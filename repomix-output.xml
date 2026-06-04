@@ -52,6 +52,13 @@ src/App.tsx
 src/assets/hero.png
 src/assets/react.svg
 src/assets/vite.svg
+src/components/spreadsheet-grid/model/gridActions.ts
+src/components/spreadsheet-grid/model/gridReducer.ts
+src/components/spreadsheet-grid/model/gridSelectors.ts
+src/components/spreadsheet-grid/model/gridTypes.ts
+src/components/spreadsheet-grid/SpreadsheetGrid.tsx
+src/components/spreadsheet-grid/utils/excelColumnName.ts
+src/components/spreadsheet-grid/utils/permissions.ts
 src/index.css
 src/main.tsx
 tsconfig.app.json
@@ -62,6 +69,978 @@ vite.config.ts
 
 <files>
 This section contains the contents of the repository's files.
+
+<file path="src/components/spreadsheet-grid/model/gridActions.ts">
+import type { CellCoord } from './gridTypes';
+
+// 追加: Grid UI action の union 型です。
+export type GridUiAction =
+  | { type: 'cell/activate'; cell: CellCoord | null }
+  | { type: 'selection/start'; cell: CellCoord }
+  | { type: 'selection/update'; cell: CellCoord }
+  | { type: 'selection/end' }
+  | { type: 'selection/clear' }
+  | { type: 'edit/start'; cell: CellCoord }
+  | { type: 'edit/stop' }
+  | {
+      type: 'column/resizeStart';
+      columnKey: string;
+      startX: number;
+      startWidth: number;
+      minWidth: number;
+      maxWidth: number;
+    }
+  | { type: 'column/resizeUpdate'; clientX: number }
+  | { type: 'column/resizeEnd' }
+  | { type: 'columnWidths/sync'; widths: Record<string, number> }
+  | { type: 'filter/setGlobal'; value: string }
+  | { type: 'filter/setColumn'; columnKey: string; value: unknown }
+  | { type: 'filter/clearColumn'; columnKey: string }
+  | { type: 'filter/resetAll' };
+
+// 追加: action creator 群です。UI から文字列リテラルを散らさないために定義します。
+export const gridActions = {
+  activateCell: (cell: CellCoord | null): GridUiAction => ({
+    type: 'cell/activate',
+    cell,
+  }),
+  startSelection: (cell: CellCoord): GridUiAction => ({
+    type: 'selection/start',
+    cell,
+  }),
+  updateSelection: (cell: CellCoord): GridUiAction => ({
+    type: 'selection/update',
+    cell,
+  }),
+  endSelection: (): GridUiAction => ({
+    type: 'selection/end',
+  }),
+  clearSelection: (): GridUiAction => ({
+    type: 'selection/clear',
+  }),
+  startEdit: (cell: CellCoord): GridUiAction => ({
+    type: 'edit/start',
+    cell,
+  }),
+  stopEdit: (): GridUiAction => ({
+    type: 'edit/stop',
+  }),
+  startColumnResize: (
+    columnKey: string,
+    startX: number,
+    startWidth: number,
+    minWidth: number,
+    maxWidth: number,
+  ): GridUiAction => ({
+    type: 'column/resizeStart',
+    columnKey,
+    startX,
+    startWidth,
+    minWidth,
+    maxWidth,
+  }),
+  updateColumnResize: (clientX: number): GridUiAction => ({
+    type: 'column/resizeUpdate',
+    clientX,
+  }),
+  endColumnResize: (): GridUiAction => ({
+    type: 'column/resizeEnd',
+  }),
+  syncColumnWidths: (widths: Record<string, number>): GridUiAction => ({
+    type: 'columnWidths/sync',
+    widths,
+  }),
+  setGlobalFilter: (value: string): GridUiAction => ({
+    type: 'filter/setGlobal',
+    value,
+  }),
+  setColumnFilter: (columnKey: string, value: unknown): GridUiAction => ({
+    type: 'filter/setColumn',
+    columnKey,
+    value,
+  }),
+  clearColumnFilter: (columnKey: string): GridUiAction => ({
+    type: 'filter/clearColumn',
+    columnKey,
+  }),
+  resetAllFilters: (): GridUiAction => ({
+    type: 'filter/resetAll',
+  }),
+};
+</file>
+
+<file path="src/components/spreadsheet-grid/model/gridReducer.ts">
+import type { GridUiAction } from './gridActions';
+import type { GridColumn, GridUiState } from './gridTypes';
+
+// 追加: 列幅のデフォルト下限です。
+const DEFAULT_MIN_WIDTH = 60;
+
+// 追加: 列幅のデフォルト上限です。
+const DEFAULT_MAX_WIDTH = 1000;
+
+// 追加: 値を min/max に収めるユーティリティです。
+const clamp = (value: number, min: number, max: number) =>
+  Math.min(Math.max(value, min), max);
+
+// 追加: 初期 column width map を生成します。
+const createColumnWidthMap = <T,>(columns: GridColumn<T>[]) =>
+  columns.reduce<Record<string, number>>((acc, column) => {
+    acc[column.key] = column.width;
+    return acc;
+  }, {});
+
+// 追加: reducer 初期 state を生成します。
+export const createInitialGridUiState = <T,>(
+  columns: GridColumn<T>[],
+): GridUiState => ({
+  activeCell: null,
+  selection: null,
+  editingCell: null,
+  dragState: null,
+  columnWidths: createColumnWidthMap(columns),
+  filters: {
+    globalText: '',
+    columnFilters: {},
+  },
+});
+
+// 追加: Grid の UI state reducer 本体です。
+export const gridUiReducer = (
+  state: GridUiState,
+  action: GridUiAction,
+): GridUiState => {
+  switch (action.type) {
+    case 'cell/activate':
+      return {
+        ...state,
+        activeCell: action.cell,
+      };
+
+    case 'selection/start':
+      return {
+        ...state,
+        activeCell: action.cell,
+        selection: {
+          type: 'cell',
+          range: {
+            start: action.cell,
+            end: action.cell,
+          },
+        },
+        dragState: {
+          type: 'selection',
+          anchor: action.cell,
+          current: action.cell,
+        },
+      };
+
+    case 'selection/update':
+      if (state.dragState?.type !== 'selection') {
+        return state;
+      }
+
+      return {
+        ...state,
+        selection: {
+          type: 'cell',
+          range: {
+            start: state.dragState.anchor,
+            end: action.cell,
+          },
+        },
+        dragState: {
+          ...state.dragState,
+          current: action.cell,
+        },
+      };
+
+    case 'selection/end':
+      return {
+        ...state,
+        dragState: state.dragState?.type === 'selection' ? null : state.dragState,
+      };
+
+    case 'selection/clear':
+      return {
+        ...state,
+        selection: null,
+        dragState: null,
+      };
+
+    case 'edit/start':
+      return {
+        ...state,
+        editingCell: action.cell,
+        activeCell: action.cell,
+      };
+
+    case 'edit/stop':
+      return {
+        ...state,
+        editingCell: null,
+      };
+
+    case 'column/resizeStart':
+      return {
+        ...state,
+        dragState: {
+          type: 'columnResize',
+          columnKey: action.columnKey,
+          startX: action.startX,
+          startWidth: action.startWidth,
+          minWidth: action.minWidth || DEFAULT_MIN_WIDTH,
+          maxWidth: action.maxWidth || DEFAULT_MAX_WIDTH,
+        },
+      };
+
+    case 'column/resizeUpdate':
+      if (state.dragState?.type !== 'columnResize') {
+        return state;
+      }
+
+      return {
+        ...state,
+        columnWidths: {
+          ...state.columnWidths,
+          [state.dragState.columnKey]: clamp(
+            state.dragState.startWidth + (action.clientX - state.dragState.startX),
+            state.dragState.minWidth,
+            state.dragState.maxWidth,
+          ),
+        },
+      };
+
+    case 'column/resizeEnd':
+      return {
+        ...state,
+        dragState: state.dragState?.type === 'columnResize' ? null : state.dragState,
+      };
+
+    case 'columnWidths/sync':
+      return {
+        ...state,
+        columnWidths: {
+          ...state.columnWidths,
+          ...action.widths,
+        },
+      };
+
+    case 'filter/setGlobal':
+      return {
+        ...state,
+        filters: {
+          ...state.filters,
+          globalText: action.value,
+        },
+      };
+
+    case 'filter/setColumn':
+      return {
+        ...state,
+        filters: {
+          ...state.filters,
+          columnFilters: {
+            ...state.filters.columnFilters,
+            [action.columnKey]: action.value,
+          },
+        },
+      };
+
+    case 'filter/clearColumn': {
+      const nextColumnFilters = { ...state.filters.columnFilters };
+      delete nextColumnFilters[action.columnKey];
+
+      return {
+        ...state,
+        filters: {
+          ...state.filters,
+          columnFilters: nextColumnFilters,
+        },
+      };
+    }
+
+    case 'filter/resetAll':
+      return {
+        ...state,
+        filters: {
+          globalText: '',
+          columnFilters: {},
+        },
+      };
+
+    default:
+      return state;
+  }
+};
+</file>
+
+<file path="src/components/spreadsheet-grid/model/gridSelectors.ts">
+import type { CellCoord, CellRange, GridUiState } from './gridTypes';
+
+// 追加: セル範囲を正規化して左上/右下を求めるユーティリティです。
+export const normalizeCellRange = (range: CellRange): CellRange => ({
+  start: {
+    row: Math.min(range.start.row, range.end.row),
+    col: Math.min(range.start.col, range.end.col),
+  },
+  end: {
+    row: Math.max(range.start.row, range.end.row),
+    col: Math.max(range.start.col, range.end.col),
+  },
+});
+
+// 追加: activeCell を取得します。
+export const selectActiveCell = (state: GridUiState) => state.activeCell;
+
+// 追加: selection を取得します。
+export const selectSelection = (state: GridUiState) => state.selection;
+
+// 追加: editingCell を取得します。
+export const selectEditingCell = (state: GridUiState) => state.editingCell;
+
+// 追加: 列幅を取得します。
+export const selectColumnWidth = (state: GridUiState, columnKey: string) =>
+  state.columnWidths[columnKey];
+
+// 追加: グローバルフィルター値を取得します。
+export const selectGlobalFilter = (state: GridUiState) => state.filters.globalText;
+
+// 追加: 列フィルター値を取得します。
+export const selectColumnFilter = (state: GridUiState, columnKey: string) =>
+  state.filters.columnFilters[columnKey];
+
+// 追加: active cell 判定です。
+export const selectIsActiveCell = (
+  state: GridUiState,
+  rowIndex: number,
+  colIndex: number,
+) =>
+  state.activeCell?.row === rowIndex && state.activeCell?.col === colIndex;
+
+// 追加: editing cell 判定です。
+export const selectIsEditingCell = (
+  state: GridUiState,
+  rowIndex: number,
+  colIndex: number,
+) =>
+  state.editingCell?.row === rowIndex && state.editingCell?.col === colIndex;
+
+// 追加: cell selection 判定です。row/col selection は将来拡張対象です。
+export const selectIsCellSelected = (
+  state: GridUiState,
+  rowIndex: number,
+  colIndex: number,
+) => {
+  if (state.selection?.type !== 'cell') {
+    return false;
+  }
+
+  const normalizedRange = normalizeCellRange(state.selection.range);
+
+  return (
+    rowIndex >= normalizedRange.start.row &&
+    rowIndex <= normalizedRange.end.row &&
+    colIndex >= normalizedRange.start.col &&
+    colIndex <= normalizedRange.end.col
+  );
+};
+
+// 追加: 座標一致判定です。今後 keyboard 操作などで再利用できます。
+export const isSameCellCoord = (
+  left: CellCoord | null,
+  right: CellCoord | null,
+) => {
+  if (!left || !right) {
+    return false;
+  }
+
+  return left.row === right.row && left.col === right.col;
+};
+</file>
+
+<file path="src/components/spreadsheet-grid/model/gridTypes.ts">
+import type { ReactNode } from 'react';
+
+// 追加: セル座標を表す基本型です。
+export type CellCoord = {
+  row: number;
+  col: number;
+};
+
+// 追加: 範囲選択を表すセル範囲型です。
+export type CellRange = {
+  start: CellCoord;
+  end: CellCoord;
+};
+
+// 追加: Grid の選択状態です。初版は cell selection を主対象にします。
+export type GridSelection =
+  | { type: 'cell'; range: CellRange }
+  | { type: 'row'; startRow: number; endRow: number }
+  | { type: 'col'; startCol: number; endCol: number }
+  | null;
+
+// 追加: フィルター状態です。初版はグローバル + 列単位の最小構成です。
+export type GridFilterState = {
+  globalText: string;
+  columnFilters: Record<string, unknown>;
+};
+
+// 追加: セル描画に渡すコンテキストです。
+export type CellRenderContext<T> = {
+  row: T;
+  rowIndex: number;
+  colIndex: number;
+  value: unknown;
+  column: GridColumn<T>;
+  isActive: boolean;
+  isSelected: boolean;
+  isEditing: boolean;
+  readOnly: boolean;
+  setValue: (value: unknown) => void;
+};
+
+// 追加: ヘッダー描画に渡すコンテキストです。
+export type HeaderRenderContext<T> = {
+  colIndex: number;
+  width: number;
+  column: GridColumn<T>;
+  filterValue?: unknown;
+  isFiltered?: boolean;
+};
+
+// 追加: 列定義です。将来のカスタムセル/カスタムヘッダー拡張を見据えています。
+export type GridColumn<T> = {
+  key: string;
+  title?: string;
+  width: number;
+  minWidth?: number;
+  maxWidth?: number;
+  visible?: boolean;
+  editable?: boolean;
+  readOnly?: boolean;
+  getValue?: (row: T) => unknown;
+  setValue?: (row: T, value: unknown) => T;
+  renderCell?: (ctx: CellRenderContext<T>) => ReactNode;
+  renderHeader?: (ctx: HeaderRenderContext<T>) => ReactNode;
+  filterType?: 'text' | 'number' | 'date' | 'select' | 'custom';
+  filterFn?: (row: T, filterValue: unknown) => boolean;
+  parseClipboardValue?: (raw: string, row: T) => unknown;
+  formatClipboardValue?: (value: unknown, row: T) => string;
+};
+
+// 追加: 列リサイズ用のドラッグ状態です。初版では reducer 側の設計だけ入れます。
+export type ColumnResizeDragState = {
+  type: 'columnResize';
+  columnKey: string;
+  startX: number;
+  startWidth: number;
+  minWidth: number;
+  maxWidth: number;
+};
+
+// 追加: 範囲選択用のドラッグ状態です。
+export type SelectionDragState = {
+  type: 'selection';
+  anchor: CellCoord;
+  current: CellCoord;
+};
+
+// 追加: Grid 内部 UI state です。rows は外部 controlled とし、ここには持ちません。
+export type GridUiState = {
+  activeCell: CellCoord | null;
+  selection: GridSelection;
+  editingCell: CellCoord | null;
+  dragState: SelectionDragState | ColumnResizeDragState | null;
+  columnWidths: Record<string, number>;
+  filters: GridFilterState;
+};
+
+// 追加: 公開 props です。
+export type SpreadsheetGridProps<T> = {
+  rows: T[];
+  columns: GridColumn<T>[];
+  onRowsChange?: (nextRows: T[]) => void;
+  rowHeight?: number;
+  headerHeight?: number;
+  rowHeaderWidth?: number;
+  readOnly?: boolean;
+  canEditCell?: (
+    rowIndex: number,
+    colIndex: number,
+    row: T,
+    column: GridColumn<T>,
+  ) => boolean;
+  enableClipboard?: boolean;
+  enableRangeSelection?: boolean;
+  enableColumnResize?: boolean;
+  enableGlobalFilter?: boolean;
+  enableColumnFilter?: boolean;
+  className?: string;
+};
+</file>
+
+<file path="src/components/spreadsheet-grid/SpreadsheetGrid.tsx">
+import {
+  useEffect,
+  useMemo,
+  useReducer,
+  type CSSProperties,
+  type PointerEvent,
+} from 'react';
+import { gridActions } from './model/gridActions';
+import { createInitialGridUiState, gridUiReducer } from './model/gridReducer';
+import {
+  selectColumnWidth,
+  selectGlobalFilter,
+  selectIsActiveCell,
+  selectIsCellSelected,
+  selectIsEditingCell,
+} from './model/gridSelectors';
+import type {
+  CellCoord,
+  GridColumn,
+  SpreadsheetGridProps,
+} from './model/gridTypes';
+import { toExcelColumnName } from './utils/excelColumnName';
+import { getCellValue, isCellEditable } from './utils/permissions';
+
+// 追加: 行フィルターの最小実装です。初版では global filter のみをここで扱います。
+const applyGlobalFilter = <T,>(
+  rows: T[],
+  columns: GridColumn<T>[],
+  globalText: string,
+) => {
+  const normalizedFilter = globalText.trim().toLowerCase();
+
+  if (!normalizedFilter) {
+    return rows;
+  }
+
+  return rows.filter((row) =>
+    columns.some((column) => {
+      const value = getCellValue(row, column);
+      return String(value ?? '').toLowerCase().includes(normalizedFilter);
+    }),
+  );
+};
+
+// 追加: Grid 本体です。バッチ1では reducer + 基本描画 + 選択を実装します。
+export function SpreadsheetGrid<T>({
+  rows,
+  columns,
+  onRowsChange,
+  rowHeight = 36,
+  headerHeight = 40,
+  rowHeaderWidth = 56,
+  readOnly = false,
+  canEditCell,
+  enableRangeSelection = true,
+  enableGlobalFilter = true,
+  className,
+}: SpreadsheetGridProps<T>) {
+  // 追加: visible column だけを描画対象にします。
+  const visibleColumns = useMemo(
+    () => columns.filter((column) => column.visible !== false),
+    [columns],
+  );
+
+  // 追加: reducer 初期化です。列幅などをここで初期化します。
+  const [uiState, dispatch] = useReducer(
+    gridUiReducer,
+    visibleColumns,
+    createInitialGridUiState,
+  );
+
+  // 追加: columns が変わった際に column width map を同期します。
+  useEffect(() => {
+    const nextWidths = visibleColumns.reduce<Record<string, number>>(
+      (acc, column) => {
+        acc[column.key] = column.width;
+        return acc;
+      },
+      {},
+    );
+
+    dispatch(gridActions.syncColumnWidths(nextWidths));
+  }, [visibleColumns]);
+
+  // 追加: selection drag 中に pointerup で終了できるようにします。
+  useEffect(() => {
+    const handleWindowPointerUp = () => {
+      dispatch(gridActions.endSelection());
+    };
+
+    window.addEventListener('pointerup', handleWindowPointerUp);
+
+    return () => {
+      window.removeEventListener('pointerup', handleWindowPointerUp);
+    };
+  }, []);
+
+  // 追加: グローバルフィルター適用済み rows です。
+  const filteredRows = useMemo(
+    () => applyGlobalFilter(rows, visibleColumns, selectGlobalFilter(uiState)),
+    [rows, visibleColumns, uiState],
+  );
+
+  // 追加: 列幅合計を計算して body の横幅に使います。
+  const totalColumnWidth = useMemo(
+    () =>
+      visibleColumns.reduce(
+        (sum, column) => sum + selectColumnWidth(uiState, column.key),
+        0,
+      ),
+    [uiState, visibleColumns],
+  );
+
+  // 追加: セルクリック/ドラッグ開始時の処理です。
+  const handleCellPointerDown = (
+    cell: CellCoord,
+    event: PointerEvent<HTMLDivElement>,
+  ) => {
+    // 追加: 左クリック/主ポインターのみを対象にします。
+    if (event.button !== 0) {
+      return;
+    }
+
+    dispatch(gridActions.activateCell(cell));
+
+    if (enableRangeSelection) {
+      dispatch(gridActions.startSelection(cell));
+    }
+  };
+
+  // 追加: selection drag 中にセルへ入ったら範囲更新します。
+  const handleCellPointerEnter = (cell: CellCoord) => {
+    if (!enableRangeSelection) {
+      return;
+    }
+
+    if (uiState.dragState?.type !== 'selection') {
+      return;
+    }
+
+    dispatch(gridActions.updateSelection(cell));
+  };
+
+  // 追加: 列定義に応じて cell node を描画します。
+  const renderCellContent = (
+    row: T,
+    rowIndex: number,
+    column: GridColumn<T>,
+    colIndex: number,
+  ) => {
+    const value = getCellValue(row, column);
+    const readOnlyCell = !isCellEditable(
+      { readOnly, canEditCell },
+      rowIndex,
+      colIndex,
+      row,
+      column,
+    );
+    const isActive = selectIsActiveCell(uiState, rowIndex, colIndex);
+    const isSelected = selectIsCellSelected(uiState, rowIndex, colIndex);
+    const isEditing = selectIsEditingCell(uiState, rowIndex, colIndex);
+
+    if (column.renderCell) {
+      return column.renderCell({
+        row,
+        rowIndex,
+        colIndex,
+        value,
+        column,
+        isActive,
+        isSelected,
+        isEditing,
+        readOnly: readOnlyCell,
+        // 追加: 実編集は次バッチですが、将来の API 互換のため setValue を先に定義します。
+        setValue: (nextValue) => {
+          if (!onRowsChange) {
+            return;
+          }
+
+          const nextRows = rows.map((currentRow, index) =>
+            index === rowIndex
+              ? ({
+                  ...(currentRow as Record<string, unknown>),
+                  [column.key]: nextValue,
+                } as T)
+              : currentRow,
+          );
+
+          onRowsChange(nextRows);
+        },
+      });
+    }
+
+    return <span>{String(value ?? '')}</span>;
+  };
+
+  // 追加: 共通スタイル定義です。バッチ1では依存を増やさずインラインで最小化します。
+  const gridShellStyle: CSSProperties = {
+    border: '1px solid #d7dce3',
+    borderRadius: 12,
+    overflow: 'hidden',
+    backgroundColor: '#ffffff',
+    boxShadow: '0 4px 14px rgba(15, 23, 42, 0.04)',
+  };
+
+  const headerCellBaseStyle: CSSProperties = {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 8,
+    boxSizing: 'border-box',
+    padding: '0 10px',
+    borderRight: '1px solid #e5e7eb',
+    borderBottom: '1px solid #d7dce3',
+    backgroundColor: '#f8fafc',
+    fontSize: 13,
+    fontWeight: 600,
+    color: '#334155',
+  };
+
+  const rowHeaderCellStyle: CSSProperties = {
+    ...headerCellBaseStyle,
+    justifyContent: 'center',
+    width: rowHeaderWidth,
+    minWidth: rowHeaderWidth,
+    position: 'sticky',
+    left: 0,
+    zIndex: 1,
+  };
+
+  return (
+    <div className={className}>
+      {enableGlobalFilter ? (
+        <div style={{ marginBottom: 12 }}>
+          {/* 追加: 初版の最小 global filter 入力です。 */}
+          <input
+            type="text"
+            value={selectGlobalFilter(uiState)}
+            onChange={(event) =>
+              dispatch(gridActions.setGlobalFilter(event.target.value))
+            }
+            placeholder="グローバルフィルター"
+            style={{
+              width: '100%',
+              maxWidth: 320,
+              boxSizing: 'border-box',
+              padding: '10px 12px',
+              border: '1px solid #cbd5e1',
+              borderRadius: 8,
+              outline: 'none',
+            }}
+          />
+        </div>
+      ) : null}
+
+      <div style={gridShellStyle}>
+        <div style={{ overflow: 'auto' }}>
+          <div
+            style={{
+              minWidth: rowHeaderWidth + totalColumnWidth,
+            }}
+          >
+            {/* 追加: ヘッダー行です。左上コーナー + 列ヘッダーを描画します。 */}
+            <div style={{ display: 'flex', height: headerHeight }}>
+              <div style={rowHeaderCellStyle}>#</div>
+
+              {visibleColumns.map((column, colIndex) => {
+                const width = selectColumnWidth(uiState, column.key);
+
+                return (
+                  <div
+                    key={column.key}
+                    style={{
+                      ...headerCellBaseStyle,
+                      width,
+                      minWidth: width,
+                      height: headerHeight,
+                    }}
+                  >
+                    <span
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        minWidth: 22,
+                        height: 22,
+                        borderRadius: 9999,
+                        backgroundColor: '#e2e8f0',
+                        color: '#475569',
+                        fontSize: 11,
+                        fontWeight: 700,
+                      }}
+                    >
+                      {toExcelColumnName(colIndex)}
+                    </span>
+
+                    {column.renderHeader
+                      ? column.renderHeader({
+                          colIndex,
+                          width,
+                          column,
+                          filterValue: uiState.filters.columnFilters[column.key],
+                          isFiltered:
+                            uiState.filters.columnFilters[column.key] !== undefined,
+                        })
+                      : column.title || column.key}
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* 追加: ボディ部です。バッチ1では非仮想の最小描画に留めます。 */}
+            {filteredRows.map((row, rowIndex) => (
+              <div key={rowIndex} style={{ display: 'flex', minHeight: rowHeight }}>
+                <div
+                  style={{
+                    ...rowHeaderCellStyle,
+                    height: rowHeight,
+                    backgroundColor: '#f8fafc',
+                    fontWeight: 500,
+                  }}
+                >
+                  {rowIndex + 1}
+                </div>
+
+                {visibleColumns.map((column, colIndex) => {
+                  const width = selectColumnWidth(uiState, column.key);
+                  const isActive = selectIsActiveCell(uiState, rowIndex, colIndex);
+                  const isSelected = selectIsCellSelected(uiState, rowIndex, colIndex);
+                  const readOnlyCell = !isCellEditable(
+                    { readOnly, canEditCell },
+                    rowIndex,
+                    colIndex,
+                    row,
+                    column,
+                  );
+
+                  return (
+                    <div
+                      key={`${rowIndex}-${column.key}`}
+                      onPointerDown={(event) =>
+                        handleCellPointerDown({ row: rowIndex, col: colIndex }, event)
+                      }
+                      onPointerEnter={() =>
+                        handleCellPointerEnter({ row: rowIndex, col: colIndex })
+                      }
+                      style={{
+                        width,
+                        minWidth: width,
+                        height: rowHeight,
+                        boxSizing: 'border-box',
+                        display: 'flex',
+                        alignItems: 'center',
+                        padding: '0 10px',
+                        borderRight: '1px solid #e5e7eb',
+                        borderBottom: '1px solid #e5e7eb',
+                        backgroundColor: isActive
+                          ? '#dbeafe'
+                          : isSelected
+                            ? '#eff6ff'
+                            : readOnlyCell
+                              ? '#f8fafc'
+                              : '#ffffff',
+                        color: readOnlyCell ? '#64748b' : '#0f172a',
+                        cursor: 'default',
+                        userSelect: 'none',
+                        outline: isActive ? '2px solid #2563eb' : 'none',
+                        outlineOffset: '-2px',
+                      }}
+                    >
+                      {renderCellContent(row, rowIndex, column, colIndex)}
+                    </div>
+                  );
+                })}
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export default SpreadsheetGrid;
+</file>
+
+<file path="src/components/spreadsheet-grid/utils/excelColumnName.ts">
+// 追加: 0-based の列 index を Excel 形式 (A, B, ... AA, AB...) に変換します。
+export const toExcelColumnName = (columnIndex: number): string => {
+  if (columnIndex < 0) {
+    return '';
+  }
+
+  let current = columnIndex;
+  let result = '';
+
+  while (current >= 0) {
+    result = String.fromCharCode((current % 26) + 65) + result;
+    current = Math.floor(current / 26) - 1;
+  }
+
+  return result;
+};
+</file>
+
+<file path="src/components/spreadsheet-grid/utils/permissions.ts">
+import type { GridColumn, SpreadsheetGridProps } from '../model/gridTypes';
+
+// 追加: Grid 全体 / 列 / セル単位の条件をまとめて編集可否を判定します。
+export const isCellEditable = <T,>(
+  props: Pick<SpreadsheetGridProps<T>, 'readOnly' | 'canEditCell'>,
+  rowIndex: number,
+  colIndex: number,
+  row: T,
+  column: GridColumn<T>,
+): boolean => {
+  if (props.readOnly) {
+    return false;
+  }
+
+  if (column.readOnly) {
+    return false;
+  }
+
+  if (column.editable === false) {
+    return false;
+  }
+
+  if (props.canEditCell) {
+    return props.canEditCell(rowIndex, colIndex, row, column);
+  }
+
+  return true;
+};
+
+// 追加: 列定義からセル値を取り出します。getValue 未指定時は key ベースで取得します。
+export const getCellValue = <T,>(row: T, column: GridColumn<T>): unknown => {
+  if (column.getValue) {
+    return column.getValue(row);
+  }
+
+  return (row as Record<string, unknown>)[column.key];
+};
+
+// 追加: 列定義を使ってセル値を書き換えます。setValue 未指定時は key ベース shallow copy を行います。
+export const setCellValue = <T,>(
+  row: T,
+  column: GridColumn<T>,
+  value: unknown,
+): T => {
+  if (column.setValue) {
+    return column.setValue(row, value);
+  }
+
+  return {
+    ...(row as Record<string, unknown>),
+    [column.key]: value,
+  } as T;
+};
+</file>
 
 <file path=".gitignore">
 # Logs
@@ -459,128 +1438,98 @@ export default defineConfig([
 </file>
 
 <file path="src/App.tsx">
-import { useState } from 'react'
-import reactLogo from './assets/react.svg'
-import viteLogo from './assets/vite.svg'
-import heroImg from './assets/hero.png'
-import './App.css'
+import { useMemo, useState } from 'react';
+import SpreadsheetGrid from './components/spreadsheet-grid/SpreadsheetGrid';
+import type { GridColumn } from './components/spreadsheet-grid/model/gridTypes';
+
+// 追加: デモ用の行型です。
+type DemoRow = {
+  partNo: string;
+  partName: string;
+  qty: number;
+  unit: string;
+  status: string;
+};
 
 function App() {
-  const [count, setCount] = useState(0)
+  // 追加: バッチ1 の動作確認用データです。
+  const [rows, setRows] = useState<DemoRow[]>([
+    { partNo: 'A-1001', partName: 'フレーム', qty: 2, unit: '個', status: '有効' },
+    { partNo: 'A-1002', partName: 'ボルト', qty: 16, unit: '本', status: '有効' },
+    { partNo: 'A-1003', partName: 'ナット', qty: 16, unit: '個', status: '有効' },
+    { partNo: 'A-1004', partName: 'ワッシャー', qty: 16, unit: '個', status: '有効' },
+    { partNo: 'A-1005', partName: 'カバー', qty: 1, unit: '式', status: '保留' },
+    { partNo: 'A-1006', partName: 'ラベル', qty: 3, unit: '枚', status: '有効' },
+  ]);
+
+  // 追加: 列定義です。今後ここに renderCell / renderHeader を拡張していきます。
+  const columns = useMemo<GridColumn<DemoRow>[]>(
+    () => [
+      { key: 'partNo', title: '品番', width: 150 },
+      { key: 'partName', title: '品名', width: 220 },
+      { key: 'qty', title: '数量', width: 90 },
+      { key: 'unit', title: '単位', width: 90, readOnly: true },
+      { key: 'status', title: '状態', width: 120 },
+    ],
+    [],
+  );
 
   return (
-    <>
-      <section id="center">
-        <div className="hero">
-          <img src={heroImg} className="base" width="170" height="179" alt="" />
-          <img src={reactLogo} className="framework" alt="React logo" />
-          <img src={viteLogo} className="vite" alt="Vite logo" />
-        </div>
-        <div>
-          <h1>Get started</h1>
-          <p>
-            Edit <code>src/App.tsx</code> and save to test <code>HMR</code>
-          </p>
-        </div>
-        <button
-          type="button"
-          className="counter"
-          onClick={() => setCount((count) => count + 1)}
+    <main
+      style={{
+        boxSizing: 'border-box',
+        width: '100%',
+        maxWidth: 1200,
+        margin: '0 auto',
+        padding: '32px 24px 48px',
+        textAlign: 'left',
+      }}
+    >
+      <header style={{ marginBottom: 20 }}>
+        <h1
+          style={{
+            margin: 0,
+            fontSize: 28,
+            lineHeight: 1.25,
+            color: '#0f172a',
+          }}
         >
-          Count is {count}
-        </button>
-      </section>
+          SpreadsheetGrid - 実装バッチ1
+        </h1>
+        <p
+          style={{
+            marginTop: 8,
+            color: '#475569',
+            fontSize: 14,
+          }}
+        >
+          reducer ベースのコア土台です。バッチ1では型 / reducer / selector / 最小描画までを実装しています。
+        </p>
+      </header>
 
-      <div className="ticks"></div>
+      <SpreadsheetGrid<DemoRow>
+        rows={rows}
+        columns={columns}
+        onRowsChange={setRows}
+        rowHeight={38}
+        headerHeight={42}
+        rowHeaderWidth={56}
+        enableRangeSelection
+        enableGlobalFilter
+        canEditCell={(rowIndex, _colIndex, row, column) => {
+          // 追加: デモ用に「保留」行は status 列以外を編集不可とする例です。
+          if (row.status === '保留' && column.key !== 'status') {
+            return false;
+          }
 
-      <section id="next-steps">
-        <div id="docs">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#documentation-icon"></use>
-          </svg>
-          <h2>Documentation</h2>
-          <p>Your questions, answered</p>
-          <ul>
-            <li>
-              <a href="https://vite.dev/" target="_blank">
-                <img className="logo" src={viteLogo} alt="" />
-                Explore Vite
-              </a>
-            </li>
-            <li>
-              <a href="https://react.dev/" target="_blank">
-                <img className="button-icon" src={reactLogo} alt="" />
-                Learn more
-              </a>
-            </li>
-          </ul>
-        </div>
-        <div id="social">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#social-icon"></use>
-          </svg>
-          <h2>Connect with us</h2>
-          <p>Join the Vite community</p>
-          <ul>
-            <li>
-              <a href="https://github.com/vitejs/vite" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#github-icon"></use>
-                </svg>
-                GitHub
-              </a>
-            </li>
-            <li>
-              <a href="https://chat.vite.dev/" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#discord-icon"></use>
-                </svg>
-                Discord
-              </a>
-            </li>
-            <li>
-              <a href="https://x.com/vite_js" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#x-icon"></use>
-                </svg>
-                X.com
-              </a>
-            </li>
-            <li>
-              <a href="https://bsky.app/profile/vite.dev" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#bluesky-icon"></use>
-                </svg>
-                Bluesky
-              </a>
-            </li>
-          </ul>
-        </div>
-      </section>
-
-      <div className="ticks"></div>
-      <section id="spacer"></section>
-    </>
-  )
+          return rowIndex >= 0;
+        }}
+      />
+    </main>
+  );
 }
 
-export default App
+export default App;
 </file>
 
 <file path="src/assets/react.svg">
