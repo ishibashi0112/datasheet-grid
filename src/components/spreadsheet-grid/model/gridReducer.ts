@@ -58,13 +58,55 @@ export const gridUiReducer = (
         },
         dragState: {
           type: 'selection',
+          selectionKind: 'cell',
           anchor: action.cell,
           current: action.cell,
         },
       };
 
+    case 'rowSelection/start':
+      return {
+        ...state,
+        activeCell: {
+          row: action.row,
+          col: state.activeCell?.col ?? 0,
+        },
+        selection: {
+          type: 'row',
+          startRow: action.row,
+          endRow: action.row,
+        },
+        dragState: {
+          type: 'selection',
+          selectionKind: 'row',
+          anchorRow: action.row,
+          currentRow: action.row,
+        },
+      };
+
+    case 'rowSelection/update':
+      if (
+        state.dragState?.type !== 'selection' ||
+        state.dragState.selectionKind !== 'row'
+      ) {
+        return state;
+      }
+
+      return {
+        ...state,
+        selection: {
+          type: 'row',
+          startRow: state.dragState.anchorRow,
+          endRow: action.row,
+        },
+        dragState: { ...state.dragState, currentRow: action.row },
+      };
+
     case 'selection/update':
-      if (state.dragState?.type !== 'selection') {
+      if (
+        state.dragState?.type !== 'selection' ||
+        state.dragState.selectionKind !== 'cell'
+      ) {
         return state;
       }
 
@@ -83,10 +125,49 @@ export const gridUiReducer = (
         },
       };
 
+    case 'columnSelection/start':
+      return {
+        ...state,
+        activeCell: {
+          row: state.activeCell?.row ?? 0,
+          col: action.col,
+        },
+        selection: {
+          type: 'col',
+          startCol: action.col,
+          endCol: action.col,
+        },
+        dragState: {
+          type: 'selection',
+          selectionKind: 'col',
+          anchorCol: action.col,
+          currentCol: action.col,
+        },
+      };
+
+    case 'columnSelection/update':
+      if (
+        state.dragState?.type !== 'selection' ||
+        state.dragState.selectionKind !== 'col'
+      ) {
+        return state;
+      }
+
+      return {
+        ...state,
+        selection: {
+          type: 'col',
+          startCol: state.dragState.anchorCol,
+          endCol: action.col,
+        },
+        dragState: { ...state.dragState, currentCol: action.col },
+      };
+
     case 'selection/end':
       return {
         ...state,
-        dragState: state.dragState?.type === 'selection' ? null : state.dragState,
+        dragState:
+          state.dragState?.type === 'selection' ? null : state.dragState,
       };
 
     case 'selection/clear':

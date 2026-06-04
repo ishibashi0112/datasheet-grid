@@ -5,6 +5,10 @@ export type GridUiAction =
   | { type: 'cell/activate'; cell: CellCoord | null }
   | { type: 'selection/start'; cell: CellCoord }
   | { type: 'selection/update'; cell: CellCoord }
+  | { type: 'rowSelection/start'; row: number }
+  | { type: 'rowSelection/update'; row: number }
+  | { type: 'columnSelection/start'; col: number }
+  | { type: 'columnSelection/update'; col: number }
   | { type: 'selection/end' }
   | { type: 'selection/clear' }
   | { type: 'edit/start'; cell: CellCoord }
@@ -38,6 +42,22 @@ export const gridActions = {
   updateSelection: (cell: CellCoord): GridUiAction => ({
     type: 'selection/update',
     cell,
+  }),
+  startRowSelection: (row: number): GridUiAction => ({
+    type: 'rowSelection/start',
+    row,
+  }),
+  updateRowSelection: (row: number): GridUiAction => ({
+    type: 'rowSelection/update',
+    row,
+  }),
+  startColumnSelection: (col: number): GridUiAction => ({
+    type: 'columnSelection/start',
+    col,
+  }),
+  updateColumnSelection: (col: number): GridUiAction => ({
+    type: 'columnSelection/update',
+    col,
   }),
   endSelection: (): GridUiAction => ({
     type: 'selection/end',
@@ -94,3 +114,4 @@ export const gridActions = {
     type: 'filter/resetAll',
   }),
 };
+``

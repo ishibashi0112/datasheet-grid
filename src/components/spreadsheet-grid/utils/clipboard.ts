@@ -1,5 +1,9 @@
 import type { GridColumn } from '../model/gridTypes';
-import { normalizeCellRange } from '../model/gridSelectors';
+import {
+  normalizeCellRange,
+  normalizeColumnRange,
+  normalizeRowRange,
+} from '../model/gridSelectors';
 import { getCellValue, setCellValue } from './permissions';
 
 // 追加: TSV の行列データ型です。
@@ -24,27 +28,88 @@ export const serializeSelectionToTsv = <T,>(
   rows: T[],
   columns: GridColumn<T>[],
   selection:
-    | {
-        type: 'cell';
-        range: {
-          start: { row: number; col: number };
-          end: { row: number; col: number };
-        };
-      }
+    | { type: 'cell'; range: { start: { row: number; col: number }; end: { row: number; col: number } } }
+    | { type: 'row'; startRow: number; endRow: number }
+    | { type: 'col'; startCol: number; endCol: number }
     | null,
 ): string => {
-  if (!selection || selection.type !== 'cell') {
+  if (!selection) {
     return '';
   }
 
-  const normalizedRange = normalizeCellRange(selection.range);
   const lines: string[] = [];
 
-  for (
-    let rowIndex = normalizedRange.start.row;
-    rowIndex <= normalizedRange.end.row;
-    rowIndex += 1
-  ) {
+  // 追加: セル範囲選択のコピーです。
+  if (selection.type === 'cell') {
+    const normalizedRange = normalizeCellRange(selection.range);
+
+    for (
+      let rowIndex = normalizedRange.start.row;
+      rowIndex <= normalizedRange.end.row;
+      rowIndex += 1
+    ) {
+      const row = rows[rowIndex];
+      if (!row) {
+        continue;
+      }
+
+      const cells: string[] = [];
+
+      for (
+        let colIndex = normalizedRange.start.col;
+        colIndex <= normalizedRange.end.col;
+        colIndex += 1
+      ) {
+        const column = columns[colIndex];
+        if (!column) {
+          continue;
+        }
+
+        const rawValue = getCellValue(row, column);
+        const formattedValue = column.formatClipboardValue
+          ? column.formatClipboardValue(rawValue, row)
+          : String(rawValue ?? '');
+
+        cells.push(formattedValue);
+      }
+
+      lines.push(cells.join('\t'));
+    }
+
+    return lines.join('\n');
+  }
+
+  // 追加: 行選択のコピーです。選択された行 × visible columns 全体を対象にします。
+  if (selection.type === 'row') {
+    const normalizedRange = normalizeRowRange(selection.startRow, selection.endRow);
+
+    for (
+      let rowIndex = normalizedRange.startRow;
+      rowIndex <= normalizedRange.endRow;
+      rowIndex += 1
+    ) {
+      const row = rows[rowIndex];
+      if (!row) {
+        continue;
+      }
+
+      const cells = columns.map((column) => {
+        const rawValue = getCellValue(row, column);
+        return column.formatClipboardValue
+          ? column.formatClipboardValue(rawValue, row)
+          : String(rawValue ?? '');
+      });
+
+      lines.push(cells.join('\t'));
+    }
+
+    return lines.join('\n');
+  }
+
+  // 追加: 列選択のコピーです。visible rows × 選択列 を対象にします。
+  const normalizedRange = normalizeColumnRange(selection.startCol, selection.endCol);
+
+  for (let rowIndex = 0; rowIndex < rows.length; rowIndex += 1) {
     const row = rows[rowIndex];
     if (!row) {
       continue;
@@ -53,8 +118,8 @@ export const serializeSelectionToTsv = <T,>(
     const cells: string[] = [];
 
     for (
-      let colIndex = normalizedRange.start.col;
-      colIndex <= normalizedRange.end.col;
+      let colIndex = normalizedRange.startCol;
+      colIndex <= normalizedRange.endCol;
       colIndex += 1
     ) {
       const column = columns[colIndex];
@@ -141,3 +206,4 @@ export const applyClipboardMatrixToRows = <T,>(
 
   return nextRows;
 };
+``

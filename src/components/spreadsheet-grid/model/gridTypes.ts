@@ -78,11 +78,28 @@ export type ColumnResizeDragState = {
   maxWidth: number;
 };
 
-// 追加: 範囲選択用のドラッグ状態です。
-export type SelectionDragState = {
+// 追加: セル範囲選択用のドラッグ状態です。
+export type CellSelectionDragState = {
   type: 'selection';
+  selectionKind: 'cell';
   anchor: CellCoord;
   current: CellCoord;
+};
+
+// 追加: 行選択用のドラッグ状態です。
+export type RowSelectionDragState = {
+  type: 'selection';
+  selectionKind: 'row';
+  anchorRow: number;
+  currentRow: number;
+};
+
+// 追加: 列選択用のドラッグ状態です。
+export type ColumnSelectionDragState = {
+  type: 'selection';
+  selectionKind: 'col';
+  anchorCol: number;
+  currentCol: number;
 };
 
 // 追加: Grid 内部 UI state です。rows は外部 controlled とし、ここには持ちません。
@@ -90,7 +107,12 @@ export type GridUiState = {
   activeCell: CellCoord | null;
   selection: GridSelection;
   editingCell: CellCoord | null;
-  dragState: SelectionDragState | ColumnResizeDragState | null;
+  dragState:
+    | CellSelectionDragState
+    | RowSelectionDragState
+    | ColumnSelectionDragState
+    | ColumnResizeDragState
+    | null;
   columnWidths: Record<string, number>;
   filters: GridFilterState;
 };

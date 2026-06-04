@@ -12,11 +12,15 @@ import { gridActions } from './model/gridActions';
 import { createInitialGridUiState, gridUiReducer } from './model/gridReducer';
 import {
   normalizeCellRange,
+  normalizeColumnRange,
+  normalizeRowRange,
   selectColumnWidth,
   selectGlobalFilter,
   selectIsActiveCell,
   selectIsCellSelected,
+  selectIsColumnSelected,
   selectIsEditingCell,
+  selectIsRowSelected,
 } from './model/gridSelectors';
 import SelectionOverlay, {
   type SelectionOverlayRect,
@@ -74,7 +78,7 @@ const getColumnOffset = <T,>(
   return offset;
 };
 
-// 追加: Grid 本体です。バッチ2では SelectionOverlay / clipboard / resize 下地を追加します。
+// 追加: Grid 本体です。バッチ3では row/col selection + header drag selection を追加します。
 export function SpreadsheetGrid<T>({
   rows,
   columns,
@@ -151,30 +155,6 @@ export function SpreadsheetGrid<T>({
     [filteredRows, rows],
   );
 
-  // 追加: 現在の selection を overlay 用矩形へ変換します。
-  const selectionOverlayRect = useMemo<SelectionOverlayRect | null>(() => {
-    if (uiState.selection?.type !== 'cell') {
-      return null;
-    }
-
-    const normalizedRange = normalizeCellRange(uiState.selection.range);
-    const left = getColumnOffset(
-      visibleColumns,
-      uiState.columnWidths,
-      normalizedRange.start.col,
-    );
-    const top = normalizedRange.start.row * rowHeight;
-    const width =
-      getColumnOffset(
-        visibleColumns,
-        uiState.columnWidths,
-        normalizedRange.end.col + 1,
-      ) - left;
-    const height = (normalizedRange.end.row - normalizedRange.start.row + 1) * rowHeight;
-
-    return { left, top, width, height };
-  }, [uiState.selection, uiState.columnWidths, visibleColumns, rowHeight]);
-
   // 追加: 列幅合計を計算して body の横幅に使います。
   const totalColumnWidth = useMemo(
     () =>
@@ -184,6 +164,78 @@ export function SpreadsheetGrid<T>({
       ),
     [uiState, visibleColumns],
   );
+
+  // 追加: 現在の selection を overlay 用矩形へ変換します。
+  const selectionOverlayRect = useMemo<SelectionOverlayRect | null>(() => {
+    if (!uiState.selection) {
+      return null;
+    }
+
+    if (uiState.selection.type === 'cell') {
+      const normalizedRange = normalizeCellRange(uiState.selection.range);
+      const left = getColumnOffset(
+        visibleColumns,
+        uiState.columnWidths,
+        normalizedRange.start.col,
+      );
+      const top = normalizedRange.start.row * rowHeight;
+      const width =
+        getColumnOffset(
+          visibleColumns,
+          uiState.columnWidths,
+          normalizedRange.end.col + 1,
+        ) - left;
+      const height =
+        (normalizedRange.end.row - normalizedRange.start.row + 1) * rowHeight;
+
+      return { left, top, width, height };
+    }
+
+    if (uiState.selection.type === 'row') {
+      const normalizedRange = normalizeRowRange(
+        uiState.selection.startRow,
+        uiState.selection.endRow,
+      );
+
+      return {
+        left: 0,
+        top: normalizedRange.startRow * rowHeight,
+        width: totalColumnWidth,
+        height:
+          (normalizedRange.endRow - normalizedRange.startRow + 1) * rowHeight,
+      };
+    }
+
+    const normalizedRange = normalizeColumnRange(
+      uiState.selection.startCol,
+      uiState.selection.endCol,
+    );
+    const left = getColumnOffset(
+      visibleColumns,
+      uiState.columnWidths,
+      normalizedRange.startCol,
+    );
+    const width =
+      getColumnOffset(
+        visibleColumns,
+        uiState.columnWidths,
+        normalizedRange.endCol + 1,
+      ) - left;
+
+    return {
+      left,
+      top: 0,
+      width,
+      height: filteredRows.length * rowHeight,
+    };
+  }, [
+    uiState.selection,
+    uiState.columnWidths,
+    visibleColumns,
+    rowHeight,
+    filteredRows.length,
+    totalColumnWidth,
+  ]);
 
   // 追加: セルクリック/ドラッグ開始時の処理です。
   const handleCellPointerDown = (
@@ -208,11 +260,62 @@ export function SpreadsheetGrid<T>({
       return;
     }
 
-    if (uiState.dragState?.type !== 'selection') {
+    if (
+      uiState.dragState?.type !== 'selection' ||
+      uiState.dragState.selectionKind !== 'cell'
+    ) {
       return;
     }
 
     dispatch(gridActions.updateSelection(cell));
+  };
+
+  // 追加: 行ヘッダー選択開始です。
+  const handleRowHeaderPointerDown = (
+    rowIndex: number,
+    event: PointerEvent<HTMLDivElement>,
+  ) => {
+    if (event.button !== 0) {
+      return;
+    }
+
+    dispatch(gridActions.startRowSelection(rowIndex));
+  };
+
+  // 追加: 行ヘッダードラッグ中の更新です。
+  const handleRowHeaderPointerEnter = (rowIndex: number) => {
+    if (
+      uiState.dragState?.type !== 'selection' ||
+      uiState.dragState.selectionKind !== 'row'
+    ) {
+      return;
+    }
+
+    dispatch(gridActions.updateRowSelection(rowIndex));
+  };
+
+  // 追加: 列ヘッダー選択開始です。
+  const handleColumnHeaderPointerDown = (
+    colIndex: number,
+    event: PointerEvent<HTMLDivElement>,
+  ) => {
+    if (event.button !== 0) {
+      return;
+    }
+
+    dispatch(gridActions.startColumnSelection(colIndex));
+  };
+
+  // 追加: 列ヘッダードラッグ中の更新です。
+  const handleColumnHeaderPointerEnter = (colIndex: number) => {
+    if (
+      uiState.dragState?.type !== 'selection' ||
+      uiState.dragState.selectionKind !== 'col'
+    ) {
+      return;
+    }
+
+    dispatch(gridActions.updateColumnSelection(colIndex));
   };
 
   // 追加: column resize 開始処理です。
@@ -236,14 +339,14 @@ export function SpreadsheetGrid<T>({
 
   // 追加: copy 処理です。selection を TSV にしてクリップボードへ書き込みます。
   const handleCopy = async () => {
-    if (uiState.selection?.type !== 'cell') {
-      return;
-    }
-
     const text = serializeSelectionToTsv(
       filteredRows,
       visibleColumns,
-      uiState.selection,
+      uiState.selection as
+        | { type: 'cell'; range: { start: { row: number; col: number }; end: { row: number; col: number } } }
+        | { type: 'row'; startRow: number; endRow: number }
+        | { type: 'col'; startCol: number; endCol: number }
+        | null,
     );
 
     if (!text) {
@@ -351,7 +454,7 @@ export function SpreadsheetGrid<T>({
     return <span>{String(value ?? '')}</span>;
   };
 
-  // 追加: 共通スタイル定義です。バッチ2でも依存を増やさずインラインで最小化します。
+  // 追加: 共通スタイル定義です。バッチ3でも依存を増やさずインラインで最小化します。
   const gridShellStyle: CSSProperties = {
     border: '1px solid #d7dce3',
     borderRadius: 12,
@@ -433,12 +536,17 @@ export function SpreadsheetGrid<T>({
                 return (
                   <div
                     key={column.key}
+                    onPointerDown={(event) => handleColumnHeaderPointerDown(colIndex, event)}
+                    onPointerEnter={() => handleColumnHeaderPointerEnter(colIndex)}
                     style={{
                       position: 'relative',
                       ...headerCellBaseStyle,
                       width,
                       minWidth: width,
                       height: headerHeight,
+                      backgroundColor: selectIsColumnSelected(uiState, colIndex)
+                        ? '#dbeafe'
+                        : '#f8fafc',
                     }}
                   >
                     <span
@@ -489,21 +597,25 @@ export function SpreadsheetGrid<T>({
               })}
             </div>
 
-            {/* 追加: 選択範囲 overlay です。 */}
+            {/* 追加: 選択範囲 overlay です。row/col selection にも対応します。 */}
             <SelectionOverlay
               rect={selectionOverlayRect}
               headerHeight={headerHeight}
               rowHeaderWidth={rowHeaderWidth}
             />
 
-            {/* 追加: ボディ部です。バッチ2でも非仮想の描画に留めます。 */}
+            {/* 追加: ボディ部です。バッチ3でも非仮想の描画に留めます。 */}
             {filteredRows.map((row, rowIndex) => (
               <div key={rowIndex} style={{ display: 'flex', minHeight: rowHeight }}>
                 <div
+                  onPointerDown={(event) => handleRowHeaderPointerDown(rowIndex, event)}
+                  onPointerEnter={() => handleRowHeaderPointerEnter(rowIndex)}
                   style={{
                     ...rowHeaderCellStyle,
                     height: rowHeight,
-                    backgroundColor: '#f8fafc',
+                    backgroundColor: selectIsRowSelected(uiState, rowIndex)
+                      ? '#dbeafe'
+                      : '#f8fafc',
                     fontWeight: 500,
                   }}
                 >
@@ -571,3 +683,4 @@ export function SpreadsheetGrid<T>({
 }
 
 export default SpreadsheetGrid;
+``

@@ -12,6 +12,18 @@ export const normalizeCellRange = (range: CellRange): CellRange => ({
   },
 });
 
+// 追加: 行選択範囲を正規化します。
+export const normalizeRowRange = (startRow: number, endRow: number) => ({
+  startRow: Math.min(startRow, endRow),
+  endRow: Math.max(startRow, endRow),
+});
+
+// 追加: 列選択範囲を正規化します。
+export const normalizeColumnRange = (startCol: number, endCol: number) => ({
+  startCol: Math.min(startCol, endCol),
+  endCol: Math.max(startCol, endCol),
+});
+
 // 追加: activeCell を取得します。
 export const selectActiveCell = (state: GridUiState) => state.activeCell;
 
@@ -48,23 +60,83 @@ export const selectIsEditingCell = (
 ) =>
   state.editingCell?.row === rowIndex && state.editingCell?.col === colIndex;
 
-// 追加: cell selection 判定です。row/col selection は将来拡張対象です。
+// 追加: cell selection 判定です。row/col selection も含めて判定します。
 export const selectIsCellSelected = (
   state: GridUiState,
   rowIndex: number,
   colIndex: number,
 ) => {
-  if (state.selection?.type !== 'cell') {
+  if (!state.selection) {
     return false;
   }
 
-  const normalizedRange = normalizeCellRange(state.selection.range);
+  if (state.selection.type === 'cell') {
+    const normalizedRange = normalizeCellRange(state.selection.range);
+
+    return (
+      rowIndex >= normalizedRange.start.row &&
+      rowIndex <= normalizedRange.end.row &&
+      colIndex >= normalizedRange.start.col &&
+      colIndex <= normalizedRange.end.col
+    );
+  }
+
+  if (state.selection.type === 'row') {
+    const normalizedRange = normalizeRowRange(
+      state.selection.startRow,
+      state.selection.endRow,
+    );
+
+    return (
+      rowIndex >= normalizedRange.startRow &&
+      rowIndex <= normalizedRange.endRow
+    );
+  }
+
+  if (state.selection.type === 'col') {
+    const normalizedRange = normalizeColumnRange(
+      state.selection.startCol,
+      state.selection.endCol,
+    );
+
+    return (
+      colIndex >= normalizedRange.startCol &&
+      colIndex <= normalizedRange.endCol
+    );
+  }
+
+  return false;
+};
+
+// 追加: 行ヘッダー用の選択判定です。
+export const selectIsRowSelected = (state: GridUiState, rowIndex: number) => {
+  if (state.selection?.type !== 'row') {
+    return false;
+  }
+
+  const normalizedRange = normalizeRowRange(
+    state.selection.startRow,
+    state.selection.endRow,
+  );
 
   return (
-    rowIndex >= normalizedRange.start.row &&
-    rowIndex <= normalizedRange.end.row &&
-    colIndex >= normalizedRange.start.col &&
-    colIndex <= normalizedRange.end.col
+    rowIndex >= normalizedRange.startRow && rowIndex <= normalizedRange.endRow
+  );
+};
+
+// 追加: 列ヘッダー用の選択判定です。
+export const selectIsColumnSelected = (state: GridUiState, colIndex: number) => {
+  if (state.selection?.type !== 'col') {
+    return false;
+  }
+
+  const normalizedRange = normalizeColumnRange(
+    state.selection.startCol,
+    state.selection.endCol,
+  );
+
+  return (
+    colIndex >= normalizedRange.startCol && colIndex <= normalizedRange.endCol
   );
 };
 
