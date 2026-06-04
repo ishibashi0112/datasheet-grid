@@ -6,6 +6,7 @@ import {
   useState,
   type CSSProperties,
   type ClipboardEvent,
+  type DragEvent,
   type KeyboardEvent,
   type PointerEvent,
 } from 'react';
@@ -30,7 +31,9 @@ import SelectionOverlay, {
 import ActiveCellOverlay, {
   type ActiveCellOverlayRect,
 } from './ActiveCellOverlay';
-import CellEditorLayer from './CellEditorLayer';
+import CellEditorLayer, {
+  type EditorCommitDirection,
+} from './CellEditorLayer';
 import type {
   CellCoord,
   GridColumn,
@@ -410,6 +413,9 @@ export function SpreadsheetGrid<T>({
     cell: CellCoord,
     event: PointerEvent<HTMLDivElement>,
   ) => {
+    // 追加: ネイティブテキスト選択や drag を抑止します。
+    event.preventDefault();
+
     if (event.button !== 0) {
       return;
     }
@@ -449,13 +455,39 @@ export function SpreadsheetGrid<T>({
     dispatch(gridActions.startEdit(cell));
   };
 
-  // 追加: 編集確定です。editorValue を rows へ反映します。
-  const commitEdit = () => {
+  // 追加: 単一セルを active + selection へ反映するユーティリティです。
+  const activateSingleCell = (cell: CellCoord) => {
+    dispatch(gridActions.startSelection(cell));
+    dispatch(gridActions.endSelection());
+    dispatch(gridActions.activateCell(cell));
+  };
+
+  // 追加: 基準セルから移動先セルを計算します。
+  const getMovedCell = (
+    baseCell: CellCoord,
+    deltaRow: number,
+    deltaCol: number,
+  ): CellCoord => ({
+    row: clamp(baseCell.row + deltaRow, 0, Math.max(filteredRows.length - 1, 0)),
+    col: clamp(baseCell.col + deltaCol, 0, Math.max(visibleColumns.length - 1, 0)),
+  });
+
+  // 追加: 編集確定です。editorValue を rows へ反映し、必要なら次セルへ移動します。
+  const commitEdit = (direction?: EditorCommitDirection) => {
     if (editorActionGuardRef.current || !uiState.editingCell) {
       return;
     }
 
     const editingCell = uiState.editingCell;
+    const nextCell =
+      direction === 'down'
+        ? getMovedCell(editingCell, 1, 0)
+        : direction === 'right'
+          ? getMovedCell(editingCell, 0, 1)
+          : direction === 'left'
+            ? getMovedCell(editingCell, 0, -1)
+            : editingCell;
+
     const column = visibleColumns[editingCell.col];
     const originalRowIndex =
       filteredRowSourceIndexes[editingCell.row] ?? editingCell.row;
@@ -485,6 +517,8 @@ export function SpreadsheetGrid<T>({
 
     requestAnimationFrame(() => {
       gridRootRef.current?.focus();
+      // 追加: 確定後の移動先セルを active / selection に反映します。
+      activateSingleCell(nextCell);
       editorActionGuardRef.current = false;
     });
 
@@ -522,11 +556,19 @@ export function SpreadsheetGrid<T>({
     dispatch(gridActions.updateSelection(cell));
   };
 
+  // 追加: ブラウザ標準の drag ghost を抑止します。
+  const handleNativeDragStart = (event: DragEvent<HTMLDivElement>) => {
+    event.preventDefault();
+  };
+
   // 追加: 行ヘッダー選択開始です。
   const handleRowHeaderPointerDown = (
     rowIndex: number,
     event: PointerEvent<HTMLDivElement>,
   ) => {
+    // 追加: ネイティブテキスト選択や drag を抑止します。
+    event.preventDefault();
+
     if (event.button !== 0) {
       return;
     }
@@ -553,6 +595,9 @@ export function SpreadsheetGrid<T>({
     colIndex: number,
     event: PointerEvent<HTMLDivElement>,
   ) => {
+    // 追加: ネイティブテキスト選択や drag を抑止します。
+    event.preventDefault();
+
     if (event.button !== 0) {
       return;
     }
@@ -762,7 +807,24 @@ export function SpreadsheetGrid<T>({
         ),
     );
 
+    // 追加: 貼り付け後の selection / activeCell を更新します。
+    const endRow = clamp(
+      uiState.activeCell.row + Math.max(matrix.length - 1, 0),
+      0,
+      Math.max(filteredRows.length - 1, 0),
+    );
+    const endCol = clamp(
+      uiState.activeCell.col + Math.max((matrix[0]?.length ?? 1) - 1, 0),
+      0,
+      Math.max(visibleColumns.length - 1, 0),
+    );
+
     onRowsChange(nextRows);
+
+    dispatch(gridActions.startSelection(uiState.activeCell));
+    dispatch(gridActions.updateSelection({ row: endRow, col: endCol }));
+    dispatch(gridActions.endSelection());
+    dispatch(gridActions.activateCell(uiState.activeCell));
   };
 
   // 追加: 列定義に応じて cell node を描画します。
@@ -877,6 +939,7 @@ export function SpreadsheetGrid<T>({
       <div
         ref={gridRootRef}
         style={gridShellStyle}
+        onDragStart={handleNativeDragStart}
         tabIndex={0}
         onKeyDown={handleKeyDown}
         onPaste={handlePaste}

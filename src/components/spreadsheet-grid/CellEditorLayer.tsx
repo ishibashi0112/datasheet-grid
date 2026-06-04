@@ -1,3 +1,6 @@
+// 追加: editor 確定後の移動方向です。
+export type EditorCommitDirection = 'down' | 'right' | 'left';
+
 import {
   useEffect,
   useRef,
@@ -18,7 +21,7 @@ type CellEditorLayerProps = {
   rowHeaderWidth: number;
   value: string;
   onChange: (value: string) => void;
-  onCommit: () => void;
+  onCommit: (direction?: EditorCommitDirection) => void;
   onCancel: () => void;
 };
 
@@ -73,11 +76,11 @@ export function CellEditorLayer({
     pointerEvents: 'auto',
   };
 
-  // 追加: Enter で確定、Escape でキャンセル、Tab も確定のみ行います。
+  // 追加: Enter で下、Tab で左右へ移動する方向付き commit を呼びます。
   const handleKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
     if (event.key === 'Enter') {
       event.preventDefault();
-      onCommit();
+      onCommit('down');
       return;
     }
 
@@ -89,7 +92,7 @@ export function CellEditorLayer({
 
     if (event.key === 'Tab') {
       event.preventDefault();
-      onCommit();
+      onCommit(event.shiftKey ? 'left' : 'right');
     }
   };
 
@@ -101,7 +104,7 @@ export function CellEditorLayer({
         value={value}
         onChange={(event) => onChange(event.target.value)}
         onKeyDown={handleKeyDown}
-        onBlur={onCommit}
+        onBlur={() => onCommit()}
         style={inputStyle}
       />
     </div>
