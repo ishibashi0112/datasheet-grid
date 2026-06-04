@@ -125,7 +125,10 @@ export type SpreadsheetGridProps<T> = {
   rows: T[];
   columns: GridColumn<T>[];
   onRowsChange?: (nextRows: T[]) => void;
+  onColumnsChange?: (nextColumns: GridColumn<T>[]) => void;
   rowKeyGetter?: (row: T, index: number) => GridRowKey;
+  createRow?: () => T;
+  createOverflowColumn?: (columnIndex: number) => GridColumn<T>;
   rowHeight?: number;
   headerHeight?: number;
   rowHeaderWidth?: number;

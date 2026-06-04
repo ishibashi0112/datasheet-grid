@@ -1,6 +1,4 @@
-import { useMemo, useState } from 'react';
-import SpreadsheetGrid from './components/spreadsheet-grid/SpreadsheetGrid';
-import type { GridColumn } from './components/spreadsheet-grid/model/gridTypes';
+import { useState } from 'react';
 
 // 追加: デモ用の行型です。
 type DemoRow = {
@@ -9,7 +7,11 @@ type DemoRow = {
   qty: number;
   unit: string;
   status: string;
+  [key: string]: string | number;
 };
+
+// 追加: オーバーフロー列のキーを生成します。
+const getOverflowColumnKey = (columnIndex: number) => `extra_${columnIndex}`;
 
 function App() {
   // 追加: バッチ1 の動作確認用データです。
@@ -22,17 +24,14 @@ function App() {
     { partNo: 'A-1006', partName: 'ラベル', qty: 3, unit: '枚', status: '有効' },
   ]);
 
-  // 追加: 列定義です。今後ここに renderCell / renderHeader を拡張していきます。
-  const columns = useMemo<GridColumn<DemoRow>[]>(
-    () => [
-      { key: 'partNo', title: '品番', width: 150 },
-      { key: 'partName', title: '品名', width: 220 },
-      { key: 'qty', title: '数量', width: 90 },
-      { key: 'unit', title: '単位', width: 90, readOnly: true },
-      { key: 'status', title: '状態', width: 120 },
-    ],
-    [],
-  );
+  // 追加: 列定義を state 化し、paste 時の自動列追加に対応します。
+  const [columns, setColumns] = useState<GridColumn<DemoRow>[]>([
+    { key: 'partNo', title: '品番', width: 150 },
+    { key: 'partName', title: '品名', width: 220 },
+    { key: 'qty', title: '数量', width: 90 },
+    { key: 'unit', title: '単位', width: 90, readOnly: true },
+    { key: 'status', title: '状態', width: 120 },
+  ]);
 
   return (
     <main
@@ -54,7 +53,7 @@ function App() {
             color: '#0f172a',
           }}
         >
-          SpreadsheetGrid - 実装バッチ1
+          SpreadsheetGrid - 実装バッチ
         </h1>
         <p
           style={{
@@ -63,7 +62,7 @@ function App() {
             fontSize: 14,
           }}
         >
-          reducer ベースのコア土台です。バッチ1では型 / reducer / selector / 最小描画までを実装しています。
+          reducer ベースの SpreadsheetGrid です。行/列選択、copy/paste、editor、row virtualization を含みます。
         </p>
       </header>
 
@@ -71,6 +70,20 @@ function App() {
         rows={rows}
         columns={columns}
         onRowsChange={setRows}
+        onColumnsChange={setColumns}
+        rowKeyGetter={(row, index) => `${row.partNo || 'row'}-${index}`}
+        createRow={() => ({
+          partNo: '',
+          partName: '',
+          qty: 0,
+          unit: '',
+          status: '',
+        })}
+        createOverflowColumn={(columnIndex) => ({
+          key: getOverflowColumnKey(columnIndex),
+          title: `列${columnIndex + 1}`,
+          width: 120,
+        })}
         rowHeight={38}
         headerHeight={42}
         rowHeaderWidth={56}
@@ -90,3 +103,6 @@ function App() {
 }
 
 export default App;
+``
+import SpreadsheetGrid from './components/spreadsheet-grid/SpreadsheetGrid';import type { GridColumn } from './components/spreadsheet-grid/model/gridTypes';
+
