@@ -1,5 +1,8 @@
 import type { ReactNode } from 'react';
 
+// 追加: row identity 用の key 型です。
+export type GridRowKey = string | number;
+
 // 追加: セル座標を表す基本型です。
 export type CellCoord = {
   row: number;
@@ -122,6 +125,7 @@ export type SpreadsheetGridProps<T> = {
   rows: T[];
   columns: GridColumn<T>[];
   onRowsChange?: (nextRows: T[]) => void;
+  rowKeyGetter?: (row: T, index: number) => GridRowKey;
   rowHeight?: number;
   headerHeight?: number;
   rowHeaderWidth?: number;
@@ -139,3 +143,4 @@ export type SpreadsheetGridProps<T> = {
   enableColumnFilter?: boolean;
   className?: string;
 };
+``

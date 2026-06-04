@@ -34,6 +34,7 @@ import CellEditorLayer from './CellEditorLayer';
 import type {
   CellCoord,
   GridColumn,
+  GridRowKey,
   SpreadsheetGridProps,
 } from './model/gridTypes';
 import { toExcelColumnName } from './utils/excelColumnName';
@@ -44,21 +45,28 @@ import {
   serializeSelectionToTsv,
 } from './utils/clipboard';
 
+// 追加: 元 rows と filteredRows の対応を安定して持つための row model です。
+type SourceRowModel<T> = {
+  row: T;
+  sourceIndex: number;
+  rowKey: GridRowKey;
+};
+
 // 追加: 行フィルターの最小実装です。初版では global filter のみをここで扱います。
 const applyGlobalFilter = <T,>(
-  rows: T[],
+  rowModels: SourceRowModel<T>[],
   columns: GridColumn<T>[],
   globalText: string,
 ) => {
   const normalizedFilter = globalText.trim().toLowerCase();
 
   if (!normalizedFilter) {
-    return rows;
+    return rowModels;
   }
 
-  return rows.filter((row) =>
+  return rowModels.filter((rowModel) =>
     columns.some((column) => {
-      const value = getCellValue(row, column);
+      const value = getCellValue(rowModel.row, column);
       return String(value ?? '').toLowerCase().includes(normalizedFilter);
     }),
   );
@@ -92,11 +100,12 @@ const clamp = (value: number, min: number, max: number) =>
 const isPrintableKey = (event: KeyboardEvent<HTMLDivElement>) =>
   event.key.length === 1 && !event.ctrlKey && !event.metaKey && !event.altKey;
 
-// 追加: Grid 本体です。バッチ5では row virtualization を追加します。
+// 追加: Grid 本体です。バッチ6では rowKeyGetter 導入 + indexOf 卒業 + clipboard/editor 整理を行います。
 export function SpreadsheetGrid<T>({
   rows,
   columns,
   onRowsChange,
+  rowKeyGetter,
   rowHeight = 36,
   headerHeight = 40,
   rowHeaderWidth = 56,
@@ -114,12 +123,18 @@ export function SpreadsheetGrid<T>({
 
   // 追加: 編集中の入力値です。editingCell 自体は reducer state を使います。
   const [editorValue, setEditorValue] = useState('');
-  const [isCommittingEdit, setIsCommittingEdit] = useState(false);
+  const editorActionGuardRef = useRef(false);
 
   // 追加: visible column だけを描画対象にします。
   const visibleColumns = useMemo(
     () => columns.filter((column) => column.visible !== false),
     [columns],
+  );
+
+  // 追加: rowKeyGetter のデフォルト実装です。未指定時は source index を使います。
+  const resolvedRowKeyGetter = useMemo(
+    () => rowKeyGetter ?? ((_row: T, index: number) => index),
+    [rowKeyGetter],
   );
 
   // 追加: reducer 初期化です。列幅などをここで初期化します。
@@ -164,16 +179,44 @@ export function SpreadsheetGrid<T>({
     };
   }, [uiState.dragState]);
 
-  // 追加: グローバルフィルター適用済み rows です。
+  // 追加: source rows を row model 化します。
+  const sourceRowModels = useMemo<SourceRowModel<T>[]>(
+    () =>
+      rows.map((row, index) => ({
+        row,
+        sourceIndex: index,
+        rowKey: resolvedRowKeyGetter(row, index),
+      })),
+    [rows, resolvedRowKeyGetter],
+  );
+
+  // 追加: グローバルフィルター適用済み row models です。
+  const filteredRowModels = useMemo(
+    () =>
+      applyGlobalFilter(
+        sourceRowModels,
+        visibleColumns,
+        selectGlobalFilter(uiState),
+      ),
+    [sourceRowModels, visibleColumns, uiState],
+  );
+
+  // 追加: 描画用 rows 配列です。
   const filteredRows = useMemo(
-    () => applyGlobalFilter(rows, visibleColumns, selectGlobalFilter(uiState)),
-    [rows, visibleColumns, uiState],
+    () => filteredRowModels.map((rowModel) => rowModel.row),
+    [filteredRowModels],
   );
 
   // 追加: filteredRows の元 rows index を保持します。
   const filteredRowSourceIndexes = useMemo(
-    () => filteredRows.map((filteredRow) => rows.indexOf(filteredRow)),
-    [filteredRows, rows],
+    () => filteredRowModels.map((rowModel) => rowModel.sourceIndex),
+    [filteredRowModels],
+  );
+
+  // 追加: filteredRows の rowKey 一覧です。
+  const filteredRowKeys = useMemo(
+    () => filteredRowModels.map((rowModel) => rowModel.rowKey),
+    [filteredRowModels],
   );
 
   // 追加: row virtualizer です。React 19 環境では useFlushSync: false が推奨されます。
@@ -240,7 +283,6 @@ export function SpreadsheetGrid<T>({
 
     const scrollElement = bodyScrollRef.current;
 
-    // 追加: 実際のコンテンツ座標へ変換します。
     const cellTop = headerHeight + activeCellRect.top;
     const cellBottom = cellTop + activeCellRect.height;
     const cellLeft = rowHeaderWidth + activeCellRect.left;
@@ -254,7 +296,6 @@ export function SpreadsheetGrid<T>({
     let nextScrollTop = currentScrollTop;
     let nextScrollLeft = currentScrollLeft;
 
-    // 追加: sticky header の下が実際の縦方向可視開始位置です。
     const visibleTop = currentScrollTop + headerHeight;
     const visibleBottom = currentScrollTop + viewportHeight;
 
@@ -264,7 +305,6 @@ export function SpreadsheetGrid<T>({
       nextScrollTop = Math.max(cellBottom - viewportHeight, 0);
     }
 
-    // 追加: sticky row header の右が実際の横方向可視開始位置です。
     const visibleLeft = currentScrollLeft + rowHeaderWidth;
     const visibleRight = currentScrollLeft + viewportWidth;
 
@@ -411,7 +451,7 @@ export function SpreadsheetGrid<T>({
 
   // 追加: 編集確定です。editorValue を rows へ反映します。
   const commitEdit = () => {
-    if (!uiState.editingCell) {
+    if (editorActionGuardRef.current || !uiState.editingCell) {
       return;
     }
 
@@ -425,8 +465,6 @@ export function SpreadsheetGrid<T>({
       dispatch(gridActions.stopEdit());
       return;
     }
-
-    setIsCommittingEdit(true);
 
     if (onRowsChange) {
       const parsedValue = column.parseClipboardValue
@@ -442,20 +480,29 @@ export function SpreadsheetGrid<T>({
       onRowsChange(nextRows);
     }
 
+    // 追加: 次の editor action と競合しないように guard を一時的に立てます。
+    editorActionGuardRef.current = true;
+
     requestAnimationFrame(() => {
       gridRootRef.current?.focus();
+      editorActionGuardRef.current = false;
     });
 
     dispatch(gridActions.stopEdit());
-    setTimeout(() => setIsCommittingEdit(false), 0);
   };
 
   // 追加: 編集キャンセルです。editor を閉じるだけです。
   const cancelEdit = () => {
+    if (editorActionGuardRef.current) {
+      return;
+    }
+
+    editorActionGuardRef.current = true;
     dispatch(gridActions.stopEdit());
 
     requestAnimationFrame(() => {
       gridRootRef.current?.focus();
+      editorActionGuardRef.current = false;
     });
   };
 
@@ -952,13 +999,14 @@ export function SpreadsheetGrid<T>({
             {virtualRows.map((virtualRow) => {
               const rowIndex = virtualRow.index;
               const row = filteredRows[rowIndex];
+              const rowKey = filteredRowKeys[rowIndex] ?? rowIndex;
 
               if (!row || !virtualRowIndexes.has(rowIndex)) {
                 return null;
               }
 
               return (
-                <div key={rowIndex} style={{ display: 'flex', minHeight: rowHeight }}>
+                <div key={String(rowKey)} style={{ display: 'flex', minHeight: rowHeight }}>
                   <div
                     onPointerDown={(event) => handleRowHeaderPointerDown(rowIndex, event)}
                     onPointerEnter={() => handleRowHeaderPointerEnter(rowIndex)}
@@ -991,7 +1039,7 @@ export function SpreadsheetGrid<T>({
 
                     return (
                       <div
-                        key={`${rowIndex}-${column.key}`}
+                        key={`${String(rowKey)}-${column.key}`}
                         onPointerDown={(event) =>
                           handleCellPointerDown({ row: rowIndex, col: colIndex }, event)
                         }
@@ -1038,10 +1086,6 @@ export function SpreadsheetGrid<T>({
           </div>
         </div>
       </div>
-
-      {isCommittingEdit ? (
-        <span style={{ display: 'none' }} aria-hidden="true" />
-      ) : null}
     </div>
   );
 }
