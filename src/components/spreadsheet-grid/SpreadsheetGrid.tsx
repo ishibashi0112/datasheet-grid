@@ -9,6 +9,7 @@ import {
   type KeyboardEvent,
   type PointerEvent,
 } from 'react';
+import { useVirtualizer } from '@tanstack/react-virtual';
 import { gridActions } from './model/gridActions';
 import { createInitialGridUiState, gridUiReducer } from './model/gridReducer';
 import {
@@ -91,7 +92,7 @@ const clamp = (value: number, min: number, max: number) =>
 const isPrintableKey = (event: KeyboardEvent<HTMLDivElement>) =>
   event.key.length === 1 && !event.ctrlKey && !event.metaKey && !event.altKey;
 
-// 追加: Grid 本体です。バッチ4では ActiveCellOverlay / CellEditorLayer / keyboard navigation を追加します。
+// 追加: Grid 本体です。バッチ5では row virtualization を追加します。
 export function SpreadsheetGrid<T>({
   rows,
   columns,
@@ -107,6 +108,9 @@ export function SpreadsheetGrid<T>({
 }: SpreadsheetGridProps<T>) {
   // 追加: Grid ルート参照です。keyboard / paste の起点に使います。
   const gridRootRef = useRef<HTMLDivElement | null>(null);
+
+  // 追加: body のスクロールコンテナ参照です。row virtualization に使います。
+  const bodyScrollRef = useRef<HTMLDivElement | null>(null);
 
   // 追加: 編集中の入力値です。editingCell 自体は reducer state を使います。
   const [editorValue, setEditorValue] = useState('');
@@ -170,6 +174,27 @@ export function SpreadsheetGrid<T>({
   const filteredRowSourceIndexes = useMemo(
     () => filteredRows.map((filteredRow) => rows.indexOf(filteredRow)),
     [filteredRows, rows],
+  );
+
+  // 追加: row virtualizer です。React 19 環境では useFlushSync: false が推奨されます。
+  const rowVirtualizer = useVirtualizer({
+    count: filteredRows.length,
+    getScrollElement: () => bodyScrollRef.current,
+    estimateSize: () => rowHeight,
+    overscan: 8,
+    useFlushSync: false,
+  });
+
+  // 追加: 仮想行一覧です。
+  const virtualRows = rowVirtualizer.getVirtualItems();
+
+  // 追加: 仮想 body の総高さです。
+  const totalBodyHeight = rowVirtualizer.getTotalSize();
+
+  // 追加: visible row の開始・終了 index を保持します。
+  const virtualRowIndexes = useMemo(
+    () => new Set(virtualRows.map((item) => item.index)),
+    [virtualRows],
   );
 
   // 追加: active cell の矩形です。overlay 用に使います。
@@ -293,7 +318,6 @@ export function SpreadsheetGrid<T>({
     cell: CellCoord,
     event: PointerEvent<HTMLDivElement>,
   ) => {
-    // 追加: 左クリック/主ポインターのみを対象にします。
     if (event.button !== 0) {
       return;
     }
@@ -366,8 +390,6 @@ export function SpreadsheetGrid<T>({
       onRowsChange(nextRows);
     }
 
-    // 追加: 編集確定後に Grid ルートへフォーカスを戻し、
-    //       矢印キーなどのキーボード操作を継続できるようにします。
     requestAnimationFrame(() => {
       gridRootRef.current?.focus();
     });
@@ -380,7 +402,6 @@ export function SpreadsheetGrid<T>({
   const cancelEdit = () => {
     dispatch(gridActions.stopEdit());
 
-    // 追加: キャンセル時も Grid ルートへフォーカスを戻します。
     requestAnimationFrame(() => {
       gridRootRef.current?.focus();
     });
@@ -585,7 +606,6 @@ export function SpreadsheetGrid<T>({
       return;
     }
 
-    // 追加: 文字キー入力で直接編集開始します。
     if (isPrintableKey(event) && uiState.activeCell) {
       const row = filteredRows[uiState.activeCell.row];
       const column = visibleColumns[uiState.activeCell.col];
@@ -676,7 +696,6 @@ export function SpreadsheetGrid<T>({
         isSelected,
         isEditing,
         readOnly: readOnlyCell,
-        // 追加: 実編集は CellEditorLayer で行いますが、将来の API 互換のため setValue も残します。
         setValue: (nextValue) => {
           if (!onRowsChange) {
             return;
@@ -700,7 +719,6 @@ export function SpreadsheetGrid<T>({
     return <span>{String(value ?? '')}</span>;
   };
 
-  // 追加: 共通スタイル定義です。バッチ4でも依存を増やさずインラインで最小化します。
   const gridShellStyle: CSSProperties = {
     border: '1px solid #d7dce3',
     borderRadius: 12,
@@ -737,7 +755,6 @@ export function SpreadsheetGrid<T>({
     <div className={className}>
       {enableGlobalFilter ? (
         <div style={{ marginBottom: 12 }}>
-          {/* 追加: 初版の最小 global filter 入力です。 */}
           <input
             type="text"
             value={selectGlobalFilter(uiState)}
@@ -765,15 +782,29 @@ export function SpreadsheetGrid<T>({
         onKeyDown={handleKeyDown}
         onPaste={handlePaste}
       >
-        <div style={{ overflow: 'auto' }}>
+        <div
+          ref={bodyScrollRef}
+          style={{
+            overflow: 'auto',
+            maxHeight: 480,
+          }}
+        >
           <div
             style={{
               position: 'relative',
               minWidth: rowHeaderWidth + totalColumnWidth,
+              height: headerHeight + totalBodyHeight,
             }}
           >
-            {/* 追加: ヘッダー行です。左上コーナー + 列ヘッダーを描画します。 */}
-            <div style={{ display: 'flex', height: headerHeight }}>
+            <div
+              style={{
+                display: 'flex',
+                height: headerHeight,
+                position: 'sticky',
+                top: 0,
+                zIndex: 6,
+              }}
+            >
               <div style={rowHeaderCellStyle}>#</div>
 
               {visibleColumns.map((column, colIndex) => {
@@ -825,7 +856,6 @@ export function SpreadsheetGrid<T>({
                         })
                       : column.title || column.key}
 
-                    {/* 追加: 列幅リサイズ用ハンドルです。 */}
                     <div
                       onPointerDown={(event) =>
                         handleColumnResizePointerDown(column, event)
@@ -845,21 +875,18 @@ export function SpreadsheetGrid<T>({
               })}
             </div>
 
-            {/* 追加: 選択範囲 overlay です。row/col selection にも対応します。 */}
             <SelectionOverlay
               rect={selectionOverlayRect}
               headerHeight={headerHeight}
               rowHeaderWidth={rowHeaderWidth}
             />
 
-            {/* 追加: active cell overlay です。 */}
             <ActiveCellOverlay
               rect={activeCellRect}
               headerHeight={headerHeight}
               rowHeaderWidth={rowHeaderWidth}
             />
 
-            {/* 追加: 編集中セルの editor layer です。 */}
             <CellEditorLayer
               rect={editorRect}
               headerHeight={headerHeight}
@@ -870,82 +897,96 @@ export function SpreadsheetGrid<T>({
               onCancel={cancelEdit}
             />
 
-            {/* 追加: ボディ部です。バッチ4でも非仮想の描画に留めます。 */}
-            {filteredRows.map((row, rowIndex) => (
-              <div key={rowIndex} style={{ display: 'flex', minHeight: rowHeight }}>
-                <div
-                  onPointerDown={(event) => handleRowHeaderPointerDown(rowIndex, event)}
-                  onPointerEnter={() => handleRowHeaderPointerEnter(rowIndex)}
-                  style={{
-                    ...rowHeaderCellStyle,
-                    height: rowHeight,
-                    backgroundColor: selectIsRowSelected(uiState, rowIndex)
-                      ? '#dbeafe'
-                      : '#f8fafc',
-                    fontWeight: 500,
-                  }}
-                >
-                  {rowIndex + 1}
+            {virtualRows.map((virtualRow) => {
+              const rowIndex = virtualRow.index;
+              const row = filteredRows[rowIndex];
+
+              if (!row || !virtualRowIndexes.has(rowIndex)) {
+                return null;
+              }
+
+              return (
+                <div key={rowIndex} style={{ display: 'flex', minHeight: rowHeight }}>
+                  <div
+                    onPointerDown={(event) => handleRowHeaderPointerDown(rowIndex, event)}
+                    onPointerEnter={() => handleRowHeaderPointerEnter(rowIndex)}
+                    style={{
+                      ...rowHeaderCellStyle,
+                      position: 'absolute',
+                      top: headerHeight + virtualRow.start,
+                      left: 0,
+                      height: rowHeight,
+                      backgroundColor: selectIsRowSelected(uiState, rowIndex)
+                        ? '#dbeafe'
+                        : '#f8fafc',
+                      fontWeight: 500,
+                    }}
+                  >
+                    {rowIndex + 1}
+                  </div>
+
+                  {visibleColumns.map((column, colIndex) => {
+                    const width = selectColumnWidth(uiState, column.key);
+                    const isActive = selectIsActiveCell(uiState, rowIndex, colIndex);
+                    const isSelected = selectIsCellSelected(uiState, rowIndex, colIndex);
+                    const readOnlyCell = !isCellEditable(
+                      { readOnly, canEditCell },
+                      rowIndex,
+                      colIndex,
+                      row,
+                      column,
+                    );
+
+                    return (
+                      <div
+                        key={`${rowIndex}-${column.key}`}
+                        onPointerDown={(event) =>
+                          handleCellPointerDown({ row: rowIndex, col: colIndex }, event)
+                        }
+                        onPointerEnter={() =>
+                          handleCellPointerEnter({ row: rowIndex, col: colIndex })
+                        }
+                        onDoubleClick={() =>
+                          handleCellDoubleClick({ row: rowIndex, col: colIndex })
+                        }
+                        style={{
+                          position: 'absolute',
+                          top: headerHeight + virtualRow.start,
+                          left:
+                            rowHeaderWidth +
+                            getColumnOffset(visibleColumns, uiState.columnWidths, colIndex),
+                          width,
+                          minWidth: width,
+                          height: rowHeight,
+                          boxSizing: 'border-box',
+                          display: 'flex',
+                          alignItems: 'center',
+                          padding: '0 10px',
+                          borderRight: '1px solid #e5e7eb',
+                          borderBottom: '1px solid #e5e7eb',
+                          backgroundColor: isSelected
+                            ? '#ffffff'
+                            : readOnlyCell
+                              ? '#f8fafc'
+                              : '#ffffff',
+                          color: readOnlyCell ? '#64748b' : '#0f172a',
+                          cursor: 'default',
+                          userSelect: 'none',
+                          outline: 'none',
+                          zIndex: isActive ? 3 : 1,
+                        }}
+                      >
+                        {renderCellContent(row, rowIndex, column, colIndex)}
+                      </div>
+                    );
+                  })}
                 </div>
-
-                {visibleColumns.map((column, colIndex) => {
-                  const width = selectColumnWidth(uiState, column.key);
-                  const isActive = selectIsActiveCell(uiState, rowIndex, colIndex);
-                  const isSelected = selectIsCellSelected(uiState, rowIndex, colIndex);
-                  const readOnlyCell = !isCellEditable(
-                    { readOnly, canEditCell },
-                    rowIndex,
-                    colIndex,
-                    row,
-                    column,
-                  );
-
-                  return (
-                    <div
-                      key={`${rowIndex}-${column.key}`}
-                      onPointerDown={(event) =>
-                        handleCellPointerDown({ row: rowIndex, col: colIndex }, event)
-                      }
-                      onPointerEnter={() =>
-                        handleCellPointerEnter({ row: rowIndex, col: colIndex })
-                      }
-                      onDoubleClick={() =>
-                        handleCellDoubleClick({ row: rowIndex, col: colIndex })
-                      }
-                      style={{
-                        width,
-                        minWidth: width,
-                        height: rowHeight,
-                        boxSizing: 'border-box',
-                        display: 'flex',
-                        alignItems: 'center',
-                        padding: '0 10px',
-                        borderRight: '1px solid #e5e7eb',
-                        borderBottom: '1px solid #e5e7eb',
-                        backgroundColor: isSelected
-                          ? '#ffffff'
-                          : readOnlyCell
-                            ? '#f8fafc'
-                            : '#ffffff',
-                        color: readOnlyCell ? '#64748b' : '#0f172a',
-                        cursor: 'default',
-                        userSelect: 'none',
-                        outline: 'none',
-                        position: 'relative',
-                        zIndex: isActive ? 3 : 1,
-                      }}
-                    >
-                      {renderCellContent(row, rowIndex, column, colIndex)}
-                    </div>
-                  );
-                })}
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       </div>
 
-      {/* 追加: blur 由来の二重 commit を避けるための状態を戻します。 */}
       {isCommittingEdit ? (
         <span style={{ display: 'none' }} aria-hidden="true" />
       ) : null}
