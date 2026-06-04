@@ -231,6 +231,58 @@ export function SpreadsheetGrid<T>({
     [uiState.editingCell, activeCellRect],
   );
 
+  // 追加: active cell が画面外へ出た場合に、scroll container を自動調整して
+  //       常に表示領域内へ収めます。sticky header / row header 分も考慮します。
+  useEffect(() => {
+    if (!bodyScrollRef.current || !activeCellRect) {
+      return;
+    }
+
+    const scrollElement = bodyScrollRef.current;
+
+    // 追加: 実際のコンテンツ座標へ変換します。
+    const cellTop = headerHeight + activeCellRect.top;
+    const cellBottom = cellTop + activeCellRect.height;
+    const cellLeft = rowHeaderWidth + activeCellRect.left;
+    const cellRight = cellLeft + activeCellRect.width;
+
+    const currentScrollTop = scrollElement.scrollTop;
+    const currentScrollLeft = scrollElement.scrollLeft;
+    const viewportHeight = scrollElement.clientHeight;
+    const viewportWidth = scrollElement.clientWidth;
+
+    let nextScrollTop = currentScrollTop;
+    let nextScrollLeft = currentScrollLeft;
+
+    // 追加: sticky header の下が実際の縦方向可視開始位置です。
+    const visibleTop = currentScrollTop + headerHeight;
+    const visibleBottom = currentScrollTop + viewportHeight;
+
+    if (cellTop < visibleTop) {
+      nextScrollTop = Math.max(cellTop - headerHeight, 0);
+    } else if (cellBottom > visibleBottom) {
+      nextScrollTop = Math.max(cellBottom - viewportHeight, 0);
+    }
+
+    // 追加: sticky row header の右が実際の横方向可視開始位置です。
+    const visibleLeft = currentScrollLeft + rowHeaderWidth;
+    const visibleRight = currentScrollLeft + viewportWidth;
+
+    if (cellLeft < visibleLeft) {
+      nextScrollLeft = Math.max(cellLeft - rowHeaderWidth, 0);
+    } else if (cellRight > visibleRight) {
+      nextScrollLeft = Math.max(cellRight - viewportWidth, 0);
+    }
+
+    if (nextScrollTop !== currentScrollTop || nextScrollLeft !== currentScrollLeft) {
+      scrollElement.scrollTo({
+        top: nextScrollTop,
+        left: nextScrollLeft,
+        behavior: 'auto',
+      });
+    }
+  }, [activeCellRect, headerHeight, rowHeaderWidth]);
+
   // 追加: 列幅合計を計算して body の横幅に使います。
   const totalColumnWidth = useMemo(
     () =>
