@@ -3,6 +3,7 @@ import {
   useMemo,
   useReducer,
   useRef,
+  useState,
   type CSSProperties,
   type ClipboardEvent,
   type KeyboardEvent,
@@ -25,13 +26,17 @@ import {
 import SelectionOverlay, {
   type SelectionOverlayRect,
 } from './SelectionOverlay';
+import ActiveCellOverlay, {
+  type ActiveCellOverlayRect,
+} from './ActiveCellOverlay';
+import CellEditorLayer from './CellEditorLayer';
 import type {
   CellCoord,
   GridColumn,
   SpreadsheetGridProps,
 } from './model/gridTypes';
 import { toExcelColumnName } from './utils/excelColumnName';
-import { getCellValue, isCellEditable } from './utils/permissions';
+import { getCellValue, isCellEditable, setCellValue } from './utils/permissions';
 import {
   applyClipboardMatrixToRows,
   parseClipboardText,
@@ -78,7 +83,15 @@ const getColumnOffset = <T,>(
   return offset;
 };
 
-// 追加: Grid 本体です。バッチ3では row/col selection + header drag selection を追加します。
+// 追加: 値を min/max に収めるユーティリティです。
+const clamp = (value: number, min: number, max: number) =>
+  Math.min(Math.max(value, min), max);
+
+// 追加: 文字キー入力で編集開始する判定です。
+const isPrintableKey = (event: KeyboardEvent<HTMLDivElement>) =>
+  event.key.length === 1 && !event.ctrlKey && !event.metaKey && !event.altKey;
+
+// 追加: Grid 本体です。バッチ4では ActiveCellOverlay / CellEditorLayer / keyboard navigation を追加します。
 export function SpreadsheetGrid<T>({
   rows,
   columns,
@@ -94,6 +107,10 @@ export function SpreadsheetGrid<T>({
 }: SpreadsheetGridProps<T>) {
   // 追加: Grid ルート参照です。keyboard / paste の起点に使います。
   const gridRootRef = useRef<HTMLDivElement | null>(null);
+
+  // 追加: 編集中の入力値です。editingCell 自体は reducer state を使います。
+  const [editorValue, setEditorValue] = useState('');
+  const [isCommittingEdit, setIsCommittingEdit] = useState(false);
 
   // 追加: visible column だけを描画対象にします。
   const visibleColumns = useMemo(
@@ -153,6 +170,40 @@ export function SpreadsheetGrid<T>({
   const filteredRowSourceIndexes = useMemo(
     () => filteredRows.map((filteredRow) => rows.indexOf(filteredRow)),
     [filteredRows, rows],
+  );
+
+  // 追加: active cell の矩形です。overlay 用に使います。
+  const activeCellRect = useMemo<ActiveCellOverlayRect | null>(() => {
+    if (!uiState.activeCell) {
+      return null;
+    }
+
+    const { row, col } = uiState.activeCell;
+    if (row < 0 || row >= filteredRows.length || col < 0 || col >= visibleColumns.length) {
+      return null;
+    }
+
+    const column = visibleColumns[col];
+    if (!column) {
+      return null;
+    }
+
+    const left = getColumnOffset(visibleColumns, uiState.columnWidths, col);
+    const top = row * rowHeight;
+    const width = selectColumnWidth(uiState, column.key);
+
+    return {
+      left,
+      top,
+      width,
+      height: rowHeight,
+    };
+  }, [uiState.activeCell, filteredRows.length, visibleColumns, uiState.columnWidths, rowHeight]);
+
+  // 追加: editor layer は editingCell がある場合に activeCellRect を流用します。
+  const editorRect = useMemo(
+    () => (uiState.editingCell ? activeCellRect : null),
+    [uiState.editingCell, activeCellRect],
   );
 
   // 追加: 列幅合計を計算して body の横幅に使います。
@@ -247,11 +298,92 @@ export function SpreadsheetGrid<T>({
       return;
     }
 
+    gridRootRef.current?.focus();
+
     dispatch(gridActions.activateCell(cell));
 
     if (enableRangeSelection) {
       dispatch(gridActions.startSelection(cell));
     }
+  };
+
+  // 追加: ダブルクリック時に編集開始します。
+  const handleCellDoubleClick = (cell: CellCoord) => {
+    const row = filteredRows[cell.row];
+    const column = visibleColumns[cell.col];
+
+    if (!row || !column) {
+      return;
+    }
+
+    if (
+      !isCellEditable(
+        { readOnly, canEditCell },
+        cell.row,
+        cell.col,
+        row,
+        column,
+      )
+    ) {
+      return;
+    }
+
+    const currentValue = getCellValue(row, column);
+    setEditorValue(String(currentValue ?? ''));
+    dispatch(gridActions.startEdit(cell));
+  };
+
+  // 追加: 編集確定です。editorValue を rows へ反映します。
+  const commitEdit = () => {
+    if (!uiState.editingCell) {
+      return;
+    }
+
+    const editingCell = uiState.editingCell;
+    const column = visibleColumns[editingCell.col];
+    const originalRowIndex =
+      filteredRowSourceIndexes[editingCell.row] ?? editingCell.row;
+    const row = rows[originalRowIndex];
+
+    if (!column || !row) {
+      dispatch(gridActions.stopEdit());
+      return;
+    }
+
+    setIsCommittingEdit(true);
+
+    if (onRowsChange) {
+      const parsedValue = column.parseClipboardValue
+        ? column.parseClipboardValue(editorValue, row)
+        : editorValue;
+
+      const nextRows = rows.map((currentRow, index) =>
+        index === originalRowIndex
+          ? setCellValue(currentRow, column, parsedValue)
+          : currentRow,
+      );
+
+      onRowsChange(nextRows);
+    }
+
+    // 追加: 編集確定後に Grid ルートへフォーカスを戻し、
+    //       矢印キーなどのキーボード操作を継続できるようにします。
+    requestAnimationFrame(() => {
+      gridRootRef.current?.focus();
+    });
+
+    dispatch(gridActions.stopEdit());
+    setTimeout(() => setIsCommittingEdit(false), 0);
+  };
+
+  // 追加: 編集キャンセルです。editor を閉じるだけです。
+  const cancelEdit = () => {
+    dispatch(gridActions.stopEdit());
+
+    // 追加: キャンセル時も Grid ルートへフォーカスを戻します。
+    requestAnimationFrame(() => {
+      gridRootRef.current?.focus();
+    });
   };
 
   // 追加: selection drag 中にセルへ入ったら範囲更新します。
@@ -279,6 +411,8 @@ export function SpreadsheetGrid<T>({
       return;
     }
 
+    gridRootRef.current?.focus();
+
     dispatch(gridActions.startRowSelection(rowIndex));
   };
 
@@ -302,6 +436,8 @@ export function SpreadsheetGrid<T>({
     if (event.button !== 0) {
       return;
     }
+
+    gridRootRef.current?.focus();
 
     dispatch(gridActions.startColumnSelection(colIndex));
   };
@@ -358,11 +494,121 @@ export function SpreadsheetGrid<T>({
     }
   };
 
-  // 追加: Ctrl/Cmd + C を捕捉します。
+  // 追加: active cell を移動します。shiftKey=true の場合は cell selection を拡張します。
+  const moveActiveCell = (
+    deltaRow: number,
+    deltaCol: number,
+    extendSelection: boolean,
+  ) => {
+    if (filteredRows.length === 0 || visibleColumns.length === 0) {
+      return;
+    }
+
+    const currentCell = uiState.activeCell ?? { row: 0, col: 0 };
+    const nextCell = {
+      row: clamp(currentCell.row + deltaRow, 0, filteredRows.length - 1),
+      col: clamp(currentCell.col + deltaCol, 0, visibleColumns.length - 1),
+    };
+
+    if (extendSelection) {
+      const anchor =
+        uiState.selection?.type === 'cell'
+          ? uiState.selection.range.start
+          : currentCell;
+
+      dispatch(gridActions.startSelection(anchor));
+      dispatch(gridActions.updateSelection(nextCell));
+      dispatch(gridActions.endSelection());
+      dispatch(gridActions.activateCell(nextCell));
+      return;
+    }
+
+    dispatch(gridActions.startSelection(nextCell));
+    dispatch(gridActions.endSelection());
+    dispatch(gridActions.activateCell(nextCell));
+  };
+
+  // 追加: Ctrl/Cmd + C や Arrow/Enter を捕捉します。
   const handleKeyDown = async (event: KeyboardEvent<HTMLDivElement>) => {
+    if (uiState.editingCell) {
+      return;
+    }
+
     if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'c') {
       event.preventDefault();
       await handleCopy();
+      return;
+    }
+
+    if (event.key === 'ArrowUp') {
+      event.preventDefault();
+      moveActiveCell(-1, 0, event.shiftKey);
+      return;
+    }
+
+    if (event.key === 'ArrowDown') {
+      event.preventDefault();
+      moveActiveCell(1, 0, event.shiftKey);
+      return;
+    }
+
+    if (event.key === 'ArrowLeft') {
+      event.preventDefault();
+      moveActiveCell(0, -1, event.shiftKey);
+      return;
+    }
+
+    if (event.key === 'ArrowRight') {
+      event.preventDefault();
+      moveActiveCell(0, 1, event.shiftKey);
+      return;
+    }
+
+    if (event.key === 'Tab') {
+      event.preventDefault();
+      moveActiveCell(0, event.shiftKey ? -1 : 1, false);
+      return;
+    }
+
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      dispatch(gridActions.clearSelection());
+      return;
+    }
+
+    if (event.key === 'Enter' || event.key === 'F2') {
+      event.preventDefault();
+
+      if (uiState.activeCell) {
+        handleCellDoubleClick(uiState.activeCell);
+      }
+      return;
+    }
+
+    // 追加: 文字キー入力で直接編集開始します。
+    if (isPrintableKey(event) && uiState.activeCell) {
+      const row = filteredRows[uiState.activeCell.row];
+      const column = visibleColumns[uiState.activeCell.col];
+
+      if (!row || !column) {
+        return;
+      }
+
+      if (
+        !isCellEditable(
+          { readOnly, canEditCell },
+          uiState.activeCell.row,
+          uiState.activeCell.col,
+          row,
+          column,
+        )
+      ) {
+        return;
+      }
+
+      event.preventDefault();
+      setEditorValue(event.key);
+      dispatch(gridActions.startEdit(uiState.activeCell));
     }
   };
 
@@ -430,7 +676,7 @@ export function SpreadsheetGrid<T>({
         isSelected,
         isEditing,
         readOnly: readOnlyCell,
-        // 追加: 実編集は次バッチですが、将来の API 互換のため setValue を先に定義します。
+        // 追加: 実編集は CellEditorLayer で行いますが、将来の API 互換のため setValue も残します。
         setValue: (nextValue) => {
           if (!onRowsChange) {
             return;
@@ -454,7 +700,7 @@ export function SpreadsheetGrid<T>({
     return <span>{String(value ?? '')}</span>;
   };
 
-  // 追加: 共通スタイル定義です。バッチ3でも依存を増やさずインラインで最小化します。
+  // 追加: 共通スタイル定義です。バッチ4でも依存を増やさずインラインで最小化します。
   const gridShellStyle: CSSProperties = {
     border: '1px solid #d7dce3',
     borderRadius: 12,
@@ -536,7 +782,9 @@ export function SpreadsheetGrid<T>({
                 return (
                   <div
                     key={column.key}
-                    onPointerDown={(event) => handleColumnHeaderPointerDown(colIndex, event)}
+                    onPointerDown={(event) =>
+                      handleColumnHeaderPointerDown(colIndex, event)
+                    }
                     onPointerEnter={() => handleColumnHeaderPointerEnter(colIndex)}
                     style={{
                       position: 'relative',
@@ -604,7 +852,25 @@ export function SpreadsheetGrid<T>({
               rowHeaderWidth={rowHeaderWidth}
             />
 
-            {/* 追加: ボディ部です。バッチ3でも非仮想の描画に留めます。 */}
+            {/* 追加: active cell overlay です。 */}
+            <ActiveCellOverlay
+              rect={activeCellRect}
+              headerHeight={headerHeight}
+              rowHeaderWidth={rowHeaderWidth}
+            />
+
+            {/* 追加: 編集中セルの editor layer です。 */}
+            <CellEditorLayer
+              rect={editorRect}
+              headerHeight={headerHeight}
+              rowHeaderWidth={rowHeaderWidth}
+              value={editorValue}
+              onChange={setEditorValue}
+              onCommit={commitEdit}
+              onCancel={cancelEdit}
+            />
+
+            {/* 追加: ボディ部です。バッチ4でも非仮想の描画に留めます。 */}
             {filteredRows.map((row, rowIndex) => (
               <div key={rowIndex} style={{ display: 'flex', minHeight: rowHeight }}>
                 <div
@@ -643,6 +909,9 @@ export function SpreadsheetGrid<T>({
                       onPointerEnter={() =>
                         handleCellPointerEnter({ row: rowIndex, col: colIndex })
                       }
+                      onDoubleClick={() =>
+                        handleCellDoubleClick({ row: rowIndex, col: colIndex })
+                      }
                       style={{
                         width,
                         minWidth: width,
@@ -653,18 +922,15 @@ export function SpreadsheetGrid<T>({
                         padding: '0 10px',
                         borderRight: '1px solid #e5e7eb',
                         borderBottom: '1px solid #e5e7eb',
-                        backgroundColor: isActive
-                          ? '#dbeafe'
-                          : isSelected
-                            ? '#ffffff'
-                            : readOnlyCell
-                              ? '#f8fafc'
-                              : '#ffffff',
+                        backgroundColor: isSelected
+                          ? '#ffffff'
+                          : readOnlyCell
+                            ? '#f8fafc'
+                            : '#ffffff',
                         color: readOnlyCell ? '#64748b' : '#0f172a',
                         cursor: 'default',
                         userSelect: 'none',
-                        outline: isActive ? '2px solid #2563eb' : 'none',
-                        outlineOffset: '-2px',
+                        outline: 'none',
                         position: 'relative',
                         zIndex: isActive ? 3 : 1,
                       }}
@@ -678,9 +944,13 @@ export function SpreadsheetGrid<T>({
           </div>
         </div>
       </div>
+
+      {/* 追加: blur 由来の二重 commit を避けるための状態を戻します。 */}
+      {isCommittingEdit ? (
+        <span style={{ display: 'none' }} aria-hidden="true" />
+      ) : null}
     </div>
   );
 }
 
 export default SpreadsheetGrid;
-``
