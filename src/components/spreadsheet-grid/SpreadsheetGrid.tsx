@@ -56,7 +56,6 @@ import {
   findColumnIndexFromOffset,
 } from './logic/geometry';
 import { isPrintableKey, shouldIgnoreGridKeydown } from './logic/domGuards';
-import { toExcelColumnName } from './utils/excelColumnName';
 import { getCellValue, isCellEditable, setCellValue } from './utils/permissions';
 import {
   applyClipboardMatrixToRows,
