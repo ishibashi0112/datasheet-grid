@@ -7,7 +7,6 @@ import {
   useRef,
   useState,
   type CSSProperties,
-  type ClipboardEvent,
   type PointerEvent,
 } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
@@ -30,7 +29,6 @@ import ActiveCellOverlay, {
   type ActiveCellOverlayRect,
 } from './ActiveCellOverlay';
 import CellEditorLayer, {
-  type EditorCommitDirection,
 } from './CellEditorLayer';
 import ColumnFilterPopover from './view/ColumnFilterPopover';
 import GridHeaderRow from './view/GridHeaderRow';
@@ -39,6 +37,8 @@ import { useFilterPopoverController } from './hooks/useFilterPopoverController';
 import { useGridPointerInteractions } from './hooks/useGridPointerInteractions';
 import { useGridKeyboardInteractions } from './hooks/useGridKeyboardInteractions';
 import { useGridViewportSync } from './hooks/useGridViewportSync';
+import { useGridClipboardController } from './hooks/useGridClipboardController';
+import { useGridEditController } from './hooks/useGridEditController';
 import type {
   CellCoord,
   GridColumn,
@@ -51,13 +51,8 @@ import {
   type GridRowModelLike,
 } from './logic/filtering';
 import { applySort } from './logic/sorting';
-import { buildColumnMeasurements, clamp } from './logic/geometry';
+import { buildColumnMeasurements } from './logic/geometry';
 import { getCellValue, isCellEditable, setCellValue } from './utils/permissions';
-import {
-  applyClipboardMatrixToRows,
-  parseClipboardText,
-  serializeSelectionToTsv,
-} from './utils/clipboard';
 
 // 追加: 元 rows と filteredRows の対応を安定して持つための row model です。
 type SourceRowModel<T> = GridRowModelLike<T> & {
@@ -84,39 +79,28 @@ export function SpreadsheetGrid<T extends object>({
   enableSorting = true,
   className,
 }: SpreadsheetGridProps<T>) {
-  // 追加: Grid ルート参照です。keyboard / paste の起点に使います。
   const gridRootRef = useRef<HTMLDivElement | null>(null);
-  // 追加: drag 中ポインタ位置を保持します。
   const pointerClientRef = useRef<{ x: number; y: number } | null>(null);
-  // 追加: drag 中の端オートスクロールに使う frame id です。
   const autoScrollFrameRef = useRef<number | null>(null);
-  // 追加: body のスクロールコンテナ参照です。row virtualization / column virtualization に使います。
   const bodyScrollRef = useRef<HTMLDivElement | null>(null);
-  // 追加: 編集中の入力値です。editingCell 自体は reducer state を使います。
-  const [editorValue, setEditorValue] = useState('');
   const editorActionGuardRef = useRef(false);
-  // 追加: 左上コーナーセル hover 状態です。
+  const [editorValue, setEditorValue] = useState('');
   const [isCornerHovered, setIsCornerHovered] = useState(false);
-  // 追加: 行ヘッダー hover 状態です。
   const [hoveredRowIndex, setHoveredRowIndex] = useState<number | null>(null);
-  // 追加: 列ヘッダー hover 状態です。
   const [hoveredColumnIndex, setHoveredColumnIndex] = useState<number | null>(
     null,
   );
 
-  // 追加: visible column だけを描画対象にします。
   const visibleColumns = useMemo(
     () => columns.filter((column) => column.visible !== false),
     [columns],
   );
 
-  // 追加: rowKeyGetter のデフォルト実装です。未指定時は source index を使います。
   const resolvedRowKeyGetter = useMemo(
     () => rowKeyGetter ?? ((_row: T, index: number) => index),
     [rowKeyGetter],
   );
 
-  // 追加: reducer 初期化です。列幅などをここで初期化します。
   const [uiState, dispatch] = useReducer(
     gridUiReducer,
     visibleColumns,
@@ -141,7 +125,6 @@ export function SpreadsheetGrid<T extends object>({
     gridRootRef,
   });
 
-  // 追加: columns が変わった際に column width map を同期します。
   useEffect(() => {
     const nextWidths = visibleColumns.reduce<Record<string, number>>(
       (acc, column) => {
@@ -153,7 +136,6 @@ export function SpreadsheetGrid<T extends object>({
     dispatch(gridActions.syncColumnWidths(nextWidths));
   }, [visibleColumns]);
 
-  // 追加: source rows を row model 化します。
   const sourceRowModels = useMemo<SourceRowModel<T>[]>(
     () =>
       rows.map((row, index) => ({
@@ -164,7 +146,6 @@ export function SpreadsheetGrid<T extends object>({
     [rows, resolvedRowKeyGetter],
   );
 
-  // 追加: select フィルター候補を列定義または rows から取得します。
   const getColumnSelectOptions = useCallback(
     (column: GridColumn<T>) => {
       if (column.filterOptions && column.filterOptions.length > 0) {
@@ -198,7 +179,6 @@ export function SpreadsheetGrid<T extends object>({
     [sourceRowModels],
   );
 
-  // 追加: グローバルフィルター適用済み row models です。
   const globallyFilteredRowModels = useMemo(
     () =>
       applyGlobalFilter(
@@ -209,7 +189,6 @@ export function SpreadsheetGrid<T extends object>({
     [sourceRowModels, visibleColumns, uiState],
   );
 
-  // 追加: 列フィルターを global filter 後に適用します。
   const columnFilteredRowModels = useMemo(
     () =>
       applyColumnFilters(
@@ -220,37 +199,31 @@ export function SpreadsheetGrid<T extends object>({
     [globallyFilteredRowModels, visibleColumns, uiState.filters.columnFilters],
   );
 
-  // 追加: 最後にソートを適用します。
   const filteredRowModels = useMemo(
     () => applySort(columnFilteredRowModels, visibleColumns, uiState.sort),
     [columnFilteredRowModels, visibleColumns, uiState.sort],
   );
 
-  // 追加: 描画用 rows 配列です。
   const filteredRows = useMemo(
     () => filteredRowModels.map((rowModel) => rowModel.row),
     [filteredRowModels],
   );
 
-  // 追加: filteredRows の元 rows index を保持します。
   const filteredRowSourceIndexes = useMemo(
     () => filteredRowModels.map((rowModel) => rowModel.sourceIndex),
     [filteredRowModels],
   );
 
-  // 追加: filteredRows の rowKey 一覧です。
   const filteredRowKeys = useMemo(
     () => filteredRowModels.map((rowModel) => rowModel.rowKey),
     [filteredRowModels],
   );
 
-  // 追加: 列 geometry を measurement として共通管理します。
   const columnMeasurements = useMemo(
     () => buildColumnMeasurements(visibleColumns, uiState.columnWidths),
     [visibleColumns, uiState.columnWidths],
   );
 
-  // 追加: 列方向の総幅です。overlay / container / virtualization で共通利用します。
   const totalColumnWidth = useMemo(
     () =>
       columnMeasurements.length > 0
@@ -259,7 +232,6 @@ export function SpreadsheetGrid<T extends object>({
     [columnMeasurements],
   );
 
-  // 追加: row virtualizer です。
   const rowVirtualizer = useVirtualizer({
     count: filteredRows.length,
     getScrollElement: () => bodyScrollRef.current,
@@ -268,7 +240,6 @@ export function SpreadsheetGrid<T extends object>({
     useFlushSync: false,
   });
 
-  // 追加: column virtualizer です。
   const columnVirtualizer = useVirtualizer({
     horizontal: true,
     count: visibleColumns.length,
@@ -279,25 +250,19 @@ export function SpreadsheetGrid<T extends object>({
     useFlushSync: false,
   });
 
-  // 追加: 仮想行一覧です。
   const virtualRows = rowVirtualizer.getVirtualItems();
-  // 追加: 仮想列一覧です。
   const virtualColumns = columnVirtualizer.getVirtualItems();
-  // 追加: 仮想 body の総高さです。
   const totalBodyHeight = rowVirtualizer.getTotalSize();
 
-  // 追加: visible row の開始・終了 index を保持します。
   const virtualRowIndexes = useMemo(
     () => new Set(virtualRows.map((item) => item.index)),
     [virtualRows],
   );
-  // 追加: visible column の開始・終了 index を保持します。
   const virtualColumnIndexes = useMemo(
     () => new Set(virtualColumns.map((item) => item.index)),
     [virtualColumns],
   );
 
-  // 追加: active cell の矩形です。overlay 用に使います。
   const activeCellRect = useMemo<ActiveCellOverlayRect | null>(() => {
     if (!uiState.activeCell) {
       return null;
@@ -330,7 +295,6 @@ export function SpreadsheetGrid<T extends object>({
     rowHeight,
   ]);
 
-  // 追加: editor layer は editingCell がある場合に activeCellRect を流用します。
   const editorRect = useMemo(
     () => (uiState.editingCell ? activeCellRect : null),
     [uiState.editingCell, activeCellRect],
@@ -375,25 +339,25 @@ export function SpreadsheetGrid<T extends object>({
     rowHeight,
   });
 
-  // 追加: 現在の selection が「表全体選択」かどうかを判定します。
-  const isWholeGridSelected = useMemo(() => {
-    if (
-      filteredRows.length === 0 ||
-      visibleColumns.length === 0 ||
-      uiState.selection?.type !== 'cell'
-    ) {
-      return false;
-    }
-    const normalizedRange = normalizeCellRange(uiState.selection.range);
-    return (
-      normalizedRange.start.row === 0 &&
-      normalizedRange.start.col === 0 &&
-      normalizedRange.end.row === filteredRows.length - 1 &&
-      normalizedRange.end.col === visibleColumns.length - 1
-    );
-  }, [uiState.selection, filteredRows.length, visibleColumns.length]);
+  const {
+    isWholeGridSelected,
+    handleCopy,
+    handlePaste,
+  } = useGridClipboardController({
+    rows,
+    filteredRows,
+    filteredRowSourceIndexes,
+    visibleColumns,
+    uiState,
+    readOnly,
+    canEditCell,
+    createRow,
+    createOverflowColumn,
+    onRowsChange,
+    onColumnsChange,
+    dispatch,
+  });
 
-  // 追加: 全体選択の実行処理を共通化します。
   const selectEntireGrid = useCallback(() => {
     if (filteredRows.length === 0 || visibleColumns.length === 0) {
       return;
@@ -409,53 +373,6 @@ export function SpreadsheetGrid<T extends object>({
     dispatch(gridActions.activateCell(startCell));
   }, [dispatch, filteredRows.length, visibleColumns.length]);
 
-  // 追加: 全体選択時の copy を専用経路で行います。
-  const serializeWholeGridToTsv = useCallback(() => {
-    if (filteredRows.length === 0 || visibleColumns.length === 0) {
-      return '';
-    }
-    return filteredRows
-      .map((row) =>
-        visibleColumns
-          .map((column) => {
-            const rawValue = getCellValue(row, column);
-            return column.formatClipboardValue
-              ? column.formatClipboardValue(rawValue, row)
-              : String(rawValue ?? '');
-          })
-          .join('\t'),
-      )
-      .join('\n');
-  }, [filteredRows, visibleColumns]);
-
-  // 追加: copy 処理です。selection を TSV にしてクリップボードへ書き込みます。
-  const handleCopy = useCallback(async () => {
-    const text = isWholeGridSelected
-      ? serializeWholeGridToTsv()
-      : serializeSelectionToTsv(
-          filteredRows,
-          visibleColumns,
-          uiState.selection as
-            | {
-                type: 'cell';
-                range: {
-                  start: { row: number; col: number };
-                  end: { row: number; col: number };
-                };
-              }
-            | { type: 'row'; startRow: number; endRow: number }
-            | { type: 'col'; startCol: number; endCol: number }
-            | null,
-        );
-    if (!text) {
-      return;
-    }
-    if (navigator.clipboard?.writeText) {
-      await navigator.clipboard.writeText(text);
-    }
-  }, [filteredRows, isWholeGridSelected, serializeWholeGridToTsv, uiState.selection, visibleColumns]);
-
-  // 追加: ダブルクリック時に編集開始します。
   const handleCellDoubleClick = useCallback(
     (cell: CellCoord) => {
       const row = filteredRows[cell.row];
@@ -495,268 +412,48 @@ export function SpreadsheetGrid<T extends object>({
     selectEntireGrid,
   });
 
-  // 追加: 単一セルを active + selection へ反映するユーティリティです。
-  const activateSingleCell = useCallback(
+  const {
+    startEditWithValue,
+    commitEdit,
+    cancelEdit,
+  } = useGridEditController({
+    uiState,
+    rows,
+    visibleColumns,
+    filteredRowSourceIndexes,
+    editorValue,
+    setEditorValue,
+    onRowsChange,
+    dispatch,
+    getMovedCell,
+    gridRootRef,
+    editorActionGuardRef,
+  });
+
+  const handleCellDoubleClickWithController = useCallback(
     (cell: CellCoord) => {
-      dispatch(gridActions.startSelection(cell));
-      dispatch(gridActions.endSelection());
-      dispatch(gridActions.activateCell(cell));
-    },
-    [dispatch],
-  );
-
-  // 追加: 編集確定です。editorValue を rows へ反映し、必要なら次セルへ移動します。
-  const commitEdit = useCallback(
-    (direction?: EditorCommitDirection) => {
-      if (editorActionGuardRef.current || !uiState.editingCell) {
+      const row = filteredRows[cell.row];
+      const column = visibleColumns[cell.col];
+      if (!row || !column) {
         return;
       }
-
-      const editingCell = uiState.editingCell;
-      const nextCell =
-        direction === 'down'
-          ? getMovedCell(editingCell, 1, 0)
-          : direction === 'right'
-            ? getMovedCell(editingCell, 0, 1)
-            : direction === 'left'
-              ? getMovedCell(editingCell, 0, -1)
-              : editingCell;
-
-      const column = visibleColumns[editingCell.col];
-      const originalRowIndex =
-        filteredRowSourceIndexes[editingCell.row] ?? editingCell.row;
-      const row = rows[originalRowIndex];
-      if (!column || !row) {
-        dispatch(gridActions.stopEdit());
-        return;
-      }
-
-      if (onRowsChange) {
-        const parsedValue = column.parseClipboardValue
-          ? column.parseClipboardValue(editorValue, row)
-          : editorValue;
-        const nextRows = rows.map((currentRow, index) =>
-          index === originalRowIndex
-            ? setCellValue(currentRow, column, parsedValue)
-            : currentRow,
-        );
-        onRowsChange(nextRows);
-      }
-
-      editorActionGuardRef.current = true;
-      requestAnimationFrame(() => {
-        gridRootRef.current?.focus();
-        activateSingleCell(nextCell);
-        editorActionGuardRef.current = false;
-      });
-
-      dispatch(gridActions.stopEdit());
-    },
-    [
-      activateSingleCell,
-      dispatch,
-      editorValue,
-      filteredRowSourceIndexes,
-      getMovedCell,
-      onRowsChange,
-      rows,
-      uiState.editingCell,
-      visibleColumns,
-    ],
-  );
-
-  // 追加: 編集キャンセルです。editor を閉じるだけです。
-  const cancelEdit = useCallback(() => {
-    if (editorActionGuardRef.current) {
-      return;
-    }
-    editorActionGuardRef.current = true;
-    dispatch(gridActions.stopEdit());
-    requestAnimationFrame(() => {
-      gridRootRef.current?.focus();
-      editorActionGuardRef.current = false;
-    });
-  }, [dispatch]);
-
-  // 追加: 列定義に応じて cell node を描画します。
-  const renderCellContent = useCallback(
-    (
-      row: T,
-      rowIndex: number,
-      column: GridColumn<T>,
-      colIndex: number,
-    ) => {
-      const value = getCellValue(row, column);
-      const readOnlyCell = !isCellEditable(
-        { readOnly, canEditCell },
-        rowIndex,
-        colIndex,
-        row,
-        column,
-      );
-      const isActive = selectIsActiveCell(uiState, rowIndex, colIndex);
-      const isSelected = selectIsCellSelected(uiState, rowIndex, colIndex);
-      const isEditing = selectIsEditingCell(uiState, rowIndex, colIndex);
-
-      if (column.renderCell) {
-        return column.renderCell({
+      if (
+        !isCellEditable(
+          { readOnly, canEditCell },
+          cell.row,
+          cell.col,
           row,
-          rowIndex,
-          colIndex,
-          value,
           column,
-          isActive,
-          isSelected,
-          isEditing,
-          readOnly: readOnlyCell,
-          // 追加: 実編集は CellEditorLayer で行いますが、将来の API 互換のため setValue も残します。
-          setValue: (nextValue) => {
-            if (!onRowsChange) {
-              return;
-            }
-            const originalRowIndex =
-              filteredRowSourceIndexes[rowIndex] ?? rowIndex;
-            const nextRows = rows.map((currentRow, index) =>
-              index === originalRowIndex
-                ? setCellValue(currentRow, column, nextValue)
-                : currentRow,
-            );
-            onRowsChange(nextRows);
-          },
-        });
-      }
-
-      return <span>{String(value ?? '')}</span>;
-    },
-    [
-      canEditCell,
-      filteredRowSourceIndexes,
-      onRowsChange,
-      readOnly,
-      rows,
-      uiState,
-    ],
-  );
-
-  // 追加: paste 処理です。TSV を activeCell 起点に適用し、必要なら行/列を自動拡張します。
-  const handlePaste = useCallback(
-    (event: ClipboardEvent<HTMLDivElement>) => {
-      if (!onRowsChange || !uiState.activeCell) {
-        return;
-      }
-      const text = event.clipboardData.getData('text/plain');
-      if (!text) {
-        return;
-      }
-      event.preventDefault();
-      const matrix = parseClipboardText(text);
-      if (matrix.length === 0) {
-        return;
-      }
-
-      const startFilteredRowIndex = uiState.activeCell.row;
-      const startOriginalRowIndex =
-        filteredRowSourceIndexes[startFilteredRowIndex] ?? startFilteredRowIndex;
-      const startColIndex = uiState.activeCell.col;
-
-      let workingRows = [...rows];
-      let workingColumns = [...visibleColumns];
-      let workingSourceIndexes = [...filteredRowSourceIndexes];
-
-      // 追加: 行不足分を createRow で自動追加します。
-      const requiredOriginalRowCount = startOriginalRowIndex + matrix.length;
-      if (requiredOriginalRowCount > workingRows.length) {
-        if (createRow) {
-          while (workingRows.length < requiredOriginalRowCount) {
-            workingRows.push(createRow());
-            workingSourceIndexes.push(workingRows.length - 1);
-          }
-        }
-      }
-
-      // 追加: 列不足分を createOverflowColumn で自動追加します。
-      let maxPasteWidth = 0;
-      for (
-        let matrixRowIndex = 0;
-        matrixRowIndex < matrix.length;
-        matrixRowIndex += 1
+        )
       ) {
-        const currentWidth = matrix[matrixRowIndex]?.length ?? 0;
-        if (currentWidth > maxPasteWidth) {
-          maxPasteWidth = currentWidth;
-        }
-      }
-      if (maxPasteWidth === 0) {
         return;
       }
-
-      const requiredColumnCount = startColIndex + maxPasteWidth;
-      if (requiredColumnCount > workingColumns.length) {
-        if (onColumnsChange && createOverflowColumn) {
-          while (workingColumns.length < requiredColumnCount) {
-            workingColumns.push(createOverflowColumn(workingColumns.length));
-          }
-          onColumnsChange(workingColumns);
-        }
-      }
-
-      const nextRows = applyClipboardMatrixToRows(
-        workingRows,
-        workingSourceIndexes,
-        workingColumns,
-        matrix,
-        startFilteredRowIndex,
-        startColIndex,
-        (originalRowIndex, colIndex, row, column) =>
-          isCellEditable(
-            { readOnly, canEditCell },
-            originalRowIndex,
-            colIndex,
-            row,
-            column,
-          ),
-      );
-
-      const endRow = clamp(
-        uiState.activeCell.row + Math.max(matrix.length - 1, 0),
-        0,
-        Math.max(
-          Math.max(filteredRows.length - 1, 0),
-          startFilteredRowIndex + matrix.length - 1,
-        ),
-      );
-      const endCol = clamp(
-        uiState.activeCell.col + Math.max((matrix[0]?.length ?? 1) - 1, 0),
-        0,
-        Math.max(
-          Math.max(workingColumns.length - 1, 0),
-          startColIndex + maxPasteWidth - 1,
-        ),
-      );
-
-      onRowsChange(nextRows);
-      dispatch(gridActions.startSelection(uiState.activeCell));
-      dispatch(gridActions.updateSelection({ row: endRow, col: endCol }));
-      dispatch(gridActions.endSelection());
-      dispatch(gridActions.activateCell(uiState.activeCell));
+      const currentValue = getCellValue(row, column);
+      startEditWithValue(cell, String(currentValue ?? ''));
     },
-    [
-      canEditCell,
-      createOverflowColumn,
-      createRow,
-      dispatch,
-      filteredRowSourceIndexes,
-      filteredRows.length,
-      onColumnsChange,
-      onRowsChange,
-      readOnly,
-      rows,
-      uiState.activeCell,
-      visibleColumns,
-    ],
+    [canEditCell, filteredRows, readOnly, startEditWithValue, visibleColumns],
   );
 
-  // 追加: 現在の selection を overlay 用矩形へ変換します。
   const selectionOverlayRect = useMemo<SelectionOverlayRect | null>(() => {
     if (!uiState.selection) {
       return null;
@@ -854,7 +551,7 @@ export function SpreadsheetGrid<T extends object>({
         ),
       );
     },
-    [dispatch, uiState, visibleColumns],
+    [dispatch, uiState],
   );
 
   const applyFilterPopoverValue = useCallback(() => {
@@ -945,6 +642,65 @@ export function SpreadsheetGrid<T extends object>({
       flex: '0 0 auto',
     }),
     [],
+  );
+
+  const renderCellContent = useCallback(
+    (
+      row: T,
+      rowIndex: number,
+      column: GridColumn<T>,
+      colIndex: number,
+    ) => {
+      const value = getCellValue(row, column);
+      const readOnlyCell = !isCellEditable(
+        { readOnly, canEditCell },
+        rowIndex,
+        colIndex,
+        row,
+        column,
+      );
+      const isActive = selectIsActiveCell(uiState, rowIndex, colIndex);
+      const isSelected = selectIsCellSelected(uiState, rowIndex, colIndex);
+      const isEditing = selectIsEditingCell(uiState, rowIndex, colIndex);
+
+      if (column.renderCell) {
+        return column.renderCell({
+          row,
+          rowIndex,
+          colIndex,
+          value,
+          column,
+          isActive,
+          isSelected,
+          isEditing,
+          readOnly: readOnlyCell,
+          // 追加: 実編集は CellEditorLayer で行いますが、将来の API 互換のため setValue も残します。
+          setValue: (nextValue) => {
+            if (!onRowsChange) {
+              return;
+            }
+            const originalRowIndex =
+              filteredRowSourceIndexes[rowIndex] ?? rowIndex;
+            const nextRows = rows.map((currentRow, index) =>
+              index === originalRowIndex
+                ? setCellValue(currentRow, column, nextValue)
+                : currentRow,
+            );
+            onRowsChange(nextRows);
+          },
+        });
+      }
+
+      return <span>{String(value ?? '')}</span>;
+    },
+    [
+      canEditCell,
+      filteredRowSourceIndexes,
+      onRowsChange,
+      readOnly,
+      rows,
+      uiState,
+    ],
   );
 
   const gridShellStyle: CSSProperties = {
@@ -1136,7 +892,7 @@ export function SpreadsheetGrid<T extends object>({
               }
               onCellPointerDown={handleCellPointerDown}
               onCellPointerEnter={handleCellPointerEnter}
-              onCellDoubleClick={handleCellDoubleClick}
+              onCellDoubleClick={handleCellDoubleClickWithController}
               renderCellContent={renderCellContent}
             />
           </div>
