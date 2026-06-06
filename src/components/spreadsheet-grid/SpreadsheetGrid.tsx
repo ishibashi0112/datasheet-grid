@@ -1,9 +1,9 @@
-// 追加: 列フィルター UI 整備 + ソート/フィルター見た目強化を反映します。// 追加: 列フィルター UI 整備 + ソ 
-import {  
-  useEffect,
+// 追加: 列フィルター UI 整備 + ソート/フィルター見た目強化を反映します。
+import {
   useMemo,
   useCallback,
-  useReducer,
+  useReducer,  
+  useEffect,
   useRef,
   useState,
   type CSSProperties,
@@ -23,7 +23,6 @@ import {
   selectGlobalFilter,
   selectIsActiveCell,
   selectIsCellSelected,
-  selectIsColumnSelected,
   selectIsEditingCell,
   selectIsRowSelected,
 } from './model/gridSelectors';
@@ -37,6 +36,7 @@ import CellEditorLayer, {
   type EditorCommitDirection,
 } from './CellEditorLayer';
 import ColumnFilterPopover from './view/ColumnFilterPopover';
+import GridHeaderRow from './view/GridHeaderRow';
 import { useFilterPopoverController } from './hooks/useFilterPopoverController';
 import type {
   CellCoord,
@@ -1392,201 +1392,39 @@ export function SpreadsheetGrid<T>({
               height: headerHeight + totalBodyHeight,
             }}
           >
-            <div
-              style={{
-                height: headerHeight,
-                position: 'sticky',
-                top: 0,
-                zIndex: 6,
-                backgroundColor: '#f8fafc',
-              }}
-            >
-              <div
-                onPointerDown={handleCornerHeaderPointerDown}
-                onPointerEnter={() => setIsCornerHovered(true)}
-                onPointerLeave={() => setIsCornerHovered(false)}
-                style={{
-                  ...rowHeaderCellStyle,
-                  // 追加: 左上コーナーセル専用に見た目を明示して、
-                  //       高さ・中央寄せ・境界線のズレを抑えます。
-                  position: 'absolute',
-                  top: 0,
-                  left: 0,
-                  width: rowHeaderWidth,
-                  minWidth: rowHeaderWidth,
-                  height: headerHeight,
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  boxSizing: 'border-box',
-                  padding: 0,
-                  lineHeight: 1,
-                  zIndex: 7,
-                  backgroundColor: isWholeGridSelected
-                    ? isCornerHovered
-                      ? '#bfdbfe'
-                      : '#dbeafe'
-                    : isCornerHovered
-                      ? '#e2e8f0'
-                      : '#f8fafc',
-                  borderRight: '1px solid #e5e7eb',
-                  borderBottom: '1px solid #d7dce3',
-                  cursor:
-                    filteredRows.length > 0 && visibleColumns.length > 0
-                      ? 'pointer'
-                      : 'default',
-                }}
-              >
-                #
-              </div>
-
-              {virtualColumns.map((virtualColumn) => {
-                const colIndex = virtualColumn.index;
-                const measurement = columnMeasurements[colIndex];
-                const column = visibleColumns[colIndex];
-                if (
-                  !column ||
-                  !measurement ||
-                  !virtualColumnIndexes.has(colIndex)
-                ) {
-                  return null;
-                }
-
-                const isColumnFiltered =
-                  String(uiState.filters.columnFilters[column.key] ?? '').trim()
-                    .length > 0;
-
-                return (
-                  <div
-                    key={column.key}
-                    onPointerDown={(event) =>
-                      handleColumnHeaderPointerDown(colIndex, event)
-                    }
-                    onPointerEnter={(event) => {
-                      setHoveredColumnIndex(colIndex);
-                      handleColumnHeaderPointerEnter(colIndex, event);
-                    }}
-                    onPointerLeave={() =>
-                      setHoveredColumnIndex((current) =>
-                        current === colIndex ? null : current,
-                      )
-                    }
-                    style={{
-                      position: 'absolute',
-                      top: 0,
-                      left: rowHeaderWidth + measurement.start,
-                      ...headerCellBaseStyle,
-                      width: measurement.size,
-                      minWidth: measurement.size,
-                      height: headerHeight,
-                      backgroundColor: isWholeGridSelected
-                        ? hoveredColumnIndex === colIndex
-                          ? '#bfdbfe'
-                          : '#dbeafe'
-                        : selectIsColumnSelected(uiState, colIndex)
-                          ? hoveredColumnIndex === colIndex
-                            ? '#bfdbfe'
-                            : '#dbeafe'
-                          : hoveredColumnIndex === colIndex
-                            ? '#e2e8f0'
-                            : '#f8fafc',
-                    }}
-                  >
-                    <span
-                      style={{
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        minWidth: 22,
-                        height: 22,
-                        borderRadius: 9999,
-                        backgroundColor: isColumnFiltered ? '#bfdbfe' : '#e2e8f0',
-                        color: isColumnFiltered ? '#1d4ed8' : '#475569',
-                        fontSize: 11,
-                        fontWeight: 700,
-                      }}
-                    >
-                      {toExcelColumnName(colIndex)}
-                    </span>
-
-                    <div
-                      style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        minWidth: 0,
-                        flex: 1,
-                        gap: 6,
-                      }}
-                    >
-                      <div
-                        style={{
-                          minWidth: 0,
-                          flex: 1,
-                          color: isColumnFiltered ? '#1d4ed8' : '#334155',
-                          overflow: 'hidden',
-                          textOverflow: 'ellipsis',
-                          whiteSpace: 'nowrap',
-                        }}
-                      >
-                        {column.renderHeader
-                          ? column.renderHeader({
-                              colIndex,
-                              width: measurement.size,
-                              column,
-                              filterValue: uiState.filters.columnFilters[column.key],
-                              isFiltered: isColumnFiltered,
-                            })
-                          : column.title || column.key}
-                      </div>
-
-                      {enableSorting ? (
-                        <button
-                          type="button"
-                          onPointerDown={(event) =>
-                            handleColumnSortButtonPointerDown(column.key, event)
-                          }
-                          title="並び替え"
-                          style={getHeaderActionButtonStyle(
-                            uiState.sort.columnKey === column.key &&
-                              uiState.sort.direction !== null,
-                          )}
-                        >
-                          {getSortIndicator(column.key)}
-                        </button>
-                      ) : null}
-
-                      {enableColumnFilter ? (
-                        <button
-                          type="button"
-                          onPointerDown={(event) =>
-                            openColumnFilterPopover(column, event)
-                          }
-                          title="列フィルター"
-                          style={getHeaderActionButtonStyle(isColumnFiltered)}
-                        >
-                          {isColumnFiltered ? '●' : '○'}
-                        </button>
-                      ) : null}
-                    </div>
-
-                    <div
-                      onPointerDown={(event) =>
-                        handleColumnResizePointerDown(column, event)
-                      }
-                      style={{
-                        position: 'absolute',
-                        top: 0,
-                        right: -3,
-                        width: 6,
-                        height: '100%',
-                        cursor: 'col-resize',
-                        zIndex: 3,
-                      }}
-                    />
-                  </div>
-                );
-              })}
-            </div>
+            <GridHeaderRow
+              rowHeaderWidth={rowHeaderWidth}
+              headerHeight={headerHeight}
+              rowHeaderCellStyle={rowHeaderCellStyle}
+              headerCellBaseStyle={headerCellBaseStyle}
+              isCornerHovered={isCornerHovered}
+              isWholeGridSelected={isWholeGridSelected}
+              filteredRowsLength={filteredRows.length}
+              visibleColumnsLength={visibleColumns.length}
+              virtualColumns={virtualColumns}
+              virtualColumnIndexes={virtualColumnIndexes}
+              columnMeasurements={columnMeasurements}
+              visibleColumns={visibleColumns}
+              hoveredColumnIndex={hoveredColumnIndex}
+              uiState={uiState}
+              columnFilterValues={uiState.filters.columnFilters}
+              sortState={uiState.sort}
+              getHeaderActionButtonStyle={getHeaderActionButtonStyle}
+              getSortIndicator={getSortIndicator}
+              onCornerPointerDown={handleCornerHeaderPointerDown}
+              onCornerPointerEnter={() => setIsCornerHovered(true)}
+              onCornerPointerLeave={() => setIsCornerHovered(false)}
+              onColumnHeaderPointerDown={handleColumnHeaderPointerDown}
+              onColumnHeaderPointerEnter={handleColumnHeaderPointerEnter}
+              onColumnHeaderPointerLeave={(colIndex) =>
+                setHoveredColumnIndex((current) =>
+                  current === colIndex ? null : current,
+                )
+              }
+              onColumnSortButtonPointerDown={handleColumnSortButtonPointerDown}
+              onColumnFilterButtonPointerDown={openColumnFilterPopover}
+              onColumnResizePointerDown={handleColumnResizePointerDown}
+            />
 
             <SelectionOverlay
               rect={selectionOverlayRect}
@@ -1751,4 +1589,5 @@ export function SpreadsheetGrid<T>({
 }
 
 export default SpreadsheetGrid;
+
 
