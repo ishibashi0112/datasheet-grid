@@ -12,11 +12,9 @@ export type ClipboardMatrix = string[][];
 // 追加: text/plain の TSV を 2次元配列へ変換します。
 export const parseClipboardText = (text: string): ClipboardMatrix => {
   const normalized = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
-
   if (!normalized) {
     return [];
   }
-
   return normalized
     .split('\n')
     .filter((line) => line.length > 0)
@@ -28,7 +26,13 @@ export const serializeSelectionToTsv = <T,>(
   rows: T[],
   columns: GridColumn<T>[],
   selection:
-    | { type: 'cell'; range: { start: { row: number; col: number }; end: { row: number; col: number } } }
+    | {
+        type: 'cell';
+        range: {
+          start: { row: number; col: number };
+          end: { row: number; col: number };
+        };
+      }
     | { type: 'row'; startRow: number; endRow: number }
     | { type: 'col'; startCol: number; endCol: number }
     | null,
@@ -42,7 +46,6 @@ export const serializeSelectionToTsv = <T,>(
   // 追加: セル範囲選択のコピーです。
   if (selection.type === 'cell') {
     const normalizedRange = normalizeCellRange(selection.range);
-
     for (
       let rowIndex = normalizedRange.start.row;
       rowIndex <= normalizedRange.end.row;
@@ -52,9 +55,7 @@ export const serializeSelectionToTsv = <T,>(
       if (!row) {
         continue;
       }
-
       const cells: string[] = [];
-
       for (
         let colIndex = normalizedRange.start.col;
         colIndex <= normalizedRange.end.col;
@@ -64,25 +65,20 @@ export const serializeSelectionToTsv = <T,>(
         if (!column) {
           continue;
         }
-
         const rawValue = getCellValue(row, column);
         const formattedValue = column.formatClipboardValue
           ? column.formatClipboardValue(rawValue, row)
           : String(rawValue ?? '');
-
         cells.push(formattedValue);
       }
-
       lines.push(cells.join('\t'));
     }
-
     return lines.join('\n');
   }
 
   // 追加: 行選択のコピーです。選択された行 × visible columns 全体を対象にします。
   if (selection.type === 'row') {
     const normalizedRange = normalizeRowRange(selection.startRow, selection.endRow);
-
     for (
       let rowIndex = normalizedRange.startRow;
       rowIndex <= normalizedRange.endRow;
@@ -92,31 +88,25 @@ export const serializeSelectionToTsv = <T,>(
       if (!row) {
         continue;
       }
-
       const cells = columns.map((column) => {
         const rawValue = getCellValue(row, column);
         return column.formatClipboardValue
           ? column.formatClipboardValue(rawValue, row)
           : String(rawValue ?? '');
       });
-
       lines.push(cells.join('\t'));
     }
-
     return lines.join('\n');
   }
 
   // 追加: 列選択のコピーです。visible rows × 選択列 を対象にします。
   const normalizedRange = normalizeColumnRange(selection.startCol, selection.endCol);
-
   for (let rowIndex = 0; rowIndex < rows.length; rowIndex += 1) {
     const row = rows[rowIndex];
     if (!row) {
       continue;
     }
-
     const cells: string[] = [];
-
     for (
       let colIndex = normalizedRange.startCol;
       colIndex <= normalizedRange.endCol;
@@ -126,15 +116,12 @@ export const serializeSelectionToTsv = <T,>(
       if (!column) {
         continue;
       }
-
       const rawValue = getCellValue(row, column);
       const formattedValue = column.formatClipboardValue
         ? column.formatClipboardValue(rawValue, row)
         : String(rawValue ?? '');
-
       cells.push(formattedValue);
     }
-
     lines.push(cells.join('\t'));
   }
 
@@ -142,7 +129,7 @@ export const serializeSelectionToTsv = <T,>(
 };
 
 // 追加: 貼り付け matrix を rows へ適用します。
-export const applyClipboardMatrixToRows = <T,>(
+export const applyClipboardMatrixToRows = <T extends object,>(
   rows: T[],
   sourceRowIndexes: number[],
   columns: GridColumn<T>[],
@@ -165,7 +152,6 @@ export const applyClipboardMatrixToRows = <T,>(
   for (let rowOffset = 0; rowOffset < matrix.length; rowOffset += 1) {
     const filteredRowIndex = startRowIndex + rowOffset;
     const originalRowIndex = sourceRowIndexes[filteredRowIndex];
-
     if (originalRowIndex === undefined) {
       continue;
     }
@@ -181,7 +167,6 @@ export const applyClipboardMatrixToRows = <T,>(
     for (let colOffset = 0; colOffset < matrix[rowOffset].length; colOffset += 1) {
       const colIndex = startColIndex + colOffset;
       const column = columns[colIndex];
-
       if (!column) {
         continue;
       }
@@ -206,4 +191,3 @@ export const applyClipboardMatrixToRows = <T,>(
 
   return nextRows;
 };
-``
