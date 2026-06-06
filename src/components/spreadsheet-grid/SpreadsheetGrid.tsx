@@ -1,8 +1,8 @@
-// 追加: 列フィルター + 単一列ソート基盤を反映します。// 追加: 列,
+// 追加: 列フィルター UI 整備 + ソート/フィルター見た目強化を反映します。
 import {
-  useEffect, 
-  useCallback,
+  useEffect,
   useMemo,
+  useCallback,
   useReducer,
   useRef,
   useState,
@@ -64,6 +64,12 @@ type SourceRowModel<T> = {
   row: T;
   sourceIndex: number;
   rowKey: GridRowKey;
+};
+
+// 追加: 列フィルターポップオーバーの状態です。
+type HeaderFilterPopoverState = {
+  columnKey: string;
+  draftValue: string;
 };
 
 // 追加: columns + columnWidths から、列座標の measurement 一覧を生成します。
@@ -272,6 +278,13 @@ export function SpreadsheetGrid<T>({
   const [hoveredColumnIndex, setHoveredColumnIndex] = useState<number | null>(
     null,
   );
+
+  // 追加: 列フィルターポップオーバーの開閉状態です。
+  const [filterPopoverState, setFilterPopoverState] =
+    useState<HeaderFilterPopoverState | null>(null);
+
+  // 追加: フィルターポップオーバーの外側クリック判定に使います。
+  const filterPopoverRef = useRef<HTMLDivElement | null>(null);
 
   // 追加: visible column だけを描画対象にします。
   const visibleColumns = useMemo(
@@ -1152,8 +1165,8 @@ export function SpreadsheetGrid<T>({
     dispatch(gridActions.clearSort());
   };
 
-  // 追加: フィルター入力は初版では prompt を使い、後で popover に差し替えやすくします。
-  const handleColumnFilterButtonPointerDown = (
+  // 追加: フィルターポップオーバーを開きます。
+  const openColumnFilterPopover = (
     column: GridColumn<T>,
     event: PointerEvent<HTMLButtonElement>,
   ) => {
@@ -1164,23 +1177,58 @@ export function SpreadsheetGrid<T>({
       return;
     }
 
-    const currentValue = String(uiState.filters.columnFilters[column.key] ?? '');
-    const nextValue = window.prompt(
-      `列フィルター: ${column.title || column.key}`,
-      currentValue,
-    );
+    setFilterPopoverState({
+      columnKey: column.key,
+      draftValue: String(uiState.filters.columnFilters[column.key] ?? ''),
+    });
+  };
 
-    if (nextValue === null) {
+  // 追加: フィルターポップオーバーを閉じます。
+  const closeColumnFilterPopover = useCallback(() => {
+    setFilterPopoverState(null);
+  }, []);
+
+  // 追加: フィルター draft を更新します。
+  const updateFilterPopoverDraft = (value: string) => {
+    setFilterPopoverState((current) => {
+      if (!current) {
+        return current;
+      }
+
+      return {
+        ...current,
+        draftValue: value,
+      };
+    });
+  };
+
+  // 追加: フィルター draft を適用します。
+  const applyFilterPopoverValue = () => {
+    if (!filterPopoverState) {
       return;
     }
 
-    const normalized = nextValue.trim();
+    const normalized = filterPopoverState.draftValue.trim();
     if (!normalized) {
-      dispatch(gridActions.clearColumnFilter(column.key));
+      dispatch(gridActions.clearColumnFilter(filterPopoverState.columnKey));
+      closeColumnFilterPopover();
       return;
     }
 
-    dispatch(gridActions.setColumnFilter(column.key, normalized));
+    dispatch(
+      gridActions.setColumnFilter(filterPopoverState.columnKey, normalized),
+    );
+    closeColumnFilterPopover();
+  };
+
+  // 追加: フィルター draft をクリアします。
+  const clearFilterPopoverValue = () => {
+    if (!filterPopoverState) {
+      return;
+    }
+
+    dispatch(gridActions.clearColumnFilter(filterPopoverState.columnKey));
+    closeColumnFilterPopover();
   };
 
   // 追加: ソートボタン押下です。列選択開始と競合しないよう stopPropagation します。
@@ -1192,6 +1240,49 @@ export function SpreadsheetGrid<T>({
     event.stopPropagation();
     cycleColumnSort(columnKey);
   };
+
+  // 追加: ポップオーバー表示中は、外側クリックで閉じます。
+  useEffect(() => {
+    if (!filterPopoverState) {
+      return;
+    }
+
+    const handleWindowPointerDown = (event: globalThis.PointerEvent) => {
+      const targetNode = event.target as Node | null;
+      if (!targetNode) {
+        return;
+      }
+
+      if (filterPopoverRef.current?.contains(targetNode)) {
+        return;
+      }
+
+      closeColumnFilterPopover();
+    };
+
+    window.addEventListener('pointerdown', handleWindowPointerDown);
+
+    return () => {
+      window.removeEventListener('pointerdown', handleWindowPointerDown);
+    };
+  }, [filterPopoverState, closeColumnFilterPopover]);
+
+  // 追加: ソート/フィルターボタンの見た目を返します。
+  const getHeaderActionButtonStyle = (isActive: boolean): CSSProperties => ({
+    border: '1px solid #cbd5e1',
+    backgroundColor: isActive ? '#dbeafe' : '#ffffff',
+    color: isActive ? '#2563eb' : '#475569',
+    borderRadius: 6,
+    width: 24,
+    height: 24,
+    padding: 0,
+    display: 'inline-flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    cursor: 'pointer',
+    fontSize: 11,
+    flex: '0 0 auto',
+  });
 
   // 追加: active cell を移動します。shiftKey=true の場合は cell selection を拡張します。
   const moveActiveCell = (
@@ -1627,9 +1718,8 @@ export function SpreadsheetGrid<T>({
                   return null;
                 }
 
-                const isColumnFiltered = String(
-                  uiState.filters.columnFilters[column.key] ?? '',
-                ).trim().length > 0;
+                const isColumnFiltered =
+                  String(uiState.filters.columnFilters[column.key] ?? '').trim().length > 0;
 
                 return (
                   <div
@@ -1676,7 +1766,7 @@ export function SpreadsheetGrid<T>({
                         height: 22,
                         borderRadius: 9999,
                         backgroundColor: isColumnFiltered ? '#bfdbfe' : '#e2e8f0',
-                        color: '#475569',
+                        color: isColumnFiltered ? '#1d4ed8' : '#475569',
                         fontSize: 11,
                         fontWeight: 700,
                       }}
@@ -1697,6 +1787,7 @@ export function SpreadsheetGrid<T>({
                         style={{
                           minWidth: 0,
                           flex: 1,
+                          color: isColumnFiltered ? '#1d4ed8' : '#334155',
                           overflow: 'hidden',
                           textOverflow: 'ellipsis',
                           whiteSpace: 'nowrap',
@@ -1720,25 +1811,10 @@ export function SpreadsheetGrid<T>({
                             handleColumnSortButtonPointerDown(column.key, event)
                           }
                           title="並び替え"
-                          style={{
-                            border: '1px solid #cbd5e1',
-                            background: '#ffffff',
-                            color:
-                              uiState.sort.columnKey === column.key &&
-                              uiState.sort.direction
-                                ? '#2563eb'
-                                : '#475569',
-                            borderRadius: 6,
-                            width: 24,
-                            height: 24,
-                            padding: 0,
-                            display: 'inline-flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            cursor: 'pointer',
-                            fontSize: 11,
-                            flex: '0 0 auto',
-                          }}
+                          style={getHeaderActionButtonStyle(
+                            uiState.sort.columnKey === column.key &&
+                              uiState.sort.direction !== null,
+                          )}
                         >
                           {getSortIndicator(column.key)}
                         </button>
@@ -1748,29 +1824,143 @@ export function SpreadsheetGrid<T>({
                         <button
                           type="button"
                           onPointerDown={(event) =>
-                            handleColumnFilterButtonPointerDown(column, event)
+                            openColumnFilterPopover(column, event)
                           }
                           title="列フィルター"
-                          style={{
-                            border: '1px solid #cbd5e1',
-                            background: '#ffffff',
-                            color: isColumnFiltered ? '#2563eb' : '#475569',
-                            borderRadius: 6,
-                            width: 24,
-                            height: 24,
-                            padding: 0,
-                            display: 'inline-flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            cursor: 'pointer',
-                            fontSize: 11,
-                            flex: '0 0 auto',
-                          }}
+                          style={getHeaderActionButtonStyle(isColumnFiltered)}
                         >
                           {isColumnFiltered ? '●' : '○'}
                         </button>
                       ) : null}
                     </div>
+
+                    {filterPopoverState?.columnKey === column.key ? (
+                      <div
+                        ref={filterPopoverRef}
+                        onPointerDown={(event) => {
+                          event.preventDefault();
+                          event.stopPropagation();
+                        }}
+                        style={{
+                          position: 'absolute',
+                          top: headerHeight - 2,
+                          right: 8,
+                          width: 240,
+                          padding: 12,
+                          boxSizing: 'border-box',
+                          border: '1px solid #cbd5e1',
+                          borderRadius: 10,
+                          backgroundColor: '#ffffff',
+                          boxShadow: '0 10px 24px rgba(15, 23, 42, 0.12)',
+                          zIndex: 10,
+                        }}
+                      >
+                        <div
+                          style={{
+                            fontSize: 12,
+                            fontWeight: 700,
+                            color: '#334155',
+                            marginBottom: 8,
+                          }}
+                        >
+                          列フィルター: {column.title || column.key}
+                        </div>
+
+                        <input
+                          type="text"
+                          value={filterPopoverState.draftValue}
+                          onChange={(event) =>
+                            updateFilterPopoverDraft(event.target.value)
+                          }
+                          onKeyDown={(event) => {
+                            if (event.key === 'Enter') {
+                              event.preventDefault();
+                              applyFilterPopoverValue();
+                              return;
+                            }
+
+                            if (event.key === 'Escape') {
+                              event.preventDefault();
+                              closeColumnFilterPopover();
+                            }
+                          }}
+                          placeholder="部分一致で絞り込み"
+                          style={{
+                            width: '100%',
+                            boxSizing: 'border-box',
+                            padding: '8px 10px',
+                            border: '1px solid #cbd5e1',
+                            borderRadius: 8,
+                            outline: 'none',
+                            marginBottom: 8,
+                          }}
+                        />
+
+                        <div
+                          style={{
+                            fontSize: 11,
+                            color: '#64748b',
+                            marginBottom: 10,
+                            whiteSpace: 'nowrap',
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                          }}
+                        >
+                          現在値:
+                          {String(uiState.filters.columnFilters[column.key] ?? '').trim()
+                            ? ` ${String(uiState.filters.columnFilters[column.key])}`
+                            : ' （なし）'}
+                        </div>
+
+                        <div
+                          style={{
+                            display: 'flex',
+                            gap: 8,
+                            justifyContent: 'flex-end',
+                          }}
+                        >
+                          <button
+                            type="button"
+                            onPointerDown={(event) => {
+                              event.preventDefault();
+                              event.stopPropagation();
+                              clearFilterPopoverValue();
+                            }}
+                            style={{
+                              border: '1px solid #cbd5e1',
+                              backgroundColor: '#ffffff',
+                              color: '#475569',
+                              borderRadius: 8,
+                              padding: '6px 10px',
+                              cursor: 'pointer',
+                              fontSize: 12,
+                            }}
+                          >
+                            クリア
+                          </button>
+
+                          <button
+                            type="button"
+                            onPointerDown={(event) => {
+                              event.preventDefault();
+                              event.stopPropagation();
+                              applyFilterPopoverValue();
+                            }}
+                            style={{
+                              border: '1px solid #2563eb',
+                              backgroundColor: '#2563eb',
+                              color: '#ffffff',
+                              borderRadius: 8,
+                              padding: '6px 10px',
+                              cursor: 'pointer',
+                              fontSize: 12,
+                            }}
+                          >
+                            適用
+                          </button>
+                        </div>
+                      </div>
+                    ) : null}
 
                     <div
                       onPointerDown={(event) =>
@@ -1956,4 +2146,3 @@ export function SpreadsheetGrid<T>({
 }
 
 export default SpreadsheetGrid;
-
