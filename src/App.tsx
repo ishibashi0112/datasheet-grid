@@ -1,4 +1,6 @@
 import { useState } from 'react';
+import SpreadsheetGrid from './components/spreadsheet-grid/SpreadsheetGrid';
+import type { GridColumn } from './components/spreadsheet-grid/model/gridTypes';
 
 // 追加: デモ用の行型です。
 type DemoRow = {
@@ -10,35 +12,75 @@ type DemoRow = {
   [key: string]: string | number;
 };
 
+// 追加: 初期ダミー行数です。UX確認用に少し多めにしています。
+const INITIAL_ROW_COUNT = 5000;
+
+// 追加: 初期追加列数です。横スクロールと column virtualization 確認用です。
+const INITIAL_EXTRA_COLUMN_COUNT = 24;
+
 // 追加: オーバーフロー列のキーを生成します。
 const getOverflowColumnKey = (columnIndex: number) => `extra_${columnIndex}`;
 
-function App() {
-  // 追加: バッチ1 の動作確認用データです。
-  const [rows, setRows] = useState<DemoRow[]>([
-    { partNo: 'A-1001', partName: 'フレーム', qty: 2, unit: '個', status: '有効' },
-    { partNo: 'A-1002', partName: 'ボルト', qty: 16, unit: '本', status: '有効' },
-    { partNo: 'A-1003', partName: 'ナット', qty: 16, unit: '個', status: '有効' },
-    { partNo: 'A-1004', partName: 'ワッシャー', qty: 16, unit: '個', status: '有効' },
-    { partNo: 'A-1005', partName: 'カバー', qty: 1, unit: '式', status: '保留' },
-    { partNo: 'A-1006', partName: 'ラベル', qty: 3, unit: '枚', status: '有効' },
-  ]);
+// 追加: ダミー行を生成します。
+const createDemoRows = (count: number): DemoRow[] =>
+  Array.from({ length: count }, (_, index) => {
+    const rowNumber = index + 1;
 
-  // 追加: 列定義を state 化し、paste 時の自動列追加に対応します。
-  const [columns, setColumns] = useState<GridColumn<DemoRow>[]>([
+    return {
+      partNo: `A-${String(1001 + index).padStart(4, '0')}`,
+      partName: `品名-${rowNumber}`,
+      qty: (rowNumber % 25) + 1,
+      unit: ['個', '本', '式', '枚'][index % 4],
+      status: index % 11 === 0 ? '保留' : '有効',
+    };
+  }).map((row, index) => {
+    const nextRow: DemoRow = { ...row };
+
+    // 追加: 確認用に extra 列へダミー値を流し込みます。
+    for (let extraIndex = 0; extraIndex < INITIAL_EXTRA_COLUMN_COUNT; extraIndex += 1) {
+      nextRow[getOverflowColumnKey(5 + extraIndex)] = `R${index + 1}-C${extraIndex + 1}`;
+    }
+
+    return nextRow;
+  });
+
+// 追加: 基本列 + 初期追加列を生成します。
+const createInitialColumns = (): GridColumn<DemoRow>[] => {
+  const baseColumns: GridColumn<DemoRow>[] = [
     { key: 'partNo', title: '品番', width: 150 },
     { key: 'partName', title: '品名', width: 220 },
     { key: 'qty', title: '数量', width: 90 },
     { key: 'unit', title: '単位', width: 90, readOnly: true },
     { key: 'status', title: '状態', width: 120 },
-  ]);
+  ];
+
+  const extraColumns = Array.from(
+    { length: INITIAL_EXTRA_COLUMN_COUNT },
+    (_, index): GridColumn<DemoRow> => ({
+      key: getOverflowColumnKey(5 + index),
+      title: `追加列${index + 1}`,
+      width: 120,
+    }),
+  );
+
+  return [...baseColumns, ...extraColumns];
+};
+
+function App() {
+  // 追加: ダミー行を多めに生成します。
+  const [rows, setRows] = useState<DemoRow[]>(() => createDemoRows(INITIAL_ROW_COUNT));
+
+  // 追加: 列定義も初期追加列込みで生成します。
+  const [columns, setColumns] = useState<GridColumn<DemoRow>[]>(() =>
+    createInitialColumns(),
+  );
 
   return (
     <main
       style={{
         boxSizing: 'border-box',
         width: '100%',
-        maxWidth: 1200,
+        maxWidth: 1600,
         margin: '0 auto',
         padding: '32px 24px 48px',
         textAlign: 'left',
@@ -62,7 +104,10 @@ function App() {
             fontSize: 14,
           }}
         >
-          reducer ベースの SpreadsheetGrid です。行/列選択、copy/paste、editor、row virtualization を含みます。
+          reducer ベースの SpreadsheetGrid です。行/列選択、copy/paste、editor、
+          row virtualization / column virtualization の確認用に、
+          初期行数 {INITIAL_ROW_COUNT.toLocaleString()} 行・
+          初期列数 {columns.length} 列のダミーデータを表示しています。
         </p>
       </header>
 
@@ -103,6 +148,3 @@ function App() {
 }
 
 export default App;
-``
-import SpreadsheetGrid from './components/spreadsheet-grid/SpreadsheetGrid';import type { GridColumn } from './components/spreadsheet-grid/model/gridTypes';
-
