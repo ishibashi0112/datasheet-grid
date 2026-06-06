@@ -1,5 +1,5 @@
-// 追加: 列フィルター UI 整備 + ソート/フィルター見た目強化を反映します。
-import {
+// 追加: 列フィルター UI 整備 + ソート/フィルター見た目強化を反映します。// 追加: 列フィルター UI 整備 + ソ 
+import {  
   useEffect,
   useMemo,
   useCallback,
@@ -37,6 +37,7 @@ import CellEditorLayer, {
   type EditorCommitDirection,
 } from './CellEditorLayer';
 import ColumnFilterPopover from './view/ColumnFilterPopover';
+import { useFilterPopoverController } from './hooks/useFilterPopoverController';
 import type {
   CellCoord,
   GridColumn,
@@ -68,19 +69,7 @@ type SourceRowModel<T> = GridRowModelLike<T> & {
   rowKey: GridRowKey;
 };
 
-// 追加: 列フィルターポップオーバーの状態です。
-type HeaderFilterPopoverState = {
-  columnKey: string;
-  draftValue: string;
-};
-
-// 追加: body 直下 portal popover の配置情報です。
-type FilterPopoverLayout = {
-  top: number;
-  left: number;
-  width: number;
-};
-
+// 追加: Grid 本体です。
 export function SpreadsheetGrid<T>({
   rows,
   columns,
@@ -100,44 +89,64 @@ export function SpreadsheetGrid<T>({
   enableSorting = true,
   className,
 }: SpreadsheetGridProps<T>) {
+  // 追加: Grid ルート参照です。keyboard / paste の起点に使います。
   const gridRootRef = useRef<HTMLDivElement | null>(null);
+  // 追加: drag 中ポインタ位置を保持します。
   const pointerClientRef = useRef<{ x: number; y: number } | null>(null);
+  // 追加: drag 中の端オートスクロールに使う frame id です。
   const autoScrollFrameRef = useRef<number | null>(null);
+  // 追加: body のスクロールコンテナ参照です。row virtualization / column virtualization に使います。
   const bodyScrollRef = useRef<HTMLDivElement | null>(null);
+  // 追加: 編集中の入力値です。editingCell 自体は reducer state を使います。
   const [editorValue, setEditorValue] = useState('');
   const editorActionGuardRef = useRef(false);
+  // 追加: 左上コーナーセル hover 状態です。
   const [isCornerHovered, setIsCornerHovered] = useState(false);
+  // 追加: 行ヘッダー hover 状態です。
   const [hoveredRowIndex, setHoveredRowIndex] = useState<number | null>(null);
+  // 追加: 列ヘッダー hover 状態です。
   const [hoveredColumnIndex, setHoveredColumnIndex] = useState<number | null>(
     null,
   );
-  const [filterPopoverState, setFilterPopoverState] =
-    useState<HeaderFilterPopoverState | null>(null);
-  const [filterPopoverLayout, setFilterPopoverLayout] =
-    useState<FilterPopoverLayout | null>(null);
-  const filterPopoverRef = useRef<HTMLDivElement | null>(null);
-  const filterPopoverAnchorButtonRef = useRef<HTMLButtonElement | null>(null);
-  const filterTextInputRef = useRef<HTMLInputElement | null>(null);
-  const filterSelectRef = useRef<HTMLSelectElement | null>(null);
-  const isFilterPopoverOpen = filterPopoverState !== null;
-  const openedFilterColumnKey = filterPopoverState?.columnKey ?? null;
 
+  // 追加: visible column だけを描画対象にします。
   const visibleColumns = useMemo(
     () => columns.filter((column) => column.visible !== false),
     [columns],
   );
 
+  // 追加: rowKeyGetter のデフォルト実装です。未指定時は source index を使います。
   const resolvedRowKeyGetter = useMemo(
     () => rowKeyGetter ?? ((_row: T, index: number) => index),
     [rowKeyGetter],
   );
 
+  // 追加: reducer 初期化です。列幅などをここで初期化します。
   const [uiState, dispatch] = useReducer(
     gridUiReducer,
     visibleColumns,
     createInitialGridUiState,
   );
 
+  const {
+    filterPopoverState,
+    filterPopoverLayout,
+    filterPopoverRef,
+    filterTextInputRef,
+    filterSelectRef,
+    isFilterPopoverOpen,
+    openedFilterColumn,
+    openColumnFilterPopover,
+    closeColumnFilterPopover,
+    updateFilterPopoverDraft,
+  } = useFilterPopoverController({
+    visibleColumns,
+    columnFilterValues: uiState.filters.columnFilters,
+    enableColumnFilter,
+    gridRootRef,
+  });
+
+  // 追加: columns が変わった際に column width map を同期します。
   useEffect(() => {
     const nextWidths = visibleColumns.reduce<Record<string, number>>(
       (acc, column) => {
@@ -149,6 +158,7 @@ export function SpreadsheetGrid<T>({
     dispatch(gridActions.syncColumnWidths(nextWidths));
   }, [visibleColumns]);
 
+  // 追加: source rows を row model 化します。
   const sourceRowModels = useMemo<SourceRowModel<T>[]>(
     () =>
       rows.map((row, index) => ({
@@ -159,6 +169,7 @@ export function SpreadsheetGrid<T>({
     [rows, resolvedRowKeyGetter],
   );
 
+  // 追加: select フィルター候補を列定義または rows から取得します。
   const getColumnSelectOptions = useCallback(
     (column: GridColumn<T>) => {
       if (column.filterOptions && column.filterOptions.length > 0) {
@@ -192,47 +203,7 @@ export function SpreadsheetGrid<T>({
     [sourceRowModels],
   );
 
-  const updateFilterPopoverLayout = useCallback(() => {
-    if (!openedFilterColumnKey || !filterPopoverAnchorButtonRef.current) {
-      setFilterPopoverLayout(null);
-      return;
-    }
-
-    const anchorRect = filterPopoverAnchorButtonRef.current.getBoundingClientRect();
-
-    const POPUP_WIDTH = 240;
-    const VIEWPORT_MARGIN = 8;
-    const OFFSET_Y = 8;
-    const ESTIMATED_POPUP_HEIGHT = 260;
-
-    let left = anchorRect.right - POPUP_WIDTH;
-    left = Math.max(VIEWPORT_MARGIN, left);
-    left = Math.min(left, window.innerWidth - POPUP_WIDTH - VIEWPORT_MARGIN);
-
-    let top = anchorRect.bottom + OFFSET_Y;
-    if (top + ESTIMATED_POPUP_HEIGHT > window.innerHeight - VIEWPORT_MARGIN) {
-      top = anchorRect.top - ESTIMATED_POPUP_HEIGHT - OFFSET_Y;
-    }
-    top = Math.max(VIEWPORT_MARGIN, top);
-
-    setFilterPopoverLayout((current) => {
-      if (
-        current &&
-        current.top === top &&
-        current.left === left &&
-        current.width === POPUP_WIDTH
-      ) {
-        return current;
-      }
-
-      return {
-        top,
-        left,
-        width: POPUP_WIDTH,
-      };
-    });
-  }, [openedFilterColumnKey]);
-
+  // 追加: グローバルフィルター適用済み row models です。
   const globallyFilteredRowModels = useMemo(
     () =>
       applyGlobalFilter(
@@ -243,6 +214,7 @@ export function SpreadsheetGrid<T>({
     [sourceRowModels, visibleColumns, uiState],
   );
 
+  // 追加: 列フィルターを global filter 後に適用します。
   const columnFilteredRowModels = useMemo(
     () =>
       applyColumnFilters(
@@ -253,31 +225,37 @@ export function SpreadsheetGrid<T>({
     [globallyFilteredRowModels, visibleColumns, uiState.filters.columnFilters],
   );
 
+  // 追加: 最後にソートを適用します。
   const filteredRowModels = useMemo(
     () => applySort(columnFilteredRowModels, visibleColumns, uiState.sort),
     [columnFilteredRowModels, visibleColumns, uiState.sort],
   );
 
+  // 追加: 描画用 rows 配列です。
   const filteredRows = useMemo(
     () => filteredRowModels.map((rowModel) => rowModel.row),
     [filteredRowModels],
   );
 
+  // 追加: filteredRows の元 rows index を保持します。
   const filteredRowSourceIndexes = useMemo(
     () => filteredRowModels.map((rowModel) => rowModel.sourceIndex),
     [filteredRowModels],
   );
 
+  // 追加: filteredRows の rowKey 一覧です。
   const filteredRowKeys = useMemo(
     () => filteredRowModels.map((rowModel) => rowModel.rowKey),
     [filteredRowModels],
   );
 
+  // 追加: 列 geometry を measurement として共通管理します。
   const columnMeasurements = useMemo(
     () => buildColumnMeasurements(visibleColumns, uiState.columnWidths),
     [visibleColumns, uiState.columnWidths],
   );
 
+  // 追加: 列方向の総幅です。overlay / container / virtualization で共通利用します。
   const totalColumnWidth = useMemo(
     () =>
       columnMeasurements.length > 0
@@ -286,6 +264,7 @@ export function SpreadsheetGrid<T>({
     [columnMeasurements],
   );
 
+  // 追加: row virtualizer です。
   const rowVirtualizer = useVirtualizer({
     count: filteredRows.length,
     getScrollElement: () => bodyScrollRef.current,
@@ -294,6 +273,7 @@ export function SpreadsheetGrid<T>({
     useFlushSync: false,
   });
 
+  // 追加: column virtualizer です。
   const columnVirtualizer = useVirtualizer({
     horizontal: true,
     count: visibleColumns.length,
@@ -304,14 +284,17 @@ export function SpreadsheetGrid<T>({
     useFlushSync: false,
   });
 
+  // 追加: 列/行サイズ変化時に virtualizer の measurement を再取得します。
   useEffect(() => {
     rowVirtualizer.measure();
   }, [rowVirtualizer, rowHeight, filteredRows.length]);
 
+  // 追加: column geometry が変わった際に horizontal virtualizer を再計測します。
   useEffect(() => {
     columnVirtualizer.measure();
   }, [columnVirtualizer, columnMeasurements]);
 
+  // 追加: selection drag / column resize drag 中の window pointer イベントを処理します。
   useEffect(() => {
     const handleWindowPointerMove = (event: globalThis.PointerEvent) => {
       pointerClientRef.current = { x: event.clientX, y: event.clientY };
@@ -331,82 +314,25 @@ export function SpreadsheetGrid<T>({
     };
   }, [uiState.dragState]);
 
-  useEffect(() => {
-    if (!openedFilterColumnKey) {
-      return;
-    }
-
-    updateFilterPopoverLayout();
-
-    const handleReposition = () => {
-      updateFilterPopoverLayout();
-    };
-
-    window.addEventListener('resize', handleReposition);
-    window.addEventListener('scroll', handleReposition, true);
-
-    return () => {
-      window.removeEventListener('resize', handleReposition);
-      window.removeEventListener('scroll', handleReposition, true);
-    };
-  }, [openedFilterColumnKey, updateFilterPopoverLayout]);
-
-  useEffect(() => {
-    if (!openedFilterColumnKey || !filterPopoverLayout) {
-      return;
-    }
-
-    const targetColumn = visibleColumns.find(
-      (column) => column.key === openedFilterColumnKey,
-    );
-    const filterType = targetColumn?.filterType ?? 'text';
-
-    let frameId1 = 0;
-    let frameId2 = 0;
-
-    frameId1 = requestAnimationFrame(() => {
-      frameId2 = requestAnimationFrame(() => {
-        if (filterType === 'select') {
-          filterSelectRef.current?.focus();
-          return;
-        }
-
-        const inputElement = filterTextInputRef.current;
-        if (!inputElement) {
-          return;
-        }
-
-        inputElement.focus();
-        const end = inputElement.value.length;
-        inputElement.setSelectionRange(end, end);
-      });
-    });
-
-    return () => {
-      cancelAnimationFrame(frameId1);
-      cancelAnimationFrame(frameId2);
-    };
-  }, [
-    openedFilterColumnKey,
-    filterPopoverLayout?.top,
-    filterPopoverLayout?.left,
-    filterPopoverLayout?.width,
-    visibleColumns,
-  ]);
-
+  // 追加: 仮想行一覧です。
   const virtualRows = rowVirtualizer.getVirtualItems();
+  // 追加: 仮想列一覧です。
   const virtualColumns = columnVirtualizer.getVirtualItems();
+  // 追加: 仮想 body の総高さです。
   const totalBodyHeight = rowVirtualizer.getTotalSize();
 
+  // 追加: visible row の開始・終了 index を保持します。
   const virtualRowIndexes = useMemo(
     () => new Set(virtualRows.map((item) => item.index)),
     [virtualRows],
   );
+  // 追加: visible column の開始・終了 index を保持します。
   const virtualColumnIndexes = useMemo(
     () => new Set(virtualColumns.map((item) => item.index)),
     [virtualColumns],
   );
 
+  // 追加: content サイズが縮んだ場合に scroll を clamp します。
   useEffect(() => {
     if (!bodyScrollRef.current) {
       return;
@@ -428,6 +354,7 @@ export function SpreadsheetGrid<T>({
     }
   }, [totalColumnWidth, totalBodyHeight, rowHeaderWidth, headerHeight]);
 
+  // 追加: active cell の矩形です。overlay 用に使います。
   const activeCellRect = useMemo<ActiveCellOverlayRect | null>(() => {
     if (!uiState.activeCell) {
       return null;
@@ -460,11 +387,13 @@ export function SpreadsheetGrid<T>({
     rowHeight,
   ]);
 
+  // 追加: editor layer は editingCell がある場合に activeCellRect を流用します。
   const editorRect = useMemo(
     () => (uiState.editingCell ? activeCellRect : null),
     [uiState.editingCell, activeCellRect],
   );
 
+  // 追加: active cell が画面外へ出た場合に、scroll container を自動調整して常に表示領域内へ収めます。
   useEffect(() => {
     if (!bodyScrollRef.current || !activeCellRect) {
       return;
@@ -506,6 +435,7 @@ export function SpreadsheetGrid<T>({
     }
   }, [activeCellRect, headerHeight, rowHeaderWidth]);
 
+  // 追加: client 座標から rowIndex / colIndex を推定します。
   const getCellCoordFromClientPoint = useCallback(
     (clientX: number, clientY: number): CellCoord | null => {
       if (
@@ -537,6 +467,7 @@ export function SpreadsheetGrid<T>({
     ],
   );
 
+  // 追加: 現在の dragState に応じて selection を更新します。
   const updateSelectionFromPointer = useCallback(
     (clientX: number, clientY: number) => {
       if (!uiState.dragState || uiState.dragState.type !== 'selection') {
@@ -561,6 +492,7 @@ export function SpreadsheetGrid<T>({
     [getCellCoordFromClientPoint, uiState.dragState],
   );
 
+  // 追加: 範囲選択中、端に近づいたら自動スクロールします。
   useEffect(() => {
     if (uiState.dragState?.type !== 'selection') {
       if (autoScrollFrameRef.current !== null) {
@@ -613,6 +545,7 @@ export function SpreadsheetGrid<T>({
     };
   }, [uiState.dragState, updateSelectionFromPointer]);
 
+  // 追加: 現在の selection が「表全体選択」かどうかを判定します。
   const isWholeGridSelected = useMemo(() => {
     if (
       filteredRows.length === 0 ||
@@ -630,6 +563,7 @@ export function SpreadsheetGrid<T>({
     );
   }, [uiState.selection, filteredRows.length, visibleColumns.length]);
 
+  // 追加: 全体選択の実行処理を共通化します。
   const selectEntireGrid = useCallback(() => {
     if (filteredRows.length === 0 || visibleColumns.length === 0) {
       return;
@@ -645,6 +579,7 @@ export function SpreadsheetGrid<T>({
     dispatch(gridActions.activateCell(startCell));
   }, [filteredRows.length, visibleColumns.length]);
 
+  // 追加: 全体選択時の copy を専用経路で行います。
   const serializeWholeGridToTsv = useCallback(() => {
     if (filteredRows.length === 0 || visibleColumns.length === 0) {
       return '';
@@ -663,6 +598,7 @@ export function SpreadsheetGrid<T>({
       .join('\n');
   }, [filteredRows, visibleColumns]);
 
+  // 追加: 現在の selection を overlay 用矩形へ変換します。
   const selectionOverlayRect = useMemo<SelectionOverlayRect | null>(() => {
     if (!uiState.selection) {
       return null;
@@ -720,6 +656,7 @@ export function SpreadsheetGrid<T>({
     totalColumnWidth,
   ]);
 
+  // 追加: 左上コーナーセルクリック時、全体選択と解除をトグルします。
   const handleCornerHeaderPointerDown = (
     event: PointerEvent<HTMLDivElement>,
   ) => {
@@ -739,6 +676,7 @@ export function SpreadsheetGrid<T>({
     selectEntireGrid();
   };
 
+  // 追加: セルクリック/ドラッグ開始時の処理です。
   const handleCellPointerDown = (
     cell: CellCoord,
     event: PointerEvent<HTMLDivElement>,
@@ -754,6 +692,7 @@ export function SpreadsheetGrid<T>({
     }
   };
 
+  // 追加: ダブルクリック時に編集開始します。
   const handleCellDoubleClick = (cell: CellCoord) => {
     const row = filteredRows[cell.row];
     const column = visibleColumns[cell.col];
@@ -776,12 +715,14 @@ export function SpreadsheetGrid<T>({
     dispatch(gridActions.startEdit(cell));
   };
 
+  // 追加: 単一セルを active + selection へ反映するユーティリティです。
   const activateSingleCell = (cell: CellCoord) => {
     dispatch(gridActions.startSelection(cell));
     dispatch(gridActions.endSelection());
     dispatch(gridActions.activateCell(cell));
   };
 
+  // 追加: 基準セルから移動先セルを計算します。
   const getMovedCell = (
     baseCell: CellCoord,
     deltaRow: number,
@@ -799,6 +740,7 @@ export function SpreadsheetGrid<T>({
     ),
   });
 
+  // 追加: 編集確定です。editorValue を rows へ反映し、必要なら次セルへ移動します。
   const commitEdit = (direction?: EditorCommitDirection) => {
     if (editorActionGuardRef.current || !uiState.editingCell) {
       return;
@@ -840,6 +782,7 @@ export function SpreadsheetGrid<T>({
     dispatch(gridActions.stopEdit());
   };
 
+  // 追加: 編集キャンセルです。editor を閉じるだけです。
   const cancelEdit = () => {
     if (editorActionGuardRef.current) {
       return;
@@ -852,6 +795,7 @@ export function SpreadsheetGrid<T>({
     });
   };
 
+  // 追加: selection drag 中にセルへ入ったら範囲更新します。
   const handleCellPointerEnter = (
     cell: CellCoord,
     event: PointerEvent<HTMLDivElement>,
@@ -869,10 +813,12 @@ export function SpreadsheetGrid<T>({
     dispatch(gridActions.updateSelection(cell));
   };
 
+  // 追加: ブラウザ標準の drag ghost を抑止します。
   const handleNativeDragStart = (event: DragEvent<HTMLDivElement>) => {
     event.preventDefault();
   };
 
+  // 追加: 行ヘッダー選択開始です。
   const handleRowHeaderPointerDown = (
     rowIndex: number,
     event: PointerEvent<HTMLDivElement>,
@@ -885,6 +831,7 @@ export function SpreadsheetGrid<T>({
     dispatch(gridActions.startRowSelection(rowIndex));
   };
 
+  // 追加: 行ヘッダードラッグ中の更新です。
   const handleRowHeaderPointerEnter = (
     rowIndex: number,
     event: PointerEvent<HTMLDivElement>,
@@ -899,6 +846,7 @@ export function SpreadsheetGrid<T>({
     dispatch(gridActions.updateRowSelection(rowIndex));
   };
 
+  // 追加: 列ヘッダー選択開始です。
   const handleColumnHeaderPointerDown = (
     colIndex: number,
     event: PointerEvent<HTMLDivElement>,
@@ -911,6 +859,7 @@ export function SpreadsheetGrid<T>({
     dispatch(gridActions.startColumnSelection(colIndex));
   };
 
+  // 追加: 列ヘッダードラッグ中の更新です。
   const handleColumnHeaderPointerEnter = (
     colIndex: number,
     event: PointerEvent<HTMLDivElement>,
@@ -925,6 +874,7 @@ export function SpreadsheetGrid<T>({
     dispatch(gridActions.updateColumnSelection(colIndex));
   };
 
+  // 追加: column resize 開始処理です。
   const handleColumnResizePointerDown = (
     column: GridColumn<T>,
     event: PointerEvent<HTMLDivElement>,
@@ -942,6 +892,7 @@ export function SpreadsheetGrid<T>({
     );
   };
 
+  // 追加: copy 処理です。selection を TSV にしてクリップボードへ書き込みます。
   const handleCopy = async () => {
     const text = isWholeGridSelected
       ? serializeWholeGridToTsv()
@@ -968,6 +919,7 @@ export function SpreadsheetGrid<T>({
     }
   };
 
+  // 追加: ソート状態に応じた表示記号を返します。
   const getSortIndicator = (columnKey: string) => {
     if (
       !enableSorting ||
@@ -979,6 +931,7 @@ export function SpreadsheetGrid<T>({
     return uiState.sort.direction === 'asc' ? '↑' : '↓';
   };
 
+  // 追加: 列ソートを asc -> desc -> none で循環させます。
   const cycleColumnSort = (columnKey: string) => {
     if (!enableSorting) {
       return;
@@ -994,53 +947,7 @@ export function SpreadsheetGrid<T>({
     dispatch(gridActions.clearSort());
   };
 
-  const openColumnFilterPopover = (
-    column: GridColumn<T>,
-    event: PointerEvent<HTMLButtonElement>,
-  ) => {
-    event.preventDefault();
-    event.stopPropagation();
-    if (!enableColumnFilter) {
-      return;
-    }
-
-    if (document.activeElement instanceof HTMLElement) {
-      document.activeElement.blur();
-    }
-    gridRootRef.current?.blur();
-
-    filterPopoverAnchorButtonRef.current = event.currentTarget;
-
-    setFilterPopoverState({
-      columnKey: column.key,
-      draftValue: String(uiState.filters.columnFilters[column.key] ?? ''),
-    });
-  };
-
-  const closeColumnFilterPopover = useCallback(() => {
-    setFilterPopoverState(null);
-    setFilterPopoverLayout(null);
-    filterPopoverAnchorButtonRef.current = null;
-    filterTextInputRef.current = null;
-    filterSelectRef.current = null;
-
-    requestAnimationFrame(() => {
-      gridRootRef.current?.focus();
-    });
-  }, []);
-
-  const updateFilterPopoverDraft = (value: string) => {
-    setFilterPopoverState((current) => {
-      if (!current) {
-        return current;
-      }
-      return {
-        ...current,
-        draftValue: value,
-      };
-    });
-  };
-
+  // 追加: フィルター draft を適用します。
   const applyFilterPopoverValue = () => {
     if (!filterPopoverState) {
       return;
@@ -1067,6 +974,7 @@ export function SpreadsheetGrid<T>({
     closeColumnFilterPopover();
   };
 
+  // 追加: フィルター draft をクリアします。
   const clearFilterPopoverValue = () => {
     if (!filterPopoverState) {
       return;
@@ -1075,6 +983,7 @@ export function SpreadsheetGrid<T>({
     closeColumnFilterPopover();
   };
 
+  // 追加: ソートボタン押下です。列選択開始と競合しないよう stopPropagation します。
   const handleColumnSortButtonPointerDown = (
     columnKey: string,
     event: PointerEvent<HTMLButtonElement>,
@@ -1084,26 +993,7 @@ export function SpreadsheetGrid<T>({
     cycleColumnSort(columnKey);
   };
 
-  useEffect(() => {
-    if (!filterPopoverState) {
-      return;
-    }
-    const handleWindowPointerDown = (event: globalThis.PointerEvent) => {
-      const targetNode = event.target as Node | null;
-      if (!targetNode) {
-        return;
-      }
-      if (filterPopoverRef.current?.contains(targetNode)) {
-        return;
-      }
-      closeColumnFilterPopover();
-    };
-    window.addEventListener('pointerdown', handleWindowPointerDown);
-    return () => {
-      window.removeEventListener('pointerdown', handleWindowPointerDown);
-    };
-  }, [filterPopoverState, closeColumnFilterPopover]);
-
+  // 追加: ソート/フィルターボタンの見た目を返します。
   const getHeaderActionButtonStyle = (isActive: boolean): CSSProperties => ({
     border: '1px solid #cbd5e1',
     backgroundColor: isActive ? '#dbeafe' : '#ffffff',
@@ -1120,6 +1010,7 @@ export function SpreadsheetGrid<T>({
     flex: '0 0 auto',
   });
 
+  // 追加: active cell を移動します。shiftKey=true の場合は cell selection を拡張します。
   const moveActiveCell = (
     deltaRow: number,
     deltaCol: number,
@@ -1149,11 +1040,15 @@ export function SpreadsheetGrid<T>({
     dispatch(gridActions.activateCell(nextCell));
   };
 
+  // 追加: Ctrl/Cmd + C や Arrow/Enter を捕捉します。
   const handleKeyDown = async (event: KeyboardEvent<HTMLDivElement>) => {
+    // 追加: popover open 中は grid 側 keyboard を一時停止します。
     if (isFilterPopoverOpen) {
       return;
     }
 
+    // 追加: filter input / select / button 等にフォーカス中は、
+    //       grid 側の keyboard 操作を無効化します。
     if (shouldIgnoreGridKeydown(event.target)) {
       return;
     }
@@ -1166,6 +1061,7 @@ export function SpreadsheetGrid<T>({
       await handleCopy();
       return;
     }
+    // 追加: Ctrl + A / Cmd + A で全体選択、2回目で解除します。
     if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'a') {
       event.preventDefault();
       if (isWholeGridSelected) {
@@ -1236,6 +1132,7 @@ export function SpreadsheetGrid<T>({
     }
   };
 
+  // 追加: paste 処理です。TSV を activeCell 起点に適用し、必要なら行/列を自動拡張します。
   const handlePaste = (event: ClipboardEvent<HTMLDivElement>) => {
     if (!onRowsChange || !uiState.activeCell) {
       return;
@@ -1259,6 +1156,7 @@ export function SpreadsheetGrid<T>({
     let workingColumns = [...visibleColumns];
     let workingSourceIndexes = [...filteredRowSourceIndexes];
 
+    // 追加: 行不足分を createRow で自動追加します。
     const requiredOriginalRowCount = startOriginalRowIndex + matrix.length;
     if (requiredOriginalRowCount > workingRows.length) {
       if (createRow) {
@@ -1269,6 +1167,7 @@ export function SpreadsheetGrid<T>({
       }
     }
 
+    // 追加: 列不足分を createOverflowColumn で自動追加します。
     let maxPasteWidth = 0;
     for (
       let matrixRowIndex = 0;
@@ -1335,6 +1234,7 @@ export function SpreadsheetGrid<T>({
     dispatch(gridActions.activateCell(uiState.activeCell));
   };
 
+  // 追加: 列定義に応じて cell node を描画します。
   const renderCellContent = (
     row: T,
     rowIndex: number,
@@ -1364,6 +1264,7 @@ export function SpreadsheetGrid<T>({
         isSelected,
         isEditing,
         readOnly: readOnlyCell,
+        // 追加: 実編集は CellEditorLayer で行いますが、将来の API 互換のため setValue も残します。
         setValue: (nextValue) => {
           if (!onRowsChange) {
             return;
@@ -1414,16 +1315,6 @@ export function SpreadsheetGrid<T>({
     left: 0,
     zIndex: 1,
   };
-
-  const openedFilterColumn = useMemo(
-    () =>
-      filterPopoverState
-        ? visibleColumns.find(
-            (column) => column.key === filterPopoverState.columnKey,
-          ) ?? null
-        : null,
-    [filterPopoverState, visibleColumns],
-  );
 
   const renderedFilterPopover = openedFilterColumn ? (
     <ColumnFilterPopover
@@ -1480,7 +1371,9 @@ export function SpreadsheetGrid<T>({
           pointerClientRef.current = { x: event.clientX, y: event.clientY };
           updateSelectionFromPointer(event.clientX, event.clientY);
         }}
+        // 追加: popover open 中は grid root を tab フォーカス対象から外します。
         tabIndex={isFilterPopoverOpen ? -1 : 0}
+        // 追加: popover open 中は root の keyboard/paste handler 自体を外します。
         onKeyDown={isFilterPopoverOpen ? undefined : handleKeyDown}
         onPaste={isFilterPopoverOpen ? undefined : handlePaste}
       >
@@ -1514,6 +1407,8 @@ export function SpreadsheetGrid<T>({
                 onPointerLeave={() => setIsCornerHovered(false)}
                 style={{
                   ...rowHeaderCellStyle,
+                  // 追加: 左上コーナーセル専用に見た目を明示して、
+                  //       高さ・中央寄せ・境界線のズレを抑えます。
                   position: 'absolute',
                   top: 0,
                   left: 0,
@@ -1605,9 +1500,7 @@ export function SpreadsheetGrid<T>({
                         minWidth: 22,
                         height: 22,
                         borderRadius: 9999,
-                        backgroundColor: isColumnFiltered
-                          ? '#bfdbfe'
-                          : '#e2e8f0',
+                        backgroundColor: isColumnFiltered ? '#bfdbfe' : '#e2e8f0',
                         color: isColumnFiltered ? '#1d4ed8' : '#475569',
                         fontSize: 11,
                         fontWeight: 700,
@@ -1640,8 +1533,7 @@ export function SpreadsheetGrid<T>({
                               colIndex,
                               width: measurement.size,
                               column,
-                              filterValue:
-                                uiState.filters.columnFilters[column.key],
+                              filterValue: uiState.filters.columnFilters[column.key],
                               isFiltered: isColumnFiltered,
                             })
                           : column.title || column.key}
@@ -1859,3 +1751,4 @@ export function SpreadsheetGrid<T>({
 }
 
 export default SpreadsheetGrid;
+
