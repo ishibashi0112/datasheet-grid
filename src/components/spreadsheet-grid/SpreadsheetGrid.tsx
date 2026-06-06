@@ -43,6 +43,18 @@ import type {
   GridRowKey,
   SpreadsheetGridProps,
 } from './model/gridTypes';
+import {
+  applyColumnFilters,
+  applyGlobalFilter,
+  type GridRowModelLike,
+} from './logic/filtering';
+import { applySort } from './logic/sorting';
+import {
+  buildColumnMeasurements,
+  clamp,
+  findColumnIndexFromOffset,
+} from './logic/geometry';
+import { isPrintableKey, shouldIgnoreGridKeydown } from './logic/domGuards';
 import { toExcelColumnName } from './utils/excelColumnName';
 import { getCellValue, isCellEditable, setCellValue } from './utils/permissions';
 import {
@@ -51,19 +63,8 @@ import {
   serializeSelectionToTsv,
 } from './utils/clipboard';
 
-// 追加: 列の座標計算を共通化するための measurement 型です。
-type ColumnMeasurement<T> = {
-  index: number;
-  column: GridColumn<T>;
-  start: number;
-  size: number;
-  end: number;
-};
-
 // 追加: 元 rows と filteredRows の対応を安定して持つための row model です。
-type SourceRowModel<T> = {
-  row: T;
-  sourceIndex: number;
+type SourceRowModel<T> = GridRowModelLike<T> & {
   rowKey: GridRowKey;
 };
 
@@ -78,265 +79,6 @@ type FilterPopoverLayout = {
   top: number;
   left: number;
   width: number;
-};
-
-// 追加: number フィルターの解釈結果です。
-type ParsedNumberFilter =
-  | {
-      mode: 'comparison';
-      operator: '>' | '>=' | '<' | '<=' | '=';
-      value: number;
-    }
-  | {
-      mode: 'range';
-      min: number;
-      max: number;
-    };
-
-// 追加: columns + columnWidths から、列座標の measurement 一覧を生成します。
-const buildColumnMeasurements = <T,>(
-  columns: GridColumn<T>[],
-  columnWidths: Record<string, number>,
-): ColumnMeasurement<T>[] => {
-  let start = 0;
-  return columns.map((column, index) => {
-    const size = columnWidths[column.key] ?? column.width;
-    const measurement: ColumnMeasurement<T> = {
-      index,
-      column,
-      start,
-      size,
-      end: start + size,
-    };
-    start += size;
-    return measurement;
-  });
-};
-
-// 追加: x 座標から列 index を特定するための二分探索です。
-const findColumnIndexFromOffset = <T,>(
-  measurements: ColumnMeasurement<T>[],
-  offset: number,
-) => {
-  if (measurements.length === 0) {
-    return -1;
-  }
-  if (offset <= 0) {
-    return 0;
-  }
-  let low = 0;
-  let high = measurements.length - 1;
-  while (low <= high) {
-    const mid = Math.floor((low + high) / 2);
-    const current = measurements[mid];
-    if (offset < current.start) {
-      high = mid - 1;
-      continue;
-    }
-    if (offset >= current.end) {
-      low = mid + 1;
-      continue;
-    }
-    return current.index;
-  }
-  return Math.max(0, Math.min(low, measurements.length - 1));
-};
-
-// 追加: 行フィルターの最小実装です。初版では global filter のみをここで扱います。
-const applyGlobalFilter = <T,>(
-  rowModels: SourceRowModel<T>[],
-  columns: GridColumn<T>[],
-  globalText: string,
-) => {
-  const normalizedFilter = globalText.trim().toLowerCase();
-  if (!normalizedFilter) {
-    return rowModels;
-  }
-  return rowModels.filter((rowModel) =>
-    columns.some((column) => {
-      const value = getCellValue(rowModel.row, column);
-      return String(value ?? '').toLowerCase().includes(normalizedFilter);
-    }),
-  );
-};
-
-// 追加: number フィルター式を解釈します。
-const parseNumberFilterExpression = (
-  rawValue: string,
-): ParsedNumberFilter | null => {
-  const normalized = rawValue.trim();
-  if (!normalized) {
-    return null;
-  }
-
-  const rangeMatch = normalized.match(
-    /^(-?\d+(?:\.\d+)?)\s*\.\.\s*(-?\d+(?:\.\d+)?)$/,
-  );
-  if (rangeMatch) {
-    const first = Number(rangeMatch[1]);
-    const second = Number(rangeMatch[2]);
-    if (!Number.isFinite(first) || !Number.isFinite(second)) {
-      return null;
-    }
-    return {
-      mode: 'range',
-      min: Math.min(first, second),
-      max: Math.max(first, second),
-    };
-  }
-
-  const comparisonMatch = normalized.match(
-    /^(<=|>=|=|<|>)?\s*(-?\d+(?:\.\d+)?)$/,
-  );
-  if (!comparisonMatch) {
-    return null;
-  }
-
-  return {
-    mode: 'comparison',
-    operator: (comparisonMatch[1] ?? '=') as '>' | '>=' | '<' | '<=' | '=',
-    value: Number(comparisonMatch[2]),
-  };
-};
-
-// 追加: number 型フィルターの評価です。
-const applyNumberFilter = (cellValue: unknown, filterValue: unknown) => {
-  const normalizedFilter = String(filterValue ?? '').trim();
-  if (!normalizedFilter) {
-    return true;
-  }
-
-  const parsedFilter = parseNumberFilterExpression(normalizedFilter);
-  if (!parsedFilter) {
-    // 追加: 式として解釈できない場合は contains にフォールバックします。
-    return String(cellValue ?? '')
-      .toLowerCase()
-      .includes(normalizedFilter.toLowerCase());
-  }
-
-  const numericCellValue = Number(cellValue);
-  if (!Number.isFinite(numericCellValue)) {
-    return false;
-  }
-
-  if (parsedFilter.mode === 'range') {
-    return (
-      numericCellValue >= parsedFilter.min &&
-      numericCellValue <= parsedFilter.max
-    );
-  }
-
-  switch (parsedFilter.operator) {
-    case '>':
-      return numericCellValue > parsedFilter.value;
-    case '>=':
-      return numericCellValue >= parsedFilter.value;
-    case '<':
-      return numericCellValue < parsedFilter.value;
-    case '<=':
-      return numericCellValue <= parsedFilter.value;
-    case '=':
-    default:
-      return numericCellValue === parsedFilter.value;
-  }
-};
-
-// 追加: 列ごとのフィルターを適用します。text / number / select の最小実装です。
-//       column.filterFn がある場合はそれを優先します。
-const applyColumnFilters = <T,>(
-  rowModels: SourceRowModel<T>[],
-  columns: GridColumn<T>[],
-  columnFilters: Record<string, unknown>,
-) => {
-  return rowModels.filter((rowModel) =>
-    columns.every((column) => {
-      const filterValue = columnFilters[column.key];
-      const normalizedFilter = String(filterValue ?? '').trim().toLowerCase();
-      if (!normalizedFilter) {
-        return true;
-      }
-      if (column.filterFn) {
-        return column.filterFn(rowModel.row, filterValue);
-      }
-
-      const cellValue = getCellValue(rowModel.row, column);
-      const filterType = column.filterType ?? 'text';
-
-      if (filterType === 'number') {
-        return applyNumberFilter(cellValue, filterValue);
-      }
-
-      if (filterType === 'select') {
-        return String(cellValue ?? '') === String(filterValue ?? '');
-      }
-
-      return String(cellValue ?? '').toLowerCase().includes(normalizedFilter);
-    }),
-  );
-};
-
-// 追加: 値比較を行います。数値化できるものは数値比較し、
-//       それ以外は文字列比較へフォールバックします。
-const compareUnknownValues = (left: unknown, right: unknown) => {
-  const leftNumber = Number(left);
-  const rightNumber = Number(right);
-  const bothNumeric = Number.isFinite(leftNumber) && Number.isFinite(rightNumber);
-  if (bothNumeric) {
-    return leftNumber - rightNumber;
-  }
-  return String(left ?? '').localeCompare(String(right ?? ''), 'ja', {
-    numeric: true,
-    sensitivity: 'base',
-  });
-};
-
-// 追加: 単一列ソートを適用します。初版は 1列のみ扱います。
-const applySort = <T,>(
-  rowModels: SourceRowModel<T>[],
-  columns: GridColumn<T>[],
-  sort: { columnKey: string | null; direction: 'asc' | 'desc' | null },
-) => {
-  if (!sort.columnKey || !sort.direction) {
-    return rowModels;
-  }
-  const column = columns.find((item) => item.key === sort.columnKey);
-  if (!column) {
-    return rowModels;
-  }
-  const multiplier = sort.direction === 'asc' ? 1 : -1;
-  return [...rowModels].sort((leftRowModel, rightRowModel) => {
-    const compared = compareUnknownValues(
-      getCellValue(leftRowModel.row, column),
-      getCellValue(rightRowModel.row, column),
-    );
-    if (compared !== 0) {
-      return compared * multiplier;
-    }
-    // 追加: 安定ソートのため sourceIndex を tie-breaker にします。
-    return leftRowModel.sourceIndex - rightRowModel.sourceIndex;
-  });
-};
-
-// 追加: 値を min/max に収めるユーティリティです。
-const clamp = (value: number, min: number, max: number) =>
-  Math.min(Math.max(value, min), max);
-
-// 追加: 文字キー入力で編集開始する判定です。
-const isPrintableKey = (event: KeyboardEvent<HTMLDivElement>) =>
-  event.key.length === 1 && !event.ctrlKey && !event.metaKey && !event.altKey;
-
-// 追加: input/select/textarea/button/contenteditable 配下では
-//       grid のキーボードショートカットを発火させないための判定です。
-const shouldIgnoreGridKeydown = (eventTarget: EventTarget | null) => {
-  if (!(eventTarget instanceof HTMLElement)) {
-    return false;
-  }
-
-  const interactiveElement = eventTarget.closest(
-    'input, textarea, select, button, [contenteditable="true"]',
-  );
-
-  return interactiveElement !== null;
 };
 
 // 追加: Grid 本体です。
