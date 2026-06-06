@@ -1,4 +1,4 @@
-import type { CellCoord } from './gridTypes';
+import type { CellCoord, GridSortDirection } from './gridTypes';
 
 // 追加: Grid UI action の union 型です。
 export type GridUiAction =
@@ -27,7 +27,9 @@ export type GridUiAction =
   | { type: 'filter/setGlobal'; value: string }
   | { type: 'filter/setColumn'; columnKey: string; value: unknown }
   | { type: 'filter/clearColumn'; columnKey: string }
-  | { type: 'filter/resetAll' };
+  | { type: 'filter/resetAll' }
+  | { type: 'sort/set'; columnKey: string; direction: GridSortDirection }
+  | { type: 'sort/clear' };
 
 // 追加: action creator 群です。UI から文字列リテラルを散らさないために定義します。
 export const gridActions = {
@@ -113,5 +115,15 @@ export const gridActions = {
   resetAllFilters: (): GridUiAction => ({
     type: 'filter/resetAll',
   }),
+  setSort: (
+    columnKey: string,
+    direction: GridSortDirection,
+  ): GridUiAction => ({
+    type: 'sort/set',
+    columnKey,
+    direction,
+  }),
+  clearSort: (): GridUiAction => ({
+    type: 'sort/clear',
+  }),
 };
-``

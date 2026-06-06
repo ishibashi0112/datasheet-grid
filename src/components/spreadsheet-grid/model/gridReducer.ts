@@ -31,6 +31,11 @@ export const createInitialGridUiState = <T,>(
     globalText: '',
     columnFilters: {},
   },
+  // 追加: 初版は単一列ソートのみ保持します。
+  sort: {
+    columnKey: null,
+    direction: null,
+  },
 });
 
 // 追加: Grid の UI state reducer 本体です。
@@ -275,6 +280,24 @@ export const gridUiReducer = (
         filters: {
           globalText: '',
           columnFilters: {},
+        },
+      };
+
+    case 'sort/set':
+      return {
+        ...state,
+        sort: {
+          columnKey: action.columnKey,
+          direction: action.direction,
+        },
+      };
+
+    case 'sort/clear':
+      return {
+        ...state,
+        sort: {
+          columnKey: null,
+          direction: null,
         },
       };
 

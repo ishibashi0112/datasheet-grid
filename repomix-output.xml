@@ -1741,6 +1741,8 @@ export const applyClipboardMatrixToRows = <T,>(
 
 <file path="src/App.tsx">
 import { useState } from 'react';
+import SpreadsheetGrid from './components/spreadsheet-grid/SpreadsheetGrid';
+import type { GridColumn } from './components/spreadsheet-grid/model/gridTypes';
 
 // 追加: デモ用の行型です。
 type DemoRow = {
@@ -1752,35 +1754,75 @@ type DemoRow = {
   [key: string]: string | number;
 };
 
+// 追加: 初期ダミー行数です。UX確認用に少し多めにしています。
+const INITIAL_ROW_COUNT = 5000;
+
+// 追加: 初期追加列数です。横スクロールと column virtualization 確認用です。
+const INITIAL_EXTRA_COLUMN_COUNT = 24;
+
 // 追加: オーバーフロー列のキーを生成します。
 const getOverflowColumnKey = (columnIndex: number) => `extra_${columnIndex}`;
 
-function App() {
-  // 追加: バッチ1 の動作確認用データです。
-  const [rows, setRows] = useState<DemoRow[]>([
-    { partNo: 'A-1001', partName: 'フレーム', qty: 2, unit: '個', status: '有効' },
-    { partNo: 'A-1002', partName: 'ボルト', qty: 16, unit: '本', status: '有効' },
-    { partNo: 'A-1003', partName: 'ナット', qty: 16, unit: '個', status: '有効' },
-    { partNo: 'A-1004', partName: 'ワッシャー', qty: 16, unit: '個', status: '有効' },
-    { partNo: 'A-1005', partName: 'カバー', qty: 1, unit: '式', status: '保留' },
-    { partNo: 'A-1006', partName: 'ラベル', qty: 3, unit: '枚', status: '有効' },
-  ]);
+// 追加: ダミー行を生成します。
+const createDemoRows = (count: number): DemoRow[] =>
+  Array.from({ length: count }, (_, index) => {
+    const rowNumber = index + 1;
 
-  // 追加: 列定義を state 化し、paste 時の自動列追加に対応します。
-  const [columns, setColumns] = useState<GridColumn<DemoRow>[]>([
+    return {
+      partNo: `A-${String(1001 + index).padStart(4, '0')}`,
+      partName: `品名-${rowNumber}`,
+      qty: (rowNumber % 25) + 1,
+      unit: ['個', '本', '式', '枚'][index % 4],
+      status: index % 11 === 0 ? '保留' : '有効',
+    };
+  }).map((row, index) => {
+    const nextRow: DemoRow = { ...row };
+
+    // 追加: 確認用に extra 列へダミー値を流し込みます。
+    for (let extraIndex = 0; extraIndex < INITIAL_EXTRA_COLUMN_COUNT; extraIndex += 1) {
+      nextRow[getOverflowColumnKey(5 + extraIndex)] = `R${index + 1}-C${extraIndex + 1}`;
+    }
+
+    return nextRow;
+  });
+
+// 追加: 基本列 + 初期追加列を生成します。
+const createInitialColumns = (): GridColumn<DemoRow>[] => {
+  const baseColumns: GridColumn<DemoRow>[] = [
     { key: 'partNo', title: '品番', width: 150 },
     { key: 'partName', title: '品名', width: 220 },
     { key: 'qty', title: '数量', width: 90 },
     { key: 'unit', title: '単位', width: 90, readOnly: true },
     { key: 'status', title: '状態', width: 120 },
-  ]);
+  ];
+
+  const extraColumns = Array.from(
+    { length: INITIAL_EXTRA_COLUMN_COUNT },
+    (_, index): GridColumn<DemoRow> => ({
+      key: getOverflowColumnKey(5 + index),
+      title: `追加列${index + 1}`,
+      width: 120,
+    }),
+  );
+
+  return [...baseColumns, ...extraColumns];
+};
+
+function App() {
+  // 追加: ダミー行を多めに生成します。
+  const [rows, setRows] = useState<DemoRow[]>(() => createDemoRows(INITIAL_ROW_COUNT));
+
+  // 追加: 列定義も初期追加列込みで生成します。
+  const [columns, setColumns] = useState<GridColumn<DemoRow>[]>(() =>
+    createInitialColumns(),
+  );
 
   return (
     <main
       style={{
         boxSizing: 'border-box',
         width: '100%',
-        maxWidth: 1200,
+        maxWidth: 1600,
         margin: '0 auto',
         padding: '32px 24px 48px',
         textAlign: 'left',
@@ -1804,7 +1846,10 @@ function App() {
             fontSize: 14,
           }}
         >
-          reducer ベースの SpreadsheetGrid です。行/列選択、copy/paste、editor、row virtualization を含みます。
+          reducer ベースの SpreadsheetGrid です。行/列選択、copy/paste、editor、
+          row virtualization / column virtualization の確認用に、
+          初期行数 {INITIAL_ROW_COUNT.toLocaleString()} 行・
+          初期列数 {columns.length} 列のダミーデータを表示しています。
         </p>
       </header>
 
@@ -1845,8 +1890,6 @@ function App() {
 }
 
 export default App;
-``
-import SpreadsheetGrid from './components/spreadsheet-grid/SpreadsheetGrid';import type { GridColumn } from './components/spreadsheet-grid/model/gridTypes';
 </file>
 
 <file path="src/components/spreadsheet-grid/model/gridTypes.ts">
@@ -2002,6 +2045,7 @@ export type SpreadsheetGridProps<T> = {
 </file>
 
 <file path="src/components/spreadsheet-grid/SpreadsheetGrid.tsx">
+// 追加: Ctrl+A 2回目解除 + corner / row header / column header hover 統一を反映します。
 import {
   useEffect,
   useMemo,
@@ -2053,11 +2097,77 @@ import {
   serializeSelectionToTsv,
 } from './utils/clipboard';
 
+// 追加: 列の座標計算を共通化するための measurement 型です。
+type ColumnMeasurement<T> = {
+  index: number;
+  column: GridColumn<T>;
+  start: number;
+  size: number;
+  end: number;
+};
+
 // 追加: 元 rows と filteredRows の対応を安定して持つための row model です。
 type SourceRowModel<T> = {
   row: T;
   sourceIndex: number;
   rowKey: GridRowKey;
+};
+
+// 追加: columns + columnWidths から、列座標の measurement 一覧を生成します。
+const buildColumnMeasurements = <T,>(
+  columns: GridColumn<T>[],
+  columnWidths: Record<string, number>,
+): ColumnMeasurement<T>[] => {
+  let start = 0;
+
+  return columns.map((column, index) => {
+    const size = columnWidths[column.key] ?? column.width;
+    const measurement: ColumnMeasurement<T> = {
+      index,
+      column,
+      start,
+      size,
+      end: start + size,
+    };
+    start += size;
+    return measurement;
+  });
+};
+
+// 追加: x 座標から列 index を特定するための二分探索です。
+const findColumnIndexFromOffset = <T,>(
+  measurements: ColumnMeasurement<T>[],
+  offset: number,
+) => {
+  if (measurements.length === 0) {
+    return -1;
+  }
+
+  if (offset <= 0) {
+    return 0;
+  }
+
+  let low = 0;
+  let high = measurements.length - 1;
+
+  while (low <= high) {
+    const mid = Math.floor((low + high) / 2);
+    const current = measurements[mid];
+
+    if (offset < current.start) {
+      high = mid - 1;
+      continue;
+    }
+
+    if (offset >= current.end) {
+      low = mid + 1;
+      continue;
+    }
+
+    return current.index;
+  }
+
+  return Math.max(0, Math.min(low, measurements.length - 1));
 };
 
 // 追加: 行フィルターの最小実装です。初版では global filter のみをここで扱います。
@@ -2080,26 +2190,6 @@ const applyGlobalFilter = <T,>(
   );
 };
 
-// 追加: 指定 index までの列幅合計を求めます。
-const getColumnOffset = <T,>(
-  columns: GridColumn<T>[],
-  columnWidths: Record<string, number>,
-  columnIndex: number,
-) => {
-  let offset = 0;
-
-  for (let index = 0; index < columnIndex; index += 1) {
-    const column = columns[index];
-    if (!column) {
-      continue;
-    }
-
-    offset += columnWidths[column.key] ?? column.width;
-  }
-
-  return offset;
-};
-
 // 追加: 値を min/max に収めるユーティリティです。
 const clamp = (value: number, min: number, max: number) =>
   Math.min(Math.max(value, min), max);
@@ -2108,7 +2198,7 @@ const clamp = (value: number, min: number, max: number) =>
 const isPrintableKey = (event: KeyboardEvent<HTMLDivElement>) =>
   event.key.length === 1 && !event.ctrlKey && !event.metaKey && !event.altKey;
 
-// 追加: Grid 本体です。バッチ6 + 小修正で、drag autoscroll と paste auto expand を追加します。
+// 追加: Grid 本体です。
 export function SpreadsheetGrid<T>({
   rows,
   columns,
@@ -2116,8 +2206,8 @@ export function SpreadsheetGrid<T>({
   onColumnsChange,
   rowKeyGetter,
   createRow,
-  rowHeight = 36,
   createOverflowColumn,
+  rowHeight = 36,
   headerHeight = 40,
   rowHeaderWidth = 56,
   readOnly = false,
@@ -2131,14 +2221,27 @@ export function SpreadsheetGrid<T>({
 
   // 追加: drag 中ポインタ位置を保持します。
   const pointerClientRef = useRef<{ x: number; y: number } | null>(null);
+
+  // 追加: drag 中の端オートスクロールに使う frame id です。
   const autoScrollFrameRef = useRef<number | null>(null);
 
-  // 追加: body のスクロールコンテナ参照です。row virtualization に使います。
+  // 追加: body のスクロールコンテナ参照です。row virtualization / column virtualization に使います。
   const bodyScrollRef = useRef<HTMLDivElement | null>(null);
 
   // 追加: 編集中の入力値です。editingCell 自体は reducer state を使います。
   const [editorValue, setEditorValue] = useState('');
   const editorActionGuardRef = useRef(false);
+
+  // 追加: 左上コーナーセル hover 状態です。
+  const [isCornerHovered, setIsCornerHovered] = useState(false);
+
+  // 追加: 行ヘッダー hover 状態です。
+  const [hoveredRowIndex, setHoveredRowIndex] = useState<number | null>(null);
+
+  // 追加: 列ヘッダー hover 状態です。
+  const [hoveredColumnIndex, setHoveredColumnIndex] = useState<number | null>(
+    null,
+  );
 
   // 追加: visible column だけを描画対象にします。
   const visibleColumns = useMemo(
@@ -2171,31 +2274,6 @@ export function SpreadsheetGrid<T>({
 
     dispatch(gridActions.syncColumnWidths(nextWidths));
   }, [visibleColumns]);
-
-  // 追加: selection drag / column resize drag 中の window pointer イベントを処理します。
-  useEffect(() => {
-    const handleWindowPointerMove = (event: globalThis.PointerEvent) => {
-      // 追加: pointer の最新位置を常に保持します。
-      pointerClientRef.current = { x: event.clientX, y: event.clientY };
-
-      if (uiState.dragState?.type === 'columnResize') {
-        dispatch(gridActions.updateColumnResize(event.clientX));
-      }
-    };
-
-    const handleWindowPointerUp = () => {
-      dispatch(gridActions.endSelection());
-      dispatch(gridActions.endColumnResize());
-    };
-
-    window.addEventListener('pointermove', handleWindowPointerMove);
-    window.addEventListener('pointerup', handleWindowPointerUp);
-
-    return () => {
-      window.removeEventListener('pointermove', handleWindowPointerMove);
-      window.removeEventListener('pointerup', handleWindowPointerUp);
-    };
-  }, [uiState.dragState]);
 
   // 追加: source rows を row model 化します。
   const sourceRowModels = useMemo<SourceRowModel<T>[]>(
@@ -2237,6 +2315,21 @@ export function SpreadsheetGrid<T>({
     [filteredRowModels],
   );
 
+  // 追加: 列 geometry を measurement として共通管理します。
+  const columnMeasurements = useMemo(
+    () => buildColumnMeasurements(visibleColumns, uiState.columnWidths),
+    [visibleColumns, uiState.columnWidths],
+  );
+
+  // 追加: 列方向の総幅です。overlay / container / virtualization で共通利用します。
+  const totalColumnWidth = useMemo(
+    () =>
+      columnMeasurements.length > 0
+        ? columnMeasurements[columnMeasurements.length - 1].end
+        : 0,
+    [columnMeasurements],
+  );
+
   // 追加: row virtualizer です。
   const rowVirtualizer = useVirtualizer({
     count: filteredRows.length,
@@ -2246,8 +2339,57 @@ export function SpreadsheetGrid<T>({
     useFlushSync: false,
   });
 
+  // 追加: column virtualizer です。
+  const columnVirtualizer = useVirtualizer({
+    horizontal: true,
+    count: visibleColumns.length,
+    getScrollElement: () => bodyScrollRef.current,
+    estimateSize: (index) =>
+      columnMeasurements[index]?.size ?? visibleColumns[index]?.width ?? 120,
+    overscan: 4,
+    useFlushSync: false,
+  });
+
+  // 追加: 列/行サイズ変化時に virtualizer の measurement を再取得します。
+  useEffect(() => {
+    rowVirtualizer.measure();
+  }, [rowVirtualizer, rowHeight, filteredRows.length]);
+
+  // 追加: column geometry が変わった際に horizontal virtualizer を再計測します。
+  useEffect(() => {
+    columnVirtualizer.measure();
+  }, [columnVirtualizer, columnMeasurements]);
+
+  // 追加: selection drag / column resize drag 中の window pointer イベントを処理します。
+  useEffect(() => {
+    const handleWindowPointerMove = (event: globalThis.PointerEvent) => {
+      // 追加: pointer の最新位置を常に保持します。
+      pointerClientRef.current = { x: event.clientX, y: event.clientY };
+
+      if (uiState.dragState?.type === 'columnResize') {
+        dispatch(gridActions.updateColumnResize(event.clientX));
+      }
+    };
+
+    const handleWindowPointerUp = () => {
+      dispatch(gridActions.endSelection());
+      dispatch(gridActions.endColumnResize());
+    };
+
+    window.addEventListener('pointermove', handleWindowPointerMove);
+    window.addEventListener('pointerup', handleWindowPointerUp);
+
+    return () => {
+      window.removeEventListener('pointermove', handleWindowPointerMove);
+      window.removeEventListener('pointerup', handleWindowPointerUp);
+    };
+  }, [uiState.dragState]);
+
   // 追加: 仮想行一覧です。
   const virtualRows = rowVirtualizer.getVirtualItems();
+
+  // 追加: 仮想列一覧です。
+  const virtualColumns = columnVirtualizer.getVirtualItems();
 
   // 追加: 仮想 body の総高さです。
   const totalBodyHeight = rowVirtualizer.getTotalSize();
@@ -2258,6 +2400,37 @@ export function SpreadsheetGrid<T>({
     [virtualRows],
   );
 
+  // 追加: visible column の開始・終了 index を保持します。
+  const virtualColumnIndexes = useMemo(
+    () => new Set(virtualColumns.map((item) => item.index)),
+    [virtualColumns],
+  );
+
+  // 追加: content サイズが縮んだ場合に scroll を clamp します。
+  useEffect(() => {
+    if (!bodyScrollRef.current) {
+      return;
+    }
+
+    const scrollElement = bodyScrollRef.current;
+    const maxScrollLeft = Math.max(
+      rowHeaderWidth + totalColumnWidth - scrollElement.clientWidth,
+      0,
+    );
+    const maxScrollTop = Math.max(
+      headerHeight + totalBodyHeight - scrollElement.clientHeight,
+      0,
+    );
+
+    if (scrollElement.scrollLeft > maxScrollLeft) {
+      scrollElement.scrollLeft = maxScrollLeft;
+    }
+
+    if (scrollElement.scrollTop > maxScrollTop) {
+      scrollElement.scrollTop = maxScrollTop;
+    }
+  }, [totalColumnWidth, totalBodyHeight, rowHeaderWidth, headerHeight]);
+
   // 追加: active cell の矩形です。overlay 用に使います。
   const activeCellRect = useMemo<ActiveCellOverlayRect | null>(() => {
     if (!uiState.activeCell) {
@@ -2265,26 +2438,35 @@ export function SpreadsheetGrid<T>({
     }
 
     const { row, col } = uiState.activeCell;
-    if (row < 0 || row >= filteredRows.length || col < 0 || col >= visibleColumns.length) {
+    if (
+      row < 0 ||
+      row >= filteredRows.length ||
+      col < 0 ||
+      col >= visibleColumns.length
+    ) {
       return null;
     }
 
-    const column = visibleColumns[col];
-    if (!column) {
+    const measurement = columnMeasurements[col];
+    if (!measurement) {
       return null;
     }
 
-    const left = getColumnOffset(visibleColumns, uiState.columnWidths, col);
     const top = row * rowHeight;
-    const width = selectColumnWidth(uiState, column.key);
 
     return {
-      left,
+      left: measurement.start,
       top,
-      width,
+      width: measurement.size,
       height: rowHeight,
     };
-  }, [uiState.activeCell, filteredRows.length, visibleColumns, uiState.columnWidths, rowHeight]);
+  }, [
+    uiState.activeCell,
+    filteredRows.length,
+    visibleColumns.length,
+    columnMeasurements,
+    rowHeight,
+  ]);
 
   // 追加: editor layer は editingCell がある場合に activeCellRect を流用します。
   const editorRect = useMemo(
@@ -2292,8 +2474,7 @@ export function SpreadsheetGrid<T>({
     [uiState.editingCell, activeCellRect],
   );
 
-  // 追加: active cell が画面外へ出た場合に、scroll container を自動調整して
-  //       常に表示領域内へ収めます。sticky header / row header 分も考慮します。
+  // 追加: active cell が画面外へ出た場合に、scroll container を自動調整して常に表示領域内へ収めます。
   useEffect(() => {
     if (!bodyScrollRef.current || !activeCellRect) {
       return;
@@ -2332,7 +2513,10 @@ export function SpreadsheetGrid<T>({
       nextScrollLeft = Math.max(cellRight - viewportWidth, 0);
     }
 
-    if (nextScrollTop !== currentScrollTop || nextScrollLeft !== currentScrollLeft) {
+    if (
+      nextScrollTop !== currentScrollTop ||
+      nextScrollLeft !== currentScrollLeft
+    ) {
       scrollElement.scrollTo({
         top: nextScrollTop,
         left: nextScrollLeft,
@@ -2344,7 +2528,11 @@ export function SpreadsheetGrid<T>({
   // 追加: client 座標から rowIndex / colIndex を推定します。
   const getCellCoordFromClientPoint = useCallback(
     (clientX: number, clientY: number): CellCoord | null => {
-      if (!bodyScrollRef.current || filteredRows.length === 0 || visibleColumns.length === 0) {
+      if (
+        !bodyScrollRef.current ||
+        filteredRows.length === 0 ||
+        visibleColumns.length === 0
+      ) {
         return null;
       }
 
@@ -2355,22 +2543,8 @@ export function SpreadsheetGrid<T>({
       const y = scrollElement.scrollTop + clientY - rect.top - headerHeight;
 
       const row = clamp(Math.floor(y / rowHeight), 0, filteredRows.length - 1);
-
-      let remainingX = x;
-      let col = 0;
-
-      for (let index = 0; index < visibleColumns.length; index += 1) {
-        const column = visibleColumns[index];
-        const width = uiState.columnWidths[column.key] ?? column.width;
-
-        if (remainingX <= width) {
-          col = index;
-          break;
-        }
-
-        remainingX -= width;
-        col = index;
-      }
+      const normalizedX = Math.max(x, 0);
+      const col = findColumnIndexFromOffset(columnMeasurements, normalizedX);
 
       return {
         row,
@@ -2379,8 +2553,8 @@ export function SpreadsheetGrid<T>({
     },
     [
       filteredRows.length,
-      visibleColumns,
-      uiState.columnWidths,
+      visibleColumns.length,
+      columnMeasurements,
       rowHeaderWidth,
       headerHeight,
       rowHeight,
@@ -2480,15 +2654,63 @@ export function SpreadsheetGrid<T>({
     };
   }, [uiState.dragState, updateSelectionFromPointer]);
 
-  // 追加: 列幅合計を計算して body の横幅に使います。
-  const totalColumnWidth = useMemo(
-    () =>
-      visibleColumns.reduce(
-        (sum, column) => sum + selectColumnWidth(uiState, column.key),
-        0,
-      ),
-    [uiState, visibleColumns],
-  );
+  // 追加: 現在の selection が「表全体選択」かどうかを判定します。
+  const isWholeGridSelected = useMemo(() => {
+    if (
+      filteredRows.length === 0 ||
+      visibleColumns.length === 0 ||
+      uiState.selection?.type !== 'cell'
+    ) {
+      return false;
+    }
+
+    const normalizedRange = normalizeCellRange(uiState.selection.range);
+
+    return (
+      normalizedRange.start.row === 0 &&
+      normalizedRange.start.col === 0 &&
+      normalizedRange.end.row === filteredRows.length - 1 &&
+      normalizedRange.end.col === visibleColumns.length - 1
+    );
+  }, [uiState.selection, filteredRows.length, visibleColumns.length]);
+
+  // 追加: 全体選択の実行処理を共通化します。
+  const selectEntireGrid = useCallback(() => {
+    if (filteredRows.length === 0 || visibleColumns.length === 0) {
+      return;
+    }
+
+    const startCell = { row: 0, col: 0 };
+    const endCell = {
+      row: filteredRows.length - 1,
+      col: visibleColumns.length - 1,
+    };
+
+    dispatch(gridActions.startSelection(startCell));
+    dispatch(gridActions.updateSelection(endCell));
+    dispatch(gridActions.endSelection());
+    dispatch(gridActions.activateCell(startCell));
+  }, [filteredRows.length, visibleColumns.length]);
+
+  // 追加: 全体選択時の copy を専用経路で行います。
+  const serializeWholeGridToTsv = useCallback(() => {
+    if (filteredRows.length === 0 || visibleColumns.length === 0) {
+      return '';
+    }
+
+    return filteredRows
+      .map((row) =>
+        visibleColumns
+          .map((column) => {
+            const rawValue = getCellValue(row, column);
+            return column.formatClipboardValue
+              ? column.formatClipboardValue(rawValue, row)
+              : String(rawValue ?? '');
+          })
+          .join('\t'),
+      )
+      .join('\n');
+  }, [filteredRows, visibleColumns]);
 
   // 追加: 現在の selection を overlay 用矩形へ変換します。
   const selectionOverlayRect = useMemo<SelectionOverlayRect | null>(() => {
@@ -2498,22 +2720,23 @@ export function SpreadsheetGrid<T>({
 
     if (uiState.selection.type === 'cell') {
       const normalizedRange = normalizeCellRange(uiState.selection.range);
-      const left = getColumnOffset(
-        visibleColumns,
-        uiState.columnWidths,
-        normalizedRange.start.col,
-      );
+      const startMeasurement = columnMeasurements[normalizedRange.start.col];
+      const endMeasurement = columnMeasurements[normalizedRange.end.col];
+
+      if (!startMeasurement || !endMeasurement) {
+        return null;
+      }
+
       const top = normalizedRange.start.row * rowHeight;
-      const width =
-        getColumnOffset(
-          visibleColumns,
-          uiState.columnWidths,
-          normalizedRange.end.col + 1,
-        ) - left;
       const height =
         (normalizedRange.end.row - normalizedRange.start.row + 1) * rowHeight;
 
-      return { left, top, width, height };
+      return {
+        left: startMeasurement.start,
+        top,
+        width: endMeasurement.end - startMeasurement.start,
+        height,
+      };
     }
 
     if (uiState.selection.type === 'row') {
@@ -2535,39 +2758,58 @@ export function SpreadsheetGrid<T>({
       uiState.selection.startCol,
       uiState.selection.endCol,
     );
-    const left = getColumnOffset(
-      visibleColumns,
-      uiState.columnWidths,
-      normalizedRange.startCol,
-    );
-    const width =
-      getColumnOffset(
-        visibleColumns,
-        uiState.columnWidths,
-        normalizedRange.endCol + 1,
-      ) - left;
+    const startMeasurement = columnMeasurements[normalizedRange.startCol];
+    const endMeasurement = columnMeasurements[normalizedRange.endCol];
+
+    if (!startMeasurement || !endMeasurement) {
+      return null;
+    }
 
     return {
-      left,
+      left: startMeasurement.start,
       top: 0,
-      width,
+      width: endMeasurement.end - startMeasurement.start,
       height: filteredRows.length * rowHeight,
     };
   }, [
     uiState.selection,
-    uiState.columnWidths,
-    visibleColumns,
+    columnMeasurements,
     rowHeight,
     filteredRows.length,
     totalColumnWidth,
   ]);
+
+  // 追加: 左上コーナーセルクリック時、全体選択と解除をトグルします。
+  const handleCornerHeaderPointerDown = (
+    event: PointerEvent<HTMLDivElement>,
+  ) => {
+    event.preventDefault();
+
+    if (event.button !== 0) {
+      return;
+    }
+
+    if (filteredRows.length === 0 || visibleColumns.length === 0) {
+      return;
+    }
+
+    gridRootRef.current?.focus();
+
+    // 追加: 2回目クリック時は全体選択解除にします。
+    if (isWholeGridSelected) {
+      dispatch(gridActions.clearSelection());
+      dispatch(gridActions.activateCell(null));
+      return;
+    }
+
+    selectEntireGrid();
+  };
 
   // 追加: セルクリック/ドラッグ開始時の処理です。
   const handleCellPointerDown = (
     cell: CellCoord,
     event: PointerEvent<HTMLDivElement>,
   ) => {
-    // 追加: ネイティブテキスト選択や drag を抑止します。
     event.preventDefault();
 
     if (event.button !== 0) {
@@ -2575,7 +2817,6 @@ export function SpreadsheetGrid<T>({
     }
 
     gridRootRef.current?.focus();
-
     dispatch(gridActions.activateCell(cell));
 
     if (enableRangeSelection) {
@@ -2622,8 +2863,16 @@ export function SpreadsheetGrid<T>({
     deltaRow: number,
     deltaCol: number,
   ): CellCoord => ({
-    row: clamp(baseCell.row + deltaRow, 0, Math.max(filteredRows.length - 1, 0)),
-    col: clamp(baseCell.col + deltaCol, 0, Math.max(visibleColumns.length - 1, 0)),
+    row: clamp(
+      baseCell.row + deltaRow,
+      0,
+      Math.max(filteredRows.length - 1, 0),
+    ),
+    col: clamp(
+      baseCell.col + deltaCol,
+      0,
+      Math.max(visibleColumns.length - 1, 0),
+    ),
   });
 
   // 追加: 編集確定です。editorValue を rows へ反映し、必要なら次セルへ移動します。
@@ -2693,7 +2942,10 @@ export function SpreadsheetGrid<T>({
   };
 
   // 追加: selection drag 中にセルへ入ったら範囲更新します。
-  const handleCellPointerEnter = (cell: CellCoord) => {
+  const handleCellPointerEnter = (
+    cell: CellCoord,
+    event: PointerEvent<HTMLDivElement>,
+  ) => {
     if (!enableRangeSelection) {
       return;
     }
@@ -2705,7 +2957,7 @@ export function SpreadsheetGrid<T>({
       return;
     }
 
-    pointerClientRef.current = pointerClientRef.current ?? null;
+    pointerClientRef.current = { x: event.clientX, y: event.clientY };
     dispatch(gridActions.updateSelection(cell));
   };
 
@@ -2719,7 +2971,6 @@ export function SpreadsheetGrid<T>({
     rowIndex: number,
     event: PointerEvent<HTMLDivElement>,
   ) => {
-    // 追加: ネイティブテキスト選択や drag を抑止します。
     event.preventDefault();
 
     if (event.button !== 0) {
@@ -2727,12 +2978,14 @@ export function SpreadsheetGrid<T>({
     }
 
     gridRootRef.current?.focus();
-
     dispatch(gridActions.startRowSelection(rowIndex));
   };
 
   // 追加: 行ヘッダードラッグ中の更新です。
-  const handleRowHeaderPointerEnter = (rowIndex: number, event: PointerEvent<HTMLDivElement>) => {
+  const handleRowHeaderPointerEnter = (
+    rowIndex: number,
+    event: PointerEvent<HTMLDivElement>,
+  ) => {
     if (
       uiState.dragState?.type !== 'selection' ||
       uiState.dragState.selectionKind !== 'row'
@@ -2740,9 +2993,7 @@ export function SpreadsheetGrid<T>({
       return;
     }
 
-    // 追加: drag 中の現在ポインタ位置を保持します。
     pointerClientRef.current = { x: event.clientX, y: event.clientY };
-
     dispatch(gridActions.updateRowSelection(rowIndex));
   };
 
@@ -2751,7 +3002,6 @@ export function SpreadsheetGrid<T>({
     colIndex: number,
     event: PointerEvent<HTMLDivElement>,
   ) => {
-    // 追加: ネイティブテキスト選択や drag を抑止します。
     event.preventDefault();
 
     if (event.button !== 0) {
@@ -2759,12 +3009,14 @@ export function SpreadsheetGrid<T>({
     }
 
     gridRootRef.current?.focus();
-
     dispatch(gridActions.startColumnSelection(colIndex));
   };
 
   // 追加: 列ヘッダードラッグ中の更新です。
-  const handleColumnHeaderPointerEnter = (colIndex: number, event: PointerEvent<HTMLDivElement>) => {
+  const handleColumnHeaderPointerEnter = (
+    colIndex: number,
+    event: PointerEvent<HTMLDivElement>,
+  ) => {
     if (
       uiState.dragState?.type !== 'selection' ||
       uiState.dragState.selectionKind !== 'col'
@@ -2772,9 +3024,7 @@ export function SpreadsheetGrid<T>({
       return;
     }
 
-    // 追加: drag 中の現在ポインタ位置を保持します。
     pointerClientRef.current = { x: event.clientX, y: event.clientY };
-
     dispatch(gridActions.updateColumnSelection(colIndex));
   };
 
@@ -2799,15 +3049,24 @@ export function SpreadsheetGrid<T>({
 
   // 追加: copy 処理です。selection を TSV にしてクリップボードへ書き込みます。
   const handleCopy = async () => {
-    const text = serializeSelectionToTsv(
-      filteredRows,
-      visibleColumns,
-      uiState.selection as
-        | { type: 'cell'; range: { start: { row: number; col: number }; end: { row: number; col: number } } }
-        | { type: 'row'; startRow: number; endRow: number }
-        | { type: 'col'; startCol: number; endCol: number }
-        | null,
-    );
+    // 追加: 全体選択時は専用経路で TSV を生成します。
+    const text = isWholeGridSelected
+      ? serializeWholeGridToTsv()
+      : serializeSelectionToTsv(
+          filteredRows,
+          visibleColumns,
+          uiState.selection as
+            | {
+                type: 'cell';
+                range: {
+                  start: { row: number; col: number };
+                  end: { row: number; col: number };
+                };
+              }
+            | { type: 'row'; startRow: number; endRow: number }
+            | { type: 'col'; startCol: number; endCol: number }
+            | null,
+        );
 
     if (!text) {
       return;
@@ -2861,6 +3120,20 @@ export function SpreadsheetGrid<T>({
     if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'c') {
       event.preventDefault();
       await handleCopy();
+      return;
+    }
+
+    // 追加: Ctrl + A / Cmd + A で全体選択、2回目で解除します。
+    if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'a') {
+      event.preventDefault();
+
+      if (isWholeGridSelected) {
+        dispatch(gridActions.clearSelection());
+        dispatch(gridActions.activateCell(null));
+        return;
+      }
+
+      selectEntireGrid();
       return;
     }
 
@@ -2974,7 +3247,22 @@ export function SpreadsheetGrid<T>({
     }
 
     // 追加: 列不足分を createOverflowColumn で自動追加します。
-    const maxPasteWidth = Math.max(...matrix.map((row) => row.length));
+    let maxPasteWidth = 0;
+    for (
+      let matrixRowIndex = 0;
+      matrixRowIndex < matrix.length;
+      matrixRowIndex += 1
+    ) {
+      const currentWidth = matrix[matrixRowIndex]?.length ?? 0;
+      if (currentWidth > maxPasteWidth) {
+        maxPasteWidth = currentWidth;
+      }
+    }
+
+    if (maxPasteWidth === 0) {
+      return;
+    }
+
     const requiredColumnCount = startColIndex + maxPasteWidth;
     if (requiredColumnCount > workingColumns.length) {
       if (onColumnsChange && createOverflowColumn) {
@@ -3002,7 +3290,6 @@ export function SpreadsheetGrid<T>({
         ),
     );
 
-    // 追加: 貼り付け後の selection / activeCell を更新します。
     const endRow = clamp(
       uiState.activeCell.row + Math.max(matrix.length - 1, 0),
       0,
@@ -3058,18 +3345,17 @@ export function SpreadsheetGrid<T>({
         isSelected,
         isEditing,
         readOnly: readOnlyCell,
+        // 追加: 実編集は CellEditorLayer で行いますが、将来の API 互換のため setValue も残します。
         setValue: (nextValue) => {
           if (!onRowsChange) {
             return;
           }
 
-          const originalRowIndex = filteredRowSourceIndexes[rowIndex] ?? rowIndex;
+          const originalRowIndex =
+            filteredRowSourceIndexes[rowIndex] ?? rowIndex;
           const nextRows = rows.map((currentRow, index) =>
             index === originalRowIndex
-              ? ({
-                  ...(currentRow as Record<string, unknown>),
-                  [column.key]: nextValue,
-                } as T)
+              ? setCellValue(currentRow, column, nextValue)
               : currentRow,
           );
 
@@ -3142,7 +3428,6 @@ export function SpreadsheetGrid<T>({
         style={gridShellStyle}
         onDragStart={handleNativeDragStart}
         onPointerMoveCapture={(event) => {
-          // 追加: drag 中のポインタ位置を常に更新します。
           pointerClientRef.current = { x: event.clientX, y: event.clientY };
           updateSelectionFromPointer(event.clientX, event.clientY);
         }}
@@ -3160,23 +3445,71 @@ export function SpreadsheetGrid<T>({
           <div
             style={{
               position: 'relative',
+              width: rowHeaderWidth + totalColumnWidth,
               minWidth: rowHeaderWidth + totalColumnWidth,
               height: headerHeight + totalBodyHeight,
             }}
           >
             <div
               style={{
-                display: 'flex',
                 height: headerHeight,
                 position: 'sticky',
                 top: 0,
                 zIndex: 6,
+                backgroundColor: '#f8fafc',
               }}
             >
-              <div style={rowHeaderCellStyle}>#</div>
+              <div
+                onPointerDown={handleCornerHeaderPointerDown}
+                onPointerEnter={() => setIsCornerHovered(true)}
+                onPointerLeave={() => setIsCornerHovered(false)}
+                style={{
+                  ...rowHeaderCellStyle,
+                  // 追加: 左上コーナーセル専用に見た目を明示して、
+                  //       高さ・中央寄せ・境界線のズレを抑えます。
+                  position: 'absolute',
+                  top: 0,
+                  left: 0,
+                  width: rowHeaderWidth,
+                  minWidth: rowHeaderWidth,
+                  height: headerHeight,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  boxSizing: 'border-box',
+                  padding: 0,
+                  lineHeight: 1,
+                  zIndex: 7,
+                  backgroundColor: isWholeGridSelected
+                    ? isCornerHovered
+                      ? '#bfdbfe'
+                      : '#dbeafe'
+                    : isCornerHovered
+                      ? '#e2e8f0'
+                      : '#f8fafc',
+                  borderRight: '1px solid #e5e7eb',
+                  borderBottom: '1px solid #d7dce3',
+                  cursor:
+                    filteredRows.length > 0 && visibleColumns.length > 0
+                      ? 'pointer'
+                      : 'default',
+                }}
+              >
+                #
+              </div>
 
-              {visibleColumns.map((column, colIndex) => {
-                const width = selectColumnWidth(uiState, column.key);
+              {virtualColumns.map((virtualColumn) => {
+                const colIndex = virtualColumn.index;
+                const measurement = columnMeasurements[colIndex];
+                const column = visibleColumns[colIndex];
+
+                if (
+                  !column ||
+                  !measurement ||
+                  !virtualColumnIndexes.has(colIndex)
+                ) {
+                  return null;
+                }
 
                 return (
                   <div
@@ -3184,18 +3517,34 @@ export function SpreadsheetGrid<T>({
                     onPointerDown={(event) =>
                       handleColumnHeaderPointerDown(colIndex, event)
                     }
-                    onPointerEnter={(event) =>
-                      handleColumnHeaderPointerEnter(colIndex, event)
+                    onPointerEnter={(event) => {
+                      setHoveredColumnIndex(colIndex);
+                      handleColumnHeaderPointerEnter(colIndex, event);
+                    }}
+                    onPointerLeave={() =>
+                      setHoveredColumnIndex((current) =>
+                        current === colIndex ? null : current,
+                      )
                     }
                     style={{
-                      position: 'relative',
+                      position: 'absolute',
+                      top: 0,
+                      left: rowHeaderWidth + measurement.start,
                       ...headerCellBaseStyle,
-                      width,
-                      minWidth: width,
+                      width: measurement.size,
+                      minWidth: measurement.size,
                       height: headerHeight,
-                      backgroundColor: selectIsColumnSelected(uiState, colIndex)
-                        ? '#dbeafe'
-                        : '#f8fafc',
+                      backgroundColor: isWholeGridSelected
+                        ? hoveredColumnIndex === colIndex
+                          ? '#bfdbfe'
+                          : '#dbeafe'
+                        : selectIsColumnSelected(uiState, colIndex)
+                          ? hoveredColumnIndex === colIndex
+                            ? '#bfdbfe'
+                            : '#dbeafe'
+                          : hoveredColumnIndex === colIndex
+                            ? '#e2e8f0'
+                            : '#f8fafc',
                     }}
                   >
                     <span
@@ -3218,11 +3567,12 @@ export function SpreadsheetGrid<T>({
                     {column.renderHeader
                       ? column.renderHeader({
                           colIndex,
-                          width,
+                          width: measurement.size,
                           column,
                           filterValue: uiState.filters.columnFilters[column.key],
                           isFiltered:
-                            uiState.filters.columnFilters[column.key] !== undefined,
+                            uiState.filters.columnFilters[column.key] !==
+                            undefined,
                         })
                       : column.title || column.key}
 
@@ -3277,29 +3627,70 @@ export function SpreadsheetGrid<T>({
               }
 
               return (
-                <div key={String(rowKey)} style={{ display: 'flex', minHeight: rowHeight }}>
+                <div
+                  key={String(rowKey)}
+                  style={{ display: 'flex', minHeight: rowHeight }}
+                >
                   <div
-                    onPointerDown={(event) => handleRowHeaderPointerDown(rowIndex, event)}
-                    onPointerEnter={(event) => handleRowHeaderPointerEnter(rowIndex, event)}
+                    onPointerDown={(event) =>
+                      handleRowHeaderPointerDown(rowIndex, event)
+                    }
+                    onPointerEnter={(event) => {
+                      setHoveredRowIndex(rowIndex);
+                      handleRowHeaderPointerEnter(rowIndex, event);
+                    }}
+                    onPointerLeave={() =>
+                      setHoveredRowIndex((current) =>
+                        current === rowIndex ? null : current,
+                      )
+                    }
                     style={{
                       ...rowHeaderCellStyle,
                       position: 'absolute',
                       top: headerHeight + virtualRow.start,
                       left: 0,
+                      zIndex: 5,
                       height: rowHeight,
-                      backgroundColor: selectIsRowSelected(uiState, rowIndex)
-                        ? '#dbeafe'
-                        : '#f8fafc',
+                      backgroundColor: isWholeGridSelected
+                        ? hoveredRowIndex === rowIndex
+                          ? '#bfdbfe'
+                          : '#dbeafe'
+                        : selectIsRowSelected(uiState, rowIndex)
+                          ? hoveredRowIndex === rowIndex
+                            ? '#bfdbfe'
+                            : '#dbeafe'
+                          : hoveredRowIndex === rowIndex
+                            ? '#e2e8f0'
+                            : '#f8fafc',
                       fontWeight: 500,
                     }}
                   >
                     {rowIndex + 1}
                   </div>
 
-                  {visibleColumns.map((column, colIndex) => {
-                    const width = selectColumnWidth(uiState, column.key);
-                    const isActive = selectIsActiveCell(uiState, rowIndex, colIndex);
-                    const isSelected = selectIsCellSelected(uiState, rowIndex, colIndex);
+                  {virtualColumns.map((virtualColumn) => {
+                    const colIndex = virtualColumn.index;
+                    const measurement = columnMeasurements[colIndex];
+                    const column = visibleColumns[colIndex];
+
+                    if (
+                      !column ||
+                      !measurement ||
+                      !virtualColumnIndexes.has(colIndex)
+                    ) {
+                      return null;
+                    }
+
+                    const isActive = selectIsActiveCell(
+                      uiState,
+                      rowIndex,
+                      colIndex,
+                    );
+                    const isSelected = selectIsCellSelected(
+                      uiState,
+                      rowIndex,
+                      colIndex,
+                    );
                     const readOnlyCell = !isCellEditable(
                       { readOnly, canEditCell },
                       rowIndex,
@@ -3312,22 +3703,29 @@ export function SpreadsheetGrid<T>({
                       <div
                         key={`${String(rowKey)}-${column.key}`}
                         onPointerDown={(event) =>
-                          handleCellPointerDown({ row: rowIndex, col: colIndex }, event)
+                          handleCellPointerDown(
+                            { row: rowIndex, col: colIndex },
+                            event,
+                          )
                         }
-                        onPointerEnter={() =>
-                          handleCellPointerEnter({ row: rowIndex, col: colIndex })
+                        onPointerEnter={(event) =>
+                          handleCellPointerEnter(
+                            { row: rowIndex, col: colIndex },
+                            event,
+                          )
                         }
                         onDoubleClick={() =>
-                          handleCellDoubleClick({ row: rowIndex, col: colIndex })
+                          handleCellDoubleClick({
+                            row: rowIndex,
+                            col: colIndex,
+                          })
                         }
                         style={{
                           position: 'absolute',
                           top: headerHeight + virtualRow.start,
-                          left:
-                            rowHeaderWidth +
-                            getColumnOffset(visibleColumns, uiState.columnWidths, colIndex),
-                          width,
-                          minWidth: width,
+                          left: rowHeaderWidth + measurement.start,
+                          width: measurement.size,
+                          minWidth: measurement.size,
                           height: rowHeight,
                           boxSizing: 'border-box',
                           display: 'flex',

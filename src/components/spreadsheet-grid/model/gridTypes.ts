@@ -28,6 +28,15 @@ export type GridFilterState = {
   columnFilters: Record<string, unknown>;
 };
 
+// 追加: 単一列ソート用の方向型です。
+export type GridSortDirection = 'asc' | 'desc' | null;
+
+// 追加: 単一列ソート状態です。初版は multi-sort ではなく 1列のみ扱います。
+export type GridSortState = {
+  columnKey: string | null;
+  direction: GridSortDirection;
+};
+
 // 追加: セル描画に渡すコンテキストです。
 export type CellRenderContext<T> = {
   row: T;
@@ -118,6 +127,7 @@ export type GridUiState = {
     | null;
   columnWidths: Record<string, number>;
   filters: GridFilterState;
+  sort: GridSortState;
 };
 
 // 追加: 公開 props です。
@@ -144,6 +154,7 @@ export type SpreadsheetGridProps<T> = {
   enableColumnResize?: boolean;
   enableGlobalFilter?: boolean;
   enableColumnFilter?: boolean;
+  enableSorting?: boolean;
   className?: string;
 };
 ``

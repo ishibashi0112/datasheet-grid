@@ -1,8 +1,8 @@
-// 追加: Ctrl+A 2回目解除 + corner / row header / column header hover 統一を反映します。
+// 追加: 列フィルター + 単一列ソート基盤を反映します。// 追加: 列,
 import {
-  useEffect,
-  useMemo,
+  useEffect, 
   useCallback,
+  useMemo,
   useReducer,
   useRef,
   useState,
@@ -143,6 +143,81 @@ const applyGlobalFilter = <T,>(
   );
 };
 
+// 追加: 列ごとのフィルターを適用します。初版は text contains を基本にしつつ、
+//       column.filterFn がある場合はそれを優先します。
+const applyColumnFilters = <T,>(
+  rowModels: SourceRowModel<T>[],
+  columns: GridColumn<T>[],
+  columnFilters: Record<string, unknown>,
+) => {
+  return rowModels.filter((rowModel) =>
+    columns.every((column) => {
+      const filterValue = columnFilters[column.key];
+      const normalizedFilter = String(filterValue ?? '').trim().toLowerCase();
+
+      if (!normalizedFilter) {
+        return true;
+      }
+
+      if (column.filterFn) {
+        return column.filterFn(rowModel.row, filterValue);
+      }
+
+      const cellValue = getCellValue(rowModel.row, column);
+      return String(cellValue ?? '').toLowerCase().includes(normalizedFilter);
+    }),
+  );
+};
+
+// 追加: 値比較を行います。数値化できるものは数値比較し、
+//       それ以外は文字列比較へフォールバックします。
+const compareUnknownValues = (left: unknown, right: unknown) => {
+  const leftNumber = Number(left);
+  const rightNumber = Number(right);
+  const bothNumeric = Number.isFinite(leftNumber) && Number.isFinite(rightNumber);
+
+  if (bothNumeric) {
+    return leftNumber - rightNumber;
+  }
+
+  return String(left ?? '').localeCompare(String(right ?? ''), 'ja', {
+    numeric: true,
+    sensitivity: 'base',
+  });
+};
+
+// 追加: 単一列ソートを適用します。初版は 1列のみ扱います。
+const applySort = <T,>(
+  rowModels: SourceRowModel<T>[],
+  columns: GridColumn<T>[],
+  sort: { columnKey: string | null; direction: 'asc' | 'desc' | null },
+) => {
+  if (!sort.columnKey || !sort.direction) {
+    return rowModels;
+  }
+
+  const column = columns.find((item) => item.key === sort.columnKey);
+  if (!column) {
+    return rowModels;
+  }
+
+  const multiplier = sort.direction === 'asc' ? 1 : -1;
+
+  return [...rowModels].sort((leftRowModel, rightRowModel) => {
+    const compared = compareUnknownValues(
+      getCellValue(leftRowModel.row, column),
+      getCellValue(rightRowModel.row, column),
+    );
+
+    if (compared !== 0) {
+      return compared * multiplier;
+    }
+
+    // 追加: 安定ソートのため sourceIndex を tie-breaker にします。
+    return leftRowModel.sourceIndex - rightRowModel.sourceIndex;
+  });
+};
+
 // 追加: 値を min/max に収めるユーティリティです。
 const clamp = (value: number, min: number, max: number) =>
   Math.min(Math.max(value, min), max);
@@ -167,6 +242,8 @@ export function SpreadsheetGrid<T>({
   canEditCell,
   enableRangeSelection = true,
   enableGlobalFilter = true,
+  enableColumnFilter = true,
+  enableSorting = true,
   className,
 }: SpreadsheetGridProps<T>) {
   // 追加: Grid ルート参照です。keyboard / paste の起点に使います。
@@ -240,7 +317,7 @@ export function SpreadsheetGrid<T>({
   );
 
   // 追加: グローバルフィルター適用済み row models です。
-  const filteredRowModels = useMemo(
+  const globallyFilteredRowModels = useMemo(
     () =>
       applyGlobalFilter(
         sourceRowModels,
@@ -248,6 +325,23 @@ export function SpreadsheetGrid<T>({
         selectGlobalFilter(uiState),
       ),
     [sourceRowModels, visibleColumns, uiState],
+  );
+
+  // 追加: 列フィルターを global filter 後に適用します。
+  const columnFilteredRowModels = useMemo(
+    () =>
+      applyColumnFilters(
+        globallyFilteredRowModels,
+        visibleColumns,
+        uiState.filters.columnFilters,
+      ),
+    [globallyFilteredRowModels, visibleColumns, uiState.filters.columnFilters],
+  );
+
+  // 追加: 最後にソートを適用します。
+  const filteredRowModels = useMemo(
+    () => applySort(columnFilteredRowModels, visibleColumns, uiState.sort),
+    [columnFilteredRowModels, visibleColumns, uiState.sort],
   );
 
   // 追加: 描画用 rows 配列です。
@@ -1030,6 +1124,75 @@ export function SpreadsheetGrid<T>({
     }
   };
 
+  // 追加: ソート状態に応じた表示記号を返します。
+  const getSortIndicator = (columnKey: string) => {
+    if (!enableSorting || uiState.sort.columnKey !== columnKey || !uiState.sort.direction) {
+      return '↕';
+    }
+
+    return uiState.sort.direction === 'asc' ? '↑' : '↓';
+  };
+
+  // 追加: 列ソートを asc -> desc -> none で循環させます。
+  const cycleColumnSort = (columnKey: string) => {
+    if (!enableSorting) {
+      return;
+    }
+
+    if (uiState.sort.columnKey !== columnKey || uiState.sort.direction === null) {
+      dispatch(gridActions.setSort(columnKey, 'asc'));
+      return;
+    }
+
+    if (uiState.sort.direction === 'asc') {
+      dispatch(gridActions.setSort(columnKey, 'desc'));
+      return;
+    }
+
+    dispatch(gridActions.clearSort());
+  };
+
+  // 追加: フィルター入力は初版では prompt を使い、後で popover に差し替えやすくします。
+  const handleColumnFilterButtonPointerDown = (
+    column: GridColumn<T>,
+    event: PointerEvent<HTMLButtonElement>,
+  ) => {
+    event.preventDefault();
+    event.stopPropagation();
+
+    if (!enableColumnFilter) {
+      return;
+    }
+
+    const currentValue = String(uiState.filters.columnFilters[column.key] ?? '');
+    const nextValue = window.prompt(
+      `列フィルター: ${column.title || column.key}`,
+      currentValue,
+    );
+
+    if (nextValue === null) {
+      return;
+    }
+
+    const normalized = nextValue.trim();
+    if (!normalized) {
+      dispatch(gridActions.clearColumnFilter(column.key));
+      return;
+    }
+
+    dispatch(gridActions.setColumnFilter(column.key, normalized));
+  };
+
+  // 追加: ソートボタン押下です。列選択開始と競合しないよう stopPropagation します。
+  const handleColumnSortButtonPointerDown = (
+    columnKey: string,
+    event: PointerEvent<HTMLButtonElement>,
+  ) => {
+    event.preventDefault();
+    event.stopPropagation();
+    cycleColumnSort(columnKey);
+  };
+
   // 追加: active cell を移動します。shiftKey=true の場合は cell selection を拡張します。
   const moveActiveCell = (
     deltaRow: number,
@@ -1464,6 +1627,10 @@ export function SpreadsheetGrid<T>({
                   return null;
                 }
 
+                const isColumnFiltered = String(
+                  uiState.filters.columnFilters[column.key] ?? '',
+                ).trim().length > 0;
+
                 return (
                   <div
                     key={column.key}
@@ -1508,7 +1675,7 @@ export function SpreadsheetGrid<T>({
                         minWidth: 22,
                         height: 22,
                         borderRadius: 9999,
-                        backgroundColor: '#e2e8f0',
+                        backgroundColor: isColumnFiltered ? '#bfdbfe' : '#e2e8f0',
                         color: '#475569',
                         fontSize: 11,
                         fontWeight: 700,
@@ -1517,17 +1684,93 @@ export function SpreadsheetGrid<T>({
                       {toExcelColumnName(colIndex)}
                     </span>
 
-                    {column.renderHeader
-                      ? column.renderHeader({
-                          colIndex,
-                          width: measurement.size,
-                          column,
-                          filterValue: uiState.filters.columnFilters[column.key],
-                          isFiltered:
-                            uiState.filters.columnFilters[column.key] !==
-                            undefined,
-                        })
-                      : column.title || column.key}
+                    <div
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        minWidth: 0,
+                        flex: 1,
+                        gap: 6,
+                      }}
+                    >
+                      <div
+                        style={{
+                          minWidth: 0,
+                          flex: 1,
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                          whiteSpace: 'nowrap',
+                        }}
+                      >
+                        {column.renderHeader
+                          ? column.renderHeader({
+                              colIndex,
+                              width: measurement.size,
+                              column,
+                              filterValue: uiState.filters.columnFilters[column.key],
+                              isFiltered: isColumnFiltered,
+                            })
+                          : column.title || column.key}
+                      </div>
+
+                      {enableSorting ? (
+                        <button
+                          type="button"
+                          onPointerDown={(event) =>
+                            handleColumnSortButtonPointerDown(column.key, event)
+                          }
+                          title="並び替え"
+                          style={{
+                            border: '1px solid #cbd5e1',
+                            background: '#ffffff',
+                            color:
+                              uiState.sort.columnKey === column.key &&
+                              uiState.sort.direction
+                                ? '#2563eb'
+                                : '#475569',
+                            borderRadius: 6,
+                            width: 24,
+                            height: 24,
+                            padding: 0,
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            cursor: 'pointer',
+                            fontSize: 11,
+                            flex: '0 0 auto',
+                          }}
+                        >
+                          {getSortIndicator(column.key)}
+                        </button>
+                      ) : null}
+
+                      {enableColumnFilter ? (
+                        <button
+                          type="button"
+                          onPointerDown={(event) =>
+                            handleColumnFilterButtonPointerDown(column, event)
+                          }
+                          title="列フィルター"
+                          style={{
+                            border: '1px solid #cbd5e1',
+                            background: '#ffffff',
+                            color: isColumnFiltered ? '#2563eb' : '#475569',
+                            borderRadius: 6,
+                            width: 24,
+                            height: 24,
+                            padding: 0,
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            cursor: 'pointer',
+                            fontSize: 11,
+                            flex: '0 0 auto',
+                          }}
+                        >
+                          {isColumnFiltered ? '●' : '○'}
+                        </button>
+                      ) : null}
+                    </div>
 
                     <div
                       onPointerDown={(event) =>
@@ -1713,3 +1956,4 @@ export function SpreadsheetGrid<T>({
 }
 
 export default SpreadsheetGrid;
+
