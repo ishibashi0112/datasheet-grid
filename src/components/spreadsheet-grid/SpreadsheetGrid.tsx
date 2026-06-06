@@ -1,9 +1,9 @@
 // 追加: 列フィルター UI 整備 + ソート/フィルター見た目強化を反映します。
 import {
+  useEffect,
   useMemo,
   useCallback,
-  useReducer,  
-  useEffect,
+  useReducer,
   useRef,
   useState,
   type CSSProperties,
@@ -24,7 +24,6 @@ import {
   selectIsActiveCell,
   selectIsCellSelected,
   selectIsEditingCell,
-  selectIsRowSelected,
 } from './model/gridSelectors';
 import SelectionOverlay, {
   type SelectionOverlayRect,
@@ -37,6 +36,7 @@ import CellEditorLayer, {
 } from './CellEditorLayer';
 import ColumnFilterPopover from './view/ColumnFilterPopover';
 import GridHeaderRow from './view/GridHeaderRow';
+import GridBodyLayer from './view/GridBodyLayer';
 import { useFilterPopoverController } from './hooks/useFilterPopoverController';
 import type {
   CellCoord,
@@ -1445,139 +1445,36 @@ export function SpreadsheetGrid<T>({
               onCancel={cancelEdit}
             />
 
-            {virtualRows.map((virtualRow) => {
-              const rowIndex = virtualRow.index;
-              const row = filteredRows[rowIndex];
-              const rowKey = filteredRowKeys[rowIndex] ?? rowIndex;
-              if (!row || !virtualRowIndexes.has(rowIndex)) {
-                return null;
+            <GridBodyLayer
+              filteredRows={filteredRows}
+              filteredRowKeys={filteredRowKeys}
+              visibleColumns={visibleColumns}
+              virtualRows={virtualRows}
+              virtualColumns={virtualColumns}
+              virtualRowIndexes={virtualRowIndexes}
+              virtualColumnIndexes={virtualColumnIndexes}
+              columnMeasurements={columnMeasurements}
+              rowHeaderWidth={rowHeaderWidth}
+              headerHeight={headerHeight}
+              rowHeight={rowHeight}
+              rowHeaderCellStyle={rowHeaderCellStyle}
+              hoveredRowIndex={hoveredRowIndex}
+              isWholeGridSelected={isWholeGridSelected}
+              uiState={uiState}
+              readOnly={readOnly}
+              canEditCell={canEditCell}
+              onRowHeaderPointerDown={handleRowHeaderPointerDown}
+              onRowHeaderPointerEnter={handleRowHeaderPointerEnter}
+              onRowHeaderPointerLeave={(rowIndex) =>
+                setHoveredRowIndex((current) =>
+                  current === rowIndex ? null : current,
+                )
               }
-
-              return (
-                <div
-                  key={String(rowKey)}
-                  style={{ display: 'flex', minHeight: rowHeight }}
-                >
-                  <div
-                    onPointerDown={(event) =>
-                      handleRowHeaderPointerDown(rowIndex, event)
-                    }
-                    onPointerEnter={(event) => {
-                      setHoveredRowIndex(rowIndex);
-                      handleRowHeaderPointerEnter(rowIndex, event);
-                    }}
-                    onPointerLeave={() =>
-                      setHoveredRowIndex((current) =>
-                        current === rowIndex ? null : current,
-                      )
-                    }
-                    style={{
-                      ...rowHeaderCellStyle,
-                      position: 'absolute',
-                      top: headerHeight + virtualRow.start,
-                      left: 0,
-                      zIndex: 5,
-                      height: rowHeight,
-                      backgroundColor: isWholeGridSelected
-                        ? hoveredRowIndex === rowIndex
-                          ? '#bfdbfe'
-                          : '#dbeafe'
-                        : selectIsRowSelected(uiState, rowIndex)
-                          ? hoveredRowIndex === rowIndex
-                            ? '#bfdbfe'
-                            : '#dbeafe'
-                          : hoveredRowIndex === rowIndex
-                            ? '#e2e8f0'
-                            : '#f8fafc',
-                      fontWeight: 500,
-                    }}
-                  >
-                    {rowIndex + 1}
-                  </div>
-
-                  {virtualColumns.map((virtualColumn) => {
-                    const colIndex = virtualColumn.index;
-                    const measurement = columnMeasurements[colIndex];
-                    const column = visibleColumns[colIndex];
-                    if (
-                      !column ||
-                      !measurement ||
-                      !virtualColumnIndexes.has(colIndex)
-                    ) {
-                      return null;
-                    }
-
-                    const isActive = selectIsActiveCell(
-                      uiState,
-                      rowIndex,
-                      colIndex,
-                    );
-                    const isSelected = selectIsCellSelected(
-                      uiState,
-                      rowIndex,
-                      colIndex,
-                    );
-                    const readOnlyCell = !isCellEditable(
-                      { readOnly, canEditCell },
-                      rowIndex,
-                      colIndex,
-                      row,
-                      column,
-                    );
-
-                    return (
-                      <div
-                        key={`${String(rowKey)}-${column.key}`}
-                        onPointerDown={(event) =>
-                          handleCellPointerDown(
-                            { row: rowIndex, col: colIndex },
-                            event,
-                          )
-                        }
-                        onPointerEnter={(event) =>
-                          handleCellPointerEnter(
-                            { row: rowIndex, col: colIndex },
-                            event,
-                          )
-                        }
-                        onDoubleClick={() =>
-                          handleCellDoubleClick({
-                            row: rowIndex,
-                            col: colIndex,
-                          })
-                        }
-                        style={{
-                          position: 'absolute',
-                          top: headerHeight + virtualRow.start,
-                          left: rowHeaderWidth + measurement.start,
-                          width: measurement.size,
-                          minWidth: measurement.size,
-                          height: rowHeight,
-                          boxSizing: 'border-box',
-                          display: 'flex',
-                          alignItems: 'center',
-                          padding: '0 10px',
-                          borderRight: '1px solid #e5e7eb',
-                          borderBottom: '1px solid #e5e7eb',
-                          backgroundColor: isSelected
-                            ? '#ffffff'
-                            : readOnlyCell
-                              ? '#f8fafc'
-                              : '#ffffff',
-                          color: readOnlyCell ? '#64748b' : '#0f172a',
-                          cursor: 'default',
-                          userSelect: 'none',
-                          outline: 'none',
-                          zIndex: isActive ? 3 : 1,
-                        }}
-                      >
-                        {renderCellContent(row, rowIndex, column, colIndex)}
-                      </div>
-                    );
-                  })}
-                </div>
-              );
-            })}
+              onCellPointerDown={handleCellPointerDown}
+              onCellPointerEnter={handleCellPointerEnter}
+              onCellDoubleClick={handleCellDoubleClick}
+              renderCellContent={renderCellContent}
+            />
           </div>
         </div>
       </div>
@@ -1588,5 +1485,3 @@ export function SpreadsheetGrid<T>({
 }
 
 export default SpreadsheetGrid;
-
-
