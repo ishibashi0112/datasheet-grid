@@ -12,6 +12,7 @@ import {
   type KeyboardEvent,
   type PointerEvent,
 } from 'react';
+import { createPortal } from 'react-dom';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { gridActions } from './model/gridActions';
 import { createInitialGridUiState, gridUiReducer } from './model/gridReducer';
@@ -72,13 +73,32 @@ type HeaderFilterPopoverState = {
   draftValue: string;
 };
 
+// 追加: body 直下 portal popover の配置情報です。
+type FilterPopoverLayout = {
+  top: number;
+  left: number;
+  width: number;
+};
+
+// 追加: number フィルターの解釈結果です。
+type ParsedNumberFilter =
+  | {
+      mode: 'comparison';
+      operator: '>' | '>=' | '<' | '<=' | '=';
+      value: number;
+    }
+  | {
+      mode: 'range';
+      min: number;
+      max: number;
+    };
+
 // 追加: columns + columnWidths から、列座標の measurement 一覧を生成します。
 const buildColumnMeasurements = <T,>(
   columns: GridColumn<T>[],
   columnWidths: Record<string, number>,
 ): ColumnMeasurement<T>[] => {
   let start = 0;
-
   return columns.map((column, index) => {
     const size = columnWidths[column.key] ?? column.width;
     const measurement: ColumnMeasurement<T> = {
@@ -101,31 +121,24 @@ const findColumnIndexFromOffset = <T,>(
   if (measurements.length === 0) {
     return -1;
   }
-
   if (offset <= 0) {
     return 0;
   }
-
   let low = 0;
   let high = measurements.length - 1;
-
   while (low <= high) {
     const mid = Math.floor((low + high) / 2);
     const current = measurements[mid];
-
     if (offset < current.start) {
       high = mid - 1;
       continue;
     }
-
     if (offset >= current.end) {
       low = mid + 1;
       continue;
     }
-
     return current.index;
   }
-
   return Math.max(0, Math.min(low, measurements.length - 1));
 };
 
@@ -136,11 +149,9 @@ const applyGlobalFilter = <T,>(
   globalText: string,
 ) => {
   const normalizedFilter = globalText.trim().toLowerCase();
-
   if (!normalizedFilter) {
     return rowModels;
   }
-
   return rowModels.filter((rowModel) =>
     columns.some((column) => {
       const value = getCellValue(rowModel.row, column);
@@ -149,7 +160,88 @@ const applyGlobalFilter = <T,>(
   );
 };
 
-// 追加: 列ごとのフィルターを適用します。初版は text contains を基本にしつつ、
+// 追加: number フィルター式を解釈します。
+const parseNumberFilterExpression = (
+  rawValue: string,
+): ParsedNumberFilter | null => {
+  const normalized = rawValue.trim();
+  if (!normalized) {
+    return null;
+  }
+
+  const rangeMatch = normalized.match(
+    /^(-?\d+(?:\.\d+)?)\s*\.\.\s*(-?\d+(?:\.\d+)?)$/,
+  );
+  if (rangeMatch) {
+    const first = Number(rangeMatch[1]);
+    const second = Number(rangeMatch[2]);
+    if (!Number.isFinite(first) || !Number.isFinite(second)) {
+      return null;
+    }
+    return {
+      mode: 'range',
+      min: Math.min(first, second),
+      max: Math.max(first, second),
+    };
+  }
+
+  const comparisonMatch = normalized.match(
+    /^(<=|>=|=|<|>)?\s*(-?\d+(?:\.\d+)?)$/,
+  );
+  if (!comparisonMatch) {
+    return null;
+  }
+
+  return {
+    mode: 'comparison',
+    operator: (comparisonMatch[1] ?? '=') as '>' | '>=' | '<' | '<=' | '=',
+    value: Number(comparisonMatch[2]),
+  };
+};
+
+// 追加: number 型フィルターの評価です。
+const applyNumberFilter = (cellValue: unknown, filterValue: unknown) => {
+  const normalizedFilter = String(filterValue ?? '').trim();
+  if (!normalizedFilter) {
+    return true;
+  }
+
+  const parsedFilter = parseNumberFilterExpression(normalizedFilter);
+  if (!parsedFilter) {
+    // 追加: 式として解釈できない場合は contains にフォールバックします。
+    return String(cellValue ?? '')
+      .toLowerCase()
+      .includes(normalizedFilter.toLowerCase());
+  }
+
+  const numericCellValue = Number(cellValue);
+  if (!Number.isFinite(numericCellValue)) {
+    return false;
+  }
+
+  if (parsedFilter.mode === 'range') {
+    return (
+      numericCellValue >= parsedFilter.min &&
+      numericCellValue <= parsedFilter.max
+    );
+  }
+
+  switch (parsedFilter.operator) {
+    case '>':
+      return numericCellValue > parsedFilter.value;
+    case '>=':
+      return numericCellValue >= parsedFilter.value;
+    case '<':
+      return numericCellValue < parsedFilter.value;
+    case '<=':
+      return numericCellValue <= parsedFilter.value;
+    case '=':
+    default:
+      return numericCellValue === parsedFilter.value;
+  }
+};
+
+// 追加: 列ごとのフィルターを適用します。text / number / select の最小実装です。
 //       column.filterFn がある場合はそれを優先します。
 const applyColumnFilters = <T,>(
   rowModels: SourceRowModel<T>[],
@@ -160,16 +252,24 @@ const applyColumnFilters = <T,>(
     columns.every((column) => {
       const filterValue = columnFilters[column.key];
       const normalizedFilter = String(filterValue ?? '').trim().toLowerCase();
-
       if (!normalizedFilter) {
         return true;
       }
-
       if (column.filterFn) {
         return column.filterFn(rowModel.row, filterValue);
       }
 
       const cellValue = getCellValue(rowModel.row, column);
+      const filterType = column.filterType ?? 'text';
+
+      if (filterType === 'number') {
+        return applyNumberFilter(cellValue, filterValue);
+      }
+
+      if (filterType === 'select') {
+        return String(cellValue ?? '') === String(filterValue ?? '');
+      }
+
       return String(cellValue ?? '').toLowerCase().includes(normalizedFilter);
     }),
   );
@@ -181,11 +281,9 @@ const compareUnknownValues = (left: unknown, right: unknown) => {
   const leftNumber = Number(left);
   const rightNumber = Number(right);
   const bothNumeric = Number.isFinite(leftNumber) && Number.isFinite(rightNumber);
-
   if (bothNumeric) {
     return leftNumber - rightNumber;
   }
-
   return String(left ?? '').localeCompare(String(right ?? ''), 'ja', {
     numeric: true,
     sensitivity: 'base',
@@ -201,24 +299,19 @@ const applySort = <T,>(
   if (!sort.columnKey || !sort.direction) {
     return rowModels;
   }
-
   const column = columns.find((item) => item.key === sort.columnKey);
   if (!column) {
     return rowModels;
   }
-
   const multiplier = sort.direction === 'asc' ? 1 : -1;
-
   return [...rowModels].sort((leftRowModel, rightRowModel) => {
     const compared = compareUnknownValues(
       getCellValue(leftRowModel.row, column),
       getCellValue(rightRowModel.row, column),
     );
-
     if (compared !== 0) {
       return compared * multiplier;
     }
-
     // 追加: 安定ソートのため sourceIndex を tie-breaker にします。
     return leftRowModel.sourceIndex - rightRowModel.sourceIndex;
   });
@@ -231,6 +324,20 @@ const clamp = (value: number, min: number, max: number) =>
 // 追加: 文字キー入力で編集開始する判定です。
 const isPrintableKey = (event: KeyboardEvent<HTMLDivElement>) =>
   event.key.length === 1 && !event.ctrlKey && !event.metaKey && !event.altKey;
+
+// 追加: input/select/textarea/button/contenteditable 配下では
+//       grid のキーボードショートカットを発火させないための判定です。
+const shouldIgnoreGridKeydown = (eventTarget: EventTarget | null) => {
+  if (!(eventTarget instanceof HTMLElement)) {
+    return false;
+  }
+
+  const interactiveElement = eventTarget.closest(
+    'input, textarea, select, button, [contenteditable="true"]',
+  );
+
+  return interactiveElement !== null;
+};
 
 // 追加: Grid 本体です。
 export function SpreadsheetGrid<T>({
@@ -254,37 +361,41 @@ export function SpreadsheetGrid<T>({
 }: SpreadsheetGridProps<T>) {
   // 追加: Grid ルート参照です。keyboard / paste の起点に使います。
   const gridRootRef = useRef<HTMLDivElement | null>(null);
-
   // 追加: drag 中ポインタ位置を保持します。
   const pointerClientRef = useRef<{ x: number; y: number } | null>(null);
-
   // 追加: drag 中の端オートスクロールに使う frame id です。
   const autoScrollFrameRef = useRef<number | null>(null);
-
   // 追加: body のスクロールコンテナ参照です。row virtualization / column virtualization に使います。
   const bodyScrollRef = useRef<HTMLDivElement | null>(null);
-
   // 追加: 編集中の入力値です。editingCell 自体は reducer state を使います。
   const [editorValue, setEditorValue] = useState('');
   const editorActionGuardRef = useRef(false);
-
   // 追加: 左上コーナーセル hover 状態です。
   const [isCornerHovered, setIsCornerHovered] = useState(false);
-
   // 追加: 行ヘッダー hover 状態です。
   const [hoveredRowIndex, setHoveredRowIndex] = useState<number | null>(null);
-
   // 追加: 列ヘッダー hover 状態です。
   const [hoveredColumnIndex, setHoveredColumnIndex] = useState<number | null>(
     null,
   );
-
   // 追加: 列フィルターポップオーバーの開閉状態です。
   const [filterPopoverState, setFilterPopoverState] =
     useState<HeaderFilterPopoverState | null>(null);
-
+  // 追加: portal popover の画面配置情報です。
+  const [filterPopoverLayout, setFilterPopoverLayout] =
+    useState<FilterPopoverLayout | null>(null);
   // 追加: フィルターポップオーバーの外側クリック判定に使います。
   const filterPopoverRef = useRef<HTMLDivElement | null>(null);
+  // 追加: filter ボタンの DOM を保持し、portal popover の位置計算に使います。
+  const filterPopoverAnchorButtonRef = useRef<HTMLButtonElement | null>(null);
+  // 追加: text filter input の自動 focus 用 ref です。
+  const filterTextInputRef = useRef<HTMLInputElement | null>(null);
+  // 追加: select filter の自動 focus 用 ref です。
+  const filterSelectRef = useRef<HTMLSelectElement | null>(null);
+  // 追加: popover open 状態を boolean で持ち、keyboard / paste 抑止条件に使います。
+  const isFilterPopoverOpen = filterPopoverState !== null;
+  // 追加: draftValue 変更ではなく、open 中の列キー単位で状態を追うための値です。
+  const openedFilterColumnKey = filterPopoverState?.columnKey ?? null;
 
   // 追加: visible column だけを描画対象にします。
   const visibleColumns = useMemo(
@@ -314,7 +425,6 @@ export function SpreadsheetGrid<T>({
       },
       {},
     );
-
     dispatch(gridActions.syncColumnWidths(nextWidths));
   }, [visibleColumns]);
 
@@ -328,6 +438,82 @@ export function SpreadsheetGrid<T>({
       })),
     [rows, resolvedRowKeyGetter],
   );
+
+  // 追加: select フィルター候補を列定義または rows から取得します。
+  const getColumnSelectOptions = useCallback(
+    (column: GridColumn<T>) => {
+      if (column.filterOptions && column.filterOptions.length > 0) {
+        return column.filterOptions;
+      }
+
+      const seen = new Set<string>();
+      const options = sourceRowModels.reduce<{ label: string; value: string }[]>(
+        (acc, rowModel) => {
+          const value = String(getCellValue(rowModel.row, column) ?? '');
+          if (seen.has(value)) {
+            return acc;
+          }
+          seen.add(value);
+          acc.push({
+            value,
+            label: value || '（空白）',
+          });
+          return acc;
+        },
+        [],
+      );
+
+      return options.sort((left, right) =>
+        left.label.localeCompare(right.label, 'ja', {
+          numeric: true,
+          sensitivity: 'base',
+        }),
+      );
+    },
+    [sourceRowModels],
+  );
+
+  // 追加: body 直下 portal popover の表示位置を計算します。
+  const updateFilterPopoverLayout = useCallback(() => {
+    if (!openedFilterColumnKey || !filterPopoverAnchorButtonRef.current) {
+      setFilterPopoverLayout(null);
+      return;
+    }
+
+    const anchorRect = filterPopoverAnchorButtonRef.current.getBoundingClientRect();
+
+    const POPUP_WIDTH = 240;
+    const VIEWPORT_MARGIN = 8;
+    const OFFSET_Y = 8;
+    const ESTIMATED_POPUP_HEIGHT = 260;
+
+    let left = anchorRect.right - POPUP_WIDTH;
+    left = Math.max(VIEWPORT_MARGIN, left);
+    left = Math.min(left, window.innerWidth - POPUP_WIDTH - VIEWPORT_MARGIN);
+
+    let top = anchorRect.bottom + OFFSET_Y;
+    if (top + ESTIMATED_POPUP_HEIGHT > window.innerHeight - VIEWPORT_MARGIN) {
+      top = anchorRect.top - ESTIMATED_POPUP_HEIGHT - OFFSET_Y;
+    }
+    top = Math.max(VIEWPORT_MARGIN, top);
+
+    setFilterPopoverLayout((current) => {
+      if (
+        current &&
+        current.top === top &&
+        current.left === left &&
+        current.width === POPUP_WIDTH
+      ) {
+        return current;
+      }
+
+      return {
+        top,
+        left,
+        width: POPUP_WIDTH,
+      };
+    });
+  }, [openedFilterColumnKey]);
 
   // 追加: グローバルフィルター適用済み row models です。
   const globallyFilteredRowModels = useMemo(
@@ -423,34 +609,96 @@ export function SpreadsheetGrid<T>({
   // 追加: selection drag / column resize drag 中の window pointer イベントを処理します。
   useEffect(() => {
     const handleWindowPointerMove = (event: globalThis.PointerEvent) => {
-      // 追加: pointer の最新位置を常に保持します。
       pointerClientRef.current = { x: event.clientX, y: event.clientY };
-
       if (uiState.dragState?.type === 'columnResize') {
         dispatch(gridActions.updateColumnResize(event.clientX));
       }
     };
-
     const handleWindowPointerUp = () => {
       dispatch(gridActions.endSelection());
       dispatch(gridActions.endColumnResize());
     };
-
     window.addEventListener('pointermove', handleWindowPointerMove);
     window.addEventListener('pointerup', handleWindowPointerUp);
-
     return () => {
       window.removeEventListener('pointermove', handleWindowPointerMove);
       window.removeEventListener('pointerup', handleWindowPointerUp);
     };
   }, [uiState.dragState]);
 
+  // 追加: portal popover の位置を open / resize / scroll に応じて再計算します。
+  useEffect(() => {
+    if (!openedFilterColumnKey) {
+      return;
+    }
+
+    updateFilterPopoverLayout();
+
+    const handleReposition = () => {
+      updateFilterPopoverLayout();
+    };
+
+    window.addEventListener('resize', handleReposition);
+    window.addEventListener('scroll', handleReposition, true);
+
+    return () => {
+      window.removeEventListener('resize', handleReposition);
+      window.removeEventListener('scroll', handleReposition, true);
+    };
+  }, [openedFilterColumnKey, updateFilterPopoverLayout]);
+
+  // 追加: popover が実際に描画され、かつ「開いた直後 / 別列へ切替時」にだけ
+  //       input / select へ自動 focus します。
+  //       draftValue 更新では再実行しないように columnKey ベースで監視します。
+  useEffect(() => {
+    if (!openedFilterColumnKey || !filterPopoverLayout) {
+      return;
+    }
+
+    const targetColumn = visibleColumns.find(
+      (column) => column.key === openedFilterColumnKey,
+    );
+    const filterType = targetColumn?.filterType ?? 'text';
+
+    let frameId1 = 0;
+    let frameId2 = 0;
+
+    // 追加: portal 描画完了をより確実に待ってから focus します。
+    frameId1 = requestAnimationFrame(() => {
+      frameId2 = requestAnimationFrame(() => {
+        if (filterType === 'select') {
+          filterSelectRef.current?.focus();
+          return;
+        }
+
+        const inputElement = filterTextInputRef.current;
+        if (!inputElement) {
+          return;
+        }
+
+        inputElement.focus();
+        // 追加: 全文選択ではなく末尾へ caret を置き、半角入力時の全文置換を避けます。
+        const end = inputElement.value.length;
+        inputElement.setSelectionRange(end, end);
+      });
+    });
+
+    return () => {
+      cancelAnimationFrame(frameId1);
+      cancelAnimationFrame(frameId2);
+    };
+  }, [
+    openedFilterColumnKey,
+    filterPopoverLayout?.top,
+    filterPopoverLayout?.left,
+    filterPopoverLayout?.width,
+    visibleColumns,
+  ]);
+
   // 追加: 仮想行一覧です。
   const virtualRows = rowVirtualizer.getVirtualItems();
-
   // 追加: 仮想列一覧です。
   const virtualColumns = columnVirtualizer.getVirtualItems();
-
   // 追加: 仮想 body の総高さです。
   const totalBodyHeight = rowVirtualizer.getTotalSize();
 
@@ -459,7 +707,6 @@ export function SpreadsheetGrid<T>({
     () => new Set(virtualRows.map((item) => item.index)),
     [virtualRows],
   );
-
   // 追加: visible column の開始・終了 index を保持します。
   const virtualColumnIndexes = useMemo(
     () => new Set(virtualColumns.map((item) => item.index)),
@@ -471,7 +718,6 @@ export function SpreadsheetGrid<T>({
     if (!bodyScrollRef.current) {
       return;
     }
-
     const scrollElement = bodyScrollRef.current;
     const maxScrollLeft = Math.max(
       rowHeaderWidth + totalColumnWidth - scrollElement.clientWidth,
@@ -481,11 +727,9 @@ export function SpreadsheetGrid<T>({
       headerHeight + totalBodyHeight - scrollElement.clientHeight,
       0,
     );
-
     if (scrollElement.scrollLeft > maxScrollLeft) {
       scrollElement.scrollLeft = maxScrollLeft;
     }
-
     if (scrollElement.scrollTop > maxScrollTop) {
       scrollElement.scrollTop = maxScrollTop;
     }
@@ -496,7 +740,6 @@ export function SpreadsheetGrid<T>({
     if (!uiState.activeCell) {
       return null;
     }
-
     const { row, col } = uiState.activeCell;
     if (
       row < 0 ||
@@ -506,14 +749,11 @@ export function SpreadsheetGrid<T>({
     ) {
       return null;
     }
-
     const measurement = columnMeasurements[col];
     if (!measurement) {
       return null;
     }
-
     const top = row * rowHeight;
-
     return {
       left: measurement.start,
       top,
@@ -539,40 +779,31 @@ export function SpreadsheetGrid<T>({
     if (!bodyScrollRef.current || !activeCellRect) {
       return;
     }
-
     const scrollElement = bodyScrollRef.current;
-
     const cellTop = headerHeight + activeCellRect.top;
     const cellBottom = cellTop + activeCellRect.height;
     const cellLeft = rowHeaderWidth + activeCellRect.left;
     const cellRight = cellLeft + activeCellRect.width;
-
     const currentScrollTop = scrollElement.scrollTop;
     const currentScrollLeft = scrollElement.scrollLeft;
     const viewportHeight = scrollElement.clientHeight;
     const viewportWidth = scrollElement.clientWidth;
-
     let nextScrollTop = currentScrollTop;
     let nextScrollLeft = currentScrollLeft;
-
     const visibleTop = currentScrollTop + headerHeight;
     const visibleBottom = currentScrollTop + viewportHeight;
-
     if (cellTop < visibleTop) {
       nextScrollTop = Math.max(cellTop - headerHeight, 0);
     } else if (cellBottom > visibleBottom) {
       nextScrollTop = Math.max(cellBottom - viewportHeight, 0);
     }
-
     const visibleLeft = currentScrollLeft + rowHeaderWidth;
     const visibleRight = currentScrollLeft + viewportWidth;
-
     if (cellLeft < visibleLeft) {
       nextScrollLeft = Math.max(cellLeft - rowHeaderWidth, 0);
     } else if (cellRight > visibleRight) {
       nextScrollLeft = Math.max(cellRight - viewportWidth, 0);
     }
-
     if (
       nextScrollTop !== currentScrollTop ||
       nextScrollLeft !== currentScrollLeft
@@ -595,17 +826,13 @@ export function SpreadsheetGrid<T>({
       ) {
         return null;
       }
-
       const scrollElement = bodyScrollRef.current;
       const rect = scrollElement.getBoundingClientRect();
-
       const x = scrollElement.scrollLeft + clientX - rect.left - rowHeaderWidth;
       const y = scrollElement.scrollTop + clientY - rect.top - headerHeight;
-
       const row = clamp(Math.floor(y / rowHeight), 0, filteredRows.length - 1);
       const normalizedX = Math.max(x, 0);
       const col = findColumnIndexFromOffset(columnMeasurements, normalizedX);
-
       return {
         row,
         col: clamp(col, 0, visibleColumns.length - 1),
@@ -627,22 +854,18 @@ export function SpreadsheetGrid<T>({
       if (!uiState.dragState || uiState.dragState.type !== 'selection') {
         return;
       }
-
       const cell = getCellCoordFromClientPoint(clientX, clientY);
       if (!cell) {
         return;
       }
-
       if (uiState.dragState.selectionKind === 'cell') {
         dispatch(gridActions.updateSelection(cell));
         return;
       }
-
       if (uiState.dragState.selectionKind === 'row') {
         dispatch(gridActions.updateRowSelection(cell.row));
         return;
       }
-
       if (uiState.dragState.selectionKind === 'col') {
         dispatch(gridActions.updateColumnSelection(cell.col));
       }
@@ -659,35 +882,28 @@ export function SpreadsheetGrid<T>({
       }
       return;
     }
-
     const EDGE_THRESHOLD = 24;
     const SCROLL_STEP = 18;
-
     const tick = () => {
       const scrollElement = bodyScrollRef.current;
       const pointer = pointerClientRef.current;
-
       if (!scrollElement || !pointer) {
         autoScrollFrameRef.current = requestAnimationFrame(tick);
         return;
       }
-
       const rect = scrollElement.getBoundingClientRect();
       let nextScrollTop = scrollElement.scrollTop;
       let nextScrollLeft = scrollElement.scrollLeft;
-
       if (pointer.y < rect.top + EDGE_THRESHOLD) {
         nextScrollTop = Math.max(scrollElement.scrollTop - SCROLL_STEP, 0);
       } else if (pointer.y > rect.bottom - EDGE_THRESHOLD) {
         nextScrollTop = scrollElement.scrollTop + SCROLL_STEP;
       }
-
       if (pointer.x < rect.left + EDGE_THRESHOLD) {
         nextScrollLeft = Math.max(scrollElement.scrollLeft - SCROLL_STEP, 0);
       } else if (pointer.x > rect.right - EDGE_THRESHOLD) {
         nextScrollLeft = scrollElement.scrollLeft + SCROLL_STEP;
       }
-
       if (
         nextScrollTop !== scrollElement.scrollTop ||
         nextScrollLeft !== scrollElement.scrollLeft
@@ -697,15 +913,11 @@ export function SpreadsheetGrid<T>({
           left: nextScrollLeft,
           behavior: 'auto',
         });
-
         updateSelectionFromPointer(pointer.x, pointer.y);
       }
-
       autoScrollFrameRef.current = requestAnimationFrame(tick);
     };
-
     autoScrollFrameRef.current = requestAnimationFrame(tick);
-
     return () => {
       if (autoScrollFrameRef.current !== null) {
         cancelAnimationFrame(autoScrollFrameRef.current);
@@ -723,9 +935,7 @@ export function SpreadsheetGrid<T>({
     ) {
       return false;
     }
-
     const normalizedRange = normalizeCellRange(uiState.selection.range);
-
     return (
       normalizedRange.start.row === 0 &&
       normalizedRange.start.col === 0 &&
@@ -739,13 +949,11 @@ export function SpreadsheetGrid<T>({
     if (filteredRows.length === 0 || visibleColumns.length === 0) {
       return;
     }
-
     const startCell = { row: 0, col: 0 };
     const endCell = {
       row: filteredRows.length - 1,
       col: visibleColumns.length - 1,
     };
-
     dispatch(gridActions.startSelection(startCell));
     dispatch(gridActions.updateSelection(endCell));
     dispatch(gridActions.endSelection());
@@ -757,7 +965,6 @@ export function SpreadsheetGrid<T>({
     if (filteredRows.length === 0 || visibleColumns.length === 0) {
       return '';
     }
-
     return filteredRows
       .map((row) =>
         visibleColumns
@@ -777,20 +984,16 @@ export function SpreadsheetGrid<T>({
     if (!uiState.selection) {
       return null;
     }
-
     if (uiState.selection.type === 'cell') {
       const normalizedRange = normalizeCellRange(uiState.selection.range);
       const startMeasurement = columnMeasurements[normalizedRange.start.col];
       const endMeasurement = columnMeasurements[normalizedRange.end.col];
-
       if (!startMeasurement || !endMeasurement) {
         return null;
       }
-
       const top = normalizedRange.start.row * rowHeight;
       const height =
         (normalizedRange.end.row - normalizedRange.start.row + 1) * rowHeight;
-
       return {
         left: startMeasurement.start,
         top,
@@ -798,13 +1001,11 @@ export function SpreadsheetGrid<T>({
         height,
       };
     }
-
     if (uiState.selection.type === 'row') {
       const normalizedRange = normalizeRowRange(
         uiState.selection.startRow,
         uiState.selection.endRow,
       );
-
       return {
         left: 0,
         top: normalizedRange.startRow * rowHeight,
@@ -813,18 +1014,15 @@ export function SpreadsheetGrid<T>({
           (normalizedRange.endRow - normalizedRange.startRow + 1) * rowHeight,
       };
     }
-
     const normalizedRange = normalizeColumnRange(
       uiState.selection.startCol,
       uiState.selection.endCol,
     );
     const startMeasurement = columnMeasurements[normalizedRange.startCol];
     const endMeasurement = columnMeasurements[normalizedRange.endCol];
-
     if (!startMeasurement || !endMeasurement) {
       return null;
     }
-
     return {
       left: startMeasurement.start,
       top: 0,
@@ -844,24 +1042,18 @@ export function SpreadsheetGrid<T>({
     event: PointerEvent<HTMLDivElement>,
   ) => {
     event.preventDefault();
-
     if (event.button !== 0) {
       return;
     }
-
     if (filteredRows.length === 0 || visibleColumns.length === 0) {
       return;
     }
-
     gridRootRef.current?.focus();
-
-    // 追加: 2回目クリック時は全体選択解除にします。
     if (isWholeGridSelected) {
       dispatch(gridActions.clearSelection());
       dispatch(gridActions.activateCell(null));
       return;
     }
-
     selectEntireGrid();
   };
 
@@ -871,14 +1063,11 @@ export function SpreadsheetGrid<T>({
     event: PointerEvent<HTMLDivElement>,
   ) => {
     event.preventDefault();
-
     if (event.button !== 0) {
       return;
     }
-
     gridRootRef.current?.focus();
     dispatch(gridActions.activateCell(cell));
-
     if (enableRangeSelection) {
       dispatch(gridActions.startSelection(cell));
     }
@@ -888,11 +1077,9 @@ export function SpreadsheetGrid<T>({
   const handleCellDoubleClick = (cell: CellCoord) => {
     const row = filteredRows[cell.row];
     const column = visibleColumns[cell.col];
-
     if (!row || !column) {
       return;
     }
-
     if (
       !isCellEditable(
         { readOnly, canEditCell },
@@ -904,7 +1091,6 @@ export function SpreadsheetGrid<T>({
     ) {
       return;
     }
-
     const currentValue = getCellValue(row, column);
     setEditorValue(String(currentValue ?? ''));
     dispatch(gridActions.startEdit(cell));
@@ -940,7 +1126,6 @@ export function SpreadsheetGrid<T>({
     if (editorActionGuardRef.current || !uiState.editingCell) {
       return;
     }
-
     const editingCell = uiState.editingCell;
     const nextCell =
       direction === 'down'
@@ -950,39 +1135,31 @@ export function SpreadsheetGrid<T>({
           : direction === 'left'
             ? getMovedCell(editingCell, 0, -1)
             : editingCell;
-
     const column = visibleColumns[editingCell.col];
     const originalRowIndex =
       filteredRowSourceIndexes[editingCell.row] ?? editingCell.row;
     const row = rows[originalRowIndex];
-
     if (!column || !row) {
       dispatch(gridActions.stopEdit());
       return;
     }
-
     if (onRowsChange) {
       const parsedValue = column.parseClipboardValue
         ? column.parseClipboardValue(editorValue, row)
         : editorValue;
-
       const nextRows = rows.map((currentRow, index) =>
         index === originalRowIndex
           ? setCellValue(currentRow, column, parsedValue)
           : currentRow,
       );
-
       onRowsChange(nextRows);
     }
-
     editorActionGuardRef.current = true;
-
     requestAnimationFrame(() => {
       gridRootRef.current?.focus();
       activateSingleCell(nextCell);
       editorActionGuardRef.current = false;
     });
-
     dispatch(gridActions.stopEdit());
   };
 
@@ -991,10 +1168,8 @@ export function SpreadsheetGrid<T>({
     if (editorActionGuardRef.current) {
       return;
     }
-
     editorActionGuardRef.current = true;
     dispatch(gridActions.stopEdit());
-
     requestAnimationFrame(() => {
       gridRootRef.current?.focus();
       editorActionGuardRef.current = false;
@@ -1009,14 +1184,12 @@ export function SpreadsheetGrid<T>({
     if (!enableRangeSelection) {
       return;
     }
-
     if (
       uiState.dragState?.type !== 'selection' ||
       uiState.dragState.selectionKind !== 'cell'
     ) {
       return;
     }
-
     pointerClientRef.current = { x: event.clientX, y: event.clientY };
     dispatch(gridActions.updateSelection(cell));
   };
@@ -1032,11 +1205,9 @@ export function SpreadsheetGrid<T>({
     event: PointerEvent<HTMLDivElement>,
   ) => {
     event.preventDefault();
-
     if (event.button !== 0) {
       return;
     }
-
     gridRootRef.current?.focus();
     dispatch(gridActions.startRowSelection(rowIndex));
   };
@@ -1052,7 +1223,6 @@ export function SpreadsheetGrid<T>({
     ) {
       return;
     }
-
     pointerClientRef.current = { x: event.clientX, y: event.clientY };
     dispatch(gridActions.updateRowSelection(rowIndex));
   };
@@ -1063,11 +1233,9 @@ export function SpreadsheetGrid<T>({
     event: PointerEvent<HTMLDivElement>,
   ) => {
     event.preventDefault();
-
     if (event.button !== 0) {
       return;
     }
-
     gridRootRef.current?.focus();
     dispatch(gridActions.startColumnSelection(colIndex));
   };
@@ -1083,7 +1251,6 @@ export function SpreadsheetGrid<T>({
     ) {
       return;
     }
-
     pointerClientRef.current = { x: event.clientX, y: event.clientY };
     dispatch(gridActions.updateColumnSelection(colIndex));
   };
@@ -1095,12 +1262,11 @@ export function SpreadsheetGrid<T>({
   ) => {
     event.preventDefault();
     event.stopPropagation();
-
     dispatch(
       gridActions.startColumnResize(
         column.key,
         event.clientX,
-        selectColumnWidth(uiState, column.key),
+        selectColumnWidth(uiState, column.key) ?? column.width,
         column.minWidth ?? 60,
         column.maxWidth ?? 1000,
       ),
@@ -1109,7 +1275,6 @@ export function SpreadsheetGrid<T>({
 
   // 追加: copy 処理です。selection を TSV にしてクリップボードへ書き込みます。
   const handleCopy = async () => {
-    // 追加: 全体選択時は専用経路で TSV を生成します。
     const text = isWholeGridSelected
       ? serializeWholeGridToTsv()
       : serializeSelectionToTsv(
@@ -1127,11 +1292,9 @@ export function SpreadsheetGrid<T>({
             | { type: 'col'; startCol: number; endCol: number }
             | null,
         );
-
     if (!text) {
       return;
     }
-
     if (navigator.clipboard?.writeText) {
       await navigator.clipboard.writeText(text);
     }
@@ -1139,10 +1302,13 @@ export function SpreadsheetGrid<T>({
 
   // 追加: ソート状態に応じた表示記号を返します。
   const getSortIndicator = (columnKey: string) => {
-    if (!enableSorting || uiState.sort.columnKey !== columnKey || !uiState.sort.direction) {
+    if (
+      !enableSorting ||
+      uiState.sort.columnKey !== columnKey ||
+      !uiState.sort.direction
+    ) {
       return '↕';
     }
-
     return uiState.sort.direction === 'asc' ? '↑' : '↓';
   };
 
@@ -1151,17 +1317,14 @@ export function SpreadsheetGrid<T>({
     if (!enableSorting) {
       return;
     }
-
     if (uiState.sort.columnKey !== columnKey || uiState.sort.direction === null) {
       dispatch(gridActions.setSort(columnKey, 'asc'));
       return;
     }
-
     if (uiState.sort.direction === 'asc') {
       dispatch(gridActions.setSort(columnKey, 'desc'));
       return;
     }
-
     dispatch(gridActions.clearSort());
   };
 
@@ -1172,10 +1335,18 @@ export function SpreadsheetGrid<T>({
   ) => {
     event.preventDefault();
     event.stopPropagation();
-
     if (!enableColumnFilter) {
       return;
     }
+
+    // 追加: grid root に残っているフォーカスを明示的に外します。
+    if (document.activeElement instanceof HTMLElement) {
+      document.activeElement.blur();
+    }
+    gridRootRef.current?.blur();
+
+    // 追加: anchor button を保持し、portal popover の位置計算に使います。
+    filterPopoverAnchorButtonRef.current = event.currentTarget;
 
     setFilterPopoverState({
       columnKey: column.key,
@@ -1186,6 +1357,16 @@ export function SpreadsheetGrid<T>({
   // 追加: フィルターポップオーバーを閉じます。
   const closeColumnFilterPopover = useCallback(() => {
     setFilterPopoverState(null);
+    setFilterPopoverLayout(null);
+    filterPopoverAnchorButtonRef.current = null;
+    // 追加: close 時に input/select ref をクリアして次回 open の focus を安定させます。
+    filterTextInputRef.current = null;
+    filterSelectRef.current = null;
+
+    // 追加: close 後は grid root にフォーカスを戻し、従来の keyboard 操作へ復帰させます。
+    requestAnimationFrame(() => {
+      gridRootRef.current?.focus();
+    });
   }, []);
 
   // 追加: フィルター draft を更新します。
@@ -1194,7 +1375,6 @@ export function SpreadsheetGrid<T>({
       if (!current) {
         return current;
       }
-
       return {
         ...current,
         draftValue: value,
@@ -1208,7 +1388,15 @@ export function SpreadsheetGrid<T>({
       return;
     }
 
-    const normalized = filterPopoverState.draftValue.trim();
+    const targetColumn = visibleColumns.find(
+      (column) => column.key === filterPopoverState.columnKey,
+    );
+    const filterType = targetColumn?.filterType ?? 'text';
+    const normalized =
+      filterType === 'select'
+        ? filterPopoverState.draftValue
+        : filterPopoverState.draftValue.trim();
+
     if (!normalized) {
       dispatch(gridActions.clearColumnFilter(filterPopoverState.columnKey));
       closeColumnFilterPopover();
@@ -1226,7 +1414,6 @@ export function SpreadsheetGrid<T>({
     if (!filterPopoverState) {
       return;
     }
-
     dispatch(gridActions.clearColumnFilter(filterPopoverState.columnKey));
     closeColumnFilterPopover();
   };
@@ -1246,22 +1433,17 @@ export function SpreadsheetGrid<T>({
     if (!filterPopoverState) {
       return;
     }
-
     const handleWindowPointerDown = (event: globalThis.PointerEvent) => {
       const targetNode = event.target as Node | null;
       if (!targetNode) {
         return;
       }
-
       if (filterPopoverRef.current?.contains(targetNode)) {
         return;
       }
-
       closeColumnFilterPopover();
     };
-
     window.addEventListener('pointerdown', handleWindowPointerDown);
-
     return () => {
       window.removeEventListener('pointerdown', handleWindowPointerDown);
     };
@@ -1293,26 +1475,22 @@ export function SpreadsheetGrid<T>({
     if (filteredRows.length === 0 || visibleColumns.length === 0) {
       return;
     }
-
     const currentCell = uiState.activeCell ?? { row: 0, col: 0 };
     const nextCell = {
       row: clamp(currentCell.row + deltaRow, 0, filteredRows.length - 1),
       col: clamp(currentCell.col + deltaCol, 0, visibleColumns.length - 1),
     };
-
     if (extendSelection) {
       const anchor =
         uiState.selection?.type === 'cell'
           ? uiState.selection.range.start
           : currentCell;
-
       dispatch(gridActions.startSelection(anchor));
       dispatch(gridActions.updateSelection(nextCell));
       dispatch(gridActions.endSelection());
       dispatch(gridActions.activateCell(nextCell));
       return;
     }
-
     dispatch(gridActions.startSelection(nextCell));
     dispatch(gridActions.endSelection());
     dispatch(gridActions.activateCell(nextCell));
@@ -1320,83 +1498,79 @@ export function SpreadsheetGrid<T>({
 
   // 追加: Ctrl/Cmd + C や Arrow/Enter を捕捉します。
   const handleKeyDown = async (event: KeyboardEvent<HTMLDivElement>) => {
-    if (uiState.editingCell) {
+    // 追加: popover open 中は grid 側 keyboard を一時停止します。
+    if (isFilterPopoverOpen) {
       return;
     }
 
+    // 追加: filter input / select / button 等にフォーカス中は、
+    //       grid 側の keyboard 操作を無効化します。
+    if (shouldIgnoreGridKeydown(event.target)) {
+      return;
+    }
+
+    if (uiState.editingCell) {
+      return;
+    }
     if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'c') {
       event.preventDefault();
       await handleCopy();
       return;
     }
-
     // 追加: Ctrl + A / Cmd + A で全体選択、2回目で解除します。
     if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'a') {
       event.preventDefault();
-
       if (isWholeGridSelected) {
         dispatch(gridActions.clearSelection());
         dispatch(gridActions.activateCell(null));
         return;
       }
-
       selectEntireGrid();
       return;
     }
-
     if (event.key === 'ArrowUp') {
       event.preventDefault();
       moveActiveCell(-1, 0, event.shiftKey);
       return;
     }
-
     if (event.key === 'ArrowDown') {
       event.preventDefault();
       moveActiveCell(1, 0, event.shiftKey);
       return;
     }
-
     if (event.key === 'ArrowLeft') {
       event.preventDefault();
       moveActiveCell(0, -1, event.shiftKey);
       return;
     }
-
     if (event.key === 'ArrowRight') {
       event.preventDefault();
       moveActiveCell(0, 1, event.shiftKey);
       return;
     }
-
     if (event.key === 'Tab') {
       event.preventDefault();
       moveActiveCell(0, event.shiftKey ? -1 : 1, false);
       return;
     }
-
     if (event.key === 'Escape') {
       event.preventDefault();
       dispatch(gridActions.clearSelection());
       return;
     }
-
     if (event.key === 'Enter' || event.key === 'F2') {
       event.preventDefault();
-
       if (uiState.activeCell) {
         handleCellDoubleClick(uiState.activeCell);
       }
       return;
     }
-
     if (isPrintableKey(event) && uiState.activeCell) {
       const row = filteredRows[uiState.activeCell.row];
       const column = visibleColumns[uiState.activeCell.col];
-
       if (!row || !column) {
         return;
       }
-
       if (
         !isCellEditable(
           { readOnly, canEditCell },
@@ -1408,7 +1582,6 @@ export function SpreadsheetGrid<T>({
       ) {
         return;
       }
-
       event.preventDefault();
       setEditorValue(event.key);
       dispatch(gridActions.startEdit(uiState.activeCell));
@@ -1420,14 +1593,11 @@ export function SpreadsheetGrid<T>({
     if (!onRowsChange || !uiState.activeCell) {
       return;
     }
-
     const text = event.clipboardData.getData('text/plain');
     if (!text) {
       return;
     }
-
     event.preventDefault();
-
     const matrix = parseClipboardText(text);
     if (matrix.length === 0) {
       return;
@@ -1465,7 +1635,6 @@ export function SpreadsheetGrid<T>({
         maxPasteWidth = currentWidth;
       }
     }
-
     if (maxPasteWidth === 0) {
       return;
     }
@@ -1515,7 +1684,6 @@ export function SpreadsheetGrid<T>({
     );
 
     onRowsChange(nextRows);
-
     dispatch(gridActions.startSelection(uiState.activeCell));
     dispatch(gridActions.updateSelection({ row: endRow, col: endCol }));
     dispatch(gridActions.endSelection());
@@ -1557,7 +1725,6 @@ export function SpreadsheetGrid<T>({
           if (!onRowsChange) {
             return;
           }
-
           const originalRowIndex =
             filteredRowSourceIndexes[rowIndex] ?? rowIndex;
           const nextRows = rows.map((currentRow, index) =>
@@ -1565,7 +1732,6 @@ export function SpreadsheetGrid<T>({
               ? setCellValue(currentRow, column, nextValue)
               : currentRow,
           );
-
           onRowsChange(nextRows);
         },
       });
@@ -1606,6 +1772,261 @@ export function SpreadsheetGrid<T>({
     zIndex: 1,
   };
 
+  const renderedFilterPopover =
+    typeof document !== 'undefined' &&
+    filterPopoverState &&
+    filterPopoverLayout
+      ? (() => {
+          const column = visibleColumns.find(
+            (item) => item.key === filterPopoverState.columnKey,
+          );
+          if (!column) {
+            return null;
+          }
+
+          const filterType = column.filterType ?? 'text';
+          const selectOptions = getColumnSelectOptions(column);
+          const draftValue = filterPopoverState.draftValue;
+
+          return createPortal(
+            <div
+              ref={filterPopoverRef}
+              onPointerDown={(event) => {
+                event.stopPropagation();
+              }}
+              onKeyDownCapture={(event) => {
+                // 追加: portal 内 keyboard イベントを React ツリー上の parent へ流しません。
+                event.stopPropagation();
+              }}
+              onPasteCapture={(event) => {
+                // 追加: portal 内 paste も grid 側へ流しません。
+                event.stopPropagation();
+              }}
+              style={{
+                position: 'fixed',
+                top: filterPopoverLayout.top,
+                left: filterPopoverLayout.left,
+                width: filterPopoverLayout.width,
+                padding: 12,
+                boxSizing: 'border-box',
+                border: '1px solid #cbd5e1',
+                borderRadius: 10,
+                backgroundColor: '#ffffff',
+                boxShadow: '0 10px 24px rgba(15, 23, 42, 0.12)',
+                zIndex: 1000,
+              }}
+            >
+              <div
+                style={{
+                  fontSize: 12,
+                  fontWeight: 700,
+                  color: '#334155',
+                  marginBottom: 8,
+                }}
+              >
+                列フィルター: {column.title || column.key}
+              </div>
+
+              {filterType === 'select' ? (
+                <>
+                  <div
+                    style={{
+                      fontSize: 11,
+                      color: '#64748b',
+                      marginBottom: 8,
+                    }}
+                  >
+                    フィルター種別: select
+                  </div>
+                  <select
+                    ref={filterSelectRef}
+                    value={draftValue}
+                    onChange={(event) =>
+                      updateFilterPopoverDraft(event.target.value)
+                    }
+                    onKeyDown={(event) => {
+                      // 追加: select 内操作を grid 側へ伝播させません。
+                      event.stopPropagation();
+                      if (event.key === 'Enter') {
+                        event.preventDefault();
+                        applyFilterPopoverValue();
+                        return;
+                      }
+                      if (event.key === 'Escape') {
+                        event.preventDefault();
+                        closeColumnFilterPopover();
+                      }
+                    }}
+                    style={{
+                      width: '100%',
+                      boxSizing: 'border-box',
+                      padding: '8px 10px',
+                      border: '1px solid #cbd5e1',
+                      borderRadius: 8,
+                      outline: 'none',
+                      marginBottom: 8,
+                      backgroundColor: '#ffffff',
+                    }}
+                  >
+                    <option value="">（すべて）</option>
+                    {selectOptions.map((option) => (
+                      <option
+                        key={`${column.key}-${option.value}`}
+                        value={option.value}
+                      >
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                  <div
+                    style={{
+                      fontSize: 11,
+                      color: '#64748b',
+                      marginBottom: 10,
+                    }}
+                  >
+                    候補数: {selectOptions.length}
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div
+                    style={{
+                      fontSize: 11,
+                      color: '#64748b',
+                      marginBottom: 8,
+                    }}
+                  >
+                    フィルター種別: {filterType === 'number' ? 'number' : 'text'}
+                  </div>
+                  <input
+                    ref={filterTextInputRef}
+                    type="text"
+                    value={draftValue}
+                    onChange={(event) =>
+                      updateFilterPopoverDraft(event.target.value)
+                    }
+                    onKeyDown={(event) => {
+                      // 追加: filter input 内入力を grid 側へ伝播させません。
+                      event.stopPropagation();
+                      if (event.key === 'Enter') {
+                        event.preventDefault();
+                        applyFilterPopoverValue();
+                        return;
+                      }
+                      if (event.key === 'Escape') {
+                        event.preventDefault();
+                        closeColumnFilterPopover();
+                      }
+                    }}
+                    placeholder={
+                      filterType === 'number'
+                        ? '例: >=10 / <20 / 10..20 / =5'
+                        : '部分一致で絞り込み'
+                    }
+                    style={{
+                      width: '100%',
+                      boxSizing: 'border-box',
+                      padding: '8px 10px',
+                      border: '1px solid #cbd5e1',
+                      borderRadius: 8,
+                      outline: 'none',
+                      marginBottom: 8,
+                    }}
+                  />
+                  <div
+                    style={{
+                      fontSize: 11,
+                      color: '#64748b',
+                      marginBottom: 10,
+                      whiteSpace: 'nowrap',
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                    }}
+                  >
+                    {filterType === 'number'
+                      ? '数量系は =, >, >=, <, <=, .. が使えます'
+                      : 'text は部分一致検索です'}
+                  </div>
+                </>
+              )}
+
+              <div
+                style={{
+                  fontSize: 11,
+                  color: '#64748b',
+                  marginBottom: 10,
+                  whiteSpace: 'nowrap',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                }}
+              >
+                現在値:
+                {String(uiState.filters.columnFilters[column.key] ?? '').trim()
+                  ? ` ${String(uiState.filters.columnFilters[column.key])}`
+                  : ' （なし）'}
+              </div>
+
+              <div
+                style={{
+                  display: 'flex',
+                  gap: 8,
+                  justifyContent: 'flex-end',
+                }}
+              >
+                <button
+                  type="button"
+                  onPointerDown={(event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    clearFilterPopoverValue();
+                  }}
+                  onKeyDown={(event) => {
+                    // 追加: popover 内 button の key 操作を grid 側へ流しません。
+                    event.stopPropagation();
+                  }}
+                  style={{
+                    border: '1px solid #cbd5e1',
+                    backgroundColor: '#ffffff',
+                    color: '#475569',
+                    borderRadius: 8,
+                    padding: '6px 10px',
+                    cursor: 'pointer',
+                    fontSize: 12,
+                  }}
+                >
+                  クリア
+                </button>
+                <button
+                  type="button"
+                  onPointerDown={(event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    applyFilterPopoverValue();
+                  }}
+                  onKeyDown={(event) => {
+                    // 追加: popover 内 button の key 操作を grid 側へ流しません。
+                    event.stopPropagation();
+                  }}
+                  style={{
+                    border: '1px solid #2563eb',
+                    backgroundColor: '#2563eb',
+                    color: '#ffffff',
+                    borderRadius: 8,
+                    padding: '6px 10px',
+                    cursor: 'pointer',
+                    fontSize: 12,
+                  }}
+                >
+                  適用
+                </button>
+              </div>
+            </div>,
+            document.body,
+          );
+        })()
+      : null;
+
   return (
     <div className={className}>
       {enableGlobalFilter ? (
@@ -1638,9 +2059,11 @@ export function SpreadsheetGrid<T>({
           pointerClientRef.current = { x: event.clientX, y: event.clientY };
           updateSelectionFromPointer(event.clientX, event.clientY);
         }}
-        tabIndex={0}
-        onKeyDown={handleKeyDown}
-        onPaste={handlePaste}
+        // 追加: popover open 中は grid root を tab フォーカス対象から外します。
+        tabIndex={isFilterPopoverOpen ? -1 : 0}
+        // 追加: popover open 中は root の keyboard/paste handler 自体を外します。
+        onKeyDown={isFilterPopoverOpen ? undefined : handleKeyDown}
+        onPaste={isFilterPopoverOpen ? undefined : handlePaste}
       >
         <div
           ref={bodyScrollRef}
@@ -1709,7 +2132,6 @@ export function SpreadsheetGrid<T>({
                 const colIndex = virtualColumn.index;
                 const measurement = columnMeasurements[colIndex];
                 const column = visibleColumns[colIndex];
-
                 if (
                   !column ||
                   !measurement ||
@@ -1719,7 +2141,8 @@ export function SpreadsheetGrid<T>({
                 }
 
                 const isColumnFiltered =
-                  String(uiState.filters.columnFilters[column.key] ?? '').trim().length > 0;
+                  String(uiState.filters.columnFilters[column.key] ?? '').trim()
+                    .length > 0;
 
                 return (
                   <div
@@ -1834,134 +2257,6 @@ export function SpreadsheetGrid<T>({
                       ) : null}
                     </div>
 
-                    {filterPopoverState?.columnKey === column.key ? (
-                      <div
-                        ref={filterPopoverRef}
-                        onPointerDown={(event) => {
-                          event.preventDefault();
-                          event.stopPropagation();
-                        }}
-                        style={{
-                          position: 'absolute',
-                          top: headerHeight - 2,
-                          right: 8,
-                          width: 240,
-                          padding: 12,
-                          boxSizing: 'border-box',
-                          border: '1px solid #cbd5e1',
-                          borderRadius: 10,
-                          backgroundColor: '#ffffff',
-                          boxShadow: '0 10px 24px rgba(15, 23, 42, 0.12)',
-                          zIndex: 10,
-                        }}
-                      >
-                        <div
-                          style={{
-                            fontSize: 12,
-                            fontWeight: 700,
-                            color: '#334155',
-                            marginBottom: 8,
-                          }}
-                        >
-                          列フィルター: {column.title || column.key}
-                        </div>
-
-                        <input
-                          type="text"
-                          value={filterPopoverState.draftValue}
-                          onChange={(event) =>
-                            updateFilterPopoverDraft(event.target.value)
-                          }
-                          onKeyDown={(event) => {
-                            if (event.key === 'Enter') {
-                              event.preventDefault();
-                              applyFilterPopoverValue();
-                              return;
-                            }
-
-                            if (event.key === 'Escape') {
-                              event.preventDefault();
-                              closeColumnFilterPopover();
-                            }
-                          }}
-                          placeholder="部分一致で絞り込み"
-                          style={{
-                            width: '100%',
-                            boxSizing: 'border-box',
-                            padding: '8px 10px',
-                            border: '1px solid #cbd5e1',
-                            borderRadius: 8,
-                            outline: 'none',
-                            marginBottom: 8,
-                          }}
-                        />
-
-                        <div
-                          style={{
-                            fontSize: 11,
-                            color: '#64748b',
-                            marginBottom: 10,
-                            whiteSpace: 'nowrap',
-                            overflow: 'hidden',
-                            textOverflow: 'ellipsis',
-                          }}
-                        >
-                          現在値:
-                          {String(uiState.filters.columnFilters[column.key] ?? '').trim()
-                            ? ` ${String(uiState.filters.columnFilters[column.key])}`
-                            : ' （なし）'}
-                        </div>
-
-                        <div
-                          style={{
-                            display: 'flex',
-                            gap: 8,
-                            justifyContent: 'flex-end',
-                          }}
-                        >
-                          <button
-                            type="button"
-                            onPointerDown={(event) => {
-                              event.preventDefault();
-                              event.stopPropagation();
-                              clearFilterPopoverValue();
-                            }}
-                            style={{
-                              border: '1px solid #cbd5e1',
-                              backgroundColor: '#ffffff',
-                              color: '#475569',
-                              borderRadius: 8,
-                              padding: '6px 10px',
-                              cursor: 'pointer',
-                              fontSize: 12,
-                            }}
-                          >
-                            クリア
-                          </button>
-
-                          <button
-                            type="button"
-                            onPointerDown={(event) => {
-                              event.preventDefault();
-                              event.stopPropagation();
-                              applyFilterPopoverValue();
-                            }}
-                            style={{
-                              border: '1px solid #2563eb',
-                              backgroundColor: '#2563eb',
-                              color: '#ffffff',
-                              borderRadius: 8,
-                              padding: '6px 10px',
-                              cursor: 'pointer',
-                              fontSize: 12,
-                            }}
-                          >
-                            適用
-                          </button>
-                        </div>
-                      </div>
-                    ) : null}
-
                     <div
                       onPointerDown={(event) =>
                         handleColumnResizePointerDown(column, event)
@@ -1986,13 +2281,11 @@ export function SpreadsheetGrid<T>({
               headerHeight={headerHeight}
               rowHeaderWidth={rowHeaderWidth}
             />
-
             <ActiveCellOverlay
               rect={activeCellRect}
               headerHeight={headerHeight}
               rowHeaderWidth={rowHeaderWidth}
             />
-
             <CellEditorLayer
               rect={editorRect}
               headerHeight={headerHeight}
@@ -2007,7 +2300,6 @@ export function SpreadsheetGrid<T>({
               const rowIndex = virtualRow.index;
               const row = filteredRows[rowIndex];
               const rowKey = filteredRowKeys[rowIndex] ?? rowIndex;
-
               if (!row || !virtualRowIndexes.has(rowIndex)) {
                 return null;
               }
@@ -2058,7 +2350,6 @@ export function SpreadsheetGrid<T>({
                     const colIndex = virtualColumn.index;
                     const measurement = columnMeasurements[colIndex];
                     const column = visibleColumns[colIndex];
-
                     if (
                       !column ||
                       !measurement ||
@@ -2141,6 +2432,8 @@ export function SpreadsheetGrid<T>({
           </div>
         </div>
       </div>
+
+      {renderedFilterPopover}
     </div>
   );
 }

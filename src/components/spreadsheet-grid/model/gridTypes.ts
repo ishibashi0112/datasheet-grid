@@ -37,6 +37,12 @@ export type GridSortState = {
   direction: GridSortDirection;
 };
 
+// 追加: select フィルター用の候補型です。
+export type GridSelectFilterOption = {
+  label: string;
+  value: string;
+};
+
 // 追加: セル描画に渡すコンテキストです。
 export type CellRenderContext<T> = {
   row: T;
@@ -75,6 +81,8 @@ export type GridColumn<T> = {
   renderCell?: (ctx: CellRenderContext<T>) => ReactNode;
   renderHeader?: (ctx: HeaderRenderContext<T>) => ReactNode;
   filterType?: 'text' | 'number' | 'date' | 'select' | 'custom';
+  // 追加: select フィルター時の候補です。未指定時は rows から自動収集します。
+  filterOptions?: GridSelectFilterOption[];
   filterFn?: (row: T, filterValue: unknown) => boolean;
   parseClipboardValue?: (raw: string, row: T) => unknown;
   formatClipboardValue?: (value: unknown, row: T) => string;
@@ -157,4 +165,3 @@ export type SpreadsheetGridProps<T> = {
   enableSorting?: boolean;
   className?: string;
 };
-``
