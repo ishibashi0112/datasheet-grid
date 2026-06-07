@@ -138,6 +138,18 @@ export type GridUiState = {
   sort: GridSortState;
 };
 
+// 追加: topBar / bottomBar へ渡す公開コンテキストです。
+export type SpreadsheetGridSlotContext<T> = {
+  rows: T[];
+  filteredRows: T[];
+  columns: GridColumn<T>[];
+  visibleColumns: GridColumn<T>[];
+  globalFilterText: string;
+  setGlobalFilterText: (value: string) => void;
+  activeCell: CellCoord | null;
+  selection: GridSelection;
+};
+
 // 追加: 公開 props です。
 export type SpreadsheetGridProps<T> = {
   rows: T[];
@@ -163,5 +175,9 @@ export type SpreadsheetGridProps<T> = {
   enableGlobalFilter?: boolean;
   enableColumnFilter?: boolean;
   enableSorting?: boolean;
+  // 追加: Grid 上部カスタム領域です。未指定時は default top bar を使えます。
+  renderTopBar?: (context: SpreadsheetGridSlotContext<T>) => ReactNode;
+  // 追加: Grid 下部カスタム領域です。未指定時は何も表示しません。
+  renderBottomBar?: (context: SpreadsheetGridSlotContext<T>) => ReactNode;
   className?: string;
 };

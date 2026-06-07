@@ -28,8 +28,7 @@ import SelectionOverlay, {
 import ActiveCellOverlay, {
   type ActiveCellOverlayRect,
 } from './ActiveCellOverlay';
-import CellEditorLayer, {
-} from './CellEditorLayer';
+import CellEditorLayer from './CellEditorLayer';
 import ColumnFilterPopover from './view/ColumnFilterPopover';
 import GridHeaderRow from './view/GridHeaderRow';
 import GridBodyLayer from './view/GridBodyLayer';
@@ -44,6 +43,7 @@ import type {
   GridColumn,
   GridRowKey,
   SpreadsheetGridProps,
+  SpreadsheetGridSlotContext,
 } from './model/gridTypes';
 import {
   applyColumnFilters,
@@ -77,6 +77,8 @@ export function SpreadsheetGrid<T extends object>({
   enableGlobalFilter = true,
   enableColumnFilter = true,
   enableSorting = true,
+  renderTopBar,
+  renderBottomBar,
   className,
 }: SpreadsheetGridProps<T>) {
   const gridRootRef = useRef<HTMLDivElement | null>(null);
@@ -84,6 +86,7 @@ export function SpreadsheetGrid<T extends object>({
   const autoScrollFrameRef = useRef<number | null>(null);
   const bodyScrollRef = useRef<HTMLDivElement | null>(null);
   const editorActionGuardRef = useRef(false);
+
   const [editorValue, setEditorValue] = useState('');
   const [isCornerHovered, setIsCornerHovered] = useState(false);
   const [hoveredRowIndex, setHoveredRowIndex] = useState<number | null>(null);
@@ -133,6 +136,7 @@ export function SpreadsheetGrid<T extends object>({
       },
       {},
     );
+
     dispatch(gridActions.syncColumnWidths(nextWidths));
   }, [visibleColumns]);
 
@@ -159,6 +163,7 @@ export function SpreadsheetGrid<T extends object>({
           if (seen.has(value)) {
             return acc;
           }
+
           seen.add(value);
           acc.push({
             value,
@@ -258,6 +263,7 @@ export function SpreadsheetGrid<T extends object>({
     () => new Set(virtualRows.map((item) => item.index)),
     [virtualRows],
   );
+
   const virtualColumnIndexes = useMemo(
     () => new Set(virtualColumns.map((item) => item.index)),
     [virtualColumns],
@@ -267,6 +273,7 @@ export function SpreadsheetGrid<T extends object>({
     if (!uiState.activeCell) {
       return null;
     }
+
     const { row, col } = uiState.activeCell;
     if (
       row < 0 ||
@@ -276,10 +283,12 @@ export function SpreadsheetGrid<T extends object>({
     ) {
       return null;
     }
+
     const measurement = columnMeasurements[col];
     if (!measurement) {
       return null;
     }
+
     const top = row * rowHeight;
     return {
       left: measurement.start,
@@ -339,34 +348,33 @@ export function SpreadsheetGrid<T extends object>({
     rowHeight,
   });
 
-  const {
-    isWholeGridSelected,
-    handleCopy,
-    handlePaste,
-  } = useGridClipboardController({
-    rows,
-    filteredRows,
-    filteredRowSourceIndexes,
-    visibleColumns,
-    uiState,
-    readOnly,
-    canEditCell,
-    createRow,
-    createOverflowColumn,
-    onRowsChange,
-    onColumnsChange,
-    dispatch,
-  });
+  const { isWholeGridSelected, handleCopy, handlePaste } =
+    useGridClipboardController({
+      rows,
+      filteredRows,
+      filteredRowSourceIndexes,
+      visibleColumns,
+      uiState,
+      readOnly,
+      canEditCell,
+      createRow,
+      createOverflowColumn,
+      onRowsChange,
+      onColumnsChange,
+      dispatch,
+    });
 
   const selectEntireGrid = useCallback(() => {
     if (filteredRows.length === 0 || visibleColumns.length === 0) {
       return;
     }
+
     const startCell = { row: 0, col: 0 };
     const endCell = {
       row: filteredRows.length - 1,
       col: visibleColumns.length - 1,
     };
+
     dispatch(gridActions.startSelection(startCell));
     dispatch(gridActions.updateSelection(endCell));
     dispatch(gridActions.endSelection());
@@ -380,6 +388,7 @@ export function SpreadsheetGrid<T extends object>({
       if (!row || !column) {
         return;
       }
+
       if (
         !isCellEditable(
           { readOnly, canEditCell },
@@ -391,6 +400,7 @@ export function SpreadsheetGrid<T extends object>({
       ) {
         return;
       }
+
       const currentValue = getCellValue(row, column);
       setEditorValue(String(currentValue ?? ''));
       dispatch(gridActions.startEdit(cell));
@@ -412,11 +422,7 @@ export function SpreadsheetGrid<T extends object>({
     selectEntireGrid,
   });
 
-  const {
-    startEditWithValue,
-    commitEdit,
-    cancelEdit,
-  } = useGridEditController({
+  const { startEditWithValue, commitEdit, cancelEdit } = useGridEditController({
     uiState,
     rows,
     visibleColumns,
@@ -437,6 +443,7 @@ export function SpreadsheetGrid<T extends object>({
       if (!row || !column) {
         return;
       }
+
       if (
         !isCellEditable(
           { readOnly, canEditCell },
@@ -448,6 +455,7 @@ export function SpreadsheetGrid<T extends object>({
       ) {
         return;
       }
+
       const currentValue = getCellValue(row, column);
       startEditWithValue(cell, String(currentValue ?? ''));
     },
@@ -458,6 +466,7 @@ export function SpreadsheetGrid<T extends object>({
     if (!uiState.selection) {
       return null;
     }
+
     if (uiState.selection.type === 'cell') {
       const normalizedRange = normalizeCellRange(uiState.selection.range);
       const startMeasurement = columnMeasurements[normalizedRange.start.col];
@@ -465,9 +474,11 @@ export function SpreadsheetGrid<T extends object>({
       if (!startMeasurement || !endMeasurement) {
         return null;
       }
+
       const top = normalizedRange.start.row * rowHeight;
       const height =
         (normalizedRange.end.row - normalizedRange.start.row + 1) * rowHeight;
+
       return {
         left: startMeasurement.start,
         top,
@@ -475,11 +486,13 @@ export function SpreadsheetGrid<T extends object>({
         height,
       };
     }
+
     if (uiState.selection.type === 'row') {
       const normalizedRange = normalizeRowRange(
         uiState.selection.startRow,
         uiState.selection.endRow,
       );
+
       return {
         left: 0,
         top: normalizedRange.startRow * rowHeight,
@@ -488,6 +501,7 @@ export function SpreadsheetGrid<T extends object>({
           (normalizedRange.endRow - normalizedRange.startRow + 1) * rowHeight,
       };
     }
+
     const normalizedRange = normalizeColumnRange(
       uiState.selection.startCol,
       uiState.selection.endCol,
@@ -497,6 +511,7 @@ export function SpreadsheetGrid<T extends object>({
     if (!startMeasurement || !endMeasurement) {
       return null;
     }
+
     return {
       left: startMeasurement.start,
       top: 0,
@@ -517,15 +532,19 @@ export function SpreadsheetGrid<T extends object>({
       if (event.button !== 0) {
         return;
       }
+
       if (filteredRows.length === 0 || visibleColumns.length === 0) {
         return;
       }
+
       gridRootRef.current?.focus();
+
       if (isWholeGridSelected) {
         dispatch(gridActions.clearSelection());
         dispatch(gridActions.activateCell(null));
         return;
       }
+
       selectEntireGrid();
     },
     [
@@ -541,6 +560,7 @@ export function SpreadsheetGrid<T extends object>({
     (column: GridColumn<T>, event: PointerEvent<HTMLDivElement>) => {
       event.preventDefault();
       event.stopPropagation();
+
       dispatch(
         gridActions.startColumnResize(
           column.key,
@@ -584,6 +604,7 @@ export function SpreadsheetGrid<T extends object>({
     if (!filterPopoverState) {
       return;
     }
+
     dispatch(gridActions.clearColumnFilter(filterPopoverState.columnKey));
     closeColumnFilterPopover();
   }, [closeColumnFilterPopover, dispatch, filterPopoverState]);
@@ -592,9 +613,11 @@ export function SpreadsheetGrid<T extends object>({
     (columnKey: string, event: PointerEvent<HTMLButtonElement>) => {
       event.preventDefault();
       event.stopPropagation();
+
       if (!enableSorting) {
         return;
       }
+
       if (
         uiState.sort.columnKey !== columnKey ||
         uiState.sort.direction === null
@@ -602,10 +625,12 @@ export function SpreadsheetGrid<T extends object>({
         dispatch(gridActions.setSort(columnKey, 'asc'));
         return;
       }
+
       if (uiState.sort.direction === 'asc') {
         dispatch(gridActions.setSort(columnKey, 'desc'));
         return;
       }
+
       dispatch(gridActions.clearSort());
     },
     [dispatch, enableSorting, uiState.sort],
@@ -620,6 +645,7 @@ export function SpreadsheetGrid<T extends object>({
       ) {
         return '↕';
       }
+
       return uiState.sort.direction === 'asc' ? '↑' : '↓';
     },
     [enableSorting, uiState.sort],
@@ -679,6 +705,7 @@ export function SpreadsheetGrid<T extends object>({
             if (!onRowsChange) {
               return;
             }
+
             const originalRowIndex =
               filteredRowSourceIndexes[rowIndex] ?? rowIndex;
             const nextRows = rows.map((currentRow, index) =>
@@ -700,6 +727,36 @@ export function SpreadsheetGrid<T extends object>({
       readOnly,
       rows,
       uiState,
+    ],
+  );
+
+  // 追加: topBar / bottomBar 用に global filter setter を公開します。
+  const setGlobalFilterText = useCallback(
+    (value: string) => {
+      dispatch(gridActions.setGlobalFilter(value));
+    },
+    [dispatch],
+  );
+
+  // 追加: slot に公開する最小コンテキストです。
+  const slotContext = useMemo<SpreadsheetGridSlotContext<T>>(
+    () => ({
+      rows,
+      filteredRows,
+      columns,
+      visibleColumns,
+      globalFilterText: selectGlobalFilter(uiState),
+      setGlobalFilterText,
+      activeCell: uiState.activeCell,
+      selection: uiState.selection,
+    }),
+    [
+      rows,
+      filteredRows,
+      columns,
+      visibleColumns,
+      uiState,
+      setGlobalFilterText,
     ],
   );
 
@@ -758,29 +815,66 @@ export function SpreadsheetGrid<T extends object>({
     />
   ) : null;
 
+  // 追加: default top bar は Global Filter を右寄せで持つ薄いツールバーです。
+  const defaultTopBar = enableGlobalFilter ? (
+    <div style={{ marginBottom: 12 }}>
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: 12,
+          padding: '10px 12px',
+          border: '1px solid #d7dce3',
+          borderRadius: 12,
+          backgroundColor: '#f8fafc',
+        }}
+      >
+        <div
+          style={{
+            minWidth: 0,
+            fontSize: 13,
+            fontWeight: 600,
+            color: '#334155',
+          }}
+        >
+          Toolbar
+        </div>
+
+        <input
+          type="text"
+          value={slotContext.globalFilterText}
+          onChange={(event) =>
+            slotContext.setGlobalFilterText(event.target.value)
+          }
+          placeholder="グローバルフィルター"
+          style={{
+            width: '100%',
+            maxWidth: 320,
+            boxSizing: 'border-box',
+            padding: '10px 12px',
+            border: '1px solid #cbd5e1',
+            borderRadius: 8,
+            outline: 'none',
+            backgroundColor: '#ffffff',
+          }}
+        />
+      </div>
+    </div>
+  ) : null;
+
+  // 追加: top/bottom slot を解決します。
+  const resolvedTopBar = renderTopBar
+    ? renderTopBar(slotContext)
+    : defaultTopBar;
+
+  const resolvedBottomBar = renderBottomBar
+    ? renderBottomBar(slotContext)
+    : null;
+
   return (
     <div className={className}>
-      {enableGlobalFilter ? (
-        <div style={{ marginBottom: 12 }}>
-          <input
-            type="text"
-            value={selectGlobalFilter(uiState)}
-            onChange={(event) =>
-              dispatch(gridActions.setGlobalFilter(event.target.value))
-            }
-            placeholder="グローバルフィルター"
-            style={{
-              width: '100%',
-              maxWidth: 320,
-              boxSizing: 'border-box',
-              padding: '10px 12px',
-              border: '1px solid #cbd5e1',
-              borderRadius: 8,
-              outline: 'none',
-            }}
-          />
-        </div>
-      ) : null}
+      {resolvedTopBar}
 
       <div
         ref={gridRootRef}
@@ -850,11 +944,13 @@ export function SpreadsheetGrid<T extends object>({
               headerHeight={headerHeight}
               rowHeaderWidth={rowHeaderWidth}
             />
+
             <ActiveCellOverlay
               rect={activeCellRect}
               headerHeight={headerHeight}
               rowHeaderWidth={rowHeaderWidth}
             />
+
             <CellEditorLayer
               rect={editorRect}
               headerHeight={headerHeight}
@@ -898,6 +994,10 @@ export function SpreadsheetGrid<T extends object>({
           </div>
         </div>
       </div>
+
+      {resolvedBottomBar ? (
+        <div style={{ marginTop: 12 }}>{resolvedBottomBar}</div>
+      ) : null}
 
       {renderedFilterPopover}
     </div>
