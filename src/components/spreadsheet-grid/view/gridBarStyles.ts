@@ -69,7 +69,7 @@ export const gridBarEmphasisChipStyle: CSSProperties = {
 // 追加: Global Filter input の共通 style です。
 export const gridBarInputStyle: CSSProperties = {
   width: '100%',
-  maxWidth: 320,
+  minWidth: 0,
   boxSizing: 'border-box',
   padding: '10px 12px',
   border: '1px solid #cbd5e1',
@@ -87,3 +87,27 @@ export const gridBarInputStyle: CSSProperties = {
   // 追加: Chromium / WebKit 系で text fill が変わるケースに備えます。
   WebkitTextFillColor: '#0f172a',
 };
+
+// 追加: Global Filter input とクリアボタンを横並びにする wrapper です。
+export const gridBarInputGroupStyle: CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  gap: 8,
+  width: '100%',
+  maxWidth: 420,
+};
+
+// 追加: Global Filter クリアボタンの共通 style です。
+export const gridBarClearButtonStyle: CSSProperties = {
+  flex: '0 0 auto',
+  border: '1px solid #cbd5e1',
+  backgroundColor: '#ffffff',
+  color: '#475569',
+  borderRadius: 8,
+  padding: '10px 12px',
+  cursor: 'pointer',
+  fontSize: 12,
+  lineHeight: 1,
+  whiteSpace: 'nowrap',
+};
+``

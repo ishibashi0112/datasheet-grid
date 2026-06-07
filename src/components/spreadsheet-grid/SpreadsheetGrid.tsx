@@ -31,6 +31,7 @@ import ActiveCellOverlay, {
 import CellEditorLayer from './CellEditorLayer';
 import { useFilterPopoverController } from './hooks/useFilterPopoverController';
 import { useGridClipboardController } from './hooks/useGridClipboardController';
+import { useGridBarContext } from './hooks/useGridBarContext';
 import { useGridEditController } from './hooks/useGridEditController';
 import { useGridKeyboardInteractions } from './hooks/useGridKeyboardInteractions';
 import { useGridPointerInteractions } from './hooks/useGridPointerInteractions';
@@ -47,13 +48,12 @@ import type {
   GridColumn,
   GridRowKey,
   SpreadsheetGridProps,
-  SpreadsheetGridSlotContext,
 } from './model/gridTypes';
 import { getCellValue, isCellEditable, setCellValue } from './utils/permissions';
 import ColumnFilterPopover from './view/ColumnFilterPopover';
 import DefaultGridBottomBar from './view/DefaultGridBottomBar';
 import DefaultGridTopBar from './view/DefaultGridTopBar';
-import { buildGridDerivedSummary, resolveGridSlot } from './view/gridBarHelpers';
+import { resolveGridSlot } from './view/gridBarHelpers';
 import GridBodyLayer from './view/GridBodyLayer';
 import GridHeaderRow from './view/GridHeaderRow';
 
@@ -61,12 +61,6 @@ import GridHeaderRow from './view/GridHeaderRow';
 type SourceRowModel<T> = GridRowModelLike<T> & {
   rowKey: GridRowKey;
 };
-
-// 追加: derivedSummary / setGlobalFilterText を載せる前の中間 slot context 型です。
-type GridSlotContextBase<T> = Omit<
-  SpreadsheetGridSlotContext<T>,
-  'setGlobalFilterText' | 'derivedSummary'
->;
 
 // 追加: Grid 本体です。
 export function SpreadsheetGrid<T extends object>({
@@ -747,37 +741,15 @@ export function SpreadsheetGrid<T extends object>({
     [dispatch],
   );
 
-  // 追加: derived summary 算出前の生コンテキストです。
-  const slotContextBase = useMemo<GridSlotContextBase<T>>(
-    () => ({
-      rows,
-      filteredRows,
-      columns,
-      visibleColumns,
-      globalFilterText: selectGlobalFilter(uiState),
-      columnFilterValues: uiState.filters.columnFilters,
-      sortState: uiState.sort,
-      activeCell: uiState.activeCell,
-      selection: uiState.selection,
-    }),
-    [rows, filteredRows, columns, visibleColumns, uiState],
-  );
-
-  // 追加: topBar / bottomBar でそのまま使える派生 summary を構築します。
-  const derivedSummary = useMemo(
-    () => buildGridDerivedSummary(slotContextBase),
-    [slotContextBase],
-  );
-
-  // 追加: slot に公開する完全版コンテキストです。
-  const slotContext = useMemo<SpreadsheetGridSlotContext<T>>(
-    () => ({
-      ...slotContextBase,
-      setGlobalFilterText,
-      derivedSummary,
-    }),
-    [derivedSummary, setGlobalFilterText, slotContextBase],
-  );
+  // 追加: bar 用 context / derived summary は hook へ逃がします。
+  const { slotContext } = useGridBarContext({
+    rows,
+    filteredRows,
+    columns,
+    visibleColumns,
+    uiState,
+    setGlobalFilterText,
+  });
 
   const gridShellStyle: CSSProperties = {
     border: '1px solid #d7dce3',
@@ -834,12 +806,14 @@ export function SpreadsheetGrid<T extends object>({
     />
   ) : null;
 
+  // 追加: slot helper を使って top/bottom の描画を解決します。
   const resolvedTopBar = resolveGridSlot(
     renderTopBar,
     slotContext,
     enableGlobalFilter ? <DefaultGridTopBar context={slotContext} /> : null,
   );
 
+  // 追加: bottom は未指定時に既定ステータスバーを表示します。
   const resolvedBottomBar = resolveGridSlot(
     renderBottomBar,
     slotContext,
@@ -858,7 +832,9 @@ export function SpreadsheetGrid<T extends object>({
           pointerClientRef.current = { x: event.clientX, y: event.clientY };
           updateSelectionFromPointer(event.clientX, event.clientY);
         }}
+        // 追加: popover open 中は grid root を tab フォーカス対象から外します。
         tabIndex={isFilterPopoverOpen ? -1 : 0}
+        // 追加: popover open 中は root の keyboard/paste handler 自体を外します。
         onKeyDown={isFilterPopoverOpen ? undefined : handleKeyDown}
         onPaste={isFilterPopoverOpen ? undefined : handlePaste}
       >

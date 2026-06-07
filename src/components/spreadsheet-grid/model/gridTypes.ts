@@ -156,6 +156,8 @@ export type SpreadsheetGridDerivedSummary = {
   selectionStatsText: string;
   selectionStats: SpreadsheetGridSelectionStats;
   hasGlobalFilter: boolean;
+  // 追加: グローバルフィルター入力値の短縮表示です。
+  globalFilterPreview: string | null;
   activeColumnFilterCount: number;
   hasAnyFilter: boolean;
   hasSorting: boolean;

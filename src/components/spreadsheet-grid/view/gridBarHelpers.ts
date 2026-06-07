@@ -24,6 +24,14 @@ export const resolveGridSlot = <T,>(
   return fallback;
 };
 
+// 追加: summary 用に長い文字列を短く丸めます。
+const truncateSummaryText = (value: string, maxLength = 16) => {
+  if (value.length <= maxLength) {
+    return value;
+  }
+  return `${value.slice(0, maxLength)}…`;
+};
+
 // 追加: ActiveCell を A1 形式へ整形します。
 export const formatGridCellLabel = (cell: CellCoord | null) => {
   if (!cell) {
@@ -172,6 +180,9 @@ export const formatGridFilterSummary = <T,>(
   >,
 ) => {
   const hasGlobalFilter = context.globalFilterText.trim().length > 0;
+  const globalFilterPreview = hasGlobalFilter
+    ? truncateSummaryText(context.globalFilterText.trim())
+    : null;
   const columnFilterCount = countActiveColumnFilters(context.columnFilterValues);
 
   if (!hasGlobalFilter && columnFilterCount === 0) {
@@ -179,14 +190,14 @@ export const formatGridFilterSummary = <T,>(
   }
 
   if (hasGlobalFilter && columnFilterCount === 0) {
-    return 'Filter: Global';
+    return `Filter: Global("${globalFilterPreview}")`;
   }
 
   if (!hasGlobalFilter && columnFilterCount > 0) {
     return `Filter: ${columnFilterCount}列`;
   }
 
-  return `Filter: Global + ${columnFilterCount}列`;
+  return `Filter: Global("${globalFilterPreview}") + ${columnFilterCount}列`;
 };
 
 // 追加: ソート列の表示名を取得します。
@@ -234,6 +245,9 @@ export const buildGridDerivedSummary = <T,>(
 ): SpreadsheetGridDerivedSummary => {
   const selectionStats = getGridSelectionStats(context);
   const hasGlobalFilter = context.globalFilterText.trim().length > 0;
+  const globalFilterPreview = hasGlobalFilter
+    ? truncateSummaryText(context.globalFilterText.trim())
+    : null;
   const activeColumnFilterCount = countActiveColumnFilters(
     context.columnFilterValues,
   );
@@ -254,10 +268,10 @@ export const buildGridDerivedSummary = <T,>(
     selectionStatsText: formatGridSelectionStatsLabel(context),
     selectionStats,
     hasGlobalFilter,
+    globalFilterPreview,
     activeColumnFilterCount,
     hasAnyFilter,
     hasSorting,
     sortedColumnLabel,
   };
 };
-``

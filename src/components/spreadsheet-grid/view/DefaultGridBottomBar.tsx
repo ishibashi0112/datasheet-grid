@@ -1,11 +1,11 @@
 import type { CSSProperties } from 'react';
+import type { SpreadsheetGridSlotContext } from '../model/gridTypes';
 import {
   getGridBarWrapperStyle,
   gridBarChipStyle,
   gridBarContainerStyle,
   gridBarGroupStyle,
 } from './gridBarStyles';
-import type { SpreadsheetGridSlotContext } from '../model/gridTypes';
 
 type DefaultGridBottomBarProps<T> = {
   context: SpreadsheetGridSlotContext<T>;
@@ -50,4 +50,3 @@ export function DefaultGridBottomBar<T>({
 }
 
 export default DefaultGridBottomBar;
-

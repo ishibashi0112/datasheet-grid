@@ -1,14 +1,15 @@
 import type { CSSProperties } from 'react';
 import type { SpreadsheetGridSlotContext } from '../model/gridTypes';
-import  {   
-    getGridBarWrapperStyle,
-    gridBarContainerStyle,
-    gridBarEmphasisChipStyle,
-    gridBarInputStyle,
-    gridBarLeadingGroupStyle,
-    gridBarTitleStyle,
+import {
+  getGridBarWrapperStyle,
+  gridBarContainerStyle,
+  gridBarClearButtonStyle,
+  gridBarEmphasisChipStyle,
+  gridBarInputGroupStyle,
+  gridBarInputStyle,
+  gridBarLeadingGroupStyle,
+  gridBarTitleStyle,
 } from './gridBarStyles';
-
 
 type DefaultGridTopBarProps<T> = {
   context: SpreadsheetGridSlotContext<T>;
@@ -47,18 +48,27 @@ export function DefaultGridTopBar<T>({
           </span>
         </div>
 
-        <input
-          type="text"
-          value={context.globalFilterText}
-          onChange={(event) => context.setGlobalFilterText(event.target.value)}
-          placeholder="グローバルフィルター"
-          style={gridBarInputStyle}
-        />
+        <div style={gridBarInputGroupStyle}>
+          <input
+            type="text"
+            value={context.globalFilterText}
+            onChange={(event) => context.setGlobalFilterText(event.target.value)}
+            placeholder="グローバルフィルター"
+            style={gridBarInputStyle}
+          />
+          {context.globalFilterText.trim().length > 0 ? (
+            <button
+              type="button"
+              onClick={() => context.setGlobalFilterText('')}
+              style={gridBarClearButtonStyle}
+            >
+              クリア
+            </button>
+          ) : null}
+        </div>
       </div>
     </div>
   );
 }
 
 export default DefaultGridTopBar;
-
-
