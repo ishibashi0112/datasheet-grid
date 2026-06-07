@@ -5,6 +5,8 @@ import {
   formatGridColumnSummary,
   formatGridRowSummary,
   formatGridSelectionLabel,
+  formatGridSelectionStatsLabel,
+  getGridSelectionStats,
 } from './gridBarHelpers';
 import {
   getGridBarWrapperStyle,
@@ -23,6 +25,8 @@ export function DefaultGridBottomBar<T>({
 }: DefaultGridBottomBarProps<T>) {
   // 追加: 共通 style helper から bottom bar 用 style を解決します。
   const wrapperStyle: CSSProperties = getGridBarWrapperStyle('bottom');
+  // 追加: 選択統計を helper から取得します。
+  const selectionStats = getGridSelectionStats(context);
 
   return (
     <div style={wrapperStyle}>
@@ -41,6 +45,12 @@ export function DefaultGridBottomBar<T>({
           <span style={gridBarChipStyle}>
             Selection: {formatGridSelectionLabel(context.selection)}
           </span>
+          <span style={gridBarChipStyle}>
+            {formatGridSelectionStatsLabel(context)}
+          </span>
+          <span style={gridBarChipStyle}>
+            Cols: {selectionStats.selectedColumnCount}
+          </span>
         </div>
       </div>
     </div>
@@ -48,3 +58,4 @@ export function DefaultGridBottomBar<T>({
 }
 
 export default DefaultGridBottomBar;
+``

@@ -1,8 +1,10 @@
 import type { CSSProperties } from 'react';
 import type { SpreadsheetGridSlotContext } from '../model/gridTypes';
 import {
+  formatGridFilterSummary,
   formatGridColumnSummary,
   formatGridRowSummary,
+  formatGridSortSummary,
 } from './gridBarHelpers';
 import {
   getGridBarWrapperStyle,
@@ -38,6 +40,14 @@ export function DefaultGridTopBar<T>({
           <span style={gridBarEmphasisChipStyle}>
             {formatGridColumnSummary(context)}
           </span>
+
+          <span style={gridBarEmphasisChipStyle}>
+            {formatGridFilterSummary(context)}
+          </span>
+
+          <span style={gridBarEmphasisChipStyle}>
+            {formatGridSortSummary(context)}
+          </span>
         </div>
 
         <input
@@ -53,4 +63,3 @@ export function DefaultGridTopBar<T>({
 }
 
 export default DefaultGridTopBar;
-``

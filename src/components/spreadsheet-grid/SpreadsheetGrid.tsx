@@ -749,6 +749,10 @@ export function SpreadsheetGrid<T extends object>({
       columns,
       visibleColumns,
       globalFilterText: selectGlobalFilter(uiState),
+      // 追加: bar summary 用に列フィルター値を公開します。
+      columnFilterValues: uiState.filters.columnFilters,
+      // 追加: bar summary 用にソート状態を公開します。
+      sortState: uiState.sort,
       setGlobalFilterText,
       activeCell: uiState.activeCell,
       selection: uiState.selection,

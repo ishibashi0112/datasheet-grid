@@ -145,6 +145,10 @@ export type SpreadsheetGridSlotContext<T> = {
   columns: GridColumn<T>[];
   visibleColumns: GridColumn<T>[];
   globalFilterText: string;
+  // 追加: bar summary 用に列フィルター値を公開します。
+  columnFilterValues: Record<string, unknown>;
+  // 追加: bar summary 用にソート状態を公開します。
+  sortState: GridSortState;
   setGlobalFilterText: (value: string) => void;
   activeCell: CellCoord | null;
   selection: GridSelection;
@@ -181,3 +185,4 @@ export type SpreadsheetGridProps<T> = {
   renderBottomBar?: (context: SpreadsheetGridSlotContext<T>) => ReactNode;
   className?: string;
 };
+``
