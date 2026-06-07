@@ -1,19 +1,11 @@
 import type { CSSProperties } from 'react';
-import type { SpreadsheetGridSlotContext } from '../model/gridTypes';
-import {
-  formatGridCellLabel,
-  formatGridColumnSummary,
-  formatGridRowSummary,
-  formatGridSelectionLabel,
-  formatGridSelectionStatsLabel,
-  getGridSelectionStats,
-} from './gridBarHelpers';
 import {
   getGridBarWrapperStyle,
   gridBarChipStyle,
   gridBarContainerStyle,
   gridBarGroupStyle,
 } from './gridBarStyles';
+import type { SpreadsheetGridSlotContext } from '../model/gridTypes';
 
 type DefaultGridBottomBarProps<T> = {
   context: SpreadsheetGridSlotContext<T>;
@@ -25,31 +17,31 @@ export function DefaultGridBottomBar<T>({
 }: DefaultGridBottomBarProps<T>) {
   // 追加: 共通 style helper から bottom bar 用 style を解決します。
   const wrapperStyle: CSSProperties = getGridBarWrapperStyle('bottom');
-  // 追加: 選択統計を helper から取得します。
-  const selectionStats = getGridSelectionStats(context);
+  // 追加: slot context が持つ派生 summary を使います。
+  const { derivedSummary } = context;
 
   return (
     <div style={wrapperStyle}>
       <div style={gridBarContainerStyle}>
         <div style={gridBarGroupStyle}>
-          <span style={gridBarChipStyle}>{formatGridRowSummary(context)}</span>
+          <span style={gridBarChipStyle}>{derivedSummary.rowSummaryText}</span>
           <span style={gridBarChipStyle}>
-            {formatGridColumnSummary(context)}
+            {derivedSummary.columnSummaryText}
           </span>
         </div>
 
         <div style={gridBarGroupStyle}>
           <span style={gridBarChipStyle}>
-            Active: {formatGridCellLabel(context.activeCell)}
+            Active: {derivedSummary.activeCellLabel}
           </span>
           <span style={gridBarChipStyle}>
-            Selection: {formatGridSelectionLabel(context.selection)}
+            Selection: {derivedSummary.selectionLabel}
           </span>
           <span style={gridBarChipStyle}>
-            {formatGridSelectionStatsLabel(context)}
+            {derivedSummary.selectionStatsText}
           </span>
           <span style={gridBarChipStyle}>
-            Cols: {selectionStats.selectedColumnCount}
+            Cols: {derivedSummary.selectionStats.selectedColumnCount}
           </span>
         </div>
       </div>
@@ -58,4 +50,4 @@ export function DefaultGridBottomBar<T>({
 }
 
 export default DefaultGridBottomBar;
-``
+

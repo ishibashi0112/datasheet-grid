@@ -138,6 +138,30 @@ export type GridUiState = {
   sort: GridSortState;
 };
 
+// 追加: 選択統計の派生 summary です。
+export type SpreadsheetGridSelectionStats = {
+  selectedCellCount: number;
+  selectedRowCount: number;
+  selectedColumnCount: number;
+};
+
+// 追加: topBar / bottomBar でそのまま使える派生 summary です。
+export type SpreadsheetGridDerivedSummary = {
+  rowSummaryText: string;
+  columnSummaryText: string;
+  filterSummaryText: string;
+  sortSummaryText: string;
+  activeCellLabel: string;
+  selectionLabel: string;
+  selectionStatsText: string;
+  selectionStats: SpreadsheetGridSelectionStats;
+  hasGlobalFilter: boolean;
+  activeColumnFilterCount: number;
+  hasAnyFilter: boolean;
+  hasSorting: boolean;
+  sortedColumnLabel: string | null;
+};
+
 // 追加: topBar / bottomBar へ渡す公開コンテキストです。
 export type SpreadsheetGridSlotContext<T> = {
   rows: T[];
@@ -152,6 +176,8 @@ export type SpreadsheetGridSlotContext<T> = {
   setGlobalFilterText: (value: string) => void;
   activeCell: CellCoord | null;
   selection: GridSelection;
+  // 追加: 利用側が helper import なしで使える派生 summary です。
+  derivedSummary: SpreadsheetGridDerivedSummary;
 };
 
 // 追加: 公開 props です。
@@ -185,4 +211,3 @@ export type SpreadsheetGridProps<T> = {
   renderBottomBar?: (context: SpreadsheetGridSlotContext<T>) => ReactNode;
   className?: string;
 };
-``

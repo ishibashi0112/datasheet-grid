@@ -1,19 +1,14 @@
 import type { CSSProperties } from 'react';
 import type { SpreadsheetGridSlotContext } from '../model/gridTypes';
-import {
-  formatGridFilterSummary,
-  formatGridColumnSummary,
-  formatGridRowSummary,
-  formatGridSortSummary,
-} from './gridBarHelpers';
-import {
-  getGridBarWrapperStyle,
-  gridBarContainerStyle,
-  gridBarEmphasisChipStyle,
-  gridBarInputStyle,
-  gridBarLeadingGroupStyle,
-  gridBarTitleStyle,
+import  {   
+    getGridBarWrapperStyle,
+    gridBarContainerStyle,
+    gridBarEmphasisChipStyle,
+    gridBarInputStyle,
+    gridBarLeadingGroupStyle,
+    gridBarTitleStyle,
 } from './gridBarStyles';
+
 
 type DefaultGridTopBarProps<T> = {
   context: SpreadsheetGridSlotContext<T>;
@@ -26,6 +21,8 @@ export function DefaultGridTopBar<T>({
 }: DefaultGridTopBarProps<T>) {
   // 追加: 共通 style helper から top bar 用 style を解決します。
   const wrapperStyle: CSSProperties = getGridBarWrapperStyle('top');
+  // 追加: slot context が持つ派生 summary を使います。
+  const { derivedSummary } = context;
 
   return (
     <div style={wrapperStyle}>
@@ -34,19 +31,19 @@ export function DefaultGridTopBar<T>({
           <span style={gridBarTitleStyle}>Toolbar</span>
 
           <span style={gridBarEmphasisChipStyle}>
-            {formatGridRowSummary(context)}
+            {derivedSummary.rowSummaryText}
           </span>
 
           <span style={gridBarEmphasisChipStyle}>
-            {formatGridColumnSummary(context)}
+            {derivedSummary.columnSummaryText}
           </span>
 
           <span style={gridBarEmphasisChipStyle}>
-            {formatGridFilterSummary(context)}
+            {derivedSummary.filterSummaryText}
           </span>
 
           <span style={gridBarEmphasisChipStyle}>
-            {formatGridSortSummary(context)}
+            {derivedSummary.sortSummaryText}
           </span>
         </div>
 
@@ -63,3 +60,5 @@ export function DefaultGridTopBar<T>({
 }
 
 export default DefaultGridTopBar;
+
+

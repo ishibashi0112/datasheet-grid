@@ -5,6 +5,8 @@ import type {
   GridSortState,
   GridColumn,
   SpreadsheetGridSlotContext,
+  SpreadsheetGridDerivedSummary,
+  SpreadsheetGridSelectionStats,
 } from '../model/gridTypes';
 import { toExcelColumnName } from '../utils/excelColumnName';
 
@@ -86,7 +88,7 @@ export const getGridSelectionStats = <T,>(
     SpreadsheetGridSlotContext<T>,
     'selection' | 'visibleColumns' | 'filteredRows'
   >,
-) => {
+): SpreadsheetGridSelectionStats => {
   const selection = context.selection;
   if (!selection) {
     return {
@@ -214,3 +216,48 @@ export const formatGridSortSummary = <T,>(
 
   return `Sort: ${columnLabel} (${directionLabel})`;
 };
+
+// 追加: slot context に載せる派生 summary を一括構築します。
+export const buildGridDerivedSummary = <T,>(
+  context: Pick<
+    SpreadsheetGridSlotContext<T>,
+    | 'rows'
+    | 'filteredRows'
+    | 'columns'
+    | 'visibleColumns'
+    | 'globalFilterText'
+    | 'columnFilterValues'
+    | 'sortState'
+    | 'activeCell'
+    | 'selection'
+  >,
+): SpreadsheetGridDerivedSummary => {
+  const selectionStats = getGridSelectionStats(context);
+  const hasGlobalFilter = context.globalFilterText.trim().length > 0;
+  const activeColumnFilterCount = countActiveColumnFilters(
+    context.columnFilterValues,
+  );
+  const hasAnyFilter = hasGlobalFilter || activeColumnFilterCount > 0;
+  const hasSorting =
+    context.sortState.columnKey !== null && context.sortState.direction !== null;
+  const sortedColumnLabel = hasSorting
+    ? getSortColumnLabel(context.columns, context.sortState)
+    : null;
+
+  return {
+    rowSummaryText: formatGridRowSummary(context),
+    columnSummaryText: formatGridColumnSummary(context),
+    filterSummaryText: formatGridFilterSummary(context),
+    sortSummaryText: formatGridSortSummary(context),
+    activeCellLabel: formatGridCellLabel(context.activeCell),
+    selectionLabel: formatGridSelectionLabel(context.selection),
+    selectionStatsText: formatGridSelectionStatsLabel(context),
+    selectionStats,
+    hasGlobalFilter,
+    activeColumnFilterCount,
+    hasAnyFilter,
+    hasSorting,
+    sortedColumnLabel,
+  };
+};
+``
