@@ -76,4 +76,14 @@ export const gridBarInputStyle: CSSProperties = {
   borderRadius: 8,
   outline: 'none',
   backgroundColor: '#ffffff',
+  // 追加: 入力文字色を明示して、dark/light やブラウザ差異で
+  //       文字が見えなくなるのを防ぎます。
+  color: '#0f172a',
+  // 追加: キャレット色も明示します。
+  caretColor: '#0f172a',
+  // 追加: bar 内での可読性を安定させます。
+  fontSize: 14,
+  lineHeight: 1.4,
+  // 追加: Chromium / WebKit 系で text fill が変わるケースに備えます。
+  WebkitTextFillColor: '#0f172a',
 };

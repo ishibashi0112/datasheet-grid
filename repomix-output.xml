@@ -3629,272 +3629,6 @@ export const isSameCellCoord = (
 };
 </file>
 
-<file path="src/components/spreadsheet-grid/view/gridBarHelpers.ts">
-import type { ReactNode } from 'react';
-import type {
-  CellCoord,
-  GridSelection,
-  GridSortState,
-  GridColumn,
-  SpreadsheetGridSlotContext,
-  SpreadsheetGridDerivedSummary,
-  SpreadsheetGridSelectionStats,
-} from '../model/gridTypes';
-import { toExcelColumnName } from '../utils/excelColumnName';
-
-// 追加: Grid の slot renderer を解決します。
-export const resolveGridSlot = <T,>(
-  slotRenderer:
-    | ((context: SpreadsheetGridSlotContext<T>) => ReactNode)
-    | undefined,
-  context: SpreadsheetGridSlotContext<T>,
-  fallback: ReactNode,
-) => {
-  if (slotRenderer) {
-    return slotRenderer(context);
-  }
-  return fallback;
-};
-
-// 追加: ActiveCell を A1 形式へ整形します。
-export const formatGridCellLabel = (cell: CellCoord | null) => {
-  if (!cell) {
-    return 'なし';
-  }
-  return `${toExcelColumnName(cell.col)}${cell.row + 1}`;
-};
-
-// 追加: selection の概要を短く整形します。
-export const formatGridSelectionLabel = (selection: GridSelection) => {
-  if (!selection) {
-    return 'なし';
-  }
-
-  if (selection.type === 'cell') {
-    const startRow = Math.min(
-      selection.range.start.row,
-      selection.range.end.row,
-    );
-    const endRow = Math.max(
-      selection.range.start.row,
-      selection.range.end.row,
-    );
-    const startCol = Math.min(
-      selection.range.start.col,
-      selection.range.end.col,
-    );
-    const endCol = Math.max(
-      selection.range.start.col,
-      selection.range.end.col,
-    );
-
-    return `${toExcelColumnName(startCol)}${startRow + 1} - ${toExcelColumnName(
-      endCol,
-    )}${endRow + 1}`;
-  }
-
-  if (selection.type === 'row') {
-    const startRow = Math.min(selection.startRow, selection.endRow);
-    const endRow = Math.max(selection.startRow, selection.endRow);
-    return `Row ${startRow + 1} - ${endRow + 1}`;
-  }
-
-  const startCol = Math.min(selection.startCol, selection.endCol);
-  const endCol = Math.max(selection.startCol, selection.endCol);
-  return `Col ${toExcelColumnName(startCol)} - ${toExcelColumnName(endCol)}`;
-};
-
-// 追加: rows / filteredRows の概要テキストです。
-export const formatGridRowSummary = <T,>(
-  context: Pick<SpreadsheetGridSlotContext<T>, 'rows' | 'filteredRows'>,
-) => `Rows: ${context.filteredRows.length} / ${context.rows.length}`;
-
-// 追加: columns / visibleColumns の概要テキストです。
-export const formatGridColumnSummary = <T,>(
-  context: Pick<SpreadsheetGridSlotContext<T>, 'columns' | 'visibleColumns'>,
-) => `Columns: ${context.visibleColumns.length} / ${context.columns.length}`;
-
-// 追加: selection から選択セル数 / 行数 / 列数を算出します。
-export const getGridSelectionStats = <T,>(
-  context: Pick<
-    SpreadsheetGridSlotContext<T>,
-    'selection' | 'visibleColumns' | 'filteredRows'
-  >,
-): SpreadsheetGridSelectionStats => {
-  const selection = context.selection;
-  if (!selection) {
-    return {
-      selectedCellCount: 0,
-      selectedRowCount: 0,
-      selectedColumnCount: 0,
-    };
-  }
-
-  if (selection.type === 'cell') {
-    const startRow = Math.min(
-      selection.range.start.row,
-      selection.range.end.row,
-    );
-    const endRow = Math.max(
-      selection.range.start.row,
-      selection.range.end.row,
-    );
-    const startCol = Math.min(
-      selection.range.start.col,
-      selection.range.end.col,
-    );
-    const endCol = Math.max(
-      selection.range.start.col,
-      selection.range.end.col,
-    );
-    const selectedRowCount = endRow - startRow + 1;
-    const selectedColumnCount = endCol - startCol + 1;
-    return {
-      selectedCellCount: selectedRowCount * selectedColumnCount,
-      selectedRowCount,
-      selectedColumnCount,
-    };
-  }
-
-  if (selection.type === 'row') {
-    const startRow = Math.min(selection.startRow, selection.endRow);
-    const endRow = Math.max(selection.startRow, selection.endRow);
-    const selectedRowCount = endRow - startRow + 1;
-    const selectedColumnCount = context.visibleColumns.length;
-    return {
-      selectedCellCount: selectedRowCount * selectedColumnCount,
-      selectedRowCount,
-      selectedColumnCount,
-    };
-  }
-
-  const startCol = Math.min(selection.startCol, selection.endCol);
-  const endCol = Math.max(selection.startCol, selection.endCol);
-  const selectedColumnCount = endCol - startCol + 1;
-  const selectedRowCount = context.filteredRows.length;
-  return {
-    selectedCellCount: selectedRowCount * selectedColumnCount,
-    selectedRowCount,
-    selectedColumnCount,
-  };
-};
-
-// 追加: selection 数量の要約テキストです。
-export const formatGridSelectionStatsLabel = <T,>(
-  context: Pick<
-    SpreadsheetGridSlotContext<T>,
-    'selection' | 'visibleColumns' | 'filteredRows'
-  >,
-) => {
-  const stats = getGridSelectionStats(context);
-  return `Cells: ${stats.selectedCellCount} / Rows: ${stats.selectedRowCount}`;
-};
-
-// 追加: 列フィルターの有効件数を数えます。
-const countActiveColumnFilters = (columnFilterValues: Record<string, unknown>) =>
-  Object.values(columnFilterValues).filter(
-    (value) => String(value ?? '').trim().length > 0,
-  ).length;
-
-// 追加: フィルター状態の要約テキストです。
-export const formatGridFilterSummary = <T,>(
-  context: Pick<
-    SpreadsheetGridSlotContext<T>,
-    'globalFilterText' | 'columnFilterValues'
-  >,
-) => {
-  const hasGlobalFilter = context.globalFilterText.trim().length > 0;
-  const columnFilterCount = countActiveColumnFilters(context.columnFilterValues);
-
-  if (!hasGlobalFilter && columnFilterCount === 0) {
-    return 'Filter: なし';
-  }
-
-  if (hasGlobalFilter && columnFilterCount === 0) {
-    return 'Filter: Global';
-  }
-
-  if (!hasGlobalFilter && columnFilterCount > 0) {
-    return `Filter: ${columnFilterCount}列`;
-  }
-
-  return `Filter: Global + ${columnFilterCount}列`;
-};
-
-// 追加: ソート列の表示名を取得します。
-const getSortColumnLabel = <T,>(
-  columns: GridColumn<T>[],
-  sortState: GridSortState,
-) => {
-  if (!sortState.columnKey) {
-    return '';
-  }
-
-  const column = columns.find((item) => item.key === sortState.columnKey);
-  return column?.title || column?.key || sortState.columnKey;
-};
-
-// 追加: ソート状態の要約テキストです。
-export const formatGridSortSummary = <T,>(
-  context: Pick<SpreadsheetGridSlotContext<T>, 'columns' | 'sortState'>,
-) => {
-  if (!context.sortState.columnKey || !context.sortState.direction) {
-    return 'Sort: なし';
-  }
-
-  const columnLabel = getSortColumnLabel(context.columns, context.sortState);
-  const directionLabel =
-    context.sortState.direction === 'asc' ? '昇順' : '降順';
-
-  return `Sort: ${columnLabel} (${directionLabel})`;
-};
-
-// 追加: slot context に載せる派生 summary を一括構築します。
-export const buildGridDerivedSummary = <T,>(
-  context: Pick<
-    SpreadsheetGridSlotContext<T>,
-    | 'rows'
-    | 'filteredRows'
-    | 'columns'
-    | 'visibleColumns'
-    | 'globalFilterText'
-    | 'columnFilterValues'
-    | 'sortState'
-    | 'activeCell'
-    | 'selection'
-  >,
-): SpreadsheetGridDerivedSummary => {
-  const selectionStats = getGridSelectionStats(context);
-  const hasGlobalFilter = context.globalFilterText.trim().length > 0;
-  const activeColumnFilterCount = countActiveColumnFilters(
-    context.columnFilterValues,
-  );
-  const hasAnyFilter = hasGlobalFilter || activeColumnFilterCount > 0;
-  const hasSorting =
-    context.sortState.columnKey !== null && context.sortState.direction !== null;
-  const sortedColumnLabel = hasSorting
-    ? getSortColumnLabel(context.columns, context.sortState)
-    : null;
-
-  return {
-    rowSummaryText: formatGridRowSummary(context),
-    columnSummaryText: formatGridColumnSummary(context),
-    filterSummaryText: formatGridFilterSummary(context),
-    sortSummaryText: formatGridSortSummary(context),
-    activeCellLabel: formatGridCellLabel(context.activeCell),
-    selectionLabel: formatGridSelectionLabel(context.selection),
-    selectionStatsText: formatGridSelectionStatsLabel(context),
-    selectionStats,
-    hasGlobalFilter,
-    activeColumnFilterCount,
-    hasAnyFilter,
-    hasSorting,
-    sortedColumnLabel,
-  };
-};
-``
-</file>
-
 <file path="src/components/spreadsheet-grid/model/gridActions.ts">
 import type { CellCoord, GridSortDirection } from './gridTypes';
 
@@ -4533,6 +4267,272 @@ export const applyClipboardMatrixToRows = <T extends object,>(
 };
 </file>
 
+<file path="src/components/spreadsheet-grid/view/gridBarHelpers.ts">
+import type { ReactNode } from 'react';
+import type {
+  CellCoord,
+  GridSelection,
+  GridSortState,
+  GridColumn,
+  SpreadsheetGridSlotContext,
+  SpreadsheetGridDerivedSummary,
+  SpreadsheetGridSelectionStats,
+} from '../model/gridTypes';
+import { toExcelColumnName } from '../utils/excelColumnName';
+
+// 追加: Grid の slot renderer を解決します。
+export const resolveGridSlot = <T,>(
+  slotRenderer:
+    | ((context: SpreadsheetGridSlotContext<T>) => ReactNode)
+    | undefined,
+  context: SpreadsheetGridSlotContext<T>,
+  fallback: ReactNode,
+) => {
+  if (slotRenderer) {
+    return slotRenderer(context);
+  }
+  return fallback;
+};
+
+// 追加: ActiveCell を A1 形式へ整形します。
+export const formatGridCellLabel = (cell: CellCoord | null) => {
+  if (!cell) {
+    return 'なし';
+  }
+  return `${toExcelColumnName(cell.col)}${cell.row + 1}`;
+};
+
+// 追加: selection の概要を短く整形します。
+export const formatGridSelectionLabel = (selection: GridSelection) => {
+  if (!selection) {
+    return 'なし';
+  }
+
+  if (selection.type === 'cell') {
+    const startRow = Math.min(
+      selection.range.start.row,
+      selection.range.end.row,
+    );
+    const endRow = Math.max(
+      selection.range.start.row,
+      selection.range.end.row,
+    );
+    const startCol = Math.min(
+      selection.range.start.col,
+      selection.range.end.col,
+    );
+    const endCol = Math.max(
+      selection.range.start.col,
+      selection.range.end.col,
+    );
+
+    return `${toExcelColumnName(startCol)}${startRow + 1} - ${toExcelColumnName(
+      endCol,
+    )}${endRow + 1}`;
+  }
+
+  if (selection.type === 'row') {
+    const startRow = Math.min(selection.startRow, selection.endRow);
+    const endRow = Math.max(selection.startRow, selection.endRow);
+    return `Row ${startRow + 1} - ${endRow + 1}`;
+  }
+
+  const startCol = Math.min(selection.startCol, selection.endCol);
+  const endCol = Math.max(selection.startCol, selection.endCol);
+  return `Col ${toExcelColumnName(startCol)} - ${toExcelColumnName(endCol)}`;
+};
+
+// 追加: rows / filteredRows の概要テキストです。
+export const formatGridRowSummary = <T,>(
+  context: Pick<SpreadsheetGridSlotContext<T>, 'rows' | 'filteredRows'>,
+) => `Rows: ${context.filteredRows.length} / ${context.rows.length}`;
+
+// 追加: columns / visibleColumns の概要テキストです。
+export const formatGridColumnSummary = <T,>(
+  context: Pick<SpreadsheetGridSlotContext<T>, 'columns' | 'visibleColumns'>,
+) => `Columns: ${context.visibleColumns.length} / ${context.columns.length}`;
+
+// 追加: selection から選択セル数 / 行数 / 列数を算出します。
+export const getGridSelectionStats = <T,>(
+  context: Pick<
+    SpreadsheetGridSlotContext<T>,
+    'selection' | 'visibleColumns' | 'filteredRows'
+  >,
+): SpreadsheetGridSelectionStats => {
+  const selection = context.selection;
+  if (!selection) {
+    return {
+      selectedCellCount: 0,
+      selectedRowCount: 0,
+      selectedColumnCount: 0,
+    };
+  }
+
+  if (selection.type === 'cell') {
+    const startRow = Math.min(
+      selection.range.start.row,
+      selection.range.end.row,
+    );
+    const endRow = Math.max(
+      selection.range.start.row,
+      selection.range.end.row,
+    );
+    const startCol = Math.min(
+      selection.range.start.col,
+      selection.range.end.col,
+    );
+    const endCol = Math.max(
+      selection.range.start.col,
+      selection.range.end.col,
+    );
+    const selectedRowCount = endRow - startRow + 1;
+    const selectedColumnCount = endCol - startCol + 1;
+    return {
+      selectedCellCount: selectedRowCount * selectedColumnCount,
+      selectedRowCount,
+      selectedColumnCount,
+    };
+  }
+
+  if (selection.type === 'row') {
+    const startRow = Math.min(selection.startRow, selection.endRow);
+    const endRow = Math.max(selection.startRow, selection.endRow);
+    const selectedRowCount = endRow - startRow + 1;
+    const selectedColumnCount = context.visibleColumns.length;
+    return {
+      selectedCellCount: selectedRowCount * selectedColumnCount,
+      selectedRowCount,
+      selectedColumnCount,
+    };
+  }
+
+  const startCol = Math.min(selection.startCol, selection.endCol);
+  const endCol = Math.max(selection.startCol, selection.endCol);
+  const selectedColumnCount = endCol - startCol + 1;
+  const selectedRowCount = context.filteredRows.length;
+  return {
+    selectedCellCount: selectedRowCount * selectedColumnCount,
+    selectedRowCount,
+    selectedColumnCount,
+  };
+};
+
+// 追加: selection 数量の要約テキストです。
+export const formatGridSelectionStatsLabel = <T,>(
+  context: Pick<
+    SpreadsheetGridSlotContext<T>,
+    'selection' | 'visibleColumns' | 'filteredRows'
+  >,
+) => {
+  const stats = getGridSelectionStats(context);
+  return `Cells: ${stats.selectedCellCount} / Rows: ${stats.selectedRowCount}`;
+};
+
+// 追加: 列フィルターの有効件数を数えます。
+const countActiveColumnFilters = (columnFilterValues: Record<string, unknown>) =>
+  Object.values(columnFilterValues).filter(
+    (value) => String(value ?? '').trim().length > 0,
+  ).length;
+
+// 追加: フィルター状態の要約テキストです。
+export const formatGridFilterSummary = <T,>(
+  context: Pick<
+    SpreadsheetGridSlotContext<T>,
+    'globalFilterText' | 'columnFilterValues'
+  >,
+) => {
+  const hasGlobalFilter = context.globalFilterText.trim().length > 0;
+  const columnFilterCount = countActiveColumnFilters(context.columnFilterValues);
+
+  if (!hasGlobalFilter && columnFilterCount === 0) {
+    return 'Filter: なし';
+  }
+
+  if (hasGlobalFilter && columnFilterCount === 0) {
+    return 'Filter: Global';
+  }
+
+  if (!hasGlobalFilter && columnFilterCount > 0) {
+    return `Filter: ${columnFilterCount}列`;
+  }
+
+  return `Filter: Global + ${columnFilterCount}列`;
+};
+
+// 追加: ソート列の表示名を取得します。
+const getSortColumnLabel = <T,>(
+  columns: GridColumn<T>[],
+  sortState: GridSortState,
+) => {
+  if (!sortState.columnKey) {
+    return '';
+  }
+
+  const column = columns.find((item) => item.key === sortState.columnKey);
+  return column?.title || column?.key || sortState.columnKey;
+};
+
+// 追加: ソート状態の要約テキストです。
+export const formatGridSortSummary = <T,>(
+  context: Pick<SpreadsheetGridSlotContext<T>, 'columns' | 'sortState'>,
+) => {
+  if (!context.sortState.columnKey || !context.sortState.direction) {
+    return 'Sort: なし';
+  }
+
+  const columnLabel = getSortColumnLabel(context.columns, context.sortState);
+  const directionLabel =
+    context.sortState.direction === 'asc' ? '昇順' : '降順';
+
+  return `Sort: ${columnLabel} (${directionLabel})`;
+};
+
+// 追加: slot context に載せる派生 summary を一括構築します。
+export const buildGridDerivedSummary = <T,>(
+  context: Pick<
+    SpreadsheetGridSlotContext<T>,
+    | 'rows'
+    | 'filteredRows'
+    | 'columns'
+    | 'visibleColumns'
+    | 'globalFilterText'
+    | 'columnFilterValues'
+    | 'sortState'
+    | 'activeCell'
+    | 'selection'
+  >,
+): SpreadsheetGridDerivedSummary => {
+  const selectionStats = getGridSelectionStats(context);
+  const hasGlobalFilter = context.globalFilterText.trim().length > 0;
+  const activeColumnFilterCount = countActiveColumnFilters(
+    context.columnFilterValues,
+  );
+  const hasAnyFilter = hasGlobalFilter || activeColumnFilterCount > 0;
+  const hasSorting =
+    context.sortState.columnKey !== null && context.sortState.direction !== null;
+  const sortedColumnLabel = hasSorting
+    ? getSortColumnLabel(context.columns, context.sortState)
+    : null;
+
+  return {
+    rowSummaryText: formatGridRowSummary(context),
+    columnSummaryText: formatGridColumnSummary(context),
+    filterSummaryText: formatGridFilterSummary(context),
+    sortSummaryText: formatGridSortSummary(context),
+    activeCellLabel: formatGridCellLabel(context.activeCell),
+    selectionLabel: formatGridSelectionLabel(context.selection),
+    selectionStatsText: formatGridSelectionStatsLabel(context),
+    selectionStats,
+    hasGlobalFilter,
+    activeColumnFilterCount,
+    hasAnyFilter,
+    hasSorting,
+    sortedColumnLabel,
+  };
+};
+``
+</file>
+
 <file path="src/components/spreadsheet-grid/view/DefaultGridBottomBar.tsx">
 import type { CSSProperties } from 'react';
 import {
@@ -5099,7 +5099,7 @@ import { getCellValue, isCellEditable, setCellValue } from './utils/permissions'
 import ColumnFilterPopover from './view/ColumnFilterPopover';
 import DefaultGridBottomBar from './view/DefaultGridBottomBar';
 import DefaultGridTopBar from './view/DefaultGridTopBar';
-import { resolveGridSlot } from './view/gridBarHelpers';
+import { buildGridDerivedSummary, resolveGridSlot } from './view/gridBarHelpers';
 import GridBodyLayer from './view/GridBodyLayer';
 import GridHeaderRow from './view/GridHeaderRow';
 
@@ -5107,6 +5107,12 @@ import GridHeaderRow from './view/GridHeaderRow';
 type SourceRowModel<T> = GridRowModelLike<T> & {
   rowKey: GridRowKey;
 };
+
+// 追加: derivedSummary / setGlobalFilterText を載せる前の中間 slot context 型です。
+type GridSlotContextBase<T> = Omit<
+  SpreadsheetGridSlotContext<T>,
+  'setGlobalFilterText' | 'derivedSummary'
+>;
 
 // 追加: Grid 本体です。
 export function SpreadsheetGrid<T extends object>({
@@ -5787,30 +5793,36 @@ export function SpreadsheetGrid<T extends object>({
     [dispatch],
   );
 
-  // 追加: slot に公開する最小コンテキストです。
-  const slotContext = useMemo<SpreadsheetGridSlotContext<T>>(
+  // 追加: derived summary 算出前の生コンテキストです。
+  const slotContextBase = useMemo<GridSlotContextBase<T>>(
     () => ({
       rows,
       filteredRows,
       columns,
       visibleColumns,
       globalFilterText: selectGlobalFilter(uiState),
-      // 追加: bar summary 用に列フィルター値を公開します。
       columnFilterValues: uiState.filters.columnFilters,
-      // 追加: bar summary 用にソート状態を公開します。
       sortState: uiState.sort,
-      setGlobalFilterText,
       activeCell: uiState.activeCell,
       selection: uiState.selection,
     }),
-    [
-      rows,
-      filteredRows,
-      columns,
-      visibleColumns,
-      uiState,
+    [rows, filteredRows, columns, visibleColumns, uiState],
+  );
+
+  // 追加: topBar / bottomBar でそのまま使える派生 summary を構築します。
+  const derivedSummary = useMemo(
+    () => buildGridDerivedSummary(slotContextBase),
+    [slotContextBase],
+  );
+
+  // 追加: slot に公開する完全版コンテキストです。
+  const slotContext = useMemo<SpreadsheetGridSlotContext<T>>(
+    () => ({
+      ...slotContextBase,
       setGlobalFilterText,
-    ],
+      derivedSummary,
+    }),
+    [derivedSummary, setGlobalFilterText, slotContextBase],
   );
 
   const gridShellStyle: CSSProperties = {
@@ -5868,14 +5880,12 @@ export function SpreadsheetGrid<T extends object>({
     />
   ) : null;
 
-  // 追加: slot helper を使って top/bottom の描画を解決します。
   const resolvedTopBar = resolveGridSlot(
     renderTopBar,
     slotContext,
     enableGlobalFilter ? <DefaultGridTopBar context={slotContext} /> : null,
   );
 
-  // 追加: bottom は未指定時に既定ステータスバーを表示します。
   const resolvedBottomBar = resolveGridSlot(
     renderBottomBar,
     slotContext,
@@ -5894,9 +5904,7 @@ export function SpreadsheetGrid<T extends object>({
           pointerClientRef.current = { x: event.clientX, y: event.clientY };
           updateSelectionFromPointer(event.clientX, event.clientY);
         }}
-        // 追加: popover open 中は grid root を tab フォーカス対象から外します。
         tabIndex={isFilterPopoverOpen ? -1 : 0}
-        // 追加: popover open 中は root の keyboard/paste handler 自体を外します。
         onKeyDown={isFilterPopoverOpen ? undefined : handleKeyDown}
         onPaste={isFilterPopoverOpen ? undefined : handlePaste}
       >
