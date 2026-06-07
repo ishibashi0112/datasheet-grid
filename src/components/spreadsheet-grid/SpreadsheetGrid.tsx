@@ -53,6 +53,7 @@ import { getCellValue, isCellEditable, setCellValue } from './utils/permissions'
 import ColumnFilterPopover from './view/ColumnFilterPopover';
 import DefaultGridBottomBar from './view/DefaultGridBottomBar';
 import DefaultGridTopBar from './view/DefaultGridTopBar';
+import { resolveGridSlot } from './view/gridBarHelpers';
 import GridBodyLayer from './view/GridBodyLayer';
 import GridHeaderRow from './view/GridHeaderRow';
 
@@ -817,17 +818,19 @@ export function SpreadsheetGrid<T extends object>({
     />
   ) : null;
 
-  // 追加: top/bottom slot を解決します。
-  const resolvedTopBar = renderTopBar
-    ? renderTopBar(slotContext)
-    : enableGlobalFilter
-      ? <DefaultGridTopBar context={slotContext} />
-      : null;
+  // 追加: slot helper を使って top/bottom の描画を解決します。
+  const resolvedTopBar = resolveGridSlot(
+    renderTopBar,
+    slotContext,
+    enableGlobalFilter ? <DefaultGridTopBar context={slotContext} /> : null,
+  );
 
-  // 追加: default bottom bar は status bar として薄く表示します。
-  const resolvedBottomBar = renderBottomBar
-    ? renderBottomBar(slotContext)
-    : <DefaultGridBottomBar context={slotContext} />;
+  // 追加: bottom は未指定時に既定ステータスバーを表示します。
+  const resolvedBottomBar = resolveGridSlot(
+    renderBottomBar,
+    slotContext,
+    <DefaultGridBottomBar context={slotContext} />,
+  );
 
   return (
     <div className={className}>
