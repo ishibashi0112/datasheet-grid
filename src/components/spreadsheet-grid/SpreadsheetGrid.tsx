@@ -29,15 +29,19 @@ import ActiveCellOverlay, {
   type ActiveCellOverlayRect,
 } from './ActiveCellOverlay';
 import CellEditorLayer from './CellEditorLayer';
-import ColumnFilterPopover from './view/ColumnFilterPopover';
-import GridHeaderRow from './view/GridHeaderRow';
-import GridBodyLayer from './view/GridBodyLayer';
 import { useFilterPopoverController } from './hooks/useFilterPopoverController';
-import { useGridPointerInteractions } from './hooks/useGridPointerInteractions';
-import { useGridKeyboardInteractions } from './hooks/useGridKeyboardInteractions';
-import { useGridViewportSync } from './hooks/useGridViewportSync';
 import { useGridClipboardController } from './hooks/useGridClipboardController';
 import { useGridEditController } from './hooks/useGridEditController';
+import { useGridKeyboardInteractions } from './hooks/useGridKeyboardInteractions';
+import { useGridPointerInteractions } from './hooks/useGridPointerInteractions';
+import { useGridViewportSync } from './hooks/useGridViewportSync';
+import {
+  applyColumnFilters,
+  applyGlobalFilter,
+  type GridRowModelLike,
+} from './logic/filtering';
+import { buildColumnMeasurements } from './logic/geometry';
+import { applySort } from './logic/sorting';
 import type {
   CellCoord,
   GridColumn,
@@ -45,14 +49,12 @@ import type {
   SpreadsheetGridProps,
   SpreadsheetGridSlotContext,
 } from './model/gridTypes';
-import {
-  applyColumnFilters,
-  applyGlobalFilter,
-  type GridRowModelLike,
-} from './logic/filtering';
-import { applySort } from './logic/sorting';
-import { buildColumnMeasurements } from './logic/geometry';
 import { getCellValue, isCellEditable, setCellValue } from './utils/permissions';
+import ColumnFilterPopover from './view/ColumnFilterPopover';
+import DefaultGridBottomBar from './view/DefaultGridBottomBar';
+import DefaultGridTopBar from './view/DefaultGridTopBar';
+import GridBodyLayer from './view/GridBodyLayer';
+import GridHeaderRow from './view/GridHeaderRow';
 
 // 追加: 元 rows と filteredRows の対応を安定して持つための row model です。
 type SourceRowModel<T> = GridRowModelLike<T> & {
@@ -815,62 +817,17 @@ export function SpreadsheetGrid<T extends object>({
     />
   ) : null;
 
-  // 追加: default top bar は Global Filter を右寄せで持つ薄いツールバーです。
-  const defaultTopBar = enableGlobalFilter ? (
-    <div style={{ marginBottom: 12 }}>
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          gap: 12,
-          padding: '10px 12px',
-          border: '1px solid #d7dce3',
-          borderRadius: 12,
-          backgroundColor: '#f8fafc',
-        }}
-      >
-        <div
-          style={{
-            minWidth: 0,
-            fontSize: 13,
-            fontWeight: 600,
-            color: '#334155',
-          }}
-        >
-          Toolbar
-        </div>
-
-        <input
-          type="text"
-          value={slotContext.globalFilterText}
-          onChange={(event) =>
-            slotContext.setGlobalFilterText(event.target.value)
-          }
-          placeholder="グローバルフィルター"
-          style={{
-            width: '100%',
-            maxWidth: 320,
-            boxSizing: 'border-box',
-            padding: '10px 12px',
-            border: '1px solid #cbd5e1',
-            borderRadius: 8,
-            outline: 'none',
-            backgroundColor: '#ffffff',
-          }}
-        />
-      </div>
-    </div>
-  ) : null;
-
   // 追加: top/bottom slot を解決します。
   const resolvedTopBar = renderTopBar
     ? renderTopBar(slotContext)
-    : defaultTopBar;
+    : enableGlobalFilter
+      ? <DefaultGridTopBar context={slotContext} />
+      : null;
 
+  // 追加: default bottom bar は status bar として薄く表示します。
   const resolvedBottomBar = renderBottomBar
     ? renderBottomBar(slotContext)
-    : null;
+    : <DefaultGridBottomBar context={slotContext} />;
 
   return (
     <div className={className}>
@@ -995,9 +952,7 @@ export function SpreadsheetGrid<T extends object>({
         </div>
       </div>
 
-      {resolvedBottomBar ? (
-        <div style={{ marginTop: 12 }}>{resolvedBottomBar}</div>
-      ) : null}
+      {resolvedBottomBar}
 
       {renderedFilterPopover}
     </div>
