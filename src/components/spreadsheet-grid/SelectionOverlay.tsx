@@ -41,4 +41,3 @@ export function SelectionOverlay({
 }
 
 export default SelectionOverlay;
-``

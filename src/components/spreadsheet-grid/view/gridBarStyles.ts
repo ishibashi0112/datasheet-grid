@@ -110,4 +110,3 @@ export const gridBarClearButtonStyle: CSSProperties = {
   lineHeight: 1,
   whiteSpace: 'nowrap',
 };
-``

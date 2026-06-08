@@ -11,7 +11,10 @@ import type {
   GridUiState,
   SpreadsheetGridProps,
 } from '../model/gridTypes';
-import type { ColumnMeasurement } from '../logic/geometry';
+// 変更(10-C): 列座標を ColumnMeasurement(グローバル) から
+//             PaneColumnEntry(ペインローカル) へ切り替えます。
+import type { PaneColumnEntry } from '../logic/geometry';
+import type { GridPaneKind } from './GridHeaderRow';
 import { isCellEditable } from '../utils/permissions';
 
 type VirtualRowLike = {
@@ -19,20 +22,20 @@ type VirtualRowLike = {
   start: number;
 };
 
-type VirtualColumnLike = {
-  index: number;
-};
-
 type GridBodyLayerProps<T> = {
+  // 追加(10-C): 描画対象のペイン種別です。
+  pane: GridPaneKind;
+  // 追加(10-C): true のときだけ行番号セルを描画します。
+  ownsRowHeader: boolean;
+  // 追加(10-C): 列の前に確保する先頭幅です(行ヘッダーを持つペインは rowHeaderWidth、他は 0)。
+  leadingWidth: number;
   filteredRows: T[];
   filteredRowKeys: GridRowKey[];
-  visibleColumns: GridColumn<T>[];
   virtualRows: VirtualRowLike[];
-  virtualColumns: VirtualColumnLike[];
   virtualRowIndexes: Set<number>;
-  virtualColumnIndexes: Set<number>;
-  columnMeasurements: ColumnMeasurement<T>[];
-  rowHeaderWidth: number;
+  // 変更(10-C): 描画対象の列エントリです(座標はペインローカル)。
+  //             中央ペインは仮想化済みの部分集合、固定ペインは全エントリです。
+  renderEntries: PaneColumnEntry<T>[];
   headerHeight: number;
   rowHeight: number;
   rowHeaderCellStyle: CSSProperties;
@@ -59,6 +62,7 @@ type GridBodyLayerProps<T> = {
     event: PointerEvent<HTMLDivElement>,
   ) => void;
   onCellDoubleClick: (cell: CellCoord) => void;
+  // 注記(10-C): renderCellContent には colIndex として entry.logicalIndex を渡します。
   renderCellContent: (
     row: T,
     rowIndex: number,
@@ -67,17 +71,17 @@ type GridBodyLayerProps<T> = {
   ) => ReactNode;
 };
 
-// 追加: 仮想行 / 仮想列に基づいて、行ヘッダーとセル本体を描画する body layer です。
+// 変更(10-C): 仮想行 × 「1ペイン分の列エントリ」で、行ヘッダーとセル本体を
+//             描画する汎用 body layer にしました。
 export function GridBodyLayer<T>({
+  pane,
+  ownsRowHeader,
+  leadingWidth,
   filteredRows,
   filteredRowKeys,
-  visibleColumns,
   virtualRows,
-  virtualColumns,
   virtualRowIndexes,
-  virtualColumnIndexes,
-  columnMeasurements,
-  rowHeaderWidth,
+  renderEntries,
   headerHeight,
   rowHeight,
   rowHeaderCellStyle,
@@ -107,50 +111,59 @@ export function GridBodyLayer<T>({
         return (
           <div
             key={String(rowKey)}
+            data-pane={pane}
             style={{ display: 'flex', minHeight: rowHeight }}
           >
-            <div
-              onPointerDown={(event) => onRowHeaderPointerDown(rowIndex, event)}
-              onPointerEnter={(event) => onRowHeaderPointerEnter(rowIndex, event)}
-              onPointerLeave={() => onRowHeaderPointerLeave(rowIndex)}
-              style={{
-                ...rowHeaderCellStyle,
-                position: 'absolute',
-                top: headerHeight + virtualRow.start,
-                left: 0,
-                zIndex: 5,
-                height: rowHeight,
-                backgroundColor: isWholeGridSelected
-                  ? hoveredRowIndex === rowIndex
-                    ? '#bfdbfe'
-                    : '#dbeafe'
-                  : selectIsRowSelected(uiState, rowIndex)
+            {ownsRowHeader && (
+              <div
+                onPointerDown={(event) =>
+                  onRowHeaderPointerDown(rowIndex, event)
+                }
+                onPointerEnter={(event) =>
+                  onRowHeaderPointerEnter(rowIndex, event)
+                }
+                onPointerLeave={() => onRowHeaderPointerLeave(rowIndex)}
+                style={{
+                  ...rowHeaderCellStyle,
+                  position: 'absolute',
+                  top: headerHeight + virtualRow.start,
+                  left: 0,
+                  zIndex: 5,
+                  height: rowHeight,
+                  backgroundColor: isWholeGridSelected
                     ? hoveredRowIndex === rowIndex
                       ? '#bfdbfe'
                       : '#dbeafe'
-                    : hoveredRowIndex === rowIndex
-                      ? '#e2e8f0'
-                      : '#f8fafc',
-                fontWeight: 500,
-              }}
-            >
-              {rowIndex + 1}
-            </div>
+                    : selectIsRowSelected(uiState, rowIndex)
+                      ? hoveredRowIndex === rowIndex
+                        ? '#bfdbfe'
+                        : '#dbeafe'
+                      : hoveredRowIndex === rowIndex
+                        ? '#e2e8f0'
+                        : '#f8fafc',
+                  fontWeight: 500,
+                }}
+              >
+                {rowIndex + 1}
+              </div>
+            )}
 
-            {virtualColumns.map((virtualColumn) => {
-              const colIndex = virtualColumn.index;
-              const measurement = columnMeasurements[colIndex];
-              const column = visibleColumns[colIndex];
-              if (
-                !column ||
-                !measurement ||
-                !virtualColumnIndexes.has(colIndex)
-              ) {
+            {renderEntries.map((entry) => {
+              if (!entry) {
                 return null;
               }
 
+              const colIndex = entry.logicalIndex;
+              const column = entry.column;
+              const left = leadingWidth + entry.paneLocalStart;
+              const size = entry.paneLocalSize;
+
               const isActive = selectIsActiveCell(uiState, rowIndex, colIndex);
-              const isSelected = selectIsCellSelected(uiState, rowIndex, colIndex);
+              const isSelected = selectIsCellSelected(
+                uiState,
+                rowIndex,
+                colIndex,
+              );
               const readOnlyCell = !isCellEditable(
                 { readOnly, canEditCell },
                 rowIndex,
@@ -174,9 +187,9 @@ export function GridBodyLayer<T>({
                   style={{
                     position: 'absolute',
                     top: headerHeight + virtualRow.start,
-                    left: rowHeaderWidth + measurement.start,
-                    width: measurement.size,
-                    minWidth: measurement.size,
+                    left,
+                    width: size,
+                    minWidth: size,
                     height: rowHeight,
                     boxSizing: 'border-box',
                     display: 'flex',

@@ -5,14 +5,24 @@ import type {
   GridSortState,
   GridUiState,
 } from '../model/gridTypes';
-import type { ColumnMeasurement } from '../logic/geometry';
+// 変更(10-C): 列座標を ColumnMeasurement(グローバル) から
+//             PaneColumnEntry(ペインローカル) へ切り替えます。
+import type { PaneColumnEntry } from '../logic/geometry';
 import { toExcelColumnName } from '../utils/excelColumnName';
 
-type VirtualColumnLike = {
-  index: number;
-};
+// 追加(10-C): このヘッダーがどのペインを描画しているかの種別です。
+export type GridPaneKind = 'left' | 'center' | 'right';
 
 type GridHeaderRowProps<T> = {
+  // 追加(10-C): 描画対象のペイン種別です。
+  pane: GridPaneKind;
+  // 追加(10-C): true のときだけ左上コーナーセル(#)を描画します。
+  //             行ヘッダーを持つペイン(左固定があれば左、無ければ中央)だけが true です。
+  ownsRowHeader: boolean;
+  // 追加(10-C): 列の前に確保する先頭幅です。
+  //             行ヘッダーを持つペインでは rowHeaderWidth、それ以外は 0 です。
+  //             各列は leadingWidth + entry.paneLocalStart に配置されます。
+  leadingWidth: number;
   rowHeaderWidth: number;
   headerHeight: number;
   rowHeaderCellStyle: CSSProperties;
@@ -21,10 +31,11 @@ type GridHeaderRowProps<T> = {
   isWholeGridSelected: boolean;
   filteredRowsLength: number;
   visibleColumnsLength: number;
-  virtualColumns: VirtualColumnLike[];
-  virtualColumnIndexes: Set<number>;
-  columnMeasurements: ColumnMeasurement<T>[];
-  visibleColumns: GridColumn<T>[];
+  // 変更(10-C): 描画対象の列エントリです。
+  //             中央ペインは仮想化済みの部分集合、固定ペインは全エントリが渡されます。
+  //             座標はすべてペインローカル(entry.paneLocalStart 起点)です。
+  renderEntries: PaneColumnEntry<T>[];
+  // 注記(10-C): hoveredColumnIndex / 各種 colIndex は entry.logicalIndex 空間です。
   hoveredColumnIndex: number | null;
   uiState: GridUiState;
   columnFilterValues: Record<string, unknown>;
@@ -57,8 +68,12 @@ type GridHeaderRowProps<T> = {
   ) => void;
 };
 
-// 追加: sticky header 行（左上コーナーセル + 列ヘッダー群）を描画します。
+// 変更(10-C): sticky header 行を「1ペイン分」描画する汎用コンポーネントにしました。
+//             ownsRowHeader が true のペインのみ左上コーナーセルを描画します。
 export function GridHeaderRow<T>({
+  pane,
+  ownsRowHeader,
+  leadingWidth,
   rowHeaderWidth,
   headerHeight,
   rowHeaderCellStyle,
@@ -67,10 +82,7 @@ export function GridHeaderRow<T>({
   isWholeGridSelected,
   filteredRowsLength,
   visibleColumnsLength,
-  virtualColumns,
-  virtualColumnIndexes,
-  columnMeasurements,
-  visibleColumns,
+  renderEntries,
   hoveredColumnIndex,
   uiState,
   columnFilterValues,
@@ -89,6 +101,7 @@ export function GridHeaderRow<T>({
 }: GridHeaderRowProps<T>) {
   return (
     <div
+      data-pane={pane}
       style={{
         height: headerHeight,
         position: 'sticky',
@@ -97,52 +110,58 @@ export function GridHeaderRow<T>({
         backgroundColor: '#f8fafc',
       }}
     >
-      <div
-        onPointerDown={onCornerPointerDown}
-        onPointerEnter={onCornerPointerEnter}
-        onPointerLeave={onCornerPointerLeave}
-        style={{
-          ...rowHeaderCellStyle,
-          // 追加: 左上コーナーセル専用に見た目を明示して、
-          //       高さ・中央寄せ・境界線のズレを抑えます。
-          position: 'absolute',
-          top: 0,
-          left: 0,
-          width: rowHeaderWidth,
-          minWidth: rowHeaderWidth,
-          height: headerHeight,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          boxSizing: 'border-box',
-          padding: 0,
-          lineHeight: 1,
-          zIndex: 7,
-          backgroundColor: isWholeGridSelected
-            ? isCornerHovered
-              ? '#bfdbfe'
-              : '#dbeafe'
-            : isCornerHovered
-              ? '#e2e8f0'
-              : '#f8fafc',
-          borderRight: '1px solid #e5e7eb',
-          borderBottom: '1px solid #d7dce3',
-          cursor:
-            filteredRowsLength > 0 && visibleColumnsLength > 0
-              ? 'pointer'
-              : 'default',
-        }}
-      >
-        #
-      </div>
+      {ownsRowHeader && (
+        <div
+          onPointerDown={onCornerPointerDown}
+          onPointerEnter={onCornerPointerEnter}
+          onPointerLeave={onCornerPointerLeave}
+          style={{
+            ...rowHeaderCellStyle,
+            // 左上コーナーセル専用に見た目を明示して、
+            // 高さ・中央寄せ・境界線のズレを抑えます。
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            width: rowHeaderWidth,
+            minWidth: rowHeaderWidth,
+            height: headerHeight,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            boxSizing: 'border-box',
+            padding: 0,
+            lineHeight: 1,
+            zIndex: 7,
+            backgroundColor: isWholeGridSelected
+              ? isCornerHovered
+                ? '#bfdbfe'
+                : '#dbeafe'
+              : isCornerHovered
+                ? '#e2e8f0'
+                : '#f8fafc',
+            borderRight: '1px solid #e5e7eb',
+            borderBottom: '1px solid #d7dce3',
+            cursor:
+              filteredRowsLength > 0 && visibleColumnsLength > 0
+                ? 'pointer'
+                : 'default',
+          }}
+        >
+          #
+        </div>
+      )}
 
-      {virtualColumns.map((virtualColumn) => {
-        const colIndex = virtualColumn.index;
-        const measurement = columnMeasurements[colIndex];
-        const column = visibleColumns[colIndex];
-        if (!column || !measurement || !virtualColumnIndexes.has(colIndex)) {
+      {renderEntries.map((entry) => {
+        // 変更(10-C): 仮想化のガードは SpreadsheetGrid 側で済ませているため、
+        //             ここでは渡されたエントリをそのまま描画します。
+        if (!entry) {
           return null;
         }
+
+        const colIndex = entry.logicalIndex;
+        const column = entry.column;
+        const left = leadingWidth + entry.paneLocalStart;
+        const size = entry.paneLocalSize;
 
         const isColumnFiltered =
           String(columnFilterValues[column.key] ?? '').trim().length > 0;
@@ -152,15 +171,17 @@ export function GridHeaderRow<T>({
           <div
             key={column.key}
             onPointerDown={(event) => onColumnHeaderPointerDown(colIndex, event)}
-            onPointerEnter={(event) => onColumnHeaderPointerEnter(colIndex, event)}
+            onPointerEnter={(event) =>
+              onColumnHeaderPointerEnter(colIndex, event)
+            }
             onPointerLeave={() => onColumnHeaderPointerLeave(colIndex)}
             style={{
               position: 'absolute',
               top: 0,
-              left: rowHeaderWidth + measurement.start,
+              left,
               ...headerCellBaseStyle,
-              width: measurement.size,
-              minWidth: measurement.size,
+              width: size,
+              minWidth: size,
               height: headerHeight,
               backgroundColor: isWholeGridSelected
                 ? hoveredColumnIndex === colIndex
@@ -214,7 +235,7 @@ export function GridHeaderRow<T>({
                 {column.renderHeader
                   ? column.renderHeader({
                       colIndex,
-                      width: measurement.size,
+                      width: size,
                       column,
                       filterValue: columnFilterValues[column.key],
                       isFiltered: isColumnFiltered,
@@ -249,9 +270,7 @@ export function GridHeaderRow<T>({
             </div>
 
             <div
-              onPointerDown={(event) =>
-                onColumnResizePointerDown(column, event)
-              }
+              onPointerDown={(event) => onColumnResizePointerDown(column, event)}
               style={{
                 position: 'absolute',
                 top: 0,

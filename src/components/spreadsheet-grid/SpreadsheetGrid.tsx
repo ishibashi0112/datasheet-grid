@@ -43,14 +43,14 @@ import {
   applyGlobalFilter,
   type GridRowModelLike,
 } from './logic/filtering';
-// 変更(10-B): 3ペインレイアウト構築用の helper を追加インポートします。
-// 変更理由: reorderColumnsByPane / buildGridPaneLayout / isPlainLayout を
-//           SpreadsheetGrid 側で使用するためです。
+// 変更(10-C): 3ペインレイアウト構築用の helper / 型を追加インポートします。
+// 変更理由: reorderColumnsByPane / buildGridPaneLayout を SpreadsheetGrid で使い、
+//           PaneColumnEntry 型を各ペインの描画エントリ受け渡しに使うためです。
 import {
   buildColumnMeasurements,
   reorderColumnsByPane,
   buildGridPaneLayout,
-  isPlainLayout,
+  type PaneColumnEntry,
 } from './logic/geometry';
 import { applySort } from './logic/sorting';
 import type {
@@ -147,17 +147,33 @@ export function SpreadsheetGrid<T extends object>({
     [orderedColumns, uiState.columnWidths],
   );
 
-  // 追加(10-B): pinned 列が 1 本もなければ true — 従来と同じ単一スクロール描画です。
-  const plainLayout = isPlainLayout(paneLayout);
+  // 追加(10-C): 左／右固定ペインが存在するか（= 固定列があるか）です。
+  const hasLeftPane = paneLayout.left.entries.length > 0;
+  const hasRightPane = paneLayout.right.entries.length > 0;
 
-  // 追加(10-B): 左固定ペインの合計幅です（row header + left-pinned 列）。
+  // 追加(10-C): 行ヘッダー（#・行番号）を持つペインです。
+  //             左固定列があれば左ペイン、無ければ従来どおり中央ペインが持ちます。
+  //             これにより固定列なしのときは見た目・挙動が従来と完全に一致します。
+  const centerOwnsRowHeader = !hasLeftPane;
+
+  // 追加(10-C): 各ペインで列の前に確保する先頭幅です。
+  //             行ヘッダーを持つペインは rowHeaderWidth、それ以外は 0 になります。
+  const leftLeadingWidth = rowHeaderWidth; // 左ペインは行ヘッダーを内包します
+  const centerLeadingWidth = centerOwnsRowHeader ? rowHeaderWidth : 0;
+  const rightLeadingWidth = 0;
+
+  // 追加(10-B→10-C): 左固定ペインの合計幅です（row header + left-pinned 列）。
   //             pinned 列がなければ 0 でペインは非表示になります。
-  const leftPaneTotalWidth = paneLayout.left.totalWidth > 0
-    ? rowHeaderWidth + paneLayout.left.totalWidth
+  const leftPaneTotalWidth = hasLeftPane
+    ? leftLeadingWidth + paneLayout.left.totalWidth
     : 0;
 
   // 追加(10-B): 右固定ペインの合計幅です。
   const rightPaneTotalWidth = paneLayout.right.totalWidth;
+
+  // 追加(10-C): 中央ペインの内側コンテンツ幅です。
+  //             固定列なしのときは rowHeaderWidth + totalColumnWidth となり従来と同一です。
+  const centerContentWidth = centerLeadingWidth + paneLayout.center.totalWidth;
 
   // ── filter popover ────────────────────────────────────
   const {
@@ -295,12 +311,22 @@ export function SpreadsheetGrid<T extends object>({
     useFlushSync: false,
   });
 
+  // 変更(10-C): 列の仮想化は「中央ペインの列エントリ」に対して行います。
+  // 変更理由: 固定列は中央スクロール対象外。中央ペインの水平スクロール範囲＝
+  //           center.totalWidth に合わせ、virtual item の index は
+  //           centerEntries 上の index になります。
+  //           固定列なしのときは centerEntries が visibleColumns と同順・同座標のため、
+  //           従来の列仮想化と完全に一致します。
+  const centerEntries = paneLayout.center.entries;
+
   const columnVirtualizer = useVirtualizer({
     horizontal: true,
-    count: visibleColumns.length,
+    count: centerEntries.length,
     getScrollElement: () => bodyScrollRef.current,
     estimateSize: (index) =>
-      columnMeasurements[index]?.size ?? visibleColumns[index]?.width ?? 120,
+      centerEntries[index]?.paneLocalSize ??
+      centerEntries[index]?.column.width ??
+      120,
     overscan: 4,
     useFlushSync: false,
   });
@@ -314,10 +340,18 @@ export function SpreadsheetGrid<T extends object>({
     [virtualRows],
   );
 
-  const virtualColumnIndexes = useMemo(
-    () => new Set(virtualColumns.map((item) => item.index)),
-    [virtualColumns],
+  // 追加(10-C): 各ペインで実際に描画する列エントリ群です。
+  //             中央ペインは仮想化済みの部分集合、固定ペインは全エントリを描画します。
+  const centerRenderEntries = useMemo<PaneColumnEntry<T>[]>(
+    () =>
+      virtualColumns
+        .map((item) => centerEntries[item.index])
+        .filter((entry): entry is PaneColumnEntry<T> => Boolean(entry)),
+    [virtualColumns, centerEntries],
   );
+
+  const leftRenderEntries = paneLayout.left.entries;
+  const rightRenderEntries = paneLayout.right.entries;
 
   // ── active cell / editor rect ─────────────────────────
   const activeCellRect = useMemo<ActiveCellOverlayRect | null>(() => {
@@ -930,23 +964,92 @@ export function SpreadsheetGrid<T extends object>({
         <div style={paneContainerStyle}>
 
           {/* ── 左固定ペイン ── */}
-          {/* 追加(10-B): 10-C でヘッダー・ボディを描画予定。       */}
-          {/*   現時点では pinned 列がないため width:0 で非表示です。*/}
+          {/* 変更(10-C): 左固定列があるときだけヘッダー・ボディ・行ヘッダーを描画します。*/}
+          {/*   固定列が無いときは hasLeftPane=false で width:0 の空ペイン（従来どおり）。*/}
           <div
             ref={leftPaneScrollRef}
             style={pinnedPaneStyle(leftPaneTotalWidth)}
           >
-            <div
-              style={{
-                position: 'relative',
-                height: headerHeight + totalBodyHeight,
-              }}
-            >
-              {/* 10-C で左ペイン用のヘッダー・ボディを描画します */}
-            </div>
+            {hasLeftPane && (
+              <div
+                style={{
+                  position: 'relative',
+                  width: leftPaneTotalWidth,
+                  minWidth: leftPaneTotalWidth,
+                  height: headerHeight + totalBodyHeight,
+                }}
+              >
+                <GridHeaderRow
+                  pane="left"
+                  ownsRowHeader
+                  leadingWidth={leftLeadingWidth}
+                  rowHeaderWidth={rowHeaderWidth}
+                  headerHeight={headerHeight}
+                  rowHeaderCellStyle={rowHeaderCellStyle}
+                  headerCellBaseStyle={headerCellBaseStyle}
+                  isCornerHovered={isCornerHovered}
+                  isWholeGridSelected={isWholeGridSelected}
+                  filteredRowsLength={filteredRows.length}
+                  visibleColumnsLength={visibleColumns.length}
+                  renderEntries={leftRenderEntries}
+                  hoveredColumnIndex={hoveredColumnIndex}
+                  uiState={uiState}
+                  columnFilterValues={uiState.filters.columnFilters}
+                  sortState={uiState.sort}
+                  getHeaderActionButtonStyle={getHeaderActionButtonStyle}
+                  getSortIndicator={getSortIndicator}
+                  onCornerPointerDown={handleCornerHeaderPointerDown}
+                  onCornerPointerEnter={() => setIsCornerHovered(true)}
+                  onCornerPointerLeave={() => setIsCornerHovered(false)}
+                  onColumnHeaderPointerDown={handleColumnHeaderPointerDown}
+                  onColumnHeaderPointerEnter={handleColumnHeaderPointerEnter}
+                  onColumnHeaderPointerLeave={(colIndex) =>
+                    setHoveredColumnIndex((current) =>
+                      current === colIndex ? null : current,
+                    )
+                  }
+                  onColumnSortButtonPointerDown={
+                    handleColumnSortButtonPointerDown
+                  }
+                  onColumnFilterButtonPointerDown={openColumnFilterPopover}
+                  onColumnResizePointerDown={handleColumnResizePointerDown}
+                />
+
+                <GridBodyLayer
+                  pane="left"
+                  ownsRowHeader
+                  leadingWidth={leftLeadingWidth}
+                  filteredRows={filteredRows}
+                  filteredRowKeys={filteredRowKeys}
+                  virtualRows={virtualRows}
+                  virtualRowIndexes={virtualRowIndexes}
+                  renderEntries={leftRenderEntries}
+                  headerHeight={headerHeight}
+                  rowHeight={rowHeight}
+                  rowHeaderCellStyle={rowHeaderCellStyle}
+                  hoveredRowIndex={hoveredRowIndex}
+                  isWholeGridSelected={isWholeGridSelected}
+                  uiState={uiState}
+                  readOnly={readOnly}
+                  canEditCell={canEditCell}
+                  onRowHeaderPointerDown={handleRowHeaderPointerDown}
+                  onRowHeaderPointerEnter={handleRowHeaderPointerEnter}
+                  onRowHeaderPointerLeave={(rowIndex) =>
+                    setHoveredRowIndex((current) =>
+                      current === rowIndex ? null : current,
+                    )
+                  }
+                  onCellPointerDown={handleCellPointerDown}
+                  onCellPointerEnter={handleCellPointerEnter}
+                  onCellDoubleClick={handleCellDoubleClickWithController}
+                  renderCellContent={renderCellContent}
+                />
+              </div>
+            )}
           </div>
 
           {/* ── 中央スクロールペイン（従来の bodyScrollRef） ── */}
+          {/* 変更(10-C): 行ヘッダーは左固定列が無いときだけ中央が持ちます（従来と同一）。*/}
           <div
             ref={bodyScrollRef}
             style={centerPaneStyle}
@@ -954,12 +1057,15 @@ export function SpreadsheetGrid<T extends object>({
             <div
               style={{
                 position: 'relative',
-                width: rowHeaderWidth + totalColumnWidth,
-                minWidth: rowHeaderWidth + totalColumnWidth,
+                width: centerContentWidth,
+                minWidth: centerContentWidth,
                 height: headerHeight + totalBodyHeight,
               }}
             >
               <GridHeaderRow
+                pane="center"
+                ownsRowHeader={centerOwnsRowHeader}
+                leadingWidth={centerLeadingWidth}
                 rowHeaderWidth={rowHeaderWidth}
                 headerHeight={headerHeight}
                 rowHeaderCellStyle={rowHeaderCellStyle}
@@ -968,10 +1074,7 @@ export function SpreadsheetGrid<T extends object>({
                 isWholeGridSelected={isWholeGridSelected}
                 filteredRowsLength={filteredRows.length}
                 visibleColumnsLength={visibleColumns.length}
-                virtualColumns={virtualColumns}
-                virtualColumnIndexes={virtualColumnIndexes}
-                columnMeasurements={columnMeasurements}
-                visibleColumns={visibleColumns}
+                renderEntries={centerRenderEntries}
                 hoveredColumnIndex={hoveredColumnIndex}
                 uiState={uiState}
                 columnFilterValues={uiState.filters.columnFilters}
@@ -1016,15 +1119,14 @@ export function SpreadsheetGrid<T extends object>({
               />
 
               <GridBodyLayer
+                pane="center"
+                ownsRowHeader={centerOwnsRowHeader}
+                leadingWidth={centerLeadingWidth}
                 filteredRows={filteredRows}
                 filteredRowKeys={filteredRowKeys}
-                visibleColumns={visibleColumns}
                 virtualRows={virtualRows}
-                virtualColumns={virtualColumns}
                 virtualRowIndexes={virtualRowIndexes}
-                virtualColumnIndexes={virtualColumnIndexes}
-                columnMeasurements={columnMeasurements}
-                rowHeaderWidth={rowHeaderWidth}
+                renderEntries={centerRenderEntries}
                 headerHeight={headerHeight}
                 rowHeight={rowHeight}
                 rowHeaderCellStyle={rowHeaderCellStyle}
@@ -1049,20 +1151,87 @@ export function SpreadsheetGrid<T extends object>({
           </div>
 
           {/* ── 右固定ペイン ── */}
-          {/* 追加(10-B): 10-C でヘッダー・ボディを描画予定。       */}
-          {/*   現時点では pinned 列がないため width:0 で非表示です。*/}
+          {/* 変更(10-C): 右固定列があるときだけ描画します。行ヘッダーは持ちません。*/}
           <div
             ref={rightPaneScrollRef}
             style={pinnedPaneStyle(rightPaneTotalWidth)}
           >
-            <div
-              style={{
-                position: 'relative',
-                height: headerHeight + totalBodyHeight,
-              }}
-            >
-              {/* 10-C で右ペイン用のヘッダー・ボディを描画します */}
-            </div>
+            {hasRightPane && (
+              <div
+                style={{
+                  position: 'relative',
+                  width: rightPaneTotalWidth,
+                  minWidth: rightPaneTotalWidth,
+                  height: headerHeight + totalBodyHeight,
+                }}
+              >
+                <GridHeaderRow
+                  pane="right"
+                  ownsRowHeader={false}
+                  leadingWidth={rightLeadingWidth}
+                  rowHeaderWidth={rowHeaderWidth}
+                  headerHeight={headerHeight}
+                  rowHeaderCellStyle={rowHeaderCellStyle}
+                  headerCellBaseStyle={headerCellBaseStyle}
+                  isCornerHovered={isCornerHovered}
+                  isWholeGridSelected={isWholeGridSelected}
+                  filteredRowsLength={filteredRows.length}
+                  visibleColumnsLength={visibleColumns.length}
+                  renderEntries={rightRenderEntries}
+                  hoveredColumnIndex={hoveredColumnIndex}
+                  uiState={uiState}
+                  columnFilterValues={uiState.filters.columnFilters}
+                  sortState={uiState.sort}
+                  getHeaderActionButtonStyle={getHeaderActionButtonStyle}
+                  getSortIndicator={getSortIndicator}
+                  onCornerPointerDown={handleCornerHeaderPointerDown}
+                  onCornerPointerEnter={() => setIsCornerHovered(true)}
+                  onCornerPointerLeave={() => setIsCornerHovered(false)}
+                  onColumnHeaderPointerDown={handleColumnHeaderPointerDown}
+                  onColumnHeaderPointerEnter={handleColumnHeaderPointerEnter}
+                  onColumnHeaderPointerLeave={(colIndex) =>
+                    setHoveredColumnIndex((current) =>
+                      current === colIndex ? null : current,
+                    )
+                  }
+                  onColumnSortButtonPointerDown={
+                    handleColumnSortButtonPointerDown
+                  }
+                  onColumnFilterButtonPointerDown={openColumnFilterPopover}
+                  onColumnResizePointerDown={handleColumnResizePointerDown}
+                />
+
+                <GridBodyLayer
+                  pane="right"
+                  ownsRowHeader={false}
+                  leadingWidth={rightLeadingWidth}
+                  filteredRows={filteredRows}
+                  filteredRowKeys={filteredRowKeys}
+                  virtualRows={virtualRows}
+                  virtualRowIndexes={virtualRowIndexes}
+                  renderEntries={rightRenderEntries}
+                  headerHeight={headerHeight}
+                  rowHeight={rowHeight}
+                  rowHeaderCellStyle={rowHeaderCellStyle}
+                  hoveredRowIndex={hoveredRowIndex}
+                  isWholeGridSelected={isWholeGridSelected}
+                  uiState={uiState}
+                  readOnly={readOnly}
+                  canEditCell={canEditCell}
+                  onRowHeaderPointerDown={handleRowHeaderPointerDown}
+                  onRowHeaderPointerEnter={handleRowHeaderPointerEnter}
+                  onRowHeaderPointerLeave={(rowIndex) =>
+                    setHoveredRowIndex((current) =>
+                      current === rowIndex ? null : current,
+                    )
+                  }
+                  onCellPointerDown={handleCellPointerDown}
+                  onCellPointerEnter={handleCellPointerEnter}
+                  onCellDoubleClick={handleCellDoubleClickWithController}
+                  renderCellContent={renderCellContent}
+                />
+              </div>
+            )}
           </div>
 
         </div>
