@@ -46,11 +46,20 @@ import {
 // 変更(10-C): 3ペインレイアウト構築用の helper / 型を追加インポートします。
 // 変更理由: reorderColumnsByPane / buildGridPaneLayout を SpreadsheetGrid で使い、
 //           PaneColumnEntry 型を各ペインの描画エントリ受け渡しに使うためです。
+// 変更(10-D): Overlay / Editor をペイン別座標系で配置するための helper / 型を追加インポートします。
+// 変更理由: SelectionOverlay / ActiveCellOverlay / CellEditorLayer を各ペイン内へ
+//           ペインローカル座標で描画するため、論理列 index 範囲 → 各ペイン extent の
+//           変換 helper（computePaneColumnExtents 等）が必要になりました。
 import {
   buildColumnMeasurements,
   reorderColumnsByPane,
   buildGridPaneLayout,
+  computePaneColumnExtents,
+  computeFullWidthPaneExtents,
+  computeSinglePaneColumnExtent,
   type PaneColumnEntry,
+  type ColumnPane,
+  type PaneColumnExtentMap,
 } from './logic/geometry';
 import { applySort } from './logic/sorting';
 import type {
@@ -353,7 +362,12 @@ export function SpreadsheetGrid<T extends object>({
   const leftRenderEntries = paneLayout.left.entries;
   const rightRenderEntries = paneLayout.right.entries;
 
-  // ── active cell / editor rect ─────────────────────────
+  // ── active cell rect（グローバル: viewport sync 専用） ──
+  // 注記(10-D): この activeCellRect は columnMeasurements（visibleColumns グローバル座標）
+  //             基準のままにしています。理由は useGridViewportSync が「中央ペインを
+  //             スクロールして active cell を可視化する」ために中央スクロール座標を必要と
+  //             するためです。overlay 描画には使わず、ペイン対応の activeCellPlacement
+  //             （下記）を使います。固定列なしのときは両者が一致します。
   const activeCellRect = useMemo<ActiveCellOverlayRect | null>(() => {
     if (!uiState.activeCell) {
       return null;
@@ -386,9 +400,51 @@ export function SpreadsheetGrid<T extends object>({
     rowHeight,
   ]);
 
-  const editorRect = useMemo(
-    () => (uiState.editingCell ? activeCellRect : null),
-    [uiState.editingCell, activeCellRect],
+  // ── active cell placement（10-D: ペイン別座標系） ──────
+  // 追加(10-D): active cell が属するペインと、そのペインローカル矩形を求めます。
+  //             col は logicalIndex（orderedColumns 空間）として扱い、
+  //             computeSinglePaneColumnExtent で所属ペイン + ローカル extent を取得します。
+  //             left は leadingWidth 非含有のローカル列座標で、描画側で leadingWidth を加算します。
+  const activeCellPlacement = useMemo<{
+    pane: ColumnPane;
+    rect: ActiveCellOverlayRect;
+  } | null>(() => {
+    if (!uiState.activeCell) {
+      return null;
+    }
+    const { row, col } = uiState.activeCell;
+    if (row < 0 || row >= filteredRows.length) {
+      return null;
+    }
+    const single = computeSinglePaneColumnExtent(paneLayout, col);
+    if (!single) {
+      return null;
+    }
+    return {
+      pane: single.pane,
+      rect: {
+        left: single.extent.start,
+        top: row * rowHeight,
+        width: single.extent.width,
+        height: rowHeight,
+      },
+    };
+  }, [uiState.activeCell, filteredRows.length, paneLayout, rowHeight]);
+
+  // 追加(10-D): 指定ペインに active cell があればそのローカル矩形を、無ければ null を返します。
+  const activeCellRectForPane = useCallback(
+    (pane: ColumnPane): ActiveCellOverlayRect | null =>
+      activeCellPlacement && activeCellPlacement.pane === pane
+        ? activeCellPlacement.rect
+        : null,
+    [activeCellPlacement],
+  );
+
+  // 追加(10-D): editor は editingCell があるときだけ、active cell と同じペイン・同じ矩形に出します。
+  const editorRectForPane = useCallback(
+    (pane: ColumnPane): ActiveCellOverlayRect | null =>
+      uiState.editingCell ? activeCellRectForPane(pane) : null,
+    [uiState.editingCell, activeCellRectForPane],
   );
 
   // ── viewport sync ────────────────────────────────────
@@ -567,63 +623,88 @@ export function SpreadsheetGrid<T extends object>({
     [canEditCell, filteredRows, readOnly, startEditWithValue, visibleColumns],
   );
 
-  // ── selection overlay rect ────────────────────────────
-  const selectionOverlayRect = useMemo<SelectionOverlayRect | null>(() => {
+  // ── selection overlay placement（10-D: ペイン別座標系） ─
+  // 変更(10-D): 選択範囲を「論理列 index 範囲 + 行範囲」に正規化し、
+  //             computePaneColumnExtents / computeFullWidthPaneExtents で
+  //             各ペインのローカル水平 extent に分解します。
+  //             これにより選択がペインをまたいでも、各ペイン内に正しくクリップされた
+  //             矩形セグメントが描画されます（AG Grid と同様のペイン別レンダリング）。
+  //             固定列なしのときは center のみに extent が出て従来と一致します。
+  const selectionPlacement = useMemo<{
+    extents: PaneColumnExtentMap;
+    top: number;
+    height: number;
+  } | null>(() => {
     if (!uiState.selection) {
       return null;
     }
+
     if (uiState.selection.type === 'cell') {
       const normalizedRange = normalizeCellRange(uiState.selection.range);
-      const startMeasurement = columnMeasurements[normalizedRange.start.col];
-      const endMeasurement = columnMeasurements[normalizedRange.end.col];
-      if (!startMeasurement || !endMeasurement) {
-        return null;
-      }
-      const top = normalizedRange.start.row * rowHeight;
-      const height =
-        (normalizedRange.end.row - normalizedRange.start.row + 1) * rowHeight;
+      const extents = computePaneColumnExtents(
+        paneLayout,
+        normalizedRange.start.col,
+        normalizedRange.end.col,
+      );
       return {
-        left: startMeasurement.start,
-        top,
-        width: endMeasurement.end - startMeasurement.start,
-        height,
+        extents,
+        top: normalizedRange.start.row * rowHeight,
+        height:
+          (normalizedRange.end.row - normalizedRange.start.row + 1) * rowHeight,
       };
     }
+
     if (uiState.selection.type === 'row') {
       const normalizedRange = normalizeRowRange(
         uiState.selection.startRow,
         uiState.selection.endRow,
       );
+      // 行選択は全ペインの全列を覆います。
+      const extents = computeFullWidthPaneExtents(paneLayout);
       return {
-        left: 0,
+        extents,
         top: normalizedRange.startRow * rowHeight,
-        width: totalColumnWidth,
         height:
           (normalizedRange.endRow - normalizedRange.startRow + 1) * rowHeight,
       };
     }
+
+    // col selection
     const normalizedRange = normalizeColumnRange(
       uiState.selection.startCol,
       uiState.selection.endCol,
     );
-    const startMeasurement = columnMeasurements[normalizedRange.startCol];
-    const endMeasurement = columnMeasurements[normalizedRange.endCol];
-    if (!startMeasurement || !endMeasurement) {
-      return null;
-    }
+    const extents = computePaneColumnExtents(
+      paneLayout,
+      normalizedRange.startCol,
+      normalizedRange.endCol,
+    );
     return {
-      left: startMeasurement.start,
+      extents,
       top: 0,
-      width: endMeasurement.end - startMeasurement.start,
       height: filteredRows.length * rowHeight,
     };
-  }, [
-    uiState.selection,
-    columnMeasurements,
-    rowHeight,
-    filteredRows.length,
-    totalColumnWidth,
-  ]);
+  }, [uiState.selection, paneLayout, rowHeight, filteredRows.length]);
+
+  // 追加(10-D): 指定ペインの選択矩形（ペインローカル）を返します。該当列が無ければ null です。
+  const selectionRectForPane = useCallback(
+    (pane: ColumnPane): SelectionOverlayRect | null => {
+      if (!selectionPlacement) {
+        return null;
+      }
+      const extent = selectionPlacement.extents[pane];
+      if (!extent) {
+        return null;
+      }
+      return {
+        left: extent.start,
+        top: selectionPlacement.top,
+        width: extent.width,
+        height: selectionPlacement.height,
+      };
+    },
+    [selectionPlacement],
+  );
 
   // ── corner header ─────────────────────────────────────
   const handleCornerHeaderPointerDown = useCallback(
@@ -1015,6 +1096,30 @@ export function SpreadsheetGrid<T extends object>({
                   onColumnResizePointerDown={handleColumnResizePointerDown}
                 />
 
+                {/* 追加(10-D): 左固定ペイン内の overlay（ペインローカル座標）。*/}
+                {/*   active cell / 選択範囲が左固定列にあるときだけ矩形が出ます。*/}
+                <SelectionOverlay
+                  rect={selectionRectForPane('left')}
+                  headerHeight={headerHeight}
+                  leadingWidth={leftLeadingWidth}
+                />
+
+                <ActiveCellOverlay
+                  rect={activeCellRectForPane('left')}
+                  headerHeight={headerHeight}
+                  leadingWidth={leftLeadingWidth}
+                />
+
+                <CellEditorLayer
+                  rect={editorRectForPane('left')}
+                  headerHeight={headerHeight}
+                  leadingWidth={leftLeadingWidth}
+                  value={editorValue}
+                  onChange={setEditorValue}
+                  onCommit={commitEdit}
+                  onCancel={cancelEdit}
+                />
+
                 <GridBodyLayer
                   pane="left"
                   ownsRowHeader
@@ -1096,22 +1201,24 @@ export function SpreadsheetGrid<T extends object>({
                 onColumnResizePointerDown={handleColumnResizePointerDown}
               />
 
+              {/* 変更(10-D): 中央ペインの overlay をペインローカル座標に切替。*/}
+              {/*   leadingWidth は centerLeadingWidth（固定列なしのとき rowHeaderWidth）。*/}
               <SelectionOverlay
-                rect={selectionOverlayRect}
+                rect={selectionRectForPane('center')}
                 headerHeight={headerHeight}
-                rowHeaderWidth={rowHeaderWidth}
+                leadingWidth={centerLeadingWidth}
               />
 
               <ActiveCellOverlay
-                rect={activeCellRect}
+                rect={activeCellRectForPane('center')}
                 headerHeight={headerHeight}
-                rowHeaderWidth={rowHeaderWidth}
+                leadingWidth={centerLeadingWidth}
               />
 
               <CellEditorLayer
-                rect={editorRect}
+                rect={editorRectForPane('center')}
                 headerHeight={headerHeight}
-                rowHeaderWidth={rowHeaderWidth}
+                leadingWidth={centerLeadingWidth}
                 value={editorValue}
                 onChange={setEditorValue}
                 onCommit={commitEdit}
@@ -1199,6 +1306,29 @@ export function SpreadsheetGrid<T extends object>({
                   }
                   onColumnFilterButtonPointerDown={openColumnFilterPopover}
                   onColumnResizePointerDown={handleColumnResizePointerDown}
+                />
+
+                {/* 追加(10-D): 右固定ペイン内の overlay（ペインローカル座標）。*/}
+                <SelectionOverlay
+                  rect={selectionRectForPane('right')}
+                  headerHeight={headerHeight}
+                  leadingWidth={rightLeadingWidth}
+                />
+
+                <ActiveCellOverlay
+                  rect={activeCellRectForPane('right')}
+                  headerHeight={headerHeight}
+                  leadingWidth={rightLeadingWidth}
+                />
+
+                <CellEditorLayer
+                  rect={editorRectForPane('right')}
+                  headerHeight={headerHeight}
+                  leadingWidth={rightLeadingWidth}
+                  value={editorValue}
+                  onChange={setEditorValue}
+                  onCommit={commitEdit}
+                  onCancel={cancelEdit}
                 />
 
                 <GridBodyLayer

@@ -1,6 +1,8 @@
 import type { CSSProperties } from 'react';
 
 // 追加: 選択範囲の矩形情報です。
+// 変更(10-D): left は「ペイン列領域内ローカル座標」になりました（leadingWidth 非含有）。
+//             描画時に leadingWidth を加算して最終 left を求めます。
 export type SelectionOverlayRect = {
   left: number;
   top: number;
@@ -11,14 +13,19 @@ export type SelectionOverlayRect = {
 type SelectionOverlayProps = {
   rect: SelectionOverlayRect | null;
   headerHeight: number;
-  rowHeaderWidth: number;
+  // 変更(10-D): rowHeaderWidth → leadingWidth に一般化しました。
+  //             行ヘッダーを持つペインでは rowHeaderWidth、それ以外のペインでは 0 が渡されます。
+  //             固定列なしの中央ペインでは leadingWidth === rowHeaderWidth となり、
+  //             従来と完全に同じ位置に描画されます。
+  leadingWidth: number;
 };
 
 // 追加: 選択範囲をセル本体とは独立したレイヤーで描画するコンポーネントです。
+// 変更(10-D): ペイン別座標系に対応。各ペインの relative コンテナ内へ配置されます。
 export function SelectionOverlay({
   rect,
   headerHeight,
-  rowHeaderWidth,
+  leadingWidth,
 }: SelectionOverlayProps) {
   if (!rect) {
     return null;
@@ -26,7 +33,7 @@ export function SelectionOverlay({
 
   const overlayStyle: CSSProperties = {
     position: 'absolute',
-    left: rowHeaderWidth + rect.left,
+    left: leadingWidth + rect.left,
     top: headerHeight + rect.top,
     width: rect.width,
     height: rect.height,

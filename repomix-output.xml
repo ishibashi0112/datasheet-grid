@@ -2129,52 +2129,6 @@ export const applySort = <T, R extends GridRowModelLike<T>>(
 };
 </file>
 
-<file path="src/components/spreadsheet-grid/SelectionOverlay.tsx">
-import type { CSSProperties } from 'react';
-
-// 追加: 選択範囲の矩形情報です。
-export type SelectionOverlayRect = {
-  left: number;
-  top: number;
-  width: number;
-  height: number;
-};
-
-type SelectionOverlayProps = {
-  rect: SelectionOverlayRect | null;
-  headerHeight: number;
-  rowHeaderWidth: number;
-};
-
-// 追加: 選択範囲をセル本体とは独立したレイヤーで描画するコンポーネントです。
-export function SelectionOverlay({
-  rect,
-  headerHeight,
-  rowHeaderWidth,
-}: SelectionOverlayProps) {
-  if (!rect) {
-    return null;
-  }
-
-  const overlayStyle: CSSProperties = {
-    position: 'absolute',
-    left: rowHeaderWidth + rect.left,
-    top: headerHeight + rect.top,
-    width: rect.width,
-    height: rect.height,
-    backgroundColor: 'rgba(37, 99, 235, 0.08)',
-    border: '2px solid #2563eb',
-    boxSizing: 'border-box',
-    pointerEvents: 'none',
-    zIndex: 2,
-  };
-
-  return <div style={overlayStyle} />;
-}
-
-export default SelectionOverlay;
-</file>
-
 <file path="src/components/spreadsheet-grid/utils/excelColumnName.ts">
 // 追加: 0-based の列 index を Excel 形式 (A, B, ... AA, AB...) に変換します。
 export const toExcelColumnName = (columnIndex: number): string => {
@@ -2546,526 +2500,6 @@ export function ColumnFilterPopover({
 }
 
 export default ColumnFilterPopover;
-</file>
-
-<file path="src/components/spreadsheet-grid/view/GridBodyLayer.tsx">
-import type { CSSProperties, PointerEvent, ReactNode } from 'react';
-import {
-  selectIsActiveCell,
-  selectIsCellSelected,
-  selectIsRowSelected,
-} from '../model/gridSelectors';
-import type {
-  CellCoord,
-  GridColumn,
-  GridRowKey,
-  GridUiState,
-  SpreadsheetGridProps,
-} from '../model/gridTypes';
-// 変更(10-C): 列座標を ColumnMeasurement(グローバル) から
-//             PaneColumnEntry(ペインローカル) へ切り替えます。
-import type { PaneColumnEntry } from '../logic/geometry';
-import type { GridPaneKind } from './GridHeaderRow';
-import { isCellEditable } from '../utils/permissions';
-
-type VirtualRowLike = {
-  index: number;
-  start: number;
-};
-
-type GridBodyLayerProps<T> = {
-  // 追加(10-C): 描画対象のペイン種別です。
-  pane: GridPaneKind;
-  // 追加(10-C): true のときだけ行番号セルを描画します。
-  ownsRowHeader: boolean;
-  // 追加(10-C): 列の前に確保する先頭幅です(行ヘッダーを持つペインは rowHeaderWidth、他は 0)。
-  leadingWidth: number;
-  filteredRows: T[];
-  filteredRowKeys: GridRowKey[];
-  virtualRows: VirtualRowLike[];
-  virtualRowIndexes: Set<number>;
-  // 変更(10-C): 描画対象の列エントリです(座標はペインローカル)。
-  //             中央ペインは仮想化済みの部分集合、固定ペインは全エントリです。
-  renderEntries: PaneColumnEntry<T>[];
-  headerHeight: number;
-  rowHeight: number;
-  rowHeaderCellStyle: CSSProperties;
-  hoveredRowIndex: number | null;
-  isWholeGridSelected: boolean;
-  uiState: GridUiState;
-  readOnly: boolean;
-  canEditCell: SpreadsheetGridProps<T>['canEditCell'];
-  onRowHeaderPointerDown: (
-    rowIndex: number,
-    event: PointerEvent<HTMLDivElement>,
-  ) => void;
-  onRowHeaderPointerEnter: (
-    rowIndex: number,
-    event: PointerEvent<HTMLDivElement>,
-  ) => void;
-  onRowHeaderPointerLeave: (rowIndex: number) => void;
-  onCellPointerDown: (
-    cell: CellCoord,
-    event: PointerEvent<HTMLDivElement>,
-  ) => void;
-  onCellPointerEnter: (
-    cell: CellCoord,
-    event: PointerEvent<HTMLDivElement>,
-  ) => void;
-  onCellDoubleClick: (cell: CellCoord) => void;
-  // 注記(10-C): renderCellContent には colIndex として entry.logicalIndex を渡します。
-  renderCellContent: (
-    row: T,
-    rowIndex: number,
-    column: GridColumn<T>,
-    colIndex: number,
-  ) => ReactNode;
-};
-
-// 変更(10-C): 仮想行 × 「1ペイン分の列エントリ」で、行ヘッダーとセル本体を
-//             描画する汎用 body layer にしました。
-export function GridBodyLayer<T>({
-  pane,
-  ownsRowHeader,
-  leadingWidth,
-  filteredRows,
-  filteredRowKeys,
-  virtualRows,
-  virtualRowIndexes,
-  renderEntries,
-  headerHeight,
-  rowHeight,
-  rowHeaderCellStyle,
-  hoveredRowIndex,
-  isWholeGridSelected,
-  uiState,
-  readOnly,
-  canEditCell,
-  onRowHeaderPointerDown,
-  onRowHeaderPointerEnter,
-  onRowHeaderPointerLeave,
-  onCellPointerDown,
-  onCellPointerEnter,
-  onCellDoubleClick,
-  renderCellContent,
-}: GridBodyLayerProps<T>) {
-  return (
-    <>
-      {virtualRows.map((virtualRow) => {
-        const rowIndex = virtualRow.index;
-        const row = filteredRows[rowIndex];
-        const rowKey = filteredRowKeys[rowIndex] ?? rowIndex;
-        if (!row || !virtualRowIndexes.has(rowIndex)) {
-          return null;
-        }
-
-        return (
-          <div
-            key={String(rowKey)}
-            data-pane={pane}
-            style={{ display: 'flex', minHeight: rowHeight }}
-          >
-            {ownsRowHeader && (
-              <div
-                onPointerDown={(event) =>
-                  onRowHeaderPointerDown(rowIndex, event)
-                }
-                onPointerEnter={(event) =>
-                  onRowHeaderPointerEnter(rowIndex, event)
-                }
-                onPointerLeave={() => onRowHeaderPointerLeave(rowIndex)}
-                style={{
-                  ...rowHeaderCellStyle,
-                  position: 'absolute',
-                  top: headerHeight + virtualRow.start,
-                  left: 0,
-                  zIndex: 5,
-                  height: rowHeight,
-                  backgroundColor: isWholeGridSelected
-                    ? hoveredRowIndex === rowIndex
-                      ? '#bfdbfe'
-                      : '#dbeafe'
-                    : selectIsRowSelected(uiState, rowIndex)
-                      ? hoveredRowIndex === rowIndex
-                        ? '#bfdbfe'
-                        : '#dbeafe'
-                      : hoveredRowIndex === rowIndex
-                        ? '#e2e8f0'
-                        : '#f8fafc',
-                  fontWeight: 500,
-                }}
-              >
-                {rowIndex + 1}
-              </div>
-            )}
-
-            {renderEntries.map((entry) => {
-              if (!entry) {
-                return null;
-              }
-
-              const colIndex = entry.logicalIndex;
-              const column = entry.column;
-              const left = leadingWidth + entry.paneLocalStart;
-              const size = entry.paneLocalSize;
-
-              const isActive = selectIsActiveCell(uiState, rowIndex, colIndex);
-              const isSelected = selectIsCellSelected(
-                uiState,
-                rowIndex,
-                colIndex,
-              );
-              const readOnlyCell = !isCellEditable(
-                { readOnly, canEditCell },
-                rowIndex,
-                colIndex,
-                row,
-                column,
-              );
-
-              return (
-                <div
-                  key={`${String(rowKey)}-${column.key}`}
-                  onPointerDown={(event) =>
-                    onCellPointerDown({ row: rowIndex, col: colIndex }, event)
-                  }
-                  onPointerEnter={(event) =>
-                    onCellPointerEnter({ row: rowIndex, col: colIndex }, event)
-                  }
-                  onDoubleClick={() =>
-                    onCellDoubleClick({ row: rowIndex, col: colIndex })
-                  }
-                  style={{
-                    position: 'absolute',
-                    top: headerHeight + virtualRow.start,
-                    left,
-                    width: size,
-                    minWidth: size,
-                    height: rowHeight,
-                    boxSizing: 'border-box',
-                    display: 'flex',
-                    alignItems: 'center',
-                    padding: '0 10px',
-                    borderRight: '1px solid #e5e7eb',
-                    borderBottom: '1px solid #e5e7eb',
-                    backgroundColor: isSelected
-                      ? '#ffffff'
-                      : readOnlyCell
-                        ? '#f8fafc'
-                        : '#ffffff',
-                    color: readOnlyCell ? '#64748b' : '#0f172a',
-                    cursor: 'default',
-                    userSelect: 'none',
-                    outline: 'none',
-                    zIndex: isActive ? 3 : 1,
-                  }}
-                >
-                  {renderCellContent(row, rowIndex, column, colIndex)}
-                </div>
-              );
-            })}
-          </div>
-        );
-      })}
-    </>
-  );
-}
-
-export default GridBodyLayer;
-</file>
-
-<file path="src/components/spreadsheet-grid/view/GridHeaderRow.tsx">
-import type { CSSProperties, PointerEvent } from 'react';
-import { selectIsColumnSelected } from '../model/gridSelectors';
-import type {
-  GridColumn,
-  GridSortState,
-  GridUiState,
-} from '../model/gridTypes';
-// 変更(10-C): 列座標を ColumnMeasurement(グローバル) から
-//             PaneColumnEntry(ペインローカル) へ切り替えます。
-import type { PaneColumnEntry } from '../logic/geometry';
-import { toExcelColumnName } from '../utils/excelColumnName';
-
-// 追加(10-C): このヘッダーがどのペインを描画しているかの種別です。
-export type GridPaneKind = 'left' | 'center' | 'right';
-
-type GridHeaderRowProps<T> = {
-  // 追加(10-C): 描画対象のペイン種別です。
-  pane: GridPaneKind;
-  // 追加(10-C): true のときだけ左上コーナーセル(#)を描画します。
-  //             行ヘッダーを持つペイン(左固定があれば左、無ければ中央)だけが true です。
-  ownsRowHeader: boolean;
-  // 追加(10-C): 列の前に確保する先頭幅です。
-  //             行ヘッダーを持つペインでは rowHeaderWidth、それ以外は 0 です。
-  //             各列は leadingWidth + entry.paneLocalStart に配置されます。
-  leadingWidth: number;
-  rowHeaderWidth: number;
-  headerHeight: number;
-  rowHeaderCellStyle: CSSProperties;
-  headerCellBaseStyle: CSSProperties;
-  isCornerHovered: boolean;
-  isWholeGridSelected: boolean;
-  filteredRowsLength: number;
-  visibleColumnsLength: number;
-  // 変更(10-C): 描画対象の列エントリです。
-  //             中央ペインは仮想化済みの部分集合、固定ペインは全エントリが渡されます。
-  //             座標はすべてペインローカル(entry.paneLocalStart 起点)です。
-  renderEntries: PaneColumnEntry<T>[];
-  // 注記(10-C): hoveredColumnIndex / 各種 colIndex は entry.logicalIndex 空間です。
-  hoveredColumnIndex: number | null;
-  uiState: GridUiState;
-  columnFilterValues: Record<string, unknown>;
-  sortState: GridSortState;
-  getHeaderActionButtonStyle: (isActive: boolean) => CSSProperties;
-  getSortIndicator: (columnKey: string) => string;
-  onCornerPointerDown: (event: PointerEvent<HTMLDivElement>) => void;
-  onCornerPointerEnter: () => void;
-  onCornerPointerLeave: () => void;
-  onColumnHeaderPointerDown: (
-    colIndex: number,
-    event: PointerEvent<HTMLDivElement>,
-  ) => void;
-  onColumnHeaderPointerEnter: (
-    colIndex: number,
-    event: PointerEvent<HTMLDivElement>,
-  ) => void;
-  onColumnHeaderPointerLeave: (colIndex: number) => void;
-  onColumnSortButtonPointerDown: (
-    columnKey: string,
-    event: PointerEvent<HTMLButtonElement>,
-  ) => void;
-  onColumnFilterButtonPointerDown: (
-    column: GridColumn<T>,
-    event: PointerEvent<HTMLButtonElement>,
-  ) => void;
-  onColumnResizePointerDown: (
-    column: GridColumn<T>,
-    event: PointerEvent<HTMLDivElement>,
-  ) => void;
-};
-
-// 変更(10-C): sticky header 行を「1ペイン分」描画する汎用コンポーネントにしました。
-//             ownsRowHeader が true のペインのみ左上コーナーセルを描画します。
-export function GridHeaderRow<T>({
-  pane,
-  ownsRowHeader,
-  leadingWidth,
-  rowHeaderWidth,
-  headerHeight,
-  rowHeaderCellStyle,
-  headerCellBaseStyle,
-  isCornerHovered,
-  isWholeGridSelected,
-  filteredRowsLength,
-  visibleColumnsLength,
-  renderEntries,
-  hoveredColumnIndex,
-  uiState,
-  columnFilterValues,
-  sortState,
-  getHeaderActionButtonStyle,
-  getSortIndicator,
-  onCornerPointerDown,
-  onCornerPointerEnter,
-  onCornerPointerLeave,
-  onColumnHeaderPointerDown,
-  onColumnHeaderPointerEnter,
-  onColumnHeaderPointerLeave,
-  onColumnSortButtonPointerDown,
-  onColumnFilterButtonPointerDown,
-  onColumnResizePointerDown,
-}: GridHeaderRowProps<T>) {
-  return (
-    <div
-      data-pane={pane}
-      style={{
-        height: headerHeight,
-        position: 'sticky',
-        top: 0,
-        zIndex: 6,
-        backgroundColor: '#f8fafc',
-      }}
-    >
-      {ownsRowHeader && (
-        <div
-          onPointerDown={onCornerPointerDown}
-          onPointerEnter={onCornerPointerEnter}
-          onPointerLeave={onCornerPointerLeave}
-          style={{
-            ...rowHeaderCellStyle,
-            // 左上コーナーセル専用に見た目を明示して、
-            // 高さ・中央寄せ・境界線のズレを抑えます。
-            position: 'absolute',
-            top: 0,
-            left: 0,
-            width: rowHeaderWidth,
-            minWidth: rowHeaderWidth,
-            height: headerHeight,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            boxSizing: 'border-box',
-            padding: 0,
-            lineHeight: 1,
-            zIndex: 7,
-            backgroundColor: isWholeGridSelected
-              ? isCornerHovered
-                ? '#bfdbfe'
-                : '#dbeafe'
-              : isCornerHovered
-                ? '#e2e8f0'
-                : '#f8fafc',
-            borderRight: '1px solid #e5e7eb',
-            borderBottom: '1px solid #d7dce3',
-            cursor:
-              filteredRowsLength > 0 && visibleColumnsLength > 0
-                ? 'pointer'
-                : 'default',
-          }}
-        >
-          #
-        </div>
-      )}
-
-      {renderEntries.map((entry) => {
-        // 変更(10-C): 仮想化のガードは SpreadsheetGrid 側で済ませているため、
-        //             ここでは渡されたエントリをそのまま描画します。
-        if (!entry) {
-          return null;
-        }
-
-        const colIndex = entry.logicalIndex;
-        const column = entry.column;
-        const left = leadingWidth + entry.paneLocalStart;
-        const size = entry.paneLocalSize;
-
-        const isColumnFiltered =
-          String(columnFilterValues[column.key] ?? '').trim().length > 0;
-        const isColumnSelected = selectIsColumnSelected(uiState, colIndex);
-
-        return (
-          <div
-            key={column.key}
-            onPointerDown={(event) => onColumnHeaderPointerDown(colIndex, event)}
-            onPointerEnter={(event) =>
-              onColumnHeaderPointerEnter(colIndex, event)
-            }
-            onPointerLeave={() => onColumnHeaderPointerLeave(colIndex)}
-            style={{
-              position: 'absolute',
-              top: 0,
-              left,
-              ...headerCellBaseStyle,
-              width: size,
-              minWidth: size,
-              height: headerHeight,
-              backgroundColor: isWholeGridSelected
-                ? hoveredColumnIndex === colIndex
-                  ? '#bfdbfe'
-                  : '#dbeafe'
-                : isColumnSelected
-                  ? hoveredColumnIndex === colIndex
-                    ? '#bfdbfe'
-                    : '#dbeafe'
-                  : hoveredColumnIndex === colIndex
-                    ? '#e2e8f0'
-                    : '#f8fafc',
-            }}
-          >
-            <span
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                minWidth: 22,
-                height: 22,
-                borderRadius: 9999,
-                backgroundColor: isColumnFiltered ? '#bfdbfe' : '#e2e8f0',
-                color: isColumnFiltered ? '#1d4ed8' : '#475569',
-                fontSize: 11,
-                fontWeight: 700,
-              }}
-            >
-              {toExcelColumnName(colIndex)}
-            </span>
-
-            <div
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                minWidth: 0,
-                flex: 1,
-                gap: 6,
-              }}
-            >
-              <div
-                style={{
-                  minWidth: 0,
-                  flex: 1,
-                  color: isColumnFiltered ? '#1d4ed8' : '#334155',
-                  overflow: 'hidden',
-                  textOverflow: 'ellipsis',
-                  whiteSpace: 'nowrap',
-                }}
-              >
-                {column.renderHeader
-                  ? column.renderHeader({
-                      colIndex,
-                      width: size,
-                      column,
-                      filterValue: columnFilterValues[column.key],
-                      isFiltered: isColumnFiltered,
-                    })
-                  : column.title || column.key}
-              </div>
-
-              <button
-                type="button"
-                onPointerDown={(event) =>
-                  onColumnSortButtonPointerDown(column.key, event)
-                }
-                title="並び替え"
-                style={getHeaderActionButtonStyle(
-                  sortState.columnKey === column.key &&
-                    sortState.direction !== null,
-                )}
-              >
-                {getSortIndicator(column.key)}
-              </button>
-
-              <button
-                type="button"
-                onPointerDown={(event) =>
-                  onColumnFilterButtonPointerDown(column, event)
-                }
-                title="列フィルター"
-                style={getHeaderActionButtonStyle(isColumnFiltered)}
-              >
-                {isColumnFiltered ? '●' : '○'}
-              </button>
-            </div>
-
-            <div
-              onPointerDown={(event) => onColumnResizePointerDown(column, event)}
-              style={{
-                position: 'absolute',
-                top: 0,
-                right: -3,
-                width: 6,
-                height: '100%',
-                cursor: 'col-resize',
-                zIndex: 3,
-              }}
-            />
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
-export default GridHeaderRow;
 </file>
 
 <file path="src/index.css">
@@ -3837,6 +3271,572 @@ export const isSameCellCoord = (
 };
 </file>
 
+<file path="src/components/spreadsheet-grid/SelectionOverlay.tsx">
+import type { CSSProperties } from 'react';
+
+// 追加: 選択範囲の矩形情報です。
+export type SelectionOverlayRect = {
+  left: number;
+  top: number;
+  width: number;
+  height: number;
+};
+
+type SelectionOverlayProps = {
+  rect: SelectionOverlayRect | null;
+  headerHeight: number;
+  rowHeaderWidth: number;
+};
+
+// 追加: 選択範囲をセル本体とは独立したレイヤーで描画するコンポーネントです。
+export function SelectionOverlay({
+  rect,
+  headerHeight,
+  rowHeaderWidth,
+}: SelectionOverlayProps) {
+  if (!rect) {
+    return null;
+  }
+
+  const overlayStyle: CSSProperties = {
+    position: 'absolute',
+    left: rowHeaderWidth + rect.left,
+    top: headerHeight + rect.top,
+    width: rect.width,
+    height: rect.height,
+    backgroundColor: 'rgba(37, 99, 235, 0.08)',
+    border: '2px solid #2563eb',
+    boxSizing: 'border-box',
+    pointerEvents: 'none',
+    zIndex: 2,
+  };
+
+  return <div style={overlayStyle} />;
+}
+
+export default SelectionOverlay;
+</file>
+
+<file path="src/components/spreadsheet-grid/view/GridBodyLayer.tsx">
+import type { CSSProperties, PointerEvent, ReactNode } from 'react';
+import {
+  selectIsActiveCell,
+  selectIsCellSelected,
+  selectIsRowSelected,
+} from '../model/gridSelectors';
+import type {
+  CellCoord,
+  GridColumn,
+  GridRowKey,
+  GridUiState,
+  SpreadsheetGridProps,
+} from '../model/gridTypes';
+// 変更(10-C): 列座標を ColumnMeasurement(グローバル) から
+//             PaneColumnEntry(ペインローカル) へ切り替えます。
+import type { PaneColumnEntry } from '../logic/geometry';
+import type { GridPaneKind } from './GridHeaderRow';
+import { isCellEditable } from '../utils/permissions';
+
+type VirtualRowLike = {
+  index: number;
+  start: number;
+};
+
+type GridBodyLayerProps<T> = {
+  // 追加(10-C): 描画対象のペイン種別です。
+  pane: GridPaneKind;
+  // 追加(10-C): true のときだけ行番号セルを描画します。
+  ownsRowHeader: boolean;
+  // 追加(10-C): 列の前に確保する先頭幅です(行ヘッダーを持つペインは rowHeaderWidth、他は 0)。
+  leadingWidth: number;
+  filteredRows: T[];
+  filteredRowKeys: GridRowKey[];
+  virtualRows: VirtualRowLike[];
+  virtualRowIndexes: Set<number>;
+  // 変更(10-C): 描画対象の列エントリです(座標はペインローカル)。
+  //             中央ペインは仮想化済みの部分集合、固定ペインは全エントリです。
+  renderEntries: PaneColumnEntry<T>[];
+  headerHeight: number;
+  rowHeight: number;
+  rowHeaderCellStyle: CSSProperties;
+  hoveredRowIndex: number | null;
+  isWholeGridSelected: boolean;
+  uiState: GridUiState;
+  readOnly: boolean;
+  canEditCell: SpreadsheetGridProps<T>['canEditCell'];
+  onRowHeaderPointerDown: (
+    rowIndex: number,
+    event: PointerEvent<HTMLDivElement>,
+  ) => void;
+  onRowHeaderPointerEnter: (
+    rowIndex: number,
+    event: PointerEvent<HTMLDivElement>,
+  ) => void;
+  onRowHeaderPointerLeave: (rowIndex: number) => void;
+  onCellPointerDown: (
+    cell: CellCoord,
+    event: PointerEvent<HTMLDivElement>,
+  ) => void;
+  onCellPointerEnter: (
+    cell: CellCoord,
+    event: PointerEvent<HTMLDivElement>,
+  ) => void;
+  onCellDoubleClick: (cell: CellCoord) => void;
+  // 注記(10-C): renderCellContent には colIndex として entry.logicalIndex を渡します。
+  renderCellContent: (
+    row: T,
+    rowIndex: number,
+    column: GridColumn<T>,
+    colIndex: number,
+  ) => ReactNode;
+};
+
+// 変更(10-C): 仮想行 × 「1ペイン分の列エントリ」で、行ヘッダーとセル本体を
+//             描画する汎用 body layer にしました。
+export function GridBodyLayer<T>({
+  pane,
+  ownsRowHeader,
+  leadingWidth,
+  filteredRows,
+  filteredRowKeys,
+  virtualRows,
+  virtualRowIndexes,
+  renderEntries,
+  headerHeight,
+  rowHeight,
+  rowHeaderCellStyle,
+  hoveredRowIndex,
+  isWholeGridSelected,
+  uiState,
+  readOnly,
+  canEditCell,
+  onRowHeaderPointerDown,
+  onRowHeaderPointerEnter,
+  onRowHeaderPointerLeave,
+  onCellPointerDown,
+  onCellPointerEnter,
+  onCellDoubleClick,
+  renderCellContent,
+}: GridBodyLayerProps<T>) {
+  return (
+    <>
+      {virtualRows.map((virtualRow) => {
+        const rowIndex = virtualRow.index;
+        const row = filteredRows[rowIndex];
+        const rowKey = filteredRowKeys[rowIndex] ?? rowIndex;
+        if (!row || !virtualRowIndexes.has(rowIndex)) {
+          return null;
+        }
+
+        return (
+          <div
+            key={String(rowKey)}
+            data-pane={pane}
+            style={{ display: 'flex', minHeight: rowHeight }}
+          >
+            {ownsRowHeader && (
+              <div
+                onPointerDown={(event) =>
+                  onRowHeaderPointerDown(rowIndex, event)
+                }
+                onPointerEnter={(event) =>
+                  onRowHeaderPointerEnter(rowIndex, event)
+                }
+                onPointerLeave={() => onRowHeaderPointerLeave(rowIndex)}
+                style={{
+                  ...rowHeaderCellStyle,
+                  position: 'absolute',
+                  top: headerHeight + virtualRow.start,
+                  left: 0,
+                  zIndex: 5,
+                  height: rowHeight,
+                  backgroundColor: isWholeGridSelected
+                    ? hoveredRowIndex === rowIndex
+                      ? '#bfdbfe'
+                      : '#dbeafe'
+                    : selectIsRowSelected(uiState, rowIndex)
+                      ? hoveredRowIndex === rowIndex
+                        ? '#bfdbfe'
+                        : '#dbeafe'
+                      : hoveredRowIndex === rowIndex
+                        ? '#e2e8f0'
+                        : '#f8fafc',
+                  fontWeight: 500,
+                }}
+              >
+                {rowIndex + 1}
+              </div>
+            )}
+
+            {renderEntries.map((entry) => {
+              if (!entry) {
+                return null;
+              }
+
+              const colIndex = entry.logicalIndex;
+              const column = entry.column;
+              const left = leadingWidth + entry.paneLocalStart;
+              const size = entry.paneLocalSize;
+
+              const isActive = selectIsActiveCell(uiState, rowIndex, colIndex);
+              const isSelected = selectIsCellSelected(
+                uiState,
+                rowIndex,
+                colIndex,
+              );
+              const readOnlyCell = !isCellEditable(
+                { readOnly, canEditCell },
+                rowIndex,
+                colIndex,
+                row,
+                column,
+              );
+
+              return (
+                <div
+                  key={`${String(rowKey)}-${column.key}`}
+                  onPointerDown={(event) =>
+                    onCellPointerDown({ row: rowIndex, col: colIndex }, event)
+                  }
+                  onPointerEnter={(event) =>
+                    onCellPointerEnter({ row: rowIndex, col: colIndex }, event)
+                  }
+                  onDoubleClick={() =>
+                    onCellDoubleClick({ row: rowIndex, col: colIndex })
+                  }
+                  style={{
+                    position: 'absolute',
+                    top: headerHeight + virtualRow.start,
+                    left,
+                    width: size,
+                    minWidth: size,
+                    height: rowHeight,
+                    boxSizing: 'border-box',
+                    display: 'flex',
+                    alignItems: 'center',
+                    padding: '0 10px',
+                    borderRight: '1px solid #e5e7eb',
+                    borderBottom: '1px solid #e5e7eb',
+                    backgroundColor: isSelected
+                      ? '#ffffff'
+                      : readOnlyCell
+                        ? '#f8fafc'
+                        : '#ffffff',
+                    color: readOnlyCell ? '#64748b' : '#0f172a',
+                    cursor: 'default',
+                    userSelect: 'none',
+                    outline: 'none',
+                    zIndex: isActive ? 3 : 1,
+                  }}
+                >
+                  {renderCellContent(row, rowIndex, column, colIndex)}
+                </div>
+              );
+            })}
+          </div>
+        );
+      })}
+    </>
+  );
+}
+
+export default GridBodyLayer;
+</file>
+
+<file path="src/components/spreadsheet-grid/view/GridHeaderRow.tsx">
+import type { CSSProperties, PointerEvent } from 'react';
+import { selectIsColumnSelected } from '../model/gridSelectors';
+import type {
+  GridColumn,
+  GridSortState,
+  GridUiState,
+} from '../model/gridTypes';
+// 変更(10-C): 列座標を ColumnMeasurement(グローバル) から
+//             PaneColumnEntry(ペインローカル) へ切り替えます。
+import type { PaneColumnEntry } from '../logic/geometry';
+import { toExcelColumnName } from '../utils/excelColumnName';
+
+// 追加(10-C): このヘッダーがどのペインを描画しているかの種別です。
+export type GridPaneKind = 'left' | 'center' | 'right';
+
+type GridHeaderRowProps<T> = {
+  // 追加(10-C): 描画対象のペイン種別です。
+  pane: GridPaneKind;
+  // 追加(10-C): true のときだけ左上コーナーセル(#)を描画します。
+  //             行ヘッダーを持つペイン(左固定があれば左、無ければ中央)だけが true です。
+  ownsRowHeader: boolean;
+  // 追加(10-C): 列の前に確保する先頭幅です。
+  //             行ヘッダーを持つペインでは rowHeaderWidth、それ以外は 0 です。
+  //             各列は leadingWidth + entry.paneLocalStart に配置されます。
+  leadingWidth: number;
+  rowHeaderWidth: number;
+  headerHeight: number;
+  rowHeaderCellStyle: CSSProperties;
+  headerCellBaseStyle: CSSProperties;
+  isCornerHovered: boolean;
+  isWholeGridSelected: boolean;
+  filteredRowsLength: number;
+  visibleColumnsLength: number;
+  // 変更(10-C): 描画対象の列エントリです。
+  //             中央ペインは仮想化済みの部分集合、固定ペインは全エントリが渡されます。
+  //             座標はすべてペインローカル(entry.paneLocalStart 起点)です。
+  renderEntries: PaneColumnEntry<T>[];
+  // 注記(10-C): hoveredColumnIndex / 各種 colIndex は entry.logicalIndex 空間です。
+  hoveredColumnIndex: number | null;
+  uiState: GridUiState;
+  columnFilterValues: Record<string, unknown>;
+  sortState: GridSortState;
+  getHeaderActionButtonStyle: (isActive: boolean) => CSSProperties;
+  getSortIndicator: (columnKey: string) => string;
+  onCornerPointerDown: (event: PointerEvent<HTMLDivElement>) => void;
+  onCornerPointerEnter: () => void;
+  onCornerPointerLeave: () => void;
+  onColumnHeaderPointerDown: (
+    colIndex: number,
+    event: PointerEvent<HTMLDivElement>,
+  ) => void;
+  onColumnHeaderPointerEnter: (
+    colIndex: number,
+    event: PointerEvent<HTMLDivElement>,
+  ) => void;
+  onColumnHeaderPointerLeave: (colIndex: number) => void;
+  onColumnSortButtonPointerDown: (
+    columnKey: string,
+    event: PointerEvent<HTMLButtonElement>,
+  ) => void;
+  onColumnFilterButtonPointerDown: (
+    column: GridColumn<T>,
+    event: PointerEvent<HTMLButtonElement>,
+  ) => void;
+  onColumnResizePointerDown: (
+    column: GridColumn<T>,
+    event: PointerEvent<HTMLDivElement>,
+  ) => void;
+};
+
+// 変更(10-C): sticky header 行を「1ペイン分」描画する汎用コンポーネントにしました。
+//             ownsRowHeader が true のペインのみ左上コーナーセルを描画します。
+export function GridHeaderRow<T>({
+  pane,
+  ownsRowHeader,
+  leadingWidth,
+  rowHeaderWidth,
+  headerHeight,
+  rowHeaderCellStyle,
+  headerCellBaseStyle,
+  isCornerHovered,
+  isWholeGridSelected,
+  filteredRowsLength,
+  visibleColumnsLength,
+  renderEntries,
+  hoveredColumnIndex,
+  uiState,
+  columnFilterValues,
+  sortState,
+  getHeaderActionButtonStyle,
+  getSortIndicator,
+  onCornerPointerDown,
+  onCornerPointerEnter,
+  onCornerPointerLeave,
+  onColumnHeaderPointerDown,
+  onColumnHeaderPointerEnter,
+  onColumnHeaderPointerLeave,
+  onColumnSortButtonPointerDown,
+  onColumnFilterButtonPointerDown,
+  onColumnResizePointerDown,
+}: GridHeaderRowProps<T>) {
+  return (
+    <div
+      data-pane={pane}
+      style={{
+        height: headerHeight,
+        position: 'sticky',
+        top: 0,
+        zIndex: 6,
+        backgroundColor: '#f8fafc',
+      }}
+    >
+      {ownsRowHeader && (
+        <div
+          onPointerDown={onCornerPointerDown}
+          onPointerEnter={onCornerPointerEnter}
+          onPointerLeave={onCornerPointerLeave}
+          style={{
+            ...rowHeaderCellStyle,
+            // 左上コーナーセル専用に見た目を明示して、
+            // 高さ・中央寄せ・境界線のズレを抑えます。
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            width: rowHeaderWidth,
+            minWidth: rowHeaderWidth,
+            height: headerHeight,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            boxSizing: 'border-box',
+            padding: 0,
+            lineHeight: 1,
+            zIndex: 7,
+            backgroundColor: isWholeGridSelected
+              ? isCornerHovered
+                ? '#bfdbfe'
+                : '#dbeafe'
+              : isCornerHovered
+                ? '#e2e8f0'
+                : '#f8fafc',
+            borderRight: '1px solid #e5e7eb',
+            borderBottom: '1px solid #d7dce3',
+            cursor:
+              filteredRowsLength > 0 && visibleColumnsLength > 0
+                ? 'pointer'
+                : 'default',
+          }}
+        >
+          #
+        </div>
+      )}
+
+      {renderEntries.map((entry) => {
+        // 変更(10-C): 仮想化のガードは SpreadsheetGrid 側で済ませているため、
+        //             ここでは渡されたエントリをそのまま描画します。
+        if (!entry) {
+          return null;
+        }
+
+        const colIndex = entry.logicalIndex;
+        const column = entry.column;
+        const left = leadingWidth + entry.paneLocalStart;
+        const size = entry.paneLocalSize;
+
+        const isColumnFiltered =
+          String(columnFilterValues[column.key] ?? '').trim().length > 0;
+        const isColumnSelected = selectIsColumnSelected(uiState, colIndex);
+
+        return (
+          <div
+            key={column.key}
+            onPointerDown={(event) => onColumnHeaderPointerDown(colIndex, event)}
+            onPointerEnter={(event) =>
+              onColumnHeaderPointerEnter(colIndex, event)
+            }
+            onPointerLeave={() => onColumnHeaderPointerLeave(colIndex)}
+            style={{
+              position: 'absolute',
+              top: 0,
+              left,
+              ...headerCellBaseStyle,
+              width: size,
+              minWidth: size,
+              height: headerHeight,
+              backgroundColor: isWholeGridSelected
+                ? hoveredColumnIndex === colIndex
+                  ? '#bfdbfe'
+                  : '#dbeafe'
+                : isColumnSelected
+                  ? hoveredColumnIndex === colIndex
+                    ? '#bfdbfe'
+                    : '#dbeafe'
+                  : hoveredColumnIndex === colIndex
+                    ? '#e2e8f0'
+                    : '#f8fafc',
+            }}
+          >
+            <span
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                minWidth: 22,
+                height: 22,
+                borderRadius: 9999,
+                backgroundColor: isColumnFiltered ? '#bfdbfe' : '#e2e8f0',
+                color: isColumnFiltered ? '#1d4ed8' : '#475569',
+                fontSize: 11,
+                fontWeight: 700,
+              }}
+            >
+              {toExcelColumnName(colIndex)}
+            </span>
+
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                minWidth: 0,
+                flex: 1,
+                gap: 6,
+              }}
+            >
+              <div
+                style={{
+                  minWidth: 0,
+                  flex: 1,
+                  color: isColumnFiltered ? '#1d4ed8' : '#334155',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                {column.renderHeader
+                  ? column.renderHeader({
+                      colIndex,
+                      width: size,
+                      column,
+                      filterValue: columnFilterValues[column.key],
+                      isFiltered: isColumnFiltered,
+                    })
+                  : column.title || column.key}
+              </div>
+
+              <button
+                type="button"
+                onPointerDown={(event) =>
+                  onColumnSortButtonPointerDown(column.key, event)
+                }
+                title="並び替え"
+                style={getHeaderActionButtonStyle(
+                  sortState.columnKey === column.key &&
+                    sortState.direction !== null,
+                )}
+              >
+                {getSortIndicator(column.key)}
+              </button>
+
+              <button
+                type="button"
+                onPointerDown={(event) =>
+                  onColumnFilterButtonPointerDown(column, event)
+                }
+                title="列フィルター"
+                style={getHeaderActionButtonStyle(isColumnFiltered)}
+              >
+                {isColumnFiltered ? '●' : '○'}
+              </button>
+            </div>
+
+            <div
+              onPointerDown={(event) => onColumnResizePointerDown(column, event)}
+              style={{
+                position: 'absolute',
+                top: 0,
+                right: -3,
+                width: 6,
+                height: '100%',
+                cursor: 'col-resize',
+                zIndex: 3,
+              }}
+            />
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+export default GridHeaderRow;
+</file>
+
 <file path="src/components/spreadsheet-grid/model/gridActions.ts">
 import type { CellCoord, GridSortDirection } from './gridTypes';
 
@@ -4475,121 +4475,6 @@ export const applyClipboardMatrixToRows = <T extends object,>(
 };
 </file>
 
-<file path="src/components/spreadsheet-grid/view/gridBarStyles.ts">
-import type { CSSProperties } from 'react';
-
-// 追加: top/bottom 共通の外側余白を返します。
-export const getGridBarWrapperStyle = (
-  position: 'top' | 'bottom',
-): CSSProperties => ({
-  marginBottom: position === 'top' ? 12 : 0,
-  marginTop: position === 'bottom' ? 12 : 0,
-});
-
-// 追加: top/bottom 共通の bar 本体スタイルです。
-export const gridBarContainerStyle: CSSProperties = {
-  display: 'flex',
-  alignItems: 'center',
-  justifyContent: 'space-between',
-  gap: 12,
-  padding: '10px 12px',
-  border: '1px solid #d7dce3',
-  borderRadius: 12,
-  backgroundColor: '#f8fafc',
-  flexWrap: 'wrap',
-};
-
-// 追加: bar 内の左/右グループで共通利用する style です。
-export const gridBarGroupStyle: CSSProperties = {
-  display: 'flex',
-  alignItems: 'center',
-  gap: 8,
-  flexWrap: 'wrap',
-};
-
-// 追加: top bar 左側のタイトル + summary 用 style です。
-export const gridBarLeadingGroupStyle: CSSProperties = {
-  ...gridBarGroupStyle,
-  minWidth: 0,
-  flex: '1 1 auto',
-  color: '#334155',
-  fontSize: 13,
-};
-
-// 追加: bar のタイトル表示用 style です。
-export const gridBarTitleStyle: CSSProperties = {
-  fontSize: 13,
-  fontWeight: 700,
-  color: '#334155',
-};
-
-// 追加: 薄い badge / chip 表示用 style です。
-export const gridBarChipStyle: CSSProperties = {
-  display: 'inline-flex',
-  alignItems: 'center',
-  padding: '4px 8px',
-  borderRadius: 9999,
-  backgroundColor: '#ffffff',
-  border: '1px solid #e2e8f0',
-  color: '#334155',
-  fontSize: 12,
-  whiteSpace: 'nowrap',
-};
-
-// 追加: top bar の件数 badge 用に、やや濃い背景の variant を定義します。
-export const gridBarEmphasisChipStyle: CSSProperties = {
-  ...gridBarChipStyle,
-  backgroundColor: '#e2e8f0',
-  border: '1px solid transparent',
-  fontWeight: 600,
-};
-
-// 追加: Global Filter input の共通 style です。
-export const gridBarInputStyle: CSSProperties = {
-  width: '100%',
-  minWidth: 0,
-  boxSizing: 'border-box',
-  padding: '10px 12px',
-  border: '1px solid #cbd5e1',
-  borderRadius: 8,
-  outline: 'none',
-  backgroundColor: '#ffffff',
-  // 追加: 入力文字色を明示して、dark/light やブラウザ差異で
-  //       文字が見えなくなるのを防ぎます。
-  color: '#0f172a',
-  // 追加: キャレット色も明示します。
-  caretColor: '#0f172a',
-  // 追加: bar 内での可読性を安定させます。
-  fontSize: 14,
-  lineHeight: 1.4,
-  // 追加: Chromium / WebKit 系で text fill が変わるケースに備えます。
-  WebkitTextFillColor: '#0f172a',
-};
-
-// 追加: Global Filter input とクリアボタンを横並びにする wrapper です。
-export const gridBarInputGroupStyle: CSSProperties = {
-  display: 'flex',
-  alignItems: 'center',
-  gap: 8,
-  width: '100%',
-  maxWidth: 420,
-};
-
-// 追加: Global Filter クリアボタンの共通 style です。
-export const gridBarClearButtonStyle: CSSProperties = {
-  flex: '0 0 auto',
-  border: '1px solid #cbd5e1',
-  backgroundColor: '#ffffff',
-  color: '#475569',
-  borderRadius: 8,
-  padding: '10px 12px',
-  cursor: 'pointer',
-  fontSize: 12,
-  lineHeight: 1,
-  whiteSpace: 'nowrap',
-};
-</file>
-
 <file path="src/components/spreadsheet-grid/view/gridBarHelpers.ts">
 import type { ReactNode } from 'react';
 import type {
@@ -4867,6 +4752,121 @@ export const buildGridDerivedSummary = <T,>(
     hasSorting,
     sortedColumnLabel,
   };
+};
+</file>
+
+<file path="src/components/spreadsheet-grid/view/gridBarStyles.ts">
+import type { CSSProperties } from 'react';
+
+// 追加: top/bottom 共通の外側余白を返します。
+export const getGridBarWrapperStyle = (
+  position: 'top' | 'bottom',
+): CSSProperties => ({
+  marginBottom: position === 'top' ? 12 : 0,
+  marginTop: position === 'bottom' ? 12 : 0,
+});
+
+// 追加: top/bottom 共通の bar 本体スタイルです。
+export const gridBarContainerStyle: CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'space-between',
+  gap: 12,
+  padding: '10px 12px',
+  border: '1px solid #d7dce3',
+  borderRadius: 12,
+  backgroundColor: '#f8fafc',
+  flexWrap: 'wrap',
+};
+
+// 追加: bar 内の左/右グループで共通利用する style です。
+export const gridBarGroupStyle: CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  gap: 8,
+  flexWrap: 'wrap',
+};
+
+// 追加: top bar 左側のタイトル + summary 用 style です。
+export const gridBarLeadingGroupStyle: CSSProperties = {
+  ...gridBarGroupStyle,
+  minWidth: 0,
+  flex: '1 1 auto',
+  color: '#334155',
+  fontSize: 13,
+};
+
+// 追加: bar のタイトル表示用 style です。
+export const gridBarTitleStyle: CSSProperties = {
+  fontSize: 13,
+  fontWeight: 700,
+  color: '#334155',
+};
+
+// 追加: 薄い badge / chip 表示用 style です。
+export const gridBarChipStyle: CSSProperties = {
+  display: 'inline-flex',
+  alignItems: 'center',
+  padding: '4px 8px',
+  borderRadius: 9999,
+  backgroundColor: '#ffffff',
+  border: '1px solid #e2e8f0',
+  color: '#334155',
+  fontSize: 12,
+  whiteSpace: 'nowrap',
+};
+
+// 追加: top bar の件数 badge 用に、やや濃い背景の variant を定義します。
+export const gridBarEmphasisChipStyle: CSSProperties = {
+  ...gridBarChipStyle,
+  backgroundColor: '#e2e8f0',
+  border: '1px solid transparent',
+  fontWeight: 600,
+};
+
+// 追加: Global Filter input の共通 style です。
+export const gridBarInputStyle: CSSProperties = {
+  width: '100%',
+  minWidth: 0,
+  boxSizing: 'border-box',
+  padding: '10px 12px',
+  border: '1px solid #cbd5e1',
+  borderRadius: 8,
+  outline: 'none',
+  backgroundColor: '#ffffff',
+  // 追加: 入力文字色を明示して、dark/light やブラウザ差異で
+  //       文字が見えなくなるのを防ぎます。
+  color: '#0f172a',
+  // 追加: キャレット色も明示します。
+  caretColor: '#0f172a',
+  // 追加: bar 内での可読性を安定させます。
+  fontSize: 14,
+  lineHeight: 1.4,
+  // 追加: Chromium / WebKit 系で text fill が変わるケースに備えます。
+  WebkitTextFillColor: '#0f172a',
+};
+
+// 追加: Global Filter input とクリアボタンを横並びにする wrapper です。
+export const gridBarInputGroupStyle: CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  gap: 8,
+  width: '100%',
+  maxWidth: 420,
+};
+
+// 追加: Global Filter クリアボタンの共通 style です。
+export const gridBarClearButtonStyle: CSSProperties = {
+  flex: '0 0 auto',
+  border: '1px solid #cbd5e1',
+  backgroundColor: '#ffffff',
+  color: '#475569',
+  borderRadius: 8,
+  padding: '10px 12px',
+  cursor: 'pointer',
+  fontSize: 12,
+  lineHeight: 1,
+  whiteSpace: 'nowrap',
 };
 </file>
 

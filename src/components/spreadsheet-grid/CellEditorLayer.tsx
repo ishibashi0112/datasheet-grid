@@ -8,6 +8,7 @@ import {
   type KeyboardEvent,
 } from 'react';
 
+// 変更(10-D): left は「ペイン列領域内ローカル座標」になりました（leadingWidth 非含有）。
 type CellEditorRect = {
   left: number;
   top: number;
@@ -18,7 +19,9 @@ type CellEditorRect = {
 type CellEditorLayerProps = {
   rect: CellEditorRect | null;
   headerHeight: number;
-  rowHeaderWidth: number;
+  // 変更(10-D): rowHeaderWidth → leadingWidth に一般化しました。
+  //             editor は active cell が属するペインの relative コンテナ内へ配置されます。
+  leadingWidth: number;
   value: string;
   onChange: (value: string) => void;
   onCommit: (direction?: EditorCommitDirection) => void;
@@ -26,10 +29,11 @@ type CellEditorLayerProps = {
 };
 
 // 追加: 編集中セルの上に input を重ねる editor layer です。
+// 変更(10-D): ペイン別座標系に対応。
 export function CellEditorLayer({
   rect,
   headerHeight,
-  rowHeaderWidth,
+  leadingWidth,
   value,
   onChange,
   onCommit,
@@ -54,7 +58,7 @@ export function CellEditorLayer({
 
   const wrapperStyle: CSSProperties = {
     position: 'absolute',
-    left: rowHeaderWidth + rect.left,
+    left: leadingWidth + rect.left,
     top: headerHeight + rect.top,
     width: rect.width,
     height: rect.height,
