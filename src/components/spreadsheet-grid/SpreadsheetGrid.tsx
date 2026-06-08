@@ -9,7 +9,9 @@ import {
   type CSSProperties,
   type PointerEvent,
 } from 'react';
+
 import { useVirtualizer } from '@tanstack/react-virtual';
+
 import { gridActions } from './model/gridActions';
 import { createInitialGridUiState, gridUiReducer } from './model/gridReducer';
 import {
@@ -41,7 +43,15 @@ import {
   applyGlobalFilter,
   type GridRowModelLike,
 } from './logic/filtering';
-import { buildColumnMeasurements } from './logic/geometry';
+// 変更(10-B): 3ペインレイアウト構築用の helper を追加インポートします。
+// 変更理由: reorderColumnsByPane / buildGridPaneLayout / isPlainLayout を
+//           SpreadsheetGrid 側で使用するためです。
+import {
+  buildColumnMeasurements,
+  reorderColumnsByPane,
+  buildGridPaneLayout,
+  isPlainLayout,
+} from './logic/geometry';
 import { applySort } from './logic/sorting';
 import type {
   CellCoord,
@@ -84,12 +94,19 @@ export function SpreadsheetGrid<T extends object>({
   renderBottomBar,
   className,
 }: SpreadsheetGridProps<T>) {
+  // ── refs ──────────────────────────────────────────────
   const gridRootRef = useRef<HTMLDivElement | null>(null);
   const pointerClientRef = useRef<{ x: number; y: number } | null>(null);
   const autoScrollFrameRef = useRef<number | null>(null);
   const bodyScrollRef = useRef<HTMLDivElement | null>(null);
   const editorActionGuardRef = useRef(false);
 
+  // 追加(10-B): 左固定ペインのスクロール要素 ref です。
+  const leftPaneScrollRef = useRef<HTMLDivElement | null>(null);
+  // 追加(10-B): 右固定ペインのスクロール要素 ref です。
+  const rightPaneScrollRef = useRef<HTMLDivElement | null>(null);
+
+  // ── local state ───────────────────────────────────────
   const [editorValue, setEditorValue] = useState('');
   const [isCornerHovered, setIsCornerHovered] = useState(false);
   const [hoveredRowIndex, setHoveredRowIndex] = useState<number | null>(null);
@@ -97,9 +114,17 @@ export function SpreadsheetGrid<T extends object>({
     null,
   );
 
+  // ── columns ───────────────────────────────────────────
   const visibleColumns = useMemo(
     () => columns.filter((column) => column.visible !== false),
     [columns],
+  );
+
+  // 追加(10-B): pinned 属性に応じて列を視覚順序（left → center → right）に並べ替えます。
+  //             pinned 列がない現時点では visibleColumns と同じ順序になります。
+  const orderedColumns = useMemo(
+    () => reorderColumnsByPane(visibleColumns),
+    [visibleColumns],
   );
 
   const resolvedRowKeyGetter = useMemo(
@@ -107,12 +132,34 @@ export function SpreadsheetGrid<T extends object>({
     [rowKeyGetter],
   );
 
+  // ── reducer ───────────────────────────────────────────
   const [uiState, dispatch] = useReducer(
     gridUiReducer,
     visibleColumns,
     createInitialGridUiState,
   );
 
+  // ── 3ペイン geometry（10-B） ──────────────────────────
+  // 追加(10-B): 3 ペイン（left / center / right）のジオメトリを構築します。
+  // 変更理由: DOM を 3 ペイン flex レイアウトに分離するために必要です。
+  const paneLayout = useMemo(
+    () => buildGridPaneLayout(orderedColumns, uiState.columnWidths),
+    [orderedColumns, uiState.columnWidths],
+  );
+
+  // 追加(10-B): pinned 列が 1 本もなければ true — 従来と同じ単一スクロール描画です。
+  const plainLayout = isPlainLayout(paneLayout);
+
+  // 追加(10-B): 左固定ペインの合計幅です（row header + left-pinned 列）。
+  //             pinned 列がなければ 0 でペインは非表示になります。
+  const leftPaneTotalWidth = paneLayout.left.totalWidth > 0
+    ? rowHeaderWidth + paneLayout.left.totalWidth
+    : 0;
+
+  // 追加(10-B): 右固定ペインの合計幅です。
+  const rightPaneTotalWidth = paneLayout.right.totalWidth;
+
+  // ── filter popover ────────────────────────────────────
   const {
     filterPopoverState,
     filterPopoverLayout,
@@ -131,6 +178,7 @@ export function SpreadsheetGrid<T extends object>({
     gridRootRef,
   });
 
+  // ── column widths sync ────────────────────────────────
   useEffect(() => {
     const nextWidths = visibleColumns.reduce<Record<string, number>>(
       (acc, column) => {
@@ -139,10 +187,10 @@ export function SpreadsheetGrid<T extends object>({
       },
       {},
     );
-
     dispatch(gridActions.syncColumnWidths(nextWidths));
   }, [visibleColumns]);
 
+  // ── row models (source → filtered → sorted) ──────────
   const sourceRowModels = useMemo<SourceRowModel<T>[]>(
     () =>
       rows.map((row, index) => ({
@@ -158,7 +206,6 @@ export function SpreadsheetGrid<T extends object>({
       if (column.filterOptions && column.filterOptions.length > 0) {
         return column.filterOptions;
       }
-
       const seen = new Set<string>();
       const options = sourceRowModels.reduce<{ label: string; value: string }[]>(
         (acc, rowModel) => {
@@ -166,7 +213,6 @@ export function SpreadsheetGrid<T extends object>({
           if (seen.has(value)) {
             return acc;
           }
-
           seen.add(value);
           acc.push({
             value,
@@ -176,7 +222,6 @@ export function SpreadsheetGrid<T extends object>({
         },
         [],
       );
-
       return options.sort((left, right) =>
         left.label.localeCompare(right.label, 'ja', {
           numeric: true,
@@ -227,6 +272,7 @@ export function SpreadsheetGrid<T extends object>({
     [filteredRowModels],
   );
 
+  // ── column measurements ───────────────────────────────
   const columnMeasurements = useMemo(
     () => buildColumnMeasurements(visibleColumns, uiState.columnWidths),
     [visibleColumns, uiState.columnWidths],
@@ -240,6 +286,7 @@ export function SpreadsheetGrid<T extends object>({
     [columnMeasurements],
   );
 
+  // ── virtualizer ───────────────────────────────────────
   const rowVirtualizer = useVirtualizer({
     count: filteredRows.length,
     getScrollElement: () => bodyScrollRef.current,
@@ -272,11 +319,11 @@ export function SpreadsheetGrid<T extends object>({
     [virtualColumns],
   );
 
+  // ── active cell / editor rect ─────────────────────────
   const activeCellRect = useMemo<ActiveCellOverlayRect | null>(() => {
     if (!uiState.activeCell) {
       return null;
     }
-
     const { row, col } = uiState.activeCell;
     if (
       row < 0 ||
@@ -286,12 +333,10 @@ export function SpreadsheetGrid<T extends object>({
     ) {
       return null;
     }
-
     const measurement = columnMeasurements[col];
     if (!measurement) {
       return null;
     }
-
     const top = row * rowHeight;
     return {
       left: measurement.start,
@@ -312,6 +357,7 @@ export function SpreadsheetGrid<T extends object>({
     [uiState.editingCell, activeCellRect],
   );
 
+  // ── viewport sync ────────────────────────────────────
   useGridViewportSync({
     bodyScrollRef,
     rowVirtualizer,
@@ -326,6 +372,30 @@ export function SpreadsheetGrid<T extends object>({
     activeCellRect,
   });
 
+  // 追加(10-B): 中央ペインの垂直スクロールを左右固定ペインへ同期します。
+  // 変更理由: 3ペイン物理分離のため、vertical scroll は中央ペインがマスターで
+  //           左右ペインへ scrollTop を転写する必要があります。
+  useEffect(() => {
+    const center = bodyScrollRef.current;
+    if (!center) return;
+
+    const syncVerticalScroll = () => {
+      const { scrollTop } = center;
+      if (leftPaneScrollRef.current) {
+        leftPaneScrollRef.current.scrollTop = scrollTop;
+      }
+      if (rightPaneScrollRef.current) {
+        rightPaneScrollRef.current.scrollTop = scrollTop;
+      }
+    };
+
+    center.addEventListener('scroll', syncVerticalScroll, { passive: true });
+    return () => {
+      center.removeEventListener('scroll', syncVerticalScroll);
+    };
+  }, []);
+
+  // ── pointer interactions ──────────────────────────────
   const {
     updateSelectionFromPointer,
     handleCellPointerDown,
@@ -351,6 +421,7 @@ export function SpreadsheetGrid<T extends object>({
     rowHeight,
   });
 
+  // ── clipboard ─────────────────────────────────────────
   const { isWholeGridSelected, handleCopy, handlePaste } =
     useGridClipboardController({
       rows,
@@ -371,19 +442,18 @@ export function SpreadsheetGrid<T extends object>({
     if (filteredRows.length === 0 || visibleColumns.length === 0) {
       return;
     }
-
     const startCell = { row: 0, col: 0 };
     const endCell = {
       row: filteredRows.length - 1,
       col: visibleColumns.length - 1,
     };
-
     dispatch(gridActions.startSelection(startCell));
     dispatch(gridActions.updateSelection(endCell));
     dispatch(gridActions.endSelection());
     dispatch(gridActions.activateCell(startCell));
   }, [dispatch, filteredRows.length, visibleColumns.length]);
 
+  // ── double click → edit ───────────────────────────────
   const handleCellDoubleClick = useCallback(
     (cell: CellCoord) => {
       const row = filteredRows[cell.row];
@@ -391,7 +461,6 @@ export function SpreadsheetGrid<T extends object>({
       if (!row || !column) {
         return;
       }
-
       if (
         !isCellEditable(
           { readOnly, canEditCell },
@@ -403,7 +472,6 @@ export function SpreadsheetGrid<T extends object>({
       ) {
         return;
       }
-
       const currentValue = getCellValue(row, column);
       setEditorValue(String(currentValue ?? ''));
       dispatch(gridActions.startEdit(cell));
@@ -411,6 +479,7 @@ export function SpreadsheetGrid<T extends object>({
     [canEditCell, dispatch, filteredRows, readOnly, visibleColumns],
   );
 
+  // ── keyboard ──────────────────────────────────────────
   const { getMovedCell, handleKeyDown } = useGridKeyboardInteractions({
     uiState,
     filteredRows,
@@ -425,6 +494,7 @@ export function SpreadsheetGrid<T extends object>({
     selectEntireGrid,
   });
 
+  // ── edit controller ───────────────────────────────────
   const { startEditWithValue, commitEdit, cancelEdit } = useGridEditController({
     uiState,
     rows,
@@ -446,7 +516,6 @@ export function SpreadsheetGrid<T extends object>({
       if (!row || !column) {
         return;
       }
-
       if (
         !isCellEditable(
           { readOnly, canEditCell },
@@ -458,18 +527,17 @@ export function SpreadsheetGrid<T extends object>({
       ) {
         return;
       }
-
       const currentValue = getCellValue(row, column);
       startEditWithValue(cell, String(currentValue ?? ''));
     },
     [canEditCell, filteredRows, readOnly, startEditWithValue, visibleColumns],
   );
 
+  // ── selection overlay rect ────────────────────────────
   const selectionOverlayRect = useMemo<SelectionOverlayRect | null>(() => {
     if (!uiState.selection) {
       return null;
     }
-
     if (uiState.selection.type === 'cell') {
       const normalizedRange = normalizeCellRange(uiState.selection.range);
       const startMeasurement = columnMeasurements[normalizedRange.start.col];
@@ -477,11 +545,9 @@ export function SpreadsheetGrid<T extends object>({
       if (!startMeasurement || !endMeasurement) {
         return null;
       }
-
       const top = normalizedRange.start.row * rowHeight;
       const height =
         (normalizedRange.end.row - normalizedRange.start.row + 1) * rowHeight;
-
       return {
         left: startMeasurement.start,
         top,
@@ -489,13 +555,11 @@ export function SpreadsheetGrid<T extends object>({
         height,
       };
     }
-
     if (uiState.selection.type === 'row') {
       const normalizedRange = normalizeRowRange(
         uiState.selection.startRow,
         uiState.selection.endRow,
       );
-
       return {
         left: 0,
         top: normalizedRange.startRow * rowHeight,
@@ -504,7 +568,6 @@ export function SpreadsheetGrid<T extends object>({
           (normalizedRange.endRow - normalizedRange.startRow + 1) * rowHeight,
       };
     }
-
     const normalizedRange = normalizeColumnRange(
       uiState.selection.startCol,
       uiState.selection.endCol,
@@ -514,7 +577,6 @@ export function SpreadsheetGrid<T extends object>({
     if (!startMeasurement || !endMeasurement) {
       return null;
     }
-
     return {
       left: startMeasurement.start,
       top: 0,
@@ -529,25 +591,22 @@ export function SpreadsheetGrid<T extends object>({
     totalColumnWidth,
   ]);
 
+  // ── corner header ─────────────────────────────────────
   const handleCornerHeaderPointerDown = useCallback(
     (event: PointerEvent<HTMLDivElement>) => {
       event.preventDefault();
       if (event.button !== 0) {
         return;
       }
-
       if (filteredRows.length === 0 || visibleColumns.length === 0) {
         return;
       }
-
       gridRootRef.current?.focus();
-
       if (isWholeGridSelected) {
         dispatch(gridActions.clearSelection());
         dispatch(gridActions.activateCell(null));
         return;
       }
-
       selectEntireGrid();
     },
     [
@@ -559,11 +618,11 @@ export function SpreadsheetGrid<T extends object>({
     ],
   );
 
+  // ── column resize ─────────────────────────────────────
   const handleColumnResizePointerDown = useCallback(
     (column: GridColumn<T>, event: PointerEvent<HTMLDivElement>) => {
       event.preventDefault();
       event.stopPropagation();
-
       dispatch(
         gridActions.startColumnResize(
           column.key,
@@ -577,11 +636,11 @@ export function SpreadsheetGrid<T extends object>({
     [dispatch, uiState],
   );
 
+  // ── filter popover actions ────────────────────────────
   const applyFilterPopoverValue = useCallback(() => {
     if (!filterPopoverState) {
       return;
     }
-
     const targetColumn = visibleColumns.find(
       (column) => column.key === filterPopoverState.columnKey,
     );
@@ -590,13 +649,11 @@ export function SpreadsheetGrid<T extends object>({
       filterType === 'select'
         ? filterPopoverState.draftValue
         : filterPopoverState.draftValue.trim();
-
     if (!normalized) {
       dispatch(gridActions.clearColumnFilter(filterPopoverState.columnKey));
       closeColumnFilterPopover();
       return;
     }
-
     dispatch(
       gridActions.setColumnFilter(filterPopoverState.columnKey, normalized),
     );
@@ -607,20 +664,18 @@ export function SpreadsheetGrid<T extends object>({
     if (!filterPopoverState) {
       return;
     }
-
     dispatch(gridActions.clearColumnFilter(filterPopoverState.columnKey));
     closeColumnFilterPopover();
   }, [closeColumnFilterPopover, dispatch, filterPopoverState]);
 
+  // ── sort ──────────────────────────────────────────────
   const handleColumnSortButtonPointerDown = useCallback(
     (columnKey: string, event: PointerEvent<HTMLButtonElement>) => {
       event.preventDefault();
       event.stopPropagation();
-
       if (!enableSorting) {
         return;
       }
-
       if (
         uiState.sort.columnKey !== columnKey ||
         uiState.sort.direction === null
@@ -628,12 +683,10 @@ export function SpreadsheetGrid<T extends object>({
         dispatch(gridActions.setSort(columnKey, 'asc'));
         return;
       }
-
       if (uiState.sort.direction === 'asc') {
         dispatch(gridActions.setSort(columnKey, 'desc'));
         return;
       }
-
       dispatch(gridActions.clearSort());
     },
     [dispatch, enableSorting, uiState.sort],
@@ -648,12 +701,12 @@ export function SpreadsheetGrid<T extends object>({
       ) {
         return '↕';
       }
-
       return uiState.sort.direction === 'asc' ? '↑' : '↓';
     },
     [enableSorting, uiState.sort],
   );
 
+  // ── header action button style ────────────────────────
   const getHeaderActionButtonStyle = useCallback(
     (isActive: boolean): CSSProperties => ({
       border: '1px solid #cbd5e1',
@@ -673,6 +726,7 @@ export function SpreadsheetGrid<T extends object>({
     [],
   );
 
+  // ── cell content renderer ─────────────────────────────
   const renderCellContent = useCallback(
     (
       row: T,
@@ -708,7 +762,6 @@ export function SpreadsheetGrid<T extends object>({
             if (!onRowsChange) {
               return;
             }
-
             const originalRowIndex =
               filteredRowSourceIndexes[rowIndex] ?? rowIndex;
             const nextRows = rows.map((currentRow, index) =>
@@ -720,7 +773,6 @@ export function SpreadsheetGrid<T extends object>({
           },
         });
       }
-
       return <span>{String(value ?? '')}</span>;
     },
     [
@@ -733,6 +785,7 @@ export function SpreadsheetGrid<T extends object>({
     ],
   );
 
+  // ── global filter setter ──────────────────────────────
   // 追加: topBar / bottomBar 用に global filter setter を公開します。
   const setGlobalFilterText = useCallback(
     (value: string) => {
@@ -741,6 +794,7 @@ export function SpreadsheetGrid<T extends object>({
     [dispatch],
   );
 
+  // ── bar context ───────────────────────────────────────
   // 追加: bar 用 context / derived summary は hook へ逃がします。
   const { slotContext } = useGridBarContext({
     rows,
@@ -751,6 +805,7 @@ export function SpreadsheetGrid<T extends object>({
     setGlobalFilterText,
   });
 
+  // ── styles ────────────────────────────────────────────
   const gridShellStyle: CSSProperties = {
     border: '1px solid #d7dce3',
     borderRadius: 12,
@@ -783,6 +838,34 @@ export function SpreadsheetGrid<T extends object>({
     zIndex: 1,
   };
 
+  // 追加(10-B): 3ペイン flex コンテナの style です。
+  // 変更理由: maxHeight を従来の bodyScrollRef から flex コンテナへ移し、
+  //           左右ペインも同じ高さ制約に収めるためです。
+  const paneContainerStyle: CSSProperties = {
+    display: 'flex',
+    maxHeight: 480,
+    overflow: 'hidden',
+  };
+
+  // 追加(10-B): 固定ペイン共通の style です。
+  // 変更理由: overflow: hidden でスクロールバーを非表示にしつつ、
+  //           JS で scrollTop を同期して縦スクロールを実現します。
+  const pinnedPaneStyle = (width: number): CSSProperties => ({
+    width,
+    flexShrink: 0,
+    overflow: 'hidden',
+  });
+
+  // 追加(10-B): 中央ペイン（従来の bodyScrollRef）の style です。
+  // 変更理由: maxHeight は親 flex コンテナ側で管理するため、
+  //           ここでは flex: 1 と overflow: auto のみ指定します。
+  const centerPaneStyle: CSSProperties = {
+    flex: '1 1 auto',
+    minWidth: 0,
+    overflow: 'auto',
+  };
+
+  // ── filter popover ────────────────────────────────────
   const renderedFilterPopover = openedFilterColumn ? (
     <ColumnFilterPopover
       isOpen={Boolean(filterPopoverState)}
@@ -806,6 +889,7 @@ export function SpreadsheetGrid<T extends object>({
     />
   ) : null;
 
+  // ── slot bars ─────────────────────────────────────────
   // 追加: slot helper を使って top/bottom の描画を解決します。
   const resolvedTopBar = resolveGridSlot(
     renderTopBar,
@@ -820,6 +904,7 @@ export function SpreadsheetGrid<T extends object>({
     <DefaultGridBottomBar context={slotContext} />,
   );
 
+  // ── render ────────────────────────────────────────────
   return (
     <div className={className}>
       {resolvedTopBar}
@@ -838,113 +923,153 @@ export function SpreadsheetGrid<T extends object>({
         onKeyDown={isFilterPopoverOpen ? undefined : handleKeyDown}
         onPaste={isFilterPopoverOpen ? undefined : handlePaste}
       >
-        <div
-          ref={bodyScrollRef}
-          style={{
-            overflow: 'auto',
-            maxHeight: 480,
-          }}
-        >
+        {/* ── 追加(10-B): 3ペイン flex コンテナ ────────────── */}
+        {/* 変更理由: AG Grid 互換の物理 DOM 分離レイアウトです。    */}
+        {/*   pinned 列がない場合は左右ペインが width:0 で非表示、  */}
+        {/*   中央ペインが flex:1 で従来と同じ見た目になります。    */}
+        <div style={paneContainerStyle}>
+
+          {/* ── 左固定ペイン ── */}
+          {/* 追加(10-B): 10-C でヘッダー・ボディを描画予定。       */}
+          {/*   現時点では pinned 列がないため width:0 で非表示です。*/}
           <div
-            style={{
-              position: 'relative',
-              width: rowHeaderWidth + totalColumnWidth,
-              minWidth: rowHeaderWidth + totalColumnWidth,
-              height: headerHeight + totalBodyHeight,
-            }}
+            ref={leftPaneScrollRef}
+            style={pinnedPaneStyle(leftPaneTotalWidth)}
           >
-            <GridHeaderRow
-              rowHeaderWidth={rowHeaderWidth}
-              headerHeight={headerHeight}
-              rowHeaderCellStyle={rowHeaderCellStyle}
-              headerCellBaseStyle={headerCellBaseStyle}
-              isCornerHovered={isCornerHovered}
-              isWholeGridSelected={isWholeGridSelected}
-              filteredRowsLength={filteredRows.length}
-              visibleColumnsLength={visibleColumns.length}
-              virtualColumns={virtualColumns}
-              virtualColumnIndexes={virtualColumnIndexes}
-              columnMeasurements={columnMeasurements}
-              visibleColumns={visibleColumns}
-              hoveredColumnIndex={hoveredColumnIndex}
-              uiState={uiState}
-              columnFilterValues={uiState.filters.columnFilters}
-              sortState={uiState.sort}
-              getHeaderActionButtonStyle={getHeaderActionButtonStyle}
-              getSortIndicator={getSortIndicator}
-              onCornerPointerDown={handleCornerHeaderPointerDown}
-              onCornerPointerEnter={() => setIsCornerHovered(true)}
-              onCornerPointerLeave={() => setIsCornerHovered(false)}
-              onColumnHeaderPointerDown={handleColumnHeaderPointerDown}
-              onColumnHeaderPointerEnter={handleColumnHeaderPointerEnter}
-              onColumnHeaderPointerLeave={(colIndex) =>
-                setHoveredColumnIndex((current) =>
-                  current === colIndex ? null : current,
-                )
-              }
-              onColumnSortButtonPointerDown={handleColumnSortButtonPointerDown}
-              onColumnFilterButtonPointerDown={openColumnFilterPopover}
-              onColumnResizePointerDown={handleColumnResizePointerDown}
-            />
-
-            <SelectionOverlay
-              rect={selectionOverlayRect}
-              headerHeight={headerHeight}
-              rowHeaderWidth={rowHeaderWidth}
-            />
-
-            <ActiveCellOverlay
-              rect={activeCellRect}
-              headerHeight={headerHeight}
-              rowHeaderWidth={rowHeaderWidth}
-            />
-
-            <CellEditorLayer
-              rect={editorRect}
-              headerHeight={headerHeight}
-              rowHeaderWidth={rowHeaderWidth}
-              value={editorValue}
-              onChange={setEditorValue}
-              onCommit={commitEdit}
-              onCancel={cancelEdit}
-            />
-
-            <GridBodyLayer
-              filteredRows={filteredRows}
-              filteredRowKeys={filteredRowKeys}
-              visibleColumns={visibleColumns}
-              virtualRows={virtualRows}
-              virtualColumns={virtualColumns}
-              virtualRowIndexes={virtualRowIndexes}
-              virtualColumnIndexes={virtualColumnIndexes}
-              columnMeasurements={columnMeasurements}
-              rowHeaderWidth={rowHeaderWidth}
-              headerHeight={headerHeight}
-              rowHeight={rowHeight}
-              rowHeaderCellStyle={rowHeaderCellStyle}
-              hoveredRowIndex={hoveredRowIndex}
-              isWholeGridSelected={isWholeGridSelected}
-              uiState={uiState}
-              readOnly={readOnly}
-              canEditCell={canEditCell}
-              onRowHeaderPointerDown={handleRowHeaderPointerDown}
-              onRowHeaderPointerEnter={handleRowHeaderPointerEnter}
-              onRowHeaderPointerLeave={(rowIndex) =>
-                setHoveredRowIndex((current) =>
-                  current === rowIndex ? null : current,
-                )
-              }
-              onCellPointerDown={handleCellPointerDown}
-              onCellPointerEnter={handleCellPointerEnter}
-              onCellDoubleClick={handleCellDoubleClickWithController}
-              renderCellContent={renderCellContent}
-            />
+            <div
+              style={{
+                position: 'relative',
+                height: headerHeight + totalBodyHeight,
+              }}
+            >
+              {/* 10-C で左ペイン用のヘッダー・ボディを描画します */}
+            </div>
           </div>
+
+          {/* ── 中央スクロールペイン（従来の bodyScrollRef） ── */}
+          <div
+            ref={bodyScrollRef}
+            style={centerPaneStyle}
+          >
+            <div
+              style={{
+                position: 'relative',
+                width: rowHeaderWidth + totalColumnWidth,
+                minWidth: rowHeaderWidth + totalColumnWidth,
+                height: headerHeight + totalBodyHeight,
+              }}
+            >
+              <GridHeaderRow
+                rowHeaderWidth={rowHeaderWidth}
+                headerHeight={headerHeight}
+                rowHeaderCellStyle={rowHeaderCellStyle}
+                headerCellBaseStyle={headerCellBaseStyle}
+                isCornerHovered={isCornerHovered}
+                isWholeGridSelected={isWholeGridSelected}
+                filteredRowsLength={filteredRows.length}
+                visibleColumnsLength={visibleColumns.length}
+                virtualColumns={virtualColumns}
+                virtualColumnIndexes={virtualColumnIndexes}
+                columnMeasurements={columnMeasurements}
+                visibleColumns={visibleColumns}
+                hoveredColumnIndex={hoveredColumnIndex}
+                uiState={uiState}
+                columnFilterValues={uiState.filters.columnFilters}
+                sortState={uiState.sort}
+                getHeaderActionButtonStyle={getHeaderActionButtonStyle}
+                getSortIndicator={getSortIndicator}
+                onCornerPointerDown={handleCornerHeaderPointerDown}
+                onCornerPointerEnter={() => setIsCornerHovered(true)}
+                onCornerPointerLeave={() => setIsCornerHovered(false)}
+                onColumnHeaderPointerDown={handleColumnHeaderPointerDown}
+                onColumnHeaderPointerEnter={handleColumnHeaderPointerEnter}
+                onColumnHeaderPointerLeave={(colIndex) =>
+                  setHoveredColumnIndex((current) =>
+                    current === colIndex ? null : current,
+                  )
+                }
+                onColumnSortButtonPointerDown={handleColumnSortButtonPointerDown}
+                onColumnFilterButtonPointerDown={openColumnFilterPopover}
+                onColumnResizePointerDown={handleColumnResizePointerDown}
+              />
+
+              <SelectionOverlay
+                rect={selectionOverlayRect}
+                headerHeight={headerHeight}
+                rowHeaderWidth={rowHeaderWidth}
+              />
+
+              <ActiveCellOverlay
+                rect={activeCellRect}
+                headerHeight={headerHeight}
+                rowHeaderWidth={rowHeaderWidth}
+              />
+
+              <CellEditorLayer
+                rect={editorRect}
+                headerHeight={headerHeight}
+                rowHeaderWidth={rowHeaderWidth}
+                value={editorValue}
+                onChange={setEditorValue}
+                onCommit={commitEdit}
+                onCancel={cancelEdit}
+              />
+
+              <GridBodyLayer
+                filteredRows={filteredRows}
+                filteredRowKeys={filteredRowKeys}
+                visibleColumns={visibleColumns}
+                virtualRows={virtualRows}
+                virtualColumns={virtualColumns}
+                virtualRowIndexes={virtualRowIndexes}
+                virtualColumnIndexes={virtualColumnIndexes}
+                columnMeasurements={columnMeasurements}
+                rowHeaderWidth={rowHeaderWidth}
+                headerHeight={headerHeight}
+                rowHeight={rowHeight}
+                rowHeaderCellStyle={rowHeaderCellStyle}
+                hoveredRowIndex={hoveredRowIndex}
+                isWholeGridSelected={isWholeGridSelected}
+                uiState={uiState}
+                readOnly={readOnly}
+                canEditCell={canEditCell}
+                onRowHeaderPointerDown={handleRowHeaderPointerDown}
+                onRowHeaderPointerEnter={handleRowHeaderPointerEnter}
+                onRowHeaderPointerLeave={(rowIndex) =>
+                  setHoveredRowIndex((current) =>
+                    current === rowIndex ? null : current,
+                  )
+                }
+                onCellPointerDown={handleCellPointerDown}
+                onCellPointerEnter={handleCellPointerEnter}
+                onCellDoubleClick={handleCellDoubleClickWithController}
+                renderCellContent={renderCellContent}
+              />
+            </div>
+          </div>
+
+          {/* ── 右固定ペイン ── */}
+          {/* 追加(10-B): 10-C でヘッダー・ボディを描画予定。       */}
+          {/*   現時点では pinned 列がないため width:0 で非表示です。*/}
+          <div
+            ref={rightPaneScrollRef}
+            style={pinnedPaneStyle(rightPaneTotalWidth)}
+          >
+            <div
+              style={{
+                position: 'relative',
+                height: headerHeight + totalBodyHeight,
+              }}
+            >
+              {/* 10-C で右ペイン用のヘッダー・ボディを描画します */}
+            </div>
+          </div>
+
         </div>
+        {/* ── /3ペイン flex コンテナ ── */}
       </div>
 
       {resolvedBottomBar}
-
       {renderedFilterPopover}
     </div>
   );
