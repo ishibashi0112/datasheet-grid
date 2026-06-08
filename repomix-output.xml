@@ -55,6 +55,7 @@ src/assets/vite.svg
 src/components/spreadsheet-grid/ActiveCellOverlay.tsx
 src/components/spreadsheet-grid/CellEditorLayer.tsx
 src/components/spreadsheet-grid/hooks/useFilterPopoverController.ts
+src/components/spreadsheet-grid/hooks/useGridBarContext.ts
 src/components/spreadsheet-grid/hooks/useGridClipboardController.ts
 src/components/spreadsheet-grid/hooks/useGridEditController.ts
 src/components/spreadsheet-grid/hooks/useGridKeyboardInteractions.ts
@@ -772,6 +773,79 @@ export const useFilterPopoverController = <T,>({
 };
 
 export default useFilterPopoverController;
+</file>
+
+<file path="src/components/spreadsheet-grid/hooks/useGridBarContext.ts">
+import { useMemo } from 'react';
+import { selectGlobalFilter } from '../model/gridSelectors';
+import type {
+  GridColumn,
+  GridUiState,
+  SpreadsheetGridSlotContext,
+} from '../model/gridTypes';
+import { buildGridDerivedSummary } from '../view/gridBarHelpers';
+
+// 追加: derivedSummary / setGlobalFilterText を載せる前の中間 slot context 型です。
+type GridSlotContextBase<T> = Omit<
+  SpreadsheetGridSlotContext<T>,
+  'setGlobalFilterText' | 'derivedSummary'
+>;
+
+type UseGridBarContextArgs<T> = {
+  rows: T[];
+  filteredRows: T[];
+  columns: GridColumn<T>[];
+  visibleColumns: GridColumn<T>[];
+  uiState: GridUiState;
+  setGlobalFilterText: (value: string) => void;
+};
+
+// 追加: topBar / bottomBar へ渡す slot context と derived summary をまとめて構築します。
+export const useGridBarContext = <T,>({
+  rows,
+  filteredRows,
+  columns,
+  visibleColumns,
+  uiState,
+  setGlobalFilterText,
+}: UseGridBarContextArgs<T>) => {
+  const slotContextBase = useMemo<GridSlotContextBase<T>>(
+    () => ({
+      rows,
+      filteredRows,
+      columns,
+      visibleColumns,
+      globalFilterText: selectGlobalFilter(uiState),
+      columnFilterValues: uiState.filters.columnFilters,
+      sortState: uiState.sort,
+      activeCell: uiState.activeCell,
+      selection: uiState.selection,
+    }),
+    [rows, filteredRows, columns, visibleColumns, uiState],
+  );
+
+  const derivedSummary = useMemo(
+    () => buildGridDerivedSummary(slotContextBase),
+    [slotContextBase],
+  );
+
+  const slotContext = useMemo<SpreadsheetGridSlotContext<T>>(
+    () => ({
+      ...slotContextBase,
+      setGlobalFilterText,
+      derivedSummary,
+    }),
+    [derivedSummary, setGlobalFilterText, slotContextBase],
+  );
+
+  return {
+    slotContextBase,
+    derivedSummary,
+    slotContext,
+  };
+};
+
+export default useGridBarContext;
 </file>
 
 <file path="src/components/spreadsheet-grid/hooks/useGridClipboardController.ts">
@@ -3547,98 +3621,6 @@ export const isSameCellCoord = (
 };
 </file>
 
-<file path="src/components/spreadsheet-grid/view/gridBarStyles.ts">
-import type { CSSProperties } from 'react';
-
-// 追加: top/bottom 共通の外側余白を返します。
-export const getGridBarWrapperStyle = (
-  position: 'top' | 'bottom',
-): CSSProperties => ({
-  marginBottom: position === 'top' ? 12 : 0,
-  marginTop: position === 'bottom' ? 12 : 0,
-});
-
-// 追加: top/bottom 共通の bar 本体スタイルです。
-export const gridBarContainerStyle: CSSProperties = {
-  display: 'flex',
-  alignItems: 'center',
-  justifyContent: 'space-between',
-  gap: 12,
-  padding: '10px 12px',
-  border: '1px solid #d7dce3',
-  borderRadius: 12,
-  backgroundColor: '#f8fafc',
-  flexWrap: 'wrap',
-};
-
-// 追加: bar 内の左/右グループで共通利用する style です。
-export const gridBarGroupStyle: CSSProperties = {
-  display: 'flex',
-  alignItems: 'center',
-  gap: 8,
-  flexWrap: 'wrap',
-};
-
-// 追加: top bar 左側のタイトル + summary 用 style です。
-export const gridBarLeadingGroupStyle: CSSProperties = {
-  ...gridBarGroupStyle,
-  minWidth: 0,
-  flex: '1 1 auto',
-  color: '#334155',
-  fontSize: 13,
-};
-
-// 追加: bar のタイトル表示用 style です。
-export const gridBarTitleStyle: CSSProperties = {
-  fontSize: 13,
-  fontWeight: 700,
-  color: '#334155',
-};
-
-// 追加: 薄い badge / chip 表示用 style です。
-export const gridBarChipStyle: CSSProperties = {
-  display: 'inline-flex',
-  alignItems: 'center',
-  padding: '4px 8px',
-  borderRadius: 9999,
-  backgroundColor: '#ffffff',
-  border: '1px solid #e2e8f0',
-  color: '#334155',
-  fontSize: 12,
-  whiteSpace: 'nowrap',
-};
-
-// 追加: top bar の件数 badge 用に、やや濃い背景の variant を定義します。
-export const gridBarEmphasisChipStyle: CSSProperties = {
-  ...gridBarChipStyle,
-  backgroundColor: '#e2e8f0',
-  border: '1px solid transparent',
-  fontWeight: 600,
-};
-
-// 追加: Global Filter input の共通 style です。
-export const gridBarInputStyle: CSSProperties = {
-  width: '100%',
-  maxWidth: 320,
-  boxSizing: 'border-box',
-  padding: '10px 12px',
-  border: '1px solid #cbd5e1',
-  borderRadius: 8,
-  outline: 'none',
-  backgroundColor: '#ffffff',
-  // 追加: 入力文字色を明示して、dark/light やブラウザ差異で
-  //       文字が見えなくなるのを防ぎます。
-  color: '#0f172a',
-  // 追加: キャレット色も明示します。
-  caretColor: '#0f172a',
-  // 追加: bar 内での可読性を安定させます。
-  fontSize: 14,
-  lineHeight: 1.4,
-  // 追加: Chromium / WebKit 系で text fill が変わるケースに備えます。
-  WebkitTextFillColor: '#0f172a',
-};
-</file>
-
 <file path="src/components/spreadsheet-grid/model/gridActions.ts">
 import type { CellCoord, GridSortDirection } from './gridTypes';
 
@@ -4277,6 +4259,122 @@ export const applyClipboardMatrixToRows = <T extends object,>(
 };
 </file>
 
+<file path="src/components/spreadsheet-grid/view/gridBarStyles.ts">
+import type { CSSProperties } from 'react';
+
+// 追加: top/bottom 共通の外側余白を返します。
+export const getGridBarWrapperStyle = (
+  position: 'top' | 'bottom',
+): CSSProperties => ({
+  marginBottom: position === 'top' ? 12 : 0,
+  marginTop: position === 'bottom' ? 12 : 0,
+});
+
+// 追加: top/bottom 共通の bar 本体スタイルです。
+export const gridBarContainerStyle: CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'space-between',
+  gap: 12,
+  padding: '10px 12px',
+  border: '1px solid #d7dce3',
+  borderRadius: 12,
+  backgroundColor: '#f8fafc',
+  flexWrap: 'wrap',
+};
+
+// 追加: bar 内の左/右グループで共通利用する style です。
+export const gridBarGroupStyle: CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  gap: 8,
+  flexWrap: 'wrap',
+};
+
+// 追加: top bar 左側のタイトル + summary 用 style です。
+export const gridBarLeadingGroupStyle: CSSProperties = {
+  ...gridBarGroupStyle,
+  minWidth: 0,
+  flex: '1 1 auto',
+  color: '#334155',
+  fontSize: 13,
+};
+
+// 追加: bar のタイトル表示用 style です。
+export const gridBarTitleStyle: CSSProperties = {
+  fontSize: 13,
+  fontWeight: 700,
+  color: '#334155',
+};
+
+// 追加: 薄い badge / chip 表示用 style です。
+export const gridBarChipStyle: CSSProperties = {
+  display: 'inline-flex',
+  alignItems: 'center',
+  padding: '4px 8px',
+  borderRadius: 9999,
+  backgroundColor: '#ffffff',
+  border: '1px solid #e2e8f0',
+  color: '#334155',
+  fontSize: 12,
+  whiteSpace: 'nowrap',
+};
+
+// 追加: top bar の件数 badge 用に、やや濃い背景の variant を定義します。
+export const gridBarEmphasisChipStyle: CSSProperties = {
+  ...gridBarChipStyle,
+  backgroundColor: '#e2e8f0',
+  border: '1px solid transparent',
+  fontWeight: 600,
+};
+
+// 追加: Global Filter input の共通 style です。
+export const gridBarInputStyle: CSSProperties = {
+  width: '100%',
+  minWidth: 0,
+  boxSizing: 'border-box',
+  padding: '10px 12px',
+  border: '1px solid #cbd5e1',
+  borderRadius: 8,
+  outline: 'none',
+  backgroundColor: '#ffffff',
+  // 追加: 入力文字色を明示して、dark/light やブラウザ差異で
+  //       文字が見えなくなるのを防ぎます。
+  color: '#0f172a',
+  // 追加: キャレット色も明示します。
+  caretColor: '#0f172a',
+  // 追加: bar 内での可読性を安定させます。
+  fontSize: 14,
+  lineHeight: 1.4,
+  // 追加: Chromium / WebKit 系で text fill が変わるケースに備えます。
+  WebkitTextFillColor: '#0f172a',
+};
+
+// 追加: Global Filter input とクリアボタンを横並びにする wrapper です。
+export const gridBarInputGroupStyle: CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  gap: 8,
+  width: '100%',
+  maxWidth: 420,
+};
+
+// 追加: Global Filter クリアボタンの共通 style です。
+export const gridBarClearButtonStyle: CSSProperties = {
+  flex: '0 0 auto',
+  border: '1px solid #cbd5e1',
+  backgroundColor: '#ffffff',
+  color: '#475569',
+  borderRadius: 8,
+  padding: '10px 12px',
+  cursor: 'pointer',
+  fontSize: 12,
+  lineHeight: 1,
+  whiteSpace: 'nowrap',
+};
+``
+</file>
+
 <file path="src/components/spreadsheet-grid/view/gridBarHelpers.ts">
 import type { ReactNode } from 'react';
 import type {
@@ -4302,6 +4400,14 @@ export const resolveGridSlot = <T,>(
     return slotRenderer(context);
   }
   return fallback;
+};
+
+// 追加: summary 用に長い文字列を短く丸めます。
+const truncateSummaryText = (value: string, maxLength = 16) => {
+  if (value.length <= maxLength) {
+    return value;
+  }
+  return `${value.slice(0, maxLength)}…`;
 };
 
 // 追加: ActiveCell を A1 形式へ整形します。
@@ -4452,6 +4558,9 @@ export const formatGridFilterSummary = <T,>(
   >,
 ) => {
   const hasGlobalFilter = context.globalFilterText.trim().length > 0;
+  const globalFilterPreview = hasGlobalFilter
+    ? truncateSummaryText(context.globalFilterText.trim())
+    : null;
   const columnFilterCount = countActiveColumnFilters(context.columnFilterValues);
 
   if (!hasGlobalFilter && columnFilterCount === 0) {
@@ -4459,14 +4568,14 @@ export const formatGridFilterSummary = <T,>(
   }
 
   if (hasGlobalFilter && columnFilterCount === 0) {
-    return 'Filter: Global';
+    return `Filter: Global("${globalFilterPreview}")`;
   }
 
   if (!hasGlobalFilter && columnFilterCount > 0) {
     return `Filter: ${columnFilterCount}列`;
   }
 
-  return `Filter: Global + ${columnFilterCount}列`;
+  return `Filter: Global("${globalFilterPreview}") + ${columnFilterCount}列`;
 };
 
 // 追加: ソート列の表示名を取得します。
@@ -4514,6 +4623,9 @@ export const buildGridDerivedSummary = <T,>(
 ): SpreadsheetGridDerivedSummary => {
   const selectionStats = getGridSelectionStats(context);
   const hasGlobalFilter = context.globalFilterText.trim().length > 0;
+  const globalFilterPreview = hasGlobalFilter
+    ? truncateSummaryText(context.globalFilterText.trim())
+    : null;
   const activeColumnFilterCount = countActiveColumnFilters(
     context.columnFilterValues,
   );
@@ -4534,133 +4646,13 @@ export const buildGridDerivedSummary = <T,>(
     selectionStatsText: formatGridSelectionStatsLabel(context),
     selectionStats,
     hasGlobalFilter,
+    globalFilterPreview,
     activeColumnFilterCount,
     hasAnyFilter,
     hasSorting,
     sortedColumnLabel,
   };
 };
-``
-</file>
-
-<file path="src/components/spreadsheet-grid/view/DefaultGridBottomBar.tsx">
-import type { CSSProperties } from 'react';
-import {
-  getGridBarWrapperStyle,
-  gridBarChipStyle,
-  gridBarContainerStyle,
-  gridBarGroupStyle,
-} from './gridBarStyles';
-import type { SpreadsheetGridSlotContext } from '../model/gridTypes';
-
-type DefaultGridBottomBarProps<T> = {
-  context: SpreadsheetGridSlotContext<T>;
-};
-
-// 追加: Grid 下部の既定ステータスバーです。
-export function DefaultGridBottomBar<T>({
-  context,
-}: DefaultGridBottomBarProps<T>) {
-  // 追加: 共通 style helper から bottom bar 用 style を解決します。
-  const wrapperStyle: CSSProperties = getGridBarWrapperStyle('bottom');
-  // 追加: slot context が持つ派生 summary を使います。
-  const { derivedSummary } = context;
-
-  return (
-    <div style={wrapperStyle}>
-      <div style={gridBarContainerStyle}>
-        <div style={gridBarGroupStyle}>
-          <span style={gridBarChipStyle}>{derivedSummary.rowSummaryText}</span>
-          <span style={gridBarChipStyle}>
-            {derivedSummary.columnSummaryText}
-          </span>
-        </div>
-
-        <div style={gridBarGroupStyle}>
-          <span style={gridBarChipStyle}>
-            Active: {derivedSummary.activeCellLabel}
-          </span>
-          <span style={gridBarChipStyle}>
-            Selection: {derivedSummary.selectionLabel}
-          </span>
-          <span style={gridBarChipStyle}>
-            {derivedSummary.selectionStatsText}
-          </span>
-          <span style={gridBarChipStyle}>
-            Cols: {derivedSummary.selectionStats.selectedColumnCount}
-          </span>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-export default DefaultGridBottomBar;
-</file>
-
-<file path="src/components/spreadsheet-grid/view/DefaultGridTopBar.tsx">
-import type { CSSProperties } from 'react';
-import type { SpreadsheetGridSlotContext } from '../model/gridTypes';
-import  {   
-    getGridBarWrapperStyle,
-    gridBarContainerStyle,
-    gridBarEmphasisChipStyle,
-    gridBarInputStyle,
-    gridBarLeadingGroupStyle,
-    gridBarTitleStyle,
-} from './gridBarStyles';
-
-
-type DefaultGridTopBarProps<T> = {
-  context: SpreadsheetGridSlotContext<T>;
-};
-
-// 追加: Grid 上部の既定ツールバーです。現時点では Global Filter を主役にしつつ、
-//       左側へ件数サマリを薄く出します。
-export function DefaultGridTopBar<T>({
-  context,
-}: DefaultGridTopBarProps<T>) {
-  // 追加: 共通 style helper から top bar 用 style を解決します。
-  const wrapperStyle: CSSProperties = getGridBarWrapperStyle('top');
-  // 追加: slot context が持つ派生 summary を使います。
-  const { derivedSummary } = context;
-
-  return (
-    <div style={wrapperStyle}>
-      <div style={gridBarContainerStyle}>
-        <div style={gridBarLeadingGroupStyle}>
-          <span style={gridBarTitleStyle}>Toolbar</span>
-
-          <span style={gridBarEmphasisChipStyle}>
-            {derivedSummary.rowSummaryText}
-          </span>
-
-          <span style={gridBarEmphasisChipStyle}>
-            {derivedSummary.columnSummaryText}
-          </span>
-
-          <span style={gridBarEmphasisChipStyle}>
-            {derivedSummary.filterSummaryText}
-          </span>
-
-          <span style={gridBarEmphasisChipStyle}>
-            {derivedSummary.sortSummaryText}
-          </span>
-        </div>
-
-        <input
-          type="text"
-          value={context.globalFilterText}
-          onChange={(event) => context.setGlobalFilterText(event.target.value)}
-          placeholder="グローバルフィルター"
-          style={gridBarInputStyle}
-        />
-      </div>
-    </div>
-  );
-}
-
-export default DefaultGridTopBar;
 </file>
 
 <file path="src/App.tsx">
@@ -4740,6 +4732,7 @@ const createInitialColumns = (): GridColumn<DemoRow>[] => {
       ],
     },
   ];
+
   const extraColumns = Array.from(
     { length: INITIAL_EXTRA_COLUMN_COUNT },
     (_, index): GridColumn<DemoRow> => ({
@@ -4750,12 +4743,14 @@ const createInitialColumns = (): GridColumn<DemoRow>[] => {
       filterType: 'text',
     }),
   );
+
   return [...baseColumns, ...extraColumns];
 };
 
 function App() {
   // 追加: ダミー行を多めに生成します。
   const [rows, setRows] = useState<DemoRow[]>(() => createDemoRows(INITIAL_ROW_COUNT));
+
   // 追加: 列定義も初期追加列込みで生成します。
   const [columns, setColumns] = useState<GridColumn<DemoRow>[]>(() =>
     createInitialColumns(),
@@ -4783,6 +4778,7 @@ function App() {
         >
           SpreadsheetGrid - 実装バッチ
         </h1>
+
         <p
           style={{
             marginTop: 8,
@@ -4797,7 +4793,7 @@ function App() {
         </p>
       </header>
 
-      <SpreadsheetGrid<DemoRow>
+      <SpreadsheetGrid
         rows={rows}
         columns={columns}
         onRowsChange={setRows}
@@ -4822,6 +4818,9 @@ function App() {
         rowHeaderWidth={56}
         enableRangeSelection
         enableGlobalFilter
+        // 追加: frozen columns のデモ確認用に先頭 2 列を固定します。
+        // 変更理由: 今回の sticky 実装をすぐ確認できるようにするためです。
+      
         canEditCell={(rowIndex, _colIndex, row, column) => {
           // 追加: デモ用に「保留」行は status 列以外を編集不可とする例です。
           if (row.status === '保留' && column.key !== 'status') {
@@ -4835,6 +4834,138 @@ function App() {
 }
 
 export default App;
+</file>
+
+<file path="src/components/spreadsheet-grid/view/DefaultGridBottomBar.tsx">
+import type { CSSProperties } from 'react';
+import type { SpreadsheetGridSlotContext } from '../model/gridTypes';
+import {
+  getGridBarWrapperStyle,
+  gridBarChipStyle,
+  gridBarContainerStyle,
+  gridBarGroupStyle,
+} from './gridBarStyles';
+
+type DefaultGridBottomBarProps<T> = {
+  context: SpreadsheetGridSlotContext<T>;
+};
+
+// 追加: Grid 下部の既定ステータスバーです。
+export function DefaultGridBottomBar<T>({
+  context,
+}: DefaultGridBottomBarProps<T>) {
+  // 追加: 共通 style helper から bottom bar 用 style を解決します。
+  const wrapperStyle: CSSProperties = getGridBarWrapperStyle('bottom');
+  // 追加: slot context が持つ派生 summary を使います。
+  const { derivedSummary } = context;
+
+  return (
+    <div style={wrapperStyle}>
+      <div style={gridBarContainerStyle}>
+        <div style={gridBarGroupStyle}>
+          <span style={gridBarChipStyle}>{derivedSummary.rowSummaryText}</span>
+          <span style={gridBarChipStyle}>
+            {derivedSummary.columnSummaryText}
+          </span>
+        </div>
+
+        <div style={gridBarGroupStyle}>
+          <span style={gridBarChipStyle}>
+            Active: {derivedSummary.activeCellLabel}
+          </span>
+          <span style={gridBarChipStyle}>
+            Selection: {derivedSummary.selectionLabel}
+          </span>
+          <span style={gridBarChipStyle}>
+            {derivedSummary.selectionStatsText}
+          </span>
+          <span style={gridBarChipStyle}>
+            Cols: {derivedSummary.selectionStats.selectedColumnCount}
+          </span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export default DefaultGridBottomBar;
+</file>
+
+<file path="src/components/spreadsheet-grid/view/DefaultGridTopBar.tsx">
+import type { CSSProperties } from 'react';
+import type { SpreadsheetGridSlotContext } from '../model/gridTypes';
+import {
+  getGridBarWrapperStyle,
+  gridBarContainerStyle,
+  gridBarClearButtonStyle,
+  gridBarEmphasisChipStyle,
+  gridBarInputGroupStyle,
+  gridBarInputStyle,
+  gridBarLeadingGroupStyle,
+  gridBarTitleStyle,
+} from './gridBarStyles';
+
+type DefaultGridTopBarProps<T> = {
+  context: SpreadsheetGridSlotContext<T>;
+};
+
+// 追加: Grid 上部の既定ツールバーです。現時点では Global Filter を主役にしつつ、
+//       左側へ件数サマリを薄く出します。
+export function DefaultGridTopBar<T>({
+  context,
+}: DefaultGridTopBarProps<T>) {
+  // 追加: 共通 style helper から top bar 用 style を解決します。
+  const wrapperStyle: CSSProperties = getGridBarWrapperStyle('top');
+  // 追加: slot context が持つ派生 summary を使います。
+  const { derivedSummary } = context;
+
+  return (
+    <div style={wrapperStyle}>
+      <div style={gridBarContainerStyle}>
+        <div style={gridBarLeadingGroupStyle}>
+          <span style={gridBarTitleStyle}>Toolbar</span>
+
+          <span style={gridBarEmphasisChipStyle}>
+            {derivedSummary.rowSummaryText}
+          </span>
+
+          <span style={gridBarEmphasisChipStyle}>
+            {derivedSummary.columnSummaryText}
+          </span>
+
+          <span style={gridBarEmphasisChipStyle}>
+            {derivedSummary.filterSummaryText}
+          </span>
+
+          <span style={gridBarEmphasisChipStyle}>
+            {derivedSummary.sortSummaryText}
+          </span>
+        </div>
+
+        <div style={gridBarInputGroupStyle}>
+          <input
+            type="text"
+            value={context.globalFilterText}
+            onChange={(event) => context.setGlobalFilterText(event.target.value)}
+            placeholder="グローバルフィルター"
+            style={gridBarInputStyle}
+          />
+          {context.globalFilterText.trim().length > 0 ? (
+            <button
+              type="button"
+              onClick={() => context.setGlobalFilterText('')}
+              style={gridBarClearButtonStyle}
+            >
+              クリア
+            </button>
+          ) : null}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export default DefaultGridTopBar;
 </file>
 
 <file path="src/components/spreadsheet-grid/model/gridTypes.ts">
@@ -4996,6 +5127,8 @@ export type SpreadsheetGridDerivedSummary = {
   selectionStatsText: string;
   selectionStats: SpreadsheetGridSelectionStats;
   hasGlobalFilter: boolean;
+  // 追加: グローバルフィルター入力値の短縮表示です。
+  globalFilterPreview: string | null;
   activeColumnFilterCount: number;
   hasAnyFilter: boolean;
   hasSorting: boolean;
@@ -5087,6 +5220,7 @@ import ActiveCellOverlay, {
 import CellEditorLayer from './CellEditorLayer';
 import { useFilterPopoverController } from './hooks/useFilterPopoverController';
 import { useGridClipboardController } from './hooks/useGridClipboardController';
+import { useGridBarContext } from './hooks/useGridBarContext';
 import { useGridEditController } from './hooks/useGridEditController';
 import { useGridKeyboardInteractions } from './hooks/useGridKeyboardInteractions';
 import { useGridPointerInteractions } from './hooks/useGridPointerInteractions';
@@ -5103,13 +5237,12 @@ import type {
   GridColumn,
   GridRowKey,
   SpreadsheetGridProps,
-  SpreadsheetGridSlotContext,
 } from './model/gridTypes';
 import { getCellValue, isCellEditable, setCellValue } from './utils/permissions';
 import ColumnFilterPopover from './view/ColumnFilterPopover';
 import DefaultGridBottomBar from './view/DefaultGridBottomBar';
 import DefaultGridTopBar from './view/DefaultGridTopBar';
-import { buildGridDerivedSummary, resolveGridSlot } from './view/gridBarHelpers';
+import { resolveGridSlot } from './view/gridBarHelpers';
 import GridBodyLayer from './view/GridBodyLayer';
 import GridHeaderRow from './view/GridHeaderRow';
 
@@ -5117,12 +5250,6 @@ import GridHeaderRow from './view/GridHeaderRow';
 type SourceRowModel<T> = GridRowModelLike<T> & {
   rowKey: GridRowKey;
 };
-
-// 追加: derivedSummary / setGlobalFilterText を載せる前の中間 slot context 型です。
-type GridSlotContextBase<T> = Omit<
-  SpreadsheetGridSlotContext<T>,
-  'setGlobalFilterText' | 'derivedSummary'
->;
 
 // 追加: Grid 本体です。
 export function SpreadsheetGrid<T extends object>({
@@ -5803,37 +5930,15 @@ export function SpreadsheetGrid<T extends object>({
     [dispatch],
   );
 
-  // 追加: derived summary 算出前の生コンテキストです。
-  const slotContextBase = useMemo<GridSlotContextBase<T>>(
-    () => ({
-      rows,
-      filteredRows,
-      columns,
-      visibleColumns,
-      globalFilterText: selectGlobalFilter(uiState),
-      columnFilterValues: uiState.filters.columnFilters,
-      sortState: uiState.sort,
-      activeCell: uiState.activeCell,
-      selection: uiState.selection,
-    }),
-    [rows, filteredRows, columns, visibleColumns, uiState],
-  );
-
-  // 追加: topBar / bottomBar でそのまま使える派生 summary を構築します。
-  const derivedSummary = useMemo(
-    () => buildGridDerivedSummary(slotContextBase),
-    [slotContextBase],
-  );
-
-  // 追加: slot に公開する完全版コンテキストです。
-  const slotContext = useMemo<SpreadsheetGridSlotContext<T>>(
-    () => ({
-      ...slotContextBase,
-      setGlobalFilterText,
-      derivedSummary,
-    }),
-    [derivedSummary, setGlobalFilterText, slotContextBase],
-  );
+  // 追加: bar 用 context / derived summary は hook へ逃がします。
+  const { slotContext } = useGridBarContext({
+    rows,
+    filteredRows,
+    columns,
+    visibleColumns,
+    uiState,
+    setGlobalFilterText,
+  });
 
   const gridShellStyle: CSSProperties = {
     border: '1px solid #d7dce3',
@@ -5890,12 +5995,14 @@ export function SpreadsheetGrid<T extends object>({
     />
   ) : null;
 
+  // 追加: slot helper を使って top/bottom の描画を解決します。
   const resolvedTopBar = resolveGridSlot(
     renderTopBar,
     slotContext,
     enableGlobalFilter ? <DefaultGridTopBar context={slotContext} /> : null,
   );
 
+  // 追加: bottom は未指定時に既定ステータスバーを表示します。
   const resolvedBottomBar = resolveGridSlot(
     renderBottomBar,
     slotContext,
@@ -5914,7 +6021,9 @@ export function SpreadsheetGrid<T extends object>({
           pointerClientRef.current = { x: event.clientX, y: event.clientY };
           updateSelectionFromPointer(event.clientX, event.clientY);
         }}
+        // 追加: popover open 中は grid root を tab フォーカス対象から外します。
         tabIndex={isFilterPopoverOpen ? -1 : 0}
+        // 追加: popover open 中は root の keyboard/paste handler 自体を外します。
         onKeyDown={isFilterPopoverOpen ? undefined : handleKeyDown}
         onPaste={isFilterPopoverOpen ? undefined : handlePaste}
       >

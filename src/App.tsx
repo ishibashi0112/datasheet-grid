@@ -74,6 +74,7 @@ const createInitialColumns = (): GridColumn<DemoRow>[] => {
       ],
     },
   ];
+
   const extraColumns = Array.from(
     { length: INITIAL_EXTRA_COLUMN_COUNT },
     (_, index): GridColumn<DemoRow> => ({
@@ -84,12 +85,14 @@ const createInitialColumns = (): GridColumn<DemoRow>[] => {
       filterType: 'text',
     }),
   );
+
   return [...baseColumns, ...extraColumns];
 };
 
 function App() {
   // 追加: ダミー行を多めに生成します。
   const [rows, setRows] = useState<DemoRow[]>(() => createDemoRows(INITIAL_ROW_COUNT));
+
   // 追加: 列定義も初期追加列込みで生成します。
   const [columns, setColumns] = useState<GridColumn<DemoRow>[]>(() =>
     createInitialColumns(),
@@ -117,6 +120,7 @@ function App() {
         >
           SpreadsheetGrid - 実装バッチ
         </h1>
+
         <p
           style={{
             marginTop: 8,
@@ -131,7 +135,7 @@ function App() {
         </p>
       </header>
 
-      <SpreadsheetGrid<DemoRow>
+      <SpreadsheetGrid
         rows={rows}
         columns={columns}
         onRowsChange={setRows}
@@ -156,6 +160,9 @@ function App() {
         rowHeaderWidth={56}
         enableRangeSelection
         enableGlobalFilter
+        // 追加: frozen columns のデモ確認用に先頭 2 列を固定します。
+        // 変更理由: 今回の sticky 実装をすぐ確認できるようにするためです。
+      
         canEditCell={(rowIndex, _colIndex, row, column) => {
           // 追加: デモ用に「保留」行は status 列以外を編集不可とする例です。
           if (row.status === '保留' && column.key !== 'status') {

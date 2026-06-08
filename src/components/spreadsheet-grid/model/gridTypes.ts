@@ -66,6 +66,10 @@ export type HeaderRenderContext<T> = {
   isFiltered?: boolean;
 };
 
+// 追加(10-A): AG Grid 互換の列固定方向型です。
+//             'left' = 左固定、'right' = 右固定、undefined = 固定なし（中央スクロール）。
+export type GridColumnPinned = 'left' | 'right';
+
 // 追加: 列定義です。将来のカスタムセル/カスタムヘッダー拡張を見据えています。
 export type GridColumn<T> = {
   key: string;
@@ -76,6 +80,9 @@ export type GridColumn<T> = {
   visible?: boolean;
   editable?: boolean;
   readOnly?: boolean;
+  // 追加(10-A): AG Grid 互換の列固定指定です。
+  //             未指定 or undefined → 中央スクロール領域に配置されます。
+  pinned?: GridColumnPinned;
   getValue?: (row: T) => unknown;
   setValue?: (row: T, value: unknown) => T;
   renderCell?: (ctx: CellRenderContext<T>) => ReactNode;
