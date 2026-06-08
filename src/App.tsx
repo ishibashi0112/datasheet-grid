@@ -45,8 +45,16 @@ const createDemoRows = (count: number): DemoRow[] =>
 const createInitialColumns = (): GridColumn<DemoRow>[] => {
   const baseColumns: GridColumn<DemoRow>[] = [
     // 追加: text / number / select の最小フィルター型を設定します。
-    { key: 'partNo', title: '品番', width: 150, filterType: 'text' },
-    { key: 'partName', title: '品名', width: 220, filterType: 'text' },
+    // 追加(10-E): frozen columns デモ。品番・品名を左固定にします（pinned: 'left'）。
+    //            これで横スクロールしても先頭 2 列が固定表示されます。
+    { key: 'partNo', title: '品番', width: 150, filterType: 'text', pinned: 'left' },
+    {
+      key: 'partName',
+      title: '品名',
+      width: 220,
+      filterType: 'text',
+      pinned: 'left',
+    },
     { key: 'qty', title: '数量', width: 90, filterType: 'number' },
     {
       key: 'unit',
@@ -160,9 +168,8 @@ function App() {
         rowHeaderWidth={56}
         enableRangeSelection
         enableGlobalFilter
-        // 追加: frozen columns のデモ確認用に先頭 2 列を固定します。
-        // 変更理由: 今回の sticky 実装をすぐ確認できるようにするためです。
-      
+        // 追加(10-E): frozen columns は列定義の pinned: 'left' で有効化済みです。
+        //            （createInitialColumns の partNo / partName を参照）
         canEditCell={(rowIndex, _colIndex, row, column) => {
           // 追加: デモ用に「保留」行は status 列以外を編集不可とする例です。
           if (row.status === '保留' && column.key !== 'status') {

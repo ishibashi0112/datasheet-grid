@@ -7,20 +7,31 @@ type VirtualizerLike = {
 };
 
 type UseGridViewportSyncArgs<T> = {
+  // 中央スクロールペイン(従来の bodyScrollRef)です。横/縦スクロールのマスターです。
   bodyScrollRef: RefObject<HTMLDivElement | null>;
   rowVirtualizer: VirtualizerLike;
   columnVirtualizer: VirtualizerLike;
   rowHeight: number;
   filteredRowsLength: number;
+  // columnVirtualizer の再計測トリガー用の依存です（中身は座標計算には使いません）。
   columnMeasurements: ColumnMeasurement<T>[];
-  totalColumnWidth: number;
+  // 変更(10-E): 旧 totalColumnWidth → 中央ペインの列領域合計幅です。
+  //             scroll clamp / 可視化はすべて中央ペインのローカル幅で行います。
+  centerColumnsWidth: number;
   totalBodyHeight: number;
-  rowHeaderWidth: number;
+  // 変更(10-E): 旧 rowHeaderWidth → 中央ペインの先頭幅(leadingWidth)です。
+  //             左固定列なし: rowHeaderWidth（従来と一致） / 左固定列あり: 0。
+  leadingWidth: number;
   headerHeight: number;
+  // 変更(10-E): active cell が中央ペインにあるときの「中央ペインローカル矩形」です。
+  //             固定ペインにある場合は横スクロール不要なので null が渡されます。
   activeCellRect: ActiveCellOverlayRect | null;
 };
 
 // 追加: virtualizer 再計測、content shrink 時の scroll clamp、active cell 可視化をまとめます。
+// 変更(10-E): すべての水平座標を「中央ペインローカル座標」に統一しました。
+//             固定列が無い場合は leadingWidth===rowHeaderWidth /
+//             centerColumnsWidth===totalColumnWidth となり、従来と完全に一致します。
 export const useGridViewportSync = <T,>({
   bodyScrollRef,
   rowVirtualizer,
@@ -28,9 +39,9 @@ export const useGridViewportSync = <T,>({
   rowHeight,
   filteredRowsLength,
   columnMeasurements,
-  totalColumnWidth,
+  centerColumnsWidth,
   totalBodyHeight,
-  rowHeaderWidth,
+  leadingWidth,
   headerHeight,
   activeCellRect,
 }: UseGridViewportSyncArgs<T>) => {
@@ -52,7 +63,7 @@ export const useGridViewportSync = <T,>({
 
     const scrollElement = bodyScrollRef.current;
     const maxScrollLeft = Math.max(
-      rowHeaderWidth + totalColumnWidth - scrollElement.clientWidth,
+      leadingWidth + centerColumnsWidth - scrollElement.clientWidth,
       0,
     );
     const maxScrollTop = Math.max(
@@ -68,13 +79,15 @@ export const useGridViewportSync = <T,>({
     }
   }, [
     bodyScrollRef,
-    totalColumnWidth,
+    centerColumnsWidth,
     totalBodyHeight,
-    rowHeaderWidth,
+    leadingWidth,
     headerHeight,
   ]);
 
   // 追加: active cell が画面外へ出た場合に、scroll container を自動調整して常に表示領域内へ収めます。
+  // 注記(10-E): activeCellRect は中央ペインローカル座標です。中央ペイン以外（固定列）に
+  //             active cell がある場合は呼び出し側で null が渡るため、横スクロールは発生しません。
   useEffect(() => {
     if (!bodyScrollRef.current || !activeCellRect) {
       return;
@@ -83,7 +96,7 @@ export const useGridViewportSync = <T,>({
     const scrollElement = bodyScrollRef.current;
     const cellTop = headerHeight + activeCellRect.top;
     const cellBottom = cellTop + activeCellRect.height;
-    const cellLeft = rowHeaderWidth + activeCellRect.left;
+    const cellLeft = leadingWidth + activeCellRect.left;
     const cellRight = cellLeft + activeCellRect.width;
 
     const currentScrollTop = scrollElement.scrollTop;
@@ -102,10 +115,10 @@ export const useGridViewportSync = <T,>({
       nextScrollTop = Math.max(cellBottom - viewportHeight, 0);
     }
 
-    const visibleLeft = currentScrollLeft + rowHeaderWidth;
+    const visibleLeft = currentScrollLeft + leadingWidth;
     const visibleRight = currentScrollLeft + viewportWidth;
     if (cellLeft < visibleLeft) {
-      nextScrollLeft = Math.max(cellLeft - rowHeaderWidth, 0);
+      nextScrollLeft = Math.max(cellLeft - leadingWidth, 0);
     } else if (cellRight > visibleRight) {
       nextScrollLeft = Math.max(cellRight - viewportWidth, 0);
     }
@@ -120,7 +133,7 @@ export const useGridViewportSync = <T,>({
         behavior: 'auto',
       });
     }
-  }, [bodyScrollRef, activeCellRect, headerHeight, rowHeaderWidth]);
+  }, [bodyScrollRef, activeCellRect, headerHeight, leadingWidth]);
 };
 
 export default useGridViewportSync;

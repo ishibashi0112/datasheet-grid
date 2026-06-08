@@ -303,13 +303,8 @@ export function SpreadsheetGrid<T extends object>({
     [visibleColumns, uiState.columnWidths],
   );
 
-  const totalColumnWidth = useMemo(
-    () =>
-      columnMeasurements.length > 0
-        ? columnMeasurements[columnMeasurements.length - 1].end
-        : 0,
-    [columnMeasurements],
-  );
+  // 注記(10-E): columnMeasurements は columnVirtualizer の再計測トリガーとしてのみ使います。
+  //             水平座標の実計算は paneLayout（ペインローカル座標）側へ移行しました。
 
   // ── virtualizer ───────────────────────────────────────
   const rowVirtualizer = useVirtualizer({
@@ -362,44 +357,6 @@ export function SpreadsheetGrid<T extends object>({
   const leftRenderEntries = paneLayout.left.entries;
   const rightRenderEntries = paneLayout.right.entries;
 
-  // ── active cell rect（グローバル: viewport sync 専用） ──
-  // 注記(10-D): この activeCellRect は columnMeasurements（visibleColumns グローバル座標）
-  //             基準のままにしています。理由は useGridViewportSync が「中央ペインを
-  //             スクロールして active cell を可視化する」ために中央スクロール座標を必要と
-  //             するためです。overlay 描画には使わず、ペイン対応の activeCellPlacement
-  //             （下記）を使います。固定列なしのときは両者が一致します。
-  const activeCellRect = useMemo<ActiveCellOverlayRect | null>(() => {
-    if (!uiState.activeCell) {
-      return null;
-    }
-    const { row, col } = uiState.activeCell;
-    if (
-      row < 0 ||
-      row >= filteredRows.length ||
-      col < 0 ||
-      col >= visibleColumns.length
-    ) {
-      return null;
-    }
-    const measurement = columnMeasurements[col];
-    if (!measurement) {
-      return null;
-    }
-    const top = row * rowHeight;
-    return {
-      left: measurement.start,
-      top,
-      width: measurement.size,
-      height: rowHeight,
-    };
-  }, [
-    uiState.activeCell,
-    filteredRows.length,
-    visibleColumns.length,
-    columnMeasurements,
-    rowHeight,
-  ]);
-
   // ── active cell placement（10-D: ペイン別座標系） ──────
   // 追加(10-D): active cell が属するペインと、そのペインローカル矩形を求めます。
   //             col は logicalIndex（orderedColumns 空間）として扱い、
@@ -431,6 +388,18 @@ export function SpreadsheetGrid<T extends object>({
     };
   }, [uiState.activeCell, filteredRows.length, paneLayout, rowHeight]);
 
+  // 追加(10-E): viewport sync（中央ペインの自動スクロール）専用の active cell 矩形です。
+  //             active cell が中央ペインにあるときだけ「中央ペインローカル座標」で返します。
+  //             固定ペイン（left / right）にある場合は横スクロール不要なので null を返し、
+  //             誤って中央ペインを横スクロールさせないようにします。
+  const centerViewportActiveRect = useMemo<ActiveCellOverlayRect | null>(
+    () =>
+      activeCellPlacement && activeCellPlacement.pane === 'center'
+        ? activeCellPlacement.rect
+        : null,
+    [activeCellPlacement],
+  );
+
   // 追加(10-D): 指定ペインに active cell があればそのローカル矩形を、無ければ null を返します。
   const activeCellRectForPane = useCallback(
     (pane: ColumnPane): ActiveCellOverlayRect | null =>
@@ -448,6 +417,10 @@ export function SpreadsheetGrid<T extends object>({
   );
 
   // ── viewport sync ────────────────────────────────────
+  // 変更(10-E): 中央ペインローカル座標で同期します。
+  //   - centerColumnsWidth: 中央ペインの列領域合計幅（旧 totalColumnWidth）
+  //   - leadingWidth: 中央ペインの先頭幅（左固定なし=rowHeaderWidth / 左固定あり=0）
+  //   - activeCellRect: 中央ペインに active cell があるときだけの中央ローカル矩形
   useGridViewportSync({
     bodyScrollRef,
     rowVirtualizer,
@@ -455,11 +428,11 @@ export function SpreadsheetGrid<T extends object>({
     rowHeight,
     filteredRowsLength: filteredRows.length,
     columnMeasurements,
-    totalColumnWidth,
+    centerColumnsWidth: paneLayout.center.totalWidth,
     totalBodyHeight,
-    rowHeaderWidth,
+    leadingWidth: centerLeadingWidth,
     headerHeight,
-    activeCellRect,
+    activeCellRect: centerViewportActiveRect,
   });
 
   // 追加(10-B): 中央ペインの垂直スクロールを左右固定ペインへ同期します。
@@ -498,6 +471,9 @@ export function SpreadsheetGrid<T extends object>({
   } = useGridPointerInteractions({
     gridRootRef,
     bodyScrollRef,
+    // 追加(10-E): 固定ペインの ref を渡し、clientX のペイン判定に使います。
+    leftPaneScrollRef,
+    rightPaneScrollRef,
     pointerClientRef,
     autoScrollFrameRef,
     uiState,
@@ -505,8 +481,12 @@ export function SpreadsheetGrid<T extends object>({
     enableRangeSelection,
     filteredRowsLength: filteredRows.length,
     visibleColumnsLength: visibleColumns.length,
-    columnMeasurements,
-    rowHeaderWidth,
+    // 変更(10-E): グローバル columnMeasurements / rowHeaderWidth から
+    //             ペイン別 geometry + 各ペインの leadingWidth へ切り替えます。
+    paneLayout,
+    leftLeadingWidth,
+    centerLeadingWidth,
+    rightLeadingWidth,
     headerHeight,
     rowHeight,
   });
@@ -517,7 +497,9 @@ export function SpreadsheetGrid<T extends object>({
       rows,
       filteredRows,
       filteredRowSourceIndexes,
-      visibleColumns,
+      // 変更(10-E): copy/paste/TSV は視覚順（論理 index 空間）で扱うため orderedColumns を渡します。
+      //             selection の col は論理 index なので、indexing も orderedColumns に揃える必要があります。
+      visibleColumns: orderedColumns,
       uiState,
       readOnly,
       canEditCell,
@@ -547,7 +529,8 @@ export function SpreadsheetGrid<T extends object>({
   const handleCellDoubleClick = useCallback(
     (cell: CellCoord) => {
       const row = filteredRows[cell.row];
-      const column = visibleColumns[cell.col];
+      // 変更(10-E): cell.col は論理 index 空間（orderedColumns）です。
+      const column = orderedColumns[cell.col];
       if (!row || !column) {
         return;
       }
@@ -566,14 +549,16 @@ export function SpreadsheetGrid<T extends object>({
       setEditorValue(String(currentValue ?? ''));
       dispatch(gridActions.startEdit(cell));
     },
-    [canEditCell, dispatch, filteredRows, readOnly, visibleColumns],
+    [canEditCell, dispatch, filteredRows, readOnly, orderedColumns],
   );
 
   // ── keyboard ──────────────────────────────────────────
   const { getMovedCell, handleKeyDown } = useGridKeyboardInteractions({
     uiState,
     filteredRows,
-    visibleColumns,
+    // 変更(10-E): キーボード移動/編集開始の col は論理 index 空間。
+    //             clamp は同数なので不変、indexing 整合のため orderedColumns を渡します。
+    visibleColumns: orderedColumns,
     readOnly,
     canEditCell,
     setEditorValue,
@@ -588,7 +573,8 @@ export function SpreadsheetGrid<T extends object>({
   const { startEditWithValue, commitEdit, cancelEdit } = useGridEditController({
     uiState,
     rows,
-    visibleColumns,
+    // 変更(10-E): editingCell.col は論理 index 空間のため orderedColumns で indexing します。
+    visibleColumns: orderedColumns,
     filteredRowSourceIndexes,
     editorValue,
     setEditorValue,
@@ -602,7 +588,8 @@ export function SpreadsheetGrid<T extends object>({
   const handleCellDoubleClickWithController = useCallback(
     (cell: CellCoord) => {
       const row = filteredRows[cell.row];
-      const column = visibleColumns[cell.col];
+      // 変更(10-E): cell.col は論理 index 空間（orderedColumns）です。
+      const column = orderedColumns[cell.col];
       if (!row || !column) {
         return;
       }
@@ -620,7 +607,7 @@ export function SpreadsheetGrid<T extends object>({
       const currentValue = getCellValue(row, column);
       startEditWithValue(cell, String(currentValue ?? ''));
     },
-    [canEditCell, filteredRows, readOnly, startEditWithValue, visibleColumns],
+    [canEditCell, filteredRows, readOnly, startEditWithValue, orderedColumns],
   );
 
   // ── selection overlay placement（10-D: ペイン別座標系） ─
@@ -965,19 +952,45 @@ export function SpreadsheetGrid<T extends object>({
   // 追加(10-B): 固定ペイン共通の style です。
   // 変更理由: overflow: hidden でスクロールバーを非表示にしつつ、
   //           JS で scrollTop を同期して縦スクロールを実現します。
-  const pinnedPaneStyle = (width: number): CSSProperties => ({
+  // 変更(10-F): frozen shadow（影）＋ ペイン境界線を追加します。
+  //   - side: 'left' は右端に、'right' は左端に境界線と内向きの影を出します。
+  //   - hasContent が false（固定列なし＝width:0）のときは影/境界線を付けません。
+  //   - position: 'relative' + zIndex で中央ペイン(zIndex:1)より前面に描画し、
+  //     影が中央ペインのセルに重なって「浮いた固定列」に見えるようにします。
+  const pinnedPaneStyle = (
+    side: 'left' | 'right',
+    width: number,
+    hasContent: boolean,
+  ): CSSProperties => ({
     width,
     flexShrink: 0,
     overflow: 'hidden',
+    position: 'relative',
+    zIndex: 2,
+    ...(hasContent
+      ? side === 'left'
+        ? {
+            borderRight: '1px solid #cbd5e1',
+            boxShadow: '6px 0 8px -6px rgba(15, 23, 42, 0.35)',
+          }
+        : {
+            borderLeft: '1px solid #cbd5e1',
+            boxShadow: '-6px 0 8px -6px rgba(15, 23, 42, 0.35)',
+          }
+      : {}),
   });
 
   // 追加(10-B): 中央ペイン（従来の bodyScrollRef）の style です。
   // 変更理由: maxHeight は親 flex コンテナ側で管理するため、
   //           ここでは flex: 1 と overflow: auto のみ指定します。
+  // 変更(10-F): 固定ペインの影が中央ペインのセルに重なるよう、
+  //           中央ペインは position: 'relative' + zIndex: 1（固定ペインより背面）にします。
   const centerPaneStyle: CSSProperties = {
     flex: '1 1 auto',
     minWidth: 0,
     overflow: 'auto',
+    position: 'relative',
+    zIndex: 1,
   };
 
   // ── filter popover ────────────────────────────────────
@@ -1049,7 +1062,7 @@ export function SpreadsheetGrid<T extends object>({
           {/*   固定列が無いときは hasLeftPane=false で width:0 の空ペイン（従来どおり）。*/}
           <div
             ref={leftPaneScrollRef}
-            style={pinnedPaneStyle(leftPaneTotalWidth)}
+            style={pinnedPaneStyle('left', leftPaneTotalWidth, hasLeftPane)}
           >
             {hasLeftPane && (
               <div
@@ -1261,7 +1274,7 @@ export function SpreadsheetGrid<T extends object>({
           {/* 変更(10-C): 右固定列があるときだけ描画します。行ヘッダーは持ちません。*/}
           <div
             ref={rightPaneScrollRef}
-            style={pinnedPaneStyle(rightPaneTotalWidth)}
+            style={pinnedPaneStyle('right', rightPaneTotalWidth, hasRightPane)}
           >
             {hasRightPane && (
               <div

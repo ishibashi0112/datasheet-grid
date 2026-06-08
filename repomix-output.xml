@@ -462,51 +462,6 @@ export default defineConfig([
 <svg xmlns="http://www.w3.org/2000/svg" width="77" height="47" fill="none" aria-labelledby="vite-logo-title" viewBox="0 0 77 47"><title id="vite-logo-title">Vite</title><style>.parenthesis{fill:#000}@media (prefers-color-scheme:dark){.parenthesis{fill:#fff}}</style><path fill="#9135ff" d="M40.151 45.71c-.663.844-2.02.374-2.02-.699V34.708a2.26 2.26 0 0 0-2.262-2.262H24.493c-.92 0-1.457-1.04-.92-1.788l7.479-10.471c1.07-1.498 0-3.578-1.842-3.578H15.443c-.92 0-1.456-1.04-.92-1.788l9.696-13.576c.213-.297.556-.474.92-.474h28.894c.92 0 1.456 1.04.92 1.788l-7.48 10.472c-1.07 1.497 0 3.578 1.842 3.578h11.376c.944 0 1.474 1.087.89 1.83L40.153 45.712z"/><mask id="a" width="48" height="47" x="14" y="0" maskUnits="userSpaceOnUse" style="mask-type:alpha"><path fill="#000" d="M40.047 45.71c-.663.843-2.02.374-2.02-.699V34.708a2.26 2.26 0 0 0-2.262-2.262H24.389c-.92 0-1.457-1.04-.92-1.788l7.479-10.472c1.07-1.497 0-3.578-1.842-3.578H15.34c-.92 0-1.456-1.04-.92-1.788l9.696-13.575c.213-.297.556-.474.92-.474H53.93c.92 0 1.456 1.04.92 1.788L47.37 13.03c-1.07 1.498 0 3.578 1.842 3.578h11.376c.944 0 1.474 1.088.89 1.831L40.049 45.712z"/></mask><g mask="url(#a)"><g filter="url(#b)"><ellipse cx="5.508" cy="14.704" fill="#eee6ff" rx="5.508" ry="14.704" transform="rotate(269.814 20.96 11.29)scale(-1 1)"/></g><g filter="url(#c)"><ellipse cx="10.399" cy="29.851" fill="#eee6ff" rx="10.399" ry="29.851" transform="rotate(89.814 -16.902 -8.275)scale(1 -1)"/></g><g filter="url(#d)"><ellipse cx="5.508" cy="30.487" fill="#8900ff" rx="5.508" ry="30.487" transform="rotate(89.814 -19.197 -7.127)scale(1 -1)"/></g><g filter="url(#e)"><ellipse cx="5.508" cy="30.599" fill="#8900ff" rx="5.508" ry="30.599" transform="rotate(89.814 -25.928 4.177)scale(1 -1)"/></g><g filter="url(#f)"><ellipse cx="5.508" cy="30.599" fill="#8900ff" rx="5.508" ry="30.599" transform="rotate(89.814 -25.738 5.52)scale(1 -1)"/></g><g filter="url(#g)"><ellipse cx="14.072" cy="22.078" fill="#eee6ff" rx="14.072" ry="22.078" transform="rotate(93.35 31.245 55.578)scale(-1 1)"/></g><g filter="url(#h)"><ellipse cx="3.47" cy="21.501" fill="#8900ff" rx="3.47" ry="21.501" transform="rotate(89.009 35.419 55.202)scale(-1 1)"/></g><g filter="url(#i)"><ellipse cx="3.47" cy="21.501" fill="#8900ff" rx="3.47" ry="21.501" transform="rotate(89.009 35.419 55.202)scale(-1 1)"/></g><g filter="url(#j)"><ellipse cx="14.592" cy="9.743" fill="#8900ff" rx="4.407" ry="29.108" transform="rotate(39.51 14.592 9.743)"/></g><g filter="url(#k)"><ellipse cx="61.728" cy="-5.321" fill="#8900ff" rx="4.407" ry="29.108" transform="rotate(37.892 61.728 -5.32)"/></g><g filter="url(#l)"><ellipse cx="55.618" cy="7.104" fill="#00c2ff" rx="5.971" ry="9.665" transform="rotate(37.892 55.618 7.104)"/></g><g filter="url(#m)"><ellipse cx="12.326" cy="39.103" fill="#8900ff" rx="4.407" ry="29.108" transform="rotate(37.892 12.326 39.103)"/></g><g filter="url(#n)"><ellipse cx="12.326" cy="39.103" fill="#8900ff" rx="4.407" ry="29.108" transform="rotate(37.892 12.326 39.103)"/></g><g filter="url(#o)"><ellipse cx="49.857" cy="30.678" fill="#8900ff" rx="4.407" ry="29.108" transform="rotate(37.892 49.857 30.678)"/></g><g filter="url(#p)"><ellipse cx="52.623" cy="33.171" fill="#00c2ff" rx="5.971" ry="15.297" transform="rotate(37.892 52.623 33.17)"/></g></g><path d="M6.919 0c-9.198 13.166-9.252 33.575 0 46.789h6.215c-9.25-13.214-9.196-33.623 0-46.789zm62.424 0h-6.215c9.198 13.166 9.252 33.575 0 46.789h6.215c9.25-13.214 9.196-33.623 0-46.789" class="parenthesis"/><defs><filter id="b" width="60.045" height="41.654" x="-5.564" y="16.92" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17286" stdDeviation="7.659"/></filter><filter id="c" width="90.34" height="51.437" x="-40.407" y="-6.762" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17286" stdDeviation="7.659"/></filter><filter id="d" width="79.355" height="29.4" x="-35.435" y="2.801" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17286" stdDeviation="4.596"/></filter><filter id="e" width="79.579" height="29.4" x="-30.84" y="20.8" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17286" stdDeviation="4.596"/></filter><filter id="f" width="79.579" height="29.4" x="-29.307" y="21.949" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17286" stdDeviation="4.596"/></filter><filter id="g" width="74.749" height="58.852" x="29.961" y="-17.13" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17286" stdDeviation="7.659"/></filter><filter id="h" width="61.377" height="25.362" x="37.754" y="3.055" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17286" stdDeviation="4.596"/></filter><filter id="i" width="61.377" height="25.362" x="37.754" y="3.055" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17286" stdDeviation="4.596"/></filter><filter id="j" width="56.045" height="63.649" x="-13.43" y="-22.082" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17286" stdDeviation="4.596"/></filter><filter id="k" width="54.814" height="64.646" x="34.321" y="-37.644" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17286" stdDeviation="4.596"/></filter><filter id="l" width="33.541" height="35.313" x="38.847" y="-10.552" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17286" stdDeviation="4.596"/></filter><filter id="m" width="54.814" height="64.646" x="-15.081" y="6.78" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17286" stdDeviation="4.596"/></filter><filter id="n" width="54.814" height="64.646" x="-15.081" y="6.78" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17286" stdDeviation="4.596"/></filter><filter id="o" width="54.814" height="64.646" x="22.45" y="-1.645" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17286" stdDeviation="4.596"/></filter><filter id="p" width="39.409" height="43.623" x="32.919" y="11.36" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17286" stdDeviation="4.596"/></filter></defs></svg>
 </file>
 
-<file path="src/components/spreadsheet-grid/ActiveCellOverlay.tsx">
-import type { CSSProperties } from 'react';
-
-// 追加: active cell の矩形情報です。
-export type ActiveCellOverlayRect = {
-  left: number;
-  top: number;
-  width: number;
-  height: number;
-};
-
-type ActiveCellOverlayProps = {
-  rect: ActiveCellOverlayRect | null;
-  headerHeight: number;
-  rowHeaderWidth: number;
-};
-
-// 追加: active cell を独立レイヤーで描画するコンポーネントです。
-export function ActiveCellOverlay({
-  rect,
-  headerHeight,
-  rowHeaderWidth,
-}: ActiveCellOverlayProps) {
-  if (!rect) {
-    return null;
-  }
-
-  const overlayStyle: CSSProperties = {
-    position: 'absolute',
-    left: rowHeaderWidth + rect.left,
-    top: headerHeight + rect.top,
-    width: rect.width,
-    height: rect.height,
-    border: '2px solid #2563eb',
-    boxSizing: 'border-box',
-    pointerEvents: 'none',
-    zIndex: 4,
-  };
-
-  return <div style={overlayStyle} />;
-}
-
-export default ActiveCellOverlay;
-</file>
-
 <file path="src/components/spreadsheet-grid/hooks/useFilterPopoverController.ts">
 import {
     useEffect,
@@ -2738,381 +2693,53 @@ export default defineConfig({
 }
 </file>
 
-<file path="src/components/spreadsheet-grid/CellEditorLayer.tsx">
-// 追加: editor 確定後の移動方向です。
-export type EditorCommitDirection = 'down' | 'right' | 'left';
+<file path="src/components/spreadsheet-grid/ActiveCellOverlay.tsx">
+import type { CSSProperties } from 'react';
 
-import {
-  useEffect,
-  useRef,
-  type CSSProperties,
-  type KeyboardEvent,
-} from 'react';
-
-type CellEditorRect = {
+// 追加: active cell の矩形情報です。
+// 変更(10-D): left は「ペイン列領域内ローカル座標」になりました（leadingWidth 非含有）。
+export type ActiveCellOverlayRect = {
   left: number;
   top: number;
   width: number;
   height: number;
 };
 
-type CellEditorLayerProps = {
-  rect: CellEditorRect | null;
+type ActiveCellOverlayProps = {
+  rect: ActiveCellOverlayRect | null;
   headerHeight: number;
-  rowHeaderWidth: number;
-  value: string;
-  onChange: (value: string) => void;
-  onCommit: (direction?: EditorCommitDirection) => void;
-  onCancel: () => void;
+  // 変更(10-D): rowHeaderWidth → leadingWidth に一般化しました。
+  //             固定列なしの中央ペインでは leadingWidth === rowHeaderWidth となり従来と同一です。
+  leadingWidth: number;
 };
 
-// 追加: 編集中セルの上に input を重ねる editor layer です。
-export function CellEditorLayer({
+// 追加: active cell を独立レイヤーで描画するコンポーネントです。
+// 変更(10-D): ペイン別座標系に対応。active cell が属するペインの relative コンテナ内へ配置されます。
+export function ActiveCellOverlay({
   rect,
   headerHeight,
-  rowHeaderWidth,
-  value,
-  onChange,
-  onCommit,
-  onCancel,
-}: CellEditorLayerProps) {
-  const inputRef = useRef<HTMLInputElement | null>(null);
-
-  // 追加: editor 表示時に自動フォーカスし、末尾へキャレット移動します。
-  useEffect(() => {
-    if (!rect || !inputRef.current) {
-      return;
-    }
-
-    inputRef.current.focus();
-    const end = inputRef.current.value.length;
-    inputRef.current.setSelectionRange(end, end);
-  }, [rect]);
-
+  leadingWidth,
+}: ActiveCellOverlayProps) {
   if (!rect) {
     return null;
   }
 
-  const wrapperStyle: CSSProperties = {
+  const overlayStyle: CSSProperties = {
     position: 'absolute',
-    left: rowHeaderWidth + rect.left,
+    left: leadingWidth + rect.left,
     top: headerHeight + rect.top,
     width: rect.width,
     height: rect.height,
-    zIndex: 5,
-    pointerEvents: 'none',
-  };
-
-  const inputStyle: CSSProperties = {
-    width: '100%',
-    height: '100%',
-    boxSizing: 'border-box',
     border: '2px solid #2563eb',
-    outline: 'none',
-    padding: '0 10px',
-    margin: 0,
-    fontSize: 16,
-    color: '#0f172a',
-    backgroundColor: '#ffffff',
-    pointerEvents: 'auto',
+    boxSizing: 'border-box',
+    pointerEvents: 'none',
+    zIndex: 4,
   };
 
-  // 追加: Enter で下、Tab で左右へ移動する方向付き commit を呼びます。
-  const handleKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
-    if (event.key === 'Enter') {
-      event.preventDefault();
-      onCommit('down');
-      return;
-    }
-
-    if (event.key === 'Escape') {
-      event.preventDefault();
-      onCancel();
-      return;
-    }
-
-    if (event.key === 'Tab') {
-      event.preventDefault();
-      onCommit(event.shiftKey ? 'left' : 'right');
-    }
-  };
-
-  return (
-    <div style={wrapperStyle}>
-      <input
-        ref={inputRef}
-        type="text"
-        value={value}
-        onChange={(event) => onChange(event.target.value)}
-        onKeyDown={handleKeyDown}
-        onBlur={() => onCommit()}
-        style={inputStyle}
-      />
-    </div>
-  );
+  return <div style={overlayStyle} />;
 }
 
-export default CellEditorLayer;
-</file>
-
-<file path="src/components/spreadsheet-grid/logic/geometry.ts">
-import type { GridColumn } from '../model/gridTypes';
-
-// ────────────────────────────────────────────────
-// 既存: 列の座標計算を共通化するための measurement 型です。
-// ────────────────────────────────────────────────
-
-export type ColumnMeasurement<T> = {
-  index: number;
-  column: GridColumn<T>;
-  start: number;
-  // 追加: 各列の実表示幅です。
-  size: number;
-  end: number;
-};
-
-// 追加: 値を min/max に収めるユーティリティです。
-export const clamp = (value: number, min: number, max: number) =>
-  Math.min(Math.max(value, min), max);
-
-// 追加: columns + columnWidths から、列座標の measurement 一覧を生成します。
-export const buildColumnMeasurements = <T,>(
-  columns: GridColumn<T>[],
-  columnWidths: Record<string, number>,
-): ColumnMeasurement<T>[] => {
-  let start = 0;
-  return columns.map((column, index) => {
-    const size = columnWidths[column.key] ?? column.width;
-    const measurement: ColumnMeasurement<T> = {
-      index,
-      column,
-      start,
-      size,
-      end: start + size,
-    };
-    start += size;
-    return measurement;
-  });
-};
-
-// 追加: x 座標から列 index を特定するための二分探索です。
-export const findColumnIndexFromOffset = <T,>(
-  measurements: ColumnMeasurement<T>[],
-  offset: number,
-) => {
-  if (measurements.length === 0) {
-    return -1;
-  }
-  if (offset <= 0) {
-    return 0;
-  }
-  let low = 0;
-  let high = measurements.length - 1;
-  while (low <= high) {
-    const mid = Math.floor((low + high) / 2);
-    const current = measurements[mid];
-    if (offset < current.start) {
-      high = mid - 1;
-      continue;
-    }
-    if (offset >= current.end) {
-      low = mid + 1;
-      continue;
-    }
-    return current.index;
-  }
-  return Math.max(0, Math.min(low, measurements.length - 1));
-};
-
-// ────────────────────────────────────────────────
-// 追加(10-A): 3 ペイン（pinned-left / center / pinned-right）
-//             分離に必要な型と helper 群です。
-//             ここでは型定義と純粋関数のみ追加し、
-//             レンダリングは一切変更しません。
-// ────────────────────────────────────────────────
-
-// 追加(10-A): 列が所属するペインの種別です。
-export type ColumnPane = 'left' | 'center' | 'right';
-
-// 追加(10-A): 列定義から所属ペインを判定します。
-export const getColumnPane = <T,>(column: GridColumn<T>): ColumnPane => {
-  if (column.pinned === 'left') return 'left';
-  if (column.pinned === 'right') return 'right';
-  return 'center';
-};
-
-// 追加(10-A): visibleColumns を AG Grid 互換の視覚順序に並べ替えます。
-//             pinned-left → center → pinned-right の順になります。
-//             各グループ内では元配列の相対順序が保持されます。
-//             ※ この関数で返る配列が「論理列 index」の基準になります。
-export const reorderColumnsByPane = <T,>(
-  columns: GridColumn<T>[],
-): GridColumn<T>[] => {
-  const left: GridColumn<T>[] = [];
-  const center: GridColumn<T>[] = [];
-  const right: GridColumn<T>[] = [];
-
-  for (const column of columns) {
-    const pane = getColumnPane(column);
-    if (pane === 'left') left.push(column);
-    else if (pane === 'right') right.push(column);
-    else center.push(column);
-  }
-
-  return [...left, ...center, ...right];
-};
-
-// 追加(10-A): 1 つのペイン内における列の座標情報です。
-//             paneLocalStart / paneLocalEnd はペイン内ローカル座標（0 始まり）です。
-//             logicalIndex は reorder 後の visibleColumns 配列上の index です。
-export type PaneColumnEntry<T> = {
-  column: GridColumn<T>;
-  logicalIndex: number;
-  paneLocalStart: number;
-  paneLocalSize: number;
-  paneLocalEnd: number;
-};
-
-// 追加(10-A): 1 つのペインの geometry 情報です。
-export type PaneGeometry<T> = {
-  pane: ColumnPane;
-  entries: PaneColumnEntry<T>[];
-  totalWidth: number;
-};
-
-// 追加(10-A): 3 ペイン全体のレイアウト情報です。
-export type GridPaneLayout<T> = {
-  left: PaneGeometry<T>;
-  center: PaneGeometry<T>;
-  right: PaneGeometry<T>;
-};
-
-// 追加(10-A): reorder 済み visibleColumns + columnWidths から
-//             3 ペインレイアウトを構築します。
-//             引数の columns は reorderColumnsByPane() 済みを前提とします。
-export const buildGridPaneLayout = <T,>(
-  orderedColumns: GridColumn<T>[],
-  columnWidths: Record<string, number>,
-): GridPaneLayout<T> => {
-  // 追加(10-A): 列を 3 グループに振り分けつつ論理 index を記録します。
-  const groups: Record<ColumnPane, { column: GridColumn<T>; logicalIndex: number }[]> = {
-    left: [],
-    center: [],
-    right: [],
-  };
-
-  orderedColumns.forEach((column, logicalIndex) => {
-    const pane = getColumnPane(column);
-    groups[pane].push({ column, logicalIndex });
-  });
-
-  // 追加(10-A): 1 ペイン分の PaneGeometry を生成する内部 helper です。
-  const buildPane = (
-    pane: ColumnPane,
-    items: { column: GridColumn<T>; logicalIndex: number }[],
-  ): PaneGeometry<T> => {
-    let offset = 0;
-    const entries: PaneColumnEntry<T>[] = items.map(({ column, logicalIndex }) => {
-      const size = columnWidths[column.key] ?? column.width;
-      const entry: PaneColumnEntry<T> = {
-        column,
-        logicalIndex,
-        paneLocalStart: offset,
-        paneLocalSize: size,
-        paneLocalEnd: offset + size,
-      };
-      offset += size;
-      return entry;
-    });
-    return { pane, entries, totalWidth: offset };
-  };
-
-  return {
-    left: buildPane('left', groups.left),
-    center: buildPane('center', groups.center),
-    right: buildPane('right', groups.right),
-  };
-};
-
-// 追加(10-A): ペイン + エントリをまとめて返す lookup 結果型です。
-export type PaneColumnLookupResult<T> = {
-  pane: ColumnPane;
-  entry: PaneColumnEntry<T>;
-};
-
-// 追加(10-A): 論理列 index からペインとローカル座標を逆引きします。
-//             見つからない場合は null を返します。
-export const lookupPaneColumn = <T,>(
-  layout: GridPaneLayout<T>,
-  logicalIndex: number,
-): PaneColumnLookupResult<T> | null => {
-  const panes: [ColumnPane, PaneGeometry<T>][] = [
-    ['left', layout.left],
-    ['center', layout.center],
-    ['right', layout.right],
-  ];
-
-  for (const [pane, geometry] of panes) {
-    const entry = geometry.entries.find((e) => e.logicalIndex === logicalIndex);
-    if (entry) {
-      return { pane, entry };
-    }
-  }
-
-  return null;
-};
-
-// 追加(10-A): ペイン内ローカル x 座標から論理列 index を特定します。
-//             pointer interaction でペインごとにヒットテストするために使います。
-export const findLogicalIndexFromPaneOffset = <T,>(
-  paneGeometry: PaneGeometry<T>,
-  offset: number,
-): number => {
-  const { entries } = paneGeometry;
-  if (entries.length === 0) {
-    return -1;
-  }
-  if (offset <= 0) {
-    return entries[0].logicalIndex;
-  }
-
-  let low = 0;
-  let high = entries.length - 1;
-
-  while (low <= high) {
-    const mid = Math.floor((low + high) / 2);
-    const entry = entries[mid];
-
-    if (offset < entry.paneLocalStart) {
-      high = mid - 1;
-      continue;
-    }
-    if (offset >= entry.paneLocalEnd) {
-      low = mid + 1;
-      continue;
-    }
-    // 追加(10-A): ヒットしたエントリの論理 index を返します。
-    return entry.logicalIndex;
-  }
-
-  // 追加(10-A): 範囲外の場合は最も近いエントリの論理 index を返します。
-  const clampedIndex = Math.max(0, Math.min(low, entries.length - 1));
-  return entries[clampedIndex].logicalIndex;
-};
-
-// 追加(10-A): 3 ペインそれぞれに pinned 列が何本あるかを返す convenience helper です。
-export const countPinnedColumns = <T,>(
-  layout: GridPaneLayout<T>,
-): { left: number; center: number; right: number } => ({
-  left: layout.left.entries.length,
-  center: layout.center.entries.length,
-  right: layout.right.entries.length,
-});
-
-// 追加(10-A): pinned 列が 1 本もなければ true を返します。
-//             10-B 以降で「従来の単一スクロール描画にフォールバックするか」の判定に使います。
-export const isPlainLayout = <T,>(layout: GridPaneLayout<T>): boolean =>
-  layout.left.entries.length === 0 && layout.right.entries.length === 0;
+export default ActiveCellOverlay;
 </file>
 
 <file path="src/components/spreadsheet-grid/model/gridSelectors.ts">
@@ -3269,52 +2896,6 @@ export const isSameCellCoord = (
 
   return left.row === right.row && left.col === right.col;
 };
-</file>
-
-<file path="src/components/spreadsheet-grid/SelectionOverlay.tsx">
-import type { CSSProperties } from 'react';
-
-// 追加: 選択範囲の矩形情報です。
-export type SelectionOverlayRect = {
-  left: number;
-  top: number;
-  width: number;
-  height: number;
-};
-
-type SelectionOverlayProps = {
-  rect: SelectionOverlayRect | null;
-  headerHeight: number;
-  rowHeaderWidth: number;
-};
-
-// 追加: 選択範囲をセル本体とは独立したレイヤーで描画するコンポーネントです。
-export function SelectionOverlay({
-  rect,
-  headerHeight,
-  rowHeaderWidth,
-}: SelectionOverlayProps) {
-  if (!rect) {
-    return null;
-  }
-
-  const overlayStyle: CSSProperties = {
-    position: 'absolute',
-    left: rowHeaderWidth + rect.left,
-    top: headerHeight + rect.top,
-    width: rect.width,
-    height: rect.height,
-    backgroundColor: 'rgba(37, 99, 235, 0.08)',
-    border: '2px solid #2563eb',
-    boxSizing: 'border-box',
-    pointerEvents: 'none',
-    zIndex: 2,
-  };
-
-  return <div style={overlayStyle} />;
-}
-
-export default SelectionOverlay;
 </file>
 
 <file path="src/components/spreadsheet-grid/view/GridBodyLayer.tsx">
@@ -3837,6 +3418,499 @@ export function GridHeaderRow<T>({
 export default GridHeaderRow;
 </file>
 
+<file path="src/components/spreadsheet-grid/CellEditorLayer.tsx">
+// 追加: editor 確定後の移動方向です。
+export type EditorCommitDirection = 'down' | 'right' | 'left';
+
+import {
+  useEffect,
+  useRef,
+  type CSSProperties,
+  type KeyboardEvent,
+} from 'react';
+
+// 変更(10-D): left は「ペイン列領域内ローカル座標」になりました（leadingWidth 非含有）。
+type CellEditorRect = {
+  left: number;
+  top: number;
+  width: number;
+  height: number;
+};
+
+type CellEditorLayerProps = {
+  rect: CellEditorRect | null;
+  headerHeight: number;
+  // 変更(10-D): rowHeaderWidth → leadingWidth に一般化しました。
+  //             editor は active cell が属するペインの relative コンテナ内へ配置されます。
+  leadingWidth: number;
+  value: string;
+  onChange: (value: string) => void;
+  onCommit: (direction?: EditorCommitDirection) => void;
+  onCancel: () => void;
+};
+
+// 追加: 編集中セルの上に input を重ねる editor layer です。
+// 変更(10-D): ペイン別座標系に対応。
+export function CellEditorLayer({
+  rect,
+  headerHeight,
+  leadingWidth,
+  value,
+  onChange,
+  onCommit,
+  onCancel,
+}: CellEditorLayerProps) {
+  const inputRef = useRef<HTMLInputElement | null>(null);
+
+  // 追加: editor 表示時に自動フォーカスし、末尾へキャレット移動します。
+  useEffect(() => {
+    if (!rect || !inputRef.current) {
+      return;
+    }
+
+    inputRef.current.focus();
+    const end = inputRef.current.value.length;
+    inputRef.current.setSelectionRange(end, end);
+  }, [rect]);
+
+  if (!rect) {
+    return null;
+  }
+
+  const wrapperStyle: CSSProperties = {
+    position: 'absolute',
+    left: leadingWidth + rect.left,
+    top: headerHeight + rect.top,
+    width: rect.width,
+    height: rect.height,
+    zIndex: 5,
+    pointerEvents: 'none',
+  };
+
+  const inputStyle: CSSProperties = {
+    width: '100%',
+    height: '100%',
+    boxSizing: 'border-box',
+    border: '2px solid #2563eb',
+    outline: 'none',
+    padding: '0 10px',
+    margin: 0,
+    fontSize: 16,
+    color: '#0f172a',
+    backgroundColor: '#ffffff',
+    pointerEvents: 'auto',
+  };
+
+  // 追加: Enter で下、Tab で左右へ移動する方向付き commit を呼びます。
+  const handleKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      onCommit('down');
+      return;
+    }
+
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      onCancel();
+      return;
+    }
+
+    if (event.key === 'Tab') {
+      event.preventDefault();
+      onCommit(event.shiftKey ? 'left' : 'right');
+    }
+  };
+
+  return (
+    <div style={wrapperStyle}>
+      <input
+        ref={inputRef}
+        type="text"
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        onKeyDown={handleKeyDown}
+        onBlur={() => onCommit()}
+        style={inputStyle}
+      />
+    </div>
+  );
+}
+
+export default CellEditorLayer;
+</file>
+
+<file path="src/components/spreadsheet-grid/logic/geometry.ts">
+import type { GridColumn } from '../model/gridTypes';
+
+// ────────────────────────────────────────────────
+// 既存: 列の座標計算を共通化するための measurement 型です。
+// ────────────────────────────────────────────────
+
+export type ColumnMeasurement<T> = {
+  index: number;
+  column: GridColumn<T>;
+  start: number;
+  // 追加: 各列の実表示幅です。
+  size: number;
+  end: number;
+};
+
+// 追加: 値を min/max に収めるユーティリティです。
+export const clamp = (value: number, min: number, max: number) =>
+  Math.min(Math.max(value, min), max);
+
+// 追加: columns + columnWidths から、列座標の measurement 一覧を生成します。
+export const buildColumnMeasurements = <T,>(
+  columns: GridColumn<T>[],
+  columnWidths: Record<string, number>,
+): ColumnMeasurement<T>[] => {
+  let start = 0;
+  return columns.map((column, index) => {
+    const size = columnWidths[column.key] ?? column.width;
+    const measurement: ColumnMeasurement<T> = {
+      index,
+      column,
+      start,
+      size,
+      end: start + size,
+    };
+    start += size;
+    return measurement;
+  });
+};
+
+// 追加: x 座標から列 index を特定するための二分探索です。
+export const findColumnIndexFromOffset = <T,>(
+  measurements: ColumnMeasurement<T>[],
+  offset: number,
+) => {
+  if (measurements.length === 0) {
+    return -1;
+  }
+  if (offset <= 0) {
+    return 0;
+  }
+  let low = 0;
+  let high = measurements.length - 1;
+  while (low <= high) {
+    const mid = Math.floor((low + high) / 2);
+    const current = measurements[mid];
+    if (offset < current.start) {
+      high = mid - 1;
+      continue;
+    }
+    if (offset >= current.end) {
+      low = mid + 1;
+      continue;
+    }
+    return current.index;
+  }
+  return Math.max(0, Math.min(low, measurements.length - 1));
+};
+
+// ────────────────────────────────────────────────
+// 追加(10-A): 3 ペイン（pinned-left / center / pinned-right）
+//             分離に必要な型と helper 群です。
+//             ここでは型定義と純粋関数のみ追加し、
+//             レンダリングは一切変更しません。
+// ────────────────────────────────────────────────
+
+// 追加(10-A): 列が所属するペインの種別です。
+export type ColumnPane = 'left' | 'center' | 'right';
+
+// 追加(10-A): 列定義から所属ペインを判定します。
+export const getColumnPane = <T,>(column: GridColumn<T>): ColumnPane => {
+  if (column.pinned === 'left') return 'left';
+  if (column.pinned === 'right') return 'right';
+  return 'center';
+};
+
+// 追加(10-A): visibleColumns を AG Grid 互換の視覚順序に並べ替えます。
+//             pinned-left → center → pinned-right の順になります。
+//             各グループ内では元配列の相対順序が保持されます。
+//             ※ この関数で返る配列が「論理列 index」の基準になります。
+export const reorderColumnsByPane = <T,>(
+  columns: GridColumn<T>[],
+): GridColumn<T>[] => {
+  const left: GridColumn<T>[] = [];
+  const center: GridColumn<T>[] = [];
+  const right: GridColumn<T>[] = [];
+
+  for (const column of columns) {
+    const pane = getColumnPane(column);
+    if (pane === 'left') left.push(column);
+    else if (pane === 'right') right.push(column);
+    else center.push(column);
+  }
+
+  return [...left, ...center, ...right];
+};
+
+// 追加(10-A): 1 つのペイン内における列の座標情報です。
+//             paneLocalStart / paneLocalEnd はペイン内ローカル座標（0 始まり）です。
+//             logicalIndex は reorder 後の visibleColumns 配列上の index です。
+export type PaneColumnEntry<T> = {
+  column: GridColumn<T>;
+  logicalIndex: number;
+  paneLocalStart: number;
+  paneLocalSize: number;
+  paneLocalEnd: number;
+};
+
+// 追加(10-A): 1 つのペインの geometry 情報です。
+export type PaneGeometry<T> = {
+  pane: ColumnPane;
+  entries: PaneColumnEntry<T>[];
+  totalWidth: number;
+};
+
+// 追加(10-A): 3 ペイン全体のレイアウト情報です。
+export type GridPaneLayout<T> = {
+  left: PaneGeometry<T>;
+  center: PaneGeometry<T>;
+  right: PaneGeometry<T>;
+};
+
+// 追加(10-A): reorder 済み visibleColumns + columnWidths から
+//             3 ペインレイアウトを構築します。
+//             引数の columns は reorderColumnsByPane() 済みを前提とします。
+export const buildGridPaneLayout = <T,>(
+  orderedColumns: GridColumn<T>[],
+  columnWidths: Record<string, number>,
+): GridPaneLayout<T> => {
+  // 追加(10-A): 列を 3 グループに振り分けつつ論理 index を記録します。
+  const groups: Record<ColumnPane, { column: GridColumn<T>; logicalIndex: number }[]> = {
+    left: [],
+    center: [],
+    right: [],
+  };
+
+  orderedColumns.forEach((column, logicalIndex) => {
+    const pane = getColumnPane(column);
+    groups[pane].push({ column, logicalIndex });
+  });
+
+  // 追加(10-A): 1 ペイン分の PaneGeometry を生成する内部 helper です。
+  const buildPane = (
+    pane: ColumnPane,
+    items: { column: GridColumn<T>; logicalIndex: number }[],
+  ): PaneGeometry<T> => {
+    let offset = 0;
+    const entries: PaneColumnEntry<T>[] = items.map(({ column, logicalIndex }) => {
+      const size = columnWidths[column.key] ?? column.width;
+      const entry: PaneColumnEntry<T> = {
+        column,
+        logicalIndex,
+        paneLocalStart: offset,
+        paneLocalSize: size,
+        paneLocalEnd: offset + size,
+      };
+      offset += size;
+      return entry;
+    });
+    return { pane, entries, totalWidth: offset };
+  };
+
+  return {
+    left: buildPane('left', groups.left),
+    center: buildPane('center', groups.center),
+    right: buildPane('right', groups.right),
+  };
+};
+
+// 追加(10-A): ペイン + エントリをまとめて返す lookup 結果型です。
+export type PaneColumnLookupResult<T> = {
+  pane: ColumnPane;
+  entry: PaneColumnEntry<T>;
+};
+
+// 追加(10-A): 論理列 index からペインとローカル座標を逆引きします。
+//             見つからない場合は null を返します。
+export const lookupPaneColumn = <T,>(
+  layout: GridPaneLayout<T>,
+  logicalIndex: number,
+): PaneColumnLookupResult<T> | null => {
+  const panes: [ColumnPane, PaneGeometry<T>][] = [
+    ['left', layout.left],
+    ['center', layout.center],
+    ['right', layout.right],
+  ];
+
+  for (const [pane, geometry] of panes) {
+    const entry = geometry.entries.find((e) => e.logicalIndex === logicalIndex);
+    if (entry) {
+      return { pane, entry };
+    }
+  }
+
+  return null;
+};
+
+// 追加(10-A): ペイン内ローカル x 座標から論理列 index を特定します。
+//             pointer interaction でペインごとにヒットテストするために使います。
+export const findLogicalIndexFromPaneOffset = <T,>(
+  paneGeometry: PaneGeometry<T>,
+  offset: number,
+): number => {
+  const { entries } = paneGeometry;
+  if (entries.length === 0) {
+    return -1;
+  }
+  if (offset <= 0) {
+    return entries[0].logicalIndex;
+  }
+
+  let low = 0;
+  let high = entries.length - 1;
+
+  while (low <= high) {
+    const mid = Math.floor((low + high) / 2);
+    const entry = entries[mid];
+
+    if (offset < entry.paneLocalStart) {
+      high = mid - 1;
+      continue;
+    }
+    if (offset >= entry.paneLocalEnd) {
+      low = mid + 1;
+      continue;
+    }
+    // 追加(10-A): ヒットしたエントリの論理 index を返します。
+    return entry.logicalIndex;
+  }
+
+  // 追加(10-A): 範囲外の場合は最も近いエントリの論理 index を返します。
+  const clampedIndex = Math.max(0, Math.min(low, entries.length - 1));
+  return entries[clampedIndex].logicalIndex;
+};
+
+// 追加(10-A): 3 ペインそれぞれに pinned 列が何本あるかを返す convenience helper です。
+export const countPinnedColumns = <T,>(
+  layout: GridPaneLayout<T>,
+): { left: number; center: number; right: number } => ({
+  left: layout.left.entries.length,
+  center: layout.center.entries.length,
+  right: layout.right.entries.length,
+});
+
+// 追加(10-A): pinned 列が 1 本もなければ true を返します。
+//             10-B 以降で「従来の単一スクロール描画にフォールバックするか」の判定に使います。
+export const isPlainLayout = <T,>(layout: GridPaneLayout<T>): boolean =>
+  layout.left.entries.length === 0 && layout.right.entries.length === 0;
+// ────────────────────────────────────────────────
+// 追加(10-D): Overlay / Editor をペイン別座標系で描画するための helper 群です。
+//             10-C までで「セル本体・ヘッダー」はペインローカル座標になりましたが、
+//             SelectionOverlay / ActiveCellOverlay / CellEditorLayer はまだ
+//             グローバル座標（columnMeasurements + rowHeaderWidth）前提でした。
+//             ここで「論理列 index 範囲 → 各ペインのローカル水平 extent」を求める
+//             純粋関数を用意し、overlay を各ペイン内へ正しく配置できるようにします。
+//             ※ 返す座標は leadingWidth を含まない「列領域内ローカル座標」です。
+//               leadingWidth（行ヘッダー幅）は描画側で加算します。
+// ────────────────────────────────────────────────
+
+// 追加(10-D): 1 ペイン内における水平 extent（列領域ローカル座標, leadingWidth 非含有）です。
+//             start / end は paneLocalStart / paneLocalEnd 起点で、width = end - start です。
+export type PaneColumnExtent = {
+  start: number;
+  end: number;
+  width: number;
+};
+
+// 追加(10-D): 3 ペインそれぞれの水平 extent をまとめた結果です。
+//             該当ペインに範囲内の列が 1 本も無い場合は null になります。
+export type PaneColumnExtentMap = Record<ColumnPane, PaneColumnExtent | null>;
+
+// 追加(10-D): 1 ペイン分の extent を、論理列 index 範囲 [startLogicalIndex, endLogicalIndex]
+//             （両端含む）から求める内部 helper です。
+const computeExtentForPane = <T,>(
+  geometry: PaneGeometry<T>,
+  startLogicalIndex: number,
+  endLogicalIndex: number,
+): PaneColumnExtent | null => {
+  const lo = Math.min(startLogicalIndex, endLogicalIndex);
+  const hi = Math.max(startLogicalIndex, endLogicalIndex);
+
+  let start = Number.POSITIVE_INFINITY;
+  let end = Number.NEGATIVE_INFINITY;
+  let found = false;
+
+  for (const entry of geometry.entries) {
+    if (entry.logicalIndex < lo || entry.logicalIndex > hi) {
+      continue;
+    }
+    found = true;
+    if (entry.paneLocalStart < start) start = entry.paneLocalStart;
+    if (entry.paneLocalEnd > end) end = entry.paneLocalEnd;
+  }
+
+  if (!found) {
+    return null;
+  }
+  return { start, end, width: end - start };
+};
+
+// 追加(10-D): 論理列 index 範囲から、3 ペインそれぞれの水平 extent を求めます。
+//             cell / col 選択や行ヘッダー以外の overlay の水平範囲決定に使います。
+export const computePaneColumnExtents = <T,>(
+  layout: GridPaneLayout<T>,
+  startLogicalIndex: number,
+  endLogicalIndex: number,
+): PaneColumnExtentMap => ({
+  left: computeExtentForPane(layout.left, startLogicalIndex, endLogicalIndex),
+  center: computeExtentForPane(
+    layout.center,
+    startLogicalIndex,
+    endLogicalIndex,
+  ),
+  right: computeExtentForPane(layout.right, startLogicalIndex, endLogicalIndex),
+});
+
+// 追加(10-D): 「全列」を覆う extent を 3 ペイン分求めます（行選択 overlay 用）。
+//             各ペインは自分の列領域全幅（0 〜 totalWidth）を覆います。
+//             列が無いペインは null になります。
+export const computeFullWidthPaneExtents = <T,>(
+  layout: GridPaneLayout<T>,
+): PaneColumnExtentMap => {
+  const toExtent = (geometry: PaneGeometry<T>): PaneColumnExtent | null =>
+    geometry.entries.length === 0
+      ? null
+      : { start: 0, end: geometry.totalWidth, width: geometry.totalWidth };
+
+  return {
+    left: toExtent(layout.left),
+    center: toExtent(layout.center),
+    right: toExtent(layout.right),
+  };
+};
+
+// 追加(10-D): 単一論理列 index が属するペインと、その列のローカル extent を求めます。
+//             ActiveCellOverlay / CellEditorLayer のように単一セル列を扱う場合に使います。
+//             見つからなければ null を返します。
+export type SinglePaneColumnExtent = {
+  pane: ColumnPane;
+  extent: PaneColumnExtent;
+};
+
+export const computeSinglePaneColumnExtent = <T,>(
+  layout: GridPaneLayout<T>,
+  logicalIndex: number,
+): SinglePaneColumnExtent | null => {
+  const lookup = lookupPaneColumn(layout, logicalIndex);
+  if (!lookup) {
+    return null;
+  }
+  const { pane, entry } = lookup;
+  return {
+    pane,
+    extent: {
+      start: entry.paneLocalStart,
+      end: entry.paneLocalEnd,
+      width: entry.paneLocalSize,
+    },
+  };
+};
+</file>
+
 <file path="src/components/spreadsheet-grid/model/gridActions.ts">
 import type { CellCoord, GridSortDirection } from './gridTypes';
 
@@ -4277,6 +4351,59 @@ export const gridUiReducer = (
       return state;
   }
 };
+</file>
+
+<file path="src/components/spreadsheet-grid/SelectionOverlay.tsx">
+import type { CSSProperties } from 'react';
+
+// 追加: 選択範囲の矩形情報です。
+// 変更(10-D): left は「ペイン列領域内ローカル座標」になりました（leadingWidth 非含有）。
+//             描画時に leadingWidth を加算して最終 left を求めます。
+export type SelectionOverlayRect = {
+  left: number;
+  top: number;
+  width: number;
+  height: number;
+};
+
+type SelectionOverlayProps = {
+  rect: SelectionOverlayRect | null;
+  headerHeight: number;
+  // 変更(10-D): rowHeaderWidth → leadingWidth に一般化しました。
+  //             行ヘッダーを持つペインでは rowHeaderWidth、それ以外のペインでは 0 が渡されます。
+  //             固定列なしの中央ペインでは leadingWidth === rowHeaderWidth となり、
+  //             従来と完全に同じ位置に描画されます。
+  leadingWidth: number;
+};
+
+// 追加: 選択範囲をセル本体とは独立したレイヤーで描画するコンポーネントです。
+// 変更(10-D): ペイン別座標系に対応。各ペインの relative コンテナ内へ配置されます。
+export function SelectionOverlay({
+  rect,
+  headerHeight,
+  leadingWidth,
+}: SelectionOverlayProps) {
+  if (!rect) {
+    return null;
+  }
+
+  const overlayStyle: CSSProperties = {
+    position: 'absolute',
+    left: leadingWidth + rect.left,
+    top: headerHeight + rect.top,
+    width: rect.width,
+    height: rect.height,
+    backgroundColor: 'rgba(37, 99, 235, 0.08)',
+    border: '2px solid #2563eb',
+    boxSizing: 'border-box',
+    pointerEvents: 'none',
+    zIndex: 2,
+  };
+
+  return <div style={overlayStyle} />;
+}
+
+export default SelectionOverlay;
 </file>
 
 <file path="src/components/spreadsheet-grid/utils/clipboard.ts">
@@ -5457,11 +5584,20 @@ import {
 // 変更(10-C): 3ペインレイアウト構築用の helper / 型を追加インポートします。
 // 変更理由: reorderColumnsByPane / buildGridPaneLayout を SpreadsheetGrid で使い、
 //           PaneColumnEntry 型を各ペインの描画エントリ受け渡しに使うためです。
+// 変更(10-D): Overlay / Editor をペイン別座標系で配置するための helper / 型を追加インポートします。
+// 変更理由: SelectionOverlay / ActiveCellOverlay / CellEditorLayer を各ペイン内へ
+//           ペインローカル座標で描画するため、論理列 index 範囲 → 各ペイン extent の
+//           変換 helper（computePaneColumnExtents 等）が必要になりました。
 import {
   buildColumnMeasurements,
   reorderColumnsByPane,
   buildGridPaneLayout,
+  computePaneColumnExtents,
+  computeFullWidthPaneExtents,
+  computeSinglePaneColumnExtent,
   type PaneColumnEntry,
+  type ColumnPane,
+  type PaneColumnExtentMap,
 } from './logic/geometry';
 import { applySort } from './logic/sorting';
 import type {
@@ -5764,7 +5900,12 @@ export function SpreadsheetGrid<T extends object>({
   const leftRenderEntries = paneLayout.left.entries;
   const rightRenderEntries = paneLayout.right.entries;
 
-  // ── active cell / editor rect ─────────────────────────
+  // ── active cell rect（グローバル: viewport sync 専用） ──
+  // 注記(10-D): この activeCellRect は columnMeasurements（visibleColumns グローバル座標）
+  //             基準のままにしています。理由は useGridViewportSync が「中央ペインを
+  //             スクロールして active cell を可視化する」ために中央スクロール座標を必要と
+  //             するためです。overlay 描画には使わず、ペイン対応の activeCellPlacement
+  //             （下記）を使います。固定列なしのときは両者が一致します。
   const activeCellRect = useMemo<ActiveCellOverlayRect | null>(() => {
     if (!uiState.activeCell) {
       return null;
@@ -5797,9 +5938,51 @@ export function SpreadsheetGrid<T extends object>({
     rowHeight,
   ]);
 
-  const editorRect = useMemo(
-    () => (uiState.editingCell ? activeCellRect : null),
-    [uiState.editingCell, activeCellRect],
+  // ── active cell placement（10-D: ペイン別座標系） ──────
+  // 追加(10-D): active cell が属するペインと、そのペインローカル矩形を求めます。
+  //             col は logicalIndex（orderedColumns 空間）として扱い、
+  //             computeSinglePaneColumnExtent で所属ペイン + ローカル extent を取得します。
+  //             left は leadingWidth 非含有のローカル列座標で、描画側で leadingWidth を加算します。
+  const activeCellPlacement = useMemo<{
+    pane: ColumnPane;
+    rect: ActiveCellOverlayRect;
+  } | null>(() => {
+    if (!uiState.activeCell) {
+      return null;
+    }
+    const { row, col } = uiState.activeCell;
+    if (row < 0 || row >= filteredRows.length) {
+      return null;
+    }
+    const single = computeSinglePaneColumnExtent(paneLayout, col);
+    if (!single) {
+      return null;
+    }
+    return {
+      pane: single.pane,
+      rect: {
+        left: single.extent.start,
+        top: row * rowHeight,
+        width: single.extent.width,
+        height: rowHeight,
+      },
+    };
+  }, [uiState.activeCell, filteredRows.length, paneLayout, rowHeight]);
+
+  // 追加(10-D): 指定ペインに active cell があればそのローカル矩形を、無ければ null を返します。
+  const activeCellRectForPane = useCallback(
+    (pane: ColumnPane): ActiveCellOverlayRect | null =>
+      activeCellPlacement && activeCellPlacement.pane === pane
+        ? activeCellPlacement.rect
+        : null,
+    [activeCellPlacement],
+  );
+
+  // 追加(10-D): editor は editingCell があるときだけ、active cell と同じペイン・同じ矩形に出します。
+  const editorRectForPane = useCallback(
+    (pane: ColumnPane): ActiveCellOverlayRect | null =>
+      uiState.editingCell ? activeCellRectForPane(pane) : null,
+    [uiState.editingCell, activeCellRectForPane],
   );
 
   // ── viewport sync ────────────────────────────────────
@@ -5978,63 +6161,88 @@ export function SpreadsheetGrid<T extends object>({
     [canEditCell, filteredRows, readOnly, startEditWithValue, visibleColumns],
   );
 
-  // ── selection overlay rect ────────────────────────────
-  const selectionOverlayRect = useMemo<SelectionOverlayRect | null>(() => {
+  // ── selection overlay placement（10-D: ペイン別座標系） ─
+  // 変更(10-D): 選択範囲を「論理列 index 範囲 + 行範囲」に正規化し、
+  //             computePaneColumnExtents / computeFullWidthPaneExtents で
+  //             各ペインのローカル水平 extent に分解します。
+  //             これにより選択がペインをまたいでも、各ペイン内に正しくクリップされた
+  //             矩形セグメントが描画されます（AG Grid と同様のペイン別レンダリング）。
+  //             固定列なしのときは center のみに extent が出て従来と一致します。
+  const selectionPlacement = useMemo<{
+    extents: PaneColumnExtentMap;
+    top: number;
+    height: number;
+  } | null>(() => {
     if (!uiState.selection) {
       return null;
     }
+
     if (uiState.selection.type === 'cell') {
       const normalizedRange = normalizeCellRange(uiState.selection.range);
-      const startMeasurement = columnMeasurements[normalizedRange.start.col];
-      const endMeasurement = columnMeasurements[normalizedRange.end.col];
-      if (!startMeasurement || !endMeasurement) {
-        return null;
-      }
-      const top = normalizedRange.start.row * rowHeight;
-      const height =
-        (normalizedRange.end.row - normalizedRange.start.row + 1) * rowHeight;
+      const extents = computePaneColumnExtents(
+        paneLayout,
+        normalizedRange.start.col,
+        normalizedRange.end.col,
+      );
       return {
-        left: startMeasurement.start,
-        top,
-        width: endMeasurement.end - startMeasurement.start,
-        height,
+        extents,
+        top: normalizedRange.start.row * rowHeight,
+        height:
+          (normalizedRange.end.row - normalizedRange.start.row + 1) * rowHeight,
       };
     }
+
     if (uiState.selection.type === 'row') {
       const normalizedRange = normalizeRowRange(
         uiState.selection.startRow,
         uiState.selection.endRow,
       );
+      // 行選択は全ペインの全列を覆います。
+      const extents = computeFullWidthPaneExtents(paneLayout);
       return {
-        left: 0,
+        extents,
         top: normalizedRange.startRow * rowHeight,
-        width: totalColumnWidth,
         height:
           (normalizedRange.endRow - normalizedRange.startRow + 1) * rowHeight,
       };
     }
+
+    // col selection
     const normalizedRange = normalizeColumnRange(
       uiState.selection.startCol,
       uiState.selection.endCol,
     );
-    const startMeasurement = columnMeasurements[normalizedRange.startCol];
-    const endMeasurement = columnMeasurements[normalizedRange.endCol];
-    if (!startMeasurement || !endMeasurement) {
-      return null;
-    }
+    const extents = computePaneColumnExtents(
+      paneLayout,
+      normalizedRange.startCol,
+      normalizedRange.endCol,
+    );
     return {
-      left: startMeasurement.start,
+      extents,
       top: 0,
-      width: endMeasurement.end - startMeasurement.start,
       height: filteredRows.length * rowHeight,
     };
-  }, [
-    uiState.selection,
-    columnMeasurements,
-    rowHeight,
-    filteredRows.length,
-    totalColumnWidth,
-  ]);
+  }, [uiState.selection, paneLayout, rowHeight, filteredRows.length]);
+
+  // 追加(10-D): 指定ペインの選択矩形（ペインローカル）を返します。該当列が無ければ null です。
+  const selectionRectForPane = useCallback(
+    (pane: ColumnPane): SelectionOverlayRect | null => {
+      if (!selectionPlacement) {
+        return null;
+      }
+      const extent = selectionPlacement.extents[pane];
+      if (!extent) {
+        return null;
+      }
+      return {
+        left: extent.start,
+        top: selectionPlacement.top,
+        width: extent.width,
+        height: selectionPlacement.height,
+      };
+    },
+    [selectionPlacement],
+  );
 
   // ── corner header ─────────────────────────────────────
   const handleCornerHeaderPointerDown = useCallback(
@@ -6426,6 +6634,30 @@ export function SpreadsheetGrid<T extends object>({
                   onColumnResizePointerDown={handleColumnResizePointerDown}
                 />
 
+                {/* 追加(10-D): 左固定ペイン内の overlay（ペインローカル座標）。*/}
+                {/*   active cell / 選択範囲が左固定列にあるときだけ矩形が出ます。*/}
+                <SelectionOverlay
+                  rect={selectionRectForPane('left')}
+                  headerHeight={headerHeight}
+                  leadingWidth={leftLeadingWidth}
+                />
+
+                <ActiveCellOverlay
+                  rect={activeCellRectForPane('left')}
+                  headerHeight={headerHeight}
+                  leadingWidth={leftLeadingWidth}
+                />
+
+                <CellEditorLayer
+                  rect={editorRectForPane('left')}
+                  headerHeight={headerHeight}
+                  leadingWidth={leftLeadingWidth}
+                  value={editorValue}
+                  onChange={setEditorValue}
+                  onCommit={commitEdit}
+                  onCancel={cancelEdit}
+                />
+
                 <GridBodyLayer
                   pane="left"
                   ownsRowHeader
@@ -6507,22 +6739,24 @@ export function SpreadsheetGrid<T extends object>({
                 onColumnResizePointerDown={handleColumnResizePointerDown}
               />
 
+              {/* 変更(10-D): 中央ペインの overlay をペインローカル座標に切替。*/}
+              {/*   leadingWidth は centerLeadingWidth（固定列なしのとき rowHeaderWidth）。*/}
               <SelectionOverlay
-                rect={selectionOverlayRect}
+                rect={selectionRectForPane('center')}
                 headerHeight={headerHeight}
-                rowHeaderWidth={rowHeaderWidth}
+                leadingWidth={centerLeadingWidth}
               />
 
               <ActiveCellOverlay
-                rect={activeCellRect}
+                rect={activeCellRectForPane('center')}
                 headerHeight={headerHeight}
-                rowHeaderWidth={rowHeaderWidth}
+                leadingWidth={centerLeadingWidth}
               />
 
               <CellEditorLayer
-                rect={editorRect}
+                rect={editorRectForPane('center')}
                 headerHeight={headerHeight}
-                rowHeaderWidth={rowHeaderWidth}
+                leadingWidth={centerLeadingWidth}
                 value={editorValue}
                 onChange={setEditorValue}
                 onCommit={commitEdit}
@@ -6610,6 +6844,29 @@ export function SpreadsheetGrid<T extends object>({
                   }
                   onColumnFilterButtonPointerDown={openColumnFilterPopover}
                   onColumnResizePointerDown={handleColumnResizePointerDown}
+                />
+
+                {/* 追加(10-D): 右固定ペイン内の overlay（ペインローカル座標）。*/}
+                <SelectionOverlay
+                  rect={selectionRectForPane('right')}
+                  headerHeight={headerHeight}
+                  leadingWidth={rightLeadingWidth}
+                />
+
+                <ActiveCellOverlay
+                  rect={activeCellRectForPane('right')}
+                  headerHeight={headerHeight}
+                  leadingWidth={rightLeadingWidth}
+                />
+
+                <CellEditorLayer
+                  rect={editorRectForPane('right')}
+                  headerHeight={headerHeight}
+                  leadingWidth={rightLeadingWidth}
+                  value={editorValue}
+                  onChange={setEditorValue}
+                  onCommit={commitEdit}
+                  onCancel={cancelEdit}
                 />
 
                 <GridBodyLayer
