@@ -115,6 +115,13 @@ export function SpreadsheetGrid<T extends object>({
   // 追加(10-B): 右固定ペインのスクロール要素 ref です。
   const rightPaneScrollRef = useRef<HTMLDivElement | null>(null);
 
+  // 追加(10-F改): 固定ペインの本体（ヘッダー以外）を transform で平行移動させるための ref です。
+  // 変更理由: scrollTop 命令同期はネイティブスクロールする中央ペインに対し 1 フレーム遅延し、
+  //           さらに固定ペイン内 sticky ヘッダーの再計算が走るため固定列がチカチカします。
+  //           本体を translate3d で動かすことで、リフロー/再計算を避けて滑らかに同期します。
+  const leftBodyRef = useRef<HTMLDivElement | null>(null);
+  const rightBodyRef = useRef<HTMLDivElement | null>(null);
+
   // ── local state ───────────────────────────────────────
   const [editorValue, setEditorValue] = useState('');
   const [isCornerHovered, setIsCornerHovered] = useState(false);
@@ -435,28 +442,63 @@ export function SpreadsheetGrid<T extends object>({
     activeCellRect: centerViewportActiveRect,
   });
 
-  // 追加(10-B): 中央ペインの垂直スクロールを左右固定ペインへ同期します。
-  // 変更理由: 3ペイン物理分離のため、vertical scroll は中央ペインがマスターで
-  //           左右ペインへ scrollTop を転写する必要があります。
+  // 変更(10-F改): 中央ペインの垂直スクロールを左右固定ペインへ「transform」で同期します。
+  // 変更理由: 旧実装は固定ペインの scrollTop を命令的に代入していましたが、
+  //           ネイティブスクロールする中央ペインに対して 1 フレーム遅延し、
+  //           さらに固定ペイン内 sticky ヘッダーの再計算（リフロー）が毎回走るため、
+  //           仮想行が再利用される帯で固定列だけがチカチカ（ティアリング）していました。
+  //           固定ペインの本体だけを translate3d で平行移動することで、リフローと
+  //           sticky 再計算を避け、コンポジタ処理で滑らかに同期します。
+  //           ※ ヘッダーは wrapper の外側（据え置き）なので transform の影響を受けません。
   useEffect(() => {
     const center = bodyScrollRef.current;
     if (!center) return;
 
     const syncVerticalScroll = () => {
-      const { scrollTop } = center;
-      if (leftPaneScrollRef.current) {
-        leftPaneScrollRef.current.scrollTop = scrollTop;
+      const transform = `translate3d(0, ${-center.scrollTop}px, 0)`;
+      if (leftBodyRef.current) {
+        leftBodyRef.current.style.transform = transform;
       }
-      if (rightPaneScrollRef.current) {
-        rightPaneScrollRef.current.scrollTop = scrollTop;
+      if (rightBodyRef.current) {
+        rightBodyRef.current.style.transform = transform;
       }
     };
+
+    // マウント直後・固定ペイン出現直後の初期同期です。
+    syncVerticalScroll();
 
     center.addEventListener('scroll', syncVerticalScroll, { passive: true });
     return () => {
       center.removeEventListener('scroll', syncVerticalScroll);
     };
-  }, []);
+  }, [hasLeftPane, hasRightPane]);
+
+  // 追加(10-F改): 固定ペイン上のホイール操作を中央ペインへ転送します。
+  // 変更理由: 固定ペインは overflow:hidden で自身がスクロールできず、中央ペインとは
+  //           兄弟要素のためホイールイベントが中央へ伝播しません。結果、マウスが
+  //           固定列の上にあるとき縦スクロールができませんでした。中央ペインの
+  //           scrollTop / scrollLeft を直接動かすことで、固定列上でもスクロールできます。
+  //           ※ React の onWheel はパッシブ登録で preventDefault が効かないため、
+  //             ネイティブの非パッシブリスナーとして登録します。
+  useEffect(() => {
+    const center = bodyScrollRef.current;
+    if (!center) return;
+
+    const forwardWheel = (event: WheelEvent) => {
+      center.scrollTop += event.deltaY;
+      center.scrollLeft += event.deltaX;
+      event.preventDefault();
+    };
+
+    const left = leftPaneScrollRef.current;
+    const right = rightPaneScrollRef.current;
+    left?.addEventListener('wheel', forwardWheel, { passive: false });
+    right?.addEventListener('wheel', forwardWheel, { passive: false });
+    return () => {
+      left?.removeEventListener('wheel', forwardWheel);
+      right?.removeEventListener('wheel', forwardWheel);
+    };
+  }, [hasLeftPane, hasRightPane]);
 
   // ── pointer interactions ──────────────────────────────
   const {
@@ -1111,6 +1153,22 @@ export function SpreadsheetGrid<T extends object>({
 
                 {/* 追加(10-D): 左固定ペイン内の overlay（ペインローカル座標）。*/}
                 {/*   active cell / 選択範囲が左固定列にあるときだけ矩形が出ます。*/}
+                {/* 変更(10-F改): ヘッダー以外（overlay + body）を transform 同期用の */}
+                {/*   wrapper で包みます。この div は transform を持つため絶対配置子の   */}
+                {/*   containing block になり、中のセルは従来どおり headerHeight + start  */}
+                {/*   で配置されます。ヘッダーは wrapper の外＆高 z-index なので、上方向へ */}
+                {/*   平行移動した行はヘッダーの背面に隠れます。                          */}
+                <div
+                  ref={leftBodyRef}
+                  style={{
+                    position: 'absolute',
+                    top: 0,
+                    left: 0,
+                    width: leftPaneTotalWidth,
+                    height: headerHeight + totalBodyHeight,
+                    willChange: 'transform',
+                  }}
+                >
                 <SelectionOverlay
                   rect={selectionRectForPane('left')}
                   headerHeight={headerHeight}
@@ -1162,6 +1220,7 @@ export function SpreadsheetGrid<T extends object>({
                   onCellDoubleClick={handleCellDoubleClickWithController}
                   renderCellContent={renderCellContent}
                 />
+                </div>
               </div>
             )}
           </div>
@@ -1322,6 +1381,19 @@ export function SpreadsheetGrid<T extends object>({
                 />
 
                 {/* 追加(10-D): 右固定ペイン内の overlay（ペインローカル座標）。*/}
+                {/* 変更(10-F改): 左ペインと同様に overlay + body を transform 同期用の */}
+                {/*   wrapper で包みます（rightBodyRef）。                                */}
+                <div
+                  ref={rightBodyRef}
+                  style={{
+                    position: 'absolute',
+                    top: 0,
+                    left: 0,
+                    width: rightPaneTotalWidth,
+                    height: headerHeight + totalBodyHeight,
+                    willChange: 'transform',
+                  }}
+                >
                 <SelectionOverlay
                   rect={selectionRectForPane('right')}
                   headerHeight={headerHeight}
@@ -1373,6 +1445,7 @@ export function SpreadsheetGrid<T extends object>({
                   onCellDoubleClick={handleCellDoubleClickWithController}
                   renderCellContent={renderCellContent}
                 />
+                </div>
               </div>
             )}
           </div>

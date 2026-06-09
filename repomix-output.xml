@@ -1397,447 +1397,6 @@ export const useGridKeyboardInteractions = <T,>({
 export default useGridKeyboardInteractions;
 </file>
 
-<file path="src/components/spreadsheet-grid/hooks/useGridPointerInteractions.ts">
-import {
-  useCallback,
-  useEffect,
-  type Dispatch,
-  type PointerEvent,
-  type RefObject,
-} from 'react';
-import { gridActions, type GridUiAction } from '../model/gridActions';
-import type { CellCoord, GridUiState } from '../model/gridTypes';
-import {
-  clamp,
-  findColumnIndexFromOffset,
-  type ColumnMeasurement,
-} from '../logic/geometry';
-
-type UseGridPointerInteractionsArgs<T> = {
-  gridRootRef: RefObject<HTMLDivElement | null>;
-  bodyScrollRef: RefObject<HTMLDivElement | null>;
-  pointerClientRef: RefObject<{ x: number; y: number } | null>;
-  autoScrollFrameRef: RefObject<number | null>;
-  uiState: GridUiState;
-  dispatch: Dispatch<GridUiAction>;
-  enableRangeSelection: boolean;
-  filteredRowsLength: number;
-  visibleColumnsLength: number;
-  columnMeasurements: ColumnMeasurement<T>[];
-  rowHeaderWidth: number;
-  headerHeight: number;
-  rowHeight: number;
-};
-
-// 追加: pointer 系 interaction（cell/row/col selection + drag auto-scroll + window pointer sync）をまとめます。
-export const useGridPointerInteractions = <T,>({
-  gridRootRef,
-  bodyScrollRef,
-  pointerClientRef,
-  autoScrollFrameRef,
-  uiState,
-  dispatch,
-  enableRangeSelection,
-  filteredRowsLength,
-  visibleColumnsLength,
-  columnMeasurements,
-  rowHeaderWidth,
-  headerHeight,
-  rowHeight,
-}: UseGridPointerInteractionsArgs<T>) => {
-  // 追加: client 座標から rowIndex / colIndex を推定します。
-  const getCellCoordFromClientPoint = useCallback(
-    (clientX: number, clientY: number): CellCoord | null => {
-      if (
-        !bodyScrollRef.current ||
-        filteredRowsLength === 0 ||
-        visibleColumnsLength === 0
-      ) {
-        return null;
-      }
-
-      const scrollElement = bodyScrollRef.current;
-      const rect = scrollElement.getBoundingClientRect();
-      const x = scrollElement.scrollLeft + clientX - rect.left - rowHeaderWidth;
-      const y = scrollElement.scrollTop + clientY - rect.top - headerHeight;
-      const row = clamp(Math.floor(y / rowHeight), 0, filteredRowsLength - 1);
-      const normalizedX = Math.max(x, 0);
-      const col = findColumnIndexFromOffset(columnMeasurements, normalizedX);
-
-      return {
-        row,
-        col: clamp(col, 0, visibleColumnsLength - 1),
-      };
-    },
-    [
-      bodyScrollRef,
-      filteredRowsLength,
-      visibleColumnsLength,
-      columnMeasurements,
-      rowHeaderWidth,
-      headerHeight,
-      rowHeight,
-    ],
-  );
-
-  // 追加: 現在の dragState に応じて selection を更新します。
-  const updateSelectionFromPointer = useCallback(
-    (clientX: number, clientY: number) => {
-      if (!uiState.dragState || uiState.dragState.type !== 'selection') {
-        return;
-      }
-
-      const cell = getCellCoordFromClientPoint(clientX, clientY);
-      if (!cell) {
-        return;
-      }
-
-      if (uiState.dragState.selectionKind === 'cell') {
-        dispatch(gridActions.updateSelection(cell));
-        return;
-      }
-      if (uiState.dragState.selectionKind === 'row') {
-        dispatch(gridActions.updateRowSelection(cell.row));
-        return;
-      }
-      if (uiState.dragState.selectionKind === 'col') {
-        dispatch(gridActions.updateColumnSelection(cell.col));
-      }
-    },
-    [dispatch, getCellCoordFromClientPoint, uiState.dragState],
-  );
-
-  // 追加: selection drag / column resize drag 中の window pointer イベントを処理します。
-  useEffect(() => {
-    const handleWindowPointerMove = (event: globalThis.PointerEvent) => {
-      pointerClientRef.current = { x: event.clientX, y: event.clientY };
-      if (uiState.dragState?.type === 'columnResize') {
-        dispatch(gridActions.updateColumnResize(event.clientX));
-      }
-    };
-
-    const handleWindowPointerUp = () => {
-      dispatch(gridActions.endSelection());
-      dispatch(gridActions.endColumnResize());
-    };
-
-    window.addEventListener('pointermove', handleWindowPointerMove);
-    window.addEventListener('pointerup', handleWindowPointerUp);
-    return () => {
-      window.removeEventListener('pointermove', handleWindowPointerMove);
-      window.removeEventListener('pointerup', handleWindowPointerUp);
-    };
-  }, [dispatch, pointerClientRef, uiState.dragState]);
-
-  // 追加: 範囲選択中、端に近づいたら自動スクロールします。
-  useEffect(() => {
-    if (uiState.dragState?.type !== 'selection') {
-      if (autoScrollFrameRef.current !== null) {
-        cancelAnimationFrame(autoScrollFrameRef.current);
-        autoScrollFrameRef.current = null;
-      }
-      return;
-    }
-
-    const EDGE_THRESHOLD = 24;
-    const SCROLL_STEP = 18;
-
-    const tick = () => {
-      const scrollElement = bodyScrollRef.current;
-      const pointer = pointerClientRef.current;
-      if (!scrollElement || !pointer) {
-        autoScrollFrameRef.current = requestAnimationFrame(tick);
-        return;
-      }
-
-      const rect = scrollElement.getBoundingClientRect();
-      let nextScrollTop = scrollElement.scrollTop;
-      let nextScrollLeft = scrollElement.scrollLeft;
-
-      if (pointer.y < rect.top + EDGE_THRESHOLD) {
-        nextScrollTop = Math.max(scrollElement.scrollTop - SCROLL_STEP, 0);
-      } else if (pointer.y > rect.bottom - EDGE_THRESHOLD) {
-        nextScrollTop = scrollElement.scrollTop + SCROLL_STEP;
-      }
-
-      if (pointer.x < rect.left + EDGE_THRESHOLD) {
-        nextScrollLeft = Math.max(scrollElement.scrollLeft - SCROLL_STEP, 0);
-      } else if (pointer.x > rect.right - EDGE_THRESHOLD) {
-        nextScrollLeft = scrollElement.scrollLeft + SCROLL_STEP;
-      }
-
-      if (
-        nextScrollTop !== scrollElement.scrollTop ||
-        nextScrollLeft !== scrollElement.scrollLeft
-      ) {
-        scrollElement.scrollTo({
-          top: nextScrollTop,
-          left: nextScrollLeft,
-          behavior: 'auto',
-        });
-        updateSelectionFromPointer(pointer.x, pointer.y);
-      }
-
-      autoScrollFrameRef.current = requestAnimationFrame(tick);
-    };
-
-    autoScrollFrameRef.current = requestAnimationFrame(tick);
-    return () => {
-      if (autoScrollFrameRef.current !== null) {
-        cancelAnimationFrame(autoScrollFrameRef.current);
-        autoScrollFrameRef.current = null;
-      }
-    };
-  }, [
-    autoScrollFrameRef,
-    bodyScrollRef,
-    pointerClientRef,
-    uiState.dragState,
-    updateSelectionFromPointer,
-  ]);
-
-  // 追加: セルクリック/ドラッグ開始時の処理です。
-  const handleCellPointerDown = useCallback(
-    (cell: CellCoord, event: PointerEvent<HTMLDivElement>) => {
-      event.preventDefault();
-      if (event.button !== 0) {
-        return;
-      }
-      gridRootRef.current?.focus();
-      dispatch(gridActions.activateCell(cell));
-      if (enableRangeSelection) {
-        dispatch(gridActions.startSelection(cell));
-      }
-    },
-    [dispatch, enableRangeSelection, gridRootRef],
-  );
-
-  // 追加: selection drag 中にセルへ入ったら範囲更新します。
-  const handleCellPointerEnter = useCallback(
-    (cell: CellCoord, event: PointerEvent<HTMLDivElement>) => {
-      if (!enableRangeSelection) {
-        return;
-      }
-      if (
-        uiState.dragState?.type !== 'selection' ||
-        uiState.dragState.selectionKind !== 'cell'
-      ) {
-        return;
-      }
-      pointerClientRef.current = { x: event.clientX, y: event.clientY };
-      dispatch(gridActions.updateSelection(cell));
-    },
-    [dispatch, enableRangeSelection, pointerClientRef, uiState.dragState],
-  );
-
-  // 追加: ブラウザ標準の drag ghost を抑止します。
-  const handleNativeDragStart = useCallback(
-    (event: React.DragEvent<HTMLDivElement>) => {
-      event.preventDefault();
-    },
-    [],
-  );
-
-  // 追加: 行ヘッダー選択開始です。
-  const handleRowHeaderPointerDown = useCallback(
-    (rowIndex: number, event: PointerEvent<HTMLDivElement>) => {
-      event.preventDefault();
-      if (event.button !== 0) {
-        return;
-      }
-      gridRootRef.current?.focus();
-      dispatch(gridActions.startRowSelection(rowIndex));
-    },
-    [dispatch, gridRootRef],
-  );
-
-  // 追加: 行ヘッダードラッグ中の更新です。
-  const handleRowHeaderPointerEnter = useCallback(
-    (rowIndex: number, event: PointerEvent<HTMLDivElement>) => {
-      if (
-        uiState.dragState?.type !== 'selection' ||
-        uiState.dragState.selectionKind !== 'row'
-      ) {
-        return;
-      }
-      pointerClientRef.current = { x: event.clientX, y: event.clientY };
-      dispatch(gridActions.updateRowSelection(rowIndex));
-    },
-    [dispatch, pointerClientRef, uiState.dragState],
-  );
-
-  // 追加: 列ヘッダー選択開始です。
-  const handleColumnHeaderPointerDown = useCallback(
-    (colIndex: number, event: PointerEvent<HTMLDivElement>) => {
-      event.preventDefault();
-      if (event.button !== 0) {
-        return;
-      }
-      gridRootRef.current?.focus();
-      dispatch(gridActions.startColumnSelection(colIndex));
-    },
-    [dispatch, gridRootRef],
-  );
-
-  // 追加: 列ヘッダードラッグ中の更新です。
-  const handleColumnHeaderPointerEnter = useCallback(
-    (colIndex: number, event: PointerEvent<HTMLDivElement>) => {
-      if (
-        uiState.dragState?.type !== 'selection' ||
-        uiState.dragState.selectionKind !== 'col'
-      ) {
-        return;
-      }
-      pointerClientRef.current = { x: event.clientX, y: event.clientY };
-      dispatch(gridActions.updateColumnSelection(colIndex));
-    },
-    [dispatch, pointerClientRef, uiState.dragState],
-  );
-
-  return {
-    updateSelectionFromPointer,
-    handleCellPointerDown,
-    handleCellPointerEnter,
-    handleNativeDragStart,
-    handleRowHeaderPointerDown,
-    handleRowHeaderPointerEnter,
-    handleColumnHeaderPointerDown,
-    handleColumnHeaderPointerEnter,
-  };
-};
-
-export default useGridPointerInteractions;
-</file>
-
-<file path="src/components/spreadsheet-grid/hooks/useGridViewportSync.ts">
-import { useEffect, type RefObject } from 'react';
-import type { ActiveCellOverlayRect } from '../ActiveCellOverlay';
-import type { ColumnMeasurement } from '../logic/geometry';
-
-type VirtualizerLike = {
-  measure: () => void;
-};
-
-type UseGridViewportSyncArgs<T> = {
-  bodyScrollRef: RefObject<HTMLDivElement | null>;
-  rowVirtualizer: VirtualizerLike;
-  columnVirtualizer: VirtualizerLike;
-  rowHeight: number;
-  filteredRowsLength: number;
-  columnMeasurements: ColumnMeasurement<T>[];
-  totalColumnWidth: number;
-  totalBodyHeight: number;
-  rowHeaderWidth: number;
-  headerHeight: number;
-  activeCellRect: ActiveCellOverlayRect | null;
-};
-
-// 追加: virtualizer 再計測、content shrink 時の scroll clamp、active cell 可視化をまとめます。
-export const useGridViewportSync = <T,>({
-  bodyScrollRef,
-  rowVirtualizer,
-  columnVirtualizer,
-  rowHeight,
-  filteredRowsLength,
-  columnMeasurements,
-  totalColumnWidth,
-  totalBodyHeight,
-  rowHeaderWidth,
-  headerHeight,
-  activeCellRect,
-}: UseGridViewportSyncArgs<T>) => {
-  // 追加: 列/行サイズ変化時に virtualizer の measurement を再取得します。
-  useEffect(() => {
-    rowVirtualizer.measure();
-  }, [rowVirtualizer, rowHeight, filteredRowsLength]);
-
-  // 追加: column geometry が変わった際に horizontal virtualizer を再計測します。
-  useEffect(() => {
-    columnVirtualizer.measure();
-  }, [columnVirtualizer, columnMeasurements]);
-
-  // 追加: content サイズが縮んだ場合に scroll を clamp します。
-  useEffect(() => {
-    if (!bodyScrollRef.current) {
-      return;
-    }
-
-    const scrollElement = bodyScrollRef.current;
-    const maxScrollLeft = Math.max(
-      rowHeaderWidth + totalColumnWidth - scrollElement.clientWidth,
-      0,
-    );
-    const maxScrollTop = Math.max(
-      headerHeight + totalBodyHeight - scrollElement.clientHeight,
-      0,
-    );
-
-    if (scrollElement.scrollLeft > maxScrollLeft) {
-      scrollElement.scrollLeft = maxScrollLeft;
-    }
-    if (scrollElement.scrollTop > maxScrollTop) {
-      scrollElement.scrollTop = maxScrollTop;
-    }
-  }, [
-    bodyScrollRef,
-    totalColumnWidth,
-    totalBodyHeight,
-    rowHeaderWidth,
-    headerHeight,
-  ]);
-
-  // 追加: active cell が画面外へ出た場合に、scroll container を自動調整して常に表示領域内へ収めます。
-  useEffect(() => {
-    if (!bodyScrollRef.current || !activeCellRect) {
-      return;
-    }
-
-    const scrollElement = bodyScrollRef.current;
-    const cellTop = headerHeight + activeCellRect.top;
-    const cellBottom = cellTop + activeCellRect.height;
-    const cellLeft = rowHeaderWidth + activeCellRect.left;
-    const cellRight = cellLeft + activeCellRect.width;
-
-    const currentScrollTop = scrollElement.scrollTop;
-    const currentScrollLeft = scrollElement.scrollLeft;
-    const viewportHeight = scrollElement.clientHeight;
-    const viewportWidth = scrollElement.clientWidth;
-
-    let nextScrollTop = currentScrollTop;
-    let nextScrollLeft = currentScrollLeft;
-
-    const visibleTop = currentScrollTop + headerHeight;
-    const visibleBottom = currentScrollTop + viewportHeight;
-    if (cellTop < visibleTop) {
-      nextScrollTop = Math.max(cellTop - headerHeight, 0);
-    } else if (cellBottom > visibleBottom) {
-      nextScrollTop = Math.max(cellBottom - viewportHeight, 0);
-    }
-
-    const visibleLeft = currentScrollLeft + rowHeaderWidth;
-    const visibleRight = currentScrollLeft + viewportWidth;
-    if (cellLeft < visibleLeft) {
-      nextScrollLeft = Math.max(cellLeft - rowHeaderWidth, 0);
-    } else if (cellRight > visibleRight) {
-      nextScrollLeft = Math.max(cellRight - viewportWidth, 0);
-    }
-
-    if (
-      nextScrollTop !== currentScrollTop ||
-      nextScrollLeft !== currentScrollLeft
-    ) {
-      scrollElement.scrollTo({
-        top: nextScrollTop,
-        left: nextScrollLeft,
-        behavior: 'auto',
-      });
-    }
-  }, [bodyScrollRef, activeCellRect, headerHeight, rowHeaderWidth]);
-};
-
-export default useGridViewportSync;
-</file>
-
 <file path="src/components/spreadsheet-grid/logic/domGuards.ts">
 // 追加: 文字キー入力で編集開始する判定です。
 export const isPrintableKey = (event: {
@@ -2740,6 +2299,533 @@ export function ActiveCellOverlay({
 }
 
 export default ActiveCellOverlay;
+</file>
+
+<file path="src/components/spreadsheet-grid/hooks/useGridPointerInteractions.ts">
+import {
+  useCallback,
+  useEffect,
+  type Dispatch,
+  type PointerEvent,
+  type RefObject,
+} from 'react';
+import { gridActions, type GridUiAction } from '../model/gridActions';
+import type { CellCoord, GridUiState } from '../model/gridTypes';
+// 変更(10-E): グローバル座標(columnMeasurements)前提の当たり判定から、
+//             ペイン別座標系の当たり判定へ切り替えます。
+// 変更理由: 10-B〜10-D で DOM を 3 ペインに物理分離し、UI state の col は
+//           「論理列 index（orderedColumns 空間＝左→中→右の視覚順）」になりました。
+//           ところがドラッグ選択の実体は grid root の onPointerMoveCapture →
+//           updateSelectionFromPointer であり、ここがグローバル座標 +
+//           columnMeasurements(visibleColumns 順) のままだと、pinned 列を入れた
+//           瞬間に「ドラッグ中の選択列がズレる」ため、ペイン別ヒットテストへ移行します。
+import {
+  clamp,
+  findLogicalIndexFromPaneOffset,
+  type GridPaneLayout,
+} from '../logic/geometry';
+
+type UseGridPointerInteractionsArgs<T> = {
+  gridRootRef: RefObject<HTMLDivElement | null>;
+  // 中央スクロールペイン(従来の bodyScrollRef)。縦スクロールのマスターです。
+  bodyScrollRef: RefObject<HTMLDivElement | null>;
+  // 追加(10-E): 左／右固定ペインのスクロール要素 ref です。clientX のペイン判定に使います。
+  leftPaneScrollRef: RefObject<HTMLDivElement | null>;
+  rightPaneScrollRef: RefObject<HTMLDivElement | null>;
+  pointerClientRef: RefObject<{ x: number; y: number } | null>;
+  autoScrollFrameRef: RefObject<number | null>;
+  uiState: GridUiState;
+  dispatch: Dispatch<GridUiAction>;
+  enableRangeSelection: boolean;
+  filteredRowsLength: number;
+  visibleColumnsLength: number;
+  // 追加(10-E): 3 ペインの geometry です。当たり判定はこのペインローカル座標で行います。
+  paneLayout: GridPaneLayout<T>;
+  // 追加(10-E): 各ペインで列の前に確保する先頭幅です。
+  //             左固定あり: left=rowHeaderWidth / center=0 / right=0
+  //             左固定なし: center=rowHeaderWidth（従来と完全一致）
+  leftLeadingWidth: number;
+  centerLeadingWidth: number;
+  rightLeadingWidth: number;
+  headerHeight: number;
+  rowHeight: number;
+};
+
+// 追加: pointer 系 interaction（cell/row/col selection + drag auto-scroll + window pointer sync）をまとめます。
+export const useGridPointerInteractions = <T,>({
+  gridRootRef,
+  bodyScrollRef,
+  leftPaneScrollRef,
+  rightPaneScrollRef,
+  pointerClientRef,
+  autoScrollFrameRef,
+  uiState,
+  dispatch,
+  enableRangeSelection,
+  filteredRowsLength,
+  visibleColumnsLength,
+  paneLayout,
+  leftLeadingWidth,
+  centerLeadingWidth,
+  rightLeadingWidth,
+  headerHeight,
+  rowHeight,
+}: UseGridPointerInteractionsArgs<T>) => {
+  // 変更(10-E): client 座標から rowIndex / 論理 colIndex を推定します（ペイン別）。
+  // 動作:
+  //   - 縦(row)は中央ペインがマスター。左右ペインは scrollTop 同期済みのため中央基準で十分です。
+  //   - 横(col)は clientX がどのペイン領域に入るかで判定し、各ペインのローカル x から
+  //     findLogicalIndexFromPaneOffset() で論理列 index を引きます。
+  //   - 返す col は orderedColumns 空間の論理 index です（UI state と一致）。
+  // フォールバック: pinned 列が無い場合は left/right が空のため必ず center 分岐に入り、
+  //                localX = scrollLeft + clientX - rect.left - rowHeaderWidth となって従来と一致します。
+  const getCellCoordFromClientPoint = useCallback(
+    (clientX: number, clientY: number): CellCoord | null => {
+      const centerEl = bodyScrollRef.current;
+      if (
+        !centerEl ||
+        filteredRowsLength === 0 ||
+        visibleColumnsLength === 0
+      ) {
+        return null;
+      }
+
+      // 縦方向（中央ペイン基準）。
+      const centerRect = centerEl.getBoundingClientRect();
+      const y = centerEl.scrollTop + clientY - centerRect.top - headerHeight;
+      const row = clamp(Math.floor(y / rowHeight), 0, filteredRowsLength - 1);
+
+      // 横方向（ペイン判定）。
+      let col: number | null = null;
+
+      // 左固定ペイン: 右端より左にあれば左ペイン扱い。
+      //   行ヘッダー上（localX < 0）は findLogicalIndexFromPaneOffset が先頭列へクランプします。
+      const leftEl = leftPaneScrollRef.current;
+      if (col === null && leftEl && paneLayout.left.entries.length > 0) {
+        const leftRect = leftEl.getBoundingClientRect();
+        if (clientX < leftRect.right) {
+          const localX = clientX - leftRect.left - leftLeadingWidth;
+          col = findLogicalIndexFromPaneOffset(paneLayout.left, localX);
+        }
+      }
+
+      // 右固定ペイン: 左端以降にあれば右ペイン扱い。
+      const rightEl = rightPaneScrollRef.current;
+      if (col === null && rightEl && paneLayout.right.entries.length > 0) {
+        const rightRect = rightEl.getBoundingClientRect();
+        if (clientX >= rightRect.left) {
+          const localX = clientX - rightRect.left - rightLeadingWidth;
+          col = findLogicalIndexFromPaneOffset(paneLayout.right, localX);
+        }
+      }
+
+      // それ以外は中央ペイン（水平スクロール量を加味）。
+      if (col === null && paneLayout.center.entries.length > 0) {
+        const localX =
+          centerEl.scrollLeft + clientX - centerRect.left - centerLeadingWidth;
+        col = findLogicalIndexFromPaneOffset(
+          paneLayout.center,
+          Math.max(localX, 0),
+        );
+      }
+
+      if (col === null) {
+        return null;
+      }
+
+      return {
+        row,
+        col: clamp(col, 0, visibleColumnsLength - 1),
+      };
+    },
+    [
+      bodyScrollRef,
+      leftPaneScrollRef,
+      rightPaneScrollRef,
+      filteredRowsLength,
+      visibleColumnsLength,
+      paneLayout,
+      leftLeadingWidth,
+      centerLeadingWidth,
+      rightLeadingWidth,
+      headerHeight,
+      rowHeight,
+    ],
+  );
+
+  // 追加: 現在の dragState に応じて selection を更新します。
+  const updateSelectionFromPointer = useCallback(
+    (clientX: number, clientY: number) => {
+      if (!uiState.dragState || uiState.dragState.type !== 'selection') {
+        return;
+      }
+
+      const cell = getCellCoordFromClientPoint(clientX, clientY);
+      if (!cell) {
+        return;
+      }
+
+      if (uiState.dragState.selectionKind === 'cell') {
+        dispatch(gridActions.updateSelection(cell));
+        return;
+      }
+      if (uiState.dragState.selectionKind === 'row') {
+        dispatch(gridActions.updateRowSelection(cell.row));
+        return;
+      }
+      if (uiState.dragState.selectionKind === 'col') {
+        dispatch(gridActions.updateColumnSelection(cell.col));
+      }
+    },
+    [dispatch, getCellCoordFromClientPoint, uiState.dragState],
+  );
+
+  // 追加: selection drag / column resize drag 中の window pointer イベントを処理します。
+  useEffect(() => {
+    const handleWindowPointerMove = (event: globalThis.PointerEvent) => {
+      pointerClientRef.current = { x: event.clientX, y: event.clientY };
+      if (uiState.dragState?.type === 'columnResize') {
+        dispatch(gridActions.updateColumnResize(event.clientX));
+      }
+    };
+
+    const handleWindowPointerUp = () => {
+      dispatch(gridActions.endSelection());
+      dispatch(gridActions.endColumnResize());
+    };
+
+    window.addEventListener('pointermove', handleWindowPointerMove);
+    window.addEventListener('pointerup', handleWindowPointerUp);
+    return () => {
+      window.removeEventListener('pointermove', handleWindowPointerMove);
+      window.removeEventListener('pointerup', handleWindowPointerUp);
+    };
+  }, [dispatch, pointerClientRef, uiState.dragState]);
+
+  // 追加: 範囲選択中、端に近づいたら自動スクロールします。
+  // 注記(10-E): 自動スクロールは中央ペイン(bodyScrollRef)のみが対象です。
+  //             固定ペインは横スクロールせず、縦は scrollTop 同期で追従します。
+  useEffect(() => {
+    if (uiState.dragState?.type !== 'selection') {
+      if (autoScrollFrameRef.current !== null) {
+        cancelAnimationFrame(autoScrollFrameRef.current);
+        autoScrollFrameRef.current = null;
+      }
+      return;
+    }
+
+    const EDGE_THRESHOLD = 24;
+    const SCROLL_STEP = 18;
+
+    const tick = () => {
+      const scrollElement = bodyScrollRef.current;
+      const pointer = pointerClientRef.current;
+      if (!scrollElement || !pointer) {
+        autoScrollFrameRef.current = requestAnimationFrame(tick);
+        return;
+      }
+
+      const rect = scrollElement.getBoundingClientRect();
+      let nextScrollTop = scrollElement.scrollTop;
+      let nextScrollLeft = scrollElement.scrollLeft;
+
+      if (pointer.y < rect.top + EDGE_THRESHOLD) {
+        nextScrollTop = Math.max(scrollElement.scrollTop - SCROLL_STEP, 0);
+      } else if (pointer.y > rect.bottom - EDGE_THRESHOLD) {
+        nextScrollTop = scrollElement.scrollTop + SCROLL_STEP;
+      }
+
+      if (pointer.x < rect.left + EDGE_THRESHOLD) {
+        nextScrollLeft = Math.max(scrollElement.scrollLeft - SCROLL_STEP, 0);
+      } else if (pointer.x > rect.right - EDGE_THRESHOLD) {
+        nextScrollLeft = scrollElement.scrollLeft + SCROLL_STEP;
+      }
+
+      if (
+        nextScrollTop !== scrollElement.scrollTop ||
+        nextScrollLeft !== scrollElement.scrollLeft
+      ) {
+        scrollElement.scrollTo({
+          top: nextScrollTop,
+          left: nextScrollLeft,
+          behavior: 'auto',
+        });
+        updateSelectionFromPointer(pointer.x, pointer.y);
+      }
+
+      autoScrollFrameRef.current = requestAnimationFrame(tick);
+    };
+
+    autoScrollFrameRef.current = requestAnimationFrame(tick);
+    return () => {
+      if (autoScrollFrameRef.current !== null) {
+        cancelAnimationFrame(autoScrollFrameRef.current);
+        autoScrollFrameRef.current = null;
+      }
+    };
+  }, [
+    autoScrollFrameRef,
+    bodyScrollRef,
+    pointerClientRef,
+    uiState.dragState,
+    updateSelectionFromPointer,
+  ]);
+
+  // 追加: セルクリック/ドラッグ開始時の処理です。
+  // 注記(10-E): cell はペイン内の各セルから entry.logicalIndex がそのまま渡るため、
+  //             ここはペイン非依存で正しく動作します（pinned 対応済み）。
+  const handleCellPointerDown = useCallback(
+    (cell: CellCoord, event: PointerEvent<HTMLDivElement>) => {
+      event.preventDefault();
+      if (event.button !== 0) {
+        return;
+      }
+      gridRootRef.current?.focus();
+      dispatch(gridActions.activateCell(cell));
+      if (enableRangeSelection) {
+        dispatch(gridActions.startSelection(cell));
+      }
+    },
+    [dispatch, enableRangeSelection, gridRootRef],
+  );
+
+  // 追加: selection drag 中にセルへ入ったら範囲更新します。
+  const handleCellPointerEnter = useCallback(
+    (cell: CellCoord, event: PointerEvent<HTMLDivElement>) => {
+      if (!enableRangeSelection) {
+        return;
+      }
+      if (
+        uiState.dragState?.type !== 'selection' ||
+        uiState.dragState.selectionKind !== 'cell'
+      ) {
+        return;
+      }
+      pointerClientRef.current = { x: event.clientX, y: event.clientY };
+      dispatch(gridActions.updateSelection(cell));
+    },
+    [dispatch, enableRangeSelection, pointerClientRef, uiState.dragState],
+  );
+
+  // 追加: ブラウザ標準の drag ghost を抑止します。
+  const handleNativeDragStart = useCallback(
+    (event: React.DragEvent<HTMLDivElement>) => {
+      event.preventDefault();
+    },
+    [],
+  );
+
+  // 追加: 行ヘッダー選択開始です。
+  const handleRowHeaderPointerDown = useCallback(
+    (rowIndex: number, event: PointerEvent<HTMLDivElement>) => {
+      event.preventDefault();
+      if (event.button !== 0) {
+        return;
+      }
+      gridRootRef.current?.focus();
+      dispatch(gridActions.startRowSelection(rowIndex));
+    },
+    [dispatch, gridRootRef],
+  );
+
+  // 追加: 行ヘッダードラッグ中の更新です。
+  const handleRowHeaderPointerEnter = useCallback(
+    (rowIndex: number, event: PointerEvent<HTMLDivElement>) => {
+      if (
+        uiState.dragState?.type !== 'selection' ||
+        uiState.dragState.selectionKind !== 'row'
+      ) {
+        return;
+      }
+      pointerClientRef.current = { x: event.clientX, y: event.clientY };
+      dispatch(gridActions.updateRowSelection(rowIndex));
+    },
+    [dispatch, pointerClientRef, uiState.dragState],
+  );
+
+  // 追加: 列ヘッダー選択開始です。
+  const handleColumnHeaderPointerDown = useCallback(
+    (colIndex: number, event: PointerEvent<HTMLDivElement>) => {
+      event.preventDefault();
+      if (event.button !== 0) {
+        return;
+      }
+      gridRootRef.current?.focus();
+      dispatch(gridActions.startColumnSelection(colIndex));
+    },
+    [dispatch, gridRootRef],
+  );
+
+  // 追加: 列ヘッダードラッグ中の更新です。
+  const handleColumnHeaderPointerEnter = useCallback(
+    (colIndex: number, event: PointerEvent<HTMLDivElement>) => {
+      if (
+        uiState.dragState?.type !== 'selection' ||
+        uiState.dragState.selectionKind !== 'col'
+      ) {
+        return;
+      }
+      pointerClientRef.current = { x: event.clientX, y: event.clientY };
+      dispatch(gridActions.updateColumnSelection(colIndex));
+    },
+    [dispatch, pointerClientRef, uiState.dragState],
+  );
+
+  return {
+    updateSelectionFromPointer,
+    handleCellPointerDown,
+    handleCellPointerEnter,
+    handleNativeDragStart,
+    handleRowHeaderPointerDown,
+    handleRowHeaderPointerEnter,
+    handleColumnHeaderPointerDown,
+    handleColumnHeaderPointerEnter,
+  };
+};
+
+export default useGridPointerInteractions;
+</file>
+
+<file path="src/components/spreadsheet-grid/hooks/useGridViewportSync.ts">
+import { useEffect, type RefObject } from 'react';
+import type { ActiveCellOverlayRect } from '../ActiveCellOverlay';
+import type { ColumnMeasurement } from '../logic/geometry';
+
+type VirtualizerLike = {
+  measure: () => void;
+};
+
+type UseGridViewportSyncArgs<T> = {
+  // 中央スクロールペイン(従来の bodyScrollRef)です。横/縦スクロールのマスターです。
+  bodyScrollRef: RefObject<HTMLDivElement | null>;
+  rowVirtualizer: VirtualizerLike;
+  columnVirtualizer: VirtualizerLike;
+  rowHeight: number;
+  filteredRowsLength: number;
+  // columnVirtualizer の再計測トリガー用の依存です（中身は座標計算には使いません）。
+  columnMeasurements: ColumnMeasurement<T>[];
+  // 変更(10-E): 旧 totalColumnWidth → 中央ペインの列領域合計幅です。
+  //             scroll clamp / 可視化はすべて中央ペインのローカル幅で行います。
+  centerColumnsWidth: number;
+  totalBodyHeight: number;
+  // 変更(10-E): 旧 rowHeaderWidth → 中央ペインの先頭幅(leadingWidth)です。
+  //             左固定列なし: rowHeaderWidth（従来と一致） / 左固定列あり: 0。
+  leadingWidth: number;
+  headerHeight: number;
+  // 変更(10-E): active cell が中央ペインにあるときの「中央ペインローカル矩形」です。
+  //             固定ペインにある場合は横スクロール不要なので null が渡されます。
+  activeCellRect: ActiveCellOverlayRect | null;
+};
+
+// 追加: virtualizer 再計測、content shrink 時の scroll clamp、active cell 可視化をまとめます。
+// 変更(10-E): すべての水平座標を「中央ペインローカル座標」に統一しました。
+//             固定列が無い場合は leadingWidth===rowHeaderWidth /
+//             centerColumnsWidth===totalColumnWidth となり、従来と完全に一致します。
+export const useGridViewportSync = <T,>({
+  bodyScrollRef,
+  rowVirtualizer,
+  columnVirtualizer,
+  rowHeight,
+  filteredRowsLength,
+  columnMeasurements,
+  centerColumnsWidth,
+  totalBodyHeight,
+  leadingWidth,
+  headerHeight,
+  activeCellRect,
+}: UseGridViewportSyncArgs<T>) => {
+  // 追加: 列/行サイズ変化時に virtualizer の measurement を再取得します。
+  useEffect(() => {
+    rowVirtualizer.measure();
+  }, [rowVirtualizer, rowHeight, filteredRowsLength]);
+
+  // 追加: column geometry が変わった際に horizontal virtualizer を再計測します。
+  useEffect(() => {
+    columnVirtualizer.measure();
+  }, [columnVirtualizer, columnMeasurements]);
+
+  // 追加: content サイズが縮んだ場合に scroll を clamp します。
+  useEffect(() => {
+    if (!bodyScrollRef.current) {
+      return;
+    }
+
+    const scrollElement = bodyScrollRef.current;
+    const maxScrollLeft = Math.max(
+      leadingWidth + centerColumnsWidth - scrollElement.clientWidth,
+      0,
+    );
+    const maxScrollTop = Math.max(
+      headerHeight + totalBodyHeight - scrollElement.clientHeight,
+      0,
+    );
+
+    if (scrollElement.scrollLeft > maxScrollLeft) {
+      scrollElement.scrollLeft = maxScrollLeft;
+    }
+    if (scrollElement.scrollTop > maxScrollTop) {
+      scrollElement.scrollTop = maxScrollTop;
+    }
+  }, [
+    bodyScrollRef,
+    centerColumnsWidth,
+    totalBodyHeight,
+    leadingWidth,
+    headerHeight,
+  ]);
+
+  // 追加: active cell が画面外へ出た場合に、scroll container を自動調整して常に表示領域内へ収めます。
+  // 注記(10-E): activeCellRect は中央ペインローカル座標です。中央ペイン以外（固定列）に
+  //             active cell がある場合は呼び出し側で null が渡るため、横スクロールは発生しません。
+  useEffect(() => {
+    if (!bodyScrollRef.current || !activeCellRect) {
+      return;
+    }
+
+    const scrollElement = bodyScrollRef.current;
+    const cellTop = headerHeight + activeCellRect.top;
+    const cellBottom = cellTop + activeCellRect.height;
+    const cellLeft = leadingWidth + activeCellRect.left;
+    const cellRight = cellLeft + activeCellRect.width;
+
+    const currentScrollTop = scrollElement.scrollTop;
+    const currentScrollLeft = scrollElement.scrollLeft;
+    const viewportHeight = scrollElement.clientHeight;
+    const viewportWidth = scrollElement.clientWidth;
+
+    let nextScrollTop = currentScrollTop;
+    let nextScrollLeft = currentScrollLeft;
+
+    const visibleTop = currentScrollTop + headerHeight;
+    const visibleBottom = currentScrollTop + viewportHeight;
+    if (cellTop < visibleTop) {
+      nextScrollTop = Math.max(cellTop - headerHeight, 0);
+    } else if (cellBottom > visibleBottom) {
+      nextScrollTop = Math.max(cellBottom - viewportHeight, 0);
+    }
+
+    const visibleLeft = currentScrollLeft + leadingWidth;
+    const visibleRight = currentScrollLeft + viewportWidth;
+    if (cellLeft < visibleLeft) {
+      nextScrollLeft = Math.max(cellLeft - leadingWidth, 0);
+    } else if (cellRight > visibleRight) {
+      nextScrollLeft = Math.max(cellRight - viewportWidth, 0);
+    }
+
+    if (
+      nextScrollTop !== currentScrollTop ||
+      nextScrollLeft !== currentScrollLeft
+    ) {
+      scrollElement.scrollTo({
+        top: nextScrollTop,
+        left: nextScrollLeft,
+        behavior: 'auto',
+      });
+    }
+  }, [bodyScrollRef, activeCellRect, headerHeight, leadingWidth]);
+};
+
+export default useGridViewportSync;
 </file>
 
 <file path="src/components/spreadsheet-grid/model/gridSelectors.ts">
@@ -5177,8 +5263,16 @@ const createDemoRows = (count: number): DemoRow[] =>
 const createInitialColumns = (): GridColumn<DemoRow>[] => {
   const baseColumns: GridColumn<DemoRow>[] = [
     // 追加: text / number / select の最小フィルター型を設定します。
-    { key: 'partNo', title: '品番', width: 150, filterType: 'text' },
-    { key: 'partName', title: '品名', width: 220, filterType: 'text' },
+    // 追加(10-E): frozen columns デモ。品番・品名を左固定にします（pinned: 'left'）。
+    //            これで横スクロールしても先頭 2 列が固定表示されます。
+    { key: 'partNo', title: '品番', width: 150, filterType: 'text', pinned: 'left' },
+    {
+      key: 'partName',
+      title: '品名',
+      width: 220,
+      filterType: 'text',
+      pinned: 'left',
+    },
     { key: 'qty', title: '数量', width: 90, filterType: 'number' },
     {
       key: 'unit',
@@ -5292,9 +5386,8 @@ function App() {
         rowHeaderWidth={56}
         enableRangeSelection
         enableGlobalFilter
-        // 追加: frozen columns のデモ確認用に先頭 2 列を固定します。
-        // 変更理由: 今回の sticky 実装をすぐ確認できるようにするためです。
-      
+        // 追加(10-E): frozen columns は列定義の pinned: 'left' で有効化済みです。
+        //            （createInitialColumns の partNo / partName を参照）
         canEditCell={(rowIndex, _colIndex, row, column) => {
           // 追加: デモ用に「保留」行は status 列以外を編集不可とする例です。
           if (row.status === '保留' && column.key !== 'status') {
@@ -5653,6 +5746,13 @@ export function SpreadsheetGrid<T extends object>({
   // 追加(10-B): 右固定ペインのスクロール要素 ref です。
   const rightPaneScrollRef = useRef<HTMLDivElement | null>(null);
 
+  // 追加(10-F改): 固定ペインの本体（ヘッダー以外）を transform で平行移動させるための ref です。
+  // 変更理由: scrollTop 命令同期はネイティブスクロールする中央ペインに対し 1 フレーム遅延し、
+  //           さらに固定ペイン内 sticky ヘッダーの再計算が走るため固定列がチカチカします。
+  //           本体を translate3d で動かすことで、リフロー/再計算を避けて滑らかに同期します。
+  const leftBodyRef = useRef<HTMLDivElement | null>(null);
+  const rightBodyRef = useRef<HTMLDivElement | null>(null);
+
   // ── local state ───────────────────────────────────────
   const [editorValue, setEditorValue] = useState('');
   const [isCornerHovered, setIsCornerHovered] = useState(false);
@@ -5841,13 +5941,8 @@ export function SpreadsheetGrid<T extends object>({
     [visibleColumns, uiState.columnWidths],
   );
 
-  const totalColumnWidth = useMemo(
-    () =>
-      columnMeasurements.length > 0
-        ? columnMeasurements[columnMeasurements.length - 1].end
-        : 0,
-    [columnMeasurements],
-  );
+  // 注記(10-E): columnMeasurements は columnVirtualizer の再計測トリガーとしてのみ使います。
+  //             水平座標の実計算は paneLayout（ペインローカル座標）側へ移行しました。
 
   // ── virtualizer ───────────────────────────────────────
   const rowVirtualizer = useVirtualizer({
@@ -5900,44 +5995,6 @@ export function SpreadsheetGrid<T extends object>({
   const leftRenderEntries = paneLayout.left.entries;
   const rightRenderEntries = paneLayout.right.entries;
 
-  // ── active cell rect（グローバル: viewport sync 専用） ──
-  // 注記(10-D): この activeCellRect は columnMeasurements（visibleColumns グローバル座標）
-  //             基準のままにしています。理由は useGridViewportSync が「中央ペインを
-  //             スクロールして active cell を可視化する」ために中央スクロール座標を必要と
-  //             するためです。overlay 描画には使わず、ペイン対応の activeCellPlacement
-  //             （下記）を使います。固定列なしのときは両者が一致します。
-  const activeCellRect = useMemo<ActiveCellOverlayRect | null>(() => {
-    if (!uiState.activeCell) {
-      return null;
-    }
-    const { row, col } = uiState.activeCell;
-    if (
-      row < 0 ||
-      row >= filteredRows.length ||
-      col < 0 ||
-      col >= visibleColumns.length
-    ) {
-      return null;
-    }
-    const measurement = columnMeasurements[col];
-    if (!measurement) {
-      return null;
-    }
-    const top = row * rowHeight;
-    return {
-      left: measurement.start,
-      top,
-      width: measurement.size,
-      height: rowHeight,
-    };
-  }, [
-    uiState.activeCell,
-    filteredRows.length,
-    visibleColumns.length,
-    columnMeasurements,
-    rowHeight,
-  ]);
-
   // ── active cell placement（10-D: ペイン別座標系） ──────
   // 追加(10-D): active cell が属するペインと、そのペインローカル矩形を求めます。
   //             col は logicalIndex（orderedColumns 空間）として扱い、
@@ -5969,6 +6026,18 @@ export function SpreadsheetGrid<T extends object>({
     };
   }, [uiState.activeCell, filteredRows.length, paneLayout, rowHeight]);
 
+  // 追加(10-E): viewport sync（中央ペインの自動スクロール）専用の active cell 矩形です。
+  //             active cell が中央ペインにあるときだけ「中央ペインローカル座標」で返します。
+  //             固定ペイン（left / right）にある場合は横スクロール不要なので null を返し、
+  //             誤って中央ペインを横スクロールさせないようにします。
+  const centerViewportActiveRect = useMemo<ActiveCellOverlayRect | null>(
+    () =>
+      activeCellPlacement && activeCellPlacement.pane === 'center'
+        ? activeCellPlacement.rect
+        : null,
+    [activeCellPlacement],
+  );
+
   // 追加(10-D): 指定ペインに active cell があればそのローカル矩形を、無ければ null を返します。
   const activeCellRectForPane = useCallback(
     (pane: ColumnPane): ActiveCellOverlayRect | null =>
@@ -5986,6 +6055,10 @@ export function SpreadsheetGrid<T extends object>({
   );
 
   // ── viewport sync ────────────────────────────────────
+  // 変更(10-E): 中央ペインローカル座標で同期します。
+  //   - centerColumnsWidth: 中央ペインの列領域合計幅（旧 totalColumnWidth）
+  //   - leadingWidth: 中央ペインの先頭幅（左固定なし=rowHeaderWidth / 左固定あり=0）
+  //   - activeCellRect: 中央ペインに active cell があるときだけの中央ローカル矩形
   useGridViewportSync({
     bodyScrollRef,
     rowVirtualizer,
@@ -5993,35 +6066,70 @@ export function SpreadsheetGrid<T extends object>({
     rowHeight,
     filteredRowsLength: filteredRows.length,
     columnMeasurements,
-    totalColumnWidth,
+    centerColumnsWidth: paneLayout.center.totalWidth,
     totalBodyHeight,
-    rowHeaderWidth,
+    leadingWidth: centerLeadingWidth,
     headerHeight,
-    activeCellRect,
+    activeCellRect: centerViewportActiveRect,
   });
 
-  // 追加(10-B): 中央ペインの垂直スクロールを左右固定ペインへ同期します。
-  // 変更理由: 3ペイン物理分離のため、vertical scroll は中央ペインがマスターで
-  //           左右ペインへ scrollTop を転写する必要があります。
+  // 変更(10-F改): 中央ペインの垂直スクロールを左右固定ペインへ「transform」で同期します。
+  // 変更理由: 旧実装は固定ペインの scrollTop を命令的に代入していましたが、
+  //           ネイティブスクロールする中央ペインに対して 1 フレーム遅延し、
+  //           さらに固定ペイン内 sticky ヘッダーの再計算（リフロー）が毎回走るため、
+  //           仮想行が再利用される帯で固定列だけがチカチカ（ティアリング）していました。
+  //           固定ペインの本体だけを translate3d で平行移動することで、リフローと
+  //           sticky 再計算を避け、コンポジタ処理で滑らかに同期します。
+  //           ※ ヘッダーは wrapper の外側（据え置き）なので transform の影響を受けません。
   useEffect(() => {
     const center = bodyScrollRef.current;
     if (!center) return;
 
     const syncVerticalScroll = () => {
-      const { scrollTop } = center;
-      if (leftPaneScrollRef.current) {
-        leftPaneScrollRef.current.scrollTop = scrollTop;
+      const transform = `translate3d(0, ${-center.scrollTop}px, 0)`;
+      if (leftBodyRef.current) {
+        leftBodyRef.current.style.transform = transform;
       }
-      if (rightPaneScrollRef.current) {
-        rightPaneScrollRef.current.scrollTop = scrollTop;
+      if (rightBodyRef.current) {
+        rightBodyRef.current.style.transform = transform;
       }
     };
+
+    // マウント直後・固定ペイン出現直後の初期同期です。
+    syncVerticalScroll();
 
     center.addEventListener('scroll', syncVerticalScroll, { passive: true });
     return () => {
       center.removeEventListener('scroll', syncVerticalScroll);
     };
-  }, []);
+  }, [hasLeftPane, hasRightPane]);
+
+  // 追加(10-F改): 固定ペイン上のホイール操作を中央ペインへ転送します。
+  // 変更理由: 固定ペインは overflow:hidden で自身がスクロールできず、中央ペインとは
+  //           兄弟要素のためホイールイベントが中央へ伝播しません。結果、マウスが
+  //           固定列の上にあるとき縦スクロールができませんでした。中央ペインの
+  //           scrollTop / scrollLeft を直接動かすことで、固定列上でもスクロールできます。
+  //           ※ React の onWheel はパッシブ登録で preventDefault が効かないため、
+  //             ネイティブの非パッシブリスナーとして登録します。
+  useEffect(() => {
+    const center = bodyScrollRef.current;
+    if (!center) return;
+
+    const forwardWheel = (event: WheelEvent) => {
+      center.scrollTop += event.deltaY;
+      center.scrollLeft += event.deltaX;
+      event.preventDefault();
+    };
+
+    const left = leftPaneScrollRef.current;
+    const right = rightPaneScrollRef.current;
+    left?.addEventListener('wheel', forwardWheel, { passive: false });
+    right?.addEventListener('wheel', forwardWheel, { passive: false });
+    return () => {
+      left?.removeEventListener('wheel', forwardWheel);
+      right?.removeEventListener('wheel', forwardWheel);
+    };
+  }, [hasLeftPane, hasRightPane]);
 
   // ── pointer interactions ──────────────────────────────
   const {
@@ -6036,6 +6144,9 @@ export function SpreadsheetGrid<T extends object>({
   } = useGridPointerInteractions({
     gridRootRef,
     bodyScrollRef,
+    // 追加(10-E): 固定ペインの ref を渡し、clientX のペイン判定に使います。
+    leftPaneScrollRef,
+    rightPaneScrollRef,
     pointerClientRef,
     autoScrollFrameRef,
     uiState,
@@ -6043,8 +6154,12 @@ export function SpreadsheetGrid<T extends object>({
     enableRangeSelection,
     filteredRowsLength: filteredRows.length,
     visibleColumnsLength: visibleColumns.length,
-    columnMeasurements,
-    rowHeaderWidth,
+    // 変更(10-E): グローバル columnMeasurements / rowHeaderWidth から
+    //             ペイン別 geometry + 各ペインの leadingWidth へ切り替えます。
+    paneLayout,
+    leftLeadingWidth,
+    centerLeadingWidth,
+    rightLeadingWidth,
     headerHeight,
     rowHeight,
   });
@@ -6055,7 +6170,9 @@ export function SpreadsheetGrid<T extends object>({
       rows,
       filteredRows,
       filteredRowSourceIndexes,
-      visibleColumns,
+      // 変更(10-E): copy/paste/TSV は視覚順（論理 index 空間）で扱うため orderedColumns を渡します。
+      //             selection の col は論理 index なので、indexing も orderedColumns に揃える必要があります。
+      visibleColumns: orderedColumns,
       uiState,
       readOnly,
       canEditCell,
@@ -6085,7 +6202,8 @@ export function SpreadsheetGrid<T extends object>({
   const handleCellDoubleClick = useCallback(
     (cell: CellCoord) => {
       const row = filteredRows[cell.row];
-      const column = visibleColumns[cell.col];
+      // 変更(10-E): cell.col は論理 index 空間（orderedColumns）です。
+      const column = orderedColumns[cell.col];
       if (!row || !column) {
         return;
       }
@@ -6104,14 +6222,16 @@ export function SpreadsheetGrid<T extends object>({
       setEditorValue(String(currentValue ?? ''));
       dispatch(gridActions.startEdit(cell));
     },
-    [canEditCell, dispatch, filteredRows, readOnly, visibleColumns],
+    [canEditCell, dispatch, filteredRows, readOnly, orderedColumns],
   );
 
   // ── keyboard ──────────────────────────────────────────
   const { getMovedCell, handleKeyDown } = useGridKeyboardInteractions({
     uiState,
     filteredRows,
-    visibleColumns,
+    // 変更(10-E): キーボード移動/編集開始の col は論理 index 空間。
+    //             clamp は同数なので不変、indexing 整合のため orderedColumns を渡します。
+    visibleColumns: orderedColumns,
     readOnly,
     canEditCell,
     setEditorValue,
@@ -6126,7 +6246,8 @@ export function SpreadsheetGrid<T extends object>({
   const { startEditWithValue, commitEdit, cancelEdit } = useGridEditController({
     uiState,
     rows,
-    visibleColumns,
+    // 変更(10-E): editingCell.col は論理 index 空間のため orderedColumns で indexing します。
+    visibleColumns: orderedColumns,
     filteredRowSourceIndexes,
     editorValue,
     setEditorValue,
@@ -6140,7 +6261,8 @@ export function SpreadsheetGrid<T extends object>({
   const handleCellDoubleClickWithController = useCallback(
     (cell: CellCoord) => {
       const row = filteredRows[cell.row];
-      const column = visibleColumns[cell.col];
+      // 変更(10-E): cell.col は論理 index 空間（orderedColumns）です。
+      const column = orderedColumns[cell.col];
       if (!row || !column) {
         return;
       }
@@ -6158,7 +6280,7 @@ export function SpreadsheetGrid<T extends object>({
       const currentValue = getCellValue(row, column);
       startEditWithValue(cell, String(currentValue ?? ''));
     },
-    [canEditCell, filteredRows, readOnly, startEditWithValue, visibleColumns],
+    [canEditCell, filteredRows, readOnly, startEditWithValue, orderedColumns],
   );
 
   // ── selection overlay placement（10-D: ペイン別座標系） ─
@@ -6503,19 +6625,45 @@ export function SpreadsheetGrid<T extends object>({
   // 追加(10-B): 固定ペイン共通の style です。
   // 変更理由: overflow: hidden でスクロールバーを非表示にしつつ、
   //           JS で scrollTop を同期して縦スクロールを実現します。
-  const pinnedPaneStyle = (width: number): CSSProperties => ({
+  // 変更(10-F): frozen shadow（影）＋ ペイン境界線を追加します。
+  //   - side: 'left' は右端に、'right' は左端に境界線と内向きの影を出します。
+  //   - hasContent が false（固定列なし＝width:0）のときは影/境界線を付けません。
+  //   - position: 'relative' + zIndex で中央ペイン(zIndex:1)より前面に描画し、
+  //     影が中央ペインのセルに重なって「浮いた固定列」に見えるようにします。
+  const pinnedPaneStyle = (
+    side: 'left' | 'right',
+    width: number,
+    hasContent: boolean,
+  ): CSSProperties => ({
     width,
     flexShrink: 0,
     overflow: 'hidden',
+    position: 'relative',
+    zIndex: 2,
+    ...(hasContent
+      ? side === 'left'
+        ? {
+            borderRight: '1px solid #cbd5e1',
+            boxShadow: '6px 0 8px -6px rgba(15, 23, 42, 0.35)',
+          }
+        : {
+            borderLeft: '1px solid #cbd5e1',
+            boxShadow: '-6px 0 8px -6px rgba(15, 23, 42, 0.35)',
+          }
+      : {}),
   });
 
   // 追加(10-B): 中央ペイン（従来の bodyScrollRef）の style です。
   // 変更理由: maxHeight は親 flex コンテナ側で管理するため、
   //           ここでは flex: 1 と overflow: auto のみ指定します。
+  // 変更(10-F): 固定ペインの影が中央ペインのセルに重なるよう、
+  //           中央ペインは position: 'relative' + zIndex: 1（固定ペインより背面）にします。
   const centerPaneStyle: CSSProperties = {
     flex: '1 1 auto',
     minWidth: 0,
     overflow: 'auto',
+    position: 'relative',
+    zIndex: 1,
   };
 
   // ── filter popover ────────────────────────────────────
@@ -6587,7 +6735,7 @@ export function SpreadsheetGrid<T extends object>({
           {/*   固定列が無いときは hasLeftPane=false で width:0 の空ペイン（従来どおり）。*/}
           <div
             ref={leftPaneScrollRef}
-            style={pinnedPaneStyle(leftPaneTotalWidth)}
+            style={pinnedPaneStyle('left', leftPaneTotalWidth, hasLeftPane)}
           >
             {hasLeftPane && (
               <div
@@ -6636,6 +6784,22 @@ export function SpreadsheetGrid<T extends object>({
 
                 {/* 追加(10-D): 左固定ペイン内の overlay（ペインローカル座標）。*/}
                 {/*   active cell / 選択範囲が左固定列にあるときだけ矩形が出ます。*/}
+                {/* 変更(10-F改): ヘッダー以外（overlay + body）を transform 同期用の */}
+                {/*   wrapper で包みます。この div は transform を持つため絶対配置子の   */}
+                {/*   containing block になり、中のセルは従来どおり headerHeight + start  */}
+                {/*   で配置されます。ヘッダーは wrapper の外＆高 z-index なので、上方向へ */}
+                {/*   平行移動した行はヘッダーの背面に隠れます。                          */}
+                <div
+                  ref={leftBodyRef}
+                  style={{
+                    position: 'absolute',
+                    top: 0,
+                    left: 0,
+                    width: leftPaneTotalWidth,
+                    height: headerHeight + totalBodyHeight,
+                    willChange: 'transform',
+                  }}
+                >
                 <SelectionOverlay
                   rect={selectionRectForPane('left')}
                   headerHeight={headerHeight}
@@ -6687,6 +6851,7 @@ export function SpreadsheetGrid<T extends object>({
                   onCellDoubleClick={handleCellDoubleClickWithController}
                   renderCellContent={renderCellContent}
                 />
+                </div>
               </div>
             )}
           </div>
@@ -6799,7 +6964,7 @@ export function SpreadsheetGrid<T extends object>({
           {/* 変更(10-C): 右固定列があるときだけ描画します。行ヘッダーは持ちません。*/}
           <div
             ref={rightPaneScrollRef}
-            style={pinnedPaneStyle(rightPaneTotalWidth)}
+            style={pinnedPaneStyle('right', rightPaneTotalWidth, hasRightPane)}
           >
             {hasRightPane && (
               <div
@@ -6847,6 +7012,19 @@ export function SpreadsheetGrid<T extends object>({
                 />
 
                 {/* 追加(10-D): 右固定ペイン内の overlay（ペインローカル座標）。*/}
+                {/* 変更(10-F改): 左ペインと同様に overlay + body を transform 同期用の */}
+                {/*   wrapper で包みます（rightBodyRef）。                                */}
+                <div
+                  ref={rightBodyRef}
+                  style={{
+                    position: 'absolute',
+                    top: 0,
+                    left: 0,
+                    width: rightPaneTotalWidth,
+                    height: headerHeight + totalBodyHeight,
+                    willChange: 'transform',
+                  }}
+                >
                 <SelectionOverlay
                   rect={selectionRectForPane('right')}
                   headerHeight={headerHeight}
@@ -6898,6 +7076,7 @@ export function SpreadsheetGrid<T extends object>({
                   onCellDoubleClick={handleCellDoubleClickWithController}
                   renderCellContent={renderCellContent}
                 />
+                </div>
               </div>
             )}
           </div>
