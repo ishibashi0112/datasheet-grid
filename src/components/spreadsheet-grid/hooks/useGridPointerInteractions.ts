@@ -23,8 +23,14 @@ import {
 
 type UseGridPointerInteractionsArgs<T> = {
   gridRootRef: RefObject<HTMLDivElement | null>;
-  // 中央スクロールペイン(従来の bodyScrollRef)。縦スクロールのマスターです。
+  // 中央ペイン要素です。ヒットテストの基準矩形に使います。
+  // 変更(10-G): 中央ペインはネイティブスクロールしなくなり（scrollTop/Left は常に 0）、
+  //             その getBoundingClientRect() がスクロール量を反映して移動するため、
+  //             当たり判定の式は従来のまま正しく機能します。
   bodyScrollRef: RefObject<HTMLDivElement | null>;
+  // 追加(10-G): 縦横ともにスクロールする「外側の共有スクロールコンテナ」です。
+  //             ドラッグ選択中の自動スクロールはこの要素を動かします。
+  scrollContainerRef: RefObject<HTMLDivElement | null>;
   // 追加(10-E): 左／右固定ペインのスクロール要素 ref です。clientX のペイン判定に使います。
   leftPaneScrollRef: RefObject<HTMLDivElement | null>;
   rightPaneScrollRef: RefObject<HTMLDivElement | null>;
@@ -51,6 +57,7 @@ type UseGridPointerInteractionsArgs<T> = {
 export const useGridPointerInteractions = <T,>({
   gridRootRef,
   bodyScrollRef,
+  scrollContainerRef,
   leftPaneScrollRef,
   rightPaneScrollRef,
   pointerClientRef,
@@ -69,12 +76,11 @@ export const useGridPointerInteractions = <T,>({
 }: UseGridPointerInteractionsArgs<T>) => {
   // 変更(10-E): client 座標から rowIndex / 論理 colIndex を推定します（ペイン別）。
   // 動作:
-  //   - 縦(row)は中央ペインがマスター。左右ペインは scrollTop 同期済みのため中央基準で十分です。
+  //   - 縦(row)は中央ペイン基準。中央ペインの矩形はスクロール量ぶん移動し、scrollTop は 0 のため、
+  //     scrollTop + clientY - rect.top - headerHeight がそのまま正しいコンテンツ内 y になります。
   //   - 横(col)は clientX がどのペイン領域に入るかで判定し、各ペインのローカル x から
   //     findLogicalIndexFromPaneOffset() で論理列 index を引きます。
   //   - 返す col は orderedColumns 空間の論理 index です（UI state と一致）。
-  // フォールバック: pinned 列が無い場合は left/right が空のため必ず center 分岐に入り、
-  //                localX = scrollLeft + clientX - rect.left - rowHeaderWidth となって従来と一致します。
   const getCellCoordFromClientPoint = useCallback(
     (clientX: number, clientY: number): CellCoord | null => {
       const centerEl = bodyScrollRef.current;
@@ -115,7 +121,8 @@ export const useGridPointerInteractions = <T,>({
         }
       }
 
-      // それ以外は中央ペイン（水平スクロール量を加味）。
+      // それ以外は中央ペイン。中央ペインは横スクロールしなくなった（scrollLeft===0）ため、
+      // 移動する rect.left を使うことで水平スクロール量が自動的に反映されます。
       if (col === null && paneLayout.center.entries.length > 0) {
         const localX =
           centerEl.scrollLeft + clientX - centerRect.left - centerLeadingWidth;
@@ -199,8 +206,8 @@ export const useGridPointerInteractions = <T,>({
   }, [dispatch, pointerClientRef, uiState.dragState]);
 
   // 追加: 範囲選択中、端に近づいたら自動スクロールします。
-  // 注記(10-E): 自動スクロールは中央ペイン(bodyScrollRef)のみが対象です。
-  //             固定ペインは横スクロールせず、縦は scrollTop 同期で追従します。
+  // 変更(10-G): スクロール対象を中央ペインから「共有スクロールコンテナ」へ。
+  //             縦横ともにこのコンテナがネイティブスクロールするため、固定ペインも一緒に追従します。
   useEffect(() => {
     if (uiState.dragState?.type !== 'selection') {
       if (autoScrollFrameRef.current !== null) {
@@ -214,7 +221,7 @@ export const useGridPointerInteractions = <T,>({
     const SCROLL_STEP = 18;
 
     const tick = () => {
-      const scrollElement = bodyScrollRef.current;
+      const scrollElement = scrollContainerRef.current;
       const pointer = pointerClientRef.current;
       if (!scrollElement || !pointer) {
         autoScrollFrameRef.current = requestAnimationFrame(tick);
@@ -261,7 +268,7 @@ export const useGridPointerInteractions = <T,>({
     };
   }, [
     autoScrollFrameRef,
-    bodyScrollRef,
+    scrollContainerRef,
     pointerClientRef,
     uiState.dragState,
     updateSelectionFromPointer,

@@ -110,17 +110,18 @@ export function SpreadsheetGrid<T extends object>({
   const bodyScrollRef = useRef<HTMLDivElement | null>(null);
   const editorActionGuardRef = useRef(false);
 
-  // 追加(10-B): 左固定ペインのスクロール要素 ref です。
-  const leftPaneScrollRef = useRef<HTMLDivElement | null>(null);
-  // 追加(10-B): 右固定ペインのスクロール要素 ref です。
-  const rightPaneScrollRef = useRef<HTMLDivElement | null>(null);
+  // 追加(10-G): 縦横ともにネイティブスクロールする「共有スクロールコンテナ」の ref です。
+  // 変更理由: 中央ペインだけをネイティブスクロールさせ、左右固定ペインを JS の transform で
+  //           追従させる方式では、コンポジタ(中央)とメインスレッド(固定)が同一フレームで
+  //           一致せず、固定列がチカチカ（ティアリング）します。縦横スクロールを 1 つの要素へ
+  //           集約し、固定列は position: sticky で横方向だけ留めることで、全ペインが同一
+  //           ネイティブスクロールで動き、ズレが原理的に発生しなくなります。
+  const scrollContainerRef = useRef<HTMLDivElement | null>(null);
 
-  // 追加(10-F改): 固定ペインの本体（ヘッダー以外）を transform で平行移動させるための ref です。
-  // 変更理由: scrollTop 命令同期はネイティブスクロールする中央ペインに対し 1 フレーム遅延し、
-  //           さらに固定ペイン内 sticky ヘッダーの再計算が走るため固定列がチカチカします。
-  //           本体を translate3d で動かすことで、リフロー/再計算を避けて滑らかに同期します。
-  const leftBodyRef = useRef<HTMLDivElement | null>(null);
-  const rightBodyRef = useRef<HTMLDivElement | null>(null);
+  // 追加(10-B): 左固定ペインの要素 ref です（clientX のペイン判定に使います）。
+  const leftPaneScrollRef = useRef<HTMLDivElement | null>(null);
+  // 追加(10-B): 右固定ペインの要素 ref です（clientX のペイン判定に使います）。
+  const rightPaneScrollRef = useRef<HTMLDivElement | null>(null);
 
   // ── local state ───────────────────────────────────────
   const [editorValue, setEditorValue] = useState('');
@@ -190,6 +191,12 @@ export function SpreadsheetGrid<T extends object>({
   // 追加(10-C): 中央ペインの内側コンテンツ幅です。
   //             固定列なしのときは rowHeaderWidth + totalColumnWidth となり従来と同一です。
   const centerContentWidth = centerLeadingWidth + paneLayout.center.totalWidth;
+
+  // 追加(10-G): 共有スクロールコンテナの内側コンテンツ全幅です。
+  //             = 左固定ペイン幅 + 中央ペイン幅 + 右固定ペイン幅。
+  //             横スクロール範囲・scroll clamp・active cell 可視化に使います。
+  const totalScrollWidth =
+    leftPaneTotalWidth + centerContentWidth + rightPaneTotalWidth;
 
   // ── filter popover ────────────────────────────────────
   const {
@@ -316,10 +323,21 @@ export function SpreadsheetGrid<T extends object>({
   // ── virtualizer ───────────────────────────────────────
   const rowVirtualizer = useVirtualizer({
     count: filteredRows.length,
-    getScrollElement: () => bodyScrollRef.current,
+    getScrollElement: () => scrollContainerRef.current,
     estimateSize: () => rowHeight,
-    overscan: 8,
+    // 変更(A-2): overscan を 8 → 20 に増やします。
+    //   useFlushSync を切る代わりに、上下に多めの行を先回りで描画しておくことで、
+    //   速いフリックでネイティブスクロールが描画ウィンドウを追い越しても、端の行が
+    //   空になる前に既に用意済みの状態にして「チカチカ（端の行が一瞬抜ける）」を隠します。
+    overscan: 20,
+    // 変更(A-2): useFlushSync:true は毎スクロールティックで重い同期再レンダー＋強制 paint を
+    //   発生させ、5000×29・メモ化なしの状況ではフレーム予算を超えてかえってカクつき/チカチカの
+    //   一因になっていました。A-1(行の memo 化)で 1 フレームの仕事量を端の行だけに減らしたうえで、
+    //   ここは false（通常の非同期更新）に戻し、遅延ぶんは上の overscan で吸収します。
     useFlushSync: false,
+    // 変更(10-G): スクロール要素が共有コンテナになったため、行リストの開始位置は
+    //             sticky ヘッダーぶん下にあります。scrollMargin で先頭オフセットを補正します。
+    scrollMargin: headerHeight,
   });
 
   // 変更(10-C): 列の仮想化は「中央ペインの列エントリ」に対して行います。
@@ -333,13 +351,19 @@ export function SpreadsheetGrid<T extends object>({
   const columnVirtualizer = useVirtualizer({
     horizontal: true,
     count: centerEntries.length,
-    getScrollElement: () => bodyScrollRef.current,
+    getScrollElement: () => scrollContainerRef.current,
     estimateSize: (index) =>
       centerEntries[index]?.paneLocalSize ??
       centerEntries[index]?.column.width ??
       120,
-    overscan: 4,
+    // 変更(A-2): 横方向も同様に overscan を 4 → 8 に増やし、useFlushSync は false に戻します。
+    //   （縦スクロールが主訴ですが、挙動を縦横で揃えておきます。横スクロールが速い場合も
+    //     端の列が一瞬抜けるのを overscan で吸収します。）
+    overscan: 8,
     useFlushSync: false,
+    // 変更(10-G): 中央ペインは左固定ペインぶん右にずれて始まるため、その先頭オフセットを
+    //             scrollMargin で補正します（左固定なし時は 0 で従来と一致）。
+    scrollMargin: leftPaneTotalWidth,
   });
 
   const virtualRows = rowVirtualizer.getVirtualItems();
@@ -424,81 +448,30 @@ export function SpreadsheetGrid<T extends object>({
   );
 
   // ── viewport sync ────────────────────────────────────
-  // 変更(10-E): 中央ペインローカル座標で同期します。
-  //   - centerColumnsWidth: 中央ペインの列領域合計幅（旧 totalColumnWidth）
-  //   - leadingWidth: 中央ペインの先頭幅（左固定なし=rowHeaderWidth / 左固定あり=0）
-  //   - activeCellRect: 中央ペインに active cell があるときだけの中央ローカル矩形
+  // 変更(10-G): スクロールのマスターを中央ペインから「共有スクロールコンテナ」へ移行しました。
+  //   - totalScrollWidth: コンテンツ全幅（左固定 + 中央 + 右固定）
+  //   - leftPaneWidth / rightPaneWidth: sticky 固定ペインに隠れない領域へ active cell を収めるため
+  //   - centerLeadingWidth: 中央ペインの先頭幅（左固定なし=rowHeaderWidth / 左固定あり=0）
   useGridViewportSync({
-    bodyScrollRef,
+    scrollRef: scrollContainerRef,
     rowVirtualizer,
     columnVirtualizer,
     rowHeight,
     filteredRowsLength: filteredRows.length,
     columnMeasurements,
-    centerColumnsWidth: paneLayout.center.totalWidth,
+    totalScrollWidth,
     totalBodyHeight,
-    leadingWidth: centerLeadingWidth,
     headerHeight,
+    leftPaneWidth: leftPaneTotalWidth,
+    rightPaneWidth: rightPaneTotalWidth,
+    centerLeadingWidth,
     activeCellRect: centerViewportActiveRect,
   });
 
-  // 変更(10-F改): 中央ペインの垂直スクロールを左右固定ペインへ「transform」で同期します。
-  // 変更理由: 旧実装は固定ペインの scrollTop を命令的に代入していましたが、
-  //           ネイティブスクロールする中央ペインに対して 1 フレーム遅延し、
-  //           さらに固定ペイン内 sticky ヘッダーの再計算（リフロー）が毎回走るため、
-  //           仮想行が再利用される帯で固定列だけがチカチカ（ティアリング）していました。
-  //           固定ペインの本体だけを translate3d で平行移動することで、リフローと
-  //           sticky 再計算を避け、コンポジタ処理で滑らかに同期します。
-  //           ※ ヘッダーは wrapper の外側（据え置き）なので transform の影響を受けません。
-  useEffect(() => {
-    const center = bodyScrollRef.current;
-    if (!center) return;
-
-    const syncVerticalScroll = () => {
-      const transform = `translate3d(0, ${-center.scrollTop}px, 0)`;
-      if (leftBodyRef.current) {
-        leftBodyRef.current.style.transform = transform;
-      }
-      if (rightBodyRef.current) {
-        rightBodyRef.current.style.transform = transform;
-      }
-    };
-
-    // マウント直後・固定ペイン出現直後の初期同期です。
-    syncVerticalScroll();
-
-    center.addEventListener('scroll', syncVerticalScroll, { passive: true });
-    return () => {
-      center.removeEventListener('scroll', syncVerticalScroll);
-    };
-  }, [hasLeftPane, hasRightPane]);
-
-  // 追加(10-F改): 固定ペイン上のホイール操作を中央ペインへ転送します。
-  // 変更理由: 固定ペインは overflow:hidden で自身がスクロールできず、中央ペインとは
-  //           兄弟要素のためホイールイベントが中央へ伝播しません。結果、マウスが
-  //           固定列の上にあるとき縦スクロールができませんでした。中央ペインの
-  //           scrollTop / scrollLeft を直接動かすことで、固定列上でもスクロールできます。
-  //           ※ React の onWheel はパッシブ登録で preventDefault が効かないため、
-  //             ネイティブの非パッシブリスナーとして登録します。
-  useEffect(() => {
-    const center = bodyScrollRef.current;
-    if (!center) return;
-
-    const forwardWheel = (event: WheelEvent) => {
-      center.scrollTop += event.deltaY;
-      center.scrollLeft += event.deltaX;
-      event.preventDefault();
-    };
-
-    const left = leftPaneScrollRef.current;
-    const right = rightPaneScrollRef.current;
-    left?.addEventListener('wheel', forwardWheel, { passive: false });
-    right?.addEventListener('wheel', forwardWheel, { passive: false });
-    return () => {
-      left?.removeEventListener('wheel', forwardWheel);
-      right?.removeEventListener('wheel', forwardWheel);
-    };
-  }, [hasLeftPane, hasRightPane]);
+  // 注記(10-G): 旧実装にあった「中央ペインの scrollTop を transform で固定ペインへ同期する
+  //             useEffect」と「固定ペイン上の wheel を中央ペインへ転送する useEffect」は、
+  //             縦横スクロールの 1 本化により不要になったため削除しました。
+  //             固定列は position: sticky で横方向だけ留まり、縦は共有スクロールで一緒に動きます。
 
   // ── pointer interactions ──────────────────────────────
   const {
@@ -513,6 +486,8 @@ export function SpreadsheetGrid<T extends object>({
   } = useGridPointerInteractions({
     gridRootRef,
     bodyScrollRef,
+    // 追加(10-G): 自動スクロールは共有スクロールコンテナを動かします。
+    scrollContainerRef,
     // 追加(10-E): 固定ペインの ref を渡し、clientX のペイン判定に使います。
     leftPaneScrollRef,
     rightPaneScrollRef,
@@ -958,56 +933,79 @@ export function SpreadsheetGrid<T extends object>({
     boxShadow: '0 4px 14px rgba(15, 23, 42, 0.04)',
   };
 
-  const headerCellBaseStyle: CSSProperties = {
-    display: 'flex',
-    alignItems: 'center',
-    gap: 8,
-    boxSizing: 'border-box',
-    padding: '0 10px',
-    borderRight: '1px solid #e5e7eb',
-    borderBottom: '1px solid #d7dce3',
-    backgroundColor: '#f8fafc',
-    fontSize: 13,
-    fontWeight: 600,
-    color: '#334155',
-  };
+  // 変更(A-1): style オブジェクトを useMemo で安定化します。
+  //   これらは GridBodyRow(memo) に props として渡るため、毎レンダーで新しい参照を作ると
+  //   memo の shallow 比較が必ず不一致になり、行のスキップが効かなくなります。
+  const headerCellBaseStyle: CSSProperties = useMemo(
+    () => ({
+      display: 'flex',
+      alignItems: 'center',
+      gap: 8,
+      boxSizing: 'border-box',
+      padding: '0 10px',
+      borderRight: '1px solid #e5e7eb',
+      borderBottom: '1px solid #d7dce3',
+      backgroundColor: '#f8fafc',
+      fontSize: 13,
+      fontWeight: 600,
+      color: '#334155',
+    }),
+    [],
+  );
 
-  const rowHeaderCellStyle: CSSProperties = {
-    ...headerCellBaseStyle,
-    justifyContent: 'center',
-    width: rowHeaderWidth,
-    minWidth: rowHeaderWidth,
-    position: 'sticky',
-    left: 0,
-    zIndex: 1,
-  };
+  const rowHeaderCellStyle: CSSProperties = useMemo(
+    () => ({
+      ...headerCellBaseStyle,
+      justifyContent: 'center',
+      width: rowHeaderWidth,
+      minWidth: rowHeaderWidth,
+      position: 'sticky',
+      left: 0,
+      zIndex: 1,
+    }),
+    [headerCellBaseStyle, rowHeaderWidth],
+  );
 
-  // 追加(10-B): 3ペイン flex コンテナの style です。
-  // 変更理由: maxHeight を従来の bodyScrollRef から flex コンテナへ移し、
-  //           左右ペインも同じ高さ制約に収めるためです。
-  const paneContainerStyle: CSSProperties = {
-    display: 'flex',
+  // 追加(10-G): 共有スクロールコンテナ（縦横ともにネイティブスクロール）の style です。
+  // 変更理由: スクロールを 1 つの要素に集約し、固定列は position: sticky で横方向だけ留めます。
+  //           これにより全ペインが同一スクロールで動き、固定列のチカチカ（ティアリング）が
+  //           原理的に消えます。
+  const scrollContainerStyle: CSSProperties = {
     maxHeight: 480,
-    overflow: 'hidden',
+    overflow: 'auto',
+    position: 'relative',
+  };
+
+  // 追加(10-G): スクロールコンテンツ本体（3 ペインを横並びにする flex 行）の style です。
+  //             width=コンテンツ全幅 / height=ヘッダー+ボディ全高 を明示し、
+  //             縦横のスクロール範囲を確定させます。
+  const innerRowStyle: CSSProperties = {
+    display: 'flex',
+    width: totalScrollWidth,
+    minWidth: totalScrollWidth,
+    height: headerHeight + totalBodyHeight,
   };
 
   // 追加(10-B): 固定ペイン共通の style です。
-  // 変更理由: overflow: hidden でスクロールバーを非表示にしつつ、
-  //           JS で scrollTop を同期して縦スクロールを実現します。
-  // 変更(10-F): frozen shadow（影）＋ ペイン境界線を追加します。
-  //   - side: 'left' は右端に、'right' は左端に境界線と内向きの影を出します。
-  //   - hasContent が false（固定列なし＝width:0）のときは影/境界線を付けません。
-  //   - position: 'relative' + zIndex で中央ペイン(zIndex:1)より前面に描画し、
-  //     影が中央ペインのセルに重なって「浮いた固定列」に見えるようにします。
+  // 変更(10-G): position: sticky で横方向だけ留めます（縦は共有スクロールで一緒に動きます）。
+  //   - side: 'left' は left:0、'right' は right:0 でビューポート端へ貼り付きます。
+  //   - 固定ペイン自身には overflow を付けません。overflow を付けると独自のスクロール
+  //     コンテナ化／sticky 破綻を招くためです。固定列は内容幅ぴったりで横へはみ出さないので
+  //     clip は不要です。
+  //   - frozen shadow（影）＋ ペイン境界線は従来どおり付けます（hasContent のときのみ）。
+  //   - zIndex で中央ペイン(zIndex:1)より前面に描画し、影が中央ペインのセルに重なって
+  //     「浮いた固定列」に見えるようにします。
   const pinnedPaneStyle = (
     side: 'left' | 'right',
     width: number,
     hasContent: boolean,
   ): CSSProperties => ({
+    position: 'sticky',
+    ...(side === 'left' ? { left: 0 } : { right: 0 }),
     width,
+    minWidth: width,
     flexShrink: 0,
-    overflow: 'hidden',
-    position: 'relative',
+    alignSelf: 'stretch',
     zIndex: 2,
     ...(hasContent
       ? side === 'left'
@@ -1022,15 +1020,14 @@ export function SpreadsheetGrid<T extends object>({
       : {}),
   });
 
-  // 追加(10-B): 中央ペイン（従来の bodyScrollRef）の style です。
-  // 変更理由: maxHeight は親 flex コンテナ側で管理するため、
-  //           ここでは flex: 1 と overflow: auto のみ指定します。
-  // 変更(10-F): 固定ペインの影が中央ペインのセルに重なるよう、
-  //           中央ペインは position: 'relative' + zIndex: 1（固定ペインより背面）にします。
+  // 追加(10-B): 中央ペインの style です。
+  // 変更(10-G): 自前のスクロールは持たず、固定幅(centerContentWidth)で並べます。
+  //           縦横スクロールは外側の共有コンテナが担うため overflow は指定しません。
+  //           固定ペインの影が重なるよう position: relative + zIndex: 1（固定ペインより背面）。
   const centerPaneStyle: CSSProperties = {
-    flex: '1 1 auto',
-    minWidth: 0,
-    overflow: 'auto',
+    width: centerContentWidth,
+    minWidth: centerContentWidth,
+    flexShrink: 0,
     position: 'relative',
     zIndex: 1,
   };
@@ -1093,11 +1090,12 @@ export function SpreadsheetGrid<T extends object>({
         onKeyDown={isFilterPopoverOpen ? undefined : handleKeyDown}
         onPaste={isFilterPopoverOpen ? undefined : handlePaste}
       >
-        {/* ── 追加(10-B): 3ペイン flex コンテナ ────────────── */}
-        {/* 変更理由: AG Grid 互換の物理 DOM 分離レイアウトです。    */}
-        {/*   pinned 列がない場合は左右ペインが width:0 で非表示、  */}
-        {/*   中央ペインが flex:1 で従来と同じ見た目になります。    */}
-        <div style={paneContainerStyle}>
+        {/* ── 変更(10-G): 縦横スクロールを 1 本化した共有スクロールコンテナ ── */}
+        {/*   旧: 中央ペインのみ overflow:auto + 左右ペインを JS の transform で同期     */}
+        {/*   新: 外側コンテナが縦横ともネイティブスクロール / 固定列は position: sticky  */}
+        {/*   pinned 列がない場合は左右ペインが width:0 で非表示、中央ペインのみ表示。     */}
+        <div ref={scrollContainerRef} style={scrollContainerStyle}>
+          <div style={innerRowStyle}>
 
           {/* ── 左固定ペイン ── */}
           {/* 変更(10-C): 左固定列があるときだけヘッダー・ボディ・行ヘッダーを描画します。*/}
@@ -1153,20 +1151,17 @@ export function SpreadsheetGrid<T extends object>({
 
                 {/* 追加(10-D): 左固定ペイン内の overlay（ペインローカル座標）。*/}
                 {/*   active cell / 選択範囲が左固定列にあるときだけ矩形が出ます。*/}
-                {/* 変更(10-F改): ヘッダー以外（overlay + body）を transform 同期用の */}
-                {/*   wrapper で包みます。この div は transform を持つため絶対配置子の   */}
-                {/*   containing block になり、中のセルは従来どおり headerHeight + start  */}
-                {/*   で配置されます。ヘッダーは wrapper の外＆高 z-index なので、上方向へ */}
-                {/*   平行移動した行はヘッダーの背面に隠れます。                          */}
+                {/* 変更(10-G): overlay + body をまとめる絶対配置レイヤーです。       */}
+                {/*   transform 同期は廃止し、縦スクロールは共有コンテナが担います。  */}
+                {/*   この div が絶対配置子の containing block となり、中のセルは        */}
+                {/*   headerHeight + start で配置され、sticky ヘッダーの背面を流れます。*/}
                 <div
-                  ref={leftBodyRef}
                   style={{
                     position: 'absolute',
                     top: 0,
                     left: 0,
                     width: leftPaneTotalWidth,
                     height: headerHeight + totalBodyHeight,
-                    willChange: 'transform',
                   }}
                 >
                 <SelectionOverlay
@@ -1200,7 +1195,6 @@ export function SpreadsheetGrid<T extends object>({
                   virtualRows={virtualRows}
                   virtualRowIndexes={virtualRowIndexes}
                   renderEntries={leftRenderEntries}
-                  headerHeight={headerHeight}
                   rowHeight={rowHeight}
                   rowHeaderCellStyle={rowHeaderCellStyle}
                   hoveredRowIndex={hoveredRowIndex}
@@ -1225,7 +1219,9 @@ export function SpreadsheetGrid<T extends object>({
             )}
           </div>
 
-          {/* ── 中央スクロールペイン（従来の bodyScrollRef） ── */}
+          {/* ── 中央ペイン ── */}
+          {/* 変更(10-G): 自前のスクロールは持たず、共有コンテナのスクロールに乗ります。   */}
+          {/*   bodyScrollRef はヒットテストの基準矩形としてのみ使用します（scrollTop/Left は 0）。*/}
           {/* 変更(10-C): 行ヘッダーは左固定列が無いときだけ中央が持ちます（従来と同一）。*/}
           <div
             ref={bodyScrollRef}
@@ -1306,7 +1302,6 @@ export function SpreadsheetGrid<T extends object>({
                 virtualRows={virtualRows}
                 virtualRowIndexes={virtualRowIndexes}
                 renderEntries={centerRenderEntries}
-                headerHeight={headerHeight}
                 rowHeight={rowHeight}
                 rowHeaderCellStyle={rowHeaderCellStyle}
                 hoveredRowIndex={hoveredRowIndex}
@@ -1381,17 +1376,15 @@ export function SpreadsheetGrid<T extends object>({
                 />
 
                 {/* 追加(10-D): 右固定ペイン内の overlay（ペインローカル座標）。*/}
-                {/* 変更(10-F改): 左ペインと同様に overlay + body を transform 同期用の */}
-                {/*   wrapper で包みます（rightBodyRef）。                                */}
+                {/* 変更(10-G): 左ペインと同様、overlay + body をまとめる絶対配置レイヤーです。*/}
+                {/*   transform 同期は廃止し、縦スクロールは共有コンテナが担います。         */}
                 <div
-                  ref={rightBodyRef}
                   style={{
                     position: 'absolute',
                     top: 0,
                     left: 0,
                     width: rightPaneTotalWidth,
                     height: headerHeight + totalBodyHeight,
-                    willChange: 'transform',
                   }}
                 >
                 <SelectionOverlay
@@ -1425,7 +1418,6 @@ export function SpreadsheetGrid<T extends object>({
                   virtualRows={virtualRows}
                   virtualRowIndexes={virtualRowIndexes}
                   renderEntries={rightRenderEntries}
-                  headerHeight={headerHeight}
                   rowHeight={rowHeight}
                   rowHeaderCellStyle={rowHeaderCellStyle}
                   hoveredRowIndex={hoveredRowIndex}
@@ -1450,8 +1442,10 @@ export function SpreadsheetGrid<T extends object>({
             )}
           </div>
 
+          </div>
+          {/* ── /スクロールコンテンツ本体（inner flex row） ── */}
         </div>
-        {/* ── /3ペイン flex コンテナ ── */}
+        {/* ── /共有スクロールコンテナ ── */}
       </div>
 
       {resolvedBottomBar}
