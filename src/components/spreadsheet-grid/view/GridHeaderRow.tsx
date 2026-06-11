@@ -1,9 +1,11 @@
 import type { CSSProperties, PointerEvent } from 'react';
-import { selectIsColumnSelected } from '../model/gridSelectors';
+// 変更(11-A): uiState 丸ごと依存を撤廃し、正規化済み SelectionSnapshot を受け取ります。
+// 変更理由: GridBodyRow と同じく、uiState のあらゆる更新で props が変わるのを防ぎ、
+//           将来ヘッダー行を memo 化する際の布石にもなります。
+import type { SelectionSnapshot } from '../model/gridSelectors';
 import type {
   GridColumn,
   GridSortState,
-  GridUiState,
 } from '../model/gridTypes';
 // 変更(10-C): 列座標を ColumnMeasurement(グローバル) から
 //             PaneColumnEntry(ペインローカル) へ切り替えます。
@@ -37,7 +39,8 @@ type GridHeaderRowProps<T> = {
   renderEntries: PaneColumnEntry<T>[];
   // 注記(10-C): hoveredColumnIndex / 各種 colIndex は entry.logicalIndex 空間です。
   hoveredColumnIndex: number | null;
-  uiState: GridUiState;
+  // 変更(11-A): 列選択判定用の正規化済みスナップショットです(uiState の置き換え)。
+  selectionSnapshot: SelectionSnapshot;
   columnFilterValues: Record<string, unknown>;
   sortState: GridSortState;
   getHeaderActionButtonStyle: (isActive: boolean) => CSSProperties;
@@ -84,7 +87,7 @@ export function GridHeaderRow<T>({
   visibleColumnsLength,
   renderEntries,
   hoveredColumnIndex,
-  uiState,
+  selectionSnapshot,
   columnFilterValues,
   sortState,
   getHeaderActionButtonStyle,
@@ -165,7 +168,12 @@ export function GridHeaderRow<T>({
 
         const isColumnFiltered =
           String(columnFilterValues[column.key] ?? '').trim().length > 0;
-        const isColumnSelected = selectIsColumnSelected(uiState, colIndex);
+        // 変更(11-A): selectIsColumnSelected(uiState, ...) と等価の判定を
+        //             SelectionSnapshot のプリミティブ比較で行います。
+        const isColumnSelected =
+          selectionSnapshot.kind === 'col' &&
+          colIndex >= selectionSnapshot.startCol &&
+          colIndex <= selectionSnapshot.endCol;
 
         return (
           <div

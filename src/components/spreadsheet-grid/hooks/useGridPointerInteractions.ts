@@ -1,6 +1,7 @@
 import {
   useCallback,
   useEffect,
+  useRef,
   type Dispatch,
   type PointerEvent,
   type RefObject,
@@ -74,6 +75,17 @@ export const useGridPointerInteractions = <T,>({
   headerHeight,
   rowHeight,
 }: UseGridPointerInteractionsArgs<T>) => {
+  // 追加(11-A2): dragState の最新値を ref で保持します(latest-ref パターン)。
+  // 変更理由: enter 系ハンドラ(handleCellPointerEnter 等)が uiState.dragState を
+  //           useCallback の依存に持つと、ドラッグ開始/終了のたびにハンドラの参照が
+  //           変わり、props として受け取る GridBodyRow(memo) が全行で再レンダー
+  //           されていました(クリック 1 回 = dragState が 2 回遷移 = 全行 ×2)。
+  //           ハンドラは ref 経由で最新の dragState を読むことで、参照を恒久的に
+  //           安定させます。render 中の代入は「最新値の読み出し専用 ref」という
+  //           標準的な latest-ref 用法であり、レンダー結果には影響しません。
+  const dragStateRef = useRef(uiState.dragState);
+  dragStateRef.current = uiState.dragState;
+
   // 変更(10-E): client 座標から rowIndex / 論理 colIndex を推定します（ペイン別）。
   // 動作:
   //   - 縦(row)は中央ペイン基準。中央ペインの矩形はスクロール量ぶん移動し、scrollTop は 0 のため、
@@ -157,9 +169,13 @@ export const useGridPointerInteractions = <T,>({
   );
 
   // 追加: 現在の dragState に応じて selection を更新します。
+  // 変更(11-A2): dragState は ref から読み、useCallback 依存から外します。
+  //              これにより本関数の参照が安定し、これを依存に持つ自動スクロール
+  //              effect の貼り直しも dragState 遷移時のみで済みます。
   const updateSelectionFromPointer = useCallback(
     (clientX: number, clientY: number) => {
-      if (!uiState.dragState || uiState.dragState.type !== 'selection') {
+      const dragState = dragStateRef.current;
+      if (!dragState || dragState.type !== 'selection') {
         return;
       }
 
@@ -168,19 +184,19 @@ export const useGridPointerInteractions = <T,>({
         return;
       }
 
-      if (uiState.dragState.selectionKind === 'cell') {
+      if (dragState.selectionKind === 'cell') {
         dispatch(gridActions.updateSelection(cell));
         return;
       }
-      if (uiState.dragState.selectionKind === 'row') {
+      if (dragState.selectionKind === 'row') {
         dispatch(gridActions.updateRowSelection(cell.row));
         return;
       }
-      if (uiState.dragState.selectionKind === 'col') {
+      if (dragState.selectionKind === 'col') {
         dispatch(gridActions.updateColumnSelection(cell.col));
       }
     },
-    [dispatch, getCellCoordFromClientPoint, uiState.dragState],
+    [dispatch, getCellCoordFromClientPoint],
   );
 
   // 追加: selection drag / column resize drag 中の window pointer イベントを処理します。
@@ -293,21 +309,25 @@ export const useGridPointerInteractions = <T,>({
   );
 
   // 追加: selection drag 中にセルへ入ったら範囲更新します。
+  // 変更(11-A2): dragState を ref から読み、依存から外して参照を恒久安定化します。
+  //              本ハンドラは GridBodyRow(memo) の props のため、参照の安定が
+  //              そのまま「全行再レンダーの回避」に直結します。
   const handleCellPointerEnter = useCallback(
     (cell: CellCoord, event: PointerEvent<HTMLDivElement>) => {
       if (!enableRangeSelection) {
         return;
       }
+      const dragState = dragStateRef.current;
       if (
-        uiState.dragState?.type !== 'selection' ||
-        uiState.dragState.selectionKind !== 'cell'
+        dragState?.type !== 'selection' ||
+        dragState.selectionKind !== 'cell'
       ) {
         return;
       }
       pointerClientRef.current = { x: event.clientX, y: event.clientY };
       dispatch(gridActions.updateSelection(cell));
     },
-    [dispatch, enableRangeSelection, pointerClientRef, uiState.dragState],
+    [dispatch, enableRangeSelection, pointerClientRef],
   );
 
   // 追加: ブラウザ標準の drag ghost を抑止します。
@@ -332,18 +352,20 @@ export const useGridPointerInteractions = <T,>({
   );
 
   // 追加: 行ヘッダードラッグ中の更新です。
+  // 変更(11-A2): dragState を ref から読み、依存から外します(理由は上と同じ)。
   const handleRowHeaderPointerEnter = useCallback(
     (rowIndex: number, event: PointerEvent<HTMLDivElement>) => {
+      const dragState = dragStateRef.current;
       if (
-        uiState.dragState?.type !== 'selection' ||
-        uiState.dragState.selectionKind !== 'row'
+        dragState?.type !== 'selection' ||
+        dragState.selectionKind !== 'row'
       ) {
         return;
       }
       pointerClientRef.current = { x: event.clientX, y: event.clientY };
       dispatch(gridActions.updateRowSelection(rowIndex));
     },
-    [dispatch, pointerClientRef, uiState.dragState],
+    [dispatch, pointerClientRef],
   );
 
   // 追加: 列ヘッダー選択開始です。
@@ -360,18 +382,20 @@ export const useGridPointerInteractions = <T,>({
   );
 
   // 追加: 列ヘッダードラッグ中の更新です。
+  // 変更(11-A2): dragState を ref から読み、依存から外します(理由は上と同じ)。
   const handleColumnHeaderPointerEnter = useCallback(
     (colIndex: number, event: PointerEvent<HTMLDivElement>) => {
+      const dragState = dragStateRef.current;
       if (
-        uiState.dragState?.type !== 'selection' ||
-        uiState.dragState.selectionKind !== 'col'
+        dragState?.type !== 'selection' ||
+        dragState.selectionKind !== 'col'
       ) {
         return;
       }
       pointerClientRef.current = { x: event.clientX, y: event.clientY };
       dispatch(gridActions.updateColumnSelection(colIndex));
     },
-    [dispatch, pointerClientRef, uiState.dragState],
+    [dispatch, pointerClientRef],
   );
 
   return {

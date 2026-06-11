@@ -15,14 +15,10 @@ import { useVirtualizer } from '@tanstack/react-virtual';
 import { gridActions } from './model/gridActions';
 import { createInitialGridUiState, gridUiReducer } from './model/gridReducer';
 import {
+  buildSelectionSnapshot,
   normalizeCellRange,
   normalizeColumnRange,
   normalizeRowRange,
-  selectColumnWidth,
-  selectGlobalFilter,
-  selectIsActiveCell,
-  selectIsCellSelected,
-  selectIsEditingCell,
 } from './model/gridSelectors';
 import SelectionOverlay, {
   type SelectionOverlayRect,
@@ -64,6 +60,7 @@ import {
 import { applySort } from './logic/sorting';
 import type {
   CellCoord,
+  CellRenderState,
   GridColumn,
   GridRowKey,
   SpreadsheetGridProps,
@@ -154,6 +151,17 @@ export function SpreadsheetGrid<T extends object>({
     gridUiReducer,
     visibleColumns,
     createInitialGridUiState,
+  );
+
+  // 追加(11-A): GridBodyLayer / GridHeaderRow へ uiState を渡さないための
+  //             正規化済み選択スナップショットです。
+  // 変更理由: uiState を丸ごと子へ渡すと、selection / dragState 等のあらゆる更新で
+  //           GridBodyRow(memo) の比較が全行不一致になっていました。
+  //           selection が変わったときだけ参照が変わる小さなオブジェクトに畳み込み、
+  //           行側はここから導出したプリミティブ値だけを受け取ります。
+  const selectionSnapshot = useMemo(
+    () => buildSelectionSnapshot(uiState.selection),
+    [uiState.selection],
   );
 
   // ── 3ペイン geometry（10-B） ──────────────────────────
@@ -271,14 +279,25 @@ export function SpreadsheetGrid<T extends object>({
     [sourceRowModels],
   );
 
+  // 変更(11-A3): 依存を uiState 丸ごと → filters.globalText(string) へ縮小します。
+  // 変更理由: これが「全行 memo が毎親レンダーで破られる」症状の根本原因でした。
+  //   旧実装は依存配列に uiState を丸ごと持っていたため、selection 更新などの
+  //   あらゆる dispatch のたびにこの useMemo が再計算され、行モデルチェーン全体
+  //   (globallyFiltered → columnFiltered → sorted → filteredRows /
+  //    filteredRowSourceIndexes / filteredRowKeys)が毎回新しい配列参照になって
+  //   いました。その結果、filteredRowSourceIndexes を依存に持つ renderCellContent と
+  //   filteredRows を依存に持つ onCellDoubleClick の参照が毎 dispatch で変わり、
+  //   GridBodyRow(memo) の props 比較が全行で不一致になっていました(11-A / 11-A2 の
+  //   修正が効かなかった理由)。あわせて 5000 行のフィルター/ソート再計算が
+  //   毎 dispatch 走る CPU 浪費も解消されます。
+  //   なお下流の columnFiltered / sorted は元から狭い依存
+  //   (uiState.filters.columnFilters / uiState.sort)になっており、起点のここだけが
+  //   丸ごと依存でした。
+  const globalFilterText = uiState.filters.globalText;
   const globallyFilteredRowModels = useMemo(
     () =>
-      applyGlobalFilter(
-        sourceRowModels,
-        visibleColumns,
-        selectGlobalFilter(uiState),
-      ),
-    [sourceRowModels, visibleColumns, uiState],
+      applyGlobalFilter(sourceRowModels, visibleColumns, globalFilterText),
+    [sourceRowModels, visibleColumns, globalFilterText],
   );
 
   const columnFilteredRowModels = useMemo(
@@ -737,7 +756,38 @@ export function SpreadsheetGrid<T extends object>({
     ],
   );
 
+  // ── hover handlers（11-A2: 参照安定化） ────────────────
+  // 追加(11-A2): JSX 内のインライン arrow だった hover 系ハンドラを useCallback へ
+  //              引き上げます。
+  // 変更理由: インライン arrow は毎レンダー新しい参照になります。とくに
+  //           onRowHeaderPointerLeave は GridBodyRow(memo) の props のため、
+  //           親が再レンダーするたびに全行の shallow 比較が不一致になり、
+  //           A-1 / 11-A の memo 化を事実上無効化していました(全行 ×N 再レンダーの主因)。
+  const handleRowHeaderPointerLeaveStable = useCallback((rowIndex: number) => {
+    setHoveredRowIndex((current) => (current === rowIndex ? null : current));
+  }, []);
+
+  const handleColumnHeaderPointerLeaveStable = useCallback(
+    (colIndex: number) => {
+      setHoveredColumnIndex((current) =>
+        current === colIndex ? null : current,
+      );
+    },
+    [],
+  );
+
+  const handleCornerPointerEnterStable = useCallback(() => {
+    setIsCornerHovered(true);
+  }, []);
+
+  const handleCornerPointerLeaveStable = useCallback(() => {
+    setIsCornerHovered(false);
+  }, []);
+
   // ── column resize ─────────────────────────────────────
+  // 変更(11-A3): 依存を uiState 丸ごと → uiState.columnWidths へ縮小します。
+  //   本ハンドラはヘッダー専用のため行 memo には影響しませんが、丸ごと依存を
+  //   残すと将来ヘッダーを memo 化する際に同じ罠になるため、ここで潰しておきます。
   const handleColumnResizePointerDown = useCallback(
     (column: GridColumn<T>, event: PointerEvent<HTMLDivElement>) => {
       event.preventDefault();
@@ -746,13 +796,13 @@ export function SpreadsheetGrid<T extends object>({
         gridActions.startColumnResize(
           column.key,
           event.clientX,
-          selectColumnWidth(uiState, column.key) ?? column.width,
+          uiState.columnWidths[column.key] ?? column.width,
           column.minWidth ?? 60,
           column.maxWidth ?? 1000,
         ),
       );
     },
-    [dispatch, uiState],
+    [dispatch, uiState.columnWidths],
   );
 
   // ── filter popover actions ────────────────────────────
@@ -846,24 +896,24 @@ export function SpreadsheetGrid<T extends object>({
   );
 
   // ── cell content renderer ─────────────────────────────
+  // 変更(11-A): isActive / isSelected / isEditing / readOnly の判定を GridBodyRow 側へ
+  //             移し、ここでは算出済みの cellState を受け取るだけにします。
+  // 変更理由: 旧実装は uiState に依存しており、選択ドラッグ・active cell 移動・編集開始の
+  //           たびにこの useCallback の参照が変わり、props として受け取る GridBodyRow(memo)
+  //           の比較が全行で不一致になっていました(=毎 pointermove で全行×3ペイン再構築)。
+  //           依存を rows / filteredRowSourceIndexes / onRowsChange のみへ縮小したことで、
+  //           uiState がどう変わっても本関数は同一参照を保ちます(rows 変更=編集 commit 時
+  //           とフィルター/ソート変更時だけ参照が変わりますが、それらは行内容自体が変わる
+  //           ため再レンダーが必要なケースです)。
   const renderCellContent = useCallback(
     (
       row: T,
       rowIndex: number,
       column: GridColumn<T>,
       colIndex: number,
+      cellState: CellRenderState,
     ) => {
       const value = getCellValue(row, column);
-      const readOnlyCell = !isCellEditable(
-        { readOnly, canEditCell },
-        rowIndex,
-        colIndex,
-        row,
-        column,
-      );
-      const isActive = selectIsActiveCell(uiState, rowIndex, colIndex);
-      const isSelected = selectIsCellSelected(uiState, rowIndex, colIndex);
-      const isEditing = selectIsEditingCell(uiState, rowIndex, colIndex);
 
       if (column.renderCell) {
         return column.renderCell({
@@ -872,10 +922,10 @@ export function SpreadsheetGrid<T extends object>({
           colIndex,
           value,
           column,
-          isActive,
-          isSelected,
-          isEditing,
-          readOnly: readOnlyCell,
+          isActive: cellState.isActive,
+          isSelected: cellState.isSelected,
+          isEditing: cellState.isEditing,
+          readOnly: cellState.readOnly,
           // 追加: 実編集は CellEditorLayer で行いますが、将来の API 互換のため setValue も残します。
           setValue: (nextValue) => {
             if (!onRowsChange) {
@@ -894,14 +944,7 @@ export function SpreadsheetGrid<T extends object>({
       }
       return <span>{String(value ?? '')}</span>;
     },
-    [
-      canEditCell,
-      filteredRowSourceIndexes,
-      onRowsChange,
-      readOnly,
-      rows,
-      uiState,
-    ],
+    [filteredRowSourceIndexes, onRowsChange, rows],
   );
 
   // ── global filter setter ──────────────────────────────
@@ -1127,21 +1170,17 @@ export function SpreadsheetGrid<T extends object>({
                   visibleColumnsLength={visibleColumns.length}
                   renderEntries={leftRenderEntries}
                   hoveredColumnIndex={hoveredColumnIndex}
-                  uiState={uiState}
+                  selectionSnapshot={selectionSnapshot}
                   columnFilterValues={uiState.filters.columnFilters}
                   sortState={uiState.sort}
                   getHeaderActionButtonStyle={getHeaderActionButtonStyle}
                   getSortIndicator={getSortIndicator}
                   onCornerPointerDown={handleCornerHeaderPointerDown}
-                  onCornerPointerEnter={() => setIsCornerHovered(true)}
-                  onCornerPointerLeave={() => setIsCornerHovered(false)}
+                  onCornerPointerEnter={handleCornerPointerEnterStable}
+                  onCornerPointerLeave={handleCornerPointerLeaveStable}
                   onColumnHeaderPointerDown={handleColumnHeaderPointerDown}
                   onColumnHeaderPointerEnter={handleColumnHeaderPointerEnter}
-                  onColumnHeaderPointerLeave={(colIndex) =>
-                    setHoveredColumnIndex((current) =>
-                      current === colIndex ? null : current,
-                    )
-                  }
+                  onColumnHeaderPointerLeave={handleColumnHeaderPointerLeaveStable}
                   onColumnSortButtonPointerDown={
                     handleColumnSortButtonPointerDown
                   }
@@ -1199,16 +1238,14 @@ export function SpreadsheetGrid<T extends object>({
                   rowHeaderCellStyle={rowHeaderCellStyle}
                   hoveredRowIndex={hoveredRowIndex}
                   isWholeGridSelected={isWholeGridSelected}
-                  uiState={uiState}
+                  activeCell={uiState.activeCell}
+                  editingCell={uiState.editingCell}
+                  selectionSnapshot={selectionSnapshot}
                   readOnly={readOnly}
                   canEditCell={canEditCell}
                   onRowHeaderPointerDown={handleRowHeaderPointerDown}
                   onRowHeaderPointerEnter={handleRowHeaderPointerEnter}
-                  onRowHeaderPointerLeave={(rowIndex) =>
-                    setHoveredRowIndex((current) =>
-                      current === rowIndex ? null : current,
-                    )
-                  }
+                  onRowHeaderPointerLeave={handleRowHeaderPointerLeaveStable}
                   onCellPointerDown={handleCellPointerDown}
                   onCellPointerEnter={handleCellPointerEnter}
                   onCellDoubleClick={handleCellDoubleClickWithController}
@@ -1249,21 +1286,17 @@ export function SpreadsheetGrid<T extends object>({
                 visibleColumnsLength={visibleColumns.length}
                 renderEntries={centerRenderEntries}
                 hoveredColumnIndex={hoveredColumnIndex}
-                uiState={uiState}
+                selectionSnapshot={selectionSnapshot}
                 columnFilterValues={uiState.filters.columnFilters}
                 sortState={uiState.sort}
                 getHeaderActionButtonStyle={getHeaderActionButtonStyle}
                 getSortIndicator={getSortIndicator}
                 onCornerPointerDown={handleCornerHeaderPointerDown}
-                onCornerPointerEnter={() => setIsCornerHovered(true)}
-                onCornerPointerLeave={() => setIsCornerHovered(false)}
+                onCornerPointerEnter={handleCornerPointerEnterStable}
+                onCornerPointerLeave={handleCornerPointerLeaveStable}
                 onColumnHeaderPointerDown={handleColumnHeaderPointerDown}
                 onColumnHeaderPointerEnter={handleColumnHeaderPointerEnter}
-                onColumnHeaderPointerLeave={(colIndex) =>
-                  setHoveredColumnIndex((current) =>
-                    current === colIndex ? null : current,
-                  )
-                }
+                onColumnHeaderPointerLeave={handleColumnHeaderPointerLeaveStable}
                 onColumnSortButtonPointerDown={handleColumnSortButtonPointerDown}
                 onColumnFilterButtonPointerDown={openColumnFilterPopover}
                 onColumnResizePointerDown={handleColumnResizePointerDown}
@@ -1306,16 +1339,14 @@ export function SpreadsheetGrid<T extends object>({
                 rowHeaderCellStyle={rowHeaderCellStyle}
                 hoveredRowIndex={hoveredRowIndex}
                 isWholeGridSelected={isWholeGridSelected}
-                uiState={uiState}
+                activeCell={uiState.activeCell}
+                editingCell={uiState.editingCell}
+                selectionSnapshot={selectionSnapshot}
                 readOnly={readOnly}
                 canEditCell={canEditCell}
                 onRowHeaderPointerDown={handleRowHeaderPointerDown}
                 onRowHeaderPointerEnter={handleRowHeaderPointerEnter}
-                onRowHeaderPointerLeave={(rowIndex) =>
-                  setHoveredRowIndex((current) =>
-                    current === rowIndex ? null : current,
-                  )
-                }
+                onRowHeaderPointerLeave={handleRowHeaderPointerLeaveStable}
                 onCellPointerDown={handleCellPointerDown}
                 onCellPointerEnter={handleCellPointerEnter}
                 onCellDoubleClick={handleCellDoubleClickWithController}
@@ -1353,21 +1384,17 @@ export function SpreadsheetGrid<T extends object>({
                   visibleColumnsLength={visibleColumns.length}
                   renderEntries={rightRenderEntries}
                   hoveredColumnIndex={hoveredColumnIndex}
-                  uiState={uiState}
+                  selectionSnapshot={selectionSnapshot}
                   columnFilterValues={uiState.filters.columnFilters}
                   sortState={uiState.sort}
                   getHeaderActionButtonStyle={getHeaderActionButtonStyle}
                   getSortIndicator={getSortIndicator}
                   onCornerPointerDown={handleCornerHeaderPointerDown}
-                  onCornerPointerEnter={() => setIsCornerHovered(true)}
-                  onCornerPointerLeave={() => setIsCornerHovered(false)}
+                  onCornerPointerEnter={handleCornerPointerEnterStable}
+                  onCornerPointerLeave={handleCornerPointerLeaveStable}
                   onColumnHeaderPointerDown={handleColumnHeaderPointerDown}
                   onColumnHeaderPointerEnter={handleColumnHeaderPointerEnter}
-                  onColumnHeaderPointerLeave={(colIndex) =>
-                    setHoveredColumnIndex((current) =>
-                      current === colIndex ? null : current,
-                    )
-                  }
+                  onColumnHeaderPointerLeave={handleColumnHeaderPointerLeaveStable}
                   onColumnSortButtonPointerDown={
                     handleColumnSortButtonPointerDown
                   }
@@ -1422,16 +1449,14 @@ export function SpreadsheetGrid<T extends object>({
                   rowHeaderCellStyle={rowHeaderCellStyle}
                   hoveredRowIndex={hoveredRowIndex}
                   isWholeGridSelected={isWholeGridSelected}
-                  uiState={uiState}
+                  activeCell={uiState.activeCell}
+                  editingCell={uiState.editingCell}
+                  selectionSnapshot={selectionSnapshot}
                   readOnly={readOnly}
                   canEditCell={canEditCell}
                   onRowHeaderPointerDown={handleRowHeaderPointerDown}
                   onRowHeaderPointerEnter={handleRowHeaderPointerEnter}
-                  onRowHeaderPointerLeave={(rowIndex) =>
-                    setHoveredRowIndex((current) =>
-                      current === rowIndex ? null : current,
-                    )
-                  }
+                  onRowHeaderPointerLeave={handleRowHeaderPointerLeaveStable}
                   onCellPointerDown={handleCellPointerDown}
                   onCellPointerEnter={handleCellPointerEnter}
                   onCellDoubleClick={handleCellDoubleClickWithController}

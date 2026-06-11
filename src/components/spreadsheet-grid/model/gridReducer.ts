@@ -169,10 +169,17 @@ export const gridUiReducer = (
       };
 
     case 'selection/end':
+      // 変更(11-A2): selection ドラッグ中でなければ state をそのまま返します。
+      // 変更理由: window の pointerup は画面上のあらゆるクリックで発火し、
+      //           endSelection / endColumnResize が毎回 dispatch されます。
+      //           旧実装は no-op でも常に新しい state オブジェクトを返していたため、
+      //           無関係なクリックでも親の再レンダーが余分に発生していました。
+      if (state.dragState?.type !== 'selection') {
+        return state;
+      }
       return {
         ...state,
-        dragState:
-          state.dragState?.type === 'selection' ? null : state.dragState,
+        dragState: null,
       };
 
     case 'selection/clear':
@@ -226,9 +233,13 @@ export const gridUiReducer = (
       };
 
     case 'column/resizeEnd':
+      // 変更(11-A2): columnResize ドラッグ中でなければ state をそのまま返します(no-op)。
+      if (state.dragState?.type !== 'columnResize') {
+        return state;
+      }
       return {
         ...state,
-        dragState: state.dragState?.type === 'columnResize' ? null : state.dragState,
+        dragState: null,
       };
 
     case 'columnWidths/sync':

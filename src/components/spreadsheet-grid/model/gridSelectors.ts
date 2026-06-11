@@ -140,6 +140,70 @@ export const selectIsColumnSelected = (state: GridUiState, colIndex: number) => 
   );
 };
 
+// ────────────────────────────────────────────────
+// 追加(11-A): 正規化済み選択スナップショットです。
+// 変更理由: GridBodyRow(memo) / GridHeaderRow へ uiState を丸ごと渡すと、
+//           selection / activeCell / dragState 等のあらゆる更新で props 参照が
+//           変わり memo が全行で破られていました。selection を「種類 + 正規化済み
+//           範囲」へ畳み込み、selection が変わったときだけ参照が変わる小さな
+//           オブジェクトとして配ります。行側はさらにプリミティブ値へ分解します。
+// ────────────────────────────────────────────────
+export type SelectionSnapshot =
+  | { kind: 'none' }
+  | {
+      kind: 'cell';
+      startRow: number;
+      endRow: number;
+      startCol: number;
+      endCol: number;
+    }
+  | { kind: 'row'; startRow: number; endRow: number }
+  | { kind: 'col'; startCol: number; endCol: number };
+
+// 追加(11-A): GridSelection から SelectionSnapshot を構築します。
+//             判定ロジックは selectIsCellSelected / selectIsRowSelected /
+//             selectIsColumnSelected と完全に等価になるよう正規化します。
+export const buildSelectionSnapshot = (
+  selection: GridUiState['selection'],
+): SelectionSnapshot => {
+  if (!selection) {
+    return { kind: 'none' };
+  }
+
+  if (selection.type === 'cell') {
+    const normalizedRange = normalizeCellRange(selection.range);
+    return {
+      kind: 'cell',
+      startRow: normalizedRange.start.row,
+      endRow: normalizedRange.end.row,
+      startCol: normalizedRange.start.col,
+      endCol: normalizedRange.end.col,
+    };
+  }
+
+  if (selection.type === 'row') {
+    const normalizedRange = normalizeRowRange(
+      selection.startRow,
+      selection.endRow,
+    );
+    return {
+      kind: 'row',
+      startRow: normalizedRange.startRow,
+      endRow: normalizedRange.endRow,
+    };
+  }
+
+  const normalizedRange = normalizeColumnRange(
+    selection.startCol,
+    selection.endCol,
+  );
+  return {
+    kind: 'col',
+    startCol: normalizedRange.startCol,
+    endCol: normalizedRange.endCol,
+  };
+};
+
 // 追加: 座標一致判定です。今後 keyboard 操作などで再利用できます。
 export const isSameCellCoord = (
   left: CellCoord | null,

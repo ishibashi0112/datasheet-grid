@@ -57,6 +57,19 @@ export type CellRenderContext<T> = {
   setValue: (value: unknown) => void;
 };
 
+// 追加(11-A): GridBodyRow がセルごとに算出し、renderCellContent へ引き渡す
+//             セル状態のスナップショットです。
+// 変更理由: 旧実装では renderCellContent(SpreadsheetGrid 側) が uiState から
+//           isActive / isSelected / isEditing を毎回判定しており、uiState 依存に
+//           よって useCallback の参照が選択操作のたびに変わり、GridBodyRow(memo)
+//           を全行で破っていました。判定を行側へ移し、結果だけを渡します。
+export type CellRenderState = {
+  isActive: boolean;
+  isSelected: boolean;
+  isEditing: boolean;
+  readOnly: boolean;
+};
+
 // 追加: ヘッダー描画に渡すコンテキストです。
 export type HeaderRenderContext<T> = {
   colIndex: number;
