@@ -119,27 +119,31 @@ export type ColumnResizeDragState = {
 };
 
 // 追加: セル範囲選択用のドラッグ状態です。
+// 変更(11-B2): current を削除しました。ドラッグ中の「現在位置」は selection 側
+//              (range.end / endRow / endCol)が唯一の正であり、dragState には
+//              ドラッグ開始時に確定する不変情報(anchor)のみを持たせます。
+//              これにより update 系 action で dragState を作り直す必要がなくなり、
+//              ドラッグ中の dragState 参照が恒久的に安定します。
 export type CellSelectionDragState = {
   type: 'selection';
   selectionKind: 'cell';
   anchor: CellCoord;
-  current: CellCoord;
 };
 
 // 追加: 行選択用のドラッグ状態です。
+// 変更(11-B2): currentRow を削除しました(理由は CellSelectionDragState と同じ)。
 export type RowSelectionDragState = {
   type: 'selection';
   selectionKind: 'row';
   anchorRow: number;
-  currentRow: number;
 };
 
 // 追加: 列選択用のドラッグ状態です。
+// 変更(11-B2): currentCol を削除しました(理由は CellSelectionDragState と同じ)。
 export type ColumnSelectionDragState = {
   type: 'selection';
   selectionKind: 'col';
   anchorCol: number;
-  currentCol: number;
 };
 
 // 追加: Grid 内部 UI state です。rows は外部 controlled とし、ここには持ちません。

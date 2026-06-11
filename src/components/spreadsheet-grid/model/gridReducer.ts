@@ -65,7 +65,6 @@ export const gridUiReducer = (
           type: 'selection',
           selectionKind: 'cell',
           anchor: action.cell,
-          current: action.cell,
         },
       };
 
@@ -85,7 +84,6 @@ export const gridUiReducer = (
           type: 'selection',
           selectionKind: 'row',
           anchorRow: action.row,
-          currentRow: action.row,
         },
       };
 
@@ -100,9 +98,8 @@ export const gridUiReducer = (
       // 追加(11-B1): 終端行が変わらない update は no-op として state をそのまま返します。
       // 変更理由: ドラッグ中の pointermove は同一行内でも毎フレーム発火し、
       //           毎回新しい state を返すと無意味な再レンダーが走るためです。
-      // 注意: 比較基準は selection.endRow です(dragState.currentRow は 11-B2 で
-      //       削除予定のため基準にしません。currentRow は読み手が存在しないことを
-      //       確認済みで、ここで更新を省略しても挙動に影響しません)。
+      // 注意: 比較基準は selection.endRow です(11-B2 で dragState.currentRow を
+      //       削除済み。ドラッグ中の現在位置の正は selection 側に一本化されています)。
       if (
         state.selection?.type === 'row' &&
         state.selection.endRow === action.row
@@ -117,7 +114,6 @@ export const gridUiReducer = (
           startRow: state.dragState.anchorRow,
           endRow: action.row,
         },
-        dragState: { ...state.dragState, currentRow: action.row },
       };
 
     case 'selection/update':
@@ -129,7 +125,7 @@ export const gridUiReducer = (
       }
 
       // 追加(11-B1): 終端セルが変わらない update は no-op として state をそのまま返します。
-      // 注意: 比較基準は selection.range.end です(dragState.current は 11-B2 で削除予定)。
+      // 注意: 比較基準は selection.range.end です(11-B2 で dragState.current を削除済み)。
       if (
         state.selection?.type === 'cell' &&
         state.selection.range.end.row === action.cell.row &&
@@ -146,10 +142,6 @@ export const gridUiReducer = (
             start: state.dragState.anchor,
             end: action.cell,
           },
-        },
-        dragState: {
-          ...state.dragState,
-          current: action.cell,
         },
       };
 
@@ -169,7 +161,6 @@ export const gridUiReducer = (
           type: 'selection',
           selectionKind: 'col',
           anchorCol: action.col,
-          currentCol: action.col,
         },
       };
 
@@ -182,7 +173,7 @@ export const gridUiReducer = (
       }
 
       // 追加(11-B1): 終端列が変わらない update は no-op として state をそのまま返します。
-      // 注意: 比較基準は selection.endCol です(dragState.currentCol は 11-B2 で削除予定)。
+      // 注意: 比較基準は selection.endCol です(11-B2 で dragState.currentCol を削除済み)。
       if (
         state.selection?.type === 'col' &&
         state.selection.endCol === action.col
@@ -197,7 +188,6 @@ export const gridUiReducer = (
           startCol: state.dragState.anchorCol,
           endCol: action.col,
         },
-        dragState: { ...state.dragState, currentCol: action.col },
       };
 
     case 'selection/end':

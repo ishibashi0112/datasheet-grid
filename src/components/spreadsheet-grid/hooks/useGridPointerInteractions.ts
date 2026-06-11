@@ -86,6 +86,17 @@ export const useGridPointerInteractions = <T,>({
   const dragStateRef = useRef(uiState.dragState);
   dragStateRef.current = uiState.dragState;
 
+  // 追加(11-B2): effect 依存用のプリミティブです。
+  // 変更理由: window pointer effect と自動スクロール effect が uiState.dragState
+  //           オブジェクトを依存に持つと、参照が変わるたびに listener 解除/再登録や
+  //           rAF ループの張り直しが発生します。両 effect が実際に分岐に使うのは
+  //           type のみのため、依存を文字列プリミティブへ縮小します。
+  //           11-B2 で update 系 action が dragState を再生成しなくなったため
+  //           ドラッグ中の参照は既に安定していますが、依存をプリミティブにする
+  //           ことで「dragState の内部構造変更」と「effect の貼り直し条件」を
+  //           恒久的に切り離します(start/end の 1 遷移ごとに 1 回だけ再実行)。
+  const dragType = uiState.dragState?.type ?? null;
+
   // 変更(10-E): client 座標から rowIndex / 論理 colIndex を推定します（ペイン別）。
   // 動作:
   //   - 縦(row)は中央ペイン基準。中央ペインの矩形はスクロール量ぶん移動し、scrollTop は 0 のため、
@@ -200,10 +211,12 @@ export const useGridPointerInteractions = <T,>({
   );
 
   // 追加: selection drag / column resize drag 中の window pointer イベントを処理します。
+  // 変更(11-B2): 依存を uiState.dragState オブジェクトから dragType プリミティブへ縮小。
+  //              listener の解除/再登録は type 遷移時(ドラッグ開始/終了)のみになります。
   useEffect(() => {
     const handleWindowPointerMove = (event: globalThis.PointerEvent) => {
       pointerClientRef.current = { x: event.clientX, y: event.clientY };
-      if (uiState.dragState?.type === 'columnResize') {
+      if (dragType === 'columnResize') {
         dispatch(gridActions.updateColumnResize(event.clientX));
       }
     };
@@ -219,13 +232,15 @@ export const useGridPointerInteractions = <T,>({
       window.removeEventListener('pointermove', handleWindowPointerMove);
       window.removeEventListener('pointerup', handleWindowPointerUp);
     };
-  }, [dispatch, pointerClientRef, uiState.dragState]);
+  }, [dispatch, pointerClientRef, dragType]);
 
   // 追加: 範囲選択中、端に近づいたら自動スクロールします。
   // 変更(10-G): スクロール対象を中央ペインから「共有スクロールコンテナ」へ。
   //             縦横ともにこのコンテナがネイティブスクロールするため、固定ペインも一緒に追従します。
+  // 変更(11-B2): 依存を uiState.dragState から dragType へ縮小。rAF ループは
+  //              ドラッグ開始時に 1 回だけ起動し、ドラッグ中は張り直されません。
   useEffect(() => {
-    if (uiState.dragState?.type !== 'selection') {
+    if (dragType !== 'selection') {
       if (autoScrollFrameRef.current !== null) {
         cancelAnimationFrame(autoScrollFrameRef.current);
         autoScrollFrameRef.current = null;
@@ -286,7 +301,7 @@ export const useGridPointerInteractions = <T,>({
     autoScrollFrameRef,
     scrollContainerRef,
     pointerClientRef,
-    uiState.dragState,
+    dragType,
     updateSelectionFromPointer,
   ]);
 
