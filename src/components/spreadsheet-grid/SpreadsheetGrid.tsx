@@ -46,13 +46,24 @@ import {
 // 変更理由: SelectionOverlay / ActiveCellOverlay / CellEditorLayer を各ペイン内へ
 //           ペインローカル座標で描画するため、論理列 index 範囲 → 各ペイン extent の
 //           変換 helper（computePaneColumnExtents 等）が必要になりました。
+// 変更(11-B4): paneLayout の一括構築(buildGridPaneLayout)をやめ、
+//             ペイン別 useMemo 用の helper（splitOrderedColumnsByPane /
+//             buildPaneWidthsKey / buildPaneGeometryFromWidthsKey）へ切り替えます。
+// 変更理由: ライブリサイズ中は columnWidths が毎 pointermove で参照更新されるため、
+//           一括 useMemo では 3 ペイン全ての entries 参照が毎回作り直され、
+//           幅が変わっていない固定ペインの全行まで memo を突破していました。
+//           ペインごとに「列ソース + そのペインの幅 join キー」だけへ依存を絞ることで、
+//           中央列リサイズ中も固定ペインの renderEntries 参照を不変に保ちます。
 import {
   buildColumnMeasurements,
   reorderColumnsByPane,
-  buildGridPaneLayout,
+  splitOrderedColumnsByPane,
+  buildPaneWidthsKey,
+  buildPaneGeometryFromWidthsKey,
   computePaneColumnExtents,
   computeFullWidthPaneExtents,
   computeSinglePaneColumnExtent,
+  type GridPaneLayout,
   type PaneColumnEntry,
   type ColumnPane,
   type PaneColumnExtentMap,
@@ -164,12 +175,82 @@ export function SpreadsheetGrid<T extends object>({
     [uiState.selection],
   );
 
-  // ── 3ペイン geometry（10-B） ──────────────────────────
-  // 追加(10-B): 3 ペイン（left / center / right）のジオメトリを構築します。
-  // 変更理由: DOM を 3 ペイン flex レイアウトに分離するために必要です。
-  const paneLayout = useMemo(
-    () => buildGridPaneLayout(orderedColumns, uiState.columnWidths),
-    [orderedColumns, uiState.columnWidths],
+  // ── 3ペイン geometry（10-B → 11-B4） ──────────────────
+  // 変更(11-B4): paneLayout を「一括 useMemo」から「3 ペイン独立の useMemo」へ分割します。
+  // 変更理由: ライブリサイズ中は uiState.columnWidths が毎 pointermove で参照更新されるため、
+  //           一括構築では幅が変わっていないペインまで entries 参照が毎回作り直され、
+  //           固定ペイン全行（GridBodyRow の memo）が renderEntries 不一致で再レンダーして
+  //           いました。各ペインの依存を「そのペインの列ソース + そのペインの幅 join キー」
+  //           へ絞ることで、中央列のリサイズ中は左右固定ペインの geometry / entries 参照が
+  //           完全に不変になります。
+
+  // 追加(11-B4): orderedColumns を 3 ペインの列ソース（列 + 論理 index）へ分割します。
+  //             columnWidths に依存しないため、列構成が変わらない限り参照は不変です。
+  const paneSourceColumns = useMemo(
+    () => splitOrderedColumnsByPane(orderedColumns),
+    [orderedColumns],
+  );
+
+  // 追加(11-B4): ペインごとの「解決済み幅 join キー」です。
+  //             毎 render 計算しますが、列数ぶんの lookup + join のみで軽量です。
+  //             columnWidths の参照が変わっても、そのペインの幅が実際に変わらない限り
+  //             同一文字列になるため、下の useMemo の依存値として機能します。
+  const leftPaneWidthsKey = buildPaneWidthsKey(
+    paneSourceColumns.left,
+    uiState.columnWidths,
+  );
+  const centerPaneWidthsKey = buildPaneWidthsKey(
+    paneSourceColumns.center,
+    uiState.columnWidths,
+  );
+  const rightPaneWidthsKey = buildPaneWidthsKey(
+    paneSourceColumns.right,
+    uiState.columnWidths,
+  );
+
+  // 追加(11-B4): ペイン別 geometry です。依存は「列ソース + 幅キー」のみ。
+  //             幅キー文字列から解決済み幅を復元するため、columnWidths 本体には依存しません。
+  const leftPaneGeometry = useMemo(
+    () =>
+      buildPaneGeometryFromWidthsKey(
+        'left',
+        paneSourceColumns.left,
+        leftPaneWidthsKey,
+      ),
+    [paneSourceColumns.left, leftPaneWidthsKey],
+  );
+
+  const centerPaneGeometry = useMemo(
+    () =>
+      buildPaneGeometryFromWidthsKey(
+        'center',
+        paneSourceColumns.center,
+        centerPaneWidthsKey,
+      ),
+    [paneSourceColumns.center, centerPaneWidthsKey],
+  );
+
+  const rightPaneGeometry = useMemo(
+    () =>
+      buildPaneGeometryFromWidthsKey(
+        'right',
+        paneSourceColumns.right,
+        rightPaneWidthsKey,
+      ),
+    [paneSourceColumns.right, rightPaneWidthsKey],
+  );
+
+  // 変更(11-B4): 下流互換のため paneLayout 合成オブジェクトは維持します。
+  //             合成オブジェクト自体の参照はいずれかのペイン変更で変わりますが、
+  //             paneLayout.left.entries 等の「ペイン単位の参照」は当該ペインの
+  //             幅・列構成が変わらない限り不変です（これが 11-B4 の狙いです）。
+  const paneLayout = useMemo<GridPaneLayout<T>>(
+    () => ({
+      left: leftPaneGeometry,
+      center: centerPaneGeometry,
+      right: rightPaneGeometry,
+    }),
+    [leftPaneGeometry, centerPaneGeometry, rightPaneGeometry],
   );
 
   // 追加(10-C): 左／右固定ペインが存在するか（= 固定列があるか）です。

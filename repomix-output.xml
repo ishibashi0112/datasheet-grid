@@ -703,104 +703,6 @@ export const useFilterPopoverController = <T,>({
 export default useFilterPopoverController;
 </file>
 
-<file path="src/components/spreadsheet-grid/hooks/useGridBarContext.ts">
-import { useMemo } from 'react';
-import { selectGlobalFilter } from '../model/gridSelectors';
-import type {
-  GridColumn,
-  GridUiState,
-  SpreadsheetGridSlotContext,
-} from '../model/gridTypes';
-import { buildGridDerivedSummary } from '../view/gridBarHelpers';
-
-// 追加: derivedSummary / setGlobalFilterText を載せる前の中間 slot context 型です。
-type GridSlotContextBase<T> = Omit<
-  SpreadsheetGridSlotContext<T>,
-  'setGlobalFilterText' | 'derivedSummary'
->;
-
-type UseGridBarContextArgs<T> = {
-  rows: T[];
-  filteredRows: T[];
-  columns: GridColumn<T>[];
-  visibleColumns: GridColumn<T>[];
-  uiState: GridUiState;
-  setGlobalFilterText: (value: string) => void;
-};
-
-// 追加: topBar / bottomBar へ渡す slot context と derived summary をまとめて構築します。
-export const useGridBarContext = <T,>({
-  rows,
-  filteredRows,
-  columns,
-  visibleColumns,
-  uiState,
-  setGlobalFilterText,
-}: UseGridBarContextArgs<T>) => {
-  // 変更(11-B3): slotContextBase の依存を uiState 丸ごとから、bar が実際に参照する
-  //   5 フィールドへ分解します。
-  // 変更理由: uiState は columnWidths(ライブリサイズ中は毎 pointermove)、
-  //   editingCell、dragState など bar 表示と無関係な更新でも参照が変わります。
-  //   丸ごと依存のままだと slotContextBase → derivedSummary → slotContext が
-  //   その度に連鎖再生成され、topBar / bottomBar スロットの再レンダーを誘発します。
-  //   reducer は無関係フィールド更新時に filters / sort / activeCell / selection の
-  //   参照を温存する(スプレッドで該当キーのみ差し替える)ため、ここで個別に
-  //   取り出した参照は安定し、useMemo が正しくスキップされます。
-  const globalFilterText = selectGlobalFilter(uiState);
-  const columnFilterValues = uiState.filters.columnFilters;
-  const sortState = uiState.sort;
-  const activeCell = uiState.activeCell;
-  const selection = uiState.selection;
-
-  const slotContextBase = useMemo<GridSlotContextBase<T>>(
-    () => ({
-      rows,
-      filteredRows,
-      columns,
-      visibleColumns,
-      globalFilterText,
-      columnFilterValues,
-      sortState,
-      activeCell,
-      selection,
-    }),
-    [
-      rows,
-      filteredRows,
-      columns,
-      visibleColumns,
-      globalFilterText,
-      columnFilterValues,
-      sortState,
-      activeCell,
-      selection,
-    ],
-  );
-
-  const derivedSummary = useMemo(
-    () => buildGridDerivedSummary(slotContextBase),
-    [slotContextBase],
-  );
-
-  const slotContext = useMemo<SpreadsheetGridSlotContext<T>>(
-    () => ({
-      ...slotContextBase,
-      setGlobalFilterText,
-      derivedSummary,
-    }),
-    [derivedSummary, setGlobalFilterText, slotContextBase],
-  );
-
-  return {
-    slotContextBase,
-    derivedSummary,
-    slotContext,
-  };
-};
-
-export default useGridBarContext;
-</file>
-
 <file path="src/components/spreadsheet-grid/hooks/useGridClipboardController.ts">
 import { useCallback, type Dispatch } from 'react';
 import { gridActions, type GridUiAction } from '../model/gridActions';
@@ -2299,6 +2201,104 @@ export function ActiveCellOverlay({
 export default ActiveCellOverlay;
 </file>
 
+<file path="src/components/spreadsheet-grid/hooks/useGridBarContext.ts">
+import { useMemo } from 'react';
+import { selectGlobalFilter } from '../model/gridSelectors';
+import type {
+  GridColumn,
+  GridUiState,
+  SpreadsheetGridSlotContext,
+} from '../model/gridTypes';
+import { buildGridDerivedSummary } from '../view/gridBarHelpers';
+
+// 追加: derivedSummary / setGlobalFilterText を載せる前の中間 slot context 型です。
+type GridSlotContextBase<T> = Omit<
+  SpreadsheetGridSlotContext<T>,
+  'setGlobalFilterText' | 'derivedSummary'
+>;
+
+type UseGridBarContextArgs<T> = {
+  rows: T[];
+  filteredRows: T[];
+  columns: GridColumn<T>[];
+  visibleColumns: GridColumn<T>[];
+  uiState: GridUiState;
+  setGlobalFilterText: (value: string) => void;
+};
+
+// 追加: topBar / bottomBar へ渡す slot context と derived summary をまとめて構築します。
+export const useGridBarContext = <T,>({
+  rows,
+  filteredRows,
+  columns,
+  visibleColumns,
+  uiState,
+  setGlobalFilterText,
+}: UseGridBarContextArgs<T>) => {
+  // 変更(11-B3): slotContextBase の依存を uiState 丸ごとから、bar が実際に参照する
+  //   5 フィールドへ分解します。
+  // 変更理由: uiState は columnWidths(ライブリサイズ中は毎 pointermove)、
+  //   editingCell、dragState など bar 表示と無関係な更新でも参照が変わります。
+  //   丸ごと依存のままだと slotContextBase → derivedSummary → slotContext が
+  //   その度に連鎖再生成され、topBar / bottomBar スロットの再レンダーを誘発します。
+  //   reducer は無関係フィールド更新時に filters / sort / activeCell / selection の
+  //   参照を温存する(スプレッドで該当キーのみ差し替える)ため、ここで個別に
+  //   取り出した参照は安定し、useMemo が正しくスキップされます。
+  const globalFilterText = selectGlobalFilter(uiState);
+  const columnFilterValues = uiState.filters.columnFilters;
+  const sortState = uiState.sort;
+  const activeCell = uiState.activeCell;
+  const selection = uiState.selection;
+
+  const slotContextBase = useMemo<GridSlotContextBase<T>>(
+    () => ({
+      rows,
+      filteredRows,
+      columns,
+      visibleColumns,
+      globalFilterText,
+      columnFilterValues,
+      sortState,
+      activeCell,
+      selection,
+    }),
+    [
+      rows,
+      filteredRows,
+      columns,
+      visibleColumns,
+      globalFilterText,
+      columnFilterValues,
+      sortState,
+      activeCell,
+      selection,
+    ],
+  );
+
+  const derivedSummary = useMemo(
+    () => buildGridDerivedSummary(slotContextBase),
+    [slotContextBase],
+  );
+
+  const slotContext = useMemo<SpreadsheetGridSlotContext<T>>(
+    () => ({
+      ...slotContextBase,
+      setGlobalFilterText,
+      derivedSummary,
+    }),
+    [derivedSummary, setGlobalFilterText, slotContextBase],
+  );
+
+  return {
+    slotContextBase,
+    derivedSummary,
+    slotContext,
+  };
+};
+
+export default useGridBarContext;
+</file>
+
 <file path=".gitignore">
 # Logs
 logs
@@ -2743,15 +2743,28 @@ export type GridPaneLayout<T> = {
   right: PaneGeometry<T>;
 };
 
-// 追加(10-A): reorder 済み visibleColumns + columnWidths から
-//             3 ペインレイアウトを構築します。
-//             引数の columns は reorderColumnsByPane() 済みを前提とします。
-export const buildGridPaneLayout = <T,>(
+// 追加(11-B4): ペイン分割後の「列ソース」（列 + 論理 index のペア）です。
+//             論理 index は reorder 済み orderedColumns 上の index で、
+//             ペイン geometry を個別に再構築しても不変です。
+export type PaneSourceColumn<T> = {
+  column: GridColumn<T>;
+  logicalIndex: number;
+};
+
+// 追加(11-B4): orderedColumns を 3 ペインの列ソースへ分割した結果です。
+export type PaneSourceColumns<T> = {
+  left: PaneSourceColumn<T>[];
+  center: PaneSourceColumn<T>[];
+  right: PaneSourceColumn<T>[];
+};
+
+// 追加(11-B4): reorder 済み orderedColumns を 3 ペインの列ソースへ分割します。
+//             columnWidths に依存しないため、列構成が変わらない限り
+//             結果を memo で固定できます（ライブリサイズ中も不変）。
+export const splitOrderedColumnsByPane = <T,>(
   orderedColumns: GridColumn<T>[],
-  columnWidths: Record<string, number>,
-): GridPaneLayout<T> => {
-  // 追加(10-A): 列を 3 グループに振り分けつつ論理 index を記録します。
-  const groups: Record<ColumnPane, { column: GridColumn<T>; logicalIndex: number }[]> = {
+): PaneSourceColumns<T> => {
+  const groups: PaneSourceColumns<T> = {
     left: [],
     center: [],
     right: [],
@@ -2762,14 +2775,41 @@ export const buildGridPaneLayout = <T,>(
     groups[pane].push({ column, logicalIndex });
   });
 
-  // 追加(10-A): 1 ペイン分の PaneGeometry を生成する内部 helper です。
-  const buildPane = (
-    pane: ColumnPane,
-    items: { column: GridColumn<T>; logicalIndex: number }[],
-  ): PaneGeometry<T> => {
-    let offset = 0;
-    const entries: PaneColumnEntry<T>[] = items.map(({ column, logicalIndex }) => {
-      const size = columnWidths[column.key] ?? column.width;
+  return groups;
+};
+
+// 追加(11-B4): 1 ペイン分の解決済み列幅（columnWidths 優先 / column.width フォールバック）を
+//             ペイン内の列順で並べた配列として返す内部 helper です。
+const resolvePaneWidths = <T,>(
+  items: PaneSourceColumn<T>[],
+  columnWidths: Record<string, number>,
+): number[] =>
+  items.map(({ column }) => columnWidths[column.key] ?? column.width);
+
+// 追加(11-B4): 1 ペイン分の解決済み列幅を join した「幅キー文字列」を作ります。
+//             useMemo の依存値として使うことで、「そのペインの幅が実際に変わったとき」
+//             だけ geometry を再構築できます（columnWidths オブジェクトは毎 pointermove で
+//             参照が変わりますが、無関係ペインの幅キーは同一文字列のままです）。
+export const buildPaneWidthsKey = <T,>(
+  items: PaneSourceColumn<T>[],
+  columnWidths: Record<string, number>,
+): string => resolvePaneWidths(items, columnWidths).join(',');
+
+// 追加(11-B4): 幅キー文字列を解決済み幅配列へ戻します（buildPaneWidthsKey の逆変換）。
+const parsePaneWidthsKey = (widthsKey: string): number[] =>
+  widthsKey === '' ? [] : widthsKey.split(',').map(Number);
+
+// 追加(11-B4): 1 ペイン分の PaneGeometry を解決済み幅配列から構築する core です。
+//             旧 buildGridPaneLayout 内部の buildPane と同一ロジックです。
+export const buildPaneGeometry = <T,>(
+  pane: ColumnPane,
+  items: PaneSourceColumn<T>[],
+  resolvedWidths: number[],
+): PaneGeometry<T> => {
+  let offset = 0;
+  const entries: PaneColumnEntry<T>[] = items.map(
+    ({ column, logicalIndex }, indexInPane) => {
+      const size = resolvedWidths[indexInPane] ?? column.width;
       const entry: PaneColumnEntry<T> = {
         column,
         logicalIndex,
@@ -2779,14 +2819,48 @@ export const buildGridPaneLayout = <T,>(
       };
       offset += size;
       return entry;
-    });
-    return { pane, entries, totalWidth: offset };
-  };
+    },
+  );
+  return { pane, entries, totalWidth: offset };
+};
 
+// 追加(11-B4): 幅キー文字列から 1 ペイン分の PaneGeometry を構築します。
+//             SpreadsheetGrid 側のペイン別 useMemo（依存 = 列ソース + 幅キー）から
+//             呼ぶ想定です。幅キーは buildPaneWidthsKey で生成された値を渡してください。
+export const buildPaneGeometryFromWidthsKey = <T,>(
+  pane: ColumnPane,
+  items: PaneSourceColumn<T>[],
+  widthsKey: string,
+): PaneGeometry<T> =>
+  buildPaneGeometry(pane, items, parsePaneWidthsKey(widthsKey));
+
+// 追加(10-A): reorder 済み visibleColumns + columnWidths から
+//             3 ペインレイアウトを構築します。
+//             引数の columns は reorderColumnsByPane() 済みを前提とします。
+// 変更(11-B4): 内部実装を splitOrderedColumnsByPane + buildPaneGeometry へ委譲しました。
+//             SpreadsheetGrid 本体はペイン別 useMemo へ移行済みですが、
+//             「一括構築」の互換 API としてテスト・将来利用向けに残しています。
+export const buildGridPaneLayout = <T,>(
+  orderedColumns: GridColumn<T>[],
+  columnWidths: Record<string, number>,
+): GridPaneLayout<T> => {
+  const groups = splitOrderedColumnsByPane(orderedColumns);
   return {
-    left: buildPane('left', groups.left),
-    center: buildPane('center', groups.center),
-    right: buildPane('right', groups.right),
+    left: buildPaneGeometry(
+      'left',
+      groups.left,
+      resolvePaneWidths(groups.left, columnWidths),
+    ),
+    center: buildPaneGeometry(
+      'center',
+      groups.center,
+      resolvePaneWidths(groups.center, columnWidths),
+    ),
+    right: buildPaneGeometry(
+      'right',
+      groups.right,
+      resolvePaneWidths(groups.right, columnWidths),
+    ),
   };
 };
 
@@ -5663,13 +5737,15 @@ const createInitialColumns = (): GridColumn<DemoRow>[] => {
     // 追加: text / number / select の最小フィルター型を設定します。
     // 追加(10-E): frozen columns デモ。品番・品名を左固定にします（pinned: 'left'）。
     //            これで横スクロールしても先頭 2 列が固定表示されます。
-    { key: 'partNo', title: '品番', width: 150, filterType: 'text', pinned: 'left' },
+    { key: 'partNo', title: '品番', width: 150, filterType: 'text', 
+      pinned: "left" 
+    },
     {
       key: 'partName',
       title: '品名',
       width: 220,
       filterType: 'text',
-      pinned: 'left',
+      pinned: "left" ,
     },
     { key: 'qty', title: '数量', width: 90, filterType: 'number' },
     {
@@ -6092,13 +6168,24 @@ import {
 // 変更理由: SelectionOverlay / ActiveCellOverlay / CellEditorLayer を各ペイン内へ
 //           ペインローカル座標で描画するため、論理列 index 範囲 → 各ペイン extent の
 //           変換 helper（computePaneColumnExtents 等）が必要になりました。
+// 変更(11-B4): paneLayout の一括構築(buildGridPaneLayout)をやめ、
+//             ペイン別 useMemo 用の helper（splitOrderedColumnsByPane /
+//             buildPaneWidthsKey / buildPaneGeometryFromWidthsKey）へ切り替えます。
+// 変更理由: ライブリサイズ中は columnWidths が毎 pointermove で参照更新されるため、
+//           一括 useMemo では 3 ペイン全ての entries 参照が毎回作り直され、
+//           幅が変わっていない固定ペインの全行まで memo を突破していました。
+//           ペインごとに「列ソース + そのペインの幅 join キー」だけへ依存を絞ることで、
+//           中央列リサイズ中も固定ペインの renderEntries 参照を不変に保ちます。
 import {
   buildColumnMeasurements,
   reorderColumnsByPane,
-  buildGridPaneLayout,
+  splitOrderedColumnsByPane,
+  buildPaneWidthsKey,
+  buildPaneGeometryFromWidthsKey,
   computePaneColumnExtents,
   computeFullWidthPaneExtents,
   computeSinglePaneColumnExtent,
+  type GridPaneLayout,
   type PaneColumnEntry,
   type ColumnPane,
   type PaneColumnExtentMap,
@@ -6210,12 +6297,82 @@ export function SpreadsheetGrid<T extends object>({
     [uiState.selection],
   );
 
-  // ── 3ペイン geometry（10-B） ──────────────────────────
-  // 追加(10-B): 3 ペイン（left / center / right）のジオメトリを構築します。
-  // 変更理由: DOM を 3 ペイン flex レイアウトに分離するために必要です。
-  const paneLayout = useMemo(
-    () => buildGridPaneLayout(orderedColumns, uiState.columnWidths),
-    [orderedColumns, uiState.columnWidths],
+  // ── 3ペイン geometry（10-B → 11-B4） ──────────────────
+  // 変更(11-B4): paneLayout を「一括 useMemo」から「3 ペイン独立の useMemo」へ分割します。
+  // 変更理由: ライブリサイズ中は uiState.columnWidths が毎 pointermove で参照更新されるため、
+  //           一括構築では幅が変わっていないペインまで entries 参照が毎回作り直され、
+  //           固定ペイン全行（GridBodyRow の memo）が renderEntries 不一致で再レンダーして
+  //           いました。各ペインの依存を「そのペインの列ソース + そのペインの幅 join キー」
+  //           へ絞ることで、中央列のリサイズ中は左右固定ペインの geometry / entries 参照が
+  //           完全に不変になります。
+
+  // 追加(11-B4): orderedColumns を 3 ペインの列ソース（列 + 論理 index）へ分割します。
+  //             columnWidths に依存しないため、列構成が変わらない限り参照は不変です。
+  const paneSourceColumns = useMemo(
+    () => splitOrderedColumnsByPane(orderedColumns),
+    [orderedColumns],
+  );
+
+  // 追加(11-B4): ペインごとの「解決済み幅 join キー」です。
+  //             毎 render 計算しますが、列数ぶんの lookup + join のみで軽量です。
+  //             columnWidths の参照が変わっても、そのペインの幅が実際に変わらない限り
+  //             同一文字列になるため、下の useMemo の依存値として機能します。
+  const leftPaneWidthsKey = buildPaneWidthsKey(
+    paneSourceColumns.left,
+    uiState.columnWidths,
+  );
+  const centerPaneWidthsKey = buildPaneWidthsKey(
+    paneSourceColumns.center,
+    uiState.columnWidths,
+  );
+  const rightPaneWidthsKey = buildPaneWidthsKey(
+    paneSourceColumns.right,
+    uiState.columnWidths,
+  );
+
+  // 追加(11-B4): ペイン別 geometry です。依存は「列ソース + 幅キー」のみ。
+  //             幅キー文字列から解決済み幅を復元するため、columnWidths 本体には依存しません。
+  const leftPaneGeometry = useMemo(
+    () =>
+      buildPaneGeometryFromWidthsKey(
+        'left',
+        paneSourceColumns.left,
+        leftPaneWidthsKey,
+      ),
+    [paneSourceColumns.left, leftPaneWidthsKey],
+  );
+
+  const centerPaneGeometry = useMemo(
+    () =>
+      buildPaneGeometryFromWidthsKey(
+        'center',
+        paneSourceColumns.center,
+        centerPaneWidthsKey,
+      ),
+    [paneSourceColumns.center, centerPaneWidthsKey],
+  );
+
+  const rightPaneGeometry = useMemo(
+    () =>
+      buildPaneGeometryFromWidthsKey(
+        'right',
+        paneSourceColumns.right,
+        rightPaneWidthsKey,
+      ),
+    [paneSourceColumns.right, rightPaneWidthsKey],
+  );
+
+  // 変更(11-B4): 下流互換のため paneLayout 合成オブジェクトは維持します。
+  //             合成オブジェクト自体の参照はいずれかのペイン変更で変わりますが、
+  //             paneLayout.left.entries 等の「ペイン単位の参照」は当該ペインの
+  //             幅・列構成が変わらない限り不変です（これが 11-B4 の狙いです）。
+  const paneLayout = useMemo<GridPaneLayout<T>>(
+    () => ({
+      left: leftPaneGeometry,
+      center: centerPaneGeometry,
+      right: rightPaneGeometry,
+    }),
+    [leftPaneGeometry, centerPaneGeometry, rightPaneGeometry],
   );
 
   // 追加(10-C): 左／右固定ペインが存在するか（= 固定列があるか）です。

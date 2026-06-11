@@ -47,13 +47,15 @@ const createInitialColumns = (): GridColumn<DemoRow>[] => {
     // 追加: text / number / select の最小フィルター型を設定します。
     // 追加(10-E): frozen columns デモ。品番・品名を左固定にします（pinned: 'left'）。
     //            これで横スクロールしても先頭 2 列が固定表示されます。
-    { key: 'partNo', title: '品番', width: 150, filterType: 'text', pinned: 'left' },
+    { key: 'partNo', title: '品番', width: 150, filterType: 'text', 
+      pinned: "left" 
+    },
     {
       key: 'partName',
       title: '品名',
       width: 220,
       filterType: 'text',
-      pinned: 'left',
+      pinned: "left" ,
     },
     { key: 'qty', title: '数量', width: 90, filterType: 'number' },
     {

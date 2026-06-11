@@ -129,15 +129,28 @@ export type GridPaneLayout<T> = {
   right: PaneGeometry<T>;
 };
 
-// 追加(10-A): reorder 済み visibleColumns + columnWidths から
-//             3 ペインレイアウトを構築します。
-//             引数の columns は reorderColumnsByPane() 済みを前提とします。
-export const buildGridPaneLayout = <T,>(
+// 追加(11-B4): ペイン分割後の「列ソース」（列 + 論理 index のペア）です。
+//             論理 index は reorder 済み orderedColumns 上の index で、
+//             ペイン geometry を個別に再構築しても不変です。
+export type PaneSourceColumn<T> = {
+  column: GridColumn<T>;
+  logicalIndex: number;
+};
+
+// 追加(11-B4): orderedColumns を 3 ペインの列ソースへ分割した結果です。
+export type PaneSourceColumns<T> = {
+  left: PaneSourceColumn<T>[];
+  center: PaneSourceColumn<T>[];
+  right: PaneSourceColumn<T>[];
+};
+
+// 追加(11-B4): reorder 済み orderedColumns を 3 ペインの列ソースへ分割します。
+//             columnWidths に依存しないため、列構成が変わらない限り
+//             結果を memo で固定できます（ライブリサイズ中も不変）。
+export const splitOrderedColumnsByPane = <T,>(
   orderedColumns: GridColumn<T>[],
-  columnWidths: Record<string, number>,
-): GridPaneLayout<T> => {
-  // 追加(10-A): 列を 3 グループに振り分けつつ論理 index を記録します。
-  const groups: Record<ColumnPane, { column: GridColumn<T>; logicalIndex: number }[]> = {
+): PaneSourceColumns<T> => {
+  const groups: PaneSourceColumns<T> = {
     left: [],
     center: [],
     right: [],
@@ -148,14 +161,41 @@ export const buildGridPaneLayout = <T,>(
     groups[pane].push({ column, logicalIndex });
   });
 
-  // 追加(10-A): 1 ペイン分の PaneGeometry を生成する内部 helper です。
-  const buildPane = (
-    pane: ColumnPane,
-    items: { column: GridColumn<T>; logicalIndex: number }[],
-  ): PaneGeometry<T> => {
-    let offset = 0;
-    const entries: PaneColumnEntry<T>[] = items.map(({ column, logicalIndex }) => {
-      const size = columnWidths[column.key] ?? column.width;
+  return groups;
+};
+
+// 追加(11-B4): 1 ペイン分の解決済み列幅（columnWidths 優先 / column.width フォールバック）を
+//             ペイン内の列順で並べた配列として返す内部 helper です。
+const resolvePaneWidths = <T,>(
+  items: PaneSourceColumn<T>[],
+  columnWidths: Record<string, number>,
+): number[] =>
+  items.map(({ column }) => columnWidths[column.key] ?? column.width);
+
+// 追加(11-B4): 1 ペイン分の解決済み列幅を join した「幅キー文字列」を作ります。
+//             useMemo の依存値として使うことで、「そのペインの幅が実際に変わったとき」
+//             だけ geometry を再構築できます（columnWidths オブジェクトは毎 pointermove で
+//             参照が変わりますが、無関係ペインの幅キーは同一文字列のままです）。
+export const buildPaneWidthsKey = <T,>(
+  items: PaneSourceColumn<T>[],
+  columnWidths: Record<string, number>,
+): string => resolvePaneWidths(items, columnWidths).join(',');
+
+// 追加(11-B4): 幅キー文字列を解決済み幅配列へ戻します（buildPaneWidthsKey の逆変換）。
+const parsePaneWidthsKey = (widthsKey: string): number[] =>
+  widthsKey === '' ? [] : widthsKey.split(',').map(Number);
+
+// 追加(11-B4): 1 ペイン分の PaneGeometry を解決済み幅配列から構築する core です。
+//             旧 buildGridPaneLayout 内部の buildPane と同一ロジックです。
+export const buildPaneGeometry = <T,>(
+  pane: ColumnPane,
+  items: PaneSourceColumn<T>[],
+  resolvedWidths: number[],
+): PaneGeometry<T> => {
+  let offset = 0;
+  const entries: PaneColumnEntry<T>[] = items.map(
+    ({ column, logicalIndex }, indexInPane) => {
+      const size = resolvedWidths[indexInPane] ?? column.width;
       const entry: PaneColumnEntry<T> = {
         column,
         logicalIndex,
@@ -165,14 +205,48 @@ export const buildGridPaneLayout = <T,>(
       };
       offset += size;
       return entry;
-    });
-    return { pane, entries, totalWidth: offset };
-  };
+    },
+  );
+  return { pane, entries, totalWidth: offset };
+};
 
+// 追加(11-B4): 幅キー文字列から 1 ペイン分の PaneGeometry を構築します。
+//             SpreadsheetGrid 側のペイン別 useMemo（依存 = 列ソース + 幅キー）から
+//             呼ぶ想定です。幅キーは buildPaneWidthsKey で生成された値を渡してください。
+export const buildPaneGeometryFromWidthsKey = <T,>(
+  pane: ColumnPane,
+  items: PaneSourceColumn<T>[],
+  widthsKey: string,
+): PaneGeometry<T> =>
+  buildPaneGeometry(pane, items, parsePaneWidthsKey(widthsKey));
+
+// 追加(10-A): reorder 済み visibleColumns + columnWidths から
+//             3 ペインレイアウトを構築します。
+//             引数の columns は reorderColumnsByPane() 済みを前提とします。
+// 変更(11-B4): 内部実装を splitOrderedColumnsByPane + buildPaneGeometry へ委譲しました。
+//             SpreadsheetGrid 本体はペイン別 useMemo へ移行済みですが、
+//             「一括構築」の互換 API としてテスト・将来利用向けに残しています。
+export const buildGridPaneLayout = <T,>(
+  orderedColumns: GridColumn<T>[],
+  columnWidths: Record<string, number>,
+): GridPaneLayout<T> => {
+  const groups = splitOrderedColumnsByPane(orderedColumns);
   return {
-    left: buildPane('left', groups.left),
-    center: buildPane('center', groups.center),
-    right: buildPane('right', groups.right),
+    left: buildPaneGeometry(
+      'left',
+      groups.left,
+      resolvePaneWidths(groups.left, columnWidths),
+    ),
+    center: buildPaneGeometry(
+      'center',
+      groups.center,
+      resolvePaneWidths(groups.center, columnWidths),
+    ),
+    right: buildPaneGeometry(
+      'right',
+      groups.right,
+      resolvePaneWidths(groups.right, columnWidths),
+    ),
   };
 };
 
