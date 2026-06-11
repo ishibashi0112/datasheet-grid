@@ -97,6 +97,19 @@ export const gridUiReducer = (
         return state;
       }
 
+      // 追加(11-B1): 終端行が変わらない update は no-op として state をそのまま返します。
+      // 変更理由: ドラッグ中の pointermove は同一行内でも毎フレーム発火し、
+      //           毎回新しい state を返すと無意味な再レンダーが走るためです。
+      // 注意: 比較基準は selection.endRow です(dragState.currentRow は 11-B2 で
+      //       削除予定のため基準にしません。currentRow は読み手が存在しないことを
+      //       確認済みで、ここで更新を省略しても挙動に影響しません)。
+      if (
+        state.selection?.type === 'row' &&
+        state.selection.endRow === action.row
+      ) {
+        return state;
+      }
+
       return {
         ...state,
         selection: {
@@ -111,6 +124,16 @@ export const gridUiReducer = (
       if (
         state.dragState?.type !== 'selection' ||
         state.dragState.selectionKind !== 'cell'
+      ) {
+        return state;
+      }
+
+      // 追加(11-B1): 終端セルが変わらない update は no-op として state をそのまま返します。
+      // 注意: 比較基準は selection.range.end です(dragState.current は 11-B2 で削除予定)。
+      if (
+        state.selection?.type === 'cell' &&
+        state.selection.range.end.row === action.cell.row &&
+        state.selection.range.end.col === action.cell.col
       ) {
         return state;
       }
@@ -154,6 +177,15 @@ export const gridUiReducer = (
       if (
         state.dragState?.type !== 'selection' ||
         state.dragState.selectionKind !== 'col'
+      ) {
+        return state;
+      }
+
+      // 追加(11-B1): 終端列が変わらない update は no-op として state をそのまま返します。
+      // 注意: 比較基準は selection.endCol です(dragState.currentCol は 11-B2 で削除予定)。
+      if (
+        state.selection?.type === 'col' &&
+        state.selection.endCol === action.col
       ) {
         return state;
       }
@@ -215,8 +247,22 @@ export const gridUiReducer = (
         },
       };
 
-    case 'column/resizeUpdate':
+    case 'column/resizeUpdate': {
       if (state.dragState?.type !== 'columnResize') {
+        return state;
+      }
+
+      const nextWidth = clamp(
+        state.dragState.startWidth + (action.clientX - state.dragState.startX),
+        state.dragState.minWidth,
+        state.dragState.maxWidth,
+      );
+
+      // 追加(11-B1): clamp 後の幅が現在値と同じなら no-op として state をそのまま返します。
+      // 変更理由: min/max に張り付いている間や、縦方向のみのポインタ移動でも
+      //           pointermove は発火し続けるため、同値更新を弾くことで
+      //           ライブリサイズ中の無駄な全体再レンダーを抑止します。
+      if (state.columnWidths[state.dragState.columnKey] === nextWidth) {
         return state;
       }
 
@@ -224,13 +270,10 @@ export const gridUiReducer = (
         ...state,
         columnWidths: {
           ...state.columnWidths,
-          [state.dragState.columnKey]: clamp(
-            state.dragState.startWidth + (action.clientX - state.dragState.startX),
-            state.dragState.minWidth,
-            state.dragState.maxWidth,
-          ),
+          [state.dragState.columnKey]: nextWidth,
         },
       };
+    }
 
     case 'column/resizeEnd':
       // 変更(11-A2): columnResize ドラッグ中でなければ state をそのまま返します(no-op)。
