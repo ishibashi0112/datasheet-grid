@@ -245,6 +245,12 @@ export type SpreadsheetGridProps<T> = {
   enableGlobalFilter?: boolean;
   enableColumnFilter?: boolean;
   enableSorting?: boolean;
+  // 追加(12-B): フィルター結果 0 行時に表示するテキストです
+  //             (AG Grid の "No Matching Rows" オーバーレイ相当)。
+  noMatchingRowsText?: string;
+  // 追加(12-B): rows 自体が 0 件のときに表示するテキストです
+  //             (AG Grid の "No Rows To Show" 相当)。
+  noRowsText?: string;
   // 追加: Grid 上部カスタム領域です。未指定時は default top bar を使えます。
   renderTopBar?: (context: SpreadsheetGridSlotContext<T>) => ReactNode;
   // 追加: Grid 下部カスタム領域です。未指定時は何も表示しません。

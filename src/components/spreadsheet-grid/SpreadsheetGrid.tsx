@@ -120,6 +120,9 @@ export function SpreadsheetGrid<T extends object>({
   enableGlobalFilter = true,
   enableColumnFilter = true,
   enableSorting = true,
+  // 追加(12-B): 0 行時の空状態テキストです(AG Grid のオーバーレイ相当)。
+  noMatchingRowsText = '一致する行がありません',
+  noRowsText = '表示する行がありません',
   renderTopBar,
   renderBottomBar,
   className,
@@ -436,14 +439,30 @@ export function SpreadsheetGrid<T extends object>({
     [sourceRowModels, visibleColumns, deferredGlobalFilterText],
   );
 
+  // 追加(12-B): 列フィルター評価値を useDeferredValue で遅延化します(11-B7 と同型)。
+  // 変更理由: 12-A で set フィルターが「チェック操作ごとの即時適用」になったため、
+  //   columnFilters の更新頻度が popover の Apply 押下時代より大きく上がりました。
+  //   従来はチェック 1 回ごとの同期レンダー内で applyColumnFilters(最大 5,000 行)と
+  //   下流チェーン(sorted → filteredRows / SourceIndexes / Keys → 仮想行再構築)が
+  //   走り、連続クリック時にチェックボックスの応答がブロックされ得ます。
+  //   依存を deferred 値へ差し替えることで、クリック直後の緊急レンダーでは
+  //   チェックボックス表示(openedSetFilterSelectedValues は即時値 uiState を参照)・
+  //   ヘッダーバッジ・bar 件数だけが即時更新され、行の再フィルタは低優先度の
+  //   遅延レンダーへ移ります。連続クリック中の中間値計算は中断・破棄され、
+  //   最終値での 1 回に収束します。
+  // 注記: text / number フィルターの Apply 押下や「クリア」も同じ経路ですが、
+  //   これらは単発操作のため体感差はなく、挙動は等価です。
+  const columnFilters = uiState.filters.columnFilters;
+  const deferredColumnFilters = useDeferredValue(columnFilters);
+
   const columnFilteredRowModels = useMemo(
     () =>
       applyColumnFilters(
         globallyFilteredRowModels,
         visibleColumns,
-        uiState.filters.columnFilters,
+        deferredColumnFilters,
       ),
-    [globallyFilteredRowModels, visibleColumns, uiState.filters.columnFilters],
+    [globallyFilteredRowModels, visibleColumns, deferredColumnFilters],
   );
 
   const filteredRowModels = useMemo(
@@ -1285,6 +1304,29 @@ export function SpreadsheetGrid<T extends object>({
     height: headerHeight + totalBodyHeight,
   };
 
+  // 追加(12-B): フィルター結果 0 行時の空状態表示(AG Grid の "No Matching Rows" 相当)です。
+  // 変更理由: 従来は totalBodyHeight=0 でボディが高さごと潰れ、空白だけが残っていました。
+  //           sticky ヘッダーの下に固定高の案内領域を確保し、メッセージを表示します。
+  // 配置のポイント:
+  //   - inner flex row(幅 totalScrollWidth)の「後ろ」に通常フローで置くことで、
+  //     ブロック要素の auto 幅はスクロールコンテナの clientWidth に一致します
+  //     (兄弟のはみ出し幅には引っ張られません)。
+  //   - position: sticky; left: 0 により、横スクロールしてもメッセージが
+  //     ビューポート中央に留まります(ヘッダーは従来どおり横スクロール可能)。
+  const isBodyEmpty = filteredRows.length === 0;
+
+  const emptyStateStyle: CSSProperties = {
+    position: 'sticky',
+    left: 0,
+    height: 160,
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    color: '#94a3b8',
+    fontSize: 13,
+    userSelect: 'none',
+  };
+
   // 追加(10-B): 固定ペイン共通の style です。
   // 変更(10-G): position: sticky で横方向だけ留めます（縦は共有スクロールで一緒に動きます）。
   //   - side: 'left' は left:0、'right' は right:0 でビューポート端へ貼り付きます。
@@ -1737,6 +1779,14 @@ export function SpreadsheetGrid<T extends object>({
 
           </div>
           {/* ── /スクロールコンテンツ本体（inner flex row） ── */}
+
+          {/* 追加(12-B): 0 行時の空状態表示です。rows 自体が 0 件か、
+              フィルターで 0 件になったかでメッセージを切り替えます。 */}
+          {isBodyEmpty && (
+            <div style={emptyStateStyle}>
+              {rows.length === 0 ? noRowsText : noMatchingRowsText}
+            </div>
+          )}
         </div>
         {/* ── /共有スクロールコンテナ ── */}
       </div>
