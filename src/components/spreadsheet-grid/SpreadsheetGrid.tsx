@@ -164,6 +164,15 @@ export function SpreadsheetGrid<T extends object>({
     createInitialGridUiState,
   );
 
+  // 追加(11-B5): columnWidths の latest-ref です（dragStateRef と同じパターン）。
+  // 変更理由: handleColumnResizePointerDown が uiState.columnWidths を依存に持つと、
+  //           ライブリサイズ中（columnWidths が毎 pointermove で参照更新）に
+  //           ハンドラ参照も毎フレーム変わり、GridHeaderRow(memo) の props 比較が
+  //           3 ペインすべてで不一致になります。pointerdown 時点の「現在幅」さえ
+  //           読めれば十分なので、ref 経由の読み出しに置き換えて依存から外します。
+  const columnWidthsRef = useRef(uiState.columnWidths);
+  columnWidthsRef.current = uiState.columnWidths;
+
   // 追加(11-A): GridBodyLayer / GridHeaderRow へ uiState を渡さないための
   //             正規化済み選択スナップショットです。
   // 変更理由: uiState を丸ごと子へ渡すと、selection / dragState 等のあらゆる更新で
@@ -866,9 +875,12 @@ export function SpreadsheetGrid<T extends object>({
   }, []);
 
   // ── column resize ─────────────────────────────────────
-  // 変更(11-A3): 依存を uiState 丸ごと → uiState.columnWidths へ縮小します。
-  //   本ハンドラはヘッダー専用のため行 memo には影響しませんが、丸ごと依存を
-  //   残すと将来ヘッダーを memo 化する際に同じ罠になるため、ここで潰しておきます。
+  // 変更(11-B5): 依存を uiState.columnWidths → latest-ref(columnWidthsRef) 読みへ
+  //             置き換え、ハンドラ参照を恒久安定化します(11-A3 の続き)。
+  // 変更理由: GridHeaderRow を memo 化するにあたり、columnWidths 依存が残っていると
+  //           ライブリサイズの毎 pointermove で本ハンドラの参照が変わり、
+  //           幅が変わっていない固定ペインのヘッダーまで memo を突破していました。
+  //           開始幅は pointerdown 時点の最新値を ref から読むため挙動は等価です。
   const handleColumnResizePointerDown = useCallback(
     (column: GridColumn<T>, event: PointerEvent<HTMLDivElement>) => {
       event.preventDefault();
@@ -877,13 +889,13 @@ export function SpreadsheetGrid<T extends object>({
         gridActions.startColumnResize(
           column.key,
           event.clientX,
-          uiState.columnWidths[column.key] ?? column.width,
+          columnWidthsRef.current[column.key] ?? column.width,
           column.minWidth ?? 60,
           column.maxWidth ?? 1000,
         ),
       );
     },
-    [dispatch, uiState.columnWidths],
+    [dispatch],
   );
 
   // ── filter popover actions ────────────────────────────

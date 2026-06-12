@@ -1,4 +1,5 @@
-import type { CSSProperties, PointerEvent } from 'react';
+// 変更(11-B5): GridHeaderRow を React.memo 化するため memo を追加 import します。
+import { memo, type CSSProperties, type PointerEvent } from 'react';
 // 変更(11-A): uiState 丸ごと依存を撤廃し、正規化済み SelectionSnapshot を受け取ります。
 // 変更理由: GridBodyRow と同じく、uiState のあらゆる更新で props が変わるのを防ぎ、
 //           将来ヘッダー行を memo 化する際の布石にもなります。
@@ -73,7 +74,14 @@ type GridHeaderRowProps<T> = {
 
 // 変更(10-C): sticky header 行を「1ペイン分」描画する汎用コンポーネントにしました。
 //             ownsRowHeader が true のペインのみ左上コーナーセルを描画します。
-export function GridHeaderRow<T>({
+// 変更(11-B5): React.memo 化のため実装本体を Inner に分離します(export は末尾参照)。
+// 変更理由: ライブリサイズ中、幅が変わっていない固定ペインのヘッダーまで親再レンダーに
+//           引きずられて再描画されていました。11-B4 で renderEntries はペイン単位で
+//           安定済み、11-B5 で onColumnResizePointerDown も latest-ref 化により恒久安定と
+//           なったため、shallow 比較で props 全一致が成立し memo が機能します。
+//           なお中央ペインは virtualColumns 依存で renderEntries が横スクロール/リサイズの
+//           たびに変わるため再レンダーされますが、これは表示更新に必要な仕様どおりの挙動です。
+function GridHeaderRowInner<T>({
   pane,
   ownsRowHeader,
   leadingWidth,
@@ -295,5 +303,14 @@ export function GridHeaderRow<T>({
     </div>
   );
 }
+
+// 追加(11-B5): memo ラップ本体です。
+// 注記: ジェネリックコンポーネントを memo すると型引数 <T> が失われるため、
+//       `as typeof GridHeaderRowInner` でジェネリックシグネチャを復元します。
+//       比較関数は渡さず既定の shallow 比較を使います(全 props がプリミティブ or
+//       親側で useMemo / useCallback / latest-ref により参照安定化済みのため)。
+export const GridHeaderRow = memo(
+  GridHeaderRowInner,
+) as typeof GridHeaderRowInner;
 
 export default GridHeaderRow;
