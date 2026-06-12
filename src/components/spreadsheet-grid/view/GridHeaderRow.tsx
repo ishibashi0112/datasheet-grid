@@ -216,15 +216,20 @@ function GridHeaderRowInner<T>({
           colIndex >= selectionSnapshot.startCol &&
           colIndex <= selectionSnapshot.endCol;
 
-        // 追加(13-A): この列のメニューを開いているかです。
-        //             「⋮」ボタンは hover 中だけ表示しますが、メニューを開いている間は
-        //             hover が外れても anchor(ボタン)を DOM に残す必要があるため、
-        //             open 中の列でも表示を継続します(unmount すると anchor の
-        //             getBoundingClientRect が 0 になり再配置が壊れます)。
+        // 追加(13-A): この列のメニューを開いているかです(「⋮」の active 表示に使います)。
+        // 変更(13-A2): 「⋮」ボタンを hover 時表示 → 常時表示へ変更します。
+        // 変更理由: 旧実装は hoveredColumnIndex === colIndex を表示条件にしていましたが、
+        //           ヘッダーに配線している onColumnHeaderPointerEnter は
+        //           useGridPointerInteractions のドラッグ選択更新ハンドラであり、
+        //           hoveredColumnIndex を set する経路がどこにも無いため、
+        //           ボタンは「メニューが開いている列」でしか表示されませんでした
+        //           (= 右クリックでメニューを開いたときだけ「⋮」が出現する症状)。
+        //           hover 表示を復活させる案もありますが、hover のたびに memo 化済み
+        //           ヘッダー 3 ペインが再レンダーされるため、常時表示(AG Grid の
+        //           suppressMenuHide 相当)を採用します。anchor ボタンが常に DOM に
+        //           存在するため、開いている列の表示継続ガードも不要になります。
         const isMenuOpenForColumn = openedMenuColumnKey === column.key;
-        const showColumnMenuButton =
-          enableColumnMenu &&
-          (hoveredColumnIndex === colIndex || isMenuOpenForColumn);
+        const showColumnMenuButton = enableColumnMenu;
 
         return (
           <div
@@ -331,9 +336,9 @@ function GridHeaderRowInner<T>({
                 {isColumnFiltered ? '●' : '○'}
               </button>
 
-              {/* 追加(13-A): 列メニュー(「⋮」)ボタンです。AG Grid と同様に
-                  hover 中(またはメニュー表示中)だけ表示し、常設ボタンによる
-                  幅圧迫を避けます(右クリックでも同じメニューが開きます)。 */}
+              {/* 変更(13-A2): 列メニュー(「⋮」)ボタンです。常時表示します
+                  (AG Grid の suppressMenuHide: true 相当。右クリックでも
+                   同じメニューが開きます)。 */}
               {showColumnMenuButton && (
                 <button
                   type="button"

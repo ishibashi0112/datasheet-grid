@@ -32,9 +32,11 @@ type UseColumnMenuControllerArgs<T> = {
 const MENU_WIDTH = 200;
 const VIEWPORT_MARGIN = 8;
 const OFFSET_Y = 6;
-// 追加(13-A): 上下フリップ判定用の見積もり高さです
-//             (タイトル + セクション見出し + 3 項目 + padding)。
-const ESTIMATED_MENU_HEIGHT = 190;
+// 変更(13-A2): カスケード化でルートメニューが「タイトル + 1 項目 + 閉じる」へ
+//             短くなったため、上下フリップ判定用の見積もり高さを更新します
+//             (padding 16 + タイトル ~30 + 項目 ~32 + 区切り/閉じる ~46 ≒ 124)。
+// 注記: サブメニューは横方向へ開くため、この縦フリップ判定には含めません。
+const ESTIMATED_MENU_HEIGHT = 130;
 
 // 追加(13-A): 列メニュー(「⋮」ボタン / ヘッダー右クリック)の
 //             state / anchor / layout / outside click / Escape をまとめて管理します。

@@ -1,3 +1,9 @@
+// 変更(13-A2): フラットな項目列挙 → AG Grid 同様のカスケード(サブメニュー)UI へ変更します。
+//             ルートメニューには「列の固定 ›」を置き、hover / クリックで右隣に
+//             サブメニュー(固定しない / 左に固定 / 右に固定)を開きます。
+//             将来「この列の幅を自動調整」「列の表示/非表示」等のルート項目を
+//             追加しても、同じ MenuRow / サブメニューパターンで拡張できる構成です。
+import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import type {
   CSSProperties,
@@ -8,23 +14,25 @@ import type {
 import type { GridColumnPinned } from '../model/gridTypes';
 import type { ColumnMenuLayout } from '../hooks/useColumnMenuController';
 
-// 追加(13-A): 列メニュー(AG Grid の Pin Column サブメニュー相当)の portal popover です。
-//             「⋮」ボタン押下 / ヘッダー右クリックのどちらからでも同じメニューが開きます。
-//             現状の項目は列固定(左に固定 / 右に固定 / 固定しない)のみですが、
-//             将来「列の表示/非表示」「自動幅調整」等を同じメニューへ足せる構成にしています。
-
 type ColumnMenuPinnedItem = {
   // 注記: undefined = 固定なし(中央スクロール領域)です。
   value: GridColumnPinned | undefined;
   label: string;
 };
 
-// 追加(13-A): AG Grid の No Pin / Pin Left / Pin Right に対応する 3 項目です。
+// 変更(13-A2): 項目順を AG Grid の Pin Column サブメニュー
+//             (No Pin / Pin Left / Pin Right)に合わせます。
 const PINNED_ITEMS: ColumnMenuPinnedItem[] = [
+  { value: undefined, label: '固定しない' },
   { value: 'left', label: '左に固定' },
   { value: 'right', label: '右に固定' },
-  { value: undefined, label: '固定しない' },
 ];
+
+// 追加(13-A2): サブメニューの幅と、ルートメニューとの水平間隔です。
+//             左右どちらへ開くかの判定(viewport はみ出し)にも使います。
+const SUBMENU_WIDTH = 180;
+const SUBMENU_GAP = 4;
+const VIEWPORT_MARGIN = 8;
 
 type ColumnMenuPopoverProps = {
   isOpen: boolean;
@@ -44,15 +52,21 @@ type ColumnMenuPopoverProps = {
   onRequestClose: () => void;
 };
 
-const SECTION_LABEL_STYLE: CSSProperties = {
-  fontSize: 11,
-  color: '#64748b',
-  margin: '4px 0 4px',
-  userSelect: 'none',
+// 追加(13-A2): ルートメニュー / サブメニューで共有するパネルの見た目です。
+const PANEL_BASE_STYLE: CSSProperties = {
+  padding: 8,
+  boxSizing: 'border-box',
+  border: '1px solid #cbd5e1',
+  borderRadius: 10,
+  backgroundColor: '#ffffff',
+  boxShadow: '0 10px 24px rgba(15, 23, 42, 0.12)',
 };
 
-// 追加(13-A): メニュー項目ボタンの style です。disabled / 選択中で出し分けます。
-const getMenuItemStyle = (disabled: boolean): CSSProperties => ({
+// 追加(13-A): メニュー項目ボタンの style です。disabled / hover(highlight) で出し分けます。
+const getMenuItemStyle = (
+  disabled: boolean,
+  highlighted: boolean,
+): CSSProperties => ({
   display: 'flex',
   alignItems: 'center',
   gap: 8,
@@ -61,7 +75,7 @@ const getMenuItemStyle = (disabled: boolean): CSSProperties => ({
   padding: '7px 8px',
   border: 'none',
   borderRadius: 8,
-  backgroundColor: 'transparent',
+  backgroundColor: highlighted ? '#f1f5f9' : 'transparent',
   color: disabled ? '#94a3b8' : '#334155',
   fontSize: 13,
   textAlign: 'left',
@@ -79,22 +93,50 @@ export function ColumnMenuPopover({
   onPinnedChange,
   onRequestClose,
 }: ColumnMenuPopoverProps) {
+  // 追加(13-A2): 「列の固定」サブメニューの開閉状態です(popover ローカル)。
+  // 注記: AG Grid と同様、一度開いたサブメニューはポインタが離れても開いたままにし、
+  //       別のルート項目へ hover したとき(将来項目が増えた場合)・メニュー自体が
+  //       閉じたときに閉じます。チラつき防止のため pointerleave では閉じません。
+  const [isPinSubmenuOpen, setIsPinSubmenuOpen] = useState(false);
+
+  // 追加(13-A2): 開いたまま別列へ切り替えた場合(popover は mount されたまま
+  //             columnKey だけ変わる)に、サブメニューの開閉状態を初期化します。
+  useEffect(() => {
+    setIsPinSubmenuOpen(false);
+  }, [columnKey, isOpen]);
+
   if (!isOpen || !layout) {
     return null;
   }
+
+  // 追加(13-A2): サブメニューを右に開くと viewport をはみ出す場合は左へ開きます
+  //             (AG Grid と同じフリップ挙動です)。layout はルートメニューの
+  //             fixed 座標なので、右端 = layout.left + layout.width です。
+  const submenuOpensLeft =
+    layout.left + layout.width + SUBMENU_GAP + SUBMENU_WIDTH >
+    window.innerWidth - VIEWPORT_MARGIN;
 
   const wrapperStyle: CSSProperties = {
     position: 'fixed',
     top: layout.top,
     left: layout.left,
     width: layout.width,
-    padding: 8,
-    boxSizing: 'border-box',
-    border: '1px solid #cbd5e1',
-    borderRadius: 10,
-    backgroundColor: '#ffffff',
-    boxShadow: '0 10px 24px rgba(15, 23, 42, 0.12)',
+    ...PANEL_BASE_STYLE,
     zIndex: 1000,
+  };
+
+  // 追加(13-A2): サブメニューはルート項目(position: relative の行)を基準に
+  //             絶対配置します。top: -9 はパネルの padding(8) + border(1) ぶんを
+  //             相殺し、サブメニューの先頭項目をルート項目と上端揃えにするためです。
+  const submenuStyle: CSSProperties = {
+    position: 'absolute',
+    top: -9,
+    ...(submenuOpensLeft
+      ? { right: `calc(100% + ${SUBMENU_GAP}px)` }
+      : { left: `calc(100% + ${SUBMENU_GAP}px)` }),
+    width: SUBMENU_WIDTH,
+    ...PANEL_BASE_STYLE,
+    zIndex: 1,
   };
 
   const handlePointerDown = (event: PointerEvent<HTMLDivElement>) => {
@@ -137,64 +179,99 @@ export function ColumnMenuPopover({
         {title}
       </div>
 
-      <div style={{ padding: '0 8px' }}>
-        <div style={SECTION_LABEL_STYLE}>列の固定</div>
-      </div>
-
-      {PINNED_ITEMS.map((item) => {
-        const isSelected = pinned === item.value;
-        return (
-          <button
-            key={item.label}
-            type="button"
-            disabled={!canChangePinned}
-            onClick={() => {
-              if (!canChangePinned) {
-                return;
-              }
-              // 注記: 現在値と同じ項目を選んでも閉じるだけになります
-              //       (no-op 判定は SpreadsheetGrid 側で行います)。
-              onPinnedChange(columnKey, item.value);
-            }}
-            onPointerEnter={(event) => {
-              if (canChangePinned) {
-                event.currentTarget.style.backgroundColor = '#f1f5f9';
-              }
-            }}
-            onPointerLeave={(event) => {
-              event.currentTarget.style.backgroundColor = 'transparent';
-            }}
-            style={getMenuItemStyle(!canChangePinned)}
-          >
-            {/* 追加: 現在の固定状態に ✓ を出します(未選択は幅だけ確保して揃えます)。*/}
-            <span
-              style={{
-                width: 14,
-                flex: '0 0 auto',
-                color: '#2563eb',
-                fontWeight: 700,
-                visibility: isSelected ? 'visible' : 'hidden',
-              }}
-            >
-              ✓
-            </span>
-            <span style={{ minWidth: 0, flex: 1 }}>{item.label}</span>
-          </button>
-        );
-      })}
-
-      {!canChangePinned && (
-        <div
-          style={{
-            fontSize: 11,
-            color: '#94a3b8',
-            padding: '4px 8px 2px',
-            userSelect: 'none',
+      {/* ── ルート項目: 列の固定 ›(サブメニュー親) ── */}
+      {/* 追加(13-A2): サブメニューはこの行(position: relative)基準で絶対配置します。
+          パネル自体は overflow を持たないため、wrapper の外側(右隣 / 左隣)へ
+          はみ出して表示されます。popoverRef(wrapper)の子孫なので、controller の
+          outside-pointerdown 判定(contains)にもそのまま含まれます。 */}
+      <div style={{ position: 'relative' }}>
+        <button
+          type="button"
+          onPointerEnter={() => {
+            // 追加(13-A2): AG Grid と同様、hover でサブメニューを開きます。
+            setIsPinSubmenuOpen(true);
           }}
+          onClick={() => {
+            // 追加(13-A2): クリックでもトグルできるようにします(タッチ環境向け)。
+            setIsPinSubmenuOpen((current) => !current);
+          }}
+          style={getMenuItemStyle(false, isPinSubmenuOpen)}
         >
-          onColumnsChange 未指定のため固定状態を変更できません
-        </div>
-      )}
+          {/* 注記: ✓ 列との左端揃えのため、サブメニュー項目と同じ幅のスペーサを置きます。*/}
+          <span style={{ width: 14, flex: '0 0 auto' }} />
+          <span style={{ minWidth: 0, flex: 1 }}>列の固定</span>
+          <span
+            style={{
+              flex: '0 0 auto',
+              color: '#94a3b8',
+              fontSize: 12,
+              lineHeight: 1,
+            }}
+          >
+            ›
+          </span>
+        </button>
+
+        {/* ── サブメニュー: 固定しない / 左に固定 / 右に固定 ── */}
+        {isPinSubmenuOpen && (
+          <div style={submenuStyle}>
+            {PINNED_ITEMS.map((item) => {
+              const isSelected = pinned === item.value;
+              return (
+                <button
+                  key={item.label}
+                  type="button"
+                  disabled={!canChangePinned}
+                  onClick={() => {
+                    if (!canChangePinned) {
+                      return;
+                    }
+                    // 注記: 現在値と同じ項目を選んでも閉じるだけになります
+                    //       (no-op 判定は SpreadsheetGrid 側で行います)。
+                    onPinnedChange(columnKey, item.value);
+                  }}
+                  onPointerEnter={(event) => {
+                    if (canChangePinned) {
+                      event.currentTarget.style.backgroundColor = '#f1f5f9';
+                    }
+                  }}
+                  onPointerLeave={(event) => {
+                    event.currentTarget.style.backgroundColor = 'transparent';
+                  }}
+                  style={getMenuItemStyle(!canChangePinned, false)}
+                >
+                  {/* 追加: 現在の固定状態に ✓ を出します(未選択は幅だけ確保して揃えます)。*/}
+                  <span
+                    style={{
+                      width: 14,
+                      flex: '0 0 auto',
+                      color: '#2563eb',
+                      fontWeight: 700,
+                      visibility: isSelected ? 'visible' : 'hidden',
+                    }}
+                  >
+                    ✓
+                  </span>
+                  <span style={{ minWidth: 0, flex: 1 }}>{item.label}</span>
+                </button>
+              );
+            })}
+
+            {!canChangePinned && (
+              <div
+                style={{
+                  fontSize: 11,
+                  color: '#94a3b8',
+                  padding: '4px 8px 2px',
+                  userSelect: 'none',
+                }}
+              >
+                onColumnsChange 未指定のため固定状態を変更できません
+              </div>
+            )}
+          </div>
+        )}
+      </div>
 
       <div
         style={{
