@@ -3,6 +3,8 @@ import {
   useEffect,
   useMemo,
   useCallback,
+  // 追加(11-B7): グローバルフィルタ評価の遅延化(Transition 化)に使います。
+  useDeferredValue,
   useReducer,
   useRef,
   useState,
@@ -394,10 +396,33 @@ export function SpreadsheetGrid<T extends object>({
   //   (uiState.filters.columnFilters / uiState.sort)になっており、起点のここだけが
   //   丸ごと依存でした。
   const globalFilterText = uiState.filters.globalText;
+
+  // 追加(11-B7): グローバルフィルタの評価値を useDeferredValue で遅延化します。
+  // 変更理由: globalText は入力欄の毎キーストロークで更新され、従来はその同期レンダー内で
+  //   5,000 行のフィルタ計算(applyGlobalFilter)と下流チェーン
+  //   (columnFiltered → sorted → filteredRows / SourceIndexes / Keys → 仮想行再構築)が
+  //   毎回走っていました。タイピングが速いと入力欄の文字反映自体がこの計算にブロックされ、
+  //   「入力の引っかかり」として体感されます。
+  //   依存を deferred 値へ差し替えることで、キーストローク直後の緊急レンダーでは
+  //   deferred 値が旧値のままになり、この useMemo 以下の行モデルチェーンは全て
+  //   同一参照を返してスキップされます(=入力欄だけが即時更新)。フィルタ再計算は
+  //   React が低優先度で行う遅延レンダーへ移り、連続タイピング中は次のキーストロークで
+  //   中断・破棄されるため、中間値での計算が省かれ最終値での 1 回に収束します。
+  //   入力欄の value は従来どおり即時値 globalFilterText を参照する
+  //   (useGridBarContext → slotContext 経由)ため、表示が遅れることはありません。
+  // 注記: pending 表示が欲しくなった場合は
+  //   `const isGlobalFilterPending = deferredGlobalFilterText !== globalFilterText;`
+  //   を slotContext へ載せて top bar 側で薄く出せます(今回は見送り)。
+  const deferredGlobalFilterText = useDeferredValue(globalFilterText);
+
   const globallyFilteredRowModels = useMemo(
     () =>
-      applyGlobalFilter(sourceRowModels, visibleColumns, globalFilterText),
-    [sourceRowModels, visibleColumns, globalFilterText],
+      applyGlobalFilter(
+        sourceRowModels,
+        visibleColumns,
+        deferredGlobalFilterText,
+      ),
+    [sourceRowModels, visibleColumns, deferredGlobalFilterText],
   );
 
   const columnFilteredRowModels = useMemo(

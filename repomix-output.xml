@@ -946,357 +946,6 @@ export const useGridClipboardController = <T extends object>({
 export default useGridClipboardController;
 </file>
 
-<file path="src/components/spreadsheet-grid/hooks/useGridEditController.ts">
-import { useCallback, type Dispatch, type RefObject } from 'react';
-import { gridActions, type GridUiAction } from '../model/gridActions';
-import type { CellCoord, GridColumn, GridUiState } from '../model/gridTypes';
-import type { EditorCommitDirection } from '../CellEditorLayer';
-import { setCellValue } from '../utils/permissions';
-
-type UseGridEditControllerArgs<T extends object> = {
-  uiState: GridUiState;
-  rows: T[];
-  visibleColumns: GridColumn<T>[];
-  filteredRowSourceIndexes: number[];
-  editorValue: string;
-  setEditorValue: (value: string) => void;
-  onRowsChange?: (nextRows: T[]) => void;
-  dispatch: Dispatch<GridUiAction>;
-  getMovedCell: (baseCell: CellCoord, deltaRow: number, deltaCol: number) => CellCoord;
-  gridRootRef: RefObject<HTMLDivElement | null>;
-  editorActionGuardRef: RefObject<boolean>;
-};
-
-// 追加: edit 確定 / cancel / active cell 復帰をまとめる controller です。
-export const useGridEditController = <T extends object>({
-  uiState,
-  rows,
-  visibleColumns,
-  filteredRowSourceIndexes,
-  editorValue,
-  setEditorValue,
-  onRowsChange,
-  dispatch,
-  getMovedCell,
-  gridRootRef,
-  editorActionGuardRef,
-}: UseGridEditControllerArgs<T>) => {
-  // 追加: 単一セルを active + selection へ反映するユーティリティです。
-  const activateSingleCell = useCallback(
-    (cell: CellCoord) => {
-      dispatch(gridActions.startSelection(cell));
-      dispatch(gridActions.endSelection());
-      dispatch(gridActions.activateCell(cell));
-    },
-    [dispatch],
-  );
-
-  // 追加: 編集開始時に editorValue を初期化する helper です。
-  const startEditWithValue = useCallback(
-    (cell: CellCoord, initialValue: string) => {
-      setEditorValue(initialValue);
-      dispatch(gridActions.startEdit(cell));
-    },
-    [dispatch, setEditorValue],
-  );
-
-  // 追加: 編集確定です。editorValue を rows へ反映し、必要なら次セルへ移動します。
-  const commitEdit = useCallback(
-    (direction?: EditorCommitDirection) => {
-      if (editorActionGuardRef.current || !uiState.editingCell) {
-        return;
-      }
-
-      const editingCell = uiState.editingCell;
-      const nextCell =
-        direction === 'down'
-          ? getMovedCell(editingCell, 1, 0)
-          : direction === 'right'
-            ? getMovedCell(editingCell, 0, 1)
-            : direction === 'left'
-              ? getMovedCell(editingCell, 0, -1)
-              : editingCell;
-
-      const column = visibleColumns[editingCell.col];
-      const originalRowIndex =
-        filteredRowSourceIndexes[editingCell.row] ?? editingCell.row;
-      const row = rows[originalRowIndex];
-      if (!column || !row) {
-        dispatch(gridActions.stopEdit());
-        return;
-      }
-
-      if (onRowsChange) {
-        const parsedValue = column.parseClipboardValue
-          ? column.parseClipboardValue(editorValue, row)
-          : editorValue;
-        const nextRows = rows.map((currentRow, index) =>
-          index === originalRowIndex
-            ? setCellValue(currentRow, column, parsedValue)
-            : currentRow,
-        );
-        onRowsChange(nextRows);
-      }
-
-      editorActionGuardRef.current = true;
-      requestAnimationFrame(() => {
-        gridRootRef.current?.focus();
-        activateSingleCell(nextCell);
-        editorActionGuardRef.current = false;
-      });
-
-      dispatch(gridActions.stopEdit());
-    },
-    [
-      activateSingleCell,
-      dispatch,
-      editorActionGuardRef,
-      editorValue,
-      filteredRowSourceIndexes,
-      getMovedCell,
-      gridRootRef,
-      onRowsChange,
-      rows,
-      uiState.editingCell,
-      visibleColumns,
-    ],
-  );
-
-  // 追加: 編集キャンセルです。editor を閉じるだけです。
-  const cancelEdit = useCallback(() => {
-    if (editorActionGuardRef.current) {
-      return;
-    }
-
-    editorActionGuardRef.current = true;
-    dispatch(gridActions.stopEdit());
-
-    requestAnimationFrame(() => {
-      gridRootRef.current?.focus();
-      editorActionGuardRef.current = false;
-    });
-  }, [dispatch, editorActionGuardRef, gridRootRef]);
-
-  return {
-    activateSingleCell,
-    startEditWithValue,
-    commitEdit,
-    cancelEdit,
-  };
-};
-
-export default useGridEditController;
-</file>
-
-<file path="src/components/spreadsheet-grid/hooks/useGridKeyboardInteractions.ts">
-import { useCallback, type Dispatch, type KeyboardEvent } from 'react';
-import { gridActions, type GridUiAction } from '../model/gridActions';
-import type {
-  CellCoord,
-  GridColumn,
-  GridUiState,
-  SpreadsheetGridProps,
-} from '../model/gridTypes';
-import { clamp } from '../logic/geometry';
-import { isPrintableKey, shouldIgnoreGridKeydown } from '../logic/domGuards';
-import { isCellEditable } from '../utils/permissions';
-
-type UseGridKeyboardInteractionsArgs<T> = {
-  uiState: GridUiState;
-  filteredRows: T[];
-  visibleColumns: GridColumn<T>[];
-  readOnly: boolean;
-  canEditCell: SpreadsheetGridProps<T>['canEditCell'];
-  setEditorValue: (value: string) => void;
-  dispatch: Dispatch<GridUiAction>;
-  handleCopy: () => Promise<void>;
-  handleCellDoubleClick: (cell: CellCoord) => void;
-  isWholeGridSelected: boolean;
-  selectEntireGrid: () => void;
-};
-
-// 追加: keyboard interaction（arrow/tab/enter/copy/select-all/edit start）をまとめます。
-export const useGridKeyboardInteractions = <T,>({
-  uiState,
-  filteredRows,
-  visibleColumns,
-  readOnly,
-  canEditCell,
-  setEditorValue,
-  dispatch,
-  handleCopy,
-  handleCellDoubleClick,
-  isWholeGridSelected,
-  selectEntireGrid,
-}: UseGridKeyboardInteractionsArgs<T>) => {
-  // 追加: 基準セルから移動先セルを計算します。
-  const getMovedCell = useCallback(
-    (baseCell: CellCoord, deltaRow: number, deltaCol: number): CellCoord => ({
-      row: clamp(
-        baseCell.row + deltaRow,
-        0,
-        Math.max(filteredRows.length - 1, 0),
-      ),
-      col: clamp(
-        baseCell.col + deltaCol,
-        0,
-        Math.max(visibleColumns.length - 1, 0),
-      ),
-    }),
-    [filteredRows.length, visibleColumns.length],
-  );
-
-  // 追加: active cell を移動します。shiftKey=true の場合は cell selection を拡張します。
-  const moveActiveCell = useCallback(
-    (deltaRow: number, deltaCol: number, extendSelection: boolean) => {
-      if (filteredRows.length === 0 || visibleColumns.length === 0) {
-        return;
-      }
-      const currentCell = uiState.activeCell ?? { row: 0, col: 0 };
-      const nextCell = {
-        row: clamp(currentCell.row + deltaRow, 0, filteredRows.length - 1),
-        col: clamp(currentCell.col + deltaCol, 0, visibleColumns.length - 1),
-      };
-      if (extendSelection) {
-        const anchor =
-          uiState.selection?.type === 'cell'
-            ? uiState.selection.range.start
-            : currentCell;
-        dispatch(gridActions.startSelection(anchor));
-        dispatch(gridActions.updateSelection(nextCell));
-        dispatch(gridActions.endSelection());
-        dispatch(gridActions.activateCell(nextCell));
-        return;
-      }
-      dispatch(gridActions.startSelection(nextCell));
-      dispatch(gridActions.endSelection());
-      dispatch(gridActions.activateCell(nextCell));
-    },
-    [
-      dispatch,
-      filteredRows.length,
-      uiState.activeCell,
-      uiState.selection,
-      visibleColumns.length,
-    ],
-  );
-
-  // 追加: Ctrl/Cmd + C や Arrow/Enter を捕捉します。
-  const handleKeyDown = useCallback(
-    async (event: KeyboardEvent<HTMLDivElement>) => {
-      // 追加: filter input / select / button 等にフォーカス中は、
-      //       grid 側の keyboard 操作を無効化します。
-      if (shouldIgnoreGridKeydown(event.target)) {
-        return;
-      }
-
-      if (uiState.editingCell) {
-        return;
-      }
-
-      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'c') {
-        event.preventDefault();
-        await handleCopy();
-        return;
-      }
-
-      // 追加: Ctrl + A / Cmd + A で全体選択、2回目で解除します。
-      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'a') {
-        event.preventDefault();
-        if (isWholeGridSelected) {
-          dispatch(gridActions.clearSelection());
-          dispatch(gridActions.activateCell(null));
-          return;
-        }
-        selectEntireGrid();
-        return;
-      }
-
-      if (event.key === 'ArrowUp') {
-        event.preventDefault();
-        moveActiveCell(-1, 0, event.shiftKey);
-        return;
-      }
-      if (event.key === 'ArrowDown') {
-        event.preventDefault();
-        moveActiveCell(1, 0, event.shiftKey);
-        return;
-      }
-      if (event.key === 'ArrowLeft') {
-        event.preventDefault();
-        moveActiveCell(0, -1, event.shiftKey);
-        return;
-      }
-      if (event.key === 'ArrowRight') {
-        event.preventDefault();
-        moveActiveCell(0, 1, event.shiftKey);
-        return;
-      }
-      if (event.key === 'Tab') {
-        event.preventDefault();
-        moveActiveCell(0, event.shiftKey ? -1 : 1, false);
-        return;
-      }
-      if (event.key === 'Escape') {
-        event.preventDefault();
-        dispatch(gridActions.clearSelection());
-        return;
-      }
-      if (event.key === 'Enter' || event.key === 'F2') {
-        event.preventDefault();
-        if (uiState.activeCell) {
-          handleCellDoubleClick(uiState.activeCell);
-        }
-        return;
-      }
-      if (isPrintableKey(event) && uiState.activeCell) {
-        const row = filteredRows[uiState.activeCell.row];
-        const column = visibleColumns[uiState.activeCell.col];
-        if (!row || !column) {
-          return;
-        }
-        if (
-          !isCellEditable(
-            { readOnly, canEditCell },
-            uiState.activeCell.row,
-            uiState.activeCell.col,
-            row,
-            column,
-          )
-        ) {
-          return;
-        }
-        event.preventDefault();
-        setEditorValue(event.key);
-        dispatch(gridActions.startEdit(uiState.activeCell));
-      }
-    },
-    [
-      canEditCell,
-      dispatch,
-      filteredRows,
-      handleCellDoubleClick,
-      handleCopy,
-      isWholeGridSelected,
-      moveActiveCell,
-      readOnly,
-      selectEntireGrid,
-      setEditorValue,
-      uiState.activeCell,
-      uiState.editingCell,
-      visibleColumns,
-    ],
-  );
-
-  return {
-    getMovedCell,
-    handleKeyDown,
-  };
-};
-
-export default useGridKeyboardInteractions;
-</file>
-
 <file path="src/components/spreadsheet-grid/logic/domGuards.ts">
 // 追加: 文字キー入力で編集開始する判定です。
 export const isPrintableKey = (event: {
@@ -2299,6 +1948,368 @@ export const useGridBarContext = <T,>({
 export default useGridBarContext;
 </file>
 
+<file path="src/components/spreadsheet-grid/hooks/useGridEditController.ts">
+import { useCallback, type Dispatch, type RefObject } from 'react';
+import { gridActions, type GridUiAction } from '../model/gridActions';
+import type { CellCoord, GridColumn, GridUiState } from '../model/gridTypes';
+import type { EditorCommitDirection } from '../CellEditorLayer';
+import { setCellValue } from '../utils/permissions';
+
+type UseGridEditControllerArgs<T extends object> = {
+  uiState: GridUiState;
+  rows: T[];
+  visibleColumns: GridColumn<T>[];
+  filteredRowSourceIndexes: number[];
+  // 変更(11-B6): editorValue / setEditorValue(ドラフト state)は廃止しました。
+  //              ドラフトは CellEditorLayer のローカル state へ移動し、
+  //              親は「編集開始時の初期値」を設定する setter だけを持ちます。
+  setEditorInitialValue: (value: string) => void;
+  onRowsChange?: (nextRows: T[]) => void;
+  dispatch: Dispatch<GridUiAction>;
+  getMovedCell: (baseCell: CellCoord, deltaRow: number, deltaCol: number) => CellCoord;
+  gridRootRef: RefObject<HTMLDivElement | null>;
+  editorActionGuardRef: RefObject<boolean>;
+};
+
+// 追加: edit 確定 / cancel / active cell 復帰をまとめる controller です。
+export const useGridEditController = <T extends object>({
+  uiState,
+  rows,
+  visibleColumns,
+  filteredRowSourceIndexes,
+  setEditorInitialValue,
+  onRowsChange,
+  dispatch,
+  getMovedCell,
+  gridRootRef,
+  editorActionGuardRef,
+}: UseGridEditControllerArgs<T>) => {
+  // 追加: 単一セルを active + selection へ反映するユーティリティです。
+  const activateSingleCell = useCallback(
+    (cell: CellCoord) => {
+      dispatch(gridActions.startSelection(cell));
+      dispatch(gridActions.endSelection());
+      dispatch(gridActions.activateCell(cell));
+    },
+    [dispatch],
+  );
+
+  // 追加: 編集開始時に editor の初期値を設定する helper です。
+  // 変更(11-B6): 設定先はドラフト state ではなく「初期値 state」になりました。
+  //   setEditorInitialValue + startEdit は同一イベントハンドラ内で React が自動バッチ
+  //   するため、編集開始時の親レンダーは従来どおり 1 回です。
+  const startEditWithValue = useCallback(
+    (cell: CellCoord, initialValue: string) => {
+      setEditorInitialValue(initialValue);
+      dispatch(gridActions.startEdit(cell));
+    },
+    [dispatch, setEditorInitialValue],
+  );
+
+  // 追加: 編集確定です。確定値を rows へ反映し、必要なら次セルへ移動します。
+  // 変更(11-B6): (direction?) → (committedValue, direction?) に変更。
+  //   ドラフト値を閉包(editorValue 依存)で読むのをやめ、CellEditorLayer から
+  //   最終値を引数で受け取ります。これにより本ハンドラの参照は編集中のタイピングで
+  //   変化しなくなります（旧実装は毎キーストロークで editorValue 依存が更新され、
+  //   commitEdit → CellEditorLayer props の参照も毎回変わっていました）。
+  const commitEdit = useCallback(
+    (committedValue: string, direction?: EditorCommitDirection) => {
+      if (editorActionGuardRef.current || !uiState.editingCell) {
+        return;
+      }
+
+      const editingCell = uiState.editingCell;
+      const nextCell =
+        direction === 'down'
+          ? getMovedCell(editingCell, 1, 0)
+          : direction === 'right'
+            ? getMovedCell(editingCell, 0, 1)
+            : direction === 'left'
+              ? getMovedCell(editingCell, 0, -1)
+              : editingCell;
+
+      const column = visibleColumns[editingCell.col];
+      const originalRowIndex =
+        filteredRowSourceIndexes[editingCell.row] ?? editingCell.row;
+      const row = rows[originalRowIndex];
+      if (!column || !row) {
+        dispatch(gridActions.stopEdit());
+        return;
+      }
+
+      if (onRowsChange) {
+        const parsedValue = column.parseClipboardValue
+          ? column.parseClipboardValue(committedValue, row)
+          : committedValue;
+        const nextRows = rows.map((currentRow, index) =>
+          index === originalRowIndex
+            ? setCellValue(currentRow, column, parsedValue)
+            : currentRow,
+        );
+        onRowsChange(nextRows);
+      }
+
+      editorActionGuardRef.current = true;
+      requestAnimationFrame(() => {
+        gridRootRef.current?.focus();
+        activateSingleCell(nextCell);
+        editorActionGuardRef.current = false;
+      });
+
+      dispatch(gridActions.stopEdit());
+    },
+    [
+      activateSingleCell,
+      dispatch,
+      editorActionGuardRef,
+      filteredRowSourceIndexes,
+      getMovedCell,
+      gridRootRef,
+      onRowsChange,
+      rows,
+      uiState.editingCell,
+      visibleColumns,
+    ],
+  );
+
+  // 追加: 編集キャンセルです。editor を閉じるだけです。
+  const cancelEdit = useCallback(() => {
+    if (editorActionGuardRef.current) {
+      return;
+    }
+
+    editorActionGuardRef.current = true;
+    dispatch(gridActions.stopEdit());
+
+    requestAnimationFrame(() => {
+      gridRootRef.current?.focus();
+      editorActionGuardRef.current = false;
+    });
+  }, [dispatch, editorActionGuardRef, gridRootRef]);
+
+  return {
+    activateSingleCell,
+    startEditWithValue,
+    commitEdit,
+    cancelEdit,
+  };
+};
+
+export default useGridEditController;
+</file>
+
+<file path="src/components/spreadsheet-grid/hooks/useGridKeyboardInteractions.ts">
+import { useCallback, type Dispatch, type KeyboardEvent } from 'react';
+import { gridActions, type GridUiAction } from '../model/gridActions';
+import type {
+  CellCoord,
+  GridColumn,
+  GridUiState,
+  SpreadsheetGridProps,
+} from '../model/gridTypes';
+import { clamp } from '../logic/geometry';
+import { isPrintableKey, shouldIgnoreGridKeydown } from '../logic/domGuards';
+import { isCellEditable } from '../utils/permissions';
+
+type UseGridKeyboardInteractionsArgs<T> = {
+  uiState: GridUiState;
+  filteredRows: T[];
+  visibleColumns: GridColumn<T>[];
+  readOnly: boolean;
+  canEditCell: SpreadsheetGridProps<T>['canEditCell'];
+  // 変更(11-B6): ドラフト state の setter → 「編集開始時の初期値」setter になりました。
+  //   文字キー直打ちの編集開始では、押下キー 1 文字を初期値として渡します
+  //   （以後のタイピングは CellEditorLayer ローカル state が受け持ちます）。
+  setEditorInitialValue: (value: string) => void;
+  dispatch: Dispatch<GridUiAction>;
+  handleCopy: () => Promise<void>;
+  handleCellDoubleClick: (cell: CellCoord) => void;
+  isWholeGridSelected: boolean;
+  selectEntireGrid: () => void;
+};
+
+// 追加: keyboard interaction（arrow/tab/enter/copy/select-all/edit start）をまとめます。
+export const useGridKeyboardInteractions = <T,>({
+  uiState,
+  filteredRows,
+  visibleColumns,
+  readOnly,
+  canEditCell,
+  setEditorInitialValue,
+  dispatch,
+  handleCopy,
+  handleCellDoubleClick,
+  isWholeGridSelected,
+  selectEntireGrid,
+}: UseGridKeyboardInteractionsArgs<T>) => {
+  // 追加: 基準セルから移動先セルを計算します。
+  const getMovedCell = useCallback(
+    (baseCell: CellCoord, deltaRow: number, deltaCol: number): CellCoord => ({
+      row: clamp(
+        baseCell.row + deltaRow,
+        0,
+        Math.max(filteredRows.length - 1, 0),
+      ),
+      col: clamp(
+        baseCell.col + deltaCol,
+        0,
+        Math.max(visibleColumns.length - 1, 0),
+      ),
+    }),
+    [filteredRows.length, visibleColumns.length],
+  );
+
+  // 追加: active cell を移動します。shiftKey=true の場合は cell selection を拡張します。
+  const moveActiveCell = useCallback(
+    (deltaRow: number, deltaCol: number, extendSelection: boolean) => {
+      if (filteredRows.length === 0 || visibleColumns.length === 0) {
+        return;
+      }
+      const currentCell = uiState.activeCell ?? { row: 0, col: 0 };
+      const nextCell = {
+        row: clamp(currentCell.row + deltaRow, 0, filteredRows.length - 1),
+        col: clamp(currentCell.col + deltaCol, 0, visibleColumns.length - 1),
+      };
+      if (extendSelection) {
+        const anchor =
+          uiState.selection?.type === 'cell'
+            ? uiState.selection.range.start
+            : currentCell;
+        dispatch(gridActions.startSelection(anchor));
+        dispatch(gridActions.updateSelection(nextCell));
+        dispatch(gridActions.endSelection());
+        dispatch(gridActions.activateCell(nextCell));
+        return;
+      }
+      dispatch(gridActions.startSelection(nextCell));
+      dispatch(gridActions.endSelection());
+      dispatch(gridActions.activateCell(nextCell));
+    },
+    [
+      dispatch,
+      filteredRows.length,
+      uiState.activeCell,
+      uiState.selection,
+      visibleColumns.length,
+    ],
+  );
+
+  // 追加: Ctrl/Cmd + C や Arrow/Enter を捕捉します。
+  const handleKeyDown = useCallback(
+    async (event: KeyboardEvent<HTMLDivElement>) => {
+      // 追加: filter input / select / button 等にフォーカス中は、
+      //       grid 側の keyboard 操作を無効化します。
+      if (shouldIgnoreGridKeydown(event.target)) {
+        return;
+      }
+
+      if (uiState.editingCell) {
+        return;
+      }
+
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'c') {
+        event.preventDefault();
+        await handleCopy();
+        return;
+      }
+
+      // 追加: Ctrl + A / Cmd + A で全体選択、2回目で解除します。
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'a') {
+        event.preventDefault();
+        if (isWholeGridSelected) {
+          dispatch(gridActions.clearSelection());
+          dispatch(gridActions.activateCell(null));
+          return;
+        }
+        selectEntireGrid();
+        return;
+      }
+
+      if (event.key === 'ArrowUp') {
+        event.preventDefault();
+        moveActiveCell(-1, 0, event.shiftKey);
+        return;
+      }
+      if (event.key === 'ArrowDown') {
+        event.preventDefault();
+        moveActiveCell(1, 0, event.shiftKey);
+        return;
+      }
+      if (event.key === 'ArrowLeft') {
+        event.preventDefault();
+        moveActiveCell(0, -1, event.shiftKey);
+        return;
+      }
+      if (event.key === 'ArrowRight') {
+        event.preventDefault();
+        moveActiveCell(0, 1, event.shiftKey);
+        return;
+      }
+      if (event.key === 'Tab') {
+        event.preventDefault();
+        moveActiveCell(0, event.shiftKey ? -1 : 1, false);
+        return;
+      }
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        dispatch(gridActions.clearSelection());
+        return;
+      }
+      if (event.key === 'Enter' || event.key === 'F2') {
+        event.preventDefault();
+        if (uiState.activeCell) {
+          handleCellDoubleClick(uiState.activeCell);
+        }
+        return;
+      }
+      if (isPrintableKey(event) && uiState.activeCell) {
+        const row = filteredRows[uiState.activeCell.row];
+        const column = visibleColumns[uiState.activeCell.col];
+        if (!row || !column) {
+          return;
+        }
+        if (
+          !isCellEditable(
+            { readOnly, canEditCell },
+            uiState.activeCell.row,
+            uiState.activeCell.col,
+            row,
+            column,
+          )
+        ) {
+          return;
+        }
+        event.preventDefault();
+        setEditorInitialValue(event.key);
+        dispatch(gridActions.startEdit(uiState.activeCell));
+      }
+    },
+    [
+      canEditCell,
+      dispatch,
+      filteredRows,
+      handleCellDoubleClick,
+      handleCopy,
+      isWholeGridSelected,
+      moveActiveCell,
+      readOnly,
+      selectEntireGrid,
+      setEditorInitialValue,
+      uiState.activeCell,
+      uiState.editingCell,
+      visibleColumns,
+    ],
+  );
+
+  return {
+    getMovedCell,
+    handleKeyDown,
+  };
+};
+
+export default useGridKeyboardInteractions;
+</file>
+
 <file path=".gitignore">
 # Logs
 logs
@@ -2327,127 +2338,6 @@ dist-ssr
 
 backup
 repomix-output.xml
-</file>
-
-<file path="src/components/spreadsheet-grid/CellEditorLayer.tsx">
-// 追加: editor 確定後の移動方向です。
-export type EditorCommitDirection = 'down' | 'right' | 'left';
-
-import {
-  useEffect,
-  useRef,
-  type CSSProperties,
-  type KeyboardEvent,
-} from 'react';
-
-// 変更(10-D): left は「ペイン列領域内ローカル座標」になりました（leadingWidth 非含有）。
-type CellEditorRect = {
-  left: number;
-  top: number;
-  width: number;
-  height: number;
-};
-
-type CellEditorLayerProps = {
-  rect: CellEditorRect | null;
-  headerHeight: number;
-  // 変更(10-D): rowHeaderWidth → leadingWidth に一般化しました。
-  //             editor は active cell が属するペインの relative コンテナ内へ配置されます。
-  leadingWidth: number;
-  value: string;
-  onChange: (value: string) => void;
-  onCommit: (direction?: EditorCommitDirection) => void;
-  onCancel: () => void;
-};
-
-// 追加: 編集中セルの上に input を重ねる editor layer です。
-// 変更(10-D): ペイン別座標系に対応。
-export function CellEditorLayer({
-  rect,
-  headerHeight,
-  leadingWidth,
-  value,
-  onChange,
-  onCommit,
-  onCancel,
-}: CellEditorLayerProps) {
-  const inputRef = useRef<HTMLInputElement | null>(null);
-
-  // 追加: editor 表示時に自動フォーカスし、末尾へキャレット移動します。
-  useEffect(() => {
-    if (!rect || !inputRef.current) {
-      return;
-    }
-
-    inputRef.current.focus();
-    const end = inputRef.current.value.length;
-    inputRef.current.setSelectionRange(end, end);
-  }, [rect]);
-
-  if (!rect) {
-    return null;
-  }
-
-  const wrapperStyle: CSSProperties = {
-    position: 'absolute',
-    left: leadingWidth + rect.left,
-    top: headerHeight + rect.top,
-    width: rect.width,
-    height: rect.height,
-    zIndex: 5,
-    pointerEvents: 'none',
-  };
-
-  const inputStyle: CSSProperties = {
-    width: '100%',
-    height: '100%',
-    boxSizing: 'border-box',
-    border: '2px solid #2563eb',
-    outline: 'none',
-    padding: '0 10px',
-    margin: 0,
-    fontSize: 16,
-    color: '#0f172a',
-    backgroundColor: '#ffffff',
-    pointerEvents: 'auto',
-  };
-
-  // 追加: Enter で下、Tab で左右へ移動する方向付き commit を呼びます。
-  const handleKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
-    if (event.key === 'Enter') {
-      event.preventDefault();
-      onCommit('down');
-      return;
-    }
-
-    if (event.key === 'Escape') {
-      event.preventDefault();
-      onCancel();
-      return;
-    }
-
-    if (event.key === 'Tab') {
-      event.preventDefault();
-      onCommit(event.shiftKey ? 'left' : 'right');
-    }
-  };
-
-  return (
-    <div style={wrapperStyle}>
-      <input
-        ref={inputRef}
-        type="text"
-        value={value}
-        onChange={(event) => onChange(event.target.value)}
-        onKeyDown={handleKeyDown}
-        onBlur={() => onCommit()}
-        style={inputStyle}
-      />
-    </div>
-  );
-}
-
-export default CellEditorLayer;
 </file>
 
 <file path="src/components/spreadsheet-grid/hooks/useGridViewportSync.ts">
@@ -3210,6 +3100,153 @@ export const applyClipboardMatrixToRows = <T extends object,>(
 
   return nextRows;
 };
+</file>
+
+<file path="src/components/spreadsheet-grid/CellEditorLayer.tsx">
+// 追加: editor 確定後の移動方向です。
+export type EditorCommitDirection = 'down' | 'right' | 'left';
+
+import {
+  useEffect,
+  useRef,
+  useState,
+  type CSSProperties,
+  type KeyboardEvent,
+} from 'react';
+
+// 変更(10-D): left は「ペイン列領域内ローカル座標」になりました（leadingWidth 非含有）。
+type CellEditorRect = {
+  left: number;
+  top: number;
+  width: number;
+  height: number;
+};
+
+type CellEditorLayerProps = {
+  rect: CellEditorRect | null;
+  headerHeight: number;
+  // 変更(10-D): rowHeaderWidth → leadingWidth に一般化しました。
+  //             editor は active cell が属するペインの relative コンテナ内へ配置されます。
+  leadingWidth: number;
+  // 変更(11-B6): 親が持つのは「編集開始時の初期値」だけになりました。
+  //              毎キーストロークのドラフト値は本コンポーネントのローカル state で管理し、
+  //              親(SpreadsheetGrid)へは commit 時に最終値だけを渡します。
+  //              これにより編集中のタイピングで親（＝3ペイン全体）が再レンダーされなくなります。
+  initialValue: string;
+  // 変更(11-B6): (direction?) → (value, direction?) に変更。確定値を引数で受け取ります。
+  onCommit: (value: string, direction?: EditorCommitDirection) => void;
+  onCancel: () => void;
+};
+
+// 追加: 編集中セルの上に input を重ねる editor layer です。
+// 変更(10-D): ペイン別座標系に対応。
+// 変更(11-B6): ドラフト値をローカル state 化しました（コントロールドのまま、状態の置き場だけ移動）。
+export function CellEditorLayer({
+  rect,
+  headerHeight,
+  leadingWidth,
+  initialValue,
+  onCommit,
+  onCancel,
+}: CellEditorLayerProps) {
+  const inputRef = useRef<HTMLInputElement | null>(null);
+
+  // 追加(11-B6): 編集中のドラフト値です。タイピングはこの state だけを更新します。
+  const [draftValue, setDraftValue] = useState('');
+
+  // 追加(11-B6): 「新しい編集セッションの開始」を rect の null → 非 null 遷移で検知し、
+  //              ドラフトを initialValue へリセットします。
+  // 実装メモ: これは React 公式ドキュメントの「レンダー中に過去の props と比較して
+  //   state を調整する」パターンです（effect ではなく render 中に setState することで、
+  //   古いドラフトが 1 フレームでも描画されるのを防ぎます。StrictMode 安全）。
+  //   commit / cancel で必ず rect が null に戻るため、「null → 非 null」は常に
+  //   新セッションを意味します。同一セルを連続編集（Esc キャンセル → 再 F2 等）しても
+  //   前回のドラフトが残りません。
+  const isOpen = rect !== null;
+  const [prevOpen, setPrevOpen] = useState(false);
+  if (isOpen !== prevOpen) {
+    setPrevOpen(isOpen);
+    if (isOpen) {
+      setDraftValue(initialValue);
+    }
+  }
+
+  // 追加: editor 表示時に自動フォーカスし、末尾へキャレット移動します。
+  useEffect(() => {
+    if (!rect || !inputRef.current) {
+      return;
+    }
+
+    inputRef.current.focus();
+    const end = inputRef.current.value.length;
+    inputRef.current.setSelectionRange(end, end);
+  }, [rect]);
+
+  if (!rect) {
+    return null;
+  }
+
+  const wrapperStyle: CSSProperties = {
+    position: 'absolute',
+    left: leadingWidth + rect.left,
+    top: headerHeight + rect.top,
+    width: rect.width,
+    height: rect.height,
+    zIndex: 5,
+    pointerEvents: 'none',
+  };
+
+  const inputStyle: CSSProperties = {
+    width: '100%',
+    height: '100%',
+    boxSizing: 'border-box',
+    border: '2px solid #2563eb',
+    outline: 'none',
+    padding: '0 10px',
+    margin: 0,
+    fontSize: 16,
+    color: '#0f172a',
+    backgroundColor: '#ffffff',
+    pointerEvents: 'auto',
+  };
+
+  // 追加: Enter で下、Tab で左右へ移動する方向付き commit を呼びます。
+  // 変更(11-B6): commit にローカルのドラフト値を引数で渡します。
+  const handleKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      onCommit(draftValue, 'down');
+      return;
+    }
+
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      onCancel();
+      return;
+    }
+
+    if (event.key === 'Tab') {
+      event.preventDefault();
+      onCommit(draftValue, event.shiftKey ? 'left' : 'right');
+    }
+  };
+
+  return (
+    <div style={wrapperStyle}>
+      <input
+        ref={inputRef}
+        type="text"
+        value={draftValue}
+        onChange={(event) => setDraftValue(event.target.value)}
+        onKeyDown={handleKeyDown}
+        onBlur={() => onCommit(draftValue)}
+        style={inputStyle}
+      />
+    </div>
+  );
+}
+
+export default CellEditorLayer;
 </file>
 
 <file path="src/components/spreadsheet-grid/logic/geometry.ts">
@@ -6142,6 +6179,8 @@ import {
   useEffect,
   useMemo,
   useCallback,
+  // 追加(11-B7): グローバルフィルタ評価の遅延化(Transition 化)に使います。
+  useDeferredValue,
   useReducer,
   useRef,
   useState,
@@ -6271,7 +6310,17 @@ export function SpreadsheetGrid<T extends object>({
   const rightPaneScrollRef = useRef<HTMLDivElement | null>(null);
 
   // ── local state ───────────────────────────────────────
-  const [editorValue, setEditorValue] = useState('');
+  // 変更(11-B6): editorValue(毎キーストロークで更新されるドラフト state)を廃止し、
+  //   「編集開始時の初期値」だけを持つ editorInitialValue へ置き換えます。
+  // 変更理由: 旧実装はドラフトを SpreadsheetGrid の state として持ち、
+  //   CellEditorLayer×3 ペインへ value/onChange を渡していたため、編集中の
+  //   毎キーストロークで親全体（3 ペインのヘッダー/ボディ含む）が再レンダーして
+  //   いました。ドラフトを CellEditorLayer ローカル state へ移すことで、
+  //   タイピング中は editor の input だけが更新されます。
+  //   本 state が更新されるのは編集開始時のみで、同一イベント内の
+  //   dispatch(startEdit) と React が自動バッチするため、編集開始時の
+  //   親レンダー回数は従来どおり 1 回です。
+  const [editorInitialValue, setEditorInitialValue] = useState('');
   const [isCornerHovered, setIsCornerHovered] = useState(false);
   const [hoveredRowIndex, setHoveredRowIndex] = useState<number | null>(null);
   const [hoveredColumnIndex, setHoveredColumnIndex] = useState<number | null>(
@@ -6523,10 +6572,33 @@ export function SpreadsheetGrid<T extends object>({
   //   (uiState.filters.columnFilters / uiState.sort)になっており、起点のここだけが
   //   丸ごと依存でした。
   const globalFilterText = uiState.filters.globalText;
+
+  // 追加(11-B7): グローバルフィルタの評価値を useDeferredValue で遅延化します。
+  // 変更理由: globalText は入力欄の毎キーストロークで更新され、従来はその同期レンダー内で
+  //   5,000 行のフィルタ計算(applyGlobalFilter)と下流チェーン
+  //   (columnFiltered → sorted → filteredRows / SourceIndexes / Keys → 仮想行再構築)が
+  //   毎回走っていました。タイピングが速いと入力欄の文字反映自体がこの計算にブロックされ、
+  //   「入力の引っかかり」として体感されます。
+  //   依存を deferred 値へ差し替えることで、キーストローク直後の緊急レンダーでは
+  //   deferred 値が旧値のままになり、この useMemo 以下の行モデルチェーンは全て
+  //   同一参照を返してスキップされます(=入力欄だけが即時更新)。フィルタ再計算は
+  //   React が低優先度で行う遅延レンダーへ移り、連続タイピング中は次のキーストロークで
+  //   中断・破棄されるため、中間値での計算が省かれ最終値での 1 回に収束します。
+  //   入力欄の value は従来どおり即時値 globalFilterText を参照する
+  //   (useGridBarContext → slotContext 経由)ため、表示が遅れることはありません。
+  // 注記: pending 表示が欲しくなった場合は
+  //   `const isGlobalFilterPending = deferredGlobalFilterText !== globalFilterText;`
+  //   を slotContext へ載せて top bar 側で薄く出せます(今回は見送り)。
+  const deferredGlobalFilterText = useDeferredValue(globalFilterText);
+
   const globallyFilteredRowModels = useMemo(
     () =>
-      applyGlobalFilter(sourceRowModels, visibleColumns, globalFilterText),
-    [sourceRowModels, visibleColumns, globalFilterText],
+      applyGlobalFilter(
+        sourceRowModels,
+        visibleColumns,
+        deferredGlobalFilterText,
+      ),
+    [sourceRowModels, visibleColumns, deferredGlobalFilterText],
   );
 
   const columnFilteredRowModels = useMemo(
@@ -6811,7 +6883,8 @@ export function SpreadsheetGrid<T extends object>({
         return;
       }
       const currentValue = getCellValue(row, column);
-      setEditorValue(String(currentValue ?? ''));
+      // 変更(11-B6): ドラフト setter → 初期値 setter へ置き換え（挙動等価）。
+      setEditorInitialValue(String(currentValue ?? ''));
       dispatch(gridActions.startEdit(cell));
     },
     [canEditCell, dispatch, filteredRows, readOnly, orderedColumns],
@@ -6826,7 +6899,7 @@ export function SpreadsheetGrid<T extends object>({
     visibleColumns: orderedColumns,
     readOnly,
     canEditCell,
-    setEditorValue,
+    setEditorInitialValue,
     dispatch,
     handleCopy,
     handleCellDoubleClick,
@@ -6841,8 +6914,7 @@ export function SpreadsheetGrid<T extends object>({
     // 変更(10-E): editingCell.col は論理 index 空間のため orderedColumns で indexing します。
     visibleColumns: orderedColumns,
     filteredRowSourceIndexes,
-    editorValue,
-    setEditorValue,
+    setEditorInitialValue,
     onRowsChange,
     dispatch,
     getMovedCell,
@@ -7451,8 +7523,7 @@ export function SpreadsheetGrid<T extends object>({
                   rect={editorRectForPane('left')}
                   headerHeight={headerHeight}
                   leadingWidth={leftLeadingWidth}
-                  value={editorValue}
-                  onChange={setEditorValue}
+                  initialValue={editorInitialValue}
                   onCommit={commitEdit}
                   onCancel={cancelEdit}
                 />
@@ -7552,8 +7623,7 @@ export function SpreadsheetGrid<T extends object>({
                 rect={editorRectForPane('center')}
                 headerHeight={headerHeight}
                 leadingWidth={centerLeadingWidth}
-                value={editorValue}
-                onChange={setEditorValue}
+                initialValue={editorInitialValue}
                 onCommit={commitEdit}
                 onCancel={cancelEdit}
               />
@@ -7662,8 +7732,7 @@ export function SpreadsheetGrid<T extends object>({
                   rect={editorRectForPane('right')}
                   headerHeight={headerHeight}
                   leadingWidth={rightLeadingWidth}
-                  value={editorValue}
-                  onChange={setEditorValue}
+                  initialValue={editorInitialValue}
                   onCommit={commitEdit}
                   onCancel={cancelEdit}
                 />
