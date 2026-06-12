@@ -1,5 +1,11 @@
 // 変更(11-B5): GridHeaderRow を React.memo 化するため memo を追加 import します。
-import { memo, type CSSProperties, type PointerEvent } from 'react';
+// 変更(13-A): ヘッダー右クリック(contextmenu)用に MouseEvent 型を追加 import します。
+import {
+  memo,
+  type CSSProperties,
+  type MouseEvent,
+  type PointerEvent,
+} from 'react';
 // 変更(11-A): uiState 丸ごと依存を撤廃し、正規化済み SelectionSnapshot を受け取ります。
 // 変更理由: GridBodyRow と同じく、uiState のあらゆる更新で props が変わるのを防ぎ、
 //           将来ヘッダー行を memo 化する際の布石にもなります。
@@ -72,6 +78,23 @@ type GridHeaderRowProps<T> = {
     column: GridColumn<T>,
     event: PointerEvent<HTMLDivElement>,
   ) => void;
+  // 追加(13-A): 列メニュー(「⋮」ボタン + ヘッダー右クリック)関連の props です。
+  //             enableColumnMenu=false のときはボタンを描画せず、右クリックも
+  //             ブラウザ標準メニューのままにします(controller 側でガード済み)。
+  enableColumnMenu: boolean;
+  // 追加(13-A): メニューを開いている列の key です(「⋮」ボタンの active 表示と、
+  //             hover が外れてもボタンを出し続ける判定に使います)。
+  // 注記: open/close の 1 回ずつだけ値が変わる string | null のため、
+  //       memo(GridHeaderRow) への影響は開閉時の 3 ペイン各 1 レンダーのみです。
+  openedMenuColumnKey: string | null;
+  onColumnMenuButtonPointerDown: (
+    column: GridColumn<T>,
+    event: PointerEvent<HTMLButtonElement>,
+  ) => void;
+  onColumnHeaderContextMenu: (
+    column: GridColumn<T>,
+    event: MouseEvent<HTMLDivElement>,
+  ) => void;
 };
 
 // 変更(10-C): sticky header 行を「1ペイン分」描画する汎用コンポーネントにしました。
@@ -111,6 +134,11 @@ function GridHeaderRowInner<T>({
   onColumnSortButtonPointerDown,
   onColumnFilterButtonPointerDown,
   onColumnResizePointerDown,
+  // 追加(13-A): 列メニュー関連 props です。
+  enableColumnMenu,
+  openedMenuColumnKey,
+  onColumnMenuButtonPointerDown,
+  onColumnHeaderContextMenu,
 }: GridHeaderRowProps<T>) {
   return (
     <div
@@ -188,6 +216,16 @@ function GridHeaderRowInner<T>({
           colIndex >= selectionSnapshot.startCol &&
           colIndex <= selectionSnapshot.endCol;
 
+        // 追加(13-A): この列のメニューを開いているかです。
+        //             「⋮」ボタンは hover 中だけ表示しますが、メニューを開いている間は
+        //             hover が外れても anchor(ボタン)を DOM に残す必要があるため、
+        //             open 中の列でも表示を継続します(unmount すると anchor の
+        //             getBoundingClientRect が 0 になり再配置が壊れます)。
+        const isMenuOpenForColumn = openedMenuColumnKey === column.key;
+        const showColumnMenuButton =
+          enableColumnMenu &&
+          (hoveredColumnIndex === colIndex || isMenuOpenForColumn);
+
         return (
           <div
             key={column.key}
@@ -196,6 +234,10 @@ function GridHeaderRowInner<T>({
               onColumnHeaderPointerEnter(colIndex, event)
             }
             onPointerLeave={() => onColumnHeaderPointerLeave(colIndex)}
+            // 追加(13-A): ヘッダー右クリックで列メニューを開きます
+            //             (enableColumnMenu=false 時は controller 側で何もせず、
+            //              ブラウザ標準メニューが出ます)。
+            onContextMenu={(event) => onColumnHeaderContextMenu(column, event)}
             style={{
               position: 'absolute',
               top: 0,
@@ -288,6 +330,22 @@ function GridHeaderRowInner<T>({
               >
                 {isColumnFiltered ? '●' : '○'}
               </button>
+
+              {/* 追加(13-A): 列メニュー(「⋮」)ボタンです。AG Grid と同様に
+                  hover 中(またはメニュー表示中)だけ表示し、常設ボタンによる
+                  幅圧迫を避けます(右クリックでも同じメニューが開きます)。 */}
+              {showColumnMenuButton && (
+                <button
+                  type="button"
+                  onPointerDown={(event) =>
+                    onColumnMenuButtonPointerDown(column, event)
+                  }
+                  title="列メニュー"
+                  style={getHeaderActionButtonStyle(isMenuOpenForColumn)}
+                >
+                  ⋮
+                </button>
+              )}
             </div>
 
             <div

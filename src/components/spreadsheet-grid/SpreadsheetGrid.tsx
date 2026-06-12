@@ -30,6 +30,7 @@ import ActiveCellOverlay, {
 } from './ActiveCellOverlay';
 import CellEditorLayer from './CellEditorLayer';
 import { useFilterPopoverController } from './hooks/useFilterPopoverController';
+// 追加(13-A): 列メニュー(「⋮」+ 右クリック)の popover controller です。
 import { useGridClipboardController } from './hooks/useGridClipboardController';
 import { useGridBarContext } from './hooks/useGridBarContext';
 import { useGridEditController } from './hooks/useGridEditController';
@@ -77,6 +78,8 @@ import type {
   CellCoord,
   CellRenderState,
   GridColumn,
+  // 追加(13-A): 列メニューからの固定切替に使います。
+  GridColumnPinned,
   GridRowKey,
   // 追加(12-A): set フィルター値の構築に使います。
   SetColumnFilterValue,
@@ -87,11 +90,14 @@ import ColumnFilterPopover, {
   // 追加(12-A): popover を開いている列の候補メモ化に使う型です。
   type ColumnFilterPopoverOption,
 } from './view/ColumnFilterPopover';
+// 追加(13-A): 列メニュー popover(列固定の切替 UI)です。
 import DefaultGridBottomBar from './view/DefaultGridBottomBar';
 import DefaultGridTopBar from './view/DefaultGridTopBar';
 import { resolveGridSlot } from './view/gridBarHelpers';
 import GridBodyLayer from './view/GridBodyLayer';
 import GridHeaderRow from './view/GridHeaderRow';
+import useColumnMenuController from './hooks/useColumnMenuController';
+import ColumnMenuPopover from './view/ColumnMenuPopover';
 
 // 追加: 元 rows と filteredRows の対応を安定して持つための row model です。
 type SourceRowModel<T> = GridRowModelLike<T> & {
@@ -120,6 +126,8 @@ export function SpreadsheetGrid<T extends object>({
   enableGlobalFilter = true,
   enableColumnFilter = true,
   enableSorting = true,
+  // 追加(13-A): 列メニュー(「⋮」+ 右クリック)の有効化フラグです(既定 true)。
+  enableColumnMenu = true,
   // 追加(12-B): 0 行時の空状態テキストです(AG Grid のオーバーレイ相当)。
   noMatchingRowsText = '一致する行がありません',
   noRowsText = '表示する行がありません',
@@ -338,6 +346,27 @@ export function SpreadsheetGrid<T extends object>({
     visibleColumns,
     columnFilterValues: uiState.filters.columnFilters,
     enableColumnFilter,
+    gridRootRef,
+  });
+
+  // ── column menu(13-A) ────────────────────────────────
+  // 追加(13-A): 列メニュー(「⋮」ボタン + ヘッダー右クリック)の controller です。
+  //             filter popover と独立した popover ですが、open / close / outside click /
+  //             layout の作法は useFilterPopoverController と同型です。
+  //             相互排他は両 controller の outside-pointerdown close が自然に担います
+  //             (片方を開く操作はもう片方にとって outside click になるためです)。
+  const {
+    columnMenuLayout,
+    columnMenuRef,
+    isColumnMenuOpen,
+    openedMenuColumnKey,
+    openedMenuColumn,
+    openColumnMenuFromButton,
+    openColumnMenuFromContextMenu,
+    closeColumnMenu,
+  } = useColumnMenuController({
+    visibleColumns,
+    enableColumnMenu,
     gridRootRef,
   });
 
@@ -963,6 +992,59 @@ export function SpreadsheetGrid<T extends object>({
     [dispatch],
   );
 
+  // ── column pinning(13-A) ─────────────────────────────
+  // 追加(13-A): 列メニューからの固定切替(AG Grid の Pin Left / Pin Right / No Pin 相当)です。
+  // 設計メモ:
+  //   - columns は controlled props のため、反映は onColumnsChange 経由で行います
+  //     (columnWidths のような内部 state は持ちません。Grid 外から pinned を変えた場合と
+  //      同じ経路に一本化し、状態の二重管理を避けます)。
+  //   - その際、columnWidthsRef の「現在の解決済み幅」を column defs の width へ書き戻します。
+  //     columns prop が変わると columnWidths/sync が column.width で state を上書きするため、
+  //     書き戻さないと手動リサイズ済みの幅が固定切替のたびにリセットされてしまいます。
+  //   - 固定切替で orderedColumns の視覚順(= selection / activeCell の論理 index 空間)が
+  //     変わるため、選択・アクティブセル・編集は破棄します(AG Grid も pin 変更で
+  //     range selection をクリアします)。index を持ち越すと無関係な列が選択された
+  //     ように見えるためです。3 dispatch は同一イベント内で自動バッチされます。
+  const handleColumnMenuPinnedChange = useCallback(
+    (columnKey: string, nextPinned: GridColumnPinned | undefined) => {
+      closeColumnMenu();
+
+      if (!onColumnsChange) {
+        return;
+      }
+
+      const targetColumn = columns.find((column) => column.key === columnKey);
+      if (!targetColumn) {
+        return;
+      }
+
+      const currentPinned = targetColumn.pinned ?? undefined;
+      if (currentPinned === nextPinned) {
+        // 追加: 現在値と同じ項目の選択は閉じるだけの no-op にします。
+        return;
+      }
+
+      const nextColumns = columns.map((column) => {
+        const resolvedWidth =
+          columnWidthsRef.current[column.key] ?? column.width;
+        if (column.key === columnKey) {
+          return { ...column, width: resolvedWidth, pinned: nextPinned };
+        }
+        // 追加: 対象外の列も、リサイズ済みなら幅を defs へ書き戻して保全します。
+        return resolvedWidth === column.width
+          ? column
+          : { ...column, width: resolvedWidth };
+      });
+
+      onColumnsChange(nextColumns);
+
+      dispatch(gridActions.stopEdit());
+      dispatch(gridActions.clearSelection());
+      dispatch(gridActions.activateCell(null));
+    },
+    [closeColumnMenu, columns, dispatch, onColumnsChange],
+  );
+
   // ── filter popover actions ────────────────────────────
   // 追加(12-A): popover を開いている列の select / set 候補です。
   // 変更理由: 従来は JSX 内で getColumnSelectOptions(openedFilterColumn) を直接呼んでおり、
@@ -1412,6 +1494,27 @@ export function SpreadsheetGrid<T extends object>({
     />
   ) : null;
 
+  // ── column menu popover(13-A) ────────────────────────
+  // 追加(13-A): 列メニュー popover の描画です(portal で body 直下へ出します)。
+  const renderedColumnMenuPopover = openedMenuColumn ? (
+    <ColumnMenuPopover
+      isOpen={isColumnMenuOpen}
+      title={openedMenuColumn.title || openedMenuColumn.key}
+      columnKey={openedMenuColumn.key}
+      pinned={openedMenuColumn.pinned}
+      canChangePinned={Boolean(onColumnsChange)}
+      layout={columnMenuLayout}
+      popoverRef={columnMenuRef}
+      onPinnedChange={handleColumnMenuPinnedChange}
+      onRequestClose={closeColumnMenu}
+    />
+  ) : null;
+
+  // 追加(13-A): いずれかの popup(フィルター / 列メニュー)表示中かどうかです。
+  //             grid root の tab フォーカス / keyboard / paste handler の一時停止に使います
+  //             (従来は isFilterPopoverOpen のみで判定していました)。
+  const isAnyGridPopupOpen = isFilterPopoverOpen || isColumnMenuOpen;
+
   // ── slot bars ─────────────────────────────────────────
   // 追加: slot helper を使って top/bottom の描画を解決します。
   const resolvedTopBar = resolveGridSlot(
@@ -1440,11 +1543,11 @@ export function SpreadsheetGrid<T extends object>({
           pointerClientRef.current = { x: event.clientX, y: event.clientY };
           updateSelectionFromPointer(event.clientX, event.clientY);
         }}
-        // 追加: popover open 中は grid root を tab フォーカス対象から外します。
-        tabIndex={isFilterPopoverOpen ? -1 : 0}
-        // 追加: popover open 中は root の keyboard/paste handler 自体を外します。
-        onKeyDown={isFilterPopoverOpen ? undefined : handleKeyDown}
-        onPaste={isFilterPopoverOpen ? undefined : handlePaste}
+        // 追加: popup(フィルター / 列メニュー)open 中は grid root を tab フォーカス対象から外します。
+        tabIndex={isAnyGridPopupOpen ? -1 : 0}
+        // 追加: popup open 中は root の keyboard/paste handler 自体を外します。
+        onKeyDown={isAnyGridPopupOpen ? undefined : handleKeyDown}
+        onPaste={isAnyGridPopupOpen ? undefined : handlePaste}
       >
         {/* ── 変更(10-G): 縦横スクロールを 1 本化した共有スクロールコンテナ ── */}
         {/*   旧: 中央ペインのみ overflow:auto + 左右ペインを JS の transform で同期     */}
@@ -1499,6 +1602,10 @@ export function SpreadsheetGrid<T extends object>({
                   }
                   onColumnFilterButtonPointerDown={openColumnFilterPopover}
                   onColumnResizePointerDown={handleColumnResizePointerDown}
+                  enableColumnMenu={enableColumnMenu}
+                  openedMenuColumnKey={openedMenuColumnKey}
+                  onColumnMenuButtonPointerDown={openColumnMenuFromButton}
+                  onColumnHeaderContextMenu={openColumnMenuFromContextMenu}
                 />
 
                 {/* 追加(10-D): 左固定ペイン内の overlay（ペインローカル座標）。*/}
@@ -1612,6 +1719,10 @@ export function SpreadsheetGrid<T extends object>({
                 onColumnSortButtonPointerDown={handleColumnSortButtonPointerDown}
                 onColumnFilterButtonPointerDown={openColumnFilterPopover}
                 onColumnResizePointerDown={handleColumnResizePointerDown}
+                enableColumnMenu={enableColumnMenu}
+                openedMenuColumnKey={openedMenuColumnKey}
+                onColumnMenuButtonPointerDown={openColumnMenuFromButton}
+                onColumnHeaderContextMenu={openColumnMenuFromContextMenu}
               />
 
               {/* 変更(10-D): 中央ペインの overlay をペインローカル座標に切替。*/}
@@ -1711,6 +1822,10 @@ export function SpreadsheetGrid<T extends object>({
                   }
                   onColumnFilterButtonPointerDown={openColumnFilterPopover}
                   onColumnResizePointerDown={handleColumnResizePointerDown}
+                  enableColumnMenu={enableColumnMenu}
+                  openedMenuColumnKey={openedMenuColumnKey}
+                  onColumnMenuButtonPointerDown={openColumnMenuFromButton}
+                  onColumnHeaderContextMenu={openColumnMenuFromContextMenu}
                 />
 
                 {/* 追加(10-D): 右固定ペイン内の overlay（ペインローカル座標）。*/}
@@ -1793,6 +1908,8 @@ export function SpreadsheetGrid<T extends object>({
 
       {resolvedBottomBar}
       {renderedFilterPopover}
+      {/* 追加(13-A): 列メニュー popover(列固定の切替 UI)です。*/}
+      {renderedColumnMenuPopover}
     </div>
   );
 }

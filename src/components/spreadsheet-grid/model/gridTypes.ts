@@ -245,6 +245,11 @@ export type SpreadsheetGridProps<T> = {
   enableGlobalFilter?: boolean;
   enableColumnFilter?: boolean;
   enableSorting?: boolean;
+  // 追加(13-A): 列メニュー(「⋮」ボタン + ヘッダー右クリック)の有効化フラグです。
+  //             既定は true。メニューからの列固定切替は columns が controlled のため
+  //             onColumnsChange が指定されている場合にのみ反映されます
+  //             (未指定時はメニュー項目が無効表示になります)。
+  enableColumnMenu?: boolean;
   // 追加(12-B): フィルター結果 0 行時に表示するテキストです
   //             (AG Grid の "No Matching Rows" オーバーレイ相当)。
   noMatchingRowsText?: string;
