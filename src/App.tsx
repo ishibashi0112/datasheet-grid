@@ -44,16 +44,20 @@ const createDemoRows = (count: number): DemoRow[] =>
 // 追加: 基本列 + 初期追加列を生成します。
 const createInitialColumns = (): GridColumn<DemoRow>[] => {
   const baseColumns: GridColumn<DemoRow>[] = [
-    // 追加: text / number / select の最小フィルター型を設定します。
+    // 追加: text / number / select / set のフィルター型を設定します。
     // 追加(10-E): frozen columns デモ。品番・品名を左固定にします（pinned: 'left'）。
     //            これで横スクロールしても先頭 2 列が固定表示されます。
-    { key: 'partNo', title: '品番', width: 150, filterType: 'text', 
-      pinned: "left" 
+    // 変更(12-A): 品番を set フィルター(AG Grid の Set Filter 相当)にします。
+    //             候補は rows から自動収集され約 5,000 件になるため、
+    //             popover 内リストの仮想化 + 検索の動作確認にそのまま使えます。
+    { key: 'partNo', title: '品番', width: 150, filterType: 'set',
+      pinned: "left"
     },
     {
       key: 'partName',
       title: '品名',
       width: 220,
+      // 注記(12-A): text フィルター(部分一致 + 適用ボタン)の動作確認用に残します。
       filterType: 'text',
       pinned: "left" ,
     },
@@ -63,8 +67,9 @@ const createInitialColumns = (): GridColumn<DemoRow>[] => {
       title: '単位',
       width: 90,
       readOnly: true,
-      filterType: 'select',
-      // 追加: select 候補を固定定義します。
+      // 変更(12-A): select → set へ移行します(チェックボックスで複数選択可能)。
+      filterType: 'set',
+      // 追加: set 候補を固定定義します(未指定なら rows から自動収集されます)。
       filterOptions: [
         { label: '個', value: '個' },
         { label: '本', value: '本' },
@@ -76,8 +81,9 @@ const createInitialColumns = (): GridColumn<DemoRow>[] => {
       key: 'status',
       title: '状態',
       width: 120,
-      filterType: 'select',
-      // 追加: select 候補を固定定義します。
+      // 変更(12-A): select → set へ移行します。
+      filterType: 'set',
+      // 追加: set 候補を固定定義します。
       filterOptions: [
         { label: '有効', value: '有効' },
         { label: '保留', value: '保留' },

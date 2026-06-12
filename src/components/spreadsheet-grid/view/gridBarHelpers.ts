@@ -9,6 +9,8 @@ import type {
   SpreadsheetGridSelectionStats,
 } from '../model/gridTypes';
 import { toExcelColumnName } from '../utils/excelColumnName';
+// 追加(12-A): set フィルター対応のフィルター有効判定を共有します。
+import { isActiveColumnFilterValue } from '../logic/filtering';
 
 // 追加: Grid の slot renderer を解決します。
 export const resolveGridSlot = <T,>(
@@ -166,10 +168,13 @@ export const formatGridSelectionStatsLabel = <T,>(
   return `Cells: ${stats.selectedCellCount} / Rows: ${stats.selectedRowCount}`;
 };
 
-// 追加: 列フィルターの有効件数を数えます。
+// 変更(12-A): 列フィルターの有効件数を数えます。
+// 変更理由: set フィルター値はオブジェクトのため String(value).trim() 判定が
+//           成立しません(空配列も「全行除外」として有効に数える必要があります)。
+//           判定を logic/filtering.ts の isActiveColumnFilterValue へ一元化します。
 const countActiveColumnFilters = (columnFilterValues: Record<string, unknown>) =>
-  Object.values(columnFilterValues).filter(
-    (value) => String(value ?? '').trim().length > 0,
+  Object.values(columnFilterValues).filter((value) =>
+    isActiveColumnFilterValue(value),
   ).length;
 
 // 追加: フィルター状態の要約テキストです。

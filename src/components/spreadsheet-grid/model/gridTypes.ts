@@ -43,6 +43,18 @@ export type GridSelectFilterOption = {
   value: string;
 };
 
+// 追加(12-A): set フィルター(AG Grid の Set Filter 相当)の列フィルター値です。
+//             columnFilters[columnKey] にこのオブジェクトが入っているときだけ
+//             set フィルターが「有効」です。全候補が選択された状態は
+//             filter/clearColumn で値ごと削除し「フィルターなし」へ正規化します
+//             (AG Grid と同じく、全選択 = フィルター非アクティブの扱いです)。
+//             values は「表示を許可する値」の配列です(空配列 = 全行非表示)。
+//             判定側(logic/filtering.ts)では Set へ変換して O(1) 照合します。
+export type SetColumnFilterValue = {
+  kind: 'set';
+  values: string[];
+};
+
 // 追加: セル描画に渡すコンテキストです。
 export type CellRenderContext<T> = {
   row: T;
@@ -100,8 +112,10 @@ export type GridColumn<T> = {
   setValue?: (row: T, value: unknown) => T;
   renderCell?: (ctx: CellRenderContext<T>) => ReactNode;
   renderHeader?: (ctx: HeaderRenderContext<T>) => ReactNode;
-  filterType?: 'text' | 'number' | 'date' | 'select' | 'custom';
-  // 追加: select フィルター時の候補です。未指定時は rows から自動収集します。
+  // 変更(12-A): 'set' を追加します。AG Grid の Set Filter 相当
+  //             (チェックボックス一覧 + 検索 + Select All)の UI になります。
+  filterType?: 'text' | 'number' | 'date' | 'select' | 'set' | 'custom';
+  // 追加: select / set フィルター時の候補です。未指定時は rows から自動収集します。
   filterOptions?: GridSelectFilterOption[];
   filterFn?: (row: T, filterValue: unknown) => boolean;
   parseClipboardValue?: (raw: string, row: T) => unknown;

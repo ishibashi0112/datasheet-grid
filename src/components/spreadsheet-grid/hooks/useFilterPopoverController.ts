@@ -33,6 +33,9 @@ const POPUP_WIDTH = 240;
 const VIEWPORT_MARGIN = 8;
 const OFFSET_Y = 8;
 const ESTIMATED_POPUP_HEIGHT = 260;
+// 追加(12-A): set フィルターは検索 + Select All + 候補リスト(208px)を含むため、
+//             上下フリップ判定用の見積もり高さを別に持ちます。
+const ESTIMATED_SET_POPUP_HEIGHT = 400;
 
 // 追加: 列フィルター popover の state / ref / focus / outside click / layout をまとめて管理します。
 export const useFilterPopoverController = <T,>({
@@ -73,13 +76,19 @@ export const useFilterPopoverController = <T,>({
 
     const anchorRect = filterPopoverAnchorButtonRef.current.getBoundingClientRect();
 
+    // 追加(12-A): set フィルターは popover が縦に長いため、見積もり高さを切り替えます。
+    const estimatedPopupHeight =
+      openedFilterColumn?.filterType === 'set'
+        ? ESTIMATED_SET_POPUP_HEIGHT
+        : ESTIMATED_POPUP_HEIGHT;
+
     let left = anchorRect.right - POPUP_WIDTH;
     left = Math.max(VIEWPORT_MARGIN, left);
     left = Math.min(left, window.innerWidth - POPUP_WIDTH - VIEWPORT_MARGIN);
 
     let top = anchorRect.bottom + OFFSET_Y;
-    if (top + ESTIMATED_POPUP_HEIGHT > window.innerHeight - VIEWPORT_MARGIN) {
-      top = anchorRect.top - ESTIMATED_POPUP_HEIGHT - OFFSET_Y;
+    if (top + estimatedPopupHeight > window.innerHeight - VIEWPORT_MARGIN) {
+      top = anchorRect.top - estimatedPopupHeight - OFFSET_Y;
     }
     top = Math.max(VIEWPORT_MARGIN, top);
 
@@ -99,7 +108,8 @@ export const useFilterPopoverController = <T,>({
         width: POPUP_WIDTH,
       };
     });
-  }, [openedFilterColumnKey]);
+    // 変更(12-A): 見積もり高さ切替のため openedFilterColumn(filterType)へ依存を追加します。
+  }, [openedFilterColumnKey, openedFilterColumn]);
 
   // 追加: 列フィルターポップオーバーを開きます。
   const openColumnFilterPopover = useCallback(
@@ -263,5 +273,3 @@ export const useFilterPopoverController = <T,>({
 };
 
 export default useFilterPopoverController;
-
-

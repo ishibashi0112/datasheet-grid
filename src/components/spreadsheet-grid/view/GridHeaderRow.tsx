@@ -11,6 +11,8 @@ import type {
 // 変更(10-C): 列座標を ColumnMeasurement(グローバル) から
 //             PaneColumnEntry(ペインローカル) へ切り替えます。
 import type { PaneColumnEntry } from '../logic/geometry';
+// 追加(12-A): set フィルター対応のフィルター有効判定を共有します。
+import { isActiveColumnFilterValue } from '../logic/filtering';
 import { toExcelColumnName } from '../utils/excelColumnName';
 
 // 追加(10-C): このヘッダーがどのペインを描画しているかの種別です。
@@ -174,8 +176,11 @@ function GridHeaderRowInner<T>({
         const left = leadingWidth + entry.paneLocalStart;
         const size = entry.paneLocalSize;
 
-        const isColumnFiltered =
-          String(columnFilterValues[column.key] ?? '').trim().length > 0;
+        // 変更(12-A): set フィルター値(オブジェクト)も正しく「フィルター済み」と
+        //             判定できるよう、共通 helper へ置き換えます。
+        const isColumnFiltered = isActiveColumnFilterValue(
+          columnFilterValues[column.key],
+        );
         // 変更(11-A): selectIsColumnSelected(uiState, ...) と等価の判定を
         //             SelectionSnapshot のプリミティブ比較で行います。
         const isColumnSelected =

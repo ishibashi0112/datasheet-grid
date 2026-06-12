@@ -39,6 +39,8 @@ import { useGridViewportSync } from './hooks/useGridViewportSync';
 import {
   applyColumnFilters,
   applyGlobalFilter,
+  // 追加(12-A): set フィルター値の判定 / 構築に使います。
+  isSetColumnFilterValue,
   type GridRowModelLike,
 } from './logic/filtering';
 // 変更(10-C): 3ペインレイアウト構築用の helper / 型を追加インポートします。
@@ -76,10 +78,15 @@ import type {
   CellRenderState,
   GridColumn,
   GridRowKey,
+  // 追加(12-A): set フィルター値の構築に使います。
+  SetColumnFilterValue,
   SpreadsheetGridProps,
 } from './model/gridTypes';
 import { getCellValue, isCellEditable, setCellValue } from './utils/permissions';
-import ColumnFilterPopover from './view/ColumnFilterPopover';
+import ColumnFilterPopover, {
+  // 追加(12-A): popover を開いている列の候補メモ化に使う型です。
+  type ColumnFilterPopoverOption,
+} from './view/ColumnFilterPopover';
 import DefaultGridBottomBar from './view/DefaultGridBottomBar';
 import DefaultGridTopBar from './view/DefaultGridTopBar';
 import { resolveGridSlot } from './view/gridBarHelpers';
@@ -90,6 +97,10 @@ import GridHeaderRow from './view/GridHeaderRow';
 type SourceRowModel<T> = GridRowModelLike<T> & {
   rowKey: GridRowKey;
 };
+
+// 追加(12-A): popover 非表示時 / 候補不要な filterType 用の安定空配列です。
+//             useMemo の返り値参照を安定させるため module スコープに置きます。
+const EMPTY_FILTER_OPTIONS: ColumnFilterPopoverOption[] = [];
 
 // 追加: Grid 本体です。
 export function SpreadsheetGrid<T extends object>({
@@ -934,6 +945,117 @@ export function SpreadsheetGrid<T extends object>({
   );
 
   // ── filter popover actions ────────────────────────────
+  // 追加(12-A): popover を開いている列の select / set 候補です。
+  // 変更理由: 従来は JSX 内で getColumnSelectOptions(openedFilterColumn) を直接呼んでおり、
+  //   popover を開いたまま親が再レンダーするたび(set フィルター即時適用での再レンダー含む)に
+  //   5,000 行スキャン + ソートが再実行されていました。開いている列と行データが
+  //   変わらない限り、計算・参照とも再利用します。
+  const openedFilterSelectOptions = useMemo<ColumnFilterPopoverOption[]>(() => {
+    if (!openedFilterColumn) {
+      return EMPTY_FILTER_OPTIONS;
+    }
+    const filterType = openedFilterColumn.filterType ?? 'text';
+    if (filterType !== 'select' && filterType !== 'set') {
+      return EMPTY_FILTER_OPTIONS;
+    }
+    return getColumnSelectOptions(openedFilterColumn);
+  }, [openedFilterColumn, getColumnSelectOptions]);
+
+  // 追加(12-A): popover を開いている列の set フィルター選択状態です。
+  //             null = 全選択(フィルター未設定)を意味します。
+  const openedSetFilterValue = openedFilterColumn
+    ? uiState.filters.columnFilters[openedFilterColumn.key]
+    : undefined;
+
+  const openedSetFilterSelectedValues = useMemo<ReadonlySet<string> | null>(
+    () =>
+      isSetColumnFilterValue(openedSetFilterValue)
+        ? new Set(openedSetFilterValue.values)
+        : null,
+    [openedSetFilterValue],
+  );
+
+  // 追加(12-A): set フィルターの選択結果を reducer へ反映します。
+  //             全候補が選択された状態は clearColumn へ正規化し
+  //             「フィルターなし」(ヘッダーバッジ消灯 / 件数 0 扱い)へ戻します。
+  const commitSetFilterSelection = useCallback(
+    (columnKey: string, nextSelected: Set<string>) => {
+      const isAllSelected = openedFilterSelectOptions.every((option) =>
+        nextSelected.has(option.value),
+      );
+      if (isAllSelected) {
+        dispatch(gridActions.clearColumnFilter(columnKey));
+        return;
+      }
+      const nextValue: SetColumnFilterValue = {
+        kind: 'set',
+        values: Array.from(nextSelected),
+      };
+      dispatch(gridActions.setColumnFilter(columnKey, nextValue));
+    },
+    [dispatch, openedFilterSelectOptions],
+  );
+
+  // 追加(12-A): チェックボックス 1 件のトグルです(AG Grid Set Filter と同じ即時適用)。
+  const handleSetFilterValueToggle = useCallback(
+    (value: string) => {
+      if (!filterPopoverState) {
+        return;
+      }
+      const nextSelected = new Set(
+        openedSetFilterSelectedValues ??
+          openedFilterSelectOptions.map((option) => option.value),
+      );
+      if (nextSelected.has(value)) {
+        nextSelected.delete(value);
+      } else {
+        nextSelected.add(value);
+      }
+      commitSetFilterSelection(filterPopoverState.columnKey, nextSelected);
+    },
+    [
+      filterPopoverState,
+      openedSetFilterSelectedValues,
+      openedFilterSelectOptions,
+      commitSetFilterSelection,
+    ],
+  );
+
+  // 追加(12-A): (Select All) の一括トグルです。検索中は popover 側から
+  //             「表示中候補の values」だけが渡るため、検索結果のみが対象になります。
+  const handleSetFilterSelectAllChange = useCallback(
+    (visibleValues: string[], nextChecked: boolean) => {
+      if (!filterPopoverState) {
+        return;
+      }
+      const nextSelected = new Set(
+        openedSetFilterSelectedValues ??
+          openedFilterSelectOptions.map((option) => option.value),
+      );
+      if (nextChecked) {
+        visibleValues.forEach((value) => nextSelected.add(value));
+      } else {
+        visibleValues.forEach((value) => nextSelected.delete(value));
+      }
+      commitSetFilterSelection(filterPopoverState.columnKey, nextSelected);
+    },
+    [
+      filterPopoverState,
+      openedSetFilterSelectedValues,
+      openedFilterSelectOptions,
+      commitSetFilterSelection,
+    ],
+  );
+
+  // 追加(12-A): set フィルターの「クリア」です。即時適用 UI のため popover は閉じず、
+  //             全選択(フィルターなし)へ戻して結果を見ながら操作を続けられるようにします。
+  const clearSetFilterPopoverValue = useCallback(() => {
+    if (!filterPopoverState) {
+      return;
+    }
+    dispatch(gridActions.clearColumnFilter(filterPopoverState.columnKey));
+  }, [dispatch, filterPopoverState]);
+
   const applyFilterPopoverValue = useCallback(() => {
     if (!filterPopoverState) {
       return;
@@ -942,6 +1064,12 @@ export function SpreadsheetGrid<T extends object>({
       (column) => column.key === filterPopoverState.columnKey,
     );
     const filterType = targetColumn?.filterType ?? 'text';
+    // 追加(12-A): set フィルターは即時適用のため、ここでは閉じるだけにします
+    //             (Enter 等で誤って draftValue が書き込まれるのを防ぎます)。
+    if (filterType === 'set') {
+      closeColumnFilterPopover();
+      return;
+    }
     const normalized =
       filterType === 'select'
         ? filterPopoverState.draftValue
@@ -1204,19 +1332,31 @@ export function SpreadsheetGrid<T extends object>({
   };
 
   // ── filter popover ────────────────────────────────────
+  // 変更(12-A): set フィルター値はオブジェクトのため String() 直書きを避け、
+  //             現在値テキストをここで type 別に整形します(set は popover 側で
+  //             件数カウンタを表示するため参考表示のみです)。
+  const openedFilterCurrentValueText = (() => {
+    if (!openedFilterColumn) {
+      return '（なし）';
+    }
+    const rawValue = uiState.filters.columnFilters[openedFilterColumn.key];
+    if (isSetColumnFilterValue(rawValue)) {
+      return `${rawValue.values.length}件を選択中`;
+    }
+    const text = String(rawValue ?? '').trim();
+    return text ? String(rawValue) : '（なし）';
+  })();
+
   const renderedFilterPopover = openedFilterColumn ? (
     <ColumnFilterPopover
       isOpen={Boolean(filterPopoverState)}
       title={openedFilterColumn.title || openedFilterColumn.key}
       filterType={openedFilterColumn.filterType ?? 'text'}
       draftValue={filterPopoverState?.draftValue ?? ''}
-      currentValueText={
-        String(uiState.filters.columnFilters[openedFilterColumn.key] ?? '').trim()
-          ? String(uiState.filters.columnFilters[openedFilterColumn.key])
-          : '（なし）'
-      }
+      currentValueText={openedFilterCurrentValueText}
       layout={filterPopoverLayout}
-      selectOptions={getColumnSelectOptions(openedFilterColumn)}
+      selectOptions={openedFilterSelectOptions}
+      setSelectedValues={openedSetFilterSelectedValues}
       popoverRef={filterPopoverRef}
       textInputRef={filterTextInputRef}
       selectRef={filterSelectRef}
@@ -1224,6 +1364,9 @@ export function SpreadsheetGrid<T extends object>({
       onDraftChange={updateFilterPopoverDraft}
       onApply={applyFilterPopoverValue}
       onClear={clearFilterPopoverValue}
+      onSetValueToggle={handleSetFilterValueToggle}
+      onSetSelectAllChange={handleSetFilterSelectAllChange}
+      onSetClear={clearSetFilterPopoverValue}
     />
   ) : null;
 

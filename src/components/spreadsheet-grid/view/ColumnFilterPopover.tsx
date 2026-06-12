@@ -1,10 +1,19 @@
 import { createPortal } from 'react-dom';
-import type {
-  CSSProperties,
-  KeyboardEvent,
-  PointerEvent,
-  RefObject,
+// 変更(12-A): set フィルター(検索 + Select All + チェックボックス一覧)用に
+//             hooks と useVirtualizer を追加 import します。
+//             候補リストは品番のように 5,000 件規模になり得るため、
+//             本体グリッドと同じ @tanstack/react-virtual で行仮想化します。
+import {
+  useDeferredValue,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+  type KeyboardEvent,
+  type PointerEvent,
+  type RefObject,
 } from 'react';
+import { useVirtualizer } from '@tanstack/react-virtual';
 
 // 追加: popover のレイアウト情報です。
 export type ColumnFilterPopoverLayout = {
@@ -13,7 +22,7 @@ export type ColumnFilterPopoverLayout = {
   width: number;
 };
 
-// 追加: select フィルター候補の最小型です。
+// 追加: select / set フィルター候補の最小型です。
 export type ColumnFilterPopoverOption = {
   label: string;
   value: string;
@@ -22,19 +31,294 @@ export type ColumnFilterPopoverOption = {
 type ColumnFilterPopoverProps = {
   isOpen: boolean;
   title: string;
-  filterType: 'text' | 'number' | 'date' | 'select' | 'custom';
+  // 変更(12-A): 'set' を追加します。
+  filterType: 'text' | 'number' | 'date' | 'select' | 'set' | 'custom';
   draftValue: string;
   currentValueText: string;
   layout: ColumnFilterPopoverLayout | null;
   selectOptions: ColumnFilterPopoverOption[];
+  // 追加(12-A): set フィルターの選択状態です。null = 全選択(フィルターなし)。
+  setSelectedValues: ReadonlySet<string> | null;
   popoverRef: RefObject<HTMLDivElement | null>;
+  // 注記(12-A): set フィルターでは検索ボックスへこの ref を割り当て、
+  //             useFilterPopoverController の autofocus をそのまま流用します。
   textInputRef: RefObject<HTMLInputElement | null>;
   selectRef: RefObject<HTMLSelectElement | null>;
   onRequestClose: () => void;
   onDraftChange: (value: string) => void;
   onApply: () => void;
   onClear: () => void;
+  // 追加(12-A): set フィルターのチェックボックス 1 件トグルです(即時適用)。
+  onSetValueToggle: (value: string) => void;
+  // 追加(12-A): (Select All) の一括トグルです。検索中は「表示中の候補のみ」を
+  //             対象にするため、対象 values を popover 側から渡します(AG Grid と同挙動)。
+  onSetSelectAllChange: (
+    visibleValues: string[],
+    nextSelected: boolean,
+  ) => void;
+  // 追加(12-A): set フィルターの「クリア」です。popover を閉じずに全選択へ戻します
+  //             (即時適用のため、結果を見ながら操作を続けられるようにします)。
+  onSetClear: () => void;
 };
+
+// ── 共通スタイル ────────────────────────────────────────
+const SECONDARY_BUTTON_STYLE: CSSProperties = {
+  border: '1px solid #cbd5e1',
+  backgroundColor: '#ffffff',
+  color: '#475569',
+  borderRadius: 8,
+  padding: '6px 10px',
+  cursor: 'pointer',
+  fontSize: 12,
+};
+
+const PRIMARY_BUTTON_STYLE: CSSProperties = {
+  border: '1px solid #2563eb',
+  backgroundColor: '#2563eb',
+  color: '#ffffff',
+  borderRadius: 8,
+  padding: '6px 10px',
+  cursor: 'pointer',
+  fontSize: 12,
+};
+
+const TEXT_INPUT_STYLE: CSSProperties = {
+  width: '100%',
+  boxSizing: 'border-box',
+  padding: '8px 10px',
+  border: '1px solid #cbd5e1',
+  borderRadius: 8,
+  outline: 'none',
+  marginBottom: 8,
+};
+
+// 追加(12-A): set フィルター候補リストの行高です(仮想化の estimateSize と一致させます)。
+const SET_FILTER_OPTION_ROW_HEIGHT = 28;
+// 追加(12-A): 候補リストの表示領域高です。
+const SET_FILTER_LIST_HEIGHT = 208;
+
+// ── set フィルター本体 ──────────────────────────────────
+// 追加(12-A): set フィルターの検索 state / 仮想化は popover 全体とライフサイクルが
+//             異なる(開閉でリセットしたい・親 SpreadsheetGrid を再レンダーさせたくない)
+//             ため、独立した子 component に切り出して hooks を持たせます。
+//             検索テキストはこのローカル state に閉じるため、タイピングしても
+//             再レンダーは popover 内部のみで完結します(本体 5,000 行は無関係)。
+type SetFilterBodyProps = {
+  options: ColumnFilterPopoverOption[];
+  // null = 全選択(フィルターなし)です。
+  selectedValues: ReadonlySet<string> | null;
+  searchInputRef: RefObject<HTMLInputElement | null>;
+  onValueToggle: (value: string) => void;
+  onSelectAllChange: (visibleValues: string[], nextSelected: boolean) => void;
+  onRequestClose: () => void;
+};
+
+function SetFilterBody({
+  options,
+  selectedValues,
+  searchInputRef,
+  onValueToggle,
+  onSelectAllChange,
+  onRequestClose,
+}: SetFilterBodyProps) {
+  const [searchText, setSearchText] = useState('');
+  // 追加(12-A): 候補 5,000 件規模での連続タイピングに備え、絞り込み計算は
+  //             低優先度レンダーへ遅延します(11-B7 のグローバルフィルタと同型)。
+  const deferredSearchText = useDeferredValue(searchText);
+
+  const visibleOptions = useMemo(() => {
+    const normalized = deferredSearchText.trim().toLowerCase();
+    if (!normalized) {
+      return options;
+    }
+    return options.filter((option) =>
+      option.label.toLowerCase().includes(normalized),
+    );
+  }, [options, deferredSearchText]);
+
+  const isSearching = deferredSearchText.trim().length > 0;
+
+  // 追加(12-A): 候補リストの行仮想化です。表示領域ぶん + overscan のみ DOM 化します。
+  const listScrollRef = useRef<HTMLDivElement | null>(null);
+  const optionVirtualizer = useVirtualizer({
+    count: visibleOptions.length,
+    getScrollElement: () => listScrollRef.current,
+    estimateSize: () => SET_FILTER_OPTION_ROW_HEIGHT,
+    overscan: 10,
+  });
+
+  // ── (Select All) の 3 状態判定(表示中候補が対象) ──
+  const visibleSelectedCount = useMemo(() => {
+    if (selectedValues === null) {
+      return visibleOptions.length;
+    }
+    let count = 0;
+    for (const option of visibleOptions) {
+      if (selectedValues.has(option.value)) {
+        count += 1;
+      }
+    }
+    return count;
+  }, [selectedValues, visibleOptions]);
+
+  const isAllVisibleSelected =
+    visibleOptions.length > 0 && visibleSelectedCount === visibleOptions.length;
+  const isSomeVisibleSelected =
+    visibleSelectedCount > 0 && !isAllVisibleSelected;
+
+  const totalSelectedCount =
+    selectedValues === null ? options.length : selectedValues.size;
+
+  const handleSelectAllToggle = () => {
+    onSelectAllChange(
+      visibleOptions.map((option) => option.value),
+      !isAllVisibleSelected,
+    );
+  };
+
+  return (
+    <>
+      <input
+        ref={searchInputRef}
+        type="text"
+        value={searchText}
+        onChange={(event) => setSearchText(event.target.value)}
+        onKeyDown={(event) => {
+          // 追加: 検索ボックス内入力を grid 側へ伝播させません。
+          event.stopPropagation();
+          if (event.key === 'Escape') {
+            event.preventDefault();
+            onRequestClose();
+          }
+        }}
+        placeholder="検索..."
+        style={TEXT_INPUT_STYLE}
+      />
+
+      {/* (Select All) 行: 検索中は表示中候補のみが対象です(AG Grid と同挙動) */}
+      <label
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 8,
+          height: SET_FILTER_OPTION_ROW_HEIGHT,
+          padding: '0 8px',
+          cursor: 'pointer',
+          fontSize: 12,
+          color: '#334155',
+          borderBottom: '1px solid #e2e8f0',
+          userSelect: 'none',
+        }}
+      >
+        <input
+          type="checkbox"
+          checked={isAllVisibleSelected}
+          ref={(element) => {
+            // 追加(12-A): 一部のみ選択中は indeterminate 表示にします。
+            if (element) {
+              element.indeterminate = isSomeVisibleSelected;
+            }
+          }}
+          onChange={handleSelectAllToggle}
+        />
+        <span style={{ fontWeight: 600 }}>
+          {isSearching ? '（検索結果をすべて選択）' : '（すべて選択）'}
+        </span>
+      </label>
+
+      {/* 候補リスト(仮想化) */}
+      <div
+        ref={listScrollRef}
+        style={{
+          height: SET_FILTER_LIST_HEIGHT,
+          overflowY: 'auto',
+          border: '1px solid #e2e8f0',
+          borderTop: 'none',
+          borderRadius: '0 0 8px 8px',
+          marginBottom: 8,
+        }}
+      >
+        {visibleOptions.length === 0 ? (
+          <div
+            style={{
+              padding: 12,
+              fontSize: 12,
+              color: '#94a3b8',
+              textAlign: 'center',
+            }}
+          >
+            一致する候補がありません
+          </div>
+        ) : (
+          <div
+            style={{
+              height: optionVirtualizer.getTotalSize(),
+              position: 'relative',
+              width: '100%',
+            }}
+          >
+            {optionVirtualizer.getVirtualItems().map((virtualItem) => {
+              const option = visibleOptions[virtualItem.index];
+              if (!option) {
+                return null;
+              }
+              const isChecked =
+                selectedValues === null || selectedValues.has(option.value);
+              return (
+                <label
+                  key={option.value}
+                  style={{
+                    position: 'absolute',
+                    top: 0,
+                    left: 0,
+                    right: 0,
+                    transform: `translateY(${virtualItem.start}px)`,
+                    height: virtualItem.size,
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 8,
+                    padding: '0 8px',
+                    boxSizing: 'border-box',
+                    cursor: 'pointer',
+                    fontSize: 12,
+                    color: '#334155',
+                    userSelect: 'none',
+                  }}
+                >
+                  <input
+                    type="checkbox"
+                    checked={isChecked}
+                    onChange={() => onValueToggle(option.value)}
+                  />
+                  <span
+                    style={{
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      whiteSpace: 'nowrap',
+                    }}
+                  >
+                    {option.label}
+                  </span>
+                </label>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      <div
+        style={{
+          fontSize: 11,
+          color: '#64748b',
+          marginBottom: 10,
+        }}
+      >
+        選択中: {totalSelectedCount} / {options.length} 件
+        {isSearching ? `（表示中 ${visibleOptions.length} 件）` : ''}
+      </div>
+    </>
+  );
+}
 
 // 追加: 列フィルター popover の view component です。
 export function ColumnFilterPopover({
@@ -45,6 +329,7 @@ export function ColumnFilterPopover({
   currentValueText,
   layout,
   selectOptions,
+  setSelectedValues,
   popoverRef,
   textInputRef,
   selectRef,
@@ -52,6 +337,9 @@ export function ColumnFilterPopover({
   onDraftChange,
   onApply,
   onClear,
+  onSetValueToggle,
+  onSetSelectAllChange,
+  onSetClear,
 }: ColumnFilterPopoverProps) {
   if (typeof document === 'undefined' || !isOpen || !layout) {
     return null;
@@ -81,6 +369,8 @@ export function ColumnFilterPopover({
     event.stopPropagation();
   };
 
+  const isSetFilter = filterType === 'set';
+
   return createPortal(
     <div
       ref={popoverRef}
@@ -103,7 +393,17 @@ export function ColumnFilterPopover({
         列フィルター: {title}
       </div>
 
-      {filterType === 'select' ? (
+      {isSetFilter ? (
+        // 追加(12-A): AG Grid の Set Filter 相当 UI です(チェック操作は即時適用)。
+        <SetFilterBody
+          options={selectOptions}
+          selectedValues={setSelectedValues}
+          searchInputRef={textInputRef}
+          onValueToggle={onSetValueToggle}
+          onSelectAllChange={onSetSelectAllChange}
+          onRequestClose={onRequestClose}
+        />
+      ) : filterType === 'select' ? (
         <>
           <div
             style={{
@@ -193,15 +493,7 @@ export function ColumnFilterPopover({
                 ? '例: >=10 / <20 / 10..20 / =5'
                 : '部分一致で絞り込み'
             }
-            style={{
-              width: '100%',
-              boxSizing: 'border-box',
-              padding: '8px 10px',
-              border: '1px solid #cbd5e1',
-              borderRadius: 8,
-              outline: 'none',
-              marginBottom: 8,
-            }}
+            style={TEXT_INPUT_STYLE}
           />
           <div
             style={{
@@ -220,18 +512,22 @@ export function ColumnFilterPopover({
         </>
       )}
 
-      <div
-        style={{
-          fontSize: 11,
-          color: '#64748b',
-          marginBottom: 10,
-          whiteSpace: 'nowrap',
-          overflow: 'hidden',
-          textOverflow: 'ellipsis',
-        }}
-      >
-        現在値: {currentValueText}
-      </div>
+      {/* 変更(12-A): set フィルターは即時適用のため現在値テキスト行を出しません
+          (選択件数カウンタを SetFilterBody 側で表示します)。 */}
+      {!isSetFilter && (
+        <div
+          style={{
+            fontSize: 11,
+            color: '#64748b',
+            marginBottom: 10,
+            whiteSpace: 'nowrap',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+          }}
+        >
+          現在値: {currentValueText}
+        </div>
+      )}
 
       <div
         style={{
@@ -240,52 +536,74 @@ export function ColumnFilterPopover({
           justifyContent: 'flex-end',
         }}
       >
-        <button
-          type="button"
-          onPointerDown={(event) => {
-            event.preventDefault();
-            event.stopPropagation();
-            onClear();
-          }}
-          onKeyDown={(event) => {
-            // 追加: popover 内 button の key 操作を grid 側へ流しません。
-            event.stopPropagation();
-          }}
-          style={{
-            border: '1px solid #cbd5e1',
-            backgroundColor: '#ffffff',
-            color: '#475569',
-            borderRadius: 8,
-            padding: '6px 10px',
-            cursor: 'pointer',
-            fontSize: 12,
-          }}
-        >
-          クリア
-        </button>
-        <button
-          type="button"
-          onPointerDown={(event) => {
-            event.preventDefault();
-            event.stopPropagation();
-            onApply();
-          }}
-          onKeyDown={(event) => {
-            // 追加: popover 内 button の key 操作を grid 側へ流しません。
-            event.stopPropagation();
-          }}
-          style={{
-            border: '1px solid #2563eb',
-            backgroundColor: '#2563eb',
-            color: '#ffffff',
-            borderRadius: 8,
-            padding: '6px 10px',
-            cursor: 'pointer',
-            fontSize: 12,
-          }}
-        >
-          適用
-        </button>
+        {isSetFilter ? (
+          // 変更(12-A): set フィルターは即時適用のため「適用」を持ちません。
+          //             クリアは popover を閉じず全選択へ戻し、閉じるで終了します。
+          <>
+            <button
+              type="button"
+              onPointerDown={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                onSetClear();
+              }}
+              onKeyDown={(event) => {
+                // 追加: popover 内 button の key 操作を grid 側へ流しません。
+                event.stopPropagation();
+              }}
+              style={SECONDARY_BUTTON_STYLE}
+            >
+              クリア
+            </button>
+            <button
+              type="button"
+              onPointerDown={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                onRequestClose();
+              }}
+              onKeyDown={(event) => {
+                event.stopPropagation();
+              }}
+              style={PRIMARY_BUTTON_STYLE}
+            >
+              閉じる
+            </button>
+          </>
+        ) : (
+          <>
+            <button
+              type="button"
+              onPointerDown={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                onClear();
+              }}
+              onKeyDown={(event) => {
+                // 追加: popover 内 button の key 操作を grid 側へ流しません。
+                event.stopPropagation();
+              }}
+              style={SECONDARY_BUTTON_STYLE}
+            >
+              クリア
+            </button>
+            <button
+              type="button"
+              onPointerDown={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                onApply();
+              }}
+              onKeyDown={(event) => {
+                // 追加: popover 内 button の key 操作を grid 側へ流しません。
+                event.stopPropagation();
+              }}
+              style={PRIMARY_BUTTON_STYLE}
+            >
+              適用
+            </button>
+          </>
+        )}
       </div>
     </div>,
     document.body,
