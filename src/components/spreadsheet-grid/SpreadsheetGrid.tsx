@@ -132,7 +132,17 @@ export function SpreadsheetGrid<T extends object>({
   const rightPaneScrollRef = useRef<HTMLDivElement | null>(null);
 
   // ── local state ───────────────────────────────────────
-  const [editorValue, setEditorValue] = useState('');
+  // 変更(11-B6): editorValue(毎キーストロークで更新されるドラフト state)を廃止し、
+  //   「編集開始時の初期値」だけを持つ editorInitialValue へ置き換えます。
+  // 変更理由: 旧実装はドラフトを SpreadsheetGrid の state として持ち、
+  //   CellEditorLayer×3 ペインへ value/onChange を渡していたため、編集中の
+  //   毎キーストロークで親全体（3 ペインのヘッダー/ボディ含む）が再レンダーして
+  //   いました。ドラフトを CellEditorLayer ローカル state へ移すことで、
+  //   タイピング中は editor の input だけが更新されます。
+  //   本 state が更新されるのは編集開始時のみで、同一イベント内の
+  //   dispatch(startEdit) と React が自動バッチするため、編集開始時の
+  //   親レンダー回数は従来どおり 1 回です。
+  const [editorInitialValue, setEditorInitialValue] = useState('');
   const [isCornerHovered, setIsCornerHovered] = useState(false);
   const [hoveredRowIndex, setHoveredRowIndex] = useState<number | null>(null);
   const [hoveredColumnIndex, setHoveredColumnIndex] = useState<number | null>(
@@ -672,7 +682,8 @@ export function SpreadsheetGrid<T extends object>({
         return;
       }
       const currentValue = getCellValue(row, column);
-      setEditorValue(String(currentValue ?? ''));
+      // 変更(11-B6): ドラフト setter → 初期値 setter へ置き換え（挙動等価）。
+      setEditorInitialValue(String(currentValue ?? ''));
       dispatch(gridActions.startEdit(cell));
     },
     [canEditCell, dispatch, filteredRows, readOnly, orderedColumns],
@@ -687,7 +698,7 @@ export function SpreadsheetGrid<T extends object>({
     visibleColumns: orderedColumns,
     readOnly,
     canEditCell,
-    setEditorValue,
+    setEditorInitialValue,
     dispatch,
     handleCopy,
     handleCellDoubleClick,
@@ -702,8 +713,7 @@ export function SpreadsheetGrid<T extends object>({
     // 変更(10-E): editingCell.col は論理 index 空間のため orderedColumns で indexing します。
     visibleColumns: orderedColumns,
     filteredRowSourceIndexes,
-    editorValue,
-    setEditorValue,
+    setEditorInitialValue,
     onRowsChange,
     dispatch,
     getMovedCell,
@@ -1312,8 +1322,7 @@ export function SpreadsheetGrid<T extends object>({
                   rect={editorRectForPane('left')}
                   headerHeight={headerHeight}
                   leadingWidth={leftLeadingWidth}
-                  value={editorValue}
-                  onChange={setEditorValue}
+                  initialValue={editorInitialValue}
                   onCommit={commitEdit}
                   onCancel={cancelEdit}
                 />
@@ -1413,8 +1422,7 @@ export function SpreadsheetGrid<T extends object>({
                 rect={editorRectForPane('center')}
                 headerHeight={headerHeight}
                 leadingWidth={centerLeadingWidth}
-                value={editorValue}
-                onChange={setEditorValue}
+                initialValue={editorInitialValue}
                 onCommit={commitEdit}
                 onCancel={cancelEdit}
               />
@@ -1523,8 +1531,7 @@ export function SpreadsheetGrid<T extends object>({
                   rect={editorRectForPane('right')}
                   headerHeight={headerHeight}
                   leadingWidth={rightLeadingWidth}
-                  value={editorValue}
-                  onChange={setEditorValue}
+                  initialValue={editorInitialValue}
                   onCommit={commitEdit}
                   onCancel={cancelEdit}
                 />

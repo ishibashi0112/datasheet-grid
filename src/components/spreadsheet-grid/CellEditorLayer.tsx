@@ -4,6 +4,7 @@ export type EditorCommitDirection = 'down' | 'right' | 'left';
 import {
   useEffect,
   useRef,
+  useState,
   type CSSProperties,
   type KeyboardEvent,
 } from 'react';
@@ -22,24 +23,48 @@ type CellEditorLayerProps = {
   // 変更(10-D): rowHeaderWidth → leadingWidth に一般化しました。
   //             editor は active cell が属するペインの relative コンテナ内へ配置されます。
   leadingWidth: number;
-  value: string;
-  onChange: (value: string) => void;
-  onCommit: (direction?: EditorCommitDirection) => void;
+  // 変更(11-B6): 親が持つのは「編集開始時の初期値」だけになりました。
+  //              毎キーストロークのドラフト値は本コンポーネントのローカル state で管理し、
+  //              親(SpreadsheetGrid)へは commit 時に最終値だけを渡します。
+  //              これにより編集中のタイピングで親（＝3ペイン全体）が再レンダーされなくなります。
+  initialValue: string;
+  // 変更(11-B6): (direction?) → (value, direction?) に変更。確定値を引数で受け取ります。
+  onCommit: (value: string, direction?: EditorCommitDirection) => void;
   onCancel: () => void;
 };
 
 // 追加: 編集中セルの上に input を重ねる editor layer です。
 // 変更(10-D): ペイン別座標系に対応。
+// 変更(11-B6): ドラフト値をローカル state 化しました（コントロールドのまま、状態の置き場だけ移動）。
 export function CellEditorLayer({
   rect,
   headerHeight,
   leadingWidth,
-  value,
-  onChange,
+  initialValue,
   onCommit,
   onCancel,
 }: CellEditorLayerProps) {
   const inputRef = useRef<HTMLInputElement | null>(null);
+
+  // 追加(11-B6): 編集中のドラフト値です。タイピングはこの state だけを更新します。
+  const [draftValue, setDraftValue] = useState('');
+
+  // 追加(11-B6): 「新しい編集セッションの開始」を rect の null → 非 null 遷移で検知し、
+  //              ドラフトを initialValue へリセットします。
+  // 実装メモ: これは React 公式ドキュメントの「レンダー中に過去の props と比較して
+  //   state を調整する」パターンです（effect ではなく render 中に setState することで、
+  //   古いドラフトが 1 フレームでも描画されるのを防ぎます。StrictMode 安全）。
+  //   commit / cancel で必ず rect が null に戻るため、「null → 非 null」は常に
+  //   新セッションを意味します。同一セルを連続編集（Esc キャンセル → 再 F2 等）しても
+  //   前回のドラフトが残りません。
+  const isOpen = rect !== null;
+  const [prevOpen, setPrevOpen] = useState(false);
+  if (isOpen !== prevOpen) {
+    setPrevOpen(isOpen);
+    if (isOpen) {
+      setDraftValue(initialValue);
+    }
+  }
 
   // 追加: editor 表示時に自動フォーカスし、末尾へキャレット移動します。
   useEffect(() => {
@@ -81,10 +106,11 @@ export function CellEditorLayer({
   };
 
   // 追加: Enter で下、Tab で左右へ移動する方向付き commit を呼びます。
+  // 変更(11-B6): commit にローカルのドラフト値を引数で渡します。
   const handleKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
     if (event.key === 'Enter') {
       event.preventDefault();
-      onCommit('down');
+      onCommit(draftValue, 'down');
       return;
     }
 
@@ -96,7 +122,7 @@ export function CellEditorLayer({
 
     if (event.key === 'Tab') {
       event.preventDefault();
-      onCommit(event.shiftKey ? 'left' : 'right');
+      onCommit(draftValue, event.shiftKey ? 'left' : 'right');
     }
   };
 
@@ -105,10 +131,10 @@ export function CellEditorLayer({
       <input
         ref={inputRef}
         type="text"
-        value={value}
-        onChange={(event) => onChange(event.target.value)}
+        value={draftValue}
+        onChange={(event) => setDraftValue(event.target.value)}
         onKeyDown={handleKeyDown}
-        onBlur={() => onCommit()}
+        onBlur={() => onCommit(draftValue)}
         style={inputStyle}
       />
     </div>

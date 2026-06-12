@@ -16,7 +16,10 @@ type UseGridKeyboardInteractionsArgs<T> = {
   visibleColumns: GridColumn<T>[];
   readOnly: boolean;
   canEditCell: SpreadsheetGridProps<T>['canEditCell'];
-  setEditorValue: (value: string) => void;
+  // 変更(11-B6): ドラフト state の setter → 「編集開始時の初期値」setter になりました。
+  //   文字キー直打ちの編集開始では、押下キー 1 文字を初期値として渡します
+  //   （以後のタイピングは CellEditorLayer ローカル state が受け持ちます）。
+  setEditorInitialValue: (value: string) => void;
   dispatch: Dispatch<GridUiAction>;
   handleCopy: () => Promise<void>;
   handleCellDoubleClick: (cell: CellCoord) => void;
@@ -31,7 +34,7 @@ export const useGridKeyboardInteractions = <T,>({
   visibleColumns,
   readOnly,
   canEditCell,
-  setEditorValue,
+  setEditorInitialValue,
   dispatch,
   handleCopy,
   handleCellDoubleClick,
@@ -176,7 +179,7 @@ export const useGridKeyboardInteractions = <T,>({
           return;
         }
         event.preventDefault();
-        setEditorValue(event.key);
+        setEditorInitialValue(event.key);
         dispatch(gridActions.startEdit(uiState.activeCell));
       }
     },
@@ -190,7 +193,7 @@ export const useGridKeyboardInteractions = <T,>({
       moveActiveCell,
       readOnly,
       selectEntireGrid,
-      setEditorValue,
+      setEditorInitialValue,
       uiState.activeCell,
       uiState.editingCell,
       visibleColumns,

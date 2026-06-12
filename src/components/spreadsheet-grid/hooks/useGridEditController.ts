@@ -9,8 +9,10 @@ type UseGridEditControllerArgs<T extends object> = {
   rows: T[];
   visibleColumns: GridColumn<T>[];
   filteredRowSourceIndexes: number[];
-  editorValue: string;
-  setEditorValue: (value: string) => void;
+  // 変更(11-B6): editorValue / setEditorValue(ドラフト state)は廃止しました。
+  //              ドラフトは CellEditorLayer のローカル state へ移動し、
+  //              親は「編集開始時の初期値」を設定する setter だけを持ちます。
+  setEditorInitialValue: (value: string) => void;
   onRowsChange?: (nextRows: T[]) => void;
   dispatch: Dispatch<GridUiAction>;
   getMovedCell: (baseCell: CellCoord, deltaRow: number, deltaCol: number) => CellCoord;
@@ -24,8 +26,7 @@ export const useGridEditController = <T extends object>({
   rows,
   visibleColumns,
   filteredRowSourceIndexes,
-  editorValue,
-  setEditorValue,
+  setEditorInitialValue,
   onRowsChange,
   dispatch,
   getMovedCell,
@@ -42,18 +43,26 @@ export const useGridEditController = <T extends object>({
     [dispatch],
   );
 
-  // 追加: 編集開始時に editorValue を初期化する helper です。
+  // 追加: 編集開始時に editor の初期値を設定する helper です。
+  // 変更(11-B6): 設定先はドラフト state ではなく「初期値 state」になりました。
+  //   setEditorInitialValue + startEdit は同一イベントハンドラ内で React が自動バッチ
+  //   するため、編集開始時の親レンダーは従来どおり 1 回です。
   const startEditWithValue = useCallback(
     (cell: CellCoord, initialValue: string) => {
-      setEditorValue(initialValue);
+      setEditorInitialValue(initialValue);
       dispatch(gridActions.startEdit(cell));
     },
-    [dispatch, setEditorValue],
+    [dispatch, setEditorInitialValue],
   );
 
-  // 追加: 編集確定です。editorValue を rows へ反映し、必要なら次セルへ移動します。
+  // 追加: 編集確定です。確定値を rows へ反映し、必要なら次セルへ移動します。
+  // 変更(11-B6): (direction?) → (committedValue, direction?) に変更。
+  //   ドラフト値を閉包(editorValue 依存)で読むのをやめ、CellEditorLayer から
+  //   最終値を引数で受け取ります。これにより本ハンドラの参照は編集中のタイピングで
+  //   変化しなくなります（旧実装は毎キーストロークで editorValue 依存が更新され、
+  //   commitEdit → CellEditorLayer props の参照も毎回変わっていました）。
   const commitEdit = useCallback(
-    (direction?: EditorCommitDirection) => {
+    (committedValue: string, direction?: EditorCommitDirection) => {
       if (editorActionGuardRef.current || !uiState.editingCell) {
         return;
       }
@@ -79,8 +88,8 @@ export const useGridEditController = <T extends object>({
 
       if (onRowsChange) {
         const parsedValue = column.parseClipboardValue
-          ? column.parseClipboardValue(editorValue, row)
-          : editorValue;
+          ? column.parseClipboardValue(committedValue, row)
+          : committedValue;
         const nextRows = rows.map((currentRow, index) =>
           index === originalRowIndex
             ? setCellValue(currentRow, column, parsedValue)
@@ -102,7 +111,6 @@ export const useGridEditController = <T extends object>({
       activateSingleCell,
       dispatch,
       editorActionGuardRef,
-      editorValue,
       filteredRowSourceIndexes,
       getMovedCell,
       gridRootRef,
