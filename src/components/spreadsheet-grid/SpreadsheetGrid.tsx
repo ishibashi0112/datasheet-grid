@@ -37,6 +37,8 @@ import { useGridEditController } from './hooks/useGridEditController';
 import { useGridKeyboardInteractions } from './hooks/useGridKeyboardInteractions';
 import { useGridPointerInteractions } from './hooks/useGridPointerInteractions';
 import { useGridViewportSync } from './hooks/useGridViewportSync';
+// 追加(13-B3-2): ヘッダー D&D 列並べ替え controller です。
+import { useColumnHeaderDragController } from './hooks/useColumnHeaderDragController';
 import {
   applyColumnFilters,
   applyGlobalFilter,
@@ -1285,8 +1287,27 @@ export function SpreadsheetGrid<T extends object>({
   //   - 注記: 本バッチでは pinned は変更しません。pinned 混在時は配列順を動かすだけで、
   //     画面側は従来どおり reorderColumnsByPane が pane(left/center/right)へ再グループ化します
   //     (ペイン跨ぎ・pinned 変更はヘッダー D&D の 13-B3-2 で扱います)。
-  const handleColumnChooserReorder = useCallback(
-    (orderedKeys: string[]) => {
+  // 変更(13-B3-2): 旧 handleColumnChooserReorder を「並べ替え + 任意の pin 変更」を 1 経路に
+  //   集約した共通 commit ヘルパ applyColumnOrderAndPin へ一般化しました。
+  // 設計メモ:
+  //   - orderedKeys は「全列キーの permutation」。長さ・集合が columns と一致しなければ no-op。
+  //   - pinOverride: 列キー → 'left'|'right'|undefined。指定列だけ pinned を上書きします
+  //     (ヘッダー D&D 用。チューザー並べ替えは未指定で従来どおり pinned 不変)。
+  //   - 【幅の保全】全列について解決済み幅(columnWidthsRef)を defs へ書き戻します。書き戻さないと
+  //     columns 変化 → columnWidths/sync effect で手動リサイズ幅が defs 幅へ戻ってしまうためです。
+  //   - 【正規化】reorderColumnsByPane で pane 連結正規化します(合意①・冪等)。pinOverride で
+  //     pinned が変わってもこの正規化が視覚順(= 論理 index 空間)を確定させます。チューザーの
+  //     orderedKeys は computeSectionReorderedKeys で既に pane 連結済みのため、ここでの正規化は
+  //     冪等で従来挙動と不変です。
+  //   - 【no-op】正規化結果が現在の columns と「順序・幅・pinned」すべて一致なら dispatch も
+  //     onColumnsChange も行いません(無駄な再レンダー抑止)。
+  //   - 並べ替え / pin 変更は orderedColumns の視覚順(= selection / activeCell の論理 index 空間)
+  //     を変え得るため、選択・アクティブセル・編集は破棄します(pin / 表示と同理由)。
+  const applyColumnOrderAndPin = useCallback(
+    (
+      orderedKeys: string[],
+      pinOverride?: Map<string, GridColumnPinned | undefined>,
+    ) => {
       if (!onColumnsChange) {
         return;
       }
@@ -1294,33 +1315,44 @@ export function SpreadsheetGrid<T extends object>({
         return;
       }
       const byKey = new Map(columns.map((column) => [column.key, column]));
-
-      let mutated = false;
-      let aborted = false;
-      const nextColumns = orderedKeys.map((key, index) => {
-        const column = byKey.get(key);
-        if (!column) {
-          // 未知キー(集合不一致)→ 安全側に倒して中断します。
-          aborted = true;
-          return columns[index];
-        }
-        if (columns[index]?.key !== key) {
-          mutated = true;
-        }
-        const resolvedWidth =
-          columnWidthsRef.current[column.key] ?? column.width;
-        if (resolvedWidth !== column.width) {
-          mutated = true;
-          return { ...column, width: resolvedWidth };
-        }
-        return column;
-      });
-
-      if (aborted || !mutated) {
+      // 集合不一致(未知キー)は安全側に倒して no-op。
+      if (!orderedKeys.every((key) => byKey.has(key))) {
         return;
       }
 
-      onColumnsChange(nextColumns);
+      const reordered = orderedKeys.map((key) => {
+        const column = byKey.get(key)!;
+        const resolvedWidth =
+          columnWidthsRef.current[column.key] ?? column.width;
+        const nextPinned = pinOverride?.has(key)
+          ? pinOverride.get(key)
+          : column.pinned;
+        const widthChanged = resolvedWidth !== column.width;
+        const pinnedChanged =
+          (column.pinned ?? undefined) !== (nextPinned ?? undefined);
+        return widthChanged || pinnedChanged
+          ? { ...column, width: resolvedWidth, pinned: nextPinned }
+          : column;
+      });
+
+      const normalized = reorderColumnsByPane(reordered);
+
+      const isNoOp =
+        normalized.length === columns.length &&
+        normalized.every((column, index) => {
+          const prev = columns[index];
+          return (
+            !!prev &&
+            prev.key === column.key &&
+            prev.width === column.width &&
+            (prev.pinned ?? undefined) === (column.pinned ?? undefined)
+          );
+        });
+      if (isNoOp) {
+        return;
+      }
+
+      onColumnsChange(normalized);
 
       dispatch(gridActions.stopEdit());
       dispatch(gridActions.clearSelection());
@@ -1328,6 +1360,58 @@ export function SpreadsheetGrid<T extends object>({
     },
     [columns, dispatch, onColumnsChange],
   );
+
+  // 変更(13-B3-2): チューザー並べ替えは applyColumnOrderAndPin(pinOverride なし)へ委譲します。
+  //   ColumnChooserPanel へ渡す参照を安定させるため薄い useCallback で包みます。
+  const handleColumnChooserReorder = useCallback(
+    (orderedKeys: string[]) => {
+      applyColumnOrderAndPin(orderedKeys);
+    },
+    [applyColumnOrderAndPin],
+  );
+
+  // 追加(13-B3-2): ヘッダー D&D 並べ替え controller(ドロップインジケータ ref + 安定ハンドラ)。
+  //   enabled は controlled columns(onColumnsChange あり)のときだけ true。
+  const {
+    onColumnDragHandlePointerDown,
+    leftIndicatorRef,
+    centerIndicatorRef,
+    rightIndicatorRef,
+  } = useColumnHeaderDragController<T>({
+    enabled: Boolean(onColumnsChange),
+    columns,
+    paneLayout,
+    leftPaneScrollRef,
+    rightPaneScrollRef,
+    bodyScrollRef,
+    scrollContainerRef,
+    leftLeadingWidth,
+    centerLeadingWidth,
+    rightLeadingWidth,
+    applyColumnOrderAndPin,
+  });
+
+  // 追加(13-B3-2): reorder 可能(controlled columns)なときだけバッジを grip 化します。
+  //   未指定時はバッジが通常表示になり、列範囲選択など既存挙動は完全に従来どおりです。
+  const headerDragHandler = onColumnsChange
+    ? onColumnDragHandlePointerDown
+    : undefined;
+
+  // 追加(13-B3-2): ドロップインジケータ(縦線)の共通 style です。display は controller が
+  //   ref 経由で 'block'/'none' を切替え、left はペインローカル境界 x を px で設定します。
+  //   各 pane の position:relative コンテナ(高さ = headerHeight + totalBodyHeight)直下に置くため
+  //   height:'100%' でヘッダー〜ボディを貫く縦線になります。zIndex は sticky ヘッダー(6/7)より前面。
+  const columnDropIndicatorStyle: CSSProperties = {
+    position: 'absolute',
+    top: 0,
+    height: '100%',
+    width: 2,
+    backgroundColor: '#2563eb',
+    transform: 'translateX(-1px)',
+    pointerEvents: 'none',
+    zIndex: 8,
+    display: 'none',
+  };
 
   // 追加(13-B2-2): 全列を初期 column defs の値(幅 / 固定 / 表示)へ戻します。
   // 設計メモ:
@@ -2004,6 +2088,7 @@ export function SpreadsheetGrid<T extends object>({
                   openedMenuColumnKey={openedMenuColumnKey}
                   onColumnMenuButtonPointerDown={openColumnMenuFromButton}
                   onColumnHeaderContextMenu={openColumnMenuFromContextMenu}
+                  onColumnDragHandlePointerDown={headerDragHandler}
                 />
 
                 {/* 追加(10-D): 左固定ペイン内の overlay（ペインローカル座標）。*/}
@@ -2069,6 +2154,9 @@ export function SpreadsheetGrid<T extends object>({
                   renderCellContent={renderCellContent}
                 />
                 </div>
+
+                {/* 追加(13-B3-2): 左固定ペインのドロップインジケータ(縦線)。 */}
+                <div ref={leftIndicatorRef} style={columnDropIndicatorStyle} />
               </div>
             )}
           </div>
@@ -2121,6 +2209,7 @@ export function SpreadsheetGrid<T extends object>({
                 openedMenuColumnKey={openedMenuColumnKey}
                 onColumnMenuButtonPointerDown={openColumnMenuFromButton}
                 onColumnHeaderContextMenu={openColumnMenuFromContextMenu}
+                onColumnDragHandlePointerDown={headerDragHandler}
               />
 
               {/* 変更(10-D): 中央ペインの overlay をペインローカル座標に切替。*/}
@@ -2172,6 +2261,11 @@ export function SpreadsheetGrid<T extends object>({
                 onCellDoubleClick={handleCellDoubleClickWithController}
                 renderCellContent={renderCellContent}
               />
+
+              {/* 追加(13-B3-2): 中央ペインのドロップインジケータ(縦線)。
+                  controller が ref 経由で display/left を imperative に制御します
+                  (ドラッグ中の再レンダーなし → GridHeaderRow の memo を維持)。 */}
+              <div ref={centerIndicatorRef} style={columnDropIndicatorStyle} />
             </div>
           </div>
 
@@ -2224,6 +2318,7 @@ export function SpreadsheetGrid<T extends object>({
                   openedMenuColumnKey={openedMenuColumnKey}
                   onColumnMenuButtonPointerDown={openColumnMenuFromButton}
                   onColumnHeaderContextMenu={openColumnMenuFromContextMenu}
+                  onColumnDragHandlePointerDown={headerDragHandler}
                 />
 
                 {/* 追加(10-D): 右固定ペイン内の overlay（ペインローカル座標）。*/}
@@ -2286,6 +2381,9 @@ export function SpreadsheetGrid<T extends object>({
                   renderCellContent={renderCellContent}
                 />
                 </div>
+
+                {/* 追加(13-B3-2): 右固定ペインのドロップインジケータ(縦線)。 */}
+                <div ref={rightIndicatorRef} style={columnDropIndicatorStyle} />
               </div>
             )}
           </div>

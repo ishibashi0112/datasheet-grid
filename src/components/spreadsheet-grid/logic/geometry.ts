@@ -316,6 +316,40 @@ export const findLogicalIndexFromPaneOffset = <T,>(
   return entries[clampedIndex].logicalIndex;
 };
 
+// 追加(13-B3-2): pane-local x オフセットから「挿入スロット index(0..件数)」を返します。
+//   ColumnChooserPanel の DOM midpoint 走査(updateDropFromPointer)の幾何版です。
+//   各エントリの midpoint より左にポインタがあれば、その手前へ挿入(= そのエントリの index)。
+//   どの midpoint よりも右なら末尾(= entries.length)を返します。空ペインは 0。
+//   ※ ヘッダー D&D のドロップ先 slot 算出に使います(findLogicalIndexFromPaneOffset が
+//      「どのセル上か」を返すのに対し、こちらは「列と列の境界(=挿入位置)」を返します)。
+export const findPaneDropSlot = <T,>(
+  paneGeometry: PaneGeometry<T>,
+  paneLocalOffset: number,
+): number => {
+  const { entries } = paneGeometry;
+  for (let i = 0; i < entries.length; i += 1) {
+    const entry = entries[i];
+    const midpoint = entry.paneLocalStart + entry.paneLocalSize / 2;
+    if (paneLocalOffset < midpoint) {
+      return i;
+    }
+  }
+  return entries.length;
+};
+
+// 追加(13-B3-2): スロット index → ペインローカル境界 x(ドロップインジケータの描画位置)。
+//   slot<件数: そのエントリの paneLocalStart / slot>=件数: totalWidth(末尾) / 空ペイン: 0。
+export const paneDropSlotBoundaryX = <T,>(
+  paneGeometry: PaneGeometry<T>,
+  slot: number,
+): number => {
+  const { entries, totalWidth } = paneGeometry;
+  if (entries.length === 0) return 0;
+  if (slot <= 0) return entries[0].paneLocalStart;
+  if (slot >= entries.length) return totalWidth;
+  return entries[slot].paneLocalStart;
+};
+
 // 追加(10-A): 3 ペインそれぞれに pinned 列が何本あるかを返す convenience helper です。
 export const countPinnedColumns = <T,>(
   layout: GridPaneLayout<T>,

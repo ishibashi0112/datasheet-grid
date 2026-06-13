@@ -95,6 +95,13 @@ type GridHeaderRowProps<T> = {
     column: GridColumn<T>,
     event: MouseEvent<HTMLDivElement>,
   ) => void;
+  // 追加(13-B3-2): バッジ(Excel 列名)を grip にした列 D&D 並べ替えの pointerdown です。
+  //   latest-ref 安定のため参照は不変。未指定(reorder 不可)時はバッジを通常表示にします
+  //   (ハンドラ内で stopPropagation し、ヘッダー本体の列範囲選択とは衝突させません)。
+  onColumnDragHandlePointerDown?: (
+    column: GridColumn<T>,
+    event: PointerEvent<HTMLSpanElement>,
+  ) => void;
 };
 
 // 変更(10-C): sticky header 行を「1ペイン分」描画する汎用コンポーネントにしました。
@@ -139,6 +146,8 @@ function GridHeaderRowInner<T>({
   openedMenuColumnKey,
   onColumnMenuButtonPointerDown,
   onColumnHeaderContextMenu,
+  // 追加(13-B3-2): バッジ grip の pointerdown(列 D&D)。
+  onColumnDragHandlePointerDown,
 }: GridHeaderRowProps<T>) {
   return (
     <div
@@ -264,7 +273,18 @@ function GridHeaderRowInner<T>({
                     : '#f8fafc',
             }}
           >
+            {/* 変更(13-B3-2): Excel 列名バッジを掴み手(grip)に再利用します。
+                onPointerDown 内で stopPropagation するため、ヘッダー本体の列範囲選択
+                (onColumnHeaderPointerDown)とは衝突しません。reorder 不可時は通常表示。 */}
             <span
+              onPointerDown={
+                onColumnDragHandlePointerDown
+                  ? (event) => onColumnDragHandlePointerDown(column, event)
+                  : undefined
+              }
+              title={
+                onColumnDragHandlePointerDown ? 'ドラッグで列を移動' : undefined
+              }
               style={{
                 display: 'inline-flex',
                 alignItems: 'center',
@@ -276,6 +296,10 @@ function GridHeaderRowInner<T>({
                 color: isColumnFiltered ? '#1d4ed8' : '#475569',
                 fontSize: 11,
                 fontWeight: 700,
+                // 追加(13-B3-2): grip の視覚 + タッチでのスクロール抑止 + 文字選択抑止。
+                cursor: onColumnDragHandlePointerDown ? 'grab' : 'default',
+                touchAction: onColumnDragHandlePointerDown ? 'none' : undefined,
+                userSelect: 'none',
               }}
             >
               {toExcelColumnName(colIndex)}
