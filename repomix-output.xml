@@ -54,6 +54,7 @@ src/assets/react.svg
 src/assets/vite.svg
 src/components/spreadsheet-grid/ActiveCellOverlay.tsx
 src/components/spreadsheet-grid/CellEditorLayer.tsx
+src/components/spreadsheet-grid/hooks/useColumnChooserController.ts
 src/components/spreadsheet-grid/hooks/useColumnMenuController.ts
 src/components/spreadsheet-grid/hooks/useFilterPopoverController.ts
 src/components/spreadsheet-grid/hooks/useGridBarContext.ts
@@ -76,6 +77,7 @@ src/components/spreadsheet-grid/SpreadsheetGrid.tsx
 src/components/spreadsheet-grid/utils/clipboard.ts
 src/components/spreadsheet-grid/utils/excelColumnName.ts
 src/components/spreadsheet-grid/utils/permissions.ts
+src/components/spreadsheet-grid/view/ColumnChooserPanel.tsx
 src/components/spreadsheet-grid/view/ColumnFilterPopover.tsx
 src/components/spreadsheet-grid/view/ColumnMenuPopover.tsx
 src/components/spreadsheet-grid/view/DefaultGridBottomBar.tsx
@@ -94,184 +96,6 @@ vite.config.ts
 
 <files>
 This section contains the contents of the repository's files.
-
-<file path="src/components/spreadsheet-grid/logic/columnAutosize.ts">
-// 追加(13-B1): 列幅の自動調整(AG Grid の Autosize This Column /
-//             Autosize All Columns 相当)の計測ロジックです。
-//
-// 方式の選定メモ(canvas measureText 方式を採用):
-//   (a) canvas measureText: フォントを実セルと揃えて文字列幅を計測します。
-//       同期・O(ユニーク文字列数) で高速、reflow を発生させません。
-//       デメリットは renderCell カスタム描画を反映できないことと、
-//       DOM レンダリング(カーニング / サブピクセル)との僅差です
-//       (僅差は TEXT_SAFETY で吸収します)。
-//   (b) オフスクリーン DOM 計測: 実 DOM へ流し込んで幅を読む方式。正確ですが
-//       5,000 行 × 29 列では layout コストが大きく、分割実行が必要になります。
-//   (c) AG Grid 本家の方式: 「描画済み(仮想化で DOM に存在する)セル」だけを計測。
-//       高速ですが、画面外の行にある最長値が反映されないという既知の挙動があります。
-//   本実装は (a) を採用し、全表示行を対象にしつつ「ユニーク文字列だけを計測」する
-//   dedupe で計測回数を抑えます(実データは値の重複が多く、set フィルターの
-//   候補収集と同じ性質を利用できます)。
-//
-// 既知の制限:
-//   - 計測対象テキストはデフォルトセル描画と同じ String(getCellValue(row, column) ?? '')
-//     です。renderCell を指定した列では実描画と差が出得ます(必要になったら
-//     列定義に getAutosizeText のような拡張点を 13-B 後続で追加する想定です)。
-import type { GridColumn } from '../model/gridTypes';
-import { getCellValue } from '../utils/permissions';
-
-// ── レイアウト定数(GridBodyLayer / GridHeaderRow の style と同期) ──
-// セル: padding '0 10px'(=20) + borderRight 1px、box-sizing: border-box。
-const CELL_HORIZONTAL_FRAME = 21;
-// canvas 計測と DOM 描画の僅差(カーニング・サブピクセル丸め)の安全マージンです。
-const TEXT_SAFETY = 4;
-// ヘッダーセルのテキスト以外の固定幅です(GridHeaderRow の構造と同期):
-//   padding 左右 10+10 + Excel 列名バッジ minWidth 22 + バッジ↔本文 gap 8
-//   + 本文内 gap 6×3(タイトル↔ソート↔フィルター↔メニュー)
-//   + アクションボタン 24×3(ソート / フィルター / メニュー) + borderRight 1
-//   = 141
-// 注記: メニュー経由で autosize する時点で enableColumnMenu=true のため、
-//       「⋮」ボタン込みの 3 ボタンで見積もります。
-const HEADER_FIXED_CONTENT_WIDTH = 141;
-// ヘッダータイトルのフォントです(headerCellBaseStyle: fontSize 13 / fontWeight 600)。
-const HEADER_FONT_SIZE = 13;
-const HEADER_FONT_WEIGHT = 600;
-// リサイズ(column/resizeStart)と同じ既定 clamp 値です(gridReducer と同期)。
-const DEFAULT_MIN_WIDTH = 60;
-const DEFAULT_MAX_WIDTH = 1000;
-
-// ── 共有 canvas context(モジュールローカル・遅延生成) ──
-let sharedContext: CanvasRenderingContext2D | null = null;
-
-const getSharedContext = (): CanvasRenderingContext2D | null => {
-  if (sharedContext) {
-    return sharedContext;
-  }
-  // 注記: SSR / canvas 非対応環境では null を返し、呼び出し側で no-op になります。
-  if (typeof document === 'undefined') {
-    return null;
-  }
-  sharedContext = document.createElement('canvas').getContext('2d');
-  return sharedContext;
-};
-
-// ── フォント解決 ──
-// セルは自前の font 指定を持たず祖先から継承するため、grid root の computed style を
-// そのまま使えばセルの実フォント(size / family / weight)と一致します。
-// ヘッダーは fontSize 13 / fontWeight 600 を明示しているため、family のみ共有します。
-type ResolvedFonts = {
-  cellFont: string;
-  headerFont: string;
-};
-
-const FALLBACK_FONT_FAMILY = 'system-ui, sans-serif';
-
-const resolveFonts = (gridRoot: HTMLElement | null): ResolvedFonts => {
-  let fontFamily = FALLBACK_FONT_FAMILY;
-  let cellFontSize = 13;
-  let cellFontWeight = '400';
-
-  if (gridRoot && typeof window !== 'undefined') {
-    const computed = window.getComputedStyle(gridRoot);
-    if (computed.fontFamily) {
-      fontFamily = computed.fontFamily;
-    }
-    const parsedSize = Number.parseFloat(computed.fontSize);
-    if (Number.isFinite(parsedSize) && parsedSize > 0) {
-      cellFontSize = parsedSize;
-    }
-    if (computed.fontWeight) {
-      cellFontWeight = computed.fontWeight;
-    }
-  }
-
-  return {
-    cellFont: `${cellFontWeight} ${cellFontSize}px ${fontFamily}`,
-    headerFont: `${HEADER_FONT_WEIGHT} ${HEADER_FONT_SIZE}px ${fontFamily}`,
-  };
-};
-
-const clamp = (value: number, min: number, max: number): number =>
-  Math.min(Math.max(value, min), max);
-
-export type ColumnAutosizeParams<T> = {
-  // 計測対象の列です(1 列だけ / 全表示列のどちらも渡せます)。
-  columns: GridColumn<T>[];
-  // 表示中の行です(グローバル / 列フィルター適用後。ソート順は計測に影響しません)。
-  rows: T[];
-  // セルフォント解決に使う grid root 要素です。
-  gridRoot: HTMLElement | null;
-  // 現在の解決済み幅です。計測結果が同じ列は戻り値から除外します(no-op 判定)。
-  currentWidths: Record<string, number>;
-};
-
-// 列ごとの自動調整幅を計測します。
-// 戻り値は「現在幅から変化がある列だけ」の { columnKey: width } です
-// (空オブジェクトなら呼び出し側は dispatch をスキップできます)。
-export function computeAutosizedColumnWidths<T>({
-  columns,
-  rows,
-  gridRoot,
-  currentWidths,
-}: ColumnAutosizeParams<T>): Record<string, number> {
-  const context = getSharedContext();
-  if (!context || columns.length === 0) {
-    return {};
-  }
-
-  const { cellFont, headerFont } = resolveFonts(gridRoot);
-  const nextWidths: Record<string, number> = {};
-
-  for (const column of columns) {
-    // ── ヘッダー幅(タイトル + 固定要素) ──
-    context.font = headerFont;
-    const headerTitle = column.title || column.key;
-    const headerRequired =
-      context.measureText(headerTitle).width +
-      TEXT_SAFETY +
-      HEADER_FIXED_CONTENT_WIDTH;
-
-    // ── セル幅(ユニーク文字列の最長値) ──
-    // 注記: 重複値の再計測を避けるため、まずユニーク文字列を集めます
-    //       (5,000 行でも実データのユニーク数は大幅に少ないのが通例です)。
-    const uniqueTexts = new Set<string>();
-    for (const row of rows) {
-      uniqueTexts.add(String(getCellValue(row, column) ?? ''));
-    }
-
-    context.font = cellFont;
-    let maxCellTextWidth = 0;
-    for (const text of uniqueTexts) {
-      if (text === '') {
-        continue;
-      }
-      const width = context.measureText(text).width;
-      if (width > maxCellTextWidth) {
-        maxCellTextWidth = width;
-      }
-    }
-    const cellRequired =
-      maxCellTextWidth > 0
-        ? maxCellTextWidth + TEXT_SAFETY + CELL_HORIZONTAL_FRAME
-        : 0;
-
-    // ── clamp + no-op 判定 ──
-    const resolved = Math.ceil(
-      clamp(
-        Math.max(headerRequired, cellRequired),
-        column.minWidth ?? DEFAULT_MIN_WIDTH,
-        column.maxWidth ?? DEFAULT_MAX_WIDTH,
-      ),
-    );
-
-    if (currentWidths[column.key] !== resolved) {
-      nextWidths[column.key] = resolved;
-    }
-  }
-
-  return nextWidths;
-}
-</file>
 
 <file path="eslint.config.js">
 import js from '@eslint/js'
@@ -616,6 +440,178 @@ export default defineConfig([
 <svg xmlns="http://www.w3.org/2000/svg" width="77" height="47" fill="none" aria-labelledby="vite-logo-title" viewBox="0 0 77 47"><title id="vite-logo-title">Vite</title><style>.parenthesis{fill:#000}@media (prefers-color-scheme:dark){.parenthesis{fill:#fff}}</style><path fill="#9135ff" d="M40.151 45.71c-.663.844-2.02.374-2.02-.699V34.708a2.26 2.26 0 0 0-2.262-2.262H24.493c-.92 0-1.457-1.04-.92-1.788l7.479-10.471c1.07-1.498 0-3.578-1.842-3.578H15.443c-.92 0-1.456-1.04-.92-1.788l9.696-13.576c.213-.297.556-.474.92-.474h28.894c.92 0 1.456 1.04.92 1.788l-7.48 10.472c-1.07 1.497 0 3.578 1.842 3.578h11.376c.944 0 1.474 1.087.89 1.83L40.153 45.712z"/><mask id="a" width="48" height="47" x="14" y="0" maskUnits="userSpaceOnUse" style="mask-type:alpha"><path fill="#000" d="M40.047 45.71c-.663.843-2.02.374-2.02-.699V34.708a2.26 2.26 0 0 0-2.262-2.262H24.389c-.92 0-1.457-1.04-.92-1.788l7.479-10.472c1.07-1.497 0-3.578-1.842-3.578H15.34c-.92 0-1.456-1.04-.92-1.788l9.696-13.575c.213-.297.556-.474.92-.474H53.93c.92 0 1.456 1.04.92 1.788L47.37 13.03c-1.07 1.498 0 3.578 1.842 3.578h11.376c.944 0 1.474 1.088.89 1.831L40.049 45.712z"/></mask><g mask="url(#a)"><g filter="url(#b)"><ellipse cx="5.508" cy="14.704" fill="#eee6ff" rx="5.508" ry="14.704" transform="rotate(269.814 20.96 11.29)scale(-1 1)"/></g><g filter="url(#c)"><ellipse cx="10.399" cy="29.851" fill="#eee6ff" rx="10.399" ry="29.851" transform="rotate(89.814 -16.902 -8.275)scale(1 -1)"/></g><g filter="url(#d)"><ellipse cx="5.508" cy="30.487" fill="#8900ff" rx="5.508" ry="30.487" transform="rotate(89.814 -19.197 -7.127)scale(1 -1)"/></g><g filter="url(#e)"><ellipse cx="5.508" cy="30.599" fill="#8900ff" rx="5.508" ry="30.599" transform="rotate(89.814 -25.928 4.177)scale(1 -1)"/></g><g filter="url(#f)"><ellipse cx="5.508" cy="30.599" fill="#8900ff" rx="5.508" ry="30.599" transform="rotate(89.814 -25.738 5.52)scale(1 -1)"/></g><g filter="url(#g)"><ellipse cx="14.072" cy="22.078" fill="#eee6ff" rx="14.072" ry="22.078" transform="rotate(93.35 31.245 55.578)scale(-1 1)"/></g><g filter="url(#h)"><ellipse cx="3.47" cy="21.501" fill="#8900ff" rx="3.47" ry="21.501" transform="rotate(89.009 35.419 55.202)scale(-1 1)"/></g><g filter="url(#i)"><ellipse cx="3.47" cy="21.501" fill="#8900ff" rx="3.47" ry="21.501" transform="rotate(89.009 35.419 55.202)scale(-1 1)"/></g><g filter="url(#j)"><ellipse cx="14.592" cy="9.743" fill="#8900ff" rx="4.407" ry="29.108" transform="rotate(39.51 14.592 9.743)"/></g><g filter="url(#k)"><ellipse cx="61.728" cy="-5.321" fill="#8900ff" rx="4.407" ry="29.108" transform="rotate(37.892 61.728 -5.32)"/></g><g filter="url(#l)"><ellipse cx="55.618" cy="7.104" fill="#00c2ff" rx="5.971" ry="9.665" transform="rotate(37.892 55.618 7.104)"/></g><g filter="url(#m)"><ellipse cx="12.326" cy="39.103" fill="#8900ff" rx="4.407" ry="29.108" transform="rotate(37.892 12.326 39.103)"/></g><g filter="url(#n)"><ellipse cx="12.326" cy="39.103" fill="#8900ff" rx="4.407" ry="29.108" transform="rotate(37.892 12.326 39.103)"/></g><g filter="url(#o)"><ellipse cx="49.857" cy="30.678" fill="#8900ff" rx="4.407" ry="29.108" transform="rotate(37.892 49.857 30.678)"/></g><g filter="url(#p)"><ellipse cx="52.623" cy="33.171" fill="#00c2ff" rx="5.971" ry="15.297" transform="rotate(37.892 52.623 33.17)"/></g></g><path d="M6.919 0c-9.198 13.166-9.252 33.575 0 46.789h6.215c-9.25-13.214-9.196-33.623 0-46.789zm62.424 0h-6.215c9.198 13.166 9.252 33.575 0 46.789h6.215c9.25-13.214 9.196-33.623 0-46.789" class="parenthesis"/><defs><filter id="b" width="60.045" height="41.654" x="-5.564" y="16.92" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17286" stdDeviation="7.659"/></filter><filter id="c" width="90.34" height="51.437" x="-40.407" y="-6.762" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17286" stdDeviation="7.659"/></filter><filter id="d" width="79.355" height="29.4" x="-35.435" y="2.801" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17286" stdDeviation="4.596"/></filter><filter id="e" width="79.579" height="29.4" x="-30.84" y="20.8" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17286" stdDeviation="4.596"/></filter><filter id="f" width="79.579" height="29.4" x="-29.307" y="21.949" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17286" stdDeviation="4.596"/></filter><filter id="g" width="74.749" height="58.852" x="29.961" y="-17.13" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17286" stdDeviation="7.659"/></filter><filter id="h" width="61.377" height="25.362" x="37.754" y="3.055" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17286" stdDeviation="4.596"/></filter><filter id="i" width="61.377" height="25.362" x="37.754" y="3.055" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17286" stdDeviation="4.596"/></filter><filter id="j" width="56.045" height="63.649" x="-13.43" y="-22.082" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17286" stdDeviation="4.596"/></filter><filter id="k" width="54.814" height="64.646" x="34.321" y="-37.644" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17286" stdDeviation="4.596"/></filter><filter id="l" width="33.541" height="35.313" x="38.847" y="-10.552" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17286" stdDeviation="4.596"/></filter><filter id="m" width="54.814" height="64.646" x="-15.081" y="6.78" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17286" stdDeviation="4.596"/></filter><filter id="n" width="54.814" height="64.646" x="-15.081" y="6.78" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17286" stdDeviation="4.596"/></filter><filter id="o" width="54.814" height="64.646" x="22.45" y="-1.645" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17286" stdDeviation="4.596"/></filter><filter id="p" width="39.409" height="43.623" x="32.919" y="11.36" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17286" stdDeviation="4.596"/></filter></defs></svg>
 </file>
 
+<file path="src/components/spreadsheet-grid/hooks/useColumnChooserController.ts">
+import { useCallback, useEffect, useRef, useState, type RefObject } from 'react';
+
+// 追加(13-B2-1): 列の表示/非表示パネル(AG Grid の Columns Tool Panel 相当)の
+//                 open / close / layout / outside click / Escape を管理するコントローラです。
+// 設計メモ:
+//   - useColumnMenuController と同型ですが、以下が異なります。
+//     ① per-column ではなくグローバル(全列を一覧するパネルなので開いている列は持たない)。
+//     ② anchor は「列の `⋮` ボタン」ではなく gridRoot 矩形の右上に固定。列メニューの
+//        項目「列の表示」から開くため、開いた時点でメニュー(と anchor)は閉じています。
+//        gridRoot 基準にすることで anchor ボタンの unmount(横スクロール仮想化)に依存せず、
+//        グリッド内部スクロールではパネルが動かず、window scroll/resize でのみ再配置されます。
+//   - パネルには検索入力(フォーカス可能要素)があるため、列メニューと違い Escape は
+//     入力にフォーカスがあっても効くよう window で拾います(列メニューと同じ作法)。
+
+// 追加(13-B2-1): body 直下 portal パネルの配置情報です(position: fixed 座標)。
+export type ColumnChooserLayout = {
+  top: number;
+  left: number;
+  width: number;
+};
+
+type UseColumnChooserControllerArgs = {
+  enableColumnMenu: boolean;
+  gridRootRef: RefObject<HTMLDivElement | null>;
+};
+
+const PANEL_WIDTH = 280;
+const VIEWPORT_MARGIN = 8;
+// 追加(13-B2-1): gridRoot の右上から内側へのオフセットです(パネルがヘッダーに被る位置)。
+const GRID_INSET = 12;
+
+export const useColumnChooserController = ({
+  enableColumnMenu,
+  gridRootRef,
+}: UseColumnChooserControllerArgs) => {
+  const [isColumnChooserOpen, setIsColumnChooserOpen] = useState(false);
+  const [columnChooserLayout, setColumnChooserLayout] =
+    useState<ColumnChooserLayout | null>(null);
+
+  // 追加(13-B2-1): パネル本体の ref です(outside click 判定に使います)。
+  const columnChooserRef = useRef<HTMLDivElement | null>(null);
+
+  // 追加(13-B2-1): gridRoot 矩形の右上を基準に fixed 座標を計算します。
+  const updateColumnChooserLayout = useCallback(() => {
+    const root = gridRootRef.current;
+    if (!root) {
+      setColumnChooserLayout(null);
+      return;
+    }
+
+    const rect = root.getBoundingClientRect();
+    let left = rect.right - PANEL_WIDTH - GRID_INSET;
+    let top = rect.top + GRID_INSET;
+
+    left = Math.max(VIEWPORT_MARGIN, left);
+    left = Math.min(left, window.innerWidth - PANEL_WIDTH - VIEWPORT_MARGIN);
+    top = Math.max(VIEWPORT_MARGIN, top);
+
+    setColumnChooserLayout((current) => {
+      if (
+        current &&
+        current.top === top &&
+        current.left === left &&
+        current.width === PANEL_WIDTH
+      ) {
+        return current;
+      }
+      return { top, left, width: PANEL_WIDTH };
+    });
+  }, [gridRootRef]);
+
+  const openColumnChooser = useCallback(() => {
+    if (!enableColumnMenu) {
+      return;
+    }
+    // 追加: grid root に残っているフォーカスを外します(列メニューと同じ作法)。
+    if (document.activeElement instanceof HTMLElement) {
+      document.activeElement.blur();
+    }
+    gridRootRef.current?.blur();
+    setIsColumnChooserOpen(true);
+  }, [enableColumnMenu, gridRootRef]);
+
+  const closeColumnChooser = useCallback(() => {
+    setIsColumnChooserOpen(false);
+    setColumnChooserLayout(null);
+    // 追加: close 後は grid root にフォーカスを戻し、keyboard 操作へ復帰させます。
+    requestAnimationFrame(() => {
+      gridRootRef.current?.focus();
+    });
+  }, [gridRootRef]);
+
+  // 追加(13-B2-1): open 時の初期配置 + resize / window scroll への追従です。
+  //               gridRoot 基準のため、グリッド内部スクロールでは動かしません
+  //               (capture: true の scroll は内部スクロールでも発火しますが、
+  //                gridRoot 矩形は内部スクロールで変わらないため layout は不変です)。
+  useEffect(() => {
+    if (!isColumnChooserOpen) {
+      return;
+    }
+
+    updateColumnChooserLayout();
+
+    const handle = () => {
+      updateColumnChooserLayout();
+    };
+
+    window.addEventListener('resize', handle);
+    window.addEventListener('scroll', handle, true);
+
+    return () => {
+      window.removeEventListener('resize', handle);
+      window.removeEventListener('scroll', handle, true);
+    };
+  }, [isColumnChooserOpen, updateColumnChooserLayout]);
+
+  // 追加(13-B2-1): 表示中は outside click で閉じます(列メニューと同じ作法)。
+  useEffect(() => {
+    if (!isColumnChooserOpen) {
+      return;
+    }
+
+    const handleWindowPointerDown = (event: globalThis.PointerEvent) => {
+      const targetNode = event.target as Node | null;
+      if (!targetNode) {
+        return;
+      }
+      if (columnChooserRef.current?.contains(targetNode)) {
+        return;
+      }
+      closeColumnChooser();
+    };
+
+    window.addEventListener('pointerdown', handleWindowPointerDown);
+    return () => {
+      window.removeEventListener('pointerdown', handleWindowPointerDown);
+    };
+  }, [closeColumnChooser, isColumnChooserOpen]);
+
+  // 追加(13-B2-1): 表示中は Escape で閉じます(検索入力にフォーカスがあっても効くよう
+  //               window で拾います)。
+  useEffect(() => {
+    if (!isColumnChooserOpen) {
+      return;
+    }
+
+    const handleWindowKeyDown = (event: globalThis.KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        closeColumnChooser();
+      }
+    };
+
+    window.addEventListener('keydown', handleWindowKeyDown);
+    return () => {
+      window.removeEventListener('keydown', handleWindowKeyDown);
+    };
+  }, [closeColumnChooser, isColumnChooserOpen]);
+
+  return {
+    isColumnChooserOpen,
+    columnChooserLayout,
+    columnChooserRef,
+    openColumnChooser,
+    closeColumnChooser,
+  };
+};
+
+export default useColumnChooserController;
+</file>
+
 <file path="src/components/spreadsheet-grid/hooks/useGridClipboardController.ts">
 import { useCallback, type Dispatch } from 'react';
 import { gridActions, type GridUiAction } from '../model/gridActions';
@@ -859,6 +855,184 @@ export const useGridClipboardController = <T extends object>({
 export default useGridClipboardController;
 </file>
 
+<file path="src/components/spreadsheet-grid/logic/columnAutosize.ts">
+// 追加(13-B1): 列幅の自動調整(AG Grid の Autosize This Column /
+//             Autosize All Columns 相当)の計測ロジックです。
+//
+// 方式の選定メモ(canvas measureText 方式を採用):
+//   (a) canvas measureText: フォントを実セルと揃えて文字列幅を計測します。
+//       同期・O(ユニーク文字列数) で高速、reflow を発生させません。
+//       デメリットは renderCell カスタム描画を反映できないことと、
+//       DOM レンダリング(カーニング / サブピクセル)との僅差です
+//       (僅差は TEXT_SAFETY で吸収します)。
+//   (b) オフスクリーン DOM 計測: 実 DOM へ流し込んで幅を読む方式。正確ですが
+//       5,000 行 × 29 列では layout コストが大きく、分割実行が必要になります。
+//   (c) AG Grid 本家の方式: 「描画済み(仮想化で DOM に存在する)セル」だけを計測。
+//       高速ですが、画面外の行にある最長値が反映されないという既知の挙動があります。
+//   本実装は (a) を採用し、全表示行を対象にしつつ「ユニーク文字列だけを計測」する
+//   dedupe で計測回数を抑えます(実データは値の重複が多く、set フィルターの
+//   候補収集と同じ性質を利用できます)。
+//
+// 既知の制限:
+//   - 計測対象テキストはデフォルトセル描画と同じ String(getCellValue(row, column) ?? '')
+//     です。renderCell を指定した列では実描画と差が出得ます(必要になったら
+//     列定義に getAutosizeText のような拡張点を 13-B 後続で追加する想定です)。
+import type { GridColumn } from '../model/gridTypes';
+import { getCellValue } from '../utils/permissions';
+
+// ── レイアウト定数(GridBodyLayer / GridHeaderRow の style と同期) ──
+// セル: padding '0 10px'(=20) + borderRight 1px、box-sizing: border-box。
+const CELL_HORIZONTAL_FRAME = 21;
+// canvas 計測と DOM 描画の僅差(カーニング・サブピクセル丸め)の安全マージンです。
+const TEXT_SAFETY = 4;
+// ヘッダーセルのテキスト以外の固定幅です(GridHeaderRow の構造と同期):
+//   padding 左右 10+10 + Excel 列名バッジ minWidth 22 + バッジ↔本文 gap 8
+//   + 本文内 gap 6×3(タイトル↔ソート↔フィルター↔メニュー)
+//   + アクションボタン 24×3(ソート / フィルター / メニュー) + borderRight 1
+//   = 141
+// 注記: メニュー経由で autosize する時点で enableColumnMenu=true のため、
+//       「⋮」ボタン込みの 3 ボタンで見積もります。
+const HEADER_FIXED_CONTENT_WIDTH = 141;
+// ヘッダータイトルのフォントです(headerCellBaseStyle: fontSize 13 / fontWeight 600)。
+const HEADER_FONT_SIZE = 13;
+const HEADER_FONT_WEIGHT = 600;
+// リサイズ(column/resizeStart)と同じ既定 clamp 値です(gridReducer と同期)。
+const DEFAULT_MIN_WIDTH = 60;
+const DEFAULT_MAX_WIDTH = 1000;
+
+// ── 共有 canvas context(モジュールローカル・遅延生成) ──
+let sharedContext: CanvasRenderingContext2D | null = null;
+
+const getSharedContext = (): CanvasRenderingContext2D | null => {
+  if (sharedContext) {
+    return sharedContext;
+  }
+  // 注記: SSR / canvas 非対応環境では null を返し、呼び出し側で no-op になります。
+  if (typeof document === 'undefined') {
+    return null;
+  }
+  sharedContext = document.createElement('canvas').getContext('2d');
+  return sharedContext;
+};
+
+// ── フォント解決 ──
+// セルは自前の font 指定を持たず祖先から継承するため、grid root の computed style を
+// そのまま使えばセルの実フォント(size / family / weight)と一致します。
+// ヘッダーは fontSize 13 / fontWeight 600 を明示しているため、family のみ共有します。
+type ResolvedFonts = {
+  cellFont: string;
+  headerFont: string;
+};
+
+const FALLBACK_FONT_FAMILY = 'system-ui, sans-serif';
+
+const resolveFonts = (gridRoot: HTMLElement | null): ResolvedFonts => {
+  let fontFamily = FALLBACK_FONT_FAMILY;
+  let cellFontSize = 13;
+  let cellFontWeight = '400';
+
+  if (gridRoot && typeof window !== 'undefined') {
+    const computed = window.getComputedStyle(gridRoot);
+    if (computed.fontFamily) {
+      fontFamily = computed.fontFamily;
+    }
+    const parsedSize = Number.parseFloat(computed.fontSize);
+    if (Number.isFinite(parsedSize) && parsedSize > 0) {
+      cellFontSize = parsedSize;
+    }
+    if (computed.fontWeight) {
+      cellFontWeight = computed.fontWeight;
+    }
+  }
+
+  return {
+    cellFont: `${cellFontWeight} ${cellFontSize}px ${fontFamily}`,
+    headerFont: `${HEADER_FONT_WEIGHT} ${HEADER_FONT_SIZE}px ${fontFamily}`,
+  };
+};
+
+const clamp = (value: number, min: number, max: number): number =>
+  Math.min(Math.max(value, min), max);
+
+export type ColumnAutosizeParams<T> = {
+  // 計測対象の列です(1 列だけ / 全表示列のどちらも渡せます)。
+  columns: GridColumn<T>[];
+  // 表示中の行です(グローバル / 列フィルター適用後。ソート順は計測に影響しません)。
+  rows: T[];
+  // セルフォント解決に使う grid root 要素です。
+  gridRoot: HTMLElement | null;
+  // 現在の解決済み幅です。計測結果が同じ列は戻り値から除外します(no-op 判定)。
+  currentWidths: Record<string, number>;
+};
+
+// 列ごとの自動調整幅を計測します。
+// 戻り値は「現在幅から変化がある列だけ」の { columnKey: width } です
+// (空オブジェクトなら呼び出し側は dispatch をスキップできます)。
+export function computeAutosizedColumnWidths<T>({
+  columns,
+  rows,
+  gridRoot,
+  currentWidths,
+}: ColumnAutosizeParams<T>): Record<string, number> {
+  const context = getSharedContext();
+  if (!context || columns.length === 0) {
+    return {};
+  }
+
+  const { cellFont, headerFont } = resolveFonts(gridRoot);
+  const nextWidths: Record<string, number> = {};
+
+  for (const column of columns) {
+    // ── ヘッダー幅(タイトル + 固定要素) ──
+    context.font = headerFont;
+    const headerTitle = column.title || column.key;
+    const headerRequired =
+      context.measureText(headerTitle).width +
+      TEXT_SAFETY +
+      HEADER_FIXED_CONTENT_WIDTH;
+
+    // ── セル幅(ユニーク文字列の最長値) ──
+    // 注記: 重複値の再計測を避けるため、まずユニーク文字列を集めます
+    //       (5,000 行でも実データのユニーク数は大幅に少ないのが通例です)。
+    const uniqueTexts = new Set<string>();
+    for (const row of rows) {
+      uniqueTexts.add(String(getCellValue(row, column) ?? ''));
+    }
+
+    context.font = cellFont;
+    let maxCellTextWidth = 0;
+    for (const text of uniqueTexts) {
+      if (text === '') {
+        continue;
+      }
+      const width = context.measureText(text).width;
+      if (width > maxCellTextWidth) {
+        maxCellTextWidth = width;
+      }
+    }
+    const cellRequired =
+      maxCellTextWidth > 0
+        ? maxCellTextWidth + TEXT_SAFETY + CELL_HORIZONTAL_FRAME
+        : 0;
+
+    // ── clamp + no-op 判定 ──
+    const resolved = Math.ceil(
+      clamp(
+        Math.max(headerRequired, cellRequired),
+        column.minWidth ?? DEFAULT_MIN_WIDTH,
+        column.maxWidth ?? DEFAULT_MAX_WIDTH,
+      ),
+    );
+
+    if (currentWidths[column.key] !== resolved) {
+      nextWidths[column.key] = resolved;
+    }
+  }
+
+  return nextWidths;
+}
+</file>
+
 <file path="src/components/spreadsheet-grid/logic/domGuards.ts">
 // 追加: 文字キー入力で編集開始する判定です。
 export const isPrintableKey = (event: {
@@ -1016,6 +1190,478 @@ export const setCellValue = <T,>(
     [column.key]: value,
   } as T;
 };
+</file>
+
+<file path="src/components/spreadsheet-grid/view/ColumnChooserPanel.tsx">
+// 追加(13-B2-1): 列の表示/非表示パネル(AG Grid の Columns Tool Panel 相当)です。
+//   - タイトル + × クローズ / 検索ボックス / 3 状態の全選択チェックボックス /
+//     列ごとのチェックボックス一覧(チェックで即 表示/非表示)で構成します。
+//   - ドラッグ並べ替え(⠿ ハンドル)は別機能のため本バッチでは出しません(13-B3 で対応)。
+//   - 本コンポーネントは非ジェネリックです(ColumnMenuPopover と同様、プリミティブな
+//     items だけを受け取ります)。一覧は「全列(非表示列を含む)」を渡す必要があるため、
+//     呼び出し側は visibleColumns ではなく columns から items を作ります。
+// 変更(13-B2-2): フッターに「すべての列を初期状態に戻す」ボタンを追加します
+//   (AG Grid の Columns Tool Panel 末尾 "Reset Columns" 相当)。幅 / 固定 / 表示を
+//   初期 column defs へ戻す操作で、ロジックは呼び出し側(onResetColumns)が持ちます。
+//   canToggle(= onColumnsChange 指定あり)が false のときは無効化します。
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
+import type {
+  CSSProperties,
+  KeyboardEvent,
+  PointerEvent,
+  RefObject,
+} from 'react';
+import type { ColumnChooserLayout } from '../hooks/useColumnChooserController';
+// import type { ColumnChooserLayout } from '../hooks/useColumnChooserController';
+
+// 追加(13-B2-1): パネルが必要とする最小の列情報です。
+export type ColumnChooserItem = {
+  key: string;
+  title: string;
+  visible: boolean;
+};
+
+type ColumnChooserPanelProps = {
+  isOpen: boolean;
+  items: ColumnChooserItem[];
+  // 追加: onColumnsChange 未指定時は false。チェックボックスを無効化し注記を出します。
+  canToggle: boolean;
+  layout: ColumnChooserLayout | null;
+  panelRef: RefObject<HTMLDivElement | null>;
+  onToggleColumnVisibility: (columnKey: string, nextVisible: boolean) => void;
+  // 追加: 全選択(= すべて表示)。最後の 1 列ガードのため「全消し」はサポートしません。
+  onShowAllColumns: () => void;
+  // 追加(13-B2-2): 全列を初期状態(幅 / 固定 / 表示)へ戻します。
+  //   ロジックは呼び出し側。canToggle が false のときフッターのボタンは無効化されます。
+  onResetColumns: () => void;
+  onRequestClose: () => void;
+};
+
+const PANEL_MAX_HEIGHT = 420;
+
+const PANEL_STYLE: CSSProperties = {
+  position: 'fixed',
+  boxSizing: 'border-box',
+  display: 'flex',
+  flexDirection: 'column',
+  maxHeight: PANEL_MAX_HEIGHT,
+  padding: 12,
+  border: '1px solid #cbd5e1',
+  borderRadius: 12,
+  backgroundColor: '#ffffff',
+  boxShadow: '0 12px 28px rgba(15, 23, 42, 0.16)',
+  zIndex: 1000,
+};
+
+type CheckState = 'checked' | 'unchecked' | 'indeterminate';
+
+// 追加(13-B2-1): 3 状態に対応した自作チェックボックスです。
+//   native input の indeterminate は ref 経由でしか設定できず、角丸の見た目も
+//   ブラウザ差が出るため、見た目は div で描画します(GIF の角丸チェックに寄せます)。
+function CheckBox({
+  state,
+  disabled,
+}: {
+  state: CheckState;
+  disabled: boolean;
+}) {
+  const filled = state === 'checked' || state === 'indeterminate';
+  const boxStyle: CSSProperties = {
+    width: 18,
+    height: 18,
+    flex: '0 0 auto',
+    borderRadius: 5,
+    border: `1.5px solid ${
+      disabled ? '#cbd5e1' : filled ? '#2563eb' : '#94a3b8'
+    }`,
+    backgroundColor: disabled
+      ? '#f1f5f9'
+      : filled
+        ? '#2563eb'
+        : '#ffffff',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    transition: 'background-color 80ms ease, border-color 80ms ease',
+  };
+
+  return (
+    <span style={boxStyle} aria-hidden>
+      {state === 'checked' && (
+        <svg width="11" height="11" viewBox="0 0 12 12" fill="none">
+          <path
+            d="M2.5 6.2 4.7 8.4 9.5 3.6"
+            stroke="#ffffff"
+            strokeWidth="1.8"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        </svg>
+      )}
+      {state === 'indeterminate' && (
+        <span
+          style={{
+            width: 9,
+            height: 2,
+            borderRadius: 1,
+            backgroundColor: '#ffffff',
+          }}
+        />
+      )}
+    </span>
+  );
+}
+
+export function ColumnChooserPanel({
+  isOpen,
+  items,
+  canToggle,
+  layout,
+  panelRef,
+  onToggleColumnVisibility,
+  onShowAllColumns,
+  onResetColumns,
+  onRequestClose,
+}: ColumnChooserPanelProps) {
+  const [query, setQuery] = useState('');
+  const searchInputRef = useRef<HTMLInputElement | null>(null);
+
+  // 追加: 開くたびに検索語をリセットし、検索入力へフォーカスします。
+  useEffect(() => {
+    if (isOpen) {
+      setQuery('');
+      // portal mount 後にフォーカスを当てます。
+      const id = requestAnimationFrame(() => {
+        searchInputRef.current?.focus();
+      });
+      return () => cancelAnimationFrame(id);
+    }
+    return undefined;
+  }, [isOpen]);
+
+  // 注記: master / guard の判定は「全列(検索フィルタ前)」を基準にします。
+  //       検索はあくまで一覧の絞り込み表示で、全選択の意味は変えません。
+  const visibleCount = useMemo(
+    () => items.filter((item) => item.visible).length,
+    [items],
+  );
+  const allVisible = visibleCount === items.length && items.length > 0;
+//   const hasHidden = items.some((item) => !item.visible);
+
+  // 全選択の状態: 全表示 = checked、一部非表示 = indeterminate。
+  // 最後の 1 列ガードにより「全非表示」は発生しないため unchecked にはなりません。
+  const masterState: CheckState = allVisible ? 'checked' : 'indeterminate';
+
+  const filteredItems = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) {
+      return items;
+    }
+    return items.filter((item) => item.title.toLowerCase().includes(q));
+  }, [items, query]);
+
+  if (!isOpen || !layout) {
+    return null;
+  }
+
+  const wrapperStyle: CSSProperties = {
+    ...PANEL_STYLE,
+    top: layout.top,
+    left: layout.left,
+    width: layout.width,
+  };
+
+  const handlePointerDown = (event: PointerEvent<HTMLDivElement>) => {
+    // 追加: パネル内 pointer 操作を grid 側へ伝播させません
+    //       (列選択開始や outside click 判定との競合を避けます)。
+    event.stopPropagation();
+  };
+
+  const handleKeyDownCapture = (event: KeyboardEvent<HTMLDivElement>) => {
+    // 追加: portal 内 keyboard を React ツリー上の parent へ流しません。
+    //       Escape での close は controller の window keydown が担当します。
+    event.stopPropagation();
+  };
+
+  const handleMasterClick = () => {
+    if (!canToggle) {
+      return;
+    }
+    // 全表示状態では何もしません(全消しは最後の 1 列ガードで不可のため)。
+    if (!allVisible) {
+      onShowAllColumns();
+    }
+  };
+
+  return createPortal(
+    <div
+      ref={panelRef}
+      onPointerDown={handlePointerDown}
+      onKeyDownCapture={handleKeyDownCapture}
+      onContextMenu={(event) => {
+        event.preventDefault();
+      }}
+      style={wrapperStyle}
+    >
+      {/* ── ヘッダー: タイトル + × ── */}
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: 8,
+          paddingBottom: 8,
+          marginBottom: 8,
+          borderBottom: '1px solid #e2e8f0',
+        }}
+      >
+        <span
+          style={{
+            fontSize: 13,
+            fontWeight: 700,
+            color: '#1e293b',
+            userSelect: 'none',
+          }}
+        >
+          列の表示
+        </span>
+        <button
+          type="button"
+          onClick={onRequestClose}
+          aria-label="閉じる"
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            width: 24,
+            height: 24,
+            border: 'none',
+            borderRadius: 6,
+            backgroundColor: 'transparent',
+            color: '#64748b',
+            cursor: 'pointer',
+            fontSize: 16,
+            lineHeight: 1,
+          }}
+          onPointerEnter={(event) => {
+            event.currentTarget.style.backgroundColor = '#f1f5f9';
+          }}
+          onPointerLeave={(event) => {
+            event.currentTarget.style.backgroundColor = 'transparent';
+          }}
+        >
+          ×
+        </button>
+      </div>
+
+      {/* ── 検索行: 全選択チェック + 検索入力 ── */}
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 8,
+          marginBottom: 8,
+        }}
+      >
+        <button
+          type="button"
+          disabled={!canToggle}
+          onClick={handleMasterClick}
+          aria-label="すべての列を表示"
+          title="すべての列を表示"
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            border: 'none',
+            background: 'transparent',
+            padding: 0,
+            cursor: canToggle ? 'pointer' : 'default',
+          }}
+        >
+          <CheckBox state={masterState} disabled={!canToggle} />
+        </button>
+        <div style={{ position: 'relative', flex: 1, minWidth: 0 }}>
+          <span
+            aria-hidden
+            style={{
+              position: 'absolute',
+              left: 9,
+              top: '50%',
+              transform: 'translateY(-50%)',
+              color: '#94a3b8',
+              fontSize: 13,
+              lineHeight: 1,
+              pointerEvents: 'none',
+            }}
+          >
+            ⌕
+          </span>
+          <input
+            ref={searchInputRef}
+            type="text"
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder="検索..."
+            style={{
+              width: '100%',
+              boxSizing: 'border-box',
+              padding: '7px 10px 7px 26px',
+              border: '1px solid #cbd5e1',
+              borderRadius: 8,
+              fontSize: 13,
+              color: '#334155',
+              outline: 'none',
+            }}
+          />
+        </div>
+      </div>
+
+      {/* ── 列一覧(スクロール) ── */}
+      <div
+        style={{
+          flex: 1,
+          minHeight: 0,
+          overflowY: 'auto',
+          margin: '0 -4px',
+          padding: '0 4px',
+        }}
+      >
+        {filteredItems.length === 0 ? (
+          <div
+            style={{
+              fontSize: 12,
+              color: '#94a3b8',
+              padding: '10px 4px',
+              userSelect: 'none',
+            }}
+          >
+            該当する列がありません
+          </div>
+        ) : (
+          filteredItems.map((item) => {
+            // 最後の 1 列ガード: 表示中が 1 列だけのとき、その列はチェックを外せません。
+            const isOnlyVisible = item.visible && visibleCount === 1;
+            const disabled = !canToggle || isOnlyVisible;
+            return (
+              <button
+                key={item.key}
+                type="button"
+                disabled={disabled}
+                onClick={() => {
+                  if (disabled) {
+                    return;
+                  }
+                  onToggleColumnVisibility(item.key, !item.visible);
+                }}
+                onPointerEnter={(event) => {
+                  if (!disabled) {
+                    event.currentTarget.style.backgroundColor = '#f1f5f9';
+                  }
+                }}
+                onPointerLeave={(event) => {
+                  event.currentTarget.style.backgroundColor = 'transparent';
+                }}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 10,
+                  width: '100%',
+                  boxSizing: 'border-box',
+                  padding: '7px 8px',
+                  border: 'none',
+                  borderRadius: 8,
+                  backgroundColor: 'transparent',
+                  cursor: disabled ? 'default' : 'pointer',
+                  textAlign: 'left',
+                }}
+              >
+                <CheckBox
+                  state={item.visible ? 'checked' : 'unchecked'}
+                  disabled={disabled}
+                />
+                <span
+                  style={{
+                    minWidth: 0,
+                    flex: 1,
+                    fontSize: 13,
+                    color: disabled && !item.visible ? '#94a3b8' : '#334155',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap',
+                  }}
+                >
+                  {item.title}
+                </span>
+              </button>
+            );
+          })
+        )}
+      </div>
+
+      {/* ── フッター: 列のリセット + (無効時)注記 ── */}
+      <div
+        style={{
+          paddingTop: 8,
+          marginTop: 8,
+          borderTop: '1px solid #e2e8f0',
+        }}
+      >
+        <button
+          type="button"
+          disabled={!canToggle}
+          onClick={() => {
+            if (!canToggle) {
+              return;
+            }
+            onResetColumns();
+          }}
+          title="すべての列の幅・固定・表示を初期状態に戻します"
+          style={{
+            display: 'block',
+            width: '100%',
+            boxSizing: 'border-box',
+            padding: '7px 8px',
+            border: '1px solid #e2e8f0',
+            borderRadius: 8,
+            backgroundColor: 'transparent',
+            color: canToggle ? '#334155' : '#cbd5e1',
+            cursor: canToggle ? 'pointer' : 'default',
+            fontSize: 13,
+            textAlign: 'center',
+            userSelect: 'none',
+          }}
+          onPointerEnter={(event) => {
+            if (canToggle) {
+              event.currentTarget.style.backgroundColor = '#f1f5f9';
+            }
+          }}
+          onPointerLeave={(event) => {
+            event.currentTarget.style.backgroundColor = 'transparent';
+          }}
+        >
+          すべての列を初期状態に戻す
+        </button>
+
+        {!canToggle && (
+          <div
+            style={{
+              fontSize: 11,
+              color: '#94a3b8',
+              marginTop: 8,
+              userSelect: 'none',
+            }}
+          >
+            onColumnsChange 未指定のため表示/非表示・リセットを変更できません
+          </div>
+        )}
+      </div>
+    </div>,
+    document.body,
+  );
+}
+
+export default ColumnChooserPanel;
 </file>
 
 <file path="src/index.css">
@@ -1301,328 +1947,6 @@ export function ActiveCellOverlay({
 }
 
 export default ActiveCellOverlay;
-</file>
-
-<file path="src/components/spreadsheet-grid/hooks/useColumnMenuController.ts">
-import {
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  type MouseEvent,
-  type PointerEvent,
-  type RefObject,
-} from 'react';
-import type { GridColumn } from '../model/gridTypes';
-
-// 追加(13-A): 列メニュー popover の内部状態です。
-//             どの列のメニューを開いているかだけを持ちます。
-type ColumnMenuState = {
-  columnKey: string;
-};
-
-// 追加(13-A): body 直下 portal popover の配置情報です(position: fixed 座標)。
-export type ColumnMenuLayout = {
-  top: number;
-  left: number;
-  width: number;
-};
-
-type UseColumnMenuControllerArgs<T> = {
-  visibleColumns: GridColumn<T>[];
-  enableColumnMenu: boolean;
-  gridRootRef: RefObject<HTMLDivElement | null>;
-};
-
-const MENU_WIDTH = 200;
-const VIEWPORT_MARGIN = 8;
-const OFFSET_Y = 6;
-// 変更(13-A2): カスケード化でルートメニューが「タイトル + 1 項目 + 閉じる」へ
-//             短くなったため、上下フリップ判定用の見積もり高さを更新します。
-// 変更(13-B1): 幅自動調整 2 項目の追加でルートが 3 項目になったため再更新します
-//             (padding 16 + タイトル ~30 + 項目 ~32×3 + 区切り/閉じる ~46 ≒ 188)。
-// 注記: サブメニューは横方向へ開くため、この縦フリップ判定には含めません。
-const ESTIMATED_MENU_HEIGHT = 190;
-
-// 追加(13-A): 列メニュー(「⋮」ボタン / ヘッダー右クリック)の
-//             state / anchor / layout / outside click / Escape をまとめて管理します。
-// 設計メモ: useFilterPopoverController と同型ですが、anchor が
-//   - 'button' モード: 「⋮」ボタン要素(getBoundingClientRect で追従配置)
-//   - 'point'  モード: 右クリック時のポインタ座標(固定配置)
-//   の 2 種類ある点が異なります。button モードは scroll/resize で再配置し、
-//   point モードは scroll 中に座標とヘッダーがズレるため scroll で閉じます
-//   (AG Grid のコンテキストメニューと同じ振る舞いです)。
-export const useColumnMenuController = <T,>({
-  visibleColumns,
-  enableColumnMenu,
-  gridRootRef,
-}: UseColumnMenuControllerArgs<T>) => {
-  const [columnMenuState, setColumnMenuState] =
-    useState<ColumnMenuState | null>(null);
-  const [columnMenuLayout, setColumnMenuLayout] =
-    useState<ColumnMenuLayout | null>(null);
-
-  // 追加(13-A): popover 本体 / anchor(ボタン or 座標)の ref 群です。
-  //             anchor は「どちらか一方だけ」が non-null になります。
-  const columnMenuRef = useRef<HTMLDivElement | null>(null);
-  const menuAnchorButtonRef = useRef<HTMLButtonElement | null>(null);
-  const menuAnchorPointRef = useRef<{ x: number; y: number } | null>(null);
-
-  // 追加(13-A): 開閉トグル判定用の latest-ref です。
-  // 注記: setState の updater 内で anchor ref を書き換えると StrictMode の
-  //       updater 二重実行で開閉が反転するため、判定・ref 更新はハンドラ本体
-  //       (1 回だけ実行される側)で行います。
-  const columnMenuStateRef = useRef(columnMenuState);
-  columnMenuStateRef.current = columnMenuState;
-
-  const isColumnMenuOpen = columnMenuState !== null;
-  const openedMenuColumnKey = columnMenuState?.columnKey ?? null;
-
-  const openedMenuColumn = useMemo(
-    () =>
-      openedMenuColumnKey
-        ? visibleColumns.find(
-            (column) => column.key === openedMenuColumnKey,
-          ) ?? null
-        : null,
-    [openedMenuColumnKey, visibleColumns],
-  );
-
-  // 追加(13-A): anchor(ボタン矩形 or 右クリック座標)から fixed 座標を計算します。
-  const updateColumnMenuLayout = useCallback(() => {
-    if (!openedMenuColumnKey) {
-      setColumnMenuLayout(null);
-      return;
-    }
-
-    let top: number;
-    let left: number;
-    let flipTop: number;
-
-    const anchorButton = menuAnchorButtonRef.current;
-    const anchorPoint = menuAnchorPointRef.current;
-
-    if (anchorButton) {
-      // 追加(13-A): 横スクロールで列が仮想化範囲外になると anchor ボタンが unmount され、
-      //             getBoundingClientRect が 0 を返して左上へ飛ぶため、その場合は閉じます。
-      if (!anchorButton.isConnected) {
-        setColumnMenuLayout(null);
-        setColumnMenuState(null);
-        menuAnchorButtonRef.current = null;
-        return;
-      }
-      const anchorRect = anchorButton.getBoundingClientRect();
-      left = anchorRect.right - MENU_WIDTH;
-      top = anchorRect.bottom + OFFSET_Y;
-      flipTop = anchorRect.top - ESTIMATED_MENU_HEIGHT - OFFSET_Y;
-    } else if (anchorPoint) {
-      // 追加(13-A): 右クリック位置の右下へ出します(ブラウザ標準メニューと同じ向き)。
-      left = anchorPoint.x;
-      top = anchorPoint.y;
-      flipTop = anchorPoint.y - ESTIMATED_MENU_HEIGHT;
-    } else {
-      setColumnMenuLayout(null);
-      return;
-    }
-
-    left = Math.max(VIEWPORT_MARGIN, left);
-    left = Math.min(left, window.innerWidth - MENU_WIDTH - VIEWPORT_MARGIN);
-
-    if (top + ESTIMATED_MENU_HEIGHT > window.innerHeight - VIEWPORT_MARGIN) {
-      top = flipTop;
-    }
-    top = Math.max(VIEWPORT_MARGIN, top);
-
-    setColumnMenuLayout((current) => {
-      if (
-        current &&
-        current.top === top &&
-        current.left === left &&
-        current.width === MENU_WIDTH
-      ) {
-        return current;
-      }
-      return { top, left, width: MENU_WIDTH };
-    });
-  }, [openedMenuColumnKey]);
-
-  // 追加(13-A): メニューを閉じます(filter popover の close と同じ作法です)。
-  const closeColumnMenu = useCallback(() => {
-    setColumnMenuState(null);
-    setColumnMenuLayout(null);
-    menuAnchorButtonRef.current = null;
-    menuAnchorPointRef.current = null;
-
-    // 追加: close 後は grid root にフォーカスを戻し、keyboard 操作へ復帰させます。
-    requestAnimationFrame(() => {
-      gridRootRef.current?.focus();
-    });
-  }, [gridRootRef]);
-
-  // 追加(13-A): 「⋮」ボタンからメニューを開きます(同じボタン再押下でトグル close)。
-  // 注記: anchor ref の更新は setState より「前」に行います。outside click 用の
-  //       window pointerdown リスナーは React ハンドラの後(window バブル到達時)に
-  //       走るため、別列のボタンを押した場合でも「新 anchor contains target」で
-  //       閉じ漏れ/誤閉じが起きません(useFilterPopoverController と同じ仕組みです)。
-  const openColumnMenuFromButton = useCallback(
-    (column: GridColumn<T>, event: PointerEvent<HTMLButtonElement>) => {
-      event.preventDefault();
-      event.stopPropagation();
-
-      if (!enableColumnMenu || event.button !== 0) {
-        return;
-      }
-
-      const anchorElement = event.currentTarget;
-
-      // 追加: 同じボタンの再押下はトグルで閉じます。
-      const current = columnMenuStateRef.current;
-      if (
-        current?.columnKey === column.key &&
-        menuAnchorButtonRef.current === anchorElement
-      ) {
-        closeColumnMenu();
-        return;
-      }
-
-      // 追加: grid root に残っているフォーカスを明示的に外します。
-      if (document.activeElement instanceof HTMLElement) {
-        document.activeElement.blur();
-      }
-      gridRootRef.current?.blur();
-
-      menuAnchorButtonRef.current = anchorElement;
-      menuAnchorPointRef.current = null;
-      setColumnMenuState({ columnKey: column.key });
-    },
-    [closeColumnMenu, enableColumnMenu, gridRootRef],
-  );
-
-  // 追加(13-A): 列ヘッダー右クリック(contextmenu)からメニューを開きます。
-  // 注記: enableColumnMenu=false のときは preventDefault しないため、
-  //       ブラウザ標準のコンテキストメニューがそのまま出ます。
-  const openColumnMenuFromContextMenu = useCallback(
-    (column: GridColumn<T>, event: MouseEvent<HTMLDivElement>) => {
-      if (!enableColumnMenu) {
-        return;
-      }
-
-      event.preventDefault();
-      event.stopPropagation();
-
-      if (document.activeElement instanceof HTMLElement) {
-        document.activeElement.blur();
-      }
-      gridRootRef.current?.blur();
-
-      menuAnchorButtonRef.current = null;
-      menuAnchorPointRef.current = { x: event.clientX, y: event.clientY };
-      setColumnMenuState({ columnKey: column.key });
-
-      // 追加: 同一列で「開いたまま別位置を右クリック」した場合も座標を追従させます。
-      //       state が同値(同一 columnKey)だと effect が走らないため、ここで直接
-      //       再計算します(初回 open 時は下の effect 側でも計算され、冪等です)。
-      updateColumnMenuLayout();
-    },
-    [enableColumnMenu, gridRootRef, updateColumnMenuLayout],
-  );
-
-  // 追加(13-A): open 時の初期配置 + resize / scroll への追従です。
-  //             button anchor は再配置、point anchor は scroll で閉じます。
-  useEffect(() => {
-    if (!openedMenuColumnKey) {
-      return;
-    }
-
-    updateColumnMenuLayout();
-
-    const handleResize = () => {
-      updateColumnMenuLayout();
-    };
-
-    const handleScroll = () => {
-      if (menuAnchorPointRef.current) {
-        // 追加: 座標 anchor はスクロールでヘッダーとズレるため閉じます。
-        closeColumnMenu();
-        return;
-      }
-      updateColumnMenuLayout();
-    };
-
-    window.addEventListener('resize', handleResize);
-    window.addEventListener('scroll', handleScroll, true);
-
-    return () => {
-      window.removeEventListener('resize', handleResize);
-      window.removeEventListener('scroll', handleScroll, true);
-    };
-  }, [openedMenuColumnKey, updateColumnMenuLayout, closeColumnMenu]);
-
-  // 追加(13-A): 表示中は outside click で閉じます(filter popover と同じ作法です)。
-  useEffect(() => {
-    if (!isColumnMenuOpen) {
-      return;
-    }
-
-    const handleWindowPointerDown = (event: globalThis.PointerEvent) => {
-      const targetNode = event.target as Node | null;
-      if (!targetNode) {
-        return;
-      }
-
-      if (columnMenuRef.current?.contains(targetNode)) {
-        return;
-      }
-
-      // 追加: anchor ボタン押下はボタン側のトグル処理に委ねます。
-      if (menuAnchorButtonRef.current?.contains(targetNode)) {
-        return;
-      }
-
-      closeColumnMenu();
-    };
-
-    window.addEventListener('pointerdown', handleWindowPointerDown);
-    return () => {
-      window.removeEventListener('pointerdown', handleWindowPointerDown);
-    };
-  }, [closeColumnMenu, isColumnMenuOpen]);
-
-  // 追加(13-A): 表示中は Escape で閉じます。
-  //             メニューには入力要素が無く popover 内にフォーカスが入らないため、
-  //             popover 側の onKeyDown ではなく window で拾います。
-  useEffect(() => {
-    if (!isColumnMenuOpen) {
-      return;
-    }
-
-    const handleWindowKeyDown = (event: globalThis.KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        event.preventDefault();
-        closeColumnMenu();
-      }
-    };
-
-    window.addEventListener('keydown', handleWindowKeyDown);
-    return () => {
-      window.removeEventListener('keydown', handleWindowKeyDown);
-    };
-  }, [closeColumnMenu, isColumnMenuOpen]);
-
-  return {
-    columnMenuLayout,
-    columnMenuRef,
-    isColumnMenuOpen,
-    openedMenuColumnKey,
-    openedMenuColumn,
-    openColumnMenuFromButton,
-    openColumnMenuFromContextMenu,
-    closeColumnMenu,
-  };
-};
-
-export default useColumnMenuController;
 </file>
 
 <file path="src/components/spreadsheet-grid/hooks/useFilterPopoverController.ts">
@@ -3213,385 +3537,6 @@ export function ColumnFilterPopover({
 export default ColumnFilterPopover;
 </file>
 
-<file path="src/components/spreadsheet-grid/view/ColumnMenuPopover.tsx">
-// 変更(13-A2): フラットな項目列挙 → AG Grid 同様のカスケード(サブメニュー)UI へ変更します。
-//             ルートメニューには「列の固定 ›」を置き、hover / クリックで右隣に
-//             サブメニュー(固定しない / 左に固定 / 右に固定)を開きます。
-// 変更(13-B1): 13-A2 セッションの設計決定どおり、サブメニュー開閉状態を
-//             isPinSubmenuOpen: boolean → openSubmenuKey: string | null へ一般化し、
-//             ルート項目に「この列の幅を自動調整」「すべての列の幅を自動調整」を
-//             追加します(AG Grid の Autosize This Column / Autosize All Columns 相当)。
-//             サブメニューを持たないルート項目への hover で openSubmenuKey を null に
-//             戻すことで、AG Grid の「別項目 hover でカスケードが閉じる」挙動になります。
-import { useEffect, useState } from 'react';
-import { createPortal } from 'react-dom';
-import type {
-  CSSProperties,
-  KeyboardEvent,
-  PointerEvent,
-  RefObject,
-} from 'react';
-import type { GridColumnPinned } from '../model/gridTypes';
-import type { ColumnMenuLayout } from '../hooks/useColumnMenuController';
-
-type ColumnMenuPinnedItem = {
-  // 注記: undefined = 固定なし(中央スクロール領域)です。
-  value: GridColumnPinned | undefined;
-  label: string;
-};
-
-// 変更(13-A2): 項目順を AG Grid の Pin Column サブメニュー
-//             (No Pin / Pin Left / Pin Right)に合わせます。
-const PINNED_ITEMS: ColumnMenuPinnedItem[] = [
-  { value: undefined, label: '固定しない' },
-  { value: 'left', label: '左に固定' },
-  { value: 'right', label: '右に固定' },
-];
-
-// 追加(13-A2): サブメニューの幅と、ルートメニューとの水平間隔です。
-//             左右どちらへ開くかの判定(viewport はみ出し)にも使います。
-const SUBMENU_WIDTH = 180;
-const SUBMENU_GAP = 4;
-const VIEWPORT_MARGIN = 8;
-
-// 追加(13-B1): サブメニューを持つルート項目の識別キーです。
-//             openSubmenuKey(string | null) との比較で開閉を判定します。
-//             13-B 後続でサブメニュー持ち項目を増やす場合はキーを追加します。
-const PIN_SUBMENU_KEY = 'pin';
-
-type ColumnMenuPopoverProps = {
-  isOpen: boolean;
-  title: string;
-  columnKey: string;
-  // 追加: 開いている列の現在の固定状態です(✓ 表示に使います)。
-  pinned: GridColumnPinned | undefined;
-  // 追加: onColumnsChange 未指定時は false になり、固定切替の項目を無効化します
-  //       (columns は controlled props のため、callback なしでは反映できません)。
-  canChangePinned: boolean;
-  layout: ColumnMenuLayout | null;
-  popoverRef: RefObject<HTMLDivElement | null>;
-  onPinnedChange: (
-    columnKey: string,
-    pinned: GridColumnPinned | undefined,
-  ) => void;
-  // 追加(13-B1): 幅自動調整のハンドラです。幅は grid 内部 state(columnWidths)で
-  //             管理されるため、pinned と違い onColumnsChange の有無に依存せず
-  //             常に有効です(手動リサイズと同じ扱い)。
-  onAutosizeColumn: (columnKey: string) => void;
-  onAutosizeAllColumns: () => void;
-  onRequestClose: () => void;
-};
-
-// 追加(13-A2): ルートメニュー / サブメニューで共有するパネルの見た目です。
-const PANEL_BASE_STYLE: CSSProperties = {
-  padding: 8,
-  boxSizing: 'border-box',
-  border: '1px solid #cbd5e1',
-  borderRadius: 10,
-  backgroundColor: '#ffffff',
-  boxShadow: '0 10px 24px rgba(15, 23, 42, 0.12)',
-};
-
-// 追加(13-A): メニュー項目ボタンの style です。disabled / hover(highlight) で出し分けます。
-const getMenuItemStyle = (
-  disabled: boolean,
-  highlighted: boolean,
-): CSSProperties => ({
-  display: 'flex',
-  alignItems: 'center',
-  gap: 8,
-  width: '100%',
-  boxSizing: 'border-box',
-  padding: '7px 8px',
-  border: 'none',
-  borderRadius: 8,
-  backgroundColor: highlighted ? '#f1f5f9' : 'transparent',
-  color: disabled ? '#94a3b8' : '#334155',
-  fontSize: 13,
-  textAlign: 'left',
-  cursor: disabled ? 'default' : 'pointer',
-});
-
-export function ColumnMenuPopover({
-  isOpen,
-  title,
-  columnKey,
-  pinned,
-  canChangePinned,
-  layout,
-  popoverRef,
-  onPinnedChange,
-  onAutosizeColumn,
-  onAutosizeAllColumns,
-  onRequestClose,
-}: ColumnMenuPopoverProps) {
-  // 変更(13-B1): isPinSubmenuOpen: boolean → openSubmenuKey: string | null へ一般化します
-  //             (13-A2 セッションの設計決定どおり)。
-  //   - サブメニューを持つルート項目: onPointerEnter で setOpenSubmenuKey(自分の key)
-  //   - サブメニューを持たないルート項目: onPointerEnter で setOpenSubmenuKey(null)
-  //     (= 開いているカスケードが閉じる。AG Grid の挙動の肝)
-  // 注記: AG Grid と同様、一度開いたサブメニューはポインタが離れても開いたままにし、
-  //       別のルート項目へ hover したとき・メニュー自体が閉じたときに閉じます。
-  //       チラつき防止のため pointerleave では閉じません。
-  const [openSubmenuKey, setOpenSubmenuKey] = useState<string | null>(null);
-
-  // 追加(13-A2): 開いたまま別列へ切り替えた場合(popover は mount されたまま
-  //             columnKey だけ変わる)に、サブメニューの開閉状態を初期化します。
-  // 変更(13-B1): リセット先を openSubmenuKey = null に読み替えます。
-  useEffect(() => {
-    setOpenSubmenuKey(null);
-  }, [columnKey, isOpen]);
-
-  if (!isOpen || !layout) {
-    return null;
-  }
-
-  const isPinSubmenuOpen = openSubmenuKey === PIN_SUBMENU_KEY;
-
-  // 追加(13-A2): サブメニューを右に開くと viewport をはみ出す場合は左へ開きます
-  //             (AG Grid と同じフリップ挙動です)。layout はルートメニューの
-  //             fixed 座標なので、右端 = layout.left + layout.width です。
-  const submenuOpensLeft =
-    layout.left + layout.width + SUBMENU_GAP + SUBMENU_WIDTH >
-    window.innerWidth - VIEWPORT_MARGIN;
-
-  const wrapperStyle: CSSProperties = {
-    position: 'fixed',
-    top: layout.top,
-    left: layout.left,
-    width: layout.width,
-    ...PANEL_BASE_STYLE,
-    zIndex: 1000,
-  };
-
-  // 追加(13-A2): サブメニューはルート項目(position: relative の行)を基準に
-  //             絶対配置します。top: -9 はパネルの padding(8) + border(1) ぶんを
-  //             相殺し、サブメニューの先頭項目をルート項目と上端揃えにするためです。
-  const submenuStyle: CSSProperties = {
-    position: 'absolute',
-    top: -9,
-    ...(submenuOpensLeft
-      ? { right: `calc(100% + ${SUBMENU_GAP}px)` }
-      : { left: `calc(100% + ${SUBMENU_GAP}px)` }),
-    width: SUBMENU_WIDTH,
-    ...PANEL_BASE_STYLE,
-    zIndex: 1,
-  };
-
-  const handlePointerDown = (event: PointerEvent<HTMLDivElement>) => {
-    // 追加: popover 内 pointer 操作を grid 側へ伝播させません
-    //       (列選択開始や outside click 判定との競合を避けます)。
-    event.stopPropagation();
-  };
-
-  const handleKeyDownCapture = (event: KeyboardEvent<HTMLDivElement>) => {
-    // 追加: portal 内 keyboard イベントを React ツリー上の parent へ流しません。
-    //       Escape での close は controller の window keydown リスナーが担当します。
-    event.stopPropagation();
-  };
-
-  return createPortal(
-    <div
-      ref={popoverRef}
-      onPointerDown={handlePointerDown}
-      onKeyDownCapture={handleKeyDownCapture}
-      onContextMenu={(event) => {
-        // 追加: メニュー上での右クリックはブラウザ標準メニューを出しません。
-        event.preventDefault();
-      }}
-      style={wrapperStyle}
-    >
-      <div
-        style={{
-          fontSize: 12,
-          fontWeight: 700,
-          color: '#334155',
-          padding: '2px 8px 6px',
-          overflow: 'hidden',
-          textOverflow: 'ellipsis',
-          whiteSpace: 'nowrap',
-          borderBottom: '1px solid #e2e8f0',
-          marginBottom: 4,
-          userSelect: 'none',
-        }}
-      >
-        {title}
-      </div>
-
-      {/* ── ルート項目: 列の固定 ›(サブメニュー親) ── */}
-      {/* 追加(13-A2): サブメニューはこの行(position: relative)基準で絶対配置します。
-          パネル自体は overflow を持たないため、wrapper の外側(右隣 / 左隣)へ
-          はみ出して表示されます。popoverRef(wrapper)の子孫なので、controller の
-          outside-pointerdown 判定(contains)にもそのまま含まれます。 */}
-      <div style={{ position: 'relative' }}>
-        <button
-          type="button"
-          onPointerEnter={() => {
-            // 変更(13-B1): AG Grid と同様、hover でこの項目のサブメニューを開きます
-            //             (他のサブメニューが開いていれば置き換わります)。
-            setOpenSubmenuKey(PIN_SUBMENU_KEY);
-          }}
-          onClick={() => {
-            // 変更(13-B1): クリックでもトグルできるようにします(タッチ環境向け)。
-            setOpenSubmenuKey((current) =>
-              current === PIN_SUBMENU_KEY ? null : PIN_SUBMENU_KEY,
-            );
-          }}
-          style={getMenuItemStyle(false, isPinSubmenuOpen)}
-        >
-          {/* 注記: ✓ 列との左端揃えのため、サブメニュー項目と同じ幅のスペーサを置きます。*/}
-          <span style={{ width: 14, flex: '0 0 auto' }} />
-          <span style={{ minWidth: 0, flex: 1 }}>列の固定</span>
-          <span
-            style={{
-              flex: '0 0 auto',
-              color: '#94a3b8',
-              fontSize: 12,
-              lineHeight: 1,
-            }}
-          >
-            ›
-          </span>
-        </button>
-
-        {/* ── サブメニュー: 固定しない / 左に固定 / 右に固定 ── */}
-        {isPinSubmenuOpen && (
-          <div style={submenuStyle}>
-            {PINNED_ITEMS.map((item) => {
-              const isSelected = pinned === item.value;
-              return (
-                <button
-                  key={item.label}
-                  type="button"
-                  disabled={!canChangePinned}
-                  onClick={() => {
-                    if (!canChangePinned) {
-                      return;
-                    }
-                    // 注記: 現在値と同じ項目を選んでも閉じるだけになります
-                    //       (no-op 判定は SpreadsheetGrid 側で行います)。
-                    onPinnedChange(columnKey, item.value);
-                  }}
-                  onPointerEnter={(event) => {
-                    if (canChangePinned) {
-                      event.currentTarget.style.backgroundColor = '#f1f5f9';
-                    }
-                  }}
-                  onPointerLeave={(event) => {
-                    event.currentTarget.style.backgroundColor = 'transparent';
-                  }}
-                  style={getMenuItemStyle(!canChangePinned, false)}
-                >
-                  {/* 追加: 現在の固定状態に ✓ を出します(未選択は幅だけ確保して揃えます)。*/}
-                  <span
-                    style={{
-                      width: 14,
-                      flex: '0 0 auto',
-                      color: '#2563eb',
-                      fontWeight: 700,
-                      visibility: isSelected ? 'visible' : 'hidden',
-                    }}
-                  >
-                    ✓
-                  </span>
-                  <span style={{ minWidth: 0, flex: 1 }}>{item.label}</span>
-                </button>
-              );
-            })}
-
-            {!canChangePinned && (
-              <div
-                style={{
-                  fontSize: 11,
-                  color: '#94a3b8',
-                  padding: '4px 8px 2px',
-                  userSelect: 'none',
-                }}
-              >
-                onColumnsChange 未指定のため固定状態を変更できません
-              </div>
-            )}
-          </div>
-        )}
-      </div>
-
-      {/* ── ルート項目: 幅の自動調整(13-B1) ── */}
-      {/* 追加(13-B1): サブメニューを持たないルート項目です。hover で
-          setOpenSubmenuKey(null) し、開いているカスケード(列の固定)を閉じます
-          (AG Grid の「別項目 hover でサブメニューが閉じる」挙動)。
-          hover ハイライトはサブメニュー項目と同じ DOM 直接書き換え方式です
-          (state を使うと hover のたびに popover 全体が再レンダーされるため)。
-          実際の close と幅反映は SpreadsheetGrid 側ハンドラが行います。 */}
-      <button
-        type="button"
-        onPointerEnter={(event) => {
-          setOpenSubmenuKey(null);
-          event.currentTarget.style.backgroundColor = '#f1f5f9';
-        }}
-        onPointerLeave={(event) => {
-          event.currentTarget.style.backgroundColor = 'transparent';
-        }}
-        onClick={() => {
-          onAutosizeColumn(columnKey);
-        }}
-        style={getMenuItemStyle(false, false)}
-      >
-        {/* 注記: ✓ 列との左端揃え用スペーサです(ピン行と同じ幅)。*/}
-        <span style={{ width: 14, flex: '0 0 auto' }} />
-        <span style={{ minWidth: 0, flex: 1 }}>この列の幅を自動調整</span>
-      </button>
-
-      <button
-        type="button"
-        onPointerEnter={(event) => {
-          setOpenSubmenuKey(null);
-          event.currentTarget.style.backgroundColor = '#f1f5f9';
-        }}
-        onPointerLeave={(event) => {
-          event.currentTarget.style.backgroundColor = 'transparent';
-        }}
-        onClick={() => {
-          onAutosizeAllColumns();
-        }}
-        style={getMenuItemStyle(false, false)}
-      >
-        <span style={{ width: 14, flex: '0 0 auto' }} />
-        <span style={{ minWidth: 0, flex: 1 }}>すべての列の幅を自動調整</span>
-      </button>
-
-      <div
-        style={{
-          borderTop: '1px solid #e2e8f0',
-          marginTop: 4,
-          paddingTop: 6,
-          display: 'flex',
-          justifyContent: 'flex-end',
-        }}
-      >
-        <button
-          type="button"
-          onClick={onRequestClose}
-          style={{
-            border: '1px solid #cbd5e1',
-            backgroundColor: '#ffffff',
-            color: '#475569',
-            borderRadius: 8,
-            padding: '5px 10px',
-            cursor: 'pointer',
-            fontSize: 12,
-          }}
-        >
-          閉じる
-        </button>
-      </div>
-    </div>,
-    document.body,
-  );
-}
-
-export default ColumnMenuPopover;
-</file>
-
 <file path=".gitignore">
 # Logs
 logs
@@ -4531,6 +4476,331 @@ export function CellEditorLayer({
 export default CellEditorLayer;
 </file>
 
+<file path="src/components/spreadsheet-grid/hooks/useColumnMenuController.ts">
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type MouseEvent,
+  type PointerEvent,
+  type RefObject,
+} from 'react';
+import type { GridColumn } from '../model/gridTypes';
+
+// 追加(13-A): 列メニュー popover の内部状態です。
+//             どの列のメニューを開いているかだけを持ちます。
+type ColumnMenuState = {
+  columnKey: string;
+};
+
+// 追加(13-A): body 直下 portal popover の配置情報です(position: fixed 座標)。
+export type ColumnMenuLayout = {
+  top: number;
+  left: number;
+  width: number;
+};
+
+type UseColumnMenuControllerArgs<T> = {
+  visibleColumns: GridColumn<T>[];
+  enableColumnMenu: boolean;
+  gridRootRef: RefObject<HTMLDivElement | null>;
+};
+
+const MENU_WIDTH = 200;
+const VIEWPORT_MARGIN = 8;
+const OFFSET_Y = 6;
+// 変更(13-A2): カスケード化でルートメニューが「タイトル + 1 項目 + 閉じる」へ
+//             短くなったため、上下フリップ判定用の見積もり高さを更新します。
+// 変更(13-B1): 幅自動調整 2 項目の追加でルートが 3 項目になったため再更新します
+//             (padding 16 + タイトル ~30 + 項目 ~32×3 + 区切り/閉じる ~46 ≒ 188)。
+// 変更(13-B2-1): ルート項目「列の表示」追加でルートが 4 項目になったため再更新します
+//             (上記 + 項目 ~32 ≒ 220)。
+// 注記: サブメニューは横方向へ開くため、この縦フリップ判定には含めません。
+//       「列の表示」は別 popover(ColumnChooserPanel)を開くため、ここの高さには含めません。
+const ESTIMATED_MENU_HEIGHT = 225;
+
+// 追加(13-A): 列メニュー(「⋮」ボタン / ヘッダー右クリック)の
+//             state / anchor / layout / outside click / Escape をまとめて管理します。
+// 設計メモ: useFilterPopoverController と同型ですが、anchor が
+//   - 'button' モード: 「⋮」ボタン要素(getBoundingClientRect で追従配置)
+//   - 'point'  モード: 右クリック時のポインタ座標(固定配置)
+//   の 2 種類ある点が異なります。button モードは scroll/resize で再配置し、
+//   point モードは scroll 中に座標とヘッダーがズレるため scroll で閉じます
+//   (AG Grid のコンテキストメニューと同じ振る舞いです)。
+export const useColumnMenuController = <T,>({
+  visibleColumns,
+  enableColumnMenu,
+  gridRootRef,
+}: UseColumnMenuControllerArgs<T>) => {
+  const [columnMenuState, setColumnMenuState] =
+    useState<ColumnMenuState | null>(null);
+  const [columnMenuLayout, setColumnMenuLayout] =
+    useState<ColumnMenuLayout | null>(null);
+
+  // 追加(13-A): popover 本体 / anchor(ボタン or 座標)の ref 群です。
+  //             anchor は「どちらか一方だけ」が non-null になります。
+  const columnMenuRef = useRef<HTMLDivElement | null>(null);
+  const menuAnchorButtonRef = useRef<HTMLButtonElement | null>(null);
+  const menuAnchorPointRef = useRef<{ x: number; y: number } | null>(null);
+
+  // 追加(13-A): 開閉トグル判定用の latest-ref です。
+  // 注記: setState の updater 内で anchor ref を書き換えると StrictMode の
+  //       updater 二重実行で開閉が反転するため、判定・ref 更新はハンドラ本体
+  //       (1 回だけ実行される側)で行います。
+  const columnMenuStateRef = useRef(columnMenuState);
+  columnMenuStateRef.current = columnMenuState;
+
+  const isColumnMenuOpen = columnMenuState !== null;
+  const openedMenuColumnKey = columnMenuState?.columnKey ?? null;
+
+  const openedMenuColumn = useMemo(
+    () =>
+      openedMenuColumnKey
+        ? visibleColumns.find(
+            (column) => column.key === openedMenuColumnKey,
+          ) ?? null
+        : null,
+    [openedMenuColumnKey, visibleColumns],
+  );
+
+  // 追加(13-A): anchor(ボタン矩形 or 右クリック座標)から fixed 座標を計算します。
+  const updateColumnMenuLayout = useCallback(() => {
+    if (!openedMenuColumnKey) {
+      setColumnMenuLayout(null);
+      return;
+    }
+
+    let top: number;
+    let left: number;
+    let flipTop: number;
+
+    const anchorButton = menuAnchorButtonRef.current;
+    const anchorPoint = menuAnchorPointRef.current;
+
+    if (anchorButton) {
+      // 追加(13-A): 横スクロールで列が仮想化範囲外になると anchor ボタンが unmount され、
+      //             getBoundingClientRect が 0 を返して左上へ飛ぶため、その場合は閉じます。
+      if (!anchorButton.isConnected) {
+        setColumnMenuLayout(null);
+        setColumnMenuState(null);
+        menuAnchorButtonRef.current = null;
+        return;
+      }
+      const anchorRect = anchorButton.getBoundingClientRect();
+      left = anchorRect.right - MENU_WIDTH;
+      top = anchorRect.bottom + OFFSET_Y;
+      flipTop = anchorRect.top - ESTIMATED_MENU_HEIGHT - OFFSET_Y;
+    } else if (anchorPoint) {
+      // 追加(13-A): 右クリック位置の右下へ出します(ブラウザ標準メニューと同じ向き)。
+      left = anchorPoint.x;
+      top = anchorPoint.y;
+      flipTop = anchorPoint.y - ESTIMATED_MENU_HEIGHT;
+    } else {
+      setColumnMenuLayout(null);
+      return;
+    }
+
+    left = Math.max(VIEWPORT_MARGIN, left);
+    left = Math.min(left, window.innerWidth - MENU_WIDTH - VIEWPORT_MARGIN);
+
+    if (top + ESTIMATED_MENU_HEIGHT > window.innerHeight - VIEWPORT_MARGIN) {
+      top = flipTop;
+    }
+    top = Math.max(VIEWPORT_MARGIN, top);
+
+    setColumnMenuLayout((current) => {
+      if (
+        current &&
+        current.top === top &&
+        current.left === left &&
+        current.width === MENU_WIDTH
+      ) {
+        return current;
+      }
+      return { top, left, width: MENU_WIDTH };
+    });
+  }, [openedMenuColumnKey]);
+
+  // 追加(13-A): メニューを閉じます(filter popover の close と同じ作法です)。
+  const closeColumnMenu = useCallback(() => {
+    setColumnMenuState(null);
+    setColumnMenuLayout(null);
+    menuAnchorButtonRef.current = null;
+    menuAnchorPointRef.current = null;
+
+    // 追加: close 後は grid root にフォーカスを戻し、keyboard 操作へ復帰させます。
+    requestAnimationFrame(() => {
+      gridRootRef.current?.focus();
+    });
+  }, [gridRootRef]);
+
+  // 追加(13-A): 「⋮」ボタンからメニューを開きます(同じボタン再押下でトグル close)。
+  // 注記: anchor ref の更新は setState より「前」に行います。outside click 用の
+  //       window pointerdown リスナーは React ハンドラの後(window バブル到達時)に
+  //       走るため、別列のボタンを押した場合でも「新 anchor contains target」で
+  //       閉じ漏れ/誤閉じが起きません(useFilterPopoverController と同じ仕組みです)。
+  const openColumnMenuFromButton = useCallback(
+    (column: GridColumn<T>, event: PointerEvent<HTMLButtonElement>) => {
+      event.preventDefault();
+      event.stopPropagation();
+
+      if (!enableColumnMenu || event.button !== 0) {
+        return;
+      }
+
+      const anchorElement = event.currentTarget;
+
+      // 追加: 同じボタンの再押下はトグルで閉じます。
+      const current = columnMenuStateRef.current;
+      if (
+        current?.columnKey === column.key &&
+        menuAnchorButtonRef.current === anchorElement
+      ) {
+        closeColumnMenu();
+        return;
+      }
+
+      // 追加: grid root に残っているフォーカスを明示的に外します。
+      if (document.activeElement instanceof HTMLElement) {
+        document.activeElement.blur();
+      }
+      gridRootRef.current?.blur();
+
+      menuAnchorButtonRef.current = anchorElement;
+      menuAnchorPointRef.current = null;
+      setColumnMenuState({ columnKey: column.key });
+    },
+    [closeColumnMenu, enableColumnMenu, gridRootRef],
+  );
+
+  // 追加(13-A): 列ヘッダー右クリック(contextmenu)からメニューを開きます。
+  // 注記: enableColumnMenu=false のときは preventDefault しないため、
+  //       ブラウザ標準のコンテキストメニューがそのまま出ます。
+  const openColumnMenuFromContextMenu = useCallback(
+    (column: GridColumn<T>, event: MouseEvent<HTMLDivElement>) => {
+      if (!enableColumnMenu) {
+        return;
+      }
+
+      event.preventDefault();
+      event.stopPropagation();
+
+      if (document.activeElement instanceof HTMLElement) {
+        document.activeElement.blur();
+      }
+      gridRootRef.current?.blur();
+
+      menuAnchorButtonRef.current = null;
+      menuAnchorPointRef.current = { x: event.clientX, y: event.clientY };
+      setColumnMenuState({ columnKey: column.key });
+
+      // 追加: 同一列で「開いたまま別位置を右クリック」した場合も座標を追従させます。
+      //       state が同値(同一 columnKey)だと effect が走らないため、ここで直接
+      //       再計算します(初回 open 時は下の effect 側でも計算され、冪等です)。
+      updateColumnMenuLayout();
+    },
+    [enableColumnMenu, gridRootRef, updateColumnMenuLayout],
+  );
+
+  // 追加(13-A): open 時の初期配置 + resize / scroll への追従です。
+  //             button anchor は再配置、point anchor は scroll で閉じます。
+  useEffect(() => {
+    if (!openedMenuColumnKey) {
+      return;
+    }
+
+    updateColumnMenuLayout();
+
+    const handleResize = () => {
+      updateColumnMenuLayout();
+    };
+
+    const handleScroll = () => {
+      if (menuAnchorPointRef.current) {
+        // 追加: 座標 anchor はスクロールでヘッダーとズレるため閉じます。
+        closeColumnMenu();
+        return;
+      }
+      updateColumnMenuLayout();
+    };
+
+    window.addEventListener('resize', handleResize);
+    window.addEventListener('scroll', handleScroll, true);
+
+    return () => {
+      window.removeEventListener('resize', handleResize);
+      window.removeEventListener('scroll', handleScroll, true);
+    };
+  }, [openedMenuColumnKey, updateColumnMenuLayout, closeColumnMenu]);
+
+  // 追加(13-A): 表示中は outside click で閉じます(filter popover と同じ作法です)。
+  useEffect(() => {
+    if (!isColumnMenuOpen) {
+      return;
+    }
+
+    const handleWindowPointerDown = (event: globalThis.PointerEvent) => {
+      const targetNode = event.target as Node | null;
+      if (!targetNode) {
+        return;
+      }
+
+      if (columnMenuRef.current?.contains(targetNode)) {
+        return;
+      }
+
+      // 追加: anchor ボタン押下はボタン側のトグル処理に委ねます。
+      if (menuAnchorButtonRef.current?.contains(targetNode)) {
+        return;
+      }
+
+      closeColumnMenu();
+    };
+
+    window.addEventListener('pointerdown', handleWindowPointerDown);
+    return () => {
+      window.removeEventListener('pointerdown', handleWindowPointerDown);
+    };
+  }, [closeColumnMenu, isColumnMenuOpen]);
+
+  // 追加(13-A): 表示中は Escape で閉じます。
+  //             メニューには入力要素が無く popover 内にフォーカスが入らないため、
+  //             popover 側の onKeyDown ではなく window で拾います。
+  useEffect(() => {
+    if (!isColumnMenuOpen) {
+      return;
+    }
+
+    const handleWindowKeyDown = (event: globalThis.KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        closeColumnMenu();
+      }
+    };
+
+    window.addEventListener('keydown', handleWindowKeyDown);
+    return () => {
+      window.removeEventListener('keydown', handleWindowKeyDown);
+    };
+  }, [closeColumnMenu, isColumnMenuOpen]);
+
+  return {
+    columnMenuLayout,
+    columnMenuRef,
+    isColumnMenuOpen,
+    openedMenuColumnKey,
+    openedMenuColumn,
+    openColumnMenuFromButton,
+    openColumnMenuFromContextMenu,
+    closeColumnMenu,
+  };
+};
+
+export default useColumnMenuController;
+</file>
+
 <file path="src/components/spreadsheet-grid/logic/geometry.ts">
 import type { GridColumn } from '../model/gridTypes';
 
@@ -4975,6 +5245,415 @@ export const computeSinglePaneColumnExtent = <T,>(
     },
   };
 };
+</file>
+
+<file path="src/components/spreadsheet-grid/view/ColumnMenuPopover.tsx">
+// 変更(13-A2): フラットな項目列挙 → AG Grid 同様のカスケード(サブメニュー)UI へ変更します。
+//             ルートメニューには「列の固定 ›」を置き、hover / クリックで右隣に
+//             サブメニュー(固定しない / 左に固定 / 右に固定)を開きます。
+// 変更(13-B1): 13-A2 セッションの設計決定どおり、サブメニュー開閉状態を
+//             isPinSubmenuOpen: boolean → openSubmenuKey: string | null へ一般化し、
+//             ルート項目に「この列の幅を自動調整」「すべての列の幅を自動調整」を
+//             追加します(AG Grid の Autosize This Column / Autosize All Columns 相当)。
+//             サブメニューを持たないルート項目への hover で openSubmenuKey を null に
+//             戻すことで、AG Grid の「別項目 hover でカスケードが閉じる」挙動になります。
+// 変更(13-B2-1): ルート項目「列の表示」を追加します(AG Grid の Choose Columns 相当)。
+//             サブメニューではなく別 popover(ColumnChooserPanel)を開くリーフ項目です。
+import { useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
+import type {
+  CSSProperties,
+  KeyboardEvent,
+  PointerEvent,
+  RefObject,
+} from 'react';
+import type { GridColumnPinned } from '../model/gridTypes';
+import type { ColumnMenuLayout } from '../hooks/useColumnMenuController';
+
+type ColumnMenuPinnedItem = {
+  // 注記: undefined = 固定なし(中央スクロール領域)です。
+  value: GridColumnPinned | undefined;
+  label: string;
+};
+
+// 変更(13-A2): 項目順を AG Grid の Pin Column サブメニュー
+//             (No Pin / Pin Left / Pin Right)に合わせます。
+const PINNED_ITEMS: ColumnMenuPinnedItem[] = [
+  { value: undefined, label: '固定しない' },
+  { value: 'left', label: '左に固定' },
+  { value: 'right', label: '右に固定' },
+];
+
+// 追加(13-A2): サブメニューの幅と、ルートメニューとの水平間隔です。
+//             左右どちらへ開くかの判定(viewport はみ出し)にも使います。
+const SUBMENU_WIDTH = 180;
+const SUBMENU_GAP = 4;
+const VIEWPORT_MARGIN = 8;
+
+// 追加(13-B1): サブメニューを持つルート項目の識別キーです。
+//             openSubmenuKey(string | null) との比較で開閉を判定します。
+//             13-B 後続でサブメニュー持ち項目を増やす場合はキーを追加します。
+const PIN_SUBMENU_KEY = 'pin';
+
+type ColumnMenuPopoverProps = {
+  isOpen: boolean;
+  title: string;
+  columnKey: string;
+  // 追加: 開いている列の現在の固定状態です(✓ 表示に使います)。
+  pinned: GridColumnPinned | undefined;
+  // 追加: onColumnsChange 未指定時は false になり、固定切替の項目を無効化します
+  //       (columns は controlled props のため、callback なしでは反映できません)。
+  canChangePinned: boolean;
+  layout: ColumnMenuLayout | null;
+  popoverRef: RefObject<HTMLDivElement | null>;
+  onPinnedChange: (
+    columnKey: string,
+    pinned: GridColumnPinned | undefined,
+  ) => void;
+  // 追加(13-B1): 幅自動調整のハンドラです。幅は grid 内部 state(columnWidths)で
+  //             管理されるため、pinned と違い onColumnsChange の有無に依存せず
+  //             常に有効です(手動リサイズと同じ扱い)。
+  onAutosizeColumn: (columnKey: string) => void;
+  onAutosizeAllColumns: () => void;
+  // 追加(13-B2-1): 列の表示/非表示パネル(ColumnChooserPanel)を開くハンドラです。
+  //             この項目はサブメニューではなく別 popover を開くリーフ項目です
+  //             (クリックで列メニューを閉じてパネルを開きます。配線は SpreadsheetGrid 側)。
+  onOpenColumnChooser: () => void;
+  onRequestClose: () => void;
+};
+
+// 追加(13-A2): ルートメニュー / サブメニューで共有するパネルの見た目です。
+const PANEL_BASE_STYLE: CSSProperties = {
+  padding: 8,
+  boxSizing: 'border-box',
+  border: '1px solid #cbd5e1',
+  borderRadius: 10,
+  backgroundColor: '#ffffff',
+  boxShadow: '0 10px 24px rgba(15, 23, 42, 0.12)',
+};
+
+// 追加(13-A): メニュー項目ボタンの style です。disabled / hover(highlight) で出し分けます。
+const getMenuItemStyle = (
+  disabled: boolean,
+  highlighted: boolean,
+): CSSProperties => ({
+  display: 'flex',
+  alignItems: 'center',
+  gap: 8,
+  width: '100%',
+  boxSizing: 'border-box',
+  padding: '7px 8px',
+  border: 'none',
+  borderRadius: 8,
+  backgroundColor: highlighted ? '#f1f5f9' : 'transparent',
+  color: disabled ? '#94a3b8' : '#334155',
+  fontSize: 13,
+  textAlign: 'left',
+  cursor: disabled ? 'default' : 'pointer',
+});
+
+export function ColumnMenuPopover({
+  isOpen,
+  title,
+  columnKey,
+  pinned,
+  canChangePinned,
+  layout,
+  popoverRef,
+  onPinnedChange,
+  onAutosizeColumn,
+  onAutosizeAllColumns,
+  onOpenColumnChooser,
+  onRequestClose,
+}: ColumnMenuPopoverProps) {
+  // 変更(13-B1): isPinSubmenuOpen: boolean → openSubmenuKey: string | null へ一般化します
+  //             (13-A2 セッションの設計決定どおり)。
+  //   - サブメニューを持つルート項目: onPointerEnter で setOpenSubmenuKey(自分の key)
+  //   - サブメニューを持たないルート項目: onPointerEnter で setOpenSubmenuKey(null)
+  //     (= 開いているカスケードが閉じる。AG Grid の挙動の肝)
+  // 注記: AG Grid と同様、一度開いたサブメニューはポインタが離れても開いたままにし、
+  //       別のルート項目へ hover したとき・メニュー自体が閉じたときに閉じます。
+  //       チラつき防止のため pointerleave では閉じません。
+  const [openSubmenuKey, setOpenSubmenuKey] = useState<string | null>(null);
+
+  // 追加(13-A2): 開いたまま別列へ切り替えた場合(popover は mount されたまま
+  //             columnKey だけ変わる)に、サブメニューの開閉状態を初期化します。
+  // 変更(13-B1): リセット先を openSubmenuKey = null に読み替えます。
+  useEffect(() => {
+    setOpenSubmenuKey(null);
+  }, [columnKey, isOpen]);
+
+  if (!isOpen || !layout) {
+    return null;
+  }
+
+  const isPinSubmenuOpen = openSubmenuKey === PIN_SUBMENU_KEY;
+
+  // 追加(13-A2): サブメニューを右に開くと viewport をはみ出す場合は左へ開きます
+  //             (AG Grid と同じフリップ挙動です)。layout はルートメニューの
+  //             fixed 座標なので、右端 = layout.left + layout.width です。
+  const submenuOpensLeft =
+    layout.left + layout.width + SUBMENU_GAP + SUBMENU_WIDTH >
+    window.innerWidth - VIEWPORT_MARGIN;
+
+  const wrapperStyle: CSSProperties = {
+    position: 'fixed',
+    top: layout.top,
+    left: layout.left,
+    width: layout.width,
+    ...PANEL_BASE_STYLE,
+    zIndex: 1000,
+  };
+
+  // 追加(13-A2): サブメニューはルート項目(position: relative の行)を基準に
+  //             絶対配置します。top: -9 はパネルの padding(8) + border(1) ぶんを
+  //             相殺し、サブメニューの先頭項目をルート項目と上端揃えにするためです。
+  const submenuStyle: CSSProperties = {
+    position: 'absolute',
+    top: -9,
+    ...(submenuOpensLeft
+      ? { right: `calc(100% + ${SUBMENU_GAP}px)` }
+      : { left: `calc(100% + ${SUBMENU_GAP}px)` }),
+    width: SUBMENU_WIDTH,
+    ...PANEL_BASE_STYLE,
+    zIndex: 1,
+  };
+
+  const handlePointerDown = (event: PointerEvent<HTMLDivElement>) => {
+    // 追加: popover 内 pointer 操作を grid 側へ伝播させません
+    //       (列選択開始や outside click 判定との競合を避けます)。
+    event.stopPropagation();
+  };
+
+  const handleKeyDownCapture = (event: KeyboardEvent<HTMLDivElement>) => {
+    // 追加: portal 内 keyboard イベントを React ツリー上の parent へ流しません。
+    //       Escape での close は controller の window keydown リスナーが担当します。
+    event.stopPropagation();
+  };
+
+  return createPortal(
+    <div
+      ref={popoverRef}
+      onPointerDown={handlePointerDown}
+      onKeyDownCapture={handleKeyDownCapture}
+      onContextMenu={(event) => {
+        // 追加: メニュー上での右クリックはブラウザ標準メニューを出しません。
+        event.preventDefault();
+      }}
+      style={wrapperStyle}
+    >
+      <div
+        style={{
+          fontSize: 12,
+          fontWeight: 700,
+          color: '#334155',
+          padding: '2px 8px 6px',
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+          whiteSpace: 'nowrap',
+          borderBottom: '1px solid #e2e8f0',
+          marginBottom: 4,
+          userSelect: 'none',
+        }}
+      >
+        {title}
+      </div>
+
+      {/* ── ルート項目: 列の固定 ›(サブメニュー親) ── */}
+      {/* 追加(13-A2): サブメニューはこの行(position: relative)基準で絶対配置します。
+          パネル自体は overflow を持たないため、wrapper の外側(右隣 / 左隣)へ
+          はみ出して表示されます。popoverRef(wrapper)の子孫なので、controller の
+          outside-pointerdown 判定(contains)にもそのまま含まれます。 */}
+      <div style={{ position: 'relative' }}>
+        <button
+          type="button"
+          onPointerEnter={() => {
+            // 変更(13-B1): AG Grid と同様、hover でこの項目のサブメニューを開きます
+            //             (他のサブメニューが開いていれば置き換わります)。
+            setOpenSubmenuKey(PIN_SUBMENU_KEY);
+          }}
+          onClick={() => {
+            // 変更(13-B1): クリックでもトグルできるようにします(タッチ環境向け)。
+            setOpenSubmenuKey((current) =>
+              current === PIN_SUBMENU_KEY ? null : PIN_SUBMENU_KEY,
+            );
+          }}
+          style={getMenuItemStyle(false, isPinSubmenuOpen)}
+        >
+          {/* 注記: ✓ 列との左端揃えのため、サブメニュー項目と同じ幅のスペーサを置きます。*/}
+          <span style={{ width: 14, flex: '0 0 auto' }} />
+          <span style={{ minWidth: 0, flex: 1 }}>列の固定</span>
+          <span
+            style={{
+              flex: '0 0 auto',
+              color: '#94a3b8',
+              fontSize: 12,
+              lineHeight: 1,
+            }}
+          >
+            ›
+          </span>
+        </button>
+
+        {/* ── サブメニュー: 固定しない / 左に固定 / 右に固定 ── */}
+        {isPinSubmenuOpen && (
+          <div style={submenuStyle}>
+            {PINNED_ITEMS.map((item) => {
+              const isSelected = pinned === item.value;
+              return (
+                <button
+                  key={item.label}
+                  type="button"
+                  disabled={!canChangePinned}
+                  onClick={() => {
+                    if (!canChangePinned) {
+                      return;
+                    }
+                    // 注記: 現在値と同じ項目を選んでも閉じるだけになります
+                    //       (no-op 判定は SpreadsheetGrid 側で行います)。
+                    onPinnedChange(columnKey, item.value);
+                  }}
+                  onPointerEnter={(event) => {
+                    if (canChangePinned) {
+                      event.currentTarget.style.backgroundColor = '#f1f5f9';
+                    }
+                  }}
+                  onPointerLeave={(event) => {
+                    event.currentTarget.style.backgroundColor = 'transparent';
+                  }}
+                  style={getMenuItemStyle(!canChangePinned, false)}
+                >
+                  {/* 追加: 現在の固定状態に ✓ を出します(未選択は幅だけ確保して揃えます)。*/}
+                  <span
+                    style={{
+                      width: 14,
+                      flex: '0 0 auto',
+                      color: '#2563eb',
+                      fontWeight: 700,
+                      visibility: isSelected ? 'visible' : 'hidden',
+                    }}
+                  >
+                    ✓
+                  </span>
+                  <span style={{ minWidth: 0, flex: 1 }}>{item.label}</span>
+                </button>
+              );
+            })}
+
+            {!canChangePinned && (
+              <div
+                style={{
+                  fontSize: 11,
+                  color: '#94a3b8',
+                  padding: '4px 8px 2px',
+                  userSelect: 'none',
+                }}
+              >
+                onColumnsChange 未指定のため固定状態を変更できません
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* ── ルート項目: 幅の自動調整(13-B1) ── */}
+      {/* 追加(13-B1): サブメニューを持たないルート項目です。hover で
+          setOpenSubmenuKey(null) し、開いているカスケード(列の固定)を閉じます
+          (AG Grid の「別項目 hover でサブメニューが閉じる」挙動)。
+          hover ハイライトはサブメニュー項目と同じ DOM 直接書き換え方式です
+          (state を使うと hover のたびに popover 全体が再レンダーされるため)。
+          実際の close と幅反映は SpreadsheetGrid 側ハンドラが行います。 */}
+      <button
+        type="button"
+        onPointerEnter={(event) => {
+          setOpenSubmenuKey(null);
+          event.currentTarget.style.backgroundColor = '#f1f5f9';
+        }}
+        onPointerLeave={(event) => {
+          event.currentTarget.style.backgroundColor = 'transparent';
+        }}
+        onClick={() => {
+          onAutosizeColumn(columnKey);
+        }}
+        style={getMenuItemStyle(false, false)}
+      >
+        {/* 注記: ✓ 列との左端揃え用スペーサです(ピン行と同じ幅)。*/}
+        <span style={{ width: 14, flex: '0 0 auto' }} />
+        <span style={{ minWidth: 0, flex: 1 }}>この列の幅を自動調整</span>
+      </button>
+
+      <button
+        type="button"
+        onPointerEnter={(event) => {
+          setOpenSubmenuKey(null);
+          event.currentTarget.style.backgroundColor = '#f1f5f9';
+        }}
+        onPointerLeave={(event) => {
+          event.currentTarget.style.backgroundColor = 'transparent';
+        }}
+        onClick={() => {
+          onAutosizeAllColumns();
+        }}
+        style={getMenuItemStyle(false, false)}
+      >
+        <span style={{ width: 14, flex: '0 0 auto' }} />
+        <span style={{ minWidth: 0, flex: 1 }}>すべての列の幅を自動調整</span>
+      </button>
+
+      {/* ── ルート項目: 列の表示(13-B2-1) ── */}
+      {/* 追加(13-B2-1): サブメニューではなく別 popover(ColumnChooserPanel)を開く
+          リーフ項目です。autosize 項目と同じく hover で setOpenSubmenuKey(null) し、
+          開いているカスケード(列の固定)を閉じます。クリックで列メニューを閉じて
+          パネルを開く処理は SpreadsheetGrid 側(onOpenColumnChooser)が担います。 */}
+      <button
+        type="button"
+        onPointerEnter={(event) => {
+          setOpenSubmenuKey(null);
+          event.currentTarget.style.backgroundColor = '#f1f5f9';
+        }}
+        onPointerLeave={(event) => {
+          event.currentTarget.style.backgroundColor = 'transparent';
+        }}
+        onClick={() => {
+          onOpenColumnChooser();
+        }}
+        style={getMenuItemStyle(false, false)}
+      >
+        <span style={{ width: 14, flex: '0 0 auto' }} />
+        <span style={{ minWidth: 0, flex: 1 }}>列の表示</span>
+      </button>
+
+      <div
+        style={{
+          borderTop: '1px solid #e2e8f0',
+          marginTop: 4,
+          paddingTop: 6,
+          display: 'flex',
+          justifyContent: 'flex-end',
+        }}
+      >
+        <button
+          type="button"
+          onClick={onRequestClose}
+          style={{
+            border: '1px solid #cbd5e1',
+            backgroundColor: '#ffffff',
+            color: '#475569',
+            borderRadius: 8,
+            padding: '5px 10px',
+            cursor: 'pointer',
+            fontSize: 12,
+          }}
+        >
+          閉じる
+        </button>
+      </div>
+    </div>,
+    document.body,
+  );
+}
+
+export default ColumnMenuPopover;
 </file>
 
 <file path="src/components/spreadsheet-grid/view/gridBarStyles.ts">
@@ -7662,6 +8341,12 @@ import GridBodyLayer from './view/GridBodyLayer';
 import GridHeaderRow from './view/GridHeaderRow';
 import useColumnMenuController from './hooks/useColumnMenuController';
 import ColumnMenuPopover from './view/ColumnMenuPopover';
+// 追加(13-B2-1): 列の表示/非表示パネル(AG Grid の Choose Columns 相当)です。
+import useColumnChooserController from './hooks/useColumnChooserController';
+import ColumnChooserPanel, { type ColumnChooserItem } from './view/ColumnChooserPanel';
+// import ColumnChooserPanel, {
+//   type ColumnChooserItem,
+// } from './view/ColumnChooserPanel';
 
 // 追加: 元 rows と filteredRows の対応を安定して持つための row model です。
 type SourceRowModel<T> = GridRowModelLike<T> & {
@@ -7770,6 +8455,32 @@ export function SpreadsheetGrid<T extends object>({
   //           読めれば十分なので、ref 経由の読み出しに置き換えて依存から外します。
   const columnWidthsRef = useRef(uiState.columnWidths);
   columnWidthsRef.current = uiState.columnWidths;
+
+  // 追加(13-B2-2): 列リセット用の「初期 column defs スナップショット」です。
+  // 設計メモ(スナップショット保持の方針 = (A) 内部 ref / 自己完結):
+  //   - 初回マウント時の columns から key ごとの {width, pinned, visible} を退避します。
+  //     遅延初期化(current が null のときだけ構築)なので構築は一度きりで、以後は
+  //     columns prop が変わっても更新しません(= ユーザー操作後の状態を「初期」と
+  //     誤認しないため)。リセットはここに退避した値へ戻します。
+  //   - 明示 API(initialColumns prop / onResetColumns)による consumer 制御リセット
+  //     (方針 (B))は、将来必要になればこの ref を prop 優先へ差し替えるだけで載せ替え
+  //     可能です。現時点では追加 props を増やさず自己完結を優先します。
+  //   - StrictMode の二重 invoke / 二重 mount では columns がいずれも初期値のため、
+  //     退避内容は同一になります(再 mount 時は再構築されますが結果は不変)。
+  //   - マウント後に追加された列(createOverflowColumn)は本スナップショットに存在せず、
+  //     リセット対象外になります(handleColumnChooserReset 側で対象外扱い)。
+  const initialColumnStateRef = useRef<Map<
+    string,
+    { width: number; pinned: GridColumn<T>['pinned']; visible: boolean | undefined }
+  > | null>(null);
+  if (initialColumnStateRef.current === null) {
+    initialColumnStateRef.current = new Map(
+      columns.map((column) => [
+        column.key,
+        { width: column.width, pinned: column.pinned, visible: column.visible },
+      ]),
+    );
+  }
 
   // 追加(11-A): GridBodyLayer / GridHeaderRow へ uiState を渡さないための
   //             正規化済み選択スナップショットです。
@@ -7930,6 +8641,21 @@ export function SpreadsheetGrid<T extends object>({
     closeColumnMenu,
   } = useColumnMenuController({
     visibleColumns,
+    enableColumnMenu,
+    gridRootRef,
+  });
+
+  // ── column chooser(13-B2-1) ──────────────────────────
+  // 追加(13-B2-1): 列の表示/非表示パネルの controller です。列メニューの項目
+  //             「列の表示」から開きます(その際メニューは閉じます)。
+  //             相互排他は各 controller の outside-pointerdown close が自然に担います。
+  const {
+    isColumnChooserOpen,
+    columnChooserLayout,
+    columnChooserRef,
+    openColumnChooser,
+    closeColumnChooser,
+  } = useColumnChooserController({
     enableColumnMenu,
     gridRootRef,
   });
@@ -8666,6 +9392,193 @@ export function SpreadsheetGrid<T extends object>({
     dispatch(gridActions.syncColumnWidths(nextWidths));
   }, [closeColumnMenu, dispatch, filteredRows, visibleColumns]);
 
+  // ── column chooser actions(13-B2-1) ──────────────────
+  // 追加(13-B2-1): パネルへ渡す列一覧です。visibleColumns ではなく columns(全列)から
+  //             作ります(非表示列も一覧して再表示できるようにするため)。
+  //             title 未指定は key を表示名にします。
+  const columnChooserItems = useMemo<ColumnChooserItem[]>(
+    () =>
+      columns.map((column) => ({
+        key: column.key,
+        title: column.title ?? column.key,
+        visible: column.visible !== false,
+      })),
+    [columns],
+  );
+
+  // 追加(13-B2-1): 列メニューの「列の表示」項目からパネルを開きます
+  //             (メニューを閉じてからパネルを開きます)。
+  const handleColumnMenuOpenChooser = useCallback(() => {
+    closeColumnMenu();
+    openColumnChooser();
+  }, [closeColumnMenu, openColumnChooser]);
+
+  // 追加(13-B2-1): パネルでの 1 列の表示/非表示トグルです。
+  // 設計メモ(handleColumnMenuPinnedChange と同型):
+  //   - columns は controlled props のため onColumnsChange 経由で反映します。
+  //   - 対象外の列も columnWidthsRef の解決済み幅を defs へ書き戻して保全します
+  //     (visible 変更 → visibleColumns 変化 → columnWidths/sync が走るため。
+  //      書き戻さないと手動リサイズ幅がトグルのたびにリセットされます)。
+  //   - 表示/非表示で orderedColumns の視覚順(= selection / activeCell の論理 index 空間)
+  //     が変わるため、選択・アクティブセル・編集は破棄します(pin と同じ理由)。
+  //   - 最後の 1 列は非表示にできません(パネル側でも disabled ですが二重ガード)。
+  const handleColumnChooserToggleVisibility = useCallback(
+    (columnKey: string, nextVisible: boolean) => {
+      if (!onColumnsChange) {
+        return;
+      }
+
+      const targetColumn = columns.find((column) => column.key === columnKey);
+      if (!targetColumn) {
+        return;
+      }
+
+      const currentVisible = targetColumn.visible !== false;
+      if (currentVisible === nextVisible) {
+        // 現在値と同じトグルは no-op。
+        return;
+      }
+
+      if (!nextVisible) {
+        const visibleCount = columns.filter(
+          (column) => column.visible !== false,
+        ).length;
+        if (visibleCount <= 1) {
+          // 最後の 1 列は非表示にしません(空グリッド回避)。
+          return;
+        }
+      }
+
+      const nextColumns = columns.map((column) => {
+        const resolvedWidth =
+          columnWidthsRef.current[column.key] ?? column.width;
+        if (column.key === columnKey) {
+          return { ...column, width: resolvedWidth, visible: nextVisible };
+        }
+        return resolvedWidth === column.width
+          ? column
+          : { ...column, width: resolvedWidth };
+      });
+
+      onColumnsChange(nextColumns);
+
+      dispatch(gridActions.stopEdit());
+      dispatch(gridActions.clearSelection());
+      dispatch(gridActions.activateCell(null));
+    },
+    [columns, dispatch, onColumnsChange],
+  );
+
+  // 追加(13-B2-1): パネルの全選択(= すべて表示)です。非表示列がなければ no-op。
+  //             幅書き戻し・選択破棄の作法はトグルと同じです。
+  const handleColumnChooserShowAll = useCallback(() => {
+    if (!onColumnsChange) {
+      return;
+    }
+
+    const hasHidden = columns.some((column) => column.visible === false);
+    if (!hasHidden) {
+      return;
+    }
+
+    const nextColumns = columns.map((column) => {
+      const resolvedWidth =
+        columnWidthsRef.current[column.key] ?? column.width;
+      const needsWidth = resolvedWidth !== column.width;
+      const needsShow = column.visible === false;
+      if (!needsWidth && !needsShow) {
+        return column;
+      }
+      return needsShow
+        ? { ...column, width: resolvedWidth, visible: true }
+        : { ...column, width: resolvedWidth };
+    });
+
+    onColumnsChange(nextColumns);
+
+    dispatch(gridActions.stopEdit());
+    dispatch(gridActions.clearSelection());
+    dispatch(gridActions.activateCell(null));
+  }, [columns, dispatch, onColumnsChange]);
+
+  // 追加(13-B2-2): 全列を初期 column defs の値(幅 / 固定 / 表示)へ戻します。
+  // 設計メモ:
+  //   - columns は controlled props のため onColumnsChange 経由で反映します
+  //     (pin / 表示トグルと同じ経路。内部 state は持ちません)。
+  //   - 【幅の戻し方】対象列は column.width を初期幅へセットするだけでよく、
+  //     syncColumnWidths は呼びません。columns prop の変化で visibleColumns が
+  //     変わり、既存の「columns → columnWidths/sync」effect が
+  //     columnWidths[key] = column.width(= 初期幅) で上書きするため、手動リサイズ済みの
+  //     live 幅は自動的に破棄され初期幅へ戻ります。
+  //     ※ pin / 表示ハンドラが「対象外の列の live 幅を defs へ書き戻して"保全"」するのと
+  //       ちょうど逆向きの操作です(リセットは live 幅を意図的に"破棄"します)。
+  //   - 【スナップショット外の列】マウント後に追加された列(createOverflowColumn)は
+  //     初期スナップショットを持たないためリセット対象外です。ただし commit する場合は
+  //     その列の live 幅を defs へ書き戻して保全します(他ハンドラと同型。書き戻さないと
+  //     上記 sync effect でそれらの列の手動リサイズも巻き添えで消えるため)。
+  //   - 【no-op】初期スナップショットを持つ列がどれも初期状態と差分なしなら dispatch も
+  //     onColumnsChange も行いません(changed フラグ。無駄な再レンダー抑止)。
+  //   - 固定 / 表示の復元で orderedColumns の視覚順(= selection / activeCell の論理 index
+  //     空間)が変わり得るため、選択・アクティブセル・編集は破棄します(pin / 表示と同理由)。
+  //   - 列メニュー root への「列のリセット」項目化は本ハンドラをそのまま再利用すれば
+  //     足せます(本バッチでは最小差分のためパネルフッターのみに置きます)。
+  const handleColumnChooserReset = useCallback(() => {
+    if (!onColumnsChange) {
+      return;
+    }
+    const snapshot = initialColumnStateRef.current;
+    if (!snapshot) {
+      return;
+    }
+
+    let changed = false;
+    const nextColumns = columns.map((column) => {
+      const resolvedWidth =
+        columnWidthsRef.current[column.key] ?? column.width;
+      const initial = snapshot.get(column.key);
+
+      if (!initial) {
+        // マウント後に追加された列はリセット対象外。解決済み幅だけ defs へ
+        // 書き戻して保全します(commit される場合の sync effect による消失を防止)。
+        return resolvedWidth === column.width
+          ? column
+          : { ...column, width: resolvedWidth };
+      }
+
+      const initialPinned = initial.pinned ?? undefined;
+      const widthDiff = resolvedWidth !== initial.width;
+      const pinnedDiff = (column.pinned ?? undefined) !== initialPinned;
+      const visibleDiff =
+        (column.visible !== false) !== (initial.visible !== false);
+
+      if (widthDiff || pinnedDiff || visibleDiff) {
+        changed = true;
+      }
+
+      // 注記: 初期幅を column.width にセットするのが重要です。これにより commit 後の
+      //       sync effect が columnWidths を初期幅で上書きし、live 幅が破棄されます。
+      //       差分なしの列も同じ正規化を行い、column.width と初期幅の不整合
+      //       (過去の書き戻しで def 幅がずれているケース)による幅ジャンプを防ぎます。
+      return {
+        ...column,
+        width: initial.width,
+        pinned: initial.pinned,
+        visible: initial.visible,
+      };
+    });
+
+    if (!changed) {
+      // どの初期列も初期状態のまま → 何もしません(再レンダー抑止)。
+      return;
+    }
+
+    onColumnsChange(nextColumns);
+
+    dispatch(gridActions.stopEdit());
+    dispatch(gridActions.clearSelection());
+    dispatch(gridActions.activateCell(null));
+  }, [columns, dispatch, onColumnsChange]);
+
   // ── filter popover actions ────────────────────────────
   // 追加(12-A): popover を開いている列の select / set 候補です。
   // 変更理由: 従来は JSX 内で getColumnSelectOptions(openedFilterColumn) を直接呼んでおり、
@@ -9129,14 +10042,34 @@ export function SpreadsheetGrid<T extends object>({
       onPinnedChange={handleColumnMenuPinnedChange}
       onAutosizeColumn={handleColumnMenuAutosizeColumn}
       onAutosizeAllColumns={handleColumnMenuAutosizeAllColumns}
+      onOpenColumnChooser={handleColumnMenuOpenChooser}
       onRequestClose={closeColumnMenu}
     />
   ) : null;
 
+  // ── column chooser panel(13-B2-1) ────────────────────
+  // 追加(13-B2-1): 列の表示/非表示パネルの描画です(portal で body 直下へ出します)。
+  const renderedColumnChooserPanel = (
+    <ColumnChooserPanel
+      isOpen={isColumnChooserOpen}
+      items={columnChooserItems}
+      canToggle={Boolean(onColumnsChange)}
+      layout={columnChooserLayout}
+      panelRef={columnChooserRef}
+      onToggleColumnVisibility={handleColumnChooserToggleVisibility}
+      onShowAllColumns={handleColumnChooserShowAll}
+      onResetColumns={handleColumnChooserReset}
+      onRequestClose={closeColumnChooser}
+    />
+  );
+
   // 追加(13-A): いずれかの popup(フィルター / 列メニュー)表示中かどうかです。
   //             grid root の tab フォーカス / keyboard / paste handler の一時停止に使います
   //             (従来は isFilterPopoverOpen のみで判定していました)。
-  const isAnyGridPopupOpen = isFilterPopoverOpen || isColumnMenuOpen;
+  // 変更(13-B2-1): 列の表示/非表示パネルも含めます(パネル表示中も grid の
+  //             keyboard/paste を止めます。パネルの検索入力にフォーカスが入るため)。
+  const isAnyGridPopupOpen =
+    isFilterPopoverOpen || isColumnMenuOpen || isColumnChooserOpen;
 
   // ── slot bars ─────────────────────────────────────────
   // 追加: slot helper を使って top/bottom の描画を解決します。
@@ -9533,6 +10466,8 @@ export function SpreadsheetGrid<T extends object>({
       {renderedFilterPopover}
       {/* 追加(13-A): 列メニュー popover(列固定の切替 UI)です。*/}
       {renderedColumnMenuPopover}
+      {/* 追加(13-B2-1): 列の表示/非表示パネル(Choose Columns 相当)です。*/}
+      {renderedColumnChooserPanel}
     </div>
   );
 }

@@ -5,6 +5,10 @@
 //   - 本コンポーネントは非ジェネリックです(ColumnMenuPopover と同様、プリミティブな
 //     items だけを受け取ります)。一覧は「全列(非表示列を含む)」を渡す必要があるため、
 //     呼び出し側は visibleColumns ではなく columns から items を作ります。
+// 変更(13-B2-2): フッターに「すべての列を初期状態に戻す」ボタンを追加します
+//   (AG Grid の Columns Tool Panel 末尾 "Reset Columns" 相当)。幅 / 固定 / 表示を
+//   初期 column defs へ戻す操作で、ロジックは呼び出し側(onResetColumns)が持ちます。
+//   canToggle(= onColumnsChange 指定あり)が false のときは無効化します。
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import type {
@@ -33,6 +37,9 @@ type ColumnChooserPanelProps = {
   onToggleColumnVisibility: (columnKey: string, nextVisible: boolean) => void;
   // 追加: 全選択(= すべて表示)。最後の 1 列ガードのため「全消し」はサポートしません。
   onShowAllColumns: () => void;
+  // 追加(13-B2-2): 全列を初期状態(幅 / 固定 / 表示)へ戻します。
+  //   ロジックは呼び出し側。canToggle が false のときフッターのボタンは無効化されます。
+  onResetColumns: () => void;
   onRequestClose: () => void;
 };
 
@@ -119,6 +126,7 @@ export function ColumnChooserPanel({
   panelRef,
   onToggleColumnVisibility,
   onShowAllColumns,
+  onResetColumns,
   onRequestClose,
 }: ColumnChooserPanelProps) {
   const [query, setQuery] = useState('');
@@ -396,20 +404,63 @@ export function ColumnChooserPanel({
         )}
       </div>
 
-      {!canToggle && (
-        <div
+      {/* ── フッター: 列のリセット + (無効時)注記 ── */}
+      <div
+        style={{
+          paddingTop: 8,
+          marginTop: 8,
+          borderTop: '1px solid #e2e8f0',
+        }}
+      >
+        <button
+          type="button"
+          disabled={!canToggle}
+          onClick={() => {
+            if (!canToggle) {
+              return;
+            }
+            onResetColumns();
+          }}
+          title="すべての列の幅・固定・表示を初期状態に戻します"
           style={{
-            fontSize: 11,
-            color: '#94a3b8',
-            paddingTop: 8,
-            marginTop: 8,
-            borderTop: '1px solid #e2e8f0',
+            display: 'block',
+            width: '100%',
+            boxSizing: 'border-box',
+            padding: '7px 8px',
+            border: '1px solid #e2e8f0',
+            borderRadius: 8,
+            backgroundColor: 'transparent',
+            color: canToggle ? '#334155' : '#cbd5e1',
+            cursor: canToggle ? 'pointer' : 'default',
+            fontSize: 13,
+            textAlign: 'center',
             userSelect: 'none',
           }}
+          onPointerEnter={(event) => {
+            if (canToggle) {
+              event.currentTarget.style.backgroundColor = '#f1f5f9';
+            }
+          }}
+          onPointerLeave={(event) => {
+            event.currentTarget.style.backgroundColor = 'transparent';
+          }}
         >
-          onColumnsChange 未指定のため表示/非表示を変更できません
-        </div>
-      )}
+          すべての列を初期状態に戻す
+        </button>
+
+        {!canToggle && (
+          <div
+            style={{
+              fontSize: 11,
+              color: '#94a3b8',
+              marginTop: 8,
+              userSelect: 'none',
+            }}
+          >
+            onColumnsChange 未指定のため表示/非表示・リセットを変更できません
+          </div>
+        )}
+      </div>
     </div>,
     document.body,
   );

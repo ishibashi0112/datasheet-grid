@@ -9,6 +9,9 @@
 //             戻すことで、AG Grid の「別項目 hover でカスケードが閉じる」挙動になります。
 // 変更(13-B2-1): ルート項目「列の表示」を追加します(AG Grid の Choose Columns 相当)。
 //             サブメニューではなく別 popover(ColumnChooserPanel)を開くリーフ項目です。
+// 追加(13-B2-3 / gpt5.5対応): ルート項目「列のリセット」を追加します。
+//             既存の ColumnChooserPanel フッターと同じ reset 処理を呼び出し、列メニュー側からも
+//             AG Grid の Reset Columns 相当を実行できるようにします。
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import type {
@@ -69,6 +72,10 @@ type ColumnMenuPopoverProps = {
   //             この項目はサブメニューではなく別 popover を開くリーフ項目です
   //             (クリックで列メニューを閉じてパネルを開きます。配線は SpreadsheetGrid 側)。
   onOpenColumnChooser: () => void;
+  // 追加(13-B2-3 / gpt5.5対応): 列メニュー root の「列のリセット」用です。
+  //             columns は controlled props のため、onColumnsChange 未指定時は無効化します。
+  canResetColumns: boolean;
+  onResetColumns: () => void;
   onRequestClose: () => void;
 };
 
@@ -114,6 +121,8 @@ export function ColumnMenuPopover({
   onAutosizeColumn,
   onAutosizeAllColumns,
   onOpenColumnChooser,
+  canResetColumns,
+  onResetColumns,
   onRequestClose,
 }: ColumnMenuPopoverProps) {
   // 変更(13-B1): isPinSubmenuOpen: boolean → openSubmenuKey: string | null へ一般化します
@@ -371,6 +380,40 @@ export function ColumnMenuPopover({
       >
         <span style={{ width: 14, flex: '0 0 auto' }} />
         <span style={{ minWidth: 0, flex: 1 }}>列の表示</span>
+      </button>
+
+      {/* ── ルート項目: 列のリセット(13-B2-3 / gpt5.5対応) ── */}
+      {/* 追加(13-B2-3 / gpt5.5対応): 既存の ColumnChooserPanel フッターと同じ
+          リセット処理を列メニュー root からも呼べるようにします。サブメニューではない
+          リーフ項目なので、hover 時は openSubmenuKey を null に戻します。 */}
+      <button
+        type="button"
+        aria-disabled={!canResetColumns}
+        tabIndex={canResetColumns ? 0 : -1}
+        title={
+          canResetColumns
+            ? 'すべての列の幅・固定・表示を初期状態に戻します'
+            : 'onColumnsChange 未指定のため列をリセットできません'
+        }
+        onPointerEnter={(event) => {
+          setOpenSubmenuKey(null);
+          if (canResetColumns) {
+            event.currentTarget.style.backgroundColor = '#f1f5f9';
+          }
+        }}
+        onPointerLeave={(event) => {
+          event.currentTarget.style.backgroundColor = 'transparent';
+        }}
+        onClick={() => {
+          if (!canResetColumns) {
+            return;
+          }
+          onResetColumns();
+        }}
+        style={getMenuItemStyle(!canResetColumns, false)}
+      >
+        <span style={{ width: 14, flex: '0 0 auto' }} />
+        <span style={{ minWidth: 0, flex: 1 }}>列のリセット</span>
       </button>
 
       <div
