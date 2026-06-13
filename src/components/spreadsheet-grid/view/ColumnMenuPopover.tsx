@@ -7,6 +7,8 @@
 //             追加します(AG Grid の Autosize This Column / Autosize All Columns 相当)。
 //             サブメニューを持たないルート項目への hover で openSubmenuKey を null に
 //             戻すことで、AG Grid の「別項目 hover でカスケードが閉じる」挙動になります。
+// 変更(13-B2-1): ルート項目「列の表示」を追加します(AG Grid の Choose Columns 相当)。
+//             サブメニューではなく別 popover(ColumnChooserPanel)を開くリーフ項目です。
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import type {
@@ -63,6 +65,10 @@ type ColumnMenuPopoverProps = {
   //             常に有効です(手動リサイズと同じ扱い)。
   onAutosizeColumn: (columnKey: string) => void;
   onAutosizeAllColumns: () => void;
+  // 追加(13-B2-1): 列の表示/非表示パネル(ColumnChooserPanel)を開くハンドラです。
+  //             この項目はサブメニューではなく別 popover を開くリーフ項目です
+  //             (クリックで列メニューを閉じてパネルを開きます。配線は SpreadsheetGrid 側)。
+  onOpenColumnChooser: () => void;
   onRequestClose: () => void;
 };
 
@@ -107,6 +113,7 @@ export function ColumnMenuPopover({
   onPinnedChange,
   onAutosizeColumn,
   onAutosizeAllColumns,
+  onOpenColumnChooser,
   onRequestClose,
 }: ColumnMenuPopoverProps) {
   // 変更(13-B1): isPinSubmenuOpen: boolean → openSubmenuKey: string | null へ一般化します
@@ -341,6 +348,29 @@ export function ColumnMenuPopover({
       >
         <span style={{ width: 14, flex: '0 0 auto' }} />
         <span style={{ minWidth: 0, flex: 1 }}>すべての列の幅を自動調整</span>
+      </button>
+
+      {/* ── ルート項目: 列の表示(13-B2-1) ── */}
+      {/* 追加(13-B2-1): サブメニューではなく別 popover(ColumnChooserPanel)を開く
+          リーフ項目です。autosize 項目と同じく hover で setOpenSubmenuKey(null) し、
+          開いているカスケード(列の固定)を閉じます。クリックで列メニューを閉じて
+          パネルを開く処理は SpreadsheetGrid 側(onOpenColumnChooser)が担います。 */}
+      <button
+        type="button"
+        onPointerEnter={(event) => {
+          setOpenSubmenuKey(null);
+          event.currentTarget.style.backgroundColor = '#f1f5f9';
+        }}
+        onPointerLeave={(event) => {
+          event.currentTarget.style.backgroundColor = 'transparent';
+        }}
+        onClick={() => {
+          onOpenColumnChooser();
+        }}
+        style={getMenuItemStyle(false, false)}
+      >
+        <span style={{ width: 14, flex: '0 0 auto' }} />
+        <span style={{ minWidth: 0, flex: 1 }}>列の表示</span>
       </button>
 
       <div

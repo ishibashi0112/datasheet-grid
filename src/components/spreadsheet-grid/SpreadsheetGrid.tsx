@@ -100,6 +100,12 @@ import GridBodyLayer from './view/GridBodyLayer';
 import GridHeaderRow from './view/GridHeaderRow';
 import useColumnMenuController from './hooks/useColumnMenuController';
 import ColumnMenuPopover from './view/ColumnMenuPopover';
+// 追加(13-B2-1): 列の表示/非表示パネル(AG Grid の Choose Columns 相当)です。
+import useColumnChooserController from './hooks/useColumnChooserController';
+import ColumnChooserPanel, { type ColumnChooserItem } from './view/ColumnChooserPanel';
+// import ColumnChooserPanel, {
+//   type ColumnChooserItem,
+// } from './view/ColumnChooserPanel';
 
 // 追加: 元 rows と filteredRows の対応を安定して持つための row model です。
 type SourceRowModel<T> = GridRowModelLike<T> & {
@@ -368,6 +374,21 @@ export function SpreadsheetGrid<T extends object>({
     closeColumnMenu,
   } = useColumnMenuController({
     visibleColumns,
+    enableColumnMenu,
+    gridRootRef,
+  });
+
+  // ── column chooser(13-B2-1) ──────────────────────────
+  // 追加(13-B2-1): 列の表示/非表示パネルの controller です。列メニューの項目
+  //             「列の表示」から開きます(その際メニューは閉じます)。
+  //             相互排他は各 controller の outside-pointerdown close が自然に担います。
+  const {
+    isColumnChooserOpen,
+    columnChooserLayout,
+    columnChooserRef,
+    openColumnChooser,
+    closeColumnChooser,
+  } = useColumnChooserController({
     enableColumnMenu,
     gridRootRef,
   });
@@ -1104,6 +1125,115 @@ export function SpreadsheetGrid<T extends object>({
     dispatch(gridActions.syncColumnWidths(nextWidths));
   }, [closeColumnMenu, dispatch, filteredRows, visibleColumns]);
 
+  // ── column chooser actions(13-B2-1) ──────────────────
+  // 追加(13-B2-1): パネルへ渡す列一覧です。visibleColumns ではなく columns(全列)から
+  //             作ります(非表示列も一覧して再表示できるようにするため)。
+  //             title 未指定は key を表示名にします。
+  const columnChooserItems = useMemo<ColumnChooserItem[]>(
+    () =>
+      columns.map((column) => ({
+        key: column.key,
+        title: column.title ?? column.key,
+        visible: column.visible !== false,
+      })),
+    [columns],
+  );
+
+  // 追加(13-B2-1): 列メニューの「列の表示」項目からパネルを開きます
+  //             (メニューを閉じてからパネルを開きます)。
+  const handleColumnMenuOpenChooser = useCallback(() => {
+    closeColumnMenu();
+    openColumnChooser();
+  }, [closeColumnMenu, openColumnChooser]);
+
+  // 追加(13-B2-1): パネルでの 1 列の表示/非表示トグルです。
+  // 設計メモ(handleColumnMenuPinnedChange と同型):
+  //   - columns は controlled props のため onColumnsChange 経由で反映します。
+  //   - 対象外の列も columnWidthsRef の解決済み幅を defs へ書き戻して保全します
+  //     (visible 変更 → visibleColumns 変化 → columnWidths/sync が走るため。
+  //      書き戻さないと手動リサイズ幅がトグルのたびにリセットされます)。
+  //   - 表示/非表示で orderedColumns の視覚順(= selection / activeCell の論理 index 空間)
+  //     が変わるため、選択・アクティブセル・編集は破棄します(pin と同じ理由)。
+  //   - 最後の 1 列は非表示にできません(パネル側でも disabled ですが二重ガード)。
+  const handleColumnChooserToggleVisibility = useCallback(
+    (columnKey: string, nextVisible: boolean) => {
+      if (!onColumnsChange) {
+        return;
+      }
+
+      const targetColumn = columns.find((column) => column.key === columnKey);
+      if (!targetColumn) {
+        return;
+      }
+
+      const currentVisible = targetColumn.visible !== false;
+      if (currentVisible === nextVisible) {
+        // 現在値と同じトグルは no-op。
+        return;
+      }
+
+      if (!nextVisible) {
+        const visibleCount = columns.filter(
+          (column) => column.visible !== false,
+        ).length;
+        if (visibleCount <= 1) {
+          // 最後の 1 列は非表示にしません(空グリッド回避)。
+          return;
+        }
+      }
+
+      const nextColumns = columns.map((column) => {
+        const resolvedWidth =
+          columnWidthsRef.current[column.key] ?? column.width;
+        if (column.key === columnKey) {
+          return { ...column, width: resolvedWidth, visible: nextVisible };
+        }
+        return resolvedWidth === column.width
+          ? column
+          : { ...column, width: resolvedWidth };
+      });
+
+      onColumnsChange(nextColumns);
+
+      dispatch(gridActions.stopEdit());
+      dispatch(gridActions.clearSelection());
+      dispatch(gridActions.activateCell(null));
+    },
+    [columns, dispatch, onColumnsChange],
+  );
+
+  // 追加(13-B2-1): パネルの全選択(= すべて表示)です。非表示列がなければ no-op。
+  //             幅書き戻し・選択破棄の作法はトグルと同じです。
+  const handleColumnChooserShowAll = useCallback(() => {
+    if (!onColumnsChange) {
+      return;
+    }
+
+    const hasHidden = columns.some((column) => column.visible === false);
+    if (!hasHidden) {
+      return;
+    }
+
+    const nextColumns = columns.map((column) => {
+      const resolvedWidth =
+        columnWidthsRef.current[column.key] ?? column.width;
+      const needsWidth = resolvedWidth !== column.width;
+      const needsShow = column.visible === false;
+      if (!needsWidth && !needsShow) {
+        return column;
+      }
+      return needsShow
+        ? { ...column, width: resolvedWidth, visible: true }
+        : { ...column, width: resolvedWidth };
+    });
+
+    onColumnsChange(nextColumns);
+
+    dispatch(gridActions.stopEdit());
+    dispatch(gridActions.clearSelection());
+    dispatch(gridActions.activateCell(null));
+  }, [columns, dispatch, onColumnsChange]);
+
   // ── filter popover actions ────────────────────────────
   // 追加(12-A): popover を開いている列の select / set 候補です。
   // 変更理由: 従来は JSX 内で getColumnSelectOptions(openedFilterColumn) を直接呼んでおり、
@@ -1567,14 +1697,33 @@ export function SpreadsheetGrid<T extends object>({
       onPinnedChange={handleColumnMenuPinnedChange}
       onAutosizeColumn={handleColumnMenuAutosizeColumn}
       onAutosizeAllColumns={handleColumnMenuAutosizeAllColumns}
+      onOpenColumnChooser={handleColumnMenuOpenChooser}
       onRequestClose={closeColumnMenu}
     />
   ) : null;
 
+  // ── column chooser panel(13-B2-1) ────────────────────
+  // 追加(13-B2-1): 列の表示/非表示パネルの描画です(portal で body 直下へ出します)。
+  const renderedColumnChooserPanel = (
+    <ColumnChooserPanel
+      isOpen={isColumnChooserOpen}
+      items={columnChooserItems}
+      canToggle={Boolean(onColumnsChange)}
+      layout={columnChooserLayout}
+      panelRef={columnChooserRef}
+      onToggleColumnVisibility={handleColumnChooserToggleVisibility}
+      onShowAllColumns={handleColumnChooserShowAll}
+      onRequestClose={closeColumnChooser}
+    />
+  );
+
   // 追加(13-A): いずれかの popup(フィルター / 列メニュー)表示中かどうかです。
   //             grid root の tab フォーカス / keyboard / paste handler の一時停止に使います
   //             (従来は isFilterPopoverOpen のみで判定していました)。
-  const isAnyGridPopupOpen = isFilterPopoverOpen || isColumnMenuOpen;
+  // 変更(13-B2-1): 列の表示/非表示パネルも含めます(パネル表示中も grid の
+  //             keyboard/paste を止めます。パネルの検索入力にフォーカスが入るため)。
+  const isAnyGridPopupOpen =
+    isFilterPopoverOpen || isColumnMenuOpen || isColumnChooserOpen;
 
   // ── slot bars ─────────────────────────────────────────
   // 追加: slot helper を使って top/bottom の描画を解決します。
@@ -1971,6 +2120,8 @@ export function SpreadsheetGrid<T extends object>({
       {renderedFilterPopover}
       {/* 追加(13-A): 列メニュー popover(列固定の切替 UI)です。*/}
       {renderedColumnMenuPopover}
+      {/* 追加(13-B2-1): 列の表示/非表示パネル(Choose Columns 相当)です。*/}
+      {renderedColumnChooserPanel}
     </div>
   );
 }
