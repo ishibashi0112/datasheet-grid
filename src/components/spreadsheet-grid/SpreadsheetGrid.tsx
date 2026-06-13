@@ -74,6 +74,8 @@ import {
   type PaneColumnExtentMap,
 } from './logic/geometry';
 import { applySort } from './logic/sorting';
+// 追加(13-B1): 列幅自動調整(canvas measureText 方式)の計測ロジックです。
+import { computeAutosizedColumnWidths } from './logic/columnAutosize';
 import type {
   CellCoord,
   CellRenderState,
@@ -1045,6 +1047,63 @@ export function SpreadsheetGrid<T extends object>({
     [closeColumnMenu, columns, dispatch, onColumnsChange],
   );
 
+  // ── column autosize(13-B1) ───────────────────────────
+  // 追加(13-B1): 列メニューからの幅自動調整(AG Grid の Autosize This Column /
+  //             Autosize All Columns 相当)です。
+  // 設計メモ:
+  //   - 幅は手動リサイズと同じく内部 state(columnWidths)で管理されるため、
+  //     pinned と違い onColumnsChange は不要です。columnWidths/sync(merge)で反映します。
+  //     columnWidthsRef にも即時反映されるため、その後の固定切替時の幅書き戻し
+  //     (handleColumnMenuPinnedChange)でも自動調整後の幅が保全されます。
+  //   - 計測対象行は filteredRows(グローバル / 列フィルター適用後の表示行)です。
+  //     AG Grid 本家は「描画済みセルのみ」計測しますが、本実装は全表示行を対象にし、
+  //     ユニーク文字列 dedupe で計測コストを抑えます(詳細は logic/columnAutosize.ts)。
+  //   - 計測結果が現在幅と同じ場合は dispatch しません(no-op。再レンダー抑止)。
+  //   - 選択・アクティブセル・編集は破棄しません(幅変更は論理 index 空間を
+  //     変えないため。手動リサイズと同じ扱いです)。
+  //   - deps に filteredRows / visibleColumns を含みますが、本ハンドラを受け取る
+  //     ColumnMenuPopover はメニュー表示中しか mount されないため、参照変化の
+  //     再レンダーコストは popover のみで実害はありません(latest-ref 化は不要と判断)。
+  const handleColumnMenuAutosizeColumn = useCallback(
+    (columnKey: string) => {
+      closeColumnMenu();
+
+      const targetColumn = visibleColumns.find(
+        (column) => column.key === columnKey,
+      );
+      if (!targetColumn) {
+        return;
+      }
+
+      const nextWidths = computeAutosizedColumnWidths({
+        columns: [targetColumn],
+        rows: filteredRows,
+        gridRoot: gridRootRef.current,
+        currentWidths: columnWidthsRef.current,
+      });
+      if (Object.keys(nextWidths).length === 0) {
+        return;
+      }
+      dispatch(gridActions.syncColumnWidths(nextWidths));
+    },
+    [closeColumnMenu, dispatch, filteredRows, visibleColumns],
+  );
+
+  const handleColumnMenuAutosizeAllColumns = useCallback(() => {
+    closeColumnMenu();
+
+    const nextWidths = computeAutosizedColumnWidths({
+      columns: visibleColumns,
+      rows: filteredRows,
+      gridRoot: gridRootRef.current,
+      currentWidths: columnWidthsRef.current,
+    });
+    if (Object.keys(nextWidths).length === 0) {
+      return;
+    }
+    dispatch(gridActions.syncColumnWidths(nextWidths));
+  }, [closeColumnMenu, dispatch, filteredRows, visibleColumns]);
+
   // ── filter popover actions ────────────────────────────
   // 追加(12-A): popover を開いている列の select / set 候補です。
   // 変更理由: 従来は JSX 内で getColumnSelectOptions(openedFilterColumn) を直接呼んでおり、
@@ -1506,6 +1565,8 @@ export function SpreadsheetGrid<T extends object>({
       layout={columnMenuLayout}
       popoverRef={columnMenuRef}
       onPinnedChange={handleColumnMenuPinnedChange}
+      onAutosizeColumn={handleColumnMenuAutosizeColumn}
+      onAutosizeAllColumns={handleColumnMenuAutosizeAllColumns}
       onRequestClose={closeColumnMenu}
     />
   ) : null;

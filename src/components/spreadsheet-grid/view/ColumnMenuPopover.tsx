@@ -1,8 +1,12 @@
 // 変更(13-A2): フラットな項目列挙 → AG Grid 同様のカスケード(サブメニュー)UI へ変更します。
 //             ルートメニューには「列の固定 ›」を置き、hover / クリックで右隣に
 //             サブメニュー(固定しない / 左に固定 / 右に固定)を開きます。
-//             将来「この列の幅を自動調整」「列の表示/非表示」等のルート項目を
-//             追加しても、同じ MenuRow / サブメニューパターンで拡張できる構成です。
+// 変更(13-B1): 13-A2 セッションの設計決定どおり、サブメニュー開閉状態を
+//             isPinSubmenuOpen: boolean → openSubmenuKey: string | null へ一般化し、
+//             ルート項目に「この列の幅を自動調整」「すべての列の幅を自動調整」を
+//             追加します(AG Grid の Autosize This Column / Autosize All Columns 相当)。
+//             サブメニューを持たないルート項目への hover で openSubmenuKey を null に
+//             戻すことで、AG Grid の「別項目 hover でカスケードが閉じる」挙動になります。
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import type {
@@ -34,6 +38,11 @@ const SUBMENU_WIDTH = 180;
 const SUBMENU_GAP = 4;
 const VIEWPORT_MARGIN = 8;
 
+// 追加(13-B1): サブメニューを持つルート項目の識別キーです。
+//             openSubmenuKey(string | null) との比較で開閉を判定します。
+//             13-B 後続でサブメニュー持ち項目を増やす場合はキーを追加します。
+const PIN_SUBMENU_KEY = 'pin';
+
 type ColumnMenuPopoverProps = {
   isOpen: boolean;
   title: string;
@@ -49,6 +58,11 @@ type ColumnMenuPopoverProps = {
     columnKey: string,
     pinned: GridColumnPinned | undefined,
   ) => void;
+  // 追加(13-B1): 幅自動調整のハンドラです。幅は grid 内部 state(columnWidths)で
+  //             管理されるため、pinned と違い onColumnsChange の有無に依存せず
+  //             常に有効です(手動リサイズと同じ扱い)。
+  onAutosizeColumn: (columnKey: string) => void;
+  onAutosizeAllColumns: () => void;
   onRequestClose: () => void;
 };
 
@@ -91,23 +105,32 @@ export function ColumnMenuPopover({
   layout,
   popoverRef,
   onPinnedChange,
+  onAutosizeColumn,
+  onAutosizeAllColumns,
   onRequestClose,
 }: ColumnMenuPopoverProps) {
-  // 追加(13-A2): 「列の固定」サブメニューの開閉状態です(popover ローカル)。
+  // 変更(13-B1): isPinSubmenuOpen: boolean → openSubmenuKey: string | null へ一般化します
+  //             (13-A2 セッションの設計決定どおり)。
+  //   - サブメニューを持つルート項目: onPointerEnter で setOpenSubmenuKey(自分の key)
+  //   - サブメニューを持たないルート項目: onPointerEnter で setOpenSubmenuKey(null)
+  //     (= 開いているカスケードが閉じる。AG Grid の挙動の肝)
   // 注記: AG Grid と同様、一度開いたサブメニューはポインタが離れても開いたままにし、
-  //       別のルート項目へ hover したとき(将来項目が増えた場合)・メニュー自体が
-  //       閉じたときに閉じます。チラつき防止のため pointerleave では閉じません。
-  const [isPinSubmenuOpen, setIsPinSubmenuOpen] = useState(false);
+  //       別のルート項目へ hover したとき・メニュー自体が閉じたときに閉じます。
+  //       チラつき防止のため pointerleave では閉じません。
+  const [openSubmenuKey, setOpenSubmenuKey] = useState<string | null>(null);
 
   // 追加(13-A2): 開いたまま別列へ切り替えた場合(popover は mount されたまま
   //             columnKey だけ変わる)に、サブメニューの開閉状態を初期化します。
+  // 変更(13-B1): リセット先を openSubmenuKey = null に読み替えます。
   useEffect(() => {
-    setIsPinSubmenuOpen(false);
+    setOpenSubmenuKey(null);
   }, [columnKey, isOpen]);
 
   if (!isOpen || !layout) {
     return null;
   }
+
+  const isPinSubmenuOpen = openSubmenuKey === PIN_SUBMENU_KEY;
 
   // 追加(13-A2): サブメニューを右に開くと viewport をはみ出す場合は左へ開きます
   //             (AG Grid と同じフリップ挙動です)。layout はルートメニューの
@@ -188,12 +211,15 @@ export function ColumnMenuPopover({
         <button
           type="button"
           onPointerEnter={() => {
-            // 追加(13-A2): AG Grid と同様、hover でサブメニューを開きます。
-            setIsPinSubmenuOpen(true);
+            // 変更(13-B1): AG Grid と同様、hover でこの項目のサブメニューを開きます
+            //             (他のサブメニューが開いていれば置き換わります)。
+            setOpenSubmenuKey(PIN_SUBMENU_KEY);
           }}
           onClick={() => {
-            // 追加(13-A2): クリックでもトグルできるようにします(タッチ環境向け)。
-            setIsPinSubmenuOpen((current) => !current);
+            // 変更(13-B1): クリックでもトグルできるようにします(タッチ環境向け)。
+            setOpenSubmenuKey((current) =>
+              current === PIN_SUBMENU_KEY ? null : PIN_SUBMENU_KEY,
+            );
           }}
           style={getMenuItemStyle(false, isPinSubmenuOpen)}
         >
@@ -272,6 +298,50 @@ export function ColumnMenuPopover({
           </div>
         )}
       </div>
+
+      {/* ── ルート項目: 幅の自動調整(13-B1) ── */}
+      {/* 追加(13-B1): サブメニューを持たないルート項目です。hover で
+          setOpenSubmenuKey(null) し、開いているカスケード(列の固定)を閉じます
+          (AG Grid の「別項目 hover でサブメニューが閉じる」挙動)。
+          hover ハイライトはサブメニュー項目と同じ DOM 直接書き換え方式です
+          (state を使うと hover のたびに popover 全体が再レンダーされるため)。
+          実際の close と幅反映は SpreadsheetGrid 側ハンドラが行います。 */}
+      <button
+        type="button"
+        onPointerEnter={(event) => {
+          setOpenSubmenuKey(null);
+          event.currentTarget.style.backgroundColor = '#f1f5f9';
+        }}
+        onPointerLeave={(event) => {
+          event.currentTarget.style.backgroundColor = 'transparent';
+        }}
+        onClick={() => {
+          onAutosizeColumn(columnKey);
+        }}
+        style={getMenuItemStyle(false, false)}
+      >
+        {/* 注記: ✓ 列との左端揃え用スペーサです(ピン行と同じ幅)。*/}
+        <span style={{ width: 14, flex: '0 0 auto' }} />
+        <span style={{ minWidth: 0, flex: 1 }}>この列の幅を自動調整</span>
+      </button>
+
+      <button
+        type="button"
+        onPointerEnter={(event) => {
+          setOpenSubmenuKey(null);
+          event.currentTarget.style.backgroundColor = '#f1f5f9';
+        }}
+        onPointerLeave={(event) => {
+          event.currentTarget.style.backgroundColor = 'transparent';
+        }}
+        onClick={() => {
+          onAutosizeAllColumns();
+        }}
+        style={getMenuItemStyle(false, false)}
+      >
+        <span style={{ width: 14, flex: '0 0 auto' }} />
+        <span style={{ minWidth: 0, flex: 1 }}>すべての列の幅を自動調整</span>
+      </button>
 
       <div
         style={{
