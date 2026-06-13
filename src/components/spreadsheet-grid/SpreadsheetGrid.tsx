@@ -68,6 +68,8 @@ import {
   computePaneColumnExtents,
   computeFullWidthPaneExtents,
   computeSinglePaneColumnExtent,
+  // 追加(13-B3-1.5): 列の所属ペイン(pinned 由来)を columnChooserItems へ付与するために使います。
+  getColumnPane,
   type GridPaneLayout,
   type PaneColumnEntry,
   type ColumnPane,
@@ -1155,12 +1157,17 @@ export function SpreadsheetGrid<T extends object>({
   // 追加(13-B2-1): パネルへ渡す列一覧です。visibleColumns ではなく columns(全列)から
   //             作ります(非表示列も一覧して再表示できるようにするため)。
   //             title 未指定は key を表示名にします。
+  // 変更(13-B3-1.5): 各列の所属ペイン(pinned 由来)を付与します。パネルは pane ごとに
+  //             セクション化して表示するため、画面の列順(reorderColumnsByPane 後)と
+  //             パネル順が一致します(固定列ありでの体感ズレ解消)。pane は visible とは
+  //             無関係に pinned から決まるため、非表示列も正しいセクションへ入ります。
   const columnChooserItems = useMemo<ColumnChooserItem[]>(
     () =>
       columns.map((column) => ({
         key: column.key,
         title: column.title ?? column.key,
         visible: column.visible !== false,
+        pane: getColumnPane(column),
       })),
     [columns],
   );
