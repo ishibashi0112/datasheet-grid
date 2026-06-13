@@ -1,7 +1,6 @@
 // 追加(13-B2-1): 列の表示/非表示パネル(AG Grid の Columns Tool Panel 相当)です。
 //   - タイトル + × クローズ / 検索ボックス / 3 状態の全選択チェックボックス /
 //     列ごとのチェックボックス一覧(チェックで即 表示/非表示)で構成します。
-//   - ドラッグ並べ替え(⠿ ハンドル)は別機能のため本バッチでは出しません(13-B3 で対応)。
 //   - 本コンポーネントは非ジェネリックです(ColumnMenuPopover と同様、プリミティブな
 //     items だけを受け取ります)。一覧は「全列(非表示列を含む)」を渡す必要があるため、
 //     呼び出し側は visibleColumns ではなく columns から items を作ります。
@@ -9,7 +8,18 @@
 //   (AG Grid の Columns Tool Panel 末尾 "Reset Columns" 相当)。幅 / 固定 / 表示を
 //   初期 column defs へ戻す操作で、ロジックは呼び出し側(onResetColumns)が持ちます。
 //   canToggle(= onColumnsChange 指定あり)が false のときは無効化します。
-import { useEffect, useMemo, useRef, useState } from 'react';
+// 変更(13-B3-1): 各行に ⠿ ドラッグハンドルを追加し、pointer ベースで一覧を並べ替えます
+//   (AG Grid の Columns Tool Panel のドラッグ並べ替え相当の第 1 段階)。
+//   - 並べ替えは items(= columns の定義配列順)の順序のみを変更します。pinned の変更や
+//     ペイン跨ぎは本バッチでは扱いません(ヘッダー D&D の 13-B3-2 で対応)。確定した
+//     キー順は onReorderColumns(orderedKeys) で呼び出し側へ渡し、commit は呼び出し側が
+//     担います(表示/非表示・リセットと同じく onColumnsChange 経由)。
+//   - ドラッグ可否は canToggle(= onColumnsChange あり)かつ「検索語が空」のときのみ。
+//     検索で一覧が絞り込まれているときは、絞り込みビュー上の並べ替えが曖昧なため
+//     ハンドルを無効化します(AG Grid 同様)。
+//   - ドラッグ中はドロップ位置インジケータ(行間の細線)を表示し、一覧端付近では
+//     一覧コンテナを自動スクロールします(29 列で一覧が PANEL_MAX_HEIGHT を超えるため)。
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import type {
   CSSProperties,
@@ -40,10 +50,47 @@ type ColumnChooserPanelProps = {
   // 追加(13-B2-2): 全列を初期状態(幅 / 固定 / 表示)へ戻します。
   //   ロジックは呼び出し側。canToggle が false のときフッターのボタンは無効化されます。
   onResetColumns: () => void;
+  // 追加(13-B3-1): ドラッグ並べ替えの確定ハンドラです。並べ替え後の「全列キー順」を
+  //   渡します(items と同一集合の permutation)。commit(onColumnsChange 経由)は
+  //   呼び出し側が担います。検索中・canToggle=false 時は呼ばれません。
+  onReorderColumns: (orderedKeys: string[]) => void;
   onRequestClose: () => void;
 };
 
 const PANEL_MAX_HEIGHT = 420;
+
+// 追加(13-B3-1): ドラッグ中の一覧端オートスクロールのしきい値 / 速度です。
+//   一覧コンテナの上下端から EDGE px 以内にポインタが入ったら、毎フレーム SPEED px ずつ
+//   スクロールします(29 列で一覧が PANEL_MAX_HEIGHT を超えるための補助)。
+const AUTO_SCROLL_EDGE = 28;
+const AUTO_SCROLL_SPEED = 12;
+
+// 追加(13-B3-1): items 上で fromKey の行を「挿入インデックス dropIndex(0..len)」へ
+//   移動した結果の全列キー順を返します。実際の移動が無い(= no-op)場合は null を返します。
+//   dropIndex は「移動前の items における挿入位置」です(行の midpoint より上の行数)。
+function computeReorderedKeys(
+  items: ColumnChooserItem[],
+  fromKey: string,
+  dropIndex: number,
+): string[] | null {
+  const fromIndex = items.findIndex((item) => item.key === fromKey);
+  if (fromIndex < 0) {
+    return null;
+  }
+  // 挿入位置は除去前基準。除去で fromIndex 以降が 1 つ詰まるため to を補正します。
+  let to = dropIndex;
+  if (to > fromIndex) {
+    to -= 1;
+  }
+  to = Math.max(0, Math.min(to, items.length - 1));
+  if (to === fromIndex) {
+    return null;
+  }
+  const keys = items.map((item) => item.key);
+  const [moved] = keys.splice(fromIndex, 1);
+  keys.splice(to, 0, moved);
+  return keys;
+}
 
 const PANEL_STYLE: CSSProperties = {
   position: 'fixed',
@@ -118,6 +165,26 @@ function CheckBox({
   );
 }
 
+// 追加(13-B3-1): ⠿ ドラッグハンドルの見た目です(2×3 の点)。
+//   操作系(pointerdown / capture)は行側に配線し、ここは見た目のみを描画します。
+function DragHandleGlyph({ disabled }: { disabled: boolean }) {
+  return (
+    <svg
+      width="10"
+      height="16"
+      viewBox="0 0 10 16"
+      fill={disabled ? '#cbd5e1' : '#94a3b8'}
+      aria-hidden
+    >
+      {[3, 8, 13].map((cy) =>
+        [3, 7].map((cx) => (
+          <circle key={`${cx}-${cy}`} cx={cx} cy={cy} r="1.2" />
+        )),
+      )}
+    </svg>
+  );
+}
+
 export function ColumnChooserPanel({
   isOpen,
   items,
@@ -127,6 +194,7 @@ export function ColumnChooserPanel({
   onToggleColumnVisibility,
   onShowAllColumns,
   onResetColumns,
+  onReorderColumns,
   onRequestClose,
 }: ColumnChooserPanelProps) {
   const [query, setQuery] = useState('');
@@ -165,6 +233,155 @@ export function ColumnChooserPanel({
     }
     return items.filter((item) => item.title.toLowerCase().includes(q));
   }, [items, query]);
+
+  // ── ドラッグ並べ替え(13-B3-1) ─────────────────────────
+  // ドラッグ可否: onColumnsChange あり(canToggle)かつ検索語が空のときのみ。
+  // 検索中は一覧が絞り込み表示のため、並べ替え対象の全体像が見えず曖昧になるので無効化します。
+  const canDrag = canToggle && query.trim() === '';
+
+  const listRef = useRef<HTMLDivElement | null>(null);
+  // ドラッグ中の列キー(null = 非ドラッグ)。dragActiveRef は pointer ハンドラ内の
+  // 早期 return 判定用(state 反映前の連続イベントでも確実に効くよう ref で持ちます)。
+  const [draggingKey, setDraggingKey] = useState<string | null>(null);
+  const dragActiveRef = useRef(false);
+  // ドロップ挿入位置(items 上の 0..length。length = 末尾へ)。インジケータ描画に使います。
+  const [dropIndex, setDropIndex] = useState<number | null>(null);
+  const pointerYRef = useRef(0);
+  const autoScrollRafRef = useRef<number | null>(null);
+
+  // ポインタ Y から「行 midpoint より上にある行数」= 挿入インデックスを求めます。
+  // DOM の行(data-chooser-row)を直接走査するため、オートスクロール後の座標にも追従します。
+  const updateDropFromPointer = useCallback(() => {
+    const list = listRef.current;
+    if (!list) {
+      return;
+    }
+    const rows = list.querySelectorAll<HTMLElement>('[data-chooser-row]');
+    const y = pointerYRef.current;
+    let index = rows.length;
+    for (let i = 0; i < rows.length; i += 1) {
+      const rect = rows[i].getBoundingClientRect();
+      if (y < rect.top + rect.height / 2) {
+        index = i;
+        break;
+      }
+    }
+    setDropIndex(index);
+  }, []);
+
+  // ドラッグ中、一覧コンテナの上下端付近へポインタが入ったらオートスクロールします。
+  const autoScrollTick = useCallback(() => {
+    const list = listRef.current;
+    if (!list || !dragActiveRef.current) {
+      autoScrollRafRef.current = null;
+      return;
+    }
+    const rect = list.getBoundingClientRect();
+    const y = pointerYRef.current;
+    let delta = 0;
+    if (y < rect.top + AUTO_SCROLL_EDGE) {
+      delta = -AUTO_SCROLL_SPEED;
+    } else if (y > rect.bottom - AUTO_SCROLL_EDGE) {
+      delta = AUTO_SCROLL_SPEED;
+    }
+    if (delta !== 0) {
+      const before = list.scrollTop;
+      list.scrollTop += delta;
+      if (list.scrollTop !== before) {
+        updateDropFromPointer();
+      }
+    }
+    autoScrollRafRef.current = requestAnimationFrame(autoScrollTick);
+  }, [updateDropFromPointer]);
+
+  const finishDrag = useCallback(
+    (commit: boolean) => {
+      if (autoScrollRafRef.current !== null) {
+        cancelAnimationFrame(autoScrollRafRef.current);
+        autoScrollRafRef.current = null;
+      }
+      const key = draggingKey;
+      const targetIndex = dropIndex;
+      dragActiveRef.current = false;
+      setDraggingKey(null);
+      setDropIndex(null);
+      if (commit && key !== null && targetIndex !== null) {
+        const next = computeReorderedKeys(items, key, targetIndex);
+        if (next) {
+          onReorderColumns(next);
+        }
+      }
+    },
+    [draggingKey, dropIndex, items, onReorderColumns],
+  );
+
+  const handleDragHandlePointerDown = useCallback(
+    (key: string, event: PointerEvent<HTMLElement>) => {
+      if (!canDrag) {
+        return;
+      }
+      // 既定のテキスト選択 / 行クリックを抑止し、grid 側へも伝播させません。
+      event.preventDefault();
+      event.stopPropagation();
+      event.currentTarget.setPointerCapture(event.pointerId);
+      dragActiveRef.current = true;
+      pointerYRef.current = event.clientY;
+      setDraggingKey(key);
+      updateDropFromPointer();
+      if (autoScrollRafRef.current === null) {
+        autoScrollRafRef.current = requestAnimationFrame(autoScrollTick);
+      }
+    },
+    [canDrag, updateDropFromPointer, autoScrollTick],
+  );
+
+  const handleDragHandlePointerMove = useCallback(
+    (event: PointerEvent<HTMLElement>) => {
+      if (!dragActiveRef.current) {
+        return;
+      }
+      pointerYRef.current = event.clientY;
+      updateDropFromPointer();
+    },
+    [updateDropFromPointer],
+  );
+
+  const handleDragHandlePointerUp = useCallback(() => {
+    if (!dragActiveRef.current) {
+      return;
+    }
+    finishDrag(true);
+  }, [finishDrag]);
+
+  const handleDragHandlePointerCancel = useCallback(() => {
+    if (!dragActiveRef.current) {
+      return;
+    }
+    finishDrag(false);
+  }, [finishDrag]);
+
+  // panel が閉じる / アンマウントされるときはドラッグ状態と rAF を確実に後始末します。
+  useEffect(() => {
+    if (!isOpen) {
+      dragActiveRef.current = false;
+      setDraggingKey(null);
+      setDropIndex(null);
+      if (autoScrollRafRef.current !== null) {
+        cancelAnimationFrame(autoScrollRafRef.current);
+        autoScrollRafRef.current = null;
+      }
+    }
+  }, [isOpen]);
+
+  useEffect(
+    () => () => {
+      if (autoScrollRafRef.current !== null) {
+        cancelAnimationFrame(autoScrollRafRef.current);
+        autoScrollRafRef.current = null;
+      }
+    },
+    [],
+  );
 
   if (!isOpen || !layout) {
     return null;
@@ -324,6 +541,7 @@ export function ColumnChooserPanel({
 
       {/* ── 列一覧(スクロール) ── */}
       <div
+        ref={listRef}
         style={{
           flex: 1,
           minHeight: 0,
@@ -344,63 +562,134 @@ export function ColumnChooserPanel({
             該当する列がありません
           </div>
         ) : (
-          filteredItems.map((item) => {
+          filteredItems.map((item, index) => {
             // 最後の 1 列ガード: 表示中が 1 列だけのとき、その列はチェックを外せません。
             const isOnlyVisible = item.visible && visibleCount === 1;
             const disabled = !canToggle || isOnlyVisible;
+            const isDragging = draggingKey === item.key;
+            // ドロップインジケータ: この行の直前に挿入される位置のとき細線を出します。
+            // 末尾(dropIndex === filteredItems.length)はループ後に別途描画します。
+            const showDropBefore = draggingKey !== null && dropIndex === index;
             return (
-              <button
+              <div
                 key={item.key}
-                type="button"
-                disabled={disabled}
-                onClick={() => {
-                  if (disabled) {
-                    return;
-                  }
-                  onToggleColumnVisibility(item.key, !item.visible);
-                }}
-                onPointerEnter={(event) => {
-                  if (!disabled) {
-                    event.currentTarget.style.backgroundColor = '#f1f5f9';
-                  }
-                }}
-                onPointerLeave={(event) => {
-                  event.currentTarget.style.backgroundColor = 'transparent';
-                }}
+                data-chooser-row=""
                 style={{
                   display: 'flex',
                   alignItems: 'center',
-                  gap: 10,
-                  width: '100%',
-                  boxSizing: 'border-box',
-                  padding: '7px 8px',
-                  border: 'none',
-                  borderRadius: 8,
-                  backgroundColor: 'transparent',
-                  cursor: disabled ? 'default' : 'pointer',
-                  textAlign: 'left',
+                  gap: 4,
+                  borderTop: showDropBefore
+                    ? '2px solid #2563eb'
+                    : '2px solid transparent',
+                  opacity: isDragging ? 0.4 : 1,
                 }}
               >
-                <CheckBox
-                  state={item.visible ? 'checked' : 'unchecked'}
-                  disabled={disabled}
-                />
+                {/* ⠿ ドラッグハンドル(13-B3-1) */}
                 <span
+                  role="button"
+                  aria-label="ドラッグして並べ替え"
+                  title={
+                    !canToggle
+                      ? 'onColumnsChange 未指定のため並べ替えできません'
+                      : query.trim() !== ''
+                        ? '検索中は並べ替えできません'
+                        : 'ドラッグして並べ替え'
+                  }
+                  onPointerDown={(event) =>
+                    handleDragHandlePointerDown(item.key, event)
+                  }
+                  onPointerMove={handleDragHandlePointerMove}
+                  onPointerUp={handleDragHandlePointerUp}
+                  onPointerCancel={handleDragHandlePointerCancel}
                   style={{
-                    minWidth: 0,
-                    flex: 1,
-                    fontSize: 13,
-                    color: disabled && !item.visible ? '#94a3b8' : '#334155',
-                    overflow: 'hidden',
-                    textOverflow: 'ellipsis',
-                    whiteSpace: 'nowrap',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    flex: '0 0 auto',
+                    width: 18,
+                    height: 28,
+                    borderRadius: 6,
+                    cursor: !canDrag
+                      ? 'default'
+                      : isDragging
+                        ? 'grabbing'
+                        : 'grab',
+                    touchAction: 'none',
+                  }}
+                  onPointerEnter={(event) => {
+                    if (canDrag) {
+                      event.currentTarget.style.backgroundColor = '#f1f5f9';
+                    }
+                  }}
+                  onPointerLeave={(event) => {
+                    event.currentTarget.style.backgroundColor = 'transparent';
                   }}
                 >
-                  {item.title}
+                  <DragHandleGlyph disabled={!canDrag} />
                 </span>
-              </button>
+
+                <button
+                  type="button"
+                  disabled={disabled}
+                  onClick={() => {
+                    if (disabled) {
+                      return;
+                    }
+                    onToggleColumnVisibility(item.key, !item.visible);
+                  }}
+                  onPointerEnter={(event) => {
+                    if (!disabled) {
+                      event.currentTarget.style.backgroundColor = '#f1f5f9';
+                    }
+                  }}
+                  onPointerLeave={(event) => {
+                    event.currentTarget.style.backgroundColor = 'transparent';
+                  }}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 10,
+                    flex: 1,
+                    minWidth: 0,
+                    boxSizing: 'border-box',
+                    padding: '7px 8px',
+                    border: 'none',
+                    borderRadius: 8,
+                    backgroundColor: 'transparent',
+                    cursor: disabled ? 'default' : 'pointer',
+                    textAlign: 'left',
+                  }}
+                >
+                  <CheckBox
+                    state={item.visible ? 'checked' : 'unchecked'}
+                    disabled={disabled}
+                  />
+                  <span
+                    style={{
+                      minWidth: 0,
+                      flex: 1,
+                      fontSize: 13,
+                      color: disabled && !item.visible ? '#94a3b8' : '#334155',
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      whiteSpace: 'nowrap',
+                    }}
+                  >
+                    {item.title}
+                  </span>
+                </button>
+              </div>
             );
           })
+        )}
+        {/* 末尾へのドロップインジケータ(13-B3-1) */}
+        {draggingKey !== null && dropIndex === filteredItems.length && (
+          <div
+            style={{
+              height: 0,
+              borderTop: '2px solid #2563eb',
+            }}
+          />
         )}
       </div>
 

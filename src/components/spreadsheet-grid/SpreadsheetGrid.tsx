@@ -1260,6 +1260,68 @@ export function SpreadsheetGrid<T extends object>({
     dispatch(gridActions.activateCell(null));
   }, [columns, dispatch, onColumnsChange]);
 
+  // 追加(13-B3-1): パネルのドラッグ並べ替えの commit です。
+  // 設計メモ(pin / 表示トグルと同型の作法):
+  //   - columns は controlled props のため onColumnsChange 経由で反映します。
+  //   - パネルから渡される orderedKeys は「全列キーの permutation」です(検索中は
+  //     ドラッグ不可なので、絞り込み部分集合のキーが来ることはありません)。orderedKeys の
+  //     順序で columns を再構築します。集合不一致(長さ違い / 未知キー)のときは安全側に
+  //     倒して no-op にします。
+  //   - 【幅の保全】並べ替えで columns 配列が変わると visibleColumns も変わり、
+  //     既存の「columns → columnWidths/sync」effect が走ります。書き戻さないと手動リサイズ幅が
+  //     並べ替えのたびに defs 幅へ戻ってしまうため、全列について解決済み幅(columnWidthsRef)を
+  //     defs へ書き戻します(pin / 表示ハンドラと同じ"保全"方向)。
+  //   - 【no-op】順序が実際に変わらず、かつ幅の書き戻しも不要なら dispatch も
+  //     onColumnsChange も行いません(mutated フラグ)。
+  //   - 並べ替えは orderedColumns の視覚順(= selection / activeCell の論理 index 空間)を
+  //     変えるため、選択・アクティブセル・編集は破棄します(pin / 表示と同理由)。
+  //   - 注記: 本バッチでは pinned は変更しません。pinned 混在時は配列順を動かすだけで、
+  //     画面側は従来どおり reorderColumnsByPane が pane(left/center/right)へ再グループ化します
+  //     (ペイン跨ぎ・pinned 変更はヘッダー D&D の 13-B3-2 で扱います)。
+  const handleColumnChooserReorder = useCallback(
+    (orderedKeys: string[]) => {
+      if (!onColumnsChange) {
+        return;
+      }
+      if (orderedKeys.length !== columns.length) {
+        return;
+      }
+      const byKey = new Map(columns.map((column) => [column.key, column]));
+
+      let mutated = false;
+      let aborted = false;
+      const nextColumns = orderedKeys.map((key, index) => {
+        const column = byKey.get(key);
+        if (!column) {
+          // 未知キー(集合不一致)→ 安全側に倒して中断します。
+          aborted = true;
+          return columns[index];
+        }
+        if (columns[index]?.key !== key) {
+          mutated = true;
+        }
+        const resolvedWidth =
+          columnWidthsRef.current[column.key] ?? column.width;
+        if (resolvedWidth !== column.width) {
+          mutated = true;
+          return { ...column, width: resolvedWidth };
+        }
+        return column;
+      });
+
+      if (aborted || !mutated) {
+        return;
+      }
+
+      onColumnsChange(nextColumns);
+
+      dispatch(gridActions.stopEdit());
+      dispatch(gridActions.clearSelection());
+      dispatch(gridActions.activateCell(null));
+    },
+    [columns, dispatch, onColumnsChange],
+  );
+
   // 追加(13-B2-2): 全列を初期 column defs の値(幅 / 固定 / 表示)へ戻します。
   // 設計メモ:
   //   - columns は controlled props のため onColumnsChange 経由で反映します
@@ -1831,6 +1893,7 @@ export function SpreadsheetGrid<T extends object>({
       onToggleColumnVisibility={handleColumnChooserToggleVisibility}
       onShowAllColumns={handleColumnChooserShowAll}
       onResetColumns={handleColumnChooserReset}
+      onReorderColumns={handleColumnChooserReorder}
       onRequestClose={closeColumnChooser}
     />
   );
