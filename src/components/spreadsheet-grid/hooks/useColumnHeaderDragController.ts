@@ -142,6 +142,55 @@ const EMPTY_PANE_DROP_BAND = 32;
 //   width:0・sticky で左:ビューポート左端 / 右:ビューポート右端のため符号が反転します)。
 const EMPTY_PANE_INDICATOR_INSET = 2;
 
+// 追加(13-B3-5): ドラッグゴースト(ポインタ追従のピル)関連の定数です。
+//   ゴーストは body 直下に imperative 生成する fixed 要素で、pointermove / autoscroll の
+//   毎フレームに transform: translate で追従します(React state は触らず、再レンダーゼロを維持)。
+//   位置はポインタからわずかに右下へオフセットして、指/カーソルにピルが隠れないようにします。
+const GHOST_OFFSET_X = 14;
+const GHOST_OFFSET_Y = 12;
+// popover(createPortal の fixed 要素)より前面に出します。ドラッグ中だけ DOM に存在します。
+const GHOST_Z_INDEX = 9999;
+// アイコンの一辺(px)。ピル内のアイコンスロットと SVG の width/height を揃えます。
+const GHOST_ICON_SIZE = 14;
+
+// 追加(13-B3-5): ゴーストのアイコン(軽量 inline SVG)。computeHit の pane で出し分けます。
+//   - move(四方向矢印): center へ移動。
+//   - pin(ピン): left / right へ固定(空ペイン帯を含む)。
+//   - out(スラッシュ円): 枠外(hit=null)。13-B3-4 の「離しても何もしない(キャンセル)」を表す
+//     無効サインです(将来 AG Grid 風の「枠外=非表示」を採るなら別アイコンへ差し替え)。
+//   いずれも stroke="currentColor" のため、ピル側の color を継承して着色されます。
+const GHOST_ICON_MOVE =
+  '<svg viewBox="0 0 24 24" width="' +
+  GHOST_ICON_SIZE +
+  '" height="' +
+  GHOST_ICON_SIZE +
+  '" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' +
+  '<polyline points="5 9 2 12 5 15"/><polyline points="9 5 12 2 15 5"/>' +
+  '<polyline points="15 19 12 22 9 19"/><polyline points="19 9 22 12 19 15"/>' +
+  '<line x1="2" y1="12" x2="22" y2="12"/><line x1="12" y1="2" x2="12" y2="22"/></svg>';
+const GHOST_ICON_PIN =
+  '<svg viewBox="0 0 24 24" width="' +
+  GHOST_ICON_SIZE +
+  '" height="' +
+  GHOST_ICON_SIZE +
+  '" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' +
+  '<line x1="12" y1="17" x2="12" y2="22"/>' +
+  '<path d="M5 17h14v-1.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V6h1a2 2 0 0 0 0-4H8a2 2 0 0 0 0 4h1v4.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24Z"/></svg>';
+const GHOST_ICON_OUT =
+  '<svg viewBox="0 0 24 24" width="' +
+  GHOST_ICON_SIZE +
+  '" height="' +
+  GHOST_ICON_SIZE +
+  '" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' +
+  '<circle cx="12" cy="12" r="10"/><line x1="4.9" y1="4.9" x2="19.1" y2="19.1"/></svg>';
+
+// 追加(13-B3-5): ゴーストのピル配色。通常(move/pin)は青系、枠外(out)はミュートの赤系で
+//   「ここで離しても無効」を視覚化します(13-B3-4 のキャンセル挙動と一致)。
+const GHOST_PALETTE = {
+  normal: { border: '#2563eb', background: '#eff6ff', color: '#1d4ed8' },
+  out: { border: '#ef4444', background: '#fef2f2', color: '#dc2626' },
+} as const;
+
 export const useColumnHeaderDragController = <T,>(
   args: UseColumnHeaderDragControllerArgs<T>,
 ) => {
@@ -159,6 +208,13 @@ export const useColumnHeaderDragController = <T,>(
   const pointerRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
   const rafRef = useRef<number | null>(null);
 
+  // 追加(13-B3-5): ドラッグゴースト(ポインタ追従ピル)の ref 群です。すべて imperative に
+  //   操作し、ドラッグ中の再レンダーは発生させません。ゴーストはドラッグ中だけ DOM に存在します。
+  const ghostElRef = useRef<HTMLDivElement | null>(null); // ピル本体(body 直下 fixed)。
+  const ghostIconElRef = useRef<HTMLSpanElement | null>(null); // アイコンスロット(innerHTML 差替)。
+  // 直近のアイコン/配色状態。同状態のフレームでは innerHTML / style 差替をスキップします。
+  const ghostStateRef = useRef<ColumnPane | 'out' | null>(null);
+
   const hideAllIndicators = useCallback(() => {
     for (const ref of [
       leftIndicatorRef,
@@ -167,6 +223,101 @@ export const useColumnHeaderDragController = <T,>(
     ]) {
       if (ref.current) ref.current.style.display = 'none';
     }
+  }, []);
+
+  // 追加(13-B3-5): ドラッグ開始時にゴースト(ピル)を body 直下へ生成します(冪等)。
+  //   - fixed + translate で追従。pointer-events:none で当たり判定(getBoundingClientRect ベース)に
+  //     も将来の elementFromPoint にも非干渉。user-select:none でテキスト選択を抑止します。
+  //   - ラベルはドラッグ開始時の列名(title || key)で確定します(renderHeader のカスタム JSX は
+  //     imperative 描画が複雑なため、ゴーストではプレーン文字列にフォールバックします)。
+  //   - アイコンは初回 updateGhost で必ずセットされるよう、state を null にしておきます。
+  const createGhost = useCallback((label: string) => {
+    if (ghostElRef.current) return;
+    const el = document.createElement('div');
+    el.setAttribute('data-grid-drag-ghost', '');
+    el.style.cssText = [
+      'position:fixed',
+      'top:0',
+      'left:0',
+      'display:inline-flex',
+      'align-items:center',
+      'gap:6px',
+      'padding:4px 10px 4px 8px',
+      'border-radius:9999px',
+      'border:1px solid ' + GHOST_PALETTE.normal.border,
+      'background:' + GHOST_PALETTE.normal.background,
+      'color:' + GHOST_PALETTE.normal.color,
+      'font-size:12px',
+      'font-weight:600',
+      'line-height:1',
+      'white-space:nowrap',
+      'box-shadow:0 4px 12px rgba(15,23,42,0.18)',
+      'pointer-events:none',
+      'user-select:none',
+      'z-index:' + GHOST_Z_INDEX,
+      'will-change:transform',
+      // 初期は画面外へ逃がし、最初の updateGhost でポインタ位置へ正規化します
+      // (生成直後の 1 フレーム、原点(0,0)にちらつかせないため)。
+      'transform:translate(-9999px,-9999px)',
+    ].join(';');
+
+    const icon = document.createElement('span');
+    icon.style.cssText =
+      'display:inline-flex;align-items:center;justify-content:center;width:' +
+      GHOST_ICON_SIZE +
+      'px;height:' +
+      GHOST_ICON_SIZE +
+      'px;flex:none';
+
+    const text = document.createElement('span');
+    text.textContent = label;
+
+    el.appendChild(icon);
+    el.appendChild(text);
+    document.body.appendChild(el);
+
+    ghostElRef.current = el;
+    ghostIconElRef.current = icon;
+    ghostStateRef.current = null;
+  }, []);
+
+  // 追加(13-B3-5): ゴーストの位置(常にポインタ基準)とアイコン/配色(pane で出し分け)を更新します。
+  //   - 位置は hit の有無に関わらずポインタへ追従します(枠外でも追従。capture 中のため枠外でも
+  //     pointermove は届きます)。
+  //   - center=move / left・right(空ペイン帯含む)=pin / null=out(無効サイン)。
+  //   - 同状態のフレームは innerHTML / style の差替をスキップします(無駄な DOM 触りを抑制)。
+  const updateGhost = useCallback((pane: ColumnPane | null) => {
+    const el = ghostElRef.current;
+    if (!el) return;
+    const { x, y } = pointerRef.current;
+    el.style.transform =
+      'translate(' + (x + GHOST_OFFSET_X) + 'px,' + (y + GHOST_OFFSET_Y) + 'px)';
+
+    const state: ColumnPane | 'out' = pane ?? 'out';
+    if (ghostStateRef.current === state) return;
+    ghostStateRef.current = state;
+
+    const icon = ghostIconElRef.current;
+    if (state === 'out') {
+      el.style.borderColor = GHOST_PALETTE.out.border;
+      el.style.background = GHOST_PALETTE.out.background;
+      el.style.color = GHOST_PALETTE.out.color;
+      if (icon) icon.innerHTML = GHOST_ICON_OUT;
+    } else {
+      el.style.borderColor = GHOST_PALETTE.normal.border;
+      el.style.background = GHOST_PALETTE.normal.background;
+      el.style.color = GHOST_PALETTE.normal.color;
+      if (icon) icon.innerHTML = state === 'center' ? GHOST_ICON_MOVE : GHOST_ICON_PIN;
+    }
+  }, []);
+
+  // 追加(13-B3-5): ゴーストを DOM から除去します(冪等)。endDrag / unmount で呼びます。
+  const destroyGhost = useCallback(() => {
+    const el = ghostElRef.current;
+    if (el && el.parentNode) el.parentNode.removeChild(el);
+    ghostElRef.current = null;
+    ghostIconElRef.current = null;
+    ghostStateRef.current = null;
   }, []);
 
   // clientX/clientY → { pane, slot, leftPx(ペインローカル境界 x + leadingWidth) }。
@@ -287,6 +438,9 @@ export const useColumnHeaderDragController = <T,>(
 
   const updateIndicator = useCallback(() => {
     const hit = computeHit(pointerRef.current.x, pointerRef.current.y);
+    // 追加(13-B3-5): ゴーストは hit の有無に関わらずポインタへ追従し、アイコン/配色を pane で
+    //   出し分けます(枠外=null は 'out' 表現)。インジケータ(縦線)の表示判定は従来どおり hit 基準。
+    updateGhost(hit ? hit.pane : null);
     if (!hit) {
       dropTargetRef.current = null;
       hideAllIndicators();
@@ -308,7 +462,7 @@ export const useColumnHeaderDragController = <T,>(
         el.style.display = 'none';
       }
     }
-  }, [computeHit, hideAllIndicators]);
+  }, [computeHit, hideAllIndicators, updateGhost]);
 
   // rAF 端 autoscroll(共有スクロールコンテナ)。自己再帰のため ref 経由で参照します。
   const autoScrollTickRef = useRef<() => void>(() => {});
@@ -347,6 +501,8 @@ export const useColumnHeaderDragController = <T,>(
       }
       document.body.style.cursor = '';
       hideAllIndicators();
+      // 追加(13-B3-5): ゴーストを除去します(commit/cancel いずれの経路でも必ず)。
+      destroyGhost();
 
       const draggedKey = draggingKeyRef.current;
       const target = dropTargetRef.current;
@@ -368,7 +524,7 @@ export const useColumnHeaderDragController = <T,>(
       ]);
       applyColumnOrderAndPin(keys, pinOverride);
     },
-    [hideAllIndicators],
+    [hideAllIndicators, destroyGhost],
   );
 
   const onColumnDragHandlePointerDown = useCallback(
@@ -382,6 +538,9 @@ export const useColumnHeaderDragController = <T,>(
       draggingKeyRef.current = column.key;
       pointerRef.current = { x: event.clientX, y: event.clientY };
       document.body.style.cursor = 'grabbing';
+      // 追加(13-B3-5): ドラッグゴースト(ピル)を生成します。ラベルは列名(title || key)で確定。
+      //   直後の updateIndicator → updateGhost でポインタ位置・アイコンが正規化されます。
+      createGhost(column.title || column.key);
 
       const target = event.currentTarget;
       const pointerId = event.pointerId;
@@ -429,13 +588,15 @@ export const useColumnHeaderDragController = <T,>(
       updateIndicator();
       rafRef.current = requestAnimationFrame(autoScrollTickRef.current);
     },
-    [updateIndicator, endDrag],
+    [updateIndicator, endDrag, createGhost],
   );
 
   // 追加(13-B3-3): アンマウント時の最終後始末ネット。ドラッグ中(grip 掴み中)に grid 側が
   //   再マウントする等で grip 要素が unmount すると pointerup/cancel が来ず、autoscroll の rAF が
   //   回りっぱなし・body cursor が 'grabbing' のまま残り得ます。これを確実に解放します。
   //   (再レンダーゼロ設計のため実際に踏む確率は低いものの、堅牢性の保険です。)
+  // 変更(13-B3-5): ゴースト(body 直下 fixed)も同じ最終後始末ネットで確実に除去します
+  //   (依存を増やさないよう、destroyGhost を介さず ghostElRef から直接外します)。
   useEffect(
     () => () => {
       if (rafRef.current !== null) {
@@ -443,6 +604,11 @@ export const useColumnHeaderDragController = <T,>(
         rafRef.current = null;
       }
       document.body.style.cursor = '';
+      const ghost = ghostElRef.current;
+      if (ghost && ghost.parentNode) ghost.parentNode.removeChild(ghost);
+      ghostElRef.current = null;
+      ghostIconElRef.current = null;
+      ghostStateRef.current = null;
     },
     [],
   );
