@@ -1,4 +1,10 @@
-import { useCallback, useRef, type PointerEvent, type RefObject } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  type PointerEvent,
+  type RefObject,
+} from 'react';
 import type { GridColumn, GridColumnPinned } from '../model/gridTypes';
 import {
   findPaneDropSlot,
@@ -125,6 +131,17 @@ type UseColumnHeaderDragControllerArgs<T> = {
 const EDGE_THRESHOLD = 24;
 const SCROLL_STEP = 18;
 
+// 追加(13-B3-3): 空の固定ペイン(pinned 列 0 本)への「最初の 1 列」を作るためのドロップ帯です。
+//   空ペインは幅 0・非レンダーで物理的に狙える場所が無いため、ドラッグ中だけビューポート端の
+//   EMPTY_PANE_DROP_BAND px を pin 用ホット帯として有効化します(帯は通常時は無効＝行ヘッダ操作に非干渉)。
+//   方針: autoscroll 帯(EDGE_THRESHOLD=24)⊂ ドロップ帯(32)。端でスクロールしつつ、指を離した
+//   瞬間の判定で pin 確定する「共存」方式です。
+const EMPTY_PANE_DROP_BAND = 32;
+// 追加(13-B3-3): 空ペインのインジケータをビューポート端の数 px 内側へ寄せる量です(端ぴったりだと
+//   2px 線が overflow:auto でクリップされ視認しづらいため)。左は +inset、右は -inset(wrapper 原点が
+//   width:0・sticky で左:ビューポート左端 / 右:ビューポート右端のため符号が反転します)。
+const EMPTY_PANE_INDICATOR_INSET = 2;
+
 export const useColumnHeaderDragController = <T,>(
   args: UseColumnHeaderDragControllerArgs<T>,
 ) => {
@@ -152,23 +169,59 @@ export const useColumnHeaderDragController = <T,>(
     }
   }, []);
 
-  // clientX → { pane, slot, leftPx(ペインローカル境界 x + leadingWidth) }。
+  // clientX/clientY → { pane, slot, leftPx(ペインローカル境界 x + leadingWidth) }。
+  // 変更(13-B3-4): 枠外判定のため clientY も受け取ります。
   const computeHit = useCallback(
     (
       clientX: number,
+      clientY: number,
     ): { pane: ColumnPane; slot: number; leftPx: number } | null => {
       const {
         paneLayout,
         leftPaneScrollRef,
         rightPaneScrollRef,
         bodyScrollRef,
+        scrollContainerRef,
         leftLeadingWidth,
         centerLeadingWidth,
         rightLeadingWidth,
       } = latestRef.current;
 
-      // 左固定ペイン(右端より左)。
+      // 追加(13-B3-4): 表の枠(共有スクロールコンテナ)の外へポインタが出たら hit なし(null)。
+      //   → updateIndicator がインジケータを消し、endDrag は dropTarget=null で commit しません
+      //     (= 枠外ドロップはキャンセル/no-op)。
+      //   注意: この判定は空ペイン帯より「前」に置きます。右空ペイン帯は clientX に上限が無く、
+      //   枠の右外でもマッチしてしまうため、先に枠外を弾く必要があります。autoscroll は枠の
+      //   「内側」EDGE_THRESHOLD で発火し、空ペイン帯も端の内側のため、いずれもこのガードと非干渉です。
+      const containerEl = scrollContainerRef.current;
+      if (containerEl) {
+        const r = containerEl.getBoundingClientRect();
+        if (
+          clientX < r.left ||
+          clientX > r.right ||
+          clientY < r.top ||
+          clientY > r.bottom
+        ) {
+          return null;
+        }
+      }
+
       const leftEl = leftPaneScrollRef.current;
+      const rightEl = rightPaneScrollRef.current;
+
+      // 追加(13-B3-3): 空の左固定ペインへのドロップ帯(最初の左固定列を作る)。
+      //   left wrapper は sticky;left:0 なので rect.left === ビューポート左端。
+      //   そこから EMPTY_PANE_DROP_BAND 以内なら slot 0 で left へ pin します。
+      //   ※ 左ペインが空のとき行ヘッダーは中央が持つため、この帯は行ヘッダ左端 32px と重なります
+      //     (列ドラッグ中のみ有効。中央 slot 0 は帯の右側＝最初の列上で従来どおり狙えます)。
+      if (leftEl && paneLayout.left.entries.length === 0) {
+        const rect = leftEl.getBoundingClientRect();
+        if (clientX <= rect.left + EMPTY_PANE_DROP_BAND) {
+          return { pane: 'left', slot: 0, leftPx: EMPTY_PANE_INDICATOR_INSET };
+        }
+      }
+
+      // 左固定ペイン(非空)。右端より左。
       if (leftEl && paneLayout.left.entries.length > 0) {
         const rect = leftEl.getBoundingClientRect();
         if (clientX < rect.right) {
@@ -182,8 +235,22 @@ export const useColumnHeaderDragController = <T,>(
         }
       }
 
-      // 右固定ペイン(左端以降)。
-      const rightEl = rightPaneScrollRef.current;
+      // 追加(13-B3-3): 空の右固定ペインへのドロップ帯(最初の右固定列を作る)。
+      //   right wrapper は sticky;right:0・width:0 なので rect.left === ビューポート右端。
+      //   そこから EMPTY_PANE_DROP_BAND 以内なら slot 0 で right へ pin します。
+      //   インジケータは原点(ビューポート右端)から負方向へ inset して端の内側に見せます。
+      if (rightEl && paneLayout.right.entries.length === 0) {
+        const rect = rightEl.getBoundingClientRect();
+        if (clientX >= rect.left - EMPTY_PANE_DROP_BAND) {
+          return {
+            pane: 'right',
+            slot: 0,
+            leftPx: -EMPTY_PANE_INDICATOR_INSET,
+          };
+        }
+      }
+
+      // 右固定ペイン(非空)。左端以降。
       if (rightEl && paneLayout.right.entries.length > 0) {
         const rect = rightEl.getBoundingClientRect();
         if (clientX >= rect.left) {
@@ -219,7 +286,7 @@ export const useColumnHeaderDragController = <T,>(
   );
 
   const updateIndicator = useCallback(() => {
-    const hit = computeHit(pointerRef.current.x);
+    const hit = computeHit(pointerRef.current.x, pointerRef.current.y);
     if (!hit) {
       dropTargetRef.current = null;
       hideAllIndicators();
@@ -340,6 +407,11 @@ export const useColumnHeaderDragController = <T,>(
         target.removeEventListener('pointermove', handleMove);
         target.removeEventListener('pointerup', handleUp);
         target.removeEventListener('pointercancel', handleCancel);
+        // 追加(13-B3-3): capture 喪失ネットも解除します。releasePointerCapture より「前」に
+        //   外すことで、release が誘発する lostpointercapture では handleCancel が走らず
+        //   (= 正常 up と二重発火しない)。なお endDrag は draggingKeyRef を null 化するため
+        //   仮に二重で呼ばれても安全(冪等)です。
+        target.removeEventListener('lostpointercapture', handleCancel);
         try {
           target.releasePointerCapture(pointerId);
         } catch {
@@ -350,11 +422,29 @@ export const useColumnHeaderDragController = <T,>(
       target.addEventListener('pointermove', handleMove);
       target.addEventListener('pointerup', handleUp);
       target.addEventListener('pointercancel', handleCancel);
+      // 追加(13-B3-3): ブラウザが capture を奪う等で pointerup/cancel が来ない経路の保険。
+      //   capture 喪失を cancel 扱いにして rAF・body cursor を確実に後始末します。
+      target.addEventListener('lostpointercapture', handleCancel);
 
       updateIndicator();
       rafRef.current = requestAnimationFrame(autoScrollTickRef.current);
     },
     [updateIndicator, endDrag],
+  );
+
+  // 追加(13-B3-3): アンマウント時の最終後始末ネット。ドラッグ中(grip 掴み中)に grid 側が
+  //   再マウントする等で grip 要素が unmount すると pointerup/cancel が来ず、autoscroll の rAF が
+  //   回りっぱなし・body cursor が 'grabbing' のまま残り得ます。これを確実に解放します。
+  //   (再レンダーゼロ設計のため実際に踏む確率は低いものの、堅牢性の保険です。)
+  useEffect(
+    () => () => {
+      if (rafRef.current !== null) {
+        cancelAnimationFrame(rafRef.current);
+        rafRef.current = null;
+      }
+      document.body.style.cursor = '';
+    },
+    [],
   );
 
   return {

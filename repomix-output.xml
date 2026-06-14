@@ -55,6 +55,7 @@ src/assets/vite.svg
 src/components/spreadsheet-grid/ActiveCellOverlay.tsx
 src/components/spreadsheet-grid/CellEditorLayer.tsx
 src/components/spreadsheet-grid/hooks/useColumnChooserController.ts
+src/components/spreadsheet-grid/hooks/useColumnHeaderDragController.ts
 src/components/spreadsheet-grid/hooks/useColumnMenuController.ts
 src/components/spreadsheet-grid/hooks/useFilterPopoverController.ts
 src/components/spreadsheet-grid/hooks/useGridBarContext.ts
@@ -610,6 +611,377 @@ export const useColumnChooserController = ({
 };
 
 export default useColumnChooserController;
+</file>
+
+<file path="src/components/spreadsheet-grid/hooks/useColumnHeaderDragController.ts">
+import { useCallback, useRef, type PointerEvent, type RefObject } from 'react';
+import type { GridColumn, GridColumnPinned } from '../model/gridTypes';
+import {
+  findPaneDropSlot,
+  paneDropSlotBoundaryX,
+  getColumnPane,
+  type ColumnPane,
+  type GridPaneLayout,
+} from '../logic/geometry';
+
+// 追加(13-B3-2): ヘッダーのバッジ(Excel 列名)を grip にした列の D&D 並べ替え controller です。
+// 設計メモ:
+//   - ドラッグ中は React state を更新しません。ドロップインジケータ(縦線)は各 pane に常設した
+//     div を ref 経由で imperative に表示/移動します(SpreadsheetGrid は再レンダーせず、
+//     GridHeaderRow の memo を完全維持。観点⑦)。
+//   - pointerdown(バッジ) → setPointerCapture → captured 要素へ pointermove/up/cancel を直付け
+//     (ephemeral listener。常駐 effect を増やしません)。
+//   - ヒットテストは useGridPointerInteractions.getCellCoordFromClientPoint と同じ pane 判定式
+//     (left.right より左=左 / right.left 以降=右 / それ以外=中央。中央は移動する rect.left で
+//      横スクロール量を吸収。観点⑧)。slot は findPaneDropSlot(pane-local midpoint)で算出。
+//   - up で computeHeaderReorderedKeys(全列の permutation を生成。非表示列も保全)→
+//     applyColumnOrderAndPin(keys, pinOverride)。ドロップ先 pane → 'left'|undefined|'right'。
+//   - 公開ハンドラは latest-ref で恒久安定化(GridHeaderRow memo 維持)。
+//   - 範囲: center 内 / center↔left / center↔right が本命ですが、pane 判定が幾何的に一様な
+//     ため left 内 / right 内 / left↔right も同一経路で成立します(13-B3-2b を実質吸収)。
+
+type ApplyColumnOrderAndPin = (
+  orderedKeys: string[],
+  pinOverride?: Map<string, GridColumnPinned | undefined>,
+) => void;
+
+// 追加(13-B3-2): ドラッグ列を target pane の「表示列内 slot」へ移動した全列キー順を返します。
+//   - 非表示列も含む columns 全体を pane ごとにキー配列へ分割 → ドラッグ列を source から除去 →
+//     target pane の「表示列(visible)」基準の slot 位置へ挿入 → left+center+right を連結。
+//   - same-pane では除去で後方が詰まるため slot を 1 補正し、同一 slot は no-op として null。
+//   - slot は paneLayout.entries(表示列のみ)基準で来るため、ここでも visible 列でアンカーします。
+//   - 返す配列は length === columns.length の permutation です(1 列のみ移動するため)。
+//   ※ computeSectionReorderedKeys(ColumnChooserPanel)のクロスペイン版に相当します。
+function computeHeaderReorderedKeys<T>(
+  columns: GridColumn<T>[],
+  draggedKey: string,
+  targetPane: ColumnPane,
+  slotInTargetVisible: number,
+): string[] | null {
+  const dragged = columns.find((column) => column.key === draggedKey);
+  if (!dragged) return null;
+  const sourcePane = getColumnPane(dragged);
+
+  const groups: Record<ColumnPane, string[]> = { left: [], center: [], right: [] };
+  const visibleByKey = new Map<string, boolean>();
+  for (const column of columns) {
+    groups[getColumnPane(column)].push(column.key);
+    visibleByKey.set(column.key, column.visible !== false);
+  }
+
+  // ドラッグ前の「target pane 表示列内 index」(same-pane 補正 / no-op 判定用。cross-pane は -1)。
+  const targetVisibleBefore = groups[targetPane].filter((key) =>
+    visibleByKey.get(key),
+  );
+  const fromVisibleIndex = targetVisibleBefore.indexOf(draggedKey);
+
+  // source から除去。
+  const sourceIndex = groups[sourcePane].indexOf(draggedKey);
+  if (sourceIndex < 0) return null;
+  groups[sourcePane].splice(sourceIndex, 1);
+
+  // slot 補正(same-pane で除去により後方が詰まる)。
+  let slot = slotInTargetVisible;
+  if (
+    sourcePane === targetPane &&
+    fromVisibleIndex >= 0 &&
+    slot > fromVisibleIndex
+  ) {
+    slot -= 1;
+  }
+
+  // 除去後の target pane 表示列を基準に slot をクランプ。
+  const targetVisibleAfter = groups[targetPane].filter((key) =>
+    visibleByKey.get(key),
+  );
+  slot = Math.max(0, Math.min(slot, targetVisibleAfter.length));
+
+  // same-pane・同一 slot は no-op(配列を動かさない)。
+  if (
+    sourcePane === targetPane &&
+    fromVisibleIndex >= 0 &&
+    slot === fromVisibleIndex
+  ) {
+    return null;
+  }
+
+  // 挿入位置(groups[targetPane] 実配列 index)を決定。
+  let insertAt: number;
+  if (slot >= targetVisibleAfter.length) {
+    insertAt = groups[targetPane].length; // 末尾(後続の非表示列の後ろ)
+  } else {
+    insertAt = groups[targetPane].indexOf(targetVisibleAfter[slot]); // アンカー表示列の手前
+  }
+  groups[targetPane].splice(insertAt, 0, draggedKey);
+
+  return [...groups.left, ...groups.center, ...groups.right];
+}
+
+type UseColumnHeaderDragControllerArgs<T> = {
+  // controlled columns(onColumnsChange あり)のときだけ true。false ならドラッグ開始しません。
+  enabled: boolean;
+  // 全列(非表示含む)。permutation 生成と pane grouping に使います。
+  columns: GridColumn<T>[];
+  // 3 ペイン geometry。当たり判定 / slot / インジケータ位置の基準です。
+  paneLayout: GridPaneLayout<T>;
+  // 各ペイン要素 ref。clientX のペイン判定 + ローカル座標換算に使います。
+  leftPaneScrollRef: RefObject<HTMLDivElement | null>;
+  rightPaneScrollRef: RefObject<HTMLDivElement | null>;
+  bodyScrollRef: RefObject<HTMLDivElement | null>;
+  // 端 autoscroll で動かす共有スクロールコンテナです。
+  scrollContainerRef: RefObject<HTMLDivElement | null>;
+  // 各ペインで列の前に確保する先頭幅(left=rowHeaderWidth / center=0 or rowHeaderWidth / right=0)。
+  leftLeadingWidth: number;
+  centerLeadingWidth: number;
+  rightLeadingWidth: number;
+  // 並べ替え + 任意 pin 変更の共通 commit。
+  applyColumnOrderAndPin: ApplyColumnOrderAndPin;
+};
+
+const EDGE_THRESHOLD = 24;
+const SCROLL_STEP = 18;
+
+export const useColumnHeaderDragController = <T,>(
+  args: UseColumnHeaderDragControllerArgs<T>,
+) => {
+  // latest-ref: 公開ハンドラを恒久安定化するため、変化する引数はここから読みます。
+  const latestRef = useRef(args);
+  latestRef.current = args;
+
+  const leftIndicatorRef = useRef<HTMLDivElement | null>(null);
+  const centerIndicatorRef = useRef<HTMLDivElement | null>(null);
+  const rightIndicatorRef = useRef<HTMLDivElement | null>(null);
+
+  // ドラッグセッション state(すべて ref。ドラッグ中の再レンダーを発生させません)。
+  const draggingKeyRef = useRef<string | null>(null);
+  const dropTargetRef = useRef<{ pane: ColumnPane; slot: number } | null>(null);
+  const pointerRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
+  const rafRef = useRef<number | null>(null);
+
+  const hideAllIndicators = useCallback(() => {
+    for (const ref of [
+      leftIndicatorRef,
+      centerIndicatorRef,
+      rightIndicatorRef,
+    ]) {
+      if (ref.current) ref.current.style.display = 'none';
+    }
+  }, []);
+
+  // clientX → { pane, slot, leftPx(ペインローカル境界 x + leadingWidth) }。
+  const computeHit = useCallback(
+    (
+      clientX: number,
+    ): { pane: ColumnPane; slot: number; leftPx: number } | null => {
+      const {
+        paneLayout,
+        leftPaneScrollRef,
+        rightPaneScrollRef,
+        bodyScrollRef,
+        leftLeadingWidth,
+        centerLeadingWidth,
+        rightLeadingWidth,
+      } = latestRef.current;
+
+      // 左固定ペイン(右端より左)。
+      const leftEl = leftPaneScrollRef.current;
+      if (leftEl && paneLayout.left.entries.length > 0) {
+        const rect = leftEl.getBoundingClientRect();
+        if (clientX < rect.right) {
+          const localX = clientX - rect.left - leftLeadingWidth;
+          const slot = findPaneDropSlot(paneLayout.left, localX);
+          return {
+            pane: 'left',
+            slot,
+            leftPx: leftLeadingWidth + paneDropSlotBoundaryX(paneLayout.left, slot),
+          };
+        }
+      }
+
+      // 右固定ペイン(左端以降)。
+      const rightEl = rightPaneScrollRef.current;
+      if (rightEl && paneLayout.right.entries.length > 0) {
+        const rect = rightEl.getBoundingClientRect();
+        if (clientX >= rect.left) {
+          const localX = clientX - rect.left - rightLeadingWidth;
+          const slot = findPaneDropSlot(paneLayout.right, localX);
+          return {
+            pane: 'right',
+            slot,
+            leftPx:
+              rightLeadingWidth + paneDropSlotBoundaryX(paneLayout.right, slot),
+          };
+        }
+      }
+
+      // それ以外は中央ペイン。中央は scrollLeft===0、移動する rect.left が横スクロールを吸収します。
+      const centerEl = bodyScrollRef.current;
+      if (centerEl && paneLayout.center.entries.length > 0) {
+        const rect = centerEl.getBoundingClientRect();
+        const localX =
+          centerEl.scrollLeft + clientX - rect.left - centerLeadingWidth;
+        const slot = findPaneDropSlot(paneLayout.center, Math.max(localX, 0));
+        return {
+          pane: 'center',
+          slot,
+          leftPx:
+            centerLeadingWidth + paneDropSlotBoundaryX(paneLayout.center, slot),
+        };
+      }
+
+      return null;
+    },
+    [],
+  );
+
+  const updateIndicator = useCallback(() => {
+    const hit = computeHit(pointerRef.current.x);
+    if (!hit) {
+      dropTargetRef.current = null;
+      hideAllIndicators();
+      return;
+    }
+    dropTargetRef.current = { pane: hit.pane, slot: hit.slot };
+    const indicatorByPane: Record<ColumnPane, HTMLDivElement | null> = {
+      left: leftIndicatorRef.current,
+      center: centerIndicatorRef.current,
+      right: rightIndicatorRef.current,
+    };
+    for (const pane of ['left', 'center', 'right'] as ColumnPane[]) {
+      const el = indicatorByPane[pane];
+      if (!el) continue;
+      if (pane === hit.pane) {
+        el.style.left = `${hit.leftPx}px`;
+        el.style.display = 'block';
+      } else {
+        el.style.display = 'none';
+      }
+    }
+  }, [computeHit, hideAllIndicators]);
+
+  // rAF 端 autoscroll(共有スクロールコンテナ)。自己再帰のため ref 経由で参照します。
+  const autoScrollTickRef = useRef<() => void>(() => {});
+  const autoScrollTick = useCallback(() => {
+    const el = latestRef.current.scrollContainerRef.current;
+    if (el) {
+      const rect = el.getBoundingClientRect();
+      const pointer = pointerRef.current;
+      let nextLeft = el.scrollLeft;
+      let nextTop = el.scrollTop;
+      if (pointer.x < rect.left + EDGE_THRESHOLD) {
+        nextLeft = Math.max(el.scrollLeft - SCROLL_STEP, 0);
+      } else if (pointer.x > rect.right - EDGE_THRESHOLD) {
+        nextLeft = el.scrollLeft + SCROLL_STEP;
+      }
+      if (pointer.y < rect.top + EDGE_THRESHOLD) {
+        nextTop = Math.max(el.scrollTop - SCROLL_STEP, 0);
+      } else if (pointer.y > rect.bottom - EDGE_THRESHOLD) {
+        nextTop = el.scrollTop + SCROLL_STEP;
+      }
+      if (nextLeft !== el.scrollLeft || nextTop !== el.scrollTop) {
+        el.scrollTo({ left: nextLeft, top: nextTop, behavior: 'auto' });
+      }
+    }
+    // 端スクロールで rect が動くため、停止中の指でも毎フレーム slot を再計算します。
+    updateIndicator();
+    rafRef.current = requestAnimationFrame(autoScrollTickRef.current);
+  }, [updateIndicator]);
+  autoScrollTickRef.current = autoScrollTick;
+
+  const endDrag = useCallback(
+    (commit: boolean) => {
+      if (rafRef.current !== null) {
+        cancelAnimationFrame(rafRef.current);
+        rafRef.current = null;
+      }
+      document.body.style.cursor = '';
+      hideAllIndicators();
+
+      const draggedKey = draggingKeyRef.current;
+      const target = dropTargetRef.current;
+      draggingKeyRef.current = null;
+      dropTargetRef.current = null;
+
+      if (!commit || !draggedKey || !target) return;
+
+      const { columns, applyColumnOrderAndPin } = latestRef.current;
+      const keys = computeHeaderReorderedKeys(
+        columns,
+        draggedKey,
+        target.pane,
+        target.slot,
+      );
+      if (!keys) return; // no-op ドラッグ(同一 pane・同一 slot)
+      const pinOverride = new Map<string, GridColumnPinned | undefined>([
+        [draggedKey, target.pane === 'center' ? undefined : target.pane],
+      ]);
+      applyColumnOrderAndPin(keys, pinOverride);
+    },
+    [hideAllIndicators],
+  );
+
+  const onColumnDragHandlePointerDown = useCallback(
+    (column: GridColumn<T>, event: PointerEvent<HTMLElement>) => {
+      if (!latestRef.current.enabled) return;
+      if (event.button !== 0) return;
+      // 重要: ヘッダー本体の列範囲選択(onColumnHeaderPointerDown)へ伝播させない(掴み手方式)。
+      event.stopPropagation();
+      event.preventDefault();
+
+      draggingKeyRef.current = column.key;
+      pointerRef.current = { x: event.clientX, y: event.clientY };
+      document.body.style.cursor = 'grabbing';
+
+      const target = event.currentTarget;
+      const pointerId = event.pointerId;
+      try {
+        target.setPointerCapture(pointerId);
+      } catch {
+        /* capture 不可環境は無視 */
+      }
+
+      const handleMove = (nativeEvent: globalThis.PointerEvent) => {
+        pointerRef.current = { x: nativeEvent.clientX, y: nativeEvent.clientY };
+        updateIndicator();
+      };
+      function handleUp() {
+        cleanup();
+        endDrag(true);
+      }
+      function handleCancel() {
+        cleanup();
+        endDrag(false);
+      }
+      const cleanup = () => {
+        target.removeEventListener('pointermove', handleMove);
+        target.removeEventListener('pointerup', handleUp);
+        target.removeEventListener('pointercancel', handleCancel);
+        try {
+          target.releasePointerCapture(pointerId);
+        } catch {
+          /* noop */
+        }
+      };
+
+      target.addEventListener('pointermove', handleMove);
+      target.addEventListener('pointerup', handleUp);
+      target.addEventListener('pointercancel', handleCancel);
+
+      updateIndicator();
+      rafRef.current = requestAnimationFrame(autoScrollTickRef.current);
+    },
+    [updateIndicator, endDrag],
+  );
+
+  return {
+    onColumnDragHandlePointerDown,
+    leftIndicatorRef,
+    centerIndicatorRef,
+    rightIndicatorRef,
+  };
+};
+
+export default useColumnHeaderDragController;
 </file>
 
 <file path="src/components/spreadsheet-grid/hooks/useGridClipboardController.ts">
@@ -4329,452 +4701,6 @@ export const useColumnMenuController = <T,>({
 export default useColumnMenuController;
 </file>
 
-<file path="src/components/spreadsheet-grid/logic/geometry.ts">
-import type { GridColumn } from '../model/gridTypes';
-
-// ────────────────────────────────────────────────
-// 既存: 列の座標計算を共通化するための measurement 型です。
-// ────────────────────────────────────────────────
-
-export type ColumnMeasurement<T> = {
-  index: number;
-  column: GridColumn<T>;
-  start: number;
-  // 追加: 各列の実表示幅です。
-  size: number;
-  end: number;
-};
-
-// 追加: 値を min/max に収めるユーティリティです。
-export const clamp = (value: number, min: number, max: number) =>
-  Math.min(Math.max(value, min), max);
-
-// 追加: columns + columnWidths から、列座標の measurement 一覧を生成します。
-export const buildColumnMeasurements = <T,>(
-  columns: GridColumn<T>[],
-  columnWidths: Record<string, number>,
-): ColumnMeasurement<T>[] => {
-  let start = 0;
-  return columns.map((column, index) => {
-    const size = columnWidths[column.key] ?? column.width;
-    const measurement: ColumnMeasurement<T> = {
-      index,
-      column,
-      start,
-      size,
-      end: start + size,
-    };
-    start += size;
-    return measurement;
-  });
-};
-
-// 追加: x 座標から列 index を特定するための二分探索です。
-export const findColumnIndexFromOffset = <T,>(
-  measurements: ColumnMeasurement<T>[],
-  offset: number,
-) => {
-  if (measurements.length === 0) {
-    return -1;
-  }
-  if (offset <= 0) {
-    return 0;
-  }
-  let low = 0;
-  let high = measurements.length - 1;
-  while (low <= high) {
-    const mid = Math.floor((low + high) / 2);
-    const current = measurements[mid];
-    if (offset < current.start) {
-      high = mid - 1;
-      continue;
-    }
-    if (offset >= current.end) {
-      low = mid + 1;
-      continue;
-    }
-    return current.index;
-  }
-  return Math.max(0, Math.min(low, measurements.length - 1));
-};
-
-// ────────────────────────────────────────────────
-// 追加(10-A): 3 ペイン（pinned-left / center / pinned-right）
-//             分離に必要な型と helper 群です。
-//             ここでは型定義と純粋関数のみ追加し、
-//             レンダリングは一切変更しません。
-// ────────────────────────────────────────────────
-
-// 追加(10-A): 列が所属するペインの種別です。
-export type ColumnPane = 'left' | 'center' | 'right';
-
-// 追加(10-A): 列定義から所属ペインを判定します。
-export const getColumnPane = <T,>(column: GridColumn<T>): ColumnPane => {
-  if (column.pinned === 'left') return 'left';
-  if (column.pinned === 'right') return 'right';
-  return 'center';
-};
-
-// 追加(10-A): visibleColumns を AG Grid 互換の視覚順序に並べ替えます。
-//             pinned-left → center → pinned-right の順になります。
-//             各グループ内では元配列の相対順序が保持されます。
-//             ※ この関数で返る配列が「論理列 index」の基準になります。
-export const reorderColumnsByPane = <T,>(
-  columns: GridColumn<T>[],
-): GridColumn<T>[] => {
-  const left: GridColumn<T>[] = [];
-  const center: GridColumn<T>[] = [];
-  const right: GridColumn<T>[] = [];
-
-  for (const column of columns) {
-    const pane = getColumnPane(column);
-    if (pane === 'left') left.push(column);
-    else if (pane === 'right') right.push(column);
-    else center.push(column);
-  }
-
-  return [...left, ...center, ...right];
-};
-
-// 追加(10-A): 1 つのペイン内における列の座標情報です。
-//             paneLocalStart / paneLocalEnd はペイン内ローカル座標（0 始まり）です。
-//             logicalIndex は reorder 後の visibleColumns 配列上の index です。
-export type PaneColumnEntry<T> = {
-  column: GridColumn<T>;
-  logicalIndex: number;
-  paneLocalStart: number;
-  paneLocalSize: number;
-  paneLocalEnd: number;
-};
-
-// 追加(10-A): 1 つのペインの geometry 情報です。
-export type PaneGeometry<T> = {
-  pane: ColumnPane;
-  entries: PaneColumnEntry<T>[];
-  totalWidth: number;
-};
-
-// 追加(10-A): 3 ペイン全体のレイアウト情報です。
-export type GridPaneLayout<T> = {
-  left: PaneGeometry<T>;
-  center: PaneGeometry<T>;
-  right: PaneGeometry<T>;
-};
-
-// 追加(11-B4): ペイン分割後の「列ソース」（列 + 論理 index のペア）です。
-//             論理 index は reorder 済み orderedColumns 上の index で、
-//             ペイン geometry を個別に再構築しても不変です。
-export type PaneSourceColumn<T> = {
-  column: GridColumn<T>;
-  logicalIndex: number;
-};
-
-// 追加(11-B4): orderedColumns を 3 ペインの列ソースへ分割した結果です。
-export type PaneSourceColumns<T> = {
-  left: PaneSourceColumn<T>[];
-  center: PaneSourceColumn<T>[];
-  right: PaneSourceColumn<T>[];
-};
-
-// 追加(11-B4): reorder 済み orderedColumns を 3 ペインの列ソースへ分割します。
-//             columnWidths に依存しないため、列構成が変わらない限り
-//             結果を memo で固定できます（ライブリサイズ中も不変）。
-export const splitOrderedColumnsByPane = <T,>(
-  orderedColumns: GridColumn<T>[],
-): PaneSourceColumns<T> => {
-  const groups: PaneSourceColumns<T> = {
-    left: [],
-    center: [],
-    right: [],
-  };
-
-  orderedColumns.forEach((column, logicalIndex) => {
-    const pane = getColumnPane(column);
-    groups[pane].push({ column, logicalIndex });
-  });
-
-  return groups;
-};
-
-// 追加(11-B4): 1 ペイン分の解決済み列幅（columnWidths 優先 / column.width フォールバック）を
-//             ペイン内の列順で並べた配列として返す内部 helper です。
-const resolvePaneWidths = <T,>(
-  items: PaneSourceColumn<T>[],
-  columnWidths: Record<string, number>,
-): number[] =>
-  items.map(({ column }) => columnWidths[column.key] ?? column.width);
-
-// 追加(11-B4): 1 ペイン分の解決済み列幅を join した「幅キー文字列」を作ります。
-//             useMemo の依存値として使うことで、「そのペインの幅が実際に変わったとき」
-//             だけ geometry を再構築できます（columnWidths オブジェクトは毎 pointermove で
-//             参照が変わりますが、無関係ペインの幅キーは同一文字列のままです）。
-export const buildPaneWidthsKey = <T,>(
-  items: PaneSourceColumn<T>[],
-  columnWidths: Record<string, number>,
-): string => resolvePaneWidths(items, columnWidths).join(',');
-
-// 追加(11-B4): 幅キー文字列を解決済み幅配列へ戻します（buildPaneWidthsKey の逆変換）。
-const parsePaneWidthsKey = (widthsKey: string): number[] =>
-  widthsKey === '' ? [] : widthsKey.split(',').map(Number);
-
-// 追加(11-B4): 1 ペイン分の PaneGeometry を解決済み幅配列から構築する core です。
-//             旧 buildGridPaneLayout 内部の buildPane と同一ロジックです。
-export const buildPaneGeometry = <T,>(
-  pane: ColumnPane,
-  items: PaneSourceColumn<T>[],
-  resolvedWidths: number[],
-): PaneGeometry<T> => {
-  let offset = 0;
-  const entries: PaneColumnEntry<T>[] = items.map(
-    ({ column, logicalIndex }, indexInPane) => {
-      const size = resolvedWidths[indexInPane] ?? column.width;
-      const entry: PaneColumnEntry<T> = {
-        column,
-        logicalIndex,
-        paneLocalStart: offset,
-        paneLocalSize: size,
-        paneLocalEnd: offset + size,
-      };
-      offset += size;
-      return entry;
-    },
-  );
-  return { pane, entries, totalWidth: offset };
-};
-
-// 追加(11-B4): 幅キー文字列から 1 ペイン分の PaneGeometry を構築します。
-//             SpreadsheetGrid 側のペイン別 useMemo（依存 = 列ソース + 幅キー）から
-//             呼ぶ想定です。幅キーは buildPaneWidthsKey で生成された値を渡してください。
-export const buildPaneGeometryFromWidthsKey = <T,>(
-  pane: ColumnPane,
-  items: PaneSourceColumn<T>[],
-  widthsKey: string,
-): PaneGeometry<T> =>
-  buildPaneGeometry(pane, items, parsePaneWidthsKey(widthsKey));
-
-// 追加(10-A): reorder 済み visibleColumns + columnWidths から
-//             3 ペインレイアウトを構築します。
-//             引数の columns は reorderColumnsByPane() 済みを前提とします。
-// 変更(11-B4): 内部実装を splitOrderedColumnsByPane + buildPaneGeometry へ委譲しました。
-//             SpreadsheetGrid 本体はペイン別 useMemo へ移行済みですが、
-//             「一括構築」の互換 API としてテスト・将来利用向けに残しています。
-export const buildGridPaneLayout = <T,>(
-  orderedColumns: GridColumn<T>[],
-  columnWidths: Record<string, number>,
-): GridPaneLayout<T> => {
-  const groups = splitOrderedColumnsByPane(orderedColumns);
-  return {
-    left: buildPaneGeometry(
-      'left',
-      groups.left,
-      resolvePaneWidths(groups.left, columnWidths),
-    ),
-    center: buildPaneGeometry(
-      'center',
-      groups.center,
-      resolvePaneWidths(groups.center, columnWidths),
-    ),
-    right: buildPaneGeometry(
-      'right',
-      groups.right,
-      resolvePaneWidths(groups.right, columnWidths),
-    ),
-  };
-};
-
-// 追加(10-A): ペイン + エントリをまとめて返す lookup 結果型です。
-export type PaneColumnLookupResult<T> = {
-  pane: ColumnPane;
-  entry: PaneColumnEntry<T>;
-};
-
-// 追加(10-A): 論理列 index からペインとローカル座標を逆引きします。
-//             見つからない場合は null を返します。
-export const lookupPaneColumn = <T,>(
-  layout: GridPaneLayout<T>,
-  logicalIndex: number,
-): PaneColumnLookupResult<T> | null => {
-  const panes: [ColumnPane, PaneGeometry<T>][] = [
-    ['left', layout.left],
-    ['center', layout.center],
-    ['right', layout.right],
-  ];
-
-  for (const [pane, geometry] of panes) {
-    const entry = geometry.entries.find((e) => e.logicalIndex === logicalIndex);
-    if (entry) {
-      return { pane, entry };
-    }
-  }
-
-  return null;
-};
-
-// 追加(10-A): ペイン内ローカル x 座標から論理列 index を特定します。
-//             pointer interaction でペインごとにヒットテストするために使います。
-export const findLogicalIndexFromPaneOffset = <T,>(
-  paneGeometry: PaneGeometry<T>,
-  offset: number,
-): number => {
-  const { entries } = paneGeometry;
-  if (entries.length === 0) {
-    return -1;
-  }
-  if (offset <= 0) {
-    return entries[0].logicalIndex;
-  }
-
-  let low = 0;
-  let high = entries.length - 1;
-
-  while (low <= high) {
-    const mid = Math.floor((low + high) / 2);
-    const entry = entries[mid];
-
-    if (offset < entry.paneLocalStart) {
-      high = mid - 1;
-      continue;
-    }
-    if (offset >= entry.paneLocalEnd) {
-      low = mid + 1;
-      continue;
-    }
-    // 追加(10-A): ヒットしたエントリの論理 index を返します。
-    return entry.logicalIndex;
-  }
-
-  // 追加(10-A): 範囲外の場合は最も近いエントリの論理 index を返します。
-  const clampedIndex = Math.max(0, Math.min(low, entries.length - 1));
-  return entries[clampedIndex].logicalIndex;
-};
-
-// 追加(10-A): 3 ペインそれぞれに pinned 列が何本あるかを返す convenience helper です。
-export const countPinnedColumns = <T,>(
-  layout: GridPaneLayout<T>,
-): { left: number; center: number; right: number } => ({
-  left: layout.left.entries.length,
-  center: layout.center.entries.length,
-  right: layout.right.entries.length,
-});
-
-// 追加(10-A): pinned 列が 1 本もなければ true を返します。
-//             10-B 以降で「従来の単一スクロール描画にフォールバックするか」の判定に使います。
-export const isPlainLayout = <T,>(layout: GridPaneLayout<T>): boolean =>
-  layout.left.entries.length === 0 && layout.right.entries.length === 0;
-// ────────────────────────────────────────────────
-// 追加(10-D): Overlay / Editor をペイン別座標系で描画するための helper 群です。
-//             10-C までで「セル本体・ヘッダー」はペインローカル座標になりましたが、
-//             SelectionOverlay / ActiveCellOverlay / CellEditorLayer はまだ
-//             グローバル座標（columnMeasurements + rowHeaderWidth）前提でした。
-//             ここで「論理列 index 範囲 → 各ペインのローカル水平 extent」を求める
-//             純粋関数を用意し、overlay を各ペイン内へ正しく配置できるようにします。
-//             ※ 返す座標は leadingWidth を含まない「列領域内ローカル座標」です。
-//               leadingWidth（行ヘッダー幅）は描画側で加算します。
-// ────────────────────────────────────────────────
-
-// 追加(10-D): 1 ペイン内における水平 extent（列領域ローカル座標, leadingWidth 非含有）です。
-//             start / end は paneLocalStart / paneLocalEnd 起点で、width = end - start です。
-export type PaneColumnExtent = {
-  start: number;
-  end: number;
-  width: number;
-};
-
-// 追加(10-D): 3 ペインそれぞれの水平 extent をまとめた結果です。
-//             該当ペインに範囲内の列が 1 本も無い場合は null になります。
-export type PaneColumnExtentMap = Record<ColumnPane, PaneColumnExtent | null>;
-
-// 追加(10-D): 1 ペイン分の extent を、論理列 index 範囲 [startLogicalIndex, endLogicalIndex]
-//             （両端含む）から求める内部 helper です。
-const computeExtentForPane = <T,>(
-  geometry: PaneGeometry<T>,
-  startLogicalIndex: number,
-  endLogicalIndex: number,
-): PaneColumnExtent | null => {
-  const lo = Math.min(startLogicalIndex, endLogicalIndex);
-  const hi = Math.max(startLogicalIndex, endLogicalIndex);
-
-  let start = Number.POSITIVE_INFINITY;
-  let end = Number.NEGATIVE_INFINITY;
-  let found = false;
-
-  for (const entry of geometry.entries) {
-    if (entry.logicalIndex < lo || entry.logicalIndex > hi) {
-      continue;
-    }
-    found = true;
-    if (entry.paneLocalStart < start) start = entry.paneLocalStart;
-    if (entry.paneLocalEnd > end) end = entry.paneLocalEnd;
-  }
-
-  if (!found) {
-    return null;
-  }
-  return { start, end, width: end - start };
-};
-
-// 追加(10-D): 論理列 index 範囲から、3 ペインそれぞれの水平 extent を求めます。
-//             cell / col 選択や行ヘッダー以外の overlay の水平範囲決定に使います。
-export const computePaneColumnExtents = <T,>(
-  layout: GridPaneLayout<T>,
-  startLogicalIndex: number,
-  endLogicalIndex: number,
-): PaneColumnExtentMap => ({
-  left: computeExtentForPane(layout.left, startLogicalIndex, endLogicalIndex),
-  center: computeExtentForPane(
-    layout.center,
-    startLogicalIndex,
-    endLogicalIndex,
-  ),
-  right: computeExtentForPane(layout.right, startLogicalIndex, endLogicalIndex),
-});
-
-// 追加(10-D): 「全列」を覆う extent を 3 ペイン分求めます（行選択 overlay 用）。
-//             各ペインは自分の列領域全幅（0 〜 totalWidth）を覆います。
-//             列が無いペインは null になります。
-export const computeFullWidthPaneExtents = <T,>(
-  layout: GridPaneLayout<T>,
-): PaneColumnExtentMap => {
-  const toExtent = (geometry: PaneGeometry<T>): PaneColumnExtent | null =>
-    geometry.entries.length === 0
-      ? null
-      : { start: 0, end: geometry.totalWidth, width: geometry.totalWidth };
-
-  return {
-    left: toExtent(layout.left),
-    center: toExtent(layout.center),
-    right: toExtent(layout.right),
-  };
-};
-
-// 追加(10-D): 単一論理列 index が属するペインと、その列のローカル extent を求めます。
-//             ActiveCellOverlay / CellEditorLayer のように単一セル列を扱う場合に使います。
-//             見つからなければ null を返します。
-export type SinglePaneColumnExtent = {
-  pane: ColumnPane;
-  extent: PaneColumnExtent;
-};
-
-export const computeSinglePaneColumnExtent = <T,>(
-  layout: GridPaneLayout<T>,
-  logicalIndex: number,
-): SinglePaneColumnExtent | null => {
-  const lookup = lookupPaneColumn(layout, logicalIndex);
-  if (!lookup) {
-    return null;
-  }
-  const { pane, entry } = lookup;
-  return {
-    pane,
-    extent: {
-      start: entry.paneLocalStart,
-      end: entry.paneLocalEnd,
-      width: entry.paneLocalSize,
-    },
-  };
-};
-</file>
-
 <file path="src/components/spreadsheet-grid/view/ColumnChooserPanel.tsx">
 // 追加(13-B2-1): 列の表示/非表示パネル(AG Grid の Columns Tool Panel 相当)です。
 //   - タイトル + × クローズ / 検索ボックス / 3 状態の全選択チェックボックス /
@@ -6606,6 +6532,486 @@ export const useGridPointerInteractions = <T,>({
 export default useGridPointerInteractions;
 </file>
 
+<file path="src/components/spreadsheet-grid/logic/geometry.ts">
+import type { GridColumn } from '../model/gridTypes';
+
+// ────────────────────────────────────────────────
+// 既存: 列の座標計算を共通化するための measurement 型です。
+// ────────────────────────────────────────────────
+
+export type ColumnMeasurement<T> = {
+  index: number;
+  column: GridColumn<T>;
+  start: number;
+  // 追加: 各列の実表示幅です。
+  size: number;
+  end: number;
+};
+
+// 追加: 値を min/max に収めるユーティリティです。
+export const clamp = (value: number, min: number, max: number) =>
+  Math.min(Math.max(value, min), max);
+
+// 追加: columns + columnWidths から、列座標の measurement 一覧を生成します。
+export const buildColumnMeasurements = <T,>(
+  columns: GridColumn<T>[],
+  columnWidths: Record<string, number>,
+): ColumnMeasurement<T>[] => {
+  let start = 0;
+  return columns.map((column, index) => {
+    const size = columnWidths[column.key] ?? column.width;
+    const measurement: ColumnMeasurement<T> = {
+      index,
+      column,
+      start,
+      size,
+      end: start + size,
+    };
+    start += size;
+    return measurement;
+  });
+};
+
+// 追加: x 座標から列 index を特定するための二分探索です。
+export const findColumnIndexFromOffset = <T,>(
+  measurements: ColumnMeasurement<T>[],
+  offset: number,
+) => {
+  if (measurements.length === 0) {
+    return -1;
+  }
+  if (offset <= 0) {
+    return 0;
+  }
+  let low = 0;
+  let high = measurements.length - 1;
+  while (low <= high) {
+    const mid = Math.floor((low + high) / 2);
+    const current = measurements[mid];
+    if (offset < current.start) {
+      high = mid - 1;
+      continue;
+    }
+    if (offset >= current.end) {
+      low = mid + 1;
+      continue;
+    }
+    return current.index;
+  }
+  return Math.max(0, Math.min(low, measurements.length - 1));
+};
+
+// ────────────────────────────────────────────────
+// 追加(10-A): 3 ペイン（pinned-left / center / pinned-right）
+//             分離に必要な型と helper 群です。
+//             ここでは型定義と純粋関数のみ追加し、
+//             レンダリングは一切変更しません。
+// ────────────────────────────────────────────────
+
+// 追加(10-A): 列が所属するペインの種別です。
+export type ColumnPane = 'left' | 'center' | 'right';
+
+// 追加(10-A): 列定義から所属ペインを判定します。
+export const getColumnPane = <T,>(column: GridColumn<T>): ColumnPane => {
+  if (column.pinned === 'left') return 'left';
+  if (column.pinned === 'right') return 'right';
+  return 'center';
+};
+
+// 追加(10-A): visibleColumns を AG Grid 互換の視覚順序に並べ替えます。
+//             pinned-left → center → pinned-right の順になります。
+//             各グループ内では元配列の相対順序が保持されます。
+//             ※ この関数で返る配列が「論理列 index」の基準になります。
+export const reorderColumnsByPane = <T,>(
+  columns: GridColumn<T>[],
+): GridColumn<T>[] => {
+  const left: GridColumn<T>[] = [];
+  const center: GridColumn<T>[] = [];
+  const right: GridColumn<T>[] = [];
+
+  for (const column of columns) {
+    const pane = getColumnPane(column);
+    if (pane === 'left') left.push(column);
+    else if (pane === 'right') right.push(column);
+    else center.push(column);
+  }
+
+  return [...left, ...center, ...right];
+};
+
+// 追加(10-A): 1 つのペイン内における列の座標情報です。
+//             paneLocalStart / paneLocalEnd はペイン内ローカル座標（0 始まり）です。
+//             logicalIndex は reorder 後の visibleColumns 配列上の index です。
+export type PaneColumnEntry<T> = {
+  column: GridColumn<T>;
+  logicalIndex: number;
+  paneLocalStart: number;
+  paneLocalSize: number;
+  paneLocalEnd: number;
+};
+
+// 追加(10-A): 1 つのペインの geometry 情報です。
+export type PaneGeometry<T> = {
+  pane: ColumnPane;
+  entries: PaneColumnEntry<T>[];
+  totalWidth: number;
+};
+
+// 追加(10-A): 3 ペイン全体のレイアウト情報です。
+export type GridPaneLayout<T> = {
+  left: PaneGeometry<T>;
+  center: PaneGeometry<T>;
+  right: PaneGeometry<T>;
+};
+
+// 追加(11-B4): ペイン分割後の「列ソース」（列 + 論理 index のペア）です。
+//             論理 index は reorder 済み orderedColumns 上の index で、
+//             ペイン geometry を個別に再構築しても不変です。
+export type PaneSourceColumn<T> = {
+  column: GridColumn<T>;
+  logicalIndex: number;
+};
+
+// 追加(11-B4): orderedColumns を 3 ペインの列ソースへ分割した結果です。
+export type PaneSourceColumns<T> = {
+  left: PaneSourceColumn<T>[];
+  center: PaneSourceColumn<T>[];
+  right: PaneSourceColumn<T>[];
+};
+
+// 追加(11-B4): reorder 済み orderedColumns を 3 ペインの列ソースへ分割します。
+//             columnWidths に依存しないため、列構成が変わらない限り
+//             結果を memo で固定できます（ライブリサイズ中も不変）。
+export const splitOrderedColumnsByPane = <T,>(
+  orderedColumns: GridColumn<T>[],
+): PaneSourceColumns<T> => {
+  const groups: PaneSourceColumns<T> = {
+    left: [],
+    center: [],
+    right: [],
+  };
+
+  orderedColumns.forEach((column, logicalIndex) => {
+    const pane = getColumnPane(column);
+    groups[pane].push({ column, logicalIndex });
+  });
+
+  return groups;
+};
+
+// 追加(11-B4): 1 ペイン分の解決済み列幅（columnWidths 優先 / column.width フォールバック）を
+//             ペイン内の列順で並べた配列として返す内部 helper です。
+const resolvePaneWidths = <T,>(
+  items: PaneSourceColumn<T>[],
+  columnWidths: Record<string, number>,
+): number[] =>
+  items.map(({ column }) => columnWidths[column.key] ?? column.width);
+
+// 追加(11-B4): 1 ペイン分の解決済み列幅を join した「幅キー文字列」を作ります。
+//             useMemo の依存値として使うことで、「そのペインの幅が実際に変わったとき」
+//             だけ geometry を再構築できます（columnWidths オブジェクトは毎 pointermove で
+//             参照が変わりますが、無関係ペインの幅キーは同一文字列のままです）。
+export const buildPaneWidthsKey = <T,>(
+  items: PaneSourceColumn<T>[],
+  columnWidths: Record<string, number>,
+): string => resolvePaneWidths(items, columnWidths).join(',');
+
+// 追加(11-B4): 幅キー文字列を解決済み幅配列へ戻します（buildPaneWidthsKey の逆変換）。
+const parsePaneWidthsKey = (widthsKey: string): number[] =>
+  widthsKey === '' ? [] : widthsKey.split(',').map(Number);
+
+// 追加(11-B4): 1 ペイン分の PaneGeometry を解決済み幅配列から構築する core です。
+//             旧 buildGridPaneLayout 内部の buildPane と同一ロジックです。
+export const buildPaneGeometry = <T,>(
+  pane: ColumnPane,
+  items: PaneSourceColumn<T>[],
+  resolvedWidths: number[],
+): PaneGeometry<T> => {
+  let offset = 0;
+  const entries: PaneColumnEntry<T>[] = items.map(
+    ({ column, logicalIndex }, indexInPane) => {
+      const size = resolvedWidths[indexInPane] ?? column.width;
+      const entry: PaneColumnEntry<T> = {
+        column,
+        logicalIndex,
+        paneLocalStart: offset,
+        paneLocalSize: size,
+        paneLocalEnd: offset + size,
+      };
+      offset += size;
+      return entry;
+    },
+  );
+  return { pane, entries, totalWidth: offset };
+};
+
+// 追加(11-B4): 幅キー文字列から 1 ペイン分の PaneGeometry を構築します。
+//             SpreadsheetGrid 側のペイン別 useMemo（依存 = 列ソース + 幅キー）から
+//             呼ぶ想定です。幅キーは buildPaneWidthsKey で生成された値を渡してください。
+export const buildPaneGeometryFromWidthsKey = <T,>(
+  pane: ColumnPane,
+  items: PaneSourceColumn<T>[],
+  widthsKey: string,
+): PaneGeometry<T> =>
+  buildPaneGeometry(pane, items, parsePaneWidthsKey(widthsKey));
+
+// 追加(10-A): reorder 済み visibleColumns + columnWidths から
+//             3 ペインレイアウトを構築します。
+//             引数の columns は reorderColumnsByPane() 済みを前提とします。
+// 変更(11-B4): 内部実装を splitOrderedColumnsByPane + buildPaneGeometry へ委譲しました。
+//             SpreadsheetGrid 本体はペイン別 useMemo へ移行済みですが、
+//             「一括構築」の互換 API としてテスト・将来利用向けに残しています。
+export const buildGridPaneLayout = <T,>(
+  orderedColumns: GridColumn<T>[],
+  columnWidths: Record<string, number>,
+): GridPaneLayout<T> => {
+  const groups = splitOrderedColumnsByPane(orderedColumns);
+  return {
+    left: buildPaneGeometry(
+      'left',
+      groups.left,
+      resolvePaneWidths(groups.left, columnWidths),
+    ),
+    center: buildPaneGeometry(
+      'center',
+      groups.center,
+      resolvePaneWidths(groups.center, columnWidths),
+    ),
+    right: buildPaneGeometry(
+      'right',
+      groups.right,
+      resolvePaneWidths(groups.right, columnWidths),
+    ),
+  };
+};
+
+// 追加(10-A): ペイン + エントリをまとめて返す lookup 結果型です。
+export type PaneColumnLookupResult<T> = {
+  pane: ColumnPane;
+  entry: PaneColumnEntry<T>;
+};
+
+// 追加(10-A): 論理列 index からペインとローカル座標を逆引きします。
+//             見つからない場合は null を返します。
+export const lookupPaneColumn = <T,>(
+  layout: GridPaneLayout<T>,
+  logicalIndex: number,
+): PaneColumnLookupResult<T> | null => {
+  const panes: [ColumnPane, PaneGeometry<T>][] = [
+    ['left', layout.left],
+    ['center', layout.center],
+    ['right', layout.right],
+  ];
+
+  for (const [pane, geometry] of panes) {
+    const entry = geometry.entries.find((e) => e.logicalIndex === logicalIndex);
+    if (entry) {
+      return { pane, entry };
+    }
+  }
+
+  return null;
+};
+
+// 追加(10-A): ペイン内ローカル x 座標から論理列 index を特定します。
+//             pointer interaction でペインごとにヒットテストするために使います。
+export const findLogicalIndexFromPaneOffset = <T,>(
+  paneGeometry: PaneGeometry<T>,
+  offset: number,
+): number => {
+  const { entries } = paneGeometry;
+  if (entries.length === 0) {
+    return -1;
+  }
+  if (offset <= 0) {
+    return entries[0].logicalIndex;
+  }
+
+  let low = 0;
+  let high = entries.length - 1;
+
+  while (low <= high) {
+    const mid = Math.floor((low + high) / 2);
+    const entry = entries[mid];
+
+    if (offset < entry.paneLocalStart) {
+      high = mid - 1;
+      continue;
+    }
+    if (offset >= entry.paneLocalEnd) {
+      low = mid + 1;
+      continue;
+    }
+    // 追加(10-A): ヒットしたエントリの論理 index を返します。
+    return entry.logicalIndex;
+  }
+
+  // 追加(10-A): 範囲外の場合は最も近いエントリの論理 index を返します。
+  const clampedIndex = Math.max(0, Math.min(low, entries.length - 1));
+  return entries[clampedIndex].logicalIndex;
+};
+
+// 追加(13-B3-2): pane-local x オフセットから「挿入スロット index(0..件数)」を返します。
+//   ColumnChooserPanel の DOM midpoint 走査(updateDropFromPointer)の幾何版です。
+//   各エントリの midpoint より左にポインタがあれば、その手前へ挿入(= そのエントリの index)。
+//   どの midpoint よりも右なら末尾(= entries.length)を返します。空ペインは 0。
+//   ※ ヘッダー D&D のドロップ先 slot 算出に使います(findLogicalIndexFromPaneOffset が
+//      「どのセル上か」を返すのに対し、こちらは「列と列の境界(=挿入位置)」を返します)。
+export const findPaneDropSlot = <T,>(
+  paneGeometry: PaneGeometry<T>,
+  paneLocalOffset: number,
+): number => {
+  const { entries } = paneGeometry;
+  for (let i = 0; i < entries.length; i += 1) {
+    const entry = entries[i];
+    const midpoint = entry.paneLocalStart + entry.paneLocalSize / 2;
+    if (paneLocalOffset < midpoint) {
+      return i;
+    }
+  }
+  return entries.length;
+};
+
+// 追加(13-B3-2): スロット index → ペインローカル境界 x(ドロップインジケータの描画位置)。
+//   slot<件数: そのエントリの paneLocalStart / slot>=件数: totalWidth(末尾) / 空ペイン: 0。
+export const paneDropSlotBoundaryX = <T,>(
+  paneGeometry: PaneGeometry<T>,
+  slot: number,
+): number => {
+  const { entries, totalWidth } = paneGeometry;
+  if (entries.length === 0) return 0;
+  if (slot <= 0) return entries[0].paneLocalStart;
+  if (slot >= entries.length) return totalWidth;
+  return entries[slot].paneLocalStart;
+};
+
+// 追加(10-A): 3 ペインそれぞれに pinned 列が何本あるかを返す convenience helper です。
+export const countPinnedColumns = <T,>(
+  layout: GridPaneLayout<T>,
+): { left: number; center: number; right: number } => ({
+  left: layout.left.entries.length,
+  center: layout.center.entries.length,
+  right: layout.right.entries.length,
+});
+
+// 追加(10-A): pinned 列が 1 本もなければ true を返します。
+//             10-B 以降で「従来の単一スクロール描画にフォールバックするか」の判定に使います。
+export const isPlainLayout = <T,>(layout: GridPaneLayout<T>): boolean =>
+  layout.left.entries.length === 0 && layout.right.entries.length === 0;
+// ────────────────────────────────────────────────
+// 追加(10-D): Overlay / Editor をペイン別座標系で描画するための helper 群です。
+//             10-C までで「セル本体・ヘッダー」はペインローカル座標になりましたが、
+//             SelectionOverlay / ActiveCellOverlay / CellEditorLayer はまだ
+//             グローバル座標（columnMeasurements + rowHeaderWidth）前提でした。
+//             ここで「論理列 index 範囲 → 各ペインのローカル水平 extent」を求める
+//             純粋関数を用意し、overlay を各ペイン内へ正しく配置できるようにします。
+//             ※ 返す座標は leadingWidth を含まない「列領域内ローカル座標」です。
+//               leadingWidth（行ヘッダー幅）は描画側で加算します。
+// ────────────────────────────────────────────────
+
+// 追加(10-D): 1 ペイン内における水平 extent（列領域ローカル座標, leadingWidth 非含有）です。
+//             start / end は paneLocalStart / paneLocalEnd 起点で、width = end - start です。
+export type PaneColumnExtent = {
+  start: number;
+  end: number;
+  width: number;
+};
+
+// 追加(10-D): 3 ペインそれぞれの水平 extent をまとめた結果です。
+//             該当ペインに範囲内の列が 1 本も無い場合は null になります。
+export type PaneColumnExtentMap = Record<ColumnPane, PaneColumnExtent | null>;
+
+// 追加(10-D): 1 ペイン分の extent を、論理列 index 範囲 [startLogicalIndex, endLogicalIndex]
+//             （両端含む）から求める内部 helper です。
+const computeExtentForPane = <T,>(
+  geometry: PaneGeometry<T>,
+  startLogicalIndex: number,
+  endLogicalIndex: number,
+): PaneColumnExtent | null => {
+  const lo = Math.min(startLogicalIndex, endLogicalIndex);
+  const hi = Math.max(startLogicalIndex, endLogicalIndex);
+
+  let start = Number.POSITIVE_INFINITY;
+  let end = Number.NEGATIVE_INFINITY;
+  let found = false;
+
+  for (const entry of geometry.entries) {
+    if (entry.logicalIndex < lo || entry.logicalIndex > hi) {
+      continue;
+    }
+    found = true;
+    if (entry.paneLocalStart < start) start = entry.paneLocalStart;
+    if (entry.paneLocalEnd > end) end = entry.paneLocalEnd;
+  }
+
+  if (!found) {
+    return null;
+  }
+  return { start, end, width: end - start };
+};
+
+// 追加(10-D): 論理列 index 範囲から、3 ペインそれぞれの水平 extent を求めます。
+//             cell / col 選択や行ヘッダー以外の overlay の水平範囲決定に使います。
+export const computePaneColumnExtents = <T,>(
+  layout: GridPaneLayout<T>,
+  startLogicalIndex: number,
+  endLogicalIndex: number,
+): PaneColumnExtentMap => ({
+  left: computeExtentForPane(layout.left, startLogicalIndex, endLogicalIndex),
+  center: computeExtentForPane(
+    layout.center,
+    startLogicalIndex,
+    endLogicalIndex,
+  ),
+  right: computeExtentForPane(layout.right, startLogicalIndex, endLogicalIndex),
+});
+
+// 追加(10-D): 「全列」を覆う extent を 3 ペイン分求めます（行選択 overlay 用）。
+//             各ペインは自分の列領域全幅（0 〜 totalWidth）を覆います。
+//             列が無いペインは null になります。
+export const computeFullWidthPaneExtents = <T,>(
+  layout: GridPaneLayout<T>,
+): PaneColumnExtentMap => {
+  const toExtent = (geometry: PaneGeometry<T>): PaneColumnExtent | null =>
+    geometry.entries.length === 0
+      ? null
+      : { start: 0, end: geometry.totalWidth, width: geometry.totalWidth };
+
+  return {
+    left: toExtent(layout.left),
+    center: toExtent(layout.center),
+    right: toExtent(layout.right),
+  };
+};
+
+// 追加(10-D): 単一論理列 index が属するペインと、その列のローカル extent を求めます。
+//             ActiveCellOverlay / CellEditorLayer のように単一セル列を扱う場合に使います。
+//             見つからなければ null を返します。
+export type SinglePaneColumnExtent = {
+  pane: ColumnPane;
+  extent: PaneColumnExtent;
+};
+
+export const computeSinglePaneColumnExtent = <T,>(
+  layout: GridPaneLayout<T>,
+  logicalIndex: number,
+): SinglePaneColumnExtent | null => {
+  const lookup = lookupPaneColumn(layout, logicalIndex);
+  if (!lookup) {
+    return null;
+  }
+  const { pane, entry } = lookup;
+  return {
+    pane,
+    extent: {
+      start: entry.paneLocalStart,
+      end: entry.paneLocalEnd,
+      width: entry.paneLocalSize,
+    },
+  };
+};
+</file>
+
 <file path="src/components/spreadsheet-grid/view/ColumnMenuPopover.tsx">
 // 変更(13-A2): フラットな項目列挙 → AG Grid 同様のカスケード(サブメニュー)UI へ変更します。
 //             ルートメニューには「列の固定 ›」を置き、hover / クリックで右隣に
@@ -7927,6 +8333,13 @@ type GridHeaderRowProps<T> = {
     column: GridColumn<T>,
     event: MouseEvent<HTMLDivElement>,
   ) => void;
+  // 追加(13-B3-2): バッジ(Excel 列名)を grip にした列 D&D 並べ替えの pointerdown です。
+  //   latest-ref 安定のため参照は不変。未指定(reorder 不可)時はバッジを通常表示にします
+  //   (ハンドラ内で stopPropagation し、ヘッダー本体の列範囲選択とは衝突させません)。
+  onColumnDragHandlePointerDown?: (
+    column: GridColumn<T>,
+    event: PointerEvent<HTMLSpanElement>,
+  ) => void;
 };
 
 // 変更(10-C): sticky header 行を「1ペイン分」描画する汎用コンポーネントにしました。
@@ -7971,6 +8384,8 @@ function GridHeaderRowInner<T>({
   openedMenuColumnKey,
   onColumnMenuButtonPointerDown,
   onColumnHeaderContextMenu,
+  // 追加(13-B3-2): バッジ grip の pointerdown(列 D&D)。
+  onColumnDragHandlePointerDown,
 }: GridHeaderRowProps<T>) {
   return (
     <div
@@ -8096,7 +8511,18 @@ function GridHeaderRowInner<T>({
                     : '#f8fafc',
             }}
           >
+            {/* 変更(13-B3-2): Excel 列名バッジを掴み手(grip)に再利用します。
+                onPointerDown 内で stopPropagation するため、ヘッダー本体の列範囲選択
+                (onColumnHeaderPointerDown)とは衝突しません。reorder 不可時は通常表示。 */}
             <span
+              onPointerDown={
+                onColumnDragHandlePointerDown
+                  ? (event) => onColumnDragHandlePointerDown(column, event)
+                  : undefined
+              }
+              title={
+                onColumnDragHandlePointerDown ? 'ドラッグで列を移動' : undefined
+              }
               style={{
                 display: 'inline-flex',
                 alignItems: 'center',
@@ -8108,6 +8534,10 @@ function GridHeaderRowInner<T>({
                 color: isColumnFiltered ? '#1d4ed8' : '#475569',
                 fontSize: 11,
                 fontWeight: 700,
+                // 追加(13-B3-2): grip の視覚 + タッチでのスクロール抑止 + 文字選択抑止。
+                cursor: onColumnDragHandlePointerDown ? 'grab' : 'default',
+                touchAction: onColumnDragHandlePointerDown ? 'none' : undefined,
+                userSelect: 'none',
               }}
             >
               {toExcelColumnName(colIndex)}
@@ -8719,6 +9149,8 @@ import { useGridEditController } from './hooks/useGridEditController';
 import { useGridKeyboardInteractions } from './hooks/useGridKeyboardInteractions';
 import { useGridPointerInteractions } from './hooks/useGridPointerInteractions';
 import { useGridViewportSync } from './hooks/useGridViewportSync';
+// 追加(13-B3-2): ヘッダー D&D 列並べ替え controller です。
+import { useColumnHeaderDragController } from './hooks/useColumnHeaderDragController';
 import {
   applyColumnFilters,
   applyGlobalFilter,
@@ -9967,8 +10399,27 @@ export function SpreadsheetGrid<T extends object>({
   //   - 注記: 本バッチでは pinned は変更しません。pinned 混在時は配列順を動かすだけで、
   //     画面側は従来どおり reorderColumnsByPane が pane(left/center/right)へ再グループ化します
   //     (ペイン跨ぎ・pinned 変更はヘッダー D&D の 13-B3-2 で扱います)。
-  const handleColumnChooserReorder = useCallback(
-    (orderedKeys: string[]) => {
+  // 変更(13-B3-2): 旧 handleColumnChooserReorder を「並べ替え + 任意の pin 変更」を 1 経路に
+  //   集約した共通 commit ヘルパ applyColumnOrderAndPin へ一般化しました。
+  // 設計メモ:
+  //   - orderedKeys は「全列キーの permutation」。長さ・集合が columns と一致しなければ no-op。
+  //   - pinOverride: 列キー → 'left'|'right'|undefined。指定列だけ pinned を上書きします
+  //     (ヘッダー D&D 用。チューザー並べ替えは未指定で従来どおり pinned 不変)。
+  //   - 【幅の保全】全列について解決済み幅(columnWidthsRef)を defs へ書き戻します。書き戻さないと
+  //     columns 変化 → columnWidths/sync effect で手動リサイズ幅が defs 幅へ戻ってしまうためです。
+  //   - 【正規化】reorderColumnsByPane で pane 連結正規化します(合意①・冪等)。pinOverride で
+  //     pinned が変わってもこの正規化が視覚順(= 論理 index 空間)を確定させます。チューザーの
+  //     orderedKeys は computeSectionReorderedKeys で既に pane 連結済みのため、ここでの正規化は
+  //     冪等で従来挙動と不変です。
+  //   - 【no-op】正規化結果が現在の columns と「順序・幅・pinned」すべて一致なら dispatch も
+  //     onColumnsChange も行いません(無駄な再レンダー抑止)。
+  //   - 並べ替え / pin 変更は orderedColumns の視覚順(= selection / activeCell の論理 index 空間)
+  //     を変え得るため、選択・アクティブセル・編集は破棄します(pin / 表示と同理由)。
+  const applyColumnOrderAndPin = useCallback(
+    (
+      orderedKeys: string[],
+      pinOverride?: Map<string, GridColumnPinned | undefined>,
+    ) => {
       if (!onColumnsChange) {
         return;
       }
@@ -9976,33 +10427,44 @@ export function SpreadsheetGrid<T extends object>({
         return;
       }
       const byKey = new Map(columns.map((column) => [column.key, column]));
-
-      let mutated = false;
-      let aborted = false;
-      const nextColumns = orderedKeys.map((key, index) => {
-        const column = byKey.get(key);
-        if (!column) {
-          // 未知キー(集合不一致)→ 安全側に倒して中断します。
-          aborted = true;
-          return columns[index];
-        }
-        if (columns[index]?.key !== key) {
-          mutated = true;
-        }
-        const resolvedWidth =
-          columnWidthsRef.current[column.key] ?? column.width;
-        if (resolvedWidth !== column.width) {
-          mutated = true;
-          return { ...column, width: resolvedWidth };
-        }
-        return column;
-      });
-
-      if (aborted || !mutated) {
+      // 集合不一致(未知キー)は安全側に倒して no-op。
+      if (!orderedKeys.every((key) => byKey.has(key))) {
         return;
       }
 
-      onColumnsChange(nextColumns);
+      const reordered = orderedKeys.map((key) => {
+        const column = byKey.get(key)!;
+        const resolvedWidth =
+          columnWidthsRef.current[column.key] ?? column.width;
+        const nextPinned = pinOverride?.has(key)
+          ? pinOverride.get(key)
+          : column.pinned;
+        const widthChanged = resolvedWidth !== column.width;
+        const pinnedChanged =
+          (column.pinned ?? undefined) !== (nextPinned ?? undefined);
+        return widthChanged || pinnedChanged
+          ? { ...column, width: resolvedWidth, pinned: nextPinned }
+          : column;
+      });
+
+      const normalized = reorderColumnsByPane(reordered);
+
+      const isNoOp =
+        normalized.length === columns.length &&
+        normalized.every((column, index) => {
+          const prev = columns[index];
+          return (
+            !!prev &&
+            prev.key === column.key &&
+            prev.width === column.width &&
+            (prev.pinned ?? undefined) === (column.pinned ?? undefined)
+          );
+        });
+      if (isNoOp) {
+        return;
+      }
+
+      onColumnsChange(normalized);
 
       dispatch(gridActions.stopEdit());
       dispatch(gridActions.clearSelection());
@@ -10010,6 +10472,58 @@ export function SpreadsheetGrid<T extends object>({
     },
     [columns, dispatch, onColumnsChange],
   );
+
+  // 変更(13-B3-2): チューザー並べ替えは applyColumnOrderAndPin(pinOverride なし)へ委譲します。
+  //   ColumnChooserPanel へ渡す参照を安定させるため薄い useCallback で包みます。
+  const handleColumnChooserReorder = useCallback(
+    (orderedKeys: string[]) => {
+      applyColumnOrderAndPin(orderedKeys);
+    },
+    [applyColumnOrderAndPin],
+  );
+
+  // 追加(13-B3-2): ヘッダー D&D 並べ替え controller(ドロップインジケータ ref + 安定ハンドラ)。
+  //   enabled は controlled columns(onColumnsChange あり)のときだけ true。
+  const {
+    onColumnDragHandlePointerDown,
+    leftIndicatorRef,
+    centerIndicatorRef,
+    rightIndicatorRef,
+  } = useColumnHeaderDragController<T>({
+    enabled: Boolean(onColumnsChange),
+    columns,
+    paneLayout,
+    leftPaneScrollRef,
+    rightPaneScrollRef,
+    bodyScrollRef,
+    scrollContainerRef,
+    leftLeadingWidth,
+    centerLeadingWidth,
+    rightLeadingWidth,
+    applyColumnOrderAndPin,
+  });
+
+  // 追加(13-B3-2): reorder 可能(controlled columns)なときだけバッジを grip 化します。
+  //   未指定時はバッジが通常表示になり、列範囲選択など既存挙動は完全に従来どおりです。
+  const headerDragHandler = onColumnsChange
+    ? onColumnDragHandlePointerDown
+    : undefined;
+
+  // 追加(13-B3-2): ドロップインジケータ(縦線)の共通 style です。display は controller が
+  //   ref 経由で 'block'/'none' を切替え、left はペインローカル境界 x を px で設定します。
+  //   各 pane の position:relative コンテナ(高さ = headerHeight + totalBodyHeight)直下に置くため
+  //   height:'100%' でヘッダー〜ボディを貫く縦線になります。zIndex は sticky ヘッダー(6/7)より前面。
+  const columnDropIndicatorStyle: CSSProperties = {
+    position: 'absolute',
+    top: 0,
+    height: '100%',
+    width: 2,
+    backgroundColor: '#2563eb',
+    transform: 'translateX(-1px)',
+    pointerEvents: 'none',
+    zIndex: 8,
+    display: 'none',
+  };
 
   // 追加(13-B2-2): 全列を初期 column defs の値(幅 / 固定 / 表示)へ戻します。
   // 設計メモ:
@@ -10686,6 +11200,7 @@ export function SpreadsheetGrid<T extends object>({
                   openedMenuColumnKey={openedMenuColumnKey}
                   onColumnMenuButtonPointerDown={openColumnMenuFromButton}
                   onColumnHeaderContextMenu={openColumnMenuFromContextMenu}
+                  onColumnDragHandlePointerDown={headerDragHandler}
                 />
 
                 {/* 追加(10-D): 左固定ペイン内の overlay（ペインローカル座標）。*/}
@@ -10751,6 +11266,9 @@ export function SpreadsheetGrid<T extends object>({
                   renderCellContent={renderCellContent}
                 />
                 </div>
+
+                {/* 追加(13-B3-2): 左固定ペインのドロップインジケータ(縦線)。 */}
+                <div ref={leftIndicatorRef} style={columnDropIndicatorStyle} />
               </div>
             )}
           </div>
@@ -10803,6 +11321,7 @@ export function SpreadsheetGrid<T extends object>({
                 openedMenuColumnKey={openedMenuColumnKey}
                 onColumnMenuButtonPointerDown={openColumnMenuFromButton}
                 onColumnHeaderContextMenu={openColumnMenuFromContextMenu}
+                onColumnDragHandlePointerDown={headerDragHandler}
               />
 
               {/* 変更(10-D): 中央ペインの overlay をペインローカル座標に切替。*/}
@@ -10854,6 +11373,11 @@ export function SpreadsheetGrid<T extends object>({
                 onCellDoubleClick={handleCellDoubleClickWithController}
                 renderCellContent={renderCellContent}
               />
+
+              {/* 追加(13-B3-2): 中央ペインのドロップインジケータ(縦線)。
+                  controller が ref 経由で display/left を imperative に制御します
+                  (ドラッグ中の再レンダーなし → GridHeaderRow の memo を維持)。 */}
+              <div ref={centerIndicatorRef} style={columnDropIndicatorStyle} />
             </div>
           </div>
 
@@ -10906,6 +11430,7 @@ export function SpreadsheetGrid<T extends object>({
                   openedMenuColumnKey={openedMenuColumnKey}
                   onColumnMenuButtonPointerDown={openColumnMenuFromButton}
                   onColumnHeaderContextMenu={openColumnMenuFromContextMenu}
+                  onColumnDragHandlePointerDown={headerDragHandler}
                 />
 
                 {/* 追加(10-D): 右固定ペイン内の overlay（ペインローカル座標）。*/}
@@ -10968,6 +11493,9 @@ export function SpreadsheetGrid<T extends object>({
                   renderCellContent={renderCellContent}
                 />
                 </div>
+
+                {/* 追加(13-B3-2): 右固定ペインのドロップインジケータ(縦線)。 */}
+                <div ref={rightIndicatorRef} style={columnDropIndicatorStyle} />
               </div>
             )}
           </div>

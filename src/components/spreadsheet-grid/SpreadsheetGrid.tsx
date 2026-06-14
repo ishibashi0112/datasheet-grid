@@ -1399,12 +1399,15 @@ export function SpreadsheetGrid<T extends object>({
 
   // 追加(13-B3-2): ドロップインジケータ(縦線)の共通 style です。display は controller が
   //   ref 経由で 'block'/'none' を切替え、left はペインローカル境界 x を px で設定します。
-  //   各 pane の position:relative コンテナ(高さ = headerHeight + totalBodyHeight)直下に置くため
-  //   height:'100%' でヘッダー〜ボディを貫く縦線になります。zIndex は sticky ヘッダー(6/7)より前面。
+  //   zIndex は sticky ヘッダー(6/7)より前面。
+  // 変更(13-B3-3): ホストが 2 種(中央=relative コンテナ / 左右=sticky wrapper)になったため、
+  //   height を百分率から数値(headerHeight + totalBodyHeight)へ確定させ、どちらのホストでも
+  //   ヘッダー〜ボディを貫く縦線になるようにしました(空ペイン wrapper は alignSelf:stretch で
+  //   同じ高さ。relative コンテナも同じ高さを明示しているため値は不変です)。
   const columnDropIndicatorStyle: CSSProperties = {
     position: 'absolute',
     top: 0,
-    height: '100%',
+    height: headerHeight + totalBodyHeight,
     width: 2,
     backgroundColor: '#2563eb',
     transform: 'translateX(-1px)',
@@ -2154,11 +2157,16 @@ export function SpreadsheetGrid<T extends object>({
                   renderCellContent={renderCellContent}
                 />
                 </div>
-
-                {/* 追加(13-B3-2): 左固定ペインのドロップインジケータ(縦線)。 */}
-                <div ref={leftIndicatorRef} style={columnDropIndicatorStyle} />
               </div>
             )}
+
+            {/* 追加(13-B3-3): 左固定ペインのドロップインジケータ(縦線)。
+                変更点: 旧来は hasLeftPane 内の relative コンテナ直下に置いていましたが、
+                空ペイン(pinned-left 0 本)時にも線を出せるよう、常時レンダーされる
+                wrapper(sticky;left:0 = absolute 子の containing block)直下へ移しました。
+                非空時は wrapper と内側 relative コンテナが原点(0,0)・高さ共通のため、
+                leftPx の意味・縦線位置は従来と不変です。 */}
+            <div ref={leftIndicatorRef} style={columnDropIndicatorStyle} />
           </div>
 
           {/* ── 中央ペイン ── */}
@@ -2381,11 +2389,15 @@ export function SpreadsheetGrid<T extends object>({
                   renderCellContent={renderCellContent}
                 />
                 </div>
-
-                {/* 追加(13-B3-2): 右固定ペインのドロップインジケータ(縦線)。 */}
-                <div ref={rightIndicatorRef} style={columnDropIndicatorStyle} />
               </div>
             )}
+
+            {/* 追加(13-B3-3): 右固定ペインのドロップインジケータ(縦線)。
+                左と同様、空ペイン(pinned-right 0 本)時にも線を出せるよう、常時レンダーされる
+                wrapper(sticky;right:0 = absolute 子の containing block)直下へ移しました。
+                非空時は leftPx の意味・位置とも従来と不変です。空時は wrapper 原点が
+                ビューポート右端のため、controller が leftPx を負値(-inset)にして端の内側へ寄せます。 */}
+            <div ref={rightIndicatorRef} style={columnDropIndicatorStyle} />
           </div>
 
           </div>
