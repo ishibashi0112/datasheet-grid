@@ -69,3 +69,50 @@ export const applySort = <T, R extends GridRowModelLike<T>>(
     return leftRowModel.sourceIndex - rightRowModel.sourceIndex;
   });
 };
+
+// 追加(MS-2 / マルチソート本体): ソートエントリ配列の「次状態」を返す純関数です。
+//   発火口を 1 か所に集約し、列メニュー(単一置換)とヘッダー Shift+click(トグル)で
+//   同じロジックを共有します。入力配列は破壊せず、常に新しい配列を返します。
+//
+//   additive=false (列メニュー / 単一置換):
+//     - 現在がちょうど [{columnKey, direction}] の「単一・同方向」なら [](解除)。
+//     - それ以外は [{columnKey, direction}] へ置換します(他列のソートは捨てます)。
+//     ⇒ MS-1 の handleColumnMenuSortChange の inline 判定と完全同値です。
+//
+//   additive=true (ヘッダー Shift+click / トグル):
+//     - 当該列が未登録            → 末尾(最低優先)に {columnKey, direction} を追加。
+//     - 登録済みで direction が別  → 位置を保ったまま direction を更新。
+//     - 登録済みで direction が同じ → 当該列のエントリのみ除去。
+//   呼び出し側(controller)が direction を
+//     existingDir ? 'desc' : 'asc'
+//   で決めることで、ユーザー体験としては none → asc → desc → none の
+//   サイクルになります(desc のときは direction='desc' を渡し、上記「同方向 → 除去」で
+//   消えます)。
+export const nextSortEntries = (
+  current: GridSortState,
+  columnKey: string,
+  direction: 'asc' | 'desc',
+  additive: boolean,
+): GridSortState => {
+  if (!additive) {
+    const isSameSingle =
+      current.length === 1 &&
+      current[0].columnKey === columnKey &&
+      current[0].direction === direction;
+    return isSameSingle ? [] : [{ columnKey, direction }];
+  }
+
+  const index = current.findIndex((entry) => entry.columnKey === columnKey);
+  if (index === -1) {
+    // 未登録 → 末尾(最低優先)に追加。
+    return [...current, { columnKey, direction }];
+  }
+  if (current[index].direction !== direction) {
+    // 別方向 → 位置を保ったまま方向だけ更新。
+    return current.map((entry, i) =>
+      i === index ? { columnKey, direction } : entry,
+    );
+  }
+  // 同方向 → 当該列のみ除去(残りの優先順位は維持)。
+  return current.filter((_, i) => i !== index);
+};

@@ -77,7 +77,7 @@ import {
   type ColumnPane,
   type PaneColumnExtentMap,
 } from './logic/geometry';
-import { applySort } from './logic/sorting';
+import { applySort, nextSortEntries } from './logic/sorting';
 // 追加(13-B1): 列幅自動調整(canvas measureText 方式)の計測ロジックです。
 import { computeAutosizedColumnWidths } from './logic/columnAutosize';
 import type {
@@ -752,6 +752,10 @@ export function SpreadsheetGrid<T extends object>({
     uiState,
     dispatch,
     enableRangeSelection,
+    // 追加(MS-2): ヘッダー Shift+click ソート(発火口 a)用です。
+    //             enableSorting=false 時はガード、orderedColumns で colIndex→key 解決。
+    enableSorting,
+    orderedColumns,
     filteredRowsLength: filteredRows.length,
     visibleColumnsLength: visibleColumns.length,
     // 変更(10-E): グローバル columnMeasurements / rowHeaderWidth から
@@ -1670,21 +1674,15 @@ export function SpreadsheetGrid<T extends object>({
         return;
       }
 
-      // 変更(MS-1): sort が配列化したため、判定/dispatch を配列ベースに置き換えます。
-      //   挙動は従来どおりの「単一置換」: 現在がちょうど『この列・同方向の単一ソート』
-      //   なら解除し、それ以外はこの列だけの単一ソートに置き換えます。
-      //   (Shift+ヘッダークリックによる複数追加は MS-2 で別経路として実装予定)
-      const isSameSingleSort =
-        uiState.sort.length === 1 &&
-        uiState.sort[0].columnKey === columnKey &&
-        uiState.sort[0].direction === direction;
-
-      if (isSameSingleSort) {
-        dispatch(gridActions.clearSort());
-        return;
-      }
-
-      dispatch(gridActions.setSort([{ columnKey, direction }]));
+      // 変更(MS-2): 単一置換ロジックを純関数 nextSortEntries(additive=false) へ一本化
+      //   します。挙動は MS-1 と完全同値(現在がちょうど『この列・同方向の単一ソート』
+      //   なら解除、それ以外はこの列だけの単一ソートへ置換)。マルチソート中に押した
+      //   場合は、その時点のマルチを破棄してこの列の単一ソートへ切り替わります
+      //   (メニューは単一置換のまま = 合意済み方針。複数追加はヘッダー Shift+click 経路)。
+      const next = nextSortEntries(uiState.sort, columnKey, direction, false);
+      dispatch(
+        next.length === 0 ? gridActions.clearSort() : gridActions.setSort(next),
+      );
     },
     [closeColumnMenu, dispatch, enableSorting, uiState.sort],
   );

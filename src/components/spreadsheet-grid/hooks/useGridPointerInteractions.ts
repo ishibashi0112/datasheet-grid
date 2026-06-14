@@ -7,7 +7,15 @@ import {
   type RefObject,
 } from 'react';
 import { gridActions, type GridUiAction } from '../model/gridActions';
-import type { CellCoord, GridUiState } from '../model/gridTypes';
+// 変更(MS-2): Shift+click ソートで colIndex(論理 index) → columnKey 解決に列配列を
+//            使うため GridColumn を追加 import します。
+import type {
+  CellCoord,
+  GridColumn,
+  GridUiState,
+} from '../model/gridTypes';
+// 追加(MS-2): ソートエントリ配列の次状態を求める純関数です(列メニューと共有)。
+import { nextSortEntries } from '../logic/sorting';
 // 変更(10-E): グローバル座標(columnMeasurements)前提の当たり判定から、
 //             ペイン別座標系の当たり判定へ切り替えます。
 // 変更理由: 10-B〜10-D で DOM を 3 ペインに物理分離し、UI state の col は
@@ -40,6 +48,13 @@ type UseGridPointerInteractionsArgs<T> = {
   uiState: GridUiState;
   dispatch: Dispatch<GridUiAction>;
   enableRangeSelection: boolean;
+  // 追加(MS-2): ヘッダー Shift+click ソート(発火口 a)の有効化フラグです。
+  //             enableSorting=false のときは Shift+click でも並べ替えしません。
+  enableSorting: boolean;
+  // 追加(MS-2): colIndex(= entry.logicalIndex / orderedColumns 空間)から
+  //             columnKey を引くための列配列です。selection/activeCell と同じ
+  //             論理 index 空間なので、orderedColumns[colIndex] で一意に解決できます。
+  orderedColumns: GridColumn<T>[];
   filteredRowsLength: number;
   visibleColumnsLength: number;
   // 追加(10-E): 3 ペインの geometry です。当たり判定はこのペインローカル座標で行います。
@@ -66,6 +81,9 @@ export const useGridPointerInteractions = <T,>({
   uiState,
   dispatch,
   enableRangeSelection,
+  // 追加(MS-2): Shift+click ソート用。
+  enableSorting,
+  orderedColumns,
   filteredRowsLength,
   visibleColumnsLength,
   paneLayout,
@@ -85,6 +103,19 @@ export const useGridPointerInteractions = <T,>({
   //           標準的な latest-ref 用法であり、レンダー結果には影響しません。
   const dragStateRef = useRef(uiState.dragState);
   dragStateRef.current = uiState.dragState;
+
+  // 追加(MS-2): handleColumnHeaderPointerDown の Shift 分岐で「最新の」ソート状態 /
+  //   列配列 / 有効化フラグを読むための latest-ref 群です(dragStateRef と同じ用法)。
+  // 変更理由: これらを useCallback の依存に入れると、ソートや列順が変わるたびに
+  //   handleColumnHeaderPointerDown の参照が変わり、これを props に持つ memo 済み
+  //   GridHeaderRow(3 ペイン)を破ってしまいます。ref 経由で読むことで、本ハンドラの
+  //   依存を [dispatch, gridRootRef] のまま恒久安定に保ちます。
+  const sortRef = useRef(uiState.sort);
+  sortRef.current = uiState.sort;
+  const orderedColumnsRef = useRef(orderedColumns);
+  orderedColumnsRef.current = orderedColumns;
+  const enableSortingRef = useRef(enableSorting);
+  enableSortingRef.current = enableSorting;
 
   // 追加(11-B2): effect 依存用のプリミティブです。
   // 変更理由: window pointer effect と自動スクロール effect が uiState.dragState
@@ -384,6 +415,15 @@ export const useGridPointerInteractions = <T,>({
   );
 
   // 追加: 列ヘッダー選択開始です。
+  // 変更(MS-2): Shift+click(発火口 a)をソートのトグルへ分岐させます。
+  //   plain クリックは従来どおり列範囲選択を開始し、Shift とは排他なので衝突しません
+  //   (旧実装も shiftKey を参照していなかったため、列の Shift 範囲拡張という既存挙動は
+  //    奪いません)。サイクルは none → asc → desc → none。direction の決め方は
+  //     未登録(undefined) → 'asc'(末尾に追加)
+  //     'asc'            → 'desc'(同位置で方向更新)
+  //     'desc'           → 'desc'(nextSortEntries の「同方向トグル」で当該列のみ除去)
+  //   ⇒ existingDir ? 'desc' : 'asc' の 1 行に畳めます。最新値はすべて ref 経由で読み、
+  //   本ハンドラの依存は [dispatch, gridRootRef] のまま(参照恒久安定 = memo 維持)です。
   const handleColumnHeaderPointerDown = useCallback(
     (colIndex: number, event: PointerEvent<HTMLDivElement>) => {
       event.preventDefault();
@@ -391,6 +431,26 @@ export const useGridPointerInteractions = <T,>({
         return;
       }
       gridRootRef.current?.focus();
+
+      if (event.shiftKey && enableSortingRef.current) {
+        const column = orderedColumnsRef.current[colIndex];
+        if (column) {
+          const current = sortRef.current;
+          const existingDir = current.find(
+            (entry) => entry.columnKey === column.key,
+          )?.direction;
+          const direction: 'asc' | 'desc' = existingDir ? 'desc' : 'asc';
+          const next = nextSortEntries(current, column.key, direction, true);
+          dispatch(
+            next.length === 0
+              ? gridActions.clearSort()
+              : gridActions.setSort(next),
+          );
+        }
+        // Shift+click では列範囲選択を開始しません(ソートと排他)。
+        return;
+      }
+
       dispatch(gridActions.startColumnSelection(colIndex));
     },
     [dispatch, gridRootRef],

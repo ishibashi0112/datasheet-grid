@@ -217,10 +217,14 @@ function GridHeaderRowInner<T>({
           colIndex >= selectionSnapshot.startCol &&
           colIndex <= selectionSnapshot.endCol;
 
-        // 追加(MS-1): 受動矢印はこの列の sort エントリ(配列)から方向を導出します
-        //            (順序番号バッジは MS-2)。未ソート列は null。
-        const sortEntry =
-          sortState.find((entry) => entry.columnKey === column.key) ?? null;
+        // 追加(MS-1): 受動矢印はこの列の sort エントリ(配列)から方向を導出します。
+        // 変更(MS-2): 順序番号バッジ用に findIndex 化し、index も引きます。未ソート列は
+        //            sortIndex===-1 / sortEntry===null。複数ソート(length>1)のときだけ、
+        //            矢印に 1 始まりの優先順位番号を併記します(単一ソート時は番号なし)。
+        const sortIndex = sortState.findIndex(
+          (entry) => entry.columnKey === column.key,
+        );
+        const sortEntry = sortIndex === -1 ? null : sortState[sortIndex];
 
         // 追加(13-A): この列のメニューを開いているかです(「⋮」の active 表示に使います)。
         // 変更(13-A2): 「⋮」ボタンを hover 時表示 → 常時表示へ変更します。
@@ -356,11 +360,15 @@ function GridHeaderRowInner<T>({
                 <span
                   aria-hidden="true"
                   title={
-                    sortEntry.direction === 'asc'
+                    (sortEntry.direction === 'asc'
                       ? '昇順で並び替え中'
-                      : '降順で並び替え中'
+                      : '降順で並び替え中') +
+                    (sortState.length > 1 ? ` (優先度 ${sortIndex + 1})` : '')
                   }
                   style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 1,
                     flex: '0 0 auto',
                     color: '#2563eb',
                     fontSize: 12,
@@ -369,6 +377,14 @@ function GridHeaderRowInner<T>({
                   }}
                 >
                   {sortEntry.direction === 'asc' ? '↑' : '↓'}
+                  {/* 追加(MS-2): 複数ソート時のみ優先順位番号(1 始まり)を小さく併記。 */}
+                  {sortState.length > 1 && (
+                    <span
+                      style={{ fontSize: 9, fontWeight: 700, lineHeight: 1 }}
+                    >
+                      {sortIndex + 1}
+                    </span>
+                  )}
                 </span>
               )}
 
