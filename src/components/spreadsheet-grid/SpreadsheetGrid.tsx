@@ -85,6 +85,8 @@ import {
   setSortEntryDirection,
   setSortEntryColumn,
   removeSortEntryAt,
+  // 追加(MS-3-2): 優先順位 DnD の配列 move 純関数です。
+  moveSortEntry,
 } from './logic/sorting';
 // 追加(13-B1): 列幅自動調整(canvas measureText 方式)の計測ロジックです。
 import { computeAutosizedColumnWidths } from './logic/columnAutosize';
@@ -1796,6 +1798,22 @@ export function SpreadsheetGrid<T extends object>({
     dispatch(gridActions.clearSort());
   }, [dispatch, enableSorting]);
 
+  // 追加(MS-3-2): 優先順位 DnD の確定ハンドラです。パネル側で補正済みの from / to を
+  //   受け取り、moveSortEntry で次状態を算出して setSort へ流します。move は長さ不変
+  //   (ドラッグは 2 件以上のときのみ可能)なので空配列にはならず、setSort 固定です。
+  //   no-op ドラッグ(from === to / 範囲外)は moveSortEntry が同一参照を返すため、
+  //   setSort へ流しても参照同一で再レンダーを誘発しません。
+  const handleSortManagerMove = useCallback(
+    (from: number, to: number) => {
+      if (!enableSorting) {
+        return;
+      }
+      const next = moveSortEntry(uiState.sort, from, to);
+      dispatch(gridActions.setSort(next));
+    },
+    [dispatch, enableSorting, uiState.sort],
+  );
+
   // ── header action button style ────────────────────────
   const getHeaderActionButtonStyle = useCallback(
     (isActive: boolean): CSSProperties => ({
@@ -2121,6 +2139,7 @@ export function SpreadsheetGrid<T extends object>({
       onChangeColumn={handleSortManagerChangeColumn}
       onRemoveLevel={handleSortManagerRemoveLevel}
       onClearAll={handleSortManagerClearAll}
+      onMove={handleSortManagerMove}
       onRequestClose={closeSortManager}
     />
   );

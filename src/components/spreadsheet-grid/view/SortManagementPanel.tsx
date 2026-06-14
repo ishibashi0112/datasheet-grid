@@ -8,9 +8,13 @@
 //     パネルは編集後も開いたまま(× / outside click / Escape でのみ閉じます)。
 //   - 並び替えロジックは持ちません。操作は index / key / direction の「意図」を emit し、
 //     次状態の算出(logic/sorting.ts の純関数)と dispatch は呼び出し側が担います。
-//   - 優先順位のドラッグ並べ替え(DnD)は MS-3-2 で追加します(本バッチは追加/削除/方向/
-//     列変更/全クリアまで)。各レベル行は左端に DnD ハンドルを差し込めるよう構成しています。
-import { useMemo } from 'react';
+//   - 変更(MS-3-2 / 優先順位 DnD): 各レベル行の左端に ⠿ ドラッグハンドルを追加し、
+//     pointer ベースで優先順位を並べ替えます(ColumnChooserPanel の DnD 機構を移植。ただし
+//     単一フラットリストのためセクション分け・オートスクロールは省略。ドロップ前線インジ
+//     ケータは踏襲)。確定時は from / 補正済み to を onMove へ emit し、次状態の算出
+//     (moveSortEntry)と dispatch は呼び出し側が担います。ドラッグは canSort かつ
+//     レベル 2 件以上のときのみ可能です。
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import type { CSSProperties, KeyboardEvent, PointerEvent, RefObject } from 'react';
 import type { GridSortEntry } from '../model/gridTypes';
@@ -38,6 +42,11 @@ type SortManagementPanelProps = {
   onChangeColumn: (index: number, columnKey: string) => void;
   onRemoveLevel: (index: number) => void;
   onClearAll: () => void;
+  // 追加(MS-3-2): 優先順位 DnD の確定ハンドラです。from(掴んだレベル)と to(除去後の
+  //   挿入先 index)を渡します。ドロップ位置からの -1 補正はパネル内で済ませているため、
+  //   呼び出し側は moveSortEntry(sort, from, to) をそのまま呼べます。canSort かつ
+  //   レベル 2 件以上のときのみ、かつ実際に位置が動いたときのみ呼ばれます。
+  onMove: (from: number, to: number) => void;
   onRequestClose: () => void;
 };
 
@@ -73,6 +82,26 @@ const directionButtonStyle = (
   cursor: disabled ? 'default' : 'pointer',
 });
 
+// 追加(MS-3-2): ⠿ ドラッグハンドルの見た目です(2×3 の点)。ColumnChooserPanel と同型。
+//   操作系(pointerdown / capture)は行側に配線し、ここは見た目のみを描画します。
+function DragHandleGlyph({ disabled }: { disabled: boolean }) {
+  return (
+    <svg
+      width="10"
+      height="16"
+      viewBox="0 0 10 16"
+      fill={disabled ? '#cbd5e1' : '#94a3b8'}
+      aria-hidden
+    >
+      {[3, 8, 13].map((cy) =>
+        [3, 7].map((cx) => (
+          <circle key={`${cx}-${cy}`} cx={cx} cy={cy} r="1.2" />
+        )),
+      )}
+    </svg>
+  );
+}
+
 export function SortManagementPanel({
   isOpen,
   entries,
@@ -85,6 +114,7 @@ export function SortManagementPanel({
   onChangeColumn,
   onRemoveLevel,
   onClearAll,
+  onMove,
   onRequestClose,
 }: SortManagementPanelProps) {
   // 既に並び替えに使われている列キーの集合です(列セレクトの候補絞り込みに使います)。
@@ -101,6 +131,113 @@ export function SortManagementPanel({
 
   const titleOf = (key: string) =>
     columns.find((column) => column.key === key)?.title ?? key;
+
+  // ── 優先順位 DnD(MS-3-2) ───────────────────────────────
+  //   ColumnChooserPanel の pointer 機構を移植。単一フラットリストのため pane 走査・
+  //   オートスクロールは省略し、ドロップ前線インジケータのみ踏襲します。
+  //   ※ 下記フックはすべて早期 return (!isOpen || !layout) より前に置きます
+  //     (条件付き hook 呼び出しを避けるため)。
+  // ドラッグ可否: 並び替え有効、かつレベルが 2 件以上のときのみ。
+  const canDrag = canSort && entries.length >= 2;
+  const listRef = useRef<HTMLDivElement | null>(null);
+  // ドラッグ中のレベル index(null = 非ドラッグ)。dragActiveRef は state 反映前の連続
+  //   pointer イベントでも確実に効くよう、早期 return 判定を ref で持ちます。
+  const [draggingIndex, setDraggingIndex] = useState<number | null>(null);
+  const dragActiveRef = useRef(false);
+  // ドロップ挿入スロット(0..entries.length。length = 末尾)。インジケータ描画に使います。
+  const [dropIndex, setDropIndex] = useState<number | null>(null);
+  const pointerYRef = useRef(0);
+
+  // ポインタ Y から「行 midpoint より上にある行数」= 挿入スロットを求めます。
+  const updateDropFromPointer = useCallback(() => {
+    const list = listRef.current;
+    if (!list) {
+      return;
+    }
+    const rows = list.querySelectorAll<HTMLElement>('[data-sort-level]');
+    const y = pointerYRef.current;
+    let index = rows.length;
+    for (let i = 0; i < rows.length; i += 1) {
+      const rect = rows[i].getBoundingClientRect();
+      if (y < rect.top + rect.height / 2) {
+        index = i;
+        break;
+      }
+    }
+    setDropIndex(index);
+  }, []);
+
+  const finishDrag = useCallback(
+    (commit: boolean) => {
+      const from = draggingIndex;
+      const rawTo = dropIndex;
+      dragActiveRef.current = false;
+      setDraggingIndex(null);
+      setDropIndex(null);
+      if (commit && from !== null && rawTo !== null) {
+        // 挿入スロット(除去前基準 0..length)→ 除去後 index へ補正します。
+        let to = rawTo;
+        if (to > from) {
+          to -= 1;
+        }
+        // moveSortEntry 側で from === to / 範囲外は同一参照になるため、no-op ドラッグでも
+        //   無駄な setSort 参照変化は起きません。
+        onMove(from, to);
+      }
+    },
+    [draggingIndex, dropIndex, onMove],
+  );
+
+  const handleHandlePointerDown = useCallback(
+    (index: number, event: PointerEvent<HTMLElement>) => {
+      if (!canDrag) {
+        return;
+      }
+      // 既定のテキスト選択 / 行操作を抑止し、grid 側へも伝播させません。
+      event.preventDefault();
+      event.stopPropagation();
+      event.currentTarget.setPointerCapture(event.pointerId);
+      dragActiveRef.current = true;
+      pointerYRef.current = event.clientY;
+      setDraggingIndex(index);
+      updateDropFromPointer();
+    },
+    [canDrag, updateDropFromPointer],
+  );
+
+  const handleHandlePointerMove = useCallback(
+    (event: PointerEvent<HTMLElement>) => {
+      if (!dragActiveRef.current) {
+        return;
+      }
+      pointerYRef.current = event.clientY;
+      updateDropFromPointer();
+    },
+    [updateDropFromPointer],
+  );
+
+  const handleHandlePointerUp = useCallback(() => {
+    if (!dragActiveRef.current) {
+      return;
+    }
+    finishDrag(true);
+  }, [finishDrag]);
+
+  const handleHandlePointerCancel = useCallback(() => {
+    if (!dragActiveRef.current) {
+      return;
+    }
+    finishDrag(false);
+  }, [finishDrag]);
+
+  // panel が閉じるときはドラッグ状態を確実に後始末します(rAF は持たないため不要)。
+  useEffect(() => {
+    if (!isOpen) {
+      dragActiveRef.current = false;
+      setDraggingIndex(null);
+      setDropIndex(null);
+    }
+  }, [isOpen]);
 
   if (!isOpen || !layout) {
     return null;
@@ -189,6 +326,7 @@ export function SortManagementPanel({
 
       {/* ── レベル一覧(スクロール) ── */}
       <div
+        ref={listRef}
         style={{
           flex: 1,
           minHeight: 0,
@@ -227,6 +365,11 @@ export function SortManagementPanel({
               ? options
               : [{ key: entry.columnKey, title: titleOf(entry.columnKey) }, ...options];
 
+            // 優先順位 DnD(MS-3-2): この行を掴んでいるか / この行の直前に挿入するか。
+            const isDragging = draggingIndex === index;
+            const showDropBefore =
+              draggingIndex !== null && dropIndex === index;
+
             return (
               <div
                 key={entry.columnKey}
@@ -235,8 +378,57 @@ export function SortManagementPanel({
                   display: 'flex',
                   alignItems: 'center',
                   gap: 6,
+                  // ドロップ前線インジケータ(行の直前に挿入される位置のとき青線)。
+                  borderTop: showDropBefore
+                    ? '2px solid #2563eb'
+                    : '2px solid transparent',
+                  opacity: isDragging ? 0.4 : 1,
                 }}
               >
+                {/* ⠿ ドラッグハンドル(MS-3-2) */}
+                <span
+                  role="button"
+                  aria-label="ドラッグして優先順位を変更"
+                  title={
+                    !canSort
+                      ? '並び替えが無効です'
+                      : entries.length < 2
+                        ? 'レベルが 2 件以上のとき並べ替えできます'
+                        : 'ドラッグして優先順位を変更'
+                  }
+                  onPointerDown={(event) =>
+                    handleHandlePointerDown(index, event)
+                  }
+                  onPointerMove={handleHandlePointerMove}
+                  onPointerUp={handleHandlePointerUp}
+                  onPointerCancel={handleHandlePointerCancel}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    flex: '0 0 auto',
+                    width: 16,
+                    height: 26,
+                    borderRadius: 6,
+                    cursor: !canDrag
+                      ? 'default'
+                      : isDragging
+                        ? 'grabbing'
+                        : 'grab',
+                    touchAction: 'none',
+                  }}
+                  onPointerEnter={(event) => {
+                    if (canDrag) {
+                      event.currentTarget.style.backgroundColor = '#f1f5f9';
+                    }
+                  }}
+                  onPointerLeave={(event) => {
+                    event.currentTarget.style.backgroundColor = 'transparent';
+                  }}
+                >
+                  <DragHandleGlyph disabled={!canDrag} />
+                </span>
+
                 {/* 優先度バッジ(1 始まり)。ヘッダーの優先順位番号と意味を揃えます。 */}
                 <span
                   aria-hidden
@@ -352,6 +544,15 @@ export function SortManagementPanel({
               </div>
             );
           })
+        )}
+        {/* 末尾へのドロップインジケータ(MS-3-2): 最後の行の後ろに挿入される位置のとき。 */}
+        {draggingIndex !== null && dropIndex === entries.length && (
+          <div
+            style={{
+              height: 0,
+              borderTop: '2px solid #2563eb',
+            }}
+          />
         )}
       </div>
 
