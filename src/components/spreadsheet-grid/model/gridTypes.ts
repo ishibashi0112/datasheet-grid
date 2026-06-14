@@ -28,14 +28,21 @@ export type GridFilterState = {
   columnFilters: Record<string, unknown>;
 };
 
-// 追加: 単一列ソート用の方向型です。
+// 追加: 列単位の UI ソート方向です(null = 未ソート)。列メニューの ✓ 表示などで
+//       「この列は今どちらか」を表すために使います(GridSortEntry の direction とは別物)。
 export type GridSortDirection = 'asc' | 'desc' | null;
 
-// 追加: 単一列ソート状態です。初版は multi-sort ではなく 1列のみ扱います。
-export type GridSortState = {
-  columnKey: string | null;
-  direction: GridSortDirection;
+// 追加(MS-1 / マルチソート): ソート 1 件分です。配列内の direction は null を取りません。
+export type GridSortEntry = {
+  columnKey: string;
+  direction: 'asc' | 'desc';
 };
+
+// 変更(MS-1 / マルチソート): 単一オブジェクト → エントリ配列にしました。
+//   - 配列順 = ソート優先順位(先頭が最優先)
+//   - [] = ソートなし
+// 単一列ソートは「長さ 1 の配列」で表現します(MS-1 時点では常に長さ 0/1)。
+export type GridSortState = GridSortEntry[];
 
 // 追加: select フィルター用の候補型です。
 export type GridSelectFilterOption = {

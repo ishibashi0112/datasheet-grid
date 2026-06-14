@@ -2,7 +2,6 @@ import type { ReactNode } from 'react';
 import type {
   CellCoord,
   GridSelection,
-  GridSortState,
   GridColumn,
   SpreadsheetGridSlotContext,
   SpreadsheetGridDerivedSummary,
@@ -205,32 +204,32 @@ export const formatGridFilterSummary = <T,>(
   return `Filter: Global("${globalFilterPreview}") + ${columnFilterCount}列`;
 };
 
-// 追加: ソート列の表示名を取得します。
-const getSortColumnLabel = <T,>(
+// 変更(MS-1): ソート列名取得を「単一 key → ラベル」に一般化します
+//            (配列の各エントリ・主ソート列の双方から使い回せるように)。
+const getColumnLabelByKey = <T,>(
   columns: GridColumn<T>[],
-  sortState: GridSortState,
+  columnKey: string,
 ) => {
-  if (!sortState.columnKey) {
-    return '';
-  }
-
-  const column = columns.find((item) => item.key === sortState.columnKey);
-  return column?.title || column?.key || sortState.columnKey;
+  const column = columns.find((item) => item.key === columnKey);
+  return column?.title || column?.key || columnKey;
 };
 
 // 追加: ソート状態の要約テキストです。
 export const formatGridSortSummary = <T,>(
   context: Pick<SpreadsheetGridSlotContext<T>, 'columns' | 'sortState'>,
 ) => {
-  if (!context.sortState.columnKey || !context.sortState.direction) {
+  // 変更(MS-1): 配列を優先順位順に「列名 (方向)」で連結します。
+  //   単一エントリのときは従来と同一の文字列(例: 'Sort: 金額 (昇順)')になります。
+  if (context.sortState.length === 0) {
     return 'Sort: なし';
   }
 
-  const columnLabel = getSortColumnLabel(context.columns, context.sortState);
-  const directionLabel =
-    context.sortState.direction === 'asc' ? '昇順' : '降順';
+  const parts = context.sortState.map((entry) => {
+    const label = getColumnLabelByKey(context.columns, entry.columnKey);
+    return `${label} (${entry.direction === 'asc' ? '昇順' : '降順'})`;
+  });
 
-  return `Sort: ${columnLabel} (${directionLabel})`;
+  return `Sort: ${parts.join(', ')}`;
 };
 
 // 追加: slot context に載せる派生 summary を一括構築します。
@@ -257,10 +256,12 @@ export const buildGridDerivedSummary = <T,>(
     context.columnFilterValues,
   );
   const hasAnyFilter = hasGlobalFilter || activeColumnFilterCount > 0;
-  const hasSorting =
-    context.sortState.columnKey !== null && context.sortState.direction !== null;
+  // 変更(MS-1): 配列ベースの判定に置き換えます。
+  //   sortedColumnLabel は後方互換のため「主ソート(先頭)列」のラベルを返します
+  //   (複数ソート時は先頭。全体の要約は sortSummaryText 側が担います)。
+  const hasSorting = context.sortState.length > 0;
   const sortedColumnLabel = hasSorting
-    ? getSortColumnLabel(context.columns, context.sortState)
+    ? getColumnLabelByKey(context.columns, context.sortState[0].columnKey)
     : null;
 
   return {

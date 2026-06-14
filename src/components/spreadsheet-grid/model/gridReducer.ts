@@ -31,11 +31,8 @@ export const createInitialGridUiState = <T,>(
     globalText: '',
     columnFilters: {},
   },
-  // 追加: 初版は単一列ソートのみ保持します。
-  sort: {
-    columnKey: null,
-    direction: null,
-  },
+  // 変更(MS-1): 単一オブジェクト → エントリ配列。[] = ソートなし。
+  sort: [],
 });
 
 // 追加: Grid の UI state reducer 本体です。
@@ -328,21 +325,17 @@ export const gridUiReducer = (
       };
 
     case 'sort/set':
+      // 変更(MS-1): 受け取ったエントリ配列をそのまま採用します。
       return {
         ...state,
-        sort: {
-          columnKey: action.columnKey,
-          direction: action.direction,
-        },
+        sort: action.entries,
       };
 
     case 'sort/clear':
+      // 変更(MS-1): 空配列でソートなしに正規化します。
       return {
         ...state,
-        sort: {
-          columnKey: null,
-          direction: null,
-        },
+        sort: [],
       };
 
     default:

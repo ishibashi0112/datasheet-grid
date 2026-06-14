@@ -217,6 +217,11 @@ function GridHeaderRowInner<T>({
           colIndex >= selectionSnapshot.startCol &&
           colIndex <= selectionSnapshot.endCol;
 
+        // 追加(MS-1): 受動矢印はこの列の sort エントリ(配列)から方向を導出します
+        //            (順序番号バッジは MS-2)。未ソート列は null。
+        const sortEntry =
+          sortState.find((entry) => entry.columnKey === column.key) ?? null;
+
         // 追加(13-A): この列のメニューを開いているかです(「⋮」の active 表示に使います)。
         // 変更(13-A2): 「⋮」ボタンを hover 時表示 → 常時表示へ変更します。
         // 変更理由: 旧実装は hoveredColumnIndex === colIndex を表示条件にしていましたが、
@@ -347,26 +352,25 @@ function GridHeaderRowInner<T>({
                   列にだけ「現在の方向」を受動表示する非インタラクティブな矢印です
                   (未ソート時は何も出さない = 旧 idle の ↕ は廃止)。
                   クリック対象が無くなったぶん、ヘッダーの横スペースが空きます。 */}
-              {sortState.columnKey === column.key &&
-                sortState.direction !== null && (
-                  <span
-                    aria-hidden="true"
-                    title={
-                      sortState.direction === 'asc'
-                        ? '昇順で並び替え中'
-                        : '降順で並び替え中'
-                    }
-                    style={{
-                      flex: '0 0 auto',
-                      color: '#2563eb',
-                      fontSize: 12,
-                      fontWeight: 700,
-                      lineHeight: 1,
-                    }}
-                  >
-                    {sortState.direction === 'asc' ? '↑' : '↓'}
-                  </span>
-                )}
+              {sortEntry && (
+                <span
+                  aria-hidden="true"
+                  title={
+                    sortEntry.direction === 'asc'
+                      ? '昇順で並び替え中'
+                      : '降順で並び替え中'
+                  }
+                  style={{
+                    flex: '0 0 auto',
+                    color: '#2563eb',
+                    fontSize: 12,
+                    fontWeight: 700,
+                    lineHeight: 1,
+                  }}
+                >
+                  {sortEntry.direction === 'asc' ? '↑' : '↓'}
+                </span>
+              )}
 
               <button
                 type="button"

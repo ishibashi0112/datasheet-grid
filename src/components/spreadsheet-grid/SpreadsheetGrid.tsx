@@ -1670,16 +1670,21 @@ export function SpreadsheetGrid<T extends object>({
         return;
       }
 
-      const isSameDirection =
-        uiState.sort.columnKey === columnKey &&
-        uiState.sort.direction === direction;
+      // 変更(MS-1): sort が配列化したため、判定/dispatch を配列ベースに置き換えます。
+      //   挙動は従来どおりの「単一置換」: 現在がちょうど『この列・同方向の単一ソート』
+      //   なら解除し、それ以外はこの列だけの単一ソートに置き換えます。
+      //   (Shift+ヘッダークリックによる複数追加は MS-2 で別経路として実装予定)
+      const isSameSingleSort =
+        uiState.sort.length === 1 &&
+        uiState.sort[0].columnKey === columnKey &&
+        uiState.sort[0].direction === direction;
 
-      if (isSameDirection) {
+      if (isSameSingleSort) {
         dispatch(gridActions.clearSort());
         return;
       }
 
-      dispatch(gridActions.setSort(columnKey, direction));
+      dispatch(gridActions.setSort([{ columnKey, direction }]));
     },
     [closeColumnMenu, dispatch, enableSorting, uiState.sort],
   );
@@ -1955,9 +1960,9 @@ export function SpreadsheetGrid<T extends object>({
       columnKey={openedMenuColumn.key}
       canSort={enableSorting}
       sortDirection={
-        uiState.sort.columnKey === openedMenuColumn.key
-          ? uiState.sort.direction
-          : null
+        // 変更(MS-1): 配列からこの列のエントリ方向を引きます(未ソートなら null)。
+        uiState.sort.find((entry) => entry.columnKey === openedMenuColumn.key)
+          ?.direction ?? null
       }
       onSortChange={(direction) =>
         handleColumnMenuSortChange(openedMenuColumn.key, direction)
