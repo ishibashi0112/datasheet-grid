@@ -19,7 +19,6 @@ import type {
 import type { PaneColumnEntry } from '../logic/geometry';
 // 追加(12-A): set フィルター対応のフィルター有効判定を共有します。
 import { isActiveColumnFilterValue } from '../logic/filtering';
-import { toExcelColumnName } from '../utils/excelColumnName';
 
 // 追加(10-C): このヘッダーがどのペインを描画しているかの種別です。
 export type GridPaneKind = 'left' | 'center' | 'right';
@@ -53,7 +52,6 @@ type GridHeaderRowProps<T> = {
   columnFilterValues: Record<string, unknown>;
   sortState: GridSortState;
   getHeaderActionButtonStyle: (isActive: boolean) => CSSProperties;
-  getSortIndicator: (columnKey: string) => string;
   onCornerPointerDown: (event: PointerEvent<HTMLDivElement>) => void;
   onCornerPointerEnter: () => void;
   onCornerPointerLeave: () => void;
@@ -66,10 +64,6 @@ type GridHeaderRowProps<T> = {
     event: PointerEvent<HTMLDivElement>,
   ) => void;
   onColumnHeaderPointerLeave: (colIndex: number) => void;
-  onColumnSortButtonPointerDown: (
-    columnKey: string,
-    event: PointerEvent<HTMLButtonElement>,
-  ) => void;
   onColumnFilterButtonPointerDown: (
     column: GridColumn<T>,
     event: PointerEvent<HTMLButtonElement>,
@@ -131,14 +125,12 @@ function GridHeaderRowInner<T>({
   columnFilterValues,
   sortState,
   getHeaderActionButtonStyle,
-  getSortIndicator,
   onCornerPointerDown,
   onCornerPointerEnter,
   onCornerPointerLeave,
   onColumnHeaderPointerDown,
   onColumnHeaderPointerEnter,
   onColumnHeaderPointerLeave,
-  onColumnSortButtonPointerDown,
   onColumnFilterButtonPointerDown,
   onColumnResizePointerDown,
   // 追加(13-A): 列メニュー関連 props です。
@@ -273,37 +265,52 @@ function GridHeaderRowInner<T>({
                     : '#f8fafc',
             }}
           >
-            {/* 変更(13-B3-2): Excel 列名バッジを掴み手(grip)に再利用します。
-                onPointerDown 内で stopPropagation するため、ヘッダー本体の列範囲選択
-                (onColumnHeaderPointerDown)とは衝突しません。reorder 不可時は通常表示。 */}
-            <span
-              onPointerDown={
-                onColumnDragHandlePointerDown
-                  ? (event) => onColumnDragHandlePointerDown(column, event)
-                  : undefined
-              }
-              title={
-                onColumnDragHandlePointerDown ? 'ドラッグで列を移動' : undefined
-              }
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                minWidth: 22,
-                height: 22,
-                borderRadius: 9999,
-                backgroundColor: isColumnFiltered ? '#bfdbfe' : '#e2e8f0',
-                color: isColumnFiltered ? '#1d4ed8' : '#475569',
-                fontSize: 11,
-                fontWeight: 700,
-                // 追加(13-B3-2): grip の視覚 + タッチでのスクロール抑止 + 文字選択抑止。
-                cursor: onColumnDragHandlePointerDown ? 'grab' : 'default',
-                touchAction: onColumnDragHandlePointerDown ? 'none' : undefined,
-                userSelect: 'none',
-              }}
-            >
-              {toExcelColumnName(colIndex)}
-            </span>
+            {/* 変更(13-B4 / Option A): Excel 列名バッジ(番地表示)を廃止し、
+                列の並べ替え掴み手(grip)を「極小のドラッグハンドル(6点グリップ)」へ
+                置き換えます。ドラッグ controller は event.currentTarget を捕捉する方式で
+                掴み手の中身に依存しないため、この差し替えで useColumnHeaderDragController は
+                不変です。reorder 不可(onColumnDragHandlePointerDown 未指定)時は要素ごと
+                非表示にして、先頭の余白も詰めます。
+                注記: フィルター有効の視覚はヘッダーテキスト色(下の青)+フィルターボタン
+                      (●/○)が担うため、grip 側のフィルター連動色は持たせません。 */}
+            {onColumnDragHandlePointerDown && (
+              <span
+                onPointerDown={(event) =>
+                  onColumnDragHandlePointerDown(column, event)
+                }
+                title="ドラッグで列を移動"
+                aria-hidden="true"
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  width: 14,
+                  height: 22,
+                  flex: '0 0 auto',
+                  color: '#cbd5e1',
+                  // 追加: grip の視覚 + タッチでのスクロール抑止 + 文字選択抑止。
+                  cursor: 'grab',
+                  touchAction: 'none',
+                  userSelect: 'none',
+                }}
+              >
+                <svg
+                  width="8"
+                  height="14"
+                  viewBox="0 0 8 14"
+                  fill="currentColor"
+                  aria-hidden="true"
+                  focusable="false"
+                >
+                  <circle cx="2" cy="3" r="1" />
+                  <circle cx="6" cy="3" r="1" />
+                  <circle cx="2" cy="7" r="1" />
+                  <circle cx="6" cy="7" r="1" />
+                  <circle cx="2" cy="11" r="1" />
+                  <circle cx="6" cy="11" r="1" />
+                </svg>
+              </span>
+            )}
 
             <div
               style={{
@@ -335,19 +342,31 @@ function GridHeaderRowInner<T>({
                   : column.title || column.key}
               </div>
 
-              <button
-                type="button"
-                onPointerDown={(event) =>
-                  onColumnSortButtonPointerDown(column.key, event)
-                }
-                title="並び替え"
-                style={getHeaderActionButtonStyle(
-                  sortState.columnKey === column.key &&
-                    sortState.direction !== null,
+              {/* 変更(13-B4): ソートボタン(↕/↑/↓ のクリック対象)を廃止し、
+                  操作は列メニュー / コンテキストメニューへ移しました。ここはソート中の
+                  列にだけ「現在の方向」を受動表示する非インタラクティブな矢印です
+                  (未ソート時は何も出さない = 旧 idle の ↕ は廃止)。
+                  クリック対象が無くなったぶん、ヘッダーの横スペースが空きます。 */}
+              {sortState.columnKey === column.key &&
+                sortState.direction !== null && (
+                  <span
+                    aria-hidden="true"
+                    title={
+                      sortState.direction === 'asc'
+                        ? '昇順で並び替え中'
+                        : '降順で並び替え中'
+                    }
+                    style={{
+                      flex: '0 0 auto',
+                      color: '#2563eb',
+                      fontSize: 12,
+                      fontWeight: 700,
+                      lineHeight: 1,
+                    }}
+                  >
+                    {sortState.direction === 'asc' ? '↑' : '↓'}
+                  </span>
                 )}
-              >
-                {getSortIndicator(column.key)}
-              </button>
 
               <button
                 type="button"

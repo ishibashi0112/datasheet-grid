@@ -20,7 +20,7 @@ import type {
   PointerEvent,
   RefObject,
 } from 'react';
-import type { GridColumnPinned } from '../model/gridTypes';
+import type { GridColumnPinned, GridSortDirection } from '../model/gridTypes';
 import type { ColumnMenuLayout } from '../hooks/useColumnMenuController';
 
 type ColumnMenuPinnedItem = {
@@ -52,6 +52,14 @@ type ColumnMenuPopoverProps = {
   isOpen: boolean;
   title: string;
   columnKey: string;
+  // 追加(13-B4): ソート(昇順/降順)をメニューから操作するための状態とハンドラです。
+  //             canSort=false(enableSorting=false 相当)のときは項目自体を出しません
+  //             (AG Grid の sortable:false でソート項目が消えるのと同じ挙動です)。
+  //             sortDirection はこの列の現在のソート方向で、✓ 表示の単一ソースです。
+  //             同じ方向を再選択したときの「解除」判定は SpreadsheetGrid 側が行います。
+  canSort: boolean;
+  sortDirection: GridSortDirection;
+  onSortChange: (direction: Exclude<GridSortDirection, null>) => void;
   // 追加: 開いている列の現在の固定状態です(✓ 表示に使います)。
   pinned: GridColumnPinned | undefined;
   // 追加: onColumnsChange 未指定時は false になり、固定切替の項目を無効化します
@@ -113,6 +121,9 @@ export function ColumnMenuPopover({
   isOpen,
   title,
   columnKey,
+  canSort,
+  sortDirection,
+  onSortChange,
   pinned,
   canChangePinned,
   layout,
@@ -217,6 +228,102 @@ export function ColumnMenuPopover({
       >
         {title}
       </div>
+
+      {/* ── ルート項目: 昇順 / 降順で並び替え(13-B4) ── */}
+      {/* 追加(13-B4): ヘッダーのソートボタンを廃止し、ソート操作をメニュー(と
+          コンテキストメニュー)へ集約します。AG Grid の Sort Ascending /
+          Sort Descending 相当のリーフ項目です。現在の方向に ✓ を出し、その方向を
+          もう一度選ぶと解除します(解除判定は SpreadsheetGrid 側)。
+          サブメニューを持たないリーフなので、hover で openSubmenuKey を null に戻し、
+          開いているカスケード(列の固定)を閉じます。hover ハイライトは他のリーフと
+          同じ DOM 直接書き換え方式です(state hover を避け、memo 影響を出しません)。 */}
+      {canSort && (
+        <>
+          <button
+            type="button"
+            onPointerEnter={(event) => {
+              setOpenSubmenuKey(null);
+              event.currentTarget.style.backgroundColor = '#f1f5f9';
+            }}
+            onPointerLeave={(event) => {
+              event.currentTarget.style.backgroundColor = 'transparent';
+            }}
+            onClick={() => {
+              onSortChange('asc');
+            }}
+            style={getMenuItemStyle(false, false)}
+          >
+            {/* 注記: 14px 列は他項目の ✓ 列と左端を揃えます。
+                未適用時は方向アイコン(↑/↓)を、適用中は ✓ を出します。
+                ラベル自体が方向を示すため、適用中にアイコンが ✓ へ変わっても
+                意味は失われません。 */}
+            <span
+              style={{
+                width: 14,
+                flex: '0 0 auto',
+                textAlign: 'center',
+                color: sortDirection === 'asc' ? '#2563eb' : '#94a3b8',
+                fontWeight: sortDirection === 'asc' ? 700 : 400,
+              }}
+            >
+              {sortDirection === 'asc' ? '✓' : '↑'}
+            </span>
+            <span
+              style={{
+                minWidth: 0,
+                flex: 1,
+                color: sortDirection === 'asc' ? '#1d4ed8' : undefined,
+              }}
+            >
+              昇順で並び替え
+            </span>
+          </button>
+
+          <button
+            type="button"
+            onPointerEnter={(event) => {
+              setOpenSubmenuKey(null);
+              event.currentTarget.style.backgroundColor = '#f1f5f9';
+            }}
+            onPointerLeave={(event) => {
+              event.currentTarget.style.backgroundColor = 'transparent';
+            }}
+            onClick={() => {
+              onSortChange('desc');
+            }}
+            style={getMenuItemStyle(false, false)}
+          >
+            <span
+              style={{
+                width: 14,
+                flex: '0 0 auto',
+                textAlign: 'center',
+                color: sortDirection === 'desc' ? '#2563eb' : '#94a3b8',
+                fontWeight: sortDirection === 'desc' ? 700 : 400,
+              }}
+            >
+              {sortDirection === 'desc' ? '✓' : '↓'}
+            </span>
+            <span
+              style={{
+                minWidth: 0,
+                flex: 1,
+                color: sortDirection === 'desc' ? '#1d4ed8' : undefined,
+              }}
+            >
+              降順で並び替え
+            </span>
+          </button>
+
+          {/* 追加(13-B4): ソート群と以降(固定/幅/表示)の区切りです。 */}
+          <div
+            style={{
+              borderTop: '1px solid #e2e8f0',
+              margin: '4px 0',
+            }}
+          />
+        </>
+      )}
 
       {/* ── ルート項目: 列の固定 ›(サブメニュー親) ── */}
       {/* 追加(13-A2): サブメニューはこの行(position: relative)基準で絶対配置します。

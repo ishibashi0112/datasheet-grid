@@ -1655,41 +1655,33 @@ export function SpreadsheetGrid<T extends object>({
   }, [closeColumnFilterPopover, dispatch, filterPopoverState]);
 
   // ── sort ──────────────────────────────────────────────
-  const handleColumnSortButtonPointerDown = useCallback(
-    (columnKey: string, event: PointerEvent<HTMLButtonElement>) => {
-      event.preventDefault();
-      event.stopPropagation();
+  // 変更(13-B4): ヘッダーのソートボタンを廃止し、ソート操作を列メニュー(と
+  //             コンテキストメニュー)へ集約しました。メニューの「昇順/降順で並び替え」
+  //             から呼ばれるハンドラです。AG Grid と同様、現在と同じ方向を再選択したら
+  //             解除(clearSort)します。reducer / actions は不変(setSort/clearSort 再利用)。
+  // 注記: 他の列メニュー操作(pin/autosize/…)と同じく、まず closeColumnMenu() してから
+  //       dispatch します。enableSorting=false の列ではメニュー項目自体を出さないため
+  //       (ColumnMenuPopover の canSort)、ここでのガードは保険です。
+  const handleColumnMenuSortChange = useCallback(
+    (columnKey: string, direction: 'asc' | 'desc') => {
+      closeColumnMenu();
+
       if (!enableSorting) {
         return;
       }
-      if (
-        uiState.sort.columnKey !== columnKey ||
-        uiState.sort.direction === null
-      ) {
-        dispatch(gridActions.setSort(columnKey, 'asc'));
-        return;
-      }
-      if (uiState.sort.direction === 'asc') {
-        dispatch(gridActions.setSort(columnKey, 'desc'));
-        return;
-      }
-      dispatch(gridActions.clearSort());
-    },
-    [dispatch, enableSorting, uiState.sort],
-  );
 
-  const getSortIndicator = useCallback(
-    (columnKey: string) => {
-      if (
-        !enableSorting ||
-        uiState.sort.columnKey !== columnKey ||
-        !uiState.sort.direction
-      ) {
-        return '↕';
+      const isSameDirection =
+        uiState.sort.columnKey === columnKey &&
+        uiState.sort.direction === direction;
+
+      if (isSameDirection) {
+        dispatch(gridActions.clearSort());
+        return;
       }
-      return uiState.sort.direction === 'asc' ? '↑' : '↓';
+
+      dispatch(gridActions.setSort(columnKey, direction));
     },
-    [enableSorting, uiState.sort],
+    [closeColumnMenu, dispatch, enableSorting, uiState.sort],
   );
 
   // ── header action button style ────────────────────────
@@ -1961,6 +1953,15 @@ export function SpreadsheetGrid<T extends object>({
       isOpen={isColumnMenuOpen}
       title={openedMenuColumn.title || openedMenuColumn.key}
       columnKey={openedMenuColumn.key}
+      canSort={enableSorting}
+      sortDirection={
+        uiState.sort.columnKey === openedMenuColumn.key
+          ? uiState.sort.direction
+          : null
+      }
+      onSortChange={(direction) =>
+        handleColumnMenuSortChange(openedMenuColumn.key, direction)
+      }
       pinned={openedMenuColumn.pinned}
       canChangePinned={Boolean(onColumnsChange)}
       layout={columnMenuLayout}
@@ -2075,16 +2076,12 @@ export function SpreadsheetGrid<T extends object>({
                   columnFilterValues={uiState.filters.columnFilters}
                   sortState={uiState.sort}
                   getHeaderActionButtonStyle={getHeaderActionButtonStyle}
-                  getSortIndicator={getSortIndicator}
                   onCornerPointerDown={handleCornerHeaderPointerDown}
                   onCornerPointerEnter={handleCornerPointerEnterStable}
                   onCornerPointerLeave={handleCornerPointerLeaveStable}
                   onColumnHeaderPointerDown={handleColumnHeaderPointerDown}
                   onColumnHeaderPointerEnter={handleColumnHeaderPointerEnter}
                   onColumnHeaderPointerLeave={handleColumnHeaderPointerLeaveStable}
-                  onColumnSortButtonPointerDown={
-                    handleColumnSortButtonPointerDown
-                  }
                   onColumnFilterButtonPointerDown={openColumnFilterPopover}
                   onColumnResizePointerDown={handleColumnResizePointerDown}
                   enableColumnMenu={enableColumnMenu}
@@ -2203,14 +2200,12 @@ export function SpreadsheetGrid<T extends object>({
                 columnFilterValues={uiState.filters.columnFilters}
                 sortState={uiState.sort}
                 getHeaderActionButtonStyle={getHeaderActionButtonStyle}
-                getSortIndicator={getSortIndicator}
                 onCornerPointerDown={handleCornerHeaderPointerDown}
                 onCornerPointerEnter={handleCornerPointerEnterStable}
                 onCornerPointerLeave={handleCornerPointerLeaveStable}
                 onColumnHeaderPointerDown={handleColumnHeaderPointerDown}
                 onColumnHeaderPointerEnter={handleColumnHeaderPointerEnter}
                 onColumnHeaderPointerLeave={handleColumnHeaderPointerLeaveStable}
-                onColumnSortButtonPointerDown={handleColumnSortButtonPointerDown}
                 onColumnFilterButtonPointerDown={openColumnFilterPopover}
                 onColumnResizePointerDown={handleColumnResizePointerDown}
                 enableColumnMenu={enableColumnMenu}
@@ -2310,16 +2305,12 @@ export function SpreadsheetGrid<T extends object>({
                   columnFilterValues={uiState.filters.columnFilters}
                   sortState={uiState.sort}
                   getHeaderActionButtonStyle={getHeaderActionButtonStyle}
-                  getSortIndicator={getSortIndicator}
                   onCornerPointerDown={handleCornerHeaderPointerDown}
                   onCornerPointerEnter={handleCornerPointerEnterStable}
                   onCornerPointerLeave={handleCornerPointerLeaveStable}
                   onColumnHeaderPointerDown={handleColumnHeaderPointerDown}
                   onColumnHeaderPointerEnter={handleColumnHeaderPointerEnter}
                   onColumnHeaderPointerLeave={handleColumnHeaderPointerLeaveStable}
-                  onColumnSortButtonPointerDown={
-                    handleColumnSortButtonPointerDown
-                  }
                   onColumnFilterButtonPointerDown={openColumnFilterPopover}
                   onColumnResizePointerDown={handleColumnResizePointerDown}
                   enableColumnMenu={enableColumnMenu}
