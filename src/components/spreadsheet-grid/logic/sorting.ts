@@ -116,3 +116,78 @@ export const nextSortEntries = (
   // 同方向 → 当該列のみ除去(残りの優先順位は維持)。
   return current.filter((_, i) => i !== index);
 };
+
+// 追加(MS-3-1 / 並び替え管理パネル): 管理パネルの明示編集用の純関数群です。
+//   nextSortEntries(additive=true) は「同方向＝除去」のトグル意味論で Shift ジェスチャ
+//   向けのため、ドロップダウン編集(同方向の再選択は no-op であるべき)・列差し替え・
+//   優先順位の入れ替えには素直に乗りません。そこで管理パネル用に下記を分離します。
+//   - すべて入力非破壊(常に新しい配列を返す)・単体テスト可で、nextSortEntries と同じ規約です。
+//   - 単一ソース(uiState.sort)は不変。呼び出し側(SpreadsheetGrid)が結果を
+//     setSort / clearSort へ流します(reducer / actions は不変)。
+//
+// addSortEntry: 末尾(最低優先)へレベルを追加します。
+//   既に同じ列が含まれている場合は何もしません(パネル側は未使用列だけを「追加」候補に
+//   出すため通常は起きませんが、純関数としての不変条件『1 列につき高々 1 エントリ』を守ります)。
+export const addSortEntry = (
+  current: GridSortState,
+  columnKey: string,
+  direction: 'asc' | 'desc',
+): GridSortState => {
+  if (current.some((entry) => entry.columnKey === columnKey)) {
+    return current;
+  }
+  return [...current, { columnKey, direction }];
+};
+
+// setSortEntryDirection: 指定レベルの方向を「冪等にセット」します(トグルしません)。
+//   index 範囲外や同方向(変化なし)のときは元配列をそのまま返します(無駄な参照変化を抑止)。
+export const setSortEntryDirection = (
+  current: GridSortState,
+  index: number,
+  direction: 'asc' | 'desc',
+): GridSortState => {
+  if (index < 0 || index >= current.length) {
+    return current;
+  }
+  if (current[index].direction === direction) {
+    return current;
+  }
+  return current.map((entry, i) =>
+    i === index ? { ...entry, direction } : entry,
+  );
+};
+
+// setSortEntryColumn: 指定レベルの対象列を差し替えます(Excel のレベル列変更相当)。
+//   - 方向は当該レベルのものを維持します。
+//   - 差し替え先の列が他レベルで既に使われている場合は、その他レベルを除去して
+//     『1 列につき高々 1 エントリ』を保ちます(当該レベルの位置・優先順位は維持)。
+//     パネル側は他レベルで使用中の列を選択肢から除くため通常は起きませんが、保険です。
+//   - index 範囲外、または変化なし(同一列)のときは元配列をそのまま返します。
+export const setSortEntryColumn = (
+  current: GridSortState,
+  index: number,
+  columnKey: string,
+): GridSortState => {
+  if (index < 0 || index >= current.length) {
+    return current;
+  }
+  if (current[index].columnKey === columnKey) {
+    return current;
+  }
+  return current
+    .map((entry, i) => (i === index ? { ...entry, columnKey } : entry))
+    .filter((entry, i) => i === index || entry.columnKey !== columnKey);
+};
+
+// removeSortEntryAt: 指定レベルを除去します(残りの優先順位は維持)。
+//   index 範囲外のときは元配列をそのまま返します。
+export const removeSortEntryAt = (
+  current: GridSortState,
+  index: number,
+): GridSortState => {
+  if (index < 0 || index >= current.length) {
+    return current;
+  }
+  return current.filter((_, i) => i !== index);
+};
+

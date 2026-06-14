@@ -60,6 +60,11 @@ type ColumnMenuPopoverProps = {
   canSort: boolean;
   sortDirection: GridSortDirection;
   onSortChange: (direction: Exclude<GridSortDirection, null>) => void;
+  // 追加(MS-3-1): 並び替え管理パネル(SortManagementPanel)を開くハンドラです。
+  //             canSort=true のときだけ、昇順/降順の下にリーフ項目として出します
+  //             (サブメニューではなく別 popover を開く点は「列の表示」と同じ作法です)。
+  //             クリックで列メニューを閉じてパネルを開く配線は SpreadsheetGrid 側が担います。
+  onOpenSortManager: () => void;
   // 追加: 開いている列の現在の固定状態です(✓ 表示に使います)。
   pinned: GridColumnPinned | undefined;
   // 追加: onColumnsChange 未指定時は false になり、固定切替の項目を無効化します
@@ -124,6 +129,7 @@ export function ColumnMenuPopover({
   canSort,
   sortDirection,
   onSortChange,
+  onOpenSortManager,
   pinned,
   canChangePinned,
   layout,
@@ -313,6 +319,32 @@ export function ColumnMenuPopover({
             >
               降順で並び替え
             </span>
+          </button>
+
+          {/* ── ルート項目: 並び替えを管理…(MS-3-1) ── */}
+          {/* 追加(MS-3-1): サブメニューではなく別 popover(SortManagementPanel)を開く
+              リーフ項目です。昇順/降順の単発操作に対し、複数レベルの追加/削除・優先順位の
+              編集をマウス/タッチで行う経路を提供します(Shift+click ジェスチャに依りません)。
+              autosize / 列の表示と同じく hover で setOpenSubmenuKey(null) し、開いている
+              カスケード(列の固定)を閉じます。✓ 列ぶんのスペーサで他項目と左端を揃えます。
+              クリックで列メニューを閉じてパネルを開く処理は SpreadsheetGrid 側
+              (onOpenSortManager)が担います。 */}
+          <button
+            type="button"
+            onPointerEnter={(event) => {
+              setOpenSubmenuKey(null);
+              event.currentTarget.style.backgroundColor = '#f1f5f9';
+            }}
+            onPointerLeave={(event) => {
+              event.currentTarget.style.backgroundColor = 'transparent';
+            }}
+            onClick={() => {
+              onOpenSortManager();
+            }}
+            style={getMenuItemStyle(false, false)}
+          >
+            <span style={{ width: 14, flex: '0 0 auto' }} />
+            <span style={{ minWidth: 0, flex: 1 }}>並び替えを管理…</span>
           </button>
 
           {/* 追加(13-B4): ソート群と以降(固定/幅/表示)の区切りです。 */}

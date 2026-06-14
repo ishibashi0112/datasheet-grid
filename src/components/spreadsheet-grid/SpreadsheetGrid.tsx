@@ -77,7 +77,15 @@ import {
   type ColumnPane,
   type PaneColumnExtentMap,
 } from './logic/geometry';
-import { applySort, nextSortEntries } from './logic/sorting';
+import {
+  applySort,
+  nextSortEntries,
+  // 追加(MS-3-1): 並び替え管理パネルの明示編集用の純関数群です。
+  addSortEntry,
+  setSortEntryDirection,
+  setSortEntryColumn,
+  removeSortEntryAt,
+} from './logic/sorting';
 // 追加(13-B1): 列幅自動調整(canvas measureText 方式)の計測ロジックです。
 import { computeAutosizedColumnWidths } from './logic/columnAutosize';
 import type {
@@ -107,6 +115,11 @@ import ColumnMenuPopover from './view/ColumnMenuPopover';
 // 追加(13-B2-1): 列の表示/非表示パネル(AG Grid の Choose Columns 相当)です。
 import useColumnChooserController from './hooks/useColumnChooserController';
 import ColumnChooserPanel, { type ColumnChooserItem } from './view/ColumnChooserPanel';
+// 追加(MS-3-1): 並び替え管理パネル(Excel の「並べ替え」ダイアログ相当)です。
+import useSortManagementController from './hooks/useSortManagementController';
+import SortManagementPanel, {
+  type SortManagementColumn,
+} from './view/SortManagementPanel';
 // import ColumnChooserPanel, {
 //   type ColumnChooserItem,
 // } from './view/ColumnChooserPanel';
@@ -420,6 +433,21 @@ export function SpreadsheetGrid<T extends object>({
     closeColumnChooser,
   } = useColumnChooserController({
     enableColumnMenu,
+    gridRootRef,
+  });
+
+  // ── sort management(MS-3-1) ──────────────────────────
+  // 追加(MS-3-1): 並び替え管理パネルの controller です。列メニューの項目
+  //             「並び替えを管理…」から開きます(その際メニューは閉じます)。
+  //             相互排他は各 controller の outside-pointerdown close が自然に担います。
+  const {
+    isSortManagerOpen,
+    sortManagerLayout,
+    sortManagerRef,
+    openSortManager,
+    closeSortManager,
+  } = useSortManagementController({
+    enableSorting,
     gridRootRef,
   });
 
@@ -1185,6 +1213,25 @@ export function SpreadsheetGrid<T extends object>({
     openColumnChooser();
   }, [closeColumnMenu, openColumnChooser]);
 
+  // 追加(MS-3-1): 並び替え管理パネルへ渡す「並び替え可能な列」一覧です。
+  //             visibleColumns を母集合にします(見えている列だけを並び替え対象に出す＝
+  //             挙動が驚かない)。title 未指定は key を表示名にします(chooser と同じ)。
+  const sortManagerColumns = useMemo<SortManagementColumn[]>(
+    () =>
+      visibleColumns.map((column) => ({
+        key: column.key,
+        title: column.title ?? column.key,
+      })),
+    [visibleColumns],
+  );
+
+  // 追加(MS-3-1): 列メニューの「並び替えを管理…」項目からパネルを開きます
+  //             (メニューを閉じてからパネルを開きます。chooser と同型)。
+  const handleColumnMenuOpenSortManager = useCallback(() => {
+    closeColumnMenu();
+    openSortManager();
+  }, [closeColumnMenu, openSortManager]);
+
   // 追加(13-B2-1): パネルでの 1 列の表示/非表示トグルです。
   // 設計メモ(handleColumnMenuPinnedChange と同型):
   //   - columns は controlled props のため onColumnsChange 経由で反映します。
@@ -1687,6 +1734,68 @@ export function SpreadsheetGrid<T extends object>({
     [closeColumnMenu, dispatch, enableSorting, uiState.sort],
   );
 
+  // ── sort management panel actions(MS-3-1) ────────────
+  // 追加(MS-3-1): 並び替え管理パネルからのライブ編集ハンドラ群です。
+  //   いずれも logic/sorting.ts の純関数で次状態を算出し、setSort / clearSort へ流します
+  //   (reducer / actions は不変)。パネルは編集後も開いたままにします
+  //   (closeSortManager は混ぜません。× / outside / Escape でのみ閉じます)。
+  //   メニュー経路(handleColumnMenuSortChange)と違い closeColumnMenu はしません
+  //   (この時点でメニューは既に閉じ、パネルだけが開いています)。
+  const handleSortManagerAddLevel = useCallback(
+    (columnKey: string, direction: 'asc' | 'desc') => {
+      if (!enableSorting) {
+        return;
+      }
+      const next = addSortEntry(uiState.sort, columnKey, direction);
+      // 追加は常に 1 件以上になるため setSort 固定です。
+      dispatch(gridActions.setSort(next));
+    },
+    [dispatch, enableSorting, uiState.sort],
+  );
+
+  const handleSortManagerChangeDirection = useCallback(
+    (index: number, direction: 'asc' | 'desc') => {
+      if (!enableSorting) {
+        return;
+      }
+      const next = setSortEntryDirection(uiState.sort, index, direction);
+      // 冪等セット(変化なし)のときは next === 現配列のため、setSort でも参照同一で実害なし。
+      dispatch(gridActions.setSort(next));
+    },
+    [dispatch, enableSorting, uiState.sort],
+  );
+
+  const handleSortManagerChangeColumn = useCallback(
+    (index: number, columnKey: string) => {
+      if (!enableSorting) {
+        return;
+      }
+      const next = setSortEntryColumn(uiState.sort, index, columnKey);
+      dispatch(gridActions.setSort(next));
+    },
+    [dispatch, enableSorting, uiState.sort],
+  );
+
+  const handleSortManagerRemoveLevel = useCallback(
+    (index: number) => {
+      if (!enableSorting) {
+        return;
+      }
+      const next = removeSortEntryAt(uiState.sort, index);
+      dispatch(
+        next.length === 0 ? gridActions.clearSort() : gridActions.setSort(next),
+      );
+    },
+    [dispatch, enableSorting, uiState.sort],
+  );
+
+  const handleSortManagerClearAll = useCallback(() => {
+    if (!enableSorting) {
+      return;
+    }
+    dispatch(gridActions.clearSort());
+  }, [dispatch, enableSorting]);
+
   // ── header action button style ────────────────────────
   const getHeaderActionButtonStyle = useCallback(
     (isActive: boolean): CSSProperties => ({
@@ -1965,6 +2074,7 @@ export function SpreadsheetGrid<T extends object>({
       onSortChange={(direction) =>
         handleColumnMenuSortChange(openedMenuColumn.key, direction)
       }
+      onOpenSortManager={handleColumnMenuOpenSortManager}
       pinned={openedMenuColumn.pinned}
       canChangePinned={Boolean(onColumnsChange)}
       layout={columnMenuLayout}
@@ -1996,13 +2106,37 @@ export function SpreadsheetGrid<T extends object>({
     />
   );
 
+  // ── sort management panel(MS-3-1) ────────────────────
+  // 追加(MS-3-1): 並び替え管理パネルの描画です(portal で body 直下へ出します)。
+  const renderedSortManagementPanel = (
+    <SortManagementPanel
+      isOpen={isSortManagerOpen}
+      entries={uiState.sort}
+      columns={sortManagerColumns}
+      canSort={enableSorting}
+      layout={sortManagerLayout}
+      panelRef={sortManagerRef}
+      onAddLevel={handleSortManagerAddLevel}
+      onChangeDirection={handleSortManagerChangeDirection}
+      onChangeColumn={handleSortManagerChangeColumn}
+      onRemoveLevel={handleSortManagerRemoveLevel}
+      onClearAll={handleSortManagerClearAll}
+      onRequestClose={closeSortManager}
+    />
+  );
+
   // 追加(13-A): いずれかの popup(フィルター / 列メニュー)表示中かどうかです。
   //             grid root の tab フォーカス / keyboard / paste handler の一時停止に使います
   //             (従来は isFilterPopoverOpen のみで判定していました)。
   // 変更(13-B2-1): 列の表示/非表示パネルも含めます(パネル表示中も grid の
   //             keyboard/paste を止めます。パネルの検索入力にフォーカスが入るため)。
+  // 変更(MS-3-1): 並び替え管理パネルも含めます(パネル内の <select> 等にフォーカスが
+  //             入るため、grid の keyboard/paste を止めます)。
   const isAnyGridPopupOpen =
-    isFilterPopoverOpen || isColumnMenuOpen || isColumnChooserOpen;
+    isFilterPopoverOpen ||
+    isColumnMenuOpen ||
+    isColumnChooserOpen ||
+    isSortManagerOpen;
 
   // ── slot bars ─────────────────────────────────────────
   // 追加: slot helper を使って top/bottom の描画を解決します。
@@ -2414,6 +2548,8 @@ export function SpreadsheetGrid<T extends object>({
       {renderedColumnMenuPopover}
       {/* 追加(13-B2-1): 列の表示/非表示パネル(Choose Columns 相当)です。*/}
       {renderedColumnChooserPanel}
+      {/* 追加(MS-3-1): 並び替え管理パネル(並べ替えダイアログ相当)です。*/}
+      {renderedSortManagementPanel}
     </div>
   );
 }
