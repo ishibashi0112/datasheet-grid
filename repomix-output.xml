@@ -1312,471 +1312,6 @@ export const setCellValue = <T,>(
 };
 </file>
 
-<file path="src/components/spreadsheet-grid/view/SortManagementPanel.tsx">
-// 追加(MS-3-1 / 並び替え管理パネル): 複数レベルの並び替えをマウス/タッチで編集する
-//   独立 popover です(Excel の「並べ替え」ダイアログ相当 / ColumnChooserPanel の兄弟)。
-//   - タイトル + × クローズ / レベル一覧(優先度・列セレクト・方向・削除) /
-//     フッター(基準を追加 / すべてクリア)で構成します。
-//   - 本コンポーネントは非ジェネリックです(ColumnChooserPanel と同様、プリミティブな
-//     entries / columns だけを受け取ります)。編集はライブ適用で、各操作は即座に
-//     呼び出し側(SpreadsheetGrid)のハンドラ経由で uiState.sort(単一ソース)へ反映します。
-//     パネルは編集後も開いたまま(× / outside click / Escape でのみ閉じます)。
-//   - 並び替えロジックは持ちません。操作は index / key / direction の「意図」を emit し、
-//     次状態の算出(logic/sorting.ts の純関数)と dispatch は呼び出し側が担います。
-//   - 優先順位のドラッグ並べ替え(DnD)は MS-3-2 で追加します(本バッチは追加/削除/方向/
-//     列変更/全クリアまで)。各レベル行は左端に DnD ハンドルを差し込めるよう構成しています。
-import { useMemo } from 'react';
-import { createPortal } from 'react-dom';
-import type { CSSProperties, KeyboardEvent, PointerEvent, RefObject } from 'react';
-import type { GridSortEntry } from '../model/gridTypes';
-import type { SortManagementLayout } from '../hooks/useSortManagementController';
-
-// 追加(MS-3-1): パネルが必要とする最小の列情報です(並び替え可能な列のみを渡します)。
-export type SortManagementColumn = {
-  key: string;
-  title: string;
-};
-
-type SortManagementPanelProps = {
-  isOpen: boolean;
-  // 現在の並び替え(優先順位順)です。uiState.sort をそのまま渡せます。
-  entries: GridSortEntry[];
-  // 並び替え対象に選べる列の一覧です(呼び出し側で visibleColumns から作ります)。
-  columns: SortManagementColumn[];
-  // enableSorting 相当。false のときは編集を無効化し注記を出します(保険。通常は開きません)。
-  canSort: boolean;
-  layout: SortManagementLayout | null;
-  panelRef: RefObject<HTMLDivElement | null>;
-  // レベルを末尾へ追加します(呼び出し側が未使用列を選んで渡すか、ここで渡す key を採用)。
-  onAddLevel: (columnKey: string, direction: 'asc' | 'desc') => void;
-  onChangeDirection: (index: number, direction: 'asc' | 'desc') => void;
-  onChangeColumn: (index: number, columnKey: string) => void;
-  onRemoveLevel: (index: number) => void;
-  onClearAll: () => void;
-  onRequestClose: () => void;
-};
-
-const PANEL_MAX_HEIGHT = 420;
-
-const PANEL_STYLE: CSSProperties = {
-  position: 'fixed',
-  boxSizing: 'border-box',
-  display: 'flex',
-  flexDirection: 'column',
-  maxHeight: PANEL_MAX_HEIGHT,
-  padding: 12,
-  border: '1px solid #cbd5e1',
-  borderRadius: 12,
-  backgroundColor: '#ffffff',
-  boxShadow: '0 12px 28px rgba(15, 23, 42, 0.16)',
-  zIndex: 1000,
-};
-
-// 追加(MS-3-1): 方向セグメント(昇順 / 降順)1 ボタンの style です。
-const directionButtonStyle = (
-  active: boolean,
-  disabled: boolean,
-): CSSProperties => ({
-  flex: '0 0 auto',
-  boxSizing: 'border-box',
-  padding: '4px 9px',
-  border: `1px solid ${active ? '#2563eb' : '#cbd5e1'}`,
-  backgroundColor: active ? '#2563eb' : '#ffffff',
-  color: disabled ? '#cbd5e1' : active ? '#ffffff' : '#475569',
-  fontSize: 12,
-  lineHeight: 1.4,
-  cursor: disabled ? 'default' : 'pointer',
-});
-
-export function SortManagementPanel({
-  isOpen,
-  entries,
-  columns,
-  canSort,
-  layout,
-  panelRef,
-  onAddLevel,
-  onChangeDirection,
-  onChangeColumn,
-  onRemoveLevel,
-  onClearAll,
-  onRequestClose,
-}: SortManagementPanelProps) {
-  // 既に並び替えに使われている列キーの集合です(列セレクトの候補絞り込みに使います)。
-  const usedKeys = useMemo(
-    () => new Set(entries.map((entry) => entry.columnKey)),
-    [entries],
-  );
-
-  // 未使用の最初の列(「基準を追加」で追加する列)です。なければ追加不可。
-  const firstUnusedColumn = useMemo(
-    () => columns.find((column) => !usedKeys.has(column.key)) ?? null,
-    [columns, usedKeys],
-  );
-
-  const titleOf = (key: string) =>
-    columns.find((column) => column.key === key)?.title ?? key;
-
-  if (!isOpen || !layout) {
-    return null;
-  }
-
-  const wrapperStyle: CSSProperties = {
-    ...PANEL_STYLE,
-    top: layout.top,
-    left: layout.left,
-    width: layout.width,
-  };
-
-  const handlePointerDown = (event: PointerEvent<HTMLDivElement>) => {
-    // パネル内 pointer 操作を grid 側へ伝播させません(列選択開始 / outside click 競合回避)。
-    event.stopPropagation();
-  };
-
-  const handleKeyDownCapture = (event: KeyboardEvent<HTMLDivElement>) => {
-    // portal 内 keyboard を React ツリー上の parent へ流しません。
-    // Escape での close は controller の window keydown が担当します。
-    event.stopPropagation();
-  };
-
-  const canAddLevel = canSort && firstUnusedColumn !== null;
-
-  return createPortal(
-    <div
-      ref={panelRef}
-      onPointerDown={handlePointerDown}
-      onKeyDownCapture={handleKeyDownCapture}
-      onContextMenu={(event) => {
-        event.preventDefault();
-      }}
-      style={wrapperStyle}
-    >
-      {/* ── ヘッダー: タイトル + × ── */}
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          gap: 8,
-          paddingBottom: 8,
-          marginBottom: 8,
-          borderBottom: '1px solid #e2e8f0',
-        }}
-      >
-        <span
-          style={{
-            fontSize: 13,
-            fontWeight: 700,
-            color: '#1e293b',
-            userSelect: 'none',
-          }}
-        >
-          並び替え
-        </span>
-        <button
-          type="button"
-          onClick={onRequestClose}
-          aria-label="閉じる"
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            width: 24,
-            height: 24,
-            border: 'none',
-            borderRadius: 6,
-            backgroundColor: 'transparent',
-            color: '#64748b',
-            cursor: 'pointer',
-            fontSize: 16,
-            lineHeight: 1,
-          }}
-          onPointerEnter={(event) => {
-            event.currentTarget.style.backgroundColor = '#f1f5f9';
-          }}
-          onPointerLeave={(event) => {
-            event.currentTarget.style.backgroundColor = 'transparent';
-          }}
-        >
-          ×
-        </button>
-      </div>
-
-      {/* ── レベル一覧(スクロール) ── */}
-      <div
-        style={{
-          flex: 1,
-          minHeight: 0,
-          overflowY: 'auto',
-          margin: '0 -4px',
-          padding: '0 4px',
-          display: 'flex',
-          flexDirection: 'column',
-          gap: 6,
-        }}
-      >
-        {entries.length === 0 ? (
-          <div
-            style={{
-              fontSize: 12,
-              color: '#94a3b8',
-              padding: '10px 4px',
-              userSelect: 'none',
-            }}
-          >
-            並び替えは設定されていません
-          </div>
-        ) : (
-          entries.map((entry, index) => {
-            // この行の列セレクト候補: 自分の列 + 他レベルで未使用の列。
-            const options = columns.filter(
-              (column) =>
-                column.key === entry.columnKey || !usedKeys.has(column.key),
-            );
-            // 万一この列が columns(= 可視列)に無い(後から非表示化された等)場合でも、
-            // セレクトの value が候補に無いと表示が崩れるため、合成候補を先頭に補います。
-            const hasOwn = options.some(
-              (column) => column.key === entry.columnKey,
-            );
-            const resolvedOptions = hasOwn
-              ? options
-              : [{ key: entry.columnKey, title: titleOf(entry.columnKey) }, ...options];
-
-            return (
-              <div
-                key={entry.columnKey}
-                data-sort-level=""
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 6,
-                }}
-              >
-                {/* 優先度バッジ(1 始まり)。ヘッダーの優先順位番号と意味を揃えます。 */}
-                <span
-                  aria-hidden
-                  style={{
-                    flex: '0 0 auto',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    width: 18,
-                    height: 18,
-                    borderRadius: 9,
-                    backgroundColor: '#eff6ff',
-                    color: '#2563eb',
-                    fontSize: 11,
-                    fontWeight: 700,
-                    userSelect: 'none',
-                  }}
-                >
-                  {index + 1}
-                </span>
-
-                {/* 列セレクト */}
-                <select
-                  value={entry.columnKey}
-                  disabled={!canSort}
-                  onChange={(event) => onChangeColumn(index, event.target.value)}
-                  style={{
-                    flex: 1,
-                    minWidth: 0,
-                    boxSizing: 'border-box',
-                    padding: '5px 6px',
-                    border: '1px solid #cbd5e1',
-                    borderRadius: 6,
-                    fontSize: 13,
-                    color: '#334155',
-                    backgroundColor: '#ffffff',
-                    cursor: canSort ? 'pointer' : 'default',
-                  }}
-                >
-                  {resolvedOptions.map((column) => (
-                    <option key={column.key} value={column.key}>
-                      {column.title}
-                    </option>
-                  ))}
-                </select>
-
-                {/* 方向セグメント(昇順 / 降順) */}
-                <div style={{ flex: '0 0 auto', display: 'flex' }}>
-                  <button
-                    type="button"
-                    disabled={!canSort}
-                    onClick={() => onChangeDirection(index, 'asc')}
-                    title="昇順"
-                    style={{
-                      ...directionButtonStyle(entry.direction === 'asc', !canSort),
-                      borderTopLeftRadius: 6,
-                      borderBottomLeftRadius: 6,
-                      borderRight: 'none',
-                    }}
-                  >
-                    ↑ 昇順
-                  </button>
-                  <button
-                    type="button"
-                    disabled={!canSort}
-                    onClick={() => onChangeDirection(index, 'desc')}
-                    title="降順"
-                    style={{
-                      ...directionButtonStyle(entry.direction === 'desc', !canSort),
-                      borderTopRightRadius: 6,
-                      borderBottomRightRadius: 6,
-                    }}
-                  >
-                    ↓ 降順
-                  </button>
-                </div>
-
-                {/* 削除 */}
-                <button
-                  type="button"
-                  disabled={!canSort}
-                  onClick={() => onRemoveLevel(index)}
-                  aria-label="このレベルを削除"
-                  title="このレベルを削除"
-                  style={{
-                    flex: '0 0 auto',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    width: 26,
-                    height: 26,
-                    border: 'none',
-                    borderRadius: 6,
-                    backgroundColor: 'transparent',
-                    color: canSort ? '#64748b' : '#cbd5e1',
-                    cursor: canSort ? 'pointer' : 'default',
-                    fontSize: 15,
-                    lineHeight: 1,
-                  }}
-                  onPointerEnter={(event) => {
-                    if (canSort) {
-                      event.currentTarget.style.backgroundColor = '#fef2f2';
-                      event.currentTarget.style.color = '#dc2626';
-                    }
-                  }}
-                  onPointerLeave={(event) => {
-                    event.currentTarget.style.backgroundColor = 'transparent';
-                    event.currentTarget.style.color = canSort ? '#64748b' : '#cbd5e1';
-                  }}
-                >
-                  ×
-                </button>
-              </div>
-            );
-          })
-        )}
-      </div>
-
-      {/* ── フッター: 基準を追加 / すべてクリア ── */}
-      <div
-        style={{
-          paddingTop: 8,
-          marginTop: 8,
-          borderTop: '1px solid #e2e8f0',
-          display: 'flex',
-          gap: 8,
-        }}
-      >
-        <button
-          type="button"
-          disabled={!canAddLevel}
-          onClick={() => {
-            if (!canAddLevel || !firstUnusedColumn) {
-              return;
-            }
-            onAddLevel(firstUnusedColumn.key, 'asc');
-          }}
-          title={
-            !canSort
-              ? '並び替えが無効です'
-              : firstUnusedColumn === null
-                ? 'すべての列が並び替えに使われています'
-                : '並び替えの基準を追加します'
-          }
-          style={{
-            flex: 1,
-            boxSizing: 'border-box',
-            padding: '7px 8px',
-            border: '1px solid #e2e8f0',
-            borderRadius: 8,
-            backgroundColor: 'transparent',
-            color: canAddLevel ? '#334155' : '#cbd5e1',
-            cursor: canAddLevel ? 'pointer' : 'default',
-            fontSize: 13,
-            textAlign: 'center',
-            userSelect: 'none',
-          }}
-          onPointerEnter={(event) => {
-            if (canAddLevel) {
-              event.currentTarget.style.backgroundColor = '#f1f5f9';
-            }
-          }}
-          onPointerLeave={(event) => {
-            event.currentTarget.style.backgroundColor = 'transparent';
-          }}
-        >
-          ＋ 基準を追加
-        </button>
-
-        <button
-          type="button"
-          disabled={!canSort || entries.length === 0}
-          onClick={() => {
-            if (!canSort || entries.length === 0) {
-              return;
-            }
-            onClearAll();
-          }}
-          title="すべての並び替えを解除します"
-          style={{
-            flex: '0 0 auto',
-            boxSizing: 'border-box',
-            padding: '7px 12px',
-            border: '1px solid #e2e8f0',
-            borderRadius: 8,
-            backgroundColor: 'transparent',
-            color: !canSort || entries.length === 0 ? '#cbd5e1' : '#334155',
-            cursor: !canSort || entries.length === 0 ? 'default' : 'pointer',
-            fontSize: 13,
-            textAlign: 'center',
-            userSelect: 'none',
-          }}
-          onPointerEnter={(event) => {
-            if (canSort && entries.length > 0) {
-              event.currentTarget.style.backgroundColor = '#f1f5f9';
-            }
-          }}
-          onPointerLeave={(event) => {
-            event.currentTarget.style.backgroundColor = 'transparent';
-          }}
-        >
-          すべてクリア
-        </button>
-      </div>
-
-      {!canSort && (
-        <div
-          style={{
-            fontSize: 11,
-            color: '#94a3b8',
-            marginTop: 8,
-            userSelect: 'none',
-          }}
-        >
-          並び替えが無効のため編集できません
-        </div>
-      )}
-    </div>,
-    document.body,
-  );
-}
-
-export default SortManagementPanel;
-</file>
-
 <file path="src/index.css">
 :root {
   --text: #6b6375;
@@ -2800,240 +2335,6 @@ export const useGridKeyboardInteractions = <T,>({
 export default useGridKeyboardInteractions;
 </file>
 
-<file path="src/components/spreadsheet-grid/logic/filtering.ts">
-import type { GridColumn, SetColumnFilterValue } from '../model/gridTypes';
-import { getCellValue } from '../utils/permissions';
-
-// 追加: filtering / sorting で共通利用しやすい最小 row model 型です。
-export type GridRowModelLike<T> = {
-  row: T;
-  sourceIndex: number;
-};
-
-// 追加(12-A): set フィルター値の type guard です。
-export const isSetColumnFilterValue = (
-  value: unknown,
-): value is SetColumnFilterValue =>
-  typeof value === 'object' &&
-  value !== null &&
-  (value as SetColumnFilterValue).kind === 'set' &&
-  Array.isArray((value as SetColumnFilterValue).values);
-
-// 追加(12-A): 列フィルター値が「有効」かを判定する共通 helper です。
-// 変更理由: 従来は GridHeaderRow(フィルター済みバッジ) / gridBarHelpers(有効件数) /
-//   applyColumnFilters がそれぞれ String(value).trim() で判定していました。
-//   set フィルター値はオブジェクトのため String() 判定が成立しません
-//   (空配列 = 全行除外でも「有効」と数える必要があります)。
-//   有効判定をここへ一元化し、3 箇所すべてが同じ規則を共有します。
-//   set 以外は従来どおり「非空文字列のみ有効」で挙動等価です。
-export const isActiveColumnFilterValue = (value: unknown): boolean => {
-  if (isSetColumnFilterValue(value)) {
-    // 注記: 全選択時は reducer 側で clearColumn 済みのため、値が存在する時点で有効です。
-    return true;
-  }
-  return String(value ?? '').trim().length > 0;
-};
-
-// 追加: number フィルターの解釈結果です。
-export type ParsedNumberFilter =
-  | {
-      mode: 'comparison';
-      operator: '>' | '>=' | '<' | '<=' | '=';
-      value: number;
-    }
-  | {
-      mode: 'range';
-      min: number;
-      max: number;
-    };
-
-// 追加: 行フィルターの最小実装です。初版では global filter のみをここで扱います。
-export const applyGlobalFilter = <T, R extends GridRowModelLike<T>>(
-  rowModels: R[],
-  columns: GridColumn<T>[],
-  globalText: string,
-) => {
-  const normalizedFilter = globalText.trim().toLowerCase();
-  if (!normalizedFilter) {
-    return rowModels;
-  }
-
-  return rowModels.filter((rowModel) =>
-    columns.some((column) => {
-      const value = getCellValue(rowModel.row, column);
-      return String(value ?? '').toLowerCase().includes(normalizedFilter);
-    }),
-  );
-};
-
-// 追加: number フィルター式を解釈します。
-export const parseNumberFilterExpression = (
-  rawValue: string,
-): ParsedNumberFilter | null => {
-  const normalized = rawValue.trim();
-  if (!normalized) {
-    return null;
-  }
-
-  const rangeMatch = normalized.match(
-    /^(-?\d+(?:\.\d+)?)\s*\.\.\s*(-?\d+(?:\.\d+)?)$/,
-  );
-  if (rangeMatch) {
-    const first = Number(rangeMatch[1]);
-    const second = Number(rangeMatch[2]);
-    if (!Number.isFinite(first) || !Number.isFinite(second)) {
-      return null;
-    }
-    return {
-      mode: 'range',
-      min: Math.min(first, second),
-      max: Math.max(first, second),
-    };
-  }
-
-  const comparisonMatch = normalized.match(
-    /^(<=|>=|=|<|>)?\s*(-?\d+(?:\.\d+)?)$/,
-  );
-  if (!comparisonMatch) {
-    return null;
-  }
-
-  return {
-    mode: 'comparison',
-    operator: (comparisonMatch[1] ?? '=') as '>' | '>=' | '<' | '<=' | '=',
-    value: Number(comparisonMatch[2]),
-  };
-};
-
-// 追加: number 型フィルターの評価です。
-export const applyNumberFilter = (
-  cellValue: unknown,
-  filterValue: unknown,
-) => {
-  const normalizedFilter = String(filterValue ?? '').trim();
-  if (!normalizedFilter) {
-    return true;
-  }
-
-  const parsedFilter = parseNumberFilterExpression(normalizedFilter);
-  if (!parsedFilter) {
-    // 追加: 式として解釈できない場合は contains にフォールバックします。
-    return String(cellValue ?? '')
-      .toLowerCase()
-      .includes(normalizedFilter.toLowerCase());
-  }
-
-  const numericCellValue = Number(cellValue);
-  if (!Number.isFinite(numericCellValue)) {
-    return false;
-  }
-
-  if (parsedFilter.mode === 'range') {
-    return (
-      numericCellValue >= parsedFilter.min &&
-      numericCellValue <= parsedFilter.max
-    );
-  }
-
-  switch (parsedFilter.operator) {
-    case '>':
-      return numericCellValue > parsedFilter.value;
-    case '>=':
-      return numericCellValue >= parsedFilter.value;
-    case '<':
-      return numericCellValue < parsedFilter.value;
-    case '<=':
-      return numericCellValue <= parsedFilter.value;
-    case '=':
-    default:
-      return numericCellValue === parsedFilter.value;
-  }
-};
-
-// 変更(12-A): applyColumnFilters を「行ループ前の事前コンパイル方式」へ変更します。
-// 変更理由:
-//   1) set フィルターは候補が多い列(例: 品番 5,000 種)でも O(1) 判定にしたく、
-//      行ループの外で一度だけ Set を構築する必要があります。
-//   2) 旧実装は rows.filter × columns.every の内側で毎回
-//      String(filterValue).trim().toLowerCase() を実行しており、フィルター未設定の列も
-//      含めて「行数 × 全列数」(5,000 × 29 ≒ 14.5 万回)の正規化が毎適用で走っていました。
-//      有効な列フィルターだけを predicate へ事前コンパイルすることで、行ループは
-//      「有効フィルター数 × 行数」に縮小します(text / number / select の判定結果は
-//      従来と等価です)。
-type CompiledColumnFilterPredicate<T> = (row: T) => boolean;
-
-// 追加(12-A): 1 列ぶんのフィルター値を predicate へコンパイルします。
-//             無効(未設定)なら null を返し、行ループから除外します。
-const compileSingleColumnFilter = <T,>(
-  column: GridColumn<T>,
-  filterValue: unknown,
-): CompiledColumnFilterPredicate<T> | null => {
-  if (!isActiveColumnFilterValue(filterValue)) {
-    return null;
-  }
-
-  // 注記: 従来どおり column.filterFn を最優先します(set 値が渡るケースも
-  //       利用側 filterFn の責務とし、挙動の優先順位は変えません)。
-  if (column.filterFn) {
-    const filterFn = column.filterFn;
-    return (row) => filterFn(row, filterValue);
-  }
-
-  // 追加(12-A): set フィルターは「許可値の Set」を一度だけ構築し、O(1) 照合します。
-  if (isSetColumnFilterValue(filterValue)) {
-    const allowedValues = new Set(filterValue.values);
-    return (row) => allowedValues.has(String(getCellValue(row, column) ?? ''));
-  }
-
-  const filterType = column.filterType ?? 'text';
-
-  if (filterType === 'number') {
-    return (row) => applyNumberFilter(getCellValue(row, column), filterValue);
-  }
-
-  if (filterType === 'select') {
-    const expectedValue = String(filterValue ?? '');
-    return (row) => String(getCellValue(row, column) ?? '') === expectedValue;
-  }
-
-  // text / date / custom(filterFn なし)は従来どおり部分一致です。
-  const normalizedFilter = String(filterValue ?? '').trim().toLowerCase();
-  return (row) =>
-    String(getCellValue(row, column) ?? '')
-      .toLowerCase()
-      .includes(normalizedFilter);
-};
-
-// 変更(12-A): 列ごとのフィルターを適用します。text / number / select / set 対応です。
-//             column.filterFn がある場合はそれを優先します。
-export const applyColumnFilters = <T, R extends GridRowModelLike<T>>(
-  rowModels: R[],
-  columns: GridColumn<T>[],
-  columnFilters: Record<string, unknown>,
-) => {
-  const predicates: CompiledColumnFilterPredicate<T>[] = [];
-  for (const column of columns) {
-    const predicate = compileSingleColumnFilter(
-      column,
-      columnFilters[column.key],
-    );
-    if (predicate) {
-      predicates.push(predicate);
-    }
-  }
-
-  // 追加(12-A): 有効フィルターなしのときは同一配列参照を返し、
-  //             下流 useMemo(sorted 以降)のスキップを最大化します。
-  if (predicates.length === 0) {
-    return rowModels;
-  }
-
-  return rowModels.filter((rowModel) =>
-    predicates.every((predicate) => predicate(rowModel.row)),
-  );
-};
-</file>
-
 <file path="src/components/spreadsheet-grid/view/ColumnFilterPopover.tsx">
 import { createPortal } from 'react-dom';
 // 変更(12-A): set フィルター(検索 + Select All + チェックボックス一覧)用に
@@ -3648,6 +2949,672 @@ export function ColumnFilterPopover({
 }
 
 export default ColumnFilterPopover;
+</file>
+
+<file path="src/components/spreadsheet-grid/view/SortManagementPanel.tsx">
+// 追加(MS-3-1 / 並び替え管理パネル): 複数レベルの並び替えをマウス/タッチで編集する
+//   独立 popover です(Excel の「並べ替え」ダイアログ相当 / ColumnChooserPanel の兄弟)。
+//   - タイトル + × クローズ / レベル一覧(優先度・列セレクト・方向・削除) /
+//     フッター(基準を追加 / すべてクリア)で構成します。
+//   - 本コンポーネントは非ジェネリックです(ColumnChooserPanel と同様、プリミティブな
+//     entries / columns だけを受け取ります)。編集はライブ適用で、各操作は即座に
+//     呼び出し側(SpreadsheetGrid)のハンドラ経由で uiState.sort(単一ソース)へ反映します。
+//     パネルは編集後も開いたまま(× / outside click / Escape でのみ閉じます)。
+//   - 並び替えロジックは持ちません。操作は index / key / direction の「意図」を emit し、
+//     次状態の算出(logic/sorting.ts の純関数)と dispatch は呼び出し側が担います。
+//   - 変更(MS-3-2 / 優先順位 DnD): 各レベル行の左端に ⠿ ドラッグハンドルを追加し、
+//     pointer ベースで優先順位を並べ替えます(ColumnChooserPanel の DnD 機構を移植。ただし
+//     単一フラットリストのためセクション分け・オートスクロールは省略。ドロップ前線インジ
+//     ケータは踏襲)。確定時は from / 補正済み to を onMove へ emit し、次状態の算出
+//     (moveSortEntry)と dispatch は呼び出し側が担います。ドラッグは canSort かつ
+//     レベル 2 件以上のときのみ可能です。
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
+import type { CSSProperties, KeyboardEvent, PointerEvent, RefObject } from 'react';
+import type { GridSortEntry } from '../model/gridTypes';
+import type { SortManagementLayout } from '../hooks/useSortManagementController';
+
+// 追加(MS-3-1): パネルが必要とする最小の列情報です(並び替え可能な列のみを渡します)。
+export type SortManagementColumn = {
+  key: string;
+  title: string;
+};
+
+type SortManagementPanelProps = {
+  isOpen: boolean;
+  // 現在の並び替え(優先順位順)です。uiState.sort をそのまま渡せます。
+  entries: GridSortEntry[];
+  // 並び替え対象に選べる列の一覧です(呼び出し側で visibleColumns から作ります)。
+  columns: SortManagementColumn[];
+  // enableSorting 相当。false のときは編集を無効化し注記を出します(保険。通常は開きません)。
+  canSort: boolean;
+  layout: SortManagementLayout | null;
+  panelRef: RefObject<HTMLDivElement | null>;
+  // レベルを末尾へ追加します(呼び出し側が未使用列を選んで渡すか、ここで渡す key を採用)。
+  onAddLevel: (columnKey: string, direction: 'asc' | 'desc') => void;
+  onChangeDirection: (index: number, direction: 'asc' | 'desc') => void;
+  onChangeColumn: (index: number, columnKey: string) => void;
+  onRemoveLevel: (index: number) => void;
+  onClearAll: () => void;
+  // 追加(MS-3-2): 優先順位 DnD の確定ハンドラです。from(掴んだレベル)と to(除去後の
+  //   挿入先 index)を渡します。ドロップ位置からの -1 補正はパネル内で済ませているため、
+  //   呼び出し側は moveSortEntry(sort, from, to) をそのまま呼べます。canSort かつ
+  //   レベル 2 件以上のときのみ、かつ実際に位置が動いたときのみ呼ばれます。
+  onMove: (from: number, to: number) => void;
+  onRequestClose: () => void;
+};
+
+const PANEL_MAX_HEIGHT = 420;
+
+const PANEL_STYLE: CSSProperties = {
+  position: 'fixed',
+  boxSizing: 'border-box',
+  display: 'flex',
+  flexDirection: 'column',
+  maxHeight: PANEL_MAX_HEIGHT,
+  padding: 12,
+  border: '1px solid #cbd5e1',
+  borderRadius: 12,
+  backgroundColor: '#ffffff',
+  boxShadow: '0 12px 28px rgba(15, 23, 42, 0.16)',
+  zIndex: 1000,
+};
+
+// 追加(MS-3-1): 方向セグメント(昇順 / 降順)1 ボタンの style です。
+const directionButtonStyle = (
+  active: boolean,
+  disabled: boolean,
+): CSSProperties => ({
+  flex: '0 0 auto',
+  boxSizing: 'border-box',
+  padding: '4px 9px',
+  border: `1px solid ${active ? '#2563eb' : '#cbd5e1'}`,
+  backgroundColor: active ? '#2563eb' : '#ffffff',
+  color: disabled ? '#cbd5e1' : active ? '#ffffff' : '#475569',
+  fontSize: 12,
+  lineHeight: 1.4,
+  cursor: disabled ? 'default' : 'pointer',
+});
+
+// 追加(MS-3-2): ⠿ ドラッグハンドルの見た目です(2×3 の点)。ColumnChooserPanel と同型。
+//   操作系(pointerdown / capture)は行側に配線し、ここは見た目のみを描画します。
+function DragHandleGlyph({ disabled }: { disabled: boolean }) {
+  return (
+    <svg
+      width="10"
+      height="16"
+      viewBox="0 0 10 16"
+      fill={disabled ? '#cbd5e1' : '#94a3b8'}
+      aria-hidden
+    >
+      {[3, 8, 13].map((cy) =>
+        [3, 7].map((cx) => (
+          <circle key={`${cx}-${cy}`} cx={cx} cy={cy} r="1.2" />
+        )),
+      )}
+    </svg>
+  );
+}
+
+export function SortManagementPanel({
+  isOpen,
+  entries,
+  columns,
+  canSort,
+  layout,
+  panelRef,
+  onAddLevel,
+  onChangeDirection,
+  onChangeColumn,
+  onRemoveLevel,
+  onClearAll,
+  onMove,
+  onRequestClose,
+}: SortManagementPanelProps) {
+  // 既に並び替えに使われている列キーの集合です(列セレクトの候補絞り込みに使います)。
+  const usedKeys = useMemo(
+    () => new Set(entries.map((entry) => entry.columnKey)),
+    [entries],
+  );
+
+  // 未使用の最初の列(「基準を追加」で追加する列)です。なければ追加不可。
+  const firstUnusedColumn = useMemo(
+    () => columns.find((column) => !usedKeys.has(column.key)) ?? null,
+    [columns, usedKeys],
+  );
+
+  const titleOf = (key: string) =>
+    columns.find((column) => column.key === key)?.title ?? key;
+
+  // ── 優先順位 DnD(MS-3-2) ───────────────────────────────
+  //   ColumnChooserPanel の pointer 機構を移植。単一フラットリストのため pane 走査・
+  //   オートスクロールは省略し、ドロップ前線インジケータのみ踏襲します。
+  //   ※ 下記フックはすべて早期 return (!isOpen || !layout) より前に置きます
+  //     (条件付き hook 呼び出しを避けるため)。
+  // ドラッグ可否: 並び替え有効、かつレベルが 2 件以上のときのみ。
+  const canDrag = canSort && entries.length >= 2;
+  const listRef = useRef<HTMLDivElement | null>(null);
+  // ドラッグ中のレベル index(null = 非ドラッグ)。dragActiveRef は state 反映前の連続
+  //   pointer イベントでも確実に効くよう、早期 return 判定を ref で持ちます。
+  const [draggingIndex, setDraggingIndex] = useState<number | null>(null);
+  const dragActiveRef = useRef(false);
+  // ドロップ挿入スロット(0..entries.length。length = 末尾)。インジケータ描画に使います。
+  const [dropIndex, setDropIndex] = useState<number | null>(null);
+  const pointerYRef = useRef(0);
+
+  // ポインタ Y から「行 midpoint より上にある行数」= 挿入スロットを求めます。
+  const updateDropFromPointer = useCallback(() => {
+    const list = listRef.current;
+    if (!list) {
+      return;
+    }
+    const rows = list.querySelectorAll<HTMLElement>('[data-sort-level]');
+    const y = pointerYRef.current;
+    let index = rows.length;
+    for (let i = 0; i < rows.length; i += 1) {
+      const rect = rows[i].getBoundingClientRect();
+      if (y < rect.top + rect.height / 2) {
+        index = i;
+        break;
+      }
+    }
+    setDropIndex(index);
+  }, []);
+
+  const finishDrag = useCallback(
+    (commit: boolean) => {
+      const from = draggingIndex;
+      const rawTo = dropIndex;
+      dragActiveRef.current = false;
+      setDraggingIndex(null);
+      setDropIndex(null);
+      if (commit && from !== null && rawTo !== null) {
+        // 挿入スロット(除去前基準 0..length)→ 除去後 index へ補正します。
+        let to = rawTo;
+        if (to > from) {
+          to -= 1;
+        }
+        // moveSortEntry 側で from === to / 範囲外は同一参照になるため、no-op ドラッグでも
+        //   無駄な setSort 参照変化は起きません。
+        onMove(from, to);
+      }
+    },
+    [draggingIndex, dropIndex, onMove],
+  );
+
+  const handleHandlePointerDown = useCallback(
+    (index: number, event: PointerEvent<HTMLElement>) => {
+      if (!canDrag) {
+        return;
+      }
+      // 既定のテキスト選択 / 行操作を抑止し、grid 側へも伝播させません。
+      event.preventDefault();
+      event.stopPropagation();
+      event.currentTarget.setPointerCapture(event.pointerId);
+      dragActiveRef.current = true;
+      pointerYRef.current = event.clientY;
+      setDraggingIndex(index);
+      updateDropFromPointer();
+    },
+    [canDrag, updateDropFromPointer],
+  );
+
+  const handleHandlePointerMove = useCallback(
+    (event: PointerEvent<HTMLElement>) => {
+      if (!dragActiveRef.current) {
+        return;
+      }
+      pointerYRef.current = event.clientY;
+      updateDropFromPointer();
+    },
+    [updateDropFromPointer],
+  );
+
+  const handleHandlePointerUp = useCallback(() => {
+    if (!dragActiveRef.current) {
+      return;
+    }
+    finishDrag(true);
+  }, [finishDrag]);
+
+  const handleHandlePointerCancel = useCallback(() => {
+    if (!dragActiveRef.current) {
+      return;
+    }
+    finishDrag(false);
+  }, [finishDrag]);
+
+  // panel が閉じるときはドラッグ状態を確実に後始末します(rAF は持たないため不要)。
+  useEffect(() => {
+    if (!isOpen) {
+      dragActiveRef.current = false;
+      setDraggingIndex(null);
+      setDropIndex(null);
+    }
+  }, [isOpen]);
+
+  if (!isOpen || !layout) {
+    return null;
+  }
+
+  const wrapperStyle: CSSProperties = {
+    ...PANEL_STYLE,
+    top: layout.top,
+    left: layout.left,
+    width: layout.width,
+  };
+
+  const handlePointerDown = (event: PointerEvent<HTMLDivElement>) => {
+    // パネル内 pointer 操作を grid 側へ伝播させません(列選択開始 / outside click 競合回避)。
+    event.stopPropagation();
+  };
+
+  const handleKeyDownCapture = (event: KeyboardEvent<HTMLDivElement>) => {
+    // portal 内 keyboard を React ツリー上の parent へ流しません。
+    // Escape での close は controller の window keydown が担当します。
+    event.stopPropagation();
+  };
+
+  const canAddLevel = canSort && firstUnusedColumn !== null;
+
+  return createPortal(
+    <div
+      ref={panelRef}
+      onPointerDown={handlePointerDown}
+      onKeyDownCapture={handleKeyDownCapture}
+      onContextMenu={(event) => {
+        event.preventDefault();
+      }}
+      style={wrapperStyle}
+    >
+      {/* ── ヘッダー: タイトル + × ── */}
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: 8,
+          paddingBottom: 8,
+          marginBottom: 8,
+          borderBottom: '1px solid #e2e8f0',
+        }}
+      >
+        <span
+          style={{
+            fontSize: 13,
+            fontWeight: 700,
+            color: '#1e293b',
+            userSelect: 'none',
+          }}
+        >
+          並び替え
+        </span>
+        <button
+          type="button"
+          onClick={onRequestClose}
+          aria-label="閉じる"
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            width: 24,
+            height: 24,
+            border: 'none',
+            borderRadius: 6,
+            backgroundColor: 'transparent',
+            color: '#64748b',
+            cursor: 'pointer',
+            fontSize: 16,
+            lineHeight: 1,
+          }}
+          onPointerEnter={(event) => {
+            event.currentTarget.style.backgroundColor = '#f1f5f9';
+          }}
+          onPointerLeave={(event) => {
+            event.currentTarget.style.backgroundColor = 'transparent';
+          }}
+        >
+          ×
+        </button>
+      </div>
+
+      {/* ── レベル一覧(スクロール) ── */}
+      <div
+        ref={listRef}
+        style={{
+          flex: 1,
+          minHeight: 0,
+          overflowY: 'auto',
+          margin: '0 -4px',
+          padding: '0 4px',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 6,
+        }}
+      >
+        {entries.length === 0 ? (
+          <div
+            style={{
+              fontSize: 12,
+              color: '#94a3b8',
+              padding: '10px 4px',
+              userSelect: 'none',
+            }}
+          >
+            並び替えは設定されていません
+          </div>
+        ) : (
+          entries.map((entry, index) => {
+            // この行の列セレクト候補: 自分の列 + 他レベルで未使用の列。
+            const options = columns.filter(
+              (column) =>
+                column.key === entry.columnKey || !usedKeys.has(column.key),
+            );
+            // 万一この列が columns(= 可視列)に無い(後から非表示化された等)場合でも、
+            // セレクトの value が候補に無いと表示が崩れるため、合成候補を先頭に補います。
+            const hasOwn = options.some(
+              (column) => column.key === entry.columnKey,
+            );
+            const resolvedOptions = hasOwn
+              ? options
+              : [{ key: entry.columnKey, title: titleOf(entry.columnKey) }, ...options];
+
+            // 優先順位 DnD(MS-3-2): この行を掴んでいるか / この行の直前に挿入するか。
+            const isDragging = draggingIndex === index;
+            const showDropBefore =
+              draggingIndex !== null && dropIndex === index;
+
+            return (
+              <div
+                key={entry.columnKey}
+                data-sort-level=""
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 6,
+                  // ドロップ前線インジケータ(行の直前に挿入される位置のとき青線)。
+                  borderTop: showDropBefore
+                    ? '2px solid #2563eb'
+                    : '2px solid transparent',
+                  opacity: isDragging ? 0.4 : 1,
+                }}
+              >
+                {/* ⠿ ドラッグハンドル(MS-3-2) */}
+                <span
+                  role="button"
+                  aria-label="ドラッグして優先順位を変更"
+                  title={
+                    !canSort
+                      ? '並び替えが無効です'
+                      : entries.length < 2
+                        ? 'レベルが 2 件以上のとき並べ替えできます'
+                        : 'ドラッグして優先順位を変更'
+                  }
+                  onPointerDown={(event) =>
+                    handleHandlePointerDown(index, event)
+                  }
+                  onPointerMove={handleHandlePointerMove}
+                  onPointerUp={handleHandlePointerUp}
+                  onPointerCancel={handleHandlePointerCancel}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    flex: '0 0 auto',
+                    width: 16,
+                    height: 26,
+                    borderRadius: 6,
+                    cursor: !canDrag
+                      ? 'default'
+                      : isDragging
+                        ? 'grabbing'
+                        : 'grab',
+                    touchAction: 'none',
+                  }}
+                  onPointerEnter={(event) => {
+                    if (canDrag) {
+                      event.currentTarget.style.backgroundColor = '#f1f5f9';
+                    }
+                  }}
+                  onPointerLeave={(event) => {
+                    event.currentTarget.style.backgroundColor = 'transparent';
+                  }}
+                >
+                  <DragHandleGlyph disabled={!canDrag} />
+                </span>
+
+                {/* 優先度バッジ(1 始まり)。ヘッダーの優先順位番号と意味を揃えます。 */}
+                <span
+                  aria-hidden
+                  style={{
+                    flex: '0 0 auto',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    width: 18,
+                    height: 18,
+                    borderRadius: 9,
+                    backgroundColor: '#eff6ff',
+                    color: '#2563eb',
+                    fontSize: 11,
+                    fontWeight: 700,
+                    userSelect: 'none',
+                  }}
+                >
+                  {index + 1}
+                </span>
+
+                {/* 列セレクト */}
+                <select
+                  value={entry.columnKey}
+                  disabled={!canSort}
+                  onChange={(event) => onChangeColumn(index, event.target.value)}
+                  style={{
+                    flex: 1,
+                    minWidth: 0,
+                    boxSizing: 'border-box',
+                    padding: '5px 6px',
+                    border: '1px solid #cbd5e1',
+                    borderRadius: 6,
+                    fontSize: 13,
+                    color: '#334155',
+                    backgroundColor: '#ffffff',
+                    cursor: canSort ? 'pointer' : 'default',
+                  }}
+                >
+                  {resolvedOptions.map((column) => (
+                    <option key={column.key} value={column.key}>
+                      {column.title}
+                    </option>
+                  ))}
+                </select>
+
+                {/* 方向セグメント(昇順 / 降順) */}
+                <div style={{ flex: '0 0 auto', display: 'flex' }}>
+                  <button
+                    type="button"
+                    disabled={!canSort}
+                    onClick={() => onChangeDirection(index, 'asc')}
+                    title="昇順"
+                    style={{
+                      ...directionButtonStyle(entry.direction === 'asc', !canSort),
+                      borderTopLeftRadius: 6,
+                      borderBottomLeftRadius: 6,
+                      borderRight: 'none',
+                    }}
+                  >
+                    ↑ 昇順
+                  </button>
+                  <button
+                    type="button"
+                    disabled={!canSort}
+                    onClick={() => onChangeDirection(index, 'desc')}
+                    title="降順"
+                    style={{
+                      ...directionButtonStyle(entry.direction === 'desc', !canSort),
+                      borderTopRightRadius: 6,
+                      borderBottomRightRadius: 6,
+                    }}
+                  >
+                    ↓ 降順
+                  </button>
+                </div>
+
+                {/* 削除 */}
+                <button
+                  type="button"
+                  disabled={!canSort}
+                  onClick={() => onRemoveLevel(index)}
+                  aria-label="このレベルを削除"
+                  title="このレベルを削除"
+                  style={{
+                    flex: '0 0 auto',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    width: 26,
+                    height: 26,
+                    border: 'none',
+                    borderRadius: 6,
+                    backgroundColor: 'transparent',
+                    color: canSort ? '#64748b' : '#cbd5e1',
+                    cursor: canSort ? 'pointer' : 'default',
+                    fontSize: 15,
+                    lineHeight: 1,
+                  }}
+                  onPointerEnter={(event) => {
+                    if (canSort) {
+                      event.currentTarget.style.backgroundColor = '#fef2f2';
+                      event.currentTarget.style.color = '#dc2626';
+                    }
+                  }}
+                  onPointerLeave={(event) => {
+                    event.currentTarget.style.backgroundColor = 'transparent';
+                    event.currentTarget.style.color = canSort ? '#64748b' : '#cbd5e1';
+                  }}
+                >
+                  ×
+                </button>
+              </div>
+            );
+          })
+        )}
+        {/* 末尾へのドロップインジケータ(MS-3-2): 最後の行の後ろに挿入される位置のとき。 */}
+        {draggingIndex !== null && dropIndex === entries.length && (
+          <div
+            style={{
+              height: 0,
+              borderTop: '2px solid #2563eb',
+            }}
+          />
+        )}
+      </div>
+
+      {/* ── フッター: 基準を追加 / すべてクリア ── */}
+      <div
+        style={{
+          paddingTop: 8,
+          marginTop: 8,
+          borderTop: '1px solid #e2e8f0',
+          display: 'flex',
+          gap: 8,
+        }}
+      >
+        <button
+          type="button"
+          disabled={!canAddLevel}
+          onClick={() => {
+            if (!canAddLevel || !firstUnusedColumn) {
+              return;
+            }
+            onAddLevel(firstUnusedColumn.key, 'asc');
+          }}
+          title={
+            !canSort
+              ? '並び替えが無効です'
+              : firstUnusedColumn === null
+                ? 'すべての列が並び替えに使われています'
+                : '並び替えの基準を追加します'
+          }
+          style={{
+            flex: 1,
+            boxSizing: 'border-box',
+            padding: '7px 8px',
+            border: '1px solid #e2e8f0',
+            borderRadius: 8,
+            backgroundColor: 'transparent',
+            color: canAddLevel ? '#334155' : '#cbd5e1',
+            cursor: canAddLevel ? 'pointer' : 'default',
+            fontSize: 13,
+            textAlign: 'center',
+            userSelect: 'none',
+          }}
+          onPointerEnter={(event) => {
+            if (canAddLevel) {
+              event.currentTarget.style.backgroundColor = '#f1f5f9';
+            }
+          }}
+          onPointerLeave={(event) => {
+            event.currentTarget.style.backgroundColor = 'transparent';
+          }}
+        >
+          ＋ 基準を追加
+        </button>
+
+        <button
+          type="button"
+          disabled={!canSort || entries.length === 0}
+          onClick={() => {
+            if (!canSort || entries.length === 0) {
+              return;
+            }
+            onClearAll();
+          }}
+          title="すべての並び替えを解除します"
+          style={{
+            flex: '0 0 auto',
+            boxSizing: 'border-box',
+            padding: '7px 12px',
+            border: '1px solid #e2e8f0',
+            borderRadius: 8,
+            backgroundColor: 'transparent',
+            color: !canSort || entries.length === 0 ? '#cbd5e1' : '#334155',
+            cursor: !canSort || entries.length === 0 ? 'default' : 'pointer',
+            fontSize: 13,
+            textAlign: 'center',
+            userSelect: 'none',
+          }}
+          onPointerEnter={(event) => {
+            if (canSort && entries.length > 0) {
+              event.currentTarget.style.backgroundColor = '#f1f5f9';
+            }
+          }}
+          onPointerLeave={(event) => {
+            event.currentTarget.style.backgroundColor = 'transparent';
+          }}
+        >
+          すべてクリア
+        </button>
+      </div>
+
+      {!canSort && (
+        <div
+          style={{
+            fontSize: 11,
+            color: '#94a3b8',
+            marginTop: 8,
+            userSelect: 'none',
+          }}
+        >
+          並び替えが無効のため編集できません
+        </div>
+      )}
+    </div>,
+    document.body,
+  );
+}
+
+export default SortManagementPanel;
 </file>
 
 <file path=".gitignore">
@@ -4468,6 +4435,363 @@ export const useGridViewportSync = <T,>({
 export default useGridViewportSync;
 </file>
 
+<file path="src/components/spreadsheet-grid/logic/filtering.ts">
+import type { GridColumn, SetColumnFilterValue } from '../model/gridTypes';
+import { getCellValue } from '../utils/permissions';
+
+// 追加: filtering / sorting で共通利用しやすい最小 row model 型です。
+export type GridRowModelLike<T> = {
+  row: T;
+  sourceIndex: number;
+};
+
+// 追加(DS-1 / index ベースパイプライン): 「ビュー順に並んだ元 rows の index 列」です。
+//   オブジェクト配列({row, sourceIndex, ...})を各段で割り当て直す従来方式に代えて、
+//   フィルタ/ソートはこの index 列(Int32Array)だけを生成・受け渡しします。
+//   - 1,000,000 行でも 4MB(= 4byte × N)に収まり、割り当て/GC が行オブジェクト方式から桁で下がります。
+//   - 将来 Web Worker へ渡す際に transferable(ゼロコピー)になります。
+//   - ビュー位置 i の元行は rows[order[i]] で引きます(この対応付けが後段のシームの土台)。
+//   DS-1 は純関数の追加のみで、配線(SpreadsheetGrid 側のチェーン差し替え)は DS-2 で行います。
+export type RowOrder = Int32Array;
+
+// 追加(DS-1): 恒等 order [0, 1, ..., rowCount-1] を生成します(パイプラインの起点)。
+export const createSourceOrder = (rowCount: number): RowOrder => {
+  const order = new Int32Array(rowCount);
+  for (let i = 0; i < rowCount; i += 1) {
+    order[i] = i;
+  }
+  return order;
+};
+
+// 追加(12-A): set フィルター値の type guard です。
+export const isSetColumnFilterValue = (
+  value: unknown,
+): value is SetColumnFilterValue =>
+  typeof value === 'object' &&
+  value !== null &&
+  (value as SetColumnFilterValue).kind === 'set' &&
+  Array.isArray((value as SetColumnFilterValue).values);
+
+// 追加(12-A): 列フィルター値が「有効」かを判定する共通 helper です。
+// 変更理由: 従来は GridHeaderRow(フィルター済みバッジ) / gridBarHelpers(有効件数) /
+//   applyColumnFilters がそれぞれ String(value).trim() で判定していました。
+//   set フィルター値はオブジェクトのため String() 判定が成立しません
+//   (空配列 = 全行除外でも「有効」と数える必要があります)。
+//   有効判定をここへ一元化し、3 箇所すべてが同じ規則を共有します。
+//   set 以外は従来どおり「非空文字列のみ有効」で挙動等価です。
+export const isActiveColumnFilterValue = (value: unknown): boolean => {
+  if (isSetColumnFilterValue(value)) {
+    // 注記: 全選択時は reducer 側で clearColumn 済みのため、値が存在する時点で有効です。
+    return true;
+  }
+  return String(value ?? '').trim().length > 0;
+};
+
+// 追加: number フィルターの解釈結果です。
+export type ParsedNumberFilter =
+  | {
+      mode: 'comparison';
+      operator: '>' | '>=' | '<' | '<=' | '=';
+      value: number;
+    }
+  | {
+      mode: 'range';
+      min: number;
+      max: number;
+    };
+
+// 追加: 行フィルターの最小実装です。初版では global filter のみをここで扱います。
+export const applyGlobalFilter = <T, R extends GridRowModelLike<T>>(
+  rowModels: R[],
+  columns: GridColumn<T>[],
+  globalText: string,
+) => {
+  const normalizedFilter = globalText.trim().toLowerCase();
+  if (!normalizedFilter) {
+    return rowModels;
+  }
+
+  return rowModels.filter((rowModel) =>
+    columns.some((column) => {
+      const value = getCellValue(rowModel.row, column);
+      return String(value ?? '').toLowerCase().includes(normalizedFilter);
+    }),
+  );
+};
+
+// 追加: number フィルター式を解釈します。
+export const parseNumberFilterExpression = (
+  rawValue: string,
+): ParsedNumberFilter | null => {
+  const normalized = rawValue.trim();
+  if (!normalized) {
+    return null;
+  }
+
+  const rangeMatch = normalized.match(
+    /^(-?\d+(?:\.\d+)?)\s*\.\.\s*(-?\d+(?:\.\d+)?)$/,
+  );
+  if (rangeMatch) {
+    const first = Number(rangeMatch[1]);
+    const second = Number(rangeMatch[2]);
+    if (!Number.isFinite(first) || !Number.isFinite(second)) {
+      return null;
+    }
+    return {
+      mode: 'range',
+      min: Math.min(first, second),
+      max: Math.max(first, second),
+    };
+  }
+
+  const comparisonMatch = normalized.match(
+    /^(<=|>=|=|<|>)?\s*(-?\d+(?:\.\d+)?)$/,
+  );
+  if (!comparisonMatch) {
+    return null;
+  }
+
+  return {
+    mode: 'comparison',
+    operator: (comparisonMatch[1] ?? '=') as '>' | '>=' | '<' | '<=' | '=',
+    value: Number(comparisonMatch[2]),
+  };
+};
+
+// 追加: number 型フィルターの評価です。
+export const applyNumberFilter = (
+  cellValue: unknown,
+  filterValue: unknown,
+) => {
+  const normalizedFilter = String(filterValue ?? '').trim();
+  if (!normalizedFilter) {
+    return true;
+  }
+
+  const parsedFilter = parseNumberFilterExpression(normalizedFilter);
+  if (!parsedFilter) {
+    // 追加: 式として解釈できない場合は contains にフォールバックします。
+    return String(cellValue ?? '')
+      .toLowerCase()
+      .includes(normalizedFilter.toLowerCase());
+  }
+
+  const numericCellValue = Number(cellValue);
+  if (!Number.isFinite(numericCellValue)) {
+    return false;
+  }
+
+  if (parsedFilter.mode === 'range') {
+    return (
+      numericCellValue >= parsedFilter.min &&
+      numericCellValue <= parsedFilter.max
+    );
+  }
+
+  switch (parsedFilter.operator) {
+    case '>':
+      return numericCellValue > parsedFilter.value;
+    case '>=':
+      return numericCellValue >= parsedFilter.value;
+    case '<':
+      return numericCellValue < parsedFilter.value;
+    case '<=':
+      return numericCellValue <= parsedFilter.value;
+    case '=':
+    default:
+      return numericCellValue === parsedFilter.value;
+  }
+};
+
+// 変更(12-A): applyColumnFilters を「行ループ前の事前コンパイル方式」へ変更します。
+// 変更理由:
+//   1) set フィルターは候補が多い列(例: 品番 5,000 種)でも O(1) 判定にしたく、
+//      行ループの外で一度だけ Set を構築する必要があります。
+//   2) 旧実装は rows.filter × columns.every の内側で毎回
+//      String(filterValue).trim().toLowerCase() を実行しており、フィルター未設定の列も
+//      含めて「行数 × 全列数」(5,000 × 29 ≒ 14.5 万回)の正規化が毎適用で走っていました。
+//      有効な列フィルターだけを predicate へ事前コンパイルすることで、行ループは
+//      「有効フィルター数 × 行数」に縮小します(text / number / select の判定結果は
+//      従来と等価です)。
+type CompiledColumnFilterPredicate<T> = (row: T) => boolean;
+
+// 追加(12-A): 1 列ぶんのフィルター値を predicate へコンパイルします。
+//             無効(未設定)なら null を返し、行ループから除外します。
+const compileSingleColumnFilter = <T,>(
+  column: GridColumn<T>,
+  filterValue: unknown,
+): CompiledColumnFilterPredicate<T> | null => {
+  if (!isActiveColumnFilterValue(filterValue)) {
+    return null;
+  }
+
+  // 注記: 従来どおり column.filterFn を最優先します(set 値が渡るケースも
+  //       利用側 filterFn の責務とし、挙動の優先順位は変えません)。
+  if (column.filterFn) {
+    const filterFn = column.filterFn;
+    return (row) => filterFn(row, filterValue);
+  }
+
+  // 追加(12-A): set フィルターは「許可値の Set」を一度だけ構築し、O(1) 照合します。
+  if (isSetColumnFilterValue(filterValue)) {
+    const allowedValues = new Set(filterValue.values);
+    return (row) => allowedValues.has(String(getCellValue(row, column) ?? ''));
+  }
+
+  const filterType = column.filterType ?? 'text';
+
+  if (filterType === 'number') {
+    return (row) => applyNumberFilter(getCellValue(row, column), filterValue);
+  }
+
+  if (filterType === 'select') {
+    const expectedValue = String(filterValue ?? '');
+    return (row) => String(getCellValue(row, column) ?? '') === expectedValue;
+  }
+
+  // text / date / custom(filterFn なし)は従来どおり部分一致です。
+  const normalizedFilter = String(filterValue ?? '').trim().toLowerCase();
+  return (row) =>
+    String(getCellValue(row, column) ?? '')
+      .toLowerCase()
+      .includes(normalizedFilter);
+};
+
+// 変更(12-A): 列ごとのフィルターを適用します。text / number / select / set 対応です。
+//             column.filterFn がある場合はそれを優先します。
+export const applyColumnFilters = <T, R extends GridRowModelLike<T>>(
+  rowModels: R[],
+  columns: GridColumn<T>[],
+  columnFilters: Record<string, unknown>,
+) => {
+  const predicates: CompiledColumnFilterPredicate<T>[] = [];
+  for (const column of columns) {
+    const predicate = compileSingleColumnFilter(
+      column,
+      columnFilters[column.key],
+    );
+    if (predicate) {
+      predicates.push(predicate);
+    }
+  }
+
+  // 追加(12-A): 有効フィルターなしのときは同一配列参照を返し、
+  //             下流 useMemo(sorted 以降)のスキップを最大化します。
+  if (predicates.length === 0) {
+    return rowModels;
+  }
+
+  return rowModels.filter((rowModel) =>
+    predicates.every((predicate) => predicate(rowModel.row)),
+  );
+};
+
+// ────────────────────────────────────────────────
+// 追加(DS-1 / index ベースパイプライン): order(RowOrder)を受けて order を返すフィルタ群。
+//   既存の applyGlobalFilter / applyColumnFilters(オブジェクト配列版)とビュー順は
+//   厳密に等価です(下記いずれも「合格行を元の相対順で詰め直す」だけ)。違いは:
+//     - 入出力が {row,...}[] ではなく元 rows + index 列(Int32Array)であること。
+//     - 「全件通過」のとき同一参照(引数 order)を返し、下流 useMemo のスキップを最大化すること
+//       (.filter は全通過でも新配列を返すため、参照節約という点ではむしろ改善です)。
+//   DS-1 では未配線。DS-2 で SpreadsheetGrid のチェーンをこちらへ差し替えます。
+// ────────────────────────────────────────────────
+
+// 追加(DS-1): グローバルフィルタの index 版です。applyGlobalFilter と等価
+//   (columns.some の部分一致)。filter 文字列が空なら同一参照を返します。
+export const filterOrderByGlobalText = <T,>(
+  rows: T[],
+  order: RowOrder,
+  columns: GridColumn<T>[],
+  globalText: string,
+): RowOrder => {
+  const normalizedFilter = globalText.trim().toLowerCase();
+  if (!normalizedFilter) {
+    return order;
+  }
+
+  const length = order.length;
+  const columnCount = columns.length;
+  const result = new Int32Array(length);
+  let count = 0;
+
+  for (let pos = 0; pos < length; pos += 1) {
+    const sourceIndex = order[pos];
+    const row = rows[sourceIndex];
+    let matched = false;
+    for (let c = 0; c < columnCount; c += 1) {
+      const value = getCellValue(row, columns[c]);
+      if (String(value ?? '').toLowerCase().includes(normalizedFilter)) {
+        matched = true;
+        break;
+      }
+    }
+    if (matched) {
+      result[count] = sourceIndex;
+      count += 1;
+    }
+  }
+
+  // 全件通過なら参照を変えません(no-op スキップ最大化)。
+  if (count === length) {
+    return order;
+  }
+  // 余剰バッファを抱えないよう、右サイズへ slice(コピー)します。
+  return result.slice(0, count);
+};
+
+// 追加(DS-1): 列フィルタの index 版です。applyColumnFilters と等価
+//   (有効フィルタの predicates.every)。事前コンパイルは既存の compileSingleColumnFilter を
+//   そのまま再利用します(text / number / select / set / filterFn の判定は完全同一)。
+//   有効フィルタが 0 件なら同一参照を返します。
+export const filterOrderByColumns = <T,>(
+  rows: T[],
+  order: RowOrder,
+  columns: GridColumn<T>[],
+  columnFilters: Record<string, unknown>,
+): RowOrder => {
+  const predicates: CompiledColumnFilterPredicate<T>[] = [];
+  for (const column of columns) {
+    const predicate = compileSingleColumnFilter(
+      column,
+      columnFilters[column.key],
+    );
+    if (predicate) {
+      predicates.push(predicate);
+    }
+  }
+
+  if (predicates.length === 0) {
+    return order;
+  }
+
+  const length = order.length;
+  const predicateCount = predicates.length;
+  const result = new Int32Array(length);
+  let count = 0;
+
+  for (let pos = 0; pos < length; pos += 1) {
+    const sourceIndex = order[pos];
+    const row = rows[sourceIndex];
+    let ok = true;
+    for (let p = 0; p < predicateCount; p += 1) {
+      if (!predicates[p](row)) {
+        ok = false;
+        break;
+      }
+    }
+    if (ok) {
+      result[count] = sourceIndex;
+      count += 1;
+    }
+  }
+
+  if (count === length) {
+    return order;
+  }
+  return result.slice(0, count);
+};
+</file>
+
 <file path="src/components/spreadsheet-grid/model/gridSelectors.ts">
 import type { CellCoord, CellRange, GridUiState } from './gridTypes';
 
@@ -5082,201 +5406,6 @@ export function CellEditorLayer({
 }
 
 export default CellEditorLayer;
-</file>
-
-<file path="src/components/spreadsheet-grid/logic/sorting.ts">
-import type { GridColumn, GridSortState } from '../model/gridTypes';
-import { getCellValue } from '../utils/permissions';
-import type { GridRowModelLike } from './filtering';
-
-// 追加: 値比較を行います。数値化できるものは数値比較し、
-//       それ以外は文字列比較へフォールバックします。
-export const compareUnknownValues = (left: unknown, right: unknown) => {
-  const leftNumber = Number(left);
-  const rightNumber = Number(right);
-  const bothNumeric =
-    Number.isFinite(leftNumber) && Number.isFinite(rightNumber);
-
-  if (bothNumeric) {
-    return leftNumber - rightNumber;
-  }
-
-  return String(left ?? '').localeCompare(String(right ?? ''), 'ja', {
-    numeric: true,
-    sensitivity: 'base',
-  });
-};
-
-// 変更(MS-1 / マルチソート): エントリ配列を優先順位順に適用する多列ソートにしました。
-//   - sort[0] が最優先。compared が 0 のときだけ次のエントリへフォールバックします。
-//   - 未知/非表示などで列が見つからないエントリはスキップします
-//     (列を隠してもクラッシュせず、残りのキーで安定して並びます)。
-//   - 解決後に有効キーが 0 件なら元配列をそのまま返します。
-//   - 最後の tie-breaker は従来どおり sourceIndex(安定ソート)。
-// 単一列ソート(長さ 1)のときは旧実装と同一の結果になります。
-export const applySort = <T, R extends GridRowModelLike<T>>(
-  rowModels: R[],
-  columns: GridColumn<T>[],
-  sort: GridSortState,
-) => {
-  if (sort.length === 0) {
-    return rowModels;
-  }
-
-  // 列解決はソート前に 1 回だけ(比較関数内で find を毎回呼ばない)。
-  const resolved = sort
-    .map((entry) => {
-      const column = columns.find((item) => item.key === entry.columnKey);
-      return column
-        ? { column, multiplier: entry.direction === 'asc' ? 1 : -1 }
-        : null;
-    })
-    .filter(
-      (item): item is { column: GridColumn<T>; multiplier: number } =>
-        item !== null,
-    );
-
-  if (resolved.length === 0) {
-    return rowModels;
-  }
-
-  return [...rowModels].sort((leftRowModel, rightRowModel) => {
-    for (const { column, multiplier } of resolved) {
-      const compared = compareUnknownValues(
-        getCellValue(leftRowModel.row, column),
-        getCellValue(rightRowModel.row, column),
-      );
-
-      if (compared !== 0) {
-        return compared * multiplier;
-      }
-    }
-
-    // 追加: 安定ソートのため sourceIndex を tie-breaker にします。
-    return leftRowModel.sourceIndex - rightRowModel.sourceIndex;
-  });
-};
-
-// 追加(MS-2 / マルチソート本体): ソートエントリ配列の「次状態」を返す純関数です。
-//   発火口を 1 か所に集約し、列メニュー(単一置換)とヘッダー Shift+click(トグル)で
-//   同じロジックを共有します。入力配列は破壊せず、常に新しい配列を返します。
-//
-//   additive=false (列メニュー / 単一置換):
-//     - 現在がちょうど [{columnKey, direction}] の「単一・同方向」なら [](解除)。
-//     - それ以外は [{columnKey, direction}] へ置換します(他列のソートは捨てます)。
-//     ⇒ MS-1 の handleColumnMenuSortChange の inline 判定と完全同値です。
-//
-//   additive=true (ヘッダー Shift+click / トグル):
-//     - 当該列が未登録            → 末尾(最低優先)に {columnKey, direction} を追加。
-//     - 登録済みで direction が別  → 位置を保ったまま direction を更新。
-//     - 登録済みで direction が同じ → 当該列のエントリのみ除去。
-//   呼び出し側(controller)が direction を
-//     existingDir ? 'desc' : 'asc'
-//   で決めることで、ユーザー体験としては none → asc → desc → none の
-//   サイクルになります(desc のときは direction='desc' を渡し、上記「同方向 → 除去」で
-//   消えます)。
-export const nextSortEntries = (
-  current: GridSortState,
-  columnKey: string,
-  direction: 'asc' | 'desc',
-  additive: boolean,
-): GridSortState => {
-  if (!additive) {
-    const isSameSingle =
-      current.length === 1 &&
-      current[0].columnKey === columnKey &&
-      current[0].direction === direction;
-    return isSameSingle ? [] : [{ columnKey, direction }];
-  }
-
-  const index = current.findIndex((entry) => entry.columnKey === columnKey);
-  if (index === -1) {
-    // 未登録 → 末尾(最低優先)に追加。
-    return [...current, { columnKey, direction }];
-  }
-  if (current[index].direction !== direction) {
-    // 別方向 → 位置を保ったまま方向だけ更新。
-    return current.map((entry, i) =>
-      i === index ? { columnKey, direction } : entry,
-    );
-  }
-  // 同方向 → 当該列のみ除去(残りの優先順位は維持)。
-  return current.filter((_, i) => i !== index);
-};
-
-// 追加(MS-3-1 / 並び替え管理パネル): 管理パネルの明示編集用の純関数群です。
-//   nextSortEntries(additive=true) は「同方向＝除去」のトグル意味論で Shift ジェスチャ
-//   向けのため、ドロップダウン編集(同方向の再選択は no-op であるべき)・列差し替え・
-//   優先順位の入れ替えには素直に乗りません。そこで管理パネル用に下記を分離します。
-//   - すべて入力非破壊(常に新しい配列を返す)・単体テスト可で、nextSortEntries と同じ規約です。
-//   - 単一ソース(uiState.sort)は不変。呼び出し側(SpreadsheetGrid)が結果を
-//     setSort / clearSort へ流します(reducer / actions は不変)。
-//
-// addSortEntry: 末尾(最低優先)へレベルを追加します。
-//   既に同じ列が含まれている場合は何もしません(パネル側は未使用列だけを「追加」候補に
-//   出すため通常は起きませんが、純関数としての不変条件『1 列につき高々 1 エントリ』を守ります)。
-export const addSortEntry = (
-  current: GridSortState,
-  columnKey: string,
-  direction: 'asc' | 'desc',
-): GridSortState => {
-  if (current.some((entry) => entry.columnKey === columnKey)) {
-    return current;
-  }
-  return [...current, { columnKey, direction }];
-};
-
-// setSortEntryDirection: 指定レベルの方向を「冪等にセット」します(トグルしません)。
-//   index 範囲外や同方向(変化なし)のときは元配列をそのまま返します(無駄な参照変化を抑止)。
-export const setSortEntryDirection = (
-  current: GridSortState,
-  index: number,
-  direction: 'asc' | 'desc',
-): GridSortState => {
-  if (index < 0 || index >= current.length) {
-    return current;
-  }
-  if (current[index].direction === direction) {
-    return current;
-  }
-  return current.map((entry, i) =>
-    i === index ? { ...entry, direction } : entry,
-  );
-};
-
-// setSortEntryColumn: 指定レベルの対象列を差し替えます(Excel のレベル列変更相当)。
-//   - 方向は当該レベルのものを維持します。
-//   - 差し替え先の列が他レベルで既に使われている場合は、その他レベルを除去して
-//     『1 列につき高々 1 エントリ』を保ちます(当該レベルの位置・優先順位は維持)。
-//     パネル側は他レベルで使用中の列を選択肢から除くため通常は起きませんが、保険です。
-//   - index 範囲外、または変化なし(同一列)のときは元配列をそのまま返します。
-export const setSortEntryColumn = (
-  current: GridSortState,
-  index: number,
-  columnKey: string,
-): GridSortState => {
-  if (index < 0 || index >= current.length) {
-    return current;
-  }
-  if (current[index].columnKey === columnKey) {
-    return current;
-  }
-  return current
-    .map((entry, i) => (i === index ? { ...entry, columnKey } : entry))
-    .filter((entry, i) => i === index || entry.columnKey !== columnKey);
-};
-
-// removeSortEntryAt: 指定レベルを除去します(残りの優先順位は維持)。
-//   index 範囲外のときは元配列をそのまま返します。
-export const removeSortEntryAt = (
-  current: GridSortState,
-  index: number,
-): GridSortState => {
-  if (index < 0 || index >= current.length) {
-    return current;
-  }
-  return current.filter((_, i) => i !== index);
-};
 </file>
 
 <file path="src/components/spreadsheet-grid/model/gridActions.ts">
@@ -8244,6 +8373,321 @@ export const useGridPointerInteractions = <T,>({
 export default useGridPointerInteractions;
 </file>
 
+<file path="src/components/spreadsheet-grid/logic/sorting.ts">
+import type { GridColumn, GridSortState } from '../model/gridTypes';
+import { getCellValue } from '../utils/permissions';
+import type { GridRowModelLike, RowOrder } from './filtering';
+
+// 追加(DS-1 / perf): 文字列比較用の共有コレーターです。
+//   従来は compareUnknownValues 内で String.prototype.localeCompare(_, 'ja', opts) を
+//   ペアごとに呼んでおり、これが文字列ソートの致命的なボトルネックでした
+//   (20 万行・文字列キーの実測で約 7.5 秒)。同一オプションの Intl.Collator を
+//   モジュールスコープで 1 度だけ生成して使い回すと、照合順序は localeCompare と
+//   等価のまま約 30 倍高速になります(同条件で約 0.25 秒)。
+//   仕様上 String.prototype.localeCompare(that, 'ja', opts) は
+//   new Intl.Collator('ja', opts).compare(this, that) と同じ照合(符号が一致)です。
+const STRING_COLLATOR = new Intl.Collator('ja', {
+  numeric: true,
+  sensitivity: 'base',
+});
+
+// 追加: 値比較を行います。数値化できるものは数値比較し、
+//       それ以外は文字列比較へフォールバックします。
+// 変更(DS-1 / perf): 文字列フォールバックを共有 Intl.Collator 経由にしました
+//   (順序は従来と等価)。数値判定・数値パスは不変です。
+export const compareUnknownValues = (left: unknown, right: unknown) => {
+  const leftNumber = Number(left);
+  const rightNumber = Number(right);
+  const bothNumeric =
+    Number.isFinite(leftNumber) && Number.isFinite(rightNumber);
+
+  if (bothNumeric) {
+    return leftNumber - rightNumber;
+  }
+
+  return STRING_COLLATOR.compare(String(left ?? ''), String(right ?? ''));
+};
+
+// 変更(MS-1 / マルチソート): エントリ配列を優先順位順に適用する多列ソートにしました。
+//   - sort[0] が最優先。compared が 0 のときだけ次のエントリへフォールバックします。
+//   - 未知/非表示などで列が見つからないエントリはスキップします
+//     (列を隠してもクラッシュせず、残りのキーで安定して並びます)。
+//   - 解決後に有効キーが 0 件なら元配列をそのまま返します。
+//   - 最後の tie-breaker は従来どおり sourceIndex(安定ソート)。
+// 単一列ソート(長さ 1)のときは旧実装と同一の結果になります。
+export const applySort = <T, R extends GridRowModelLike<T>>(
+  rowModels: R[],
+  columns: GridColumn<T>[],
+  sort: GridSortState,
+) => {
+  if (sort.length === 0) {
+    return rowModels;
+  }
+
+  // 列解決はソート前に 1 回だけ(比較関数内で find を毎回呼ばない)。
+  const resolved = sort
+    .map((entry) => {
+      const column = columns.find((item) => item.key === entry.columnKey);
+      return column
+        ? { column, multiplier: entry.direction === 'asc' ? 1 : -1 }
+        : null;
+    })
+    .filter(
+      (item): item is { column: GridColumn<T>; multiplier: number } =>
+        item !== null,
+    );
+
+  if (resolved.length === 0) {
+    return rowModels;
+  }
+
+  return [...rowModels].sort((leftRowModel, rightRowModel) => {
+    for (const { column, multiplier } of resolved) {
+      const compared = compareUnknownValues(
+        getCellValue(leftRowModel.row, column),
+        getCellValue(rightRowModel.row, column),
+      );
+
+      if (compared !== 0) {
+        return compared * multiplier;
+      }
+    }
+
+    // 追加: 安定ソートのため sourceIndex を tie-breaker にします。
+    return leftRowModel.sourceIndex - rightRowModel.sourceIndex;
+  });
+};
+
+// 追加(MS-2 / マルチソート本体): ソートエントリ配列の「次状態」を返す純関数です。
+//   発火口を 1 か所に集約し、列メニュー(単一置換)とヘッダー Shift+click(トグル)で
+//   同じロジックを共有します。入力配列は破壊せず、常に新しい配列を返します。
+//
+//   additive=false (列メニュー / 単一置換):
+//     - 現在がちょうど [{columnKey, direction}] の「単一・同方向」なら [](解除)。
+//     - それ以外は [{columnKey, direction}] へ置換します(他列のソートは捨てます)。
+//     ⇒ MS-1 の handleColumnMenuSortChange の inline 判定と完全同値です。
+//
+//   additive=true (ヘッダー Shift+click / トグル):
+//     - 当該列が未登録            → 末尾(最低優先)に {columnKey, direction} を追加。
+//     - 登録済みで direction が別  → 位置を保ったまま direction を更新。
+//     - 登録済みで direction が同じ → 当該列のエントリのみ除去。
+//   呼び出し側(controller)が direction を
+//     existingDir ? 'desc' : 'asc'
+//   で決めることで、ユーザー体験としては none → asc → desc → none の
+//   サイクルになります(desc のときは direction='desc' を渡し、上記「同方向 → 除去」で
+//   消えます)。
+export const nextSortEntries = (
+  current: GridSortState,
+  columnKey: string,
+  direction: 'asc' | 'desc',
+  additive: boolean,
+): GridSortState => {
+  if (!additive) {
+    const isSameSingle =
+      current.length === 1 &&
+      current[0].columnKey === columnKey &&
+      current[0].direction === direction;
+    return isSameSingle ? [] : [{ columnKey, direction }];
+  }
+
+  const index = current.findIndex((entry) => entry.columnKey === columnKey);
+  if (index === -1) {
+    // 未登録 → 末尾(最低優先)に追加。
+    return [...current, { columnKey, direction }];
+  }
+  if (current[index].direction !== direction) {
+    // 別方向 → 位置を保ったまま方向だけ更新。
+    return current.map((entry, i) =>
+      i === index ? { columnKey, direction } : entry,
+    );
+  }
+  // 同方向 → 当該列のみ除去(残りの優先順位は維持)。
+  return current.filter((_, i) => i !== index);
+};
+
+// 追加(MS-3-1 / 並び替え管理パネル): 管理パネルの明示編集用の純関数群です。
+//   nextSortEntries(additive=true) は「同方向＝除去」のトグル意味論で Shift ジェスチャ
+//   向けのため、ドロップダウン編集(同方向の再選択は no-op であるべき)・列差し替え・
+//   優先順位の入れ替えには素直に乗りません。そこで管理パネル用に下記を分離します。
+//   - すべて入力非破壊(常に新しい配列を返す)・単体テスト可で、nextSortEntries と同じ規約です。
+//   - 単一ソース(uiState.sort)は不変。呼び出し側(SpreadsheetGrid)が結果を
+//     setSort / clearSort へ流します(reducer / actions は不変)。
+//
+// addSortEntry: 末尾(最低優先)へレベルを追加します。
+//   既に同じ列が含まれている場合は何もしません(パネル側は未使用列だけを「追加」候補に
+//   出すため通常は起きませんが、純関数としての不変条件『1 列につき高々 1 エントリ』を守ります)。
+export const addSortEntry = (
+  current: GridSortState,
+  columnKey: string,
+  direction: 'asc' | 'desc',
+): GridSortState => {
+  if (current.some((entry) => entry.columnKey === columnKey)) {
+    return current;
+  }
+  return [...current, { columnKey, direction }];
+};
+
+// setSortEntryDirection: 指定レベルの方向を「冪等にセット」します(トグルしません)。
+//   index 範囲外や同方向(変化なし)のときは元配列をそのまま返します(無駄な参照変化を抑止)。
+export const setSortEntryDirection = (
+  current: GridSortState,
+  index: number,
+  direction: 'asc' | 'desc',
+): GridSortState => {
+  if (index < 0 || index >= current.length) {
+    return current;
+  }
+  if (current[index].direction === direction) {
+    return current;
+  }
+  return current.map((entry, i) =>
+    i === index ? { ...entry, direction } : entry,
+  );
+};
+
+// setSortEntryColumn: 指定レベルの対象列を差し替えます(Excel のレベル列変更相当)。
+//   - 方向は当該レベルのものを維持します。
+//   - 差し替え先の列が他レベルで既に使われている場合は、その他レベルを除去して
+//     『1 列につき高々 1 エントリ』を保ちます(当該レベルの位置・優先順位は維持)。
+//     パネル側は他レベルで使用中の列を選択肢から除くため通常は起きませんが、保険です。
+//   - index 範囲外、または変化なし(同一列)のときは元配列をそのまま返します。
+export const setSortEntryColumn = (
+  current: GridSortState,
+  index: number,
+  columnKey: string,
+): GridSortState => {
+  if (index < 0 || index >= current.length) {
+    return current;
+  }
+  if (current[index].columnKey === columnKey) {
+    return current;
+  }
+  return current
+    .map((entry, i) => (i === index ? { ...entry, columnKey } : entry))
+    .filter((entry, i) => i === index || entry.columnKey !== columnKey);
+};
+
+// removeSortEntryAt: 指定レベルを除去します(残りの優先順位は維持)。
+//   index 範囲外のときは元配列をそのまま返します。
+export const removeSortEntryAt = (
+  current: GridSortState,
+  index: number,
+): GridSortState => {
+  if (index < 0 || index >= current.length) {
+    return current;
+  }
+  return current.filter((_, i) => i !== index);
+};
+
+// 追加(MS-3-2 / 優先順位 DnD): 指定レベルを from から to へ移動します(配列 move)。
+//   - 標準的な「配列 move」意味論です。to は除去後の挿入先 index(0..length-1)。
+//     ドロップ位置(挿入スロット 0..length)からの -1 補正は呼び出し側(管理パネルの
+//     finishDrag)が担います。ColumnChooser で computeSectionReorderedKeys が補正を持ち、
+//     配列プリミティブを汚さない役割分担と同じです。
+//   - すべて入力非破壊(常に新しい配列を返す)・単体テスト可で、他の sort 純関数と同規約です。
+//   - from / to が範囲外、または from === to(動かない)のときは元配列をそのまま返します
+//     (no-op ドラッグで参照を変えないため。setSort へ流しても再レンダーを誘発しません)。
+export const moveSortEntry = (
+  current: GridSortState,
+  from: number,
+  to: number,
+): GridSortState => {
+  if (from < 0 || from >= current.length || to < 0 || to >= current.length) {
+    return current;
+  }
+  if (from === to) {
+    return current;
+  }
+  const next = [...current];
+  const [moved] = next.splice(from, 1);
+  next.splice(to, 0, moved);
+  return next;
+};
+
+// 追加(DS-1 / index ベースパイプライン): applySort の index 版です。
+//   オブジェクト配列ではなく order(RowOrder) を受け、並べ替えた order を返します。
+//   結果のビュー順は applySort と厳密に等価です:
+//     - 多列の優先順位適用(resolved を先頭から比較、0 のとき次のキーへ)、
+//     - 未解決(列が見つからない)エントリのスキップ、有効キー 0 件なら元 order を返す、
+//     - 最終タイブレークは元 source index(= order[pos])で安定化、
+//     これらはすべて applySort と同一規則です。sort が空 / 有効キー 0 件のときは同一参照。
+//
+//   パフォーマンス上の要点(decorate-sort-undecorate):
+//     - 従来は比較子の内側で getCellValue を毎回呼んでおり、呼び出し回数が
+//       O(行数 × log 行数 × ソート列数) に膨らんでいました。
+//     - ここではアクティブ sort 列ごとに「order 各位置のセル値」を事前に 1 回だけ
+//       取り出して配列化(decorate)し、比較は decorate 済み値に対して行います。
+//       getCellValue の呼び出しは O(行数 × ソート列数) に下がります。
+//     - 比較関数 compareUnknownValues 自体は据え置きのため、数値/文字列が混在する列でも
+//       結果は従来と完全に一致します(列ごとに型を決め打ちする最適化はしていません)。
+//     - 実際の sort 対象は「位置(0..length-1)の number[]」で、確定後に
+//       result[i] = order[positions[i]] で undecorate して Int32Array へ書き戻します。
+export const sortOrder = <T,>(
+  rows: T[],
+  order: RowOrder,
+  columns: GridColumn<T>[],
+  sort: GridSortState,
+): RowOrder => {
+  if (sort.length === 0) {
+    return order;
+  }
+
+  // 列解決はソート前に 1 回だけ(applySort と同一)。
+  const resolved = sort
+    .map((entry) => {
+      const column = columns.find((item) => item.key === entry.columnKey);
+      return column
+        ? { column, multiplier: entry.direction === 'asc' ? 1 : -1 }
+        : null;
+    })
+    .filter(
+      (item): item is { column: GridColumn<T>; multiplier: number } =>
+        item !== null,
+    );
+
+  if (resolved.length === 0) {
+    return order;
+  }
+
+  const length = order.length;
+  const columnCount = resolved.length;
+
+  // decorate: アクティブ sort 列ごとに、order 各位置のセル値を 1 回だけ取り出します。
+  const keyColumns: unknown[][] = resolved.map(({ column }) => {
+    const keys = new Array<unknown>(length);
+    for (let pos = 0; pos < length; pos += 1) {
+      keys[pos] = getCellValue(rows[order[pos]], column);
+    }
+    return keys;
+  });
+  const multipliers = resolved.map((item) => item.multiplier);
+
+  // 位置(0..length-1)を並べ替えます。比較は decorate 済みキー、
+  // タイブレークは元 source index(order[a]/order[b])で安定化します。
+  const positions = new Array<number>(length);
+  for (let i = 0; i < length; i += 1) {
+    positions[i] = i;
+  }
+
+  positions.sort((a, b) => {
+    for (let c = 0; c < columnCount; c += 1) {
+      const compared = compareUnknownValues(keyColumns[c][a], keyColumns[c][b]);
+      if (compared !== 0) {
+        return compared * multipliers[c];
+      }
+    }
+    return order[a] - order[b];
+  });
+
+  // undecorate: 並べ替えた位置を元 source index へ戻して Int32Array を組み立てます。
+  const result = new Int32Array(length);
+  for (let i = 0; i < length; i += 1) {
+    result[i] = order[positions[i]];
+  }
+  return result;
+};
+</file>
+
 <file path="src/components/spreadsheet-grid/view/gridBarHelpers.ts">
 import type { ReactNode } from 'react';
 import type {
@@ -10476,6 +10920,8 @@ import {
   setSortEntryDirection,
   setSortEntryColumn,
   removeSortEntryAt,
+  // 追加(MS-3-2): 優先順位 DnD の配列 move 純関数です。
+  moveSortEntry,
 } from './logic/sorting';
 // 追加(13-B1): 列幅自動調整(canvas measureText 方式)の計測ロジックです。
 import { computeAutosizedColumnWidths } from './logic/columnAutosize';
@@ -12187,6 +12633,22 @@ export function SpreadsheetGrid<T extends object>({
     dispatch(gridActions.clearSort());
   }, [dispatch, enableSorting]);
 
+  // 追加(MS-3-2): 優先順位 DnD の確定ハンドラです。パネル側で補正済みの from / to を
+  //   受け取り、moveSortEntry で次状態を算出して setSort へ流します。move は長さ不変
+  //   (ドラッグは 2 件以上のときのみ可能)なので空配列にはならず、setSort 固定です。
+  //   no-op ドラッグ(from === to / 範囲外)は moveSortEntry が同一参照を返すため、
+  //   setSort へ流しても参照同一で再レンダーを誘発しません。
+  const handleSortManagerMove = useCallback(
+    (from: number, to: number) => {
+      if (!enableSorting) {
+        return;
+      }
+      const next = moveSortEntry(uiState.sort, from, to);
+      dispatch(gridActions.setSort(next));
+    },
+    [dispatch, enableSorting, uiState.sort],
+  );
+
   // ── header action button style ────────────────────────
   const getHeaderActionButtonStyle = useCallback(
     (isActive: boolean): CSSProperties => ({
@@ -12512,6 +12974,7 @@ export function SpreadsheetGrid<T extends object>({
       onChangeColumn={handleSortManagerChangeColumn}
       onRemoveLevel={handleSortManagerRemoveLevel}
       onClearAll={handleSortManagerClearAll}
+      onMove={handleSortManagerMove}
       onRequestClose={closeSortManager}
     />
   );

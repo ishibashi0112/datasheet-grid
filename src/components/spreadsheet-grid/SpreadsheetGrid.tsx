@@ -40,11 +40,14 @@ import { useGridViewportSync } from './hooks/useGridViewportSync';
 // 追加(13-B3-2): ヘッダー D&D 列並べ替え controller です。
 import { useColumnHeaderDragController } from './hooks/useColumnHeaderDragController';
 import {
-  applyColumnFilters,
-  applyGlobalFilter,
   // 追加(12-A): set フィルター値の判定 / 構築に使います。
   isSetColumnFilterValue,
-  type GridRowModelLike,
+  // 変更(DS-2): 行モデルチェーンを order(Int32Array)ベースへ差し替えます。
+  //   旧オブジェクト配列版(applyGlobalFilter / applyColumnFilters)は logic 層に残置
+  //   (DS-3 削除候補)。本体はこの index 版へ一本化します。
+  createSourceOrder,
+  filterOrderByGlobalText,
+  filterOrderByColumns,
 } from './logic/filtering';
 // 変更(10-C): 3ペインレイアウト構築用の helper / 型を追加インポートします。
 // 変更理由: reorderColumnsByPane / buildGridPaneLayout を SpreadsheetGrid で使い、
@@ -78,7 +81,8 @@ import {
   type PaneColumnExtentMap,
 } from './logic/geometry';
 import {
-  applySort,
+  // 変更(DS-2): applySort(オブジェクト配列版)→ sortOrder(order 版)へ差し替えます。
+  sortOrder,
   nextSortEntries,
   // 追加(MS-3-1): 並び替え管理パネルの明示編集用の純関数群です。
   addSortEntry,
@@ -96,7 +100,6 @@ import type {
   GridColumn,
   // 追加(13-A): 列メニューからの固定切替に使います。
   GridColumnPinned,
-  GridRowKey,
   // 追加(12-A): set フィルター値の構築に使います。
   SetColumnFilterValue,
   SpreadsheetGridProps,
@@ -125,11 +128,6 @@ import SortManagementPanel, {
 // import ColumnChooserPanel, {
 //   type ColumnChooserItem,
 // } from './view/ColumnChooserPanel';
-
-// 追加: 元 rows と filteredRows の対応を安定して持つための row model です。
-type SourceRowModel<T> = GridRowModelLike<T> & {
-  rowKey: GridRowKey;
-};
 
 // 追加(12-A): popover 非表示時 / 候補不要な filterType 用の安定空配列です。
 //             useMemo の返り値参照を安定させるため module スコープに置きます。
@@ -466,25 +464,16 @@ export function SpreadsheetGrid<T extends object>({
   }, [visibleColumns]);
 
   // ── row models (source → filtered → sorted) ──────────
-  const sourceRowModels = useMemo<SourceRowModel<T>[]>(
-    () =>
-      rows.map((row, index) => ({
-        row,
-        sourceIndex: index,
-        rowKey: resolvedRowKeyGetter(row, index),
-      })),
-    [rows, resolvedRowKeyGetter],
-  );
-
   const getColumnSelectOptions = useCallback(
     (column: GridColumn<T>) => {
       if (column.filterOptions && column.filterOptions.length > 0) {
         return column.filterOptions;
       }
       const seen = new Set<string>();
-      const options = sourceRowModels.reduce<{ label: string; value: string }[]>(
-        (acc, rowModel) => {
-          const value = String(getCellValue(rowModel.row, column) ?? '');
+      // 変更(DS-2): sourceRowModels 廃止に伴い rows を直接走査します(走査順・値とも等価)。
+      const options = rows.reduce<{ label: string; value: string }[]>(
+        (acc, row) => {
+          const value = String(getCellValue(row, column) ?? '');
           if (seen.has(value)) {
             return acc;
           }
@@ -504,7 +493,7 @@ export function SpreadsheetGrid<T extends object>({
         }),
       );
     },
-    [sourceRowModels],
+    [rows],
   );
 
   // 変更(11-A3): 依存を uiState 丸ごと → filters.globalText(string) へ縮小します。
@@ -541,16 +530,6 @@ export function SpreadsheetGrid<T extends object>({
   //   を slotContext へ載せて top bar 側で薄く出せます(今回は見送り)。
   const deferredGlobalFilterText = useDeferredValue(globalFilterText);
 
-  const globallyFilteredRowModels = useMemo(
-    () =>
-      applyGlobalFilter(
-        sourceRowModels,
-        visibleColumns,
-        deferredGlobalFilterText,
-      ),
-    [sourceRowModels, visibleColumns, deferredGlobalFilterText],
-  );
-
   // 追加(12-B): 列フィルター評価値を useDeferredValue で遅延化します(11-B7 と同型)。
   // 変更理由: 12-A で set フィルターが「チェック操作ごとの即時適用」になったため、
   //   columnFilters の更新頻度が popover の Apply 押下時代より大きく上がりました。
@@ -567,34 +546,64 @@ export function SpreadsheetGrid<T extends object>({
   const columnFilters = uiState.filters.columnFilters;
   const deferredColumnFilters = useDeferredValue(columnFilters);
 
-  const columnFilteredRowModels = useMemo(
+  // ── row order pipeline (DS-2) ─────────────────────────
+  // 変更(DS-2): オブジェクト配列チェーン(source→global→column→sort の {row,...}[])を
+  //   order(RowOrder = Int32Array)チェーンへ差し替えます。各段は DS-1 で追加・検証済みの
+  //   純関数で、ビュー順は旧オブジェクト版と厳密に等価です(39 アサーション PASS)。
+  //   旧チェーンと同じ依存構造を踏襲するため、no-op dispatch(selection 等)では
+  //   全 useMemo がスキップされ、order 参照が不変に保たれます
+  //   (= 11-A3 / 11-B7 / 12-B の最適化を維持)。
+  //
+  //   filteredRows / filteredRowSourceIndexes / filteredRowKeys は order からの
+  //   「派生ビュー」として materialize し続けます(全 consumer をバイト等価で無改修に保つため)。
+  //   この materialize は DS-3 で consumer を rowModel.getRow 等へ移行後に撤去予定です。
+  //
+  //   baseOrder は恒等 order [0..n-1]。長さのみ依存のため、rows の identity が変わっても
+  //   同一長なら参照が安定します(下流の filterOrder* は rows 依存で再計算)。
+  const baseOrder = useMemo(() => createSourceOrder(rows.length), [rows.length]);
+
+  const globalFilteredOrder = useMemo(
     () =>
-      applyColumnFilters(
-        globallyFilteredRowModels,
+      filterOrderByGlobalText(
+        rows,
+        baseOrder,
+        visibleColumns,
+        deferredGlobalFilterText,
+      ),
+    [rows, baseOrder, visibleColumns, deferredGlobalFilterText],
+  );
+
+  const columnFilteredOrder = useMemo(
+    () =>
+      filterOrderByColumns(
+        rows,
+        globalFilteredOrder,
         visibleColumns,
         deferredColumnFilters,
       ),
-    [globallyFilteredRowModels, visibleColumns, deferredColumnFilters],
+    [rows, globalFilteredOrder, visibleColumns, deferredColumnFilters],
   );
 
-  const filteredRowModels = useMemo(
-    () => applySort(columnFilteredRowModels, visibleColumns, uiState.sort),
-    [columnFilteredRowModels, visibleColumns, uiState.sort],
+  const order = useMemo(
+    () => sortOrder(rows, columnFilteredOrder, visibleColumns, uiState.sort),
+    [rows, columnFilteredOrder, visibleColumns, uiState.sort],
   );
 
+  // 派生ビュー: order[i] が「ビュー位置 i の元 rows index(= source index)」です。
   const filteredRows = useMemo(
-    () => filteredRowModels.map((rowModel) => rowModel.row),
-    [filteredRowModels],
+    () => Array.from(order, (sourceIndex) => rows[sourceIndex]),
+    [order, rows],
   );
 
-  const filteredRowSourceIndexes = useMemo(
-    () => filteredRowModels.map((rowModel) => rowModel.sourceIndex),
-    [filteredRowModels],
-  );
+  // filteredRowSourceIndexes は order そのもの(Int32Array)を number[] へ materialize します。
+  const filteredRowSourceIndexes = useMemo(() => Array.from(order), [order]);
 
   const filteredRowKeys = useMemo(
-    () => filteredRowModels.map((rowModel) => rowModel.rowKey),
-    [filteredRowModels],
+    () =>
+      Array.from(order, (sourceIndex) =>
+        resolvedRowKeyGetter(rows[sourceIndex], sourceIndex),
+      ),
+    [order, rows, resolvedRowKeyGetter],
   );
 
   // ── column measurements ───────────────────────────────
