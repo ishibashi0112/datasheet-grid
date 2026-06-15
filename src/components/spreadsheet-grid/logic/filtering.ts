@@ -7,6 +7,24 @@ export type GridRowModelLike<T> = {
   sourceIndex: number;
 };
 
+// 追加(DS-1 / index ベースパイプライン): 「ビュー順に並んだ元 rows の index 列」です。
+//   オブジェクト配列({row, sourceIndex, ...})を各段で割り当て直す従来方式に代えて、
+//   フィルタ/ソートはこの index 列(Int32Array)だけを生成・受け渡しします。
+//   - 1,000,000 行でも 4MB(= 4byte × N)に収まり、割り当て/GC が行オブジェクト方式から桁で下がります。
+//   - 将来 Web Worker へ渡す際に transferable(ゼロコピー)になります。
+//   - ビュー位置 i の元行は rows[order[i]] で引きます(この対応付けが後段のシームの土台)。
+//   DS-1 は純関数の追加のみで、配線(SpreadsheetGrid 側のチェーン差し替え)は DS-2 で行います。
+export type RowOrder = Int32Array;
+
+// 追加(DS-1): 恒等 order [0, 1, ..., rowCount-1] を生成します(パイプラインの起点)。
+export const createSourceOrder = (rowCount: number): RowOrder => {
+  const order = new Int32Array(rowCount);
+  for (let i = 0; i < rowCount; i += 1) {
+    order[i] = i;
+  }
+  return order;
+};
+
 // 追加(12-A): set フィルター値の type guard です。
 export const isSetColumnFilterValue = (
   value: unknown,
@@ -228,4 +246,109 @@ export const applyColumnFilters = <T, R extends GridRowModelLike<T>>(
   return rowModels.filter((rowModel) =>
     predicates.every((predicate) => predicate(rowModel.row)),
   );
+};
+
+// ────────────────────────────────────────────────
+// 追加(DS-1 / index ベースパイプライン): order(RowOrder)を受けて order を返すフィルタ群。
+//   既存の applyGlobalFilter / applyColumnFilters(オブジェクト配列版)とビュー順は
+//   厳密に等価です(下記いずれも「合格行を元の相対順で詰め直す」だけ)。違いは:
+//     - 入出力が {row,...}[] ではなく元 rows + index 列(Int32Array)であること。
+//     - 「全件通過」のとき同一参照(引数 order)を返し、下流 useMemo のスキップを最大化すること
+//       (.filter は全通過でも新配列を返すため、参照節約という点ではむしろ改善です)。
+//   DS-1 では未配線。DS-2 で SpreadsheetGrid のチェーンをこちらへ差し替えます。
+// ────────────────────────────────────────────────
+
+// 追加(DS-1): グローバルフィルタの index 版です。applyGlobalFilter と等価
+//   (columns.some の部分一致)。filter 文字列が空なら同一参照を返します。
+export const filterOrderByGlobalText = <T,>(
+  rows: T[],
+  order: RowOrder,
+  columns: GridColumn<T>[],
+  globalText: string,
+): RowOrder => {
+  const normalizedFilter = globalText.trim().toLowerCase();
+  if (!normalizedFilter) {
+    return order;
+  }
+
+  const length = order.length;
+  const columnCount = columns.length;
+  const result = new Int32Array(length);
+  let count = 0;
+
+  for (let pos = 0; pos < length; pos += 1) {
+    const sourceIndex = order[pos];
+    const row = rows[sourceIndex];
+    let matched = false;
+    for (let c = 0; c < columnCount; c += 1) {
+      const value = getCellValue(row, columns[c]);
+      if (String(value ?? '').toLowerCase().includes(normalizedFilter)) {
+        matched = true;
+        break;
+      }
+    }
+    if (matched) {
+      result[count] = sourceIndex;
+      count += 1;
+    }
+  }
+
+  // 全件通過なら参照を変えません(no-op スキップ最大化)。
+  if (count === length) {
+    return order;
+  }
+  // 余剰バッファを抱えないよう、右サイズへ slice(コピー)します。
+  return result.slice(0, count);
+};
+
+// 追加(DS-1): 列フィルタの index 版です。applyColumnFilters と等価
+//   (有効フィルタの predicates.every)。事前コンパイルは既存の compileSingleColumnFilter を
+//   そのまま再利用します(text / number / select / set / filterFn の判定は完全同一)。
+//   有効フィルタが 0 件なら同一参照を返します。
+export const filterOrderByColumns = <T,>(
+  rows: T[],
+  order: RowOrder,
+  columns: GridColumn<T>[],
+  columnFilters: Record<string, unknown>,
+): RowOrder => {
+  const predicates: CompiledColumnFilterPredicate<T>[] = [];
+  for (const column of columns) {
+    const predicate = compileSingleColumnFilter(
+      column,
+      columnFilters[column.key],
+    );
+    if (predicate) {
+      predicates.push(predicate);
+    }
+  }
+
+  if (predicates.length === 0) {
+    return order;
+  }
+
+  const length = order.length;
+  const predicateCount = predicates.length;
+  const result = new Int32Array(length);
+  let count = 0;
+
+  for (let pos = 0; pos < length; pos += 1) {
+    const sourceIndex = order[pos];
+    const row = rows[sourceIndex];
+    let ok = true;
+    for (let p = 0; p < predicateCount; p += 1) {
+      if (!predicates[p](row)) {
+        ok = false;
+        break;
+      }
+    }
+    if (ok) {
+      result[count] = sourceIndex;
+      count += 1;
+    }
+  }
+
+  if (count === length) {
+    return order;
+  }
+  return result.slice(0, count);
 };
