@@ -4,6 +4,7 @@ import type {
   CellCoord,
   GridColumn,
   GridUiState,
+  RowModel,
   SpreadsheetGridProps,
 } from '../model/gridTypes';
 import { clamp } from '../logic/geometry';
@@ -12,7 +13,9 @@ import { isCellEditable } from '../utils/permissions';
 
 type UseGridKeyboardInteractionsArgs<T> = {
   uiState: GridUiState;
-  filteredRows: T[];
+  // 変更(DS-3-1): filteredRows: T[] を RowModel シームへ置換しました(DS-3-0 の seam を消費)。
+  //   length は getRowCount()、行取得は getRow(viewIndex) 経由に切り替えます。
+  rowModel: RowModel<T>;
   visibleColumns: GridColumn<T>[];
   readOnly: boolean;
   canEditCell: SpreadsheetGridProps<T>['canEditCell'];
@@ -30,7 +33,7 @@ type UseGridKeyboardInteractionsArgs<T> = {
 // 追加: keyboard interaction（arrow/tab/enter/copy/select-all/edit start）をまとめます。
 export const useGridKeyboardInteractions = <T,>({
   uiState,
-  filteredRows,
+  rowModel,
   visibleColumns,
   readOnly,
   canEditCell,
@@ -41,13 +44,18 @@ export const useGridKeyboardInteractions = <T,>({
   isWholeGridSelected,
   selectEntireGrid,
 }: UseGridKeyboardInteractionsArgs<T>) => {
+  // 追加(DS-3-1): 行数はシーム経由で取得します(= order.length / 旧 filteredRows.length と等価)。
+  //   各 useCallback の deps はこのプリミティブ rowCount を使い、rowModel オブジェクト参照を
+  //   deps に入れないことで、件数不変のソートで handler identity が変わらない 11系のメモ化を保ちます。
+  const rowCount = rowModel.getRowCount();
+
   // 追加: 基準セルから移動先セルを計算します。
   const getMovedCell = useCallback(
     (baseCell: CellCoord, deltaRow: number, deltaCol: number): CellCoord => ({
       row: clamp(
         baseCell.row + deltaRow,
         0,
-        Math.max(filteredRows.length - 1, 0),
+        Math.max(rowCount - 1, 0),
       ),
       col: clamp(
         baseCell.col + deltaCol,
@@ -55,18 +63,18 @@ export const useGridKeyboardInteractions = <T,>({
         Math.max(visibleColumns.length - 1, 0),
       ),
     }),
-    [filteredRows.length, visibleColumns.length],
+    [rowCount, visibleColumns.length],
   );
 
   // 追加: active cell を移動します。shiftKey=true の場合は cell selection を拡張します。
   const moveActiveCell = useCallback(
     (deltaRow: number, deltaCol: number, extendSelection: boolean) => {
-      if (filteredRows.length === 0 || visibleColumns.length === 0) {
+      if (rowCount === 0 || visibleColumns.length === 0) {
         return;
       }
       const currentCell = uiState.activeCell ?? { row: 0, col: 0 };
       const nextCell = {
-        row: clamp(currentCell.row + deltaRow, 0, filteredRows.length - 1),
+        row: clamp(currentCell.row + deltaRow, 0, rowCount - 1),
         col: clamp(currentCell.col + deltaCol, 0, visibleColumns.length - 1),
       };
       if (extendSelection) {
@@ -86,7 +94,7 @@ export const useGridKeyboardInteractions = <T,>({
     },
     [
       dispatch,
-      filteredRows.length,
+      rowCount,
       uiState.activeCell,
       uiState.selection,
       visibleColumns.length,
@@ -162,7 +170,7 @@ export const useGridKeyboardInteractions = <T,>({
         return;
       }
       if (isPrintableKey(event) && uiState.activeCell) {
-        const row = filteredRows[uiState.activeCell.row];
+        const row = rowModel.getRow(uiState.activeCell.row);
         const column = visibleColumns[uiState.activeCell.col];
         if (!row || !column) {
           return;
@@ -186,7 +194,7 @@ export const useGridKeyboardInteractions = <T,>({
     [
       canEditCell,
       dispatch,
-      filteredRows,
+      rowModel,
       handleCellDoubleClick,
       handleCopy,
       isWholeGridSelected,

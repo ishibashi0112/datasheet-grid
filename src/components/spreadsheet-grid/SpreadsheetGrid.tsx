@@ -894,7 +894,8 @@ export function SpreadsheetGrid<T extends object>({
   // ── keyboard ──────────────────────────────────────────
   const { getMovedCell, handleKeyDown } = useGridKeyboardInteractions({
     uiState,
-    filteredRows,
+    // 変更(DS-3-1): filteredRows 配列 → rowModel シームを渡します(keyboard consumer 移行)。
+    rowModel,
     // 変更(10-E): キーボード移動/編集開始の col は論理 index 空間。
     //             clamp は同数なので不変、indexing 整合のため orderedColumns を渡します。
     visibleColumns: orderedColumns,

@@ -13,7 +13,9 @@ type DemoRow = {
 };
 
 // 追加: 初期ダミー行数です。UX確認用に少し多めにしています。
-const INITIAL_ROW_COUNT = 5000;
+// 変更(DS-3-1): 5,000 → 50,000(5万)。DS-3 の rowModel 移行を Profiler で検証するための負荷増です。
+//   行は virtualizer 化済みのため DOM 量は据え置き、sort/filter は order(Int32Array)全走査で数十 ms 級です。
+const INITIAL_ROW_COUNT = 50000;
 
 // 追加: 初期追加列数です。横スクロールと column virtualization 確認用です。
 const INITIAL_EXTRA_COLUMN_COUNT = 24;
@@ -48,8 +50,10 @@ const createInitialColumns = (): GridColumn<DemoRow>[] => {
     // 追加(10-E): frozen columns デモ。品番・品名を左固定にします（pinned: 'left'）。
     //            これで横スクロールしても先頭 2 列が固定表示されます。
     // 変更(12-A): 品番を set フィルター(AG Grid の Set Filter 相当)にします。
-    //             候補は rows から自動収集され約 5,000 件になるため、
+    //             候補は rows から自動収集され約 50,000 件になるため、
     //             popover 内リストの仮想化 + 検索の動作確認にそのまま使えます。
+    //             注記(DS-3-1): 5万行化で候補も約5万件になります。リスト UI は仮想化済みで描画は
+    //             問題ありませんが、収集の全走査(getColumnSelectOptions)は DS-4 の worker 化対象です。
     { key: 'partNo', title: '品番', width: 150, filterType: 'set',
       pinned: "left"
     },
