@@ -84,12 +84,13 @@ export const useGridEditController = <T extends object>({
               : editingCell;
 
       const column = visibleColumns[editingCell.col];
-      // 変更(DS-3-2): source index 解決をシーム経由に切り替えます。
-      //   getSourceIndex(viewIndex) = order[viewIndex]。件数変動でビュー index が範囲外に
-      //   なった場合 order[OOB] = undefined のため、旧版と同じく ?? で editingCell.row へ
-      //   フォールバックします(直後の rows[...] / !row ガードも据え置き=挙動完全一致)。
-      const originalRowIndex =
-        rowModel.getSourceIndex(editingCell.row) ?? editingCell.row;
+      // 変更(DS-3-9): レガシーの ?? editingCell.row フォールバックを撤去します。
+      //   getSourceIndex(viewIndex) = order[viewIndex]。編集中に件数変動でビュー index が範囲外に
+      //   なると order[OOB] = undefined を返します。旧版は ?? で editingCell.row(view index)を
+      //   source index に誤代入しており、フィルター/ソート中の OOB では誤行へ書き込む潜在バグでした。
+      //   撤去後は undefined がそのまま下流へ流れ、rows[undefined] = undefined → 直後の !row ガードで
+      //   編集をクリーンにキャンセルします(in-bounds 時は従来と完全一致)。
+      const originalRowIndex = rowModel.getSourceIndex(editingCell.row);
       const row = rows[originalRowIndex];
       if (!column || !row) {
         dispatch(gridActions.stopEdit());

@@ -12,6 +12,11 @@ export type GridRowKey = string | number;
 //   本体(SpreadsheetGrid / 各 consumer)はどちらのモードかを区別しません。これがシームの目的です。
 //   viewIndex は「ビュー位置(フィルター/ソート適用後の表示上の行 index)」で、source index
 //   (元 rows の index)とは別空間です。両者の対応付けは getSourceIndex が担います。
+//   注記(DS-3-9): clientSide 実装は OOB(viewIndex >= getRowCount())で実行時 undefined を返します
+//   (getRow = rows[order[OOB]] / getSourceIndex = order[OOB])。型は T / number のままですが
+//   (本 repo は strictNullChecks 無効のため | undefined を付けても型保護が効かず、実態の明文化に
+//   留まるため)、consumer 側は !row ガード(getRow)または === undefined 判定(getSourceIndex)で
+//   OOB を no-op として吸収します。serverSide 化(DS-4+)でこの境界を再検討します。
 export type RowModel<T> = {
   getRowCount: () => number;
   getRow: (viewIndex: number) => T;

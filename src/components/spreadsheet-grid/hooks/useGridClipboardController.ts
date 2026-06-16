@@ -149,10 +149,16 @@ export const useGridClipboardController = <T extends object>({
       }
 
       const startFilteredRowIndex = uiState.activeCell.row;
-      // 変更(DS-3-3): filteredRowSourceIndexes[i] ?? i → getSourceIndex(i) ?? i。
-      //   OOB の viewIndex では getSourceIndex(=order[i]) が undefined を返し、?? でフォールバック。
+      // 変更(DS-3-9): レガシーの ?? startFilteredRowIndex フォールバックを撤去します。
+      //   getSourceIndex(=order[i]) は OOB(activeCell が縮小後の order を超える)で undefined を
+      //   返します。旧版は ?? で view index を source index に誤代入していました。撤去後は
+      //   undefined をそのまま判定し、OOB の paste 起点は no-op で抜けます(下流の startOriginalRowIndex +
+      //   matrix.length が NaN になるのを防ぎ、誤行 append も回避)。in-bounds 時は従来と完全一致。
       const startOriginalRowIndex =
-        rowModel.getSourceIndex(startFilteredRowIndex) ?? startFilteredRowIndex;
+        rowModel.getSourceIndex(startFilteredRowIndex);
+      if (startOriginalRowIndex === undefined) {
+        return;
+      }
       const startColIndex = uiState.activeCell.col;
 
       let workingRows = [...rows];

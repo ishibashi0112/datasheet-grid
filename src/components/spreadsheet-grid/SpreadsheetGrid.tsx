@@ -1943,11 +1943,15 @@ export function SpreadsheetGrid<T extends object>({
             if (!onRowsChange) {
               return;
             }
-            // 変更(DS-3-2b): source index 解決をシーム経由へ。getSourceIndex(viewIndex) =
-            //   order[viewIndex]。OOB は undefined のため旧版同様 ?? rowIndex でフォール
-            //   バックします(in-bounds/OOB とも挙動完全一致)。
-            const originalRowIndex =
-              rowModel.getSourceIndex(rowIndex) ?? rowIndex;
+            // 変更(DS-3-9): レガシーの ?? rowIndex フォールバックを撤去します。
+            //   getSourceIndex(viewIndex) = order[viewIndex]。ここで rowIndex は virtualizer の
+            //   描画レンジ ⊂ [0, viewRowCount) のため常に in-bounds で、OOB(undefined)は実際には
+            //   発生しません。万一 undefined の場合は誤行(rows[viewIndex])への書き込みを避けるため
+            //   早期 return で no-op に倒します(旧 ?? は view index を source index に誤代入していた)。
+            const originalRowIndex = rowModel.getSourceIndex(rowIndex);
+            if (originalRowIndex === undefined) {
+              return;
+            }
             const nextRows = rows.map((currentRow, index) =>
               index === originalRowIndex
                 ? setCellValue(currentRow, column, nextValue)
