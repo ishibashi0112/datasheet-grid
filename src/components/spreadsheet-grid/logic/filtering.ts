@@ -1,12 +1,6 @@
 import type { GridColumn, SetColumnFilterValue } from '../model/gridTypes';
 import { getCellValue } from '../utils/permissions';
 
-// 追加: filtering / sorting で共通利用しやすい最小 row model 型です。
-export type GridRowModelLike<T> = {
-  row: T;
-  sourceIndex: number;
-};
-
 // 追加(DS-1 / index ベースパイプライン): 「ビュー順に並んだ元 rows の index 列」です。
 //   オブジェクト配列({row, sourceIndex, ...})を各段で割り当て直す従来方式に代えて、
 //   フィルタ/ソートはこの index 列(Int32Array)だけを生成・受け渡しします。
@@ -36,7 +30,7 @@ export const isSetColumnFilterValue = (
 
 // 追加(12-A): 列フィルター値が「有効」かを判定する共通 helper です。
 // 変更理由: 従来は GridHeaderRow(フィルター済みバッジ) / gridBarHelpers(有効件数) /
-//   applyColumnFilters がそれぞれ String(value).trim() で判定していました。
+//   列フィルタの適用処理がそれぞれ String(value).trim() で判定していました。
 //   set フィルター値はオブジェクトのため String() 判定が成立しません
 //   (空配列 = 全行除外でも「有効」と数える必要があります)。
 //   有効判定をここへ一元化し、3 箇所すべてが同じ規則を共有します。
@@ -61,25 +55,6 @@ export type ParsedNumberFilter =
       min: number;
       max: number;
     };
-
-// 追加: 行フィルターの最小実装です。初版では global filter のみをここで扱います。
-export const applyGlobalFilter = <T, R extends GridRowModelLike<T>>(
-  rowModels: R[],
-  columns: GridColumn<T>[],
-  globalText: string,
-) => {
-  const normalizedFilter = globalText.trim().toLowerCase();
-  if (!normalizedFilter) {
-    return rowModels;
-  }
-
-  return rowModels.filter((rowModel) =>
-    columns.some((column) => {
-      const value = getCellValue(rowModel.row, column);
-      return String(value ?? '').toLowerCase().includes(normalizedFilter);
-    }),
-  );
-};
 
 // 追加: number フィルター式を解釈します。
 export const parseNumberFilterExpression = (
@@ -165,16 +140,14 @@ export const applyNumberFilter = (
   }
 };
 
-// 変更(12-A): applyColumnFilters を「行ループ前の事前コンパイル方式」へ変更します。
-// 変更理由:
-//   1) set フィルターは候補が多い列(例: 品番 5,000 種)でも O(1) 判定にしたく、
-//      行ループの外で一度だけ Set を構築する必要があります。
-//   2) 旧実装は rows.filter × columns.every の内側で毎回
-//      String(filterValue).trim().toLowerCase() を実行しており、フィルター未設定の列も
-//      含めて「行数 × 全列数」(5,000 × 29 ≒ 14.5 万回)の正規化が毎適用で走っていました。
-//      有効な列フィルターだけを predicate へ事前コンパイルすることで、行ループは
-//      「有効フィルター数 × 行数」に縮小します(text / number / select の判定結果は
-//      従来と等価です)。
+// 列フィルターの「行ループ前の事前コンパイル方式」のための型・helper 群です(12-A)。
+//   set フィルターは候補が多い列(例: 品番 5,000 種)でも O(1) 判定にしたく、
+//   行ループの外で一度だけ Set を構築する必要があります。また有効な列フィルターだけを
+//   predicate へ事前コンパイルすることで、行ループは「有効フィルター数 × 行数」に縮小し、
+//   フィルター未設定列ぶんの String(...).trim().toLowerCase() 正規化を省けます
+//   (text / number / select の判定結果は単一実装で一意です)。
+//   現在の利用者は index 版 filterOrderByColumns です
+//   (旧オブジェクト配列版は DS-3-8 で削除しました)。
 type CompiledColumnFilterPredicate<T> = (row: T) => boolean;
 
 // 追加(12-A): 1 列ぶんのフィルター値を predicate へコンパイルします。
@@ -219,47 +192,17 @@ const compileSingleColumnFilter = <T,>(
       .includes(normalizedFilter);
 };
 
-// 変更(12-A): 列ごとのフィルターを適用します。text / number / select / set 対応です。
-//             column.filterFn がある場合はそれを優先します。
-export const applyColumnFilters = <T, R extends GridRowModelLike<T>>(
-  rowModels: R[],
-  columns: GridColumn<T>[],
-  columnFilters: Record<string, unknown>,
-) => {
-  const predicates: CompiledColumnFilterPredicate<T>[] = [];
-  for (const column of columns) {
-    const predicate = compileSingleColumnFilter(
-      column,
-      columnFilters[column.key],
-    );
-    if (predicate) {
-      predicates.push(predicate);
-    }
-  }
-
-  // 追加(12-A): 有効フィルターなしのときは同一配列参照を返し、
-  //             下流 useMemo(sorted 以降)のスキップを最大化します。
-  if (predicates.length === 0) {
-    return rowModels;
-  }
-
-  return rowModels.filter((rowModel) =>
-    predicates.every((predicate) => predicate(rowModel.row)),
-  );
-};
-
 // ────────────────────────────────────────────────
 // 追加(DS-1 / index ベースパイプライン): order(RowOrder)を受けて order を返すフィルタ群。
-//   既存の applyGlobalFilter / applyColumnFilters(オブジェクト配列版)とビュー順は
-//   厳密に等価です(下記いずれも「合格行を元の相対順で詰め直す」だけ)。違いは:
-//     - 入出力が {row,...}[] ではなく元 rows + index 列(Int32Array)であること。
-//     - 「全件通過」のとき同一参照(引数 order)を返し、下流 useMemo のスキップを最大化すること
-//       (.filter は全通過でも新配列を返すため、参照節約という点ではむしろ改善です)。
-//   DS-1 では未配線。DS-2 で SpreadsheetGrid のチェーンをこちらへ差し替えます。
+//   本体のフィルタ経路はこの index 版に一本化済みです(DS-2 で差し替え、
+//   旧オブジェクト配列版は DS-3-8 で削除)。いずれも「合格行を元の相対順で詰め直す」処理で、
+//   入出力が {row,...}[] ではなく元 rows + index 列(Int32Array)である点が要点です。
+//   「全件通過」のときは同一参照(引数 order)を返し、下流 useMemo のスキップを最大化します
+//   (.filter は全通過でも新配列を返すため、参照節約という点でも改善です)。
 // ────────────────────────────────────────────────
 
-// 追加(DS-1): グローバルフィルタの index 版です。applyGlobalFilter と等価
-//   (columns.some の部分一致)。filter 文字列が空なら同一参照を返します。
+// 追加(DS-1): グローバルフィルタの index 版です(columns.some の部分一致)。
+//   filter 文字列が空なら同一参照を返します。
 export const filterOrderByGlobalText = <T,>(
   rows: T[],
   order: RowOrder,
@@ -301,9 +244,9 @@ export const filterOrderByGlobalText = <T,>(
   return result.slice(0, count);
 };
 
-// 追加(DS-1): 列フィルタの index 版です。applyColumnFilters と等価
-//   (有効フィルタの predicates.every)。事前コンパイルは既存の compileSingleColumnFilter を
-//   そのまま再利用します(text / number / select / set / filterFn の判定は完全同一)。
+// 追加(DS-1): 列フィルタの index 版です(有効フィルタの predicates.every)。
+//   事前コンパイルは compileSingleColumnFilter を再利用します
+//   (text / number / select / set / filterFn の判定は単一実装)。
 //   有効フィルタが 0 件なら同一参照を返します。
 export const filterOrderByColumns = <T,>(
   rows: T[],

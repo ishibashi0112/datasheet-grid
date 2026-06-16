@@ -42,9 +42,8 @@ import { useColumnHeaderDragController } from './hooks/useColumnHeaderDragContro
 import {
   // 追加(12-A): set フィルター値の判定 / 構築に使います。
   isSetColumnFilterValue,
-  // 変更(DS-2): 行モデルチェーンを order(Int32Array)ベースへ差し替えます。
-  //   旧オブジェクト配列版(applyGlobalFilter / applyColumnFilters)は logic 層に残置
-  //   (DS-3 削除候補)。本体はこの index 版へ一本化します。
+  // 行モデルチェーンは order(Int32Array)ベースに一本化しています
+  //   (DS-2 で差し替え、旧オブジェクト配列版は DS-3-8 で削除)。
   createSourceOrder,
   filterOrderByGlobalText,
   filterOrderByColumns,
@@ -81,7 +80,8 @@ import {
   type PaneColumnExtentMap,
 } from './logic/geometry';
 import {
-  // 変更(DS-2): applySort(オブジェクト配列版)→ sortOrder(order 版)へ差し替えます。
+  // ソートは order(Int32Array)版に一本化しています
+  //   (DS-2 で差し替え、旧オブジェクト配列版は DS-3-8 で削除)。
   sortOrder,
   nextSortEntries,
   // 追加(MS-3-1): 並び替え管理パネルの明示編集用の純関数群です。
@@ -516,7 +516,7 @@ export function SpreadsheetGrid<T extends object>({
 
   // 追加(11-B7): グローバルフィルタの評価値を useDeferredValue で遅延化します。
   // 変更理由: globalText は入力欄の毎キーストロークで更新され、従来はその同期レンダー内で
-  //   5,000 行のフィルタ計算(applyGlobalFilter)と下流チェーン
+  //   5,000 行のフィルタ計算(filterOrderByGlobalText)と下流チェーン
   //   (columnFiltered → sorted → filteredRows / SourceIndexes / Keys → 仮想行再構築)が
   //   毎回走っていました。タイピングが速いと入力欄の文字反映自体がこの計算にブロックされ、
   //   「入力の引っかかり」として体感されます。
@@ -535,7 +535,7 @@ export function SpreadsheetGrid<T extends object>({
   // 追加(12-B): 列フィルター評価値を useDeferredValue で遅延化します(11-B7 と同型)。
   // 変更理由: 12-A で set フィルターが「チェック操作ごとの即時適用」になったため、
   //   columnFilters の更新頻度が popover の Apply 押下時代より大きく上がりました。
-  //   従来はチェック 1 回ごとの同期レンダー内で applyColumnFilters(最大 5,000 行)と
+  //   従来はチェック 1 回ごとの同期レンダー内で filterOrderByColumns(最大 5,000 行)と
   //   下流チェーン(sorted → filteredRows / SourceIndexes / Keys → 仮想行再構築)が
   //   走り、連続クリック時にチェックボックスの応答がブロックされ得ます。
   //   依存を deferred 値へ差し替えることで、クリック直後の緊急レンダーでは

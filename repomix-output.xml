@@ -1632,116 +1632,6 @@ export const useFilterPopoverController = <T,>({
 export default useFilterPopoverController;
 </file>
 
-<file path="src/components/spreadsheet-grid/hooks/useGridBarContext.ts">
-import { useMemo } from 'react';
-import { selectGlobalFilter } from '../model/gridSelectors';
-import type {
-  GridColumn,
-  GridUiState,
-  SpreadsheetGridSlotContext,
-} from '../model/gridTypes';
-import { buildGridDerivedSummary } from '../view/gridBarHelpers';
-
-// 追加: derivedSummary / setGlobalFilterText を載せる前の中間 slot context 型です。
-// 変更(DS-3-7): base から filteredRows(配列)を外します。サマリは件数のみ使用し、公開
-//   slotContext.filteredRows は最終 object で遅延 getter として付与します。
-type GridSlotContextBase<T> = Omit<
-  SpreadsheetGridSlotContext<T>,
-  'setGlobalFilterText' | 'derivedSummary' | 'filteredRows'
->;
-
-type UseGridBarContextArgs<T> = {
-  rows: T[];
-  // 変更(DS-3-7): filteredRows(配列)→ 件数(viewRowCount)+ 遅延 factory(getFilteredRows)。
-  //   サマリは viewRowCount を使い、公開 slotContext.filteredRows は getFilteredRows() を
-  //   遅延 getter で返します(外部スロットが読んだ時だけ materialize)。
-  viewRowCount: number;
-  getFilteredRows: () => T[];
-  columns: GridColumn<T>[];
-  visibleColumns: GridColumn<T>[];
-  uiState: GridUiState;
-  setGlobalFilterText: (value: string) => void;
-};
-
-// 追加: topBar / bottomBar へ渡す slot context と derived summary をまとめて構築します。
-export const useGridBarContext = <T,>({
-  rows,
-  viewRowCount,
-  getFilteredRows,
-  columns,
-  visibleColumns,
-  uiState,
-  setGlobalFilterText,
-}: UseGridBarContextArgs<T>) => {
-  // 変更(11-B3): slotContextBase の依存を uiState 丸ごとから、bar が実際に参照する
-  //   5 フィールドへ分解します。
-  // 変更理由: uiState は columnWidths(ライブリサイズ中は毎 pointermove)、
-  //   editingCell、dragState など bar 表示と無関係な更新でも参照が変わります。
-  //   丸ごと依存のままだと slotContextBase → derivedSummary → slotContext が
-  //   その度に連鎖再生成され、topBar / bottomBar スロットの再レンダーを誘発します。
-  //   reducer は無関係フィールド更新時に filters / sort / activeCell / selection の
-  //   参照を温存する(スプレッドで該当キーのみ差し替える)ため、ここで個別に
-  //   取り出した参照は安定し、useMemo が正しくスキップされます。
-  const globalFilterText = selectGlobalFilter(uiState);
-  const columnFilterValues = uiState.filters.columnFilters;
-  const sortState = uiState.sort;
-  const activeCell = uiState.activeCell;
-  const selection = uiState.selection;
-
-  const slotContextBase = useMemo<GridSlotContextBase<T>>(
-    () => ({
-      rows,
-      columns,
-      visibleColumns,
-      globalFilterText,
-      columnFilterValues,
-      sortState,
-      activeCell,
-      selection,
-    }),
-    [
-      rows,
-      columns,
-      visibleColumns,
-      globalFilterText,
-      columnFilterValues,
-      sortState,
-      activeCell,
-      selection,
-    ],
-  );
-
-  const derivedSummary = useMemo(
-    // 変更(DS-3-7): 件数 viewRowCount を明示引数で渡します(filteredRows 配列は使いません)。
-    () => buildGridDerivedSummary(slotContextBase, viewRowCount),
-    [slotContextBase, viewRowCount],
-  );
-
-  const slotContext = useMemo<SpreadsheetGridSlotContext<T>>(
-    () => ({
-      ...slotContextBase,
-      // 追加(DS-3-7): 公開 filteredRows は遅延 getter。外部スロットが読んだ時だけ materialize し、
-      //   getFilteredRows() 内部キャッシュで同一世代([order,rows])は参照も安定します。
-      //   base には filteredRows が無いため、上の spread では materialize されません。
-      get filteredRows() {
-        return getFilteredRows();
-      },
-      setGlobalFilterText,
-      derivedSummary,
-    }),
-    [derivedSummary, getFilteredRows, setGlobalFilterText, slotContextBase],
-  );
-
-  return {
-    slotContextBase,
-    derivedSummary,
-    slotContext,
-  };
-};
-
-export default useGridBarContext;
-</file>
-
 <file path="src/components/spreadsheet-grid/hooks/useGridClipboardController.ts">
 import { useCallback, type Dispatch } from 'react';
 import { gridActions, type GridUiAction } from '../model/gridActions';
@@ -3316,6 +3206,116 @@ backup
 repomix-output.xml
 </file>
 
+<file path="src/components/spreadsheet-grid/hooks/useGridBarContext.ts">
+import { useMemo } from 'react';
+import { selectGlobalFilter } from '../model/gridSelectors';
+import type {
+  GridColumn,
+  GridUiState,
+  SpreadsheetGridSlotContext,
+} from '../model/gridTypes';
+import { buildGridDerivedSummary } from '../view/gridBarHelpers';
+
+// 追加: derivedSummary / setGlobalFilterText を載せる前の中間 slot context 型です。
+// 変更(DS-3-7): base から filteredRows(配列)を外します。サマリは件数のみ使用し、公開
+//   slotContext.filteredRows は最終 object で遅延 getter として付与します。
+type GridSlotContextBase<T> = Omit<
+  SpreadsheetGridSlotContext<T>,
+  'setGlobalFilterText' | 'derivedSummary' | 'filteredRows'
+>;
+
+type UseGridBarContextArgs<T> = {
+  rows: T[];
+  // 変更(DS-3-7): filteredRows(配列)→ 件数(viewRowCount)+ 遅延 factory(getFilteredRows)。
+  //   サマリは viewRowCount を使い、公開 slotContext.filteredRows は getFilteredRows() を
+  //   遅延 getter で返します(外部スロットが読んだ時だけ materialize)。
+  viewRowCount: number;
+  getFilteredRows: () => T[];
+  columns: GridColumn<T>[];
+  visibleColumns: GridColumn<T>[];
+  uiState: GridUiState;
+  setGlobalFilterText: (value: string) => void;
+};
+
+// 追加: topBar / bottomBar へ渡す slot context と derived summary をまとめて構築します。
+export const useGridBarContext = <T,>({
+  rows,
+  viewRowCount,
+  getFilteredRows,
+  columns,
+  visibleColumns,
+  uiState,
+  setGlobalFilterText,
+}: UseGridBarContextArgs<T>) => {
+  // 変更(11-B3): slotContextBase の依存を uiState 丸ごとから、bar が実際に参照する
+  //   5 フィールドへ分解します。
+  // 変更理由: uiState は columnWidths(ライブリサイズ中は毎 pointermove)、
+  //   editingCell、dragState など bar 表示と無関係な更新でも参照が変わります。
+  //   丸ごと依存のままだと slotContextBase → derivedSummary → slotContext が
+  //   その度に連鎖再生成され、topBar / bottomBar スロットの再レンダーを誘発します。
+  //   reducer は無関係フィールド更新時に filters / sort / activeCell / selection の
+  //   参照を温存する(スプレッドで該当キーのみ差し替える)ため、ここで個別に
+  //   取り出した参照は安定し、useMemo が正しくスキップされます。
+  const globalFilterText = selectGlobalFilter(uiState);
+  const columnFilterValues = uiState.filters.columnFilters;
+  const sortState = uiState.sort;
+  const activeCell = uiState.activeCell;
+  const selection = uiState.selection;
+
+  const slotContextBase = useMemo<GridSlotContextBase<T>>(
+    () => ({
+      rows,
+      columns,
+      visibleColumns,
+      globalFilterText,
+      columnFilterValues,
+      sortState,
+      activeCell,
+      selection,
+    }),
+    [
+      rows,
+      columns,
+      visibleColumns,
+      globalFilterText,
+      columnFilterValues,
+      sortState,
+      activeCell,
+      selection,
+    ],
+  );
+
+  const derivedSummary = useMemo(
+    // 変更(DS-3-7): 件数 viewRowCount を明示引数で渡します(filteredRows 配列は使いません)。
+    () => buildGridDerivedSummary(slotContextBase, viewRowCount),
+    [slotContextBase, viewRowCount],
+  );
+
+  const slotContext = useMemo<SpreadsheetGridSlotContext<T>>(
+    () => ({
+      ...slotContextBase,
+      // 追加(DS-3-7): 公開 filteredRows は遅延 getter。外部スロットが読んだ時だけ materialize し、
+      //   getFilteredRows() 内部キャッシュで同一世代([order,rows])は参照も安定します。
+      //   base には filteredRows が無いため、上の spread では materialize されません。
+      get filteredRows() {
+        return getFilteredRows();
+      },
+      setGlobalFilterText,
+      derivedSummary,
+    }),
+    [derivedSummary, getFilteredRows, setGlobalFilterText, slotContextBase],
+  );
+
+  return {
+    slotContextBase,
+    derivedSummary,
+    slotContext,
+  };
+};
+
+export default useGridBarContext;
+</file>
+
 <file path="src/components/spreadsheet-grid/hooks/useGridEditController.ts">
 import { useCallback, type Dispatch, type RefObject } from 'react';
 import { gridActions, type GridUiAction } from '../model/gridActions';
@@ -3861,12 +3861,6 @@ export default useGridViewportSync;
 import type { GridColumn, SetColumnFilterValue } from '../model/gridTypes';
 import { getCellValue } from '../utils/permissions';
 
-// 追加: filtering / sorting で共通利用しやすい最小 row model 型です。
-export type GridRowModelLike<T> = {
-  row: T;
-  sourceIndex: number;
-};
-
 // 追加(DS-1 / index ベースパイプライン): 「ビュー順に並んだ元 rows の index 列」です。
 //   オブジェクト配列({row, sourceIndex, ...})を各段で割り当て直す従来方式に代えて、
 //   フィルタ/ソートはこの index 列(Int32Array)だけを生成・受け渡しします。
@@ -3896,7 +3890,7 @@ export const isSetColumnFilterValue = (
 
 // 追加(12-A): 列フィルター値が「有効」かを判定する共通 helper です。
 // 変更理由: 従来は GridHeaderRow(フィルター済みバッジ) / gridBarHelpers(有効件数) /
-//   applyColumnFilters がそれぞれ String(value).trim() で判定していました。
+//   列フィルタの適用処理がそれぞれ String(value).trim() で判定していました。
 //   set フィルター値はオブジェクトのため String() 判定が成立しません
 //   (空配列 = 全行除外でも「有効」と数える必要があります)。
 //   有効判定をここへ一元化し、3 箇所すべてが同じ規則を共有します。
@@ -3921,25 +3915,6 @@ export type ParsedNumberFilter =
       min: number;
       max: number;
     };
-
-// 追加: 行フィルターの最小実装です。初版では global filter のみをここで扱います。
-export const applyGlobalFilter = <T, R extends GridRowModelLike<T>>(
-  rowModels: R[],
-  columns: GridColumn<T>[],
-  globalText: string,
-) => {
-  const normalizedFilter = globalText.trim().toLowerCase();
-  if (!normalizedFilter) {
-    return rowModels;
-  }
-
-  return rowModels.filter((rowModel) =>
-    columns.some((column) => {
-      const value = getCellValue(rowModel.row, column);
-      return String(value ?? '').toLowerCase().includes(normalizedFilter);
-    }),
-  );
-};
 
 // 追加: number フィルター式を解釈します。
 export const parseNumberFilterExpression = (
@@ -4025,16 +4000,14 @@ export const applyNumberFilter = (
   }
 };
 
-// 変更(12-A): applyColumnFilters を「行ループ前の事前コンパイル方式」へ変更します。
-// 変更理由:
-//   1) set フィルターは候補が多い列(例: 品番 5,000 種)でも O(1) 判定にしたく、
-//      行ループの外で一度だけ Set を構築する必要があります。
-//   2) 旧実装は rows.filter × columns.every の内側で毎回
-//      String(filterValue).trim().toLowerCase() を実行しており、フィルター未設定の列も
-//      含めて「行数 × 全列数」(5,000 × 29 ≒ 14.5 万回)の正規化が毎適用で走っていました。
-//      有効な列フィルターだけを predicate へ事前コンパイルすることで、行ループは
-//      「有効フィルター数 × 行数」に縮小します(text / number / select の判定結果は
-//      従来と等価です)。
+// 列フィルターの「行ループ前の事前コンパイル方式」のための型・helper 群です(12-A)。
+//   set フィルターは候補が多い列(例: 品番 5,000 種)でも O(1) 判定にしたく、
+//   行ループの外で一度だけ Set を構築する必要があります。また有効な列フィルターだけを
+//   predicate へ事前コンパイルすることで、行ループは「有効フィルター数 × 行数」に縮小し、
+//   フィルター未設定列ぶんの String(...).trim().toLowerCase() 正規化を省けます
+//   (text / number / select の判定結果は単一実装で一意です)。
+//   現在の利用者は index 版 filterOrderByColumns です
+//   (旧オブジェクト配列版は DS-3-8 で削除しました)。
 type CompiledColumnFilterPredicate<T> = (row: T) => boolean;
 
 // 追加(12-A): 1 列ぶんのフィルター値を predicate へコンパイルします。
@@ -4079,47 +4052,17 @@ const compileSingleColumnFilter = <T,>(
       .includes(normalizedFilter);
 };
 
-// 変更(12-A): 列ごとのフィルターを適用します。text / number / select / set 対応です。
-//             column.filterFn がある場合はそれを優先します。
-export const applyColumnFilters = <T, R extends GridRowModelLike<T>>(
-  rowModels: R[],
-  columns: GridColumn<T>[],
-  columnFilters: Record<string, unknown>,
-) => {
-  const predicates: CompiledColumnFilterPredicate<T>[] = [];
-  for (const column of columns) {
-    const predicate = compileSingleColumnFilter(
-      column,
-      columnFilters[column.key],
-    );
-    if (predicate) {
-      predicates.push(predicate);
-    }
-  }
-
-  // 追加(12-A): 有効フィルターなしのときは同一配列参照を返し、
-  //             下流 useMemo(sorted 以降)のスキップを最大化します。
-  if (predicates.length === 0) {
-    return rowModels;
-  }
-
-  return rowModels.filter((rowModel) =>
-    predicates.every((predicate) => predicate(rowModel.row)),
-  );
-};
-
 // ────────────────────────────────────────────────
 // 追加(DS-1 / index ベースパイプライン): order(RowOrder)を受けて order を返すフィルタ群。
-//   既存の applyGlobalFilter / applyColumnFilters(オブジェクト配列版)とビュー順は
-//   厳密に等価です(下記いずれも「合格行を元の相対順で詰め直す」だけ)。違いは:
-//     - 入出力が {row,...}[] ではなく元 rows + index 列(Int32Array)であること。
-//     - 「全件通過」のとき同一参照(引数 order)を返し、下流 useMemo のスキップを最大化すること
-//       (.filter は全通過でも新配列を返すため、参照節約という点ではむしろ改善です)。
-//   DS-1 では未配線。DS-2 で SpreadsheetGrid のチェーンをこちらへ差し替えます。
+//   本体のフィルタ経路はこの index 版に一本化済みです(DS-2 で差し替え、
+//   旧オブジェクト配列版は DS-3-8 で削除)。いずれも「合格行を元の相対順で詰め直す」処理で、
+//   入出力が {row,...}[] ではなく元 rows + index 列(Int32Array)である点が要点です。
+//   「全件通過」のときは同一参照(引数 order)を返し、下流 useMemo のスキップを最大化します
+//   (.filter は全通過でも新配列を返すため、参照節約という点でも改善です)。
 // ────────────────────────────────────────────────
 
-// 追加(DS-1): グローバルフィルタの index 版です。applyGlobalFilter と等価
-//   (columns.some の部分一致)。filter 文字列が空なら同一参照を返します。
+// 追加(DS-1): グローバルフィルタの index 版です(columns.some の部分一致)。
+//   filter 文字列が空なら同一参照を返します。
 export const filterOrderByGlobalText = <T,>(
   rows: T[],
   order: RowOrder,
@@ -4161,9 +4104,9 @@ export const filterOrderByGlobalText = <T,>(
   return result.slice(0, count);
 };
 
-// 追加(DS-1): 列フィルタの index 版です。applyColumnFilters と等価
-//   (有効フィルタの predicates.every)。事前コンパイルは既存の compileSingleColumnFilter を
-//   そのまま再利用します(text / number / select / set / filterFn の判定は完全同一)。
+// 追加(DS-1): 列フィルタの index 版です(有効フィルタの predicates.every)。
+//   事前コンパイルは compileSingleColumnFilter を再利用します
+//   (text / number / select / set / filterFn の判定は単一実装)。
 //   有効フィルタが 0 件なら同一参照を返します。
 export const filterOrderByColumns = <T,>(
   rows: T[],
@@ -8437,7 +8380,7 @@ export default useGridPointerInteractions;
 <file path="src/components/spreadsheet-grid/logic/sorting.ts">
 import type { GridColumn, GridSortState } from '../model/gridTypes';
 import { getCellValue } from '../utils/permissions';
-import type { GridRowModelLike, RowOrder } from './filtering';
+import type { RowOrder } from './filtering';
 
 // 追加(DS-1 / perf): 文字列比較用の共有コレーターです。
 //   従来は compareUnknownValues 内で String.prototype.localeCompare(_, 'ja', opts) を
@@ -8467,56 +8410,6 @@ export const compareUnknownValues = (left: unknown, right: unknown) => {
   }
 
   return STRING_COLLATOR.compare(String(left ?? ''), String(right ?? ''));
-};
-
-// 変更(MS-1 / マルチソート): エントリ配列を優先順位順に適用する多列ソートにしました。
-//   - sort[0] が最優先。compared が 0 のときだけ次のエントリへフォールバックします。
-//   - 未知/非表示などで列が見つからないエントリはスキップします
-//     (列を隠してもクラッシュせず、残りのキーで安定して並びます)。
-//   - 解決後に有効キーが 0 件なら元配列をそのまま返します。
-//   - 最後の tie-breaker は従来どおり sourceIndex(安定ソート)。
-// 単一列ソート(長さ 1)のときは旧実装と同一の結果になります。
-export const applySort = <T, R extends GridRowModelLike<T>>(
-  rowModels: R[],
-  columns: GridColumn<T>[],
-  sort: GridSortState,
-) => {
-  if (sort.length === 0) {
-    return rowModels;
-  }
-
-  // 列解決はソート前に 1 回だけ(比較関数内で find を毎回呼ばない)。
-  const resolved = sort
-    .map((entry) => {
-      const column = columns.find((item) => item.key === entry.columnKey);
-      return column
-        ? { column, multiplier: entry.direction === 'asc' ? 1 : -1 }
-        : null;
-    })
-    .filter(
-      (item): item is { column: GridColumn<T>; multiplier: number } =>
-        item !== null,
-    );
-
-  if (resolved.length === 0) {
-    return rowModels;
-  }
-
-  return [...rowModels].sort((leftRowModel, rightRowModel) => {
-    for (const { column, multiplier } of resolved) {
-      const compared = compareUnknownValues(
-        getCellValue(leftRowModel.row, column),
-        getCellValue(rightRowModel.row, column),
-      );
-
-      if (compared !== 0) {
-        return compared * multiplier;
-      }
-    }
-
-    // 追加: 安定ソートのため sourceIndex を tie-breaker にします。
-    return leftRowModel.sourceIndex - rightRowModel.sourceIndex;
-  });
 };
 
 // 追加(MS-2 / マルチソート本体): ソートエントリ配列の「次状態」を返す純関数です。
@@ -8665,22 +8558,22 @@ export const moveSortEntry = (
   return next;
 };
 
-// 追加(DS-1 / index ベースパイプライン): applySort の index 版です。
-//   オブジェクト配列ではなく order(RowOrder) を受け、並べ替えた order を返します。
-//   結果のビュー順は applySort と厳密に等価です:
+// 追加(DS-1 / index ベースパイプライン): order(RowOrder) を受け、並べ替えた order を
+//   返す多列ソートです(本体のソート経路はこれに一本化済み。旧オブジェクト配列版は
+//   DS-3-8 で削除)。規約:
 //     - 多列の優先順位適用(resolved を先頭から比較、0 のとき次のキーへ)、
 //     - 未解決(列が見つからない)エントリのスキップ、有効キー 0 件なら元 order を返す、
 //     - 最終タイブレークは元 source index(= order[pos])で安定化、
-//     これらはすべて applySort と同一規則です。sort が空 / 有効キー 0 件のときは同一参照。
+//   sort が空 / 有効キー 0 件のときは同一参照を返します。
 //
 //   パフォーマンス上の要点(decorate-sort-undecorate):
-//     - 従来は比較子の内側で getCellValue を毎回呼んでおり、呼び出し回数が
-//       O(行数 × log 行数 × ソート列数) に膨らんでいました。
+//     - 比較子の内側で getCellValue を毎回呼ぶ素朴な実装だと、呼び出し回数が
+//       O(行数 × log 行数 × ソート列数) に膨らみます。
 //     - ここではアクティブ sort 列ごとに「order 各位置のセル値」を事前に 1 回だけ
 //       取り出して配列化(decorate)し、比較は decorate 済み値に対して行います。
 //       getCellValue の呼び出しは O(行数 × ソート列数) に下がります。
-//     - 比較関数 compareUnknownValues 自体は据え置きのため、数値/文字列が混在する列でも
-//       結果は従来と完全に一致します(列ごとに型を決め打ちする最適化はしていません)。
+//     - 比較関数 compareUnknownValues は据え置きのため、数値/文字列が混在する列でも
+//       結果は一意です(列ごとに型を決め打ちする最適化はしていません)。
 //     - 実際の sort 対象は「位置(0..length-1)の number[]」で、確定後に
 //       result[i] = order[positions[i]] で undecorate して Int32Array へ書き戻します。
 export const sortOrder = <T,>(
@@ -8693,7 +8586,7 @@ export const sortOrder = <T,>(
     return order;
   }
 
-  // 列解決はソート前に 1 回だけ(applySort と同一)。
+  // 列解決はソート前に 1 回だけ(比較関数内で find を毎回呼ばない)。
   const resolved = sort
     .map((entry) => {
       const column = columns.find((item) => item.key === entry.columnKey);
@@ -8746,293 +8639,6 @@ export const sortOrder = <T,>(
     result[i] = order[positions[i]];
   }
   return result;
-};
-</file>
-
-<file path="src/components/spreadsheet-grid/view/gridBarHelpers.ts">
-import type { ReactNode } from 'react';
-import type {
-  CellCoord,
-  GridSelection,
-  GridColumn,
-  SpreadsheetGridSlotContext,
-  SpreadsheetGridDerivedSummary,
-  SpreadsheetGridSelectionStats,
-} from '../model/gridTypes';
-import { toExcelColumnName } from '../utils/excelColumnName';
-// 追加(12-A): set フィルター対応のフィルター有効判定を共有します。
-import { isActiveColumnFilterValue } from '../logic/filtering';
-
-// 追加: Grid の slot renderer を解決します。
-export const resolveGridSlot = <T,>(
-  slotRenderer:
-    | ((context: SpreadsheetGridSlotContext<T>) => ReactNode)
-    | undefined,
-  context: SpreadsheetGridSlotContext<T>,
-  fallback: ReactNode,
-) => {
-  if (slotRenderer) {
-    return slotRenderer(context);
-  }
-  return fallback;
-};
-
-// 追加: summary 用に長い文字列を短く丸めます。
-const truncateSummaryText = (value: string, maxLength = 16) => {
-  if (value.length <= maxLength) {
-    return value;
-  }
-  return `${value.slice(0, maxLength)}…`;
-};
-
-// 追加: ActiveCell を A1 形式へ整形します。
-export const formatGridCellLabel = (cell: CellCoord | null) => {
-  if (!cell) {
-    return 'なし';
-  }
-  return `${toExcelColumnName(cell.col)}${cell.row + 1}`;
-};
-
-// 追加: selection の概要を短く整形します。
-export const formatGridSelectionLabel = (selection: GridSelection) => {
-  if (!selection) {
-    return 'なし';
-  }
-
-  if (selection.type === 'cell') {
-    const startRow = Math.min(
-      selection.range.start.row,
-      selection.range.end.row,
-    );
-    const endRow = Math.max(
-      selection.range.start.row,
-      selection.range.end.row,
-    );
-    const startCol = Math.min(
-      selection.range.start.col,
-      selection.range.end.col,
-    );
-    const endCol = Math.max(
-      selection.range.start.col,
-      selection.range.end.col,
-    );
-
-    return `${toExcelColumnName(startCol)}${startRow + 1} - ${toExcelColumnName(
-      endCol,
-    )}${endRow + 1}`;
-  }
-
-  if (selection.type === 'row') {
-    const startRow = Math.min(selection.startRow, selection.endRow);
-    const endRow = Math.max(selection.startRow, selection.endRow);
-    return `Row ${startRow + 1} - ${endRow + 1}`;
-  }
-
-  const startCol = Math.min(selection.startCol, selection.endCol);
-  const endCol = Math.max(selection.startCol, selection.endCol);
-  return `Col ${toExcelColumnName(startCol)} - ${toExcelColumnName(endCol)}`;
-};
-
-// 追加: rows / filteredRows の概要テキストです。
-// 変更(DS-3-7): filteredRows(配列)依存をやめ、件数 filteredRowCount(数値)を引数で受けます。
-//   公開 slotContext.filteredRows は遅延 getter で別途供給され、サマリは件数しか使いません。
-export const formatGridRowSummary = <T,>(
-  context: Pick<SpreadsheetGridSlotContext<T>, 'rows'>,
-  filteredRowCount: number,
-) => `Rows: ${filteredRowCount} / ${context.rows.length}`;
-
-// 追加: columns / visibleColumns の概要テキストです。
-export const formatGridColumnSummary = <T,>(
-  context: Pick<SpreadsheetGridSlotContext<T>, 'columns' | 'visibleColumns'>,
-) => `Columns: ${context.visibleColumns.length} / ${context.columns.length}`;
-
-// 追加: selection から選択セル数 / 行数 / 列数を算出します。
-export const getGridSelectionStats = <T,>(
-  context: Pick<SpreadsheetGridSlotContext<T>, 'selection' | 'visibleColumns'>,
-  // 変更(DS-3-7): filteredRows(配列)→ 件数 filteredRowCount(数値)を引数で受けます。
-  filteredRowCount: number,
-): SpreadsheetGridSelectionStats => {
-  const selection = context.selection;
-  if (!selection) {
-    return {
-      selectedCellCount: 0,
-      selectedRowCount: 0,
-      selectedColumnCount: 0,
-    };
-  }
-
-  if (selection.type === 'cell') {
-    const startRow = Math.min(
-      selection.range.start.row,
-      selection.range.end.row,
-    );
-    const endRow = Math.max(
-      selection.range.start.row,
-      selection.range.end.row,
-    );
-    const startCol = Math.min(
-      selection.range.start.col,
-      selection.range.end.col,
-    );
-    const endCol = Math.max(
-      selection.range.start.col,
-      selection.range.end.col,
-    );
-    const selectedRowCount = endRow - startRow + 1;
-    const selectedColumnCount = endCol - startCol + 1;
-    return {
-      selectedCellCount: selectedRowCount * selectedColumnCount,
-      selectedRowCount,
-      selectedColumnCount,
-    };
-  }
-
-  if (selection.type === 'row') {
-    const startRow = Math.min(selection.startRow, selection.endRow);
-    const endRow = Math.max(selection.startRow, selection.endRow);
-    const selectedRowCount = endRow - startRow + 1;
-    const selectedColumnCount = context.visibleColumns.length;
-    return {
-      selectedCellCount: selectedRowCount * selectedColumnCount,
-      selectedRowCount,
-      selectedColumnCount,
-    };
-  }
-
-  const startCol = Math.min(selection.startCol, selection.endCol);
-  const endCol = Math.max(selection.startCol, selection.endCol);
-  const selectedColumnCount = endCol - startCol + 1;
-  const selectedRowCount = filteredRowCount;
-  return {
-    selectedCellCount: selectedRowCount * selectedColumnCount,
-    selectedRowCount,
-    selectedColumnCount,
-  };
-};
-
-// 追加: selection 数量の要約テキストです。
-export const formatGridSelectionStatsLabel = <T,>(
-  context: Pick<SpreadsheetGridSlotContext<T>, 'selection' | 'visibleColumns'>,
-  filteredRowCount: number,
-) => {
-  const stats = getGridSelectionStats(context, filteredRowCount);
-  return `Cells: ${stats.selectedCellCount} / Rows: ${stats.selectedRowCount}`;
-};
-
-// 変更(12-A): 列フィルターの有効件数を数えます。
-// 変更理由: set フィルター値はオブジェクトのため String(value).trim() 判定が
-//           成立しません(空配列も「全行除外」として有効に数える必要があります)。
-//           判定を logic/filtering.ts の isActiveColumnFilterValue へ一元化します。
-const countActiveColumnFilters = (columnFilterValues: Record<string, unknown>) =>
-  Object.values(columnFilterValues).filter((value) =>
-    isActiveColumnFilterValue(value),
-  ).length;
-
-// 追加: フィルター状態の要約テキストです。
-export const formatGridFilterSummary = <T,>(
-  context: Pick<
-    SpreadsheetGridSlotContext<T>,
-    'globalFilterText' | 'columnFilterValues'
-  >,
-) => {
-  const hasGlobalFilter = context.globalFilterText.trim().length > 0;
-  const globalFilterPreview = hasGlobalFilter
-    ? truncateSummaryText(context.globalFilterText.trim())
-    : null;
-  const columnFilterCount = countActiveColumnFilters(context.columnFilterValues);
-
-  if (!hasGlobalFilter && columnFilterCount === 0) {
-    return 'Filter: なし';
-  }
-
-  if (hasGlobalFilter && columnFilterCount === 0) {
-    return `Filter: Global("${globalFilterPreview}")`;
-  }
-
-  if (!hasGlobalFilter && columnFilterCount > 0) {
-    return `Filter: ${columnFilterCount}列`;
-  }
-
-  return `Filter: Global("${globalFilterPreview}") + ${columnFilterCount}列`;
-};
-
-// 変更(MS-1): ソート列名取得を「単一 key → ラベル」に一般化します
-//            (配列の各エントリ・主ソート列の双方から使い回せるように)。
-const getColumnLabelByKey = <T,>(
-  columns: GridColumn<T>[],
-  columnKey: string,
-) => {
-  const column = columns.find((item) => item.key === columnKey);
-  return column?.title || column?.key || columnKey;
-};
-
-// 追加: ソート状態の要約テキストです。
-export const formatGridSortSummary = <T,>(
-  context: Pick<SpreadsheetGridSlotContext<T>, 'columns' | 'sortState'>,
-) => {
-  // 変更(MS-1): 配列を優先順位順に「列名 (方向)」で連結します。
-  //   単一エントリのときは従来と同一の文字列(例: 'Sort: 金額 (昇順)')になります。
-  if (context.sortState.length === 0) {
-    return 'Sort: なし';
-  }
-
-  const parts = context.sortState.map((entry) => {
-    const label = getColumnLabelByKey(context.columns, entry.columnKey);
-    return `${label} (${entry.direction === 'asc' ? '昇順' : '降順'})`;
-  });
-
-  return `Sort: ${parts.join(', ')}`;
-};
-
-// 追加: slot context に載せる派生 summary を一括構築します。
-export const buildGridDerivedSummary = <T,>(
-  context: Pick<
-    SpreadsheetGridSlotContext<T>,
-    | 'rows'
-    | 'columns'
-    | 'visibleColumns'
-    | 'globalFilterText'
-    | 'columnFilterValues'
-    | 'sortState'
-    | 'activeCell'
-    | 'selection'
-  >,
-  // 変更(DS-3-7): filteredRows(配列)依存を除去し、件数を引数で各 format 関数へ流します。
-  filteredRowCount: number,
-): SpreadsheetGridDerivedSummary => {
-  const selectionStats = getGridSelectionStats(context, filteredRowCount);
-  const hasGlobalFilter = context.globalFilterText.trim().length > 0;
-  const globalFilterPreview = hasGlobalFilter
-    ? truncateSummaryText(context.globalFilterText.trim())
-    : null;
-  const activeColumnFilterCount = countActiveColumnFilters(
-    context.columnFilterValues,
-  );
-  const hasAnyFilter = hasGlobalFilter || activeColumnFilterCount > 0;
-  // 変更(MS-1): 配列ベースの判定に置き換えます。
-  //   sortedColumnLabel は後方互換のため「主ソート(先頭)列」のラベルを返します
-  //   (複数ソート時は先頭。全体の要約は sortSummaryText 側が担います)。
-  const hasSorting = context.sortState.length > 0;
-  const sortedColumnLabel = hasSorting
-    ? getColumnLabelByKey(context.columns, context.sortState[0].columnKey)
-    : null;
-
-  return {
-    rowSummaryText: formatGridRowSummary(context, filteredRowCount),
-    columnSummaryText: formatGridColumnSummary(context),
-    filterSummaryText: formatGridFilterSummary(context),
-    sortSummaryText: formatGridSortSummary(context),
-    activeCellLabel: formatGridCellLabel(context.activeCell),
-    selectionLabel: formatGridSelectionLabel(context.selection),
-    selectionStatsText: formatGridSelectionStatsLabel(context, filteredRowCount),
-    selectionStats,
-    hasGlobalFilter,
-    globalFilterPreview,
-    activeColumnFilterCount,
-    hasAnyFilter,
-    hasSorting,
-    sortedColumnLabel,
-  };
 };
 </file>
 
@@ -9972,6 +9578,293 @@ export function ColumnMenuPopover({
 }
 
 export default ColumnMenuPopover;
+</file>
+
+<file path="src/components/spreadsheet-grid/view/gridBarHelpers.ts">
+import type { ReactNode } from 'react';
+import type {
+  CellCoord,
+  GridSelection,
+  GridColumn,
+  SpreadsheetGridSlotContext,
+  SpreadsheetGridDerivedSummary,
+  SpreadsheetGridSelectionStats,
+} from '../model/gridTypes';
+import { toExcelColumnName } from '../utils/excelColumnName';
+// 追加(12-A): set フィルター対応のフィルター有効判定を共有します。
+import { isActiveColumnFilterValue } from '../logic/filtering';
+
+// 追加: Grid の slot renderer を解決します。
+export const resolveGridSlot = <T,>(
+  slotRenderer:
+    | ((context: SpreadsheetGridSlotContext<T>) => ReactNode)
+    | undefined,
+  context: SpreadsheetGridSlotContext<T>,
+  fallback: ReactNode,
+) => {
+  if (slotRenderer) {
+    return slotRenderer(context);
+  }
+  return fallback;
+};
+
+// 追加: summary 用に長い文字列を短く丸めます。
+const truncateSummaryText = (value: string, maxLength = 16) => {
+  if (value.length <= maxLength) {
+    return value;
+  }
+  return `${value.slice(0, maxLength)}…`;
+};
+
+// 追加: ActiveCell を A1 形式へ整形します。
+export const formatGridCellLabel = (cell: CellCoord | null) => {
+  if (!cell) {
+    return 'なし';
+  }
+  return `${toExcelColumnName(cell.col)}${cell.row + 1}`;
+};
+
+// 追加: selection の概要を短く整形します。
+export const formatGridSelectionLabel = (selection: GridSelection) => {
+  if (!selection) {
+    return 'なし';
+  }
+
+  if (selection.type === 'cell') {
+    const startRow = Math.min(
+      selection.range.start.row,
+      selection.range.end.row,
+    );
+    const endRow = Math.max(
+      selection.range.start.row,
+      selection.range.end.row,
+    );
+    const startCol = Math.min(
+      selection.range.start.col,
+      selection.range.end.col,
+    );
+    const endCol = Math.max(
+      selection.range.start.col,
+      selection.range.end.col,
+    );
+
+    return `${toExcelColumnName(startCol)}${startRow + 1} - ${toExcelColumnName(
+      endCol,
+    )}${endRow + 1}`;
+  }
+
+  if (selection.type === 'row') {
+    const startRow = Math.min(selection.startRow, selection.endRow);
+    const endRow = Math.max(selection.startRow, selection.endRow);
+    return `Row ${startRow + 1} - ${endRow + 1}`;
+  }
+
+  const startCol = Math.min(selection.startCol, selection.endCol);
+  const endCol = Math.max(selection.startCol, selection.endCol);
+  return `Col ${toExcelColumnName(startCol)} - ${toExcelColumnName(endCol)}`;
+};
+
+// 追加: rows / filteredRows の概要テキストです。
+// 変更(DS-3-7): filteredRows(配列)依存をやめ、件数 filteredRowCount(数値)を引数で受けます。
+//   公開 slotContext.filteredRows は遅延 getter で別途供給され、サマリは件数しか使いません。
+export const formatGridRowSummary = <T,>(
+  context: Pick<SpreadsheetGridSlotContext<T>, 'rows'>,
+  filteredRowCount: number,
+) => `Rows: ${filteredRowCount} / ${context.rows.length}`;
+
+// 追加: columns / visibleColumns の概要テキストです。
+export const formatGridColumnSummary = <T,>(
+  context: Pick<SpreadsheetGridSlotContext<T>, 'columns' | 'visibleColumns'>,
+) => `Columns: ${context.visibleColumns.length} / ${context.columns.length}`;
+
+// 追加: selection から選択セル数 / 行数 / 列数を算出します。
+export const getGridSelectionStats = <T,>(
+  context: Pick<SpreadsheetGridSlotContext<T>, 'selection' | 'visibleColumns'>,
+  // 変更(DS-3-7): filteredRows(配列)→ 件数 filteredRowCount(数値)を引数で受けます。
+  filteredRowCount: number,
+): SpreadsheetGridSelectionStats => {
+  const selection = context.selection;
+  if (!selection) {
+    return {
+      selectedCellCount: 0,
+      selectedRowCount: 0,
+      selectedColumnCount: 0,
+    };
+  }
+
+  if (selection.type === 'cell') {
+    const startRow = Math.min(
+      selection.range.start.row,
+      selection.range.end.row,
+    );
+    const endRow = Math.max(
+      selection.range.start.row,
+      selection.range.end.row,
+    );
+    const startCol = Math.min(
+      selection.range.start.col,
+      selection.range.end.col,
+    );
+    const endCol = Math.max(
+      selection.range.start.col,
+      selection.range.end.col,
+    );
+    const selectedRowCount = endRow - startRow + 1;
+    const selectedColumnCount = endCol - startCol + 1;
+    return {
+      selectedCellCount: selectedRowCount * selectedColumnCount,
+      selectedRowCount,
+      selectedColumnCount,
+    };
+  }
+
+  if (selection.type === 'row') {
+    const startRow = Math.min(selection.startRow, selection.endRow);
+    const endRow = Math.max(selection.startRow, selection.endRow);
+    const selectedRowCount = endRow - startRow + 1;
+    const selectedColumnCount = context.visibleColumns.length;
+    return {
+      selectedCellCount: selectedRowCount * selectedColumnCount,
+      selectedRowCount,
+      selectedColumnCount,
+    };
+  }
+
+  const startCol = Math.min(selection.startCol, selection.endCol);
+  const endCol = Math.max(selection.startCol, selection.endCol);
+  const selectedColumnCount = endCol - startCol + 1;
+  const selectedRowCount = filteredRowCount;
+  return {
+    selectedCellCount: selectedRowCount * selectedColumnCount,
+    selectedRowCount,
+    selectedColumnCount,
+  };
+};
+
+// 追加: selection 数量の要約テキストです。
+export const formatGridSelectionStatsLabel = <T,>(
+  context: Pick<SpreadsheetGridSlotContext<T>, 'selection' | 'visibleColumns'>,
+  filteredRowCount: number,
+) => {
+  const stats = getGridSelectionStats(context, filteredRowCount);
+  return `Cells: ${stats.selectedCellCount} / Rows: ${stats.selectedRowCount}`;
+};
+
+// 変更(12-A): 列フィルターの有効件数を数えます。
+// 変更理由: set フィルター値はオブジェクトのため String(value).trim() 判定が
+//           成立しません(空配列も「全行除外」として有効に数える必要があります)。
+//           判定を logic/filtering.ts の isActiveColumnFilterValue へ一元化します。
+const countActiveColumnFilters = (columnFilterValues: Record<string, unknown>) =>
+  Object.values(columnFilterValues).filter((value) =>
+    isActiveColumnFilterValue(value),
+  ).length;
+
+// 追加: フィルター状態の要約テキストです。
+export const formatGridFilterSummary = <T,>(
+  context: Pick<
+    SpreadsheetGridSlotContext<T>,
+    'globalFilterText' | 'columnFilterValues'
+  >,
+) => {
+  const hasGlobalFilter = context.globalFilterText.trim().length > 0;
+  const globalFilterPreview = hasGlobalFilter
+    ? truncateSummaryText(context.globalFilterText.trim())
+    : null;
+  const columnFilterCount = countActiveColumnFilters(context.columnFilterValues);
+
+  if (!hasGlobalFilter && columnFilterCount === 0) {
+    return 'Filter: なし';
+  }
+
+  if (hasGlobalFilter && columnFilterCount === 0) {
+    return `Filter: Global("${globalFilterPreview}")`;
+  }
+
+  if (!hasGlobalFilter && columnFilterCount > 0) {
+    return `Filter: ${columnFilterCount}列`;
+  }
+
+  return `Filter: Global("${globalFilterPreview}") + ${columnFilterCount}列`;
+};
+
+// 変更(MS-1): ソート列名取得を「単一 key → ラベル」に一般化します
+//            (配列の各エントリ・主ソート列の双方から使い回せるように)。
+const getColumnLabelByKey = <T,>(
+  columns: GridColumn<T>[],
+  columnKey: string,
+) => {
+  const column = columns.find((item) => item.key === columnKey);
+  return column?.title || column?.key || columnKey;
+};
+
+// 追加: ソート状態の要約テキストです。
+export const formatGridSortSummary = <T,>(
+  context: Pick<SpreadsheetGridSlotContext<T>, 'columns' | 'sortState'>,
+) => {
+  // 変更(MS-1): 配列を優先順位順に「列名 (方向)」で連結します。
+  //   単一エントリのときは従来と同一の文字列(例: 'Sort: 金額 (昇順)')になります。
+  if (context.sortState.length === 0) {
+    return 'Sort: なし';
+  }
+
+  const parts = context.sortState.map((entry) => {
+    const label = getColumnLabelByKey(context.columns, entry.columnKey);
+    return `${label} (${entry.direction === 'asc' ? '昇順' : '降順'})`;
+  });
+
+  return `Sort: ${parts.join(', ')}`;
+};
+
+// 追加: slot context に載せる派生 summary を一括構築します。
+export const buildGridDerivedSummary = <T,>(
+  context: Pick<
+    SpreadsheetGridSlotContext<T>,
+    | 'rows'
+    | 'columns'
+    | 'visibleColumns'
+    | 'globalFilterText'
+    | 'columnFilterValues'
+    | 'sortState'
+    | 'activeCell'
+    | 'selection'
+  >,
+  // 変更(DS-3-7): filteredRows(配列)依存を除去し、件数を引数で各 format 関数へ流します。
+  filteredRowCount: number,
+): SpreadsheetGridDerivedSummary => {
+  const selectionStats = getGridSelectionStats(context, filteredRowCount);
+  const hasGlobalFilter = context.globalFilterText.trim().length > 0;
+  const globalFilterPreview = hasGlobalFilter
+    ? truncateSummaryText(context.globalFilterText.trim())
+    : null;
+  const activeColumnFilterCount = countActiveColumnFilters(
+    context.columnFilterValues,
+  );
+  const hasAnyFilter = hasGlobalFilter || activeColumnFilterCount > 0;
+  // 変更(MS-1): 配列ベースの判定に置き換えます。
+  //   sortedColumnLabel は後方互換のため「主ソート(先頭)列」のラベルを返します
+  //   (複数ソート時は先頭。全体の要約は sortSummaryText 側が担います)。
+  const hasSorting = context.sortState.length > 0;
+  const sortedColumnLabel = hasSorting
+    ? getColumnLabelByKey(context.columns, context.sortState[0].columnKey)
+    : null;
+
+  return {
+    rowSummaryText: formatGridRowSummary(context, filteredRowCount),
+    columnSummaryText: formatGridColumnSummary(context),
+    filterSummaryText: formatGridFilterSummary(context),
+    sortSummaryText: formatGridSortSummary(context),
+    activeCellLabel: formatGridCellLabel(context.activeCell),
+    selectionLabel: formatGridSelectionLabel(context.selection),
+    selectionStatsText: formatGridSelectionStatsLabel(context, filteredRowCount),
+    selectionStats,
+    hasGlobalFilter,
+    globalFilterPreview,
+    activeColumnFilterCount,
+    hasAnyFilter,
+    hasSorting,
+    sortedColumnLabel,
+  };
+};
 </file>
 
 <file path="src/App.tsx">
@@ -10959,9 +10852,8 @@ import { useColumnHeaderDragController } from './hooks/useColumnHeaderDragContro
 import {
   // 追加(12-A): set フィルター値の判定 / 構築に使います。
   isSetColumnFilterValue,
-  // 変更(DS-2): 行モデルチェーンを order(Int32Array)ベースへ差し替えます。
-  //   旧オブジェクト配列版(applyGlobalFilter / applyColumnFilters)は logic 層に残置
-  //   (DS-3 削除候補)。本体はこの index 版へ一本化します。
+  // 行モデルチェーンは order(Int32Array)ベースに一本化しています
+  //   (DS-2 で差し替え、旧オブジェクト配列版は DS-3-8 で削除)。
   createSourceOrder,
   filterOrderByGlobalText,
   filterOrderByColumns,
@@ -10998,7 +10890,8 @@ import {
   type PaneColumnExtentMap,
 } from './logic/geometry';
 import {
-  // 変更(DS-2): applySort(オブジェクト配列版)→ sortOrder(order 版)へ差し替えます。
+  // ソートは order(Int32Array)版に一本化しています
+  //   (DS-2 で差し替え、旧オブジェクト配列版は DS-3-8 で削除)。
   sortOrder,
   nextSortEntries,
   // 追加(MS-3-1): 並び替え管理パネルの明示編集用の純関数群です。
@@ -11433,7 +11326,7 @@ export function SpreadsheetGrid<T extends object>({
 
   // 追加(11-B7): グローバルフィルタの評価値を useDeferredValue で遅延化します。
   // 変更理由: globalText は入力欄の毎キーストロークで更新され、従来はその同期レンダー内で
-  //   5,000 行のフィルタ計算(applyGlobalFilter)と下流チェーン
+  //   5,000 行のフィルタ計算(filterOrderByGlobalText)と下流チェーン
   //   (columnFiltered → sorted → filteredRows / SourceIndexes / Keys → 仮想行再構築)が
   //   毎回走っていました。タイピングが速いと入力欄の文字反映自体がこの計算にブロックされ、
   //   「入力の引っかかり」として体感されます。
@@ -11452,7 +11345,7 @@ export function SpreadsheetGrid<T extends object>({
   // 追加(12-B): 列フィルター評価値を useDeferredValue で遅延化します(11-B7 と同型)。
   // 変更理由: 12-A で set フィルターが「チェック操作ごとの即時適用」になったため、
   //   columnFilters の更新頻度が popover の Apply 押下時代より大きく上がりました。
-  //   従来はチェック 1 回ごとの同期レンダー内で applyColumnFilters(最大 5,000 行)と
+  //   従来はチェック 1 回ごとの同期レンダー内で filterOrderByColumns(最大 5,000 行)と
   //   下流チェーン(sorted → filteredRows / SourceIndexes / Keys → 仮想行再構築)が
   //   走り、連続クリック時にチェックボックスの応答がブロックされ得ます。
   //   依存を deferred 値へ差し替えることで、クリック直後の緊急レンダーでは

@@ -1,6 +1,6 @@
 import type { GridColumn, GridSortState } from '../model/gridTypes';
 import { getCellValue } from '../utils/permissions';
-import type { GridRowModelLike, RowOrder } from './filtering';
+import type { RowOrder } from './filtering';
 
 // 追加(DS-1 / perf): 文字列比較用の共有コレーターです。
 //   従来は compareUnknownValues 内で String.prototype.localeCompare(_, 'ja', opts) を
@@ -30,56 +30,6 @@ export const compareUnknownValues = (left: unknown, right: unknown) => {
   }
 
   return STRING_COLLATOR.compare(String(left ?? ''), String(right ?? ''));
-};
-
-// 変更(MS-1 / マルチソート): エントリ配列を優先順位順に適用する多列ソートにしました。
-//   - sort[0] が最優先。compared が 0 のときだけ次のエントリへフォールバックします。
-//   - 未知/非表示などで列が見つからないエントリはスキップします
-//     (列を隠してもクラッシュせず、残りのキーで安定して並びます)。
-//   - 解決後に有効キーが 0 件なら元配列をそのまま返します。
-//   - 最後の tie-breaker は従来どおり sourceIndex(安定ソート)。
-// 単一列ソート(長さ 1)のときは旧実装と同一の結果になります。
-export const applySort = <T, R extends GridRowModelLike<T>>(
-  rowModels: R[],
-  columns: GridColumn<T>[],
-  sort: GridSortState,
-) => {
-  if (sort.length === 0) {
-    return rowModels;
-  }
-
-  // 列解決はソート前に 1 回だけ(比較関数内で find を毎回呼ばない)。
-  const resolved = sort
-    .map((entry) => {
-      const column = columns.find((item) => item.key === entry.columnKey);
-      return column
-        ? { column, multiplier: entry.direction === 'asc' ? 1 : -1 }
-        : null;
-    })
-    .filter(
-      (item): item is { column: GridColumn<T>; multiplier: number } =>
-        item !== null,
-    );
-
-  if (resolved.length === 0) {
-    return rowModels;
-  }
-
-  return [...rowModels].sort((leftRowModel, rightRowModel) => {
-    for (const { column, multiplier } of resolved) {
-      const compared = compareUnknownValues(
-        getCellValue(leftRowModel.row, column),
-        getCellValue(rightRowModel.row, column),
-      );
-
-      if (compared !== 0) {
-        return compared * multiplier;
-      }
-    }
-
-    // 追加: 安定ソートのため sourceIndex を tie-breaker にします。
-    return leftRowModel.sourceIndex - rightRowModel.sourceIndex;
-  });
 };
 
 // 追加(MS-2 / マルチソート本体): ソートエントリ配列の「次状態」を返す純関数です。
@@ -228,22 +178,22 @@ export const moveSortEntry = (
   return next;
 };
 
-// 追加(DS-1 / index ベースパイプライン): applySort の index 版です。
-//   オブジェクト配列ではなく order(RowOrder) を受け、並べ替えた order を返します。
-//   結果のビュー順は applySort と厳密に等価です:
+// 追加(DS-1 / index ベースパイプライン): order(RowOrder) を受け、並べ替えた order を
+//   返す多列ソートです(本体のソート経路はこれに一本化済み。旧オブジェクト配列版は
+//   DS-3-8 で削除)。規約:
 //     - 多列の優先順位適用(resolved を先頭から比較、0 のとき次のキーへ)、
 //     - 未解決(列が見つからない)エントリのスキップ、有効キー 0 件なら元 order を返す、
 //     - 最終タイブレークは元 source index(= order[pos])で安定化、
-//     これらはすべて applySort と同一規則です。sort が空 / 有効キー 0 件のときは同一参照。
+//   sort が空 / 有効キー 0 件のときは同一参照を返します。
 //
 //   パフォーマンス上の要点(decorate-sort-undecorate):
-//     - 従来は比較子の内側で getCellValue を毎回呼んでおり、呼び出し回数が
-//       O(行数 × log 行数 × ソート列数) に膨らんでいました。
+//     - 比較子の内側で getCellValue を毎回呼ぶ素朴な実装だと、呼び出し回数が
+//       O(行数 × log 行数 × ソート列数) に膨らみます。
 //     - ここではアクティブ sort 列ごとに「order 各位置のセル値」を事前に 1 回だけ
 //       取り出して配列化(decorate)し、比較は decorate 済み値に対して行います。
 //       getCellValue の呼び出しは O(行数 × ソート列数) に下がります。
-//     - 比較関数 compareUnknownValues 自体は据え置きのため、数値/文字列が混在する列でも
-//       結果は従来と完全に一致します(列ごとに型を決め打ちする最適化はしていません)。
+//     - 比較関数 compareUnknownValues は据え置きのため、数値/文字列が混在する列でも
+//       結果は一意です(列ごとに型を決め打ちする最適化はしていません)。
 //     - 実際の sort 対象は「位置(0..length-1)の number[]」で、確定後に
 //       result[i] = order[positions[i]] で undecorate して Int32Array へ書き戻します。
 export const sortOrder = <T,>(
@@ -256,7 +206,7 @@ export const sortOrder = <T,>(
     return order;
   }
 
-  // 列解決はソート前に 1 回だけ(applySort と同一)。
+  // 列解決はソート前に 1 回だけ(比較関数内で find を毎回呼ばない)。
   const resolved = sort
     .map((entry) => {
       const column = columns.find((item) => item.key === entry.columnKey);
