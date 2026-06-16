@@ -869,7 +869,10 @@ export function SpreadsheetGrid<T extends object>({
   // ── double click → edit ───────────────────────────────
   const handleCellDoubleClick = useCallback(
     (cell: CellCoord) => {
-      const row = filteredRows[cell.row];
+      // 変更(DS-3-5): filteredRows[cell.row] → rowModel.getRow 経由(double-click consumer 移行)。
+      //   getRow(i)=rows[order[i]] で旧 filteredRows[i] と参照同一。OOB は getRow が undefined を
+      //   返し、下の `if (!row …) return` ガードで吸収するため挙動等価です。
+      const row = rowModel.getRow(cell.row);
       // 変更(10-E): cell.col は論理 index 空間（orderedColumns）です。
       const column = orderedColumns[cell.col];
       if (!row || !column) {
@@ -891,7 +894,7 @@ export function SpreadsheetGrid<T extends object>({
       setEditorInitialValue(String(currentValue ?? ''));
       dispatch(gridActions.startEdit(cell));
     },
-    [canEditCell, dispatch, filteredRows, readOnly, orderedColumns],
+    [canEditCell, dispatch, rowModel, readOnly, orderedColumns],
   );
 
   // ── keyboard ──────────────────────────────────────────
@@ -932,7 +935,10 @@ export function SpreadsheetGrid<T extends object>({
 
   const handleCellDoubleClickWithController = useCallback(
     (cell: CellCoord) => {
-      const row = filteredRows[cell.row];
+      // 変更(DS-3-5): filteredRows[cell.row] → rowModel.getRow 経由(double-click consumer 移行)。
+      //   getRow(i)=rows[order[i]] で旧 filteredRows[i] と参照同一。OOB は getRow が undefined を
+      //   返し、下の `if (!row …) return` ガードで吸収するため挙動等価です。
+      const row = rowModel.getRow(cell.row);
       // 変更(10-E): cell.col は論理 index 空間（orderedColumns）です。
       const column = orderedColumns[cell.col];
       if (!row || !column) {
@@ -952,7 +958,7 @@ export function SpreadsheetGrid<T extends object>({
       const currentValue = getCellValue(row, column);
       startEditWithValue(cell, String(currentValue ?? ''));
     },
-    [canEditCell, filteredRows, readOnly, startEditWithValue, orderedColumns],
+    [canEditCell, rowModel, readOnly, startEditWithValue, orderedColumns],
   );
 
   // ── selection overlay placement（10-D: ペイン別座標系） ─
