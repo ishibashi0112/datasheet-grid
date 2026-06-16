@@ -1643,14 +1643,20 @@ import type {
 import { buildGridDerivedSummary } from '../view/gridBarHelpers';
 
 // 追加: derivedSummary / setGlobalFilterText を載せる前の中間 slot context 型です。
+// 変更(DS-3-7): base から filteredRows(配列)を外します。サマリは件数のみ使用し、公開
+//   slotContext.filteredRows は最終 object で遅延 getter として付与します。
 type GridSlotContextBase<T> = Omit<
   SpreadsheetGridSlotContext<T>,
-  'setGlobalFilterText' | 'derivedSummary'
+  'setGlobalFilterText' | 'derivedSummary' | 'filteredRows'
 >;
 
 type UseGridBarContextArgs<T> = {
   rows: T[];
-  filteredRows: T[];
+  // 変更(DS-3-7): filteredRows(配列)→ 件数(viewRowCount)+ 遅延 factory(getFilteredRows)。
+  //   サマリは viewRowCount を使い、公開 slotContext.filteredRows は getFilteredRows() を
+  //   遅延 getter で返します(外部スロットが読んだ時だけ materialize)。
+  viewRowCount: number;
+  getFilteredRows: () => T[];
   columns: GridColumn<T>[];
   visibleColumns: GridColumn<T>[];
   uiState: GridUiState;
@@ -1660,7 +1666,8 @@ type UseGridBarContextArgs<T> = {
 // 追加: topBar / bottomBar へ渡す slot context と derived summary をまとめて構築します。
 export const useGridBarContext = <T,>({
   rows,
-  filteredRows,
+  viewRowCount,
+  getFilteredRows,
   columns,
   visibleColumns,
   uiState,
@@ -1684,7 +1691,6 @@ export const useGridBarContext = <T,>({
   const slotContextBase = useMemo<GridSlotContextBase<T>>(
     () => ({
       rows,
-      filteredRows,
       columns,
       visibleColumns,
       globalFilterText,
@@ -1695,7 +1701,6 @@ export const useGridBarContext = <T,>({
     }),
     [
       rows,
-      filteredRows,
       columns,
       visibleColumns,
       globalFilterText,
@@ -1707,17 +1712,24 @@ export const useGridBarContext = <T,>({
   );
 
   const derivedSummary = useMemo(
-    () => buildGridDerivedSummary(slotContextBase),
-    [slotContextBase],
+    // 変更(DS-3-7): 件数 viewRowCount を明示引数で渡します(filteredRows 配列は使いません)。
+    () => buildGridDerivedSummary(slotContextBase, viewRowCount),
+    [slotContextBase, viewRowCount],
   );
 
   const slotContext = useMemo<SpreadsheetGridSlotContext<T>>(
     () => ({
       ...slotContextBase,
+      // 追加(DS-3-7): 公開 filteredRows は遅延 getter。外部スロットが読んだ時だけ materialize し、
+      //   getFilteredRows() 内部キャッシュで同一世代([order,rows])は参照も安定します。
+      //   base には filteredRows が無いため、上の spread では materialize されません。
+      get filteredRows() {
+        return getFilteredRows();
+      },
       setGlobalFilterText,
       derivedSummary,
     }),
-    [derivedSummary, setGlobalFilterText, slotContextBase],
+    [derivedSummary, getFilteredRows, setGlobalFilterText, slotContextBase],
   );
 
   return {
@@ -8822,9 +8834,12 @@ export const formatGridSelectionLabel = (selection: GridSelection) => {
 };
 
 // 追加: rows / filteredRows の概要テキストです。
+// 変更(DS-3-7): filteredRows(配列)依存をやめ、件数 filteredRowCount(数値)を引数で受けます。
+//   公開 slotContext.filteredRows は遅延 getter で別途供給され、サマリは件数しか使いません。
 export const formatGridRowSummary = <T,>(
-  context: Pick<SpreadsheetGridSlotContext<T>, 'rows' | 'filteredRows'>,
-) => `Rows: ${context.filteredRows.length} / ${context.rows.length}`;
+  context: Pick<SpreadsheetGridSlotContext<T>, 'rows'>,
+  filteredRowCount: number,
+) => `Rows: ${filteredRowCount} / ${context.rows.length}`;
 
 // 追加: columns / visibleColumns の概要テキストです。
 export const formatGridColumnSummary = <T,>(
@@ -8833,10 +8848,9 @@ export const formatGridColumnSummary = <T,>(
 
 // 追加: selection から選択セル数 / 行数 / 列数を算出します。
 export const getGridSelectionStats = <T,>(
-  context: Pick<
-    SpreadsheetGridSlotContext<T>,
-    'selection' | 'visibleColumns' | 'filteredRows'
-  >,
+  context: Pick<SpreadsheetGridSlotContext<T>, 'selection' | 'visibleColumns'>,
+  // 変更(DS-3-7): filteredRows(配列)→ 件数 filteredRowCount(数値)を引数で受けます。
+  filteredRowCount: number,
 ): SpreadsheetGridSelectionStats => {
   const selection = context.selection;
   if (!selection) {
@@ -8888,7 +8902,7 @@ export const getGridSelectionStats = <T,>(
   const startCol = Math.min(selection.startCol, selection.endCol);
   const endCol = Math.max(selection.startCol, selection.endCol);
   const selectedColumnCount = endCol - startCol + 1;
-  const selectedRowCount = context.filteredRows.length;
+  const selectedRowCount = filteredRowCount;
   return {
     selectedCellCount: selectedRowCount * selectedColumnCount,
     selectedRowCount,
@@ -8898,12 +8912,10 @@ export const getGridSelectionStats = <T,>(
 
 // 追加: selection 数量の要約テキストです。
 export const formatGridSelectionStatsLabel = <T,>(
-  context: Pick<
-    SpreadsheetGridSlotContext<T>,
-    'selection' | 'visibleColumns' | 'filteredRows'
-  >,
+  context: Pick<SpreadsheetGridSlotContext<T>, 'selection' | 'visibleColumns'>,
+  filteredRowCount: number,
 ) => {
-  const stats = getGridSelectionStats(context);
+  const stats = getGridSelectionStats(context, filteredRowCount);
   return `Cells: ${stats.selectedCellCount} / Rows: ${stats.selectedRowCount}`;
 };
 
@@ -8977,7 +8989,6 @@ export const buildGridDerivedSummary = <T,>(
   context: Pick<
     SpreadsheetGridSlotContext<T>,
     | 'rows'
-    | 'filteredRows'
     | 'columns'
     | 'visibleColumns'
     | 'globalFilterText'
@@ -8986,8 +8997,10 @@ export const buildGridDerivedSummary = <T,>(
     | 'activeCell'
     | 'selection'
   >,
+  // 変更(DS-3-7): filteredRows(配列)依存を除去し、件数を引数で各 format 関数へ流します。
+  filteredRowCount: number,
 ): SpreadsheetGridDerivedSummary => {
-  const selectionStats = getGridSelectionStats(context);
+  const selectionStats = getGridSelectionStats(context, filteredRowCount);
   const hasGlobalFilter = context.globalFilterText.trim().length > 0;
   const globalFilterPreview = hasGlobalFilter
     ? truncateSummaryText(context.globalFilterText.trim())
@@ -9005,13 +9018,13 @@ export const buildGridDerivedSummary = <T,>(
     : null;
 
   return {
-    rowSummaryText: formatGridRowSummary(context),
+    rowSummaryText: formatGridRowSummary(context, filteredRowCount),
     columnSummaryText: formatGridColumnSummary(context),
     filterSummaryText: formatGridFilterSummary(context),
     sortSummaryText: formatGridSortSummary(context),
     activeCellLabel: formatGridCellLabel(context.activeCell),
     selectionLabel: formatGridSelectionLabel(context.selection),
-    selectionStatsText: formatGridSelectionStatsLabel(context),
+    selectionStatsText: formatGridSelectionStatsLabel(context, filteredRowCount),
     selectionStats,
     hasGlobalFilter,
     globalFilterPreview,
@@ -11525,22 +11538,24 @@ export function SpreadsheetGrid<T extends object>({
   const viewRowCount = rowModel.getRowCount();
 
   // 派生ビュー: order[i] が「ビュー位置 i の元 rows index(= source index)」です。
-  // 注記(DS-3-0/DS-3-6): filteredRows は残る公開 consumer 向けの materialize として併存します。
-  //   - 移行済み(DS-3-6): virtualizer count / activeCell 範囲ガード / paneLayout 高さ /
-  //     isBodyEmpty / selectEntireGrid / corner header / viewportSync / pointerInteractions /
-  //     GridHeaderRow の filteredRowsLength は全て viewRowCount(= rowModel.getRowCount())へ。
-  //   - 残る配列 consumer は公開 slotContext(useGridBarContext)のみ。これは公開スロット契約の
-  //     派生ビューとして維持します(撤去可否は DS-3 後段で判断)。
+  // 変更(DS-3-7): eager な filteredRows 配列 materialize を撤去し、遅延キャッシュ factory に
+  //   置き換えます。唯一残る consumer は公開 slotContext.filteredRows(外部スロット契約)のみで、
+  //   内部の bar summary は viewRowCount(件数)へ移行済み(DS-3-7)。よって全行配列は外部スロットが
+  //   実際に読んだ時だけ materialize すれば足ります(pay-per-use)。
+  //   - getFilteredRows は [order, rows] で memo 化され、初回呼び出し時に Array.from を 1 度だけ
+  //     実行してキャッシュ。同一世代では参照も安定(従来 eager memo の identity 契約を維持)。
+  //   - no-op dispatch(order/rows 不変)では factory 参照が不変 → slotContext memo も安定。
+  //   公開型 SpreadsheetGridSlotContext.filteredRows: T[] は不変(getter は透過、consumer 不可視)。
   // 撤去済み(DS-3-0): filteredRowKeys は唯一の consumer だった GridBodyLayer を
   //   rowModel.getRowKey へ移行したため撤去しました(行キーは seam が供給)。
   // 撤去済み(DS-3-3): filteredRowSourceIndexes は最後の source-index consumer だった
   //   clipboard を rowModel.getSourceIndex へ移行したため撤去しました
   //   (edit=DS-3-2 / renderCellContent.setValue=DS-3-2b は移行済み)。source-index 解決は
   //   全て seam の getSourceIndex(i)(= order[i])経由になりました。
-  const filteredRows = useMemo(
-    () => Array.from(order, (sourceIndex) => rows[sourceIndex]),
-    [order, rows],
-  );
+  const getFilteredRows = useMemo(() => {
+    let cache: T[] | null = null;
+    return () => (cache ??= Array.from(order, (sourceIndex) => rows[sourceIndex]));
+  }, [order, rows]);
 
   // ── column measurements ───────────────────────────────
   const columnMeasurements = useMemo(
@@ -12877,7 +12892,10 @@ export function SpreadsheetGrid<T extends object>({
   // 追加: bar 用 context / derived summary は hook へ逃がします。
   const { slotContext } = useGridBarContext({
     rows,
-    filteredRows,
+    // 変更(DS-3-7): filteredRows(配列)→ viewRowCount(件数)+ getFilteredRows(遅延 factory)。
+    //   bar summary は件数のみ、公開 slotContext.filteredRows は外部スロットが読んだ時だけ生成。
+    viewRowCount,
+    getFilteredRows,
     columns,
     visibleColumns,
     uiState,

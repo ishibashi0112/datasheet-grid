@@ -8,14 +8,20 @@ import type {
 import { buildGridDerivedSummary } from '../view/gridBarHelpers';
 
 // 追加: derivedSummary / setGlobalFilterText を載せる前の中間 slot context 型です。
+// 変更(DS-3-7): base から filteredRows(配列)を外します。サマリは件数のみ使用し、公開
+//   slotContext.filteredRows は最終 object で遅延 getter として付与します。
 type GridSlotContextBase<T> = Omit<
   SpreadsheetGridSlotContext<T>,
-  'setGlobalFilterText' | 'derivedSummary'
+  'setGlobalFilterText' | 'derivedSummary' | 'filteredRows'
 >;
 
 type UseGridBarContextArgs<T> = {
   rows: T[];
-  filteredRows: T[];
+  // 変更(DS-3-7): filteredRows(配列)→ 件数(viewRowCount)+ 遅延 factory(getFilteredRows)。
+  //   サマリは viewRowCount を使い、公開 slotContext.filteredRows は getFilteredRows() を
+  //   遅延 getter で返します(外部スロットが読んだ時だけ materialize)。
+  viewRowCount: number;
+  getFilteredRows: () => T[];
   columns: GridColumn<T>[];
   visibleColumns: GridColumn<T>[];
   uiState: GridUiState;
@@ -25,7 +31,8 @@ type UseGridBarContextArgs<T> = {
 // 追加: topBar / bottomBar へ渡す slot context と derived summary をまとめて構築します。
 export const useGridBarContext = <T,>({
   rows,
-  filteredRows,
+  viewRowCount,
+  getFilteredRows,
   columns,
   visibleColumns,
   uiState,
@@ -49,7 +56,6 @@ export const useGridBarContext = <T,>({
   const slotContextBase = useMemo<GridSlotContextBase<T>>(
     () => ({
       rows,
-      filteredRows,
       columns,
       visibleColumns,
       globalFilterText,
@@ -60,7 +66,6 @@ export const useGridBarContext = <T,>({
     }),
     [
       rows,
-      filteredRows,
       columns,
       visibleColumns,
       globalFilterText,
@@ -72,17 +77,24 @@ export const useGridBarContext = <T,>({
   );
 
   const derivedSummary = useMemo(
-    () => buildGridDerivedSummary(slotContextBase),
-    [slotContextBase],
+    // 変更(DS-3-7): 件数 viewRowCount を明示引数で渡します(filteredRows 配列は使いません)。
+    () => buildGridDerivedSummary(slotContextBase, viewRowCount),
+    [slotContextBase, viewRowCount],
   );
 
   const slotContext = useMemo<SpreadsheetGridSlotContext<T>>(
     () => ({
       ...slotContextBase,
+      // 追加(DS-3-7): 公開 filteredRows は遅延 getter。外部スロットが読んだ時だけ materialize し、
+      //   getFilteredRows() 内部キャッシュで同一世代([order,rows])は参照も安定します。
+      //   base には filteredRows が無いため、上の spread では materialize されません。
+      get filteredRows() {
+        return getFilteredRows();
+      },
       setGlobalFilterText,
       derivedSummary,
     }),
-    [derivedSummary, setGlobalFilterText, slotContextBase],
+    [derivedSummary, getFilteredRows, setGlobalFilterText, slotContextBase],
   );
 
   return {

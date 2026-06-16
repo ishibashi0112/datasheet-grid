@@ -82,9 +82,12 @@ export const formatGridSelectionLabel = (selection: GridSelection) => {
 };
 
 // 追加: rows / filteredRows の概要テキストです。
+// 変更(DS-3-7): filteredRows(配列)依存をやめ、件数 filteredRowCount(数値)を引数で受けます。
+//   公開 slotContext.filteredRows は遅延 getter で別途供給され、サマリは件数しか使いません。
 export const formatGridRowSummary = <T,>(
-  context: Pick<SpreadsheetGridSlotContext<T>, 'rows' | 'filteredRows'>,
-) => `Rows: ${context.filteredRows.length} / ${context.rows.length}`;
+  context: Pick<SpreadsheetGridSlotContext<T>, 'rows'>,
+  filteredRowCount: number,
+) => `Rows: ${filteredRowCount} / ${context.rows.length}`;
 
 // 追加: columns / visibleColumns の概要テキストです。
 export const formatGridColumnSummary = <T,>(
@@ -93,10 +96,9 @@ export const formatGridColumnSummary = <T,>(
 
 // 追加: selection から選択セル数 / 行数 / 列数を算出します。
 export const getGridSelectionStats = <T,>(
-  context: Pick<
-    SpreadsheetGridSlotContext<T>,
-    'selection' | 'visibleColumns' | 'filteredRows'
-  >,
+  context: Pick<SpreadsheetGridSlotContext<T>, 'selection' | 'visibleColumns'>,
+  // 変更(DS-3-7): filteredRows(配列)→ 件数 filteredRowCount(数値)を引数で受けます。
+  filteredRowCount: number,
 ): SpreadsheetGridSelectionStats => {
   const selection = context.selection;
   if (!selection) {
@@ -148,7 +150,7 @@ export const getGridSelectionStats = <T,>(
   const startCol = Math.min(selection.startCol, selection.endCol);
   const endCol = Math.max(selection.startCol, selection.endCol);
   const selectedColumnCount = endCol - startCol + 1;
-  const selectedRowCount = context.filteredRows.length;
+  const selectedRowCount = filteredRowCount;
   return {
     selectedCellCount: selectedRowCount * selectedColumnCount,
     selectedRowCount,
@@ -158,12 +160,10 @@ export const getGridSelectionStats = <T,>(
 
 // 追加: selection 数量の要約テキストです。
 export const formatGridSelectionStatsLabel = <T,>(
-  context: Pick<
-    SpreadsheetGridSlotContext<T>,
-    'selection' | 'visibleColumns' | 'filteredRows'
-  >,
+  context: Pick<SpreadsheetGridSlotContext<T>, 'selection' | 'visibleColumns'>,
+  filteredRowCount: number,
 ) => {
-  const stats = getGridSelectionStats(context);
+  const stats = getGridSelectionStats(context, filteredRowCount);
   return `Cells: ${stats.selectedCellCount} / Rows: ${stats.selectedRowCount}`;
 };
 
@@ -237,7 +237,6 @@ export const buildGridDerivedSummary = <T,>(
   context: Pick<
     SpreadsheetGridSlotContext<T>,
     | 'rows'
-    | 'filteredRows'
     | 'columns'
     | 'visibleColumns'
     | 'globalFilterText'
@@ -246,8 +245,10 @@ export const buildGridDerivedSummary = <T,>(
     | 'activeCell'
     | 'selection'
   >,
+  // 変更(DS-3-7): filteredRows(配列)依存を除去し、件数を引数で各 format 関数へ流します。
+  filteredRowCount: number,
 ): SpreadsheetGridDerivedSummary => {
-  const selectionStats = getGridSelectionStats(context);
+  const selectionStats = getGridSelectionStats(context, filteredRowCount);
   const hasGlobalFilter = context.globalFilterText.trim().length > 0;
   const globalFilterPreview = hasGlobalFilter
     ? truncateSummaryText(context.globalFilterText.trim())
@@ -265,13 +266,13 @@ export const buildGridDerivedSummary = <T,>(
     : null;
 
   return {
-    rowSummaryText: formatGridRowSummary(context),
+    rowSummaryText: formatGridRowSummary(context, filteredRowCount),
     columnSummaryText: formatGridColumnSummary(context),
     filterSummaryText: formatGridFilterSummary(context),
     sortSummaryText: formatGridSortSummary(context),
     activeCellLabel: formatGridCellLabel(context.activeCell),
     selectionLabel: formatGridSelectionLabel(context.selection),
-    selectionStatsText: formatGridSelectionStatsLabel(context),
+    selectionStatsText: formatGridSelectionStatsLabel(context, filteredRowCount),
     selectionStats,
     hasGlobalFilter,
     globalFilterPreview,

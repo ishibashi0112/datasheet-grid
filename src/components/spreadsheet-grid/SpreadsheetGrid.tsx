@@ -621,22 +621,24 @@ export function SpreadsheetGrid<T extends object>({
   const viewRowCount = rowModel.getRowCount();
 
   // 派生ビュー: order[i] が「ビュー位置 i の元 rows index(= source index)」です。
-  // 注記(DS-3-0/DS-3-6): filteredRows は残る公開 consumer 向けの materialize として併存します。
-  //   - 移行済み(DS-3-6): virtualizer count / activeCell 範囲ガード / paneLayout 高さ /
-  //     isBodyEmpty / selectEntireGrid / corner header / viewportSync / pointerInteractions /
-  //     GridHeaderRow の filteredRowsLength は全て viewRowCount(= rowModel.getRowCount())へ。
-  //   - 残る配列 consumer は公開 slotContext(useGridBarContext)のみ。これは公開スロット契約の
-  //     派生ビューとして維持します(撤去可否は DS-3 後段で判断)。
+  // 変更(DS-3-7): eager な filteredRows 配列 materialize を撤去し、遅延キャッシュ factory に
+  //   置き換えます。唯一残る consumer は公開 slotContext.filteredRows(外部スロット契約)のみで、
+  //   内部の bar summary は viewRowCount(件数)へ移行済み(DS-3-7)。よって全行配列は外部スロットが
+  //   実際に読んだ時だけ materialize すれば足ります(pay-per-use)。
+  //   - getFilteredRows は [order, rows] で memo 化され、初回呼び出し時に Array.from を 1 度だけ
+  //     実行してキャッシュ。同一世代では参照も安定(従来 eager memo の identity 契約を維持)。
+  //   - no-op dispatch(order/rows 不変)では factory 参照が不変 → slotContext memo も安定。
+  //   公開型 SpreadsheetGridSlotContext.filteredRows: T[] は不変(getter は透過、consumer 不可視)。
   // 撤去済み(DS-3-0): filteredRowKeys は唯一の consumer だった GridBodyLayer を
   //   rowModel.getRowKey へ移行したため撤去しました(行キーは seam が供給)。
   // 撤去済み(DS-3-3): filteredRowSourceIndexes は最後の source-index consumer だった
   //   clipboard を rowModel.getSourceIndex へ移行したため撤去しました
   //   (edit=DS-3-2 / renderCellContent.setValue=DS-3-2b は移行済み)。source-index 解決は
   //   全て seam の getSourceIndex(i)(= order[i])経由になりました。
-  const filteredRows = useMemo(
-    () => Array.from(order, (sourceIndex) => rows[sourceIndex]),
-    [order, rows],
-  );
+  const getFilteredRows = useMemo(() => {
+    let cache: T[] | null = null;
+    return () => (cache ??= Array.from(order, (sourceIndex) => rows[sourceIndex]));
+  }, [order, rows]);
 
   // ── column measurements ───────────────────────────────
   const columnMeasurements = useMemo(
@@ -1973,7 +1975,10 @@ export function SpreadsheetGrid<T extends object>({
   // 追加: bar 用 context / derived summary は hook へ逃がします。
   const { slotContext } = useGridBarContext({
     rows,
-    filteredRows,
+    // 変更(DS-3-7): filteredRows(配列)→ viewRowCount(件数)+ getFilteredRows(遅延 factory)。
+    //   bar summary は件数のみ、公開 slotContext.filteredRows は外部スロットが読んだ時だけ生成。
+    viewRowCount,
+    getFilteredRows,
     columns,
     visibleColumns,
     uiState,
