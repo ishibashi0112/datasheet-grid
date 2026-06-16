@@ -616,7 +616,9 @@ export function SpreadsheetGrid<T extends object>({
   // 注記(DS-3-0): 下の 2 配列は未移行 consumer 向けの materialize として当面併存します。
   //   - filteredRows: virtualizer count / keyboard / edit / clipboard / autosize /
   //     slotContext / GridHeaderRow の filteredRowsLength が直接参照中。
-  //   - filteredRowSourceIndexes: edit(source index 解決) / clipboard が直接参照中。
+  //   - filteredRowSourceIndexes: clipboard(source index 解決)が直接参照中。
+  //     ※ edit(DS-3-2) / renderCellContent.setValue(DS-3-2b)は rowModel.getSourceIndex へ
+  //       移行済み。残る consumer は clipboard のみで、DS-3-3 移行後に本 materialize を撤去します。
   //   各 consumer を rowModel.getRow / getSourceIndex 越しへ移し終えた段階で撤去します。
   // 撤去済み(DS-3-0): filteredRowKeys は唯一の consumer だった GridBodyLayer を
   //   rowModel.getRowKey へ移行したため、本バッチで撤去しました(行キーは seam が供給)。
@@ -917,7 +919,7 @@ export function SpreadsheetGrid<T extends object>({
     visibleColumns: orderedColumns,
     // 変更(DS-3-2): filteredRowSourceIndexes 配列 → rowModel シームを渡します(edit consumer 移行)。
     //   rowModel は DS-3-0 で構築済みの memo を再利用。materialize 済み filteredRowSourceIndexes は
-    //   renderCellContent.setValue(DS-3-2b 候補) / clipboard(DS-3-3) がまだ参照するため残置します。
+    //   clipboard(DS-3-3)がまだ参照するため残置します(renderCellContent.setValue は DS-3-2b で移行済み)。
     rowModel,
     setEditorInitialValue,
     onRowsChange,
@@ -1875,10 +1877,13 @@ export function SpreadsheetGrid<T extends object>({
   // 変更理由: 旧実装は uiState に依存しており、選択ドラッグ・active cell 移動・編集開始の
   //           たびにこの useCallback の参照が変わり、props として受け取る GridBodyRow(memo)
   //           の比較が全行で不一致になっていました(=毎 pointermove で全行×3ペイン再構築)。
-  //           依存を rows / filteredRowSourceIndexes / onRowsChange のみへ縮小したことで、
+  //           依存を rows / rowModel / onRowsChange のみへ縮小したことで、
   //           uiState がどう変わっても本関数は同一参照を保ちます(rows 変更=編集 commit 時
   //           とフィルター/ソート変更時だけ参照が変わりますが、それらは行内容自体が変わる
   //           ため再レンダーが必要なケースです)。
+  // 変更(DS-3-2b): filteredRowSourceIndexes 依存を rowModel へ置換しました。rowModel
+  //   deps=[order, rows, keyGetter] のうち keyGetter は安定 prop のため、実質の再生成条件は
+  //   旧版(deps=[order])と等価です(no-op dispatch では order 不変 → 参照安定=11-A 維持)。
   const renderCellContent = useCallback(
     (
       row: T,
@@ -1905,8 +1910,11 @@ export function SpreadsheetGrid<T extends object>({
             if (!onRowsChange) {
               return;
             }
+            // 変更(DS-3-2b): source index 解決をシーム経由へ。getSourceIndex(viewIndex) =
+            //   order[viewIndex]。OOB は undefined のため旧版同様 ?? rowIndex でフォール
+            //   バックします(in-bounds/OOB とも挙動完全一致)。
             const originalRowIndex =
-              filteredRowSourceIndexes[rowIndex] ?? rowIndex;
+              rowModel.getSourceIndex(rowIndex) ?? rowIndex;
             const nextRows = rows.map((currentRow, index) =>
               index === originalRowIndex
                 ? setCellValue(currentRow, column, nextValue)
@@ -1918,7 +1926,7 @@ export function SpreadsheetGrid<T extends object>({
       }
       return <span>{String(value ?? '')}</span>;
     },
-    [filteredRowSourceIndexes, onRowsChange, rows],
+    [rowModel, onRowsChange, rows],
   );
 
   // ── global filter setter ──────────────────────────────
