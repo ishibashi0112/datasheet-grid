@@ -613,22 +613,21 @@ export function SpreadsheetGrid<T extends object>({
   );
 
   // 派生ビュー: order[i] が「ビュー位置 i の元 rows index(= source index)」です。
-  // 注記(DS-3-0): 下の 2 配列は未移行 consumer 向けの materialize として当面併存します。
-  //   - filteredRows: virtualizer count / keyboard / edit / clipboard / autosize /
-  //     slotContext / GridHeaderRow の filteredRowsLength が直接参照中。
-  //   - filteredRowSourceIndexes: clipboard(source index 解決)が直接参照中。
-  //     ※ edit(DS-3-2) / renderCellContent.setValue(DS-3-2b)は rowModel.getSourceIndex へ
-  //       移行済み。残る consumer は clipboard のみで、DS-3-3 移行後に本 materialize を撤去します。
-  //   各 consumer を rowModel.getRow / getSourceIndex 越しへ移し終えた段階で撤去します。
+  // 注記(DS-3-0): filteredRows は未移行 consumer 向けの materialize として当面併存します。
+  //   - filteredRows: virtualizer count / keyboard(length) / autosize / slotContext /
+  //     GridHeaderRow の filteredRowsLength / activeCell 範囲ガード / paneLayout 高さ /
+  //     isBodyEmpty / selectEntireGrid などが直接参照中。
+  //   各 consumer を rowModel.getRow / getRowCount 越しへ移し終えた段階で撤去します。
   // 撤去済み(DS-3-0): filteredRowKeys は唯一の consumer だった GridBodyLayer を
-  //   rowModel.getRowKey へ移行したため、本バッチで撤去しました(行キーは seam が供給)。
+  //   rowModel.getRowKey へ移行したため撤去しました(行キーは seam が供給)。
+  // 撤去済み(DS-3-3): filteredRowSourceIndexes は最後の source-index consumer だった
+  //   clipboard を rowModel.getSourceIndex へ移行したため撤去しました
+  //   (edit=DS-3-2 / renderCellContent.setValue=DS-3-2b は移行済み)。source-index 解決は
+  //   全て seam の getSourceIndex(i)(= order[i])経由になりました。
   const filteredRows = useMemo(
     () => Array.from(order, (sourceIndex) => rows[sourceIndex]),
     [order, rows],
   );
-
-  // filteredRowSourceIndexes は order そのもの(Int32Array)を number[] へ materialize します。
-  const filteredRowSourceIndexes = useMemo(() => Array.from(order), [order]);
 
   // ── column measurements ───────────────────────────────
   const columnMeasurements = useMemo(
@@ -835,8 +834,10 @@ export function SpreadsheetGrid<T extends object>({
   const { isWholeGridSelected, handleCopy, handlePaste } =
     useGridClipboardController({
       rows,
-      filteredRows,
-      filteredRowSourceIndexes,
+      // 変更(DS-3-3): filteredRows / filteredRowSourceIndexes 配列 → rowModel シームを渡します
+      //   (clipboard consumer 移行)。copy=getRow(i) / paste source 解決=getSourceIndex(i) /
+      //   範囲判定=getRowCount() を controller 内で使い分けます。rowModel は DS-3-0 構築済み memo を再利用。
+      rowModel,
       // 変更(10-E): copy/paste/TSV は視覚順（論理 index 空間）で扱うため orderedColumns を渡します。
       //             selection の col は論理 index なので、indexing も orderedColumns に揃える必要があります。
       visibleColumns: orderedColumns,
@@ -918,8 +919,8 @@ export function SpreadsheetGrid<T extends object>({
     // 変更(10-E): editingCell.col は論理 index 空間のため orderedColumns で indexing します。
     visibleColumns: orderedColumns,
     // 変更(DS-3-2): filteredRowSourceIndexes 配列 → rowModel シームを渡します(edit consumer 移行)。
-    //   rowModel は DS-3-0 で構築済みの memo を再利用。materialize 済み filteredRowSourceIndexes は
-    //   clipboard(DS-3-3)がまだ参照するため残置します(renderCellContent.setValue は DS-3-2b で移行済み)。
+    //   rowModel は DS-3-0 で構築済みの memo を再利用。source-index 解決は seam の getSourceIndex(i)
+    //   に統一され、materialize 済み filteredRowSourceIndexes は DS-3-3(clipboard 移行)で撤去済みです。
     rowModel,
     setEditorInitialValue,
     onRowsChange,

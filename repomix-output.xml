@@ -622,6 +622,7 @@ import type {
   GridColumn,
   SpreadsheetGridProps,
   GridUiState,
+  RowModel,
 } from '../model/gridTypes';
 import { clamp } from '../logic/geometry';
 import { getCellValue, isCellEditable } from '../utils/permissions';
@@ -633,8 +634,10 @@ import {
 
 type UseGridClipboardControllerArgs<T extends object> = {
   rows: T[];
-  filteredRows: T[];
-  filteredRowSourceIndexes: number[];
+  // 変更(DS-3-3): filteredRows / filteredRowSourceIndexes 配列 → rowModel シームへ集約。
+  //   copy 時のセル値取得は getRow(i)、paste 書き込みの source 解決は getSourceIndex(i)、
+  //   範囲判定の行数は getRowCount() を使い分けます。順序契約は order と同一(viewIndex 空間)。
+  rowModel: RowModel<T>;
   visibleColumns: GridColumn<T>[];
   uiState: GridUiState;
   readOnly: boolean;
@@ -649,8 +652,7 @@ type UseGridClipboardControllerArgs<T extends object> = {
 // 追加: copy / paste と行列自動拡張をまとめる clipboard controller です。
 export const useGridClipboardController = <T extends object>({
   rows,
-  filteredRows,
-  filteredRowSourceIndexes,
+  rowModel,
   visibleColumns,
   uiState,
   readOnly,
@@ -662,8 +664,10 @@ export const useGridClipboardController = <T extends object>({
   dispatch,
 }: UseGridClipboardControllerArgs<T>) => {
   // 追加: 現在の selection が「表全体選択」かどうかを判定します。
+  // 変更(DS-3-3): filteredRows.length → rowModel.getRowCount()。
+  const viewRowCount = rowModel.getRowCount();
   const isWholeGridSelected =
-    filteredRows.length > 0 &&
+    viewRowCount > 0 &&
     visibleColumns.length > 0 &&
     uiState.selection?.type === 'cell' &&
     (() => {
@@ -676,37 +680,44 @@ export const useGridClipboardController = <T extends object>({
       return (
         startRow === 0 &&
         startCol === 0 &&
-        endRow === filteredRows.length - 1 &&
+        endRow === viewRowCount - 1 &&
         endCol === visibleColumns.length - 1
       );
     })();
 
   // 追加: 全体選択時の copy を専用経路で行います。
+  // 変更(DS-3-3): filteredRows.map → getRowCount()/getRow(i) のビュー順走査へ置換。
   const serializeWholeGridToTsv = useCallback(() => {
-    if (filteredRows.length === 0 || visibleColumns.length === 0) {
+    const rowCount = rowModel.getRowCount();
+    if (rowCount === 0 || visibleColumns.length === 0) {
       return '';
     }
 
-    return filteredRows
-      .map((row) =>
-        visibleColumns
-          .map((column) => {
-            const rawValue = getCellValue(row, column);
-            return column.formatClipboardValue
-              ? column.formatClipboardValue(rawValue, row)
-              : String(rawValue ?? '');
-          })
-          .join('\t'),
-      )
-      .join('\n');
-  }, [filteredRows, visibleColumns]);
+    const lines: string[] = [];
+    for (let viewIndex = 0; viewIndex < rowCount; viewIndex += 1) {
+      const row = rowModel.getRow(viewIndex);
+      const cells = visibleColumns.map((column) => {
+        const rawValue = getCellValue(row, column);
+        return column.formatClipboardValue
+          ? column.formatClipboardValue(rawValue, row)
+          : String(rawValue ?? '');
+      });
+      lines.push(cells.join('\t'));
+    }
+    return lines.join('\n');
+  }, [rowModel, visibleColumns]);
 
   // 追加: copy 処理です。selection を TSV にしてクリップボードへ書き込みます。
   const handleCopy = useCallback(async () => {
+    // 変更(DS-3-3): serializeSelectionToTsv は行を view index で引くため、
+    //   getRow(i) でビュー順の行配列を一時 materialize して渡します(copy は稀操作)。
+    //   旧 filteredRows[i] と参照値一致(getRow(i) = rows[order[i]] = filteredRows[i])。
     const text = isWholeGridSelected
       ? serializeWholeGridToTsv()
       : serializeSelectionToTsv(
-          filteredRows,
+          Array.from({ length: rowModel.getRowCount() }, (_, viewIndex) =>
+            rowModel.getRow(viewIndex),
+          ),
           visibleColumns,
           uiState.selection as
             | {
@@ -729,8 +740,8 @@ export const useGridClipboardController = <T extends object>({
       await navigator.clipboard.writeText(text);
     }
   }, [
-    filteredRows,
     isWholeGridSelected,
+    rowModel,
     serializeWholeGridToTsv,
     uiState.selection,
     visibleColumns,
@@ -756,13 +767,21 @@ export const useGridClipboardController = <T extends object>({
       }
 
       const startFilteredRowIndex = uiState.activeCell.row;
+      // 変更(DS-3-3): filteredRowSourceIndexes[i] ?? i → getSourceIndex(i) ?? i。
+      //   OOB の viewIndex では getSourceIndex(=order[i]) が undefined を返し、?? でフォールバック。
       const startOriginalRowIndex =
-        filteredRowSourceIndexes[startFilteredRowIndex] ?? startFilteredRowIndex;
+        rowModel.getSourceIndex(startFilteredRowIndex) ?? startFilteredRowIndex;
       const startColIndex = uiState.activeCell.col;
 
       let workingRows = [...rows];
       let workingColumns = [...visibleColumns];
-      let workingSourceIndexes = [...filteredRowSourceIndexes];
+      // 変更(DS-3-3): [...filteredRowSourceIndexes] → getSourceIndex(i) のビュー順 materialize。
+      //   値は order と同一(getSourceIndex(i) = order[i])。以降の append は従来どおり末尾追加。
+      const viewRowCountForPaste = rowModel.getRowCount();
+      let workingSourceIndexes = Array.from(
+        { length: viewRowCountForPaste },
+        (_, viewIndex) => rowModel.getSourceIndex(viewIndex),
+      );
 
       // 追加: 行不足分を createRow で自動追加します。
       const requiredOriginalRowCount = startOriginalRowIndex + matrix.length;
@@ -813,7 +832,8 @@ export const useGridClipboardController = <T extends object>({
         uiState.activeCell.row + Math.max(matrix.length - 1, 0),
         0,
         Math.max(
-          Math.max(filteredRows.length - 1, 0),
+          // 変更(DS-3-3): filteredRows.length - 1 → getRowCount() - 1。
+          Math.max(rowModel.getRowCount() - 1, 0),
           startFilteredRowIndex + matrix.length - 1,
         ),
       );
@@ -837,11 +857,10 @@ export const useGridClipboardController = <T extends object>({
       createOverflowColumn,
       createRow,
       dispatch,
-      filteredRowSourceIndexes,
-      filteredRows.length,
       onColumnsChange,
       onRowsChange,
       readOnly,
+      rowModel,
       rows,
       uiState.activeCell,
       visibleColumns,
@@ -11499,20 +11518,21 @@ export function SpreadsheetGrid<T extends object>({
   );
 
   // 派生ビュー: order[i] が「ビュー位置 i の元 rows index(= source index)」です。
-  // 注記(DS-3-0): 下の 2 配列は未移行 consumer 向けの materialize として当面併存します。
-  //   - filteredRows: virtualizer count / keyboard / edit / clipboard / autosize /
-  //     slotContext / GridHeaderRow の filteredRowsLength が直接参照中。
-  //   - filteredRowSourceIndexes: edit(source index 解決) / clipboard が直接参照中。
-  //   各 consumer を rowModel.getRow / getSourceIndex 越しへ移し終えた段階で撤去します。
+  // 注記(DS-3-0): filteredRows は未移行 consumer 向けの materialize として当面併存します。
+  //   - filteredRows: virtualizer count / keyboard(length) / autosize / slotContext /
+  //     GridHeaderRow の filteredRowsLength / activeCell 範囲ガード / paneLayout 高さ /
+  //     isBodyEmpty / selectEntireGrid などが直接参照中。
+  //   各 consumer を rowModel.getRow / getRowCount 越しへ移し終えた段階で撤去します。
   // 撤去済み(DS-3-0): filteredRowKeys は唯一の consumer だった GridBodyLayer を
-  //   rowModel.getRowKey へ移行したため、本バッチで撤去しました(行キーは seam が供給)。
+  //   rowModel.getRowKey へ移行したため撤去しました(行キーは seam が供給)。
+  // 撤去済み(DS-3-3): filteredRowSourceIndexes は最後の source-index consumer だった
+  //   clipboard を rowModel.getSourceIndex へ移行したため撤去しました
+  //   (edit=DS-3-2 / renderCellContent.setValue=DS-3-2b は移行済み)。source-index 解決は
+  //   全て seam の getSourceIndex(i)(= order[i])経由になりました。
   const filteredRows = useMemo(
     () => Array.from(order, (sourceIndex) => rows[sourceIndex]),
     [order, rows],
   );
-
-  // filteredRowSourceIndexes は order そのもの(Int32Array)を number[] へ materialize します。
-  const filteredRowSourceIndexes = useMemo(() => Array.from(order), [order]);
 
   // ── column measurements ───────────────────────────────
   const columnMeasurements = useMemo(
@@ -11719,8 +11739,10 @@ export function SpreadsheetGrid<T extends object>({
   const { isWholeGridSelected, handleCopy, handlePaste } =
     useGridClipboardController({
       rows,
-      filteredRows,
-      filteredRowSourceIndexes,
+      // 変更(DS-3-3): filteredRows / filteredRowSourceIndexes 配列 → rowModel シームを渡します
+      //   (clipboard consumer 移行)。copy=getRow(i) / paste source 解決=getSourceIndex(i) /
+      //   範囲判定=getRowCount() を controller 内で使い分けます。rowModel は DS-3-0 構築済み memo を再利用。
+      rowModel,
       // 変更(10-E): copy/paste/TSV は視覚順（論理 index 空間）で扱うため orderedColumns を渡します。
       //             selection の col は論理 index なので、indexing も orderedColumns に揃える必要があります。
       visibleColumns: orderedColumns,
@@ -11802,8 +11824,8 @@ export function SpreadsheetGrid<T extends object>({
     // 変更(10-E): editingCell.col は論理 index 空間のため orderedColumns で indexing します。
     visibleColumns: orderedColumns,
     // 変更(DS-3-2): filteredRowSourceIndexes 配列 → rowModel シームを渡します(edit consumer 移行)。
-    //   rowModel は DS-3-0 で構築済みの memo を再利用。materialize 済み filteredRowSourceIndexes は
-    //   renderCellContent.setValue(DS-3-2b 候補) / clipboard(DS-3-3) がまだ参照するため残置します。
+    //   rowModel は DS-3-0 で構築済みの memo を再利用。source-index 解決は seam の getSourceIndex(i)
+    //   に統一され、materialize 済み filteredRowSourceIndexes は DS-3-3(clipboard 移行)で撤去済みです。
     rowModel,
     setEditorInitialValue,
     onRowsChange,
@@ -12761,10 +12783,13 @@ export function SpreadsheetGrid<T extends object>({
   // 変更理由: 旧実装は uiState に依存しており、選択ドラッグ・active cell 移動・編集開始の
   //           たびにこの useCallback の参照が変わり、props として受け取る GridBodyRow(memo)
   //           の比較が全行で不一致になっていました(=毎 pointermove で全行×3ペイン再構築)。
-  //           依存を rows / filteredRowSourceIndexes / onRowsChange のみへ縮小したことで、
+  //           依存を rows / rowModel / onRowsChange のみへ縮小したことで、
   //           uiState がどう変わっても本関数は同一参照を保ちます(rows 変更=編集 commit 時
   //           とフィルター/ソート変更時だけ参照が変わりますが、それらは行内容自体が変わる
   //           ため再レンダーが必要なケースです)。
+  // 変更(DS-3-2b): filteredRowSourceIndexes 依存を rowModel へ置換しました。rowModel
+  //   deps=[order, rows, keyGetter] のうち keyGetter は安定 prop のため、実質の再生成条件は
+  //   旧版(deps=[order])と等価です(no-op dispatch では order 不変 → 参照安定=11-A 維持)。
   const renderCellContent = useCallback(
     (
       row: T,
@@ -12791,8 +12816,11 @@ export function SpreadsheetGrid<T extends object>({
             if (!onRowsChange) {
               return;
             }
+            // 変更(DS-3-2b): source index 解決をシーム経由へ。getSourceIndex(viewIndex) =
+            //   order[viewIndex]。OOB は undefined のため旧版同様 ?? rowIndex でフォール
+            //   バックします(in-bounds/OOB とも挙動完全一致)。
             const originalRowIndex =
-              filteredRowSourceIndexes[rowIndex] ?? rowIndex;
+              rowModel.getSourceIndex(rowIndex) ?? rowIndex;
             const nextRows = rows.map((currentRow, index) =>
               index === originalRowIndex
                 ? setCellValue(currentRow, column, nextValue)
@@ -12804,7 +12832,7 @@ export function SpreadsheetGrid<T extends object>({
       }
       return <span>{String(value ?? '')}</span>;
     },
-    [filteredRowSourceIndexes, onRowsChange, rows],
+    [rowModel, onRowsChange, rows],
   );
 
   // ── global filter setter ──────────────────────────────
