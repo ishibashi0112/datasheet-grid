@@ -472,19 +472,18 @@ export const useColumnHeaderDragController = <T,>(
       const rect = el.getBoundingClientRect();
       const pointer = pointerRef.current;
       let nextLeft = el.scrollLeft;
-      let nextTop = el.scrollTop;
+      // 修正(13-B3-6): 水平方向のみ autoscroll します。列の並べ替え先(pane/slot)は clientX で
+      //   決まり縦スクロールは不要なうえ、グリップは position:sticky のヘッダー＝スクロール
+      //   コンテナ最上部にあり、縦の上端バンド(rect.top + EDGE_THRESHOLD)へ常時侵入して
+      //   「掴んだだけ/水平ドラッグ中」に上方向 autoscroll を自己発火させていました(縦の
+      //   pointer.y / nextTop 分岐を撤去)。水平は画面外の列を手繰るため有用なので維持します。
       if (pointer.x < rect.left + EDGE_THRESHOLD) {
         nextLeft = Math.max(el.scrollLeft - SCROLL_STEP, 0);
       } else if (pointer.x > rect.right - EDGE_THRESHOLD) {
         nextLeft = el.scrollLeft + SCROLL_STEP;
       }
-      if (pointer.y < rect.top + EDGE_THRESHOLD) {
-        nextTop = Math.max(el.scrollTop - SCROLL_STEP, 0);
-      } else if (pointer.y > rect.bottom - EDGE_THRESHOLD) {
-        nextTop = el.scrollTop + SCROLL_STEP;
-      }
-      if (nextLeft !== el.scrollLeft || nextTop !== el.scrollTop) {
-        el.scrollTo({ left: nextLeft, top: nextTop, behavior: 'auto' });
+      if (nextLeft !== el.scrollLeft) {
+        el.scrollTo({ left: nextLeft, behavior: 'auto' });
       }
     }
     // 端スクロールで rect が動くため、停止中の指でも毎フレーム slot を再計算します。
