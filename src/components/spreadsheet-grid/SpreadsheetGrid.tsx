@@ -614,7 +614,7 @@ export function SpreadsheetGrid<T extends object>({
 
   // 派生ビュー: order[i] が「ビュー位置 i の元 rows index(= source index)」です。
   // 注記(DS-3-0): filteredRows は未移行 consumer 向けの materialize として当面併存します。
-  //   - filteredRows: virtualizer count / keyboard(length) / autosize / slotContext /
+  //   - filteredRows: virtualizer count / slotContext /
   //     GridHeaderRow の filteredRowsLength / activeCell 範囲ガード / paneLayout 高さ /
   //     isBodyEmpty / selectEntireGrid などが直接参照中。
   //   各 consumer を rowModel.getRow / getRowCount 越しへ移し終えた段階で撤去します。
@@ -1178,13 +1178,13 @@ export function SpreadsheetGrid<T extends object>({
   //     pinned と違い onColumnsChange は不要です。columnWidths/sync(merge)で反映します。
   //     columnWidthsRef にも即時反映されるため、その後の固定切替時の幅書き戻し
   //     (handleColumnMenuPinnedChange)でも自動調整後の幅が保全されます。
-  //   - 計測対象行は filteredRows(グローバル / 列フィルター適用後の表示行)です。
+  //   - 計測対象行は rowModel 越しのビュー順全行(getRow(i)・グローバル / 列フィルター適用後)です。
   //     AG Grid 本家は「描画済みセルのみ」計測しますが、本実装は全表示行を対象にし、
   //     ユニーク文字列 dedupe で計測コストを抑えます(詳細は logic/columnAutosize.ts)。
   //   - 計測結果が現在幅と同じ場合は dispatch しません(no-op。再レンダー抑止)。
   //   - 選択・アクティブセル・編集は破棄しません(幅変更は論理 index 空間を
   //     変えないため。手動リサイズと同じ扱いです)。
-  //   - deps に filteredRows / visibleColumns を含みますが、本ハンドラを受け取る
+  //   - deps に rowModel / visibleColumns を含みますが、本ハンドラを受け取る
   //     ColumnMenuPopover はメニュー表示中しか mount されないため、参照変化の
   //     再レンダーコストは popover のみで実害はありません(latest-ref 化は不要と判断)。
   const handleColumnMenuAutosizeColumn = useCallback(
@@ -1198,9 +1198,18 @@ export function SpreadsheetGrid<T extends object>({
         return;
       }
 
+      // 変更(DS-3-4): filteredRows 配列直渡し → rowModel 越しのビュー順 materialize。
+      //   computeAutosizedColumnWidths の配列契約は無改変のまま、境界でビュー順全行を
+      //   一時 materialize します(getRow(i) = rows[order[i]] = 旧 filteredRows[i])。
+      //   DS-3-3 copy と同型。autosize は稀操作のため描画ホットパス非該当。
+      const viewRows = Array.from(
+        { length: rowModel.getRowCount() },
+        (_, viewIndex) => rowModel.getRow(viewIndex),
+      );
+
       const nextWidths = computeAutosizedColumnWidths({
         columns: [targetColumn],
-        rows: filteredRows,
+        rows: viewRows,
         gridRoot: gridRootRef.current,
         currentWidths: columnWidthsRef.current,
       });
@@ -1209,15 +1218,21 @@ export function SpreadsheetGrid<T extends object>({
       }
       dispatch(gridActions.syncColumnWidths(nextWidths));
     },
-    [closeColumnMenu, dispatch, filteredRows, visibleColumns],
+    [closeColumnMenu, dispatch, rowModel, visibleColumns],
   );
 
   const handleColumnMenuAutosizeAllColumns = useCallback(() => {
     closeColumnMenu();
 
+    // 変更(DS-3-4): 全列経路も同型。materialize は 1 回で全列の計測ループに再利用されます。
+    const viewRows = Array.from(
+      { length: rowModel.getRowCount() },
+      (_, viewIndex) => rowModel.getRow(viewIndex),
+    );
+
     const nextWidths = computeAutosizedColumnWidths({
       columns: visibleColumns,
-      rows: filteredRows,
+      rows: viewRows,
       gridRoot: gridRootRef.current,
       currentWidths: columnWidthsRef.current,
     });
@@ -1225,7 +1240,7 @@ export function SpreadsheetGrid<T extends object>({
       return;
     }
     dispatch(gridActions.syncColumnWidths(nextWidths));
-  }, [closeColumnMenu, dispatch, filteredRows, visibleColumns]);
+  }, [closeColumnMenu, dispatch, rowModel, visibleColumns]);
 
   // ── column chooser actions(13-B2-1) ──────────────────
   // 追加(13-B2-1): パネルへ渡す列一覧です。visibleColumns ではなく columns(全列)から
