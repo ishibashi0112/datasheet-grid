@@ -100,6 +100,8 @@ import type {
   GridColumn,
   // 追加(13-A): 列メニューからの固定切替に使います。
   GridColumnPinned,
+  // 追加(DS-3-0): 行モデルのシーム契約型です(rowModel の構築に使います)。
+  RowModel,
   // 追加(12-A): set フィルター値の構築に使います。
   SetColumnFilterValue,
   SpreadsheetGridProps,
@@ -589,7 +591,35 @@ export function SpreadsheetGrid<T extends object>({
     [rows, columnFilteredOrder, visibleColumns, uiState.sort],
   );
 
+  // ── row model seam (DS-3-0) ───────────────────────────
+  // 変更(DS-3-0): order(Int32Array)を直接触る consumer を、この rowModel 越しの参照へ
+  //   段階移行します(DS-3 で 1 consumer = 1 コミット)。本バッチでは GridBodyLayer が
+  //   getRow / getRowKey を読みます(getRowCount = virtualizer 移行 / getSourceIndex =
+  //   edit 移行で後続 consumer が読むため、シーム契約として 4 メソッドを今まとめて確定します)。
+  //   deps は order / rows / resolvedRowKeyGetter のみ。no-op dispatch(selection 等)では
+  //   order 参照が不変(DS-2)のため rowModel 参照も不変に保たれ、将来 memo 化される consumer の
+  //   props 安定(11-A 系)を壊しません。
+  //   viewIndex は表示上の行 index、getSourceIndex の返り値(= order[viewIndex])は元 rows の
+  //   index です。getRow / getRowKey は内部でこの対応付け rows[order[viewIndex]] を使います。
+  const rowModel = useMemo<RowModel<T>>(
+    () => ({
+      getRowCount: () => order.length,
+      getRow: (viewIndex) => rows[order[viewIndex]],
+      getSourceIndex: (viewIndex) => order[viewIndex],
+      getRowKey: (viewIndex) =>
+        resolvedRowKeyGetter(rows[order[viewIndex]], order[viewIndex]),
+    }),
+    [order, rows, resolvedRowKeyGetter],
+  );
+
   // 派生ビュー: order[i] が「ビュー位置 i の元 rows index(= source index)」です。
+  // 注記(DS-3-0): 下の 2 配列は未移行 consumer 向けの materialize として当面併存します。
+  //   - filteredRows: virtualizer count / keyboard / edit / clipboard / autosize /
+  //     slotContext / GridHeaderRow の filteredRowsLength が直接参照中。
+  //   - filteredRowSourceIndexes: edit(source index 解決) / clipboard が直接参照中。
+  //   各 consumer を rowModel.getRow / getSourceIndex 越しへ移し終えた段階で撤去します。
+  // 撤去済み(DS-3-0): filteredRowKeys は唯一の consumer だった GridBodyLayer を
+  //   rowModel.getRowKey へ移行したため、本バッチで撤去しました(行キーは seam が供給)。
   const filteredRows = useMemo(
     () => Array.from(order, (sourceIndex) => rows[sourceIndex]),
     [order, rows],
@@ -597,14 +627,6 @@ export function SpreadsheetGrid<T extends object>({
 
   // filteredRowSourceIndexes は order そのもの(Int32Array)を number[] へ materialize します。
   const filteredRowSourceIndexes = useMemo(() => Array.from(order), [order]);
-
-  const filteredRowKeys = useMemo(
-    () =>
-      Array.from(order, (sourceIndex) =>
-        resolvedRowKeyGetter(rows[sourceIndex], sourceIndex),
-      ),
-    [order, rows, resolvedRowKeyGetter],
-  );
 
   // ── column measurements ───────────────────────────────
   const columnMeasurements = useMemo(
@@ -2296,8 +2318,7 @@ export function SpreadsheetGrid<T extends object>({
                   pane="left"
                   ownsRowHeader
                   leadingWidth={leftLeadingWidth}
-                  filteredRows={filteredRows}
-                  filteredRowKeys={filteredRowKeys}
+                  rowModel={rowModel}
                   virtualRows={virtualRows}
                   virtualRowIndexes={virtualRowIndexes}
                   renderEntries={leftRenderEntries}
@@ -2407,8 +2428,7 @@ export function SpreadsheetGrid<T extends object>({
                 pane="center"
                 ownsRowHeader={centerOwnsRowHeader}
                 leadingWidth={centerLeadingWidth}
-                filteredRows={filteredRows}
-                filteredRowKeys={filteredRowKeys}
+                rowModel={rowModel}
                 virtualRows={virtualRows}
                 virtualRowIndexes={virtualRowIndexes}
                 renderEntries={centerRenderEntries}
@@ -2522,8 +2542,7 @@ export function SpreadsheetGrid<T extends object>({
                   pane="right"
                   ownsRowHeader={false}
                   leadingWidth={rightLeadingWidth}
-                  filteredRows={filteredRows}
-                  filteredRowKeys={filteredRowKeys}
+                  rowModel={rowModel}
                   virtualRows={virtualRows}
                   virtualRowIndexes={virtualRowIndexes}
                   renderEntries={rightRenderEntries}

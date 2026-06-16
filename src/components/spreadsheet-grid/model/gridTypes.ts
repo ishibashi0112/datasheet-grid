@@ -3,6 +3,22 @@ import type { ReactNode } from 'react';
 // 追加: row identity 用の key 型です。
 export type GridRowKey = string | number;
 
+// 追加(DS-3-0): 行モデルのシーム契約です。
+//   本体は order(Int32Array)を直接触る代わりに、この 4 メソッド越しに行を引きます。
+//   - clientSide(既定): 「全件メモリ rows + ビュー順 order」で実装します
+//     (getRow = rows[order[i]] / getSourceIndex = order[i] / getRowKey =
+//      resolvedRowKeyGetter(rows[order[i]], order[i]) / getRowCount = order.length)。
+//   - 将来 serverSide: 「スパースキャッシュ + getRows ブロック取得」で実装します。
+//   本体(SpreadsheetGrid / 各 consumer)はどちらのモードかを区別しません。これがシームの目的です。
+//   viewIndex は「ビュー位置(フィルター/ソート適用後の表示上の行 index)」で、source index
+//   (元 rows の index)とは別空間です。両者の対応付けは getSourceIndex が担います。
+export type RowModel<T> = {
+  getRowCount: () => number;
+  getRow: (viewIndex: number) => T;
+  getSourceIndex: (viewIndex: number) => number;
+  getRowKey: (viewIndex: number) => GridRowKey;
+};
+
 // 追加: セル座標を表す基本型です。
 export type CellCoord = {
   row: number;

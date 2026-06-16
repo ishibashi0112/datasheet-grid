@@ -14,6 +14,8 @@ import type {
   CellRenderState,
   GridColumn,
   GridRowKey,
+  // 追加(DS-3-0): 行モデルのシーム契約型です(filteredRows/Keys props を置換)。
+  RowModel,
   SpreadsheetGridProps,
 } from '../model/gridTypes';
 // 変更(10-C): 列座標を ColumnMeasurement(グローバル) から
@@ -257,8 +259,11 @@ type GridBodyLayerProps<T> = {
   ownsRowHeader: boolean;
   // 追加(10-C): 列の前に確保する先頭幅です(行ヘッダーを持つペインは rowHeaderWidth、他は 0)。
   leadingWidth: number;
-  filteredRows: T[];
-  filteredRowKeys: GridRowKey[];
+  // 変更(DS-3-0): filteredRows: T[] / filteredRowKeys: GridRowKey[] を rowModel シームへ
+  //   置換しました。行・行キーは map 内で rowModel.getRow(i) / getRowKey(i) から引きます。
+  //   GridBodyRow(memo) へは解決済みの row / rowKey(プリミティブ)を渡すため、11-A の
+  //   行ごとプリミティブ props 境界は不変です(rowModel 自体は GridBodyRow へ渡しません)。
+  rowModel: RowModel<T>;
   virtualRows: VirtualRowLike[];
   virtualRowIndexes: Set<number>;
   // 変更(10-C): 描画対象の列エントリです(座標はペインローカル)。
@@ -312,8 +317,7 @@ export function GridBodyLayer<T>({
   pane,
   ownsRowHeader,
   leadingWidth,
-  filteredRows,
-  filteredRowKeys,
+  rowModel,
   virtualRows,
   virtualRowIndexes,
   renderEntries,
@@ -338,11 +342,20 @@ export function GridBodyLayer<T>({
     <>
       {virtualRows.map((virtualRow) => {
         const rowIndex = virtualRow.index;
-        const row = filteredRows[rowIndex];
-        const rowKey = filteredRowKeys[rowIndex] ?? rowIndex;
+        // 変更(DS-3-0): filteredRows[rowIndex] / filteredRowKeys[rowIndex] を rowModel 越しへ。
+        //   getRow(i) は内部で rows[order[i]] を返すため、旧 filteredRows[i] と参照同一
+        //   (= GridBodyRow memo の row props 安定)です。
+        //   論点A(呼び出し順): rowKey は row が valid と確定した guard 後に算出します。
+        //   旧版は filteredRowKeys[i] の配列アクセスで OOB 時も undefined を返すだけでしたが、
+        //   getRowKey は内部で resolvedRowKeyGetter(row, sourceIndex) を呼ぶため、カスタム
+        //   rowKeyGetter が row を参照する実装だと OOB rowIndex で throw し得ます。実機では
+        //   virtualizer の count === order.length のため OOB は起きませんが、防御的に
+        //   「row が valid と確定してから getRowKey を呼ぶ」順へ寄せます(出力は全ケース等価)。
+        const row = rowModel.getRow(rowIndex);
         if (!row || !virtualRowIndexes.has(rowIndex)) {
           return null;
         }
+        const rowKey = rowModel.getRowKey(rowIndex) ?? rowIndex;
 
         // 追加(11-A): この行に関係する選択状態だけをプリミティブへ分解します。
         const isRowSelected =
