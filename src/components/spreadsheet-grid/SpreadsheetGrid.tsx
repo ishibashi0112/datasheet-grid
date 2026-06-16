@@ -915,7 +915,10 @@ export function SpreadsheetGrid<T extends object>({
     rows,
     // 変更(10-E): editingCell.col は論理 index 空間のため orderedColumns で indexing します。
     visibleColumns: orderedColumns,
-    filteredRowSourceIndexes,
+    // 変更(DS-3-2): filteredRowSourceIndexes 配列 → rowModel シームを渡します(edit consumer 移行)。
+    //   rowModel は DS-3-0 で構築済みの memo を再利用。materialize 済み filteredRowSourceIndexes は
+    //   renderCellContent.setValue(DS-3-2b 候補) / clipboard(DS-3-3) がまだ参照するため残置します。
+    rowModel,
     setEditorInitialValue,
     onRowsChange,
     dispatch,

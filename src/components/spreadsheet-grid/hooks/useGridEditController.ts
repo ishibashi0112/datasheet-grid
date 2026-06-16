@@ -1,6 +1,6 @@
 import { useCallback, type Dispatch, type RefObject } from 'react';
 import { gridActions, type GridUiAction } from '../model/gridActions';
-import type { CellCoord, GridColumn, GridUiState } from '../model/gridTypes';
+import type { CellCoord, GridColumn, GridUiState, RowModel } from '../model/gridTypes';
 import type { EditorCommitDirection } from '../CellEditorLayer';
 import { setCellValue } from '../utils/permissions';
 
@@ -8,7 +8,13 @@ type UseGridEditControllerArgs<T extends object> = {
   uiState: GridUiState;
   rows: T[];
   visibleColumns: GridColumn<T>[];
-  filteredRowSourceIndexes: number[];
+  // 変更(DS-3-2): filteredRowSourceIndexes: number[] を RowModel シームへ置換しました
+  //   (DS-3-0 の seam を消費 / edit consumer 移行)。source index は
+  //   getSourceIndex(viewIndex) = order[viewIndex] で解決します
+  //   (旧 filteredRowSourceIndexes[i] = Array.from(order)[i] と参照値一致)。
+  //   ※ rows 自体は commit の rows.map / rows[originalRowIndex] で引き続き直接参照します
+  //     (書き込みは source index 基準で rows を再構築するため getRow では代替不可)。
+  rowModel: RowModel<T>;
   // 変更(11-B6): editorValue / setEditorValue(ドラフト state)は廃止しました。
   //              ドラフトは CellEditorLayer のローカル state へ移動し、
   //              親は「編集開始時の初期値」を設定する setter だけを持ちます。
@@ -25,7 +31,7 @@ export const useGridEditController = <T extends object>({
   uiState,
   rows,
   visibleColumns,
-  filteredRowSourceIndexes,
+  rowModel,
   setEditorInitialValue,
   onRowsChange,
   dispatch,
@@ -78,8 +84,12 @@ export const useGridEditController = <T extends object>({
               : editingCell;
 
       const column = visibleColumns[editingCell.col];
+      // 変更(DS-3-2): source index 解決をシーム経由に切り替えます。
+      //   getSourceIndex(viewIndex) = order[viewIndex]。件数変動でビュー index が範囲外に
+      //   なった場合 order[OOB] = undefined のため、旧版と同じく ?? で editingCell.row へ
+      //   フォールバックします(直後の rows[...] / !row ガードも据え置き=挙動完全一致)。
       const originalRowIndex =
-        filteredRowSourceIndexes[editingCell.row] ?? editingCell.row;
+        rowModel.getSourceIndex(editingCell.row) ?? editingCell.row;
       const row = rows[originalRowIndex];
       if (!column || !row) {
         dispatch(gridActions.stopEdit());
@@ -111,7 +121,7 @@ export const useGridEditController = <T extends object>({
       activateSingleCell,
       dispatch,
       editorActionGuardRef,
-      filteredRowSourceIndexes,
+      rowModel,
       getMovedCell,
       gridRootRef,
       onRowsChange,
