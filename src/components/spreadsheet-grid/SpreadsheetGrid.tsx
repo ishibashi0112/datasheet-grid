@@ -612,12 +612,21 @@ export function SpreadsheetGrid<T extends object>({
     [order, rows, resolvedRowKeyGetter],
   );
 
+  // 追加(DS-3-6): ビュー行数の単一ソースを seam(getRowCount)経由へ移します。
+  //   値は order.length(= 旧 filteredRows.length)で常に等価。プリミティブ number のため
+  //   deps では値比較され、no-op dispatch(order 不変)では同値となり、これを依存に持つ
+  //   memo/callback の参照を維持します(11-A 系の参照安定方針に整合)。rowModel を直接 deps に
+  //   入れる方式と違い、resolvedRowKeyGetter 変化(order/rows 不変)では再評価されません
+  //   (行数は order.length のみに依存するため)。DS-3-1 keyboard / DS-3-3 clipboard と同型です。
+  const viewRowCount = rowModel.getRowCount();
+
   // 派生ビュー: order[i] が「ビュー位置 i の元 rows index(= source index)」です。
-  // 注記(DS-3-0): filteredRows は未移行 consumer 向けの materialize として当面併存します。
-  //   - filteredRows: virtualizer count / slotContext /
-  //     GridHeaderRow の filteredRowsLength / activeCell 範囲ガード / paneLayout 高さ /
-  //     isBodyEmpty / selectEntireGrid などが直接参照中。
-  //   各 consumer を rowModel.getRow / getRowCount 越しへ移し終えた段階で撤去します。
+  // 注記(DS-3-0/DS-3-6): filteredRows は残る公開 consumer 向けの materialize として併存します。
+  //   - 移行済み(DS-3-6): virtualizer count / activeCell 範囲ガード / paneLayout 高さ /
+  //     isBodyEmpty / selectEntireGrid / corner header / viewportSync / pointerInteractions /
+  //     GridHeaderRow の filteredRowsLength は全て viewRowCount(= rowModel.getRowCount())へ。
+  //   - 残る配列 consumer は公開 slotContext(useGridBarContext)のみ。これは公開スロット契約の
+  //     派生ビューとして維持します(撤去可否は DS-3 後段で判断)。
   // 撤去済み(DS-3-0): filteredRowKeys は唯一の consumer だった GridBodyLayer を
   //   rowModel.getRowKey へ移行したため撤去しました(行キーは seam が供給)。
   // 撤去済み(DS-3-3): filteredRowSourceIndexes は最後の source-index consumer だった
@@ -640,7 +649,7 @@ export function SpreadsheetGrid<T extends object>({
 
   // ── virtualizer ───────────────────────────────────────
   const rowVirtualizer = useVirtualizer({
-    count: filteredRows.length,
+    count: viewRowCount,
     getScrollElement: () => scrollContainerRef.current,
     estimateSize: () => rowHeight,
     // 変更(A-2): overscan を 8 → 20 に増やします。
@@ -719,7 +728,7 @@ export function SpreadsheetGrid<T extends object>({
       return null;
     }
     const { row, col } = uiState.activeCell;
-    if (row < 0 || row >= filteredRows.length) {
+    if (row < 0 || row >= viewRowCount) {
       return null;
     }
     const single = computeSinglePaneColumnExtent(paneLayout, col);
@@ -735,7 +744,7 @@ export function SpreadsheetGrid<T extends object>({
         height: rowHeight,
       },
     };
-  }, [uiState.activeCell, filteredRows.length, paneLayout, rowHeight]);
+  }, [uiState.activeCell, viewRowCount, paneLayout, rowHeight]);
 
   // 追加(10-E): viewport sync（中央ペインの自動スクロール）専用の active cell 矩形です。
   //             active cell が中央ペインにあるときだけ「中央ペインローカル座標」で返します。
@@ -775,7 +784,7 @@ export function SpreadsheetGrid<T extends object>({
     rowVirtualizer,
     columnVirtualizer,
     rowHeight,
-    filteredRowsLength: filteredRows.length,
+    filteredRowsLength: viewRowCount,
     columnMeasurements,
     totalScrollWidth,
     totalBodyHeight,
@@ -818,7 +827,7 @@ export function SpreadsheetGrid<T extends object>({
     //             enableSorting=false 時はガード、orderedColumns で colIndex→key 解決。
     enableSorting,
     orderedColumns,
-    filteredRowsLength: filteredRows.length,
+    filteredRowsLength: viewRowCount,
     visibleColumnsLength: visibleColumns.length,
     // 変更(10-E): グローバル columnMeasurements / rowHeaderWidth から
     //             ペイン別 geometry + 各ペインの leadingWidth へ切り替えます。
@@ -852,19 +861,19 @@ export function SpreadsheetGrid<T extends object>({
     });
 
   const selectEntireGrid = useCallback(() => {
-    if (filteredRows.length === 0 || visibleColumns.length === 0) {
+    if (viewRowCount === 0 || visibleColumns.length === 0) {
       return;
     }
     const startCell = { row: 0, col: 0 };
     const endCell = {
-      row: filteredRows.length - 1,
+      row: viewRowCount - 1,
       col: visibleColumns.length - 1,
     };
     dispatch(gridActions.startSelection(startCell));
     dispatch(gridActions.updateSelection(endCell));
     dispatch(gridActions.endSelection());
     dispatch(gridActions.activateCell(startCell));
-  }, [dispatch, filteredRows.length, visibleColumns.length]);
+  }, [dispatch, viewRowCount, visibleColumns.length]);
 
   // ── double click → edit ───────────────────────────────
   const handleCellDoubleClick = useCallback(
@@ -1020,9 +1029,9 @@ export function SpreadsheetGrid<T extends object>({
     return {
       extents,
       top: 0,
-      height: filteredRows.length * rowHeight,
+      height: viewRowCount * rowHeight,
     };
-  }, [uiState.selection, paneLayout, rowHeight, filteredRows.length]);
+  }, [uiState.selection, paneLayout, rowHeight, viewRowCount]);
 
   // 追加(10-D): 指定ペインの選択矩形（ペインローカル）を返します。該当列が無ければ null です。
   const selectionRectForPane = useCallback(
@@ -1051,7 +1060,7 @@ export function SpreadsheetGrid<T extends object>({
       if (event.button !== 0) {
         return;
       }
-      if (filteredRows.length === 0 || visibleColumns.length === 0) {
+      if (viewRowCount === 0 || visibleColumns.length === 0) {
         return;
       }
       gridRootRef.current?.focus();
@@ -1064,7 +1073,7 @@ export function SpreadsheetGrid<T extends object>({
     },
     [
       dispatch,
-      filteredRows.length,
+      viewRowCount,
       isWholeGridSelected,
       selectEntireGrid,
       visibleColumns.length,
@@ -2042,7 +2051,7 @@ export function SpreadsheetGrid<T extends object>({
   //     (兄弟のはみ出し幅には引っ張られません)。
   //   - position: sticky; left: 0 により、横スクロールしてもメッセージが
   //     ビューポート中央に留まります(ヘッダーは従来どおり横スクロール可能)。
-  const isBodyEmpty = filteredRows.length === 0;
+  const isBodyEmpty = viewRowCount === 0;
 
   const emptyStateStyle: CSSProperties = {
     position: 'sticky',
@@ -2289,7 +2298,7 @@ export function SpreadsheetGrid<T extends object>({
                   headerCellBaseStyle={headerCellBaseStyle}
                   isCornerHovered={isCornerHovered}
                   isWholeGridSelected={isWholeGridSelected}
-                  filteredRowsLength={filteredRows.length}
+                  filteredRowsLength={viewRowCount}
                   visibleColumnsLength={visibleColumns.length}
                   renderEntries={leftRenderEntries}
                   hoveredColumnIndex={hoveredColumnIndex}
@@ -2412,7 +2421,7 @@ export function SpreadsheetGrid<T extends object>({
                 headerCellBaseStyle={headerCellBaseStyle}
                 isCornerHovered={isCornerHovered}
                 isWholeGridSelected={isWholeGridSelected}
-                filteredRowsLength={filteredRows.length}
+                filteredRowsLength={viewRowCount}
                 visibleColumnsLength={visibleColumns.length}
                 renderEntries={centerRenderEntries}
                 hoveredColumnIndex={hoveredColumnIndex}
@@ -2516,7 +2525,7 @@ export function SpreadsheetGrid<T extends object>({
                   headerCellBaseStyle={headerCellBaseStyle}
                   isCornerHovered={isCornerHovered}
                   isWholeGridSelected={isWholeGridSelected}
-                  filteredRowsLength={filteredRows.length}
+                  filteredRowsLength={viewRowCount}
                   visibleColumnsLength={visibleColumns.length}
                   renderEntries={rightRenderEntries}
                   hoveredColumnIndex={hoveredColumnIndex}
