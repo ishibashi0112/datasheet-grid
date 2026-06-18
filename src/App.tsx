@@ -15,7 +15,7 @@ type DemoRow = {
 // 追加: 初期ダミー行数です。UX確認用に少し多めにしています。
 // 変更(DS-3-1): 5,000 → 50,000(5万)。DS-3 の rowModel 移行を Profiler で検証するための負荷増です。
 //   行は virtualizer 化済みのため DOM 量は据え置き、sort/filter は order(Int32Array)全走査で数十 ms 級です。
-const INITIAL_ROW_COUNT = 50000;
+const INITIAL_ROW_COUNT = 500000; // 50000 → 500000
 
 // 追加: 初期追加列数です。横スクロールと column virtualization 確認用です。
 const INITIAL_EXTRA_COLUMN_COUNT = 24;

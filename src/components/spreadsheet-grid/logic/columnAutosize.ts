@@ -29,6 +29,16 @@
 //   実幅は最大」の行が候補から押し出される取りこぼしを、全角ウェイトで防ぎます。
 //   推定がラフでも候補選択が当たれば結果は正確で、残差は TEXT_SAFETY が吸収します。
 //
+// estimate ループの回避(追加 DS-4 ①-(3a)):
+//   上記 1 の候補収集で、候補が TOP_K 件で満杯になった後は、各セルの実推定幅を
+//   出す前に text.length だけで O(1) 足切りします。推定幅 units は「全角=2 / 半角=1」の
+//   和で、コードポイント数 P に対し P ≤ units ≤ 2P、かつ P ≤ text.length(サロゲートは
+//   length 側が大)なので units ≤ 2*text.length が常に成立します。したがって
+//   2*text.length ≤ 最小推定幅 なら units ≤ 最小推定幅 が確定し、estimateTextWidthUnits の
+//   コードポイント走査を回さずに棄却できます。30万行級では満杯後の estimate が collect の
+//   支配項のため、候補が温まれば大多数のセルがここで走査ゼロで弾かれます。結果は
+//   ①-(1)/①-(2) とバイト等価です(2*length ≤ minEst ⇒ est ≤ minEst で、既存の
+//   est ≤ 最小推定幅 棄却と一致。候補集合・順序・minEst とも不変)。
 // メモリ / 走査特性:
 //   - 候補保持は列あたり最大 TOP_K 件で、行数に依存しません(旧 Set はユニーク数=
 //     最悪 行数 ぶん成長していました)。
@@ -210,9 +220,16 @@ export function createColumnWidthAccumulator<T>(
       if (text === '') {
         continue;
       }
-      const est = estimateTextWidthUnits(text);
       const list = candidates[ci];
       const estList = candidateEst[ci];
+      // 追加(DS-4 ①-(3a)): 候補が満杯なら、実推定幅を出す前に length で O(1) 足切りします。
+      //   units ≤ 2*text.length のため、2*text.length ≤ 最小推定幅 なら推定幅も最小以下が
+      //   確定し、estimateTextWidthUnits のコードポイント走査を省けます(結果は下の
+      //   est <= candidateMinEst 棄却と一致)。満杯前(minEst=+∞)はこの分岐に入りません。
+      if (list.length === TOP_K && 2 * text.length <= candidateMinEst[ci]) {
+        continue;
+      }
+      const est = estimateTextWidthUnits(text);
       if (list.length < TOP_K) {
         list.push(text);
         estList.push(est);
@@ -228,7 +245,7 @@ export function createColumnWidthAccumulator<T>(
         }
         continue;
       }
-      // 満杯。最小推定幅以下なら候補入りしません(大多数はここで O(1) 棄却)。
+      // 満杯。length 足切りを通過した残りを、実推定幅で最終判定します。
       if (est <= candidateMinEst[ci]) {
         continue;
       }
