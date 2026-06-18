@@ -1215,18 +1215,14 @@ export function SpreadsheetGrid<T extends object>({
         return;
       }
 
-      // 変更(DS-3-4): filteredRows 配列直渡し → rowModel 越しのビュー順 materialize。
-      //   computeAutosizedColumnWidths の配列契約は無改変のまま、境界でビュー順全行を
-      //   一時 materialize します(getRow(i) = rows[order[i]] = 旧 filteredRows[i])。
-      //   DS-3-3 copy と同型。autosize は稀操作のため描画ホットパス非該当。
-      const viewRows = Array.from(
-        { length: rowModel.getRowCount() },
-        (_, viewIndex) => rowModel.getRow(viewIndex),
-      );
-
+      // 変更(DS-4 ①-(1)): ビュー順全行の一時 materialize(Array.from)を撤去し、
+      //   computeAutosizedColumnWidths へ rowModel シームを直渡しします(seam-native)。
+      //   計測側が getRow を行数ぶん 1 パス走査し、候補 TOP_K のみ measureText するため、
+      //   全行配列を作る必要がなくなりました(DS-3-10 clipboard と同型)。
       const nextWidths = computeAutosizedColumnWidths({
         columns: [targetColumn],
-        rows: viewRows,
+        getRow: rowModel.getRow,
+        viewRowCount: rowModel.getRowCount(),
         gridRoot: gridRootRef.current,
         currentWidths: columnWidthsRef.current,
       });
@@ -1241,15 +1237,12 @@ export function SpreadsheetGrid<T extends object>({
   const handleColumnMenuAutosizeAllColumns = useCallback(() => {
     closeColumnMenu();
 
-    // 変更(DS-3-4): 全列経路も同型。materialize は 1 回で全列の計測ループに再利用されます。
-    const viewRows = Array.from(
-      { length: rowModel.getRowCount() },
-      (_, viewIndex) => rowModel.getRow(viewIndex),
-    );
-
+    // 変更(DS-4 ①-(1)): 全列経路も seam-native 化。Array.from の一時 materialize を撤去し、
+    //   計測側の 1 パス走査で全列の候補を同時収集します(getRow は行数ぶん・列数倍にしない)。
     const nextWidths = computeAutosizedColumnWidths({
       columns: visibleColumns,
-      rows: viewRows,
+      getRow: rowModel.getRow,
+      viewRowCount: rowModel.getRowCount(),
       gridRoot: gridRootRef.current,
       currentWidths: columnWidthsRef.current,
     });
