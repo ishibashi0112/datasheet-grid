@@ -92,8 +92,9 @@ import {
   // 追加(MS-3-2): 優先順位 DnD の配列 move 純関数です。
   moveSortEntry,
 } from './logic/sorting';
-// 追加(13-B1): 列幅自動調整(canvas measureText 方式)の計測ロジックです。
-import { computeAutosizedColumnWidths } from './logic/columnAutosize';
+// 追加(DS-4 ①-(2)): 列幅自動調整を時間分割(async・単一経路)で実行するランナーです。
+//   計測ロジック本体(logic/columnAutosize)はランナー内部で使うため、ここでの直 import は不要です。
+import useColumnAutosizeRunner from './hooks/useColumnAutosizeRunner';
 import type {
   CellCoord,
   CellRenderState,
@@ -611,6 +612,21 @@ export function SpreadsheetGrid<T extends object>({
     }),
     [order, rows, resolvedRowKeyGetter],
   );
+
+  // 追加(DS-4 ①-(2)): 最新 rowModel を指す latest-ref です。autosize ランナーが run 開始時に
+  //   キャプチャし、実行中に参照が変わった(= order/rows 変化)ら計測を中断するために使います。
+  const rowModelRef = useRef(rowModel);
+  rowModelRef.current = rowModel;
+
+  // 追加(DS-4 ①-(2)): autosize 計測を「単一経路の時間分割(async)」で実行するランナーです。
+  //   overlay は遅延表示で、重い時だけ Pending を出し、メインスレッドを塞ぎません
+  //   (小規模は overlay 発火前に完了し、体感は従来の同期計測と同一です)。
+  const { isAutosizing, runAutosize } = useColumnAutosizeRunner<T>({
+    rowModelRef,
+    gridRootRef,
+    columnWidthsRef,
+    dispatch,
+  });
 
   // 追加(DS-3-6): ビュー行数の単一ソースを seam(getRowCount)経由へ移します。
   //   値は order.length(= 旧 filteredRows.length)で常に等価。プリミティブ number のため
@@ -1201,9 +1217,9 @@ export function SpreadsheetGrid<T extends object>({
   //   - 計測結果が現在幅と同じ場合は dispatch しません(no-op。再レンダー抑止)。
   //   - 選択・アクティブセル・編集は破棄しません(幅変更は論理 index 空間を
   //     変えないため。手動リサイズと同じ扱いです)。
-  //   - deps に rowModel / visibleColumns を含みますが、本ハンドラを受け取る
-  //     ColumnMenuPopover はメニュー表示中しか mount されないため、参照変化の
-  //     再レンダーコストは popover のみで実害はありません(latest-ref 化は不要と判断)。
+  //   - 変更(DS-4 ①-(2)): 計測は時間分割ランナー(useColumnAutosizeRunner)へ委譲しました。
+  //     ハンドラ deps から rowModel / dispatch が外れ(ランナーが latest-ref で読むため)、
+  //     closeColumnMenu / runAutosize / visibleColumns のみになりました(runAutosize は安定参照)。
   const handleColumnMenuAutosizeColumn = useCallback(
     (columnKey: string) => {
       closeColumnMenu();
@@ -1215,42 +1231,19 @@ export function SpreadsheetGrid<T extends object>({
         return;
       }
 
-      // 変更(DS-4 ①-(1)): ビュー順全行の一時 materialize(Array.from)を撤去し、
-      //   computeAutosizedColumnWidths へ rowModel シームを直渡しします(seam-native)。
-      //   計測側が getRow を行数ぶん 1 パス走査し、候補 TOP_K のみ measureText するため、
-      //   全行配列を作る必要がなくなりました(DS-3-10 clipboard と同型)。
-      const nextWidths = computeAutosizedColumnWidths({
-        columns: [targetColumn],
-        getRow: rowModel.getRow,
-        viewRowCount: rowModel.getRowCount(),
-        gridRoot: gridRootRef.current,
-        currentWidths: columnWidthsRef.current,
-      });
-      if (Object.keys(nextWidths).length === 0) {
-        return;
-      }
-      dispatch(gridActions.syncColumnWidths(nextWidths));
+      // 変更(DS-4 ①-(2)): 同期計測を撤去し、時間分割ランナーへ委譲します(単一経路)。
+      //   getRow / viewRowCount / gridRoot / currentWidths は run 開始時にランナーが
+      //   latest-ref 群からキャプチャするため、ここでは対象列だけを渡します。
+      void runAutosize([targetColumn]);
     },
-    [closeColumnMenu, dispatch, rowModel, visibleColumns],
+    [closeColumnMenu, runAutosize, visibleColumns],
   );
 
   const handleColumnMenuAutosizeAllColumns = useCallback(() => {
     closeColumnMenu();
-
-    // 変更(DS-4 ①-(1)): 全列経路も seam-native 化。Array.from の一時 materialize を撤去し、
-    //   計測側の 1 パス走査で全列の候補を同時収集します(getRow は行数ぶん・列数倍にしない)。
-    const nextWidths = computeAutosizedColumnWidths({
-      columns: visibleColumns,
-      getRow: rowModel.getRow,
-      viewRowCount: rowModel.getRowCount(),
-      gridRoot: gridRootRef.current,
-      currentWidths: columnWidthsRef.current,
-    });
-    if (Object.keys(nextWidths).length === 0) {
-      return;
-    }
-    dispatch(gridActions.syncColumnWidths(nextWidths));
-  }, [closeColumnMenu, dispatch, rowModel, visibleColumns]);
+    // 変更(DS-4 ①-(2)): 全列経路もランナーへ委譲します(単一経路・時間分割)。
+    void runAutosize(visibleColumns);
+  }, [closeColumnMenu, runAutosize, visibleColumns]);
 
   // ── column chooser actions(13-B2-1) ──────────────────
   // 追加(13-B2-1): パネルへ渡す列一覧です。visibleColumns ではなく columns(全列)から
@@ -1989,6 +1982,9 @@ export function SpreadsheetGrid<T extends object>({
     overflow: 'hidden',
     backgroundColor: '#ffffff',
     boxShadow: '0 4px 14px rgba(15, 23, 42, 0.04)',
+    // 追加(DS-4 ①-(2)): Pending overlay(絶対配置)の基準 + 計測中の wait カーソルです。
+    position: 'relative',
+    cursor: isAutosizing ? 'progress' : undefined,
   };
 
   // 変更(A-1): style オブジェクトを useMemo で安定化します。
@@ -2064,6 +2060,33 @@ export function SpreadsheetGrid<T extends object>({
     justifyContent: 'center',
     color: '#94a3b8',
     fontSize: 13,
+    userSelect: 'none',
+  };
+
+  // 追加(DS-4 ①-(2)): autosize 計測中の Pending overlay です。12-B の空状態と同じ
+  //   「中央寄せの案内層」ですが、本層は body 上へ重ねる必要があるため、gridShell
+  //   (position: relative)への絶対配置 + pointer-events: none にし、計測中もスクロール /
+  //   選択などの操作を素通しで生かします(時間分割の意味を保つため)。表示するのは遅延
+  //   overlay(OVERLAY_DELAY_MS)が発火した「本当に重い時」だけで、短時間で終わる規模では
+  //   一度も出ません(チラつき防止)。
+  const autosizeOverlayStyle: CSSProperties = {
+    position: 'absolute',
+    inset: 0,
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    pointerEvents: 'none',
+    zIndex: 5,
+  };
+
+  const autosizeOverlayPillStyle: CSSProperties = {
+    padding: '8px 14px',
+    borderRadius: 8,
+    backgroundColor: 'rgba(15, 23, 42, 0.82)',
+    color: '#f8fafc',
+    fontSize: 13,
+    fontWeight: 600,
+    boxShadow: '0 6px 20px rgba(15, 23, 42, 0.25)',
     userSelect: 'none',
   };
 
@@ -2632,6 +2655,14 @@ export function SpreadsheetGrid<T extends object>({
           )}
         </div>
         {/* ── /共有スクロールコンテナ ── */}
+
+        {/* 追加(DS-4 ①-(2)): autosize 計測中の Pending overlay です。
+            遅延表示(OVERLAY_DELAY_MS 経過後)・pointer-events: none で操作素通し。 */}
+        {isAutosizing && (
+          <div style={autosizeOverlayStyle}>
+            <span style={autosizeOverlayPillStyle}>列幅を計算中…</span>
+          </div>
+        )}
       </div>
 
       {resolvedBottomBar}

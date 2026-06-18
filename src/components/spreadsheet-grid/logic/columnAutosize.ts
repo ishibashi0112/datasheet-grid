@@ -170,40 +170,41 @@ export type ColumnAutosizeParams<T> = {
   currentWidths: Record<string, number>;
 };
 
-// 列ごとの自動調整幅を計測します。
-// 戻り値は「現在幅から変化がある列だけ」の { columnKey: width } です
-// (空オブジェクトなら呼び出し側は dispatch をスキップできます)。
-export function computeAutosizedColumnWidths<T>({
-  columns,
-  getRow,
-  viewRowCount,
-  gridRoot,
-  currentWidths,
-}: ColumnAutosizeParams<T>): Record<string, number> {
-  const context = getSharedContext();
-  if (!context || columns.length === 0) {
-    return {};
-  }
+// 追加(DS-4 ①-(2)): 計測を「行 collect 相」と「幅 finalize 相」に分離した accumulator です。
+//   ①-(1) の 2 段方式(候補 TOP_K 収集 → 実 measureText)のうち、collect が候補収集を、
+//   finalize がヘッダー / セルの実 measureText + clamp + no-op 判定を担います。
+//   sync 版(computeAutosizedColumnWidths)と DS-4 ①-(2) の時間分割ランナーは、どちらも
+//   この同一 accumulator を共有するため、走査の刻み方によらず結果が一致します
+//   (同期一括 collect でも、チャンク分割 collect でも、collect の呼び出し順が同じなら
+//    候補配列の最終状態は同値になります)。
+export type ColumnWidthAccumulator<T> = {
+  // 1 行ぶんを候補へ反映します(全列同時)。getRow の OOB(undefined)は呼び出し側で
+  //   吸収する前提で、ここへは非 null の行だけ渡します。
+  collect: (row: T) => void;
+  // 候補から各列幅を確定し、現在幅から変化がある列だけの { columnKey: width } を返します
+  //   (空オブジェクトなら呼び出し側は dispatch をスキップできます)。
+  finalize: (params: {
+    gridRoot: HTMLElement | null;
+    currentWidths: Record<string, number>;
+  }) => Record<string, number>;
+};
 
-  const { cellFont, headerFont } = resolveFonts(gridRoot);
-
-  // ── セル候補の収集(1 パス × 全列同時) ──
-  // 列ごとに「推定幅が大きい上位 TOP_K 件の文字列」だけを保持します。
-  //   - candidates[ci]: 候補配列(最大 TOP_K 件)
-  //   - candidateMinEst[ci]: 候補配列内の最小推定幅(満杯時の足切り用。満杯前は +∞)
-  // 走査は getRow 越しで、行は 1 回だけ取得して全列のセルを引きます(列数倍にしない)。
+// 列ごとの候補(推定幅 上位 TOP_K)を 1 パス collect で蓄積し、finalize で実 measureText
+// へ落とす accumulator を生成します。候補保持は列あたり最大 TOP_K 件で行数非依存です。
+export function createColumnWidthAccumulator<T>(
+  columns: GridColumn<T>[],
+): ColumnWidthAccumulator<T> {
+  // ── 候補状態(1 パス × 全列同時) ──
+  //   - candidates[ci]: 候補文字列(最大 TOP_K 件)
+  //   - candidateEst[ci]: 各候補の推定幅
+  //   - candidateMinEst[ci]: 候補内の最小推定幅(満杯時の足切り用。満杯前は +∞)
   const candidates: string[][] = columns.map(() => []);
   const candidateEst: number[][] = columns.map(() => []);
   const candidateMinEst: number[] = columns.map(
     () => Number.POSITIVE_INFINITY,
   );
 
-  for (let viewIndex = 0; viewIndex < viewRowCount; viewIndex += 1) {
-    const row = getRow(viewIndex);
-    // 注記(DS-3-9/3-10 と同方針): seam の OOB は実行時ガードで吸収します。
-    if (!row) {
-      continue;
-    }
+  const collect = (row: T): void => {
     for (let ci = 0; ci < columns.length; ci += 1) {
       const text = String(getCellValue(row, columns[ci]) ?? '');
       if (text === '') {
@@ -248,50 +249,103 @@ export function computeAutosizedColumnWidths<T>({
       }
       candidateMinEst[ci] = m;
     }
-  }
+  };
 
-  // ── 列ごとに幅を確定 ──
-  const nextWidths: Record<string, number> = {};
+  const finalize = ({
+    gridRoot,
+    currentWidths,
+  }: {
+    gridRoot: HTMLElement | null;
+    currentWidths: Record<string, number>;
+  }): Record<string, number> => {
+    const context = getSharedContext();
+    if (!context || columns.length === 0) {
+      return {};
+    }
 
-  for (let ci = 0; ci < columns.length; ci += 1) {
-    const column = columns[ci];
+    const { cellFont, headerFont } = resolveFonts(gridRoot);
+    const nextWidths: Record<string, number> = {};
 
-    // ── ヘッダー幅(タイトル + 固定要素) ──
-    context.font = headerFont;
-    const headerTitle = column.title || column.key;
-    const headerRequired =
-      context.measureText(headerTitle).width +
-      TEXT_SAFETY +
-      HEADER_FIXED_CONTENT_WIDTH;
+    for (let ci = 0; ci < columns.length; ci += 1) {
+      const column = columns[ci];
 
-    // ── セル幅(候補 TOP_K 件の実 measureText の最大) ──
-    context.font = cellFont;
-    let maxCellTextWidth = 0;
-    const list = candidates[ci];
-    for (let j = 0; j < list.length; j += 1) {
-      const width = context.measureText(list[j]).width;
-      if (width > maxCellTextWidth) {
-        maxCellTextWidth = width;
+      // ── ヘッダー幅(タイトル + 固定要素) ──
+      context.font = headerFont;
+      const headerTitle = column.title || column.key;
+      const headerRequired =
+        context.measureText(headerTitle).width +
+        TEXT_SAFETY +
+        HEADER_FIXED_CONTENT_WIDTH;
+
+      // ── セル幅(候補 TOP_K 件の実 measureText の最大) ──
+      context.font = cellFont;
+      let maxCellTextWidth = 0;
+      const list = candidates[ci];
+      for (let j = 0; j < list.length; j += 1) {
+        const width = context.measureText(list[j]).width;
+        if (width > maxCellTextWidth) {
+          maxCellTextWidth = width;
+        }
+      }
+      const cellRequired =
+        maxCellTextWidth > 0
+          ? maxCellTextWidth + TEXT_SAFETY + CELL_HORIZONTAL_FRAME
+          : 0;
+
+      // ── clamp + no-op 判定 ──
+      const resolved = Math.ceil(
+        clamp(
+          Math.max(headerRequired, cellRequired),
+          column.minWidth ?? DEFAULT_MIN_WIDTH,
+          column.maxWidth ?? DEFAULT_MAX_WIDTH,
+        ),
+      );
+
+      if (currentWidths[column.key] !== resolved) {
+        nextWidths[column.key] = resolved;
       }
     }
-    const cellRequired =
-      maxCellTextWidth > 0
-        ? maxCellTextWidth + TEXT_SAFETY + CELL_HORIZONTAL_FRAME
-        : 0;
 
-    // ── clamp + no-op 判定 ──
-    const resolved = Math.ceil(
-      clamp(
-        Math.max(headerRequired, cellRequired),
-        column.minWidth ?? DEFAULT_MIN_WIDTH,
-        column.maxWidth ?? DEFAULT_MAX_WIDTH,
-      ),
-    );
+    return nextWidths;
+  };
 
-    if (currentWidths[column.key] !== resolved) {
-      nextWidths[column.key] = resolved;
-    }
+  return { collect, finalize };
+}
+
+// 追加(DS-4 ①-(2)): autosize 計測が可能か(canvas 2d context が得られるか)を返します。
+//   時間分割ランナーが「行走査を始める前に」no-op 判定するために使います(非対応環境で
+//   30万行級の空振り走査をしないため)。sync 版は従来どおり内部の早期 return で吸収します。
+export function canMeasureAutosize(): boolean {
+  return getSharedContext() !== null;
+}
+
+// 列ごとの自動調整幅を計測します(同期一括版)。
+// 戻り値は「現在幅から変化がある列だけ」の { columnKey: width } です
+// (空オブジェクトなら呼び出し側は dispatch をスキップできます)。
+// 変更(DS-4 ①-(2)): 計測本体を createColumnWidthAccumulator へ集約しました。本 sync 版は
+//   「全行を一括 collect → finalize」で、DS-4 ①-(1) と結果はバイト等価です(等価検証で確認)。
+//   早期 return(context 無し / 列 0)も従来どおり維持し、無駄な行走査を避けます。
+export function computeAutosizedColumnWidths<T>({
+  columns,
+  getRow,
+  viewRowCount,
+  gridRoot,
+  currentWidths,
+}: ColumnAutosizeParams<T>): Record<string, number> {
+  if (columns.length === 0 || getSharedContext() === null) {
+    return {};
   }
 
-  return nextWidths;
+  const accumulator = createColumnWidthAccumulator(columns);
+
+  for (let viewIndex = 0; viewIndex < viewRowCount; viewIndex += 1) {
+    const row = getRow(viewIndex);
+    // 注記(DS-3-9/3-10 と同方針): seam の OOB は実行時ガードで吸収します。
+    if (!row) {
+      continue;
+    }
+    accumulator.collect(row);
+  }
+
+  return accumulator.finalize({ gridRoot, currentWidths });
 }
