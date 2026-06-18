@@ -23,7 +23,11 @@ export const parseClipboardText = (text: string): ClipboardMatrix => {
 
 // 追加: 選択範囲の rows/columns から TSV を生成します。
 export const serializeSelectionToTsv = <T,>(
-  rows: T[],
+  // 変更(DS-3-10): rows: T[] → getRow/viewRowCount の seam-native 署名へ。
+  //   呼び出し側のビュー行 materialize を不要にします(関数側は選択レンジ or
+  //   0..viewRowCount-1 のみを getRow で引きます)。
+  getRow: (viewIndex: number) => T,
+  viewRowCount: number,
   columns: GridColumn<T>[],
   selection:
     | {
@@ -51,7 +55,7 @@ export const serializeSelectionToTsv = <T,>(
       rowIndex <= normalizedRange.end.row;
       rowIndex += 1
     ) {
-      const row = rows[rowIndex];
+      const row = getRow(rowIndex);
       if (!row) {
         continue;
       }
@@ -84,7 +88,7 @@ export const serializeSelectionToTsv = <T,>(
       rowIndex <= normalizedRange.endRow;
       rowIndex += 1
     ) {
-      const row = rows[rowIndex];
+      const row = getRow(rowIndex);
       if (!row) {
         continue;
       }
@@ -101,8 +105,8 @@ export const serializeSelectionToTsv = <T,>(
 
   // 追加: 列選択のコピーです。visible rows × 選択列 を対象にします。
   const normalizedRange = normalizeColumnRange(selection.startCol, selection.endCol);
-  for (let rowIndex = 0; rowIndex < rows.length; rowIndex += 1) {
-    const row = rows[rowIndex];
+  for (let rowIndex = 0; rowIndex < viewRowCount; rowIndex += 1) {
+    const row = getRow(rowIndex);
     if (!row) {
       continue;
     }
@@ -131,7 +135,10 @@ export const serializeSelectionToTsv = <T,>(
 // 追加: 貼り付け matrix を rows へ適用します。
 export const applyClipboardMatrixToRows = <T extends object,>(
   rows: T[],
-  sourceRowIndexes: number[],
+  // 変更(DS-3-10): sourceRowIndexes: number[] → view→source 解決クロージャへ。
+  //   N 個の配列 materialize を撤去します。範囲外 viewIndex に定義値が返っても、
+  //   下の !currentRow ガードで skip され従来の undefined→continue と同結果です。
+  resolveSourceIndex: (viewIndex: number) => number | undefined,
   columns: GridColumn<T>[],
   matrix: ClipboardMatrix,
   startRowIndex: number,
@@ -151,7 +158,7 @@ export const applyClipboardMatrixToRows = <T extends object,>(
 
   for (let rowOffset = 0; rowOffset < matrix.length; rowOffset += 1) {
     const filteredRowIndex = startRowIndex + rowOffset;
-    const originalRowIndex = sourceRowIndexes[filteredRowIndex];
+    const originalRowIndex = resolveSourceIndex(filteredRowIndex);
     if (originalRowIndex === undefined) {
       continue;
     }

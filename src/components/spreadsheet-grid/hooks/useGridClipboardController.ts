@@ -91,15 +91,14 @@ export const useGridClipboardController = <T extends object>({
 
   // 追加: copy 処理です。selection を TSV にしてクリップボードへ書き込みます。
   const handleCopy = useCallback(async () => {
-    // 変更(DS-3-3): serializeSelectionToTsv は行を view index で引くため、
-    //   getRow(i) でビュー順の行配列を一時 materialize して渡します(copy は稀操作)。
-    //   旧 filteredRows[i] と参照値一致(getRow(i) = rows[order[i]] = filteredRows[i])。
+    // 変更(DS-3-10): serializeSelectionToTsv を seam-native 化。view 行の一時 materialize
+    //   (Array.from + getRow)を撤去し、getRow / getRowCount をそのまま渡します。関数側は
+    //   選択レンジ(cell/row)または 0..viewRowCount-1(col)だけを getRow で引きます。
     const text = isWholeGridSelected
       ? serializeWholeGridToTsv()
       : serializeSelectionToTsv(
-          Array.from({ length: rowModel.getRowCount() }, (_, viewIndex) =>
-            rowModel.getRow(viewIndex),
-          ),
+          rowModel.getRow,
+          rowModel.getRowCount(),
           visibleColumns,
           uiState.selection as
             | {
@@ -163,20 +162,27 @@ export const useGridClipboardController = <T extends object>({
 
       let workingRows = [...rows];
       let workingColumns = [...visibleColumns];
-      // 変更(DS-3-3): [...filteredRowSourceIndexes] → getSourceIndex(i) のビュー順 materialize。
-      //   値は order と同一(getSourceIndex(i) = order[i])。以降の append は従来どおり末尾追加。
+      // 変更(DS-3-10): workingSourceIndexes 配列(N 個の Array.from)を撤去し、view→source の
+      //   解決をクロージャ resolveSourceIndex に置換します。返り値は旧配列と完全一致:
+      //     v < N            : rowModel.getSourceIndex(v)  (= order[v])
+      //     v >= N(append 行): appendBaseSource + (v - N)
+      //   appendBaseSource = 拡張前 rows.length、N = paste 時点の getRowCount()。旧 append は
+      //   workingSourceIndexes.push(workingRows.length - 1) で appendBaseSource から連番を積んで
+      //   いたため式が一致します。append していない範囲外 v は定義値(OOB の source index)を返し
+      //   ますが、下流 applyClipboardMatrixToRows の !currentRow ガードで skip され、旧の
+      //   undefined→continue と同一結果になります。
       const viewRowCountForPaste = rowModel.getRowCount();
-      let workingSourceIndexes = Array.from(
-        { length: viewRowCountForPaste },
-        (_, viewIndex) => rowModel.getSourceIndex(viewIndex),
-      );
+      const appendBaseSource = workingRows.length;
+      const resolveSourceIndex = (viewIndex: number): number | undefined =>
+        viewIndex < viewRowCountForPaste
+          ? rowModel.getSourceIndex(viewIndex)
+          : appendBaseSource + (viewIndex - viewRowCountForPaste);
 
       // 追加: 行不足分を createRow で自動追加します。
       const requiredOriginalRowCount = startOriginalRowIndex + matrix.length;
       if (requiredOriginalRowCount > workingRows.length && createRow) {
         while (workingRows.length < requiredOriginalRowCount) {
           workingRows.push(createRow());
-          workingSourceIndexes.push(workingRows.length - 1);
         }
       }
 
@@ -201,7 +207,7 @@ export const useGridClipboardController = <T extends object>({
 
       const nextRows = applyClipboardMatrixToRows(
         workingRows,
-        workingSourceIndexes,
+        resolveSourceIndex,
         workingColumns,
         matrix,
         startFilteredRowIndex,

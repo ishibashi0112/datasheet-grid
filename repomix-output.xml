@@ -1632,268 +1632,6 @@ export const useFilterPopoverController = <T,>({
 export default useFilterPopoverController;
 </file>
 
-<file path="src/components/spreadsheet-grid/hooks/useGridClipboardController.ts">
-import { useCallback, type Dispatch } from 'react';
-import { gridActions, type GridUiAction } from '../model/gridActions';
-import type {
-  GridColumn,
-  SpreadsheetGridProps,
-  GridUiState,
-  RowModel,
-} from '../model/gridTypes';
-import { clamp } from '../logic/geometry';
-import { getCellValue, isCellEditable } from '../utils/permissions';
-import {
-  applyClipboardMatrixToRows,
-  parseClipboardText,
-  serializeSelectionToTsv,
-} from '../utils/clipboard';
-
-type UseGridClipboardControllerArgs<T extends object> = {
-  rows: T[];
-  // 変更(DS-3-3): filteredRows / filteredRowSourceIndexes 配列 → rowModel シームへ集約。
-  //   copy 時のセル値取得は getRow(i)、paste 書き込みの source 解決は getSourceIndex(i)、
-  //   範囲判定の行数は getRowCount() を使い分けます。順序契約は order と同一(viewIndex 空間)。
-  rowModel: RowModel<T>;
-  visibleColumns: GridColumn<T>[];
-  uiState: GridUiState;
-  readOnly: boolean;
-  canEditCell: SpreadsheetGridProps<T>['canEditCell'];
-  createRow?: () => T;
-  createOverflowColumn?: (columnIndex: number) => GridColumn<T>;
-  onRowsChange?: (nextRows: T[]) => void;
-  onColumnsChange?: (nextColumns: GridColumn<T>[]) => void;
-  dispatch: Dispatch<GridUiAction>;
-};
-
-// 追加: copy / paste と行列自動拡張をまとめる clipboard controller です。
-export const useGridClipboardController = <T extends object>({
-  rows,
-  rowModel,
-  visibleColumns,
-  uiState,
-  readOnly,
-  canEditCell,
-  createRow,
-  createOverflowColumn,
-  onRowsChange,
-  onColumnsChange,
-  dispatch,
-}: UseGridClipboardControllerArgs<T>) => {
-  // 追加: 現在の selection が「表全体選択」かどうかを判定します。
-  // 変更(DS-3-3): filteredRows.length → rowModel.getRowCount()。
-  const viewRowCount = rowModel.getRowCount();
-  const isWholeGridSelected =
-    viewRowCount > 0 &&
-    visibleColumns.length > 0 &&
-    uiState.selection?.type === 'cell' &&
-    (() => {
-      const start = uiState.selection.range.start;
-      const end = uiState.selection.range.end;
-      const startRow = Math.min(start.row, end.row);
-      const startCol = Math.min(start.col, end.col);
-      const endRow = Math.max(start.row, end.row);
-      const endCol = Math.max(start.col, end.col);
-      return (
-        startRow === 0 &&
-        startCol === 0 &&
-        endRow === viewRowCount - 1 &&
-        endCol === visibleColumns.length - 1
-      );
-    })();
-
-  // 追加: 全体選択時の copy を専用経路で行います。
-  // 変更(DS-3-3): filteredRows.map → getRowCount()/getRow(i) のビュー順走査へ置換。
-  const serializeWholeGridToTsv = useCallback(() => {
-    const rowCount = rowModel.getRowCount();
-    if (rowCount === 0 || visibleColumns.length === 0) {
-      return '';
-    }
-
-    const lines: string[] = [];
-    for (let viewIndex = 0; viewIndex < rowCount; viewIndex += 1) {
-      const row = rowModel.getRow(viewIndex);
-      const cells = visibleColumns.map((column) => {
-        const rawValue = getCellValue(row, column);
-        return column.formatClipboardValue
-          ? column.formatClipboardValue(rawValue, row)
-          : String(rawValue ?? '');
-      });
-      lines.push(cells.join('\t'));
-    }
-    return lines.join('\n');
-  }, [rowModel, visibleColumns]);
-
-  // 追加: copy 処理です。selection を TSV にしてクリップボードへ書き込みます。
-  const handleCopy = useCallback(async () => {
-    // 変更(DS-3-3): serializeSelectionToTsv は行を view index で引くため、
-    //   getRow(i) でビュー順の行配列を一時 materialize して渡します(copy は稀操作)。
-    //   旧 filteredRows[i] と参照値一致(getRow(i) = rows[order[i]] = filteredRows[i])。
-    const text = isWholeGridSelected
-      ? serializeWholeGridToTsv()
-      : serializeSelectionToTsv(
-          Array.from({ length: rowModel.getRowCount() }, (_, viewIndex) =>
-            rowModel.getRow(viewIndex),
-          ),
-          visibleColumns,
-          uiState.selection as
-            | {
-                type: 'cell';
-                range: {
-                  start: { row: number; col: number };
-                  end: { row: number; col: number };
-                };
-              }
-            | { type: 'row'; startRow: number; endRow: number }
-            | { type: 'col'; startCol: number; endCol: number }
-            | null,
-        );
-
-    if (!text) {
-      return;
-    }
-
-    if (navigator.clipboard?.writeText) {
-      await navigator.clipboard.writeText(text);
-    }
-  }, [
-    isWholeGridSelected,
-    rowModel,
-    serializeWholeGridToTsv,
-    uiState.selection,
-    visibleColumns,
-  ]);
-
-  // 追加: paste 処理です。TSV を activeCell 起点に適用し、必要なら行/列を自動拡張します。
-  const handlePaste = useCallback(
-    (event: React.ClipboardEvent<HTMLDivElement>) => {
-      if (!onRowsChange || !uiState.activeCell) {
-        return;
-      }
-
-      const text = event.clipboardData.getData('text/plain');
-      if (!text) {
-        return;
-      }
-
-      event.preventDefault();
-
-      const matrix = parseClipboardText(text);
-      if (matrix.length === 0) {
-        return;
-      }
-
-      const startFilteredRowIndex = uiState.activeCell.row;
-      // 変更(DS-3-3): filteredRowSourceIndexes[i] ?? i → getSourceIndex(i) ?? i。
-      //   OOB の viewIndex では getSourceIndex(=order[i]) が undefined を返し、?? でフォールバック。
-      const startOriginalRowIndex =
-        rowModel.getSourceIndex(startFilteredRowIndex) ?? startFilteredRowIndex;
-      const startColIndex = uiState.activeCell.col;
-
-      let workingRows = [...rows];
-      let workingColumns = [...visibleColumns];
-      // 変更(DS-3-3): [...filteredRowSourceIndexes] → getSourceIndex(i) のビュー順 materialize。
-      //   値は order と同一(getSourceIndex(i) = order[i])。以降の append は従来どおり末尾追加。
-      const viewRowCountForPaste = rowModel.getRowCount();
-      let workingSourceIndexes = Array.from(
-        { length: viewRowCountForPaste },
-        (_, viewIndex) => rowModel.getSourceIndex(viewIndex),
-      );
-
-      // 追加: 行不足分を createRow で自動追加します。
-      const requiredOriginalRowCount = startOriginalRowIndex + matrix.length;
-      if (requiredOriginalRowCount > workingRows.length && createRow) {
-        while (workingRows.length < requiredOriginalRowCount) {
-          workingRows.push(createRow());
-          workingSourceIndexes.push(workingRows.length - 1);
-        }
-      }
-
-      // 追加: 列不足分を createOverflowColumn で自動追加します。
-      const maxPasteWidth = matrix.reduce(
-        (max, currentRow) => Math.max(max, currentRow.length),
-        0,
-      );
-      if (maxPasteWidth === 0) {
-        return;
-      }
-
-      const requiredColumnCount = startColIndex + maxPasteWidth;
-      if (requiredColumnCount > workingColumns.length) {
-        if (onColumnsChange && createOverflowColumn) {
-          while (workingColumns.length < requiredColumnCount) {
-            workingColumns.push(createOverflowColumn(workingColumns.length));
-          }
-          onColumnsChange(workingColumns);
-        }
-      }
-
-      const nextRows = applyClipboardMatrixToRows(
-        workingRows,
-        workingSourceIndexes,
-        workingColumns,
-        matrix,
-        startFilteredRowIndex,
-        startColIndex,
-        (originalRowIndex, colIndex, row, column) =>
-          isCellEditable(
-            { readOnly, canEditCell },
-            originalRowIndex,
-            colIndex,
-            row,
-            column,
-          ),
-      );
-
-      const endRow = clamp(
-        uiState.activeCell.row + Math.max(matrix.length - 1, 0),
-        0,
-        Math.max(
-          // 変更(DS-3-3): filteredRows.length - 1 → getRowCount() - 1。
-          Math.max(rowModel.getRowCount() - 1, 0),
-          startFilteredRowIndex + matrix.length - 1,
-        ),
-      );
-      const endCol = clamp(
-        uiState.activeCell.col + Math.max((matrix[0]?.length ?? 1) - 1, 0),
-        0,
-        Math.max(
-          Math.max(workingColumns.length - 1, 0),
-          startColIndex + maxPasteWidth - 1,
-        ),
-      );
-
-      onRowsChange(nextRows);
-      dispatch(gridActions.startSelection(uiState.activeCell));
-      dispatch(gridActions.updateSelection({ row: endRow, col: endCol }));
-      dispatch(gridActions.endSelection());
-      dispatch(gridActions.activateCell(uiState.activeCell));
-    },
-    [
-      canEditCell,
-      createOverflowColumn,
-      createRow,
-      dispatch,
-      onColumnsChange,
-      onRowsChange,
-      readOnly,
-      rowModel,
-      rows,
-      uiState.activeCell,
-      visibleColumns,
-    ],
-  );
-
-  return {
-    isWholeGridSelected,
-    handleCopy,
-    handlePaste,
-  };
-};
-
-export default useGridClipboardController;
-</file>
-
 <file path="src/components/spreadsheet-grid/view/ColumnFilterPopover.tsx">
 import { createPortal } from 'react-dom';
 // 変更(12-A): set フィルター(検索 + Select All + チェックボックス一覧)用に
@@ -3316,164 +3054,272 @@ export const useGridBarContext = <T,>({
 export default useGridBarContext;
 </file>
 
-<file path="src/components/spreadsheet-grid/hooks/useGridEditController.ts">
-import { useCallback, type Dispatch, type RefObject } from 'react';
+<file path="src/components/spreadsheet-grid/hooks/useGridClipboardController.ts">
+import { useCallback, type Dispatch } from 'react';
 import { gridActions, type GridUiAction } from '../model/gridActions';
-import type { CellCoord, GridColumn, GridUiState, RowModel } from '../model/gridTypes';
-import type { EditorCommitDirection } from '../CellEditorLayer';
-import { setCellValue } from '../utils/permissions';
+import type {
+  GridColumn,
+  SpreadsheetGridProps,
+  GridUiState,
+  RowModel,
+} from '../model/gridTypes';
+import { clamp } from '../logic/geometry';
+import { getCellValue, isCellEditable } from '../utils/permissions';
+import {
+  applyClipboardMatrixToRows,
+  parseClipboardText,
+  serializeSelectionToTsv,
+} from '../utils/clipboard';
 
-type UseGridEditControllerArgs<T extends object> = {
-  uiState: GridUiState;
+type UseGridClipboardControllerArgs<T extends object> = {
   rows: T[];
-  visibleColumns: GridColumn<T>[];
-  // 変更(DS-3-2): filteredRowSourceIndexes: number[] を RowModel シームへ置換しました
-  //   (DS-3-0 の seam を消費 / edit consumer 移行)。source index は
-  //   getSourceIndex(viewIndex) = order[viewIndex] で解決します
-  //   (旧 filteredRowSourceIndexes[i] = Array.from(order)[i] と参照値一致)。
-  //   ※ rows 自体は commit の rows.map / rows[originalRowIndex] で引き続き直接参照します
-  //     (書き込みは source index 基準で rows を再構築するため getRow では代替不可)。
+  // 変更(DS-3-3): filteredRows / filteredRowSourceIndexes 配列 → rowModel シームへ集約。
+  //   copy 時のセル値取得は getRow(i)、paste 書き込みの source 解決は getSourceIndex(i)、
+  //   範囲判定の行数は getRowCount() を使い分けます。順序契約は order と同一(viewIndex 空間)。
   rowModel: RowModel<T>;
-  // 変更(11-B6): editorValue / setEditorValue(ドラフト state)は廃止しました。
-  //              ドラフトは CellEditorLayer のローカル state へ移動し、
-  //              親は「編集開始時の初期値」を設定する setter だけを持ちます。
-  setEditorInitialValue: (value: string) => void;
+  visibleColumns: GridColumn<T>[];
+  uiState: GridUiState;
+  readOnly: boolean;
+  canEditCell: SpreadsheetGridProps<T>['canEditCell'];
+  createRow?: () => T;
+  createOverflowColumn?: (columnIndex: number) => GridColumn<T>;
   onRowsChange?: (nextRows: T[]) => void;
+  onColumnsChange?: (nextColumns: GridColumn<T>[]) => void;
   dispatch: Dispatch<GridUiAction>;
-  getMovedCell: (baseCell: CellCoord, deltaRow: number, deltaCol: number) => CellCoord;
-  gridRootRef: RefObject<HTMLDivElement | null>;
-  editorActionGuardRef: RefObject<boolean>;
 };
 
-// 追加: edit 確定 / cancel / active cell 復帰をまとめる controller です。
-export const useGridEditController = <T extends object>({
-  uiState,
+// 追加: copy / paste と行列自動拡張をまとめる clipboard controller です。
+export const useGridClipboardController = <T extends object>({
   rows,
-  visibleColumns,
   rowModel,
-  setEditorInitialValue,
+  visibleColumns,
+  uiState,
+  readOnly,
+  canEditCell,
+  createRow,
+  createOverflowColumn,
   onRowsChange,
+  onColumnsChange,
   dispatch,
-  getMovedCell,
-  gridRootRef,
-  editorActionGuardRef,
-}: UseGridEditControllerArgs<T>) => {
-  // 追加: 単一セルを active + selection へ反映するユーティリティです。
-  const activateSingleCell = useCallback(
-    (cell: CellCoord) => {
-      dispatch(gridActions.startSelection(cell));
-      dispatch(gridActions.endSelection());
-      dispatch(gridActions.activateCell(cell));
-    },
-    [dispatch],
-  );
+}: UseGridClipboardControllerArgs<T>) => {
+  // 追加: 現在の selection が「表全体選択」かどうかを判定します。
+  // 変更(DS-3-3): filteredRows.length → rowModel.getRowCount()。
+  const viewRowCount = rowModel.getRowCount();
+  const isWholeGridSelected =
+    viewRowCount > 0 &&
+    visibleColumns.length > 0 &&
+    uiState.selection?.type === 'cell' &&
+    (() => {
+      const start = uiState.selection.range.start;
+      const end = uiState.selection.range.end;
+      const startRow = Math.min(start.row, end.row);
+      const startCol = Math.min(start.col, end.col);
+      const endRow = Math.max(start.row, end.row);
+      const endCol = Math.max(start.col, end.col);
+      return (
+        startRow === 0 &&
+        startCol === 0 &&
+        endRow === viewRowCount - 1 &&
+        endCol === visibleColumns.length - 1
+      );
+    })();
 
-  // 追加: 編集開始時に editor の初期値を設定する helper です。
-  // 変更(11-B6): 設定先はドラフト state ではなく「初期値 state」になりました。
-  //   setEditorInitialValue + startEdit は同一イベントハンドラ内で React が自動バッチ
-  //   するため、編集開始時の親レンダーは従来どおり 1 回です。
-  const startEditWithValue = useCallback(
-    (cell: CellCoord, initialValue: string) => {
-      setEditorInitialValue(initialValue);
-      dispatch(gridActions.startEdit(cell));
-    },
-    [dispatch, setEditorInitialValue],
-  );
+  // 追加: 全体選択時の copy を専用経路で行います。
+  // 変更(DS-3-3): filteredRows.map → getRowCount()/getRow(i) のビュー順走査へ置換。
+  const serializeWholeGridToTsv = useCallback(() => {
+    const rowCount = rowModel.getRowCount();
+    if (rowCount === 0 || visibleColumns.length === 0) {
+      return '';
+    }
 
-  // 追加: 編集確定です。確定値を rows へ反映し、必要なら次セルへ移動します。
-  // 変更(11-B6): (direction?) → (committedValue, direction?) に変更。
-  //   ドラフト値を閉包(editorValue 依存)で読むのをやめ、CellEditorLayer から
-  //   最終値を引数で受け取ります。これにより本ハンドラの参照は編集中のタイピングで
-  //   変化しなくなります（旧実装は毎キーストロークで editorValue 依存が更新され、
-  //   commitEdit → CellEditorLayer props の参照も毎回変わっていました）。
-  const commitEdit = useCallback(
-    (committedValue: string, direction?: EditorCommitDirection) => {
-      if (editorActionGuardRef.current || !uiState.editingCell) {
-        return;
-      }
-
-      const editingCell = uiState.editingCell;
-      const nextCell =
-        direction === 'down'
-          ? getMovedCell(editingCell, 1, 0)
-          : direction === 'right'
-            ? getMovedCell(editingCell, 0, 1)
-            : direction === 'left'
-              ? getMovedCell(editingCell, 0, -1)
-              : editingCell;
-
-      const column = visibleColumns[editingCell.col];
-      // 変更(DS-3-2): source index 解決をシーム経由に切り替えます。
-      //   getSourceIndex(viewIndex) = order[viewIndex]。件数変動でビュー index が範囲外に
-      //   なった場合 order[OOB] = undefined のため、旧版と同じく ?? で editingCell.row へ
-      //   フォールバックします(直後の rows[...] / !row ガードも据え置き=挙動完全一致)。
-      const originalRowIndex =
-        rowModel.getSourceIndex(editingCell.row) ?? editingCell.row;
-      const row = rows[originalRowIndex];
-      if (!column || !row) {
-        dispatch(gridActions.stopEdit());
-        return;
-      }
-
-      if (onRowsChange) {
-        const parsedValue = column.parseClipboardValue
-          ? column.parseClipboardValue(committedValue, row)
-          : committedValue;
-        const nextRows = rows.map((currentRow, index) =>
-          index === originalRowIndex
-            ? setCellValue(currentRow, column, parsedValue)
-            : currentRow,
-        );
-        onRowsChange(nextRows);
-      }
-
-      editorActionGuardRef.current = true;
-      requestAnimationFrame(() => {
-        gridRootRef.current?.focus();
-        activateSingleCell(nextCell);
-        editorActionGuardRef.current = false;
+    const lines: string[] = [];
+    for (let viewIndex = 0; viewIndex < rowCount; viewIndex += 1) {
+      const row = rowModel.getRow(viewIndex);
+      const cells = visibleColumns.map((column) => {
+        const rawValue = getCellValue(row, column);
+        return column.formatClipboardValue
+          ? column.formatClipboardValue(rawValue, row)
+          : String(rawValue ?? '');
       });
+      lines.push(cells.join('\t'));
+    }
+    return lines.join('\n');
+  }, [rowModel, visibleColumns]);
 
-      dispatch(gridActions.stopEdit());
+  // 追加: copy 処理です。selection を TSV にしてクリップボードへ書き込みます。
+  const handleCopy = useCallback(async () => {
+    // 変更(DS-3-3): serializeSelectionToTsv は行を view index で引くため、
+    //   getRow(i) でビュー順の行配列を一時 materialize して渡します(copy は稀操作)。
+    //   旧 filteredRows[i] と参照値一致(getRow(i) = rows[order[i]] = filteredRows[i])。
+    const text = isWholeGridSelected
+      ? serializeWholeGridToTsv()
+      : serializeSelectionToTsv(
+          Array.from({ length: rowModel.getRowCount() }, (_, viewIndex) =>
+            rowModel.getRow(viewIndex),
+          ),
+          visibleColumns,
+          uiState.selection as
+            | {
+                type: 'cell';
+                range: {
+                  start: { row: number; col: number };
+                  end: { row: number; col: number };
+                };
+              }
+            | { type: 'row'; startRow: number; endRow: number }
+            | { type: 'col'; startCol: number; endCol: number }
+            | null,
+        );
+
+    if (!text) {
+      return;
+    }
+
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text);
+    }
+  }, [
+    isWholeGridSelected,
+    rowModel,
+    serializeWholeGridToTsv,
+    uiState.selection,
+    visibleColumns,
+  ]);
+
+  // 追加: paste 処理です。TSV を activeCell 起点に適用し、必要なら行/列を自動拡張します。
+  const handlePaste = useCallback(
+    (event: React.ClipboardEvent<HTMLDivElement>) => {
+      if (!onRowsChange || !uiState.activeCell) {
+        return;
+      }
+
+      const text = event.clipboardData.getData('text/plain');
+      if (!text) {
+        return;
+      }
+
+      event.preventDefault();
+
+      const matrix = parseClipboardText(text);
+      if (matrix.length === 0) {
+        return;
+      }
+
+      const startFilteredRowIndex = uiState.activeCell.row;
+      // 変更(DS-3-9): レガシーの ?? startFilteredRowIndex フォールバックを撤去します。
+      //   getSourceIndex(=order[i]) は OOB(activeCell が縮小後の order を超える)で undefined を
+      //   返します。旧版は ?? で view index を source index に誤代入していました。撤去後は
+      //   undefined をそのまま判定し、OOB の paste 起点は no-op で抜けます(下流の startOriginalRowIndex +
+      //   matrix.length が NaN になるのを防ぎ、誤行 append も回避)。in-bounds 時は従来と完全一致。
+      const startOriginalRowIndex =
+        rowModel.getSourceIndex(startFilteredRowIndex);
+      if (startOriginalRowIndex === undefined) {
+        return;
+      }
+      const startColIndex = uiState.activeCell.col;
+
+      let workingRows = [...rows];
+      let workingColumns = [...visibleColumns];
+      // 変更(DS-3-3): [...filteredRowSourceIndexes] → getSourceIndex(i) のビュー順 materialize。
+      //   値は order と同一(getSourceIndex(i) = order[i])。以降の append は従来どおり末尾追加。
+      const viewRowCountForPaste = rowModel.getRowCount();
+      let workingSourceIndexes = Array.from(
+        { length: viewRowCountForPaste },
+        (_, viewIndex) => rowModel.getSourceIndex(viewIndex),
+      );
+
+      // 追加: 行不足分を createRow で自動追加します。
+      const requiredOriginalRowCount = startOriginalRowIndex + matrix.length;
+      if (requiredOriginalRowCount > workingRows.length && createRow) {
+        while (workingRows.length < requiredOriginalRowCount) {
+          workingRows.push(createRow());
+          workingSourceIndexes.push(workingRows.length - 1);
+        }
+      }
+
+      // 追加: 列不足分を createOverflowColumn で自動追加します。
+      const maxPasteWidth = matrix.reduce(
+        (max, currentRow) => Math.max(max, currentRow.length),
+        0,
+      );
+      if (maxPasteWidth === 0) {
+        return;
+      }
+
+      const requiredColumnCount = startColIndex + maxPasteWidth;
+      if (requiredColumnCount > workingColumns.length) {
+        if (onColumnsChange && createOverflowColumn) {
+          while (workingColumns.length < requiredColumnCount) {
+            workingColumns.push(createOverflowColumn(workingColumns.length));
+          }
+          onColumnsChange(workingColumns);
+        }
+      }
+
+      const nextRows = applyClipboardMatrixToRows(
+        workingRows,
+        workingSourceIndexes,
+        workingColumns,
+        matrix,
+        startFilteredRowIndex,
+        startColIndex,
+        (originalRowIndex, colIndex, row, column) =>
+          isCellEditable(
+            { readOnly, canEditCell },
+            originalRowIndex,
+            colIndex,
+            row,
+            column,
+          ),
+      );
+
+      const endRow = clamp(
+        uiState.activeCell.row + Math.max(matrix.length - 1, 0),
+        0,
+        Math.max(
+          // 変更(DS-3-3): filteredRows.length - 1 → getRowCount() - 1。
+          Math.max(rowModel.getRowCount() - 1, 0),
+          startFilteredRowIndex + matrix.length - 1,
+        ),
+      );
+      const endCol = clamp(
+        uiState.activeCell.col + Math.max((matrix[0]?.length ?? 1) - 1, 0),
+        0,
+        Math.max(
+          Math.max(workingColumns.length - 1, 0),
+          startColIndex + maxPasteWidth - 1,
+        ),
+      );
+
+      onRowsChange(nextRows);
+      dispatch(gridActions.startSelection(uiState.activeCell));
+      dispatch(gridActions.updateSelection({ row: endRow, col: endCol }));
+      dispatch(gridActions.endSelection());
+      dispatch(gridActions.activateCell(uiState.activeCell));
     },
     [
-      activateSingleCell,
+      canEditCell,
+      createOverflowColumn,
+      createRow,
       dispatch,
-      editorActionGuardRef,
-      rowModel,
-      getMovedCell,
-      gridRootRef,
+      onColumnsChange,
       onRowsChange,
+      readOnly,
+      rowModel,
       rows,
-      uiState.editingCell,
+      uiState.activeCell,
       visibleColumns,
     ],
   );
 
-  // 追加: 編集キャンセルです。editor を閉じるだけです。
-  const cancelEdit = useCallback(() => {
-    if (editorActionGuardRef.current) {
-      return;
-    }
-
-    editorActionGuardRef.current = true;
-    dispatch(gridActions.stopEdit());
-
-    requestAnimationFrame(() => {
-      gridRootRef.current?.focus();
-      editorActionGuardRef.current = false;
-    });
-  }, [dispatch, editorActionGuardRef, gridRootRef]);
-
   return {
-    activateSingleCell,
-    startEditWithValue,
-    commitEdit,
-    cancelEdit,
+    isWholeGridSelected,
+    handleCopy,
+    handlePaste,
   };
 };
 
-export default useGridEditController;
+export default useGridClipboardController;
 </file>
 
 <file path="src/components/spreadsheet-grid/hooks/useGridKeyboardInteractions.ts">
@@ -3855,306 +3701,6 @@ export const useGridViewportSync = <T,>({
 };
 
 export default useGridViewportSync;
-</file>
-
-<file path="src/components/spreadsheet-grid/logic/filtering.ts">
-import type { GridColumn, SetColumnFilterValue } from '../model/gridTypes';
-import { getCellValue } from '../utils/permissions';
-
-// 追加(DS-1 / index ベースパイプライン): 「ビュー順に並んだ元 rows の index 列」です。
-//   オブジェクト配列({row, sourceIndex, ...})を各段で割り当て直す従来方式に代えて、
-//   フィルタ/ソートはこの index 列(Int32Array)だけを生成・受け渡しします。
-//   - 1,000,000 行でも 4MB(= 4byte × N)に収まり、割り当て/GC が行オブジェクト方式から桁で下がります。
-//   - 将来 Web Worker へ渡す際に transferable(ゼロコピー)になります。
-//   - ビュー位置 i の元行は rows[order[i]] で引きます(この対応付けが後段のシームの土台)。
-//   DS-1 は純関数の追加のみで、配線(SpreadsheetGrid 側のチェーン差し替え)は DS-2 で行います。
-export type RowOrder = Int32Array;
-
-// 追加(DS-1): 恒等 order [0, 1, ..., rowCount-1] を生成します(パイプラインの起点)。
-export const createSourceOrder = (rowCount: number): RowOrder => {
-  const order = new Int32Array(rowCount);
-  for (let i = 0; i < rowCount; i += 1) {
-    order[i] = i;
-  }
-  return order;
-};
-
-// 追加(12-A): set フィルター値の type guard です。
-export const isSetColumnFilterValue = (
-  value: unknown,
-): value is SetColumnFilterValue =>
-  typeof value === 'object' &&
-  value !== null &&
-  (value as SetColumnFilterValue).kind === 'set' &&
-  Array.isArray((value as SetColumnFilterValue).values);
-
-// 追加(12-A): 列フィルター値が「有効」かを判定する共通 helper です。
-// 変更理由: 従来は GridHeaderRow(フィルター済みバッジ) / gridBarHelpers(有効件数) /
-//   列フィルタの適用処理がそれぞれ String(value).trim() で判定していました。
-//   set フィルター値はオブジェクトのため String() 判定が成立しません
-//   (空配列 = 全行除外でも「有効」と数える必要があります)。
-//   有効判定をここへ一元化し、3 箇所すべてが同じ規則を共有します。
-//   set 以外は従来どおり「非空文字列のみ有効」で挙動等価です。
-export const isActiveColumnFilterValue = (value: unknown): boolean => {
-  if (isSetColumnFilterValue(value)) {
-    // 注記: 全選択時は reducer 側で clearColumn 済みのため、値が存在する時点で有効です。
-    return true;
-  }
-  return String(value ?? '').trim().length > 0;
-};
-
-// 追加: number フィルターの解釈結果です。
-export type ParsedNumberFilter =
-  | {
-      mode: 'comparison';
-      operator: '>' | '>=' | '<' | '<=' | '=';
-      value: number;
-    }
-  | {
-      mode: 'range';
-      min: number;
-      max: number;
-    };
-
-// 追加: number フィルター式を解釈します。
-export const parseNumberFilterExpression = (
-  rawValue: string,
-): ParsedNumberFilter | null => {
-  const normalized = rawValue.trim();
-  if (!normalized) {
-    return null;
-  }
-
-  const rangeMatch = normalized.match(
-    /^(-?\d+(?:\.\d+)?)\s*\.\.\s*(-?\d+(?:\.\d+)?)$/,
-  );
-  if (rangeMatch) {
-    const first = Number(rangeMatch[1]);
-    const second = Number(rangeMatch[2]);
-    if (!Number.isFinite(first) || !Number.isFinite(second)) {
-      return null;
-    }
-    return {
-      mode: 'range',
-      min: Math.min(first, second),
-      max: Math.max(first, second),
-    };
-  }
-
-  const comparisonMatch = normalized.match(
-    /^(<=|>=|=|<|>)?\s*(-?\d+(?:\.\d+)?)$/,
-  );
-  if (!comparisonMatch) {
-    return null;
-  }
-
-  return {
-    mode: 'comparison',
-    operator: (comparisonMatch[1] ?? '=') as '>' | '>=' | '<' | '<=' | '=',
-    value: Number(comparisonMatch[2]),
-  };
-};
-
-// 追加: number 型フィルターの評価です。
-export const applyNumberFilter = (
-  cellValue: unknown,
-  filterValue: unknown,
-) => {
-  const normalizedFilter = String(filterValue ?? '').trim();
-  if (!normalizedFilter) {
-    return true;
-  }
-
-  const parsedFilter = parseNumberFilterExpression(normalizedFilter);
-  if (!parsedFilter) {
-    // 追加: 式として解釈できない場合は contains にフォールバックします。
-    return String(cellValue ?? '')
-      .toLowerCase()
-      .includes(normalizedFilter.toLowerCase());
-  }
-
-  const numericCellValue = Number(cellValue);
-  if (!Number.isFinite(numericCellValue)) {
-    return false;
-  }
-
-  if (parsedFilter.mode === 'range') {
-    return (
-      numericCellValue >= parsedFilter.min &&
-      numericCellValue <= parsedFilter.max
-    );
-  }
-
-  switch (parsedFilter.operator) {
-    case '>':
-      return numericCellValue > parsedFilter.value;
-    case '>=':
-      return numericCellValue >= parsedFilter.value;
-    case '<':
-      return numericCellValue < parsedFilter.value;
-    case '<=':
-      return numericCellValue <= parsedFilter.value;
-    case '=':
-    default:
-      return numericCellValue === parsedFilter.value;
-  }
-};
-
-// 列フィルターの「行ループ前の事前コンパイル方式」のための型・helper 群です(12-A)。
-//   set フィルターは候補が多い列(例: 品番 5,000 種)でも O(1) 判定にしたく、
-//   行ループの外で一度だけ Set を構築する必要があります。また有効な列フィルターだけを
-//   predicate へ事前コンパイルすることで、行ループは「有効フィルター数 × 行数」に縮小し、
-//   フィルター未設定列ぶんの String(...).trim().toLowerCase() 正規化を省けます
-//   (text / number / select の判定結果は単一実装で一意です)。
-//   現在の利用者は index 版 filterOrderByColumns です
-//   (旧オブジェクト配列版は DS-3-8 で削除しました)。
-type CompiledColumnFilterPredicate<T> = (row: T) => boolean;
-
-// 追加(12-A): 1 列ぶんのフィルター値を predicate へコンパイルします。
-//             無効(未設定)なら null を返し、行ループから除外します。
-const compileSingleColumnFilter = <T,>(
-  column: GridColumn<T>,
-  filterValue: unknown,
-): CompiledColumnFilterPredicate<T> | null => {
-  if (!isActiveColumnFilterValue(filterValue)) {
-    return null;
-  }
-
-  // 注記: 従来どおり column.filterFn を最優先します(set 値が渡るケースも
-  //       利用側 filterFn の責務とし、挙動の優先順位は変えません)。
-  if (column.filterFn) {
-    const filterFn = column.filterFn;
-    return (row) => filterFn(row, filterValue);
-  }
-
-  // 追加(12-A): set フィルターは「許可値の Set」を一度だけ構築し、O(1) 照合します。
-  if (isSetColumnFilterValue(filterValue)) {
-    const allowedValues = new Set(filterValue.values);
-    return (row) => allowedValues.has(String(getCellValue(row, column) ?? ''));
-  }
-
-  const filterType = column.filterType ?? 'text';
-
-  if (filterType === 'number') {
-    return (row) => applyNumberFilter(getCellValue(row, column), filterValue);
-  }
-
-  if (filterType === 'select') {
-    const expectedValue = String(filterValue ?? '');
-    return (row) => String(getCellValue(row, column) ?? '') === expectedValue;
-  }
-
-  // text / date / custom(filterFn なし)は従来どおり部分一致です。
-  const normalizedFilter = String(filterValue ?? '').trim().toLowerCase();
-  return (row) =>
-    String(getCellValue(row, column) ?? '')
-      .toLowerCase()
-      .includes(normalizedFilter);
-};
-
-// ────────────────────────────────────────────────
-// 追加(DS-1 / index ベースパイプライン): order(RowOrder)を受けて order を返すフィルタ群。
-//   本体のフィルタ経路はこの index 版に一本化済みです(DS-2 で差し替え、
-//   旧オブジェクト配列版は DS-3-8 で削除)。いずれも「合格行を元の相対順で詰め直す」処理で、
-//   入出力が {row,...}[] ではなく元 rows + index 列(Int32Array)である点が要点です。
-//   「全件通過」のときは同一参照(引数 order)を返し、下流 useMemo のスキップを最大化します
-//   (.filter は全通過でも新配列を返すため、参照節約という点でも改善です)。
-// ────────────────────────────────────────────────
-
-// 追加(DS-1): グローバルフィルタの index 版です(columns.some の部分一致)。
-//   filter 文字列が空なら同一参照を返します。
-export const filterOrderByGlobalText = <T,>(
-  rows: T[],
-  order: RowOrder,
-  columns: GridColumn<T>[],
-  globalText: string,
-): RowOrder => {
-  const normalizedFilter = globalText.trim().toLowerCase();
-  if (!normalizedFilter) {
-    return order;
-  }
-
-  const length = order.length;
-  const columnCount = columns.length;
-  const result = new Int32Array(length);
-  let count = 0;
-
-  for (let pos = 0; pos < length; pos += 1) {
-    const sourceIndex = order[pos];
-    const row = rows[sourceIndex];
-    let matched = false;
-    for (let c = 0; c < columnCount; c += 1) {
-      const value = getCellValue(row, columns[c]);
-      if (String(value ?? '').toLowerCase().includes(normalizedFilter)) {
-        matched = true;
-        break;
-      }
-    }
-    if (matched) {
-      result[count] = sourceIndex;
-      count += 1;
-    }
-  }
-
-  // 全件通過なら参照を変えません(no-op スキップ最大化)。
-  if (count === length) {
-    return order;
-  }
-  // 余剰バッファを抱えないよう、右サイズへ slice(コピー)します。
-  return result.slice(0, count);
-};
-
-// 追加(DS-1): 列フィルタの index 版です(有効フィルタの predicates.every)。
-//   事前コンパイルは compileSingleColumnFilter を再利用します
-//   (text / number / select / set / filterFn の判定は単一実装)。
-//   有効フィルタが 0 件なら同一参照を返します。
-export const filterOrderByColumns = <T,>(
-  rows: T[],
-  order: RowOrder,
-  columns: GridColumn<T>[],
-  columnFilters: Record<string, unknown>,
-): RowOrder => {
-  const predicates: CompiledColumnFilterPredicate<T>[] = [];
-  for (const column of columns) {
-    const predicate = compileSingleColumnFilter(
-      column,
-      columnFilters[column.key],
-    );
-    if (predicate) {
-      predicates.push(predicate);
-    }
-  }
-
-  if (predicates.length === 0) {
-    return order;
-  }
-
-  const length = order.length;
-  const predicateCount = predicates.length;
-  const result = new Int32Array(length);
-  let count = 0;
-
-  for (let pos = 0; pos < length; pos += 1) {
-    const sourceIndex = order[pos];
-    const row = rows[sourceIndex];
-    let ok = true;
-    for (let p = 0; p < predicateCount; p += 1) {
-      if (!predicates[p](row)) {
-        ok = false;
-        break;
-      }
-    }
-    if (ok) {
-      result[count] = sourceIndex;
-      count += 1;
-    }
-  }
-
-  if (count === length) {
-    return order;
-  }
-  return result.slice(0, count);
-};
 </file>
 
 <file path="src/components/spreadsheet-grid/model/gridSelectors.ts">
@@ -5397,6 +4943,467 @@ export const useColumnHeaderDragController = <T,>(
 };
 
 export default useColumnHeaderDragController;
+</file>
+
+<file path="src/components/spreadsheet-grid/hooks/useGridEditController.ts">
+import { useCallback, type Dispatch, type RefObject } from 'react';
+import { gridActions, type GridUiAction } from '../model/gridActions';
+import type { CellCoord, GridColumn, GridUiState, RowModel } from '../model/gridTypes';
+import type { EditorCommitDirection } from '../CellEditorLayer';
+import { setCellValue } from '../utils/permissions';
+
+type UseGridEditControllerArgs<T extends object> = {
+  uiState: GridUiState;
+  rows: T[];
+  visibleColumns: GridColumn<T>[];
+  // 変更(DS-3-2): filteredRowSourceIndexes: number[] を RowModel シームへ置換しました
+  //   (DS-3-0 の seam を消費 / edit consumer 移行)。source index は
+  //   getSourceIndex(viewIndex) = order[viewIndex] で解決します
+  //   (旧 filteredRowSourceIndexes[i] = Array.from(order)[i] と参照値一致)。
+  //   ※ rows 自体は commit の rows.map / rows[originalRowIndex] で引き続き直接参照します
+  //     (書き込みは source index 基準で rows を再構築するため getRow では代替不可)。
+  rowModel: RowModel<T>;
+  // 変更(11-B6): editorValue / setEditorValue(ドラフト state)は廃止しました。
+  //              ドラフトは CellEditorLayer のローカル state へ移動し、
+  //              親は「編集開始時の初期値」を設定する setter だけを持ちます。
+  setEditorInitialValue: (value: string) => void;
+  onRowsChange?: (nextRows: T[]) => void;
+  dispatch: Dispatch<GridUiAction>;
+  getMovedCell: (baseCell: CellCoord, deltaRow: number, deltaCol: number) => CellCoord;
+  gridRootRef: RefObject<HTMLDivElement | null>;
+  editorActionGuardRef: RefObject<boolean>;
+};
+
+// 追加: edit 確定 / cancel / active cell 復帰をまとめる controller です。
+export const useGridEditController = <T extends object>({
+  uiState,
+  rows,
+  visibleColumns,
+  rowModel,
+  setEditorInitialValue,
+  onRowsChange,
+  dispatch,
+  getMovedCell,
+  gridRootRef,
+  editorActionGuardRef,
+}: UseGridEditControllerArgs<T>) => {
+  // 追加: 単一セルを active + selection へ反映するユーティリティです。
+  const activateSingleCell = useCallback(
+    (cell: CellCoord) => {
+      dispatch(gridActions.startSelection(cell));
+      dispatch(gridActions.endSelection());
+      dispatch(gridActions.activateCell(cell));
+    },
+    [dispatch],
+  );
+
+  // 追加: 編集開始時に editor の初期値を設定する helper です。
+  // 変更(11-B6): 設定先はドラフト state ではなく「初期値 state」になりました。
+  //   setEditorInitialValue + startEdit は同一イベントハンドラ内で React が自動バッチ
+  //   するため、編集開始時の親レンダーは従来どおり 1 回です。
+  const startEditWithValue = useCallback(
+    (cell: CellCoord, initialValue: string) => {
+      setEditorInitialValue(initialValue);
+      dispatch(gridActions.startEdit(cell));
+    },
+    [dispatch, setEditorInitialValue],
+  );
+
+  // 追加: 編集確定です。確定値を rows へ反映し、必要なら次セルへ移動します。
+  // 変更(11-B6): (direction?) → (committedValue, direction?) に変更。
+  //   ドラフト値を閉包(editorValue 依存)で読むのをやめ、CellEditorLayer から
+  //   最終値を引数で受け取ります。これにより本ハンドラの参照は編集中のタイピングで
+  //   変化しなくなります（旧実装は毎キーストロークで editorValue 依存が更新され、
+  //   commitEdit → CellEditorLayer props の参照も毎回変わっていました）。
+  const commitEdit = useCallback(
+    (committedValue: string, direction?: EditorCommitDirection) => {
+      if (editorActionGuardRef.current || !uiState.editingCell) {
+        return;
+      }
+
+      const editingCell = uiState.editingCell;
+      const nextCell =
+        direction === 'down'
+          ? getMovedCell(editingCell, 1, 0)
+          : direction === 'right'
+            ? getMovedCell(editingCell, 0, 1)
+            : direction === 'left'
+              ? getMovedCell(editingCell, 0, -1)
+              : editingCell;
+
+      const column = visibleColumns[editingCell.col];
+      // 変更(DS-3-9): レガシーの ?? editingCell.row フォールバックを撤去します。
+      //   getSourceIndex(viewIndex) = order[viewIndex]。編集中に件数変動でビュー index が範囲外に
+      //   なると order[OOB] = undefined を返します。旧版は ?? で editingCell.row(view index)を
+      //   source index に誤代入しており、フィルター/ソート中の OOB では誤行へ書き込む潜在バグでした。
+      //   撤去後は undefined がそのまま下流へ流れ、rows[undefined] = undefined → 直後の !row ガードで
+      //   編集をクリーンにキャンセルします(in-bounds 時は従来と完全一致)。
+      const originalRowIndex = rowModel.getSourceIndex(editingCell.row);
+      const row = rows[originalRowIndex];
+      if (!column || !row) {
+        dispatch(gridActions.stopEdit());
+        return;
+      }
+
+      if (onRowsChange) {
+        const parsedValue = column.parseClipboardValue
+          ? column.parseClipboardValue(committedValue, row)
+          : committedValue;
+        const nextRows = rows.map((currentRow, index) =>
+          index === originalRowIndex
+            ? setCellValue(currentRow, column, parsedValue)
+            : currentRow,
+        );
+        onRowsChange(nextRows);
+      }
+
+      editorActionGuardRef.current = true;
+      requestAnimationFrame(() => {
+        gridRootRef.current?.focus();
+        activateSingleCell(nextCell);
+        editorActionGuardRef.current = false;
+      });
+
+      dispatch(gridActions.stopEdit());
+    },
+    [
+      activateSingleCell,
+      dispatch,
+      editorActionGuardRef,
+      rowModel,
+      getMovedCell,
+      gridRootRef,
+      onRowsChange,
+      rows,
+      uiState.editingCell,
+      visibleColumns,
+    ],
+  );
+
+  // 追加: 編集キャンセルです。editor を閉じるだけです。
+  const cancelEdit = useCallback(() => {
+    if (editorActionGuardRef.current) {
+      return;
+    }
+
+    editorActionGuardRef.current = true;
+    dispatch(gridActions.stopEdit());
+
+    requestAnimationFrame(() => {
+      gridRootRef.current?.focus();
+      editorActionGuardRef.current = false;
+    });
+  }, [dispatch, editorActionGuardRef, gridRootRef]);
+
+  return {
+    activateSingleCell,
+    startEditWithValue,
+    commitEdit,
+    cancelEdit,
+  };
+};
+
+export default useGridEditController;
+</file>
+
+<file path="src/components/spreadsheet-grid/logic/filtering.ts">
+import type { GridColumn, SetColumnFilterValue } from '../model/gridTypes';
+import { getCellValue } from '../utils/permissions';
+
+// 追加(DS-1 / index ベースパイプライン): 「ビュー順に並んだ元 rows の index 列」です。
+//   オブジェクト配列({row, sourceIndex, ...})を各段で割り当て直す従来方式に代えて、
+//   フィルタ/ソートはこの index 列(Int32Array)だけを生成・受け渡しします。
+//   - 1,000,000 行でも 4MB(= 4byte × N)に収まり、割り当て/GC が行オブジェクト方式から桁で下がります。
+//   - 将来 Web Worker へ渡す際に transferable(ゼロコピー)になります。
+//   - ビュー位置 i の元行は rows[order[i]] で引きます(この対応付けが後段のシームの土台)。
+//   DS-1 は純関数の追加のみで、配線(SpreadsheetGrid 側のチェーン差し替え)は DS-2 で行います。
+export type RowOrder = Int32Array;
+
+// 追加(DS-1): 恒等 order [0, 1, ..., rowCount-1] を生成します(パイプラインの起点)。
+export const createSourceOrder = (rowCount: number): RowOrder => {
+  const order = new Int32Array(rowCount);
+  for (let i = 0; i < rowCount; i += 1) {
+    order[i] = i;
+  }
+  return order;
+};
+
+// 追加(12-A): set フィルター値の type guard です。
+export const isSetColumnFilterValue = (
+  value: unknown,
+): value is SetColumnFilterValue =>
+  typeof value === 'object' &&
+  value !== null &&
+  (value as SetColumnFilterValue).kind === 'set' &&
+  Array.isArray((value as SetColumnFilterValue).values);
+
+// 追加(12-A): 列フィルター値が「有効」かを判定する共通 helper です。
+// 変更理由: 従来は GridHeaderRow(フィルター済みバッジ) / gridBarHelpers(有効件数) /
+//   列フィルタの適用処理がそれぞれ String(value).trim() で判定していました。
+//   set フィルター値はオブジェクトのため String() 判定が成立しません
+//   (空配列 = 全行除外でも「有効」と数える必要があります)。
+//   有効判定をここへ一元化し、3 箇所すべてが同じ規則を共有します。
+//   set 以外は従来どおり「非空文字列のみ有効」で挙動等価です。
+export const isActiveColumnFilterValue = (value: unknown): boolean => {
+  if (isSetColumnFilterValue(value)) {
+    // 注記: 全選択時は reducer 側で clearColumn 済みのため、値が存在する時点で有効です。
+    return true;
+  }
+  return String(value ?? '').trim().length > 0;
+};
+
+// 追加: number フィルターの解釈結果です。
+export type ParsedNumberFilter =
+  | {
+      mode: 'comparison';
+      operator: '>' | '>=' | '<' | '<=' | '=';
+      value: number;
+    }
+  | {
+      mode: 'range';
+      min: number;
+      max: number;
+    };
+
+// 追加: number フィルター式を解釈します。
+export const parseNumberFilterExpression = (
+  rawValue: string,
+): ParsedNumberFilter | null => {
+  const normalized = rawValue.trim();
+  if (!normalized) {
+    return null;
+  }
+
+  const rangeMatch = normalized.match(
+    /^(-?\d+(?:\.\d+)?)\s*\.\.\s*(-?\d+(?:\.\d+)?)$/,
+  );
+  if (rangeMatch) {
+    const first = Number(rangeMatch[1]);
+    const second = Number(rangeMatch[2]);
+    if (!Number.isFinite(first) || !Number.isFinite(second)) {
+      return null;
+    }
+    return {
+      mode: 'range',
+      min: Math.min(first, second),
+      max: Math.max(first, second),
+    };
+  }
+
+  const comparisonMatch = normalized.match(
+    /^(<=|>=|=|<|>)?\s*(-?\d+(?:\.\d+)?)$/,
+  );
+  if (!comparisonMatch) {
+    return null;
+  }
+
+  return {
+    mode: 'comparison',
+    operator: (comparisonMatch[1] ?? '=') as '>' | '>=' | '<' | '<=' | '=',
+    value: Number(comparisonMatch[2]),
+  };
+};
+
+// 追加: number 型フィルターの評価です。
+export const applyNumberFilter = (
+  cellValue: unknown,
+  filterValue: unknown,
+) => {
+  const normalizedFilter = String(filterValue ?? '').trim();
+  if (!normalizedFilter) {
+    return true;
+  }
+
+  const parsedFilter = parseNumberFilterExpression(normalizedFilter);
+  if (!parsedFilter) {
+    // 追加: 式として解釈できない場合は contains にフォールバックします。
+    return String(cellValue ?? '')
+      .toLowerCase()
+      .includes(normalizedFilter.toLowerCase());
+  }
+
+  const numericCellValue = Number(cellValue);
+  if (!Number.isFinite(numericCellValue)) {
+    return false;
+  }
+
+  if (parsedFilter.mode === 'range') {
+    return (
+      numericCellValue >= parsedFilter.min &&
+      numericCellValue <= parsedFilter.max
+    );
+  }
+
+  switch (parsedFilter.operator) {
+    case '>':
+      return numericCellValue > parsedFilter.value;
+    case '>=':
+      return numericCellValue >= parsedFilter.value;
+    case '<':
+      return numericCellValue < parsedFilter.value;
+    case '<=':
+      return numericCellValue <= parsedFilter.value;
+    case '=':
+    default:
+      return numericCellValue === parsedFilter.value;
+  }
+};
+
+// 列フィルターの「行ループ前の事前コンパイル方式」のための型・helper 群です(12-A)。
+//   set フィルターは候補が多い列(例: 品番 5,000 種)でも O(1) 判定にしたく、
+//   行ループの外で一度だけ Set を構築する必要があります。また有効な列フィルターだけを
+//   predicate へ事前コンパイルすることで、行ループは「有効フィルター数 × 行数」に縮小し、
+//   フィルター未設定列ぶんの String(...).trim().toLowerCase() 正規化を省けます
+//   (text / number / select の判定結果は単一実装で一意です)。
+//   現在の利用者は index 版 filterOrderByColumns です
+//   (旧オブジェクト配列版は DS-3-8 で削除しました)。
+type CompiledColumnFilterPredicate<T> = (row: T) => boolean;
+
+// 追加(12-A): 1 列ぶんのフィルター値を predicate へコンパイルします。
+//             無効(未設定)なら null を返し、行ループから除外します。
+const compileSingleColumnFilter = <T,>(
+  column: GridColumn<T>,
+  filterValue: unknown,
+): CompiledColumnFilterPredicate<T> | null => {
+  if (!isActiveColumnFilterValue(filterValue)) {
+    return null;
+  }
+
+  // 注記: 従来どおり column.filterFn を最優先します(set 値が渡るケースも
+  //       利用側 filterFn の責務とし、挙動の優先順位は変えません)。
+  if (column.filterFn) {
+    const filterFn = column.filterFn;
+    return (row) => filterFn(row, filterValue);
+  }
+
+  // 追加(12-A): set フィルターは「許可値の Set」を一度だけ構築し、O(1) 照合します。
+  if (isSetColumnFilterValue(filterValue)) {
+    const allowedValues = new Set(filterValue.values);
+    return (row) => allowedValues.has(String(getCellValue(row, column) ?? ''));
+  }
+
+  const filterType = column.filterType ?? 'text';
+
+  if (filterType === 'number') {
+    return (row) => applyNumberFilter(getCellValue(row, column), filterValue);
+  }
+
+  if (filterType === 'select') {
+    const expectedValue = String(filterValue ?? '');
+    return (row) => String(getCellValue(row, column) ?? '') === expectedValue;
+  }
+
+  // text / date / custom(filterFn なし)は従来どおり部分一致です。
+  const normalizedFilter = String(filterValue ?? '').trim().toLowerCase();
+  return (row) =>
+    String(getCellValue(row, column) ?? '')
+      .toLowerCase()
+      .includes(normalizedFilter);
+};
+
+// ────────────────────────────────────────────────
+// 追加(DS-1 / index ベースパイプライン): order(RowOrder)を受けて order を返すフィルタ群。
+//   本体のフィルタ経路はこの index 版に一本化済みです(DS-2 で差し替え、
+//   旧オブジェクト配列版は DS-3-8 で削除)。いずれも「合格行を元の相対順で詰め直す」処理で、
+//   入出力が {row,...}[] ではなく元 rows + index 列(Int32Array)である点が要点です。
+//   「全件通過」のときは同一参照(引数 order)を返し、下流 useMemo のスキップを最大化します
+//   (.filter は全通過でも新配列を返すため、参照節約という点でも改善です)。
+// ────────────────────────────────────────────────
+
+// 追加(DS-1): グローバルフィルタの index 版です(columns.some の部分一致)。
+//   filter 文字列が空なら同一参照を返します。
+export const filterOrderByGlobalText = <T,>(
+  rows: T[],
+  order: RowOrder,
+  columns: GridColumn<T>[],
+  globalText: string,
+): RowOrder => {
+  const normalizedFilter = globalText.trim().toLowerCase();
+  if (!normalizedFilter) {
+    return order;
+  }
+
+  const length = order.length;
+  const columnCount = columns.length;
+  const result = new Int32Array(length);
+  let count = 0;
+
+  for (let pos = 0; pos < length; pos += 1) {
+    const sourceIndex = order[pos];
+    const row = rows[sourceIndex];
+    let matched = false;
+    for (let c = 0; c < columnCount; c += 1) {
+      const value = getCellValue(row, columns[c]);
+      if (String(value ?? '').toLowerCase().includes(normalizedFilter)) {
+        matched = true;
+        break;
+      }
+    }
+    if (matched) {
+      result[count] = sourceIndex;
+      count += 1;
+    }
+  }
+
+  // 全件通過なら参照を変えません(no-op スキップ最大化)。
+  if (count === length) {
+    return order;
+  }
+  // 余剰バッファを抱えないよう、右サイズへ slice(コピー)します。
+  return result.slice(0, count);
+};
+
+// 追加(DS-1): 列フィルタの index 版です(有効フィルタの predicates.every)。
+//   事前コンパイルは compileSingleColumnFilter を再利用します
+//   (text / number / select / set / filterFn の判定は単一実装)。
+//   有効フィルタが 0 件なら同一参照を返します。
+export const filterOrderByColumns = <T,>(
+  rows: T[],
+  order: RowOrder,
+  columns: GridColumn<T>[],
+  columnFilters: Record<string, unknown>,
+): RowOrder => {
+  const predicates: CompiledColumnFilterPredicate<T>[] = [];
+  for (const column of columns) {
+    const predicate = compileSingleColumnFilter(
+      column,
+      columnFilters[column.key],
+    );
+    if (predicate) {
+      predicates.push(predicate);
+    }
+  }
+
+  if (predicates.length === 0) {
+    return order;
+  }
+
+  const length = order.length;
+  const predicateCount = predicates.length;
+  const result = new Int32Array(length);
+  let count = 0;
+
+  for (let pos = 0; pos < length; pos += 1) {
+    const sourceIndex = order[pos];
+    const row = rows[sourceIndex];
+    let ok = true;
+    for (let p = 0; p < predicateCount; p += 1) {
+      if (!predicates[p](row)) {
+        ok = false;
+        break;
+      }
+    }
+    if (ok) {
+      result[count] = sourceIndex;
+      count += 1;
+    }
+  }
+
+  if (count === length) {
+    return order;
+  }
+  return result.slice(0, count);
+};
 </file>
 
 <file path="src/components/spreadsheet-grid/model/gridActions.ts">
@@ -10532,6 +10539,11 @@ export type GridRowKey = string | number;
 //   本体(SpreadsheetGrid / 各 consumer)はどちらのモードかを区別しません。これがシームの目的です。
 //   viewIndex は「ビュー位置(フィルター/ソート適用後の表示上の行 index)」で、source index
 //   (元 rows の index)とは別空間です。両者の対応付けは getSourceIndex が担います。
+//   注記(DS-3-9): clientSide 実装は OOB(viewIndex >= getRowCount())で実行時 undefined を返します
+//   (getRow = rows[order[OOB]] / getSourceIndex = order[OOB])。型は T / number のままですが
+//   (本 repo は strictNullChecks 無効のため | undefined を付けても型保護が効かず、実態の明文化に
+//   留まるため)、consumer 側は !row ガード(getRow)または === undefined 判定(getSourceIndex)で
+//   OOB を no-op として吸収します。serverSide 化(DS-4+)でこの境界を再検討します。
 export type RowModel<T> = {
   getRowCount: () => number;
   getRow: (viewIndex: number) => T;
@@ -12753,11 +12765,15 @@ export function SpreadsheetGrid<T extends object>({
             if (!onRowsChange) {
               return;
             }
-            // 変更(DS-3-2b): source index 解決をシーム経由へ。getSourceIndex(viewIndex) =
-            //   order[viewIndex]。OOB は undefined のため旧版同様 ?? rowIndex でフォール
-            //   バックします(in-bounds/OOB とも挙動完全一致)。
-            const originalRowIndex =
-              rowModel.getSourceIndex(rowIndex) ?? rowIndex;
+            // 変更(DS-3-9): レガシーの ?? rowIndex フォールバックを撤去します。
+            //   getSourceIndex(viewIndex) = order[viewIndex]。ここで rowIndex は virtualizer の
+            //   描画レンジ ⊂ [0, viewRowCount) のため常に in-bounds で、OOB(undefined)は実際には
+            //   発生しません。万一 undefined の場合は誤行(rows[viewIndex])への書き込みを避けるため
+            //   早期 return で no-op に倒します(旧 ?? は view index を source index に誤代入していた)。
+            const originalRowIndex = rowModel.getSourceIndex(rowIndex);
+            if (originalRowIndex === undefined) {
+              return;
+            }
             const nextRows = rows.map((currentRow, index) =>
               index === originalRowIndex
                 ? setCellValue(currentRow, column, nextValue)
