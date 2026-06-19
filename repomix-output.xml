@@ -69,10 +69,14 @@ src/components/spreadsheet-grid/hooks/useGridViewportSync.ts
 src/components/spreadsheet-grid/hooks/useSortManagementController.ts
 src/components/spreadsheet-grid/logic/columnAutosize.ts
 src/components/spreadsheet-grid/logic/domGuards.ts
+src/components/spreadsheet-grid/logic/filtering.test.ts
 src/components/spreadsheet-grid/logic/filtering.ts
 src/components/spreadsheet-grid/logic/geometry.ts
+src/components/spreadsheet-grid/logic/selectOptions.test.ts
 src/components/spreadsheet-grid/logic/selectOptions.ts
+src/components/spreadsheet-grid/logic/sorting.test.ts
 src/components/spreadsheet-grid/logic/sorting.ts
+src/components/spreadsheet-grid/logic/verticalGeometry.test.ts
 src/components/spreadsheet-grid/logic/verticalGeometry.ts
 src/components/spreadsheet-grid/model/gridActions.ts
 src/components/spreadsheet-grid/model/gridReducer.ts
@@ -99,263 +103,983 @@ src/main.tsx
 tsconfig.app.json
 tsconfig.json
 tsconfig.node.json
+tsconfig.vitest.json
 vite.config.ts
+vitest.config.ts
 </directory_structure>
 
 <files>
 This section contains the contents of the repository's files.
 
-<file path="src/components/spreadsheet-grid/hooks/useColumnSelectOptionsCollector.ts">
-import { useEffect, useMemo, useState } from 'react';
-import type { GridColumn } from '../model/gridTypes';
-import { yieldToMain } from '../utils/scheduler';
-import { collectSelectOptions, createSelectOptionsAccumulator, type SelectOptionEntry } from '../logic/selectOptions';
+<file path="src/components/spreadsheet-grid/logic/filtering.test.ts">
+// V-1: filtering の等価性テスト(旧 adhoc ハーネスの恒久化)。
+//   - B-2: filterOrderByColumns に numericKeys を渡した経路と渡さない経路が、number
+//     (comparison/range)でバイト等価であること(値の取得元のみ差し替え・判定本体は不変)。
+//   - 記述子 ≡ 旧 applyNumberFilter: commit 時 1 回 parse の記述子経路が、行ごとに parse する
+//     旧 applyNumberFilter と厳密に等価であること。
+//   - set(include/exclude)/ select / text(contains)/ 全通過 no-op / 無効フィルターの規約。
+//   - 記述子 helper(parse / build / draftText / isActive)の単体仕様。
+import { describe, it, expect } from 'vitest';
+import {
+  applyNumberFilter,
+  buildNumberColumnFilterValue,
+  columnFilterValueToDraftText,
+  createSourceOrder,
+  filterOrderByColumns,
+  filterOrderByGlobalText,
+  isActiveColumnFilterValue,
+  isNumberColumnFilterValue,
+  isSetColumnFilterValue,
+  parseNumberFilterExpression,
+  type RowOrder,
+} from './filtering';
+import { getCellValue } from '../utils/permissions';
+import type { GridColumn, SetColumnFilterValue } from '../model/gridTypes';
 
-// 1 チャンクで連続走査する時間予算(ms)です(autosize ランナーと同値)。
-const CHUNK_BUDGET_MS = 10;
-// 同期一括で収集する行数の上限です。これ以下は従来どおり open レンダーの useMemo で
-//   即時確定し(チラつきなし・バイト等価)、超えたぶんだけ時間分割の非同期収集に倒します。
-//   500k/1M の同期スキャン(≈0.4s/≈0.8〜1s)が主スレッドを塞ぐのを避ける一方、通常規模の
-//   体感(open 即リスト表示)は一切変えないための分岐点です。
-export const ASYNC_SELECT_COLLECT_ROW_THRESHOLD = 50_000;
+type Row = Record<string, unknown>;
 
-const now = (): number =>
-  typeof performance !== 'undefined' ? performance.now() : Date.now();
+const numberCol = (key: string): GridColumn<Row> => ({
+  key,
+  width: 100,
+  filterType: 'number',
+});
+const textCol = (key: string): GridColumn<Row> => ({ key, width: 100 });
+const selectCol = (key: string): GridColumn<Row> => ({
+  key,
+  width: 100,
+  filterType: 'select',
+});
+const setCol = (key: string): GridColumn<Row> => ({
+  key,
+  width: 100,
+  filterType: 'set',
+});
 
-const EMPTY_OPTIONS: SelectOptionEntry[] = [];
-const EMPTY_VALUES: ReadonlySet<string> = new Set<string>();
+const asArray = (order: RowOrder): number[] => Array.from(order);
 
-export type ColumnSelectOptionsStatus = 'idle' | 'collecting' | 'ready';
+const buildNumericKeys = (
+  rows: Row[],
+  key: string,
+): ReadonlyMap<string, Float64Array> =>
+  new Map([[key, Float64Array.from(rows, (row) => Number(row[key]))]]);
 
-export type ColumnSelectOptionsResult = {
-  status: ColumnSelectOptionsStatus;
-  options: SelectOptionEntry[];
-  // 全候補値の集合(ready のときのみ完全)。トグル/Select All の universe 判定に使います。
-  allValues: ReadonlySet<string>;
-  // collecting 中の進捗(0..1)。ready は 1 / idle は 0。
-  progress: number;
-};
+// 数値・非有限・空・文字列を混ぜた母集合(comparison/range/contains すべてを踏む)。
+const rows: Row[] = [
+  { n: 5, t: 'Apple', g: 'red' },
+  { n: 1, t: 'banana', g: 'yellow' },
+  { n: 10, t: 'Cherry', g: 'red' },
+  { n: 'x', t: 'date', g: 'brown' }, // 非有限
+  { n: '', t: 'Elder', g: 'black' }, // 空(Number('')=0 だが空白扱いの確認用)
+  { n: -3, t: 'fig', g: 'purple' },
+  { n: 7.5, t: 'Grape', g: 'green' },
+  { n: 2, t: 'apricot', g: 'orange' },
+];
 
-// idle / 収集開始直後(キー未一致)の安定参照です。新規生成を避けて不要レンダーを抑えます。
-const IDLE_RESULT: ColumnSelectOptionsResult = {
-  status: 'idle',
-  options: EMPTY_OPTIONS,
-  allValues: EMPTY_VALUES,
-  progress: 0,
-};
-const COLLECTING_INITIAL: ColumnSelectOptionsResult = {
-  status: 'collecting',
-  options: EMPTY_OPTIONS,
-  allValues: EMPTY_VALUES,
-  progress: 0,
-};
+describe('filterOrderByColumns (B-2: numericKeys path === no-key path)', () => {
+  const order = createSourceOrder(rows.length);
+  const keys = buildNumericKeys(rows, 'n');
+  const numberFilters = [
+    '> 2',
+    '>= 2',
+    '< 5',
+    '<= 5',
+    '= 10',
+    '5',
+    '1 .. 8',
+    '8 .. 1', // min/max 入れ替え
+    '-3 .. 2',
+  ];
 
-type RawValueAccessor = (index: number) => unknown;
+  it.each(numberFilters)('number filter %s', (raw) => {
+    const descriptor = buildNumberColumnFilterValue(raw);
+    const columnFilters = { n: descriptor };
+    const withKeys = filterOrderByColumns(
+      rows,
+      order,
+      [numberCol('n')],
+      columnFilters,
+      keys,
+    );
+    const withoutKeys = filterOrderByColumns(
+      rows,
+      order,
+      [numberCol('n')],
+      columnFilters,
+    );
+    expect(asArray(withKeys)).toEqual(asArray(withoutKeys));
+  });
 
-type UseColumnSelectOptionsCollectorArgs<T> = {
-  // popover を開いている列(null = 閉。select/set 以外は idle)。
-  column: GridColumn<T> | null;
-  // 候補収集の母集合の行数(= 全ソース行 rows.length。フィルター後の件数ではありません)。
-  rowCount: number;
-  // rows[index] の対象列セル値を返すアクセサ(= getCellValue(rows[index], column))。
-  //   この identity が変わったとき(= rows/column が変化)に収集をやり直します(旧 [rows] 依存と等価)。
-  getRawValueAt: RawValueAccessor;
-};
+  it('contains fallback (unparseable) is identical with/without keys', () => {
+    const descriptor = buildNumberColumnFilterValue('1.'); // 解釈不可 → contains
+    const columnFilters = { n: descriptor };
+    const withKeys = filterOrderByColumns(
+      rows,
+      order,
+      [numberCol('n')],
+      columnFilters,
+      keys,
+    );
+    const withoutKeys = filterOrderByColumns(
+      rows,
+      order,
+      [numberCol('n')],
+      columnFilters,
+    );
+    expect(asArray(withKeys)).toEqual(asArray(withoutKeys));
+  });
+});
 
-const buildValueSet = (options: SelectOptionEntry[]): ReadonlySet<string> =>
-  new Set(options.map((option) => option.value));
+describe('filterOrderByColumns (descriptor === legacy applyNumberFilter)', () => {
+  const order = createSourceOrder(rows.length);
+  const keys = buildNumericKeys(rows, 'n');
+  const cases = ['> 2', '>=2', '<5', '<= 5', '=10', '7.5', '1..8', '1.', 'abc'];
 
-// 非同期収集結果は「どの収集に対する結果か」をキー(source/rowCount)付きで持ちます。
-//   レンダー時に現在のキーと照合し、不一致(別列を開いた直後の 1 レンダー等)なら stale と
-//   みなして collecting を返すため、直前列の候補が一瞬見える問題を防ぎます。あわせて、
-//   この方式により effect 本体での同期 setState(set-state-in-effect)も不要になります。
-type AsyncCollectState = {
-  source: RawValueAccessor | null;
-  rowCount: number;
-  result: ColumnSelectOptionsResult;
-};
-const IDLE_ASYNC_STATE: AsyncCollectState = {
-  source: null,
-  rowCount: 0,
-  result: IDLE_RESULT,
-};
-
-// 追加(DS-4 #1): select / set 候補を「通常規模=同期 / 大規模=時間分割の非同期」で収集します。
-//   - 同期経路: 旧 getColumnSelectOptions と同じ open レンダー 1 回きりの useMemo(チラつき無)。
-//   - 非同期経路: yieldToMain で主スレッドを塞がずチャンク収集し、effect cleanup の cancelled
-//     フラグで後続 run / unmount / 母集合変化に対し安全に中断します。
-//   - どちらも logic/selectOptions の共有コレクタを使うため、結果はバイト等価です。
-export const useColumnSelectOptionsCollector = <T,>({
-  column,
-  rowCount,
-  getRawValueAt,
-}: UseColumnSelectOptionsCollectorArgs<T>): ColumnSelectOptionsResult => {
-  const filterType = column?.filterType ?? null;
-  const isSelectLike = filterType === 'select' || filterType === 'set';
-  const explicitOptions =
-    column?.filterOptions && column.filterOptions.length > 0
-      ? column.filterOptions
-      : null;
-  const needsAsync =
-    isSelectLike &&
-    explicitOptions === null &&
-    rowCount > ASYNC_SELECT_COLLECT_ROW_THRESHOLD;
-
-  // 同期で確定できるケースはここで即時決定します(従来挙動・チラつきなし)。
-  //   needsAsync のときだけ null を返し、下の effect 経路へ委ねます。
-  const syncResult = useMemo<ColumnSelectOptionsResult | null>(() => {
-    if (!column || !isSelectLike) {
-      return IDLE_RESULT;
-    }
-    if (explicitOptions) {
-      const options = explicitOptions as SelectOptionEntry[];
-      return {
-        status: 'ready',
-        options,
-        allValues: buildValueSet(options),
-        progress: 1,
-      };
-    }
-    if (!needsAsync) {
-      const options = collectSelectOptions(rowCount, getRawValueAt);
-      return {
-        status: 'ready',
-        options,
-        allValues: buildValueSet(options),
-        progress: 1,
-      };
-    }
-    return null;
-    // getRawValueAt の identity 変化(= rows/column 変化)で同期収集をやり直します(旧 [rows] と等価)。
-  }, [column, isSelectLike, explicitOptions, needsAsync, rowCount, getRawValueAt]);
-
-  const [asyncState, setAsyncState] =
-    useState<AsyncCollectState>(IDLE_ASYNC_STATE);
-
-  useEffect(() => {
-    // 同期で確定済み(syncResult!==null)なら非同期 run は不要です。進行中の run があっても、
-    //   この effect 再実行に伴う直前 cleanup(下の return)で既に中断されています。
-    if (syncResult !== null) {
-      return;
-    }
-
-    // この run のキー。collecting/ready の setAsyncState はこのキー付きで行い、レンダー側で照合します。
-    const myKey = getRawValueAt;
-    const myRowCount = rowCount;
-    const accumulator = createSelectOptionsAccumulator();
-    // 収集開始時の collecting 表示は、レンダー時フォールバック(下記 asyncResult 導出)が担います。
-    //   effect 本体での同期 setState を避けるため、ここでは run を起動するだけにします。
-    let cancelled = false;
-
-    const run = async (): Promise<void> => {
-      let index = 0;
-      while (index < myRowCount) {
-        const sliceStart = now();
-        while (index < myRowCount && now() - sliceStart < CHUNK_BUDGET_MS) {
-          accumulator.collect(myKey(index));
-          index += 1;
-        }
-        if (index < myRowCount) {
-          await yieldToMain();
-          // yield 後の中断判定(後続 run / unmount / 母集合変化で cleanup が cancelled を立てる)。
-          if (cancelled) {
-            return;
-          }
-          setAsyncState({
-            source: myKey,
-            rowCount: myRowCount,
-            result: {
-              status: 'collecting',
-              options: EMPTY_OPTIONS,
-              allValues: EMPTY_VALUES,
-              progress: index / myRowCount,
-            },
-          });
-        }
+  it.each(cases)('raw %s', (raw) => {
+    const descriptor = buildNumberColumnFilterValue(raw);
+    const actual = asArray(
+      filterOrderByColumns(rows, order, [numberCol('n')], { n: descriptor }, keys),
+    );
+    // 参照: 旧 applyNumberFilter(raw 文字列)で行ごとに判定。
+    const expected: number[] = [];
+    for (let i = 0; i < rows.length; i += 1) {
+      if (applyNumberFilter(getCellValue(rows[i], numberCol('n')), raw)) {
+        expected.push(i);
       }
-      if (cancelled) {
-        return;
-      }
-      const options = accumulator.finalize();
-      setAsyncState({
-        source: myKey,
-        rowCount: myRowCount,
-        result: {
-          status: 'ready',
-          options,
-          allValues: buildValueSet(options),
-          progress: 1,
-        },
-      });
+    }
+    expect(actual).toEqual(expected);
+  });
+});
+
+describe('filterOrderByColumns (set include / exclude)', () => {
+  const order = createSourceOrder(rows.length);
+
+  it('include keeps only listed values', () => {
+    const value: SetColumnFilterValue = {
+      kind: 'set',
+      mode: 'include',
+      values: ['red', 'green'],
     };
-    void run();
+    const actual = asArray(
+      filterOrderByColumns(rows, order, [setCol('g')], { g: value }),
+    );
+    const expected = rows
+      .map((row, i) => [row.g, i] as const)
+      .filter(([g]) => g === 'red' || g === 'green')
+      .map(([, i]) => i);
+    expect(actual).toEqual(expected);
+  });
 
-    return () => {
-      // effect 再実行 / unmount: 進行中 run を次の yield 後に中断させます。
-      cancelled = true;
+  it('exclude drops listed values (complement of include over universe)', () => {
+    const include: SetColumnFilterValue = {
+      kind: 'set',
+      mode: 'include',
+      values: ['red', 'green'],
     };
-  }, [syncResult, rowCount, getRawValueAt]);
+    // universe = 全行値。exclude(U−S) は include(S) と同じ通過集合になる。
+    const universe = Array.from(new Set(rows.map((row) => String(row.g))));
+    const excludedValues = universe.filter(
+      (v) => v !== 'red' && v !== 'green',
+    );
+    const exclude: SetColumnFilterValue = {
+      kind: 'set',
+      mode: 'exclude',
+      values: excludedValues,
+    };
+    const includeOrder = asArray(
+      filterOrderByColumns(rows, order, [setCol('g')], { g: include }),
+    );
+    const excludeOrder = asArray(
+      filterOrderByColumns(rows, order, [setCol('g')], { g: exclude }),
+    );
+    expect(excludeOrder).toEqual(includeOrder);
+  });
 
-  // 非同期結果はキー一致時のみ採用します。不一致(別列を開いた直後等)は stale とみなし
-  //   collecting(0%)を返し、直前列の候補表示と effect 内同期 setState の双方を避けます。
-  const asyncResult: ColumnSelectOptionsResult =
-    asyncState.source === getRawValueAt && asyncState.rowCount === rowCount
-      ? asyncState.result
-      : COLLECTING_INITIAL;
+  it('empty include values yields no rows', () => {
+    const value: SetColumnFilterValue = { kind: 'set', values: [] };
+    const actual = asArray(
+      filterOrderByColumns(rows, order, [setCol('g')], { g: value }),
+    );
+    expect(actual).toEqual([]);
+  });
+});
 
-  return syncResult ?? asyncResult;
-};
+describe('filterOrderByColumns (select / text / no-op identity)', () => {
+  const order = createSourceOrder(rows.length);
 
-export default useColumnSelectOptionsCollector;
+  it('select matches exact string equality', () => {
+    const actual = asArray(
+      filterOrderByColumns(rows, order, [selectCol('g')], { g: 'red' }),
+    );
+    const expected = rows
+      .map((row, i) => [row.g, i] as const)
+      .filter(([g]) => g === 'red')
+      .map(([, i]) => i);
+    expect(actual).toEqual(expected);
+  });
+
+  it('text is case-insensitive contains', () => {
+    const actual = asArray(
+      filterOrderByColumns(rows, order, [textCol('t')], { t: 'ap' }),
+    );
+    // 'Apple' / 'apricot' / 'Grape'(gr*ap*e)が含む。
+    const expected = rows
+      .map((row, i) => [String(row.t).toLowerCase(), i] as const)
+      .filter(([t]) => t.includes('ap'))
+      .map(([, i]) => i);
+    expect(actual).toEqual(expected);
+  });
+
+  it('returns the same reference when no active filter exists', () => {
+    expect(
+      filterOrderByColumns(rows, order, [textCol('t')], { t: '' }),
+    ).toBe(order);
+    expect(filterOrderByColumns(rows, order, [textCol('t')], {})).toBe(order);
+  });
+
+  it('returns the same reference when every row passes (set include over full universe)', () => {
+    // universe = 全行の g 値。全候補を include すると全行通過し、count===length で
+    //   下流 useMemo スキップのため同一参照(引数 order)を返す。
+    const universe = Array.from(new Set(rows.map((row) => String(row.g))));
+    const value: SetColumnFilterValue = {
+      kind: 'set',
+      mode: 'include',
+      values: universe,
+    };
+    expect(filterOrderByColumns(rows, order, [setCol('g')], { g: value })).toBe(
+      order,
+    );
+  });
+});
+
+describe('filterOrderByGlobalText', () => {
+  const order = createSourceOrder(rows.length);
+
+  it('returns the same reference for empty text', () => {
+    expect(
+      filterOrderByGlobalText(rows, order, [textCol('t'), numberCol('n')], '  '),
+    ).toBe(order);
+  });
+
+  it('matches across any column (case-insensitive contains)', () => {
+    const actual = asArray(
+      filterOrderByGlobalText(
+        rows,
+        order,
+        [textCol('t'), selectCol('g')],
+        'red',
+      ),
+    );
+    const expected = rows
+      .map((row, i) => [row, i] as const)
+      .filter(
+        ([row]) =>
+          String(row.t).toLowerCase().includes('red') ||
+          String(row.g).toLowerCase().includes('red'),
+      )
+      .map(([, i]) => i);
+    expect(actual).toEqual(expected);
+  });
+});
+
+describe('number filter descriptor helpers', () => {
+  it('parseNumberFilterExpression handles comparison / default = / range / invalid', () => {
+    expect(parseNumberFilterExpression('> 5')).toEqual({
+      mode: 'comparison',
+      operator: '>',
+      value: 5,
+    });
+    expect(parseNumberFilterExpression('42')).toEqual({
+      mode: 'comparison',
+      operator: '=',
+      value: 42,
+    });
+    expect(parseNumberFilterExpression('8 .. 1')).toEqual({
+      mode: 'range',
+      min: 1,
+      max: 8,
+    });
+    expect(parseNumberFilterExpression('')).toBeNull();
+    expect(parseNumberFilterExpression('1.')).toBeNull();
+    expect(parseNumberFilterExpression('abc')).toBeNull();
+  });
+
+  it('buildNumberColumnFilterValue trims, parses once, and nulls on empty', () => {
+    expect(buildNumberColumnFilterValue('   ')).toBeNull();
+    const descriptor = buildNumberColumnFilterValue('  >= 3  ');
+    expect(descriptor).toEqual({
+      kind: 'number',
+      raw: '>= 3',
+      parsed: { mode: 'comparison', operator: '>=', value: 3 },
+    });
+    const contains = buildNumberColumnFilterValue('1.');
+    expect(contains).toEqual({ kind: 'number', raw: '1.', parsed: null });
+  });
+
+  it('columnFilterValueToDraftText returns raw for number descriptors, String otherwise', () => {
+    const descriptor = buildNumberColumnFilterValue('> 5');
+    expect(columnFilterValueToDraftText(descriptor)).toBe('> 5');
+    expect(columnFilterValueToDraftText('hello')).toBe('hello');
+    expect(columnFilterValueToDraftText(null)).toBe('');
+    expect(columnFilterValueToDraftText(undefined)).toBe('');
+  });
+
+  it('isActiveColumnFilterValue treats set / number descriptors / non-empty strings as active', () => {
+    expect(
+      isActiveColumnFilterValue({ kind: 'set', values: [] } as SetColumnFilterValue),
+    ).toBe(true);
+    expect(isActiveColumnFilterValue(buildNumberColumnFilterValue('> 1'))).toBe(
+      true,
+    );
+    expect(isActiveColumnFilterValue('abc')).toBe(true);
+    expect(isActiveColumnFilterValue('   ')).toBe(false);
+    expect(isActiveColumnFilterValue('')).toBe(false);
+    expect(isActiveColumnFilterValue(null)).toBe(false);
+  });
+
+  it('type guards are consistent', () => {
+    const setValue: SetColumnFilterValue = { kind: 'set', values: ['a'] };
+    expect(isSetColumnFilterValue(setValue)).toBe(true);
+    expect(isNumberColumnFilterValue(setValue)).toBe(false);
+    const numberValue = buildNumberColumnFilterValue('> 1');
+    expect(isNumberColumnFilterValue(numberValue)).toBe(true);
+    expect(isSetColumnFilterValue(numberValue)).toBe(false);
+  });
+});
 </file>
 
-<file path="src/components/spreadsheet-grid/logic/selectOptions.ts">
-// 追加(DS-4 #1): select / set フィルター候補の収集ロジックを 1 か所へ集約します。
-//   同期一括版(通常規模)と時間分割の非同期版(500k/1M)の双方がここを共有するため、
-//   刻み方が違っても収集結果はバイト等価になります(DS-4① の
-//   createColumnWidthAccumulator と同じ「共有アキュムレータで等価保証」方針)。
+<file path="src/components/spreadsheet-grid/logic/selectOptions.test.ts">
+// V-1: selectOptions の等価性テスト(旧 adhoc ハーネスの恒久化)。
+//   - collectSelectOptions ≡ 旧 getColumnSelectOptions(String 化・空白ラベル '（空白）'・
+//     STRING_COLLATOR ソート・初出順 dedupe)。
+//   - createSelectOptionsAccumulator のチャンク収集 ≡ 一括収集(刻み方に依らずバイト等価)。
+//     これは同期/非同期どちらの収集経路でも結果が同一になることの土台です。
+import { describe, it, expect } from 'vitest';
+import {
+  collectSelectOptions,
+  createSelectOptionsAccumulator,
+  type SelectOptionEntry,
+} from './selectOptions';
 import { STRING_COLLATOR } from './sorting';
 
-// 候補の最小型です。view 層の ColumnFilterPopoverOption と構造的に同一で相互代入可能ですが、
-//   logic -> view の依存を作らないため別定義にします。
-export type SelectOptionEntry = { label: string; value: string };
-
-// 候補収集アキュムレータです。raw セル値を 1 件ずつ collect し、最後に finalize でソート確定します。
-//   String 化・空白ラベル・ソート規則はいずれも旧 getColumnSelectOptions と同一です。
-export const createSelectOptionsAccumulator = () => {
+// 参照実装(旧 getColumnSelectOptions のスキャン本体と同一規則)。
+const referenceCollect = (values: unknown[]): SelectOptionEntry[] => {
   const seen = new Set<string>();
   const options: SelectOptionEntry[] = [];
-  return {
-    // raw セル値 1 件を候補へ反映します(初出のみ push。走査順=push 順)。
-    collect(rawValue: unknown): void {
-      const value = String(rawValue ?? '');
-      if (seen.has(value)) {
-        return;
-      }
-      seen.add(value);
-      options.push({ value, label: value || '（空白）' });
-    },
-    // 収集済み候補をソート確定します(label の STRING_COLLATOR 比較。旧実装と同一)。
-    finalize(): SelectOptionEntry[] {
-      return options.sort((left, right) =>
-        STRING_COLLATOR.compare(left.label, right.label),
-      );
-    },
-  };
+  for (const raw of values) {
+    const value = String(raw ?? '');
+    if (seen.has(value)) {
+      continue;
+    }
+    seen.add(value);
+    options.push({ value, label: value || '（空白）' });
+  }
+  return options.sort((left, right) =>
+    STRING_COLLATOR.compare(left.label, right.label),
+  );
 };
 
-// 同期一括版です(通常規模で使用)。旧 getColumnSelectOptions のスキャン本体と等価です。
-//   getRawValueAt(index) は rows[index] の対象列セル値(= getCellValue(rows[index], column))を返します。
-export const collectSelectOptions = (
-  rowCount: number,
-  getRawValueAt: (index: number) => unknown,
-): SelectOptionEntry[] => {
-  const accumulator = createSelectOptionsAccumulator();
-  for (let index = 0; index < rowCount; index += 1) {
-    accumulator.collect(getRawValueAt(index));
+const collectFromArray = (values: unknown[]): SelectOptionEntry[] =>
+  collectSelectOptions(values.length, (index) => values[index]);
+
+describe('collectSelectOptions (equivalence with legacy getColumnSelectOptions)', () => {
+  const datasets: { name: string; values: unknown[] }[] = [
+    {
+      name: 'mixed types with null / undefined / empty',
+      values: ['b', 'a', null, undefined, '', 'a', 'b', 'c'],
+    },
+    {
+      name: 'numeric strings (numeric collator ordering)',
+      values: ['10', '2', '1', '100', '2', '20'],
+    },
+    {
+      name: 'numbers and strings coerced via String()',
+      values: [1, 2, 10, '1', 'apple', 2, 'Apple'],
+    },
+    {
+      name: 'all blanks collapse to one （空白）',
+      values: ['', null, undefined, ''],
+    },
+  ];
+
+  it.each(datasets)('$name', ({ values }) => {
+    expect(collectFromArray(values)).toEqual(referenceCollect(values));
+  });
+
+  it('handles large unique input (20,000 distinct)', () => {
+    const values = Array.from({ length: 20_000 }, (_, i) => `item-${i}`);
+    const actual = collectFromArray(values);
+    expect(actual).toEqual(referenceCollect(values));
+    expect(actual.length).toBe(20_000);
+    // ソート済みであること(隣接ペアで collator 比較 <= 0)。
+    for (let i = 1; i < actual.length; i += 1) {
+      expect(
+        STRING_COLLATOR.compare(actual[i - 1].label, actual[i].label),
+      ).toBeLessThanOrEqual(0);
+    }
+  });
+
+  it('blank value maps to （空白） label', () => {
+    const result = collectFromArray(['', 'x']);
+    const blank = result.find((entry) => entry.value === '');
+    expect(blank).toEqual({ value: '', label: '（空白）' });
+  });
+});
+
+describe('createSelectOptionsAccumulator (chunked collect === one-shot)', () => {
+  const feedInChunks = (
+    values: unknown[],
+    chunkSizes: number[],
+  ): SelectOptionEntry[] => {
+    const accumulator = createSelectOptionsAccumulator();
+    let index = 0;
+    let chunkPointer = 0;
+    while (index < values.length) {
+      const size = chunkSizes[chunkPointer % chunkSizes.length];
+      const end = Math.min(index + size, values.length);
+      for (; index < end; index += 1) {
+        accumulator.collect(values[index]);
+      }
+      chunkPointer += 1;
+    }
+    return accumulator.finalize();
+  };
+
+  it('is byte-equivalent regardless of chunk boundaries', () => {
+    const values = [
+      '10',
+      '2',
+      'apple',
+      null,
+      '',
+      'Apple',
+      '2',
+      'banana',
+      undefined,
+      '1',
+      'apple',
+    ];
+    const oneShot = collectFromArray(values);
+    // 異なる刻み方をいくつか試し、すべて一括と一致することを確認。
+    for (const chunkSizes of [[1], [2], [3, 1], [5, 2, 1], [values.length]]) {
+      expect(feedInChunks(values, chunkSizes)).toEqual(oneShot);
+    }
+  });
+
+  it('chunked collect over large unique input matches one-shot', () => {
+    const values = Array.from({ length: 5000 }, (_, i) => `k${(i * 7) % 1000}`);
+    expect(feedInChunks(values, [7, 13, 1])).toEqual(collectFromArray(values));
+  });
+});
+</file>
+
+<file path="src/components/spreadsheet-grid/logic/sorting.test.ts">
+// V-1: sortOrder の B-1 等価性テスト(旧 adhoc ハーネスの恒久化)。
+//   sortOrder は内部で「全列数値 → Float64 fast path / それ以外 → unknown[] fallback」を
+//   自動選択します。両経路の正解は同一の compareUnknownValues 意味論(数値なら数値差、
+//   それ以外は STRING_COLLATOR、source index タイブレーク)なので、compareUnknownValues を
+//   常用する参照実装と sortOrder の出力がバイト等価であることを検査します。
+//   - all-numeric / numeric-string → fast path を踏む。
+//   - 非有限混在 / 文字列二次キー → fallback を踏む。
+//   どちらのデータでも参照と一致すれば、fast path ≡ fallback ≡ 旧実装が担保されます。
+import { describe, it, expect } from 'vitest';
+import { compareUnknownValues, sortOrder } from './sorting';
+import { createSourceOrder, type RowOrder } from './filtering';
+import { getCellValue } from '../utils/permissions';
+import type { GridColumn, GridSortState } from '../model/gridTypes';
+
+type Row = Record<string, unknown>;
+
+const col = (key: string): GridColumn<Row> => ({ key, width: 100 });
+
+// 参照実装: 比較は常に compareUnknownValues。sortOrder の規約(列解決・優先順位・
+//   未解決スキップ・有効キー 0 件は同一参照・source index タイブレーク)を素朴に再現します。
+const referenceSortOrder = (
+  rows: Row[],
+  order: RowOrder,
+  columns: GridColumn<Row>[],
+  sort: GridSortState,
+): RowOrder => {
+  if (sort.length === 0) {
+    return order;
   }
-  return accumulator.finalize();
+  const resolved = sort
+    .map((entry) => {
+      const column = columns.find((item) => item.key === entry.columnKey);
+      return column
+        ? { column, multiplier: entry.direction === 'asc' ? 1 : -1 }
+        : null;
+    })
+    .filter(
+      (item): item is { column: GridColumn<Row>; multiplier: number } =>
+        item !== null,
+    );
+  if (resolved.length === 0) {
+    return order;
+  }
+  const length = order.length;
+  const keyColumns = resolved.map(({ column }) => {
+    const keys = new Array<unknown>(length);
+    for (let pos = 0; pos < length; pos += 1) {
+      keys[pos] = getCellValue(rows[order[pos]], column);
+    }
+    return keys;
+  });
+  const positions = Array.from({ length }, (_, i) => i);
+  positions.sort((a, b) => {
+    for (let c = 0; c < resolved.length; c += 1) {
+      const compared = compareUnknownValues(keyColumns[c][a], keyColumns[c][b]);
+      if (compared !== 0) {
+        return compared * resolved[c].multiplier;
+      }
+    }
+    return order[a] - order[b];
+  });
+  const result = new Int32Array(length);
+  for (let i = 0; i < length; i += 1) {
+    result[i] = order[positions[i]];
+  }
+  return result;
 };
+
+const asArray = (order: RowOrder): number[] => Array.from(order);
+
+type Dataset = {
+  name: string;
+  rows: Row[];
+  columns: GridColumn<Row>[];
+  sort: GridSortState;
+  // fast path(全列数値)を踏むはずか(到達経路を明示するための注記・assert 用)。
+  expectFastPath: boolean;
+};
+
+const seededRows = (count: number, mod: number): Row[] =>
+  Array.from({ length: count }, (_, i) => ({
+    n: ((i * 7919) % mod) - Math.floor(mod / 2),
+    s: String.fromCharCode(97 + ((i * 13) % 26)) + ((i * 31) % 100),
+  }));
+
+const datasets: Dataset[] = [
+  {
+    name: 'all-numeric asc (fast path / single column)',
+    rows: [{ n: 3 }, { n: 1 }, { n: 2 }, { n: 1 }, { n: -5 }],
+    columns: [col('n')],
+    sort: [{ columnKey: 'n', direction: 'asc' }],
+    expectFastPath: true,
+  },
+  {
+    name: 'all-numeric desc (fast path / single column)',
+    rows: [{ n: 3 }, { n: 1 }, { n: 2 }, { n: 1 }, { n: -5 }],
+    columns: [col('n')],
+    sort: [{ columnKey: 'n', direction: 'desc' }],
+    expectFastPath: true,
+  },
+  {
+    name: 'numeric strings (fast path / Number() finite)',
+    rows: [{ n: '10' }, { n: '2' }, { n: '100' }, { n: '2' }, { n: '-1' }],
+    columns: [col('n')],
+    sort: [{ columnKey: 'n', direction: 'asc' }],
+    expectFastPath: true,
+  },
+  {
+    name: 'all-numeric multi-column (fast path / multi)',
+    rows: [
+      { a: 1, b: 2 },
+      { a: 1, b: 1 },
+      { a: 2, b: 5 },
+      { a: 1, b: 1 },
+      { a: 0, b: 9 },
+    ],
+    columns: [col('a'), col('b')],
+    sort: [
+      { columnKey: 'a', direction: 'asc' },
+      { columnKey: 'b', direction: 'desc' },
+    ],
+    expectFastPath: true,
+  },
+  {
+    name: 'mixed non-finite (fallback)',
+    rows: [{ n: 3 }, { n: 'abc' }, { n: 2 }, { n: '' }, { n: 1 }],
+    columns: [col('n')],
+    sort: [{ columnKey: 'n', direction: 'asc' }],
+    expectFastPath: false,
+  },
+  {
+    name: 'string secondary key forces fallback (multi)',
+    rows: [
+      { a: 1, s: 'pear' },
+      { a: 1, s: 'apple' },
+      { a: 2, s: 'kiwi' },
+      { a: 1, s: 'apple' },
+    ],
+    columns: [col('a'), col('s')],
+    sort: [
+      { columnKey: 'a', direction: 'asc' },
+      { columnKey: 's', direction: 'asc' },
+    ],
+    expectFastPath: false,
+  },
+  {
+    name: 'duplicates → stable by source index (fast path)',
+    rows: Array.from({ length: 50 }, () => ({ n: 7 })),
+    columns: [col('n')],
+    sort: [{ columnKey: 'n', direction: 'desc' }],
+    expectFastPath: true,
+  },
+  {
+    name: 'large all-numeric (fast path / 5000 rows)',
+    rows: seededRows(5000, 997),
+    columns: [col('n')],
+    sort: [{ columnKey: 'n', direction: 'asc' }],
+    expectFastPath: true,
+  },
+  {
+    name: 'large mixed (fallback / numeric + string cols, 5000 rows)',
+    rows: seededRows(5000, 997),
+    columns: [col('n'), col('s')],
+    sort: [
+      { columnKey: 'n', direction: 'desc' },
+      { columnKey: 's', direction: 'asc' },
+    ],
+    expectFastPath: false,
+  },
+];
+
+describe('sortOrder (B-1 equivalence with compareUnknownValues reference)', () => {
+  it.each(datasets)('$name', ({ rows, columns, sort }) => {
+    const order = createSourceOrder(rows.length);
+    const actual = sortOrder(rows, order, columns, sort);
+    const expected = referenceSortOrder(rows, order, columns, sort);
+    expect(asArray(actual)).toEqual(asArray(expected));
+  });
+
+  it('returns the same reference when sort is empty', () => {
+    const rows: Row[] = [{ n: 1 }, { n: 2 }];
+    const order = createSourceOrder(rows.length);
+    expect(sortOrder(rows, order, [col('n')], [])).toBe(order);
+  });
+
+  it('returns the same reference when no sort entry resolves to a column', () => {
+    const rows: Row[] = [{ n: 1 }, { n: 2 }];
+    const order = createSourceOrder(rows.length);
+    const sort: GridSortState = [{ columnKey: 'missing', direction: 'asc' }];
+    expect(sortOrder(rows, order, [col('n')], sort)).toBe(order);
+  });
+
+  it('sorts a pre-filtered order (non-identity input order) consistently', () => {
+    const rows: Row[] = [{ n: 5 }, { n: 1 }, { n: 9 }, { n: 3 }, { n: 7 }];
+    // 偶数 source index のみ残したビュー順(フィルター後相当)。
+    const order = Int32Array.from([0, 2, 4]);
+    const sort: GridSortState = [{ columnKey: 'n', direction: 'asc' }];
+    const actual = sortOrder(rows, order, [col('n')], sort);
+    const expected = referenceSortOrder(rows, order, [col('n')], sort);
+    expect(asArray(actual)).toEqual(asArray(expected));
+    // 念のため: 出力は入力 order の置換であり、source index 集合を保存する。
+    expect([...actual].sort((x, y) => x - y)).toEqual([0, 2, 4]);
+  });
+});
+</file>
+
+<file path="src/components/spreadsheet-grid/logic/verticalGeometry.test.ts">
+// V-1: verticalGeometry の等価性 / 不変条件テスト(旧 adhoc ハーネスの恒久化)。
+//   旧 rowVirtualizer(scrollMargin=headerHeight / estimateSize=rowHeight)は import できないため、
+//   等価性は「ドキュメント化された契約=不変条件」として encode します:
+//     - no-op(logicalBodyHeight <= cap): scaleFactor=1 / translateY=0 / start=headerHeight+i*rowHeight
+//       (= 旧 virtualRow.start と数値一致)。
+//     - scaling: physicalBodyHeight=cap / scaleFactor>=1 / translateY<=0 / 末尾行到達可能 /
+//       物理↔論理のラウンドトリップ / clientYToRowIndex の逆写像一致。
+//   旧ハーネスの 369 ケースに相当する系統的スイープ(>369 組合せ)を回し、各ケースで不変条件を検査します。
+import { describe, it, expect } from 'vitest';
+import {
+  MAX_BODY_PX,
+  clientYToRowIndex,
+  computeVerticalGeometry,
+  logicalToPhysicalScrollTop,
+  physicalToLogicalScrollTop,
+  type ComputeVerticalGeometryArgs,
+} from './verticalGeometry';
+
+const clamp = (value: number, min: number, max: number): number =>
+  Math.min(Math.max(value, min), max);
+
+// 1 ケースの不変条件を検査します(失敗時はケース内容を添えて throw)。
+const checkInvariants = (args: ComputeVerticalGeometryArgs): void => {
+  const {
+    rowCount,
+    rowHeight,
+    headerHeight,
+    viewportHeight,
+    scrollTop,
+    maxBodyPx,
+  } = args;
+  const geometry = computeVerticalGeometry(args);
+  const label = (message: string): string =>
+    `${message} | case=${JSON.stringify(args)} | geometry.scaleFactor=${geometry.scaleFactor} translateY=${geometry.translateY}`;
+  const assert = (condition: boolean, message: string): void => {
+    if (!condition) {
+      throw new Error(label(message));
+    }
+  };
+
+  const logicalBodyHeight = rowCount * rowHeight;
+  const physicalBodyHeight = Math.min(logicalBodyHeight, maxBodyPx);
+  const physicalMax = Math.max(
+    headerHeight + physicalBodyHeight - viewportHeight,
+    0,
+  );
+
+  assert(geometry.logicalBodyHeight === logicalBodyHeight, 'logicalBodyHeight');
+  assert(
+    geometry.physicalBodyHeight === physicalBodyHeight,
+    'physicalBodyHeight',
+  );
+  assert(geometry.scaleFactor >= 1, 'scaleFactor >= 1');
+  // translateY = clampedScrollTop * (1 - scaleFactor) <= 0。
+  assert(geometry.translateY <= 1e-6, 'translateY <= 0');
+
+  // 窓は連続・[0,rowCount) 内・rowIndexSet と整合。
+  for (let k = 0; k < geometry.rows.length; k += 1) {
+    const row = geometry.rows[k];
+    assert(row.index >= 0 && row.index < rowCount, 'row.index in range');
+    assert(
+      row.start === headerHeight + row.index * rowHeight,
+      'row.start === headerHeight + index*rowHeight',
+    );
+    if (k > 0) {
+      assert(
+        row.index === geometry.rows[k - 1].index + 1,
+        'rows are contiguous',
+      );
+    }
+    assert(geometry.rowIndexSet.has(row.index), 'rowIndexSet contains index');
+  }
+  assert(
+    geometry.rowIndexSet.size === geometry.rows.length,
+    'rowIndexSet size === rows length',
+  );
+
+  const isNoop = logicalBodyHeight <= maxBodyPx;
+  if (isNoop) {
+    assert(geometry.scaleFactor === 1, 'no-op scaleFactor === 1');
+    assert(geometry.translateY === 0, 'no-op translateY === 0');
+  }
+
+  // 可視帯の被覆: 論理可視域の先頭/末尾行が窓に含まれる(overscan が上下マージンを賄う)。
+  //   viewportHeight=0 は可視行が存在しないため対象外。
+  if (rowCount > 0 && viewportHeight > 0) {
+    const clampedScrollTop = clamp(scrollTop, 0, physicalMax);
+    const logicalScrollTop = clampedScrollTop * geometry.scaleFactor;
+    const firstVisible = clamp(
+      Math.floor(logicalScrollTop / rowHeight),
+      0,
+      rowCount - 1,
+    );
+    const lastVisible = clamp(
+      Math.floor((logicalScrollTop + viewportHeight) / rowHeight),
+      0,
+      rowCount - 1,
+    );
+    assert(geometry.rowIndexSet.has(firstVisible), 'first visible row in window');
+    assert(geometry.rowIndexSet.has(lastVisible), 'last visible row in window');
+  }
+
+  // 末尾行到達可能: スクロール可能 かつ 可視域がある なら scrollTop=physicalMax で
+  //   最終行が窓に入る。viewportHeight=0 は可視域ゼロのため対象外(末尾で 1 行が域外に出るのは正常)。
+  if (rowCount > 0 && physicalMax > 0 && viewportHeight > 0) {
+    const atBottom = computeVerticalGeometry({ ...args, scrollTop: physicalMax });
+    assert(
+      atBottom.rowIndexSet.has(rowCount - 1),
+      'last row reachable at physicalMax',
+    );
+  }
+
+  // 物理↔論理ラウンドトリップ(可動域内では誤差なく往復する)。
+  if (physicalMax > 0) {
+    for (const probe of [0, physicalMax / 2, physicalMax]) {
+      const roundTrip = logicalToPhysicalScrollTop(
+        physicalToLogicalScrollTop(probe, geometry.scaleFactor),
+        geometry.scaleFactor,
+      );
+      assert(Math.abs(roundTrip - probe) < 1e-3, 'scroll round-trip');
+    }
+  }
+};
+
+// 系統的スイープのケースを生成します(>369 組合せ)。
+const buildCases = (): ComputeVerticalGeometryArgs[] => {
+  const rowCounts = [0, 1, 10, 400_000, 420_000, 1_000_000];
+  const rowHeights = [1, 36, 38];
+  const headerHeights = [0, 42];
+  const viewportHeights = [0, 300, 1000];
+  const overscans = [0, 20];
+  // MAX_BODY_PX に加え、小行数でも scaling を起動させる小さい cap を併用して経路網羅を上げます。
+  const maxBodyPxs = [MAX_BODY_PX, 1000];
+
+  const cases: ComputeVerticalGeometryArgs[] = [];
+  for (const rowCount of rowCounts) {
+    for (const rowHeight of rowHeights) {
+      for (const headerHeight of headerHeights) {
+        for (const viewportHeight of viewportHeights) {
+          for (const overscan of overscans) {
+            for (const maxBodyPx of maxBodyPxs) {
+              const physicalBodyHeight = Math.min(
+                rowCount * rowHeight,
+                maxBodyPx,
+              );
+              const physicalMax = Math.max(
+                headerHeight + physicalBodyHeight - viewportHeight,
+                0,
+              );
+              const scrollTops = Array.from(
+                new Set([
+                  0,
+                  Math.floor(physicalMax / 2),
+                  physicalMax,
+                  physicalMax + 1000,
+                ]),
+              );
+              for (const scrollTop of scrollTops) {
+                cases.push({
+                  rowCount,
+                  rowHeight,
+                  headerHeight,
+                  viewportHeight,
+                  scrollTop,
+                  overscan,
+                  maxBodyPx,
+                });
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+  return cases;
+};
+
+describe('computeVerticalGeometry (sweep invariants)', () => {
+  const cases = buildCases();
+
+  it(`covers >= 369 cases (actual ${cases.length})`, () => {
+    expect(cases.length).toBeGreaterThanOrEqual(369);
+  });
+
+  it('holds invariants on every swept case', () => {
+    for (const args of cases) {
+      checkInvariants(args);
+    }
+  });
+});
+
+describe('computeVerticalGeometry (no-op equivalence with old uniform virtualizer)', () => {
+  it('produces start === headerHeight + index*rowHeight and identity scaling below cap', () => {
+    const geometry = computeVerticalGeometry({
+      rowCount: 1000,
+      rowHeight: 38,
+      headerHeight: 42,
+      viewportHeight: 600,
+      scrollTop: 5_000,
+      overscan: 20,
+      maxBodyPx: MAX_BODY_PX,
+    });
+    expect(geometry.scaleFactor).toBe(1);
+    expect(geometry.translateY).toBe(0);
+    for (const row of geometry.rows) {
+      expect(row.start).toBe(42 + row.index * 38);
+    }
+  });
+});
+
+describe('computeVerticalGeometry (scaling activation at App defaults)', () => {
+  it('activates scaling at 500k rows / rowHeight=38 (sf ~ 1.27)', () => {
+    const geometry = computeVerticalGeometry({
+      rowCount: 500_000,
+      rowHeight: 38,
+      headerHeight: 42,
+      viewportHeight: 800,
+      scrollTop: 0,
+      overscan: 20,
+      maxBodyPx: MAX_BODY_PX,
+    });
+    expect(geometry.physicalBodyHeight).toBe(MAX_BODY_PX);
+    expect(geometry.scaleFactor).toBeGreaterThan(1.2);
+    expect(geometry.scaleFactor).toBeLessThan(1.35);
+  });
+
+  it('keeps no-op below the activation threshold (<= 394,736 rows)', () => {
+    const geometry = computeVerticalGeometry({
+      rowCount: 394_000,
+      rowHeight: 38,
+      headerHeight: 42,
+      viewportHeight: 800,
+      scrollTop: 1000,
+      overscan: 20,
+      maxBodyPx: MAX_BODY_PX,
+    });
+    expect(geometry.scaleFactor).toBe(1);
+    expect(geometry.translateY).toBe(0);
+  });
+});
+
+describe('clientYToRowIndex (inverse of body-content row band)', () => {
+  it('reduces to floor(y / rowHeight) when scaleFactor === 1', () => {
+    const rowHeight = 38;
+    const rowCount = 1000;
+    for (let i = 0; i < 50; i += 1) {
+      for (const delta of [0, 1, rowHeight - 1]) {
+        const y = i * rowHeight + delta;
+        expect(clientYToRowIndex(y, 0, 1, rowHeight, rowCount)).toBe(i);
+      }
+    }
+  });
+
+  it('inverts the d-shifted band under scaling (row i occupies [i*rowHeight + d, ...))', () => {
+    const rowHeight = 38;
+    const rowCount = 1_000_000;
+    const scaleFactor = 1.27;
+    const scrollTop = 1_000_000;
+    const d = scrollTop * (1 - scaleFactor); // <= 0
+    for (const i of [0, 1, 100, 5000, rowCount - 1]) {
+      for (const delta of [0, rowHeight / 2, rowHeight - 1]) {
+        const y = i * rowHeight + d + delta;
+        expect(
+          clientYToRowIndex(y, scrollTop, scaleFactor, rowHeight, rowCount),
+        ).toBe(clamp(i, 0, rowCount - 1));
+      }
+    }
+  });
+
+  it('clamps out-of-range y into [0, rowCount-1]', () => {
+    const rowHeight = 38;
+    const rowCount = 10;
+    expect(clientYToRowIndex(-9999, 0, 1, rowHeight, rowCount)).toBe(0);
+    expect(clientYToRowIndex(9_999_999, 0, 1, rowHeight, rowCount)).toBe(9);
+  });
+});
+</file>
+
+<file path="tsconfig.vitest.json">
+{
+  "extends": "./tsconfig.app.json",
+  "include": ["src"],
+  "exclude": []
+}
+</file>
+
+<file path="vitest.config.ts">
+import { defineConfig } from 'vitest/config';
+
+// 追加(V-1): 等価性ハーネスの恒久化用 vitest 設定です。
+//   - 本番ビルド設定(vite.config.ts)は変更しません。テストは別グラフで回します。
+//   - V-1 は純ロジック(verticalGeometry / sorting / filtering / selectOptions)のみで
+//     React 非依存のため environment は node。将来 V-2(collector フック)を足すときは
+//     該当テストだけ jsdom へ振り分けます(environmentMatchGlobs などで個別指定)。
+export default defineConfig({
+  test: {
+    environment: 'node',
+    include: ['src/**/*.test.ts'],
+  },
+});
 </file>
 
 <file path="eslint.config.js">
@@ -1021,6 +1745,210 @@ export const useColumnChooserController = ({
 export default useColumnChooserController;
 </file>
 
+<file path="src/components/spreadsheet-grid/hooks/useColumnSelectOptionsCollector.ts">
+import { useEffect, useMemo, useState } from 'react';
+import type { GridColumn } from '../model/gridTypes';
+import { yieldToMain } from '../utils/scheduler';
+import { collectSelectOptions, createSelectOptionsAccumulator, type SelectOptionEntry } from '../logic/selectOptions';
+
+// 1 チャンクで連続走査する時間予算(ms)です(autosize ランナーと同値)。
+const CHUNK_BUDGET_MS = 10;
+// 同期一括で収集する行数の上限です。これ以下は従来どおり open レンダーの useMemo で
+//   即時確定し(チラつきなし・バイト等価)、超えたぶんだけ時間分割の非同期収集に倒します。
+//   500k/1M の同期スキャン(≈0.4s/≈0.8〜1s)が主スレッドを塞ぐのを避ける一方、通常規模の
+//   体感(open 即リスト表示)は一切変えないための分岐点です。
+export const ASYNC_SELECT_COLLECT_ROW_THRESHOLD = 50_000;
+
+const now = (): number =>
+  typeof performance !== 'undefined' ? performance.now() : Date.now();
+
+const EMPTY_OPTIONS: SelectOptionEntry[] = [];
+const EMPTY_VALUES: ReadonlySet<string> = new Set<string>();
+
+export type ColumnSelectOptionsStatus = 'idle' | 'collecting' | 'ready';
+
+export type ColumnSelectOptionsResult = {
+  status: ColumnSelectOptionsStatus;
+  options: SelectOptionEntry[];
+  // 全候補値の集合(ready のときのみ完全)。トグル/Select All の universe 判定に使います。
+  allValues: ReadonlySet<string>;
+  // collecting 中の進捗(0..1)。ready は 1 / idle は 0。
+  progress: number;
+};
+
+// idle / 収集開始直後(キー未一致)の安定参照です。新規生成を避けて不要レンダーを抑えます。
+const IDLE_RESULT: ColumnSelectOptionsResult = {
+  status: 'idle',
+  options: EMPTY_OPTIONS,
+  allValues: EMPTY_VALUES,
+  progress: 0,
+};
+const COLLECTING_INITIAL: ColumnSelectOptionsResult = {
+  status: 'collecting',
+  options: EMPTY_OPTIONS,
+  allValues: EMPTY_VALUES,
+  progress: 0,
+};
+
+type RawValueAccessor = (index: number) => unknown;
+
+type UseColumnSelectOptionsCollectorArgs<T> = {
+  // popover を開いている列(null = 閉。select/set 以外は idle)。
+  column: GridColumn<T> | null;
+  // 候補収集の母集合の行数(= 全ソース行 rows.length。フィルター後の件数ではありません)。
+  rowCount: number;
+  // rows[index] の対象列セル値を返すアクセサ(= getCellValue(rows[index], column))。
+  //   この identity が変わったとき(= rows/column が変化)に収集をやり直します(旧 [rows] 依存と等価)。
+  getRawValueAt: RawValueAccessor;
+};
+
+const buildValueSet = (options: SelectOptionEntry[]): ReadonlySet<string> =>
+  new Set(options.map((option) => option.value));
+
+// 非同期収集結果は「どの収集に対する結果か」をキー(source/rowCount)付きで持ちます。
+//   レンダー時に現在のキーと照合し、不一致(別列を開いた直後の 1 レンダー等)なら stale と
+//   みなして collecting を返すため、直前列の候補が一瞬見える問題を防ぎます。あわせて、
+//   この方式により effect 本体での同期 setState(set-state-in-effect)も不要になります。
+type AsyncCollectState = {
+  source: RawValueAccessor | null;
+  rowCount: number;
+  result: ColumnSelectOptionsResult;
+};
+const IDLE_ASYNC_STATE: AsyncCollectState = {
+  source: null,
+  rowCount: 0,
+  result: IDLE_RESULT,
+};
+
+// 追加(DS-4 #1): select / set 候補を「通常規模=同期 / 大規模=時間分割の非同期」で収集します。
+//   - 同期経路: 旧 getColumnSelectOptions と同じ open レンダー 1 回きりの useMemo(チラつき無)。
+//   - 非同期経路: yieldToMain で主スレッドを塞がずチャンク収集し、effect cleanup の cancelled
+//     フラグで後続 run / unmount / 母集合変化に対し安全に中断します。
+//   - どちらも logic/selectOptions の共有コレクタを使うため、結果はバイト等価です。
+export const useColumnSelectOptionsCollector = <T,>({
+  column,
+  rowCount,
+  getRawValueAt,
+}: UseColumnSelectOptionsCollectorArgs<T>): ColumnSelectOptionsResult => {
+  const filterType = column?.filterType ?? null;
+  const isSelectLike = filterType === 'select' || filterType === 'set';
+  const explicitOptions =
+    column?.filterOptions && column.filterOptions.length > 0
+      ? column.filterOptions
+      : null;
+  const needsAsync =
+    isSelectLike &&
+    explicitOptions === null &&
+    rowCount > ASYNC_SELECT_COLLECT_ROW_THRESHOLD;
+
+  // 同期で確定できるケースはここで即時決定します(従来挙動・チラつきなし)。
+  //   needsAsync のときだけ null を返し、下の effect 経路へ委ねます。
+  const syncResult = useMemo<ColumnSelectOptionsResult | null>(() => {
+    if (!column || !isSelectLike) {
+      return IDLE_RESULT;
+    }
+    if (explicitOptions) {
+      const options = explicitOptions as SelectOptionEntry[];
+      return {
+        status: 'ready',
+        options,
+        allValues: buildValueSet(options),
+        progress: 1,
+      };
+    }
+    if (!needsAsync) {
+      const options = collectSelectOptions(rowCount, getRawValueAt);
+      return {
+        status: 'ready',
+        options,
+        allValues: buildValueSet(options),
+        progress: 1,
+      };
+    }
+    return null;
+    // getRawValueAt の identity 変化(= rows/column 変化)で同期収集をやり直します(旧 [rows] と等価)。
+  }, [column, isSelectLike, explicitOptions, needsAsync, rowCount, getRawValueAt]);
+
+  const [asyncState, setAsyncState] =
+    useState<AsyncCollectState>(IDLE_ASYNC_STATE);
+
+  useEffect(() => {
+    // 同期で確定済み(syncResult!==null)なら非同期 run は不要です。進行中の run があっても、
+    //   この effect 再実行に伴う直前 cleanup(下の return)で既に中断されています。
+    if (syncResult !== null) {
+      return;
+    }
+
+    // この run のキー。collecting/ready の setAsyncState はこのキー付きで行い、レンダー側で照合します。
+    const myKey = getRawValueAt;
+    const myRowCount = rowCount;
+    const accumulator = createSelectOptionsAccumulator();
+    // 収集開始時の collecting 表示は、レンダー時フォールバック(下記 asyncResult 導出)が担います。
+    //   effect 本体での同期 setState を避けるため、ここでは run を起動するだけにします。
+    let cancelled = false;
+
+    const run = async (): Promise<void> => {
+      let index = 0;
+      while (index < myRowCount) {
+        const sliceStart = now();
+        while (index < myRowCount && now() - sliceStart < CHUNK_BUDGET_MS) {
+          accumulator.collect(myKey(index));
+          index += 1;
+        }
+        if (index < myRowCount) {
+          await yieldToMain();
+          // yield 後の中断判定(後続 run / unmount / 母集合変化で cleanup が cancelled を立てる)。
+          if (cancelled) {
+            return;
+          }
+          setAsyncState({
+            source: myKey,
+            rowCount: myRowCount,
+            result: {
+              status: 'collecting',
+              options: EMPTY_OPTIONS,
+              allValues: EMPTY_VALUES,
+              progress: index / myRowCount,
+            },
+          });
+        }
+      }
+      if (cancelled) {
+        return;
+      }
+      const options = accumulator.finalize();
+      setAsyncState({
+        source: myKey,
+        rowCount: myRowCount,
+        result: {
+          status: 'ready',
+          options,
+          allValues: buildValueSet(options),
+          progress: 1,
+        },
+      });
+    };
+    void run();
+
+    return () => {
+      // effect 再実行 / unmount: 進行中 run を次の yield 後に中断させます。
+      cancelled = true;
+    };
+  }, [syncResult, rowCount, getRawValueAt]);
+
+  // 非同期結果はキー一致時のみ採用します。不一致(別列を開いた直後等)は stale とみなし
+  //   collecting(0%)を返し、直前列の候補表示と effect 内同期 setState の双方を避けます。
+  const asyncResult: ColumnSelectOptionsResult =
+    asyncState.source === getRawValueAt && asyncState.rowCount === rowCount
+      ? asyncState.result
+      : COLLECTING_INITIAL;
+
+  return syncResult ?? asyncResult;
+};
+
+export default useColumnSelectOptionsCollector;
+</file>
+
 <file path="src/components/spreadsheet-grid/hooks/useSortManagementController.ts">
 import { useCallback, useEffect, useRef, useState, type RefObject } from 'react';
 
@@ -1219,6 +2147,55 @@ export const shouldIgnoreGridKeydown = (eventTarget: EventTarget | null) => {
   );
 
   return interactiveElement !== null;
+};
+</file>
+
+<file path="src/components/spreadsheet-grid/logic/selectOptions.ts">
+// 追加(DS-4 #1): select / set フィルター候補の収集ロジックを 1 か所へ集約します。
+//   同期一括版(通常規模)と時間分割の非同期版(500k/1M)の双方がここを共有するため、
+//   刻み方が違っても収集結果はバイト等価になります(DS-4① の
+//   createColumnWidthAccumulator と同じ「共有アキュムレータで等価保証」方針)。
+import { STRING_COLLATOR } from './sorting';
+
+// 候補の最小型です。view 層の ColumnFilterPopoverOption と構造的に同一で相互代入可能ですが、
+//   logic -> view の依存を作らないため別定義にします。
+export type SelectOptionEntry = { label: string; value: string };
+
+// 候補収集アキュムレータです。raw セル値を 1 件ずつ collect し、最後に finalize でソート確定します。
+//   String 化・空白ラベル・ソート規則はいずれも旧 getColumnSelectOptions と同一です。
+export const createSelectOptionsAccumulator = () => {
+  const seen = new Set<string>();
+  const options: SelectOptionEntry[] = [];
+  return {
+    // raw セル値 1 件を候補へ反映します(初出のみ push。走査順=push 順)。
+    collect(rawValue: unknown): void {
+      const value = String(rawValue ?? '');
+      if (seen.has(value)) {
+        return;
+      }
+      seen.add(value);
+      options.push({ value, label: value || '（空白）' });
+    },
+    // 収集済み候補をソート確定します(label の STRING_COLLATOR 比較。旧実装と同一)。
+    finalize(): SelectOptionEntry[] {
+      return options.sort((left, right) =>
+        STRING_COLLATOR.compare(left.label, right.label),
+      );
+    },
+  };
+};
+
+// 同期一括版です(通常規模で使用)。旧 getColumnSelectOptions のスキャン本体と等価です。
+//   getRawValueAt(index) は rows[index] の対象列セル値(= getCellValue(rows[index], column))を返します。
+export const collectSelectOptions = (
+  rowCount: number,
+  getRawValueAt: (index: number) => unknown,
+): SelectOptionEntry[] => {
+  const accumulator = createSelectOptionsAccumulator();
+  for (let index = 0; index < rowCount; index += 1) {
+    accumulator.collect(getRawValueAt(index));
+  }
+  return accumulator.finalize();
 };
 </file>
 
@@ -1636,7 +2613,8 @@ createRoot(document.getElementById('root')!).render(
     "erasableSyntaxOnly": true,
     "noFallthroughCasesInSwitch": true
   },
-  "include": ["src"]
+  "include": ["src"],
+  "exclude": ["src/**/*.test.ts", "src/**/*.test.tsx"]
 }
 </file>
 
@@ -1697,7 +2675,10 @@ export default defineConfig({
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck:test": "tsc --noEmit -p tsconfig.vitest.json"
   },
   "dependencies": {
     "@tanstack/react-virtual": "^3.14.2",
@@ -1716,7 +2697,8 @@ export default defineConfig({
     "globals": "^17.6.0",
     "typescript": "~6.0.2",
     "typescript-eslint": "^8.59.2",
-    "vite": "^8.0.12"
+    "vite": "^8.0.12",
+    "vitest": "^4.1.9"
   }
 }
 </file>
@@ -6303,6 +7285,601 @@ export function ColumnChooserPanel({
 export default ColumnChooserPanel;
 </file>
 
+<file path="src/components/spreadsheet-grid/view/gridBarStyles.ts">
+import type { CSSProperties } from 'react';
+
+// 追加: top/bottom 共通の外側余白を返します。
+export const getGridBarWrapperStyle = (
+  position: 'top' | 'bottom',
+): CSSProperties => ({
+  marginBottom: position === 'top' ? 12 : 0,
+  marginTop: position === 'bottom' ? 12 : 0,
+});
+
+// 追加: top/bottom 共通の bar 本体スタイルです。
+export const gridBarContainerStyle: CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'space-between',
+  gap: 12,
+  padding: '10px 12px',
+  border: '1px solid #d7dce3',
+  borderRadius: 12,
+  backgroundColor: '#f8fafc',
+  flexWrap: 'wrap',
+};
+
+// 追加: bar 内の左/右グループで共通利用する style です。
+export const gridBarGroupStyle: CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  gap: 8,
+  flexWrap: 'wrap',
+};
+
+// 追加: top bar 左側のタイトル + summary 用 style です。
+export const gridBarLeadingGroupStyle: CSSProperties = {
+  ...gridBarGroupStyle,
+  minWidth: 0,
+  flex: '1 1 auto',
+  color: '#334155',
+  fontSize: 13,
+};
+
+// 追加: bar のタイトル表示用 style です。
+export const gridBarTitleStyle: CSSProperties = {
+  fontSize: 13,
+  fontWeight: 700,
+  color: '#334155',
+};
+
+// 追加: 薄い badge / chip 表示用 style です。
+export const gridBarChipStyle: CSSProperties = {
+  display: 'inline-flex',
+  alignItems: 'center',
+  padding: '4px 8px',
+  borderRadius: 9999,
+  backgroundColor: '#ffffff',
+  border: '1px solid #e2e8f0',
+  color: '#334155',
+  fontSize: 12,
+  whiteSpace: 'nowrap',
+};
+
+// 追加: top bar の件数 badge 用に、やや濃い背景の variant を定義します。
+export const gridBarEmphasisChipStyle: CSSProperties = {
+  ...gridBarChipStyle,
+  backgroundColor: '#e2e8f0',
+  border: '1px solid transparent',
+  fontWeight: 600,
+};
+
+// 追加: Global Filter input の共通 style です。
+export const gridBarInputStyle: CSSProperties = {
+  width: '100%',
+  minWidth: 0,
+  boxSizing: 'border-box',
+  padding: '10px 12px',
+  border: '1px solid #cbd5e1',
+  borderRadius: 8,
+  outline: 'none',
+  backgroundColor: '#ffffff',
+  // 追加: 入力文字色を明示して、dark/light やブラウザ差異で
+  //       文字が見えなくなるのを防ぎます。
+  color: '#0f172a',
+  // 追加: キャレット色も明示します。
+  caretColor: '#0f172a',
+  // 追加: bar 内での可読性を安定させます。
+  fontSize: 14,
+  lineHeight: 1.4,
+  // 追加: Chromium / WebKit 系で text fill が変わるケースに備えます。
+  WebkitTextFillColor: '#0f172a',
+};
+
+// 追加: Global Filter input とクリアボタンを横並びにする wrapper です。
+export const gridBarInputGroupStyle: CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  gap: 8,
+  width: '100%',
+  maxWidth: 420,
+};
+
+// 追加: Global Filter クリアボタンの共通 style です。
+export const gridBarClearButtonStyle: CSSProperties = {
+  flex: '0 0 auto',
+  border: '1px solid #cbd5e1',
+  backgroundColor: '#ffffff',
+  color: '#475569',
+  borderRadius: 8,
+  padding: '10px 12px',
+  cursor: 'pointer',
+  fontSize: 12,
+  lineHeight: 1,
+  whiteSpace: 'nowrap',
+};
+</file>
+
+<file path="src/components/spreadsheet-grid/logic/geometry.ts">
+import type { GridColumn } from '../model/gridTypes';
+
+// ────────────────────────────────────────────────
+// 既存: 列の座標計算を共通化するための measurement 型です。
+// ────────────────────────────────────────────────
+
+export type ColumnMeasurement<T> = {
+  index: number;
+  column: GridColumn<T>;
+  start: number;
+  // 追加: 各列の実表示幅です。
+  size: number;
+  end: number;
+};
+
+// 追加: 値を min/max に収めるユーティリティです。
+export const clamp = (value: number, min: number, max: number) =>
+  Math.min(Math.max(value, min), max);
+
+// 追加: columns + columnWidths から、列座標の measurement 一覧を生成します。
+export const buildColumnMeasurements = <T,>(
+  columns: GridColumn<T>[],
+  columnWidths: Record<string, number>,
+): ColumnMeasurement<T>[] => {
+  let start = 0;
+  return columns.map((column, index) => {
+    const size = columnWidths[column.key] ?? column.width;
+    const measurement: ColumnMeasurement<T> = {
+      index,
+      column,
+      start,
+      size,
+      end: start + size,
+    };
+    start += size;
+    return measurement;
+  });
+};
+
+// 追加: x 座標から列 index を特定するための二分探索です。
+export const findColumnIndexFromOffset = <T,>(
+  measurements: ColumnMeasurement<T>[],
+  offset: number,
+) => {
+  if (measurements.length === 0) {
+    return -1;
+  }
+  if (offset <= 0) {
+    return 0;
+  }
+  let low = 0;
+  let high = measurements.length - 1;
+  while (low <= high) {
+    const mid = Math.floor((low + high) / 2);
+    const current = measurements[mid];
+    if (offset < current.start) {
+      high = mid - 1;
+      continue;
+    }
+    if (offset >= current.end) {
+      low = mid + 1;
+      continue;
+    }
+    return current.index;
+  }
+  return Math.max(0, Math.min(low, measurements.length - 1));
+};
+
+// ────────────────────────────────────────────────
+// 追加(10-A): 3 ペイン（pinned-left / center / pinned-right）
+//             分離に必要な型と helper 群です。
+//             ここでは型定義と純粋関数のみ追加し、
+//             レンダリングは一切変更しません。
+// ────────────────────────────────────────────────
+
+// 追加(10-A): 列が所属するペインの種別です。
+export type ColumnPane = 'left' | 'center' | 'right';
+
+// 追加(10-A): 列定義から所属ペインを判定します。
+export const getColumnPane = <T,>(column: GridColumn<T>): ColumnPane => {
+  if (column.pinned === 'left') return 'left';
+  if (column.pinned === 'right') return 'right';
+  return 'center';
+};
+
+// 追加(10-A): visibleColumns を AG Grid 互換の視覚順序に並べ替えます。
+//             pinned-left → center → pinned-right の順になります。
+//             各グループ内では元配列の相対順序が保持されます。
+//             ※ この関数で返る配列が「論理列 index」の基準になります。
+export const reorderColumnsByPane = <T,>(
+  columns: GridColumn<T>[],
+): GridColumn<T>[] => {
+  const left: GridColumn<T>[] = [];
+  const center: GridColumn<T>[] = [];
+  const right: GridColumn<T>[] = [];
+
+  for (const column of columns) {
+    const pane = getColumnPane(column);
+    if (pane === 'left') left.push(column);
+    else if (pane === 'right') right.push(column);
+    else center.push(column);
+  }
+
+  return [...left, ...center, ...right];
+};
+
+// 追加(10-A): 1 つのペイン内における列の座標情報です。
+//             paneLocalStart / paneLocalEnd はペイン内ローカル座標（0 始まり）です。
+//             logicalIndex は reorder 後の visibleColumns 配列上の index です。
+export type PaneColumnEntry<T> = {
+  column: GridColumn<T>;
+  logicalIndex: number;
+  paneLocalStart: number;
+  paneLocalSize: number;
+  paneLocalEnd: number;
+};
+
+// 追加(10-A): 1 つのペインの geometry 情報です。
+export type PaneGeometry<T> = {
+  pane: ColumnPane;
+  entries: PaneColumnEntry<T>[];
+  totalWidth: number;
+};
+
+// 追加(10-A): 3 ペイン全体のレイアウト情報です。
+export type GridPaneLayout<T> = {
+  left: PaneGeometry<T>;
+  center: PaneGeometry<T>;
+  right: PaneGeometry<T>;
+};
+
+// 追加(11-B4): ペイン分割後の「列ソース」（列 + 論理 index のペア）です。
+//             論理 index は reorder 済み orderedColumns 上の index で、
+//             ペイン geometry を個別に再構築しても不変です。
+export type PaneSourceColumn<T> = {
+  column: GridColumn<T>;
+  logicalIndex: number;
+};
+
+// 追加(11-B4): orderedColumns を 3 ペインの列ソースへ分割した結果です。
+export type PaneSourceColumns<T> = {
+  left: PaneSourceColumn<T>[];
+  center: PaneSourceColumn<T>[];
+  right: PaneSourceColumn<T>[];
+};
+
+// 追加(11-B4): reorder 済み orderedColumns を 3 ペインの列ソースへ分割します。
+//             columnWidths に依存しないため、列構成が変わらない限り
+//             結果を memo で固定できます（ライブリサイズ中も不変）。
+export const splitOrderedColumnsByPane = <T,>(
+  orderedColumns: GridColumn<T>[],
+): PaneSourceColumns<T> => {
+  const groups: PaneSourceColumns<T> = {
+    left: [],
+    center: [],
+    right: [],
+  };
+
+  orderedColumns.forEach((column, logicalIndex) => {
+    const pane = getColumnPane(column);
+    groups[pane].push({ column, logicalIndex });
+  });
+
+  return groups;
+};
+
+// 追加(11-B4): 1 ペイン分の解決済み列幅（columnWidths 優先 / column.width フォールバック）を
+//             ペイン内の列順で並べた配列として返す内部 helper です。
+const resolvePaneWidths = <T,>(
+  items: PaneSourceColumn<T>[],
+  columnWidths: Record<string, number>,
+): number[] =>
+  items.map(({ column }) => columnWidths[column.key] ?? column.width);
+
+// 追加(11-B4): 1 ペイン分の解決済み列幅を join した「幅キー文字列」を作ります。
+//             useMemo の依存値として使うことで、「そのペインの幅が実際に変わったとき」
+//             だけ geometry を再構築できます（columnWidths オブジェクトは毎 pointermove で
+//             参照が変わりますが、無関係ペインの幅キーは同一文字列のままです）。
+export const buildPaneWidthsKey = <T,>(
+  items: PaneSourceColumn<T>[],
+  columnWidths: Record<string, number>,
+): string => resolvePaneWidths(items, columnWidths).join(',');
+
+// 追加(11-B4): 幅キー文字列を解決済み幅配列へ戻します（buildPaneWidthsKey の逆変換）。
+const parsePaneWidthsKey = (widthsKey: string): number[] =>
+  widthsKey === '' ? [] : widthsKey.split(',').map(Number);
+
+// 追加(11-B4): 1 ペイン分の PaneGeometry を解決済み幅配列から構築する core です。
+//             旧 buildGridPaneLayout 内部の buildPane と同一ロジックです。
+export const buildPaneGeometry = <T,>(
+  pane: ColumnPane,
+  items: PaneSourceColumn<T>[],
+  resolvedWidths: number[],
+): PaneGeometry<T> => {
+  let offset = 0;
+  const entries: PaneColumnEntry<T>[] = items.map(
+    ({ column, logicalIndex }, indexInPane) => {
+      const size = resolvedWidths[indexInPane] ?? column.width;
+      const entry: PaneColumnEntry<T> = {
+        column,
+        logicalIndex,
+        paneLocalStart: offset,
+        paneLocalSize: size,
+        paneLocalEnd: offset + size,
+      };
+      offset += size;
+      return entry;
+    },
+  );
+  return { pane, entries, totalWidth: offset };
+};
+
+// 追加(11-B4): 幅キー文字列から 1 ペイン分の PaneGeometry を構築します。
+//             SpreadsheetGrid 側のペイン別 useMemo（依存 = 列ソース + 幅キー）から
+//             呼ぶ想定です。幅キーは buildPaneWidthsKey で生成された値を渡してください。
+export const buildPaneGeometryFromWidthsKey = <T,>(
+  pane: ColumnPane,
+  items: PaneSourceColumn<T>[],
+  widthsKey: string,
+): PaneGeometry<T> =>
+  buildPaneGeometry(pane, items, parsePaneWidthsKey(widthsKey));
+
+// 追加(10-A): reorder 済み visibleColumns + columnWidths から
+//             3 ペインレイアウトを構築します。
+//             引数の columns は reorderColumnsByPane() 済みを前提とします。
+// 変更(11-B4): 内部実装を splitOrderedColumnsByPane + buildPaneGeometry へ委譲しました。
+//             SpreadsheetGrid 本体はペイン別 useMemo へ移行済みですが、
+//             「一括構築」の互換 API としてテスト・将来利用向けに残しています。
+export const buildGridPaneLayout = <T,>(
+  orderedColumns: GridColumn<T>[],
+  columnWidths: Record<string, number>,
+): GridPaneLayout<T> => {
+  const groups = splitOrderedColumnsByPane(orderedColumns);
+  return {
+    left: buildPaneGeometry(
+      'left',
+      groups.left,
+      resolvePaneWidths(groups.left, columnWidths),
+    ),
+    center: buildPaneGeometry(
+      'center',
+      groups.center,
+      resolvePaneWidths(groups.center, columnWidths),
+    ),
+    right: buildPaneGeometry(
+      'right',
+      groups.right,
+      resolvePaneWidths(groups.right, columnWidths),
+    ),
+  };
+};
+
+// 追加(10-A): ペイン + エントリをまとめて返す lookup 結果型です。
+export type PaneColumnLookupResult<T> = {
+  pane: ColumnPane;
+  entry: PaneColumnEntry<T>;
+};
+
+// 追加(10-A): 論理列 index からペインとローカル座標を逆引きします。
+//             見つからない場合は null を返します。
+export const lookupPaneColumn = <T,>(
+  layout: GridPaneLayout<T>,
+  logicalIndex: number,
+): PaneColumnLookupResult<T> | null => {
+  const panes: [ColumnPane, PaneGeometry<T>][] = [
+    ['left', layout.left],
+    ['center', layout.center],
+    ['right', layout.right],
+  ];
+
+  for (const [pane, geometry] of panes) {
+    const entry = geometry.entries.find((e) => e.logicalIndex === logicalIndex);
+    if (entry) {
+      return { pane, entry };
+    }
+  }
+
+  return null;
+};
+
+// 追加(10-A): ペイン内ローカル x 座標から論理列 index を特定します。
+//             pointer interaction でペインごとにヒットテストするために使います。
+export const findLogicalIndexFromPaneOffset = <T,>(
+  paneGeometry: PaneGeometry<T>,
+  offset: number,
+): number => {
+  const { entries } = paneGeometry;
+  if (entries.length === 0) {
+    return -1;
+  }
+  if (offset <= 0) {
+    return entries[0].logicalIndex;
+  }
+
+  let low = 0;
+  let high = entries.length - 1;
+
+  while (low <= high) {
+    const mid = Math.floor((low + high) / 2);
+    const entry = entries[mid];
+
+    if (offset < entry.paneLocalStart) {
+      high = mid - 1;
+      continue;
+    }
+    if (offset >= entry.paneLocalEnd) {
+      low = mid + 1;
+      continue;
+    }
+    // 追加(10-A): ヒットしたエントリの論理 index を返します。
+    return entry.logicalIndex;
+  }
+
+  // 追加(10-A): 範囲外の場合は最も近いエントリの論理 index を返します。
+  const clampedIndex = Math.max(0, Math.min(low, entries.length - 1));
+  return entries[clampedIndex].logicalIndex;
+};
+
+// 追加(13-B3-2): pane-local x オフセットから「挿入スロット index(0..件数)」を返します。
+//   ColumnChooserPanel の DOM midpoint 走査(updateDropFromPointer)の幾何版です。
+//   各エントリの midpoint より左にポインタがあれば、その手前へ挿入(= そのエントリの index)。
+//   どの midpoint よりも右なら末尾(= entries.length)を返します。空ペインは 0。
+//   ※ ヘッダー D&D のドロップ先 slot 算出に使います(findLogicalIndexFromPaneOffset が
+//      「どのセル上か」を返すのに対し、こちらは「列と列の境界(=挿入位置)」を返します)。
+export const findPaneDropSlot = <T,>(
+  paneGeometry: PaneGeometry<T>,
+  paneLocalOffset: number,
+): number => {
+  const { entries } = paneGeometry;
+  for (let i = 0; i < entries.length; i += 1) {
+    const entry = entries[i];
+    const midpoint = entry.paneLocalStart + entry.paneLocalSize / 2;
+    if (paneLocalOffset < midpoint) {
+      return i;
+    }
+  }
+  return entries.length;
+};
+
+// 追加(13-B3-2): スロット index → ペインローカル境界 x(ドロップインジケータの描画位置)。
+//   slot<件数: そのエントリの paneLocalStart / slot>=件数: totalWidth(末尾) / 空ペイン: 0。
+export const paneDropSlotBoundaryX = <T,>(
+  paneGeometry: PaneGeometry<T>,
+  slot: number,
+): number => {
+  const { entries, totalWidth } = paneGeometry;
+  if (entries.length === 0) return 0;
+  if (slot <= 0) return entries[0].paneLocalStart;
+  if (slot >= entries.length) return totalWidth;
+  return entries[slot].paneLocalStart;
+};
+
+// 追加(10-A): 3 ペインそれぞれに pinned 列が何本あるかを返す convenience helper です。
+export const countPinnedColumns = <T,>(
+  layout: GridPaneLayout<T>,
+): { left: number; center: number; right: number } => ({
+  left: layout.left.entries.length,
+  center: layout.center.entries.length,
+  right: layout.right.entries.length,
+});
+
+// 追加(10-A): pinned 列が 1 本もなければ true を返します。
+//             10-B 以降で「従来の単一スクロール描画にフォールバックするか」の判定に使います。
+export const isPlainLayout = <T,>(layout: GridPaneLayout<T>): boolean =>
+  layout.left.entries.length === 0 && layout.right.entries.length === 0;
+// ────────────────────────────────────────────────
+// 追加(10-D): Overlay / Editor をペイン別座標系で描画するための helper 群です。
+//             10-C までで「セル本体・ヘッダー」はペインローカル座標になりましたが、
+//             SelectionOverlay / ActiveCellOverlay / CellEditorLayer はまだ
+//             グローバル座標（columnMeasurements + rowHeaderWidth）前提でした。
+//             ここで「論理列 index 範囲 → 各ペインのローカル水平 extent」を求める
+//             純粋関数を用意し、overlay を各ペイン内へ正しく配置できるようにします。
+//             ※ 返す座標は leadingWidth を含まない「列領域内ローカル座標」です。
+//               leadingWidth（行ヘッダー幅）は描画側で加算します。
+// ────────────────────────────────────────────────
+
+// 追加(10-D): 1 ペイン内における水平 extent（列領域ローカル座標, leadingWidth 非含有）です。
+//             start / end は paneLocalStart / paneLocalEnd 起点で、width = end - start です。
+export type PaneColumnExtent = {
+  start: number;
+  end: number;
+  width: number;
+};
+
+// 追加(10-D): 3 ペインそれぞれの水平 extent をまとめた結果です。
+//             該当ペインに範囲内の列が 1 本も無い場合は null になります。
+export type PaneColumnExtentMap = Record<ColumnPane, PaneColumnExtent | null>;
+
+// 追加(10-D): 1 ペイン分の extent を、論理列 index 範囲 [startLogicalIndex, endLogicalIndex]
+//             （両端含む）から求める内部 helper です。
+const computeExtentForPane = <T,>(
+  geometry: PaneGeometry<T>,
+  startLogicalIndex: number,
+  endLogicalIndex: number,
+): PaneColumnExtent | null => {
+  const lo = Math.min(startLogicalIndex, endLogicalIndex);
+  const hi = Math.max(startLogicalIndex, endLogicalIndex);
+
+  let start = Number.POSITIVE_INFINITY;
+  let end = Number.NEGATIVE_INFINITY;
+  let found = false;
+
+  for (const entry of geometry.entries) {
+    if (entry.logicalIndex < lo || entry.logicalIndex > hi) {
+      continue;
+    }
+    found = true;
+    if (entry.paneLocalStart < start) start = entry.paneLocalStart;
+    if (entry.paneLocalEnd > end) end = entry.paneLocalEnd;
+  }
+
+  if (!found) {
+    return null;
+  }
+  return { start, end, width: end - start };
+};
+
+// 追加(10-D): 論理列 index 範囲から、3 ペインそれぞれの水平 extent を求めます。
+//             cell / col 選択や行ヘッダー以外の overlay の水平範囲決定に使います。
+export const computePaneColumnExtents = <T,>(
+  layout: GridPaneLayout<T>,
+  startLogicalIndex: number,
+  endLogicalIndex: number,
+): PaneColumnExtentMap => ({
+  left: computeExtentForPane(layout.left, startLogicalIndex, endLogicalIndex),
+  center: computeExtentForPane(
+    layout.center,
+    startLogicalIndex,
+    endLogicalIndex,
+  ),
+  right: computeExtentForPane(layout.right, startLogicalIndex, endLogicalIndex),
+});
+
+// 追加(10-D): 「全列」を覆う extent を 3 ペイン分求めます（行選択 overlay 用）。
+//             各ペインは自分の列領域全幅（0 〜 totalWidth）を覆います。
+//             列が無いペインは null になります。
+export const computeFullWidthPaneExtents = <T,>(
+  layout: GridPaneLayout<T>,
+): PaneColumnExtentMap => {
+  const toExtent = (geometry: PaneGeometry<T>): PaneColumnExtent | null =>
+    geometry.entries.length === 0
+      ? null
+      : { start: 0, end: geometry.totalWidth, width: geometry.totalWidth };
+
+  return {
+    left: toExtent(layout.left),
+    center: toExtent(layout.center),
+    right: toExtent(layout.right),
+  };
+};
+
+// 追加(10-D): 単一論理列 index が属するペインと、その列のローカル extent を求めます。
+//             ActiveCellOverlay / CellEditorLayer のように単一セル列を扱う場合に使います。
+//             見つからなければ null を返します。
+export type SinglePaneColumnExtent = {
+  pane: ColumnPane;
+  extent: PaneColumnExtent;
+};
+
+export const computeSinglePaneColumnExtent = <T,>(
+  layout: GridPaneLayout<T>,
+  logicalIndex: number,
+): SinglePaneColumnExtent | null => {
+  const lookup = lookupPaneColumn(layout, logicalIndex);
+  if (!lookup) {
+    return null;
+  }
+  const { pane, entry } = lookup;
+  return {
+    pane,
+    extent: {
+      start: entry.paneLocalStart,
+      end: entry.paneLocalEnd,
+      width: entry.paneLocalSize,
+    },
+  };
+};
+</file>
+
 <file path="src/components/spreadsheet-grid/view/ColumnFilterPopover.tsx">
 import { createPortal } from 'react-dom';
 // 変更(12-A): set フィルター(検索 + Select All + チェックボックス一覧)用に
@@ -6964,601 +8541,6 @@ export function ColumnFilterPopover({
 }
 
 export default ColumnFilterPopover;
-</file>
-
-<file path="src/components/spreadsheet-grid/view/gridBarStyles.ts">
-import type { CSSProperties } from 'react';
-
-// 追加: top/bottom 共通の外側余白を返します。
-export const getGridBarWrapperStyle = (
-  position: 'top' | 'bottom',
-): CSSProperties => ({
-  marginBottom: position === 'top' ? 12 : 0,
-  marginTop: position === 'bottom' ? 12 : 0,
-});
-
-// 追加: top/bottom 共通の bar 本体スタイルです。
-export const gridBarContainerStyle: CSSProperties = {
-  display: 'flex',
-  alignItems: 'center',
-  justifyContent: 'space-between',
-  gap: 12,
-  padding: '10px 12px',
-  border: '1px solid #d7dce3',
-  borderRadius: 12,
-  backgroundColor: '#f8fafc',
-  flexWrap: 'wrap',
-};
-
-// 追加: bar 内の左/右グループで共通利用する style です。
-export const gridBarGroupStyle: CSSProperties = {
-  display: 'flex',
-  alignItems: 'center',
-  gap: 8,
-  flexWrap: 'wrap',
-};
-
-// 追加: top bar 左側のタイトル + summary 用 style です。
-export const gridBarLeadingGroupStyle: CSSProperties = {
-  ...gridBarGroupStyle,
-  minWidth: 0,
-  flex: '1 1 auto',
-  color: '#334155',
-  fontSize: 13,
-};
-
-// 追加: bar のタイトル表示用 style です。
-export const gridBarTitleStyle: CSSProperties = {
-  fontSize: 13,
-  fontWeight: 700,
-  color: '#334155',
-};
-
-// 追加: 薄い badge / chip 表示用 style です。
-export const gridBarChipStyle: CSSProperties = {
-  display: 'inline-flex',
-  alignItems: 'center',
-  padding: '4px 8px',
-  borderRadius: 9999,
-  backgroundColor: '#ffffff',
-  border: '1px solid #e2e8f0',
-  color: '#334155',
-  fontSize: 12,
-  whiteSpace: 'nowrap',
-};
-
-// 追加: top bar の件数 badge 用に、やや濃い背景の variant を定義します。
-export const gridBarEmphasisChipStyle: CSSProperties = {
-  ...gridBarChipStyle,
-  backgroundColor: '#e2e8f0',
-  border: '1px solid transparent',
-  fontWeight: 600,
-};
-
-// 追加: Global Filter input の共通 style です。
-export const gridBarInputStyle: CSSProperties = {
-  width: '100%',
-  minWidth: 0,
-  boxSizing: 'border-box',
-  padding: '10px 12px',
-  border: '1px solid #cbd5e1',
-  borderRadius: 8,
-  outline: 'none',
-  backgroundColor: '#ffffff',
-  // 追加: 入力文字色を明示して、dark/light やブラウザ差異で
-  //       文字が見えなくなるのを防ぎます。
-  color: '#0f172a',
-  // 追加: キャレット色も明示します。
-  caretColor: '#0f172a',
-  // 追加: bar 内での可読性を安定させます。
-  fontSize: 14,
-  lineHeight: 1.4,
-  // 追加: Chromium / WebKit 系で text fill が変わるケースに備えます。
-  WebkitTextFillColor: '#0f172a',
-};
-
-// 追加: Global Filter input とクリアボタンを横並びにする wrapper です。
-export const gridBarInputGroupStyle: CSSProperties = {
-  display: 'flex',
-  alignItems: 'center',
-  gap: 8,
-  width: '100%',
-  maxWidth: 420,
-};
-
-// 追加: Global Filter クリアボタンの共通 style です。
-export const gridBarClearButtonStyle: CSSProperties = {
-  flex: '0 0 auto',
-  border: '1px solid #cbd5e1',
-  backgroundColor: '#ffffff',
-  color: '#475569',
-  borderRadius: 8,
-  padding: '10px 12px',
-  cursor: 'pointer',
-  fontSize: 12,
-  lineHeight: 1,
-  whiteSpace: 'nowrap',
-};
-</file>
-
-<file path="src/components/spreadsheet-grid/logic/geometry.ts">
-import type { GridColumn } from '../model/gridTypes';
-
-// ────────────────────────────────────────────────
-// 既存: 列の座標計算を共通化するための measurement 型です。
-// ────────────────────────────────────────────────
-
-export type ColumnMeasurement<T> = {
-  index: number;
-  column: GridColumn<T>;
-  start: number;
-  // 追加: 各列の実表示幅です。
-  size: number;
-  end: number;
-};
-
-// 追加: 値を min/max に収めるユーティリティです。
-export const clamp = (value: number, min: number, max: number) =>
-  Math.min(Math.max(value, min), max);
-
-// 追加: columns + columnWidths から、列座標の measurement 一覧を生成します。
-export const buildColumnMeasurements = <T,>(
-  columns: GridColumn<T>[],
-  columnWidths: Record<string, number>,
-): ColumnMeasurement<T>[] => {
-  let start = 0;
-  return columns.map((column, index) => {
-    const size = columnWidths[column.key] ?? column.width;
-    const measurement: ColumnMeasurement<T> = {
-      index,
-      column,
-      start,
-      size,
-      end: start + size,
-    };
-    start += size;
-    return measurement;
-  });
-};
-
-// 追加: x 座標から列 index を特定するための二分探索です。
-export const findColumnIndexFromOffset = <T,>(
-  measurements: ColumnMeasurement<T>[],
-  offset: number,
-) => {
-  if (measurements.length === 0) {
-    return -1;
-  }
-  if (offset <= 0) {
-    return 0;
-  }
-  let low = 0;
-  let high = measurements.length - 1;
-  while (low <= high) {
-    const mid = Math.floor((low + high) / 2);
-    const current = measurements[mid];
-    if (offset < current.start) {
-      high = mid - 1;
-      continue;
-    }
-    if (offset >= current.end) {
-      low = mid + 1;
-      continue;
-    }
-    return current.index;
-  }
-  return Math.max(0, Math.min(low, measurements.length - 1));
-};
-
-// ────────────────────────────────────────────────
-// 追加(10-A): 3 ペイン（pinned-left / center / pinned-right）
-//             分離に必要な型と helper 群です。
-//             ここでは型定義と純粋関数のみ追加し、
-//             レンダリングは一切変更しません。
-// ────────────────────────────────────────────────
-
-// 追加(10-A): 列が所属するペインの種別です。
-export type ColumnPane = 'left' | 'center' | 'right';
-
-// 追加(10-A): 列定義から所属ペインを判定します。
-export const getColumnPane = <T,>(column: GridColumn<T>): ColumnPane => {
-  if (column.pinned === 'left') return 'left';
-  if (column.pinned === 'right') return 'right';
-  return 'center';
-};
-
-// 追加(10-A): visibleColumns を AG Grid 互換の視覚順序に並べ替えます。
-//             pinned-left → center → pinned-right の順になります。
-//             各グループ内では元配列の相対順序が保持されます。
-//             ※ この関数で返る配列が「論理列 index」の基準になります。
-export const reorderColumnsByPane = <T,>(
-  columns: GridColumn<T>[],
-): GridColumn<T>[] => {
-  const left: GridColumn<T>[] = [];
-  const center: GridColumn<T>[] = [];
-  const right: GridColumn<T>[] = [];
-
-  for (const column of columns) {
-    const pane = getColumnPane(column);
-    if (pane === 'left') left.push(column);
-    else if (pane === 'right') right.push(column);
-    else center.push(column);
-  }
-
-  return [...left, ...center, ...right];
-};
-
-// 追加(10-A): 1 つのペイン内における列の座標情報です。
-//             paneLocalStart / paneLocalEnd はペイン内ローカル座標（0 始まり）です。
-//             logicalIndex は reorder 後の visibleColumns 配列上の index です。
-export type PaneColumnEntry<T> = {
-  column: GridColumn<T>;
-  logicalIndex: number;
-  paneLocalStart: number;
-  paneLocalSize: number;
-  paneLocalEnd: number;
-};
-
-// 追加(10-A): 1 つのペインの geometry 情報です。
-export type PaneGeometry<T> = {
-  pane: ColumnPane;
-  entries: PaneColumnEntry<T>[];
-  totalWidth: number;
-};
-
-// 追加(10-A): 3 ペイン全体のレイアウト情報です。
-export type GridPaneLayout<T> = {
-  left: PaneGeometry<T>;
-  center: PaneGeometry<T>;
-  right: PaneGeometry<T>;
-};
-
-// 追加(11-B4): ペイン分割後の「列ソース」（列 + 論理 index のペア）です。
-//             論理 index は reorder 済み orderedColumns 上の index で、
-//             ペイン geometry を個別に再構築しても不変です。
-export type PaneSourceColumn<T> = {
-  column: GridColumn<T>;
-  logicalIndex: number;
-};
-
-// 追加(11-B4): orderedColumns を 3 ペインの列ソースへ分割した結果です。
-export type PaneSourceColumns<T> = {
-  left: PaneSourceColumn<T>[];
-  center: PaneSourceColumn<T>[];
-  right: PaneSourceColumn<T>[];
-};
-
-// 追加(11-B4): reorder 済み orderedColumns を 3 ペインの列ソースへ分割します。
-//             columnWidths に依存しないため、列構成が変わらない限り
-//             結果を memo で固定できます（ライブリサイズ中も不変）。
-export const splitOrderedColumnsByPane = <T,>(
-  orderedColumns: GridColumn<T>[],
-): PaneSourceColumns<T> => {
-  const groups: PaneSourceColumns<T> = {
-    left: [],
-    center: [],
-    right: [],
-  };
-
-  orderedColumns.forEach((column, logicalIndex) => {
-    const pane = getColumnPane(column);
-    groups[pane].push({ column, logicalIndex });
-  });
-
-  return groups;
-};
-
-// 追加(11-B4): 1 ペイン分の解決済み列幅（columnWidths 優先 / column.width フォールバック）を
-//             ペイン内の列順で並べた配列として返す内部 helper です。
-const resolvePaneWidths = <T,>(
-  items: PaneSourceColumn<T>[],
-  columnWidths: Record<string, number>,
-): number[] =>
-  items.map(({ column }) => columnWidths[column.key] ?? column.width);
-
-// 追加(11-B4): 1 ペイン分の解決済み列幅を join した「幅キー文字列」を作ります。
-//             useMemo の依存値として使うことで、「そのペインの幅が実際に変わったとき」
-//             だけ geometry を再構築できます（columnWidths オブジェクトは毎 pointermove で
-//             参照が変わりますが、無関係ペインの幅キーは同一文字列のままです）。
-export const buildPaneWidthsKey = <T,>(
-  items: PaneSourceColumn<T>[],
-  columnWidths: Record<string, number>,
-): string => resolvePaneWidths(items, columnWidths).join(',');
-
-// 追加(11-B4): 幅キー文字列を解決済み幅配列へ戻します（buildPaneWidthsKey の逆変換）。
-const parsePaneWidthsKey = (widthsKey: string): number[] =>
-  widthsKey === '' ? [] : widthsKey.split(',').map(Number);
-
-// 追加(11-B4): 1 ペイン分の PaneGeometry を解決済み幅配列から構築する core です。
-//             旧 buildGridPaneLayout 内部の buildPane と同一ロジックです。
-export const buildPaneGeometry = <T,>(
-  pane: ColumnPane,
-  items: PaneSourceColumn<T>[],
-  resolvedWidths: number[],
-): PaneGeometry<T> => {
-  let offset = 0;
-  const entries: PaneColumnEntry<T>[] = items.map(
-    ({ column, logicalIndex }, indexInPane) => {
-      const size = resolvedWidths[indexInPane] ?? column.width;
-      const entry: PaneColumnEntry<T> = {
-        column,
-        logicalIndex,
-        paneLocalStart: offset,
-        paneLocalSize: size,
-        paneLocalEnd: offset + size,
-      };
-      offset += size;
-      return entry;
-    },
-  );
-  return { pane, entries, totalWidth: offset };
-};
-
-// 追加(11-B4): 幅キー文字列から 1 ペイン分の PaneGeometry を構築します。
-//             SpreadsheetGrid 側のペイン別 useMemo（依存 = 列ソース + 幅キー）から
-//             呼ぶ想定です。幅キーは buildPaneWidthsKey で生成された値を渡してください。
-export const buildPaneGeometryFromWidthsKey = <T,>(
-  pane: ColumnPane,
-  items: PaneSourceColumn<T>[],
-  widthsKey: string,
-): PaneGeometry<T> =>
-  buildPaneGeometry(pane, items, parsePaneWidthsKey(widthsKey));
-
-// 追加(10-A): reorder 済み visibleColumns + columnWidths から
-//             3 ペインレイアウトを構築します。
-//             引数の columns は reorderColumnsByPane() 済みを前提とします。
-// 変更(11-B4): 内部実装を splitOrderedColumnsByPane + buildPaneGeometry へ委譲しました。
-//             SpreadsheetGrid 本体はペイン別 useMemo へ移行済みですが、
-//             「一括構築」の互換 API としてテスト・将来利用向けに残しています。
-export const buildGridPaneLayout = <T,>(
-  orderedColumns: GridColumn<T>[],
-  columnWidths: Record<string, number>,
-): GridPaneLayout<T> => {
-  const groups = splitOrderedColumnsByPane(orderedColumns);
-  return {
-    left: buildPaneGeometry(
-      'left',
-      groups.left,
-      resolvePaneWidths(groups.left, columnWidths),
-    ),
-    center: buildPaneGeometry(
-      'center',
-      groups.center,
-      resolvePaneWidths(groups.center, columnWidths),
-    ),
-    right: buildPaneGeometry(
-      'right',
-      groups.right,
-      resolvePaneWidths(groups.right, columnWidths),
-    ),
-  };
-};
-
-// 追加(10-A): ペイン + エントリをまとめて返す lookup 結果型です。
-export type PaneColumnLookupResult<T> = {
-  pane: ColumnPane;
-  entry: PaneColumnEntry<T>;
-};
-
-// 追加(10-A): 論理列 index からペインとローカル座標を逆引きします。
-//             見つからない場合は null を返します。
-export const lookupPaneColumn = <T,>(
-  layout: GridPaneLayout<T>,
-  logicalIndex: number,
-): PaneColumnLookupResult<T> | null => {
-  const panes: [ColumnPane, PaneGeometry<T>][] = [
-    ['left', layout.left],
-    ['center', layout.center],
-    ['right', layout.right],
-  ];
-
-  for (const [pane, geometry] of panes) {
-    const entry = geometry.entries.find((e) => e.logicalIndex === logicalIndex);
-    if (entry) {
-      return { pane, entry };
-    }
-  }
-
-  return null;
-};
-
-// 追加(10-A): ペイン内ローカル x 座標から論理列 index を特定します。
-//             pointer interaction でペインごとにヒットテストするために使います。
-export const findLogicalIndexFromPaneOffset = <T,>(
-  paneGeometry: PaneGeometry<T>,
-  offset: number,
-): number => {
-  const { entries } = paneGeometry;
-  if (entries.length === 0) {
-    return -1;
-  }
-  if (offset <= 0) {
-    return entries[0].logicalIndex;
-  }
-
-  let low = 0;
-  let high = entries.length - 1;
-
-  while (low <= high) {
-    const mid = Math.floor((low + high) / 2);
-    const entry = entries[mid];
-
-    if (offset < entry.paneLocalStart) {
-      high = mid - 1;
-      continue;
-    }
-    if (offset >= entry.paneLocalEnd) {
-      low = mid + 1;
-      continue;
-    }
-    // 追加(10-A): ヒットしたエントリの論理 index を返します。
-    return entry.logicalIndex;
-  }
-
-  // 追加(10-A): 範囲外の場合は最も近いエントリの論理 index を返します。
-  const clampedIndex = Math.max(0, Math.min(low, entries.length - 1));
-  return entries[clampedIndex].logicalIndex;
-};
-
-// 追加(13-B3-2): pane-local x オフセットから「挿入スロット index(0..件数)」を返します。
-//   ColumnChooserPanel の DOM midpoint 走査(updateDropFromPointer)の幾何版です。
-//   各エントリの midpoint より左にポインタがあれば、その手前へ挿入(= そのエントリの index)。
-//   どの midpoint よりも右なら末尾(= entries.length)を返します。空ペインは 0。
-//   ※ ヘッダー D&D のドロップ先 slot 算出に使います(findLogicalIndexFromPaneOffset が
-//      「どのセル上か」を返すのに対し、こちらは「列と列の境界(=挿入位置)」を返します)。
-export const findPaneDropSlot = <T,>(
-  paneGeometry: PaneGeometry<T>,
-  paneLocalOffset: number,
-): number => {
-  const { entries } = paneGeometry;
-  for (let i = 0; i < entries.length; i += 1) {
-    const entry = entries[i];
-    const midpoint = entry.paneLocalStart + entry.paneLocalSize / 2;
-    if (paneLocalOffset < midpoint) {
-      return i;
-    }
-  }
-  return entries.length;
-};
-
-// 追加(13-B3-2): スロット index → ペインローカル境界 x(ドロップインジケータの描画位置)。
-//   slot<件数: そのエントリの paneLocalStart / slot>=件数: totalWidth(末尾) / 空ペイン: 0。
-export const paneDropSlotBoundaryX = <T,>(
-  paneGeometry: PaneGeometry<T>,
-  slot: number,
-): number => {
-  const { entries, totalWidth } = paneGeometry;
-  if (entries.length === 0) return 0;
-  if (slot <= 0) return entries[0].paneLocalStart;
-  if (slot >= entries.length) return totalWidth;
-  return entries[slot].paneLocalStart;
-};
-
-// 追加(10-A): 3 ペインそれぞれに pinned 列が何本あるかを返す convenience helper です。
-export const countPinnedColumns = <T,>(
-  layout: GridPaneLayout<T>,
-): { left: number; center: number; right: number } => ({
-  left: layout.left.entries.length,
-  center: layout.center.entries.length,
-  right: layout.right.entries.length,
-});
-
-// 追加(10-A): pinned 列が 1 本もなければ true を返します。
-//             10-B 以降で「従来の単一スクロール描画にフォールバックするか」の判定に使います。
-export const isPlainLayout = <T,>(layout: GridPaneLayout<T>): boolean =>
-  layout.left.entries.length === 0 && layout.right.entries.length === 0;
-// ────────────────────────────────────────────────
-// 追加(10-D): Overlay / Editor をペイン別座標系で描画するための helper 群です。
-//             10-C までで「セル本体・ヘッダー」はペインローカル座標になりましたが、
-//             SelectionOverlay / ActiveCellOverlay / CellEditorLayer はまだ
-//             グローバル座標（columnMeasurements + rowHeaderWidth）前提でした。
-//             ここで「論理列 index 範囲 → 各ペインのローカル水平 extent」を求める
-//             純粋関数を用意し、overlay を各ペイン内へ正しく配置できるようにします。
-//             ※ 返す座標は leadingWidth を含まない「列領域内ローカル座標」です。
-//               leadingWidth（行ヘッダー幅）は描画側で加算します。
-// ────────────────────────────────────────────────
-
-// 追加(10-D): 1 ペイン内における水平 extent（列領域ローカル座標, leadingWidth 非含有）です。
-//             start / end は paneLocalStart / paneLocalEnd 起点で、width = end - start です。
-export type PaneColumnExtent = {
-  start: number;
-  end: number;
-  width: number;
-};
-
-// 追加(10-D): 3 ペインそれぞれの水平 extent をまとめた結果です。
-//             該当ペインに範囲内の列が 1 本も無い場合は null になります。
-export type PaneColumnExtentMap = Record<ColumnPane, PaneColumnExtent | null>;
-
-// 追加(10-D): 1 ペイン分の extent を、論理列 index 範囲 [startLogicalIndex, endLogicalIndex]
-//             （両端含む）から求める内部 helper です。
-const computeExtentForPane = <T,>(
-  geometry: PaneGeometry<T>,
-  startLogicalIndex: number,
-  endLogicalIndex: number,
-): PaneColumnExtent | null => {
-  const lo = Math.min(startLogicalIndex, endLogicalIndex);
-  const hi = Math.max(startLogicalIndex, endLogicalIndex);
-
-  let start = Number.POSITIVE_INFINITY;
-  let end = Number.NEGATIVE_INFINITY;
-  let found = false;
-
-  for (const entry of geometry.entries) {
-    if (entry.logicalIndex < lo || entry.logicalIndex > hi) {
-      continue;
-    }
-    found = true;
-    if (entry.paneLocalStart < start) start = entry.paneLocalStart;
-    if (entry.paneLocalEnd > end) end = entry.paneLocalEnd;
-  }
-
-  if (!found) {
-    return null;
-  }
-  return { start, end, width: end - start };
-};
-
-// 追加(10-D): 論理列 index 範囲から、3 ペインそれぞれの水平 extent を求めます。
-//             cell / col 選択や行ヘッダー以外の overlay の水平範囲決定に使います。
-export const computePaneColumnExtents = <T,>(
-  layout: GridPaneLayout<T>,
-  startLogicalIndex: number,
-  endLogicalIndex: number,
-): PaneColumnExtentMap => ({
-  left: computeExtentForPane(layout.left, startLogicalIndex, endLogicalIndex),
-  center: computeExtentForPane(
-    layout.center,
-    startLogicalIndex,
-    endLogicalIndex,
-  ),
-  right: computeExtentForPane(layout.right, startLogicalIndex, endLogicalIndex),
-});
-
-// 追加(10-D): 「全列」を覆う extent を 3 ペイン分求めます（行選択 overlay 用）。
-//             各ペインは自分の列領域全幅（0 〜 totalWidth）を覆います。
-//             列が無いペインは null になります。
-export const computeFullWidthPaneExtents = <T,>(
-  layout: GridPaneLayout<T>,
-): PaneColumnExtentMap => {
-  const toExtent = (geometry: PaneGeometry<T>): PaneColumnExtent | null =>
-    geometry.entries.length === 0
-      ? null
-      : { start: 0, end: geometry.totalWidth, width: geometry.totalWidth };
-
-  return {
-    left: toExtent(layout.left),
-    center: toExtent(layout.center),
-    right: toExtent(layout.right),
-  };
-};
-
-// 追加(10-D): 単一論理列 index が属するペインと、その列のローカル extent を求めます。
-//             ActiveCellOverlay / CellEditorLayer のように単一セル列を扱う場合に使います。
-//             見つからなければ null を返します。
-export type SinglePaneColumnExtent = {
-  pane: ColumnPane;
-  extent: PaneColumnExtent;
-};
-
-export const computeSinglePaneColumnExtent = <T,>(
-  layout: GridPaneLayout<T>,
-  logicalIndex: number,
-): SinglePaneColumnExtent | null => {
-  const lookup = lookupPaneColumn(layout, logicalIndex);
-  if (!lookup) {
-    return null;
-  }
-  const { pane, entry } = lookup;
-  return {
-    pane,
-    extent: {
-      start: entry.paneLocalStart,
-      end: entry.paneLocalEnd,
-      width: entry.paneLocalSize,
-    },
-  };
-};
 </file>
 
 <file path="src/components/spreadsheet-grid/view/DefaultGridBottomBar.tsx">
