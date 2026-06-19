@@ -80,6 +80,9 @@ export type GridSelectFilterOption = {
 //             判定側(logic/filtering.ts)では Set へ変換して O(1) 照合します。
 export type SetColumnFilterValue = {
   kind: 'set';
+  // 追加(反転set): 既定 'include'(values=選択値)。多数選択時は 'exclude'(values=非選択値のみ)で
+  //   巨大配列の生成・複製・dispatch を回避します。mode 省略時は従来どおり include 扱い(後方互換)。
+  mode?: 'include' | 'exclude';
   values: string[];
 };
 

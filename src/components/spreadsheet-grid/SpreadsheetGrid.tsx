@@ -117,6 +117,9 @@ import { getCellValue, isCellEditable, setCellValue } from './utils/permissions'
 import ColumnFilterPopover, {
   // 追加(12-A): popover を開いている列の候補メモ化に使う型です。
   type ColumnFilterPopoverOption,
+  // 追加(反転set): set 選択状態 { mode, values } 型と mode 判定ヘルパです。
+  type ColumnFilterSetSelection,
+  isSetValueSelected,
 } from './view/ColumnFilterPopover';
 // 追加(13-A): 列メニュー popover(列固定の切替 UI)です。
 import DefaultGridBottomBar from './view/DefaultGridBottomBar';
@@ -141,6 +144,35 @@ import SortManagementPanel, {
 // 追加(12-A): popover 非表示時 / 候補不要な filterType 用の安定空配列です。
 //             useMemo の返り値参照を安定させるため module スコープに置きます。
 const EMPTY_FILTER_OPTIONS: ColumnFilterPopoverOption[] = [];
+
+// 追加(反転set): 小さい側の集合に 1 件 / 複数件を加減する純ヘルパです(巨大側は作りません)。
+const setWith = (base: ReadonlySet<string>, value: string): Set<string> => {
+  const next = new Set(base);
+  next.add(value);
+  return next;
+};
+const setWithout = (base: ReadonlySet<string>, value: string): Set<string> => {
+  const next = new Set(base);
+  next.delete(value);
+  return next;
+};
+const setUnion = (base: ReadonlySet<string>, add: string[]): Set<string> => {
+  const next = new Set(base);
+  for (const value of add) {
+    next.add(value);
+  }
+  return next;
+};
+const setDifference = (
+  base: ReadonlySet<string>,
+  remove: string[],
+): Set<string> => {
+  const next = new Set(base);
+  for (const value of remove) {
+    next.delete(value);
+  }
+  return next;
+};
 
 // 追加: Grid 本体です。
 export function SpreadsheetGrid<T extends object>({
@@ -547,7 +579,7 @@ export function SpreadsheetGrid<T extends object>({
   //   下流チェーン(sorted → filteredRows / SourceIndexes / Keys → 仮想行再構築)が
   //   走り、連続クリック時にチェックボックスの応答がブロックされ得ます。
   //   依存を deferred 値へ差し替えることで、クリック直後の緊急レンダーでは
-  //   チェックボックス表示(openedSetFilterSelectedValues は即時値 uiState を参照)・
+  //   チェックボックス表示(openedSetSelection は即時値 uiState を参照)・
   //   ヘッダーバッジ・bar 件数だけが即時更新され、行の再フィルタは低優先度の
   //   遅延レンダーへ移ります。連続クリック中の中間値計算は中断・破棄され、
   //   最終値での 1 回に収束します。
@@ -1627,30 +1659,23 @@ export function SpreadsheetGrid<T extends object>({
   //   popover を開いたまま親が再レンダーするたび(set フィルター即時適用での再レンダー含む)に
   //   5,000 行スキャン + ソートが再実行されていました。開いている列と行データが
   //   変わらない限り、計算・参照とも再利用します。
-  // 追加(Set Filter perf / b): 候補収集(getColumnSelectOptions)は品番のような
-  //   全件ユニーク列で 30 万件超の reduce + ソートになり、open レンダー内で同期実行すると
-  //   popover の初回 paint がそのぶんブロックされていました(報告された「表示が遅い」の主因)。
-  //   openedFilterColumn を deferred 値経由にして heavy な収集を低優先度レンダーへ逃がし、
-  //   popover の枠は即時に開けるようにします(11-B7 / 12-B と同型)。
-  const deferredFilterColumnForOptions = useDeferredValue(openedFilterColumn);
-
+  // 変更(Set Filter perf / b 撤去): 収集は同期 useMemo(eager)で 1 回だけ実行します。
+  //   旧 (b) は useDeferredValue で収集を破棄可能な低優先度レンダーへ逃がしていましたが、
+  //   重い同期計算(500k の reduce+ソート ≈ 数百 ms)を deferred 化すると、収集中にユーザー操作
+  //   (高優先度更新)が割り込むたびに React がそのレンダーを破棄して useMemo をフルに再実行し、
+  //   再実行が累積して主スレッドを数秒〜十数秒ブロック(=「ページ応答なし」)していました。
+  //   eager は open レンダーで 1 回だけ走り(以後は openedFilterColumn/rows 不変でメモ再利用)、
+  //   破棄・再実行が起きないため固まりません(開く瞬間に一度きりの軽いもたつきのみ)。
   const openedFilterSelectOptions = useMemo<ColumnFilterPopoverOption[]>(() => {
-    if (!deferredFilterColumnForOptions) {
+    if (!openedFilterColumn) {
       return EMPTY_FILTER_OPTIONS;
     }
-    const filterType = deferredFilterColumnForOptions.filterType ?? 'text';
+    const filterType = openedFilterColumn.filterType ?? 'text';
     if (filterType !== 'select' && filterType !== 'set') {
       return EMPTY_FILTER_OPTIONS;
     }
-    return getColumnSelectOptions(deferredFilterColumnForOptions);
-  }, [deferredFilterColumnForOptions, getColumnSelectOptions]);
-
-  // 追加(Set Filter perf / b): deferred 収集が現在開いている列へ追いついていない間は
-  //   pending とし、popover 側で「集計中…」を表示します(空候補の「ありません」と区別)。
-  //   collection が軽い列(filterOptions 指定の unit/status 等)では deferred が即追従するため
-  //   実質ちらつかず、重い列でのみ可視の待機表示になります。
-  const isFilterOptionsPending =
-    deferredFilterColumnForOptions !== openedFilterColumn;
+    return getColumnSelectOptions(openedFilterColumn);
+  }, [openedFilterColumn, getColumnSelectOptions]);
 
   // 追加(Set Filter perf / c): 全候補値の集合です。トグル/Select All の Set 初期化で
   //   30 万件超の options.map(...) 配列を毎クリック確保しないよう、開いた列ごとに 1 度だけ
@@ -1666,81 +1691,162 @@ export function SpreadsheetGrid<T extends object>({
     ? uiState.filters.columnFilters[openedFilterColumn.key]
     : undefined;
 
-  const openedSetFilterSelectedValues = useMemo<ReadonlySet<string> | null>(
-    () =>
-      isSetColumnFilterValue(openedSetFilterValue)
-        ? new Set(openedSetFilterValue.values)
-        : null,
-    [openedSetFilterValue],
+  // 追加(反転set): popover を開いている列の set 選択状態 { mode, values }(null = 全選択)。
+  //   values は常に小さい側のみ(include=選択値 / exclude=非選択値)。巨大側は作りません。
+  const openedSetSelection = useMemo<ColumnFilterSetSelection | null>(() => {
+    if (!isSetColumnFilterValue(openedSetFilterValue)) {
+      return null;
+    }
+    return {
+      mode: openedSetFilterValue.mode === 'exclude' ? 'exclude' : 'include',
+      values: new Set(openedSetFilterValue.values),
+    };
+  }, [openedSetFilterValue]);
+
+  // 追加(反転set): filterOptions を明示指定した列は universe が全行値を覆わない可能性があるため
+  //   exclude(反転)を選ばず include 固定にします(集合が小さく反転不要・挙動差も防止)。
+  //   スキャン収集列は universe=全行値で include≡exclude が保証されるため反転可。
+  const openedColumnCanInvert = !(
+    openedFilterColumn?.filterOptions &&
+    openedFilterColumn.filterOptions.length > 0
   );
 
-  // 追加(12-A): set フィルターの選択結果を reducer へ反映します。
-  //             全候補が選択された状態は clearColumn へ正規化し
-  //             「フィルターなし」(ヘッダーバッジ消灯 / 件数 0 扱い)へ戻します。
+  // 追加(反転set): set 選択結果を reducer へ反映します。全選択→clearColumn / 0 件→include{} /
+  //   中間→ハンドラが選んだ mode の小さい側。ハンドラが mode を確定済みのため complement
+  //   (O(total))はここで計算しません。total は候補総数(=universe サイズ)です。
   const commitSetFilterSelection = useCallback(
-    (columnKey: string, nextSelected: Set<string>) => {
-      const isAllSelected = openedFilterSelectOptions.every((option) =>
-        nextSelected.has(option.value),
-      );
-      if (isAllSelected) {
+    (columnKey: string, next: ColumnFilterSetSelection, total: number) => {
+      const selectedCount =
+        next.mode === 'include' ? next.values.size : total - next.values.size;
+      if (selectedCount >= total) {
+        // 全選択(exclude{} 等)は保存せずフィルターなしへ正規化します。
         dispatch(gridActions.clearColumnFilter(columnKey));
+        return;
+      }
+      if (selectedCount <= 0) {
+        // 何も選択されていない状態は include{}(小さい)で表現します(exclude{universe} を作らない)。
+        dispatch(
+          gridActions.setColumnFilter(columnKey, {
+            kind: 'set',
+            mode: 'include',
+            values: [],
+          }),
+        );
         return;
       }
       const nextValue: SetColumnFilterValue = {
         kind: 'set',
-        values: Array.from(nextSelected),
+        mode: next.mode,
+        values: Array.from(next.values),
       };
       dispatch(gridActions.setColumnFilter(columnKey, nextValue));
     },
-    [dispatch, openedFilterSelectOptions],
+    [dispatch],
   );
 
-  // 追加(12-A): チェックボックス 1 件のトグルです(AG Grid Set Filter と同じ即時適用)。
+  // 追加(反転set): チェックボックス 1 件のトグルです(即時適用)。現在の選択 mode を保ったまま
+  //   小さい側へ ±1 します(巨大側を作りません)。null(全選択)からの解除は canInvert 列なら
+  //   exclude{value}、非invert 列(universe が小)なら include{universe∖value} になります。
   const handleSetFilterValueToggle = useCallback(
     (value: string) => {
       if (!filterPopoverState) {
         return;
       }
-      const nextSelected = new Set(
-        openedSetFilterSelectedValues ?? openedFilterAllValues,
-      );
-      if (nextSelected.has(value)) {
-        nextSelected.delete(value);
+      const total = openedFilterSelectOptions.length;
+      const selection = openedSetSelection;
+      let next: ColumnFilterSetSelection;
+      if (isSetValueSelected(selection, value)) {
+        // value を解除します。
+        if (selection === null) {
+          next = openedColumnCanInvert
+            ? { mode: 'exclude', values: new Set([value]) }
+            : {
+                mode: 'include',
+                values: setWithout(openedFilterAllValues, value),
+              };
+        } else if (selection.mode === 'include') {
+          next = { mode: 'include', values: setWithout(selection.values, value) };
+        } else {
+          next = { mode: 'exclude', values: setWith(selection.values, value) };
+        }
       } else {
-        nextSelected.add(value);
+        // value を選択します(selection は null ではない: null は全選択)。
+        next =
+          selection!.mode === 'include'
+            ? { mode: 'include', values: setWith(selection!.values, value) }
+            : { mode: 'exclude', values: setWithout(selection!.values, value) };
       }
-      commitSetFilterSelection(filterPopoverState.columnKey, nextSelected);
+      commitSetFilterSelection(filterPopoverState.columnKey, next, total);
     },
     [
       filterPopoverState,
-      openedSetFilterSelectedValues,
+      openedSetSelection,
+      openedColumnCanInvert,
+      openedFilterAllValues,
       openedFilterSelectOptions,
       commitSetFilterSelection,
     ],
   );
 
-  // 追加(12-A): (Select All) の一括トグルです。検索中は popover 側から
-  //             「表示中候補の values」だけが渡るため、検索結果のみが対象になります。
+  // 追加(反転set): (すべて選択) の一括トグルです。非検索は scope='all'(全候補)、検索中は
+  //   表示中候補(=小さい側)の values が渡ります。いずれも巨大側を作らず mode 空間で更新します。
   const handleSetFilterSelectAllChange = useCallback(
-    (visibleValues: string[], nextChecked: boolean) => {
+    (scope: 'all' | string[], nextChecked: boolean) => {
       if (!filterPopoverState) {
         return;
       }
-      const nextSelected = new Set(
-        openedSetFilterSelectedValues ?? openedFilterAllValues,
-      );
-      if (nextChecked) {
-        visibleValues.forEach((value) => nextSelected.add(value));
-      } else {
-        visibleValues.forEach((value) => nextSelected.delete(value));
+      const columnKey = filterPopoverState.columnKey;
+      const total = openedFilterSelectOptions.length;
+      if (scope === 'all') {
+        // 非検索: 全候補対象。全選択→clear / 全解除→include{}。
+        if (nextChecked) {
+          dispatch(gridActions.clearColumnFilter(columnKey));
+        } else {
+          commitSetFilterSelection(
+            columnKey,
+            { mode: 'include', values: new Set() },
+            total,
+          );
+        }
+        return;
       }
-      commitSetFilterSelection(filterPopoverState.columnKey, nextSelected);
+      // 検索中: scope = 表示中候補(小さい側)。現在 selection に ±scope を mode 空間で適用。
+      const selection = openedSetSelection;
+      let next: ColumnFilterSetSelection;
+      if (nextChecked) {
+        if (selection === null) {
+          // 全選択のまま(表示中を選択しても変化なし)→ フィルターなし。
+          dispatch(gridActions.clearColumnFilter(columnKey));
+          return;
+        }
+        next =
+          selection.mode === 'include'
+            ? { mode: 'include', values: setUnion(selection.values, scope) }
+            : { mode: 'exclude', values: setDifference(selection.values, scope) };
+      } else {
+        if (selection === null) {
+          next = openedColumnCanInvert
+            ? { mode: 'exclude', values: new Set(scope) }
+            : {
+                mode: 'include',
+                values: setDifference(openedFilterAllValues, scope),
+              };
+        } else if (selection.mode === 'include') {
+          next = { mode: 'include', values: setDifference(selection.values, scope) };
+        } else {
+          next = { mode: 'exclude', values: setUnion(selection.values, scope) };
+        }
+      }
+      commitSetFilterSelection(columnKey, next, total);
     },
     [
       filterPopoverState,
-      openedSetFilterSelectedValues,
+      openedSetSelection,
+      openedColumnCanInvert,
+      openedFilterAllValues,
       openedFilterSelectOptions,
       commitSetFilterSelection,
+      dispatch,
     ],
   );
 
@@ -2192,7 +2298,10 @@ export function SpreadsheetGrid<T extends object>({
     }
     const rawValue = uiState.filters.columnFilters[openedFilterColumn.key];
     if (isSetColumnFilterValue(rawValue)) {
-      return `${rawValue.values.length}件を選択中`;
+      // 変更(反転set): exclude は「除外中」表示にします(total 非依存で正確)。
+      return rawValue.mode === 'exclude'
+        ? `${rawValue.values.length}件を除外中`
+        : `${rawValue.values.length}件を選択中`;
     }
     // 追加(記述子化 / number): number 記述子は raw(式そのもの)を現在値表示にします。
     if (isNumberColumnFilterValue(rawValue)) {
@@ -2211,8 +2320,7 @@ export function SpreadsheetGrid<T extends object>({
       currentValueText={openedFilterCurrentValueText}
       layout={filterPopoverLayout}
       selectOptions={openedFilterSelectOptions}
-      isOptionsPending={isFilterOptionsPending}
-      setSelectedValues={openedSetFilterSelectedValues}
+      setSelection={openedSetSelection}
       popoverRef={filterPopoverRef}
       textInputRef={filterTextInputRef}
       selectRef={filterSelectRef}

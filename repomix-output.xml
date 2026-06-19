@@ -1352,904 +1352,6 @@ export function ActiveCellOverlay({
 export default ActiveCellOverlay;
 </file>
 
-<file path="src/components/spreadsheet-grid/hooks/useFilterPopoverController.ts">
-import {
-    useEffect,
-    useMemo,  
-    useCallback,
-    useRef,
-    useState,
-  type PointerEvent,
-  type RefObject,
-} from 'react';
-import type { GridColumn } from '../model/gridTypes';
-// 追加(記述子化): number 記述子を含む列フィルター値を draft 用テキストへ整形します。
-import { columnFilterValueToDraftText } from '../logic/filtering';
-
-// 追加: 列フィルターポップオーバーの内部状態です。
-type HeaderFilterPopoverState = {
-  columnKey: string;
-  draftValue: string;
-};
-
-// 追加: body 直下 portal popover の配置情報です。
-export type FilterPopoverLayout = {
-  top: number;
-  left: number;
-  width: number;
-};
-
-type UseFilterPopoverControllerArgs<T> = {
-  visibleColumns: GridColumn<T>[];
-  columnFilterValues: Record<string, unknown>;
-  enableColumnFilter: boolean;
-  gridRootRef: RefObject<HTMLDivElement | null>;
-};
-
-const POPUP_WIDTH = 240;
-const VIEWPORT_MARGIN = 8;
-const OFFSET_Y = 8;
-const ESTIMATED_POPUP_HEIGHT = 260;
-// 追加(12-A): set フィルターは検索 + Select All + 候補リスト(208px)を含むため、
-//             上下フリップ判定用の見積もり高さを別に持ちます。
-const ESTIMATED_SET_POPUP_HEIGHT = 400;
-
-// 追加: 列フィルター popover の state / ref / focus / outside click / layout をまとめて管理します。
-export const useFilterPopoverController = <T,>({
-  visibleColumns,
-  columnFilterValues,
-  enableColumnFilter,
-  gridRootRef,
-}: UseFilterPopoverControllerArgs<T>) => {
-  const [filterPopoverState, setFilterPopoverState] =
-    useState<HeaderFilterPopoverState | null>(null);
-  const [filterPopoverLayout, setFilterPopoverLayout] =
-    useState<FilterPopoverLayout | null>(null);
-
-  // 追加: popover / anchor / autofocus 対象 input/select の ref 群です。
-  const filterPopoverRef = useRef<HTMLDivElement | null>(null);
-  const filterPopoverAnchorButtonRef = useRef<HTMLButtonElement | null>(null);
-  const filterTextInputRef = useRef<HTMLInputElement | null>(null);
-  const filterSelectRef = useRef<HTMLSelectElement | null>(null);
-
-  const isFilterPopoverOpen = filterPopoverState !== null;
-  const openedFilterColumnKey = filterPopoverState?.columnKey ?? null;
-
-  const openedFilterColumn = useMemo(
-    () =>
-      openedFilterColumnKey
-        ? visibleColumns.find((column) => column.key === openedFilterColumnKey) ??
-          null
-        : null,
-    [openedFilterColumnKey, visibleColumns],
-  );
-
-  // 追加: anchor button の位置から portal popover の fixed 座標を計算します。
-  const updateFilterPopoverLayout = useCallback(() => {
-    if (!openedFilterColumnKey || !filterPopoverAnchorButtonRef.current) {
-      setFilterPopoverLayout(null);
-      return;
-    }
-
-    const anchorRect = filterPopoverAnchorButtonRef.current.getBoundingClientRect();
-
-    // 追加(12-A): set フィルターは popover が縦に長いため、見積もり高さを切り替えます。
-    const estimatedPopupHeight =
-      openedFilterColumn?.filterType === 'set'
-        ? ESTIMATED_SET_POPUP_HEIGHT
-        : ESTIMATED_POPUP_HEIGHT;
-
-    let left = anchorRect.right - POPUP_WIDTH;
-    left = Math.max(VIEWPORT_MARGIN, left);
-    left = Math.min(left, window.innerWidth - POPUP_WIDTH - VIEWPORT_MARGIN);
-
-    let top = anchorRect.bottom + OFFSET_Y;
-    if (top + estimatedPopupHeight > window.innerHeight - VIEWPORT_MARGIN) {
-      top = anchorRect.top - estimatedPopupHeight - OFFSET_Y;
-    }
-    top = Math.max(VIEWPORT_MARGIN, top);
-
-    setFilterPopoverLayout((current) => {
-      if (
-        current &&
-        current.top === top &&
-        current.left === left &&
-        current.width === POPUP_WIDTH
-      ) {
-        return current;
-      }
-
-      return {
-        top,
-        left,
-        width: POPUP_WIDTH,
-      };
-    });
-    // 変更(12-A): 見積もり高さ切替のため openedFilterColumn(filterType)へ依存を追加します。
-  }, [openedFilterColumnKey, openedFilterColumn]);
-
-  // 追加: 列フィルターポップオーバーを開きます。
-  const openColumnFilterPopover = useCallback(
-    (column: GridColumn<T>, event: PointerEvent<HTMLButtonElement>) => {
-      event.preventDefault();
-      event.stopPropagation();
-
-      if (!enableColumnFilter) {
-        return;
-      }
-
-      // 追加: grid root に残っているフォーカスを明示的に外します。
-      if (document.activeElement instanceof HTMLElement) {
-        document.activeElement.blur();
-      }
-      gridRootRef.current?.blur();
-
-      // 追加: anchor button を保持し、portal popover の位置計算に使います。
-      filterPopoverAnchorButtonRef.current = event.currentTarget;
-
-      setFilterPopoverState({
-        columnKey: column.key,
-        // 変更(記述子化): number 記述子は String() で "[object Object]" になるため、
-        //   raw を取り出す columnFilterValueToDraftText 経由にします(他種別は従来と同値)。
-        draftValue: columnFilterValueToDraftText(columnFilterValues[column.key]),
-      });
-    },
-    [columnFilterValues, enableColumnFilter, gridRootRef],
-  );
-
-  // 追加: 列フィルターポップオーバーを閉じます。
-  const closeColumnFilterPopover = useCallback(() => {
-    setFilterPopoverState(null);
-    setFilterPopoverLayout(null);
-    filterPopoverAnchorButtonRef.current = null;
-    filterTextInputRef.current = null;
-    filterSelectRef.current = null;
-
-    // 追加: close 後は grid root にフォーカスを戻し、従来の keyboard 操作へ復帰させます。
-    requestAnimationFrame(() => {
-      gridRootRef.current?.focus();
-    });
-  }, [gridRootRef]);
-
-  // 追加: フィルター draft を更新します。
-  const updateFilterPopoverDraft = useCallback((value: string) => {
-    setFilterPopoverState((current) => {
-      if (!current) {
-        return current;
-      }
-      return {
-        ...current,
-        draftValue: value,
-      };
-    });
-  }, []);
-
-  // 追加: portal popover の位置を open / resize / scroll に応じて再計算します。
-  useEffect(() => {
-    if (!openedFilterColumnKey) {
-      return;
-    }
-
-    updateFilterPopoverLayout();
-
-    const handleReposition = () => {
-      updateFilterPopoverLayout();
-    };
-
-    window.addEventListener('resize', handleReposition);
-    window.addEventListener('scroll', handleReposition, true);
-
-    return () => {
-      window.removeEventListener('resize', handleReposition);
-      window.removeEventListener('scroll', handleReposition, true);
-    };
-  }, [openedFilterColumnKey, updateFilterPopoverLayout]);
-
-  // 追加: popover が実際に描画され、かつ「開いた直後 / 別列へ切替時」にだけ
-  //       input / select へ自動 focus します。
-  useEffect(() => {
-    if (!openedFilterColumn || !filterPopoverLayout) {
-      return;
-    }
-
-    const filterType = openedFilterColumn.filterType ?? 'text';
-
-    let frameId1 = 0;
-    let frameId2 = 0;
-
-    frameId1 = requestAnimationFrame(() => {
-      frameId2 = requestAnimationFrame(() => {
-        if (filterType === 'select') {
-          filterSelectRef.current?.focus();
-          return;
-        }
-
-        const inputElement = filterTextInputRef.current;
-        if (!inputElement) {
-          return;
-        }
-
-        inputElement.focus();
-        // 追加: 全文選択ではなく末尾へ caret を置き、半角入力時の全文置換を避けます。
-        const end = inputElement.value.length;
-        inputElement.setSelectionRange(end, end);
-      });
-    });
-
-    return () => {
-      cancelAnimationFrame(frameId1);
-      cancelAnimationFrame(frameId2);
-    };
-  }, [
-    openedFilterColumn,
-    filterPopoverLayout?.top,
-    filterPopoverLayout?.left,
-    filterPopoverLayout?.width,
-  ]);
-
-  // 追加: ポップオーバー表示中は、外側クリックで閉じます。
-  useEffect(() => {
-    if (!isFilterPopoverOpen) {
-      return;
-    }
-
-    const handleWindowPointerDown = (event: globalThis.PointerEvent) => {
-      const targetNode = event.target as Node | null;
-      if (!targetNode) {
-        return;
-      }
-
-      if (filterPopoverRef.current?.contains(targetNode)) {
-        return;
-      }
-
-      // 追加: anchor button を押したケースでは close の native listener と競合させません。
-      if (filterPopoverAnchorButtonRef.current?.contains(targetNode)) {
-        return;
-      }
-
-      closeColumnFilterPopover();
-    };
-
-    window.addEventListener('pointerdown', handleWindowPointerDown);
-    return () => {
-      window.removeEventListener('pointerdown', handleWindowPointerDown);
-    };
-  }, [closeColumnFilterPopover, isFilterPopoverOpen]);
-
-  return {
-    filterPopoverState,
-    filterPopoverLayout,
-    filterPopoverRef,
-    filterTextInputRef,
-    filterSelectRef,
-    isFilterPopoverOpen,
-    openedFilterColumn,
-    openColumnFilterPopover,
-    closeColumnFilterPopover,
-    updateFilterPopoverDraft,
-  };
-};
-
-export default useFilterPopoverController;
-</file>
-
-<file path="src/components/spreadsheet-grid/view/ColumnFilterPopover.tsx">
-import { createPortal } from 'react-dom';
-// 変更(12-A): set フィルター(検索 + Select All + チェックボックス一覧)用に
-//             hooks と useVirtualizer を追加 import します。
-//             候補リストは品番のように 5,000 件規模になり得るため、
-//             本体グリッドと同じ @tanstack/react-virtual で行仮想化します。
-import {
-  useDeferredValue,
-  useMemo,
-  useRef,
-  useState,
-  type CSSProperties,
-  type KeyboardEvent,
-  type PointerEvent,
-  type RefObject,
-} from 'react';
-import { useVirtualizer } from '@tanstack/react-virtual';
-
-// 追加: popover のレイアウト情報です。
-export type ColumnFilterPopoverLayout = {
-  top: number;
-  left: number;
-  width: number;
-};
-
-// 追加: select / set フィルター候補の最小型です。
-export type ColumnFilterPopoverOption = {
-  label: string;
-  value: string;
-};
-
-type ColumnFilterPopoverProps = {
-  isOpen: boolean;
-  title: string;
-  // 変更(12-A): 'set' を追加します。
-  filterType: 'text' | 'number' | 'date' | 'select' | 'set' | 'custom';
-  draftValue: string;
-  currentValueText: string;
-  layout: ColumnFilterPopoverLayout | null;
-  selectOptions: ColumnFilterPopoverOption[];
-  // 追加(12-A): set フィルターの選択状態です。null = 全選択(フィルターなし)。
-  setSelectedValues: ReadonlySet<string> | null;
-  popoverRef: RefObject<HTMLDivElement | null>;
-  // 注記(12-A): set フィルターでは検索ボックスへこの ref を割り当て、
-  //             useFilterPopoverController の autofocus をそのまま流用します。
-  textInputRef: RefObject<HTMLInputElement | null>;
-  selectRef: RefObject<HTMLSelectElement | null>;
-  onRequestClose: () => void;
-  onDraftChange: (value: string) => void;
-  onApply: () => void;
-  onClear: () => void;
-  // 追加(12-A): set フィルターのチェックボックス 1 件トグルです(即時適用)。
-  onSetValueToggle: (value: string) => void;
-  // 追加(12-A): (Select All) の一括トグルです。検索中は「表示中の候補のみ」を
-  //             対象にするため、対象 values を popover 側から渡します(AG Grid と同挙動)。
-  onSetSelectAllChange: (
-    visibleValues: string[],
-    nextSelected: boolean,
-  ) => void;
-  // 追加(12-A): set フィルターの「クリア」です。popover を閉じずに全選択へ戻します
-  //             (即時適用のため、結果を見ながら操作を続けられるようにします)。
-  onSetClear: () => void;
-};
-
-// ── 共通スタイル ────────────────────────────────────────
-const SECONDARY_BUTTON_STYLE: CSSProperties = {
-  border: '1px solid #cbd5e1',
-  backgroundColor: '#ffffff',
-  color: '#475569',
-  borderRadius: 8,
-  padding: '6px 10px',
-  cursor: 'pointer',
-  fontSize: 12,
-};
-
-const PRIMARY_BUTTON_STYLE: CSSProperties = {
-  border: '1px solid #2563eb',
-  backgroundColor: '#2563eb',
-  color: '#ffffff',
-  borderRadius: 8,
-  padding: '6px 10px',
-  cursor: 'pointer',
-  fontSize: 12,
-};
-
-const TEXT_INPUT_STYLE: CSSProperties = {
-  width: '100%',
-  boxSizing: 'border-box',
-  padding: '8px 10px',
-  border: '1px solid #cbd5e1',
-  borderRadius: 8,
-  outline: 'none',
-  marginBottom: 8,
-};
-
-// 追加(12-A): set フィルター候補リストの行高です(仮想化の estimateSize と一致させます)。
-const SET_FILTER_OPTION_ROW_HEIGHT = 28;
-// 追加(12-A): 候補リストの表示領域高です。
-const SET_FILTER_LIST_HEIGHT = 208;
-
-// ── set フィルター本体 ──────────────────────────────────
-// 追加(12-A): set フィルターの検索 state / 仮想化は popover 全体とライフサイクルが
-//             異なる(開閉でリセットしたい・親 SpreadsheetGrid を再レンダーさせたくない)
-//             ため、独立した子 component に切り出して hooks を持たせます。
-//             検索テキストはこのローカル state に閉じるため、タイピングしても
-//             再レンダーは popover 内部のみで完結します(本体 5,000 行は無関係)。
-type SetFilterBodyProps = {
-  options: ColumnFilterPopoverOption[];
-  // null = 全選択(フィルターなし)です。
-  selectedValues: ReadonlySet<string> | null;
-  searchInputRef: RefObject<HTMLInputElement | null>;
-  onValueToggle: (value: string) => void;
-  onSelectAllChange: (visibleValues: string[], nextSelected: boolean) => void;
-  onRequestClose: () => void;
-};
-
-function SetFilterBody({
-  options,
-  selectedValues,
-  searchInputRef,
-  onValueToggle,
-  onSelectAllChange,
-  onRequestClose,
-}: SetFilterBodyProps) {
-  const [searchText, setSearchText] = useState('');
-  // 追加(12-A): 候補 5,000 件規模での連続タイピングに備え、絞り込み計算は
-  //             低優先度レンダーへ遅延します(11-B7 のグローバルフィルタと同型)。
-  const deferredSearchText = useDeferredValue(searchText);
-
-  const visibleOptions = useMemo(() => {
-    const normalized = deferredSearchText.trim().toLowerCase();
-    if (!normalized) {
-      return options;
-    }
-    return options.filter((option) =>
-      option.label.toLowerCase().includes(normalized),
-    );
-  }, [options, deferredSearchText]);
-
-  const isSearching = deferredSearchText.trim().length > 0;
-
-  // 追加(12-A): 候補リストの行仮想化です。表示領域ぶん + overscan のみ DOM 化します。
-  const listScrollRef = useRef<HTMLDivElement | null>(null);
-  const optionVirtualizer = useVirtualizer({
-    count: visibleOptions.length,
-    getScrollElement: () => listScrollRef.current,
-    estimateSize: () => SET_FILTER_OPTION_ROW_HEIGHT,
-    overscan: 10,
-  });
-
-  // ── (Select All) の 3 状態判定(表示中候補が対象) ──
-  const visibleSelectedCount = useMemo(() => {
-    if (selectedValues === null) {
-      return visibleOptions.length;
-    }
-    let count = 0;
-    for (const option of visibleOptions) {
-      if (selectedValues.has(option.value)) {
-        count += 1;
-      }
-    }
-    return count;
-  }, [selectedValues, visibleOptions]);
-
-  const isAllVisibleSelected =
-    visibleOptions.length > 0 && visibleSelectedCount === visibleOptions.length;
-  const isSomeVisibleSelected =
-    visibleSelectedCount > 0 && !isAllVisibleSelected;
-
-  const totalSelectedCount =
-    selectedValues === null ? options.length : selectedValues.size;
-
-  const handleSelectAllToggle = () => {
-    onSelectAllChange(
-      visibleOptions.map((option) => option.value),
-      !isAllVisibleSelected,
-    );
-  };
-
-  return (
-    <>
-      <input
-        ref={searchInputRef}
-        type="text"
-        value={searchText}
-        onChange={(event) => setSearchText(event.target.value)}
-        onKeyDown={(event) => {
-          // 追加: 検索ボックス内入力を grid 側へ伝播させません。
-          event.stopPropagation();
-          if (event.key === 'Escape') {
-            event.preventDefault();
-            onRequestClose();
-          }
-        }}
-        placeholder="検索..."
-        style={TEXT_INPUT_STYLE}
-      />
-
-      {/* (Select All) 行: 検索中は表示中候補のみが対象です(AG Grid と同挙動) */}
-      <label
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: 8,
-          height: SET_FILTER_OPTION_ROW_HEIGHT,
-          padding: '0 8px',
-          cursor: 'pointer',
-          fontSize: 12,
-          color: '#334155',
-          borderBottom: '1px solid #e2e8f0',
-          userSelect: 'none',
-        }}
-      >
-        <input
-          type="checkbox"
-          checked={isAllVisibleSelected}
-          ref={(element) => {
-            // 追加(12-A): 一部のみ選択中は indeterminate 表示にします。
-            if (element) {
-              element.indeterminate = isSomeVisibleSelected;
-            }
-          }}
-          onChange={handleSelectAllToggle}
-        />
-        <span style={{ fontWeight: 600 }}>
-          {isSearching ? '（検索結果をすべて選択）' : '（すべて選択）'}
-        </span>
-      </label>
-
-      {/* 候補リスト(仮想化) */}
-      <div
-        ref={listScrollRef}
-        style={{
-          height: SET_FILTER_LIST_HEIGHT,
-          overflowY: 'auto',
-          border: '1px solid #e2e8f0',
-          borderTop: 'none',
-          borderRadius: '0 0 8px 8px',
-          marginBottom: 8,
-        }}
-      >
-        {visibleOptions.length === 0 ? (
-          <div
-            style={{
-              padding: 12,
-              fontSize: 12,
-              color: '#94a3b8',
-              textAlign: 'center',
-            }}
-          >
-            一致する候補がありません
-          </div>
-        ) : (
-          <div
-            style={{
-              height: optionVirtualizer.getTotalSize(),
-              position: 'relative',
-              width: '100%',
-            }}
-          >
-            {optionVirtualizer.getVirtualItems().map((virtualItem) => {
-              const option = visibleOptions[virtualItem.index];
-              if (!option) {
-                return null;
-              }
-              const isChecked =
-                selectedValues === null || selectedValues.has(option.value);
-              return (
-                <label
-                  key={option.value}
-                  style={{
-                    position: 'absolute',
-                    top: 0,
-                    left: 0,
-                    right: 0,
-                    transform: `translateY(${virtualItem.start}px)`,
-                    height: virtualItem.size,
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 8,
-                    padding: '0 8px',
-                    boxSizing: 'border-box',
-                    cursor: 'pointer',
-                    fontSize: 12,
-                    color: '#334155',
-                    userSelect: 'none',
-                  }}
-                >
-                  <input
-                    type="checkbox"
-                    checked={isChecked}
-                    onChange={() => onValueToggle(option.value)}
-                  />
-                  <span
-                    style={{
-                      overflow: 'hidden',
-                      textOverflow: 'ellipsis',
-                      whiteSpace: 'nowrap',
-                    }}
-                  >
-                    {option.label}
-                  </span>
-                </label>
-              );
-            })}
-          </div>
-        )}
-      </div>
-
-      <div
-        style={{
-          fontSize: 11,
-          color: '#64748b',
-          marginBottom: 10,
-        }}
-      >
-        選択中: {totalSelectedCount} / {options.length} 件
-        {isSearching ? `（表示中 ${visibleOptions.length} 件）` : ''}
-      </div>
-    </>
-  );
-}
-
-// 追加: 列フィルター popover の view component です。
-export function ColumnFilterPopover({
-  isOpen,
-  title,
-  filterType,
-  draftValue,
-  currentValueText,
-  layout,
-  selectOptions,
-  setSelectedValues,
-  popoverRef,
-  textInputRef,
-  selectRef,
-  onRequestClose,
-  onDraftChange,
-  onApply,
-  onClear,
-  onSetValueToggle,
-  onSetSelectAllChange,
-  onSetClear,
-}: ColumnFilterPopoverProps) {
-  if (typeof document === 'undefined' || !isOpen || !layout) {
-    return null;
-  }
-
-  const wrapperStyle: CSSProperties = {
-    position: 'fixed',
-    top: layout.top,
-    left: layout.left,
-    width: layout.width,
-    padding: 12,
-    boxSizing: 'border-box',
-    border: '1px solid #cbd5e1',
-    borderRadius: 10,
-    backgroundColor: '#ffffff',
-    boxShadow: '0 10px 24px rgba(15, 23, 42, 0.12)',
-    zIndex: 1000,
-  };
-
-  const handleKeyDownCapture = (event: KeyboardEvent<HTMLDivElement>) => {
-    // 追加: portal 内 keyboard イベントを React ツリー上の parent へ流しません。
-    event.stopPropagation();
-  };
-
-  const handlePointerDown = (event: PointerEvent<HTMLDivElement>) => {
-    // 追加: popover 内 pointer 操作を外側へ伝播させません。
-    event.stopPropagation();
-  };
-
-  const isSetFilter = filterType === 'set';
-
-  return createPortal(
-    <div
-      ref={popoverRef}
-      onPointerDown={handlePointerDown}
-      onKeyDownCapture={handleKeyDownCapture}
-      onPasteCapture={(event) => {
-        // 追加: portal 内 paste も grid 側へ流しません。
-        event.stopPropagation();
-      }}
-      style={wrapperStyle}
-    >
-      <div
-        style={{
-          fontSize: 12,
-          fontWeight: 700,
-          color: '#334155',
-          marginBottom: 8,
-        }}
-      >
-        列フィルター: {title}
-      </div>
-
-      {isSetFilter ? (
-        // 追加(12-A): AG Grid の Set Filter 相当 UI です(チェック操作は即時適用)。
-        <SetFilterBody
-          options={selectOptions}
-          selectedValues={setSelectedValues}
-          searchInputRef={textInputRef}
-          onValueToggle={onSetValueToggle}
-          onSelectAllChange={onSetSelectAllChange}
-          onRequestClose={onRequestClose}
-        />
-      ) : filterType === 'select' ? (
-        <>
-          <div
-            style={{
-              fontSize: 11,
-              color: '#64748b',
-              marginBottom: 8,
-            }}
-          >
-            フィルター種別: select
-          </div>
-          <select
-            ref={selectRef}
-            value={draftValue}
-            onChange={(event) => onDraftChange(event.target.value)}
-            onKeyDown={(event) => {
-              // 追加: select 内操作を grid 側へ伝播させません。
-              event.stopPropagation();
-              if (event.key === 'Enter') {
-                event.preventDefault();
-                onApply();
-                return;
-              }
-              if (event.key === 'Escape') {
-                event.preventDefault();
-                onRequestClose();
-              }
-            }}
-            style={{
-              width: '100%',
-              boxSizing: 'border-box',
-              padding: '8px 10px',
-              border: '1px solid #cbd5e1',
-              borderRadius: 8,
-              outline: 'none',
-              marginBottom: 8,
-              backgroundColor: '#ffffff',
-            }}
-          >
-            <option value="">（すべて）</option>
-            {selectOptions.map((option) => (
-              <option key={`${title}-${option.value}`} value={option.value}>
-                {option.label}
-              </option>
-            ))}
-          </select>
-          <div
-            style={{
-              fontSize: 11,
-              color: '#64748b',
-              marginBottom: 10,
-            }}
-          >
-            候補数: {selectOptions.length}
-          </div>
-        </>
-      ) : (
-        <>
-          <div
-            style={{
-              fontSize: 11,
-              color: '#64748b',
-              marginBottom: 8,
-            }}
-          >
-            フィルター種別: {filterType === 'number' ? 'number' : 'text'}
-          </div>
-          <input
-            ref={textInputRef}
-            type="text"
-            value={draftValue}
-            onChange={(event) => onDraftChange(event.target.value)}
-            onKeyDown={(event) => {
-              // 追加: filter input 内入力を grid 側へ伝播させません。
-              event.stopPropagation();
-              if (event.key === 'Enter') {
-                event.preventDefault();
-                onApply();
-                return;
-              }
-              if (event.key === 'Escape') {
-                event.preventDefault();
-                onRequestClose();
-              }
-            }}
-            placeholder={
-              filterType === 'number'
-                ? '例: >=10 / <20 / 10..20 / =5'
-                : '部分一致で絞り込み'
-            }
-            style={TEXT_INPUT_STYLE}
-          />
-          <div
-            style={{
-              fontSize: 11,
-              color: '#64748b',
-              marginBottom: 10,
-              whiteSpace: 'nowrap',
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-            }}
-          >
-            {filterType === 'number'
-              ? '数量系は =, >, >=, <, <=, .. が使えます'
-              : 'text は部分一致検索です'}
-          </div>
-        </>
-      )}
-
-      {/* 変更(12-A): set フィルターは即時適用のため現在値テキスト行を出しません
-          (選択件数カウンタを SetFilterBody 側で表示します)。 */}
-      {!isSetFilter && (
-        <div
-          style={{
-            fontSize: 11,
-            color: '#64748b',
-            marginBottom: 10,
-            whiteSpace: 'nowrap',
-            overflow: 'hidden',
-            textOverflow: 'ellipsis',
-          }}
-        >
-          現在値: {currentValueText}
-        </div>
-      )}
-
-      <div
-        style={{
-          display: 'flex',
-          gap: 8,
-          justifyContent: 'flex-end',
-        }}
-      >
-        {isSetFilter ? (
-          // 変更(12-A): set フィルターは即時適用のため「適用」を持ちません。
-          //             クリアは popover を閉じず全選択へ戻し、閉じるで終了します。
-          <>
-            <button
-              type="button"
-              onPointerDown={(event) => {
-                event.preventDefault();
-                event.stopPropagation();
-                onSetClear();
-              }}
-              onKeyDown={(event) => {
-                // 追加: popover 内 button の key 操作を grid 側へ流しません。
-                event.stopPropagation();
-              }}
-              style={SECONDARY_BUTTON_STYLE}
-            >
-              クリア
-            </button>
-            <button
-              type="button"
-              onPointerDown={(event) => {
-                event.preventDefault();
-                event.stopPropagation();
-                onRequestClose();
-              }}
-              onKeyDown={(event) => {
-                event.stopPropagation();
-              }}
-              style={PRIMARY_BUTTON_STYLE}
-            >
-              閉じる
-            </button>
-          </>
-        ) : (
-          <>
-            <button
-              type="button"
-              onPointerDown={(event) => {
-                event.preventDefault();
-                event.stopPropagation();
-                onClear();
-              }}
-              onKeyDown={(event) => {
-                // 追加: popover 内 button の key 操作を grid 側へ流しません。
-                event.stopPropagation();
-              }}
-              style={SECONDARY_BUTTON_STYLE}
-            >
-              クリア
-            </button>
-            <button
-              type="button"
-              onPointerDown={(event) => {
-                event.preventDefault();
-                event.stopPropagation();
-                onApply();
-              }}
-              onKeyDown={(event) => {
-                // 追加: popover 内 button の key 操作を grid 側へ流しません。
-                event.stopPropagation();
-              }}
-              style={PRIMARY_BUTTON_STYLE}
-            >
-              適用
-            </button>
-          </>
-        )}
-      </div>
-    </div>,
-    document.body,
-  );
-}
-
-export default ColumnFilterPopover;
-</file>
-
 <file path="src/components/spreadsheet-grid/view/SortManagementPanel.tsx">
 // 追加(MS-3-1 / 並び替え管理パネル): 複数レベルの並び替えをマウス/タッチで編集する
 //   独立 popover です(Excel の「並べ替え」ダイアログ相当 / ColumnChooserPanel の兄弟)。
@@ -2944,6 +2046,288 @@ dist-ssr
 
 backup
 repomix-output.xml
+</file>
+
+<file path="src/components/spreadsheet-grid/hooks/useFilterPopoverController.ts">
+import {
+    useEffect,
+    useMemo,  
+    useCallback,
+    useRef,
+    useState,
+  type PointerEvent,
+  type RefObject,
+} from 'react';
+import type { GridColumn } from '../model/gridTypes';
+// 追加(記述子化): number 記述子を含む列フィルター値を draft 用テキストへ整形します。
+import { columnFilterValueToDraftText } from '../logic/filtering';
+
+// 追加: 列フィルターポップオーバーの内部状態です。
+type HeaderFilterPopoverState = {
+  columnKey: string;
+  draftValue: string;
+};
+
+// 追加: body 直下 portal popover の配置情報です。
+export type FilterPopoverLayout = {
+  top: number;
+  left: number;
+  width: number;
+};
+
+type UseFilterPopoverControllerArgs<T> = {
+  visibleColumns: GridColumn<T>[];
+  columnFilterValues: Record<string, unknown>;
+  enableColumnFilter: boolean;
+  gridRootRef: RefObject<HTMLDivElement | null>;
+};
+
+const POPUP_WIDTH = 240;
+const VIEWPORT_MARGIN = 8;
+const OFFSET_Y = 8;
+const ESTIMATED_POPUP_HEIGHT = 260;
+// 追加(12-A): set フィルターは検索 + Select All + 候補リスト(208px)を含むため、
+//             上下フリップ判定用の見積もり高さを別に持ちます。
+const ESTIMATED_SET_POPUP_HEIGHT = 400;
+
+// 追加: 列フィルター popover の state / ref / focus / outside click / layout をまとめて管理します。
+export const useFilterPopoverController = <T,>({
+  visibleColumns,
+  columnFilterValues,
+  enableColumnFilter,
+  gridRootRef,
+}: UseFilterPopoverControllerArgs<T>) => {
+  const [filterPopoverState, setFilterPopoverState] =
+    useState<HeaderFilterPopoverState | null>(null);
+  const [filterPopoverLayout, setFilterPopoverLayout] =
+    useState<FilterPopoverLayout | null>(null);
+
+  // 追加: popover / anchor / autofocus 対象 input/select の ref 群です。
+  const filterPopoverRef = useRef<HTMLDivElement | null>(null);
+  const filterPopoverAnchorButtonRef = useRef<HTMLButtonElement | null>(null);
+  const filterTextInputRef = useRef<HTMLInputElement | null>(null);
+  const filterSelectRef = useRef<HTMLSelectElement | null>(null);
+
+  const isFilterPopoverOpen = filterPopoverState !== null;
+  const openedFilterColumnKey = filterPopoverState?.columnKey ?? null;
+
+  const openedFilterColumn = useMemo(
+    () =>
+      openedFilterColumnKey
+        ? visibleColumns.find((column) => column.key === openedFilterColumnKey) ??
+          null
+        : null,
+    [openedFilterColumnKey, visibleColumns],
+  );
+
+  // 追加: anchor button の位置から portal popover の fixed 座標を計算します。
+  const updateFilterPopoverLayout = useCallback(() => {
+    if (!openedFilterColumnKey || !filterPopoverAnchorButtonRef.current) {
+      setFilterPopoverLayout(null);
+      return;
+    }
+
+    const anchorRect = filterPopoverAnchorButtonRef.current.getBoundingClientRect();
+
+    // 追加(12-A): set フィルターは popover が縦に長いため、見積もり高さを切り替えます。
+    const estimatedPopupHeight =
+      openedFilterColumn?.filterType === 'set'
+        ? ESTIMATED_SET_POPUP_HEIGHT
+        : ESTIMATED_POPUP_HEIGHT;
+
+    let left = anchorRect.right - POPUP_WIDTH;
+    left = Math.max(VIEWPORT_MARGIN, left);
+    left = Math.min(left, window.innerWidth - POPUP_WIDTH - VIEWPORT_MARGIN);
+
+    let top = anchorRect.bottom + OFFSET_Y;
+    if (top + estimatedPopupHeight > window.innerHeight - VIEWPORT_MARGIN) {
+      top = anchorRect.top - estimatedPopupHeight - OFFSET_Y;
+    }
+    top = Math.max(VIEWPORT_MARGIN, top);
+
+    setFilterPopoverLayout((current) => {
+      if (
+        current &&
+        current.top === top &&
+        current.left === left &&
+        current.width === POPUP_WIDTH
+      ) {
+        return current;
+      }
+
+      return {
+        top,
+        left,
+        width: POPUP_WIDTH,
+      };
+    });
+    // 変更(12-A): 見積もり高さ切替のため openedFilterColumn(filterType)へ依存を追加します。
+  }, [openedFilterColumnKey, openedFilterColumn]);
+
+  // 追加: 列フィルターポップオーバーを開きます。
+  const openColumnFilterPopover = useCallback(
+    (column: GridColumn<T>, event: PointerEvent<HTMLButtonElement>) => {
+      event.preventDefault();
+      event.stopPropagation();
+
+      if (!enableColumnFilter) {
+        return;
+      }
+
+      // 追加: grid root に残っているフォーカスを明示的に外します。
+      if (document.activeElement instanceof HTMLElement) {
+        document.activeElement.blur();
+      }
+      gridRootRef.current?.blur();
+
+      // 追加: anchor button を保持し、portal popover の位置計算に使います。
+      filterPopoverAnchorButtonRef.current = event.currentTarget;
+
+      setFilterPopoverState({
+        columnKey: column.key,
+        // 変更(記述子化): number 記述子は String() で "[object Object]" になるため、
+        //   raw を取り出す columnFilterValueToDraftText 経由にします(他種別は従来と同値)。
+        draftValue: columnFilterValueToDraftText(columnFilterValues[column.key]),
+      });
+    },
+    [columnFilterValues, enableColumnFilter, gridRootRef],
+  );
+
+  // 追加: 列フィルターポップオーバーを閉じます。
+  const closeColumnFilterPopover = useCallback(() => {
+    setFilterPopoverState(null);
+    setFilterPopoverLayout(null);
+    filterPopoverAnchorButtonRef.current = null;
+    filterTextInputRef.current = null;
+    filterSelectRef.current = null;
+
+    // 追加: close 後は grid root にフォーカスを戻し、従来の keyboard 操作へ復帰させます。
+    requestAnimationFrame(() => {
+      gridRootRef.current?.focus();
+    });
+  }, [gridRootRef]);
+
+  // 追加: フィルター draft を更新します。
+  const updateFilterPopoverDraft = useCallback((value: string) => {
+    setFilterPopoverState((current) => {
+      if (!current) {
+        return current;
+      }
+      return {
+        ...current,
+        draftValue: value,
+      };
+    });
+  }, []);
+
+  // 追加: portal popover の位置を open / resize / scroll に応じて再計算します。
+  useEffect(() => {
+    if (!openedFilterColumnKey) {
+      return;
+    }
+
+    updateFilterPopoverLayout();
+
+    const handleReposition = () => {
+      updateFilterPopoverLayout();
+    };
+
+    window.addEventListener('resize', handleReposition);
+    window.addEventListener('scroll', handleReposition, true);
+
+    return () => {
+      window.removeEventListener('resize', handleReposition);
+      window.removeEventListener('scroll', handleReposition, true);
+    };
+  }, [openedFilterColumnKey, updateFilterPopoverLayout]);
+
+  // 追加: popover が実際に描画され、かつ「開いた直後 / 別列へ切替時」にだけ
+  //       input / select へ自動 focus します。
+  useEffect(() => {
+    if (!openedFilterColumn || !filterPopoverLayout) {
+      return;
+    }
+
+    const filterType = openedFilterColumn.filterType ?? 'text';
+
+    let frameId1 = 0;
+    let frameId2 = 0;
+
+    frameId1 = requestAnimationFrame(() => {
+      frameId2 = requestAnimationFrame(() => {
+        if (filterType === 'select') {
+          filterSelectRef.current?.focus();
+          return;
+        }
+
+        const inputElement = filterTextInputRef.current;
+        if (!inputElement) {
+          return;
+        }
+
+        inputElement.focus();
+        // 追加: 全文選択ではなく末尾へ caret を置き、半角入力時の全文置換を避けます。
+        const end = inputElement.value.length;
+        inputElement.setSelectionRange(end, end);
+      });
+    });
+
+    return () => {
+      cancelAnimationFrame(frameId1);
+      cancelAnimationFrame(frameId2);
+    };
+  }, [
+    openedFilterColumn,
+    filterPopoverLayout?.top,
+    filterPopoverLayout?.left,
+    filterPopoverLayout?.width,
+  ]);
+
+  // 追加: ポップオーバー表示中は、外側クリックで閉じます。
+  useEffect(() => {
+    if (!isFilterPopoverOpen) {
+      return;
+    }
+
+    const handleWindowPointerDown = (event: globalThis.PointerEvent) => {
+      const targetNode = event.target as Node | null;
+      if (!targetNode) {
+        return;
+      }
+
+      if (filterPopoverRef.current?.contains(targetNode)) {
+        return;
+      }
+
+      // 追加: anchor button を押したケースでは close の native listener と競合させません。
+      if (filterPopoverAnchorButtonRef.current?.contains(targetNode)) {
+        return;
+      }
+
+      closeColumnFilterPopover();
+    };
+
+    window.addEventListener('pointerdown', handleWindowPointerDown);
+    return () => {
+      window.removeEventListener('pointerdown', handleWindowPointerDown);
+    };
+  }, [closeColumnFilterPopover, isFilterPopoverOpen]);
+
+  return {
+    filterPopoverState,
+    filterPopoverLayout,
+    filterPopoverRef,
+    filterTextInputRef,
+    filterSelectRef,
+    isFilterPopoverOpen,
+    openedFilterColumn,
+    openColumnFilterPopover,
+    closeColumnFilterPopover,
+    updateFilterPopoverDraft,
+  };
+};
+
+export default useFilterPopoverController;
 </file>
 
 <file path="src/components/spreadsheet-grid/hooks/useGridBarContext.ts">
@@ -3708,6 +3092,678 @@ export function SelectionOverlay({
 }
 
 export default SelectionOverlay;
+</file>
+
+<file path="src/components/spreadsheet-grid/view/ColumnFilterPopover.tsx">
+import { createPortal } from 'react-dom';
+// 変更(12-A): set フィルター(検索 + Select All + チェックボックス一覧)用に
+//             hooks と useVirtualizer を追加 import します。
+//             候補リストは品番のように 5,000 件規模になり得るため、
+//             本体グリッドと同じ @tanstack/react-virtual で行仮想化します。
+import {
+  useDeferredValue,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+  type KeyboardEvent,
+  type PointerEvent,
+  type RefObject,
+} from 'react';
+import { useVirtualizer } from '@tanstack/react-virtual';
+
+// 追加: popover のレイアウト情報です。
+export type ColumnFilterPopoverLayout = {
+  top: number;
+  left: number;
+  width: number;
+};
+
+// 追加: select / set フィルター候補の最小型です。
+export type ColumnFilterPopoverOption = {
+  label: string;
+  value: string;
+};
+
+// 追加(反転set): set フィルターの選択状態です。null = 全選択(フィルターなし)。
+//   巨大側を作らないため「選択集合」ではなく { mode, values } で持ち、values は常に
+//   小さい側のみ(include=選択値 / exclude=非選択値)。判定は mode で行います。
+export type ColumnFilterSetSelection = {
+  mode: 'include' | 'exclude';
+  values: ReadonlySet<string>;
+};
+
+// 追加(反転set): ある候補値が「選択中」かを mode 適用で判定します(巨大側を materialize しません)。
+export const isSetValueSelected = (
+  selection: ColumnFilterSetSelection | null,
+  value: string,
+): boolean =>
+  selection === null
+    ? true
+    : selection.mode === 'include'
+      ? selection.values.has(value)
+      : !selection.values.has(value);
+
+type ColumnFilterPopoverProps = {
+  isOpen: boolean;
+  title: string;
+  // 変更(12-A): 'set' を追加します。
+  filterType: 'text' | 'number' | 'date' | 'select' | 'set' | 'custom';
+  draftValue: string;
+  currentValueText: string;
+  layout: ColumnFilterPopoverLayout | null;
+  selectOptions: ColumnFilterPopoverOption[];
+  // 追加(Set Filter perf / b): 候補収集が deferred で追従途中の間 true。set 本体で
+  //   「集計中…」を表示し、空候補(「ありません」)と区別します。
+  isOptionsPending: boolean;
+  // 変更(反転set): set 選択状態を { mode, values }(小さい側のみ)で受けます。null = 全選択。
+  setSelection: ColumnFilterSetSelection | null;
+  popoverRef: RefObject<HTMLDivElement | null>;
+  // 注記(12-A): set フィルターでは検索ボックスへこの ref を割り当て、
+  //             useFilterPopoverController の autofocus をそのまま流用します。
+  textInputRef: RefObject<HTMLInputElement | null>;
+  selectRef: RefObject<HTMLSelectElement | null>;
+  onRequestClose: () => void;
+  onDraftChange: (value: string) => void;
+  onApply: () => void;
+  onClear: () => void;
+  // 追加(12-A): set フィルターのチェックボックス 1 件トグルです(即時適用)。
+  onSetValueToggle: (value: string) => void;
+  // 追加(12-A): (Select All) の一括トグルです。検索中は「表示中の候補のみ」を
+  //             対象にするため、対象 values を popover 側から渡します(AG Grid と同挙動)。
+  // 変更(反転set): scope='all'(非検索=全候補) か 表示中候補の values(検索中=小さい側)。
+  //   非検索の全選択/全解除で 30 万件配列を作らないため 'all' を区別します。
+  onSetSelectAllChange: (
+    scope: 'all' | string[],
+    nextSelected: boolean,
+  ) => void;
+  // 追加(12-A): set フィルターの「クリア」です。popover を閉じずに全選択へ戻します
+  //             (即時適用のため、結果を見ながら操作を続けられるようにします)。
+  onSetClear: () => void;
+};
+
+// ── 共通スタイル ────────────────────────────────────────
+const SECONDARY_BUTTON_STYLE: CSSProperties = {
+  border: '1px solid #cbd5e1',
+  backgroundColor: '#ffffff',
+  color: '#475569',
+  borderRadius: 8,
+  padding: '6px 10px',
+  cursor: 'pointer',
+  fontSize: 12,
+};
+
+const PRIMARY_BUTTON_STYLE: CSSProperties = {
+  border: '1px solid #2563eb',
+  backgroundColor: '#2563eb',
+  color: '#ffffff',
+  borderRadius: 8,
+  padding: '6px 10px',
+  cursor: 'pointer',
+  fontSize: 12,
+};
+
+const TEXT_INPUT_STYLE: CSSProperties = {
+  width: '100%',
+  boxSizing: 'border-box',
+  padding: '8px 10px',
+  border: '1px solid #cbd5e1',
+  borderRadius: 8,
+  outline: 'none',
+  marginBottom: 8,
+};
+
+// 追加(12-A): set フィルター候補リストの行高です(仮想化の estimateSize と一致させます)。
+const SET_FILTER_OPTION_ROW_HEIGHT = 28;
+// 追加(12-A): 候補リストの表示領域高です。
+const SET_FILTER_LIST_HEIGHT = 208;
+
+// ── set フィルター本体 ──────────────────────────────────
+// 追加(12-A): set フィルターの検索 state / 仮想化は popover 全体とライフサイクルが
+//             異なる(開閉でリセットしたい・親 SpreadsheetGrid を再レンダーさせたくない)
+//             ため、独立した子 component に切り出して hooks を持たせます。
+//             検索テキストはこのローカル state に閉じるため、タイピングしても
+//             再レンダーは popover 内部のみで完結します(本体 5,000 行は無関係)。
+type SetFilterBodyProps = {
+  options: ColumnFilterPopoverOption[];
+  // 追加(Set Filter perf / b): 候補収集が deferred で追従途中の間 true です。
+  isOptionsPending: boolean;
+  // 変更(反転set): { mode, values }(小さい側のみ)。null = 全選択(フィルターなし)です。
+  setSelection: ColumnFilterSetSelection | null;
+  searchInputRef: RefObject<HTMLInputElement | null>;
+  onValueToggle: (value: string) => void;
+  onSelectAllChange: (scope: 'all' | string[], nextSelected: boolean) => void;
+  onRequestClose: () => void;
+};
+
+function SetFilterBody({
+  options,
+  isOptionsPending,
+  setSelection,
+  searchInputRef,
+  onValueToggle,
+  onSelectAllChange,
+  onRequestClose,
+}: SetFilterBodyProps) {
+  const [searchText, setSearchText] = useState('');
+  // 追加(12-A): 候補 5,000 件規模での連続タイピングに備え、絞り込み計算は
+  //             低優先度レンダーへ遅延します(11-B7 のグローバルフィルタと同型)。
+  const deferredSearchText = useDeferredValue(searchText);
+
+  const visibleOptions = useMemo(() => {
+    const normalized = deferredSearchText.trim().toLowerCase();
+    if (!normalized) {
+      return options;
+    }
+    return options.filter((option) =>
+      option.label.toLowerCase().includes(normalized),
+    );
+  }, [options, deferredSearchText]);
+
+  const isSearching = deferredSearchText.trim().length > 0;
+
+  // 追加(12-A): 候補リストの行仮想化です。表示領域ぶん + overscan のみ DOM 化します。
+  const listScrollRef = useRef<HTMLDivElement | null>(null);
+  const optionVirtualizer = useVirtualizer({
+    count: visibleOptions.length,
+    getScrollElement: () => listScrollRef.current,
+    estimateSize: () => SET_FILTER_OPTION_ROW_HEIGHT,
+    overscan: 10,
+  });
+
+  // ── (Select All) の 3 状態判定(表示中候補が対象) ──
+  const visibleSelectedCount = useMemo(() => {
+    if (setSelection === null) {
+      return visibleOptions.length;
+    }
+    let count = 0;
+    for (const option of visibleOptions) {
+      if (isSetValueSelected(setSelection, option.value)) {
+        count += 1;
+      }
+    }
+    return count;
+  }, [setSelection, visibleOptions]);
+
+  const isAllVisibleSelected =
+    visibleOptions.length > 0 && visibleSelectedCount === visibleOptions.length;
+  const isSomeVisibleSelected =
+    visibleSelectedCount > 0 && !isAllVisibleSelected;
+
+  // 変更(反転set): mode から O(1) 算出します(巨大側を materialize しません)。
+  const totalSelectedCount =
+    setSelection === null
+      ? options.length
+      : setSelection.mode === 'include'
+        ? setSelection.values.size
+        : options.length - setSelection.values.size;
+
+  const handleSelectAllToggle = () => {
+    // 追加(Set Filter perf / b): 収集中(候補ゼロ)はトグル対象が無いため無効化します。
+    if (isOptionsPending) {
+      return;
+    }
+    // 変更(反転set): 非検索時は scope='all' を渡し、30 万件の values 配列を作りません。
+    //   検索中のみ表示中候補(=小さい側)の values を渡します。
+    onSelectAllChange(
+      isSearching ? visibleOptions.map((option) => option.value) : 'all',
+      !isAllVisibleSelected,
+    );
+  };
+
+  return (
+    <>
+      <input
+        ref={searchInputRef}
+        type="text"
+        value={searchText}
+        onChange={(event) => setSearchText(event.target.value)}
+        onKeyDown={(event) => {
+          // 追加: 検索ボックス内入力を grid 側へ伝播させません。
+          event.stopPropagation();
+          if (event.key === 'Escape') {
+            event.preventDefault();
+            onRequestClose();
+          }
+        }}
+        placeholder="検索..."
+        style={TEXT_INPUT_STYLE}
+      />
+
+      {/* (Select All) 行: 検索中は表示中候補のみが対象です(AG Grid と同挙動) */}
+      <label
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 8,
+          height: SET_FILTER_OPTION_ROW_HEIGHT,
+          padding: '0 8px',
+          cursor: 'pointer',
+          fontSize: 12,
+          color: '#334155',
+          borderBottom: '1px solid #e2e8f0',
+          userSelect: 'none',
+        }}
+      >
+        <input
+          type="checkbox"
+          checked={isAllVisibleSelected}
+          disabled={isOptionsPending}
+          ref={(element) => {
+            // 追加(12-A): 一部のみ選択中は indeterminate 表示にします。
+            if (element) {
+              element.indeterminate = isSomeVisibleSelected;
+            }
+          }}
+          onChange={handleSelectAllToggle}
+        />
+        <span style={{ fontWeight: 600 }}>
+          {isSearching ? '（検索結果をすべて選択）' : '（すべて選択）'}
+        </span>
+      </label>
+
+      {/* 候補リスト(仮想化) */}
+      <div
+        ref={listScrollRef}
+        style={{
+          height: SET_FILTER_LIST_HEIGHT,
+          overflowY: 'auto',
+          border: '1px solid #e2e8f0',
+          borderTop: 'none',
+          borderRadius: '0 0 8px 8px',
+          marginBottom: 8,
+        }}
+      >
+        {isOptionsPending ? (
+          // 追加(Set Filter perf / b): 候補収集中のプレースホルダです。
+          //   将来 Loading spinner へ差し替える場合はこの 1 ブロックだけを置換します。
+          <div
+            style={{
+              padding: 12,
+              fontSize: 12,
+              color: '#94a3b8',
+              textAlign: 'center',
+            }}
+          >
+            集計中…
+          </div>
+        ) : visibleOptions.length === 0 ? (
+          <div
+            style={{
+              padding: 12,
+              fontSize: 12,
+              color: '#94a3b8',
+              textAlign: 'center',
+            }}
+          >
+            一致する候補がありません
+          </div>
+        ) : (
+          <div
+            style={{
+              height: optionVirtualizer.getTotalSize(),
+              position: 'relative',
+              width: '100%',
+            }}
+          >
+            {optionVirtualizer.getVirtualItems().map((virtualItem) => {
+              const option = visibleOptions[virtualItem.index];
+              if (!option) {
+                return null;
+              }
+              const isChecked = isSetValueSelected(setSelection, option.value);
+              return (
+                <label
+                  key={option.value}
+                  style={{
+                    position: 'absolute',
+                    top: 0,
+                    left: 0,
+                    right: 0,
+                    transform: `translateY(${virtualItem.start}px)`,
+                    height: virtualItem.size,
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 8,
+                    padding: '0 8px',
+                    boxSizing: 'border-box',
+                    cursor: 'pointer',
+                    fontSize: 12,
+                    color: '#334155',
+                    userSelect: 'none',
+                  }}
+                >
+                  <input
+                    type="checkbox"
+                    checked={isChecked}
+                    onChange={() => onValueToggle(option.value)}
+                  />
+                  <span
+                    style={{
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      whiteSpace: 'nowrap',
+                    }}
+                  >
+                    {option.label}
+                  </span>
+                </label>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      <div
+        style={{
+          fontSize: 11,
+          color: '#64748b',
+          marginBottom: 10,
+        }}
+      >
+        {isOptionsPending
+          ? '集計中…'
+          : `選択中: ${totalSelectedCount} / ${options.length} 件${
+              isSearching ? `（表示中 ${visibleOptions.length} 件）` : ''
+            }`}
+      </div>
+    </>
+  );
+}
+
+// 追加: 列フィルター popover の view component です。
+export function ColumnFilterPopover({
+  isOpen,
+  title,
+  filterType,
+  draftValue,
+  currentValueText,
+  layout,
+  selectOptions,
+  isOptionsPending,
+  setSelection,
+  popoverRef,
+  textInputRef,
+  selectRef,
+  onRequestClose,
+  onDraftChange,
+  onApply,
+  onClear,
+  onSetValueToggle,
+  onSetSelectAllChange,
+  onSetClear,
+}: ColumnFilterPopoverProps) {
+  if (typeof document === 'undefined' || !isOpen || !layout) {
+    return null;
+  }
+
+  const wrapperStyle: CSSProperties = {
+    position: 'fixed',
+    top: layout.top,
+    left: layout.left,
+    width: layout.width,
+    padding: 12,
+    boxSizing: 'border-box',
+    border: '1px solid #cbd5e1',
+    borderRadius: 10,
+    backgroundColor: '#ffffff',
+    boxShadow: '0 10px 24px rgba(15, 23, 42, 0.12)',
+    zIndex: 1000,
+  };
+
+  const handleKeyDownCapture = (event: KeyboardEvent<HTMLDivElement>) => {
+    // 追加: portal 内 keyboard イベントを React ツリー上の parent へ流しません。
+    event.stopPropagation();
+  };
+
+  const handlePointerDown = (event: PointerEvent<HTMLDivElement>) => {
+    // 追加: popover 内 pointer 操作を外側へ伝播させません。
+    event.stopPropagation();
+  };
+
+  const isSetFilter = filterType === 'set';
+
+  return createPortal(
+    <div
+      ref={popoverRef}
+      onPointerDown={handlePointerDown}
+      onKeyDownCapture={handleKeyDownCapture}
+      onPasteCapture={(event) => {
+        // 追加: portal 内 paste も grid 側へ流しません。
+        event.stopPropagation();
+      }}
+      style={wrapperStyle}
+    >
+      <div
+        style={{
+          fontSize: 12,
+          fontWeight: 700,
+          color: '#334155',
+          marginBottom: 8,
+        }}
+      >
+        列フィルター: {title}
+      </div>
+
+      {isSetFilter ? (
+        // 追加(12-A): AG Grid の Set Filter 相当 UI です(チェック操作は即時適用)。
+        <SetFilterBody
+          options={selectOptions}
+          isOptionsPending={isOptionsPending}
+          setSelection={setSelection}
+          searchInputRef={textInputRef}
+          onValueToggle={onSetValueToggle}
+          onSelectAllChange={onSetSelectAllChange}
+          onRequestClose={onRequestClose}
+        />
+      ) : filterType === 'select' ? (
+        <>
+          <div
+            style={{
+              fontSize: 11,
+              color: '#64748b',
+              marginBottom: 8,
+            }}
+          >
+            フィルター種別: select
+          </div>
+          <select
+            ref={selectRef}
+            value={draftValue}
+            onChange={(event) => onDraftChange(event.target.value)}
+            onKeyDown={(event) => {
+              // 追加: select 内操作を grid 側へ伝播させません。
+              event.stopPropagation();
+              if (event.key === 'Enter') {
+                event.preventDefault();
+                onApply();
+                return;
+              }
+              if (event.key === 'Escape') {
+                event.preventDefault();
+                onRequestClose();
+              }
+            }}
+            style={{
+              width: '100%',
+              boxSizing: 'border-box',
+              padding: '8px 10px',
+              border: '1px solid #cbd5e1',
+              borderRadius: 8,
+              outline: 'none',
+              marginBottom: 8,
+              backgroundColor: '#ffffff',
+            }}
+          >
+            <option value="">（すべて）</option>
+            {selectOptions.map((option) => (
+              <option key={`${title}-${option.value}`} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+          <div
+            style={{
+              fontSize: 11,
+              color: '#64748b',
+              marginBottom: 10,
+            }}
+          >
+            候補数: {selectOptions.length}
+          </div>
+        </>
+      ) : (
+        <>
+          <div
+            style={{
+              fontSize: 11,
+              color: '#64748b',
+              marginBottom: 8,
+            }}
+          >
+            フィルター種別: {filterType === 'number' ? 'number' : 'text'}
+          </div>
+          <input
+            ref={textInputRef}
+            type="text"
+            value={draftValue}
+            onChange={(event) => onDraftChange(event.target.value)}
+            onKeyDown={(event) => {
+              // 追加: filter input 内入力を grid 側へ伝播させません。
+              event.stopPropagation();
+              if (event.key === 'Enter') {
+                event.preventDefault();
+                onApply();
+                return;
+              }
+              if (event.key === 'Escape') {
+                event.preventDefault();
+                onRequestClose();
+              }
+            }}
+            placeholder={
+              filterType === 'number'
+                ? '例: >=10 / <20 / 10..20 / =5'
+                : '部分一致で絞り込み'
+            }
+            style={TEXT_INPUT_STYLE}
+          />
+          <div
+            style={{
+              fontSize: 11,
+              color: '#64748b',
+              marginBottom: 10,
+              whiteSpace: 'nowrap',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+            }}
+          >
+            {filterType === 'number'
+              ? '数量系は =, >, >=, <, <=, .. が使えます'
+              : 'text は部分一致検索です'}
+          </div>
+        </>
+      )}
+
+      {/* 変更(12-A): set フィルターは即時適用のため現在値テキスト行を出しません
+          (選択件数カウンタを SetFilterBody 側で表示します)。 */}
+      {!isSetFilter && (
+        <div
+          style={{
+            fontSize: 11,
+            color: '#64748b',
+            marginBottom: 10,
+            whiteSpace: 'nowrap',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+          }}
+        >
+          現在値: {currentValueText}
+        </div>
+      )}
+
+      <div
+        style={{
+          display: 'flex',
+          gap: 8,
+          justifyContent: 'flex-end',
+        }}
+      >
+        {isSetFilter ? (
+          // 変更(12-A): set フィルターは即時適用のため「適用」を持ちません。
+          //             クリアは popover を閉じず全選択へ戻し、閉じるで終了します。
+          <>
+            <button
+              type="button"
+              onPointerDown={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                onSetClear();
+              }}
+              onKeyDown={(event) => {
+                // 追加: popover 内 button の key 操作を grid 側へ流しません。
+                event.stopPropagation();
+              }}
+              style={SECONDARY_BUTTON_STYLE}
+            >
+              クリア
+            </button>
+            <button
+              type="button"
+              onPointerDown={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                onRequestClose();
+              }}
+              onKeyDown={(event) => {
+                event.stopPropagation();
+              }}
+              style={PRIMARY_BUTTON_STYLE}
+            >
+              閉じる
+            </button>
+          </>
+        ) : (
+          <>
+            <button
+              type="button"
+              onPointerDown={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                onClear();
+              }}
+              onKeyDown={(event) => {
+                // 追加: popover 内 button の key 操作を grid 側へ流しません。
+                event.stopPropagation();
+              }}
+              style={SECONDARY_BUTTON_STYLE}
+            >
+              クリア
+            </button>
+            <button
+              type="button"
+              onPointerDown={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                onApply();
+              }}
+              onKeyDown={(event) => {
+                // 追加: popover 内 button の key 操作を grid 側へ流しません。
+                event.stopPropagation();
+              }}
+              style={PRIMARY_BUTTON_STYLE}
+            >
+              適用
+            </button>
+          </>
+        )}
+      </div>
+    </div>,
+    document.body,
+  );
+}
+
+export default ColumnFilterPopover;
 </file>
 
 <file path="src/components/spreadsheet-grid/CellEditorLayer.tsx">
@@ -5289,412 +5345,6 @@ export function computeAutosizedColumnWidths<T>({
 }
 </file>
 
-<file path="src/components/spreadsheet-grid/logic/filtering.ts">
-import type { GridColumn, SetColumnFilterValue } from '../model/gridTypes';
-import { getCellValue } from '../utils/permissions';
-
-// 追加(DS-1 / index ベースパイプライン): 「ビュー順に並んだ元 rows の index 列」です。
-//   オブジェクト配列({row, sourceIndex, ...})を各段で割り当て直す従来方式に代えて、
-//   フィルタ/ソートはこの index 列(Int32Array)だけを生成・受け渡しします。
-//   - 1,000,000 行でも 4MB(= 4byte × N)に収まり、割り当て/GC が行オブジェクト方式から桁で下がります。
-//   - 将来 Web Worker へ渡す際に transferable(ゼロコピー)になります。
-//   - ビュー位置 i の元行は rows[order[i]] で引きます(この対応付けが後段のシームの土台)。
-//   DS-1 は純関数の追加のみで、配線(SpreadsheetGrid 側のチェーン差し替え)は DS-2 で行います。
-export type RowOrder = Int32Array;
-
-// 追加(DS-1): 恒等 order [0, 1, ..., rowCount-1] を生成します(パイプラインの起点)。
-export const createSourceOrder = (rowCount: number): RowOrder => {
-  const order = new Int32Array(rowCount);
-  for (let i = 0; i < rowCount; i += 1) {
-    order[i] = i;
-  }
-  return order;
-};
-
-// 追加(12-A): set フィルター値の type guard です。
-export const isSetColumnFilterValue = (
-  value: unknown,
-): value is SetColumnFilterValue =>
-  typeof value === 'object' &&
-  value !== null &&
-  (value as SetColumnFilterValue).kind === 'set' &&
-  Array.isArray((value as SetColumnFilterValue).values);
-
-// 追加(12-A): 列フィルター値が「有効」かを判定する共通 helper です。
-// 変更理由: 従来は GridHeaderRow(フィルター済みバッジ) / gridBarHelpers(有効件数) /
-//   列フィルタの適用処理がそれぞれ String(value).trim() で判定していました。
-//   set フィルター値はオブジェクトのため String() 判定が成立しません
-//   (空配列 = 全行除外でも「有効」と数える必要があります)。
-//   有効判定をここへ一元化し、3 箇所すべてが同じ規則を共有します。
-//   set 以外は従来どおり「非空文字列のみ有効」で挙動等価です。
-export const isActiveColumnFilterValue = (value: unknown): boolean => {
-  if (isSetColumnFilterValue(value)) {
-    // 注記: 全選択時は reducer 側で clearColumn 済みのため、値が存在する時点で有効です。
-    return true;
-  }
-  // 追加(記述子化 / number): number 記述子は buildNumberColumnFilterValue で
-  //   raw 非空のときだけ生成されるため、存在する時点で有効です(set と同じ規則)。
-  if (isNumberColumnFilterValue(value)) {
-    return true;
-  }
-  return String(value ?? '').trim().length > 0;
-};
-
-// 追加: number フィルターの解釈結果です。
-export type ParsedNumberFilter =
-  | {
-      mode: 'comparison';
-      operator: '>' | '>=' | '<' | '<=' | '=';
-      value: number;
-    }
-  | {
-      mode: 'range';
-      min: number;
-      max: number;
-    };
-
-// 追加: number フィルター式を解釈します。
-export const parseNumberFilterExpression = (
-  rawValue: string,
-): ParsedNumberFilter | null => {
-  const normalized = rawValue.trim();
-  if (!normalized) {
-    return null;
-  }
-
-  const rangeMatch = normalized.match(
-    /^(-?\d+(?:\.\d+)?)\s*\.\.\s*(-?\d+(?:\.\d+)?)$/,
-  );
-  if (rangeMatch) {
-    const first = Number(rangeMatch[1]);
-    const second = Number(rangeMatch[2]);
-    if (!Number.isFinite(first) || !Number.isFinite(second)) {
-      return null;
-    }
-    return {
-      mode: 'range',
-      min: Math.min(first, second),
-      max: Math.max(first, second),
-    };
-  }
-
-  const comparisonMatch = normalized.match(
-    /^(<=|>=|=|<|>)?\s*(-?\d+(?:\.\d+)?)$/,
-  );
-  if (!comparisonMatch) {
-    return null;
-  }
-
-  return {
-    mode: 'comparison',
-    operator: (comparisonMatch[1] ?? '=') as '>' | '>=' | '<' | '<=' | '=',
-    value: Number(comparisonMatch[2]),
-  };
-};
-
-// 追加(記述子化 / number): number フィルターのタグ付き記述子です。
-//   set({ kind:'set' })に続く 2 種目の判別共用体メンバーで、columnFilters[key] に
-//   この形が入っているときだけ「コンパイル済み number フィルター」が有効です。
-//   - raw   : ユーザー入力(trim 済み)。再オープン時の draft seed / 現在値表示 /
-//             式として解釈不可だった場合の contains フォールバック needle に使います。
-//   - parsed: 式の解釈結果。null = 解釈不可(→ raw で contains)。従来 applyNumberFilter が
-//             行ループ内で毎回行っていた parse を「commit 時 1 回」へ前倒しするための field です。
-//   注記: text / select / date は本バッチでは生文字列のまま据え置きます(後続で同じ型へ寄せる)。
-export type NumberColumnFilterValue = {
-  kind: 'number';
-  raw: string;
-  parsed: ParsedNumberFilter | null;
-};
-
-// 追加(記述子化 / number): number 記述子の type guard です(set と同型)。
-export const isNumberColumnFilterValue = (
-  value: unknown,
-): value is NumberColumnFilterValue =>
-  typeof value === 'object' &&
-  value !== null &&
-  (value as NumberColumnFilterValue).kind === 'number';
-
-// 追加(記述子化 / number): 生入力から number 記述子を構築します。
-//   - trim 後が空なら null(= フィルターなしへ正規化。呼び出し側で clearColumn 相当に倒す)。
-//   - parse は parseNumberFilterExpression 1 回のみ。挙動は従来 applyNumberFilter の
-//     「trim → parse → 不可なら contains」と厳密に等価です(raw は trim 済みを保持)。
-export const buildNumberColumnFilterValue = (
-  rawInput: string,
-): NumberColumnFilterValue | null => {
-  const raw = rawInput.trim();
-  if (!raw) {
-    return null;
-  }
-  return { kind: 'number', raw, parsed: parseNumberFilterExpression(raw) };
-};
-
-// 追加(記述子化): 列フィルター値を「テキスト入力の編集用文字列」へ整形します。
-//   popover 再オープン時の draft seed の単一窓口です(従来は呼び出し側で String(value) 直書き)。
-//   - number 記述子 → raw(式そのもの)。
-//   - それ以外(text/select/date の生文字列等)→ 従来どおり String(value ?? '')。
-//   set はチェックボックス UI のため text 入力 draft を使わず、ここへは到達しません。
-//   後続で text/select も記述子化する際、この関数へ分岐を足せば draft seed 側は無改修で済みます。
-export const columnFilterValueToDraftText = (value: unknown): string => {
-  if (isNumberColumnFilterValue(value)) {
-    return value.raw;
-  }
-  return String(value ?? '');
-};
-
-// 追加: number 型フィルターの評価です。
-export const applyNumberFilter = (
-  cellValue: unknown,
-  filterValue: unknown,
-) => {
-  const normalizedFilter = String(filterValue ?? '').trim();
-  if (!normalizedFilter) {
-    return true;
-  }
-
-  const parsedFilter = parseNumberFilterExpression(normalizedFilter);
-  if (!parsedFilter) {
-    // 追加: 式として解釈できない場合は contains にフォールバックします。
-    return String(cellValue ?? '')
-      .toLowerCase()
-      .includes(normalizedFilter.toLowerCase());
-  }
-
-  const numericCellValue = Number(cellValue);
-  if (!Number.isFinite(numericCellValue)) {
-    return false;
-  }
-
-  if (parsedFilter.mode === 'range') {
-    return (
-      numericCellValue >= parsedFilter.min &&
-      numericCellValue <= parsedFilter.max
-    );
-  }
-
-  switch (parsedFilter.operator) {
-    case '>':
-      return numericCellValue > parsedFilter.value;
-    case '>=':
-      return numericCellValue >= parsedFilter.value;
-    case '<':
-      return numericCellValue < parsedFilter.value;
-    case '<=':
-      return numericCellValue <= parsedFilter.value;
-    case '=':
-    default:
-      return numericCellValue === parsedFilter.value;
-  }
-};
-
-// 列フィルターの「行ループ前の事前コンパイル方式」のための型・helper 群です(12-A)。
-//   set フィルターは候補が多い列(例: 品番 5,000 種)でも O(1) 判定にしたく、
-//   行ループの外で一度だけ Set を構築する必要があります。また有効な列フィルターだけを
-//   predicate へ事前コンパイルすることで、行ループは「有効フィルター数 × 行数」に縮小し、
-//   フィルター未設定列ぶんの String(...).trim().toLowerCase() 正規化を省けます
-//   (text / number / select の判定結果は単一実装で一意です)。
-//   現在の利用者は index 版 filterOrderByColumns です
-//   (旧オブジェクト配列版は DS-3-8 で削除しました)。
-type CompiledColumnFilterPredicate<T> = (row: T) => boolean;
-
-// 追加(12-A): 1 列ぶんのフィルター値を predicate へコンパイルします。
-//             無効(未設定)なら null を返し、行ループから除外します。
-const compileSingleColumnFilter = <T,>(
-  column: GridColumn<T>,
-  filterValue: unknown,
-): CompiledColumnFilterPredicate<T> | null => {
-  if (!isActiveColumnFilterValue(filterValue)) {
-    return null;
-  }
-
-  // 注記: 従来どおり column.filterFn を最優先します(set 値が渡るケースも
-  //       利用側 filterFn の責務とし、挙動の優先順位は変えません)。
-  if (column.filterFn) {
-    const filterFn = column.filterFn;
-    return (row) => filterFn(row, filterValue);
-  }
-
-  // 追加(12-A): set フィルターは「許可値の Set」を一度だけ構築し、O(1) 照合します。
-  if (isSetColumnFilterValue(filterValue)) {
-    const allowedValues = new Set(filterValue.values);
-    return (row) => allowedValues.has(String(getCellValue(row, column) ?? ''));
-  }
-
-  // 追加(記述子化 / number): number 記述子は parse 済みのため、行ループ外で評価器を確定します
-  //   (従来 applyNumberFilter は行ごとに parseNumberFilterExpression を呼んでいた)。
-  //   合否は applyNumberFilter と厳密に等価:
-  //     - parsed=null  → raw で contains(大文字小文字無視)。
-  //     - range        → Number(cell) が有限かつ [min,max]。
-  //     - comparison   → Number(cell) が有限かつ op 比較(= は ===)。
-  //   注記: filterFn を持つ列は上の filterFn 分岐が優先するため、ここへは到達しません
-  //         (その場合 filterFn は本記述子オブジェクトを受け取ります。set と同じ契約)。
-  if (isNumberColumnFilterValue(filterValue)) {
-    const parsed = filterValue.parsed;
-    if (parsed === null) {
-      const needle = filterValue.raw.toLowerCase();
-      return (row) =>
-        String(getCellValue(row, column) ?? '')
-          .toLowerCase()
-          .includes(needle);
-    }
-    if (parsed.mode === 'range') {
-      const { min, max } = parsed;
-      return (row) => {
-        const numericCellValue = Number(getCellValue(row, column));
-        return (
-          Number.isFinite(numericCellValue) &&
-          numericCellValue >= min &&
-          numericCellValue <= max
-        );
-      };
-    }
-    const { operator, value } = parsed;
-    return (row) => {
-      const numericCellValue = Number(getCellValue(row, column));
-      if (!Number.isFinite(numericCellValue)) {
-        return false;
-      }
-      switch (operator) {
-        case '>':
-          return numericCellValue > value;
-        case '>=':
-          return numericCellValue >= value;
-        case '<':
-          return numericCellValue < value;
-        case '<=':
-          return numericCellValue <= value;
-        case '=':
-        default:
-          return numericCellValue === value;
-      }
-    };
-  }
-
-  const filterType = column.filterType ?? 'text';
-
-  if (filterType === 'number') {
-    // 注記(記述子化): commit を通った number は上の記述子分岐で処理されます。ここは
-    //   生文字列 number 値(未移行 / 外部 hydrate)のための後方互換フォールバックです。
-    return (row) => applyNumberFilter(getCellValue(row, column), filterValue);
-  }
-
-  if (filterType === 'select') {
-    const expectedValue = String(filterValue ?? '');
-    return (row) => String(getCellValue(row, column) ?? '') === expectedValue;
-  }
-
-  // text / date / custom(filterFn なし)は従来どおり部分一致です。
-  const normalizedFilter = String(filterValue ?? '').trim().toLowerCase();
-  return (row) =>
-    String(getCellValue(row, column) ?? '')
-      .toLowerCase()
-      .includes(normalizedFilter);
-};
-
-// ────────────────────────────────────────────────
-// 追加(DS-1 / index ベースパイプライン): order(RowOrder)を受けて order を返すフィルタ群。
-//   本体のフィルタ経路はこの index 版に一本化済みです(DS-2 で差し替え、
-//   旧オブジェクト配列版は DS-3-8 で削除)。いずれも「合格行を元の相対順で詰め直す」処理で、
-//   入出力が {row,...}[] ではなく元 rows + index 列(Int32Array)である点が要点です。
-//   「全件通過」のときは同一参照(引数 order)を返し、下流 useMemo のスキップを最大化します
-//   (.filter は全通過でも新配列を返すため、参照節約という点でも改善です)。
-// ────────────────────────────────────────────────
-
-// 追加(DS-1): グローバルフィルタの index 版です(columns.some の部分一致)。
-//   filter 文字列が空なら同一参照を返します。
-export const filterOrderByGlobalText = <T,>(
-  rows: T[],
-  order: RowOrder,
-  columns: GridColumn<T>[],
-  globalText: string,
-): RowOrder => {
-  const normalizedFilter = globalText.trim().toLowerCase();
-  if (!normalizedFilter) {
-    return order;
-  }
-
-  const length = order.length;
-  const columnCount = columns.length;
-  const result = new Int32Array(length);
-  let count = 0;
-
-  for (let pos = 0; pos < length; pos += 1) {
-    const sourceIndex = order[pos];
-    const row = rows[sourceIndex];
-    let matched = false;
-    for (let c = 0; c < columnCount; c += 1) {
-      const value = getCellValue(row, columns[c]);
-      if (String(value ?? '').toLowerCase().includes(normalizedFilter)) {
-        matched = true;
-        break;
-      }
-    }
-    if (matched) {
-      result[count] = sourceIndex;
-      count += 1;
-    }
-  }
-
-  // 全件通過なら参照を変えません(no-op スキップ最大化)。
-  if (count === length) {
-    return order;
-  }
-  // 余剰バッファを抱えないよう、右サイズへ slice(コピー)します。
-  return result.slice(0, count);
-};
-
-// 追加(DS-1): 列フィルタの index 版です(有効フィルタの predicates.every)。
-//   事前コンパイルは compileSingleColumnFilter を再利用します
-//   (text / number / select / set / filterFn の判定は単一実装)。
-//   有効フィルタが 0 件なら同一参照を返します。
-export const filterOrderByColumns = <T,>(
-  rows: T[],
-  order: RowOrder,
-  columns: GridColumn<T>[],
-  columnFilters: Record<string, unknown>,
-): RowOrder => {
-  const predicates: CompiledColumnFilterPredicate<T>[] = [];
-  for (const column of columns) {
-    const predicate = compileSingleColumnFilter(
-      column,
-      columnFilters[column.key],
-    );
-    if (predicate) {
-      predicates.push(predicate);
-    }
-  }
-
-  if (predicates.length === 0) {
-    return order;
-  }
-
-  const length = order.length;
-  const predicateCount = predicates.length;
-  const result = new Int32Array(length);
-  let count = 0;
-
-  for (let pos = 0; pos < length; pos += 1) {
-    const sourceIndex = order[pos];
-    const row = rows[sourceIndex];
-    let ok = true;
-    for (let p = 0; p < predicateCount; p += 1) {
-      if (!predicates[p](row)) {
-        ok = false;
-        break;
-      }
-    }
-    if (ok) {
-      result[count] = sourceIndex;
-      count += 1;
-    }
-  }
-
-  if (count === length) {
-    return order;
-  }
-  return result.slice(0, count);
-};
-</file>
-
 <file path="src/components/spreadsheet-grid/model/gridActions.ts">
 import type { CellCoord, GridSortEntry } from './gridTypes';
 
@@ -7010,6 +6660,418 @@ export const gridBarClearButtonStyle: CSSProperties = {
   fontSize: 12,
   lineHeight: 1,
   whiteSpace: 'nowrap',
+};
+</file>
+
+<file path="src/components/spreadsheet-grid/logic/filtering.ts">
+import type { GridColumn, SetColumnFilterValue } from '../model/gridTypes';
+import { getCellValue } from '../utils/permissions';
+
+// 追加(DS-1 / index ベースパイプライン): 「ビュー順に並んだ元 rows の index 列」です。
+//   オブジェクト配列({row, sourceIndex, ...})を各段で割り当て直す従来方式に代えて、
+//   フィルタ/ソートはこの index 列(Int32Array)だけを生成・受け渡しします。
+//   - 1,000,000 行でも 4MB(= 4byte × N)に収まり、割り当て/GC が行オブジェクト方式から桁で下がります。
+//   - 将来 Web Worker へ渡す際に transferable(ゼロコピー)になります。
+//   - ビュー位置 i の元行は rows[order[i]] で引きます(この対応付けが後段のシームの土台)。
+//   DS-1 は純関数の追加のみで、配線(SpreadsheetGrid 側のチェーン差し替え)は DS-2 で行います。
+export type RowOrder = Int32Array;
+
+// 追加(DS-1): 恒等 order [0, 1, ..., rowCount-1] を生成します(パイプラインの起点)。
+export const createSourceOrder = (rowCount: number): RowOrder => {
+  const order = new Int32Array(rowCount);
+  for (let i = 0; i < rowCount; i += 1) {
+    order[i] = i;
+  }
+  return order;
+};
+
+// 追加(12-A): set フィルター値の type guard です。
+export const isSetColumnFilterValue = (
+  value: unknown,
+): value is SetColumnFilterValue =>
+  typeof value === 'object' &&
+  value !== null &&
+  (value as SetColumnFilterValue).kind === 'set' &&
+  Array.isArray((value as SetColumnFilterValue).values);
+
+// 追加(12-A): 列フィルター値が「有効」かを判定する共通 helper です。
+// 変更理由: 従来は GridHeaderRow(フィルター済みバッジ) / gridBarHelpers(有効件数) /
+//   列フィルタの適用処理がそれぞれ String(value).trim() で判定していました。
+//   set フィルター値はオブジェクトのため String() 判定が成立しません
+//   (空配列 = 全行除外でも「有効」と数える必要があります)。
+//   有効判定をここへ一元化し、3 箇所すべてが同じ規則を共有します。
+//   set 以外は従来どおり「非空文字列のみ有効」で挙動等価です。
+export const isActiveColumnFilterValue = (value: unknown): boolean => {
+  if (isSetColumnFilterValue(value)) {
+    // 注記: 全選択時は reducer 側で clearColumn 済みのため、値が存在する時点で有効です。
+    return true;
+  }
+  // 追加(記述子化 / number): number 記述子は buildNumberColumnFilterValue で
+  //   raw 非空のときだけ生成されるため、存在する時点で有効です(set と同じ規則)。
+  if (isNumberColumnFilterValue(value)) {
+    return true;
+  }
+  return String(value ?? '').trim().length > 0;
+};
+
+// 追加: number フィルターの解釈結果です。
+export type ParsedNumberFilter =
+  | {
+      mode: 'comparison';
+      operator: '>' | '>=' | '<' | '<=' | '=';
+      value: number;
+    }
+  | {
+      mode: 'range';
+      min: number;
+      max: number;
+    };
+
+// 追加: number フィルター式を解釈します。
+export const parseNumberFilterExpression = (
+  rawValue: string,
+): ParsedNumberFilter | null => {
+  const normalized = rawValue.trim();
+  if (!normalized) {
+    return null;
+  }
+
+  const rangeMatch = normalized.match(
+    /^(-?\d+(?:\.\d+)?)\s*\.\.\s*(-?\d+(?:\.\d+)?)$/,
+  );
+  if (rangeMatch) {
+    const first = Number(rangeMatch[1]);
+    const second = Number(rangeMatch[2]);
+    if (!Number.isFinite(first) || !Number.isFinite(second)) {
+      return null;
+    }
+    return {
+      mode: 'range',
+      min: Math.min(first, second),
+      max: Math.max(first, second),
+    };
+  }
+
+  const comparisonMatch = normalized.match(
+    /^(<=|>=|=|<|>)?\s*(-?\d+(?:\.\d+)?)$/,
+  );
+  if (!comparisonMatch) {
+    return null;
+  }
+
+  return {
+    mode: 'comparison',
+    operator: (comparisonMatch[1] ?? '=') as '>' | '>=' | '<' | '<=' | '=',
+    value: Number(comparisonMatch[2]),
+  };
+};
+
+// 追加(記述子化 / number): number フィルターのタグ付き記述子です。
+//   set({ kind:'set' })に続く 2 種目の判別共用体メンバーで、columnFilters[key] に
+//   この形が入っているときだけ「コンパイル済み number フィルター」が有効です。
+//   - raw   : ユーザー入力(trim 済み)。再オープン時の draft seed / 現在値表示 /
+//             式として解釈不可だった場合の contains フォールバック needle に使います。
+//   - parsed: 式の解釈結果。null = 解釈不可(→ raw で contains)。従来 applyNumberFilter が
+//             行ループ内で毎回行っていた parse を「commit 時 1 回」へ前倒しするための field です。
+//   注記: text / select / date は本バッチでは生文字列のまま据え置きます(後続で同じ型へ寄せる)。
+export type NumberColumnFilterValue = {
+  kind: 'number';
+  raw: string;
+  parsed: ParsedNumberFilter | null;
+};
+
+// 追加(記述子化 / number): number 記述子の type guard です(set と同型)。
+export const isNumberColumnFilterValue = (
+  value: unknown,
+): value is NumberColumnFilterValue =>
+  typeof value === 'object' &&
+  value !== null &&
+  (value as NumberColumnFilterValue).kind === 'number';
+
+// 追加(記述子化 / number): 生入力から number 記述子を構築します。
+//   - trim 後が空なら null(= フィルターなしへ正規化。呼び出し側で clearColumn 相当に倒す)。
+//   - parse は parseNumberFilterExpression 1 回のみ。挙動は従来 applyNumberFilter の
+//     「trim → parse → 不可なら contains」と厳密に等価です(raw は trim 済みを保持)。
+export const buildNumberColumnFilterValue = (
+  rawInput: string,
+): NumberColumnFilterValue | null => {
+  const raw = rawInput.trim();
+  if (!raw) {
+    return null;
+  }
+  return { kind: 'number', raw, parsed: parseNumberFilterExpression(raw) };
+};
+
+// 追加(記述子化): 列フィルター値を「テキスト入力の編集用文字列」へ整形します。
+//   popover 再オープン時の draft seed の単一窓口です(従来は呼び出し側で String(value) 直書き)。
+//   - number 記述子 → raw(式そのもの)。
+//   - それ以外(text/select/date の生文字列等)→ 従来どおり String(value ?? '')。
+//   set はチェックボックス UI のため text 入力 draft を使わず、ここへは到達しません。
+//   後続で text/select も記述子化する際、この関数へ分岐を足せば draft seed 側は無改修で済みます。
+export const columnFilterValueToDraftText = (value: unknown): string => {
+  if (isNumberColumnFilterValue(value)) {
+    return value.raw;
+  }
+  return String(value ?? '');
+};
+
+// 追加: number 型フィルターの評価です。
+export const applyNumberFilter = (
+  cellValue: unknown,
+  filterValue: unknown,
+) => {
+  const normalizedFilter = String(filterValue ?? '').trim();
+  if (!normalizedFilter) {
+    return true;
+  }
+
+  const parsedFilter = parseNumberFilterExpression(normalizedFilter);
+  if (!parsedFilter) {
+    // 追加: 式として解釈できない場合は contains にフォールバックします。
+    return String(cellValue ?? '')
+      .toLowerCase()
+      .includes(normalizedFilter.toLowerCase());
+  }
+
+  const numericCellValue = Number(cellValue);
+  if (!Number.isFinite(numericCellValue)) {
+    return false;
+  }
+
+  if (parsedFilter.mode === 'range') {
+    return (
+      numericCellValue >= parsedFilter.min &&
+      numericCellValue <= parsedFilter.max
+    );
+  }
+
+  switch (parsedFilter.operator) {
+    case '>':
+      return numericCellValue > parsedFilter.value;
+    case '>=':
+      return numericCellValue >= parsedFilter.value;
+    case '<':
+      return numericCellValue < parsedFilter.value;
+    case '<=':
+      return numericCellValue <= parsedFilter.value;
+    case '=':
+    default:
+      return numericCellValue === parsedFilter.value;
+  }
+};
+
+// 列フィルターの「行ループ前の事前コンパイル方式」のための型・helper 群です(12-A)。
+//   set フィルターは候補が多い列(例: 品番 5,000 種)でも O(1) 判定にしたく、
+//   行ループの外で一度だけ Set を構築する必要があります。また有効な列フィルターだけを
+//   predicate へ事前コンパイルすることで、行ループは「有効フィルター数 × 行数」に縮小し、
+//   フィルター未設定列ぶんの String(...).trim().toLowerCase() 正規化を省けます
+//   (text / number / select の判定結果は単一実装で一意です)。
+//   現在の利用者は index 版 filterOrderByColumns です
+//   (旧オブジェクト配列版は DS-3-8 で削除しました)。
+type CompiledColumnFilterPredicate<T> = (row: T) => boolean;
+
+// 追加(12-A): 1 列ぶんのフィルター値を predicate へコンパイルします。
+//             無効(未設定)なら null を返し、行ループから除外します。
+const compileSingleColumnFilter = <T,>(
+  column: GridColumn<T>,
+  filterValue: unknown,
+): CompiledColumnFilterPredicate<T> | null => {
+  if (!isActiveColumnFilterValue(filterValue)) {
+    return null;
+  }
+
+  // 注記: 従来どおり column.filterFn を最優先します(set 値が渡るケースも
+  //       利用側 filterFn の責務とし、挙動の優先順位は変えません)。
+  if (column.filterFn) {
+    const filterFn = column.filterFn;
+    return (row) => filterFn(row, filterValue);
+  }
+
+  // 追加(12-A / 反転set): set フィルターは「対象値の Set」を一度だけ構築し、O(1) 照合します。
+  //   values は mode により「選択値(include)」か「非選択値(exclude)」のいずれか(常に小さい側)。
+  //   include: 行値が対象に含まれれば通過 / exclude: 行値が対象に含まれなければ通過。
+  //   注記: スキャン収集列では universe=全行値のため include(S) ≡ exclude(U−S) が成立します。
+  if (isSetColumnFilterValue(filterValue)) {
+    const targetValues = new Set(filterValue.values);
+    if (filterValue.mode === 'exclude') {
+      return (row) => !targetValues.has(String(getCellValue(row, column) ?? ''));
+    }
+    return (row) => targetValues.has(String(getCellValue(row, column) ?? ''));
+  }
+
+  // 追加(記述子化 / number): number 記述子は parse 済みのため、行ループ外で評価器を確定します
+  //   (従来 applyNumberFilter は行ごとに parseNumberFilterExpression を呼んでいた)。
+  //   合否は applyNumberFilter と厳密に等価:
+  //     - parsed=null  → raw で contains(大文字小文字無視)。
+  //     - range        → Number(cell) が有限かつ [min,max]。
+  //     - comparison   → Number(cell) が有限かつ op 比較(= は ===)。
+  //   注記: filterFn を持つ列は上の filterFn 分岐が優先するため、ここへは到達しません
+  //         (その場合 filterFn は本記述子オブジェクトを受け取ります。set と同じ契約)。
+  if (isNumberColumnFilterValue(filterValue)) {
+    const parsed = filterValue.parsed;
+    if (parsed === null) {
+      const needle = filterValue.raw.toLowerCase();
+      return (row) =>
+        String(getCellValue(row, column) ?? '')
+          .toLowerCase()
+          .includes(needle);
+    }
+    if (parsed.mode === 'range') {
+      const { min, max } = parsed;
+      return (row) => {
+        const numericCellValue = Number(getCellValue(row, column));
+        return (
+          Number.isFinite(numericCellValue) &&
+          numericCellValue >= min &&
+          numericCellValue <= max
+        );
+      };
+    }
+    const { operator, value } = parsed;
+    return (row) => {
+      const numericCellValue = Number(getCellValue(row, column));
+      if (!Number.isFinite(numericCellValue)) {
+        return false;
+      }
+      switch (operator) {
+        case '>':
+          return numericCellValue > value;
+        case '>=':
+          return numericCellValue >= value;
+        case '<':
+          return numericCellValue < value;
+        case '<=':
+          return numericCellValue <= value;
+        case '=':
+        default:
+          return numericCellValue === value;
+      }
+    };
+  }
+
+  const filterType = column.filterType ?? 'text';
+
+  if (filterType === 'number') {
+    // 注記(記述子化): commit を通った number は上の記述子分岐で処理されます。ここは
+    //   生文字列 number 値(未移行 / 外部 hydrate)のための後方互換フォールバックです。
+    return (row) => applyNumberFilter(getCellValue(row, column), filterValue);
+  }
+
+  if (filterType === 'select') {
+    const expectedValue = String(filterValue ?? '');
+    return (row) => String(getCellValue(row, column) ?? '') === expectedValue;
+  }
+
+  // text / date / custom(filterFn なし)は従来どおり部分一致です。
+  const normalizedFilter = String(filterValue ?? '').trim().toLowerCase();
+  return (row) =>
+    String(getCellValue(row, column) ?? '')
+      .toLowerCase()
+      .includes(normalizedFilter);
+};
+
+// ────────────────────────────────────────────────
+// 追加(DS-1 / index ベースパイプライン): order(RowOrder)を受けて order を返すフィルタ群。
+//   本体のフィルタ経路はこの index 版に一本化済みです(DS-2 で差し替え、
+//   旧オブジェクト配列版は DS-3-8 で削除)。いずれも「合格行を元の相対順で詰め直す」処理で、
+//   入出力が {row,...}[] ではなく元 rows + index 列(Int32Array)である点が要点です。
+//   「全件通過」のときは同一参照(引数 order)を返し、下流 useMemo のスキップを最大化します
+//   (.filter は全通過でも新配列を返すため、参照節約という点でも改善です)。
+// ────────────────────────────────────────────────
+
+// 追加(DS-1): グローバルフィルタの index 版です(columns.some の部分一致)。
+//   filter 文字列が空なら同一参照を返します。
+export const filterOrderByGlobalText = <T,>(
+  rows: T[],
+  order: RowOrder,
+  columns: GridColumn<T>[],
+  globalText: string,
+): RowOrder => {
+  const normalizedFilter = globalText.trim().toLowerCase();
+  if (!normalizedFilter) {
+    return order;
+  }
+
+  const length = order.length;
+  const columnCount = columns.length;
+  const result = new Int32Array(length);
+  let count = 0;
+
+  for (let pos = 0; pos < length; pos += 1) {
+    const sourceIndex = order[pos];
+    const row = rows[sourceIndex];
+    let matched = false;
+    for (let c = 0; c < columnCount; c += 1) {
+      const value = getCellValue(row, columns[c]);
+      if (String(value ?? '').toLowerCase().includes(normalizedFilter)) {
+        matched = true;
+        break;
+      }
+    }
+    if (matched) {
+      result[count] = sourceIndex;
+      count += 1;
+    }
+  }
+
+  // 全件通過なら参照を変えません(no-op スキップ最大化)。
+  if (count === length) {
+    return order;
+  }
+  // 余剰バッファを抱えないよう、右サイズへ slice(コピー)します。
+  return result.slice(0, count);
+};
+
+// 追加(DS-1): 列フィルタの index 版です(有効フィルタの predicates.every)。
+//   事前コンパイルは compileSingleColumnFilter を再利用します
+//   (text / number / select / set / filterFn の判定は単一実装)。
+//   有効フィルタが 0 件なら同一参照を返します。
+export const filterOrderByColumns = <T,>(
+  rows: T[],
+  order: RowOrder,
+  columns: GridColumn<T>[],
+  columnFilters: Record<string, unknown>,
+): RowOrder => {
+  const predicates: CompiledColumnFilterPredicate<T>[] = [];
+  for (const column of columns) {
+    const predicate = compileSingleColumnFilter(
+      column,
+      columnFilters[column.key],
+    );
+    if (predicate) {
+      predicates.push(predicate);
+    }
+  }
+
+  if (predicates.length === 0) {
+    return order;
+  }
+
+  const length = order.length;
+  const predicateCount = predicates.length;
+  const result = new Int32Array(length);
+  let count = 0;
+
+  for (let pos = 0; pos < length; pos += 1) {
+    const sourceIndex = order[pos];
+    const row = rows[sourceIndex];
+    let ok = true;
+    for (let p = 0; p < predicateCount; p += 1) {
+      if (!predicates[p](row)) {
+        ok = false;
+        break;
+      }
+    }
+    if (ok) {
+      result[count] = sourceIndex;
+      count += 1;
+    }
+  }
+
+  if (count === length) {
+    return order;
+  }
+  return result.slice(0, count);
 };
 </file>
 
@@ -8876,271 +8938,6 @@ export const useGridPointerInteractions = <T,>({
 export default useGridPointerInteractions;
 </file>
 
-<file path="src/components/spreadsheet-grid/logic/sorting.ts">
-import type { GridColumn, GridSortState } from '../model/gridTypes';
-import { getCellValue } from '../utils/permissions';
-import type { RowOrder } from './filtering';
-
-// 追加(DS-1 / perf): 文字列比較用の共有コレーターです。
-//   従来は compareUnknownValues 内で String.prototype.localeCompare(_, 'ja', opts) を
-//   ペアごとに呼んでおり、これが文字列ソートの致命的なボトルネックでした
-//   (20 万行・文字列キーの実測で約 7.5 秒)。同一オプションの Intl.Collator を
-//   モジュールスコープで 1 度だけ生成して使い回すと、照合順序は localeCompare と
-//   等価のまま約 30 倍高速になります(同条件で約 0.25 秒)。
-//   仕様上 String.prototype.localeCompare(that, 'ja', opts) は
-//   new Intl.Collator('ja', opts).compare(this, that) と同じ照合(符号が一致)です。
-const STRING_COLLATOR = new Intl.Collator('ja', {
-  numeric: true,
-  sensitivity: 'base',
-});
-
-// 追加: 値比較を行います。数値化できるものは数値比較し、
-//       それ以外は文字列比較へフォールバックします。
-// 変更(DS-1 / perf): 文字列フォールバックを共有 Intl.Collator 経由にしました
-//   (順序は従来と等価)。数値判定・数値パスは不変です。
-export const compareUnknownValues = (left: unknown, right: unknown) => {
-  const leftNumber = Number(left);
-  const rightNumber = Number(right);
-  const bothNumeric =
-    Number.isFinite(leftNumber) && Number.isFinite(rightNumber);
-
-  if (bothNumeric) {
-    return leftNumber - rightNumber;
-  }
-
-  return STRING_COLLATOR.compare(String(left ?? ''), String(right ?? ''));
-};
-
-// 追加(MS-2 / マルチソート本体): ソートエントリ配列の「次状態」を返す純関数です。
-//   発火口を 1 か所に集約し、列メニュー(単一置換)とヘッダー Shift+click(トグル)で
-//   同じロジックを共有します。入力配列は破壊せず、常に新しい配列を返します。
-//
-//   additive=false (列メニュー / 単一置換):
-//     - 現在がちょうど [{columnKey, direction}] の「単一・同方向」なら [](解除)。
-//     - それ以外は [{columnKey, direction}] へ置換します(他列のソートは捨てます)。
-//     ⇒ MS-1 の handleColumnMenuSortChange の inline 判定と完全同値です。
-//
-//   additive=true (ヘッダー Shift+click / トグル):
-//     - 当該列が未登録            → 末尾(最低優先)に {columnKey, direction} を追加。
-//     - 登録済みで direction が別  → 位置を保ったまま direction を更新。
-//     - 登録済みで direction が同じ → 当該列のエントリのみ除去。
-//   呼び出し側(controller)が direction を
-//     existingDir ? 'desc' : 'asc'
-//   で決めることで、ユーザー体験としては none → asc → desc → none の
-//   サイクルになります(desc のときは direction='desc' を渡し、上記「同方向 → 除去」で
-//   消えます)。
-export const nextSortEntries = (
-  current: GridSortState,
-  columnKey: string,
-  direction: 'asc' | 'desc',
-  additive: boolean,
-): GridSortState => {
-  if (!additive) {
-    const isSameSingle =
-      current.length === 1 &&
-      current[0].columnKey === columnKey &&
-      current[0].direction === direction;
-    return isSameSingle ? [] : [{ columnKey, direction }];
-  }
-
-  const index = current.findIndex((entry) => entry.columnKey === columnKey);
-  if (index === -1) {
-    // 未登録 → 末尾(最低優先)に追加。
-    return [...current, { columnKey, direction }];
-  }
-  if (current[index].direction !== direction) {
-    // 別方向 → 位置を保ったまま方向だけ更新。
-    return current.map((entry, i) =>
-      i === index ? { columnKey, direction } : entry,
-    );
-  }
-  // 同方向 → 当該列のみ除去(残りの優先順位は維持)。
-  return current.filter((_, i) => i !== index);
-};
-
-// 追加(MS-3-1 / 並び替え管理パネル): 管理パネルの明示編集用の純関数群です。
-//   nextSortEntries(additive=true) は「同方向＝除去」のトグル意味論で Shift ジェスチャ
-//   向けのため、ドロップダウン編集(同方向の再選択は no-op であるべき)・列差し替え・
-//   優先順位の入れ替えには素直に乗りません。そこで管理パネル用に下記を分離します。
-//   - すべて入力非破壊(常に新しい配列を返す)・単体テスト可で、nextSortEntries と同じ規約です。
-//   - 単一ソース(uiState.sort)は不変。呼び出し側(SpreadsheetGrid)が結果を
-//     setSort / clearSort へ流します(reducer / actions は不変)。
-//
-// addSortEntry: 末尾(最低優先)へレベルを追加します。
-//   既に同じ列が含まれている場合は何もしません(パネル側は未使用列だけを「追加」候補に
-//   出すため通常は起きませんが、純関数としての不変条件『1 列につき高々 1 エントリ』を守ります)。
-export const addSortEntry = (
-  current: GridSortState,
-  columnKey: string,
-  direction: 'asc' | 'desc',
-): GridSortState => {
-  if (current.some((entry) => entry.columnKey === columnKey)) {
-    return current;
-  }
-  return [...current, { columnKey, direction }];
-};
-
-// setSortEntryDirection: 指定レベルの方向を「冪等にセット」します(トグルしません)。
-//   index 範囲外や同方向(変化なし)のときは元配列をそのまま返します(無駄な参照変化を抑止)。
-export const setSortEntryDirection = (
-  current: GridSortState,
-  index: number,
-  direction: 'asc' | 'desc',
-): GridSortState => {
-  if (index < 0 || index >= current.length) {
-    return current;
-  }
-  if (current[index].direction === direction) {
-    return current;
-  }
-  return current.map((entry, i) =>
-    i === index ? { ...entry, direction } : entry,
-  );
-};
-
-// setSortEntryColumn: 指定レベルの対象列を差し替えます(Excel のレベル列変更相当)。
-//   - 方向は当該レベルのものを維持します。
-//   - 差し替え先の列が他レベルで既に使われている場合は、その他レベルを除去して
-//     『1 列につき高々 1 エントリ』を保ちます(当該レベルの位置・優先順位は維持)。
-//     パネル側は他レベルで使用中の列を選択肢から除くため通常は起きませんが、保険です。
-//   - index 範囲外、または変化なし(同一列)のときは元配列をそのまま返します。
-export const setSortEntryColumn = (
-  current: GridSortState,
-  index: number,
-  columnKey: string,
-): GridSortState => {
-  if (index < 0 || index >= current.length) {
-    return current;
-  }
-  if (current[index].columnKey === columnKey) {
-    return current;
-  }
-  return current
-    .map((entry, i) => (i === index ? { ...entry, columnKey } : entry))
-    .filter((entry, i) => i === index || entry.columnKey !== columnKey);
-};
-
-// removeSortEntryAt: 指定レベルを除去します(残りの優先順位は維持)。
-//   index 範囲外のときは元配列をそのまま返します。
-export const removeSortEntryAt = (
-  current: GridSortState,
-  index: number,
-): GridSortState => {
-  if (index < 0 || index >= current.length) {
-    return current;
-  }
-  return current.filter((_, i) => i !== index);
-};
-
-// 追加(MS-3-2 / 優先順位 DnD): 指定レベルを from から to へ移動します(配列 move)。
-//   - 標準的な「配列 move」意味論です。to は除去後の挿入先 index(0..length-1)。
-//     ドロップ位置(挿入スロット 0..length)からの -1 補正は呼び出し側(管理パネルの
-//     finishDrag)が担います。ColumnChooser で computeSectionReorderedKeys が補正を持ち、
-//     配列プリミティブを汚さない役割分担と同じです。
-//   - すべて入力非破壊(常に新しい配列を返す)・単体テスト可で、他の sort 純関数と同規約です。
-//   - from / to が範囲外、または from === to(動かない)のときは元配列をそのまま返します
-//     (no-op ドラッグで参照を変えないため。setSort へ流しても再レンダーを誘発しません)。
-export const moveSortEntry = (
-  current: GridSortState,
-  from: number,
-  to: number,
-): GridSortState => {
-  if (from < 0 || from >= current.length || to < 0 || to >= current.length) {
-    return current;
-  }
-  if (from === to) {
-    return current;
-  }
-  const next = [...current];
-  const [moved] = next.splice(from, 1);
-  next.splice(to, 0, moved);
-  return next;
-};
-
-// 追加(DS-1 / index ベースパイプライン): order(RowOrder) を受け、並べ替えた order を
-//   返す多列ソートです(本体のソート経路はこれに一本化済み。旧オブジェクト配列版は
-//   DS-3-8 で削除)。規約:
-//     - 多列の優先順位適用(resolved を先頭から比較、0 のとき次のキーへ)、
-//     - 未解決(列が見つからない)エントリのスキップ、有効キー 0 件なら元 order を返す、
-//     - 最終タイブレークは元 source index(= order[pos])で安定化、
-//   sort が空 / 有効キー 0 件のときは同一参照を返します。
-//
-//   パフォーマンス上の要点(decorate-sort-undecorate):
-//     - 比較子の内側で getCellValue を毎回呼ぶ素朴な実装だと、呼び出し回数が
-//       O(行数 × log 行数 × ソート列数) に膨らみます。
-//     - ここではアクティブ sort 列ごとに「order 各位置のセル値」を事前に 1 回だけ
-//       取り出して配列化(decorate)し、比較は decorate 済み値に対して行います。
-//       getCellValue の呼び出しは O(行数 × ソート列数) に下がります。
-//     - 比較関数 compareUnknownValues は据え置きのため、数値/文字列が混在する列でも
-//       結果は一意です(列ごとに型を決め打ちする最適化はしていません)。
-//     - 実際の sort 対象は「位置(0..length-1)の number[]」で、確定後に
-//       result[i] = order[positions[i]] で undecorate して Int32Array へ書き戻します。
-export const sortOrder = <T,>(
-  rows: T[],
-  order: RowOrder,
-  columns: GridColumn<T>[],
-  sort: GridSortState,
-): RowOrder => {
-  if (sort.length === 0) {
-    return order;
-  }
-
-  // 列解決はソート前に 1 回だけ(比較関数内で find を毎回呼ばない)。
-  const resolved = sort
-    .map((entry) => {
-      const column = columns.find((item) => item.key === entry.columnKey);
-      return column
-        ? { column, multiplier: entry.direction === 'asc' ? 1 : -1 }
-        : null;
-    })
-    .filter(
-      (item): item is { column: GridColumn<T>; multiplier: number } =>
-        item !== null,
-    );
-
-  if (resolved.length === 0) {
-    return order;
-  }
-
-  const length = order.length;
-  const columnCount = resolved.length;
-
-  // decorate: アクティブ sort 列ごとに、order 各位置のセル値を 1 回だけ取り出します。
-  const keyColumns: unknown[][] = resolved.map(({ column }) => {
-    const keys = new Array<unknown>(length);
-    for (let pos = 0; pos < length; pos += 1) {
-      keys[pos] = getCellValue(rows[order[pos]], column);
-    }
-    return keys;
-  });
-  const multipliers = resolved.map((item) => item.multiplier);
-
-  // 位置(0..length-1)を並べ替えます。比較は decorate 済みキー、
-  // タイブレークは元 source index(order[a]/order[b])で安定化します。
-  const positions = new Array<number>(length);
-  for (let i = 0; i < length; i += 1) {
-    positions[i] = i;
-  }
-
-  positions.sort((a, b) => {
-    for (let c = 0; c < columnCount; c += 1) {
-      const compared = compareUnknownValues(keyColumns[c][a], keyColumns[c][b]);
-      if (compared !== 0) {
-        return compared * multipliers[c];
-      }
-    }
-    return order[a] - order[b];
-  });
-
-  // undecorate: 並べ替えた位置を元 source index へ戻して Int32Array を組み立てます。
-  const result = new Int32Array(length);
-  for (let i = 0; i < length; i += 1) {
-    result[i] = order[positions[i]];
-  }
-  return result;
-};
-</file>
-
 <file path="src/components/spreadsheet-grid/model/gridReducer.ts">
 import type { GridUiAction } from './gridActions';
 import type { GridColumn, GridUiState } from './gridTypes';
@@ -10366,6 +10163,273 @@ export const buildGridDerivedSummary = <T,>(
 };
 </file>
 
+<file path="src/components/spreadsheet-grid/logic/sorting.ts">
+import type { GridColumn, GridSortState } from '../model/gridTypes';
+import { getCellValue } from '../utils/permissions';
+import type { RowOrder } from './filtering';
+
+// 追加(DS-1 / perf): 文字列比較用の共有コレーターです。
+//   従来は compareUnknownValues 内で String.prototype.localeCompare(_, 'ja', opts) を
+//   ペアごとに呼んでおり、これが文字列ソートの致命的なボトルネックでした
+//   (20 万行・文字列キーの実測で約 7.5 秒)。同一オプションの Intl.Collator を
+//   モジュールスコープで 1 度だけ生成して使い回すと、照合順序は localeCompare と
+//   等価のまま約 30 倍高速になります(同条件で約 0.25 秒)。
+//   仕様上 String.prototype.localeCompare(that, 'ja', opts) は
+//   new Intl.Collator('ja', opts).compare(this, that) と同じ照合(符号が一致)です。
+// 変更(Set Filter perf): getColumnSelectOptions の候補ソートからも再利用するため
+//   export します(照合オプションは不変・並び順は従来と等価)。
+export const STRING_COLLATOR = new Intl.Collator('ja', {
+  numeric: true,
+  sensitivity: 'base',
+});
+
+// 追加: 値比較を行います。数値化できるものは数値比較し、
+//       それ以外は文字列比較へフォールバックします。
+// 変更(DS-1 / perf): 文字列フォールバックを共有 Intl.Collator 経由にしました
+//   (順序は従来と等価)。数値判定・数値パスは不変です。
+export const compareUnknownValues = (left: unknown, right: unknown) => {
+  const leftNumber = Number(left);
+  const rightNumber = Number(right);
+  const bothNumeric =
+    Number.isFinite(leftNumber) && Number.isFinite(rightNumber);
+
+  if (bothNumeric) {
+    return leftNumber - rightNumber;
+  }
+
+  return STRING_COLLATOR.compare(String(left ?? ''), String(right ?? ''));
+};
+
+// 追加(MS-2 / マルチソート本体): ソートエントリ配列の「次状態」を返す純関数です。
+//   発火口を 1 か所に集約し、列メニュー(単一置換)とヘッダー Shift+click(トグル)で
+//   同じロジックを共有します。入力配列は破壊せず、常に新しい配列を返します。
+//
+//   additive=false (列メニュー / 単一置換):
+//     - 現在がちょうど [{columnKey, direction}] の「単一・同方向」なら [](解除)。
+//     - それ以外は [{columnKey, direction}] へ置換します(他列のソートは捨てます)。
+//     ⇒ MS-1 の handleColumnMenuSortChange の inline 判定と完全同値です。
+//
+//   additive=true (ヘッダー Shift+click / トグル):
+//     - 当該列が未登録            → 末尾(最低優先)に {columnKey, direction} を追加。
+//     - 登録済みで direction が別  → 位置を保ったまま direction を更新。
+//     - 登録済みで direction が同じ → 当該列のエントリのみ除去。
+//   呼び出し側(controller)が direction を
+//     existingDir ? 'desc' : 'asc'
+//   で決めることで、ユーザー体験としては none → asc → desc → none の
+//   サイクルになります(desc のときは direction='desc' を渡し、上記「同方向 → 除去」で
+//   消えます)。
+export const nextSortEntries = (
+  current: GridSortState,
+  columnKey: string,
+  direction: 'asc' | 'desc',
+  additive: boolean,
+): GridSortState => {
+  if (!additive) {
+    const isSameSingle =
+      current.length === 1 &&
+      current[0].columnKey === columnKey &&
+      current[0].direction === direction;
+    return isSameSingle ? [] : [{ columnKey, direction }];
+  }
+
+  const index = current.findIndex((entry) => entry.columnKey === columnKey);
+  if (index === -1) {
+    // 未登録 → 末尾(最低優先)に追加。
+    return [...current, { columnKey, direction }];
+  }
+  if (current[index].direction !== direction) {
+    // 別方向 → 位置を保ったまま方向だけ更新。
+    return current.map((entry, i) =>
+      i === index ? { columnKey, direction } : entry,
+    );
+  }
+  // 同方向 → 当該列のみ除去(残りの優先順位は維持)。
+  return current.filter((_, i) => i !== index);
+};
+
+// 追加(MS-3-1 / 並び替え管理パネル): 管理パネルの明示編集用の純関数群です。
+//   nextSortEntries(additive=true) は「同方向＝除去」のトグル意味論で Shift ジェスチャ
+//   向けのため、ドロップダウン編集(同方向の再選択は no-op であるべき)・列差し替え・
+//   優先順位の入れ替えには素直に乗りません。そこで管理パネル用に下記を分離します。
+//   - すべて入力非破壊(常に新しい配列を返す)・単体テスト可で、nextSortEntries と同じ規約です。
+//   - 単一ソース(uiState.sort)は不変。呼び出し側(SpreadsheetGrid)が結果を
+//     setSort / clearSort へ流します(reducer / actions は不変)。
+//
+// addSortEntry: 末尾(最低優先)へレベルを追加します。
+//   既に同じ列が含まれている場合は何もしません(パネル側は未使用列だけを「追加」候補に
+//   出すため通常は起きませんが、純関数としての不変条件『1 列につき高々 1 エントリ』を守ります)。
+export const addSortEntry = (
+  current: GridSortState,
+  columnKey: string,
+  direction: 'asc' | 'desc',
+): GridSortState => {
+  if (current.some((entry) => entry.columnKey === columnKey)) {
+    return current;
+  }
+  return [...current, { columnKey, direction }];
+};
+
+// setSortEntryDirection: 指定レベルの方向を「冪等にセット」します(トグルしません)。
+//   index 範囲外や同方向(変化なし)のときは元配列をそのまま返します(無駄な参照変化を抑止)。
+export const setSortEntryDirection = (
+  current: GridSortState,
+  index: number,
+  direction: 'asc' | 'desc',
+): GridSortState => {
+  if (index < 0 || index >= current.length) {
+    return current;
+  }
+  if (current[index].direction === direction) {
+    return current;
+  }
+  return current.map((entry, i) =>
+    i === index ? { ...entry, direction } : entry,
+  );
+};
+
+// setSortEntryColumn: 指定レベルの対象列を差し替えます(Excel のレベル列変更相当)。
+//   - 方向は当該レベルのものを維持します。
+//   - 差し替え先の列が他レベルで既に使われている場合は、その他レベルを除去して
+//     『1 列につき高々 1 エントリ』を保ちます(当該レベルの位置・優先順位は維持)。
+//     パネル側は他レベルで使用中の列を選択肢から除くため通常は起きませんが、保険です。
+//   - index 範囲外、または変化なし(同一列)のときは元配列をそのまま返します。
+export const setSortEntryColumn = (
+  current: GridSortState,
+  index: number,
+  columnKey: string,
+): GridSortState => {
+  if (index < 0 || index >= current.length) {
+    return current;
+  }
+  if (current[index].columnKey === columnKey) {
+    return current;
+  }
+  return current
+    .map((entry, i) => (i === index ? { ...entry, columnKey } : entry))
+    .filter((entry, i) => i === index || entry.columnKey !== columnKey);
+};
+
+// removeSortEntryAt: 指定レベルを除去します(残りの優先順位は維持)。
+//   index 範囲外のときは元配列をそのまま返します。
+export const removeSortEntryAt = (
+  current: GridSortState,
+  index: number,
+): GridSortState => {
+  if (index < 0 || index >= current.length) {
+    return current;
+  }
+  return current.filter((_, i) => i !== index);
+};
+
+// 追加(MS-3-2 / 優先順位 DnD): 指定レベルを from から to へ移動します(配列 move)。
+//   - 標準的な「配列 move」意味論です。to は除去後の挿入先 index(0..length-1)。
+//     ドロップ位置(挿入スロット 0..length)からの -1 補正は呼び出し側(管理パネルの
+//     finishDrag)が担います。ColumnChooser で computeSectionReorderedKeys が補正を持ち、
+//     配列プリミティブを汚さない役割分担と同じです。
+//   - すべて入力非破壊(常に新しい配列を返す)・単体テスト可で、他の sort 純関数と同規約です。
+//   - from / to が範囲外、または from === to(動かない)のときは元配列をそのまま返します
+//     (no-op ドラッグで参照を変えないため。setSort へ流しても再レンダーを誘発しません)。
+export const moveSortEntry = (
+  current: GridSortState,
+  from: number,
+  to: number,
+): GridSortState => {
+  if (from < 0 || from >= current.length || to < 0 || to >= current.length) {
+    return current;
+  }
+  if (from === to) {
+    return current;
+  }
+  const next = [...current];
+  const [moved] = next.splice(from, 1);
+  next.splice(to, 0, moved);
+  return next;
+};
+
+// 追加(DS-1 / index ベースパイプライン): order(RowOrder) を受け、並べ替えた order を
+//   返す多列ソートです(本体のソート経路はこれに一本化済み。旧オブジェクト配列版は
+//   DS-3-8 で削除)。規約:
+//     - 多列の優先順位適用(resolved を先頭から比較、0 のとき次のキーへ)、
+//     - 未解決(列が見つからない)エントリのスキップ、有効キー 0 件なら元 order を返す、
+//     - 最終タイブレークは元 source index(= order[pos])で安定化、
+//   sort が空 / 有効キー 0 件のときは同一参照を返します。
+//
+//   パフォーマンス上の要点(decorate-sort-undecorate):
+//     - 比較子の内側で getCellValue を毎回呼ぶ素朴な実装だと、呼び出し回数が
+//       O(行数 × log 行数 × ソート列数) に膨らみます。
+//     - ここではアクティブ sort 列ごとに「order 各位置のセル値」を事前に 1 回だけ
+//       取り出して配列化(decorate)し、比較は decorate 済み値に対して行います。
+//       getCellValue の呼び出しは O(行数 × ソート列数) に下がります。
+//     - 比較関数 compareUnknownValues は据え置きのため、数値/文字列が混在する列でも
+//       結果は一意です(列ごとに型を決め打ちする最適化はしていません)。
+//     - 実際の sort 対象は「位置(0..length-1)の number[]」で、確定後に
+//       result[i] = order[positions[i]] で undecorate して Int32Array へ書き戻します。
+export const sortOrder = <T,>(
+  rows: T[],
+  order: RowOrder,
+  columns: GridColumn<T>[],
+  sort: GridSortState,
+): RowOrder => {
+  if (sort.length === 0) {
+    return order;
+  }
+
+  // 列解決はソート前に 1 回だけ(比較関数内で find を毎回呼ばない)。
+  const resolved = sort
+    .map((entry) => {
+      const column = columns.find((item) => item.key === entry.columnKey);
+      return column
+        ? { column, multiplier: entry.direction === 'asc' ? 1 : -1 }
+        : null;
+    })
+    .filter(
+      (item): item is { column: GridColumn<T>; multiplier: number } =>
+        item !== null,
+    );
+
+  if (resolved.length === 0) {
+    return order;
+  }
+
+  const length = order.length;
+  const columnCount = resolved.length;
+
+  // decorate: アクティブ sort 列ごとに、order 各位置のセル値を 1 回だけ取り出します。
+  const keyColumns: unknown[][] = resolved.map(({ column }) => {
+    const keys = new Array<unknown>(length);
+    for (let pos = 0; pos < length; pos += 1) {
+      keys[pos] = getCellValue(rows[order[pos]], column);
+    }
+    return keys;
+  });
+  const multipliers = resolved.map((item) => item.multiplier);
+
+  // 位置(0..length-1)を並べ替えます。比較は decorate 済みキー、
+  // タイブレークは元 source index(order[a]/order[b])で安定化します。
+  const positions = new Array<number>(length);
+  for (let i = 0; i < length; i += 1) {
+    positions[i] = i;
+  }
+
+  positions.sort((a, b) => {
+    for (let c = 0; c < columnCount; c += 1) {
+      const compared = compareUnknownValues(keyColumns[c][a], keyColumns[c][b]);
+      if (compared !== 0) {
+        return compared * multipliers[c];
+      }
+    }
+    return order[a] - order[b];
+  });
+
+  // undecorate: 並べ替えた位置を元 source index へ戻して Int32Array を組み立てます。
+  const result = new Int32Array(length);
+  for (let i = 0; i < length; i += 1) {
+    result[i] = order[positions[i]];
+  }
+  return result;
+};
+</file>
+
 <file path="src/App.tsx">
 import { useState } from 'react';
 import SpreadsheetGrid from './components/spreadsheet-grid/SpreadsheetGrid';
@@ -11099,6 +11163,9 @@ export type GridSelectFilterOption = {
 //             判定側(logic/filtering.ts)では Set へ変換して O(1) 照合します。
 export type SetColumnFilterValue = {
   kind: 'set';
+  // 追加(反転set): 既定 'include'(values=選択値)。多数選択時は 'exclude'(values=非選択値のみ)で
+  //   巨大配列の生成・複製・dispatch を回避します。mode 省略時は従来どおり include 扱い(後方互換)。
+  mode?: 'include' | 'exclude';
   values: string[];
 };
 
@@ -11408,6 +11475,9 @@ import {
   removeSortEntryAt,
   // 追加(MS-3-2): 優先順位 DnD の配列 move 純関数です。
   moveSortEntry,
+  // 追加(Set Filter perf / a): 候補ソートを per-call localeCompare から共有 Collator へ
+  //   寄せるために再利用します(DS-1 と同手当て・照合順序等価)。
+  STRING_COLLATOR,
 } from './logic/sorting';
 // 追加(DS-4 ①-(2)): 列幅自動調整を時間分割(async・単一経路)で実行するランナーです。
 //   計測ロジック本体(logic/columnAutosize)はランナー内部で使うため、ここでの直 import は不要です。
@@ -11428,6 +11498,9 @@ import { getCellValue, isCellEditable, setCellValue } from './utils/permissions'
 import ColumnFilterPopover, {
   // 追加(12-A): popover を開いている列の候補メモ化に使う型です。
   type ColumnFilterPopoverOption,
+  // 追加(反転set): set 選択状態 { mode, values } 型と mode 判定ヘルパです。
+  type ColumnFilterSetSelection,
+  isSetValueSelected,
 } from './view/ColumnFilterPopover';
 // 追加(13-A): 列メニュー popover(列固定の切替 UI)です。
 import DefaultGridBottomBar from './view/DefaultGridBottomBar';
@@ -11452,6 +11525,35 @@ import SortManagementPanel, {
 // 追加(12-A): popover 非表示時 / 候補不要な filterType 用の安定空配列です。
 //             useMemo の返り値参照を安定させるため module スコープに置きます。
 const EMPTY_FILTER_OPTIONS: ColumnFilterPopoverOption[] = [];
+
+// 追加(反転set): 小さい側の集合に 1 件 / 複数件を加減する純ヘルパです(巨大側は作りません)。
+const setWith = (base: ReadonlySet<string>, value: string): Set<string> => {
+  const next = new Set(base);
+  next.add(value);
+  return next;
+};
+const setWithout = (base: ReadonlySet<string>, value: string): Set<string> => {
+  const next = new Set(base);
+  next.delete(value);
+  return next;
+};
+const setUnion = (base: ReadonlySet<string>, add: string[]): Set<string> => {
+  const next = new Set(base);
+  for (const value of add) {
+    next.add(value);
+  }
+  return next;
+};
+const setDifference = (
+  base: ReadonlySet<string>,
+  remove: string[],
+): Set<string> => {
+  const next = new Set(base);
+  for (const value of remove) {
+    next.delete(value);
+  }
+  return next;
+};
 
 // 追加: Grid 本体です。
 export function SpreadsheetGrid<T extends object>({
@@ -11806,11 +11908,12 @@ export function SpreadsheetGrid<T extends object>({
         },
         [],
       );
+      // 変更(Set Filter perf / a): per-call localeCompare('ja', opts) は候補が
+      //   30 万件超(品番のような全件ユニーク列)で致命的に遅く、popover 表示遅延の
+      //   主因でした(DS-1 と同症状・20 万件で約 7.5 秒の実測)。共有 Collator の
+      //   compare へ寄せると照合順序は等価のまま約 30 倍高速化します。
       return options.sort((left, right) =>
-        left.label.localeCompare(right.label, 'ja', {
-          numeric: true,
-          sensitivity: 'base',
-        }),
+        STRING_COLLATOR.compare(left.label, right.label),
       );
     },
     [rows],
@@ -11857,7 +11960,7 @@ export function SpreadsheetGrid<T extends object>({
   //   下流チェーン(sorted → filteredRows / SourceIndexes / Keys → 仮想行再構築)が
   //   走り、連続クリック時にチェックボックスの応答がブロックされ得ます。
   //   依存を deferred 値へ差し替えることで、クリック直後の緊急レンダーでは
-  //   チェックボックス表示(openedSetFilterSelectedValues は即時値 uiState を参照)・
+  //   チェックボックス表示(openedSetSelection は即時値 uiState を参照)・
   //   ヘッダーバッジ・bar 件数だけが即時更新され、行の再フィルタは低優先度の
   //   遅延レンダーへ移ります。連続クリック中の中間値計算は中断・破棄され、
   //   最終値での 1 回に収束します。
@@ -12937,16 +13040,38 @@ export function SpreadsheetGrid<T extends object>({
   //   popover を開いたまま親が再レンダーするたび(set フィルター即時適用での再レンダー含む)に
   //   5,000 行スキャン + ソートが再実行されていました。開いている列と行データが
   //   変わらない限り、計算・参照とも再利用します。
+  // 追加(Set Filter perf / b): 候補収集(getColumnSelectOptions)は品番のような
+  //   全件ユニーク列で 30 万件超の reduce + ソートになり、open レンダー内で同期実行すると
+  //   popover の初回 paint がそのぶんブロックされていました(報告された「表示が遅い」の主因)。
+  //   openedFilterColumn を deferred 値経由にして heavy な収集を低優先度レンダーへ逃がし、
+  //   popover の枠は即時に開けるようにします(11-B7 / 12-B と同型)。
+  const deferredFilterColumnForOptions = useDeferredValue(openedFilterColumn);
+
   const openedFilterSelectOptions = useMemo<ColumnFilterPopoverOption[]>(() => {
-    if (!openedFilterColumn) {
+    if (!deferredFilterColumnForOptions) {
       return EMPTY_FILTER_OPTIONS;
     }
-    const filterType = openedFilterColumn.filterType ?? 'text';
+    const filterType = deferredFilterColumnForOptions.filterType ?? 'text';
     if (filterType !== 'select' && filterType !== 'set') {
       return EMPTY_FILTER_OPTIONS;
     }
-    return getColumnSelectOptions(openedFilterColumn);
-  }, [openedFilterColumn, getColumnSelectOptions]);
+    return getColumnSelectOptions(deferredFilterColumnForOptions);
+  }, [deferredFilterColumnForOptions, getColumnSelectOptions]);
+
+  // 追加(Set Filter perf / b): deferred 収集が現在開いている列へ追いついていない間は
+  //   pending とし、popover 側で「集計中…」を表示します(空候補の「ありません」と区別)。
+  //   collection が軽い列(filterOptions 指定の unit/status 等)では deferred が即追従するため
+  //   実質ちらつかず、重い列でのみ可視の待機表示になります。
+  const isFilterOptionsPending =
+    deferredFilterColumnForOptions !== openedFilterColumn;
+
+  // 追加(Set Filter perf / c): 全候補値の集合です。トグル/Select All の Set 初期化で
+  //   30 万件超の options.map(...) 配列を毎クリック確保しないよう、開いた列ごとに 1 度だけ
+  //   生成して使い回します(openedFilterSelectOptions と同ライフサイクル)。
+  const openedFilterAllValues = useMemo<ReadonlySet<string>>(
+    () => new Set(openedFilterSelectOptions.map((option) => option.value)),
+    [openedFilterSelectOptions],
+  );
 
   // 追加(12-A): popover を開いている列の set フィルター選択状態です。
   //             null = 全選択(フィルター未設定)を意味します。
@@ -12954,83 +13079,162 @@ export function SpreadsheetGrid<T extends object>({
     ? uiState.filters.columnFilters[openedFilterColumn.key]
     : undefined;
 
-  const openedSetFilterSelectedValues = useMemo<ReadonlySet<string> | null>(
-    () =>
-      isSetColumnFilterValue(openedSetFilterValue)
-        ? new Set(openedSetFilterValue.values)
-        : null,
-    [openedSetFilterValue],
+  // 追加(反転set): popover を開いている列の set 選択状態 { mode, values }(null = 全選択)。
+  //   values は常に小さい側のみ(include=選択値 / exclude=非選択値)。巨大側は作りません。
+  const openedSetSelection = useMemo<ColumnFilterSetSelection | null>(() => {
+    if (!isSetColumnFilterValue(openedSetFilterValue)) {
+      return null;
+    }
+    return {
+      mode: openedSetFilterValue.mode === 'exclude' ? 'exclude' : 'include',
+      values: new Set(openedSetFilterValue.values),
+    };
+  }, [openedSetFilterValue]);
+
+  // 追加(反転set): filterOptions を明示指定した列は universe が全行値を覆わない可能性があるため
+  //   exclude(反転)を選ばず include 固定にします(集合が小さく反転不要・挙動差も防止)。
+  //   スキャン収集列は universe=全行値で include≡exclude が保証されるため反転可。
+  const openedColumnCanInvert = !(
+    openedFilterColumn?.filterOptions &&
+    openedFilterColumn.filterOptions.length > 0
   );
 
-  // 追加(12-A): set フィルターの選択結果を reducer へ反映します。
-  //             全候補が選択された状態は clearColumn へ正規化し
-  //             「フィルターなし」(ヘッダーバッジ消灯 / 件数 0 扱い)へ戻します。
+  // 追加(反転set): set 選択結果を reducer へ反映します。全選択→clearColumn / 0 件→include{} /
+  //   中間→ハンドラが選んだ mode の小さい側。ハンドラが mode を確定済みのため complement
+  //   (O(total))はここで計算しません。total は候補総数(=universe サイズ)です。
   const commitSetFilterSelection = useCallback(
-    (columnKey: string, nextSelected: Set<string>) => {
-      const isAllSelected = openedFilterSelectOptions.every((option) =>
-        nextSelected.has(option.value),
-      );
-      if (isAllSelected) {
+    (columnKey: string, next: ColumnFilterSetSelection, total: number) => {
+      const selectedCount =
+        next.mode === 'include' ? next.values.size : total - next.values.size;
+      if (selectedCount >= total) {
+        // 全選択(exclude{} 等)は保存せずフィルターなしへ正規化します。
         dispatch(gridActions.clearColumnFilter(columnKey));
+        return;
+      }
+      if (selectedCount <= 0) {
+        // 何も選択されていない状態は include{}(小さい)で表現します(exclude{universe} を作らない)。
+        dispatch(
+          gridActions.setColumnFilter(columnKey, {
+            kind: 'set',
+            mode: 'include',
+            values: [],
+          }),
+        );
         return;
       }
       const nextValue: SetColumnFilterValue = {
         kind: 'set',
-        values: Array.from(nextSelected),
+        mode: next.mode,
+        values: Array.from(next.values),
       };
       dispatch(gridActions.setColumnFilter(columnKey, nextValue));
     },
-    [dispatch, openedFilterSelectOptions],
+    [dispatch],
   );
 
-  // 追加(12-A): チェックボックス 1 件のトグルです(AG Grid Set Filter と同じ即時適用)。
+  // 追加(反転set): チェックボックス 1 件のトグルです(即時適用)。現在の選択 mode を保ったまま
+  //   小さい側へ ±1 します(巨大側を作りません)。null(全選択)からの解除は canInvert 列なら
+  //   exclude{value}、非invert 列(universe が小)なら include{universe∖value} になります。
   const handleSetFilterValueToggle = useCallback(
     (value: string) => {
       if (!filterPopoverState) {
         return;
       }
-      const nextSelected = new Set(
-        openedSetFilterSelectedValues ??
-          openedFilterSelectOptions.map((option) => option.value),
-      );
-      if (nextSelected.has(value)) {
-        nextSelected.delete(value);
+      const total = openedFilterSelectOptions.length;
+      const selection = openedSetSelection;
+      let next: ColumnFilterSetSelection;
+      if (isSetValueSelected(selection, value)) {
+        // value を解除します。
+        if (selection === null) {
+          next = openedColumnCanInvert
+            ? { mode: 'exclude', values: new Set([value]) }
+            : {
+                mode: 'include',
+                values: setWithout(openedFilterAllValues, value),
+              };
+        } else if (selection.mode === 'include') {
+          next = { mode: 'include', values: setWithout(selection.values, value) };
+        } else {
+          next = { mode: 'exclude', values: setWith(selection.values, value) };
+        }
       } else {
-        nextSelected.add(value);
+        // value を選択します(selection は null ではない: null は全選択)。
+        next =
+          selection!.mode === 'include'
+            ? { mode: 'include', values: setWith(selection!.values, value) }
+            : { mode: 'exclude', values: setWithout(selection!.values, value) };
       }
-      commitSetFilterSelection(filterPopoverState.columnKey, nextSelected);
+      commitSetFilterSelection(filterPopoverState.columnKey, next, total);
     },
     [
       filterPopoverState,
-      openedSetFilterSelectedValues,
+      openedSetSelection,
+      openedColumnCanInvert,
+      openedFilterAllValues,
       openedFilterSelectOptions,
       commitSetFilterSelection,
     ],
   );
 
-  // 追加(12-A): (Select All) の一括トグルです。検索中は popover 側から
-  //             「表示中候補の values」だけが渡るため、検索結果のみが対象になります。
+  // 追加(反転set): (すべて選択) の一括トグルです。非検索は scope='all'(全候補)、検索中は
+  //   表示中候補(=小さい側)の values が渡ります。いずれも巨大側を作らず mode 空間で更新します。
   const handleSetFilterSelectAllChange = useCallback(
-    (visibleValues: string[], nextChecked: boolean) => {
+    (scope: 'all' | string[], nextChecked: boolean) => {
       if (!filterPopoverState) {
         return;
       }
-      const nextSelected = new Set(
-        openedSetFilterSelectedValues ??
-          openedFilterSelectOptions.map((option) => option.value),
-      );
-      if (nextChecked) {
-        visibleValues.forEach((value) => nextSelected.add(value));
-      } else {
-        visibleValues.forEach((value) => nextSelected.delete(value));
+      const columnKey = filterPopoverState.columnKey;
+      const total = openedFilterSelectOptions.length;
+      if (scope === 'all') {
+        // 非検索: 全候補対象。全選択→clear / 全解除→include{}。
+        if (nextChecked) {
+          dispatch(gridActions.clearColumnFilter(columnKey));
+        } else {
+          commitSetFilterSelection(
+            columnKey,
+            { mode: 'include', values: new Set() },
+            total,
+          );
+        }
+        return;
       }
-      commitSetFilterSelection(filterPopoverState.columnKey, nextSelected);
+      // 検索中: scope = 表示中候補(小さい側)。現在 selection に ±scope を mode 空間で適用。
+      const selection = openedSetSelection;
+      let next: ColumnFilterSetSelection;
+      if (nextChecked) {
+        if (selection === null) {
+          // 全選択のまま(表示中を選択しても変化なし)→ フィルターなし。
+          dispatch(gridActions.clearColumnFilter(columnKey));
+          return;
+        }
+        next =
+          selection.mode === 'include'
+            ? { mode: 'include', values: setUnion(selection.values, scope) }
+            : { mode: 'exclude', values: setDifference(selection.values, scope) };
+      } else {
+        if (selection === null) {
+          next = openedColumnCanInvert
+            ? { mode: 'exclude', values: new Set(scope) }
+            : {
+                mode: 'include',
+                values: setDifference(openedFilterAllValues, scope),
+              };
+        } else if (selection.mode === 'include') {
+          next = { mode: 'include', values: setDifference(selection.values, scope) };
+        } else {
+          next = { mode: 'exclude', values: setUnion(selection.values, scope) };
+        }
+      }
+      commitSetFilterSelection(columnKey, next, total);
     },
     [
       filterPopoverState,
-      openedSetFilterSelectedValues,
+      openedSetSelection,
+      openedColumnCanInvert,
+      openedFilterAllValues,
       openedFilterSelectOptions,
       commitSetFilterSelection,
+      dispatch,
     ],
   );
 
@@ -13482,7 +13686,10 @@ export function SpreadsheetGrid<T extends object>({
     }
     const rawValue = uiState.filters.columnFilters[openedFilterColumn.key];
     if (isSetColumnFilterValue(rawValue)) {
-      return `${rawValue.values.length}件を選択中`;
+      // 変更(反転set): exclude は「除外中」表示にします(total 非依存で正確)。
+      return rawValue.mode === 'exclude'
+        ? `${rawValue.values.length}件を除外中`
+        : `${rawValue.values.length}件を選択中`;
     }
     // 追加(記述子化 / number): number 記述子は raw(式そのもの)を現在値表示にします。
     if (isNumberColumnFilterValue(rawValue)) {
@@ -13501,7 +13708,8 @@ export function SpreadsheetGrid<T extends object>({
       currentValueText={openedFilterCurrentValueText}
       layout={filterPopoverLayout}
       selectOptions={openedFilterSelectOptions}
-      setSelectedValues={openedSetFilterSelectedValues}
+      isOptionsPending={isFilterOptionsPending}
+      setSelection={openedSetSelection}
       popoverRef={filterPopoverRef}
       textInputRef={filterTextInputRef}
       selectRef={filterSelectRef}

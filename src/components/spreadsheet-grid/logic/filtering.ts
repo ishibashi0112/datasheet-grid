@@ -221,10 +221,16 @@ const compileSingleColumnFilter = <T,>(
     return (row) => filterFn(row, filterValue);
   }
 
-  // 追加(12-A): set フィルターは「許可値の Set」を一度だけ構築し、O(1) 照合します。
+  // 追加(12-A / 反転set): set フィルターは「対象値の Set」を一度だけ構築し、O(1) 照合します。
+  //   values は mode により「選択値(include)」か「非選択値(exclude)」のいずれか(常に小さい側)。
+  //   include: 行値が対象に含まれれば通過 / exclude: 行値が対象に含まれなければ通過。
+  //   注記: スキャン収集列では universe=全行値のため include(S) ≡ exclude(U−S) が成立します。
   if (isSetColumnFilterValue(filterValue)) {
-    const allowedValues = new Set(filterValue.values);
-    return (row) => allowedValues.has(String(getCellValue(row, column) ?? ''));
+    const targetValues = new Set(filterValue.values);
+    if (filterValue.mode === 'exclude') {
+      return (row) => !targetValues.has(String(getCellValue(row, column) ?? ''));
+    }
+    return (row) => targetValues.has(String(getCellValue(row, column) ?? ''));
   }
 
   // 追加(記述子化 / number): number 記述子は parse 済みのため、行ループ外で評価器を確定します
