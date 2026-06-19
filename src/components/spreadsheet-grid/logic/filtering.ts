@@ -40,6 +40,11 @@ export const isActiveColumnFilterValue = (value: unknown): boolean => {
     // 注記: 全選択時は reducer 側で clearColumn 済みのため、値が存在する時点で有効です。
     return true;
   }
+  // 追加(記述子化 / number): number 記述子は buildNumberColumnFilterValue で
+  //   raw 非空のときだけ生成されるため、存在する時点で有効です(set と同じ規則)。
+  if (isNumberColumnFilterValue(value)) {
+    return true;
+  }
   return String(value ?? '').trim().length > 0;
 };
 
@@ -93,6 +98,55 @@ export const parseNumberFilterExpression = (
     operator: (comparisonMatch[1] ?? '=') as '>' | '>=' | '<' | '<=' | '=',
     value: Number(comparisonMatch[2]),
   };
+};
+
+// 追加(記述子化 / number): number フィルターのタグ付き記述子です。
+//   set({ kind:'set' })に続く 2 種目の判別共用体メンバーで、columnFilters[key] に
+//   この形が入っているときだけ「コンパイル済み number フィルター」が有効です。
+//   - raw   : ユーザー入力(trim 済み)。再オープン時の draft seed / 現在値表示 /
+//             式として解釈不可だった場合の contains フォールバック needle に使います。
+//   - parsed: 式の解釈結果。null = 解釈不可(→ raw で contains)。従来 applyNumberFilter が
+//             行ループ内で毎回行っていた parse を「commit 時 1 回」へ前倒しするための field です。
+//   注記: text / select / date は本バッチでは生文字列のまま据え置きます(後続で同じ型へ寄せる)。
+export type NumberColumnFilterValue = {
+  kind: 'number';
+  raw: string;
+  parsed: ParsedNumberFilter | null;
+};
+
+// 追加(記述子化 / number): number 記述子の type guard です(set と同型)。
+export const isNumberColumnFilterValue = (
+  value: unknown,
+): value is NumberColumnFilterValue =>
+  typeof value === 'object' &&
+  value !== null &&
+  (value as NumberColumnFilterValue).kind === 'number';
+
+// 追加(記述子化 / number): 生入力から number 記述子を構築します。
+//   - trim 後が空なら null(= フィルターなしへ正規化。呼び出し側で clearColumn 相当に倒す)。
+//   - parse は parseNumberFilterExpression 1 回のみ。挙動は従来 applyNumberFilter の
+//     「trim → parse → 不可なら contains」と厳密に等価です(raw は trim 済みを保持)。
+export const buildNumberColumnFilterValue = (
+  rawInput: string,
+): NumberColumnFilterValue | null => {
+  const raw = rawInput.trim();
+  if (!raw) {
+    return null;
+  }
+  return { kind: 'number', raw, parsed: parseNumberFilterExpression(raw) };
+};
+
+// 追加(記述子化): 列フィルター値を「テキスト入力の編集用文字列」へ整形します。
+//   popover 再オープン時の draft seed の単一窓口です(従来は呼び出し側で String(value) 直書き)。
+//   - number 記述子 → raw(式そのもの)。
+//   - それ以外(text/select/date の生文字列等)→ 従来どおり String(value ?? '')。
+//   set はチェックボックス UI のため text 入力 draft を使わず、ここへは到達しません。
+//   後続で text/select も記述子化する際、この関数へ分岐を足せば draft seed 側は無改修で済みます。
+export const columnFilterValueToDraftText = (value: unknown): string => {
+  if (isNumberColumnFilterValue(value)) {
+    return value.raw;
+  }
+  return String(value ?? '');
 };
 
 // 追加: number 型フィルターの評価です。
@@ -173,9 +227,61 @@ const compileSingleColumnFilter = <T,>(
     return (row) => allowedValues.has(String(getCellValue(row, column) ?? ''));
   }
 
+  // 追加(記述子化 / number): number 記述子は parse 済みのため、行ループ外で評価器を確定します
+  //   (従来 applyNumberFilter は行ごとに parseNumberFilterExpression を呼んでいた)。
+  //   合否は applyNumberFilter と厳密に等価:
+  //     - parsed=null  → raw で contains(大文字小文字無視)。
+  //     - range        → Number(cell) が有限かつ [min,max]。
+  //     - comparison   → Number(cell) が有限かつ op 比較(= は ===)。
+  //   注記: filterFn を持つ列は上の filterFn 分岐が優先するため、ここへは到達しません
+  //         (その場合 filterFn は本記述子オブジェクトを受け取ります。set と同じ契約)。
+  if (isNumberColumnFilterValue(filterValue)) {
+    const parsed = filterValue.parsed;
+    if (parsed === null) {
+      const needle = filterValue.raw.toLowerCase();
+      return (row) =>
+        String(getCellValue(row, column) ?? '')
+          .toLowerCase()
+          .includes(needle);
+    }
+    if (parsed.mode === 'range') {
+      const { min, max } = parsed;
+      return (row) => {
+        const numericCellValue = Number(getCellValue(row, column));
+        return (
+          Number.isFinite(numericCellValue) &&
+          numericCellValue >= min &&
+          numericCellValue <= max
+        );
+      };
+    }
+    const { operator, value } = parsed;
+    return (row) => {
+      const numericCellValue = Number(getCellValue(row, column));
+      if (!Number.isFinite(numericCellValue)) {
+        return false;
+      }
+      switch (operator) {
+        case '>':
+          return numericCellValue > value;
+        case '>=':
+          return numericCellValue >= value;
+        case '<':
+          return numericCellValue < value;
+        case '<=':
+          return numericCellValue <= value;
+        case '=':
+        default:
+          return numericCellValue === value;
+      }
+    };
+  }
+
   const filterType = column.filterType ?? 'text';
 
   if (filterType === 'number') {
+    // 注記(記述子化): commit を通った number は上の記述子分岐で処理されます。ここは
+    //   生文字列 number 値(未移行 / 外部 hydrate)のための後方互換フォールバックです。
     return (row) => applyNumberFilter(getCellValue(row, column), filterValue);
   }
 

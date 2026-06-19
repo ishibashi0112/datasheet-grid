@@ -8,6 +8,8 @@ import {
   type RefObject,
 } from 'react';
 import type { GridColumn } from '../model/gridTypes';
+// 追加(記述子化): number 記述子を含む列フィルター値を draft 用テキストへ整形します。
+import { columnFilterValueToDraftText } from '../logic/filtering';
 
 // 追加: 列フィルターポップオーバーの内部状態です。
 type HeaderFilterPopoverState = {
@@ -132,7 +134,9 @@ export const useFilterPopoverController = <T,>({
 
       setFilterPopoverState({
         columnKey: column.key,
-        draftValue: String(columnFilterValues[column.key] ?? ''),
+        // 変更(記述子化): number 記述子は String() で "[object Object]" になるため、
+        //   raw を取り出す columnFilterValueToDraftText 経由にします(他種別は従来と同値)。
+        draftValue: columnFilterValueToDraftText(columnFilterValues[column.key]),
       });
     },
     [columnFilterValues, enableColumnFilter, gridRootRef],

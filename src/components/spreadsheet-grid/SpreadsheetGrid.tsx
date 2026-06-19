@@ -42,6 +42,9 @@ import { useColumnHeaderDragController } from './hooks/useColumnHeaderDragContro
 import {
   // 追加(12-A): set フィルター値の判定 / 構築に使います。
   isSetColumnFilterValue,
+  // 追加(記述子化 / number): number 記述子の判定 / 構築に使います。
+  isNumberColumnFilterValue,
+  buildNumberColumnFilterValue,
   // 行モデルチェーンは order(Int32Array)ベースに一本化しています
   //   (DS-2 で差し替え、旧オブジェクト配列版は DS-3-8 で削除)。
   createSourceOrder,
@@ -1740,6 +1743,25 @@ export function SpreadsheetGrid<T extends object>({
       closeColumnFilterPopover();
       return;
     }
+    // 追加(記述子化 / number): number は生文字列ではなく { kind:'number', raw, parsed }
+    //   記述子で commit します(parse は build 内で 1 回)。空入力は従来どおり clearColumn。
+    //   挙動は旧「trim → 空なら clear / 非空なら setColumnFilter(生文字列)」と等価で、
+    //   違いは保存値の形(生文字列 → 記述子)だけです。
+    if (filterType === 'number') {
+      const descriptor = buildNumberColumnFilterValue(
+        filterPopoverState.draftValue,
+      );
+      if (!descriptor) {
+        dispatch(gridActions.clearColumnFilter(filterPopoverState.columnKey));
+        closeColumnFilterPopover();
+        return;
+      }
+      dispatch(
+        gridActions.setColumnFilter(filterPopoverState.columnKey, descriptor),
+      );
+      closeColumnFilterPopover();
+      return;
+    }
     const normalized =
       filterType === 'select'
         ? filterPopoverState.draftValue
@@ -2147,6 +2169,10 @@ export function SpreadsheetGrid<T extends object>({
     const rawValue = uiState.filters.columnFilters[openedFilterColumn.key];
     if (isSetColumnFilterValue(rawValue)) {
       return `${rawValue.values.length}件を選択中`;
+    }
+    // 追加(記述子化 / number): number 記述子は raw(式そのもの)を現在値表示にします。
+    if (isNumberColumnFilterValue(rawValue)) {
+      return rawValue.raw;
     }
     const text = String(rawValue ?? '').trim();
     return text ? String(rawValue) : '（なし）';
