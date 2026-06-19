@@ -10,7 +10,9 @@ import type { RowOrder } from './filtering';
 //   等価のまま約 30 倍高速になります(同条件で約 0.25 秒)。
 //   仕様上 String.prototype.localeCompare(that, 'ja', opts) は
 //   new Intl.Collator('ja', opts).compare(this, that) と同じ照合(符号が一致)です。
-const STRING_COLLATOR = new Intl.Collator('ja', {
+// 変更(Set Filter perf): getColumnSelectOptions の候補ソートからも再利用するため
+//   export します(照合オプションは不変・並び順は従来と等価)。
+export const STRING_COLLATOR = new Intl.Collator('ja', {
   numeric: true,
   sensitivity: 'base',
 });

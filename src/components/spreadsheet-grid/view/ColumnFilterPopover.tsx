@@ -37,6 +37,9 @@ type ColumnFilterPopoverProps = {
   currentValueText: string;
   layout: ColumnFilterPopoverLayout | null;
   selectOptions: ColumnFilterPopoverOption[];
+  // 追加(Set Filter perf / b): 候補収集が deferred で追従途中の間 true。set 本体で
+  //   「集計中…」を表示し、空候補(「ありません」)と区別します。
+  isOptionsPending: boolean;
   // 追加(12-A): set フィルターの選択状態です。null = 全選択(フィルターなし)。
   setSelectedValues: ReadonlySet<string> | null;
   popoverRef: RefObject<HTMLDivElement | null>;
@@ -105,6 +108,8 @@ const SET_FILTER_LIST_HEIGHT = 208;
 //             再レンダーは popover 内部のみで完結します(本体 5,000 行は無関係)。
 type SetFilterBodyProps = {
   options: ColumnFilterPopoverOption[];
+  // 追加(Set Filter perf / b): 候補収集が deferred で追従途中の間 true です。
+  isOptionsPending: boolean;
   // null = 全選択(フィルターなし)です。
   selectedValues: ReadonlySet<string> | null;
   searchInputRef: RefObject<HTMLInputElement | null>;
@@ -115,6 +120,7 @@ type SetFilterBodyProps = {
 
 function SetFilterBody({
   options,
+  isOptionsPending,
   selectedValues,
   searchInputRef,
   onValueToggle,
@@ -170,6 +176,10 @@ function SetFilterBody({
     selectedValues === null ? options.length : selectedValues.size;
 
   const handleSelectAllToggle = () => {
+    // 追加(Set Filter perf / b): 収集中(候補ゼロ)はトグル対象が無いため無効化します。
+    if (isOptionsPending) {
+      return;
+    }
     onSelectAllChange(
       visibleOptions.map((option) => option.value),
       !isAllVisibleSelected,
@@ -213,6 +223,7 @@ function SetFilterBody({
         <input
           type="checkbox"
           checked={isAllVisibleSelected}
+          disabled={isOptionsPending}
           ref={(element) => {
             // 追加(12-A): 一部のみ選択中は indeterminate 表示にします。
             if (element) {
@@ -238,7 +249,20 @@ function SetFilterBody({
           marginBottom: 8,
         }}
       >
-        {visibleOptions.length === 0 ? (
+        {isOptionsPending ? (
+          // 追加(Set Filter perf / b): 候補収集中のプレースホルダです。
+          //   将来 Loading spinner へ差し替える場合はこの 1 ブロックだけを置換します。
+          <div
+            style={{
+              padding: 12,
+              fontSize: 12,
+              color: '#94a3b8',
+              textAlign: 'center',
+            }}
+          >
+            集計中…
+          </div>
+        ) : visibleOptions.length === 0 ? (
           <div
             style={{
               padding: 12,
@@ -313,8 +337,11 @@ function SetFilterBody({
           marginBottom: 10,
         }}
       >
-        選択中: {totalSelectedCount} / {options.length} 件
-        {isSearching ? `（表示中 ${visibleOptions.length} 件）` : ''}
+        {isOptionsPending
+          ? '集計中…'
+          : `選択中: ${totalSelectedCount} / ${options.length} 件${
+              isSearching ? `（表示中 ${visibleOptions.length} 件）` : ''
+            }`}
       </div>
     </>
   );
@@ -329,6 +356,7 @@ export function ColumnFilterPopover({
   currentValueText,
   layout,
   selectOptions,
+  isOptionsPending,
   setSelectedValues,
   popoverRef,
   textInputRef,
@@ -397,6 +425,7 @@ export function ColumnFilterPopover({
         // 追加(12-A): AG Grid の Set Filter 相当 UI です(チェック操作は即時適用)。
         <SetFilterBody
           options={selectOptions}
+          isOptionsPending={isOptionsPending}
           selectedValues={setSelectedValues}
           searchInputRef={textInputRef}
           onValueToggle={onSetValueToggle}

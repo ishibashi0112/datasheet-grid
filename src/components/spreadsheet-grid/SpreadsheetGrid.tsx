@@ -94,6 +94,9 @@ import {
   removeSortEntryAt,
   // 追加(MS-3-2): 優先順位 DnD の配列 move 純関数です。
   moveSortEntry,
+  // 追加(Set Filter perf / a): 候補ソートを per-call localeCompare から共有 Collator へ
+  //   寄せるために再利用します(DS-1 と同手当て・照合順序等価)。
+  STRING_COLLATOR,
 } from './logic/sorting';
 // 追加(DS-4 ①-(2)): 列幅自動調整を時間分割(async・単一経路)で実行するランナーです。
 //   計測ロジック本体(logic/columnAutosize)はランナー内部で使うため、ここでの直 import は不要です。
@@ -492,11 +495,12 @@ export function SpreadsheetGrid<T extends object>({
         },
         [],
       );
+      // 変更(Set Filter perf / a): per-call localeCompare('ja', opts) は候補が
+      //   30 万件超(品番のような全件ユニーク列)で致命的に遅く、popover 表示遅延の
+      //   主因でした(DS-1 と同症状・20 万件で約 7.5 秒の実測)。共有 Collator の
+      //   compare へ寄せると照合順序は等価のまま約 30 倍高速化します。
       return options.sort((left, right) =>
-        left.label.localeCompare(right.label, 'ja', {
-          numeric: true,
-          sensitivity: 'base',
-        }),
+        STRING_COLLATOR.compare(left.label, right.label),
       );
     },
     [rows],
@@ -1623,16 +1627,38 @@ export function SpreadsheetGrid<T extends object>({
   //   popover を開いたまま親が再レンダーするたび(set フィルター即時適用での再レンダー含む)に
   //   5,000 行スキャン + ソートが再実行されていました。開いている列と行データが
   //   変わらない限り、計算・参照とも再利用します。
+  // 追加(Set Filter perf / b): 候補収集(getColumnSelectOptions)は品番のような
+  //   全件ユニーク列で 30 万件超の reduce + ソートになり、open レンダー内で同期実行すると
+  //   popover の初回 paint がそのぶんブロックされていました(報告された「表示が遅い」の主因)。
+  //   openedFilterColumn を deferred 値経由にして heavy な収集を低優先度レンダーへ逃がし、
+  //   popover の枠は即時に開けるようにします(11-B7 / 12-B と同型)。
+  const deferredFilterColumnForOptions = useDeferredValue(openedFilterColumn);
+
   const openedFilterSelectOptions = useMemo<ColumnFilterPopoverOption[]>(() => {
-    if (!openedFilterColumn) {
+    if (!deferredFilterColumnForOptions) {
       return EMPTY_FILTER_OPTIONS;
     }
-    const filterType = openedFilterColumn.filterType ?? 'text';
+    const filterType = deferredFilterColumnForOptions.filterType ?? 'text';
     if (filterType !== 'select' && filterType !== 'set') {
       return EMPTY_FILTER_OPTIONS;
     }
-    return getColumnSelectOptions(openedFilterColumn);
-  }, [openedFilterColumn, getColumnSelectOptions]);
+    return getColumnSelectOptions(deferredFilterColumnForOptions);
+  }, [deferredFilterColumnForOptions, getColumnSelectOptions]);
+
+  // 追加(Set Filter perf / b): deferred 収集が現在開いている列へ追いついていない間は
+  //   pending とし、popover 側で「集計中…」を表示します(空候補の「ありません」と区別)。
+  //   collection が軽い列(filterOptions 指定の unit/status 等)では deferred が即追従するため
+  //   実質ちらつかず、重い列でのみ可視の待機表示になります。
+  const isFilterOptionsPending =
+    deferredFilterColumnForOptions !== openedFilterColumn;
+
+  // 追加(Set Filter perf / c): 全候補値の集合です。トグル/Select All の Set 初期化で
+  //   30 万件超の options.map(...) 配列を毎クリック確保しないよう、開いた列ごとに 1 度だけ
+  //   生成して使い回します(openedFilterSelectOptions と同ライフサイクル)。
+  const openedFilterAllValues = useMemo<ReadonlySet<string>>(
+    () => new Set(openedFilterSelectOptions.map((option) => option.value)),
+    [openedFilterSelectOptions],
+  );
 
   // 追加(12-A): popover を開いている列の set フィルター選択状態です。
   //             null = 全選択(フィルター未設定)を意味します。
@@ -1676,8 +1702,7 @@ export function SpreadsheetGrid<T extends object>({
         return;
       }
       const nextSelected = new Set(
-        openedSetFilterSelectedValues ??
-          openedFilterSelectOptions.map((option) => option.value),
+        openedSetFilterSelectedValues ?? openedFilterAllValues,
       );
       if (nextSelected.has(value)) {
         nextSelected.delete(value);
@@ -1702,8 +1727,7 @@ export function SpreadsheetGrid<T extends object>({
         return;
       }
       const nextSelected = new Set(
-        openedSetFilterSelectedValues ??
-          openedFilterSelectOptions.map((option) => option.value),
+        openedSetFilterSelectedValues ?? openedFilterAllValues,
       );
       if (nextChecked) {
         visibleValues.forEach((value) => nextSelected.add(value));
@@ -2187,6 +2211,7 @@ export function SpreadsheetGrid<T extends object>({
       currentValueText={openedFilterCurrentValueText}
       layout={filterPopoverLayout}
       selectOptions={openedFilterSelectOptions}
+      isOptionsPending={isFilterOptionsPending}
       setSelectedValues={openedSetFilterSelectedValues}
       popoverRef={filterPopoverRef}
       textInputRef={filterTextInputRef}
