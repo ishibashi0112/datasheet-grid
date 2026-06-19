@@ -56,6 +56,10 @@ type ColumnFilterPopoverProps = {
   currentValueText: string;
   layout: ColumnFilterPopoverLayout | null;
   selectOptions: ColumnFilterPopoverOption[];
+  // 追加(DS-4 #1): 候補収集の状態です。'collecting' の間は universe(総数 / 全値集合)が未確定の
+  //   ため、set / select の操作 UI を出さず「収集中」を表示します(部分集合での誤確定を防ぐ)。
+  optionsStatus: 'idle' | 'collecting' | 'ready';
+  optionsProgress: number;
   // 変更(反転set): set 選択状態を { mode, values }(小さい側のみ)で受けます。null = 全選択。
   setSelection: ColumnFilterSetSelection | null;
   popoverRef: RefObject<HTMLDivElement | null>;
@@ -356,6 +360,8 @@ export function ColumnFilterPopover({
   currentValueText,
   layout,
   selectOptions,
+  optionsStatus,
+  optionsProgress,
   setSelection,
   popoverRef,
   textInputRef,
@@ -420,7 +426,21 @@ export function ColumnFilterPopover({
         列フィルター: {title}
       </div>
 
-      {isSetFilter ? (
+      {(isSetFilter || filterType === 'select') &&
+      optionsStatus === 'collecting' ? (
+        // 追加(DS-4 #1): 大規模列(>閾値)の候補収集中です。universe 未確定のため操作 UI は出さず、
+        //   進捗のみ表示します(収集完了 = ready で本来の set / select UI へ切り替わります)。
+        <div
+          style={{
+            padding: 24,
+            textAlign: 'center',
+            fontSize: 12,
+            color: '#64748b',
+          }}
+        >
+          候補を収集中… {Math.round(optionsProgress * 100)}%
+        </div>
+      ) : isSetFilter ? (
         // 追加(12-A): AG Grid の Set Filter 相当 UI です(チェック操作は即時適用)。
         <SetFilterBody
           options={selectOptions}

@@ -100,13 +100,12 @@ import {
   removeSortEntryAt,
   // 追加(MS-3-2): 優先順位 DnD の配列 move 純関数です。
   moveSortEntry,
-  // 追加(Set Filter perf / a): 候補ソートを per-call localeCompare から共有 Collator へ
-  //   寄せるために再利用します(DS-1 と同手当て・照合順序等価)。
-  STRING_COLLATOR,
 } from './logic/sorting';
 // 追加(DS-4 ①-(2)): 列幅自動調整を時間分割(async・単一経路)で実行するランナーです。
 //   計測ロジック本体(logic/columnAutosize)はランナー内部で使うため、ここでの直 import は不要です。
 import useColumnAutosizeRunner from './hooks/useColumnAutosizeRunner';
+// 追加(DS-4 #1): select / set 候補を「通常規模=同期 / 大規模=時間分割の非同期」で収集します。
+import useColumnSelectOptionsCollector from './hooks/useColumnSelectOptionsCollector';
 import type {
   CellCoord,
   CellRenderState,
@@ -121,8 +120,6 @@ import type {
 } from './model/gridTypes';
 import { getCellValue, isCellEditable, setCellValue } from './utils/permissions';
 import ColumnFilterPopover, {
-  // 追加(12-A): popover を開いている列の候補メモ化に使う型です。
-  type ColumnFilterPopoverOption,
   // 追加(反転set): set 選択状態 { mode, values } 型と mode 判定ヘルパです。
   type ColumnFilterSetSelection,
   isSetValueSelected,
@@ -146,10 +143,6 @@ import SortManagementPanel, {
 // import ColumnChooserPanel, {
 //   type ColumnChooserItem,
 // } from './view/ColumnChooserPanel';
-
-// 追加(12-A): popover 非表示時 / 候補不要な filterType 用の安定空配列です。
-//             useMemo の返り値参照を安定させるため module スコープに置きます。
-const EMPTY_FILTER_OPTIONS: ColumnFilterPopoverOption[] = [];
 
 // 追加(反転set): 小さい側の集合に 1 件 / 複数件を加減する純ヘルパです(巨大側は作りません)。
 const setWith = (base: ReadonlySet<string>, value: string): Set<string> => {
@@ -511,38 +504,9 @@ export function SpreadsheetGrid<T extends object>({
   }, [visibleColumns]);
 
   // ── row models (source → filtered → sorted) ──────────
-  const getColumnSelectOptions = useCallback(
-    (column: GridColumn<T>) => {
-      if (column.filterOptions && column.filterOptions.length > 0) {
-        return column.filterOptions;
-      }
-      const seen = new Set<string>();
-      // 変更(DS-2): sourceRowModels 廃止に伴い rows を直接走査します(走査順・値とも等価)。
-      const options = rows.reduce<{ label: string; value: string }[]>(
-        (acc, row) => {
-          const value = String(getCellValue(row, column) ?? '');
-          if (seen.has(value)) {
-            return acc;
-          }
-          seen.add(value);
-          acc.push({
-            value,
-            label: value || '（空白）',
-          });
-          return acc;
-        },
-        [],
-      );
-      // 変更(Set Filter perf / a): per-call localeCompare('ja', opts) は候補が
-      //   30 万件超(品番のような全件ユニーク列)で致命的に遅く、popover 表示遅延の
-      //   主因でした(DS-1 と同症状・20 万件で約 7.5 秒の実測)。共有 Collator の
-      //   compare へ寄せると照合順序は等価のまま約 30 倍高速化します。
-      return options.sort((left, right) =>
-        STRING_COLLATOR.compare(left.label, right.label),
-      );
-    },
-    [rows],
-  );
+  // 変更(DS-4 #1): 候補収集は logic/selectOptions の共有コレクタへ移管しました。
+  //   開いている列の候補は useColumnSelectOptionsCollector が「通常規模=同期 / 大規模=
+  //   時間分割の非同期」で出し分けます(下部 filter popover actions 参照)。
 
   // 変更(11-A3): 依存を uiState 丸ごと → filters.globalText(string) へ縮小します。
   // 変更理由: これが「全行 memo が毎親レンダーで破られる」症状の根本原因でした。
@@ -1749,36 +1713,34 @@ export function SpreadsheetGrid<T extends object>({
   }, [closeColumnMenu, handleColumnChooserReset]);
 
   // ── filter popover actions ────────────────────────────
-  // 追加(12-A): popover を開いている列の select / set 候補です。
-  // 変更理由: 従来は JSX 内で getColumnSelectOptions(openedFilterColumn) を直接呼んでおり、
-  //   popover を開いたまま親が再レンダーするたび(set フィルター即時適用での再レンダー含む)に
-  //   5,000 行スキャン + ソートが再実行されていました。開いている列と行データが
-  //   変わらない限り、計算・参照とも再利用します。
-  // 変更(Set Filter perf / b 撤去): 収集は同期 useMemo(eager)で 1 回だけ実行します。
-  //   旧 (b) は useDeferredValue で収集を破棄可能な低優先度レンダーへ逃がしていましたが、
-  //   重い同期計算(500k の reduce+ソート ≈ 数百 ms)を deferred 化すると、収集中にユーザー操作
-  //   (高優先度更新)が割り込むたびに React がそのレンダーを破棄して useMemo をフルに再実行し、
-  //   再実行が累積して主スレッドを数秒〜十数秒ブロック(=「ページ応答なし」)していました。
-  //   eager は open レンダーで 1 回だけ走り(以後は openedFilterColumn/rows 不変でメモ再利用)、
-  //   破棄・再実行が起きないため固まりません(開く瞬間に一度きりの軽いもたつきのみ)。
-  const openedFilterSelectOptions = useMemo<ColumnFilterPopoverOption[]>(() => {
-    if (!openedFilterColumn) {
-      return EMPTY_FILTER_OPTIONS;
-    }
-    const filterType = openedFilterColumn.filterType ?? 'text';
-    if (filterType !== 'select' && filterType !== 'set') {
-      return EMPTY_FILTER_OPTIONS;
-    }
-    return getColumnSelectOptions(openedFilterColumn);
-  }, [openedFilterColumn, getColumnSelectOptions]);
-
-  // 追加(Set Filter perf / c): 全候補値の集合です。トグル/Select All の Set 初期化で
-  //   30 万件超の options.map(...) 配列を毎クリック確保しないよう、開いた列ごとに 1 度だけ
-  //   生成して使い回します(openedFilterSelectOptions と同ライフサイクル)。
-  const openedFilterAllValues = useMemo<ReadonlySet<string>>(
-    () => new Set(openedFilterSelectOptions.map((option) => option.value)),
-    [openedFilterSelectOptions],
+  // 追加(DS-4 #1): rows[index] の対象列セル値アクセサです。identity は rows/openedFilterColumn に
+  //   連動し、これが変わったときだけ候補収集をやり直します(旧 getColumnSelectOptions の [rows]
+  //   依存と等価)。set 即時適用の再レンダー(uiState 変化)では rows/openedFilterColumn とも不変の
+  //   ため identity が保たれ、収集の再実行は起きません(open 中の再収集なしを維持)。
+  const getOpenedColumnRawValueAt = useCallback(
+    (index: number): unknown =>
+      openedFilterColumn
+        ? getCellValue(rows[index], openedFilterColumn)
+        : undefined,
+    [rows, openedFilterColumn],
   );
+
+  // 変更(DS-4 #1): 候補収集を「通常規模=同期 / 大規模(>閾値)=時間分割の非同期」へ。
+  //   旧実装は open レンダーで同期 useMemo を 1 回走らせる eager 方式で、500k/1M では
+  //   その 1 回(reduce + ソート ≈ 0.4〜1s)が主スレッドを塞いでいました(deferred 化は
+  //   thrash のため不可)。通常規模はフック内の同期 useMemo で従来どおり即時確定し(チラつき無・
+  //   バイト等価)、大規模のみ yieldToMain で時間分割し、収集中は popover を収集中表示にします。
+  //   options 配列は同期/非同期いずれも logic/selectOptions の共有コレクタ経由でバイト等価です。
+  const {
+    options: openedFilterSelectOptions,
+    allValues: openedFilterAllValues,
+    status: openedFilterOptionsStatus,
+    progress: openedFilterOptionsProgress,
+  } = useColumnSelectOptionsCollector({
+    column: openedFilterColumn,
+    rowCount: rows.length,
+    getRawValueAt: getOpenedColumnRawValueAt,
+  });
 
   // 追加(12-A): popover を開いている列の set フィルター選択状態です。
   //             null = 全選択(フィルター未設定)を意味します。
@@ -2416,6 +2378,8 @@ export function SpreadsheetGrid<T extends object>({
       layout={filterPopoverLayout}
       selectOptions={openedFilterSelectOptions}
       setSelection={openedSetSelection}
+      optionsStatus={openedFilterOptionsStatus}
+      optionsProgress={openedFilterOptionsProgress}
       popoverRef={filterPopoverRef}
       textInputRef={filterTextInputRef}
       selectRef={filterSelectRef}

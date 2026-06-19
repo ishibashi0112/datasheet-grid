@@ -58,6 +58,7 @@ src/components/spreadsheet-grid/hooks/useColumnAutosizeRunner.ts
 src/components/spreadsheet-grid/hooks/useColumnChooserController.ts
 src/components/spreadsheet-grid/hooks/useColumnHeaderDragController.ts
 src/components/spreadsheet-grid/hooks/useColumnMenuController.ts
+src/components/spreadsheet-grid/hooks/useColumnSelectOptionsCollector.ts
 src/components/spreadsheet-grid/hooks/useFilterPopoverController.ts
 src/components/spreadsheet-grid/hooks/useGridBarContext.ts
 src/components/spreadsheet-grid/hooks/useGridClipboardController.ts
@@ -70,6 +71,7 @@ src/components/spreadsheet-grid/logic/columnAutosize.ts
 src/components/spreadsheet-grid/logic/domGuards.ts
 src/components/spreadsheet-grid/logic/filtering.ts
 src/components/spreadsheet-grid/logic/geometry.ts
+src/components/spreadsheet-grid/logic/selectOptions.ts
 src/components/spreadsheet-grid/logic/sorting.ts
 src/components/spreadsheet-grid/logic/verticalGeometry.ts
 src/components/spreadsheet-grid/model/gridActions.ts
@@ -103,165 +105,256 @@ vite.config.ts
 <files>
 This section contains the contents of the repository's files.
 
-<file path="src/components/spreadsheet-grid/logic/verticalGeometry.ts">
-// 縦スクロールの仮想化ジオメトリ(uniform 行高専用)です。
-//
-// 目的(scroll-space 仮想化 / 1M 行対応):
-//   論理ボディ全高 = rowCount * rowHeight が、ブラウザの要素高さ上限
-//   (Chrome/Edge/Electron ≈ 33,554,432px / Firefox ≈ 17,895,697px) を超えると、
-//   scrollHeight がクランプされて末尾行が到達不能になります(座標破綻 = 機能ブロッカー)。
-//   そこで物理 DOM 高さを上限内(MAX_BODY_PX)へ圧縮し、物理 scrollTop ↔ 論理オフセットを
-//   線形写像します(= pixel scaling)。圧縮が不要な行数では完全な恒等写像になります。
-//
-// 設計(このコードベース固有の前提を踏襲):
-//   - 単一スクロールコンテナ + sticky 3 ペイン(Batch 10-G)を維持します。ネイティブ
-//     スクロールのまま、行/overlay レイヤーへ translateY(D) を掛けて物理ウィンドウへ
-//     引き込みます(JS スクロール同期は増やしません)。
-//   - 行は uniform 行高(estimateSize 定数)なので、窓出しは純粋な算術(firstRow / count)に
-//     潰れます。実測 / 二分探索 / サイズキャッシュは不要です。
-//   - 物理↔論理写像・行窓・ヒットテストを本ファイル 1 か所へ集約します(縦ジオメトリの
-//     シーム)。将来 auto-height モードを足すときは、同じ契約の第二実装(prefix-sum +
-//     二分探索 + ResizeObserver)へ差し替えるだけで、消費側(GridBodyLayer / ヒットテスト /
-//     viewport-sync)は不変に保てます。
-//
-// 等価性(圧縮不要時の no-op):
-//   logicalBodyHeight <= MAX_BODY_PX のとき scaleFactor = 1 / translateY = 0 となり、
-//   rows[i].start = headerHeight + i * rowHeight は旧 rowVirtualizer(scrollMargin=
-//   headerHeight / estimateSize=rowHeight)の virtualRow.start と数値的に一致します。
-//   ヒットテストも D=0 で従来式(floor(y / rowHeight))と一致します。
+<file path="src/components/spreadsheet-grid/hooks/useColumnSelectOptionsCollector.ts">
+import { useEffect, useMemo, useState } from 'react';
+import type { GridColumn } from '../model/gridTypes';
+import { yieldToMain } from '../utils/scheduler';
+import { collectSelectOptions, createSelectOptionsAccumulator, type SelectOptionEntry } from '../logic/selectOptions';
 
-// 物理ボディ高さの上限です。
-// 注記: 全ブラウザ安全側の既定として 15,000,000 を採用しています(Firefox ≈ 17.9M を
-//   下回るマージン)。scaling が起動する閾値は MAX_BODY_PX / rowHeight 行
-//   (rowHeight=36 なら約 417k 行)で、これ未満では現状と数値一致します。
-//   実行環境が Chrome / Electron 確定なら 30,000,000 まで上げて起動閾値を約 833k 行へ
-//   押し上げてよく、その場合の差分は本定数 1 行のみです。
-export const MAX_BODY_PX = 15_000_000;
+// 1 チャンクで連続走査する時間予算(ms)です(autosize ランナーと同値)。
+const CHUNK_BUDGET_MS = 10;
+// 同期一括で収集する行数の上限です。これ以下は従来どおり open レンダーの useMemo で
+//   即時確定し(チラつきなし・バイト等価)、超えたぶんだけ時間分割の非同期収集に倒します。
+//   500k/1M の同期スキャン(≈0.4s/≈0.8〜1s)が主スレッドを塞ぐのを避ける一方、通常規模の
+//   体感(open 即リスト表示)は一切変えないための分岐点です。
+export const ASYNC_SELECT_COLLECT_ROW_THRESHOLD = 50_000;
 
-// 描画する 1 行の窓エントリです(旧 @tanstack/react-virtual の VirtualItem 互換)。
-export type VerticalRow = {
-  index: number;
-  // 行の論理 top(headerHeight 込み)。GridBodyLayer の translateY 基準(virtualRow.start 互換)。
-  start: number;
+const now = (): number =>
+  typeof performance !== 'undefined' ? performance.now() : Date.now();
+
+const EMPTY_OPTIONS: SelectOptionEntry[] = [];
+const EMPTY_VALUES: ReadonlySet<string> = new Set<string>();
+
+export type ColumnSelectOptionsStatus = 'idle' | 'collecting' | 'ready';
+
+export type ColumnSelectOptionsResult = {
+  status: ColumnSelectOptionsStatus;
+  options: SelectOptionEntry[];
+  // 全候補値の集合(ready のときのみ完全)。トグル/Select All の universe 判定に使います。
+  allValues: ReadonlySet<string>;
+  // collecting 中の進捗(0..1)。ready は 1 / idle は 0。
+  progress: number;
 };
 
-// 縦ジオメトリのシーム契約です。uniform / 将来の auto-height で実装を差し替えても、
-// 消費側はこの型だけに依存します。
-export type VerticalGeometry = {
-  // コンテナ / overlay+body wrapper / ドロップインジケータの高さに使う物理ボディ高さ
-  // (= min(logicalBodyHeight, MAX_BODY_PX))。
-  physicalBodyHeight: number;
-  // 論理ボディ全高(= rowCount * rowHeight)。selection の全面高さ等、論理座標が要る箇所用。
-  logicalBodyHeight: number;
-  // 物理 scrollTop → 論理 scrollTop の倍率(>= 1)。logicalBodyHeight <= cap のとき 1。
-  scaleFactor: number;
-  // overlay+body wrapper に掛ける translateY(<= 0)。scaleFactor=1 のとき 0(現状と一致)。
-  translateY: number;
-  // 描画する行窓(virtualRow 互換の {index, start})。
-  rows: VerticalRow[];
-  // 描画行 index 集合(GridBodyLayer の OOB / 重複ガードと整合)。
-  rowIndexSet: Set<number>;
+// idle / 収集開始直後(キー未一致)の安定参照です。新規生成を避けて不要レンダーを抑えます。
+const IDLE_RESULT: ColumnSelectOptionsResult = {
+  status: 'idle',
+  options: EMPTY_OPTIONS,
+  allValues: EMPTY_VALUES,
+  progress: 0,
+};
+const COLLECTING_INITIAL: ColumnSelectOptionsResult = {
+  status: 'collecting',
+  options: EMPTY_OPTIONS,
+  allValues: EMPTY_VALUES,
+  progress: 0,
 };
 
-export type ComputeVerticalGeometryArgs = {
+type RawValueAccessor = (index: number) => unknown;
+
+type UseColumnSelectOptionsCollectorArgs<T> = {
+  // popover を開いている列(null = 閉。select/set 以外は idle)。
+  column: GridColumn<T> | null;
+  // 候補収集の母集合の行数(= 全ソース行 rows.length。フィルター後の件数ではありません)。
   rowCount: number;
-  rowHeight: number;
-  headerHeight: number;
-  // スクロールコンテナの可視高さ(clientHeight)。窓の行数と scaleFactor に効きます。
-  viewportHeight: number;
-  // 物理 scrollTop(スクロールコンテナの scrollTop そのもの)。
-  scrollTop: number;
-  // 窓の上下に先回りで描画する行数(旧 rowVirtualizer overscan=20 相当)。
-  overscan: number;
-  // 物理ボディ高さの上限(MAX_BODY_PX)。
-  maxBodyPx: number;
+  // rows[index] の対象列セル値を返すアクセサ(= getCellValue(rows[index], column))。
+  //   この identity が変わったとき(= rows/column が変化)に収集をやり直します(旧 [rows] 依存と等価)。
+  getRawValueAt: RawValueAccessor;
 };
 
-// 物理 scrollTop → 論理 scrollTop です(active cell 自動スクロールの現在位置換算に使用)。
-export const physicalToLogicalScrollTop = (
-  physical: number,
-  scaleFactor: number,
-): number => physical * scaleFactor;
+const buildValueSet = (options: SelectOptionEntry[]): ReadonlySet<string> =>
+  new Set(options.map((option) => option.value));
 
-// 論理 scrollTop → 物理 scrollTop です(算出した論理スクロール目標を実 scrollTop へ戻す)。
-export const logicalToPhysicalScrollTop = (
-  logical: number,
-  scaleFactor: number,
-): number => (scaleFactor === 1 ? logical : logical / scaleFactor);
-
-// ヒットテスト: ボディ content-top 基準の物理 y(= 旧来の y。moving rect 経由で物理
-//   スクロール量 S_phys を含む)→ 行 index。
-//   論理 y = y - D(D = S_phys * (1 - scaleFactor))で求めます。scaleFactor=1 のとき D=0 で
-//   従来式(floor(y / rowHeight))と一致します。
-export const clientYToRowIndex = (
-  yRelativeToBodyTop: number,
-  scrollTop: number,
-  scaleFactor: number,
-  rowHeight: number,
-  rowCount: number,
-): number => {
-  const d = scrollTop * (1 - scaleFactor);
-  const row = Math.floor((yRelativeToBodyTop - d) / rowHeight);
-  return Math.min(Math.max(row, 0), Math.max(rowCount - 1, 0));
+// 非同期収集結果は「どの収集に対する結果か」をキー(source/rowCount)付きで持ちます。
+//   レンダー時に現在のキーと照合し、不一致(別列を開いた直後の 1 レンダー等)なら stale と
+//   みなして collecting を返すため、直前列の候補が一瞬見える問題を防ぎます。あわせて、
+//   この方式により effect 本体での同期 setState(set-state-in-effect)も不要になります。
+type AsyncCollectState = {
+  source: RawValueAccessor | null;
+  rowCount: number;
+  result: ColumnSelectOptionsResult;
+};
+const IDLE_ASYNC_STATE: AsyncCollectState = {
+  source: null,
+  rowCount: 0,
+  result: IDLE_RESULT,
 };
 
-export const computeVerticalGeometry = ({
+// 追加(DS-4 #1): select / set 候補を「通常規模=同期 / 大規模=時間分割の非同期」で収集します。
+//   - 同期経路: 旧 getColumnSelectOptions と同じ open レンダー 1 回きりの useMemo(チラつき無)。
+//   - 非同期経路: yieldToMain で主スレッドを塞がずチャンク収集し、effect cleanup の cancelled
+//     フラグで後続 run / unmount / 母集合変化に対し安全に中断します。
+//   - どちらも logic/selectOptions の共有コレクタを使うため、結果はバイト等価です。
+export const useColumnSelectOptionsCollector = <T,>({
+  column,
   rowCount,
-  rowHeight,
-  headerHeight,
-  viewportHeight,
-  scrollTop,
-  overscan,
-  maxBodyPx,
-}: ComputeVerticalGeometryArgs): VerticalGeometry => {
-  const logicalBodyHeight = rowCount * rowHeight;
-  const physicalBodyHeight = Math.min(logicalBodyHeight, maxBodyPx);
+  getRawValueAt,
+}: UseColumnSelectOptionsCollectorArgs<T>): ColumnSelectOptionsResult => {
+  const filterType = column?.filterType ?? null;
+  const isSelectLike = filterType === 'select' || filterType === 'set';
+  const explicitOptions =
+    column?.filterOptions && column.filterOptions.length > 0
+      ? column.filterOptions
+      : null;
+  const needsAsync =
+    isSelectLike &&
+    explicitOptions === null &&
+    rowCount > ASYNC_SELECT_COLLECT_ROW_THRESHOLD;
 
-  // 物理 / 論理それぞれのスクロール可動域です。両端(先頭・末尾)を一致させるため、
-  // 「全高」ではなく「可動域(total - viewport)」を基準に倍率を取ります
-  // (全高基準だと末尾でオーバーシュートし、最終行が下端に届きません)。
-  const logicalMax = Math.max(headerHeight + logicalBodyHeight - viewportHeight, 0);
-  const physicalMax = Math.max(headerHeight + physicalBodyHeight - viewportHeight, 0);
+  // 同期で確定できるケースはここで即時決定します(従来挙動・チラつきなし)。
+  //   needsAsync のときだけ null を返し、下の effect 経路へ委ねます。
+  const syncResult = useMemo<ColumnSelectOptionsResult | null>(() => {
+    if (!column || !isSelectLike) {
+      return IDLE_RESULT;
+    }
+    if (explicitOptions) {
+      const options = explicitOptions as SelectOptionEntry[];
+      return {
+        status: 'ready',
+        options,
+        allValues: buildValueSet(options),
+        progress: 1,
+      };
+    }
+    if (!needsAsync) {
+      const options = collectSelectOptions(rowCount, getRawValueAt);
+      return {
+        status: 'ready',
+        options,
+        allValues: buildValueSet(options),
+        progress: 1,
+      };
+    }
+    return null;
+    // getRawValueAt の identity 変化(= rows/column 変化)で同期収集をやり直します(旧 [rows] と等価)。
+  }, [column, isSelectLike, explicitOptions, needsAsync, rowCount, getRawValueAt]);
 
-  // 圧縮不要 / スクロール不能時は scaleFactor=1(= 現状と数値一致・transform なし)。
-  const scaleFactor =
-    physicalMax > 0 && logicalBodyHeight > physicalBodyHeight
-      ? logicalMax / physicalMax
-      : 1;
+  const [asyncState, setAsyncState] =
+    useState<AsyncCollectState>(IDLE_ASYNC_STATE);
 
-  // 物理 scrollTop を論理オフセットへ写像します。
-  const clampedScrollTop = Math.min(Math.max(scrollTop, 0), physicalMax);
-  const logicalScrollTop = clampedScrollTop * scaleFactor;
+  useEffect(() => {
+    // 同期で確定済み(syncResult!==null)なら非同期 run は不要です。進行中の run があっても、
+    //   この effect 再実行に伴う直前 cleanup(下の return)で既に中断されています。
+    if (syncResult !== null) {
+      return;
+    }
 
-  // overlay+body wrapper の translateY。D = S_phys - S_log(<= 0)。
-  //   行は論理 top(headerHeight + index*rowHeight)へ置き、この D で物理ウィンドウへ
-  //   引き込むことで、行 index の表示位置は論理スクロール S_log のときと完全一致します。
-  const translateY = clampedScrollTop - logicalScrollTop;
+    // この run のキー。collecting/ready の setAsyncState はこのキー付きで行い、レンダー側で照合します。
+    const myKey = getRawValueAt;
+    const myRowCount = rowCount;
+    const accumulator = createSelectOptionsAccumulator();
+    // 収集開始時の collecting 表示は、レンダー時フォールバック(下記 asyncResult 導出)が担います。
+    //   effect 本体での同期 setState を避けるため、ここでは run を起動するだけにします。
+    let cancelled = false;
 
-  // 窓出し(uniform: 純粋な算術)。論理オフセット基準で firstVisible を求めます。
-  //   firstVisible = floor(S_log / rowHeight) は、行 index の表示 y =
-  //   headerHeight + index*rowHeight - S_log がボディ可視域に入る先頭行です
-  //   (ヘッダー下に一部潜る行を含むため floor)。overscan が上方向の被覆行も賄います。
-  const visibleCount = Math.ceil(viewportHeight / rowHeight) + 1;
-  const firstVisible = Math.floor(logicalScrollTop / rowHeight);
-  const start = Math.max(firstVisible - overscan, 0);
-  const end = Math.min(firstVisible + visibleCount + overscan, rowCount);
+    const run = async (): Promise<void> => {
+      let index = 0;
+      while (index < myRowCount) {
+        const sliceStart = now();
+        while (index < myRowCount && now() - sliceStart < CHUNK_BUDGET_MS) {
+          accumulator.collect(myKey(index));
+          index += 1;
+        }
+        if (index < myRowCount) {
+          await yieldToMain();
+          // yield 後の中断判定(後続 run / unmount / 母集合変化で cleanup が cancelled を立てる)。
+          if (cancelled) {
+            return;
+          }
+          setAsyncState({
+            source: myKey,
+            rowCount: myRowCount,
+            result: {
+              status: 'collecting',
+              options: EMPTY_OPTIONS,
+              allValues: EMPTY_VALUES,
+              progress: index / myRowCount,
+            },
+          });
+        }
+      }
+      if (cancelled) {
+        return;
+      }
+      const options = accumulator.finalize();
+      setAsyncState({
+        source: myKey,
+        rowCount: myRowCount,
+        result: {
+          status: 'ready',
+          options,
+          allValues: buildValueSet(options),
+          progress: 1,
+        },
+      });
+    };
+    void run();
 
-  const rows: VerticalRow[] = [];
-  const rowIndexSet = new Set<number>();
-  for (let index = start; index < end; index += 1) {
-    rows.push({ index, start: headerHeight + index * rowHeight });
-    rowIndexSet.add(index);
-  }
+    return () => {
+      // effect 再実行 / unmount: 進行中 run を次の yield 後に中断させます。
+      cancelled = true;
+    };
+  }, [syncResult, rowCount, getRawValueAt]);
 
+  // 非同期結果はキー一致時のみ採用します。不一致(別列を開いた直後等)は stale とみなし
+  //   collecting(0%)を返し、直前列の候補表示と effect 内同期 setState の双方を避けます。
+  const asyncResult: ColumnSelectOptionsResult =
+    asyncState.source === getRawValueAt && asyncState.rowCount === rowCount
+      ? asyncState.result
+      : COLLECTING_INITIAL;
+
+  return syncResult ?? asyncResult;
+};
+
+export default useColumnSelectOptionsCollector;
+</file>
+
+<file path="src/components/spreadsheet-grid/logic/selectOptions.ts">
+// 追加(DS-4 #1): select / set フィルター候補の収集ロジックを 1 か所へ集約します。
+//   同期一括版(通常規模)と時間分割の非同期版(500k/1M)の双方がここを共有するため、
+//   刻み方が違っても収集結果はバイト等価になります(DS-4① の
+//   createColumnWidthAccumulator と同じ「共有アキュムレータで等価保証」方針)。
+import { STRING_COLLATOR } from './sorting';
+
+// 候補の最小型です。view 層の ColumnFilterPopoverOption と構造的に同一で相互代入可能ですが、
+//   logic -> view の依存を作らないため別定義にします。
+export type SelectOptionEntry = { label: string; value: string };
+
+// 候補収集アキュムレータです。raw セル値を 1 件ずつ collect し、最後に finalize でソート確定します。
+//   String 化・空白ラベル・ソート規則はいずれも旧 getColumnSelectOptions と同一です。
+export const createSelectOptionsAccumulator = () => {
+  const seen = new Set<string>();
+  const options: SelectOptionEntry[] = [];
   return {
-    physicalBodyHeight,
-    logicalBodyHeight,
-    scaleFactor,
-    translateY,
-    rows,
-    rowIndexSet,
+    // raw セル値 1 件を候補へ反映します(初出のみ push。走査順=push 順)。
+    collect(rawValue: unknown): void {
+      const value = String(rawValue ?? '');
+      if (seen.has(value)) {
+        return;
+      }
+      seen.add(value);
+      options.push({ value, label: value || '（空白）' });
+    },
+    // 収集済み候補をソート確定します(label の STRING_COLLATOR 比較。旧実装と同一)。
+    finalize(): SelectOptionEntry[] {
+      return options.sort((left, right) =>
+        STRING_COLLATOR.compare(left.label, right.label),
+      );
+    },
   };
+};
+
+// 同期一括版です(通常規模で使用)。旧 getColumnSelectOptions のスキャン本体と等価です。
+//   getRawValueAt(index) は rows[index] の対象列セル値(= getCellValue(rows[index], column))を返します。
+export const collectSelectOptions = (
+  rowCount: number,
+  getRawValueAt: (index: number) => unknown,
+): SelectOptionEntry[] => {
+  const accumulator = createSelectOptionsAccumulator();
+  for (let index = 0; index < rowCount; index += 1) {
+    accumulator.collect(getRawValueAt(index));
+  }
+  return accumulator.finalize();
 };
 </file>
 
@@ -1126,6 +1219,168 @@ export const shouldIgnoreGridKeydown = (eventTarget: EventTarget | null) => {
   );
 
   return interactiveElement !== null;
+};
+</file>
+
+<file path="src/components/spreadsheet-grid/logic/verticalGeometry.ts">
+// 縦スクロールの仮想化ジオメトリ(uniform 行高専用)です。
+//
+// 目的(scroll-space 仮想化 / 1M 行対応):
+//   論理ボディ全高 = rowCount * rowHeight が、ブラウザの要素高さ上限
+//   (Chrome/Edge/Electron ≈ 33,554,432px / Firefox ≈ 17,895,697px) を超えると、
+//   scrollHeight がクランプされて末尾行が到達不能になります(座標破綻 = 機能ブロッカー)。
+//   そこで物理 DOM 高さを上限内(MAX_BODY_PX)へ圧縮し、物理 scrollTop ↔ 論理オフセットを
+//   線形写像します(= pixel scaling)。圧縮が不要な行数では完全な恒等写像になります。
+//
+// 設計(このコードベース固有の前提を踏襲):
+//   - 単一スクロールコンテナ + sticky 3 ペイン(Batch 10-G)を維持します。ネイティブ
+//     スクロールのまま、行/overlay レイヤーへ translateY(D) を掛けて物理ウィンドウへ
+//     引き込みます(JS スクロール同期は増やしません)。
+//   - 行は uniform 行高(estimateSize 定数)なので、窓出しは純粋な算術(firstRow / count)に
+//     潰れます。実測 / 二分探索 / サイズキャッシュは不要です。
+//   - 物理↔論理写像・行窓・ヒットテストを本ファイル 1 か所へ集約します(縦ジオメトリの
+//     シーム)。将来 auto-height モードを足すときは、同じ契約の第二実装(prefix-sum +
+//     二分探索 + ResizeObserver)へ差し替えるだけで、消費側(GridBodyLayer / ヒットテスト /
+//     viewport-sync)は不変に保てます。
+//
+// 等価性(圧縮不要時の no-op):
+//   logicalBodyHeight <= MAX_BODY_PX のとき scaleFactor = 1 / translateY = 0 となり、
+//   rows[i].start = headerHeight + i * rowHeight は旧 rowVirtualizer(scrollMargin=
+//   headerHeight / estimateSize=rowHeight)の virtualRow.start と数値的に一致します。
+//   ヒットテストも D=0 で従来式(floor(y / rowHeight))と一致します。
+
+// 物理ボディ高さの上限です。
+// 注記: 全ブラウザ安全側の既定として 15,000,000 を採用しています(Firefox ≈ 17.9M を
+//   下回るマージン)。scaling が起動する閾値は MAX_BODY_PX / rowHeight 行
+//   (rowHeight=36 なら約 417k 行)で、これ未満では現状と数値一致します。
+//   実行環境が Chrome / Electron 確定なら 30,000,000 まで上げて起動閾値を約 833k 行へ
+//   押し上げてよく、その場合の差分は本定数 1 行のみです。
+export const MAX_BODY_PX = 15_000_000;
+
+// 描画する 1 行の窓エントリです(旧 @tanstack/react-virtual の VirtualItem 互換)。
+export type VerticalRow = {
+  index: number;
+  // 行の論理 top(headerHeight 込み)。GridBodyLayer の translateY 基準(virtualRow.start 互換)。
+  start: number;
+};
+
+// 縦ジオメトリのシーム契約です。uniform / 将来の auto-height で実装を差し替えても、
+// 消費側はこの型だけに依存します。
+export type VerticalGeometry = {
+  // コンテナ / overlay+body wrapper / ドロップインジケータの高さに使う物理ボディ高さ
+  // (= min(logicalBodyHeight, MAX_BODY_PX))。
+  physicalBodyHeight: number;
+  // 論理ボディ全高(= rowCount * rowHeight)。selection の全面高さ等、論理座標が要る箇所用。
+  logicalBodyHeight: number;
+  // 物理 scrollTop → 論理 scrollTop の倍率(>= 1)。logicalBodyHeight <= cap のとき 1。
+  scaleFactor: number;
+  // overlay+body wrapper に掛ける translateY(<= 0)。scaleFactor=1 のとき 0(現状と一致)。
+  translateY: number;
+  // 描画する行窓(virtualRow 互換の {index, start})。
+  rows: VerticalRow[];
+  // 描画行 index 集合(GridBodyLayer の OOB / 重複ガードと整合)。
+  rowIndexSet: Set<number>;
+};
+
+export type ComputeVerticalGeometryArgs = {
+  rowCount: number;
+  rowHeight: number;
+  headerHeight: number;
+  // スクロールコンテナの可視高さ(clientHeight)。窓の行数と scaleFactor に効きます。
+  viewportHeight: number;
+  // 物理 scrollTop(スクロールコンテナの scrollTop そのもの)。
+  scrollTop: number;
+  // 窓の上下に先回りで描画する行数(旧 rowVirtualizer overscan=20 相当)。
+  overscan: number;
+  // 物理ボディ高さの上限(MAX_BODY_PX)。
+  maxBodyPx: number;
+};
+
+// 物理 scrollTop → 論理 scrollTop です(active cell 自動スクロールの現在位置換算に使用)。
+export const physicalToLogicalScrollTop = (
+  physical: number,
+  scaleFactor: number,
+): number => physical * scaleFactor;
+
+// 論理 scrollTop → 物理 scrollTop です(算出した論理スクロール目標を実 scrollTop へ戻す)。
+export const logicalToPhysicalScrollTop = (
+  logical: number,
+  scaleFactor: number,
+): number => (scaleFactor === 1 ? logical : logical / scaleFactor);
+
+// ヒットテスト: ボディ content-top 基準の物理 y(= 旧来の y。moving rect 経由で物理
+//   スクロール量 S_phys を含む)→ 行 index。
+//   論理 y = y - D(D = S_phys * (1 - scaleFactor))で求めます。scaleFactor=1 のとき D=0 で
+//   従来式(floor(y / rowHeight))と一致します。
+export const clientYToRowIndex = (
+  yRelativeToBodyTop: number,
+  scrollTop: number,
+  scaleFactor: number,
+  rowHeight: number,
+  rowCount: number,
+): number => {
+  const d = scrollTop * (1 - scaleFactor);
+  const row = Math.floor((yRelativeToBodyTop - d) / rowHeight);
+  return Math.min(Math.max(row, 0), Math.max(rowCount - 1, 0));
+};
+
+export const computeVerticalGeometry = ({
+  rowCount,
+  rowHeight,
+  headerHeight,
+  viewportHeight,
+  scrollTop,
+  overscan,
+  maxBodyPx,
+}: ComputeVerticalGeometryArgs): VerticalGeometry => {
+  const logicalBodyHeight = rowCount * rowHeight;
+  const physicalBodyHeight = Math.min(logicalBodyHeight, maxBodyPx);
+
+  // 物理 / 論理それぞれのスクロール可動域です。両端(先頭・末尾)を一致させるため、
+  // 「全高」ではなく「可動域(total - viewport)」を基準に倍率を取ります
+  // (全高基準だと末尾でオーバーシュートし、最終行が下端に届きません)。
+  const logicalMax = Math.max(headerHeight + logicalBodyHeight - viewportHeight, 0);
+  const physicalMax = Math.max(headerHeight + physicalBodyHeight - viewportHeight, 0);
+
+  // 圧縮不要 / スクロール不能時は scaleFactor=1(= 現状と数値一致・transform なし)。
+  const scaleFactor =
+    physicalMax > 0 && logicalBodyHeight > physicalBodyHeight
+      ? logicalMax / physicalMax
+      : 1;
+
+  // 物理 scrollTop を論理オフセットへ写像します。
+  const clampedScrollTop = Math.min(Math.max(scrollTop, 0), physicalMax);
+  const logicalScrollTop = clampedScrollTop * scaleFactor;
+
+  // overlay+body wrapper の translateY。D = S_phys - S_log(<= 0)。
+  //   行は論理 top(headerHeight + index*rowHeight)へ置き、この D で物理ウィンドウへ
+  //   引き込むことで、行 index の表示位置は論理スクロール S_log のときと完全一致します。
+  const translateY = clampedScrollTop - logicalScrollTop;
+
+  // 窓出し(uniform: 純粋な算術)。論理オフセット基準で firstVisible を求めます。
+  //   firstVisible = floor(S_log / rowHeight) は、行 index の表示 y =
+  //   headerHeight + index*rowHeight - S_log がボディ可視域に入る先頭行です
+  //   (ヘッダー下に一部潜る行を含むため floor)。overscan が上方向の被覆行も賄います。
+  const visibleCount = Math.ceil(viewportHeight / rowHeight) + 1;
+  const firstVisible = Math.floor(logicalScrollTop / rowHeight);
+  const start = Math.max(firstVisible - overscan, 0);
+  const end = Math.min(firstVisible + visibleCount + overscan, rowCount);
+
+  const rows: VerticalRow[] = [];
+  const rowIndexSet = new Set<number>();
+  for (let index = start; index < end; index += 1) {
+    rows.push({ index, start: headerHeight + index * rowHeight });
+    rowIndexSet.add(index);
+  }
+
+  return {
+    physicalBodyHeight,
+    logicalBodyHeight,
+    scaleFactor,
+    translateY,
+    rows,
+    rowIndexSet,
+  };
 };
 </file>
 
@@ -2823,176 +3078,6 @@ export const useGridKeyboardInteractions = <T,>({
 export default useGridKeyboardInteractions;
 </file>
 
-<file path="src/components/spreadsheet-grid/hooks/useGridViewportSync.ts">
-import { useEffect, type RefObject } from 'react';
-import type { ActiveCellOverlayRect } from '../ActiveCellOverlay';
-import type { ColumnMeasurement } from '../logic/geometry';
-// 追加(scroll-space 仮想化): active cell 自動スクロール / clamp の物理↔論理換算。
-import {
-  logicalToPhysicalScrollTop,
-  physicalToLogicalScrollTop,
-} from '../logic/verticalGeometry';
-
-type VirtualizerLike = {
-  measure: () => void;
-};
-
-type UseGridViewportSyncArgs<T> = {
-  // 変更(10-G): 縦横ともに「外側スクロールコンテナ 1 本」がネイティブスクロールします。
-  //             旧 bodyScrollRef(中央ペイン)はスクロールしなくなったため、scroll clamp /
-  //             active cell 可視化はすべてこの共有スクロール要素に対して行います。
-  scrollRef: RefObject<HTMLDivElement | null>;
-  columnVirtualizer: VirtualizerLike;
-  // columnVirtualizer の再計測トリガー用の依存です（中身は座標計算には使いません）。
-  columnMeasurements: ColumnMeasurement<T>[];
-  // 変更(10-G): 共有スクロールコンテナの内側コンテンツ全幅です。
-  //             = 左固定ペイン幅 + 中央ペイン幅 + 右固定ペイン幅。
-  //             水平方向の scroll clamp(content shrink 対策)に使います。
-  totalScrollWidth: number;
-  // 変更(scroll-space 仮想化): content-shrink clamp は物理ボディ高さ基準にします
-  //   (旧 totalBodyHeight=論理全高 → physicalBodyHeight=ブラウザ上限内へ圧縮済みの高さ)。
-  physicalBodyHeight: number;
-  headerHeight: number;
-  // 追加(10-G): 左/右固定ペインの幅です。固定ペインは sticky で視界の左右端を覆うため、
-  //             active cell の可視判定では「固定ペインに隠れない領域」へ収める必要があります。
-  leftPaneWidth: number;
-  rightPaneWidth: number;
-  // 追加(10-G): 中央ペインが列の前に確保する先頭幅です（左固定なし時の行ヘッダー幅 / 左固定あり時 0）。
-  centerLeadingWidth: number;
-  // active cell が中央ペインにあるときの「中央ペインローカル矩形」です。
-  // 固定ペインにある場合は横スクロール不要なので null が渡されます。
-  activeCellRect: ActiveCellOverlayRect | null;
-  // 追加(scroll-space 仮想化): active cell 自動スクロールの論理↔物理換算倍率
-  //   (scaleFactor=1 のとき両変換は恒等＝現状と完全一致)。
-  verticalScaleFactor: number;
-};
-
-// 追加: virtualizer 再計測、content shrink 時の scroll clamp、active cell 可視化をまとめます。
-// 変更(10-G): スクロールのマスターを中央ペインから「外側の共有スクロールコンテナ」へ移しました。
-//             これにより左右固定ペインは同一ネイティブスクロールで縦に動き、JS による
-//             transform 同期が不要になります（＝固定列のチカチカ/ティアリングが原理的に消えます）。
-export const useGridViewportSync = <T,>({
-  scrollRef,
-  columnVirtualizer,
-  columnMeasurements,
-  totalScrollWidth,
-  physicalBodyHeight,
-  headerHeight,
-  leftPaneWidth,
-  rightPaneWidth,
-  centerLeadingWidth,
-  activeCellRect,
-  verticalScaleFactor,
-}: UseGridViewportSyncArgs<T>) => {
-  // 追加: column geometry が変わった際に horizontal virtualizer を再計測します。
-  useEffect(() => {
-    columnVirtualizer.measure();
-  }, [columnVirtualizer, columnMeasurements]);
-
-  // 追加: content サイズが縮んだ場合に scroll を clamp します。
-  // 変更(10-G): 対象を中央ペインから共有スクロールコンテナへ。最大スクロール量は
-  //             コンテンツ全幅/全高 - クライアントサイズで求めます。
-  useEffect(() => {
-    if (!scrollRef.current) {
-      return;
-    }
-
-    const scrollElement = scrollRef.current;
-    const maxScrollLeft = Math.max(
-      totalScrollWidth - scrollElement.clientWidth,
-      0,
-    );
-    const maxScrollTop = Math.max(
-      headerHeight + physicalBodyHeight - scrollElement.clientHeight,
-      0,
-    );
-
-    if (scrollElement.scrollLeft > maxScrollLeft) {
-      scrollElement.scrollLeft = maxScrollLeft;
-    }
-    if (scrollElement.scrollTop > maxScrollTop) {
-      scrollElement.scrollTop = maxScrollTop;
-    }
-  }, [scrollRef, totalScrollWidth, physicalBodyHeight, headerHeight]);
-
-  // 追加: active cell が画面外へ出た場合に、scroll container を自動調整して常に表示領域内へ収めます。
-  // 注記(10-G): activeCellRect は中央ペインローカル座標です。中央ペイン以外（固定列）に
-  //             active cell がある場合は呼び出し側で null が渡るため、横スクロールは発生しません。
-  //   - 縦: ヘッダー(sticky)に隠れない領域 [scrollTop + headerHeight, scrollTop + clientHeight] に収めます。
-  //   - 横: 左右固定ペイン(sticky)に隠れない領域
-  //         [scrollLeft + leftPaneWidth, scrollLeft + clientWidth - rightPaneWidth] に収めます。
-  useEffect(() => {
-    if (!scrollRef.current || !activeCellRect) {
-      return;
-    }
-
-    const scrollElement = scrollRef.current;
-
-    // セルの「スクロールコンテンツ内」絶対座標(論理)です。
-    const cellTop = headerHeight + activeCellRect.top;
-    const cellBottom = cellTop + activeCellRect.height;
-    const cellLeft = leftPaneWidth + centerLeadingWidth + activeCellRect.left;
-    const cellRight = cellLeft + activeCellRect.width;
-
-    // 変更(scroll-space 仮想化): 縦の可視判定は論理座標で行い、設定時に物理 scrollTop へ戻します。
-    //   行は物理 36px のまま(サイズは非圧縮)なので可視域は実 viewportHeight のまま不変で、
-    //   縦のスクロール位置のみ scaleFactor 換算します(scaleFactor=1 のとき現状と完全一致)。
-    //   横(scrollLeft)は圧縮対象外のため物理値のまま据え置きです。
-    const currentScrollTop = physicalToLogicalScrollTop(
-      scrollElement.scrollTop,
-      verticalScaleFactor,
-    );
-    const currentScrollLeft = scrollElement.scrollLeft;
-    const viewportHeight = scrollElement.clientHeight;
-    const viewportWidth = scrollElement.clientWidth;
-
-    let nextScrollTop = currentScrollTop;
-    let nextScrollLeft = currentScrollLeft;
-
-    const visibleTop = currentScrollTop + headerHeight;
-    const visibleBottom = currentScrollTop + viewportHeight;
-    if (cellTop < visibleTop) {
-      nextScrollTop = Math.max(cellTop - headerHeight, 0);
-    } else if (cellBottom > visibleBottom) {
-      nextScrollTop = Math.max(cellBottom - viewportHeight, 0);
-    }
-
-    const visibleLeft = currentScrollLeft + leftPaneWidth;
-    const visibleRight = currentScrollLeft + viewportWidth - rightPaneWidth;
-    if (cellLeft < visibleLeft) {
-      nextScrollLeft = Math.max(cellLeft - leftPaneWidth, 0);
-    } else if (cellRight > visibleRight) {
-      nextScrollLeft = Math.max(
-        cellRight - viewportWidth + rightPaneWidth,
-        0,
-      );
-    }
-
-    if (
-      nextScrollTop !== currentScrollTop ||
-      nextScrollLeft !== currentScrollLeft
-    ) {
-      scrollElement.scrollTo({
-        // nextScrollTop は論理。実 scrollTop は物理なので戻します(横はそのまま)。
-        top: logicalToPhysicalScrollTop(nextScrollTop, verticalScaleFactor),
-        left: nextScrollLeft,
-        behavior: 'auto',
-      });
-    }
-  }, [
-    scrollRef,
-    activeCellRect,
-    headerHeight,
-    leftPaneWidth,
-    rightPaneWidth,
-    centerLeadingWidth,
-    verticalScaleFactor,
-  ]);
-};
-
-export default useGridViewportSync;
-</file>
-
 <file path="src/components/spreadsheet-grid/model/gridSelectors.ts">
 import type { CellCoord, CellRange, GridUiState } from './gridTypes';
 
@@ -4472,6 +4557,176 @@ export const useGridEditController = <T extends object>({
 };
 
 export default useGridEditController;
+</file>
+
+<file path="src/components/spreadsheet-grid/hooks/useGridViewportSync.ts">
+import { useEffect, type RefObject } from 'react';
+import type { ActiveCellOverlayRect } from '../ActiveCellOverlay';
+import type { ColumnMeasurement } from '../logic/geometry';
+// 追加(scroll-space 仮想化): active cell 自動スクロール / clamp の物理↔論理換算。
+import {
+  logicalToPhysicalScrollTop,
+  physicalToLogicalScrollTop,
+} from '../logic/verticalGeometry';
+
+type VirtualizerLike = {
+  measure: () => void;
+};
+
+type UseGridViewportSyncArgs<T> = {
+  // 変更(10-G): 縦横ともに「外側スクロールコンテナ 1 本」がネイティブスクロールします。
+  //             旧 bodyScrollRef(中央ペイン)はスクロールしなくなったため、scroll clamp /
+  //             active cell 可視化はすべてこの共有スクロール要素に対して行います。
+  scrollRef: RefObject<HTMLDivElement | null>;
+  columnVirtualizer: VirtualizerLike;
+  // columnVirtualizer の再計測トリガー用の依存です（中身は座標計算には使いません）。
+  columnMeasurements: ColumnMeasurement<T>[];
+  // 変更(10-G): 共有スクロールコンテナの内側コンテンツ全幅です。
+  //             = 左固定ペイン幅 + 中央ペイン幅 + 右固定ペイン幅。
+  //             水平方向の scroll clamp(content shrink 対策)に使います。
+  totalScrollWidth: number;
+  // 変更(scroll-space 仮想化): content-shrink clamp は物理ボディ高さ基準にします
+  //   (旧 totalBodyHeight=論理全高 → physicalBodyHeight=ブラウザ上限内へ圧縮済みの高さ)。
+  physicalBodyHeight: number;
+  headerHeight: number;
+  // 追加(10-G): 左/右固定ペインの幅です。固定ペインは sticky で視界の左右端を覆うため、
+  //             active cell の可視判定では「固定ペインに隠れない領域」へ収める必要があります。
+  leftPaneWidth: number;
+  rightPaneWidth: number;
+  // 追加(10-G): 中央ペインが列の前に確保する先頭幅です（左固定なし時の行ヘッダー幅 / 左固定あり時 0）。
+  centerLeadingWidth: number;
+  // active cell が中央ペインにあるときの「中央ペインローカル矩形」です。
+  // 固定ペインにある場合は横スクロール不要なので null が渡されます。
+  activeCellRect: ActiveCellOverlayRect | null;
+  // 追加(scroll-space 仮想化): active cell 自動スクロールの論理↔物理換算倍率
+  //   (scaleFactor=1 のとき両変換は恒等＝現状と完全一致)。
+  verticalScaleFactor: number;
+};
+
+// 追加: virtualizer 再計測、content shrink 時の scroll clamp、active cell 可視化をまとめます。
+// 変更(10-G): スクロールのマスターを中央ペインから「外側の共有スクロールコンテナ」へ移しました。
+//             これにより左右固定ペインは同一ネイティブスクロールで縦に動き、JS による
+//             transform 同期が不要になります（＝固定列のチカチカ/ティアリングが原理的に消えます）。
+export const useGridViewportSync = <T,>({
+  scrollRef,
+  columnVirtualizer,
+  columnMeasurements,
+  totalScrollWidth,
+  physicalBodyHeight,
+  headerHeight,
+  leftPaneWidth,
+  rightPaneWidth,
+  centerLeadingWidth,
+  activeCellRect,
+  verticalScaleFactor,
+}: UseGridViewportSyncArgs<T>) => {
+  // 追加: column geometry が変わった際に horizontal virtualizer を再計測します。
+  useEffect(() => {
+    columnVirtualizer.measure();
+  }, [columnVirtualizer, columnMeasurements]);
+
+  // 追加: content サイズが縮んだ場合に scroll を clamp します。
+  // 変更(10-G): 対象を中央ペインから共有スクロールコンテナへ。最大スクロール量は
+  //             コンテンツ全幅/全高 - クライアントサイズで求めます。
+  useEffect(() => {
+    if (!scrollRef.current) {
+      return;
+    }
+
+    const scrollElement = scrollRef.current;
+    const maxScrollLeft = Math.max(
+      totalScrollWidth - scrollElement.clientWidth,
+      0,
+    );
+    const maxScrollTop = Math.max(
+      headerHeight + physicalBodyHeight - scrollElement.clientHeight,
+      0,
+    );
+
+    if (scrollElement.scrollLeft > maxScrollLeft) {
+      scrollElement.scrollLeft = maxScrollLeft;
+    }
+    if (scrollElement.scrollTop > maxScrollTop) {
+      scrollElement.scrollTop = maxScrollTop;
+    }
+  }, [scrollRef, totalScrollWidth, physicalBodyHeight, headerHeight]);
+
+  // 追加: active cell が画面外へ出た場合に、scroll container を自動調整して常に表示領域内へ収めます。
+  // 注記(10-G): activeCellRect は中央ペインローカル座標です。中央ペイン以外（固定列）に
+  //             active cell がある場合は呼び出し側で null が渡るため、横スクロールは発生しません。
+  //   - 縦: ヘッダー(sticky)に隠れない領域 [scrollTop + headerHeight, scrollTop + clientHeight] に収めます。
+  //   - 横: 左右固定ペイン(sticky)に隠れない領域
+  //         [scrollLeft + leftPaneWidth, scrollLeft + clientWidth - rightPaneWidth] に収めます。
+  useEffect(() => {
+    if (!scrollRef.current || !activeCellRect) {
+      return;
+    }
+
+    const scrollElement = scrollRef.current;
+
+    // セルの「スクロールコンテンツ内」絶対座標(論理)です。
+    const cellTop = headerHeight + activeCellRect.top;
+    const cellBottom = cellTop + activeCellRect.height;
+    const cellLeft = leftPaneWidth + centerLeadingWidth + activeCellRect.left;
+    const cellRight = cellLeft + activeCellRect.width;
+
+    // 変更(scroll-space 仮想化): 縦の可視判定は論理座標で行い、設定時に物理 scrollTop へ戻します。
+    //   行は物理 36px のまま(サイズは非圧縮)なので可視域は実 viewportHeight のまま不変で、
+    //   縦のスクロール位置のみ scaleFactor 換算します(scaleFactor=1 のとき現状と完全一致)。
+    //   横(scrollLeft)は圧縮対象外のため物理値のまま据え置きです。
+    const currentScrollTop = physicalToLogicalScrollTop(
+      scrollElement.scrollTop,
+      verticalScaleFactor,
+    );
+    const currentScrollLeft = scrollElement.scrollLeft;
+    const viewportHeight = scrollElement.clientHeight;
+    const viewportWidth = scrollElement.clientWidth;
+
+    let nextScrollTop = currentScrollTop;
+    let nextScrollLeft = currentScrollLeft;
+
+    const visibleTop = currentScrollTop + headerHeight;
+    const visibleBottom = currentScrollTop + viewportHeight;
+    if (cellTop < visibleTop) {
+      nextScrollTop = Math.max(cellTop - headerHeight, 0);
+    } else if (cellBottom > visibleBottom) {
+      nextScrollTop = Math.max(cellBottom - viewportHeight, 0);
+    }
+
+    const visibleLeft = currentScrollLeft + leftPaneWidth;
+    const visibleRight = currentScrollLeft + viewportWidth - rightPaneWidth;
+    if (cellLeft < visibleLeft) {
+      nextScrollLeft = Math.max(cellLeft - leftPaneWidth, 0);
+    } else if (cellRight > visibleRight) {
+      nextScrollLeft = Math.max(
+        cellRight - viewportWidth + rightPaneWidth,
+        0,
+      );
+    }
+
+    if (
+      nextScrollTop !== currentScrollTop ||
+      nextScrollLeft !== currentScrollLeft
+    ) {
+      scrollElement.scrollTo({
+        // nextScrollTop は論理。実 scrollTop は物理なので戻します(横はそのまま)。
+        top: logicalToPhysicalScrollTop(nextScrollTop, verticalScaleFactor),
+        left: nextScrollLeft,
+        behavior: 'auto',
+      });
+    }
+  }, [
+    scrollRef,
+    activeCellRect,
+    headerHeight,
+    leftPaneWidth,
+    rightPaneWidth,
+    centerLeadingWidth,
+    verticalScaleFactor,
+  ]);
+};
+
+export default useGridViewportSync;
 </file>
 
 <file path="src/components/spreadsheet-grid/logic/columnAutosize.ts">
@@ -6107,6 +6362,10 @@ type ColumnFilterPopoverProps = {
   currentValueText: string;
   layout: ColumnFilterPopoverLayout | null;
   selectOptions: ColumnFilterPopoverOption[];
+  // 追加(DS-4 #1): 候補収集の状態です。'collecting' の間は universe(総数 / 全値集合)が未確定の
+  //   ため、set / select の操作 UI を出さず「収集中」を表示します(部分集合での誤確定を防ぐ)。
+  optionsStatus: 'idle' | 'collecting' | 'ready';
+  optionsProgress: number;
   // 変更(反転set): set 選択状態を { mode, values }(小さい側のみ)で受けます。null = 全選択。
   setSelection: ColumnFilterSetSelection | null;
   popoverRef: RefObject<HTMLDivElement | null>;
@@ -6407,6 +6666,8 @@ export function ColumnFilterPopover({
   currentValueText,
   layout,
   selectOptions,
+  optionsStatus,
+  optionsProgress,
   setSelection,
   popoverRef,
   textInputRef,
@@ -6471,7 +6732,21 @@ export function ColumnFilterPopover({
         列フィルター: {title}
       </div>
 
-      {isSetFilter ? (
+      {(isSetFilter || filterType === 'select') &&
+      optionsStatus === 'collecting' ? (
+        // 追加(DS-4 #1): 大規模列(>閾値)の候補収集中です。universe 未確定のため操作 UI は出さず、
+        //   進捗のみ表示します(収集完了 = ready で本来の set / select UI へ切り替わります)。
+        <div
+          style={{
+            padding: 24,
+            textAlign: 'center',
+            fontSize: 12,
+            color: '#64748b',
+          }}
+        >
+          候補を収集中… {Math.round(optionsProgress * 100)}%
+        </div>
+      ) : isSetFilter ? (
         // 追加(12-A): AG Grid の Set Filter 相当 UI です(チェック操作は即時適用)。
         <SetFilterBody
           options={selectOptions}
@@ -11730,13 +12005,12 @@ import {
   removeSortEntryAt,
   // 追加(MS-3-2): 優先順位 DnD の配列 move 純関数です。
   moveSortEntry,
-  // 追加(Set Filter perf / a): 候補ソートを per-call localeCompare から共有 Collator へ
-  //   寄せるために再利用します(DS-1 と同手当て・照合順序等価)。
-  STRING_COLLATOR,
 } from './logic/sorting';
 // 追加(DS-4 ①-(2)): 列幅自動調整を時間分割(async・単一経路)で実行するランナーです。
 //   計測ロジック本体(logic/columnAutosize)はランナー内部で使うため、ここでの直 import は不要です。
 import useColumnAutosizeRunner from './hooks/useColumnAutosizeRunner';
+// 追加(DS-4 #1): select / set 候補を「通常規模=同期 / 大規模=時間分割の非同期」で収集します。
+import useColumnSelectOptionsCollector from './hooks/useColumnSelectOptionsCollector';
 import type {
   CellCoord,
   CellRenderState,
@@ -11751,8 +12025,6 @@ import type {
 } from './model/gridTypes';
 import { getCellValue, isCellEditable, setCellValue } from './utils/permissions';
 import ColumnFilterPopover, {
-  // 追加(12-A): popover を開いている列の候補メモ化に使う型です。
-  type ColumnFilterPopoverOption,
   // 追加(反転set): set 選択状態 { mode, values } 型と mode 判定ヘルパです。
   type ColumnFilterSetSelection,
   isSetValueSelected,
@@ -11776,10 +12048,6 @@ import SortManagementPanel, {
 // import ColumnChooserPanel, {
 //   type ColumnChooserItem,
 // } from './view/ColumnChooserPanel';
-
-// 追加(12-A): popover 非表示時 / 候補不要な filterType 用の安定空配列です。
-//             useMemo の返り値参照を安定させるため module スコープに置きます。
-const EMPTY_FILTER_OPTIONS: ColumnFilterPopoverOption[] = [];
 
 // 追加(反転set): 小さい側の集合に 1 件 / 複数件を加減する純ヘルパです(巨大側は作りません)。
 const setWith = (base: ReadonlySet<string>, value: string): Set<string> => {
@@ -12141,38 +12409,9 @@ export function SpreadsheetGrid<T extends object>({
   }, [visibleColumns]);
 
   // ── row models (source → filtered → sorted) ──────────
-  const getColumnSelectOptions = useCallback(
-    (column: GridColumn<T>) => {
-      if (column.filterOptions && column.filterOptions.length > 0) {
-        return column.filterOptions;
-      }
-      const seen = new Set<string>();
-      // 変更(DS-2): sourceRowModels 廃止に伴い rows を直接走査します(走査順・値とも等価)。
-      const options = rows.reduce<{ label: string; value: string }[]>(
-        (acc, row) => {
-          const value = String(getCellValue(row, column) ?? '');
-          if (seen.has(value)) {
-            return acc;
-          }
-          seen.add(value);
-          acc.push({
-            value,
-            label: value || '（空白）',
-          });
-          return acc;
-        },
-        [],
-      );
-      // 変更(Set Filter perf / a): per-call localeCompare('ja', opts) は候補が
-      //   30 万件超(品番のような全件ユニーク列)で致命的に遅く、popover 表示遅延の
-      //   主因でした(DS-1 と同症状・20 万件で約 7.5 秒の実測)。共有 Collator の
-      //   compare へ寄せると照合順序は等価のまま約 30 倍高速化します。
-      return options.sort((left, right) =>
-        STRING_COLLATOR.compare(left.label, right.label),
-      );
-    },
-    [rows],
-  );
+  // 変更(DS-4 #1): 候補収集は logic/selectOptions の共有コレクタへ移管しました。
+  //   開いている列の候補は useColumnSelectOptionsCollector が「通常規模=同期 / 大規模=
+  //   時間分割の非同期」で出し分けます(下部 filter popover actions 参照)。
 
   // 変更(11-A3): 依存を uiState 丸ごと → filters.globalText(string) へ縮小します。
   // 変更理由: これが「全行 memo が毎親レンダーで破られる」症状の根本原因でした。
@@ -13379,36 +13618,34 @@ export function SpreadsheetGrid<T extends object>({
   }, [closeColumnMenu, handleColumnChooserReset]);
 
   // ── filter popover actions ────────────────────────────
-  // 追加(12-A): popover を開いている列の select / set 候補です。
-  // 変更理由: 従来は JSX 内で getColumnSelectOptions(openedFilterColumn) を直接呼んでおり、
-  //   popover を開いたまま親が再レンダーするたび(set フィルター即時適用での再レンダー含む)に
-  //   5,000 行スキャン + ソートが再実行されていました。開いている列と行データが
-  //   変わらない限り、計算・参照とも再利用します。
-  // 変更(Set Filter perf / b 撤去): 収集は同期 useMemo(eager)で 1 回だけ実行します。
-  //   旧 (b) は useDeferredValue で収集を破棄可能な低優先度レンダーへ逃がしていましたが、
-  //   重い同期計算(500k の reduce+ソート ≈ 数百 ms)を deferred 化すると、収集中にユーザー操作
-  //   (高優先度更新)が割り込むたびに React がそのレンダーを破棄して useMemo をフルに再実行し、
-  //   再実行が累積して主スレッドを数秒〜十数秒ブロック(=「ページ応答なし」)していました。
-  //   eager は open レンダーで 1 回だけ走り(以後は openedFilterColumn/rows 不変でメモ再利用)、
-  //   破棄・再実行が起きないため固まりません(開く瞬間に一度きりの軽いもたつきのみ)。
-  const openedFilterSelectOptions = useMemo<ColumnFilterPopoverOption[]>(() => {
-    if (!openedFilterColumn) {
-      return EMPTY_FILTER_OPTIONS;
-    }
-    const filterType = openedFilterColumn.filterType ?? 'text';
-    if (filterType !== 'select' && filterType !== 'set') {
-      return EMPTY_FILTER_OPTIONS;
-    }
-    return getColumnSelectOptions(openedFilterColumn);
-  }, [openedFilterColumn, getColumnSelectOptions]);
-
-  // 追加(Set Filter perf / c): 全候補値の集合です。トグル/Select All の Set 初期化で
-  //   30 万件超の options.map(...) 配列を毎クリック確保しないよう、開いた列ごとに 1 度だけ
-  //   生成して使い回します(openedFilterSelectOptions と同ライフサイクル)。
-  const openedFilterAllValues = useMemo<ReadonlySet<string>>(
-    () => new Set(openedFilterSelectOptions.map((option) => option.value)),
-    [openedFilterSelectOptions],
+  // 追加(DS-4 #1): rows[index] の対象列セル値アクセサです。identity は rows/openedFilterColumn に
+  //   連動し、これが変わったときだけ候補収集をやり直します(旧 getColumnSelectOptions の [rows]
+  //   依存と等価)。set 即時適用の再レンダー(uiState 変化)では rows/openedFilterColumn とも不変の
+  //   ため identity が保たれ、収集の再実行は起きません(open 中の再収集なしを維持)。
+  const getOpenedColumnRawValueAt = useCallback(
+    (index: number): unknown =>
+      openedFilterColumn
+        ? getCellValue(rows[index], openedFilterColumn)
+        : undefined,
+    [rows, openedFilterColumn],
   );
+
+  // 変更(DS-4 #1): 候補収集を「通常規模=同期 / 大規模(>閾値)=時間分割の非同期」へ。
+  //   旧実装は open レンダーで同期 useMemo を 1 回走らせる eager 方式で、500k/1M では
+  //   その 1 回(reduce + ソート ≈ 0.4〜1s)が主スレッドを塞いでいました(deferred 化は
+  //   thrash のため不可)。通常規模はフック内の同期 useMemo で従来どおり即時確定し(チラつき無・
+  //   バイト等価)、大規模のみ yieldToMain で時間分割し、収集中は popover を収集中表示にします。
+  //   options 配列は同期/非同期いずれも logic/selectOptions の共有コレクタ経由でバイト等価です。
+  const {
+    options: openedFilterSelectOptions,
+    allValues: openedFilterAllValues,
+    status: openedFilterOptionsStatus,
+    progress: openedFilterOptionsProgress,
+  } = useColumnSelectOptionsCollector({
+    column: openedFilterColumn,
+    rowCount: rows.length,
+    getRawValueAt: getOpenedColumnRawValueAt,
+  });
 
   // 追加(12-A): popover を開いている列の set フィルター選択状態です。
   //             null = 全選択(フィルター未設定)を意味します。
@@ -14046,6 +14283,8 @@ export function SpreadsheetGrid<T extends object>({
       layout={filterPopoverLayout}
       selectOptions={openedFilterSelectOptions}
       setSelection={openedSetSelection}
+      optionsStatus={openedFilterOptionsStatus}
+      optionsProgress={openedFilterOptionsProgress}
       popoverRef={filterPopoverRef}
       textInputRef={filterTextInputRef}
       selectRef={filterSelectRef}
