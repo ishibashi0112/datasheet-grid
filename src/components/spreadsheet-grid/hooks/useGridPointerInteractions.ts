@@ -29,6 +29,8 @@ import {
   findLogicalIndexFromPaneOffset,
   type GridPaneLayout,
 } from '../logic/geometry';
+// 追加(scroll-space 仮想化): clientY→row の物理→論理換算(scaleFactor=1 で従来式と一致)。
+import { clientYToRowIndex } from '../logic/verticalGeometry';
 
 type UseGridPointerInteractionsArgs<T> = {
   gridRootRef: RefObject<HTMLDivElement | null>;
@@ -67,6 +69,8 @@ type UseGridPointerInteractionsArgs<T> = {
   rightLeadingWidth: number;
   headerHeight: number;
   rowHeight: number;
+  // 追加(scroll-space 仮想化): clientY→row の物理→論理換算倍率(scaleFactor=1 で従来式)。
+  verticalScaleFactor: number;
 };
 
 // 追加: pointer 系 interaction（cell/row/col selection + drag auto-scroll + window pointer sync）をまとめます。
@@ -92,6 +96,7 @@ export const useGridPointerInteractions = <T,>({
   rightLeadingWidth,
   headerHeight,
   rowHeight,
+  verticalScaleFactor,
 }: UseGridPointerInteractionsArgs<T>) => {
   // 追加(11-A2): dragState の最新値を ref で保持します(latest-ref パターン)。
   // 変更理由: enter 系ハンドラ(handleCellPointerEnter 等)が uiState.dragState を
@@ -149,7 +154,16 @@ export const useGridPointerInteractions = <T,>({
       // 縦方向（中央ペイン基準）。
       const centerRect = centerEl.getBoundingClientRect();
       const y = centerEl.scrollTop + clientY - centerRect.top - headerHeight;
-      const row = clamp(Math.floor(y / rowHeight), 0, filteredRowsLength - 1);
+      // 変更(scroll-space 仮想化): y は moving rect 経由で物理スクロール量を含むため、
+      //   論理行へは clientYToRowIndex(y, 実 scrollTop, scaleFactor) で換算します
+      //   (scaleFactor=1 のとき従来の floor(y / rowHeight) と一致)。
+      const row = clientYToRowIndex(
+        y,
+        scrollContainerRef.current?.scrollTop ?? 0,
+        verticalScaleFactor,
+        rowHeight,
+        filteredRowsLength,
+      );
 
       // 横方向（ペイン判定）。
       let col: number | null = null;
@@ -199,6 +213,7 @@ export const useGridPointerInteractions = <T,>({
       bodyScrollRef,
       leftPaneScrollRef,
       rightPaneScrollRef,
+      scrollContainerRef,
       filteredRowsLength,
       visibleColumnsLength,
       paneLayout,
@@ -207,6 +222,7 @@ export const useGridPointerInteractions = <T,>({
       rightLeadingWidth,
       headerHeight,
       rowHeight,
+      verticalScaleFactor,
     ],
   );
 

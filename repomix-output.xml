@@ -71,6 +71,7 @@ src/components/spreadsheet-grid/logic/domGuards.ts
 src/components/spreadsheet-grid/logic/filtering.ts
 src/components/spreadsheet-grid/logic/geometry.ts
 src/components/spreadsheet-grid/logic/sorting.ts
+src/components/spreadsheet-grid/logic/verticalGeometry.ts
 src/components/spreadsheet-grid/model/gridActions.ts
 src/components/spreadsheet-grid/model/gridReducer.ts
 src/components/spreadsheet-grid/model/gridSelectors.ts
@@ -101,6 +102,168 @@ vite.config.ts
 
 <files>
 This section contains the contents of the repository's files.
+
+<file path="src/components/spreadsheet-grid/logic/verticalGeometry.ts">
+// 縦スクロールの仮想化ジオメトリ(uniform 行高専用)です。
+//
+// 目的(scroll-space 仮想化 / 1M 行対応):
+//   論理ボディ全高 = rowCount * rowHeight が、ブラウザの要素高さ上限
+//   (Chrome/Edge/Electron ≈ 33,554,432px / Firefox ≈ 17,895,697px) を超えると、
+//   scrollHeight がクランプされて末尾行が到達不能になります(座標破綻 = 機能ブロッカー)。
+//   そこで物理 DOM 高さを上限内(MAX_BODY_PX)へ圧縮し、物理 scrollTop ↔ 論理オフセットを
+//   線形写像します(= pixel scaling)。圧縮が不要な行数では完全な恒等写像になります。
+//
+// 設計(このコードベース固有の前提を踏襲):
+//   - 単一スクロールコンテナ + sticky 3 ペイン(Batch 10-G)を維持します。ネイティブ
+//     スクロールのまま、行/overlay レイヤーへ translateY(D) を掛けて物理ウィンドウへ
+//     引き込みます(JS スクロール同期は増やしません)。
+//   - 行は uniform 行高(estimateSize 定数)なので、窓出しは純粋な算術(firstRow / count)に
+//     潰れます。実測 / 二分探索 / サイズキャッシュは不要です。
+//   - 物理↔論理写像・行窓・ヒットテストを本ファイル 1 か所へ集約します(縦ジオメトリの
+//     シーム)。将来 auto-height モードを足すときは、同じ契約の第二実装(prefix-sum +
+//     二分探索 + ResizeObserver)へ差し替えるだけで、消費側(GridBodyLayer / ヒットテスト /
+//     viewport-sync)は不変に保てます。
+//
+// 等価性(圧縮不要時の no-op):
+//   logicalBodyHeight <= MAX_BODY_PX のとき scaleFactor = 1 / translateY = 0 となり、
+//   rows[i].start = headerHeight + i * rowHeight は旧 rowVirtualizer(scrollMargin=
+//   headerHeight / estimateSize=rowHeight)の virtualRow.start と数値的に一致します。
+//   ヒットテストも D=0 で従来式(floor(y / rowHeight))と一致します。
+
+// 物理ボディ高さの上限です。
+// 注記: 全ブラウザ安全側の既定として 15,000,000 を採用しています(Firefox ≈ 17.9M を
+//   下回るマージン)。scaling が起動する閾値は MAX_BODY_PX / rowHeight 行
+//   (rowHeight=36 なら約 417k 行)で、これ未満では現状と数値一致します。
+//   実行環境が Chrome / Electron 確定なら 30,000,000 まで上げて起動閾値を約 833k 行へ
+//   押し上げてよく、その場合の差分は本定数 1 行のみです。
+export const MAX_BODY_PX = 15_000_000;
+
+// 描画する 1 行の窓エントリです(旧 @tanstack/react-virtual の VirtualItem 互換)。
+export type VerticalRow = {
+  index: number;
+  // 行の論理 top(headerHeight 込み)。GridBodyLayer の translateY 基準(virtualRow.start 互換)。
+  start: number;
+};
+
+// 縦ジオメトリのシーム契約です。uniform / 将来の auto-height で実装を差し替えても、
+// 消費側はこの型だけに依存します。
+export type VerticalGeometry = {
+  // コンテナ / overlay+body wrapper / ドロップインジケータの高さに使う物理ボディ高さ
+  // (= min(logicalBodyHeight, MAX_BODY_PX))。
+  physicalBodyHeight: number;
+  // 論理ボディ全高(= rowCount * rowHeight)。selection の全面高さ等、論理座標が要る箇所用。
+  logicalBodyHeight: number;
+  // 物理 scrollTop → 論理 scrollTop の倍率(>= 1)。logicalBodyHeight <= cap のとき 1。
+  scaleFactor: number;
+  // overlay+body wrapper に掛ける translateY(<= 0)。scaleFactor=1 のとき 0(現状と一致)。
+  translateY: number;
+  // 描画する行窓(virtualRow 互換の {index, start})。
+  rows: VerticalRow[];
+  // 描画行 index 集合(GridBodyLayer の OOB / 重複ガードと整合)。
+  rowIndexSet: Set<number>;
+};
+
+export type ComputeVerticalGeometryArgs = {
+  rowCount: number;
+  rowHeight: number;
+  headerHeight: number;
+  // スクロールコンテナの可視高さ(clientHeight)。窓の行数と scaleFactor に効きます。
+  viewportHeight: number;
+  // 物理 scrollTop(スクロールコンテナの scrollTop そのもの)。
+  scrollTop: number;
+  // 窓の上下に先回りで描画する行数(旧 rowVirtualizer overscan=20 相当)。
+  overscan: number;
+  // 物理ボディ高さの上限(MAX_BODY_PX)。
+  maxBodyPx: number;
+};
+
+// 物理 scrollTop → 論理 scrollTop です(active cell 自動スクロールの現在位置換算に使用)。
+export const physicalToLogicalScrollTop = (
+  physical: number,
+  scaleFactor: number,
+): number => physical * scaleFactor;
+
+// 論理 scrollTop → 物理 scrollTop です(算出した論理スクロール目標を実 scrollTop へ戻す)。
+export const logicalToPhysicalScrollTop = (
+  logical: number,
+  scaleFactor: number,
+): number => (scaleFactor === 1 ? logical : logical / scaleFactor);
+
+// ヒットテスト: ボディ content-top 基準の物理 y(= 旧来の y。moving rect 経由で物理
+//   スクロール量 S_phys を含む)→ 行 index。
+//   論理 y = y - D(D = S_phys * (1 - scaleFactor))で求めます。scaleFactor=1 のとき D=0 で
+//   従来式(floor(y / rowHeight))と一致します。
+export const clientYToRowIndex = (
+  yRelativeToBodyTop: number,
+  scrollTop: number,
+  scaleFactor: number,
+  rowHeight: number,
+  rowCount: number,
+): number => {
+  const d = scrollTop * (1 - scaleFactor);
+  const row = Math.floor((yRelativeToBodyTop - d) / rowHeight);
+  return Math.min(Math.max(row, 0), Math.max(rowCount - 1, 0));
+};
+
+export const computeVerticalGeometry = ({
+  rowCount,
+  rowHeight,
+  headerHeight,
+  viewportHeight,
+  scrollTop,
+  overscan,
+  maxBodyPx,
+}: ComputeVerticalGeometryArgs): VerticalGeometry => {
+  const logicalBodyHeight = rowCount * rowHeight;
+  const physicalBodyHeight = Math.min(logicalBodyHeight, maxBodyPx);
+
+  // 物理 / 論理それぞれのスクロール可動域です。両端(先頭・末尾)を一致させるため、
+  // 「全高」ではなく「可動域(total - viewport)」を基準に倍率を取ります
+  // (全高基準だと末尾でオーバーシュートし、最終行が下端に届きません)。
+  const logicalMax = Math.max(headerHeight + logicalBodyHeight - viewportHeight, 0);
+  const physicalMax = Math.max(headerHeight + physicalBodyHeight - viewportHeight, 0);
+
+  // 圧縮不要 / スクロール不能時は scaleFactor=1(= 現状と数値一致・transform なし)。
+  const scaleFactor =
+    physicalMax > 0 && logicalBodyHeight > physicalBodyHeight
+      ? logicalMax / physicalMax
+      : 1;
+
+  // 物理 scrollTop を論理オフセットへ写像します。
+  const clampedScrollTop = Math.min(Math.max(scrollTop, 0), physicalMax);
+  const logicalScrollTop = clampedScrollTop * scaleFactor;
+
+  // overlay+body wrapper の translateY。D = S_phys - S_log(<= 0)。
+  //   行は論理 top(headerHeight + index*rowHeight)へ置き、この D で物理ウィンドウへ
+  //   引き込むことで、行 index の表示位置は論理スクロール S_log のときと完全一致します。
+  const translateY = clampedScrollTop - logicalScrollTop;
+
+  // 窓出し(uniform: 純粋な算術)。論理オフセット基準で firstVisible を求めます。
+  //   firstVisible = floor(S_log / rowHeight) は、行 index の表示 y =
+  //   headerHeight + index*rowHeight - S_log がボディ可視域に入る先頭行です
+  //   (ヘッダー下に一部潜る行を含むため floor)。overscan が上方向の被覆行も賄います。
+  const visibleCount = Math.ceil(viewportHeight / rowHeight) + 1;
+  const firstVisible = Math.floor(logicalScrollTop / rowHeight);
+  const start = Math.max(firstVisible - overscan, 0);
+  const end = Math.min(firstVisible + visibleCount + overscan, rowCount);
+
+  const rows: VerticalRow[] = [];
+  const rowIndexSet = new Set<number>();
+  for (let index = start; index < end; index += 1) {
+    rows.push({ index, start: headerHeight + index * rowHeight });
+    rowIndexSet.add(index);
+  }
+
+  return {
+    physicalBodyHeight,
+    logicalBodyHeight,
+    scaleFactor,
+    translateY,
+    rows,
+    rowIndexSet,
+  };
+};
+</file>
 
 <file path="eslint.config.js">
 import js from '@eslint/js'
@@ -2664,6 +2827,11 @@ export default useGridKeyboardInteractions;
 import { useEffect, type RefObject } from 'react';
 import type { ActiveCellOverlayRect } from '../ActiveCellOverlay';
 import type { ColumnMeasurement } from '../logic/geometry';
+// 追加(scroll-space 仮想化): active cell 自動スクロール / clamp の物理↔論理換算。
+import {
+  logicalToPhysicalScrollTop,
+  physicalToLogicalScrollTop,
+} from '../logic/verticalGeometry';
 
 type VirtualizerLike = {
   measure: () => void;
@@ -2674,17 +2842,16 @@ type UseGridViewportSyncArgs<T> = {
   //             旧 bodyScrollRef(中央ペイン)はスクロールしなくなったため、scroll clamp /
   //             active cell 可視化はすべてこの共有スクロール要素に対して行います。
   scrollRef: RefObject<HTMLDivElement | null>;
-  rowVirtualizer: VirtualizerLike;
   columnVirtualizer: VirtualizerLike;
-  rowHeight: number;
-  filteredRowsLength: number;
   // columnVirtualizer の再計測トリガー用の依存です（中身は座標計算には使いません）。
   columnMeasurements: ColumnMeasurement<T>[];
   // 変更(10-G): 共有スクロールコンテナの内側コンテンツ全幅です。
   //             = 左固定ペイン幅 + 中央ペイン幅 + 右固定ペイン幅。
   //             水平方向の scroll clamp(content shrink 対策)に使います。
   totalScrollWidth: number;
-  totalBodyHeight: number;
+  // 変更(scroll-space 仮想化): content-shrink clamp は物理ボディ高さ基準にします
+  //   (旧 totalBodyHeight=論理全高 → physicalBodyHeight=ブラウザ上限内へ圧縮済みの高さ)。
+  physicalBodyHeight: number;
   headerHeight: number;
   // 追加(10-G): 左/右固定ペインの幅です。固定ペインは sticky で視界の左右端を覆うため、
   //             active cell の可視判定では「固定ペインに隠れない領域」へ収める必要があります。
@@ -2695,6 +2862,9 @@ type UseGridViewportSyncArgs<T> = {
   // active cell が中央ペインにあるときの「中央ペインローカル矩形」です。
   // 固定ペインにある場合は横スクロール不要なので null が渡されます。
   activeCellRect: ActiveCellOverlayRect | null;
+  // 追加(scroll-space 仮想化): active cell 自動スクロールの論理↔物理換算倍率
+  //   (scaleFactor=1 のとき両変換は恒等＝現状と完全一致)。
+  verticalScaleFactor: number;
 };
 
 // 追加: virtualizer 再計測、content shrink 時の scroll clamp、active cell 可視化をまとめます。
@@ -2703,24 +2873,17 @@ type UseGridViewportSyncArgs<T> = {
 //             transform 同期が不要になります（＝固定列のチカチカ/ティアリングが原理的に消えます）。
 export const useGridViewportSync = <T,>({
   scrollRef,
-  rowVirtualizer,
   columnVirtualizer,
-  rowHeight,
-  filteredRowsLength,
   columnMeasurements,
   totalScrollWidth,
-  totalBodyHeight,
+  physicalBodyHeight,
   headerHeight,
   leftPaneWidth,
   rightPaneWidth,
   centerLeadingWidth,
   activeCellRect,
+  verticalScaleFactor,
 }: UseGridViewportSyncArgs<T>) => {
-  // 追加: 列/行サイズ変化時に virtualizer の measurement を再取得します。
-  useEffect(() => {
-    rowVirtualizer.measure();
-  }, [rowVirtualizer, rowHeight, filteredRowsLength]);
-
   // 追加: column geometry が変わった際に horizontal virtualizer を再計測します。
   useEffect(() => {
     columnVirtualizer.measure();
@@ -2740,7 +2903,7 @@ export const useGridViewportSync = <T,>({
       0,
     );
     const maxScrollTop = Math.max(
-      headerHeight + totalBodyHeight - scrollElement.clientHeight,
+      headerHeight + physicalBodyHeight - scrollElement.clientHeight,
       0,
     );
 
@@ -2750,7 +2913,7 @@ export const useGridViewportSync = <T,>({
     if (scrollElement.scrollTop > maxScrollTop) {
       scrollElement.scrollTop = maxScrollTop;
     }
-  }, [scrollRef, totalScrollWidth, totalBodyHeight, headerHeight]);
+  }, [scrollRef, totalScrollWidth, physicalBodyHeight, headerHeight]);
 
   // 追加: active cell が画面外へ出た場合に、scroll container を自動調整して常に表示領域内へ収めます。
   // 注記(10-G): activeCellRect は中央ペインローカル座標です。中央ペイン以外（固定列）に
@@ -2765,13 +2928,20 @@ export const useGridViewportSync = <T,>({
 
     const scrollElement = scrollRef.current;
 
-    // セルの「スクロールコンテンツ内」絶対座標です。
+    // セルの「スクロールコンテンツ内」絶対座標(論理)です。
     const cellTop = headerHeight + activeCellRect.top;
     const cellBottom = cellTop + activeCellRect.height;
     const cellLeft = leftPaneWidth + centerLeadingWidth + activeCellRect.left;
     const cellRight = cellLeft + activeCellRect.width;
 
-    const currentScrollTop = scrollElement.scrollTop;
+    // 変更(scroll-space 仮想化): 縦の可視判定は論理座標で行い、設定時に物理 scrollTop へ戻します。
+    //   行は物理 36px のまま(サイズは非圧縮)なので可視域は実 viewportHeight のまま不変で、
+    //   縦のスクロール位置のみ scaleFactor 換算します(scaleFactor=1 のとき現状と完全一致)。
+    //   横(scrollLeft)は圧縮対象外のため物理値のまま据え置きです。
+    const currentScrollTop = physicalToLogicalScrollTop(
+      scrollElement.scrollTop,
+      verticalScaleFactor,
+    );
     const currentScrollLeft = scrollElement.scrollLeft;
     const viewportHeight = scrollElement.clientHeight;
     const viewportWidth = scrollElement.clientWidth;
@@ -2803,7 +2973,8 @@ export const useGridViewportSync = <T,>({
       nextScrollLeft !== currentScrollLeft
     ) {
       scrollElement.scrollTo({
-        top: nextScrollTop,
+        // nextScrollTop は論理。実 scrollTop は物理なので戻します(横はそのまま)。
+        top: logicalToPhysicalScrollTop(nextScrollTop, verticalScaleFactor),
         left: nextScrollLeft,
         behavior: 'auto',
       });
@@ -2815,6 +2986,7 @@ export const useGridViewportSync = <T,>({
     leftPaneWidth,
     rightPaneWidth,
     centerLeadingWidth,
+    verticalScaleFactor,
   ]);
 };
 
@@ -8038,6 +8210,8 @@ import {
   findLogicalIndexFromPaneOffset,
   type GridPaneLayout,
 } from '../logic/geometry';
+// 追加(scroll-space 仮想化): clientY→row の物理→論理換算(scaleFactor=1 で従来式と一致)。
+import { clientYToRowIndex } from '../logic/verticalGeometry';
 
 type UseGridPointerInteractionsArgs<T> = {
   gridRootRef: RefObject<HTMLDivElement | null>;
@@ -8076,6 +8250,8 @@ type UseGridPointerInteractionsArgs<T> = {
   rightLeadingWidth: number;
   headerHeight: number;
   rowHeight: number;
+  // 追加(scroll-space 仮想化): clientY→row の物理→論理換算倍率(scaleFactor=1 で従来式)。
+  verticalScaleFactor: number;
 };
 
 // 追加: pointer 系 interaction（cell/row/col selection + drag auto-scroll + window pointer sync）をまとめます。
@@ -8101,6 +8277,7 @@ export const useGridPointerInteractions = <T,>({
   rightLeadingWidth,
   headerHeight,
   rowHeight,
+  verticalScaleFactor,
 }: UseGridPointerInteractionsArgs<T>) => {
   // 追加(11-A2): dragState の最新値を ref で保持します(latest-ref パターン)。
   // 変更理由: enter 系ハンドラ(handleCellPointerEnter 等)が uiState.dragState を
@@ -8158,7 +8335,16 @@ export const useGridPointerInteractions = <T,>({
       // 縦方向（中央ペイン基準）。
       const centerRect = centerEl.getBoundingClientRect();
       const y = centerEl.scrollTop + clientY - centerRect.top - headerHeight;
-      const row = clamp(Math.floor(y / rowHeight), 0, filteredRowsLength - 1);
+      // 変更(scroll-space 仮想化): y は moving rect 経由で物理スクロール量を含むため、
+      //   論理行へは clientYToRowIndex(y, 実 scrollTop, scaleFactor) で換算します
+      //   (scaleFactor=1 のとき従来の floor(y / rowHeight) と一致)。
+      const row = clientYToRowIndex(
+        y,
+        scrollContainerRef.current?.scrollTop ?? 0,
+        verticalScaleFactor,
+        rowHeight,
+        filteredRowsLength,
+      );
 
       // 横方向（ペイン判定）。
       let col: number | null = null;
@@ -8208,6 +8394,7 @@ export const useGridPointerInteractions = <T,>({
       bodyScrollRef,
       leftPaneScrollRef,
       rightPaneScrollRef,
+      scrollContainerRef,
       filteredRowsLength,
       visibleColumnsLength,
       paneLayout,
@@ -8216,6 +8403,7 @@ export const useGridPointerInteractions = <T,>({
       rightLeadingWidth,
       headerHeight,
       rowHeight,
+      verticalScaleFactor,
     ],
   );
 
@@ -11524,6 +11712,12 @@ import {
   type ColumnPane,
   type PaneColumnExtentMap,
 } from './logic/geometry';
+// 追加(scroll-space 仮想化): 縦ジオメトリのシーム(uniform window + pixel scaling)です。
+//   1M 行で innerRowStyle.height がブラウザ要素高さ上限を超える機能ブロッカーを解消します。
+import {
+  MAX_BODY_PX,
+  computeVerticalGeometry,
+} from './logic/verticalGeometry';
 import {
   // ソートは order(Int32Array)版に一本化しています
   //   (DS-2 で差し替え、旧オブジェクト配列版は DS-3-8 で削除)。
@@ -12196,25 +12390,40 @@ export function SpreadsheetGrid<T extends object>({
   // 注記(10-E): columnMeasurements は columnVirtualizer の再計測トリガーとしてのみ使います。
   //             水平座標の実計算は paneLayout（ペインローカル座標）側へ移行しました。
 
-  // ── virtualizer ───────────────────────────────────────
-  const rowVirtualizer = useVirtualizer({
-    count: viewRowCount,
-    getScrollElement: () => scrollContainerRef.current,
-    estimateSize: () => rowHeight,
-    // 変更(A-2): overscan を 8 → 20 に増やします。
-    //   useFlushSync を切る代わりに、上下に多めの行を先回りで描画しておくことで、
-    //   速いフリックでネイティブスクロールが描画ウィンドウを追い越しても、端の行が
-    //   空になる前に既に用意済みの状態にして「チカチカ（端の行が一瞬抜ける）」を隠します。
-    overscan: 20,
-    // 変更(A-2): useFlushSync:true は毎スクロールティックで重い同期再レンダー＋強制 paint を
-    //   発生させ、5000×29・メモ化なしの状況ではフレーム予算を超えてかえってカクつき/チカチカの
-    //   一因になっていました。A-1(行の memo 化)で 1 フレームの仕事量を端の行だけに減らしたうえで、
-    //   ここは false（通常の非同期更新）に戻し、遅延ぶんは上の overscan で吸収します。
-    useFlushSync: false,
-    // 変更(10-G): スクロール要素が共有コンテナになったため、行リストの開始位置は
-    //             sticky ヘッダーぶん下にあります。scrollMargin で先頭オフセットを補正します。
-    scrollMargin: headerHeight,
-  });
+  // ── 縦スクロール計測(scroll-space 仮想化の駆動) ───────────
+  // 変更(scroll-space 仮想化): 縦の行窓出しを @tanstack/react-virtual から、uniform 行高
+  //   専用の手書きジオメトリ(logic/verticalGeometry)へ移行しました。
+  // 変更理由: 1M 行で innerRowStyle.height = headerHeight + viewRowCount*rowHeight が
+  //   ブラウザの要素高さ上限(Chrome ≈ 33.5M px)を超え、scrollHeight がクランプされて
+  //   末尾行が到達不能になる機能ブロッカーがありました。物理 DOM 高さを上限内へ圧縮し
+  //   (pixel scaling)、物理 scrollTop ↔ 論理オフセットを線形写像します。行高が一様なので
+  //   窓出しは純粋な算術に潰れ、実測/二分探索は不要です(横の columnVirtualizer は可変幅で
+  //   本当に効くため据え置き)。圧縮不要な行数(論理高さ <= MAX_BODY_PX)では scaleFactor=1 と
+  //   なり、行の配置・各種写像は現状と数値的に一致します。
+  //   旧 rowVirtualizer はスクロールごとの再レンダー駆動も担っていたため、その役割を
+  //   下記の scroll/resize リスナーへ移管します(発火頻度は同等)。
+  const [scrollTop, setScrollTop] = useState(0);
+  const [viewportHeight, setViewportHeight] = useState(0);
+
+  useEffect(() => {
+    const el = scrollContainerRef.current;
+    if (!el) {
+      return;
+    }
+    setScrollTop(el.scrollTop);
+    setViewportHeight(el.clientHeight);
+    const handleScroll = () => setScrollTop(el.scrollTop);
+    el.addEventListener('scroll', handleScroll, { passive: true });
+    // viewport 高さ変化(リサイズ/レイアウト変動)で窓と倍率を再計算するためです。
+    const resizeObserver = new ResizeObserver(() =>
+      setViewportHeight(el.clientHeight),
+    );
+    resizeObserver.observe(el);
+    return () => {
+      el.removeEventListener('scroll', handleScroll);
+      resizeObserver.disconnect();
+    };
+  }, []);
 
   // 変更(10-C): 列の仮想化は「中央ペインの列エントリ」に対して行います。
   // 変更理由: 固定列は中央スクロール対象外。中央ペインの水平スクロール範囲＝
@@ -12242,14 +12451,34 @@ export function SpreadsheetGrid<T extends object>({
     scrollMargin: leftPaneTotalWidth,
   });
 
-  const virtualRows = rowVirtualizer.getVirtualItems();
   const virtualColumns = columnVirtualizer.getVirtualItems();
-  const totalBodyHeight = rowVirtualizer.getTotalSize();
 
-  const virtualRowIndexes = useMemo(
-    () => new Set(virtualRows.map((item) => item.index)),
-    [virtualRows],
+  // 縦ジオメトリ(uniform window + pixel scaling)。scaleFactor=1 のとき現状と数値一致。
+  const verticalGeometry = useMemo(
+    () =>
+      computeVerticalGeometry({
+        rowCount: viewRowCount,
+        rowHeight,
+        headerHeight,
+        viewportHeight,
+        scrollTop,
+        // 旧 rowVirtualizer overscan=20 を踏襲します。
+        overscan: 20,
+        maxBodyPx: MAX_BODY_PX,
+      }),
+    [viewRowCount, rowHeight, headerHeight, viewportHeight, scrollTop],
   );
+  const virtualRows = verticalGeometry.rows;
+  const virtualRowIndexes = verticalGeometry.rowIndexSet;
+  // コンテナ/wrapper/indicator 高さに使う物理ボディ高さ(<= ブラウザ要素高さ上限)。
+  const physicalBodyHeight = verticalGeometry.physicalBodyHeight;
+  // overlay+body wrapper の transform。scaleFactor=1 のとき undefined(= 現状と同一 DOM)。
+  const bodyLayerTransform =
+    verticalGeometry.translateY !== 0
+      ? `translateY(${verticalGeometry.translateY}px)`
+      : undefined;
+  // ヒットテスト/viewport-sync の物理↔論理換算に渡す倍率です。
+  const verticalScaleFactor = verticalGeometry.scaleFactor;
 
   // 追加(10-C): 各ペインで実際に描画する列エントリ群です。
   //             中央ペインは仮想化済みの部分集合、固定ペインは全エントリを描画します。
@@ -12330,18 +12559,18 @@ export function SpreadsheetGrid<T extends object>({
   //   - centerLeadingWidth: 中央ペインの先頭幅（左固定なし=rowHeaderWidth / 左固定あり=0）
   useGridViewportSync({
     scrollRef: scrollContainerRef,
-    rowVirtualizer,
     columnVirtualizer,
-    rowHeight,
-    filteredRowsLength: viewRowCount,
     columnMeasurements,
     totalScrollWidth,
-    totalBodyHeight,
+    // 変更(scroll-space 仮想化): content-shrink clamp は物理高さ基準にします。
+    physicalBodyHeight,
     headerHeight,
     leftPaneWidth: leftPaneTotalWidth,
     rightPaneWidth: rightPaneTotalWidth,
     centerLeadingWidth,
     activeCellRect: centerViewportActiveRect,
+    // 追加(scroll-space 仮想化): active cell 自動スクロールの論理↔物理換算に使います。
+    verticalScaleFactor,
   });
 
   // 注記(10-G): 旧実装にあった「中央ペインの scrollTop を transform で固定ペインへ同期する
@@ -12386,6 +12615,8 @@ export function SpreadsheetGrid<T extends object>({
     rightLeadingWidth,
     headerHeight,
     rowHeight,
+    // 追加(scroll-space 仮想化): ヒットテスト clientY→row の物理→論理換算に使います。
+    verticalScaleFactor,
   });
 
   // ── clipboard ─────────────────────────────────────────
@@ -13041,13 +13272,15 @@ export function SpreadsheetGrid<T extends object>({
   //   ref 経由で 'block'/'none' を切替え、left はペインローカル境界 x を px で設定します。
   //   zIndex は sticky ヘッダー(6/7)より前面。
   // 変更(13-B3-3): ホストが 2 種(中央=relative コンテナ / 左右=sticky wrapper)になったため、
-  //   height を百分率から数値(headerHeight + totalBodyHeight)へ確定させ、どちらのホストでも
+  //   height を百分率から数値(headerHeight + physicalBodyHeight)へ確定させ、どちらのホストでも
   //   ヘッダー〜ボディを貫く縦線になるようにしました(空ペイン wrapper は alignSelf:stretch で
   //   同じ高さ。relative コンテナも同じ高さを明示しているため値は不変です)。
+  // 変更(scroll-space 仮想化): scaling 起動時はコンテナ高さが物理ボディ高さに揃うため、
+  //   インジケータも physicalBodyHeight 基準にします(縦線は transform 外＝動かしません)。
   const columnDropIndicatorStyle: CSSProperties = {
     position: 'absolute',
     top: 0,
-    height: headerHeight + totalBodyHeight,
+    height: headerHeight + physicalBodyHeight,
     width: 2,
     backgroundColor: '#2563eb',
     transform: 'translateX(-1px)',
@@ -13681,7 +13914,7 @@ export function SpreadsheetGrid<T extends object>({
     display: 'flex',
     width: totalScrollWidth,
     minWidth: totalScrollWidth,
-    height: headerHeight + totalBodyHeight,
+    height: headerHeight + physicalBodyHeight,
   };
 
   // 追加(12-B): フィルター結果 0 行時の空状態表示(AG Grid の "No Matching Rows" 相当)です。
@@ -13961,7 +14194,7 @@ export function SpreadsheetGrid<T extends object>({
                   position: 'relative',
                   width: leftPaneTotalWidth,
                   minWidth: leftPaneTotalWidth,
-                  height: headerHeight + totalBodyHeight,
+                  height: headerHeight + physicalBodyHeight,
                 }}
               >
                 <GridHeaderRow
@@ -14009,7 +14242,9 @@ export function SpreadsheetGrid<T extends object>({
                     top: 0,
                     left: 0,
                     width: leftPaneTotalWidth,
-                    height: headerHeight + totalBodyHeight,
+                    height: headerHeight + physicalBodyHeight,
+                    // 追加(scroll-space 仮想化): 行/overlay を物理ウィンドウへ引き込む変換。
+                    transform: bodyLayerTransform,
                   }}
                 >
                 <SelectionOverlay
@@ -14084,7 +14319,7 @@ export function SpreadsheetGrid<T extends object>({
                 position: 'relative',
                 width: centerContentWidth,
                 minWidth: centerContentWidth,
-                height: headerHeight + totalBodyHeight,
+                height: headerHeight + physicalBodyHeight,
               }}
             >
               <GridHeaderRow
@@ -14122,52 +14357,67 @@ export function SpreadsheetGrid<T extends object>({
 
               {/* 変更(10-D): 中央ペインの overlay をペインローカル座標に切替。*/}
               {/*   leadingWidth は centerLeadingWidth（固定列なしのとき rowHeaderWidth）。*/}
-              <SelectionOverlay
-                rect={selectionRectForPane('center')}
-                headerHeight={headerHeight}
-                leadingWidth={centerLeadingWidth}
-              />
+              {/* 追加(scroll-space 仮想化): 行/overlay を物理ウィンドウへ引き込む transform 層
+                  (左右ペインと同型)。header と drop indicator は transform 外に置き、
+                  ヘッダーは sticky のまま動かしません。原点(0,0)・同サイズの wrapper のため
+                  overlay 内部のペインローカル座標は不変で、transform のみ加わります。*/}
+              <div
+                style={{
+                  position: 'absolute',
+                  top: 0,
+                  left: 0,
+                  width: centerContentWidth,
+                  height: headerHeight + physicalBodyHeight,
+                  transform: bodyLayerTransform,
+                }}
+              >
+                <SelectionOverlay
+                  rect={selectionRectForPane('center')}
+                  headerHeight={headerHeight}
+                  leadingWidth={centerLeadingWidth}
+                />
 
-              <ActiveCellOverlay
-                rect={activeCellRectForPane('center')}
-                headerHeight={headerHeight}
-                leadingWidth={centerLeadingWidth}
-              />
+                <ActiveCellOverlay
+                  rect={activeCellRectForPane('center')}
+                  headerHeight={headerHeight}
+                  leadingWidth={centerLeadingWidth}
+                />
 
-              <CellEditorLayer
-                rect={editorRectForPane('center')}
-                headerHeight={headerHeight}
-                leadingWidth={centerLeadingWidth}
-                initialValue={editorInitialValue}
-                onCommit={commitEdit}
-                onCancel={cancelEdit}
-              />
+                <CellEditorLayer
+                  rect={editorRectForPane('center')}
+                  headerHeight={headerHeight}
+                  leadingWidth={centerLeadingWidth}
+                  initialValue={editorInitialValue}
+                  onCommit={commitEdit}
+                  onCancel={cancelEdit}
+                />
 
-              <GridBodyLayer
-                pane="center"
-                ownsRowHeader={centerOwnsRowHeader}
-                leadingWidth={centerLeadingWidth}
-                rowModel={rowModel}
-                virtualRows={virtualRows}
-                virtualRowIndexes={virtualRowIndexes}
-                renderEntries={centerRenderEntries}
-                rowHeight={rowHeight}
-                rowHeaderCellStyle={rowHeaderCellStyle}
-                hoveredRowIndex={hoveredRowIndex}
-                isWholeGridSelected={isWholeGridSelected}
-                activeCell={uiState.activeCell}
-                editingCell={uiState.editingCell}
-                selectionSnapshot={selectionSnapshot}
-                readOnly={readOnly}
-                canEditCell={canEditCell}
-                onRowHeaderPointerDown={handleRowHeaderPointerDown}
-                onRowHeaderPointerEnter={handleRowHeaderPointerEnter}
-                onRowHeaderPointerLeave={handleRowHeaderPointerLeaveStable}
-                onCellPointerDown={handleCellPointerDown}
-                onCellPointerEnter={handleCellPointerEnter}
-                onCellDoubleClick={handleCellDoubleClickWithController}
-                renderCellContent={renderCellContent}
-              />
+                <GridBodyLayer
+                  pane="center"
+                  ownsRowHeader={centerOwnsRowHeader}
+                  leadingWidth={centerLeadingWidth}
+                  rowModel={rowModel}
+                  virtualRows={virtualRows}
+                  virtualRowIndexes={virtualRowIndexes}
+                  renderEntries={centerRenderEntries}
+                  rowHeight={rowHeight}
+                  rowHeaderCellStyle={rowHeaderCellStyle}
+                  hoveredRowIndex={hoveredRowIndex}
+                  isWholeGridSelected={isWholeGridSelected}
+                  activeCell={uiState.activeCell}
+                  editingCell={uiState.editingCell}
+                  selectionSnapshot={selectionSnapshot}
+                  readOnly={readOnly}
+                  canEditCell={canEditCell}
+                  onRowHeaderPointerDown={handleRowHeaderPointerDown}
+                  onRowHeaderPointerEnter={handleRowHeaderPointerEnter}
+                  onRowHeaderPointerLeave={handleRowHeaderPointerLeaveStable}
+                  onCellPointerDown={handleCellPointerDown}
+                  onCellPointerEnter={handleCellPointerEnter}
+                  onCellDoubleClick={handleCellDoubleClickWithController}
+                  renderCellContent={renderCellContent}
+                />
+              </div>
 
               {/* 追加(13-B3-2): 中央ペインのドロップインジケータ(縦線)。
                   controller が ref 経由で display/left を imperative に制御します
@@ -14188,7 +14438,7 @@ export function SpreadsheetGrid<T extends object>({
                   position: 'relative',
                   width: rightPaneTotalWidth,
                   minWidth: rightPaneTotalWidth,
-                  height: headerHeight + totalBodyHeight,
+                  height: headerHeight + physicalBodyHeight,
                 }}
               >
                 <GridHeaderRow
@@ -14233,7 +14483,9 @@ export function SpreadsheetGrid<T extends object>({
                     top: 0,
                     left: 0,
                     width: rightPaneTotalWidth,
-                    height: headerHeight + totalBodyHeight,
+                    height: headerHeight + physicalBodyHeight,
+                    // 追加(scroll-space 仮想化): 行/overlay を物理ウィンドウへ引き込む変換。
+                    transform: bodyLayerTransform,
                   }}
                 >
                 <SelectionOverlay
