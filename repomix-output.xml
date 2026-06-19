@@ -58,6 +58,7 @@ src/components/spreadsheet-grid/hooks/useColumnAutosizeRunner.ts
 src/components/spreadsheet-grid/hooks/useColumnChooserController.ts
 src/components/spreadsheet-grid/hooks/useColumnHeaderDragController.ts
 src/components/spreadsheet-grid/hooks/useColumnMenuController.ts
+src/components/spreadsheet-grid/hooks/useColumnSelectOptionsCollector.test.ts
 src/components/spreadsheet-grid/hooks/useColumnSelectOptionsCollector.ts
 src/components/spreadsheet-grid/hooks/useFilterPopoverController.ts
 src/components/spreadsheet-grid/hooks/useGridBarContext.ts
@@ -111,974 +112,311 @@ vitest.config.ts
 <files>
 This section contains the contents of the repository's files.
 
-<file path="src/components/spreadsheet-grid/logic/filtering.test.ts">
-// V-1: filtering の等価性テスト(旧 adhoc ハーネスの恒久化)。
-//   - B-2: filterOrderByColumns に numericKeys を渡した経路と渡さない経路が、number
-//     (comparison/range)でバイト等価であること(値の取得元のみ差し替え・判定本体は不変)。
-//   - 記述子 ≡ 旧 applyNumberFilter: commit 時 1 回 parse の記述子経路が、行ごとに parse する
-//     旧 applyNumberFilter と厳密に等価であること。
-//   - set(include/exclude)/ select / text(contains)/ 全通過 no-op / 無効フィルターの規約。
-//   - 記述子 helper(parse / build / draftText / isActive)の単体仕様。
-import { describe, it, expect } from 'vitest';
+<file path="src/components/spreadsheet-grid/hooks/useColumnSelectOptionsCollector.test.ts">
+// V-2: useColumnSelectOptionsCollector の挙動テスト(DS-4 #1 の非同期収集の恒久化)。
+//   バックログ #1 の残り(collector フックの挙動テスト)を満たします。本番コードは無改修で、
+//   等価性ロジック(logic/selectOptions)の上に乗る「フックの状態遷移・中断・stale 排除」を検証します。
+//
+//   このファイルだけ環境を jsdom にします(renderHook が DOM を要するため)。グローバルは node のまま
+//   (vitest.config.ts は無改修)で、下記ドックブロックで本ファイルのみ上書きします。
+//
+//   決定性の出し方(本番無改修のための都合):
+//     - yieldToMain を vi.mock でゲート化し、yield の解決をテストが手動で進めます
+//       (実 MessageChannel / 実時間に依存しない)。
+//     - performance.now を単調増加スタブにして inner loop(CHUNK_BUDGET_MS=10ms)のチャンク境界を
+//       決定化します(STEP=0.001ms ⇒ ROWS=50,001 行で数チャンク)。
+//   アサーションは性質ベース(進捗の単調非減少 / collecting を最低 1 回観測 / 最終結果が
+//   collectSelectOptions の同期参照とバイト等価)で、チャンク数の揺らぎに依存しません。
+// @vitest-environment jsdom
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+
+// yieldToMain をゲート化します。run() は await yieldToMain() でここに溜まり、テストが flushYield で
+//   解決するまで先へ進みません。vi.mock のファクトリから参照するため vi.hoisted で巻き上げます。
+const { pendingYields } = vi.hoisted(() => ({
+  pendingYields: [] as Array<() => void>,
+}));
+vi.mock('../utils/scheduler', () => ({
+  yieldToMain: (): Promise<void> =>
+    new Promise<void>((resolve) => {
+      pendingYields.push(resolve);
+    }),
+}));
+
+import { renderHook, act } from '@testing-library/react';
 import {
-  applyNumberFilter,
-  buildNumberColumnFilterValue,
-  columnFilterValueToDraftText,
-  createSourceOrder,
-  filterOrderByColumns,
-  filterOrderByGlobalText,
-  isActiveColumnFilterValue,
-  isNumberColumnFilterValue,
-  isSetColumnFilterValue,
-  parseNumberFilterExpression,
-  type RowOrder,
-} from './filtering';
-import { getCellValue } from '../utils/permissions';
-import type { GridColumn, SetColumnFilterValue } from '../model/gridTypes';
+  useColumnSelectOptionsCollector,
+  ASYNC_SELECT_COLLECT_ROW_THRESHOLD,
+} from './useColumnSelectOptionsCollector';
+import { collectSelectOptions } from '../logic/selectOptions';
+import type { GridColumn, GridSelectFilterOption } from '../model/gridTypes';
 
-type Row = Record<string, unknown>;
+// inner loop の budget(10ms)に対し now() 1 回あたり STEP ms 進めます。10/STEP ≒ rows/chunk。
+const STEP = 0.001;
+let nowValue = 0;
 
-const numberCol = (key: string): GridColumn<Row> => ({
-  key,
-  width: 100,
-  filterType: 'number',
+beforeEach(() => {
+  nowValue = 0;
+  pendingYields.length = 0;
+  vi.spyOn(performance, 'now').mockImplementation(() => {
+    nowValue += STEP;
+    return nowValue;
+  });
 });
-const textCol = (key: string): GridColumn<Row> => ({ key, width: 100 });
-const selectCol = (key: string): GridColumn<Row> => ({
-  key,
-  width: 100,
-  filterType: 'select',
+afterEach(() => {
+  vi.restoreAllMocks();
 });
-const setCol = (key: string): GridColumn<Row> => ({
+
+// 型に正直な最小カラム(key / width は必須)。既定は set フィルター。
+const makeColumn = (
+  key: string,
+  overrides: Partial<GridColumn<unknown>> = {},
+): GridColumn<unknown> => ({
   key,
   width: 100,
   filterType: 'set',
+  ...overrides,
 });
 
-const asArray = (order: RowOrder): number[] => Array.from(order);
+type CollectorArgs = Parameters<typeof useColumnSelectOptionsCollector<unknown>>[0];
 
-const buildNumericKeys = (
-  rows: Row[],
-  key: string,
-): ReadonlyMap<string, Float64Array> =>
-  new Map([[key, Float64Array.from(rows, (row) => Number(row[key]))]]);
+const THRESHOLD = ASYNC_SELECT_COLLECT_ROW_THRESHOLD;
+const ASYNC_ROWS = THRESHOLD + 1;
 
-// 数値・非有限・空・文字列を混ぜた母集合(comparison/range/contains すべてを踏む)。
-const rows: Row[] = [
-  { n: 5, t: 'Apple', g: 'red' },
-  { n: 1, t: 'banana', g: 'yellow' },
-  { n: 10, t: 'Cherry', g: 'red' },
-  { n: 'x', t: 'date', g: 'brown' }, // 非有限
-  { n: '', t: 'Elder', g: 'black' }, // 空(Number('')=0 だが空白扱いの確認用)
-  { n: -3, t: 'fig', g: 'purple' },
-  { n: 7.5, t: 'Grape', g: 'green' },
-  { n: 2, t: 'apricot', g: 'orange' },
-];
-
-describe('filterOrderByColumns (B-2: numericKeys path === no-key path)', () => {
-  const order = createSourceOrder(rows.length);
-  const keys = buildNumericKeys(rows, 'n');
-  const numberFilters = [
-    '> 2',
-    '>= 2',
-    '< 5',
-    '<= 5',
-    '= 10',
-    '5',
-    '1 .. 8',
-    '8 .. 1', // min/max 入れ替え
-    '-3 .. 2',
-  ];
-
-  it.each(numberFilters)('number filter %s', (raw) => {
-    const descriptor = buildNumberColumnFilterValue(raw);
-    const columnFilters = { n: descriptor };
-    const withKeys = filterOrderByColumns(
-      rows,
-      order,
-      [numberCol('n')],
-      columnFilters,
-      keys,
-    );
-    const withoutKeys = filterOrderByColumns(
-      rows,
-      order,
-      [numberCol('n')],
-      columnFilters,
-    );
-    expect(asArray(withKeys)).toEqual(asArray(withoutKeys));
+// 溜まった yield をすべて解決し、後続の同期 run と setState を act 内で流します。
+const flushYield = async (): Promise<void> => {
+  await act(async () => {
+    const resolvers = pendingYields.splice(0);
+    resolvers.forEach((resolve) => resolve());
+    await Promise.resolve();
   });
-
-  it('contains fallback (unparseable) is identical with/without keys', () => {
-    const descriptor = buildNumberColumnFilterValue('1.'); // 解釈不可 → contains
-    const columnFilters = { n: descriptor };
-    const withKeys = filterOrderByColumns(
-      rows,
-      order,
-      [numberCol('n')],
-      columnFilters,
-      keys,
-    );
-    const withoutKeys = filterOrderByColumns(
-      rows,
-      order,
-      [numberCol('n')],
-      columnFilters,
-    );
-    expect(asArray(withKeys)).toEqual(asArray(withoutKeys));
-  });
-});
-
-describe('filterOrderByColumns (descriptor === legacy applyNumberFilter)', () => {
-  const order = createSourceOrder(rows.length);
-  const keys = buildNumericKeys(rows, 'n');
-  const cases = ['> 2', '>=2', '<5', '<= 5', '=10', '7.5', '1..8', '1.', 'abc'];
-
-  it.each(cases)('raw %s', (raw) => {
-    const descriptor = buildNumberColumnFilterValue(raw);
-    const actual = asArray(
-      filterOrderByColumns(rows, order, [numberCol('n')], { n: descriptor }, keys),
-    );
-    // 参照: 旧 applyNumberFilter(raw 文字列)で行ごとに判定。
-    const expected: number[] = [];
-    for (let i = 0; i < rows.length; i += 1) {
-      if (applyNumberFilter(getCellValue(rows[i], numberCol('n')), raw)) {
-        expected.push(i);
-      }
-    }
-    expect(actual).toEqual(expected);
-  });
-});
-
-describe('filterOrderByColumns (set include / exclude)', () => {
-  const order = createSourceOrder(rows.length);
-
-  it('include keeps only listed values', () => {
-    const value: SetColumnFilterValue = {
-      kind: 'set',
-      mode: 'include',
-      values: ['red', 'green'],
-    };
-    const actual = asArray(
-      filterOrderByColumns(rows, order, [setCol('g')], { g: value }),
-    );
-    const expected = rows
-      .map((row, i) => [row.g, i] as const)
-      .filter(([g]) => g === 'red' || g === 'green')
-      .map(([, i]) => i);
-    expect(actual).toEqual(expected);
-  });
-
-  it('exclude drops listed values (complement of include over universe)', () => {
-    const include: SetColumnFilterValue = {
-      kind: 'set',
-      mode: 'include',
-      values: ['red', 'green'],
-    };
-    // universe = 全行値。exclude(U−S) は include(S) と同じ通過集合になる。
-    const universe = Array.from(new Set(rows.map((row) => String(row.g))));
-    const excludedValues = universe.filter(
-      (v) => v !== 'red' && v !== 'green',
-    );
-    const exclude: SetColumnFilterValue = {
-      kind: 'set',
-      mode: 'exclude',
-      values: excludedValues,
-    };
-    const includeOrder = asArray(
-      filterOrderByColumns(rows, order, [setCol('g')], { g: include }),
-    );
-    const excludeOrder = asArray(
-      filterOrderByColumns(rows, order, [setCol('g')], { g: exclude }),
-    );
-    expect(excludeOrder).toEqual(includeOrder);
-  });
-
-  it('empty include values yields no rows', () => {
-    const value: SetColumnFilterValue = { kind: 'set', values: [] };
-    const actual = asArray(
-      filterOrderByColumns(rows, order, [setCol('g')], { g: value }),
-    );
-    expect(actual).toEqual([]);
-  });
-});
-
-describe('filterOrderByColumns (select / text / no-op identity)', () => {
-  const order = createSourceOrder(rows.length);
-
-  it('select matches exact string equality', () => {
-    const actual = asArray(
-      filterOrderByColumns(rows, order, [selectCol('g')], { g: 'red' }),
-    );
-    const expected = rows
-      .map((row, i) => [row.g, i] as const)
-      .filter(([g]) => g === 'red')
-      .map(([, i]) => i);
-    expect(actual).toEqual(expected);
-  });
-
-  it('text is case-insensitive contains', () => {
-    const actual = asArray(
-      filterOrderByColumns(rows, order, [textCol('t')], { t: 'ap' }),
-    );
-    // 'Apple' / 'apricot' / 'Grape'(gr*ap*e)が含む。
-    const expected = rows
-      .map((row, i) => [String(row.t).toLowerCase(), i] as const)
-      .filter(([t]) => t.includes('ap'))
-      .map(([, i]) => i);
-    expect(actual).toEqual(expected);
-  });
-
-  it('returns the same reference when no active filter exists', () => {
-    expect(
-      filterOrderByColumns(rows, order, [textCol('t')], { t: '' }),
-    ).toBe(order);
-    expect(filterOrderByColumns(rows, order, [textCol('t')], {})).toBe(order);
-  });
-
-  it('returns the same reference when every row passes (set include over full universe)', () => {
-    // universe = 全行の g 値。全候補を include すると全行通過し、count===length で
-    //   下流 useMemo スキップのため同一参照(引数 order)を返す。
-    const universe = Array.from(new Set(rows.map((row) => String(row.g))));
-    const value: SetColumnFilterValue = {
-      kind: 'set',
-      mode: 'include',
-      values: universe,
-    };
-    expect(filterOrderByColumns(rows, order, [setCol('g')], { g: value })).toBe(
-      order,
-    );
-  });
-});
-
-describe('filterOrderByGlobalText', () => {
-  const order = createSourceOrder(rows.length);
-
-  it('returns the same reference for empty text', () => {
-    expect(
-      filterOrderByGlobalText(rows, order, [textCol('t'), numberCol('n')], '  '),
-    ).toBe(order);
-  });
-
-  it('matches across any column (case-insensitive contains)', () => {
-    const actual = asArray(
-      filterOrderByGlobalText(
-        rows,
-        order,
-        [textCol('t'), selectCol('g')],
-        'red',
-      ),
-    );
-    const expected = rows
-      .map((row, i) => [row, i] as const)
-      .filter(
-        ([row]) =>
-          String(row.t).toLowerCase().includes('red') ||
-          String(row.g).toLowerCase().includes('red'),
-      )
-      .map(([, i]) => i);
-    expect(actual).toEqual(expected);
-  });
-});
-
-describe('number filter descriptor helpers', () => {
-  it('parseNumberFilterExpression handles comparison / default = / range / invalid', () => {
-    expect(parseNumberFilterExpression('> 5')).toEqual({
-      mode: 'comparison',
-      operator: '>',
-      value: 5,
-    });
-    expect(parseNumberFilterExpression('42')).toEqual({
-      mode: 'comparison',
-      operator: '=',
-      value: 42,
-    });
-    expect(parseNumberFilterExpression('8 .. 1')).toEqual({
-      mode: 'range',
-      min: 1,
-      max: 8,
-    });
-    expect(parseNumberFilterExpression('')).toBeNull();
-    expect(parseNumberFilterExpression('1.')).toBeNull();
-    expect(parseNumberFilterExpression('abc')).toBeNull();
-  });
-
-  it('buildNumberColumnFilterValue trims, parses once, and nulls on empty', () => {
-    expect(buildNumberColumnFilterValue('   ')).toBeNull();
-    const descriptor = buildNumberColumnFilterValue('  >= 3  ');
-    expect(descriptor).toEqual({
-      kind: 'number',
-      raw: '>= 3',
-      parsed: { mode: 'comparison', operator: '>=', value: 3 },
-    });
-    const contains = buildNumberColumnFilterValue('1.');
-    expect(contains).toEqual({ kind: 'number', raw: '1.', parsed: null });
-  });
-
-  it('columnFilterValueToDraftText returns raw for number descriptors, String otherwise', () => {
-    const descriptor = buildNumberColumnFilterValue('> 5');
-    expect(columnFilterValueToDraftText(descriptor)).toBe('> 5');
-    expect(columnFilterValueToDraftText('hello')).toBe('hello');
-    expect(columnFilterValueToDraftText(null)).toBe('');
-    expect(columnFilterValueToDraftText(undefined)).toBe('');
-  });
-
-  it('isActiveColumnFilterValue treats set / number descriptors / non-empty strings as active', () => {
-    expect(
-      isActiveColumnFilterValue({ kind: 'set', values: [] } as SetColumnFilterValue),
-    ).toBe(true);
-    expect(isActiveColumnFilterValue(buildNumberColumnFilterValue('> 1'))).toBe(
-      true,
-    );
-    expect(isActiveColumnFilterValue('abc')).toBe(true);
-    expect(isActiveColumnFilterValue('   ')).toBe(false);
-    expect(isActiveColumnFilterValue('')).toBe(false);
-    expect(isActiveColumnFilterValue(null)).toBe(false);
-  });
-
-  it('type guards are consistent', () => {
-    const setValue: SetColumnFilterValue = { kind: 'set', values: ['a'] };
-    expect(isSetColumnFilterValue(setValue)).toBe(true);
-    expect(isNumberColumnFilterValue(setValue)).toBe(false);
-    const numberValue = buildNumberColumnFilterValue('> 1');
-    expect(isNumberColumnFilterValue(numberValue)).toBe(true);
-    expect(isSetColumnFilterValue(numberValue)).toBe(false);
-  });
-});
-</file>
-
-<file path="src/components/spreadsheet-grid/logic/selectOptions.test.ts">
-// V-1: selectOptions の等価性テスト(旧 adhoc ハーネスの恒久化)。
-//   - collectSelectOptions ≡ 旧 getColumnSelectOptions(String 化・空白ラベル '（空白）'・
-//     STRING_COLLATOR ソート・初出順 dedupe)。
-//   - createSelectOptionsAccumulator のチャンク収集 ≡ 一括収集(刻み方に依らずバイト等価)。
-//     これは同期/非同期どちらの収集経路でも結果が同一になることの土台です。
-import { describe, it, expect } from 'vitest';
-import {
-  collectSelectOptions,
-  createSelectOptionsAccumulator,
-  type SelectOptionEntry,
-} from './selectOptions';
-import { STRING_COLLATOR } from './sorting';
-
-// 参照実装(旧 getColumnSelectOptions のスキャン本体と同一規則)。
-const referenceCollect = (values: unknown[]): SelectOptionEntry[] => {
-  const seen = new Set<string>();
-  const options: SelectOptionEntry[] = [];
-  for (const raw of values) {
-    const value = String(raw ?? '');
-    if (seen.has(value)) {
-      continue;
-    }
-    seen.add(value);
-    options.push({ value, label: value || '（空白）' });
-  }
-  return options.sort((left, right) =>
-    STRING_COLLATOR.compare(left.label, right.label),
-  );
 };
 
-const collectFromArray = (values: unknown[]): SelectOptionEntry[] =>
-  collectSelectOptions(values.length, (index) => values[index]);
-
-describe('collectSelectOptions (equivalence with legacy getColumnSelectOptions)', () => {
-  const datasets: { name: string; values: unknown[] }[] = [
-    {
-      name: 'mixed types with null / undefined / empty',
-      values: ['b', 'a', null, undefined, '', 'a', 'b', 'c'],
-    },
-    {
-      name: 'numeric strings (numeric collator ordering)',
-      values: ['10', '2', '1', '100', '2', '20'],
-    },
-    {
-      name: 'numbers and strings coerced via String()',
-      values: [1, 2, 10, '1', 'apple', 2, 'Apple'],
-    },
-    {
-      name: 'all blanks collapse to one （空白）',
-      values: ['', null, undefined, ''],
-    },
-  ];
-
-  it.each(datasets)('$name', ({ values }) => {
-    expect(collectFromArray(values)).toEqual(referenceCollect(values));
+describe('useColumnSelectOptionsCollector - 同期経路(従来挙動・チラつきなし)', () => {
+  it('select / set 以外は idle を返す', () => {
+    const { result } = renderHook(() =>
+      useColumnSelectOptionsCollector({
+        column: makeColumn('a', { filterType: 'text' }),
+        rowCount: 10,
+        getRawValueAt: (index) => index,
+      }),
+    );
+    expect(result.current.status).toBe('idle');
+    expect(result.current.options).toEqual([]);
+    expect(result.current.progress).toBe(0);
   });
 
-  it('handles large unique input (20,000 distinct)', () => {
-    const values = Array.from({ length: 20_000 }, (_, i) => `item-${i}`);
-    const actual = collectFromArray(values);
-    expect(actual).toEqual(referenceCollect(values));
-    expect(actual.length).toBe(20_000);
-    // ソート済みであること(隣接ペアで collator 比較 <= 0)。
-    for (let i = 1; i < actual.length; i += 1) {
-      expect(
-        STRING_COLLATOR.compare(actual[i - 1].label, actual[i].label),
-      ).toBeLessThanOrEqual(0);
-    }
+  it('column=null は idle を返す', () => {
+    const { result } = renderHook(() =>
+      useColumnSelectOptionsCollector({
+        column: null,
+        rowCount: 10,
+        getRawValueAt: (index) => index,
+      }),
+    );
+    expect(result.current.status).toBe('idle');
   });
 
-  it('blank value maps to （空白） label', () => {
-    const result = collectFromArray(['', 'x']);
-    const blank = result.find((entry) => entry.value === '');
-    expect(blank).toEqual({ value: '', label: '（空白）' });
+  it('閾値以下(<=50k)は同期で即 ready・同期参照と等価', () => {
+    const getRaw = (index: number): unknown => `v${index % 6}`;
+    const { result } = renderHook(() =>
+      useColumnSelectOptionsCollector({
+        column: makeColumn('a'),
+        rowCount: THRESHOLD, // 50,000 は threshold 超えではない(> 判定)ので同期経路
+        getRawValueAt: getRaw,
+      }),
+    );
+    expect(result.current.status).toBe('ready');
+    expect(result.current.progress).toBe(1);
+    expect(result.current.options).toEqual(collectSelectOptions(THRESHOLD, getRaw));
+    expect(pendingYields.length).toBe(0); // 非同期 run は起動しない
   });
-});
 
-describe('createSelectOptionsAccumulator (chunked collect === one-shot)', () => {
-  const feedInChunks = (
-    values: unknown[],
-    chunkSizes: number[],
-  ): SelectOptionEntry[] => {
-    const accumulator = createSelectOptionsAccumulator();
-    let index = 0;
-    let chunkPointer = 0;
-    while (index < values.length) {
-      const size = chunkSizes[chunkPointer % chunkSizes.length];
-      const end = Math.min(index + size, values.length);
-      for (; index < end; index += 1) {
-        accumulator.collect(values[index]);
-      }
-      chunkPointer += 1;
-    }
-    return accumulator.finalize();
-  };
-
-  it('is byte-equivalent regardless of chunk boundaries', () => {
-    const values = [
-      '10',
-      '2',
-      'apple',
-      null,
-      '',
-      'Apple',
-      '2',
-      'banana',
-      undefined,
-      '1',
-      'apple',
+  it('filterOptions 明示時は閾値超でも即 ready(自動収集しない)', () => {
+    const explicit: GridSelectFilterOption[] = [
+      { label: 'Beta', value: 'b' },
+      { label: 'Alpha', value: 'a' },
     ];
-    const oneShot = collectFromArray(values);
-    // 異なる刻み方をいくつか試し、すべて一括と一致することを確認。
-    for (const chunkSizes of [[1], [2], [3, 1], [5, 2, 1], [values.length]]) {
-      expect(feedInChunks(values, chunkSizes)).toEqual(oneShot);
-    }
-  });
-
-  it('chunked collect over large unique input matches one-shot', () => {
-    const values = Array.from({ length: 5000 }, (_, i) => `k${(i * 7) % 1000}`);
-    expect(feedInChunks(values, [7, 13, 1])).toEqual(collectFromArray(values));
-  });
-});
-</file>
-
-<file path="src/components/spreadsheet-grid/logic/sorting.test.ts">
-// V-1: sortOrder の B-1 等価性テスト(旧 adhoc ハーネスの恒久化)。
-//   sortOrder は内部で「全列数値 → Float64 fast path / それ以外 → unknown[] fallback」を
-//   自動選択します。両経路の正解は同一の compareUnknownValues 意味論(数値なら数値差、
-//   それ以外は STRING_COLLATOR、source index タイブレーク)なので、compareUnknownValues を
-//   常用する参照実装と sortOrder の出力がバイト等価であることを検査します。
-//   - all-numeric / numeric-string → fast path を踏む。
-//   - 非有限混在 / 文字列二次キー → fallback を踏む。
-//   どちらのデータでも参照と一致すれば、fast path ≡ fallback ≡ 旧実装が担保されます。
-import { describe, it, expect } from 'vitest';
-import { compareUnknownValues, sortOrder } from './sorting';
-import { createSourceOrder, type RowOrder } from './filtering';
-import { getCellValue } from '../utils/permissions';
-import type { GridColumn, GridSortState } from '../model/gridTypes';
-
-type Row = Record<string, unknown>;
-
-const col = (key: string): GridColumn<Row> => ({ key, width: 100 });
-
-// 参照実装: 比較は常に compareUnknownValues。sortOrder の規約(列解決・優先順位・
-//   未解決スキップ・有効キー 0 件は同一参照・source index タイブレーク)を素朴に再現します。
-const referenceSortOrder = (
-  rows: Row[],
-  order: RowOrder,
-  columns: GridColumn<Row>[],
-  sort: GridSortState,
-): RowOrder => {
-  if (sort.length === 0) {
-    return order;
-  }
-  const resolved = sort
-    .map((entry) => {
-      const column = columns.find((item) => item.key === entry.columnKey);
-      return column
-        ? { column, multiplier: entry.direction === 'asc' ? 1 : -1 }
-        : null;
-    })
-    .filter(
-      (item): item is { column: GridColumn<Row>; multiplier: number } =>
-        item !== null,
+    const { result } = renderHook(() =>
+      useColumnSelectOptionsCollector({
+        column: makeColumn('a', { filterOptions: explicit }),
+        rowCount: ASYNC_ROWS, // 閾値超だが explicit 指定が優先
+        getRawValueAt: () => 'unused',
+      }),
     );
-  if (resolved.length === 0) {
-    return order;
-  }
-  const length = order.length;
-  const keyColumns = resolved.map(({ column }) => {
-    const keys = new Array<unknown>(length);
-    for (let pos = 0; pos < length; pos += 1) {
-      keys[pos] = getCellValue(rows[order[pos]], column);
-    }
-    return keys;
-  });
-  const positions = Array.from({ length }, (_, i) => i);
-  positions.sort((a, b) => {
-    for (let c = 0; c < resolved.length; c += 1) {
-      const compared = compareUnknownValues(keyColumns[c][a], keyColumns[c][b]);
-      if (compared !== 0) {
-        return compared * resolved[c].multiplier;
-      }
-    }
-    return order[a] - order[b];
-  });
-  const result = new Int32Array(length);
-  for (let i = 0; i < length; i += 1) {
-    result[i] = order[positions[i]];
-  }
-  return result;
-};
-
-const asArray = (order: RowOrder): number[] => Array.from(order);
-
-type Dataset = {
-  name: string;
-  rows: Row[];
-  columns: GridColumn<Row>[];
-  sort: GridSortState;
-  // fast path(全列数値)を踏むはずか(到達経路を明示するための注記・assert 用)。
-  expectFastPath: boolean;
-};
-
-const seededRows = (count: number, mod: number): Row[] =>
-  Array.from({ length: count }, (_, i) => ({
-    n: ((i * 7919) % mod) - Math.floor(mod / 2),
-    s: String.fromCharCode(97 + ((i * 13) % 26)) + ((i * 31) % 100),
-  }));
-
-const datasets: Dataset[] = [
-  {
-    name: 'all-numeric asc (fast path / single column)',
-    rows: [{ n: 3 }, { n: 1 }, { n: 2 }, { n: 1 }, { n: -5 }],
-    columns: [col('n')],
-    sort: [{ columnKey: 'n', direction: 'asc' }],
-    expectFastPath: true,
-  },
-  {
-    name: 'all-numeric desc (fast path / single column)',
-    rows: [{ n: 3 }, { n: 1 }, { n: 2 }, { n: 1 }, { n: -5 }],
-    columns: [col('n')],
-    sort: [{ columnKey: 'n', direction: 'desc' }],
-    expectFastPath: true,
-  },
-  {
-    name: 'numeric strings (fast path / Number() finite)',
-    rows: [{ n: '10' }, { n: '2' }, { n: '100' }, { n: '2' }, { n: '-1' }],
-    columns: [col('n')],
-    sort: [{ columnKey: 'n', direction: 'asc' }],
-    expectFastPath: true,
-  },
-  {
-    name: 'all-numeric multi-column (fast path / multi)',
-    rows: [
-      { a: 1, b: 2 },
-      { a: 1, b: 1 },
-      { a: 2, b: 5 },
-      { a: 1, b: 1 },
-      { a: 0, b: 9 },
-    ],
-    columns: [col('a'), col('b')],
-    sort: [
-      { columnKey: 'a', direction: 'asc' },
-      { columnKey: 'b', direction: 'desc' },
-    ],
-    expectFastPath: true,
-  },
-  {
-    name: 'mixed non-finite (fallback)',
-    rows: [{ n: 3 }, { n: 'abc' }, { n: 2 }, { n: '' }, { n: 1 }],
-    columns: [col('n')],
-    sort: [{ columnKey: 'n', direction: 'asc' }],
-    expectFastPath: false,
-  },
-  {
-    name: 'string secondary key forces fallback (multi)',
-    rows: [
-      { a: 1, s: 'pear' },
-      { a: 1, s: 'apple' },
-      { a: 2, s: 'kiwi' },
-      { a: 1, s: 'apple' },
-    ],
-    columns: [col('a'), col('s')],
-    sort: [
-      { columnKey: 'a', direction: 'asc' },
-      { columnKey: 's', direction: 'asc' },
-    ],
-    expectFastPath: false,
-  },
-  {
-    name: 'duplicates → stable by source index (fast path)',
-    rows: Array.from({ length: 50 }, () => ({ n: 7 })),
-    columns: [col('n')],
-    sort: [{ columnKey: 'n', direction: 'desc' }],
-    expectFastPath: true,
-  },
-  {
-    name: 'large all-numeric (fast path / 5000 rows)',
-    rows: seededRows(5000, 997),
-    columns: [col('n')],
-    sort: [{ columnKey: 'n', direction: 'asc' }],
-    expectFastPath: true,
-  },
-  {
-    name: 'large mixed (fallback / numeric + string cols, 5000 rows)',
-    rows: seededRows(5000, 997),
-    columns: [col('n'), col('s')],
-    sort: [
-      { columnKey: 'n', direction: 'desc' },
-      { columnKey: 's', direction: 'asc' },
-    ],
-    expectFastPath: false,
-  },
-];
-
-describe('sortOrder (B-1 equivalence with compareUnknownValues reference)', () => {
-  it.each(datasets)('$name', ({ rows, columns, sort }) => {
-    const order = createSourceOrder(rows.length);
-    const actual = sortOrder(rows, order, columns, sort);
-    const expected = referenceSortOrder(rows, order, columns, sort);
-    expect(asArray(actual)).toEqual(asArray(expected));
-  });
-
-  it('returns the same reference when sort is empty', () => {
-    const rows: Row[] = [{ n: 1 }, { n: 2 }];
-    const order = createSourceOrder(rows.length);
-    expect(sortOrder(rows, order, [col('n')], [])).toBe(order);
-  });
-
-  it('returns the same reference when no sort entry resolves to a column', () => {
-    const rows: Row[] = [{ n: 1 }, { n: 2 }];
-    const order = createSourceOrder(rows.length);
-    const sort: GridSortState = [{ columnKey: 'missing', direction: 'asc' }];
-    expect(sortOrder(rows, order, [col('n')], sort)).toBe(order);
-  });
-
-  it('sorts a pre-filtered order (non-identity input order) consistently', () => {
-    const rows: Row[] = [{ n: 5 }, { n: 1 }, { n: 9 }, { n: 3 }, { n: 7 }];
-    // 偶数 source index のみ残したビュー順(フィルター後相当)。
-    const order = Int32Array.from([0, 2, 4]);
-    const sort: GridSortState = [{ columnKey: 'n', direction: 'asc' }];
-    const actual = sortOrder(rows, order, [col('n')], sort);
-    const expected = referenceSortOrder(rows, order, [col('n')], sort);
-    expect(asArray(actual)).toEqual(asArray(expected));
-    // 念のため: 出力は入力 order の置換であり、source index 集合を保存する。
-    expect([...actual].sort((x, y) => x - y)).toEqual([0, 2, 4]);
+    expect(result.current.status).toBe('ready');
+    expect(result.current.options).toEqual(explicit); // 指定順を保持(ソートしない)
+    expect(result.current.allValues).toEqual(new Set(['b', 'a']));
+    expect(pendingYields.length).toBe(0);
   });
 });
-</file>
 
-<file path="src/components/spreadsheet-grid/logic/verticalGeometry.test.ts">
-// V-1: verticalGeometry の等価性 / 不変条件テスト(旧 adhoc ハーネスの恒久化)。
-//   旧 rowVirtualizer(scrollMargin=headerHeight / estimateSize=rowHeight)は import できないため、
-//   等価性は「ドキュメント化された契約=不変条件」として encode します:
-//     - no-op(logicalBodyHeight <= cap): scaleFactor=1 / translateY=0 / start=headerHeight+i*rowHeight
-//       (= 旧 virtualRow.start と数値一致)。
-//     - scaling: physicalBodyHeight=cap / scaleFactor>=1 / translateY<=0 / 末尾行到達可能 /
-//       物理↔論理のラウンドトリップ / clientYToRowIndex の逆写像一致。
-//   旧ハーネスの 369 ケースに相当する系統的スイープ(>369 組合せ)を回し、各ケースで不変条件を検査します。
-import { describe, it, expect } from 'vitest';
-import {
-  MAX_BODY_PX,
-  clientYToRowIndex,
-  computeVerticalGeometry,
-  logicalToPhysicalScrollTop,
-  physicalToLogicalScrollTop,
-  type ComputeVerticalGeometryArgs,
-} from './verticalGeometry';
+describe('useColumnSelectOptionsCollector - 非同期経路(大規模・時間分割)', () => {
+  it('idle->collecting(進捗単調増)->ready で同期参照とバイト等価', async () => {
+    const getRaw = (index: number): unknown => index % 7;
 
-const clamp = (value: number, min: number, max: number): number =>
-  Math.min(Math.max(value, min), max);
-
-// 1 ケースの不変条件を検査します(失敗時はケース内容を添えて throw)。
-const checkInvariants = (args: ComputeVerticalGeometryArgs): void => {
-  const {
-    rowCount,
-    rowHeight,
-    headerHeight,
-    viewportHeight,
-    scrollTop,
-    maxBodyPx,
-  } = args;
-  const geometry = computeVerticalGeometry(args);
-  const label = (message: string): string =>
-    `${message} | case=${JSON.stringify(args)} | geometry.scaleFactor=${geometry.scaleFactor} translateY=${geometry.translateY}`;
-  const assert = (condition: boolean, message: string): void => {
-    if (!condition) {
-      throw new Error(label(message));
-    }
-  };
-
-  const logicalBodyHeight = rowCount * rowHeight;
-  const physicalBodyHeight = Math.min(logicalBodyHeight, maxBodyPx);
-  const physicalMax = Math.max(
-    headerHeight + physicalBodyHeight - viewportHeight,
-    0,
-  );
-
-  assert(geometry.logicalBodyHeight === logicalBodyHeight, 'logicalBodyHeight');
-  assert(
-    geometry.physicalBodyHeight === physicalBodyHeight,
-    'physicalBodyHeight',
-  );
-  assert(geometry.scaleFactor >= 1, 'scaleFactor >= 1');
-  // translateY = clampedScrollTop * (1 - scaleFactor) <= 0。
-  assert(geometry.translateY <= 1e-6, 'translateY <= 0');
-
-  // 窓は連続・[0,rowCount) 内・rowIndexSet と整合。
-  for (let k = 0; k < geometry.rows.length; k += 1) {
-    const row = geometry.rows[k];
-    assert(row.index >= 0 && row.index < rowCount, 'row.index in range');
-    assert(
-      row.start === headerHeight + row.index * rowHeight,
-      'row.start === headerHeight + index*rowHeight',
+    const { result } = renderHook(() =>
+      useColumnSelectOptionsCollector({
+        column: makeColumn('a'),
+        rowCount: ASYNC_ROWS,
+        getRawValueAt: getRaw,
+      }),
     );
-    if (k > 0) {
-      assert(
-        row.index === geometry.rows[k - 1].index + 1,
-        'rows are contiguous',
-      );
+
+    // 初期レンダーは収集中(universe 未確定 = popover ゲートに使う)。
+    expect(result.current.status).toBe('collecting');
+    expect(result.current.progress).toBe(0);
+    expect(result.current.options).toEqual([]);
+
+    const progresses: number[] = [result.current.progress];
+    let guard = 0;
+    while (result.current.status !== 'ready' && guard < 100) {
+      await flushYield();
+      progresses.push(result.current.progress);
+      guard += 1;
     }
-    assert(geometry.rowIndexSet.has(row.index), 'rowIndexSet contains index');
-  }
-  assert(
-    geometry.rowIndexSet.size === geometry.rows.length,
-    'rowIndexSet size === rows length',
-  );
 
-  const isNoop = logicalBodyHeight <= maxBodyPx;
-  if (isNoop) {
-    assert(geometry.scaleFactor === 1, 'no-op scaleFactor === 1');
-    assert(geometry.translateY === 0, 'no-op translateY === 0');
-  }
+    expect(result.current.status).toBe('ready');
+    // 進捗は単調非減少で 1 に到達。
+    for (let i = 1; i < progresses.length; i += 1) {
+      expect(progresses[i]).toBeGreaterThanOrEqual(progresses[i - 1]);
+    }
+    // collecting(0<p<1)を最低 1 回観測している。
+    expect(progresses.some((p) => p > 0 && p < 1)).toBe(true);
+    expect(result.current.progress).toBe(1);
 
-  // 可視帯の被覆: 論理可視域の先頭/末尾行が窓に含まれる(overscan が上下マージンを賄う)。
-  //   viewportHeight=0 は可視行が存在しないため対象外。
-  if (rowCount > 0 && viewportHeight > 0) {
-    const clampedScrollTop = clamp(scrollTop, 0, physicalMax);
-    const logicalScrollTop = clampedScrollTop * geometry.scaleFactor;
-    const firstVisible = clamp(
-      Math.floor(logicalScrollTop / rowHeight),
-      0,
-      rowCount - 1,
+    // 結果は同期一括収集とバイト等価(刻み方非依存)。
+    const reference = collectSelectOptions(ASYNC_ROWS, getRaw);
+    expect(result.current.options).toEqual(reference);
+    expect(result.current.allValues).toEqual(
+      new Set(reference.map((option) => option.value)),
     );
-    const lastVisible = clamp(
-      Math.floor((logicalScrollTop + viewportHeight) / rowHeight),
-      0,
-      rowCount - 1,
+  });
+});
+
+describe('useColumnSelectOptionsCollector - 中断 / stale 排除', () => {
+  it('収集途中で列を切替えると in-flight run は中断され、最終結果は新列のみ', async () => {
+    const getRawA = (index: number): unknown => `A${index % 5}`;
+    const getRawB = (index: number): unknown => `B${index % 3}`;
+
+    const { result, rerender } = renderHook(
+      (props: CollectorArgs) => useColumnSelectOptionsCollector(props),
+      {
+        initialProps: {
+          column: makeColumn('a'),
+          rowCount: ASYNC_ROWS,
+          getRawValueAt: getRawA,
+        },
+      },
     );
-    assert(geometry.rowIndexSet.has(firstVisible), 'first visible row in window');
-    assert(geometry.rowIndexSet.has(lastVisible), 'last visible row in window');
-  }
 
-  // 末尾行到達可能: スクロール可能 かつ 可視域がある なら scrollTop=physicalMax で
-  //   最終行が窓に入る。viewportHeight=0 は可視域ゼロのため対象外(末尾で 1 行が域外に出るのは正常)。
-  if (rowCount > 0 && physicalMax > 0 && viewportHeight > 0) {
-    const atBottom = computeVerticalGeometry({ ...args, scrollTop: physicalMax });
-    assert(
-      atBottom.rowIndexSet.has(rowCount - 1),
-      'last row reachable at physicalMax',
+    // A を 1 チャンクだけ進める(まだ ready ではない)。
+    await flushYield();
+    expect(result.current.status).toBe('collecting');
+
+    // 列 B へ切替(getRawValueAt identity 変化で A の effect が cleanup→中断)。
+    rerender({ column: makeColumn('b'), rowCount: ASYNC_ROWS, getRawValueAt: getRawB });
+    // 切替直後は key 不一致で collecting(A の候補は出さない)。
+    expect(result.current.status).toBe('collecting');
+
+    let guard = 0;
+    while (result.current.status !== 'ready' && guard < 100) {
+      await flushYield();
+      guard += 1;
+    }
+
+    // 最終結果は B のみ(中断された A の混入なし)。
+    expect(result.current.options).toEqual(collectSelectOptions(ASYNC_ROWS, getRawB));
+    expect(result.current.options.some((option) => option.value.startsWith('A'))).toBe(
+      false,
     );
-  }
-
-  // 物理↔論理ラウンドトリップ(可動域内では誤差なく往復する)。
-  if (physicalMax > 0) {
-    for (const probe of [0, physicalMax / 2, physicalMax]) {
-      const roundTrip = logicalToPhysicalScrollTop(
-        physicalToLogicalScrollTop(probe, geometry.scaleFactor),
-        geometry.scaleFactor,
-      );
-      assert(Math.abs(roundTrip - probe) < 1e-3, 'scroll round-trip');
-    }
-  }
-};
-
-// 系統的スイープのケースを生成します(>369 組合せ)。
-const buildCases = (): ComputeVerticalGeometryArgs[] => {
-  const rowCounts = [0, 1, 10, 400_000, 420_000, 1_000_000];
-  const rowHeights = [1, 36, 38];
-  const headerHeights = [0, 42];
-  const viewportHeights = [0, 300, 1000];
-  const overscans = [0, 20];
-  // MAX_BODY_PX に加え、小行数でも scaling を起動させる小さい cap を併用して経路網羅を上げます。
-  const maxBodyPxs = [MAX_BODY_PX, 1000];
-
-  const cases: ComputeVerticalGeometryArgs[] = [];
-  for (const rowCount of rowCounts) {
-    for (const rowHeight of rowHeights) {
-      for (const headerHeight of headerHeights) {
-        for (const viewportHeight of viewportHeights) {
-          for (const overscan of overscans) {
-            for (const maxBodyPx of maxBodyPxs) {
-              const physicalBodyHeight = Math.min(
-                rowCount * rowHeight,
-                maxBodyPx,
-              );
-              const physicalMax = Math.max(
-                headerHeight + physicalBodyHeight - viewportHeight,
-                0,
-              );
-              const scrollTops = Array.from(
-                new Set([
-                  0,
-                  Math.floor(physicalMax / 2),
-                  physicalMax,
-                  physicalMax + 1000,
-                ]),
-              );
-              for (const scrollTop of scrollTops) {
-                cases.push({
-                  rowCount,
-                  rowHeight,
-                  headerHeight,
-                  viewportHeight,
-                  scrollTop,
-                  overscan,
-                  maxBodyPx,
-                });
-              }
-            }
-          }
-        }
-      }
-    }
-  }
-  return cases;
-};
-
-describe('computeVerticalGeometry (sweep invariants)', () => {
-  const cases = buildCases();
-
-  it(`covers >= 369 cases (actual ${cases.length})`, () => {
-    expect(cases.length).toBeGreaterThanOrEqual(369);
   });
 
-  it('holds invariants on every swept case', () => {
-    for (const args of cases) {
-      checkInvariants(args);
+  it('前列が ready 到達後に切替えても、新列の収集中は前列の候補を表面化しない(stale 排除)', async () => {
+    const getRawA = (index: number): unknown => `A${index % 4}`;
+    const getRawB = (index: number): unknown => `B${index % 6}`;
+
+    const { result, rerender } = renderHook(
+      (props: CollectorArgs) => useColumnSelectOptionsCollector(props),
+      {
+        initialProps: {
+          column: makeColumn('a'),
+          rowCount: ASYNC_ROWS,
+          getRawValueAt: getRawA,
+        },
+      },
+    );
+
+    // A を ready まで流し切る。
+    let guard = 0;
+    while (result.current.status !== 'ready' && guard < 100) {
+      await flushYield();
+      guard += 1;
     }
+    expect(result.current.options).toEqual(collectSelectOptions(ASYNC_ROWS, getRawA));
+
+    // B へ切替えた直後のレンダーで、A の ready 候補が一瞬でも見えないこと(key 照合で stale 排除)。
+    rerender({ column: makeColumn('b'), rowCount: ASYNC_ROWS, getRawValueAt: getRawB });
+    expect(result.current.status).toBe('collecting');
+    expect(result.current.options).toEqual([]);
+
+    // B を流し切ると B の候補に確定。
+    guard = 0;
+    while (result.current.status !== 'ready' && guard < 100) {
+      await flushYield();
+      guard += 1;
+    }
+    expect(result.current.options).toEqual(collectSelectOptions(ASYNC_ROWS, getRawB));
+  });
+
+  it('母集合(rowCount)変化で再収集し、結果は新しい rowCount を反映する', async () => {
+    const getRaw = (index: number): unknown => index % 9;
+
+    const { result, rerender } = renderHook(
+      (props: CollectorArgs) => useColumnSelectOptionsCollector(props),
+      {
+        initialProps: {
+          column: makeColumn('a'),
+          rowCount: ASYNC_ROWS,
+          getRawValueAt: getRaw,
+        },
+      },
+    );
+
+    await flushYield();
+    expect(result.current.status).toBe('collecting');
+
+    // rowCount を変更(同 getRawValueAt)。effect 再実行で旧 run は中断、新 run が起動。
+    const nextRowCount = ASYNC_ROWS + 3;
+    rerender({ column: makeColumn('a'), rowCount: nextRowCount, getRawValueAt: getRaw });
+    // rowCount key 不一致で collecting に戻る。
+    expect(result.current.status).toBe('collecting');
+
+    let guard = 0;
+    while (result.current.status !== 'ready' && guard < 100) {
+      await flushYield();
+      guard += 1;
+    }
+    expect(result.current.options).toEqual(collectSelectOptions(nextRowCount, getRaw));
   });
 });
 
-describe('computeVerticalGeometry (no-op equivalence with old uniform virtualizer)', () => {
-  it('produces start === headerHeight + index*rowHeight and identity scaling below cap', () => {
-    const geometry = computeVerticalGeometry({
-      rowCount: 1000,
-      rowHeight: 38,
-      headerHeight: 42,
-      viewportHeight: 600,
-      scrollTop: 5_000,
-      overscan: 20,
-      maxBodyPx: MAX_BODY_PX,
-    });
-    expect(geometry.scaleFactor).toBe(1);
-    expect(geometry.translateY).toBe(0);
-    for (const row of geometry.rows) {
-      expect(row.start).toBe(42 + row.index * 38);
-    }
+describe('useColumnSelectOptionsCollector - unmount', () => {
+  it('収集途中の unmount 後に残 yield を解決しても例外/警告なく no-op', async () => {
+    const getRaw = (index: number): unknown => index % 4;
+    const { result, unmount } = renderHook(() =>
+      useColumnSelectOptionsCollector({
+        column: makeColumn('a'),
+        rowCount: ASYNC_ROWS,
+        getRawValueAt: getRaw,
+      }),
+    );
+    await flushYield();
+    expect(result.current.status).toBe('collecting');
+
+    unmount();
+    // unmount 後の残 yield 解決は cancelled により setState せず、例外も投げない。
+    await expect(flushYield()).resolves.toBeUndefined();
   });
-});
-
-describe('computeVerticalGeometry (scaling activation at App defaults)', () => {
-  it('activates scaling at 500k rows / rowHeight=38 (sf ~ 1.27)', () => {
-    const geometry = computeVerticalGeometry({
-      rowCount: 500_000,
-      rowHeight: 38,
-      headerHeight: 42,
-      viewportHeight: 800,
-      scrollTop: 0,
-      overscan: 20,
-      maxBodyPx: MAX_BODY_PX,
-    });
-    expect(geometry.physicalBodyHeight).toBe(MAX_BODY_PX);
-    expect(geometry.scaleFactor).toBeGreaterThan(1.2);
-    expect(geometry.scaleFactor).toBeLessThan(1.35);
-  });
-
-  it('keeps no-op below the activation threshold (<= 394,736 rows)', () => {
-    const geometry = computeVerticalGeometry({
-      rowCount: 394_000,
-      rowHeight: 38,
-      headerHeight: 42,
-      viewportHeight: 800,
-      scrollTop: 1000,
-      overscan: 20,
-      maxBodyPx: MAX_BODY_PX,
-    });
-    expect(geometry.scaleFactor).toBe(1);
-    expect(geometry.translateY).toBe(0);
-  });
-});
-
-describe('clientYToRowIndex (inverse of body-content row band)', () => {
-  it('reduces to floor(y / rowHeight) when scaleFactor === 1', () => {
-    const rowHeight = 38;
-    const rowCount = 1000;
-    for (let i = 0; i < 50; i += 1) {
-      for (const delta of [0, 1, rowHeight - 1]) {
-        const y = i * rowHeight + delta;
-        expect(clientYToRowIndex(y, 0, 1, rowHeight, rowCount)).toBe(i);
-      }
-    }
-  });
-
-  it('inverts the d-shifted band under scaling (row i occupies [i*rowHeight + d, ...))', () => {
-    const rowHeight = 38;
-    const rowCount = 1_000_000;
-    const scaleFactor = 1.27;
-    const scrollTop = 1_000_000;
-    const d = scrollTop * (1 - scaleFactor); // <= 0
-    for (const i of [0, 1, 100, 5000, rowCount - 1]) {
-      for (const delta of [0, rowHeight / 2, rowHeight - 1]) {
-        const y = i * rowHeight + d + delta;
-        expect(
-          clientYToRowIndex(y, scrollTop, scaleFactor, rowHeight, rowCount),
-        ).toBe(clamp(i, 0, rowCount - 1));
-      }
-    }
-  });
-
-  it('clamps out-of-range y into [0, rowCount-1]', () => {
-    const rowHeight = 38;
-    const rowCount = 10;
-    expect(clientYToRowIndex(-9999, 0, 1, rowHeight, rowCount)).toBe(0);
-    expect(clientYToRowIndex(9_999_999, 0, 1, rowHeight, rowCount)).toBe(9);
-  });
-});
-</file>
-
-<file path="tsconfig.vitest.json">
-{
-  "extends": "./tsconfig.app.json",
-  "include": ["src"],
-  "exclude": []
-}
-</file>
-
-<file path="vitest.config.ts">
-import { defineConfig } from 'vitest/config';
-
-// 追加(V-1): 等価性ハーネスの恒久化用 vitest 設定です。
-//   - 本番ビルド設定(vite.config.ts)は変更しません。テストは別グラフで回します。
-//   - V-1 は純ロジック(verticalGeometry / sorting / filtering / selectOptions)のみで
-//     React 非依存のため environment は node。将来 V-2(collector フック)を足すときは
-//     該当テストだけ jsdom へ振り分けます(environmentMatchGlobs などで個別指定)。
-export default defineConfig({
-  test: {
-    environment: 'node',
-    include: ['src/**/*.test.ts'],
-  },
 });
 </file>
 
@@ -2150,6 +1488,467 @@ export const shouldIgnoreGridKeydown = (eventTarget: EventTarget | null) => {
 };
 </file>
 
+<file path="src/components/spreadsheet-grid/logic/filtering.test.ts">
+// V-1: filtering の等価性テスト(旧 adhoc ハーネスの恒久化)。
+//   - B-2: filterOrderByColumns に numericKeys を渡した経路と渡さない経路が、number
+//     (comparison/range)でバイト等価であること(値の取得元のみ差し替え・判定本体は不変)。
+//   - 記述子 ≡ 旧 applyNumberFilter: commit 時 1 回 parse の記述子経路が、行ごとに parse する
+//     旧 applyNumberFilter と厳密に等価であること。
+//   - set(include/exclude)/ select / text(contains)/ 全通過 no-op / 無効フィルターの規約。
+//   - 記述子 helper(parse / build / draftText / isActive)の単体仕様。
+import { describe, it, expect } from 'vitest';
+import {
+  applyNumberFilter,
+  buildNumberColumnFilterValue,
+  columnFilterValueToDraftText,
+  createSourceOrder,
+  filterOrderByColumns,
+  filterOrderByGlobalText,
+  isActiveColumnFilterValue,
+  isNumberColumnFilterValue,
+  isSetColumnFilterValue,
+  parseNumberFilterExpression,
+  type RowOrder,
+} from './filtering';
+import { getCellValue } from '../utils/permissions';
+import type { GridColumn, SetColumnFilterValue } from '../model/gridTypes';
+
+type Row = Record<string, unknown>;
+
+const numberCol = (key: string): GridColumn<Row> => ({
+  key,
+  width: 100,
+  filterType: 'number',
+});
+const textCol = (key: string): GridColumn<Row> => ({ key, width: 100 });
+const selectCol = (key: string): GridColumn<Row> => ({
+  key,
+  width: 100,
+  filterType: 'select',
+});
+const setCol = (key: string): GridColumn<Row> => ({
+  key,
+  width: 100,
+  filterType: 'set',
+});
+
+const asArray = (order: RowOrder): number[] => Array.from(order);
+
+const buildNumericKeys = (
+  rows: Row[],
+  key: string,
+): ReadonlyMap<string, Float64Array> =>
+  new Map([[key, Float64Array.from(rows, (row) => Number(row[key]))]]);
+
+// 数値・非有限・空・文字列を混ぜた母集合(comparison/range/contains すべてを踏む)。
+const rows: Row[] = [
+  { n: 5, t: 'Apple', g: 'red' },
+  { n: 1, t: 'banana', g: 'yellow' },
+  { n: 10, t: 'Cherry', g: 'red' },
+  { n: 'x', t: 'date', g: 'brown' }, // 非有限
+  { n: '', t: 'Elder', g: 'black' }, // 空(Number('')=0 だが空白扱いの確認用)
+  { n: -3, t: 'fig', g: 'purple' },
+  { n: 7.5, t: 'Grape', g: 'green' },
+  { n: 2, t: 'apricot', g: 'orange' },
+];
+
+describe('filterOrderByColumns (B-2: numericKeys path === no-key path)', () => {
+  const order = createSourceOrder(rows.length);
+  const keys = buildNumericKeys(rows, 'n');
+  const numberFilters = [
+    '> 2',
+    '>= 2',
+    '< 5',
+    '<= 5',
+    '= 10',
+    '5',
+    '1 .. 8',
+    '8 .. 1', // min/max 入れ替え
+    '-3 .. 2',
+  ];
+
+  it.each(numberFilters)('number filter %s', (raw) => {
+    const descriptor = buildNumberColumnFilterValue(raw);
+    const columnFilters = { n: descriptor };
+    const withKeys = filterOrderByColumns(
+      rows,
+      order,
+      [numberCol('n')],
+      columnFilters,
+      keys,
+    );
+    const withoutKeys = filterOrderByColumns(
+      rows,
+      order,
+      [numberCol('n')],
+      columnFilters,
+    );
+    expect(asArray(withKeys)).toEqual(asArray(withoutKeys));
+  });
+
+  it('contains fallback (unparseable) is identical with/without keys', () => {
+    const descriptor = buildNumberColumnFilterValue('1.'); // 解釈不可 → contains
+    const columnFilters = { n: descriptor };
+    const withKeys = filterOrderByColumns(
+      rows,
+      order,
+      [numberCol('n')],
+      columnFilters,
+      keys,
+    );
+    const withoutKeys = filterOrderByColumns(
+      rows,
+      order,
+      [numberCol('n')],
+      columnFilters,
+    );
+    expect(asArray(withKeys)).toEqual(asArray(withoutKeys));
+  });
+});
+
+describe('filterOrderByColumns (descriptor === legacy applyNumberFilter)', () => {
+  const order = createSourceOrder(rows.length);
+  const keys = buildNumericKeys(rows, 'n');
+  const cases = ['> 2', '>=2', '<5', '<= 5', '=10', '7.5', '1..8', '1.', 'abc'];
+
+  it.each(cases)('raw %s', (raw) => {
+    const descriptor = buildNumberColumnFilterValue(raw);
+    const actual = asArray(
+      filterOrderByColumns(rows, order, [numberCol('n')], { n: descriptor }, keys),
+    );
+    // 参照: 旧 applyNumberFilter(raw 文字列)で行ごとに判定。
+    const expected: number[] = [];
+    for (let i = 0; i < rows.length; i += 1) {
+      if (applyNumberFilter(getCellValue(rows[i], numberCol('n')), raw)) {
+        expected.push(i);
+      }
+    }
+    expect(actual).toEqual(expected);
+  });
+});
+
+describe('filterOrderByColumns (set include / exclude)', () => {
+  const order = createSourceOrder(rows.length);
+
+  it('include keeps only listed values', () => {
+    const value: SetColumnFilterValue = {
+      kind: 'set',
+      mode: 'include',
+      values: ['red', 'green'],
+    };
+    const actual = asArray(
+      filterOrderByColumns(rows, order, [setCol('g')], { g: value }),
+    );
+    const expected = rows
+      .map((row, i) => [row.g, i] as const)
+      .filter(([g]) => g === 'red' || g === 'green')
+      .map(([, i]) => i);
+    expect(actual).toEqual(expected);
+  });
+
+  it('exclude drops listed values (complement of include over universe)', () => {
+    const include: SetColumnFilterValue = {
+      kind: 'set',
+      mode: 'include',
+      values: ['red', 'green'],
+    };
+    // universe = 全行値。exclude(U−S) は include(S) と同じ通過集合になる。
+    const universe = Array.from(new Set(rows.map((row) => String(row.g))));
+    const excludedValues = universe.filter(
+      (v) => v !== 'red' && v !== 'green',
+    );
+    const exclude: SetColumnFilterValue = {
+      kind: 'set',
+      mode: 'exclude',
+      values: excludedValues,
+    };
+    const includeOrder = asArray(
+      filterOrderByColumns(rows, order, [setCol('g')], { g: include }),
+    );
+    const excludeOrder = asArray(
+      filterOrderByColumns(rows, order, [setCol('g')], { g: exclude }),
+    );
+    expect(excludeOrder).toEqual(includeOrder);
+  });
+
+  it('empty include values yields no rows', () => {
+    const value: SetColumnFilterValue = { kind: 'set', values: [] };
+    const actual = asArray(
+      filterOrderByColumns(rows, order, [setCol('g')], { g: value }),
+    );
+    expect(actual).toEqual([]);
+  });
+});
+
+describe('filterOrderByColumns (select / text / no-op identity)', () => {
+  const order = createSourceOrder(rows.length);
+
+  it('select matches exact string equality', () => {
+    const actual = asArray(
+      filterOrderByColumns(rows, order, [selectCol('g')], { g: 'red' }),
+    );
+    const expected = rows
+      .map((row, i) => [row.g, i] as const)
+      .filter(([g]) => g === 'red')
+      .map(([, i]) => i);
+    expect(actual).toEqual(expected);
+  });
+
+  it('text is case-insensitive contains', () => {
+    const actual = asArray(
+      filterOrderByColumns(rows, order, [textCol('t')], { t: 'ap' }),
+    );
+    // 'Apple' / 'apricot' / 'Grape'(gr*ap*e)が含む。
+    const expected = rows
+      .map((row, i) => [String(row.t).toLowerCase(), i] as const)
+      .filter(([t]) => t.includes('ap'))
+      .map(([, i]) => i);
+    expect(actual).toEqual(expected);
+  });
+
+  it('returns the same reference when no active filter exists', () => {
+    expect(
+      filterOrderByColumns(rows, order, [textCol('t')], { t: '' }),
+    ).toBe(order);
+    expect(filterOrderByColumns(rows, order, [textCol('t')], {})).toBe(order);
+  });
+
+  it('returns the same reference when every row passes (set include over full universe)', () => {
+    // universe = 全行の g 値。全候補を include すると全行通過し、count===length で
+    //   下流 useMemo スキップのため同一参照(引数 order)を返す。
+    const universe = Array.from(new Set(rows.map((row) => String(row.g))));
+    const value: SetColumnFilterValue = {
+      kind: 'set',
+      mode: 'include',
+      values: universe,
+    };
+    expect(filterOrderByColumns(rows, order, [setCol('g')], { g: value })).toBe(
+      order,
+    );
+  });
+});
+
+describe('filterOrderByGlobalText', () => {
+  const order = createSourceOrder(rows.length);
+
+  it('returns the same reference for empty text', () => {
+    expect(
+      filterOrderByGlobalText(rows, order, [textCol('t'), numberCol('n')], '  '),
+    ).toBe(order);
+  });
+
+  it('matches across any column (case-insensitive contains)', () => {
+    const actual = asArray(
+      filterOrderByGlobalText(
+        rows,
+        order,
+        [textCol('t'), selectCol('g')],
+        'red',
+      ),
+    );
+    const expected = rows
+      .map((row, i) => [row, i] as const)
+      .filter(
+        ([row]) =>
+          String(row.t).toLowerCase().includes('red') ||
+          String(row.g).toLowerCase().includes('red'),
+      )
+      .map(([, i]) => i);
+    expect(actual).toEqual(expected);
+  });
+});
+
+describe('number filter descriptor helpers', () => {
+  it('parseNumberFilterExpression handles comparison / default = / range / invalid', () => {
+    expect(parseNumberFilterExpression('> 5')).toEqual({
+      mode: 'comparison',
+      operator: '>',
+      value: 5,
+    });
+    expect(parseNumberFilterExpression('42')).toEqual({
+      mode: 'comparison',
+      operator: '=',
+      value: 42,
+    });
+    expect(parseNumberFilterExpression('8 .. 1')).toEqual({
+      mode: 'range',
+      min: 1,
+      max: 8,
+    });
+    expect(parseNumberFilterExpression('')).toBeNull();
+    expect(parseNumberFilterExpression('1.')).toBeNull();
+    expect(parseNumberFilterExpression('abc')).toBeNull();
+  });
+
+  it('buildNumberColumnFilterValue trims, parses once, and nulls on empty', () => {
+    expect(buildNumberColumnFilterValue('   ')).toBeNull();
+    const descriptor = buildNumberColumnFilterValue('  >= 3  ');
+    expect(descriptor).toEqual({
+      kind: 'number',
+      raw: '>= 3',
+      parsed: { mode: 'comparison', operator: '>=', value: 3 },
+    });
+    const contains = buildNumberColumnFilterValue('1.');
+    expect(contains).toEqual({ kind: 'number', raw: '1.', parsed: null });
+  });
+
+  it('columnFilterValueToDraftText returns raw for number descriptors, String otherwise', () => {
+    const descriptor = buildNumberColumnFilterValue('> 5');
+    expect(columnFilterValueToDraftText(descriptor)).toBe('> 5');
+    expect(columnFilterValueToDraftText('hello')).toBe('hello');
+    expect(columnFilterValueToDraftText(null)).toBe('');
+    expect(columnFilterValueToDraftText(undefined)).toBe('');
+  });
+
+  it('isActiveColumnFilterValue treats set / number descriptors / non-empty strings as active', () => {
+    expect(
+      isActiveColumnFilterValue({ kind: 'set', values: [] } as SetColumnFilterValue),
+    ).toBe(true);
+    expect(isActiveColumnFilterValue(buildNumberColumnFilterValue('> 1'))).toBe(
+      true,
+    );
+    expect(isActiveColumnFilterValue('abc')).toBe(true);
+    expect(isActiveColumnFilterValue('   ')).toBe(false);
+    expect(isActiveColumnFilterValue('')).toBe(false);
+    expect(isActiveColumnFilterValue(null)).toBe(false);
+  });
+
+  it('type guards are consistent', () => {
+    const setValue: SetColumnFilterValue = { kind: 'set', values: ['a'] };
+    expect(isSetColumnFilterValue(setValue)).toBe(true);
+    expect(isNumberColumnFilterValue(setValue)).toBe(false);
+    const numberValue = buildNumberColumnFilterValue('> 1');
+    expect(isNumberColumnFilterValue(numberValue)).toBe(true);
+    expect(isSetColumnFilterValue(numberValue)).toBe(false);
+  });
+});
+</file>
+
+<file path="src/components/spreadsheet-grid/logic/selectOptions.test.ts">
+// V-1: selectOptions の等価性テスト(旧 adhoc ハーネスの恒久化)。
+//   - collectSelectOptions ≡ 旧 getColumnSelectOptions(String 化・空白ラベル '（空白）'・
+//     STRING_COLLATOR ソート・初出順 dedupe)。
+//   - createSelectOptionsAccumulator のチャンク収集 ≡ 一括収集(刻み方に依らずバイト等価)。
+//     これは同期/非同期どちらの収集経路でも結果が同一になることの土台です。
+import { describe, it, expect } from 'vitest';
+import {
+  collectSelectOptions,
+  createSelectOptionsAccumulator,
+  type SelectOptionEntry,
+} from './selectOptions';
+import { STRING_COLLATOR } from './sorting';
+
+// 参照実装(旧 getColumnSelectOptions のスキャン本体と同一規則)。
+const referenceCollect = (values: unknown[]): SelectOptionEntry[] => {
+  const seen = new Set<string>();
+  const options: SelectOptionEntry[] = [];
+  for (const raw of values) {
+    const value = String(raw ?? '');
+    if (seen.has(value)) {
+      continue;
+    }
+    seen.add(value);
+    options.push({ value, label: value || '（空白）' });
+  }
+  return options.sort((left, right) =>
+    STRING_COLLATOR.compare(left.label, right.label),
+  );
+};
+
+const collectFromArray = (values: unknown[]): SelectOptionEntry[] =>
+  collectSelectOptions(values.length, (index) => values[index]);
+
+describe('collectSelectOptions (equivalence with legacy getColumnSelectOptions)', () => {
+  const datasets: { name: string; values: unknown[] }[] = [
+    {
+      name: 'mixed types with null / undefined / empty',
+      values: ['b', 'a', null, undefined, '', 'a', 'b', 'c'],
+    },
+    {
+      name: 'numeric strings (numeric collator ordering)',
+      values: ['10', '2', '1', '100', '2', '20'],
+    },
+    {
+      name: 'numbers and strings coerced via String()',
+      values: [1, 2, 10, '1', 'apple', 2, 'Apple'],
+    },
+    {
+      name: 'all blanks collapse to one （空白）',
+      values: ['', null, undefined, ''],
+    },
+  ];
+
+  it.each(datasets)('$name', ({ values }) => {
+    expect(collectFromArray(values)).toEqual(referenceCollect(values));
+  });
+
+  it('handles large unique input (20,000 distinct)', () => {
+    const values = Array.from({ length: 20_000 }, (_, i) => `item-${i}`);
+    const actual = collectFromArray(values);
+    expect(actual).toEqual(referenceCollect(values));
+    expect(actual.length).toBe(20_000);
+    // ソート済みであること(隣接ペアで collator 比較 <= 0)。
+    for (let i = 1; i < actual.length; i += 1) {
+      expect(
+        STRING_COLLATOR.compare(actual[i - 1].label, actual[i].label),
+      ).toBeLessThanOrEqual(0);
+    }
+  });
+
+  it('blank value maps to （空白） label', () => {
+    const result = collectFromArray(['', 'x']);
+    const blank = result.find((entry) => entry.value === '');
+    expect(blank).toEqual({ value: '', label: '（空白）' });
+  });
+});
+
+describe('createSelectOptionsAccumulator (chunked collect === one-shot)', () => {
+  const feedInChunks = (
+    values: unknown[],
+    chunkSizes: number[],
+  ): SelectOptionEntry[] => {
+    const accumulator = createSelectOptionsAccumulator();
+    let index = 0;
+    let chunkPointer = 0;
+    while (index < values.length) {
+      const size = chunkSizes[chunkPointer % chunkSizes.length];
+      const end = Math.min(index + size, values.length);
+      for (; index < end; index += 1) {
+        accumulator.collect(values[index]);
+      }
+      chunkPointer += 1;
+    }
+    return accumulator.finalize();
+  };
+
+  it('is byte-equivalent regardless of chunk boundaries', () => {
+    const values = [
+      '10',
+      '2',
+      'apple',
+      null,
+      '',
+      'Apple',
+      '2',
+      'banana',
+      undefined,
+      '1',
+      'apple',
+    ];
+    const oneShot = collectFromArray(values);
+    // 異なる刻み方をいくつか試し、すべて一括と一致することを確認。
+    for (const chunkSizes of [[1], [2], [3, 1], [5, 2, 1], [values.length]]) {
+      expect(feedInChunks(values, chunkSizes)).toEqual(oneShot);
+    }
+  });
+
+  it('chunked collect over large unique input matches one-shot', () => {
+    const values = Array.from({ length: 5000 }, (_, i) => `k${(i * 7) % 1000}`);
+    expect(feedInChunks(values, [7, 13, 1])).toEqual(collectFromArray(values));
+  });
+});
+</file>
+
 <file path="src/components/spreadsheet-grid/logic/selectOptions.ts">
 // 追加(DS-4 #1): select / set フィルター候補の収集ロジックを 1 か所へ集約します。
 //   同期一括版(通常規模)と時間分割の非同期版(500k/1M)の双方がここを共有するため、
@@ -2197,6 +1996,492 @@ export const collectSelectOptions = (
   }
   return accumulator.finalize();
 };
+</file>
+
+<file path="src/components/spreadsheet-grid/logic/sorting.test.ts">
+// V-1: sortOrder の B-1 等価性テスト(旧 adhoc ハーネスの恒久化)。
+//   sortOrder は内部で「全列数値 → Float64 fast path / それ以外 → unknown[] fallback」を
+//   自動選択します。両経路の正解は同一の compareUnknownValues 意味論(数値なら数値差、
+//   それ以外は STRING_COLLATOR、source index タイブレーク)なので、compareUnknownValues を
+//   常用する参照実装と sortOrder の出力がバイト等価であることを検査します。
+//   - all-numeric / numeric-string → fast path を踏む。
+//   - 非有限混在 / 文字列二次キー → fallback を踏む。
+//   どちらのデータでも参照と一致すれば、fast path ≡ fallback ≡ 旧実装が担保されます。
+import { describe, it, expect } from 'vitest';
+import { compareUnknownValues, sortOrder } from './sorting';
+import { createSourceOrder, type RowOrder } from './filtering';
+import { getCellValue } from '../utils/permissions';
+import type { GridColumn, GridSortState } from '../model/gridTypes';
+
+type Row = Record<string, unknown>;
+
+const col = (key: string): GridColumn<Row> => ({ key, width: 100 });
+
+// 参照実装: 比較は常に compareUnknownValues。sortOrder の規約(列解決・優先順位・
+//   未解決スキップ・有効キー 0 件は同一参照・source index タイブレーク)を素朴に再現します。
+const referenceSortOrder = (
+  rows: Row[],
+  order: RowOrder,
+  columns: GridColumn<Row>[],
+  sort: GridSortState,
+): RowOrder => {
+  if (sort.length === 0) {
+    return order;
+  }
+  const resolved = sort
+    .map((entry) => {
+      const column = columns.find((item) => item.key === entry.columnKey);
+      return column
+        ? { column, multiplier: entry.direction === 'asc' ? 1 : -1 }
+        : null;
+    })
+    .filter(
+      (item): item is { column: GridColumn<Row>; multiplier: number } =>
+        item !== null,
+    );
+  if (resolved.length === 0) {
+    return order;
+  }
+  const length = order.length;
+  const keyColumns = resolved.map(({ column }) => {
+    const keys = new Array<unknown>(length);
+    for (let pos = 0; pos < length; pos += 1) {
+      keys[pos] = getCellValue(rows[order[pos]], column);
+    }
+    return keys;
+  });
+  const positions = Array.from({ length }, (_, i) => i);
+  positions.sort((a, b) => {
+    for (let c = 0; c < resolved.length; c += 1) {
+      const compared = compareUnknownValues(keyColumns[c][a], keyColumns[c][b]);
+      if (compared !== 0) {
+        return compared * resolved[c].multiplier;
+      }
+    }
+    return order[a] - order[b];
+  });
+  const result = new Int32Array(length);
+  for (let i = 0; i < length; i += 1) {
+    result[i] = order[positions[i]];
+  }
+  return result;
+};
+
+const asArray = (order: RowOrder): number[] => Array.from(order);
+
+type Dataset = {
+  name: string;
+  rows: Row[];
+  columns: GridColumn<Row>[];
+  sort: GridSortState;
+  // fast path(全列数値)を踏むはずか(到達経路を明示するための注記・assert 用)。
+  expectFastPath: boolean;
+};
+
+const seededRows = (count: number, mod: number): Row[] =>
+  Array.from({ length: count }, (_, i) => ({
+    n: ((i * 7919) % mod) - Math.floor(mod / 2),
+    s: String.fromCharCode(97 + ((i * 13) % 26)) + ((i * 31) % 100),
+  }));
+
+const datasets: Dataset[] = [
+  {
+    name: 'all-numeric asc (fast path / single column)',
+    rows: [{ n: 3 }, { n: 1 }, { n: 2 }, { n: 1 }, { n: -5 }],
+    columns: [col('n')],
+    sort: [{ columnKey: 'n', direction: 'asc' }],
+    expectFastPath: true,
+  },
+  {
+    name: 'all-numeric desc (fast path / single column)',
+    rows: [{ n: 3 }, { n: 1 }, { n: 2 }, { n: 1 }, { n: -5 }],
+    columns: [col('n')],
+    sort: [{ columnKey: 'n', direction: 'desc' }],
+    expectFastPath: true,
+  },
+  {
+    name: 'numeric strings (fast path / Number() finite)',
+    rows: [{ n: '10' }, { n: '2' }, { n: '100' }, { n: '2' }, { n: '-1' }],
+    columns: [col('n')],
+    sort: [{ columnKey: 'n', direction: 'asc' }],
+    expectFastPath: true,
+  },
+  {
+    name: 'all-numeric multi-column (fast path / multi)',
+    rows: [
+      { a: 1, b: 2 },
+      { a: 1, b: 1 },
+      { a: 2, b: 5 },
+      { a: 1, b: 1 },
+      { a: 0, b: 9 },
+    ],
+    columns: [col('a'), col('b')],
+    sort: [
+      { columnKey: 'a', direction: 'asc' },
+      { columnKey: 'b', direction: 'desc' },
+    ],
+    expectFastPath: true,
+  },
+  {
+    name: 'mixed non-finite (fallback)',
+    rows: [{ n: 3 }, { n: 'abc' }, { n: 2 }, { n: '' }, { n: 1 }],
+    columns: [col('n')],
+    sort: [{ columnKey: 'n', direction: 'asc' }],
+    expectFastPath: false,
+  },
+  {
+    name: 'string secondary key forces fallback (multi)',
+    rows: [
+      { a: 1, s: 'pear' },
+      { a: 1, s: 'apple' },
+      { a: 2, s: 'kiwi' },
+      { a: 1, s: 'apple' },
+    ],
+    columns: [col('a'), col('s')],
+    sort: [
+      { columnKey: 'a', direction: 'asc' },
+      { columnKey: 's', direction: 'asc' },
+    ],
+    expectFastPath: false,
+  },
+  {
+    name: 'duplicates → stable by source index (fast path)',
+    rows: Array.from({ length: 50 }, () => ({ n: 7 })),
+    columns: [col('n')],
+    sort: [{ columnKey: 'n', direction: 'desc' }],
+    expectFastPath: true,
+  },
+  {
+    name: 'large all-numeric (fast path / 5000 rows)',
+    rows: seededRows(5000, 997),
+    columns: [col('n')],
+    sort: [{ columnKey: 'n', direction: 'asc' }],
+    expectFastPath: true,
+  },
+  {
+    name: 'large mixed (fallback / numeric + string cols, 5000 rows)',
+    rows: seededRows(5000, 997),
+    columns: [col('n'), col('s')],
+    sort: [
+      { columnKey: 'n', direction: 'desc' },
+      { columnKey: 's', direction: 'asc' },
+    ],
+    expectFastPath: false,
+  },
+];
+
+describe('sortOrder (B-1 equivalence with compareUnknownValues reference)', () => {
+  it.each(datasets)('$name', ({ rows, columns, sort }) => {
+    const order = createSourceOrder(rows.length);
+    const actual = sortOrder(rows, order, columns, sort);
+    const expected = referenceSortOrder(rows, order, columns, sort);
+    expect(asArray(actual)).toEqual(asArray(expected));
+  });
+
+  it('returns the same reference when sort is empty', () => {
+    const rows: Row[] = [{ n: 1 }, { n: 2 }];
+    const order = createSourceOrder(rows.length);
+    expect(sortOrder(rows, order, [col('n')], [])).toBe(order);
+  });
+
+  it('returns the same reference when no sort entry resolves to a column', () => {
+    const rows: Row[] = [{ n: 1 }, { n: 2 }];
+    const order = createSourceOrder(rows.length);
+    const sort: GridSortState = [{ columnKey: 'missing', direction: 'asc' }];
+    expect(sortOrder(rows, order, [col('n')], sort)).toBe(order);
+  });
+
+  it('sorts a pre-filtered order (non-identity input order) consistently', () => {
+    const rows: Row[] = [{ n: 5 }, { n: 1 }, { n: 9 }, { n: 3 }, { n: 7 }];
+    // 偶数 source index のみ残したビュー順(フィルター後相当)。
+    const order = Int32Array.from([0, 2, 4]);
+    const sort: GridSortState = [{ columnKey: 'n', direction: 'asc' }];
+    const actual = sortOrder(rows, order, [col('n')], sort);
+    const expected = referenceSortOrder(rows, order, [col('n')], sort);
+    expect(asArray(actual)).toEqual(asArray(expected));
+    // 念のため: 出力は入力 order の置換であり、source index 集合を保存する。
+    expect([...actual].sort((x, y) => x - y)).toEqual([0, 2, 4]);
+  });
+});
+</file>
+
+<file path="src/components/spreadsheet-grid/logic/verticalGeometry.test.ts">
+// V-1: verticalGeometry の等価性 / 不変条件テスト(旧 adhoc ハーネスの恒久化)。
+//   旧 rowVirtualizer(scrollMargin=headerHeight / estimateSize=rowHeight)は import できないため、
+//   等価性は「ドキュメント化された契約=不変条件」として encode します:
+//     - no-op(logicalBodyHeight <= cap): scaleFactor=1 / translateY=0 / start=headerHeight+i*rowHeight
+//       (= 旧 virtualRow.start と数値一致)。
+//     - scaling: physicalBodyHeight=cap / scaleFactor>=1 / translateY<=0 / 末尾行到達可能 /
+//       物理↔論理のラウンドトリップ / clientYToRowIndex の逆写像一致。
+//   旧ハーネスの 369 ケースに相当する系統的スイープ(>369 組合せ)を回し、各ケースで不変条件を検査します。
+import { describe, it, expect } from 'vitest';
+import {
+  MAX_BODY_PX,
+  clientYToRowIndex,
+  computeVerticalGeometry,
+  logicalToPhysicalScrollTop,
+  physicalToLogicalScrollTop,
+  type ComputeVerticalGeometryArgs,
+} from './verticalGeometry';
+
+const clamp = (value: number, min: number, max: number): number =>
+  Math.min(Math.max(value, min), max);
+
+// 1 ケースの不変条件を検査します(失敗時はケース内容を添えて throw)。
+const checkInvariants = (args: ComputeVerticalGeometryArgs): void => {
+  const {
+    rowCount,
+    rowHeight,
+    headerHeight,
+    viewportHeight,
+    scrollTop,
+    maxBodyPx,
+  } = args;
+  const geometry = computeVerticalGeometry(args);
+  const label = (message: string): string =>
+    `${message} | case=${JSON.stringify(args)} | geometry.scaleFactor=${geometry.scaleFactor} translateY=${geometry.translateY}`;
+  const assert = (condition: boolean, message: string): void => {
+    if (!condition) {
+      throw new Error(label(message));
+    }
+  };
+
+  const logicalBodyHeight = rowCount * rowHeight;
+  const physicalBodyHeight = Math.min(logicalBodyHeight, maxBodyPx);
+  const physicalMax = Math.max(
+    headerHeight + physicalBodyHeight - viewportHeight,
+    0,
+  );
+
+  assert(geometry.logicalBodyHeight === logicalBodyHeight, 'logicalBodyHeight');
+  assert(
+    geometry.physicalBodyHeight === physicalBodyHeight,
+    'physicalBodyHeight',
+  );
+  assert(geometry.scaleFactor >= 1, 'scaleFactor >= 1');
+  // translateY = clampedScrollTop * (1 - scaleFactor) <= 0。
+  assert(geometry.translateY <= 1e-6, 'translateY <= 0');
+
+  // 窓は連続・[0,rowCount) 内・rowIndexSet と整合。
+  for (let k = 0; k < geometry.rows.length; k += 1) {
+    const row = geometry.rows[k];
+    assert(row.index >= 0 && row.index < rowCount, 'row.index in range');
+    assert(
+      row.start === headerHeight + row.index * rowHeight,
+      'row.start === headerHeight + index*rowHeight',
+    );
+    if (k > 0) {
+      assert(
+        row.index === geometry.rows[k - 1].index + 1,
+        'rows are contiguous',
+      );
+    }
+    assert(geometry.rowIndexSet.has(row.index), 'rowIndexSet contains index');
+  }
+  assert(
+    geometry.rowIndexSet.size === geometry.rows.length,
+    'rowIndexSet size === rows length',
+  );
+
+  const isNoop = logicalBodyHeight <= maxBodyPx;
+  if (isNoop) {
+    assert(geometry.scaleFactor === 1, 'no-op scaleFactor === 1');
+    assert(geometry.translateY === 0, 'no-op translateY === 0');
+  }
+
+  // 可視帯の被覆: 論理可視域の先頭/末尾行が窓に含まれる(overscan が上下マージンを賄う)。
+  //   viewportHeight=0 は可視行が存在しないため対象外。
+  if (rowCount > 0 && viewportHeight > 0) {
+    const clampedScrollTop = clamp(scrollTop, 0, physicalMax);
+    const logicalScrollTop = clampedScrollTop * geometry.scaleFactor;
+    const firstVisible = clamp(
+      Math.floor(logicalScrollTop / rowHeight),
+      0,
+      rowCount - 1,
+    );
+    const lastVisible = clamp(
+      Math.floor((logicalScrollTop + viewportHeight) / rowHeight),
+      0,
+      rowCount - 1,
+    );
+    assert(geometry.rowIndexSet.has(firstVisible), 'first visible row in window');
+    assert(geometry.rowIndexSet.has(lastVisible), 'last visible row in window');
+  }
+
+  // 末尾行到達可能: スクロール可能 かつ 可視域がある なら scrollTop=physicalMax で
+  //   最終行が窓に入る。viewportHeight=0 は可視域ゼロのため対象外(末尾で 1 行が域外に出るのは正常)。
+  if (rowCount > 0 && physicalMax > 0 && viewportHeight > 0) {
+    const atBottom = computeVerticalGeometry({ ...args, scrollTop: physicalMax });
+    assert(
+      atBottom.rowIndexSet.has(rowCount - 1),
+      'last row reachable at physicalMax',
+    );
+  }
+
+  // 物理↔論理ラウンドトリップ(可動域内では誤差なく往復する)。
+  if (physicalMax > 0) {
+    for (const probe of [0, physicalMax / 2, physicalMax]) {
+      const roundTrip = logicalToPhysicalScrollTop(
+        physicalToLogicalScrollTop(probe, geometry.scaleFactor),
+        geometry.scaleFactor,
+      );
+      assert(Math.abs(roundTrip - probe) < 1e-3, 'scroll round-trip');
+    }
+  }
+};
+
+// 系統的スイープのケースを生成します(>369 組合せ)。
+const buildCases = (): ComputeVerticalGeometryArgs[] => {
+  const rowCounts = [0, 1, 10, 400_000, 420_000, 1_000_000];
+  const rowHeights = [1, 36, 38];
+  const headerHeights = [0, 42];
+  const viewportHeights = [0, 300, 1000];
+  const overscans = [0, 20];
+  // MAX_BODY_PX に加え、小行数でも scaling を起動させる小さい cap を併用して経路網羅を上げます。
+  const maxBodyPxs = [MAX_BODY_PX, 1000];
+
+  const cases: ComputeVerticalGeometryArgs[] = [];
+  for (const rowCount of rowCounts) {
+    for (const rowHeight of rowHeights) {
+      for (const headerHeight of headerHeights) {
+        for (const viewportHeight of viewportHeights) {
+          for (const overscan of overscans) {
+            for (const maxBodyPx of maxBodyPxs) {
+              const physicalBodyHeight = Math.min(
+                rowCount * rowHeight,
+                maxBodyPx,
+              );
+              const physicalMax = Math.max(
+                headerHeight + physicalBodyHeight - viewportHeight,
+                0,
+              );
+              const scrollTops = Array.from(
+                new Set([
+                  0,
+                  Math.floor(physicalMax / 2),
+                  physicalMax,
+                  physicalMax + 1000,
+                ]),
+              );
+              for (const scrollTop of scrollTops) {
+                cases.push({
+                  rowCount,
+                  rowHeight,
+                  headerHeight,
+                  viewportHeight,
+                  scrollTop,
+                  overscan,
+                  maxBodyPx,
+                });
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+  return cases;
+};
+
+describe('computeVerticalGeometry (sweep invariants)', () => {
+  const cases = buildCases();
+
+  it(`covers >= 369 cases (actual ${cases.length})`, () => {
+    expect(cases.length).toBeGreaterThanOrEqual(369);
+  });
+
+  it('holds invariants on every swept case', () => {
+    for (const args of cases) {
+      checkInvariants(args);
+    }
+  });
+});
+
+describe('computeVerticalGeometry (no-op equivalence with old uniform virtualizer)', () => {
+  it('produces start === headerHeight + index*rowHeight and identity scaling below cap', () => {
+    const geometry = computeVerticalGeometry({
+      rowCount: 1000,
+      rowHeight: 38,
+      headerHeight: 42,
+      viewportHeight: 600,
+      scrollTop: 5_000,
+      overscan: 20,
+      maxBodyPx: MAX_BODY_PX,
+    });
+    expect(geometry.scaleFactor).toBe(1);
+    expect(geometry.translateY).toBe(0);
+    for (const row of geometry.rows) {
+      expect(row.start).toBe(42 + row.index * 38);
+    }
+  });
+});
+
+describe('computeVerticalGeometry (scaling activation at App defaults)', () => {
+  it('activates scaling at 500k rows / rowHeight=38 (sf ~ 1.27)', () => {
+    const geometry = computeVerticalGeometry({
+      rowCount: 500_000,
+      rowHeight: 38,
+      headerHeight: 42,
+      viewportHeight: 800,
+      scrollTop: 0,
+      overscan: 20,
+      maxBodyPx: MAX_BODY_PX,
+    });
+    expect(geometry.physicalBodyHeight).toBe(MAX_BODY_PX);
+    expect(geometry.scaleFactor).toBeGreaterThan(1.2);
+    expect(geometry.scaleFactor).toBeLessThan(1.35);
+  });
+
+  it('keeps no-op below the activation threshold (<= 394,736 rows)', () => {
+    const geometry = computeVerticalGeometry({
+      rowCount: 394_000,
+      rowHeight: 38,
+      headerHeight: 42,
+      viewportHeight: 800,
+      scrollTop: 1000,
+      overscan: 20,
+      maxBodyPx: MAX_BODY_PX,
+    });
+    expect(geometry.scaleFactor).toBe(1);
+    expect(geometry.translateY).toBe(0);
+  });
+});
+
+describe('clientYToRowIndex (inverse of body-content row band)', () => {
+  it('reduces to floor(y / rowHeight) when scaleFactor === 1', () => {
+    const rowHeight = 38;
+    const rowCount = 1000;
+    for (let i = 0; i < 50; i += 1) {
+      for (const delta of [0, 1, rowHeight - 1]) {
+        const y = i * rowHeight + delta;
+        expect(clientYToRowIndex(y, 0, 1, rowHeight, rowCount)).toBe(i);
+      }
+    }
+  });
+
+  it('inverts the d-shifted band under scaling (row i occupies [i*rowHeight + d, ...))', () => {
+    const rowHeight = 38;
+    const rowCount = 1_000_000;
+    const scaleFactor = 1.27;
+    const scrollTop = 1_000_000;
+    const d = scrollTop * (1 - scaleFactor); // <= 0
+    for (const i of [0, 1, 100, 5000, rowCount - 1]) {
+      for (const delta of [0, rowHeight / 2, rowHeight - 1]) {
+        const y = i * rowHeight + d + delta;
+        expect(
+          clientYToRowIndex(y, scrollTop, scaleFactor, rowHeight, rowCount),
+        ).toBe(clamp(i, 0, rowCount - 1));
+      }
+    }
+  });
+
+  it('clamps out-of-range y into [0, rowCount-1]', () => {
+    const rowHeight = 38;
+    const rowCount = 10;
+    expect(clientYToRowIndex(-9999, 0, 1, rowHeight, rowCount)).toBe(0);
+    expect(clientYToRowIndex(9_999_999, 0, 1, rowHeight, rowCount)).toBe(9);
+  });
+});
 </file>
 
 <file path="src/components/spreadsheet-grid/logic/verticalGeometry.ts">
@@ -2589,35 +2874,6 @@ createRoot(document.getElementById('root')!).render(
 )
 </file>
 
-<file path="tsconfig.app.json">
-{
-  "compilerOptions": {
-    "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.app.tsbuildinfo",
-    "target": "es2023",
-    "lib": ["ES2023", "DOM"],
-    "module": "esnext",
-    "types": ["vite/client"],
-    "skipLibCheck": true,
-
-    /* Bundler mode */
-    "moduleResolution": "bundler",
-    "allowImportingTsExtensions": true,
-    "verbatimModuleSyntax": true,
-    "moduleDetection": "force",
-    "noEmit": true,
-    "jsx": "react-jsx",
-
-    /* Linting */
-    "noUnusedLocals": true,
-    "noUnusedParameters": true,
-    "erasableSyntaxOnly": true,
-    "noFallthroughCasesInSwitch": true
-  },
-  "include": ["src"],
-  "exclude": ["src/**/*.test.ts", "src/**/*.test.tsx"]
-}
-</file>
-
 <file path="tsconfig.json">
 {
   "files": [],
@@ -2655,6 +2911,14 @@ createRoot(document.getElementById('root')!).render(
 }
 </file>
 
+<file path="tsconfig.vitest.json">
+{
+  "extends": "./tsconfig.app.json",
+  "include": ["src"],
+  "exclude": []
+}
+</file>
+
 <file path="vite.config.ts">
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
@@ -2665,42 +2929,20 @@ export default defineConfig({
 })
 </file>
 
-<file path="package.json">
-{
-  "name": "datesheet-grid",
-  "private": true,
-  "version": "0.0.0",
-  "type": "module",
-  "scripts": {
-    "dev": "vite",
-    "build": "tsc -b && vite build",
-    "lint": "eslint .",
-    "preview": "vite preview",
-    "test": "vitest run",
-    "test:watch": "vitest",
-    "typecheck:test": "tsc --noEmit -p tsconfig.vitest.json"
+<file path="vitest.config.ts">
+import { defineConfig } from 'vitest/config';
+
+// 追加(V-1): 等価性ハーネスの恒久化用 vitest 設定です。
+//   - 本番ビルド設定(vite.config.ts)は変更しません。テストは別グラフで回します。
+//   - V-1 は純ロジック(verticalGeometry / sorting / filtering / selectOptions)のみで
+//     React 非依存のため environment は node。将来 V-2(collector フック)を足すときは
+//     該当テストだけ jsdom へ振り分けます(environmentMatchGlobs などで個別指定)。
+export default defineConfig({
+  test: {
+    environment: 'node',
+    include: ['src/**/*.test.ts'],
   },
-  "dependencies": {
-    "@tanstack/react-virtual": "^3.14.2",
-    "react": "^19.2.6",
-    "react-dom": "^19.2.6"
-  },
-  "devDependencies": {
-    "@eslint/js": "^10.0.1",
-    "@types/node": "^24.12.3",
-    "@types/react": "^19.2.14",
-    "@types/react-dom": "^19.2.3",
-    "@vitejs/plugin-react": "^6.0.1",
-    "eslint": "^10.3.0",
-    "eslint-plugin-react-hooks": "^7.1.1",
-    "eslint-plugin-react-refresh": "^0.5.2",
-    "globals": "^17.6.0",
-    "typescript": "~6.0.2",
-    "typescript-eslint": "^8.59.2",
-    "vite": "^8.0.12",
-    "vitest": "^4.1.9"
-  }
-}
+});
 </file>
 
 <file path="src/components/spreadsheet-grid/ActiveCellOverlay.tsx">
@@ -3418,6 +3660,35 @@ export function SortManagementPanel({
 export default SortManagementPanel;
 </file>
 
+<file path="tsconfig.app.json">
+{
+  "compilerOptions": {
+    "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.app.tsbuildinfo",
+    "target": "es2023",
+    "lib": ["ES2023", "DOM"],
+    "module": "esnext",
+    "types": ["vite/client"],
+    "skipLibCheck": true,
+
+    /* Bundler mode */
+    "moduleResolution": "bundler",
+    "allowImportingTsExtensions": true,
+    "verbatimModuleSyntax": true,
+    "moduleDetection": "force",
+    "noEmit": true,
+    "jsx": "react-jsx",
+
+    /* Linting */
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "erasableSyntaxOnly": true,
+    "noFallthroughCasesInSwitch": true
+  },
+  "include": ["src"],
+  "exclude": ["src/**/*.test.ts", "src/**/*.test.tsx"]
+}
+</file>
+
 <file path=".gitignore">
 # Logs
 logs
@@ -3446,6 +3717,47 @@ dist-ssr
 
 backup
 repomix-output.xml
+</file>
+
+<file path="package.json">
+{
+  "name": "datesheet-grid",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "lint": "eslint .",
+    "preview": "vite preview",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck:test": "tsc --noEmit -p tsconfig.vitest.json"
+  },
+  "dependencies": {
+    "@tanstack/react-virtual": "^3.14.2",
+    "react": "^19.2.6",
+    "react-dom": "^19.2.6"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@testing-library/dom": "^10.4.1",
+    "@testing-library/react": "^16.3.2",
+    "@types/node": "^24.12.3",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^6.0.1",
+    "eslint": "^10.3.0",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "eslint-plugin-react-refresh": "^0.5.2",
+    "globals": "^17.6.0",
+    "jsdom": "^29.1.1",
+    "typescript": "~6.0.2",
+    "typescript-eslint": "^8.59.2",
+    "vite": "^8.0.12",
+    "vitest": "^4.1.9"
+  }
+}
 </file>
 
 <file path="src/components/spreadsheet-grid/hooks/useFilterPopoverController.ts">
