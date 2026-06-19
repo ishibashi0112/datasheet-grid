@@ -615,6 +615,49 @@ export function SpreadsheetGrid<T extends object>({
     [rows, baseOrder, visibleColumns, deferredGlobalFilterText],
   );
 
+  // 追加(B-2): number 記述子が当たっている可視列の「集合シグネチャ」です。
+  //   値編集(>50 → >500 等)では同一列のままなので signature 不変 → 下の numericFilterKeys を保持し、
+  //   Float64 key をフィルタ値編集をまたいで再利用します(B-2 の本旨)。number の ON/OFF(列の出入り)
+  //   でだけ signature が変わり key を作り直します。NUL 区切りは列キーへの混入が実質ありえないため。
+  const numberFilteredColumnSignature = useMemo(() => {
+    const keys: string[] = [];
+    for (const column of visibleColumns) {
+      if (isNumberColumnFilterValue(deferredColumnFilters[column.key])) {
+        keys.push(column.key);
+      }
+    }
+    return keys.join('\u0000');
+  }, [visibleColumns, deferredColumnFilters]);
+
+  // 追加(B-2): number(comparison/range)用に、列ごとの Number(セル値) を rows 全長・
+  //   sourceIndex 添字の Float64Array へ前計算したキャッシュです。
+  //   - 構築は signature に載った列ぶんだけ(number 未使用なら空 Map ＝実質ゼロコスト)。
+  //   - deps は [rows, visibleColumns, signature]。値編集では signature 不変のため参照を保ち、
+  //     毎キーストロークの再 coercion を回避します(rows identity 変化＝編集時のみ全長再構築)。
+  //   - 対象列は signature を split して特定するため、deferredColumnFilters を deps から外せます
+  //     (signature は同一 render で deferredColumnFilters から導出済み＝stale 読みなし)。
+  //   compileSingleColumnFilter は key があれば key[sourceIndex] を、無ければ
+  //   Number(getCellValue(...)) を使うため、空 Map のときは現状とバイト等価です。
+  const numericFilterKeys = useMemo(() => {
+    const keyMap = new Map<string, Float64Array>();
+    if (numberFilteredColumnSignature.length === 0) {
+      return keyMap;
+    }
+    const targetKeys = new Set(numberFilteredColumnSignature.split('\u0000'));
+    const rowCount = rows.length;
+    for (const column of visibleColumns) {
+      if (!targetKeys.has(column.key)) {
+        continue;
+      }
+      const keys = new Float64Array(rowCount);
+      for (let i = 0; i < rowCount; i += 1) {
+        keys[i] = Number(getCellValue(rows[i], column));
+      }
+      keyMap.set(column.key, keys);
+    }
+    return keyMap;
+  }, [rows, visibleColumns, numberFilteredColumnSignature]);
+
   const columnFilteredOrder = useMemo(
     () =>
       filterOrderByColumns(
@@ -622,8 +665,15 @@ export function SpreadsheetGrid<T extends object>({
         globalFilteredOrder,
         visibleColumns,
         deferredColumnFilters,
+        numericFilterKeys,
       ),
-    [rows, globalFilteredOrder, visibleColumns, deferredColumnFilters],
+    [
+      rows,
+      globalFilteredOrder,
+      visibleColumns,
+      deferredColumnFilters,
+      numericFilterKeys,
+    ],
   );
 
   const order = useMemo(

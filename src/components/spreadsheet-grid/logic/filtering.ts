@@ -202,13 +202,21 @@ export const applyNumberFilter = (
 //   (text / number / select の判定結果は単一実装で一意です)。
 //   現在の利用者は index 版 filterOrderByColumns です
 //   (旧オブジェクト配列版は DS-3-8 で削除しました)。
-type CompiledColumnFilterPredicate<T> = (row: T) => boolean;
+// 変更(B-2): predicate に sourceIndex を渡せるよう第 2 引数を追加します。
+//   number(comparison/range)で「事前計算した Float64 key[sourceIndex]」を引くために使います。
+//   TS 上 (row) => boolean は (row, sourceIndex) => boolean へ代入可能なので、
+//   key を使わない既存クロージャ(filterFn / set / contains / select / text)は無改修のまま通ります。
+type CompiledColumnFilterPredicate<T> = (row: T, sourceIndex: number) => boolean;
 
 // 追加(12-A): 1 列ぶんのフィルター値を predicate へコンパイルします。
 //             無効(未設定)なら null を返し、行ループから除外します。
 const compileSingleColumnFilter = <T,>(
   column: GridColumn<T>,
   filterValue: unknown,
+  // 追加(B-2): この列ぶんの Float64 key(rows 全長・sourceIndex 添字)。
+  //   渡されたときだけ comparison/range が key[sourceIndex] を引きます。
+  //   未指定(set 列 / key 未構築)なら従来の Number(getCellValue(...)) 経路に倒れ、挙動は等価です。
+  numericKey?: Float64Array,
 ): CompiledColumnFilterPredicate<T> | null => {
   if (!isActiveColumnFilterValue(filterValue)) {
     return null;
@@ -252,8 +260,12 @@ const compileSingleColumnFilter = <T,>(
     }
     if (parsed.mode === 'range') {
       const { min, max } = parsed;
-      return (row) => {
-        const numericCellValue = Number(getCellValue(row, column));
+      // 変更(B-2): numericKey があれば key[sourceIndex] を、無ければ従来どおり
+      //   Number(getCellValue(...)) を読みます。値の取得元だけが変わり、判定本体は不変です。
+      return (row, sourceIndex) => {
+        const numericCellValue = numericKey
+          ? numericKey[sourceIndex]
+          : Number(getCellValue(row, column));
         return (
           Number.isFinite(numericCellValue) &&
           numericCellValue >= min &&
@@ -262,8 +274,11 @@ const compileSingleColumnFilter = <T,>(
       };
     }
     const { operator, value } = parsed;
-    return (row) => {
-      const numericCellValue = Number(getCellValue(row, column));
+    // 変更(B-2): comparison も numericKey 経路を併設します(無ければ従来 getCellValue 経路)。
+    return (row, sourceIndex) => {
+      const numericCellValue = numericKey
+        ? numericKey[sourceIndex]
+        : Number(getCellValue(row, column));
       if (!Number.isFinite(numericCellValue)) {
         return false;
       }
@@ -365,12 +380,16 @@ export const filterOrderByColumns = <T,>(
   order: RowOrder,
   columns: GridColumn<T>[],
   columnFilters: Record<string, unknown>,
+  // 追加(B-2): 列キー → Float64 key の table(任意)。number(comparison/range)列のみ収録。
+  //   未指定なら全列が従来経路へ倒れ、現状とバイト等価です(set/text/select/filterFn は元から key 不使用)。
+  numericKeys?: ReadonlyMap<string, Float64Array>,
 ): RowOrder => {
   const predicates: CompiledColumnFilterPredicate<T>[] = [];
   for (const column of columns) {
     const predicate = compileSingleColumnFilter(
       column,
       columnFilters[column.key],
+      numericKeys?.get(column.key),
     );
     if (predicate) {
       predicates.push(predicate);
@@ -391,7 +410,7 @@ export const filterOrderByColumns = <T,>(
     const row = rows[sourceIndex];
     let ok = true;
     for (let p = 0; p < predicateCount; p += 1) {
-      if (!predicates[p](row)) {
+      if (!predicates[p](row, sourceIndex)) {
         ok = false;
         break;
       }
