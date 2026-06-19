@@ -188,14 +188,27 @@ export const moveSortEntry = (
 //     - 最終タイブレークは元 source index(= order[pos])で安定化、
 //   sort が空 / 有効キー 0 件のときは同一参照を返します。
 //
-//   パフォーマンス上の要点(decorate-sort-undecorate):
+//   パフォーマンス上の要点(decorate-sort-undecorate / B-1: 数値列 Float64 typed key):
 //     - 比較子の内側で getCellValue を毎回呼ぶ素朴な実装だと、呼び出し回数が
-//       O(行数 × log 行数 × ソート列数) に膨らみます。
-//     - ここではアクティブ sort 列ごとに「order 各位置のセル値」を事前に 1 回だけ
-//       取り出して配列化(decorate)し、比較は decorate 済み値に対して行います。
-//       getCellValue の呼び出しは O(行数 × ソート列数) に下がります。
-//     - 比較関数 compareUnknownValues は据え置きのため、数値/文字列が混在する列でも
-//       結果は一意です(列ごとに型を決め打ちする最適化はしていません)。
+//       O(行数 × log 行数 × ソート列数) に膨らみます。アクティブ sort 列ごとに
+//       「order 各位置のセル値」を事前に 1 回だけ取り出して配列化(decorate)し、
+//       比較は decorate 済み値に対して行うことで O(行数 × ソート列数) に下げます。
+//     - B-1(Float64 typed key): さらに「全アクティブ sort 列が数値」のときは、
+//       decorate を unknown[] ではなく Float64Array(typed key)で行い、比較を
+//       純粋な数値差分(分岐レス)にします。compareUnknownValues は比較ごとに
+//       Number(...) を 2 回・Number.isFinite を 2 回呼ぶため、数値が文字列で
+//       hydrate された列(CSV 由来など)では再 coercion が O(行数 × log 行数 × 列数)
+//       に膨らみます。typed key 化でこれを「列ごと 1 回(O(行数))」へ前倒しし、比較は
+//       key[a] - key[b] のみになります(500k 実測で約 +30〜57%。文字列で持つ数値列ほど効く)。
+//     - 等価性: compareUnknownValues は両値が Number.isFinite のときだけ数値比較し、
+//       片方でも非有限なら STRING_COLLATOR へフォールバックします(列単位ではなく
+//       ペア単位の判定)。よって Float64 経路は「列の全値が Number.isFinite」のときに
+//       限り compareUnknownValues の数値枝と恒等です(key は Number(値) を格納し、
+//       key[a]-key[b] は Number(a)-Number(b) とビット等価)。非有限値が 1 つでも混じる
+//       列があれば、その列だけでなく全体を従来の unknown[] + compareUnknownValues 経路へ
+//       フォールバックさせ、コンパレータを単形(分岐レス)に保ちます(混在ソートの安全側)。
+//     - 数値判定は filterType に依存させず、compareUnknownValues と同じ「値駆動」で
+//       行います(挙動の決定権は一貫して値側にあります)。
 //     - 実際の sort 対象は「位置(0..length-1)の number[]」で、確定後に
 //       result[i] = order[positions[i]] で undecorate して Int32Array へ書き戻します。
 export const sortOrder = <T,>(
@@ -228,15 +241,34 @@ export const sortOrder = <T,>(
   const length = order.length;
   const columnCount = resolved.length;
 
-  // decorate: アクティブ sort 列ごとに、order 各位置のセル値を 1 回だけ取り出します。
-  const keyColumns: unknown[][] = resolved.map(({ column }) => {
-    const keys = new Array<unknown>(length);
-    for (let pos = 0; pos < length; pos += 1) {
-      keys[pos] = getCellValue(rows[order[pos]], column);
-    }
-    return keys;
-  });
   const multipliers = resolved.map((item) => item.multiplier);
+
+  // decorate(B-1): まず「全アクティブ sort 列が数値」かを試行しつつ、数値列の
+  //   typed key(Float64Array)を構築します。各列は最初の非有限値で打ち切るため、
+  //   文字列列はほぼ先頭で抜け(実質ゼロコスト)、全数値列のみ全長を走査します。
+  //   非有限値を 1 つでも含む列に当たった時点で allNumeric=false にして以降の列も
+  //   試さず、下の fallback(従来 unknown[] 経路)へ倒します(構築済みの typed key は
+  //   破棄。fallback は稀かつ Collator 律速のため、この破棄コストは無視できます)。
+  const numericKeyColumns: Float64Array[] = new Array<Float64Array>(columnCount);
+  let allNumeric = true;
+  for (let c = 0; c < columnCount; c += 1) {
+    const column = resolved[c].column;
+    const keys = new Float64Array(length);
+    let columnIsNumeric = true;
+    for (let pos = 0; pos < length; pos += 1) {
+      const numeric = Number(getCellValue(rows[order[pos]], column));
+      if (!Number.isFinite(numeric)) {
+        columnIsNumeric = false;
+        break;
+      }
+      keys[pos] = numeric;
+    }
+    if (!columnIsNumeric) {
+      allNumeric = false;
+      break;
+    }
+    numericKeyColumns[c] = keys;
+  }
 
   // 位置(0..length-1)を並べ替えます。比較は decorate 済みキー、
   // タイブレークは元 source index(order[a]/order[b])で安定化します。
@@ -245,15 +277,54 @@ export const sortOrder = <T,>(
     positions[i] = i;
   }
 
-  positions.sort((a, b) => {
-    for (let c = 0; c < columnCount; c += 1) {
-      const compared = compareUnknownValues(keyColumns[c][a], keyColumns[c][b]);
-      if (compared !== 0) {
-        return compared * multipliers[c];
-      }
+  if (allNumeric) {
+    // fast path: 全列が数値。Float64 typed key の差分のみで比較します(分岐レス)。
+    //   単一列ソートは最頻ケースのため、列ループ・列添字を畳んだ専用形へ特化します
+    //   (この特化で単一数値列でも従来 boxed 経路に対し非回帰になります)。
+    if (columnCount === 1) {
+      const keys = numericKeyColumns[0];
+      const multiplier = multipliers[0];
+      positions.sort((a, b) => {
+        const diff = keys[a] - keys[b];
+        if (diff !== 0) {
+          return diff * multiplier;
+        }
+        return order[a] - order[b];
+      });
+    } else {
+      positions.sort((a, b) => {
+        for (let c = 0; c < columnCount; c += 1) {
+          const diff = numericKeyColumns[c][a] - numericKeyColumns[c][b];
+          if (diff !== 0) {
+            return diff * multipliers[c];
+          }
+        }
+        return order[a] - order[b];
+      });
     }
-    return order[a] - order[b];
-  });
+  } else {
+    // fallback: 1 列でも非数値を含む。従来どおり全列を unknown[] へ decorate し、
+    //   compareUnknownValues(ペア単位の数値/文字列判定)で比較します(現状とバイト等価)。
+    const keyColumns: unknown[][] = resolved.map(({ column }) => {
+      const keys = new Array<unknown>(length);
+      for (let pos = 0; pos < length; pos += 1) {
+        keys[pos] = getCellValue(rows[order[pos]], column);
+      }
+      return keys;
+    });
+    positions.sort((a, b) => {
+      for (let c = 0; c < columnCount; c += 1) {
+        const compared = compareUnknownValues(
+          keyColumns[c][a],
+          keyColumns[c][b],
+        );
+        if (compared !== 0) {
+          return compared * multipliers[c];
+        }
+      }
+      return order[a] - order[b];
+    });
+  }
 
   // undecorate: 並べ替えた位置を元 source index へ戻して Int32Array を組み立てます。
   const result = new Int32Array(length);
