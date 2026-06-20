@@ -2205,6 +2205,305 @@ describe('sortOrder (B-1 equivalence with compareUnknownValues reference)', () =
 });
 </file>
 
+<file path="src/components/spreadsheet-grid/utils/excelColumnName.ts">
+// 追加: 0-based の列 index を Excel 形式 (A, B, ... AA, AB...) に変換します。
+export const toExcelColumnName = (columnIndex: number): string => {
+  if (columnIndex < 0) {
+    return '';
+  }
+
+  let current = columnIndex;
+  let result = '';
+
+  while (current >= 0) {
+    result = String.fromCharCode((current % 26) + 65) + result;
+    current = Math.floor(current / 26) - 1;
+  }
+
+  return result;
+};
+</file>
+
+<file path="src/components/spreadsheet-grid/utils/permissions.ts">
+import type { GridColumn, SpreadsheetGridProps } from '../model/gridTypes';
+
+// 追加: Grid 全体 / 列 / セル単位の条件をまとめて編集可否を判定します。
+export const isCellEditable = <T,>(
+  props: Pick<SpreadsheetGridProps<T>, 'readOnly' | 'canEditCell'>,
+  rowIndex: number,
+  colIndex: number,
+  row: T,
+  column: GridColumn<T>,
+): boolean => {
+  if (props.readOnly) {
+    return false;
+  }
+
+  if (column.readOnly) {
+    return false;
+  }
+
+  if (column.editable === false) {
+    return false;
+  }
+
+  if (props.canEditCell) {
+    return props.canEditCell(rowIndex, colIndex, row, column);
+  }
+
+  return true;
+};
+
+// 追加: 列定義からセル値を取り出します。getValue 未指定時は key ベースで取得します。
+export const getCellValue = <T,>(row: T, column: GridColumn<T>): unknown => {
+  if (column.getValue) {
+    return column.getValue(row);
+  }
+
+  return (row as Record<string, unknown>)[column.key];
+};
+
+// 追加: 列定義を使ってセル値を書き換えます。setValue 未指定時は key ベース shallow copy を行います。
+export const setCellValue = <T,>(
+  row: T,
+  column: GridColumn<T>,
+  value: unknown,
+): T => {
+  if (column.setValue) {
+    return column.setValue(row, value);
+  }
+
+  return {
+    ...(row as Record<string, unknown>),
+    [column.key]: value,
+  } as T;
+};
+</file>
+
+<file path="src/components/spreadsheet-grid/utils/scheduler.ts">
+// 追加(DS-4 ①-(2)): メインスレッドへ一旦処理を返す yield ユーティリティです。
+//   時間分割した autosize 計測の各チャンク境界で await し、ブラウザに入力処理 / 描画 /
+//   スクロールの隙間を与えます。
+// scheduler 選定メモ:
+//   - setTimeout(fn, 0) は入れ子(タイマーから再度タイマー)で 4ms クランプが入り、
+//     チャンク数ぶん遅延が積み上がります。完了までの待ち時間を短く保ちたいので避けます。
+//   - MessageChannel.postMessage はクランプの対象外で、マクロタスク境界まで素早く戻ります。
+//     本実装は yield ごとに使い捨ての MessageChannel を 1 つ作って解放します
+//     (autosize 1 回あたりのチャンク数は数十程度で、生成コストは無視できます)。
+//   - 非対応環境(SSR 等)では setTimeout へフォールバックします。
+export const yieldToMain = (): Promise<void> =>
+  new Promise<void>((resolve) => {
+    if (typeof MessageChannel === 'undefined') {
+      setTimeout(resolve, 0);
+      return;
+    }
+    const channel = new MessageChannel();
+    channel.port1.onmessage = () => {
+      channel.port1.close();
+      resolve();
+    };
+    channel.port2.postMessage(null);
+  });
+</file>
+
+<file path="src/index.css">
+:root {
+  --text: #6b6375;
+  --text-h: #08060d;
+  --bg: #fff;
+  --border: #e5e4e7;
+  --code-bg: #f4f3ec;
+  --accent: #aa3bff;
+  --accent-bg: rgba(170, 59, 255, 0.1);
+  --accent-border: rgba(170, 59, 255, 0.5);
+  --social-bg: rgba(244, 243, 236, 0.5);
+  --shadow:
+    rgba(0, 0, 0, 0.1) 0 10px 15px -3px, rgba(0, 0, 0, 0.05) 0 4px 6px -2px;
+
+  --sans: system-ui, 'Segoe UI', Roboto, sans-serif;
+  --heading: system-ui, 'Segoe UI', Roboto, sans-serif;
+  --mono: ui-monospace, Consolas, monospace;
+
+  font: 18px/145% var(--sans);
+  letter-spacing: 0.18px;
+  color-scheme: light dark;
+  color: var(--text);
+  background: var(--bg);
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+
+  @media (max-width: 1024px) {
+    font-size: 16px;
+  }
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --text: #9ca3af;
+    --text-h: #f3f4f6;
+    --bg: #16171d;
+    --border: #2e303a;
+    --code-bg: #1f2028;
+    --accent: #c084fc;
+    --accent-bg: rgba(192, 132, 252, 0.15);
+    --accent-border: rgba(192, 132, 252, 0.5);
+    --social-bg: rgba(47, 48, 58, 0.5);
+    --shadow:
+      rgba(0, 0, 0, 0.4) 0 10px 15px -3px, rgba(0, 0, 0, 0.25) 0 4px 6px -2px;
+  }
+
+  #social .button-icon {
+    filter: invert(1) brightness(2);
+  }
+}
+
+#root {
+  width: 1126px;
+  max-width: 100%;
+  margin: 0 auto;
+  text-align: center;
+  border-inline: 1px solid var(--border);
+  min-height: 100svh;
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+}
+
+h1,
+h2 {
+  font-family: var(--heading);
+  font-weight: 500;
+  color: var(--text-h);
+}
+
+h1 {
+  font-size: 56px;
+  letter-spacing: -1.68px;
+  margin: 32px 0;
+  @media (max-width: 1024px) {
+    font-size: 36px;
+    margin: 20px 0;
+  }
+}
+h2 {
+  font-size: 24px;
+  line-height: 118%;
+  letter-spacing: -0.24px;
+  margin: 0 0 8px;
+  @media (max-width: 1024px) {
+    font-size: 20px;
+  }
+}
+p {
+  margin: 0;
+}
+
+code,
+.counter {
+  font-family: var(--mono);
+  display: inline-flex;
+  border-radius: 4px;
+  color: var(--text-h);
+}
+
+code {
+  font-size: 15px;
+  line-height: 135%;
+  padding: 4px 8px;
+  background: var(--code-bg);
+}
+</file>
+
+<file path="src/main.tsx">
+import { StrictMode } from 'react'
+import { createRoot } from 'react-dom/client'
+import './index.css'
+import App from './App.tsx'
+
+createRoot(document.getElementById('root')!).render(
+  <StrictMode>
+    <App />
+  </StrictMode>,
+)
+</file>
+
+<file path="tsconfig.json">
+{
+  "files": [],
+  "references": [
+    { "path": "./tsconfig.app.json" },
+    { "path": "./tsconfig.node.json" }
+  ]
+}
+</file>
+
+<file path="tsconfig.node.json">
+{
+  "compilerOptions": {
+    "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.node.tsbuildinfo",
+    "target": "es2023",
+    "lib": ["ES2023"],
+    "module": "esnext",
+    "types": ["node"],
+    "skipLibCheck": true,
+
+    /* Bundler mode */
+    "moduleResolution": "bundler",
+    "allowImportingTsExtensions": true,
+    "verbatimModuleSyntax": true,
+    "moduleDetection": "force",
+    "noEmit": true,
+
+    /* Linting */
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "erasableSyntaxOnly": true,
+    "noFallthroughCasesInSwitch": true
+  },
+  "include": ["vite.config.ts"]
+}
+</file>
+
+<file path="tsconfig.vitest.json">
+{
+  "extends": "./tsconfig.app.json",
+  "include": ["src"],
+  "exclude": []
+}
+</file>
+
+<file path="vite.config.ts">
+import { defineConfig } from 'vite'
+import react from '@vitejs/plugin-react'
+
+// https://vite.dev/config/
+export default defineConfig({
+  plugins: [react()],
+})
+</file>
+
+<file path="vitest.config.ts">
+import { defineConfig } from 'vitest/config';
+
+// 追加(V-1): 等価性ハーネスの恒久化用 vitest 設定です。
+//   - 本番ビルド設定(vite.config.ts)は変更しません。テストは別グラフで回します。
+//   - V-1 は純ロジック(verticalGeometry / sorting / filtering / selectOptions)のみで
+//     React 非依存のため environment は node。将来 V-2(collector フック)を足すときは
+//     該当テストだけ jsdom へ振り分けます(environmentMatchGlobs などで個別指定)。
+export default defineConfig({
+  test: {
+    environment: 'node',
+    include: ['src/**/*.test.ts'],
+  },
+});
+</file>
+
 <file path="src/components/spreadsheet-grid/logic/verticalGeometry.test.ts">
 // V-1: verticalGeometry の等価性 / 不変条件テスト(旧 adhoc ハーネスの恒久化)。
 //   旧 rowVirtualizer(scrollMargin=headerHeight / estimateSize=rowHeight)は import できないため、
@@ -2786,360 +3085,6 @@ export const computeVerticalGeometry = ({
     rowIndexSet,
   };
 };
-</file>
-
-<file path="src/components/spreadsheet-grid/utils/excelColumnName.ts">
-// 追加: 0-based の列 index を Excel 形式 (A, B, ... AA, AB...) に変換します。
-export const toExcelColumnName = (columnIndex: number): string => {
-  if (columnIndex < 0) {
-    return '';
-  }
-
-  let current = columnIndex;
-  let result = '';
-
-  while (current >= 0) {
-    result = String.fromCharCode((current % 26) + 65) + result;
-    current = Math.floor(current / 26) - 1;
-  }
-
-  return result;
-};
-</file>
-
-<file path="src/components/spreadsheet-grid/utils/permissions.ts">
-import type { GridColumn, SpreadsheetGridProps } from '../model/gridTypes';
-
-// 追加: Grid 全体 / 列 / セル単位の条件をまとめて編集可否を判定します。
-export const isCellEditable = <T,>(
-  props: Pick<SpreadsheetGridProps<T>, 'readOnly' | 'canEditCell'>,
-  rowIndex: number,
-  colIndex: number,
-  row: T,
-  column: GridColumn<T>,
-): boolean => {
-  if (props.readOnly) {
-    return false;
-  }
-
-  if (column.readOnly) {
-    return false;
-  }
-
-  if (column.editable === false) {
-    return false;
-  }
-
-  if (props.canEditCell) {
-    return props.canEditCell(rowIndex, colIndex, row, column);
-  }
-
-  return true;
-};
-
-// 追加: 列定義からセル値を取り出します。getValue 未指定時は key ベースで取得します。
-export const getCellValue = <T,>(row: T, column: GridColumn<T>): unknown => {
-  if (column.getValue) {
-    return column.getValue(row);
-  }
-
-  return (row as Record<string, unknown>)[column.key];
-};
-
-// 追加: 列定義を使ってセル値を書き換えます。setValue 未指定時は key ベース shallow copy を行います。
-export const setCellValue = <T,>(
-  row: T,
-  column: GridColumn<T>,
-  value: unknown,
-): T => {
-  if (column.setValue) {
-    return column.setValue(row, value);
-  }
-
-  return {
-    ...(row as Record<string, unknown>),
-    [column.key]: value,
-  } as T;
-};
-</file>
-
-<file path="src/components/spreadsheet-grid/utils/scheduler.ts">
-// 追加(DS-4 ①-(2)): メインスレッドへ一旦処理を返す yield ユーティリティです。
-//   時間分割した autosize 計測の各チャンク境界で await し、ブラウザに入力処理 / 描画 /
-//   スクロールの隙間を与えます。
-// scheduler 選定メモ:
-//   - setTimeout(fn, 0) は入れ子(タイマーから再度タイマー)で 4ms クランプが入り、
-//     チャンク数ぶん遅延が積み上がります。完了までの待ち時間を短く保ちたいので避けます。
-//   - MessageChannel.postMessage はクランプの対象外で、マクロタスク境界まで素早く戻ります。
-//     本実装は yield ごとに使い捨ての MessageChannel を 1 つ作って解放します
-//     (autosize 1 回あたりのチャンク数は数十程度で、生成コストは無視できます)。
-//   - 非対応環境(SSR 等)では setTimeout へフォールバックします。
-export const yieldToMain = (): Promise<void> =>
-  new Promise<void>((resolve) => {
-    if (typeof MessageChannel === 'undefined') {
-      setTimeout(resolve, 0);
-      return;
-    }
-    const channel = new MessageChannel();
-    channel.port1.onmessage = () => {
-      channel.port1.close();
-      resolve();
-    };
-    channel.port2.postMessage(null);
-  });
-</file>
-
-<file path="src/index.css">
-:root {
-  --text: #6b6375;
-  --text-h: #08060d;
-  --bg: #fff;
-  --border: #e5e4e7;
-  --code-bg: #f4f3ec;
-  --accent: #aa3bff;
-  --accent-bg: rgba(170, 59, 255, 0.1);
-  --accent-border: rgba(170, 59, 255, 0.5);
-  --social-bg: rgba(244, 243, 236, 0.5);
-  --shadow:
-    rgba(0, 0, 0, 0.1) 0 10px 15px -3px, rgba(0, 0, 0, 0.05) 0 4px 6px -2px;
-
-  --sans: system-ui, 'Segoe UI', Roboto, sans-serif;
-  --heading: system-ui, 'Segoe UI', Roboto, sans-serif;
-  --mono: ui-monospace, Consolas, monospace;
-
-  font: 18px/145% var(--sans);
-  letter-spacing: 0.18px;
-  color-scheme: light dark;
-  color: var(--text);
-  background: var(--bg);
-  font-synthesis: none;
-  text-rendering: optimizeLegibility;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-
-  @media (max-width: 1024px) {
-    font-size: 16px;
-  }
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --text: #9ca3af;
-    --text-h: #f3f4f6;
-    --bg: #16171d;
-    --border: #2e303a;
-    --code-bg: #1f2028;
-    --accent: #c084fc;
-    --accent-bg: rgba(192, 132, 252, 0.15);
-    --accent-border: rgba(192, 132, 252, 0.5);
-    --social-bg: rgba(47, 48, 58, 0.5);
-    --shadow:
-      rgba(0, 0, 0, 0.4) 0 10px 15px -3px, rgba(0, 0, 0, 0.25) 0 4px 6px -2px;
-  }
-
-  #social .button-icon {
-    filter: invert(1) brightness(2);
-  }
-}
-
-#root {
-  width: 1126px;
-  max-width: 100%;
-  margin: 0 auto;
-  text-align: center;
-  border-inline: 1px solid var(--border);
-  min-height: 100svh;
-  display: flex;
-  flex-direction: column;
-  box-sizing: border-box;
-}
-
-body {
-  margin: 0;
-}
-
-h1,
-h2 {
-  font-family: var(--heading);
-  font-weight: 500;
-  color: var(--text-h);
-}
-
-h1 {
-  font-size: 56px;
-  letter-spacing: -1.68px;
-  margin: 32px 0;
-  @media (max-width: 1024px) {
-    font-size: 36px;
-    margin: 20px 0;
-  }
-}
-h2 {
-  font-size: 24px;
-  line-height: 118%;
-  letter-spacing: -0.24px;
-  margin: 0 0 8px;
-  @media (max-width: 1024px) {
-    font-size: 20px;
-  }
-}
-p {
-  margin: 0;
-}
-
-code,
-.counter {
-  font-family: var(--mono);
-  display: inline-flex;
-  border-radius: 4px;
-  color: var(--text-h);
-}
-
-code {
-  font-size: 15px;
-  line-height: 135%;
-  padding: 4px 8px;
-  background: var(--code-bg);
-}
-</file>
-
-<file path="src/main.tsx">
-import { StrictMode } from 'react'
-import { createRoot } from 'react-dom/client'
-import './index.css'
-import App from './App.tsx'
-
-createRoot(document.getElementById('root')!).render(
-  <StrictMode>
-    <App />
-  </StrictMode>,
-)
-</file>
-
-<file path="tsconfig.json">
-{
-  "files": [],
-  "references": [
-    { "path": "./tsconfig.app.json" },
-    { "path": "./tsconfig.node.json" }
-  ]
-}
-</file>
-
-<file path="tsconfig.node.json">
-{
-  "compilerOptions": {
-    "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.node.tsbuildinfo",
-    "target": "es2023",
-    "lib": ["ES2023"],
-    "module": "esnext",
-    "types": ["node"],
-    "skipLibCheck": true,
-
-    /* Bundler mode */
-    "moduleResolution": "bundler",
-    "allowImportingTsExtensions": true,
-    "verbatimModuleSyntax": true,
-    "moduleDetection": "force",
-    "noEmit": true,
-
-    /* Linting */
-    "noUnusedLocals": true,
-    "noUnusedParameters": true,
-    "erasableSyntaxOnly": true,
-    "noFallthroughCasesInSwitch": true
-  },
-  "include": ["vite.config.ts"]
-}
-</file>
-
-<file path="tsconfig.vitest.json">
-{
-  "extends": "./tsconfig.app.json",
-  "include": ["src"],
-  "exclude": []
-}
-</file>
-
-<file path="vite.config.ts">
-import { defineConfig } from 'vite'
-import react from '@vitejs/plugin-react'
-
-// https://vite.dev/config/
-export default defineConfig({
-  plugins: [react()],
-})
-</file>
-
-<file path="vitest.config.ts">
-import { defineConfig } from 'vitest/config';
-
-// 追加(V-1): 等価性ハーネスの恒久化用 vitest 設定です。
-//   - 本番ビルド設定(vite.config.ts)は変更しません。テストは別グラフで回します。
-//   - V-1 は純ロジック(verticalGeometry / sorting / filtering / selectOptions)のみで
-//     React 非依存のため environment は node。将来 V-2(collector フック)を足すときは
-//     該当テストだけ jsdom へ振り分けます(environmentMatchGlobs などで個別指定)。
-export default defineConfig({
-  test: {
-    environment: 'node',
-    include: ['src/**/*.test.ts'],
-  },
-});
-</file>
-
-<file path="src/components/spreadsheet-grid/ActiveCellOverlay.tsx">
-import type { CSSProperties } from 'react';
-
-// 追加: active cell の矩形情報です。
-// 変更(10-D): left は「ペイン列領域内ローカル座標」になりました（leadingWidth 非含有）。
-export type ActiveCellOverlayRect = {
-  left: number;
-  top: number;
-  width: number;
-  height: number;
-};
-
-type ActiveCellOverlayProps = {
-  rect: ActiveCellOverlayRect | null;
-  headerHeight: number;
-  // 変更(10-D): rowHeaderWidth → leadingWidth に一般化しました。
-  //             固定列なしの中央ペインでは leadingWidth === rowHeaderWidth となり従来と同一です。
-  leadingWidth: number;
-  // 追加(scroll-space 仮想化 修正): 絶対論理 top から差し引く描画ウィンドウ基準オフセット(px)。
-  //   no-op では 0(従来と同一配置)。scaling 時のみ正値で、巨大 transform を避けるため
-  //   rect.top(絶対論理)をウィンドウ相対へ寄せます。基準ぶんは wrapper の translateY に
-  //   同額含まれるため、画面上の表示位置は不変です。
-  baseOffset?: number;
-};
-
-// 追加: active cell を独立レイヤーで描画するコンポーネントです。
-// 変更(10-D): ペイン別座標系に対応。active cell が属するペインの relative コンテナ内へ配置されます。
-export function ActiveCellOverlay({
-  rect,
-  headerHeight,
-  leadingWidth,
-  baseOffset = 0,
-}: ActiveCellOverlayProps) {
-  if (!rect) {
-    return null;
-  }
-
-  const overlayStyle: CSSProperties = {
-    position: 'absolute',
-    left: leadingWidth + rect.left,
-    top: headerHeight + rect.top - baseOffset,
-    width: rect.width,
-    height: rect.height,
-    border: '2px solid #2563eb',
-    boxSizing: 'border-box',
-    pointerEvents: 'none',
-    zIndex: 4,
-  };
-
-  return <div style={overlayStyle} />;
-}
-
-export default ActiveCellOverlay;
 </file>
 
 <file path="src/components/spreadsheet-grid/view/SortManagementPanel.tsx">
@@ -3865,6 +3810,61 @@ dist-ssr
 
 backup
 repomix-output.xml
+</file>
+
+<file path="src/components/spreadsheet-grid/ActiveCellOverlay.tsx">
+import type { CSSProperties } from 'react';
+
+// 追加: active cell の矩形情報です。
+// 変更(10-D): left は「ペイン列領域内ローカル座標」になりました（leadingWidth 非含有）。
+export type ActiveCellOverlayRect = {
+  left: number;
+  top: number;
+  width: number;
+  height: number;
+};
+
+type ActiveCellOverlayProps = {
+  rect: ActiveCellOverlayRect | null;
+  headerHeight: number;
+  // 変更(10-D): rowHeaderWidth → leadingWidth に一般化しました。
+  //             固定列なしの中央ペインでは leadingWidth === rowHeaderWidth となり従来と同一です。
+  leadingWidth: number;
+  // 追加(scroll-space 仮想化 修正): 絶対論理 top から差し引く描画ウィンドウ基準オフセット(px)。
+  //   no-op では 0(従来と同一配置)。scaling 時のみ正値で、巨大 transform を避けるため
+  //   rect.top(絶対論理)をウィンドウ相対へ寄せます。基準ぶんは wrapper の translateY に
+  //   同額含まれるため、画面上の表示位置は不変です。
+  baseOffset?: number;
+};
+
+// 追加: active cell を独立レイヤーで描画するコンポーネントです。
+// 変更(10-D): ペイン別座標系に対応。active cell が属するペインの relative コンテナ内へ配置されます。
+export function ActiveCellOverlay({
+  rect,
+  headerHeight,
+  leadingWidth,
+  baseOffset = 0,
+}: ActiveCellOverlayProps) {
+  if (!rect) {
+    return null;
+  }
+
+  const overlayStyle: CSSProperties = {
+    position: 'absolute',
+    left: leadingWidth + rect.left,
+    top: headerHeight + rect.top - baseOffset,
+    width: rect.width,
+    height: rect.height,
+    border: '2px solid #2563eb',
+    boxSizing: 'border-box',
+    pointerEvents: 'none',
+    zIndex: 4,
+  };
+
+  return <div style={overlayStyle} />;
+}
+
+export default ActiveCellOverlay;
 </file>
 
 <file path="src/components/spreadsheet-grid/hooks/useFilterPopoverController.ts">
@@ -4699,63 +4699,6 @@ export const isSameCellCoord = (
 };
 </file>
 
-<file path="src/components/spreadsheet-grid/SelectionOverlay.tsx">
-import type { CSSProperties } from 'react';
-
-// 追加: 選択範囲の矩形情報です。
-// 変更(10-D): left は「ペイン列領域内ローカル座標」になりました（leadingWidth 非含有）。
-//             描画時に leadingWidth を加算して最終 left を求めます。
-export type SelectionOverlayRect = {
-  left: number;
-  top: number;
-  width: number;
-  height: number;
-};
-
-type SelectionOverlayProps = {
-  rect: SelectionOverlayRect | null;
-  headerHeight: number;
-  // 変更(10-D): rowHeaderWidth → leadingWidth に一般化しました。
-  //             行ヘッダーを持つペインでは rowHeaderWidth、それ以外のペインでは 0 が渡されます。
-  //             固定列なしの中央ペインでは leadingWidth === rowHeaderWidth となり、
-  //             従来と完全に同じ位置に描画されます。
-  leadingWidth: number;
-  // 追加(scroll-space 仮想化 修正): 絶対論理 top から差し引く描画ウィンドウ基準オフセット(px)。
-  //   no-op では 0(従来と同一配置)。scaling 時のみ正値です(詳細は ActiveCellOverlay と同様)。
-  baseOffset?: number;
-};
-
-// 追加: 選択範囲をセル本体とは独立したレイヤーで描画するコンポーネントです。
-// 変更(10-D): ペイン別座標系に対応。各ペインの relative コンテナ内へ配置されます。
-export function SelectionOverlay({
-  rect,
-  headerHeight,
-  leadingWidth,
-  baseOffset = 0,
-}: SelectionOverlayProps) {
-  if (!rect) {
-    return null;
-  }
-
-  const overlayStyle: CSSProperties = {
-    position: 'absolute',
-    left: leadingWidth + rect.left,
-    top: headerHeight + rect.top - baseOffset,
-    width: rect.width,
-    height: rect.height,
-    backgroundColor: 'rgba(37, 99, 235, 0.08)',
-    border: '2px solid #2563eb',
-    boxSizing: 'border-box',
-    pointerEvents: 'none',
-    zIndex: 2,
-  };
-
-  return <div style={overlayStyle} />;
-}
-
-export default SelectionOverlay;
-</file>
-
 <file path="package.json">
 {
   "name": "datesheet-grid",
@@ -4795,157 +4738,6 @@ export default SelectionOverlay;
     "vitest": "^4.1.9"
   }
 }
-</file>
-
-<file path="src/components/spreadsheet-grid/CellEditorLayer.tsx">
-// 追加: editor 確定後の移動方向です。
-export type EditorCommitDirection = 'down' | 'right' | 'left';
-
-import {
-  useEffect,
-  useRef,
-  useState,
-  type CSSProperties,
-  type KeyboardEvent,
-} from 'react';
-
-// 変更(10-D): left は「ペイン列領域内ローカル座標」になりました（leadingWidth 非含有）。
-type CellEditorRect = {
-  left: number;
-  top: number;
-  width: number;
-  height: number;
-};
-
-type CellEditorLayerProps = {
-  rect: CellEditorRect | null;
-  headerHeight: number;
-  // 変更(10-D): rowHeaderWidth → leadingWidth に一般化しました。
-  //             editor は active cell が属するペインの relative コンテナ内へ配置されます。
-  leadingWidth: number;
-  // 追加(scroll-space 仮想化 修正): 絶対論理 top から差し引く描画ウィンドウ基準オフセット(px)。
-  //   no-op では 0(従来と同一配置)。scaling 時のみ正値です(詳細は ActiveCellOverlay と同様)。
-  baseOffset?: number;
-  // 変更(11-B6): 親が持つのは「編集開始時の初期値」だけになりました。
-  //              毎キーストロークのドラフト値は本コンポーネントのローカル state で管理し、
-  //              親(SpreadsheetGrid)へは commit 時に最終値だけを渡します。
-  //              これにより編集中のタイピングで親（＝3ペイン全体）が再レンダーされなくなります。
-  initialValue: string;
-  // 変更(11-B6): (direction?) → (value, direction?) に変更。確定値を引数で受け取ります。
-  onCommit: (value: string, direction?: EditorCommitDirection) => void;
-  onCancel: () => void;
-};
-
-// 追加: 編集中セルの上に input を重ねる editor layer です。
-// 変更(10-D): ペイン別座標系に対応。
-// 変更(11-B6): ドラフト値をローカル state 化しました（コントロールドのまま、状態の置き場だけ移動）。
-export function CellEditorLayer({
-  rect,
-  headerHeight,
-  leadingWidth,
-  baseOffset = 0,
-  initialValue,
-  onCommit,
-  onCancel,
-}: CellEditorLayerProps) {
-  const inputRef = useRef<HTMLInputElement | null>(null);
-
-  // 追加(11-B6): 編集中のドラフト値です。タイピングはこの state だけを更新します。
-  const [draftValue, setDraftValue] = useState('');
-
-  // 追加(11-B6): 「新しい編集セッションの開始」を rect の null → 非 null 遷移で検知し、
-  //              ドラフトを initialValue へリセットします。
-  // 実装メモ: これは React 公式ドキュメントの「レンダー中に過去の props と比較して
-  //   state を調整する」パターンです（effect ではなく render 中に setState することで、
-  //   古いドラフトが 1 フレームでも描画されるのを防ぎます。StrictMode 安全）。
-  //   commit / cancel で必ず rect が null に戻るため、「null → 非 null」は常に
-  //   新セッションを意味します。同一セルを連続編集（Esc キャンセル → 再 F2 等）しても
-  //   前回のドラフトが残りません。
-  const isOpen = rect !== null;
-  const [prevOpen, setPrevOpen] = useState(false);
-  if (isOpen !== prevOpen) {
-    setPrevOpen(isOpen);
-    if (isOpen) {
-      setDraftValue(initialValue);
-    }
-  }
-
-  // 追加: editor 表示時に自動フォーカスし、末尾へキャレット移動します。
-  useEffect(() => {
-    if (!rect || !inputRef.current) {
-      return;
-    }
-
-    inputRef.current.focus();
-    const end = inputRef.current.value.length;
-    inputRef.current.setSelectionRange(end, end);
-  }, [rect]);
-
-  if (!rect) {
-    return null;
-  }
-
-  const wrapperStyle: CSSProperties = {
-    position: 'absolute',
-    left: leadingWidth + rect.left,
-    top: headerHeight + rect.top - baseOffset,
-    width: rect.width,
-    height: rect.height,
-    zIndex: 5,
-    pointerEvents: 'none',
-  };
-
-  const inputStyle: CSSProperties = {
-    width: '100%',
-    height: '100%',
-    boxSizing: 'border-box',
-    border: '2px solid #2563eb',
-    outline: 'none',
-    padding: '0 10px',
-    margin: 0,
-    fontSize: 16,
-    color: '#0f172a',
-    backgroundColor: '#ffffff',
-    pointerEvents: 'auto',
-  };
-
-  // 追加: Enter で下、Tab で左右へ移動する方向付き commit を呼びます。
-  // 変更(11-B6): commit にローカルのドラフト値を引数で渡します。
-  const handleKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
-    if (event.key === 'Enter') {
-      event.preventDefault();
-      onCommit(draftValue, 'down');
-      return;
-    }
-
-    if (event.key === 'Escape') {
-      event.preventDefault();
-      onCancel();
-      return;
-    }
-
-    if (event.key === 'Tab') {
-      event.preventDefault();
-      onCommit(draftValue, event.shiftKey ? 'left' : 'right');
-    }
-  };
-
-  return (
-    <div style={wrapperStyle}>
-      <input
-        ref={inputRef}
-        type="text"
-        value={draftValue}
-        onChange={(event) => setDraftValue(event.target.value)}
-        onKeyDown={handleKeyDown}
-        onBlur={() => onCommit(draftValue)}
-        style={inputStyle}
-      />
-    </div>
-  );
-}
-
-export default CellEditorLayer;
 </file>
 
 <file path="src/components/spreadsheet-grid/hooks/useColumnHeaderDragController.ts">
@@ -6680,6 +6472,63 @@ export const gridActions = {
 };
 </file>
 
+<file path="src/components/spreadsheet-grid/SelectionOverlay.tsx">
+import type { CSSProperties } from 'react';
+
+// 追加: 選択範囲の矩形情報です。
+// 変更(10-D): left は「ペイン列領域内ローカル座標」になりました（leadingWidth 非含有）。
+//             描画時に leadingWidth を加算して最終 left を求めます。
+export type SelectionOverlayRect = {
+  left: number;
+  top: number;
+  width: number;
+  height: number;
+};
+
+type SelectionOverlayProps = {
+  rect: SelectionOverlayRect | null;
+  headerHeight: number;
+  // 変更(10-D): rowHeaderWidth → leadingWidth に一般化しました。
+  //             行ヘッダーを持つペインでは rowHeaderWidth、それ以外のペインでは 0 が渡されます。
+  //             固定列なしの中央ペインでは leadingWidth === rowHeaderWidth となり、
+  //             従来と完全に同じ位置に描画されます。
+  leadingWidth: number;
+  // 追加(scroll-space 仮想化 修正): 絶対論理 top から差し引く描画ウィンドウ基準オフセット(px)。
+  //   no-op では 0(従来と同一配置)。scaling 時のみ正値です(詳細は ActiveCellOverlay と同様)。
+  baseOffset?: number;
+};
+
+// 追加: 選択範囲をセル本体とは独立したレイヤーで描画するコンポーネントです。
+// 変更(10-D): ペイン別座標系に対応。各ペインの relative コンテナ内へ配置されます。
+export function SelectionOverlay({
+  rect,
+  headerHeight,
+  leadingWidth,
+  baseOffset = 0,
+}: SelectionOverlayProps) {
+  if (!rect) {
+    return null;
+  }
+
+  const overlayStyle: CSSProperties = {
+    position: 'absolute',
+    left: leadingWidth + rect.left,
+    top: headerHeight + rect.top - baseOffset,
+    width: rect.width,
+    height: rect.height,
+    backgroundColor: 'rgba(37, 99, 235, 0.08)',
+    border: '2px solid #2563eb',
+    boxSizing: 'border-box',
+    pointerEvents: 'none',
+    zIndex: 2,
+  };
+
+  return <div style={overlayStyle} />;
+}
+
+export default SelectionOverlay;
+</file>
+
 <file path="src/components/spreadsheet-grid/utils/clipboard.ts">
 import type { GridColumn } from '../model/gridTypes';
 import {
@@ -7866,6 +7715,157 @@ export const gridBarClearButtonStyle: CSSProperties = {
   lineHeight: 1,
   whiteSpace: 'nowrap',
 };
+</file>
+
+<file path="src/components/spreadsheet-grid/CellEditorLayer.tsx">
+// 追加: editor 確定後の移動方向です。
+export type EditorCommitDirection = 'down' | 'right' | 'left';
+
+import {
+  useEffect,
+  useRef,
+  useState,
+  type CSSProperties,
+  type KeyboardEvent,
+} from 'react';
+
+// 変更(10-D): left は「ペイン列領域内ローカル座標」になりました（leadingWidth 非含有）。
+type CellEditorRect = {
+  left: number;
+  top: number;
+  width: number;
+  height: number;
+};
+
+type CellEditorLayerProps = {
+  rect: CellEditorRect | null;
+  headerHeight: number;
+  // 変更(10-D): rowHeaderWidth → leadingWidth に一般化しました。
+  //             editor は active cell が属するペインの relative コンテナ内へ配置されます。
+  leadingWidth: number;
+  // 追加(scroll-space 仮想化 修正): 絶対論理 top から差し引く描画ウィンドウ基準オフセット(px)。
+  //   no-op では 0(従来と同一配置)。scaling 時のみ正値です(詳細は ActiveCellOverlay と同様)。
+  baseOffset?: number;
+  // 変更(11-B6): 親が持つのは「編集開始時の初期値」だけになりました。
+  //              毎キーストロークのドラフト値は本コンポーネントのローカル state で管理し、
+  //              親(SpreadsheetGrid)へは commit 時に最終値だけを渡します。
+  //              これにより編集中のタイピングで親（＝3ペイン全体）が再レンダーされなくなります。
+  initialValue: string;
+  // 変更(11-B6): (direction?) → (value, direction?) に変更。確定値を引数で受け取ります。
+  onCommit: (value: string, direction?: EditorCommitDirection) => void;
+  onCancel: () => void;
+};
+
+// 追加: 編集中セルの上に input を重ねる editor layer です。
+// 変更(10-D): ペイン別座標系に対応。
+// 変更(11-B6): ドラフト値をローカル state 化しました（コントロールドのまま、状態の置き場だけ移動）。
+export function CellEditorLayer({
+  rect,
+  headerHeight,
+  leadingWidth,
+  baseOffset = 0,
+  initialValue,
+  onCommit,
+  onCancel,
+}: CellEditorLayerProps) {
+  const inputRef = useRef<HTMLInputElement | null>(null);
+
+  // 追加(11-B6): 編集中のドラフト値です。タイピングはこの state だけを更新します。
+  const [draftValue, setDraftValue] = useState('');
+
+  // 追加(11-B6): 「新しい編集セッションの開始」を rect の null → 非 null 遷移で検知し、
+  //              ドラフトを initialValue へリセットします。
+  // 実装メモ: これは React 公式ドキュメントの「レンダー中に過去の props と比較して
+  //   state を調整する」パターンです（effect ではなく render 中に setState することで、
+  //   古いドラフトが 1 フレームでも描画されるのを防ぎます。StrictMode 安全）。
+  //   commit / cancel で必ず rect が null に戻るため、「null → 非 null」は常に
+  //   新セッションを意味します。同一セルを連続編集（Esc キャンセル → 再 F2 等）しても
+  //   前回のドラフトが残りません。
+  const isOpen = rect !== null;
+  const [prevOpen, setPrevOpen] = useState(false);
+  if (isOpen !== prevOpen) {
+    setPrevOpen(isOpen);
+    if (isOpen) {
+      setDraftValue(initialValue);
+    }
+  }
+
+  // 追加: editor 表示時に自動フォーカスし、末尾へキャレット移動します。
+  useEffect(() => {
+    if (!rect || !inputRef.current) {
+      return;
+    }
+
+    inputRef.current.focus();
+    const end = inputRef.current.value.length;
+    inputRef.current.setSelectionRange(end, end);
+  }, [rect]);
+
+  if (!rect) {
+    return null;
+  }
+
+  const wrapperStyle: CSSProperties = {
+    position: 'absolute',
+    left: leadingWidth + rect.left,
+    top: headerHeight + rect.top - baseOffset,
+    width: rect.width,
+    height: rect.height,
+    zIndex: 5,
+    pointerEvents: 'none',
+  };
+
+  const inputStyle: CSSProperties = {
+    width: '100%',
+    height: '100%',
+    boxSizing: 'border-box',
+    border: '2px solid #2563eb',
+    outline: 'none',
+    padding: '0 10px',
+    margin: 0,
+    fontSize: 16,
+    color: '#0f172a',
+    backgroundColor: '#ffffff',
+    pointerEvents: 'auto',
+  };
+
+  // 追加: Enter で下、Tab で左右へ移動する方向付き commit を呼びます。
+  // 変更(11-B6): commit にローカルのドラフト値を引数で渡します。
+  const handleKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      onCommit(draftValue, 'down');
+      return;
+    }
+
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      onCancel();
+      return;
+    }
+
+    if (event.key === 'Tab') {
+      event.preventDefault();
+      onCommit(draftValue, event.shiftKey ? 'left' : 'right');
+    }
+  };
+
+  return (
+    <div style={wrapperStyle}>
+      <input
+        ref={inputRef}
+        type="text"
+        value={draftValue}
+        onChange={(event) => setDraftValue(event.target.value)}
+        onKeyDown={handleKeyDown}
+        onBlur={() => onCommit(draftValue)}
+        style={inputStyle}
+      />
+    </div>
+  );
+}
+
+export default CellEditorLayer;
 </file>
 
 <file path="src/components/spreadsheet-grid/logic/geometry.ts">
@@ -12404,206 +12404,6 @@ export const sortOrder = <T,>(
 };
 </file>
 
-<file path="src/App.tsx">
-import { useState } from 'react';
-import SpreadsheetGrid from './components/spreadsheet-grid/SpreadsheetGrid';
-import type { GridColumn } from './components/spreadsheet-grid/model/gridTypes';
-
-// 追加: デモ用の行型です。
-type DemoRow = {
-  partNo: string;
-  partName: string;
-  qty: number;
-  unit: string;
-  status: string;
-  [key: string]: string | number;
-};
-
-// 追加: 初期ダミー行数です。UX確認用に少し多めにしています。
-// 変更(DS-3-1): 5,000 → 50,000(5万)。DS-3 の rowModel 移行を Profiler で検証するための負荷増です。
-//   行は virtualizer 化済みのため DOM 量は据え置き、sort/filter は order(Int32Array)全走査で数十 ms 級です。
-const INITIAL_ROW_COUNT = 1000000; // 50000 → 500000
-
-// 追加: 初期追加列数です。横スクロールと column virtualization 確認用です。
-const INITIAL_EXTRA_COLUMN_COUNT = 24;
-
-// 追加: オーバーフロー列のキーを生成します。
-const getOverflowColumnKey = (columnIndex: number) => `extra_${columnIndex}`;
-
-// 追加: ダミー行を生成します。
-const createDemoRows = (count: number): DemoRow[] =>
-  Array.from({ length: count }, (_, index) => {
-    const rowNumber = index + 1;
-    return {
-      partNo: `A-${String(1001 + index).padStart(4, '0')}`,
-      partName: `品名-${rowNumber}`,
-      qty: (rowNumber % 25) + 1,
-      unit: ['個', '本', '式', '枚'][index % 4],
-      status: index % 11 === 0 ? '保留' : '有効',
-    };
-  }).map((row, index) => {
-    const nextRow: DemoRow = { ...row };
-    // 追加: 確認用に extra 列へダミー値を流し込みます。
-    for (let extraIndex = 0; extraIndex < INITIAL_EXTRA_COLUMN_COUNT; extraIndex += 1) {
-      nextRow[getOverflowColumnKey(5 + extraIndex)] = `R${index + 1}-C${extraIndex + 1}`;
-    }
-    return nextRow;
-  });
-
-// 追加: 基本列 + 初期追加列を生成します。
-const createInitialColumns = (): GridColumn<DemoRow>[] => {
-  const baseColumns: GridColumn<DemoRow>[] = [
-    // 追加: text / number / select / set のフィルター型を設定します。
-    // 追加(10-E): frozen columns デモ。品番・品名を左固定にします（pinned: 'left'）。
-    //            これで横スクロールしても先頭 2 列が固定表示されます。
-    // 変更(12-A): 品番を set フィルター(AG Grid の Set Filter 相当)にします。
-    //             候補は rows から自動収集され約 50,000 件になるため、
-    //             popover 内リストの仮想化 + 検索の動作確認にそのまま使えます。
-    //             注記(DS-3-1): 5万行化で候補も約5万件になります。リスト UI は仮想化済みで描画は
-    //             問題ありませんが、収集の全走査(getColumnSelectOptions)は DS-4 の worker 化対象です。
-    { key: 'partNo', title: '品番', width: 150, filterType: 'set',
-      pinned: "left"
-    },
-    {
-      key: 'partName',
-      title: '品名',
-      width: 220,
-      // 注記(12-A): text フィルター(部分一致 + 適用ボタン)の動作確認用に残します。
-      filterType: 'text',
-      pinned: "left" ,
-    },
-    { key: 'qty', title: '数量', width: 90, filterType: 'number' },
-    {
-      key: 'unit',
-      title: '単位',
-      width: 90,
-      readOnly: true,
-      // 変更(12-A): select → set へ移行します(チェックボックスで複数選択可能)。
-      filterType: 'set',
-      // 追加: set 候補を固定定義します(未指定なら rows から自動収集されます)。
-      filterOptions: [
-        { label: '個', value: '個' },
-        { label: '本', value: '本' },
-        { label: '式', value: '式' },
-        { label: '枚', value: '枚' },
-      ],
-    },
-    {
-      key: 'status',
-      title: '状態',
-      width: 120,
-      // 変更(12-A): select → set へ移行します。
-      filterType: 'set',
-      // 追加: set 候補を固定定義します。
-      filterOptions: [
-        { label: '有効', value: '有効' },
-        { label: '保留', value: '保留' },
-      ],
-    },
-  ];
-
-  const extraColumns = Array.from(
-    { length: INITIAL_EXTRA_COLUMN_COUNT },
-    (_, index): GridColumn<DemoRow> => ({
-      key: getOverflowColumnKey(5 + index),
-      title: `追加列${index + 1}`,
-      width: 120,
-      // 追加: 追加列は text として扱います。
-      filterType: 'text',
-    }),
-  );
-
-  return [...baseColumns, ...extraColumns];
-};
-
-function App() {
-  // 追加: ダミー行を多めに生成します。
-  const [rows, setRows] = useState<DemoRow[]>(() => createDemoRows(INITIAL_ROW_COUNT));
-
-  // 追加: 列定義も初期追加列込みで生成します。
-  const [columns, setColumns] = useState<GridColumn<DemoRow>[]>(() =>
-    createInitialColumns(),
-  );
-
-  return (
-    <main
-      style={{
-        boxSizing: 'border-box',
-        width: '100%',
-        maxWidth: 1600,
-        margin: '0 auto',
-        padding: '32px 24px 48px',
-        textAlign: 'left',
-      }}
-    >
-      <header style={{ marginBottom: 20 }}>
-        <h1
-          style={{
-            margin: 0,
-            fontSize: 28,
-            lineHeight: 1.25,
-            color: '#0f172a',
-          }}
-        >
-          SpreadsheetGrid - 実装バッチ
-        </h1>
-
-        <p
-          style={{
-            marginTop: 8,
-            color: '#475569',
-            fontSize: 14,
-          }}
-        >
-          reducer ベースの SpreadsheetGrid です。行/列選択、copy/paste、editor、
-          row virtualization / column virtualization の確認用に、
-          初期行数 {INITIAL_ROW_COUNT.toLocaleString()} 行・
-          初期列数 {columns.length} 列のダミーデータを表示しています。
-        </p>
-      </header>
-
-      <SpreadsheetGrid
-        rows={rows}
-        columns={columns}
-        onRowsChange={setRows}
-        onColumnsChange={setColumns}
-        rowKeyGetter={(row, index) => `${row.partNo || 'row'}-${index}`}
-        createRow={() => ({
-          partNo: '',
-          partName: '',
-          qty: 0,
-          unit: '',
-          status: '',
-        })}
-        createOverflowColumn={(columnIndex) => ({
-          key: getOverflowColumnKey(columnIndex),
-          title: `列${columnIndex + 1}`,
-          width: 120,
-          // 追加: 後から増える列も text フィルター対象に揃えます。
-          filterType: 'text',
-        })}
-        rowHeight={38}
-        headerHeight={42}
-        rowHeaderWidth={56}
-        enableRangeSelection
-        enableGlobalFilter
-        // 追加(10-E): frozen columns は列定義の pinned: 'left' で有効化済みです。
-        //            （createInitialColumns の partNo / partName を参照）
-        canEditCell={(rowIndex, _colIndex, row, column) => {
-          // 追加: デモ用に「保留」行は status 列以外を編集不可とする例です。
-          if (row.status === '保留' && column.key !== 'status') {
-            return false;
-          }
-          return rowIndex >= 0;
-        }}
-      />
-    </main>
-  );
-}
-
-export default App;
-</file>
-
 <file path="src/components/spreadsheet-grid/view/GridHeaderRow.tsx">
 // 変更(11-B5): GridHeaderRow を React.memo 化するため memo を追加 import します。
 // 変更(13-A): ヘッダー右クリック(contextmenu)用に MouseEvent 型を追加 import します。
@@ -13052,6 +12852,206 @@ export const GridHeaderRow = memo(
 ) as typeof GridHeaderRowInner;
 
 export default GridHeaderRow;
+</file>
+
+<file path="src/App.tsx">
+import { useState } from 'react';
+import SpreadsheetGrid from './components/spreadsheet-grid/SpreadsheetGrid';
+import type { GridColumn } from './components/spreadsheet-grid/model/gridTypes';
+
+// 追加: デモ用の行型です。
+type DemoRow = {
+  partNo: string;
+  partName: string;
+  qty: number;
+  unit: string;
+  status: string;
+  [key: string]: string | number;
+};
+
+// 追加: 初期ダミー行数です。UX確認用に少し多めにしています。
+// 変更(DS-3-1): 5,000 → 50,000(5万)。DS-3 の rowModel 移行を Profiler で検証するための負荷増です。
+//   行は virtualizer 化済みのため DOM 量は据え置き、sort/filter は order(Int32Array)全走査で数十 ms 級です。
+const INITIAL_ROW_COUNT = 1000000; // 50000 → 500000
+
+// 追加: 初期追加列数です。横スクロールと column virtualization 確認用です。
+const INITIAL_EXTRA_COLUMN_COUNT = 24;
+
+// 追加: オーバーフロー列のキーを生成します。
+const getOverflowColumnKey = (columnIndex: number) => `extra_${columnIndex}`;
+
+// 追加: ダミー行を生成します。
+const createDemoRows = (count: number): DemoRow[] =>
+  Array.from({ length: count }, (_, index) => {
+    const rowNumber = index + 1;
+    return {
+      partNo: `A-${String(1001 + index).padStart(4, '0')}`,
+      partName: `品名-${rowNumber}`,
+      qty: (rowNumber % 25) + 1,
+      unit: ['個', '本', '式', '枚'][index % 4],
+      status: index % 11 === 0 ? '保留' : '有効',
+    };
+  }).map((row, index) => {
+    const nextRow: DemoRow = { ...row };
+    // 追加: 確認用に extra 列へダミー値を流し込みます。
+    for (let extraIndex = 0; extraIndex < INITIAL_EXTRA_COLUMN_COUNT; extraIndex += 1) {
+      nextRow[getOverflowColumnKey(5 + extraIndex)] = `R${index + 1}-C${extraIndex + 1}`;
+    }
+    return nextRow;
+  });
+
+// 追加: 基本列 + 初期追加列を生成します。
+const createInitialColumns = (): GridColumn<DemoRow>[] => {
+  const baseColumns: GridColumn<DemoRow>[] = [
+    // 追加: text / number / select / set のフィルター型を設定します。
+    // 追加(10-E): frozen columns デモ。品番・品名を左固定にします（pinned: 'left'）。
+    //            これで横スクロールしても先頭 2 列が固定表示されます。
+    // 変更(12-A): 品番を set フィルター(AG Grid の Set Filter 相当)にします。
+    //             候補は rows から自動収集され約 50,000 件になるため、
+    //             popover 内リストの仮想化 + 検索の動作確認にそのまま使えます。
+    //             注記(DS-3-1): 5万行化で候補も約5万件になります。リスト UI は仮想化済みで描画は
+    //             問題ありませんが、収集の全走査(getColumnSelectOptions)は DS-4 の worker 化対象です。
+    { key: 'partNo', title: '品番', width: 150, filterType: 'set',
+      pinned: "left"
+    },
+    {
+      key: 'partName',
+      title: '品名',
+      width: 220,
+      // 注記(12-A): text フィルター(部分一致 + 適用ボタン)の動作確認用に残します。
+      filterType: 'text',
+      pinned: "left" ,
+    },
+    { key: 'qty', title: '数量', width: 90, filterType: 'number' },
+    {
+      key: 'unit',
+      title: '単位',
+      width: 90,
+      readOnly: true,
+      // 変更(12-A): select → set へ移行します(チェックボックスで複数選択可能)。
+      filterType: 'set',
+      // 追加: set 候補を固定定義します(未指定なら rows から自動収集されます)。
+      filterOptions: [
+        { label: '個', value: '個' },
+        { label: '本', value: '本' },
+        { label: '式', value: '式' },
+        { label: '枚', value: '枚' },
+      ],
+    },
+    {
+      key: 'status',
+      title: '状態',
+      width: 120,
+      // 変更(12-A): select → set へ移行します。
+      filterType: 'set',
+      // 追加: set 候補を固定定義します。
+      filterOptions: [
+        { label: '有効', value: '有効' },
+        { label: '保留', value: '保留' },
+      ],
+    },
+  ];
+
+  const extraColumns = Array.from(
+    { length: INITIAL_EXTRA_COLUMN_COUNT },
+    (_, index): GridColumn<DemoRow> => ({
+      key: getOverflowColumnKey(5 + index),
+      title: `追加列${index + 1}`,
+      width: 120,
+      // 追加: 追加列は text として扱います。
+      filterType: 'text',
+    }),
+  );
+
+  return [...baseColumns, ...extraColumns];
+};
+
+function App() {
+  // 追加: ダミー行を多めに生成します。
+  const [rows, setRows] = useState<DemoRow[]>(() => createDemoRows(INITIAL_ROW_COUNT));
+
+  // 追加: 列定義も初期追加列込みで生成します。
+  const [columns, setColumns] = useState<GridColumn<DemoRow>[]>(() =>
+    createInitialColumns(),
+  );
+
+  return (
+    <main
+      style={{
+        boxSizing: 'border-box',
+        width: '100%',
+        maxWidth: 1600,
+        margin: '0 auto',
+        padding: '32px 24px 48px',
+        textAlign: 'left',
+      }}
+    >
+      <header style={{ marginBottom: 20 }}>
+        <h1
+          style={{
+            margin: 0,
+            fontSize: 28,
+            lineHeight: 1.25,
+            color: '#0f172a',
+          }}
+        >
+          SpreadsheetGrid - 実装バッチ
+        </h1>
+
+        <p
+          style={{
+            marginTop: 8,
+            color: '#475569',
+            fontSize: 14,
+          }}
+        >
+          reducer ベースの SpreadsheetGrid です。行/列選択、copy/paste、editor、
+          row virtualization / column virtualization の確認用に、
+          初期行数 {INITIAL_ROW_COUNT.toLocaleString()} 行・
+          初期列数 {columns.length} 列のダミーデータを表示しています。
+        </p>
+      </header>
+
+      <SpreadsheetGrid
+        rows={rows}
+        columns={columns}
+        onRowsChange={setRows}
+        onColumnsChange={setColumns}
+        rowKeyGetter={(row, index) => `${row.partNo || 'row'}-${index}`}
+        createRow={() => ({
+          partNo: '',
+          partName: '',
+          qty: 0,
+          unit: '',
+          status: '',
+        })}
+        createOverflowColumn={(columnIndex) => ({
+          key: getOverflowColumnKey(columnIndex),
+          title: `列${columnIndex + 1}`,
+          width: 120,
+          // 追加: 後から増える列も text フィルター対象に揃えます。
+          filterType: 'text',
+        })}
+        rowHeight={38}
+        headerHeight={42}
+        rowHeaderWidth={56}
+        enableRangeSelection
+        enableGlobalFilter
+        // 追加(10-E): frozen columns は列定義の pinned: 'left' で有効化済みです。
+        //            （createInitialColumns の partNo / partName を参照）
+        canEditCell={(rowIndex, _colIndex, row, column) => {
+          // 追加: デモ用に「保留」行は status 列以外を編集不可とする例です。
+          if (row.status === '保留' && column.key !== 'status') {
+            return false;
+          }
+          return rowIndex >= 0;
+        }}
+      />
+    </main>
+  );
+}
+
+export default App;
 </file>
 
 <file path="src/components/spreadsheet-grid/model/gridTypes.ts">
@@ -15885,6 +15885,15 @@ export function SpreadsheetGrid<T extends object>({
               <div
                 style={{
                   position: 'relative',
+                  // 追加(scroll-space 仮想化 修正2): scaling 時の wrapper translateY は正値
+                  //   (最大 ≈ physicalBodyHeight)になり、CSS transform はスクロールコンテナの
+                  //   scrollable-overflow を下方向へ広げます。その結果、最終行の下に余分な
+                  //   スクロール領域(余白)が生じます。overflow: clip でこの relative ボックス
+                  //   ([0, headerHeight+physicalBodyHeight])外への波及を遮断します。
+                  //   overflow: clip はスクロールコンテナを生成しないため sticky ヘッダーには
+                  //   影響せず、ヘッダー/行/オーバーレイはいずれもこのボックス内に収まるため
+                  //   視覚的なクリップも起きません。
+                  overflow: 'clip',
                   width: leftPaneTotalWidth,
                   minWidth: leftPaneTotalWidth,
                   height: headerHeight + physicalBodyHeight,
@@ -16013,6 +16022,9 @@ export function SpreadsheetGrid<T extends object>({
             <div
               style={{
                 position: 'relative',
+                // 追加(scroll-space 仮想化 修正2): wrapper の正値 translateY による
+                //   scrollable-overflow 拡張(末尾下の余白)を遮断するクリップ(詳細は左ペイン参照)。
+                overflow: 'clip',
                 width: centerContentWidth,
                 minWidth: centerContentWidth,
                 height: headerHeight + physicalBodyHeight,
@@ -16135,6 +16147,9 @@ export function SpreadsheetGrid<T extends object>({
               <div
                 style={{
                   position: 'relative',
+                  // 追加(scroll-space 仮想化 修正2): wrapper の正値 translateY による
+                  //   scrollable-overflow 拡張(末尾下の余白)を遮断するクリップ(詳細は左ペイン参照)。
+                  overflow: 'clip',
                   width: rightPaneTotalWidth,
                   minWidth: rightPaneTotalWidth,
                   height: headerHeight + physicalBodyHeight,
