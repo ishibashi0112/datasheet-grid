@@ -12,6 +12,7 @@ import {
   WINDOW_BASE_CHUNK_PX,
   clientYToRowIndex,
   computeVerticalGeometry,
+  createUniformRowMetrics,
   logicalToPhysicalScrollTop,
   physicalToLogicalScrollTop,
   type ComputeVerticalGeometryArgs,
@@ -346,10 +347,11 @@ describe('clientYToRowIndex (inverse of body-content row band)', () => {
   it('reduces to floor(y / rowHeight) when scaleFactor === 1', () => {
     const rowHeight = 38;
     const rowCount = 1000;
+    const metrics = createUniformRowMetrics(rowCount, rowHeight);
     for (let i = 0; i < 50; i += 1) {
       for (const delta of [0, 1, rowHeight - 1]) {
         const y = i * rowHeight + delta;
-        expect(clientYToRowIndex(y, 0, 1, rowHeight, rowCount)).toBe(i);
+        expect(clientYToRowIndex(y, 0, 1, metrics)).toBe(i);
       }
     }
   });
@@ -360,12 +362,13 @@ describe('clientYToRowIndex (inverse of body-content row band)', () => {
     const scaleFactor = 1.27;
     const scrollTop = 1_000_000;
     const d = scrollTop * (1 - scaleFactor); // <= 0
+    const metrics = createUniformRowMetrics(rowCount, rowHeight);
     for (const i of [0, 1, 100, 5000, rowCount - 1]) {
       for (const delta of [0, rowHeight / 2, rowHeight - 1]) {
         const y = i * rowHeight + d + delta;
-        expect(
-          clientYToRowIndex(y, scrollTop, scaleFactor, rowHeight, rowCount),
-        ).toBe(clamp(i, 0, rowCount - 1));
+        expect(clientYToRowIndex(y, scrollTop, scaleFactor, metrics)).toBe(
+          clamp(i, 0, rowCount - 1),
+        );
       }
     }
   });
@@ -373,7 +376,69 @@ describe('clientYToRowIndex (inverse of body-content row band)', () => {
   it('clamps out-of-range y into [0, rowCount-1]', () => {
     const rowHeight = 38;
     const rowCount = 10;
-    expect(clientYToRowIndex(-9999, 0, 1, rowHeight, rowCount)).toBe(0);
-    expect(clientYToRowIndex(9_999_999, 0, 1, rowHeight, rowCount)).toBe(9);
+    const metrics = createUniformRowMetrics(rowCount, rowHeight);
+    expect(clientYToRowIndex(-9999, 0, 1, metrics)).toBe(0);
+    expect(clientYToRowIndex(9_999_999, 0, 1, metrics)).toBe(9);
+  });
+});
+
+// C0(auto-height シーム): createUniformRowMetrics の各 resolver が、移行前に overlay /
+//   ヒットテストが直書きしていた算術(index*rowHeight 等)とバイト等価であることのガードです。
+//   将来の auto-height(prefix-sum 実装)を入れても uniform 経路はここで一致が担保されます。
+describe('createUniformRowMetrics (no-op equivalence with pre-seam arithmetic)', () => {
+  const cases: Array<{ rowCount: number; rowHeight: number }> = [];
+  for (const rowCount of [0, 1, 2, 10, 1000, 500_000, 1_000_000]) {
+    for (const rowHeight of [1, 20, 36, 38, 42]) {
+      cases.push({ rowCount, rowHeight });
+    }
+  }
+
+  it(`covers >= 35 cases (actual ${cases.length})`, () => {
+    expect(cases.length).toBeGreaterThanOrEqual(35);
+  });
+
+  it('rowTop(i) === i * rowHeight and totalBodyHeight === rowCount * rowHeight', () => {
+    for (const { rowCount, rowHeight } of cases) {
+      const metrics = createUniformRowMetrics(rowCount, rowHeight);
+      expect(metrics.rowCount).toBe(rowCount);
+      expect(metrics.totalBodyHeight).toBe(rowCount * rowHeight);
+      for (const i of [0, 1, 2, 7, 123, Math.max(rowCount - 1, 0)]) {
+        if (i >= rowCount && rowCount > 0) continue;
+        expect(metrics.rowTop(i)).toBe(i * rowHeight);
+      }
+    }
+  });
+
+  it('rowsHeight(a, b) === (b - a + 1) * rowHeight (inclusive span)', () => {
+    for (const { rowCount, rowHeight } of cases) {
+      if (rowCount === 0) continue;
+      const metrics = createUniformRowMetrics(rowCount, rowHeight);
+      const last = rowCount - 1;
+      for (const [a, b] of [
+        [0, 0],
+        [0, last],
+        [Math.min(3, last), Math.min(3, last)],
+        [Math.min(2, last), last],
+      ] as Array<[number, number]>) {
+        expect(metrics.rowsHeight(a, b)).toBe((b - a + 1) * rowHeight);
+      }
+    }
+  });
+
+  it('rowAtContentY(y) === clamp(floor(y / rowHeight), 0, rowCount-1)', () => {
+    for (const { rowCount, rowHeight } of cases) {
+      const metrics = createUniformRowMetrics(rowCount, rowHeight);
+      for (const i of [-5, 0, 1, 50, rowCount - 1, rowCount, rowCount + 10]) {
+        for (const delta of [0, rowHeight / 2, rowHeight - 1]) {
+          const y = i * rowHeight + delta;
+          const expected = clamp(
+            Math.floor(y / rowHeight),
+            0,
+            Math.max(rowCount - 1, 0),
+          );
+          expect(metrics.rowAtContentY(y)).toBe(expected);
+        }
+      }
+    }
   });
 });

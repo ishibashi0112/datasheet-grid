@@ -91,6 +91,40 @@ export type ComputeVerticalGeometryArgs = {
   maxBodyPx: number;
 };
 
+// 行メトリクス(スクロール非依存)。行の content-top 位置・区間高さ・content-y→行 を解決します。
+//   overlay(active cell / selection)の top/height とヒットテストの行解決がここを通ります。
+//   ★スクロール非依存(rowCount / rowHeight のみ依存)。overlay の useMemo を scrollTop に結合させず、
+//     縦スクロールで再レンダーさせない(11-A の memo 最適化を維持)ための分離です。computeVerticalGeometry
+//     が返す per-scroll の窓(rows / translateY)とは別軸で、selection 等が変わったときだけ作り直します。
+//   将来の auto-height は同じ RowMetrics 契約を prefix-sum + 二分探索で実装し、消費側を不変に保ちます。
+export type RowMetrics = {
+  // 行数(= 表示対象の行数)。rowAtContentY の clamp 上限に使います。
+  rowCount: number;
+  // body content-top 基準の行 top(headerHeight 抜き)。= prefix(index)。
+  rowTop(index: number): number;
+  // 行区間 [startInclusive, endInclusive] の高さ合計。= prefix(end+1) - prefix(start)。
+  rowsHeight(startInclusive: number, endInclusive: number): number;
+  // ボディ論理全高(= rowTop(rowCount))。col 選択の全面高さ等に使用。
+  totalBodyHeight: number;
+  // content-top 基準 y(論理)→ 行 index([0, rowCount-1] へ clamp)。
+  rowAtContentY(y: number): number;
+};
+
+// uniform 行高の RowMetrics を生成します(純算術)。
+//   各 resolver は移行前の呼び出し箇所(index*rowHeight 等)とバイト等価です。
+export const createUniformRowMetrics = (
+  rowCount: number,
+  rowHeight: number,
+): RowMetrics => ({
+  rowCount,
+  rowTop: (index) => index * rowHeight,
+  rowsHeight: (startInclusive, endInclusive) =>
+    (endInclusive - startInclusive + 1) * rowHeight,
+  totalBodyHeight: rowCount * rowHeight,
+  rowAtContentY: (y) =>
+    Math.min(Math.max(Math.floor(y / rowHeight), 0), Math.max(rowCount - 1, 0)),
+});
+
 // 物理 scrollTop → 論理 scrollTop です(active cell 自動スクロールの現在位置換算に使用)。
 export const physicalToLogicalScrollTop = (
   physical: number,
@@ -107,16 +141,16 @@ export const logicalToPhysicalScrollTop = (
 //   スクロール量 S_phys を含む)→ 行 index。
 //   論理 y = y - D(D = S_phys * (1 - scaleFactor))で求めます。scaleFactor=1 のとき D=0 で
 //   従来式(floor(y / rowHeight))と一致します。
+//   変更(auto-height シーム): 物理→論理の d 補正はスクロール依存なのでここに残し、論理 content-y の
+//   行解決のみ RowMetrics.rowAtContentY へ委譲します(uniform では従来式と一致)。
 export const clientYToRowIndex = (
   yRelativeToBodyTop: number,
   scrollTop: number,
   scaleFactor: number,
-  rowHeight: number,
-  rowCount: number,
+  rowMetrics: RowMetrics,
 ): number => {
   const d = scrollTop * (1 - scaleFactor);
-  const row = Math.floor((yRelativeToBodyTop - d) / rowHeight);
-  return Math.min(Math.max(row, 0), Math.max(rowCount - 1, 0));
+  return rowMetrics.rowAtContentY(yRelativeToBodyTop - d);
 };
 
 export const computeVerticalGeometry = ({

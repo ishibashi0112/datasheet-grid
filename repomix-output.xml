@@ -81,11 +81,13 @@ src/components/spreadsheet-grid/logic/verticalGeometry.test.ts
 src/components/spreadsheet-grid/logic/verticalGeometry.ts
 src/components/spreadsheet-grid/model/gridActions.ts
 src/components/spreadsheet-grid/model/gridReducer.ts
+src/components/spreadsheet-grid/model/gridSelectors.test.ts
 src/components/spreadsheet-grid/model/gridSelectors.ts
 src/components/spreadsheet-grid/model/gridTypes.ts
 src/components/spreadsheet-grid/SelectionOverlay.tsx
 src/components/spreadsheet-grid/SpreadsheetGrid.tsx
 src/components/spreadsheet-grid/utils/clipboard.ts
+src/components/spreadsheet-grid/utils/excelColumnName.test.ts
 src/components/spreadsheet-grid/utils/excelColumnName.ts
 src/components/spreadsheet-grid/utils/permissions.ts
 src/components/spreadsheet-grid/utils/scheduler.ts
@@ -94,6 +96,7 @@ src/components/spreadsheet-grid/view/ColumnFilterPopover.tsx
 src/components/spreadsheet-grid/view/ColumnMenuPopover.tsx
 src/components/spreadsheet-grid/view/DefaultGridBottomBar.tsx
 src/components/spreadsheet-grid/view/DefaultGridTopBar.tsx
+src/components/spreadsheet-grid/view/gridBarHelpers.test.ts
 src/components/spreadsheet-grid/view/gridBarHelpers.ts
 src/components/spreadsheet-grid/view/gridBarStyles.ts
 src/components/spreadsheet-grid/view/GridBodyLayer.tsx
@@ -2205,6 +2208,289 @@ describe('sortOrder (B-1 equivalence with compareUnknownValues reference)', () =
 });
 </file>
 
+<file path="src/components/spreadsheet-grid/model/gridSelectors.test.ts">
+// B: gridSelectors の正規化 / 選択判定 / SelectionSnapshot 等価性テスト(純関数・node)。
+//   本番コードは無改修。要点は buildSelectionSnapshot が
+//   selectIsCellSelected / selectIsRowSelected / selectIsColumnSelected と「完全に等価」
+//   であること(11-A の memo 最適化はこの等価性に依存します)。
+import { describe, it, expect } from 'vitest';
+import type { GridSelection, GridUiState } from './gridTypes';
+import {
+  buildSelectionSnapshot,
+  isSameCellCoord,
+  normalizeCellRange,
+  normalizeColumnRange,
+  normalizeRowRange,
+  selectIsActiveCell,
+  selectIsCellSelected,
+  selectIsColumnSelected,
+  selectIsEditingCell,
+  selectIsRowSelected,
+  type SelectionSnapshot,
+} from './gridSelectors';
+
+// selection だけ差し替えられる最小の GridUiState を組みます(他フィールドは既定値)。
+const makeState = (overrides: Partial<GridUiState> = {}): GridUiState => ({
+  activeCell: null,
+  selection: null,
+  editingCell: null,
+  dragState: null,
+  columnWidths: {},
+  filters: { globalText: '', columnFilters: {} },
+  sort: [],
+  ...overrides,
+});
+
+// SelectionSnapshot からのメンバーシップ判定(GridBodyLayer の導出と同じ規則)。
+const isSelectedFromSnapshot = (
+  snapshot: SelectionSnapshot,
+  row: number,
+  col: number,
+): boolean => {
+  switch (snapshot.kind) {
+    case 'none':
+      return false;
+    case 'cell':
+      return (
+        row >= snapshot.startRow &&
+        row <= snapshot.endRow &&
+        col >= snapshot.startCol &&
+        col <= snapshot.endCol
+      );
+    case 'row':
+      return row >= snapshot.startRow && row <= snapshot.endRow;
+    case 'col':
+      return col >= snapshot.startCol && col <= snapshot.endCol;
+  }
+};
+
+describe('normalize* range helpers', () => {
+  it('orders cell range corners into top-left / bottom-right', () => {
+    expect(
+      normalizeCellRange({ start: { row: 3, col: 4 }, end: { row: 1, col: 2 } }),
+    ).toEqual({ start: { row: 1, col: 2 }, end: { row: 3, col: 4 } });
+    // 既に正規化済みなら不変。
+    expect(
+      normalizeCellRange({ start: { row: 1, col: 2 }, end: { row: 3, col: 4 } }),
+    ).toEqual({ start: { row: 1, col: 2 }, end: { row: 3, col: 4 } });
+  });
+
+  it('orders row / column ranges', () => {
+    expect(normalizeRowRange(5, 2)).toEqual({ startRow: 2, endRow: 5 });
+    expect(normalizeRowRange(2, 5)).toEqual({ startRow: 2, endRow: 5 });
+    expect(normalizeColumnRange(7, 3)).toEqual({ startCol: 3, endCol: 7 });
+    expect(normalizeColumnRange(3, 7)).toEqual({ startCol: 3, endCol: 7 });
+  });
+});
+
+describe('isSameCellCoord', () => {
+  it('treats null operands as not-equal', () => {
+    expect(isSameCellCoord(null, null)).toBe(false);
+    expect(isSameCellCoord({ row: 1, col: 1 }, null)).toBe(false);
+    expect(isSameCellCoord(null, { row: 1, col: 1 })).toBe(false);
+  });
+
+  it('compares row and col', () => {
+    expect(isSameCellCoord({ row: 2, col: 3 }, { row: 2, col: 3 })).toBe(true);
+    expect(isSameCellCoord({ row: 2, col: 3 }, { row: 2, col: 4 })).toBe(false);
+    expect(isSameCellCoord({ row: 2, col: 3 }, { row: 9, col: 3 })).toBe(false);
+  });
+});
+
+describe('selectIsActiveCell / selectIsEditingCell', () => {
+  it('matches only the exact coordinate', () => {
+    const state = makeState({
+      activeCell: { row: 2, col: 3 },
+      editingCell: { row: 4, col: 5 },
+    });
+    expect(selectIsActiveCell(state, 2, 3)).toBe(true);
+    expect(selectIsActiveCell(state, 2, 4)).toBe(false);
+    expect(selectIsActiveCell(makeState(), 0, 0)).toBe(false);
+
+    expect(selectIsEditingCell(state, 4, 5)).toBe(true);
+    expect(selectIsEditingCell(state, 4, 6)).toBe(false);
+    expect(selectIsEditingCell(makeState(), 0, 0)).toBe(false);
+  });
+});
+
+describe('buildSelectionSnapshot', () => {
+  it('returns kind:none for null selection', () => {
+    expect(buildSelectionSnapshot(null)).toEqual({ kind: 'none' });
+  });
+
+  it('normalizes reversed ranges into the snapshot', () => {
+    expect(
+      buildSelectionSnapshot({
+        type: 'cell',
+        range: { start: { row: 3, col: 4 }, end: { row: 1, col: 2 } },
+      }),
+    ).toEqual({ kind: 'cell', startRow: 1, endRow: 3, startCol: 2, endCol: 4 });
+
+    expect(
+      buildSelectionSnapshot({ type: 'row', startRow: 5, endRow: 2 }),
+    ).toEqual({ kind: 'row', startRow: 2, endRow: 5 });
+
+    expect(
+      buildSelectionSnapshot({ type: 'col', startCol: 7, endCol: 3 }),
+    ).toEqual({ kind: 'col', startCol: 3, endCol: 7 });
+  });
+});
+
+describe('buildSelectionSnapshot is equivalent to the selectIs* selectors', () => {
+  // 6x5 グリッド上で、各 selection について「スナップショット由来の判定」と
+  // 「selectIsCellSelected(state, ...)」が全セルで一致することを確認します。
+  const ROWS = 6;
+  const COLS = 5;
+
+  const selections: Array<{ label: string; selection: GridSelection }> = [
+    { label: 'null', selection: null },
+    {
+      label: 'cell (normalized)',
+      selection: {
+        type: 'cell',
+        range: { start: { row: 1, col: 1 }, end: { row: 3, col: 3 } },
+      },
+    },
+    {
+      label: 'cell (reversed)',
+      selection: {
+        type: 'cell',
+        range: { start: { row: 3, col: 3 }, end: { row: 1, col: 1 } },
+      },
+    },
+    {
+      label: 'cell (single)',
+      selection: {
+        type: 'cell',
+        range: { start: { row: 2, col: 2 }, end: { row: 2, col: 2 } },
+      },
+    },
+    { label: 'row', selection: { type: 'row', startRow: 1, endRow: 3 } },
+    {
+      label: 'row (reversed)',
+      selection: { type: 'row', startRow: 3, endRow: 1 },
+    },
+    { label: 'col', selection: { type: 'col', startCol: 1, endCol: 3 } },
+    {
+      label: 'col (reversed)',
+      selection: { type: 'col', startCol: 3, endCol: 1 },
+    },
+  ];
+
+  for (const { label, selection } of selections) {
+    it(`matches selectIsCellSelected for every cell — ${label}`, () => {
+      const state = makeState({ selection });
+      const snapshot = buildSelectionSnapshot(selection);
+      for (let row = 0; row < ROWS; row += 1) {
+        for (let col = 0; col < COLS; col += 1) {
+          expect(isSelectedFromSnapshot(snapshot, row, col)).toBe(
+            selectIsCellSelected(state, row, col),
+          );
+        }
+      }
+    });
+  }
+
+  it('row-kind snapshot matches selectIsRowSelected', () => {
+    const selection: GridSelection = { type: 'row', startRow: 3, endRow: 1 };
+    const state = makeState({ selection });
+    const snapshot = buildSelectionSnapshot(selection);
+    for (let row = 0; row < ROWS; row += 1) {
+      const fromSnapshot =
+        snapshot.kind === 'row' &&
+        row >= snapshot.startRow &&
+        row <= snapshot.endRow;
+      expect(fromSnapshot).toBe(selectIsRowSelected(state, row));
+    }
+    // cell / col 選択では行ヘッダー判定は常に false。
+    expect(
+      selectIsRowSelected(makeState({ selection: { type: 'col', startCol: 0, endCol: 2 } }), 0),
+    ).toBe(false);
+  });
+
+  it('col-kind snapshot matches selectIsColumnSelected', () => {
+    const selection: GridSelection = { type: 'col', startCol: 3, endCol: 1 };
+    const state = makeState({ selection });
+    const snapshot = buildSelectionSnapshot(selection);
+    for (let col = 0; col < COLS; col += 1) {
+      const fromSnapshot =
+        snapshot.kind === 'col' &&
+        col >= snapshot.startCol &&
+        col <= snapshot.endCol;
+      expect(fromSnapshot).toBe(selectIsColumnSelected(state, col));
+    }
+    // cell / row 選択では列ヘッダー判定は常に false。
+    expect(
+      selectIsColumnSelected(makeState({ selection: { type: 'row', startRow: 0, endRow: 2 } }), 0),
+    ).toBe(false);
+  });
+});
+</file>
+
+<file path="src/components/spreadsheet-grid/utils/excelColumnName.test.ts">
+// B: toExcelColumnName の境界 / 全域等価性テスト(純関数・node)。
+//   本番コードは無改修。0-based 列 index → Excel 列名(A, B, ... Z, AA, ...)の
+//   bijective base-26 変換が、独立した参照実装と全域(0..2000)で一致することを固定します。
+import { describe, it, expect } from 'vitest';
+import { toExcelColumnName } from './excelColumnName';
+
+// 参照実装(被テストと独立した bijective base-26)。負値は '' を返します。
+const referenceExcelColumnName = (index: number): string => {
+  if (index < 0) {
+    return '';
+  }
+  let n = index + 1;
+  let result = '';
+  while (n > 0) {
+    const remainder = (n - 1) % 26;
+    result = String.fromCharCode(65 + remainder) + result;
+    n = Math.floor((n - 1) / 26);
+  }
+  return result;
+};
+
+describe('toExcelColumnName (boundaries)', () => {
+  it('returns empty string for negative indices', () => {
+    expect(toExcelColumnName(-1)).toBe('');
+    expect(toExcelColumnName(-26)).toBe('');
+    expect(toExcelColumnName(-1000)).toBe('');
+  });
+
+  it('maps single-letter range A..Z', () => {
+    expect(toExcelColumnName(0)).toBe('A');
+    expect(toExcelColumnName(1)).toBe('B');
+    expect(toExcelColumnName(25)).toBe('Z');
+  });
+
+  it('maps the single→double letter boundary', () => {
+    expect(toExcelColumnName(26)).toBe('AA');
+    expect(toExcelColumnName(27)).toBe('AB');
+    expect(toExcelColumnName(51)).toBe('AZ');
+    expect(toExcelColumnName(52)).toBe('BA');
+  });
+
+  it('maps the double→triple letter boundary', () => {
+    expect(toExcelColumnName(701)).toBe('ZZ');
+    expect(toExcelColumnName(702)).toBe('AAA');
+    expect(toExcelColumnName(703)).toBe('AAB');
+  });
+});
+
+describe('toExcelColumnName (equivalence with reference over a full sweep)', () => {
+  it('matches the reference implementation for indices 0..2000', () => {
+    for (let i = 0; i <= 2000; i += 1) {
+      expect(toExcelColumnName(i)).toBe(referenceExcelColumnName(i));
+    }
+  });
+
+  it('produces only uppercase A..Z letters for non-negative indices', () => {
+    for (let i = 0; i <= 2000; i += 1) {
+      expect(toExcelColumnName(i)).toMatch(/^[A-Z]+$/);
+    }
+  });
+});
+</file>
+
 <file path="src/components/spreadsheet-grid/utils/excelColumnName.ts">
 // 追加: 0-based の列 index を Excel 形式 (A, B, ... AA, AB...) に変換します。
 export const toExcelColumnName = (columnIndex: number): string => {
@@ -2304,6 +2590,309 @@ export const yieldToMain = (): Promise<void> =>
     };
     channel.port2.postMessage(null);
   });
+</file>
+
+<file path="src/components/spreadsheet-grid/view/gridBarHelpers.test.ts">
+// B: gridBarHelpers の表示テキスト / 選択統計テスト(純関数・node)。
+//   本番コードは無改修。ツールバー / ステータスバーが見せる文字列(A1 整形・件数・
+//   フィルター/ソート要約)と getGridSelectionStats の cell/row/col 分岐を固定します。
+import { describe, it, expect } from 'vitest';
+import type { GridColumn, GridSelection } from '../model/gridTypes';
+import {
+  buildGridDerivedSummary,
+  formatGridCellLabel,
+  formatGridColumnSummary,
+  formatGridFilterSummary,
+  formatGridRowSummary,
+  formatGridSelectionLabel,
+  formatGridSelectionStatsLabel,
+  formatGridSortSummary,
+  getGridSelectionStats,
+} from './gridBarHelpers';
+
+type Row = { id: number };
+
+const makeCol = (key: string, title?: string): GridColumn<Row> => ({
+  key,
+  title,
+  width: 100,
+});
+
+const makeCols = (count: number): GridColumn<Row>[] =>
+  Array.from({ length: count }, (_, i) => makeCol(`c${i}`, `列${i}`));
+
+describe('formatGridCellLabel (A1 形式)', () => {
+  it('returns なし for null', () => {
+    expect(formatGridCellLabel(null)).toBe('なし');
+  });
+
+  it('formats column letter + 1-based row', () => {
+    expect(formatGridCellLabel({ row: 0, col: 0 })).toBe('A1');
+    expect(formatGridCellLabel({ row: 2, col: 0 })).toBe('A3');
+    expect(formatGridCellLabel({ row: 0, col: 26 })).toBe('AA1');
+    expect(formatGridCellLabel({ row: 4, col: 27 })).toBe('AB5');
+  });
+});
+
+describe('formatGridSelectionLabel', () => {
+  it('returns なし for null', () => {
+    expect(formatGridSelectionLabel(null)).toBe('なし');
+  });
+
+  it('formats cell selection (normalized regardless of corner order)', () => {
+    const normalized: GridSelection = {
+      type: 'cell',
+      range: { start: { row: 0, col: 0 }, end: { row: 1, col: 1 } },
+    };
+    const reversed: GridSelection = {
+      type: 'cell',
+      range: { start: { row: 1, col: 1 }, end: { row: 0, col: 0 } },
+    };
+    expect(formatGridSelectionLabel(normalized)).toBe('A1 - B2');
+    expect(formatGridSelectionLabel(reversed)).toBe('A1 - B2');
+  });
+
+  it('formats single-cell, row and col selections', () => {
+    expect(
+      formatGridSelectionLabel({
+        type: 'cell',
+        range: { start: { row: 2, col: 2 }, end: { row: 2, col: 2 } },
+      }),
+    ).toBe('C3 - C3');
+    expect(
+      formatGridSelectionLabel({ type: 'row', startRow: 2, endRow: 0 }),
+    ).toBe('Row 1 - 3');
+    expect(
+      formatGridSelectionLabel({ type: 'col', startCol: 2, endCol: 0 }),
+    ).toBe('Col A - C');
+  });
+});
+
+describe('formatGridRowSummary / formatGridColumnSummary', () => {
+  it('shows filtered / total counts', () => {
+    expect(
+      formatGridRowSummary({ rows: [{ id: 1 }, { id: 2 }, { id: 3 }] }, 2),
+    ).toBe('Rows: 2 / 3');
+  });
+
+  it('shows visible / total columns', () => {
+    expect(
+      formatGridColumnSummary({
+        columns: makeCols(5),
+        visibleColumns: makeCols(3),
+      }),
+    ).toBe('Columns: 3 / 5');
+  });
+});
+
+describe('getGridSelectionStats (cell / row / col 分岐)', () => {
+  it('returns zeros when nothing is selected', () => {
+    expect(
+      getGridSelectionStats({ selection: null, visibleColumns: makeCols(5) }, 100),
+    ).toEqual({
+      selectedCellCount: 0,
+      selectedRowCount: 0,
+      selectedColumnCount: 0,
+    });
+  });
+
+  it('cell selection counts rows x cols within the normalized range', () => {
+    expect(
+      getGridSelectionStats(
+        {
+          selection: {
+            type: 'cell',
+            range: { start: { row: 2, col: 2 }, end: { row: 0, col: 0 } },
+          },
+          visibleColumns: makeCols(5),
+        },
+        100,
+      ),
+    ).toEqual({
+      selectedCellCount: 9,
+      selectedRowCount: 3,
+      selectedColumnCount: 3,
+    });
+  });
+
+  it('row selection spans all visible columns', () => {
+    expect(
+      getGridSelectionStats(
+        {
+          selection: { type: 'row', startRow: 0, endRow: 1 },
+          visibleColumns: makeCols(5),
+        },
+        100,
+      ),
+    ).toEqual({
+      selectedCellCount: 10,
+      selectedRowCount: 2,
+      selectedColumnCount: 5,
+    });
+  });
+
+  it('col selection spans all filtered rows (count passed in)', () => {
+    expect(
+      getGridSelectionStats(
+        {
+          selection: { type: 'col', startCol: 0, endCol: 2 },
+          visibleColumns: makeCols(5),
+        },
+        100,
+      ),
+    ).toEqual({
+      selectedCellCount: 300,
+      selectedRowCount: 100,
+      selectedColumnCount: 3,
+    });
+  });
+
+  it('formatGridSelectionStatsLabel renders cells / rows', () => {
+    expect(
+      formatGridSelectionStatsLabel(
+        {
+          selection: {
+            type: 'cell',
+            range: { start: { row: 0, col: 0 }, end: { row: 2, col: 2 } },
+          },
+          visibleColumns: makeCols(5),
+        },
+        100,
+      ),
+    ).toBe('Cells: 9 / Rows: 3');
+  });
+});
+
+describe('formatGridFilterSummary (4 分岐 + 短縮)', () => {
+  it('none', () => {
+    expect(
+      formatGridFilterSummary({ globalFilterText: '', columnFilterValues: {} }),
+    ).toBe('Filter: なし');
+  });
+
+  it('global only', () => {
+    expect(
+      formatGridFilterSummary({
+        globalFilterText: 'abc',
+        columnFilterValues: {},
+      }),
+    ).toBe('Filter: Global("abc")');
+  });
+
+  it('column only (空文字の列は無効として数えない)', () => {
+    expect(
+      formatGridFilterSummary({
+        globalFilterText: '',
+        columnFilterValues: { c0: 'x', c1: '', c2: 'y' },
+      }),
+    ).toBe('Filter: 2列');
+  });
+
+  it('both global and columns', () => {
+    expect(
+      formatGridFilterSummary({
+        globalFilterText: 'abc',
+        columnFilterValues: { c0: 'x', c1: 'y' },
+      }),
+    ).toBe('Filter: Global("abc") + 2列');
+  });
+
+  it('truncates a long global filter preview to 16 chars + …', () => {
+    expect(
+      formatGridFilterSummary({
+        globalFilterText: 'abcdefghijklmnopqrstuvwxyz',
+        columnFilterValues: {},
+      }),
+    ).toBe('Filter: Global("abcdefghijklmnop…")');
+  });
+});
+
+describe('formatGridSortSummary', () => {
+  it('returns なし for empty sort state', () => {
+    expect(
+      formatGridSortSummary({ columns: makeCols(3), sortState: [] }),
+    ).toBe('Sort: なし');
+  });
+
+  it('formats a single sort entry with title and direction', () => {
+    const columns = [makeCol('amount', '金額')];
+    expect(
+      formatGridSortSummary({
+        columns,
+        sortState: [{ columnKey: 'amount', direction: 'asc' }],
+      }),
+    ).toBe('Sort: 金額 (昇順)');
+    expect(
+      formatGridSortSummary({
+        columns,
+        sortState: [{ columnKey: 'amount', direction: 'desc' }],
+      }),
+    ).toBe('Sort: 金額 (降順)');
+  });
+
+  it('joins multiple entries in priority order', () => {
+    const columns = [makeCol('amount', '金額'), makeCol('qty', '数量')];
+    expect(
+      formatGridSortSummary({
+        columns,
+        sortState: [
+          { columnKey: 'amount', direction: 'asc' },
+          { columnKey: 'qty', direction: 'desc' },
+        ],
+      }),
+    ).toBe('Sort: 金額 (昇順), 数量 (降順)');
+  });
+
+  it('falls back to the column key when the column is missing', () => {
+    expect(
+      formatGridSortSummary({
+        columns: [],
+        sortState: [{ columnKey: 'missing', direction: 'asc' }],
+      }),
+    ).toBe('Sort: missing (昇順)');
+  });
+});
+
+describe('buildGridDerivedSummary composes the individual helpers', () => {
+  it('matches the standalone helper outputs for the same context', () => {
+    const context = {
+      rows: [{ id: 1 }, { id: 2 }, { id: 3 }] as Row[],
+      columns: [makeCol('amount', '金額'), makeCol('qty', '数量')],
+      visibleColumns: [makeCol('amount', '金額')],
+      globalFilterText: 'foo',
+      columnFilterValues: { amount: 'x' } as Record<string, unknown>,
+      sortState: [{ columnKey: 'amount', direction: 'asc' as const }],
+      activeCell: { row: 2, col: 0 },
+      selection: {
+        type: 'cell' as const,
+        range: { start: { row: 0, col: 0 }, end: { row: 1, col: 1 } },
+      },
+    };
+    const filteredRowCount = 3;
+    const summary = buildGridDerivedSummary(context, filteredRowCount);
+
+    expect(summary.rowSummaryText).toBe(
+      formatGridRowSummary(context, filteredRowCount),
+    );
+    expect(summary.columnSummaryText).toBe(formatGridColumnSummary(context));
+    expect(summary.filterSummaryText).toBe(formatGridFilterSummary(context));
+    expect(summary.sortSummaryText).toBe(formatGridSortSummary(context));
+    expect(summary.activeCellLabel).toBe(
+      formatGridCellLabel(context.activeCell),
+    );
+    expect(summary.selectionLabel).toBe(
+      formatGridSelectionLabel(context.selection),
+    );
+    expect(summary.selectionStats).toEqual(
+      getGridSelectionStats(context, filteredRowCount),
+    );
+    expect(summary.hasGlobalFilter).toBe(true);
+    expect(summary.activeColumnFilterCount).toBe(1);
+    expect(summary.hasAnyFilter).toBe(true);
+    expect(summary.hasSorting).toBe(true);
+    expect(summary.sortedColumnLabel).toBe('金額');
+  });
+});
 </file>
 
 <file path="src/index.css">
@@ -2519,6 +3108,7 @@ import {
   WINDOW_BASE_CHUNK_PX,
   clientYToRowIndex,
   computeVerticalGeometry,
+  createUniformRowMetrics,
   logicalToPhysicalScrollTop,
   physicalToLogicalScrollTop,
   type ComputeVerticalGeometryArgs,
@@ -2853,10 +3443,11 @@ describe('clientYToRowIndex (inverse of body-content row band)', () => {
   it('reduces to floor(y / rowHeight) when scaleFactor === 1', () => {
     const rowHeight = 38;
     const rowCount = 1000;
+    const metrics = createUniformRowMetrics(rowCount, rowHeight);
     for (let i = 0; i < 50; i += 1) {
       for (const delta of [0, 1, rowHeight - 1]) {
         const y = i * rowHeight + delta;
-        expect(clientYToRowIndex(y, 0, 1, rowHeight, rowCount)).toBe(i);
+        expect(clientYToRowIndex(y, 0, 1, metrics)).toBe(i);
       }
     }
   });
@@ -2867,12 +3458,13 @@ describe('clientYToRowIndex (inverse of body-content row band)', () => {
     const scaleFactor = 1.27;
     const scrollTop = 1_000_000;
     const d = scrollTop * (1 - scaleFactor); // <= 0
+    const metrics = createUniformRowMetrics(rowCount, rowHeight);
     for (const i of [0, 1, 100, 5000, rowCount - 1]) {
       for (const delta of [0, rowHeight / 2, rowHeight - 1]) {
         const y = i * rowHeight + d + delta;
-        expect(
-          clientYToRowIndex(y, scrollTop, scaleFactor, rowHeight, rowCount),
-        ).toBe(clamp(i, 0, rowCount - 1));
+        expect(clientYToRowIndex(y, scrollTop, scaleFactor, metrics)).toBe(
+          clamp(i, 0, rowCount - 1),
+        );
       }
     }
   });
@@ -2880,8 +3472,70 @@ describe('clientYToRowIndex (inverse of body-content row band)', () => {
   it('clamps out-of-range y into [0, rowCount-1]', () => {
     const rowHeight = 38;
     const rowCount = 10;
-    expect(clientYToRowIndex(-9999, 0, 1, rowHeight, rowCount)).toBe(0);
-    expect(clientYToRowIndex(9_999_999, 0, 1, rowHeight, rowCount)).toBe(9);
+    const metrics = createUniformRowMetrics(rowCount, rowHeight);
+    expect(clientYToRowIndex(-9999, 0, 1, metrics)).toBe(0);
+    expect(clientYToRowIndex(9_999_999, 0, 1, metrics)).toBe(9);
+  });
+});
+
+// C0(auto-height シーム): createUniformRowMetrics の各 resolver が、移行前に overlay /
+//   ヒットテストが直書きしていた算術(index*rowHeight 等)とバイト等価であることのガードです。
+//   将来の auto-height(prefix-sum 実装)を入れても uniform 経路はここで一致が担保されます。
+describe('createUniformRowMetrics (no-op equivalence with pre-seam arithmetic)', () => {
+  const cases: Array<{ rowCount: number; rowHeight: number }> = [];
+  for (const rowCount of [0, 1, 2, 10, 1000, 500_000, 1_000_000]) {
+    for (const rowHeight of [1, 20, 36, 38, 42]) {
+      cases.push({ rowCount, rowHeight });
+    }
+  }
+
+  it(`covers >= 35 cases (actual ${cases.length})`, () => {
+    expect(cases.length).toBeGreaterThanOrEqual(35);
+  });
+
+  it('rowTop(i) === i * rowHeight and totalBodyHeight === rowCount * rowHeight', () => {
+    for (const { rowCount, rowHeight } of cases) {
+      const metrics = createUniformRowMetrics(rowCount, rowHeight);
+      expect(metrics.rowCount).toBe(rowCount);
+      expect(metrics.totalBodyHeight).toBe(rowCount * rowHeight);
+      for (const i of [0, 1, 2, 7, 123, Math.max(rowCount - 1, 0)]) {
+        if (i >= rowCount && rowCount > 0) continue;
+        expect(metrics.rowTop(i)).toBe(i * rowHeight);
+      }
+    }
+  });
+
+  it('rowsHeight(a, b) === (b - a + 1) * rowHeight (inclusive span)', () => {
+    for (const { rowCount, rowHeight } of cases) {
+      if (rowCount === 0) continue;
+      const metrics = createUniformRowMetrics(rowCount, rowHeight);
+      const last = rowCount - 1;
+      for (const [a, b] of [
+        [0, 0],
+        [0, last],
+        [Math.min(3, last), Math.min(3, last)],
+        [Math.min(2, last), last],
+      ] as Array<[number, number]>) {
+        expect(metrics.rowsHeight(a, b)).toBe((b - a + 1) * rowHeight);
+      }
+    }
+  });
+
+  it('rowAtContentY(y) === clamp(floor(y / rowHeight), 0, rowCount-1)', () => {
+    for (const { rowCount, rowHeight } of cases) {
+      const metrics = createUniformRowMetrics(rowCount, rowHeight);
+      for (const i of [-5, 0, 1, 50, rowCount - 1, rowCount, rowCount + 10]) {
+        for (const delta of [0, rowHeight / 2, rowHeight - 1]) {
+          const y = i * rowHeight + delta;
+          const expected = clamp(
+            Math.floor(y / rowHeight),
+            0,
+            Math.max(rowCount - 1, 0),
+          );
+          expect(metrics.rowAtContentY(y)).toBe(expected);
+        }
+      }
+    }
   });
 });
 </file>
@@ -2980,6 +3634,40 @@ export type ComputeVerticalGeometryArgs = {
   maxBodyPx: number;
 };
 
+// 行メトリクス(スクロール非依存)。行の content-top 位置・区間高さ・content-y→行 を解決します。
+//   overlay(active cell / selection)の top/height とヒットテストの行解決がここを通ります。
+//   ★スクロール非依存(rowCount / rowHeight のみ依存)。overlay の useMemo を scrollTop に結合させず、
+//     縦スクロールで再レンダーさせない(11-A の memo 最適化を維持)ための分離です。computeVerticalGeometry
+//     が返す per-scroll の窓(rows / translateY)とは別軸で、selection 等が変わったときだけ作り直します。
+//   将来の auto-height は同じ RowMetrics 契約を prefix-sum + 二分探索で実装し、消費側を不変に保ちます。
+export type RowMetrics = {
+  // 行数(= 表示対象の行数)。rowAtContentY の clamp 上限に使います。
+  rowCount: number;
+  // body content-top 基準の行 top(headerHeight 抜き)。= prefix(index)。
+  rowTop(index: number): number;
+  // 行区間 [startInclusive, endInclusive] の高さ合計。= prefix(end+1) - prefix(start)。
+  rowsHeight(startInclusive: number, endInclusive: number): number;
+  // ボディ論理全高(= rowTop(rowCount))。col 選択の全面高さ等に使用。
+  totalBodyHeight: number;
+  // content-top 基準 y(論理)→ 行 index([0, rowCount-1] へ clamp)。
+  rowAtContentY(y: number): number;
+};
+
+// uniform 行高の RowMetrics を生成します(純算術)。
+//   各 resolver は移行前の呼び出し箇所(index*rowHeight 等)とバイト等価です。
+export const createUniformRowMetrics = (
+  rowCount: number,
+  rowHeight: number,
+): RowMetrics => ({
+  rowCount,
+  rowTop: (index) => index * rowHeight,
+  rowsHeight: (startInclusive, endInclusive) =>
+    (endInclusive - startInclusive + 1) * rowHeight,
+  totalBodyHeight: rowCount * rowHeight,
+  rowAtContentY: (y) =>
+    Math.min(Math.max(Math.floor(y / rowHeight), 0), Math.max(rowCount - 1, 0)),
+});
+
 // 物理 scrollTop → 論理 scrollTop です(active cell 自動スクロールの現在位置換算に使用)。
 export const physicalToLogicalScrollTop = (
   physical: number,
@@ -2996,16 +3684,16 @@ export const logicalToPhysicalScrollTop = (
 //   スクロール量 S_phys を含む)→ 行 index。
 //   論理 y = y - D(D = S_phys * (1 - scaleFactor))で求めます。scaleFactor=1 のとき D=0 で
 //   従来式(floor(y / rowHeight))と一致します。
+//   変更(auto-height シーム): 物理→論理の d 補正はスクロール依存なのでここに残し、論理 content-y の
+//   行解決のみ RowMetrics.rowAtContentY へ委譲します(uniform では従来式と一致)。
 export const clientYToRowIndex = (
   yRelativeToBodyTop: number,
   scrollTop: number,
   scaleFactor: number,
-  rowHeight: number,
-  rowCount: number,
+  rowMetrics: RowMetrics,
 ): number => {
   const d = scrollTop * (1 - scaleFactor);
-  const row = Math.floor((yRelativeToBodyTop - d) / rowHeight);
-  return Math.min(Math.max(row, 0), Math.max(rowCount - 1, 0));
+  return rowMetrics.rowAtContentY(yRelativeToBodyTop - d);
 };
 
 export const computeVerticalGeometry = ({
@@ -9937,6 +10625,7 @@ import {
 } from '../logic/geometry';
 // 追加(scroll-space 仮想化): clientY→row の物理→論理換算(scaleFactor=1 で従来式と一致)。
 import { clientYToRowIndex } from '../logic/verticalGeometry';
+import type { RowMetrics } from '../logic/verticalGeometry';
 
 type UseGridPointerInteractionsArgs<T> = {
   gridRootRef: RefObject<HTMLDivElement | null>;
@@ -9974,7 +10663,8 @@ type UseGridPointerInteractionsArgs<T> = {
   centerLeadingWidth: number;
   rightLeadingWidth: number;
   headerHeight: number;
-  rowHeight: number;
+  // 変更(auto-height シーム): ヒットテストの行解決は RowMetrics 経由(uniform で従来の floor(y/rowHeight) と一致)。
+  rowMetrics: RowMetrics;
   // 追加(scroll-space 仮想化): clientY→row の物理→論理換算倍率(scaleFactor=1 で従来式)。
   verticalScaleFactor: number;
 };
@@ -10001,7 +10691,7 @@ export const useGridPointerInteractions = <T,>({
   centerLeadingWidth,
   rightLeadingWidth,
   headerHeight,
-  rowHeight,
+  rowMetrics,
   verticalScaleFactor,
 }: UseGridPointerInteractionsArgs<T>) => {
   // 追加(11-A2): dragState の最新値を ref で保持します(latest-ref パターン)。
@@ -10061,14 +10751,13 @@ export const useGridPointerInteractions = <T,>({
       const centerRect = centerEl.getBoundingClientRect();
       const y = centerEl.scrollTop + clientY - centerRect.top - headerHeight;
       // 変更(scroll-space 仮想化): y は moving rect 経由で物理スクロール量を含むため、
-      //   論理行へは clientYToRowIndex(y, 実 scrollTop, scaleFactor) で換算します
-      //   (scaleFactor=1 のとき従来の floor(y / rowHeight) と一致)。
+      //   論理行へは clientYToRowIndex(y, 実 scrollTop, scaleFactor, rowMetrics) で換算します
+      //   (scaleFactor=1 のとき従来の floor(y / rowHeight) と一致)。rowMetrics.rowCount で clamp。
       const row = clientYToRowIndex(
         y,
         scrollContainerRef.current?.scrollTop ?? 0,
         verticalScaleFactor,
-        rowHeight,
-        filteredRowsLength,
+        rowMetrics,
       );
 
       // 横方向（ペイン判定）。
@@ -10127,7 +10816,7 @@ export const useGridPointerInteractions = <T,>({
       centerLeadingWidth,
       rightLeadingWidth,
       headerHeight,
-      rowHeight,
+      rowMetrics,
       verticalScaleFactor,
     ],
   );
@@ -13442,7 +14131,9 @@ import {
 import {
   MAX_BODY_PX,
   computeVerticalGeometry,
+  createUniformRowMetrics,
 } from './logic/verticalGeometry';
+import type { RowMetrics } from './logic/verticalGeometry';
 import {
   // ソートは order(Int32Array)版に一本化しています
   //   (DS-2 で差し替え、旧オブジェクト配列版は DS-3-8 で削除)。
@@ -14173,6 +14864,14 @@ export function SpreadsheetGrid<T extends object>({
   //   用いるため activeCellPlacement(下記)はオフセットせず、描画オーバーレイにのみ渡します。
   const overlayBaseOffset = verticalGeometry.windowBaseOffsetPx;
 
+  // 行メトリクス(スクロール非依存)。overlay(active cell / selection)の top/height と
+  //   ヒットテスト(useGridPointerInteractions)の行解決が共有します。verticalGeometry とは別軸で、
+  //   selection 等が変わったときだけ作り直し、縦スクロールでは作り直しません(11-A の memo 維持)。
+  const rowMetrics: RowMetrics = useMemo(
+    () => createUniformRowMetrics(viewRowCount, rowHeight),
+    [viewRowCount, rowHeight],
+  );
+
   // 追加(10-C): 各ペインで実際に描画する列エントリ群です。
   //             中央ペインは仮想化済みの部分集合、固定ペインは全エントリを描画します。
   const centerRenderEntries = useMemo<PaneColumnEntry<T>[]>(
@@ -14210,12 +14909,12 @@ export function SpreadsheetGrid<T extends object>({
       pane: single.pane,
       rect: {
         left: single.extent.start,
-        top: row * rowHeight,
+        top: rowMetrics.rowTop(row),
         width: single.extent.width,
-        height: rowHeight,
+        height: rowMetrics.rowsHeight(row, row),
       },
     };
-  }, [uiState.activeCell, viewRowCount, paneLayout, rowHeight]);
+  }, [uiState.activeCell, viewRowCount, paneLayout, rowMetrics]);
 
   // 追加(10-E): viewport sync（中央ペインの自動スクロール）専用の active cell 矩形です。
   //             active cell が中央ペインにあるときだけ「中央ペインローカル座標」で返します。
@@ -14307,7 +15006,8 @@ export function SpreadsheetGrid<T extends object>({
     centerLeadingWidth,
     rightLeadingWidth,
     headerHeight,
-    rowHeight,
+    // 変更(auto-height シーム): ヒットテストの行解決は rowMetrics 経由(uniform で従来式と一致)。
+    rowMetrics,
     // 追加(scroll-space 仮想化): ヒットテスト clientY→row の物理→論理換算に使います。
     verticalScaleFactor,
   });
@@ -14468,9 +15168,11 @@ export function SpreadsheetGrid<T extends object>({
       );
       return {
         extents,
-        top: normalizedRange.start.row * rowHeight,
-        height:
-          (normalizedRange.end.row - normalizedRange.start.row + 1) * rowHeight,
+        top: rowMetrics.rowTop(normalizedRange.start.row),
+        height: rowMetrics.rowsHeight(
+          normalizedRange.start.row,
+          normalizedRange.end.row,
+        ),
       };
     }
 
@@ -14483,9 +15185,11 @@ export function SpreadsheetGrid<T extends object>({
       const extents = computeFullWidthPaneExtents(paneLayout);
       return {
         extents,
-        top: normalizedRange.startRow * rowHeight,
-        height:
-          (normalizedRange.endRow - normalizedRange.startRow + 1) * rowHeight,
+        top: rowMetrics.rowTop(normalizedRange.startRow),
+        height: rowMetrics.rowsHeight(
+          normalizedRange.startRow,
+          normalizedRange.endRow,
+        ),
       };
     }
 
@@ -14502,9 +15206,9 @@ export function SpreadsheetGrid<T extends object>({
     return {
       extents,
       top: 0,
-      height: viewRowCount * rowHeight,
+      height: rowMetrics.totalBodyHeight,
     };
-  }, [uiState.selection, paneLayout, rowHeight, viewRowCount]);
+  }, [uiState.selection, paneLayout, rowMetrics]);
 
   // 追加(10-D): 指定ペインの選択矩形（ペインローカル）を返します。該当列が無ければ null です。
   const selectionRectForPane = useCallback(

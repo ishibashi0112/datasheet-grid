@@ -31,6 +31,7 @@ import {
 } from '../logic/geometry';
 // 追加(scroll-space 仮想化): clientY→row の物理→論理換算(scaleFactor=1 で従来式と一致)。
 import { clientYToRowIndex } from '../logic/verticalGeometry';
+import type { RowMetrics } from '../logic/verticalGeometry';
 
 type UseGridPointerInteractionsArgs<T> = {
   gridRootRef: RefObject<HTMLDivElement | null>;
@@ -68,7 +69,8 @@ type UseGridPointerInteractionsArgs<T> = {
   centerLeadingWidth: number;
   rightLeadingWidth: number;
   headerHeight: number;
-  rowHeight: number;
+  // 変更(auto-height シーム): ヒットテストの行解決は RowMetrics 経由(uniform で従来の floor(y/rowHeight) と一致)。
+  rowMetrics: RowMetrics;
   // 追加(scroll-space 仮想化): clientY→row の物理→論理換算倍率(scaleFactor=1 で従来式)。
   verticalScaleFactor: number;
 };
@@ -95,7 +97,7 @@ export const useGridPointerInteractions = <T,>({
   centerLeadingWidth,
   rightLeadingWidth,
   headerHeight,
-  rowHeight,
+  rowMetrics,
   verticalScaleFactor,
 }: UseGridPointerInteractionsArgs<T>) => {
   // 追加(11-A2): dragState の最新値を ref で保持します(latest-ref パターン)。
@@ -155,14 +157,13 @@ export const useGridPointerInteractions = <T,>({
       const centerRect = centerEl.getBoundingClientRect();
       const y = centerEl.scrollTop + clientY - centerRect.top - headerHeight;
       // 変更(scroll-space 仮想化): y は moving rect 経由で物理スクロール量を含むため、
-      //   論理行へは clientYToRowIndex(y, 実 scrollTop, scaleFactor) で換算します
-      //   (scaleFactor=1 のとき従来の floor(y / rowHeight) と一致)。
+      //   論理行へは clientYToRowIndex(y, 実 scrollTop, scaleFactor, rowMetrics) で換算します
+      //   (scaleFactor=1 のとき従来の floor(y / rowHeight) と一致)。rowMetrics.rowCount で clamp。
       const row = clientYToRowIndex(
         y,
         scrollContainerRef.current?.scrollTop ?? 0,
         verticalScaleFactor,
-        rowHeight,
-        filteredRowsLength,
+        rowMetrics,
       );
 
       // 横方向（ペイン判定）。
@@ -221,7 +222,7 @@ export const useGridPointerInteractions = <T,>({
       centerLeadingWidth,
       rightLeadingWidth,
       headerHeight,
-      rowHeight,
+      rowMetrics,
       verticalScaleFactor,
     ],
   );

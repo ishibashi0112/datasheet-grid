@@ -87,7 +87,9 @@ import {
 import {
   MAX_BODY_PX,
   computeVerticalGeometry,
+  createUniformRowMetrics,
 } from './logic/verticalGeometry';
+import type { RowMetrics } from './logic/verticalGeometry';
 import {
   // ソートは order(Int32Array)版に一本化しています
   //   (DS-2 で差し替え、旧オブジェクト配列版は DS-3-8 で削除)。
@@ -818,6 +820,14 @@ export function SpreadsheetGrid<T extends object>({
   //   用いるため activeCellPlacement(下記)はオフセットせず、描画オーバーレイにのみ渡します。
   const overlayBaseOffset = verticalGeometry.windowBaseOffsetPx;
 
+  // 行メトリクス(スクロール非依存)。overlay(active cell / selection)の top/height と
+  //   ヒットテスト(useGridPointerInteractions)の行解決が共有します。verticalGeometry とは別軸で、
+  //   selection 等が変わったときだけ作り直し、縦スクロールでは作り直しません(11-A の memo 維持)。
+  const rowMetrics: RowMetrics = useMemo(
+    () => createUniformRowMetrics(viewRowCount, rowHeight),
+    [viewRowCount, rowHeight],
+  );
+
   // 追加(10-C): 各ペインで実際に描画する列エントリ群です。
   //             中央ペインは仮想化済みの部分集合、固定ペインは全エントリを描画します。
   const centerRenderEntries = useMemo<PaneColumnEntry<T>[]>(
@@ -855,12 +865,12 @@ export function SpreadsheetGrid<T extends object>({
       pane: single.pane,
       rect: {
         left: single.extent.start,
-        top: row * rowHeight,
+        top: rowMetrics.rowTop(row),
         width: single.extent.width,
-        height: rowHeight,
+        height: rowMetrics.rowsHeight(row, row),
       },
     };
-  }, [uiState.activeCell, viewRowCount, paneLayout, rowHeight]);
+  }, [uiState.activeCell, viewRowCount, paneLayout, rowMetrics]);
 
   // 追加(10-E): viewport sync（中央ペインの自動スクロール）専用の active cell 矩形です。
   //             active cell が中央ペインにあるときだけ「中央ペインローカル座標」で返します。
@@ -952,7 +962,8 @@ export function SpreadsheetGrid<T extends object>({
     centerLeadingWidth,
     rightLeadingWidth,
     headerHeight,
-    rowHeight,
+    // 変更(auto-height シーム): ヒットテストの行解決は rowMetrics 経由(uniform で従来式と一致)。
+    rowMetrics,
     // 追加(scroll-space 仮想化): ヒットテスト clientY→row の物理→論理換算に使います。
     verticalScaleFactor,
   });
@@ -1113,9 +1124,11 @@ export function SpreadsheetGrid<T extends object>({
       );
       return {
         extents,
-        top: normalizedRange.start.row * rowHeight,
-        height:
-          (normalizedRange.end.row - normalizedRange.start.row + 1) * rowHeight,
+        top: rowMetrics.rowTop(normalizedRange.start.row),
+        height: rowMetrics.rowsHeight(
+          normalizedRange.start.row,
+          normalizedRange.end.row,
+        ),
       };
     }
 
@@ -1128,9 +1141,11 @@ export function SpreadsheetGrid<T extends object>({
       const extents = computeFullWidthPaneExtents(paneLayout);
       return {
         extents,
-        top: normalizedRange.startRow * rowHeight,
-        height:
-          (normalizedRange.endRow - normalizedRange.startRow + 1) * rowHeight,
+        top: rowMetrics.rowTop(normalizedRange.startRow),
+        height: rowMetrics.rowsHeight(
+          normalizedRange.startRow,
+          normalizedRange.endRow,
+        ),
       };
     }
 
@@ -1147,9 +1162,9 @@ export function SpreadsheetGrid<T extends object>({
     return {
       extents,
       top: 0,
-      height: viewRowCount * rowHeight,
+      height: rowMetrics.totalBodyHeight,
     };
-  }, [uiState.selection, paneLayout, rowHeight, viewRowCount]);
+  }, [uiState.selection, paneLayout, rowMetrics]);
 
   // 追加(10-D): 指定ペインの選択矩形（ペインローカル）を返します。該当列が無ければ null です。
   const selectionRectForPane = useCallback(
