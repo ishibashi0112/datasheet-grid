@@ -813,6 +813,10 @@ export function SpreadsheetGrid<T extends object>({
       : undefined;
   // ヒットテスト/viewport-sync の物理↔論理換算に渡す倍率です。
   const verticalScaleFactor = verticalGeometry.scaleFactor;
+  // overlay の絶対論理 top から差し引く描画ウィンドウ基準オフセット(px)。no-op では 0。
+  //   行 start には verticalGeometry 側で反映済み。auto-scroll の目標計算は絶対論理 top を
+  //   用いるため activeCellPlacement(下記)はオフセットせず、描画オーバーレイにのみ渡します。
+  const overlayBaseOffset = verticalGeometry.windowBaseOffsetPx;
 
   // 追加(10-C): 各ペインで実際に描画する列エントリ群です。
   //             中央ペインは仮想化済みの部分集合、固定ペインは全エントリを描画します。
@@ -2526,6 +2530,15 @@ export function SpreadsheetGrid<T extends object>({
               <div
                 style={{
                   position: 'relative',
+                  // 追加(scroll-space 仮想化 修正2): scaling 時の wrapper translateY は正値
+                  //   (最大 ≈ physicalBodyHeight)になり、CSS transform はスクロールコンテナの
+                  //   scrollable-overflow を下方向へ広げます。その結果、最終行の下に余分な
+                  //   スクロール領域(余白)が生じます。overflow: clip でこの relative ボックス
+                  //   ([0, headerHeight+physicalBodyHeight])外への波及を遮断します。
+                  //   overflow: clip はスクロールコンテナを生成しないため sticky ヘッダーには
+                  //   影響せず、ヘッダー/行/オーバーレイはいずれもこのボックス内に収まるため
+                  //   視覚的なクリップも起きません。
+                  overflow: 'clip',
                   width: leftPaneTotalWidth,
                   minWidth: leftPaneTotalWidth,
                   height: headerHeight + physicalBodyHeight,
@@ -2584,18 +2597,21 @@ export function SpreadsheetGrid<T extends object>({
                 <SelectionOverlay
                   rect={selectionRectForPane('left')}
                   headerHeight={headerHeight}
+                  baseOffset={overlayBaseOffset}
                   leadingWidth={leftLeadingWidth}
                 />
 
                 <ActiveCellOverlay
                   rect={activeCellRectForPane('left')}
                   headerHeight={headerHeight}
+                  baseOffset={overlayBaseOffset}
                   leadingWidth={leftLeadingWidth}
                 />
 
                 <CellEditorLayer
                   rect={editorRectForPane('left')}
                   headerHeight={headerHeight}
+                  baseOffset={overlayBaseOffset}
                   leadingWidth={leftLeadingWidth}
                   initialValue={editorInitialValue}
                   onCommit={commitEdit}
@@ -2651,6 +2667,9 @@ export function SpreadsheetGrid<T extends object>({
             <div
               style={{
                 position: 'relative',
+                // 追加(scroll-space 仮想化 修正2): wrapper の正値 translateY による
+                //   scrollable-overflow 拡張(末尾下の余白)を遮断するクリップ(詳細は左ペイン参照)。
+                overflow: 'clip',
                 width: centerContentWidth,
                 minWidth: centerContentWidth,
                 height: headerHeight + physicalBodyHeight,
@@ -2708,18 +2727,21 @@ export function SpreadsheetGrid<T extends object>({
                 <SelectionOverlay
                   rect={selectionRectForPane('center')}
                   headerHeight={headerHeight}
+                  baseOffset={overlayBaseOffset}
                   leadingWidth={centerLeadingWidth}
                 />
 
                 <ActiveCellOverlay
                   rect={activeCellRectForPane('center')}
                   headerHeight={headerHeight}
+                  baseOffset={overlayBaseOffset}
                   leadingWidth={centerLeadingWidth}
                 />
 
                 <CellEditorLayer
                   rect={editorRectForPane('center')}
                   headerHeight={headerHeight}
+                  baseOffset={overlayBaseOffset}
                   leadingWidth={centerLeadingWidth}
                   initialValue={editorInitialValue}
                   onCommit={commitEdit}
@@ -2770,6 +2792,9 @@ export function SpreadsheetGrid<T extends object>({
               <div
                 style={{
                   position: 'relative',
+                  // 追加(scroll-space 仮想化 修正2): wrapper の正値 translateY による
+                  //   scrollable-overflow 拡張(末尾下の余白)を遮断するクリップ(詳細は左ペイン参照)。
+                  overflow: 'clip',
                   width: rightPaneTotalWidth,
                   minWidth: rightPaneTotalWidth,
                   height: headerHeight + physicalBodyHeight,
@@ -2825,18 +2850,21 @@ export function SpreadsheetGrid<T extends object>({
                 <SelectionOverlay
                   rect={selectionRectForPane('right')}
                   headerHeight={headerHeight}
+                  baseOffset={overlayBaseOffset}
                   leadingWidth={rightLeadingWidth}
                 />
 
                 <ActiveCellOverlay
                   rect={activeCellRectForPane('right')}
                   headerHeight={headerHeight}
+                  baseOffset={overlayBaseOffset}
                   leadingWidth={rightLeadingWidth}
                 />
 
                 <CellEditorLayer
                   rect={editorRectForPane('right')}
                   headerHeight={headerHeight}
+                  baseOffset={overlayBaseOffset}
                   leadingWidth={rightLeadingWidth}
                   initialValue={editorInitialValue}
                   onCommit={commitEdit}

@@ -9,12 +9,18 @@
 import { describe, it, expect } from 'vitest';
 import {
   MAX_BODY_PX,
+  WINDOW_BASE_CHUNK_PX,
   clientYToRowIndex,
   computeVerticalGeometry,
   logicalToPhysicalScrollTop,
   physicalToLogicalScrollTop,
   type ComputeVerticalGeometryArgs,
 } from './verticalGeometry';
+
+// transform/レイアウトが安定してペイントされる float32 の正確整数域(2^24)。
+//   行/オーバーレイの配置値・wrapper の translateY はこの範囲内に収まる必要があります
+//   (超えると 1M 行で末尾行がペイントされなくなる回帰)。
+const FLOAT32_SAFE_PX = 1 << 24;
 
 const clamp = (value: number, min: number, max: number): number =>
   Math.min(Math.max(value, min), max);
@@ -51,16 +57,50 @@ const checkInvariants = (args: ComputeVerticalGeometryArgs): void => {
     'physicalBodyHeight',
   );
   assert(geometry.scaleFactor >= 1, 'scaleFactor >= 1');
-  // translateY = clampedScrollTop * (1 - scaleFactor) <= 0。
-  assert(geometry.translateY <= 1e-6, 'translateY <= 0');
 
-  // 窓は連続・[0,rowCount) 内・rowIndexSet と整合。
+  // 描画ウィンドウ基準オフセット: 0(no-op) または WINDOW_BASE_CHUNK_PX の非負整数倍(scaling)。
+  assert(geometry.windowBaseOffsetPx >= 0, 'windowBaseOffsetPx >= 0');
+  assert(
+    geometry.windowBaseOffsetPx % WINDOW_BASE_CHUNK_PX === 0,
+    'windowBaseOffsetPx is a multiple of WINDOW_BASE_CHUNK_PX',
+  );
+
+  // 物理↔論理スクロール(画面座標の不変性チェック・可視帯被覆で再利用)。
+  const clampedScrollTop = clamp(scrollTop, 0, physicalMax);
+  const logicalScrollTop = clampedScrollTop * geometry.scaleFactor;
+
+  // 有界性(回帰ガード): wrapper の translateY は float32 の正確整数域に収まる。
+  //   これを超えると巨大 transform で 1M 行の末尾行がペイントされなくなる(本修正が直したバグ)。
+  assert(
+    Math.abs(geometry.translateY) < FLOAT32_SAFE_PX,
+    'translateY within float32-safe range',
+  );
+
+  // 窓は連続・[0,rowCount) 内・rowIndexSet と整合。row.start は基準オフセット相対。
   for (let k = 0; k < geometry.rows.length; k += 1) {
     const row = geometry.rows[k];
     assert(row.index >= 0 && row.index < rowCount, 'row.index in range');
+    // start = 絶対論理 top - windowBaseOffsetPx。no-op では windowBaseOffsetPx=0 で従来式と一致。
     assert(
-      row.start === headerHeight + row.index * rowHeight,
-      'row.start === headerHeight + index*rowHeight',
+      row.start ===
+        headerHeight + row.index * rowHeight - geometry.windowBaseOffsetPx,
+      'row.start === headerHeight + index*rowHeight - windowBaseOffsetPx',
+    );
+    // 有界性(回帰ガード): per-row の配置値も float32 安全域に収まる。
+    assert(
+      Math.abs(row.start) < FLOAT32_SAFE_PX,
+      'row.start within float32-safe range',
+    );
+    // 画面座標の不変性(等価性の本質): wrapper(translateY) + 行(start) のスクロール内位置は、
+    //   基準オフセットの有無に関わらず
+    //   「(clampedScrollTop - logicalScrollTop) + headerHeight + index*rowHeight」
+    //   (= 旧 translateY + 旧 start)と一致する。
+    const sceneTop = geometry.translateY + row.start;
+    const expectedSceneTop =
+      clampedScrollTop - logicalScrollTop + headerHeight + row.index * rowHeight;
+    assert(
+      Math.abs(sceneTop - expectedSceneTop) < 1e-3,
+      'scene position invariant (translateY + start)',
     );
     if (k > 0) {
       assert(
@@ -79,13 +119,12 @@ const checkInvariants = (args: ComputeVerticalGeometryArgs): void => {
   if (isNoop) {
     assert(geometry.scaleFactor === 1, 'no-op scaleFactor === 1');
     assert(geometry.translateY === 0, 'no-op translateY === 0');
+    assert(geometry.windowBaseOffsetPx === 0, 'no-op windowBaseOffsetPx === 0');
   }
 
   // 可視帯の被覆: 論理可視域の先頭/末尾行が窓に含まれる(overscan が上下マージンを賄う)。
   //   viewportHeight=0 は可視行が存在しないため対象外。
   if (rowCount > 0 && viewportHeight > 0) {
-    const clampedScrollTop = clamp(scrollTop, 0, physicalMax);
-    const logicalScrollTop = clampedScrollTop * geometry.scaleFactor;
     const firstVisible = clamp(
       Math.floor(logicalScrollTop / rowHeight),
       0,
@@ -202,6 +241,7 @@ describe('computeVerticalGeometry (no-op equivalence with old uniform virtualize
     });
     expect(geometry.scaleFactor).toBe(1);
     expect(geometry.translateY).toBe(0);
+    expect(geometry.windowBaseOffsetPx).toBe(0);
     for (const row of geometry.rows) {
       expect(row.start).toBe(42 + row.index * 38);
     }
@@ -236,6 +276,69 @@ describe('computeVerticalGeometry (scaling activation at App defaults)', () => {
     });
     expect(geometry.scaleFactor).toBe(1);
     expect(geometry.translateY).toBe(0);
+  });
+});
+
+describe('computeVerticalGeometry (1M bottom: bounded transforms regression guard)', () => {
+  // 本修正が直したバグ: 1M 行で scaling 起動時、行/オーバーレイを絶対論理 top(最大 38M)へ
+  //   置くと float32 安全域(2^24)を超え、末尾付近がペイントされず末尾行へ到達できなかった。
+  //   基準オフセットの畳み込みで、末尾でも translateY / row.start が安全域に収まることを固定する。
+  const FLOAT32_SAFE = 1 << 24;
+  const rowCount = 1_000_000;
+  const rowHeight = 38;
+  const headerHeight = 42;
+  const viewportHeight = 800;
+  const maxBodyPx = MAX_BODY_PX;
+
+  const physicalMax = Math.max(
+    headerHeight + Math.min(rowCount * rowHeight, maxBodyPx) - viewportHeight,
+    0,
+  );
+
+  it('reaches the last row at the bottom with all placements within float32-safe range', () => {
+    const geometry = computeVerticalGeometry({
+      rowCount,
+      rowHeight,
+      headerHeight,
+      viewportHeight,
+      scrollTop: physicalMax,
+      overscan: 20,
+      maxBodyPx,
+    });
+
+    // 末尾行が窓に入る(= 到達可能)。
+    expect(geometry.rowIndexSet.has(rowCount - 1)).toBe(true);
+    // scaling 起動・基準オフセットは正のチャンク倍数。
+    expect(geometry.scaleFactor).toBeGreaterThan(1);
+    expect(geometry.windowBaseOffsetPx).toBeGreaterThan(0);
+    expect(geometry.windowBaseOffsetPx % WINDOW_BASE_CHUNK_PX).toBe(0);
+    // wrapper / per-row の配置値はいずれも float32 安全域。
+    expect(Math.abs(geometry.translateY)).toBeLessThan(FLOAT32_SAFE);
+    for (const row of geometry.rows) {
+      expect(Math.abs(row.start)).toBeLessThan(FLOAT32_SAFE);
+    }
+  });
+
+  it('preserves the on-screen position of the last row at the bottom', () => {
+    const geometry = computeVerticalGeometry({
+      rowCount,
+      rowHeight,
+      headerHeight,
+      viewportHeight,
+      scrollTop: physicalMax,
+      overscan: 20,
+      maxBodyPx,
+    });
+    const logicalScrollTop = physicalMax * geometry.scaleFactor;
+    const lastRow = geometry.rows.find((row) => row.index === rowCount - 1);
+    expect(lastRow).toBeDefined();
+    if (lastRow) {
+      // wrapper(translateY) + 行(start) のスクロール内位置 = 絶対論理 top - logicalScrollTop + 物理 scrollTop。
+      const sceneTop = geometry.translateY + lastRow.start;
+      const expectedSceneTop =
+        physicalMax - logicalScrollTop + headerHeight + (rowCount - 1) * rowHeight;
+      expect(Math.abs(sceneTop - expectedSceneTop)).toBeLessThan(1e-3);
+    }
   });
 });
 

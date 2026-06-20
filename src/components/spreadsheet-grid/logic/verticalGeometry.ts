@@ -32,6 +32,20 @@
 //   押し上げてよく、その場合の差分は本定数 1 行のみです。
 export const MAX_BODY_PX = 15_000_000;
 
+// 描画ウィンドウの基準オフセットをスナップする単位(px)です。
+// 目的(巨大 transform によるペイント不良の回避):
+//   scaling 起動時、行/オーバーレイを「絶対論理 top(最大 ≈ rowCount*rowHeight)」へ置くと、
+//   1M 行では 38,000,000px に達します。ブラウザの transform/レイアウトは float32 の正確整数域
+//   (2^24 = 16,777,216px)を超えると配置が不安定になり、一定の行から先がペイントされません
+//   (= 末尾行に到達できない症状)。そこで scaling 時は描画ウィンドウ先頭をこの単位へスナップした
+//   基準で相対化し、基準ぶんを wrapper の translateY 側へ畳み込みます。これにより行/オーバーレイの
+//   transform も wrapper の translateY も常に <= physicalBodyHeight(< 16.7M)へ収まります。
+//   スナップ単位なので、チャンクを跨がない通常スクロールでは per-row の値が変わらず、
+//   GridBodyRow の memo(縦スクロールで再レンダーしない最適化)を維持します。
+// 注記: 1,048,576px(2^20)は rowHeight=38 で約 27,000 行ぶん。チャンク跨ぎは数万行スクロールに
+//   1 回で、per-row 値が更新されるのはその瞬間だけです。
+export const WINDOW_BASE_CHUNK_PX = 1 << 20;
+
 // 描画する 1 行の窓エントリです(旧 @tanstack/react-virtual の VirtualItem 互換)。
 export type VerticalRow = {
   index: number;
@@ -49,8 +63,14 @@ export type VerticalGeometry = {
   logicalBodyHeight: number;
   // 物理 scrollTop → 論理 scrollTop の倍率(>= 1)。logicalBodyHeight <= cap のとき 1。
   scaleFactor: number;
-  // overlay+body wrapper に掛ける translateY(<= 0)。scaleFactor=1 のとき 0(現状と一致)。
+  // overlay+body wrapper に掛ける translateY。scaleFactor=1 のとき 0(現状と一致)。
+  //   scaling 時は windowBaseOffsetPx を畳み込むため正値を取り得ます(<= physicalBodyHeight に有界)。
   translateY: number;
+  // 行/オーバーレイの「絶対論理 top(headerHeight + row*rowHeight)」から差し引く基準オフセット(px)。
+  //   no-op(scaleFactor=1)では 0(= 従来どおり絶対配置)。scaling 時のみ WINDOW_BASE_CHUNK_PX 境界へ
+  //   スナップした正値。消費側はオーバーレイの top からこの値を引き、行 start は本ファイルで反映済みです。
+  //   基準は translateY 側に同額が含まれるため、ネットの画面座標は scaleFactor に関わらず不変です。
+  windowBaseOffsetPx: number;
   // 描画する行窓(virtualRow 互換の {index, start})。
   rows: VerticalRow[];
   // 描画行 index 集合(GridBodyLayer の OOB / 重複ガードと整合)。
@@ -127,11 +147,6 @@ export const computeVerticalGeometry = ({
   const clampedScrollTop = Math.min(Math.max(scrollTop, 0), physicalMax);
   const logicalScrollTop = clampedScrollTop * scaleFactor;
 
-  // overlay+body wrapper の translateY。D = S_phys - S_log(<= 0)。
-  //   行は論理 top(headerHeight + index*rowHeight)へ置き、この D で物理ウィンドウへ
-  //   引き込むことで、行 index の表示位置は論理スクロール S_log のときと完全一致します。
-  const translateY = clampedScrollTop - logicalScrollTop;
-
   // 窓出し(uniform: 純粋な算術)。論理オフセット基準で firstVisible を求めます。
   //   firstVisible = floor(S_log / rowHeight) は、行 index の表示 y =
   //   headerHeight + index*rowHeight - S_log がボディ可視域に入る先頭行です
@@ -141,10 +156,33 @@ export const computeVerticalGeometry = ({
   const start = Math.max(firstVisible - overscan, 0);
   const end = Math.min(firstVisible + visibleCount + overscan, rowCount);
 
+  // 描画ウィンドウの基準オフセット(px)。no-op(scaleFactor=1)では 0 にして従来と完全一致を保ちます
+  //   (この経路では絶対論理 top <= physicalBodyHeight <= MAX_BODY_PX < 16.7M なので相対化は不要)。
+  //   scaling 時のみ、ウィンドウ先頭(start)の論理 top を WINDOW_BASE_CHUNK_PX 境界へスナップして
+  //   基準にします。スナップにより通常スクロールでは値が動かず、行/オーバーレイの transform が
+  //   小さく保たれ、巨大 transform によるペイント不良(末尾行が描画されない問題)を回避します。
+  const windowBaseOffsetPx =
+    scaleFactor === 1
+      ? 0
+      : Math.floor((start * rowHeight) / WINDOW_BASE_CHUNK_PX) *
+        WINDOW_BASE_CHUNK_PX;
+
+  // overlay+body wrapper の translateY。基準 D = S_phys - S_log(<= 0)に基準オフセットを畳み込みます。
+  //   行は論理 top(headerHeight + index*rowHeight - windowBaseOffsetPx)へ置き、この translateY で
+  //   物理ウィンドウへ引き込むことで、行 index の表示位置は基準オフセットの有無に関わらず
+  //   論理スクロール S_log のときと完全一致します(画面 y = headerHeight + index*rowHeight - S_log)。
+  //   no-op では D=0 かつ windowBaseOffsetPx=0 ⇒ translateY=0(従来と一致)。
+  //   scaling では translateY <= physicalBodyHeight(<16.7M)に有界になります。
+  const translateY = clampedScrollTop - logicalScrollTop + windowBaseOffsetPx;
+
   const rows: VerticalRow[] = [];
   const rowIndexSet = new Set<number>();
   for (let index = start; index < end; index += 1) {
-    rows.push({ index, start: headerHeight + index * rowHeight });
+    // start は「絶対論理 top - 基準オフセット」。no-op では従来どおり headerHeight + index*rowHeight。
+    rows.push({
+      index,
+      start: headerHeight + index * rowHeight - windowBaseOffsetPx,
+    });
     rowIndexSet.add(index);
   }
 
@@ -153,6 +191,7 @@ export const computeVerticalGeometry = ({
     logicalBodyHeight,
     scaleFactor,
     translateY,
+    windowBaseOffsetPx,
     rows,
     rowIndexSet,
   };

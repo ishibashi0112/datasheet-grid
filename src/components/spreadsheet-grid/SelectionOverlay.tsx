@@ -18,6 +18,9 @@ type SelectionOverlayProps = {
   //             固定列なしの中央ペインでは leadingWidth === rowHeaderWidth となり、
   //             従来と完全に同じ位置に描画されます。
   leadingWidth: number;
+  // 追加(scroll-space 仮想化 修正): 絶対論理 top から差し引く描画ウィンドウ基準オフセット(px)。
+  //   no-op では 0(従来と同一配置)。scaling 時のみ正値です(詳細は ActiveCellOverlay と同様)。
+  baseOffset?: number;
 };
 
 // 追加: 選択範囲をセル本体とは独立したレイヤーで描画するコンポーネントです。
@@ -26,6 +29,7 @@ export function SelectionOverlay({
   rect,
   headerHeight,
   leadingWidth,
+  baseOffset = 0,
 }: SelectionOverlayProps) {
   if (!rect) {
     return null;
@@ -34,7 +38,7 @@ export function SelectionOverlay({
   const overlayStyle: CSSProperties = {
     position: 'absolute',
     left: leadingWidth + rect.left,
-    top: headerHeight + rect.top,
+    top: headerHeight + rect.top - baseOffset,
     width: rect.width,
     height: rect.height,
     backgroundColor: 'rgba(37, 99, 235, 0.08)',

@@ -23,6 +23,9 @@ type CellEditorLayerProps = {
   // 変更(10-D): rowHeaderWidth → leadingWidth に一般化しました。
   //             editor は active cell が属するペインの relative コンテナ内へ配置されます。
   leadingWidth: number;
+  // 追加(scroll-space 仮想化 修正): 絶対論理 top から差し引く描画ウィンドウ基準オフセット(px)。
+  //   no-op では 0(従来と同一配置)。scaling 時のみ正値です(詳細は ActiveCellOverlay と同様)。
+  baseOffset?: number;
   // 変更(11-B6): 親が持つのは「編集開始時の初期値」だけになりました。
   //              毎キーストロークのドラフト値は本コンポーネントのローカル state で管理し、
   //              親(SpreadsheetGrid)へは commit 時に最終値だけを渡します。
@@ -40,6 +43,7 @@ export function CellEditorLayer({
   rect,
   headerHeight,
   leadingWidth,
+  baseOffset = 0,
   initialValue,
   onCommit,
   onCancel,
@@ -84,7 +88,7 @@ export function CellEditorLayer({
   const wrapperStyle: CSSProperties = {
     position: 'absolute',
     left: leadingWidth + rect.left,
-    top: headerHeight + rect.top,
+    top: headerHeight + rect.top - baseOffset,
     width: rect.width,
     height: rect.height,
     zIndex: 5,
