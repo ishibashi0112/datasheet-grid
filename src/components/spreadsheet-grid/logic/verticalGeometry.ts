@@ -125,6 +125,36 @@ export const createUniformRowMetrics = (
     Math.min(Math.max(Math.floor(y / rowHeight), 0), Math.max(rowCount - 1, 0)),
 });
 
+// 選択オーバーレイの縦範囲を、現在の描画窓(virtualRows の先頭/末尾行 index)へクリップします。
+//   col / グリッド全選択 / 巨大 cell・row 選択は論理全高(uniform で rowCount*rowHeight、auto-height でも
+//   最大 MAX_BODY_PX)に達し、ブラウザの要素高さ上限(≈33.5M) / float32 正確整数域(2^24)を超えて一部しか
+//   描画されません(列全選択ハイライトの途中切れ)。可視域に映るのは窓の帯だけなので、選択の縦範囲を窓へ
+//   クリップして小さな帯に畳めば、視覚的に完全かつペイント安全になります。
+//   窓は overscan を含み viewport より広いため、帯の上下ボーダーは可視域の外へ落ち、横スクロール時に
+//   中途半端な水平線は出ません(グリッド真上端/真下端でのみボーダーが見え、巨大 div 時代と一致)。
+//   窓内に収まる通常の選択ではクリップは恒等で、出力は不変です(no-op 等価)。
+//   ★スクロール非依存の rowTop/rowsHeight(RowMetrics)と組み合わせて使うため、auto-height の
+//     prefix-sum 版 RowMetrics へ差し替えてもこのクリップはそのまま機能します。
+// 返り値: クリップ後の行区間 [start, end](inclusive)。窓と交差しない / 空窓のときは null。
+export const clipRowRangeToWindow = (
+  selStartRow: number,
+  selEndRow: number,
+  windowFirstRow: number,
+  windowLastRow: number,
+): { start: number; end: number } | null => {
+  // 空窓(描画行ゼロ)では末尾 < 先頭。描画しません。
+  if (windowLastRow < windowFirstRow) {
+    return null;
+  }
+  const start = Math.max(selStartRow, windowFirstRow);
+  const end = Math.min(selEndRow, windowLastRow);
+  // 選択が窓の完全に上 / 下(画面外)なら交差なし。
+  if (start > end) {
+    return null;
+  }
+  return { start, end };
+};
+
 // 物理 scrollTop → 論理 scrollTop です(active cell 自動スクロールの現在位置換算に使用)。
 export const physicalToLogicalScrollTop = (
   physical: number,

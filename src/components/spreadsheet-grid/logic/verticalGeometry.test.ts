@@ -11,6 +11,7 @@ import {
   MAX_BODY_PX,
   WINDOW_BASE_CHUNK_PX,
   clientYToRowIndex,
+  clipRowRangeToWindow,
   computeVerticalGeometry,
   createUniformRowMetrics,
   logicalToPhysicalScrollTop,
@@ -440,5 +441,50 @@ describe('createUniformRowMetrics (no-op equivalence with pre-seam arithmetic)',
         }
       }
     }
+  });
+});
+
+describe('clipRowRangeToWindow (selection band clip to render window)', () => {
+  it('returns the selection unchanged when fully inside the window (no-op equivalence)', () => {
+    // 窓 [80, 132] 内に収まる小さな選択はクリップされず、出力不変(no-op 等価)。
+    expect(clipRowRangeToWindow(100, 102, 80, 132)).toEqual({ start: 100, end: 102 });
+    expect(clipRowRangeToWindow(80, 132, 80, 132)).toEqual({ start: 80, end: 132 });
+    expect(clipRowRangeToWindow(81, 81, 80, 132)).toEqual({ start: 81, end: 81 });
+  });
+
+  it('clips a full-body selection (col / whole-grid) down to the window band', () => {
+    // col / グリッド全選択は [0, rowCount-1]。窓へ畳まれて巨大 div を回避します。
+    expect(clipRowRangeToWindow(0, 999_999, 200, 252)).toEqual({ start: 200, end: 252 });
+    expect(clipRowRangeToWindow(0, 999_999, 0, 32)).toEqual({ start: 0, end: 32 });
+    expect(clipRowRangeToWindow(0, 999_999, 999_968, 999_999)).toEqual({
+      start: 999_968,
+      end: 999_999,
+    });
+  });
+
+  it('clips the leading edge when the selection starts above the window', () => {
+    expect(clipRowRangeToWindow(0, 150, 100, 200)).toEqual({ start: 100, end: 150 });
+  });
+
+  it('clips the trailing edge when the selection ends below the window', () => {
+    expect(clipRowRangeToWindow(150, 999_999, 100, 200)).toEqual({ start: 150, end: 200 });
+  });
+
+  it('returns null when the selection is entirely above or below the window', () => {
+    expect(clipRowRangeToWindow(0, 50, 100, 200)).toBeNull();
+    expect(clipRowRangeToWindow(300, 400, 100, 200)).toBeNull();
+  });
+
+  it('returns null for an empty window (no rendered rows)', () => {
+    // 空窓は末尾 < 先頭(windowFirstRow=0 / windowLastRow=-1 の規約)。
+    expect(clipRowRangeToWindow(0, 999_999, 0, -1)).toBeNull();
+    expect(clipRowRangeToWindow(5, 5, 0, -1)).toBeNull();
+  });
+
+  it('handles single-row window and single-row selection at the boundary', () => {
+    expect(clipRowRangeToWindow(0, 999_999, 42, 42)).toEqual({ start: 42, end: 42 });
+    expect(clipRowRangeToWindow(42, 42, 42, 42)).toEqual({ start: 42, end: 42 });
+    expect(clipRowRangeToWindow(41, 41, 42, 42)).toBeNull();
+    expect(clipRowRangeToWindow(43, 43, 42, 42)).toBeNull();
   });
 });

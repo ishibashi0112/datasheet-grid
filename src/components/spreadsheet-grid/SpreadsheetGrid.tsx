@@ -86,6 +86,7 @@ import {
 //   1M 行で innerRowStyle.height がブラウザ要素高さ上限を超える機能ブロッカーを解消します。
 import {
   MAX_BODY_PX,
+  clipRowRangeToWindow,
   computeVerticalGeometry,
   createUniformRowMetrics,
 } from './logic/verticalGeometry';
@@ -806,6 +807,13 @@ export function SpreadsheetGrid<T extends object>({
   );
   const virtualRows = verticalGeometry.rows;
   const virtualRowIndexes = verticalGeometry.rowIndexSet;
+  // 描画窓の先頭/末尾行 index(可視帯クリップ用)。virtualRows は computeVerticalGeometry が返す
+  //   [start, end) の窓で、overscan を含み viewport より広い。選択オーバーレイの縦範囲をこの窓へ
+  //   クリップして巨大 div を避けます(列全選択ハイライトの途中切れ修正)。空窓(0 行)では
+  //   末尾 < 先頭 となり、clipRowRangeToWindow が null を返してオーバーレイを描きません。
+  const windowFirstRow = virtualRows.length > 0 ? virtualRows[0].index : 0;
+  const windowLastRow =
+    virtualRows.length > 0 ? virtualRows[virtualRows.length - 1].index : -1;
   // コンテナ/wrapper/indicator 高さに使う物理ボディ高さ(<= ブラウザ要素高さ上限)。
   const physicalBodyHeight = verticalGeometry.physicalBodyHeight;
   // overlay+body wrapper の transform。scaleFactor=1 のとき undefined(= 現状と同一 DOM)。
@@ -1099,17 +1107,28 @@ export function SpreadsheetGrid<T extends object>({
     [canEditCell, rowModel, readOnly, startEditWithValue, orderedColumns],
   );
 
-  // ── selection overlay placement（10-D: ペイン別座標系） ─
+  // ── selection overlay placement（10-D: ペイン別座標系 / 可視帯クリップ） ─
   // 変更(10-D): 選択範囲を「論理列 index 範囲 + 行範囲」に正規化し、
   //             computePaneColumnExtents / computeFullWidthPaneExtents で
   //             各ペインのローカル水平 extent に分解します。
   //             これにより選択がペインをまたいでも、各ペイン内に正しくクリップされた
   //             矩形セグメントが描画されます（AG Grid と同様のペイン別レンダリング）。
   //             固定列なしのときは center のみに extent が出て従来と一致します。
-  const selectionPlacement = useMemo<{
+  // 変更(可視帯クリップ): 横 extent(スクロール非依存)と縦帯(描画窓クリップでスクロール依存)を
+  //             別の useMemo へ分離します。横 extent はスクロール経路から外し、縦帯だけ窓へ追従させます
+  //             (RowMetrics=スクロール非依存 / verticalGeometry=スクロール依存 の軸分離に準拠)。
+  //             旧実装は col / グリッド全選択を top:0 / height:totalBodyHeight の単一巨大 div で描き、
+  //             1M 行で ≈38,000,000px に達してブラウザの要素高さ上限 / float32 域を超え一部しか
+  //             描けませんでした(列全選択ハイライトの途中切れ)。選択の縦範囲を窓へクリップすることで、
+  //             全選択タイプ(col / グリッド全選択 / 巨大 cell・row)が小さな帯になりペイント安全になります。
+  //             窓は overscan を含み viewport より広いため、可視域に映るピクセルは旧巨大 div と同一で、
+  //             no-op(scaleFactor=1)でも可視域等価です。
+
+  // 横 extent + 生の選択行範囲(スクロール非依存)。
+  const selectionExtents = useMemo<{
     extents: PaneColumnExtentMap;
-    top: number;
-    height: number;
+    startRow: number;
+    endRow: number;
   } | null>(() => {
     if (!uiState.selection) {
       return null;
@@ -1124,11 +1143,8 @@ export function SpreadsheetGrid<T extends object>({
       );
       return {
         extents,
-        top: rowMetrics.rowTop(normalizedRange.start.row),
-        height: rowMetrics.rowsHeight(
-          normalizedRange.start.row,
-          normalizedRange.end.row,
-        ),
+        startRow: normalizedRange.start.row,
+        endRow: normalizedRange.end.row,
       };
     }
 
@@ -1141,15 +1157,12 @@ export function SpreadsheetGrid<T extends object>({
       const extents = computeFullWidthPaneExtents(paneLayout);
       return {
         extents,
-        top: rowMetrics.rowTop(normalizedRange.startRow),
-        height: rowMetrics.rowsHeight(
-          normalizedRange.startRow,
-          normalizedRange.endRow,
-        ),
+        startRow: normalizedRange.startRow,
+        endRow: normalizedRange.endRow,
       };
     }
 
-    // col selection
+    // col selection: 縦は全行が対象(窓クリップ側で帯に畳む)。
     const normalizedRange = normalizeColumnRange(
       uiState.selection.startCol,
       uiState.selection.endCol,
@@ -1161,29 +1174,50 @@ export function SpreadsheetGrid<T extends object>({
     );
     return {
       extents,
-      top: 0,
-      height: rowMetrics.totalBodyHeight,
+      startRow: 0,
+      endRow: Math.max(viewRowCount - 1, 0),
     };
-  }, [uiState.selection, paneLayout, rowMetrics]);
+  }, [uiState.selection, paneLayout, viewRowCount]);
 
-  // 追加(10-D): 指定ペインの選択矩形（ペインローカル）を返します。該当列が無ければ null です。
+  // 縦帯(スクロール依存): 選択行範囲を描画窓へクリップし、rowMetrics で top/height を求めます。
+  //   窓と交差しない(画面外へ完全にスクロールアウトした)選択は null で描画しません。
+  const selectionBand = useMemo<{ top: number; height: number } | null>(() => {
+    if (!selectionExtents) {
+      return null;
+    }
+    const clipped = clipRowRangeToWindow(
+      selectionExtents.startRow,
+      selectionExtents.endRow,
+      windowFirstRow,
+      windowLastRow,
+    );
+    if (!clipped) {
+      return null;
+    }
+    return {
+      top: rowMetrics.rowTop(clipped.start),
+      height: rowMetrics.rowsHeight(clipped.start, clipped.end),
+    };
+  }, [selectionExtents, rowMetrics, windowFirstRow, windowLastRow]);
+
+  // 追加(10-D): 指定ペインの選択矩形（ペインローカル）を返します。該当列が無い / 窓外なら null です。
   const selectionRectForPane = useCallback(
     (pane: ColumnPane): SelectionOverlayRect | null => {
-      if (!selectionPlacement) {
+      if (!selectionExtents || !selectionBand) {
         return null;
       }
-      const extent = selectionPlacement.extents[pane];
+      const extent = selectionExtents.extents[pane];
       if (!extent) {
         return null;
       }
       return {
         left: extent.start,
-        top: selectionPlacement.top,
+        top: selectionBand.top,
         width: extent.width,
-        height: selectionPlacement.height,
+        height: selectionBand.height,
       };
     },
-    [selectionPlacement],
+    [selectionExtents, selectionBand],
   );
 
   // ── corner header ─────────────────────────────────────
