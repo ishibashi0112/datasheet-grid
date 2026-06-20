@@ -204,6 +204,9 @@ export type GridColumn<T> = {
   width: number;
   minWidth?: number;
   maxWidth?: number;
+  // 追加(C1): true の列が auto-height 行の高さを駆動します(複数列指定時は max を採用)。
+  //   グリッド props の autoHeight 有効時のみ効きます(無効時はこのフラグは無視)。
+  autoHeight?: boolean;
   visible?: boolean;
   editable?: boolean;
   readOnly?: boolean;
@@ -333,6 +336,12 @@ export type SpreadsheetGridProps<T> = {
   createRow?: () => T;
   createOverflowColumn?: (columnIndex: number) => GridColumn<T>;
   rowHeight?: number;
+  // 追加(C1): auto-height 行モードを有効化します。autoHeight:true の列が行高を駆動し、
+  //   行ごとに内容量で高さが変わります。論理全高が行数 gate を超える場合は uniform 行高へ
+  //   フォールバックします(供給側の配線は C1-3)。
+  autoHeight?: boolean;
+  // 追加(C1): auto-height の未測定行に使う 1 行の推定高さ(px)。未指定時は rowHeight。
+  estimateRowHeight?: number;
   headerHeight?: number;
   rowHeaderWidth?: number;
   readOnly?: boolean;

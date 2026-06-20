@@ -32,6 +32,27 @@
 //   押し上げてよく、その場合の差分は本定数 1 行のみです。
 export const MAX_BODY_PX = 15_000_000;
 
+// auto-height 行モードの行数上限です(gate)。論理全高 = 行数 × 1 行最大高(~280px)が
+//   MAX_BODY_PX を超えない範囲に行数で gate します(MAX_BODY_PX / 280 ≒ 53,571 を切り下げ)。
+//   これにより auto-height モードでは scaleFactor=1 / windowBaseOffsetPx=0 / translateY=0 が
+//   保証され、scaling・float32 対策・基準オフセットが休眠します。超過時は uniform 行高へ
+//   フォールバックします(上限値・1 行最大高はプロダクト判断で調整可)。
+export const AUTO_HEIGHT_MAX_ROWS = 50_000;
+
+// auto-height を使うべきか(測定なしで事前判定できる pure gate)。
+//   props 有効 + 駆動列(autoHeight:true)が存在 + 行数が [1, maxRows] のとき true。
+//   超過時は false(uniform フォールバック)。viewRowCount=0 も false(描画なし)。
+export const shouldUseAutoHeight = (
+  autoHeightEnabled: boolean,
+  hasAutoHeightColumn: boolean,
+  viewRowCount: number,
+  maxRows: number,
+): boolean =>
+  autoHeightEnabled &&
+  hasAutoHeightColumn &&
+  viewRowCount > 0 &&
+  viewRowCount <= maxRows;
+
 // 描画ウィンドウの基準オフセットをスナップする単位(px)です。
 // 目的(巨大 transform によるペイント不良の回避):
 //   scaling 起動時、行/オーバーレイを「絶対論理 top(最大 ≈ rowCount*rowHeight)」へ置くと、
@@ -51,6 +72,9 @@ export type VerticalRow = {
   index: number;
   // 行の論理 top(headerHeight 込み)。GridBodyLayer の translateY 基準(virtualRow.start 互換)。
   start: number;
+  // 行ごとの高さ(px)。auto-height 専用。uniform 経路では未設定で、消費側(GridBodyLayer)は
+  //   rowHeight prop へフォールバックします(uniform 出力をバイト等価に保つため)。
+  size?: number;
 };
 
 // 縦ジオメトリのシーム契約です。uniform / 将来の auto-height で実装を差し替えても、
@@ -256,6 +280,78 @@ export const computeVerticalGeometry = ({
     scaleFactor,
     translateY,
     windowBaseOffsetPx,
+    rows,
+    rowIndexSet,
+  };
+};
+
+export type ComputeAutoHeightVerticalGeometryArgs = {
+  headerHeight: number;
+  // スクロールコンテナの可視高さ(clientHeight)。窓の行数に効きます。
+  viewportHeight: number;
+  // 物理 scrollTop。auto-height では sf=1 なので論理 scrollTop と一致します。
+  scrollTop: number;
+  // 窓の上下に先回りで描画する行数(uniform 経路と同じ overscan=20 を渡す想定)。
+  overscan: number;
+};
+
+// auto-height 行の縦ジオメトリ(prefix-sum 版 RowMetrics を窓出し)。
+//   ★gate(論理全高 < MAX_BODY_PX / 行数 <= AUTO_HEIGHT_MAX_ROWS)前提なので、scaleFactor=1 /
+//     windowBaseOffsetPx=0 / translateY=0 に固定されます。scaling・float32 対策・基準オフセットは
+//     休眠し、行/オーバーレイは絶対論理 top(headerHeight + rowTop(i))にそのまま置けます。
+//   窓出しは uniform の純算術(floor(y/rowHeight))の代わりに RowMetrics.rowAtContentY
+//     (prefix 二分探索)で可視域 [scrollTop, scrollTop+viewport] を覆う行を求め、両側に overscan を
+//     足します。estimate 一様・measured 空の RowMetrics を渡すと、共通 index の start は
+//     computeVerticalGeometry(sf=1)と一致し、窓は同じ可視域を被覆します(末尾 overscan の行数は
+//     行高可変の窓計算原理が異なるため厳密一致は保証しません)。
+//   各 row には start に加え size(= rowsHeight(i,i))を載せ、GridBodyLayer が行ごとの高さに使います。
+export const computeAutoHeightVerticalGeometry = (
+  {
+    headerHeight,
+    viewportHeight,
+    scrollTop,
+    overscan,
+  }: ComputeAutoHeightVerticalGeometryArgs,
+  rowMetrics: RowMetrics,
+): VerticalGeometry => {
+  const rowCount = rowMetrics.rowCount;
+  const logicalBodyHeight = rowMetrics.totalBodyHeight;
+  // gate により論理全高 <= MAX_BODY_PX。圧縮は不要で物理 = 論理です。
+  const physicalBodyHeight = logicalBodyHeight;
+
+  // スクロール可動域(uniform と同式)。sf=1 なので物理 = 論理です。
+  const logicalMax = Math.max(
+    headerHeight + logicalBodyHeight - viewportHeight,
+    0,
+  );
+  const clampedScrollTop = Math.min(Math.max(scrollTop, 0), logicalMax);
+
+  // 窓出し: 可視域 [clampedScrollTop, clampedScrollTop + viewportHeight] を覆う行 + 両側 overscan。
+  //   rowAtContentY は content-top 基準(headerHeight 抜き)の論理 y を取るため、可視域の上端/下端を
+  //   そのまま渡します(no-op で uniform の floor(y/rowHeight) と一致)。
+  const firstVisible = rowMetrics.rowAtContentY(clampedScrollTop);
+  const lastVisible = rowMetrics.rowAtContentY(clampedScrollTop + viewportHeight);
+  const start = Math.max(firstVisible - overscan, 0);
+  const end = Math.min(lastVisible + overscan + 1, rowCount);
+
+  const rows: VerticalRow[] = [];
+  const rowIndexSet = new Set<number>();
+  for (let index = start; index < end; index += 1) {
+    rows.push({
+      index,
+      // sf=1 / windowBaseOffsetPx=0 なので絶対論理 top をそのまま置きます。
+      start: headerHeight + rowMetrics.rowTop(index),
+      size: rowMetrics.rowsHeight(index, index),
+    });
+    rowIndexSet.add(index);
+  }
+
+  return {
+    physicalBodyHeight,
+    logicalBodyHeight,
+    scaleFactor: 1,
+    translateY: 0,
+    windowBaseOffsetPx: 0,
     rows,
     rowIndexSet,
   };

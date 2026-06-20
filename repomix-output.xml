@@ -73,6 +73,8 @@ src/components/spreadsheet-grid/logic/domGuards.ts
 src/components/spreadsheet-grid/logic/filtering.test.ts
 src/components/spreadsheet-grid/logic/filtering.ts
 src/components/spreadsheet-grid/logic/geometry.ts
+src/components/spreadsheet-grid/logic/rowHeightStore.test.ts
+src/components/spreadsheet-grid/logic/rowHeightStore.ts
 src/components/spreadsheet-grid/logic/selectOptions.test.ts
 src/components/spreadsheet-grid/logic/selectOptions.ts
 src/components/spreadsheet-grid/logic/sorting.test.ts
@@ -114,6 +116,342 @@ vitest.config.ts
 
 <files>
 This section contains the contents of the repository's files.
+
+<file path="src/components/spreadsheet-grid/logic/rowHeightStore.test.ts">
+// C1-1: rowHeightStore の prefix-sum / measured キャッシュ / 前方更新 / 二分探索の検査と、
+//   uniform 行高(estimate 一様・measured 空)での createUniformRowMetrics 等価性。
+import { describe, it, expect } from 'vitest';
+import {
+  buildRowHeightStore,
+  createAutoHeightRowMetrics,
+  rebuildPrefixFrom,
+  setMeasuredRowHeight,
+} from './rowHeightStore';
+import { createUniformRowMetrics } from './verticalGeometry';
+import type { GridRowKey } from '../model/gridTypes';
+
+// view index をそのまま rowKey にする getter(rowKey=index)。
+const identityKey = (index: number): GridRowKey => index;
+
+describe('buildRowHeightStore (prefix construction)', () => {
+  it('builds a monotonic prefix with prefix[0]=0 and prefix[n]=sum(heights)', () => {
+    // estimate 一様: prefix[i] = i * estimate。
+    const store = buildRowHeightStore(5, 10, identityKey);
+    expect(Array.from(store.prefix)).toEqual([0, 10, 20, 30, 40, 50]);
+    expect(store.prefix[0]).toBe(0);
+    expect(store.prefix[store.rowCount]).toBe(50);
+  });
+
+  it('applies the measured cache by rowKey (overrides estimate)', () => {
+    // rowKey=1,3 を実測で上書き。view 順は identity。
+    const measured = new Map<GridRowKey, number>([
+      [1, 30],
+      [3, 5],
+    ]);
+    const store = buildRowHeightStore(5, 10, identityKey, measured);
+    // heights = [10, 30, 10, 5, 10] / prefix = 累積。
+    expect(Array.from(store.heights)).toEqual([10, 30, 10, 5, 10]);
+    expect(Array.from(store.prefix)).toEqual([0, 10, 40, 50, 55, 65]);
+  });
+
+  it('reuses measured heights across a view reorder (rowKey stable)', () => {
+    const measured = new Map<GridRowKey, number>([
+      [100, 50],
+      [200, 8],
+    ]);
+    // view 順 A: [100, 200, 300]
+    const orderA = [100, 200, 300];
+    const storeA = buildRowHeightStore(3, 10, (i) => orderA[i], measured);
+    expect(Array.from(storeA.heights)).toEqual([50, 8, 10]);
+    // view 順 B: [300, 100, 200] へ並べ替え。同じ measured で再構築。
+    const orderB = [300, 100, 200];
+    const storeB = buildRowHeightStore(3, 10, (i) => orderB[i], measured);
+    expect(Array.from(storeB.heights)).toEqual([10, 50, 8]);
+  });
+
+  it('handles empty store (rowCount=0)', () => {
+    const store = buildRowHeightStore(0, 10, identityKey);
+    expect(store.rowCount).toBe(0);
+    expect(Array.from(store.prefix)).toEqual([0]);
+    const metrics = createAutoHeightRowMetrics(store);
+    expect(metrics.totalBodyHeight).toBe(0);
+    expect(metrics.rowAtContentY(0)).toBe(0);
+    expect(metrics.rowAtContentY(100)).toBe(0);
+  });
+});
+
+describe('setMeasuredRowHeight + rebuildPrefixFrom (measurement flush)', () => {
+  it('updates measured + heights and reports change flags', () => {
+    const store = buildRowHeightStore(4, 10, identityKey);
+    // 同値は変更なし。
+    expect(setMeasuredRowHeight(store, 0, 0, 10)).toBe(false);
+    // 異なる値は変更あり + measured へ反映。
+    expect(setMeasuredRowHeight(store, 2, 2, 40)).toBe(true);
+    expect(store.heights[2]).toBe(40);
+    expect(store.measured.get(2)).toBe(40);
+    // 範囲外は false。
+    expect(setMeasuredRowHeight(store, -1, 99, 5)).toBe(false);
+    expect(setMeasuredRowHeight(store, 4, 99, 5)).toBe(false);
+  });
+
+  it('rebuilds prefix forward from the minimum changed index only', () => {
+    const store = buildRowHeightStore(5, 10, identityKey);
+    // index 2 を 40 へ。flush 前は prefix は古いまま。
+    setMeasuredRowHeight(store, 2, 2, 40);
+    // 最小変更 index=2 から前方再構築。
+    rebuildPrefixFrom(store, 2);
+    // heights = [10,10,40,10,10] / prefix = [0,10,20,60,70,80]。
+    expect(Array.from(store.prefix)).toEqual([0, 10, 20, 60, 70, 80]);
+    expect(store.prefix[store.rowCount]).toBe(80);
+  });
+
+  it('accumulates multiple measured deltas in one flush', () => {
+    const store = buildRowHeightStore(5, 10, identityKey);
+    setMeasuredRowHeight(store, 1, 1, 25);
+    setMeasuredRowHeight(store, 3, 3, 5);
+    // 最小変更 index=1 から 1 回だけ再構築。
+    rebuildPrefixFrom(store, 1);
+    // heights = [10,25,10,5,10] / prefix = [0,10,35,45,50,60]。
+    expect(Array.from(store.prefix)).toEqual([0, 10, 35, 45, 50, 60]);
+  });
+});
+
+describe('createAutoHeightRowMetrics (non-uniform heights)', () => {
+  it('resolves rowTop / rowsHeight / totalBodyHeight from prefix', () => {
+    const measured = new Map<GridRowKey, number>([
+      [0, 20],
+      [1, 30],
+      [2, 10],
+    ]);
+    const store = buildRowHeightStore(3, 10, identityKey, measured);
+    const metrics = createAutoHeightRowMetrics(store);
+    // heights = [20, 30, 10] / prefix = [0, 20, 50, 60]。
+    expect(metrics.rowTop(0)).toBe(0);
+    expect(metrics.rowTop(1)).toBe(20);
+    expect(metrics.rowTop(2)).toBe(50);
+    expect(metrics.rowsHeight(0, 0)).toBe(20);
+    expect(metrics.rowsHeight(1, 2)).toBe(40);
+    expect(metrics.rowsHeight(0, 2)).toBe(60);
+    expect(metrics.totalBodyHeight).toBe(60);
+  });
+
+  it('binary-searches rowAtContentY across variable heights and edges', () => {
+    const measured = new Map<GridRowKey, number>([
+      [0, 20],
+      [1, 30],
+      [2, 10],
+    ]);
+    const store = buildRowHeightStore(3, 10, identityKey, measured);
+    const metrics = createAutoHeightRowMetrics(store);
+    // prefix = [0, 20, 50, 60]。区間 [prefix[i], prefix[i+1]) が行 i。
+    expect(metrics.rowAtContentY(-5)).toBe(0); // y<0
+    expect(metrics.rowAtContentY(0)).toBe(0); // 行 0 の上端
+    expect(metrics.rowAtContentY(19)).toBe(0);
+    expect(metrics.rowAtContentY(20)).toBe(1); // 境界は次行の上端
+    expect(metrics.rowAtContentY(49)).toBe(1);
+    expect(metrics.rowAtContentY(50)).toBe(2);
+    expect(metrics.rowAtContentY(59)).toBe(2);
+    expect(metrics.rowAtContentY(60)).toBe(2); // y>=total は末尾行
+    expect(metrics.rowAtContentY(1000)).toBe(2);
+  });
+});
+
+describe('createAutoHeightRowMetrics (uniform equivalence with createUniformRowMetrics)', () => {
+  // estimate 一様・measured 空のとき、auto-height 版 RowMetrics は uniform 版と全 index 一致します
+  //   (prefix-sum が uniform 算術の正しい一般化であることの担保)。
+  const cases: Array<{ rowCount: number; rowHeight: number }> = [
+    { rowCount: 1, rowHeight: 36 },
+    { rowCount: 10, rowHeight: 38 },
+    { rowCount: 137, rowHeight: 42 },
+    { rowCount: 1000, rowHeight: 24 },
+  ];
+
+  for (const { rowCount, rowHeight } of cases) {
+    it(`matches uniform for rowCount=${rowCount} rowHeight=${rowHeight}`, () => {
+      const uniform = createUniformRowMetrics(rowCount, rowHeight);
+      const store = buildRowHeightStore(rowCount, rowHeight, identityKey);
+      const auto = createAutoHeightRowMetrics(store);
+
+      expect(auto.rowCount).toBe(uniform.rowCount);
+      expect(auto.totalBodyHeight).toBe(uniform.totalBodyHeight);
+
+      // rowTop / rowsHeight / rowAtContentY を全 index・代表 y でスイープ照合。
+      for (let i = 0; i < rowCount; i += 1) {
+        expect(auto.rowTop(i)).toBe(uniform.rowTop(i));
+        expect(auto.rowsHeight(i, i)).toBe(uniform.rowsHeight(i, i));
+        if (i + 5 < rowCount) {
+          expect(auto.rowsHeight(i, i + 5)).toBe(uniform.rowsHeight(i, i + 5));
+        }
+      }
+
+      // content-y → row(境界・中央・端を含む)。
+      const total = rowCount * rowHeight;
+      const samples = [
+        -10,
+        0,
+        rowHeight - 1,
+        rowHeight,
+        Math.floor(total / 2),
+        Math.floor(total / 2) + 1,
+        total - 1,
+        total,
+        total + 100,
+      ];
+      for (const y of samples) {
+        expect(auto.rowAtContentY(y)).toBe(uniform.rowAtContentY(y));
+      }
+    });
+  }
+});
+</file>
+
+<file path="src/components/spreadsheet-grid/logic/rowHeightStore.ts">
+// auto-height 行の行高ストアです(prefix-sum 版 RowMetrics の供給元)。
+//
+// 目的(C1: auto-height 本体):
+//   uniform 行高では行位置 = index*rowHeight の純算術で済みますが、auto-height では行ごとに
+//   高さが異なるため prefix-sum(累積和)で rowTop/rowsHeight/rowAtContentY を提供します。
+//   ★gate(論理全高 < MAX_BODY_PX / 行数 <= AUTO_HEIGHT_MAX_ROWS)前提なので、scaling・float32
+//     対策・基準オフセットは休眠(sf=1 / offset=0 / translateY=0)。よって Fenwick 不要・素の
+//     Float64Array prefix-sum で足り、O(n) の前方再構築も n <= 50,000 で安価です。
+//
+// 設計:
+//   - 行高の実測値は rowKey でキャッシュ(measured: Map)。filter/sort で view 順が変わっても
+//     行の実体(rowKey)の内容高は不変なので、view 順の付け替えだけで再測定が不要になります。
+//   - view 順の heights / prefix は buildRowHeightStore で getRowKey から引き直して構築します
+//     (未測定行は estimate)。
+//   - 測定 flush: setMeasuredRowHeight で measured + heights を更新し、最小変更 index から
+//     rebuildPrefixFrom で prefix を 1 回だけ前方再構築します(行ごとには再構築しません)。
+//   - createAutoHeightRowMetrics は store の prefix を読む RowMetrics(uniform と同契約)。
+//     rowAtContentY は prefix 上の二分探索。estimate 一様・measured 空のとき uniform と一致します。
+
+import type { GridRowKey } from '../model/gridTypes';
+import type { RowMetrics } from './verticalGeometry';
+
+export type RowHeightStore = {
+  // view 行数(= heights の長さ)。
+  rowCount: number;
+  // 未測定行に使う 1 行の推定高さ(px)。
+  estimate: number;
+  // view 順の行高(measured があればその値、無ければ estimate)。
+  heights: Float64Array;
+  // 累積和。prefix[i] = heights[0..i-1] の和。prefix[0]=0 / prefix[rowCount]=論理全高。
+  prefix: Float64Array;
+  // rowKey → 実測高さ(view 非依存の永続キャッシュ)。
+  measured: Map<GridRowKey, number>;
+};
+
+// prefix を [fromIndex, rowCount] の範囲で前方再構築します。
+//   prefix[fromIndex] を起点に prefix[j+1] = prefix[j] + heights[j] を順に埋めます。
+//   測定 flush では「最小変更 index」を渡し、1 回だけ呼びます(行ごと再構築の回避)。
+export const rebuildPrefixFrom = (
+  store: RowHeightStore,
+  fromIndex: number,
+): void => {
+  const { heights, prefix, rowCount } = store;
+  const from = Math.max(fromIndex, 0);
+  for (let j = from; j < rowCount; j += 1) {
+    prefix[j + 1] = prefix[j] + heights[j];
+  }
+};
+
+// view 順(getRowKey)・estimate・既存 measured キャッシュから store を構築します。
+//   heights[i] = measured.get(getRowKey(i)) ?? estimate。prefix は全域を一括構築します。
+//   measured を渡すと再構築でも実測値が維持されます(view 順だけ付け替え)。
+export const buildRowHeightStore = (
+  rowCount: number,
+  estimate: number,
+  getRowKey: (viewIndex: number) => GridRowKey,
+  measured?: Map<GridRowKey, number>,
+): RowHeightStore => {
+  const cache = measured ?? new Map<GridRowKey, number>();
+  const safeCount = Math.max(rowCount, 0);
+  const heights = new Float64Array(safeCount);
+  for (let i = 0; i < safeCount; i += 1) {
+    const cached = cache.get(getRowKey(i));
+    heights[i] = cached !== undefined ? cached : estimate;
+  }
+  // prefix[0]=0 は Float64Array 既定で 0。全域を前方構築します。
+  const prefix = new Float64Array(safeCount + 1);
+  const store: RowHeightStore = {
+    rowCount: safeCount,
+    estimate,
+    heights,
+    prefix,
+    measured: cache,
+  };
+  rebuildPrefixFrom(store, 0);
+  return store;
+};
+
+// 1 行の実測高さを反映します(measured キャッシュ + heights を更新)。
+//   prefix は呼び出し側が flush でまとめて rebuildPrefixFrom します(ここでは更新しません)。
+//   戻り値: 高さが実際に変わったか(prefix 再構築の要否判定に使用)。
+export const setMeasuredRowHeight = (
+  store: RowHeightStore,
+  viewIndex: number,
+  rowKey: GridRowKey,
+  height: number,
+): boolean => {
+  if (viewIndex < 0 || viewIndex >= store.rowCount) {
+    return false;
+  }
+  // 実測値は view 非依存に保持(view 順が変わっても再測定不要)。
+  store.measured.set(rowKey, height);
+  if (store.heights[viewIndex] === height) {
+    return false;
+  }
+  store.heights[viewIndex] = height;
+  return true;
+};
+
+// content-top 基準 y(論理)→ 行 index。prefix 上で「prefix[i] <= y を満たす最大 i」を
+//   二分探索し [0, rowCount-1] へ clamp します。estimate 一様・measured 空のとき
+//   floor(y / rowHeight) と一致します。
+const rowAtContentYFromPrefix = (
+  prefix: Float64Array,
+  rowCount: number,
+  y: number,
+): number => {
+  if (rowCount <= 0 || y <= 0) {
+    return 0;
+  }
+  // prefix[rowCount] = 論理全高。これ以上は末尾行へ clamp。
+  if (y >= prefix[rowCount]) {
+    return rowCount - 1;
+  }
+  // prefix は単調非減少。不変条件 prefix[lo] <= y を保ちつつ上限を詰めます。
+  let lo = 0;
+  let hi = rowCount;
+  while (lo < hi) {
+    const mid = (lo + hi + 1) >> 1;
+    if (prefix[mid] <= y) {
+      lo = mid;
+    } else {
+      hi = mid - 1;
+    }
+  }
+  // lo は prefix[lo] <= y を満たす最大 index(y < prefix[rowCount] より lo <= rowCount-1)。
+  return Math.min(Math.max(lo, 0), rowCount - 1);
+};
+
+// store の prefix を読む auto-height 版 RowMetrics(uniform と同契約)。
+//   rowTop / rowsHeight は O(1)、rowAtContentY は O(log n)。clamp は防御(正常範囲では no-op)。
+export const createAutoHeightRowMetrics = (
+  store: RowHeightStore,
+): RowMetrics => {
+  const { prefix, rowCount } = store;
+  return {
+    rowCount,
+    rowTop: (index) => prefix[Math.min(Math.max(index, 0), rowCount)],
+    rowsHeight: (startInclusive, endInclusive) =>
+      prefix[Math.min(Math.max(endInclusive + 1, 0), rowCount)] -
+      prefix[Math.min(Math.max(startInclusive, 0), rowCount)],
+    totalBodyHeight: prefix[rowCount],
+    rowAtContentY: (y) => rowAtContentYFromPrefix(prefix, rowCount, y),
+  };
+};
+</file>
 
 <file path="eslint.config.js">
 import js from '@eslint/js'
@@ -1491,479 +1829,6 @@ export const shouldIgnoreGridKeydown = (eventTarget: EventTarget | null) => {
 };
 </file>
 
-<file path="src/components/spreadsheet-grid/logic/filtering.test.ts">
-// V-1: filtering の等価性テスト(旧 adhoc ハーネスの恒久化)。
-//   - B-2: filterOrderByColumns に numericKeys を渡した経路と渡さない経路が、number
-//     (comparison/range)でバイト等価であること(値の取得元のみ差し替え・判定本体は不変)。
-//   - 記述子 ≡ 旧 applyNumberFilter: commit 時 1 回 parse の記述子経路が、行ごとに parse する
-//     旧 applyNumberFilter と厳密に等価であること。
-//   - set(include/exclude)/ select / text・date(contains)/ 全通過 no-op / 無効フィルターの規約。
-//   - 記述子 helper(parse / build / draftText / isActive / guards)の単体仕様。
-//   変更(記述子化): columnFilters の値は ColumnFilterValue(判別共用体)になりました。テストも
-//     生文字列ではなくタグ付き記述子({kind:'text'|'select'|'date'|'number'|'set'|'custom'})を渡します。
-import { describe, it, expect } from 'vitest';
-import {
-  applyNumberFilter,
-  buildNumberColumnFilterValue,
-  columnFilterValueToDraftText,
-  createSourceOrder,
-  filterOrderByColumns,
-  filterOrderByGlobalText,
-  isActiveColumnFilterValue,
-  isNumberColumnFilterValue,
-  isSetColumnFilterValue,
-  parseNumberFilterExpression,
-  type RowOrder,
-} from './filtering';
-import { getCellValue } from '../utils/permissions';
-import type {
-  ColumnFilterValue,
-  GridColumn,
-  NumberColumnFilterValue,
-  SetColumnFilterValue,
-} from '../model/gridTypes';
-
-type Row = Record<string, unknown>;
-
-const numberCol = (key: string): GridColumn<Row> => ({
-  key,
-  width: 100,
-  filterType: 'number',
-});
-const textCol = (key: string): GridColumn<Row> => ({ key, width: 100 });
-const selectCol = (key: string): GridColumn<Row> => ({
-  key,
-  width: 100,
-  filterType: 'select',
-});
-const setCol = (key: string): GridColumn<Row> => ({
-  key,
-  width: 100,
-  filterType: 'set',
-});
-
-// テスト用: number 記述子を非 null で構築します(本テスト群の raw はすべて非空で、build は
-//   非 null を返すため安全)。型を Record<string, ColumnFilterValue> へ入れるための薄いラッパです。
-const num = (raw: string): NumberColumnFilterValue =>
-  buildNumberColumnFilterValue(raw) as NumberColumnFilterValue;
-
-const asArray = (order: RowOrder): number[] => Array.from(order);
-
-const buildNumericKeys = (
-  rows: Row[],
-  key: string,
-): ReadonlyMap<string, Float64Array> =>
-  new Map([[key, Float64Array.from(rows, (row) => Number(row[key]))]]);
-
-// 数値・非有限・空・文字列を混ぜた母集合(comparison/range/contains すべてを踏む)。
-const rows: Row[] = [
-  { n: 5, t: 'Apple', g: 'red' },
-  { n: 1, t: 'banana', g: 'yellow' },
-  { n: 10, t: 'Cherry', g: 'red' },
-  { n: 'x', t: 'date', g: 'brown' }, // 非有限
-  { n: '', t: 'Elder', g: 'black' }, // 空(Number('')=0 だが空白扱いの確認用)
-  { n: -3, t: 'fig', g: 'purple' },
-  { n: 7.5, t: 'Grape', g: 'green' },
-  { n: 2, t: 'apricot', g: 'orange' },
-];
-
-describe('filterOrderByColumns (B-2: numericKeys path === no-key path)', () => {
-  const order = createSourceOrder(rows.length);
-  const keys = buildNumericKeys(rows, 'n');
-  const numberFilters = [
-    '> 2',
-    '>= 2',
-    '< 5',
-    '<= 5',
-    '= 10',
-    '5',
-    '1 .. 8',
-    '8 .. 1', // min/max 入れ替え
-    '-3 .. 2',
-  ];
-
-  it.each(numberFilters)('number filter %s', (raw) => {
-    const descriptor = num(raw);
-    const columnFilters = { n: descriptor };
-    const withKeys = filterOrderByColumns(
-      rows,
-      order,
-      [numberCol('n')],
-      columnFilters,
-      keys,
-    );
-    const withoutKeys = filterOrderByColumns(
-      rows,
-      order,
-      [numberCol('n')],
-      columnFilters,
-    );
-    expect(asArray(withKeys)).toEqual(asArray(withoutKeys));
-  });
-
-  it('contains fallback (unparseable) is identical with/without keys', () => {
-    const descriptor = num('1.'); // 解釈不可 → contains
-    const columnFilters = { n: descriptor };
-    const withKeys = filterOrderByColumns(
-      rows,
-      order,
-      [numberCol('n')],
-      columnFilters,
-      keys,
-    );
-    const withoutKeys = filterOrderByColumns(
-      rows,
-      order,
-      [numberCol('n')],
-      columnFilters,
-    );
-    expect(asArray(withKeys)).toEqual(asArray(withoutKeys));
-  });
-});
-
-describe('filterOrderByColumns (descriptor === legacy applyNumberFilter)', () => {
-  const order = createSourceOrder(rows.length);
-  const keys = buildNumericKeys(rows, 'n');
-  const cases = ['> 2', '>=2', '<5', '<= 5', '=10', '7.5', '1..8', '1.', 'abc'];
-
-  it.each(cases)('raw %s', (raw) => {
-    const descriptor = num(raw);
-    const actual = asArray(
-      filterOrderByColumns(rows, order, [numberCol('n')], { n: descriptor }, keys),
-    );
-    // 参照: 旧 applyNumberFilter(raw 文字列)で行ごとに判定。
-    const expected: number[] = [];
-    for (let i = 0; i < rows.length; i += 1) {
-      if (applyNumberFilter(getCellValue(rows[i], numberCol('n')), raw)) {
-        expected.push(i);
-      }
-    }
-    expect(actual).toEqual(expected);
-  });
-});
-
-describe('filterOrderByColumns (set include / exclude)', () => {
-  const order = createSourceOrder(rows.length);
-
-  it('include keeps only listed values', () => {
-    const value: SetColumnFilterValue = {
-      kind: 'set',
-      mode: 'include',
-      values: ['red', 'green'],
-    };
-    const actual = asArray(
-      filterOrderByColumns(rows, order, [setCol('g')], { g: value }),
-    );
-    const expected = rows
-      .map((row, i) => [row.g, i] as const)
-      .filter(([g]) => g === 'red' || g === 'green')
-      .map(([, i]) => i);
-    expect(actual).toEqual(expected);
-  });
-
-  it('exclude drops listed values (complement of include over universe)', () => {
-    const include: SetColumnFilterValue = {
-      kind: 'set',
-      mode: 'include',
-      values: ['red', 'green'],
-    };
-    // universe = 全行値。exclude(U−S) は include(S) と同じ通過集合になる。
-    const universe = Array.from(new Set(rows.map((row) => String(row.g))));
-    const excludedValues = universe.filter(
-      (v) => v !== 'red' && v !== 'green',
-    );
-    const exclude: SetColumnFilterValue = {
-      kind: 'set',
-      mode: 'exclude',
-      values: excludedValues,
-    };
-    const includeOrder = asArray(
-      filterOrderByColumns(rows, order, [setCol('g')], { g: include }),
-    );
-    const excludeOrder = asArray(
-      filterOrderByColumns(rows, order, [setCol('g')], { g: exclude }),
-    );
-    expect(excludeOrder).toEqual(includeOrder);
-  });
-
-  it('empty include values yields no rows', () => {
-    const value: SetColumnFilterValue = { kind: 'set', values: [] };
-    const actual = asArray(
-      filterOrderByColumns(rows, order, [setCol('g')], { g: value }),
-    );
-    expect(actual).toEqual([]);
-  });
-});
-
-describe('filterOrderByColumns (select / text / no-op identity)', () => {
-  const order = createSourceOrder(rows.length);
-
-  it('select matches exact string equality', () => {
-    const actual = asArray(
-      filterOrderByColumns(rows, order, [selectCol('g')], {
-        g: { kind: 'select', value: 'red' },
-      }),
-    );
-    const expected = rows
-      .map((row, i) => [row.g, i] as const)
-      .filter(([g]) => g === 'red')
-      .map(([, i]) => i);
-    expect(actual).toEqual(expected);
-  });
-
-  it('text is case-insensitive contains', () => {
-    const actual = asArray(
-      filterOrderByColumns(rows, order, [textCol('t')], {
-        t: { kind: 'text', value: 'ap' },
-      }),
-    );
-    // 'Apple' / 'apricot' / 'Grape'(gr*ap*e)が含む。
-    const expected = rows
-      .map((row, i) => [String(row.t).toLowerCase(), i] as const)
-      .filter(([t]) => t.includes('ap'))
-      .map(([, i]) => i);
-    expect(actual).toEqual(expected);
-  });
-
-  it('returns the same reference when no active filter exists', () => {
-    expect(
-      filterOrderByColumns(rows, order, [textCol('t')], {
-        t: { kind: 'text', value: '' },
-      }),
-    ).toBe(order);
-    expect(filterOrderByColumns(rows, order, [textCol('t')], {})).toBe(order);
-  });
-
-  it('returns the same reference when every row passes (set include over full universe)', () => {
-    // universe = 全行の g 値。全候補を include すると全行通過し、count===length で
-    //   下流 useMemo スキップのため同一参照(引数 order)を返す。
-    const universe = Array.from(new Set(rows.map((row) => String(row.g))));
-    const value: SetColumnFilterValue = {
-      kind: 'set',
-      mode: 'include',
-      values: universe,
-    };
-    expect(filterOrderByColumns(rows, order, [setCol('g')], { g: value })).toBe(
-      order,
-    );
-  });
-});
-
-describe('filterOrderByColumns (記述子経路 ≡ 旧・生文字列述語: text / date / select / custom)', () => {
-  const order = createSourceOrder(rows.length);
-  const dateCol = (key: string): GridColumn<Row> => ({
-    key,
-    width: 100,
-    filterType: 'date',
-  });
-
-  // 参照述語: text/date/custom(filterFn なし)= 部分一致(大文字小文字無視) / select = 完全一致。
-  const containsOracle = (key: string, needle: string): number[] => {
-    const n = needle.trim().toLowerCase();
-    const out: number[] = [];
-    for (let i = 0; i < rows.length; i += 1) {
-      if (
-        String(getCellValue(rows[i], textCol(key)) ?? '')
-          .toLowerCase()
-          .includes(n)
-      ) {
-        out.push(i);
-      }
-    }
-    return out;
-  };
-  const exactOracle = (key: string, expected: string): number[] => {
-    const out: number[] = [];
-    for (let i = 0; i < rows.length; i += 1) {
-      if (String(getCellValue(rows[i], selectCol(key)) ?? '') === expected) {
-        out.push(i);
-      }
-    }
-    return out;
-  };
-
-  it.each(['ap', 'A', 'rry', 'z'])(
-    'text descriptor contains %s === oracle',
-    (needle) => {
-      const actual = asArray(
-        filterOrderByColumns(rows, order, [textCol('t')], {
-          t: { kind: 'text', value: needle },
-        }),
-      );
-      expect(actual).toEqual(containsOracle('t', needle));
-    },
-  );
-
-  it('date descriptor shares the text contains predicate', () => {
-    const value: ColumnFilterValue = { kind: 'date', value: 'a' };
-    const actual = asArray(
-      filterOrderByColumns(rows, order, [dateCol('t')], { t: value }),
-    );
-    expect(actual).toEqual(containsOracle('t', 'a'));
-  });
-
-  it.each(['red', 'green', 'none'])(
-    'select descriptor exact %s === oracle',
-    (expected) => {
-      const actual = asArray(
-        filterOrderByColumns(rows, order, [selectCol('g')], {
-          g: { kind: 'select', value: expected },
-        }),
-      );
-      expect(actual).toEqual(exactOracle('g', expected));
-    },
-  );
-
-  it('empty text / date / select descriptors are inactive (identity)', () => {
-    expect(
-      filterOrderByColumns(rows, order, [textCol('t')], {
-        t: { kind: 'text', value: '' },
-      }),
-    ).toBe(order);
-    expect(
-      filterOrderByColumns(rows, order, [dateCol('t')], {
-        t: { kind: 'date', value: '  ' },
-      }),
-    ).toBe(order);
-    expect(
-      filterOrderByColumns(rows, order, [selectCol('g')], {
-        g: { kind: 'select', value: '' },
-      }),
-    ).toBe(order);
-  });
-
-  it('custom descriptor without filterFn falls back to contains', () => {
-    const customCol: GridColumn<Row> = {
-      key: 't',
-      width: 100,
-      filterType: 'custom',
-    };
-    const actual = asArray(
-      filterOrderByColumns(rows, order, [customCol], {
-        t: { kind: 'custom', value: 'rry' },
-      }),
-    );
-    expect(actual).toEqual(containsOracle('t', 'rry'));
-  });
-});
-
-describe('filterOrderByGlobalText', () => {
-  const order = createSourceOrder(rows.length);
-
-  it('returns the same reference for empty text', () => {
-    expect(
-      filterOrderByGlobalText(rows, order, [textCol('t'), numberCol('n')], '  '),
-    ).toBe(order);
-  });
-
-  it('matches across any column (case-insensitive contains)', () => {
-    const actual = asArray(
-      filterOrderByGlobalText(
-        rows,
-        order,
-        [textCol('t'), selectCol('g')],
-        'red',
-      ),
-    );
-    const expected = rows
-      .map((row, i) => [row, i] as const)
-      .filter(
-        ([row]) =>
-          String(row.t).toLowerCase().includes('red') ||
-          String(row.g).toLowerCase().includes('red'),
-      )
-      .map(([, i]) => i);
-    expect(actual).toEqual(expected);
-  });
-});
-
-describe('number filter descriptor helpers', () => {
-  it('parseNumberFilterExpression handles comparison / default = / range / invalid', () => {
-    expect(parseNumberFilterExpression('> 5')).toEqual({
-      mode: 'comparison',
-      operator: '>',
-      value: 5,
-    });
-    expect(parseNumberFilterExpression('42')).toEqual({
-      mode: 'comparison',
-      operator: '=',
-      value: 42,
-    });
-    expect(parseNumberFilterExpression('8 .. 1')).toEqual({
-      mode: 'range',
-      min: 1,
-      max: 8,
-    });
-    expect(parseNumberFilterExpression('')).toBeNull();
-    expect(parseNumberFilterExpression('1.')).toBeNull();
-    expect(parseNumberFilterExpression('abc')).toBeNull();
-  });
-
-  it('buildNumberColumnFilterValue trims, parses once, and nulls on empty', () => {
-    expect(buildNumberColumnFilterValue('   ')).toBeNull();
-    const descriptor = buildNumberColumnFilterValue('  >= 3  ');
-    expect(descriptor).toEqual({
-      kind: 'number',
-      raw: '>= 3',
-      parsed: { mode: 'comparison', operator: '>=', value: 3 },
-    });
-    const contains = buildNumberColumnFilterValue('1.');
-    expect(contains).toEqual({ kind: 'number', raw: '1.', parsed: null });
-  });
-
-  it('columnFilterValueToDraftText returns raw for number, value for text/select, empty otherwise', () => {
-    expect(columnFilterValueToDraftText(num('> 5'))).toBe('> 5');
-    expect(
-      columnFilterValueToDraftText({ kind: 'text', value: 'hello' }),
-    ).toBe('hello');
-    expect(
-      columnFilterValueToDraftText({ kind: 'select', value: 'red' }),
-    ).toBe('red');
-    expect(
-      columnFilterValueToDraftText({ kind: 'set', values: ['a'] }),
-    ).toBe('');
-    expect(
-      columnFilterValueToDraftText({ kind: 'custom', value: { x: 1 } }),
-    ).toBe('');
-    expect(columnFilterValueToDraftText(undefined)).toBe('');
-  });
-
-  it('isActiveColumnFilterValue: set/number/custom active; text/date trim non-empty; select non-empty', () => {
-    expect(
-      isActiveColumnFilterValue({ kind: 'set', values: [] }),
-    ).toBe(true);
-    expect(isActiveColumnFilterValue(num('> 1'))).toBe(true);
-    expect(isActiveColumnFilterValue({ kind: 'custom', value: 0 })).toBe(true);
-    expect(isActiveColumnFilterValue({ kind: 'text', value: 'abc' })).toBe(true);
-    expect(isActiveColumnFilterValue({ kind: 'date', value: '2024' })).toBe(
-      true,
-    );
-    expect(isActiveColumnFilterValue({ kind: 'select', value: 'x' })).toBe(true);
-    expect(isActiveColumnFilterValue({ kind: 'text', value: '   ' })).toBe(
-      false,
-    );
-    expect(isActiveColumnFilterValue({ kind: 'text', value: '' })).toBe(false);
-    expect(isActiveColumnFilterValue({ kind: 'select', value: '' })).toBe(
-      false,
-    );
-    expect(isActiveColumnFilterValue(undefined)).toBe(false);
-  });
-
-  it('type guards are consistent', () => {
-    const setValue: SetColumnFilterValue = { kind: 'set', values: ['a'] };
-    expect(isSetColumnFilterValue(setValue)).toBe(true);
-    expect(isNumberColumnFilterValue(setValue)).toBe(false);
-    const numberValue = num('> 1');
-    expect(isNumberColumnFilterValue(numberValue)).toBe(true);
-    expect(isSetColumnFilterValue(numberValue)).toBe(false);
-    // 追加(記述子化): text/date/select/custom はどちらの guard にも該当しません。
-    const textValue: ColumnFilterValue = { kind: 'text', value: 'x' };
-    expect(isSetColumnFilterValue(textValue)).toBe(false);
-    expect(isNumberColumnFilterValue(textValue)).toBe(false);
-  });
-});
-</file>
-
 <file path="src/components/spreadsheet-grid/logic/selectOptions.test.ts">
 // V-1: selectOptions の等価性テスト(旧 adhoc ハーネスの恒久化)。
 //   - collectSelectOptions ≡ 旧 getColumnSelectOptions(String 化・空白ラベル '（空白）'・
@@ -2729,6 +2594,677 @@ export const yieldToMain = (): Promise<void> =>
   });
 </file>
 
+<file path="src/index.css">
+:root {
+  --text: #6b6375;
+  --text-h: #08060d;
+  --bg: #fff;
+  --border: #e5e4e7;
+  --code-bg: #f4f3ec;
+  --accent: #aa3bff;
+  --accent-bg: rgba(170, 59, 255, 0.1);
+  --accent-border: rgba(170, 59, 255, 0.5);
+  --social-bg: rgba(244, 243, 236, 0.5);
+  --shadow:
+    rgba(0, 0, 0, 0.1) 0 10px 15px -3px, rgba(0, 0, 0, 0.05) 0 4px 6px -2px;
+
+  --sans: system-ui, 'Segoe UI', Roboto, sans-serif;
+  --heading: system-ui, 'Segoe UI', Roboto, sans-serif;
+  --mono: ui-monospace, Consolas, monospace;
+
+  font: 18px/145% var(--sans);
+  letter-spacing: 0.18px;
+  color-scheme: light dark;
+  color: var(--text);
+  background: var(--bg);
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+
+  @media (max-width: 1024px) {
+    font-size: 16px;
+  }
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --text: #9ca3af;
+    --text-h: #f3f4f6;
+    --bg: #16171d;
+    --border: #2e303a;
+    --code-bg: #1f2028;
+    --accent: #c084fc;
+    --accent-bg: rgba(192, 132, 252, 0.15);
+    --accent-border: rgba(192, 132, 252, 0.5);
+    --social-bg: rgba(47, 48, 58, 0.5);
+    --shadow:
+      rgba(0, 0, 0, 0.4) 0 10px 15px -3px, rgba(0, 0, 0, 0.25) 0 4px 6px -2px;
+  }
+
+  #social .button-icon {
+    filter: invert(1) brightness(2);
+  }
+}
+
+#root {
+  width: 1126px;
+  max-width: 100%;
+  margin: 0 auto;
+  text-align: center;
+  border-inline: 1px solid var(--border);
+  min-height: 100svh;
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+}
+
+h1,
+h2 {
+  font-family: var(--heading);
+  font-weight: 500;
+  color: var(--text-h);
+}
+
+h1 {
+  font-size: 56px;
+  letter-spacing: -1.68px;
+  margin: 32px 0;
+  @media (max-width: 1024px) {
+    font-size: 36px;
+    margin: 20px 0;
+  }
+}
+h2 {
+  font-size: 24px;
+  line-height: 118%;
+  letter-spacing: -0.24px;
+  margin: 0 0 8px;
+  @media (max-width: 1024px) {
+    font-size: 20px;
+  }
+}
+p {
+  margin: 0;
+}
+
+code,
+.counter {
+  font-family: var(--mono);
+  display: inline-flex;
+  border-radius: 4px;
+  color: var(--text-h);
+}
+
+code {
+  font-size: 15px;
+  line-height: 135%;
+  padding: 4px 8px;
+  background: var(--code-bg);
+}
+</file>
+
+<file path="src/main.tsx">
+import { StrictMode } from 'react'
+import { createRoot } from 'react-dom/client'
+import './index.css'
+import App from './App.tsx'
+
+createRoot(document.getElementById('root')!).render(
+  <StrictMode>
+    <App />
+  </StrictMode>,
+)
+</file>
+
+<file path="tsconfig.json">
+{
+  "files": [],
+  "references": [
+    { "path": "./tsconfig.app.json" },
+    { "path": "./tsconfig.node.json" }
+  ]
+}
+</file>
+
+<file path="tsconfig.node.json">
+{
+  "compilerOptions": {
+    "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.node.tsbuildinfo",
+    "target": "es2023",
+    "lib": ["ES2023"],
+    "module": "esnext",
+    "types": ["node"],
+    "skipLibCheck": true,
+
+    /* Bundler mode */
+    "moduleResolution": "bundler",
+    "allowImportingTsExtensions": true,
+    "verbatimModuleSyntax": true,
+    "moduleDetection": "force",
+    "noEmit": true,
+
+    /* Linting */
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "erasableSyntaxOnly": true,
+    "noFallthroughCasesInSwitch": true
+  },
+  "include": ["vite.config.ts"]
+}
+</file>
+
+<file path="tsconfig.vitest.json">
+{
+  "extends": "./tsconfig.app.json",
+  "include": ["src"],
+  "exclude": []
+}
+</file>
+
+<file path="vite.config.ts">
+import { defineConfig } from 'vite'
+import react from '@vitejs/plugin-react'
+
+// https://vite.dev/config/
+export default defineConfig({
+  plugins: [react()],
+})
+</file>
+
+<file path="vitest.config.ts">
+import { defineConfig } from 'vitest/config';
+
+// 追加(V-1): 等価性ハーネスの恒久化用 vitest 設定です。
+//   - 本番ビルド設定(vite.config.ts)は変更しません。テストは別グラフで回します。
+//   - V-1 は純ロジック(verticalGeometry / sorting / filtering / selectOptions)のみで
+//     React 非依存のため environment は node。将来 V-2(collector フック)を足すときは
+//     該当テストだけ jsdom へ振り分けます(environmentMatchGlobs などで個別指定)。
+export default defineConfig({
+  test: {
+    environment: 'node',
+    include: ['src/**/*.test.ts'],
+  },
+});
+</file>
+
+<file path="src/components/spreadsheet-grid/logic/filtering.test.ts">
+// V-1: filtering の等価性テスト(旧 adhoc ハーネスの恒久化)。
+//   - B-2: filterOrderByColumns に numericKeys を渡した経路と渡さない経路が、number
+//     (comparison/range)でバイト等価であること(値の取得元のみ差し替え・判定本体は不変)。
+//   - 記述子 ≡ 旧 applyNumberFilter: commit 時 1 回 parse の記述子経路が、行ごとに parse する
+//     旧 applyNumberFilter と厳密に等価であること。
+//   - set(include/exclude)/ select / text・date(contains)/ 全通過 no-op / 無効フィルターの規約。
+//   - 記述子 helper(parse / build / draftText / isActive / guards)の単体仕様。
+//   変更(記述子化): columnFilters の値は ColumnFilterValue(判別共用体)になりました。テストも
+//     生文字列ではなくタグ付き記述子({kind:'text'|'select'|'date'|'number'|'set'|'custom'})を渡します。
+import { describe, it, expect } from 'vitest';
+import {
+  applyNumberFilter,
+  buildNumberColumnFilterValue,
+  columnFilterValueToDraftText,
+  createSourceOrder,
+  filterOrderByColumns,
+  filterOrderByGlobalText,
+  isActiveColumnFilterValue,
+  isNumberColumnFilterValue,
+  isSetColumnFilterValue,
+  parseNumberFilterExpression,
+  type RowOrder,
+} from './filtering';
+import { getCellValue } from '../utils/permissions';
+import type {
+  ColumnFilterValue,
+  GridColumn,
+  NumberColumnFilterValue,
+  SetColumnFilterValue,
+} from '../model/gridTypes';
+
+type Row = Record<string, unknown>;
+
+const numberCol = (key: string): GridColumn<Row> => ({
+  key,
+  width: 100,
+  filterType: 'number',
+});
+const textCol = (key: string): GridColumn<Row> => ({ key, width: 100 });
+const selectCol = (key: string): GridColumn<Row> => ({
+  key,
+  width: 100,
+  filterType: 'select',
+});
+const setCol = (key: string): GridColumn<Row> => ({
+  key,
+  width: 100,
+  filterType: 'set',
+});
+
+// テスト用: number 記述子を非 null で構築します(本テスト群の raw はすべて非空で、build は
+//   非 null を返すため安全)。型を Record<string, ColumnFilterValue> へ入れるための薄いラッパです。
+const num = (raw: string): NumberColumnFilterValue =>
+  buildNumberColumnFilterValue(raw) as NumberColumnFilterValue;
+
+const asArray = (order: RowOrder): number[] => Array.from(order);
+
+const buildNumericKeys = (
+  rows: Row[],
+  key: string,
+): ReadonlyMap<string, Float64Array> =>
+  new Map([[key, Float64Array.from(rows, (row) => Number(row[key]))]]);
+
+// 数値・非有限・空・文字列を混ぜた母集合(comparison/range/contains すべてを踏む)。
+const rows: Row[] = [
+  { n: 5, t: 'Apple', g: 'red' },
+  { n: 1, t: 'banana', g: 'yellow' },
+  { n: 10, t: 'Cherry', g: 'red' },
+  { n: 'x', t: 'date', g: 'brown' }, // 非有限
+  { n: '', t: 'Elder', g: 'black' }, // 空(Number('')=0 だが空白扱いの確認用)
+  { n: -3, t: 'fig', g: 'purple' },
+  { n: 7.5, t: 'Grape', g: 'green' },
+  { n: 2, t: 'apricot', g: 'orange' },
+];
+
+describe('filterOrderByColumns (B-2: numericKeys path === no-key path)', () => {
+  const order = createSourceOrder(rows.length);
+  const keys = buildNumericKeys(rows, 'n');
+  const numberFilters = [
+    '> 2',
+    '>= 2',
+    '< 5',
+    '<= 5',
+    '= 10',
+    '5',
+    '1 .. 8',
+    '8 .. 1', // min/max 入れ替え
+    '-3 .. 2',
+  ];
+
+  it.each(numberFilters)('number filter %s', (raw) => {
+    const descriptor = num(raw);
+    const columnFilters = { n: descriptor };
+    const withKeys = filterOrderByColumns(
+      rows,
+      order,
+      [numberCol('n')],
+      columnFilters,
+      keys,
+    );
+    const withoutKeys = filterOrderByColumns(
+      rows,
+      order,
+      [numberCol('n')],
+      columnFilters,
+    );
+    expect(asArray(withKeys)).toEqual(asArray(withoutKeys));
+  });
+
+  it('contains fallback (unparseable) is identical with/without keys', () => {
+    const descriptor = num('1.'); // 解釈不可 → contains
+    const columnFilters = { n: descriptor };
+    const withKeys = filterOrderByColumns(
+      rows,
+      order,
+      [numberCol('n')],
+      columnFilters,
+      keys,
+    );
+    const withoutKeys = filterOrderByColumns(
+      rows,
+      order,
+      [numberCol('n')],
+      columnFilters,
+    );
+    expect(asArray(withKeys)).toEqual(asArray(withoutKeys));
+  });
+});
+
+describe('filterOrderByColumns (descriptor === legacy applyNumberFilter)', () => {
+  const order = createSourceOrder(rows.length);
+  const keys = buildNumericKeys(rows, 'n');
+  const cases = ['> 2', '>=2', '<5', '<= 5', '=10', '7.5', '1..8', '1.', 'abc'];
+
+  it.each(cases)('raw %s', (raw) => {
+    const descriptor = num(raw);
+    const actual = asArray(
+      filterOrderByColumns(rows, order, [numberCol('n')], { n: descriptor }, keys),
+    );
+    // 参照: 旧 applyNumberFilter(raw 文字列)で行ごとに判定。
+    const expected: number[] = [];
+    for (let i = 0; i < rows.length; i += 1) {
+      if (applyNumberFilter(getCellValue(rows[i], numberCol('n')), raw)) {
+        expected.push(i);
+      }
+    }
+    expect(actual).toEqual(expected);
+  });
+});
+
+describe('filterOrderByColumns (set include / exclude)', () => {
+  const order = createSourceOrder(rows.length);
+
+  it('include keeps only listed values', () => {
+    const value: SetColumnFilterValue = {
+      kind: 'set',
+      mode: 'include',
+      values: ['red', 'green'],
+    };
+    const actual = asArray(
+      filterOrderByColumns(rows, order, [setCol('g')], { g: value }),
+    );
+    const expected = rows
+      .map((row, i) => [row.g, i] as const)
+      .filter(([g]) => g === 'red' || g === 'green')
+      .map(([, i]) => i);
+    expect(actual).toEqual(expected);
+  });
+
+  it('exclude drops listed values (complement of include over universe)', () => {
+    const include: SetColumnFilterValue = {
+      kind: 'set',
+      mode: 'include',
+      values: ['red', 'green'],
+    };
+    // universe = 全行値。exclude(U−S) は include(S) と同じ通過集合になる。
+    const universe = Array.from(new Set(rows.map((row) => String(row.g))));
+    const excludedValues = universe.filter(
+      (v) => v !== 'red' && v !== 'green',
+    );
+    const exclude: SetColumnFilterValue = {
+      kind: 'set',
+      mode: 'exclude',
+      values: excludedValues,
+    };
+    const includeOrder = asArray(
+      filterOrderByColumns(rows, order, [setCol('g')], { g: include }),
+    );
+    const excludeOrder = asArray(
+      filterOrderByColumns(rows, order, [setCol('g')], { g: exclude }),
+    );
+    expect(excludeOrder).toEqual(includeOrder);
+  });
+
+  it('empty include values yields no rows', () => {
+    const value: SetColumnFilterValue = { kind: 'set', values: [] };
+    const actual = asArray(
+      filterOrderByColumns(rows, order, [setCol('g')], { g: value }),
+    );
+    expect(actual).toEqual([]);
+  });
+});
+
+describe('filterOrderByColumns (select / text / no-op identity)', () => {
+  const order = createSourceOrder(rows.length);
+
+  it('select matches exact string equality', () => {
+    const actual = asArray(
+      filterOrderByColumns(rows, order, [selectCol('g')], {
+        g: { kind: 'select', value: 'red' },
+      }),
+    );
+    const expected = rows
+      .map((row, i) => [row.g, i] as const)
+      .filter(([g]) => g === 'red')
+      .map(([, i]) => i);
+    expect(actual).toEqual(expected);
+  });
+
+  it('text is case-insensitive contains', () => {
+    const actual = asArray(
+      filterOrderByColumns(rows, order, [textCol('t')], {
+        t: { kind: 'text', value: 'ap' },
+      }),
+    );
+    // 'Apple' / 'apricot' / 'Grape'(gr*ap*e)が含む。
+    const expected = rows
+      .map((row, i) => [String(row.t).toLowerCase(), i] as const)
+      .filter(([t]) => t.includes('ap'))
+      .map(([, i]) => i);
+    expect(actual).toEqual(expected);
+  });
+
+  it('returns the same reference when no active filter exists', () => {
+    expect(
+      filterOrderByColumns(rows, order, [textCol('t')], {
+        t: { kind: 'text', value: '' },
+      }),
+    ).toBe(order);
+    expect(filterOrderByColumns(rows, order, [textCol('t')], {})).toBe(order);
+  });
+
+  it('returns the same reference when every row passes (set include over full universe)', () => {
+    // universe = 全行の g 値。全候補を include すると全行通過し、count===length で
+    //   下流 useMemo スキップのため同一参照(引数 order)を返す。
+    const universe = Array.from(new Set(rows.map((row) => String(row.g))));
+    const value: SetColumnFilterValue = {
+      kind: 'set',
+      mode: 'include',
+      values: universe,
+    };
+    expect(filterOrderByColumns(rows, order, [setCol('g')], { g: value })).toBe(
+      order,
+    );
+  });
+});
+
+describe('filterOrderByColumns (記述子経路 ≡ 旧・生文字列述語: text / date / select / custom)', () => {
+  const order = createSourceOrder(rows.length);
+  const dateCol = (key: string): GridColumn<Row> => ({
+    key,
+    width: 100,
+    filterType: 'date',
+  });
+
+  // 参照述語: text/date/custom(filterFn なし)= 部分一致(大文字小文字無視) / select = 完全一致。
+  const containsOracle = (key: string, needle: string): number[] => {
+    const n = needle.trim().toLowerCase();
+    const out: number[] = [];
+    for (let i = 0; i < rows.length; i += 1) {
+      if (
+        String(getCellValue(rows[i], textCol(key)) ?? '')
+          .toLowerCase()
+          .includes(n)
+      ) {
+        out.push(i);
+      }
+    }
+    return out;
+  };
+  const exactOracle = (key: string, expected: string): number[] => {
+    const out: number[] = [];
+    for (let i = 0; i < rows.length; i += 1) {
+      if (String(getCellValue(rows[i], selectCol(key)) ?? '') === expected) {
+        out.push(i);
+      }
+    }
+    return out;
+  };
+
+  it.each(['ap', 'A', 'rry', 'z'])(
+    'text descriptor contains %s === oracle',
+    (needle) => {
+      const actual = asArray(
+        filterOrderByColumns(rows, order, [textCol('t')], {
+          t: { kind: 'text', value: needle },
+        }),
+      );
+      expect(actual).toEqual(containsOracle('t', needle));
+    },
+  );
+
+  it('date descriptor shares the text contains predicate', () => {
+    const value: ColumnFilterValue = { kind: 'date', value: 'a' };
+    const actual = asArray(
+      filterOrderByColumns(rows, order, [dateCol('t')], { t: value }),
+    );
+    expect(actual).toEqual(containsOracle('t', 'a'));
+  });
+
+  it.each(['red', 'green', 'none'])(
+    'select descriptor exact %s === oracle',
+    (expected) => {
+      const actual = asArray(
+        filterOrderByColumns(rows, order, [selectCol('g')], {
+          g: { kind: 'select', value: expected },
+        }),
+      );
+      expect(actual).toEqual(exactOracle('g', expected));
+    },
+  );
+
+  it('empty text / date / select descriptors are inactive (identity)', () => {
+    expect(
+      filterOrderByColumns(rows, order, [textCol('t')], {
+        t: { kind: 'text', value: '' },
+      }),
+    ).toBe(order);
+    expect(
+      filterOrderByColumns(rows, order, [dateCol('t')], {
+        t: { kind: 'date', value: '  ' },
+      }),
+    ).toBe(order);
+    expect(
+      filterOrderByColumns(rows, order, [selectCol('g')], {
+        g: { kind: 'select', value: '' },
+      }),
+    ).toBe(order);
+  });
+
+  it('custom descriptor without filterFn falls back to contains', () => {
+    const customCol: GridColumn<Row> = {
+      key: 't',
+      width: 100,
+      filterType: 'custom',
+    };
+    const actual = asArray(
+      filterOrderByColumns(rows, order, [customCol], {
+        t: { kind: 'custom', value: 'rry' },
+      }),
+    );
+    expect(actual).toEqual(containsOracle('t', 'rry'));
+  });
+});
+
+describe('filterOrderByGlobalText', () => {
+  const order = createSourceOrder(rows.length);
+
+  it('returns the same reference for empty text', () => {
+    expect(
+      filterOrderByGlobalText(rows, order, [textCol('t'), numberCol('n')], '  '),
+    ).toBe(order);
+  });
+
+  it('matches across any column (case-insensitive contains)', () => {
+    const actual = asArray(
+      filterOrderByGlobalText(
+        rows,
+        order,
+        [textCol('t'), selectCol('g')],
+        'red',
+      ),
+    );
+    const expected = rows
+      .map((row, i) => [row, i] as const)
+      .filter(
+        ([row]) =>
+          String(row.t).toLowerCase().includes('red') ||
+          String(row.g).toLowerCase().includes('red'),
+      )
+      .map(([, i]) => i);
+    expect(actual).toEqual(expected);
+  });
+});
+
+describe('number filter descriptor helpers', () => {
+  it('parseNumberFilterExpression handles comparison / default = / range / invalid', () => {
+    expect(parseNumberFilterExpression('> 5')).toEqual({
+      mode: 'comparison',
+      operator: '>',
+      value: 5,
+    });
+    expect(parseNumberFilterExpression('42')).toEqual({
+      mode: 'comparison',
+      operator: '=',
+      value: 42,
+    });
+    expect(parseNumberFilterExpression('8 .. 1')).toEqual({
+      mode: 'range',
+      min: 1,
+      max: 8,
+    });
+    expect(parseNumberFilterExpression('')).toBeNull();
+    expect(parseNumberFilterExpression('1.')).toBeNull();
+    expect(parseNumberFilterExpression('abc')).toBeNull();
+  });
+
+  it('buildNumberColumnFilterValue trims, parses once, and nulls on empty', () => {
+    expect(buildNumberColumnFilterValue('   ')).toBeNull();
+    const descriptor = buildNumberColumnFilterValue('  >= 3  ');
+    expect(descriptor).toEqual({
+      kind: 'number',
+      raw: '>= 3',
+      parsed: { mode: 'comparison', operator: '>=', value: 3 },
+    });
+    const contains = buildNumberColumnFilterValue('1.');
+    expect(contains).toEqual({ kind: 'number', raw: '1.', parsed: null });
+  });
+
+  it('columnFilterValueToDraftText returns raw for number, value for text/select, empty otherwise', () => {
+    expect(columnFilterValueToDraftText(num('> 5'))).toBe('> 5');
+    expect(
+      columnFilterValueToDraftText({ kind: 'text', value: 'hello' }),
+    ).toBe('hello');
+    expect(
+      columnFilterValueToDraftText({ kind: 'select', value: 'red' }),
+    ).toBe('red');
+    expect(
+      columnFilterValueToDraftText({ kind: 'set', values: ['a'] }),
+    ).toBe('');
+    expect(
+      columnFilterValueToDraftText({ kind: 'custom', value: { x: 1 } }),
+    ).toBe('');
+    expect(columnFilterValueToDraftText(undefined)).toBe('');
+  });
+
+  it('isActiveColumnFilterValue: set/number/custom active; text/date trim non-empty; select non-empty', () => {
+    expect(
+      isActiveColumnFilterValue({ kind: 'set', values: [] }),
+    ).toBe(true);
+    expect(isActiveColumnFilterValue(num('> 1'))).toBe(true);
+    expect(isActiveColumnFilterValue({ kind: 'custom', value: 0 })).toBe(true);
+    expect(isActiveColumnFilterValue({ kind: 'text', value: 'abc' })).toBe(true);
+    expect(isActiveColumnFilterValue({ kind: 'date', value: '2024' })).toBe(
+      true,
+    );
+    expect(isActiveColumnFilterValue({ kind: 'select', value: 'x' })).toBe(true);
+    expect(isActiveColumnFilterValue({ kind: 'text', value: '   ' })).toBe(
+      false,
+    );
+    expect(isActiveColumnFilterValue({ kind: 'text', value: '' })).toBe(false);
+    expect(isActiveColumnFilterValue({ kind: 'select', value: '' })).toBe(
+      false,
+    );
+    expect(isActiveColumnFilterValue(undefined)).toBe(false);
+  });
+
+  it('type guards are consistent', () => {
+    const setValue: SetColumnFilterValue = { kind: 'set', values: ['a'] };
+    expect(isSetColumnFilterValue(setValue)).toBe(true);
+    expect(isNumberColumnFilterValue(setValue)).toBe(false);
+    const numberValue = num('> 1');
+    expect(isNumberColumnFilterValue(numberValue)).toBe(true);
+    expect(isSetColumnFilterValue(numberValue)).toBe(false);
+    // 追加(記述子化): text/date/select/custom はどちらの guard にも該当しません。
+    const textValue: ColumnFilterValue = { kind: 'text', value: 'x' };
+    expect(isSetColumnFilterValue(textValue)).toBe(false);
+    expect(isNumberColumnFilterValue(textValue)).toBe(false);
+  });
+});
+</file>
+
 <file path="src/components/spreadsheet-grid/view/gridBarHelpers.test.ts">
 // B: gridBarHelpers の表示テキスト / 選択統計テスト(純関数・node)。
 //   本番コードは無改修。ツールバー / ステータスバーが見せる文字列(A1 整形・件数・
@@ -3039,204 +3575,6 @@ describe('buildGridDerivedSummary composes the individual helpers', () => {
     expect(summary.hasSorting).toBe(true);
     expect(summary.sortedColumnLabel).toBe('金額');
   });
-});
-</file>
-
-<file path="src/index.css">
-:root {
-  --text: #6b6375;
-  --text-h: #08060d;
-  --bg: #fff;
-  --border: #e5e4e7;
-  --code-bg: #f4f3ec;
-  --accent: #aa3bff;
-  --accent-bg: rgba(170, 59, 255, 0.1);
-  --accent-border: rgba(170, 59, 255, 0.5);
-  --social-bg: rgba(244, 243, 236, 0.5);
-  --shadow:
-    rgba(0, 0, 0, 0.1) 0 10px 15px -3px, rgba(0, 0, 0, 0.05) 0 4px 6px -2px;
-
-  --sans: system-ui, 'Segoe UI', Roboto, sans-serif;
-  --heading: system-ui, 'Segoe UI', Roboto, sans-serif;
-  --mono: ui-monospace, Consolas, monospace;
-
-  font: 18px/145% var(--sans);
-  letter-spacing: 0.18px;
-  color-scheme: light dark;
-  color: var(--text);
-  background: var(--bg);
-  font-synthesis: none;
-  text-rendering: optimizeLegibility;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-
-  @media (max-width: 1024px) {
-    font-size: 16px;
-  }
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --text: #9ca3af;
-    --text-h: #f3f4f6;
-    --bg: #16171d;
-    --border: #2e303a;
-    --code-bg: #1f2028;
-    --accent: #c084fc;
-    --accent-bg: rgba(192, 132, 252, 0.15);
-    --accent-border: rgba(192, 132, 252, 0.5);
-    --social-bg: rgba(47, 48, 58, 0.5);
-    --shadow:
-      rgba(0, 0, 0, 0.4) 0 10px 15px -3px, rgba(0, 0, 0, 0.25) 0 4px 6px -2px;
-  }
-
-  #social .button-icon {
-    filter: invert(1) brightness(2);
-  }
-}
-
-#root {
-  width: 1126px;
-  max-width: 100%;
-  margin: 0 auto;
-  text-align: center;
-  border-inline: 1px solid var(--border);
-  min-height: 100svh;
-  display: flex;
-  flex-direction: column;
-  box-sizing: border-box;
-}
-
-body {
-  margin: 0;
-}
-
-h1,
-h2 {
-  font-family: var(--heading);
-  font-weight: 500;
-  color: var(--text-h);
-}
-
-h1 {
-  font-size: 56px;
-  letter-spacing: -1.68px;
-  margin: 32px 0;
-  @media (max-width: 1024px) {
-    font-size: 36px;
-    margin: 20px 0;
-  }
-}
-h2 {
-  font-size: 24px;
-  line-height: 118%;
-  letter-spacing: -0.24px;
-  margin: 0 0 8px;
-  @media (max-width: 1024px) {
-    font-size: 20px;
-  }
-}
-p {
-  margin: 0;
-}
-
-code,
-.counter {
-  font-family: var(--mono);
-  display: inline-flex;
-  border-radius: 4px;
-  color: var(--text-h);
-}
-
-code {
-  font-size: 15px;
-  line-height: 135%;
-  padding: 4px 8px;
-  background: var(--code-bg);
-}
-</file>
-
-<file path="src/main.tsx">
-import { StrictMode } from 'react'
-import { createRoot } from 'react-dom/client'
-import './index.css'
-import App from './App.tsx'
-
-createRoot(document.getElementById('root')!).render(
-  <StrictMode>
-    <App />
-  </StrictMode>,
-)
-</file>
-
-<file path="tsconfig.json">
-{
-  "files": [],
-  "references": [
-    { "path": "./tsconfig.app.json" },
-    { "path": "./tsconfig.node.json" }
-  ]
-}
-</file>
-
-<file path="tsconfig.node.json">
-{
-  "compilerOptions": {
-    "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.node.tsbuildinfo",
-    "target": "es2023",
-    "lib": ["ES2023"],
-    "module": "esnext",
-    "types": ["node"],
-    "skipLibCheck": true,
-
-    /* Bundler mode */
-    "moduleResolution": "bundler",
-    "allowImportingTsExtensions": true,
-    "verbatimModuleSyntax": true,
-    "moduleDetection": "force",
-    "noEmit": true,
-
-    /* Linting */
-    "noUnusedLocals": true,
-    "noUnusedParameters": true,
-    "erasableSyntaxOnly": true,
-    "noFallthroughCasesInSwitch": true
-  },
-  "include": ["vite.config.ts"]
-}
-</file>
-
-<file path="tsconfig.vitest.json">
-{
-  "extends": "./tsconfig.app.json",
-  "include": ["src"],
-  "exclude": []
-}
-</file>
-
-<file path="vite.config.ts">
-import { defineConfig } from 'vite'
-import react from '@vitejs/plugin-react'
-
-// https://vite.dev/config/
-export default defineConfig({
-  plugins: [react()],
-})
-</file>
-
-<file path="vitest.config.ts">
-import { defineConfig } from 'vitest/config';
-
-// 追加(V-1): 等価性ハーネスの恒久化用 vitest 設定です。
-//   - 本番ビルド設定(vite.config.ts)は変更しません。テストは別グラフで回します。
-//   - V-1 は純ロジック(verticalGeometry / sorting / filtering / selectOptions)のみで
-//     React 非依存のため environment は node。将来 V-2(collector フック)を足すときは
-//     該当テストだけ jsdom へ振り分けます(environmentMatchGlobs などで個別指定)。
-export default defineConfig({
-  test: {
-    environment: 'node',
-    include: ['src/**/*.test.ts'],
-  },
 });
 </file>
 
@@ -4018,288 +4356,6 @@ export function ActiveCellOverlay({
 }
 
 export default ActiveCellOverlay;
-</file>
-
-<file path="src/components/spreadsheet-grid/hooks/useFilterPopoverController.ts">
-import {
-    useEffect,
-    useMemo,  
-    useCallback,
-    useRef,
-    useState,
-  type PointerEvent,
-  type RefObject,
-} from 'react';
-import type { ColumnFilterValue, GridColumn } from '../model/gridTypes';
-// 追加(記述子化): number 記述子を含む列フィルター値を draft 用テキストへ整形します。
-import { columnFilterValueToDraftText } from '../logic/filtering';
-
-// 追加: 列フィルターポップオーバーの内部状態です。
-type HeaderFilterPopoverState = {
-  columnKey: string;
-  draftValue: string;
-};
-
-// 追加: body 直下 portal popover の配置情報です。
-export type FilterPopoverLayout = {
-  top: number;
-  left: number;
-  width: number;
-};
-
-type UseFilterPopoverControllerArgs<T> = {
-  visibleColumns: GridColumn<T>[];
-  columnFilterValues: Record<string, ColumnFilterValue>;
-  enableColumnFilter: boolean;
-  gridRootRef: RefObject<HTMLDivElement | null>;
-};
-
-const POPUP_WIDTH = 240;
-const VIEWPORT_MARGIN = 8;
-const OFFSET_Y = 8;
-const ESTIMATED_POPUP_HEIGHT = 260;
-// 追加(12-A): set フィルターは検索 + Select All + 候補リスト(208px)を含むため、
-//             上下フリップ判定用の見積もり高さを別に持ちます。
-const ESTIMATED_SET_POPUP_HEIGHT = 400;
-
-// 追加: 列フィルター popover の state / ref / focus / outside click / layout をまとめて管理します。
-export const useFilterPopoverController = <T,>({
-  visibleColumns,
-  columnFilterValues,
-  enableColumnFilter,
-  gridRootRef,
-}: UseFilterPopoverControllerArgs<T>) => {
-  const [filterPopoverState, setFilterPopoverState] =
-    useState<HeaderFilterPopoverState | null>(null);
-  const [filterPopoverLayout, setFilterPopoverLayout] =
-    useState<FilterPopoverLayout | null>(null);
-
-  // 追加: popover / anchor / autofocus 対象 input/select の ref 群です。
-  const filterPopoverRef = useRef<HTMLDivElement | null>(null);
-  const filterPopoverAnchorButtonRef = useRef<HTMLButtonElement | null>(null);
-  const filterTextInputRef = useRef<HTMLInputElement | null>(null);
-  const filterSelectRef = useRef<HTMLSelectElement | null>(null);
-
-  const isFilterPopoverOpen = filterPopoverState !== null;
-  const openedFilterColumnKey = filterPopoverState?.columnKey ?? null;
-
-  const openedFilterColumn = useMemo(
-    () =>
-      openedFilterColumnKey
-        ? visibleColumns.find((column) => column.key === openedFilterColumnKey) ??
-          null
-        : null,
-    [openedFilterColumnKey, visibleColumns],
-  );
-
-  // 追加: anchor button の位置から portal popover の fixed 座標を計算します。
-  const updateFilterPopoverLayout = useCallback(() => {
-    if (!openedFilterColumnKey || !filterPopoverAnchorButtonRef.current) {
-      setFilterPopoverLayout(null);
-      return;
-    }
-
-    const anchorRect = filterPopoverAnchorButtonRef.current.getBoundingClientRect();
-
-    // 追加(12-A): set フィルターは popover が縦に長いため、見積もり高さを切り替えます。
-    const estimatedPopupHeight =
-      openedFilterColumn?.filterType === 'set'
-        ? ESTIMATED_SET_POPUP_HEIGHT
-        : ESTIMATED_POPUP_HEIGHT;
-
-    let left = anchorRect.right - POPUP_WIDTH;
-    left = Math.max(VIEWPORT_MARGIN, left);
-    left = Math.min(left, window.innerWidth - POPUP_WIDTH - VIEWPORT_MARGIN);
-
-    let top = anchorRect.bottom + OFFSET_Y;
-    if (top + estimatedPopupHeight > window.innerHeight - VIEWPORT_MARGIN) {
-      top = anchorRect.top - estimatedPopupHeight - OFFSET_Y;
-    }
-    top = Math.max(VIEWPORT_MARGIN, top);
-
-    setFilterPopoverLayout((current) => {
-      if (
-        current &&
-        current.top === top &&
-        current.left === left &&
-        current.width === POPUP_WIDTH
-      ) {
-        return current;
-      }
-
-      return {
-        top,
-        left,
-        width: POPUP_WIDTH,
-      };
-    });
-    // 変更(12-A): 見積もり高さ切替のため openedFilterColumn(filterType)へ依存を追加します。
-  }, [openedFilterColumnKey, openedFilterColumn]);
-
-  // 追加: 列フィルターポップオーバーを開きます。
-  const openColumnFilterPopover = useCallback(
-    (column: GridColumn<T>, event: PointerEvent<HTMLButtonElement>) => {
-      event.preventDefault();
-      event.stopPropagation();
-
-      if (!enableColumnFilter) {
-        return;
-      }
-
-      // 追加: grid root に残っているフォーカスを明示的に外します。
-      if (document.activeElement instanceof HTMLElement) {
-        document.activeElement.blur();
-      }
-      gridRootRef.current?.blur();
-
-      // 追加: anchor button を保持し、portal popover の位置計算に使います。
-      filterPopoverAnchorButtonRef.current = event.currentTarget;
-
-      setFilterPopoverState({
-        columnKey: column.key,
-        // 変更(記述子化): number 記述子は String() で "[object Object]" になるため、
-        //   raw を取り出す columnFilterValueToDraftText 経由にします(他種別は従来と同値)。
-        draftValue: columnFilterValueToDraftText(columnFilterValues[column.key]),
-      });
-    },
-    [columnFilterValues, enableColumnFilter, gridRootRef],
-  );
-
-  // 追加: 列フィルターポップオーバーを閉じます。
-  const closeColumnFilterPopover = useCallback(() => {
-    setFilterPopoverState(null);
-    setFilterPopoverLayout(null);
-    filterPopoverAnchorButtonRef.current = null;
-    filterTextInputRef.current = null;
-    filterSelectRef.current = null;
-
-    // 追加: close 後は grid root にフォーカスを戻し、従来の keyboard 操作へ復帰させます。
-    requestAnimationFrame(() => {
-      gridRootRef.current?.focus();
-    });
-  }, [gridRootRef]);
-
-  // 追加: フィルター draft を更新します。
-  const updateFilterPopoverDraft = useCallback((value: string) => {
-    setFilterPopoverState((current) => {
-      if (!current) {
-        return current;
-      }
-      return {
-        ...current,
-        draftValue: value,
-      };
-    });
-  }, []);
-
-  // 追加: portal popover の位置を open / resize / scroll に応じて再計算します。
-  useEffect(() => {
-    if (!openedFilterColumnKey) {
-      return;
-    }
-
-    updateFilterPopoverLayout();
-
-    const handleReposition = () => {
-      updateFilterPopoverLayout();
-    };
-
-    window.addEventListener('resize', handleReposition);
-    window.addEventListener('scroll', handleReposition, true);
-
-    return () => {
-      window.removeEventListener('resize', handleReposition);
-      window.removeEventListener('scroll', handleReposition, true);
-    };
-  }, [openedFilterColumnKey, updateFilterPopoverLayout]);
-
-  // 追加: popover が実際に描画され、かつ「開いた直後 / 別列へ切替時」にだけ
-  //       input / select へ自動 focus します。
-  useEffect(() => {
-    if (!openedFilterColumn || !filterPopoverLayout) {
-      return;
-    }
-
-    const filterType = openedFilterColumn.filterType ?? 'text';
-
-    let frameId1 = 0;
-    let frameId2 = 0;
-
-    frameId1 = requestAnimationFrame(() => {
-      frameId2 = requestAnimationFrame(() => {
-        if (filterType === 'select') {
-          filterSelectRef.current?.focus();
-          return;
-        }
-
-        const inputElement = filterTextInputRef.current;
-        if (!inputElement) {
-          return;
-        }
-
-        inputElement.focus();
-        // 追加: 全文選択ではなく末尾へ caret を置き、半角入力時の全文置換を避けます。
-        const end = inputElement.value.length;
-        inputElement.setSelectionRange(end, end);
-      });
-    });
-
-    return () => {
-      cancelAnimationFrame(frameId1);
-      cancelAnimationFrame(frameId2);
-    };
-  }, [
-    openedFilterColumn,
-    filterPopoverLayout?.top,
-    filterPopoverLayout?.left,
-    filterPopoverLayout?.width,
-  ]);
-
-  // 追加: ポップオーバー表示中は、外側クリックで閉じます。
-  useEffect(() => {
-    if (!isFilterPopoverOpen) {
-      return;
-    }
-
-    const handleWindowPointerDown = (event: globalThis.PointerEvent) => {
-      const targetNode = event.target as Node | null;
-      if (!targetNode) {
-        return;
-      }
-
-      if (filterPopoverRef.current?.contains(targetNode)) {
-        return;
-      }
-
-      // 追加: anchor button を押したケースでは close の native listener と競合させません。
-      if (filterPopoverAnchorButtonRef.current?.contains(targetNode)) {
-        return;
-      }
-
-      closeColumnFilterPopover();
-    };
-
-    window.addEventListener('pointerdown', handleWindowPointerDown);
-    return () => {
-      window.removeEventListener('pointerdown', handleWindowPointerDown);
-    };
-  }, [closeColumnFilterPopover, isFilterPopoverOpen]);
-
-  return {
-    filterPopoverState,
-    filterPopoverLayout,
-    filterPopoverRef,
-    filterTextInputRef,
-    filterSelectRef,
-    isFilterPopoverOpen,
-    openedFilterColumn,
-    openColumnFilterPopover,
-    closeColumnFilterPopover,
-    updateFilterPopoverDraft,
-  };
-};
-
-export default useFilterPopoverController;
 </file>
 
 <file path="src/components/spreadsheet-grid/hooks/useGridBarContext.ts">
@@ -5519,6 +5575,288 @@ export const useColumnHeaderDragController = <T,>(
 export default useColumnHeaderDragController;
 </file>
 
+<file path="src/components/spreadsheet-grid/hooks/useFilterPopoverController.ts">
+import {
+    useEffect,
+    useMemo,  
+    useCallback,
+    useRef,
+    useState,
+  type PointerEvent,
+  type RefObject,
+} from 'react';
+import type { ColumnFilterValue, GridColumn } from '../model/gridTypes';
+// 追加(記述子化): number 記述子を含む列フィルター値を draft 用テキストへ整形します。
+import { columnFilterValueToDraftText } from '../logic/filtering';
+
+// 追加: 列フィルターポップオーバーの内部状態です。
+type HeaderFilterPopoverState = {
+  columnKey: string;
+  draftValue: string;
+};
+
+// 追加: body 直下 portal popover の配置情報です。
+export type FilterPopoverLayout = {
+  top: number;
+  left: number;
+  width: number;
+};
+
+type UseFilterPopoverControllerArgs<T> = {
+  visibleColumns: GridColumn<T>[];
+  columnFilterValues: Record<string, ColumnFilterValue>;
+  enableColumnFilter: boolean;
+  gridRootRef: RefObject<HTMLDivElement | null>;
+};
+
+const POPUP_WIDTH = 240;
+const VIEWPORT_MARGIN = 8;
+const OFFSET_Y = 8;
+const ESTIMATED_POPUP_HEIGHT = 260;
+// 追加(12-A): set フィルターは検索 + Select All + 候補リスト(208px)を含むため、
+//             上下フリップ判定用の見積もり高さを別に持ちます。
+const ESTIMATED_SET_POPUP_HEIGHT = 400;
+
+// 追加: 列フィルター popover の state / ref / focus / outside click / layout をまとめて管理します。
+export const useFilterPopoverController = <T,>({
+  visibleColumns,
+  columnFilterValues,
+  enableColumnFilter,
+  gridRootRef,
+}: UseFilterPopoverControllerArgs<T>) => {
+  const [filterPopoverState, setFilterPopoverState] =
+    useState<HeaderFilterPopoverState | null>(null);
+  const [filterPopoverLayout, setFilterPopoverLayout] =
+    useState<FilterPopoverLayout | null>(null);
+
+  // 追加: popover / anchor / autofocus 対象 input/select の ref 群です。
+  const filterPopoverRef = useRef<HTMLDivElement | null>(null);
+  const filterPopoverAnchorButtonRef = useRef<HTMLButtonElement | null>(null);
+  const filterTextInputRef = useRef<HTMLInputElement | null>(null);
+  const filterSelectRef = useRef<HTMLSelectElement | null>(null);
+
+  const isFilterPopoverOpen = filterPopoverState !== null;
+  const openedFilterColumnKey = filterPopoverState?.columnKey ?? null;
+
+  const openedFilterColumn = useMemo(
+    () =>
+      openedFilterColumnKey
+        ? visibleColumns.find((column) => column.key === openedFilterColumnKey) ??
+          null
+        : null,
+    [openedFilterColumnKey, visibleColumns],
+  );
+
+  // 追加: anchor button の位置から portal popover の fixed 座標を計算します。
+  const updateFilterPopoverLayout = useCallback(() => {
+    if (!openedFilterColumnKey || !filterPopoverAnchorButtonRef.current) {
+      setFilterPopoverLayout(null);
+      return;
+    }
+
+    const anchorRect = filterPopoverAnchorButtonRef.current.getBoundingClientRect();
+
+    // 追加(12-A): set フィルターは popover が縦に長いため、見積もり高さを切り替えます。
+    const estimatedPopupHeight =
+      openedFilterColumn?.filterType === 'set'
+        ? ESTIMATED_SET_POPUP_HEIGHT
+        : ESTIMATED_POPUP_HEIGHT;
+
+    let left = anchorRect.right - POPUP_WIDTH;
+    left = Math.max(VIEWPORT_MARGIN, left);
+    left = Math.min(left, window.innerWidth - POPUP_WIDTH - VIEWPORT_MARGIN);
+
+    let top = anchorRect.bottom + OFFSET_Y;
+    if (top + estimatedPopupHeight > window.innerHeight - VIEWPORT_MARGIN) {
+      top = anchorRect.top - estimatedPopupHeight - OFFSET_Y;
+    }
+    top = Math.max(VIEWPORT_MARGIN, top);
+
+    setFilterPopoverLayout((current) => {
+      if (
+        current &&
+        current.top === top &&
+        current.left === left &&
+        current.width === POPUP_WIDTH
+      ) {
+        return current;
+      }
+
+      return {
+        top,
+        left,
+        width: POPUP_WIDTH,
+      };
+    });
+    // 変更(12-A): 見積もり高さ切替のため openedFilterColumn(filterType)へ依存を追加します。
+  }, [openedFilterColumnKey, openedFilterColumn]);
+
+  // 追加: 列フィルターポップオーバーを開きます。
+  const openColumnFilterPopover = useCallback(
+    (column: GridColumn<T>, event: PointerEvent<HTMLButtonElement>) => {
+      event.preventDefault();
+      event.stopPropagation();
+
+      if (!enableColumnFilter) {
+        return;
+      }
+
+      // 追加: grid root に残っているフォーカスを明示的に外します。
+      if (document.activeElement instanceof HTMLElement) {
+        document.activeElement.blur();
+      }
+      gridRootRef.current?.blur();
+
+      // 追加: anchor button を保持し、portal popover の位置計算に使います。
+      filterPopoverAnchorButtonRef.current = event.currentTarget;
+
+      setFilterPopoverState({
+        columnKey: column.key,
+        // 変更(記述子化): number 記述子は String() で "[object Object]" になるため、
+        //   raw を取り出す columnFilterValueToDraftText 経由にします(他種別は従来と同値)。
+        draftValue: columnFilterValueToDraftText(columnFilterValues[column.key]),
+      });
+    },
+    [columnFilterValues, enableColumnFilter, gridRootRef],
+  );
+
+  // 追加: 列フィルターポップオーバーを閉じます。
+  const closeColumnFilterPopover = useCallback(() => {
+    setFilterPopoverState(null);
+    setFilterPopoverLayout(null);
+    filterPopoverAnchorButtonRef.current = null;
+    filterTextInputRef.current = null;
+    filterSelectRef.current = null;
+
+    // 追加: close 後は grid root にフォーカスを戻し、従来の keyboard 操作へ復帰させます。
+    requestAnimationFrame(() => {
+      gridRootRef.current?.focus();
+    });
+  }, [gridRootRef]);
+
+  // 追加: フィルター draft を更新します。
+  const updateFilterPopoverDraft = useCallback((value: string) => {
+    setFilterPopoverState((current) => {
+      if (!current) {
+        return current;
+      }
+      return {
+        ...current,
+        draftValue: value,
+      };
+    });
+  }, []);
+
+  // 追加: portal popover の位置を open / resize / scroll に応じて再計算します。
+  useEffect(() => {
+    if (!openedFilterColumnKey) {
+      return;
+    }
+
+    updateFilterPopoverLayout();
+
+    const handleReposition = () => {
+      updateFilterPopoverLayout();
+    };
+
+    window.addEventListener('resize', handleReposition);
+    window.addEventListener('scroll', handleReposition, true);
+
+    return () => {
+      window.removeEventListener('resize', handleReposition);
+      window.removeEventListener('scroll', handleReposition, true);
+    };
+  }, [openedFilterColumnKey, updateFilterPopoverLayout]);
+
+  // 追加: popover が実際に描画され、かつ「開いた直後 / 別列へ切替時」にだけ
+  //       input / select へ自動 focus します。
+  useEffect(() => {
+    if (!openedFilterColumn || !filterPopoverLayout) {
+      return;
+    }
+
+    const filterType = openedFilterColumn.filterType ?? 'text';
+
+    let frameId1 = 0;
+    let frameId2 = 0;
+
+    frameId1 = requestAnimationFrame(() => {
+      frameId2 = requestAnimationFrame(() => {
+        if (filterType === 'select') {
+          filterSelectRef.current?.focus();
+          return;
+        }
+
+        const inputElement = filterTextInputRef.current;
+        if (!inputElement) {
+          return;
+        }
+
+        inputElement.focus();
+        // 追加: 全文選択ではなく末尾へ caret を置き、半角入力時の全文置換を避けます。
+        const end = inputElement.value.length;
+        inputElement.setSelectionRange(end, end);
+      });
+    });
+
+    return () => {
+      cancelAnimationFrame(frameId1);
+      cancelAnimationFrame(frameId2);
+    };
+  }, [
+    openedFilterColumn,
+    filterPopoverLayout?.top,
+    filterPopoverLayout?.left,
+    filterPopoverLayout?.width,
+  ]);
+
+  // 追加: ポップオーバー表示中は、外側クリックで閉じます。
+  useEffect(() => {
+    if (!isFilterPopoverOpen) {
+      return;
+    }
+
+    const handleWindowPointerDown = (event: globalThis.PointerEvent) => {
+      const targetNode = event.target as Node | null;
+      if (!targetNode) {
+        return;
+      }
+
+      if (filterPopoverRef.current?.contains(targetNode)) {
+        return;
+      }
+
+      // 追加: anchor button を押したケースでは close の native listener と競合させません。
+      if (filterPopoverAnchorButtonRef.current?.contains(targetNode)) {
+        return;
+      }
+
+      closeColumnFilterPopover();
+    };
+
+    window.addEventListener('pointerdown', handleWindowPointerDown);
+    return () => {
+      window.removeEventListener('pointerdown', handleWindowPointerDown);
+    };
+  }, [closeColumnFilterPopover, isFilterPopoverOpen]);
+
+  return {
+    filterPopoverState,
+    filterPopoverLayout,
+    filterPopoverRef,
+    filterTextInputRef,
+    filterSelectRef,
+    isFilterPopoverOpen,
+    openedFilterColumn,
+    openColumnFilterPopover,
+    closeColumnFilterPopover,
+    updateFilterPopoverDraft,
+  };
+};
+
+export default useFilterPopoverController;
+</file>
+
 <file path="src/components/spreadsheet-grid/hooks/useGridClipboardController.ts">
 import { useCallback, type Dispatch } from 'react';
 import { gridActions, type GridUiAction } from '../model/gridActions';
@@ -6508,14 +6846,21 @@ import { describe, it, expect } from 'vitest';
 import {
   MAX_BODY_PX,
   WINDOW_BASE_CHUNK_PX,
+  AUTO_HEIGHT_MAX_ROWS,
   clientYToRowIndex,
   clipRowRangeToWindow,
+  computeAutoHeightVerticalGeometry,
   computeVerticalGeometry,
   createUniformRowMetrics,
   logicalToPhysicalScrollTop,
   physicalToLogicalScrollTop,
+  shouldUseAutoHeight,
   type ComputeVerticalGeometryArgs,
 } from './verticalGeometry';
+import {
+  buildRowHeightStore,
+  createAutoHeightRowMetrics,
+} from './rowHeightStore';
 
 // transform/レイアウトが安定してペイントされる float32 の正確整数域(2^24)。
 //   行/オーバーレイの配置値・wrapper の translateY はこの範囲内に収まる必要があります
@@ -6986,6 +7331,143 @@ describe('clipRowRangeToWindow (selection band clip to render window)', () => {
     expect(clipRowRangeToWindow(43, 43, 42, 42)).toBeNull();
   });
 });
+
+// C1-1: computeAutoHeightVerticalGeometry の等価性(uniform 相当の RowMetrics で start が
+//   computeVerticalGeometry(sf=1)と一致)と不変条件(sf=1 固定 / start 単調連続 / size 正値 /
+//   窓が可視域を被覆)を検査します。
+const identityKey = (index: number): number => index;
+
+describe('computeAutoHeightVerticalGeometry (uniform-equivalent: start matches computeVerticalGeometry)', () => {
+  const cases: Array<{
+    rowCount: number;
+    rowHeight: number;
+    headerHeight: number;
+    viewportHeight: number;
+    scrollTop: number;
+  }> = [
+    { rowCount: 1000, rowHeight: 36, headerHeight: 42, viewportHeight: 600, scrollTop: 0 },
+    { rowCount: 1000, rowHeight: 38, headerHeight: 42, viewportHeight: 600, scrollTop: 5 },
+    { rowCount: 1000, rowHeight: 38, headerHeight: 42, viewportHeight: 640, scrollTop: 3800 },
+    { rowCount: 137, rowHeight: 24, headerHeight: 30, viewportHeight: 480, scrollTop: 1000 },
+    { rowCount: 1000, rowHeight: 38, headerHeight: 42, viewportHeight: 600, scrollTop: 1e9 },
+  ];
+
+  for (const c of cases) {
+    it(`start matches uniform for ${JSON.stringify(c)}`, () => {
+      // uniform 経路(estimate=rowHeight・measured 空)→ auto-height は sf=1 / offset=0。
+      const store = buildRowHeightStore(c.rowCount, c.rowHeight, identityKey);
+      const rowMetrics = createAutoHeightRowMetrics(store);
+      const auto = computeAutoHeightVerticalGeometry(
+        {
+          headerHeight: c.headerHeight,
+          viewportHeight: c.viewportHeight,
+          scrollTop: c.scrollTop,
+          overscan: 20,
+        },
+        rowMetrics,
+      );
+      const uniform = computeVerticalGeometry({
+        rowCount: c.rowCount,
+        rowHeight: c.rowHeight,
+        headerHeight: c.headerHeight,
+        viewportHeight: c.viewportHeight,
+        scrollTop: c.scrollTop,
+        overscan: 20,
+        maxBodyPx: MAX_BODY_PX,
+      });
+
+      // sf=1 / translateY=0 / offset=0 に固定。
+      expect(auto.scaleFactor).toBe(1);
+      expect(auto.translateY).toBe(0);
+      expect(auto.windowBaseOffsetPx).toBe(0);
+      expect(auto.physicalBodyHeight).toBe(uniform.physicalBodyHeight);
+      expect(auto.logicalBodyHeight).toBe(uniform.logicalBodyHeight);
+
+      // 共通 index の start が一致(rowTop が uniform と一致するため)。
+      const autoByIndex = new Map(auto.rows.map((r) => [r.index, r.start]));
+      for (const r of uniform.rows) {
+        if (autoByIndex.has(r.index)) {
+          expect(autoByIndex.get(r.index)).toBe(r.start);
+        }
+      }
+
+      // 各 size は rowHeight(uniform estimate)。
+      for (const r of auto.rows) {
+        expect(r.size).toBe(c.rowHeight);
+      }
+    });
+  }
+});
+
+describe('shouldUseAutoHeight (pre-measurement gate)', () => {
+  it('requires enabled + driving column + row count within [1, maxRows]', () => {
+    expect(shouldUseAutoHeight(true, true, 1000, AUTO_HEIGHT_MAX_ROWS)).toBe(true);
+    // props 無効。
+    expect(shouldUseAutoHeight(false, true, 1000, AUTO_HEIGHT_MAX_ROWS)).toBe(false);
+    // 駆動列なし。
+    expect(shouldUseAutoHeight(true, false, 1000, AUTO_HEIGHT_MAX_ROWS)).toBe(false);
+    // 行数 0(描画なし)。
+    expect(shouldUseAutoHeight(true, true, 0, AUTO_HEIGHT_MAX_ROWS)).toBe(false);
+  });
+
+  it('gates at the row-count boundary (fallback to uniform above max)', () => {
+    // 上限ちょうどは true、+1 で false(uniform フォールバック)。
+    expect(shouldUseAutoHeight(true, true, AUTO_HEIGHT_MAX_ROWS, AUTO_HEIGHT_MAX_ROWS)).toBe(true);
+    expect(shouldUseAutoHeight(true, true, AUTO_HEIGHT_MAX_ROWS + 1, AUTO_HEIGHT_MAX_ROWS)).toBe(false);
+    // 1M 行は当然フォールバック。
+    expect(shouldUseAutoHeight(true, true, 1_000_000, AUTO_HEIGHT_MAX_ROWS)).toBe(false);
+  });
+});
+
+describe('computeAutoHeightVerticalGeometry (invariants: window covers viewport, monotonic, sized)', () => {
+  it('produces contiguous monotonically increasing rows that cover the visible band', () => {
+    // 非一様な行高(measured)で窓が可視域を覆い、start が単調・連続、size>0 を確認します。
+    const rowCount = 500;
+    const estimate = 30;
+    const measured = new Map<number, number>();
+    // 偶数行を背高(60)に。view 順=identity。
+    for (let i = 0; i < rowCount; i += 2) {
+      measured.set(i, 60);
+    }
+    const store = buildRowHeightStore(rowCount, estimate, identityKey, measured);
+    const rowMetrics = createAutoHeightRowMetrics(store);
+    const headerHeight = 42;
+    const viewportHeight = 600;
+
+    for (const scrollTop of [0, 500, 5000, 1e9]) {
+      const geo = computeAutoHeightVerticalGeometry(
+        { headerHeight, viewportHeight, scrollTop, overscan: 20 },
+        rowMetrics,
+      );
+
+      expect(geo.rows.length).toBeGreaterThan(0);
+
+      // index 連続・start 単調増加・size 正値・start = headerHeight + rowTop(index)。
+      for (let k = 0; k < geo.rows.length; k += 1) {
+        const r = geo.rows[k];
+        expect(r.size).toBeGreaterThan(0);
+        expect(r.start).toBe(headerHeight + rowMetrics.rowTop(r.index));
+        if (k > 0) {
+          expect(r.index).toBe(geo.rows[k - 1].index + 1);
+          expect(r.start).toBeGreaterThan(geo.rows[k - 1].start);
+        }
+      }
+
+      // 可視域 [clampedScrollTop, clampedScrollTop+viewport] が窓 [first, last] に含まれること。
+      const logicalMax = Math.max(
+        headerHeight + rowMetrics.totalBodyHeight - viewportHeight,
+        0,
+      );
+      const clamped = Math.min(Math.max(scrollTop, 0), logicalMax);
+      const firstVisible = rowMetrics.rowAtContentY(clamped);
+      const lastVisible = rowMetrics.rowAtContentY(clamped + viewportHeight);
+      const first = geo.rows[0].index;
+      const last = geo.rows[geo.rows.length - 1].index;
+      expect(first).toBeLessThanOrEqual(firstVisible);
+      expect(last).toBeGreaterThanOrEqual(lastVisible);
+    }
+  });
+});
 </file>
 
 <file path="src/components/spreadsheet-grid/logic/verticalGeometry.ts">
@@ -7023,6 +7505,27 @@ describe('clipRowRangeToWindow (selection band clip to render window)', () => {
 //   押し上げてよく、その場合の差分は本定数 1 行のみです。
 export const MAX_BODY_PX = 15_000_000;
 
+// auto-height 行モードの行数上限です(gate)。論理全高 = 行数 × 1 行最大高(~280px)が
+//   MAX_BODY_PX を超えない範囲に行数で gate します(MAX_BODY_PX / 280 ≒ 53,571 を切り下げ)。
+//   これにより auto-height モードでは scaleFactor=1 / windowBaseOffsetPx=0 / translateY=0 が
+//   保証され、scaling・float32 対策・基準オフセットが休眠します。超過時は uniform 行高へ
+//   フォールバックします(上限値・1 行最大高はプロダクト判断で調整可)。
+export const AUTO_HEIGHT_MAX_ROWS = 50_000;
+
+// auto-height を使うべきか(測定なしで事前判定できる pure gate)。
+//   props 有効 + 駆動列(autoHeight:true)が存在 + 行数が [1, maxRows] のとき true。
+//   超過時は false(uniform フォールバック)。viewRowCount=0 も false(描画なし)。
+export const shouldUseAutoHeight = (
+  autoHeightEnabled: boolean,
+  hasAutoHeightColumn: boolean,
+  viewRowCount: number,
+  maxRows: number,
+): boolean =>
+  autoHeightEnabled &&
+  hasAutoHeightColumn &&
+  viewRowCount > 0 &&
+  viewRowCount <= maxRows;
+
 // 描画ウィンドウの基準オフセットをスナップする単位(px)です。
 // 目的(巨大 transform によるペイント不良の回避):
 //   scaling 起動時、行/オーバーレイを「絶対論理 top(最大 ≈ rowCount*rowHeight)」へ置くと、
@@ -7042,6 +7545,9 @@ export type VerticalRow = {
   index: number;
   // 行の論理 top(headerHeight 込み)。GridBodyLayer の translateY 基準(virtualRow.start 互換)。
   start: number;
+  // 行ごとの高さ(px)。auto-height 専用。uniform 経路では未設定で、消費側(GridBodyLayer)は
+  //   rowHeight prop へフォールバックします(uniform 出力をバイト等価に保つため)。
+  size?: number;
 };
 
 // 縦ジオメトリのシーム契約です。uniform / 将来の auto-height で実装を差し替えても、
@@ -7251,138 +7757,77 @@ export const computeVerticalGeometry = ({
     rowIndexSet,
   };
 };
-</file>
 
-<file path="src/components/spreadsheet-grid/model/gridActions.ts">
-import type { CellCoord, ColumnFilterValue, GridSortEntry } from './gridTypes';
+export type ComputeAutoHeightVerticalGeometryArgs = {
+  headerHeight: number;
+  // スクロールコンテナの可視高さ(clientHeight)。窓の行数に効きます。
+  viewportHeight: number;
+  // 物理 scrollTop。auto-height では sf=1 なので論理 scrollTop と一致します。
+  scrollTop: number;
+  // 窓の上下に先回りで描画する行数(uniform 経路と同じ overscan=20 を渡す想定)。
+  overscan: number;
+};
 
-// 追加: Grid UI action の union 型です。
-export type GridUiAction =
-  | { type: 'cell/activate'; cell: CellCoord | null }
-  | { type: 'selection/start'; cell: CellCoord }
-  | { type: 'selection/update'; cell: CellCoord }
-  | { type: 'rowSelection/start'; row: number }
-  | { type: 'rowSelection/update'; row: number }
-  | { type: 'columnSelection/start'; col: number }
-  | { type: 'columnSelection/update'; col: number }
-  | { type: 'selection/end' }
-  | { type: 'selection/clear' }
-  | { type: 'edit/start'; cell: CellCoord }
-  | { type: 'edit/stop' }
-  | {
-      type: 'column/resizeStart';
-      columnKey: string;
-      startX: number;
-      startWidth: number;
-      minWidth: number;
-      maxWidth: number;
-    }
-  | { type: 'column/resizeUpdate'; clientX: number }
-  | { type: 'column/resizeEnd' }
-  | { type: 'columnWidths/sync'; widths: Record<string, number> }
-  | { type: 'filter/setGlobal'; value: string }
-  | { type: 'filter/setColumn'; columnKey: string; value: ColumnFilterValue }
-  | { type: 'filter/clearColumn'; columnKey: string }
-  | { type: 'filter/resetAll' }
-  | { type: 'sort/set'; entries: GridSortEntry[] }
-  | { type: 'sort/clear' };
+// auto-height 行の縦ジオメトリ(prefix-sum 版 RowMetrics を窓出し)。
+//   ★gate(論理全高 < MAX_BODY_PX / 行数 <= AUTO_HEIGHT_MAX_ROWS)前提なので、scaleFactor=1 /
+//     windowBaseOffsetPx=0 / translateY=0 に固定されます。scaling・float32 対策・基準オフセットは
+//     休眠し、行/オーバーレイは絶対論理 top(headerHeight + rowTop(i))にそのまま置けます。
+//   窓出しは uniform の純算術(floor(y/rowHeight))の代わりに RowMetrics.rowAtContentY
+//     (prefix 二分探索)で可視域 [scrollTop, scrollTop+viewport] を覆う行を求め、両側に overscan を
+//     足します。estimate 一様・measured 空の RowMetrics を渡すと、共通 index の start は
+//     computeVerticalGeometry(sf=1)と一致し、窓は同じ可視域を被覆します(末尾 overscan の行数は
+//     行高可変の窓計算原理が異なるため厳密一致は保証しません)。
+//   各 row には start に加え size(= rowsHeight(i,i))を載せ、GridBodyLayer が行ごとの高さに使います。
+export const computeAutoHeightVerticalGeometry = (
+  {
+    headerHeight,
+    viewportHeight,
+    scrollTop,
+    overscan,
+  }: ComputeAutoHeightVerticalGeometryArgs,
+  rowMetrics: RowMetrics,
+): VerticalGeometry => {
+  const rowCount = rowMetrics.rowCount;
+  const logicalBodyHeight = rowMetrics.totalBodyHeight;
+  // gate により論理全高 <= MAX_BODY_PX。圧縮は不要で物理 = 論理です。
+  const physicalBodyHeight = logicalBodyHeight;
 
-// 追加: action creator 群です。UI から文字列リテラルを散らさないために定義します。
-export const gridActions = {
-  activateCell: (cell: CellCoord | null): GridUiAction => ({
-    type: 'cell/activate',
-    cell,
-  }),
-  startSelection: (cell: CellCoord): GridUiAction => ({
-    type: 'selection/start',
-    cell,
-  }),
-  updateSelection: (cell: CellCoord): GridUiAction => ({
-    type: 'selection/update',
-    cell,
-  }),
-  startRowSelection: (row: number): GridUiAction => ({
-    type: 'rowSelection/start',
-    row,
-  }),
-  updateRowSelection: (row: number): GridUiAction => ({
-    type: 'rowSelection/update',
-    row,
-  }),
-  startColumnSelection: (col: number): GridUiAction => ({
-    type: 'columnSelection/start',
-    col,
-  }),
-  updateColumnSelection: (col: number): GridUiAction => ({
-    type: 'columnSelection/update',
-    col,
-  }),
-  endSelection: (): GridUiAction => ({
-    type: 'selection/end',
-  }),
-  clearSelection: (): GridUiAction => ({
-    type: 'selection/clear',
-  }),
-  startEdit: (cell: CellCoord): GridUiAction => ({
-    type: 'edit/start',
-    cell,
-  }),
-  stopEdit: (): GridUiAction => ({
-    type: 'edit/stop',
-  }),
-  startColumnResize: (
-    columnKey: string,
-    startX: number,
-    startWidth: number,
-    minWidth: number,
-    maxWidth: number,
-  ): GridUiAction => ({
-    type: 'column/resizeStart',
-    columnKey,
-    startX,
-    startWidth,
-    minWidth,
-    maxWidth,
-  }),
-  updateColumnResize: (clientX: number): GridUiAction => ({
-    type: 'column/resizeUpdate',
-    clientX,
-  }),
-  endColumnResize: (): GridUiAction => ({
-    type: 'column/resizeEnd',
-  }),
-  syncColumnWidths: (widths: Record<string, number>): GridUiAction => ({
-    type: 'columnWidths/sync',
-    widths,
-  }),
-  setGlobalFilter: (value: string): GridUiAction => ({
-    type: 'filter/setGlobal',
-    value,
-  }),
-  setColumnFilter: (
-    columnKey: string,
-    value: ColumnFilterValue,
-  ): GridUiAction => ({
-    type: 'filter/setColumn',
-    columnKey,
-    value,
-  }),
-  clearColumnFilter: (columnKey: string): GridUiAction => ({
-    type: 'filter/clearColumn',
-    columnKey,
-  }),
-  resetAllFilters: (): GridUiAction => ({
-    type: 'filter/resetAll',
-  }),
-  // 変更(MS-1): 単一(columnKey, direction) → エントリ配列まるごと set にしました。
-  //   配列の組み立て(置換/追加/除去)は呼び出し側で行い、reducer/action は薄いまま保ちます。
-  setSort: (entries: GridSortEntry[]): GridUiAction => ({
-    type: 'sort/set',
-    entries,
-  }),
-  clearSort: (): GridUiAction => ({
-    type: 'sort/clear',
-  }),
+  // スクロール可動域(uniform と同式)。sf=1 なので物理 = 論理です。
+  const logicalMax = Math.max(
+    headerHeight + logicalBodyHeight - viewportHeight,
+    0,
+  );
+  const clampedScrollTop = Math.min(Math.max(scrollTop, 0), logicalMax);
+
+  // 窓出し: 可視域 [clampedScrollTop, clampedScrollTop + viewportHeight] を覆う行 + 両側 overscan。
+  //   rowAtContentY は content-top 基準(headerHeight 抜き)の論理 y を取るため、可視域の上端/下端を
+  //   そのまま渡します(no-op で uniform の floor(y/rowHeight) と一致)。
+  const firstVisible = rowMetrics.rowAtContentY(clampedScrollTop);
+  const lastVisible = rowMetrics.rowAtContentY(clampedScrollTop + viewportHeight);
+  const start = Math.max(firstVisible - overscan, 0);
+  const end = Math.min(lastVisible + overscan + 1, rowCount);
+
+  const rows: VerticalRow[] = [];
+  const rowIndexSet = new Set<number>();
+  for (let index = start; index < end; index += 1) {
+    rows.push({
+      index,
+      // sf=1 / windowBaseOffsetPx=0 なので絶対論理 top をそのまま置きます。
+      start: headerHeight + rowMetrics.rowTop(index),
+      size: rowMetrics.rowsHeight(index, index),
+    });
+    rowIndexSet.add(index);
+  }
+
+  return {
+    physicalBodyHeight,
+    logicalBodyHeight,
+    scaleFactor: 1,
+    translateY: 0,
+    windowBaseOffsetPx: 0,
+    rows,
+    rowIndexSet,
+  };
 };
 </file>
 
@@ -9262,6 +9707,139 @@ export const computeSinglePaneColumnExtent = <T,>(
 };
 </file>
 
+<file path="src/components/spreadsheet-grid/model/gridActions.ts">
+import type { CellCoord, ColumnFilterValue, GridSortEntry } from './gridTypes';
+
+// 追加: Grid UI action の union 型です。
+export type GridUiAction =
+  | { type: 'cell/activate'; cell: CellCoord | null }
+  | { type: 'selection/start'; cell: CellCoord }
+  | { type: 'selection/update'; cell: CellCoord }
+  | { type: 'rowSelection/start'; row: number }
+  | { type: 'rowSelection/update'; row: number }
+  | { type: 'columnSelection/start'; col: number }
+  | { type: 'columnSelection/update'; col: number }
+  | { type: 'selection/end' }
+  | { type: 'selection/clear' }
+  | { type: 'edit/start'; cell: CellCoord }
+  | { type: 'edit/stop' }
+  | {
+      type: 'column/resizeStart';
+      columnKey: string;
+      startX: number;
+      startWidth: number;
+      minWidth: number;
+      maxWidth: number;
+    }
+  | { type: 'column/resizeUpdate'; clientX: number }
+  | { type: 'column/resizeEnd' }
+  | { type: 'columnWidths/sync'; widths: Record<string, number> }
+  | { type: 'filter/setGlobal'; value: string }
+  | { type: 'filter/setColumn'; columnKey: string; value: ColumnFilterValue }
+  | { type: 'filter/clearColumn'; columnKey: string }
+  | { type: 'filter/resetAll' }
+  | { type: 'sort/set'; entries: GridSortEntry[] }
+  | { type: 'sort/clear' };
+
+// 追加: action creator 群です。UI から文字列リテラルを散らさないために定義します。
+export const gridActions = {
+  activateCell: (cell: CellCoord | null): GridUiAction => ({
+    type: 'cell/activate',
+    cell,
+  }),
+  startSelection: (cell: CellCoord): GridUiAction => ({
+    type: 'selection/start',
+    cell,
+  }),
+  updateSelection: (cell: CellCoord): GridUiAction => ({
+    type: 'selection/update',
+    cell,
+  }),
+  startRowSelection: (row: number): GridUiAction => ({
+    type: 'rowSelection/start',
+    row,
+  }),
+  updateRowSelection: (row: number): GridUiAction => ({
+    type: 'rowSelection/update',
+    row,
+  }),
+  startColumnSelection: (col: number): GridUiAction => ({
+    type: 'columnSelection/start',
+    col,
+  }),
+  updateColumnSelection: (col: number): GridUiAction => ({
+    type: 'columnSelection/update',
+    col,
+  }),
+  endSelection: (): GridUiAction => ({
+    type: 'selection/end',
+  }),
+  clearSelection: (): GridUiAction => ({
+    type: 'selection/clear',
+  }),
+  startEdit: (cell: CellCoord): GridUiAction => ({
+    type: 'edit/start',
+    cell,
+  }),
+  stopEdit: (): GridUiAction => ({
+    type: 'edit/stop',
+  }),
+  startColumnResize: (
+    columnKey: string,
+    startX: number,
+    startWidth: number,
+    minWidth: number,
+    maxWidth: number,
+  ): GridUiAction => ({
+    type: 'column/resizeStart',
+    columnKey,
+    startX,
+    startWidth,
+    minWidth,
+    maxWidth,
+  }),
+  updateColumnResize: (clientX: number): GridUiAction => ({
+    type: 'column/resizeUpdate',
+    clientX,
+  }),
+  endColumnResize: (): GridUiAction => ({
+    type: 'column/resizeEnd',
+  }),
+  syncColumnWidths: (widths: Record<string, number>): GridUiAction => ({
+    type: 'columnWidths/sync',
+    widths,
+  }),
+  setGlobalFilter: (value: string): GridUiAction => ({
+    type: 'filter/setGlobal',
+    value,
+  }),
+  setColumnFilter: (
+    columnKey: string,
+    value: ColumnFilterValue,
+  ): GridUiAction => ({
+    type: 'filter/setColumn',
+    columnKey,
+    value,
+  }),
+  clearColumnFilter: (columnKey: string): GridUiAction => ({
+    type: 'filter/clearColumn',
+    columnKey,
+  }),
+  resetAllFilters: (): GridUiAction => ({
+    type: 'filter/resetAll',
+  }),
+  // 変更(MS-1): 単一(columnKey, direction) → エントリ配列まるごと set にしました。
+  //   配列の組み立て(置換/追加/除去)は呼び出し側で行い、reducer/action は薄いまま保ちます。
+  setSort: (entries: GridSortEntry[]): GridUiAction => ({
+    type: 'sort/set',
+    entries,
+  }),
+  clearSort: (): GridUiAction => ({
+    type: 'sort/clear',
+  }),
+};
+</file>
+
 <file path="src/components/spreadsheet-grid/view/ColumnFilterPopover.tsx">
 import { createPortal } from 'react-dom';
 // 変更(12-A): set フィルター(検索 + Select All + チェックボックス一覧)用に
@@ -10087,6 +10665,8 @@ import { isCellEditable } from '../utils/permissions';
 type VirtualRowLike = {
   index: number;
   start: number;
+  // 追加(C1): auto-height の行ごと高さ。uniform では undefined(rowHeight へフォールバック)。
+  size?: number;
 };
 
 // ──────────────────────────────────────────────────────────
@@ -10116,7 +10696,17 @@ type GridBodyRowProps<T> = {
   // virtualRow.start(scrollMargin=headerHeight 込み)。行全体の translateY に使います。
   top: number;
   renderEntries: PaneColumnEntry<T>[];
+  // この行の解決済み高さ(px)。uniform では rowHeight prop と同値、auto-height では行ごとの
+  //   解決済み高さ(virtualRow.size)が GridBodyLayer 側で載ります。
   rowHeight: number;
+  // 追加(C1): auto-height 行モードか。true かつ column.autoHeight のセルは内容駆動レイアウト
+  //   (min-height + white-space:normal + 測定マーカー)になります。uniform では常に false。
+  autoHeight: boolean;
+  // 追加(C1-6): auto-height セルの min-height 下限(基準行高=estimate)。rowHeight(=解決済み行高/
+  //   実測由来)を下限にすると一度伸びた行が縮まなくなる(min-height で測定が下げ止まる)ため、
+  //   下限は実測に依存しない固定値(基準行高)にして shrink を可能にします。GridBodyLayer の基準
+  //   rowHeight prop がそのまま入ります(uniform では未使用)。
+  autoHeightMinHeight: number;
   rowHeaderCellStyle: CSSProperties;
   // 注記: hoveredRowIndex そのものではなく「この行がホバー中か」を boolean で渡します。
   //       これによりホバー変化時に再レンダーされるのは該当 2 行だけで済みます。
@@ -10170,6 +10760,8 @@ function GridBodyRowInner<T>({
   top,
   renderEntries,
   rowHeight,
+  autoHeight,
+  autoHeightMinHeight,
   rowHeaderCellStyle,
   isRowHovered,
   isWholeGridSelected,
@@ -10262,9 +10854,16 @@ function GridBodyRowInner<T>({
           column,
         );
 
+        // 追加(C1): auto-height モードかつ駆動列(column.autoHeight)のセルは内容駆動高さにします。
+        //   高さを固定せず min-height=解決済み行高を下限に、white-space:normal で折り返します。
+        //   data-autoheight-cell は C1-3 の ResizeObserver が実測対象を見つけるためのマーカーです。
+        //   uniform(autoHeight=false)では常に false で、従来どおり固定高 + 中央寄せになります。
+        const isAutoHeightCell = autoHeight && column.autoHeight === true;
+
         return (
           <div
             key={`${String(rowKey)}-${column.key}`}
+            data-autoheight-cell={isAutoHeightCell ? '' : undefined}
             onPointerDown={(event) =>
               onCellPointerDown({ row: rowIndex, col: colIndex }, event)
             }
@@ -10280,10 +10879,30 @@ function GridBodyRowInner<T>({
               left,
               width: size,
               minWidth: size,
-              height: rowHeight,
+              // auto-height セル: 内容駆動(下限=基準行高=estimate)。通常セル: 従来どおり固定高 + 中央寄せ。
+              // 変更(C1-5): uniform セルは固定行高に対し長文だと既定の white-space:normal で折り返し、
+              //   overflow 未指定のため溢れた分が隣行へ被って見えていました(autoHeight:true 列を
+              //   uniform 側=gate 外/トグル OFF で表示したときに顕在化)。nowrap + overflow:hidden で
+              //   1 行表示・セル境界クリップへ寄せ、隣行への被りを防ぎます(短文列は元から 1 行で不変)。
+              // 変更(C1-6): min-height を rowHeight(解決済み行高=実測由来)から autoHeightMinHeight
+              //   (基準行高=estimate・実測非依存)へ変更。旧実装は一度伸びた行の min-height が大きい実測値で
+              //   固定され、列幅拡大等で内容が減っても測定が min-height で下げ止まり行が縮みませんでした。
+              //   固定下限にすることでセルが内容まで縮み、再測定で小さい値が反映されて行が shrink します。
+              ...(isAutoHeightCell
+                ? {
+                    minHeight: autoHeightMinHeight,
+                    alignItems: 'flex-start',
+                    whiteSpace: 'normal',
+                    wordBreak: 'break-word',
+                  }
+                : {
+                    height: rowHeight,
+                    alignItems: 'center',
+                    whiteSpace: 'nowrap',
+                    overflow: 'hidden',
+                  }),
               boxSizing: 'border-box',
               display: 'flex',
-              alignItems: 'center',
               padding: '0 10px',
               borderRight: '1px solid #e5e7eb',
               borderBottom: '1px solid #e5e7eb',
@@ -10329,6 +10948,8 @@ type GridBodyLayerProps<T> = {
   // 変更(10-C): 描画対象の列エントリです(座標はペインローカル)。
   renderEntries: PaneColumnEntry<T>[];
   rowHeight: number;
+  // 追加(C1): auto-height 行モード。未指定時 false(供給側 C1-3 まで uniform 経路で不変)。
+  autoHeight?: boolean;
   rowHeaderCellStyle: CSSProperties;
   hoveredRowIndex: number | null;
   isWholeGridSelected: boolean;
@@ -10382,6 +11003,7 @@ export function GridBodyLayer<T>({
   virtualRowIndexes,
   renderEntries,
   rowHeight,
+  autoHeight = false,
   rowHeaderCellStyle,
   hoveredRowIndex,
   isWholeGridSelected,
@@ -10416,6 +11038,9 @@ export function GridBodyLayer<T>({
           return null;
         }
         const rowKey = rowModel.getRowKey(rowIndex) ?? rowIndex;
+
+        // 行ごとの解決済み高さ。auto-height では virtualRow.size、uniform では rowHeight。
+        const rowSize = virtualRow.size ?? rowHeight;
 
         // 追加(11-A): この行に関係する選択状態だけをプリミティブへ分解します。
         const isRowSelected =
@@ -10457,7 +11082,9 @@ export function GridBodyLayer<T>({
             row={row}
             top={virtualRow.start}
             renderEntries={renderEntries}
-            rowHeight={rowHeight}
+            rowHeight={rowSize}
+            autoHeight={autoHeight}
+            autoHeightMinHeight={rowHeight}
             rowHeaderCellStyle={rowHeaderCellStyle}
             isRowHovered={hoveredRowIndex === rowIndex}
             isWholeGridSelected={isWholeGridSelected}
@@ -10815,453 +11442,6 @@ export const useColumnMenuController = <T,>({
 };
 
 export default useColumnMenuController;
-</file>
-
-<file path="src/components/spreadsheet-grid/logic/filtering.ts">
-import type {
-  ColumnFilterValue,
-  GridColumn,
-  NumberColumnFilterValue,
-  ParsedNumberFilter,
-  SetColumnFilterValue,
-} from '../model/gridTypes';
-import { getCellValue } from '../utils/permissions';
-
-// 追加(DS-1 / index ベースパイプライン): 「ビュー順に並んだ元 rows の index 列」です。
-//   オブジェクト配列({row, sourceIndex, ...})を各段で割り当て直す従来方式に代えて、
-//   フィルタ/ソートはこの index 列(Int32Array)だけを生成・受け渡しします。
-//   - 1,000,000 行でも 4MB(= 4byte × N)に収まり、割り当て/GC が行オブジェクト方式から桁で下がります。
-//   - 将来 Web Worker へ渡す際に transferable(ゼロコピー)になります。
-//   - ビュー位置 i の元行は rows[order[i]] で引きます(この対応付けが後段のシームの土台)。
-//   DS-1 は純関数の追加のみで、配線(SpreadsheetGrid 側のチェーン差し替え)は DS-2 で行います。
-export type RowOrder = Int32Array;
-
-// 追加(DS-1): 恒等 order [0, 1, ..., rowCount-1] を生成します(パイプラインの起点)。
-export const createSourceOrder = (rowCount: number): RowOrder => {
-  const order = new Int32Array(rowCount);
-  for (let i = 0; i < rowCount; i += 1) {
-    order[i] = i;
-  }
-  return order;
-};
-
-// 追加(12-A → 記述子化): set フィルター値の type guard です。
-// 変更(記述子化): columnFilters の値が ColumnFilterValue(判別共用体)へ閉じたため、
-//   typeof / Array.isArray の実行時ダックタイピングは不要になり、kind の絞り込みだけで足ります。
-//   外部呼び出し側(SpreadsheetGrid の表示・署名計算)の narrowing を据え置くため guard は残します。
-export const isSetColumnFilterValue = (
-  value: ColumnFilterValue | undefined,
-): value is SetColumnFilterValue => value?.kind === 'set';
-
-// 追加(12-A): 列フィルター値が「有効」かを判定する共通 helper です。
-// 変更理由: 従来は GridHeaderRow(フィルター済みバッジ) / gridBarHelpers(有効件数) /
-//   列フィルタの適用処理がそれぞれ String(value).trim() で判定していました。
-//   set フィルター値はオブジェクトのため String() 判定が成立しません
-//   (空配列 = 全行除外でも「有効」と数える必要があります)。
-//   有効判定をここへ一元化し、3 箇所すべてが同じ規則を共有します。
-// 変更(記述子化): 判別共用体の kind で網羅判定します。set / number / custom は存在時点で有効
-//   (set/number は reducer/build 側で空を clear 済み、custom は利用者が明示的に set した値)。
-//   text / date は trim 後非空、select は値非空のときだけ有効です(旧・生文字列時代と等価)。
-export const isActiveColumnFilterValue = (
-  value: ColumnFilterValue | undefined,
-): boolean => {
-  if (!value) {
-    return false;
-  }
-  switch (value.kind) {
-    case 'set':
-    case 'number':
-    case 'custom':
-      return true;
-    case 'select':
-      return value.value.length > 0;
-    case 'text':
-    case 'date':
-      return value.value.trim().length > 0;
-  }
-};
-
-// 注記(記述子化): ParsedNumberFilter 型は gridTypes へ移設しました(ColumnFilterValue が
-//   number 記述子を内包する都合)。parse の「ロジック」は引き続きこちらにあります。
-// 追加: number フィルター式を解釈します。
-export const parseNumberFilterExpression = (
-  rawValue: string,
-): ParsedNumberFilter | null => {
-  const normalized = rawValue.trim();
-  if (!normalized) {
-    return null;
-  }
-
-  const rangeMatch = normalized.match(
-    /^(-?\d+(?:\.\d+)?)\s*\.\.\s*(-?\d+(?:\.\d+)?)$/,
-  );
-  if (rangeMatch) {
-    const first = Number(rangeMatch[1]);
-    const second = Number(rangeMatch[2]);
-    if (!Number.isFinite(first) || !Number.isFinite(second)) {
-      return null;
-    }
-    return {
-      mode: 'range',
-      min: Math.min(first, second),
-      max: Math.max(first, second),
-    };
-  }
-
-  const comparisonMatch = normalized.match(
-    /^(<=|>=|=|<|>)?\s*(-?\d+(?:\.\d+)?)$/,
-  );
-  if (!comparisonMatch) {
-    return null;
-  }
-
-  return {
-    mode: 'comparison',
-    operator: (comparisonMatch[1] ?? '=') as '>' | '>=' | '<' | '<=' | '=',
-    value: Number(comparisonMatch[2]),
-  };
-};
-
-// 注記(記述子化 / number): NumberColumnFilterValue 型は gridTypes へ移設しました。
-//   raw は再オープン時の draft seed / 現在値表示 / 解釈不可時の contains needle に使い、
-//   parsed は commit 時 1 回の parse 結果(B-2 の Float64 key 最適化が依存する形)です。
-
-// 追加(記述子化 / number → 記述子化): number 記述子の type guard です。
-// 変更(記述子化): 入力が ColumnFilterValue へ閉じたため kind の絞り込みだけで足ります。
-//   外部呼び出し側(B-2 署名計算・現在値表示)の narrowing 据え置きのため guard は残します。
-export const isNumberColumnFilterValue = (
-  value: ColumnFilterValue | undefined,
-): value is NumberColumnFilterValue => value?.kind === 'number';
-
-// 追加(記述子化 / number): 生入力から number 記述子を構築します。
-//   - trim 後が空なら null(= フィルターなしへ正規化。呼び出し側で clearColumn 相当に倒す)。
-//   - parse は parseNumberFilterExpression 1 回のみ。挙動は従来 applyNumberFilter の
-//     「trim → parse → 不可なら contains」と厳密に等価です(raw は trim 済みを保持)。
-export const buildNumberColumnFilterValue = (
-  rawInput: string,
-): NumberColumnFilterValue | null => {
-  const raw = rawInput.trim();
-  if (!raw) {
-    return null;
-  }
-  return { kind: 'number', raw, parsed: parseNumberFilterExpression(raw) };
-};
-
-// 追加(記述子化): 列フィルター値を「テキスト入力の編集用文字列」へ整形します。
-//   popover 再オープン時の draft seed の単一窓口です。
-// 変更(記述子化): 全種別が記述子になったため kind で分岐します。
-//   - number → raw(式そのもの) / text・date・select → value(検索/選択文字列)。
-//   - set はチェックボックス UI、custom は自由形 UI のため text 入力 draft を持ちません(空)。
-export const columnFilterValueToDraftText = (
-  value: ColumnFilterValue | undefined,
-): string => {
-  if (!value) {
-    return '';
-  }
-  switch (value.kind) {
-    case 'number':
-      return value.raw;
-    case 'text':
-    case 'date':
-    case 'select':
-      return value.value;
-    case 'set':
-    case 'custom':
-      return '';
-  }
-};
-
-// 追加: number 型フィルターの評価です。
-export const applyNumberFilter = (
-  cellValue: unknown,
-  filterValue: unknown,
-) => {
-  const normalizedFilter = String(filterValue ?? '').trim();
-  if (!normalizedFilter) {
-    return true;
-  }
-
-  const parsedFilter = parseNumberFilterExpression(normalizedFilter);
-  if (!parsedFilter) {
-    // 追加: 式として解釈できない場合は contains にフォールバックします。
-    return String(cellValue ?? '')
-      .toLowerCase()
-      .includes(normalizedFilter.toLowerCase());
-  }
-
-  const numericCellValue = Number(cellValue);
-  if (!Number.isFinite(numericCellValue)) {
-    return false;
-  }
-
-  if (parsedFilter.mode === 'range') {
-    return (
-      numericCellValue >= parsedFilter.min &&
-      numericCellValue <= parsedFilter.max
-    );
-  }
-
-  switch (parsedFilter.operator) {
-    case '>':
-      return numericCellValue > parsedFilter.value;
-    case '>=':
-      return numericCellValue >= parsedFilter.value;
-    case '<':
-      return numericCellValue < parsedFilter.value;
-    case '<=':
-      return numericCellValue <= parsedFilter.value;
-    case '=':
-    default:
-      return numericCellValue === parsedFilter.value;
-  }
-};
-
-// 列フィルターの「行ループ前の事前コンパイル方式」のための型・helper 群です(12-A)。
-//   set フィルターは候補が多い列(例: 品番 5,000 種)でも O(1) 判定にしたく、
-//   行ループの外で一度だけ Set を構築する必要があります。また有効な列フィルターだけを
-//   predicate へ事前コンパイルすることで、行ループは「有効フィルター数 × 行数」に縮小し、
-//   フィルター未設定列ぶんの String(...).trim().toLowerCase() 正規化を省けます
-//   (text / number / select の判定結果は単一実装で一意です)。
-//   現在の利用者は index 版 filterOrderByColumns です
-//   (旧オブジェクト配列版は DS-3-8 で削除しました)。
-// 変更(B-2): predicate に sourceIndex を渡せるよう第 2 引数を追加します。
-//   number(comparison/range)で「事前計算した Float64 key[sourceIndex]」を引くために使います。
-//   TS 上 (row) => boolean は (row, sourceIndex) => boolean へ代入可能なので、
-//   key を使わない既存クロージャ(filterFn / set / contains / select / text)は無改修のまま通ります。
-type CompiledColumnFilterPredicate<T> = (row: T, sourceIndex: number) => boolean;
-
-// 追加(12-A): 1 列ぶんのフィルター値を predicate へコンパイルします。
-//             無効(未設定)なら null を返し、行ループから除外します。
-// 変更(記述子化): filterValue を ColumnFilterValue へ閉じ、判別を switch(value.kind) 一本に
-//   統一しました(従来の column.filterType 突き合わせ・生文字列 number の後方互換フォールバックを撤去)。
-//   合否はいずれも旧経路と厳密に等価です(select=完全一致 / text・date=部分一致 / number=下記)。
-const compileSingleColumnFilter = <T,>(
-  column: GridColumn<T>,
-  filterValue: ColumnFilterValue | undefined,
-  // 追加(B-2): この列ぶんの Float64 key(rows 全長・sourceIndex 添字)。
-  //   渡されたときだけ comparison/range が key[sourceIndex] を引きます。
-  //   未指定(set 列 / key 未構築)なら従来の Number(getCellValue(...)) 経路に倒れ、挙動は等価です。
-  numericKey?: Float64Array,
-): CompiledColumnFilterPredicate<T> | null => {
-  if (!isActiveColumnFilterValue(filterValue)) {
-    return null;
-  }
-  // 注記: isActiveColumnFilterValue を通った時点で filterValue は存在します(undefined 除外)。
-  const value = filterValue as ColumnFilterValue;
-
-  // 注記: 従来どおり column.filterFn を最優先します(記述子オブジェクトをそのまま渡す契約。
-  //       custom 列の自由形値もここで利用側 filterFn の責務として解釈されます)。
-  if (column.filterFn) {
-    const filterFn = column.filterFn;
-    return (row) => filterFn(row, value);
-  }
-
-  switch (value.kind) {
-    // 追加(12-A / 反転set): set フィルターは「対象値の Set」を一度だけ構築し、O(1) 照合します。
-    //   values は mode により「選択値(include)」か「非選択値(exclude)」のいずれか(常に小さい側)。
-    //   include: 行値が対象に含まれれば通過 / exclude: 行値が対象に含まれなければ通過。
-    case 'set': {
-      const targetValues = new Set(value.values);
-      if (value.mode === 'exclude') {
-        return (row) =>
-          !targetValues.has(String(getCellValue(row, column) ?? ''));
-      }
-      return (row) => targetValues.has(String(getCellValue(row, column) ?? ''));
-    }
-
-    // 追加(記述子化 / number): number 記述子は parse 済みのため、行ループ外で評価器を確定します。
-    //   合否は旧 applyNumberFilter と厳密に等価:
-    //     - parsed=null  → raw で contains(大文字小文字無視)。
-    //     - range        → Number(cell) が有限かつ [min,max]。
-    //     - comparison   → Number(cell) が有限かつ op 比較(= は ===)。
-    case 'number': {
-      const parsed = value.parsed;
-      if (parsed === null) {
-        const needle = value.raw.toLowerCase();
-        return (row) =>
-          String(getCellValue(row, column) ?? '')
-            .toLowerCase()
-            .includes(needle);
-      }
-      if (parsed.mode === 'range') {
-        const { min, max } = parsed;
-        // 変更(B-2): numericKey があれば key[sourceIndex] を、無ければ従来どおり
-        //   Number(getCellValue(...)) を読みます。値の取得元だけが変わり、判定本体は不変です。
-        return (row, sourceIndex) => {
-          const numericCellValue = numericKey
-            ? numericKey[sourceIndex]
-            : Number(getCellValue(row, column));
-          return (
-            Number.isFinite(numericCellValue) &&
-            numericCellValue >= min &&
-            numericCellValue <= max
-          );
-        };
-      }
-      const { operator, value: threshold } = parsed;
-      // 変更(B-2): comparison も numericKey 経路を併設します(無ければ従来 getCellValue 経路)。
-      return (row, sourceIndex) => {
-        const numericCellValue = numericKey
-          ? numericKey[sourceIndex]
-          : Number(getCellValue(row, column));
-        if (!Number.isFinite(numericCellValue)) {
-          return false;
-        }
-        switch (operator) {
-          case '>':
-            return numericCellValue > threshold;
-          case '>=':
-            return numericCellValue >= threshold;
-          case '<':
-            return numericCellValue < threshold;
-          case '<=':
-            return numericCellValue <= threshold;
-          case '=':
-          default:
-            return numericCellValue === threshold;
-        }
-      };
-    }
-
-    // 追加(記述子化 / select): 完全一致です(旧 String(filterValue ?? '') と等価)。
-    case 'select': {
-      const expectedValue = value.value;
-      return (row) =>
-        String(getCellValue(row, column) ?? '') === expectedValue;
-    }
-
-    // 追加(記述子化 / text・date): 部分一致です(旧 text/date と等価)。date は現状 text と
-    //   同述語を共有しますが、将来の相対日付は評価時解決の専用分岐をここに足して切り出せます。
-    case 'text':
-    case 'date': {
-      const normalizedFilter = value.value.trim().toLowerCase();
-      return (row) =>
-        String(getCellValue(row, column) ?? '')
-          .toLowerCase()
-          .includes(normalizedFilter);
-    }
-
-    // 追加(記述子化 / custom): filterFn 不在の custom 列は、旧 text/custom 経路と等価に
-    //   String(value) の部分一致へフォールバックします(filterFn を持つ列は上で処理済み)。
-    case 'custom': {
-      const needle = String(value.value ?? '')
-        .trim()
-        .toLowerCase();
-      return (row) =>
-        String(getCellValue(row, column) ?? '')
-          .toLowerCase()
-          .includes(needle);
-    }
-  }
-};
-
-// ────────────────────────────────────────────────
-// 追加(DS-1 / index ベースパイプライン): order(RowOrder)を受けて order を返すフィルタ群。
-//   本体のフィルタ経路はこの index 版に一本化済みです(DS-2 で差し替え、
-//   旧オブジェクト配列版は DS-3-8 で削除)。いずれも「合格行を元の相対順で詰め直す」処理で、
-//   入出力が {row,...}[] ではなく元 rows + index 列(Int32Array)である点が要点です。
-//   「全件通過」のときは同一参照(引数 order)を返し、下流 useMemo のスキップを最大化します
-//   (.filter は全通過でも新配列を返すため、参照節約という点でも改善です)。
-// ────────────────────────────────────────────────
-
-// 追加(DS-1): グローバルフィルタの index 版です(columns.some の部分一致)。
-//   filter 文字列が空なら同一参照を返します。
-export const filterOrderByGlobalText = <T,>(
-  rows: T[],
-  order: RowOrder,
-  columns: GridColumn<T>[],
-  globalText: string,
-): RowOrder => {
-  const normalizedFilter = globalText.trim().toLowerCase();
-  if (!normalizedFilter) {
-    return order;
-  }
-
-  const length = order.length;
-  const columnCount = columns.length;
-  const result = new Int32Array(length);
-  let count = 0;
-
-  for (let pos = 0; pos < length; pos += 1) {
-    const sourceIndex = order[pos];
-    const row = rows[sourceIndex];
-    let matched = false;
-    for (let c = 0; c < columnCount; c += 1) {
-      const value = getCellValue(row, columns[c]);
-      if (String(value ?? '').toLowerCase().includes(normalizedFilter)) {
-        matched = true;
-        break;
-      }
-    }
-    if (matched) {
-      result[count] = sourceIndex;
-      count += 1;
-    }
-  }
-
-  // 全件通過なら参照を変えません(no-op スキップ最大化)。
-  if (count === length) {
-    return order;
-  }
-  // 余剰バッファを抱えないよう、右サイズへ slice(コピー)します。
-  return result.slice(0, count);
-};
-
-// 追加(DS-1): 列フィルタの index 版です(有効フィルタの predicates.every)。
-//   事前コンパイルは compileSingleColumnFilter を再利用します
-//   (text / number / select / set / filterFn の判定は単一実装)。
-//   有効フィルタが 0 件なら同一参照を返します。
-export const filterOrderByColumns = <T,>(
-  rows: T[],
-  order: RowOrder,
-  columns: GridColumn<T>[],
-  columnFilters: Record<string, ColumnFilterValue>,
-  // 追加(B-2): 列キー → Float64 key の table(任意)。number(comparison/range)列のみ収録。
-  //   未指定なら全列が従来経路へ倒れ、現状とバイト等価です(set/text/select/filterFn は元から key 不使用)。
-  numericKeys?: ReadonlyMap<string, Float64Array>,
-): RowOrder => {
-  const predicates: CompiledColumnFilterPredicate<T>[] = [];
-  for (const column of columns) {
-    const predicate = compileSingleColumnFilter(
-      column,
-      columnFilters[column.key],
-      numericKeys?.get(column.key),
-    );
-    if (predicate) {
-      predicates.push(predicate);
-    }
-  }
-
-  if (predicates.length === 0) {
-    return order;
-  }
-
-  const length = order.length;
-  const predicateCount = predicates.length;
-  const result = new Int32Array(length);
-  let count = 0;
-
-  for (let pos = 0; pos < length; pos += 1) {
-    const sourceIndex = order[pos];
-    const row = rows[sourceIndex];
-    let ok = true;
-    for (let p = 0; p < predicateCount; p += 1) {
-      if (!predicates[p](row, sourceIndex)) {
-        ok = false;
-        break;
-      }
-    }
-    if (ok) {
-      result[count] = sourceIndex;
-      count += 1;
-    }
-  }
-
-  if (count === length) {
-    return order;
-  }
-  return result.slice(0, count);
-};
 </file>
 
 <file path="src/components/spreadsheet-grid/model/gridReducer.ts">
@@ -12200,6 +12380,453 @@ export function ColumnMenuPopover({
 }
 
 export default ColumnMenuPopover;
+</file>
+
+<file path="src/components/spreadsheet-grid/logic/filtering.ts">
+import type {
+  ColumnFilterValue,
+  GridColumn,
+  NumberColumnFilterValue,
+  ParsedNumberFilter,
+  SetColumnFilterValue,
+} from '../model/gridTypes';
+import { getCellValue } from '../utils/permissions';
+
+// 追加(DS-1 / index ベースパイプライン): 「ビュー順に並んだ元 rows の index 列」です。
+//   オブジェクト配列({row, sourceIndex, ...})を各段で割り当て直す従来方式に代えて、
+//   フィルタ/ソートはこの index 列(Int32Array)だけを生成・受け渡しします。
+//   - 1,000,000 行でも 4MB(= 4byte × N)に収まり、割り当て/GC が行オブジェクト方式から桁で下がります。
+//   - 将来 Web Worker へ渡す際に transferable(ゼロコピー)になります。
+//   - ビュー位置 i の元行は rows[order[i]] で引きます(この対応付けが後段のシームの土台)。
+//   DS-1 は純関数の追加のみで、配線(SpreadsheetGrid 側のチェーン差し替え)は DS-2 で行います。
+export type RowOrder = Int32Array;
+
+// 追加(DS-1): 恒等 order [0, 1, ..., rowCount-1] を生成します(パイプラインの起点)。
+export const createSourceOrder = (rowCount: number): RowOrder => {
+  const order = new Int32Array(rowCount);
+  for (let i = 0; i < rowCount; i += 1) {
+    order[i] = i;
+  }
+  return order;
+};
+
+// 追加(12-A → 記述子化): set フィルター値の type guard です。
+// 変更(記述子化): columnFilters の値が ColumnFilterValue(判別共用体)へ閉じたため、
+//   typeof / Array.isArray の実行時ダックタイピングは不要になり、kind の絞り込みだけで足ります。
+//   外部呼び出し側(SpreadsheetGrid の表示・署名計算)の narrowing を据え置くため guard は残します。
+export const isSetColumnFilterValue = (
+  value: ColumnFilterValue | undefined,
+): value is SetColumnFilterValue => value?.kind === 'set';
+
+// 追加(12-A): 列フィルター値が「有効」かを判定する共通 helper です。
+// 変更理由: 従来は GridHeaderRow(フィルター済みバッジ) / gridBarHelpers(有効件数) /
+//   列フィルタの適用処理がそれぞれ String(value).trim() で判定していました。
+//   set フィルター値はオブジェクトのため String() 判定が成立しません
+//   (空配列 = 全行除外でも「有効」と数える必要があります)。
+//   有効判定をここへ一元化し、3 箇所すべてが同じ規則を共有します。
+// 変更(記述子化): 判別共用体の kind で網羅判定します。set / number / custom は存在時点で有効
+//   (set/number は reducer/build 側で空を clear 済み、custom は利用者が明示的に set した値)。
+//   text / date は trim 後非空、select は値非空のときだけ有効です(旧・生文字列時代と等価)。
+export const isActiveColumnFilterValue = (
+  value: ColumnFilterValue | undefined,
+): boolean => {
+  if (!value) {
+    return false;
+  }
+  switch (value.kind) {
+    case 'set':
+    case 'number':
+    case 'custom':
+      return true;
+    case 'select':
+      return value.value.length > 0;
+    case 'text':
+    case 'date':
+      return value.value.trim().length > 0;
+  }
+};
+
+// 注記(記述子化): ParsedNumberFilter 型は gridTypes へ移設しました(ColumnFilterValue が
+//   number 記述子を内包する都合)。parse の「ロジック」は引き続きこちらにあります。
+// 追加: number フィルター式を解釈します。
+export const parseNumberFilterExpression = (
+  rawValue: string,
+): ParsedNumberFilter | null => {
+  const normalized = rawValue.trim();
+  if (!normalized) {
+    return null;
+  }
+
+  const rangeMatch = normalized.match(
+    /^(-?\d+(?:\.\d+)?)\s*\.\.\s*(-?\d+(?:\.\d+)?)$/,
+  );
+  if (rangeMatch) {
+    const first = Number(rangeMatch[1]);
+    const second = Number(rangeMatch[2]);
+    if (!Number.isFinite(first) || !Number.isFinite(second)) {
+      return null;
+    }
+    return {
+      mode: 'range',
+      min: Math.min(first, second),
+      max: Math.max(first, second),
+    };
+  }
+
+  const comparisonMatch = normalized.match(
+    /^(<=|>=|=|<|>)?\s*(-?\d+(?:\.\d+)?)$/,
+  );
+  if (!comparisonMatch) {
+    return null;
+  }
+
+  return {
+    mode: 'comparison',
+    operator: (comparisonMatch[1] ?? '=') as '>' | '>=' | '<' | '<=' | '=',
+    value: Number(comparisonMatch[2]),
+  };
+};
+
+// 注記(記述子化 / number): NumberColumnFilterValue 型は gridTypes へ移設しました。
+//   raw は再オープン時の draft seed / 現在値表示 / 解釈不可時の contains needle に使い、
+//   parsed は commit 時 1 回の parse 結果(B-2 の Float64 key 最適化が依存する形)です。
+
+// 追加(記述子化 / number → 記述子化): number 記述子の type guard です。
+// 変更(記述子化): 入力が ColumnFilterValue へ閉じたため kind の絞り込みだけで足ります。
+//   外部呼び出し側(B-2 署名計算・現在値表示)の narrowing 据え置きのため guard は残します。
+export const isNumberColumnFilterValue = (
+  value: ColumnFilterValue | undefined,
+): value is NumberColumnFilterValue => value?.kind === 'number';
+
+// 追加(記述子化 / number): 生入力から number 記述子を構築します。
+//   - trim 後が空なら null(= フィルターなしへ正規化。呼び出し側で clearColumn 相当に倒す)。
+//   - parse は parseNumberFilterExpression 1 回のみ。挙動は従来 applyNumberFilter の
+//     「trim → parse → 不可なら contains」と厳密に等価です(raw は trim 済みを保持)。
+export const buildNumberColumnFilterValue = (
+  rawInput: string,
+): NumberColumnFilterValue | null => {
+  const raw = rawInput.trim();
+  if (!raw) {
+    return null;
+  }
+  return { kind: 'number', raw, parsed: parseNumberFilterExpression(raw) };
+};
+
+// 追加(記述子化): 列フィルター値を「テキスト入力の編集用文字列」へ整形します。
+//   popover 再オープン時の draft seed の単一窓口です。
+// 変更(記述子化): 全種別が記述子になったため kind で分岐します。
+//   - number → raw(式そのもの) / text・date・select → value(検索/選択文字列)。
+//   - set はチェックボックス UI、custom は自由形 UI のため text 入力 draft を持ちません(空)。
+export const columnFilterValueToDraftText = (
+  value: ColumnFilterValue | undefined,
+): string => {
+  if (!value) {
+    return '';
+  }
+  switch (value.kind) {
+    case 'number':
+      return value.raw;
+    case 'text':
+    case 'date':
+    case 'select':
+      return value.value;
+    case 'set':
+    case 'custom':
+      return '';
+  }
+};
+
+// 追加: number 型フィルターの評価です。
+export const applyNumberFilter = (
+  cellValue: unknown,
+  filterValue: unknown,
+) => {
+  const normalizedFilter = String(filterValue ?? '').trim();
+  if (!normalizedFilter) {
+    return true;
+  }
+
+  const parsedFilter = parseNumberFilterExpression(normalizedFilter);
+  if (!parsedFilter) {
+    // 追加: 式として解釈できない場合は contains にフォールバックします。
+    return String(cellValue ?? '')
+      .toLowerCase()
+      .includes(normalizedFilter.toLowerCase());
+  }
+
+  const numericCellValue = Number(cellValue);
+  if (!Number.isFinite(numericCellValue)) {
+    return false;
+  }
+
+  if (parsedFilter.mode === 'range') {
+    return (
+      numericCellValue >= parsedFilter.min &&
+      numericCellValue <= parsedFilter.max
+    );
+  }
+
+  switch (parsedFilter.operator) {
+    case '>':
+      return numericCellValue > parsedFilter.value;
+    case '>=':
+      return numericCellValue >= parsedFilter.value;
+    case '<':
+      return numericCellValue < parsedFilter.value;
+    case '<=':
+      return numericCellValue <= parsedFilter.value;
+    case '=':
+    default:
+      return numericCellValue === parsedFilter.value;
+  }
+};
+
+// 列フィルターの「行ループ前の事前コンパイル方式」のための型・helper 群です(12-A)。
+//   set フィルターは候補が多い列(例: 品番 5,000 種)でも O(1) 判定にしたく、
+//   行ループの外で一度だけ Set を構築する必要があります。また有効な列フィルターだけを
+//   predicate へ事前コンパイルすることで、行ループは「有効フィルター数 × 行数」に縮小し、
+//   フィルター未設定列ぶんの String(...).trim().toLowerCase() 正規化を省けます
+//   (text / number / select の判定結果は単一実装で一意です)。
+//   現在の利用者は index 版 filterOrderByColumns です
+//   (旧オブジェクト配列版は DS-3-8 で削除しました)。
+// 変更(B-2): predicate に sourceIndex を渡せるよう第 2 引数を追加します。
+//   number(comparison/range)で「事前計算した Float64 key[sourceIndex]」を引くために使います。
+//   TS 上 (row) => boolean は (row, sourceIndex) => boolean へ代入可能なので、
+//   key を使わない既存クロージャ(filterFn / set / contains / select / text)は無改修のまま通ります。
+type CompiledColumnFilterPredicate<T> = (row: T, sourceIndex: number) => boolean;
+
+// 追加(12-A): 1 列ぶんのフィルター値を predicate へコンパイルします。
+//             無効(未設定)なら null を返し、行ループから除外します。
+// 変更(記述子化): filterValue を ColumnFilterValue へ閉じ、判別を switch(value.kind) 一本に
+//   統一しました(従来の column.filterType 突き合わせ・生文字列 number の後方互換フォールバックを撤去)。
+//   合否はいずれも旧経路と厳密に等価です(select=完全一致 / text・date=部分一致 / number=下記)。
+const compileSingleColumnFilter = <T,>(
+  column: GridColumn<T>,
+  filterValue: ColumnFilterValue | undefined,
+  // 追加(B-2): この列ぶんの Float64 key(rows 全長・sourceIndex 添字)。
+  //   渡されたときだけ comparison/range が key[sourceIndex] を引きます。
+  //   未指定(set 列 / key 未構築)なら従来の Number(getCellValue(...)) 経路に倒れ、挙動は等価です。
+  numericKey?: Float64Array,
+): CompiledColumnFilterPredicate<T> | null => {
+  if (!isActiveColumnFilterValue(filterValue)) {
+    return null;
+  }
+  // 注記: isActiveColumnFilterValue を通った時点で filterValue は存在します(undefined 除外)。
+  const value = filterValue as ColumnFilterValue;
+
+  // 注記: 従来どおり column.filterFn を最優先します(記述子オブジェクトをそのまま渡す契約。
+  //       custom 列の自由形値もここで利用側 filterFn の責務として解釈されます)。
+  if (column.filterFn) {
+    const filterFn = column.filterFn;
+    return (row) => filterFn(row, value);
+  }
+
+  switch (value.kind) {
+    // 追加(12-A / 反転set): set フィルターは「対象値の Set」を一度だけ構築し、O(1) 照合します。
+    //   values は mode により「選択値(include)」か「非選択値(exclude)」のいずれか(常に小さい側)。
+    //   include: 行値が対象に含まれれば通過 / exclude: 行値が対象に含まれなければ通過。
+    case 'set': {
+      const targetValues = new Set(value.values);
+      if (value.mode === 'exclude') {
+        return (row) =>
+          !targetValues.has(String(getCellValue(row, column) ?? ''));
+      }
+      return (row) => targetValues.has(String(getCellValue(row, column) ?? ''));
+    }
+
+    // 追加(記述子化 / number): number 記述子は parse 済みのため、行ループ外で評価器を確定します。
+    //   合否は旧 applyNumberFilter と厳密に等価:
+    //     - parsed=null  → raw で contains(大文字小文字無視)。
+    //     - range        → Number(cell) が有限かつ [min,max]。
+    //     - comparison   → Number(cell) が有限かつ op 比較(= は ===)。
+    case 'number': {
+      const parsed = value.parsed;
+      if (parsed === null) {
+        const needle = value.raw.toLowerCase();
+        return (row) =>
+          String(getCellValue(row, column) ?? '')
+            .toLowerCase()
+            .includes(needle);
+      }
+      if (parsed.mode === 'range') {
+        const { min, max } = parsed;
+        // 変更(B-2): numericKey があれば key[sourceIndex] を、無ければ従来どおり
+        //   Number(getCellValue(...)) を読みます。値の取得元だけが変わり、判定本体は不変です。
+        return (row, sourceIndex) => {
+          const numericCellValue = numericKey
+            ? numericKey[sourceIndex]
+            : Number(getCellValue(row, column));
+          return (
+            Number.isFinite(numericCellValue) &&
+            numericCellValue >= min &&
+            numericCellValue <= max
+          );
+        };
+      }
+      const { operator, value: threshold } = parsed;
+      // 変更(B-2): comparison も numericKey 経路を併設します(無ければ従来 getCellValue 経路)。
+      return (row, sourceIndex) => {
+        const numericCellValue = numericKey
+          ? numericKey[sourceIndex]
+          : Number(getCellValue(row, column));
+        if (!Number.isFinite(numericCellValue)) {
+          return false;
+        }
+        switch (operator) {
+          case '>':
+            return numericCellValue > threshold;
+          case '>=':
+            return numericCellValue >= threshold;
+          case '<':
+            return numericCellValue < threshold;
+          case '<=':
+            return numericCellValue <= threshold;
+          case '=':
+          default:
+            return numericCellValue === threshold;
+        }
+      };
+    }
+
+    // 追加(記述子化 / select): 完全一致です(旧 String(filterValue ?? '') と等価)。
+    case 'select': {
+      const expectedValue = value.value;
+      return (row) =>
+        String(getCellValue(row, column) ?? '') === expectedValue;
+    }
+
+    // 追加(記述子化 / text・date): 部分一致です(旧 text/date と等価)。date は現状 text と
+    //   同述語を共有しますが、将来の相対日付は評価時解決の専用分岐をここに足して切り出せます。
+    case 'text':
+    case 'date': {
+      const normalizedFilter = value.value.trim().toLowerCase();
+      return (row) =>
+        String(getCellValue(row, column) ?? '')
+          .toLowerCase()
+          .includes(normalizedFilter);
+    }
+
+    // 追加(記述子化 / custom): filterFn 不在の custom 列は、旧 text/custom 経路と等価に
+    //   String(value) の部分一致へフォールバックします(filterFn を持つ列は上で処理済み)。
+    case 'custom': {
+      const needle = String(value.value ?? '')
+        .trim()
+        .toLowerCase();
+      return (row) =>
+        String(getCellValue(row, column) ?? '')
+          .toLowerCase()
+          .includes(needle);
+    }
+  }
+};
+
+// ────────────────────────────────────────────────
+// 追加(DS-1 / index ベースパイプライン): order(RowOrder)を受けて order を返すフィルタ群。
+//   本体のフィルタ経路はこの index 版に一本化済みです(DS-2 で差し替え、
+//   旧オブジェクト配列版は DS-3-8 で削除)。いずれも「合格行を元の相対順で詰め直す」処理で、
+//   入出力が {row,...}[] ではなく元 rows + index 列(Int32Array)である点が要点です。
+//   「全件通過」のときは同一参照(引数 order)を返し、下流 useMemo のスキップを最大化します
+//   (.filter は全通過でも新配列を返すため、参照節約という点でも改善です)。
+// ────────────────────────────────────────────────
+
+// 追加(DS-1): グローバルフィルタの index 版です(columns.some の部分一致)。
+//   filter 文字列が空なら同一参照を返します。
+export const filterOrderByGlobalText = <T,>(
+  rows: T[],
+  order: RowOrder,
+  columns: GridColumn<T>[],
+  globalText: string,
+): RowOrder => {
+  const normalizedFilter = globalText.trim().toLowerCase();
+  if (!normalizedFilter) {
+    return order;
+  }
+
+  const length = order.length;
+  const columnCount = columns.length;
+  const result = new Int32Array(length);
+  let count = 0;
+
+  for (let pos = 0; pos < length; pos += 1) {
+    const sourceIndex = order[pos];
+    const row = rows[sourceIndex];
+    let matched = false;
+    for (let c = 0; c < columnCount; c += 1) {
+      const value = getCellValue(row, columns[c]);
+      if (String(value ?? '').toLowerCase().includes(normalizedFilter)) {
+        matched = true;
+        break;
+      }
+    }
+    if (matched) {
+      result[count] = sourceIndex;
+      count += 1;
+    }
+  }
+
+  // 全件通過なら参照を変えません(no-op スキップ最大化)。
+  if (count === length) {
+    return order;
+  }
+  // 余剰バッファを抱えないよう、右サイズへ slice(コピー)します。
+  return result.slice(0, count);
+};
+
+// 追加(DS-1): 列フィルタの index 版です(有効フィルタの predicates.every)。
+//   事前コンパイルは compileSingleColumnFilter を再利用します
+//   (text / number / select / set / filterFn の判定は単一実装)。
+//   有効フィルタが 0 件なら同一参照を返します。
+export const filterOrderByColumns = <T,>(
+  rows: T[],
+  order: RowOrder,
+  columns: GridColumn<T>[],
+  columnFilters: Record<string, ColumnFilterValue>,
+  // 追加(B-2): 列キー → Float64 key の table(任意)。number(comparison/range)列のみ収録。
+  //   未指定なら全列が従来経路へ倒れ、現状とバイト等価です(set/text/select/filterFn は元から key 不使用)。
+  numericKeys?: ReadonlyMap<string, Float64Array>,
+): RowOrder => {
+  const predicates: CompiledColumnFilterPredicate<T>[] = [];
+  for (const column of columns) {
+    const predicate = compileSingleColumnFilter(
+      column,
+      columnFilters[column.key],
+      numericKeys?.get(column.key),
+    );
+    if (predicate) {
+      predicates.push(predicate);
+    }
+  }
+
+  if (predicates.length === 0) {
+    return order;
+  }
+
+  const length = order.length;
+  const predicateCount = predicates.length;
+  const result = new Int32Array(length);
+  let count = 0;
+
+  for (let pos = 0; pos < length; pos += 1) {
+    const sourceIndex = order[pos];
+    const row = rows[sourceIndex];
+    let ok = true;
+    for (let p = 0; p < predicateCount; p += 1) {
+      if (!predicates[p](row, sourceIndex)) {
+        ok = false;
+        break;
+      }
+    }
+    if (ok) {
+      result[count] = sourceIndex;
+      count += 1;
+    }
+  }
+
+  if (count === length) {
+    return order;
+  }
+  return result.slice(0, count);
+};
 </file>
 
 <file path="src/components/spreadsheet-grid/view/gridBarHelpers.ts">
@@ -13821,6 +14448,9 @@ type DemoRow = {
   status: string;
   // 追加(date デモ): 発注日です。date フィルター型(部分一致)の動作確認用に ISO 文字列で持ちます。
   orderedAt: string;
+  // 追加(C1 auto-height デモ): 備考。行ごとに長さが変わる長文で、auto-height 列の折り返し/可変行高を
+  //   確認します(autoHeight デモモード時のみ駆動)。
+  note: string;
   [key: string]: string | number;
 };
 
@@ -13838,6 +14468,28 @@ const getOverflowColumnKey = (columnIndex: number) => `extra_${columnIndex}`;
 // 追加(date デモ): 発注日の生成基点(2023-01-01 UTC)です。index から決定的に日付を割り当てます。
 const ORDERED_AT_BASE_UTC = Date.UTC(2023, 0, 1);
 const ORDERED_AT_SPAN_DAYS = 731; // 2023-01-01 〜 2024-12-31(約2年)を循環。
+
+// 追加(C1 auto-height デモ): auto-height は行数 gate(50,000 行)内でのみ起動するため、
+//   デモモードではこの行数に絞ります(uniform 性能確認の 1M とは別系統)。
+const AUTO_HEIGHT_DEMO_ROW_COUNT = 5000;
+
+// 追加(C1 auto-height デモ): 備考の元になる文の候補です。
+const NOTE_PHRASES = [
+  '在庫僅少のため早期手配が必要です。',
+  '代替品あり。仕様は要確認のこと。',
+  '長納期品。リードタイム約8週間を見込む。',
+  '前回ロットで初期不良の報告あり、受入検査を強化すること。',
+];
+
+// 追加(C1 auto-height デモ): index から決定的に 1〜4 文の備考を生成します(行ごとに高さが変わる)。
+const buildNote = (index: number): string => {
+  const count = (index % 4) + 1;
+  const parts: string[] = [];
+  for (let i = 0; i < count; i += 1) {
+    parts.push(NOTE_PHRASES[(index + i) % NOTE_PHRASES.length]);
+  }
+  return parts.join(' ');
+};
 
 // 追加: ダミー行を生成します。
 const createDemoRows = (count: number): DemoRow[] =>
@@ -13857,6 +14509,7 @@ const createDemoRows = (count: number): DemoRow[] =>
       unit: ['個', '本', '式', '枚'][index % 4],
       status: index % 11 === 0 ? '保留' : '有効',
       orderedAt,
+      note: buildNote(index),
     };
   }).map((row, index) => {
     const nextRow: DemoRow = { ...row };
@@ -13920,6 +14573,9 @@ const createInitialColumns = (): GridColumn<DemoRow>[] => {
     // 追加(date デモ): date フィルター型の動作確認用の列です。値は ISO 文字列(YYYY-MM-DD)で、
     //   フィルターは部分一致です('2024' で年 / '2024-03' で月 / '-15' で15日 を絞り込めます)。
     { key: 'orderedAt', title: '発注日', width: 130, filterType: 'date' },
+    // 追加(C1 auto-height デモ): 長文の備考列。autoHeight:true で、グリッド props の autoHeight 有効 +
+    //   行数 gate 内のとき行高を内容に合わせて可変化します(折り返し表示)。
+    { key: 'note', title: '備考', width: 320, filterType: 'text', autoHeight: true },
   ];
 
   const extraColumns = Array.from(
@@ -13944,6 +14600,17 @@ function App() {
   const [columns, setColumns] = useState<GridColumn<DemoRow>[]>(() =>
     createInitialColumns(),
   );
+
+  // 追加(C1 auto-height デモ): auto-height モードのトグル。ON で行数を gate 内(5,000)に絞り、
+  //   grid props の autoHeight を有効化します。OFF で uniform 性能確認用の 1M に戻します。
+  const [autoHeightMode, setAutoHeightMode] = useState(false);
+  const toggleAutoHeight = () => {
+    const next = !autoHeightMode;
+    setAutoHeightMode(next);
+    setRows(
+      createDemoRows(next ? AUTO_HEIGHT_DEMO_ROW_COUNT : INITIAL_ROW_COUNT),
+    );
+  };
 
   return (
     <main
@@ -13977,9 +14644,28 @@ function App() {
         >
           reducer ベースの SpreadsheetGrid です。行/列選択、copy/paste、editor、
           row virtualization / column virtualization の確認用に、
-          初期行数 {INITIAL_ROW_COUNT.toLocaleString()} 行・
+          初期行数 {rows.length.toLocaleString()} 行・
           初期列数 {columns.length} 列のダミーデータを表示しています。
         </p>
+
+        <button
+          type="button"
+          onClick={toggleAutoHeight}
+          style={{
+            marginTop: 4,
+            padding: '6px 12px',
+            fontSize: 13,
+            borderRadius: 8,
+            border: '1px solid #94a3b8',
+            backgroundColor: autoHeightMode ? '#dbeafe' : '#ffffff',
+            color: '#0f172a',
+            cursor: 'pointer',
+          }}
+        >
+          {autoHeightMode
+            ? `auto-height デモ中(${AUTO_HEIGHT_DEMO_ROW_COUNT.toLocaleString()} 行・備考列で可変行高)→ 1M(uniform)へ戻す`
+            : `auto-height デモへ切替(${AUTO_HEIGHT_DEMO_ROW_COUNT.toLocaleString()} 行・備考列で可変行高)`}
+        </button>
       </header>
 
       <SpreadsheetGrid
@@ -13996,6 +14682,8 @@ function App() {
           status: '',
           // 追加(date デモ): 新規行も orderedAt を持たせます(既定は空文字 = フィルター未該当)。
           orderedAt: '',
+          // 追加(C1 auto-height デモ): 新規行の備考は空文字。
+          note: '',
         })}
         createOverflowColumn={(columnIndex) => ({
           key: getOverflowColumnKey(columnIndex),
@@ -14005,6 +14693,7 @@ function App() {
           filterType: 'text',
         })}
         rowHeight={38}
+        autoHeight={autoHeightMode}
         headerHeight={42}
         rowHeaderWidth={56}
         enableRangeSelection
@@ -14233,6 +14922,9 @@ export type GridColumn<T> = {
   width: number;
   minWidth?: number;
   maxWidth?: number;
+  // 追加(C1): true の列が auto-height 行の高さを駆動します(複数列指定時は max を採用)。
+  //   グリッド props の autoHeight 有効時のみ効きます(無効時はこのフラグは無視)。
+  autoHeight?: boolean;
   visible?: boolean;
   editable?: boolean;
   readOnly?: boolean;
@@ -14362,6 +15054,12 @@ export type SpreadsheetGridProps<T> = {
   createRow?: () => T;
   createOverflowColumn?: (columnIndex: number) => GridColumn<T>;
   rowHeight?: number;
+  // 追加(C1): auto-height 行モードを有効化します。autoHeight:true の列が行高を駆動し、
+  //   行ごとに内容量で高さが変わります。論理全高が行数 gate を超える場合は uniform 行高へ
+  //   フォールバックします(供給側の配線は C1-3)。
+  autoHeight?: boolean;
+  // 追加(C1): auto-height の未測定行に使う 1 行の推定高さ(px)。未指定時は rowHeight。
+  estimateRowHeight?: number;
   headerHeight?: number;
   rowHeaderWidth?: number;
   readOnly?: boolean;
@@ -14400,6 +15098,7 @@ export type SpreadsheetGridProps<T> = {
 // 追加: 列フィルター UI 整備 + ソート/フィルター見た目強化を反映します。
 import {
   useEffect,
+  useLayoutEffect,
   useMemo,
   useCallback,
   // 追加(11-B7): グローバルフィルタ評価の遅延化(Transition 化)に使います。
@@ -14487,11 +15186,21 @@ import {
 //   1M 行で innerRowStyle.height がブラウザ要素高さ上限を超える機能ブロッカーを解消します。
 import {
   MAX_BODY_PX,
+  AUTO_HEIGHT_MAX_ROWS,
   clipRowRangeToWindow,
+  computeAutoHeightVerticalGeometry,
   computeVerticalGeometry,
   createUniformRowMetrics,
+  shouldUseAutoHeight,
 } from './logic/verticalGeometry';
 import type { RowMetrics } from './logic/verticalGeometry';
+import {
+  buildRowHeightStore,
+  createAutoHeightRowMetrics,
+  rebuildPrefixFrom,
+  setMeasuredRowHeight,
+} from './logic/rowHeightStore';
+import type { RowHeightStore } from './logic/rowHeightStore';
 import {
   // ソートは order(Int32Array)版に一本化しています
   //   (DS-2 で差し替え、旧オブジェクト配列版は DS-3-8 で削除)。
@@ -14516,6 +15225,8 @@ import type {
   GridColumn,
   // 追加(13-A): 列メニューからの固定切替に使います。
   GridColumnPinned,
+  // 追加(C1): auto-height 実測キャッシュのキー型です。
+  GridRowKey,
   // 追加(DS-3-0): 行モデルのシーム契約型です(rowModel の構築に使います)。
   RowModel,
   // 追加(記述子化): commit 経路で text/date/select/custom を記述子化する際の型です。
@@ -14589,6 +15300,8 @@ export function SpreadsheetGrid<T extends object>({
   createRow,
   createOverflowColumn,
   rowHeight = 36,
+  autoHeight = false,
+  estimateRowHeight,
   headerHeight = 40,
   rowHeaderWidth = 56,
   readOnly = false,
@@ -15193,20 +15906,101 @@ export function SpreadsheetGrid<T extends object>({
 
   const virtualColumns = columnVirtualizer.getVirtualItems();
 
-  // 縦ジオメトリ(uniform window + pixel scaling)。scaleFactor=1 のとき現状と数値一致。
+  // ── auto-height gate / 行高ストア(C1) ───────────
+  // 未測定行の推定高さ。未指定時は rowHeight。
+  const estimateRowHeightValue = estimateRowHeight ?? rowHeight;
+  // 駆動列(autoHeight:true)の有無。
+  const hasAutoHeightColumn = useMemo(
+    () => visibleColumns.some((column) => column.autoHeight === true),
+    [visibleColumns],
+  );
+  // gate: props 有効 + 駆動列あり + 行数が上限内。超過時は uniform 行高へフォールバックします。
+  const autoHeightActive = shouldUseAutoHeight(
+    autoHeight,
+    hasAutoHeightColumn,
+    viewRowCount,
+    AUTO_HEIGHT_MAX_ROWS,
+  );
+  // gate 超過時の開発時警告(例外は投げず uniform にフォールバック)。
+  useEffect(() => {
+    if (
+      import.meta.env.DEV &&
+      autoHeight &&
+      hasAutoHeightColumn &&
+      viewRowCount > AUTO_HEIGHT_MAX_ROWS
+    ) {
+      console.warn(
+        `[SpreadsheetGrid] auto-height は ${AUTO_HEIGHT_MAX_ROWS} 行までです(現在 ${viewRowCount} 行)。uniform 行高にフォールバックします。`,
+      );
+    }
+  }, [autoHeight, hasAutoHeightColumn, viewRowCount]);
+
+  // 実測高さの永続キャッシュ(rowKey 単位)。store を作り直しても引き継ぎます
+  //   (filter/sort で view 順が変わっても再測定不要)。
+  const measuredHeightsRef = useRef<Map<GridRowKey, number>>(new Map());
+  // 測定 flush で store の prefix が更新されたことを伝える version(geometry/rowMetrics 再計算用)。
+  const [autoHeightVersion, setAutoHeightVersion] = useState(0);
+  // ResizeObserver(内容変化=編集等)による再測定トリガー。
+  const [autoHeightMeasureNonce, setAutoHeightMeasureNonce] = useState(0);
+
+  // 行高ストア。order(view 順)/ 行数 / estimate が変わったときだけ作り直します(rowModel は
+  //   order 変化で identity が変わるため、これを依存に持てば reorder で再構築されます)。
+  //   autoHeight 無効時は null(uniform 経路)。
+  const rowHeightStore = useMemo<RowHeightStore | null>(
+    () =>
+      autoHeightActive
+        ? buildRowHeightStore(
+            viewRowCount,
+            estimateRowHeightValue,
+            rowModel.getRowKey,
+            measuredHeightsRef.current,
+          )
+        : null,
+    [autoHeightActive, viewRowCount, estimateRowHeightValue, rowModel],
+  );
+
+  // 行メトリクス(スクロール非依存)。auto-height では prefix-sum 版、uniform では従来版。
+  //   overlay(active cell / selection)の top/height とヒットテストの行解決が共有します。
+  //   autoHeightVersion: 測定 flush で store.prefix が変わったら作り直します(store は in-place 更新)。
+  const rowMetrics: RowMetrics = useMemo(
+    () =>
+      autoHeightActive && rowHeightStore
+        ? createAutoHeightRowMetrics(rowHeightStore)
+        : createUniformRowMetrics(viewRowCount, rowHeight),
+    // autoHeightVersion は測定 flush(store の in-place prefix 更新)後に再計算させるための
+    //   意図的なトリガー依存です(body では直接参照しないため exhaustive-deps を抑止)。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [autoHeightActive, rowHeightStore, autoHeightVersion, viewRowCount, rowHeight],
+  );
+
+  // 縦ジオメトリ。auto-height は prefix-sum 版(sf=1 / offset=0 / translateY=0)、uniform は従来版。
+  //   uniform 経路は rowMetrics 非依存で従来と数値一致します。
   const verticalGeometry = useMemo(
     () =>
-      computeVerticalGeometry({
-        rowCount: viewRowCount,
-        rowHeight,
-        headerHeight,
-        viewportHeight,
-        scrollTop,
-        // 旧 rowVirtualizer overscan=20 を踏襲します。
-        overscan: 20,
-        maxBodyPx: MAX_BODY_PX,
-      }),
-    [viewRowCount, rowHeight, headerHeight, viewportHeight, scrollTop],
+      autoHeightActive
+        ? computeAutoHeightVerticalGeometry(
+            { headerHeight, viewportHeight, scrollTop, overscan: 20 },
+            rowMetrics,
+          )
+        : computeVerticalGeometry({
+            rowCount: viewRowCount,
+            rowHeight,
+            headerHeight,
+            viewportHeight,
+            scrollTop,
+            // 旧 rowVirtualizer overscan=20 を踏襲します。
+            overscan: 20,
+            maxBodyPx: MAX_BODY_PX,
+          }),
+    [
+      autoHeightActive,
+      rowMetrics,
+      viewRowCount,
+      rowHeight,
+      headerHeight,
+      viewportHeight,
+      scrollTop,
+    ],
   );
   const virtualRows = verticalGeometry.rows;
   const virtualRowIndexes = verticalGeometry.rowIndexSet;
@@ -15231,13 +16025,88 @@ export function SpreadsheetGrid<T extends object>({
   //   用いるため activeCellPlacement(下記)はオフセットせず、描画オーバーレイにのみ渡します。
   const overlayBaseOffset = verticalGeometry.windowBaseOffsetPx;
 
-  // 行メトリクス(スクロール非依存)。overlay(active cell / selection)の top/height と
-  //   ヒットテスト(useGridPointerInteractions)の行解決が共有します。verticalGeometry とは別軸で、
-  //   selection 等が変わったときだけ作り直し、縦スクロールでは作り直しません(11-A の memo 維持)。
-  const rowMetrics: RowMetrics = useMemo(
-    () => createUniformRowMetrics(viewRowCount, rowHeight),
-    [viewRowCount, rowHeight],
-  );
+  // ── auto-height 測定フロー(ResizeObserver + アンカー補正)(C1) ───────────
+  //   描画済みの [data-autoheight-cell](C1-2 マーカー)を実測し、行ごと(同一 rowKey の 3 ペイン分は
+  //   max)に store へ反映 → 最小変更 index から prefix を 1 回前方再構築 → version bump で geometry を
+  //   更新します。view index は行 div の data-row-index から逆引きします。
+  //   ★アンカー補正: 測定で上方の行高が変わると基準行の論理 top がずれて画面がジャンプするため、
+  //     viewport 上端の行を anchor とし、prefix 再構築と同じ layout フレーム内(ペイント前)で
+  //     scrollTop を同量ずらして見た目のジャンプを消します。
+  //   再測定トリガー: 描画窓(virtualRows)変化 / version / nonce(ResizeObserver=内容変化)/ viewport。
+  //     高さが収束すると setMeasuredRowHeight が false を返し version が動かず、ループは止まります。
+  useLayoutEffect(() => {
+    if (!autoHeightActive || !rowHeightStore) {
+      return;
+    }
+    const el = scrollContainerRef.current;
+    if (!el) {
+      return;
+    }
+    const cells = el.querySelectorAll<HTMLElement>('[data-autoheight-cell]');
+    if (cells.length === 0) {
+      return;
+    }
+
+    // 行ごとの実測 max 高さ(3 ペイン分)。
+    const perRow = new Map<number, number>();
+    cells.forEach((cell) => {
+      const rowEl = cell.closest<HTMLElement>('[data-row-index]');
+      if (!rowEl) {
+        return;
+      }
+      const idx = Number(rowEl.dataset.rowIndex);
+      if (!Number.isFinite(idx)) {
+        return;
+      }
+      const height = Math.ceil(cell.getBoundingClientRect().height);
+      const prev = perRow.get(idx);
+      if (prev === undefined || height > prev) {
+        perRow.set(idx, height);
+      }
+    });
+
+    let changed = false;
+    let minChanged = Number.POSITIVE_INFINITY;
+    perRow.forEach((height, idx) => {
+      const key = rowModel.getRowKey(idx) ?? idx;
+      if (setMeasuredRowHeight(rowHeightStore, idx, key, height)) {
+        changed = true;
+        if (idx < minChanged) {
+          minChanged = idx;
+        }
+      }
+    });
+
+    if (changed) {
+      // 旧 prefix のまま anchor(viewport 上端行)と offset を数値で捕捉してから再構築します。
+      const beforeScrollTop = el.scrollTop;
+      const anchorRow = rowMetrics.rowAtContentY(beforeScrollTop);
+      const anchorTopBefore = rowMetrics.rowTop(anchorRow);
+      const offset = beforeScrollTop - anchorTopBefore;
+      rebuildPrefixFrom(rowHeightStore, minChanged);
+      const anchorTopAfter = rowHeightStore.prefix[anchorRow];
+      // ペイント前(layout フレーム内)に同期適用してジャンプを消します。
+      el.scrollTop = anchorTopAfter + offset;
+      // 測定収束のための version bump(ペイント前に geometry を更新)。
+      setAutoHeightVersion((v) => v + 1);
+    }
+
+    // 内容変化(編集等)を拾うため可視窓のセルを監視します。
+    const observer = new ResizeObserver(() =>
+      setAutoHeightMeasureNonce((n) => n + 1),
+    );
+    cells.forEach((cell) => observer.observe(cell));
+    return () => observer.disconnect();
+  }, [
+    autoHeightActive,
+    rowHeightStore,
+    rowMetrics,
+    rowModel,
+    virtualRows,
+    viewportHeight,
+    autoHeightVersion,
+    autoHeightMeasureNonce,
+  ]);
 
   // 追加(10-C): 各ペインで実際に描画する列エントリ群です。
   //             中央ペインは仮想化済みの部分集合、固定ペインは全エントリを描画します。
@@ -17092,6 +17961,7 @@ export function SpreadsheetGrid<T extends object>({
                   virtualRowIndexes={virtualRowIndexes}
                   renderEntries={leftRenderEntries}
                   rowHeight={rowHeight}
+                  autoHeight={autoHeightActive}
                   rowHeaderCellStyle={rowHeaderCellStyle}
                   hoveredRowIndex={hoveredRowIndex}
                   isWholeGridSelected={isWholeGridSelected}
@@ -17222,6 +18092,7 @@ export function SpreadsheetGrid<T extends object>({
                   virtualRowIndexes={virtualRowIndexes}
                   renderEntries={centerRenderEntries}
                   rowHeight={rowHeight}
+                  autoHeight={autoHeightActive}
                   rowHeaderCellStyle={rowHeaderCellStyle}
                   hoveredRowIndex={hoveredRowIndex}
                   isWholeGridSelected={isWholeGridSelected}
@@ -17345,6 +18216,7 @@ export function SpreadsheetGrid<T extends object>({
                   virtualRowIndexes={virtualRowIndexes}
                   renderEntries={rightRenderEntries}
                   rowHeight={rowHeight}
+                  autoHeight={autoHeightActive}
                   rowHeaderCellStyle={rowHeaderCellStyle}
                   hoveredRowIndex={hoveredRowIndex}
                   isWholeGridSelected={isWholeGridSelected}

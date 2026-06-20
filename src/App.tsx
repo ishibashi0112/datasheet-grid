@@ -11,6 +11,9 @@ type DemoRow = {
   status: string;
   // 追加(date デモ): 発注日です。date フィルター型(部分一致)の動作確認用に ISO 文字列で持ちます。
   orderedAt: string;
+  // 追加(C1 auto-height デモ): 備考。行ごとに長さが変わる長文で、auto-height 列の折り返し/可変行高を
+  //   確認します(autoHeight デモモード時のみ駆動)。
+  note: string;
   [key: string]: string | number;
 };
 
@@ -28,6 +31,28 @@ const getOverflowColumnKey = (columnIndex: number) => `extra_${columnIndex}`;
 // 追加(date デモ): 発注日の生成基点(2023-01-01 UTC)です。index から決定的に日付を割り当てます。
 const ORDERED_AT_BASE_UTC = Date.UTC(2023, 0, 1);
 const ORDERED_AT_SPAN_DAYS = 731; // 2023-01-01 〜 2024-12-31(約2年)を循環。
+
+// 追加(C1 auto-height デモ): auto-height は行数 gate(50,000 行)内でのみ起動するため、
+//   デモモードではこの行数に絞ります(uniform 性能確認の 1M とは別系統)。
+const AUTO_HEIGHT_DEMO_ROW_COUNT = 5000;
+
+// 追加(C1 auto-height デモ): 備考の元になる文の候補です。
+const NOTE_PHRASES = [
+  '在庫僅少のため早期手配が必要です。',
+  '代替品あり。仕様は要確認のこと。',
+  '長納期品。リードタイム約8週間を見込む。',
+  '前回ロットで初期不良の報告あり、受入検査を強化すること。',
+];
+
+// 追加(C1 auto-height デモ): index から決定的に 1〜4 文の備考を生成します(行ごとに高さが変わる)。
+const buildNote = (index: number): string => {
+  const count = (index % 4) + 1;
+  const parts: string[] = [];
+  for (let i = 0; i < count; i += 1) {
+    parts.push(NOTE_PHRASES[(index + i) % NOTE_PHRASES.length]);
+  }
+  return parts.join(' ');
+};
 
 // 追加: ダミー行を生成します。
 const createDemoRows = (count: number): DemoRow[] =>
@@ -47,6 +72,7 @@ const createDemoRows = (count: number): DemoRow[] =>
       unit: ['個', '本', '式', '枚'][index % 4],
       status: index % 11 === 0 ? '保留' : '有効',
       orderedAt,
+      note: buildNote(index),
     };
   }).map((row, index) => {
     const nextRow: DemoRow = { ...row };
@@ -110,6 +136,9 @@ const createInitialColumns = (): GridColumn<DemoRow>[] => {
     // 追加(date デモ): date フィルター型の動作確認用の列です。値は ISO 文字列(YYYY-MM-DD)で、
     //   フィルターは部分一致です('2024' で年 / '2024-03' で月 / '-15' で15日 を絞り込めます)。
     { key: 'orderedAt', title: '発注日', width: 130, filterType: 'date' },
+    // 追加(C1 auto-height デモ): 長文の備考列。autoHeight:true で、グリッド props の autoHeight 有効 +
+    //   行数 gate 内のとき行高を内容に合わせて可変化します(折り返し表示)。
+    { key: 'note', title: '備考', width: 320, filterType: 'text', autoHeight: true },
   ];
 
   const extraColumns = Array.from(
@@ -134,6 +163,17 @@ function App() {
   const [columns, setColumns] = useState<GridColumn<DemoRow>[]>(() =>
     createInitialColumns(),
   );
+
+  // 追加(C1 auto-height デモ): auto-height モードのトグル。ON で行数を gate 内(5,000)に絞り、
+  //   grid props の autoHeight を有効化します。OFF で uniform 性能確認用の 1M に戻します。
+  const [autoHeightMode, setAutoHeightMode] = useState(false);
+  const toggleAutoHeight = () => {
+    const next = !autoHeightMode;
+    setAutoHeightMode(next);
+    setRows(
+      createDemoRows(next ? AUTO_HEIGHT_DEMO_ROW_COUNT : INITIAL_ROW_COUNT),
+    );
+  };
 
   return (
     <main
@@ -167,9 +207,28 @@ function App() {
         >
           reducer ベースの SpreadsheetGrid です。行/列選択、copy/paste、editor、
           row virtualization / column virtualization の確認用に、
-          初期行数 {INITIAL_ROW_COUNT.toLocaleString()} 行・
+          初期行数 {rows.length.toLocaleString()} 行・
           初期列数 {columns.length} 列のダミーデータを表示しています。
         </p>
+
+        <button
+          type="button"
+          onClick={toggleAutoHeight}
+          style={{
+            marginTop: 4,
+            padding: '6px 12px',
+            fontSize: 13,
+            borderRadius: 8,
+            border: '1px solid #94a3b8',
+            backgroundColor: autoHeightMode ? '#dbeafe' : '#ffffff',
+            color: '#0f172a',
+            cursor: 'pointer',
+          }}
+        >
+          {autoHeightMode
+            ? `auto-height デモ中(${AUTO_HEIGHT_DEMO_ROW_COUNT.toLocaleString()} 行・備考列で可変行高)→ 1M(uniform)へ戻す`
+            : `auto-height デモへ切替(${AUTO_HEIGHT_DEMO_ROW_COUNT.toLocaleString()} 行・備考列で可変行高)`}
+        </button>
       </header>
 
       <SpreadsheetGrid
@@ -186,6 +245,8 @@ function App() {
           status: '',
           // 追加(date デモ): 新規行も orderedAt を持たせます(既定は空文字 = フィルター未該当)。
           orderedAt: '',
+          // 追加(C1 auto-height デモ): 新規行の備考は空文字。
+          note: '',
         })}
         createOverflowColumn={(columnIndex) => ({
           key: getOverflowColumnKey(columnIndex),
@@ -195,6 +256,7 @@ function App() {
           filterType: 'text',
         })}
         rowHeight={38}
+        autoHeight={autoHeightMode}
         headerHeight={42}
         rowHeaderWidth={56}
         enableRangeSelection

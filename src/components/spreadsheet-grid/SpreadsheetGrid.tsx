@@ -1,6 +1,7 @@
 // 追加: 列フィルター UI 整備 + ソート/フィルター見た目強化を反映します。
 import {
   useEffect,
+  useLayoutEffect,
   useMemo,
   useCallback,
   // 追加(11-B7): グローバルフィルタ評価の遅延化(Transition 化)に使います。
@@ -88,11 +89,21 @@ import {
 //   1M 行で innerRowStyle.height がブラウザ要素高さ上限を超える機能ブロッカーを解消します。
 import {
   MAX_BODY_PX,
+  AUTO_HEIGHT_MAX_ROWS,
   clipRowRangeToWindow,
+  computeAutoHeightVerticalGeometry,
   computeVerticalGeometry,
   createUniformRowMetrics,
+  shouldUseAutoHeight,
 } from './logic/verticalGeometry';
 import type { RowMetrics } from './logic/verticalGeometry';
+import {
+  buildRowHeightStore,
+  createAutoHeightRowMetrics,
+  rebuildPrefixFrom,
+  setMeasuredRowHeight,
+} from './logic/rowHeightStore';
+import type { RowHeightStore } from './logic/rowHeightStore';
 import {
   // ソートは order(Int32Array)版に一本化しています
   //   (DS-2 で差し替え、旧オブジェクト配列版は DS-3-8 で削除)。
@@ -117,6 +128,8 @@ import type {
   GridColumn,
   // 追加(13-A): 列メニューからの固定切替に使います。
   GridColumnPinned,
+  // 追加(C1): auto-height 実測キャッシュのキー型です。
+  GridRowKey,
   // 追加(DS-3-0): 行モデルのシーム契約型です(rowModel の構築に使います)。
   RowModel,
   // 追加(記述子化): commit 経路で text/date/select/custom を記述子化する際の型です。
@@ -190,6 +203,8 @@ export function SpreadsheetGrid<T extends object>({
   createRow,
   createOverflowColumn,
   rowHeight = 36,
+  autoHeight = false,
+  estimateRowHeight,
   headerHeight = 40,
   rowHeaderWidth = 56,
   readOnly = false,
@@ -794,20 +809,101 @@ export function SpreadsheetGrid<T extends object>({
 
   const virtualColumns = columnVirtualizer.getVirtualItems();
 
-  // 縦ジオメトリ(uniform window + pixel scaling)。scaleFactor=1 のとき現状と数値一致。
+  // ── auto-height gate / 行高ストア(C1) ───────────
+  // 未測定行の推定高さ。未指定時は rowHeight。
+  const estimateRowHeightValue = estimateRowHeight ?? rowHeight;
+  // 駆動列(autoHeight:true)の有無。
+  const hasAutoHeightColumn = useMemo(
+    () => visibleColumns.some((column) => column.autoHeight === true),
+    [visibleColumns],
+  );
+  // gate: props 有効 + 駆動列あり + 行数が上限内。超過時は uniform 行高へフォールバックします。
+  const autoHeightActive = shouldUseAutoHeight(
+    autoHeight,
+    hasAutoHeightColumn,
+    viewRowCount,
+    AUTO_HEIGHT_MAX_ROWS,
+  );
+  // gate 超過時の開発時警告(例外は投げず uniform にフォールバック)。
+  useEffect(() => {
+    if (
+      import.meta.env.DEV &&
+      autoHeight &&
+      hasAutoHeightColumn &&
+      viewRowCount > AUTO_HEIGHT_MAX_ROWS
+    ) {
+      console.warn(
+        `[SpreadsheetGrid] auto-height は ${AUTO_HEIGHT_MAX_ROWS} 行までです(現在 ${viewRowCount} 行)。uniform 行高にフォールバックします。`,
+      );
+    }
+  }, [autoHeight, hasAutoHeightColumn, viewRowCount]);
+
+  // 実測高さの永続キャッシュ(rowKey 単位)。store を作り直しても引き継ぎます
+  //   (filter/sort で view 順が変わっても再測定不要)。
+  const measuredHeightsRef = useRef<Map<GridRowKey, number>>(new Map());
+  // 測定 flush で store の prefix が更新されたことを伝える version(geometry/rowMetrics 再計算用)。
+  const [autoHeightVersion, setAutoHeightVersion] = useState(0);
+  // ResizeObserver(内容変化=編集等)による再測定トリガー。
+  const [autoHeightMeasureNonce, setAutoHeightMeasureNonce] = useState(0);
+
+  // 行高ストア。order(view 順)/ 行数 / estimate が変わったときだけ作り直します(rowModel は
+  //   order 変化で identity が変わるため、これを依存に持てば reorder で再構築されます)。
+  //   autoHeight 無効時は null(uniform 経路)。
+  const rowHeightStore = useMemo<RowHeightStore | null>(
+    () =>
+      autoHeightActive
+        ? buildRowHeightStore(
+            viewRowCount,
+            estimateRowHeightValue,
+            rowModel.getRowKey,
+            measuredHeightsRef.current,
+          )
+        : null,
+    [autoHeightActive, viewRowCount, estimateRowHeightValue, rowModel],
+  );
+
+  // 行メトリクス(スクロール非依存)。auto-height では prefix-sum 版、uniform では従来版。
+  //   overlay(active cell / selection)の top/height とヒットテストの行解決が共有します。
+  //   autoHeightVersion: 測定 flush で store.prefix が変わったら作り直します(store は in-place 更新)。
+  const rowMetrics: RowMetrics = useMemo(
+    () =>
+      autoHeightActive && rowHeightStore
+        ? createAutoHeightRowMetrics(rowHeightStore)
+        : createUniformRowMetrics(viewRowCount, rowHeight),
+    // autoHeightVersion は測定 flush(store の in-place prefix 更新)後に再計算させるための
+    //   意図的なトリガー依存です(body では直接参照しないため exhaustive-deps を抑止)。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [autoHeightActive, rowHeightStore, autoHeightVersion, viewRowCount, rowHeight],
+  );
+
+  // 縦ジオメトリ。auto-height は prefix-sum 版(sf=1 / offset=0 / translateY=0)、uniform は従来版。
+  //   uniform 経路は rowMetrics 非依存で従来と数値一致します。
   const verticalGeometry = useMemo(
     () =>
-      computeVerticalGeometry({
-        rowCount: viewRowCount,
-        rowHeight,
-        headerHeight,
-        viewportHeight,
-        scrollTop,
-        // 旧 rowVirtualizer overscan=20 を踏襲します。
-        overscan: 20,
-        maxBodyPx: MAX_BODY_PX,
-      }),
-    [viewRowCount, rowHeight, headerHeight, viewportHeight, scrollTop],
+      autoHeightActive
+        ? computeAutoHeightVerticalGeometry(
+            { headerHeight, viewportHeight, scrollTop, overscan: 20 },
+            rowMetrics,
+          )
+        : computeVerticalGeometry({
+            rowCount: viewRowCount,
+            rowHeight,
+            headerHeight,
+            viewportHeight,
+            scrollTop,
+            // 旧 rowVirtualizer overscan=20 を踏襲します。
+            overscan: 20,
+            maxBodyPx: MAX_BODY_PX,
+          }),
+    [
+      autoHeightActive,
+      rowMetrics,
+      viewRowCount,
+      rowHeight,
+      headerHeight,
+      viewportHeight,
+      scrollTop,
+    ],
   );
   const virtualRows = verticalGeometry.rows;
   const virtualRowIndexes = verticalGeometry.rowIndexSet;
@@ -832,13 +928,88 @@ export function SpreadsheetGrid<T extends object>({
   //   用いるため activeCellPlacement(下記)はオフセットせず、描画オーバーレイにのみ渡します。
   const overlayBaseOffset = verticalGeometry.windowBaseOffsetPx;
 
-  // 行メトリクス(スクロール非依存)。overlay(active cell / selection)の top/height と
-  //   ヒットテスト(useGridPointerInteractions)の行解決が共有します。verticalGeometry とは別軸で、
-  //   selection 等が変わったときだけ作り直し、縦スクロールでは作り直しません(11-A の memo 維持)。
-  const rowMetrics: RowMetrics = useMemo(
-    () => createUniformRowMetrics(viewRowCount, rowHeight),
-    [viewRowCount, rowHeight],
-  );
+  // ── auto-height 測定フロー(ResizeObserver + アンカー補正)(C1) ───────────
+  //   描画済みの [data-autoheight-cell](C1-2 マーカー)を実測し、行ごと(同一 rowKey の 3 ペイン分は
+  //   max)に store へ反映 → 最小変更 index から prefix を 1 回前方再構築 → version bump で geometry を
+  //   更新します。view index は行 div の data-row-index から逆引きします。
+  //   ★アンカー補正: 測定で上方の行高が変わると基準行の論理 top がずれて画面がジャンプするため、
+  //     viewport 上端の行を anchor とし、prefix 再構築と同じ layout フレーム内(ペイント前)で
+  //     scrollTop を同量ずらして見た目のジャンプを消します。
+  //   再測定トリガー: 描画窓(virtualRows)変化 / version / nonce(ResizeObserver=内容変化)/ viewport。
+  //     高さが収束すると setMeasuredRowHeight が false を返し version が動かず、ループは止まります。
+  useLayoutEffect(() => {
+    if (!autoHeightActive || !rowHeightStore) {
+      return;
+    }
+    const el = scrollContainerRef.current;
+    if (!el) {
+      return;
+    }
+    const cells = el.querySelectorAll<HTMLElement>('[data-autoheight-cell]');
+    if (cells.length === 0) {
+      return;
+    }
+
+    // 行ごとの実測 max 高さ(3 ペイン分)。
+    const perRow = new Map<number, number>();
+    cells.forEach((cell) => {
+      const rowEl = cell.closest<HTMLElement>('[data-row-index]');
+      if (!rowEl) {
+        return;
+      }
+      const idx = Number(rowEl.dataset.rowIndex);
+      if (!Number.isFinite(idx)) {
+        return;
+      }
+      const height = Math.ceil(cell.getBoundingClientRect().height);
+      const prev = perRow.get(idx);
+      if (prev === undefined || height > prev) {
+        perRow.set(idx, height);
+      }
+    });
+
+    let changed = false;
+    let minChanged = Number.POSITIVE_INFINITY;
+    perRow.forEach((height, idx) => {
+      const key = rowModel.getRowKey(idx) ?? idx;
+      if (setMeasuredRowHeight(rowHeightStore, idx, key, height)) {
+        changed = true;
+        if (idx < minChanged) {
+          minChanged = idx;
+        }
+      }
+    });
+
+    if (changed) {
+      // 旧 prefix のまま anchor(viewport 上端行)と offset を数値で捕捉してから再構築します。
+      const beforeScrollTop = el.scrollTop;
+      const anchorRow = rowMetrics.rowAtContentY(beforeScrollTop);
+      const anchorTopBefore = rowMetrics.rowTop(anchorRow);
+      const offset = beforeScrollTop - anchorTopBefore;
+      rebuildPrefixFrom(rowHeightStore, minChanged);
+      const anchorTopAfter = rowHeightStore.prefix[anchorRow];
+      // ペイント前(layout フレーム内)に同期適用してジャンプを消します。
+      el.scrollTop = anchorTopAfter + offset;
+      // 測定収束のための version bump(ペイント前に geometry を更新)。
+      setAutoHeightVersion((v) => v + 1);
+    }
+
+    // 内容変化(編集等)を拾うため可視窓のセルを監視します。
+    const observer = new ResizeObserver(() =>
+      setAutoHeightMeasureNonce((n) => n + 1),
+    );
+    cells.forEach((cell) => observer.observe(cell));
+    return () => observer.disconnect();
+  }, [
+    autoHeightActive,
+    rowHeightStore,
+    rowMetrics,
+    rowModel,
+    virtualRows,
+    viewportHeight,
+    autoHeightVersion,
+    autoHeightMeasureNonce,
+  ]);
 
   // 追加(10-C): 各ペインで実際に描画する列エントリ群です。
   //             中央ペインは仮想化済みの部分集合、固定ペインは全エントリを描画します。
@@ -2693,6 +2864,7 @@ export function SpreadsheetGrid<T extends object>({
                   virtualRowIndexes={virtualRowIndexes}
                   renderEntries={leftRenderEntries}
                   rowHeight={rowHeight}
+                  autoHeight={autoHeightActive}
                   rowHeaderCellStyle={rowHeaderCellStyle}
                   hoveredRowIndex={hoveredRowIndex}
                   isWholeGridSelected={isWholeGridSelected}
@@ -2823,6 +2995,7 @@ export function SpreadsheetGrid<T extends object>({
                   virtualRowIndexes={virtualRowIndexes}
                   renderEntries={centerRenderEntries}
                   rowHeight={rowHeight}
+                  autoHeight={autoHeightActive}
                   rowHeaderCellStyle={rowHeaderCellStyle}
                   hoveredRowIndex={hoveredRowIndex}
                   isWholeGridSelected={isWholeGridSelected}
@@ -2946,6 +3119,7 @@ export function SpreadsheetGrid<T extends object>({
                   virtualRowIndexes={virtualRowIndexes}
                   renderEntries={rightRenderEntries}
                   rowHeight={rowHeight}
+                  autoHeight={autoHeightActive}
                   rowHeaderCellStyle={rowHeaderCellStyle}
                   hoveredRowIndex={hoveredRowIndex}
                   isWholeGridSelected={isWholeGridSelected}

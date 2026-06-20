@@ -27,6 +27,8 @@ import { isCellEditable } from '../utils/permissions';
 type VirtualRowLike = {
   index: number;
   start: number;
+  // 追加(C1): auto-height の行ごと高さ。uniform では undefined(rowHeight へフォールバック)。
+  size?: number;
 };
 
 // ──────────────────────────────────────────────────────────
@@ -56,7 +58,17 @@ type GridBodyRowProps<T> = {
   // virtualRow.start(scrollMargin=headerHeight 込み)。行全体の translateY に使います。
   top: number;
   renderEntries: PaneColumnEntry<T>[];
+  // この行の解決済み高さ(px)。uniform では rowHeight prop と同値、auto-height では行ごとの
+  //   解決済み高さ(virtualRow.size)が GridBodyLayer 側で載ります。
   rowHeight: number;
+  // 追加(C1): auto-height 行モードか。true かつ column.autoHeight のセルは内容駆動レイアウト
+  //   (min-height + white-space:normal + 測定マーカー)になります。uniform では常に false。
+  autoHeight: boolean;
+  // 追加(C1-6): auto-height セルの min-height 下限(基準行高=estimate)。rowHeight(=解決済み行高/
+  //   実測由来)を下限にすると一度伸びた行が縮まなくなる(min-height で測定が下げ止まる)ため、
+  //   下限は実測に依存しない固定値(基準行高)にして shrink を可能にします。GridBodyLayer の基準
+  //   rowHeight prop がそのまま入ります(uniform では未使用)。
+  autoHeightMinHeight: number;
   rowHeaderCellStyle: CSSProperties;
   // 注記: hoveredRowIndex そのものではなく「この行がホバー中か」を boolean で渡します。
   //       これによりホバー変化時に再レンダーされるのは該当 2 行だけで済みます。
@@ -110,6 +122,8 @@ function GridBodyRowInner<T>({
   top,
   renderEntries,
   rowHeight,
+  autoHeight,
+  autoHeightMinHeight,
   rowHeaderCellStyle,
   isRowHovered,
   isWholeGridSelected,
@@ -202,9 +216,16 @@ function GridBodyRowInner<T>({
           column,
         );
 
+        // 追加(C1): auto-height モードかつ駆動列(column.autoHeight)のセルは内容駆動高さにします。
+        //   高さを固定せず min-height=解決済み行高を下限に、white-space:normal で折り返します。
+        //   data-autoheight-cell は C1-3 の ResizeObserver が実測対象を見つけるためのマーカーです。
+        //   uniform(autoHeight=false)では常に false で、従来どおり固定高 + 中央寄せになります。
+        const isAutoHeightCell = autoHeight && column.autoHeight === true;
+
         return (
           <div
             key={`${String(rowKey)}-${column.key}`}
+            data-autoheight-cell={isAutoHeightCell ? '' : undefined}
             onPointerDown={(event) =>
               onCellPointerDown({ row: rowIndex, col: colIndex }, event)
             }
@@ -220,10 +241,30 @@ function GridBodyRowInner<T>({
               left,
               width: size,
               minWidth: size,
-              height: rowHeight,
+              // auto-height セル: 内容駆動(下限=基準行高=estimate)。通常セル: 従来どおり固定高 + 中央寄せ。
+              // 変更(C1-5): uniform セルは固定行高に対し長文だと既定の white-space:normal で折り返し、
+              //   overflow 未指定のため溢れた分が隣行へ被って見えていました(autoHeight:true 列を
+              //   uniform 側=gate 外/トグル OFF で表示したときに顕在化)。nowrap + overflow:hidden で
+              //   1 行表示・セル境界クリップへ寄せ、隣行への被りを防ぎます(短文列は元から 1 行で不変)。
+              // 変更(C1-6): min-height を rowHeight(解決済み行高=実測由来)から autoHeightMinHeight
+              //   (基準行高=estimate・実測非依存)へ変更。旧実装は一度伸びた行の min-height が大きい実測値で
+              //   固定され、列幅拡大等で内容が減っても測定が min-height で下げ止まり行が縮みませんでした。
+              //   固定下限にすることでセルが内容まで縮み、再測定で小さい値が反映されて行が shrink します。
+              ...(isAutoHeightCell
+                ? {
+                    minHeight: autoHeightMinHeight,
+                    alignItems: 'flex-start',
+                    whiteSpace: 'normal',
+                    wordBreak: 'break-word',
+                  }
+                : {
+                    height: rowHeight,
+                    alignItems: 'center',
+                    whiteSpace: 'nowrap',
+                    overflow: 'hidden',
+                  }),
               boxSizing: 'border-box',
               display: 'flex',
-              alignItems: 'center',
               padding: '0 10px',
               borderRight: '1px solid #e5e7eb',
               borderBottom: '1px solid #e5e7eb',
@@ -269,6 +310,8 @@ type GridBodyLayerProps<T> = {
   // 変更(10-C): 描画対象の列エントリです(座標はペインローカル)。
   renderEntries: PaneColumnEntry<T>[];
   rowHeight: number;
+  // 追加(C1): auto-height 行モード。未指定時 false(供給側 C1-3 まで uniform 経路で不変)。
+  autoHeight?: boolean;
   rowHeaderCellStyle: CSSProperties;
   hoveredRowIndex: number | null;
   isWholeGridSelected: boolean;
@@ -322,6 +365,7 @@ export function GridBodyLayer<T>({
   virtualRowIndexes,
   renderEntries,
   rowHeight,
+  autoHeight = false,
   rowHeaderCellStyle,
   hoveredRowIndex,
   isWholeGridSelected,
@@ -356,6 +400,9 @@ export function GridBodyLayer<T>({
           return null;
         }
         const rowKey = rowModel.getRowKey(rowIndex) ?? rowIndex;
+
+        // 行ごとの解決済み高さ。auto-height では virtualRow.size、uniform では rowHeight。
+        const rowSize = virtualRow.size ?? rowHeight;
 
         // 追加(11-A): この行に関係する選択状態だけをプリミティブへ分解します。
         const isRowSelected =
@@ -397,7 +444,9 @@ export function GridBodyLayer<T>({
             row={row}
             top={virtualRow.start}
             renderEntries={renderEntries}
-            rowHeight={rowHeight}
+            rowHeight={rowSize}
+            autoHeight={autoHeight}
+            autoHeightMinHeight={rowHeight}
             rowHeaderCellStyle={rowHeaderCellStyle}
             isRowHovered={hoveredRowIndex === rowIndex}
             isWholeGridSelected={isWholeGridSelected}

@@ -10,14 +10,21 @@ import { describe, it, expect } from 'vitest';
 import {
   MAX_BODY_PX,
   WINDOW_BASE_CHUNK_PX,
+  AUTO_HEIGHT_MAX_ROWS,
   clientYToRowIndex,
   clipRowRangeToWindow,
+  computeAutoHeightVerticalGeometry,
   computeVerticalGeometry,
   createUniformRowMetrics,
   logicalToPhysicalScrollTop,
   physicalToLogicalScrollTop,
+  shouldUseAutoHeight,
   type ComputeVerticalGeometryArgs,
 } from './verticalGeometry';
+import {
+  buildRowHeightStore,
+  createAutoHeightRowMetrics,
+} from './rowHeightStore';
 
 // transform/レイアウトが安定してペイントされる float32 の正確整数域(2^24)。
 //   行/オーバーレイの配置値・wrapper の translateY はこの範囲内に収まる必要があります
@@ -486,5 +493,142 @@ describe('clipRowRangeToWindow (selection band clip to render window)', () => {
     expect(clipRowRangeToWindow(42, 42, 42, 42)).toEqual({ start: 42, end: 42 });
     expect(clipRowRangeToWindow(41, 41, 42, 42)).toBeNull();
     expect(clipRowRangeToWindow(43, 43, 42, 42)).toBeNull();
+  });
+});
+
+// C1-1: computeAutoHeightVerticalGeometry の等価性(uniform 相当の RowMetrics で start が
+//   computeVerticalGeometry(sf=1)と一致)と不変条件(sf=1 固定 / start 単調連続 / size 正値 /
+//   窓が可視域を被覆)を検査します。
+const identityKey = (index: number): number => index;
+
+describe('computeAutoHeightVerticalGeometry (uniform-equivalent: start matches computeVerticalGeometry)', () => {
+  const cases: Array<{
+    rowCount: number;
+    rowHeight: number;
+    headerHeight: number;
+    viewportHeight: number;
+    scrollTop: number;
+  }> = [
+    { rowCount: 1000, rowHeight: 36, headerHeight: 42, viewportHeight: 600, scrollTop: 0 },
+    { rowCount: 1000, rowHeight: 38, headerHeight: 42, viewportHeight: 600, scrollTop: 5 },
+    { rowCount: 1000, rowHeight: 38, headerHeight: 42, viewportHeight: 640, scrollTop: 3800 },
+    { rowCount: 137, rowHeight: 24, headerHeight: 30, viewportHeight: 480, scrollTop: 1000 },
+    { rowCount: 1000, rowHeight: 38, headerHeight: 42, viewportHeight: 600, scrollTop: 1e9 },
+  ];
+
+  for (const c of cases) {
+    it(`start matches uniform for ${JSON.stringify(c)}`, () => {
+      // uniform 経路(estimate=rowHeight・measured 空)→ auto-height は sf=1 / offset=0。
+      const store = buildRowHeightStore(c.rowCount, c.rowHeight, identityKey);
+      const rowMetrics = createAutoHeightRowMetrics(store);
+      const auto = computeAutoHeightVerticalGeometry(
+        {
+          headerHeight: c.headerHeight,
+          viewportHeight: c.viewportHeight,
+          scrollTop: c.scrollTop,
+          overscan: 20,
+        },
+        rowMetrics,
+      );
+      const uniform = computeVerticalGeometry({
+        rowCount: c.rowCount,
+        rowHeight: c.rowHeight,
+        headerHeight: c.headerHeight,
+        viewportHeight: c.viewportHeight,
+        scrollTop: c.scrollTop,
+        overscan: 20,
+        maxBodyPx: MAX_BODY_PX,
+      });
+
+      // sf=1 / translateY=0 / offset=0 に固定。
+      expect(auto.scaleFactor).toBe(1);
+      expect(auto.translateY).toBe(0);
+      expect(auto.windowBaseOffsetPx).toBe(0);
+      expect(auto.physicalBodyHeight).toBe(uniform.physicalBodyHeight);
+      expect(auto.logicalBodyHeight).toBe(uniform.logicalBodyHeight);
+
+      // 共通 index の start が一致(rowTop が uniform と一致するため)。
+      const autoByIndex = new Map(auto.rows.map((r) => [r.index, r.start]));
+      for (const r of uniform.rows) {
+        if (autoByIndex.has(r.index)) {
+          expect(autoByIndex.get(r.index)).toBe(r.start);
+        }
+      }
+
+      // 各 size は rowHeight(uniform estimate)。
+      for (const r of auto.rows) {
+        expect(r.size).toBe(c.rowHeight);
+      }
+    });
+  }
+});
+
+describe('shouldUseAutoHeight (pre-measurement gate)', () => {
+  it('requires enabled + driving column + row count within [1, maxRows]', () => {
+    expect(shouldUseAutoHeight(true, true, 1000, AUTO_HEIGHT_MAX_ROWS)).toBe(true);
+    // props 無効。
+    expect(shouldUseAutoHeight(false, true, 1000, AUTO_HEIGHT_MAX_ROWS)).toBe(false);
+    // 駆動列なし。
+    expect(shouldUseAutoHeight(true, false, 1000, AUTO_HEIGHT_MAX_ROWS)).toBe(false);
+    // 行数 0(描画なし)。
+    expect(shouldUseAutoHeight(true, true, 0, AUTO_HEIGHT_MAX_ROWS)).toBe(false);
+  });
+
+  it('gates at the row-count boundary (fallback to uniform above max)', () => {
+    // 上限ちょうどは true、+1 で false(uniform フォールバック)。
+    expect(shouldUseAutoHeight(true, true, AUTO_HEIGHT_MAX_ROWS, AUTO_HEIGHT_MAX_ROWS)).toBe(true);
+    expect(shouldUseAutoHeight(true, true, AUTO_HEIGHT_MAX_ROWS + 1, AUTO_HEIGHT_MAX_ROWS)).toBe(false);
+    // 1M 行は当然フォールバック。
+    expect(shouldUseAutoHeight(true, true, 1_000_000, AUTO_HEIGHT_MAX_ROWS)).toBe(false);
+  });
+});
+
+describe('computeAutoHeightVerticalGeometry (invariants: window covers viewport, monotonic, sized)', () => {
+  it('produces contiguous monotonically increasing rows that cover the visible band', () => {
+    // 非一様な行高(measured)で窓が可視域を覆い、start が単調・連続、size>0 を確認します。
+    const rowCount = 500;
+    const estimate = 30;
+    const measured = new Map<number, number>();
+    // 偶数行を背高(60)に。view 順=identity。
+    for (let i = 0; i < rowCount; i += 2) {
+      measured.set(i, 60);
+    }
+    const store = buildRowHeightStore(rowCount, estimate, identityKey, measured);
+    const rowMetrics = createAutoHeightRowMetrics(store);
+    const headerHeight = 42;
+    const viewportHeight = 600;
+
+    for (const scrollTop of [0, 500, 5000, 1e9]) {
+      const geo = computeAutoHeightVerticalGeometry(
+        { headerHeight, viewportHeight, scrollTop, overscan: 20 },
+        rowMetrics,
+      );
+
+      expect(geo.rows.length).toBeGreaterThan(0);
+
+      // index 連続・start 単調増加・size 正値・start = headerHeight + rowTop(index)。
+      for (let k = 0; k < geo.rows.length; k += 1) {
+        const r = geo.rows[k];
+        expect(r.size).toBeGreaterThan(0);
+        expect(r.start).toBe(headerHeight + rowMetrics.rowTop(r.index));
+        if (k > 0) {
+          expect(r.index).toBe(geo.rows[k - 1].index + 1);
+          expect(r.start).toBeGreaterThan(geo.rows[k - 1].start);
+        }
+      }
+
+      // 可視域 [clampedScrollTop, clampedScrollTop+viewport] が窓 [first, last] に含まれること。
+      const logicalMax = Math.max(
+        headerHeight + rowMetrics.totalBodyHeight - viewportHeight,
+        0,
+      );
+      const clamped = Math.min(Math.max(scrollTop, 0), logicalMax);
+      const firstVisible = rowMetrics.rowAtContentY(clamped);
+      const lastVisible = rowMetrics.rowAtContentY(clamped + viewportHeight);
+      const first = geo.rows[0].index;
+      const last = geo.rows[geo.rows.length - 1].index;
+      expect(first).toBeLessThanOrEqual(firstVisible);
+      expect(last).toBeGreaterThanOrEqual(lastVisible);
+    }
   });
 });
