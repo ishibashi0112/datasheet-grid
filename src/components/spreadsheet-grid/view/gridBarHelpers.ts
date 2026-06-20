@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 import type {
   CellCoord,
+  ColumnFilterValue,
   GridSelection,
   GridColumn,
   SpreadsheetGridSlotContext,
@@ -171,7 +172,9 @@ export const formatGridSelectionStatsLabel = <T,>(
 // 変更理由: set フィルター値はオブジェクトのため String(value).trim() 判定が
 //           成立しません(空配列も「全行除外」として有効に数える必要があります)。
 //           判定を logic/filtering.ts の isActiveColumnFilterValue へ一元化します。
-const countActiveColumnFilters = (columnFilterValues: Record<string, unknown>) =>
+const countActiveColumnFilters = (
+  columnFilterValues: Record<string, ColumnFilterValue>,
+) =>
   Object.values(columnFilterValues).filter((value) =>
     isActiveColumnFilterValue(value),
   ).length;

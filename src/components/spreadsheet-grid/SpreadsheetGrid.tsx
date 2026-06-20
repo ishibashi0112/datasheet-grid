@@ -45,6 +45,8 @@ import {
   // 追加(記述子化 / number): number 記述子の判定 / 構築に使います。
   isNumberColumnFilterValue,
   buildNumberColumnFilterValue,
+  // 追加(記述子化): 現在値表示の text 整形に使います(記述子 → 表示文字列)。
+  columnFilterValueToDraftText,
   // 行モデルチェーンは order(Int32Array)ベースに一本化しています
   //   (DS-2 で差し替え、旧オブジェクト配列版は DS-3-8 で削除)。
   createSourceOrder,
@@ -117,6 +119,8 @@ import type {
   GridColumnPinned,
   // 追加(DS-3-0): 行モデルのシーム契約型です(rowModel の構築に使います)。
   RowModel,
+  // 追加(記述子化): commit 経路で text/date/select/custom を記述子化する際の型です。
+  ColumnFilterValue,
   // 追加(12-A): set フィルター値の構築に使います。
   SetColumnFilterValue,
   SpreadsheetGridProps,
@@ -2011,8 +2015,19 @@ export function SpreadsheetGrid<T extends object>({
       closeColumnFilterPopover();
       return;
     }
+    // 変更(記述子化): text / date / select / custom も生文字列ではなくタグ付き記述子で commit します。
+    //   ここは列定義(filterType)を持つ唯一の境界なので、filterType → kind の対応付けはここで行います
+    //   (合否は旧・生文字列時代と等価: text/date=部分一致 / select=完全一致 / custom=filterFn or 部分一致)。
+    const descriptor: ColumnFilterValue =
+      filterType === 'select'
+        ? { kind: 'select', value: normalized }
+        : filterType === 'date'
+          ? { kind: 'date', value: normalized }
+          : filterType === 'custom'
+            ? { kind: 'custom', value: normalized }
+            : { kind: 'text', value: normalized };
     dispatch(
-      gridActions.setColumnFilter(filterPopoverState.columnKey, normalized),
+      gridActions.setColumnFilter(filterPopoverState.columnKey, descriptor),
     );
     closeColumnFilterPopover();
   }, [closeColumnFilterPopover, dispatch, filterPopoverState, visibleColumns]);
@@ -2417,8 +2432,10 @@ export function SpreadsheetGrid<T extends object>({
     if (isNumberColumnFilterValue(rawValue)) {
       return rawValue.raw;
     }
-    const text = String(rawValue ?? '').trim();
-    return text ? String(rawValue) : '（なし）';
+    // 変更(記述子化): text/date/select は記述子のため String() 直書きでは "[object Object]" に
+    //   なります。表示文字列は columnFilterValueToDraftText 経由で取り出します(custom は空 → なし)。
+    const text = columnFilterValueToDraftText(rawValue);
+    return text.trim() ? text : '（なし）';
   })();
 
   const renderedFilterPopover = openedFilterColumn ? (

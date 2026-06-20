@@ -7,7 +7,7 @@ import {
   type PointerEvent,
   type RefObject,
 } from 'react';
-import type { GridColumn } from '../model/gridTypes';
+import type { ColumnFilterValue, GridColumn } from '../model/gridTypes';
 // 追加(記述子化): number 記述子を含む列フィルター値を draft 用テキストへ整形します。
 import { columnFilterValueToDraftText } from '../logic/filtering';
 
@@ -26,7 +26,7 @@ export type FilterPopoverLayout = {
 
 type UseFilterPopoverControllerArgs<T> = {
   visibleColumns: GridColumn<T>[];
-  columnFilterValues: Record<string, unknown>;
+  columnFilterValues: Record<string, ColumnFilterValue>;
   enableColumnFilter: boolean;
   gridRootRef: RefObject<HTMLDivElement | null>;
 };

@@ -3,8 +3,10 @@
 //     (comparison/range)でバイト等価であること(値の取得元のみ差し替え・判定本体は不変)。
 //   - 記述子 ≡ 旧 applyNumberFilter: commit 時 1 回 parse の記述子経路が、行ごとに parse する
 //     旧 applyNumberFilter と厳密に等価であること。
-//   - set(include/exclude)/ select / text(contains)/ 全通過 no-op / 無効フィルターの規約。
-//   - 記述子 helper(parse / build / draftText / isActive)の単体仕様。
+//   - set(include/exclude)/ select / text・date(contains)/ 全通過 no-op / 無効フィルターの規約。
+//   - 記述子 helper(parse / build / draftText / isActive / guards)の単体仕様。
+//   変更(記述子化): columnFilters の値は ColumnFilterValue(判別共用体)になりました。テストも
+//     生文字列ではなくタグ付き記述子({kind:'text'|'select'|'date'|'number'|'set'|'custom'})を渡します。
 import { describe, it, expect } from 'vitest';
 import {
   applyNumberFilter,
@@ -20,7 +22,12 @@ import {
   type RowOrder,
 } from './filtering';
 import { getCellValue } from '../utils/permissions';
-import type { GridColumn, SetColumnFilterValue } from '../model/gridTypes';
+import type {
+  ColumnFilterValue,
+  GridColumn,
+  NumberColumnFilterValue,
+  SetColumnFilterValue,
+} from '../model/gridTypes';
 
 type Row = Record<string, unknown>;
 
@@ -40,6 +47,11 @@ const setCol = (key: string): GridColumn<Row> => ({
   width: 100,
   filterType: 'set',
 });
+
+// テスト用: number 記述子を非 null で構築します(本テスト群の raw はすべて非空で、build は
+//   非 null を返すため安全)。型を Record<string, ColumnFilterValue> へ入れるための薄いラッパです。
+const num = (raw: string): NumberColumnFilterValue =>
+  buildNumberColumnFilterValue(raw) as NumberColumnFilterValue;
 
 const asArray = (order: RowOrder): number[] => Array.from(order);
 
@@ -77,7 +89,7 @@ describe('filterOrderByColumns (B-2: numericKeys path === no-key path)', () => {
   ];
 
   it.each(numberFilters)('number filter %s', (raw) => {
-    const descriptor = buildNumberColumnFilterValue(raw);
+    const descriptor = num(raw);
     const columnFilters = { n: descriptor };
     const withKeys = filterOrderByColumns(
       rows,
@@ -96,7 +108,7 @@ describe('filterOrderByColumns (B-2: numericKeys path === no-key path)', () => {
   });
 
   it('contains fallback (unparseable) is identical with/without keys', () => {
-    const descriptor = buildNumberColumnFilterValue('1.'); // 解釈不可 → contains
+    const descriptor = num('1.'); // 解釈不可 → contains
     const columnFilters = { n: descriptor };
     const withKeys = filterOrderByColumns(
       rows,
@@ -121,7 +133,7 @@ describe('filterOrderByColumns (descriptor === legacy applyNumberFilter)', () =>
   const cases = ['> 2', '>=2', '<5', '<= 5', '=10', '7.5', '1..8', '1.', 'abc'];
 
   it.each(cases)('raw %s', (raw) => {
-    const descriptor = buildNumberColumnFilterValue(raw);
+    const descriptor = num(raw);
     const actual = asArray(
       filterOrderByColumns(rows, order, [numberCol('n')], { n: descriptor }, keys),
     );
@@ -194,7 +206,9 @@ describe('filterOrderByColumns (select / text / no-op identity)', () => {
 
   it('select matches exact string equality', () => {
     const actual = asArray(
-      filterOrderByColumns(rows, order, [selectCol('g')], { g: 'red' }),
+      filterOrderByColumns(rows, order, [selectCol('g')], {
+        g: { kind: 'select', value: 'red' },
+      }),
     );
     const expected = rows
       .map((row, i) => [row.g, i] as const)
@@ -205,7 +219,9 @@ describe('filterOrderByColumns (select / text / no-op identity)', () => {
 
   it('text is case-insensitive contains', () => {
     const actual = asArray(
-      filterOrderByColumns(rows, order, [textCol('t')], { t: 'ap' }),
+      filterOrderByColumns(rows, order, [textCol('t')], {
+        t: { kind: 'text', value: 'ap' },
+      }),
     );
     // 'Apple' / 'apricot' / 'Grape'(gr*ap*e)が含む。
     const expected = rows
@@ -217,7 +233,9 @@ describe('filterOrderByColumns (select / text / no-op identity)', () => {
 
   it('returns the same reference when no active filter exists', () => {
     expect(
-      filterOrderByColumns(rows, order, [textCol('t')], { t: '' }),
+      filterOrderByColumns(rows, order, [textCol('t')], {
+        t: { kind: 'text', value: '' },
+      }),
     ).toBe(order);
     expect(filterOrderByColumns(rows, order, [textCol('t')], {})).toBe(order);
   });
@@ -234,6 +252,104 @@ describe('filterOrderByColumns (select / text / no-op identity)', () => {
     expect(filterOrderByColumns(rows, order, [setCol('g')], { g: value })).toBe(
       order,
     );
+  });
+});
+
+describe('filterOrderByColumns (記述子経路 ≡ 旧・生文字列述語: text / date / select / custom)', () => {
+  const order = createSourceOrder(rows.length);
+  const dateCol = (key: string): GridColumn<Row> => ({
+    key,
+    width: 100,
+    filterType: 'date',
+  });
+
+  // 参照述語: text/date/custom(filterFn なし)= 部分一致(大文字小文字無視) / select = 完全一致。
+  const containsOracle = (key: string, needle: string): number[] => {
+    const n = needle.trim().toLowerCase();
+    const out: number[] = [];
+    for (let i = 0; i < rows.length; i += 1) {
+      if (
+        String(getCellValue(rows[i], textCol(key)) ?? '')
+          .toLowerCase()
+          .includes(n)
+      ) {
+        out.push(i);
+      }
+    }
+    return out;
+  };
+  const exactOracle = (key: string, expected: string): number[] => {
+    const out: number[] = [];
+    for (let i = 0; i < rows.length; i += 1) {
+      if (String(getCellValue(rows[i], selectCol(key)) ?? '') === expected) {
+        out.push(i);
+      }
+    }
+    return out;
+  };
+
+  it.each(['ap', 'A', 'rry', 'z'])(
+    'text descriptor contains %s === oracle',
+    (needle) => {
+      const actual = asArray(
+        filterOrderByColumns(rows, order, [textCol('t')], {
+          t: { kind: 'text', value: needle },
+        }),
+      );
+      expect(actual).toEqual(containsOracle('t', needle));
+    },
+  );
+
+  it('date descriptor shares the text contains predicate', () => {
+    const value: ColumnFilterValue = { kind: 'date', value: 'a' };
+    const actual = asArray(
+      filterOrderByColumns(rows, order, [dateCol('t')], { t: value }),
+    );
+    expect(actual).toEqual(containsOracle('t', 'a'));
+  });
+
+  it.each(['red', 'green', 'none'])(
+    'select descriptor exact %s === oracle',
+    (expected) => {
+      const actual = asArray(
+        filterOrderByColumns(rows, order, [selectCol('g')], {
+          g: { kind: 'select', value: expected },
+        }),
+      );
+      expect(actual).toEqual(exactOracle('g', expected));
+    },
+  );
+
+  it('empty text / date / select descriptors are inactive (identity)', () => {
+    expect(
+      filterOrderByColumns(rows, order, [textCol('t')], {
+        t: { kind: 'text', value: '' },
+      }),
+    ).toBe(order);
+    expect(
+      filterOrderByColumns(rows, order, [dateCol('t')], {
+        t: { kind: 'date', value: '  ' },
+      }),
+    ).toBe(order);
+    expect(
+      filterOrderByColumns(rows, order, [selectCol('g')], {
+        g: { kind: 'select', value: '' },
+      }),
+    ).toBe(order);
+  });
+
+  it('custom descriptor without filterFn falls back to contains', () => {
+    const customCol: GridColumn<Row> = {
+      key: 't',
+      width: 100,
+      filterType: 'custom',
+    };
+    const actual = asArray(
+      filterOrderByColumns(rows, order, [customCol], {
+        t: { kind: 'custom', value: 'rry' },
+      }),
+    );
+    expect(actual).toEqual(containsOracle('t', 'rry'));
   });
 });
 
@@ -301,33 +417,54 @@ describe('number filter descriptor helpers', () => {
     expect(contains).toEqual({ kind: 'number', raw: '1.', parsed: null });
   });
 
-  it('columnFilterValueToDraftText returns raw for number descriptors, String otherwise', () => {
-    const descriptor = buildNumberColumnFilterValue('> 5');
-    expect(columnFilterValueToDraftText(descriptor)).toBe('> 5');
-    expect(columnFilterValueToDraftText('hello')).toBe('hello');
-    expect(columnFilterValueToDraftText(null)).toBe('');
+  it('columnFilterValueToDraftText returns raw for number, value for text/select, empty otherwise', () => {
+    expect(columnFilterValueToDraftText(num('> 5'))).toBe('> 5');
+    expect(
+      columnFilterValueToDraftText({ kind: 'text', value: 'hello' }),
+    ).toBe('hello');
+    expect(
+      columnFilterValueToDraftText({ kind: 'select', value: 'red' }),
+    ).toBe('red');
+    expect(
+      columnFilterValueToDraftText({ kind: 'set', values: ['a'] }),
+    ).toBe('');
+    expect(
+      columnFilterValueToDraftText({ kind: 'custom', value: { x: 1 } }),
+    ).toBe('');
     expect(columnFilterValueToDraftText(undefined)).toBe('');
   });
 
-  it('isActiveColumnFilterValue treats set / number descriptors / non-empty strings as active', () => {
+  it('isActiveColumnFilterValue: set/number/custom active; text/date trim non-empty; select non-empty', () => {
     expect(
-      isActiveColumnFilterValue({ kind: 'set', values: [] } as SetColumnFilterValue),
+      isActiveColumnFilterValue({ kind: 'set', values: [] }),
     ).toBe(true);
-    expect(isActiveColumnFilterValue(buildNumberColumnFilterValue('> 1'))).toBe(
+    expect(isActiveColumnFilterValue(num('> 1'))).toBe(true);
+    expect(isActiveColumnFilterValue({ kind: 'custom', value: 0 })).toBe(true);
+    expect(isActiveColumnFilterValue({ kind: 'text', value: 'abc' })).toBe(true);
+    expect(isActiveColumnFilterValue({ kind: 'date', value: '2024' })).toBe(
       true,
     );
-    expect(isActiveColumnFilterValue('abc')).toBe(true);
-    expect(isActiveColumnFilterValue('   ')).toBe(false);
-    expect(isActiveColumnFilterValue('')).toBe(false);
-    expect(isActiveColumnFilterValue(null)).toBe(false);
+    expect(isActiveColumnFilterValue({ kind: 'select', value: 'x' })).toBe(true);
+    expect(isActiveColumnFilterValue({ kind: 'text', value: '   ' })).toBe(
+      false,
+    );
+    expect(isActiveColumnFilterValue({ kind: 'text', value: '' })).toBe(false);
+    expect(isActiveColumnFilterValue({ kind: 'select', value: '' })).toBe(
+      false,
+    );
+    expect(isActiveColumnFilterValue(undefined)).toBe(false);
   });
 
   it('type guards are consistent', () => {
     const setValue: SetColumnFilterValue = { kind: 'set', values: ['a'] };
     expect(isSetColumnFilterValue(setValue)).toBe(true);
     expect(isNumberColumnFilterValue(setValue)).toBe(false);
-    const numberValue = buildNumberColumnFilterValue('> 1');
+    const numberValue = num('> 1');
     expect(isNumberColumnFilterValue(numberValue)).toBe(true);
     expect(isSetColumnFilterValue(numberValue)).toBe(false);
+    // 追加(記述子化): text/date/select/custom はどちらの guard にも該当しません。
+    const textValue: ColumnFilterValue = { kind: 'text', value: 'x' };
+    expect(isSetColumnFilterValue(textValue)).toBe(false);
+    expect(isNumberColumnFilterValue(textValue)).toBe(false);
   });
 });

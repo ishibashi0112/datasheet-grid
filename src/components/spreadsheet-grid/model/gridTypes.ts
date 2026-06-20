@@ -44,9 +44,12 @@ export type GridSelection =
   | null;
 
 // 追加: フィルター状態です。初版はグローバル + 列単位の最小構成です。
+// 変更(記述子化): columnFilters の値型を unknown → ColumnFilterValue(判別共用体)へ閉じました。
+//   従来 set / number だけがタグ付き記述子で、text / select / date は生文字列のまま混在していました。
+//   全種別を kind 付き記述子へ寄せ、値そのものから種別が一意に決まる(自己記述的)状態にしています。
 export type GridFilterState = {
   globalText: string;
-  columnFilters: Record<string, unknown>;
+  columnFilters: Record<string, ColumnFilterValue>;
 };
 
 // 追加: 列単位の UI ソート方向です(null = 未ソート)。列メニューの ✓ 表示などで
@@ -85,6 +88,74 @@ export type SetColumnFilterValue = {
   mode?: 'include' | 'exclude';
   values: string[];
 };
+
+// 追加(記述子化 / number): number フィルター式の解釈結果です。
+//   旧 logic/filtering.ts 内に定義していましたが、ColumnFilterValue union(下記)が
+//   number 記述子を内包する都合上、型はこちら(下層の型モジュール)へ移設しました。
+//   parse/build の「ロジック」は引き続き logic/filtering.ts 側にあります(本型を import します)。
+export type ParsedNumberFilter =
+  | {
+      mode: 'comparison';
+      operator: '>' | '>=' | '<' | '<=' | '=';
+      value: number;
+    }
+  | {
+      mode: 'range';
+      min: number;
+      max: number;
+    };
+
+// 追加(記述子化 / number): number フィルターのタグ付き記述子です(旧 filtering.ts から移設)。
+//   - raw   : ユーザー入力(trim 済み)。再オープン時の draft seed / 現在値表示 /
+//             式として解釈不可だった場合の contains フォールバック needle に使います。
+//   - parsed: 式の解釈結果。null = 解釈不可(→ raw で contains)。commit 時 1 回だけ parse します
+//             (B-2 の Float64 key 最適化はこの parsed に依存するため、形は不変に保ちます)。
+export type NumberColumnFilterValue = {
+  kind: 'number';
+  raw: string;
+  parsed: ParsedNumberFilter | null;
+};
+
+// 追加(記述子化): text / date の部分一致フィルターのタグ付き記述子です。
+//   value は trim 済みの検索文字列です(判定側で toLowerCase して contains)。
+//   date は今は text と同じ部分一致述語を共有しますが、将来の相対日付(評価時に解決)のため
+//   箱(kind)を分けて確保しています。number のように commit 時へ parse を焼くことはしません。
+export type TextColumnFilterValue = {
+  kind: 'text';
+  value: string;
+};
+
+export type DateColumnFilterValue = {
+  kind: 'date';
+  value: string;
+};
+
+// 追加(記述子化): select の完全一致フィルターのタグ付き記述子です。
+//   value は選択値そのもの(trim しない)で、判定側で文字列完全一致します。
+export type SelectColumnFilterValue = {
+  kind: 'select';
+  value: string;
+};
+
+// 追加(記述子化 / custom): 利用者の column.filterFn が自由形で解釈するためのエスケープハッチです。
+//   value は unknown のまま(任意形を保持)。filterFn を持つ列のみで使い、判定側では
+//   filterFn が最優先で呼ばれます(filterFn 不在時は String(value) の部分一致へフォールバック)。
+//   union 全体は kind で網羅できるため型安全のまま、custom の中身だけが自由という両立になります。
+export type CustomColumnFilterValue = {
+  kind: 'custom';
+  value: unknown;
+};
+
+// 追加(記述子化): 列フィルター値の判別共用体です。columnFilters[columnKey] の値はこの形のいずれか。
+//   値の kind だけで種別が一意に決まるため、消費側は column.filterType と突き合わせずに
+//   switch(value.kind) 一本で判別できます(filterType は popover の表示分岐用にのみ残ります)。
+export type ColumnFilterValue =
+  | SetColumnFilterValue
+  | NumberColumnFilterValue
+  | TextColumnFilterValue
+  | DateColumnFilterValue
+  | SelectColumnFilterValue
+  | CustomColumnFilterValue;
 
 // 追加: セル描画に渡すコンテキストです。
 export type CellRenderContext<T> = {
@@ -241,7 +312,8 @@ export type SpreadsheetGridSlotContext<T> = {
   visibleColumns: GridColumn<T>[];
   globalFilterText: string;
   // 追加: bar summary 用に列フィルター値を公開します。
-  columnFilterValues: Record<string, unknown>;
+  // 変更(記述子化): 値型を unknown → ColumnFilterValue へ閉じました(state 側と一致)。
+  columnFilterValues: Record<string, ColumnFilterValue>;
   // 追加: bar summary 用にソート状態を公開します。
   sortState: GridSortState;
   setGlobalFilterText: (value: string) => void;

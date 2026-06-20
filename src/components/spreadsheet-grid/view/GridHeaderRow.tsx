@@ -11,6 +11,7 @@ import {
 //           将来ヘッダー行を memo 化する際の布石にもなります。
 import type { SelectionSnapshot } from '../model/gridSelectors';
 import type {
+  ColumnFilterValue,
   GridColumn,
   GridSortState,
 } from '../model/gridTypes';
@@ -49,7 +50,7 @@ type GridHeaderRowProps<T> = {
   hoveredColumnIndex: number | null;
   // 変更(11-A): 列選択判定用の正規化済みスナップショットです(uiState の置き換え)。
   selectionSnapshot: SelectionSnapshot;
-  columnFilterValues: Record<string, unknown>;
+  columnFilterValues: Record<string, ColumnFilterValue>;
   sortState: GridSortState;
   getHeaderActionButtonStyle: (isActive: boolean) => CSSProperties;
   onCornerPointerDown: (event: PointerEvent<HTMLDivElement>) => void;

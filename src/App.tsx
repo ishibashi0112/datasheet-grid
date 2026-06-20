@@ -9,6 +9,8 @@ type DemoRow = {
   qty: number;
   unit: string;
   status: string;
+  // 追加(date デモ): 発注日です。date フィルター型(部分一致)の動作確認用に ISO 文字列で持ちます。
+  orderedAt: string;
   [key: string]: string | number;
 };
 
@@ -23,16 +25,28 @@ const INITIAL_EXTRA_COLUMN_COUNT = 24;
 // 追加: オーバーフロー列のキーを生成します。
 const getOverflowColumnKey = (columnIndex: number) => `extra_${columnIndex}`;
 
+// 追加(date デモ): 発注日の生成基点(2023-01-01 UTC)です。index から決定的に日付を割り当てます。
+const ORDERED_AT_BASE_UTC = Date.UTC(2023, 0, 1);
+const ORDERED_AT_SPAN_DAYS = 731; // 2023-01-01 〜 2024-12-31(約2年)を循環。
+
 // 追加: ダミー行を生成します。
 const createDemoRows = (count: number): DemoRow[] =>
   Array.from({ length: count }, (_, index) => {
     const rowNumber = index + 1;
+    // 追加(date デモ): 乱数を使わず index から決定的に ISO 日付(YYYY-MM-DD)を割り当てます。
+    //   部分一致 date フィルターの確認用(例: '2024-03' で月絞り込み / '-15' で15日絞り込み)。
+    const orderedAt = new Date(
+      ORDERED_AT_BASE_UTC + (index % ORDERED_AT_SPAN_DAYS) * 86_400_000,
+    )
+      .toISOString()
+      .slice(0, 10);
     return {
       partNo: `A-${String(1001 + index).padStart(4, '0')}`,
       partName: `品名-${rowNumber}`,
       qty: (rowNumber % 25) + 1,
       unit: ['個', '本', '式', '枚'][index % 4],
       status: index % 11 === 0 ? '保留' : '有効',
+      orderedAt,
     };
   }).map((row, index) => {
     const nextRow: DemoRow = { ...row };
@@ -93,6 +107,9 @@ const createInitialColumns = (): GridColumn<DemoRow>[] => {
         { label: '保留', value: '保留' },
       ],
     },
+    // 追加(date デモ): date フィルター型の動作確認用の列です。値は ISO 文字列(YYYY-MM-DD)で、
+    //   フィルターは部分一致です('2024' で年 / '2024-03' で月 / '-15' で15日 を絞り込めます)。
+    { key: 'orderedAt', title: '発注日', width: 130, filterType: 'date' },
   ];
 
   const extraColumns = Array.from(
@@ -167,6 +184,8 @@ function App() {
           qty: 0,
           unit: '',
           status: '',
+          // 追加(date デモ): 新規行も orderedAt を持たせます(既定は空文字 = フィルター未該当)。
+          orderedAt: '',
         })}
         createOverflowColumn={(columnIndex) => ({
           key: getOverflowColumnKey(columnIndex),

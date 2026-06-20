@@ -1,4 +1,10 @@
-import type { GridColumn, SetColumnFilterValue } from '../model/gridTypes';
+import type {
+  ColumnFilterValue,
+  GridColumn,
+  NumberColumnFilterValue,
+  ParsedNumberFilter,
+  SetColumnFilterValue,
+} from '../model/gridTypes';
 import { getCellValue } from '../utils/permissions';
 
 // 追加(DS-1 / index ベースパイプライン): 「ビュー順に並んだ元 rows の index 列」です。
@@ -19,14 +25,13 @@ export const createSourceOrder = (rowCount: number): RowOrder => {
   return order;
 };
 
-// 追加(12-A): set フィルター値の type guard です。
+// 追加(12-A → 記述子化): set フィルター値の type guard です。
+// 変更(記述子化): columnFilters の値が ColumnFilterValue(判別共用体)へ閉じたため、
+//   typeof / Array.isArray の実行時ダックタイピングは不要になり、kind の絞り込みだけで足ります。
+//   外部呼び出し側(SpreadsheetGrid の表示・署名計算)の narrowing を据え置くため guard は残します。
 export const isSetColumnFilterValue = (
-  value: unknown,
-): value is SetColumnFilterValue =>
-  typeof value === 'object' &&
-  value !== null &&
-  (value as SetColumnFilterValue).kind === 'set' &&
-  Array.isArray((value as SetColumnFilterValue).values);
+  value: ColumnFilterValue | undefined,
+): value is SetColumnFilterValue => value?.kind === 'set';
 
 // 追加(12-A): 列フィルター値が「有効」かを判定する共通 helper です。
 // 変更理由: 従来は GridHeaderRow(フィルター済みバッジ) / gridBarHelpers(有効件数) /
@@ -34,33 +39,30 @@ export const isSetColumnFilterValue = (
 //   set フィルター値はオブジェクトのため String() 判定が成立しません
 //   (空配列 = 全行除外でも「有効」と数える必要があります)。
 //   有効判定をここへ一元化し、3 箇所すべてが同じ規則を共有します。
-//   set 以外は従来どおり「非空文字列のみ有効」で挙動等価です。
-export const isActiveColumnFilterValue = (value: unknown): boolean => {
-  if (isSetColumnFilterValue(value)) {
-    // 注記: 全選択時は reducer 側で clearColumn 済みのため、値が存在する時点で有効です。
-    return true;
+// 変更(記述子化): 判別共用体の kind で網羅判定します。set / number / custom は存在時点で有効
+//   (set/number は reducer/build 側で空を clear 済み、custom は利用者が明示的に set した値)。
+//   text / date は trim 後非空、select は値非空のときだけ有効です(旧・生文字列時代と等価)。
+export const isActiveColumnFilterValue = (
+  value: ColumnFilterValue | undefined,
+): boolean => {
+  if (!value) {
+    return false;
   }
-  // 追加(記述子化 / number): number 記述子は buildNumberColumnFilterValue で
-  //   raw 非空のときだけ生成されるため、存在する時点で有効です(set と同じ規則)。
-  if (isNumberColumnFilterValue(value)) {
-    return true;
+  switch (value.kind) {
+    case 'set':
+    case 'number':
+    case 'custom':
+      return true;
+    case 'select':
+      return value.value.length > 0;
+    case 'text':
+    case 'date':
+      return value.value.trim().length > 0;
   }
-  return String(value ?? '').trim().length > 0;
 };
 
-// 追加: number フィルターの解釈結果です。
-export type ParsedNumberFilter =
-  | {
-      mode: 'comparison';
-      operator: '>' | '>=' | '<' | '<=' | '=';
-      value: number;
-    }
-  | {
-      mode: 'range';
-      min: number;
-      max: number;
-    };
-
+// 注記(記述子化): ParsedNumberFilter 型は gridTypes へ移設しました(ColumnFilterValue が
+//   number 記述子を内包する都合)。parse の「ロジック」は引き続きこちらにあります。
 // 追加: number フィルター式を解釈します。
 export const parseNumberFilterExpression = (
   rawValue: string,
@@ -100,27 +102,16 @@ export const parseNumberFilterExpression = (
   };
 };
 
-// 追加(記述子化 / number): number フィルターのタグ付き記述子です。
-//   set({ kind:'set' })に続く 2 種目の判別共用体メンバーで、columnFilters[key] に
-//   この形が入っているときだけ「コンパイル済み number フィルター」が有効です。
-//   - raw   : ユーザー入力(trim 済み)。再オープン時の draft seed / 現在値表示 /
-//             式として解釈不可だった場合の contains フォールバック needle に使います。
-//   - parsed: 式の解釈結果。null = 解釈不可(→ raw で contains)。従来 applyNumberFilter が
-//             行ループ内で毎回行っていた parse を「commit 時 1 回」へ前倒しするための field です。
-//   注記: text / select / date は本バッチでは生文字列のまま据え置きます(後続で同じ型へ寄せる)。
-export type NumberColumnFilterValue = {
-  kind: 'number';
-  raw: string;
-  parsed: ParsedNumberFilter | null;
-};
+// 注記(記述子化 / number): NumberColumnFilterValue 型は gridTypes へ移設しました。
+//   raw は再オープン時の draft seed / 現在値表示 / 解釈不可時の contains needle に使い、
+//   parsed は commit 時 1 回の parse 結果(B-2 の Float64 key 最適化が依存する形)です。
 
-// 追加(記述子化 / number): number 記述子の type guard です(set と同型)。
+// 追加(記述子化 / number → 記述子化): number 記述子の type guard です。
+// 変更(記述子化): 入力が ColumnFilterValue へ閉じたため kind の絞り込みだけで足ります。
+//   外部呼び出し側(B-2 署名計算・現在値表示)の narrowing 据え置きのため guard は残します。
 export const isNumberColumnFilterValue = (
-  value: unknown,
-): value is NumberColumnFilterValue =>
-  typeof value === 'object' &&
-  value !== null &&
-  (value as NumberColumnFilterValue).kind === 'number';
+  value: ColumnFilterValue | undefined,
+): value is NumberColumnFilterValue => value?.kind === 'number';
 
 // 追加(記述子化 / number): 生入力から number 記述子を構築します。
 //   - trim 後が空なら null(= フィルターなしへ正規化。呼び出し側で clearColumn 相当に倒す)。
@@ -137,16 +128,27 @@ export const buildNumberColumnFilterValue = (
 };
 
 // 追加(記述子化): 列フィルター値を「テキスト入力の編集用文字列」へ整形します。
-//   popover 再オープン時の draft seed の単一窓口です(従来は呼び出し側で String(value) 直書き)。
-//   - number 記述子 → raw(式そのもの)。
-//   - それ以外(text/select/date の生文字列等)→ 従来どおり String(value ?? '')。
-//   set はチェックボックス UI のため text 入力 draft を使わず、ここへは到達しません。
-//   後続で text/select も記述子化する際、この関数へ分岐を足せば draft seed 側は無改修で済みます。
-export const columnFilterValueToDraftText = (value: unknown): string => {
-  if (isNumberColumnFilterValue(value)) {
-    return value.raw;
+//   popover 再オープン時の draft seed の単一窓口です。
+// 変更(記述子化): 全種別が記述子になったため kind で分岐します。
+//   - number → raw(式そのもの) / text・date・select → value(検索/選択文字列)。
+//   - set はチェックボックス UI、custom は自由形 UI のため text 入力 draft を持ちません(空)。
+export const columnFilterValueToDraftText = (
+  value: ColumnFilterValue | undefined,
+): string => {
+  if (!value) {
+    return '';
   }
-  return String(value ?? '');
+  switch (value.kind) {
+    case 'number':
+      return value.raw;
+    case 'text':
+    case 'date':
+    case 'select':
+      return value.value;
+    case 'set':
+    case 'custom':
+      return '';
+  }
 };
 
 // 追加: number 型フィルターの評価です。
@@ -210,9 +212,12 @@ type CompiledColumnFilterPredicate<T> = (row: T, sourceIndex: number) => boolean
 
 // 追加(12-A): 1 列ぶんのフィルター値を predicate へコンパイルします。
 //             無効(未設定)なら null を返し、行ループから除外します。
+// 変更(記述子化): filterValue を ColumnFilterValue へ閉じ、判別を switch(value.kind) 一本に
+//   統一しました(従来の column.filterType 突き合わせ・生文字列 number の後方互換フォールバックを撤去)。
+//   合否はいずれも旧経路と厳密に等価です(select=完全一致 / text・date=部分一致 / number=下記)。
 const compileSingleColumnFilter = <T,>(
   column: GridColumn<T>,
-  filterValue: unknown,
+  filterValue: ColumnFilterValue | undefined,
   // 追加(B-2): この列ぶんの Float64 key(rows 全長・sourceIndex 添字)。
   //   渡されたときだけ comparison/range が key[sourceIndex] を引きます。
   //   未指定(set 列 / key 未構築)なら従来の Number(getCellValue(...)) 経路に倒れ、挙動は等価です。
@@ -221,102 +226,113 @@ const compileSingleColumnFilter = <T,>(
   if (!isActiveColumnFilterValue(filterValue)) {
     return null;
   }
+  // 注記: isActiveColumnFilterValue を通った時点で filterValue は存在します(undefined 除外)。
+  const value = filterValue as ColumnFilterValue;
 
-  // 注記: 従来どおり column.filterFn を最優先します(set 値が渡るケースも
-  //       利用側 filterFn の責務とし、挙動の優先順位は変えません)。
+  // 注記: 従来どおり column.filterFn を最優先します(記述子オブジェクトをそのまま渡す契約。
+  //       custom 列の自由形値もここで利用側 filterFn の責務として解釈されます)。
   if (column.filterFn) {
     const filterFn = column.filterFn;
-    return (row) => filterFn(row, filterValue);
+    return (row) => filterFn(row, value);
   }
 
-  // 追加(12-A / 反転set): set フィルターは「対象値の Set」を一度だけ構築し、O(1) 照合します。
-  //   values は mode により「選択値(include)」か「非選択値(exclude)」のいずれか(常に小さい側)。
-  //   include: 行値が対象に含まれれば通過 / exclude: 行値が対象に含まれなければ通過。
-  //   注記: スキャン収集列では universe=全行値のため include(S) ≡ exclude(U−S) が成立します。
-  if (isSetColumnFilterValue(filterValue)) {
-    const targetValues = new Set(filterValue.values);
-    if (filterValue.mode === 'exclude') {
-      return (row) => !targetValues.has(String(getCellValue(row, column) ?? ''));
+  switch (value.kind) {
+    // 追加(12-A / 反転set): set フィルターは「対象値の Set」を一度だけ構築し、O(1) 照合します。
+    //   values は mode により「選択値(include)」か「非選択値(exclude)」のいずれか(常に小さい側)。
+    //   include: 行値が対象に含まれれば通過 / exclude: 行値が対象に含まれなければ通過。
+    case 'set': {
+      const targetValues = new Set(value.values);
+      if (value.mode === 'exclude') {
+        return (row) =>
+          !targetValues.has(String(getCellValue(row, column) ?? ''));
+      }
+      return (row) => targetValues.has(String(getCellValue(row, column) ?? ''));
     }
-    return (row) => targetValues.has(String(getCellValue(row, column) ?? ''));
-  }
 
-  // 追加(記述子化 / number): number 記述子は parse 済みのため、行ループ外で評価器を確定します
-  //   (従来 applyNumberFilter は行ごとに parseNumberFilterExpression を呼んでいた)。
-  //   合否は applyNumberFilter と厳密に等価:
-  //     - parsed=null  → raw で contains(大文字小文字無視)。
-  //     - range        → Number(cell) が有限かつ [min,max]。
-  //     - comparison   → Number(cell) が有限かつ op 比較(= は ===)。
-  //   注記: filterFn を持つ列は上の filterFn 分岐が優先するため、ここへは到達しません
-  //         (その場合 filterFn は本記述子オブジェクトを受け取ります。set と同じ契約)。
-  if (isNumberColumnFilterValue(filterValue)) {
-    const parsed = filterValue.parsed;
-    if (parsed === null) {
-      const needle = filterValue.raw.toLowerCase();
+    // 追加(記述子化 / number): number 記述子は parse 済みのため、行ループ外で評価器を確定します。
+    //   合否は旧 applyNumberFilter と厳密に等価:
+    //     - parsed=null  → raw で contains(大文字小文字無視)。
+    //     - range        → Number(cell) が有限かつ [min,max]。
+    //     - comparison   → Number(cell) が有限かつ op 比較(= は ===)。
+    case 'number': {
+      const parsed = value.parsed;
+      if (parsed === null) {
+        const needle = value.raw.toLowerCase();
+        return (row) =>
+          String(getCellValue(row, column) ?? '')
+            .toLowerCase()
+            .includes(needle);
+      }
+      if (parsed.mode === 'range') {
+        const { min, max } = parsed;
+        // 変更(B-2): numericKey があれば key[sourceIndex] を、無ければ従来どおり
+        //   Number(getCellValue(...)) を読みます。値の取得元だけが変わり、判定本体は不変です。
+        return (row, sourceIndex) => {
+          const numericCellValue = numericKey
+            ? numericKey[sourceIndex]
+            : Number(getCellValue(row, column));
+          return (
+            Number.isFinite(numericCellValue) &&
+            numericCellValue >= min &&
+            numericCellValue <= max
+          );
+        };
+      }
+      const { operator, value: threshold } = parsed;
+      // 変更(B-2): comparison も numericKey 経路を併設します(無ければ従来 getCellValue 経路)。
+      return (row, sourceIndex) => {
+        const numericCellValue = numericKey
+          ? numericKey[sourceIndex]
+          : Number(getCellValue(row, column));
+        if (!Number.isFinite(numericCellValue)) {
+          return false;
+        }
+        switch (operator) {
+          case '>':
+            return numericCellValue > threshold;
+          case '>=':
+            return numericCellValue >= threshold;
+          case '<':
+            return numericCellValue < threshold;
+          case '<=':
+            return numericCellValue <= threshold;
+          case '=':
+          default:
+            return numericCellValue === threshold;
+        }
+      };
+    }
+
+    // 追加(記述子化 / select): 完全一致です(旧 String(filterValue ?? '') と等価)。
+    case 'select': {
+      const expectedValue = value.value;
+      return (row) =>
+        String(getCellValue(row, column) ?? '') === expectedValue;
+    }
+
+    // 追加(記述子化 / text・date): 部分一致です(旧 text/date と等価)。date は現状 text と
+    //   同述語を共有しますが、将来の相対日付は評価時解決の専用分岐をここに足して切り出せます。
+    case 'text':
+    case 'date': {
+      const normalizedFilter = value.value.trim().toLowerCase();
+      return (row) =>
+        String(getCellValue(row, column) ?? '')
+          .toLowerCase()
+          .includes(normalizedFilter);
+    }
+
+    // 追加(記述子化 / custom): filterFn 不在の custom 列は、旧 text/custom 経路と等価に
+    //   String(value) の部分一致へフォールバックします(filterFn を持つ列は上で処理済み)。
+    case 'custom': {
+      const needle = String(value.value ?? '')
+        .trim()
+        .toLowerCase();
       return (row) =>
         String(getCellValue(row, column) ?? '')
           .toLowerCase()
           .includes(needle);
     }
-    if (parsed.mode === 'range') {
-      const { min, max } = parsed;
-      // 変更(B-2): numericKey があれば key[sourceIndex] を、無ければ従来どおり
-      //   Number(getCellValue(...)) を読みます。値の取得元だけが変わり、判定本体は不変です。
-      return (row, sourceIndex) => {
-        const numericCellValue = numericKey
-          ? numericKey[sourceIndex]
-          : Number(getCellValue(row, column));
-        return (
-          Number.isFinite(numericCellValue) &&
-          numericCellValue >= min &&
-          numericCellValue <= max
-        );
-      };
-    }
-    const { operator, value } = parsed;
-    // 変更(B-2): comparison も numericKey 経路を併設します(無ければ従来 getCellValue 経路)。
-    return (row, sourceIndex) => {
-      const numericCellValue = numericKey
-        ? numericKey[sourceIndex]
-        : Number(getCellValue(row, column));
-      if (!Number.isFinite(numericCellValue)) {
-        return false;
-      }
-      switch (operator) {
-        case '>':
-          return numericCellValue > value;
-        case '>=':
-          return numericCellValue >= value;
-        case '<':
-          return numericCellValue < value;
-        case '<=':
-          return numericCellValue <= value;
-        case '=':
-        default:
-          return numericCellValue === value;
-      }
-    };
   }
-
-  const filterType = column.filterType ?? 'text';
-
-  if (filterType === 'number') {
-    // 注記(記述子化): commit を通った number は上の記述子分岐で処理されます。ここは
-    //   生文字列 number 値(未移行 / 外部 hydrate)のための後方互換フォールバックです。
-    return (row) => applyNumberFilter(getCellValue(row, column), filterValue);
-  }
-
-  if (filterType === 'select') {
-    const expectedValue = String(filterValue ?? '');
-    return (row) => String(getCellValue(row, column) ?? '') === expectedValue;
-  }
-
-  // text / date / custom(filterFn なし)は従来どおり部分一致です。
-  const normalizedFilter = String(filterValue ?? '').trim().toLowerCase();
-  return (row) =>
-    String(getCellValue(row, column) ?? '')
-      .toLowerCase()
-      .includes(normalizedFilter);
 };
 
 // ────────────────────────────────────────────────
@@ -379,7 +395,7 @@ export const filterOrderByColumns = <T,>(
   rows: T[],
   order: RowOrder,
   columns: GridColumn<T>[],
-  columnFilters: Record<string, unknown>,
+  columnFilters: Record<string, ColumnFilterValue>,
   // 追加(B-2): 列キー → Float64 key の table(任意)。number(comparison/range)列のみ収録。
   //   未指定なら全列が従来経路へ倒れ、現状とバイト等価です(set/text/select/filterFn は元から key 不使用)。
   numericKeys?: ReadonlyMap<string, Float64Array>,

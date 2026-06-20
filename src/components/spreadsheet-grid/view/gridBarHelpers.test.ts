@@ -188,7 +188,12 @@ describe('formatGridFilterSummary (4 分岐 + 短縮)', () => {
     expect(
       formatGridFilterSummary({
         globalFilterText: '',
-        columnFilterValues: { c0: 'x', c1: '', c2: 'y' },
+        // 変更(記述子化): 生文字列 → text 記述子。空 value は inactive のまま(2列)。
+        columnFilterValues: {
+          c0: { kind: 'text', value: 'x' },
+          c1: { kind: 'text', value: '' },
+          c2: { kind: 'text', value: 'y' },
+        },
       }),
     ).toBe('Filter: 2列');
   });
@@ -197,7 +202,11 @@ describe('formatGridFilterSummary (4 分岐 + 短縮)', () => {
     expect(
       formatGridFilterSummary({
         globalFilterText: 'abc',
-        columnFilterValues: { c0: 'x', c1: 'y' },
+        // 変更(記述子化): 生文字列 → text 記述子。
+        columnFilterValues: {
+          c0: { kind: 'text', value: 'x' },
+          c1: { kind: 'text', value: 'y' },
+        },
       }),
     ).toBe('Filter: Global("abc") + 2列');
   });
@@ -265,7 +274,8 @@ describe('buildGridDerivedSummary composes the individual helpers', () => {
       columns: [makeCol('amount', '金額'), makeCol('qty', '数量')],
       visibleColumns: [makeCol('amount', '金額')],
       globalFilterText: 'foo',
-      columnFilterValues: { amount: 'x' } as Record<string, unknown>,
+      // 変更(記述子化): 生文字列 + as unknown キャスト → text 記述子(kind は as const で narrow)。
+      columnFilterValues: { amount: { kind: 'text' as const, value: 'x' } },
       sortState: [{ columnKey: 'amount', direction: 'asc' as const }],
       activeCell: { row: 2, col: 0 },
       selection: {

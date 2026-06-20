@@ -1497,8 +1497,10 @@ export const shouldIgnoreGridKeydown = (eventTarget: EventTarget | null) => {
 //     (comparison/range)でバイト等価であること(値の取得元のみ差し替え・判定本体は不変)。
 //   - 記述子 ≡ 旧 applyNumberFilter: commit 時 1 回 parse の記述子経路が、行ごとに parse する
 //     旧 applyNumberFilter と厳密に等価であること。
-//   - set(include/exclude)/ select / text(contains)/ 全通過 no-op / 無効フィルターの規約。
-//   - 記述子 helper(parse / build / draftText / isActive)の単体仕様。
+//   - set(include/exclude)/ select / text・date(contains)/ 全通過 no-op / 無効フィルターの規約。
+//   - 記述子 helper(parse / build / draftText / isActive / guards)の単体仕様。
+//   変更(記述子化): columnFilters の値は ColumnFilterValue(判別共用体)になりました。テストも
+//     生文字列ではなくタグ付き記述子({kind:'text'|'select'|'date'|'number'|'set'|'custom'})を渡します。
 import { describe, it, expect } from 'vitest';
 import {
   applyNumberFilter,
@@ -1514,7 +1516,12 @@ import {
   type RowOrder,
 } from './filtering';
 import { getCellValue } from '../utils/permissions';
-import type { GridColumn, SetColumnFilterValue } from '../model/gridTypes';
+import type {
+  ColumnFilterValue,
+  GridColumn,
+  NumberColumnFilterValue,
+  SetColumnFilterValue,
+} from '../model/gridTypes';
 
 type Row = Record<string, unknown>;
 
@@ -1534,6 +1541,11 @@ const setCol = (key: string): GridColumn<Row> => ({
   width: 100,
   filterType: 'set',
 });
+
+// テスト用: number 記述子を非 null で構築します(本テスト群の raw はすべて非空で、build は
+//   非 null を返すため安全)。型を Record<string, ColumnFilterValue> へ入れるための薄いラッパです。
+const num = (raw: string): NumberColumnFilterValue =>
+  buildNumberColumnFilterValue(raw) as NumberColumnFilterValue;
 
 const asArray = (order: RowOrder): number[] => Array.from(order);
 
@@ -1571,7 +1583,7 @@ describe('filterOrderByColumns (B-2: numericKeys path === no-key path)', () => {
   ];
 
   it.each(numberFilters)('number filter %s', (raw) => {
-    const descriptor = buildNumberColumnFilterValue(raw);
+    const descriptor = num(raw);
     const columnFilters = { n: descriptor };
     const withKeys = filterOrderByColumns(
       rows,
@@ -1590,7 +1602,7 @@ describe('filterOrderByColumns (B-2: numericKeys path === no-key path)', () => {
   });
 
   it('contains fallback (unparseable) is identical with/without keys', () => {
-    const descriptor = buildNumberColumnFilterValue('1.'); // 解釈不可 → contains
+    const descriptor = num('1.'); // 解釈不可 → contains
     const columnFilters = { n: descriptor };
     const withKeys = filterOrderByColumns(
       rows,
@@ -1615,7 +1627,7 @@ describe('filterOrderByColumns (descriptor === legacy applyNumberFilter)', () =>
   const cases = ['> 2', '>=2', '<5', '<= 5', '=10', '7.5', '1..8', '1.', 'abc'];
 
   it.each(cases)('raw %s', (raw) => {
-    const descriptor = buildNumberColumnFilterValue(raw);
+    const descriptor = num(raw);
     const actual = asArray(
       filterOrderByColumns(rows, order, [numberCol('n')], { n: descriptor }, keys),
     );
@@ -1688,7 +1700,9 @@ describe('filterOrderByColumns (select / text / no-op identity)', () => {
 
   it('select matches exact string equality', () => {
     const actual = asArray(
-      filterOrderByColumns(rows, order, [selectCol('g')], { g: 'red' }),
+      filterOrderByColumns(rows, order, [selectCol('g')], {
+        g: { kind: 'select', value: 'red' },
+      }),
     );
     const expected = rows
       .map((row, i) => [row.g, i] as const)
@@ -1699,7 +1713,9 @@ describe('filterOrderByColumns (select / text / no-op identity)', () => {
 
   it('text is case-insensitive contains', () => {
     const actual = asArray(
-      filterOrderByColumns(rows, order, [textCol('t')], { t: 'ap' }),
+      filterOrderByColumns(rows, order, [textCol('t')], {
+        t: { kind: 'text', value: 'ap' },
+      }),
     );
     // 'Apple' / 'apricot' / 'Grape'(gr*ap*e)が含む。
     const expected = rows
@@ -1711,7 +1727,9 @@ describe('filterOrderByColumns (select / text / no-op identity)', () => {
 
   it('returns the same reference when no active filter exists', () => {
     expect(
-      filterOrderByColumns(rows, order, [textCol('t')], { t: '' }),
+      filterOrderByColumns(rows, order, [textCol('t')], {
+        t: { kind: 'text', value: '' },
+      }),
     ).toBe(order);
     expect(filterOrderByColumns(rows, order, [textCol('t')], {})).toBe(order);
   });
@@ -1728,6 +1746,104 @@ describe('filterOrderByColumns (select / text / no-op identity)', () => {
     expect(filterOrderByColumns(rows, order, [setCol('g')], { g: value })).toBe(
       order,
     );
+  });
+});
+
+describe('filterOrderByColumns (記述子経路 ≡ 旧・生文字列述語: text / date / select / custom)', () => {
+  const order = createSourceOrder(rows.length);
+  const dateCol = (key: string): GridColumn<Row> => ({
+    key,
+    width: 100,
+    filterType: 'date',
+  });
+
+  // 参照述語: text/date/custom(filterFn なし)= 部分一致(大文字小文字無視) / select = 完全一致。
+  const containsOracle = (key: string, needle: string): number[] => {
+    const n = needle.trim().toLowerCase();
+    const out: number[] = [];
+    for (let i = 0; i < rows.length; i += 1) {
+      if (
+        String(getCellValue(rows[i], textCol(key)) ?? '')
+          .toLowerCase()
+          .includes(n)
+      ) {
+        out.push(i);
+      }
+    }
+    return out;
+  };
+  const exactOracle = (key: string, expected: string): number[] => {
+    const out: number[] = [];
+    for (let i = 0; i < rows.length; i += 1) {
+      if (String(getCellValue(rows[i], selectCol(key)) ?? '') === expected) {
+        out.push(i);
+      }
+    }
+    return out;
+  };
+
+  it.each(['ap', 'A', 'rry', 'z'])(
+    'text descriptor contains %s === oracle',
+    (needle) => {
+      const actual = asArray(
+        filterOrderByColumns(rows, order, [textCol('t')], {
+          t: { kind: 'text', value: needle },
+        }),
+      );
+      expect(actual).toEqual(containsOracle('t', needle));
+    },
+  );
+
+  it('date descriptor shares the text contains predicate', () => {
+    const value: ColumnFilterValue = { kind: 'date', value: 'a' };
+    const actual = asArray(
+      filterOrderByColumns(rows, order, [dateCol('t')], { t: value }),
+    );
+    expect(actual).toEqual(containsOracle('t', 'a'));
+  });
+
+  it.each(['red', 'green', 'none'])(
+    'select descriptor exact %s === oracle',
+    (expected) => {
+      const actual = asArray(
+        filterOrderByColumns(rows, order, [selectCol('g')], {
+          g: { kind: 'select', value: expected },
+        }),
+      );
+      expect(actual).toEqual(exactOracle('g', expected));
+    },
+  );
+
+  it('empty text / date / select descriptors are inactive (identity)', () => {
+    expect(
+      filterOrderByColumns(rows, order, [textCol('t')], {
+        t: { kind: 'text', value: '' },
+      }),
+    ).toBe(order);
+    expect(
+      filterOrderByColumns(rows, order, [dateCol('t')], {
+        t: { kind: 'date', value: '  ' },
+      }),
+    ).toBe(order);
+    expect(
+      filterOrderByColumns(rows, order, [selectCol('g')], {
+        g: { kind: 'select', value: '' },
+      }),
+    ).toBe(order);
+  });
+
+  it('custom descriptor without filterFn falls back to contains', () => {
+    const customCol: GridColumn<Row> = {
+      key: 't',
+      width: 100,
+      filterType: 'custom',
+    };
+    const actual = asArray(
+      filterOrderByColumns(rows, order, [customCol], {
+        t: { kind: 'custom', value: 'rry' },
+      }),
+    );
+    expect(actual).toEqual(containsOracle('t', 'rry'));
   });
 });
 
@@ -1795,34 +1911,55 @@ describe('number filter descriptor helpers', () => {
     expect(contains).toEqual({ kind: 'number', raw: '1.', parsed: null });
   });
 
-  it('columnFilterValueToDraftText returns raw for number descriptors, String otherwise', () => {
-    const descriptor = buildNumberColumnFilterValue('> 5');
-    expect(columnFilterValueToDraftText(descriptor)).toBe('> 5');
-    expect(columnFilterValueToDraftText('hello')).toBe('hello');
-    expect(columnFilterValueToDraftText(null)).toBe('');
+  it('columnFilterValueToDraftText returns raw for number, value for text/select, empty otherwise', () => {
+    expect(columnFilterValueToDraftText(num('> 5'))).toBe('> 5');
+    expect(
+      columnFilterValueToDraftText({ kind: 'text', value: 'hello' }),
+    ).toBe('hello');
+    expect(
+      columnFilterValueToDraftText({ kind: 'select', value: 'red' }),
+    ).toBe('red');
+    expect(
+      columnFilterValueToDraftText({ kind: 'set', values: ['a'] }),
+    ).toBe('');
+    expect(
+      columnFilterValueToDraftText({ kind: 'custom', value: { x: 1 } }),
+    ).toBe('');
     expect(columnFilterValueToDraftText(undefined)).toBe('');
   });
 
-  it('isActiveColumnFilterValue treats set / number descriptors / non-empty strings as active', () => {
+  it('isActiveColumnFilterValue: set/number/custom active; text/date trim non-empty; select non-empty', () => {
     expect(
-      isActiveColumnFilterValue({ kind: 'set', values: [] } as SetColumnFilterValue),
+      isActiveColumnFilterValue({ kind: 'set', values: [] }),
     ).toBe(true);
-    expect(isActiveColumnFilterValue(buildNumberColumnFilterValue('> 1'))).toBe(
+    expect(isActiveColumnFilterValue(num('> 1'))).toBe(true);
+    expect(isActiveColumnFilterValue({ kind: 'custom', value: 0 })).toBe(true);
+    expect(isActiveColumnFilterValue({ kind: 'text', value: 'abc' })).toBe(true);
+    expect(isActiveColumnFilterValue({ kind: 'date', value: '2024' })).toBe(
       true,
     );
-    expect(isActiveColumnFilterValue('abc')).toBe(true);
-    expect(isActiveColumnFilterValue('   ')).toBe(false);
-    expect(isActiveColumnFilterValue('')).toBe(false);
-    expect(isActiveColumnFilterValue(null)).toBe(false);
+    expect(isActiveColumnFilterValue({ kind: 'select', value: 'x' })).toBe(true);
+    expect(isActiveColumnFilterValue({ kind: 'text', value: '   ' })).toBe(
+      false,
+    );
+    expect(isActiveColumnFilterValue({ kind: 'text', value: '' })).toBe(false);
+    expect(isActiveColumnFilterValue({ kind: 'select', value: '' })).toBe(
+      false,
+    );
+    expect(isActiveColumnFilterValue(undefined)).toBe(false);
   });
 
   it('type guards are consistent', () => {
     const setValue: SetColumnFilterValue = { kind: 'set', values: ['a'] };
     expect(isSetColumnFilterValue(setValue)).toBe(true);
     expect(isNumberColumnFilterValue(setValue)).toBe(false);
-    const numberValue = buildNumberColumnFilterValue('> 1');
+    const numberValue = num('> 1');
     expect(isNumberColumnFilterValue(numberValue)).toBe(true);
     expect(isSetColumnFilterValue(numberValue)).toBe(false);
+    // 追加(記述子化): text/date/select/custom はどちらの guard にも該当しません。
+    const textValue: ColumnFilterValue = { kind: 'text', value: 'x' };
+    expect(isSetColumnFilterValue(textValue)).toBe(false);
+    expect(isNumberColumnFilterValue(textValue)).toBe(false);
   });
 });
 </file>
@@ -2783,7 +2920,12 @@ describe('formatGridFilterSummary (4 分岐 + 短縮)', () => {
     expect(
       formatGridFilterSummary({
         globalFilterText: '',
-        columnFilterValues: { c0: 'x', c1: '', c2: 'y' },
+        // 変更(記述子化): 生文字列 → text 記述子。空 value は inactive のまま(2列)。
+        columnFilterValues: {
+          c0: { kind: 'text', value: 'x' },
+          c1: { kind: 'text', value: '' },
+          c2: { kind: 'text', value: 'y' },
+        },
       }),
     ).toBe('Filter: 2列');
   });
@@ -2792,7 +2934,11 @@ describe('formatGridFilterSummary (4 分岐 + 短縮)', () => {
     expect(
       formatGridFilterSummary({
         globalFilterText: 'abc',
-        columnFilterValues: { c0: 'x', c1: 'y' },
+        // 変更(記述子化): 生文字列 → text 記述子。
+        columnFilterValues: {
+          c0: { kind: 'text', value: 'x' },
+          c1: { kind: 'text', value: 'y' },
+        },
       }),
     ).toBe('Filter: Global("abc") + 2列');
   });
@@ -2860,7 +3006,8 @@ describe('buildGridDerivedSummary composes the individual helpers', () => {
       columns: [makeCol('amount', '金額'), makeCol('qty', '数量')],
       visibleColumns: [makeCol('amount', '金額')],
       globalFilterText: 'foo',
-      columnFilterValues: { amount: 'x' } as Record<string, unknown>,
+      // 変更(記述子化): 生文字列 + as unknown キャスト → text 記述子(kind は as const で narrow)。
+      columnFilterValues: { amount: { kind: 'text' as const, value: 'x' } },
       sortState: [{ columnKey: 'amount', direction: 'asc' as const }],
       activeCell: { row: 2, col: 0 },
       selection: {
@@ -3883,7 +4030,7 @@ import {
   type PointerEvent,
   type RefObject,
 } from 'react';
-import type { GridColumn } from '../model/gridTypes';
+import type { ColumnFilterValue, GridColumn } from '../model/gridTypes';
 // 追加(記述子化): number 記述子を含む列フィルター値を draft 用テキストへ整形します。
 import { columnFilterValueToDraftText } from '../logic/filtering';
 
@@ -3902,7 +4049,7 @@ export type FilterPopoverLayout = {
 
 type UseFilterPopoverControllerArgs<T> = {
   visibleColumns: GridColumn<T>[];
-  columnFilterValues: Record<string, unknown>;
+  columnFilterValues: Record<string, ColumnFilterValue>;
   enableColumnFilter: boolean;
   gridRootRef: RefObject<HTMLDivElement | null>;
 };
@@ -7107,7 +7254,7 @@ export const computeVerticalGeometry = ({
 </file>
 
 <file path="src/components/spreadsheet-grid/model/gridActions.ts">
-import type { CellCoord, GridSortEntry } from './gridTypes';
+import type { CellCoord, ColumnFilterValue, GridSortEntry } from './gridTypes';
 
 // 追加: Grid UI action の union 型です。
 export type GridUiAction =
@@ -7134,7 +7281,7 @@ export type GridUiAction =
   | { type: 'column/resizeEnd' }
   | { type: 'columnWidths/sync'; widths: Record<string, number> }
   | { type: 'filter/setGlobal'; value: string }
-  | { type: 'filter/setColumn'; columnKey: string; value: unknown }
+  | { type: 'filter/setColumn'; columnKey: string; value: ColumnFilterValue }
   | { type: 'filter/clearColumn'; columnKey: string }
   | { type: 'filter/resetAll' }
   | { type: 'sort/set'; entries: GridSortEntry[] }
@@ -7212,7 +7359,10 @@ export const gridActions = {
     type: 'filter/setGlobal',
     value,
   }),
-  setColumnFilter: (columnKey: string, value: unknown): GridUiAction => ({
+  setColumnFilter: (
+    columnKey: string,
+    value: ColumnFilterValue,
+  ): GridUiAction => ({
     type: 'filter/setColumn',
     columnKey,
     value,
@@ -10668,7 +10818,13 @@ export default useColumnMenuController;
 </file>
 
 <file path="src/components/spreadsheet-grid/logic/filtering.ts">
-import type { GridColumn, SetColumnFilterValue } from '../model/gridTypes';
+import type {
+  ColumnFilterValue,
+  GridColumn,
+  NumberColumnFilterValue,
+  ParsedNumberFilter,
+  SetColumnFilterValue,
+} from '../model/gridTypes';
 import { getCellValue } from '../utils/permissions';
 
 // 追加(DS-1 / index ベースパイプライン): 「ビュー順に並んだ元 rows の index 列」です。
@@ -10689,14 +10845,13 @@ export const createSourceOrder = (rowCount: number): RowOrder => {
   return order;
 };
 
-// 追加(12-A): set フィルター値の type guard です。
+// 追加(12-A → 記述子化): set フィルター値の type guard です。
+// 変更(記述子化): columnFilters の値が ColumnFilterValue(判別共用体)へ閉じたため、
+//   typeof / Array.isArray の実行時ダックタイピングは不要になり、kind の絞り込みだけで足ります。
+//   外部呼び出し側(SpreadsheetGrid の表示・署名計算)の narrowing を据え置くため guard は残します。
 export const isSetColumnFilterValue = (
-  value: unknown,
-): value is SetColumnFilterValue =>
-  typeof value === 'object' &&
-  value !== null &&
-  (value as SetColumnFilterValue).kind === 'set' &&
-  Array.isArray((value as SetColumnFilterValue).values);
+  value: ColumnFilterValue | undefined,
+): value is SetColumnFilterValue => value?.kind === 'set';
 
 // 追加(12-A): 列フィルター値が「有効」かを判定する共通 helper です。
 // 変更理由: 従来は GridHeaderRow(フィルター済みバッジ) / gridBarHelpers(有効件数) /
@@ -10704,33 +10859,30 @@ export const isSetColumnFilterValue = (
 //   set フィルター値はオブジェクトのため String() 判定が成立しません
 //   (空配列 = 全行除外でも「有効」と数える必要があります)。
 //   有効判定をここへ一元化し、3 箇所すべてが同じ規則を共有します。
-//   set 以外は従来どおり「非空文字列のみ有効」で挙動等価です。
-export const isActiveColumnFilterValue = (value: unknown): boolean => {
-  if (isSetColumnFilterValue(value)) {
-    // 注記: 全選択時は reducer 側で clearColumn 済みのため、値が存在する時点で有効です。
-    return true;
+// 変更(記述子化): 判別共用体の kind で網羅判定します。set / number / custom は存在時点で有効
+//   (set/number は reducer/build 側で空を clear 済み、custom は利用者が明示的に set した値)。
+//   text / date は trim 後非空、select は値非空のときだけ有効です(旧・生文字列時代と等価)。
+export const isActiveColumnFilterValue = (
+  value: ColumnFilterValue | undefined,
+): boolean => {
+  if (!value) {
+    return false;
   }
-  // 追加(記述子化 / number): number 記述子は buildNumberColumnFilterValue で
-  //   raw 非空のときだけ生成されるため、存在する時点で有効です(set と同じ規則)。
-  if (isNumberColumnFilterValue(value)) {
-    return true;
+  switch (value.kind) {
+    case 'set':
+    case 'number':
+    case 'custom':
+      return true;
+    case 'select':
+      return value.value.length > 0;
+    case 'text':
+    case 'date':
+      return value.value.trim().length > 0;
   }
-  return String(value ?? '').trim().length > 0;
 };
 
-// 追加: number フィルターの解釈結果です。
-export type ParsedNumberFilter =
-  | {
-      mode: 'comparison';
-      operator: '>' | '>=' | '<' | '<=' | '=';
-      value: number;
-    }
-  | {
-      mode: 'range';
-      min: number;
-      max: number;
-    };
-
+// 注記(記述子化): ParsedNumberFilter 型は gridTypes へ移設しました(ColumnFilterValue が
+//   number 記述子を内包する都合)。parse の「ロジック」は引き続きこちらにあります。
 // 追加: number フィルター式を解釈します。
 export const parseNumberFilterExpression = (
   rawValue: string,
@@ -10770,27 +10922,16 @@ export const parseNumberFilterExpression = (
   };
 };
 
-// 追加(記述子化 / number): number フィルターのタグ付き記述子です。
-//   set({ kind:'set' })に続く 2 種目の判別共用体メンバーで、columnFilters[key] に
-//   この形が入っているときだけ「コンパイル済み number フィルター」が有効です。
-//   - raw   : ユーザー入力(trim 済み)。再オープン時の draft seed / 現在値表示 /
-//             式として解釈不可だった場合の contains フォールバック needle に使います。
-//   - parsed: 式の解釈結果。null = 解釈不可(→ raw で contains)。従来 applyNumberFilter が
-//             行ループ内で毎回行っていた parse を「commit 時 1 回」へ前倒しするための field です。
-//   注記: text / select / date は本バッチでは生文字列のまま据え置きます(後続で同じ型へ寄せる)。
-export type NumberColumnFilterValue = {
-  kind: 'number';
-  raw: string;
-  parsed: ParsedNumberFilter | null;
-};
+// 注記(記述子化 / number): NumberColumnFilterValue 型は gridTypes へ移設しました。
+//   raw は再オープン時の draft seed / 現在値表示 / 解釈不可時の contains needle に使い、
+//   parsed は commit 時 1 回の parse 結果(B-2 の Float64 key 最適化が依存する形)です。
 
-// 追加(記述子化 / number): number 記述子の type guard です(set と同型)。
+// 追加(記述子化 / number → 記述子化): number 記述子の type guard です。
+// 変更(記述子化): 入力が ColumnFilterValue へ閉じたため kind の絞り込みだけで足ります。
+//   外部呼び出し側(B-2 署名計算・現在値表示)の narrowing 据え置きのため guard は残します。
 export const isNumberColumnFilterValue = (
-  value: unknown,
-): value is NumberColumnFilterValue =>
-  typeof value === 'object' &&
-  value !== null &&
-  (value as NumberColumnFilterValue).kind === 'number';
+  value: ColumnFilterValue | undefined,
+): value is NumberColumnFilterValue => value?.kind === 'number';
 
 // 追加(記述子化 / number): 生入力から number 記述子を構築します。
 //   - trim 後が空なら null(= フィルターなしへ正規化。呼び出し側で clearColumn 相当に倒す)。
@@ -10807,16 +10948,27 @@ export const buildNumberColumnFilterValue = (
 };
 
 // 追加(記述子化): 列フィルター値を「テキスト入力の編集用文字列」へ整形します。
-//   popover 再オープン時の draft seed の単一窓口です(従来は呼び出し側で String(value) 直書き)。
-//   - number 記述子 → raw(式そのもの)。
-//   - それ以外(text/select/date の生文字列等)→ 従来どおり String(value ?? '')。
-//   set はチェックボックス UI のため text 入力 draft を使わず、ここへは到達しません。
-//   後続で text/select も記述子化する際、この関数へ分岐を足せば draft seed 側は無改修で済みます。
-export const columnFilterValueToDraftText = (value: unknown): string => {
-  if (isNumberColumnFilterValue(value)) {
-    return value.raw;
+//   popover 再オープン時の draft seed の単一窓口です。
+// 変更(記述子化): 全種別が記述子になったため kind で分岐します。
+//   - number → raw(式そのもの) / text・date・select → value(検索/選択文字列)。
+//   - set はチェックボックス UI、custom は自由形 UI のため text 入力 draft を持ちません(空)。
+export const columnFilterValueToDraftText = (
+  value: ColumnFilterValue | undefined,
+): string => {
+  if (!value) {
+    return '';
   }
-  return String(value ?? '');
+  switch (value.kind) {
+    case 'number':
+      return value.raw;
+    case 'text':
+    case 'date':
+    case 'select':
+      return value.value;
+    case 'set':
+    case 'custom':
+      return '';
+  }
 };
 
 // 追加: number 型フィルターの評価です。
@@ -10880,9 +11032,12 @@ type CompiledColumnFilterPredicate<T> = (row: T, sourceIndex: number) => boolean
 
 // 追加(12-A): 1 列ぶんのフィルター値を predicate へコンパイルします。
 //             無効(未設定)なら null を返し、行ループから除外します。
+// 変更(記述子化): filterValue を ColumnFilterValue へ閉じ、判別を switch(value.kind) 一本に
+//   統一しました(従来の column.filterType 突き合わせ・生文字列 number の後方互換フォールバックを撤去)。
+//   合否はいずれも旧経路と厳密に等価です(select=完全一致 / text・date=部分一致 / number=下記)。
 const compileSingleColumnFilter = <T,>(
   column: GridColumn<T>,
-  filterValue: unknown,
+  filterValue: ColumnFilterValue | undefined,
   // 追加(B-2): この列ぶんの Float64 key(rows 全長・sourceIndex 添字)。
   //   渡されたときだけ comparison/range が key[sourceIndex] を引きます。
   //   未指定(set 列 / key 未構築)なら従来の Number(getCellValue(...)) 経路に倒れ、挙動は等価です。
@@ -10891,102 +11046,113 @@ const compileSingleColumnFilter = <T,>(
   if (!isActiveColumnFilterValue(filterValue)) {
     return null;
   }
+  // 注記: isActiveColumnFilterValue を通った時点で filterValue は存在します(undefined 除外)。
+  const value = filterValue as ColumnFilterValue;
 
-  // 注記: 従来どおり column.filterFn を最優先します(set 値が渡るケースも
-  //       利用側 filterFn の責務とし、挙動の優先順位は変えません)。
+  // 注記: 従来どおり column.filterFn を最優先します(記述子オブジェクトをそのまま渡す契約。
+  //       custom 列の自由形値もここで利用側 filterFn の責務として解釈されます)。
   if (column.filterFn) {
     const filterFn = column.filterFn;
-    return (row) => filterFn(row, filterValue);
+    return (row) => filterFn(row, value);
   }
 
-  // 追加(12-A / 反転set): set フィルターは「対象値の Set」を一度だけ構築し、O(1) 照合します。
-  //   values は mode により「選択値(include)」か「非選択値(exclude)」のいずれか(常に小さい側)。
-  //   include: 行値が対象に含まれれば通過 / exclude: 行値が対象に含まれなければ通過。
-  //   注記: スキャン収集列では universe=全行値のため include(S) ≡ exclude(U−S) が成立します。
-  if (isSetColumnFilterValue(filterValue)) {
-    const targetValues = new Set(filterValue.values);
-    if (filterValue.mode === 'exclude') {
-      return (row) => !targetValues.has(String(getCellValue(row, column) ?? ''));
+  switch (value.kind) {
+    // 追加(12-A / 反転set): set フィルターは「対象値の Set」を一度だけ構築し、O(1) 照合します。
+    //   values は mode により「選択値(include)」か「非選択値(exclude)」のいずれか(常に小さい側)。
+    //   include: 行値が対象に含まれれば通過 / exclude: 行値が対象に含まれなければ通過。
+    case 'set': {
+      const targetValues = new Set(value.values);
+      if (value.mode === 'exclude') {
+        return (row) =>
+          !targetValues.has(String(getCellValue(row, column) ?? ''));
+      }
+      return (row) => targetValues.has(String(getCellValue(row, column) ?? ''));
     }
-    return (row) => targetValues.has(String(getCellValue(row, column) ?? ''));
-  }
 
-  // 追加(記述子化 / number): number 記述子は parse 済みのため、行ループ外で評価器を確定します
-  //   (従来 applyNumberFilter は行ごとに parseNumberFilterExpression を呼んでいた)。
-  //   合否は applyNumberFilter と厳密に等価:
-  //     - parsed=null  → raw で contains(大文字小文字無視)。
-  //     - range        → Number(cell) が有限かつ [min,max]。
-  //     - comparison   → Number(cell) が有限かつ op 比較(= は ===)。
-  //   注記: filterFn を持つ列は上の filterFn 分岐が優先するため、ここへは到達しません
-  //         (その場合 filterFn は本記述子オブジェクトを受け取ります。set と同じ契約)。
-  if (isNumberColumnFilterValue(filterValue)) {
-    const parsed = filterValue.parsed;
-    if (parsed === null) {
-      const needle = filterValue.raw.toLowerCase();
+    // 追加(記述子化 / number): number 記述子は parse 済みのため、行ループ外で評価器を確定します。
+    //   合否は旧 applyNumberFilter と厳密に等価:
+    //     - parsed=null  → raw で contains(大文字小文字無視)。
+    //     - range        → Number(cell) が有限かつ [min,max]。
+    //     - comparison   → Number(cell) が有限かつ op 比較(= は ===)。
+    case 'number': {
+      const parsed = value.parsed;
+      if (parsed === null) {
+        const needle = value.raw.toLowerCase();
+        return (row) =>
+          String(getCellValue(row, column) ?? '')
+            .toLowerCase()
+            .includes(needle);
+      }
+      if (parsed.mode === 'range') {
+        const { min, max } = parsed;
+        // 変更(B-2): numericKey があれば key[sourceIndex] を、無ければ従来どおり
+        //   Number(getCellValue(...)) を読みます。値の取得元だけが変わり、判定本体は不変です。
+        return (row, sourceIndex) => {
+          const numericCellValue = numericKey
+            ? numericKey[sourceIndex]
+            : Number(getCellValue(row, column));
+          return (
+            Number.isFinite(numericCellValue) &&
+            numericCellValue >= min &&
+            numericCellValue <= max
+          );
+        };
+      }
+      const { operator, value: threshold } = parsed;
+      // 変更(B-2): comparison も numericKey 経路を併設します(無ければ従来 getCellValue 経路)。
+      return (row, sourceIndex) => {
+        const numericCellValue = numericKey
+          ? numericKey[sourceIndex]
+          : Number(getCellValue(row, column));
+        if (!Number.isFinite(numericCellValue)) {
+          return false;
+        }
+        switch (operator) {
+          case '>':
+            return numericCellValue > threshold;
+          case '>=':
+            return numericCellValue >= threshold;
+          case '<':
+            return numericCellValue < threshold;
+          case '<=':
+            return numericCellValue <= threshold;
+          case '=':
+          default:
+            return numericCellValue === threshold;
+        }
+      };
+    }
+
+    // 追加(記述子化 / select): 完全一致です(旧 String(filterValue ?? '') と等価)。
+    case 'select': {
+      const expectedValue = value.value;
+      return (row) =>
+        String(getCellValue(row, column) ?? '') === expectedValue;
+    }
+
+    // 追加(記述子化 / text・date): 部分一致です(旧 text/date と等価)。date は現状 text と
+    //   同述語を共有しますが、将来の相対日付は評価時解決の専用分岐をここに足して切り出せます。
+    case 'text':
+    case 'date': {
+      const normalizedFilter = value.value.trim().toLowerCase();
+      return (row) =>
+        String(getCellValue(row, column) ?? '')
+          .toLowerCase()
+          .includes(normalizedFilter);
+    }
+
+    // 追加(記述子化 / custom): filterFn 不在の custom 列は、旧 text/custom 経路と等価に
+    //   String(value) の部分一致へフォールバックします(filterFn を持つ列は上で処理済み)。
+    case 'custom': {
+      const needle = String(value.value ?? '')
+        .trim()
+        .toLowerCase();
       return (row) =>
         String(getCellValue(row, column) ?? '')
           .toLowerCase()
           .includes(needle);
     }
-    if (parsed.mode === 'range') {
-      const { min, max } = parsed;
-      // 変更(B-2): numericKey があれば key[sourceIndex] を、無ければ従来どおり
-      //   Number(getCellValue(...)) を読みます。値の取得元だけが変わり、判定本体は不変です。
-      return (row, sourceIndex) => {
-        const numericCellValue = numericKey
-          ? numericKey[sourceIndex]
-          : Number(getCellValue(row, column));
-        return (
-          Number.isFinite(numericCellValue) &&
-          numericCellValue >= min &&
-          numericCellValue <= max
-        );
-      };
-    }
-    const { operator, value } = parsed;
-    // 変更(B-2): comparison も numericKey 経路を併設します(無ければ従来 getCellValue 経路)。
-    return (row, sourceIndex) => {
-      const numericCellValue = numericKey
-        ? numericKey[sourceIndex]
-        : Number(getCellValue(row, column));
-      if (!Number.isFinite(numericCellValue)) {
-        return false;
-      }
-      switch (operator) {
-        case '>':
-          return numericCellValue > value;
-        case '>=':
-          return numericCellValue >= value;
-        case '<':
-          return numericCellValue < value;
-        case '<=':
-          return numericCellValue <= value;
-        case '=':
-        default:
-          return numericCellValue === value;
-      }
-    };
   }
-
-  const filterType = column.filterType ?? 'text';
-
-  if (filterType === 'number') {
-    // 注記(記述子化): commit を通った number は上の記述子分岐で処理されます。ここは
-    //   生文字列 number 値(未移行 / 外部 hydrate)のための後方互換フォールバックです。
-    return (row) => applyNumberFilter(getCellValue(row, column), filterValue);
-  }
-
-  if (filterType === 'select') {
-    const expectedValue = String(filterValue ?? '');
-    return (row) => String(getCellValue(row, column) ?? '') === expectedValue;
-  }
-
-  // text / date / custom(filterFn なし)は従来どおり部分一致です。
-  const normalizedFilter = String(filterValue ?? '').trim().toLowerCase();
-  return (row) =>
-    String(getCellValue(row, column) ?? '')
-      .toLowerCase()
-      .includes(normalizedFilter);
 };
 
 // ────────────────────────────────────────────────
@@ -11049,7 +11215,7 @@ export const filterOrderByColumns = <T,>(
   rows: T[],
   order: RowOrder,
   columns: GridColumn<T>[],
-  columnFilters: Record<string, unknown>,
+  columnFilters: Record<string, ColumnFilterValue>,
   // 追加(B-2): 列キー → Float64 key の table(任意)。number(comparison/range)列のみ収録。
   //   未指定なら全列が従来経路へ倒れ、現状とバイト等価です(set/text/select/filterFn は元から key 不使用)。
   numericKeys?: ReadonlyMap<string, Float64Array>,
@@ -12040,6 +12206,7 @@ export default ColumnMenuPopover;
 import type { ReactNode } from 'react';
 import type {
   CellCoord,
+  ColumnFilterValue,
   GridSelection,
   GridColumn,
   SpreadsheetGridSlotContext,
@@ -12210,7 +12377,9 @@ export const formatGridSelectionStatsLabel = <T,>(
 // 変更理由: set フィルター値はオブジェクトのため String(value).trim() 判定が
 //           成立しません(空配列も「全行除外」として有効に数える必要があります)。
 //           判定を logic/filtering.ts の isActiveColumnFilterValue へ一元化します。
-const countActiveColumnFilters = (columnFilterValues: Record<string, unknown>) =>
+const countActiveColumnFilters = (
+  columnFilterValues: Record<string, ColumnFilterValue>,
+) =>
   Object.values(columnFilterValues).filter((value) =>
     isActiveColumnFilterValue(value),
   ).length;
@@ -12320,6 +12489,344 @@ export const buildGridDerivedSummary = <T,>(
     hasSorting,
     sortedColumnLabel,
   };
+};
+</file>
+
+<file path="src/components/spreadsheet-grid/logic/sorting.ts">
+import type { GridColumn, GridSortState } from '../model/gridTypes';
+import { getCellValue } from '../utils/permissions';
+import type { RowOrder } from './filtering';
+
+// 追加(DS-1 / perf): 文字列比較用の共有コレーターです。
+//   従来は compareUnknownValues 内で String.prototype.localeCompare(_, 'ja', opts) を
+//   ペアごとに呼んでおり、これが文字列ソートの致命的なボトルネックでした
+//   (20 万行・文字列キーの実測で約 7.5 秒)。同一オプションの Intl.Collator を
+//   モジュールスコープで 1 度だけ生成して使い回すと、照合順序は localeCompare と
+//   等価のまま約 30 倍高速になります(同条件で約 0.25 秒)。
+//   仕様上 String.prototype.localeCompare(that, 'ja', opts) は
+//   new Intl.Collator('ja', opts).compare(this, that) と同じ照合(符号が一致)です。
+// 変更(Set Filter perf): getColumnSelectOptions の候補ソートからも再利用するため
+//   export します(照合オプションは不変・並び順は従来と等価)。
+export const STRING_COLLATOR = new Intl.Collator('ja', {
+  numeric: true,
+  sensitivity: 'base',
+});
+
+// 追加: 値比較を行います。数値化できるものは数値比較し、
+//       それ以外は文字列比較へフォールバックします。
+// 変更(DS-1 / perf): 文字列フォールバックを共有 Intl.Collator 経由にしました
+//   (順序は従来と等価)。数値判定・数値パスは不変です。
+export const compareUnknownValues = (left: unknown, right: unknown) => {
+  const leftNumber = Number(left);
+  const rightNumber = Number(right);
+  const bothNumeric =
+    Number.isFinite(leftNumber) && Number.isFinite(rightNumber);
+
+  if (bothNumeric) {
+    return leftNumber - rightNumber;
+  }
+
+  return STRING_COLLATOR.compare(String(left ?? ''), String(right ?? ''));
+};
+
+// 追加(MS-2 / マルチソート本体): ソートエントリ配列の「次状態」を返す純関数です。
+//   発火口を 1 か所に集約し、列メニュー(単一置換)とヘッダー Shift+click(トグル)で
+//   同じロジックを共有します。入力配列は破壊せず、常に新しい配列を返します。
+//
+//   additive=false (列メニュー / 単一置換):
+//     - 現在がちょうど [{columnKey, direction}] の「単一・同方向」なら [](解除)。
+//     - それ以外は [{columnKey, direction}] へ置換します(他列のソートは捨てます)。
+//     ⇒ MS-1 の handleColumnMenuSortChange の inline 判定と完全同値です。
+//
+//   additive=true (ヘッダー Shift+click / トグル):
+//     - 当該列が未登録            → 末尾(最低優先)に {columnKey, direction} を追加。
+//     - 登録済みで direction が別  → 位置を保ったまま direction を更新。
+//     - 登録済みで direction が同じ → 当該列のエントリのみ除去。
+//   呼び出し側(controller)が direction を
+//     existingDir ? 'desc' : 'asc'
+//   で決めることで、ユーザー体験としては none → asc → desc → none の
+//   サイクルになります(desc のときは direction='desc' を渡し、上記「同方向 → 除去」で
+//   消えます)。
+export const nextSortEntries = (
+  current: GridSortState,
+  columnKey: string,
+  direction: 'asc' | 'desc',
+  additive: boolean,
+): GridSortState => {
+  if (!additive) {
+    const isSameSingle =
+      current.length === 1 &&
+      current[0].columnKey === columnKey &&
+      current[0].direction === direction;
+    return isSameSingle ? [] : [{ columnKey, direction }];
+  }
+
+  const index = current.findIndex((entry) => entry.columnKey === columnKey);
+  if (index === -1) {
+    // 未登録 → 末尾(最低優先)に追加。
+    return [...current, { columnKey, direction }];
+  }
+  if (current[index].direction !== direction) {
+    // 別方向 → 位置を保ったまま方向だけ更新。
+    return current.map((entry, i) =>
+      i === index ? { columnKey, direction } : entry,
+    );
+  }
+  // 同方向 → 当該列のみ除去(残りの優先順位は維持)。
+  return current.filter((_, i) => i !== index);
+};
+
+// 追加(MS-3-1 / 並び替え管理パネル): 管理パネルの明示編集用の純関数群です。
+//   nextSortEntries(additive=true) は「同方向＝除去」のトグル意味論で Shift ジェスチャ
+//   向けのため、ドロップダウン編集(同方向の再選択は no-op であるべき)・列差し替え・
+//   優先順位の入れ替えには素直に乗りません。そこで管理パネル用に下記を分離します。
+//   - すべて入力非破壊(常に新しい配列を返す)・単体テスト可で、nextSortEntries と同じ規約です。
+//   - 単一ソース(uiState.sort)は不変。呼び出し側(SpreadsheetGrid)が結果を
+//     setSort / clearSort へ流します(reducer / actions は不変)。
+//
+// addSortEntry: 末尾(最低優先)へレベルを追加します。
+//   既に同じ列が含まれている場合は何もしません(パネル側は未使用列だけを「追加」候補に
+//   出すため通常は起きませんが、純関数としての不変条件『1 列につき高々 1 エントリ』を守ります)。
+export const addSortEntry = (
+  current: GridSortState,
+  columnKey: string,
+  direction: 'asc' | 'desc',
+): GridSortState => {
+  if (current.some((entry) => entry.columnKey === columnKey)) {
+    return current;
+  }
+  return [...current, { columnKey, direction }];
+};
+
+// setSortEntryDirection: 指定レベルの方向を「冪等にセット」します(トグルしません)。
+//   index 範囲外や同方向(変化なし)のときは元配列をそのまま返します(無駄な参照変化を抑止)。
+export const setSortEntryDirection = (
+  current: GridSortState,
+  index: number,
+  direction: 'asc' | 'desc',
+): GridSortState => {
+  if (index < 0 || index >= current.length) {
+    return current;
+  }
+  if (current[index].direction === direction) {
+    return current;
+  }
+  return current.map((entry, i) =>
+    i === index ? { ...entry, direction } : entry,
+  );
+};
+
+// setSortEntryColumn: 指定レベルの対象列を差し替えます(Excel のレベル列変更相当)。
+//   - 方向は当該レベルのものを維持します。
+//   - 差し替え先の列が他レベルで既に使われている場合は、その他レベルを除去して
+//     『1 列につき高々 1 エントリ』を保ちます(当該レベルの位置・優先順位は維持)。
+//     パネル側は他レベルで使用中の列を選択肢から除くため通常は起きませんが、保険です。
+//   - index 範囲外、または変化なし(同一列)のときは元配列をそのまま返します。
+export const setSortEntryColumn = (
+  current: GridSortState,
+  index: number,
+  columnKey: string,
+): GridSortState => {
+  if (index < 0 || index >= current.length) {
+    return current;
+  }
+  if (current[index].columnKey === columnKey) {
+    return current;
+  }
+  return current
+    .map((entry, i) => (i === index ? { ...entry, columnKey } : entry))
+    .filter((entry, i) => i === index || entry.columnKey !== columnKey);
+};
+
+// removeSortEntryAt: 指定レベルを除去します(残りの優先順位は維持)。
+//   index 範囲外のときは元配列をそのまま返します。
+export const removeSortEntryAt = (
+  current: GridSortState,
+  index: number,
+): GridSortState => {
+  if (index < 0 || index >= current.length) {
+    return current;
+  }
+  return current.filter((_, i) => i !== index);
+};
+
+// 追加(MS-3-2 / 優先順位 DnD): 指定レベルを from から to へ移動します(配列 move)。
+//   - 標準的な「配列 move」意味論です。to は除去後の挿入先 index(0..length-1)。
+//     ドロップ位置(挿入スロット 0..length)からの -1 補正は呼び出し側(管理パネルの
+//     finishDrag)が担います。ColumnChooser で computeSectionReorderedKeys が補正を持ち、
+//     配列プリミティブを汚さない役割分担と同じです。
+//   - すべて入力非破壊(常に新しい配列を返す)・単体テスト可で、他の sort 純関数と同規約です。
+//   - from / to が範囲外、または from === to(動かない)のときは元配列をそのまま返します
+//     (no-op ドラッグで参照を変えないため。setSort へ流しても再レンダーを誘発しません)。
+export const moveSortEntry = (
+  current: GridSortState,
+  from: number,
+  to: number,
+): GridSortState => {
+  if (from < 0 || from >= current.length || to < 0 || to >= current.length) {
+    return current;
+  }
+  if (from === to) {
+    return current;
+  }
+  const next = [...current];
+  const [moved] = next.splice(from, 1);
+  next.splice(to, 0, moved);
+  return next;
+};
+
+// 追加(DS-1 / index ベースパイプライン): order(RowOrder) を受け、並べ替えた order を
+//   返す多列ソートです(本体のソート経路はこれに一本化済み。旧オブジェクト配列版は
+//   DS-3-8 で削除)。規約:
+//     - 多列の優先順位適用(resolved を先頭から比較、0 のとき次のキーへ)、
+//     - 未解決(列が見つからない)エントリのスキップ、有効キー 0 件なら元 order を返す、
+//     - 最終タイブレークは元 source index(= order[pos])で安定化、
+//   sort が空 / 有効キー 0 件のときは同一参照を返します。
+//
+//   パフォーマンス上の要点(decorate-sort-undecorate / B-1: 数値列 Float64 typed key):
+//     - 比較子の内側で getCellValue を毎回呼ぶ素朴な実装だと、呼び出し回数が
+//       O(行数 × log 行数 × ソート列数) に膨らみます。アクティブ sort 列ごとに
+//       「order 各位置のセル値」を事前に 1 回だけ取り出して配列化(decorate)し、
+//       比較は decorate 済み値に対して行うことで O(行数 × ソート列数) に下げます。
+//     - B-1(Float64 typed key): さらに「全アクティブ sort 列が数値」のときは、
+//       decorate を unknown[] ではなく Float64Array(typed key)で行い、比較を
+//       純粋な数値差分(分岐レス)にします。compareUnknownValues は比較ごとに
+//       Number(...) を 2 回・Number.isFinite を 2 回呼ぶため、数値が文字列で
+//       hydrate された列(CSV 由来など)では再 coercion が O(行数 × log 行数 × 列数)
+//       に膨らみます。typed key 化でこれを「列ごと 1 回(O(行数))」へ前倒しし、比較は
+//       key[a] - key[b] のみになります(500k 実測で約 +30〜57%。文字列で持つ数値列ほど効く)。
+//     - 等価性: compareUnknownValues は両値が Number.isFinite のときだけ数値比較し、
+//       片方でも非有限なら STRING_COLLATOR へフォールバックします(列単位ではなく
+//       ペア単位の判定)。よって Float64 経路は「列の全値が Number.isFinite」のときに
+//       限り compareUnknownValues の数値枝と恒等です(key は Number(値) を格納し、
+//       key[a]-key[b] は Number(a)-Number(b) とビット等価)。非有限値が 1 つでも混じる
+//       列があれば、その列だけでなく全体を従来の unknown[] + compareUnknownValues 経路へ
+//       フォールバックさせ、コンパレータを単形(分岐レス)に保ちます(混在ソートの安全側)。
+//     - 数値判定は filterType に依存させず、compareUnknownValues と同じ「値駆動」で
+//       行います(挙動の決定権は一貫して値側にあります)。
+//     - 実際の sort 対象は「位置(0..length-1)の number[]」で、確定後に
+//       result[i] = order[positions[i]] で undecorate して Int32Array へ書き戻します。
+export const sortOrder = <T,>(
+  rows: T[],
+  order: RowOrder,
+  columns: GridColumn<T>[],
+  sort: GridSortState,
+): RowOrder => {
+  if (sort.length === 0) {
+    return order;
+  }
+
+  // 列解決はソート前に 1 回だけ(比較関数内で find を毎回呼ばない)。
+  const resolved = sort
+    .map((entry) => {
+      const column = columns.find((item) => item.key === entry.columnKey);
+      return column
+        ? { column, multiplier: entry.direction === 'asc' ? 1 : -1 }
+        : null;
+    })
+    .filter(
+      (item): item is { column: GridColumn<T>; multiplier: number } =>
+        item !== null,
+    );
+
+  if (resolved.length === 0) {
+    return order;
+  }
+
+  const length = order.length;
+  const columnCount = resolved.length;
+
+  const multipliers = resolved.map((item) => item.multiplier);
+
+  // decorate(B-1): まず「全アクティブ sort 列が数値」かを試行しつつ、数値列の
+  //   typed key(Float64Array)を構築します。各列は最初の非有限値で打ち切るため、
+  //   文字列列はほぼ先頭で抜け(実質ゼロコスト)、全数値列のみ全長を走査します。
+  //   非有限値を 1 つでも含む列に当たった時点で allNumeric=false にして以降の列も
+  //   試さず、下の fallback(従来 unknown[] 経路)へ倒します(構築済みの typed key は
+  //   破棄。fallback は稀かつ Collator 律速のため、この破棄コストは無視できます)。
+  const numericKeyColumns: Float64Array[] = new Array<Float64Array>(columnCount);
+  let allNumeric = true;
+  for (let c = 0; c < columnCount; c += 1) {
+    const column = resolved[c].column;
+    const keys = new Float64Array(length);
+    let columnIsNumeric = true;
+    for (let pos = 0; pos < length; pos += 1) {
+      const numeric = Number(getCellValue(rows[order[pos]], column));
+      if (!Number.isFinite(numeric)) {
+        columnIsNumeric = false;
+        break;
+      }
+      keys[pos] = numeric;
+    }
+    if (!columnIsNumeric) {
+      allNumeric = false;
+      break;
+    }
+    numericKeyColumns[c] = keys;
+  }
+
+  // 位置(0..length-1)を並べ替えます。比較は decorate 済みキー、
+  // タイブレークは元 source index(order[a]/order[b])で安定化します。
+  const positions = new Array<number>(length);
+  for (let i = 0; i < length; i += 1) {
+    positions[i] = i;
+  }
+
+  if (allNumeric) {
+    // fast path: 全列が数値。Float64 typed key の差分のみで比較します(分岐レス)。
+    //   単一列ソートは最頻ケースのため、列ループ・列添字を畳んだ専用形へ特化します
+    //   (この特化で単一数値列でも従来 boxed 経路に対し非回帰になります)。
+    if (columnCount === 1) {
+      const keys = numericKeyColumns[0];
+      const multiplier = multipliers[0];
+      positions.sort((a, b) => {
+        const diff = keys[a] - keys[b];
+        if (diff !== 0) {
+          return diff * multiplier;
+        }
+        return order[a] - order[b];
+      });
+    } else {
+      positions.sort((a, b) => {
+        for (let c = 0; c < columnCount; c += 1) {
+          const diff = numericKeyColumns[c][a] - numericKeyColumns[c][b];
+          if (diff !== 0) {
+            return diff * multipliers[c];
+          }
+        }
+        return order[a] - order[b];
+      });
+    }
+  } else {
+    // fallback: 1 列でも非数値を含む。従来どおり全列を unknown[] へ decorate し、
+    //   compareUnknownValues(ペア単位の数値/文字列判定)で比較します(現状とバイト等価)。
+    const keyColumns: unknown[][] = resolved.map(({ column }) => {
+      const keys = new Array<unknown>(length);
+      for (let pos = 0; pos < length; pos += 1) {
+        keys[pos] = getCellValue(rows[order[pos]], column);
+      }
+      return keys;
+    });
+    positions.sort((a, b) => {
+      for (let c = 0; c < columnCount; c += 1) {
+        const compared = compareUnknownValues(
+          keyColumns[c][a],
+          keyColumns[c][b],
+        );
+        if (compared !== 0) {
+          return compared * multipliers[c];
+        }
+      }
+      return order[a] - order[b];
+    });
+  }
+
+  // undecorate: 並べ替えた位置を元 source index へ戻して Int32Array を組み立てます。
+  const result = new Int32Array(length);
+  for (let i = 0; i < length; i += 1) {
+    result[i] = order[positions[i]];
+  }
+  return result;
 };
 </file>
 
@@ -12849,344 +13356,6 @@ export const useGridPointerInteractions = <T,>({
 export default useGridPointerInteractions;
 </file>
 
-<file path="src/components/spreadsheet-grid/logic/sorting.ts">
-import type { GridColumn, GridSortState } from '../model/gridTypes';
-import { getCellValue } from '../utils/permissions';
-import type { RowOrder } from './filtering';
-
-// 追加(DS-1 / perf): 文字列比較用の共有コレーターです。
-//   従来は compareUnknownValues 内で String.prototype.localeCompare(_, 'ja', opts) を
-//   ペアごとに呼んでおり、これが文字列ソートの致命的なボトルネックでした
-//   (20 万行・文字列キーの実測で約 7.5 秒)。同一オプションの Intl.Collator を
-//   モジュールスコープで 1 度だけ生成して使い回すと、照合順序は localeCompare と
-//   等価のまま約 30 倍高速になります(同条件で約 0.25 秒)。
-//   仕様上 String.prototype.localeCompare(that, 'ja', opts) は
-//   new Intl.Collator('ja', opts).compare(this, that) と同じ照合(符号が一致)です。
-// 変更(Set Filter perf): getColumnSelectOptions の候補ソートからも再利用するため
-//   export します(照合オプションは不変・並び順は従来と等価)。
-export const STRING_COLLATOR = new Intl.Collator('ja', {
-  numeric: true,
-  sensitivity: 'base',
-});
-
-// 追加: 値比較を行います。数値化できるものは数値比較し、
-//       それ以外は文字列比較へフォールバックします。
-// 変更(DS-1 / perf): 文字列フォールバックを共有 Intl.Collator 経由にしました
-//   (順序は従来と等価)。数値判定・数値パスは不変です。
-export const compareUnknownValues = (left: unknown, right: unknown) => {
-  const leftNumber = Number(left);
-  const rightNumber = Number(right);
-  const bothNumeric =
-    Number.isFinite(leftNumber) && Number.isFinite(rightNumber);
-
-  if (bothNumeric) {
-    return leftNumber - rightNumber;
-  }
-
-  return STRING_COLLATOR.compare(String(left ?? ''), String(right ?? ''));
-};
-
-// 追加(MS-2 / マルチソート本体): ソートエントリ配列の「次状態」を返す純関数です。
-//   発火口を 1 か所に集約し、列メニュー(単一置換)とヘッダー Shift+click(トグル)で
-//   同じロジックを共有します。入力配列は破壊せず、常に新しい配列を返します。
-//
-//   additive=false (列メニュー / 単一置換):
-//     - 現在がちょうど [{columnKey, direction}] の「単一・同方向」なら [](解除)。
-//     - それ以外は [{columnKey, direction}] へ置換します(他列のソートは捨てます)。
-//     ⇒ MS-1 の handleColumnMenuSortChange の inline 判定と完全同値です。
-//
-//   additive=true (ヘッダー Shift+click / トグル):
-//     - 当該列が未登録            → 末尾(最低優先)に {columnKey, direction} を追加。
-//     - 登録済みで direction が別  → 位置を保ったまま direction を更新。
-//     - 登録済みで direction が同じ → 当該列のエントリのみ除去。
-//   呼び出し側(controller)が direction を
-//     existingDir ? 'desc' : 'asc'
-//   で決めることで、ユーザー体験としては none → asc → desc → none の
-//   サイクルになります(desc のときは direction='desc' を渡し、上記「同方向 → 除去」で
-//   消えます)。
-export const nextSortEntries = (
-  current: GridSortState,
-  columnKey: string,
-  direction: 'asc' | 'desc',
-  additive: boolean,
-): GridSortState => {
-  if (!additive) {
-    const isSameSingle =
-      current.length === 1 &&
-      current[0].columnKey === columnKey &&
-      current[0].direction === direction;
-    return isSameSingle ? [] : [{ columnKey, direction }];
-  }
-
-  const index = current.findIndex((entry) => entry.columnKey === columnKey);
-  if (index === -1) {
-    // 未登録 → 末尾(最低優先)に追加。
-    return [...current, { columnKey, direction }];
-  }
-  if (current[index].direction !== direction) {
-    // 別方向 → 位置を保ったまま方向だけ更新。
-    return current.map((entry, i) =>
-      i === index ? { columnKey, direction } : entry,
-    );
-  }
-  // 同方向 → 当該列のみ除去(残りの優先順位は維持)。
-  return current.filter((_, i) => i !== index);
-};
-
-// 追加(MS-3-1 / 並び替え管理パネル): 管理パネルの明示編集用の純関数群です。
-//   nextSortEntries(additive=true) は「同方向＝除去」のトグル意味論で Shift ジェスチャ
-//   向けのため、ドロップダウン編集(同方向の再選択は no-op であるべき)・列差し替え・
-//   優先順位の入れ替えには素直に乗りません。そこで管理パネル用に下記を分離します。
-//   - すべて入力非破壊(常に新しい配列を返す)・単体テスト可で、nextSortEntries と同じ規約です。
-//   - 単一ソース(uiState.sort)は不変。呼び出し側(SpreadsheetGrid)が結果を
-//     setSort / clearSort へ流します(reducer / actions は不変)。
-//
-// addSortEntry: 末尾(最低優先)へレベルを追加します。
-//   既に同じ列が含まれている場合は何もしません(パネル側は未使用列だけを「追加」候補に
-//   出すため通常は起きませんが、純関数としての不変条件『1 列につき高々 1 エントリ』を守ります)。
-export const addSortEntry = (
-  current: GridSortState,
-  columnKey: string,
-  direction: 'asc' | 'desc',
-): GridSortState => {
-  if (current.some((entry) => entry.columnKey === columnKey)) {
-    return current;
-  }
-  return [...current, { columnKey, direction }];
-};
-
-// setSortEntryDirection: 指定レベルの方向を「冪等にセット」します(トグルしません)。
-//   index 範囲外や同方向(変化なし)のときは元配列をそのまま返します(無駄な参照変化を抑止)。
-export const setSortEntryDirection = (
-  current: GridSortState,
-  index: number,
-  direction: 'asc' | 'desc',
-): GridSortState => {
-  if (index < 0 || index >= current.length) {
-    return current;
-  }
-  if (current[index].direction === direction) {
-    return current;
-  }
-  return current.map((entry, i) =>
-    i === index ? { ...entry, direction } : entry,
-  );
-};
-
-// setSortEntryColumn: 指定レベルの対象列を差し替えます(Excel のレベル列変更相当)。
-//   - 方向は当該レベルのものを維持します。
-//   - 差し替え先の列が他レベルで既に使われている場合は、その他レベルを除去して
-//     『1 列につき高々 1 エントリ』を保ちます(当該レベルの位置・優先順位は維持)。
-//     パネル側は他レベルで使用中の列を選択肢から除くため通常は起きませんが、保険です。
-//   - index 範囲外、または変化なし(同一列)のときは元配列をそのまま返します。
-export const setSortEntryColumn = (
-  current: GridSortState,
-  index: number,
-  columnKey: string,
-): GridSortState => {
-  if (index < 0 || index >= current.length) {
-    return current;
-  }
-  if (current[index].columnKey === columnKey) {
-    return current;
-  }
-  return current
-    .map((entry, i) => (i === index ? { ...entry, columnKey } : entry))
-    .filter((entry, i) => i === index || entry.columnKey !== columnKey);
-};
-
-// removeSortEntryAt: 指定レベルを除去します(残りの優先順位は維持)。
-//   index 範囲外のときは元配列をそのまま返します。
-export const removeSortEntryAt = (
-  current: GridSortState,
-  index: number,
-): GridSortState => {
-  if (index < 0 || index >= current.length) {
-    return current;
-  }
-  return current.filter((_, i) => i !== index);
-};
-
-// 追加(MS-3-2 / 優先順位 DnD): 指定レベルを from から to へ移動します(配列 move)。
-//   - 標準的な「配列 move」意味論です。to は除去後の挿入先 index(0..length-1)。
-//     ドロップ位置(挿入スロット 0..length)からの -1 補正は呼び出し側(管理パネルの
-//     finishDrag)が担います。ColumnChooser で computeSectionReorderedKeys が補正を持ち、
-//     配列プリミティブを汚さない役割分担と同じです。
-//   - すべて入力非破壊(常に新しい配列を返す)・単体テスト可で、他の sort 純関数と同規約です。
-//   - from / to が範囲外、または from === to(動かない)のときは元配列をそのまま返します
-//     (no-op ドラッグで参照を変えないため。setSort へ流しても再レンダーを誘発しません)。
-export const moveSortEntry = (
-  current: GridSortState,
-  from: number,
-  to: number,
-): GridSortState => {
-  if (from < 0 || from >= current.length || to < 0 || to >= current.length) {
-    return current;
-  }
-  if (from === to) {
-    return current;
-  }
-  const next = [...current];
-  const [moved] = next.splice(from, 1);
-  next.splice(to, 0, moved);
-  return next;
-};
-
-// 追加(DS-1 / index ベースパイプライン): order(RowOrder) を受け、並べ替えた order を
-//   返す多列ソートです(本体のソート経路はこれに一本化済み。旧オブジェクト配列版は
-//   DS-3-8 で削除)。規約:
-//     - 多列の優先順位適用(resolved を先頭から比較、0 のとき次のキーへ)、
-//     - 未解決(列が見つからない)エントリのスキップ、有効キー 0 件なら元 order を返す、
-//     - 最終タイブレークは元 source index(= order[pos])で安定化、
-//   sort が空 / 有効キー 0 件のときは同一参照を返します。
-//
-//   パフォーマンス上の要点(decorate-sort-undecorate / B-1: 数値列 Float64 typed key):
-//     - 比較子の内側で getCellValue を毎回呼ぶ素朴な実装だと、呼び出し回数が
-//       O(行数 × log 行数 × ソート列数) に膨らみます。アクティブ sort 列ごとに
-//       「order 各位置のセル値」を事前に 1 回だけ取り出して配列化(decorate)し、
-//       比較は decorate 済み値に対して行うことで O(行数 × ソート列数) に下げます。
-//     - B-1(Float64 typed key): さらに「全アクティブ sort 列が数値」のときは、
-//       decorate を unknown[] ではなく Float64Array(typed key)で行い、比較を
-//       純粋な数値差分(分岐レス)にします。compareUnknownValues は比較ごとに
-//       Number(...) を 2 回・Number.isFinite を 2 回呼ぶため、数値が文字列で
-//       hydrate された列(CSV 由来など)では再 coercion が O(行数 × log 行数 × 列数)
-//       に膨らみます。typed key 化でこれを「列ごと 1 回(O(行数))」へ前倒しし、比較は
-//       key[a] - key[b] のみになります(500k 実測で約 +30〜57%。文字列で持つ数値列ほど効く)。
-//     - 等価性: compareUnknownValues は両値が Number.isFinite のときだけ数値比較し、
-//       片方でも非有限なら STRING_COLLATOR へフォールバックします(列単位ではなく
-//       ペア単位の判定)。よって Float64 経路は「列の全値が Number.isFinite」のときに
-//       限り compareUnknownValues の数値枝と恒等です(key は Number(値) を格納し、
-//       key[a]-key[b] は Number(a)-Number(b) とビット等価)。非有限値が 1 つでも混じる
-//       列があれば、その列だけでなく全体を従来の unknown[] + compareUnknownValues 経路へ
-//       フォールバックさせ、コンパレータを単形(分岐レス)に保ちます(混在ソートの安全側)。
-//     - 数値判定は filterType に依存させず、compareUnknownValues と同じ「値駆動」で
-//       行います(挙動の決定権は一貫して値側にあります)。
-//     - 実際の sort 対象は「位置(0..length-1)の number[]」で、確定後に
-//       result[i] = order[positions[i]] で undecorate して Int32Array へ書き戻します。
-export const sortOrder = <T,>(
-  rows: T[],
-  order: RowOrder,
-  columns: GridColumn<T>[],
-  sort: GridSortState,
-): RowOrder => {
-  if (sort.length === 0) {
-    return order;
-  }
-
-  // 列解決はソート前に 1 回だけ(比較関数内で find を毎回呼ばない)。
-  const resolved = sort
-    .map((entry) => {
-      const column = columns.find((item) => item.key === entry.columnKey);
-      return column
-        ? { column, multiplier: entry.direction === 'asc' ? 1 : -1 }
-        : null;
-    })
-    .filter(
-      (item): item is { column: GridColumn<T>; multiplier: number } =>
-        item !== null,
-    );
-
-  if (resolved.length === 0) {
-    return order;
-  }
-
-  const length = order.length;
-  const columnCount = resolved.length;
-
-  const multipliers = resolved.map((item) => item.multiplier);
-
-  // decorate(B-1): まず「全アクティブ sort 列が数値」かを試行しつつ、数値列の
-  //   typed key(Float64Array)を構築します。各列は最初の非有限値で打ち切るため、
-  //   文字列列はほぼ先頭で抜け(実質ゼロコスト)、全数値列のみ全長を走査します。
-  //   非有限値を 1 つでも含む列に当たった時点で allNumeric=false にして以降の列も
-  //   試さず、下の fallback(従来 unknown[] 経路)へ倒します(構築済みの typed key は
-  //   破棄。fallback は稀かつ Collator 律速のため、この破棄コストは無視できます)。
-  const numericKeyColumns: Float64Array[] = new Array<Float64Array>(columnCount);
-  let allNumeric = true;
-  for (let c = 0; c < columnCount; c += 1) {
-    const column = resolved[c].column;
-    const keys = new Float64Array(length);
-    let columnIsNumeric = true;
-    for (let pos = 0; pos < length; pos += 1) {
-      const numeric = Number(getCellValue(rows[order[pos]], column));
-      if (!Number.isFinite(numeric)) {
-        columnIsNumeric = false;
-        break;
-      }
-      keys[pos] = numeric;
-    }
-    if (!columnIsNumeric) {
-      allNumeric = false;
-      break;
-    }
-    numericKeyColumns[c] = keys;
-  }
-
-  // 位置(0..length-1)を並べ替えます。比較は decorate 済みキー、
-  // タイブレークは元 source index(order[a]/order[b])で安定化します。
-  const positions = new Array<number>(length);
-  for (let i = 0; i < length; i += 1) {
-    positions[i] = i;
-  }
-
-  if (allNumeric) {
-    // fast path: 全列が数値。Float64 typed key の差分のみで比較します(分岐レス)。
-    //   単一列ソートは最頻ケースのため、列ループ・列添字を畳んだ専用形へ特化します
-    //   (この特化で単一数値列でも従来 boxed 経路に対し非回帰になります)。
-    if (columnCount === 1) {
-      const keys = numericKeyColumns[0];
-      const multiplier = multipliers[0];
-      positions.sort((a, b) => {
-        const diff = keys[a] - keys[b];
-        if (diff !== 0) {
-          return diff * multiplier;
-        }
-        return order[a] - order[b];
-      });
-    } else {
-      positions.sort((a, b) => {
-        for (let c = 0; c < columnCount; c += 1) {
-          const diff = numericKeyColumns[c][a] - numericKeyColumns[c][b];
-          if (diff !== 0) {
-            return diff * multipliers[c];
-          }
-        }
-        return order[a] - order[b];
-      });
-    }
-  } else {
-    // fallback: 1 列でも非数値を含む。従来どおり全列を unknown[] へ decorate し、
-    //   compareUnknownValues(ペア単位の数値/文字列判定)で比較します(現状とバイト等価)。
-    const keyColumns: unknown[][] = resolved.map(({ column }) => {
-      const keys = new Array<unknown>(length);
-      for (let pos = 0; pos < length; pos += 1) {
-        keys[pos] = getCellValue(rows[order[pos]], column);
-      }
-      return keys;
-    });
-    positions.sort((a, b) => {
-      for (let c = 0; c < columnCount; c += 1) {
-        const compared = compareUnknownValues(
-          keyColumns[c][a],
-          keyColumns[c][b],
-        );
-        if (compared !== 0) {
-          return compared * multipliers[c];
-        }
-      }
-      return order[a] - order[b];
-    });
-  }
-
-  // undecorate: 並べ替えた位置を元 source index へ戻して Int32Array を組み立てます。
-  const result = new Int32Array(length);
-  for (let i = 0; i < length; i += 1) {
-    result[i] = order[positions[i]];
-  }
-  return result;
-};
-</file>
-
 <file path="src/components/spreadsheet-grid/view/GridHeaderRow.tsx">
 // 変更(11-B5): GridHeaderRow を React.memo 化するため memo を追加 import します。
 // 変更(13-A): ヘッダー右クリック(contextmenu)用に MouseEvent 型を追加 import します。
@@ -13201,6 +13370,7 @@ import {
 //           将来ヘッダー行を memo 化する際の布石にもなります。
 import type { SelectionSnapshot } from '../model/gridSelectors';
 import type {
+  ColumnFilterValue,
   GridColumn,
   GridSortState,
 } from '../model/gridTypes';
@@ -13239,7 +13409,7 @@ type GridHeaderRowProps<T> = {
   hoveredColumnIndex: number | null;
   // 変更(11-A): 列選択判定用の正規化済みスナップショットです(uiState の置き換え)。
   selectionSnapshot: SelectionSnapshot;
-  columnFilterValues: Record<string, unknown>;
+  columnFilterValues: Record<string, ColumnFilterValue>;
   sortState: GridSortState;
   getHeaderActionButtonStyle: (isActive: boolean) => CSSProperties;
   onCornerPointerDown: (event: PointerEvent<HTMLDivElement>) => void;
@@ -13649,6 +13819,8 @@ type DemoRow = {
   qty: number;
   unit: string;
   status: string;
+  // 追加(date デモ): 発注日です。date フィルター型(部分一致)の動作確認用に ISO 文字列で持ちます。
+  orderedAt: string;
   [key: string]: string | number;
 };
 
@@ -13663,16 +13835,28 @@ const INITIAL_EXTRA_COLUMN_COUNT = 24;
 // 追加: オーバーフロー列のキーを生成します。
 const getOverflowColumnKey = (columnIndex: number) => `extra_${columnIndex}`;
 
+// 追加(date デモ): 発注日の生成基点(2023-01-01 UTC)です。index から決定的に日付を割り当てます。
+const ORDERED_AT_BASE_UTC = Date.UTC(2023, 0, 1);
+const ORDERED_AT_SPAN_DAYS = 731; // 2023-01-01 〜 2024-12-31(約2年)を循環。
+
 // 追加: ダミー行を生成します。
 const createDemoRows = (count: number): DemoRow[] =>
   Array.from({ length: count }, (_, index) => {
     const rowNumber = index + 1;
+    // 追加(date デモ): 乱数を使わず index から決定的に ISO 日付(YYYY-MM-DD)を割り当てます。
+    //   部分一致 date フィルターの確認用(例: '2024-03' で月絞り込み / '-15' で15日絞り込み)。
+    const orderedAt = new Date(
+      ORDERED_AT_BASE_UTC + (index % ORDERED_AT_SPAN_DAYS) * 86_400_000,
+    )
+      .toISOString()
+      .slice(0, 10);
     return {
       partNo: `A-${String(1001 + index).padStart(4, '0')}`,
       partName: `品名-${rowNumber}`,
       qty: (rowNumber % 25) + 1,
       unit: ['個', '本', '式', '枚'][index % 4],
       status: index % 11 === 0 ? '保留' : '有効',
+      orderedAt,
     };
   }).map((row, index) => {
     const nextRow: DemoRow = { ...row };
@@ -13733,6 +13917,9 @@ const createInitialColumns = (): GridColumn<DemoRow>[] => {
         { label: '保留', value: '保留' },
       ],
     },
+    // 追加(date デモ): date フィルター型の動作確認用の列です。値は ISO 文字列(YYYY-MM-DD)で、
+    //   フィルターは部分一致です('2024' で年 / '2024-03' で月 / '-15' で15日 を絞り込めます)。
+    { key: 'orderedAt', title: '発注日', width: 130, filterType: 'date' },
   ];
 
   const extraColumns = Array.from(
@@ -13807,6 +13994,8 @@ function App() {
           qty: 0,
           unit: '',
           status: '',
+          // 追加(date デモ): 新規行も orderedAt を持たせます(既定は空文字 = フィルター未該当)。
+          orderedAt: '',
         })}
         createOverflowColumn={(columnIndex) => ({
           key: getOverflowColumnKey(columnIndex),
@@ -13884,9 +14073,12 @@ export type GridSelection =
   | null;
 
 // 追加: フィルター状態です。初版はグローバル + 列単位の最小構成です。
+// 変更(記述子化): columnFilters の値型を unknown → ColumnFilterValue(判別共用体)へ閉じました。
+//   従来 set / number だけがタグ付き記述子で、text / select / date は生文字列のまま混在していました。
+//   全種別を kind 付き記述子へ寄せ、値そのものから種別が一意に決まる(自己記述的)状態にしています。
 export type GridFilterState = {
   globalText: string;
-  columnFilters: Record<string, unknown>;
+  columnFilters: Record<string, ColumnFilterValue>;
 };
 
 // 追加: 列単位の UI ソート方向です(null = 未ソート)。列メニューの ✓ 表示などで
@@ -13925,6 +14117,74 @@ export type SetColumnFilterValue = {
   mode?: 'include' | 'exclude';
   values: string[];
 };
+
+// 追加(記述子化 / number): number フィルター式の解釈結果です。
+//   旧 logic/filtering.ts 内に定義していましたが、ColumnFilterValue union(下記)が
+//   number 記述子を内包する都合上、型はこちら(下層の型モジュール)へ移設しました。
+//   parse/build の「ロジック」は引き続き logic/filtering.ts 側にあります(本型を import します)。
+export type ParsedNumberFilter =
+  | {
+      mode: 'comparison';
+      operator: '>' | '>=' | '<' | '<=' | '=';
+      value: number;
+    }
+  | {
+      mode: 'range';
+      min: number;
+      max: number;
+    };
+
+// 追加(記述子化 / number): number フィルターのタグ付き記述子です(旧 filtering.ts から移設)。
+//   - raw   : ユーザー入力(trim 済み)。再オープン時の draft seed / 現在値表示 /
+//             式として解釈不可だった場合の contains フォールバック needle に使います。
+//   - parsed: 式の解釈結果。null = 解釈不可(→ raw で contains)。commit 時 1 回だけ parse します
+//             (B-2 の Float64 key 最適化はこの parsed に依存するため、形は不変に保ちます)。
+export type NumberColumnFilterValue = {
+  kind: 'number';
+  raw: string;
+  parsed: ParsedNumberFilter | null;
+};
+
+// 追加(記述子化): text / date の部分一致フィルターのタグ付き記述子です。
+//   value は trim 済みの検索文字列です(判定側で toLowerCase して contains)。
+//   date は今は text と同じ部分一致述語を共有しますが、将来の相対日付(評価時に解決)のため
+//   箱(kind)を分けて確保しています。number のように commit 時へ parse を焼くことはしません。
+export type TextColumnFilterValue = {
+  kind: 'text';
+  value: string;
+};
+
+export type DateColumnFilterValue = {
+  kind: 'date';
+  value: string;
+};
+
+// 追加(記述子化): select の完全一致フィルターのタグ付き記述子です。
+//   value は選択値そのもの(trim しない)で、判定側で文字列完全一致します。
+export type SelectColumnFilterValue = {
+  kind: 'select';
+  value: string;
+};
+
+// 追加(記述子化 / custom): 利用者の column.filterFn が自由形で解釈するためのエスケープハッチです。
+//   value は unknown のまま(任意形を保持)。filterFn を持つ列のみで使い、判定側では
+//   filterFn が最優先で呼ばれます(filterFn 不在時は String(value) の部分一致へフォールバック)。
+//   union 全体は kind で網羅できるため型安全のまま、custom の中身だけが自由という両立になります。
+export type CustomColumnFilterValue = {
+  kind: 'custom';
+  value: unknown;
+};
+
+// 追加(記述子化): 列フィルター値の判別共用体です。columnFilters[columnKey] の値はこの形のいずれか。
+//   値の kind だけで種別が一意に決まるため、消費側は column.filterType と突き合わせずに
+//   switch(value.kind) 一本で判別できます(filterType は popover の表示分岐用にのみ残ります)。
+export type ColumnFilterValue =
+  | SetColumnFilterValue
+  | NumberColumnFilterValue
+  | TextColumnFilterValue
+  | DateColumnFilterValue
+  | SelectColumnFilterValue
+  | CustomColumnFilterValue;
 
 // 追加: セル描画に渡すコンテキストです。
 export type CellRenderContext<T> = {
@@ -14081,7 +14341,8 @@ export type SpreadsheetGridSlotContext<T> = {
   visibleColumns: GridColumn<T>[];
   globalFilterText: string;
   // 追加: bar summary 用に列フィルター値を公開します。
-  columnFilterValues: Record<string, unknown>;
+  // 変更(記述子化): 値型を unknown → ColumnFilterValue へ閉じました(state 側と一致)。
+  columnFilterValues: Record<string, ColumnFilterValue>;
   // 追加: bar summary 用にソート状態を公開します。
   sortState: GridSortState;
   setGlobalFilterText: (value: string) => void;
@@ -14183,6 +14444,8 @@ import {
   // 追加(記述子化 / number): number 記述子の判定 / 構築に使います。
   isNumberColumnFilterValue,
   buildNumberColumnFilterValue,
+  // 追加(記述子化): 現在値表示の text 整形に使います(記述子 → 表示文字列)。
+  columnFilterValueToDraftText,
   // 行モデルチェーンは order(Int32Array)ベースに一本化しています
   //   (DS-2 で差し替え、旧オブジェクト配列版は DS-3-8 で削除)。
   createSourceOrder,
@@ -14255,6 +14518,8 @@ import type {
   GridColumnPinned,
   // 追加(DS-3-0): 行モデルのシーム契約型です(rowModel の構築に使います)。
   RowModel,
+  // 追加(記述子化): commit 経路で text/date/select/custom を記述子化する際の型です。
+  ColumnFilterValue,
   // 追加(12-A): set フィルター値の構築に使います。
   SetColumnFilterValue,
   SpreadsheetGridProps,
@@ -16149,8 +16414,19 @@ export function SpreadsheetGrid<T extends object>({
       closeColumnFilterPopover();
       return;
     }
+    // 変更(記述子化): text / date / select / custom も生文字列ではなくタグ付き記述子で commit します。
+    //   ここは列定義(filterType)を持つ唯一の境界なので、filterType → kind の対応付けはここで行います
+    //   (合否は旧・生文字列時代と等価: text/date=部分一致 / select=完全一致 / custom=filterFn or 部分一致)。
+    const descriptor: ColumnFilterValue =
+      filterType === 'select'
+        ? { kind: 'select', value: normalized }
+        : filterType === 'date'
+          ? { kind: 'date', value: normalized }
+          : filterType === 'custom'
+            ? { kind: 'custom', value: normalized }
+            : { kind: 'text', value: normalized };
     dispatch(
-      gridActions.setColumnFilter(filterPopoverState.columnKey, normalized),
+      gridActions.setColumnFilter(filterPopoverState.columnKey, descriptor),
     );
     closeColumnFilterPopover();
   }, [closeColumnFilterPopover, dispatch, filterPopoverState, visibleColumns]);
@@ -16555,8 +16831,10 @@ export function SpreadsheetGrid<T extends object>({
     if (isNumberColumnFilterValue(rawValue)) {
       return rawValue.raw;
     }
-    const text = String(rawValue ?? '').trim();
-    return text ? String(rawValue) : '（なし）';
+    // 変更(記述子化): text/date/select は記述子のため String() 直書きでは "[object Object]" に
+    //   なります。表示文字列は columnFilterValueToDraftText 経由で取り出します(custom は空 → なし)。
+    const text = columnFilterValueToDraftText(rawValue);
+    return text.trim() ? text : '（なし）';
   })();
 
   const renderedFilterPopover = openedFilterColumn ? (

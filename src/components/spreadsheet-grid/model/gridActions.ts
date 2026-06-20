@@ -1,4 +1,4 @@
-import type { CellCoord, GridSortEntry } from './gridTypes';
+import type { CellCoord, ColumnFilterValue, GridSortEntry } from './gridTypes';
 
 // 追加: Grid UI action の union 型です。
 export type GridUiAction =
@@ -25,7 +25,7 @@ export type GridUiAction =
   | { type: 'column/resizeEnd' }
   | { type: 'columnWidths/sync'; widths: Record<string, number> }
   | { type: 'filter/setGlobal'; value: string }
-  | { type: 'filter/setColumn'; columnKey: string; value: unknown }
+  | { type: 'filter/setColumn'; columnKey: string; value: ColumnFilterValue }
   | { type: 'filter/clearColumn'; columnKey: string }
   | { type: 'filter/resetAll' }
   | { type: 'sort/set'; entries: GridSortEntry[] }
@@ -103,7 +103,10 @@ export const gridActions = {
     type: 'filter/setGlobal',
     value,
   }),
-  setColumnFilter: (columnKey: string, value: unknown): GridUiAction => ({
+  setColumnFilter: (
+    columnKey: string,
+    value: ColumnFilterValue,
+  ): GridUiAction => ({
     type: 'filter/setColumn',
     columnKey,
     value,
