@@ -311,12 +311,19 @@ export const useGridPointerInteractions = <T,>({
       let nextScrollTop = scrollElement.scrollTop;
       let nextScrollLeft = scrollElement.scrollLeft;
 
-      // 追加(症状2修正): 列選択はポインタが sticky ヘッダー帯に留まる操作のため、縦の自動スクロールを
-      //   行わない(ヘッダー押下中に scrollTop が先頭まで連続で削られる問題を防止)。横は複数列ドラッグの
-      //   追従のため維持します。セル/行選択は従来どおり縦横とも自動スクロールします。
+      // 自動スクロールの軸ガード(症状2 と その横版):
+      //   - 列選択: ポインタが sticky ヘッダー帯(上端)に留まるため、縦の自動スクロールを行わない
+      //     (ヘッダー押下中に scrollTop が先頭まで連続で削られる問題を防止)。横は複数列ドラッグの追従のため維持。
+      //   - 行選択: ポインタが左の行ヘッダー帯(leadingWidth)に留まるため、横の自動スクロールを行わない
+      //     (行ヘッダー押下中に scrollLeft が左端まで連続で削られる問題を防止)。縦は複数行ドラッグの追従のため維持。
+      //     行選択は全列が対象なので、横スクロール位置は選択範囲に無関係で、無効化しても影響しません。
+      //   - セル選択: 従来どおり縦横とも自動スクロールします。
       const isColumnSelection =
         dragStateRef.current?.type === 'selection' &&
         dragStateRef.current.selectionKind === 'col';
+      const isRowSelection =
+        dragStateRef.current?.type === 'selection' &&
+        dragStateRef.current.selectionKind === 'row';
 
       if (!isColumnSelection) {
         if (pointer.y < rect.top + EDGE_THRESHOLD) {
@@ -326,10 +333,12 @@ export const useGridPointerInteractions = <T,>({
         }
       }
 
-      if (pointer.x < rect.left + EDGE_THRESHOLD) {
-        nextScrollLeft = Math.max(scrollElement.scrollLeft - SCROLL_STEP, 0);
-      } else if (pointer.x > rect.right - EDGE_THRESHOLD) {
-        nextScrollLeft = scrollElement.scrollLeft + SCROLL_STEP;
+      if (!isRowSelection) {
+        if (pointer.x < rect.left + EDGE_THRESHOLD) {
+          nextScrollLeft = Math.max(scrollElement.scrollLeft - SCROLL_STEP, 0);
+        } else if (pointer.x > rect.right - EDGE_THRESHOLD) {
+          nextScrollLeft = scrollElement.scrollLeft + SCROLL_STEP;
+        }
       }
 
       if (
