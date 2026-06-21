@@ -3219,5 +3219,3 @@ export function SpreadsheetGrid<T extends object>({
     </div>
   );
 }
-
-export default SpreadsheetGrid;

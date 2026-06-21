@@ -1,6 +1,5 @@
 import { useState } from 'react';
-import SpreadsheetGrid from './components/spreadsheet-grid/SpreadsheetGrid';
-import type { GridColumn } from './components/spreadsheet-grid/model/gridTypes';
+import { SpreadsheetGrid, type GridColumn } from './components/spreadsheet-grid';
 
 // 追加: デモ用の行型です。
 type DemoRow = {
