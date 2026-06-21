@@ -124,6 +124,11 @@ import useColumnAutosizeRunner from './hooks/useColumnAutosizeRunner';
 import useColumnSelectOptionsCollector from './hooks/useColumnSelectOptionsCollector';
 // 追加(①-3): serverSide(SSRM)の RowModel を供給するフックです(dataSource 指定時に使用)。
 import { useServerSideRowModel } from './hooks/useServerSideRowModel';
+// 追加(stage ②): serverSide query の構築 / queryKey 直列化(純ロジック)です。
+import {
+  buildServerSideQuery,
+  serializeServerSideQuery,
+} from './logic/serverSideQuery';
 import type {
   CellCoord,
   CellRenderState,
@@ -138,8 +143,10 @@ import type {
   ColumnFilterValue,
   // 追加(12-A): set フィルター値の構築に使います。
   SetColumnFilterValue,
-  // 追加(①-3): serverSide の安定空 query 用の型です。
+  // 追加(①-3 / stage ②): serverSide query 用の型です。
   ServerSideQuery,
+  // 追加(stage ②): serverSide query の sort 既定値の型です。
+  GridSortState,
   SpreadsheetGridProps,
 } from './model/gridTypes';
 import { getCellValue, isCellEditable, setCellValue } from './utils/permissions';
@@ -201,6 +208,16 @@ const setDifference = (
 //   ライン / rowModel など既存 memo を不要に揺らさないよう module スコープで 1 つだけ持ちます。
 //   never[] は任意の T[] に代入可能で、destructure 既定値として rows の型を T[] に保ちます。
 const EMPTY_ROWS: never[] = [];
+
+// 追加(stage ②): serverSide query 構築/debounce 用の安定既定値・定数です。
+//   clientSide では query を空に保ち(フックは inert)、参照同一で memo/effect を不要に揺らしません。
+const EMPTY_SERVER_QUERY: ServerSideQuery = {};
+const EMPTY_COLUMN_FILTERS: Record<string, ColumnFilterValue> = {};
+const EMPTY_SORT: GridSortState = [];
+// query(filter/sort)変更をサーバへ送る前の debounce(ms)です。入力欄の即時反映とは別系統で、
+//   キーストロークごとの再フェッチ(block 0 取り直し)を合体します。フック内の 120ms(レンジ要求
+//   debounce)とは役割が異なり併存します。
+const SERVER_SIDE_QUERY_DEBOUNCE_MS = 300;
 
 // 追加: Grid 本体です。
 export function SpreadsheetGrid<T extends object>({
@@ -291,20 +308,18 @@ export function SpreadsheetGrid<T extends object>({
     [rowKeyGetter],
   );
 
-  // ── serverSide(SSRM)モード分岐(①-3) ───────────────────
+  // ── serverSide(SSRM)モード分岐(①-3 / stage ②) ───────────
   // dataSource 指定で serverSide モードへ切り替えます。clientSide(dataSource 不在)は従来
   //   経路を一切変えません(以降の各 consumer は rowModel シーム越しで透過に動きます)。
   const isServerSide = dataSource != null;
-  // stage ① は filter/sort/global-filter の UI を無効化します(query は空のまま=DB へ条件を
-  //   渡しません)。恒久ではなく段階導入の途中で、stage ② で getRows の query へ配線します。
-  //   boolean は deps で値比較されるため、dataSource の identity に関係なく安定に振る舞います。
-  const sortingEnabled = enableSorting && !isServerSide;
-  const columnFilterEnabled = enableColumnFilter && !isServerSide;
-  const globalFilterEnabled = enableGlobalFilter && !isServerSide;
-  // stage ① の serverSide query / queryKey は安定な空値です(filter/sort 無効のため)。
-  //   stage ② で filter/sort シグネチャから導出し、queryKey 変化でキャッシュを無効化します。
-  const serverSideQuery = useMemo<ServerSideQuery>(() => ({}), []);
-  const serverSideQueryKey = '';
+  // 変更(stage ②): serverSide でも sort/filter/global-filter の UI を有効化します。ローカル並べ替えは
+  //   行わず(serverSide 時は rows=空のため clientSide パイプラインは空走行=ゼロコストでバイパス)、
+  //   状態を下の ServerSideQuery に載せて getRows へ送出します。利用者がサーバ非対応の操作を塞ぎたい
+  //   場合は enableSorting / enableColumnFilter / enableGlobalFilter を false にできます。
+  //   serverSide query / queryKey は uiState 確定後に下方(rowModel シーム付近)で構築します。
+  const sortingEnabled = enableSorting;
+  const columnFilterEnabled = enableColumnFilter;
+  const globalFilterEnabled = enableGlobalFilter;
 
   // ── reducer ───────────────────────────────────────────
   const [uiState, dispatch] = useReducer(
@@ -722,6 +737,61 @@ export function SpreadsheetGrid<T extends object>({
     [order, rows, resolvedRowKeyGetter],
   );
 
+  // ── serverSide query 配線(stage ②) ───────────────────
+  // clientSide の UI 状態(sort / 列フィルター / グローバルフィルター)から ServerSideQuery を組み立て、
+  //   安定 queryKey を導出します。clientSide(isServerSide=false)では空 query 固定です(フックは inert の
+  //   ため値は無視されますが、debounce effect を不発にして無駄な再描画を避けます)。
+  //   入力欄の value は従来どおり即時 uiState を参照するため、タイピングは即時反映されます。ここで作る
+  //   live 値はそのまま渡さず、下で debounce してからフックへ供給します(サーバ送出の合体)。
+  const liveServerSideQuery = useMemo<ServerSideQuery>(
+    () =>
+      isServerSide
+        ? buildServerSideQuery({
+            globalText: globalFilterEnabled ? globalFilterText : '',
+            columnFilters: columnFilterEnabled
+              ? columnFilters
+              : EMPTY_COLUMN_FILTERS,
+            sort: sortingEnabled ? uiState.sort : EMPTY_SORT,
+          })
+        : EMPTY_SERVER_QUERY,
+    [
+      isServerSide,
+      globalFilterEnabled,
+      globalFilterText,
+      columnFilterEnabled,
+      columnFilters,
+      sortingEnabled,
+      uiState.sort,
+    ],
+  );
+  const liveServerSideQueryKey = useMemo(
+    () => (isServerSide ? serializeServerSideQuery(liveServerSideQuery) : ''),
+    [isServerSide, liveServerSideQuery],
+  );
+
+  // debounce 済みの query / queryKey です(これをフックへ渡します)。live が変化しても
+  //   SERVER_SIDE_QUERY_DEBOUNCE_MS の静止後に一度だけ反映し、キーストロークごとのキャッシュ破棄+
+  //   block 0 取り直しを抑止します。初期値は live の初回値で seed し、mount 時のフック queryKey と
+  //   一致させて初回 debounce 後の余計な再設定を避けます。
+  const [serverSideQuery, setServerSideQuery] =
+    useState<ServerSideQuery>(liveServerSideQuery);
+  const [serverSideQueryKey, setServerSideQueryKey] = useState<string>(
+    liveServerSideQueryKey,
+  );
+
+  useEffect(() => {
+    // clientSide では反映しません(live は空のまま)。serverSide 時のみ debounce 反映します。
+    if (!isServerSide) {
+      return;
+    }
+    const timer = setTimeout(() => {
+      // setState は timer コールバック内(非同期)のため set-state-in-effect には該当しません。
+      setServerSideQuery(liveServerSideQuery);
+      setServerSideQueryKey(liveServerSideQueryKey);
+    }, SERVER_SIDE_QUERY_DEBOUNCE_MS);
+    return () => clearTimeout(timer);
+  }, [isServerSide, liveServerSideQueryKey, liveServerSideQuery]);
+
   // 追加(①-3): serverSide(SSRM)の RowModel を供給します。React Hooks 規則によりフックは
   //   無条件に呼びます。dataSource 不在(clientSide)では hook が inert(件数 0 / 取得 no-op)に
   //   なるよう実装済みのため、clientSide 経路は完全に不変です。
@@ -972,10 +1042,27 @@ export function SpreadsheetGrid<T extends object>({
   const windowFirstRow = virtualRows.length > 0 ? virtualRows[0].index : 0;
   const windowLastRow =
     virtualRows.length > 0 ? virtualRows[virtualRows.length - 1].index : -1;
-  // 追加(①-3): serverSide のとき、描画窓(overscan 込み)の可視レンジを hook へ通知します。
+  // 追加(stage ②): serverSide で query(debounced queryKey)が変わったら先頭へスクロールを戻します。
+  //   フィルター/ソートで結果セットが総入れ替えされるため、同一 index に別行が来る違和感を避けます。
+  //   mount 時は scrollTop が既に 0 のため無害です。clientSide では queryKey が安定空のため不発です。
+  useEffect(() => {
+    if (!isServerSide) {
+      return;
+    }
+    const el = scrollContainerRef.current;
+    if (el) {
+      el.scrollTop = 0;
+    }
+    // 物理 scrollTop の即時 0 化に React state も追従させます(scroll イベント待ちの 1 フレーム遅延回避)。
+    setScrollTop(0);
+  }, [isServerSide, serverSideQueryKey]);
+
+  // 追加(①-3 / stage ②): serverSide のとき、描画窓(overscan 込み)の可視レンジを hook へ通知します。
   //   requestRange は即時 touchBlocks + debounce fetch。空窓(末尾 < 先頭)では何もしません。
   //   clientSide では isServerSide=false で早期 return(requestRange 自体も inert で no-op)。
   //   [start, end) の end は排他のため windowLastRow + 1 を渡します。
+  //   依存に serverSideQueryKey を含めます: query 変化でフックがキャッシュ破棄した直後、窓 index が
+  //   不変でも(画面最上部で件数も不変など)再要求を発火させ、未ロード固着を防ぐためです。
   useEffect(() => {
     if (!isServerSide) {
       return;
@@ -984,7 +1071,13 @@ export function SpreadsheetGrid<T extends object>({
       return;
     }
     requestServerSideRange(windowFirstRow, windowLastRow + 1);
-  }, [isServerSide, windowFirstRow, windowLastRow, requestServerSideRange]);
+  }, [
+    isServerSide,
+    windowFirstRow,
+    windowLastRow,
+    requestServerSideRange,
+    serverSideQueryKey,
+  ]);
   // コンテナ/wrapper/indicator 高さに使う物理ボディ高さ(<= ブラウザ要素高さ上限)。
   const physicalBodyHeight = verticalGeometry.physicalBodyHeight;
   // overlay+body wrapper の transform。scaleFactor=1 のとき undefined(= 現状と同一 DOM)。
@@ -2719,6 +2812,9 @@ export function SpreadsheetGrid<T extends object>({
       isOpen={Boolean(filterPopoverState)}
       title={openedFilterColumn.title || openedFilterColumn.key}
       filterType={openedFilterColumn.filterType ?? 'text'}
+      // 追加(stage ②): serverSide では set/select 候補をクライアントが自動収集できないため、
+      //   候補空時の空表示文言を出し分けます(filterOptions 指定列は従来どおり候補が出ます)。
+      isServerSide={isServerSide}
       draftValue={filterPopoverState?.draftValue ?? ''}
       currentValueText={openedFilterCurrentValueText}
       layout={filterPopoverLayout}

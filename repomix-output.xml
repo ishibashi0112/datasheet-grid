@@ -85,6 +85,8 @@ src/components/spreadsheet-grid/logic/serverSideBlocks.test.ts
 src/components/spreadsheet-grid/logic/serverSideBlocks.ts
 src/components/spreadsheet-grid/logic/serverSideCache.test.ts
 src/components/spreadsheet-grid/logic/serverSideCache.ts
+src/components/spreadsheet-grid/logic/serverSideQuery.test.ts
+src/components/spreadsheet-grid/logic/serverSideQuery.ts
 src/components/spreadsheet-grid/logic/sorting.test.ts
 src/components/spreadsheet-grid/logic/sorting.ts
 src/components/spreadsheet-grid/logic/verticalGeometry.test.ts
@@ -1822,274 +1824,6 @@ describe('useServerSideRowModel', () => {
 });
 </file>
 
-<file path="src/components/spreadsheet-grid/hooks/useServerSideRowModel.ts">
-// serverSide(SSRM)の RowModel を供給するフックです(DS-4 ②)。
-//
-// 責務:
-//   - クライアント側スパース LRU キャッシュ(serverSideCache)を保持し、RowModel シーム
-//     (getRowCount / getRow / getSourceIndex / getRowKey)を serverSide 実装で供給します。
-//   - 可視レンジ(requestRange)に対し、欠落ブロックだけを getRows で都度取得します
-//     (computeBlockIndexes で必要ブロックを定数サイズに限定 → 取得範囲を縛りメモリを有界化)。
-//   - スクロール debounce / in-flight 重複排除 / stale リクエストの AbortSignal キャンセル /
-//     件数ブートストラップ(block 0 先行 fetch) / queryKey 変化での無効化 を担います。
-//
-// 設計メモ:
-//   - getRow は cache の純読み(recency 不変)。可視帯の MRU 化は requestRange 内の touchBlocks で
-//     明示的に行い、render が evict 順序を揺らさないようにします(serverSideCache の方針に整合)。
-//   - getSourceIndex は恒等(viewIndex)。serverSide は view 順が正準で、別空間の source index を
-//     持ちません。getRowKey は未ロード行で viewIndex を返し、スケルトン行の React key を安定させます。
-//   - rowCount は state(縦ジオメトリ駆動の単一ソース)。getRows 結果の totalRowCount で最新化します。
-//     非同期コールバックは rowCountRef(setRowCount と必ず対で更新)から最新件数を読みます。
-//   - ブロック到着は version(state)の bump で再描画を促し、getRow が新データを拾います。
-
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type {
-  GridRowKey,
-  RowModel,
-  ServerSideDataSource,
-  ServerSideQuery,
-} from '../model/gridTypes';
-import { createServerSideRowCache } from '../logic/serverSideCache';
-import { computeBlockIndexes } from '../logic/serverSideBlocks';
-
-// dataSource 側で未指定のときの既定値です。
-const DEFAULT_BLOCK_SIZE = 100;
-const DEFAULT_MAX_CACHED_BLOCKS = 64;
-const DEFAULT_DEBOUNCE_MS = 120;
-
-export type UseServerSideRowModelParams<T> = {
-  // 変更(①-3): dataSource を optional 化しました。SpreadsheetGrid は本フックを無条件に
-  //   呼ぶ(React Hooks 規則)ため、clientSide(dataSource 不在)では inert 動作にします。
-  dataSource?: ServerSideDataSource<T>;
-  rowKeyGetter: (row: T, index: number) => GridRowKey;
-  query: ServerSideQuery;
-  // query の同一性キーです。変化でキャッシュ無効化 + 再取得します(stage ① は安定値)。
-  queryKey: string;
-  debounceMs?: number;
-};
-
-export type UseServerSideRowModelResult<T> = {
-  rowModel: RowModel<T>;
-  rowCount: number;
-  isRowLoaded: (viewIndex: number) => boolean;
-  requestRange: (startIndex: number, endIndex: number) => void;
-};
-
-export function useServerSideRowModel<T>(
-  params: UseServerSideRowModelParams<T>,
-): UseServerSideRowModelResult<T> {
-  const { dataSource, rowKeyGetter, query, queryKey } = params;
-  // 変更(①-3): dataSource 不在(clientSide)でも安全に評価できるよう optional-chain します。
-  //   inert 時は既定値で空キャッシュを作るだけで、書き込みも fetch も発生しません。
-  const blockSize = dataSource?.blockSize ?? DEFAULT_BLOCK_SIZE;
-  const maxBlocks = dataSource?.maxCachedBlocks ?? DEFAULT_MAX_CACHED_BLOCKS;
-  const debounceMs = params.debounceMs ?? DEFAULT_DEBOUNCE_MS;
-
-  // スパース LRU キャッシュです。useState の遅延初期化で render をまたいで安定させます
-  //   (blockSize / maxBlocks はフックの生存中は固定の想定)。
-  const [cache] = useState(() =>
-    createServerSideRowCache<T>({ blockSize, maxBlocks }),
-  );
-
-  const [rowCount, setRowCount] = useState<number>(
-    dataSource?.initialRowCount ?? 0,
-  );
-  // ブロック到着を rowModel / consumer に伝える再描画トリガーです(値自体は読みません)。
-  const [version, setVersion] = useState<number>(0);
-
-  // 非同期コールバック(timer / promise)が最新 rowCount を読むための latest-ref です。
-  //   setRowCount を呼ぶ箇所(下記 2 箇所)で必ず対で更新するため、render 中の書き込みは不要です。
-  const rowCountRef = useRef<number>(rowCount);
-
-  // in-flight な block fetch(blockIndex -> AbortController)です。重複排除とキャンセルに使います。
-  const inFlightRef = useRef<Map<number, AbortController>>(new Map());
-  // debounce タイマーと最新の要求レンジです。
-  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const latestRangeRef = useRef<{ start: number; end: number }>({
-    start: 0,
-    end: 0,
-  });
-
-  const fetchBlock = useCallback(
-    (blockIndex: number): void => {
-      // 追加(①-3): clientSide(inert)では取得しません。
-      if (dataSource == null) {
-        return;
-      }
-      if (cache.hasBlock(blockIndex) || inFlightRef.current.has(blockIndex)) {
-        return;
-      }
-      const controller = new AbortController();
-      inFlightRef.current.set(blockIndex, controller);
-
-      const knownRowCount = rowCountRef.current;
-      const startIndex = blockIndex * blockSize;
-      const rawEnd = startIndex + blockSize;
-      // 件数既知なら末端をクランプします。未知(ブートストラップ)なら blockSize まで投げ、
-      //   結果の totalRowCount で件数を確定します。
-      const endIndex =
-        knownRowCount > 0 ? Math.min(rawEnd, knownRowCount) : rawEnd;
-
-      dataSource
-        .getRows({
-          startIndex,
-          endIndex,
-          query,
-          signal: controller.signal,
-        })
-        .then((result) => {
-          if (controller.signal.aborted) {
-            return;
-          }
-          // 自分が登録した controller でなければ(別世代に置換)結果を捨てます。
-          if (inFlightRef.current.get(blockIndex) !== controller) {
-            return;
-          }
-          inFlightRef.current.delete(blockIndex);
-          cache.setBlock(blockIndex, result.rows);
-          if (result.totalRowCount !== rowCountRef.current) {
-            rowCountRef.current = result.totalRowCount;
-            setRowCount(result.totalRowCount);
-          }
-          setVersion((value) => value + 1);
-        })
-        .catch(() => {
-          // abort は無視します。その他エラーは in-flight を解放し、次の requestRange で再試行します。
-          if (inFlightRef.current.get(blockIndex) === controller) {
-            inFlightRef.current.delete(blockIndex);
-          }
-        });
-    },
-    [cache, blockSize, dataSource, query],
-  );
-
-  const runFetch = useCallback((): void => {
-    const { start, end } = latestRangeRef.current;
-    const needed = computeBlockIndexes(
-      start,
-      end,
-      blockSize,
-      rowCountRef.current,
-    );
-    const neededSet = new Set(needed);
-    // 最新の必要集合に含まれない in-flight を中断します(スクロールで通り過ぎた帯の破棄)。
-    for (const [blockIndex, controller] of inFlightRef.current) {
-      if (!neededSet.has(blockIndex)) {
-        controller.abort();
-        inFlightRef.current.delete(blockIndex);
-      }
-    }
-    for (const blockIndex of needed) {
-      fetchBlock(blockIndex);
-    }
-  }, [blockSize, fetchBlock]);
-
-  const scheduleFetch = useCallback((): void => {
-    if (timerRef.current !== null) {
-      clearTimeout(timerRef.current);
-    }
-    timerRef.current = setTimeout(() => {
-      timerRef.current = null;
-      runFetch();
-    }, debounceMs);
-  }, [debounceMs, runFetch]);
-
-  const requestRange = useCallback(
-    (startIndex: number, endIndex: number): void => {
-      // 追加(①-3): clientSide(inert)では no-op です。
-      if (dataSource == null) {
-        return;
-      }
-      latestRangeRef.current = { start: startIndex, end: endIndex };
-      // 可視帯を即時 MRU 化して退避から保護します(fetch は debounce 経由)。
-      cache.touchBlocks(
-        computeBlockIndexes(startIndex, endIndex, blockSize, rowCountRef.current),
-      );
-      scheduleFetch();
-    },
-    [cache, blockSize, dataSource, scheduleFetch],
-  );
-
-  // queryKey 変化(stage ② の filter/sort 変更)でキャッシュを無効化し、件数をリセットして
-  //   再ブートストラップします。mount 時も走り、件数未知なら block 0 を先行 fetch します。
-  useEffect(() => {
-    // 追加(①-3): clientSide(inert)では何もしません(ブートストラップ/件数リセットを抑止し、
-    //   clientSide 経路を完全不変に保ちます)。
-    if (dataSource == null) {
-      return;
-    }
-    // 進行中の取得を全て中断します。
-    for (const [, controller] of inFlightRef.current) {
-      controller.abort();
-    }
-    inFlightRef.current.clear();
-    if (timerRef.current !== null) {
-      clearTimeout(timerRef.current);
-      timerRef.current = null;
-    }
-    cache.clear();
-    const initial = dataSource.initialRowCount ?? 0;
-    rowCountRef.current = initial;
-    // queryKey 変化時に件数を初期値へ戻します(古い total を引きずらない)。mount 時は useState
-    //   初期値と同値のため React が再描画を省きます。意図的な state リセットのため局所抑止します。
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setRowCount(initial);
-    setVersion((value) => value + 1);
-    // 件数未知なら block 0 を先行 fetch して totalRowCount を確定します(ブートストラップ)。
-    //   既知(initialRowCount 指定)なら requestRange 駆動に委ねます。
-    if (initial <= 0) {
-      fetchBlock(0);
-    }
-    // queryKey 変化のみを再実行トリガーにします(fetchBlock/cache/dataSource は同 render で最新)。
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [queryKey]);
-
-  // unmount クリーンアップ: in-flight abort + timer クリアです。
-  useEffect(() => {
-    // cleanup 実行時に ref が指し替わっている可能性を避けるため、Map 参照を退避します
-    //   (inFlightRef.current は再代入されず .clear/.set/.delete のみのため退避で十分)。
-    const inFlight = inFlightRef.current;
-    const timer = timerRef;
-    return () => {
-      for (const [, controller] of inFlight) {
-        controller.abort();
-      }
-      inFlight.clear();
-      if (timer.current !== null) {
-        clearTimeout(timer.current);
-        timer.current = null;
-      }
-    };
-  }, []);
-
-  const isRowLoaded = useCallback(
-    (viewIndex: number): boolean => cache.getRow(viewIndex) !== undefined,
-    [cache],
-  );
-
-  // RowModel シームの serverSide 実装です。order/rows ではなく cache を読みます。
-  //   version を deps に含め、ブロック到着で参照を更新して consumer の再評価を促します。
-  const rowModel = useMemo<RowModel<T>>(
-    () => ({
-      getRowCount: () => rowCountRef.current,
-      // 未ロードは undefined(シーム契約どおり=clientSide の OOB と同じ)。型は T 固定のため
-      //   キャストします(strictNullChecks 下で cache.getRow の | undefined を吸収)。
-      getRow: (viewIndex) => cache.getRow(viewIndex) as T,
-      getSourceIndex: (viewIndex) => viewIndex,
-      getRowKey: (viewIndex) => {
-        const row = cache.getRow(viewIndex);
-        return row === undefined ? viewIndex : rowKeyGetter(row, viewIndex);
-      },
-    }),
-    // version はブロック到着での再計算トリガーです(memo 本体は読まないため lint は不要と判定)。
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [cache, rowKeyGetter, version],
-  );
-
-  return { rowModel, rowCount, isRowLoaded, requestRange };
-}
-</file>
-
 <file path="src/components/spreadsheet-grid/hooks/useSortManagementController.ts">
 import { useCallback, useEffect, useRef, useState, type RefObject } from 'react';
 
@@ -2261,57 +1995,6 @@ export const useSortManagementController = ({
 };
 
 export default useSortManagementController;
-</file>
-
-<file path="src/components/spreadsheet-grid/index.ts">
-// SpreadsheetGrid の公開エントリ(バレル)です。
-// ライブラリ利用者はこの index 経由で import します。reducer / hooks / view / logic /
-// selectors などの内部実装は公開しません。公開する型は API_REFERENCE.md と対応します。
-
-// 公開コンポーネント(named のみ。default export は廃止しました)。
-export { SpreadsheetGrid } from './SpreadsheetGrid';
-
-// 公開型です。
-export type {
-  // コンポーネント props。
-  SpreadsheetGridProps,
-  // 列定義と固定方向。
-  GridColumn,
-  GridColumnPinned,
-  // 行キー。
-  GridRowKey,
-  // select / set フィルターの候補。
-  GridSelectFilterOption,
-  // セル / ヘッダーのカスタム描画コンテキスト(renderCell / renderHeader 引数)。
-  CellRenderContext,
-  HeaderRenderContext,
-  // top / bottom バーのスロットコンテキストと、そこに載る派生 summary。
-  SpreadsheetGridSlotContext,
-  SpreadsheetGridDerivedSummary,
-  SpreadsheetGridSelectionStats,
-  // スロットコンテキストが公開する選択 / ソート / 列フィルター値の型族です。
-  CellCoord,
-  CellRange,
-  GridSelection,
-  GridSortState,
-  GridSortEntry,
-  GridSortDirection,
-  ColumnFilterValue,
-  SetColumnFilterValue,
-  NumberColumnFilterValue,
-  ParsedNumberFilter,
-  TextColumnFilterValue,
-  DateColumnFilterValue,
-  SelectColumnFilterValue,
-  CustomColumnFilterValue,
-  // serverSide(SSRM)用の公開型族です。dataSource 指定時に serverSide モードへ切替わります。
-  ServerSideDataSource,
-  ServerSideQuery,
-  ServerSideGetRowsParams,
-  ServerSideGetRowsResult,
-  // 行モデル境界型(clientSide / serverSide 共通の行取得 seam)です。
-  RowModel,
-} from './model/gridTypes';
 </file>
 
 <file path="src/components/spreadsheet-grid/logic/domGuards.ts">
@@ -3189,6 +2872,289 @@ export function createServerSideRowCache<T>(
 }
 </file>
 
+<file path="src/components/spreadsheet-grid/logic/serverSideQuery.test.ts">
+// serverSideQuery(query 構築 / queryKey 直列化)の純ロジックテストです(stage ②)。
+//   - buildServerSideQuery: 空入力の省略 / globalText trim / 無効フィルター除外 / sort 反映。
+//   - serializeServerSideQuery: 空 query の安定ベースライン / 列キー挿入順非依存 / sort 順序依存 /
+//     差異検出 / 往復安定(同一論理 query は同一文字列)。
+import { describe, it, expect } from 'vitest';
+import type {
+  ColumnFilterValue,
+} from '../model/gridTypes';
+import {
+  buildServerSideQuery,
+  serializeServerSideQuery,
+} from './serverSideQuery';
+
+const numberGt5: ColumnFilterValue = {
+  kind: 'number',
+  raw: '>5',
+  parsed: { mode: 'comparison', operator: '>', value: 5 },
+};
+const textFoo: ColumnFilterValue = { kind: 'text', value: 'foo' };
+const emptyText: ColumnFilterValue = { kind: 'text', value: '   ' };
+const setExclude: ColumnFilterValue = {
+  kind: 'set',
+  mode: 'exclude',
+  values: ['保留'],
+};
+
+describe('buildServerSideQuery', () => {
+  it('全て空なら空 query {} を返す(キー自体を省く)', () => {
+    const query = buildServerSideQuery({
+      globalText: '',
+      columnFilters: {},
+      sort: [],
+    });
+    expect(query).toEqual({});
+  });
+
+  it('globalText は trim して載せ、空白のみは省く', () => {
+    expect(
+      buildServerSideQuery({
+        globalText: '  abc ',
+        columnFilters: {},
+        sort: [],
+      }),
+    ).toEqual({ globalText: 'abc' });
+
+    expect(
+      buildServerSideQuery({
+        globalText: '   ',
+        columnFilters: {},
+        sort: [],
+      }),
+    ).toEqual({});
+  });
+
+  it('無効な列フィルター(空 text)は除外し、有効なものだけ収集する', () => {
+    const query = buildServerSideQuery({
+      globalText: '',
+      columnFilters: { qty: numberGt5, partName: emptyText, status: setExclude },
+      sort: [],
+    });
+    // emptyText は除外。qty / status のみ。
+    expect(query.columnFilters).toEqual({ qty: numberGt5, status: setExclude });
+    expect(query.globalText).toBeUndefined();
+    expect(query.sort).toBeUndefined();
+  });
+
+  it('有効フィルターが 0 件なら columnFilters キー自体を省く', () => {
+    const query = buildServerSideQuery({
+      globalText: '',
+      columnFilters: { partName: emptyText },
+      sort: [],
+    });
+    expect(query).toEqual({});
+  });
+
+  it('sort は非空のときだけ載せる', () => {
+    const query = buildServerSideQuery({
+      globalText: '',
+      columnFilters: {},
+      sort: [{ columnKey: 'qty', direction: 'desc' }],
+    });
+    expect(query).toEqual({ sort: [{ columnKey: 'qty', direction: 'desc' }] });
+  });
+
+  it('3 種そろったときは全て載せる', () => {
+    const query = buildServerSideQuery({
+      globalText: 'x',
+      columnFilters: { qty: numberGt5 },
+      sort: [{ columnKey: 'partName', direction: 'asc' }],
+    });
+    expect(query).toEqual({
+      globalText: 'x',
+      columnFilters: { qty: numberGt5 },
+      sort: [{ columnKey: 'partName', direction: 'asc' }],
+    });
+  });
+});
+
+describe('serializeServerSideQuery', () => {
+  it('空 query は安定したベースライン文字列を返す', () => {
+    const key = serializeServerSideQuery({});
+    expect(key).toBe(serializeServerSideQuery({}));
+    // globalText:'' / sort:[] / columnFilters:{} を表す決定的な形。
+    expect(key).toBe(JSON.stringify({ g: '', s: [], c: [] }));
+  });
+
+  it('列フィルターのキー挿入順に依存しない(昇順正規化)', () => {
+    const a: Record<string, ColumnFilterValue> = {};
+    a.qty = numberGt5;
+    a.partName = textFoo;
+
+    const b: Record<string, ColumnFilterValue> = {};
+    b.partName = textFoo;
+    b.qty = numberGt5;
+
+    expect(serializeServerSideQuery({ columnFilters: a })).toBe(
+      serializeServerSideQuery({ columnFilters: b }),
+    );
+  });
+
+  it('フィルター内容が変われば queryKey も変わる', () => {
+    const base = serializeServerSideQuery({ columnFilters: { qty: numberGt5 } });
+    const changed = serializeServerSideQuery({
+      columnFilters: {
+        qty: {
+          kind: 'number',
+          raw: '>6',
+          parsed: { mode: 'comparison', operator: '>', value: 6 },
+        },
+      },
+    });
+    expect(changed).not.toBe(base);
+  });
+
+  it('sort は順序(優先順位)を区別する', () => {
+    const ab = serializeServerSideQuery({
+      sort: [
+        { columnKey: 'a', direction: 'asc' },
+        { columnKey: 'b', direction: 'desc' },
+      ],
+    });
+    const ba = serializeServerSideQuery({
+      sort: [
+        { columnKey: 'b', direction: 'desc' },
+        { columnKey: 'a', direction: 'asc' },
+      ],
+    });
+    expect(ab).not.toBe(ba);
+  });
+
+  it('globalText が反映される', () => {
+    const withText = serializeServerSideQuery({ globalText: 'hello' });
+    const empty = serializeServerSideQuery({});
+    expect(withText).not.toBe(empty);
+    expect(withText).toContain('hello');
+  });
+
+  it('build → serialize: 同一論理状態(挿入順違い)は同一 queryKey になる', () => {
+    const q1 = buildServerSideQuery({
+      globalText: ' term ',
+      columnFilters: { qty: numberGt5, status: setExclude },
+      sort: [{ columnKey: 'qty', direction: 'asc' }],
+    });
+    // 列フィルターの指定順を入れ替えただけの同一論理状態。
+    const q2 = buildServerSideQuery({
+      globalText: 'term',
+      columnFilters: { status: setExclude, qty: numberGt5 },
+      sort: [{ columnKey: 'qty', direction: 'asc' }],
+    });
+    expect(serializeServerSideQuery(q1)).toBe(serializeServerSideQuery(q2));
+  });
+
+  it('build → serialize: 有効フィルターの有無で queryKey が変わる', () => {
+    const withFilter = serializeServerSideQuery(
+      buildServerSideQuery({
+        globalText: '',
+        columnFilters: { qty: numberGt5 },
+        sort: [],
+      }),
+    );
+    // emptyText のみ = 実質フィルターなし → 空 query と同一キー。
+    const effectivelyEmpty = serializeServerSideQuery(
+      buildServerSideQuery({
+        globalText: '',
+        columnFilters: { partName: emptyText },
+        sort: [],
+      }),
+    );
+    expect(effectivelyEmpty).toBe(serializeServerSideQuery({}));
+    expect(withFilter).not.toBe(effectivelyEmpty);
+  });
+});
+</file>
+
+<file path="src/components/spreadsheet-grid/logic/serverSideQuery.ts">
+// serverSide(SSRM)の query 構築 / queryKey 直列化を担う純ロジックです(React 非依存・stage ②)。
+//
+// 役割:
+//   - buildServerSideQuery: clientSide の UI 状態(globalText / columnFilters / sort)から、
+//     getRows へ載せる ServerSideQuery を組み立てます。空・無効な要素は落として「最小の query」に
+//     正規化します(無効フィルターを含めて queryKey を無駄に揺らさないため)。
+//   - serializeServerSideQuery: query から安定文字列(queryKey)を導出します。論理的に等価な query は
+//     同一文字列になり、useServerSideRowModel の queryKey 駆動キャッシュ無効化が不要な再フェッチを
+//     起こさないようにします。
+//
+// 安定化の要点(なぜ手組み連結でなく JSON か):
+//   - columnFilters は Record のため、どの列を先に絞ったか(キー挿入順)で文字列がぶれます。
+//     キーを昇順ソートしてから直列化し、挿入順非依存にします。
+//   - 区切り文字の自前連結は、フィルター値中の文字(例: text "a|b")と区切りが衝突して
+//     別 query が同一文字列になる(=取りこぼし)リスクがあります。構造を JSON.stringify することで
+//     エスケープが効き、実用上の単射性を担保します。
+//   - 記述子値(ColumnFilterValue)は kind ごとに固定形のリテラルで構築されるため、
+//     JSON のキー順も安定します。例外は custom(value:unknown)で、object を入れる場合は
+//     利用者がキー順を安定させる責務を負います(揺れると queryKey も揺れ得ます)。
+//   - sort は配列順=優先順位の意味を持つため順序を保持します。set の values 配列も順序は保持し
+//     (候補順で決定的に生成される想定)、巨大配列のソートコストを避けます。万一順序がぶれても
+//     最悪は不要な 1 回の再フェッチに留まり、正しさは損ないません。
+
+import type {
+  ColumnFilterValue,
+  GridSortState,
+  ServerSideQuery,
+} from '../model/gridTypes';
+import { isActiveColumnFilterValue } from './filtering';
+
+// clientSide の UI 状態 3 種から ServerSideQuery を組み立てます。
+//   - globalText は trim 後非空のときだけ載せます。
+//   - columnFilters は isActiveColumnFilterValue を通った有効フィルターだけを収集します
+//     (空 text / 値なし select 等は除外。clientSide の compileSingleColumnFilter と同じ有効判定)。
+//   - sort は非空のときだけ載せます。
+//   いずれも無ければそのキー自体を省き、空 query {} を返します(無フィルター時の安定ベースライン)。
+export const buildServerSideQuery = (input: {
+  globalText: string;
+  columnFilters: Record<string, ColumnFilterValue>;
+  sort: GridSortState;
+}): ServerSideQuery => {
+  const query: ServerSideQuery = {};
+
+  const trimmedGlobal = input.globalText.trim();
+  if (trimmedGlobal.length > 0) {
+    query.globalText = trimmedGlobal;
+  }
+
+  const activeFilters: Record<string, ColumnFilterValue> = {};
+  let hasActiveFilter = false;
+  for (const key of Object.keys(input.columnFilters)) {
+    const value = input.columnFilters[key];
+    if (isActiveColumnFilterValue(value)) {
+      activeFilters[key] = value;
+      hasActiveFilter = true;
+    }
+  }
+  if (hasActiveFilter) {
+    query.columnFilters = activeFilters;
+  }
+
+  if (input.sort.length > 0) {
+    query.sort = input.sort;
+  }
+
+  return query;
+};
+
+// query から安定 queryKey(文字列)を導出します。論理的に等価な query は同一文字列になります。
+//   columnFilters はキー昇順で並べ替えてから直列化し、列の絞り込み順に依存しないようにします。
+//   sort は順序保持(優先順位)。全体を JSON.stringify して区切り衝突を回避します。
+export const serializeServerSideQuery = (query: ServerSideQuery): string => {
+  const columnFilters = query.columnFilters ?? {};
+  const sortedFilters = Object.keys(columnFilters)
+    .sort()
+    .map((key): [string, ColumnFilterValue] => [key, columnFilters[key]]);
+
+  const sort = query.sort ?? [];
+
+  return JSON.stringify({
+    g: query.globalText ?? '',
+    s: sort.map((entry) => [entry.columnKey, entry.direction]),
+    c: sortedFilters,
+  });
+};
+</file>
+
 <file path="src/components/spreadsheet-grid/logic/sorting.test.ts">
 // V-1: sortOrder の B-1 等価性テスト(旧 adhoc ハーネスの恒久化)。
 //   sortOrder は内部で「全列数値 → Float64 fast path / それ以外 → unknown[] fallback」を
@@ -4008,6 +3974,47 @@ backup
 repomix-output.xml
 </file>
 
+<file path="package.json">
+{
+  "name": "datesheet-grid",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "lint": "eslint .",
+    "preview": "vite preview",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck:test": "tsc --noEmit -p tsconfig.vitest.json"
+  },
+  "dependencies": {
+    "@tanstack/react-virtual": "^3.14.2",
+    "react": "^19.2.6",
+    "react-dom": "^19.2.6"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@testing-library/dom": "^10.4.1",
+    "@testing-library/react": "^16.3.2",
+    "@types/node": "^24.12.3",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^6.0.1",
+    "eslint": "^10.3.0",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "eslint-plugin-react-refresh": "^0.5.2",
+    "globals": "^17.6.0",
+    "jsdom": "^29.1.1",
+    "typescript": "~6.0.2",
+    "typescript-eslint": "^8.59.2",
+    "vite": "^8.0.12",
+    "vitest": "^4.1.9"
+  }
+}
+</file>
+
 <file path="src/components/spreadsheet-grid/ActiveCellOverlay.tsx">
 import type { CSSProperties } from 'react';
 
@@ -4063,95 +4070,323 @@ export function ActiveCellOverlay({
 export default ActiveCellOverlay;
 </file>
 
-<file path="src/components/spreadsheet-grid/API_REFERENCE.md">
-# SpreadsheetGrid 公開 API リファレンス
+<file path="src/components/spreadsheet-grid/hooks/useServerSideRowModel.ts">
+// serverSide(SSRM)の RowModel を供給するフックです(DS-4 ②)。
+//
+// 責務:
+//   - クライアント側スパース LRU キャッシュ(serverSideCache)を保持し、RowModel シーム
+//     (getRowCount / getRow / getSourceIndex / getRowKey)を serverSide 実装で供給します。
+//   - 可視レンジ(requestRange)に対し、欠落ブロックだけを getRows で都度取得します
+//     (computeBlockIndexes で必要ブロックを定数サイズに限定 → 取得範囲を縛りメモリを有界化)。
+//   - スクロール debounce / in-flight 重複排除 / stale リクエストの AbortSignal キャンセル /
+//     件数ブートストラップ(block 0 先行 fetch) / queryKey 変化での無効化 を担います。
+//
+// 設計メモ:
+//   - getRow は cache の純読み(recency 不変)。可視帯の MRU 化は requestRange 内の touchBlocks で
+//     明示的に行い、render が evict 順序を揺らさないようにします(serverSideCache の方針に整合)。
+//   - getSourceIndex は恒等(viewIndex)。serverSide は view 順が正準で、別空間の source index を
+//     持ちません。getRowKey は未ロード行で viewIndex を返し、スケルトン行の React key を安定させます。
+//   - rowCount は state(縦ジオメトリ駆動の単一ソース)。getRows 結果の totalRowCount で最新化します。
+//     非同期コールバックは rowCountRef(setRowCount と必ず対で更新)から最新件数を読みます。
+//   - ブロック到着は version(state)の bump で再描画を促し、getRow が新データを拾います。
 
-> このファイルは `model/gridTypes.ts`(`SpreadsheetGridProps<T>` / `GridColumn<T>` 他)と
-> `SpreadsheetGrid.tsx`(既定値の分割代入)から手で起こした公開 API のスナップショットです。
-> **型を変更したら本ファイルも同期してください。** 将来 `index.ts` バレル整備時に props メタデータを
-> single source of truth 化し、dev 実行時パネル + 自動生成へ移行する想定です(現状は手動同期)。
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import type {
+  GridRowKey,
+  RowModel,
+  ServerSideDataSource,
+  ServerSideQuery,
+} from '../model/gridTypes';
+import { createServerSideRowCache } from '../logic/serverSideCache';
+import { computeBlockIndexes } from '../logic/serverSideBlocks';
 
-最終更新: C1-7 完了時点。
+// dataSource 側で未指定のときの既定値です。
+const DEFAULT_BLOCK_SIZE = 100;
+const DEFAULT_MAX_CACHED_BLOCKS = 64;
+const DEFAULT_DEBOUNCE_MS = 120;
 
-## SpreadsheetGrid props (`SpreadsheetGridProps<T>`)
+export type UseServerSideRowModelParams<T> = {
+  // 変更(①-3): dataSource を optional 化しました。SpreadsheetGrid は本フックを無条件に
+  //   呼ぶ(React Hooks 規則)ため、clientSide(dataSource 不在)では inert 動作にします。
+  dataSource?: ServerSideDataSource<T>;
+  rowKeyGetter: (row: T, index: number) => GridRowKey;
+  query: ServerSideQuery;
+  // query の同一性キーです。変化でキャッシュ無効化 + 再取得します(stage ① は安定値)。
+  queryKey: string;
+  debounceMs?: number;
+};
 
-| Name | Type | Default | Description |
-| --- | --- | --- | --- |
-| `rows` | `T[]` | — | clientSide モードの行データ。`dataSource` を指定した場合は無視され serverSide モードになる(両者は排他)。 |
-| `columns` | `GridColumn<T>[]` | (required) | 列定義の配列。 |
-| `onRowsChange` | `(nextRows: T[]) => void` | — | 行が変化したとき呼ばれる(rows を controlled にする)。 |
-| `dataSource` | `ServerSideDataSource<T>` | — | serverSide(SSRM)モードのデータ供給口。指定すると可視窓近傍のブロックだけを `getRows` で都度取得し、`rows` 系の clientSide パイプラインをバイパスする。 |
-| `onColumnsChange` | `(nextColumns: GridColumn<T>[]) => void` | — | 列が変化したとき呼ばれる。列メニューの固定切替はこれが指定されている場合のみ反映。 |
-| `rowKeyGetter` | `(row: T, index: number) => GridRowKey` | index ベース | 安定した行キーを返す。 |
-| `createRow` | `() => T` | — | 行追加時に使う新規行ファクトリ。 |
-| `createOverflowColumn` | `(columnIndex: number) => GridColumn<T>` | — | 列追加時に使う列ファクトリ。 |
-| `rowHeight` | `number` | `36` | uniform 行の行高(px)。 |
-| `autoHeight` | `boolean` | `false` | auto-height 行モードを有効化。 |
-| `estimateRowHeight` | `number` | `rowHeight` | 未測定行の推定行高(px)。 |
-| `headerHeight` | `number` | `40` | ヘッダー行の高さ(px)。 |
-| `rowHeaderWidth` | `number` | `56` | 行番号列の幅(px)。 |
-| `readOnly` | `boolean` | `false` | グリッド全体の編集を無効化。 |
-| `canEditCell` | `(rowIndex, colIndex, row, column) => boolean` | — | セル単位の編集可否ゲート。 |
-| `enableRangeSelection` | `boolean` | `true` | 複数セル範囲選択。 |
-| `enableGlobalFilter` | `boolean` | `true` | グローバルフィルター入力。 |
-| `enableColumnFilter` | `boolean` | `true` | 列ごとのフィルター。 |
-| `enableSorting` | `boolean` | `true` | ヘッダークリックでのソート。 |
-| `enableColumnMenu` | `boolean` | `true` | 列メニュー(⋮ + ヘッダー右クリック)。 |
-| `noMatchingRowsText` | `string` | `'一致する行がありません'` | フィルター結果 0 行時のオーバーレイ文言。 |
-| `noRowsText` | `string` | `'表示する行がありません'` | rows が 0 件のときの文言。 |
-| `renderTopBar` | `(ctx: SpreadsheetGridSlotContext<T>) => ReactNode` | 内蔵トップバー | 上部バーの差し替え。 |
-| `renderBottomBar` | `(ctx: SpreadsheetGridSlotContext<T>) => ReactNode` | 非表示 | 下部バーの差し替え。 |
-| `className` | `string` | — | ルート要素の class。 |
+export type UseServerSideRowModelResult<T> = {
+  rowModel: RowModel<T>;
+  rowCount: number;
+  isRowLoaded: (viewIndex: number) => boolean;
+  requestRange: (startIndex: number, endIndex: number) => void;
+};
 
-## GridColumn props (`GridColumn<T>`)
+export function useServerSideRowModel<T>(
+  params: UseServerSideRowModelParams<T>,
+): UseServerSideRowModelResult<T> {
+  const { dataSource, rowKeyGetter, query, queryKey } = params;
+  // 変更(①-3): dataSource 不在(clientSide)でも安全に評価できるよう optional-chain します。
+  //   inert 時は既定値で空キャッシュを作るだけで、書き込みも fetch も発生しません。
+  const blockSize = dataSource?.blockSize ?? DEFAULT_BLOCK_SIZE;
+  const maxBlocks = dataSource?.maxCachedBlocks ?? DEFAULT_MAX_CACHED_BLOCKS;
+  const debounceMs = params.debounceMs ?? DEFAULT_DEBOUNCE_MS;
 
-| Name | Type | Default | Description |
-| --- | --- | --- | --- |
-| `key` | `string` | (required) | 列の一意キー。 |
-| `title` | `string` | — | ヘッダーの表示ラベル。 |
-| `width` | `number` | (required) | 列幅(px)。 |
-| `minWidth` | `number` | — | リサイズ時の下限幅。 |
-| `maxWidth` | `number` | — | リサイズ時の上限幅。 |
-| `autoHeight` | `boolean` | — | この列が auto-height 行の高さを駆動(グリッドの `autoHeight` 有効時のみ)。 |
-| `visible` | `boolean` | — | 列の表示/非表示。 |
-| `editable` | `boolean` | — | この列の編集を許可。 |
-| `readOnly` | `boolean` | — | この列を読み取り専用にする。 |
-| `pinned` | `'left' \| 'right'` | undefined = 中央スクロール | 列固定の方向。 |
-| `getValue` | `(row: T) => unknown` | `row[key]` | 値アクセサ。 |
-| `setValue` | `(row: T, value: unknown) => T` | — | 値ライター(新しい行を返す)。 |
-| `renderCell` | `(ctx: CellRenderContext<T>) => ReactNode` | プレーン `<span>` | カスタムセル描画。 |
-| `renderHeader` | `(ctx: HeaderRenderContext<T>) => ReactNode` | — | カスタムヘッダー描画。 |
-| `filterType` | `'text' \| 'number' \| 'date' \| 'select' \| 'set' \| 'custom'` | — | フィルター UI の種別。 |
-| `filterOptions` | `GridSelectFilterOption[]` | rows から自動収集 | select / set の候補。 |
-| `filterFn` | `(row: T, filterValue: unknown) => boolean` | — | カスタムフィルター述語。 |
-| `parseClipboardValue` | `(raw: string, row: T) => unknown` | — | 貼り付け時のパーサ。 |
-| `formatClipboardValue` | `(value: unknown, row: T) => string` | — | コピー時のフォーマッタ。 |
+  // スパース LRU キャッシュです。useState の遅延初期化で render をまたいで安定させます
+  //   (blockSize / maxBlocks はフックの生存中は固定の想定)。
+  const [cache] = useState(() =>
+    createServerSideRowCache<T>({ blockSize, maxBlocks }),
+  );
 
-## serverSide モード(SSRM / DS-4 ②)
+  const [rowCount, setRowCount] = useState<number>(
+    dataSource?.initialRowCount ?? 0,
+  );
+  // ブロック到着を rowModel / consumer に伝える再描画トリガーです(値自体は読みません)。
+  const [version, setVersion] = useState<number>(0);
 
-`dataSource` を渡すと serverSide モードになり、総行数ぶんの縦スクロール空間を保ったまま、可視窓に近いブロックだけを `getRows` で取得する(取得範囲を定数で縛りメモリを有界化)。未ロード行はスケルトン行として描画され、到着後に実データへ差し替わる。
+  // 非同期コールバック(timer / promise)が最新 rowCount を読むための latest-ref です。
+  //   setRowCount を呼ぶ箇所(下記 2 箇所)で必ず対で更新するため、render 中の書き込みは不要です。
+  const rowCountRef = useRef<number>(rowCount);
 
-- **stage ①(現状・読み取り専用)**: フィルター(グローバル / 列)・ソート・編集 UI は無効化される。`getRows` の `query` は空で、サーバ側でのフィルター/ソート実行は stage ② で配線予定。`onRowsChange` は不要(read-only)。
-- **`initialRowCount`**: 初回 fetch 前から正しい総高さ/スクロールバーを出したい場合に渡す(未指定時は最初の `getRows` 結果が返るまで件数 0)。
-- **`blockSize`(既定 100)/ `maxCachedBlocks`(既定 64)**: 1 ブロックの行数とクライアント側 LRU 上限。超過分は画面外の古いブロックから退避する。
-- **利用者契約**: `getRows` は渡された `[startIndex, endIndex)`(view 空間・end 排他)を尊重し、全件を返さないこと。`signal` が abort されたら速やかに reject すること。
+  // in-flight な block fetch(blockIndex -> AbortController)です。重複排除とキャンセルに使います。
+  const inFlightRef = useRef<Map<number, AbortController>>(new Map());
+  // debounce タイマーと最新の要求レンジです。
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const latestRangeRef = useRef<{ start: number; end: number }>({
+    start: 0,
+    end: 0,
+  });
 
-## 補助型(props で参照される shape)
+  const fetchBlock = useCallback(
+    (blockIndex: number): void => {
+      // 追加(①-3): clientSide(inert)では取得しません。
+      if (dataSource == null) {
+        return;
+      }
+      if (cache.hasBlock(blockIndex) || inFlightRef.current.has(blockIndex)) {
+        return;
+      }
+      const controller = new AbortController();
+      inFlightRef.current.set(blockIndex, controller);
 
-- `GridRowKey = string | number`
-- `GridColumnPinned = 'left' | 'right'`
-- `GridSelectFilterOption = { label: string; value: string }`
-- `CellRenderContext<T> = { row, rowIndex, colIndex, value, column, isActive, isSelected, isEditing, readOnly, setValue }`
-- `HeaderRenderContext<T> = { colIndex, width, column, filterValue?, isFiltered? }`
-- `SpreadsheetGridSlotContext<T> = { rows, filteredRows, columns, visibleColumns, globalFilterText, columnFilterValues, sortState, setGlobalFilterText, activeCell, selection, derivedSummary }`
-  - `derivedSummary` は `SpreadsheetGridDerivedSummary`(行/列/フィルター/ソートの summary 文字列・選択統計などを内包)。helper を import せずトップ/ボトムバーで使える。
+      const knownRowCount = rowCountRef.current;
+      const startIndex = blockIndex * blockSize;
+      const rawEnd = startIndex + blockSize;
+      // 件数既知なら末端をクランプします。未知(ブートストラップ)なら blockSize まで投げ、
+      //   結果の totalRowCount で件数を確定します。
+      const endIndex =
+        knownRowCount > 0 ? Math.min(rawEnd, knownRowCount) : rawEnd;
 
-## ライブラリ化の宿題(現状把握)
+      dataSource
+        .getRows({
+          startIndex,
+          endIndex,
+          query,
+          signal: controller.signal,
+        })
+        .then((result) => {
+          if (controller.signal.aborted) {
+            return;
+          }
+          // 自分が登録した controller でなければ(別世代に置換)結果を捨てます。
+          if (inFlightRef.current.get(blockIndex) !== controller) {
+            return;
+          }
+          inFlightRef.current.delete(blockIndex);
+          cache.setBlock(blockIndex, result.rows);
+          if (result.totalRowCount !== rowCountRef.current) {
+            rowCountRef.current = result.totalRowCount;
+            setRowCount(result.totalRowCount);
+          }
+          setVersion((value) => value + 1);
+        })
+        .catch(() => {
+          // abort は無視します。その他エラーは in-flight を解放し、次の requestRange で再試行します。
+          if (inFlightRef.current.get(blockIndex) === controller) {
+            inFlightRef.current.delete(blockIndex);
+          }
+        });
+    },
+    [cache, blockSize, dataSource, query],
+  );
 
-- 〔解消〕**no-op props**: `enableClipboard` / `enableColumnResize` を型から削除(常時 ON 固定の挙動は不変)。将来「無効化」が必要になれば配線つきで非破壊追加する。
-- **imperative API(ref ハンドル)なし**: `forwardRef` / `useImperativeHandle` 未使用。外部から「特定セルへスクロール」「選択クリア」等を命令的に呼ぶ口がない(状態は全て controlled)。
-- 〔解消〕**公開バレル(`index.ts`)**: 入口を `index.ts` に集約し、`SpreadsheetGrid`(named)と公開型群(serverSide 型・`RowModel` 含む)を再エクスポート。`default export` は廃止。
-- **テーマ/スタイリング API**: 公開されるのは `className`(ルート1個)のみ。パーツ単位のクラスや CSS トークンは未提供。
+  const runFetch = useCallback((): void => {
+    const { start, end } = latestRangeRef.current;
+    const needed = computeBlockIndexes(
+      start,
+      end,
+      blockSize,
+      rowCountRef.current,
+    );
+    const neededSet = new Set(needed);
+    // 最新の必要集合に含まれない in-flight を中断します(スクロールで通り過ぎた帯の破棄)。
+    for (const [blockIndex, controller] of inFlightRef.current) {
+      if (!neededSet.has(blockIndex)) {
+        controller.abort();
+        inFlightRef.current.delete(blockIndex);
+      }
+    }
+    for (const blockIndex of needed) {
+      fetchBlock(blockIndex);
+    }
+  }, [blockSize, fetchBlock]);
+
+  const scheduleFetch = useCallback((): void => {
+    if (timerRef.current !== null) {
+      clearTimeout(timerRef.current);
+    }
+    timerRef.current = setTimeout(() => {
+      timerRef.current = null;
+      runFetch();
+    }, debounceMs);
+  }, [debounceMs, runFetch]);
+
+  const requestRange = useCallback(
+    (startIndex: number, endIndex: number): void => {
+      // 追加(①-3): clientSide(inert)では no-op です。
+      if (dataSource == null) {
+        return;
+      }
+      latestRangeRef.current = { start: startIndex, end: endIndex };
+      // 可視帯を即時 MRU 化して退避から保護します(fetch は debounce 経由)。
+      cache.touchBlocks(
+        computeBlockIndexes(startIndex, endIndex, blockSize, rowCountRef.current),
+      );
+      scheduleFetch();
+    },
+    [cache, blockSize, dataSource, scheduleFetch],
+  );
+
+  // queryKey 変化(stage ② の filter/sort 変更)でキャッシュを無効化し、件数をリセットして
+  //   再ブートストラップします。mount 時も走り、件数未知なら block 0 を先行 fetch します。
+  useEffect(() => {
+    // 追加(①-3): clientSide(inert)では何もしません(ブートストラップ/件数リセットを抑止し、
+    //   clientSide 経路を完全不変に保ちます)。
+    if (dataSource == null) {
+      return;
+    }
+    // 進行中の取得を全て中断します。
+    for (const [, controller] of inFlightRef.current) {
+      controller.abort();
+    }
+    inFlightRef.current.clear();
+    if (timerRef.current !== null) {
+      clearTimeout(timerRef.current);
+      timerRef.current = null;
+    }
+    cache.clear();
+    const initial = dataSource.initialRowCount ?? 0;
+    rowCountRef.current = initial;
+    // queryKey 変化時に件数を初期値へ戻します(古い total を引きずらない)。mount 時は useState
+    //   初期値と同値のため React が再描画を省きます。意図的な state リセットのため局所抑止します。
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setRowCount(initial);
+    setVersion((value) => value + 1);
+    // 件数未知なら block 0 を先行 fetch して totalRowCount を確定します(ブートストラップ)。
+    //   既知(initialRowCount 指定)なら requestRange 駆動に委ねます。
+    if (initial <= 0) {
+      fetchBlock(0);
+    }
+    // queryKey 変化のみを再実行トリガーにします(fetchBlock/cache/dataSource は同 render で最新)。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [queryKey]);
+
+  // unmount クリーンアップ: in-flight abort + timer クリアです。
+  useEffect(() => {
+    // cleanup 実行時に ref が指し替わっている可能性を避けるため、Map 参照を退避します
+    //   (inFlightRef.current は再代入されず .clear/.set/.delete のみのため退避で十分)。
+    const inFlight = inFlightRef.current;
+    const timer = timerRef;
+    return () => {
+      for (const [, controller] of inFlight) {
+        controller.abort();
+      }
+      inFlight.clear();
+      if (timer.current !== null) {
+        clearTimeout(timer.current);
+        timer.current = null;
+      }
+    };
+  }, []);
+
+  const isRowLoaded = useCallback(
+    (viewIndex: number): boolean => cache.getRow(viewIndex) !== undefined,
+    [cache],
+  );
+
+  // RowModel シームの serverSide 実装です。order/rows ではなく cache を読みます。
+  //   version を deps に含め、ブロック到着で参照を更新して consumer の再評価を促します。
+  const rowModel = useMemo<RowModel<T>>(
+    () => ({
+      getRowCount: () => rowCountRef.current,
+      // 未ロードは undefined(シーム契約どおり=clientSide の OOB と同じ)。型は T 固定のため
+      //   キャストします(strictNullChecks 下で cache.getRow の | undefined を吸収)。
+      getRow: (viewIndex) => cache.getRow(viewIndex) as T,
+      getSourceIndex: (viewIndex) => viewIndex,
+      getRowKey: (viewIndex) => {
+        const row = cache.getRow(viewIndex);
+        return row === undefined ? viewIndex : rowKeyGetter(row, viewIndex);
+      },
+    }),
+    // version はブロック到着での再計算トリガーです(memo 本体は読まないため lint は不要と判定)。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [cache, rowKeyGetter, version],
+  );
+
+  return { rowModel, rowCount, isRowLoaded, requestRange };
+}
+</file>
+
+<file path="src/components/spreadsheet-grid/index.ts">
+// SpreadsheetGrid の公開エントリ(バレル)です。
+// ライブラリ利用者はこの index 経由で import します。reducer / hooks / view / logic /
+// selectors などの内部実装は公開しません。公開する型は API_REFERENCE.md と対応します。
+
+// 公開コンポーネント(named のみ。default export は廃止しました)。
+export { SpreadsheetGrid } from './SpreadsheetGrid';
+
+// 公開型です。
+export type {
+  // コンポーネント props。
+  SpreadsheetGridProps,
+  // 列定義と固定方向。
+  GridColumn,
+  GridColumnPinned,
+  // 行キー。
+  GridRowKey,
+  // select / set フィルターの候補。
+  GridSelectFilterOption,
+  // セル / ヘッダーのカスタム描画コンテキスト(renderCell / renderHeader 引数)。
+  CellRenderContext,
+  HeaderRenderContext,
+  // top / bottom バーのスロットコンテキストと、そこに載る派生 summary。
+  SpreadsheetGridSlotContext,
+  SpreadsheetGridDerivedSummary,
+  SpreadsheetGridSelectionStats,
+  // スロットコンテキストが公開する選択 / ソート / 列フィルター値の型族です。
+  CellCoord,
+  CellRange,
+  GridSelection,
+  GridSortState,
+  GridSortEntry,
+  GridSortDirection,
+  ColumnFilterValue,
+  SetColumnFilterValue,
+  NumberColumnFilterValue,
+  ParsedNumberFilter,
+  TextColumnFilterValue,
+  DateColumnFilterValue,
+  SelectColumnFilterValue,
+  CustomColumnFilterValue,
+  // serverSide(SSRM)用の公開型族です。dataSource 指定時に serverSide モードへ切替わります。
+  ServerSideDataSource,
+  ServerSideQuery,
+  ServerSideGetRowsParams,
+  ServerSideGetRowsResult,
+  // 行モデル境界型(clientSide / serverSide 共通の行取得 seam)です。
+  RowModel,
+} from './model/gridTypes';
 </file>
 
 <file path="src/components/spreadsheet-grid/logic/filtering.test.ts">
@@ -5809,45 +6044,95 @@ export function SortManagementPanel({
 export default SortManagementPanel;
 </file>
 
-<file path="package.json">
-{
-  "name": "datesheet-grid",
-  "private": true,
-  "version": "0.0.0",
-  "type": "module",
-  "scripts": {
-    "dev": "vite",
-    "build": "tsc -b && vite build",
-    "lint": "eslint .",
-    "preview": "vite preview",
-    "test": "vitest run",
-    "test:watch": "vitest",
-    "typecheck:test": "tsc --noEmit -p tsconfig.vitest.json"
-  },
-  "dependencies": {
-    "@tanstack/react-virtual": "^3.14.2",
-    "react": "^19.2.6",
-    "react-dom": "^19.2.6"
-  },
-  "devDependencies": {
-    "@eslint/js": "^10.0.1",
-    "@testing-library/dom": "^10.4.1",
-    "@testing-library/react": "^16.3.2",
-    "@types/node": "^24.12.3",
-    "@types/react": "^19.2.14",
-    "@types/react-dom": "^19.2.3",
-    "@vitejs/plugin-react": "^6.0.1",
-    "eslint": "^10.3.0",
-    "eslint-plugin-react-hooks": "^7.1.1",
-    "eslint-plugin-react-refresh": "^0.5.2",
-    "globals": "^17.6.0",
-    "jsdom": "^29.1.1",
-    "typescript": "~6.0.2",
-    "typescript-eslint": "^8.59.2",
-    "vite": "^8.0.12",
-    "vitest": "^4.1.9"
-  }
-}
+<file path="src/components/spreadsheet-grid/API_REFERENCE.md">
+# SpreadsheetGrid 公開 API リファレンス
+
+> このファイルは `model/gridTypes.ts`(`SpreadsheetGridProps<T>` / `GridColumn<T>` 他)と
+> `SpreadsheetGrid.tsx`(既定値の分割代入)から手で起こした公開 API のスナップショットです。
+> **型を変更したら本ファイルも同期してください。** 将来 `index.ts` バレル整備時に props メタデータを
+> single source of truth 化し、dev 実行時パネル + 自動生成へ移行する想定です(現状は手動同期)。
+
+最終更新: C1-7 完了時点。
+
+## SpreadsheetGrid props (`SpreadsheetGridProps<T>`)
+
+| Name | Type | Default | Description |
+| --- | --- | --- | --- |
+| `rows` | `T[]` | — | clientSide モードの行データ。`dataSource` を指定した場合は無視され serverSide モードになる(両者は排他)。 |
+| `columns` | `GridColumn<T>[]` | (required) | 列定義の配列。 |
+| `onRowsChange` | `(nextRows: T[]) => void` | — | 行が変化したとき呼ばれる(rows を controlled にする)。 |
+| `dataSource` | `ServerSideDataSource<T>` | — | serverSide(SSRM)モードのデータ供給口。指定すると可視窓近傍のブロックだけを `getRows` で都度取得し、`rows` 系の clientSide パイプラインをバイパスする。 |
+| `onColumnsChange` | `(nextColumns: GridColumn<T>[]) => void` | — | 列が変化したとき呼ばれる。列メニューの固定切替はこれが指定されている場合のみ反映。 |
+| `rowKeyGetter` | `(row: T, index: number) => GridRowKey` | index ベース | 安定した行キーを返す。 |
+| `createRow` | `() => T` | — | 行追加時に使う新規行ファクトリ。 |
+| `createOverflowColumn` | `(columnIndex: number) => GridColumn<T>` | — | 列追加時に使う列ファクトリ。 |
+| `rowHeight` | `number` | `36` | uniform 行の行高(px)。 |
+| `autoHeight` | `boolean` | `false` | auto-height 行モードを有効化。 |
+| `estimateRowHeight` | `number` | `rowHeight` | 未測定行の推定行高(px)。 |
+| `headerHeight` | `number` | `40` | ヘッダー行の高さ(px)。 |
+| `rowHeaderWidth` | `number` | `56` | 行番号列の幅(px)。 |
+| `readOnly` | `boolean` | `false` | グリッド全体の編集を無効化。 |
+| `canEditCell` | `(rowIndex, colIndex, row, column) => boolean` | — | セル単位の編集可否ゲート。 |
+| `enableRangeSelection` | `boolean` | `true` | 複数セル範囲選択。 |
+| `enableGlobalFilter` | `boolean` | `true` | グローバルフィルター入力。 |
+| `enableColumnFilter` | `boolean` | `true` | 列ごとのフィルター。 |
+| `enableSorting` | `boolean` | `true` | ヘッダークリックでのソート。 |
+| `enableColumnMenu` | `boolean` | `true` | 列メニュー(⋮ + ヘッダー右クリック)。 |
+| `noMatchingRowsText` | `string` | `'一致する行がありません'` | フィルター結果 0 行時のオーバーレイ文言。 |
+| `noRowsText` | `string` | `'表示する行がありません'` | rows が 0 件のときの文言。 |
+| `renderTopBar` | `(ctx: SpreadsheetGridSlotContext<T>) => ReactNode` | 内蔵トップバー | 上部バーの差し替え。 |
+| `renderBottomBar` | `(ctx: SpreadsheetGridSlotContext<T>) => ReactNode` | 非表示 | 下部バーの差し替え。 |
+| `className` | `string` | — | ルート要素の class。 |
+
+## GridColumn props (`GridColumn<T>`)
+
+| Name | Type | Default | Description |
+| --- | --- | --- | --- |
+| `key` | `string` | (required) | 列の一意キー。 |
+| `title` | `string` | — | ヘッダーの表示ラベル。 |
+| `width` | `number` | (required) | 列幅(px)。 |
+| `minWidth` | `number` | — | リサイズ時の下限幅。 |
+| `maxWidth` | `number` | — | リサイズ時の上限幅。 |
+| `autoHeight` | `boolean` | — | この列が auto-height 行の高さを駆動(グリッドの `autoHeight` 有効時のみ)。 |
+| `visible` | `boolean` | — | 列の表示/非表示。 |
+| `editable` | `boolean` | — | この列の編集を許可。 |
+| `readOnly` | `boolean` | — | この列を読み取り専用にする。 |
+| `pinned` | `'left' \| 'right'` | undefined = 中央スクロール | 列固定の方向。 |
+| `getValue` | `(row: T) => unknown` | `row[key]` | 値アクセサ。 |
+| `setValue` | `(row: T, value: unknown) => T` | — | 値ライター(新しい行を返す)。 |
+| `renderCell` | `(ctx: CellRenderContext<T>) => ReactNode` | プレーン `<span>` | カスタムセル描画。 |
+| `renderHeader` | `(ctx: HeaderRenderContext<T>) => ReactNode` | — | カスタムヘッダー描画。 |
+| `filterType` | `'text' \| 'number' \| 'date' \| 'select' \| 'set' \| 'custom'` | — | フィルター UI の種別。 |
+| `filterOptions` | `GridSelectFilterOption[]` | rows から自動収集 | select / set の候補。 |
+| `filterFn` | `(row: T, filterValue: unknown) => boolean` | — | カスタムフィルター述語。 |
+| `parseClipboardValue` | `(raw: string, row: T) => unknown` | — | 貼り付け時のパーサ。 |
+| `formatClipboardValue` | `(value: unknown, row: T) => string` | — | コピー時のフォーマッタ。 |
+
+## serverSide モード(SSRM / DS-4 ②)
+
+`dataSource` を渡すと serverSide モードになり、総行数ぶんの縦スクロール空間を保ったまま、可視窓に近いブロックだけを `getRows` で取得する(取得範囲を定数で縛りメモリを有界化)。未ロード行はスケルトン行として描画され、到着後に実データへ差し替わる。
+
+- **stage ①(現状・読み取り専用)**: フィルター(グローバル / 列)・ソート・編集 UI は無効化される。`getRows` の `query` は空で、サーバ側でのフィルター/ソート実行は stage ② で配線予定。`onRowsChange` は不要(read-only)。
+- **`initialRowCount`**: 初回 fetch 前から正しい総高さ/スクロールバーを出したい場合に渡す(未指定時は最初の `getRows` 結果が返るまで件数 0)。
+- **`blockSize`(既定 100)/ `maxCachedBlocks`(既定 64)**: 1 ブロックの行数とクライアント側 LRU 上限。超過分は画面外の古いブロックから退避する。
+- **利用者契約**: `getRows` は渡された `[startIndex, endIndex)`(view 空間・end 排他)を尊重し、全件を返さないこと。`signal` が abort されたら速やかに reject すること。
+
+## 補助型(props で参照される shape)
+
+- `GridRowKey = string | number`
+- `GridColumnPinned = 'left' | 'right'`
+- `GridSelectFilterOption = { label: string; value: string }`
+- `CellRenderContext<T> = { row, rowIndex, colIndex, value, column, isActive, isSelected, isEditing, readOnly, setValue }`
+- `HeaderRenderContext<T> = { colIndex, width, column, filterValue?, isFiltered? }`
+- `SpreadsheetGridSlotContext<T> = { rows, filteredRows, columns, visibleColumns, globalFilterText, columnFilterValues, sortState, setGlobalFilterText, activeCell, selection, derivedSummary }`
+  - `derivedSummary` は `SpreadsheetGridDerivedSummary`(行/列/フィルター/ソートの summary 文字列・選択統計などを内包)。helper を import せずトップ/ボトムバーで使える。
+
+## ライブラリ化の宿題(現状把握)
+
+- 〔解消〕**no-op props**: `enableClipboard` / `enableColumnResize` を型から削除(常時 ON 固定の挙動は不変)。将来「無効化」が必要になれば配線つきで非破壊追加する。
+- **imperative API(ref ハンドル)なし**: `forwardRef` / `useImperativeHandle` 未使用。外部から「特定セルへスクロール」「選択クリア」等を命令的に呼ぶ口がない(状態は全て controlled)。
+- 〔解消〕**公開バレル(`index.ts`)**: 入口を `index.ts` に集約し、`SpreadsheetGrid`(named)と公開型群(serverSide 型・`RowModel` 含む)を再エクスポート。`default export` は廃止。
+- **テーマ/スタイリング API**: 公開されるのは `className`(ルート1個)のみ。パーツ単位のクラスや CSS トークンは未提供。
 </file>
 
 <file path="src/components/spreadsheet-grid/hooks/useGridBarContext.ts">
@@ -7427,286 +7712,6 @@ export const useFilterPopoverController = <T,>({
 };
 
 export default useFilterPopoverController;
-</file>
-
-<file path="src/components/spreadsheet-grid/hooks/useGridClipboardController.ts">
-import { useCallback, type Dispatch } from 'react';
-import { gridActions, type GridUiAction } from '../model/gridActions';
-import type {
-  GridColumn,
-  SpreadsheetGridProps,
-  GridUiState,
-  RowModel,
-} from '../model/gridTypes';
-import { clamp } from '../logic/geometry';
-import { getCellValue, isCellEditable } from '../utils/permissions';
-import {
-  applyClipboardMatrixToRows,
-  parseClipboardText,
-  serializeSelectionToTsv,
-} from '../utils/clipboard';
-
-type UseGridClipboardControllerArgs<T extends object> = {
-  rows: T[];
-  // 変更(DS-3-3): filteredRows / filteredRowSourceIndexes 配列 → rowModel シームへ集約。
-  //   copy 時のセル値取得は getRow(i)、paste 書き込みの source 解決は getSourceIndex(i)、
-  //   範囲判定の行数は getRowCount() を使い分けます。順序契約は order と同一(viewIndex 空間)。
-  rowModel: RowModel<T>;
-  visibleColumns: GridColumn<T>[];
-  uiState: GridUiState;
-  readOnly: boolean;
-  canEditCell: SpreadsheetGridProps<T>['canEditCell'];
-  createRow?: () => T;
-  createOverflowColumn?: (columnIndex: number) => GridColumn<T>;
-  onRowsChange?: (nextRows: T[]) => void;
-  onColumnsChange?: (nextColumns: GridColumn<T>[]) => void;
-  dispatch: Dispatch<GridUiAction>;
-};
-
-// 追加: copy / paste と行列自動拡張をまとめる clipboard controller です。
-export const useGridClipboardController = <T extends object>({
-  rows,
-  rowModel,
-  visibleColumns,
-  uiState,
-  readOnly,
-  canEditCell,
-  createRow,
-  createOverflowColumn,
-  onRowsChange,
-  onColumnsChange,
-  dispatch,
-}: UseGridClipboardControllerArgs<T>) => {
-  // 追加: 現在の selection が「表全体選択」かどうかを判定します。
-  // 変更(DS-3-3): filteredRows.length → rowModel.getRowCount()。
-  const viewRowCount = rowModel.getRowCount();
-  const isWholeGridSelected =
-    viewRowCount > 0 &&
-    visibleColumns.length > 0 &&
-    uiState.selection?.type === 'cell' &&
-    (() => {
-      const start = uiState.selection.range.start;
-      const end = uiState.selection.range.end;
-      const startRow = Math.min(start.row, end.row);
-      const startCol = Math.min(start.col, end.col);
-      const endRow = Math.max(start.row, end.row);
-      const endCol = Math.max(start.col, end.col);
-      return (
-        startRow === 0 &&
-        startCol === 0 &&
-        endRow === viewRowCount - 1 &&
-        endCol === visibleColumns.length - 1
-      );
-    })();
-
-  // 追加: 全体選択時の copy を専用経路で行います。
-  // 変更(DS-3-3): filteredRows.map → getRowCount()/getRow(i) のビュー順走査へ置換。
-  const serializeWholeGridToTsv = useCallback(() => {
-    const rowCount = rowModel.getRowCount();
-    if (rowCount === 0 || visibleColumns.length === 0) {
-      return '';
-    }
-
-    const lines: string[] = [];
-    for (let viewIndex = 0; viewIndex < rowCount; viewIndex += 1) {
-      const row = rowModel.getRow(viewIndex);
-      // 追加(①-3): serverSide の未ロード行(getRow===undefined)は getCellValue が throw する
-      //   ため skip します(serializeSelectionToTsv と同方針)。clientSide は全行ロード済みの
-      //   ため、この guard は実質 no-op です。
-      if (!row) {
-        continue;
-      }
-      const cells = visibleColumns.map((column) => {
-        const rawValue = getCellValue(row, column);
-        return column.formatClipboardValue
-          ? column.formatClipboardValue(rawValue, row)
-          : String(rawValue ?? '');
-      });
-      lines.push(cells.join('\t'));
-    }
-    return lines.join('\n');
-  }, [rowModel, visibleColumns]);
-
-  // 追加: copy 処理です。selection を TSV にしてクリップボードへ書き込みます。
-  const handleCopy = useCallback(async () => {
-    // 変更(DS-3-10): serializeSelectionToTsv を seam-native 化。view 行の一時 materialize
-    //   (Array.from + getRow)を撤去し、getRow / getRowCount をそのまま渡します。関数側は
-    //   選択レンジ(cell/row)または 0..viewRowCount-1(col)だけを getRow で引きます。
-    const text = isWholeGridSelected
-      ? serializeWholeGridToTsv()
-      : serializeSelectionToTsv(
-          rowModel.getRow,
-          rowModel.getRowCount(),
-          visibleColumns,
-          uiState.selection as
-            | {
-                type: 'cell';
-                range: {
-                  start: { row: number; col: number };
-                  end: { row: number; col: number };
-                };
-              }
-            | { type: 'row'; startRow: number; endRow: number }
-            | { type: 'col'; startCol: number; endCol: number }
-            | null,
-        );
-
-    if (!text) {
-      return;
-    }
-
-    if (navigator.clipboard?.writeText) {
-      await navigator.clipboard.writeText(text);
-    }
-  }, [
-    isWholeGridSelected,
-    rowModel,
-    serializeWholeGridToTsv,
-    uiState.selection,
-    visibleColumns,
-  ]);
-
-  // 追加: paste 処理です。TSV を activeCell 起点に適用し、必要なら行/列を自動拡張します。
-  const handlePaste = useCallback(
-    (event: React.ClipboardEvent<HTMLDivElement>) => {
-      if (!onRowsChange || !uiState.activeCell) {
-        return;
-      }
-
-      const text = event.clipboardData.getData('text/plain');
-      if (!text) {
-        return;
-      }
-
-      event.preventDefault();
-
-      const matrix = parseClipboardText(text);
-      if (matrix.length === 0) {
-        return;
-      }
-
-      const startFilteredRowIndex = uiState.activeCell.row;
-      // 変更(DS-3-9): レガシーの ?? startFilteredRowIndex フォールバックを撤去します。
-      //   getSourceIndex(=order[i]) は OOB(activeCell が縮小後の order を超える)で undefined を
-      //   返します。旧版は ?? で view index を source index に誤代入していました。撤去後は
-      //   undefined をそのまま判定し、OOB の paste 起点は no-op で抜けます(下流の startOriginalRowIndex +
-      //   matrix.length が NaN になるのを防ぎ、誤行 append も回避)。in-bounds 時は従来と完全一致。
-      const startOriginalRowIndex =
-        rowModel.getSourceIndex(startFilteredRowIndex);
-      if (startOriginalRowIndex === undefined) {
-        return;
-      }
-      const startColIndex = uiState.activeCell.col;
-
-      let workingRows = [...rows];
-      let workingColumns = [...visibleColumns];
-      // 変更(DS-3-10): workingSourceIndexes 配列(N 個の Array.from)を撤去し、view→source の
-      //   解決をクロージャ resolveSourceIndex に置換します。返り値は旧配列と完全一致:
-      //     v < N            : rowModel.getSourceIndex(v)  (= order[v])
-      //     v >= N(append 行): appendBaseSource + (v - N)
-      //   appendBaseSource = 拡張前 rows.length、N = paste 時点の getRowCount()。旧 append は
-      //   workingSourceIndexes.push(workingRows.length - 1) で appendBaseSource から連番を積んで
-      //   いたため式が一致します。append していない範囲外 v は定義値(OOB の source index)を返し
-      //   ますが、下流 applyClipboardMatrixToRows の !currentRow ガードで skip され、旧の
-      //   undefined→continue と同一結果になります。
-      const viewRowCountForPaste = rowModel.getRowCount();
-      const appendBaseSource = workingRows.length;
-      const resolveSourceIndex = (viewIndex: number): number | undefined =>
-        viewIndex < viewRowCountForPaste
-          ? rowModel.getSourceIndex(viewIndex)
-          : appendBaseSource + (viewIndex - viewRowCountForPaste);
-
-      // 追加: 行不足分を createRow で自動追加します。
-      const requiredOriginalRowCount = startOriginalRowIndex + matrix.length;
-      if (requiredOriginalRowCount > workingRows.length && createRow) {
-        while (workingRows.length < requiredOriginalRowCount) {
-          workingRows.push(createRow());
-        }
-      }
-
-      // 追加: 列不足分を createOverflowColumn で自動追加します。
-      const maxPasteWidth = matrix.reduce(
-        (max, currentRow) => Math.max(max, currentRow.length),
-        0,
-      );
-      if (maxPasteWidth === 0) {
-        return;
-      }
-
-      const requiredColumnCount = startColIndex + maxPasteWidth;
-      if (requiredColumnCount > workingColumns.length) {
-        if (onColumnsChange && createOverflowColumn) {
-          while (workingColumns.length < requiredColumnCount) {
-            workingColumns.push(createOverflowColumn(workingColumns.length));
-          }
-          onColumnsChange(workingColumns);
-        }
-      }
-
-      const nextRows = applyClipboardMatrixToRows(
-        workingRows,
-        resolveSourceIndex,
-        workingColumns,
-        matrix,
-        startFilteredRowIndex,
-        startColIndex,
-        (originalRowIndex, colIndex, row, column) =>
-          isCellEditable(
-            { readOnly, canEditCell },
-            originalRowIndex,
-            colIndex,
-            row,
-            column,
-          ),
-      );
-
-      const endRow = clamp(
-        uiState.activeCell.row + Math.max(matrix.length - 1, 0),
-        0,
-        Math.max(
-          // 変更(DS-3-3): filteredRows.length - 1 → getRowCount() - 1。
-          Math.max(rowModel.getRowCount() - 1, 0),
-          startFilteredRowIndex + matrix.length - 1,
-        ),
-      );
-      const endCol = clamp(
-        uiState.activeCell.col + Math.max((matrix[0]?.length ?? 1) - 1, 0),
-        0,
-        Math.max(
-          Math.max(workingColumns.length - 1, 0),
-          startColIndex + maxPasteWidth - 1,
-        ),
-      );
-
-      onRowsChange(nextRows);
-      dispatch(gridActions.startSelection(uiState.activeCell));
-      dispatch(gridActions.updateSelection({ row: endRow, col: endCol }));
-      dispatch(gridActions.endSelection());
-      dispatch(gridActions.activateCell(uiState.activeCell));
-    },
-    [
-      canEditCell,
-      createOverflowColumn,
-      createRow,
-      dispatch,
-      onColumnsChange,
-      onRowsChange,
-      readOnly,
-      rowModel,
-      rows,
-      uiState.activeCell,
-      visibleColumns,
-    ],
-  );
-
-  return {
-    isWholeGridSelected,
-    handleCopy,
-    handlePaste,
-  };
-};
-
-export default useGridClipboardController;
 </file>
 
 <file path="src/components/spreadsheet-grid/hooks/useGridEditController.ts">
@@ -9394,6 +9399,286 @@ export const gridBarClearButtonStyle: CSSProperties = {
   lineHeight: 1,
   whiteSpace: 'nowrap',
 };
+</file>
+
+<file path="src/components/spreadsheet-grid/hooks/useGridClipboardController.ts">
+import { useCallback, type Dispatch } from 'react';
+import { gridActions, type GridUiAction } from '../model/gridActions';
+import type {
+  GridColumn,
+  SpreadsheetGridProps,
+  GridUiState,
+  RowModel,
+} from '../model/gridTypes';
+import { clamp } from '../logic/geometry';
+import { getCellValue, isCellEditable } from '../utils/permissions';
+import {
+  applyClipboardMatrixToRows,
+  parseClipboardText,
+  serializeSelectionToTsv,
+} from '../utils/clipboard';
+
+type UseGridClipboardControllerArgs<T extends object> = {
+  rows: T[];
+  // 変更(DS-3-3): filteredRows / filteredRowSourceIndexes 配列 → rowModel シームへ集約。
+  //   copy 時のセル値取得は getRow(i)、paste 書き込みの source 解決は getSourceIndex(i)、
+  //   範囲判定の行数は getRowCount() を使い分けます。順序契約は order と同一(viewIndex 空間)。
+  rowModel: RowModel<T>;
+  visibleColumns: GridColumn<T>[];
+  uiState: GridUiState;
+  readOnly: boolean;
+  canEditCell: SpreadsheetGridProps<T>['canEditCell'];
+  createRow?: () => T;
+  createOverflowColumn?: (columnIndex: number) => GridColumn<T>;
+  onRowsChange?: (nextRows: T[]) => void;
+  onColumnsChange?: (nextColumns: GridColumn<T>[]) => void;
+  dispatch: Dispatch<GridUiAction>;
+};
+
+// 追加: copy / paste と行列自動拡張をまとめる clipboard controller です。
+export const useGridClipboardController = <T extends object>({
+  rows,
+  rowModel,
+  visibleColumns,
+  uiState,
+  readOnly,
+  canEditCell,
+  createRow,
+  createOverflowColumn,
+  onRowsChange,
+  onColumnsChange,
+  dispatch,
+}: UseGridClipboardControllerArgs<T>) => {
+  // 追加: 現在の selection が「表全体選択」かどうかを判定します。
+  // 変更(DS-3-3): filteredRows.length → rowModel.getRowCount()。
+  const viewRowCount = rowModel.getRowCount();
+  const isWholeGridSelected =
+    viewRowCount > 0 &&
+    visibleColumns.length > 0 &&
+    uiState.selection?.type === 'cell' &&
+    (() => {
+      const start = uiState.selection.range.start;
+      const end = uiState.selection.range.end;
+      const startRow = Math.min(start.row, end.row);
+      const startCol = Math.min(start.col, end.col);
+      const endRow = Math.max(start.row, end.row);
+      const endCol = Math.max(start.col, end.col);
+      return (
+        startRow === 0 &&
+        startCol === 0 &&
+        endRow === viewRowCount - 1 &&
+        endCol === visibleColumns.length - 1
+      );
+    })();
+
+  // 追加: 全体選択時の copy を専用経路で行います。
+  // 変更(DS-3-3): filteredRows.map → getRowCount()/getRow(i) のビュー順走査へ置換。
+  const serializeWholeGridToTsv = useCallback(() => {
+    const rowCount = rowModel.getRowCount();
+    if (rowCount === 0 || visibleColumns.length === 0) {
+      return '';
+    }
+
+    const lines: string[] = [];
+    for (let viewIndex = 0; viewIndex < rowCount; viewIndex += 1) {
+      const row = rowModel.getRow(viewIndex);
+      // 追加(①-3): serverSide の未ロード行(getRow===undefined)は getCellValue が throw する
+      //   ため skip します(serializeSelectionToTsv と同方針)。clientSide は全行ロード済みの
+      //   ため、この guard は実質 no-op です。
+      if (!row) {
+        continue;
+      }
+      const cells = visibleColumns.map((column) => {
+        const rawValue = getCellValue(row, column);
+        return column.formatClipboardValue
+          ? column.formatClipboardValue(rawValue, row)
+          : String(rawValue ?? '');
+      });
+      lines.push(cells.join('\t'));
+    }
+    return lines.join('\n');
+  }, [rowModel, visibleColumns]);
+
+  // 追加: copy 処理です。selection を TSV にしてクリップボードへ書き込みます。
+  const handleCopy = useCallback(async () => {
+    // 変更(DS-3-10): serializeSelectionToTsv を seam-native 化。view 行の一時 materialize
+    //   (Array.from + getRow)を撤去し、getRow / getRowCount をそのまま渡します。関数側は
+    //   選択レンジ(cell/row)または 0..viewRowCount-1(col)だけを getRow で引きます。
+    const text = isWholeGridSelected
+      ? serializeWholeGridToTsv()
+      : serializeSelectionToTsv(
+          rowModel.getRow,
+          rowModel.getRowCount(),
+          visibleColumns,
+          uiState.selection as
+            | {
+                type: 'cell';
+                range: {
+                  start: { row: number; col: number };
+                  end: { row: number; col: number };
+                };
+              }
+            | { type: 'row'; startRow: number; endRow: number }
+            | { type: 'col'; startCol: number; endCol: number }
+            | null,
+        );
+
+    if (!text) {
+      return;
+    }
+
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text);
+    }
+  }, [
+    isWholeGridSelected,
+    rowModel,
+    serializeWholeGridToTsv,
+    uiState.selection,
+    visibleColumns,
+  ]);
+
+  // 追加: paste 処理です。TSV を activeCell 起点に適用し、必要なら行/列を自動拡張します。
+  const handlePaste = useCallback(
+    (event: React.ClipboardEvent<HTMLDivElement>) => {
+      if (!onRowsChange || !uiState.activeCell) {
+        return;
+      }
+
+      const text = event.clipboardData.getData('text/plain');
+      if (!text) {
+        return;
+      }
+
+      event.preventDefault();
+
+      const matrix = parseClipboardText(text);
+      if (matrix.length === 0) {
+        return;
+      }
+
+      const startFilteredRowIndex = uiState.activeCell.row;
+      // 変更(DS-3-9): レガシーの ?? startFilteredRowIndex フォールバックを撤去します。
+      //   getSourceIndex(=order[i]) は OOB(activeCell が縮小後の order を超える)で undefined を
+      //   返します。旧版は ?? で view index を source index に誤代入していました。撤去後は
+      //   undefined をそのまま判定し、OOB の paste 起点は no-op で抜けます(下流の startOriginalRowIndex +
+      //   matrix.length が NaN になるのを防ぎ、誤行 append も回避)。in-bounds 時は従来と完全一致。
+      const startOriginalRowIndex =
+        rowModel.getSourceIndex(startFilteredRowIndex);
+      if (startOriginalRowIndex === undefined) {
+        return;
+      }
+      const startColIndex = uiState.activeCell.col;
+
+      let workingRows = [...rows];
+      let workingColumns = [...visibleColumns];
+      // 変更(DS-3-10): workingSourceIndexes 配列(N 個の Array.from)を撤去し、view→source の
+      //   解決をクロージャ resolveSourceIndex に置換します。返り値は旧配列と完全一致:
+      //     v < N            : rowModel.getSourceIndex(v)  (= order[v])
+      //     v >= N(append 行): appendBaseSource + (v - N)
+      //   appendBaseSource = 拡張前 rows.length、N = paste 時点の getRowCount()。旧 append は
+      //   workingSourceIndexes.push(workingRows.length - 1) で appendBaseSource から連番を積んで
+      //   いたため式が一致します。append していない範囲外 v は定義値(OOB の source index)を返し
+      //   ますが、下流 applyClipboardMatrixToRows の !currentRow ガードで skip され、旧の
+      //   undefined→continue と同一結果になります。
+      const viewRowCountForPaste = rowModel.getRowCount();
+      const appendBaseSource = workingRows.length;
+      const resolveSourceIndex = (viewIndex: number): number | undefined =>
+        viewIndex < viewRowCountForPaste
+          ? rowModel.getSourceIndex(viewIndex)
+          : appendBaseSource + (viewIndex - viewRowCountForPaste);
+
+      // 追加: 行不足分を createRow で自動追加します。
+      const requiredOriginalRowCount = startOriginalRowIndex + matrix.length;
+      if (requiredOriginalRowCount > workingRows.length && createRow) {
+        while (workingRows.length < requiredOriginalRowCount) {
+          workingRows.push(createRow());
+        }
+      }
+
+      // 追加: 列不足分を createOverflowColumn で自動追加します。
+      const maxPasteWidth = matrix.reduce(
+        (max, currentRow) => Math.max(max, currentRow.length),
+        0,
+      );
+      if (maxPasteWidth === 0) {
+        return;
+      }
+
+      const requiredColumnCount = startColIndex + maxPasteWidth;
+      if (requiredColumnCount > workingColumns.length) {
+        if (onColumnsChange && createOverflowColumn) {
+          while (workingColumns.length < requiredColumnCount) {
+            workingColumns.push(createOverflowColumn(workingColumns.length));
+          }
+          onColumnsChange(workingColumns);
+        }
+      }
+
+      const nextRows = applyClipboardMatrixToRows(
+        workingRows,
+        resolveSourceIndex,
+        workingColumns,
+        matrix,
+        startFilteredRowIndex,
+        startColIndex,
+        (originalRowIndex, colIndex, row, column) =>
+          isCellEditable(
+            { readOnly, canEditCell },
+            originalRowIndex,
+            colIndex,
+            row,
+            column,
+          ),
+      );
+
+      const endRow = clamp(
+        uiState.activeCell.row + Math.max(matrix.length - 1, 0),
+        0,
+        Math.max(
+          // 変更(DS-3-3): filteredRows.length - 1 → getRowCount() - 1。
+          Math.max(rowModel.getRowCount() - 1, 0),
+          startFilteredRowIndex + matrix.length - 1,
+        ),
+      );
+      const endCol = clamp(
+        uiState.activeCell.col + Math.max((matrix[0]?.length ?? 1) - 1, 0),
+        0,
+        Math.max(
+          Math.max(workingColumns.length - 1, 0),
+          startColIndex + maxPasteWidth - 1,
+        ),
+      );
+
+      onRowsChange(nextRows);
+      dispatch(gridActions.startSelection(uiState.activeCell));
+      dispatch(gridActions.updateSelection({ row: endRow, col: endCol }));
+      dispatch(gridActions.endSelection());
+      dispatch(gridActions.activateCell(uiState.activeCell));
+    },
+    [
+      canEditCell,
+      createOverflowColumn,
+      createRow,
+      dispatch,
+      onColumnsChange,
+      onRowsChange,
+      readOnly,
+      rowModel,
+      rows,
+      uiState.activeCell,
+      visibleColumns,
+    ],
+  );
+
+  return {
+    isWholeGridSelected,
+    handleCopy,
+    handlePaste,
+  };
+};
+
+export default useGridClipboardController;
 </file>
 
 <file path="src/components/spreadsheet-grid/logic/geometry.ts">
@@ -12348,6 +12633,597 @@ export const useColumnMenuController = <T,>({
 export default useColumnMenuController;
 </file>
 
+<file path="src/components/spreadsheet-grid/view/ColumnMenuPopover.tsx">
+// 変更(13-A2): フラットな項目列挙 → AG Grid 同様のカスケード(サブメニュー)UI へ変更します。
+//             ルートメニューには「列の固定 ›」を置き、hover / クリックで右隣に
+//             サブメニュー(固定しない / 左に固定 / 右に固定)を開きます。
+// 変更(13-B1): 13-A2 セッションの設計決定どおり、サブメニュー開閉状態を
+//             isPinSubmenuOpen: boolean → openSubmenuKey: string | null へ一般化し、
+//             ルート項目に「この列の幅を自動調整」「すべての列の幅を自動調整」を
+//             追加します(AG Grid の Autosize This Column / Autosize All Columns 相当)。
+//             サブメニューを持たないルート項目への hover で openSubmenuKey を null に
+//             戻すことで、AG Grid の「別項目 hover でカスケードが閉じる」挙動になります。
+// 変更(13-B2-1): ルート項目「列の表示」を追加します(AG Grid の Choose Columns 相当)。
+//             サブメニューではなく別 popover(ColumnChooserPanel)を開くリーフ項目です。
+// 追加(13-B2-3 / gpt5.5対応): ルート項目「列のリセット」を追加します。
+//             既存の ColumnChooserPanel フッターと同じ reset 処理を呼び出し、列メニュー側からも
+//             AG Grid の Reset Columns 相当を実行できるようにします。
+import { useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
+import type {
+  CSSProperties,
+  KeyboardEvent,
+  PointerEvent,
+  RefObject,
+} from 'react';
+import type { GridColumnPinned, GridSortDirection } from '../model/gridTypes';
+import type { ColumnMenuLayout } from '../hooks/useColumnMenuController';
+
+type ColumnMenuPinnedItem = {
+  // 注記: undefined = 固定なし(中央スクロール領域)です。
+  value: GridColumnPinned | undefined;
+  label: string;
+};
+
+// 変更(13-A2): 項目順を AG Grid の Pin Column サブメニュー
+//             (No Pin / Pin Left / Pin Right)に合わせます。
+const PINNED_ITEMS: ColumnMenuPinnedItem[] = [
+  { value: undefined, label: '固定しない' },
+  { value: 'left', label: '左に固定' },
+  { value: 'right', label: '右に固定' },
+];
+
+// 追加(13-A2): サブメニューの幅と、ルートメニューとの水平間隔です。
+//             左右どちらへ開くかの判定(viewport はみ出し)にも使います。
+const SUBMENU_WIDTH = 180;
+const SUBMENU_GAP = 4;
+const VIEWPORT_MARGIN = 8;
+
+// 追加(13-B1): サブメニューを持つルート項目の識別キーです。
+//             openSubmenuKey(string | null) との比較で開閉を判定します。
+//             13-B 後続でサブメニュー持ち項目を増やす場合はキーを追加します。
+const PIN_SUBMENU_KEY = 'pin';
+
+type ColumnMenuPopoverProps = {
+  isOpen: boolean;
+  title: string;
+  columnKey: string;
+  // 追加(13-B4): ソート(昇順/降順)をメニューから操作するための状態とハンドラです。
+  //             canSort=false(enableSorting=false 相当)のときは項目自体を出しません
+  //             (AG Grid の sortable:false でソート項目が消えるのと同じ挙動です)。
+  //             sortDirection はこの列の現在のソート方向で、✓ 表示の単一ソースです。
+  //             同じ方向を再選択したときの「解除」判定は SpreadsheetGrid 側が行います。
+  canSort: boolean;
+  sortDirection: GridSortDirection;
+  onSortChange: (direction: Exclude<GridSortDirection, null>) => void;
+  // 追加(MS-3-1): 並び替え管理パネル(SortManagementPanel)を開くハンドラです。
+  //             canSort=true のときだけ、昇順/降順の下にリーフ項目として出します
+  //             (サブメニューではなく別 popover を開く点は「列の表示」と同じ作法です)。
+  //             クリックで列メニューを閉じてパネルを開く配線は SpreadsheetGrid 側が担います。
+  onOpenSortManager: () => void;
+  // 追加: 開いている列の現在の固定状態です(✓ 表示に使います)。
+  pinned: GridColumnPinned | undefined;
+  // 追加: onColumnsChange 未指定時は false になり、固定切替の項目を無効化します
+  //       (columns は controlled props のため、callback なしでは反映できません)。
+  canChangePinned: boolean;
+  layout: ColumnMenuLayout | null;
+  popoverRef: RefObject<HTMLDivElement | null>;
+  onPinnedChange: (
+    columnKey: string,
+    pinned: GridColumnPinned | undefined,
+  ) => void;
+  // 追加(13-B1): 幅自動調整のハンドラです。幅は grid 内部 state(columnWidths)で
+  //             管理されるため、pinned と違い onColumnsChange の有無に依存せず
+  //             常に有効です(手動リサイズと同じ扱い)。
+  onAutosizeColumn: (columnKey: string) => void;
+  onAutosizeAllColumns: () => void;
+  // 追加(13-B2-1): 列の表示/非表示パネル(ColumnChooserPanel)を開くハンドラです。
+  //             この項目はサブメニューではなく別 popover を開くリーフ項目です
+  //             (クリックで列メニューを閉じてパネルを開きます。配線は SpreadsheetGrid 側)。
+  onOpenColumnChooser: () => void;
+  // 追加(13-B2-3 / gpt5.5対応): 列メニュー root の「列のリセット」用です。
+  //             columns は controlled props のため、onColumnsChange 未指定時は無効化します。
+  canResetColumns: boolean;
+  onResetColumns: () => void;
+  onRequestClose: () => void;
+};
+
+// 追加(13-A2): ルートメニュー / サブメニューで共有するパネルの見た目です。
+const PANEL_BASE_STYLE: CSSProperties = {
+  padding: 8,
+  boxSizing: 'border-box',
+  border: '1px solid #cbd5e1',
+  borderRadius: 10,
+  backgroundColor: '#ffffff',
+  boxShadow: '0 10px 24px rgba(15, 23, 42, 0.12)',
+};
+
+// 追加(13-A): メニュー項目ボタンの style です。disabled / hover(highlight) で出し分けます。
+const getMenuItemStyle = (
+  disabled: boolean,
+  highlighted: boolean,
+): CSSProperties => ({
+  display: 'flex',
+  alignItems: 'center',
+  gap: 8,
+  width: '100%',
+  boxSizing: 'border-box',
+  padding: '7px 8px',
+  border: 'none',
+  borderRadius: 8,
+  backgroundColor: highlighted ? '#f1f5f9' : 'transparent',
+  color: disabled ? '#94a3b8' : '#334155',
+  fontSize: 13,
+  textAlign: 'left',
+  cursor: disabled ? 'default' : 'pointer',
+});
+
+export function ColumnMenuPopover({
+  isOpen,
+  title,
+  columnKey,
+  canSort,
+  sortDirection,
+  onSortChange,
+  onOpenSortManager,
+  pinned,
+  canChangePinned,
+  layout,
+  popoverRef,
+  onPinnedChange,
+  onAutosizeColumn,
+  onAutosizeAllColumns,
+  onOpenColumnChooser,
+  canResetColumns,
+  onResetColumns,
+  onRequestClose,
+}: ColumnMenuPopoverProps) {
+  // 変更(13-B1): isPinSubmenuOpen: boolean → openSubmenuKey: string | null へ一般化します
+  //             (13-A2 セッションの設計決定どおり)。
+  //   - サブメニューを持つルート項目: onPointerEnter で setOpenSubmenuKey(自分の key)
+  //   - サブメニューを持たないルート項目: onPointerEnter で setOpenSubmenuKey(null)
+  //     (= 開いているカスケードが閉じる。AG Grid の挙動の肝)
+  // 注記: AG Grid と同様、一度開いたサブメニューはポインタが離れても開いたままにし、
+  //       別のルート項目へ hover したとき・メニュー自体が閉じたときに閉じます。
+  //       チラつき防止のため pointerleave では閉じません。
+  const [openSubmenuKey, setOpenSubmenuKey] = useState<string | null>(null);
+
+  // 追加(13-A2): 開いたまま別列へ切り替えた場合(popover は mount されたまま
+  //             columnKey だけ変わる)に、サブメニューの開閉状態を初期化します。
+  // 変更(13-B1): リセット先を openSubmenuKey = null に読み替えます。
+  useEffect(() => {
+    setOpenSubmenuKey(null);
+  }, [columnKey, isOpen]);
+
+  if (!isOpen || !layout) {
+    return null;
+  }
+
+  const isPinSubmenuOpen = openSubmenuKey === PIN_SUBMENU_KEY;
+
+  // 追加(13-A2): サブメニューを右に開くと viewport をはみ出す場合は左へ開きます
+  //             (AG Grid と同じフリップ挙動です)。layout はルートメニューの
+  //             fixed 座標なので、右端 = layout.left + layout.width です。
+  const submenuOpensLeft =
+    layout.left + layout.width + SUBMENU_GAP + SUBMENU_WIDTH >
+    window.innerWidth - VIEWPORT_MARGIN;
+
+  const wrapperStyle: CSSProperties = {
+    position: 'fixed',
+    top: layout.top,
+    left: layout.left,
+    width: layout.width,
+    ...PANEL_BASE_STYLE,
+    zIndex: 1000,
+  };
+
+  // 追加(13-A2): サブメニューはルート項目(position: relative の行)を基準に
+  //             絶対配置します。top: -9 はパネルの padding(8) + border(1) ぶんを
+  //             相殺し、サブメニューの先頭項目をルート項目と上端揃えにするためです。
+  const submenuStyle: CSSProperties = {
+    position: 'absolute',
+    top: -9,
+    ...(submenuOpensLeft
+      ? { right: `calc(100% + ${SUBMENU_GAP}px)` }
+      : { left: `calc(100% + ${SUBMENU_GAP}px)` }),
+    width: SUBMENU_WIDTH,
+    ...PANEL_BASE_STYLE,
+    zIndex: 1,
+  };
+
+  const handlePointerDown = (event: PointerEvent<HTMLDivElement>) => {
+    // 追加: popover 内 pointer 操作を grid 側へ伝播させません
+    //       (列選択開始や outside click 判定との競合を避けます)。
+    event.stopPropagation();
+  };
+
+  const handleKeyDownCapture = (event: KeyboardEvent<HTMLDivElement>) => {
+    // 追加: portal 内 keyboard イベントを React ツリー上の parent へ流しません。
+    //       Escape での close は controller の window keydown リスナーが担当します。
+    event.stopPropagation();
+  };
+
+  return createPortal(
+    <div
+      ref={popoverRef}
+      onPointerDown={handlePointerDown}
+      onKeyDownCapture={handleKeyDownCapture}
+      onContextMenu={(event) => {
+        // 追加: メニュー上での右クリックはブラウザ標準メニューを出しません。
+        event.preventDefault();
+      }}
+      style={wrapperStyle}
+    >
+      <div
+        style={{
+          fontSize: 12,
+          fontWeight: 700,
+          color: '#334155',
+          padding: '2px 8px 6px',
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+          whiteSpace: 'nowrap',
+          borderBottom: '1px solid #e2e8f0',
+          marginBottom: 4,
+          userSelect: 'none',
+        }}
+      >
+        {title}
+      </div>
+
+      {/* ── ルート項目: 昇順 / 降順で並び替え(13-B4) ── */}
+      {/* 追加(13-B4): ヘッダーのソートボタンを廃止し、ソート操作をメニュー(と
+          コンテキストメニュー)へ集約します。AG Grid の Sort Ascending /
+          Sort Descending 相当のリーフ項目です。現在の方向に ✓ を出し、その方向を
+          もう一度選ぶと解除します(解除判定は SpreadsheetGrid 側)。
+          サブメニューを持たないリーフなので、hover で openSubmenuKey を null に戻し、
+          開いているカスケード(列の固定)を閉じます。hover ハイライトは他のリーフと
+          同じ DOM 直接書き換え方式です(state hover を避け、memo 影響を出しません)。 */}
+      {canSort && (
+        <>
+          <button
+            type="button"
+            onPointerEnter={(event) => {
+              setOpenSubmenuKey(null);
+              event.currentTarget.style.backgroundColor = '#f1f5f9';
+            }}
+            onPointerLeave={(event) => {
+              event.currentTarget.style.backgroundColor = 'transparent';
+            }}
+            onClick={() => {
+              onSortChange('asc');
+            }}
+            style={getMenuItemStyle(false, false)}
+          >
+            {/* 注記: 14px 列は他項目の ✓ 列と左端を揃えます。
+                未適用時は方向アイコン(↑/↓)を、適用中は ✓ を出します。
+                ラベル自体が方向を示すため、適用中にアイコンが ✓ へ変わっても
+                意味は失われません。 */}
+            <span
+              style={{
+                width: 14,
+                flex: '0 0 auto',
+                textAlign: 'center',
+                color: sortDirection === 'asc' ? '#2563eb' : '#94a3b8',
+                fontWeight: sortDirection === 'asc' ? 700 : 400,
+              }}
+            >
+              {sortDirection === 'asc' ? '✓' : '↑'}
+            </span>
+            <span
+              style={{
+                minWidth: 0,
+                flex: 1,
+                color: sortDirection === 'asc' ? '#1d4ed8' : undefined,
+              }}
+            >
+              昇順で並び替え
+            </span>
+          </button>
+
+          <button
+            type="button"
+            onPointerEnter={(event) => {
+              setOpenSubmenuKey(null);
+              event.currentTarget.style.backgroundColor = '#f1f5f9';
+            }}
+            onPointerLeave={(event) => {
+              event.currentTarget.style.backgroundColor = 'transparent';
+            }}
+            onClick={() => {
+              onSortChange('desc');
+            }}
+            style={getMenuItemStyle(false, false)}
+          >
+            <span
+              style={{
+                width: 14,
+                flex: '0 0 auto',
+                textAlign: 'center',
+                color: sortDirection === 'desc' ? '#2563eb' : '#94a3b8',
+                fontWeight: sortDirection === 'desc' ? 700 : 400,
+              }}
+            >
+              {sortDirection === 'desc' ? '✓' : '↓'}
+            </span>
+            <span
+              style={{
+                minWidth: 0,
+                flex: 1,
+                color: sortDirection === 'desc' ? '#1d4ed8' : undefined,
+              }}
+            >
+              降順で並び替え
+            </span>
+          </button>
+
+          {/* ── ルート項目: 並び替えを管理…(MS-3-1) ── */}
+          {/* 追加(MS-3-1): サブメニューではなく別 popover(SortManagementPanel)を開く
+              リーフ項目です。昇順/降順の単発操作に対し、複数レベルの追加/削除・優先順位の
+              編集をマウス/タッチで行う経路を提供します(Shift+click ジェスチャに依りません)。
+              autosize / 列の表示と同じく hover で setOpenSubmenuKey(null) し、開いている
+              カスケード(列の固定)を閉じます。✓ 列ぶんのスペーサで他項目と左端を揃えます。
+              クリックで列メニューを閉じてパネルを開く処理は SpreadsheetGrid 側
+              (onOpenSortManager)が担います。 */}
+          <button
+            type="button"
+            onPointerEnter={(event) => {
+              setOpenSubmenuKey(null);
+              event.currentTarget.style.backgroundColor = '#f1f5f9';
+            }}
+            onPointerLeave={(event) => {
+              event.currentTarget.style.backgroundColor = 'transparent';
+            }}
+            onClick={() => {
+              onOpenSortManager();
+            }}
+            style={getMenuItemStyle(false, false)}
+          >
+            <span style={{ width: 14, flex: '0 0 auto' }} />
+            <span style={{ minWidth: 0, flex: 1 }}>並び替えを管理…</span>
+          </button>
+
+          {/* 追加(13-B4): ソート群と以降(固定/幅/表示)の区切りです。 */}
+          <div
+            style={{
+              borderTop: '1px solid #e2e8f0',
+              margin: '4px 0',
+            }}
+          />
+        </>
+      )}
+
+      {/* ── ルート項目: 列の固定 ›(サブメニュー親) ── */}
+      {/* 追加(13-A2): サブメニューはこの行(position: relative)基準で絶対配置します。
+          パネル自体は overflow を持たないため、wrapper の外側(右隣 / 左隣)へ
+          はみ出して表示されます。popoverRef(wrapper)の子孫なので、controller の
+          outside-pointerdown 判定(contains)にもそのまま含まれます。 */}
+      <div style={{ position: 'relative' }}>
+        <button
+          type="button"
+          onPointerEnter={() => {
+            // 変更(13-B1): AG Grid と同様、hover でこの項目のサブメニューを開きます
+            //             (他のサブメニューが開いていれば置き換わります)。
+            setOpenSubmenuKey(PIN_SUBMENU_KEY);
+          }}
+          onClick={() => {
+            // 変更(13-B1): クリックでもトグルできるようにします(タッチ環境向け)。
+            setOpenSubmenuKey((current) =>
+              current === PIN_SUBMENU_KEY ? null : PIN_SUBMENU_KEY,
+            );
+          }}
+          style={getMenuItemStyle(false, isPinSubmenuOpen)}
+        >
+          {/* 注記: ✓ 列との左端揃えのため、サブメニュー項目と同じ幅のスペーサを置きます。*/}
+          <span style={{ width: 14, flex: '0 0 auto' }} />
+          <span style={{ minWidth: 0, flex: 1 }}>列の固定</span>
+          <span
+            style={{
+              flex: '0 0 auto',
+              color: '#94a3b8',
+              fontSize: 12,
+              lineHeight: 1,
+            }}
+          >
+            ›
+          </span>
+        </button>
+
+        {/* ── サブメニュー: 固定しない / 左に固定 / 右に固定 ── */}
+        {isPinSubmenuOpen && (
+          <div style={submenuStyle}>
+            {PINNED_ITEMS.map((item) => {
+              const isSelected = pinned === item.value;
+              return (
+                <button
+                  key={item.label}
+                  type="button"
+                  disabled={!canChangePinned}
+                  onClick={() => {
+                    if (!canChangePinned) {
+                      return;
+                    }
+                    // 注記: 現在値と同じ項目を選んでも閉じるだけになります
+                    //       (no-op 判定は SpreadsheetGrid 側で行います)。
+                    onPinnedChange(columnKey, item.value);
+                  }}
+                  onPointerEnter={(event) => {
+                    if (canChangePinned) {
+                      event.currentTarget.style.backgroundColor = '#f1f5f9';
+                    }
+                  }}
+                  onPointerLeave={(event) => {
+                    event.currentTarget.style.backgroundColor = 'transparent';
+                  }}
+                  style={getMenuItemStyle(!canChangePinned, false)}
+                >
+                  {/* 追加: 現在の固定状態に ✓ を出します(未選択は幅だけ確保して揃えます)。*/}
+                  <span
+                    style={{
+                      width: 14,
+                      flex: '0 0 auto',
+                      color: '#2563eb',
+                      fontWeight: 700,
+                      visibility: isSelected ? 'visible' : 'hidden',
+                    }}
+                  >
+                    ✓
+                  </span>
+                  <span style={{ minWidth: 0, flex: 1 }}>{item.label}</span>
+                </button>
+              );
+            })}
+
+            {!canChangePinned && (
+              <div
+                style={{
+                  fontSize: 11,
+                  color: '#94a3b8',
+                  padding: '4px 8px 2px',
+                  userSelect: 'none',
+                }}
+              >
+                onColumnsChange 未指定のため固定状態を変更できません
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* ── ルート項目: 幅の自動調整(13-B1) ── */}
+      {/* 追加(13-B1): サブメニューを持たないルート項目です。hover で
+          setOpenSubmenuKey(null) し、開いているカスケード(列の固定)を閉じます
+          (AG Grid の「別項目 hover でサブメニューが閉じる」挙動)。
+          hover ハイライトはサブメニュー項目と同じ DOM 直接書き換え方式です
+          (state を使うと hover のたびに popover 全体が再レンダーされるため)。
+          実際の close と幅反映は SpreadsheetGrid 側ハンドラが行います。 */}
+      <button
+        type="button"
+        onPointerEnter={(event) => {
+          setOpenSubmenuKey(null);
+          event.currentTarget.style.backgroundColor = '#f1f5f9';
+        }}
+        onPointerLeave={(event) => {
+          event.currentTarget.style.backgroundColor = 'transparent';
+        }}
+        onClick={() => {
+          onAutosizeColumn(columnKey);
+        }}
+        style={getMenuItemStyle(false, false)}
+      >
+        {/* 注記: ✓ 列との左端揃え用スペーサです(ピン行と同じ幅)。*/}
+        <span style={{ width: 14, flex: '0 0 auto' }} />
+        <span style={{ minWidth: 0, flex: 1 }}>この列の幅を自動調整</span>
+      </button>
+
+      <button
+        type="button"
+        onPointerEnter={(event) => {
+          setOpenSubmenuKey(null);
+          event.currentTarget.style.backgroundColor = '#f1f5f9';
+        }}
+        onPointerLeave={(event) => {
+          event.currentTarget.style.backgroundColor = 'transparent';
+        }}
+        onClick={() => {
+          onAutosizeAllColumns();
+        }}
+        style={getMenuItemStyle(false, false)}
+      >
+        <span style={{ width: 14, flex: '0 0 auto' }} />
+        <span style={{ minWidth: 0, flex: 1 }}>すべての列の幅を自動調整</span>
+      </button>
+
+      {/* ── ルート項目: 列の表示(13-B2-1) ── */}
+      {/* 追加(13-B2-1): サブメニューではなく別 popover(ColumnChooserPanel)を開く
+          リーフ項目です。autosize 項目と同じく hover で setOpenSubmenuKey(null) し、
+          開いているカスケード(列の固定)を閉じます。クリックで列メニューを閉じて
+          パネルを開く処理は SpreadsheetGrid 側(onOpenColumnChooser)が担います。 */}
+      <button
+        type="button"
+        onPointerEnter={(event) => {
+          setOpenSubmenuKey(null);
+          event.currentTarget.style.backgroundColor = '#f1f5f9';
+        }}
+        onPointerLeave={(event) => {
+          event.currentTarget.style.backgroundColor = 'transparent';
+        }}
+        onClick={() => {
+          onOpenColumnChooser();
+        }}
+        style={getMenuItemStyle(false, false)}
+      >
+        <span style={{ width: 14, flex: '0 0 auto' }} />
+        <span style={{ minWidth: 0, flex: 1 }}>列の表示</span>
+      </button>
+
+      {/* ── ルート項目: 列のリセット(13-B2-3 / gpt5.5対応) ── */}
+      {/* 追加(13-B2-3 / gpt5.5対応): 既存の ColumnChooserPanel フッターと同じ
+          リセット処理を列メニュー root からも呼べるようにします。サブメニューではない
+          リーフ項目なので、hover 時は openSubmenuKey を null に戻します。 */}
+      <button
+        type="button"
+        aria-disabled={!canResetColumns}
+        tabIndex={canResetColumns ? 0 : -1}
+        title={
+          canResetColumns
+            ? 'すべての列の幅・固定・表示を初期状態に戻します'
+            : 'onColumnsChange 未指定のため列をリセットできません'
+        }
+        onPointerEnter={(event) => {
+          setOpenSubmenuKey(null);
+          if (canResetColumns) {
+            event.currentTarget.style.backgroundColor = '#f1f5f9';
+          }
+        }}
+        onPointerLeave={(event) => {
+          event.currentTarget.style.backgroundColor = 'transparent';
+        }}
+        onClick={() => {
+          if (!canResetColumns) {
+            return;
+          }
+          onResetColumns();
+        }}
+        style={getMenuItemStyle(!canResetColumns, false)}
+      >
+        <span style={{ width: 14, flex: '0 0 auto' }} />
+        <span style={{ minWidth: 0, flex: 1 }}>列のリセット</span>
+      </button>
+
+      <div
+        style={{
+          borderTop: '1px solid #e2e8f0',
+          marginTop: 4,
+          paddingTop: 6,
+          display: 'flex',
+          justifyContent: 'flex-end',
+        }}
+      >
+        <button
+          type="button"
+          onClick={onRequestClose}
+          style={{
+            border: '1px solid #cbd5e1',
+            backgroundColor: '#ffffff',
+            color: '#475569',
+            borderRadius: 8,
+            padding: '5px 10px',
+            cursor: 'pointer',
+            fontSize: 12,
+          }}
+        >
+          閉じる
+        </button>
+      </div>
+    </div>,
+    document.body,
+  );
+}
+
+export default ColumnMenuPopover;
+</file>
+
 <file path="src/components/spreadsheet-grid/view/GridBodyLayer.tsx">
 import { memo } from 'react';
 import type { CSSProperties, PointerEvent, ReactNode } from 'react';
@@ -13011,597 +13887,6 @@ export function GridBodyLayer<T>({
 }
 
 export default GridBodyLayer;
-</file>
-
-<file path="src/components/spreadsheet-grid/view/ColumnMenuPopover.tsx">
-// 変更(13-A2): フラットな項目列挙 → AG Grid 同様のカスケード(サブメニュー)UI へ変更します。
-//             ルートメニューには「列の固定 ›」を置き、hover / クリックで右隣に
-//             サブメニュー(固定しない / 左に固定 / 右に固定)を開きます。
-// 変更(13-B1): 13-A2 セッションの設計決定どおり、サブメニュー開閉状態を
-//             isPinSubmenuOpen: boolean → openSubmenuKey: string | null へ一般化し、
-//             ルート項目に「この列の幅を自動調整」「すべての列の幅を自動調整」を
-//             追加します(AG Grid の Autosize This Column / Autosize All Columns 相当)。
-//             サブメニューを持たないルート項目への hover で openSubmenuKey を null に
-//             戻すことで、AG Grid の「別項目 hover でカスケードが閉じる」挙動になります。
-// 変更(13-B2-1): ルート項目「列の表示」を追加します(AG Grid の Choose Columns 相当)。
-//             サブメニューではなく別 popover(ColumnChooserPanel)を開くリーフ項目です。
-// 追加(13-B2-3 / gpt5.5対応): ルート項目「列のリセット」を追加します。
-//             既存の ColumnChooserPanel フッターと同じ reset 処理を呼び出し、列メニュー側からも
-//             AG Grid の Reset Columns 相当を実行できるようにします。
-import { useEffect, useState } from 'react';
-import { createPortal } from 'react-dom';
-import type {
-  CSSProperties,
-  KeyboardEvent,
-  PointerEvent,
-  RefObject,
-} from 'react';
-import type { GridColumnPinned, GridSortDirection } from '../model/gridTypes';
-import type { ColumnMenuLayout } from '../hooks/useColumnMenuController';
-
-type ColumnMenuPinnedItem = {
-  // 注記: undefined = 固定なし(中央スクロール領域)です。
-  value: GridColumnPinned | undefined;
-  label: string;
-};
-
-// 変更(13-A2): 項目順を AG Grid の Pin Column サブメニュー
-//             (No Pin / Pin Left / Pin Right)に合わせます。
-const PINNED_ITEMS: ColumnMenuPinnedItem[] = [
-  { value: undefined, label: '固定しない' },
-  { value: 'left', label: '左に固定' },
-  { value: 'right', label: '右に固定' },
-];
-
-// 追加(13-A2): サブメニューの幅と、ルートメニューとの水平間隔です。
-//             左右どちらへ開くかの判定(viewport はみ出し)にも使います。
-const SUBMENU_WIDTH = 180;
-const SUBMENU_GAP = 4;
-const VIEWPORT_MARGIN = 8;
-
-// 追加(13-B1): サブメニューを持つルート項目の識別キーです。
-//             openSubmenuKey(string | null) との比較で開閉を判定します。
-//             13-B 後続でサブメニュー持ち項目を増やす場合はキーを追加します。
-const PIN_SUBMENU_KEY = 'pin';
-
-type ColumnMenuPopoverProps = {
-  isOpen: boolean;
-  title: string;
-  columnKey: string;
-  // 追加(13-B4): ソート(昇順/降順)をメニューから操作するための状態とハンドラです。
-  //             canSort=false(enableSorting=false 相当)のときは項目自体を出しません
-  //             (AG Grid の sortable:false でソート項目が消えるのと同じ挙動です)。
-  //             sortDirection はこの列の現在のソート方向で、✓ 表示の単一ソースです。
-  //             同じ方向を再選択したときの「解除」判定は SpreadsheetGrid 側が行います。
-  canSort: boolean;
-  sortDirection: GridSortDirection;
-  onSortChange: (direction: Exclude<GridSortDirection, null>) => void;
-  // 追加(MS-3-1): 並び替え管理パネル(SortManagementPanel)を開くハンドラです。
-  //             canSort=true のときだけ、昇順/降順の下にリーフ項目として出します
-  //             (サブメニューではなく別 popover を開く点は「列の表示」と同じ作法です)。
-  //             クリックで列メニューを閉じてパネルを開く配線は SpreadsheetGrid 側が担います。
-  onOpenSortManager: () => void;
-  // 追加: 開いている列の現在の固定状態です(✓ 表示に使います)。
-  pinned: GridColumnPinned | undefined;
-  // 追加: onColumnsChange 未指定時は false になり、固定切替の項目を無効化します
-  //       (columns は controlled props のため、callback なしでは反映できません)。
-  canChangePinned: boolean;
-  layout: ColumnMenuLayout | null;
-  popoverRef: RefObject<HTMLDivElement | null>;
-  onPinnedChange: (
-    columnKey: string,
-    pinned: GridColumnPinned | undefined,
-  ) => void;
-  // 追加(13-B1): 幅自動調整のハンドラです。幅は grid 内部 state(columnWidths)で
-  //             管理されるため、pinned と違い onColumnsChange の有無に依存せず
-  //             常に有効です(手動リサイズと同じ扱い)。
-  onAutosizeColumn: (columnKey: string) => void;
-  onAutosizeAllColumns: () => void;
-  // 追加(13-B2-1): 列の表示/非表示パネル(ColumnChooserPanel)を開くハンドラです。
-  //             この項目はサブメニューではなく別 popover を開くリーフ項目です
-  //             (クリックで列メニューを閉じてパネルを開きます。配線は SpreadsheetGrid 側)。
-  onOpenColumnChooser: () => void;
-  // 追加(13-B2-3 / gpt5.5対応): 列メニュー root の「列のリセット」用です。
-  //             columns は controlled props のため、onColumnsChange 未指定時は無効化します。
-  canResetColumns: boolean;
-  onResetColumns: () => void;
-  onRequestClose: () => void;
-};
-
-// 追加(13-A2): ルートメニュー / サブメニューで共有するパネルの見た目です。
-const PANEL_BASE_STYLE: CSSProperties = {
-  padding: 8,
-  boxSizing: 'border-box',
-  border: '1px solid #cbd5e1',
-  borderRadius: 10,
-  backgroundColor: '#ffffff',
-  boxShadow: '0 10px 24px rgba(15, 23, 42, 0.12)',
-};
-
-// 追加(13-A): メニュー項目ボタンの style です。disabled / hover(highlight) で出し分けます。
-const getMenuItemStyle = (
-  disabled: boolean,
-  highlighted: boolean,
-): CSSProperties => ({
-  display: 'flex',
-  alignItems: 'center',
-  gap: 8,
-  width: '100%',
-  boxSizing: 'border-box',
-  padding: '7px 8px',
-  border: 'none',
-  borderRadius: 8,
-  backgroundColor: highlighted ? '#f1f5f9' : 'transparent',
-  color: disabled ? '#94a3b8' : '#334155',
-  fontSize: 13,
-  textAlign: 'left',
-  cursor: disabled ? 'default' : 'pointer',
-});
-
-export function ColumnMenuPopover({
-  isOpen,
-  title,
-  columnKey,
-  canSort,
-  sortDirection,
-  onSortChange,
-  onOpenSortManager,
-  pinned,
-  canChangePinned,
-  layout,
-  popoverRef,
-  onPinnedChange,
-  onAutosizeColumn,
-  onAutosizeAllColumns,
-  onOpenColumnChooser,
-  canResetColumns,
-  onResetColumns,
-  onRequestClose,
-}: ColumnMenuPopoverProps) {
-  // 変更(13-B1): isPinSubmenuOpen: boolean → openSubmenuKey: string | null へ一般化します
-  //             (13-A2 セッションの設計決定どおり)。
-  //   - サブメニューを持つルート項目: onPointerEnter で setOpenSubmenuKey(自分の key)
-  //   - サブメニューを持たないルート項目: onPointerEnter で setOpenSubmenuKey(null)
-  //     (= 開いているカスケードが閉じる。AG Grid の挙動の肝)
-  // 注記: AG Grid と同様、一度開いたサブメニューはポインタが離れても開いたままにし、
-  //       別のルート項目へ hover したとき・メニュー自体が閉じたときに閉じます。
-  //       チラつき防止のため pointerleave では閉じません。
-  const [openSubmenuKey, setOpenSubmenuKey] = useState<string | null>(null);
-
-  // 追加(13-A2): 開いたまま別列へ切り替えた場合(popover は mount されたまま
-  //             columnKey だけ変わる)に、サブメニューの開閉状態を初期化します。
-  // 変更(13-B1): リセット先を openSubmenuKey = null に読み替えます。
-  useEffect(() => {
-    setOpenSubmenuKey(null);
-  }, [columnKey, isOpen]);
-
-  if (!isOpen || !layout) {
-    return null;
-  }
-
-  const isPinSubmenuOpen = openSubmenuKey === PIN_SUBMENU_KEY;
-
-  // 追加(13-A2): サブメニューを右に開くと viewport をはみ出す場合は左へ開きます
-  //             (AG Grid と同じフリップ挙動です)。layout はルートメニューの
-  //             fixed 座標なので、右端 = layout.left + layout.width です。
-  const submenuOpensLeft =
-    layout.left + layout.width + SUBMENU_GAP + SUBMENU_WIDTH >
-    window.innerWidth - VIEWPORT_MARGIN;
-
-  const wrapperStyle: CSSProperties = {
-    position: 'fixed',
-    top: layout.top,
-    left: layout.left,
-    width: layout.width,
-    ...PANEL_BASE_STYLE,
-    zIndex: 1000,
-  };
-
-  // 追加(13-A2): サブメニューはルート項目(position: relative の行)を基準に
-  //             絶対配置します。top: -9 はパネルの padding(8) + border(1) ぶんを
-  //             相殺し、サブメニューの先頭項目をルート項目と上端揃えにするためです。
-  const submenuStyle: CSSProperties = {
-    position: 'absolute',
-    top: -9,
-    ...(submenuOpensLeft
-      ? { right: `calc(100% + ${SUBMENU_GAP}px)` }
-      : { left: `calc(100% + ${SUBMENU_GAP}px)` }),
-    width: SUBMENU_WIDTH,
-    ...PANEL_BASE_STYLE,
-    zIndex: 1,
-  };
-
-  const handlePointerDown = (event: PointerEvent<HTMLDivElement>) => {
-    // 追加: popover 内 pointer 操作を grid 側へ伝播させません
-    //       (列選択開始や outside click 判定との競合を避けます)。
-    event.stopPropagation();
-  };
-
-  const handleKeyDownCapture = (event: KeyboardEvent<HTMLDivElement>) => {
-    // 追加: portal 内 keyboard イベントを React ツリー上の parent へ流しません。
-    //       Escape での close は controller の window keydown リスナーが担当します。
-    event.stopPropagation();
-  };
-
-  return createPortal(
-    <div
-      ref={popoverRef}
-      onPointerDown={handlePointerDown}
-      onKeyDownCapture={handleKeyDownCapture}
-      onContextMenu={(event) => {
-        // 追加: メニュー上での右クリックはブラウザ標準メニューを出しません。
-        event.preventDefault();
-      }}
-      style={wrapperStyle}
-    >
-      <div
-        style={{
-          fontSize: 12,
-          fontWeight: 700,
-          color: '#334155',
-          padding: '2px 8px 6px',
-          overflow: 'hidden',
-          textOverflow: 'ellipsis',
-          whiteSpace: 'nowrap',
-          borderBottom: '1px solid #e2e8f0',
-          marginBottom: 4,
-          userSelect: 'none',
-        }}
-      >
-        {title}
-      </div>
-
-      {/* ── ルート項目: 昇順 / 降順で並び替え(13-B4) ── */}
-      {/* 追加(13-B4): ヘッダーのソートボタンを廃止し、ソート操作をメニュー(と
-          コンテキストメニュー)へ集約します。AG Grid の Sort Ascending /
-          Sort Descending 相当のリーフ項目です。現在の方向に ✓ を出し、その方向を
-          もう一度選ぶと解除します(解除判定は SpreadsheetGrid 側)。
-          サブメニューを持たないリーフなので、hover で openSubmenuKey を null に戻し、
-          開いているカスケード(列の固定)を閉じます。hover ハイライトは他のリーフと
-          同じ DOM 直接書き換え方式です(state hover を避け、memo 影響を出しません)。 */}
-      {canSort && (
-        <>
-          <button
-            type="button"
-            onPointerEnter={(event) => {
-              setOpenSubmenuKey(null);
-              event.currentTarget.style.backgroundColor = '#f1f5f9';
-            }}
-            onPointerLeave={(event) => {
-              event.currentTarget.style.backgroundColor = 'transparent';
-            }}
-            onClick={() => {
-              onSortChange('asc');
-            }}
-            style={getMenuItemStyle(false, false)}
-          >
-            {/* 注記: 14px 列は他項目の ✓ 列と左端を揃えます。
-                未適用時は方向アイコン(↑/↓)を、適用中は ✓ を出します。
-                ラベル自体が方向を示すため、適用中にアイコンが ✓ へ変わっても
-                意味は失われません。 */}
-            <span
-              style={{
-                width: 14,
-                flex: '0 0 auto',
-                textAlign: 'center',
-                color: sortDirection === 'asc' ? '#2563eb' : '#94a3b8',
-                fontWeight: sortDirection === 'asc' ? 700 : 400,
-              }}
-            >
-              {sortDirection === 'asc' ? '✓' : '↑'}
-            </span>
-            <span
-              style={{
-                minWidth: 0,
-                flex: 1,
-                color: sortDirection === 'asc' ? '#1d4ed8' : undefined,
-              }}
-            >
-              昇順で並び替え
-            </span>
-          </button>
-
-          <button
-            type="button"
-            onPointerEnter={(event) => {
-              setOpenSubmenuKey(null);
-              event.currentTarget.style.backgroundColor = '#f1f5f9';
-            }}
-            onPointerLeave={(event) => {
-              event.currentTarget.style.backgroundColor = 'transparent';
-            }}
-            onClick={() => {
-              onSortChange('desc');
-            }}
-            style={getMenuItemStyle(false, false)}
-          >
-            <span
-              style={{
-                width: 14,
-                flex: '0 0 auto',
-                textAlign: 'center',
-                color: sortDirection === 'desc' ? '#2563eb' : '#94a3b8',
-                fontWeight: sortDirection === 'desc' ? 700 : 400,
-              }}
-            >
-              {sortDirection === 'desc' ? '✓' : '↓'}
-            </span>
-            <span
-              style={{
-                minWidth: 0,
-                flex: 1,
-                color: sortDirection === 'desc' ? '#1d4ed8' : undefined,
-              }}
-            >
-              降順で並び替え
-            </span>
-          </button>
-
-          {/* ── ルート項目: 並び替えを管理…(MS-3-1) ── */}
-          {/* 追加(MS-3-1): サブメニューではなく別 popover(SortManagementPanel)を開く
-              リーフ項目です。昇順/降順の単発操作に対し、複数レベルの追加/削除・優先順位の
-              編集をマウス/タッチで行う経路を提供します(Shift+click ジェスチャに依りません)。
-              autosize / 列の表示と同じく hover で setOpenSubmenuKey(null) し、開いている
-              カスケード(列の固定)を閉じます。✓ 列ぶんのスペーサで他項目と左端を揃えます。
-              クリックで列メニューを閉じてパネルを開く処理は SpreadsheetGrid 側
-              (onOpenSortManager)が担います。 */}
-          <button
-            type="button"
-            onPointerEnter={(event) => {
-              setOpenSubmenuKey(null);
-              event.currentTarget.style.backgroundColor = '#f1f5f9';
-            }}
-            onPointerLeave={(event) => {
-              event.currentTarget.style.backgroundColor = 'transparent';
-            }}
-            onClick={() => {
-              onOpenSortManager();
-            }}
-            style={getMenuItemStyle(false, false)}
-          >
-            <span style={{ width: 14, flex: '0 0 auto' }} />
-            <span style={{ minWidth: 0, flex: 1 }}>並び替えを管理…</span>
-          </button>
-
-          {/* 追加(13-B4): ソート群と以降(固定/幅/表示)の区切りです。 */}
-          <div
-            style={{
-              borderTop: '1px solid #e2e8f0',
-              margin: '4px 0',
-            }}
-          />
-        </>
-      )}
-
-      {/* ── ルート項目: 列の固定 ›(サブメニュー親) ── */}
-      {/* 追加(13-A2): サブメニューはこの行(position: relative)基準で絶対配置します。
-          パネル自体は overflow を持たないため、wrapper の外側(右隣 / 左隣)へ
-          はみ出して表示されます。popoverRef(wrapper)の子孫なので、controller の
-          outside-pointerdown 判定(contains)にもそのまま含まれます。 */}
-      <div style={{ position: 'relative' }}>
-        <button
-          type="button"
-          onPointerEnter={() => {
-            // 変更(13-B1): AG Grid と同様、hover でこの項目のサブメニューを開きます
-            //             (他のサブメニューが開いていれば置き換わります)。
-            setOpenSubmenuKey(PIN_SUBMENU_KEY);
-          }}
-          onClick={() => {
-            // 変更(13-B1): クリックでもトグルできるようにします(タッチ環境向け)。
-            setOpenSubmenuKey((current) =>
-              current === PIN_SUBMENU_KEY ? null : PIN_SUBMENU_KEY,
-            );
-          }}
-          style={getMenuItemStyle(false, isPinSubmenuOpen)}
-        >
-          {/* 注記: ✓ 列との左端揃えのため、サブメニュー項目と同じ幅のスペーサを置きます。*/}
-          <span style={{ width: 14, flex: '0 0 auto' }} />
-          <span style={{ minWidth: 0, flex: 1 }}>列の固定</span>
-          <span
-            style={{
-              flex: '0 0 auto',
-              color: '#94a3b8',
-              fontSize: 12,
-              lineHeight: 1,
-            }}
-          >
-            ›
-          </span>
-        </button>
-
-        {/* ── サブメニュー: 固定しない / 左に固定 / 右に固定 ── */}
-        {isPinSubmenuOpen && (
-          <div style={submenuStyle}>
-            {PINNED_ITEMS.map((item) => {
-              const isSelected = pinned === item.value;
-              return (
-                <button
-                  key={item.label}
-                  type="button"
-                  disabled={!canChangePinned}
-                  onClick={() => {
-                    if (!canChangePinned) {
-                      return;
-                    }
-                    // 注記: 現在値と同じ項目を選んでも閉じるだけになります
-                    //       (no-op 判定は SpreadsheetGrid 側で行います)。
-                    onPinnedChange(columnKey, item.value);
-                  }}
-                  onPointerEnter={(event) => {
-                    if (canChangePinned) {
-                      event.currentTarget.style.backgroundColor = '#f1f5f9';
-                    }
-                  }}
-                  onPointerLeave={(event) => {
-                    event.currentTarget.style.backgroundColor = 'transparent';
-                  }}
-                  style={getMenuItemStyle(!canChangePinned, false)}
-                >
-                  {/* 追加: 現在の固定状態に ✓ を出します(未選択は幅だけ確保して揃えます)。*/}
-                  <span
-                    style={{
-                      width: 14,
-                      flex: '0 0 auto',
-                      color: '#2563eb',
-                      fontWeight: 700,
-                      visibility: isSelected ? 'visible' : 'hidden',
-                    }}
-                  >
-                    ✓
-                  </span>
-                  <span style={{ minWidth: 0, flex: 1 }}>{item.label}</span>
-                </button>
-              );
-            })}
-
-            {!canChangePinned && (
-              <div
-                style={{
-                  fontSize: 11,
-                  color: '#94a3b8',
-                  padding: '4px 8px 2px',
-                  userSelect: 'none',
-                }}
-              >
-                onColumnsChange 未指定のため固定状態を変更できません
-              </div>
-            )}
-          </div>
-        )}
-      </div>
-
-      {/* ── ルート項目: 幅の自動調整(13-B1) ── */}
-      {/* 追加(13-B1): サブメニューを持たないルート項目です。hover で
-          setOpenSubmenuKey(null) し、開いているカスケード(列の固定)を閉じます
-          (AG Grid の「別項目 hover でサブメニューが閉じる」挙動)。
-          hover ハイライトはサブメニュー項目と同じ DOM 直接書き換え方式です
-          (state を使うと hover のたびに popover 全体が再レンダーされるため)。
-          実際の close と幅反映は SpreadsheetGrid 側ハンドラが行います。 */}
-      <button
-        type="button"
-        onPointerEnter={(event) => {
-          setOpenSubmenuKey(null);
-          event.currentTarget.style.backgroundColor = '#f1f5f9';
-        }}
-        onPointerLeave={(event) => {
-          event.currentTarget.style.backgroundColor = 'transparent';
-        }}
-        onClick={() => {
-          onAutosizeColumn(columnKey);
-        }}
-        style={getMenuItemStyle(false, false)}
-      >
-        {/* 注記: ✓ 列との左端揃え用スペーサです(ピン行と同じ幅)。*/}
-        <span style={{ width: 14, flex: '0 0 auto' }} />
-        <span style={{ minWidth: 0, flex: 1 }}>この列の幅を自動調整</span>
-      </button>
-
-      <button
-        type="button"
-        onPointerEnter={(event) => {
-          setOpenSubmenuKey(null);
-          event.currentTarget.style.backgroundColor = '#f1f5f9';
-        }}
-        onPointerLeave={(event) => {
-          event.currentTarget.style.backgroundColor = 'transparent';
-        }}
-        onClick={() => {
-          onAutosizeAllColumns();
-        }}
-        style={getMenuItemStyle(false, false)}
-      >
-        <span style={{ width: 14, flex: '0 0 auto' }} />
-        <span style={{ minWidth: 0, flex: 1 }}>すべての列の幅を自動調整</span>
-      </button>
-
-      {/* ── ルート項目: 列の表示(13-B2-1) ── */}
-      {/* 追加(13-B2-1): サブメニューではなく別 popover(ColumnChooserPanel)を開く
-          リーフ項目です。autosize 項目と同じく hover で setOpenSubmenuKey(null) し、
-          開いているカスケード(列の固定)を閉じます。クリックで列メニューを閉じて
-          パネルを開く処理は SpreadsheetGrid 側(onOpenColumnChooser)が担います。 */}
-      <button
-        type="button"
-        onPointerEnter={(event) => {
-          setOpenSubmenuKey(null);
-          event.currentTarget.style.backgroundColor = '#f1f5f9';
-        }}
-        onPointerLeave={(event) => {
-          event.currentTarget.style.backgroundColor = 'transparent';
-        }}
-        onClick={() => {
-          onOpenColumnChooser();
-        }}
-        style={getMenuItemStyle(false, false)}
-      >
-        <span style={{ width: 14, flex: '0 0 auto' }} />
-        <span style={{ minWidth: 0, flex: 1 }}>列の表示</span>
-      </button>
-
-      {/* ── ルート項目: 列のリセット(13-B2-3 / gpt5.5対応) ── */}
-      {/* 追加(13-B2-3 / gpt5.5対応): 既存の ColumnChooserPanel フッターと同じ
-          リセット処理を列メニュー root からも呼べるようにします。サブメニューではない
-          リーフ項目なので、hover 時は openSubmenuKey を null に戻します。 */}
-      <button
-        type="button"
-        aria-disabled={!canResetColumns}
-        tabIndex={canResetColumns ? 0 : -1}
-        title={
-          canResetColumns
-            ? 'すべての列の幅・固定・表示を初期状態に戻します'
-            : 'onColumnsChange 未指定のため列をリセットできません'
-        }
-        onPointerEnter={(event) => {
-          setOpenSubmenuKey(null);
-          if (canResetColumns) {
-            event.currentTarget.style.backgroundColor = '#f1f5f9';
-          }
-        }}
-        onPointerLeave={(event) => {
-          event.currentTarget.style.backgroundColor = 'transparent';
-        }}
-        onClick={() => {
-          if (!canResetColumns) {
-            return;
-          }
-          onResetColumns();
-        }}
-        style={getMenuItemStyle(!canResetColumns, false)}
-      >
-        <span style={{ width: 14, flex: '0 0 auto' }} />
-        <span style={{ minWidth: 0, flex: 1 }}>列のリセット</span>
-      </button>
-
-      <div
-        style={{
-          borderTop: '1px solid #e2e8f0',
-          marginTop: 4,
-          paddingTop: 6,
-          display: 'flex',
-          justifyContent: 'flex-end',
-        }}
-      >
-        <button
-          type="button"
-          onClick={onRequestClose}
-          style={{
-            border: '1px solid #cbd5e1',
-            backgroundColor: '#ffffff',
-            color: '#475569',
-            borderRadius: 8,
-            padding: '5px 10px',
-            cursor: 'pointer',
-            fontSize: 12,
-          }}
-        >
-          閉じる
-        </button>
-      </div>
-    </div>,
-    document.body,
-  );
-}
-
-export default ColumnMenuPopover;
 </file>
 
 <file path="src/components/spreadsheet-grid/logic/filtering.ts">

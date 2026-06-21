@@ -84,6 +84,10 @@ type ColumnFilterPopoverProps = {
   // 追加(12-A): set フィルターの「クリア」です。popover を閉じずに全選択へ戻します
   //             (即時適用のため、結果を見ながら操作を続けられるようにします)。
   onSetClear: () => void;
+  // 追加(stage ②): serverSide か否か。set/select で候補が空のとき、空表示の文言を
+  //   「検索ヒット無し」と「候補未供給(serverSide では filterOptions / サーバ供給が必要)」で
+  //   出し分けるために使います(既定 false = clientSide で従来表示)。
+  isServerSide?: boolean;
 };
 
 // ── 共通スタイル ────────────────────────────────────────
@@ -136,6 +140,8 @@ type SetFilterBodyProps = {
   onValueToggle: (value: string) => void;
   onSelectAllChange: (scope: 'all' | string[], nextSelected: boolean) => void;
   onRequestClose: () => void;
+  // 追加(stage ②): 候補空時の空表示文言を出し分けるために親から受けます。
+  isServerSide: boolean;
 };
 
 function SetFilterBody({
@@ -145,6 +151,7 @@ function SetFilterBody({
   onValueToggle,
   onSelectAllChange,
   onRequestClose,
+  isServerSide,
 }: SetFilterBodyProps) {
   const [searchText, setSearchText] = useState('');
   // 追加(12-A): 候補 5,000 件規模での連続タイピングに備え、絞り込み計算は
@@ -279,7 +286,11 @@ function SetFilterBody({
               textAlign: 'center',
             }}
           >
-            一致する候補がありません
+            {options.length === 0
+              ? isServerSide
+                ? '候補が未指定です（serverSide では列に filterOptions などの候補供給が必要）'
+                : '候補がありません'
+              : '一致する候補がありません'}
           </div>
         ) : (
           <div
@@ -373,6 +384,7 @@ export function ColumnFilterPopover({
   onSetValueToggle,
   onSetSelectAllChange,
   onSetClear,
+  isServerSide = false,
 }: ColumnFilterPopoverProps) {
   if (typeof document === 'undefined' || !isOpen || !layout) {
     return null;
@@ -449,6 +461,7 @@ export function ColumnFilterPopover({
           onValueToggle={onSetValueToggle}
           onSelectAllChange={onSetSelectAllChange}
           onRequestClose={onRequestClose}
+          isServerSide={isServerSide}
         />
       ) : filterType === 'select' ? (
         <>

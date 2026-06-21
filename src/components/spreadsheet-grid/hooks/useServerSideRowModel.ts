@@ -73,8 +73,13 @@ export function useServerSideRowModel<T>(
   const [version, setVersion] = useState<number>(0);
 
   // 非同期コールバック(timer / promise)が最新 rowCount を読むための latest-ref です。
-  //   setRowCount を呼ぶ箇所(下記 2 箇所)で必ず対で更新するため、render 中の書き込みは不要です。
+  //   setRowCount を呼ぶ箇所(fetchBlock の .then)で必ず対で更新するため、render 中の書き込みは不要です。
   const rowCountRef = useRef<number>(rowCount);
+
+  // 追加(stage ②): 初回 mount を識別するフラグです。queryKey effect は mount でも走るため、
+  //   initialRowCount(即時スクロールバー)を初回だけ適用し、再クエリ時は前回件数を保持して
+  //   block 0 到着で件数を更新する分岐に使います(下の queryKey effect 参照)。
+  const hasInitializedRef = useRef(false);
 
   // in-flight な block fetch(blockIndex -> AbortController)です。重複排除とキャンセルに使います。
   const inFlightRef = useRef<Map<number, AbortController>>(new Map());
@@ -97,13 +102,13 @@ export function useServerSideRowModel<T>(
       const controller = new AbortController();
       inFlightRef.current.set(blockIndex, controller);
 
-      const knownRowCount = rowCountRef.current;
       const startIndex = blockIndex * blockSize;
-      const rawEnd = startIndex + blockSize;
-      // 件数既知なら末端をクランプします。未知(ブートストラップ)なら blockSize まで投げ、
-      //   結果の totalRowCount で件数を確定します。
-      const endIndex =
-        knownRowCount > 0 ? Math.min(rawEnd, knownRowCount) : rawEnd;
+      // 変更(stage ②): endIndex は常に blockSize 全幅で要求します(knownRowCount クランプ撤去)。
+      //   理由: queryKey 変化直後は前回件数が stale になり得ます。stale 件数で末端を切り詰めると
+      //   ブロックが部分長で確定し、以降 hasBlock=true により再フェッチされず未ロード行が残ります。
+      //   末端の部分ブロックはサーバが範囲内の存在ぶんだけ返す契約で吸収します(rows.length は要求幅と
+      //   不一致でも可)。ブートストラップ(件数未知)時も全幅要求で従来と一致します。
+      const endIndex = startIndex + blockSize;
 
       dataSource
         .getRows({
@@ -185,10 +190,11 @@ export function useServerSideRowModel<T>(
     [cache, blockSize, dataSource, scheduleFetch],
   );
 
-  // queryKey 変化(stage ② の filter/sort 変更)でキャッシュを無効化し、件数をリセットして
-  //   再ブートストラップします。mount 時も走り、件数未知なら block 0 を先行 fetch します。
+  // queryKey 変化(stage ② の filter/sort 変更)でキャッシュを無効化し、block 0 を取り直します。
+  //   件数はここでは戻さず、block 0 到着の totalRowCount で一度だけ更新します(再クエリ時の
+  //   スクロールバーの巻き戻し=一瞬の振れを避けるため)。mount 時も走ります。
   useEffect(() => {
-    // 追加(①-3): clientSide(inert)では何もしません(ブートストラップ/件数リセットを抑止し、
+    // 追加(①-3): clientSide(inert)では何もしません(ブートストラップ/無効化を抑止し、
     //   clientSide 経路を完全不変に保ちます)。
     if (dataSource == null) {
       return;
@@ -203,16 +209,31 @@ export function useServerSideRowModel<T>(
       timerRef.current = null;
     }
     cache.clear();
-    const initial = dataSource.initialRowCount ?? 0;
-    rowCountRef.current = initial;
-    // queryKey 変化時に件数を初期値へ戻します(古い total を引きずらない)。mount 時は useState
-    //   初期値と同値のため React が再描画を省きます。意図的な state リセットのため局所抑止します。
+
+    // 変更(stage ②): 件数をここでリセットしません。
+    //   - 初回 mount: rowCount は useState 初期値(initialRowCount ?? 0)のまま。initialRowCount 既知なら
+    //     即時に正しい総高さ/スクロールバーが出ます(従来どおり)。
+    //   - 再クエリ(queryKey 変化): 前回件数を保持したまま下記で block 0 を取り直し、到着した
+    //     totalRowCount で一度だけ更新します(initialRowCount への巻き戻しを避け件数遷移を単一化)。
+    //     stale 件数でも endIndex は全幅要求のためブロック切り詰めは起きません(fetchBlock 参照)。
+    const isFirstRun = !hasInitializedRef.current;
+    hasInitializedRef.current = true;
+
+    // クリア済みキャッシュをスケルトンとして再描画させるための意図的な再描画トリガーです
+    //   (version の bump。functional 更新で render 中 state は読みませんが、effect 内 setState の
+    //   ため元コードと同様に局所抑止します)。
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    setRowCount(initial);
     setVersion((value) => value + 1);
-    // 件数未知なら block 0 を先行 fetch して totalRowCount を確定します(ブートストラップ)。
-    //   既知(initialRowCount 指定)なら requestRange 駆動に委ねます。
-    if (initial <= 0) {
+
+    // block 0 先行 fetch:
+    //   - 初回 mount: 件数未知(initialRowCount 未指定 = 0)のときだけブートストラップします
+    //     (既知なら requestRange 駆動に委ね、初回から余計な block 0 を投げません)。
+    //   - 再クエリ: キャッシュ破棄したため常に block 0 を取り直します(件数追従の起点)。
+    if (isFirstRun) {
+      if ((dataSource.initialRowCount ?? 0) <= 0) {
+        fetchBlock(0);
+      }
+    } else {
       fetchBlock(0);
     }
     // queryKey 変化のみを再実行トリガーにします(fetchBlock/cache/dataSource は同 render で最新)。

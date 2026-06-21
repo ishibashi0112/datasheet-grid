@@ -4,7 +4,18 @@ import {
   type GridColumn,
   type ServerSideDataSource,
   type ServerSideGetRowsResult,
+  type ServerSideQuery,
 } from './components/spreadsheet-grid';
+// 注記(stage ②・デモ限定): モックサーバが query(フィルター/ソート)を実適用するため、グリッド内部の
+//   純関数を deep-import して再利用します。実サーバは SQL 等の自前クエリエンジンを使う想定で、これは
+//   「サーバの代役」をデモ内で最小コードかつグリッドと同一意味で再現するための便宜です。
+import {
+  createSourceOrder,
+  filterOrderByGlobalText,
+  filterOrderByColumns,
+} from './components/spreadsheet-grid/logic/filtering';
+import { sortOrder } from './components/spreadsheet-grid/logic/sorting';
+import { serializeServerSideQuery } from './components/spreadsheet-grid/logic/serverSideQuery';
 
 // 追加: デモ用の行型です。
 type DemoRow = {
@@ -87,27 +98,78 @@ const createDemoRowAt = (index: number): DemoRow => {
 const createDemoRows = (count: number): DemoRow[] =>
   Array.from({ length: count }, (_, index) => createDemoRowAt(index));
 
-// 追加(①-5): serverSide(SSRM)デモ用のモックデータ供給口です。実サーバの代わりに setTimeout で
-//   遅延を模し、要求された [startIndex, endIndex) のブロックだけを生成して返します(全件は返さない)。
-//   signal で「スクロールで通り過ぎた帯」の取得をキャンセルします(stale request 破棄)。
+// 追加(①-5 / stage ②): serverSide(SSRM)デモ用のモックデータ供給口です。実サーバの代わりに
+//   setTimeout で遅延を模し、query(グローバル/列フィルター・ソート)を全件データセットへ実適用してから、
+//   要求された [startIndex, endIndex) のスライスだけを返します(全件は返さない)。signal で「スクロールで
+//   通り過ぎた帯」やフィルター変更で不要になった取得をキャンセルします(stale request 破棄)。
+//   注意(デモ限定): フィルター/ソートの実適用には rows 配列が要るため、全件(SERVER_ROW_COUNT)を一度だけ
+//   materialize します(実サーバは DB 側で解決する想定)。また resolveServerOrder は同期計算のため、
+//   大件数では query 変更時に数百 ms の同期処理が走ります(モックの割り切り)。
 const SERVER_ROW_COUNT = 1000000;
 const SERVER_LATENCY_MS = 350;
+
+// サーバ側の全件データ(モックの「DB」)です。決定的生成のため遅延構築し 1 度だけ保持します。
+let serverRowsCache: DemoRow[] | null = null;
+const getServerRows = (): DemoRow[] => {
+  if (serverRowsCache === null) {
+    serverRowsCache = createDemoRows(SERVER_ROW_COUNT);
+  }
+  return serverRowsCache;
+};
+
+// サーバが知る全列です(フィルター/ソートの列解決に使用)。createInitialColumns は後方定義のため
+//   eval 時 TDZ を避けて遅延取得します。表示状態(列の表示/並び/固定)とは独立に固定で持ちます。
+let serverColumnsCache: GridColumn<DemoRow>[] | null = null;
+const getServerColumns = (): GridColumn<DemoRow>[] => {
+  if (serverColumnsCache === null) {
+    serverColumnsCache = createInitialColumns();
+  }
+  return serverColumnsCache;
+};
+
+// 直近 query の解決済み order(フィルター+ソート後の index 列)を 1 件だけキャッシュします。
+//   グリッドは同一 query で複数ブロックを要求するため、ブロックごとの全件再計算を避けます。
+let lastServerQueryKey: string | null = null;
+let lastServerOrder: Int32Array | null = null;
+
+const resolveServerOrder = (query: ServerSideQuery): Int32Array => {
+  const key = serializeServerSideQuery(query);
+  if (key === lastServerQueryKey && lastServerOrder !== null) {
+    return lastServerOrder;
+  }
+  const rows = getServerRows();
+  const columns = getServerColumns();
+  // グリッド本体と同一の純関数で order を解決します(クライアント時と完全に同じ意味)。
+  let order = createSourceOrder(rows.length);
+  order = filterOrderByGlobalText(rows, order, columns, query.globalText ?? '');
+  order = filterOrderByColumns(rows, order, columns, query.columnFilters ?? {});
+  order = sortOrder(rows, order, columns, query.sort ?? []);
+  lastServerQueryKey = key;
+  lastServerOrder = order;
+  return order;
+};
 
 const serverSideDataSource: ServerSideDataSource<DemoRow> = {
   // 初回 fetch 前から正しい総高さ/スクロールバーを出すため総件数を即時提示します。
   initialRowCount: SERVER_ROW_COUNT,
-  getRows: ({ startIndex, endIndex, signal }) =>
+  getRows: ({ startIndex, endIndex, query, signal }) =>
     new Promise<ServerSideGetRowsResult<DemoRow>>((resolve, reject) => {
       if (signal.aborted) {
         reject(new DOMException('aborted', 'AbortError'));
         return;
       }
       const timer = setTimeout(() => {
+        const rows = getServerRows();
+        // query を全件へ実適用(フィルター→ソート)。order.length がフィルター後の総件数です。
+        const order = resolveServerOrder(query);
+        const total = order.length;
+        const from = Math.max(0, Math.min(startIndex, total));
+        const to = Math.max(from, Math.min(endIndex, total));
         const slice: DemoRow[] = [];
-        for (let index = startIndex; index < endIndex; index += 1) {
-          slice.push(createDemoRowAt(index));
+        for (let i = from; i < to; i += 1) {
+          slice.push(rows[order[i]]);
         }
-        resolve({ rows: slice, totalRowCount: SERVER_ROW_COUNT });
+        resolve({ rows: slice, totalRowCount: total });
       }, SERVER_LATENCY_MS);
       signal.addEventListener(
         'abort',
@@ -121,7 +183,11 @@ const serverSideDataSource: ServerSideDataSource<DemoRow> = {
 };
 
 // 追加: 基本列 + 初期追加列を生成します。
-const createInitialColumns = (): GridColumn<DemoRow>[] => {
+const createInitialColumns = (
+  // 追加(stage ②): 品番列の filterType。clientSide は 'set'(大規模候補の仮想化デモ)、
+  //   serverSide は 'text'(高カーディナリティのため set 不適 → 部分一致)を渡します。
+  partNoFilterType: 'set' | 'text' = 'set',
+): GridColumn<DemoRow>[] => {
   const baseColumns: GridColumn<DemoRow>[] = [
     // 追加: text / number / select / set のフィルター型を設定します。
     // 追加(10-E): frozen columns デモ。品番・品名を左固定にします（pinned: 'left'）。
@@ -131,7 +197,7 @@ const createInitialColumns = (): GridColumn<DemoRow>[] => {
     //             popover 内リストの仮想化 + 検索の動作確認にそのまま使えます。
     //             注記(DS-3-1): 5万行化で候補も約5万件になります。リスト UI は仮想化済みで描画は
     //             問題ありませんが、収集の全走査(getColumnSelectOptions)は DS-4 の worker 化対象です。
-    { key: 'partNo', title: '品番', width: 150, filterType: 'set',
+    { key: 'partNo', title: '品番', width: 150, filterType: partNoFilterType,
       pinned: "left"
     },
     {
@@ -222,6 +288,8 @@ function App() {
   // 追加(①-5): モード切替で rows を再生成します(server は dataSource 駆動のため空配列で解放)。
   const [mode, setMode] = useState<DemoMode>('client');
   const changeMode = (next: DemoMode) => {
+    const wasServer = mode === 'server';
+    const willServer = next === 'server';
     setMode(next);
     if (next === 'server') {
       setRows(EMPTY_ROWS);
@@ -229,6 +297,13 @@ function App() {
       setRows(createDemoRows(AUTO_HEIGHT_DEMO_ROW_COUNT));
     } else {
       setRows(createDemoRows(INITIAL_ROW_COUNT));
+    }
+    // 追加(stage ②): serverSide 境界をまたぐ時だけ列を作り直します。品番は serverSide では
+    //   text フィルター、clientSide では set に切り替えます。同境界では grid も key で再マウント
+    //   するため列リセットは一貫します。client↔autoHeight(同 serverSide 性)では作り直さず、
+    //   列のカスタマイズ(並び/幅/固定/表示)を保持します。
+    if (wasServer !== willServer) {
+      setColumns(createInitialColumns(willServer ? 'text' : 'set'));
     }
   };
 
@@ -294,9 +369,36 @@ function App() {
             {`serverSide / SSRM(${SERVER_ROW_COUNT.toLocaleString()} 行・都度取得)`}
           </button>
         </div>
+
+        {mode === 'server' && (
+          <p
+            style={{
+              marginTop: 10,
+              padding: '8px 10px',
+              background: '#f1f5f9',
+              border: '1px solid #e2e8f0',
+              borderRadius: 6,
+              color: '#475569',
+              fontSize: 12.5,
+              lineHeight: 1.6,
+            }}
+          >
+            serverSide モード: 並べ替え・列フィルター・グローバルフィルターはモック
+            サーバへ送出され、結果は都度取得されます(入力は即時、送出は約 300ms
+            デバウンス後)。結果セットが入れ替わるとスクロールは先頭へ戻ります。品番は
+            高カーディナリティのため serverSide では text フィルター(部分一致)に切り替えて
+            います(clientSide は set フィルター = 大規模候補の仮想化デモ)。単位 / 状態は
+            列定義に候補(filterOptions)を持つため両モードで set として機能します。候補を
+            供給しない set/select 列は serverSide では候補を自動収集できず空になります。
+            ヘッダーの行数はフィルター前のデータセット総件数です。
+          </p>
+        )}
       </header>
 
       <SpreadsheetGrid
+        // 追加(stage ②・デモ): clientSide↔serverSide はフックの初期件数読込が mount 限定のため、
+        //   境界をまたぐ時だけ key で再マウントします(client↔autoHeight は同 key で再マウントなし)。
+        key={mode === 'server' ? 'server' : 'client'}
         rows={mode === 'server' ? undefined : rows}
         dataSource={mode === 'server' ? serverSideDataSource : undefined}
         columns={columns}
