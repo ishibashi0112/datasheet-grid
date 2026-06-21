@@ -78,6 +78,12 @@ export const useGridClipboardController = <T extends object>({
     const lines: string[] = [];
     for (let viewIndex = 0; viewIndex < rowCount; viewIndex += 1) {
       const row = rowModel.getRow(viewIndex);
+      // 追加(①-3): serverSide の未ロード行(getRow===undefined)は getCellValue が throw する
+      //   ため skip します(serializeSelectionToTsv と同方針)。clientSide は全行ロード済みの
+      //   ため、この guard は実質 no-op です。
+      if (!row) {
+        continue;
+      }
       const cells = visibleColumns.map((column) => {
         const rawValue = getCellValue(row, column);
         return column.formatClipboardValue

@@ -293,6 +293,158 @@ function GridBodyRowInner<T>({
 // memo + ジェネリック関数コンポーネントの定石です(型を保ったまま memo 化)。
 const GridBodyRow = memo(GridBodyRowInner) as typeof GridBodyRowInner;
 
+// ──────────────────────────────────────────────────────────
+// 追加(①-4): serverSide(SSRM)で未ロードの行に描画するスケルトン行です。
+//   ロード済み行(GridBodyRowInner)とコンテナの絶対配置・行ヘッダー・セル境界を一致させ、
+//   セル内容の代わりに静的なプレースホルダーバー(薄いグレー)を描きます。
+//   - 選択の親和性のため pointer ハンドラ(セル/行ヘッダーの down/enter/leave)は配線します
+//     (ダブルクリック=編集は stage ① では無効のため配線しません)。
+//   - keyframes / CSS 注入は使いません(本コードベースのインラインスタイル方針に整合)。
+// ──────────────────────────────────────────────────────────
+type GridBodySkeletonRowProps<T> = {
+  pane: GridPaneKind;
+  ownsRowHeader: boolean;
+  leadingWidth: number;
+  rowIndex: number;
+  top: number;
+  rowHeight: number;
+  renderEntries: PaneColumnEntry<T>[];
+  rowHeaderCellStyle: CSSProperties;
+  isRowHovered: boolean;
+  onRowHeaderPointerDown: (
+    rowIndex: number,
+    event: PointerEvent<HTMLDivElement>,
+  ) => void;
+  onRowHeaderPointerEnter: (
+    rowIndex: number,
+    event: PointerEvent<HTMLDivElement>,
+  ) => void;
+  onRowHeaderPointerLeave: (rowIndex: number) => void;
+  onCellPointerDown: (
+    cell: CellCoord,
+    event: PointerEvent<HTMLDivElement>,
+  ) => void;
+  onCellPointerEnter: (
+    cell: CellCoord,
+    event: PointerEvent<HTMLDivElement>,
+  ) => void;
+};
+
+// プレースホルダーバーの幅を列ごとに少し変えて機械的な均一さを避けます(列 index 駆動で
+//   render をまたいで安定。Math.random は使いません)。
+const SKELETON_BAR_WIDTHS = ['62%', '46%', '78%', '54%'] as const;
+
+function GridBodySkeletonRowInner<T>({
+  pane,
+  ownsRowHeader,
+  leadingWidth,
+  rowIndex,
+  top,
+  rowHeight,
+  renderEntries,
+  rowHeaderCellStyle,
+  isRowHovered,
+  onRowHeaderPointerDown,
+  onRowHeaderPointerEnter,
+  onRowHeaderPointerLeave,
+  onCellPointerDown,
+  onCellPointerEnter,
+}: GridBodySkeletonRowProps<T>) {
+  return (
+    <div
+      data-pane={pane}
+      data-row-index={rowIndex}
+      data-skeleton-row=""
+      style={{
+        position: 'absolute',
+        top: 0,
+        left: 0,
+        width: '100%',
+        height: rowHeight,
+        transform: `translateY(${top}px)`,
+        contain: 'layout style paint',
+      }}
+    >
+      {ownsRowHeader && (
+        <div
+          onPointerDown={(event) => onRowHeaderPointerDown(rowIndex, event)}
+          onPointerEnter={(event) => onRowHeaderPointerEnter(rowIndex, event)}
+          onPointerLeave={() => onRowHeaderPointerLeave(rowIndex)}
+          style={{
+            ...rowHeaderCellStyle,
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            zIndex: 5,
+            height: rowHeight,
+            backgroundColor: isRowHovered ? '#e2e8f0' : '#f8fafc',
+            color: '#94a3b8',
+            fontWeight: 500,
+          }}
+        >
+          {rowIndex + 1}
+        </div>
+      )}
+
+      {renderEntries.map((entry) => {
+        if (!entry) {
+          return null;
+        }
+        const colIndex = entry.logicalIndex;
+        const left = leadingWidth + entry.paneLocalStart;
+        const size = entry.paneLocalSize;
+        const barWidth =
+          SKELETON_BAR_WIDTHS[colIndex % SKELETON_BAR_WIDTHS.length];
+
+        return (
+          <div
+            key={`skeleton-${pane}-${colIndex}`}
+            onPointerDown={(event) =>
+              onCellPointerDown({ row: rowIndex, col: colIndex }, event)
+            }
+            onPointerEnter={(event) =>
+              onCellPointerEnter({ row: rowIndex, col: colIndex }, event)
+            }
+            style={{
+              position: 'absolute',
+              top: 0,
+              left,
+              width: size,
+              minWidth: size,
+              height: rowHeight,
+              boxSizing: 'border-box',
+              display: 'flex',
+              alignItems: 'center',
+              padding: '0 10px',
+              borderRight: '1px solid #e5e7eb',
+              borderBottom: '1px solid #e5e7eb',
+              backgroundColor: '#ffffff',
+              cursor: 'default',
+              userSelect: 'none',
+              outline: 'none',
+              zIndex: 1,
+            }}
+          >
+            <div
+              aria-hidden="true"
+              style={{
+                width: barWidth,
+                height: 10,
+                borderRadius: 4,
+                backgroundColor: '#e2e8f0',
+              }}
+            />
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+const GridBodySkeletonRow = memo(
+  GridBodySkeletonRowInner,
+) as typeof GridBodySkeletonRowInner;
+
 type GridBodyLayerProps<T> = {
   // 追加(10-C): 描画対象のペイン種別です。
   pane: GridPaneKind;
@@ -312,6 +464,9 @@ type GridBodyLayerProps<T> = {
   rowHeight: number;
   // 追加(C1): auto-height 行モード。未指定時 false(供給側 C1-3 まで uniform 経路で不変)。
   autoHeight?: boolean;
+  // 追加(①-4): serverSide(SSRM)モードか。true のとき未ロード行をスケルトン描画します。
+  //   未指定時 false(clientSide は従来どおり未ロード=OOB を null 返し)。
+  isServerSide?: boolean;
   rowHeaderCellStyle: CSSProperties;
   hoveredRowIndex: number | null;
   isWholeGridSelected: boolean;
@@ -366,6 +521,7 @@ export function GridBodyLayer<T>({
   renderEntries,
   rowHeight,
   autoHeight = false,
+  isServerSide = false,
   rowHeaderCellStyle,
   hoveredRowIndex,
   isWholeGridSelected,
@@ -386,23 +542,55 @@ export function GridBodyLayer<T>({
     <>
       {virtualRows.map((virtualRow) => {
         const rowIndex = virtualRow.index;
+        // 変更(①-4): 可視判定を先に評価し、範囲外行は即 null にします(skeleton 描画判定の前段)。
+        //   旧版は getRow の後に !row||!visible をまとめて判定していましたが、未ロード行の
+        //   skeleton 描画を可視帯に限定するため、可視判定を getRow より前へ移します。
+        if (!virtualRowIndexes.has(rowIndex)) {
+          return null;
+        }
+
+        // 行ごとの解決済み高さ。auto-height では virtualRow.size、uniform では rowHeight。
+        //   skeleton 行も同じ解決高を用い、ロード済み行とレイアウトを一致させます。
+        const rowSize = virtualRow.size ?? rowHeight;
+
         // 変更(DS-3-0): filteredRows[rowIndex] / filteredRowKeys[rowIndex] を rowModel 越しへ。
         //   getRow(i) は内部で rows[order[i]] を返すため、旧 filteredRows[i] と参照同一
         //   (= GridBodyRow memo の row props 安定)です。
         //   論点A(呼び出し順): rowKey は row が valid と確定した guard 後に算出します。
-        //   旧版は filteredRowKeys[i] の配列アクセスで OOB 時も undefined を返すだけでしたが、
         //   getRowKey は内部で resolvedRowKeyGetter(row, sourceIndex) を呼ぶため、カスタム
-        //   rowKeyGetter が row を参照する実装だと OOB rowIndex で throw し得ます。実機では
-        //   virtualizer の count === order.length のため OOB は起きませんが、防御的に
-        //   「row が valid と確定してから getRowKey を呼ぶ」順へ寄せます(出力は全ケース等価)。
+        //   rowKeyGetter が row を参照する実装だと未ロード/OOB rowIndex で throw し得ます。
+        //   そのため「row が valid と確定してから getRowKey を呼ぶ」順を維持します。
         const row = rowModel.getRow(rowIndex);
-        if (!row || !virtualRowIndexes.has(rowIndex)) {
-          return null;
+        // 追加(①-4): serverSide で未ロード(getRow===undefined)の行はスケルトンを描画します。
+        //   clientSide の OOB(同じく undefined)は従来どおり null を返します。
+        //   未ロード行の getRowKey は viewIndex を返す契約のため、React key は viewIndex 由来で
+        //   安定し、ロード完了時に実 row キーへ切り替わって skeleton→実行の差し替えが起きます。
+        if (!row) {
+          if (!isServerSide) {
+            return null;
+          }
+          const skeletonKey = rowModel.getRowKey(rowIndex) ?? rowIndex;
+          return (
+            <GridBodySkeletonRow
+              key={String(skeletonKey)}
+              pane={pane}
+              ownsRowHeader={ownsRowHeader}
+              leadingWidth={leadingWidth}
+              rowIndex={rowIndex}
+              top={virtualRow.start}
+              rowHeight={rowSize}
+              renderEntries={renderEntries}
+              rowHeaderCellStyle={rowHeaderCellStyle}
+              isRowHovered={hoveredRowIndex === rowIndex}
+              onRowHeaderPointerDown={onRowHeaderPointerDown}
+              onRowHeaderPointerEnter={onRowHeaderPointerEnter}
+              onRowHeaderPointerLeave={onRowHeaderPointerLeave}
+              onCellPointerDown={onCellPointerDown}
+              onCellPointerEnter={onCellPointerEnter}
+            />
+          );
         }
         const rowKey = rowModel.getRowKey(rowIndex) ?? rowIndex;
-
-        // 行ごとの解決済み高さ。auto-height では virtualRow.size、uniform では rowHeight。
-        const rowSize = virtualRow.size ?? rowHeight;
 
         // 追加(11-A): この行に関係する選択状態だけをプリミティブへ分解します。
         const isRowSelected =

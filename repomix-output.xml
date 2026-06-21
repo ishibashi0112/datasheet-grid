@@ -68,6 +68,8 @@ src/components/spreadsheet-grid/hooks/useGridEditController.ts
 src/components/spreadsheet-grid/hooks/useGridKeyboardInteractions.ts
 src/components/spreadsheet-grid/hooks/useGridPointerInteractions.ts
 src/components/spreadsheet-grid/hooks/useGridViewportSync.ts
+src/components/spreadsheet-grid/hooks/useServerSideRowModel.test.ts
+src/components/spreadsheet-grid/hooks/useServerSideRowModel.ts
 src/components/spreadsheet-grid/hooks/useSortManagementController.ts
 src/components/spreadsheet-grid/index.ts
 src/components/spreadsheet-grid/logic/columnAutosize.ts
@@ -1547,6 +1549,547 @@ export const useColumnSelectOptionsCollector = <T,>({
 export default useColumnSelectOptionsCollector;
 </file>
 
+<file path="src/components/spreadsheet-grid/hooks/useServerSideRowModel.test.ts">
+// useServerSideRowModel(SSRM フック)の挙動テストです(DS-4 ②)。
+//   性質ベースで検証します: 件数ブートストラップ(block 0 先行 fetch)/ debounce 合体 /
+//   in-flight 重複排除 / stale キャンセル(abort)/ getRow・isRowLoaded / queryKey 無効化 /
+//   unmount abort。renderHook が DOM を要するため本ファイルのみ jsdom にします。
+//   getRows はモックで、解決を自動/保留で切り替えられます(in-flight 検証は保留モードで行います)。
+// @vitest-environment jsdom
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { renderHook, act } from '@testing-library/react';
+import { useServerSideRowModel } from './useServerSideRowModel';
+import type {
+  ServerSideDataSource,
+  ServerSideGetRowsParams,
+  ServerSideGetRowsResult,
+} from '../model/gridTypes';
+
+type Row = { v: number };
+
+const rowKeyGetter = (row: Row): number => row.v;
+const EMPTY_QUERY = {} as const;
+
+type Recording = {
+  dataSource: ServerSideDataSource<Row>;
+  getRows: ReturnType<typeof vi.fn>;
+  calls: ServerSideGetRowsParams[];
+};
+
+// 記録つき getRows を持つ dataSource を作ります。autoResolve=false なら解決しない Promise を返し、
+//   in-flight 状態(重複排除 / abort)を検査できます。startIndex/endIndex は必ず尊重します。
+const createRecording = (opts: {
+  totalRowCount: number;
+  initialRowCount?: number;
+  blockSize?: number;
+  maxCachedBlocks?: number;
+  autoResolve?: boolean;
+}): Recording => {
+  const calls: ServerSideGetRowsParams[] = [];
+  const blockSize = opts.blockSize ?? 100;
+  const autoResolve = opts.autoResolve ?? true;
+  const getRows = vi.fn(
+    (params: ServerSideGetRowsParams): Promise<ServerSideGetRowsResult<Row>> => {
+      calls.push(params);
+      if (!autoResolve) {
+        return new Promise<ServerSideGetRowsResult<Row>>(() => {});
+      }
+      const rows: Row[] = [];
+      for (let i = params.startIndex; i < params.endIndex; i += 1) {
+        rows.push({ v: i });
+      }
+      return Promise.resolve({ rows, totalRowCount: opts.totalRowCount });
+    },
+  );
+  const dataSource: ServerSideDataSource<Row> = {
+    getRows,
+    initialRowCount: opts.initialRowCount,
+    blockSize,
+    maxCachedBlocks: opts.maxCachedBlocks,
+  };
+  return { dataSource, getRows, calls };
+};
+
+// マイクロタスクを数回流します(getRows().then(...) チェーンの解決用)。
+const flush = async (): Promise<void> => {
+  await act(async () => {
+    await Promise.resolve();
+    await Promise.resolve();
+  });
+};
+
+// debounce タイマーを進めて runFetch を発火し、続く fetch の解決まで流します。
+const advance = async (ms: number): Promise<void> => {
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(ms);
+  });
+};
+
+// calls から startIndex の昇順ユニーク配列を作ります(どのブロックを取得したかの指標)。
+const startedBlocks = (calls: ServerSideGetRowsParams[], blockSize: number): number[] => {
+  const set = new Set<number>();
+  for (const c of calls) {
+    set.add(c.startIndex / blockSize);
+  }
+  return Array.from(set).sort((a, b) => a - b);
+};
+
+beforeEach(() => {
+  vi.useFakeTimers();
+});
+afterEach(() => {
+  vi.useRealTimers();
+  vi.restoreAllMocks();
+});
+
+const DEBOUNCE = 120;
+
+describe('useServerSideRowModel', () => {
+  it('initialRowCount 未指定なら block 0 を先行 fetch して件数を確定する(ブートストラップ)', async () => {
+    const rec = createRecording({ totalRowCount: 1000 });
+    const { result } = renderHook(() =>
+      useServerSideRowModel<Row>({
+        dataSource: rec.dataSource,
+        rowKeyGetter,
+        query: EMPTY_QUERY,
+        queryKey: 'a',
+      }),
+    );
+    await flush();
+    // block 0 だけが取得され、totalRowCount が反映される。
+    expect(startedBlocks(rec.calls, 100)).toEqual([0]);
+    expect(rec.calls[0]).toMatchObject({ startIndex: 0, endIndex: 100 });
+    expect(result.current.rowCount).toBe(1000);
+    expect(result.current.rowModel.getRowCount()).toBe(1000);
+    expect(result.current.rowModel.getRow(0)).toEqual({ v: 0 });
+    expect(result.current.isRowLoaded(0)).toBe(true);
+    expect(result.current.isRowLoaded(500)).toBe(false);
+  });
+
+  it('getSourceIndex は恒等 / 未ロード getRowKey は viewIndex', async () => {
+    const rec = createRecording({ totalRowCount: 1000 });
+    const { result } = renderHook(() =>
+      useServerSideRowModel<Row>({
+        dataSource: rec.dataSource,
+        rowKeyGetter,
+        query: EMPTY_QUERY,
+        queryKey: 'a',
+      }),
+    );
+    await flush();
+    expect(result.current.rowModel.getSourceIndex(42)).toBe(42);
+    // block 0 はロード済み → rowKeyGetter(row.v)。未ロード行は viewIndex。
+    expect(result.current.rowModel.getRowKey(3)).toBe(3);
+    expect(result.current.rowModel.getRowKey(900)).toBe(900);
+  });
+
+  it('requestRange は debounce で合体し、最新レンジのブロックだけ取得する', async () => {
+    const rec = createRecording({ totalRowCount: 1000, initialRowCount: 1000 });
+    const { result } = renderHook(() =>
+      useServerSideRowModel<Row>({
+        dataSource: rec.dataSource,
+        rowKeyGetter,
+        query: EMPTY_QUERY,
+        queryKey: 'a',
+      }),
+    );
+    // initialRowCount 既知 → ブートストラップ fetch なし。
+    await flush();
+    expect(rec.calls.length).toBe(0);
+    act(() => {
+      result.current.requestRange(0, 200);
+      result.current.requestRange(0, 300);
+    });
+    // debounce 未発火では未取得。
+    expect(rec.calls.length).toBe(0);
+    await advance(DEBOUNCE);
+    // 最新 [0,300) のブロック 0,1,2 のみ、各 1 回。
+    expect(startedBlocks(rec.calls, 100)).toEqual([0, 1, 2]);
+    expect(rec.calls.length).toBe(3);
+  });
+
+  it('in-flight 中の同一ブロックは二重 fetch しない(重複排除)', async () => {
+    const rec = createRecording({
+      totalRowCount: 1000,
+      initialRowCount: 1000,
+      autoResolve: false,
+    });
+    const { result } = renderHook(() =>
+      useServerSideRowModel<Row>({
+        dataSource: rec.dataSource,
+        rowKeyGetter,
+        query: EMPTY_QUERY,
+        queryKey: 'a',
+      }),
+    );
+    await flush();
+    act(() => {
+      result.current.requestRange(0, 200);
+    });
+    await advance(DEBOUNCE);
+    // block 0,1 が in-flight(未解決)。
+    expect(startedBlocks(rec.calls, 100)).toEqual([0, 1]);
+    act(() => {
+      result.current.requestRange(0, 300);
+    });
+    await advance(DEBOUNCE);
+    // 0,1 は in-flight のため skip、新規 2 のみ追加。各ブロック 1 回。
+    expect(startedBlocks(rec.calls, 100)).toEqual([0, 1, 2]);
+    expect(rec.calls.length).toBe(3);
+  });
+
+  it('範囲外になった in-flight は abort される(stale キャンセル)', async () => {
+    const rec = createRecording({
+      totalRowCount: 1000,
+      initialRowCount: 1000,
+      autoResolve: false,
+    });
+    const { result } = renderHook(() =>
+      useServerSideRowModel<Row>({
+        dataSource: rec.dataSource,
+        rowKeyGetter,
+        query: EMPTY_QUERY,
+        queryKey: 'a',
+      }),
+    );
+    await flush();
+    act(() => {
+      result.current.requestRange(0, 200);
+    });
+    await advance(DEBOUNCE);
+    const block0Signal = rec.calls[0].signal;
+    const block1Signal = rec.calls[1].signal;
+    expect(block0Signal.aborted).toBe(false);
+    // 遠くへスクロール → 0,1 は不要に。
+    act(() => {
+      result.current.requestRange(500, 700);
+    });
+    await advance(DEBOUNCE);
+    // 旧ブロックの signal が abort され、新ブロック 5,6 が取得される。
+    expect(block0Signal.aborted).toBe(true);
+    expect(block1Signal.aborted).toBe(true);
+    expect(startedBlocks(rec.calls, 100)).toEqual([0, 1, 5, 6]);
+  });
+
+  it('queryKey 変化で旧キャッシュを破棄し再取得する', async () => {
+    const rec = createRecording({ totalRowCount: 1000 });
+    const { result, rerender } = renderHook(
+      ({ queryKey }: { queryKey: string }) =>
+        useServerSideRowModel<Row>({
+          dataSource: rec.dataSource,
+          rowKeyGetter,
+          query: EMPTY_QUERY,
+          queryKey,
+        }),
+      { initialProps: { queryKey: 'a' } },
+    );
+    await flush();
+    expect(result.current.rowModel.getRow(0)).toEqual({ v: 0 });
+    const callsAfterFirst = rec.calls.length;
+    // queryKey を変える → キャッシュ破棄 + 再ブートストラップ。
+    rerender({ queryKey: 'b' });
+    await flush();
+    // block 0 が再取得され、ロードし直される。
+    expect(rec.calls.length).toBeGreaterThan(callsAfterFirst);
+    expect(result.current.rowModel.getRow(0)).toEqual({ v: 0 });
+  });
+
+  it('unmount で in-flight を abort する', async () => {
+    const rec = createRecording({
+      totalRowCount: 1000,
+      initialRowCount: 1000,
+      autoResolve: false,
+    });
+    const { result, unmount } = renderHook(() =>
+      useServerSideRowModel<Row>({
+        dataSource: rec.dataSource,
+        rowKeyGetter,
+        query: EMPTY_QUERY,
+        queryKey: 'a',
+      }),
+    );
+    await flush();
+    act(() => {
+      result.current.requestRange(0, 200);
+    });
+    await advance(DEBOUNCE);
+    const signals = rec.calls.map((c) => c.signal);
+    expect(signals.length).toBeGreaterThan(0);
+    expect(signals.every((s) => s.aborted)).toBe(false);
+    unmount();
+    expect(signals.every((s) => s.aborted)).toBe(true);
+  });
+});
+</file>
+
+<file path="src/components/spreadsheet-grid/hooks/useServerSideRowModel.ts">
+// serverSide(SSRM)の RowModel を供給するフックです(DS-4 ②)。
+//
+// 責務:
+//   - クライアント側スパース LRU キャッシュ(serverSideCache)を保持し、RowModel シーム
+//     (getRowCount / getRow / getSourceIndex / getRowKey)を serverSide 実装で供給します。
+//   - 可視レンジ(requestRange)に対し、欠落ブロックだけを getRows で都度取得します
+//     (computeBlockIndexes で必要ブロックを定数サイズに限定 → 取得範囲を縛りメモリを有界化)。
+//   - スクロール debounce / in-flight 重複排除 / stale リクエストの AbortSignal キャンセル /
+//     件数ブートストラップ(block 0 先行 fetch) / queryKey 変化での無効化 を担います。
+//
+// 設計メモ:
+//   - getRow は cache の純読み(recency 不変)。可視帯の MRU 化は requestRange 内の touchBlocks で
+//     明示的に行い、render が evict 順序を揺らさないようにします(serverSideCache の方針に整合)。
+//   - getSourceIndex は恒等(viewIndex)。serverSide は view 順が正準で、別空間の source index を
+//     持ちません。getRowKey は未ロード行で viewIndex を返し、スケルトン行の React key を安定させます。
+//   - rowCount は state(縦ジオメトリ駆動の単一ソース)。getRows 結果の totalRowCount で最新化します。
+//     非同期コールバックは rowCountRef(setRowCount と必ず対で更新)から最新件数を読みます。
+//   - ブロック到着は version(state)の bump で再描画を促し、getRow が新データを拾います。
+
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import type {
+  GridRowKey,
+  RowModel,
+  ServerSideDataSource,
+  ServerSideQuery,
+} from '../model/gridTypes';
+import { createServerSideRowCache } from '../logic/serverSideCache';
+import { computeBlockIndexes } from '../logic/serverSideBlocks';
+
+// dataSource 側で未指定のときの既定値です。
+const DEFAULT_BLOCK_SIZE = 100;
+const DEFAULT_MAX_CACHED_BLOCKS = 64;
+const DEFAULT_DEBOUNCE_MS = 120;
+
+export type UseServerSideRowModelParams<T> = {
+  // 変更(①-3): dataSource を optional 化しました。SpreadsheetGrid は本フックを無条件に
+  //   呼ぶ(React Hooks 規則)ため、clientSide(dataSource 不在)では inert 動作にします。
+  dataSource?: ServerSideDataSource<T>;
+  rowKeyGetter: (row: T, index: number) => GridRowKey;
+  query: ServerSideQuery;
+  // query の同一性キーです。変化でキャッシュ無効化 + 再取得します(stage ① は安定値)。
+  queryKey: string;
+  debounceMs?: number;
+};
+
+export type UseServerSideRowModelResult<T> = {
+  rowModel: RowModel<T>;
+  rowCount: number;
+  isRowLoaded: (viewIndex: number) => boolean;
+  requestRange: (startIndex: number, endIndex: number) => void;
+};
+
+export function useServerSideRowModel<T>(
+  params: UseServerSideRowModelParams<T>,
+): UseServerSideRowModelResult<T> {
+  const { dataSource, rowKeyGetter, query, queryKey } = params;
+  // 変更(①-3): dataSource 不在(clientSide)でも安全に評価できるよう optional-chain します。
+  //   inert 時は既定値で空キャッシュを作るだけで、書き込みも fetch も発生しません。
+  const blockSize = dataSource?.blockSize ?? DEFAULT_BLOCK_SIZE;
+  const maxBlocks = dataSource?.maxCachedBlocks ?? DEFAULT_MAX_CACHED_BLOCKS;
+  const debounceMs = params.debounceMs ?? DEFAULT_DEBOUNCE_MS;
+
+  // スパース LRU キャッシュです。useState の遅延初期化で render をまたいで安定させます
+  //   (blockSize / maxBlocks はフックの生存中は固定の想定)。
+  const [cache] = useState(() =>
+    createServerSideRowCache<T>({ blockSize, maxBlocks }),
+  );
+
+  const [rowCount, setRowCount] = useState<number>(
+    dataSource?.initialRowCount ?? 0,
+  );
+  // ブロック到着を rowModel / consumer に伝える再描画トリガーです(値自体は読みません)。
+  const [version, setVersion] = useState<number>(0);
+
+  // 非同期コールバック(timer / promise)が最新 rowCount を読むための latest-ref です。
+  //   setRowCount を呼ぶ箇所(下記 2 箇所)で必ず対で更新するため、render 中の書き込みは不要です。
+  const rowCountRef = useRef<number>(rowCount);
+
+  // in-flight な block fetch(blockIndex -> AbortController)です。重複排除とキャンセルに使います。
+  const inFlightRef = useRef<Map<number, AbortController>>(new Map());
+  // debounce タイマーと最新の要求レンジです。
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const latestRangeRef = useRef<{ start: number; end: number }>({
+    start: 0,
+    end: 0,
+  });
+
+  const fetchBlock = useCallback(
+    (blockIndex: number): void => {
+      // 追加(①-3): clientSide(inert)では取得しません。
+      if (dataSource == null) {
+        return;
+      }
+      if (cache.hasBlock(blockIndex) || inFlightRef.current.has(blockIndex)) {
+        return;
+      }
+      const controller = new AbortController();
+      inFlightRef.current.set(blockIndex, controller);
+
+      const knownRowCount = rowCountRef.current;
+      const startIndex = blockIndex * blockSize;
+      const rawEnd = startIndex + blockSize;
+      // 件数既知なら末端をクランプします。未知(ブートストラップ)なら blockSize まで投げ、
+      //   結果の totalRowCount で件数を確定します。
+      const endIndex =
+        knownRowCount > 0 ? Math.min(rawEnd, knownRowCount) : rawEnd;
+
+      dataSource
+        .getRows({
+          startIndex,
+          endIndex,
+          query,
+          signal: controller.signal,
+        })
+        .then((result) => {
+          if (controller.signal.aborted) {
+            return;
+          }
+          // 自分が登録した controller でなければ(別世代に置換)結果を捨てます。
+          if (inFlightRef.current.get(blockIndex) !== controller) {
+            return;
+          }
+          inFlightRef.current.delete(blockIndex);
+          cache.setBlock(blockIndex, result.rows);
+          if (result.totalRowCount !== rowCountRef.current) {
+            rowCountRef.current = result.totalRowCount;
+            setRowCount(result.totalRowCount);
+          }
+          setVersion((value) => value + 1);
+        })
+        .catch(() => {
+          // abort は無視します。その他エラーは in-flight を解放し、次の requestRange で再試行します。
+          if (inFlightRef.current.get(blockIndex) === controller) {
+            inFlightRef.current.delete(blockIndex);
+          }
+        });
+    },
+    [cache, blockSize, dataSource, query],
+  );
+
+  const runFetch = useCallback((): void => {
+    const { start, end } = latestRangeRef.current;
+    const needed = computeBlockIndexes(
+      start,
+      end,
+      blockSize,
+      rowCountRef.current,
+    );
+    const neededSet = new Set(needed);
+    // 最新の必要集合に含まれない in-flight を中断します(スクロールで通り過ぎた帯の破棄)。
+    for (const [blockIndex, controller] of inFlightRef.current) {
+      if (!neededSet.has(blockIndex)) {
+        controller.abort();
+        inFlightRef.current.delete(blockIndex);
+      }
+    }
+    for (const blockIndex of needed) {
+      fetchBlock(blockIndex);
+    }
+  }, [blockSize, fetchBlock]);
+
+  const scheduleFetch = useCallback((): void => {
+    if (timerRef.current !== null) {
+      clearTimeout(timerRef.current);
+    }
+    timerRef.current = setTimeout(() => {
+      timerRef.current = null;
+      runFetch();
+    }, debounceMs);
+  }, [debounceMs, runFetch]);
+
+  const requestRange = useCallback(
+    (startIndex: number, endIndex: number): void => {
+      // 追加(①-3): clientSide(inert)では no-op です。
+      if (dataSource == null) {
+        return;
+      }
+      latestRangeRef.current = { start: startIndex, end: endIndex };
+      // 可視帯を即時 MRU 化して退避から保護します(fetch は debounce 経由)。
+      cache.touchBlocks(
+        computeBlockIndexes(startIndex, endIndex, blockSize, rowCountRef.current),
+      );
+      scheduleFetch();
+    },
+    [cache, blockSize, dataSource, scheduleFetch],
+  );
+
+  // queryKey 変化(stage ② の filter/sort 変更)でキャッシュを無効化し、件数をリセットして
+  //   再ブートストラップします。mount 時も走り、件数未知なら block 0 を先行 fetch します。
+  useEffect(() => {
+    // 追加(①-3): clientSide(inert)では何もしません(ブートストラップ/件数リセットを抑止し、
+    //   clientSide 経路を完全不変に保ちます)。
+    if (dataSource == null) {
+      return;
+    }
+    // 進行中の取得を全て中断します。
+    for (const [, controller] of inFlightRef.current) {
+      controller.abort();
+    }
+    inFlightRef.current.clear();
+    if (timerRef.current !== null) {
+      clearTimeout(timerRef.current);
+      timerRef.current = null;
+    }
+    cache.clear();
+    const initial = dataSource.initialRowCount ?? 0;
+    rowCountRef.current = initial;
+    // queryKey 変化時に件数を初期値へ戻します(古い total を引きずらない)。mount 時は useState
+    //   初期値と同値のため React が再描画を省きます。意図的な state リセットのため局所抑止します。
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setRowCount(initial);
+    setVersion((value) => value + 1);
+    // 件数未知なら block 0 を先行 fetch して totalRowCount を確定します(ブートストラップ)。
+    //   既知(initialRowCount 指定)なら requestRange 駆動に委ねます。
+    if (initial <= 0) {
+      fetchBlock(0);
+    }
+    // queryKey 変化のみを再実行トリガーにします(fetchBlock/cache/dataSource は同 render で最新)。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [queryKey]);
+
+  // unmount クリーンアップ: in-flight abort + timer クリアです。
+  useEffect(() => {
+    // cleanup 実行時に ref が指し替わっている可能性を避けるため、Map 参照を退避します
+    //   (inFlightRef.current は再代入されず .clear/.set/.delete のみのため退避で十分)。
+    const inFlight = inFlightRef.current;
+    const timer = timerRef;
+    return () => {
+      for (const [, controller] of inFlight) {
+        controller.abort();
+      }
+      inFlight.clear();
+      if (timer.current !== null) {
+        clearTimeout(timer.current);
+        timer.current = null;
+      }
+    };
+  }, []);
+
+  const isRowLoaded = useCallback(
+    (viewIndex: number): boolean => cache.getRow(viewIndex) !== undefined,
+    [cache],
+  );
+
+  // RowModel シームの serverSide 実装です。order/rows ではなく cache を読みます。
+  //   version を deps に含め、ブロック到着で参照を更新して consumer の再評価を促します。
+  const rowModel = useMemo<RowModel<T>>(
+    () => ({
+      getRowCount: () => rowCountRef.current,
+      // 未ロードは undefined(シーム契約どおり=clientSide の OOB と同じ)。型は T 固定のため
+      //   キャストします(strictNullChecks 下で cache.getRow の | undefined を吸収)。
+      getRow: (viewIndex) => cache.getRow(viewIndex) as T,
+      getSourceIndex: (viewIndex) => viewIndex,
+      getRowKey: (viewIndex) => {
+        const row = cache.getRow(viewIndex);
+        return row === undefined ? viewIndex : rowKeyGetter(row, viewIndex);
+      },
+    }),
+    // version はブロック到着での再計算トリガーです(memo 本体は読まないため lint は不要と判定)。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [cache, rowKeyGetter, version],
+  );
+
+  return { rowModel, rowCount, isRowLoaded, requestRange };
+}
+</file>
+
 <file path="src/components/spreadsheet-grid/hooks/useSortManagementController.ts">
 import { useCallback, useEffect, useRef, useState, type RefObject } from 'react';
 
@@ -1761,6 +2304,13 @@ export type {
   DateColumnFilterValue,
   SelectColumnFilterValue,
   CustomColumnFilterValue,
+  // serverSide(SSRM)用の公開型族です。dataSource 指定時に serverSide モードへ切替わります。
+  ServerSideDataSource,
+  ServerSideQuery,
+  ServerSideGetRowsParams,
+  ServerSideGetRowsResult,
+  // 行モデル境界型(clientSide / serverSide 共通の行取得 seam)です。
+  RowModel,
 } from './model/gridTypes';
 </file>
 
@@ -3458,6 +4008,61 @@ backup
 repomix-output.xml
 </file>
 
+<file path="src/components/spreadsheet-grid/ActiveCellOverlay.tsx">
+import type { CSSProperties } from 'react';
+
+// 追加: active cell の矩形情報です。
+// 変更(10-D): left は「ペイン列領域内ローカル座標」になりました（leadingWidth 非含有）。
+export type ActiveCellOverlayRect = {
+  left: number;
+  top: number;
+  width: number;
+  height: number;
+};
+
+type ActiveCellOverlayProps = {
+  rect: ActiveCellOverlayRect | null;
+  headerHeight: number;
+  // 変更(10-D): rowHeaderWidth → leadingWidth に一般化しました。
+  //             固定列なしの中央ペインでは leadingWidth === rowHeaderWidth となり従来と同一です。
+  leadingWidth: number;
+  // 追加(scroll-space 仮想化 修正): 絶対論理 top から差し引く描画ウィンドウ基準オフセット(px)。
+  //   no-op では 0(従来と同一配置)。scaling 時のみ正値で、巨大 transform を避けるため
+  //   rect.top(絶対論理)をウィンドウ相対へ寄せます。基準ぶんは wrapper の translateY に
+  //   同額含まれるため、画面上の表示位置は不変です。
+  baseOffset?: number;
+};
+
+// 追加: active cell を独立レイヤーで描画するコンポーネントです。
+// 変更(10-D): ペイン別座標系に対応。active cell が属するペインの relative コンテナ内へ配置されます。
+export function ActiveCellOverlay({
+  rect,
+  headerHeight,
+  leadingWidth,
+  baseOffset = 0,
+}: ActiveCellOverlayProps) {
+  if (!rect) {
+    return null;
+  }
+
+  const overlayStyle: CSSProperties = {
+    position: 'absolute',
+    left: leadingWidth + rect.left,
+    top: headerHeight + rect.top - baseOffset,
+    width: rect.width,
+    height: rect.height,
+    border: '2px solid #2563eb',
+    boxSizing: 'border-box',
+    pointerEvents: 'none',
+    zIndex: 4,
+  };
+
+  return <div style={overlayStyle} />;
+}
+
+export default ActiveCellOverlay;
+</file>
+
 <file path="src/components/spreadsheet-grid/API_REFERENCE.md">
 # SpreadsheetGrid 公開 API リファレンス
 
@@ -3472,9 +4077,10 @@ repomix-output.xml
 
 | Name | Type | Default | Description |
 | --- | --- | --- | --- |
-| `rows` | `T[]` | (required) | 行データの配列。 |
+| `rows` | `T[]` | — | clientSide モードの行データ。`dataSource` を指定した場合は無視され serverSide モードになる(両者は排他)。 |
 | `columns` | `GridColumn<T>[]` | (required) | 列定義の配列。 |
 | `onRowsChange` | `(nextRows: T[]) => void` | — | 行が変化したとき呼ばれる(rows を controlled にする)。 |
+| `dataSource` | `ServerSideDataSource<T>` | — | serverSide(SSRM)モードのデータ供給口。指定すると可視窓近傍のブロックだけを `getRows` で都度取得し、`rows` 系の clientSide パイプラインをバイパスする。 |
 | `onColumnsChange` | `(nextColumns: GridColumn<T>[]) => void` | — | 列が変化したとき呼ばれる。列メニューの固定切替はこれが指定されている場合のみ反映。 |
 | `rowKeyGetter` | `(row: T, index: number) => GridRowKey` | index ベース | 安定した行キーを返す。 |
 | `createRow` | `() => T` | — | 行追加時に使う新規行ファクトリ。 |
@@ -3521,6 +4127,15 @@ repomix-output.xml
 | `parseClipboardValue` | `(raw: string, row: T) => unknown` | — | 貼り付け時のパーサ。 |
 | `formatClipboardValue` | `(value: unknown, row: T) => string` | — | コピー時のフォーマッタ。 |
 
+## serverSide モード(SSRM / DS-4 ②)
+
+`dataSource` を渡すと serverSide モードになり、総行数ぶんの縦スクロール空間を保ったまま、可視窓に近いブロックだけを `getRows` で取得する(取得範囲を定数で縛りメモリを有界化)。未ロード行はスケルトン行として描画され、到着後に実データへ差し替わる。
+
+- **stage ①(現状・読み取り専用)**: フィルター(グローバル / 列)・ソート・編集 UI は無効化される。`getRows` の `query` は空で、サーバ側でのフィルター/ソート実行は stage ② で配線予定。`onRowsChange` は不要(read-only)。
+- **`initialRowCount`**: 初回 fetch 前から正しい総高さ/スクロールバーを出したい場合に渡す(未指定時は最初の `getRows` 結果が返るまで件数 0)。
+- **`blockSize`(既定 100)/ `maxCachedBlocks`(既定 64)**: 1 ブロックの行数とクライアント側 LRU 上限。超過分は画面外の古いブロックから退避する。
+- **利用者契約**: `getRows` は渡された `[startIndex, endIndex)`(view 空間・end 排他)を尊重し、全件を返さないこと。`signal` が abort されたら速やかに reject すること。
+
 ## 補助型(props で参照される shape)
 
 - `GridRowKey = string | number`
@@ -3535,7 +4150,7 @@ repomix-output.xml
 
 - 〔解消〕**no-op props**: `enableClipboard` / `enableColumnResize` を型から削除(常時 ON 固定の挙動は不変)。将来「無効化」が必要になれば配線つきで非破壊追加する。
 - **imperative API(ref ハンドル)なし**: `forwardRef` / `useImperativeHandle` 未使用。外部から「特定セルへスクロール」「選択クリア」等を命令的に呼ぶ口がない(状態は全て controlled)。
-- **公開バレル(`index.ts`)なし**: エクスポート面が `SpreadsheetGrid.tsx`(default export)と `gridTypes.ts`(型群)に分散。ライブラリの入口を1箇所に集約したい。
+- 〔解消〕**公開バレル(`index.ts`)**: 入口を `index.ts` に集約し、`SpreadsheetGrid`(named)と公開型群(serverSide 型・`RowModel` 含む)を再エクスポート。`default export` は廃止。
 - **テーマ/スタイリング API**: 公開されるのは `className`(ルート1個)のみ。パーツ単位のクラスや CSS トークンは未提供。
 </file>
 
@@ -5235,61 +5850,6 @@ export default SortManagementPanel;
 }
 </file>
 
-<file path="src/components/spreadsheet-grid/ActiveCellOverlay.tsx">
-import type { CSSProperties } from 'react';
-
-// 追加: active cell の矩形情報です。
-// 変更(10-D): left は「ペイン列領域内ローカル座標」になりました（leadingWidth 非含有）。
-export type ActiveCellOverlayRect = {
-  left: number;
-  top: number;
-  width: number;
-  height: number;
-};
-
-type ActiveCellOverlayProps = {
-  rect: ActiveCellOverlayRect | null;
-  headerHeight: number;
-  // 変更(10-D): rowHeaderWidth → leadingWidth に一般化しました。
-  //             固定列なしの中央ペインでは leadingWidth === rowHeaderWidth となり従来と同一です。
-  leadingWidth: number;
-  // 追加(scroll-space 仮想化 修正): 絶対論理 top から差し引く描画ウィンドウ基準オフセット(px)。
-  //   no-op では 0(従来と同一配置)。scaling 時のみ正値で、巨大 transform を避けるため
-  //   rect.top(絶対論理)をウィンドウ相対へ寄せます。基準ぶんは wrapper の translateY に
-  //   同額含まれるため、画面上の表示位置は不変です。
-  baseOffset?: number;
-};
-
-// 追加: active cell を独立レイヤーで描画するコンポーネントです。
-// 変更(10-D): ペイン別座標系に対応。active cell が属するペインの relative コンテナ内へ配置されます。
-export function ActiveCellOverlay({
-  rect,
-  headerHeight,
-  leadingWidth,
-  baseOffset = 0,
-}: ActiveCellOverlayProps) {
-  if (!rect) {
-    return null;
-  }
-
-  const overlayStyle: CSSProperties = {
-    position: 'absolute',
-    left: leadingWidth + rect.left,
-    top: headerHeight + rect.top - baseOffset,
-    width: rect.width,
-    height: rect.height,
-    border: '2px solid #2563eb',
-    boxSizing: 'border-box',
-    pointerEvents: 'none',
-    zIndex: 4,
-  };
-
-  return <div style={overlayStyle} />;
-}
-
-export default ActiveCellOverlay;
-</file>
-
 <file path="src/components/spreadsheet-grid/hooks/useGridBarContext.ts">
 import { useMemo } from 'react';
 import { selectGlobalFilter } from '../model/gridSelectors';
@@ -5808,6 +6368,157 @@ export function SelectionOverlay({
 }
 
 export default SelectionOverlay;
+</file>
+
+<file path="src/components/spreadsheet-grid/CellEditorLayer.tsx">
+// 追加: editor 確定後の移動方向です。
+export type EditorCommitDirection = 'down' | 'right' | 'left';
+
+import {
+  useEffect,
+  useRef,
+  useState,
+  type CSSProperties,
+  type KeyboardEvent,
+} from 'react';
+
+// 変更(10-D): left は「ペイン列領域内ローカル座標」になりました（leadingWidth 非含有）。
+type CellEditorRect = {
+  left: number;
+  top: number;
+  width: number;
+  height: number;
+};
+
+type CellEditorLayerProps = {
+  rect: CellEditorRect | null;
+  headerHeight: number;
+  // 変更(10-D): rowHeaderWidth → leadingWidth に一般化しました。
+  //             editor は active cell が属するペインの relative コンテナ内へ配置されます。
+  leadingWidth: number;
+  // 追加(scroll-space 仮想化 修正): 絶対論理 top から差し引く描画ウィンドウ基準オフセット(px)。
+  //   no-op では 0(従来と同一配置)。scaling 時のみ正値です(詳細は ActiveCellOverlay と同様)。
+  baseOffset?: number;
+  // 変更(11-B6): 親が持つのは「編集開始時の初期値」だけになりました。
+  //              毎キーストロークのドラフト値は本コンポーネントのローカル state で管理し、
+  //              親(SpreadsheetGrid)へは commit 時に最終値だけを渡します。
+  //              これにより編集中のタイピングで親（＝3ペイン全体）が再レンダーされなくなります。
+  initialValue: string;
+  // 変更(11-B6): (direction?) → (value, direction?) に変更。確定値を引数で受け取ります。
+  onCommit: (value: string, direction?: EditorCommitDirection) => void;
+  onCancel: () => void;
+};
+
+// 追加: 編集中セルの上に input を重ねる editor layer です。
+// 変更(10-D): ペイン別座標系に対応。
+// 変更(11-B6): ドラフト値をローカル state 化しました（コントロールドのまま、状態の置き場だけ移動）。
+export function CellEditorLayer({
+  rect,
+  headerHeight,
+  leadingWidth,
+  baseOffset = 0,
+  initialValue,
+  onCommit,
+  onCancel,
+}: CellEditorLayerProps) {
+  const inputRef = useRef<HTMLInputElement | null>(null);
+
+  // 追加(11-B6): 編集中のドラフト値です。タイピングはこの state だけを更新します。
+  const [draftValue, setDraftValue] = useState('');
+
+  // 追加(11-B6): 「新しい編集セッションの開始」を rect の null → 非 null 遷移で検知し、
+  //              ドラフトを initialValue へリセットします。
+  // 実装メモ: これは React 公式ドキュメントの「レンダー中に過去の props と比較して
+  //   state を調整する」パターンです（effect ではなく render 中に setState することで、
+  //   古いドラフトが 1 フレームでも描画されるのを防ぎます。StrictMode 安全）。
+  //   commit / cancel で必ず rect が null に戻るため、「null → 非 null」は常に
+  //   新セッションを意味します。同一セルを連続編集（Esc キャンセル → 再 F2 等）しても
+  //   前回のドラフトが残りません。
+  const isOpen = rect !== null;
+  const [prevOpen, setPrevOpen] = useState(false);
+  if (isOpen !== prevOpen) {
+    setPrevOpen(isOpen);
+    if (isOpen) {
+      setDraftValue(initialValue);
+    }
+  }
+
+  // 追加: editor 表示時に自動フォーカスし、末尾へキャレット移動します。
+  useEffect(() => {
+    if (!rect || !inputRef.current) {
+      return;
+    }
+
+    inputRef.current.focus();
+    const end = inputRef.current.value.length;
+    inputRef.current.setSelectionRange(end, end);
+  }, [rect]);
+
+  if (!rect) {
+    return null;
+  }
+
+  const wrapperStyle: CSSProperties = {
+    position: 'absolute',
+    left: leadingWidth + rect.left,
+    top: headerHeight + rect.top - baseOffset,
+    width: rect.width,
+    height: rect.height,
+    zIndex: 5,
+    pointerEvents: 'none',
+  };
+
+  const inputStyle: CSSProperties = {
+    width: '100%',
+    height: '100%',
+    boxSizing: 'border-box',
+    border: '2px solid #2563eb',
+    outline: 'none',
+    padding: '0 10px',
+    margin: 0,
+    fontSize: 16,
+    color: '#0f172a',
+    backgroundColor: '#ffffff',
+    pointerEvents: 'auto',
+  };
+
+  // 追加: Enter で下、Tab で左右へ移動する方向付き commit を呼びます。
+  // 変更(11-B6): commit にローカルのドラフト値を引数で渡します。
+  const handleKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      onCommit(draftValue, 'down');
+      return;
+    }
+
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      onCancel();
+      return;
+    }
+
+    if (event.key === 'Tab') {
+      event.preventDefault();
+      onCommit(draftValue, event.shiftKey ? 'left' : 'right');
+    }
+  };
+
+  return (
+    <div style={wrapperStyle}>
+      <input
+        ref={inputRef}
+        type="text"
+        value={draftValue}
+        onChange={(event) => setDraftValue(event.target.value)}
+        onKeyDown={handleKeyDown}
+        onBlur={() => onCommit(draftValue)}
+        style={inputStyle}
+      />
+    </div>
+  );
+}
+
+export default CellEditorLayer;
 </file>
 
 <file path="src/components/spreadsheet-grid/hooks/useColumnHeaderDragController.ts">
@@ -6799,6 +7510,12 @@ export const useGridClipboardController = <T extends object>({
     const lines: string[] = [];
     for (let viewIndex = 0; viewIndex < rowCount; viewIndex += 1) {
       const row = rowModel.getRow(viewIndex);
+      // 追加(①-3): serverSide の未ロード行(getRow===undefined)は getCellValue が throw する
+      //   ため skip します(serializeSelectionToTsv と同方針)。clientSide は全行ロード済みの
+      //   ため、この guard は実質 no-op です。
+      if (!row) {
+        continue;
+      }
       const cells = visibleColumns.map((column) => {
         const rawValue = getCellValue(row, column);
         return column.formatClipboardValue
@@ -8677,157 +9394,6 @@ export const gridBarClearButtonStyle: CSSProperties = {
   lineHeight: 1,
   whiteSpace: 'nowrap',
 };
-</file>
-
-<file path="src/components/spreadsheet-grid/CellEditorLayer.tsx">
-// 追加: editor 確定後の移動方向です。
-export type EditorCommitDirection = 'down' | 'right' | 'left';
-
-import {
-  useEffect,
-  useRef,
-  useState,
-  type CSSProperties,
-  type KeyboardEvent,
-} from 'react';
-
-// 変更(10-D): left は「ペイン列領域内ローカル座標」になりました（leadingWidth 非含有）。
-type CellEditorRect = {
-  left: number;
-  top: number;
-  width: number;
-  height: number;
-};
-
-type CellEditorLayerProps = {
-  rect: CellEditorRect | null;
-  headerHeight: number;
-  // 変更(10-D): rowHeaderWidth → leadingWidth に一般化しました。
-  //             editor は active cell が属するペインの relative コンテナ内へ配置されます。
-  leadingWidth: number;
-  // 追加(scroll-space 仮想化 修正): 絶対論理 top から差し引く描画ウィンドウ基準オフセット(px)。
-  //   no-op では 0(従来と同一配置)。scaling 時のみ正値です(詳細は ActiveCellOverlay と同様)。
-  baseOffset?: number;
-  // 変更(11-B6): 親が持つのは「編集開始時の初期値」だけになりました。
-  //              毎キーストロークのドラフト値は本コンポーネントのローカル state で管理し、
-  //              親(SpreadsheetGrid)へは commit 時に最終値だけを渡します。
-  //              これにより編集中のタイピングで親（＝3ペイン全体）が再レンダーされなくなります。
-  initialValue: string;
-  // 変更(11-B6): (direction?) → (value, direction?) に変更。確定値を引数で受け取ります。
-  onCommit: (value: string, direction?: EditorCommitDirection) => void;
-  onCancel: () => void;
-};
-
-// 追加: 編集中セルの上に input を重ねる editor layer です。
-// 変更(10-D): ペイン別座標系に対応。
-// 変更(11-B6): ドラフト値をローカル state 化しました（コントロールドのまま、状態の置き場だけ移動）。
-export function CellEditorLayer({
-  rect,
-  headerHeight,
-  leadingWidth,
-  baseOffset = 0,
-  initialValue,
-  onCommit,
-  onCancel,
-}: CellEditorLayerProps) {
-  const inputRef = useRef<HTMLInputElement | null>(null);
-
-  // 追加(11-B6): 編集中のドラフト値です。タイピングはこの state だけを更新します。
-  const [draftValue, setDraftValue] = useState('');
-
-  // 追加(11-B6): 「新しい編集セッションの開始」を rect の null → 非 null 遷移で検知し、
-  //              ドラフトを initialValue へリセットします。
-  // 実装メモ: これは React 公式ドキュメントの「レンダー中に過去の props と比較して
-  //   state を調整する」パターンです（effect ではなく render 中に setState することで、
-  //   古いドラフトが 1 フレームでも描画されるのを防ぎます。StrictMode 安全）。
-  //   commit / cancel で必ず rect が null に戻るため、「null → 非 null」は常に
-  //   新セッションを意味します。同一セルを連続編集（Esc キャンセル → 再 F2 等）しても
-  //   前回のドラフトが残りません。
-  const isOpen = rect !== null;
-  const [prevOpen, setPrevOpen] = useState(false);
-  if (isOpen !== prevOpen) {
-    setPrevOpen(isOpen);
-    if (isOpen) {
-      setDraftValue(initialValue);
-    }
-  }
-
-  // 追加: editor 表示時に自動フォーカスし、末尾へキャレット移動します。
-  useEffect(() => {
-    if (!rect || !inputRef.current) {
-      return;
-    }
-
-    inputRef.current.focus();
-    const end = inputRef.current.value.length;
-    inputRef.current.setSelectionRange(end, end);
-  }, [rect]);
-
-  if (!rect) {
-    return null;
-  }
-
-  const wrapperStyle: CSSProperties = {
-    position: 'absolute',
-    left: leadingWidth + rect.left,
-    top: headerHeight + rect.top - baseOffset,
-    width: rect.width,
-    height: rect.height,
-    zIndex: 5,
-    pointerEvents: 'none',
-  };
-
-  const inputStyle: CSSProperties = {
-    width: '100%',
-    height: '100%',
-    boxSizing: 'border-box',
-    border: '2px solid #2563eb',
-    outline: 'none',
-    padding: '0 10px',
-    margin: 0,
-    fontSize: 16,
-    color: '#0f172a',
-    backgroundColor: '#ffffff',
-    pointerEvents: 'auto',
-  };
-
-  // 追加: Enter で下、Tab で左右へ移動する方向付き commit を呼びます。
-  // 変更(11-B6): commit にローカルのドラフト値を引数で渡します。
-  const handleKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
-    if (event.key === 'Enter') {
-      event.preventDefault();
-      onCommit(draftValue, 'down');
-      return;
-    }
-
-    if (event.key === 'Escape') {
-      event.preventDefault();
-      onCancel();
-      return;
-    }
-
-    if (event.key === 'Tab') {
-      event.preventDefault();
-      onCommit(draftValue, event.shiftKey ? 'left' : 'right');
-    }
-  };
-
-  return (
-    <div style={wrapperStyle}>
-      <input
-        ref={inputRef}
-        type="text"
-        value={draftValue}
-        onChange={(event) => setDraftValue(event.target.value)}
-        onKeyDown={handleKeyDown}
-        onBlur={() => onCommit(draftValue)}
-        style={inputStyle}
-      />
-    </div>
-  );
-}
-
-export default CellEditorLayer;
 </file>
 
 <file path="src/components/spreadsheet-grid/logic/geometry.ts">
@@ -12078,6 +12644,158 @@ function GridBodyRowInner<T>({
 // memo + ジェネリック関数コンポーネントの定石です(型を保ったまま memo 化)。
 const GridBodyRow = memo(GridBodyRowInner) as typeof GridBodyRowInner;
 
+// ──────────────────────────────────────────────────────────
+// 追加(①-4): serverSide(SSRM)で未ロードの行に描画するスケルトン行です。
+//   ロード済み行(GridBodyRowInner)とコンテナの絶対配置・行ヘッダー・セル境界を一致させ、
+//   セル内容の代わりに静的なプレースホルダーバー(薄いグレー)を描きます。
+//   - 選択の親和性のため pointer ハンドラ(セル/行ヘッダーの down/enter/leave)は配線します
+//     (ダブルクリック=編集は stage ① では無効のため配線しません)。
+//   - keyframes / CSS 注入は使いません(本コードベースのインラインスタイル方針に整合)。
+// ──────────────────────────────────────────────────────────
+type GridBodySkeletonRowProps<T> = {
+  pane: GridPaneKind;
+  ownsRowHeader: boolean;
+  leadingWidth: number;
+  rowIndex: number;
+  top: number;
+  rowHeight: number;
+  renderEntries: PaneColumnEntry<T>[];
+  rowHeaderCellStyle: CSSProperties;
+  isRowHovered: boolean;
+  onRowHeaderPointerDown: (
+    rowIndex: number,
+    event: PointerEvent<HTMLDivElement>,
+  ) => void;
+  onRowHeaderPointerEnter: (
+    rowIndex: number,
+    event: PointerEvent<HTMLDivElement>,
+  ) => void;
+  onRowHeaderPointerLeave: (rowIndex: number) => void;
+  onCellPointerDown: (
+    cell: CellCoord,
+    event: PointerEvent<HTMLDivElement>,
+  ) => void;
+  onCellPointerEnter: (
+    cell: CellCoord,
+    event: PointerEvent<HTMLDivElement>,
+  ) => void;
+};
+
+// プレースホルダーバーの幅を列ごとに少し変えて機械的な均一さを避けます(列 index 駆動で
+//   render をまたいで安定。Math.random は使いません)。
+const SKELETON_BAR_WIDTHS = ['62%', '46%', '78%', '54%'] as const;
+
+function GridBodySkeletonRowInner<T>({
+  pane,
+  ownsRowHeader,
+  leadingWidth,
+  rowIndex,
+  top,
+  rowHeight,
+  renderEntries,
+  rowHeaderCellStyle,
+  isRowHovered,
+  onRowHeaderPointerDown,
+  onRowHeaderPointerEnter,
+  onRowHeaderPointerLeave,
+  onCellPointerDown,
+  onCellPointerEnter,
+}: GridBodySkeletonRowProps<T>) {
+  return (
+    <div
+      data-pane={pane}
+      data-row-index={rowIndex}
+      data-skeleton-row=""
+      style={{
+        position: 'absolute',
+        top: 0,
+        left: 0,
+        width: '100%',
+        height: rowHeight,
+        transform: `translateY(${top}px)`,
+        contain: 'layout style paint',
+      }}
+    >
+      {ownsRowHeader && (
+        <div
+          onPointerDown={(event) => onRowHeaderPointerDown(rowIndex, event)}
+          onPointerEnter={(event) => onRowHeaderPointerEnter(rowIndex, event)}
+          onPointerLeave={() => onRowHeaderPointerLeave(rowIndex)}
+          style={{
+            ...rowHeaderCellStyle,
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            zIndex: 5,
+            height: rowHeight,
+            backgroundColor: isRowHovered ? '#e2e8f0' : '#f8fafc',
+            color: '#94a3b8',
+            fontWeight: 500,
+          }}
+        >
+          {rowIndex + 1}
+        </div>
+      )}
+
+      {renderEntries.map((entry) => {
+        if (!entry) {
+          return null;
+        }
+        const colIndex = entry.logicalIndex;
+        const left = leadingWidth + entry.paneLocalStart;
+        const size = entry.paneLocalSize;
+        const barWidth =
+          SKELETON_BAR_WIDTHS[colIndex % SKELETON_BAR_WIDTHS.length];
+
+        return (
+          <div
+            key={`skeleton-${pane}-${colIndex}`}
+            onPointerDown={(event) =>
+              onCellPointerDown({ row: rowIndex, col: colIndex }, event)
+            }
+            onPointerEnter={(event) =>
+              onCellPointerEnter({ row: rowIndex, col: colIndex }, event)
+            }
+            style={{
+              position: 'absolute',
+              top: 0,
+              left,
+              width: size,
+              minWidth: size,
+              height: rowHeight,
+              boxSizing: 'border-box',
+              display: 'flex',
+              alignItems: 'center',
+              padding: '0 10px',
+              borderRight: '1px solid #e5e7eb',
+              borderBottom: '1px solid #e5e7eb',
+              backgroundColor: '#ffffff',
+              cursor: 'default',
+              userSelect: 'none',
+              outline: 'none',
+              zIndex: 1,
+            }}
+          >
+            <div
+              aria-hidden="true"
+              style={{
+                width: barWidth,
+                height: 10,
+                borderRadius: 4,
+                backgroundColor: '#e2e8f0',
+              }}
+            />
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+const GridBodySkeletonRow = memo(
+  GridBodySkeletonRowInner,
+) as typeof GridBodySkeletonRowInner;
+
 type GridBodyLayerProps<T> = {
   // 追加(10-C): 描画対象のペイン種別です。
   pane: GridPaneKind;
@@ -12097,6 +12815,9 @@ type GridBodyLayerProps<T> = {
   rowHeight: number;
   // 追加(C1): auto-height 行モード。未指定時 false(供給側 C1-3 まで uniform 経路で不変)。
   autoHeight?: boolean;
+  // 追加(①-4): serverSide(SSRM)モードか。true のとき未ロード行をスケルトン描画します。
+  //   未指定時 false(clientSide は従来どおり未ロード=OOB を null 返し)。
+  isServerSide?: boolean;
   rowHeaderCellStyle: CSSProperties;
   hoveredRowIndex: number | null;
   isWholeGridSelected: boolean;
@@ -12151,6 +12872,7 @@ export function GridBodyLayer<T>({
   renderEntries,
   rowHeight,
   autoHeight = false,
+  isServerSide = false,
   rowHeaderCellStyle,
   hoveredRowIndex,
   isWholeGridSelected,
@@ -12171,23 +12893,55 @@ export function GridBodyLayer<T>({
     <>
       {virtualRows.map((virtualRow) => {
         const rowIndex = virtualRow.index;
+        // 変更(①-4): 可視判定を先に評価し、範囲外行は即 null にします(skeleton 描画判定の前段)。
+        //   旧版は getRow の後に !row||!visible をまとめて判定していましたが、未ロード行の
+        //   skeleton 描画を可視帯に限定するため、可視判定を getRow より前へ移します。
+        if (!virtualRowIndexes.has(rowIndex)) {
+          return null;
+        }
+
+        // 行ごとの解決済み高さ。auto-height では virtualRow.size、uniform では rowHeight。
+        //   skeleton 行も同じ解決高を用い、ロード済み行とレイアウトを一致させます。
+        const rowSize = virtualRow.size ?? rowHeight;
+
         // 変更(DS-3-0): filteredRows[rowIndex] / filteredRowKeys[rowIndex] を rowModel 越しへ。
         //   getRow(i) は内部で rows[order[i]] を返すため、旧 filteredRows[i] と参照同一
         //   (= GridBodyRow memo の row props 安定)です。
         //   論点A(呼び出し順): rowKey は row が valid と確定した guard 後に算出します。
-        //   旧版は filteredRowKeys[i] の配列アクセスで OOB 時も undefined を返すだけでしたが、
         //   getRowKey は内部で resolvedRowKeyGetter(row, sourceIndex) を呼ぶため、カスタム
-        //   rowKeyGetter が row を参照する実装だと OOB rowIndex で throw し得ます。実機では
-        //   virtualizer の count === order.length のため OOB は起きませんが、防御的に
-        //   「row が valid と確定してから getRowKey を呼ぶ」順へ寄せます(出力は全ケース等価)。
+        //   rowKeyGetter が row を参照する実装だと未ロード/OOB rowIndex で throw し得ます。
+        //   そのため「row が valid と確定してから getRowKey を呼ぶ」順を維持します。
         const row = rowModel.getRow(rowIndex);
-        if (!row || !virtualRowIndexes.has(rowIndex)) {
-          return null;
+        // 追加(①-4): serverSide で未ロード(getRow===undefined)の行はスケルトンを描画します。
+        //   clientSide の OOB(同じく undefined)は従来どおり null を返します。
+        //   未ロード行の getRowKey は viewIndex を返す契約のため、React key は viewIndex 由来で
+        //   安定し、ロード完了時に実 row キーへ切り替わって skeleton→実行の差し替えが起きます。
+        if (!row) {
+          if (!isServerSide) {
+            return null;
+          }
+          const skeletonKey = rowModel.getRowKey(rowIndex) ?? rowIndex;
+          return (
+            <GridBodySkeletonRow
+              key={String(skeletonKey)}
+              pane={pane}
+              ownsRowHeader={ownsRowHeader}
+              leadingWidth={leadingWidth}
+              rowIndex={rowIndex}
+              top={virtualRow.start}
+              rowHeight={rowSize}
+              renderEntries={renderEntries}
+              rowHeaderCellStyle={rowHeaderCellStyle}
+              isRowHovered={hoveredRowIndex === rowIndex}
+              onRowHeaderPointerDown={onRowHeaderPointerDown}
+              onRowHeaderPointerEnter={onRowHeaderPointerEnter}
+              onRowHeaderPointerLeave={onRowHeaderPointerLeave}
+              onCellPointerDown={onCellPointerDown}
+              onCellPointerEnter={onCellPointerEnter}
+            />
+          );
         }
         const rowKey = rowModel.getRowKey(rowIndex) ?? rowIndex;
-
-        // 行ごとの解決済み高さ。auto-height では virtualRow.size、uniform では rowHeight。
-        const rowSize = virtualRow.size ?? rowHeight;
 
         // 追加(11-A): この行に関係する選択状態だけをプリミティブへ分解します。
         const isRowSelected =
@@ -14903,8 +15657,13 @@ export default GridHeaderRow;
 </file>
 
 <file path="src/App.tsx">
-import { useState } from 'react';
-import { SpreadsheetGrid, type GridColumn } from './components/spreadsheet-grid';
+import { useState, type CSSProperties } from 'react';
+import {
+  SpreadsheetGrid,
+  type GridColumn,
+  type ServerSideDataSource,
+  type ServerSideGetRowsResult,
+} from './components/spreadsheet-grid';
 
 // 追加: デモ用の行型です。
 type DemoRow = {
@@ -14959,8 +15718,7 @@ const buildNote = (index: number): string => {
 };
 
 // 追加: ダミー行を生成します。
-const createDemoRows = (count: number): DemoRow[] =>
-  Array.from({ length: count }, (_, index) => {
+const createDemoRowAt = (index: number): DemoRow => {
     const rowNumber = index + 1;
     // 追加(date デモ): 乱数を使わず index から決定的に ISO 日付(YYYY-MM-DD)を割り当てます。
     //   部分一致 date フィルターの確認用(例: '2024-03' で月絞り込み / '-15' で15日絞り込み)。
@@ -14969,7 +15727,7 @@ const createDemoRows = (count: number): DemoRow[] =>
     )
       .toISOString()
       .slice(0, 10);
-    return {
+    const row: DemoRow = {
       partNo: `A-${String(1001 + index).padStart(4, '0')}`,
       partName: `品名-${rowNumber}`,
       qty: (rowNumber % 25) + 1,
@@ -14978,14 +15736,48 @@ const createDemoRows = (count: number): DemoRow[] =>
       orderedAt,
       note: buildNote(index),
     };
-  }).map((row, index) => {
-    const nextRow: DemoRow = { ...row };
-    // 追加: 確認用に extra 列へダミー値を流し込みます。
     for (let extraIndex = 0; extraIndex < INITIAL_EXTRA_COLUMN_COUNT; extraIndex += 1) {
-      nextRow[getOverflowColumnKey(5 + extraIndex)] = `R${index + 1}-C${extraIndex + 1}`;
+      row[getOverflowColumnKey(5 + extraIndex)] = `R${index + 1}-C${extraIndex + 1}`;
     }
-    return nextRow;
-  });
+    return row;
+};
+
+// 追加(①-5): 単一行ビルダーを総数ぶん適用してダミー行配列を生成します。
+const createDemoRows = (count: number): DemoRow[] =>
+  Array.from({ length: count }, (_, index) => createDemoRowAt(index));
+
+// 追加(①-5): serverSide(SSRM)デモ用のモックデータ供給口です。実サーバの代わりに setTimeout で
+//   遅延を模し、要求された [startIndex, endIndex) のブロックだけを生成して返します(全件は返さない)。
+//   signal で「スクロールで通り過ぎた帯」の取得をキャンセルします(stale request 破棄)。
+const SERVER_ROW_COUNT = 1000000;
+const SERVER_LATENCY_MS = 350;
+
+const serverSideDataSource: ServerSideDataSource<DemoRow> = {
+  // 初回 fetch 前から正しい総高さ/スクロールバーを出すため総件数を即時提示します。
+  initialRowCount: SERVER_ROW_COUNT,
+  getRows: ({ startIndex, endIndex, signal }) =>
+    new Promise<ServerSideGetRowsResult<DemoRow>>((resolve, reject) => {
+      if (signal.aborted) {
+        reject(new DOMException('aborted', 'AbortError'));
+        return;
+      }
+      const timer = setTimeout(() => {
+        const slice: DemoRow[] = [];
+        for (let index = startIndex; index < endIndex; index += 1) {
+          slice.push(createDemoRowAt(index));
+        }
+        resolve({ rows: slice, totalRowCount: SERVER_ROW_COUNT });
+      }, SERVER_LATENCY_MS);
+      signal.addEventListener(
+        'abort',
+        () => {
+          clearTimeout(timer);
+          reject(new DOMException('aborted', 'AbortError'));
+        },
+        { once: true },
+      );
+    }),
+};
 
 // 追加: 基本列 + 初期追加列を生成します。
 const createInitialColumns = (): GridColumn<DemoRow>[] => {
@@ -15059,6 +15851,23 @@ const createInitialColumns = (): GridColumn<DemoRow>[] => {
   return [...baseColumns, ...extraColumns];
 };
 
+type DemoMode = 'client' | 'autoHeight' | 'server';
+
+// 追加(①-5): serverSide では rows を使わないため、空配列の共有参照でメモリを解放します。
+const EMPTY_ROWS: DemoRow[] = [];
+
+// 追加(①-5): モード切替ボタンのスタイルです(選択中はハイライト)。
+const modeButtonStyle = (active: boolean): CSSProperties => ({
+  padding: '6px 12px',
+  fontSize: 13,
+  borderRadius: 8,
+  border: '1px solid #94a3b8',
+  backgroundColor: active ? '#dbeafe' : '#ffffff',
+  color: '#0f172a',
+  cursor: 'pointer',
+  fontWeight: active ? 600 : 400,
+});
+
 function App() {
   // 追加: ダミー行を多めに生成します。
   const [rows, setRows] = useState<DemoRow[]>(() => createDemoRows(INITIAL_ROW_COUNT));
@@ -15068,16 +15877,22 @@ function App() {
     createInitialColumns(),
   );
 
-  // 追加(C1 auto-height デモ): auto-height モードのトグル。ON で行数を gate 内(5,000)に絞り、
-  //   grid props の autoHeight を有効化します。OFF で uniform 性能確認用の 1M に戻します。
-  const [autoHeightMode, setAutoHeightMode] = useState(false);
-  const toggleAutoHeight = () => {
-    const next = !autoHeightMode;
-    setAutoHeightMode(next);
-    setRows(
-      createDemoRows(next ? AUTO_HEIGHT_DEMO_ROW_COUNT : INITIAL_ROW_COUNT),
-    );
+  // 追加(①-5): デモモード。client=1M(uniform) / autoHeight=5,000(可変行高) / server=SSRM(都度取得)。
+  // 追加(①-5): モード切替で rows を再生成します(server は dataSource 駆動のため空配列で解放)。
+  const [mode, setMode] = useState<DemoMode>('client');
+  const changeMode = (next: DemoMode) => {
+    setMode(next);
+    if (next === 'server') {
+      setRows(EMPTY_ROWS);
+    } else if (next === 'autoHeight') {
+      setRows(createDemoRows(AUTO_HEIGHT_DEMO_ROW_COUNT));
+    } else {
+      setRows(createDemoRows(INITIAL_ROW_COUNT));
+    }
   };
+
+  // 追加(①-5): ヘッダー表示用の行数です(server はサーバ総件数を提示)。
+  const displayRowCount = mode === 'server' ? SERVER_ROW_COUNT : rows.length;
 
   return (
     <main
@@ -15111,34 +15926,40 @@ function App() {
         >
           reducer ベースの SpreadsheetGrid です。行/列選択、copy/paste、editor、
           row virtualization / column virtualization の確認用に、
-          初期行数 {rows.length.toLocaleString()} 行・
+          初期行数 {displayRowCount.toLocaleString()} 行・
           初期列数 {columns.length} 列のダミーデータを表示しています。
         </p>
 
-        <button
-          type="button"
-          onClick={toggleAutoHeight}
-          style={{
-            marginTop: 4,
-            padding: '6px 12px',
-            fontSize: 13,
-            borderRadius: 8,
-            border: '1px solid #94a3b8',
-            backgroundColor: autoHeightMode ? '#dbeafe' : '#ffffff',
-            color: '#0f172a',
-            cursor: 'pointer',
-          }}
-        >
-          {autoHeightMode
-            ? `auto-height デモ中(${AUTO_HEIGHT_DEMO_ROW_COUNT.toLocaleString()} 行・備考列で可変行高)→ 1M(uniform)へ戻す`
-            : `auto-height デモへ切替(${AUTO_HEIGHT_DEMO_ROW_COUNT.toLocaleString()} 行・備考列で可変行高)`}
-        </button>
+        <div style={{ marginTop: 4, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          <button
+            type="button"
+            onClick={() => changeMode('client')}
+            style={modeButtonStyle(mode === 'client')}
+          >
+            {`クライアント(${INITIAL_ROW_COUNT.toLocaleString()} 行・uniform)`}
+          </button>
+          <button
+            type="button"
+            onClick={() => changeMode('autoHeight')}
+            style={modeButtonStyle(mode === 'autoHeight')}
+          >
+            {`auto-height(${AUTO_HEIGHT_DEMO_ROW_COUNT.toLocaleString()} 行・可変行高)`}
+          </button>
+          <button
+            type="button"
+            onClick={() => changeMode('server')}
+            style={modeButtonStyle(mode === 'server')}
+          >
+            {`serverSide / SSRM(${SERVER_ROW_COUNT.toLocaleString()} 行・都度取得)`}
+          </button>
+        </div>
       </header>
 
       <SpreadsheetGrid
-        rows={rows}
+        rows={mode === 'server' ? undefined : rows}
+        dataSource={mode === 'server' ? serverSideDataSource : undefined}
         columns={columns}
-        onRowsChange={setRows}
+        onRowsChange={mode === 'server' ? undefined : setRows}
         onColumnsChange={setColumns}
         rowKeyGetter={(row, index) => `${row.partNo || 'row'}-${index}`}
         createRow={() => ({
@@ -15160,7 +15981,7 @@ function App() {
           filterType: 'text',
         })}
         rowHeight={38}
-        autoHeight={autoHeightMode}
+        autoHeight={mode === 'autoHeight'}
         headerHeight={42}
         rowHeaderWidth={56}
         enableRangeSelection
@@ -15207,6 +16028,50 @@ export type RowModel<T> = {
   getRow: (viewIndex: number) => T;
   getSourceIndex: (viewIndex: number) => number;
   getRowKey: (viewIndex: number) => GridRowKey;
+};
+
+// 追加(DS-4 ②): serverSide(SSRM)用のデータ供給契約群です。dataSource 指定時に serverSide
+//   モードへ切り替わり、clientSide の四段パイプライン(baseOrder→…→order)をバイパスして、
+//   可視窓近傍のブロックだけを getRows で都度取得します(取得範囲を定数に縛りメモリを有界化)。
+//   query は getRows へ載せるフィルター/ソート状態の枠で、stage ①(読み取り専用)では空、
+//   stage ② でサーバ実行へ配線します。
+export type ServerSideQuery = {
+  // グローバルフィルター文字列(stage ② で配線)。
+  globalText?: string;
+  // 列フィルター記述子(stage ② で配線)。
+  columnFilters?: Record<string, ColumnFilterValue>;
+  // ソート状態(stage ② で配線)。
+  sort?: GridSortState;
+};
+
+// 追加(DS-4 ②): getRows の引数です。[startIndex, endIndex) は view 空間・end 排他。
+//   signal は古いリクエストのキャンセル用です(スクロールで通り過ぎた帯の取得を破棄)。
+export type ServerSideGetRowsParams = {
+  startIndex: number;
+  endIndex: number;
+  query: ServerSideQuery;
+  signal: AbortSignal;
+};
+
+// 追加(DS-4 ②): getRows の戻り値です。totalRowCount はクエリ適用後の総件数で、毎回返す設計に
+//   することで stage ② のフィルター件数変動にも縦ジオメトリが追従します(stage ① では不変)。
+export type ServerSideGetRowsResult<T> = {
+  rows: T[];
+  totalRowCount: number;
+};
+
+// 追加(DS-4 ②): serverSide データ供給口です。getRows のみ必須で、残りは任意調整です。
+//   - initialRowCount: 初回 fetch 前から正しい総高さ/スクロールバーを出したい場合に渡します
+//     (未指定時は最初の getRows 結果が返るまで件数 0 = 全面ローディング)。
+//   - blockSize: 1 ブロックの行数(既定 100)。1 リクエスト = 数ブロックに収まります。
+//   - maxCachedBlocks: クライアント側 LRU 上限(既定 64)。超過分は画面外の古いブロックから退避。
+//   ★利用者契約: getRows は渡された [startIndex, endIndex) を尊重し、全件返さないこと
+//     (広い範囲を返すとクライアントで全件保持と同義になり SSRM の意義が消えます)。
+export type ServerSideDataSource<T> = {
+  getRows: (params: ServerSideGetRowsParams) => Promise<ServerSideGetRowsResult<T>>;
+  initialRowCount?: number;
+  blockSize?: number;
+  maxCachedBlocks?: number;
 };
 
 // 追加: セル座標を表す基本型です。
@@ -15513,7 +16378,12 @@ export type SpreadsheetGridSlotContext<T> = {
 
 // 追加: 公開 props です。
 export type SpreadsheetGridProps<T> = {
-  rows: T[];
+  // 変更(DS-4 ②/①-3): rows を optional 化しました。dataSource(serverSide)指定時は rows 不要のため。
+  //   clientSide でも SpreadsheetGrid 側で既定値(EMPTY_ROWS)を当てるため、未指定でも従来どおり動作します。
+  rows?: T[];
+  // 追加(DS-4 ②): serverSide データ供給口です。指定時に serverSide モードへ切り替えます
+  //   (rows と排他・dataSource 優先)。①-3 で本 prop を消費してモード分岐します。
+  dataSource?: ServerSideDataSource<T>;
   columns: GridColumn<T>[];
   onRowsChange?: (nextRows: T[]) => void;
   onColumnsChange?: (nextColumns: GridColumn<T>[]) => void;
@@ -15684,6 +16554,8 @@ import {
 import useColumnAutosizeRunner from './hooks/useColumnAutosizeRunner';
 // 追加(DS-4 #1): select / set 候補を「通常規模=同期 / 大規模=時間分割の非同期」で収集します。
 import useColumnSelectOptionsCollector from './hooks/useColumnSelectOptionsCollector';
+// 追加(①-3): serverSide(SSRM)の RowModel を供給するフックです(dataSource 指定時に使用)。
+import { useServerSideRowModel } from './hooks/useServerSideRowModel';
 import type {
   CellCoord,
   CellRenderState,
@@ -15698,6 +16570,8 @@ import type {
   ColumnFilterValue,
   // 追加(12-A): set フィルター値の構築に使います。
   SetColumnFilterValue,
+  // 追加(①-3): serverSide の安定空 query 用の型です。
+  ServerSideQuery,
   SpreadsheetGridProps,
 } from './model/gridTypes';
 import { getCellValue, isCellEditable, setCellValue } from './utils/permissions';
@@ -15755,9 +16629,18 @@ const setDifference = (
   return next;
 };
 
+// 追加(①-3): rows 未指定(serverSide 等)時の安定既定値です。参照同一を保ち、order パイプ
+//   ライン / rowModel など既存 memo を不要に揺らさないよう module スコープで 1 つだけ持ちます。
+//   never[] は任意の T[] に代入可能で、destructure 既定値として rows の型を T[] に保ちます。
+const EMPTY_ROWS: never[] = [];
+
 // 追加: Grid 本体です。
 export function SpreadsheetGrid<T extends object>({
-  rows,
+  // 変更(①-3): rows に安定既定値(EMPTY_ROWS)を当てます。rows が optional でも全 consumer は
+  //   従来どおり T[] を見ます(serverSide 時は dataSource を使い rows は空のまま)。
+  rows = EMPTY_ROWS,
+  // 追加(①-3): serverSide データ供給口。指定時に serverSide モードへ分岐します(rows と排他)。
+  dataSource,
   columns,
   onRowsChange,
   onColumnsChange,
@@ -15839,6 +16722,21 @@ export function SpreadsheetGrid<T extends object>({
     () => rowKeyGetter ?? ((_row: T, index: number) => index),
     [rowKeyGetter],
   );
+
+  // ── serverSide(SSRM)モード分岐(①-3) ───────────────────
+  // dataSource 指定で serverSide モードへ切り替えます。clientSide(dataSource 不在)は従来
+  //   経路を一切変えません(以降の各 consumer は rowModel シーム越しで透過に動きます)。
+  const isServerSide = dataSource != null;
+  // stage ① は filter/sort/global-filter の UI を無効化します(query は空のまま=DB へ条件を
+  //   渡しません)。恒久ではなく段階導入の途中で、stage ② で getRows の query へ配線します。
+  //   boolean は deps で値比較されるため、dataSource の identity に関係なく安定に振る舞います。
+  const sortingEnabled = enableSorting && !isServerSide;
+  const columnFilterEnabled = enableColumnFilter && !isServerSide;
+  const globalFilterEnabled = enableGlobalFilter && !isServerSide;
+  // stage ① の serverSide query / queryKey は安定な空値です(filter/sort 無効のため)。
+  //   stage ② で filter/sort シグネチャから導出し、queryKey 変化でキャッシュを無効化します。
+  const serverSideQuery = useMemo<ServerSideQuery>(() => ({}), []);
+  const serverSideQueryKey = '';
 
   // ── reducer ───────────────────────────────────────────
   const [uiState, dispatch] = useReducer(
@@ -16020,7 +16918,7 @@ export function SpreadsheetGrid<T extends object>({
   } = useFilterPopoverController({
     visibleColumns,
     columnFilterValues: uiState.filters.columnFilters,
-    enableColumnFilter,
+    enableColumnFilter: columnFilterEnabled,
     gridRootRef,
   });
 
@@ -16071,7 +16969,7 @@ export function SpreadsheetGrid<T extends object>({
     openSortManager,
     closeSortManager,
   } = useSortManagementController({
-    enableSorting,
+    enableSorting: sortingEnabled,
     gridRootRef,
   });
 
@@ -16245,7 +17143,7 @@ export function SpreadsheetGrid<T extends object>({
   //   props 安定(11-A 系)を壊しません。
   //   viewIndex は表示上の行 index、getSourceIndex の返り値(= order[viewIndex])は元 rows の
   //   index です。getRow / getRowKey は内部でこの対応付け rows[order[viewIndex]] を使います。
-  const rowModel = useMemo<RowModel<T>>(
+  const clientSideRowModel = useMemo<RowModel<T>>(
     () => ({
       getRowCount: () => order.length,
       getRow: (viewIndex) => rows[order[viewIndex]],
@@ -16255,6 +17153,22 @@ export function SpreadsheetGrid<T extends object>({
     }),
     [order, rows, resolvedRowKeyGetter],
   );
+
+  // 追加(①-3): serverSide(SSRM)の RowModel を供給します。React Hooks 規則によりフックは
+  //   無条件に呼びます。dataSource 不在(clientSide)では hook が inert(件数 0 / 取得 no-op)に
+  //   なるよう実装済みのため、clientSide 経路は完全に不変です。
+  const serverSide = useServerSideRowModel<T>({
+    dataSource,
+    rowKeyGetter: resolvedRowKeyGetter,
+    query: serverSideQuery,
+    queryKey: serverSideQueryKey,
+  });
+  // 可視レンジ通知に使う stable 参照(useCallback)だけを抜き出します。serverSide オブジェクト
+  //   自体は毎 render 生成のため、effect 依存にはこの requestRange のみを使います。
+  const requestServerSideRange = serverSide.requestRange;
+  // 以降の全 consumer(rowModelRef / viewRowCount / keyboard / edit / clipboard / body /
+  //   rowHeightStore)はこの rowModel シーム越しで透過に動きます。
+  const rowModel = isServerSide ? serverSide.rowModel : clientSideRowModel;
 
   // 追加(DS-4 ①-(2)): 最新 rowModel を指す latest-ref です。autosize ランナーが run 開始時に
   //   キャプチャし、実行中に参照が変わった(= order/rows 変化)ら計測を中断するために使います。
@@ -16380,25 +17294,35 @@ export function SpreadsheetGrid<T extends object>({
     [visibleColumns],
   );
   // gate: props 有効 + 駆動列あり + 行数が上限内。超過時は uniform 行高へフォールバックします。
-  const autoHeightActive = shouldUseAutoHeight(
-    autoHeight,
-    hasAutoHeightColumn,
-    viewRowCount,
-    AUTO_HEIGHT_MAX_ROWS,
-  );
-  // gate 超過時の開発時警告(例外は投げず uniform にフォールバック)。
+  // 変更(①-3): serverSide(dataSource)では auto-height を常に無効化します。未ロード行の高さが
+  //   不明で prefix-sum を構築できないため、uniform 行高に固定します(下の effect で開発時警告)。
+  const autoHeightActive =
+    !isServerSide &&
+    shouldUseAutoHeight(
+      autoHeight,
+      hasAutoHeightColumn,
+      viewRowCount,
+      AUTO_HEIGHT_MAX_ROWS,
+    );
+  // gate 外フォールバック時の開発時警告(例外は投げず uniform にフォールバック)。
+  // 変更(①-3): serverSide では行数に関わらず未対応の旨を警告します(行数上限とは別理由のため
+  //   メッセージを分けます)。
   useEffect(() => {
-    if (
-      import.meta.env.DEV &&
-      autoHeight &&
-      hasAutoHeightColumn &&
-      viewRowCount > AUTO_HEIGHT_MAX_ROWS
-    ) {
+    if (!import.meta.env.DEV || !autoHeight || !hasAutoHeightColumn) {
+      return;
+    }
+    if (isServerSide) {
+      console.warn(
+        '[SpreadsheetGrid] serverSide(dataSource)では auto-height は未対応です(未ロード行の高さが不明なため)。uniform 行高にフォールバックします。',
+      );
+      return;
+    }
+    if (viewRowCount > AUTO_HEIGHT_MAX_ROWS) {
       console.warn(
         `[SpreadsheetGrid] auto-height は ${AUTO_HEIGHT_MAX_ROWS} 行までです(現在 ${viewRowCount} 行)。uniform 行高にフォールバックします。`,
       );
     }
-  }, [autoHeight, hasAutoHeightColumn, viewRowCount]);
+  }, [autoHeight, hasAutoHeightColumn, viewRowCount, isServerSide]);
 
   // 実測高さの永続キャッシュ(rowKey 単位)。store を作り直しても引き継ぎます
   //   (filter/sort で view 順が変わっても再測定不要)。
@@ -16480,6 +17404,19 @@ export function SpreadsheetGrid<T extends object>({
   const windowFirstRow = virtualRows.length > 0 ? virtualRows[0].index : 0;
   const windowLastRow =
     virtualRows.length > 0 ? virtualRows[virtualRows.length - 1].index : -1;
+  // 追加(①-3): serverSide のとき、描画窓(overscan 込み)の可視レンジを hook へ通知します。
+  //   requestRange は即時 touchBlocks + debounce fetch。空窓(末尾 < 先頭)では何もしません。
+  //   clientSide では isServerSide=false で早期 return(requestRange 自体も inert で no-op)。
+  //   [start, end) の end は排他のため windowLastRow + 1 を渡します。
+  useEffect(() => {
+    if (!isServerSide) {
+      return;
+    }
+    if (windowLastRow < windowFirstRow) {
+      return;
+    }
+    requestServerSideRange(windowFirstRow, windowLastRow + 1);
+  }, [isServerSide, windowFirstRow, windowLastRow, requestServerSideRange]);
   // コンテナ/wrapper/indicator 高さに使う物理ボディ高さ(<= ブラウザ要素高さ上限)。
   const physicalBodyHeight = verticalGeometry.physicalBodyHeight;
   // overlay+body wrapper の transform。scaleFactor=1 のとき undefined(= 現状と同一 DOM)。
@@ -16734,7 +17671,7 @@ export function SpreadsheetGrid<T extends object>({
     enableRangeSelection,
     // 追加(MS-2): ヘッダー Shift+click ソート(発火口 a)用です。
     //             enableSorting=false 時はガード、orderedColumns で colIndex→key 解決。
-    enableSorting,
+    enableSorting: sortingEnabled,
     orderedColumns,
     filteredRowsLength: viewRowCount,
     visibleColumnsLength: visibleColumns.length,
@@ -18241,7 +19178,7 @@ export function SpreadsheetGrid<T extends object>({
       isOpen={isColumnMenuOpen}
       title={openedMenuColumn.title || openedMenuColumn.key}
       columnKey={openedMenuColumn.key}
-      canSort={enableSorting}
+      canSort={sortingEnabled}
       sortDirection={
         // 変更(MS-1): 配列からこの列のエントリ方向を引きます(未ソートなら null)。
         uiState.sort.find((entry) => entry.columnKey === openedMenuColumn.key)
@@ -18289,7 +19226,7 @@ export function SpreadsheetGrid<T extends object>({
       isOpen={isSortManagerOpen}
       entries={uiState.sort}
       columns={sortManagerColumns}
-      canSort={enableSorting}
+      canSort={sortingEnabled}
       layout={sortManagerLayout}
       panelRef={sortManagerRef}
       onAddLevel={handleSortManagerAddLevel}
@@ -18320,7 +19257,7 @@ export function SpreadsheetGrid<T extends object>({
   const resolvedTopBar = resolveGridSlot(
     renderTopBar,
     slotContext,
-    enableGlobalFilter ? <DefaultGridTopBar context={slotContext} /> : null,
+    globalFilterEnabled ? <DefaultGridTopBar context={slotContext} /> : null,
   );
 
   // 追加: bottom は未指定時に既定ステータスバーを表示します。
@@ -18465,6 +19402,7 @@ export function SpreadsheetGrid<T extends object>({
                   renderEntries={leftRenderEntries}
                   rowHeight={rowHeight}
                   autoHeight={autoHeightActive}
+                  isServerSide={isServerSide}
                   rowHeaderCellStyle={rowHeaderCellStyle}
                   hoveredRowIndex={hoveredRowIndex}
                   isWholeGridSelected={isWholeGridSelected}
@@ -18596,6 +19534,7 @@ export function SpreadsheetGrid<T extends object>({
                   renderEntries={centerRenderEntries}
                   rowHeight={rowHeight}
                   autoHeight={autoHeightActive}
+                  isServerSide={isServerSide}
                   rowHeaderCellStyle={rowHeaderCellStyle}
                   hoveredRowIndex={hoveredRowIndex}
                   isWholeGridSelected={isWholeGridSelected}
@@ -18720,6 +19659,7 @@ export function SpreadsheetGrid<T extends object>({
                   renderEntries={rightRenderEntries}
                   rowHeight={rowHeight}
                   autoHeight={autoHeightActive}
+                  isServerSide={isServerSide}
                   rowHeaderCellStyle={rowHeaderCellStyle}
                   hoveredRowIndex={hoveredRowIndex}
                   isWholeGridSelected={isWholeGridSelected}

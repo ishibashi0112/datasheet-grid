@@ -33,7 +33,9 @@ const DEFAULT_MAX_CACHED_BLOCKS = 64;
 const DEFAULT_DEBOUNCE_MS = 120;
 
 export type UseServerSideRowModelParams<T> = {
-  dataSource: ServerSideDataSource<T>;
+  // 変更(①-3): dataSource を optional 化しました。SpreadsheetGrid は本フックを無条件に
+  //   呼ぶ(React Hooks 規則)ため、clientSide(dataSource 不在)では inert 動作にします。
+  dataSource?: ServerSideDataSource<T>;
   rowKeyGetter: (row: T, index: number) => GridRowKey;
   query: ServerSideQuery;
   // query の同一性キーです。変化でキャッシュ無効化 + 再取得します(stage ① は安定値)。
@@ -52,8 +54,10 @@ export function useServerSideRowModel<T>(
   params: UseServerSideRowModelParams<T>,
 ): UseServerSideRowModelResult<T> {
   const { dataSource, rowKeyGetter, query, queryKey } = params;
-  const blockSize = dataSource.blockSize ?? DEFAULT_BLOCK_SIZE;
-  const maxBlocks = dataSource.maxCachedBlocks ?? DEFAULT_MAX_CACHED_BLOCKS;
+  // 変更(①-3): dataSource 不在(clientSide)でも安全に評価できるよう optional-chain します。
+  //   inert 時は既定値で空キャッシュを作るだけで、書き込みも fetch も発生しません。
+  const blockSize = dataSource?.blockSize ?? DEFAULT_BLOCK_SIZE;
+  const maxBlocks = dataSource?.maxCachedBlocks ?? DEFAULT_MAX_CACHED_BLOCKS;
   const debounceMs = params.debounceMs ?? DEFAULT_DEBOUNCE_MS;
 
   // スパース LRU キャッシュです。useState の遅延初期化で render をまたいで安定させます
@@ -63,7 +67,7 @@ export function useServerSideRowModel<T>(
   );
 
   const [rowCount, setRowCount] = useState<number>(
-    dataSource.initialRowCount ?? 0,
+    dataSource?.initialRowCount ?? 0,
   );
   // ブロック到着を rowModel / consumer に伝える再描画トリガーです(値自体は読みません)。
   const [version, setVersion] = useState<number>(0);
@@ -83,6 +87,10 @@ export function useServerSideRowModel<T>(
 
   const fetchBlock = useCallback(
     (blockIndex: number): void => {
+      // 追加(①-3): clientSide(inert)では取得しません。
+      if (dataSource == null) {
+        return;
+      }
       if (cache.hasBlock(blockIndex) || inFlightRef.current.has(blockIndex)) {
         return;
       }
@@ -163,6 +171,10 @@ export function useServerSideRowModel<T>(
 
   const requestRange = useCallback(
     (startIndex: number, endIndex: number): void => {
+      // 追加(①-3): clientSide(inert)では no-op です。
+      if (dataSource == null) {
+        return;
+      }
       latestRangeRef.current = { start: startIndex, end: endIndex };
       // 可視帯を即時 MRU 化して退避から保護します(fetch は debounce 経由)。
       cache.touchBlocks(
@@ -170,12 +182,17 @@ export function useServerSideRowModel<T>(
       );
       scheduleFetch();
     },
-    [cache, blockSize, scheduleFetch],
+    [cache, blockSize, dataSource, scheduleFetch],
   );
 
   // queryKey 変化(stage ② の filter/sort 変更)でキャッシュを無効化し、件数をリセットして
   //   再ブートストラップします。mount 時も走り、件数未知なら block 0 を先行 fetch します。
   useEffect(() => {
+    // 追加(①-3): clientSide(inert)では何もしません(ブートストラップ/件数リセットを抑止し、
+    //   clientSide 経路を完全不変に保ちます)。
+    if (dataSource == null) {
+      return;
+    }
     // 進行中の取得を全て中断します。
     for (const [, controller] of inFlightRef.current) {
       controller.abort();

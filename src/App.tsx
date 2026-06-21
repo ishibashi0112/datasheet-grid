@@ -1,5 +1,10 @@
-import { useState } from 'react';
-import { SpreadsheetGrid, type GridColumn } from './components/spreadsheet-grid';
+import { useState, type CSSProperties } from 'react';
+import {
+  SpreadsheetGrid,
+  type GridColumn,
+  type ServerSideDataSource,
+  type ServerSideGetRowsResult,
+} from './components/spreadsheet-grid';
 
 // 追加: デモ用の行型です。
 type DemoRow = {
@@ -54,8 +59,7 @@ const buildNote = (index: number): string => {
 };
 
 // 追加: ダミー行を生成します。
-const createDemoRows = (count: number): DemoRow[] =>
-  Array.from({ length: count }, (_, index) => {
+const createDemoRowAt = (index: number): DemoRow => {
     const rowNumber = index + 1;
     // 追加(date デモ): 乱数を使わず index から決定的に ISO 日付(YYYY-MM-DD)を割り当てます。
     //   部分一致 date フィルターの確認用(例: '2024-03' で月絞り込み / '-15' で15日絞り込み)。
@@ -64,7 +68,7 @@ const createDemoRows = (count: number): DemoRow[] =>
     )
       .toISOString()
       .slice(0, 10);
-    return {
+    const row: DemoRow = {
       partNo: `A-${String(1001 + index).padStart(4, '0')}`,
       partName: `品名-${rowNumber}`,
       qty: (rowNumber % 25) + 1,
@@ -73,14 +77,48 @@ const createDemoRows = (count: number): DemoRow[] =>
       orderedAt,
       note: buildNote(index),
     };
-  }).map((row, index) => {
-    const nextRow: DemoRow = { ...row };
-    // 追加: 確認用に extra 列へダミー値を流し込みます。
     for (let extraIndex = 0; extraIndex < INITIAL_EXTRA_COLUMN_COUNT; extraIndex += 1) {
-      nextRow[getOverflowColumnKey(5 + extraIndex)] = `R${index + 1}-C${extraIndex + 1}`;
+      row[getOverflowColumnKey(5 + extraIndex)] = `R${index + 1}-C${extraIndex + 1}`;
     }
-    return nextRow;
-  });
+    return row;
+};
+
+// 追加(①-5): 単一行ビルダーを総数ぶん適用してダミー行配列を生成します。
+const createDemoRows = (count: number): DemoRow[] =>
+  Array.from({ length: count }, (_, index) => createDemoRowAt(index));
+
+// 追加(①-5): serverSide(SSRM)デモ用のモックデータ供給口です。実サーバの代わりに setTimeout で
+//   遅延を模し、要求された [startIndex, endIndex) のブロックだけを生成して返します(全件は返さない)。
+//   signal で「スクロールで通り過ぎた帯」の取得をキャンセルします(stale request 破棄)。
+const SERVER_ROW_COUNT = 1000000;
+const SERVER_LATENCY_MS = 350;
+
+const serverSideDataSource: ServerSideDataSource<DemoRow> = {
+  // 初回 fetch 前から正しい総高さ/スクロールバーを出すため総件数を即時提示します。
+  initialRowCount: SERVER_ROW_COUNT,
+  getRows: ({ startIndex, endIndex, signal }) =>
+    new Promise<ServerSideGetRowsResult<DemoRow>>((resolve, reject) => {
+      if (signal.aborted) {
+        reject(new DOMException('aborted', 'AbortError'));
+        return;
+      }
+      const timer = setTimeout(() => {
+        const slice: DemoRow[] = [];
+        for (let index = startIndex; index < endIndex; index += 1) {
+          slice.push(createDemoRowAt(index));
+        }
+        resolve({ rows: slice, totalRowCount: SERVER_ROW_COUNT });
+      }, SERVER_LATENCY_MS);
+      signal.addEventListener(
+        'abort',
+        () => {
+          clearTimeout(timer);
+          reject(new DOMException('aborted', 'AbortError'));
+        },
+        { once: true },
+      );
+    }),
+};
 
 // 追加: 基本列 + 初期追加列を生成します。
 const createInitialColumns = (): GridColumn<DemoRow>[] => {
@@ -154,6 +192,23 @@ const createInitialColumns = (): GridColumn<DemoRow>[] => {
   return [...baseColumns, ...extraColumns];
 };
 
+type DemoMode = 'client' | 'autoHeight' | 'server';
+
+// 追加(①-5): serverSide では rows を使わないため、空配列の共有参照でメモリを解放します。
+const EMPTY_ROWS: DemoRow[] = [];
+
+// 追加(①-5): モード切替ボタンのスタイルです(選択中はハイライト)。
+const modeButtonStyle = (active: boolean): CSSProperties => ({
+  padding: '6px 12px',
+  fontSize: 13,
+  borderRadius: 8,
+  border: '1px solid #94a3b8',
+  backgroundColor: active ? '#dbeafe' : '#ffffff',
+  color: '#0f172a',
+  cursor: 'pointer',
+  fontWeight: active ? 600 : 400,
+});
+
 function App() {
   // 追加: ダミー行を多めに生成します。
   const [rows, setRows] = useState<DemoRow[]>(() => createDemoRows(INITIAL_ROW_COUNT));
@@ -163,16 +218,22 @@ function App() {
     createInitialColumns(),
   );
 
-  // 追加(C1 auto-height デモ): auto-height モードのトグル。ON で行数を gate 内(5,000)に絞り、
-  //   grid props の autoHeight を有効化します。OFF で uniform 性能確認用の 1M に戻します。
-  const [autoHeightMode, setAutoHeightMode] = useState(false);
-  const toggleAutoHeight = () => {
-    const next = !autoHeightMode;
-    setAutoHeightMode(next);
-    setRows(
-      createDemoRows(next ? AUTO_HEIGHT_DEMO_ROW_COUNT : INITIAL_ROW_COUNT),
-    );
+  // 追加(①-5): デモモード。client=1M(uniform) / autoHeight=5,000(可変行高) / server=SSRM(都度取得)。
+  // 追加(①-5): モード切替で rows を再生成します(server は dataSource 駆動のため空配列で解放)。
+  const [mode, setMode] = useState<DemoMode>('client');
+  const changeMode = (next: DemoMode) => {
+    setMode(next);
+    if (next === 'server') {
+      setRows(EMPTY_ROWS);
+    } else if (next === 'autoHeight') {
+      setRows(createDemoRows(AUTO_HEIGHT_DEMO_ROW_COUNT));
+    } else {
+      setRows(createDemoRows(INITIAL_ROW_COUNT));
+    }
   };
+
+  // 追加(①-5): ヘッダー表示用の行数です(server はサーバ総件数を提示)。
+  const displayRowCount = mode === 'server' ? SERVER_ROW_COUNT : rows.length;
 
   return (
     <main
@@ -206,34 +267,40 @@ function App() {
         >
           reducer ベースの SpreadsheetGrid です。行/列選択、copy/paste、editor、
           row virtualization / column virtualization の確認用に、
-          初期行数 {rows.length.toLocaleString()} 行・
+          初期行数 {displayRowCount.toLocaleString()} 行・
           初期列数 {columns.length} 列のダミーデータを表示しています。
         </p>
 
-        <button
-          type="button"
-          onClick={toggleAutoHeight}
-          style={{
-            marginTop: 4,
-            padding: '6px 12px',
-            fontSize: 13,
-            borderRadius: 8,
-            border: '1px solid #94a3b8',
-            backgroundColor: autoHeightMode ? '#dbeafe' : '#ffffff',
-            color: '#0f172a',
-            cursor: 'pointer',
-          }}
-        >
-          {autoHeightMode
-            ? `auto-height デモ中(${AUTO_HEIGHT_DEMO_ROW_COUNT.toLocaleString()} 行・備考列で可変行高)→ 1M(uniform)へ戻す`
-            : `auto-height デモへ切替(${AUTO_HEIGHT_DEMO_ROW_COUNT.toLocaleString()} 行・備考列で可変行高)`}
-        </button>
+        <div style={{ marginTop: 4, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          <button
+            type="button"
+            onClick={() => changeMode('client')}
+            style={modeButtonStyle(mode === 'client')}
+          >
+            {`クライアント(${INITIAL_ROW_COUNT.toLocaleString()} 行・uniform)`}
+          </button>
+          <button
+            type="button"
+            onClick={() => changeMode('autoHeight')}
+            style={modeButtonStyle(mode === 'autoHeight')}
+          >
+            {`auto-height(${AUTO_HEIGHT_DEMO_ROW_COUNT.toLocaleString()} 行・可変行高)`}
+          </button>
+          <button
+            type="button"
+            onClick={() => changeMode('server')}
+            style={modeButtonStyle(mode === 'server')}
+          >
+            {`serverSide / SSRM(${SERVER_ROW_COUNT.toLocaleString()} 行・都度取得)`}
+          </button>
+        </div>
       </header>
 
       <SpreadsheetGrid
-        rows={rows}
+        rows={mode === 'server' ? undefined : rows}
+        dataSource={mode === 'server' ? serverSideDataSource : undefined}
         columns={columns}
-        onRowsChange={setRows}
+        onRowsChange={mode === 'server' ? undefined : setRows}
         onColumnsChange={setColumns}
         rowKeyGetter={(row, index) => `${row.partNo || 'row'}-${index}`}
         createRow={() => ({
@@ -255,7 +322,7 @@ function App() {
           filterType: 'text',
         })}
         rowHeight={38}
-        autoHeight={autoHeightMode}
+        autoHeight={mode === 'autoHeight'}
         headerHeight={42}
         rowHeaderWidth={56}
         enableRangeSelection

@@ -372,10 +372,11 @@ export type SpreadsheetGridSlotContext<T> = {
 
 // 追加: 公開 props です。
 export type SpreadsheetGridProps<T> = {
-  rows: T[];
-  // 追加(DS-4 ②): serverSide データ供給口です。指定時に serverSide モードへ切り替える想定です
-  //   (rows と排他・dataSource 優先)。本 prop の消費(モード分岐)と rows の optional 化は ①-3 で
-  //   配線します。本バッチ(①-2)は型の追加のみで、既存の clientSide 経路は不変です。
+  // 変更(DS-4 ②/①-3): rows を optional 化しました。dataSource(serverSide)指定時は rows 不要のため。
+  //   clientSide でも SpreadsheetGrid 側で既定値(EMPTY_ROWS)を当てるため、未指定でも従来どおり動作します。
+  rows?: T[];
+  // 追加(DS-4 ②): serverSide データ供給口です。指定時に serverSide モードへ切り替えます
+  //   (rows と排他・dataSource 優先)。①-3 で本 prop を消費してモード分岐します。
   dataSource?: ServerSideDataSource<T>;
   columns: GridColumn<T>[];
   onRowsChange?: (nextRows: T[]) => void;

@@ -122,6 +122,8 @@ import {
 import useColumnAutosizeRunner from './hooks/useColumnAutosizeRunner';
 // 追加(DS-4 #1): select / set 候補を「通常規模=同期 / 大規模=時間分割の非同期」で収集します。
 import useColumnSelectOptionsCollector from './hooks/useColumnSelectOptionsCollector';
+// 追加(①-3): serverSide(SSRM)の RowModel を供給するフックです(dataSource 指定時に使用)。
+import { useServerSideRowModel } from './hooks/useServerSideRowModel';
 import type {
   CellCoord,
   CellRenderState,
@@ -136,6 +138,8 @@ import type {
   ColumnFilterValue,
   // 追加(12-A): set フィルター値の構築に使います。
   SetColumnFilterValue,
+  // 追加(①-3): serverSide の安定空 query 用の型です。
+  ServerSideQuery,
   SpreadsheetGridProps,
 } from './model/gridTypes';
 import { getCellValue, isCellEditable, setCellValue } from './utils/permissions';
@@ -193,9 +197,18 @@ const setDifference = (
   return next;
 };
 
+// 追加(①-3): rows 未指定(serverSide 等)時の安定既定値です。参照同一を保ち、order パイプ
+//   ライン / rowModel など既存 memo を不要に揺らさないよう module スコープで 1 つだけ持ちます。
+//   never[] は任意の T[] に代入可能で、destructure 既定値として rows の型を T[] に保ちます。
+const EMPTY_ROWS: never[] = [];
+
 // 追加: Grid 本体です。
 export function SpreadsheetGrid<T extends object>({
-  rows,
+  // 変更(①-3): rows に安定既定値(EMPTY_ROWS)を当てます。rows が optional でも全 consumer は
+  //   従来どおり T[] を見ます(serverSide 時は dataSource を使い rows は空のまま)。
+  rows = EMPTY_ROWS,
+  // 追加(①-3): serverSide データ供給口。指定時に serverSide モードへ分岐します(rows と排他)。
+  dataSource,
   columns,
   onRowsChange,
   onColumnsChange,
@@ -277,6 +290,21 @@ export function SpreadsheetGrid<T extends object>({
     () => rowKeyGetter ?? ((_row: T, index: number) => index),
     [rowKeyGetter],
   );
+
+  // ── serverSide(SSRM)モード分岐(①-3) ───────────────────
+  // dataSource 指定で serverSide モードへ切り替えます。clientSide(dataSource 不在)は従来
+  //   経路を一切変えません(以降の各 consumer は rowModel シーム越しで透過に動きます)。
+  const isServerSide = dataSource != null;
+  // stage ① は filter/sort/global-filter の UI を無効化します(query は空のまま=DB へ条件を
+  //   渡しません)。恒久ではなく段階導入の途中で、stage ② で getRows の query へ配線します。
+  //   boolean は deps で値比較されるため、dataSource の identity に関係なく安定に振る舞います。
+  const sortingEnabled = enableSorting && !isServerSide;
+  const columnFilterEnabled = enableColumnFilter && !isServerSide;
+  const globalFilterEnabled = enableGlobalFilter && !isServerSide;
+  // stage ① の serverSide query / queryKey は安定な空値です(filter/sort 無効のため)。
+  //   stage ② で filter/sort シグネチャから導出し、queryKey 変化でキャッシュを無効化します。
+  const serverSideQuery = useMemo<ServerSideQuery>(() => ({}), []);
+  const serverSideQueryKey = '';
 
   // ── reducer ───────────────────────────────────────────
   const [uiState, dispatch] = useReducer(
@@ -458,7 +486,7 @@ export function SpreadsheetGrid<T extends object>({
   } = useFilterPopoverController({
     visibleColumns,
     columnFilterValues: uiState.filters.columnFilters,
-    enableColumnFilter,
+    enableColumnFilter: columnFilterEnabled,
     gridRootRef,
   });
 
@@ -509,7 +537,7 @@ export function SpreadsheetGrid<T extends object>({
     openSortManager,
     closeSortManager,
   } = useSortManagementController({
-    enableSorting,
+    enableSorting: sortingEnabled,
     gridRootRef,
   });
 
@@ -683,7 +711,7 @@ export function SpreadsheetGrid<T extends object>({
   //   props 安定(11-A 系)を壊しません。
   //   viewIndex は表示上の行 index、getSourceIndex の返り値(= order[viewIndex])は元 rows の
   //   index です。getRow / getRowKey は内部でこの対応付け rows[order[viewIndex]] を使います。
-  const rowModel = useMemo<RowModel<T>>(
+  const clientSideRowModel = useMemo<RowModel<T>>(
     () => ({
       getRowCount: () => order.length,
       getRow: (viewIndex) => rows[order[viewIndex]],
@@ -693,6 +721,22 @@ export function SpreadsheetGrid<T extends object>({
     }),
     [order, rows, resolvedRowKeyGetter],
   );
+
+  // 追加(①-3): serverSide(SSRM)の RowModel を供給します。React Hooks 規則によりフックは
+  //   無条件に呼びます。dataSource 不在(clientSide)では hook が inert(件数 0 / 取得 no-op)に
+  //   なるよう実装済みのため、clientSide 経路は完全に不変です。
+  const serverSide = useServerSideRowModel<T>({
+    dataSource,
+    rowKeyGetter: resolvedRowKeyGetter,
+    query: serverSideQuery,
+    queryKey: serverSideQueryKey,
+  });
+  // 可視レンジ通知に使う stable 参照(useCallback)だけを抜き出します。serverSide オブジェクト
+  //   自体は毎 render 生成のため、effect 依存にはこの requestRange のみを使います。
+  const requestServerSideRange = serverSide.requestRange;
+  // 以降の全 consumer(rowModelRef / viewRowCount / keyboard / edit / clipboard / body /
+  //   rowHeightStore)はこの rowModel シーム越しで透過に動きます。
+  const rowModel = isServerSide ? serverSide.rowModel : clientSideRowModel;
 
   // 追加(DS-4 ①-(2)): 最新 rowModel を指す latest-ref です。autosize ランナーが run 開始時に
   //   キャプチャし、実行中に参照が変わった(= order/rows 変化)ら計測を中断するために使います。
@@ -818,25 +862,35 @@ export function SpreadsheetGrid<T extends object>({
     [visibleColumns],
   );
   // gate: props 有効 + 駆動列あり + 行数が上限内。超過時は uniform 行高へフォールバックします。
-  const autoHeightActive = shouldUseAutoHeight(
-    autoHeight,
-    hasAutoHeightColumn,
-    viewRowCount,
-    AUTO_HEIGHT_MAX_ROWS,
-  );
-  // gate 超過時の開発時警告(例外は投げず uniform にフォールバック)。
+  // 変更(①-3): serverSide(dataSource)では auto-height を常に無効化します。未ロード行の高さが
+  //   不明で prefix-sum を構築できないため、uniform 行高に固定します(下の effect で開発時警告)。
+  const autoHeightActive =
+    !isServerSide &&
+    shouldUseAutoHeight(
+      autoHeight,
+      hasAutoHeightColumn,
+      viewRowCount,
+      AUTO_HEIGHT_MAX_ROWS,
+    );
+  // gate 外フォールバック時の開発時警告(例外は投げず uniform にフォールバック)。
+  // 変更(①-3): serverSide では行数に関わらず未対応の旨を警告します(行数上限とは別理由のため
+  //   メッセージを分けます)。
   useEffect(() => {
-    if (
-      import.meta.env.DEV &&
-      autoHeight &&
-      hasAutoHeightColumn &&
-      viewRowCount > AUTO_HEIGHT_MAX_ROWS
-    ) {
+    if (!import.meta.env.DEV || !autoHeight || !hasAutoHeightColumn) {
+      return;
+    }
+    if (isServerSide) {
+      console.warn(
+        '[SpreadsheetGrid] serverSide(dataSource)では auto-height は未対応です(未ロード行の高さが不明なため)。uniform 行高にフォールバックします。',
+      );
+      return;
+    }
+    if (viewRowCount > AUTO_HEIGHT_MAX_ROWS) {
       console.warn(
         `[SpreadsheetGrid] auto-height は ${AUTO_HEIGHT_MAX_ROWS} 行までです(現在 ${viewRowCount} 行)。uniform 行高にフォールバックします。`,
       );
     }
-  }, [autoHeight, hasAutoHeightColumn, viewRowCount]);
+  }, [autoHeight, hasAutoHeightColumn, viewRowCount, isServerSide]);
 
   // 実測高さの永続キャッシュ(rowKey 単位)。store を作り直しても引き継ぎます
   //   (filter/sort で view 順が変わっても再測定不要)。
@@ -918,6 +972,19 @@ export function SpreadsheetGrid<T extends object>({
   const windowFirstRow = virtualRows.length > 0 ? virtualRows[0].index : 0;
   const windowLastRow =
     virtualRows.length > 0 ? virtualRows[virtualRows.length - 1].index : -1;
+  // 追加(①-3): serverSide のとき、描画窓(overscan 込み)の可視レンジを hook へ通知します。
+  //   requestRange は即時 touchBlocks + debounce fetch。空窓(末尾 < 先頭)では何もしません。
+  //   clientSide では isServerSide=false で早期 return(requestRange 自体も inert で no-op)。
+  //   [start, end) の end は排他のため windowLastRow + 1 を渡します。
+  useEffect(() => {
+    if (!isServerSide) {
+      return;
+    }
+    if (windowLastRow < windowFirstRow) {
+      return;
+    }
+    requestServerSideRange(windowFirstRow, windowLastRow + 1);
+  }, [isServerSide, windowFirstRow, windowLastRow, requestServerSideRange]);
   // コンテナ/wrapper/indicator 高さに使う物理ボディ高さ(<= ブラウザ要素高さ上限)。
   const physicalBodyHeight = verticalGeometry.physicalBodyHeight;
   // overlay+body wrapper の transform。scaleFactor=1 のとき undefined(= 現状と同一 DOM)。
@@ -1172,7 +1239,7 @@ export function SpreadsheetGrid<T extends object>({
     enableRangeSelection,
     // 追加(MS-2): ヘッダー Shift+click ソート(発火口 a)用です。
     //             enableSorting=false 時はガード、orderedColumns で colIndex→key 解決。
-    enableSorting,
+    enableSorting: sortingEnabled,
     orderedColumns,
     filteredRowsLength: viewRowCount,
     visibleColumnsLength: visibleColumns.length,
@@ -2679,7 +2746,7 @@ export function SpreadsheetGrid<T extends object>({
       isOpen={isColumnMenuOpen}
       title={openedMenuColumn.title || openedMenuColumn.key}
       columnKey={openedMenuColumn.key}
-      canSort={enableSorting}
+      canSort={sortingEnabled}
       sortDirection={
         // 変更(MS-1): 配列からこの列のエントリ方向を引きます(未ソートなら null)。
         uiState.sort.find((entry) => entry.columnKey === openedMenuColumn.key)
@@ -2727,7 +2794,7 @@ export function SpreadsheetGrid<T extends object>({
       isOpen={isSortManagerOpen}
       entries={uiState.sort}
       columns={sortManagerColumns}
-      canSort={enableSorting}
+      canSort={sortingEnabled}
       layout={sortManagerLayout}
       panelRef={sortManagerRef}
       onAddLevel={handleSortManagerAddLevel}
@@ -2758,7 +2825,7 @@ export function SpreadsheetGrid<T extends object>({
   const resolvedTopBar = resolveGridSlot(
     renderTopBar,
     slotContext,
-    enableGlobalFilter ? <DefaultGridTopBar context={slotContext} /> : null,
+    globalFilterEnabled ? <DefaultGridTopBar context={slotContext} /> : null,
   );
 
   // 追加: bottom は未指定時に既定ステータスバーを表示します。
@@ -2903,6 +2970,7 @@ export function SpreadsheetGrid<T extends object>({
                   renderEntries={leftRenderEntries}
                   rowHeight={rowHeight}
                   autoHeight={autoHeightActive}
+                  isServerSide={isServerSide}
                   rowHeaderCellStyle={rowHeaderCellStyle}
                   hoveredRowIndex={hoveredRowIndex}
                   isWholeGridSelected={isWholeGridSelected}
@@ -3034,6 +3102,7 @@ export function SpreadsheetGrid<T extends object>({
                   renderEntries={centerRenderEntries}
                   rowHeight={rowHeight}
                   autoHeight={autoHeightActive}
+                  isServerSide={isServerSide}
                   rowHeaderCellStyle={rowHeaderCellStyle}
                   hoveredRowIndex={hoveredRowIndex}
                   isWholeGridSelected={isWholeGridSelected}
@@ -3158,6 +3227,7 @@ export function SpreadsheetGrid<T extends object>({
                   renderEntries={rightRenderEntries}
                   rowHeight={rowHeight}
                   autoHeight={autoHeightActive}
+                  isServerSide={isServerSide}
                   rowHeaderCellStyle={rowHeaderCellStyle}
                   hoveredRowIndex={hoveredRowIndex}
                   isWholeGridSelected={isWholeGridSelected}

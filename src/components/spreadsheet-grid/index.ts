@@ -38,4 +38,11 @@ export type {
   DateColumnFilterValue,
   SelectColumnFilterValue,
   CustomColumnFilterValue,
+  // serverSide(SSRM)用の公開型族です。dataSource 指定時に serverSide モードへ切替わります。
+  ServerSideDataSource,
+  ServerSideQuery,
+  ServerSideGetRowsParams,
+  ServerSideGetRowsResult,
+  // 行モデル境界型(clientSide / serverSide 共通の行取得 seam)です。
+  RowModel,
 } from './model/gridTypes';

@@ -11,9 +11,10 @@
 
 | Name | Type | Default | Description |
 | --- | --- | --- | --- |
-| `rows` | `T[]` | (required) | 行データの配列。 |
+| `rows` | `T[]` | — | clientSide モードの行データ。`dataSource` を指定した場合は無視され serverSide モードになる(両者は排他)。 |
 | `columns` | `GridColumn<T>[]` | (required) | 列定義の配列。 |
 | `onRowsChange` | `(nextRows: T[]) => void` | — | 行が変化したとき呼ばれる(rows を controlled にする)。 |
+| `dataSource` | `ServerSideDataSource<T>` | — | serverSide(SSRM)モードのデータ供給口。指定すると可視窓近傍のブロックだけを `getRows` で都度取得し、`rows` 系の clientSide パイプラインをバイパスする。 |
 | `onColumnsChange` | `(nextColumns: GridColumn<T>[]) => void` | — | 列が変化したとき呼ばれる。列メニューの固定切替はこれが指定されている場合のみ反映。 |
 | `rowKeyGetter` | `(row: T, index: number) => GridRowKey` | index ベース | 安定した行キーを返す。 |
 | `createRow` | `() => T` | — | 行追加時に使う新規行ファクトリ。 |
@@ -60,6 +61,15 @@
 | `parseClipboardValue` | `(raw: string, row: T) => unknown` | — | 貼り付け時のパーサ。 |
 | `formatClipboardValue` | `(value: unknown, row: T) => string` | — | コピー時のフォーマッタ。 |
 
+## serverSide モード(SSRM / DS-4 ②)
+
+`dataSource` を渡すと serverSide モードになり、総行数ぶんの縦スクロール空間を保ったまま、可視窓に近いブロックだけを `getRows` で取得する(取得範囲を定数で縛りメモリを有界化)。未ロード行はスケルトン行として描画され、到着後に実データへ差し替わる。
+
+- **stage ①(現状・読み取り専用)**: フィルター(グローバル / 列)・ソート・編集 UI は無効化される。`getRows` の `query` は空で、サーバ側でのフィルター/ソート実行は stage ② で配線予定。`onRowsChange` は不要(read-only)。
+- **`initialRowCount`**: 初回 fetch 前から正しい総高さ/スクロールバーを出したい場合に渡す(未指定時は最初の `getRows` 結果が返るまで件数 0)。
+- **`blockSize`(既定 100)/ `maxCachedBlocks`(既定 64)**: 1 ブロックの行数とクライアント側 LRU 上限。超過分は画面外の古いブロックから退避する。
+- **利用者契約**: `getRows` は渡された `[startIndex, endIndex)`(view 空間・end 排他)を尊重し、全件を返さないこと。`signal` が abort されたら速やかに reject すること。
+
 ## 補助型(props で参照される shape)
 
 - `GridRowKey = string | number`
@@ -74,5 +84,5 @@
 
 - 〔解消〕**no-op props**: `enableClipboard` / `enableColumnResize` を型から削除(常時 ON 固定の挙動は不変)。将来「無効化」が必要になれば配線つきで非破壊追加する。
 - **imperative API(ref ハンドル)なし**: `forwardRef` / `useImperativeHandle` 未使用。外部から「特定セルへスクロール」「選択クリア」等を命令的に呼ぶ口がない(状態は全て controlled)。
-- **公開バレル(`index.ts`)なし**: エクスポート面が `SpreadsheetGrid.tsx`(default export)と `gridTypes.ts`(型群)に分散。ライブラリの入口を1箇所に集約したい。
+- 〔解消〕**公開バレル(`index.ts`)**: 入口を `index.ts` に集約し、`SpreadsheetGrid`(named)と公開型群(serverSide 型・`RowModel` 含む)を再エクスポート。`default export` は廃止。
 - **テーマ/スタイリング API**: 公開されるのは `className`(ルート1個)のみ。パーツ単位のクラスや CSS トークンは未提供。
