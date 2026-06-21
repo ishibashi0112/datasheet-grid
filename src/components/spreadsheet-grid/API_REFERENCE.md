@@ -25,9 +25,7 @@
 | `rowHeaderWidth` | `number` | `56` | 行番号列の幅(px)。 |
 | `readOnly` | `boolean` | `false` | グリッド全体の編集を無効化。 |
 | `canEditCell` | `(rowIndex, colIndex, row, column) => boolean` | — | セル単位の編集可否ゲート。 |
-| `enableClipboard` | `boolean` | — (**no-op**) | 型に宣言のみで未配線。クリップボードは常時有効で、このフラグは効かない。 |
 | `enableRangeSelection` | `boolean` | `true` | 複数セル範囲選択。 |
-| `enableColumnResize` | `boolean` | — (**no-op**) | 型に宣言のみで未配線。列リサイズは常時有効で、このフラグは効かない。 |
 | `enableGlobalFilter` | `boolean` | `true` | グローバルフィルター入力。 |
 | `enableColumnFilter` | `boolean` | `true` | 列ごとのフィルター。 |
 | `enableSorting` | `boolean` | `true` | ヘッダークリックでのソート。 |
@@ -74,7 +72,7 @@
 
 ## ライブラリ化の宿題(現状把握)
 
-- **no-op props**: `enableClipboard` / `enableColumnResize` は型に宣言のみで未配線。クリップボード・列リサイズは常時 ON 固定。公開前に「配線する」か「型から削除する」を要決定。
+- 〔解消〕**no-op props**: `enableClipboard` / `enableColumnResize` を型から削除(常時 ON 固定の挙動は不変)。将来「無効化」が必要になれば配線つきで非破壊追加する。
 - **imperative API(ref ハンドル)なし**: `forwardRef` / `useImperativeHandle` 未使用。外部から「特定セルへスクロール」「選択クリア」等を命令的に呼ぶ口がない(状態は全て controlled)。
 - **公開バレル(`index.ts`)なし**: エクスポート面が `SpreadsheetGrid.tsx`(default export)と `gridTypes.ts`(型群)に分散。ライブラリの入口を1箇所に集約したい。
 - **テーマ/スタイリング API**: 公開されるのは `className`(ルート1個)のみ。パーツ単位のクラスや CSS トークンは未提供。

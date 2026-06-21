@@ -351,9 +351,7 @@ export type SpreadsheetGridProps<T> = {
     row: T,
     column: GridColumn<T>,
   ) => boolean;
-  enableClipboard?: boolean;
   enableRangeSelection?: boolean;
-  enableColumnResize?: boolean;
   enableGlobalFilter?: boolean;
   enableColumnFilter?: boolean;
   enableSorting?: boolean;
