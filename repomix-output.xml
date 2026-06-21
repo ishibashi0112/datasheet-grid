@@ -117,342 +117,6 @@ vitest.config.ts
 <files>
 This section contains the contents of the repository's files.
 
-<file path="src/components/spreadsheet-grid/logic/rowHeightStore.test.ts">
-// C1-1: rowHeightStore の prefix-sum / measured キャッシュ / 前方更新 / 二分探索の検査と、
-//   uniform 行高(estimate 一様・measured 空)での createUniformRowMetrics 等価性。
-import { describe, it, expect } from 'vitest';
-import {
-  buildRowHeightStore,
-  createAutoHeightRowMetrics,
-  rebuildPrefixFrom,
-  setMeasuredRowHeight,
-} from './rowHeightStore';
-import { createUniformRowMetrics } from './verticalGeometry';
-import type { GridRowKey } from '../model/gridTypes';
-
-// view index をそのまま rowKey にする getter(rowKey=index)。
-const identityKey = (index: number): GridRowKey => index;
-
-describe('buildRowHeightStore (prefix construction)', () => {
-  it('builds a monotonic prefix with prefix[0]=0 and prefix[n]=sum(heights)', () => {
-    // estimate 一様: prefix[i] = i * estimate。
-    const store = buildRowHeightStore(5, 10, identityKey);
-    expect(Array.from(store.prefix)).toEqual([0, 10, 20, 30, 40, 50]);
-    expect(store.prefix[0]).toBe(0);
-    expect(store.prefix[store.rowCount]).toBe(50);
-  });
-
-  it('applies the measured cache by rowKey (overrides estimate)', () => {
-    // rowKey=1,3 を実測で上書き。view 順は identity。
-    const measured = new Map<GridRowKey, number>([
-      [1, 30],
-      [3, 5],
-    ]);
-    const store = buildRowHeightStore(5, 10, identityKey, measured);
-    // heights = [10, 30, 10, 5, 10] / prefix = 累積。
-    expect(Array.from(store.heights)).toEqual([10, 30, 10, 5, 10]);
-    expect(Array.from(store.prefix)).toEqual([0, 10, 40, 50, 55, 65]);
-  });
-
-  it('reuses measured heights across a view reorder (rowKey stable)', () => {
-    const measured = new Map<GridRowKey, number>([
-      [100, 50],
-      [200, 8],
-    ]);
-    // view 順 A: [100, 200, 300]
-    const orderA = [100, 200, 300];
-    const storeA = buildRowHeightStore(3, 10, (i) => orderA[i], measured);
-    expect(Array.from(storeA.heights)).toEqual([50, 8, 10]);
-    // view 順 B: [300, 100, 200] へ並べ替え。同じ measured で再構築。
-    const orderB = [300, 100, 200];
-    const storeB = buildRowHeightStore(3, 10, (i) => orderB[i], measured);
-    expect(Array.from(storeB.heights)).toEqual([10, 50, 8]);
-  });
-
-  it('handles empty store (rowCount=0)', () => {
-    const store = buildRowHeightStore(0, 10, identityKey);
-    expect(store.rowCount).toBe(0);
-    expect(Array.from(store.prefix)).toEqual([0]);
-    const metrics = createAutoHeightRowMetrics(store);
-    expect(metrics.totalBodyHeight).toBe(0);
-    expect(metrics.rowAtContentY(0)).toBe(0);
-    expect(metrics.rowAtContentY(100)).toBe(0);
-  });
-});
-
-describe('setMeasuredRowHeight + rebuildPrefixFrom (measurement flush)', () => {
-  it('updates measured + heights and reports change flags', () => {
-    const store = buildRowHeightStore(4, 10, identityKey);
-    // 同値は変更なし。
-    expect(setMeasuredRowHeight(store, 0, 0, 10)).toBe(false);
-    // 異なる値は変更あり + measured へ反映。
-    expect(setMeasuredRowHeight(store, 2, 2, 40)).toBe(true);
-    expect(store.heights[2]).toBe(40);
-    expect(store.measured.get(2)).toBe(40);
-    // 範囲外は false。
-    expect(setMeasuredRowHeight(store, -1, 99, 5)).toBe(false);
-    expect(setMeasuredRowHeight(store, 4, 99, 5)).toBe(false);
-  });
-
-  it('rebuilds prefix forward from the minimum changed index only', () => {
-    const store = buildRowHeightStore(5, 10, identityKey);
-    // index 2 を 40 へ。flush 前は prefix は古いまま。
-    setMeasuredRowHeight(store, 2, 2, 40);
-    // 最小変更 index=2 から前方再構築。
-    rebuildPrefixFrom(store, 2);
-    // heights = [10,10,40,10,10] / prefix = [0,10,20,60,70,80]。
-    expect(Array.from(store.prefix)).toEqual([0, 10, 20, 60, 70, 80]);
-    expect(store.prefix[store.rowCount]).toBe(80);
-  });
-
-  it('accumulates multiple measured deltas in one flush', () => {
-    const store = buildRowHeightStore(5, 10, identityKey);
-    setMeasuredRowHeight(store, 1, 1, 25);
-    setMeasuredRowHeight(store, 3, 3, 5);
-    // 最小変更 index=1 から 1 回だけ再構築。
-    rebuildPrefixFrom(store, 1);
-    // heights = [10,25,10,5,10] / prefix = [0,10,35,45,50,60]。
-    expect(Array.from(store.prefix)).toEqual([0, 10, 35, 45, 50, 60]);
-  });
-});
-
-describe('createAutoHeightRowMetrics (non-uniform heights)', () => {
-  it('resolves rowTop / rowsHeight / totalBodyHeight from prefix', () => {
-    const measured = new Map<GridRowKey, number>([
-      [0, 20],
-      [1, 30],
-      [2, 10],
-    ]);
-    const store = buildRowHeightStore(3, 10, identityKey, measured);
-    const metrics = createAutoHeightRowMetrics(store);
-    // heights = [20, 30, 10] / prefix = [0, 20, 50, 60]。
-    expect(metrics.rowTop(0)).toBe(0);
-    expect(metrics.rowTop(1)).toBe(20);
-    expect(metrics.rowTop(2)).toBe(50);
-    expect(metrics.rowsHeight(0, 0)).toBe(20);
-    expect(metrics.rowsHeight(1, 2)).toBe(40);
-    expect(metrics.rowsHeight(0, 2)).toBe(60);
-    expect(metrics.totalBodyHeight).toBe(60);
-  });
-
-  it('binary-searches rowAtContentY across variable heights and edges', () => {
-    const measured = new Map<GridRowKey, number>([
-      [0, 20],
-      [1, 30],
-      [2, 10],
-    ]);
-    const store = buildRowHeightStore(3, 10, identityKey, measured);
-    const metrics = createAutoHeightRowMetrics(store);
-    // prefix = [0, 20, 50, 60]。区間 [prefix[i], prefix[i+1]) が行 i。
-    expect(metrics.rowAtContentY(-5)).toBe(0); // y<0
-    expect(metrics.rowAtContentY(0)).toBe(0); // 行 0 の上端
-    expect(metrics.rowAtContentY(19)).toBe(0);
-    expect(metrics.rowAtContentY(20)).toBe(1); // 境界は次行の上端
-    expect(metrics.rowAtContentY(49)).toBe(1);
-    expect(metrics.rowAtContentY(50)).toBe(2);
-    expect(metrics.rowAtContentY(59)).toBe(2);
-    expect(metrics.rowAtContentY(60)).toBe(2); // y>=total は末尾行
-    expect(metrics.rowAtContentY(1000)).toBe(2);
-  });
-});
-
-describe('createAutoHeightRowMetrics (uniform equivalence with createUniformRowMetrics)', () => {
-  // estimate 一様・measured 空のとき、auto-height 版 RowMetrics は uniform 版と全 index 一致します
-  //   (prefix-sum が uniform 算術の正しい一般化であることの担保)。
-  const cases: Array<{ rowCount: number; rowHeight: number }> = [
-    { rowCount: 1, rowHeight: 36 },
-    { rowCount: 10, rowHeight: 38 },
-    { rowCount: 137, rowHeight: 42 },
-    { rowCount: 1000, rowHeight: 24 },
-  ];
-
-  for (const { rowCount, rowHeight } of cases) {
-    it(`matches uniform for rowCount=${rowCount} rowHeight=${rowHeight}`, () => {
-      const uniform = createUniformRowMetrics(rowCount, rowHeight);
-      const store = buildRowHeightStore(rowCount, rowHeight, identityKey);
-      const auto = createAutoHeightRowMetrics(store);
-
-      expect(auto.rowCount).toBe(uniform.rowCount);
-      expect(auto.totalBodyHeight).toBe(uniform.totalBodyHeight);
-
-      // rowTop / rowsHeight / rowAtContentY を全 index・代表 y でスイープ照合。
-      for (let i = 0; i < rowCount; i += 1) {
-        expect(auto.rowTop(i)).toBe(uniform.rowTop(i));
-        expect(auto.rowsHeight(i, i)).toBe(uniform.rowsHeight(i, i));
-        if (i + 5 < rowCount) {
-          expect(auto.rowsHeight(i, i + 5)).toBe(uniform.rowsHeight(i, i + 5));
-        }
-      }
-
-      // content-y → row(境界・中央・端を含む)。
-      const total = rowCount * rowHeight;
-      const samples = [
-        -10,
-        0,
-        rowHeight - 1,
-        rowHeight,
-        Math.floor(total / 2),
-        Math.floor(total / 2) + 1,
-        total - 1,
-        total,
-        total + 100,
-      ];
-      for (const y of samples) {
-        expect(auto.rowAtContentY(y)).toBe(uniform.rowAtContentY(y));
-      }
-    });
-  }
-});
-</file>
-
-<file path="src/components/spreadsheet-grid/logic/rowHeightStore.ts">
-// auto-height 行の行高ストアです(prefix-sum 版 RowMetrics の供給元)。
-//
-// 目的(C1: auto-height 本体):
-//   uniform 行高では行位置 = index*rowHeight の純算術で済みますが、auto-height では行ごとに
-//   高さが異なるため prefix-sum(累積和)で rowTop/rowsHeight/rowAtContentY を提供します。
-//   ★gate(論理全高 < MAX_BODY_PX / 行数 <= AUTO_HEIGHT_MAX_ROWS)前提なので、scaling・float32
-//     対策・基準オフセットは休眠(sf=1 / offset=0 / translateY=0)。よって Fenwick 不要・素の
-//     Float64Array prefix-sum で足り、O(n) の前方再構築も n <= 50,000 で安価です。
-//
-// 設計:
-//   - 行高の実測値は rowKey でキャッシュ(measured: Map)。filter/sort で view 順が変わっても
-//     行の実体(rowKey)の内容高は不変なので、view 順の付け替えだけで再測定が不要になります。
-//   - view 順の heights / prefix は buildRowHeightStore で getRowKey から引き直して構築します
-//     (未測定行は estimate)。
-//   - 測定 flush: setMeasuredRowHeight で measured + heights を更新し、最小変更 index から
-//     rebuildPrefixFrom で prefix を 1 回だけ前方再構築します(行ごとには再構築しません)。
-//   - createAutoHeightRowMetrics は store の prefix を読む RowMetrics(uniform と同契約)。
-//     rowAtContentY は prefix 上の二分探索。estimate 一様・measured 空のとき uniform と一致します。
-
-import type { GridRowKey } from '../model/gridTypes';
-import type { RowMetrics } from './verticalGeometry';
-
-export type RowHeightStore = {
-  // view 行数(= heights の長さ)。
-  rowCount: number;
-  // 未測定行に使う 1 行の推定高さ(px)。
-  estimate: number;
-  // view 順の行高(measured があればその値、無ければ estimate)。
-  heights: Float64Array;
-  // 累積和。prefix[i] = heights[0..i-1] の和。prefix[0]=0 / prefix[rowCount]=論理全高。
-  prefix: Float64Array;
-  // rowKey → 実測高さ(view 非依存の永続キャッシュ)。
-  measured: Map<GridRowKey, number>;
-};
-
-// prefix を [fromIndex, rowCount] の範囲で前方再構築します。
-//   prefix[fromIndex] を起点に prefix[j+1] = prefix[j] + heights[j] を順に埋めます。
-//   測定 flush では「最小変更 index」を渡し、1 回だけ呼びます(行ごと再構築の回避)。
-export const rebuildPrefixFrom = (
-  store: RowHeightStore,
-  fromIndex: number,
-): void => {
-  const { heights, prefix, rowCount } = store;
-  const from = Math.max(fromIndex, 0);
-  for (let j = from; j < rowCount; j += 1) {
-    prefix[j + 1] = prefix[j] + heights[j];
-  }
-};
-
-// view 順(getRowKey)・estimate・既存 measured キャッシュから store を構築します。
-//   heights[i] = measured.get(getRowKey(i)) ?? estimate。prefix は全域を一括構築します。
-//   measured を渡すと再構築でも実測値が維持されます(view 順だけ付け替え)。
-export const buildRowHeightStore = (
-  rowCount: number,
-  estimate: number,
-  getRowKey: (viewIndex: number) => GridRowKey,
-  measured?: Map<GridRowKey, number>,
-): RowHeightStore => {
-  const cache = measured ?? new Map<GridRowKey, number>();
-  const safeCount = Math.max(rowCount, 0);
-  const heights = new Float64Array(safeCount);
-  for (let i = 0; i < safeCount; i += 1) {
-    const cached = cache.get(getRowKey(i));
-    heights[i] = cached !== undefined ? cached : estimate;
-  }
-  // prefix[0]=0 は Float64Array 既定で 0。全域を前方構築します。
-  const prefix = new Float64Array(safeCount + 1);
-  const store: RowHeightStore = {
-    rowCount: safeCount,
-    estimate,
-    heights,
-    prefix,
-    measured: cache,
-  };
-  rebuildPrefixFrom(store, 0);
-  return store;
-};
-
-// 1 行の実測高さを反映します(measured キャッシュ + heights を更新)。
-//   prefix は呼び出し側が flush でまとめて rebuildPrefixFrom します(ここでは更新しません)。
-//   戻り値: 高さが実際に変わったか(prefix 再構築の要否判定に使用)。
-export const setMeasuredRowHeight = (
-  store: RowHeightStore,
-  viewIndex: number,
-  rowKey: GridRowKey,
-  height: number,
-): boolean => {
-  if (viewIndex < 0 || viewIndex >= store.rowCount) {
-    return false;
-  }
-  // 実測値は view 非依存に保持(view 順が変わっても再測定不要)。
-  store.measured.set(rowKey, height);
-  if (store.heights[viewIndex] === height) {
-    return false;
-  }
-  store.heights[viewIndex] = height;
-  return true;
-};
-
-// content-top 基準 y(論理)→ 行 index。prefix 上で「prefix[i] <= y を満たす最大 i」を
-//   二分探索し [0, rowCount-1] へ clamp します。estimate 一様・measured 空のとき
-//   floor(y / rowHeight) と一致します。
-const rowAtContentYFromPrefix = (
-  prefix: Float64Array,
-  rowCount: number,
-  y: number,
-): number => {
-  if (rowCount <= 0 || y <= 0) {
-    return 0;
-  }
-  // prefix[rowCount] = 論理全高。これ以上は末尾行へ clamp。
-  if (y >= prefix[rowCount]) {
-    return rowCount - 1;
-  }
-  // prefix は単調非減少。不変条件 prefix[lo] <= y を保ちつつ上限を詰めます。
-  let lo = 0;
-  let hi = rowCount;
-  while (lo < hi) {
-    const mid = (lo + hi + 1) >> 1;
-    if (prefix[mid] <= y) {
-      lo = mid;
-    } else {
-      hi = mid - 1;
-    }
-  }
-  // lo は prefix[lo] <= y を満たす最大 index(y < prefix[rowCount] より lo <= rowCount-1)。
-  return Math.min(Math.max(lo, 0), rowCount - 1);
-};
-
-// store の prefix を読む auto-height 版 RowMetrics(uniform と同契約)。
-//   rowTop / rowsHeight は O(1)、rowAtContentY は O(log n)。clamp は防御(正常範囲では no-op)。
-export const createAutoHeightRowMetrics = (
-  store: RowHeightStore,
-): RowMetrics => {
-  const { prefix, rowCount } = store;
-  return {
-    rowCount,
-    rowTop: (index) => prefix[Math.min(Math.max(index, 0), rowCount)],
-    rowsHeight: (startInclusive, endInclusive) =>
-      prefix[Math.min(Math.max(endInclusive + 1, 0), rowCount)] -
-      prefix[Math.min(Math.max(startInclusive, 0), rowCount)],
-    totalBodyHeight: prefix[rowCount],
-    rowAtContentY: (y) => rowAtContentYFromPrefix(prefix, rowCount, y),
-  };
-};
-</file>
-
 <file path="eslint.config.js">
 import js from '@eslint/js'
 import globals from 'globals'
@@ -1826,6 +1490,342 @@ export const shouldIgnoreGridKeydown = (eventTarget: EventTarget | null) => {
   );
 
   return interactiveElement !== null;
+};
+</file>
+
+<file path="src/components/spreadsheet-grid/logic/rowHeightStore.test.ts">
+// C1-1: rowHeightStore の prefix-sum / measured キャッシュ / 前方更新 / 二分探索の検査と、
+//   uniform 行高(estimate 一様・measured 空)での createUniformRowMetrics 等価性。
+import { describe, it, expect } from 'vitest';
+import {
+  buildRowHeightStore,
+  createAutoHeightRowMetrics,
+  rebuildPrefixFrom,
+  setMeasuredRowHeight,
+} from './rowHeightStore';
+import { createUniformRowMetrics } from './verticalGeometry';
+import type { GridRowKey } from '../model/gridTypes';
+
+// view index をそのまま rowKey にする getter(rowKey=index)。
+const identityKey = (index: number): GridRowKey => index;
+
+describe('buildRowHeightStore (prefix construction)', () => {
+  it('builds a monotonic prefix with prefix[0]=0 and prefix[n]=sum(heights)', () => {
+    // estimate 一様: prefix[i] = i * estimate。
+    const store = buildRowHeightStore(5, 10, identityKey);
+    expect(Array.from(store.prefix)).toEqual([0, 10, 20, 30, 40, 50]);
+    expect(store.prefix[0]).toBe(0);
+    expect(store.prefix[store.rowCount]).toBe(50);
+  });
+
+  it('applies the measured cache by rowKey (overrides estimate)', () => {
+    // rowKey=1,3 を実測で上書き。view 順は identity。
+    const measured = new Map<GridRowKey, number>([
+      [1, 30],
+      [3, 5],
+    ]);
+    const store = buildRowHeightStore(5, 10, identityKey, measured);
+    // heights = [10, 30, 10, 5, 10] / prefix = 累積。
+    expect(Array.from(store.heights)).toEqual([10, 30, 10, 5, 10]);
+    expect(Array.from(store.prefix)).toEqual([0, 10, 40, 50, 55, 65]);
+  });
+
+  it('reuses measured heights across a view reorder (rowKey stable)', () => {
+    const measured = new Map<GridRowKey, number>([
+      [100, 50],
+      [200, 8],
+    ]);
+    // view 順 A: [100, 200, 300]
+    const orderA = [100, 200, 300];
+    const storeA = buildRowHeightStore(3, 10, (i) => orderA[i], measured);
+    expect(Array.from(storeA.heights)).toEqual([50, 8, 10]);
+    // view 順 B: [300, 100, 200] へ並べ替え。同じ measured で再構築。
+    const orderB = [300, 100, 200];
+    const storeB = buildRowHeightStore(3, 10, (i) => orderB[i], measured);
+    expect(Array.from(storeB.heights)).toEqual([10, 50, 8]);
+  });
+
+  it('handles empty store (rowCount=0)', () => {
+    const store = buildRowHeightStore(0, 10, identityKey);
+    expect(store.rowCount).toBe(0);
+    expect(Array.from(store.prefix)).toEqual([0]);
+    const metrics = createAutoHeightRowMetrics(store);
+    expect(metrics.totalBodyHeight).toBe(0);
+    expect(metrics.rowAtContentY(0)).toBe(0);
+    expect(metrics.rowAtContentY(100)).toBe(0);
+  });
+});
+
+describe('setMeasuredRowHeight + rebuildPrefixFrom (measurement flush)', () => {
+  it('updates measured + heights and reports change flags', () => {
+    const store = buildRowHeightStore(4, 10, identityKey);
+    // 同値は変更なし。
+    expect(setMeasuredRowHeight(store, 0, 0, 10)).toBe(false);
+    // 異なる値は変更あり + measured へ反映。
+    expect(setMeasuredRowHeight(store, 2, 2, 40)).toBe(true);
+    expect(store.heights[2]).toBe(40);
+    expect(store.measured.get(2)).toBe(40);
+    // 範囲外は false。
+    expect(setMeasuredRowHeight(store, -1, 99, 5)).toBe(false);
+    expect(setMeasuredRowHeight(store, 4, 99, 5)).toBe(false);
+  });
+
+  it('rebuilds prefix forward from the minimum changed index only', () => {
+    const store = buildRowHeightStore(5, 10, identityKey);
+    // index 2 を 40 へ。flush 前は prefix は古いまま。
+    setMeasuredRowHeight(store, 2, 2, 40);
+    // 最小変更 index=2 から前方再構築。
+    rebuildPrefixFrom(store, 2);
+    // heights = [10,10,40,10,10] / prefix = [0,10,20,60,70,80]。
+    expect(Array.from(store.prefix)).toEqual([0, 10, 20, 60, 70, 80]);
+    expect(store.prefix[store.rowCount]).toBe(80);
+  });
+
+  it('accumulates multiple measured deltas in one flush', () => {
+    const store = buildRowHeightStore(5, 10, identityKey);
+    setMeasuredRowHeight(store, 1, 1, 25);
+    setMeasuredRowHeight(store, 3, 3, 5);
+    // 最小変更 index=1 から 1 回だけ再構築。
+    rebuildPrefixFrom(store, 1);
+    // heights = [10,25,10,5,10] / prefix = [0,10,35,45,50,60]。
+    expect(Array.from(store.prefix)).toEqual([0, 10, 35, 45, 50, 60]);
+  });
+});
+
+describe('createAutoHeightRowMetrics (non-uniform heights)', () => {
+  it('resolves rowTop / rowsHeight / totalBodyHeight from prefix', () => {
+    const measured = new Map<GridRowKey, number>([
+      [0, 20],
+      [1, 30],
+      [2, 10],
+    ]);
+    const store = buildRowHeightStore(3, 10, identityKey, measured);
+    const metrics = createAutoHeightRowMetrics(store);
+    // heights = [20, 30, 10] / prefix = [0, 20, 50, 60]。
+    expect(metrics.rowTop(0)).toBe(0);
+    expect(metrics.rowTop(1)).toBe(20);
+    expect(metrics.rowTop(2)).toBe(50);
+    expect(metrics.rowsHeight(0, 0)).toBe(20);
+    expect(metrics.rowsHeight(1, 2)).toBe(40);
+    expect(metrics.rowsHeight(0, 2)).toBe(60);
+    expect(metrics.totalBodyHeight).toBe(60);
+  });
+
+  it('binary-searches rowAtContentY across variable heights and edges', () => {
+    const measured = new Map<GridRowKey, number>([
+      [0, 20],
+      [1, 30],
+      [2, 10],
+    ]);
+    const store = buildRowHeightStore(3, 10, identityKey, measured);
+    const metrics = createAutoHeightRowMetrics(store);
+    // prefix = [0, 20, 50, 60]。区間 [prefix[i], prefix[i+1]) が行 i。
+    expect(metrics.rowAtContentY(-5)).toBe(0); // y<0
+    expect(metrics.rowAtContentY(0)).toBe(0); // 行 0 の上端
+    expect(metrics.rowAtContentY(19)).toBe(0);
+    expect(metrics.rowAtContentY(20)).toBe(1); // 境界は次行の上端
+    expect(metrics.rowAtContentY(49)).toBe(1);
+    expect(metrics.rowAtContentY(50)).toBe(2);
+    expect(metrics.rowAtContentY(59)).toBe(2);
+    expect(metrics.rowAtContentY(60)).toBe(2); // y>=total は末尾行
+    expect(metrics.rowAtContentY(1000)).toBe(2);
+  });
+});
+
+describe('createAutoHeightRowMetrics (uniform equivalence with createUniformRowMetrics)', () => {
+  // estimate 一様・measured 空のとき、auto-height 版 RowMetrics は uniform 版と全 index 一致します
+  //   (prefix-sum が uniform 算術の正しい一般化であることの担保)。
+  const cases: Array<{ rowCount: number; rowHeight: number }> = [
+    { rowCount: 1, rowHeight: 36 },
+    { rowCount: 10, rowHeight: 38 },
+    { rowCount: 137, rowHeight: 42 },
+    { rowCount: 1000, rowHeight: 24 },
+  ];
+
+  for (const { rowCount, rowHeight } of cases) {
+    it(`matches uniform for rowCount=${rowCount} rowHeight=${rowHeight}`, () => {
+      const uniform = createUniformRowMetrics(rowCount, rowHeight);
+      const store = buildRowHeightStore(rowCount, rowHeight, identityKey);
+      const auto = createAutoHeightRowMetrics(store);
+
+      expect(auto.rowCount).toBe(uniform.rowCount);
+      expect(auto.totalBodyHeight).toBe(uniform.totalBodyHeight);
+
+      // rowTop / rowsHeight / rowAtContentY を全 index・代表 y でスイープ照合。
+      for (let i = 0; i < rowCount; i += 1) {
+        expect(auto.rowTop(i)).toBe(uniform.rowTop(i));
+        expect(auto.rowsHeight(i, i)).toBe(uniform.rowsHeight(i, i));
+        if (i + 5 < rowCount) {
+          expect(auto.rowsHeight(i, i + 5)).toBe(uniform.rowsHeight(i, i + 5));
+        }
+      }
+
+      // content-y → row(境界・中央・端を含む)。
+      const total = rowCount * rowHeight;
+      const samples = [
+        -10,
+        0,
+        rowHeight - 1,
+        rowHeight,
+        Math.floor(total / 2),
+        Math.floor(total / 2) + 1,
+        total - 1,
+        total,
+        total + 100,
+      ];
+      for (const y of samples) {
+        expect(auto.rowAtContentY(y)).toBe(uniform.rowAtContentY(y));
+      }
+    });
+  }
+});
+</file>
+
+<file path="src/components/spreadsheet-grid/logic/rowHeightStore.ts">
+// auto-height 行の行高ストアです(prefix-sum 版 RowMetrics の供給元)。
+//
+// 目的(C1: auto-height 本体):
+//   uniform 行高では行位置 = index*rowHeight の純算術で済みますが、auto-height では行ごとに
+//   高さが異なるため prefix-sum(累積和)で rowTop/rowsHeight/rowAtContentY を提供します。
+//   ★gate(論理全高 < MAX_BODY_PX / 行数 <= AUTO_HEIGHT_MAX_ROWS)前提なので、scaling・float32
+//     対策・基準オフセットは休眠(sf=1 / offset=0 / translateY=0)。よって Fenwick 不要・素の
+//     Float64Array prefix-sum で足り、O(n) の前方再構築も n <= 50,000 で安価です。
+//
+// 設計:
+//   - 行高の実測値は rowKey でキャッシュ(measured: Map)。filter/sort で view 順が変わっても
+//     行の実体(rowKey)の内容高は不変なので、view 順の付け替えだけで再測定が不要になります。
+//   - view 順の heights / prefix は buildRowHeightStore で getRowKey から引き直して構築します
+//     (未測定行は estimate)。
+//   - 測定 flush: setMeasuredRowHeight で measured + heights を更新し、最小変更 index から
+//     rebuildPrefixFrom で prefix を 1 回だけ前方再構築します(行ごとには再構築しません)。
+//   - createAutoHeightRowMetrics は store の prefix を読む RowMetrics(uniform と同契約)。
+//     rowAtContentY は prefix 上の二分探索。estimate 一様・measured 空のとき uniform と一致します。
+
+import type { GridRowKey } from '../model/gridTypes';
+import type { RowMetrics } from './verticalGeometry';
+
+export type RowHeightStore = {
+  // view 行数(= heights の長さ)。
+  rowCount: number;
+  // 未測定行に使う 1 行の推定高さ(px)。
+  estimate: number;
+  // view 順の行高(measured があればその値、無ければ estimate)。
+  heights: Float64Array;
+  // 累積和。prefix[i] = heights[0..i-1] の和。prefix[0]=0 / prefix[rowCount]=論理全高。
+  prefix: Float64Array;
+  // rowKey → 実測高さ(view 非依存の永続キャッシュ)。
+  measured: Map<GridRowKey, number>;
+};
+
+// prefix を [fromIndex, rowCount] の範囲で前方再構築します。
+//   prefix[fromIndex] を起点に prefix[j+1] = prefix[j] + heights[j] を順に埋めます。
+//   測定 flush では「最小変更 index」を渡し、1 回だけ呼びます(行ごと再構築の回避)。
+export const rebuildPrefixFrom = (
+  store: RowHeightStore,
+  fromIndex: number,
+): void => {
+  const { heights, prefix, rowCount } = store;
+  const from = Math.max(fromIndex, 0);
+  for (let j = from; j < rowCount; j += 1) {
+    prefix[j + 1] = prefix[j] + heights[j];
+  }
+};
+
+// view 順(getRowKey)・estimate・既存 measured キャッシュから store を構築します。
+//   heights[i] = measured.get(getRowKey(i)) ?? estimate。prefix は全域を一括構築します。
+//   measured を渡すと再構築でも実測値が維持されます(view 順だけ付け替え)。
+export const buildRowHeightStore = (
+  rowCount: number,
+  estimate: number,
+  getRowKey: (viewIndex: number) => GridRowKey,
+  measured?: Map<GridRowKey, number>,
+): RowHeightStore => {
+  const cache = measured ?? new Map<GridRowKey, number>();
+  const safeCount = Math.max(rowCount, 0);
+  const heights = new Float64Array(safeCount);
+  for (let i = 0; i < safeCount; i += 1) {
+    const cached = cache.get(getRowKey(i));
+    heights[i] = cached !== undefined ? cached : estimate;
+  }
+  // prefix[0]=0 は Float64Array 既定で 0。全域を前方構築します。
+  const prefix = new Float64Array(safeCount + 1);
+  const store: RowHeightStore = {
+    rowCount: safeCount,
+    estimate,
+    heights,
+    prefix,
+    measured: cache,
+  };
+  rebuildPrefixFrom(store, 0);
+  return store;
+};
+
+// 1 行の実測高さを反映します(measured キャッシュ + heights を更新)。
+//   prefix は呼び出し側が flush でまとめて rebuildPrefixFrom します(ここでは更新しません)。
+//   戻り値: 高さが実際に変わったか(prefix 再構築の要否判定に使用)。
+export const setMeasuredRowHeight = (
+  store: RowHeightStore,
+  viewIndex: number,
+  rowKey: GridRowKey,
+  height: number,
+): boolean => {
+  if (viewIndex < 0 || viewIndex >= store.rowCount) {
+    return false;
+  }
+  // 実測値は view 非依存に保持(view 順が変わっても再測定不要)。
+  store.measured.set(rowKey, height);
+  if (store.heights[viewIndex] === height) {
+    return false;
+  }
+  store.heights[viewIndex] = height;
+  return true;
+};
+
+// content-top 基準 y(論理)→ 行 index。prefix 上で「prefix[i] <= y を満たす最大 i」を
+//   二分探索し [0, rowCount-1] へ clamp します。estimate 一様・measured 空のとき
+//   floor(y / rowHeight) と一致します。
+const rowAtContentYFromPrefix = (
+  prefix: Float64Array,
+  rowCount: number,
+  y: number,
+): number => {
+  if (rowCount <= 0 || y <= 0) {
+    return 0;
+  }
+  // prefix[rowCount] = 論理全高。これ以上は末尾行へ clamp。
+  if (y >= prefix[rowCount]) {
+    return rowCount - 1;
+  }
+  // prefix は単調非減少。不変条件 prefix[lo] <= y を保ちつつ上限を詰めます。
+  let lo = 0;
+  let hi = rowCount;
+  while (lo < hi) {
+    const mid = (lo + hi + 1) >> 1;
+    if (prefix[mid] <= y) {
+      lo = mid;
+    } else {
+      hi = mid - 1;
+    }
+  }
+  // lo は prefix[lo] <= y を満たす最大 index(y < prefix[rowCount] より lo <= rowCount-1)。
+  return Math.min(Math.max(lo, 0), rowCount - 1);
+};
+
+// store の prefix を読む auto-height 版 RowMetrics(uniform と同契約)。
+//   rowTop / rowsHeight は O(1)、rowAtContentY は O(log n)。clamp は防御(正常範囲では no-op)。
+export const createAutoHeightRowMetrics = (
+  store: RowHeightStore,
+): RowMetrics => {
+  const { prefix, rowCount } = store;
+  return {
+    rowCount,
+    rowTop: (index) => prefix[Math.min(Math.max(index, 0), rowCount)],
+    rowsHeight: (startInclusive, endInclusive) =>
+      prefix[Math.min(Math.max(endInclusive + 1, 0), rowCount)] -
+      prefix[Math.min(Math.max(startInclusive, 0), rowCount)],
+    totalBodyHeight: prefix[rowCount],
+    rowAtContentY: (y) => rowAtContentYFromPrefix(prefix, rowCount, y),
+  };
 };
 </file>
 
@@ -6833,1004 +6833,6 @@ export function computeAutosizedColumnWidths<T>({
 }
 </file>
 
-<file path="src/components/spreadsheet-grid/logic/verticalGeometry.test.ts">
-// V-1: verticalGeometry の等価性 / 不変条件テスト(旧 adhoc ハーネスの恒久化)。
-//   旧 rowVirtualizer(scrollMargin=headerHeight / estimateSize=rowHeight)は import できないため、
-//   等価性は「ドキュメント化された契約=不変条件」として encode します:
-//     - no-op(logicalBodyHeight <= cap): scaleFactor=1 / translateY=0 / start=headerHeight+i*rowHeight
-//       (= 旧 virtualRow.start と数値一致)。
-//     - scaling: physicalBodyHeight=cap / scaleFactor>=1 / translateY<=0 / 末尾行到達可能 /
-//       物理↔論理のラウンドトリップ / clientYToRowIndex の逆写像一致。
-//   旧ハーネスの 369 ケースに相当する系統的スイープ(>369 組合せ)を回し、各ケースで不変条件を検査します。
-import { describe, it, expect } from 'vitest';
-import {
-  MAX_BODY_PX,
-  WINDOW_BASE_CHUNK_PX,
-  AUTO_HEIGHT_MAX_ROWS,
-  clientYToRowIndex,
-  clipRowRangeToWindow,
-  computeAutoHeightVerticalGeometry,
-  computeVerticalGeometry,
-  createUniformRowMetrics,
-  logicalToPhysicalScrollTop,
-  physicalToLogicalScrollTop,
-  shouldUseAutoHeight,
-  type ComputeVerticalGeometryArgs,
-} from './verticalGeometry';
-import {
-  buildRowHeightStore,
-  createAutoHeightRowMetrics,
-} from './rowHeightStore';
-
-// transform/レイアウトが安定してペイントされる float32 の正確整数域(2^24)。
-//   行/オーバーレイの配置値・wrapper の translateY はこの範囲内に収まる必要があります
-//   (超えると 1M 行で末尾行がペイントされなくなる回帰)。
-const FLOAT32_SAFE_PX = 1 << 24;
-
-const clamp = (value: number, min: number, max: number): number =>
-  Math.min(Math.max(value, min), max);
-
-// 1 ケースの不変条件を検査します(失敗時はケース内容を添えて throw)。
-const checkInvariants = (args: ComputeVerticalGeometryArgs): void => {
-  const {
-    rowCount,
-    rowHeight,
-    headerHeight,
-    viewportHeight,
-    scrollTop,
-    maxBodyPx,
-  } = args;
-  const geometry = computeVerticalGeometry(args);
-  const label = (message: string): string =>
-    `${message} | case=${JSON.stringify(args)} | geometry.scaleFactor=${geometry.scaleFactor} translateY=${geometry.translateY}`;
-  const assert = (condition: boolean, message: string): void => {
-    if (!condition) {
-      throw new Error(label(message));
-    }
-  };
-
-  const logicalBodyHeight = rowCount * rowHeight;
-  const physicalBodyHeight = Math.min(logicalBodyHeight, maxBodyPx);
-  const physicalMax = Math.max(
-    headerHeight + physicalBodyHeight - viewportHeight,
-    0,
-  );
-
-  assert(geometry.logicalBodyHeight === logicalBodyHeight, 'logicalBodyHeight');
-  assert(
-    geometry.physicalBodyHeight === physicalBodyHeight,
-    'physicalBodyHeight',
-  );
-  assert(geometry.scaleFactor >= 1, 'scaleFactor >= 1');
-
-  // 描画ウィンドウ基準オフセット: 0(no-op) または WINDOW_BASE_CHUNK_PX の非負整数倍(scaling)。
-  assert(geometry.windowBaseOffsetPx >= 0, 'windowBaseOffsetPx >= 0');
-  assert(
-    geometry.windowBaseOffsetPx % WINDOW_BASE_CHUNK_PX === 0,
-    'windowBaseOffsetPx is a multiple of WINDOW_BASE_CHUNK_PX',
-  );
-
-  // 物理↔論理スクロール(画面座標の不変性チェック・可視帯被覆で再利用)。
-  const clampedScrollTop = clamp(scrollTop, 0, physicalMax);
-  const logicalScrollTop = clampedScrollTop * geometry.scaleFactor;
-
-  // 有界性(回帰ガード): wrapper の translateY は float32 の正確整数域に収まる。
-  //   これを超えると巨大 transform で 1M 行の末尾行がペイントされなくなる(本修正が直したバグ)。
-  assert(
-    Math.abs(geometry.translateY) < FLOAT32_SAFE_PX,
-    'translateY within float32-safe range',
-  );
-
-  // 窓は連続・[0,rowCount) 内・rowIndexSet と整合。row.start は基準オフセット相対。
-  for (let k = 0; k < geometry.rows.length; k += 1) {
-    const row = geometry.rows[k];
-    assert(row.index >= 0 && row.index < rowCount, 'row.index in range');
-    // start = 絶対論理 top - windowBaseOffsetPx。no-op では windowBaseOffsetPx=0 で従来式と一致。
-    assert(
-      row.start ===
-        headerHeight + row.index * rowHeight - geometry.windowBaseOffsetPx,
-      'row.start === headerHeight + index*rowHeight - windowBaseOffsetPx',
-    );
-    // 有界性(回帰ガード): per-row の配置値も float32 安全域に収まる。
-    assert(
-      Math.abs(row.start) < FLOAT32_SAFE_PX,
-      'row.start within float32-safe range',
-    );
-    // 画面座標の不変性(等価性の本質): wrapper(translateY) + 行(start) のスクロール内位置は、
-    //   基準オフセットの有無に関わらず
-    //   「(clampedScrollTop - logicalScrollTop) + headerHeight + index*rowHeight」
-    //   (= 旧 translateY + 旧 start)と一致する。
-    const sceneTop = geometry.translateY + row.start;
-    const expectedSceneTop =
-      clampedScrollTop - logicalScrollTop + headerHeight + row.index * rowHeight;
-    assert(
-      Math.abs(sceneTop - expectedSceneTop) < 1e-3,
-      'scene position invariant (translateY + start)',
-    );
-    if (k > 0) {
-      assert(
-        row.index === geometry.rows[k - 1].index + 1,
-        'rows are contiguous',
-      );
-    }
-    assert(geometry.rowIndexSet.has(row.index), 'rowIndexSet contains index');
-  }
-  assert(
-    geometry.rowIndexSet.size === geometry.rows.length,
-    'rowIndexSet size === rows length',
-  );
-
-  const isNoop = logicalBodyHeight <= maxBodyPx;
-  if (isNoop) {
-    assert(geometry.scaleFactor === 1, 'no-op scaleFactor === 1');
-    assert(geometry.translateY === 0, 'no-op translateY === 0');
-    assert(geometry.windowBaseOffsetPx === 0, 'no-op windowBaseOffsetPx === 0');
-  }
-
-  // 可視帯の被覆: 論理可視域の先頭/末尾行が窓に含まれる(overscan が上下マージンを賄う)。
-  //   viewportHeight=0 は可視行が存在しないため対象外。
-  if (rowCount > 0 && viewportHeight > 0) {
-    const firstVisible = clamp(
-      Math.floor(logicalScrollTop / rowHeight),
-      0,
-      rowCount - 1,
-    );
-    const lastVisible = clamp(
-      Math.floor((logicalScrollTop + viewportHeight) / rowHeight),
-      0,
-      rowCount - 1,
-    );
-    assert(geometry.rowIndexSet.has(firstVisible), 'first visible row in window');
-    assert(geometry.rowIndexSet.has(lastVisible), 'last visible row in window');
-  }
-
-  // 末尾行到達可能: スクロール可能 かつ 可視域がある なら scrollTop=physicalMax で
-  //   最終行が窓に入る。viewportHeight=0 は可視域ゼロのため対象外(末尾で 1 行が域外に出るのは正常)。
-  if (rowCount > 0 && physicalMax > 0 && viewportHeight > 0) {
-    const atBottom = computeVerticalGeometry({ ...args, scrollTop: physicalMax });
-    assert(
-      atBottom.rowIndexSet.has(rowCount - 1),
-      'last row reachable at physicalMax',
-    );
-  }
-
-  // 物理↔論理ラウンドトリップ(可動域内では誤差なく往復する)。
-  if (physicalMax > 0) {
-    for (const probe of [0, physicalMax / 2, physicalMax]) {
-      const roundTrip = logicalToPhysicalScrollTop(
-        physicalToLogicalScrollTop(probe, geometry.scaleFactor),
-        geometry.scaleFactor,
-      );
-      assert(Math.abs(roundTrip - probe) < 1e-3, 'scroll round-trip');
-    }
-  }
-};
-
-// 系統的スイープのケースを生成します(>369 組合せ)。
-const buildCases = (): ComputeVerticalGeometryArgs[] => {
-  const rowCounts = [0, 1, 10, 400_000, 420_000, 1_000_000];
-  const rowHeights = [1, 36, 38];
-  const headerHeights = [0, 42];
-  const viewportHeights = [0, 300, 1000];
-  const overscans = [0, 20];
-  // MAX_BODY_PX に加え、小行数でも scaling を起動させる小さい cap を併用して経路網羅を上げます。
-  const maxBodyPxs = [MAX_BODY_PX, 1000];
-
-  const cases: ComputeVerticalGeometryArgs[] = [];
-  for (const rowCount of rowCounts) {
-    for (const rowHeight of rowHeights) {
-      for (const headerHeight of headerHeights) {
-        for (const viewportHeight of viewportHeights) {
-          for (const overscan of overscans) {
-            for (const maxBodyPx of maxBodyPxs) {
-              const physicalBodyHeight = Math.min(
-                rowCount * rowHeight,
-                maxBodyPx,
-              );
-              const physicalMax = Math.max(
-                headerHeight + physicalBodyHeight - viewportHeight,
-                0,
-              );
-              const scrollTops = Array.from(
-                new Set([
-                  0,
-                  Math.floor(physicalMax / 2),
-                  physicalMax,
-                  physicalMax + 1000,
-                ]),
-              );
-              for (const scrollTop of scrollTops) {
-                cases.push({
-                  rowCount,
-                  rowHeight,
-                  headerHeight,
-                  viewportHeight,
-                  scrollTop,
-                  overscan,
-                  maxBodyPx,
-                });
-              }
-            }
-          }
-        }
-      }
-    }
-  }
-  return cases;
-};
-
-describe('computeVerticalGeometry (sweep invariants)', () => {
-  const cases = buildCases();
-
-  it(`covers >= 369 cases (actual ${cases.length})`, () => {
-    expect(cases.length).toBeGreaterThanOrEqual(369);
-  });
-
-  it('holds invariants on every swept case', () => {
-    for (const args of cases) {
-      checkInvariants(args);
-    }
-  });
-});
-
-describe('computeVerticalGeometry (no-op equivalence with old uniform virtualizer)', () => {
-  it('produces start === headerHeight + index*rowHeight and identity scaling below cap', () => {
-    const geometry = computeVerticalGeometry({
-      rowCount: 1000,
-      rowHeight: 38,
-      headerHeight: 42,
-      viewportHeight: 600,
-      scrollTop: 5_000,
-      overscan: 20,
-      maxBodyPx: MAX_BODY_PX,
-    });
-    expect(geometry.scaleFactor).toBe(1);
-    expect(geometry.translateY).toBe(0);
-    expect(geometry.windowBaseOffsetPx).toBe(0);
-    for (const row of geometry.rows) {
-      expect(row.start).toBe(42 + row.index * 38);
-    }
-  });
-});
-
-describe('computeVerticalGeometry (scaling activation at App defaults)', () => {
-  it('activates scaling at 500k rows / rowHeight=38 (sf ~ 1.27)', () => {
-    const geometry = computeVerticalGeometry({
-      rowCount: 500_000,
-      rowHeight: 38,
-      headerHeight: 42,
-      viewportHeight: 800,
-      scrollTop: 0,
-      overscan: 20,
-      maxBodyPx: MAX_BODY_PX,
-    });
-    expect(geometry.physicalBodyHeight).toBe(MAX_BODY_PX);
-    expect(geometry.scaleFactor).toBeGreaterThan(1.2);
-    expect(geometry.scaleFactor).toBeLessThan(1.35);
-  });
-
-  it('keeps no-op below the activation threshold (<= 394,736 rows)', () => {
-    const geometry = computeVerticalGeometry({
-      rowCount: 394_000,
-      rowHeight: 38,
-      headerHeight: 42,
-      viewportHeight: 800,
-      scrollTop: 1000,
-      overscan: 20,
-      maxBodyPx: MAX_BODY_PX,
-    });
-    expect(geometry.scaleFactor).toBe(1);
-    expect(geometry.translateY).toBe(0);
-  });
-});
-
-describe('computeVerticalGeometry (1M bottom: bounded transforms regression guard)', () => {
-  // 本修正が直したバグ: 1M 行で scaling 起動時、行/オーバーレイを絶対論理 top(最大 38M)へ
-  //   置くと float32 安全域(2^24)を超え、末尾付近がペイントされず末尾行へ到達できなかった。
-  //   基準オフセットの畳み込みで、末尾でも translateY / row.start が安全域に収まることを固定する。
-  const FLOAT32_SAFE = 1 << 24;
-  const rowCount = 1_000_000;
-  const rowHeight = 38;
-  const headerHeight = 42;
-  const viewportHeight = 800;
-  const maxBodyPx = MAX_BODY_PX;
-
-  const physicalMax = Math.max(
-    headerHeight + Math.min(rowCount * rowHeight, maxBodyPx) - viewportHeight,
-    0,
-  );
-
-  it('reaches the last row at the bottom with all placements within float32-safe range', () => {
-    const geometry = computeVerticalGeometry({
-      rowCount,
-      rowHeight,
-      headerHeight,
-      viewportHeight,
-      scrollTop: physicalMax,
-      overscan: 20,
-      maxBodyPx,
-    });
-
-    // 末尾行が窓に入る(= 到達可能)。
-    expect(geometry.rowIndexSet.has(rowCount - 1)).toBe(true);
-    // scaling 起動・基準オフセットは正のチャンク倍数。
-    expect(geometry.scaleFactor).toBeGreaterThan(1);
-    expect(geometry.windowBaseOffsetPx).toBeGreaterThan(0);
-    expect(geometry.windowBaseOffsetPx % WINDOW_BASE_CHUNK_PX).toBe(0);
-    // wrapper / per-row の配置値はいずれも float32 安全域。
-    expect(Math.abs(geometry.translateY)).toBeLessThan(FLOAT32_SAFE);
-    for (const row of geometry.rows) {
-      expect(Math.abs(row.start)).toBeLessThan(FLOAT32_SAFE);
-    }
-  });
-
-  it('preserves the on-screen position of the last row at the bottom', () => {
-    const geometry = computeVerticalGeometry({
-      rowCount,
-      rowHeight,
-      headerHeight,
-      viewportHeight,
-      scrollTop: physicalMax,
-      overscan: 20,
-      maxBodyPx,
-    });
-    const logicalScrollTop = physicalMax * geometry.scaleFactor;
-    const lastRow = geometry.rows.find((row) => row.index === rowCount - 1);
-    expect(lastRow).toBeDefined();
-    if (lastRow) {
-      // wrapper(translateY) + 行(start) のスクロール内位置 = 絶対論理 top - logicalScrollTop + 物理 scrollTop。
-      const sceneTop = geometry.translateY + lastRow.start;
-      const expectedSceneTop =
-        physicalMax - logicalScrollTop + headerHeight + (rowCount - 1) * rowHeight;
-      expect(Math.abs(sceneTop - expectedSceneTop)).toBeLessThan(1e-3);
-    }
-  });
-});
-
-describe('clientYToRowIndex (inverse of body-content row band)', () => {
-  it('reduces to floor(y / rowHeight) when scaleFactor === 1', () => {
-    const rowHeight = 38;
-    const rowCount = 1000;
-    const metrics = createUniformRowMetrics(rowCount, rowHeight);
-    for (let i = 0; i < 50; i += 1) {
-      for (const delta of [0, 1, rowHeight - 1]) {
-        const y = i * rowHeight + delta;
-        expect(clientYToRowIndex(y, 0, 1, metrics)).toBe(i);
-      }
-    }
-  });
-
-  it('inverts the d-shifted band under scaling (row i occupies [i*rowHeight + d, ...))', () => {
-    const rowHeight = 38;
-    const rowCount = 1_000_000;
-    const scaleFactor = 1.27;
-    const scrollTop = 1_000_000;
-    const d = scrollTop * (1 - scaleFactor); // <= 0
-    const metrics = createUniformRowMetrics(rowCount, rowHeight);
-    for (const i of [0, 1, 100, 5000, rowCount - 1]) {
-      for (const delta of [0, rowHeight / 2, rowHeight - 1]) {
-        const y = i * rowHeight + d + delta;
-        expect(clientYToRowIndex(y, scrollTop, scaleFactor, metrics)).toBe(
-          clamp(i, 0, rowCount - 1),
-        );
-      }
-    }
-  });
-
-  it('clamps out-of-range y into [0, rowCount-1]', () => {
-    const rowHeight = 38;
-    const rowCount = 10;
-    const metrics = createUniformRowMetrics(rowCount, rowHeight);
-    expect(clientYToRowIndex(-9999, 0, 1, metrics)).toBe(0);
-    expect(clientYToRowIndex(9_999_999, 0, 1, metrics)).toBe(9);
-  });
-});
-
-// C0(auto-height シーム): createUniformRowMetrics の各 resolver が、移行前に overlay /
-//   ヒットテストが直書きしていた算術(index*rowHeight 等)とバイト等価であることのガードです。
-//   将来の auto-height(prefix-sum 実装)を入れても uniform 経路はここで一致が担保されます。
-describe('createUniformRowMetrics (no-op equivalence with pre-seam arithmetic)', () => {
-  const cases: Array<{ rowCount: number; rowHeight: number }> = [];
-  for (const rowCount of [0, 1, 2, 10, 1000, 500_000, 1_000_000]) {
-    for (const rowHeight of [1, 20, 36, 38, 42]) {
-      cases.push({ rowCount, rowHeight });
-    }
-  }
-
-  it(`covers >= 35 cases (actual ${cases.length})`, () => {
-    expect(cases.length).toBeGreaterThanOrEqual(35);
-  });
-
-  it('rowTop(i) === i * rowHeight and totalBodyHeight === rowCount * rowHeight', () => {
-    for (const { rowCount, rowHeight } of cases) {
-      const metrics = createUniformRowMetrics(rowCount, rowHeight);
-      expect(metrics.rowCount).toBe(rowCount);
-      expect(metrics.totalBodyHeight).toBe(rowCount * rowHeight);
-      for (const i of [0, 1, 2, 7, 123, Math.max(rowCount - 1, 0)]) {
-        if (i >= rowCount && rowCount > 0) continue;
-        expect(metrics.rowTop(i)).toBe(i * rowHeight);
-      }
-    }
-  });
-
-  it('rowsHeight(a, b) === (b - a + 1) * rowHeight (inclusive span)', () => {
-    for (const { rowCount, rowHeight } of cases) {
-      if (rowCount === 0) continue;
-      const metrics = createUniformRowMetrics(rowCount, rowHeight);
-      const last = rowCount - 1;
-      for (const [a, b] of [
-        [0, 0],
-        [0, last],
-        [Math.min(3, last), Math.min(3, last)],
-        [Math.min(2, last), last],
-      ] as Array<[number, number]>) {
-        expect(metrics.rowsHeight(a, b)).toBe((b - a + 1) * rowHeight);
-      }
-    }
-  });
-
-  it('rowAtContentY(y) === clamp(floor(y / rowHeight), 0, rowCount-1)', () => {
-    for (const { rowCount, rowHeight } of cases) {
-      const metrics = createUniformRowMetrics(rowCount, rowHeight);
-      for (const i of [-5, 0, 1, 50, rowCount - 1, rowCount, rowCount + 10]) {
-        for (const delta of [0, rowHeight / 2, rowHeight - 1]) {
-          const y = i * rowHeight + delta;
-          const expected = clamp(
-            Math.floor(y / rowHeight),
-            0,
-            Math.max(rowCount - 1, 0),
-          );
-          expect(metrics.rowAtContentY(y)).toBe(expected);
-        }
-      }
-    }
-  });
-});
-
-describe('clipRowRangeToWindow (selection band clip to render window)', () => {
-  it('returns the selection unchanged when fully inside the window (no-op equivalence)', () => {
-    // 窓 [80, 132] 内に収まる小さな選択はクリップされず、出力不変(no-op 等価)。
-    expect(clipRowRangeToWindow(100, 102, 80, 132)).toEqual({ start: 100, end: 102 });
-    expect(clipRowRangeToWindow(80, 132, 80, 132)).toEqual({ start: 80, end: 132 });
-    expect(clipRowRangeToWindow(81, 81, 80, 132)).toEqual({ start: 81, end: 81 });
-  });
-
-  it('clips a full-body selection (col / whole-grid) down to the window band', () => {
-    // col / グリッド全選択は [0, rowCount-1]。窓へ畳まれて巨大 div を回避します。
-    expect(clipRowRangeToWindow(0, 999_999, 200, 252)).toEqual({ start: 200, end: 252 });
-    expect(clipRowRangeToWindow(0, 999_999, 0, 32)).toEqual({ start: 0, end: 32 });
-    expect(clipRowRangeToWindow(0, 999_999, 999_968, 999_999)).toEqual({
-      start: 999_968,
-      end: 999_999,
-    });
-  });
-
-  it('clips the leading edge when the selection starts above the window', () => {
-    expect(clipRowRangeToWindow(0, 150, 100, 200)).toEqual({ start: 100, end: 150 });
-  });
-
-  it('clips the trailing edge when the selection ends below the window', () => {
-    expect(clipRowRangeToWindow(150, 999_999, 100, 200)).toEqual({ start: 150, end: 200 });
-  });
-
-  it('returns null when the selection is entirely above or below the window', () => {
-    expect(clipRowRangeToWindow(0, 50, 100, 200)).toBeNull();
-    expect(clipRowRangeToWindow(300, 400, 100, 200)).toBeNull();
-  });
-
-  it('returns null for an empty window (no rendered rows)', () => {
-    // 空窓は末尾 < 先頭(windowFirstRow=0 / windowLastRow=-1 の規約)。
-    expect(clipRowRangeToWindow(0, 999_999, 0, -1)).toBeNull();
-    expect(clipRowRangeToWindow(5, 5, 0, -1)).toBeNull();
-  });
-
-  it('handles single-row window and single-row selection at the boundary', () => {
-    expect(clipRowRangeToWindow(0, 999_999, 42, 42)).toEqual({ start: 42, end: 42 });
-    expect(clipRowRangeToWindow(42, 42, 42, 42)).toEqual({ start: 42, end: 42 });
-    expect(clipRowRangeToWindow(41, 41, 42, 42)).toBeNull();
-    expect(clipRowRangeToWindow(43, 43, 42, 42)).toBeNull();
-  });
-});
-
-// C1-1: computeAutoHeightVerticalGeometry の等価性(uniform 相当の RowMetrics で start が
-//   computeVerticalGeometry(sf=1)と一致)と不変条件(sf=1 固定 / start 単調連続 / size 正値 /
-//   窓が可視域を被覆)を検査します。
-const identityKey = (index: number): number => index;
-
-describe('computeAutoHeightVerticalGeometry (uniform-equivalent: start matches computeVerticalGeometry)', () => {
-  const cases: Array<{
-    rowCount: number;
-    rowHeight: number;
-    headerHeight: number;
-    viewportHeight: number;
-    scrollTop: number;
-  }> = [
-    { rowCount: 1000, rowHeight: 36, headerHeight: 42, viewportHeight: 600, scrollTop: 0 },
-    { rowCount: 1000, rowHeight: 38, headerHeight: 42, viewportHeight: 600, scrollTop: 5 },
-    { rowCount: 1000, rowHeight: 38, headerHeight: 42, viewportHeight: 640, scrollTop: 3800 },
-    { rowCount: 137, rowHeight: 24, headerHeight: 30, viewportHeight: 480, scrollTop: 1000 },
-    { rowCount: 1000, rowHeight: 38, headerHeight: 42, viewportHeight: 600, scrollTop: 1e9 },
-  ];
-
-  for (const c of cases) {
-    it(`start matches uniform for ${JSON.stringify(c)}`, () => {
-      // uniform 経路(estimate=rowHeight・measured 空)→ auto-height は sf=1 / offset=0。
-      const store = buildRowHeightStore(c.rowCount, c.rowHeight, identityKey);
-      const rowMetrics = createAutoHeightRowMetrics(store);
-      const auto = computeAutoHeightVerticalGeometry(
-        {
-          headerHeight: c.headerHeight,
-          viewportHeight: c.viewportHeight,
-          scrollTop: c.scrollTop,
-          overscan: 20,
-        },
-        rowMetrics,
-      );
-      const uniform = computeVerticalGeometry({
-        rowCount: c.rowCount,
-        rowHeight: c.rowHeight,
-        headerHeight: c.headerHeight,
-        viewportHeight: c.viewportHeight,
-        scrollTop: c.scrollTop,
-        overscan: 20,
-        maxBodyPx: MAX_BODY_PX,
-      });
-
-      // sf=1 / translateY=0 / offset=0 に固定。
-      expect(auto.scaleFactor).toBe(1);
-      expect(auto.translateY).toBe(0);
-      expect(auto.windowBaseOffsetPx).toBe(0);
-      expect(auto.physicalBodyHeight).toBe(uniform.physicalBodyHeight);
-      expect(auto.logicalBodyHeight).toBe(uniform.logicalBodyHeight);
-
-      // 共通 index の start が一致(rowTop が uniform と一致するため)。
-      const autoByIndex = new Map(auto.rows.map((r) => [r.index, r.start]));
-      for (const r of uniform.rows) {
-        if (autoByIndex.has(r.index)) {
-          expect(autoByIndex.get(r.index)).toBe(r.start);
-        }
-      }
-
-      // 各 size は rowHeight(uniform estimate)。
-      for (const r of auto.rows) {
-        expect(r.size).toBe(c.rowHeight);
-      }
-    });
-  }
-});
-
-describe('shouldUseAutoHeight (pre-measurement gate)', () => {
-  it('requires enabled + driving column + row count within [1, maxRows]', () => {
-    expect(shouldUseAutoHeight(true, true, 1000, AUTO_HEIGHT_MAX_ROWS)).toBe(true);
-    // props 無効。
-    expect(shouldUseAutoHeight(false, true, 1000, AUTO_HEIGHT_MAX_ROWS)).toBe(false);
-    // 駆動列なし。
-    expect(shouldUseAutoHeight(true, false, 1000, AUTO_HEIGHT_MAX_ROWS)).toBe(false);
-    // 行数 0(描画なし)。
-    expect(shouldUseAutoHeight(true, true, 0, AUTO_HEIGHT_MAX_ROWS)).toBe(false);
-  });
-
-  it('gates at the row-count boundary (fallback to uniform above max)', () => {
-    // 上限ちょうどは true、+1 で false(uniform フォールバック)。
-    expect(shouldUseAutoHeight(true, true, AUTO_HEIGHT_MAX_ROWS, AUTO_HEIGHT_MAX_ROWS)).toBe(true);
-    expect(shouldUseAutoHeight(true, true, AUTO_HEIGHT_MAX_ROWS + 1, AUTO_HEIGHT_MAX_ROWS)).toBe(false);
-    // 1M 行は当然フォールバック。
-    expect(shouldUseAutoHeight(true, true, 1_000_000, AUTO_HEIGHT_MAX_ROWS)).toBe(false);
-  });
-});
-
-describe('computeAutoHeightVerticalGeometry (invariants: window covers viewport, monotonic, sized)', () => {
-  it('produces contiguous monotonically increasing rows that cover the visible band', () => {
-    // 非一様な行高(measured)で窓が可視域を覆い、start が単調・連続、size>0 を確認します。
-    const rowCount = 500;
-    const estimate = 30;
-    const measured = new Map<number, number>();
-    // 偶数行を背高(60)に。view 順=identity。
-    for (let i = 0; i < rowCount; i += 2) {
-      measured.set(i, 60);
-    }
-    const store = buildRowHeightStore(rowCount, estimate, identityKey, measured);
-    const rowMetrics = createAutoHeightRowMetrics(store);
-    const headerHeight = 42;
-    const viewportHeight = 600;
-
-    for (const scrollTop of [0, 500, 5000, 1e9]) {
-      const geo = computeAutoHeightVerticalGeometry(
-        { headerHeight, viewportHeight, scrollTop, overscan: 20 },
-        rowMetrics,
-      );
-
-      expect(geo.rows.length).toBeGreaterThan(0);
-
-      // index 連続・start 単調増加・size 正値・start = headerHeight + rowTop(index)。
-      for (let k = 0; k < geo.rows.length; k += 1) {
-        const r = geo.rows[k];
-        expect(r.size).toBeGreaterThan(0);
-        expect(r.start).toBe(headerHeight + rowMetrics.rowTop(r.index));
-        if (k > 0) {
-          expect(r.index).toBe(geo.rows[k - 1].index + 1);
-          expect(r.start).toBeGreaterThan(geo.rows[k - 1].start);
-        }
-      }
-
-      // 可視域 [clampedScrollTop, clampedScrollTop+viewport] が窓 [first, last] に含まれること。
-      const logicalMax = Math.max(
-        headerHeight + rowMetrics.totalBodyHeight - viewportHeight,
-        0,
-      );
-      const clamped = Math.min(Math.max(scrollTop, 0), logicalMax);
-      const firstVisible = rowMetrics.rowAtContentY(clamped);
-      const lastVisible = rowMetrics.rowAtContentY(clamped + viewportHeight);
-      const first = geo.rows[0].index;
-      const last = geo.rows[geo.rows.length - 1].index;
-      expect(first).toBeLessThanOrEqual(firstVisible);
-      expect(last).toBeGreaterThanOrEqual(lastVisible);
-    }
-  });
-});
-</file>
-
-<file path="src/components/spreadsheet-grid/logic/verticalGeometry.ts">
-// 縦スクロールの仮想化ジオメトリ(uniform 行高専用)です。
-//
-// 目的(scroll-space 仮想化 / 1M 行対応):
-//   論理ボディ全高 = rowCount * rowHeight が、ブラウザの要素高さ上限
-//   (Chrome/Edge/Electron ≈ 33,554,432px / Firefox ≈ 17,895,697px) を超えると、
-//   scrollHeight がクランプされて末尾行が到達不能になります(座標破綻 = 機能ブロッカー)。
-//   そこで物理 DOM 高さを上限内(MAX_BODY_PX)へ圧縮し、物理 scrollTop ↔ 論理オフセットを
-//   線形写像します(= pixel scaling)。圧縮が不要な行数では完全な恒等写像になります。
-//
-// 設計(このコードベース固有の前提を踏襲):
-//   - 単一スクロールコンテナ + sticky 3 ペイン(Batch 10-G)を維持します。ネイティブ
-//     スクロールのまま、行/overlay レイヤーへ translateY(D) を掛けて物理ウィンドウへ
-//     引き込みます(JS スクロール同期は増やしません)。
-//   - 行は uniform 行高(estimateSize 定数)なので、窓出しは純粋な算術(firstRow / count)に
-//     潰れます。実測 / 二分探索 / サイズキャッシュは不要です。
-//   - 物理↔論理写像・行窓・ヒットテストを本ファイル 1 か所へ集約します(縦ジオメトリの
-//     シーム)。将来 auto-height モードを足すときは、同じ契約の第二実装(prefix-sum +
-//     二分探索 + ResizeObserver)へ差し替えるだけで、消費側(GridBodyLayer / ヒットテスト /
-//     viewport-sync)は不変に保てます。
-//
-// 等価性(圧縮不要時の no-op):
-//   logicalBodyHeight <= MAX_BODY_PX のとき scaleFactor = 1 / translateY = 0 となり、
-//   rows[i].start = headerHeight + i * rowHeight は旧 rowVirtualizer(scrollMargin=
-//   headerHeight / estimateSize=rowHeight)の virtualRow.start と数値的に一致します。
-//   ヒットテストも D=0 で従来式(floor(y / rowHeight))と一致します。
-
-// 物理ボディ高さの上限です。
-// 注記: 全ブラウザ安全側の既定として 15,000,000 を採用しています(Firefox ≈ 17.9M を
-//   下回るマージン)。scaling が起動する閾値は MAX_BODY_PX / rowHeight 行
-//   (rowHeight=36 なら約 417k 行)で、これ未満では現状と数値一致します。
-//   実行環境が Chrome / Electron 確定なら 30,000,000 まで上げて起動閾値を約 833k 行へ
-//   押し上げてよく、その場合の差分は本定数 1 行のみです。
-export const MAX_BODY_PX = 15_000_000;
-
-// auto-height 行モードの行数上限です(gate)。論理全高 = 行数 × 1 行最大高(~280px)が
-//   MAX_BODY_PX を超えない範囲に行数で gate します(MAX_BODY_PX / 280 ≒ 53,571 を切り下げ)。
-//   これにより auto-height モードでは scaleFactor=1 / windowBaseOffsetPx=0 / translateY=0 が
-//   保証され、scaling・float32 対策・基準オフセットが休眠します。超過時は uniform 行高へ
-//   フォールバックします(上限値・1 行最大高はプロダクト判断で調整可)。
-export const AUTO_HEIGHT_MAX_ROWS = 50_000;
-
-// auto-height を使うべきか(測定なしで事前判定できる pure gate)。
-//   props 有効 + 駆動列(autoHeight:true)が存在 + 行数が [1, maxRows] のとき true。
-//   超過時は false(uniform フォールバック)。viewRowCount=0 も false(描画なし)。
-export const shouldUseAutoHeight = (
-  autoHeightEnabled: boolean,
-  hasAutoHeightColumn: boolean,
-  viewRowCount: number,
-  maxRows: number,
-): boolean =>
-  autoHeightEnabled &&
-  hasAutoHeightColumn &&
-  viewRowCount > 0 &&
-  viewRowCount <= maxRows;
-
-// 描画ウィンドウの基準オフセットをスナップする単位(px)です。
-// 目的(巨大 transform によるペイント不良の回避):
-//   scaling 起動時、行/オーバーレイを「絶対論理 top(最大 ≈ rowCount*rowHeight)」へ置くと、
-//   1M 行では 38,000,000px に達します。ブラウザの transform/レイアウトは float32 の正確整数域
-//   (2^24 = 16,777,216px)を超えると配置が不安定になり、一定の行から先がペイントされません
-//   (= 末尾行に到達できない症状)。そこで scaling 時は描画ウィンドウ先頭をこの単位へスナップした
-//   基準で相対化し、基準ぶんを wrapper の translateY 側へ畳み込みます。これにより行/オーバーレイの
-//   transform も wrapper の translateY も常に <= physicalBodyHeight(< 16.7M)へ収まります。
-//   スナップ単位なので、チャンクを跨がない通常スクロールでは per-row の値が変わらず、
-//   GridBodyRow の memo(縦スクロールで再レンダーしない最適化)を維持します。
-// 注記: 1,048,576px(2^20)は rowHeight=38 で約 27,000 行ぶん。チャンク跨ぎは数万行スクロールに
-//   1 回で、per-row 値が更新されるのはその瞬間だけです。
-export const WINDOW_BASE_CHUNK_PX = 1 << 20;
-
-// 描画する 1 行の窓エントリです(旧 @tanstack/react-virtual の VirtualItem 互換)。
-export type VerticalRow = {
-  index: number;
-  // 行の論理 top(headerHeight 込み)。GridBodyLayer の translateY 基準(virtualRow.start 互換)。
-  start: number;
-  // 行ごとの高さ(px)。auto-height 専用。uniform 経路では未設定で、消費側(GridBodyLayer)は
-  //   rowHeight prop へフォールバックします(uniform 出力をバイト等価に保つため)。
-  size?: number;
-};
-
-// 縦ジオメトリのシーム契約です。uniform / 将来の auto-height で実装を差し替えても、
-// 消費側はこの型だけに依存します。
-export type VerticalGeometry = {
-  // コンテナ / overlay+body wrapper / ドロップインジケータの高さに使う物理ボディ高さ
-  // (= min(logicalBodyHeight, MAX_BODY_PX))。
-  physicalBodyHeight: number;
-  // 論理ボディ全高(= rowCount * rowHeight)。selection の全面高さ等、論理座標が要る箇所用。
-  logicalBodyHeight: number;
-  // 物理 scrollTop → 論理 scrollTop の倍率(>= 1)。logicalBodyHeight <= cap のとき 1。
-  scaleFactor: number;
-  // overlay+body wrapper に掛ける translateY。scaleFactor=1 のとき 0(現状と一致)。
-  //   scaling 時は windowBaseOffsetPx を畳み込むため正値を取り得ます(<= physicalBodyHeight に有界)。
-  translateY: number;
-  // 行/オーバーレイの「絶対論理 top(headerHeight + row*rowHeight)」から差し引く基準オフセット(px)。
-  //   no-op(scaleFactor=1)では 0(= 従来どおり絶対配置)。scaling 時のみ WINDOW_BASE_CHUNK_PX 境界へ
-  //   スナップした正値。消費側はオーバーレイの top からこの値を引き、行 start は本ファイルで反映済みです。
-  //   基準は translateY 側に同額が含まれるため、ネットの画面座標は scaleFactor に関わらず不変です。
-  windowBaseOffsetPx: number;
-  // 描画する行窓(virtualRow 互換の {index, start})。
-  rows: VerticalRow[];
-  // 描画行 index 集合(GridBodyLayer の OOB / 重複ガードと整合)。
-  rowIndexSet: Set<number>;
-};
-
-export type ComputeVerticalGeometryArgs = {
-  rowCount: number;
-  rowHeight: number;
-  headerHeight: number;
-  // スクロールコンテナの可視高さ(clientHeight)。窓の行数と scaleFactor に効きます。
-  viewportHeight: number;
-  // 物理 scrollTop(スクロールコンテナの scrollTop そのもの)。
-  scrollTop: number;
-  // 窓の上下に先回りで描画する行数(旧 rowVirtualizer overscan=20 相当)。
-  overscan: number;
-  // 物理ボディ高さの上限(MAX_BODY_PX)。
-  maxBodyPx: number;
-};
-
-// 行メトリクス(スクロール非依存)。行の content-top 位置・区間高さ・content-y→行 を解決します。
-//   overlay(active cell / selection)の top/height とヒットテストの行解決がここを通ります。
-//   ★スクロール非依存(rowCount / rowHeight のみ依存)。overlay の useMemo を scrollTop に結合させず、
-//     縦スクロールで再レンダーさせない(11-A の memo 最適化を維持)ための分離です。computeVerticalGeometry
-//     が返す per-scroll の窓(rows / translateY)とは別軸で、selection 等が変わったときだけ作り直します。
-//   将来の auto-height は同じ RowMetrics 契約を prefix-sum + 二分探索で実装し、消費側を不変に保ちます。
-export type RowMetrics = {
-  // 行数(= 表示対象の行数)。rowAtContentY の clamp 上限に使います。
-  rowCount: number;
-  // body content-top 基準の行 top(headerHeight 抜き)。= prefix(index)。
-  rowTop(index: number): number;
-  // 行区間 [startInclusive, endInclusive] の高さ合計。= prefix(end+1) - prefix(start)。
-  rowsHeight(startInclusive: number, endInclusive: number): number;
-  // ボディ論理全高(= rowTop(rowCount))。col 選択の全面高さ等に使用。
-  totalBodyHeight: number;
-  // content-top 基準 y(論理)→ 行 index([0, rowCount-1] へ clamp)。
-  rowAtContentY(y: number): number;
-};
-
-// uniform 行高の RowMetrics を生成します(純算術)。
-//   各 resolver は移行前の呼び出し箇所(index*rowHeight 等)とバイト等価です。
-export const createUniformRowMetrics = (
-  rowCount: number,
-  rowHeight: number,
-): RowMetrics => ({
-  rowCount,
-  rowTop: (index) => index * rowHeight,
-  rowsHeight: (startInclusive, endInclusive) =>
-    (endInclusive - startInclusive + 1) * rowHeight,
-  totalBodyHeight: rowCount * rowHeight,
-  rowAtContentY: (y) =>
-    Math.min(Math.max(Math.floor(y / rowHeight), 0), Math.max(rowCount - 1, 0)),
-});
-
-// 選択オーバーレイの縦範囲を、現在の描画窓(virtualRows の先頭/末尾行 index)へクリップします。
-//   col / グリッド全選択 / 巨大 cell・row 選択は論理全高(uniform で rowCount*rowHeight、auto-height でも
-//   最大 MAX_BODY_PX)に達し、ブラウザの要素高さ上限(≈33.5M) / float32 正確整数域(2^24)を超えて一部しか
-//   描画されません(列全選択ハイライトの途中切れ)。可視域に映るのは窓の帯だけなので、選択の縦範囲を窓へ
-//   クリップして小さな帯に畳めば、視覚的に完全かつペイント安全になります。
-//   窓は overscan を含み viewport より広いため、帯の上下ボーダーは可視域の外へ落ち、横スクロール時に
-//   中途半端な水平線は出ません(グリッド真上端/真下端でのみボーダーが見え、巨大 div 時代と一致)。
-//   窓内に収まる通常の選択ではクリップは恒等で、出力は不変です(no-op 等価)。
-//   ★スクロール非依存の rowTop/rowsHeight(RowMetrics)と組み合わせて使うため、auto-height の
-//     prefix-sum 版 RowMetrics へ差し替えてもこのクリップはそのまま機能します。
-// 返り値: クリップ後の行区間 [start, end](inclusive)。窓と交差しない / 空窓のときは null。
-export const clipRowRangeToWindow = (
-  selStartRow: number,
-  selEndRow: number,
-  windowFirstRow: number,
-  windowLastRow: number,
-): { start: number; end: number } | null => {
-  // 空窓(描画行ゼロ)では末尾 < 先頭。描画しません。
-  if (windowLastRow < windowFirstRow) {
-    return null;
-  }
-  const start = Math.max(selStartRow, windowFirstRow);
-  const end = Math.min(selEndRow, windowLastRow);
-  // 選択が窓の完全に上 / 下(画面外)なら交差なし。
-  if (start > end) {
-    return null;
-  }
-  return { start, end };
-};
-
-// 物理 scrollTop → 論理 scrollTop です(active cell 自動スクロールの現在位置換算に使用)。
-export const physicalToLogicalScrollTop = (
-  physical: number,
-  scaleFactor: number,
-): number => physical * scaleFactor;
-
-// 論理 scrollTop → 物理 scrollTop です(算出した論理スクロール目標を実 scrollTop へ戻す)。
-export const logicalToPhysicalScrollTop = (
-  logical: number,
-  scaleFactor: number,
-): number => (scaleFactor === 1 ? logical : logical / scaleFactor);
-
-// ヒットテスト: ボディ content-top 基準の物理 y(= 旧来の y。moving rect 経由で物理
-//   スクロール量 S_phys を含む)→ 行 index。
-//   論理 y = y - D(D = S_phys * (1 - scaleFactor))で求めます。scaleFactor=1 のとき D=0 で
-//   従来式(floor(y / rowHeight))と一致します。
-//   変更(auto-height シーム): 物理→論理の d 補正はスクロール依存なのでここに残し、論理 content-y の
-//   行解決のみ RowMetrics.rowAtContentY へ委譲します(uniform では従来式と一致)。
-export const clientYToRowIndex = (
-  yRelativeToBodyTop: number,
-  scrollTop: number,
-  scaleFactor: number,
-  rowMetrics: RowMetrics,
-): number => {
-  const d = scrollTop * (1 - scaleFactor);
-  return rowMetrics.rowAtContentY(yRelativeToBodyTop - d);
-};
-
-export const computeVerticalGeometry = ({
-  rowCount,
-  rowHeight,
-  headerHeight,
-  viewportHeight,
-  scrollTop,
-  overscan,
-  maxBodyPx,
-}: ComputeVerticalGeometryArgs): VerticalGeometry => {
-  const logicalBodyHeight = rowCount * rowHeight;
-  const physicalBodyHeight = Math.min(logicalBodyHeight, maxBodyPx);
-
-  // 物理 / 論理それぞれのスクロール可動域です。両端(先頭・末尾)を一致させるため、
-  // 「全高」ではなく「可動域(total - viewport)」を基準に倍率を取ります
-  // (全高基準だと末尾でオーバーシュートし、最終行が下端に届きません)。
-  const logicalMax = Math.max(headerHeight + logicalBodyHeight - viewportHeight, 0);
-  const physicalMax = Math.max(headerHeight + physicalBodyHeight - viewportHeight, 0);
-
-  // 圧縮不要 / スクロール不能時は scaleFactor=1(= 現状と数値一致・transform なし)。
-  const scaleFactor =
-    physicalMax > 0 && logicalBodyHeight > physicalBodyHeight
-      ? logicalMax / physicalMax
-      : 1;
-
-  // 物理 scrollTop を論理オフセットへ写像します。
-  const clampedScrollTop = Math.min(Math.max(scrollTop, 0), physicalMax);
-  const logicalScrollTop = clampedScrollTop * scaleFactor;
-
-  // 窓出し(uniform: 純粋な算術)。論理オフセット基準で firstVisible を求めます。
-  //   firstVisible = floor(S_log / rowHeight) は、行 index の表示 y =
-  //   headerHeight + index*rowHeight - S_log がボディ可視域に入る先頭行です
-  //   (ヘッダー下に一部潜る行を含むため floor)。overscan が上方向の被覆行も賄います。
-  const visibleCount = Math.ceil(viewportHeight / rowHeight) + 1;
-  const firstVisible = Math.floor(logicalScrollTop / rowHeight);
-  const start = Math.max(firstVisible - overscan, 0);
-  const end = Math.min(firstVisible + visibleCount + overscan, rowCount);
-
-  // 描画ウィンドウの基準オフセット(px)。no-op(scaleFactor=1)では 0 にして従来と完全一致を保ちます
-  //   (この経路では絶対論理 top <= physicalBodyHeight <= MAX_BODY_PX < 16.7M なので相対化は不要)。
-  //   scaling 時のみ、ウィンドウ先頭(start)の論理 top を WINDOW_BASE_CHUNK_PX 境界へスナップして
-  //   基準にします。スナップにより通常スクロールでは値が動かず、行/オーバーレイの transform が
-  //   小さく保たれ、巨大 transform によるペイント不良(末尾行が描画されない問題)を回避します。
-  const windowBaseOffsetPx =
-    scaleFactor === 1
-      ? 0
-      : Math.floor((start * rowHeight) / WINDOW_BASE_CHUNK_PX) *
-        WINDOW_BASE_CHUNK_PX;
-
-  // overlay+body wrapper の translateY。基準 D = S_phys - S_log(<= 0)に基準オフセットを畳み込みます。
-  //   行は論理 top(headerHeight + index*rowHeight - windowBaseOffsetPx)へ置き、この translateY で
-  //   物理ウィンドウへ引き込むことで、行 index の表示位置は基準オフセットの有無に関わらず
-  //   論理スクロール S_log のときと完全一致します(画面 y = headerHeight + index*rowHeight - S_log)。
-  //   no-op では D=0 かつ windowBaseOffsetPx=0 ⇒ translateY=0(従来と一致)。
-  //   scaling では translateY <= physicalBodyHeight(<16.7M)に有界になります。
-  const translateY = clampedScrollTop - logicalScrollTop + windowBaseOffsetPx;
-
-  const rows: VerticalRow[] = [];
-  const rowIndexSet = new Set<number>();
-  for (let index = start; index < end; index += 1) {
-    // start は「絶対論理 top - 基準オフセット」。no-op では従来どおり headerHeight + index*rowHeight。
-    rows.push({
-      index,
-      start: headerHeight + index * rowHeight - windowBaseOffsetPx,
-    });
-    rowIndexSet.add(index);
-  }
-
-  return {
-    physicalBodyHeight,
-    logicalBodyHeight,
-    scaleFactor,
-    translateY,
-    windowBaseOffsetPx,
-    rows,
-    rowIndexSet,
-  };
-};
-
-export type ComputeAutoHeightVerticalGeometryArgs = {
-  headerHeight: number;
-  // スクロールコンテナの可視高さ(clientHeight)。窓の行数に効きます。
-  viewportHeight: number;
-  // 物理 scrollTop。auto-height では sf=1 なので論理 scrollTop と一致します。
-  scrollTop: number;
-  // 窓の上下に先回りで描画する行数(uniform 経路と同じ overscan=20 を渡す想定)。
-  overscan: number;
-};
-
-// auto-height 行の縦ジオメトリ(prefix-sum 版 RowMetrics を窓出し)。
-//   ★gate(論理全高 < MAX_BODY_PX / 行数 <= AUTO_HEIGHT_MAX_ROWS)前提なので、scaleFactor=1 /
-//     windowBaseOffsetPx=0 / translateY=0 に固定されます。scaling・float32 対策・基準オフセットは
-//     休眠し、行/オーバーレイは絶対論理 top(headerHeight + rowTop(i))にそのまま置けます。
-//   窓出しは uniform の純算術(floor(y/rowHeight))の代わりに RowMetrics.rowAtContentY
-//     (prefix 二分探索)で可視域 [scrollTop, scrollTop+viewport] を覆う行を求め、両側に overscan を
-//     足します。estimate 一様・measured 空の RowMetrics を渡すと、共通 index の start は
-//     computeVerticalGeometry(sf=1)と一致し、窓は同じ可視域を被覆します(末尾 overscan の行数は
-//     行高可変の窓計算原理が異なるため厳密一致は保証しません)。
-//   各 row には start に加え size(= rowsHeight(i,i))を載せ、GridBodyLayer が行ごとの高さに使います。
-export const computeAutoHeightVerticalGeometry = (
-  {
-    headerHeight,
-    viewportHeight,
-    scrollTop,
-    overscan,
-  }: ComputeAutoHeightVerticalGeometryArgs,
-  rowMetrics: RowMetrics,
-): VerticalGeometry => {
-  const rowCount = rowMetrics.rowCount;
-  const logicalBodyHeight = rowMetrics.totalBodyHeight;
-  // gate により論理全高 <= MAX_BODY_PX。圧縮は不要で物理 = 論理です。
-  const physicalBodyHeight = logicalBodyHeight;
-
-  // スクロール可動域(uniform と同式)。sf=1 なので物理 = 論理です。
-  const logicalMax = Math.max(
-    headerHeight + logicalBodyHeight - viewportHeight,
-    0,
-  );
-  const clampedScrollTop = Math.min(Math.max(scrollTop, 0), logicalMax);
-
-  // 窓出し: 可視域 [clampedScrollTop, clampedScrollTop + viewportHeight] を覆う行 + 両側 overscan。
-  //   rowAtContentY は content-top 基準(headerHeight 抜き)の論理 y を取るため、可視域の上端/下端を
-  //   そのまま渡します(no-op で uniform の floor(y/rowHeight) と一致)。
-  const firstVisible = rowMetrics.rowAtContentY(clampedScrollTop);
-  const lastVisible = rowMetrics.rowAtContentY(clampedScrollTop + viewportHeight);
-  const start = Math.max(firstVisible - overscan, 0);
-  const end = Math.min(lastVisible + overscan + 1, rowCount);
-
-  const rows: VerticalRow[] = [];
-  const rowIndexSet = new Set<number>();
-  for (let index = start; index < end; index += 1) {
-    rows.push({
-      index,
-      // sf=1 / windowBaseOffsetPx=0 なので絶対論理 top をそのまま置きます。
-      start: headerHeight + rowMetrics.rowTop(index),
-      size: rowMetrics.rowsHeight(index, index),
-    });
-    rowIndexSet.add(index);
-  }
-
-  return {
-    physicalBodyHeight,
-    logicalBodyHeight,
-    scaleFactor: 1,
-    translateY: 0,
-    windowBaseOffsetPx: 0,
-    rows,
-    rowIndexSet,
-  };
-};
-</file>
-
 <file path="src/components/spreadsheet-grid/SelectionOverlay.tsx">
 import type { CSSProperties } from 'react';
 
@@ -9707,6 +8709,1004 @@ export const computeSinglePaneColumnExtent = <T,>(
 };
 </file>
 
+<file path="src/components/spreadsheet-grid/logic/verticalGeometry.test.ts">
+// V-1: verticalGeometry の等価性 / 不変条件テスト(旧 adhoc ハーネスの恒久化)。
+//   旧 rowVirtualizer(scrollMargin=headerHeight / estimateSize=rowHeight)は import できないため、
+//   等価性は「ドキュメント化された契約=不変条件」として encode します:
+//     - no-op(logicalBodyHeight <= cap): scaleFactor=1 / translateY=0 / start=headerHeight+i*rowHeight
+//       (= 旧 virtualRow.start と数値一致)。
+//     - scaling: physicalBodyHeight=cap / scaleFactor>=1 / translateY<=0 / 末尾行到達可能 /
+//       物理↔論理のラウンドトリップ / clientYToRowIndex の逆写像一致。
+//   旧ハーネスの 369 ケースに相当する系統的スイープ(>369 組合せ)を回し、各ケースで不変条件を検査します。
+import { describe, it, expect } from 'vitest';
+import {
+  MAX_BODY_PX,
+  WINDOW_BASE_CHUNK_PX,
+  AUTO_HEIGHT_MAX_ROWS,
+  clientYToRowIndex,
+  clipRowRangeToWindow,
+  computeAutoHeightVerticalGeometry,
+  computeVerticalGeometry,
+  createUniformRowMetrics,
+  logicalToPhysicalScrollTop,
+  physicalToLogicalScrollTop,
+  shouldUseAutoHeight,
+  type ComputeVerticalGeometryArgs,
+} from './verticalGeometry';
+import {
+  buildRowHeightStore,
+  createAutoHeightRowMetrics,
+} from './rowHeightStore';
+
+// transform/レイアウトが安定してペイントされる float32 の正確整数域(2^24)。
+//   行/オーバーレイの配置値・wrapper の translateY はこの範囲内に収まる必要があります
+//   (超えると 1M 行で末尾行がペイントされなくなる回帰)。
+const FLOAT32_SAFE_PX = 1 << 24;
+
+const clamp = (value: number, min: number, max: number): number =>
+  Math.min(Math.max(value, min), max);
+
+// 1 ケースの不変条件を検査します(失敗時はケース内容を添えて throw)。
+const checkInvariants = (args: ComputeVerticalGeometryArgs): void => {
+  const {
+    rowCount,
+    rowHeight,
+    headerHeight,
+    viewportHeight,
+    scrollTop,
+    maxBodyPx,
+  } = args;
+  const geometry = computeVerticalGeometry(args);
+  const label = (message: string): string =>
+    `${message} | case=${JSON.stringify(args)} | geometry.scaleFactor=${geometry.scaleFactor} translateY=${geometry.translateY}`;
+  const assert = (condition: boolean, message: string): void => {
+    if (!condition) {
+      throw new Error(label(message));
+    }
+  };
+
+  const logicalBodyHeight = rowCount * rowHeight;
+  const physicalBodyHeight = Math.min(logicalBodyHeight, maxBodyPx);
+  const physicalMax = Math.max(
+    headerHeight + physicalBodyHeight - viewportHeight,
+    0,
+  );
+
+  assert(geometry.logicalBodyHeight === logicalBodyHeight, 'logicalBodyHeight');
+  assert(
+    geometry.physicalBodyHeight === physicalBodyHeight,
+    'physicalBodyHeight',
+  );
+  assert(geometry.scaleFactor >= 1, 'scaleFactor >= 1');
+
+  // 描画ウィンドウ基準オフセット: 0(no-op) または WINDOW_BASE_CHUNK_PX の非負整数倍(scaling)。
+  assert(geometry.windowBaseOffsetPx >= 0, 'windowBaseOffsetPx >= 0');
+  assert(
+    geometry.windowBaseOffsetPx % WINDOW_BASE_CHUNK_PX === 0,
+    'windowBaseOffsetPx is a multiple of WINDOW_BASE_CHUNK_PX',
+  );
+
+  // 物理↔論理スクロール(画面座標の不変性チェック・可視帯被覆で再利用)。
+  const clampedScrollTop = clamp(scrollTop, 0, physicalMax);
+  const logicalScrollTop = clampedScrollTop * geometry.scaleFactor;
+
+  // 有界性(回帰ガード): wrapper の translateY は float32 の正確整数域に収まる。
+  //   これを超えると巨大 transform で 1M 行の末尾行がペイントされなくなる(本修正が直したバグ)。
+  assert(
+    Math.abs(geometry.translateY) < FLOAT32_SAFE_PX,
+    'translateY within float32-safe range',
+  );
+
+  // 窓は連続・[0,rowCount) 内・rowIndexSet と整合。row.start は基準オフセット相対。
+  for (let k = 0; k < geometry.rows.length; k += 1) {
+    const row = geometry.rows[k];
+    assert(row.index >= 0 && row.index < rowCount, 'row.index in range');
+    // start = 絶対論理 top - windowBaseOffsetPx。no-op では windowBaseOffsetPx=0 で従来式と一致。
+    assert(
+      row.start ===
+        headerHeight + row.index * rowHeight - geometry.windowBaseOffsetPx,
+      'row.start === headerHeight + index*rowHeight - windowBaseOffsetPx',
+    );
+    // 有界性(回帰ガード): per-row の配置値も float32 安全域に収まる。
+    assert(
+      Math.abs(row.start) < FLOAT32_SAFE_PX,
+      'row.start within float32-safe range',
+    );
+    // 画面座標の不変性(等価性の本質): wrapper(translateY) + 行(start) のスクロール内位置は、
+    //   基準オフセットの有無に関わらず
+    //   「(clampedScrollTop - logicalScrollTop) + headerHeight + index*rowHeight」
+    //   (= 旧 translateY + 旧 start)と一致する。
+    const sceneTop = geometry.translateY + row.start;
+    const expectedSceneTop =
+      clampedScrollTop - logicalScrollTop + headerHeight + row.index * rowHeight;
+    assert(
+      Math.abs(sceneTop - expectedSceneTop) < 1e-3,
+      'scene position invariant (translateY + start)',
+    );
+    if (k > 0) {
+      assert(
+        row.index === geometry.rows[k - 1].index + 1,
+        'rows are contiguous',
+      );
+    }
+    assert(geometry.rowIndexSet.has(row.index), 'rowIndexSet contains index');
+  }
+  assert(
+    geometry.rowIndexSet.size === geometry.rows.length,
+    'rowIndexSet size === rows length',
+  );
+
+  const isNoop = logicalBodyHeight <= maxBodyPx;
+  if (isNoop) {
+    assert(geometry.scaleFactor === 1, 'no-op scaleFactor === 1');
+    assert(geometry.translateY === 0, 'no-op translateY === 0');
+    assert(geometry.windowBaseOffsetPx === 0, 'no-op windowBaseOffsetPx === 0');
+  }
+
+  // 可視帯の被覆: 論理可視域の先頭/末尾行が窓に含まれる(overscan が上下マージンを賄う)。
+  //   viewportHeight=0 は可視行が存在しないため対象外。
+  if (rowCount > 0 && viewportHeight > 0) {
+    const firstVisible = clamp(
+      Math.floor(logicalScrollTop / rowHeight),
+      0,
+      rowCount - 1,
+    );
+    const lastVisible = clamp(
+      Math.floor((logicalScrollTop + viewportHeight) / rowHeight),
+      0,
+      rowCount - 1,
+    );
+    assert(geometry.rowIndexSet.has(firstVisible), 'first visible row in window');
+    assert(geometry.rowIndexSet.has(lastVisible), 'last visible row in window');
+  }
+
+  // 末尾行到達可能: スクロール可能 かつ 可視域がある なら scrollTop=physicalMax で
+  //   最終行が窓に入る。viewportHeight=0 は可視域ゼロのため対象外(末尾で 1 行が域外に出るのは正常)。
+  if (rowCount > 0 && physicalMax > 0 && viewportHeight > 0) {
+    const atBottom = computeVerticalGeometry({ ...args, scrollTop: physicalMax });
+    assert(
+      atBottom.rowIndexSet.has(rowCount - 1),
+      'last row reachable at physicalMax',
+    );
+  }
+
+  // 物理↔論理ラウンドトリップ(可動域内では誤差なく往復する)。
+  if (physicalMax > 0) {
+    for (const probe of [0, physicalMax / 2, physicalMax]) {
+      const roundTrip = logicalToPhysicalScrollTop(
+        physicalToLogicalScrollTop(probe, geometry.scaleFactor),
+        geometry.scaleFactor,
+      );
+      assert(Math.abs(roundTrip - probe) < 1e-3, 'scroll round-trip');
+    }
+  }
+};
+
+// 系統的スイープのケースを生成します(>369 組合せ)。
+const buildCases = (): ComputeVerticalGeometryArgs[] => {
+  const rowCounts = [0, 1, 10, 400_000, 420_000, 1_000_000];
+  const rowHeights = [1, 36, 38];
+  const headerHeights = [0, 42];
+  const viewportHeights = [0, 300, 1000];
+  const overscans = [0, 20];
+  // MAX_BODY_PX に加え、小行数でも scaling を起動させる小さい cap を併用して経路網羅を上げます。
+  const maxBodyPxs = [MAX_BODY_PX, 1000];
+
+  const cases: ComputeVerticalGeometryArgs[] = [];
+  for (const rowCount of rowCounts) {
+    for (const rowHeight of rowHeights) {
+      for (const headerHeight of headerHeights) {
+        for (const viewportHeight of viewportHeights) {
+          for (const overscan of overscans) {
+            for (const maxBodyPx of maxBodyPxs) {
+              const physicalBodyHeight = Math.min(
+                rowCount * rowHeight,
+                maxBodyPx,
+              );
+              const physicalMax = Math.max(
+                headerHeight + physicalBodyHeight - viewportHeight,
+                0,
+              );
+              const scrollTops = Array.from(
+                new Set([
+                  0,
+                  Math.floor(physicalMax / 2),
+                  physicalMax,
+                  physicalMax + 1000,
+                ]),
+              );
+              for (const scrollTop of scrollTops) {
+                cases.push({
+                  rowCount,
+                  rowHeight,
+                  headerHeight,
+                  viewportHeight,
+                  scrollTop,
+                  overscan,
+                  maxBodyPx,
+                });
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+  return cases;
+};
+
+describe('computeVerticalGeometry (sweep invariants)', () => {
+  const cases = buildCases();
+
+  it(`covers >= 369 cases (actual ${cases.length})`, () => {
+    expect(cases.length).toBeGreaterThanOrEqual(369);
+  });
+
+  it('holds invariants on every swept case', () => {
+    for (const args of cases) {
+      checkInvariants(args);
+    }
+  });
+});
+
+describe('computeVerticalGeometry (no-op equivalence with old uniform virtualizer)', () => {
+  it('produces start === headerHeight + index*rowHeight and identity scaling below cap', () => {
+    const geometry = computeVerticalGeometry({
+      rowCount: 1000,
+      rowHeight: 38,
+      headerHeight: 42,
+      viewportHeight: 600,
+      scrollTop: 5_000,
+      overscan: 20,
+      maxBodyPx: MAX_BODY_PX,
+    });
+    expect(geometry.scaleFactor).toBe(1);
+    expect(geometry.translateY).toBe(0);
+    expect(geometry.windowBaseOffsetPx).toBe(0);
+    for (const row of geometry.rows) {
+      expect(row.start).toBe(42 + row.index * 38);
+    }
+  });
+});
+
+describe('computeVerticalGeometry (scaling activation at App defaults)', () => {
+  it('activates scaling at 500k rows / rowHeight=38 (sf ~ 1.27)', () => {
+    const geometry = computeVerticalGeometry({
+      rowCount: 500_000,
+      rowHeight: 38,
+      headerHeight: 42,
+      viewportHeight: 800,
+      scrollTop: 0,
+      overscan: 20,
+      maxBodyPx: MAX_BODY_PX,
+    });
+    expect(geometry.physicalBodyHeight).toBe(MAX_BODY_PX);
+    expect(geometry.scaleFactor).toBeGreaterThan(1.2);
+    expect(geometry.scaleFactor).toBeLessThan(1.35);
+  });
+
+  it('keeps no-op below the activation threshold (<= 394,736 rows)', () => {
+    const geometry = computeVerticalGeometry({
+      rowCount: 394_000,
+      rowHeight: 38,
+      headerHeight: 42,
+      viewportHeight: 800,
+      scrollTop: 1000,
+      overscan: 20,
+      maxBodyPx: MAX_BODY_PX,
+    });
+    expect(geometry.scaleFactor).toBe(1);
+    expect(geometry.translateY).toBe(0);
+  });
+});
+
+describe('computeVerticalGeometry (1M bottom: bounded transforms regression guard)', () => {
+  // 本修正が直したバグ: 1M 行で scaling 起動時、行/オーバーレイを絶対論理 top(最大 38M)へ
+  //   置くと float32 安全域(2^24)を超え、末尾付近がペイントされず末尾行へ到達できなかった。
+  //   基準オフセットの畳み込みで、末尾でも translateY / row.start が安全域に収まることを固定する。
+  const FLOAT32_SAFE = 1 << 24;
+  const rowCount = 1_000_000;
+  const rowHeight = 38;
+  const headerHeight = 42;
+  const viewportHeight = 800;
+  const maxBodyPx = MAX_BODY_PX;
+
+  const physicalMax = Math.max(
+    headerHeight + Math.min(rowCount * rowHeight, maxBodyPx) - viewportHeight,
+    0,
+  );
+
+  it('reaches the last row at the bottom with all placements within float32-safe range', () => {
+    const geometry = computeVerticalGeometry({
+      rowCount,
+      rowHeight,
+      headerHeight,
+      viewportHeight,
+      scrollTop: physicalMax,
+      overscan: 20,
+      maxBodyPx,
+    });
+
+    // 末尾行が窓に入る(= 到達可能)。
+    expect(geometry.rowIndexSet.has(rowCount - 1)).toBe(true);
+    // scaling 起動・基準オフセットは正のチャンク倍数。
+    expect(geometry.scaleFactor).toBeGreaterThan(1);
+    expect(geometry.windowBaseOffsetPx).toBeGreaterThan(0);
+    expect(geometry.windowBaseOffsetPx % WINDOW_BASE_CHUNK_PX).toBe(0);
+    // wrapper / per-row の配置値はいずれも float32 安全域。
+    expect(Math.abs(geometry.translateY)).toBeLessThan(FLOAT32_SAFE);
+    for (const row of geometry.rows) {
+      expect(Math.abs(row.start)).toBeLessThan(FLOAT32_SAFE);
+    }
+  });
+
+  it('preserves the on-screen position of the last row at the bottom', () => {
+    const geometry = computeVerticalGeometry({
+      rowCount,
+      rowHeight,
+      headerHeight,
+      viewportHeight,
+      scrollTop: physicalMax,
+      overscan: 20,
+      maxBodyPx,
+    });
+    const logicalScrollTop = physicalMax * geometry.scaleFactor;
+    const lastRow = geometry.rows.find((row) => row.index === rowCount - 1);
+    expect(lastRow).toBeDefined();
+    if (lastRow) {
+      // wrapper(translateY) + 行(start) のスクロール内位置 = 絶対論理 top - logicalScrollTop + 物理 scrollTop。
+      const sceneTop = geometry.translateY + lastRow.start;
+      const expectedSceneTop =
+        physicalMax - logicalScrollTop + headerHeight + (rowCount - 1) * rowHeight;
+      expect(Math.abs(sceneTop - expectedSceneTop)).toBeLessThan(1e-3);
+    }
+  });
+});
+
+describe('clientYToRowIndex (inverse of body-content row band)', () => {
+  it('reduces to floor(y / rowHeight) when scaleFactor === 1', () => {
+    const rowHeight = 38;
+    const rowCount = 1000;
+    const metrics = createUniformRowMetrics(rowCount, rowHeight);
+    for (let i = 0; i < 50; i += 1) {
+      for (const delta of [0, 1, rowHeight - 1]) {
+        const y = i * rowHeight + delta;
+        expect(clientYToRowIndex(y, 0, 1, metrics)).toBe(i);
+      }
+    }
+  });
+
+  it('inverts the d-shifted band under scaling (row i occupies [i*rowHeight + d, ...))', () => {
+    const rowHeight = 38;
+    const rowCount = 1_000_000;
+    const scaleFactor = 1.27;
+    const scrollTop = 1_000_000;
+    const d = scrollTop * (1 - scaleFactor); // <= 0
+    const metrics = createUniformRowMetrics(rowCount, rowHeight);
+    for (const i of [0, 1, 100, 5000, rowCount - 1]) {
+      for (const delta of [0, rowHeight / 2, rowHeight - 1]) {
+        const y = i * rowHeight + d + delta;
+        expect(clientYToRowIndex(y, scrollTop, scaleFactor, metrics)).toBe(
+          clamp(i, 0, rowCount - 1),
+        );
+      }
+    }
+  });
+
+  it('clamps out-of-range y into [0, rowCount-1]', () => {
+    const rowHeight = 38;
+    const rowCount = 10;
+    const metrics = createUniformRowMetrics(rowCount, rowHeight);
+    expect(clientYToRowIndex(-9999, 0, 1, metrics)).toBe(0);
+    expect(clientYToRowIndex(9_999_999, 0, 1, metrics)).toBe(9);
+  });
+});
+
+// C0(auto-height シーム): createUniformRowMetrics の各 resolver が、移行前に overlay /
+//   ヒットテストが直書きしていた算術(index*rowHeight 等)とバイト等価であることのガードです。
+//   将来の auto-height(prefix-sum 実装)を入れても uniform 経路はここで一致が担保されます。
+describe('createUniformRowMetrics (no-op equivalence with pre-seam arithmetic)', () => {
+  const cases: Array<{ rowCount: number; rowHeight: number }> = [];
+  for (const rowCount of [0, 1, 2, 10, 1000, 500_000, 1_000_000]) {
+    for (const rowHeight of [1, 20, 36, 38, 42]) {
+      cases.push({ rowCount, rowHeight });
+    }
+  }
+
+  it(`covers >= 35 cases (actual ${cases.length})`, () => {
+    expect(cases.length).toBeGreaterThanOrEqual(35);
+  });
+
+  it('rowTop(i) === i * rowHeight and totalBodyHeight === rowCount * rowHeight', () => {
+    for (const { rowCount, rowHeight } of cases) {
+      const metrics = createUniformRowMetrics(rowCount, rowHeight);
+      expect(metrics.rowCount).toBe(rowCount);
+      expect(metrics.totalBodyHeight).toBe(rowCount * rowHeight);
+      for (const i of [0, 1, 2, 7, 123, Math.max(rowCount - 1, 0)]) {
+        if (i >= rowCount && rowCount > 0) continue;
+        expect(metrics.rowTop(i)).toBe(i * rowHeight);
+      }
+    }
+  });
+
+  it('rowsHeight(a, b) === (b - a + 1) * rowHeight (inclusive span)', () => {
+    for (const { rowCount, rowHeight } of cases) {
+      if (rowCount === 0) continue;
+      const metrics = createUniformRowMetrics(rowCount, rowHeight);
+      const last = rowCount - 1;
+      for (const [a, b] of [
+        [0, 0],
+        [0, last],
+        [Math.min(3, last), Math.min(3, last)],
+        [Math.min(2, last), last],
+      ] as Array<[number, number]>) {
+        expect(metrics.rowsHeight(a, b)).toBe((b - a + 1) * rowHeight);
+      }
+    }
+  });
+
+  it('rowAtContentY(y) === clamp(floor(y / rowHeight), 0, rowCount-1)', () => {
+    for (const { rowCount, rowHeight } of cases) {
+      const metrics = createUniformRowMetrics(rowCount, rowHeight);
+      for (const i of [-5, 0, 1, 50, rowCount - 1, rowCount, rowCount + 10]) {
+        for (const delta of [0, rowHeight / 2, rowHeight - 1]) {
+          const y = i * rowHeight + delta;
+          const expected = clamp(
+            Math.floor(y / rowHeight),
+            0,
+            Math.max(rowCount - 1, 0),
+          );
+          expect(metrics.rowAtContentY(y)).toBe(expected);
+        }
+      }
+    }
+  });
+});
+
+describe('clipRowRangeToWindow (selection band clip to render window)', () => {
+  it('returns the selection unchanged when fully inside the window (no-op equivalence)', () => {
+    // 窓 [80, 132] 内に収まる小さな選択はクリップされず、出力不変(no-op 等価)。
+    expect(clipRowRangeToWindow(100, 102, 80, 132)).toEqual({ start: 100, end: 102 });
+    expect(clipRowRangeToWindow(80, 132, 80, 132)).toEqual({ start: 80, end: 132 });
+    expect(clipRowRangeToWindow(81, 81, 80, 132)).toEqual({ start: 81, end: 81 });
+  });
+
+  it('clips a full-body selection (col / whole-grid) down to the window band', () => {
+    // col / グリッド全選択は [0, rowCount-1]。窓へ畳まれて巨大 div を回避します。
+    expect(clipRowRangeToWindow(0, 999_999, 200, 252)).toEqual({ start: 200, end: 252 });
+    expect(clipRowRangeToWindow(0, 999_999, 0, 32)).toEqual({ start: 0, end: 32 });
+    expect(clipRowRangeToWindow(0, 999_999, 999_968, 999_999)).toEqual({
+      start: 999_968,
+      end: 999_999,
+    });
+  });
+
+  it('clips the leading edge when the selection starts above the window', () => {
+    expect(clipRowRangeToWindow(0, 150, 100, 200)).toEqual({ start: 100, end: 150 });
+  });
+
+  it('clips the trailing edge when the selection ends below the window', () => {
+    expect(clipRowRangeToWindow(150, 999_999, 100, 200)).toEqual({ start: 150, end: 200 });
+  });
+
+  it('returns null when the selection is entirely above or below the window', () => {
+    expect(clipRowRangeToWindow(0, 50, 100, 200)).toBeNull();
+    expect(clipRowRangeToWindow(300, 400, 100, 200)).toBeNull();
+  });
+
+  it('returns null for an empty window (no rendered rows)', () => {
+    // 空窓は末尾 < 先頭(windowFirstRow=0 / windowLastRow=-1 の規約)。
+    expect(clipRowRangeToWindow(0, 999_999, 0, -1)).toBeNull();
+    expect(clipRowRangeToWindow(5, 5, 0, -1)).toBeNull();
+  });
+
+  it('handles single-row window and single-row selection at the boundary', () => {
+    expect(clipRowRangeToWindow(0, 999_999, 42, 42)).toEqual({ start: 42, end: 42 });
+    expect(clipRowRangeToWindow(42, 42, 42, 42)).toEqual({ start: 42, end: 42 });
+    expect(clipRowRangeToWindow(41, 41, 42, 42)).toBeNull();
+    expect(clipRowRangeToWindow(43, 43, 42, 42)).toBeNull();
+  });
+});
+
+// C1-1: computeAutoHeightVerticalGeometry の等価性(uniform 相当の RowMetrics で start が
+//   computeVerticalGeometry(sf=1)と一致)と不変条件(sf=1 固定 / start 単調連続 / size 正値 /
+//   窓が可視域を被覆)を検査します。
+const identityKey = (index: number): number => index;
+
+describe('computeAutoHeightVerticalGeometry (uniform-equivalent: start matches computeVerticalGeometry)', () => {
+  const cases: Array<{
+    rowCount: number;
+    rowHeight: number;
+    headerHeight: number;
+    viewportHeight: number;
+    scrollTop: number;
+  }> = [
+    { rowCount: 1000, rowHeight: 36, headerHeight: 42, viewportHeight: 600, scrollTop: 0 },
+    { rowCount: 1000, rowHeight: 38, headerHeight: 42, viewportHeight: 600, scrollTop: 5 },
+    { rowCount: 1000, rowHeight: 38, headerHeight: 42, viewportHeight: 640, scrollTop: 3800 },
+    { rowCount: 137, rowHeight: 24, headerHeight: 30, viewportHeight: 480, scrollTop: 1000 },
+    { rowCount: 1000, rowHeight: 38, headerHeight: 42, viewportHeight: 600, scrollTop: 1e9 },
+  ];
+
+  for (const c of cases) {
+    it(`start matches uniform for ${JSON.stringify(c)}`, () => {
+      // uniform 経路(estimate=rowHeight・measured 空)→ auto-height は sf=1 / offset=0。
+      const store = buildRowHeightStore(c.rowCount, c.rowHeight, identityKey);
+      const rowMetrics = createAutoHeightRowMetrics(store);
+      const auto = computeAutoHeightVerticalGeometry(
+        {
+          headerHeight: c.headerHeight,
+          viewportHeight: c.viewportHeight,
+          scrollTop: c.scrollTop,
+          overscan: 20,
+        },
+        rowMetrics,
+      );
+      const uniform = computeVerticalGeometry({
+        rowCount: c.rowCount,
+        rowHeight: c.rowHeight,
+        headerHeight: c.headerHeight,
+        viewportHeight: c.viewportHeight,
+        scrollTop: c.scrollTop,
+        overscan: 20,
+        maxBodyPx: MAX_BODY_PX,
+      });
+
+      // sf=1 / translateY=0 / offset=0 に固定。
+      expect(auto.scaleFactor).toBe(1);
+      expect(auto.translateY).toBe(0);
+      expect(auto.windowBaseOffsetPx).toBe(0);
+      expect(auto.physicalBodyHeight).toBe(uniform.physicalBodyHeight);
+      expect(auto.logicalBodyHeight).toBe(uniform.logicalBodyHeight);
+
+      // 共通 index の start が一致(rowTop が uniform と一致するため)。
+      const autoByIndex = new Map(auto.rows.map((r) => [r.index, r.start]));
+      for (const r of uniform.rows) {
+        if (autoByIndex.has(r.index)) {
+          expect(autoByIndex.get(r.index)).toBe(r.start);
+        }
+      }
+
+      // 各 size は rowHeight(uniform estimate)。
+      for (const r of auto.rows) {
+        expect(r.size).toBe(c.rowHeight);
+      }
+    });
+  }
+});
+
+describe('shouldUseAutoHeight (pre-measurement gate)', () => {
+  it('requires enabled + driving column + row count within [1, maxRows]', () => {
+    expect(shouldUseAutoHeight(true, true, 1000, AUTO_HEIGHT_MAX_ROWS)).toBe(true);
+    // props 無効。
+    expect(shouldUseAutoHeight(false, true, 1000, AUTO_HEIGHT_MAX_ROWS)).toBe(false);
+    // 駆動列なし。
+    expect(shouldUseAutoHeight(true, false, 1000, AUTO_HEIGHT_MAX_ROWS)).toBe(false);
+    // 行数 0(描画なし)。
+    expect(shouldUseAutoHeight(true, true, 0, AUTO_HEIGHT_MAX_ROWS)).toBe(false);
+  });
+
+  it('gates at the row-count boundary (fallback to uniform above max)', () => {
+    // 上限ちょうどは true、+1 で false(uniform フォールバック)。
+    expect(shouldUseAutoHeight(true, true, AUTO_HEIGHT_MAX_ROWS, AUTO_HEIGHT_MAX_ROWS)).toBe(true);
+    expect(shouldUseAutoHeight(true, true, AUTO_HEIGHT_MAX_ROWS + 1, AUTO_HEIGHT_MAX_ROWS)).toBe(false);
+    // 1M 行は当然フォールバック。
+    expect(shouldUseAutoHeight(true, true, 1_000_000, AUTO_HEIGHT_MAX_ROWS)).toBe(false);
+  });
+});
+
+describe('computeAutoHeightVerticalGeometry (invariants: window covers viewport, monotonic, sized)', () => {
+  it('produces contiguous monotonically increasing rows that cover the visible band', () => {
+    // 非一様な行高(measured)で窓が可視域を覆い、start が単調・連続、size>0 を確認します。
+    const rowCount = 500;
+    const estimate = 30;
+    const measured = new Map<number, number>();
+    // 偶数行を背高(60)に。view 順=identity。
+    for (let i = 0; i < rowCount; i += 2) {
+      measured.set(i, 60);
+    }
+    const store = buildRowHeightStore(rowCount, estimate, identityKey, measured);
+    const rowMetrics = createAutoHeightRowMetrics(store);
+    const headerHeight = 42;
+    const viewportHeight = 600;
+
+    for (const scrollTop of [0, 500, 5000, 1e9]) {
+      const geo = computeAutoHeightVerticalGeometry(
+        { headerHeight, viewportHeight, scrollTop, overscan: 20 },
+        rowMetrics,
+      );
+
+      expect(geo.rows.length).toBeGreaterThan(0);
+
+      // index 連続・start 単調増加・size 正値・start = headerHeight + rowTop(index)。
+      for (let k = 0; k < geo.rows.length; k += 1) {
+        const r = geo.rows[k];
+        expect(r.size).toBeGreaterThan(0);
+        expect(r.start).toBe(headerHeight + rowMetrics.rowTop(r.index));
+        if (k > 0) {
+          expect(r.index).toBe(geo.rows[k - 1].index + 1);
+          expect(r.start).toBeGreaterThan(geo.rows[k - 1].start);
+        }
+      }
+
+      // 可視域 [clampedScrollTop, clampedScrollTop+viewport] が窓 [first, last] に含まれること。
+      const logicalMax = Math.max(
+        headerHeight + rowMetrics.totalBodyHeight - viewportHeight,
+        0,
+      );
+      const clamped = Math.min(Math.max(scrollTop, 0), logicalMax);
+      const firstVisible = rowMetrics.rowAtContentY(clamped);
+      const lastVisible = rowMetrics.rowAtContentY(clamped + viewportHeight);
+      const first = geo.rows[0].index;
+      const last = geo.rows[geo.rows.length - 1].index;
+      expect(first).toBeLessThanOrEqual(firstVisible);
+      expect(last).toBeGreaterThanOrEqual(lastVisible);
+    }
+  });
+});
+</file>
+
+<file path="src/components/spreadsheet-grid/logic/verticalGeometry.ts">
+// 縦スクロールの仮想化ジオメトリ(uniform 行高専用)です。
+//
+// 目的(scroll-space 仮想化 / 1M 行対応):
+//   論理ボディ全高 = rowCount * rowHeight が、ブラウザの要素高さ上限
+//   (Chrome/Edge/Electron ≈ 33,554,432px / Firefox ≈ 17,895,697px) を超えると、
+//   scrollHeight がクランプされて末尾行が到達不能になります(座標破綻 = 機能ブロッカー)。
+//   そこで物理 DOM 高さを上限内(MAX_BODY_PX)へ圧縮し、物理 scrollTop ↔ 論理オフセットを
+//   線形写像します(= pixel scaling)。圧縮が不要な行数では完全な恒等写像になります。
+//
+// 設計(このコードベース固有の前提を踏襲):
+//   - 単一スクロールコンテナ + sticky 3 ペイン(Batch 10-G)を維持します。ネイティブ
+//     スクロールのまま、行/overlay レイヤーへ translateY(D) を掛けて物理ウィンドウへ
+//     引き込みます(JS スクロール同期は増やしません)。
+//   - 行は uniform 行高(estimateSize 定数)なので、窓出しは純粋な算術(firstRow / count)に
+//     潰れます。実測 / 二分探索 / サイズキャッシュは不要です。
+//   - 物理↔論理写像・行窓・ヒットテストを本ファイル 1 か所へ集約します(縦ジオメトリの
+//     シーム)。将来 auto-height モードを足すときは、同じ契約の第二実装(prefix-sum +
+//     二分探索 + ResizeObserver)へ差し替えるだけで、消費側(GridBodyLayer / ヒットテスト /
+//     viewport-sync)は不変に保てます。
+//
+// 等価性(圧縮不要時の no-op):
+//   logicalBodyHeight <= MAX_BODY_PX のとき scaleFactor = 1 / translateY = 0 となり、
+//   rows[i].start = headerHeight + i * rowHeight は旧 rowVirtualizer(scrollMargin=
+//   headerHeight / estimateSize=rowHeight)の virtualRow.start と数値的に一致します。
+//   ヒットテストも D=0 で従来式(floor(y / rowHeight))と一致します。
+
+// 物理ボディ高さの上限です。
+// 注記: 全ブラウザ安全側の既定として 15,000,000 を採用しています(Firefox ≈ 17.9M を
+//   下回るマージン)。scaling が起動する閾値は MAX_BODY_PX / rowHeight 行
+//   (rowHeight=36 なら約 417k 行)で、これ未満では現状と数値一致します。
+//   実行環境が Chrome / Electron 確定なら 30,000,000 まで上げて起動閾値を約 833k 行へ
+//   押し上げてよく、その場合の差分は本定数 1 行のみです。
+export const MAX_BODY_PX = 15_000_000;
+
+// auto-height 行モードの行数上限です(gate)。論理全高 = 行数 × 1 行最大高(~280px)が
+//   MAX_BODY_PX を超えない範囲に行数で gate します(MAX_BODY_PX / 280 ≒ 53,571 を切り下げ)。
+//   これにより auto-height モードでは scaleFactor=1 / windowBaseOffsetPx=0 / translateY=0 が
+//   保証され、scaling・float32 対策・基準オフセットが休眠します。超過時は uniform 行高へ
+//   フォールバックします(上限値・1 行最大高はプロダクト判断で調整可)。
+export const AUTO_HEIGHT_MAX_ROWS = 50_000;
+
+// auto-height を使うべきか(測定なしで事前判定できる pure gate)。
+//   props 有効 + 駆動列(autoHeight:true)が存在 + 行数が [1, maxRows] のとき true。
+//   超過時は false(uniform フォールバック)。viewRowCount=0 も false(描画なし)。
+export const shouldUseAutoHeight = (
+  autoHeightEnabled: boolean,
+  hasAutoHeightColumn: boolean,
+  viewRowCount: number,
+  maxRows: number,
+): boolean =>
+  autoHeightEnabled &&
+  hasAutoHeightColumn &&
+  viewRowCount > 0 &&
+  viewRowCount <= maxRows;
+
+// 描画ウィンドウの基準オフセットをスナップする単位(px)です。
+// 目的(巨大 transform によるペイント不良の回避):
+//   scaling 起動時、行/オーバーレイを「絶対論理 top(最大 ≈ rowCount*rowHeight)」へ置くと、
+//   1M 行では 38,000,000px に達します。ブラウザの transform/レイアウトは float32 の正確整数域
+//   (2^24 = 16,777,216px)を超えると配置が不安定になり、一定の行から先がペイントされません
+//   (= 末尾行に到達できない症状)。そこで scaling 時は描画ウィンドウ先頭をこの単位へスナップした
+//   基準で相対化し、基準ぶんを wrapper の translateY 側へ畳み込みます。これにより行/オーバーレイの
+//   transform も wrapper の translateY も常に <= physicalBodyHeight(< 16.7M)へ収まります。
+//   スナップ単位なので、チャンクを跨がない通常スクロールでは per-row の値が変わらず、
+//   GridBodyRow の memo(縦スクロールで再レンダーしない最適化)を維持します。
+// 注記: 1,048,576px(2^20)は rowHeight=38 で約 27,000 行ぶん。チャンク跨ぎは数万行スクロールに
+//   1 回で、per-row 値が更新されるのはその瞬間だけです。
+export const WINDOW_BASE_CHUNK_PX = 1 << 20;
+
+// 描画する 1 行の窓エントリです(旧 @tanstack/react-virtual の VirtualItem 互換)。
+export type VerticalRow = {
+  index: number;
+  // 行の論理 top(headerHeight 込み)。GridBodyLayer の translateY 基準(virtualRow.start 互換)。
+  start: number;
+  // 行ごとの高さ(px)。auto-height 専用。uniform 経路では未設定で、消費側(GridBodyLayer)は
+  //   rowHeight prop へフォールバックします(uniform 出力をバイト等価に保つため)。
+  size?: number;
+};
+
+// 縦ジオメトリのシーム契約です。uniform / 将来の auto-height で実装を差し替えても、
+// 消費側はこの型だけに依存します。
+export type VerticalGeometry = {
+  // コンテナ / overlay+body wrapper / ドロップインジケータの高さに使う物理ボディ高さ
+  // (= min(logicalBodyHeight, MAX_BODY_PX))。
+  physicalBodyHeight: number;
+  // 論理ボディ全高(= rowCount * rowHeight)。selection の全面高さ等、論理座標が要る箇所用。
+  logicalBodyHeight: number;
+  // 物理 scrollTop → 論理 scrollTop の倍率(>= 1)。logicalBodyHeight <= cap のとき 1。
+  scaleFactor: number;
+  // overlay+body wrapper に掛ける translateY。scaleFactor=1 のとき 0(現状と一致)。
+  //   scaling 時は windowBaseOffsetPx を畳み込むため正値を取り得ます(<= physicalBodyHeight に有界)。
+  translateY: number;
+  // 行/オーバーレイの「絶対論理 top(headerHeight + row*rowHeight)」から差し引く基準オフセット(px)。
+  //   no-op(scaleFactor=1)では 0(= 従来どおり絶対配置)。scaling 時のみ WINDOW_BASE_CHUNK_PX 境界へ
+  //   スナップした正値。消費側はオーバーレイの top からこの値を引き、行 start は本ファイルで反映済みです。
+  //   基準は translateY 側に同額が含まれるため、ネットの画面座標は scaleFactor に関わらず不変です。
+  windowBaseOffsetPx: number;
+  // 描画する行窓(virtualRow 互換の {index, start})。
+  rows: VerticalRow[];
+  // 描画行 index 集合(GridBodyLayer の OOB / 重複ガードと整合)。
+  rowIndexSet: Set<number>;
+};
+
+export type ComputeVerticalGeometryArgs = {
+  rowCount: number;
+  rowHeight: number;
+  headerHeight: number;
+  // スクロールコンテナの可視高さ(clientHeight)。窓の行数と scaleFactor に効きます。
+  viewportHeight: number;
+  // 物理 scrollTop(スクロールコンテナの scrollTop そのもの)。
+  scrollTop: number;
+  // 窓の上下に先回りで描画する行数(旧 rowVirtualizer overscan=20 相当)。
+  overscan: number;
+  // 物理ボディ高さの上限(MAX_BODY_PX)。
+  maxBodyPx: number;
+};
+
+// 行メトリクス(スクロール非依存)。行の content-top 位置・区間高さ・content-y→行 を解決します。
+//   overlay(active cell / selection)の top/height とヒットテストの行解決がここを通ります。
+//   ★スクロール非依存(rowCount / rowHeight のみ依存)。overlay の useMemo を scrollTop に結合させず、
+//     縦スクロールで再レンダーさせない(11-A の memo 最適化を維持)ための分離です。computeVerticalGeometry
+//     が返す per-scroll の窓(rows / translateY)とは別軸で、selection 等が変わったときだけ作り直します。
+//   将来の auto-height は同じ RowMetrics 契約を prefix-sum + 二分探索で実装し、消費側を不変に保ちます。
+export type RowMetrics = {
+  // 行数(= 表示対象の行数)。rowAtContentY の clamp 上限に使います。
+  rowCount: number;
+  // body content-top 基準の行 top(headerHeight 抜き)。= prefix(index)。
+  rowTop(index: number): number;
+  // 行区間 [startInclusive, endInclusive] の高さ合計。= prefix(end+1) - prefix(start)。
+  rowsHeight(startInclusive: number, endInclusive: number): number;
+  // ボディ論理全高(= rowTop(rowCount))。col 選択の全面高さ等に使用。
+  totalBodyHeight: number;
+  // content-top 基準 y(論理)→ 行 index([0, rowCount-1] へ clamp)。
+  rowAtContentY(y: number): number;
+};
+
+// uniform 行高の RowMetrics を生成します(純算術)。
+//   各 resolver は移行前の呼び出し箇所(index*rowHeight 等)とバイト等価です。
+export const createUniformRowMetrics = (
+  rowCount: number,
+  rowHeight: number,
+): RowMetrics => ({
+  rowCount,
+  rowTop: (index) => index * rowHeight,
+  rowsHeight: (startInclusive, endInclusive) =>
+    (endInclusive - startInclusive + 1) * rowHeight,
+  totalBodyHeight: rowCount * rowHeight,
+  rowAtContentY: (y) =>
+    Math.min(Math.max(Math.floor(y / rowHeight), 0), Math.max(rowCount - 1, 0)),
+});
+
+// 選択オーバーレイの縦範囲を、現在の描画窓(virtualRows の先頭/末尾行 index)へクリップします。
+//   col / グリッド全選択 / 巨大 cell・row 選択は論理全高(uniform で rowCount*rowHeight、auto-height でも
+//   最大 MAX_BODY_PX)に達し、ブラウザの要素高さ上限(≈33.5M) / float32 正確整数域(2^24)を超えて一部しか
+//   描画されません(列全選択ハイライトの途中切れ)。可視域に映るのは窓の帯だけなので、選択の縦範囲を窓へ
+//   クリップして小さな帯に畳めば、視覚的に完全かつペイント安全になります。
+//   窓は overscan を含み viewport より広いため、帯の上下ボーダーは可視域の外へ落ち、横スクロール時に
+//   中途半端な水平線は出ません(グリッド真上端/真下端でのみボーダーが見え、巨大 div 時代と一致)。
+//   窓内に収まる通常の選択ではクリップは恒等で、出力は不変です(no-op 等価)。
+//   ★スクロール非依存の rowTop/rowsHeight(RowMetrics)と組み合わせて使うため、auto-height の
+//     prefix-sum 版 RowMetrics へ差し替えてもこのクリップはそのまま機能します。
+// 返り値: クリップ後の行区間 [start, end](inclusive)。窓と交差しない / 空窓のときは null。
+export const clipRowRangeToWindow = (
+  selStartRow: number,
+  selEndRow: number,
+  windowFirstRow: number,
+  windowLastRow: number,
+): { start: number; end: number } | null => {
+  // 空窓(描画行ゼロ)では末尾 < 先頭。描画しません。
+  if (windowLastRow < windowFirstRow) {
+    return null;
+  }
+  const start = Math.max(selStartRow, windowFirstRow);
+  const end = Math.min(selEndRow, windowLastRow);
+  // 選択が窓の完全に上 / 下(画面外)なら交差なし。
+  if (start > end) {
+    return null;
+  }
+  return { start, end };
+};
+
+// 物理 scrollTop → 論理 scrollTop です(active cell 自動スクロールの現在位置換算に使用)。
+export const physicalToLogicalScrollTop = (
+  physical: number,
+  scaleFactor: number,
+): number => physical * scaleFactor;
+
+// 論理 scrollTop → 物理 scrollTop です(算出した論理スクロール目標を実 scrollTop へ戻す)。
+export const logicalToPhysicalScrollTop = (
+  logical: number,
+  scaleFactor: number,
+): number => (scaleFactor === 1 ? logical : logical / scaleFactor);
+
+// ヒットテスト: ボディ content-top 基準の物理 y(= 旧来の y。moving rect 経由で物理
+//   スクロール量 S_phys を含む)→ 行 index。
+//   論理 y = y - D(D = S_phys * (1 - scaleFactor))で求めます。scaleFactor=1 のとき D=0 で
+//   従来式(floor(y / rowHeight))と一致します。
+//   変更(auto-height シーム): 物理→論理の d 補正はスクロール依存なのでここに残し、論理 content-y の
+//   行解決のみ RowMetrics.rowAtContentY へ委譲します(uniform では従来式と一致)。
+export const clientYToRowIndex = (
+  yRelativeToBodyTop: number,
+  scrollTop: number,
+  scaleFactor: number,
+  rowMetrics: RowMetrics,
+): number => {
+  const d = scrollTop * (1 - scaleFactor);
+  return rowMetrics.rowAtContentY(yRelativeToBodyTop - d);
+};
+
+export const computeVerticalGeometry = ({
+  rowCount,
+  rowHeight,
+  headerHeight,
+  viewportHeight,
+  scrollTop,
+  overscan,
+  maxBodyPx,
+}: ComputeVerticalGeometryArgs): VerticalGeometry => {
+  const logicalBodyHeight = rowCount * rowHeight;
+  const physicalBodyHeight = Math.min(logicalBodyHeight, maxBodyPx);
+
+  // 物理 / 論理それぞれのスクロール可動域です。両端(先頭・末尾)を一致させるため、
+  // 「全高」ではなく「可動域(total - viewport)」を基準に倍率を取ります
+  // (全高基準だと末尾でオーバーシュートし、最終行が下端に届きません)。
+  const logicalMax = Math.max(headerHeight + logicalBodyHeight - viewportHeight, 0);
+  const physicalMax = Math.max(headerHeight + physicalBodyHeight - viewportHeight, 0);
+
+  // 圧縮不要 / スクロール不能時は scaleFactor=1(= 現状と数値一致・transform なし)。
+  const scaleFactor =
+    physicalMax > 0 && logicalBodyHeight > physicalBodyHeight
+      ? logicalMax / physicalMax
+      : 1;
+
+  // 物理 scrollTop を論理オフセットへ写像します。
+  const clampedScrollTop = Math.min(Math.max(scrollTop, 0), physicalMax);
+  const logicalScrollTop = clampedScrollTop * scaleFactor;
+
+  // 窓出し(uniform: 純粋な算術)。論理オフセット基準で firstVisible を求めます。
+  //   firstVisible = floor(S_log / rowHeight) は、行 index の表示 y =
+  //   headerHeight + index*rowHeight - S_log がボディ可視域に入る先頭行です
+  //   (ヘッダー下に一部潜る行を含むため floor)。overscan が上方向の被覆行も賄います。
+  const visibleCount = Math.ceil(viewportHeight / rowHeight) + 1;
+  const firstVisible = Math.floor(logicalScrollTop / rowHeight);
+  const start = Math.max(firstVisible - overscan, 0);
+  const end = Math.min(firstVisible + visibleCount + overscan, rowCount);
+
+  // 描画ウィンドウの基準オフセット(px)。no-op(scaleFactor=1)では 0 にして従来と完全一致を保ちます
+  //   (この経路では絶対論理 top <= physicalBodyHeight <= MAX_BODY_PX < 16.7M なので相対化は不要)。
+  //   scaling 時のみ、ウィンドウ先頭(start)の論理 top を WINDOW_BASE_CHUNK_PX 境界へスナップして
+  //   基準にします。スナップにより通常スクロールでは値が動かず、行/オーバーレイの transform が
+  //   小さく保たれ、巨大 transform によるペイント不良(末尾行が描画されない問題)を回避します。
+  const windowBaseOffsetPx =
+    scaleFactor === 1
+      ? 0
+      : Math.floor((start * rowHeight) / WINDOW_BASE_CHUNK_PX) *
+        WINDOW_BASE_CHUNK_PX;
+
+  // overlay+body wrapper の translateY。基準 D = S_phys - S_log(<= 0)に基準オフセットを畳み込みます。
+  //   行は論理 top(headerHeight + index*rowHeight - windowBaseOffsetPx)へ置き、この translateY で
+  //   物理ウィンドウへ引き込むことで、行 index の表示位置は基準オフセットの有無に関わらず
+  //   論理スクロール S_log のときと完全一致します(画面 y = headerHeight + index*rowHeight - S_log)。
+  //   no-op では D=0 かつ windowBaseOffsetPx=0 ⇒ translateY=0(従来と一致)。
+  //   scaling では translateY <= physicalBodyHeight(<16.7M)に有界になります。
+  const translateY = clampedScrollTop - logicalScrollTop + windowBaseOffsetPx;
+
+  const rows: VerticalRow[] = [];
+  const rowIndexSet = new Set<number>();
+  for (let index = start; index < end; index += 1) {
+    // start は「絶対論理 top - 基準オフセット」。no-op では従来どおり headerHeight + index*rowHeight。
+    rows.push({
+      index,
+      start: headerHeight + index * rowHeight - windowBaseOffsetPx,
+    });
+    rowIndexSet.add(index);
+  }
+
+  return {
+    physicalBodyHeight,
+    logicalBodyHeight,
+    scaleFactor,
+    translateY,
+    windowBaseOffsetPx,
+    rows,
+    rowIndexSet,
+  };
+};
+
+export type ComputeAutoHeightVerticalGeometryArgs = {
+  headerHeight: number;
+  // スクロールコンテナの可視高さ(clientHeight)。窓の行数に効きます。
+  viewportHeight: number;
+  // 物理 scrollTop。auto-height では sf=1 なので論理 scrollTop と一致します。
+  scrollTop: number;
+  // 窓の上下に先回りで描画する行数(uniform 経路と同じ overscan=20 を渡す想定)。
+  overscan: number;
+};
+
+// auto-height 行の縦ジオメトリ(prefix-sum 版 RowMetrics を窓出し)。
+//   ★gate(論理全高 < MAX_BODY_PX / 行数 <= AUTO_HEIGHT_MAX_ROWS)前提なので、scaleFactor=1 /
+//     windowBaseOffsetPx=0 / translateY=0 に固定されます。scaling・float32 対策・基準オフセットは
+//     休眠し、行/オーバーレイは絶対論理 top(headerHeight + rowTop(i))にそのまま置けます。
+//   窓出しは uniform の純算術(floor(y/rowHeight))の代わりに RowMetrics.rowAtContentY
+//     (prefix 二分探索)で可視域 [scrollTop, scrollTop+viewport] を覆う行を求め、両側に overscan を
+//     足します。estimate 一様・measured 空の RowMetrics を渡すと、共通 index の start は
+//     computeVerticalGeometry(sf=1)と一致し、窓は同じ可視域を被覆します(末尾 overscan の行数は
+//     行高可変の窓計算原理が異なるため厳密一致は保証しません)。
+//   各 row には start に加え size(= rowsHeight(i,i))を載せ、GridBodyLayer が行ごとの高さに使います。
+export const computeAutoHeightVerticalGeometry = (
+  {
+    headerHeight,
+    viewportHeight,
+    scrollTop,
+    overscan,
+  }: ComputeAutoHeightVerticalGeometryArgs,
+  rowMetrics: RowMetrics,
+): VerticalGeometry => {
+  const rowCount = rowMetrics.rowCount;
+  const logicalBodyHeight = rowMetrics.totalBodyHeight;
+  // gate により論理全高 <= MAX_BODY_PX。圧縮は不要で物理 = 論理です。
+  const physicalBodyHeight = logicalBodyHeight;
+
+  // スクロール可動域(uniform と同式)。sf=1 なので物理 = 論理です。
+  const logicalMax = Math.max(
+    headerHeight + logicalBodyHeight - viewportHeight,
+    0,
+  );
+  const clampedScrollTop = Math.min(Math.max(scrollTop, 0), logicalMax);
+
+  // 窓出し: 可視域 [clampedScrollTop, clampedScrollTop + viewportHeight] を覆う行 + 両側 overscan。
+  //   rowAtContentY は content-top 基準(headerHeight 抜き)の論理 y を取るため、可視域の上端/下端を
+  //   そのまま渡します(no-op で uniform の floor(y/rowHeight) と一致)。
+  const firstVisible = rowMetrics.rowAtContentY(clampedScrollTop);
+  const lastVisible = rowMetrics.rowAtContentY(clampedScrollTop + viewportHeight);
+  const start = Math.max(firstVisible - overscan, 0);
+  const end = Math.min(lastVisible + overscan + 1, rowCount);
+
+  const rows: VerticalRow[] = [];
+  const rowIndexSet = new Set<number>();
+  for (let index = start; index < end; index += 1) {
+    rows.push({
+      index,
+      // sf=1 / windowBaseOffsetPx=0 なので絶対論理 top をそのまま置きます。
+      start: headerHeight + rowMetrics.rowTop(index),
+      size: rowMetrics.rowsHeight(index, index),
+    });
+    rowIndexSet.add(index);
+  }
+
+  return {
+    physicalBodyHeight,
+    logicalBodyHeight,
+    scaleFactor: 1,
+    translateY: 0,
+    windowBaseOffsetPx: 0,
+    rows,
+    rowIndexSet,
+  };
+};
+</file>
+
 <file path="src/components/spreadsheet-grid/model/gridActions.ts">
 import type { CellCoord, ColumnFilterValue, GridSortEntry } from './gridTypes';
 
@@ -10635,6 +10635,338 @@ export function DefaultGridTopBar<T>({
 export default DefaultGridTopBar;
 </file>
 
+<file path="src/components/spreadsheet-grid/hooks/useColumnMenuController.ts">
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type MouseEvent,
+  type PointerEvent,
+  type RefObject,
+} from 'react';
+import type { GridColumn } from '../model/gridTypes';
+
+// 追加(13-A): 列メニュー popover の内部状態です。
+//             どの列のメニューを開いているかだけを持ちます。
+type ColumnMenuState = {
+  columnKey: string;
+};
+
+// 追加(13-A): body 直下 portal popover の配置情報です(position: fixed 座標)。
+export type ColumnMenuLayout = {
+  top: number;
+  left: number;
+  width: number;
+};
+
+type UseColumnMenuControllerArgs<T> = {
+  visibleColumns: GridColumn<T>[];
+  enableColumnMenu: boolean;
+  gridRootRef: RefObject<HTMLDivElement | null>;
+};
+
+const MENU_WIDTH = 200;
+const VIEWPORT_MARGIN = 8;
+const OFFSET_Y = 6;
+// 変更(13-A2): カスケード化でルートメニューが「タイトル + 1 項目 + 閉じる」へ
+//             短くなったため、上下フリップ判定用の見積もり高さを更新します。
+// 変更(13-B1): 幅自動調整 2 項目の追加でルートが 3 項目になったため再更新します
+//             (padding 16 + タイトル ~30 + 項目 ~32×3 + 区切り/閉じる ~46 ≒ 188)。
+// 変更(13-B2-1): ルート項目「列の表示」追加でルートが 4 項目になったため再更新します
+//             (上記 + 項目 ~32 ≒ 220)。
+// 変更(13-B4): ソート(昇順/降順)2 項目 + 区切り線をルート先頭に追加したため再更新します
+//             (220 + 項目 ~32×2 - 微調整 ≒ 257)。縦フリップの見積りが小さいと、
+//             下側スペースが足りない場合に上向きフリップせず見切れるため、実高さに合わせます。
+// 変更(MS-3-1): ソート群へリーフ項目「並び替えを管理…」を 1 つ追加したため再更新します
+//             (257 + 項目 ~32 ≒ 289)。「並び替えを管理…」は別 popover
+//             (SortManagementPanel)を開くリーフですが、項目自体はルートメニュー内に
+//             並ぶため、縦フリップ用の高さには含めます(「列の表示」とは別扱い)。
+// 注記: サブメニューは横方向へ開くため、この縦フリップ判定には含めません。
+//       「列の表示」は別 popover(ColumnChooserPanel)を開くため、ここの高さには含めません。
+const ESTIMATED_MENU_HEIGHT = 289;
+
+// 追加(13-A): 列メニュー(「⋮」ボタン / ヘッダー右クリック)の
+//             state / anchor / layout / outside click / Escape をまとめて管理します。
+// 設計メモ: useFilterPopoverController と同型ですが、anchor が
+//   - 'button' モード: 「⋮」ボタン要素(getBoundingClientRect で追従配置)
+//   - 'point'  モード: 右クリック時のポインタ座標(固定配置)
+//   の 2 種類ある点が異なります。button モードは scroll/resize で再配置し、
+//   point モードは scroll 中に座標とヘッダーがズレるため scroll で閉じます
+//   (AG Grid のコンテキストメニューと同じ振る舞いです)。
+export const useColumnMenuController = <T,>({
+  visibleColumns,
+  enableColumnMenu,
+  gridRootRef,
+}: UseColumnMenuControllerArgs<T>) => {
+  const [columnMenuState, setColumnMenuState] =
+    useState<ColumnMenuState | null>(null);
+  const [columnMenuLayout, setColumnMenuLayout] =
+    useState<ColumnMenuLayout | null>(null);
+
+  // 追加(13-A): popover 本体 / anchor(ボタン or 座標)の ref 群です。
+  //             anchor は「どちらか一方だけ」が non-null になります。
+  const columnMenuRef = useRef<HTMLDivElement | null>(null);
+  const menuAnchorButtonRef = useRef<HTMLButtonElement | null>(null);
+  const menuAnchorPointRef = useRef<{ x: number; y: number } | null>(null);
+
+  // 追加(13-A): 開閉トグル判定用の latest-ref です。
+  // 注記: setState の updater 内で anchor ref を書き換えると StrictMode の
+  //       updater 二重実行で開閉が反転するため、判定・ref 更新はハンドラ本体
+  //       (1 回だけ実行される側)で行います。
+  const columnMenuStateRef = useRef(columnMenuState);
+  columnMenuStateRef.current = columnMenuState;
+
+  const isColumnMenuOpen = columnMenuState !== null;
+  const openedMenuColumnKey = columnMenuState?.columnKey ?? null;
+
+  const openedMenuColumn = useMemo(
+    () =>
+      openedMenuColumnKey
+        ? visibleColumns.find(
+            (column) => column.key === openedMenuColumnKey,
+          ) ?? null
+        : null,
+    [openedMenuColumnKey, visibleColumns],
+  );
+
+  // 追加(13-A): anchor(ボタン矩形 or 右クリック座標)から fixed 座標を計算します。
+  const updateColumnMenuLayout = useCallback(() => {
+    if (!openedMenuColumnKey) {
+      setColumnMenuLayout(null);
+      return;
+    }
+
+    let top: number;
+    let left: number;
+    let flipTop: number;
+
+    const anchorButton = menuAnchorButtonRef.current;
+    const anchorPoint = menuAnchorPointRef.current;
+
+    if (anchorButton) {
+      // 追加(13-A): 横スクロールで列が仮想化範囲外になると anchor ボタンが unmount され、
+      //             getBoundingClientRect が 0 を返して左上へ飛ぶため、その場合は閉じます。
+      if (!anchorButton.isConnected) {
+        setColumnMenuLayout(null);
+        setColumnMenuState(null);
+        menuAnchorButtonRef.current = null;
+        return;
+      }
+      const anchorRect = anchorButton.getBoundingClientRect();
+      left = anchorRect.right - MENU_WIDTH;
+      top = anchorRect.bottom + OFFSET_Y;
+      flipTop = anchorRect.top - ESTIMATED_MENU_HEIGHT - OFFSET_Y;
+    } else if (anchorPoint) {
+      // 追加(13-A): 右クリック位置の右下へ出します(ブラウザ標準メニューと同じ向き)。
+      left = anchorPoint.x;
+      top = anchorPoint.y;
+      flipTop = anchorPoint.y - ESTIMATED_MENU_HEIGHT;
+    } else {
+      setColumnMenuLayout(null);
+      return;
+    }
+
+    left = Math.max(VIEWPORT_MARGIN, left);
+    left = Math.min(left, window.innerWidth - MENU_WIDTH - VIEWPORT_MARGIN);
+
+    if (top + ESTIMATED_MENU_HEIGHT > window.innerHeight - VIEWPORT_MARGIN) {
+      top = flipTop;
+    }
+    top = Math.max(VIEWPORT_MARGIN, top);
+
+    setColumnMenuLayout((current) => {
+      if (
+        current &&
+        current.top === top &&
+        current.left === left &&
+        current.width === MENU_WIDTH
+      ) {
+        return current;
+      }
+      return { top, left, width: MENU_WIDTH };
+    });
+  }, [openedMenuColumnKey]);
+
+  // 追加(13-A): メニューを閉じます(filter popover の close と同じ作法です)。
+  const closeColumnMenu = useCallback(() => {
+    setColumnMenuState(null);
+    setColumnMenuLayout(null);
+    menuAnchorButtonRef.current = null;
+    menuAnchorPointRef.current = null;
+
+    // 追加: close 後は grid root にフォーカスを戻し、keyboard 操作へ復帰させます。
+    requestAnimationFrame(() => {
+      gridRootRef.current?.focus();
+    });
+  }, [gridRootRef]);
+
+  // 追加(13-A): 「⋮」ボタンからメニューを開きます(同じボタン再押下でトグル close)。
+  // 注記: anchor ref の更新は setState より「前」に行います。outside click 用の
+  //       window pointerdown リスナーは React ハンドラの後(window バブル到達時)に
+  //       走るため、別列のボタンを押した場合でも「新 anchor contains target」で
+  //       閉じ漏れ/誤閉じが起きません(useFilterPopoverController と同じ仕組みです)。
+  const openColumnMenuFromButton = useCallback(
+    (column: GridColumn<T>, event: PointerEvent<HTMLButtonElement>) => {
+      event.preventDefault();
+      event.stopPropagation();
+
+      if (!enableColumnMenu || event.button !== 0) {
+        return;
+      }
+
+      const anchorElement = event.currentTarget;
+
+      // 追加: 同じボタンの再押下はトグルで閉じます。
+      const current = columnMenuStateRef.current;
+      if (
+        current?.columnKey === column.key &&
+        menuAnchorButtonRef.current === anchorElement
+      ) {
+        closeColumnMenu();
+        return;
+      }
+
+      // 追加: grid root に残っているフォーカスを明示的に外します。
+      if (document.activeElement instanceof HTMLElement) {
+        document.activeElement.blur();
+      }
+      gridRootRef.current?.blur();
+
+      menuAnchorButtonRef.current = anchorElement;
+      menuAnchorPointRef.current = null;
+      setColumnMenuState({ columnKey: column.key });
+    },
+    [closeColumnMenu, enableColumnMenu, gridRootRef],
+  );
+
+  // 追加(13-A): 列ヘッダー右クリック(contextmenu)からメニューを開きます。
+  // 注記: enableColumnMenu=false のときは preventDefault しないため、
+  //       ブラウザ標準のコンテキストメニューがそのまま出ます。
+  const openColumnMenuFromContextMenu = useCallback(
+    (column: GridColumn<T>, event: MouseEvent<HTMLDivElement>) => {
+      if (!enableColumnMenu) {
+        return;
+      }
+
+      event.preventDefault();
+      event.stopPropagation();
+
+      if (document.activeElement instanceof HTMLElement) {
+        document.activeElement.blur();
+      }
+      gridRootRef.current?.blur();
+
+      menuAnchorButtonRef.current = null;
+      menuAnchorPointRef.current = { x: event.clientX, y: event.clientY };
+      setColumnMenuState({ columnKey: column.key });
+
+      // 追加: 同一列で「開いたまま別位置を右クリック」した場合も座標を追従させます。
+      //       state が同値(同一 columnKey)だと effect が走らないため、ここで直接
+      //       再計算します(初回 open 時は下の effect 側でも計算され、冪等です)。
+      updateColumnMenuLayout();
+    },
+    [enableColumnMenu, gridRootRef, updateColumnMenuLayout],
+  );
+
+  // 追加(13-A): open 時の初期配置 + resize / scroll への追従です。
+  //             button anchor は再配置、point anchor は scroll で閉じます。
+  useEffect(() => {
+    if (!openedMenuColumnKey) {
+      return;
+    }
+
+    updateColumnMenuLayout();
+
+    const handleResize = () => {
+      updateColumnMenuLayout();
+    };
+
+    const handleScroll = () => {
+      if (menuAnchorPointRef.current) {
+        // 追加: 座標 anchor はスクロールでヘッダーとズレるため閉じます。
+        closeColumnMenu();
+        return;
+      }
+      updateColumnMenuLayout();
+    };
+
+    window.addEventListener('resize', handleResize);
+    window.addEventListener('scroll', handleScroll, true);
+
+    return () => {
+      window.removeEventListener('resize', handleResize);
+      window.removeEventListener('scroll', handleScroll, true);
+    };
+  }, [openedMenuColumnKey, updateColumnMenuLayout, closeColumnMenu]);
+
+  // 追加(13-A): 表示中は outside click で閉じます(filter popover と同じ作法です)。
+  useEffect(() => {
+    if (!isColumnMenuOpen) {
+      return;
+    }
+
+    const handleWindowPointerDown = (event: globalThis.PointerEvent) => {
+      const targetNode = event.target as Node | null;
+      if (!targetNode) {
+        return;
+      }
+
+      if (columnMenuRef.current?.contains(targetNode)) {
+        return;
+      }
+
+      // 追加: anchor ボタン押下はボタン側のトグル処理に委ねます。
+      if (menuAnchorButtonRef.current?.contains(targetNode)) {
+        return;
+      }
+
+      closeColumnMenu();
+    };
+
+    window.addEventListener('pointerdown', handleWindowPointerDown);
+    return () => {
+      window.removeEventListener('pointerdown', handleWindowPointerDown);
+    };
+  }, [closeColumnMenu, isColumnMenuOpen]);
+
+  // 追加(13-A): 表示中は Escape で閉じます。
+  //             メニューには入力要素が無く popover 内にフォーカスが入らないため、
+  //             popover 側の onKeyDown ではなく window で拾います。
+  useEffect(() => {
+    if (!isColumnMenuOpen) {
+      return;
+    }
+
+    const handleWindowKeyDown = (event: globalThis.KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        closeColumnMenu();
+      }
+    };
+
+    window.addEventListener('keydown', handleWindowKeyDown);
+    return () => {
+      window.removeEventListener('keydown', handleWindowKeyDown);
+    };
+  }, [closeColumnMenu, isColumnMenuOpen]);
+
+  return {
+    columnMenuLayout,
+    columnMenuRef,
+    isColumnMenuOpen,
+    openedMenuColumnKey,
+    openedMenuColumn,
+    openColumnMenuFromButton,
+    openColumnMenuFromContextMenu,
+    closeColumnMenu,
+  };
+};
+
+export default useColumnMenuController;
+</file>
+
 <file path="src/components/spreadsheet-grid/view/GridBodyLayer.tsx">
 import { memo } from 'react';
 import type { CSSProperties, PointerEvent, ReactNode } from 'react';
@@ -11110,338 +11442,6 @@ export function GridBodyLayer<T>({
 }
 
 export default GridBodyLayer;
-</file>
-
-<file path="src/components/spreadsheet-grid/hooks/useColumnMenuController.ts">
-import {
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  type MouseEvent,
-  type PointerEvent,
-  type RefObject,
-} from 'react';
-import type { GridColumn } from '../model/gridTypes';
-
-// 追加(13-A): 列メニュー popover の内部状態です。
-//             どの列のメニューを開いているかだけを持ちます。
-type ColumnMenuState = {
-  columnKey: string;
-};
-
-// 追加(13-A): body 直下 portal popover の配置情報です(position: fixed 座標)。
-export type ColumnMenuLayout = {
-  top: number;
-  left: number;
-  width: number;
-};
-
-type UseColumnMenuControllerArgs<T> = {
-  visibleColumns: GridColumn<T>[];
-  enableColumnMenu: boolean;
-  gridRootRef: RefObject<HTMLDivElement | null>;
-};
-
-const MENU_WIDTH = 200;
-const VIEWPORT_MARGIN = 8;
-const OFFSET_Y = 6;
-// 変更(13-A2): カスケード化でルートメニューが「タイトル + 1 項目 + 閉じる」へ
-//             短くなったため、上下フリップ判定用の見積もり高さを更新します。
-// 変更(13-B1): 幅自動調整 2 項目の追加でルートが 3 項目になったため再更新します
-//             (padding 16 + タイトル ~30 + 項目 ~32×3 + 区切り/閉じる ~46 ≒ 188)。
-// 変更(13-B2-1): ルート項目「列の表示」追加でルートが 4 項目になったため再更新します
-//             (上記 + 項目 ~32 ≒ 220)。
-// 変更(13-B4): ソート(昇順/降順)2 項目 + 区切り線をルート先頭に追加したため再更新します
-//             (220 + 項目 ~32×2 - 微調整 ≒ 257)。縦フリップの見積りが小さいと、
-//             下側スペースが足りない場合に上向きフリップせず見切れるため、実高さに合わせます。
-// 変更(MS-3-1): ソート群へリーフ項目「並び替えを管理…」を 1 つ追加したため再更新します
-//             (257 + 項目 ~32 ≒ 289)。「並び替えを管理…」は別 popover
-//             (SortManagementPanel)を開くリーフですが、項目自体はルートメニュー内に
-//             並ぶため、縦フリップ用の高さには含めます(「列の表示」とは別扱い)。
-// 注記: サブメニューは横方向へ開くため、この縦フリップ判定には含めません。
-//       「列の表示」は別 popover(ColumnChooserPanel)を開くため、ここの高さには含めません。
-const ESTIMATED_MENU_HEIGHT = 289;
-
-// 追加(13-A): 列メニュー(「⋮」ボタン / ヘッダー右クリック)の
-//             state / anchor / layout / outside click / Escape をまとめて管理します。
-// 設計メモ: useFilterPopoverController と同型ですが、anchor が
-//   - 'button' モード: 「⋮」ボタン要素(getBoundingClientRect で追従配置)
-//   - 'point'  モード: 右クリック時のポインタ座標(固定配置)
-//   の 2 種類ある点が異なります。button モードは scroll/resize で再配置し、
-//   point モードは scroll 中に座標とヘッダーがズレるため scroll で閉じます
-//   (AG Grid のコンテキストメニューと同じ振る舞いです)。
-export const useColumnMenuController = <T,>({
-  visibleColumns,
-  enableColumnMenu,
-  gridRootRef,
-}: UseColumnMenuControllerArgs<T>) => {
-  const [columnMenuState, setColumnMenuState] =
-    useState<ColumnMenuState | null>(null);
-  const [columnMenuLayout, setColumnMenuLayout] =
-    useState<ColumnMenuLayout | null>(null);
-
-  // 追加(13-A): popover 本体 / anchor(ボタン or 座標)の ref 群です。
-  //             anchor は「どちらか一方だけ」が non-null になります。
-  const columnMenuRef = useRef<HTMLDivElement | null>(null);
-  const menuAnchorButtonRef = useRef<HTMLButtonElement | null>(null);
-  const menuAnchorPointRef = useRef<{ x: number; y: number } | null>(null);
-
-  // 追加(13-A): 開閉トグル判定用の latest-ref です。
-  // 注記: setState の updater 内で anchor ref を書き換えると StrictMode の
-  //       updater 二重実行で開閉が反転するため、判定・ref 更新はハンドラ本体
-  //       (1 回だけ実行される側)で行います。
-  const columnMenuStateRef = useRef(columnMenuState);
-  columnMenuStateRef.current = columnMenuState;
-
-  const isColumnMenuOpen = columnMenuState !== null;
-  const openedMenuColumnKey = columnMenuState?.columnKey ?? null;
-
-  const openedMenuColumn = useMemo(
-    () =>
-      openedMenuColumnKey
-        ? visibleColumns.find(
-            (column) => column.key === openedMenuColumnKey,
-          ) ?? null
-        : null,
-    [openedMenuColumnKey, visibleColumns],
-  );
-
-  // 追加(13-A): anchor(ボタン矩形 or 右クリック座標)から fixed 座標を計算します。
-  const updateColumnMenuLayout = useCallback(() => {
-    if (!openedMenuColumnKey) {
-      setColumnMenuLayout(null);
-      return;
-    }
-
-    let top: number;
-    let left: number;
-    let flipTop: number;
-
-    const anchorButton = menuAnchorButtonRef.current;
-    const anchorPoint = menuAnchorPointRef.current;
-
-    if (anchorButton) {
-      // 追加(13-A): 横スクロールで列が仮想化範囲外になると anchor ボタンが unmount され、
-      //             getBoundingClientRect が 0 を返して左上へ飛ぶため、その場合は閉じます。
-      if (!anchorButton.isConnected) {
-        setColumnMenuLayout(null);
-        setColumnMenuState(null);
-        menuAnchorButtonRef.current = null;
-        return;
-      }
-      const anchorRect = anchorButton.getBoundingClientRect();
-      left = anchorRect.right - MENU_WIDTH;
-      top = anchorRect.bottom + OFFSET_Y;
-      flipTop = anchorRect.top - ESTIMATED_MENU_HEIGHT - OFFSET_Y;
-    } else if (anchorPoint) {
-      // 追加(13-A): 右クリック位置の右下へ出します(ブラウザ標準メニューと同じ向き)。
-      left = anchorPoint.x;
-      top = anchorPoint.y;
-      flipTop = anchorPoint.y - ESTIMATED_MENU_HEIGHT;
-    } else {
-      setColumnMenuLayout(null);
-      return;
-    }
-
-    left = Math.max(VIEWPORT_MARGIN, left);
-    left = Math.min(left, window.innerWidth - MENU_WIDTH - VIEWPORT_MARGIN);
-
-    if (top + ESTIMATED_MENU_HEIGHT > window.innerHeight - VIEWPORT_MARGIN) {
-      top = flipTop;
-    }
-    top = Math.max(VIEWPORT_MARGIN, top);
-
-    setColumnMenuLayout((current) => {
-      if (
-        current &&
-        current.top === top &&
-        current.left === left &&
-        current.width === MENU_WIDTH
-      ) {
-        return current;
-      }
-      return { top, left, width: MENU_WIDTH };
-    });
-  }, [openedMenuColumnKey]);
-
-  // 追加(13-A): メニューを閉じます(filter popover の close と同じ作法です)。
-  const closeColumnMenu = useCallback(() => {
-    setColumnMenuState(null);
-    setColumnMenuLayout(null);
-    menuAnchorButtonRef.current = null;
-    menuAnchorPointRef.current = null;
-
-    // 追加: close 後は grid root にフォーカスを戻し、keyboard 操作へ復帰させます。
-    requestAnimationFrame(() => {
-      gridRootRef.current?.focus();
-    });
-  }, [gridRootRef]);
-
-  // 追加(13-A): 「⋮」ボタンからメニューを開きます(同じボタン再押下でトグル close)。
-  // 注記: anchor ref の更新は setState より「前」に行います。outside click 用の
-  //       window pointerdown リスナーは React ハンドラの後(window バブル到達時)に
-  //       走るため、別列のボタンを押した場合でも「新 anchor contains target」で
-  //       閉じ漏れ/誤閉じが起きません(useFilterPopoverController と同じ仕組みです)。
-  const openColumnMenuFromButton = useCallback(
-    (column: GridColumn<T>, event: PointerEvent<HTMLButtonElement>) => {
-      event.preventDefault();
-      event.stopPropagation();
-
-      if (!enableColumnMenu || event.button !== 0) {
-        return;
-      }
-
-      const anchorElement = event.currentTarget;
-
-      // 追加: 同じボタンの再押下はトグルで閉じます。
-      const current = columnMenuStateRef.current;
-      if (
-        current?.columnKey === column.key &&
-        menuAnchorButtonRef.current === anchorElement
-      ) {
-        closeColumnMenu();
-        return;
-      }
-
-      // 追加: grid root に残っているフォーカスを明示的に外します。
-      if (document.activeElement instanceof HTMLElement) {
-        document.activeElement.blur();
-      }
-      gridRootRef.current?.blur();
-
-      menuAnchorButtonRef.current = anchorElement;
-      menuAnchorPointRef.current = null;
-      setColumnMenuState({ columnKey: column.key });
-    },
-    [closeColumnMenu, enableColumnMenu, gridRootRef],
-  );
-
-  // 追加(13-A): 列ヘッダー右クリック(contextmenu)からメニューを開きます。
-  // 注記: enableColumnMenu=false のときは preventDefault しないため、
-  //       ブラウザ標準のコンテキストメニューがそのまま出ます。
-  const openColumnMenuFromContextMenu = useCallback(
-    (column: GridColumn<T>, event: MouseEvent<HTMLDivElement>) => {
-      if (!enableColumnMenu) {
-        return;
-      }
-
-      event.preventDefault();
-      event.stopPropagation();
-
-      if (document.activeElement instanceof HTMLElement) {
-        document.activeElement.blur();
-      }
-      gridRootRef.current?.blur();
-
-      menuAnchorButtonRef.current = null;
-      menuAnchorPointRef.current = { x: event.clientX, y: event.clientY };
-      setColumnMenuState({ columnKey: column.key });
-
-      // 追加: 同一列で「開いたまま別位置を右クリック」した場合も座標を追従させます。
-      //       state が同値(同一 columnKey)だと effect が走らないため、ここで直接
-      //       再計算します(初回 open 時は下の effect 側でも計算され、冪等です)。
-      updateColumnMenuLayout();
-    },
-    [enableColumnMenu, gridRootRef, updateColumnMenuLayout],
-  );
-
-  // 追加(13-A): open 時の初期配置 + resize / scroll への追従です。
-  //             button anchor は再配置、point anchor は scroll で閉じます。
-  useEffect(() => {
-    if (!openedMenuColumnKey) {
-      return;
-    }
-
-    updateColumnMenuLayout();
-
-    const handleResize = () => {
-      updateColumnMenuLayout();
-    };
-
-    const handleScroll = () => {
-      if (menuAnchorPointRef.current) {
-        // 追加: 座標 anchor はスクロールでヘッダーとズレるため閉じます。
-        closeColumnMenu();
-        return;
-      }
-      updateColumnMenuLayout();
-    };
-
-    window.addEventListener('resize', handleResize);
-    window.addEventListener('scroll', handleScroll, true);
-
-    return () => {
-      window.removeEventListener('resize', handleResize);
-      window.removeEventListener('scroll', handleScroll, true);
-    };
-  }, [openedMenuColumnKey, updateColumnMenuLayout, closeColumnMenu]);
-
-  // 追加(13-A): 表示中は outside click で閉じます(filter popover と同じ作法です)。
-  useEffect(() => {
-    if (!isColumnMenuOpen) {
-      return;
-    }
-
-    const handleWindowPointerDown = (event: globalThis.PointerEvent) => {
-      const targetNode = event.target as Node | null;
-      if (!targetNode) {
-        return;
-      }
-
-      if (columnMenuRef.current?.contains(targetNode)) {
-        return;
-      }
-
-      // 追加: anchor ボタン押下はボタン側のトグル処理に委ねます。
-      if (menuAnchorButtonRef.current?.contains(targetNode)) {
-        return;
-      }
-
-      closeColumnMenu();
-    };
-
-    window.addEventListener('pointerdown', handleWindowPointerDown);
-    return () => {
-      window.removeEventListener('pointerdown', handleWindowPointerDown);
-    };
-  }, [closeColumnMenu, isColumnMenuOpen]);
-
-  // 追加(13-A): 表示中は Escape で閉じます。
-  //             メニューには入力要素が無く popover 内にフォーカスが入らないため、
-  //             popover 側の onKeyDown ではなく window で拾います。
-  useEffect(() => {
-    if (!isColumnMenuOpen) {
-      return;
-    }
-
-    const handleWindowKeyDown = (event: globalThis.KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        event.preventDefault();
-        closeColumnMenu();
-      }
-    };
-
-    window.addEventListener('keydown', handleWindowKeyDown);
-    return () => {
-      window.removeEventListener('keydown', handleWindowKeyDown);
-    };
-  }, [closeColumnMenu, isColumnMenuOpen]);
-
-  return {
-    columnMenuLayout,
-    columnMenuRef,
-    isColumnMenuOpen,
-    openedMenuColumnKey,
-    openedMenuColumn,
-    openColumnMenuFromButton,
-    openColumnMenuFromContextMenu,
-    closeColumnMenu,
-  };
-};
-
-export default useColumnMenuController;
 </file>
 
 <file path="src/components/spreadsheet-grid/model/gridReducer.ts">
@@ -15942,6 +15942,10 @@ export function SpreadsheetGrid<T extends object>({
   const [autoHeightVersion, setAutoHeightVersion] = useState(0);
   // ResizeObserver(内容変化=編集等)による再測定トリガー。
   const [autoHeightMeasureNonce, setAutoHeightMeasureNonce] = useState(0);
+  // 内容変化監視の永続 ResizeObserver と現在の観測セル集合。描画窓更新ごとに作り直さず、
+  //   窓差分(新規セルのみ observe / 消失セルのみ unobserve)だけを反映するために ref 保持します。
+  const measureObserverRef = useRef<ResizeObserver | null>(null);
+  const observedCellsRef = useRef<Set<HTMLElement>>(new Set());
 
   // 行高ストア。order(view 順)/ 行数 / estimate が変わったときだけ作り直します(rowModel は
   //   order 変化で identity が変わるため、これを依存に持てば reorder で再構築されます)。
@@ -16035,7 +16039,11 @@ export function SpreadsheetGrid<T extends object>({
   //   再測定トリガー: 描画窓(virtualRows)変化 / version / nonce(ResizeObserver=内容変化)/ viewport。
   //     高さが収束すると setMeasuredRowHeight が false を返し version が動かず、ループは止まります。
   useLayoutEffect(() => {
+    // 無効時(toggle OFF 等)は永続 observer を破棄して終了します。
     if (!autoHeightActive || !rowHeightStore) {
+      measureObserverRef.current?.disconnect();
+      measureObserverRef.current = null;
+      observedCellsRef.current.clear();
       return;
     }
     const el = scrollContainerRef.current;
@@ -16043,60 +16051,79 @@ export function SpreadsheetGrid<T extends object>({
       return;
     }
     const cells = el.querySelectorAll<HTMLElement>('[data-autoheight-cell]');
-    if (cells.length === 0) {
-      return;
-    }
 
-    // 行ごとの実測 max 高さ(3 ペイン分)。
-    const perRow = new Map<number, number>();
-    cells.forEach((cell) => {
-      const rowEl = cell.closest<HTMLElement>('[data-row-index]');
-      if (!rowEl) {
-        return;
-      }
-      const idx = Number(rowEl.dataset.rowIndex);
-      if (!Number.isFinite(idx)) {
-        return;
-      }
-      const height = Math.ceil(cell.getBoundingClientRect().height);
-      const prev = perRow.get(idx);
-      if (prev === undefined || height > prev) {
-        perRow.set(idx, height);
-      }
-    });
-
-    let changed = false;
-    let minChanged = Number.POSITIVE_INFINITY;
-    perRow.forEach((height, idx) => {
-      const key = rowModel.getRowKey(idx) ?? idx;
-      if (setMeasuredRowHeight(rowHeightStore, idx, key, height)) {
-        changed = true;
-        if (idx < minChanged) {
-          minChanged = idx;
+    // 行ごとの実測 max 高さ(3 ペイン分)を store へ反映します(セルがある場合のみ)。
+    if (cells.length > 0) {
+      const perRow = new Map<number, number>();
+      cells.forEach((cell) => {
+        const rowEl = cell.closest<HTMLElement>('[data-row-index]');
+        if (!rowEl) {
+          return;
         }
-      }
-    });
+        const idx = Number(rowEl.dataset.rowIndex);
+        if (!Number.isFinite(idx)) {
+          return;
+        }
+        const height = Math.ceil(cell.getBoundingClientRect().height);
+        const prev = perRow.get(idx);
+        if (prev === undefined || height > prev) {
+          perRow.set(idx, height);
+        }
+      });
 
-    if (changed) {
-      // 旧 prefix のまま anchor(viewport 上端行)と offset を数値で捕捉してから再構築します。
-      const beforeScrollTop = el.scrollTop;
-      const anchorRow = rowMetrics.rowAtContentY(beforeScrollTop);
-      const anchorTopBefore = rowMetrics.rowTop(anchorRow);
-      const offset = beforeScrollTop - anchorTopBefore;
-      rebuildPrefixFrom(rowHeightStore, minChanged);
-      const anchorTopAfter = rowHeightStore.prefix[anchorRow];
-      // ペイント前(layout フレーム内)に同期適用してジャンプを消します。
-      el.scrollTop = anchorTopAfter + offset;
-      // 測定収束のための version bump(ペイント前に geometry を更新)。
-      setAutoHeightVersion((v) => v + 1);
+      let changed = false;
+      let minChanged = Number.POSITIVE_INFINITY;
+      perRow.forEach((height, idx) => {
+        const key = rowModel.getRowKey(idx) ?? idx;
+        if (setMeasuredRowHeight(rowHeightStore, idx, key, height)) {
+          changed = true;
+          if (idx < minChanged) {
+            minChanged = idx;
+          }
+        }
+      });
+
+      if (changed) {
+        // 旧 prefix のまま anchor(viewport 上端行)と offset を数値で捕捉してから再構築します。
+        const beforeScrollTop = el.scrollTop;
+        const anchorRow = rowMetrics.rowAtContentY(beforeScrollTop);
+        const anchorTopBefore = rowMetrics.rowTop(anchorRow);
+        const offset = beforeScrollTop - anchorTopBefore;
+        rebuildPrefixFrom(rowHeightStore, minChanged);
+        const anchorTopAfter = rowHeightStore.prefix[anchorRow];
+        // ペイント前(layout フレーム内)に同期適用してジャンプを消します。
+        el.scrollTop = anchorTopAfter + offset;
+        // 測定収束のための version bump(ペイント前に geometry を更新)。
+        setAutoHeightVersion((v) => v + 1);
+      }
     }
 
-    // 内容変化(編集等)を拾うため可視窓のセルを監視します。
-    const observer = new ResizeObserver(() =>
-      setAutoHeightMeasureNonce((n) => n + 1),
-    );
-    cells.forEach((cell) => observer.observe(cell));
-    return () => observer.disconnect();
+    // 内容変化(編集等)を拾う永続 ResizeObserver。描画窓更新ごとに作り直さず、窓差分のみ
+    //   反映します(新規セルだけ observe / 消失セルだけ unobserve)。初回 active 時に遅延生成。
+    const observer =
+      measureObserverRef.current ??
+      new ResizeObserver(() => setAutoHeightMeasureNonce((n) => n + 1));
+    measureObserverRef.current = observer;
+    const observed = observedCellsRef.current;
+    const current = new Set<HTMLElement>();
+    cells.forEach((cell) => {
+      current.add(cell);
+      if (!observed.has(cell)) {
+        observer.observe(cell);
+        observed.add(cell);
+      }
+    });
+    // 描画窓から外れた(=DOM から消えた)セルは監視解除して参照を手放します。
+    const goneCells: HTMLElement[] = [];
+    observed.forEach((cell) => {
+      if (!current.has(cell)) {
+        goneCells.push(cell);
+      }
+    });
+    goneCells.forEach((cell) => {
+      observer.unobserve(cell);
+      observed.delete(cell);
+    });
   }, [
     autoHeightActive,
     rowHeightStore,
@@ -16107,6 +16134,17 @@ export function SpreadsheetGrid<T extends object>({
     autoHeightVersion,
     autoHeightMeasureNonce,
   ]);
+
+  // アンマウント時に永続 observer を破棄します(toggle OFF は上の測定 effect 冒頭で破棄)。
+  //   observedCells は生成後に再代入しない安定 Set なので、ローカルへ退避して cleanup から参照します。
+  useEffect(() => {
+    const observedCells = observedCellsRef.current;
+    return () => {
+      measureObserverRef.current?.disconnect();
+      measureObserverRef.current = null;
+      observedCells.clear();
+    };
+  }, []);
 
   // 追加(10-C): 各ペインで実際に描画する列エントリ群です。
   //             中央ペインは仮想化済みの部分集合、固定ペインは全エントリを描画します。

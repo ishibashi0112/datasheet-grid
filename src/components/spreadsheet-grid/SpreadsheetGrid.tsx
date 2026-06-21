@@ -845,6 +845,10 @@ export function SpreadsheetGrid<T extends object>({
   const [autoHeightVersion, setAutoHeightVersion] = useState(0);
   // ResizeObserver(内容変化=編集等)による再測定トリガー。
   const [autoHeightMeasureNonce, setAutoHeightMeasureNonce] = useState(0);
+  // 内容変化監視の永続 ResizeObserver と現在の観測セル集合。描画窓更新ごとに作り直さず、
+  //   窓差分(新規セルのみ observe / 消失セルのみ unobserve)だけを反映するために ref 保持します。
+  const measureObserverRef = useRef<ResizeObserver | null>(null);
+  const observedCellsRef = useRef<Set<HTMLElement>>(new Set());
 
   // 行高ストア。order(view 順)/ 行数 / estimate が変わったときだけ作り直します(rowModel は
   //   order 変化で identity が変わるため、これを依存に持てば reorder で再構築されます)。
@@ -938,7 +942,11 @@ export function SpreadsheetGrid<T extends object>({
   //   再測定トリガー: 描画窓(virtualRows)変化 / version / nonce(ResizeObserver=内容変化)/ viewport。
   //     高さが収束すると setMeasuredRowHeight が false を返し version が動かず、ループは止まります。
   useLayoutEffect(() => {
+    // 無効時(toggle OFF 等)は永続 observer を破棄して終了します。
     if (!autoHeightActive || !rowHeightStore) {
+      measureObserverRef.current?.disconnect();
+      measureObserverRef.current = null;
+      observedCellsRef.current.clear();
       return;
     }
     const el = scrollContainerRef.current;
@@ -946,60 +954,79 @@ export function SpreadsheetGrid<T extends object>({
       return;
     }
     const cells = el.querySelectorAll<HTMLElement>('[data-autoheight-cell]');
-    if (cells.length === 0) {
-      return;
-    }
 
-    // 行ごとの実測 max 高さ(3 ペイン分)。
-    const perRow = new Map<number, number>();
-    cells.forEach((cell) => {
-      const rowEl = cell.closest<HTMLElement>('[data-row-index]');
-      if (!rowEl) {
-        return;
-      }
-      const idx = Number(rowEl.dataset.rowIndex);
-      if (!Number.isFinite(idx)) {
-        return;
-      }
-      const height = Math.ceil(cell.getBoundingClientRect().height);
-      const prev = perRow.get(idx);
-      if (prev === undefined || height > prev) {
-        perRow.set(idx, height);
-      }
-    });
-
-    let changed = false;
-    let minChanged = Number.POSITIVE_INFINITY;
-    perRow.forEach((height, idx) => {
-      const key = rowModel.getRowKey(idx) ?? idx;
-      if (setMeasuredRowHeight(rowHeightStore, idx, key, height)) {
-        changed = true;
-        if (idx < minChanged) {
-          minChanged = idx;
+    // 行ごとの実測 max 高さ(3 ペイン分)を store へ反映します(セルがある場合のみ)。
+    if (cells.length > 0) {
+      const perRow = new Map<number, number>();
+      cells.forEach((cell) => {
+        const rowEl = cell.closest<HTMLElement>('[data-row-index]');
+        if (!rowEl) {
+          return;
         }
-      }
-    });
+        const idx = Number(rowEl.dataset.rowIndex);
+        if (!Number.isFinite(idx)) {
+          return;
+        }
+        const height = Math.ceil(cell.getBoundingClientRect().height);
+        const prev = perRow.get(idx);
+        if (prev === undefined || height > prev) {
+          perRow.set(idx, height);
+        }
+      });
 
-    if (changed) {
-      // 旧 prefix のまま anchor(viewport 上端行)と offset を数値で捕捉してから再構築します。
-      const beforeScrollTop = el.scrollTop;
-      const anchorRow = rowMetrics.rowAtContentY(beforeScrollTop);
-      const anchorTopBefore = rowMetrics.rowTop(anchorRow);
-      const offset = beforeScrollTop - anchorTopBefore;
-      rebuildPrefixFrom(rowHeightStore, minChanged);
-      const anchorTopAfter = rowHeightStore.prefix[anchorRow];
-      // ペイント前(layout フレーム内)に同期適用してジャンプを消します。
-      el.scrollTop = anchorTopAfter + offset;
-      // 測定収束のための version bump(ペイント前に geometry を更新)。
-      setAutoHeightVersion((v) => v + 1);
+      let changed = false;
+      let minChanged = Number.POSITIVE_INFINITY;
+      perRow.forEach((height, idx) => {
+        const key = rowModel.getRowKey(idx) ?? idx;
+        if (setMeasuredRowHeight(rowHeightStore, idx, key, height)) {
+          changed = true;
+          if (idx < minChanged) {
+            minChanged = idx;
+          }
+        }
+      });
+
+      if (changed) {
+        // 旧 prefix のまま anchor(viewport 上端行)と offset を数値で捕捉してから再構築します。
+        const beforeScrollTop = el.scrollTop;
+        const anchorRow = rowMetrics.rowAtContentY(beforeScrollTop);
+        const anchorTopBefore = rowMetrics.rowTop(anchorRow);
+        const offset = beforeScrollTop - anchorTopBefore;
+        rebuildPrefixFrom(rowHeightStore, minChanged);
+        const anchorTopAfter = rowHeightStore.prefix[anchorRow];
+        // ペイント前(layout フレーム内)に同期適用してジャンプを消します。
+        el.scrollTop = anchorTopAfter + offset;
+        // 測定収束のための version bump(ペイント前に geometry を更新)。
+        setAutoHeightVersion((v) => v + 1);
+      }
     }
 
-    // 内容変化(編集等)を拾うため可視窓のセルを監視します。
-    const observer = new ResizeObserver(() =>
-      setAutoHeightMeasureNonce((n) => n + 1),
-    );
-    cells.forEach((cell) => observer.observe(cell));
-    return () => observer.disconnect();
+    // 内容変化(編集等)を拾う永続 ResizeObserver。描画窓更新ごとに作り直さず、窓差分のみ
+    //   反映します(新規セルだけ observe / 消失セルだけ unobserve)。初回 active 時に遅延生成。
+    const observer =
+      measureObserverRef.current ??
+      new ResizeObserver(() => setAutoHeightMeasureNonce((n) => n + 1));
+    measureObserverRef.current = observer;
+    const observed = observedCellsRef.current;
+    const current = new Set<HTMLElement>();
+    cells.forEach((cell) => {
+      current.add(cell);
+      if (!observed.has(cell)) {
+        observer.observe(cell);
+        observed.add(cell);
+      }
+    });
+    // 描画窓から外れた(=DOM から消えた)セルは監視解除して参照を手放します。
+    const goneCells: HTMLElement[] = [];
+    observed.forEach((cell) => {
+      if (!current.has(cell)) {
+        goneCells.push(cell);
+      }
+    });
+    goneCells.forEach((cell) => {
+      observer.unobserve(cell);
+      observed.delete(cell);
+    });
   }, [
     autoHeightActive,
     rowHeightStore,
@@ -1010,6 +1037,17 @@ export function SpreadsheetGrid<T extends object>({
     autoHeightVersion,
     autoHeightMeasureNonce,
   ]);
+
+  // アンマウント時に永続 observer を破棄します(toggle OFF は上の測定 effect 冒頭で破棄)。
+  //   observedCells は生成後に再代入しない安定 Set なので、ローカルへ退避して cleanup から参照します。
+  useEffect(() => {
+    const observedCells = observedCellsRef.current;
+    return () => {
+      measureObserverRef.current?.disconnect();
+      measureObserverRef.current = null;
+      observedCells.clear();
+    };
+  }, []);
 
   // 追加(10-C): 各ペインで実際に描画する列エントリ群です。
   //             中央ペインは仮想化済みの部分集合、固定ペインは全エントリを描画します。
