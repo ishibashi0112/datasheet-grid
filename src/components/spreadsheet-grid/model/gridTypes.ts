@@ -24,6 +24,50 @@ export type RowModel<T> = {
   getRowKey: (viewIndex: number) => GridRowKey;
 };
 
+// 追加(DS-4 ②): serverSide(SSRM)用のデータ供給契約群です。dataSource 指定時に serverSide
+//   モードへ切り替わり、clientSide の四段パイプライン(baseOrder→…→order)をバイパスして、
+//   可視窓近傍のブロックだけを getRows で都度取得します(取得範囲を定数に縛りメモリを有界化)。
+//   query は getRows へ載せるフィルター/ソート状態の枠で、stage ①(読み取り専用)では空、
+//   stage ② でサーバ実行へ配線します。
+export type ServerSideQuery = {
+  // グローバルフィルター文字列(stage ② で配線)。
+  globalText?: string;
+  // 列フィルター記述子(stage ② で配線)。
+  columnFilters?: Record<string, ColumnFilterValue>;
+  // ソート状態(stage ② で配線)。
+  sort?: GridSortState;
+};
+
+// 追加(DS-4 ②): getRows の引数です。[startIndex, endIndex) は view 空間・end 排他。
+//   signal は古いリクエストのキャンセル用です(スクロールで通り過ぎた帯の取得を破棄)。
+export type ServerSideGetRowsParams = {
+  startIndex: number;
+  endIndex: number;
+  query: ServerSideQuery;
+  signal: AbortSignal;
+};
+
+// 追加(DS-4 ②): getRows の戻り値です。totalRowCount はクエリ適用後の総件数で、毎回返す設計に
+//   することで stage ② のフィルター件数変動にも縦ジオメトリが追従します(stage ① では不変)。
+export type ServerSideGetRowsResult<T> = {
+  rows: T[];
+  totalRowCount: number;
+};
+
+// 追加(DS-4 ②): serverSide データ供給口です。getRows のみ必須で、残りは任意調整です。
+//   - initialRowCount: 初回 fetch 前から正しい総高さ/スクロールバーを出したい場合に渡します
+//     (未指定時は最初の getRows 結果が返るまで件数 0 = 全面ローディング)。
+//   - blockSize: 1 ブロックの行数(既定 100)。1 リクエスト = 数ブロックに収まります。
+//   - maxCachedBlocks: クライアント側 LRU 上限(既定 64)。超過分は画面外の古いブロックから退避。
+//   ★利用者契約: getRows は渡された [startIndex, endIndex) を尊重し、全件返さないこと
+//     (広い範囲を返すとクライアントで全件保持と同義になり SSRM の意義が消えます)。
+export type ServerSideDataSource<T> = {
+  getRows: (params: ServerSideGetRowsParams) => Promise<ServerSideGetRowsResult<T>>;
+  initialRowCount?: number;
+  blockSize?: number;
+  maxCachedBlocks?: number;
+};
+
 // 追加: セル座標を表す基本型です。
 export type CellCoord = {
   row: number;
@@ -329,6 +373,10 @@ export type SpreadsheetGridSlotContext<T> = {
 // 追加: 公開 props です。
 export type SpreadsheetGridProps<T> = {
   rows: T[];
+  // 追加(DS-4 ②): serverSide データ供給口です。指定時に serverSide モードへ切り替える想定です
+  //   (rows と排他・dataSource 優先)。本 prop の消費(モード分岐)と rows の optional 化は ①-3 で
+  //   配線します。本バッチ(①-2)は型の追加のみで、既存の clientSide 経路は不変です。
+  dataSource?: ServerSideDataSource<T>;
   columns: GridColumn<T>[];
   onRowsChange?: (nextRows: T[]) => void;
   onColumnsChange?: (nextColumns: GridColumn<T>[]) => void;
