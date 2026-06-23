@@ -2626,26 +2626,9 @@ export function SpreadsheetGrid<T extends object>({
   });
 
   // ── styles ────────────────────────────────────────────
-  // 統合(UI): top バー + 本体 + bottom バーを 1 つの枠に収める外枠 frame です。境界・角丸・影・
-  //   角丸クリップをここで一元化し、バーと本体を地続きに見せます(以前は 3 つの独立した角丸カードで、
-  //   間の margin により浮いて見えていました)。ポップオーバー類は createPortal で document 直下へ
-  //   描画されるため、overflow:hidden でも切れません。
-  const gridFrameStyle: CSSProperties = {
-    border: '1px solid #d7dce3',
-    borderRadius: 8,
-    overflow: 'hidden',
-    backgroundColor: '#ffffff',
-    boxShadow: '0 4px 14px rgba(15, 23, 42, 0.04)',
-  };
-  const gridShellStyle: CSSProperties = {
-    // 統合(UI): 個別の border / borderRadius / boxShadow は撤去(外枠 frame が担当)。本体は枠の
-    //   内側に収まるセクションになります。
-    overflow: 'hidden',
-    backgroundColor: '#ffffff',
-    // 追加(DS-4 ①-(2)): Pending overlay(絶対配置)の基準 + 計測中の wait カーソルです。
-    position: 'relative',
-    cursor: isAutosizing ? 'progress' : undefined,
-  };
+  // 変更(UI CSS移行): 外枠 frame(境界/角丸/影/クリップ)は styles.css の .ssg-root へ、
+  //   本体シェル(overflow/bg/position)は .ssg-shell へ移行しました。shell の cursor
+  //   (autosize 計測中 progress)だけ動的なので、使用箇所で inline 指定します。
 
   // 変更(A-1): style オブジェクトを useMemo で安定化します。
   //   これらは GridBodyRow(memo) に props として渡るため、毎レンダーで新しい参照を作ると
@@ -2664,21 +2647,10 @@ export function SpreadsheetGrid<T extends object>({
   // 変更理由: スクロールを 1 つの要素に集約し、固定列は position: sticky で横方向だけ留めます。
   //           これにより全ペインが同一スクロールで動き、固定列のチカチカ（ティアリング）が
   //           原理的に消えます。
-  const scrollContainerStyle: CSSProperties = {
-    maxHeight: 480,
-    overflow: 'auto',
-    position: 'relative',
-  };
 
   // 追加(10-G): スクロールコンテンツ本体（3 ペインを横並びにする flex 行）の style です。
   //             width=コンテンツ全幅 / height=ヘッダー+ボディ全高 を明示し、
   //             縦横のスクロール範囲を確定させます。
-  const innerRowStyle: CSSProperties = {
-    display: 'flex',
-    width: totalScrollWidth,
-    minWidth: totalScrollWidth,
-    height: headerHeight + physicalBodyHeight,
-  };
 
   // 追加(12-B): フィルター結果 0 行時の空状態表示(AG Grid の "No Matching Rows" 相当)です。
   // 変更理由: 従来は totalBodyHeight=0 でボディが高さごと潰れ、空白だけが残っていました。
@@ -2691,17 +2663,6 @@ export function SpreadsheetGrid<T extends object>({
   //     ビューポート中央に留まります(ヘッダーは従来どおり横スクロール可能)。
   const isBodyEmpty = viewRowCount === 0;
 
-  const emptyStateStyle: CSSProperties = {
-    position: 'sticky',
-    left: 0,
-    height: 160,
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    color: '#94a3b8',
-    fontSize: 13,
-    userSelect: 'none',
-  };
 
   // 追加(DS-4 ①-(2)): autosize 計測中の Pending overlay です。12-B の空状態と同じ
   //   「中央寄せの案内層」ですが、本層は body 上へ重ねる必要があるため、gridShell
@@ -2709,26 +2670,6 @@ export function SpreadsheetGrid<T extends object>({
   //   選択などの操作を素通しで生かします(時間分割の意味を保つため)。表示するのは遅延
   //   overlay(OVERLAY_DELAY_MS)が発火した「本当に重い時」だけで、短時間で終わる規模では
   //   一度も出ません(チラつき防止)。
-  const autosizeOverlayStyle: CSSProperties = {
-    position: 'absolute',
-    inset: 0,
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    pointerEvents: 'none',
-    zIndex: 5,
-  };
-
-  const autosizeOverlayPillStyle: CSSProperties = {
-    padding: '8px 14px',
-    borderRadius: 8,
-    backgroundColor: 'rgba(15, 23, 42, 0.82)',
-    color: '#f8fafc',
-    fontSize: 13,
-    fontWeight: 600,
-    boxShadow: '0 6px 20px rgba(15, 23, 42, 0.25)',
-    userSelect: 'none',
-  };
 
   // 追加(10-B): 固定ペイン共通の style です。
   // 変更(10-G): position: sticky で横方向だけ留めます（縦は共有スクロールで一緒に動きます）。
@@ -2768,13 +2709,6 @@ export function SpreadsheetGrid<T extends object>({
   // 変更(10-G): 自前のスクロールは持たず、固定幅(centerContentWidth)で並べます。
   //           縦横スクロールは外側の共有コンテナが担うため overflow は指定しません。
   //           固定ペインの影が重なるよう position: relative + zIndex: 1（固定ペインより背面）。
-  const centerPaneStyle: CSSProperties = {
-    width: centerContentWidth,
-    minWidth: centerContentWidth,
-    flexShrink: 0,
-    position: 'relative',
-    zIndex: 1,
-  };
 
   // ── filter popover ────────────────────────────────────
   // 変更(12-A): set フィルター値はオブジェクトのため String() 直書きを避け、
@@ -2927,15 +2861,13 @@ export function SpreadsheetGrid<T extends object>({
 
   // ── render ────────────────────────────────────────────
   return (
-    <div
-      className={cx('ssg-root', className, classNames?.root)}
-      style={gridFrameStyle}
-    >
+    <div className={cx('ssg-root', className, classNames?.root)}>
       {resolvedTopBar}
 
       <div
         ref={gridRootRef}
-        style={gridShellStyle}
+        className="ssg-shell"
+        style={{ cursor: isAutosizing ? 'progress' : undefined }}
         onDragStart={handleNativeDragStart}
         // 追加(UI hover): grid 本体(ヘッダー+ボディ)から出たら行ホバーをクリアします。
         onPointerLeave={() => setHoveredRowIndex(null)}
@@ -2953,8 +2885,15 @@ export function SpreadsheetGrid<T extends object>({
         {/*   旧: 中央ペインのみ overflow:auto + 左右ペインを JS の transform で同期     */}
         {/*   新: 外側コンテナが縦横ともネイティブスクロール / 固定列は position: sticky  */}
         {/*   pinned 列がない場合は左右ペインが width:0 で非表示、中央ペインのみ表示。     */}
-        <div ref={scrollContainerRef} style={scrollContainerStyle}>
-          <div style={innerRowStyle}>
+        <div ref={scrollContainerRef} className="ssg-scroll-container">
+          <div
+            className="ssg-inner-row"
+            style={{
+              width: totalScrollWidth,
+              minWidth: totalScrollWidth,
+              height: headerHeight + physicalBodyHeight,
+            }}
+          >
 
           {/* ── 左固定ペイン ── */}
           {/* 変更(10-C): 左固定列があるときだけヘッダー・ボディ・行ヘッダーを描画します。*/}
@@ -3106,7 +3045,8 @@ export function SpreadsheetGrid<T extends object>({
           {/* 変更(10-C): 行ヘッダーは左固定列が無いときだけ中央が持ちます（従来と同一）。*/}
           <div
             ref={bodyScrollRef}
-            style={centerPaneStyle}
+            className="ssg-center-pane"
+            style={{ width: centerContentWidth, minWidth: centerContentWidth }}
           >
             <div
               style={{
@@ -3372,7 +3312,7 @@ export function SpreadsheetGrid<T extends object>({
           {/* 追加(12-B): 0 行時の空状態表示です。rows 自体が 0 件か、
               フィルターで 0 件になったかでメッセージを切り替えます。 */}
           {isBodyEmpty && (
-            <div style={emptyStateStyle}>
+            <div className="ssg-empty-state">
               {rows.length === 0 ? noRowsText : noMatchingRowsText}
             </div>
           )}
@@ -3382,8 +3322,8 @@ export function SpreadsheetGrid<T extends object>({
         {/* 追加(DS-4 ①-(2)): autosize 計測中の Pending overlay です。
             遅延表示(OVERLAY_DELAY_MS 経過後)・pointer-events: none で操作素通し。 */}
         {isAutosizing && (
-          <div style={autosizeOverlayStyle}>
-            <span style={autosizeOverlayPillStyle}>列幅を計算中…</span>
+          <div className="ssg-autosize-overlay">
+            <span className="ssg-autosize-pill">列幅を計算中…</span>
           </div>
         )}
       </div>

@@ -39,6 +39,13 @@
     /* 寸法トークン */
     --ssg-radius: 8px;
     --ssg-icon-btn-size: 22px;
+
+    /* 外枠 frame(top バー+本体+bottom バーを 1 枠に収める境界/角丸/影/クリップ)。 */
+    border: 1px solid var(--ssg-divider);
+    border-radius: var(--ssg-radius);
+    overflow: hidden;
+    background-color: var(--ssg-cell-bg);
+    box-shadow: 0 4px 14px rgba(15, 23, 42, 0.04);
   }
 
   /* ヘッダーのアイコンボタン(フィルター / メニュー) */
@@ -1125,5 +1132,60 @@
     height: 10px;
     border-radius: 4px;
     background-color: #e2e8f0;
+  }
+
+  /* ── グリッド本体シェル / スクロール(SpreadsheetGrid) ── */
+  /* cursor(計測中 progress)のみ inline。 */
+  .ssg-shell {
+    position: relative;
+    overflow: hidden;
+    background-color: var(--ssg-cell-bg);
+  }
+  .ssg-scroll-container {
+    max-height: 480px;
+    overflow: auto;
+    position: relative;
+  }
+  /* width/min-width/height(スクロール範囲)は inline。 */
+  .ssg-inner-row {
+    display: flex;
+  }
+  /* width/min-width(中央ペイン幅)は inline。 */
+  .ssg-center-pane {
+    flex-shrink: 0;
+    position: relative;
+    z-index: 1;
+  }
+  /* 0 行時の空状態。 */
+  .ssg-empty-state {
+    position: sticky;
+    left: 0;
+    height: 160px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #94a3b8;
+    font-size: 13px;
+    user-select: none;
+  }
+  /* autosize 計測中の overlay + ピル。 */
+  .ssg-autosize-overlay {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    pointer-events: none;
+    z-index: 5;
+  }
+  .ssg-autosize-pill {
+    padding: 8px 14px;
+    border-radius: 8px;
+    background-color: rgba(15, 23, 42, 0.82);
+    color: #f8fafc;
+    font-size: 13px;
+    font-weight: 600;
+    box-shadow: 0 6px 20px rgba(15, 23, 42, 0.25);
+    user-select: none;
   }
 }
