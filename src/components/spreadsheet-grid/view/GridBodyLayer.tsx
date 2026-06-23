@@ -162,16 +162,8 @@ function GridBodyRowInner<T>({
       data-row-index={rowIndex}
       className={cx('ssg-body-row', rowClassName, bodyRowClassName)}
       style={{
-        position: 'absolute',
-        top: 0,
-        left: 0,
-        width: '100%',
         height: rowHeight,
         transform: `translateY(${top}px)`,
-        // 行単位で絶対配置し、セル側は row 内ローカル座標にします。
-        // これにより仮想行の出入りで通常フローの高さが揺れず、
-        // sticky header / fixed pane 付近の境界チラつきを抑えます。
-        contain: 'layout style paint',
       }}
     >
       {ownsRowHeader && (
@@ -190,10 +182,6 @@ function GridBodyRowInner<T>({
           )}
           style={{
             ...rowHeaderCellStyle,
-            position: 'absolute',
-            top: 0,
-            left: 0,
-            zIndex: 5,
             height: rowHeight,
           }}
         >
@@ -285,8 +273,6 @@ function GridBodyRowInner<T>({
               onCellDoubleClick({ row: rowIndex, col: colIndex })
             }
             style={{
-              position: 'absolute',
-              top: 0,
               left,
               width: size,
               minWidth: size,
@@ -392,13 +378,8 @@ function GridBodySkeletonRowInner<T>({
       data-skeleton-row=""
       className={cx('ssg-body-row', bodyRowClassName)}
       style={{
-        position: 'absolute',
-        top: 0,
-        left: 0,
-        width: '100%',
         height: rowHeight,
         transform: `translateY(${top}px)`,
-        contain: 'layout style paint',
       }}
     >
       {ownsRowHeader && (
@@ -409,17 +390,13 @@ function GridBodySkeletonRowInner<T>({
           className={cx(
             'ssg-header-cell',
             'ssg-row-header-cell',
+            'ssg-skeleton-rowheader',
             isRowHovered && 'ssg-header-cell--hovered',
             rowHeaderCellClassName,
           )}
           style={{
             ...rowHeaderCellStyle,
-            position: 'absolute',
-            top: 0,
-            left: 0,
-            zIndex: 5,
             height: rowHeight,
-            color: '#94a3b8',
           }}
         >
           {rowIndex + 1}
@@ -451,8 +428,6 @@ function GridBodySkeletonRowInner<T>({
               onCellPointerEnter({ row: rowIndex, col: colIndex }, event)
             }
             style={{
-              position: 'absolute',
-              top: 0,
               left,
               width: size,
               minWidth: size,
@@ -462,12 +437,8 @@ function GridBodySkeletonRowInner<T>({
           >
             <div
               aria-hidden="true"
-              style={{
-                width: barWidth,
-                height: 10,
-                borderRadius: 4,
-                backgroundColor: '#e2e8f0',
-              }}
+              className="ssg-skeleton-bar"
+              style={{ width: barWidth }}
             />
           </div>
         );

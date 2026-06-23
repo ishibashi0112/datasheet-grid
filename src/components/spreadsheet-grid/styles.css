@@ -78,6 +78,8 @@
 
   /* 本体セル(データ行のセル)。座標 / 幅 / 高さ / zIndex はインライン(動的)。 */
   .ssg-body-cell {
+    position: absolute;
+    top: 0;
     box-sizing: border-box;
     display: flex;
     align-items: center;
@@ -127,6 +129,8 @@
 
   /* ヘッダーセル(列ヘッダー / 行ヘッダー / コーナー共通の土台)。座標 / 幅 / 高さはインライン。 */
   .ssg-header-cell {
+    position: absolute;
+    top: 0;
     display: flex;
     align-items: center;
     gap: 8px;
@@ -153,12 +157,16 @@
 
   /* 行ヘッダー「#」セル(番号セル)。header-cell に重ねて中央寄せ + 細字。 */
   .ssg-row-header-cell {
+    left: 0;
+    z-index: 5;
     justify-content: center;
     font-weight: 500;
   }
 
   /* 左上コーナーセル。中央寄せ + 余白詰め + 右境界を濃く。 */
   .ssg-corner-cell {
+    left: 0;
+    z-index: 7;
     justify-content: center;
     padding: 0;
     border-right: 1px solid var(--ssg-line-strong);
@@ -1036,5 +1044,86 @@
     padding: 5px 10px;
     cursor: pointer;
     font-size: 12px;
+  }
+
+  /* ── ボディ行コンテナ(GridBodyLayer)。height/transform は inline。 ── */
+  .ssg-body-row {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    contain: layout style paint;
+  }
+
+  /* ── ヘッダー内要素(GridHeaderRow) ── */
+  /* 列並べ替え grip。 */
+  .ssg-header-grip {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 14px;
+    height: 22px;
+    flex: 0 0 auto;
+    color: #cbd5e1;
+    cursor: grab;
+    touch-action: none;
+    user-select: none;
+  }
+  /* タイトル + ソート矢印 + アクションボタンの行。 */
+  .ssg-header-label-row {
+    display: flex;
+    align-items: center;
+    min-width: 0;
+    flex: 1;
+    gap: 4px;
+  }
+  /* ヘッダーテキスト。フィルター適用中はアクセント色。 */
+  .ssg-header-label {
+    min-width: 0;
+    flex: 1;
+    color: var(--ssg-header-text);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .ssg-header-label--filtered {
+    color: var(--ssg-accent-strong);
+  }
+  /* ソート方向の受動表示(矢印 + 優先番号)。 */
+  .ssg-header-sort {
+    display: inline-flex;
+    align-items: center;
+    gap: 1px;
+    flex: 0 0 auto;
+    color: var(--ssg-accent);
+    font-size: 12px;
+    font-weight: 700;
+    line-height: 1;
+  }
+  .ssg-header-sort-priority {
+    font-size: 9px;
+    font-weight: 700;
+    line-height: 1;
+  }
+  /* 列リサイズ把手。 */
+  .ssg-header-resize {
+    position: absolute;
+    top: 0;
+    right: -3px;
+    width: 6px;
+    height: 100%;
+    cursor: col-resize;
+    z-index: 3;
+  }
+
+  /* ── スケルトン(GridBodyLayer 読み込み中) ── */
+  .ssg-skeleton-rowheader {
+    color: #94a3b8;
+  }
+  /* バーの幅は inline(barWidth)で与える。 */
+  .ssg-skeleton-bar {
+    height: 10px;
+    border-radius: 4px;
+    background-color: #e2e8f0;
   }
 }

@@ -206,11 +206,7 @@ function GridHeaderRowInner<T>({
           )}
           style={{
             ...rowHeaderCellStyle,
-            position: 'absolute',
-            top: 0,
-            left: 0,
             height: headerHeight,
-            zIndex: 7,
             cursor:
               filteredRowsLength > 0 && visibleColumnsLength > 0
                 ? 'pointer'
@@ -289,8 +285,6 @@ function GridHeaderRowInner<T>({
               headerCellClassName,
             )}
             style={{
-              position: 'absolute',
-              top: 0,
               left,
               width: size,
               minWidth: size,
@@ -312,19 +306,7 @@ function GridHeaderRowInner<T>({
                 }
                 title="ドラッグで列を移動"
                 aria-hidden="true"
-                style={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  width: 14,
-                  height: 22,
-                  flex: '0 0 auto',
-                  color: '#cbd5e1',
-                  // 追加: grip の視覚 + タッチでのスクロール抑止 + 文字選択抑止。
-                  cursor: 'grab',
-                  touchAction: 'none',
-                  userSelect: 'none',
-                }}
+                className="ssg-header-grip"
               >
                 <svg
                   width="8"
@@ -344,24 +326,12 @@ function GridHeaderRowInner<T>({
               </span>
             )}
 
-            <div
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                minWidth: 0,
-                flex: 1,
-                gap: 4,
-              }}
-            >
+            <div className="ssg-header-label-row">
               <div
-                style={{
-                  minWidth: 0,
-                  flex: 1,
-                  color: isColumnFiltered ? '#1d4ed8' : '#334155',
-                  overflow: 'hidden',
-                  textOverflow: 'ellipsis',
-                  whiteSpace: 'nowrap',
-                }}
+                className={cx(
+                  'ssg-header-label',
+                  isColumnFiltered && 'ssg-header-label--filtered',
+                )}
               >
                 {column.renderHeader
                   ? column.renderHeader({
@@ -388,22 +358,13 @@ function GridHeaderRowInner<T>({
                       : '降順で並び替え中') +
                     (sortState.length > 1 ? ` (優先度 ${sortIndex + 1})` : '')
                   }
-                  style={{
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: 1,
-                    flex: '0 0 auto',
-                    color: '#3461c9',
-                    fontSize: 12,
-                    fontWeight: 700,
-                    lineHeight: 1,
-                  }}
+                  className="ssg-header-sort"
                 >
                   {sortEntry.direction === 'asc' ? '↑' : '↓'}
                   {/* 追加(MS-2): 複数ソート時のみ優先順位番号(1 始まり)を小さく併記。 */}
                   {sortState.length > 1 && (
                     <span
-                      style={{ fontSize: 9, fontWeight: 700, lineHeight: 1 }}
+                      className="ssg-header-sort-priority"
                     >
                       {sortIndex + 1}
                     </span>
@@ -455,15 +416,7 @@ function GridHeaderRowInner<T>({
 
             <div
               onPointerDown={(event) => onColumnResizePointerDown(column, event)}
-              style={{
-                position: 'absolute',
-                top: 0,
-                right: -3,
-                width: 6,
-                height: '100%',
-                cursor: 'col-resize',
-                zIndex: 3,
-              }}
+              className="ssg-header-resize"
             />
           </div>
         );
