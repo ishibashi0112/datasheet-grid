@@ -109,3 +109,14 @@ code {
   padding: 4px 8px;
   background: var(--code-bg);
 }
+
+/* 追加(条件付きスタイル デモ): Stage 1 の getRowClassName / GridColumn.cellClassName 実機確認用。
+   このプロジェクトは Tailwind 未導入のため素の class で確認します。基底(.ssg-body-cell)は
+   @layer ssg-base にあるため、未レイヤーのこれらが特異度を気にせず勝ちます。 */
+.demo-row-hold {
+  background-color: #fff7ed;
+}
+.demo-cell-hold {
+  color: #b91c1c;
+  font-weight: 600;
+}

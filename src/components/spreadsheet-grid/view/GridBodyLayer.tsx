@@ -22,7 +22,9 @@ import type {
 //             PaneColumnEntry(ペインローカル) へ切り替えます。
 import type { PaneColumnEntry } from '../logic/geometry';
 import type { GridPaneKind } from './GridHeaderRow';
-import { isCellEditable } from '../utils/permissions';
+import { getCellValue, isCellEditable } from '../utils/permissions';
+// 追加(UI CSS移行): className 合成ヘルパー。
+import { cx } from '../logic/cx';
 
 type VirtualRowLike = {
   index: number;
@@ -110,6 +112,12 @@ type GridBodyRowProps<T> = {
     colIndex: number,
     cellState: CellRenderState,
   ) => ReactNode;
+  // 追加(UI CSS移行): 条件付き / スロット className(すべて文字列=プリミティブで memo 安全)。
+  //   rowClassName=getRowClassName の解決結果(親で算出)。bodyCellClassName / bodyRowClassName
+  //   =classNames.bodyCell / .bodyRow スロット。
+  rowClassName?: string;
+  bodyCellClassName?: string;
+  bodyRowClassName?: string;
 };
 
 function GridBodyRowInner<T>({
@@ -141,11 +149,15 @@ function GridBodyRowInner<T>({
   onCellPointerEnter,
   onCellDoubleClick,
   renderCellContent,
+  rowClassName,
+  bodyCellClassName,
+  bodyRowClassName,
 }: GridBodyRowProps<T>) {
   return (
     <div
       data-pane={pane}
       data-row-index={rowIndex}
+      className={cx('ssg-body-row', rowClassName, bodyRowClassName)}
       style={{
         position: 'absolute',
         top: 0,
@@ -222,10 +234,44 @@ function GridBodyRowInner<T>({
         //   uniform(autoHeight=false)では常に false で、従来どおり固定高 + 中央寄せになります。
         const isAutoHeightCell = autoHeight && column.autoHeight === true;
 
+        // 追加(UI CSS移行): セルの className を合成します。基底(.ssg-body-cell)+ 状態修飾子
+        //   (autoheight / readonly / row-hovered)+ 条件付き(行=rowClassName / 列=cellClassName)
+        //   + スロット(bodyCellClassName)。状態系は @layer ssg-base なので、条件付き / スロットの
+        //   クラスが特異度を気にせず背景等を上書きできます。列 cellClassName が関数のときだけ
+        //   値解決(getCellValue)します(未指定列は無コスト)。
+        let conditionalCellClass: string | undefined;
+        const columnCellClassName = column.cellClassName;
+        if (columnCellClassName) {
+          conditionalCellClass =
+            typeof columnCellClassName === 'function'
+              ? columnCellClassName({
+                  row,
+                  rowIndex,
+                  colIndex,
+                  value: getCellValue(row, column),
+                  column,
+                  isActive,
+                  isSelected,
+                  isEditing,
+                  readOnly: readOnlyCell,
+                })
+              : columnCellClassName;
+        }
+        const cellClassName = cx(
+          'ssg-body-cell',
+          isAutoHeightCell && 'ssg-body-cell--autoheight',
+          readOnlyCell && !isSelected && 'ssg-body-cell--readonly',
+          isRowHovered && 'ssg-body-cell--row-hovered',
+          rowClassName,
+          conditionalCellClass,
+          bodyCellClassName,
+        );
+
         return (
           <div
             key={`${String(rowKey)}-${column.key}`}
             data-autoheight-cell={isAutoHeightCell ? '' : undefined}
+            className={cellClassName}
             onPointerDown={(event) =>
               onCellPointerDown({ row: rowIndex, col: colIndex }, event)
             }
@@ -251,34 +297,8 @@ function GridBodyRowInner<T>({
               //   固定され、列幅拡大等で内容が減っても測定が min-height で下げ止まり行が縮みませんでした。
               //   固定下限にすることでセルが内容まで縮み、再測定で小さい値が反映されて行が shrink します。
               ...(isAutoHeightCell
-                ? {
-                    minHeight: autoHeightMinHeight,
-                    alignItems: 'flex-start',
-                    whiteSpace: 'normal',
-                    wordBreak: 'break-word',
-                  }
-                : {
-                    height: rowHeight,
-                    alignItems: 'center',
-                    whiteSpace: 'nowrap',
-                    overflow: 'hidden',
-                  }),
-              boxSizing: 'border-box',
-              display: 'flex',
-              padding: '0 10px',
-              borderRight: '1px solid #f1f5f9',
-              borderBottom: '1px solid #e5e7eb',
-              backgroundColor: readOnlyCell && !isSelected
-                ? isRowHovered
-                  ? '#eef2f7'
-                  : '#f8fafc'
-                : isRowHovered
-                  ? '#f1f5f9'
-                  : '#ffffff',
-              color: readOnlyCell ? '#64748b' : '#0f172a',
-              cursor: 'default',
-              userSelect: 'none',
-              outline: 'none',
+                ? { minHeight: autoHeightMinHeight }
+                : { height: rowHeight }),
               zIndex: isActive ? 3 : 1,
             }}
           >
@@ -333,6 +353,9 @@ type GridBodySkeletonRowProps<T> = {
     cell: CellCoord,
     event: PointerEvent<HTMLDivElement>,
   ) => void;
+  // 追加(UI CSS移行): 本体スロット(skeleton も同じ .ssg-body-cell / .ssg-body-row を使うため)。
+  bodyCellClassName?: string;
+  bodyRowClassName?: string;
 };
 
 // プレースホルダーバーの幅を列ごとに少し変えて機械的な均一さを避けます(列 index 駆動で
@@ -354,12 +377,15 @@ function GridBodySkeletonRowInner<T>({
   onRowHeaderPointerLeave,
   onCellPointerDown,
   onCellPointerEnter,
+  bodyCellClassName,
+  bodyRowClassName,
 }: GridBodySkeletonRowProps<T>) {
   return (
     <div
       data-pane={pane}
       data-row-index={rowIndex}
       data-skeleton-row=""
+      className={cx('ssg-body-row', bodyRowClassName)}
       style={{
         position: 'absolute',
         top: 0,
@@ -404,6 +430,11 @@ function GridBodySkeletonRowInner<T>({
         return (
           <div
             key={`skeleton-${pane}-${colIndex}`}
+            className={cx(
+              'ssg-body-cell',
+              isRowHovered && 'ssg-body-cell--row-hovered',
+              bodyCellClassName,
+            )}
             onPointerDown={(event) =>
               onCellPointerDown({ row: rowIndex, col: colIndex }, event)
             }
@@ -417,16 +448,6 @@ function GridBodySkeletonRowInner<T>({
               width: size,
               minWidth: size,
               height: rowHeight,
-              boxSizing: 'border-box',
-              display: 'flex',
-              alignItems: 'center',
-              padding: '0 10px',
-              borderRight: '1px solid #f1f5f9',
-              borderBottom: '1px solid #e5e7eb',
-              backgroundColor: isRowHovered ? '#f1f5f9' : '#ffffff',
-              cursor: 'default',
-              userSelect: 'none',
-              outline: 'none',
               zIndex: 1,
             }}
           >
@@ -508,6 +529,11 @@ type GridBodyLayerProps<T> = {
     colIndex: number,
     cellState: CellRenderState,
   ) => ReactNode;
+  // 追加(UI CSS移行): 条件付き行スタイル + 本体スロット。getRowClassName は本層(毎レンダー)で
+  //   行ごとに解決し、結果文字列を GridBodyRow へ渡します(memo 安全)。
+  getRowClassName?: (row: T, rowIndex: number) => string | undefined;
+  bodyCellClassName?: string;
+  bodyRowClassName?: string;
 };
 
 // 変更(A-1): 本体は「仮想行を並べて GridBodyRow(memo) に委譲するだけ」の薄い層になりました。
@@ -542,6 +568,9 @@ export function GridBodyLayer<T>({
   onCellPointerEnter,
   onCellDoubleClick,
   renderCellContent,
+  getRowClassName,
+  bodyCellClassName,
+  bodyRowClassName,
 }: GridBodyLayerProps<T>) {
   return (
     <>
@@ -592,6 +621,8 @@ export function GridBodyLayer<T>({
               onRowHeaderPointerLeave={onRowHeaderPointerLeave}
               onCellPointerDown={onCellPointerDown}
               onCellPointerEnter={onCellPointerEnter}
+              bodyCellClassName={bodyCellClassName}
+              bodyRowClassName={bodyRowClassName}
             />
           );
         }
@@ -626,6 +657,11 @@ export function GridBodyLayer<T>({
         const editingColInRow =
           editingCell && editingCell.row === rowIndex ? editingCell.col : -1;
 
+        // 追加(UI CSS移行): 行ごとの条件付き className を本層(毎レンダー)で解決し、結果文字列を
+        //   memo 済み GridBodyRow へ渡します(関数を直接渡すと参照不安定で memo が壊れるため、
+        //   文字列へ解決してから渡すのが肝です)。
+        const rowClassName = getRowClassName?.(row, rowIndex);
+
         return (
           <GridBodyRow
             key={String(rowKey)}
@@ -657,6 +693,9 @@ export function GridBodyLayer<T>({
             onCellPointerEnter={onCellPointerEnter}
             onCellDoubleClick={onCellDoubleClick}
             renderCellContent={renderCellContent}
+            rowClassName={rowClassName}
+            bodyCellClassName={bodyCellClassName}
+            bodyRowClassName={bodyRowClassName}
           />
         );
       })}

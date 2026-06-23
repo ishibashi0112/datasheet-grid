@@ -215,6 +215,21 @@ export type CellRenderContext<T> = {
   setValue: (value: unknown) => void;
 };
 
+// 追加(UI CSS移行): 条件付きセル className(GridColumn.cellClassName)の関数版へ渡す
+//   コンテキストです。CellRenderContext から setValue を除いた読み取り専用版で、
+//   className 算出に副作用(setValue)は不要なため値解決(getCellValue)のみを伴います。
+export type CellStyleContext<T> = {
+  row: T;
+  rowIndex: number;
+  colIndex: number;
+  value: unknown;
+  column: GridColumn<T>;
+  isActive: boolean;
+  isSelected: boolean;
+  isEditing: boolean;
+  readOnly: boolean;
+};
+
 // 追加(11-A): GridBodyRow がセルごとに算出し、renderCellContent へ引き渡す
 //             セル状態のスナップショットです。
 // 変更理由: 旧実装では renderCellContent(SpreadsheetGrid 側) が uiState から
@@ -260,6 +275,11 @@ export type GridColumn<T> = {
   getValue?: (row: T) => unknown;
   setValue?: (row: T, value: unknown) => T;
   renderCell?: (ctx: CellRenderContext<T>) => ReactNode;
+  // 追加(UI CSS移行): セルへ付与する追加 className(条件付きスタイル)。文字列 or 関数。
+  //   関数版は CellStyleContext を受け取り、値や状態に応じてクラスを返せます(例: Tailwind)。
+  //   基底クラス(.ssg-body-cell)は @layer ssg-base のため、ここで返したクラスが特異度を
+  //   気にせず背景等を上書きできます(選択 / アクティブは別オーバーレイなので共存します)。
+  cellClassName?: string | ((ctx: CellStyleContext<T>) => string | undefined);
   renderHeader?: (ctx: HeaderRenderContext<T>) => ReactNode;
   // 変更(12-A): 'set' を追加します。AG Grid の Set Filter 相当
   //             (チェックボックス一覧 + 検索 + Select All)の UI になります。
@@ -447,4 +467,8 @@ export type SpreadsheetGridProps<T> = {
   className?: string;
   // 追加(UI CSS移行): パーツ別の追加 className スロット(詳細は GridClassNames)。
   classNames?: GridClassNames;
+  // 追加(UI CSS移行): 行ごとの追加 className を返すコールバック(条件付き行スタイル)。
+  //   返り値は行コンテナと各データセルへ付与され、Tailwind 等での行ハイライトに使えます。
+  //   (注記: 行ヘッダー「#」セルはヘッダー系スタイルと共有のため現状この対象外です。)
+  getRowClassName?: (row: T, rowIndex: number) => string | undefined;
 };

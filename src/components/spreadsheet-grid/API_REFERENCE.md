@@ -39,6 +39,8 @@
 | `renderTopBar` | `(ctx: SpreadsheetGridSlotContext<T>) => ReactNode` | 内蔵トップバー | 上部バーの差し替え。 |
 | `renderBottomBar` | `(ctx: SpreadsheetGridSlotContext<T>) => ReactNode` | 非表示 | 下部バーの差し替え。 |
 | `className` | `string` | — | ルート要素の class。 |
+| `classNames` | `GridClassNames` | — | パーツ別の追加 class スロット。現状 `root` / `iconButton` / `bodyCell` / `bodyRow` が配線済み(他は順次)。基底 class は `@layer ssg-base` のため Tailwind 等の未レイヤー上書きが効く。 |
+| `getRowClassName` | `(row: T, rowIndex: number) => string \| undefined` | — | 行ごとの追加 class。行コンテナ + 各データセルに付与され、Tailwind 等での行ハイライトに使える。行ヘッダー「#」セルは現状対象外。 |
 
 ## GridColumn props (`GridColumn<T>`)
 
@@ -57,6 +59,7 @@
 | `getValue` | `(row: T) => unknown` | `row[key]` | 値アクセサ。 |
 | `setValue` | `(row: T, value: unknown) => T` | — | 値ライター(新しい行を返す)。 |
 | `renderCell` | `(ctx: CellRenderContext<T>) => ReactNode` | プレーン `<span>` | カスタムセル描画。 |
+| `cellClassName` | `string \| ((ctx: CellStyleContext<T>) => string \| undefined)` | — | セルへ付与する追加 class(条件付きスタイル)。関数版は値 / 状態に応じて class を返せる。基底 `.ssg-body-cell` は `@layer` のため上書きが効く。 |
 | `renderHeader` | `(ctx: HeaderRenderContext<T>) => ReactNode` | — | カスタムヘッダー描画。 |
 | `filterType` | `'text' \| 'number' \| 'date' \| 'select' \| 'set' \| 'custom'` | — | フィルター UI の種別。 |
 | `filterOptions` | `GridSelectFilterOption[]` | rows から自動収集 | select / set の候補。 |

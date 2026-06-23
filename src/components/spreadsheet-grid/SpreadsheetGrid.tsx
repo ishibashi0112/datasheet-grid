@@ -263,6 +263,8 @@ export function SpreadsheetGrid<T extends object>({
   className,
   // 追加(UI CSS移行): パーツ別の追加 className スロット。
   classNames,
+  // 追加(UI CSS移行): 行ごとの条件付き className。
+  getRowClassName,
 }: SpreadsheetGridProps<T>) {
   // ── refs ──────────────────────────────────────────────
   const gridRootRef = useRef<HTMLDivElement | null>(null);
@@ -3099,6 +3101,9 @@ export function SpreadsheetGrid<T extends object>({
                   onCellPointerEnter={handleCellPointerEnter}
                   onCellDoubleClick={handleCellDoubleClickWithController}
                   renderCellContent={renderCellContent}
+                  getRowClassName={getRowClassName}
+                  bodyCellClassName={classNames?.bodyCell}
+                  bodyRowClassName={classNames?.bodyRow}
                 />
                 </div>
               </div>
@@ -3231,6 +3236,9 @@ export function SpreadsheetGrid<T extends object>({
                   onCellPointerEnter={handleCellPointerEnter}
                   onCellDoubleClick={handleCellDoubleClickWithController}
                   renderCellContent={renderCellContent}
+                  getRowClassName={getRowClassName}
+                  bodyCellClassName={classNames?.bodyCell}
+                  bodyRowClassName={classNames?.bodyRow}
                 />
               </div>
 
@@ -3356,6 +3364,9 @@ export function SpreadsheetGrid<T extends object>({
                   onCellPointerEnter={handleCellPointerEnter}
                   onCellDoubleClick={handleCellDoubleClickWithController}
                   renderCellContent={renderCellContent}
+                  getRowClassName={getRowClassName}
+                  bodyCellClassName={classNames?.bodyCell}
+                  bodyRowClassName={classNames?.bodyRow}
                 />
                 </div>
               </div>

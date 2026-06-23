@@ -239,6 +239,8 @@ const createInitialColumns = (
       key: 'status',
       title: '状態',
       width: 120,
+      // 追加(条件付きスタイル デモ): 値が「保留」のセルだけ赤字にします(GridColumn.cellClassName)。
+      cellClassName: (ctx) => (ctx.value === '保留' ? 'demo-cell-hold' : undefined),
       // 変更(12-A): select → set へ移行します。
       filterType: 'set',
       // 追加: set 候補を固定定義します。
@@ -465,6 +467,11 @@ function App() {
         rowHeaderWidth={56}
         enableRangeSelection
         enableGlobalFilter
+        // 追加(条件付きスタイル デモ): 「保留」行を薄オレンジでハイライトします(getRowClassName)。
+        //   返り値の class は行コンテナ + 各データセルに付与されます(# 行ヘッダーセルは現状対象外)。
+        getRowClassName={(row) =>
+          row.status === '保留' ? 'demo-row-hold' : undefined
+        }
         // 追加(10-E): frozen columns は列定義の pinned: 'left' で有効化済みです。
         //            （createInitialColumns の partNo / partName を参照）
         canEditCell={(rowIndex, _colIndex, row, column) => {

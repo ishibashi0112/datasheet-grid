@@ -23,6 +23,12 @@
     --ssg-icon-active-bg: #e3e9f5;
     --ssg-icon-active-bg-hover: #d4ddf0;
     --ssg-icon-active-border: #c7d3ea;
+    /* 本体セル */
+    --ssg-cell-bg: #ffffff;
+    --ssg-cell-text: #0f172a;
+    --ssg-readonly-bg: #f8fafc;
+    --ssg-readonly-text: #64748b;
+    --ssg-readonly-hover-bg: #eef2f7;
     /* 寸法トークン */
     --ssg-radius: 8px;
     --ssg-icon-btn-size: 22px;
@@ -61,5 +67,45 @@
   .ssg-icon-btn--active:hover {
     background-color: var(--ssg-icon-active-bg-hover);
     color: var(--ssg-accent);
+  }
+
+  /* 本体セル(データ行のセル)。座標 / 幅 / 高さ / zIndex はインライン(動的)。 */
+  .ssg-body-cell {
+    box-sizing: border-box;
+    display: flex;
+    align-items: center;
+    padding: 0 10px;
+    border-right: 1px solid var(--ssg-line);
+    border-bottom: 1px solid var(--ssg-line-strong);
+    background-color: var(--ssg-cell-bg);
+    color: var(--ssg-cell-text);
+    white-space: nowrap;
+    overflow: hidden;
+    cursor: default;
+    user-select: none;
+    outline: none;
+  }
+
+  /* auto-height 駆動セル: 内容駆動高さ(下限はインライン min-height)で折り返し表示。 */
+  .ssg-body-cell--autoheight {
+    align-items: flex-start;
+    white-space: normal;
+    word-break: break-word;
+    overflow: visible;
+  }
+
+  /* 行ホバー(hoveredRowIndex 由来。3 ペイン横断のため :hover では実装不可)。 */
+  .ssg-body-cell--row-hovered {
+    background-color: var(--ssg-row-hover-bg);
+  }
+
+  /* 読み取り専用セル(選択時は通常背景へ戻し、選択塗りを素直に見せる)。 */
+  .ssg-body-cell--readonly {
+    background-color: var(--ssg-readonly-bg);
+    color: var(--ssg-readonly-text);
+  }
+
+  .ssg-body-cell--readonly.ssg-body-cell--row-hovered {
+    background-color: var(--ssg-readonly-hover-bg);
   }
 }
