@@ -297,4 +297,744 @@
     line-height: 1;
     white-space: nowrap;
   }
+
+  /* ── ポップオーバー/パネル共通 ── */
+  /* ポータルで body 直下に出るため、トークン(.ssg-root スコープ)は届かない。
+     したがってポップオーバー系はリテラル色で定義する(クラス自体は未レイヤー CSS で上書き可能)。
+     アクセントは意図的にグリッド(#3461c9)より明るい #2563eb を用いる。 */
+  .ssg-popover {
+    position: fixed;
+    box-sizing: border-box;
+    display: flex;
+    flex-direction: column;
+    padding: 12px;
+    border: 1px solid #cbd5e1;
+    border-radius: 12px;
+    background-color: #ffffff;
+    box-shadow: 0 12px 28px rgba(15, 23, 42, 0.16);
+    z-index: 1000;
+  }
+
+  .ssg-popover-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding-bottom: 8px;
+    margin-bottom: 8px;
+    border-bottom: 1px solid #e2e8f0;
+  }
+
+  .ssg-popover-title {
+    font-size: 13px;
+    font-weight: 700;
+    color: #1e293b;
+    user-select: none;
+  }
+
+  .ssg-popover-close {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    border: none;
+    border-radius: 6px;
+    background-color: transparent;
+    color: #64748b;
+    cursor: pointer;
+    font-size: 16px;
+    line-height: 1;
+  }
+  .ssg-popover-close:hover {
+    background-color: #f1f5f9;
+  }
+
+  .ssg-popover-footer {
+    padding-top: 8px;
+    margin-top: 8px;
+    border-top: 1px solid #e2e8f0;
+    display: flex;
+    gap: 8px;
+  }
+
+  /* ── 並び替え管理パネル(SortManagementPanel) ── */
+  .ssg-sort-panel {
+    max-height: 420px;
+  }
+
+  .ssg-sort-list {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    margin: 0 -4px;
+    padding: 0 4px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .ssg-sort-empty {
+    font-size: 12px;
+    color: #94a3b8;
+    padding: 10px 4px;
+    user-select: none;
+  }
+
+  /* レベル行。ドロップ前線インジケータ / ドラッグ中は修飾子で表現。 */
+  .ssg-sort-level {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    border-top: 2px solid transparent;
+    opacity: 1;
+  }
+  .ssg-sort-level--drop-before {
+    border-top-color: #2563eb;
+  }
+  .ssg-sort-level--dragging {
+    opacity: 0.4;
+  }
+
+  /* ⠿ ドラッグハンドル。hover 背景は draggable(=未 disabled)のときのみ。 */
+  .ssg-sort-handle {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 auto;
+    width: 16px;
+    height: 26px;
+    border-radius: 6px;
+    cursor: grab;
+    touch-action: none;
+  }
+  .ssg-sort-handle--dragging {
+    cursor: grabbing;
+  }
+  .ssg-sort-handle--disabled {
+    cursor: default;
+  }
+  .ssg-sort-handle:not(.ssg-sort-handle--disabled):hover {
+    background-color: #f1f5f9;
+  }
+
+  .ssg-sort-badge {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 18px;
+    border-radius: 9px;
+    background-color: #eff6ff;
+    color: #2563eb;
+    font-size: 11px;
+    font-weight: 700;
+    user-select: none;
+  }
+
+  .ssg-sort-select {
+    flex: 1;
+    min-width: 0;
+    box-sizing: border-box;
+    padding: 5px 6px;
+    border: 1px solid #cbd5e1;
+    border-radius: 6px;
+    font-size: 13px;
+    color: #334155;
+    background-color: #ffffff;
+    cursor: pointer;
+  }
+  .ssg-sort-select:disabled {
+    cursor: default;
+  }
+
+  /* 方向セグメント(昇順 / 降順)。active は青で塗り、disabled はグレー文字。 */
+  .ssg-sort-dir-group {
+    flex: 0 0 auto;
+    display: flex;
+  }
+  .ssg-sort-dir-btn {
+    flex: 0 0 auto;
+    box-sizing: border-box;
+    padding: 4px 9px;
+    border: 1px solid #cbd5e1;
+    background-color: #ffffff;
+    color: #475569;
+    font-size: 12px;
+    line-height: 1.4;
+    cursor: pointer;
+  }
+  .ssg-sort-dir-group > .ssg-sort-dir-btn:first-child {
+    border-top-left-radius: 6px;
+    border-bottom-left-radius: 6px;
+    border-right: none;
+  }
+  .ssg-sort-dir-group > .ssg-sort-dir-btn:last-child {
+    border-top-right-radius: 6px;
+    border-bottom-right-radius: 6px;
+  }
+  .ssg-sort-dir-btn--active {
+    border-color: #2563eb;
+    background-color: #2563eb;
+    color: #ffffff;
+  }
+  .ssg-sort-dir-btn:disabled {
+    color: #cbd5e1;
+    cursor: default;
+  }
+
+  .ssg-sort-delete {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 26px;
+    height: 26px;
+    border: none;
+    border-radius: 6px;
+    background-color: transparent;
+    color: #64748b;
+    cursor: pointer;
+    font-size: 15px;
+    line-height: 1;
+  }
+  .ssg-sort-delete:disabled {
+    color: #cbd5e1;
+    cursor: default;
+  }
+  .ssg-sort-delete:not(:disabled):hover {
+    background-color: #fef2f2;
+    color: #dc2626;
+  }
+
+  .ssg-sort-drop-end {
+    height: 0;
+    border-top: 2px solid #2563eb;
+  }
+
+  /* フッターボタン(基準を追加 / すべてクリア)。 */
+  .ssg-sort-footer-btn {
+    box-sizing: border-box;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    background-color: transparent;
+    color: #334155;
+    cursor: pointer;
+    font-size: 13px;
+    text-align: center;
+    user-select: none;
+  }
+  .ssg-sort-footer-btn--add {
+    flex: 1;
+    padding: 7px 8px;
+  }
+  .ssg-sort-footer-btn--clear {
+    flex: 0 0 auto;
+    padding: 7px 12px;
+  }
+  .ssg-sort-footer-btn:disabled {
+    color: #cbd5e1;
+    cursor: default;
+  }
+  .ssg-sort-footer-btn:not(:disabled):hover {
+    background-color: #f1f5f9;
+  }
+
+  .ssg-sort-note {
+    font-size: 11px;
+    color: #94a3b8;
+    margin-top: 8px;
+    user-select: none;
+  }
+
+  /* ── 列の表示パネル(ColumnChooserPanel) ── */
+  .ssg-chooser-panel {
+    max-height: 420px;
+  }
+
+  .ssg-chooser-search-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 8px;
+  }
+
+  /* 全選択チェックボックスのボタン枠。 */
+  .ssg-chooser-master-btn {
+    display: flex;
+    align-items: center;
+    border: none;
+    background: transparent;
+    padding: 0;
+    cursor: pointer;
+  }
+  .ssg-chooser-master-btn:disabled {
+    cursor: default;
+  }
+
+  .ssg-chooser-search-field {
+    position: relative;
+    flex: 1;
+    min-width: 0;
+  }
+  .ssg-chooser-search-icon {
+    position: absolute;
+    left: 9px;
+    top: 50%;
+    transform: translateY(-50%);
+    color: #94a3b8;
+    font-size: 13px;
+    line-height: 1;
+    pointer-events: none;
+  }
+  .ssg-chooser-search-input {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 7px 10px 7px 26px;
+    border: 1px solid #cbd5e1;
+    border-radius: 8px;
+    font-size: 13px;
+    color: #334155;
+    outline: none;
+  }
+
+  /* 列一覧(スクロール)。セクション側でレイアウトするため flex は付けない。 */
+  .ssg-chooser-list {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    margin: 0 -4px;
+    padding: 0 4px;
+  }
+
+  .ssg-chooser-empty {
+    font-size: 12px;
+    color: #94a3b8;
+    padding: 10px 4px;
+    user-select: none;
+  }
+
+  .ssg-chooser-section-heading {
+    font-size: 11px;
+    font-weight: 700;
+    color: #94a3b8;
+    letter-spacing: 0.4px;
+    padding: 8px 4px 4px;
+    user-select: none;
+  }
+
+  /* 列行。ドロップ前線 / ドラッグ中は修飾子で。 */
+  .ssg-chooser-row {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    border-top: 2px solid transparent;
+    opacity: 1;
+  }
+  .ssg-chooser-row--drop-before {
+    border-top-color: #2563eb;
+  }
+  .ssg-chooser-row--dragging {
+    opacity: 0.4;
+  }
+
+  /* ⠿ ドラッグハンドル。hover は draggable のときのみ。 */
+  .ssg-chooser-handle {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 auto;
+    width: 18px;
+    height: 28px;
+    border-radius: 6px;
+    cursor: grab;
+    touch-action: none;
+  }
+  .ssg-chooser-handle--dragging {
+    cursor: grabbing;
+  }
+  .ssg-chooser-handle--disabled {
+    cursor: default;
+  }
+  .ssg-chooser-handle:not(.ssg-chooser-handle--disabled):hover {
+    background-color: #f1f5f9;
+  }
+
+  /* 表示/非表示トグル(チェックボックス + ラベル)。 */
+  .ssg-chooser-toggle {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex: 1;
+    min-width: 0;
+    box-sizing: border-box;
+    padding: 7px 8px;
+    border: none;
+    border-radius: 8px;
+    background-color: transparent;
+    cursor: pointer;
+    text-align: left;
+  }
+  .ssg-chooser-toggle:disabled {
+    cursor: default;
+  }
+  .ssg-chooser-toggle:not(:disabled):hover {
+    background-color: #f1f5f9;
+  }
+
+  .ssg-chooser-label {
+    min-width: 0;
+    flex: 1;
+    font-size: 13px;
+    color: #334155;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .ssg-chooser-label--muted {
+    color: #94a3b8;
+  }
+
+  .ssg-chooser-drop-end {
+    height: 0;
+    border-top: 2px solid #2563eb;
+  }
+
+  /* フッター(リセットボタン + 注記)。sort と異なり縦積み。 */
+  .ssg-chooser-footer {
+    padding-top: 8px;
+    margin-top: 8px;
+    border-top: 1px solid #e2e8f0;
+  }
+  .ssg-chooser-reset-btn {
+    display: block;
+    width: 100%;
+    box-sizing: border-box;
+    padding: 7px 8px;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    background-color: transparent;
+    color: #334155;
+    cursor: pointer;
+    font-size: 13px;
+    text-align: center;
+    user-select: none;
+  }
+  .ssg-chooser-reset-btn:disabled {
+    color: #cbd5e1;
+    cursor: default;
+  }
+  .ssg-chooser-reset-btn:not(:disabled):hover {
+    background-color: #f1f5f9;
+  }
+
+  .ssg-chooser-note {
+    font-size: 11px;
+    color: #94a3b8;
+    margin-top: 8px;
+    user-select: none;
+  }
+
+  /* ── 3状態チェックボックス(CheckBox) ── */
+  .ssg-checkbox {
+    width: 18px;
+    height: 18px;
+    flex: 0 0 auto;
+    border-radius: 5px;
+    border: 1.5px solid #94a3b8;
+    background-color: #ffffff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background-color 80ms ease, border-color 80ms ease;
+  }
+  .ssg-checkbox--filled {
+    border-color: #2563eb;
+    background-color: #2563eb;
+  }
+  .ssg-checkbox--disabled {
+    border-color: #cbd5e1;
+    background-color: #f1f5f9;
+  }
+  .ssg-checkbox-dash {
+    width: 9px;
+    height: 2px;
+    border-radius: 1px;
+    background-color: #ffffff;
+  }
+
+  /* ── 列フィルター popover(ColumnFilterPopover) ── */
+  /* パネル(.ssg-popover)とは別の軽量フレーム(radius 10 / 影も控えめ)。 */
+  .ssg-filter-popover {
+    position: fixed;
+    box-sizing: border-box;
+    padding: 12px;
+    border: 1px solid #cbd5e1;
+    border-radius: 10px;
+    background-color: #ffffff;
+    box-shadow: 0 10px 24px rgba(15, 23, 42, 0.12);
+    z-index: 1000;
+  }
+
+  .ssg-filter-title {
+    font-size: 12px;
+    font-weight: 700;
+    color: #334155;
+    margin-bottom: 8px;
+  }
+
+  /* 種別ヒント / メタ情報行。--ellipsis は省略表示を足す。 */
+  .ssg-filter-hint {
+    font-size: 11px;
+    color: #64748b;
+    margin-bottom: 8px;
+  }
+  .ssg-filter-meta {
+    font-size: 11px;
+    color: #64748b;
+    margin-bottom: 10px;
+  }
+  .ssg-filter-meta--ellipsis {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .ssg-filter-collecting {
+    padding: 24px;
+    text-align: center;
+    font-size: 12px;
+    color: #64748b;
+  }
+
+  /* テキスト/数値入力 + select。 */
+  .ssg-filter-input {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 8px 10px;
+    border: 1px solid #cbd5e1;
+    border-radius: 8px;
+    outline: none;
+    margin-bottom: 8px;
+  }
+  .ssg-filter-select {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 8px 10px;
+    border: 1px solid #cbd5e1;
+    border-radius: 8px;
+    outline: none;
+    margin-bottom: 8px;
+    background-color: #ffffff;
+  }
+
+  /* set フィルター: 全選択行 / 候補リスト / 行 / 件数。 */
+  .ssg-filter-selectall {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    height: 28px;
+    padding: 0 8px;
+    cursor: pointer;
+    font-size: 12px;
+    color: #334155;
+    border-bottom: 1px solid #e2e8f0;
+    user-select: none;
+  }
+  .ssg-filter-selectall-label {
+    font-weight: 600;
+  }
+  .ssg-filter-list {
+    height: 208px;
+    overflow-y: auto;
+    border: 1px solid #e2e8f0;
+    border-top: none;
+    border-radius: 0 0 8px 8px;
+    margin-bottom: 8px;
+  }
+  .ssg-filter-empty {
+    padding: 12px;
+    font-size: 12px;
+    color: #94a3b8;
+    text-align: center;
+  }
+  /* 仮想化スペーサ。高さ(getTotalSize)は inline で与える。 */
+  .ssg-filter-virt {
+    position: relative;
+    width: 100%;
+  }
+  /* 候補行。transform(translateY) と height は virtualItem を inline で与える。 */
+  .ssg-filter-option {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 0 8px;
+    box-sizing: border-box;
+    cursor: pointer;
+    font-size: 12px;
+    color: #334155;
+    user-select: none;
+  }
+  .ssg-filter-option-label {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  /* フッター(クリア / 適用・閉じる)。 */
+  .ssg-filter-footer {
+    display: flex;
+    gap: 8px;
+    justify-content: flex-end;
+  }
+  .ssg-filter-btn-secondary {
+    border: 1px solid #cbd5e1;
+    background-color: #ffffff;
+    color: #475569;
+    border-radius: 8px;
+    padding: 6px 10px;
+    cursor: pointer;
+    font-size: 12px;
+  }
+  .ssg-filter-btn-primary {
+    border: 1px solid #2563eb;
+    background-color: #2563eb;
+    color: #ffffff;
+    border-radius: 8px;
+    padding: 6px 10px;
+    cursor: pointer;
+    font-size: 12px;
+  }
+
+  /* ── 列メニュー popover(ColumnMenuPopover) ── */
+  /* ルート/サブメニュー共通のパネル枠(radius 10)。座標/zIndex は inline。 */
+  .ssg-menu-panel {
+    padding: 8px;
+    box-sizing: border-box;
+    border: 1px solid #cbd5e1;
+    border-radius: 10px;
+    background-color: #ffffff;
+    box-shadow: 0 10px 24px rgba(15, 23, 42, 0.12);
+  }
+
+  .ssg-menu-title {
+    font-size: 12px;
+    font-weight: 700;
+    color: #334155;
+    padding: 2px 8px 6px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    border-bottom: 1px solid #e2e8f0;
+    margin-bottom: 4px;
+    user-select: none;
+  }
+
+  /* メニュー項目。disabled(属性) / --disabled(aria 相当)で淡色、hover で淡背景、
+     --active(サブメニュー開)で淡背景を維持。 */
+  .ssg-menu-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    box-sizing: border-box;
+    padding: 7px 8px;
+    border: none;
+    border-radius: 8px;
+    background-color: transparent;
+    color: #334155;
+    font-size: 13px;
+    text-align: left;
+    cursor: pointer;
+  }
+  .ssg-menu-item:disabled,
+  .ssg-menu-item--disabled {
+    color: #94a3b8;
+    cursor: default;
+  }
+  .ssg-menu-item--active {
+    background-color: #f1f5f9;
+  }
+  .ssg-menu-item:not(:disabled):not(.ssg-menu-item--disabled):hover {
+    background-color: #f1f5f9;
+  }
+
+  .ssg-menu-submenu-anchor {
+    position: relative;
+  }
+
+  /* 左端 ✓ 列スペーサ / ソート方向アイコン / 固定 ✓ / ラベル / › キャレット。 */
+  .ssg-menu-icon {
+    width: 14px;
+    flex: 0 0 auto;
+    text-align: center;
+  }
+  .ssg-menu-sort-icon {
+    width: 14px;
+    flex: 0 0 auto;
+    text-align: center;
+    color: #94a3b8;
+    font-weight: 400;
+  }
+  .ssg-menu-sort-icon--active {
+    color: #2563eb;
+    font-weight: 700;
+  }
+  .ssg-menu-check {
+    width: 14px;
+    flex: 0 0 auto;
+    text-align: center;
+    color: #2563eb;
+    font-weight: 700;
+  }
+  .ssg-menu-check--hidden {
+    visibility: hidden;
+  }
+  .ssg-menu-label {
+    min-width: 0;
+    flex: 1;
+  }
+  .ssg-menu-label--sorted {
+    color: #1d4ed8;
+  }
+  .ssg-menu-caret {
+    flex: 0 0 auto;
+    color: #94a3b8;
+    font-size: 12px;
+    line-height: 1;
+  }
+
+  .ssg-menu-separator {
+    border-top: 1px solid #e2e8f0;
+    margin: 4px 0;
+  }
+  .ssg-menu-note {
+    font-size: 11px;
+    color: #94a3b8;
+    padding: 4px 8px 2px;
+    user-select: none;
+  }
+
+  /* フッター(閉じる)。 */
+  .ssg-menu-footer {
+    border-top: 1px solid #e2e8f0;
+    margin-top: 4px;
+    padding-top: 6px;
+    display: flex;
+    justify-content: flex-end;
+  }
+  .ssg-menu-close-btn {
+    border: 1px solid #cbd5e1;
+    background-color: #ffffff;
+    color: #475569;
+    border-radius: 8px;
+    padding: 5px 10px;
+    cursor: pointer;
+    font-size: 12px;
+  }
 }

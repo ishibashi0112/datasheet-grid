@@ -16,6 +16,7 @@
 //     レベル 2 件以上のときのみ可能です。
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { cx } from '../logic/cx';
 import type { CSSProperties, KeyboardEvent, PointerEvent, RefObject } from 'react';
 import type { GridSortEntry } from '../model/gridTypes';
 import type { SortManagementLayout } from '../hooks/useSortManagementController';
@@ -49,38 +50,6 @@ type SortManagementPanelProps = {
   onMove: (from: number, to: number) => void;
   onRequestClose: () => void;
 };
-
-const PANEL_MAX_HEIGHT = 420;
-
-const PANEL_STYLE: CSSProperties = {
-  position: 'fixed',
-  boxSizing: 'border-box',
-  display: 'flex',
-  flexDirection: 'column',
-  maxHeight: PANEL_MAX_HEIGHT,
-  padding: 12,
-  border: '1px solid #cbd5e1',
-  borderRadius: 12,
-  backgroundColor: '#ffffff',
-  boxShadow: '0 12px 28px rgba(15, 23, 42, 0.16)',
-  zIndex: 1000,
-};
-
-// 追加(MS-3-1): 方向セグメント(昇順 / 降順)1 ボタンの style です。
-const directionButtonStyle = (
-  active: boolean,
-  disabled: boolean,
-): CSSProperties => ({
-  flex: '0 0 auto',
-  boxSizing: 'border-box',
-  padding: '4px 9px',
-  border: `1px solid ${active ? '#2563eb' : '#cbd5e1'}`,
-  backgroundColor: active ? '#2563eb' : '#ffffff',
-  color: disabled ? '#cbd5e1' : active ? '#ffffff' : '#475569',
-  fontSize: 12,
-  lineHeight: 1.4,
-  cursor: disabled ? 'default' : 'pointer',
-});
 
 // 追加(MS-3-2): ⠿ ドラッグハンドルの見た目です(2×3 の点)。ColumnChooserPanel と同型。
 //   操作系(pointerdown / capture)は行側に配線し、ここは見た目のみを描画します。
@@ -244,7 +213,6 @@ export function SortManagementPanel({
   }
 
   const wrapperStyle: CSSProperties = {
-    ...PANEL_STYLE,
     top: layout.top,
     left: layout.left,
     width: layout.width,
@@ -271,84 +239,26 @@ export function SortManagementPanel({
       onContextMenu={(event) => {
         event.preventDefault();
       }}
+      className="ssg-popover ssg-sort-panel"
       style={wrapperStyle}
     >
       {/* ── ヘッダー: タイトル + × ── */}
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          gap: 8,
-          paddingBottom: 8,
-          marginBottom: 8,
-          borderBottom: '1px solid #e2e8f0',
-        }}
-      >
-        <span
-          style={{
-            fontSize: 13,
-            fontWeight: 700,
-            color: '#1e293b',
-            userSelect: 'none',
-          }}
-        >
-          並び替え
-        </span>
+      <div className="ssg-popover-header">
+        <span className="ssg-popover-title">並び替え</span>
         <button
           type="button"
           onClick={onRequestClose}
           aria-label="閉じる"
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            width: 24,
-            height: 24,
-            border: 'none',
-            borderRadius: 6,
-            backgroundColor: 'transparent',
-            color: '#64748b',
-            cursor: 'pointer',
-            fontSize: 16,
-            lineHeight: 1,
-          }}
-          onPointerEnter={(event) => {
-            event.currentTarget.style.backgroundColor = '#f1f5f9';
-          }}
-          onPointerLeave={(event) => {
-            event.currentTarget.style.backgroundColor = 'transparent';
-          }}
+          className="ssg-popover-close"
         >
           ×
         </button>
       </div>
 
       {/* ── レベル一覧(スクロール) ── */}
-      <div
-        ref={listRef}
-        style={{
-          flex: 1,
-          minHeight: 0,
-          overflowY: 'auto',
-          margin: '0 -4px',
-          padding: '0 4px',
-          display: 'flex',
-          flexDirection: 'column',
-          gap: 6,
-        }}
-      >
+      <div ref={listRef} className="ssg-sort-list">
         {entries.length === 0 ? (
-          <div
-            style={{
-              fontSize: 12,
-              color: '#94a3b8',
-              padding: '10px 4px',
-              userSelect: 'none',
-            }}
-          >
-            並び替えは設定されていません
-          </div>
+          <div className="ssg-sort-empty">並び替えは設定されていません</div>
         ) : (
           entries.map((entry, index) => {
             // この行の列セレクト候補: 自分の列 + 他レベルで未使用の列。
@@ -374,16 +284,11 @@ export function SortManagementPanel({
               <div
                 key={entry.columnKey}
                 data-sort-level=""
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 6,
-                  // ドロップ前線インジケータ(行の直前に挿入される位置のとき青線)。
-                  borderTop: showDropBefore
-                    ? '2px solid #2563eb'
-                    : '2px solid transparent',
-                  opacity: isDragging ? 0.4 : 1,
-                }}
+                className={cx(
+                  'ssg-sort-level',
+                  showDropBefore && 'ssg-sort-level--drop-before',
+                  isDragging && 'ssg-sort-level--dragging',
+                )}
               >
                 {/* ⠿ ドラッグハンドル(MS-3-2) */}
                 <span
@@ -402,51 +307,17 @@ export function SortManagementPanel({
                   onPointerMove={handleHandlePointerMove}
                   onPointerUp={handleHandlePointerUp}
                   onPointerCancel={handleHandlePointerCancel}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    flex: '0 0 auto',
-                    width: 16,
-                    height: 26,
-                    borderRadius: 6,
-                    cursor: !canDrag
-                      ? 'default'
-                      : isDragging
-                        ? 'grabbing'
-                        : 'grab',
-                    touchAction: 'none',
-                  }}
-                  onPointerEnter={(event) => {
-                    if (canDrag) {
-                      event.currentTarget.style.backgroundColor = '#f1f5f9';
-                    }
-                  }}
-                  onPointerLeave={(event) => {
-                    event.currentTarget.style.backgroundColor = 'transparent';
-                  }}
+                  className={cx(
+                    'ssg-sort-handle',
+                    !canDrag && 'ssg-sort-handle--disabled',
+                    isDragging && 'ssg-sort-handle--dragging',
+                  )}
                 >
                   <DragHandleGlyph disabled={!canDrag} />
                 </span>
 
                 {/* 優先度バッジ(1 始まり)。ヘッダーの優先順位番号と意味を揃えます。 */}
-                <span
-                  aria-hidden
-                  style={{
-                    flex: '0 0 auto',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    width: 18,
-                    height: 18,
-                    borderRadius: 9,
-                    backgroundColor: '#eff6ff',
-                    color: '#2563eb',
-                    fontSize: 11,
-                    fontWeight: 700,
-                    userSelect: 'none',
-                  }}
-                >
+                <span aria-hidden className="ssg-sort-badge">
                   {index + 1}
                 </span>
 
@@ -455,18 +326,7 @@ export function SortManagementPanel({
                   value={entry.columnKey}
                   disabled={!canSort}
                   onChange={(event) => onChangeColumn(index, event.target.value)}
-                  style={{
-                    flex: 1,
-                    minWidth: 0,
-                    boxSizing: 'border-box',
-                    padding: '5px 6px',
-                    border: '1px solid #cbd5e1',
-                    borderRadius: 6,
-                    fontSize: 13,
-                    color: '#334155',
-                    backgroundColor: '#ffffff',
-                    cursor: canSort ? 'pointer' : 'default',
-                  }}
+                  className="ssg-sort-select"
                 >
                   {resolvedOptions.map((column) => (
                     <option key={column.key} value={column.key}>
@@ -476,18 +336,16 @@ export function SortManagementPanel({
                 </select>
 
                 {/* 方向セグメント(昇順 / 降順) */}
-                <div style={{ flex: '0 0 auto', display: 'flex' }}>
+                <div className="ssg-sort-dir-group">
                   <button
                     type="button"
                     disabled={!canSort}
                     onClick={() => onChangeDirection(index, 'asc')}
                     title="昇順"
-                    style={{
-                      ...directionButtonStyle(entry.direction === 'asc', !canSort),
-                      borderTopLeftRadius: 6,
-                      borderBottomLeftRadius: 6,
-                      borderRight: 'none',
-                    }}
+                    className={cx(
+                      'ssg-sort-dir-btn',
+                      entry.direction === 'asc' && 'ssg-sort-dir-btn--active',
+                    )}
                   >
                     ↑ 昇順
                   </button>
@@ -496,11 +354,10 @@ export function SortManagementPanel({
                     disabled={!canSort}
                     onClick={() => onChangeDirection(index, 'desc')}
                     title="降順"
-                    style={{
-                      ...directionButtonStyle(entry.direction === 'desc', !canSort),
-                      borderTopRightRadius: 6,
-                      borderBottomRightRadius: 6,
-                    }}
+                    className={cx(
+                      'ssg-sort-dir-btn',
+                      entry.direction === 'desc' && 'ssg-sort-dir-btn--active',
+                    )}
                   >
                     ↓ 降順
                   </button>
@@ -513,31 +370,7 @@ export function SortManagementPanel({
                   onClick={() => onRemoveLevel(index)}
                   aria-label="このレベルを削除"
                   title="このレベルを削除"
-                  style={{
-                    flex: '0 0 auto',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    width: 26,
-                    height: 26,
-                    border: 'none',
-                    borderRadius: 6,
-                    backgroundColor: 'transparent',
-                    color: canSort ? '#64748b' : '#cbd5e1',
-                    cursor: canSort ? 'pointer' : 'default',
-                    fontSize: 15,
-                    lineHeight: 1,
-                  }}
-                  onPointerEnter={(event) => {
-                    if (canSort) {
-                      event.currentTarget.style.backgroundColor = '#fef2f2';
-                      event.currentTarget.style.color = '#dc2626';
-                    }
-                  }}
-                  onPointerLeave={(event) => {
-                    event.currentTarget.style.backgroundColor = 'transparent';
-                    event.currentTarget.style.color = canSort ? '#64748b' : '#cbd5e1';
-                  }}
+                  className="ssg-sort-delete"
                 >
                   ×
                 </button>
@@ -547,25 +380,12 @@ export function SortManagementPanel({
         )}
         {/* 末尾へのドロップインジケータ(MS-3-2): 最後の行の後ろに挿入される位置のとき。 */}
         {draggingIndex !== null && dropIndex === entries.length && (
-          <div
-            style={{
-              height: 0,
-              borderTop: '2px solid #2563eb',
-            }}
-          />
+          <div className="ssg-sort-drop-end" />
         )}
       </div>
 
       {/* ── フッター: 基準を追加 / すべてクリア ── */}
-      <div
-        style={{
-          paddingTop: 8,
-          marginTop: 8,
-          borderTop: '1px solid #e2e8f0',
-          display: 'flex',
-          gap: 8,
-        }}
-      >
+      <div className="ssg-popover-footer">
         <button
           type="button"
           disabled={!canAddLevel}
@@ -582,27 +402,7 @@ export function SortManagementPanel({
                 ? 'すべての列が並び替えに使われています'
                 : '並び替えの基準を追加します'
           }
-          style={{
-            flex: 1,
-            boxSizing: 'border-box',
-            padding: '7px 8px',
-            border: '1px solid #e2e8f0',
-            borderRadius: 8,
-            backgroundColor: 'transparent',
-            color: canAddLevel ? '#334155' : '#cbd5e1',
-            cursor: canAddLevel ? 'pointer' : 'default',
-            fontSize: 13,
-            textAlign: 'center',
-            userSelect: 'none',
-          }}
-          onPointerEnter={(event) => {
-            if (canAddLevel) {
-              event.currentTarget.style.backgroundColor = '#f1f5f9';
-            }
-          }}
-          onPointerLeave={(event) => {
-            event.currentTarget.style.backgroundColor = 'transparent';
-          }}
+          className="ssg-sort-footer-btn ssg-sort-footer-btn--add"
         >
           ＋ 基準を追加
         </button>
@@ -617,41 +417,14 @@ export function SortManagementPanel({
             onClearAll();
           }}
           title="すべての並び替えを解除します"
-          style={{
-            flex: '0 0 auto',
-            boxSizing: 'border-box',
-            padding: '7px 12px',
-            border: '1px solid #e2e8f0',
-            borderRadius: 8,
-            backgroundColor: 'transparent',
-            color: !canSort || entries.length === 0 ? '#cbd5e1' : '#334155',
-            cursor: !canSort || entries.length === 0 ? 'default' : 'pointer',
-            fontSize: 13,
-            textAlign: 'center',
-            userSelect: 'none',
-          }}
-          onPointerEnter={(event) => {
-            if (canSort && entries.length > 0) {
-              event.currentTarget.style.backgroundColor = '#f1f5f9';
-            }
-          }}
-          onPointerLeave={(event) => {
-            event.currentTarget.style.backgroundColor = 'transparent';
-          }}
+          className="ssg-sort-footer-btn ssg-sort-footer-btn--clear"
         >
           すべてクリア
         </button>
       </div>
 
       {!canSort && (
-        <div
-          style={{
-            fontSize: 11,
-            color: '#94a3b8',
-            marginTop: 8,
-            userSelect: 'none',
-          }}
-        >
+        <div className="ssg-sort-note">
           並び替えが無効のため編集できません
         </div>
       )}

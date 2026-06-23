@@ -14,6 +14,7 @@
 //             AG Grid の Reset Columns 相当を実行できるようにします。
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { cx } from '../logic/cx';
 import type {
   CSSProperties,
   KeyboardEvent,
@@ -92,36 +93,6 @@ type ColumnMenuPopoverProps = {
   onRequestClose: () => void;
 };
 
-// 追加(13-A2): ルートメニュー / サブメニューで共有するパネルの見た目です。
-const PANEL_BASE_STYLE: CSSProperties = {
-  padding: 8,
-  boxSizing: 'border-box',
-  border: '1px solid #cbd5e1',
-  borderRadius: 10,
-  backgroundColor: '#ffffff',
-  boxShadow: '0 10px 24px rgba(15, 23, 42, 0.12)',
-};
-
-// 追加(13-A): メニュー項目ボタンの style です。disabled / hover(highlight) で出し分けます。
-const getMenuItemStyle = (
-  disabled: boolean,
-  highlighted: boolean,
-): CSSProperties => ({
-  display: 'flex',
-  alignItems: 'center',
-  gap: 8,
-  width: '100%',
-  boxSizing: 'border-box',
-  padding: '7px 8px',
-  border: 'none',
-  borderRadius: 8,
-  backgroundColor: highlighted ? '#f1f5f9' : 'transparent',
-  color: disabled ? '#94a3b8' : '#334155',
-  fontSize: 13,
-  textAlign: 'left',
-  cursor: disabled ? 'default' : 'pointer',
-});
-
 export function ColumnMenuPopover({
   isOpen,
   title,
@@ -177,7 +148,6 @@ export function ColumnMenuPopover({
     top: layout.top,
     left: layout.left,
     width: layout.width,
-    ...PANEL_BASE_STYLE,
     zIndex: 1000,
   };
 
@@ -191,7 +161,6 @@ export function ColumnMenuPopover({
       ? { right: `calc(100% + ${SUBMENU_GAP}px)` }
       : { left: `calc(100% + ${SUBMENU_GAP}px)` }),
     width: SUBMENU_WIDTH,
-    ...PANEL_BASE_STYLE,
     zIndex: 1,
   };
 
@@ -216,24 +185,10 @@ export function ColumnMenuPopover({
         // 追加: メニュー上での右クリックはブラウザ標準メニューを出しません。
         event.preventDefault();
       }}
+      className="ssg-menu-panel"
       style={wrapperStyle}
     >
-      <div
-        style={{
-          fontSize: 12,
-          fontWeight: 700,
-          color: '#334155',
-          padding: '2px 8px 6px',
-          overflow: 'hidden',
-          textOverflow: 'ellipsis',
-          whiteSpace: 'nowrap',
-          borderBottom: '1px solid #e2e8f0',
-          marginBottom: 4,
-          userSelect: 'none',
-        }}
-      >
-        {title}
-      </div>
+      <div className="ssg-menu-title">{title}</div>
 
       {/* ── ルート項目: 昇順 / 降順で並び替え(13-B4) ── */}
       {/* 追加(13-B4): ヘッダーのソートボタンを廃止し、ソート操作をメニュー(と
@@ -241,45 +196,37 @@ export function ColumnMenuPopover({
           Sort Descending 相当のリーフ項目です。現在の方向に ✓ を出し、その方向を
           もう一度選ぶと解除します(解除判定は SpreadsheetGrid 側)。
           サブメニューを持たないリーフなので、hover で openSubmenuKey を null に戻し、
-          開いているカスケード(列の固定)を閉じます。hover ハイライトは他のリーフと
-          同じ DOM 直接書き換え方式です(state hover を避け、memo 影響を出しません)。 */}
+          開いているカスケード(列の固定)を閉じます。hover ハイライトは CSS :hover で
+          行います(state hover を避け、memo 影響を出しません)。 */}
       {canSort && (
         <>
           <button
             type="button"
-            onPointerEnter={(event) => {
+            onPointerEnter={() => {
               setOpenSubmenuKey(null);
-              event.currentTarget.style.backgroundColor = '#f1f5f9';
-            }}
-            onPointerLeave={(event) => {
-              event.currentTarget.style.backgroundColor = 'transparent';
             }}
             onClick={() => {
               onSortChange('asc');
             }}
-            style={getMenuItemStyle(false, false)}
+            className="ssg-menu-item"
           >
             {/* 注記: 14px 列は他項目の ✓ 列と左端を揃えます。
                 未適用時は方向アイコン(↑/↓)を、適用中は ✓ を出します。
                 ラベル自体が方向を示すため、適用中にアイコンが ✓ へ変わっても
                 意味は失われません。 */}
             <span
-              style={{
-                width: 14,
-                flex: '0 0 auto',
-                textAlign: 'center',
-                color: sortDirection === 'asc' ? '#2563eb' : '#94a3b8',
-                fontWeight: sortDirection === 'asc' ? 700 : 400,
-              }}
+              className={cx(
+                'ssg-menu-sort-icon',
+                sortDirection === 'asc' && 'ssg-menu-sort-icon--active',
+              )}
             >
               {sortDirection === 'asc' ? '✓' : '↑'}
             </span>
             <span
-              style={{
-                minWidth: 0,
-                flex: 1,
-                color: sortDirection === 'asc' ? '#1d4ed8' : undefined,
-              }}
+              className={cx(
+                'ssg-menu-label',
+                sortDirection === 'asc' && 'ssg-menu-label--sorted',
+              )}
             >
               昇順で並び替え
             </span>
@@ -287,35 +234,27 @@ export function ColumnMenuPopover({
 
           <button
             type="button"
-            onPointerEnter={(event) => {
+            onPointerEnter={() => {
               setOpenSubmenuKey(null);
-              event.currentTarget.style.backgroundColor = '#f1f5f9';
-            }}
-            onPointerLeave={(event) => {
-              event.currentTarget.style.backgroundColor = 'transparent';
             }}
             onClick={() => {
               onSortChange('desc');
             }}
-            style={getMenuItemStyle(false, false)}
+            className="ssg-menu-item"
           >
             <span
-              style={{
-                width: 14,
-                flex: '0 0 auto',
-                textAlign: 'center',
-                color: sortDirection === 'desc' ? '#2563eb' : '#94a3b8',
-                fontWeight: sortDirection === 'desc' ? 700 : 400,
-              }}
+              className={cx(
+                'ssg-menu-sort-icon',
+                sortDirection === 'desc' && 'ssg-menu-sort-icon--active',
+              )}
             >
               {sortDirection === 'desc' ? '✓' : '↓'}
             </span>
             <span
-              style={{
-                minWidth: 0,
-                flex: 1,
-                color: sortDirection === 'desc' ? '#1d4ed8' : undefined,
-              }}
+              className={cx(
+                'ssg-menu-label',
+                sortDirection === 'desc' && 'ssg-menu-label--sorted',
+              )}
             >
               降順で並び替え
             </span>
@@ -331,29 +270,20 @@ export function ColumnMenuPopover({
               (onOpenSortManager)が担います。 */}
           <button
             type="button"
-            onPointerEnter={(event) => {
+            onPointerEnter={() => {
               setOpenSubmenuKey(null);
-              event.currentTarget.style.backgroundColor = '#f1f5f9';
-            }}
-            onPointerLeave={(event) => {
-              event.currentTarget.style.backgroundColor = 'transparent';
             }}
             onClick={() => {
               onOpenSortManager();
             }}
-            style={getMenuItemStyle(false, false)}
+            className="ssg-menu-item"
           >
-            <span style={{ width: 14, flex: '0 0 auto' }} />
-            <span style={{ minWidth: 0, flex: 1 }}>並び替えを管理…</span>
+            <span className="ssg-menu-icon" />
+            <span className="ssg-menu-label">並び替えを管理…</span>
           </button>
 
           {/* 追加(13-B4): ソート群と以降(固定/幅/表示)の区切りです。 */}
-          <div
-            style={{
-              borderTop: '1px solid #e2e8f0',
-              margin: '4px 0',
-            }}
-          />
+          <div className="ssg-menu-separator" />
         </>
       )}
 
@@ -362,7 +292,7 @@ export function ColumnMenuPopover({
           パネル自体は overflow を持たないため、wrapper の外側(右隣 / 左隣)へ
           はみ出して表示されます。popoverRef(wrapper)の子孫なので、controller の
           outside-pointerdown 判定(contains)にもそのまま含まれます。 */}
-      <div style={{ position: 'relative' }}>
+      <div className="ssg-menu-submenu-anchor">
         <button
           type="button"
           onPointerEnter={() => {
@@ -376,26 +306,20 @@ export function ColumnMenuPopover({
               current === PIN_SUBMENU_KEY ? null : PIN_SUBMENU_KEY,
             );
           }}
-          style={getMenuItemStyle(false, isPinSubmenuOpen)}
+          className={cx(
+            'ssg-menu-item',
+            isPinSubmenuOpen && 'ssg-menu-item--active',
+          )}
         >
           {/* 注記: ✓ 列との左端揃えのため、サブメニュー項目と同じ幅のスペーサを置きます。*/}
-          <span style={{ width: 14, flex: '0 0 auto' }} />
-          <span style={{ minWidth: 0, flex: 1 }}>列の固定</span>
-          <span
-            style={{
-              flex: '0 0 auto',
-              color: '#94a3b8',
-              fontSize: 12,
-              lineHeight: 1,
-            }}
-          >
-            ›
-          </span>
+          <span className="ssg-menu-icon" />
+          <span className="ssg-menu-label">列の固定</span>
+          <span className="ssg-menu-caret">›</span>
         </button>
 
         {/* ── サブメニュー: 固定しない / 左に固定 / 右に固定 ── */}
         {isPinSubmenuOpen && (
-          <div style={submenuStyle}>
+          <div className="ssg-menu-panel" style={submenuStyle}>
             {PINNED_ITEMS.map((item) => {
               const isSelected = pinned === item.value;
               return (
@@ -411,42 +335,24 @@ export function ColumnMenuPopover({
                     //       (no-op 判定は SpreadsheetGrid 側で行います)。
                     onPinnedChange(columnKey, item.value);
                   }}
-                  onPointerEnter={(event) => {
-                    if (canChangePinned) {
-                      event.currentTarget.style.backgroundColor = '#f1f5f9';
-                    }
-                  }}
-                  onPointerLeave={(event) => {
-                    event.currentTarget.style.backgroundColor = 'transparent';
-                  }}
-                  style={getMenuItemStyle(!canChangePinned, false)}
+                  className="ssg-menu-item"
                 >
                   {/* 追加: 現在の固定状態に ✓ を出します(未選択は幅だけ確保して揃えます)。*/}
                   <span
-                    style={{
-                      width: 14,
-                      flex: '0 0 auto',
-                      color: '#2563eb',
-                      fontWeight: 700,
-                      visibility: isSelected ? 'visible' : 'hidden',
-                    }}
+                    className={cx(
+                      'ssg-menu-check',
+                      !isSelected && 'ssg-menu-check--hidden',
+                    )}
                   >
                     ✓
                   </span>
-                  <span style={{ minWidth: 0, flex: 1 }}>{item.label}</span>
+                  <span className="ssg-menu-label">{item.label}</span>
                 </button>
               );
             })}
 
             {!canChangePinned && (
-              <div
-                style={{
-                  fontSize: 11,
-                  color: '#94a3b8',
-                  padding: '4px 8px 2px',
-                  userSelect: 'none',
-                }}
-              >
+              <div className="ssg-menu-note">
                 onColumnsChange 未指定のため固定状態を変更できません
               </div>
             )}
@@ -458,44 +364,36 @@ export function ColumnMenuPopover({
       {/* 追加(13-B1): サブメニューを持たないルート項目です。hover で
           setOpenSubmenuKey(null) し、開いているカスケード(列の固定)を閉じます
           (AG Grid の「別項目 hover でサブメニューが閉じる」挙動)。
-          hover ハイライトはサブメニュー項目と同じ DOM 直接書き換え方式です
-          (state を使うと hover のたびに popover 全体が再レンダーされるため)。
+          hover ハイライトは CSS :hover で行います(state を使うと hover のたびに
+          popover 全体が再レンダーされるため)。
           実際の close と幅反映は SpreadsheetGrid 側ハンドラが行います。 */}
       <button
         type="button"
-        onPointerEnter={(event) => {
+        onPointerEnter={() => {
           setOpenSubmenuKey(null);
-          event.currentTarget.style.backgroundColor = '#f1f5f9';
-        }}
-        onPointerLeave={(event) => {
-          event.currentTarget.style.backgroundColor = 'transparent';
         }}
         onClick={() => {
           onAutosizeColumn(columnKey);
         }}
-        style={getMenuItemStyle(false, false)}
+        className="ssg-menu-item"
       >
         {/* 注記: ✓ 列との左端揃え用スペーサです(ピン行と同じ幅)。*/}
-        <span style={{ width: 14, flex: '0 0 auto' }} />
-        <span style={{ minWidth: 0, flex: 1 }}>この列の幅を自動調整</span>
+        <span className="ssg-menu-icon" />
+        <span className="ssg-menu-label">この列の幅を自動調整</span>
       </button>
 
       <button
         type="button"
-        onPointerEnter={(event) => {
+        onPointerEnter={() => {
           setOpenSubmenuKey(null);
-          event.currentTarget.style.backgroundColor = '#f1f5f9';
-        }}
-        onPointerLeave={(event) => {
-          event.currentTarget.style.backgroundColor = 'transparent';
         }}
         onClick={() => {
           onAutosizeAllColumns();
         }}
-        style={getMenuItemStyle(false, false)}
+        className="ssg-menu-item"
       >
-        <span style={{ width: 14, flex: '0 0 auto' }} />
-        <span style={{ minWidth: 0, flex: 1 }}>すべての列の幅を自動調整</span>
+        <span className="ssg-menu-icon" />
+        <span className="ssg-menu-label">すべての列の幅を自動調整</span>
       </button>
 
       {/* ── ルート項目: 列の表示(13-B2-1) ── */}
@@ -505,20 +403,16 @@ export function ColumnMenuPopover({
           パネルを開く処理は SpreadsheetGrid 側(onOpenColumnChooser)が担います。 */}
       <button
         type="button"
-        onPointerEnter={(event) => {
+        onPointerEnter={() => {
           setOpenSubmenuKey(null);
-          event.currentTarget.style.backgroundColor = '#f1f5f9';
-        }}
-        onPointerLeave={(event) => {
-          event.currentTarget.style.backgroundColor = 'transparent';
         }}
         onClick={() => {
           onOpenColumnChooser();
         }}
-        style={getMenuItemStyle(false, false)}
+        className="ssg-menu-item"
       >
-        <span style={{ width: 14, flex: '0 0 auto' }} />
-        <span style={{ minWidth: 0, flex: 1 }}>列の表示</span>
+        <span className="ssg-menu-icon" />
+        <span className="ssg-menu-label">列の表示</span>
       </button>
 
       {/* ── ルート項目: 列のリセット(13-B2-3 / gpt5.5対応) ── */}
@@ -534,14 +428,8 @@ export function ColumnMenuPopover({
             ? 'すべての列の幅・固定・表示を初期状態に戻します'
             : 'onColumnsChange 未指定のため列をリセットできません'
         }
-        onPointerEnter={(event) => {
+        onPointerEnter={() => {
           setOpenSubmenuKey(null);
-          if (canResetColumns) {
-            event.currentTarget.style.backgroundColor = '#f1f5f9';
-          }
-        }}
-        onPointerLeave={(event) => {
-          event.currentTarget.style.backgroundColor = 'transparent';
         }}
         onClick={() => {
           if (!canResetColumns) {
@@ -549,33 +437,20 @@ export function ColumnMenuPopover({
           }
           onResetColumns();
         }}
-        style={getMenuItemStyle(!canResetColumns, false)}
+        className={cx(
+          'ssg-menu-item',
+          !canResetColumns && 'ssg-menu-item--disabled',
+        )}
       >
-        <span style={{ width: 14, flex: '0 0 auto' }} />
-        <span style={{ minWidth: 0, flex: 1 }}>列のリセット</span>
+        <span className="ssg-menu-icon" />
+        <span className="ssg-menu-label">列のリセット</span>
       </button>
 
-      <div
-        style={{
-          borderTop: '1px solid #e2e8f0',
-          marginTop: 4,
-          paddingTop: 6,
-          display: 'flex',
-          justifyContent: 'flex-end',
-        }}
-      >
+      <div className="ssg-menu-footer">
         <button
           type="button"
           onClick={onRequestClose}
-          style={{
-            border: '1px solid #cbd5e1',
-            backgroundColor: '#ffffff',
-            color: '#475569',
-            borderRadius: 8,
-            padding: '5px 10px',
-            cursor: 'pointer',
-            fontSize: 12,
-          }}
+          className="ssg-menu-close-btn"
         >
           閉じる
         </button>

@@ -18,7 +18,7 @@
 //     検索で一覧が絞り込まれているときは、絞り込みビュー上の並べ替えが曖昧なため
 //     ハンドルを無効化します(AG Grid 同様)。
 //   - ドラッグ中はドロップ位置インジケータ(行間の細線)を表示し、一覧端付近では
-//     一覧コンテナを自動スクロールします(29 列で一覧が PANEL_MAX_HEIGHT を超えるため)。
+//     一覧コンテナを自動スクロールします(29 列で一覧が パネル上限高 を超えるため)。
 // 変更(13-B3-1.5): 一覧を pinned ペイン(left / center / right)ごとの小見出しセクションへ
 //   分割します(AG Grid 着想の独自解。AG Grid 本家のツールパネルは pinned ではセクション
 //   分けしませんが、本実装は「パネル = 定義配列素順 / グリッド = reorderColumnsByPane 後の
@@ -33,6 +33,7 @@
 //   - 非空セクションが 1 つだけ(= 固定列なし)のときは小見出しを出さずフラット表示します。
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { cx } from '../logic/cx';
 import type {
   CSSProperties,
   KeyboardEvent,
@@ -73,11 +74,9 @@ type ColumnChooserPanelProps = {
   onRequestClose: () => void;
 };
 
-const PANEL_MAX_HEIGHT = 420;
-
 // 追加(13-B3-1): ドラッグ中の一覧端オートスクロールのしきい値 / 速度です。
 //   一覧コンテナの上下端から EDGE px 以内にポインタが入ったら、毎フレーム SPEED px ずつ
-//   スクロールします(29 列で一覧が PANEL_MAX_HEIGHT を超えるための補助)。
+//   スクロールします(29 列で一覧が パネル上限高 を超えるための補助)。
 const AUTO_SCROLL_EDGE = 28;
 const AUTO_SCROLL_SPEED = 12;
 
@@ -87,15 +86,6 @@ const SECTION_LABELS: Record<ColumnPane, string> = {
   left: '左固定',
   center: '固定なし',
   right: '右固定',
-};
-
-const SECTION_HEADING_STYLE: CSSProperties = {
-  fontSize: 11,
-  fontWeight: 700,
-  color: '#94a3b8',
-  letterSpacing: 0.4,
-  padding: '8px 4px 4px',
-  userSelect: 'none',
 };
 
 // 変更(13-B3-1.5): セクション内(= fromKey と同一ペイン)でのみ並べ替え、確定時に
@@ -142,20 +132,6 @@ function computeSectionReorderedKeys(
   return [...groups.left, ...groups.center, ...groups.right];
 }
 
-const PANEL_STYLE: CSSProperties = {
-  position: 'fixed',
-  boxSizing: 'border-box',
-  display: 'flex',
-  flexDirection: 'column',
-  maxHeight: PANEL_MAX_HEIGHT,
-  padding: 12,
-  border: '1px solid #cbd5e1',
-  borderRadius: 12,
-  backgroundColor: '#ffffff',
-  boxShadow: '0 12px 28px rgba(15, 23, 42, 0.16)',
-  zIndex: 1000,
-};
-
 type CheckState = 'checked' | 'unchecked' | 'indeterminate';
 
 // 追加(13-B2-1): 3 状態に対応した自作チェックボックスです。
@@ -169,27 +145,16 @@ function CheckBox({
   disabled: boolean;
 }) {
   const filled = state === 'checked' || state === 'indeterminate';
-  const boxStyle: CSSProperties = {
-    width: 18,
-    height: 18,
-    flex: '0 0 auto',
-    borderRadius: 5,
-    border: `1.5px solid ${
-      disabled ? '#cbd5e1' : filled ? '#2563eb' : '#94a3b8'
-    }`,
-    backgroundColor: disabled
-      ? '#f1f5f9'
-      : filled
-        ? '#2563eb'
-        : '#ffffff',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    transition: 'background-color 80ms ease, border-color 80ms ease',
-  };
 
   return (
-    <span style={boxStyle} aria-hidden>
+    <span
+      className={cx(
+        'ssg-checkbox',
+        filled && 'ssg-checkbox--filled',
+        disabled && 'ssg-checkbox--disabled',
+      )}
+      aria-hidden
+    >
       {state === 'checked' && (
         <svg width="11" height="11" viewBox="0 0 12 12" fill="none">
           <path
@@ -201,16 +166,7 @@ function CheckBox({
           />
         </svg>
       )}
-      {state === 'indeterminate' && (
-        <span
-          style={{
-            width: 9,
-            height: 2,
-            borderRadius: 1,
-            backgroundColor: '#ffffff',
-          }}
-        />
-      )}
+      {state === 'indeterminate' && <span className="ssg-checkbox-dash" />}
     </span>
   );
 }
@@ -470,7 +426,6 @@ export function ColumnChooserPanel({
   }
 
   const wrapperStyle: CSSProperties = {
-    ...PANEL_STYLE,
     top: layout.top,
     left: layout.left,
     width: layout.width,
@@ -526,15 +481,11 @@ export function ColumnChooserPanel({
         key={item.key}
         data-chooser-row=""
         data-chooser-pane={pane}
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: 4,
-          borderTop: showDropBefore
-            ? '2px solid #2563eb'
-            : '2px solid transparent',
-          opacity: isDragging ? 0.4 : 1,
-        }}
+        className={cx(
+          'ssg-chooser-row',
+          showDropBefore && 'ssg-chooser-row--drop-before',
+          isDragging && 'ssg-chooser-row--dragging',
+        )}
       >
         {/* ⠿ ドラッグハンドル(13-B3-1) */}
         <span
@@ -553,25 +504,11 @@ export function ColumnChooserPanel({
           onPointerMove={handleDragHandlePointerMove}
           onPointerUp={handleDragHandlePointerUp}
           onPointerCancel={handleDragHandlePointerCancel}
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            flex: '0 0 auto',
-            width: 18,
-            height: 28,
-            borderRadius: 6,
-            cursor: !canDrag ? 'default' : isDragging ? 'grabbing' : 'grab',
-            touchAction: 'none',
-          }}
-          onPointerEnter={(event) => {
-            if (canDrag) {
-              event.currentTarget.style.backgroundColor = '#f1f5f9';
-            }
-          }}
-          onPointerLeave={(event) => {
-            event.currentTarget.style.backgroundColor = 'transparent';
-          }}
+          className={cx(
+            'ssg-chooser-handle',
+            !canDrag && 'ssg-chooser-handle--disabled',
+            isDragging && 'ssg-chooser-handle--dragging',
+          )}
         >
           <DragHandleGlyph disabled={!canDrag} />
         </span>
@@ -585,43 +522,17 @@ export function ColumnChooserPanel({
             }
             onToggleColumnVisibility(item.key, !item.visible);
           }}
-          onPointerEnter={(event) => {
-            if (!disabled) {
-              event.currentTarget.style.backgroundColor = '#f1f5f9';
-            }
-          }}
-          onPointerLeave={(event) => {
-            event.currentTarget.style.backgroundColor = 'transparent';
-          }}
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 10,
-            flex: 1,
-            minWidth: 0,
-            boxSizing: 'border-box',
-            padding: '7px 8px',
-            border: 'none',
-            borderRadius: 8,
-            backgroundColor: 'transparent',
-            cursor: disabled ? 'default' : 'pointer',
-            textAlign: 'left',
-          }}
+          className="ssg-chooser-toggle"
         >
           <CheckBox
             state={item.visible ? 'checked' : 'unchecked'}
             disabled={disabled}
           />
           <span
-            style={{
-              minWidth: 0,
-              flex: 1,
-              fontSize: 13,
-              color: disabled && !item.visible ? '#94a3b8' : '#334155',
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-              whiteSpace: 'nowrap',
-            }}
+            className={cx(
+              'ssg-chooser-label',
+              disabled && !item.visible && 'ssg-chooser-label--muted',
+            )}
           >
             {item.title}
           </span>
@@ -638,99 +549,36 @@ export function ColumnChooserPanel({
       onContextMenu={(event) => {
         event.preventDefault();
       }}
+      className="ssg-popover ssg-chooser-panel"
       style={wrapperStyle}
     >
       {/* ── ヘッダー: タイトル + × ── */}
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          gap: 8,
-          paddingBottom: 8,
-          marginBottom: 8,
-          borderBottom: '1px solid #e2e8f0',
-        }}
-      >
-        <span
-          style={{
-            fontSize: 13,
-            fontWeight: 700,
-            color: '#1e293b',
-            userSelect: 'none',
-          }}
-        >
-          列の表示
-        </span>
+      <div className="ssg-popover-header">
+        <span className="ssg-popover-title">列の表示</span>
         <button
           type="button"
           onClick={onRequestClose}
           aria-label="閉じる"
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            width: 24,
-            height: 24,
-            border: 'none',
-            borderRadius: 6,
-            backgroundColor: 'transparent',
-            color: '#64748b',
-            cursor: 'pointer',
-            fontSize: 16,
-            lineHeight: 1,
-          }}
-          onPointerEnter={(event) => {
-            event.currentTarget.style.backgroundColor = '#f1f5f9';
-          }}
-          onPointerLeave={(event) => {
-            event.currentTarget.style.backgroundColor = 'transparent';
-          }}
+          className="ssg-popover-close"
         >
           ×
         </button>
       </div>
 
       {/* ── 検索行: 全選択チェック + 検索入力 ── */}
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: 8,
-          marginBottom: 8,
-        }}
-      >
+      <div className="ssg-chooser-search-row">
         <button
           type="button"
           disabled={!canToggle}
           onClick={handleMasterClick}
           aria-label="すべての列を表示"
           title="すべての列を表示"
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            border: 'none',
-            background: 'transparent',
-            padding: 0,
-            cursor: canToggle ? 'pointer' : 'default',
-          }}
+          className="ssg-chooser-master-btn"
         >
           <CheckBox state={masterState} disabled={!canToggle} />
         </button>
-        <div style={{ position: 'relative', flex: 1, minWidth: 0 }}>
-          <span
-            aria-hidden
-            style={{
-              position: 'absolute',
-              left: 9,
-              top: '50%',
-              transform: 'translateY(-50%)',
-              color: '#94a3b8',
-              fontSize: 13,
-              lineHeight: 1,
-              pointerEvents: 'none',
-            }}
-          >
+        <div className="ssg-chooser-search-field">
+          <span aria-hidden className="ssg-chooser-search-icon">
             ⌕
           </span>
           <input
@@ -739,47 +587,20 @@ export function ColumnChooserPanel({
             value={query}
             onChange={(event) => setQuery(event.target.value)}
             placeholder="検索..."
-            style={{
-              width: '100%',
-              boxSizing: 'border-box',
-              padding: '7px 10px 7px 26px',
-              border: '1px solid #cbd5e1',
-              borderRadius: 8,
-              fontSize: 13,
-              color: '#334155',
-              outline: 'none',
-            }}
+            className="ssg-chooser-search-input"
           />
         </div>
       </div>
 
       {/* ── 列一覧(スクロール) ── */}
-      <div
-        ref={listRef}
-        style={{
-          flex: 1,
-          minHeight: 0,
-          overflowY: 'auto',
-          margin: '0 -4px',
-          padding: '0 4px',
-        }}
-      >
+      <div ref={listRef} className="ssg-chooser-list">
         {filteredItems.length === 0 ? (
-          <div
-            style={{
-              fontSize: 12,
-              color: '#94a3b8',
-              padding: '10px 4px',
-              userSelect: 'none',
-            }}
-          >
-            該当する列がありません
-          </div>
+          <div className="ssg-chooser-empty">該当する列がありません</div>
         ) : (
           sections.map((section) => (
             <div key={section.pane} data-chooser-section={section.pane}>
               {showHeadings && (
-                <div style={SECTION_HEADING_STYLE}>
+                <div className="ssg-chooser-section-heading">
                   {SECTION_LABELS[section.pane]}
                 </div>
               )}
@@ -790,12 +611,7 @@ export function ColumnChooserPanel({
               {draggingKey !== null &&
                 draggingPane === section.pane &&
                 dropIndex === section.items.length && (
-                  <div
-                    style={{
-                      height: 0,
-                      borderTop: '2px solid #2563eb',
-                    }}
-                  />
+                  <div className="ssg-chooser-drop-end" />
                 )}
             </div>
           ))
@@ -803,13 +619,7 @@ export function ColumnChooserPanel({
       </div>
 
       {/* ── フッター: 列のリセット + (無効時)注記 ── */}
-      <div
-        style={{
-          paddingTop: 8,
-          marginTop: 8,
-          borderTop: '1px solid #e2e8f0',
-        }}
-      >
+      <div className="ssg-chooser-footer">
         <button
           type="button"
           disabled={!canToggle}
@@ -820,41 +630,13 @@ export function ColumnChooserPanel({
             onResetColumns();
           }}
           title="すべての列の幅・固定・表示を初期状態に戻します"
-          style={{
-            display: 'block',
-            width: '100%',
-            boxSizing: 'border-box',
-            padding: '7px 8px',
-            border: '1px solid #e2e8f0',
-            borderRadius: 8,
-            backgroundColor: 'transparent',
-            color: canToggle ? '#334155' : '#cbd5e1',
-            cursor: canToggle ? 'pointer' : 'default',
-            fontSize: 13,
-            textAlign: 'center',
-            userSelect: 'none',
-          }}
-          onPointerEnter={(event) => {
-            if (canToggle) {
-              event.currentTarget.style.backgroundColor = '#f1f5f9';
-            }
-          }}
-          onPointerLeave={(event) => {
-            event.currentTarget.style.backgroundColor = 'transparent';
-          }}
+          className="ssg-chooser-reset-btn"
         >
           すべての列を初期状態に戻す
         </button>
 
         {!canToggle && (
-          <div
-            style={{
-              fontSize: 11,
-              color: '#94a3b8',
-              marginTop: 8,
-              userSelect: 'none',
-            }}
-          >
+          <div className="ssg-chooser-note">
             onColumnsChange 未指定のため表示/非表示・リセットを変更できません
           </div>
         )}

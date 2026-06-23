@@ -90,41 +90,8 @@ type ColumnFilterPopoverProps = {
   isServerSide?: boolean;
 };
 
-// ── 共通スタイル ────────────────────────────────────────
-const SECONDARY_BUTTON_STYLE: CSSProperties = {
-  border: '1px solid #cbd5e1',
-  backgroundColor: '#ffffff',
-  color: '#475569',
-  borderRadius: 8,
-  padding: '6px 10px',
-  cursor: 'pointer',
-  fontSize: 12,
-};
-
-const PRIMARY_BUTTON_STYLE: CSSProperties = {
-  border: '1px solid #2563eb',
-  backgroundColor: '#2563eb',
-  color: '#ffffff',
-  borderRadius: 8,
-  padding: '6px 10px',
-  cursor: 'pointer',
-  fontSize: 12,
-};
-
-const TEXT_INPUT_STYLE: CSSProperties = {
-  width: '100%',
-  boxSizing: 'border-box',
-  padding: '8px 10px',
-  border: '1px solid #cbd5e1',
-  borderRadius: 8,
-  outline: 'none',
-  marginBottom: 8,
-};
-
 // 追加(12-A): set フィルター候補リストの行高です(仮想化の estimateSize と一致させます)。
 const SET_FILTER_OPTION_ROW_HEIGHT = 28;
-// 追加(12-A): 候補リストの表示領域高です。
-const SET_FILTER_LIST_HEIGHT = 208;
 
 // ── set フィルター本体 ──────────────────────────────────
 // 追加(12-A): set フィルターの検索 state / 仮想化は popover 全体とライフサイクルが
@@ -231,24 +198,11 @@ function SetFilterBody({
           }
         }}
         placeholder="検索..."
-        style={TEXT_INPUT_STYLE}
+        className="ssg-filter-input"
       />
 
       {/* (Select All) 行: 検索中は表示中候補のみが対象です(AG Grid と同挙動) */}
-      <label
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: 8,
-          height: SET_FILTER_OPTION_ROW_HEIGHT,
-          padding: '0 8px',
-          cursor: 'pointer',
-          fontSize: 12,
-          color: '#334155',
-          borderBottom: '1px solid #e2e8f0',
-          userSelect: 'none',
-        }}
-      >
+      <label className="ssg-filter-selectall">
         <input
           type="checkbox"
           checked={isAllVisibleSelected}
@@ -260,32 +214,15 @@ function SetFilterBody({
           }}
           onChange={handleSelectAllToggle}
         />
-        <span style={{ fontWeight: 600 }}>
+        <span className="ssg-filter-selectall-label">
           {isSearching ? '（検索結果をすべて選択）' : '（すべて選択）'}
         </span>
       </label>
 
       {/* 候補リスト(仮想化) */}
-      <div
-        ref={listScrollRef}
-        style={{
-          height: SET_FILTER_LIST_HEIGHT,
-          overflowY: 'auto',
-          border: '1px solid #e2e8f0',
-          borderTop: 'none',
-          borderRadius: '0 0 8px 8px',
-          marginBottom: 8,
-        }}
-      >
+      <div ref={listScrollRef} className="ssg-filter-list">
         {visibleOptions.length === 0 ? (
-          <div
-            style={{
-              padding: 12,
-              fontSize: 12,
-              color: '#94a3b8',
-              textAlign: 'center',
-            }}
-          >
+          <div className="ssg-filter-empty">
             {options.length === 0
               ? isServerSide
                 ? '候補が未指定です（serverSide では列に filterOptions などの候補供給が必要）'
@@ -294,11 +231,8 @@ function SetFilterBody({
           </div>
         ) : (
           <div
-            style={{
-              height: optionVirtualizer.getTotalSize(),
-              position: 'relative',
-              width: '100%',
-            }}
+            className="ssg-filter-virt"
+            style={{ height: optionVirtualizer.getTotalSize() }}
           >
             {optionVirtualizer.getVirtualItems().map((virtualItem) => {
               const option = visibleOptions[virtualItem.index];
@@ -309,22 +243,10 @@ function SetFilterBody({
               return (
                 <label
                   key={option.value}
+                  className="ssg-filter-option"
                   style={{
-                    position: 'absolute',
-                    top: 0,
-                    left: 0,
-                    right: 0,
                     transform: `translateY(${virtualItem.start}px)`,
                     height: virtualItem.size,
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 8,
-                    padding: '0 8px',
-                    boxSizing: 'border-box',
-                    cursor: 'pointer',
-                    fontSize: 12,
-                    color: '#334155',
-                    userSelect: 'none',
                   }}
                 >
                   <input
@@ -332,13 +254,7 @@ function SetFilterBody({
                     checked={isChecked}
                     onChange={() => onValueToggle(option.value)}
                   />
-                  <span
-                    style={{
-                      overflow: 'hidden',
-                      textOverflow: 'ellipsis',
-                      whiteSpace: 'nowrap',
-                    }}
-                  >
+                  <span className="ssg-filter-option-label">
                     {option.label}
                   </span>
                 </label>
@@ -348,13 +264,7 @@ function SetFilterBody({
         )}
       </div>
 
-      <div
-        style={{
-          fontSize: 11,
-          color: '#64748b',
-          marginBottom: 10,
-        }}
-      >
+      <div className="ssg-filter-meta">
         選択中: {totalSelectedCount} / {options.length} 件
         {isSearching ? `（表示中 ${visibleOptions.length} 件）` : ''}
       </div>
@@ -391,17 +301,9 @@ export function ColumnFilterPopover({
   }
 
   const wrapperStyle: CSSProperties = {
-    position: 'fixed',
     top: layout.top,
     left: layout.left,
     width: layout.width,
-    padding: 12,
-    boxSizing: 'border-box',
-    border: '1px solid #cbd5e1',
-    borderRadius: 10,
-    backgroundColor: '#ffffff',
-    boxShadow: '0 10px 24px rgba(15, 23, 42, 0.12)',
-    zIndex: 1000,
   };
 
   const handleKeyDownCapture = (event: KeyboardEvent<HTMLDivElement>) => {
@@ -425,31 +327,16 @@ export function ColumnFilterPopover({
         // 追加: portal 内 paste も grid 側へ流しません。
         event.stopPropagation();
       }}
+      className="ssg-filter-popover"
       style={wrapperStyle}
     >
-      <div
-        style={{
-          fontSize: 12,
-          fontWeight: 700,
-          color: '#334155',
-          marginBottom: 8,
-        }}
-      >
-        列フィルター: {title}
-      </div>
+      <div className="ssg-filter-title">列フィルター: {title}</div>
 
       {(isSetFilter || filterType === 'select') &&
       optionsStatus === 'collecting' ? (
         // 追加(DS-4 #1): 大規模列(>閾値)の候補収集中です。universe 未確定のため操作 UI は出さず、
         //   進捗のみ表示します(収集完了 = ready で本来の set / select UI へ切り替わります)。
-        <div
-          style={{
-            padding: 24,
-            textAlign: 'center',
-            fontSize: 12,
-            color: '#64748b',
-          }}
-        >
+        <div className="ssg-filter-collecting">
           候補を収集中… {Math.round(optionsProgress * 100)}%
         </div>
       ) : isSetFilter ? (
@@ -465,15 +352,7 @@ export function ColumnFilterPopover({
         />
       ) : filterType === 'select' ? (
         <>
-          <div
-            style={{
-              fontSize: 11,
-              color: '#64748b',
-              marginBottom: 8,
-            }}
-          >
-            フィルター種別: select
-          </div>
+          <div className="ssg-filter-hint">フィルター種別: select</div>
           <select
             ref={selectRef}
             value={draftValue}
@@ -491,16 +370,7 @@ export function ColumnFilterPopover({
                 onRequestClose();
               }
             }}
-            style={{
-              width: '100%',
-              boxSizing: 'border-box',
-              padding: '8px 10px',
-              border: '1px solid #cbd5e1',
-              borderRadius: 8,
-              outline: 'none',
-              marginBottom: 8,
-              backgroundColor: '#ffffff',
-            }}
+            className="ssg-filter-select"
           >
             <option value="">（すべて）</option>
             {selectOptions.map((option) => (
@@ -509,25 +379,11 @@ export function ColumnFilterPopover({
               </option>
             ))}
           </select>
-          <div
-            style={{
-              fontSize: 11,
-              color: '#64748b',
-              marginBottom: 10,
-            }}
-          >
-            候補数: {selectOptions.length}
-          </div>
+          <div className="ssg-filter-meta">候補数: {selectOptions.length}</div>
         </>
       ) : (
         <>
-          <div
-            style={{
-              fontSize: 11,
-              color: '#64748b',
-              marginBottom: 8,
-            }}
-          >
+          <div className="ssg-filter-hint">
             フィルター種別: {filterType === 'number' ? 'number' : 'text'}
           </div>
           <input
@@ -553,18 +409,9 @@ export function ColumnFilterPopover({
                 ? '例: >=10 / <20 / 10..20 / =5'
                 : '部分一致で絞り込み'
             }
-            style={TEXT_INPUT_STYLE}
+            className="ssg-filter-input"
           />
-          <div
-            style={{
-              fontSize: 11,
-              color: '#64748b',
-              marginBottom: 10,
-              whiteSpace: 'nowrap',
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-            }}
-          >
+          <div className="ssg-filter-meta ssg-filter-meta--ellipsis">
             {filterType === 'number'
               ? '数量系は =, >, >=, <, <=, .. が使えます'
               : 'text は部分一致検索です'}
@@ -575,27 +422,12 @@ export function ColumnFilterPopover({
       {/* 変更(12-A): set フィルターは即時適用のため現在値テキスト行を出しません
           (選択件数カウンタを SetFilterBody 側で表示します)。 */}
       {!isSetFilter && (
-        <div
-          style={{
-            fontSize: 11,
-            color: '#64748b',
-            marginBottom: 10,
-            whiteSpace: 'nowrap',
-            overflow: 'hidden',
-            textOverflow: 'ellipsis',
-          }}
-        >
+        <div className="ssg-filter-meta ssg-filter-meta--ellipsis">
           現在値: {currentValueText}
         </div>
       )}
 
-      <div
-        style={{
-          display: 'flex',
-          gap: 8,
-          justifyContent: 'flex-end',
-        }}
-      >
+      <div className="ssg-filter-footer">
         {isSetFilter ? (
           // 変更(12-A): set フィルターは即時適用のため「適用」を持ちません。
           //             クリアは popover を閉じず全選択へ戻し、閉じるで終了します。
@@ -611,7 +443,7 @@ export function ColumnFilterPopover({
                 // 追加: popover 内 button の key 操作を grid 側へ流しません。
                 event.stopPropagation();
               }}
-              style={SECONDARY_BUTTON_STYLE}
+              className="ssg-filter-btn-secondary"
             >
               クリア
             </button>
@@ -625,7 +457,7 @@ export function ColumnFilterPopover({
               onKeyDown={(event) => {
                 event.stopPropagation();
               }}
-              style={PRIMARY_BUTTON_STYLE}
+              className="ssg-filter-btn-primary"
             >
               閉じる
             </button>
@@ -643,7 +475,7 @@ export function ColumnFilterPopover({
                 // 追加: popover 内 button の key 操作を grid 側へ流しません。
                 event.stopPropagation();
               }}
-              style={SECONDARY_BUTTON_STYLE}
+              className="ssg-filter-btn-secondary"
             >
               クリア
             </button>
@@ -658,7 +490,7 @@ export function ColumnFilterPopover({
                 // 追加: popover 内 button の key 操作を grid 側へ流しません。
                 event.stopPropagation();
               }}
-              style={PRIMARY_BUTTON_STYLE}
+              className="ssg-filter-btn-primary"
             >
               適用
             </button>
