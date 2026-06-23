@@ -29,6 +29,11 @@
     --ssg-readonly-bg: #f8fafc;
     --ssg-readonly-text: #64748b;
     --ssg-readonly-hover-bg: #eef2f7;
+    /* ヘッダー */
+    --ssg-header-text: #334155;
+    --ssg-header-hover-bg: #e2e8f0;
+    --ssg-select-bg: #e3e9f5;
+    --ssg-select-bg-hover: #ccd7ee;
     /* 寸法トークン */
     --ssg-radius: 8px;
     --ssg-icon-btn-size: 22px;
@@ -107,5 +112,54 @@
 
   .ssg-body-cell--readonly.ssg-body-cell--row-hovered {
     background-color: var(--ssg-readonly-hover-bg);
+  }
+
+  /* ── ヘッダー ── */
+  /* ヘッダー行コンテナ(sticky)。height はインライン。 */
+  .ssg-header-row {
+    position: sticky;
+    top: 0;
+    z-index: 6;
+    background-color: var(--ssg-header-bg);
+  }
+
+  /* ヘッダーセル(列ヘッダー / 行ヘッダー / コーナー共通の土台)。座標 / 幅 / 高さはインライン。 */
+  .ssg-header-cell {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    box-sizing: border-box;
+    padding: 0 10px;
+    border-right: 1px solid var(--ssg-line);
+    border-bottom: 1px solid var(--ssg-divider);
+    background-color: var(--ssg-header-bg);
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--ssg-header-text);
+  }
+
+  /* ヘッダーセルのホバー / 選択(列・行・全体で同色)。 */
+  .ssg-header-cell--hovered {
+    background-color: var(--ssg-header-hover-bg);
+  }
+  .ssg-header-cell--selected {
+    background-color: var(--ssg-select-bg);
+  }
+  .ssg-header-cell--selected.ssg-header-cell--hovered {
+    background-color: var(--ssg-select-bg-hover);
+  }
+
+  /* 行ヘッダー「#」セル(番号セル)。header-cell に重ねて中央寄せ + 細字。 */
+  .ssg-row-header-cell {
+    justify-content: center;
+    font-weight: 500;
+  }
+
+  /* 左上コーナーセル。中央寄せ + 余白詰め + 右境界を濃く。 */
+  .ssg-corner-cell {
+    justify-content: center;
+    padding: 0;
+    border-right: 1px solid var(--ssg-line-strong);
+    line-height: 1;
   }
 }

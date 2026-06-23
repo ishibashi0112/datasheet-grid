@@ -37,10 +37,12 @@ type GridHeaderRowProps<T> = {
   //             行ヘッダーを持つペインでは rowHeaderWidth、それ以外は 0 です。
   //             各列は leadingWidth + entry.paneLocalStart に配置されます。
   leadingWidth: number;
-  rowHeaderWidth: number;
   headerHeight: number;
   rowHeaderCellStyle: CSSProperties;
-  headerCellBaseStyle: CSSProperties;
+  // 追加(UI CSS移行): ヘッダー系スロット(すべて文字列=memo 安全)。基底は @layer ssg-base。
+  headerRowClassName?: string;
+  headerCellClassName?: string;
+  rowHeaderCellClassName?: string;
   isCornerHovered: boolean;
   isWholeGridSelected: boolean;
   filteredRowsLength: number;
@@ -151,10 +153,11 @@ function GridHeaderRowInner<T>({
   pane,
   ownsRowHeader,
   leadingWidth,
-  rowHeaderWidth,
   headerHeight,
   rowHeaderCellStyle,
-  headerCellBaseStyle,
+  headerRowClassName,
+  headerCellClassName,
+  rowHeaderCellClassName,
   isCornerHovered,
   isWholeGridSelected,
   filteredRowsLength,
@@ -184,12 +187,9 @@ function GridHeaderRowInner<T>({
   return (
     <div
       data-pane={pane}
+      className={cx('ssg-header-row', headerRowClassName)}
       style={{
         height: headerHeight,
-        position: 'sticky',
-        top: 0,
-        zIndex: 6,
-        backgroundColor: '#f8fafc',
       }}
     >
       {ownsRowHeader && (
@@ -197,32 +197,20 @@ function GridHeaderRowInner<T>({
           onPointerDown={onCornerPointerDown}
           onPointerEnter={onCornerPointerEnter}
           onPointerLeave={onCornerPointerLeave}
+          className={cx(
+            'ssg-header-cell',
+            'ssg-corner-cell',
+            isWholeGridSelected && 'ssg-header-cell--selected',
+            isCornerHovered && 'ssg-header-cell--hovered',
+            rowHeaderCellClassName,
+          )}
           style={{
             ...rowHeaderCellStyle,
-            // 左上コーナーセル専用に見た目を明示して、
-            // 高さ・中央寄せ・境界線のズレを抑えます。
             position: 'absolute',
             top: 0,
             left: 0,
-            width: rowHeaderWidth,
-            minWidth: rowHeaderWidth,
             height: headerHeight,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            boxSizing: 'border-box',
-            padding: 0,
-            lineHeight: 1,
             zIndex: 7,
-            backgroundColor: isWholeGridSelected
-              ? isCornerHovered
-                ? '#ccd7ee'
-                : '#e3e9f5'
-              : isCornerHovered
-                ? '#e2e8f0'
-                : '#f8fafc',
-            borderRight: '1px solid #e5e7eb',
-            borderBottom: '1px solid #d7dce3',
             cursor:
               filteredRowsLength > 0 && visibleColumnsLength > 0
                 ? 'pointer'
@@ -293,25 +281,20 @@ function GridHeaderRowInner<T>({
             //             (enableColumnMenu=false 時は controller 側で何もせず、
             //              ブラウザ標準メニューが出ます)。
             onContextMenu={(event) => onColumnHeaderContextMenu(column, event)}
+            className={cx(
+              'ssg-header-cell',
+              (isWholeGridSelected || isColumnSelected) &&
+                'ssg-header-cell--selected',
+              hoveredColumnIndex === colIndex && 'ssg-header-cell--hovered',
+              headerCellClassName,
+            )}
             style={{
               position: 'absolute',
               top: 0,
               left,
-              ...headerCellBaseStyle,
               width: size,
               minWidth: size,
               height: headerHeight,
-              backgroundColor: isWholeGridSelected
-                ? hoveredColumnIndex === colIndex
-                  ? '#ccd7ee'
-                  : '#e3e9f5'
-                : isColumnSelected
-                  ? hoveredColumnIndex === colIndex
-                    ? '#ccd7ee'
-                    : '#e3e9f5'
-                  : hoveredColumnIndex === colIndex
-                    ? '#e2e8f0'
-                    : '#f8fafc',
             }}
           >
             {/* 変更(13-B4 / Option A): Excel 列名バッジ(番地表示)を廃止し、

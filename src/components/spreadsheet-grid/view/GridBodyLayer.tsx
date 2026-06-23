@@ -118,6 +118,8 @@ type GridBodyRowProps<T> = {
   rowClassName?: string;
   bodyCellClassName?: string;
   bodyRowClassName?: string;
+  // 追加(UI CSS移行・ヘッダー): 行ヘッダー「#」セルへのスロット。
+  rowHeaderCellClassName?: string;
 };
 
 function GridBodyRowInner<T>({
@@ -152,6 +154,7 @@ function GridBodyRowInner<T>({
   rowClassName,
   bodyCellClassName,
   bodyRowClassName,
+  rowHeaderCellClassName,
 }: GridBodyRowProps<T>) {
   return (
     <div
@@ -176,6 +179,15 @@ function GridBodyRowInner<T>({
           onPointerDown={(event) => onRowHeaderPointerDown(rowIndex, event)}
           onPointerEnter={(event) => onRowHeaderPointerEnter(rowIndex, event)}
           onPointerLeave={() => onRowHeaderPointerLeave(rowIndex)}
+          className={cx(
+            'ssg-header-cell',
+            'ssg-row-header-cell',
+            (isWholeGridSelected || isRowSelected) &&
+              'ssg-header-cell--selected',
+            isRowHovered && 'ssg-header-cell--hovered',
+            rowClassName,
+            rowHeaderCellClassName,
+          )}
           style={{
             ...rowHeaderCellStyle,
             position: 'absolute',
@@ -183,15 +195,6 @@ function GridBodyRowInner<T>({
             left: 0,
             zIndex: 5,
             height: rowHeight,
-            backgroundColor:
-              isWholeGridSelected || isRowSelected
-                ? isRowHovered
-                  ? '#ccd7ee'
-                  : '#e3e9f5'
-                : isRowHovered
-                  ? '#e2e8f0'
-                  : '#f8fafc',
-            fontWeight: 500,
           }}
         >
           {rowIndex + 1}
@@ -356,6 +359,7 @@ type GridBodySkeletonRowProps<T> = {
   // 追加(UI CSS移行): 本体スロット(skeleton も同じ .ssg-body-cell / .ssg-body-row を使うため)。
   bodyCellClassName?: string;
   bodyRowClassName?: string;
+  rowHeaderCellClassName?: string;
 };
 
 // プレースホルダーバーの幅を列ごとに少し変えて機械的な均一さを避けます(列 index 駆動で
@@ -379,6 +383,7 @@ function GridBodySkeletonRowInner<T>({
   onCellPointerEnter,
   bodyCellClassName,
   bodyRowClassName,
+  rowHeaderCellClassName,
 }: GridBodySkeletonRowProps<T>) {
   return (
     <div
@@ -401,6 +406,12 @@ function GridBodySkeletonRowInner<T>({
           onPointerDown={(event) => onRowHeaderPointerDown(rowIndex, event)}
           onPointerEnter={(event) => onRowHeaderPointerEnter(rowIndex, event)}
           onPointerLeave={() => onRowHeaderPointerLeave(rowIndex)}
+          className={cx(
+            'ssg-header-cell',
+            'ssg-row-header-cell',
+            isRowHovered && 'ssg-header-cell--hovered',
+            rowHeaderCellClassName,
+          )}
           style={{
             ...rowHeaderCellStyle,
             position: 'absolute',
@@ -408,9 +419,7 @@ function GridBodySkeletonRowInner<T>({
             left: 0,
             zIndex: 5,
             height: rowHeight,
-            backgroundColor: isRowHovered ? '#e2e8f0' : '#f8fafc',
             color: '#94a3b8',
-            fontWeight: 500,
           }}
         >
           {rowIndex + 1}
@@ -534,6 +543,7 @@ type GridBodyLayerProps<T> = {
   getRowClassName?: (row: T, rowIndex: number) => string | undefined;
   bodyCellClassName?: string;
   bodyRowClassName?: string;
+  rowHeaderCellClassName?: string;
 };
 
 // 変更(A-1): 本体は「仮想行を並べて GridBodyRow(memo) に委譲するだけ」の薄い層になりました。
@@ -571,6 +581,7 @@ export function GridBodyLayer<T>({
   getRowClassName,
   bodyCellClassName,
   bodyRowClassName,
+  rowHeaderCellClassName,
 }: GridBodyLayerProps<T>) {
   return (
     <>
@@ -623,6 +634,7 @@ export function GridBodyLayer<T>({
               onCellPointerEnter={onCellPointerEnter}
               bodyCellClassName={bodyCellClassName}
               bodyRowClassName={bodyRowClassName}
+              rowHeaderCellClassName={rowHeaderCellClassName}
             />
           );
         }
@@ -696,6 +708,7 @@ export function GridBodyLayer<T>({
             rowClassName={rowClassName}
             bodyCellClassName={bodyCellClassName}
             bodyRowClassName={bodyRowClassName}
+            rowHeaderCellClassName={rowHeaderCellClassName}
           />
         );
       })}

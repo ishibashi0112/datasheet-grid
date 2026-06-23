@@ -2650,34 +2650,14 @@ export function SpreadsheetGrid<T extends object>({
   // 変更(A-1): style オブジェクトを useMemo で安定化します。
   //   これらは GridBodyRow(memo) に props として渡るため、毎レンダーで新しい参照を作ると
   //   memo の shallow 比較が必ず不一致になり、行のスキップが効かなくなります。
-  const headerCellBaseStyle: CSSProperties = useMemo(
-    () => ({
-      display: 'flex',
-      alignItems: 'center',
-      gap: 8,
-      boxSizing: 'border-box',
-      padding: '0 10px',
-      borderRight: '1px solid #f1f5f9',
-      borderBottom: '1px solid #d7dce3',
-      backgroundColor: '#f8fafc',
-      fontSize: 13,
-      fontWeight: 600,
-      color: '#334155',
-    }),
-    [],
-  );
-
+  // 変更(UI CSS移行): ヘッダーセルの静的スタイルは styles.css(.ssg-header-cell)へ移行しました。
+  //   行ヘッダー「#」セル / コーナーが必要とする動的な幅だけを rowHeaderCellStyle に残します。
   const rowHeaderCellStyle: CSSProperties = useMemo(
     () => ({
-      ...headerCellBaseStyle,
-      justifyContent: 'center',
       width: rowHeaderWidth,
       minWidth: rowHeaderWidth,
-      position: 'sticky',
-      left: 0,
-      zIndex: 1,
     }),
-    [headerCellBaseStyle, rowHeaderWidth],
+    [rowHeaderWidth],
   );
 
   // 追加(10-G): 共有スクロールコンテナ（縦横ともにネイティブスクロール）の style です。
@@ -3005,10 +2985,11 @@ export function SpreadsheetGrid<T extends object>({
                   pane="left"
                   ownsRowHeader
                   leadingWidth={leftLeadingWidth}
-                  rowHeaderWidth={rowHeaderWidth}
                   headerHeight={headerHeight}
                   rowHeaderCellStyle={rowHeaderCellStyle}
-                  headerCellBaseStyle={headerCellBaseStyle}
+                  headerRowClassName={classNames?.headerRow}
+                  headerCellClassName={classNames?.headerCell}
+                  rowHeaderCellClassName={classNames?.rowHeaderCell}
                   isCornerHovered={isCornerHovered}
                   isWholeGridSelected={isWholeGridSelected}
                   filteredRowsLength={viewRowCount}
@@ -3104,6 +3085,7 @@ export function SpreadsheetGrid<T extends object>({
                   getRowClassName={getRowClassName}
                   bodyCellClassName={classNames?.bodyCell}
                   bodyRowClassName={classNames?.bodyRow}
+                  rowHeaderCellClassName={classNames?.rowHeaderCell}
                 />
                 </div>
               </div>
@@ -3141,10 +3123,11 @@ export function SpreadsheetGrid<T extends object>({
                 pane="center"
                 ownsRowHeader={centerOwnsRowHeader}
                 leadingWidth={centerLeadingWidth}
-                rowHeaderWidth={rowHeaderWidth}
                 headerHeight={headerHeight}
                 rowHeaderCellStyle={rowHeaderCellStyle}
-                headerCellBaseStyle={headerCellBaseStyle}
+                headerRowClassName={classNames?.headerRow}
+                headerCellClassName={classNames?.headerCell}
+                rowHeaderCellClassName={classNames?.rowHeaderCell}
                 isCornerHovered={isCornerHovered}
                 isWholeGridSelected={isWholeGridSelected}
                 filteredRowsLength={viewRowCount}
@@ -3239,6 +3222,7 @@ export function SpreadsheetGrid<T extends object>({
                   getRowClassName={getRowClassName}
                   bodyCellClassName={classNames?.bodyCell}
                   bodyRowClassName={classNames?.bodyRow}
+                  rowHeaderCellClassName={classNames?.rowHeaderCell}
                 />
               </div>
 
@@ -3271,10 +3255,11 @@ export function SpreadsheetGrid<T extends object>({
                   pane="right"
                   ownsRowHeader={false}
                   leadingWidth={rightLeadingWidth}
-                  rowHeaderWidth={rowHeaderWidth}
                   headerHeight={headerHeight}
                   rowHeaderCellStyle={rowHeaderCellStyle}
-                  headerCellBaseStyle={headerCellBaseStyle}
+                  headerRowClassName={classNames?.headerRow}
+                  headerCellClassName={classNames?.headerCell}
+                  rowHeaderCellClassName={classNames?.rowHeaderCell}
                   isCornerHovered={isCornerHovered}
                   isWholeGridSelected={isWholeGridSelected}
                   filteredRowsLength={viewRowCount}
@@ -3367,6 +3352,7 @@ export function SpreadsheetGrid<T extends object>({
                   getRowClassName={getRowClassName}
                   bodyCellClassName={classNames?.bodyCell}
                   bodyRowClassName={classNames?.bodyRow}
+                  rowHeaderCellClassName={classNames?.rowHeaderCell}
                 />
                 </div>
               </div>
