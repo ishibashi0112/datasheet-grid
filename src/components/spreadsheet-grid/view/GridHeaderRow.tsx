@@ -2,12 +2,13 @@
 // 変更(13-A): ヘッダー右クリック(contextmenu)用に MouseEvent 型を追加 import します。
 import {
   memo,
-  useState,
   type CSSProperties,
   type MouseEvent,
   type PointerEvent,
   type ReactNode,
 } from 'react';
+// 追加(UI CSS移行): className 合成ヘルパー。
+import { cx } from '../logic/cx';
 // 変更(11-A): uiState 丸ごと依存を撤廃し、正規化済み SelectionSnapshot を受け取ります。
 // 変更理由: GridBodyRow と同じく、uiState のあらゆる更新で props が変わるのを防ぎ、
 //           将来ヘッダー行を memo 化する際の布石にもなります。
@@ -54,10 +55,8 @@ type GridHeaderRowProps<T> = {
   selectionSnapshot: SelectionSnapshot;
   columnFilterValues: Record<string, ColumnFilterValue>;
   sortState: GridSortState;
-  getHeaderActionButtonStyle: (
-    isActive: boolean,
-    isHovered: boolean,
-  ) => CSSProperties;
+  // 追加(UI CSS移行): ヘッダーのアイコンボタンへ差し込む追加 className(classNames.iconButton)。
+  iconButtonClassName?: string;
   onCornerPointerDown: (event: PointerEvent<HTMLDivElement>) => void;
   onCornerPointerEnter: () => void;
   onCornerPointerLeave: () => void;
@@ -112,25 +111,29 @@ type GridHeaderRowProps<T> = {
 function HeaderActionButton({
   isActive,
   title,
-  getStyle,
+  className,
   onPointerDown,
   children,
 }: {
   isActive: boolean;
   title: string;
-  getStyle: (isActive: boolean, isHovered: boolean) => CSSProperties;
+  className?: string;
   onPointerDown: (event: PointerEvent<HTMLButtonElement>) => void;
   children: ReactNode;
 }) {
-  const [isHovered, setIsHovered] = useState(false);
+  // 変更(UI CSS移行): JS ホバー state を撤去し、:hover を CSS(.ssg-icon-btn)へ委譲します。
+  //   ホバーで再描画されなくなり、active 表示はクラス修飾子(--active)で行います。利用側は
+  //   classNames.iconButton(className)で局所上書きできます。
   return (
     <button
       type="button"
       title={title}
       onPointerDown={onPointerDown}
-      onPointerEnter={() => setIsHovered(true)}
-      onPointerLeave={() => setIsHovered(false)}
-      style={getStyle(isActive, isHovered)}
+      className={cx(
+        'ssg-icon-btn',
+        isActive && 'ssg-icon-btn--active',
+        className,
+      )}
     >
       {children}
     </button>
@@ -161,7 +164,7 @@ function GridHeaderRowInner<T>({
   selectionSnapshot,
   columnFilterValues,
   sortState,
-  getHeaderActionButtonStyle,
+  iconButtonClassName,
   onCornerPointerDown,
   onCornerPointerEnter,
   onCornerPointerLeave,
@@ -428,7 +431,7 @@ function GridHeaderRowInner<T>({
               <HeaderActionButton
                 title="列フィルター"
                 isActive={isColumnFiltered}
-                getStyle={getHeaderActionButtonStyle}
+                className={iconButtonClassName}
                 onPointerDown={(event) =>
                   onColumnFilterButtonPointerDown(column, event)
                 }
@@ -457,7 +460,7 @@ function GridHeaderRowInner<T>({
                 <HeaderActionButton
                   title="列メニュー"
                   isActive={isMenuOpenForColumn}
-                  getStyle={getHeaderActionButtonStyle}
+                  className={iconButtonClassName}
                   onPointerDown={(event) =>
                     onColumnMenuButtonPointerDown(column, event)
                   }

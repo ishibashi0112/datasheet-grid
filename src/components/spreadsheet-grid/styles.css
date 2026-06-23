@@ -1,0 +1,65 @@
+/* SpreadsheetGrid のスタイル(段階移行中)。
+   方針:
+   - デザイントークンは CSS 変数(--ssg-*)で定義。利用側はこれを上書きするだけでテーマ変更できます。
+   - 基底スタイルは @layer ssg-base に入れます。@layer のスタイルは「未レイヤーのスタイル」
+     (利用側の通常 CSS / Tailwind ユーティリティ等)に必ず負けるため、利用側の className 上書きが
+     特異度を気にせず効きます。
+   - 動的に決まる値(座標 / 解決済み列幅 / オーバーレイ位置など)は引き続きインライン style です。
+   - トークンは .ssg-root にスコープし、グローバル(:root)を汚しません。 */
+
+@layer ssg-base {
+  .ssg-root {
+    /* 色トークン */
+    --ssg-accent: #3461c9;
+    --ssg-accent-strong: #1d4ed8;
+    --ssg-line: #f1f5f9;
+    --ssg-line-strong: #e5e7eb;
+    --ssg-divider: #d7dce3;
+    --ssg-header-bg: #f8fafc;
+    --ssg-row-hover-bg: #f1f5f9;
+    --ssg-glyph: #94a3b8;
+    --ssg-glyph-hover: #475569;
+    --ssg-icon-hover-bg: #d6dee8;
+    --ssg-icon-active-bg: #e3e9f5;
+    --ssg-icon-active-bg-hover: #d4ddf0;
+    --ssg-icon-active-border: #c7d3ea;
+    /* 寸法トークン */
+    --ssg-radius: 8px;
+    --ssg-icon-btn-size: 22px;
+  }
+
+  /* ヘッダーのアイコンボタン(フィルター / メニュー) */
+  .ssg-icon-btn {
+    width: var(--ssg-icon-btn-size);
+    height: var(--ssg-icon-btn-size);
+    padding: 0;
+    border: 1px solid transparent;
+    border-radius: 6px;
+    background-color: transparent;
+    color: var(--ssg-glyph);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 auto;
+    cursor: pointer;
+    font-size: 11px;
+    line-height: 1;
+    transition: background-color 100ms ease, color 100ms ease;
+  }
+
+  .ssg-icon-btn:hover {
+    background-color: var(--ssg-icon-hover-bg);
+    color: var(--ssg-glyph-hover);
+  }
+
+  .ssg-icon-btn--active {
+    border-color: var(--ssg-icon-active-border);
+    background-color: var(--ssg-icon-active-bg);
+    color: var(--ssg-accent);
+  }
+
+  .ssg-icon-btn--active:hover {
+    background-color: var(--ssg-icon-active-bg-hover);
+    color: var(--ssg-accent);
+  }
+}

@@ -13,6 +13,10 @@ import {
   type PointerEvent,
 } from 'react';
 
+// 追加(UI CSS移行): 基底スタイル(トークン + @layer ssg-base)を読み込みます。
+import './styles.css';
+import { cx } from './logic/cx';
+
 import { useVirtualizer } from '@tanstack/react-virtual';
 
 import { gridActions } from './model/gridActions';
@@ -257,6 +261,8 @@ export function SpreadsheetGrid<T extends object>({
   renderTopBar,
   renderBottomBar,
   className,
+  // 追加(UI CSS移行): パーツ別の追加 className スロット。
+  classNames,
 }: SpreadsheetGridProps<T>) {
   // ── refs ──────────────────────────────────────────────
   const gridRootRef = useRef<HTMLDivElement | null>(null);
@@ -2529,36 +2535,8 @@ export function SpreadsheetGrid<T extends object>({
     [dispatch, enableSorting, uiState.sort],
   );
 
-  // ── header action button style ────────────────────────
-  const getHeaderActionButtonStyle = useCallback(
-    (isActive: boolean, isHovered: boolean): CSSProperties => ({
-      // 統合(UI): 既定は枠なし・薄いグリフでヘッダーを静かに保ち、active(フィルター適用 / メニュー
-      //   表示中)のときだけ落ち着いたブルーで前景化します。透明 border で box サイズを一定に保ちます。
-      // 追加(UI hover): ホバー時のみ背景を出します(inactive=薄グレー / active=やや濃いブルー)。
-      //   列ヘッダーホバー(セル背景 #e2e8f0)の上でも視認できる濃さにしています。
-      border: isActive ? '1px solid #c7d3ea' : '1px solid transparent',
-      backgroundColor: isActive
-        ? isHovered
-          ? '#d4ddf0'
-          : '#e3e9f5'
-        : isHovered
-          ? '#d6dee8'
-          : 'transparent',
-      color: isActive ? '#3461c9' : isHovered ? '#475569' : '#94a3b8',
-      borderRadius: 6,
-      width: 22,
-      height: 22,
-      padding: 0,
-      display: 'inline-flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-      cursor: 'pointer',
-      fontSize: 11,
-      flex: '0 0 auto',
-      transition: 'background-color 100ms ease, color 100ms ease',
-    }),
-    [],
-  );
+  // 変更(UI CSS移行): getHeaderActionButtonStyle(インライン)を撤去しました。
+  //   ヘッダーアイコンボタンのスタイルは styles.css(.ssg-icon-btn / --active / :hover)へ移行。
 
   // ── cell content renderer ─────────────────────────────
   // 変更(11-A): isActive / isSelected / isEditing / readOnly の判定を GridBodyRow 側へ
@@ -2967,7 +2945,10 @@ export function SpreadsheetGrid<T extends object>({
 
   // ── render ────────────────────────────────────────────
   return (
-    <div className={className} style={gridFrameStyle}>
+    <div
+      className={cx('ssg-root', className, classNames?.root)}
+      style={gridFrameStyle}
+    >
       {resolvedTopBar}
 
       <div
@@ -3035,7 +3016,7 @@ export function SpreadsheetGrid<T extends object>({
                   selectionSnapshot={selectionSnapshot}
                   columnFilterValues={uiState.filters.columnFilters}
                   sortState={uiState.sort}
-                  getHeaderActionButtonStyle={getHeaderActionButtonStyle}
+                  iconButtonClassName={classNames?.iconButton}
                   onCornerPointerDown={handleCornerHeaderPointerDown}
                   onCornerPointerEnter={handleCornerPointerEnterStable}
                   onCornerPointerLeave={handleCornerPointerLeaveStable}
@@ -3168,7 +3149,7 @@ export function SpreadsheetGrid<T extends object>({
                 selectionSnapshot={selectionSnapshot}
                 columnFilterValues={uiState.filters.columnFilters}
                 sortState={uiState.sort}
-                getHeaderActionButtonStyle={getHeaderActionButtonStyle}
+                iconButtonClassName={classNames?.iconButton}
                 onCornerPointerDown={handleCornerHeaderPointerDown}
                 onCornerPointerEnter={handleCornerPointerEnterStable}
                 onCornerPointerLeave={handleCornerPointerLeaveStable}
@@ -3295,7 +3276,7 @@ export function SpreadsheetGrid<T extends object>({
                   selectionSnapshot={selectionSnapshot}
                   columnFilterValues={uiState.filters.columnFilters}
                   sortState={uiState.sort}
-                  getHeaderActionButtonStyle={getHeaderActionButtonStyle}
+                  iconButtonClassName={classNames?.iconButton}
                   onCornerPointerDown={handleCornerHeaderPointerDown}
                   onCornerPointerEnter={handleCornerPointerEnterStable}
                   onCornerPointerLeave={handleCornerPointerLeaveStable}

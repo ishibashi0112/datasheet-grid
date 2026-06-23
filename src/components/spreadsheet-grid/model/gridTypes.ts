@@ -371,6 +371,22 @@ export type SpreadsheetGridSlotContext<T> = {
 };
 
 // 追加: 公開 props です。
+// 追加(UI CSS移行): 各パーツへ追加 className を差し込むスロットです。利用側はここに任意のクラス
+//   (例: 別プロジェクトの Tailwind ユーティリティ)を渡して局所調整できます。基底クラスは
+//   @layer ssg-base に入っているため、ここで渡したクラスが特異度を気にせず上書きできます。
+//   注記: 段階移行中。現在“配線済み”は root / iconButton。他スロットは順次配線します。
+export type GridClassNames = {
+  root?: string;
+  toolbar?: string;
+  statusBar?: string;
+  headerRow?: string;
+  headerCell?: string;
+  bodyRow?: string;
+  bodyCell?: string;
+  rowHeaderCell?: string;
+  iconButton?: string;
+};
+
 export type SpreadsheetGridProps<T> = {
   // 変更(DS-4 ②/①-3): rows を optional 化しました。dataSource(serverSide)指定時は rows 不要のため。
   //   clientSide でも SpreadsheetGrid 側で既定値(EMPTY_ROWS)を当てるため、未指定でも従来どおり動作します。
@@ -429,4 +445,6 @@ export type SpreadsheetGridProps<T> = {
   // 追加: Grid 下部カスタム領域です。未指定時は何も表示しません。
   renderBottomBar?: (context: SpreadsheetGridSlotContext<T>) => ReactNode;
   className?: string;
+  // 追加(UI CSS移行): パーツ別の追加 className スロット(詳細は GridClassNames)。
+  classNames?: GridClassNames;
 };
