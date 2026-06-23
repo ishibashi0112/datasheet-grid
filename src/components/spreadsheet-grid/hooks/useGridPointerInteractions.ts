@@ -73,6 +73,14 @@ type UseGridPointerInteractionsArgs<T> = {
   rowMetrics: RowMetrics;
   // 追加(scroll-space 仮想化): clientY→row の物理→論理換算倍率(scaleFactor=1 で従来式)。
   verticalScaleFactor: number;
+  // 追加(UI hover): 行ホバーの設定/クリア用 setter です。セル/行ヘッダー enter で行 index を
+  //   設定し、列ヘッダー enter ではクリアします(grid から出たときの clear は呼び出し側で行います)。
+  setHoveredRowIndex: (value: number | null) => void;
+  // 追加(UI hover): 列ヘッダーホバーの設定用 setter です(列ヘッダー enter で colIndex を設定)。
+  setHoveredColumnIndex: (value: number | null) => void;
+  // 追加(UI hover): 行ホバー(既定 true)/列ヘッダーホバー(既定 true)の有効化フラグです。
+  enableRowHover: boolean;
+  enableColumnHeaderHover: boolean;
 };
 
 // 追加: pointer 系 interaction（cell/row/col selection + drag auto-scroll + window pointer sync）をまとめます。
@@ -99,6 +107,10 @@ export const useGridPointerInteractions = <T,>({
   headerHeight,
   rowMetrics,
   verticalScaleFactor,
+  setHoveredRowIndex,
+  setHoveredColumnIndex,
+  enableRowHover,
+  enableColumnHeaderHover,
 }: UseGridPointerInteractionsArgs<T>) => {
   // 追加(11-A2): dragState の最新値を ref で保持します(latest-ref パターン)。
   // 変更理由: enter 系ハンドラ(handleCellPointerEnter 等)が uiState.dragState を
@@ -395,6 +407,12 @@ export const useGridPointerInteractions = <T,>({
   //              そのまま「全行再レンダーの回避」に直結します。
   const handleCellPointerEnter = useCallback(
     (cell: CellCoord, event: PointerEvent<HTMLDivElement>) => {
+      // 追加(UI hover): セルに入ったら行ホバーを設定します(enableRowHover 時のみ / 選択ドラッグの
+      //   有無に関わらず)。同一行内のセル移動では同値設定となり React が再描画を省くため、再描画は
+      //   行をまたいだときの該当 2 行のみで済みます。
+      if (enableRowHover) {
+        setHoveredRowIndex(cell.row);
+      }
       if (!enableRangeSelection) {
         return;
       }
@@ -408,7 +426,13 @@ export const useGridPointerInteractions = <T,>({
       pointerClientRef.current = { x: event.clientX, y: event.clientY };
       dispatch(gridActions.updateSelection(cell));
     },
-    [dispatch, enableRangeSelection, pointerClientRef],
+    [
+      dispatch,
+      enableRangeSelection,
+      pointerClientRef,
+      setHoveredRowIndex,
+      enableRowHover,
+    ],
   );
 
   // 追加: ブラウザ標準の drag ghost を抑止します。
@@ -436,6 +460,10 @@ export const useGridPointerInteractions = <T,>({
   // 変更(11-A2): dragState を ref から読み、依存から外します(理由は上と同じ)。
   const handleRowHeaderPointerEnter = useCallback(
     (rowIndex: number, event: PointerEvent<HTMLDivElement>) => {
+      // 追加(UI hover): 行ヘッダー(#セル)に入っても行ホバーを設定します(enableRowHover 時のみ)。
+      if (enableRowHover) {
+        setHoveredRowIndex(rowIndex);
+      }
       const dragState = dragStateRef.current;
       if (
         dragState?.type !== 'selection' ||
@@ -446,7 +474,7 @@ export const useGridPointerInteractions = <T,>({
       pointerClientRef.current = { x: event.clientX, y: event.clientY };
       dispatch(gridActions.updateRowSelection(rowIndex));
     },
-    [dispatch, pointerClientRef],
+    [dispatch, pointerClientRef, setHoveredRowIndex, enableRowHover],
   );
 
   // 追加: 列ヘッダー選択開始です。
@@ -495,6 +523,13 @@ export const useGridPointerInteractions = <T,>({
   // 変更(11-A2): dragState を ref から読み、依存から外します(理由は上と同じ)。
   const handleColumnHeaderPointerEnter = useCallback(
     (colIndex: number, event: PointerEvent<HTMLDivElement>) => {
+      // 追加(UI hover): 列ヘッダーへ入ったら行ホバーをクリアします(本体→ヘッダー移動時に直前の
+      //   行ハイライトが残らないように)。enableColumnHeaderHover 時は列ヘッダーホバーを設定します
+      //   (クリアは列ヘッダー leave 側=handleColumnHeaderPointerLeaveStable が担います)。
+      setHoveredRowIndex(null);
+      if (enableColumnHeaderHover) {
+        setHoveredColumnIndex(colIndex);
+      }
       const dragState = dragStateRef.current;
       if (
         dragState?.type !== 'selection' ||
@@ -505,7 +540,13 @@ export const useGridPointerInteractions = <T,>({
       pointerClientRef.current = { x: event.clientX, y: event.clientY };
       dispatch(gridActions.updateColumnSelection(colIndex));
     },
-    [dispatch, pointerClientRef],
+    [
+      dispatch,
+      pointerClientRef,
+      setHoveredRowIndex,
+      setHoveredColumnIndex,
+      enableColumnHeaderHover,
+    ],
   );
 
   return {

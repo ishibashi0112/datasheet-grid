@@ -409,6 +409,10 @@ export type SpreadsheetGridProps<T> = {
   enableGlobalFilter?: boolean;
   enableColumnFilter?: boolean;
   enableSorting?: boolean;
+  // 追加(UI hover): 行ホバー時に行全体を薄くハイライトします。既定 true。
+  enableRowHover?: boolean;
+  // 追加(UI hover): 列ヘッダーのホバー時にヘッダーセルを薄くハイライトします。既定 true。
+  enableColumnHeaderHover?: boolean;
   // 追加(13-A): 列メニュー(「⋮」ボタン + ヘッダー右クリック)の有効化フラグです。
   //             既定は true。メニューからの列固定切替は columns が controlled のため
   //             onColumnsChange が指定されている場合にのみ反映されます

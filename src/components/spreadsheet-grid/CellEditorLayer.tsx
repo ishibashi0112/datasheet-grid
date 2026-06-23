@@ -99,7 +99,7 @@ export function CellEditorLayer({
     width: '100%',
     height: '100%',
     boxSizing: 'border-box',
-    border: '2px solid #2563eb',
+    border: '2px solid #3461c9',
     outline: 'none',
     padding: '0 10px',
     margin: 0,

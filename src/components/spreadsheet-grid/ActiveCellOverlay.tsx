@@ -40,7 +40,7 @@ export function ActiveCellOverlay({
     top: headerHeight + rect.top - baseOffset,
     width: rect.width,
     height: rect.height,
-    border: '2px solid #2563eb',
+    border: '2px solid #3461c9',
     boxSizing: 'border-box',
     pointerEvents: 'none',
     zIndex: 4,

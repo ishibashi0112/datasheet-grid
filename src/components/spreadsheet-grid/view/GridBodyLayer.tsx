@@ -174,8 +174,8 @@ function GridBodyRowInner<T>({
             backgroundColor:
               isWholeGridSelected || isRowSelected
                 ? isRowHovered
-                  ? '#bfdbfe'
-                  : '#dbeafe'
+                  ? '#ccd7ee'
+                  : '#e3e9f5'
                 : isRowHovered
                   ? '#e2e8f0'
                   : '#f8fafc',
@@ -266,10 +266,15 @@ function GridBodyRowInner<T>({
               boxSizing: 'border-box',
               display: 'flex',
               padding: '0 10px',
-              borderRight: '1px solid #e5e7eb',
+              borderRight: '1px solid #f1f5f9',
               borderBottom: '1px solid #e5e7eb',
-              backgroundColor:
-                readOnlyCell && !isSelected ? '#f8fafc' : '#ffffff',
+              backgroundColor: readOnlyCell && !isSelected
+                ? isRowHovered
+                  ? '#eef2f7'
+                  : '#f8fafc'
+                : isRowHovered
+                  ? '#f1f5f9'
+                  : '#ffffff',
               color: readOnlyCell ? '#64748b' : '#0f172a',
               cursor: 'default',
               userSelect: 'none',
@@ -416,9 +421,9 @@ function GridBodySkeletonRowInner<T>({
               display: 'flex',
               alignItems: 'center',
               padding: '0 10px',
-              borderRight: '1px solid #e5e7eb',
+              borderRight: '1px solid #f1f5f9',
               borderBottom: '1px solid #e5e7eb',
-              backgroundColor: '#ffffff',
+              backgroundColor: isRowHovered ? '#f1f5f9' : '#ffffff',
               cursor: 'default',
               userSelect: 'none',
               outline: 'none',

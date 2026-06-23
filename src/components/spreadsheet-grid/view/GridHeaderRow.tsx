@@ -2,9 +2,11 @@
 // 変更(13-A): ヘッダー右クリック(contextmenu)用に MouseEvent 型を追加 import します。
 import {
   memo,
+  useState,
   type CSSProperties,
   type MouseEvent,
   type PointerEvent,
+  type ReactNode,
 } from 'react';
 // 変更(11-A): uiState 丸ごと依存を撤廃し、正規化済み SelectionSnapshot を受け取ります。
 // 変更理由: GridBodyRow と同じく、uiState のあらゆる更新で props が変わるのを防ぎ、
@@ -52,7 +54,10 @@ type GridHeaderRowProps<T> = {
   selectionSnapshot: SelectionSnapshot;
   columnFilterValues: Record<string, ColumnFilterValue>;
   sortState: GridSortState;
-  getHeaderActionButtonStyle: (isActive: boolean) => CSSProperties;
+  getHeaderActionButtonStyle: (
+    isActive: boolean,
+    isHovered: boolean,
+  ) => CSSProperties;
   onCornerPointerDown: (event: PointerEvent<HTMLDivElement>) => void;
   onCornerPointerEnter: () => void;
   onCornerPointerLeave: () => void;
@@ -101,6 +106,37 @@ type GridHeaderRowProps<T> = {
 
 // 変更(10-C): sticky header 行を「1ペイン分」描画する汎用コンポーネントにしました。
 //             ownsRowHeader が true のペインのみ左上コーナーセルを描画します。
+// 追加(UI hover): ヘッダーのアイコンボタンです。各ボタンが自分のホバー状態を持ち、ホバー時のみ
+//   背景を出します(:hover 相当をインラインスタイルで実現)。ホバー変化で再描画されるのは当該
+//   ボタンのみで、ヘッダー全体や他ボタンには波及しません。
+function HeaderActionButton({
+  isActive,
+  title,
+  getStyle,
+  onPointerDown,
+  children,
+}: {
+  isActive: boolean;
+  title: string;
+  getStyle: (isActive: boolean, isHovered: boolean) => CSSProperties;
+  onPointerDown: (event: PointerEvent<HTMLButtonElement>) => void;
+  children: ReactNode;
+}) {
+  const [isHovered, setIsHovered] = useState(false);
+  return (
+    <button
+      type="button"
+      title={title}
+      onPointerDown={onPointerDown}
+      onPointerEnter={() => setIsHovered(true)}
+      onPointerLeave={() => setIsHovered(false)}
+      style={getStyle(isActive, isHovered)}
+    >
+      {children}
+    </button>
+  );
+}
+
 // 変更(11-B5): React.memo 化のため実装本体を Inner に分離します(export は末尾参照)。
 // 変更理由: ライブリサイズ中、幅が変わっていない固定ペインのヘッダーまで親再レンダーに
 //           引きずられて再描画されていました。11-B4 で renderEntries はペイン単位で
@@ -177,8 +213,8 @@ function GridHeaderRowInner<T>({
             zIndex: 7,
             backgroundColor: isWholeGridSelected
               ? isCornerHovered
-                ? '#bfdbfe'
-                : '#dbeafe'
+                ? '#ccd7ee'
+                : '#e3e9f5'
               : isCornerHovered
                 ? '#e2e8f0'
                 : '#f8fafc',
@@ -264,12 +300,12 @@ function GridHeaderRowInner<T>({
               height: headerHeight,
               backgroundColor: isWholeGridSelected
                 ? hoveredColumnIndex === colIndex
-                  ? '#bfdbfe'
-                  : '#dbeafe'
+                  ? '#ccd7ee'
+                  : '#e3e9f5'
                 : isColumnSelected
                   ? hoveredColumnIndex === colIndex
-                    ? '#bfdbfe'
-                    : '#dbeafe'
+                    ? '#ccd7ee'
+                    : '#e3e9f5'
                   : hoveredColumnIndex === colIndex
                     ? '#e2e8f0'
                     : '#f8fafc',
@@ -328,7 +364,7 @@ function GridHeaderRowInner<T>({
                 alignItems: 'center',
                 minWidth: 0,
                 flex: 1,
-                gap: 6,
+                gap: 4,
               }}
             >
               <div
@@ -371,7 +407,7 @@ function GridHeaderRowInner<T>({
                     alignItems: 'center',
                     gap: 1,
                     flex: '0 0 auto',
-                    color: '#2563eb',
+                    color: '#3461c9',
                     fontSize: 12,
                     fontWeight: 700,
                     lineHeight: 1,
@@ -389,31 +425,45 @@ function GridHeaderRowInner<T>({
                 </span>
               )}
 
-              <button
-                type="button"
+              <HeaderActionButton
+                title="列フィルター"
+                isActive={isColumnFiltered}
+                getStyle={getHeaderActionButtonStyle}
                 onPointerDown={(event) =>
                   onColumnFilterButtonPointerDown(column, event)
                 }
-                title="列フィルター"
-                style={getHeaderActionButtonStyle(isColumnFiltered)}
               >
-                {isColumnFiltered ? '●' : '○'}
-              </button>
+                {/* 変更(UI): フィルターのアイコンを ●/○ から漏斗(ファネル)へ。未適用=枠線 /
+                    適用中=塗りつぶし で区別し、色はボタンの currentColor に追従します。 */}
+                <svg
+                  width="12"
+                  height="12"
+                  viewBox="0 0 16 16"
+                  fill={isColumnFiltered ? 'currentColor' : 'none'}
+                  stroke="currentColor"
+                  strokeWidth={isColumnFiltered ? 0 : 1.4}
+                  strokeLinejoin="round"
+                  aria-hidden="true"
+                  focusable="false"
+                >
+                  <path d="M2 4 L14 4 L9.2 9.2 L9.2 13 L6.8 13 L6.8 9.2 Z" />
+                </svg>
+              </HeaderActionButton>
 
               {/* 変更(13-A2): 列メニュー(「⋮」)ボタンです。常時表示します
                   (AG Grid の suppressMenuHide: true 相当。右クリックでも
                    同じメニューが開きます)。 */}
               {showColumnMenuButton && (
-                <button
-                  type="button"
+                <HeaderActionButton
+                  title="列メニュー"
+                  isActive={isMenuOpenForColumn}
+                  getStyle={getHeaderActionButtonStyle}
                   onPointerDown={(event) =>
                     onColumnMenuButtonPointerDown(column, event)
                   }
-                  title="列メニュー"
-                  style={getHeaderActionButtonStyle(isMenuOpenForColumn)}
                 >
                   ⋮
-                </button>
+                </HeaderActionButton>
               )}
             </div>
 

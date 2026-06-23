@@ -1,22 +1,23 @@
 import type { CSSProperties } from 'react';
 
-// 追加: top/bottom 共通の外側余白を返します。
+// 統合(UI): バーは外枠 frame の内側に収め、本体との境界は 1px の divider のみで表します
+//   (top は下境界 / bottom は上境界)。以前の外側 margin による「浮いたカード」分離を廃止しました。
 export const getGridBarWrapperStyle = (
   position: 'top' | 'bottom',
 ): CSSProperties => ({
-  marginBottom: position === 'top' ? 12 : 0,
-  marginTop: position === 'bottom' ? 12 : 0,
+  borderBottom: position === 'top' ? '1px solid #d7dce3' : undefined,
+  borderTop: position === 'bottom' ? '1px solid #d7dce3' : undefined,
 });
 
-// 追加: top/bottom 共通の bar 本体スタイルです。
+// 統合(UI): top/bottom 共通の bar 本体スタイルです。個別の border / borderRadius は撤去し、
+//   外枠 frame が単一の境界・角丸を担います。バーは本体と地続きのセクションになり、背景 #f8fafc は
+//   ヘッダー行と同系色で連続感を出します。
 export const gridBarContainerStyle: CSSProperties = {
   display: 'flex',
   alignItems: 'center',
   justifyContent: 'space-between',
   gap: 12,
   padding: '10px 12px',
-  border: '1px solid #d7dce3',
-  borderRadius: 12,
   backgroundColor: '#f8fafc',
   flexWrap: 'wrap',
 };

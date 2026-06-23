@@ -246,6 +246,9 @@ export function SpreadsheetGrid<T extends object>({
   enableGlobalFilter = true,
   enableColumnFilter = true,
   enableSorting = true,
+  // 追加(UI hover): 行ホバー(既定 true) / 列ヘッダーホバー(既定 true)。
+  enableRowHover = true,
+  enableColumnHeaderHover = true,
   // 追加(13-A): 列メニュー(「⋮」+ 右クリック)の有効化フラグです(既定 true)。
   enableColumnMenu = true,
   // 追加(12-B): 0 行時の空状態テキストです(AG Grid のオーバーレイ相当)。
@@ -1352,6 +1355,11 @@ export function SpreadsheetGrid<T extends object>({
     rowMetrics,
     // 追加(scroll-space 仮想化): ヒットテスト clientY→row の物理→論理換算に使います。
     verticalScaleFactor,
+    // 追加(UI hover): 行/列ヘッダーホバーの設定 setter と有効化フラグ(行=既定 true / 列=既定 true)。
+    setHoveredRowIndex,
+    setHoveredColumnIndex,
+    enableRowHover,
+    enableColumnHeaderHover,
   });
 
   // ── clipboard ─────────────────────────────────────────
@@ -2523,13 +2531,23 @@ export function SpreadsheetGrid<T extends object>({
 
   // ── header action button style ────────────────────────
   const getHeaderActionButtonStyle = useCallback(
-    (isActive: boolean): CSSProperties => ({
-      border: '1px solid #cbd5e1',
-      backgroundColor: isActive ? '#dbeafe' : '#ffffff',
-      color: isActive ? '#2563eb' : '#475569',
+    (isActive: boolean, isHovered: boolean): CSSProperties => ({
+      // 統合(UI): 既定は枠なし・薄いグリフでヘッダーを静かに保ち、active(フィルター適用 / メニュー
+      //   表示中)のときだけ落ち着いたブルーで前景化します。透明 border で box サイズを一定に保ちます。
+      // 追加(UI hover): ホバー時のみ背景を出します(inactive=薄グレー / active=やや濃いブルー)。
+      //   列ヘッダーホバー(セル背景 #e2e8f0)の上でも視認できる濃さにしています。
+      border: isActive ? '1px solid #c7d3ea' : '1px solid transparent',
+      backgroundColor: isActive
+        ? isHovered
+          ? '#d4ddf0'
+          : '#e3e9f5'
+        : isHovered
+          ? '#d6dee8'
+          : 'transparent',
+      color: isActive ? '#3461c9' : isHovered ? '#475569' : '#94a3b8',
       borderRadius: 6,
-      width: 24,
-      height: 24,
+      width: 22,
+      height: 22,
       padding: 0,
       display: 'inline-flex',
       alignItems: 'center',
@@ -2537,6 +2555,7 @@ export function SpreadsheetGrid<T extends object>({
       cursor: 'pointer',
       fontSize: 11,
       flex: '0 0 auto',
+      transition: 'background-color 100ms ease, color 100ms ease',
     }),
     [],
   );
@@ -2627,12 +2646,22 @@ export function SpreadsheetGrid<T extends object>({
   });
 
   // ── styles ────────────────────────────────────────────
-  const gridShellStyle: CSSProperties = {
+  // 統合(UI): top バー + 本体 + bottom バーを 1 つの枠に収める外枠 frame です。境界・角丸・影・
+  //   角丸クリップをここで一元化し、バーと本体を地続きに見せます(以前は 3 つの独立した角丸カードで、
+  //   間の margin により浮いて見えていました)。ポップオーバー類は createPortal で document 直下へ
+  //   描画されるため、overflow:hidden でも切れません。
+  const gridFrameStyle: CSSProperties = {
     border: '1px solid #d7dce3',
-    borderRadius: 12,
+    borderRadius: 8,
     overflow: 'hidden',
     backgroundColor: '#ffffff',
     boxShadow: '0 4px 14px rgba(15, 23, 42, 0.04)',
+  };
+  const gridShellStyle: CSSProperties = {
+    // 統合(UI): 個別の border / borderRadius / boxShadow は撤去(外枠 frame が担当)。本体は枠の
+    //   内側に収まるセクションになります。
+    overflow: 'hidden',
+    backgroundColor: '#ffffff',
     // 追加(DS-4 ①-(2)): Pending overlay(絶対配置)の基準 + 計測中の wait カーソルです。
     position: 'relative',
     cursor: isAutosizing ? 'progress' : undefined,
@@ -2648,7 +2677,7 @@ export function SpreadsheetGrid<T extends object>({
       gap: 8,
       boxSizing: 'border-box',
       padding: '0 10px',
-      borderRight: '1px solid #e5e7eb',
+      borderRight: '1px solid #f1f5f9',
       borderBottom: '1px solid #d7dce3',
       backgroundColor: '#f8fafc',
       fontSize: 13,
@@ -2938,13 +2967,15 @@ export function SpreadsheetGrid<T extends object>({
 
   // ── render ────────────────────────────────────────────
   return (
-    <div className={className}>
+    <div className={className} style={gridFrameStyle}>
       {resolvedTopBar}
 
       <div
         ref={gridRootRef}
         style={gridShellStyle}
         onDragStart={handleNativeDragStart}
+        // 追加(UI hover): grid 本体(ヘッダー+ボディ)から出たら行ホバーをクリアします。
+        onPointerLeave={() => setHoveredRowIndex(null)}
         onPointerMoveCapture={(event) => {
           pointerClientRef.current = { x: event.clientX, y: event.clientY };
           updateSelectionFromPointer(event.clientX, event.clientY);
