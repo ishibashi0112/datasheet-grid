@@ -34,6 +34,8 @@
     --ssg-header-hover-bg: #e2e8f0;
     --ssg-select-bg: #e3e9f5;
     --ssg-select-bg-hover: #ccd7ee;
+    /* オーバーレイ */
+    --ssg-selection-fill: rgba(52, 97, 201, 0.08);
     /* 寸法トークン */
     --ssg-radius: 8px;
     --ssg-icon-btn-size: 22px;
@@ -161,5 +163,42 @@
     padding: 0;
     border-right: 1px solid var(--ssg-line-strong);
     line-height: 1;
+  }
+
+  /* ── オーバーレイ / エディタ ── */
+  /* アクティブセル枠。座標 / 幅 / 高さはインライン(動的)。枠色は accent に追従。 */
+  .ssg-active-cell-overlay {
+    box-sizing: border-box;
+    border: 2px solid var(--ssg-accent);
+    pointer-events: none;
+    z-index: 4;
+  }
+
+  /* 選択範囲(枠 + 塗り)。 */
+  .ssg-selection-overlay {
+    box-sizing: border-box;
+    border: 2px solid var(--ssg-accent);
+    background-color: var(--ssg-selection-fill);
+    pointer-events: none;
+    z-index: 2;
+  }
+
+  /* セルエディタ。wrapper は座標のみインライン。 */
+  .ssg-cell-editor {
+    pointer-events: none;
+    z-index: 5;
+  }
+  .ssg-cell-editor-input {
+    width: 100%;
+    height: 100%;
+    box-sizing: border-box;
+    border: 2px solid var(--ssg-accent);
+    outline: none;
+    padding: 0 10px;
+    margin: 0;
+    font-size: 16px;
+    color: var(--ssg-cell-text);
+    background-color: var(--ssg-cell-bg);
+    pointer-events: auto;
   }
 }

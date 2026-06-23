@@ -34,19 +34,17 @@ export function ActiveCellOverlay({
     return null;
   }
 
+  // 変更(UI CSS移行): 静的スタイル(枠 / boxSizing / pointerEvents / zIndex)は styles.css
+  //   (.ssg-active-cell-overlay)へ。座標 / 幅 / 高さのみインライン(動的)。枠色は accent 追従。
   const overlayStyle: CSSProperties = {
     position: 'absolute',
     left: leadingWidth + rect.left,
     top: headerHeight + rect.top - baseOffset,
     width: rect.width,
     height: rect.height,
-    border: '2px solid #3461c9',
-    boxSizing: 'border-box',
-    pointerEvents: 'none',
-    zIndex: 4,
   };
 
-  return <div style={overlayStyle} />;
+  return <div className="ssg-active-cell-overlay" style={overlayStyle} />;
 }
 
 export default ActiveCellOverlay;

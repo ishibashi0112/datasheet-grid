@@ -4290,172 +4290,137 @@ describe('number filter descriptor helpers', () => {
 });
 </file>
 
-<file path="src/components/spreadsheet-grid/styles.css">
-/* SpreadsheetGrid のスタイル(段階移行中)。
-   方針:
-   - デザイントークンは CSS 変数(--ssg-*)で定義。利用側はこれを上書きするだけでテーマ変更できます。
-   - 基底スタイルは @layer ssg-base に入れます。@layer のスタイルは「未レイヤーのスタイル」
-     (利用側の通常 CSS / Tailwind ユーティリティ等)に必ず負けるため、利用側の className 上書きが
-     特異度を気にせず効きます。
-   - 動的に決まる値(座標 / 解決済み列幅 / オーバーレイ位置など)は引き続きインライン style です。
-   - トークンは .ssg-root にスコープし、グローバル(:root)を汚しません。 */
+<file path="src/components/spreadsheet-grid/model/gridActions.ts">
+import type { CellCoord, ColumnFilterValue, GridSortEntry } from './gridTypes';
 
-@layer ssg-base {
-  .ssg-root {
-    /* 色トークン */
-    --ssg-accent: #3461c9;
-    --ssg-accent-strong: #1d4ed8;
-    --ssg-line: #f1f5f9;
-    --ssg-line-strong: #e5e7eb;
-    --ssg-divider: #d7dce3;
-    --ssg-header-bg: #f8fafc;
-    --ssg-row-hover-bg: #f1f5f9;
-    --ssg-glyph: #94a3b8;
-    --ssg-glyph-hover: #475569;
-    --ssg-icon-hover-bg: #d6dee8;
-    --ssg-icon-active-bg: #e3e9f5;
-    --ssg-icon-active-bg-hover: #d4ddf0;
-    --ssg-icon-active-border: #c7d3ea;
-    /* 本体セル */
-    --ssg-cell-bg: #ffffff;
-    --ssg-cell-text: #0f172a;
-    --ssg-readonly-bg: #f8fafc;
-    --ssg-readonly-text: #64748b;
-    --ssg-readonly-hover-bg: #eef2f7;
-    /* ヘッダー */
-    --ssg-header-text: #334155;
-    --ssg-header-hover-bg: #e2e8f0;
-    --ssg-select-bg: #e3e9f5;
-    --ssg-select-bg-hover: #ccd7ee;
-    /* 寸法トークン */
-    --ssg-radius: 8px;
-    --ssg-icon-btn-size: 22px;
-  }
+// 追加: Grid UI action の union 型です。
+export type GridUiAction =
+  | { type: 'cell/activate'; cell: CellCoord | null }
+  | { type: 'selection/start'; cell: CellCoord }
+  | { type: 'selection/update'; cell: CellCoord }
+  | { type: 'rowSelection/start'; row: number }
+  | { type: 'rowSelection/update'; row: number }
+  | { type: 'columnSelection/start'; col: number }
+  | { type: 'columnSelection/update'; col: number }
+  | { type: 'selection/end' }
+  | { type: 'selection/clear' }
+  | { type: 'edit/start'; cell: CellCoord }
+  | { type: 'edit/stop' }
+  | {
+      type: 'column/resizeStart';
+      columnKey: string;
+      startX: number;
+      startWidth: number;
+      minWidth: number;
+      maxWidth: number;
+    }
+  | { type: 'column/resizeUpdate'; clientX: number }
+  | { type: 'column/resizeEnd' }
+  | { type: 'columnWidths/sync'; widths: Record<string, number> }
+  | { type: 'filter/setGlobal'; value: string }
+  | { type: 'filter/setColumn'; columnKey: string; value: ColumnFilterValue }
+  | { type: 'filter/clearColumn'; columnKey: string }
+  | { type: 'filter/resetAll' }
+  | { type: 'sort/set'; entries: GridSortEntry[] }
+  | { type: 'sort/clear' };
 
-  /* ヘッダーのアイコンボタン(フィルター / メニュー) */
-  .ssg-icon-btn {
-    width: var(--ssg-icon-btn-size);
-    height: var(--ssg-icon-btn-size);
-    padding: 0;
-    border: 1px solid transparent;
-    border-radius: 6px;
-    background-color: transparent;
-    color: var(--ssg-glyph);
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    flex: 0 0 auto;
-    cursor: pointer;
-    font-size: 11px;
-    line-height: 1;
-    transition: background-color 100ms ease, color 100ms ease;
-  }
-
-  .ssg-icon-btn:hover {
-    background-color: var(--ssg-icon-hover-bg);
-    color: var(--ssg-glyph-hover);
-  }
-
-  .ssg-icon-btn--active {
-    border-color: var(--ssg-icon-active-border);
-    background-color: var(--ssg-icon-active-bg);
-    color: var(--ssg-accent);
-  }
-
-  .ssg-icon-btn--active:hover {
-    background-color: var(--ssg-icon-active-bg-hover);
-    color: var(--ssg-accent);
-  }
-
-  /* 本体セル(データ行のセル)。座標 / 幅 / 高さ / zIndex はインライン(動的)。 */
-  .ssg-body-cell {
-    box-sizing: border-box;
-    display: flex;
-    align-items: center;
-    padding: 0 10px;
-    border-right: 1px solid var(--ssg-line);
-    border-bottom: 1px solid var(--ssg-line-strong);
-    background-color: var(--ssg-cell-bg);
-    color: var(--ssg-cell-text);
-    white-space: nowrap;
-    overflow: hidden;
-    cursor: default;
-    user-select: none;
-    outline: none;
-  }
-
-  /* auto-height 駆動セル: 内容駆動高さ(下限はインライン min-height)で折り返し表示。 */
-  .ssg-body-cell--autoheight {
-    align-items: flex-start;
-    white-space: normal;
-    word-break: break-word;
-    overflow: visible;
-  }
-
-  /* 行ホバー(hoveredRowIndex 由来。3 ペイン横断のため :hover では実装不可)。 */
-  .ssg-body-cell--row-hovered {
-    background-color: var(--ssg-row-hover-bg);
-  }
-
-  /* 読み取り専用セル(選択時は通常背景へ戻し、選択塗りを素直に見せる)。 */
-  .ssg-body-cell--readonly {
-    background-color: var(--ssg-readonly-bg);
-    color: var(--ssg-readonly-text);
-  }
-
-  .ssg-body-cell--readonly.ssg-body-cell--row-hovered {
-    background-color: var(--ssg-readonly-hover-bg);
-  }
-
-  /* ── ヘッダー ── */
-  /* ヘッダー行コンテナ(sticky)。height はインライン。 */
-  .ssg-header-row {
-    position: sticky;
-    top: 0;
-    z-index: 6;
-    background-color: var(--ssg-header-bg);
-  }
-
-  /* ヘッダーセル(列ヘッダー / 行ヘッダー / コーナー共通の土台)。座標 / 幅 / 高さはインライン。 */
-  .ssg-header-cell {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    box-sizing: border-box;
-    padding: 0 10px;
-    border-right: 1px solid var(--ssg-line);
-    border-bottom: 1px solid var(--ssg-divider);
-    background-color: var(--ssg-header-bg);
-    font-size: 13px;
-    font-weight: 600;
-    color: var(--ssg-header-text);
-  }
-
-  /* ヘッダーセルのホバー / 選択(列・行・全体で同色)。 */
-  .ssg-header-cell--hovered {
-    background-color: var(--ssg-header-hover-bg);
-  }
-  .ssg-header-cell--selected {
-    background-color: var(--ssg-select-bg);
-  }
-  .ssg-header-cell--selected.ssg-header-cell--hovered {
-    background-color: var(--ssg-select-bg-hover);
-  }
-
-  /* 行ヘッダー「#」セル(番号セル)。header-cell に重ねて中央寄せ + 細字。 */
-  .ssg-row-header-cell {
-    justify-content: center;
-    font-weight: 500;
-  }
-
-  /* 左上コーナーセル。中央寄せ + 余白詰め + 右境界を濃く。 */
-  .ssg-corner-cell {
-    justify-content: center;
-    padding: 0;
-    border-right: 1px solid var(--ssg-line-strong);
-    line-height: 1;
-  }
-}
+// 追加: action creator 群です。UI から文字列リテラルを散らさないために定義します。
+export const gridActions = {
+  activateCell: (cell: CellCoord | null): GridUiAction => ({
+    type: 'cell/activate',
+    cell,
+  }),
+  startSelection: (cell: CellCoord): GridUiAction => ({
+    type: 'selection/start',
+    cell,
+  }),
+  updateSelection: (cell: CellCoord): GridUiAction => ({
+    type: 'selection/update',
+    cell,
+  }),
+  startRowSelection: (row: number): GridUiAction => ({
+    type: 'rowSelection/start',
+    row,
+  }),
+  updateRowSelection: (row: number): GridUiAction => ({
+    type: 'rowSelection/update',
+    row,
+  }),
+  startColumnSelection: (col: number): GridUiAction => ({
+    type: 'columnSelection/start',
+    col,
+  }),
+  updateColumnSelection: (col: number): GridUiAction => ({
+    type: 'columnSelection/update',
+    col,
+  }),
+  endSelection: (): GridUiAction => ({
+    type: 'selection/end',
+  }),
+  clearSelection: (): GridUiAction => ({
+    type: 'selection/clear',
+  }),
+  startEdit: (cell: CellCoord): GridUiAction => ({
+    type: 'edit/start',
+    cell,
+  }),
+  stopEdit: (): GridUiAction => ({
+    type: 'edit/stop',
+  }),
+  startColumnResize: (
+    columnKey: string,
+    startX: number,
+    startWidth: number,
+    minWidth: number,
+    maxWidth: number,
+  ): GridUiAction => ({
+    type: 'column/resizeStart',
+    columnKey,
+    startX,
+    startWidth,
+    minWidth,
+    maxWidth,
+  }),
+  updateColumnResize: (clientX: number): GridUiAction => ({
+    type: 'column/resizeUpdate',
+    clientX,
+  }),
+  endColumnResize: (): GridUiAction => ({
+    type: 'column/resizeEnd',
+  }),
+  syncColumnWidths: (widths: Record<string, number>): GridUiAction => ({
+    type: 'columnWidths/sync',
+    widths,
+  }),
+  setGlobalFilter: (value: string): GridUiAction => ({
+    type: 'filter/setGlobal',
+    value,
+  }),
+  setColumnFilter: (
+    columnKey: string,
+    value: ColumnFilterValue,
+  ): GridUiAction => ({
+    type: 'filter/setColumn',
+    columnKey,
+    value,
+  }),
+  clearColumnFilter: (columnKey: string): GridUiAction => ({
+    type: 'filter/clearColumn',
+    columnKey,
+  }),
+  resetAllFilters: (): GridUiAction => ({
+    type: 'filter/resetAll',
+  }),
+  // 変更(MS-1): 単一(columnKey, direction) → エントリ配列まるごと set にしました。
+  //   配列の組み立て(置換/追加/除去)は呼び出し側で行い、reducer/action は薄いまま保ちます。
+  setSort: (entries: GridSortEntry[]): GridUiAction => ({
+    type: 'sort/set',
+    entries,
+  }),
+  clearSort: (): GridUiAction => ({
+    type: 'sort/clear',
+  }),
+};
 </file>
 
 <file path="src/components/spreadsheet-grid/utils/clipboard.ts">
@@ -6506,137 +6471,172 @@ describe('useServerSideRowModel', () => {
 });
 </file>
 
-<file path="src/components/spreadsheet-grid/model/gridActions.ts">
-import type { CellCoord, ColumnFilterValue, GridSortEntry } from './gridTypes';
+<file path="src/components/spreadsheet-grid/styles.css">
+/* SpreadsheetGrid のスタイル(段階移行中)。
+   方針:
+   - デザイントークンは CSS 変数(--ssg-*)で定義。利用側はこれを上書きするだけでテーマ変更できます。
+   - 基底スタイルは @layer ssg-base に入れます。@layer のスタイルは「未レイヤーのスタイル」
+     (利用側の通常 CSS / Tailwind ユーティリティ等)に必ず負けるため、利用側の className 上書きが
+     特異度を気にせず効きます。
+   - 動的に決まる値(座標 / 解決済み列幅 / オーバーレイ位置など)は引き続きインライン style です。
+   - トークンは .ssg-root にスコープし、グローバル(:root)を汚しません。 */
 
-// 追加: Grid UI action の union 型です。
-export type GridUiAction =
-  | { type: 'cell/activate'; cell: CellCoord | null }
-  | { type: 'selection/start'; cell: CellCoord }
-  | { type: 'selection/update'; cell: CellCoord }
-  | { type: 'rowSelection/start'; row: number }
-  | { type: 'rowSelection/update'; row: number }
-  | { type: 'columnSelection/start'; col: number }
-  | { type: 'columnSelection/update'; col: number }
-  | { type: 'selection/end' }
-  | { type: 'selection/clear' }
-  | { type: 'edit/start'; cell: CellCoord }
-  | { type: 'edit/stop' }
-  | {
-      type: 'column/resizeStart';
-      columnKey: string;
-      startX: number;
-      startWidth: number;
-      minWidth: number;
-      maxWidth: number;
-    }
-  | { type: 'column/resizeUpdate'; clientX: number }
-  | { type: 'column/resizeEnd' }
-  | { type: 'columnWidths/sync'; widths: Record<string, number> }
-  | { type: 'filter/setGlobal'; value: string }
-  | { type: 'filter/setColumn'; columnKey: string; value: ColumnFilterValue }
-  | { type: 'filter/clearColumn'; columnKey: string }
-  | { type: 'filter/resetAll' }
-  | { type: 'sort/set'; entries: GridSortEntry[] }
-  | { type: 'sort/clear' };
+@layer ssg-base {
+  .ssg-root {
+    /* 色トークン */
+    --ssg-accent: #3461c9;
+    --ssg-accent-strong: #1d4ed8;
+    --ssg-line: #f1f5f9;
+    --ssg-line-strong: #e5e7eb;
+    --ssg-divider: #d7dce3;
+    --ssg-header-bg: #f8fafc;
+    --ssg-row-hover-bg: #f1f5f9;
+    --ssg-glyph: #94a3b8;
+    --ssg-glyph-hover: #475569;
+    --ssg-icon-hover-bg: #d6dee8;
+    --ssg-icon-active-bg: #e3e9f5;
+    --ssg-icon-active-bg-hover: #d4ddf0;
+    --ssg-icon-active-border: #c7d3ea;
+    /* 本体セル */
+    --ssg-cell-bg: #ffffff;
+    --ssg-cell-text: #0f172a;
+    --ssg-readonly-bg: #f8fafc;
+    --ssg-readonly-text: #64748b;
+    --ssg-readonly-hover-bg: #eef2f7;
+    /* ヘッダー */
+    --ssg-header-text: #334155;
+    --ssg-header-hover-bg: #e2e8f0;
+    --ssg-select-bg: #e3e9f5;
+    --ssg-select-bg-hover: #ccd7ee;
+    /* 寸法トークン */
+    --ssg-radius: 8px;
+    --ssg-icon-btn-size: 22px;
+  }
 
-// 追加: action creator 群です。UI から文字列リテラルを散らさないために定義します。
-export const gridActions = {
-  activateCell: (cell: CellCoord | null): GridUiAction => ({
-    type: 'cell/activate',
-    cell,
-  }),
-  startSelection: (cell: CellCoord): GridUiAction => ({
-    type: 'selection/start',
-    cell,
-  }),
-  updateSelection: (cell: CellCoord): GridUiAction => ({
-    type: 'selection/update',
-    cell,
-  }),
-  startRowSelection: (row: number): GridUiAction => ({
-    type: 'rowSelection/start',
-    row,
-  }),
-  updateRowSelection: (row: number): GridUiAction => ({
-    type: 'rowSelection/update',
-    row,
-  }),
-  startColumnSelection: (col: number): GridUiAction => ({
-    type: 'columnSelection/start',
-    col,
-  }),
-  updateColumnSelection: (col: number): GridUiAction => ({
-    type: 'columnSelection/update',
-    col,
-  }),
-  endSelection: (): GridUiAction => ({
-    type: 'selection/end',
-  }),
-  clearSelection: (): GridUiAction => ({
-    type: 'selection/clear',
-  }),
-  startEdit: (cell: CellCoord): GridUiAction => ({
-    type: 'edit/start',
-    cell,
-  }),
-  stopEdit: (): GridUiAction => ({
-    type: 'edit/stop',
-  }),
-  startColumnResize: (
-    columnKey: string,
-    startX: number,
-    startWidth: number,
-    minWidth: number,
-    maxWidth: number,
-  ): GridUiAction => ({
-    type: 'column/resizeStart',
-    columnKey,
-    startX,
-    startWidth,
-    minWidth,
-    maxWidth,
-  }),
-  updateColumnResize: (clientX: number): GridUiAction => ({
-    type: 'column/resizeUpdate',
-    clientX,
-  }),
-  endColumnResize: (): GridUiAction => ({
-    type: 'column/resizeEnd',
-  }),
-  syncColumnWidths: (widths: Record<string, number>): GridUiAction => ({
-    type: 'columnWidths/sync',
-    widths,
-  }),
-  setGlobalFilter: (value: string): GridUiAction => ({
-    type: 'filter/setGlobal',
-    value,
-  }),
-  setColumnFilter: (
-    columnKey: string,
-    value: ColumnFilterValue,
-  ): GridUiAction => ({
-    type: 'filter/setColumn',
-    columnKey,
-    value,
-  }),
-  clearColumnFilter: (columnKey: string): GridUiAction => ({
-    type: 'filter/clearColumn',
-    columnKey,
-  }),
-  resetAllFilters: (): GridUiAction => ({
-    type: 'filter/resetAll',
-  }),
-  // 変更(MS-1): 単一(columnKey, direction) → エントリ配列まるごと set にしました。
-  //   配列の組み立て(置換/追加/除去)は呼び出し側で行い、reducer/action は薄いまま保ちます。
-  setSort: (entries: GridSortEntry[]): GridUiAction => ({
-    type: 'sort/set',
-    entries,
-  }),
-  clearSort: (): GridUiAction => ({
-    type: 'sort/clear',
-  }),
-};
+  /* ヘッダーのアイコンボタン(フィルター / メニュー) */
+  .ssg-icon-btn {
+    width: var(--ssg-icon-btn-size);
+    height: var(--ssg-icon-btn-size);
+    padding: 0;
+    border: 1px solid transparent;
+    border-radius: 6px;
+    background-color: transparent;
+    color: var(--ssg-glyph);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 auto;
+    cursor: pointer;
+    font-size: 11px;
+    line-height: 1;
+    transition: background-color 100ms ease, color 100ms ease;
+  }
+
+  .ssg-icon-btn:hover {
+    background-color: var(--ssg-icon-hover-bg);
+    color: var(--ssg-glyph-hover);
+  }
+
+  .ssg-icon-btn--active {
+    border-color: var(--ssg-icon-active-border);
+    background-color: var(--ssg-icon-active-bg);
+    color: var(--ssg-accent);
+  }
+
+  .ssg-icon-btn--active:hover {
+    background-color: var(--ssg-icon-active-bg-hover);
+    color: var(--ssg-accent);
+  }
+
+  /* 本体セル(データ行のセル)。座標 / 幅 / 高さ / zIndex はインライン(動的)。 */
+  .ssg-body-cell {
+    box-sizing: border-box;
+    display: flex;
+    align-items: center;
+    padding: 0 10px;
+    border-right: 1px solid var(--ssg-line);
+    border-bottom: 1px solid var(--ssg-line-strong);
+    background-color: var(--ssg-cell-bg);
+    color: var(--ssg-cell-text);
+    white-space: nowrap;
+    overflow: hidden;
+    cursor: default;
+    user-select: none;
+    outline: none;
+  }
+
+  /* auto-height 駆動セル: 内容駆動高さ(下限はインライン min-height)で折り返し表示。 */
+  .ssg-body-cell--autoheight {
+    align-items: flex-start;
+    white-space: normal;
+    word-break: break-word;
+    overflow: visible;
+  }
+
+  /* 行ホバー(hoveredRowIndex 由来。3 ペイン横断のため :hover では実装不可)。 */
+  .ssg-body-cell--row-hovered {
+    background-color: var(--ssg-row-hover-bg);
+  }
+
+  /* 読み取り専用セル(選択時は通常背景へ戻し、選択塗りを素直に見せる)。 */
+  .ssg-body-cell--readonly {
+    background-color: var(--ssg-readonly-bg);
+    color: var(--ssg-readonly-text);
+  }
+
+  .ssg-body-cell--readonly.ssg-body-cell--row-hovered {
+    background-color: var(--ssg-readonly-hover-bg);
+  }
+
+  /* ── ヘッダー ── */
+  /* ヘッダー行コンテナ(sticky)。height はインライン。 */
+  .ssg-header-row {
+    position: sticky;
+    top: 0;
+    z-index: 6;
+    background-color: var(--ssg-header-bg);
+  }
+
+  /* ヘッダーセル(列ヘッダー / 行ヘッダー / コーナー共通の土台)。座標 / 幅 / 高さはインライン。 */
+  .ssg-header-cell {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    box-sizing: border-box;
+    padding: 0 10px;
+    border-right: 1px solid var(--ssg-line);
+    border-bottom: 1px solid var(--ssg-divider);
+    background-color: var(--ssg-header-bg);
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--ssg-header-text);
+  }
+
+  /* ヘッダーセルのホバー / 選択(列・行・全体で同色)。 */
+  .ssg-header-cell--hovered {
+    background-color: var(--ssg-header-hover-bg);
+  }
+  .ssg-header-cell--selected {
+    background-color: var(--ssg-select-bg);
+  }
+  .ssg-header-cell--selected.ssg-header-cell--hovered {
+    background-color: var(--ssg-select-bg-hover);
+  }
+
+  /* 行ヘッダー「#」セル(番号セル)。header-cell に重ねて中央寄せ + 細字。 */
+  .ssg-row-header-cell {
+    justify-content: center;
+    font-weight: 500;
+  }
+
+  /* 左上コーナーセル。中央寄せ + 余白詰め + 右境界を濃く。 */
+  .ssg-corner-cell {
+    justify-content: center;
+    padding: 0;
+    border-right: 1px solid var(--ssg-line-strong);
+    line-height: 1;
+  }
+}
 </file>
 
 <file path="src/components/spreadsheet-grid/CellEditorLayer.tsx">
@@ -8737,6 +8737,353 @@ export function computeAutosizedColumnWidths<T>({
 
   return accumulator.finalize({ gridRoot, currentWidths });
 }
+</file>
+
+<file path="src/components/spreadsheet-grid/model/gridReducer.ts">
+import type { GridUiAction } from './gridActions';
+import type { GridColumn, GridUiState } from './gridTypes';
+
+// 追加: 列幅のデフォルト下限です。
+const DEFAULT_MIN_WIDTH = 60;
+
+// 追加: 列幅のデフォルト上限です。
+const DEFAULT_MAX_WIDTH = 1000;
+
+// 追加: 値を min/max に収めるユーティリティです。
+const clamp = (value: number, min: number, max: number) =>
+  Math.min(Math.max(value, min), max);
+
+// 追加: 初期 column width map を生成します。
+const createColumnWidthMap = <T,>(columns: GridColumn<T>[]) =>
+  columns.reduce<Record<string, number>>((acc, column) => {
+    acc[column.key] = column.width;
+    return acc;
+  }, {});
+
+// 追加: reducer 初期 state を生成します。
+export const createInitialGridUiState = <T,>(
+  columns: GridColumn<T>[],
+): GridUiState => ({
+  activeCell: null,
+  selection: null,
+  editingCell: null,
+  dragState: null,
+  columnWidths: createColumnWidthMap(columns),
+  filters: {
+    globalText: '',
+    columnFilters: {},
+  },
+  // 変更(MS-1): 単一オブジェクト → エントリ配列。[] = ソートなし。
+  sort: [],
+});
+
+// 追加: Grid の UI state reducer 本体です。
+export const gridUiReducer = (
+  state: GridUiState,
+  action: GridUiAction,
+): GridUiState => {
+  switch (action.type) {
+    case 'cell/activate':
+      return {
+        ...state,
+        activeCell: action.cell,
+      };
+
+    case 'selection/start':
+      return {
+        ...state,
+        activeCell: action.cell,
+        selection: {
+          type: 'cell',
+          range: {
+            start: action.cell,
+            end: action.cell,
+          },
+        },
+        dragState: {
+          type: 'selection',
+          selectionKind: 'cell',
+          anchor: action.cell,
+        },
+      };
+
+    case 'rowSelection/start':
+      return {
+        ...state,
+        activeCell: {
+          row: action.row,
+          col: state.activeCell?.col ?? 0,
+        },
+        selection: {
+          type: 'row',
+          startRow: action.row,
+          endRow: action.row,
+        },
+        dragState: {
+          type: 'selection',
+          selectionKind: 'row',
+          anchorRow: action.row,
+        },
+      };
+
+    case 'rowSelection/update':
+      if (
+        state.dragState?.type !== 'selection' ||
+        state.dragState.selectionKind !== 'row'
+      ) {
+        return state;
+      }
+
+      // 追加(11-B1): 終端行が変わらない update は no-op として state をそのまま返します。
+      // 変更理由: ドラッグ中の pointermove は同一行内でも毎フレーム発火し、
+      //           毎回新しい state を返すと無意味な再レンダーが走るためです。
+      // 注意: 比較基準は selection.endRow です(11-B2 で dragState.currentRow を
+      //       削除済み。ドラッグ中の現在位置の正は selection 側に一本化されています)。
+      if (
+        state.selection?.type === 'row' &&
+        state.selection.endRow === action.row
+      ) {
+        return state;
+      }
+
+      return {
+        ...state,
+        selection: {
+          type: 'row',
+          startRow: state.dragState.anchorRow,
+          endRow: action.row,
+        },
+      };
+
+    case 'selection/update':
+      if (
+        state.dragState?.type !== 'selection' ||
+        state.dragState.selectionKind !== 'cell'
+      ) {
+        return state;
+      }
+
+      // 追加(11-B1): 終端セルが変わらない update は no-op として state をそのまま返します。
+      // 注意: 比較基準は selection.range.end です(11-B2 で dragState.current を削除済み)。
+      if (
+        state.selection?.type === 'cell' &&
+        state.selection.range.end.row === action.cell.row &&
+        state.selection.range.end.col === action.cell.col
+      ) {
+        return state;
+      }
+
+      return {
+        ...state,
+        selection: {
+          type: 'cell',
+          range: {
+            start: state.dragState.anchor,
+            end: action.cell,
+          },
+        },
+      };
+
+    case 'columnSelection/start':
+      return {
+        ...state,
+        activeCell: {
+          row: state.activeCell?.row ?? 0,
+          col: action.col,
+        },
+        selection: {
+          type: 'col',
+          startCol: action.col,
+          endCol: action.col,
+        },
+        dragState: {
+          type: 'selection',
+          selectionKind: 'col',
+          anchorCol: action.col,
+        },
+      };
+
+    case 'columnSelection/update':
+      if (
+        state.dragState?.type !== 'selection' ||
+        state.dragState.selectionKind !== 'col'
+      ) {
+        return state;
+      }
+
+      // 追加(11-B1): 終端列が変わらない update は no-op として state をそのまま返します。
+      // 注意: 比較基準は selection.endCol です(11-B2 で dragState.currentCol を削除済み)。
+      if (
+        state.selection?.type === 'col' &&
+        state.selection.endCol === action.col
+      ) {
+        return state;
+      }
+
+      return {
+        ...state,
+        selection: {
+          type: 'col',
+          startCol: state.dragState.anchorCol,
+          endCol: action.col,
+        },
+      };
+
+    case 'selection/end':
+      // 変更(11-A2): selection ドラッグ中でなければ state をそのまま返します。
+      // 変更理由: window の pointerup は画面上のあらゆるクリックで発火し、
+      //           endSelection / endColumnResize が毎回 dispatch されます。
+      //           旧実装は no-op でも常に新しい state オブジェクトを返していたため、
+      //           無関係なクリックでも親の再レンダーが余分に発生していました。
+      if (state.dragState?.type !== 'selection') {
+        return state;
+      }
+      return {
+        ...state,
+        dragState: null,
+      };
+
+    case 'selection/clear':
+      return {
+        ...state,
+        selection: null,
+        dragState: null,
+      };
+
+    case 'edit/start':
+      return {
+        ...state,
+        editingCell: action.cell,
+        activeCell: action.cell,
+      };
+
+    case 'edit/stop':
+      return {
+        ...state,
+        editingCell: null,
+      };
+
+    case 'column/resizeStart':
+      return {
+        ...state,
+        dragState: {
+          type: 'columnResize',
+          columnKey: action.columnKey,
+          startX: action.startX,
+          startWidth: action.startWidth,
+          minWidth: action.minWidth || DEFAULT_MIN_WIDTH,
+          maxWidth: action.maxWidth || DEFAULT_MAX_WIDTH,
+        },
+      };
+
+    case 'column/resizeUpdate': {
+      if (state.dragState?.type !== 'columnResize') {
+        return state;
+      }
+
+      const nextWidth = clamp(
+        state.dragState.startWidth + (action.clientX - state.dragState.startX),
+        state.dragState.minWidth,
+        state.dragState.maxWidth,
+      );
+
+      // 追加(11-B1): clamp 後の幅が現在値と同じなら no-op として state をそのまま返します。
+      // 変更理由: min/max に張り付いている間や、縦方向のみのポインタ移動でも
+      //           pointermove は発火し続けるため、同値更新を弾くことで
+      //           ライブリサイズ中の無駄な全体再レンダーを抑止します。
+      if (state.columnWidths[state.dragState.columnKey] === nextWidth) {
+        return state;
+      }
+
+      return {
+        ...state,
+        columnWidths: {
+          ...state.columnWidths,
+          [state.dragState.columnKey]: nextWidth,
+        },
+      };
+    }
+
+    case 'column/resizeEnd':
+      // 変更(11-A2): columnResize ドラッグ中でなければ state をそのまま返します(no-op)。
+      if (state.dragState?.type !== 'columnResize') {
+        return state;
+      }
+      return {
+        ...state,
+        dragState: null,
+      };
+
+    case 'columnWidths/sync':
+      return {
+        ...state,
+        columnWidths: {
+          ...state.columnWidths,
+          ...action.widths,
+        },
+      };
+
+    case 'filter/setGlobal':
+      return {
+        ...state,
+        filters: {
+          ...state.filters,
+          globalText: action.value,
+        },
+      };
+
+    case 'filter/setColumn':
+      return {
+        ...state,
+        filters: {
+          ...state.filters,
+          columnFilters: {
+            ...state.filters.columnFilters,
+            [action.columnKey]: action.value,
+          },
+        },
+      };
+
+    case 'filter/clearColumn': {
+      const nextColumnFilters = { ...state.filters.columnFilters };
+      delete nextColumnFilters[action.columnKey];
+
+      return {
+        ...state,
+        filters: {
+          ...state.filters,
+          columnFilters: nextColumnFilters,
+        },
+      };
+    }
+
+    case 'filter/resetAll':
+      return {
+        ...state,
+        filters: {
+          globalText: '',
+          columnFilters: {},
+        },
+      };
+
+    case 'sort/set':
+      // 変更(MS-1): 受け取ったエントリ配列をそのまま採用します。
+      return {
+        ...state,
+        sort: action.entries,
+      };
+
+    case 'sort/clear':
+      // 変更(MS-1): 空配列でソートなしに正規化します。
+      return {
+        ...state,
+        sort: [],
+      };
+
+    default:
+      return state;
+  }
+};
 </file>
 
 <file path="src/components/spreadsheet-grid/SelectionOverlay.tsx">
@@ -11421,353 +11768,6 @@ export const computeAutoHeightVerticalGeometry = (
     rows,
     rowIndexSet,
   };
-};
-</file>
-
-<file path="src/components/spreadsheet-grid/model/gridReducer.ts">
-import type { GridUiAction } from './gridActions';
-import type { GridColumn, GridUiState } from './gridTypes';
-
-// 追加: 列幅のデフォルト下限です。
-const DEFAULT_MIN_WIDTH = 60;
-
-// 追加: 列幅のデフォルト上限です。
-const DEFAULT_MAX_WIDTH = 1000;
-
-// 追加: 値を min/max に収めるユーティリティです。
-const clamp = (value: number, min: number, max: number) =>
-  Math.min(Math.max(value, min), max);
-
-// 追加: 初期 column width map を生成します。
-const createColumnWidthMap = <T,>(columns: GridColumn<T>[]) =>
-  columns.reduce<Record<string, number>>((acc, column) => {
-    acc[column.key] = column.width;
-    return acc;
-  }, {});
-
-// 追加: reducer 初期 state を生成します。
-export const createInitialGridUiState = <T,>(
-  columns: GridColumn<T>[],
-): GridUiState => ({
-  activeCell: null,
-  selection: null,
-  editingCell: null,
-  dragState: null,
-  columnWidths: createColumnWidthMap(columns),
-  filters: {
-    globalText: '',
-    columnFilters: {},
-  },
-  // 変更(MS-1): 単一オブジェクト → エントリ配列。[] = ソートなし。
-  sort: [],
-});
-
-// 追加: Grid の UI state reducer 本体です。
-export const gridUiReducer = (
-  state: GridUiState,
-  action: GridUiAction,
-): GridUiState => {
-  switch (action.type) {
-    case 'cell/activate':
-      return {
-        ...state,
-        activeCell: action.cell,
-      };
-
-    case 'selection/start':
-      return {
-        ...state,
-        activeCell: action.cell,
-        selection: {
-          type: 'cell',
-          range: {
-            start: action.cell,
-            end: action.cell,
-          },
-        },
-        dragState: {
-          type: 'selection',
-          selectionKind: 'cell',
-          anchor: action.cell,
-        },
-      };
-
-    case 'rowSelection/start':
-      return {
-        ...state,
-        activeCell: {
-          row: action.row,
-          col: state.activeCell?.col ?? 0,
-        },
-        selection: {
-          type: 'row',
-          startRow: action.row,
-          endRow: action.row,
-        },
-        dragState: {
-          type: 'selection',
-          selectionKind: 'row',
-          anchorRow: action.row,
-        },
-      };
-
-    case 'rowSelection/update':
-      if (
-        state.dragState?.type !== 'selection' ||
-        state.dragState.selectionKind !== 'row'
-      ) {
-        return state;
-      }
-
-      // 追加(11-B1): 終端行が変わらない update は no-op として state をそのまま返します。
-      // 変更理由: ドラッグ中の pointermove は同一行内でも毎フレーム発火し、
-      //           毎回新しい state を返すと無意味な再レンダーが走るためです。
-      // 注意: 比較基準は selection.endRow です(11-B2 で dragState.currentRow を
-      //       削除済み。ドラッグ中の現在位置の正は selection 側に一本化されています)。
-      if (
-        state.selection?.type === 'row' &&
-        state.selection.endRow === action.row
-      ) {
-        return state;
-      }
-
-      return {
-        ...state,
-        selection: {
-          type: 'row',
-          startRow: state.dragState.anchorRow,
-          endRow: action.row,
-        },
-      };
-
-    case 'selection/update':
-      if (
-        state.dragState?.type !== 'selection' ||
-        state.dragState.selectionKind !== 'cell'
-      ) {
-        return state;
-      }
-
-      // 追加(11-B1): 終端セルが変わらない update は no-op として state をそのまま返します。
-      // 注意: 比較基準は selection.range.end です(11-B2 で dragState.current を削除済み)。
-      if (
-        state.selection?.type === 'cell' &&
-        state.selection.range.end.row === action.cell.row &&
-        state.selection.range.end.col === action.cell.col
-      ) {
-        return state;
-      }
-
-      return {
-        ...state,
-        selection: {
-          type: 'cell',
-          range: {
-            start: state.dragState.anchor,
-            end: action.cell,
-          },
-        },
-      };
-
-    case 'columnSelection/start':
-      return {
-        ...state,
-        activeCell: {
-          row: state.activeCell?.row ?? 0,
-          col: action.col,
-        },
-        selection: {
-          type: 'col',
-          startCol: action.col,
-          endCol: action.col,
-        },
-        dragState: {
-          type: 'selection',
-          selectionKind: 'col',
-          anchorCol: action.col,
-        },
-      };
-
-    case 'columnSelection/update':
-      if (
-        state.dragState?.type !== 'selection' ||
-        state.dragState.selectionKind !== 'col'
-      ) {
-        return state;
-      }
-
-      // 追加(11-B1): 終端列が変わらない update は no-op として state をそのまま返します。
-      // 注意: 比較基準は selection.endCol です(11-B2 で dragState.currentCol を削除済み)。
-      if (
-        state.selection?.type === 'col' &&
-        state.selection.endCol === action.col
-      ) {
-        return state;
-      }
-
-      return {
-        ...state,
-        selection: {
-          type: 'col',
-          startCol: state.dragState.anchorCol,
-          endCol: action.col,
-        },
-      };
-
-    case 'selection/end':
-      // 変更(11-A2): selection ドラッグ中でなければ state をそのまま返します。
-      // 変更理由: window の pointerup は画面上のあらゆるクリックで発火し、
-      //           endSelection / endColumnResize が毎回 dispatch されます。
-      //           旧実装は no-op でも常に新しい state オブジェクトを返していたため、
-      //           無関係なクリックでも親の再レンダーが余分に発生していました。
-      if (state.dragState?.type !== 'selection') {
-        return state;
-      }
-      return {
-        ...state,
-        dragState: null,
-      };
-
-    case 'selection/clear':
-      return {
-        ...state,
-        selection: null,
-        dragState: null,
-      };
-
-    case 'edit/start':
-      return {
-        ...state,
-        editingCell: action.cell,
-        activeCell: action.cell,
-      };
-
-    case 'edit/stop':
-      return {
-        ...state,
-        editingCell: null,
-      };
-
-    case 'column/resizeStart':
-      return {
-        ...state,
-        dragState: {
-          type: 'columnResize',
-          columnKey: action.columnKey,
-          startX: action.startX,
-          startWidth: action.startWidth,
-          minWidth: action.minWidth || DEFAULT_MIN_WIDTH,
-          maxWidth: action.maxWidth || DEFAULT_MAX_WIDTH,
-        },
-      };
-
-    case 'column/resizeUpdate': {
-      if (state.dragState?.type !== 'columnResize') {
-        return state;
-      }
-
-      const nextWidth = clamp(
-        state.dragState.startWidth + (action.clientX - state.dragState.startX),
-        state.dragState.minWidth,
-        state.dragState.maxWidth,
-      );
-
-      // 追加(11-B1): clamp 後の幅が現在値と同じなら no-op として state をそのまま返します。
-      // 変更理由: min/max に張り付いている間や、縦方向のみのポインタ移動でも
-      //           pointermove は発火し続けるため、同値更新を弾くことで
-      //           ライブリサイズ中の無駄な全体再レンダーを抑止します。
-      if (state.columnWidths[state.dragState.columnKey] === nextWidth) {
-        return state;
-      }
-
-      return {
-        ...state,
-        columnWidths: {
-          ...state.columnWidths,
-          [state.dragState.columnKey]: nextWidth,
-        },
-      };
-    }
-
-    case 'column/resizeEnd':
-      // 変更(11-A2): columnResize ドラッグ中でなければ state をそのまま返します(no-op)。
-      if (state.dragState?.type !== 'columnResize') {
-        return state;
-      }
-      return {
-        ...state,
-        dragState: null,
-      };
-
-    case 'columnWidths/sync':
-      return {
-        ...state,
-        columnWidths: {
-          ...state.columnWidths,
-          ...action.widths,
-        },
-      };
-
-    case 'filter/setGlobal':
-      return {
-        ...state,
-        filters: {
-          ...state.filters,
-          globalText: action.value,
-        },
-      };
-
-    case 'filter/setColumn':
-      return {
-        ...state,
-        filters: {
-          ...state.filters,
-          columnFilters: {
-            ...state.filters.columnFilters,
-            [action.columnKey]: action.value,
-          },
-        },
-      };
-
-    case 'filter/clearColumn': {
-      const nextColumnFilters = { ...state.filters.columnFilters };
-      delete nextColumnFilters[action.columnKey];
-
-      return {
-        ...state,
-        filters: {
-          ...state.filters,
-          columnFilters: nextColumnFilters,
-        },
-      };
-    }
-
-    case 'filter/resetAll':
-      return {
-        ...state,
-        filters: {
-          globalText: '',
-          columnFilters: {},
-        },
-      };
-
-    case 'sort/set':
-      // 変更(MS-1): 受け取ったエントリ配列をそのまま採用します。
-      return {
-        ...state,
-        sort: action.entries,
-      };
-
-    case 'sort/clear':
-      // 変更(MS-1): 空配列でソートなしに正規化します。
-      return {
-        ...state,
-        sort: [],
-      };
-
-    default:
-      return state;
-  }
 };
 </file>
 
@@ -16117,493 +16117,6 @@ export const useGridPointerInteractions = <T,>({
 export default useGridPointerInteractions;
 </file>
 
-<file path="src/components/spreadsheet-grid/view/GridHeaderRow.tsx">
-// 変更(11-B5): GridHeaderRow を React.memo 化するため memo を追加 import します。
-// 変更(13-A): ヘッダー右クリック(contextmenu)用に MouseEvent 型を追加 import します。
-import {
-  memo,
-  type CSSProperties,
-  type MouseEvent,
-  type PointerEvent,
-  type ReactNode,
-} from 'react';
-// 追加(UI CSS移行): className 合成ヘルパー。
-import { cx } from '../logic/cx';
-// 変更(11-A): uiState 丸ごと依存を撤廃し、正規化済み SelectionSnapshot を受け取ります。
-// 変更理由: GridBodyRow と同じく、uiState のあらゆる更新で props が変わるのを防ぎ、
-//           将来ヘッダー行を memo 化する際の布石にもなります。
-import type { SelectionSnapshot } from '../model/gridSelectors';
-import type {
-  ColumnFilterValue,
-  GridColumn,
-  GridSortState,
-} from '../model/gridTypes';
-// 変更(10-C): 列座標を ColumnMeasurement(グローバル) から
-//             PaneColumnEntry(ペインローカル) へ切り替えます。
-import type { PaneColumnEntry } from '../logic/geometry';
-// 追加(12-A): set フィルター対応のフィルター有効判定を共有します。
-import { isActiveColumnFilterValue } from '../logic/filtering';
-
-// 追加(10-C): このヘッダーがどのペインを描画しているかの種別です。
-export type GridPaneKind = 'left' | 'center' | 'right';
-
-type GridHeaderRowProps<T> = {
-  // 追加(10-C): 描画対象のペイン種別です。
-  pane: GridPaneKind;
-  // 追加(10-C): true のときだけ左上コーナーセル(#)を描画します。
-  //             行ヘッダーを持つペイン(左固定があれば左、無ければ中央)だけが true です。
-  ownsRowHeader: boolean;
-  // 追加(10-C): 列の前に確保する先頭幅です。
-  //             行ヘッダーを持つペインでは rowHeaderWidth、それ以外は 0 です。
-  //             各列は leadingWidth + entry.paneLocalStart に配置されます。
-  leadingWidth: number;
-  headerHeight: number;
-  rowHeaderCellStyle: CSSProperties;
-  // 追加(UI CSS移行): ヘッダー系スロット(すべて文字列=memo 安全)。基底は @layer ssg-base。
-  headerRowClassName?: string;
-  headerCellClassName?: string;
-  rowHeaderCellClassName?: string;
-  isCornerHovered: boolean;
-  isWholeGridSelected: boolean;
-  filteredRowsLength: number;
-  visibleColumnsLength: number;
-  // 変更(10-C): 描画対象の列エントリです。
-  //             中央ペインは仮想化済みの部分集合、固定ペインは全エントリが渡されます。
-  //             座標はすべてペインローカル(entry.paneLocalStart 起点)です。
-  renderEntries: PaneColumnEntry<T>[];
-  // 注記(10-C): hoveredColumnIndex / 各種 colIndex は entry.logicalIndex 空間です。
-  hoveredColumnIndex: number | null;
-  // 変更(11-A): 列選択判定用の正規化済みスナップショットです(uiState の置き換え)。
-  selectionSnapshot: SelectionSnapshot;
-  columnFilterValues: Record<string, ColumnFilterValue>;
-  sortState: GridSortState;
-  // 追加(UI CSS移行): ヘッダーのアイコンボタンへ差し込む追加 className(classNames.iconButton)。
-  iconButtonClassName?: string;
-  onCornerPointerDown: (event: PointerEvent<HTMLDivElement>) => void;
-  onCornerPointerEnter: () => void;
-  onCornerPointerLeave: () => void;
-  onColumnHeaderPointerDown: (
-    colIndex: number,
-    event: PointerEvent<HTMLDivElement>,
-  ) => void;
-  onColumnHeaderPointerEnter: (
-    colIndex: number,
-    event: PointerEvent<HTMLDivElement>,
-  ) => void;
-  onColumnHeaderPointerLeave: (colIndex: number) => void;
-  onColumnFilterButtonPointerDown: (
-    column: GridColumn<T>,
-    event: PointerEvent<HTMLButtonElement>,
-  ) => void;
-  onColumnResizePointerDown: (
-    column: GridColumn<T>,
-    event: PointerEvent<HTMLDivElement>,
-  ) => void;
-  // 追加(13-A): 列メニュー(「⋮」ボタン + ヘッダー右クリック)関連の props です。
-  //             enableColumnMenu=false のときはボタンを描画せず、右クリックも
-  //             ブラウザ標準メニューのままにします(controller 側でガード済み)。
-  enableColumnMenu: boolean;
-  // 追加(13-A): メニューを開いている列の key です(「⋮」ボタンの active 表示と、
-  //             hover が外れてもボタンを出し続ける判定に使います)。
-  // 注記: open/close の 1 回ずつだけ値が変わる string | null のため、
-  //       memo(GridHeaderRow) への影響は開閉時の 3 ペイン各 1 レンダーのみです。
-  openedMenuColumnKey: string | null;
-  onColumnMenuButtonPointerDown: (
-    column: GridColumn<T>,
-    event: PointerEvent<HTMLButtonElement>,
-  ) => void;
-  onColumnHeaderContextMenu: (
-    column: GridColumn<T>,
-    event: MouseEvent<HTMLDivElement>,
-  ) => void;
-  // 追加(13-B3-2): バッジ(Excel 列名)を grip にした列 D&D 並べ替えの pointerdown です。
-  //   latest-ref 安定のため参照は不変。未指定(reorder 不可)時はバッジを通常表示にします
-  //   (ハンドラ内で stopPropagation し、ヘッダー本体の列範囲選択とは衝突させません)。
-  onColumnDragHandlePointerDown?: (
-    column: GridColumn<T>,
-    event: PointerEvent<HTMLSpanElement>,
-  ) => void;
-};
-
-// 変更(10-C): sticky header 行を「1ペイン分」描画する汎用コンポーネントにしました。
-//             ownsRowHeader が true のペインのみ左上コーナーセルを描画します。
-// 追加(UI hover): ヘッダーのアイコンボタンです。各ボタンが自分のホバー状態を持ち、ホバー時のみ
-//   背景を出します(:hover 相当をインラインスタイルで実現)。ホバー変化で再描画されるのは当該
-//   ボタンのみで、ヘッダー全体や他ボタンには波及しません。
-function HeaderActionButton({
-  isActive,
-  title,
-  className,
-  onPointerDown,
-  children,
-}: {
-  isActive: boolean;
-  title: string;
-  className?: string;
-  onPointerDown: (event: PointerEvent<HTMLButtonElement>) => void;
-  children: ReactNode;
-}) {
-  // 変更(UI CSS移行): JS ホバー state を撤去し、:hover を CSS(.ssg-icon-btn)へ委譲します。
-  //   ホバーで再描画されなくなり、active 表示はクラス修飾子(--active)で行います。利用側は
-  //   classNames.iconButton(className)で局所上書きできます。
-  return (
-    <button
-      type="button"
-      title={title}
-      onPointerDown={onPointerDown}
-      className={cx(
-        'ssg-icon-btn',
-        isActive && 'ssg-icon-btn--active',
-        className,
-      )}
-    >
-      {children}
-    </button>
-  );
-}
-
-// 変更(11-B5): React.memo 化のため実装本体を Inner に分離します(export は末尾参照)。
-// 変更理由: ライブリサイズ中、幅が変わっていない固定ペインのヘッダーまで親再レンダーに
-//           引きずられて再描画されていました。11-B4 で renderEntries はペイン単位で
-//           安定済み、11-B5 で onColumnResizePointerDown も latest-ref 化により恒久安定と
-//           なったため、shallow 比較で props 全一致が成立し memo が機能します。
-//           なお中央ペインは virtualColumns 依存で renderEntries が横スクロール/リサイズの
-//           たびに変わるため再レンダーされますが、これは表示更新に必要な仕様どおりの挙動です。
-function GridHeaderRowInner<T>({
-  pane,
-  ownsRowHeader,
-  leadingWidth,
-  headerHeight,
-  rowHeaderCellStyle,
-  headerRowClassName,
-  headerCellClassName,
-  rowHeaderCellClassName,
-  isCornerHovered,
-  isWholeGridSelected,
-  filteredRowsLength,
-  visibleColumnsLength,
-  renderEntries,
-  hoveredColumnIndex,
-  selectionSnapshot,
-  columnFilterValues,
-  sortState,
-  iconButtonClassName,
-  onCornerPointerDown,
-  onCornerPointerEnter,
-  onCornerPointerLeave,
-  onColumnHeaderPointerDown,
-  onColumnHeaderPointerEnter,
-  onColumnHeaderPointerLeave,
-  onColumnFilterButtonPointerDown,
-  onColumnResizePointerDown,
-  // 追加(13-A): 列メニュー関連 props です。
-  enableColumnMenu,
-  openedMenuColumnKey,
-  onColumnMenuButtonPointerDown,
-  onColumnHeaderContextMenu,
-  // 追加(13-B3-2): バッジ grip の pointerdown(列 D&D)。
-  onColumnDragHandlePointerDown,
-}: GridHeaderRowProps<T>) {
-  return (
-    <div
-      data-pane={pane}
-      className={cx('ssg-header-row', headerRowClassName)}
-      style={{
-        height: headerHeight,
-      }}
-    >
-      {ownsRowHeader && (
-        <div
-          onPointerDown={onCornerPointerDown}
-          onPointerEnter={onCornerPointerEnter}
-          onPointerLeave={onCornerPointerLeave}
-          className={cx(
-            'ssg-header-cell',
-            'ssg-corner-cell',
-            isWholeGridSelected && 'ssg-header-cell--selected',
-            isCornerHovered && 'ssg-header-cell--hovered',
-            rowHeaderCellClassName,
-          )}
-          style={{
-            ...rowHeaderCellStyle,
-            position: 'absolute',
-            top: 0,
-            left: 0,
-            height: headerHeight,
-            zIndex: 7,
-            cursor:
-              filteredRowsLength > 0 && visibleColumnsLength > 0
-                ? 'pointer'
-                : 'default',
-          }}
-        >
-          #
-        </div>
-      )}
-
-      {renderEntries.map((entry) => {
-        // 変更(10-C): 仮想化のガードは SpreadsheetGrid 側で済ませているため、
-        //             ここでは渡されたエントリをそのまま描画します。
-        if (!entry) {
-          return null;
-        }
-
-        const colIndex = entry.logicalIndex;
-        const column = entry.column;
-        const left = leadingWidth + entry.paneLocalStart;
-        const size = entry.paneLocalSize;
-
-        // 変更(12-A): set フィルター値(オブジェクト)も正しく「フィルター済み」と
-        //             判定できるよう、共通 helper へ置き換えます。
-        const isColumnFiltered = isActiveColumnFilterValue(
-          columnFilterValues[column.key],
-        );
-        // 変更(11-A): selectIsColumnSelected(uiState, ...) と等価の判定を
-        //             SelectionSnapshot のプリミティブ比較で行います。
-        const isColumnSelected =
-          selectionSnapshot.kind === 'col' &&
-          colIndex >= selectionSnapshot.startCol &&
-          colIndex <= selectionSnapshot.endCol;
-
-        // 追加(MS-1): 受動矢印はこの列の sort エントリ(配列)から方向を導出します。
-        // 変更(MS-2): 順序番号バッジ用に findIndex 化し、index も引きます。未ソート列は
-        //            sortIndex===-1 / sortEntry===null。複数ソート(length>1)のときだけ、
-        //            矢印に 1 始まりの優先順位番号を併記します(単一ソート時は番号なし)。
-        const sortIndex = sortState.findIndex(
-          (entry) => entry.columnKey === column.key,
-        );
-        const sortEntry = sortIndex === -1 ? null : sortState[sortIndex];
-
-        // 追加(13-A): この列のメニューを開いているかです(「⋮」の active 表示に使います)。
-        // 変更(13-A2): 「⋮」ボタンを hover 時表示 → 常時表示へ変更します。
-        // 変更理由: 旧実装は hoveredColumnIndex === colIndex を表示条件にしていましたが、
-        //           ヘッダーに配線している onColumnHeaderPointerEnter は
-        //           useGridPointerInteractions のドラッグ選択更新ハンドラであり、
-        //           hoveredColumnIndex を set する経路がどこにも無いため、
-        //           ボタンは「メニューが開いている列」でしか表示されませんでした
-        //           (= 右クリックでメニューを開いたときだけ「⋮」が出現する症状)。
-        //           hover 表示を復活させる案もありますが、hover のたびに memo 化済み
-        //           ヘッダー 3 ペインが再レンダーされるため、常時表示(AG Grid の
-        //           suppressMenuHide 相当)を採用します。anchor ボタンが常に DOM に
-        //           存在するため、開いている列の表示継続ガードも不要になります。
-        const isMenuOpenForColumn = openedMenuColumnKey === column.key;
-        const showColumnMenuButton = enableColumnMenu;
-
-        return (
-          <div
-            key={column.key}
-            onPointerDown={(event) => onColumnHeaderPointerDown(colIndex, event)}
-            onPointerEnter={(event) =>
-              onColumnHeaderPointerEnter(colIndex, event)
-            }
-            onPointerLeave={() => onColumnHeaderPointerLeave(colIndex)}
-            // 追加(13-A): ヘッダー右クリックで列メニューを開きます
-            //             (enableColumnMenu=false 時は controller 側で何もせず、
-            //              ブラウザ標準メニューが出ます)。
-            onContextMenu={(event) => onColumnHeaderContextMenu(column, event)}
-            className={cx(
-              'ssg-header-cell',
-              (isWholeGridSelected || isColumnSelected) &&
-                'ssg-header-cell--selected',
-              hoveredColumnIndex === colIndex && 'ssg-header-cell--hovered',
-              headerCellClassName,
-            )}
-            style={{
-              position: 'absolute',
-              top: 0,
-              left,
-              width: size,
-              minWidth: size,
-              height: headerHeight,
-            }}
-          >
-            {/* 変更(13-B4 / Option A): Excel 列名バッジ(番地表示)を廃止し、
-                列の並べ替え掴み手(grip)を「極小のドラッグハンドル(6点グリップ)」へ
-                置き換えます。ドラッグ controller は event.currentTarget を捕捉する方式で
-                掴み手の中身に依存しないため、この差し替えで useColumnHeaderDragController は
-                不変です。reorder 不可(onColumnDragHandlePointerDown 未指定)時は要素ごと
-                非表示にして、先頭の余白も詰めます。
-                注記: フィルター有効の視覚はヘッダーテキスト色(下の青)+フィルターボタン
-                      (●/○)が担うため、grip 側のフィルター連動色は持たせません。 */}
-            {onColumnDragHandlePointerDown && (
-              <span
-                onPointerDown={(event) =>
-                  onColumnDragHandlePointerDown(column, event)
-                }
-                title="ドラッグで列を移動"
-                aria-hidden="true"
-                style={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  width: 14,
-                  height: 22,
-                  flex: '0 0 auto',
-                  color: '#cbd5e1',
-                  // 追加: grip の視覚 + タッチでのスクロール抑止 + 文字選択抑止。
-                  cursor: 'grab',
-                  touchAction: 'none',
-                  userSelect: 'none',
-                }}
-              >
-                <svg
-                  width="8"
-                  height="14"
-                  viewBox="0 0 8 14"
-                  fill="currentColor"
-                  aria-hidden="true"
-                  focusable="false"
-                >
-                  <circle cx="2" cy="3" r="1" />
-                  <circle cx="6" cy="3" r="1" />
-                  <circle cx="2" cy="7" r="1" />
-                  <circle cx="6" cy="7" r="1" />
-                  <circle cx="2" cy="11" r="1" />
-                  <circle cx="6" cy="11" r="1" />
-                </svg>
-              </span>
-            )}
-
-            <div
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                minWidth: 0,
-                flex: 1,
-                gap: 4,
-              }}
-            >
-              <div
-                style={{
-                  minWidth: 0,
-                  flex: 1,
-                  color: isColumnFiltered ? '#1d4ed8' : '#334155',
-                  overflow: 'hidden',
-                  textOverflow: 'ellipsis',
-                  whiteSpace: 'nowrap',
-                }}
-              >
-                {column.renderHeader
-                  ? column.renderHeader({
-                      colIndex,
-                      width: size,
-                      column,
-                      filterValue: columnFilterValues[column.key],
-                      isFiltered: isColumnFiltered,
-                    })
-                  : column.title || column.key}
-              </div>
-
-              {/* 変更(13-B4): ソートボタン(↕/↑/↓ のクリック対象)を廃止し、
-                  操作は列メニュー / コンテキストメニューへ移しました。ここはソート中の
-                  列にだけ「現在の方向」を受動表示する非インタラクティブな矢印です
-                  (未ソート時は何も出さない = 旧 idle の ↕ は廃止)。
-                  クリック対象が無くなったぶん、ヘッダーの横スペースが空きます。 */}
-              {sortEntry && (
-                <span
-                  aria-hidden="true"
-                  title={
-                    (sortEntry.direction === 'asc'
-                      ? '昇順で並び替え中'
-                      : '降順で並び替え中') +
-                    (sortState.length > 1 ? ` (優先度 ${sortIndex + 1})` : '')
-                  }
-                  style={{
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: 1,
-                    flex: '0 0 auto',
-                    color: '#3461c9',
-                    fontSize: 12,
-                    fontWeight: 700,
-                    lineHeight: 1,
-                  }}
-                >
-                  {sortEntry.direction === 'asc' ? '↑' : '↓'}
-                  {/* 追加(MS-2): 複数ソート時のみ優先順位番号(1 始まり)を小さく併記。 */}
-                  {sortState.length > 1 && (
-                    <span
-                      style={{ fontSize: 9, fontWeight: 700, lineHeight: 1 }}
-                    >
-                      {sortIndex + 1}
-                    </span>
-                  )}
-                </span>
-              )}
-
-              <HeaderActionButton
-                title="列フィルター"
-                isActive={isColumnFiltered}
-                className={iconButtonClassName}
-                onPointerDown={(event) =>
-                  onColumnFilterButtonPointerDown(column, event)
-                }
-              >
-                {/* 変更(UI): フィルターのアイコンを ●/○ から漏斗(ファネル)へ。未適用=枠線 /
-                    適用中=塗りつぶし で区別し、色はボタンの currentColor に追従します。 */}
-                <svg
-                  width="12"
-                  height="12"
-                  viewBox="0 0 16 16"
-                  fill={isColumnFiltered ? 'currentColor' : 'none'}
-                  stroke="currentColor"
-                  strokeWidth={isColumnFiltered ? 0 : 1.4}
-                  strokeLinejoin="round"
-                  aria-hidden="true"
-                  focusable="false"
-                >
-                  <path d="M2 4 L14 4 L9.2 9.2 L9.2 13 L6.8 13 L6.8 9.2 Z" />
-                </svg>
-              </HeaderActionButton>
-
-              {/* 変更(13-A2): 列メニュー(「⋮」)ボタンです。常時表示します
-                  (AG Grid の suppressMenuHide: true 相当。右クリックでも
-                   同じメニューが開きます)。 */}
-              {showColumnMenuButton && (
-                <HeaderActionButton
-                  title="列メニュー"
-                  isActive={isMenuOpenForColumn}
-                  className={iconButtonClassName}
-                  onPointerDown={(event) =>
-                    onColumnMenuButtonPointerDown(column, event)
-                  }
-                >
-                  ⋮
-                </HeaderActionButton>
-              )}
-            </div>
-
-            <div
-              onPointerDown={(event) => onColumnResizePointerDown(column, event)}
-              style={{
-                position: 'absolute',
-                top: 0,
-                right: -3,
-                width: 6,
-                height: '100%',
-                cursor: 'col-resize',
-                zIndex: 3,
-              }}
-            />
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
-// 追加(11-B5): memo ラップ本体です。
-// 注記: ジェネリックコンポーネントを memo すると型引数 <T> が失われるため、
-//       `as typeof GridHeaderRowInner` でジェネリックシグネチャを復元します。
-//       比較関数は渡さず既定の shallow 比較を使います(全 props がプリミティブ or
-//       親側で useMemo / useCallback / latest-ref により参照安定化済みのため)。
-export const GridHeaderRow = memo(
-  GridHeaderRowInner,
-) as typeof GridHeaderRowInner;
-
-export default GridHeaderRow;
-</file>
-
 <file path="src/App.tsx">
 import { useState, type CSSProperties } from 'react';
 import {
@@ -17094,6 +16607,493 @@ function App() {
 }
 
 export default App;
+</file>
+
+<file path="src/components/spreadsheet-grid/view/GridHeaderRow.tsx">
+// 変更(11-B5): GridHeaderRow を React.memo 化するため memo を追加 import します。
+// 変更(13-A): ヘッダー右クリック(contextmenu)用に MouseEvent 型を追加 import します。
+import {
+  memo,
+  type CSSProperties,
+  type MouseEvent,
+  type PointerEvent,
+  type ReactNode,
+} from 'react';
+// 追加(UI CSS移行): className 合成ヘルパー。
+import { cx } from '../logic/cx';
+// 変更(11-A): uiState 丸ごと依存を撤廃し、正規化済み SelectionSnapshot を受け取ります。
+// 変更理由: GridBodyRow と同じく、uiState のあらゆる更新で props が変わるのを防ぎ、
+//           将来ヘッダー行を memo 化する際の布石にもなります。
+import type { SelectionSnapshot } from '../model/gridSelectors';
+import type {
+  ColumnFilterValue,
+  GridColumn,
+  GridSortState,
+} from '../model/gridTypes';
+// 変更(10-C): 列座標を ColumnMeasurement(グローバル) から
+//             PaneColumnEntry(ペインローカル) へ切り替えます。
+import type { PaneColumnEntry } from '../logic/geometry';
+// 追加(12-A): set フィルター対応のフィルター有効判定を共有します。
+import { isActiveColumnFilterValue } from '../logic/filtering';
+
+// 追加(10-C): このヘッダーがどのペインを描画しているかの種別です。
+export type GridPaneKind = 'left' | 'center' | 'right';
+
+type GridHeaderRowProps<T> = {
+  // 追加(10-C): 描画対象のペイン種別です。
+  pane: GridPaneKind;
+  // 追加(10-C): true のときだけ左上コーナーセル(#)を描画します。
+  //             行ヘッダーを持つペイン(左固定があれば左、無ければ中央)だけが true です。
+  ownsRowHeader: boolean;
+  // 追加(10-C): 列の前に確保する先頭幅です。
+  //             行ヘッダーを持つペインでは rowHeaderWidth、それ以外は 0 です。
+  //             各列は leadingWidth + entry.paneLocalStart に配置されます。
+  leadingWidth: number;
+  headerHeight: number;
+  rowHeaderCellStyle: CSSProperties;
+  // 追加(UI CSS移行): ヘッダー系スロット(すべて文字列=memo 安全)。基底は @layer ssg-base。
+  headerRowClassName?: string;
+  headerCellClassName?: string;
+  rowHeaderCellClassName?: string;
+  isCornerHovered: boolean;
+  isWholeGridSelected: boolean;
+  filteredRowsLength: number;
+  visibleColumnsLength: number;
+  // 変更(10-C): 描画対象の列エントリです。
+  //             中央ペインは仮想化済みの部分集合、固定ペインは全エントリが渡されます。
+  //             座標はすべてペインローカル(entry.paneLocalStart 起点)です。
+  renderEntries: PaneColumnEntry<T>[];
+  // 注記(10-C): hoveredColumnIndex / 各種 colIndex は entry.logicalIndex 空間です。
+  hoveredColumnIndex: number | null;
+  // 変更(11-A): 列選択判定用の正規化済みスナップショットです(uiState の置き換え)。
+  selectionSnapshot: SelectionSnapshot;
+  columnFilterValues: Record<string, ColumnFilterValue>;
+  sortState: GridSortState;
+  // 追加(UI CSS移行): ヘッダーのアイコンボタンへ差し込む追加 className(classNames.iconButton)。
+  iconButtonClassName?: string;
+  onCornerPointerDown: (event: PointerEvent<HTMLDivElement>) => void;
+  onCornerPointerEnter: () => void;
+  onCornerPointerLeave: () => void;
+  onColumnHeaderPointerDown: (
+    colIndex: number,
+    event: PointerEvent<HTMLDivElement>,
+  ) => void;
+  onColumnHeaderPointerEnter: (
+    colIndex: number,
+    event: PointerEvent<HTMLDivElement>,
+  ) => void;
+  onColumnHeaderPointerLeave: (colIndex: number) => void;
+  onColumnFilterButtonPointerDown: (
+    column: GridColumn<T>,
+    event: PointerEvent<HTMLButtonElement>,
+  ) => void;
+  onColumnResizePointerDown: (
+    column: GridColumn<T>,
+    event: PointerEvent<HTMLDivElement>,
+  ) => void;
+  // 追加(13-A): 列メニュー(「⋮」ボタン + ヘッダー右クリック)関連の props です。
+  //             enableColumnMenu=false のときはボタンを描画せず、右クリックも
+  //             ブラウザ標準メニューのままにします(controller 側でガード済み)。
+  enableColumnMenu: boolean;
+  // 追加(13-A): メニューを開いている列の key です(「⋮」ボタンの active 表示と、
+  //             hover が外れてもボタンを出し続ける判定に使います)。
+  // 注記: open/close の 1 回ずつだけ値が変わる string | null のため、
+  //       memo(GridHeaderRow) への影響は開閉時の 3 ペイン各 1 レンダーのみです。
+  openedMenuColumnKey: string | null;
+  onColumnMenuButtonPointerDown: (
+    column: GridColumn<T>,
+    event: PointerEvent<HTMLButtonElement>,
+  ) => void;
+  onColumnHeaderContextMenu: (
+    column: GridColumn<T>,
+    event: MouseEvent<HTMLDivElement>,
+  ) => void;
+  // 追加(13-B3-2): バッジ(Excel 列名)を grip にした列 D&D 並べ替えの pointerdown です。
+  //   latest-ref 安定のため参照は不変。未指定(reorder 不可)時はバッジを通常表示にします
+  //   (ハンドラ内で stopPropagation し、ヘッダー本体の列範囲選択とは衝突させません)。
+  onColumnDragHandlePointerDown?: (
+    column: GridColumn<T>,
+    event: PointerEvent<HTMLSpanElement>,
+  ) => void;
+};
+
+// 変更(10-C): sticky header 行を「1ペイン分」描画する汎用コンポーネントにしました。
+//             ownsRowHeader が true のペインのみ左上コーナーセルを描画します。
+// 追加(UI hover): ヘッダーのアイコンボタンです。各ボタンが自分のホバー状態を持ち、ホバー時のみ
+//   背景を出します(:hover 相当をインラインスタイルで実現)。ホバー変化で再描画されるのは当該
+//   ボタンのみで、ヘッダー全体や他ボタンには波及しません。
+function HeaderActionButton({
+  isActive,
+  title,
+  className,
+  onPointerDown,
+  children,
+}: {
+  isActive: boolean;
+  title: string;
+  className?: string;
+  onPointerDown: (event: PointerEvent<HTMLButtonElement>) => void;
+  children: ReactNode;
+}) {
+  // 変更(UI CSS移行): JS ホバー state を撤去し、:hover を CSS(.ssg-icon-btn)へ委譲します。
+  //   ホバーで再描画されなくなり、active 表示はクラス修飾子(--active)で行います。利用側は
+  //   classNames.iconButton(className)で局所上書きできます。
+  return (
+    <button
+      type="button"
+      title={title}
+      onPointerDown={onPointerDown}
+      className={cx(
+        'ssg-icon-btn',
+        isActive && 'ssg-icon-btn--active',
+        className,
+      )}
+    >
+      {children}
+    </button>
+  );
+}
+
+// 変更(11-B5): React.memo 化のため実装本体を Inner に分離します(export は末尾参照)。
+// 変更理由: ライブリサイズ中、幅が変わっていない固定ペインのヘッダーまで親再レンダーに
+//           引きずられて再描画されていました。11-B4 で renderEntries はペイン単位で
+//           安定済み、11-B5 で onColumnResizePointerDown も latest-ref 化により恒久安定と
+//           なったため、shallow 比較で props 全一致が成立し memo が機能します。
+//           なお中央ペインは virtualColumns 依存で renderEntries が横スクロール/リサイズの
+//           たびに変わるため再レンダーされますが、これは表示更新に必要な仕様どおりの挙動です。
+function GridHeaderRowInner<T>({
+  pane,
+  ownsRowHeader,
+  leadingWidth,
+  headerHeight,
+  rowHeaderCellStyle,
+  headerRowClassName,
+  headerCellClassName,
+  rowHeaderCellClassName,
+  isCornerHovered,
+  isWholeGridSelected,
+  filteredRowsLength,
+  visibleColumnsLength,
+  renderEntries,
+  hoveredColumnIndex,
+  selectionSnapshot,
+  columnFilterValues,
+  sortState,
+  iconButtonClassName,
+  onCornerPointerDown,
+  onCornerPointerEnter,
+  onCornerPointerLeave,
+  onColumnHeaderPointerDown,
+  onColumnHeaderPointerEnter,
+  onColumnHeaderPointerLeave,
+  onColumnFilterButtonPointerDown,
+  onColumnResizePointerDown,
+  // 追加(13-A): 列メニュー関連 props です。
+  enableColumnMenu,
+  openedMenuColumnKey,
+  onColumnMenuButtonPointerDown,
+  onColumnHeaderContextMenu,
+  // 追加(13-B3-2): バッジ grip の pointerdown(列 D&D)。
+  onColumnDragHandlePointerDown,
+}: GridHeaderRowProps<T>) {
+  return (
+    <div
+      data-pane={pane}
+      className={cx('ssg-header-row', headerRowClassName)}
+      style={{
+        height: headerHeight,
+      }}
+    >
+      {ownsRowHeader && (
+        <div
+          onPointerDown={onCornerPointerDown}
+          onPointerEnter={onCornerPointerEnter}
+          onPointerLeave={onCornerPointerLeave}
+          className={cx(
+            'ssg-header-cell',
+            'ssg-corner-cell',
+            isWholeGridSelected && 'ssg-header-cell--selected',
+            isCornerHovered && 'ssg-header-cell--hovered',
+            rowHeaderCellClassName,
+          )}
+          style={{
+            ...rowHeaderCellStyle,
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            height: headerHeight,
+            zIndex: 7,
+            cursor:
+              filteredRowsLength > 0 && visibleColumnsLength > 0
+                ? 'pointer'
+                : 'default',
+          }}
+        >
+          #
+        </div>
+      )}
+
+      {renderEntries.map((entry) => {
+        // 変更(10-C): 仮想化のガードは SpreadsheetGrid 側で済ませているため、
+        //             ここでは渡されたエントリをそのまま描画します。
+        if (!entry) {
+          return null;
+        }
+
+        const colIndex = entry.logicalIndex;
+        const column = entry.column;
+        const left = leadingWidth + entry.paneLocalStart;
+        const size = entry.paneLocalSize;
+
+        // 変更(12-A): set フィルター値(オブジェクト)も正しく「フィルター済み」と
+        //             判定できるよう、共通 helper へ置き換えます。
+        const isColumnFiltered = isActiveColumnFilterValue(
+          columnFilterValues[column.key],
+        );
+        // 変更(11-A): selectIsColumnSelected(uiState, ...) と等価の判定を
+        //             SelectionSnapshot のプリミティブ比較で行います。
+        const isColumnSelected =
+          selectionSnapshot.kind === 'col' &&
+          colIndex >= selectionSnapshot.startCol &&
+          colIndex <= selectionSnapshot.endCol;
+
+        // 追加(MS-1): 受動矢印はこの列の sort エントリ(配列)から方向を導出します。
+        // 変更(MS-2): 順序番号バッジ用に findIndex 化し、index も引きます。未ソート列は
+        //            sortIndex===-1 / sortEntry===null。複数ソート(length>1)のときだけ、
+        //            矢印に 1 始まりの優先順位番号を併記します(単一ソート時は番号なし)。
+        const sortIndex = sortState.findIndex(
+          (entry) => entry.columnKey === column.key,
+        );
+        const sortEntry = sortIndex === -1 ? null : sortState[sortIndex];
+
+        // 追加(13-A): この列のメニューを開いているかです(「⋮」の active 表示に使います)。
+        // 変更(13-A2): 「⋮」ボタンを hover 時表示 → 常時表示へ変更します。
+        // 変更理由: 旧実装は hoveredColumnIndex === colIndex を表示条件にしていましたが、
+        //           ヘッダーに配線している onColumnHeaderPointerEnter は
+        //           useGridPointerInteractions のドラッグ選択更新ハンドラであり、
+        //           hoveredColumnIndex を set する経路がどこにも無いため、
+        //           ボタンは「メニューが開いている列」でしか表示されませんでした
+        //           (= 右クリックでメニューを開いたときだけ「⋮」が出現する症状)。
+        //           hover 表示を復活させる案もありますが、hover のたびに memo 化済み
+        //           ヘッダー 3 ペインが再レンダーされるため、常時表示(AG Grid の
+        //           suppressMenuHide 相当)を採用します。anchor ボタンが常に DOM に
+        //           存在するため、開いている列の表示継続ガードも不要になります。
+        const isMenuOpenForColumn = openedMenuColumnKey === column.key;
+        const showColumnMenuButton = enableColumnMenu;
+
+        return (
+          <div
+            key={column.key}
+            onPointerDown={(event) => onColumnHeaderPointerDown(colIndex, event)}
+            onPointerEnter={(event) =>
+              onColumnHeaderPointerEnter(colIndex, event)
+            }
+            onPointerLeave={() => onColumnHeaderPointerLeave(colIndex)}
+            // 追加(13-A): ヘッダー右クリックで列メニューを開きます
+            //             (enableColumnMenu=false 時は controller 側で何もせず、
+            //              ブラウザ標準メニューが出ます)。
+            onContextMenu={(event) => onColumnHeaderContextMenu(column, event)}
+            className={cx(
+              'ssg-header-cell',
+              (isWholeGridSelected || isColumnSelected) &&
+                'ssg-header-cell--selected',
+              hoveredColumnIndex === colIndex && 'ssg-header-cell--hovered',
+              headerCellClassName,
+            )}
+            style={{
+              position: 'absolute',
+              top: 0,
+              left,
+              width: size,
+              minWidth: size,
+              height: headerHeight,
+            }}
+          >
+            {/* 変更(13-B4 / Option A): Excel 列名バッジ(番地表示)を廃止し、
+                列の並べ替え掴み手(grip)を「極小のドラッグハンドル(6点グリップ)」へ
+                置き換えます。ドラッグ controller は event.currentTarget を捕捉する方式で
+                掴み手の中身に依存しないため、この差し替えで useColumnHeaderDragController は
+                不変です。reorder 不可(onColumnDragHandlePointerDown 未指定)時は要素ごと
+                非表示にして、先頭の余白も詰めます。
+                注記: フィルター有効の視覚はヘッダーテキスト色(下の青)+フィルターボタン
+                      (●/○)が担うため、grip 側のフィルター連動色は持たせません。 */}
+            {onColumnDragHandlePointerDown && (
+              <span
+                onPointerDown={(event) =>
+                  onColumnDragHandlePointerDown(column, event)
+                }
+                title="ドラッグで列を移動"
+                aria-hidden="true"
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  width: 14,
+                  height: 22,
+                  flex: '0 0 auto',
+                  color: '#cbd5e1',
+                  // 追加: grip の視覚 + タッチでのスクロール抑止 + 文字選択抑止。
+                  cursor: 'grab',
+                  touchAction: 'none',
+                  userSelect: 'none',
+                }}
+              >
+                <svg
+                  width="8"
+                  height="14"
+                  viewBox="0 0 8 14"
+                  fill="currentColor"
+                  aria-hidden="true"
+                  focusable="false"
+                >
+                  <circle cx="2" cy="3" r="1" />
+                  <circle cx="6" cy="3" r="1" />
+                  <circle cx="2" cy="7" r="1" />
+                  <circle cx="6" cy="7" r="1" />
+                  <circle cx="2" cy="11" r="1" />
+                  <circle cx="6" cy="11" r="1" />
+                </svg>
+              </span>
+            )}
+
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                minWidth: 0,
+                flex: 1,
+                gap: 4,
+              }}
+            >
+              <div
+                style={{
+                  minWidth: 0,
+                  flex: 1,
+                  color: isColumnFiltered ? '#1d4ed8' : '#334155',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                {column.renderHeader
+                  ? column.renderHeader({
+                      colIndex,
+                      width: size,
+                      column,
+                      filterValue: columnFilterValues[column.key],
+                      isFiltered: isColumnFiltered,
+                    })
+                  : column.title || column.key}
+              </div>
+
+              {/* 変更(13-B4): ソートボタン(↕/↑/↓ のクリック対象)を廃止し、
+                  操作は列メニュー / コンテキストメニューへ移しました。ここはソート中の
+                  列にだけ「現在の方向」を受動表示する非インタラクティブな矢印です
+                  (未ソート時は何も出さない = 旧 idle の ↕ は廃止)。
+                  クリック対象が無くなったぶん、ヘッダーの横スペースが空きます。 */}
+              {sortEntry && (
+                <span
+                  aria-hidden="true"
+                  title={
+                    (sortEntry.direction === 'asc'
+                      ? '昇順で並び替え中'
+                      : '降順で並び替え中') +
+                    (sortState.length > 1 ? ` (優先度 ${sortIndex + 1})` : '')
+                  }
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 1,
+                    flex: '0 0 auto',
+                    color: '#3461c9',
+                    fontSize: 12,
+                    fontWeight: 700,
+                    lineHeight: 1,
+                  }}
+                >
+                  {sortEntry.direction === 'asc' ? '↑' : '↓'}
+                  {/* 追加(MS-2): 複数ソート時のみ優先順位番号(1 始まり)を小さく併記。 */}
+                  {sortState.length > 1 && (
+                    <span
+                      style={{ fontSize: 9, fontWeight: 700, lineHeight: 1 }}
+                    >
+                      {sortIndex + 1}
+                    </span>
+                  )}
+                </span>
+              )}
+
+              <HeaderActionButton
+                title="列フィルター"
+                isActive={isColumnFiltered}
+                className={iconButtonClassName}
+                onPointerDown={(event) =>
+                  onColumnFilterButtonPointerDown(column, event)
+                }
+              >
+                {/* 変更(UI): フィルターのアイコンを ●/○ から漏斗(ファネル)へ。未適用=枠線 /
+                    適用中=塗りつぶし で区別し、色はボタンの currentColor に追従します。 */}
+                <svg
+                  width="12"
+                  height="12"
+                  viewBox="0 0 16 16"
+                  fill={isColumnFiltered ? 'currentColor' : 'none'}
+                  stroke="currentColor"
+                  strokeWidth={isColumnFiltered ? 0 : 1.4}
+                  strokeLinejoin="round"
+                  aria-hidden="true"
+                  focusable="false"
+                >
+                  <path d="M2 4 L14 4 L9.2 9.2 L9.2 13 L6.8 13 L6.8 9.2 Z" />
+                </svg>
+              </HeaderActionButton>
+
+              {/* 変更(13-A2): 列メニュー(「⋮」)ボタンです。常時表示します
+                  (AG Grid の suppressMenuHide: true 相当。右クリックでも
+                   同じメニューが開きます)。 */}
+              {showColumnMenuButton && (
+                <HeaderActionButton
+                  title="列メニュー"
+                  isActive={isMenuOpenForColumn}
+                  className={iconButtonClassName}
+                  onPointerDown={(event) =>
+                    onColumnMenuButtonPointerDown(column, event)
+                  }
+                >
+                  ⋮
+                </HeaderActionButton>
+              )}
+            </div>
+
+            <div
+              onPointerDown={(event) => onColumnResizePointerDown(column, event)}
+              style={{
+                position: 'absolute',
+                top: 0,
+                right: -3,
+                width: 6,
+                height: '100%',
+                cursor: 'col-resize',
+                zIndex: 3,
+              }}
+            />
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// 追加(11-B5): memo ラップ本体です。
+// 注記: ジェネリックコンポーネントを memo すると型引数 <T> が失われるため、
+//       `as typeof GridHeaderRowInner` でジェネリックシグネチャを復元します。
+//       比較関数は渡さず既定の shallow 比較を使います(全 props がプリミティブ or
+//       親側で useMemo / useCallback / latest-ref により参照安定化済みのため)。
+export const GridHeaderRow = memo(
+  GridHeaderRowInner,
+) as typeof GridHeaderRowInner;
+
+export default GridHeaderRow;
 </file>
 
 <file path="src/components/spreadsheet-grid/model/gridTypes.ts">

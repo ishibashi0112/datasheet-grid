@@ -85,28 +85,14 @@ export function CellEditorLayer({
     return null;
   }
 
+  // 変更(UI CSS移行): wrapper は座標のみインライン。zIndex / pointerEvents と input の静的
+  //   スタイルは styles.css(.ssg-cell-editor / .ssg-cell-editor-input)へ。枠色は accent 追従。
   const wrapperStyle: CSSProperties = {
     position: 'absolute',
     left: leadingWidth + rect.left,
     top: headerHeight + rect.top - baseOffset,
     width: rect.width,
     height: rect.height,
-    zIndex: 5,
-    pointerEvents: 'none',
-  };
-
-  const inputStyle: CSSProperties = {
-    width: '100%',
-    height: '100%',
-    boxSizing: 'border-box',
-    border: '2px solid #3461c9',
-    outline: 'none',
-    padding: '0 10px',
-    margin: 0,
-    fontSize: 16,
-    color: '#0f172a',
-    backgroundColor: '#ffffff',
-    pointerEvents: 'auto',
   };
 
   // 追加: Enter で下、Tab で左右へ移動する方向付き commit を呼びます。
@@ -131,7 +117,7 @@ export function CellEditorLayer({
   };
 
   return (
-    <div style={wrapperStyle}>
+    <div className="ssg-cell-editor" style={wrapperStyle}>
       <input
         ref={inputRef}
         type="text"
@@ -139,7 +125,7 @@ export function CellEditorLayer({
         onChange={(event) => setDraftValue(event.target.value)}
         onKeyDown={handleKeyDown}
         onBlur={() => onCommit(draftValue)}
-        style={inputStyle}
+        className="ssg-cell-editor-input"
       />
     </div>
   );

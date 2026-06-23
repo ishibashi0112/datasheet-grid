@@ -35,20 +35,17 @@ export function SelectionOverlay({
     return null;
   }
 
+  // 変更(UI CSS移行): 静的スタイル(枠 / 塗り / boxSizing / pointerEvents / zIndex)は styles.css
+  //   (.ssg-selection-overlay)へ。座標 / 幅 / 高さのみインライン(動的)。
   const overlayStyle: CSSProperties = {
     position: 'absolute',
     left: leadingWidth + rect.left,
     top: headerHeight + rect.top - baseOffset,
     width: rect.width,
     height: rect.height,
-    backgroundColor: 'rgba(52, 97, 201, 0.08)',
-    border: '2px solid #3461c9',
-    boxSizing: 'border-box',
-    pointerEvents: 'none',
-    zIndex: 2,
   };
 
-  return <div style={overlayStyle} />;
+  return <div className="ssg-selection-overlay" style={overlayStyle} />;
 }
 
 export default SelectionOverlay;
