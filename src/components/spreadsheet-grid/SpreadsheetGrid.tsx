@@ -226,6 +226,9 @@ export function SpreadsheetGrid<T extends object>({
   rows = EMPTY_ROWS,
   // 追加(①-3): serverSide データ供給口。指定時に serverSide モードへ分岐します(rows と排他)。
   dataSource,
+  // 追加(stage ③): serverSide ソフトリフレッシュ用トークン。値を増やすと query 不変のまま
+  //   キャッシュ破棄+可視レンジ取り直し(スクロール保持)。フックへ refreshToken として渡します。
+  serverSideRefreshToken,
   columns,
   onRowsChange,
   onColumnsChange,
@@ -800,6 +803,8 @@ export function SpreadsheetGrid<T extends object>({
     rowKeyGetter: resolvedRowKeyGetter,
     query: serverSideQuery,
     queryKey: serverSideQueryKey,
+    // 追加(stage ③): ソフトリフレッシュ signal。queryKey と独立にキャッシュ破棄+可視レンジ取り直しを起こす。
+    refreshToken: serverSideRefreshToken,
   });
   // 可視レンジ通知に使う stable 参照(useCallback)だけを抜き出します。serverSide オブジェクト
   //   自体は毎 render 生成のため、effect 依存にはこの requestRange のみを使います。

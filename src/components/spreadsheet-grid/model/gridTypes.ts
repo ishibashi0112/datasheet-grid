@@ -378,6 +378,11 @@ export type SpreadsheetGridProps<T> = {
   // 追加(DS-4 ②): serverSide データ供給口です。指定時に serverSide モードへ切り替えます
   //   (rows と排他・dataSource 優先)。①-3 で本 prop を消費してモード分岐します。
   dataSource?: ServerSideDataSource<T>;
+  // 追加(stage ③): serverSide のソフトリフレッシュ用トークンです。値を増やすと、クエリ
+  //   (フィルター/ソート/グローバル)を変えずにキャッシュを破棄し、現在の可視レンジをサーバから
+  //   取り直します。スクロール位置は保持し、件数は到着ブロックの totalRowCount で追従します
+  //   (queryKey 変化=結果総入れ替え→先頭リセットとは別物)。clientSide では無視されます。
+  serverSideRefreshToken?: number;
   columns: GridColumn<T>[];
   onRowsChange?: (nextRows: T[]) => void;
   onColumnsChange?: (nextColumns: GridColumn<T>[]) => void;

@@ -346,4 +346,133 @@ describe('useServerSideRowModel', () => {
     });
     expect(result.current.rowCount).toBe(7);
   });
+
+  it('refreshToken 変化でキャッシュを破棄し、現在の可視レンジ(block 0,1)を即時取り直す', async () => {
+    const rec = createRecording({ totalRowCount: 1000, initialRowCount: 1000 });
+    const { result, rerender } = renderHook(
+      ({ refreshToken }: { refreshToken: number }) =>
+        useServerSideRowModel<Row>({
+          dataSource: rec.dataSource,
+          rowKeyGetter,
+          query: EMPTY_QUERY,
+          queryKey: 'a',
+          refreshToken,
+        }),
+      { initialProps: { refreshToken: 0 } },
+    );
+    // initialRowCount 既知 → mount ではブートストラップせず、refreshToken=0 も no-op。
+    await flush();
+    expect(rec.calls.length).toBe(0);
+    // 可視レンジ [0,200) を取得 → block 0,1 がキャッシュされる。
+    act(() => {
+      result.current.requestRange(0, 200);
+    });
+    await advance(DEBOUNCE);
+    expect(startedBlocks(rec.calls, 100)).toEqual([0, 1]);
+    expect(rec.calls.length).toBe(2);
+    expect(result.current.rowModel.getRow(0)).toEqual({ v: 0 });
+
+    // refreshToken を増やす → キャッシュ破棄 + 可視レンジ([0,200)=block 0,1)を即時取り直す。
+    //   debounce を介さないため、timer を進めず flush(microtask)だけで再取得が観測できる。
+    rerender({ refreshToken: 1 });
+    await flush();
+    expect(rec.calls.length).toBe(4);
+    expect(startedBlocks(rec.calls, 100)).toEqual([0, 1]);
+    expect(result.current.rowModel.getRow(0)).toEqual({ v: 0 });
+  });
+
+  it('refreshToken 変化では件数をリセットせず、到着 totalRowCount で更新する', async () => {
+    let resolveFn: ((r: ServerSideGetRowsResult<Row>) => void) | null = null;
+    const calls: ServerSideGetRowsParams[] = [];
+    const dataSource: ServerSideDataSource<Row> = {
+      initialRowCount: 1000,
+      getRows: (params) => {
+        calls.push(params);
+        return new Promise<ServerSideGetRowsResult<Row>>((resolve) => {
+          resolveFn = resolve;
+        });
+      },
+    };
+    const { result, rerender } = renderHook(
+      ({ refreshToken }: { refreshToken: number }) =>
+        useServerSideRowModel<Row>({
+          dataSource,
+          rowKeyGetter,
+          query: EMPTY_QUERY,
+          queryKey: 'a',
+          refreshToken,
+        }),
+      { initialProps: { refreshToken: 0 } },
+    );
+    await flush();
+    expect(calls.length).toBe(0);
+    expect(result.current.rowCount).toBe(1000);
+
+    // 可視レンジ取得 → block 0 を解決して件数 1000 を確定。
+    act(() => {
+      result.current.requestRange(0, 100);
+    });
+    await advance(DEBOUNCE);
+    expect(calls.length).toBe(1);
+    await act(async () => {
+      resolveFn?.({ rows: [{ v: 0 }], totalRowCount: 1000 });
+      await Promise.resolve();
+    });
+    expect(result.current.rowCount).toBe(1000);
+
+    // refreshToken を増やす → block 0 を取り直す。件数は到着まで 1000 を保持(initialRowCount や 0 へ戻さない)。
+    rerender({ refreshToken: 1 });
+    await flush();
+    expect(calls.length).toBe(2);
+    expect(result.current.rowCount).toBe(1000);
+
+    // 到着 totalRowCount=42(サーバ側でデータが減った想定)で一度だけ更新。
+    await act(async () => {
+      resolveFn?.({ rows: [{ v: 0 }], totalRowCount: 42 });
+      await Promise.resolve();
+    });
+    expect(result.current.rowCount).toBe(42);
+  });
+
+  it('初回 mount では refreshToken による再取得をしない(no-op)', async () => {
+    const rec = createRecording({ totalRowCount: 1000, initialRowCount: 1000 });
+    renderHook(() =>
+      useServerSideRowModel<Row>({
+        dataSource: rec.dataSource,
+        rowKeyGetter,
+        query: EMPTY_QUERY,
+        queryKey: 'a',
+        // 初期値が 0 以外でも mount では発火しない。
+        refreshToken: 5,
+      }),
+    );
+    await flush();
+    expect(rec.calls.length).toBe(0);
+  });
+
+  it('refreshToken 未指定では無関係な rerender で再取得しない(inert)', async () => {
+    const rec = createRecording({ totalRowCount: 1000, initialRowCount: 1000 });
+    const { result, rerender } = renderHook(
+      ({ k }: { k: string }) =>
+        useServerSideRowModel<Row>({
+          dataSource: rec.dataSource,
+          rowKeyGetter,
+          query: EMPTY_QUERY,
+          queryKey: k,
+          // refreshToken は未指定(inert)。
+        }),
+      { initialProps: { k: 'a' } },
+    );
+    await flush();
+    act(() => {
+      result.current.requestRange(0, 100);
+    });
+    await advance(DEBOUNCE);
+    const before = rec.calls.length;
+    expect(before).toBe(1);
+    // 同 queryKey での rerender。queryKey effect も refresh effect も発火せず再取得は起きない。
+    rerender({ k: 'a' });
+    await flush();
+    expect(rec.calls.length).toBe(before);
+  });
 });

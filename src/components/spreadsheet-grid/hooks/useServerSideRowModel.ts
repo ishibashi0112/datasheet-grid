@@ -40,6 +40,9 @@ export type UseServerSideRowModelParams<T> = {
   query: ServerSideQuery;
   // query の同一性キーです。変化でキャッシュ無効化 + 再取得します(stage ① は安定値)。
   queryKey: string;
+  // 追加(stage ③): ソフトリフレッシュ用トークン。値の変化で「query 不変のまま」キャッシュを
+  //   破棄し可視レンジを取り直します(queryKey 無効化とは独立。未指定/clientSide では inert)。
+  refreshToken?: number;
   debounceMs?: number;
 };
 
@@ -53,7 +56,7 @@ export type UseServerSideRowModelResult<T> = {
 export function useServerSideRowModel<T>(
   params: UseServerSideRowModelParams<T>,
 ): UseServerSideRowModelResult<T> {
-  const { dataSource, rowKeyGetter, query, queryKey } = params;
+  const { dataSource, rowKeyGetter, query, queryKey, refreshToken } = params;
   // 変更(①-3): dataSource 不在(clientSide)でも安全に評価できるよう optional-chain します。
   //   inert 時は既定値で空キャッシュを作るだけで、書き込みも fetch も発生しません。
   const blockSize = dataSource?.blockSize ?? DEFAULT_BLOCK_SIZE;
@@ -239,6 +242,53 @@ export function useServerSideRowModel<T>(
     // queryKey 変化のみを再実行トリガーにします(fetchBlock/cache/dataSource は同 render で最新)。
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [queryKey]);
+
+  // 追加(stage ③): refreshToken 変化でのソフトリフレッシュ effect です。
+  //   queryKey 変化(結果セット総入れ替え→先頭リセット)とは別物で、クエリは変えずにキャッシュを
+  //   破棄し「現在の可視レンジ」を即時取り直します。スクロール位置は SpreadsheetGrid 側が
+  //   serverSideQueryKey 不変のため自動的に保持し、件数はここではリセットせず到着ブロックの
+  //   totalRowCount で更新します(外部更新で件数が変わっていれば追従)。block 0 ではなく latestRange を
+  //   取り直すのは、scroll 保持時に「今見えている行」を最優先で更新するためです。マウント時の no-op は
+  //   前回値比較で実現し、dev StrictMode の二重実行でも余計な再取得を出しません。
+  const prevRefreshTokenRef = useRef<number | undefined>(refreshToken);
+  useEffect(() => {
+    // clientSide(inert)/ refreshToken 未指定では取得しません(基準値だけ追従させます)。
+    if (dataSource == null || refreshToken === undefined) {
+      prevRefreshTokenRef.current = refreshToken;
+      return;
+    }
+    // 初めて defined な値を観測したケース(初期化 or undefined→number)は基準化のみで取得しません。
+    if (prevRefreshTokenRef.current === undefined) {
+      prevRefreshTokenRef.current = refreshToken;
+      return;
+    }
+    // 値が変わっていなければ(mount 含む)何もしません。
+    if (prevRefreshTokenRef.current === refreshToken) {
+      return;
+    }
+    prevRefreshTokenRef.current = refreshToken;
+
+    // 進行中の取得を全て中断し、debounce タイマーを破棄してキャッシュを破棄します。
+    for (const [, controller] of inFlightRef.current) {
+      controller.abort();
+    }
+    inFlightRef.current.clear();
+    if (timerRef.current !== null) {
+      clearTimeout(timerRef.current);
+      timerRef.current = null;
+    }
+    cache.clear();
+
+    // 破棄済みキャッシュをスケルトンとして即時再描画させます(件数は保持)。
+    //   本 setState は前回値比較ガードによりマウント時(初回 effect 実行)には到達しないため、
+    //   react-hooks/set-state-in-effect は報告せず disable は不要です(付けると Unused 警告)。
+    setVersion((value) => value + 1);
+
+    // 現在の可視レンジを即時取り直します(debounce を介さず、明示操作に即応)。
+    runFetch();
+    // refreshToken のみを再実行トリガーにします(cache/dataSource/runFetch は同 render で最新)。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [refreshToken]);
 
   // unmount クリーンアップ: in-flight abort + timer クリアです。
   useEffect(() => {

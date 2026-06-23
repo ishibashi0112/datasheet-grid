@@ -1551,279 +1551,6 @@ export const useColumnSelectOptionsCollector = <T,>({
 export default useColumnSelectOptionsCollector;
 </file>
 
-<file path="src/components/spreadsheet-grid/hooks/useServerSideRowModel.test.ts">
-// useServerSideRowModel(SSRM フック)の挙動テストです(DS-4 ②)。
-//   性質ベースで検証します: 件数ブートストラップ(block 0 先行 fetch)/ debounce 合体 /
-//   in-flight 重複排除 / stale キャンセル(abort)/ getRow・isRowLoaded / queryKey 無効化 /
-//   unmount abort。renderHook が DOM を要するため本ファイルのみ jsdom にします。
-//   getRows はモックで、解決を自動/保留で切り替えられます(in-flight 検証は保留モードで行います)。
-// @vitest-environment jsdom
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { renderHook, act } from '@testing-library/react';
-import { useServerSideRowModel } from './useServerSideRowModel';
-import type {
-  ServerSideDataSource,
-  ServerSideGetRowsParams,
-  ServerSideGetRowsResult,
-} from '../model/gridTypes';
-
-type Row = { v: number };
-
-const rowKeyGetter = (row: Row): number => row.v;
-const EMPTY_QUERY = {} as const;
-
-type Recording = {
-  dataSource: ServerSideDataSource<Row>;
-  getRows: ReturnType<typeof vi.fn>;
-  calls: ServerSideGetRowsParams[];
-};
-
-// 記録つき getRows を持つ dataSource を作ります。autoResolve=false なら解決しない Promise を返し、
-//   in-flight 状態(重複排除 / abort)を検査できます。startIndex/endIndex は必ず尊重します。
-const createRecording = (opts: {
-  totalRowCount: number;
-  initialRowCount?: number;
-  blockSize?: number;
-  maxCachedBlocks?: number;
-  autoResolve?: boolean;
-}): Recording => {
-  const calls: ServerSideGetRowsParams[] = [];
-  const blockSize = opts.blockSize ?? 100;
-  const autoResolve = opts.autoResolve ?? true;
-  const getRows = vi.fn(
-    (params: ServerSideGetRowsParams): Promise<ServerSideGetRowsResult<Row>> => {
-      calls.push(params);
-      if (!autoResolve) {
-        return new Promise<ServerSideGetRowsResult<Row>>(() => {});
-      }
-      const rows: Row[] = [];
-      for (let i = params.startIndex; i < params.endIndex; i += 1) {
-        rows.push({ v: i });
-      }
-      return Promise.resolve({ rows, totalRowCount: opts.totalRowCount });
-    },
-  );
-  const dataSource: ServerSideDataSource<Row> = {
-    getRows,
-    initialRowCount: opts.initialRowCount,
-    blockSize,
-    maxCachedBlocks: opts.maxCachedBlocks,
-  };
-  return { dataSource, getRows, calls };
-};
-
-// マイクロタスクを数回流します(getRows().then(...) チェーンの解決用)。
-const flush = async (): Promise<void> => {
-  await act(async () => {
-    await Promise.resolve();
-    await Promise.resolve();
-  });
-};
-
-// debounce タイマーを進めて runFetch を発火し、続く fetch の解決まで流します。
-const advance = async (ms: number): Promise<void> => {
-  await act(async () => {
-    await vi.advanceTimersByTimeAsync(ms);
-  });
-};
-
-// calls から startIndex の昇順ユニーク配列を作ります(どのブロックを取得したかの指標)。
-const startedBlocks = (calls: ServerSideGetRowsParams[], blockSize: number): number[] => {
-  const set = new Set<number>();
-  for (const c of calls) {
-    set.add(c.startIndex / blockSize);
-  }
-  return Array.from(set).sort((a, b) => a - b);
-};
-
-beforeEach(() => {
-  vi.useFakeTimers();
-});
-afterEach(() => {
-  vi.useRealTimers();
-  vi.restoreAllMocks();
-});
-
-const DEBOUNCE = 120;
-
-describe('useServerSideRowModel', () => {
-  it('initialRowCount 未指定なら block 0 を先行 fetch して件数を確定する(ブートストラップ)', async () => {
-    const rec = createRecording({ totalRowCount: 1000 });
-    const { result } = renderHook(() =>
-      useServerSideRowModel<Row>({
-        dataSource: rec.dataSource,
-        rowKeyGetter,
-        query: EMPTY_QUERY,
-        queryKey: 'a',
-      }),
-    );
-    await flush();
-    // block 0 だけが取得され、totalRowCount が反映される。
-    expect(startedBlocks(rec.calls, 100)).toEqual([0]);
-    expect(rec.calls[0]).toMatchObject({ startIndex: 0, endIndex: 100 });
-    expect(result.current.rowCount).toBe(1000);
-    expect(result.current.rowModel.getRowCount()).toBe(1000);
-    expect(result.current.rowModel.getRow(0)).toEqual({ v: 0 });
-    expect(result.current.isRowLoaded(0)).toBe(true);
-    expect(result.current.isRowLoaded(500)).toBe(false);
-  });
-
-  it('getSourceIndex は恒等 / 未ロード getRowKey は viewIndex', async () => {
-    const rec = createRecording({ totalRowCount: 1000 });
-    const { result } = renderHook(() =>
-      useServerSideRowModel<Row>({
-        dataSource: rec.dataSource,
-        rowKeyGetter,
-        query: EMPTY_QUERY,
-        queryKey: 'a',
-      }),
-    );
-    await flush();
-    expect(result.current.rowModel.getSourceIndex(42)).toBe(42);
-    // block 0 はロード済み → rowKeyGetter(row.v)。未ロード行は viewIndex。
-    expect(result.current.rowModel.getRowKey(3)).toBe(3);
-    expect(result.current.rowModel.getRowKey(900)).toBe(900);
-  });
-
-  it('requestRange は debounce で合体し、最新レンジのブロックだけ取得する', async () => {
-    const rec = createRecording({ totalRowCount: 1000, initialRowCount: 1000 });
-    const { result } = renderHook(() =>
-      useServerSideRowModel<Row>({
-        dataSource: rec.dataSource,
-        rowKeyGetter,
-        query: EMPTY_QUERY,
-        queryKey: 'a',
-      }),
-    );
-    // initialRowCount 既知 → ブートストラップ fetch なし。
-    await flush();
-    expect(rec.calls.length).toBe(0);
-    act(() => {
-      result.current.requestRange(0, 200);
-      result.current.requestRange(0, 300);
-    });
-    // debounce 未発火では未取得。
-    expect(rec.calls.length).toBe(0);
-    await advance(DEBOUNCE);
-    // 最新 [0,300) のブロック 0,1,2 のみ、各 1 回。
-    expect(startedBlocks(rec.calls, 100)).toEqual([0, 1, 2]);
-    expect(rec.calls.length).toBe(3);
-  });
-
-  it('in-flight 中の同一ブロックは二重 fetch しない(重複排除)', async () => {
-    const rec = createRecording({
-      totalRowCount: 1000,
-      initialRowCount: 1000,
-      autoResolve: false,
-    });
-    const { result } = renderHook(() =>
-      useServerSideRowModel<Row>({
-        dataSource: rec.dataSource,
-        rowKeyGetter,
-        query: EMPTY_QUERY,
-        queryKey: 'a',
-      }),
-    );
-    await flush();
-    act(() => {
-      result.current.requestRange(0, 200);
-    });
-    await advance(DEBOUNCE);
-    // block 0,1 が in-flight(未解決)。
-    expect(startedBlocks(rec.calls, 100)).toEqual([0, 1]);
-    act(() => {
-      result.current.requestRange(0, 300);
-    });
-    await advance(DEBOUNCE);
-    // 0,1 は in-flight のため skip、新規 2 のみ追加。各ブロック 1 回。
-    expect(startedBlocks(rec.calls, 100)).toEqual([0, 1, 2]);
-    expect(rec.calls.length).toBe(3);
-  });
-
-  it('範囲外になった in-flight は abort される(stale キャンセル)', async () => {
-    const rec = createRecording({
-      totalRowCount: 1000,
-      initialRowCount: 1000,
-      autoResolve: false,
-    });
-    const { result } = renderHook(() =>
-      useServerSideRowModel<Row>({
-        dataSource: rec.dataSource,
-        rowKeyGetter,
-        query: EMPTY_QUERY,
-        queryKey: 'a',
-      }),
-    );
-    await flush();
-    act(() => {
-      result.current.requestRange(0, 200);
-    });
-    await advance(DEBOUNCE);
-    const block0Signal = rec.calls[0].signal;
-    const block1Signal = rec.calls[1].signal;
-    expect(block0Signal.aborted).toBe(false);
-    // 遠くへスクロール → 0,1 は不要に。
-    act(() => {
-      result.current.requestRange(500, 700);
-    });
-    await advance(DEBOUNCE);
-    // 旧ブロックの signal が abort され、新ブロック 5,6 が取得される。
-    expect(block0Signal.aborted).toBe(true);
-    expect(block1Signal.aborted).toBe(true);
-    expect(startedBlocks(rec.calls, 100)).toEqual([0, 1, 5, 6]);
-  });
-
-  it('queryKey 変化で旧キャッシュを破棄し再取得する', async () => {
-    const rec = createRecording({ totalRowCount: 1000 });
-    const { result, rerender } = renderHook(
-      ({ queryKey }: { queryKey: string }) =>
-        useServerSideRowModel<Row>({
-          dataSource: rec.dataSource,
-          rowKeyGetter,
-          query: EMPTY_QUERY,
-          queryKey,
-        }),
-      { initialProps: { queryKey: 'a' } },
-    );
-    await flush();
-    expect(result.current.rowModel.getRow(0)).toEqual({ v: 0 });
-    const callsAfterFirst = rec.calls.length;
-    // queryKey を変える → キャッシュ破棄 + 再ブートストラップ。
-    rerender({ queryKey: 'b' });
-    await flush();
-    // block 0 が再取得され、ロードし直される。
-    expect(rec.calls.length).toBeGreaterThan(callsAfterFirst);
-    expect(result.current.rowModel.getRow(0)).toEqual({ v: 0 });
-  });
-
-  it('unmount で in-flight を abort する', async () => {
-    const rec = createRecording({
-      totalRowCount: 1000,
-      initialRowCount: 1000,
-      autoResolve: false,
-    });
-    const { result, unmount } = renderHook(() =>
-      useServerSideRowModel<Row>({
-        dataSource: rec.dataSource,
-        rowKeyGetter,
-        query: EMPTY_QUERY,
-        queryKey: 'a',
-      }),
-    );
-    await flush();
-    act(() => {
-      result.current.requestRange(0, 200);
-    });
-    await advance(DEBOUNCE);
-    const signals = rec.calls.map((c) => c.signal);
-    expect(signals.length).toBeGreaterThan(0);
-    expect(signals.every((s) => s.aborted)).toBe(false);
-    unmount();
-    expect(signals.every((s) => s.aborted)).toBe(true);
-  });
-});
-</file>
-
 <file path="src/components/spreadsheet-grid/hooks/useSortManagementController.ts">
 import { useCallback, useEffect, useRef, useState, type RefObject } from 'react';
 
@@ -4070,272 +3797,485 @@ export function ActiveCellOverlay({
 export default ActiveCellOverlay;
 </file>
 
-<file path="src/components/spreadsheet-grid/hooks/useServerSideRowModel.ts">
-// serverSide(SSRM)の RowModel を供給するフックです(DS-4 ②)。
-//
-// 責務:
-//   - クライアント側スパース LRU キャッシュ(serverSideCache)を保持し、RowModel シーム
-//     (getRowCount / getRow / getSourceIndex / getRowKey)を serverSide 実装で供給します。
-//   - 可視レンジ(requestRange)に対し、欠落ブロックだけを getRows で都度取得します
-//     (computeBlockIndexes で必要ブロックを定数サイズに限定 → 取得範囲を縛りメモリを有界化)。
-//   - スクロール debounce / in-flight 重複排除 / stale リクエストの AbortSignal キャンセル /
-//     件数ブートストラップ(block 0 先行 fetch) / queryKey 変化での無効化 を担います。
-//
-// 設計メモ:
-//   - getRow は cache の純読み(recency 不変)。可視帯の MRU 化は requestRange 内の touchBlocks で
-//     明示的に行い、render が evict 順序を揺らさないようにします(serverSideCache の方針に整合)。
-//   - getSourceIndex は恒等(viewIndex)。serverSide は view 順が正準で、別空間の source index を
-//     持ちません。getRowKey は未ロード行で viewIndex を返し、スケルトン行の React key を安定させます。
-//   - rowCount は state(縦ジオメトリ駆動の単一ソース)。getRows 結果の totalRowCount で最新化します。
-//     非同期コールバックは rowCountRef(setRowCount と必ず対で更新)から最新件数を読みます。
-//   - ブロック到着は version(state)の bump で再描画を促し、getRow が新データを拾います。
-
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+<file path="src/components/spreadsheet-grid/hooks/useServerSideRowModel.test.ts">
+// useServerSideRowModel(SSRM フック)の挙動テストです(DS-4 ②)。
+//   性質ベースで検証します: 件数ブートストラップ(block 0 先行 fetch)/ debounce 合体 /
+//   in-flight 重複排除 / stale キャンセル(abort)/ getRow・isRowLoaded / queryKey 無効化 /
+//   unmount abort。renderHook が DOM を要するため本ファイルのみ jsdom にします。
+//   getRows はモックで、解決を自動/保留で切り替えられます(in-flight 検証は保留モードで行います)。
+// @vitest-environment jsdom
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { renderHook, act } from '@testing-library/react';
+import { useServerSideRowModel } from './useServerSideRowModel';
 import type {
-  GridRowKey,
-  RowModel,
   ServerSideDataSource,
-  ServerSideQuery,
+  ServerSideGetRowsParams,
+  ServerSideGetRowsResult,
 } from '../model/gridTypes';
-import { createServerSideRowCache } from '../logic/serverSideCache';
-import { computeBlockIndexes } from '../logic/serverSideBlocks';
 
-// dataSource 側で未指定のときの既定値です。
-const DEFAULT_BLOCK_SIZE = 100;
-const DEFAULT_MAX_CACHED_BLOCKS = 64;
-const DEFAULT_DEBOUNCE_MS = 120;
+type Row = { v: number };
 
-export type UseServerSideRowModelParams<T> = {
-  // 変更(①-3): dataSource を optional 化しました。SpreadsheetGrid は本フックを無条件に
-  //   呼ぶ(React Hooks 規則)ため、clientSide(dataSource 不在)では inert 動作にします。
-  dataSource?: ServerSideDataSource<T>;
-  rowKeyGetter: (row: T, index: number) => GridRowKey;
-  query: ServerSideQuery;
-  // query の同一性キーです。変化でキャッシュ無効化 + 再取得します(stage ① は安定値)。
-  queryKey: string;
-  debounceMs?: number;
+const rowKeyGetter = (row: Row): number => row.v;
+const EMPTY_QUERY = {} as const;
+
+type Recording = {
+  dataSource: ServerSideDataSource<Row>;
+  getRows: ReturnType<typeof vi.fn>;
+  calls: ServerSideGetRowsParams[];
 };
 
-export type UseServerSideRowModelResult<T> = {
-  rowModel: RowModel<T>;
-  rowCount: number;
-  isRowLoaded: (viewIndex: number) => boolean;
-  requestRange: (startIndex: number, endIndex: number) => void;
+// 記録つき getRows を持つ dataSource を作ります。autoResolve=false なら解決しない Promise を返し、
+//   in-flight 状態(重複排除 / abort)を検査できます。startIndex/endIndex は必ず尊重します。
+const createRecording = (opts: {
+  totalRowCount: number;
+  initialRowCount?: number;
+  blockSize?: number;
+  maxCachedBlocks?: number;
+  autoResolve?: boolean;
+}): Recording => {
+  const calls: ServerSideGetRowsParams[] = [];
+  const blockSize = opts.blockSize ?? 100;
+  const autoResolve = opts.autoResolve ?? true;
+  const getRows = vi.fn(
+    (params: ServerSideGetRowsParams): Promise<ServerSideGetRowsResult<Row>> => {
+      calls.push(params);
+      if (!autoResolve) {
+        return new Promise<ServerSideGetRowsResult<Row>>(() => {});
+      }
+      const rows: Row[] = [];
+      for (let i = params.startIndex; i < params.endIndex; i += 1) {
+        rows.push({ v: i });
+      }
+      return Promise.resolve({ rows, totalRowCount: opts.totalRowCount });
+    },
+  );
+  const dataSource: ServerSideDataSource<Row> = {
+    getRows,
+    initialRowCount: opts.initialRowCount,
+    blockSize,
+    maxCachedBlocks: opts.maxCachedBlocks,
+  };
+  return { dataSource, getRows, calls };
 };
 
-export function useServerSideRowModel<T>(
-  params: UseServerSideRowModelParams<T>,
-): UseServerSideRowModelResult<T> {
-  const { dataSource, rowKeyGetter, query, queryKey } = params;
-  // 変更(①-3): dataSource 不在(clientSide)でも安全に評価できるよう optional-chain します。
-  //   inert 時は既定値で空キャッシュを作るだけで、書き込みも fetch も発生しません。
-  const blockSize = dataSource?.blockSize ?? DEFAULT_BLOCK_SIZE;
-  const maxBlocks = dataSource?.maxCachedBlocks ?? DEFAULT_MAX_CACHED_BLOCKS;
-  const debounceMs = params.debounceMs ?? DEFAULT_DEBOUNCE_MS;
+// マイクロタスクを数回流します(getRows().then(...) チェーンの解決用)。
+const flush = async (): Promise<void> => {
+  await act(async () => {
+    await Promise.resolve();
+    await Promise.resolve();
+  });
+};
 
-  // スパース LRU キャッシュです。useState の遅延初期化で render をまたいで安定させます
-  //   (blockSize / maxBlocks はフックの生存中は固定の想定)。
-  const [cache] = useState(() =>
-    createServerSideRowCache<T>({ blockSize, maxBlocks }),
-  );
+// debounce タイマーを進めて runFetch を発火し、続く fetch の解決まで流します。
+const advance = async (ms: number): Promise<void> => {
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(ms);
+  });
+};
 
-  const [rowCount, setRowCount] = useState<number>(
-    dataSource?.initialRowCount ?? 0,
-  );
-  // ブロック到着を rowModel / consumer に伝える再描画トリガーです(値自体は読みません)。
-  const [version, setVersion] = useState<number>(0);
+// calls から startIndex の昇順ユニーク配列を作ります(どのブロックを取得したかの指標)。
+const startedBlocks = (calls: ServerSideGetRowsParams[], blockSize: number): number[] => {
+  const set = new Set<number>();
+  for (const c of calls) {
+    set.add(c.startIndex / blockSize);
+  }
+  return Array.from(set).sort((a, b) => a - b);
+};
 
-  // 非同期コールバック(timer / promise)が最新 rowCount を読むための latest-ref です。
-  //   setRowCount を呼ぶ箇所(下記 2 箇所)で必ず対で更新するため、render 中の書き込みは不要です。
-  const rowCountRef = useRef<number>(rowCount);
+beforeEach(() => {
+  vi.useFakeTimers();
+});
+afterEach(() => {
+  vi.useRealTimers();
+  vi.restoreAllMocks();
+});
 
-  // in-flight な block fetch(blockIndex -> AbortController)です。重複排除とキャンセルに使います。
-  const inFlightRef = useRef<Map<number, AbortController>>(new Map());
-  // debounce タイマーと最新の要求レンジです。
-  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const latestRangeRef = useRef<{ start: number; end: number }>({
-    start: 0,
-    end: 0,
+const DEBOUNCE = 120;
+
+describe('useServerSideRowModel', () => {
+  it('initialRowCount 未指定なら block 0 を先行 fetch して件数を確定する(ブートストラップ)', async () => {
+    const rec = createRecording({ totalRowCount: 1000 });
+    const { result } = renderHook(() =>
+      useServerSideRowModel<Row>({
+        dataSource: rec.dataSource,
+        rowKeyGetter,
+        query: EMPTY_QUERY,
+        queryKey: 'a',
+      }),
+    );
+    await flush();
+    // block 0 だけが取得され、totalRowCount が反映される。
+    expect(startedBlocks(rec.calls, 100)).toEqual([0]);
+    expect(rec.calls[0]).toMatchObject({ startIndex: 0, endIndex: 100 });
+    expect(result.current.rowCount).toBe(1000);
+    expect(result.current.rowModel.getRowCount()).toBe(1000);
+    expect(result.current.rowModel.getRow(0)).toEqual({ v: 0 });
+    expect(result.current.isRowLoaded(0)).toBe(true);
+    expect(result.current.isRowLoaded(500)).toBe(false);
   });
 
-  const fetchBlock = useCallback(
-    (blockIndex: number): void => {
-      // 追加(①-3): clientSide(inert)では取得しません。
-      if (dataSource == null) {
-        return;
-      }
-      if (cache.hasBlock(blockIndex) || inFlightRef.current.has(blockIndex)) {
-        return;
-      }
-      const controller = new AbortController();
-      inFlightRef.current.set(blockIndex, controller);
-
-      const knownRowCount = rowCountRef.current;
-      const startIndex = blockIndex * blockSize;
-      const rawEnd = startIndex + blockSize;
-      // 件数既知なら末端をクランプします。未知(ブートストラップ)なら blockSize まで投げ、
-      //   結果の totalRowCount で件数を確定します。
-      const endIndex =
-        knownRowCount > 0 ? Math.min(rawEnd, knownRowCount) : rawEnd;
-
-      dataSource
-        .getRows({
-          startIndex,
-          endIndex,
-          query,
-          signal: controller.signal,
-        })
-        .then((result) => {
-          if (controller.signal.aborted) {
-            return;
-          }
-          // 自分が登録した controller でなければ(別世代に置換)結果を捨てます。
-          if (inFlightRef.current.get(blockIndex) !== controller) {
-            return;
-          }
-          inFlightRef.current.delete(blockIndex);
-          cache.setBlock(blockIndex, result.rows);
-          if (result.totalRowCount !== rowCountRef.current) {
-            rowCountRef.current = result.totalRowCount;
-            setRowCount(result.totalRowCount);
-          }
-          setVersion((value) => value + 1);
-        })
-        .catch(() => {
-          // abort は無視します。その他エラーは in-flight を解放し、次の requestRange で再試行します。
-          if (inFlightRef.current.get(blockIndex) === controller) {
-            inFlightRef.current.delete(blockIndex);
-          }
-        });
-    },
-    [cache, blockSize, dataSource, query],
-  );
-
-  const runFetch = useCallback((): void => {
-    const { start, end } = latestRangeRef.current;
-    const needed = computeBlockIndexes(
-      start,
-      end,
-      blockSize,
-      rowCountRef.current,
+  it('getSourceIndex は恒等 / 未ロード getRowKey は viewIndex', async () => {
+    const rec = createRecording({ totalRowCount: 1000 });
+    const { result } = renderHook(() =>
+      useServerSideRowModel<Row>({
+        dataSource: rec.dataSource,
+        rowKeyGetter,
+        query: EMPTY_QUERY,
+        queryKey: 'a',
+      }),
     );
-    const neededSet = new Set(needed);
-    // 最新の必要集合に含まれない in-flight を中断します(スクロールで通り過ぎた帯の破棄)。
-    for (const [blockIndex, controller] of inFlightRef.current) {
-      if (!neededSet.has(blockIndex)) {
-        controller.abort();
-        inFlightRef.current.delete(blockIndex);
-      }
-    }
-    for (const blockIndex of needed) {
-      fetchBlock(blockIndex);
-    }
-  }, [blockSize, fetchBlock]);
+    await flush();
+    expect(result.current.rowModel.getSourceIndex(42)).toBe(42);
+    // block 0 はロード済み → rowKeyGetter(row.v)。未ロード行は viewIndex。
+    expect(result.current.rowModel.getRowKey(3)).toBe(3);
+    expect(result.current.rowModel.getRowKey(900)).toBe(900);
+  });
 
-  const scheduleFetch = useCallback((): void => {
-    if (timerRef.current !== null) {
-      clearTimeout(timerRef.current);
-    }
-    timerRef.current = setTimeout(() => {
-      timerRef.current = null;
-      runFetch();
-    }, debounceMs);
-  }, [debounceMs, runFetch]);
+  it('requestRange は debounce で合体し、最新レンジのブロックだけ取得する', async () => {
+    const rec = createRecording({ totalRowCount: 1000, initialRowCount: 1000 });
+    const { result } = renderHook(() =>
+      useServerSideRowModel<Row>({
+        dataSource: rec.dataSource,
+        rowKeyGetter,
+        query: EMPTY_QUERY,
+        queryKey: 'a',
+      }),
+    );
+    // initialRowCount 既知 → ブートストラップ fetch なし。
+    await flush();
+    expect(rec.calls.length).toBe(0);
+    act(() => {
+      result.current.requestRange(0, 200);
+      result.current.requestRange(0, 300);
+    });
+    // debounce 未発火では未取得。
+    expect(rec.calls.length).toBe(0);
+    await advance(DEBOUNCE);
+    // 最新 [0,300) のブロック 0,1,2 のみ、各 1 回。
+    expect(startedBlocks(rec.calls, 100)).toEqual([0, 1, 2]);
+    expect(rec.calls.length).toBe(3);
+  });
 
-  const requestRange = useCallback(
-    (startIndex: number, endIndex: number): void => {
-      // 追加(①-3): clientSide(inert)では no-op です。
-      if (dataSource == null) {
-        return;
-      }
-      latestRangeRef.current = { start: startIndex, end: endIndex };
-      // 可視帯を即時 MRU 化して退避から保護します(fetch は debounce 経由)。
-      cache.touchBlocks(
-        computeBlockIndexes(startIndex, endIndex, blockSize, rowCountRef.current),
-      );
-      scheduleFetch();
-    },
-    [cache, blockSize, dataSource, scheduleFetch],
-  );
+  it('in-flight 中の同一ブロックは二重 fetch しない(重複排除)', async () => {
+    const rec = createRecording({
+      totalRowCount: 1000,
+      initialRowCount: 1000,
+      autoResolve: false,
+    });
+    const { result } = renderHook(() =>
+      useServerSideRowModel<Row>({
+        dataSource: rec.dataSource,
+        rowKeyGetter,
+        query: EMPTY_QUERY,
+        queryKey: 'a',
+      }),
+    );
+    await flush();
+    act(() => {
+      result.current.requestRange(0, 200);
+    });
+    await advance(DEBOUNCE);
+    // block 0,1 が in-flight(未解決)。
+    expect(startedBlocks(rec.calls, 100)).toEqual([0, 1]);
+    act(() => {
+      result.current.requestRange(0, 300);
+    });
+    await advance(DEBOUNCE);
+    // 0,1 は in-flight のため skip、新規 2 のみ追加。各ブロック 1 回。
+    expect(startedBlocks(rec.calls, 100)).toEqual([0, 1, 2]);
+    expect(rec.calls.length).toBe(3);
+  });
 
-  // queryKey 変化(stage ② の filter/sort 変更)でキャッシュを無効化し、件数をリセットして
-  //   再ブートストラップします。mount 時も走り、件数未知なら block 0 を先行 fetch します。
-  useEffect(() => {
-    // 追加(①-3): clientSide(inert)では何もしません(ブートストラップ/件数リセットを抑止し、
-    //   clientSide 経路を完全不変に保ちます)。
-    if (dataSource == null) {
-      return;
-    }
-    // 進行中の取得を全て中断します。
-    for (const [, controller] of inFlightRef.current) {
-      controller.abort();
-    }
-    inFlightRef.current.clear();
-    if (timerRef.current !== null) {
-      clearTimeout(timerRef.current);
-      timerRef.current = null;
-    }
-    cache.clear();
-    const initial = dataSource.initialRowCount ?? 0;
-    rowCountRef.current = initial;
-    // queryKey 変化時に件数を初期値へ戻します(古い total を引きずらない)。mount 時は useState
-    //   初期値と同値のため React が再描画を省きます。意図的な state リセットのため局所抑止します。
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setRowCount(initial);
-    setVersion((value) => value + 1);
-    // 件数未知なら block 0 を先行 fetch して totalRowCount を確定します(ブートストラップ)。
-    //   既知(initialRowCount 指定)なら requestRange 駆動に委ねます。
-    if (initial <= 0) {
-      fetchBlock(0);
-    }
-    // queryKey 変化のみを再実行トリガーにします(fetchBlock/cache/dataSource は同 render で最新)。
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [queryKey]);
+  it('範囲外になった in-flight は abort される(stale キャンセル)', async () => {
+    const rec = createRecording({
+      totalRowCount: 1000,
+      initialRowCount: 1000,
+      autoResolve: false,
+    });
+    const { result } = renderHook(() =>
+      useServerSideRowModel<Row>({
+        dataSource: rec.dataSource,
+        rowKeyGetter,
+        query: EMPTY_QUERY,
+        queryKey: 'a',
+      }),
+    );
+    await flush();
+    act(() => {
+      result.current.requestRange(0, 200);
+    });
+    await advance(DEBOUNCE);
+    const block0Signal = rec.calls[0].signal;
+    const block1Signal = rec.calls[1].signal;
+    expect(block0Signal.aborted).toBe(false);
+    // 遠くへスクロール → 0,1 は不要に。
+    act(() => {
+      result.current.requestRange(500, 700);
+    });
+    await advance(DEBOUNCE);
+    // 旧ブロックの signal が abort され、新ブロック 5,6 が取得される。
+    expect(block0Signal.aborted).toBe(true);
+    expect(block1Signal.aborted).toBe(true);
+    expect(startedBlocks(rec.calls, 100)).toEqual([0, 1, 5, 6]);
+  });
 
-  // unmount クリーンアップ: in-flight abort + timer クリアです。
-  useEffect(() => {
-    // cleanup 実行時に ref が指し替わっている可能性を避けるため、Map 参照を退避します
-    //   (inFlightRef.current は再代入されず .clear/.set/.delete のみのため退避で十分)。
-    const inFlight = inFlightRef.current;
-    const timer = timerRef;
-    return () => {
-      for (const [, controller] of inFlight) {
-        controller.abort();
-      }
-      inFlight.clear();
-      if (timer.current !== null) {
-        clearTimeout(timer.current);
-        timer.current = null;
-      }
-    };
-  }, []);
+  it('queryKey 変化で旧キャッシュを破棄し再取得する', async () => {
+    const rec = createRecording({ totalRowCount: 1000 });
+    const { result, rerender } = renderHook(
+      ({ queryKey }: { queryKey: string }) =>
+        useServerSideRowModel<Row>({
+          dataSource: rec.dataSource,
+          rowKeyGetter,
+          query: EMPTY_QUERY,
+          queryKey,
+        }),
+      { initialProps: { queryKey: 'a' } },
+    );
+    await flush();
+    expect(result.current.rowModel.getRow(0)).toEqual({ v: 0 });
+    const callsAfterFirst = rec.calls.length;
+    // queryKey を変える → キャッシュ破棄 + 再ブートストラップ。
+    rerender({ queryKey: 'b' });
+    await flush();
+    // block 0 が再取得され、ロードし直される。
+    expect(rec.calls.length).toBeGreaterThan(callsAfterFirst);
+    expect(result.current.rowModel.getRow(0)).toEqual({ v: 0 });
+  });
 
-  const isRowLoaded = useCallback(
-    (viewIndex: number): boolean => cache.getRow(viewIndex) !== undefined,
-    [cache],
-  );
+  it('unmount で in-flight を abort する', async () => {
+    const rec = createRecording({
+      totalRowCount: 1000,
+      initialRowCount: 1000,
+      autoResolve: false,
+    });
+    const { result, unmount } = renderHook(() =>
+      useServerSideRowModel<Row>({
+        dataSource: rec.dataSource,
+        rowKeyGetter,
+        query: EMPTY_QUERY,
+        queryKey: 'a',
+      }),
+    );
+    await flush();
+    act(() => {
+      result.current.requestRange(0, 200);
+    });
+    await advance(DEBOUNCE);
+    const signals = rec.calls.map((c) => c.signal);
+    expect(signals.length).toBeGreaterThan(0);
+    expect(signals.every((s) => s.aborted)).toBe(false);
+    unmount();
+    expect(signals.every((s) => s.aborted)).toBe(true);
+  });
 
-  // RowModel シームの serverSide 実装です。order/rows ではなく cache を読みます。
-  //   version を deps に含め、ブロック到着で参照を更新して consumer の再評価を促します。
-  const rowModel = useMemo<RowModel<T>>(
-    () => ({
-      getRowCount: () => rowCountRef.current,
-      // 未ロードは undefined(シーム契約どおり=clientSide の OOB と同じ)。型は T 固定のため
-      //   キャストします(strictNullChecks 下で cache.getRow の | undefined を吸収)。
-      getRow: (viewIndex) => cache.getRow(viewIndex) as T,
-      getSourceIndex: (viewIndex) => viewIndex,
-      getRowKey: (viewIndex) => {
-        const row = cache.getRow(viewIndex);
-        return row === undefined ? viewIndex : rowKeyGetter(row, viewIndex);
+  it('initialRowCount 既知でも queryKey 変化で block 0 を再取得し、totalRowCount で件数を更新する', async () => {
+    // 再クエリ時のサーバ件数(フィルターで 1000 → 30 に減る想定)。
+    let total = 1000;
+    const calls: ServerSideGetRowsParams[] = [];
+    const dataSource: ServerSideDataSource<Row> = {
+      initialRowCount: 1000,
+      getRows: (params) => {
+        calls.push(params);
+        const rows: Row[] = [];
+        for (let i = params.startIndex; i < params.endIndex && i < total; i += 1) {
+          rows.push({ v: i });
+        }
+        return Promise.resolve({ rows, totalRowCount: total });
       },
-    }),
-    // version はブロック到着での再計算トリガーです(memo 本体は読まないため lint は不要と判定)。
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [cache, rowKeyGetter, version],
-  );
+    };
+    const { result, rerender } = renderHook(
+      ({ queryKey }: { queryKey: string }) =>
+        useServerSideRowModel<Row>({
+          dataSource,
+          rowKeyGetter,
+          query: EMPTY_QUERY,
+          queryKey,
+        }),
+      { initialProps: { queryKey: 'a' } },
+    );
+    await flush();
+    // initialRowCount 既知 → mount ではブートストラップしない(requestRange 駆動)。
+    expect(calls.length).toBe(0);
+    expect(result.current.rowCount).toBe(1000);
 
-  return { rowModel, rowCount, isRowLoaded, requestRange };
-}
+    // フィルター適用相当: queryKey 変化 + サーバ件数が 30 に変わる。
+    total = 30;
+    rerender({ queryKey: 'b' });
+    await flush();
+    // 再クエリでは initialRowCount 既知でも block 0 を取り直す。
+    expect(calls.length).toBeGreaterThan(0);
+    expect(calls[0].startIndex).toBe(0);
+    // endIndex は全幅要求(クランプ撤去のため 30 でなく 100)。
+    expect(calls[0].endIndex).toBe(100);
+    // totalRowCount で件数追従(initialRowCount=1000 へ戻らない)。
+    expect(result.current.rowCount).toBe(30);
+    expect(result.current.rowModel.getRowCount()).toBe(30);
+  });
+
+  it('再クエリ直後は件数を保持し(リセットしない)、block 0 解決後に更新する', async () => {
+    let resolveFn: ((r: ServerSideGetRowsResult<Row>) => void) | null = null;
+    const dataSource: ServerSideDataSource<Row> = {
+      initialRowCount: 1000,
+      getRows: () =>
+        new Promise<ServerSideGetRowsResult<Row>>((resolve) => {
+          resolveFn = resolve;
+        }),
+    };
+    const { result, rerender } = renderHook(
+      ({ queryKey }: { queryKey: string }) =>
+        useServerSideRowModel<Row>({
+          dataSource,
+          rowKeyGetter,
+          query: EMPTY_QUERY,
+          queryKey,
+        }),
+      { initialProps: { queryKey: 'a' } },
+    );
+    await flush();
+    expect(result.current.rowCount).toBe(1000);
+
+    rerender({ queryKey: 'b' });
+    await flush();
+    // block 0 は in-flight(未解決)。件数は前回値 1000 を保持し、リセットされない。
+    expect(result.current.rowCount).toBe(1000);
+
+    // block 0 が解決 → 件数追従(7 件)で一度だけ更新。
+    await act(async () => {
+      resolveFn?.({ rows: [{ v: 0 }], totalRowCount: 7 });
+      await Promise.resolve();
+    });
+    expect(result.current.rowCount).toBe(7);
+  });
+
+  it('refreshToken 変化でキャッシュを破棄し、現在の可視レンジ(block 0,1)を即時取り直す', async () => {
+    const rec = createRecording({ totalRowCount: 1000, initialRowCount: 1000 });
+    const { result, rerender } = renderHook(
+      ({ refreshToken }: { refreshToken: number }) =>
+        useServerSideRowModel<Row>({
+          dataSource: rec.dataSource,
+          rowKeyGetter,
+          query: EMPTY_QUERY,
+          queryKey: 'a',
+          refreshToken,
+        }),
+      { initialProps: { refreshToken: 0 } },
+    );
+    // initialRowCount 既知 → mount ではブートストラップせず、refreshToken=0 も no-op。
+    await flush();
+    expect(rec.calls.length).toBe(0);
+    // 可視レンジ [0,200) を取得 → block 0,1 がキャッシュされる。
+    act(() => {
+      result.current.requestRange(0, 200);
+    });
+    await advance(DEBOUNCE);
+    expect(startedBlocks(rec.calls, 100)).toEqual([0, 1]);
+    expect(rec.calls.length).toBe(2);
+    expect(result.current.rowModel.getRow(0)).toEqual({ v: 0 });
+
+    // refreshToken を増やす → キャッシュ破棄 + 可視レンジ([0,200)=block 0,1)を即時取り直す。
+    //   debounce を介さないため、timer を進めず flush(microtask)だけで再取得が観測できる。
+    rerender({ refreshToken: 1 });
+    await flush();
+    expect(rec.calls.length).toBe(4);
+    expect(startedBlocks(rec.calls, 100)).toEqual([0, 1]);
+    expect(result.current.rowModel.getRow(0)).toEqual({ v: 0 });
+  });
+
+  it('refreshToken 変化では件数をリセットせず、到着 totalRowCount で更新する', async () => {
+    let resolveFn: ((r: ServerSideGetRowsResult<Row>) => void) | null = null;
+    const calls: ServerSideGetRowsParams[] = [];
+    const dataSource: ServerSideDataSource<Row> = {
+      initialRowCount: 1000,
+      getRows: (params) => {
+        calls.push(params);
+        return new Promise<ServerSideGetRowsResult<Row>>((resolve) => {
+          resolveFn = resolve;
+        });
+      },
+    };
+    const { result, rerender } = renderHook(
+      ({ refreshToken }: { refreshToken: number }) =>
+        useServerSideRowModel<Row>({
+          dataSource,
+          rowKeyGetter,
+          query: EMPTY_QUERY,
+          queryKey: 'a',
+          refreshToken,
+        }),
+      { initialProps: { refreshToken: 0 } },
+    );
+    await flush();
+    expect(calls.length).toBe(0);
+    expect(result.current.rowCount).toBe(1000);
+
+    // 可視レンジ取得 → block 0 を解決して件数 1000 を確定。
+    act(() => {
+      result.current.requestRange(0, 100);
+    });
+    await advance(DEBOUNCE);
+    expect(calls.length).toBe(1);
+    await act(async () => {
+      resolveFn?.({ rows: [{ v: 0 }], totalRowCount: 1000 });
+      await Promise.resolve();
+    });
+    expect(result.current.rowCount).toBe(1000);
+
+    // refreshToken を増やす → block 0 を取り直す。件数は到着まで 1000 を保持(initialRowCount や 0 へ戻さない)。
+    rerender({ refreshToken: 1 });
+    await flush();
+    expect(calls.length).toBe(2);
+    expect(result.current.rowCount).toBe(1000);
+
+    // 到着 totalRowCount=42(サーバ側でデータが減った想定)で一度だけ更新。
+    await act(async () => {
+      resolveFn?.({ rows: [{ v: 0 }], totalRowCount: 42 });
+      await Promise.resolve();
+    });
+    expect(result.current.rowCount).toBe(42);
+  });
+
+  it('初回 mount では refreshToken による再取得をしない(no-op)', async () => {
+    const rec = createRecording({ totalRowCount: 1000, initialRowCount: 1000 });
+    renderHook(() =>
+      useServerSideRowModel<Row>({
+        dataSource: rec.dataSource,
+        rowKeyGetter,
+        query: EMPTY_QUERY,
+        queryKey: 'a',
+        // 初期値が 0 以外でも mount では発火しない。
+        refreshToken: 5,
+      }),
+    );
+    await flush();
+    expect(rec.calls.length).toBe(0);
+  });
+
+  it('refreshToken 未指定では無関係な rerender で再取得しない(inert)', async () => {
+    const rec = createRecording({ totalRowCount: 1000, initialRowCount: 1000 });
+    const { result, rerender } = renderHook(
+      ({ k }: { k: string }) =>
+        useServerSideRowModel<Row>({
+          dataSource: rec.dataSource,
+          rowKeyGetter,
+          query: EMPTY_QUERY,
+          queryKey: k,
+          // refreshToken は未指定(inert)。
+        }),
+      { initialProps: { k: 'a' } },
+    );
+    await flush();
+    act(() => {
+      result.current.requestRange(0, 100);
+    });
+    await advance(DEBOUNCE);
+    const before = rec.calls.length;
+    expect(before).toBe(1);
+    // 同 queryKey での rerender。queryKey effect も refresh effect も発火せず再取得は起きない。
+    rerender({ k: 'a' });
+    await flush();
+    expect(rec.calls.length).toBe(before);
+  });
+});
 </file>
 
 <file path="src/components/spreadsheet-grid/index.ts">
@@ -6044,97 +5984,6 @@ export function SortManagementPanel({
 export default SortManagementPanel;
 </file>
 
-<file path="src/components/spreadsheet-grid/API_REFERENCE.md">
-# SpreadsheetGrid 公開 API リファレンス
-
-> このファイルは `model/gridTypes.ts`(`SpreadsheetGridProps<T>` / `GridColumn<T>` 他)と
-> `SpreadsheetGrid.tsx`(既定値の分割代入)から手で起こした公開 API のスナップショットです。
-> **型を変更したら本ファイルも同期してください。** 将来 `index.ts` バレル整備時に props メタデータを
-> single source of truth 化し、dev 実行時パネル + 自動生成へ移行する想定です(現状は手動同期)。
-
-最終更新: C1-7 完了時点。
-
-## SpreadsheetGrid props (`SpreadsheetGridProps<T>`)
-
-| Name | Type | Default | Description |
-| --- | --- | --- | --- |
-| `rows` | `T[]` | — | clientSide モードの行データ。`dataSource` を指定した場合は無視され serverSide モードになる(両者は排他)。 |
-| `columns` | `GridColumn<T>[]` | (required) | 列定義の配列。 |
-| `onRowsChange` | `(nextRows: T[]) => void` | — | 行が変化したとき呼ばれる(rows を controlled にする)。 |
-| `dataSource` | `ServerSideDataSource<T>` | — | serverSide(SSRM)モードのデータ供給口。指定すると可視窓近傍のブロックだけを `getRows` で都度取得し、`rows` 系の clientSide パイプラインをバイパスする。 |
-| `onColumnsChange` | `(nextColumns: GridColumn<T>[]) => void` | — | 列が変化したとき呼ばれる。列メニューの固定切替はこれが指定されている場合のみ反映。 |
-| `rowKeyGetter` | `(row: T, index: number) => GridRowKey` | index ベース | 安定した行キーを返す。 |
-| `createRow` | `() => T` | — | 行追加時に使う新規行ファクトリ。 |
-| `createOverflowColumn` | `(columnIndex: number) => GridColumn<T>` | — | 列追加時に使う列ファクトリ。 |
-| `rowHeight` | `number` | `36` | uniform 行の行高(px)。 |
-| `autoHeight` | `boolean` | `false` | auto-height 行モードを有効化。 |
-| `estimateRowHeight` | `number` | `rowHeight` | 未測定行の推定行高(px)。 |
-| `headerHeight` | `number` | `40` | ヘッダー行の高さ(px)。 |
-| `rowHeaderWidth` | `number` | `56` | 行番号列の幅(px)。 |
-| `readOnly` | `boolean` | `false` | グリッド全体の編集を無効化。 |
-| `canEditCell` | `(rowIndex, colIndex, row, column) => boolean` | — | セル単位の編集可否ゲート。 |
-| `enableRangeSelection` | `boolean` | `true` | 複数セル範囲選択。 |
-| `enableGlobalFilter` | `boolean` | `true` | グローバルフィルター入力。 |
-| `enableColumnFilter` | `boolean` | `true` | 列ごとのフィルター。 |
-| `enableSorting` | `boolean` | `true` | ヘッダークリックでのソート。 |
-| `enableColumnMenu` | `boolean` | `true` | 列メニュー(⋮ + ヘッダー右クリック)。 |
-| `noMatchingRowsText` | `string` | `'一致する行がありません'` | フィルター結果 0 行時のオーバーレイ文言。 |
-| `noRowsText` | `string` | `'表示する行がありません'` | rows が 0 件のときの文言。 |
-| `renderTopBar` | `(ctx: SpreadsheetGridSlotContext<T>) => ReactNode` | 内蔵トップバー | 上部バーの差し替え。 |
-| `renderBottomBar` | `(ctx: SpreadsheetGridSlotContext<T>) => ReactNode` | 非表示 | 下部バーの差し替え。 |
-| `className` | `string` | — | ルート要素の class。 |
-
-## GridColumn props (`GridColumn<T>`)
-
-| Name | Type | Default | Description |
-| --- | --- | --- | --- |
-| `key` | `string` | (required) | 列の一意キー。 |
-| `title` | `string` | — | ヘッダーの表示ラベル。 |
-| `width` | `number` | (required) | 列幅(px)。 |
-| `minWidth` | `number` | — | リサイズ時の下限幅。 |
-| `maxWidth` | `number` | — | リサイズ時の上限幅。 |
-| `autoHeight` | `boolean` | — | この列が auto-height 行の高さを駆動(グリッドの `autoHeight` 有効時のみ)。 |
-| `visible` | `boolean` | — | 列の表示/非表示。 |
-| `editable` | `boolean` | — | この列の編集を許可。 |
-| `readOnly` | `boolean` | — | この列を読み取り専用にする。 |
-| `pinned` | `'left' \| 'right'` | undefined = 中央スクロール | 列固定の方向。 |
-| `getValue` | `(row: T) => unknown` | `row[key]` | 値アクセサ。 |
-| `setValue` | `(row: T, value: unknown) => T` | — | 値ライター(新しい行を返す)。 |
-| `renderCell` | `(ctx: CellRenderContext<T>) => ReactNode` | プレーン `<span>` | カスタムセル描画。 |
-| `renderHeader` | `(ctx: HeaderRenderContext<T>) => ReactNode` | — | カスタムヘッダー描画。 |
-| `filterType` | `'text' \| 'number' \| 'date' \| 'select' \| 'set' \| 'custom'` | — | フィルター UI の種別。 |
-| `filterOptions` | `GridSelectFilterOption[]` | rows から自動収集 | select / set の候補。 |
-| `filterFn` | `(row: T, filterValue: unknown) => boolean` | — | カスタムフィルター述語。 |
-| `parseClipboardValue` | `(raw: string, row: T) => unknown` | — | 貼り付け時のパーサ。 |
-| `formatClipboardValue` | `(value: unknown, row: T) => string` | — | コピー時のフォーマッタ。 |
-
-## serverSide モード(SSRM / DS-4 ②)
-
-`dataSource` を渡すと serverSide モードになり、総行数ぶんの縦スクロール空間を保ったまま、可視窓に近いブロックだけを `getRows` で取得する(取得範囲を定数で縛りメモリを有界化)。未ロード行はスケルトン行として描画され、到着後に実データへ差し替わる。
-
-- **stage ①(現状・読み取り専用)**: フィルター(グローバル / 列)・ソート・編集 UI は無効化される。`getRows` の `query` は空で、サーバ側でのフィルター/ソート実行は stage ② で配線予定。`onRowsChange` は不要(read-only)。
-- **`initialRowCount`**: 初回 fetch 前から正しい総高さ/スクロールバーを出したい場合に渡す(未指定時は最初の `getRows` 結果が返るまで件数 0)。
-- **`blockSize`(既定 100)/ `maxCachedBlocks`(既定 64)**: 1 ブロックの行数とクライアント側 LRU 上限。超過分は画面外の古いブロックから退避する。
-- **利用者契約**: `getRows` は渡された `[startIndex, endIndex)`(view 空間・end 排他)を尊重し、全件を返さないこと。`signal` が abort されたら速やかに reject すること。
-
-## 補助型(props で参照される shape)
-
-- `GridRowKey = string | number`
-- `GridColumnPinned = 'left' | 'right'`
-- `GridSelectFilterOption = { label: string; value: string }`
-- `CellRenderContext<T> = { row, rowIndex, colIndex, value, column, isActive, isSelected, isEditing, readOnly, setValue }`
-- `HeaderRenderContext<T> = { colIndex, width, column, filterValue?, isFiltered? }`
-- `SpreadsheetGridSlotContext<T> = { rows, filteredRows, columns, visibleColumns, globalFilterText, columnFilterValues, sortState, setGlobalFilterText, activeCell, selection, derivedSummary }`
-  - `derivedSummary` は `SpreadsheetGridDerivedSummary`(行/列/フィルター/ソートの summary 文字列・選択統計などを内包)。helper を import せずトップ/ボトムバーで使える。
-
-## ライブラリ化の宿題(現状把握)
-
-- 〔解消〕**no-op props**: `enableClipboard` / `enableColumnResize` を型から削除(常時 ON 固定の挙動は不変)。将来「無効化」が必要になれば配線つきで非破壊追加する。
-- **imperative API(ref ハンドル)なし**: `forwardRef` / `useImperativeHandle` 未使用。外部から「特定セルへスクロール」「選択クリア」等を命令的に呼ぶ口がない(状態は全て controlled)。
-- 〔解消〕**公開バレル(`index.ts`)**: 入口を `index.ts` に集約し、`SpreadsheetGrid`(named)と公開型群(serverSide 型・`RowModel` 含む)を再エクスポート。`default export` は廃止。
-- **テーマ/スタイリング API**: 公開されるのは `className`(ルート1個)のみ。パーツ単位のクラスや CSS トークンは未提供。
-</file>
-
 <file path="src/components/spreadsheet-grid/hooks/useGridBarContext.ts">
 import { useMemo } from 'react';
 import { selectGlobalFilter } from '../model/gridSelectors';
@@ -6465,6 +6314,345 @@ export const useGridKeyboardInteractions = <T,>({
 export default useGridKeyboardInteractions;
 </file>
 
+<file path="src/components/spreadsheet-grid/hooks/useServerSideRowModel.ts">
+// serverSide(SSRM)の RowModel を供給するフックです(DS-4 ②)。
+//
+// 責務:
+//   - クライアント側スパース LRU キャッシュ(serverSideCache)を保持し、RowModel シーム
+//     (getRowCount / getRow / getSourceIndex / getRowKey)を serverSide 実装で供給します。
+//   - 可視レンジ(requestRange)に対し、欠落ブロックだけを getRows で都度取得します
+//     (computeBlockIndexes で必要ブロックを定数サイズに限定 → 取得範囲を縛りメモリを有界化)。
+//   - スクロール debounce / in-flight 重複排除 / stale リクエストの AbortSignal キャンセル /
+//     件数ブートストラップ(block 0 先行 fetch) / queryKey 変化での無効化 を担います。
+//
+// 設計メモ:
+//   - getRow は cache の純読み(recency 不変)。可視帯の MRU 化は requestRange 内の touchBlocks で
+//     明示的に行い、render が evict 順序を揺らさないようにします(serverSideCache の方針に整合)。
+//   - getSourceIndex は恒等(viewIndex)。serverSide は view 順が正準で、別空間の source index を
+//     持ちません。getRowKey は未ロード行で viewIndex を返し、スケルトン行の React key を安定させます。
+//   - rowCount は state(縦ジオメトリ駆動の単一ソース)。getRows 結果の totalRowCount で最新化します。
+//     非同期コールバックは rowCountRef(setRowCount と必ず対で更新)から最新件数を読みます。
+//   - ブロック到着は version(state)の bump で再描画を促し、getRow が新データを拾います。
+
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import type {
+  GridRowKey,
+  RowModel,
+  ServerSideDataSource,
+  ServerSideQuery,
+} from '../model/gridTypes';
+import { createServerSideRowCache } from '../logic/serverSideCache';
+import { computeBlockIndexes } from '../logic/serverSideBlocks';
+
+// dataSource 側で未指定のときの既定値です。
+const DEFAULT_BLOCK_SIZE = 100;
+const DEFAULT_MAX_CACHED_BLOCKS = 64;
+const DEFAULT_DEBOUNCE_MS = 120;
+
+export type UseServerSideRowModelParams<T> = {
+  // 変更(①-3): dataSource を optional 化しました。SpreadsheetGrid は本フックを無条件に
+  //   呼ぶ(React Hooks 規則)ため、clientSide(dataSource 不在)では inert 動作にします。
+  dataSource?: ServerSideDataSource<T>;
+  rowKeyGetter: (row: T, index: number) => GridRowKey;
+  query: ServerSideQuery;
+  // query の同一性キーです。変化でキャッシュ無効化 + 再取得します(stage ① は安定値)。
+  queryKey: string;
+  // 追加(stage ③): ソフトリフレッシュ用トークン。値の変化で「query 不変のまま」キャッシュを
+  //   破棄し可視レンジを取り直します(queryKey 無効化とは独立。未指定/clientSide では inert)。
+  refreshToken?: number;
+  debounceMs?: number;
+};
+
+export type UseServerSideRowModelResult<T> = {
+  rowModel: RowModel<T>;
+  rowCount: number;
+  isRowLoaded: (viewIndex: number) => boolean;
+  requestRange: (startIndex: number, endIndex: number) => void;
+};
+
+export function useServerSideRowModel<T>(
+  params: UseServerSideRowModelParams<T>,
+): UseServerSideRowModelResult<T> {
+  const { dataSource, rowKeyGetter, query, queryKey, refreshToken } = params;
+  // 変更(①-3): dataSource 不在(clientSide)でも安全に評価できるよう optional-chain します。
+  //   inert 時は既定値で空キャッシュを作るだけで、書き込みも fetch も発生しません。
+  const blockSize = dataSource?.blockSize ?? DEFAULT_BLOCK_SIZE;
+  const maxBlocks = dataSource?.maxCachedBlocks ?? DEFAULT_MAX_CACHED_BLOCKS;
+  const debounceMs = params.debounceMs ?? DEFAULT_DEBOUNCE_MS;
+
+  // スパース LRU キャッシュです。useState の遅延初期化で render をまたいで安定させます
+  //   (blockSize / maxBlocks はフックの生存中は固定の想定)。
+  const [cache] = useState(() =>
+    createServerSideRowCache<T>({ blockSize, maxBlocks }),
+  );
+
+  const [rowCount, setRowCount] = useState<number>(
+    dataSource?.initialRowCount ?? 0,
+  );
+  // ブロック到着を rowModel / consumer に伝える再描画トリガーです(値自体は読みません)。
+  const [version, setVersion] = useState<number>(0);
+
+  // 非同期コールバック(timer / promise)が最新 rowCount を読むための latest-ref です。
+  //   setRowCount を呼ぶ箇所(fetchBlock の .then)で必ず対で更新するため、render 中の書き込みは不要です。
+  const rowCountRef = useRef<number>(rowCount);
+
+  // 追加(stage ②): 初回 mount を識別するフラグです。queryKey effect は mount でも走るため、
+  //   initialRowCount(即時スクロールバー)を初回だけ適用し、再クエリ時は前回件数を保持して
+  //   block 0 到着で件数を更新する分岐に使います(下の queryKey effect 参照)。
+  const hasInitializedRef = useRef(false);
+
+  // in-flight な block fetch(blockIndex -> AbortController)です。重複排除とキャンセルに使います。
+  const inFlightRef = useRef<Map<number, AbortController>>(new Map());
+  // debounce タイマーと最新の要求レンジです。
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const latestRangeRef = useRef<{ start: number; end: number }>({
+    start: 0,
+    end: 0,
+  });
+
+  const fetchBlock = useCallback(
+    (blockIndex: number): void => {
+      // 追加(①-3): clientSide(inert)では取得しません。
+      if (dataSource == null) {
+        return;
+      }
+      if (cache.hasBlock(blockIndex) || inFlightRef.current.has(blockIndex)) {
+        return;
+      }
+      const controller = new AbortController();
+      inFlightRef.current.set(blockIndex, controller);
+
+      const startIndex = blockIndex * blockSize;
+      // 変更(stage ②): endIndex は常に blockSize 全幅で要求します(knownRowCount クランプ撤去)。
+      //   理由: queryKey 変化直後は前回件数が stale になり得ます。stale 件数で末端を切り詰めると
+      //   ブロックが部分長で確定し、以降 hasBlock=true により再フェッチされず未ロード行が残ります。
+      //   末端の部分ブロックはサーバが範囲内の存在ぶんだけ返す契約で吸収します(rows.length は要求幅と
+      //   不一致でも可)。ブートストラップ(件数未知)時も全幅要求で従来と一致します。
+      const endIndex = startIndex + blockSize;
+
+      dataSource
+        .getRows({
+          startIndex,
+          endIndex,
+          query,
+          signal: controller.signal,
+        })
+        .then((result) => {
+          if (controller.signal.aborted) {
+            return;
+          }
+          // 自分が登録した controller でなければ(別世代に置換)結果を捨てます。
+          if (inFlightRef.current.get(blockIndex) !== controller) {
+            return;
+          }
+          inFlightRef.current.delete(blockIndex);
+          cache.setBlock(blockIndex, result.rows);
+          if (result.totalRowCount !== rowCountRef.current) {
+            rowCountRef.current = result.totalRowCount;
+            setRowCount(result.totalRowCount);
+          }
+          setVersion((value) => value + 1);
+        })
+        .catch(() => {
+          // abort は無視します。その他エラーは in-flight を解放し、次の requestRange で再試行します。
+          if (inFlightRef.current.get(blockIndex) === controller) {
+            inFlightRef.current.delete(blockIndex);
+          }
+        });
+    },
+    [cache, blockSize, dataSource, query],
+  );
+
+  const runFetch = useCallback((): void => {
+    const { start, end } = latestRangeRef.current;
+    const needed = computeBlockIndexes(
+      start,
+      end,
+      blockSize,
+      rowCountRef.current,
+    );
+    const neededSet = new Set(needed);
+    // 最新の必要集合に含まれない in-flight を中断します(スクロールで通り過ぎた帯の破棄)。
+    for (const [blockIndex, controller] of inFlightRef.current) {
+      if (!neededSet.has(blockIndex)) {
+        controller.abort();
+        inFlightRef.current.delete(blockIndex);
+      }
+    }
+    for (const blockIndex of needed) {
+      fetchBlock(blockIndex);
+    }
+  }, [blockSize, fetchBlock]);
+
+  const scheduleFetch = useCallback((): void => {
+    if (timerRef.current !== null) {
+      clearTimeout(timerRef.current);
+    }
+    timerRef.current = setTimeout(() => {
+      timerRef.current = null;
+      runFetch();
+    }, debounceMs);
+  }, [debounceMs, runFetch]);
+
+  const requestRange = useCallback(
+    (startIndex: number, endIndex: number): void => {
+      // 追加(①-3): clientSide(inert)では no-op です。
+      if (dataSource == null) {
+        return;
+      }
+      latestRangeRef.current = { start: startIndex, end: endIndex };
+      // 可視帯を即時 MRU 化して退避から保護します(fetch は debounce 経由)。
+      cache.touchBlocks(
+        computeBlockIndexes(startIndex, endIndex, blockSize, rowCountRef.current),
+      );
+      scheduleFetch();
+    },
+    [cache, blockSize, dataSource, scheduleFetch],
+  );
+
+  // queryKey 変化(stage ② の filter/sort 変更)でキャッシュを無効化し、block 0 を取り直します。
+  //   件数はここでは戻さず、block 0 到着の totalRowCount で一度だけ更新します(再クエリ時の
+  //   スクロールバーの巻き戻し=一瞬の振れを避けるため)。mount 時も走ります。
+  useEffect(() => {
+    // 追加(①-3): clientSide(inert)では何もしません(ブートストラップ/無効化を抑止し、
+    //   clientSide 経路を完全不変に保ちます)。
+    if (dataSource == null) {
+      return;
+    }
+    // 進行中の取得を全て中断します。
+    for (const [, controller] of inFlightRef.current) {
+      controller.abort();
+    }
+    inFlightRef.current.clear();
+    if (timerRef.current !== null) {
+      clearTimeout(timerRef.current);
+      timerRef.current = null;
+    }
+    cache.clear();
+
+    // 変更(stage ②): 件数をここでリセットしません。
+    //   - 初回 mount: rowCount は useState 初期値(initialRowCount ?? 0)のまま。initialRowCount 既知なら
+    //     即時に正しい総高さ/スクロールバーが出ます(従来どおり)。
+    //   - 再クエリ(queryKey 変化): 前回件数を保持したまま下記で block 0 を取り直し、到着した
+    //     totalRowCount で一度だけ更新します(initialRowCount への巻き戻しを避け件数遷移を単一化)。
+    //     stale 件数でも endIndex は全幅要求のためブロック切り詰めは起きません(fetchBlock 参照)。
+    const isFirstRun = !hasInitializedRef.current;
+    hasInitializedRef.current = true;
+
+    // クリア済みキャッシュをスケルトンとして再描画させるための意図的な再描画トリガーです
+    //   (version の bump。functional 更新で render 中 state は読みませんが、effect 内 setState の
+    //   ため元コードと同様に局所抑止します)。
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setVersion((value) => value + 1);
+
+    // block 0 先行 fetch:
+    //   - 初回 mount: 件数未知(initialRowCount 未指定 = 0)のときだけブートストラップします
+    //     (既知なら requestRange 駆動に委ね、初回から余計な block 0 を投げません)。
+    //   - 再クエリ: キャッシュ破棄したため常に block 0 を取り直します(件数追従の起点)。
+    if (isFirstRun) {
+      if ((dataSource.initialRowCount ?? 0) <= 0) {
+        fetchBlock(0);
+      }
+    } else {
+      fetchBlock(0);
+    }
+    // queryKey 変化のみを再実行トリガーにします(fetchBlock/cache/dataSource は同 render で最新)。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [queryKey]);
+
+  // 追加(stage ③): refreshToken 変化でのソフトリフレッシュ effect です。
+  //   queryKey 変化(結果セット総入れ替え→先頭リセット)とは別物で、クエリは変えずにキャッシュを
+  //   破棄し「現在の可視レンジ」を即時取り直します。スクロール位置は SpreadsheetGrid 側が
+  //   serverSideQueryKey 不変のため自動的に保持し、件数はここではリセットせず到着ブロックの
+  //   totalRowCount で更新します(外部更新で件数が変わっていれば追従)。block 0 ではなく latestRange を
+  //   取り直すのは、scroll 保持時に「今見えている行」を最優先で更新するためです。マウント時の no-op は
+  //   前回値比較で実現し、dev StrictMode の二重実行でも余計な再取得を出しません。
+  const prevRefreshTokenRef = useRef<number | undefined>(refreshToken);
+  useEffect(() => {
+    // clientSide(inert)/ refreshToken 未指定では取得しません(基準値だけ追従させます)。
+    if (dataSource == null || refreshToken === undefined) {
+      prevRefreshTokenRef.current = refreshToken;
+      return;
+    }
+    // 初めて defined な値を観測したケース(初期化 or undefined→number)は基準化のみで取得しません。
+    if (prevRefreshTokenRef.current === undefined) {
+      prevRefreshTokenRef.current = refreshToken;
+      return;
+    }
+    // 値が変わっていなければ(mount 含む)何もしません。
+    if (prevRefreshTokenRef.current === refreshToken) {
+      return;
+    }
+    prevRefreshTokenRef.current = refreshToken;
+
+    // 進行中の取得を全て中断し、debounce タイマーを破棄してキャッシュを破棄します。
+    for (const [, controller] of inFlightRef.current) {
+      controller.abort();
+    }
+    inFlightRef.current.clear();
+    if (timerRef.current !== null) {
+      clearTimeout(timerRef.current);
+      timerRef.current = null;
+    }
+    cache.clear();
+
+    // 破棄済みキャッシュをスケルトンとして即時再描画させます(件数は保持)。
+    //   本 setState は前回値比較ガードによりマウント時(初回 effect 実行)には到達しないため、
+    //   react-hooks/set-state-in-effect は報告せず disable は不要です(付けると Unused 警告)。
+    setVersion((value) => value + 1);
+
+    // 現在の可視レンジを即時取り直します(debounce を介さず、明示操作に即応)。
+    runFetch();
+    // refreshToken のみを再実行トリガーにします(cache/dataSource/runFetch は同 render で最新)。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [refreshToken]);
+
+  // unmount クリーンアップ: in-flight abort + timer クリアです。
+  useEffect(() => {
+    // cleanup 実行時に ref が指し替わっている可能性を避けるため、Map 参照を退避します
+    //   (inFlightRef.current は再代入されず .clear/.set/.delete のみのため退避で十分)。
+    const inFlight = inFlightRef.current;
+    const timer = timerRef;
+    return () => {
+      for (const [, controller] of inFlight) {
+        controller.abort();
+      }
+      inFlight.clear();
+      if (timer.current !== null) {
+        clearTimeout(timer.current);
+        timer.current = null;
+      }
+    };
+  }, []);
+
+  const isRowLoaded = useCallback(
+    (viewIndex: number): boolean => cache.getRow(viewIndex) !== undefined,
+    [cache],
+  );
+
+  // RowModel シームの serverSide 実装です。order/rows ではなく cache を読みます。
+  //   version を deps に含め、ブロック到着で参照を更新して consumer の再評価を促します。
+  const rowModel = useMemo<RowModel<T>>(
+    () => ({
+      getRowCount: () => rowCountRef.current,
+      // 未ロードは undefined(シーム契約どおり=clientSide の OOB と同じ)。型は T 固定のため
+      //   キャストします(strictNullChecks 下で cache.getRow の | undefined を吸収)。
+      getRow: (viewIndex) => cache.getRow(viewIndex) as T,
+      getSourceIndex: (viewIndex) => viewIndex,
+      getRowKey: (viewIndex) => {
+        const row = cache.getRow(viewIndex);
+        return row === undefined ? viewIndex : rowKeyGetter(row, viewIndex);
+      },
+    }),
+    // version はブロック到着での再計算トリガーです(memo 本体は読まないため lint は不要と判定)。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [cache, rowKeyGetter, version],
+  );
+
+  return { rowModel, rowCount, isRowLoaded, requestRange };
+}
+</file>
+
 <file path="src/components/spreadsheet-grid/model/gridActions.ts">
 import type { CellCoord, ColumnFilterValue, GridSortEntry } from './gridTypes';
 
@@ -6653,6 +6841,136 @@ export function SelectionOverlay({
 }
 
 export default SelectionOverlay;
+</file>
+
+<file path="src/components/spreadsheet-grid/API_REFERENCE.md">
+# SpreadsheetGrid 公開 API リファレンス
+
+> このファイルは `model/gridTypes.ts`(`SpreadsheetGridProps<T>` / `GridColumn<T>` 他)と
+> `SpreadsheetGrid.tsx`(既定値の分割代入)から手で起こした公開 API のスナップショットです。
+> **型を変更したら本ファイルも同期してください。** 将来 `index.ts` バレル整備時に props メタデータを
+> single source of truth 化し、dev 実行時パネル + 自動生成へ移行する想定です(現状は手動同期)。
+
+最終更新: SSRM stage ②(query 配線)完了時点。
+
+## SpreadsheetGrid props (`SpreadsheetGridProps<T>`)
+
+| Name | Type | Default | Description |
+| --- | --- | --- | --- |
+| `rows` | `T[]` | — | clientSide モードの行データ。`dataSource` を指定した場合は無視され serverSide モードになる(両者は排他)。 |
+| `columns` | `GridColumn<T>[]` | (required) | 列定義の配列。 |
+| `onRowsChange` | `(nextRows: T[]) => void` | — | 行が変化したとき呼ばれる(rows を controlled にする)。 |
+| `dataSource` | `ServerSideDataSource<T>` | — | serverSide(SSRM)モードのデータ供給口。指定すると可視窓近傍のブロックだけを `getRows` で都度取得し、`rows` 系の clientSide パイプラインをバイパスする。 |
+| `serverSideRefreshToken` | `number` | — | serverSide のソフトリフレッシュ用トークン。値を増やすと、クエリ(フィルター/ソート/グローバル)を変えずにキャッシュを破棄して現在の可視レンジをサーバから取り直す。スクロール位置は保持し、件数は到着ブロックの `totalRowCount` で追従する(clientSide では無視)。 |
+| `onColumnsChange` | `(nextColumns: GridColumn<T>[]) => void` | — | 列が変化したとき呼ばれる。列メニューの固定切替はこれが指定されている場合のみ反映。 |
+| `rowKeyGetter` | `(row: T, index: number) => GridRowKey` | index ベース | 安定した行キーを返す。 |
+| `createRow` | `() => T` | — | 行追加時に使う新規行ファクトリ。 |
+| `createOverflowColumn` | `(columnIndex: number) => GridColumn<T>` | — | 列追加時に使う列ファクトリ。 |
+| `rowHeight` | `number` | `36` | uniform 行の行高(px)。 |
+| `autoHeight` | `boolean` | `false` | auto-height 行モードを有効化。 |
+| `estimateRowHeight` | `number` | `rowHeight` | 未測定行の推定行高(px)。 |
+| `headerHeight` | `number` | `40` | ヘッダー行の高さ(px)。 |
+| `rowHeaderWidth` | `number` | `56` | 行番号列の幅(px)。 |
+| `readOnly` | `boolean` | `false` | グリッド全体の編集を無効化。 |
+| `canEditCell` | `(rowIndex, colIndex, row, column) => boolean` | — | セル単位の編集可否ゲート。 |
+| `enableRangeSelection` | `boolean` | `true` | 複数セル範囲選択。 |
+| `enableGlobalFilter` | `boolean` | `true` | グローバルフィルター入力。 |
+| `enableColumnFilter` | `boolean` | `true` | 列ごとのフィルター。 |
+| `enableSorting` | `boolean` | `true` | ヘッダークリックでのソート。 |
+| `enableColumnMenu` | `boolean` | `true` | 列メニュー(⋮ + ヘッダー右クリック)。 |
+| `noMatchingRowsText` | `string` | `'一致する行がありません'` | フィルター結果 0 行時のオーバーレイ文言。 |
+| `noRowsText` | `string` | `'表示する行がありません'` | rows が 0 件のときの文言。 |
+| `renderTopBar` | `(ctx: SpreadsheetGridSlotContext<T>) => ReactNode` | 内蔵トップバー | 上部バーの差し替え。 |
+| `renderBottomBar` | `(ctx: SpreadsheetGridSlotContext<T>) => ReactNode` | 非表示 | 下部バーの差し替え。 |
+| `className` | `string` | — | ルート要素の class。 |
+
+## GridColumn props (`GridColumn<T>`)
+
+| Name | Type | Default | Description |
+| --- | --- | --- | --- |
+| `key` | `string` | (required) | 列の一意キー。 |
+| `title` | `string` | — | ヘッダーの表示ラベル。 |
+| `width` | `number` | (required) | 列幅(px)。 |
+| `minWidth` | `number` | — | リサイズ時の下限幅。 |
+| `maxWidth` | `number` | — | リサイズ時の上限幅。 |
+| `autoHeight` | `boolean` | — | この列が auto-height 行の高さを駆動(グリッドの `autoHeight` 有効時のみ)。 |
+| `visible` | `boolean` | — | 列の表示/非表示。 |
+| `editable` | `boolean` | — | この列の編集を許可。 |
+| `readOnly` | `boolean` | — | この列を読み取り専用にする。 |
+| `pinned` | `'left' \| 'right'` | undefined = 中央スクロール | 列固定の方向。 |
+| `getValue` | `(row: T) => unknown` | `row[key]` | 値アクセサ。 |
+| `setValue` | `(row: T, value: unknown) => T` | — | 値ライター(新しい行を返す)。 |
+| `renderCell` | `(ctx: CellRenderContext<T>) => ReactNode` | プレーン `<span>` | カスタムセル描画。 |
+| `renderHeader` | `(ctx: HeaderRenderContext<T>) => ReactNode` | — | カスタムヘッダー描画。 |
+| `filterType` | `'text' \| 'number' \| 'date' \| 'select' \| 'set' \| 'custom'` | — | フィルター UI の種別。 |
+| `filterOptions` | `GridSelectFilterOption[]` | rows から自動収集 | select / set の候補。 |
+| `filterFn` | `(row: T, filterValue: unknown) => boolean` | — | カスタムフィルター述語。 |
+| `parseClipboardValue` | `(raw: string, row: T) => unknown` | — | 貼り付け時のパーサ。 |
+| `formatClipboardValue` | `(value: unknown, row: T) => string` | — | コピー時のフォーマッタ。 |
+
+## serverSide モード(SSRM / DS-4 ②)
+
+`dataSource` を渡すと serverSide モードになり、総行数ぶんの縦スクロール空間を保ったまま、可視窓に近いブロックだけを `getRows` で取得する(取得範囲を定数で縛りメモリを有界化)。未ロード行はスケルトン行として描画され、到着後に実データへ差し替わる。`rows`(clientSide)と `dataSource`(serverSide)は排他。
+
+### query 配線(stage ②)
+
+clientSide の操作状態(グローバルフィルター・列フィルター・ソート)を `ServerSideQuery` に組み立て、`getRows` の `params.query` として送出する(フィルター/ソートの実行はサーバへ委ねる)。
+
+- **`ServerSideQuery`**: `{ globalText?: string; columnFilters?: Record<string, ColumnFilterValue>; sort?: GridSortState }`。全フィールドが空のときは `{}` を渡す。
+- **列フィルターの wire format**: `ColumnFilterValue` は `kind` を持つ discriminated union で、**そのまま**送出される(サーバはこの記述子を解釈して WHERE を組む)。`kind` 別の shape:
+  - `{ kind: 'set'; mode?: 'include' | 'exclude'; values: string[] }` — `values` は常に小さい側のみ保持する(全候補が多いとき `mode: 'exclude'` で非選択側を送る)。サーバは `mode` に応じて IN / NOT IN を組む。
+  - `{ kind: 'number'; raw: string; parsed }` — `parsed` が `range` / `comparison` / `null`(=`raw` で部分一致)。
+  - `{ kind: 'text'; value }` / `{ kind: 'date'; value }` / `{ kind: 'select'; value }`
+  - `{ kind: 'custom'; value }` — `column.filterFn` 利用列の自由形値(サーバ解釈は利用側責務)。
+  - アクティブなフィルターのみ送出される。キーは安定 queryKey のため昇順整列される。
+- **debounce**: query(filter/sort)の変更は約 300ms 静止後に一度だけ送出する(キーストロークごとの再フェッチを合体)。入力欄の表示自体は即時反映される。
+- **scroll-reset**: query が変わると結果セットが総入れ替えされるため、スクロールは先頭に戻る。
+- **enable\* フラグ**: serverSide でも `enableSorting` / `enableColumnFilter` / `enableGlobalFilter`(いずれも既定 true)が有効。サーバ非対応の操作を塞ぎたい場合に false にする。
+
+### set / select フィルターの候補(SSRM)
+
+set / select の候補集合はクライアントが供給する必要がある。**clientSide** は `rows` 全件から自動収集できるが、**serverSide** はクライアントが全件を持たないため自動収集できず候補が空になる。
+
+- **低カーディナリティ列**(状態・区分など): 列定義に `filterOptions` を静的指定する(serverSide でも set として機能する)。
+- **高カーディナリティ列**(品番・ID など): そもそも set 不適。`filterType: 'text'`(部分一致)や `number` 範囲を使う。
+- `filterOptions` 未指定の set/select 列を serverSide で開くと、候補リストに「候補が未指定」である旨が表示される(バグではなく設定不足)。サーバから候補を非同期供給する仕組みは将来の拡張(別 stage)。
+
+### dataSource とパラメータ
+
+- **`initialRowCount`**: 初回 fetch 前から正しい総高さ/スクロールバーを出したい場合に渡す(未指定時は最初の `getRows` 結果が返るまで件数 0)。**mount 時に一度だけ読まれる**(下記 remount 契約を参照)。
+- **`blockSize`(既定 100)/ `maxCachedBlocks`(既定 64)**: 1 ブロックの行数とクライアント側 LRU 上限。超過分は画面外の古いブロックから退避する。
+- **`getRows(params)` 契約**: `params` は `{ startIndex, endIndex, query, signal }`。渡された `[startIndex, endIndex)`(view 空間・end 排他)を尊重し全件を返さないこと。`query` 適用後の**フィルター後総件数**を `result.totalRowCount` で返すこと(縦スクロール空間がこれに追従する)。`signal` が abort されたら速やかに reject すること。
+- **`result`**: `{ rows: T[]; totalRowCount: number }`。`rows` は要求レンジ内の存在ぶん(末端では要求幅より短くてよい)。
+
+### サーバ最新の取り直し(`serverSideRefreshToken`)
+
+サーバ側のデータが外部で更新された場合など、**クエリは変えずにサーバの最新を取り直したい**ときは `serverSideRefreshToken`(`number`)を増やす。controlled な設計に合わせた軽量な signal で、`forwardRef` の命令的 API は持たない。
+
+- **`queryKey` 変化との違い**: フィルター/ソート/グローバルフィルターの変更は結果セットの総入れ替えなので**先頭へスクロールリセット**してキャッシュを全破棄し block 0 から取り直す。一方 `serverSideRefreshToken` は**スクロール位置を保持**したままキャッシュを破棄し、**現在の可視レンジ**を即時(debounce なし)取り直す。
+- **件数**: リフレッシュ時に件数はリセットせず、到着ブロックの `totalRowCount` で更新する。外部更新で件数が増減していれば縦スクロール空間が追従する。
+- **挙動メモ**: 取り直し中は対象行が一瞬スケルトン表示になる(purge → 再取得)。`refreshToken` は単調増加で運用する(値が変わったときだけ取り直す)。初回 mount では発火しない。
+- **用途**: 外部での編集/追加削除(mutation)後の反映トリガーとして使う想定。mutation 自体のサーバ書き戻し契約は別途必要(本グリッドの `onRowsChange` は clientSide 前提)。
+
+### clientSide ↔ serverSide の切替(remount 契約)
+
+`initialRowCount` と内部の行数 state は mount 時に確定する。そのため **実行時にモードを切り替える場合は `key` を変えてグリッドを再マウントすること**(clientSide で mount 後に `dataSource` を後付けしても件数が初期化されない)。serverSide で直接 mount する通常利用ではこの限りではない。
+
+## 補助型(props で参照される shape)
+
+- `GridRowKey = string | number`
+- `GridColumnPinned = 'left' | 'right'`
+- `GridSelectFilterOption = { label: string; value: string }`
+- `CellRenderContext<T> = { row, rowIndex, colIndex, value, column, isActive, isSelected, isEditing, readOnly, setValue }`
+- `HeaderRenderContext<T> = { colIndex, width, column, filterValue?, isFiltered? }`
+- `SpreadsheetGridSlotContext<T> = { rows, filteredRows, columns, visibleColumns, globalFilterText, columnFilterValues, sortState, setGlobalFilterText, activeCell, selection, derivedSummary }`
+  - `derivedSummary` は `SpreadsheetGridDerivedSummary`(行/列/フィルター/ソートの summary 文字列・選択統計などを内包)。helper を import せずトップ/ボトムバーで使える。
+
+## ライブラリ化の宿題(現状把握)
+
+- 〔解消〕**no-op props**: `enableClipboard` / `enableColumnResize` を型から削除(常時 ON 固定の挙動は不変)。将来「無効化」が必要になれば配線つきで非破壊追加する。
+- **imperative API(ref ハンドル)なし**: `forwardRef` / `useImperativeHandle` 未使用。外部から「特定セルへスクロール」「選択クリア」等を命令的に呼ぶ口がない(状態は全て controlled)。〔一部解消〕serverSide の「クエリ不変での最新取り直し」は `serverSideRefreshToken`(controlled な token prop)で可能。それ以外の命令操作は未提供。
+- 〔解消〕**公開バレル(`index.ts`)**: 入口を `index.ts` に集約し、`SpreadsheetGrid`(named)と公開型群(serverSide 型・`RowModel` 含む)を再エクスポート。`default export` は廃止。
+- **テーマ/スタイリング API**: 公開されるのは `className`(ルート1個)のみ。パーツ単位のクラスや CSS トークンは未提供。
 </file>
 
 <file path="src/components/spreadsheet-grid/CellEditorLayer.tsx">
@@ -11506,669 +11824,6 @@ export const gridUiReducer = (
 };
 </file>
 
-<file path="src/components/spreadsheet-grid/view/ColumnFilterPopover.tsx">
-import { createPortal } from 'react-dom';
-// 変更(12-A): set フィルター(検索 + Select All + チェックボックス一覧)用に
-//             hooks と useVirtualizer を追加 import します。
-//             候補リストは品番のように 5,000 件規模になり得るため、
-//             本体グリッドと同じ @tanstack/react-virtual で行仮想化します。
-import {
-  useDeferredValue,
-  useMemo,
-  useRef,
-  useState,
-  type CSSProperties,
-  type KeyboardEvent,
-  type PointerEvent,
-  type RefObject,
-} from 'react';
-import { useVirtualizer } from '@tanstack/react-virtual';
-
-// 追加: popover のレイアウト情報です。
-export type ColumnFilterPopoverLayout = {
-  top: number;
-  left: number;
-  width: number;
-};
-
-// 追加: select / set フィルター候補の最小型です。
-export type ColumnFilterPopoverOption = {
-  label: string;
-  value: string;
-};
-
-// 追加(反転set): set フィルターの選択状態です。null = 全選択(フィルターなし)。
-//   巨大側を作らないため「選択集合」ではなく { mode, values } で持ち、values は常に
-//   小さい側のみ(include=選択値 / exclude=非選択値)。判定は mode で行います。
-export type ColumnFilterSetSelection = {
-  mode: 'include' | 'exclude';
-  values: ReadonlySet<string>;
-};
-
-// 追加(反転set): ある候補値が「選択中」かを mode 適用で判定します(巨大側を materialize しません)。
-export const isSetValueSelected = (
-  selection: ColumnFilterSetSelection | null,
-  value: string,
-): boolean =>
-  selection === null
-    ? true
-    : selection.mode === 'include'
-      ? selection.values.has(value)
-      : !selection.values.has(value);
-
-type ColumnFilterPopoverProps = {
-  isOpen: boolean;
-  title: string;
-  // 変更(12-A): 'set' を追加します。
-  filterType: 'text' | 'number' | 'date' | 'select' | 'set' | 'custom';
-  draftValue: string;
-  currentValueText: string;
-  layout: ColumnFilterPopoverLayout | null;
-  selectOptions: ColumnFilterPopoverOption[];
-  // 追加(DS-4 #1): 候補収集の状態です。'collecting' の間は universe(総数 / 全値集合)が未確定の
-  //   ため、set / select の操作 UI を出さず「収集中」を表示します(部分集合での誤確定を防ぐ)。
-  optionsStatus: 'idle' | 'collecting' | 'ready';
-  optionsProgress: number;
-  // 変更(反転set): set 選択状態を { mode, values }(小さい側のみ)で受けます。null = 全選択。
-  setSelection: ColumnFilterSetSelection | null;
-  popoverRef: RefObject<HTMLDivElement | null>;
-  // 注記(12-A): set フィルターでは検索ボックスへこの ref を割り当て、
-  //             useFilterPopoverController の autofocus をそのまま流用します。
-  textInputRef: RefObject<HTMLInputElement | null>;
-  selectRef: RefObject<HTMLSelectElement | null>;
-  onRequestClose: () => void;
-  onDraftChange: (value: string) => void;
-  onApply: () => void;
-  onClear: () => void;
-  // 追加(12-A): set フィルターのチェックボックス 1 件トグルです(即時適用)。
-  onSetValueToggle: (value: string) => void;
-  // 追加(12-A): (Select All) の一括トグルです。検索中は「表示中の候補のみ」を
-  //             対象にするため、対象 values を popover 側から渡します(AG Grid と同挙動)。
-  // 変更(反転set): scope='all'(非検索=全候補) か 表示中候補の values(検索中=小さい側)。
-  //   非検索の全選択/全解除で 30 万件配列を作らないため 'all' を区別します。
-  onSetSelectAllChange: (
-    scope: 'all' | string[],
-    nextSelected: boolean,
-  ) => void;
-  // 追加(12-A): set フィルターの「クリア」です。popover を閉じずに全選択へ戻します
-  //             (即時適用のため、結果を見ながら操作を続けられるようにします)。
-  onSetClear: () => void;
-};
-
-// ── 共通スタイル ────────────────────────────────────────
-const SECONDARY_BUTTON_STYLE: CSSProperties = {
-  border: '1px solid #cbd5e1',
-  backgroundColor: '#ffffff',
-  color: '#475569',
-  borderRadius: 8,
-  padding: '6px 10px',
-  cursor: 'pointer',
-  fontSize: 12,
-};
-
-const PRIMARY_BUTTON_STYLE: CSSProperties = {
-  border: '1px solid #2563eb',
-  backgroundColor: '#2563eb',
-  color: '#ffffff',
-  borderRadius: 8,
-  padding: '6px 10px',
-  cursor: 'pointer',
-  fontSize: 12,
-};
-
-const TEXT_INPUT_STYLE: CSSProperties = {
-  width: '100%',
-  boxSizing: 'border-box',
-  padding: '8px 10px',
-  border: '1px solid #cbd5e1',
-  borderRadius: 8,
-  outline: 'none',
-  marginBottom: 8,
-};
-
-// 追加(12-A): set フィルター候補リストの行高です(仮想化の estimateSize と一致させます)。
-const SET_FILTER_OPTION_ROW_HEIGHT = 28;
-// 追加(12-A): 候補リストの表示領域高です。
-const SET_FILTER_LIST_HEIGHT = 208;
-
-// ── set フィルター本体 ──────────────────────────────────
-// 追加(12-A): set フィルターの検索 state / 仮想化は popover 全体とライフサイクルが
-//             異なる(開閉でリセットしたい・親 SpreadsheetGrid を再レンダーさせたくない)
-//             ため、独立した子 component に切り出して hooks を持たせます。
-//             検索テキストはこのローカル state に閉じるため、タイピングしても
-//             再レンダーは popover 内部のみで完結します(本体 5,000 行は無関係)。
-type SetFilterBodyProps = {
-  options: ColumnFilterPopoverOption[];
-  // 変更(反転set): { mode, values }(小さい側のみ)。null = 全選択(フィルターなし)です。
-  setSelection: ColumnFilterSetSelection | null;
-  searchInputRef: RefObject<HTMLInputElement | null>;
-  onValueToggle: (value: string) => void;
-  onSelectAllChange: (scope: 'all' | string[], nextSelected: boolean) => void;
-  onRequestClose: () => void;
-};
-
-function SetFilterBody({
-  options,
-  setSelection,
-  searchInputRef,
-  onValueToggle,
-  onSelectAllChange,
-  onRequestClose,
-}: SetFilterBodyProps) {
-  const [searchText, setSearchText] = useState('');
-  // 追加(12-A): 候補 5,000 件規模での連続タイピングに備え、絞り込み計算は
-  //             低優先度レンダーへ遅延します(11-B7 のグローバルフィルタと同型)。
-  const deferredSearchText = useDeferredValue(searchText);
-
-  const visibleOptions = useMemo(() => {
-    const normalized = deferredSearchText.trim().toLowerCase();
-    if (!normalized) {
-      return options;
-    }
-    return options.filter((option) =>
-      option.label.toLowerCase().includes(normalized),
-    );
-  }, [options, deferredSearchText]);
-
-  const isSearching = deferredSearchText.trim().length > 0;
-
-  // 追加(12-A): 候補リストの行仮想化です。表示領域ぶん + overscan のみ DOM 化します。
-  const listScrollRef = useRef<HTMLDivElement | null>(null);
-  const optionVirtualizer = useVirtualizer({
-    count: visibleOptions.length,
-    getScrollElement: () => listScrollRef.current,
-    estimateSize: () => SET_FILTER_OPTION_ROW_HEIGHT,
-    overscan: 10,
-  });
-
-  // ── (Select All) の 3 状態判定(表示中候補が対象) ──
-  const visibleSelectedCount = useMemo(() => {
-    if (setSelection === null) {
-      return visibleOptions.length;
-    }
-    let count = 0;
-    for (const option of visibleOptions) {
-      if (isSetValueSelected(setSelection, option.value)) {
-        count += 1;
-      }
-    }
-    return count;
-  }, [setSelection, visibleOptions]);
-
-  const isAllVisibleSelected =
-    visibleOptions.length > 0 && visibleSelectedCount === visibleOptions.length;
-  const isSomeVisibleSelected =
-    visibleSelectedCount > 0 && !isAllVisibleSelected;
-
-  // 変更(反転set): mode から O(1) 算出します(巨大側を materialize しません)。
-  const totalSelectedCount =
-    setSelection === null
-      ? options.length
-      : setSelection.mode === 'include'
-        ? setSelection.values.size
-        : options.length - setSelection.values.size;
-
-  const handleSelectAllToggle = () => {
-    // 変更(反転set): 非検索時は scope='all' を渡し、30 万件の values 配列を作りません。
-    //   検索中のみ表示中候補(=小さい側)の values を渡します。
-    onSelectAllChange(
-      isSearching ? visibleOptions.map((option) => option.value) : 'all',
-      !isAllVisibleSelected,
-    );
-  };
-
-  return (
-    <>
-      <input
-        ref={searchInputRef}
-        type="text"
-        value={searchText}
-        onChange={(event) => setSearchText(event.target.value)}
-        onKeyDown={(event) => {
-          // 追加: 検索ボックス内入力を grid 側へ伝播させません。
-          event.stopPropagation();
-          if (event.key === 'Escape') {
-            event.preventDefault();
-            onRequestClose();
-          }
-        }}
-        placeholder="検索..."
-        style={TEXT_INPUT_STYLE}
-      />
-
-      {/* (Select All) 行: 検索中は表示中候補のみが対象です(AG Grid と同挙動) */}
-      <label
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: 8,
-          height: SET_FILTER_OPTION_ROW_HEIGHT,
-          padding: '0 8px',
-          cursor: 'pointer',
-          fontSize: 12,
-          color: '#334155',
-          borderBottom: '1px solid #e2e8f0',
-          userSelect: 'none',
-        }}
-      >
-        <input
-          type="checkbox"
-          checked={isAllVisibleSelected}
-          ref={(element) => {
-            // 追加(12-A): 一部のみ選択中は indeterminate 表示にします。
-            if (element) {
-              element.indeterminate = isSomeVisibleSelected;
-            }
-          }}
-          onChange={handleSelectAllToggle}
-        />
-        <span style={{ fontWeight: 600 }}>
-          {isSearching ? '（検索結果をすべて選択）' : '（すべて選択）'}
-        </span>
-      </label>
-
-      {/* 候補リスト(仮想化) */}
-      <div
-        ref={listScrollRef}
-        style={{
-          height: SET_FILTER_LIST_HEIGHT,
-          overflowY: 'auto',
-          border: '1px solid #e2e8f0',
-          borderTop: 'none',
-          borderRadius: '0 0 8px 8px',
-          marginBottom: 8,
-        }}
-      >
-        {visibleOptions.length === 0 ? (
-          <div
-            style={{
-              padding: 12,
-              fontSize: 12,
-              color: '#94a3b8',
-              textAlign: 'center',
-            }}
-          >
-            一致する候補がありません
-          </div>
-        ) : (
-          <div
-            style={{
-              height: optionVirtualizer.getTotalSize(),
-              position: 'relative',
-              width: '100%',
-            }}
-          >
-            {optionVirtualizer.getVirtualItems().map((virtualItem) => {
-              const option = visibleOptions[virtualItem.index];
-              if (!option) {
-                return null;
-              }
-              const isChecked = isSetValueSelected(setSelection, option.value);
-              return (
-                <label
-                  key={option.value}
-                  style={{
-                    position: 'absolute',
-                    top: 0,
-                    left: 0,
-                    right: 0,
-                    transform: `translateY(${virtualItem.start}px)`,
-                    height: virtualItem.size,
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 8,
-                    padding: '0 8px',
-                    boxSizing: 'border-box',
-                    cursor: 'pointer',
-                    fontSize: 12,
-                    color: '#334155',
-                    userSelect: 'none',
-                  }}
-                >
-                  <input
-                    type="checkbox"
-                    checked={isChecked}
-                    onChange={() => onValueToggle(option.value)}
-                  />
-                  <span
-                    style={{
-                      overflow: 'hidden',
-                      textOverflow: 'ellipsis',
-                      whiteSpace: 'nowrap',
-                    }}
-                  >
-                    {option.label}
-                  </span>
-                </label>
-              );
-            })}
-          </div>
-        )}
-      </div>
-
-      <div
-        style={{
-          fontSize: 11,
-          color: '#64748b',
-          marginBottom: 10,
-        }}
-      >
-        選択中: {totalSelectedCount} / {options.length} 件
-        {isSearching ? `（表示中 ${visibleOptions.length} 件）` : ''}
-      </div>
-    </>
-  );
-}
-
-// 追加: 列フィルター popover の view component です。
-export function ColumnFilterPopover({
-  isOpen,
-  title,
-  filterType,
-  draftValue,
-  currentValueText,
-  layout,
-  selectOptions,
-  optionsStatus,
-  optionsProgress,
-  setSelection,
-  popoverRef,
-  textInputRef,
-  selectRef,
-  onRequestClose,
-  onDraftChange,
-  onApply,
-  onClear,
-  onSetValueToggle,
-  onSetSelectAllChange,
-  onSetClear,
-}: ColumnFilterPopoverProps) {
-  if (typeof document === 'undefined' || !isOpen || !layout) {
-    return null;
-  }
-
-  const wrapperStyle: CSSProperties = {
-    position: 'fixed',
-    top: layout.top,
-    left: layout.left,
-    width: layout.width,
-    padding: 12,
-    boxSizing: 'border-box',
-    border: '1px solid #cbd5e1',
-    borderRadius: 10,
-    backgroundColor: '#ffffff',
-    boxShadow: '0 10px 24px rgba(15, 23, 42, 0.12)',
-    zIndex: 1000,
-  };
-
-  const handleKeyDownCapture = (event: KeyboardEvent<HTMLDivElement>) => {
-    // 追加: portal 内 keyboard イベントを React ツリー上の parent へ流しません。
-    event.stopPropagation();
-  };
-
-  const handlePointerDown = (event: PointerEvent<HTMLDivElement>) => {
-    // 追加: popover 内 pointer 操作を外側へ伝播させません。
-    event.stopPropagation();
-  };
-
-  const isSetFilter = filterType === 'set';
-
-  return createPortal(
-    <div
-      ref={popoverRef}
-      onPointerDown={handlePointerDown}
-      onKeyDownCapture={handleKeyDownCapture}
-      onPasteCapture={(event) => {
-        // 追加: portal 内 paste も grid 側へ流しません。
-        event.stopPropagation();
-      }}
-      style={wrapperStyle}
-    >
-      <div
-        style={{
-          fontSize: 12,
-          fontWeight: 700,
-          color: '#334155',
-          marginBottom: 8,
-        }}
-      >
-        列フィルター: {title}
-      </div>
-
-      {(isSetFilter || filterType === 'select') &&
-      optionsStatus === 'collecting' ? (
-        // 追加(DS-4 #1): 大規模列(>閾値)の候補収集中です。universe 未確定のため操作 UI は出さず、
-        //   進捗のみ表示します(収集完了 = ready で本来の set / select UI へ切り替わります)。
-        <div
-          style={{
-            padding: 24,
-            textAlign: 'center',
-            fontSize: 12,
-            color: '#64748b',
-          }}
-        >
-          候補を収集中… {Math.round(optionsProgress * 100)}%
-        </div>
-      ) : isSetFilter ? (
-        // 追加(12-A): AG Grid の Set Filter 相当 UI です(チェック操作は即時適用)。
-        <SetFilterBody
-          options={selectOptions}
-          setSelection={setSelection}
-          searchInputRef={textInputRef}
-          onValueToggle={onSetValueToggle}
-          onSelectAllChange={onSetSelectAllChange}
-          onRequestClose={onRequestClose}
-        />
-      ) : filterType === 'select' ? (
-        <>
-          <div
-            style={{
-              fontSize: 11,
-              color: '#64748b',
-              marginBottom: 8,
-            }}
-          >
-            フィルター種別: select
-          </div>
-          <select
-            ref={selectRef}
-            value={draftValue}
-            onChange={(event) => onDraftChange(event.target.value)}
-            onKeyDown={(event) => {
-              // 追加: select 内操作を grid 側へ伝播させません。
-              event.stopPropagation();
-              if (event.key === 'Enter') {
-                event.preventDefault();
-                onApply();
-                return;
-              }
-              if (event.key === 'Escape') {
-                event.preventDefault();
-                onRequestClose();
-              }
-            }}
-            style={{
-              width: '100%',
-              boxSizing: 'border-box',
-              padding: '8px 10px',
-              border: '1px solid #cbd5e1',
-              borderRadius: 8,
-              outline: 'none',
-              marginBottom: 8,
-              backgroundColor: '#ffffff',
-            }}
-          >
-            <option value="">（すべて）</option>
-            {selectOptions.map((option) => (
-              <option key={`${title}-${option.value}`} value={option.value}>
-                {option.label}
-              </option>
-            ))}
-          </select>
-          <div
-            style={{
-              fontSize: 11,
-              color: '#64748b',
-              marginBottom: 10,
-            }}
-          >
-            候補数: {selectOptions.length}
-          </div>
-        </>
-      ) : (
-        <>
-          <div
-            style={{
-              fontSize: 11,
-              color: '#64748b',
-              marginBottom: 8,
-            }}
-          >
-            フィルター種別: {filterType === 'number' ? 'number' : 'text'}
-          </div>
-          <input
-            ref={textInputRef}
-            type="text"
-            value={draftValue}
-            onChange={(event) => onDraftChange(event.target.value)}
-            onKeyDown={(event) => {
-              // 追加: filter input 内入力を grid 側へ伝播させません。
-              event.stopPropagation();
-              if (event.key === 'Enter') {
-                event.preventDefault();
-                onApply();
-                return;
-              }
-              if (event.key === 'Escape') {
-                event.preventDefault();
-                onRequestClose();
-              }
-            }}
-            placeholder={
-              filterType === 'number'
-                ? '例: >=10 / <20 / 10..20 / =5'
-                : '部分一致で絞り込み'
-            }
-            style={TEXT_INPUT_STYLE}
-          />
-          <div
-            style={{
-              fontSize: 11,
-              color: '#64748b',
-              marginBottom: 10,
-              whiteSpace: 'nowrap',
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-            }}
-          >
-            {filterType === 'number'
-              ? '数量系は =, >, >=, <, <=, .. が使えます'
-              : 'text は部分一致検索です'}
-          </div>
-        </>
-      )}
-
-      {/* 変更(12-A): set フィルターは即時適用のため現在値テキスト行を出しません
-          (選択件数カウンタを SetFilterBody 側で表示します)。 */}
-      {!isSetFilter && (
-        <div
-          style={{
-            fontSize: 11,
-            color: '#64748b',
-            marginBottom: 10,
-            whiteSpace: 'nowrap',
-            overflow: 'hidden',
-            textOverflow: 'ellipsis',
-          }}
-        >
-          現在値: {currentValueText}
-        </div>
-      )}
-
-      <div
-        style={{
-          display: 'flex',
-          gap: 8,
-          justifyContent: 'flex-end',
-        }}
-      >
-        {isSetFilter ? (
-          // 変更(12-A): set フィルターは即時適用のため「適用」を持ちません。
-          //             クリアは popover を閉じず全選択へ戻し、閉じるで終了します。
-          <>
-            <button
-              type="button"
-              onPointerDown={(event) => {
-                event.preventDefault();
-                event.stopPropagation();
-                onSetClear();
-              }}
-              onKeyDown={(event) => {
-                // 追加: popover 内 button の key 操作を grid 側へ流しません。
-                event.stopPropagation();
-              }}
-              style={SECONDARY_BUTTON_STYLE}
-            >
-              クリア
-            </button>
-            <button
-              type="button"
-              onPointerDown={(event) => {
-                event.preventDefault();
-                event.stopPropagation();
-                onRequestClose();
-              }}
-              onKeyDown={(event) => {
-                event.stopPropagation();
-              }}
-              style={PRIMARY_BUTTON_STYLE}
-            >
-              閉じる
-            </button>
-          </>
-        ) : (
-          <>
-            <button
-              type="button"
-              onPointerDown={(event) => {
-                event.preventDefault();
-                event.stopPropagation();
-                onClear();
-              }}
-              onKeyDown={(event) => {
-                // 追加: popover 内 button の key 操作を grid 側へ流しません。
-                event.stopPropagation();
-              }}
-              style={SECONDARY_BUTTON_STYLE}
-            >
-              クリア
-            </button>
-            <button
-              type="button"
-              onPointerDown={(event) => {
-                event.preventDefault();
-                event.stopPropagation();
-                onApply();
-              }}
-              onKeyDown={(event) => {
-                // 追加: popover 内 button の key 操作を grid 側へ流しません。
-                event.stopPropagation();
-              }}
-              style={PRIMARY_BUTTON_STYLE}
-            >
-              適用
-            </button>
-          </>
-        )}
-      </div>
-    </div>,
-    document.body,
-  );
-}
-
-export default ColumnFilterPopover;
-</file>
-
 <file path="src/components/spreadsheet-grid/view/DefaultGridBottomBar.tsx">
 import type { CSSProperties } from 'react';
 import type { SpreadsheetGridSlotContext } from '../model/gridTypes';
@@ -12631,6 +12286,682 @@ export const useColumnMenuController = <T,>({
 };
 
 export default useColumnMenuController;
+</file>
+
+<file path="src/components/spreadsheet-grid/view/ColumnFilterPopover.tsx">
+import { createPortal } from 'react-dom';
+// 変更(12-A): set フィルター(検索 + Select All + チェックボックス一覧)用に
+//             hooks と useVirtualizer を追加 import します。
+//             候補リストは品番のように 5,000 件規模になり得るため、
+//             本体グリッドと同じ @tanstack/react-virtual で行仮想化します。
+import {
+  useDeferredValue,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+  type KeyboardEvent,
+  type PointerEvent,
+  type RefObject,
+} from 'react';
+import { useVirtualizer } from '@tanstack/react-virtual';
+
+// 追加: popover のレイアウト情報です。
+export type ColumnFilterPopoverLayout = {
+  top: number;
+  left: number;
+  width: number;
+};
+
+// 追加: select / set フィルター候補の最小型です。
+export type ColumnFilterPopoverOption = {
+  label: string;
+  value: string;
+};
+
+// 追加(反転set): set フィルターの選択状態です。null = 全選択(フィルターなし)。
+//   巨大側を作らないため「選択集合」ではなく { mode, values } で持ち、values は常に
+//   小さい側のみ(include=選択値 / exclude=非選択値)。判定は mode で行います。
+export type ColumnFilterSetSelection = {
+  mode: 'include' | 'exclude';
+  values: ReadonlySet<string>;
+};
+
+// 追加(反転set): ある候補値が「選択中」かを mode 適用で判定します(巨大側を materialize しません)。
+export const isSetValueSelected = (
+  selection: ColumnFilterSetSelection | null,
+  value: string,
+): boolean =>
+  selection === null
+    ? true
+    : selection.mode === 'include'
+      ? selection.values.has(value)
+      : !selection.values.has(value);
+
+type ColumnFilterPopoverProps = {
+  isOpen: boolean;
+  title: string;
+  // 変更(12-A): 'set' を追加します。
+  filterType: 'text' | 'number' | 'date' | 'select' | 'set' | 'custom';
+  draftValue: string;
+  currentValueText: string;
+  layout: ColumnFilterPopoverLayout | null;
+  selectOptions: ColumnFilterPopoverOption[];
+  // 追加(DS-4 #1): 候補収集の状態です。'collecting' の間は universe(総数 / 全値集合)が未確定の
+  //   ため、set / select の操作 UI を出さず「収集中」を表示します(部分集合での誤確定を防ぐ)。
+  optionsStatus: 'idle' | 'collecting' | 'ready';
+  optionsProgress: number;
+  // 変更(反転set): set 選択状態を { mode, values }(小さい側のみ)で受けます。null = 全選択。
+  setSelection: ColumnFilterSetSelection | null;
+  popoverRef: RefObject<HTMLDivElement | null>;
+  // 注記(12-A): set フィルターでは検索ボックスへこの ref を割り当て、
+  //             useFilterPopoverController の autofocus をそのまま流用します。
+  textInputRef: RefObject<HTMLInputElement | null>;
+  selectRef: RefObject<HTMLSelectElement | null>;
+  onRequestClose: () => void;
+  onDraftChange: (value: string) => void;
+  onApply: () => void;
+  onClear: () => void;
+  // 追加(12-A): set フィルターのチェックボックス 1 件トグルです(即時適用)。
+  onSetValueToggle: (value: string) => void;
+  // 追加(12-A): (Select All) の一括トグルです。検索中は「表示中の候補のみ」を
+  //             対象にするため、対象 values を popover 側から渡します(AG Grid と同挙動)。
+  // 変更(反転set): scope='all'(非検索=全候補) か 表示中候補の values(検索中=小さい側)。
+  //   非検索の全選択/全解除で 30 万件配列を作らないため 'all' を区別します。
+  onSetSelectAllChange: (
+    scope: 'all' | string[],
+    nextSelected: boolean,
+  ) => void;
+  // 追加(12-A): set フィルターの「クリア」です。popover を閉じずに全選択へ戻します
+  //             (即時適用のため、結果を見ながら操作を続けられるようにします)。
+  onSetClear: () => void;
+  // 追加(stage ②): serverSide か否か。set/select で候補が空のとき、空表示の文言を
+  //   「検索ヒット無し」と「候補未供給(serverSide では filterOptions / サーバ供給が必要)」で
+  //   出し分けるために使います(既定 false = clientSide で従来表示)。
+  isServerSide?: boolean;
+};
+
+// ── 共通スタイル ────────────────────────────────────────
+const SECONDARY_BUTTON_STYLE: CSSProperties = {
+  border: '1px solid #cbd5e1',
+  backgroundColor: '#ffffff',
+  color: '#475569',
+  borderRadius: 8,
+  padding: '6px 10px',
+  cursor: 'pointer',
+  fontSize: 12,
+};
+
+const PRIMARY_BUTTON_STYLE: CSSProperties = {
+  border: '1px solid #2563eb',
+  backgroundColor: '#2563eb',
+  color: '#ffffff',
+  borderRadius: 8,
+  padding: '6px 10px',
+  cursor: 'pointer',
+  fontSize: 12,
+};
+
+const TEXT_INPUT_STYLE: CSSProperties = {
+  width: '100%',
+  boxSizing: 'border-box',
+  padding: '8px 10px',
+  border: '1px solid #cbd5e1',
+  borderRadius: 8,
+  outline: 'none',
+  marginBottom: 8,
+};
+
+// 追加(12-A): set フィルター候補リストの行高です(仮想化の estimateSize と一致させます)。
+const SET_FILTER_OPTION_ROW_HEIGHT = 28;
+// 追加(12-A): 候補リストの表示領域高です。
+const SET_FILTER_LIST_HEIGHT = 208;
+
+// ── set フィルター本体 ──────────────────────────────────
+// 追加(12-A): set フィルターの検索 state / 仮想化は popover 全体とライフサイクルが
+//             異なる(開閉でリセットしたい・親 SpreadsheetGrid を再レンダーさせたくない)
+//             ため、独立した子 component に切り出して hooks を持たせます。
+//             検索テキストはこのローカル state に閉じるため、タイピングしても
+//             再レンダーは popover 内部のみで完結します(本体 5,000 行は無関係)。
+type SetFilterBodyProps = {
+  options: ColumnFilterPopoverOption[];
+  // 変更(反転set): { mode, values }(小さい側のみ)。null = 全選択(フィルターなし)です。
+  setSelection: ColumnFilterSetSelection | null;
+  searchInputRef: RefObject<HTMLInputElement | null>;
+  onValueToggle: (value: string) => void;
+  onSelectAllChange: (scope: 'all' | string[], nextSelected: boolean) => void;
+  onRequestClose: () => void;
+  // 追加(stage ②): 候補空時の空表示文言を出し分けるために親から受けます。
+  isServerSide: boolean;
+};
+
+function SetFilterBody({
+  options,
+  setSelection,
+  searchInputRef,
+  onValueToggle,
+  onSelectAllChange,
+  onRequestClose,
+  isServerSide,
+}: SetFilterBodyProps) {
+  const [searchText, setSearchText] = useState('');
+  // 追加(12-A): 候補 5,000 件規模での連続タイピングに備え、絞り込み計算は
+  //             低優先度レンダーへ遅延します(11-B7 のグローバルフィルタと同型)。
+  const deferredSearchText = useDeferredValue(searchText);
+
+  const visibleOptions = useMemo(() => {
+    const normalized = deferredSearchText.trim().toLowerCase();
+    if (!normalized) {
+      return options;
+    }
+    return options.filter((option) =>
+      option.label.toLowerCase().includes(normalized),
+    );
+  }, [options, deferredSearchText]);
+
+  const isSearching = deferredSearchText.trim().length > 0;
+
+  // 追加(12-A): 候補リストの行仮想化です。表示領域ぶん + overscan のみ DOM 化します。
+  const listScrollRef = useRef<HTMLDivElement | null>(null);
+  const optionVirtualizer = useVirtualizer({
+    count: visibleOptions.length,
+    getScrollElement: () => listScrollRef.current,
+    estimateSize: () => SET_FILTER_OPTION_ROW_HEIGHT,
+    overscan: 10,
+  });
+
+  // ── (Select All) の 3 状態判定(表示中候補が対象) ──
+  const visibleSelectedCount = useMemo(() => {
+    if (setSelection === null) {
+      return visibleOptions.length;
+    }
+    let count = 0;
+    for (const option of visibleOptions) {
+      if (isSetValueSelected(setSelection, option.value)) {
+        count += 1;
+      }
+    }
+    return count;
+  }, [setSelection, visibleOptions]);
+
+  const isAllVisibleSelected =
+    visibleOptions.length > 0 && visibleSelectedCount === visibleOptions.length;
+  const isSomeVisibleSelected =
+    visibleSelectedCount > 0 && !isAllVisibleSelected;
+
+  // 変更(反転set): mode から O(1) 算出します(巨大側を materialize しません)。
+  const totalSelectedCount =
+    setSelection === null
+      ? options.length
+      : setSelection.mode === 'include'
+        ? setSelection.values.size
+        : options.length - setSelection.values.size;
+
+  const handleSelectAllToggle = () => {
+    // 変更(反転set): 非検索時は scope='all' を渡し、30 万件の values 配列を作りません。
+    //   検索中のみ表示中候補(=小さい側)の values を渡します。
+    onSelectAllChange(
+      isSearching ? visibleOptions.map((option) => option.value) : 'all',
+      !isAllVisibleSelected,
+    );
+  };
+
+  return (
+    <>
+      <input
+        ref={searchInputRef}
+        type="text"
+        value={searchText}
+        onChange={(event) => setSearchText(event.target.value)}
+        onKeyDown={(event) => {
+          // 追加: 検索ボックス内入力を grid 側へ伝播させません。
+          event.stopPropagation();
+          if (event.key === 'Escape') {
+            event.preventDefault();
+            onRequestClose();
+          }
+        }}
+        placeholder="検索..."
+        style={TEXT_INPUT_STYLE}
+      />
+
+      {/* (Select All) 行: 検索中は表示中候補のみが対象です(AG Grid と同挙動) */}
+      <label
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 8,
+          height: SET_FILTER_OPTION_ROW_HEIGHT,
+          padding: '0 8px',
+          cursor: 'pointer',
+          fontSize: 12,
+          color: '#334155',
+          borderBottom: '1px solid #e2e8f0',
+          userSelect: 'none',
+        }}
+      >
+        <input
+          type="checkbox"
+          checked={isAllVisibleSelected}
+          ref={(element) => {
+            // 追加(12-A): 一部のみ選択中は indeterminate 表示にします。
+            if (element) {
+              element.indeterminate = isSomeVisibleSelected;
+            }
+          }}
+          onChange={handleSelectAllToggle}
+        />
+        <span style={{ fontWeight: 600 }}>
+          {isSearching ? '（検索結果をすべて選択）' : '（すべて選択）'}
+        </span>
+      </label>
+
+      {/* 候補リスト(仮想化) */}
+      <div
+        ref={listScrollRef}
+        style={{
+          height: SET_FILTER_LIST_HEIGHT,
+          overflowY: 'auto',
+          border: '1px solid #e2e8f0',
+          borderTop: 'none',
+          borderRadius: '0 0 8px 8px',
+          marginBottom: 8,
+        }}
+      >
+        {visibleOptions.length === 0 ? (
+          <div
+            style={{
+              padding: 12,
+              fontSize: 12,
+              color: '#94a3b8',
+              textAlign: 'center',
+            }}
+          >
+            {options.length === 0
+              ? isServerSide
+                ? '候補が未指定です（serverSide では列に filterOptions などの候補供給が必要）'
+                : '候補がありません'
+              : '一致する候補がありません'}
+          </div>
+        ) : (
+          <div
+            style={{
+              height: optionVirtualizer.getTotalSize(),
+              position: 'relative',
+              width: '100%',
+            }}
+          >
+            {optionVirtualizer.getVirtualItems().map((virtualItem) => {
+              const option = visibleOptions[virtualItem.index];
+              if (!option) {
+                return null;
+              }
+              const isChecked = isSetValueSelected(setSelection, option.value);
+              return (
+                <label
+                  key={option.value}
+                  style={{
+                    position: 'absolute',
+                    top: 0,
+                    left: 0,
+                    right: 0,
+                    transform: `translateY(${virtualItem.start}px)`,
+                    height: virtualItem.size,
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 8,
+                    padding: '0 8px',
+                    boxSizing: 'border-box',
+                    cursor: 'pointer',
+                    fontSize: 12,
+                    color: '#334155',
+                    userSelect: 'none',
+                  }}
+                >
+                  <input
+                    type="checkbox"
+                    checked={isChecked}
+                    onChange={() => onValueToggle(option.value)}
+                  />
+                  <span
+                    style={{
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      whiteSpace: 'nowrap',
+                    }}
+                  >
+                    {option.label}
+                  </span>
+                </label>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      <div
+        style={{
+          fontSize: 11,
+          color: '#64748b',
+          marginBottom: 10,
+        }}
+      >
+        選択中: {totalSelectedCount} / {options.length} 件
+        {isSearching ? `（表示中 ${visibleOptions.length} 件）` : ''}
+      </div>
+    </>
+  );
+}
+
+// 追加: 列フィルター popover の view component です。
+export function ColumnFilterPopover({
+  isOpen,
+  title,
+  filterType,
+  draftValue,
+  currentValueText,
+  layout,
+  selectOptions,
+  optionsStatus,
+  optionsProgress,
+  setSelection,
+  popoverRef,
+  textInputRef,
+  selectRef,
+  onRequestClose,
+  onDraftChange,
+  onApply,
+  onClear,
+  onSetValueToggle,
+  onSetSelectAllChange,
+  onSetClear,
+  isServerSide = false,
+}: ColumnFilterPopoverProps) {
+  if (typeof document === 'undefined' || !isOpen || !layout) {
+    return null;
+  }
+
+  const wrapperStyle: CSSProperties = {
+    position: 'fixed',
+    top: layout.top,
+    left: layout.left,
+    width: layout.width,
+    padding: 12,
+    boxSizing: 'border-box',
+    border: '1px solid #cbd5e1',
+    borderRadius: 10,
+    backgroundColor: '#ffffff',
+    boxShadow: '0 10px 24px rgba(15, 23, 42, 0.12)',
+    zIndex: 1000,
+  };
+
+  const handleKeyDownCapture = (event: KeyboardEvent<HTMLDivElement>) => {
+    // 追加: portal 内 keyboard イベントを React ツリー上の parent へ流しません。
+    event.stopPropagation();
+  };
+
+  const handlePointerDown = (event: PointerEvent<HTMLDivElement>) => {
+    // 追加: popover 内 pointer 操作を外側へ伝播させません。
+    event.stopPropagation();
+  };
+
+  const isSetFilter = filterType === 'set';
+
+  return createPortal(
+    <div
+      ref={popoverRef}
+      onPointerDown={handlePointerDown}
+      onKeyDownCapture={handleKeyDownCapture}
+      onPasteCapture={(event) => {
+        // 追加: portal 内 paste も grid 側へ流しません。
+        event.stopPropagation();
+      }}
+      style={wrapperStyle}
+    >
+      <div
+        style={{
+          fontSize: 12,
+          fontWeight: 700,
+          color: '#334155',
+          marginBottom: 8,
+        }}
+      >
+        列フィルター: {title}
+      </div>
+
+      {(isSetFilter || filterType === 'select') &&
+      optionsStatus === 'collecting' ? (
+        // 追加(DS-4 #1): 大規模列(>閾値)の候補収集中です。universe 未確定のため操作 UI は出さず、
+        //   進捗のみ表示します(収集完了 = ready で本来の set / select UI へ切り替わります)。
+        <div
+          style={{
+            padding: 24,
+            textAlign: 'center',
+            fontSize: 12,
+            color: '#64748b',
+          }}
+        >
+          候補を収集中… {Math.round(optionsProgress * 100)}%
+        </div>
+      ) : isSetFilter ? (
+        // 追加(12-A): AG Grid の Set Filter 相当 UI です(チェック操作は即時適用)。
+        <SetFilterBody
+          options={selectOptions}
+          setSelection={setSelection}
+          searchInputRef={textInputRef}
+          onValueToggle={onSetValueToggle}
+          onSelectAllChange={onSetSelectAllChange}
+          onRequestClose={onRequestClose}
+          isServerSide={isServerSide}
+        />
+      ) : filterType === 'select' ? (
+        <>
+          <div
+            style={{
+              fontSize: 11,
+              color: '#64748b',
+              marginBottom: 8,
+            }}
+          >
+            フィルター種別: select
+          </div>
+          <select
+            ref={selectRef}
+            value={draftValue}
+            onChange={(event) => onDraftChange(event.target.value)}
+            onKeyDown={(event) => {
+              // 追加: select 内操作を grid 側へ伝播させません。
+              event.stopPropagation();
+              if (event.key === 'Enter') {
+                event.preventDefault();
+                onApply();
+                return;
+              }
+              if (event.key === 'Escape') {
+                event.preventDefault();
+                onRequestClose();
+              }
+            }}
+            style={{
+              width: '100%',
+              boxSizing: 'border-box',
+              padding: '8px 10px',
+              border: '1px solid #cbd5e1',
+              borderRadius: 8,
+              outline: 'none',
+              marginBottom: 8,
+              backgroundColor: '#ffffff',
+            }}
+          >
+            <option value="">（すべて）</option>
+            {selectOptions.map((option) => (
+              <option key={`${title}-${option.value}`} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+          <div
+            style={{
+              fontSize: 11,
+              color: '#64748b',
+              marginBottom: 10,
+            }}
+          >
+            候補数: {selectOptions.length}
+          </div>
+        </>
+      ) : (
+        <>
+          <div
+            style={{
+              fontSize: 11,
+              color: '#64748b',
+              marginBottom: 8,
+            }}
+          >
+            フィルター種別: {filterType === 'number' ? 'number' : 'text'}
+          </div>
+          <input
+            ref={textInputRef}
+            type="text"
+            value={draftValue}
+            onChange={(event) => onDraftChange(event.target.value)}
+            onKeyDown={(event) => {
+              // 追加: filter input 内入力を grid 側へ伝播させません。
+              event.stopPropagation();
+              if (event.key === 'Enter') {
+                event.preventDefault();
+                onApply();
+                return;
+              }
+              if (event.key === 'Escape') {
+                event.preventDefault();
+                onRequestClose();
+              }
+            }}
+            placeholder={
+              filterType === 'number'
+                ? '例: >=10 / <20 / 10..20 / =5'
+                : '部分一致で絞り込み'
+            }
+            style={TEXT_INPUT_STYLE}
+          />
+          <div
+            style={{
+              fontSize: 11,
+              color: '#64748b',
+              marginBottom: 10,
+              whiteSpace: 'nowrap',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+            }}
+          >
+            {filterType === 'number'
+              ? '数量系は =, >, >=, <, <=, .. が使えます'
+              : 'text は部分一致検索です'}
+          </div>
+        </>
+      )}
+
+      {/* 変更(12-A): set フィルターは即時適用のため現在値テキスト行を出しません
+          (選択件数カウンタを SetFilterBody 側で表示します)。 */}
+      {!isSetFilter && (
+        <div
+          style={{
+            fontSize: 11,
+            color: '#64748b',
+            marginBottom: 10,
+            whiteSpace: 'nowrap',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+          }}
+        >
+          現在値: {currentValueText}
+        </div>
+      )}
+
+      <div
+        style={{
+          display: 'flex',
+          gap: 8,
+          justifyContent: 'flex-end',
+        }}
+      >
+        {isSetFilter ? (
+          // 変更(12-A): set フィルターは即時適用のため「適用」を持ちません。
+          //             クリアは popover を閉じず全選択へ戻し、閉じるで終了します。
+          <>
+            <button
+              type="button"
+              onPointerDown={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                onSetClear();
+              }}
+              onKeyDown={(event) => {
+                // 追加: popover 内 button の key 操作を grid 側へ流しません。
+                event.stopPropagation();
+              }}
+              style={SECONDARY_BUTTON_STYLE}
+            >
+              クリア
+            </button>
+            <button
+              type="button"
+              onPointerDown={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                onRequestClose();
+              }}
+              onKeyDown={(event) => {
+                event.stopPropagation();
+              }}
+              style={PRIMARY_BUTTON_STYLE}
+            >
+              閉じる
+            </button>
+          </>
+        ) : (
+          <>
+            <button
+              type="button"
+              onPointerDown={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                onClear();
+              }}
+              onKeyDown={(event) => {
+                // 追加: popover 内 button の key 操作を grid 側へ流しません。
+                event.stopPropagation();
+              }}
+              style={SECONDARY_BUTTON_STYLE}
+            >
+              クリア
+            </button>
+            <button
+              type="button"
+              onPointerDown={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                onApply();
+              }}
+              onKeyDown={(event) => {
+                // 追加: popover 内 button の key 操作を grid 側へ流しません。
+                event.stopPropagation();
+              }}
+              style={PRIMARY_BUTTON_STYLE}
+            >
+              適用
+            </button>
+          </>
+        )}
+      </div>
+    </div>,
+    document.body,
+  );
+}
+
+export default ColumnFilterPopover;
 </file>
 
 <file path="src/components/spreadsheet-grid/view/ColumnMenuPopover.tsx">
@@ -15948,7 +16279,18 @@ import {
   type GridColumn,
   type ServerSideDataSource,
   type ServerSideGetRowsResult,
+  type ServerSideQuery,
 } from './components/spreadsheet-grid';
+// 注記(stage ②・デモ限定): モックサーバが query(フィルター/ソート)を実適用するため、グリッド内部の
+//   純関数を deep-import して再利用します。実サーバは SQL 等の自前クエリエンジンを使う想定で、これは
+//   「サーバの代役」をデモ内で最小コードかつグリッドと同一意味で再現するための便宜です。
+import {
+  createSourceOrder,
+  filterOrderByGlobalText,
+  filterOrderByColumns,
+} from './components/spreadsheet-grid/logic/filtering';
+import { sortOrder } from './components/spreadsheet-grid/logic/sorting';
+import { serializeServerSideQuery } from './components/spreadsheet-grid/logic/serverSideQuery';
 
 // 追加: デモ用の行型です。
 type DemoRow = {
@@ -16031,27 +16373,89 @@ const createDemoRowAt = (index: number): DemoRow => {
 const createDemoRows = (count: number): DemoRow[] =>
   Array.from({ length: count }, (_, index) => createDemoRowAt(index));
 
-// 追加(①-5): serverSide(SSRM)デモ用のモックデータ供給口です。実サーバの代わりに setTimeout で
-//   遅延を模し、要求された [startIndex, endIndex) のブロックだけを生成して返します(全件は返さない)。
-//   signal で「スクロールで通り過ぎた帯」の取得をキャンセルします(stale request 破棄)。
+// 追加(①-5 / stage ②): serverSide(SSRM)デモ用のモックデータ供給口です。実サーバの代わりに
+//   setTimeout で遅延を模し、query(グローバル/列フィルター・ソート)を全件データセットへ実適用してから、
+//   要求された [startIndex, endIndex) のスライスだけを返します(全件は返さない)。signal で「スクロールで
+//   通り過ぎた帯」やフィルター変更で不要になった取得をキャンセルします(stale request 破棄)。
+//   注意(デモ限定): フィルター/ソートの実適用には rows 配列が要るため、全件(SERVER_ROW_COUNT)を一度だけ
+//   materialize します(実サーバは DB 側で解決する想定)。また resolveServerOrder は同期計算のため、
+//   大件数では query 変更時に数百 ms の同期処理が走ります(モックの割り切り)。
 const SERVER_ROW_COUNT = 1000000;
 const SERVER_LATENCY_MS = 350;
+
+// 追加(stage ③ デモ): モックサーバの「データ改訂番号」です。リフレッシュボタンで増やし、getRows が
+//   返す行の備考へ刻印して「サーバから取り直した」ことを可視化します(実サーバのデータ更新の代用)。
+let serverDataRevision = 0;
+
+// サーバ側の全件データ(モックの「DB」)です。決定的生成のため遅延構築し 1 度だけ保持します。
+let serverRowsCache: DemoRow[] | null = null;
+const getServerRows = (): DemoRow[] => {
+  if (serverRowsCache === null) {
+    serverRowsCache = createDemoRows(SERVER_ROW_COUNT);
+  }
+  return serverRowsCache;
+};
+
+// サーバが知る全列です(フィルター/ソートの列解決に使用)。createInitialColumns は後方定義のため
+//   eval 時 TDZ を避けて遅延取得します。表示状態(列の表示/並び/固定)とは独立に固定で持ちます。
+let serverColumnsCache: GridColumn<DemoRow>[] | null = null;
+const getServerColumns = (): GridColumn<DemoRow>[] => {
+  if (serverColumnsCache === null) {
+    serverColumnsCache = createInitialColumns();
+  }
+  return serverColumnsCache;
+};
+
+// 直近 query の解決済み order(フィルター+ソート後の index 列)を 1 件だけキャッシュします。
+//   グリッドは同一 query で複数ブロックを要求するため、ブロックごとの全件再計算を避けます。
+let lastServerQueryKey: string | null = null;
+let lastServerOrder: Int32Array | null = null;
+
+const resolveServerOrder = (query: ServerSideQuery): Int32Array => {
+  const key = serializeServerSideQuery(query);
+  if (key === lastServerQueryKey && lastServerOrder !== null) {
+    return lastServerOrder;
+  }
+  const rows = getServerRows();
+  const columns = getServerColumns();
+  // グリッド本体と同一の純関数で order を解決します(クライアント時と完全に同じ意味)。
+  let order = createSourceOrder(rows.length);
+  order = filterOrderByGlobalText(rows, order, columns, query.globalText ?? '');
+  order = filterOrderByColumns(rows, order, columns, query.columnFilters ?? {});
+  order = sortOrder(rows, order, columns, query.sort ?? []);
+  lastServerQueryKey = key;
+  lastServerOrder = order;
+  return order;
+};
 
 const serverSideDataSource: ServerSideDataSource<DemoRow> = {
   // 初回 fetch 前から正しい総高さ/スクロールバーを出すため総件数を即時提示します。
   initialRowCount: SERVER_ROW_COUNT,
-  getRows: ({ startIndex, endIndex, signal }) =>
+  getRows: ({ startIndex, endIndex, query, signal }) =>
     new Promise<ServerSideGetRowsResult<DemoRow>>((resolve, reject) => {
       if (signal.aborted) {
         reject(new DOMException('aborted', 'AbortError'));
         return;
       }
       const timer = setTimeout(() => {
+        const rows = getServerRows();
+        // query を全件へ実適用(フィルター→ソート)。order.length がフィルター後の総件数です。
+        const order = resolveServerOrder(query);
+        const total = order.length;
+        const from = Math.max(0, Math.min(startIndex, total));
+        const to = Math.max(from, Math.min(endIndex, total));
         const slice: DemoRow[] = [];
-        for (let index = startIndex; index < endIndex; index += 1) {
-          slice.push(createDemoRowAt(index));
+        for (let i = from; i < to; i += 1) {
+          const row = rows[order[i]];
+          // デモ: リフレッシュ(refreshToken 増加)で再取得が起きたことが見えるよう、改訂番号を
+          //   備考へ浅いコピーで刻印します(>0 のときのみ。元データは不変なので改訂は累積しません)。
+          slice.push(
+            serverDataRevision > 0
+              ? { ...row, note: `取得#${serverDataRevision} ${row.note}` }
+              : row,
+          );
         }
-        resolve({ rows: slice, totalRowCount: SERVER_ROW_COUNT });
+        resolve({ rows: slice, totalRowCount: total });
       }, SERVER_LATENCY_MS);
       signal.addEventListener(
         'abort',
@@ -16065,7 +16469,11 @@ const serverSideDataSource: ServerSideDataSource<DemoRow> = {
 };
 
 // 追加: 基本列 + 初期追加列を生成します。
-const createInitialColumns = (): GridColumn<DemoRow>[] => {
+const createInitialColumns = (
+  // 追加(stage ②): 品番列の filterType。clientSide は 'set'(大規模候補の仮想化デモ)、
+  //   serverSide は 'text'(高カーディナリティのため set 不適 → 部分一致)を渡します。
+  partNoFilterType: 'set' | 'text' = 'set',
+): GridColumn<DemoRow>[] => {
   const baseColumns: GridColumn<DemoRow>[] = [
     // 追加: text / number / select / set のフィルター型を設定します。
     // 追加(10-E): frozen columns デモ。品番・品名を左固定にします（pinned: 'left'）。
@@ -16075,7 +16483,7 @@ const createInitialColumns = (): GridColumn<DemoRow>[] => {
     //             popover 内リストの仮想化 + 検索の動作確認にそのまま使えます。
     //             注記(DS-3-1): 5万行化で候補も約5万件になります。リスト UI は仮想化済みで描画は
     //             問題ありませんが、収集の全走査(getColumnSelectOptions)は DS-4 の worker 化対象です。
-    { key: 'partNo', title: '品番', width: 150, filterType: 'set',
+    { key: 'partNo', title: '品番', width: 150, filterType: partNoFilterType,
       pinned: "left"
     },
     {
@@ -16165,7 +16573,11 @@ function App() {
   // 追加(①-5): デモモード。client=1M(uniform) / autoHeight=5,000(可変行高) / server=SSRM(都度取得)。
   // 追加(①-5): モード切替で rows を再生成します(server は dataSource 駆動のため空配列で解放)。
   const [mode, setMode] = useState<DemoMode>('client');
+  // 追加(stage ③ デモ): serverSide ソフトリフレッシュ用トークン。下のボタンで増やします。
+  const [serverRefreshToken, setServerRefreshToken] = useState(0);
   const changeMode = (next: DemoMode) => {
+    const wasServer = mode === 'server';
+    const willServer = next === 'server';
     setMode(next);
     if (next === 'server') {
       setRows(EMPTY_ROWS);
@@ -16174,6 +16586,20 @@ function App() {
     } else {
       setRows(createDemoRows(INITIAL_ROW_COUNT));
     }
+    // 追加(stage ②): serverSide 境界をまたぐ時だけ列を作り直します。品番は serverSide では
+    //   text フィルター、clientSide では set に切り替えます。同境界では grid も key で再マウント
+    //   するため列リセットは一貫します。client↔autoHeight(同 serverSide 性)では作り直さず、
+    //   列のカスタマイズ(並び/幅/固定/表示)を保持します。
+    if (wasServer !== willServer) {
+      setColumns(createInitialColumns(willServer ? 'text' : 'set'));
+    }
+  };
+
+  // 追加(stage ③ デモ): モックサーバのデータ更新を模し(改訂番号を増やす)、再取得トークンを増やします。
+  //   グリッドは query 不変のままスクロール位置を保って現在の可視レンジを取り直します。
+  const refreshServerData = () => {
+    serverDataRevision += 1;
+    setServerRefreshToken((n) => n + 1);
   };
 
   // 追加(①-5): ヘッダー表示用の行数です(server はサーバ総件数を提示)。
@@ -16238,11 +16664,54 @@ function App() {
             {`serverSide / SSRM(${SERVER_ROW_COUNT.toLocaleString()} 行・都度取得)`}
           </button>
         </div>
+
+        {mode === 'server' && (
+          <div style={{ marginTop: 8 }}>
+            <button
+              type="button"
+              onClick={refreshServerData}
+              style={modeButtonStyle(false)}
+            >
+              {`サーバデータを更新して再取得(refreshToken: ${serverRefreshToken})`}
+            </button>
+          </div>
+        )}
+
+        {mode === 'server' && (
+          <p
+            style={{
+              marginTop: 10,
+              padding: '8px 10px',
+              background: '#f1f5f9',
+              border: '1px solid #e2e8f0',
+              borderRadius: 6,
+              color: '#475569',
+              fontSize: 12.5,
+              lineHeight: 1.6,
+            }}
+          >
+            serverSide モード: 並べ替え・列フィルター・グローバルフィルターはモック
+            サーバへ送出され、結果は都度取得されます(入力は即時、送出は約 300ms
+            デバウンス後)。結果セットが入れ替わるとスクロールは先頭へ戻ります。品番は
+            高カーディナリティのため serverSide では text フィルター(部分一致)に切り替えて
+            います(clientSide は set フィルター = 大規模候補の仮想化デモ)。単位 / 状態は
+            列定義に候補(filterOptions)を持つため両モードで set として機能します。候補を
+            供給しない set/select 列は serverSide では候補を自動収集できず空になります。
+            ヘッダーの行数はフィルター前のデータセット総件数です。上の「再取得」ボタンで
+            refreshToken を増やすと、クエリを変えずスクロール位置を保ったまま現在の可視レンジを
+            取り直します(再取得された行は備考の先頭に「取得#N」が付きます)。
+          </p>
+        )}
       </header>
 
       <SpreadsheetGrid
+        // 追加(stage ②・デモ): clientSide↔serverSide はフックの初期件数読込が mount 限定のため、
+        //   境界をまたぐ時だけ key で再マウントします(client↔autoHeight は同 key で再マウントなし)。
+        key={mode === 'server' ? 'server' : 'client'}
         rows={mode === 'server' ? undefined : rows}
         dataSource={mode === 'server' ? serverSideDataSource : undefined}
+        // 追加(stage ③): serverSide ソフトリフレッシュ用トークン(server mode 以外は undefined=inert)。
+        serverSideRefreshToken={mode === 'server' ? serverRefreshToken : undefined}
         columns={columns}
         onRowsChange={mode === 'server' ? undefined : setRows}
         onColumnsChange={setColumns}
@@ -16669,6 +17138,11 @@ export type SpreadsheetGridProps<T> = {
   // 追加(DS-4 ②): serverSide データ供給口です。指定時に serverSide モードへ切り替えます
   //   (rows と排他・dataSource 優先)。①-3 で本 prop を消費してモード分岐します。
   dataSource?: ServerSideDataSource<T>;
+  // 追加(stage ③): serverSide のソフトリフレッシュ用トークンです。値を増やすと、クエリ
+  //   (フィルター/ソート/グローバル)を変えずにキャッシュを破棄し、現在の可視レンジをサーバから
+  //   取り直します。スクロール位置は保持し、件数は到着ブロックの totalRowCount で追従します
+  //   (queryKey 変化=結果総入れ替え→先頭リセットとは別物)。clientSide では無視されます。
+  serverSideRefreshToken?: number;
   columns: GridColumn<T>[];
   onRowsChange?: (nextRows: T[]) => void;
   onColumnsChange?: (nextColumns: GridColumn<T>[]) => void;
@@ -16841,6 +17315,11 @@ import useColumnAutosizeRunner from './hooks/useColumnAutosizeRunner';
 import useColumnSelectOptionsCollector from './hooks/useColumnSelectOptionsCollector';
 // 追加(①-3): serverSide(SSRM)の RowModel を供給するフックです(dataSource 指定時に使用)。
 import { useServerSideRowModel } from './hooks/useServerSideRowModel';
+// 追加(stage ②): serverSide query の構築 / queryKey 直列化(純ロジック)です。
+import {
+  buildServerSideQuery,
+  serializeServerSideQuery,
+} from './logic/serverSideQuery';
 import type {
   CellCoord,
   CellRenderState,
@@ -16855,8 +17334,10 @@ import type {
   ColumnFilterValue,
   // 追加(12-A): set フィルター値の構築に使います。
   SetColumnFilterValue,
-  // 追加(①-3): serverSide の安定空 query 用の型です。
+  // 追加(①-3 / stage ②): serverSide query 用の型です。
   ServerSideQuery,
+  // 追加(stage ②): serverSide query の sort 既定値の型です。
+  GridSortState,
   SpreadsheetGridProps,
 } from './model/gridTypes';
 import { getCellValue, isCellEditable, setCellValue } from './utils/permissions';
@@ -16919,6 +17400,16 @@ const setDifference = (
 //   never[] は任意の T[] に代入可能で、destructure 既定値として rows の型を T[] に保ちます。
 const EMPTY_ROWS: never[] = [];
 
+// 追加(stage ②): serverSide query 構築/debounce 用の安定既定値・定数です。
+//   clientSide では query を空に保ち(フックは inert)、参照同一で memo/effect を不要に揺らしません。
+const EMPTY_SERVER_QUERY: ServerSideQuery = {};
+const EMPTY_COLUMN_FILTERS: Record<string, ColumnFilterValue> = {};
+const EMPTY_SORT: GridSortState = [];
+// query(filter/sort)変更をサーバへ送る前の debounce(ms)です。入力欄の即時反映とは別系統で、
+//   キーストロークごとの再フェッチ(block 0 取り直し)を合体します。フック内の 120ms(レンジ要求
+//   debounce)とは役割が異なり併存します。
+const SERVER_SIDE_QUERY_DEBOUNCE_MS = 300;
+
 // 追加: Grid 本体です。
 export function SpreadsheetGrid<T extends object>({
   // 変更(①-3): rows に安定既定値(EMPTY_ROWS)を当てます。rows が optional でも全 consumer は
@@ -16926,6 +17417,9 @@ export function SpreadsheetGrid<T extends object>({
   rows = EMPTY_ROWS,
   // 追加(①-3): serverSide データ供給口。指定時に serverSide モードへ分岐します(rows と排他)。
   dataSource,
+  // 追加(stage ③): serverSide ソフトリフレッシュ用トークン。値を増やすと query 不変のまま
+  //   キャッシュ破棄+可視レンジ取り直し(スクロール保持)。フックへ refreshToken として渡します。
+  serverSideRefreshToken,
   columns,
   onRowsChange,
   onColumnsChange,
@@ -17008,20 +17502,18 @@ export function SpreadsheetGrid<T extends object>({
     [rowKeyGetter],
   );
 
-  // ── serverSide(SSRM)モード分岐(①-3) ───────────────────
+  // ── serverSide(SSRM)モード分岐(①-3 / stage ②) ───────────
   // dataSource 指定で serverSide モードへ切り替えます。clientSide(dataSource 不在)は従来
   //   経路を一切変えません(以降の各 consumer は rowModel シーム越しで透過に動きます)。
   const isServerSide = dataSource != null;
-  // stage ① は filter/sort/global-filter の UI を無効化します(query は空のまま=DB へ条件を
-  //   渡しません)。恒久ではなく段階導入の途中で、stage ② で getRows の query へ配線します。
-  //   boolean は deps で値比較されるため、dataSource の identity に関係なく安定に振る舞います。
-  const sortingEnabled = enableSorting && !isServerSide;
-  const columnFilterEnabled = enableColumnFilter && !isServerSide;
-  const globalFilterEnabled = enableGlobalFilter && !isServerSide;
-  // stage ① の serverSide query / queryKey は安定な空値です(filter/sort 無効のため)。
-  //   stage ② で filter/sort シグネチャから導出し、queryKey 変化でキャッシュを無効化します。
-  const serverSideQuery = useMemo<ServerSideQuery>(() => ({}), []);
-  const serverSideQueryKey = '';
+  // 変更(stage ②): serverSide でも sort/filter/global-filter の UI を有効化します。ローカル並べ替えは
+  //   行わず(serverSide 時は rows=空のため clientSide パイプラインは空走行=ゼロコストでバイパス)、
+  //   状態を下の ServerSideQuery に載せて getRows へ送出します。利用者がサーバ非対応の操作を塞ぎたい
+  //   場合は enableSorting / enableColumnFilter / enableGlobalFilter を false にできます。
+  //   serverSide query / queryKey は uiState 確定後に下方(rowModel シーム付近)で構築します。
+  const sortingEnabled = enableSorting;
+  const columnFilterEnabled = enableColumnFilter;
+  const globalFilterEnabled = enableGlobalFilter;
 
   // ── reducer ───────────────────────────────────────────
   const [uiState, dispatch] = useReducer(
@@ -17439,6 +17931,61 @@ export function SpreadsheetGrid<T extends object>({
     [order, rows, resolvedRowKeyGetter],
   );
 
+  // ── serverSide query 配線(stage ②) ───────────────────
+  // clientSide の UI 状態(sort / 列フィルター / グローバルフィルター)から ServerSideQuery を組み立て、
+  //   安定 queryKey を導出します。clientSide(isServerSide=false)では空 query 固定です(フックは inert の
+  //   ため値は無視されますが、debounce effect を不発にして無駄な再描画を避けます)。
+  //   入力欄の value は従来どおり即時 uiState を参照するため、タイピングは即時反映されます。ここで作る
+  //   live 値はそのまま渡さず、下で debounce してからフックへ供給します(サーバ送出の合体)。
+  const liveServerSideQuery = useMemo<ServerSideQuery>(
+    () =>
+      isServerSide
+        ? buildServerSideQuery({
+            globalText: globalFilterEnabled ? globalFilterText : '',
+            columnFilters: columnFilterEnabled
+              ? columnFilters
+              : EMPTY_COLUMN_FILTERS,
+            sort: sortingEnabled ? uiState.sort : EMPTY_SORT,
+          })
+        : EMPTY_SERVER_QUERY,
+    [
+      isServerSide,
+      globalFilterEnabled,
+      globalFilterText,
+      columnFilterEnabled,
+      columnFilters,
+      sortingEnabled,
+      uiState.sort,
+    ],
+  );
+  const liveServerSideQueryKey = useMemo(
+    () => (isServerSide ? serializeServerSideQuery(liveServerSideQuery) : ''),
+    [isServerSide, liveServerSideQuery],
+  );
+
+  // debounce 済みの query / queryKey です(これをフックへ渡します)。live が変化しても
+  //   SERVER_SIDE_QUERY_DEBOUNCE_MS の静止後に一度だけ反映し、キーストロークごとのキャッシュ破棄+
+  //   block 0 取り直しを抑止します。初期値は live の初回値で seed し、mount 時のフック queryKey と
+  //   一致させて初回 debounce 後の余計な再設定を避けます。
+  const [serverSideQuery, setServerSideQuery] =
+    useState<ServerSideQuery>(liveServerSideQuery);
+  const [serverSideQueryKey, setServerSideQueryKey] = useState<string>(
+    liveServerSideQueryKey,
+  );
+
+  useEffect(() => {
+    // clientSide では反映しません(live は空のまま)。serverSide 時のみ debounce 反映します。
+    if (!isServerSide) {
+      return;
+    }
+    const timer = setTimeout(() => {
+      // setState は timer コールバック内(非同期)のため set-state-in-effect には該当しません。
+      setServerSideQuery(liveServerSideQuery);
+      setServerSideQueryKey(liveServerSideQueryKey);
+    }, SERVER_SIDE_QUERY_DEBOUNCE_MS);
+    return () => clearTimeout(timer);
+  }, [isServerSide, liveServerSideQueryKey, liveServerSideQuery]);
+
   // 追加(①-3): serverSide(SSRM)の RowModel を供給します。React Hooks 規則によりフックは
   //   無条件に呼びます。dataSource 不在(clientSide)では hook が inert(件数 0 / 取得 no-op)に
   //   なるよう実装済みのため、clientSide 経路は完全に不変です。
@@ -17447,6 +17994,8 @@ export function SpreadsheetGrid<T extends object>({
     rowKeyGetter: resolvedRowKeyGetter,
     query: serverSideQuery,
     queryKey: serverSideQueryKey,
+    // 追加(stage ③): ソフトリフレッシュ signal。queryKey と独立にキャッシュ破棄+可視レンジ取り直しを起こす。
+    refreshToken: serverSideRefreshToken,
   });
   // 可視レンジ通知に使う stable 参照(useCallback)だけを抜き出します。serverSide オブジェクト
   //   自体は毎 render 生成のため、effect 依存にはこの requestRange のみを使います。
@@ -17689,10 +18238,27 @@ export function SpreadsheetGrid<T extends object>({
   const windowFirstRow = virtualRows.length > 0 ? virtualRows[0].index : 0;
   const windowLastRow =
     virtualRows.length > 0 ? virtualRows[virtualRows.length - 1].index : -1;
-  // 追加(①-3): serverSide のとき、描画窓(overscan 込み)の可視レンジを hook へ通知します。
+  // 追加(stage ②): serverSide で query(debounced queryKey)が変わったら先頭へスクロールを戻します。
+  //   フィルター/ソートで結果セットが総入れ替えされるため、同一 index に別行が来る違和感を避けます。
+  //   mount 時は scrollTop が既に 0 のため無害です。clientSide では queryKey が安定空のため不発です。
+  useEffect(() => {
+    if (!isServerSide) {
+      return;
+    }
+    const el = scrollContainerRef.current;
+    if (el) {
+      el.scrollTop = 0;
+    }
+    // 物理 scrollTop の即時 0 化に React state も追従させます(scroll イベント待ちの 1 フレーム遅延回避)。
+    setScrollTop(0);
+  }, [isServerSide, serverSideQueryKey]);
+
+  // 追加(①-3 / stage ②): serverSide のとき、描画窓(overscan 込み)の可視レンジを hook へ通知します。
   //   requestRange は即時 touchBlocks + debounce fetch。空窓(末尾 < 先頭)では何もしません。
   //   clientSide では isServerSide=false で早期 return(requestRange 自体も inert で no-op)。
   //   [start, end) の end は排他のため windowLastRow + 1 を渡します。
+  //   依存に serverSideQueryKey を含めます: query 変化でフックがキャッシュ破棄した直後、窓 index が
+  //   不変でも(画面最上部で件数も不変など)再要求を発火させ、未ロード固着を防ぐためです。
   useEffect(() => {
     if (!isServerSide) {
       return;
@@ -17701,7 +18267,13 @@ export function SpreadsheetGrid<T extends object>({
       return;
     }
     requestServerSideRange(windowFirstRow, windowLastRow + 1);
-  }, [isServerSide, windowFirstRow, windowLastRow, requestServerSideRange]);
+  }, [
+    isServerSide,
+    windowFirstRow,
+    windowLastRow,
+    requestServerSideRange,
+    serverSideQueryKey,
+  ]);
   // コンテナ/wrapper/indicator 高さに使う物理ボディ高さ(<= ブラウザ要素高さ上限)。
   const physicalBodyHeight = verticalGeometry.physicalBodyHeight;
   // overlay+body wrapper の transform。scaleFactor=1 のとき undefined(= 現状と同一 DOM)。
@@ -19436,6 +20008,9 @@ export function SpreadsheetGrid<T extends object>({
       isOpen={Boolean(filterPopoverState)}
       title={openedFilterColumn.title || openedFilterColumn.key}
       filterType={openedFilterColumn.filterType ?? 'text'}
+      // 追加(stage ②): serverSide では set/select 候補をクライアントが自動収集できないため、
+      //   候補空時の空表示文言を出し分けます(filterOptions 指定列は従来どおり候補が出ます)。
+      isServerSide={isServerSide}
       draftValue={filterPopoverState?.draftValue ?? ''}
       currentValueText={openedFilterCurrentValueText}
       layout={filterPopoverLayout}

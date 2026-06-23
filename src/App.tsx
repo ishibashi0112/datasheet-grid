@@ -108,6 +108,10 @@ const createDemoRows = (count: number): DemoRow[] =>
 const SERVER_ROW_COUNT = 1000000;
 const SERVER_LATENCY_MS = 350;
 
+// 追加(stage ③ デモ): モックサーバの「データ改訂番号」です。リフレッシュボタンで増やし、getRows が
+//   返す行の備考へ刻印して「サーバから取り直した」ことを可視化します(実サーバのデータ更新の代用)。
+let serverDataRevision = 0;
+
 // サーバ側の全件データ(モックの「DB」)です。決定的生成のため遅延構築し 1 度だけ保持します。
 let serverRowsCache: DemoRow[] | null = null;
 const getServerRows = (): DemoRow[] => {
@@ -167,7 +171,14 @@ const serverSideDataSource: ServerSideDataSource<DemoRow> = {
         const to = Math.max(from, Math.min(endIndex, total));
         const slice: DemoRow[] = [];
         for (let i = from; i < to; i += 1) {
-          slice.push(rows[order[i]]);
+          const row = rows[order[i]];
+          // デモ: リフレッシュ(refreshToken 増加)で再取得が起きたことが見えるよう、改訂番号を
+          //   備考へ浅いコピーで刻印します(>0 のときのみ。元データは不変なので改訂は累積しません)。
+          slice.push(
+            serverDataRevision > 0
+              ? { ...row, note: `取得#${serverDataRevision} ${row.note}` }
+              : row,
+          );
         }
         resolve({ rows: slice, totalRowCount: total });
       }, SERVER_LATENCY_MS);
@@ -287,6 +298,8 @@ function App() {
   // 追加(①-5): デモモード。client=1M(uniform) / autoHeight=5,000(可変行高) / server=SSRM(都度取得)。
   // 追加(①-5): モード切替で rows を再生成します(server は dataSource 駆動のため空配列で解放)。
   const [mode, setMode] = useState<DemoMode>('client');
+  // 追加(stage ③ デモ): serverSide ソフトリフレッシュ用トークン。下のボタンで増やします。
+  const [serverRefreshToken, setServerRefreshToken] = useState(0);
   const changeMode = (next: DemoMode) => {
     const wasServer = mode === 'server';
     const willServer = next === 'server';
@@ -305,6 +318,13 @@ function App() {
     if (wasServer !== willServer) {
       setColumns(createInitialColumns(willServer ? 'text' : 'set'));
     }
+  };
+
+  // 追加(stage ③ デモ): モックサーバのデータ更新を模し(改訂番号を増やす)、再取得トークンを増やします。
+  //   グリッドは query 不変のままスクロール位置を保って現在の可視レンジを取り直します。
+  const refreshServerData = () => {
+    serverDataRevision += 1;
+    setServerRefreshToken((n) => n + 1);
   };
 
   // 追加(①-5): ヘッダー表示用の行数です(server はサーバ総件数を提示)。
@@ -371,6 +391,18 @@ function App() {
         </div>
 
         {mode === 'server' && (
+          <div style={{ marginTop: 8 }}>
+            <button
+              type="button"
+              onClick={refreshServerData}
+              style={modeButtonStyle(false)}
+            >
+              {`サーバデータを更新して再取得(refreshToken: ${serverRefreshToken})`}
+            </button>
+          </div>
+        )}
+
+        {mode === 'server' && (
           <p
             style={{
               marginTop: 10,
@@ -390,7 +422,9 @@ function App() {
             います(clientSide は set フィルター = 大規模候補の仮想化デモ)。単位 / 状態は
             列定義に候補(filterOptions)を持つため両モードで set として機能します。候補を
             供給しない set/select 列は serverSide では候補を自動収集できず空になります。
-            ヘッダーの行数はフィルター前のデータセット総件数です。
+            ヘッダーの行数はフィルター前のデータセット総件数です。上の「再取得」ボタンで
+            refreshToken を増やすと、クエリを変えずスクロール位置を保ったまま現在の可視レンジを
+            取り直します(再取得された行は備考の先頭に「取得#N」が付きます)。
           </p>
         )}
       </header>
@@ -401,6 +435,8 @@ function App() {
         key={mode === 'server' ? 'server' : 'client'}
         rows={mode === 'server' ? undefined : rows}
         dataSource={mode === 'server' ? serverSideDataSource : undefined}
+        // 追加(stage ③): serverSide ソフトリフレッシュ用トークン(server mode 以外は undefined=inert)。
+        serverSideRefreshToken={mode === 'server' ? serverRefreshToken : undefined}
         columns={columns}
         onRowsChange={mode === 'server' ? undefined : setRows}
         onColumnsChange={setColumns}
