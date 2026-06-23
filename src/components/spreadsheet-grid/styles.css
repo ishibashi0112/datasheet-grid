@@ -201,4 +201,100 @@
     background-color: var(--ssg-cell-bg);
     pointer-events: auto;
   }
+
+  /* ── バー(ツールバー / ステータスバー) ── */
+  /* 外枠。本体との境界は 1px divider のみ(top は下境界 / bottom は上境界)。 */
+  .ssg-bar--top {
+    border-bottom: 1px solid var(--ssg-divider);
+  }
+  .ssg-bar--bottom {
+    border-top: 1px solid var(--ssg-divider);
+  }
+
+  .ssg-bar-container {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 10px 12px;
+    background-color: var(--ssg-header-bg);
+    flex-wrap: wrap;
+  }
+
+  .ssg-bar-group {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+
+  /* 左側のタイトル + summary グループ(group に重ねる)。 */
+  .ssg-bar-leading {
+    min-width: 0;
+    flex: 1 1 auto;
+    color: var(--ssg-header-text);
+    font-size: 13px;
+  }
+
+  .ssg-bar-title {
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--ssg-header-text);
+  }
+
+  /* 件数 chip。emphasis はやや濃い背景。 */
+  .ssg-bar-chip {
+    display: inline-flex;
+    align-items: center;
+    padding: 4px 8px;
+    border-radius: 9999px;
+    background-color: var(--ssg-cell-bg);
+    border: 1px solid var(--ssg-header-hover-bg);
+    color: var(--ssg-header-text);
+    font-size: 12px;
+    white-space: nowrap;
+  }
+  .ssg-bar-chip--emphasis {
+    background-color: var(--ssg-header-hover-bg);
+    border-color: transparent;
+    font-weight: 600;
+  }
+
+  /* グローバルフィルター input + クリアボタン。 */
+  .ssg-bar-input {
+    width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
+    padding: 10px 12px;
+    border: 1px solid #cbd5e1;
+    border-radius: 8px;
+    outline: none;
+    background-color: var(--ssg-cell-bg);
+    color: var(--ssg-cell-text);
+    caret-color: var(--ssg-cell-text);
+    font-size: 14px;
+    line-height: 1.4;
+    -webkit-text-fill-color: var(--ssg-cell-text);
+  }
+
+  .ssg-bar-input-group {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    max-width: 420px;
+  }
+
+  .ssg-bar-clear-btn {
+    flex: 0 0 auto;
+    border: 1px solid #cbd5e1;
+    background-color: var(--ssg-cell-bg);
+    color: #475569;
+    border-radius: 8px;
+    padding: 10px 12px;
+    cursor: pointer;
+    font-size: 12px;
+    line-height: 1;
+    white-space: nowrap;
+  }
 }

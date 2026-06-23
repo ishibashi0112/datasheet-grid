@@ -5605,61 +5605,6 @@ export function SortManagementPanel({
 export default SortManagementPanel;
 </file>
 
-<file path="src/components/spreadsheet-grid/ActiveCellOverlay.tsx">
-import type { CSSProperties } from 'react';
-
-// 追加: active cell の矩形情報です。
-// 変更(10-D): left は「ペイン列領域内ローカル座標」になりました（leadingWidth 非含有）。
-export type ActiveCellOverlayRect = {
-  left: number;
-  top: number;
-  width: number;
-  height: number;
-};
-
-type ActiveCellOverlayProps = {
-  rect: ActiveCellOverlayRect | null;
-  headerHeight: number;
-  // 変更(10-D): rowHeaderWidth → leadingWidth に一般化しました。
-  //             固定列なしの中央ペインでは leadingWidth === rowHeaderWidth となり従来と同一です。
-  leadingWidth: number;
-  // 追加(scroll-space 仮想化 修正): 絶対論理 top から差し引く描画ウィンドウ基準オフセット(px)。
-  //   no-op では 0(従来と同一配置)。scaling 時のみ正値で、巨大 transform を避けるため
-  //   rect.top(絶対論理)をウィンドウ相対へ寄せます。基準ぶんは wrapper の translateY に
-  //   同額含まれるため、画面上の表示位置は不変です。
-  baseOffset?: number;
-};
-
-// 追加: active cell を独立レイヤーで描画するコンポーネントです。
-// 変更(10-D): ペイン別座標系に対応。active cell が属するペインの relative コンテナ内へ配置されます。
-export function ActiveCellOverlay({
-  rect,
-  headerHeight,
-  leadingWidth,
-  baseOffset = 0,
-}: ActiveCellOverlayProps) {
-  if (!rect) {
-    return null;
-  }
-
-  const overlayStyle: CSSProperties = {
-    position: 'absolute',
-    left: leadingWidth + rect.left,
-    top: headerHeight + rect.top - baseOffset,
-    width: rect.width,
-    height: rect.height,
-    border: '2px solid #3461c9',
-    boxSizing: 'border-box',
-    pointerEvents: 'none',
-    zIndex: 4,
-  };
-
-  return <div style={overlayStyle} />;
-}
-
-export default ActiveCellOverlay;
-</file>
-
 <file path="src/components/spreadsheet-grid/hooks/useGridBarContext.ts">
 import { useMemo } from 'react';
 import { selectGlobalFilter } from '../model/gridSelectors';
@@ -6471,323 +6416,57 @@ describe('useServerSideRowModel', () => {
 });
 </file>
 
-<file path="src/components/spreadsheet-grid/styles.css">
-/* SpreadsheetGrid のスタイル(段階移行中)。
-   方針:
-   - デザイントークンは CSS 変数(--ssg-*)で定義。利用側はこれを上書きするだけでテーマ変更できます。
-   - 基底スタイルは @layer ssg-base に入れます。@layer のスタイルは「未レイヤーのスタイル」
-     (利用側の通常 CSS / Tailwind ユーティリティ等)に必ず負けるため、利用側の className 上書きが
-     特異度を気にせず効きます。
-   - 動的に決まる値(座標 / 解決済み列幅 / オーバーレイ位置など)は引き続きインライン style です。
-   - トークンは .ssg-root にスコープし、グローバル(:root)を汚しません。 */
+<file path="src/components/spreadsheet-grid/ActiveCellOverlay.tsx">
+import type { CSSProperties } from 'react';
 
-@layer ssg-base {
-  .ssg-root {
-    /* 色トークン */
-    --ssg-accent: #3461c9;
-    --ssg-accent-strong: #1d4ed8;
-    --ssg-line: #f1f5f9;
-    --ssg-line-strong: #e5e7eb;
-    --ssg-divider: #d7dce3;
-    --ssg-header-bg: #f8fafc;
-    --ssg-row-hover-bg: #f1f5f9;
-    --ssg-glyph: #94a3b8;
-    --ssg-glyph-hover: #475569;
-    --ssg-icon-hover-bg: #d6dee8;
-    --ssg-icon-active-bg: #e3e9f5;
-    --ssg-icon-active-bg-hover: #d4ddf0;
-    --ssg-icon-active-border: #c7d3ea;
-    /* 本体セル */
-    --ssg-cell-bg: #ffffff;
-    --ssg-cell-text: #0f172a;
-    --ssg-readonly-bg: #f8fafc;
-    --ssg-readonly-text: #64748b;
-    --ssg-readonly-hover-bg: #eef2f7;
-    /* ヘッダー */
-    --ssg-header-text: #334155;
-    --ssg-header-hover-bg: #e2e8f0;
-    --ssg-select-bg: #e3e9f5;
-    --ssg-select-bg-hover: #ccd7ee;
-    /* 寸法トークン */
-    --ssg-radius: 8px;
-    --ssg-icon-btn-size: 22px;
-  }
-
-  /* ヘッダーのアイコンボタン(フィルター / メニュー) */
-  .ssg-icon-btn {
-    width: var(--ssg-icon-btn-size);
-    height: var(--ssg-icon-btn-size);
-    padding: 0;
-    border: 1px solid transparent;
-    border-radius: 6px;
-    background-color: transparent;
-    color: var(--ssg-glyph);
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    flex: 0 0 auto;
-    cursor: pointer;
-    font-size: 11px;
-    line-height: 1;
-    transition: background-color 100ms ease, color 100ms ease;
-  }
-
-  .ssg-icon-btn:hover {
-    background-color: var(--ssg-icon-hover-bg);
-    color: var(--ssg-glyph-hover);
-  }
-
-  .ssg-icon-btn--active {
-    border-color: var(--ssg-icon-active-border);
-    background-color: var(--ssg-icon-active-bg);
-    color: var(--ssg-accent);
-  }
-
-  .ssg-icon-btn--active:hover {
-    background-color: var(--ssg-icon-active-bg-hover);
-    color: var(--ssg-accent);
-  }
-
-  /* 本体セル(データ行のセル)。座標 / 幅 / 高さ / zIndex はインライン(動的)。 */
-  .ssg-body-cell {
-    box-sizing: border-box;
-    display: flex;
-    align-items: center;
-    padding: 0 10px;
-    border-right: 1px solid var(--ssg-line);
-    border-bottom: 1px solid var(--ssg-line-strong);
-    background-color: var(--ssg-cell-bg);
-    color: var(--ssg-cell-text);
-    white-space: nowrap;
-    overflow: hidden;
-    cursor: default;
-    user-select: none;
-    outline: none;
-  }
-
-  /* auto-height 駆動セル: 内容駆動高さ(下限はインライン min-height)で折り返し表示。 */
-  .ssg-body-cell--autoheight {
-    align-items: flex-start;
-    white-space: normal;
-    word-break: break-word;
-    overflow: visible;
-  }
-
-  /* 行ホバー(hoveredRowIndex 由来。3 ペイン横断のため :hover では実装不可)。 */
-  .ssg-body-cell--row-hovered {
-    background-color: var(--ssg-row-hover-bg);
-  }
-
-  /* 読み取り専用セル(選択時は通常背景へ戻し、選択塗りを素直に見せる)。 */
-  .ssg-body-cell--readonly {
-    background-color: var(--ssg-readonly-bg);
-    color: var(--ssg-readonly-text);
-  }
-
-  .ssg-body-cell--readonly.ssg-body-cell--row-hovered {
-    background-color: var(--ssg-readonly-hover-bg);
-  }
-
-  /* ── ヘッダー ── */
-  /* ヘッダー行コンテナ(sticky)。height はインライン。 */
-  .ssg-header-row {
-    position: sticky;
-    top: 0;
-    z-index: 6;
-    background-color: var(--ssg-header-bg);
-  }
-
-  /* ヘッダーセル(列ヘッダー / 行ヘッダー / コーナー共通の土台)。座標 / 幅 / 高さはインライン。 */
-  .ssg-header-cell {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    box-sizing: border-box;
-    padding: 0 10px;
-    border-right: 1px solid var(--ssg-line);
-    border-bottom: 1px solid var(--ssg-divider);
-    background-color: var(--ssg-header-bg);
-    font-size: 13px;
-    font-weight: 600;
-    color: var(--ssg-header-text);
-  }
-
-  /* ヘッダーセルのホバー / 選択(列・行・全体で同色)。 */
-  .ssg-header-cell--hovered {
-    background-color: var(--ssg-header-hover-bg);
-  }
-  .ssg-header-cell--selected {
-    background-color: var(--ssg-select-bg);
-  }
-  .ssg-header-cell--selected.ssg-header-cell--hovered {
-    background-color: var(--ssg-select-bg-hover);
-  }
-
-  /* 行ヘッダー「#」セル(番号セル)。header-cell に重ねて中央寄せ + 細字。 */
-  .ssg-row-header-cell {
-    justify-content: center;
-    font-weight: 500;
-  }
-
-  /* 左上コーナーセル。中央寄せ + 余白詰め + 右境界を濃く。 */
-  .ssg-corner-cell {
-    justify-content: center;
-    padding: 0;
-    border-right: 1px solid var(--ssg-line-strong);
-    line-height: 1;
-  }
-}
-</file>
-
-<file path="src/components/spreadsheet-grid/CellEditorLayer.tsx">
-// 追加: editor 確定後の移動方向です。
-export type EditorCommitDirection = 'down' | 'right' | 'left';
-
-import {
-  useEffect,
-  useRef,
-  useState,
-  type CSSProperties,
-  type KeyboardEvent,
-} from 'react';
-
+// 追加: active cell の矩形情報です。
 // 変更(10-D): left は「ペイン列領域内ローカル座標」になりました（leadingWidth 非含有）。
-type CellEditorRect = {
+export type ActiveCellOverlayRect = {
   left: number;
   top: number;
   width: number;
   height: number;
 };
 
-type CellEditorLayerProps = {
-  rect: CellEditorRect | null;
+type ActiveCellOverlayProps = {
+  rect: ActiveCellOverlayRect | null;
   headerHeight: number;
   // 変更(10-D): rowHeaderWidth → leadingWidth に一般化しました。
-  //             editor は active cell が属するペインの relative コンテナ内へ配置されます。
+  //             固定列なしの中央ペインでは leadingWidth === rowHeaderWidth となり従来と同一です。
   leadingWidth: number;
   // 追加(scroll-space 仮想化 修正): 絶対論理 top から差し引く描画ウィンドウ基準オフセット(px)。
-  //   no-op では 0(従来と同一配置)。scaling 時のみ正値です(詳細は ActiveCellOverlay と同様)。
+  //   no-op では 0(従来と同一配置)。scaling 時のみ正値で、巨大 transform を避けるため
+  //   rect.top(絶対論理)をウィンドウ相対へ寄せます。基準ぶんは wrapper の translateY に
+  //   同額含まれるため、画面上の表示位置は不変です。
   baseOffset?: number;
-  // 変更(11-B6): 親が持つのは「編集開始時の初期値」だけになりました。
-  //              毎キーストロークのドラフト値は本コンポーネントのローカル state で管理し、
-  //              親(SpreadsheetGrid)へは commit 時に最終値だけを渡します。
-  //              これにより編集中のタイピングで親（＝3ペイン全体）が再レンダーされなくなります。
-  initialValue: string;
-  // 変更(11-B6): (direction?) → (value, direction?) に変更。確定値を引数で受け取ります。
-  onCommit: (value: string, direction?: EditorCommitDirection) => void;
-  onCancel: () => void;
 };
 
-// 追加: 編集中セルの上に input を重ねる editor layer です。
-// 変更(10-D): ペイン別座標系に対応。
-// 変更(11-B6): ドラフト値をローカル state 化しました（コントロールドのまま、状態の置き場だけ移動）。
-export function CellEditorLayer({
+// 追加: active cell を独立レイヤーで描画するコンポーネントです。
+// 変更(10-D): ペイン別座標系に対応。active cell が属するペインの relative コンテナ内へ配置されます。
+export function ActiveCellOverlay({
   rect,
   headerHeight,
   leadingWidth,
   baseOffset = 0,
-  initialValue,
-  onCommit,
-  onCancel,
-}: CellEditorLayerProps) {
-  const inputRef = useRef<HTMLInputElement | null>(null);
-
-  // 追加(11-B6): 編集中のドラフト値です。タイピングはこの state だけを更新します。
-  const [draftValue, setDraftValue] = useState('');
-
-  // 追加(11-B6): 「新しい編集セッションの開始」を rect の null → 非 null 遷移で検知し、
-  //              ドラフトを initialValue へリセットします。
-  // 実装メモ: これは React 公式ドキュメントの「レンダー中に過去の props と比較して
-  //   state を調整する」パターンです（effect ではなく render 中に setState することで、
-  //   古いドラフトが 1 フレームでも描画されるのを防ぎます。StrictMode 安全）。
-  //   commit / cancel で必ず rect が null に戻るため、「null → 非 null」は常に
-  //   新セッションを意味します。同一セルを連続編集（Esc キャンセル → 再 F2 等）しても
-  //   前回のドラフトが残りません。
-  const isOpen = rect !== null;
-  const [prevOpen, setPrevOpen] = useState(false);
-  if (isOpen !== prevOpen) {
-    setPrevOpen(isOpen);
-    if (isOpen) {
-      setDraftValue(initialValue);
-    }
-  }
-
-  // 追加: editor 表示時に自動フォーカスし、末尾へキャレット移動します。
-  useEffect(() => {
-    if (!rect || !inputRef.current) {
-      return;
-    }
-
-    inputRef.current.focus();
-    const end = inputRef.current.value.length;
-    inputRef.current.setSelectionRange(end, end);
-  }, [rect]);
-
+}: ActiveCellOverlayProps) {
   if (!rect) {
     return null;
   }
 
-  const wrapperStyle: CSSProperties = {
+  // 変更(UI CSS移行): 静的スタイル(枠 / boxSizing / pointerEvents / zIndex)は styles.css
+  //   (.ssg-active-cell-overlay)へ。座標 / 幅 / 高さのみインライン(動的)。枠色は accent 追従。
+  const overlayStyle: CSSProperties = {
     position: 'absolute',
     left: leadingWidth + rect.left,
     top: headerHeight + rect.top - baseOffset,
     width: rect.width,
     height: rect.height,
-    zIndex: 5,
-    pointerEvents: 'none',
   };
 
-  const inputStyle: CSSProperties = {
-    width: '100%',
-    height: '100%',
-    boxSizing: 'border-box',
-    border: '2px solid #3461c9',
-    outline: 'none',
-    padding: '0 10px',
-    margin: 0,
-    fontSize: 16,
-    color: '#0f172a',
-    backgroundColor: '#ffffff',
-    pointerEvents: 'auto',
-  };
-
-  // 追加: Enter で下、Tab で左右へ移動する方向付き commit を呼びます。
-  // 変更(11-B6): commit にローカルのドラフト値を引数で渡します。
-  const handleKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
-    if (event.key === 'Enter') {
-      event.preventDefault();
-      onCommit(draftValue, 'down');
-      return;
-    }
-
-    if (event.key === 'Escape') {
-      event.preventDefault();
-      onCancel();
-      return;
-    }
-
-    if (event.key === 'Tab') {
-      event.preventDefault();
-      onCommit(draftValue, event.shiftKey ? 'left' : 'right');
-    }
-  };
-
-  return (
-    <div style={wrapperStyle}>
-      <input
-        ref={inputRef}
-        type="text"
-        value={draftValue}
-        onChange={(event) => setDraftValue(event.target.value)}
-        onKeyDown={handleKeyDown}
-        onBlur={() => onCommit(draftValue)}
-        style={inputStyle}
-      />
-    </div>
-  );
+  return <div className="ssg-active-cell-overlay" style={overlayStyle} />;
 }
 
-export default CellEditorLayer;
+export default ActiveCellOverlay;
 </file>
 
 <file path="src/components/spreadsheet-grid/hooks/useColumnHeaderDragController.ts">
@@ -9086,61 +8765,211 @@ export const gridUiReducer = (
 };
 </file>
 
-<file path="src/components/spreadsheet-grid/SelectionOverlay.tsx">
-import type { CSSProperties } from 'react';
+<file path="src/components/spreadsheet-grid/styles.css">
+/* SpreadsheetGrid のスタイル(段階移行中)。
+   方針:
+   - デザイントークンは CSS 変数(--ssg-*)で定義。利用側はこれを上書きするだけでテーマ変更できます。
+   - 基底スタイルは @layer ssg-base に入れます。@layer のスタイルは「未レイヤーのスタイル」
+     (利用側の通常 CSS / Tailwind ユーティリティ等)に必ず負けるため、利用側の className 上書きが
+     特異度を気にせず効きます。
+   - 動的に決まる値(座標 / 解決済み列幅 / オーバーレイ位置など)は引き続きインライン style です。
+   - トークンは .ssg-root にスコープし、グローバル(:root)を汚しません。 */
 
-// 追加: 選択範囲の矩形情報です。
-// 変更(10-D): left は「ペイン列領域内ローカル座標」になりました（leadingWidth 非含有）。
-//             描画時に leadingWidth を加算して最終 left を求めます。
-export type SelectionOverlayRect = {
-  left: number;
-  top: number;
-  width: number;
-  height: number;
-};
-
-type SelectionOverlayProps = {
-  rect: SelectionOverlayRect | null;
-  headerHeight: number;
-  // 変更(10-D): rowHeaderWidth → leadingWidth に一般化しました。
-  //             行ヘッダーを持つペインでは rowHeaderWidth、それ以外のペインでは 0 が渡されます。
-  //             固定列なしの中央ペインでは leadingWidth === rowHeaderWidth となり、
-  //             従来と完全に同じ位置に描画されます。
-  leadingWidth: number;
-  // 追加(scroll-space 仮想化 修正): 絶対論理 top から差し引く描画ウィンドウ基準オフセット(px)。
-  //   no-op では 0(従来と同一配置)。scaling 時のみ正値です(詳細は ActiveCellOverlay と同様)。
-  baseOffset?: number;
-};
-
-// 追加: 選択範囲をセル本体とは独立したレイヤーで描画するコンポーネントです。
-// 変更(10-D): ペイン別座標系に対応。各ペインの relative コンテナ内へ配置されます。
-export function SelectionOverlay({
-  rect,
-  headerHeight,
-  leadingWidth,
-  baseOffset = 0,
-}: SelectionOverlayProps) {
-  if (!rect) {
-    return null;
+@layer ssg-base {
+  .ssg-root {
+    /* 色トークン */
+    --ssg-accent: #3461c9;
+    --ssg-accent-strong: #1d4ed8;
+    --ssg-line: #f1f5f9;
+    --ssg-line-strong: #e5e7eb;
+    --ssg-divider: #d7dce3;
+    --ssg-header-bg: #f8fafc;
+    --ssg-row-hover-bg: #f1f5f9;
+    --ssg-glyph: #94a3b8;
+    --ssg-glyph-hover: #475569;
+    --ssg-icon-hover-bg: #d6dee8;
+    --ssg-icon-active-bg: #e3e9f5;
+    --ssg-icon-active-bg-hover: #d4ddf0;
+    --ssg-icon-active-border: #c7d3ea;
+    /* 本体セル */
+    --ssg-cell-bg: #ffffff;
+    --ssg-cell-text: #0f172a;
+    --ssg-readonly-bg: #f8fafc;
+    --ssg-readonly-text: #64748b;
+    --ssg-readonly-hover-bg: #eef2f7;
+    /* ヘッダー */
+    --ssg-header-text: #334155;
+    --ssg-header-hover-bg: #e2e8f0;
+    --ssg-select-bg: #e3e9f5;
+    --ssg-select-bg-hover: #ccd7ee;
+    /* オーバーレイ */
+    --ssg-selection-fill: rgba(52, 97, 201, 0.08);
+    /* 寸法トークン */
+    --ssg-radius: 8px;
+    --ssg-icon-btn-size: 22px;
   }
 
-  const overlayStyle: CSSProperties = {
-    position: 'absolute',
-    left: leadingWidth + rect.left,
-    top: headerHeight + rect.top - baseOffset,
-    width: rect.width,
-    height: rect.height,
-    backgroundColor: 'rgba(52, 97, 201, 0.08)',
-    border: '2px solid #3461c9',
-    boxSizing: 'border-box',
-    pointerEvents: 'none',
-    zIndex: 2,
-  };
+  /* ヘッダーのアイコンボタン(フィルター / メニュー) */
+  .ssg-icon-btn {
+    width: var(--ssg-icon-btn-size);
+    height: var(--ssg-icon-btn-size);
+    padding: 0;
+    border: 1px solid transparent;
+    border-radius: 6px;
+    background-color: transparent;
+    color: var(--ssg-glyph);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 auto;
+    cursor: pointer;
+    font-size: 11px;
+    line-height: 1;
+    transition: background-color 100ms ease, color 100ms ease;
+  }
 
-  return <div style={overlayStyle} />;
+  .ssg-icon-btn:hover {
+    background-color: var(--ssg-icon-hover-bg);
+    color: var(--ssg-glyph-hover);
+  }
+
+  .ssg-icon-btn--active {
+    border-color: var(--ssg-icon-active-border);
+    background-color: var(--ssg-icon-active-bg);
+    color: var(--ssg-accent);
+  }
+
+  .ssg-icon-btn--active:hover {
+    background-color: var(--ssg-icon-active-bg-hover);
+    color: var(--ssg-accent);
+  }
+
+  /* 本体セル(データ行のセル)。座標 / 幅 / 高さ / zIndex はインライン(動的)。 */
+  .ssg-body-cell {
+    box-sizing: border-box;
+    display: flex;
+    align-items: center;
+    padding: 0 10px;
+    border-right: 1px solid var(--ssg-line);
+    border-bottom: 1px solid var(--ssg-line-strong);
+    background-color: var(--ssg-cell-bg);
+    color: var(--ssg-cell-text);
+    white-space: nowrap;
+    overflow: hidden;
+    cursor: default;
+    user-select: none;
+    outline: none;
+  }
+
+  /* auto-height 駆動セル: 内容駆動高さ(下限はインライン min-height)で折り返し表示。 */
+  .ssg-body-cell--autoheight {
+    align-items: flex-start;
+    white-space: normal;
+    word-break: break-word;
+    overflow: visible;
+  }
+
+  /* 行ホバー(hoveredRowIndex 由来。3 ペイン横断のため :hover では実装不可)。 */
+  .ssg-body-cell--row-hovered {
+    background-color: var(--ssg-row-hover-bg);
+  }
+
+  /* 読み取り専用セル(選択時は通常背景へ戻し、選択塗りを素直に見せる)。 */
+  .ssg-body-cell--readonly {
+    background-color: var(--ssg-readonly-bg);
+    color: var(--ssg-readonly-text);
+  }
+
+  .ssg-body-cell--readonly.ssg-body-cell--row-hovered {
+    background-color: var(--ssg-readonly-hover-bg);
+  }
+
+  /* ── ヘッダー ── */
+  /* ヘッダー行コンテナ(sticky)。height はインライン。 */
+  .ssg-header-row {
+    position: sticky;
+    top: 0;
+    z-index: 6;
+    background-color: var(--ssg-header-bg);
+  }
+
+  /* ヘッダーセル(列ヘッダー / 行ヘッダー / コーナー共通の土台)。座標 / 幅 / 高さはインライン。 */
+  .ssg-header-cell {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    box-sizing: border-box;
+    padding: 0 10px;
+    border-right: 1px solid var(--ssg-line);
+    border-bottom: 1px solid var(--ssg-divider);
+    background-color: var(--ssg-header-bg);
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--ssg-header-text);
+  }
+
+  /* ヘッダーセルのホバー / 選択(列・行・全体で同色)。 */
+  .ssg-header-cell--hovered {
+    background-color: var(--ssg-header-hover-bg);
+  }
+  .ssg-header-cell--selected {
+    background-color: var(--ssg-select-bg);
+  }
+  .ssg-header-cell--selected.ssg-header-cell--hovered {
+    background-color: var(--ssg-select-bg-hover);
+  }
+
+  /* 行ヘッダー「#」セル(番号セル)。header-cell に重ねて中央寄せ + 細字。 */
+  .ssg-row-header-cell {
+    justify-content: center;
+    font-weight: 500;
+  }
+
+  /* 左上コーナーセル。中央寄せ + 余白詰め + 右境界を濃く。 */
+  .ssg-corner-cell {
+    justify-content: center;
+    padding: 0;
+    border-right: 1px solid var(--ssg-line-strong);
+    line-height: 1;
+  }
+
+  /* ── オーバーレイ / エディタ ── */
+  /* アクティブセル枠。座標 / 幅 / 高さはインライン(動的)。枠色は accent に追従。 */
+  .ssg-active-cell-overlay {
+    box-sizing: border-box;
+    border: 2px solid var(--ssg-accent);
+    pointer-events: none;
+    z-index: 4;
+  }
+
+  /* 選択範囲(枠 + 塗り)。 */
+  .ssg-selection-overlay {
+    box-sizing: border-box;
+    border: 2px solid var(--ssg-accent);
+    background-color: var(--ssg-selection-fill);
+    pointer-events: none;
+    z-index: 2;
+  }
+
+  /* セルエディタ。wrapper は座標のみインライン。 */
+  .ssg-cell-editor {
+    pointer-events: none;
+    z-index: 5;
+  }
+  .ssg-cell-editor-input {
+    width: 100%;
+    height: 100%;
+    box-sizing: border-box;
+    border: 2px solid var(--ssg-accent);
+    outline: none;
+    padding: 0 10px;
+    margin: 0;
+    font-size: 16px;
+    color: var(--ssg-cell-text);
+    background-color: var(--ssg-cell-bg);
+    pointer-events: auto;
+  }
 }
-
-export default SelectionOverlay;
 </file>
 
 <file path="src/components/spreadsheet-grid/view/ColumnChooserPanel.tsx">
@@ -10011,6 +9840,143 @@ export function ColumnChooserPanel({
 }
 
 export default ColumnChooserPanel;
+</file>
+
+<file path="src/components/spreadsheet-grid/CellEditorLayer.tsx">
+// 追加: editor 確定後の移動方向です。
+export type EditorCommitDirection = 'down' | 'right' | 'left';
+
+import {
+  useEffect,
+  useRef,
+  useState,
+  type CSSProperties,
+  type KeyboardEvent,
+} from 'react';
+
+// 変更(10-D): left は「ペイン列領域内ローカル座標」になりました（leadingWidth 非含有）。
+type CellEditorRect = {
+  left: number;
+  top: number;
+  width: number;
+  height: number;
+};
+
+type CellEditorLayerProps = {
+  rect: CellEditorRect | null;
+  headerHeight: number;
+  // 変更(10-D): rowHeaderWidth → leadingWidth に一般化しました。
+  //             editor は active cell が属するペインの relative コンテナ内へ配置されます。
+  leadingWidth: number;
+  // 追加(scroll-space 仮想化 修正): 絶対論理 top から差し引く描画ウィンドウ基準オフセット(px)。
+  //   no-op では 0(従来と同一配置)。scaling 時のみ正値です(詳細は ActiveCellOverlay と同様)。
+  baseOffset?: number;
+  // 変更(11-B6): 親が持つのは「編集開始時の初期値」だけになりました。
+  //              毎キーストロークのドラフト値は本コンポーネントのローカル state で管理し、
+  //              親(SpreadsheetGrid)へは commit 時に最終値だけを渡します。
+  //              これにより編集中のタイピングで親（＝3ペイン全体）が再レンダーされなくなります。
+  initialValue: string;
+  // 変更(11-B6): (direction?) → (value, direction?) に変更。確定値を引数で受け取ります。
+  onCommit: (value: string, direction?: EditorCommitDirection) => void;
+  onCancel: () => void;
+};
+
+// 追加: 編集中セルの上に input を重ねる editor layer です。
+// 変更(10-D): ペイン別座標系に対応。
+// 変更(11-B6): ドラフト値をローカル state 化しました（コントロールドのまま、状態の置き場だけ移動）。
+export function CellEditorLayer({
+  rect,
+  headerHeight,
+  leadingWidth,
+  baseOffset = 0,
+  initialValue,
+  onCommit,
+  onCancel,
+}: CellEditorLayerProps) {
+  const inputRef = useRef<HTMLInputElement | null>(null);
+
+  // 追加(11-B6): 編集中のドラフト値です。タイピングはこの state だけを更新します。
+  const [draftValue, setDraftValue] = useState('');
+
+  // 追加(11-B6): 「新しい編集セッションの開始」を rect の null → 非 null 遷移で検知し、
+  //              ドラフトを initialValue へリセットします。
+  // 実装メモ: これは React 公式ドキュメントの「レンダー中に過去の props と比較して
+  //   state を調整する」パターンです（effect ではなく render 中に setState することで、
+  //   古いドラフトが 1 フレームでも描画されるのを防ぎます。StrictMode 安全）。
+  //   commit / cancel で必ず rect が null に戻るため、「null → 非 null」は常に
+  //   新セッションを意味します。同一セルを連続編集（Esc キャンセル → 再 F2 等）しても
+  //   前回のドラフトが残りません。
+  const isOpen = rect !== null;
+  const [prevOpen, setPrevOpen] = useState(false);
+  if (isOpen !== prevOpen) {
+    setPrevOpen(isOpen);
+    if (isOpen) {
+      setDraftValue(initialValue);
+    }
+  }
+
+  // 追加: editor 表示時に自動フォーカスし、末尾へキャレット移動します。
+  useEffect(() => {
+    if (!rect || !inputRef.current) {
+      return;
+    }
+
+    inputRef.current.focus();
+    const end = inputRef.current.value.length;
+    inputRef.current.setSelectionRange(end, end);
+  }, [rect]);
+
+  if (!rect) {
+    return null;
+  }
+
+  // 変更(UI CSS移行): wrapper は座標のみインライン。zIndex / pointerEvents と input の静的
+  //   スタイルは styles.css(.ssg-cell-editor / .ssg-cell-editor-input)へ。枠色は accent 追従。
+  const wrapperStyle: CSSProperties = {
+    position: 'absolute',
+    left: leadingWidth + rect.left,
+    top: headerHeight + rect.top - baseOffset,
+    width: rect.width,
+    height: rect.height,
+  };
+
+  // 追加: Enter で下、Tab で左右へ移動する方向付き commit を呼びます。
+  // 変更(11-B6): commit にローカルのドラフト値を引数で渡します。
+  const handleKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      onCommit(draftValue, 'down');
+      return;
+    }
+
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      onCancel();
+      return;
+    }
+
+    if (event.key === 'Tab') {
+      event.preventDefault();
+      onCommit(draftValue, event.shiftKey ? 'left' : 'right');
+    }
+  };
+
+  return (
+    <div className="ssg-cell-editor" style={wrapperStyle}>
+      <input
+        ref={inputRef}
+        type="text"
+        value={draftValue}
+        onChange={(event) => setDraftValue(event.target.value)}
+        onKeyDown={handleKeyDown}
+        onBlur={() => onCommit(draftValue)}
+        className="ssg-cell-editor-input"
+      />
+    </div>
+  );
+}
+
+export default CellEditorLayer;
 </file>
 
 <file path="src/components/spreadsheet-grid/hooks/useGridClipboardController.ts">
@@ -11769,6 +11735,60 @@ export const computeAutoHeightVerticalGeometry = (
     rowIndexSet,
   };
 };
+</file>
+
+<file path="src/components/spreadsheet-grid/SelectionOverlay.tsx">
+import type { CSSProperties } from 'react';
+
+// 追加: 選択範囲の矩形情報です。
+// 変更(10-D): left は「ペイン列領域内ローカル座標」になりました（leadingWidth 非含有）。
+//             描画時に leadingWidth を加算して最終 left を求めます。
+export type SelectionOverlayRect = {
+  left: number;
+  top: number;
+  width: number;
+  height: number;
+};
+
+type SelectionOverlayProps = {
+  rect: SelectionOverlayRect | null;
+  headerHeight: number;
+  // 変更(10-D): rowHeaderWidth → leadingWidth に一般化しました。
+  //             行ヘッダーを持つペインでは rowHeaderWidth、それ以外のペインでは 0 が渡されます。
+  //             固定列なしの中央ペインでは leadingWidth === rowHeaderWidth となり、
+  //             従来と完全に同じ位置に描画されます。
+  leadingWidth: number;
+  // 追加(scroll-space 仮想化 修正): 絶対論理 top から差し引く描画ウィンドウ基準オフセット(px)。
+  //   no-op では 0(従来と同一配置)。scaling 時のみ正値です(詳細は ActiveCellOverlay と同様)。
+  baseOffset?: number;
+};
+
+// 追加: 選択範囲をセル本体とは独立したレイヤーで描画するコンポーネントです。
+// 変更(10-D): ペイン別座標系に対応。各ペインの relative コンテナ内へ配置されます。
+export function SelectionOverlay({
+  rect,
+  headerHeight,
+  leadingWidth,
+  baseOffset = 0,
+}: SelectionOverlayProps) {
+  if (!rect) {
+    return null;
+  }
+
+  // 変更(UI CSS移行): 静的スタイル(枠 / 塗り / boxSizing / pointerEvents / zIndex)は styles.css
+  //   (.ssg-selection-overlay)へ。座標 / 幅 / 高さのみインライン(動的)。
+  const overlayStyle: CSSProperties = {
+    position: 'absolute',
+    left: leadingWidth + rect.left,
+    top: headerHeight + rect.top - baseOffset,
+    width: rect.width,
+    height: rect.height,
+  };
+
+  return <div className="ssg-selection-overlay" style={overlayStyle} />;
+}
+
+export default SelectionOverlay;
 </file>
 
 <file path="src/components/spreadsheet-grid/view/DefaultGridBottomBar.tsx">
