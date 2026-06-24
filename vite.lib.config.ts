@@ -36,7 +36,7 @@ export default defineConfig({
       },
     },
     target: 'es2023',
-    sourcemap: true,
+    sourcemap: false,
     cssCodeSplit: false,
     emptyOutDir: true,
   },
