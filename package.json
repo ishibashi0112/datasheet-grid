@@ -1,21 +1,71 @@
 {
-  "name": "datesheet-grid",
-  "private": true,
-  "version": "0.0.0",
+  "name": "@ishibashi0112/spreadsheet-grid",
+  "version": "0.1.0",
+  "description": "React 19 製のカスタム仮想化データグリッド。100 万行対応の仮想化・3 ペイン固定列・ソート/フィルター・クライアント/サーバーサイド行モデル対応。",
+  "keywords": [
+    "react",
+    "react19",
+    "grid",
+    "datagrid",
+    "table",
+    "spreadsheet",
+    "virtualized",
+    "virtual-scroll",
+    "typescript",
+    "ssrm"
+  ],
+  "license": "MIT",
+  "author": "Yuki Sakakibara",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ishibashi0112/datasheet-grid.git"
+  },
+  "homepage": "https://github.com/ishibashi0112/datasheet-grid#readme",
+  "bugs": {
+    "url": "https://github.com/ishibashi0112/datasheet-grid/issues"
+  },
   "type": "module",
+  "sideEffects": [
+    "**/*.css"
+  ],
+  "files": [
+    "dist"
+  ],
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    },
+    "./style.css": "./dist/style.css"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
+    "build:lib": "vite build --config vite.lib.config.ts && tsc -p tsconfig.lib.json",
+    "build:types": "tsc -p tsconfig.lib.json",
+    "prepublishOnly": "npm run build:lib",
     "lint": "eslint .",
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck:test": "tsc --noEmit -p tsconfig.vitest.json"
   },
+  "peerDependencies": {
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  },
   "dependencies": {
-    "@tanstack/react-virtual": "^3.14.2",
-    "react": "^19.2.6",
-    "react-dom": "^19.2.6"
+    "@tanstack/react-virtual": "^3.14.2"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
@@ -30,6 +80,8 @@
     "eslint-plugin-react-refresh": "^0.5.2",
     "globals": "^17.6.0",
     "jsdom": "^29.1.1",
+    "react": "^19.2.6",
+    "react-dom": "^19.2.6",
     "typescript": "~6.0.2",
     "typescript-eslint": "^8.59.2",
     "vite": "^8.0.12",

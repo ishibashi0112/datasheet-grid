@@ -1,0 +1,15 @@
+{
+  "extends": "./tsconfig.app.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "declaration": true,
+    "emitDeclarationOnly": true,
+    "outDir": "dist",
+    "rootDir": "src/components/spreadsheet-grid"
+  },
+  "include": ["src/components/spreadsheet-grid"],
+  "exclude": [
+    "src/components/spreadsheet-grid/**/*.test.ts",
+    "src/components/spreadsheet-grid/**/*.test.tsx"
+  ]
+}
