@@ -1845,6 +1845,18 @@ export function SpreadsheetGrid<T extends object>({
     openSortManager();
   }, [closeColumnMenu, openSortManager]);
 
+  // 追加(③): 列メニューの「フィルター…」項目からフィルター popover を開きます
+  //          (メニューを閉じてから開きます。sort manager / chooser と同型)。
+  //          openColumnFilterPopover は anchor を列ヘッダーセル(data-ssg-col-key)から解決するため、
+  //          起点ボタンが無くても column だけで開けます。
+  const handleColumnMenuOpenFilter = useCallback(
+    (column: GridColumn<T>) => {
+      closeColumnMenu();
+      openColumnFilterPopover(column);
+    },
+    [closeColumnMenu, openColumnFilterPopover],
+  );
+
   // 追加(13-B2-1): パネルでの 1 列の表示/非表示トグルです。
   // 設計メモ(handleColumnMenuPinnedChange と同型):
   //   - columns は controlled props のため onColumnsChange 経由で反映します。
@@ -2782,6 +2794,8 @@ export function SpreadsheetGrid<T extends object>({
       isOpen={isColumnMenuOpen}
       title={openedMenuColumn.title || openedMenuColumn.key}
       columnKey={openedMenuColumn.key}
+      canFilter={columnFilterEnabled && Boolean(openedMenuColumn.filterType)}
+      onOpenFilter={() => handleColumnMenuOpenFilter(openedMenuColumn)}
       canSort={sortingEnabled}
       sortDirection={
         // 変更(MS-1): 配列からこの列のエントリ方向を引きます(未ソートなら null)。
@@ -2982,7 +2996,6 @@ export function SpreadsheetGrid<T extends object>({
                   onColumnHeaderPointerDown={handleColumnHeaderPointerDown}
                   onColumnHeaderPointerEnter={handleColumnHeaderPointerEnter}
                   onColumnHeaderPointerLeave={handleColumnHeaderPointerLeaveStable}
-                  onColumnFilterButtonPointerDown={openColumnFilterPopover}
                   onColumnResizePointerDown={handleColumnResizePointerDown}
                   enableColumnMenu={enableColumnMenu}
                   openedMenuColumnKey={openedMenuColumnKey}
@@ -3121,7 +3134,6 @@ export function SpreadsheetGrid<T extends object>({
                 onColumnHeaderPointerDown={handleColumnHeaderPointerDown}
                 onColumnHeaderPointerEnter={handleColumnHeaderPointerEnter}
                 onColumnHeaderPointerLeave={handleColumnHeaderPointerLeaveStable}
-                onColumnFilterButtonPointerDown={openColumnFilterPopover}
                 onColumnResizePointerDown={handleColumnResizePointerDown}
                 enableColumnMenu={enableColumnMenu}
                 openedMenuColumnKey={openedMenuColumnKey}
@@ -3253,7 +3265,6 @@ export function SpreadsheetGrid<T extends object>({
                   onColumnHeaderPointerDown={handleColumnHeaderPointerDown}
                   onColumnHeaderPointerEnter={handleColumnHeaderPointerEnter}
                   onColumnHeaderPointerLeave={handleColumnHeaderPointerLeaveStable}
-                  onColumnFilterButtonPointerDown={openColumnFilterPopover}
                   onColumnResizePointerDown={handleColumnResizePointerDown}
                   enableColumnMenu={enableColumnMenu}
                   openedMenuColumnKey={openedMenuColumnKey}

@@ -4,7 +4,6 @@ import {
     useCallback,
     useRef,
     useState,
-  type PointerEvent,
   type RefObject,
 } from 'react';
 import type { ColumnFilterValue, GridColumn } from '../model/gridTypes';
@@ -53,7 +52,7 @@ export const useFilterPopoverController = <T,>({
 
   // 追加: popover / anchor / autofocus 対象 input/select の ref 群です。
   const filterPopoverRef = useRef<HTMLDivElement | null>(null);
-  const filterPopoverAnchorButtonRef = useRef<HTMLButtonElement | null>(null);
+  const filterPopoverAnchorRef = useRef<HTMLElement | null>(null);
   const filterTextInputRef = useRef<HTMLInputElement | null>(null);
   const filterSelectRef = useRef<HTMLSelectElement | null>(null);
 
@@ -71,12 +70,12 @@ export const useFilterPopoverController = <T,>({
 
   // 追加: anchor button の位置から portal popover の fixed 座標を計算します。
   const updateFilterPopoverLayout = useCallback(() => {
-    if (!openedFilterColumnKey || !filterPopoverAnchorButtonRef.current) {
+    if (!openedFilterColumnKey || !filterPopoverAnchorRef.current) {
       setFilterPopoverLayout(null);
       return;
     }
 
-    const anchorRect = filterPopoverAnchorButtonRef.current.getBoundingClientRect();
+    const anchorRect = filterPopoverAnchorRef.current.getBoundingClientRect();
 
     // 追加(12-A): set フィルターは popover が縦に長いため、見積もり高さを切り替えます。
     const estimatedPopupHeight =
@@ -114,11 +113,9 @@ export const useFilterPopoverController = <T,>({
   }, [openedFilterColumnKey, openedFilterColumn]);
 
   // 追加: 列フィルターポップオーバーを開きます。
+  // 変更(③): フィルター操作を列メニュー(⋮)へ集約したため、起点のボタン要素(event)を取りません。
   const openColumnFilterPopover = useCallback(
-    (column: GridColumn<T>, event: PointerEvent<HTMLButtonElement>) => {
-      event.preventDefault();
-      event.stopPropagation();
-
+    (column: GridColumn<T>) => {
       if (!enableColumnFilter) {
         return;
       }
@@ -129,8 +126,22 @@ export const useFilterPopoverController = <T,>({
       }
       gridRootRef.current?.blur();
 
-      // 追加: anchor button を保持し、portal popover の位置計算に使います。
-      filterPopoverAnchorButtonRef.current = event.currentTarget;
+      // 変更(③): anchor をフィルターボタン → 列ヘッダーセル(data-ssg-col-key)へ移します。
+      //   開く起点がメニュー項目でボタン要素が無いため、gridRoot 配下のヘッダーセルを key 一致で
+      //   走査して anchor を解決します(キーに特殊文字が含まれてもセレクタ文字列を組まないので安全。
+      //   1 列につきヘッダーセルは 1 つ)。横スクロールで対象列が画面外なら見つからず null となり、
+      //   updateFilterPopoverLayout 側で layout=null(従来のボタン仮想化時と同等)になります。
+      // 変更: NodeList を for...of で回すと lib に DOM.Iterable が無い設定/旧 TS では
+      //   TS2488 になるため、lib 非依存の Array.from + find で解決します(列数ぶんの小さな
+      //   配列化で早期終了。挙動は同じ。横スクロールで対象列が画面外なら見つからず null)。
+      const headerCells =
+        gridRootRef.current?.querySelectorAll<HTMLElement>('[data-ssg-col-key]');
+      const anchorEl = headerCells
+        ? Array.from(headerCells).find(
+            (cell) => cell.dataset.ssgColKey === column.key,
+          ) ?? null
+        : null;
+      filterPopoverAnchorRef.current = anchorEl;
 
       setFilterPopoverState({
         columnKey: column.key,
@@ -146,7 +157,7 @@ export const useFilterPopoverController = <T,>({
   const closeColumnFilterPopover = useCallback(() => {
     setFilterPopoverState(null);
     setFilterPopoverLayout(null);
-    filterPopoverAnchorButtonRef.current = null;
+    filterPopoverAnchorRef.current = null;
     filterTextInputRef.current = null;
     filterSelectRef.current = null;
 
@@ -248,11 +259,9 @@ export const useFilterPopoverController = <T,>({
         return;
       }
 
-      // 追加: anchor button を押したケースでは close の native listener と競合させません。
-      if (filterPopoverAnchorButtonRef.current?.contains(targetNode)) {
-        return;
-      }
-
+      // 変更(③): フィルター操作は列メニューへ集約され、anchor は列ヘッダーセルになりました。
+      //   ヘッダーをクリックしたら(列選択など)フィルターは閉じるべきため、旧「anchor button を
+      //   押したら閉じない」除外は撤去します(popover 自身の内側クリックのみ上で除外済み)。
       closeColumnFilterPopover();
     };
 

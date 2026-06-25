@@ -38,7 +38,7 @@
     --ssg-selection-fill: rgba(52, 97, 201, 0.08);
     /* 寸法トークン */
     --ssg-radius: 8px;
-    --ssg-icon-btn-size: 22px;
+    --ssg-icon-btn-size: 20px;
 
     /* 外枠 frame(top バー+本体+bottom バーを 1 枠に収める境界/角丸/影/クリップ)。 */
     border: 1px solid var(--ssg-divider);
@@ -135,14 +135,16 @@
   }
 
   /* ヘッダーセル(列ヘッダー / 行ヘッダー / コーナー共通の土台)。座標 / 幅 / 高さはインライン。 */
+  /* 変更(①②): padding 0 10px → 0 6px・gap 8px → 4px に圧縮し、ラベル領域を広げます。
+     position:absolute は ssg-header-actions(hover オーバーレイ)の containing block を兼ねます。 */
   .ssg-header-cell {
     position: absolute;
     top: 0;
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: 4px;
     box-sizing: border-box;
-    padding: 0 10px;
+    padding: 0 6px;
     border-right: 1px solid var(--ssg-line);
     border-bottom: 1px solid var(--ssg-divider);
     background-color: var(--ssg-header-bg);
@@ -1080,21 +1082,59 @@
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 14px;
-    height: 22px;
+    width: 12px;
+    height: 20px;
     flex: 0 0 auto;
     color: #cbd5e1;
     cursor: grab;
     touch-action: none;
     user-select: none;
   }
-  /* タイトル + ソート矢印 + アクションボタンの行。 */
-  .ssg-header-label-row {
+  /* 追加(②): フィルター適用中の漏斗・ソート矢印など「状態」を常時表示する右寄せスロット。
+     hover で出る操作群(ssg-header-actions)とは別系統で、非hover でも見えます。 */
+  .ssg-header-status {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    flex: 0 0 auto;
+  }
+  /* 追加(②): grip + 列メニュー(⋮)を載せる hover オーバーレイ。非hover は opacity:0 で
+     幅を取らず(absolute)、ラベルが全幅使えます。hover でフェードインし、不透明背景で
+     ラベル末尾を覆います。タッチ端末(hover 不可)は @media で常時表示の通常フローへ戻します。 */
+  .ssg-header-actions {
+    position: absolute;
+    right: 0;
+    top: 0;
+    height: 100%;
     display: flex;
     align-items: center;
-    min-width: 0;
-    flex: 1;
-    gap: 4px;
+    gap: 2px;
+    padding: 0 6px 0 14px;
+    background-color: var(--ssg-header-bg);
+    opacity: 0;
+    transition: opacity 100ms ease;
+    pointer-events: none;
+  }
+  .ssg-header-cell:hover .ssg-header-actions {
+    opacity: 1;
+    pointer-events: auto;
+    background-color: var(--ssg-header-hover-bg);
+  }
+  @media (hover: none) {
+    .ssg-header-actions {
+      position: static;
+      height: auto;
+      padding: 0;
+      background-color: transparent;
+      opacity: 1;
+      pointer-events: auto;
+    }
+  }
+  /* 追加: hover で出る操作アイコン(grip / ⋮)の通常色を濃く(slate-600)して視認性を上げます。
+     メニュー表示中の ⋮ のアクセント色(--active)は :not(--active) で除外し、従来どおり優先します。 */
+  .ssg-header-actions .ssg-header-grip,
+  .ssg-header-actions .ssg-icon-btn:not(.ssg-icon-btn--active) {
+    color: #475569;
   }
   /* ヘッダーテキスト。フィルター適用中はアクセント色。 */
   .ssg-header-label {
@@ -1123,6 +1163,14 @@
     font-size: 9px;
     font-weight: 700;
     line-height: 1;
+  }
+  /* 追加(②③): フィルター適用中マーク(小さな漏斗)。状態表示のみで非クリック。色はアクセント。
+     フィルターの操作自体は列メニュー(⋮)の「フィルター」へ集約しています。 */
+  .ssg-header-filtered-mark {
+    display: inline-flex;
+    align-items: center;
+    color: var(--ssg-accent-strong);
+    flex: 0 0 auto;
   }
   /* 列リサイズ把手。 */
   .ssg-header-resize {

@@ -53,6 +53,11 @@ type ColumnMenuPopoverProps = {
   isOpen: boolean;
   title: string;
   columnKey: string;
+  // 追加(③): フィルターをメニューへ集約します。canFilter=false(enableColumnFilter=false や
+  //          この列に filterType 未設定)のときは項目を出しません。クリックで列メニューを閉じて
+  //          フィルター popover を開く配線は SpreadsheetGrid 側(onOpenFilter)が担います。
+  canFilter: boolean;
+  onOpenFilter: () => void;
   // 追加(13-B4): ソート(昇順/降順)をメニューから操作するための状態とハンドラです。
   //             canSort=false(enableSorting=false 相当)のときは項目自体を出しません
   //             (AG Grid の sortable:false でソート項目が消えるのと同じ挙動です)。
@@ -97,6 +102,8 @@ export function ColumnMenuPopover({
   isOpen,
   title,
   columnKey,
+  canFilter,
+  onOpenFilter,
   canSort,
   sortDirection,
   onSortChange,
@@ -189,6 +196,33 @@ export function ColumnMenuPopover({
       style={wrapperStyle}
     >
       <div className="ssg-menu-title">{title}</div>
+
+      {/* ── ルート項目: フィルター…(③) ── */}
+      {/* 追加(③): ヘッダーの常時フィルターボタンを廃止し、フィルター操作をここへ集約します。
+          サブメニューではなく別 popover(フィルター)を開くリーフ項目です。autosize / 列の表示と
+          同じく hover で setOpenSubmenuKey(null) し、開いているカスケード(列の固定)を閉じます。
+          ✓ 列ぶんのスペーサで他項目と左端を揃えます。クリックで列メニューを閉じてフィルター
+          popover を開く処理は SpreadsheetGrid 側(onOpenFilter)が担います。canFilter=false の
+          ときは項目を出しません(enableColumnFilter=false / この列に filterType 未設定)。 */}
+      {canFilter && (
+        <>
+          <button
+            type="button"
+            onPointerEnter={() => {
+              setOpenSubmenuKey(null);
+            }}
+            onClick={() => {
+              onOpenFilter();
+            }}
+            className="ssg-menu-item"
+          >
+            <span className="ssg-menu-icon" />
+            <span className="ssg-menu-label">フィルター…</span>
+          </button>
+
+          <div className="ssg-menu-separator" />
+        </>
+      )}
 
       {/* ── ルート項目: 昇順 / 降順で並び替え(13-B4) ── */}
       {/* 追加(13-B4): ヘッダーのソートボタンを廃止し、ソート操作をメニュー(と

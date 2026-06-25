@@ -71,10 +71,6 @@ type GridHeaderRowProps<T> = {
     event: PointerEvent<HTMLDivElement>,
   ) => void;
   onColumnHeaderPointerLeave: (colIndex: number) => void;
-  onColumnFilterButtonPointerDown: (
-    column: GridColumn<T>,
-    event: PointerEvent<HTMLButtonElement>,
-  ) => void;
   onColumnResizePointerDown: (
     column: GridColumn<T>,
     event: PointerEvent<HTMLDivElement>,
@@ -174,7 +170,6 @@ function GridHeaderRowInner<T>({
   onColumnHeaderPointerDown,
   onColumnHeaderPointerEnter,
   onColumnHeaderPointerLeave,
-  onColumnFilterButtonPointerDown,
   onColumnResizePointerDown,
   // 追加(13-A): 列メニュー関連 props です。
   enableColumnMenu,
@@ -268,14 +263,12 @@ function GridHeaderRowInner<T>({
         return (
           <div
             key={column.key}
+            data-ssg-col-key={column.key}
             onPointerDown={(event) => onColumnHeaderPointerDown(colIndex, event)}
             onPointerEnter={(event) =>
               onColumnHeaderPointerEnter(colIndex, event)
             }
             onPointerLeave={() => onColumnHeaderPointerLeave(colIndex)}
-            // 追加(13-A): ヘッダー右クリックで列メニューを開きます
-            //             (enableColumnMenu=false 時は controller 側で何もせず、
-            //              ブラウザ標準メニューが出ます)。
             onContextMenu={(event) => onColumnHeaderContextMenu(column, event)}
             className={cx(
               'ssg-header-cell',
@@ -291,64 +284,32 @@ function GridHeaderRowInner<T>({
               height: headerHeight,
             }}
           >
-            {/* 変更(13-B4 / Option A): Excel 列名バッジ(番地表示)を廃止し、
-                列の並べ替え掴み手(grip)を「極小のドラッグハンドル(6点グリップ)」へ
-                置き換えます。ドラッグ controller は event.currentTarget を捕捉する方式で
-                掴み手の中身に依存しないため、この差し替えで useColumnHeaderDragController は
-                不変です。reorder 不可(onColumnDragHandlePointerDown 未指定)時は要素ごと
-                非表示にして、先頭の余白も詰めます。
-                注記: フィルター有効の視覚はヘッダーテキスト色(下の青)+フィルターボタン
-                      (●/○)が担うため、grip 側のフィルター連動色は持たせません。 */}
-            {onColumnDragHandlePointerDown && (
-              <span
-                onPointerDown={(event) =>
-                  onColumnDragHandlePointerDown(column, event)
-                }
-                title="ドラッグで列を移動"
-                aria-hidden="true"
-                className="ssg-header-grip"
-              >
-                <svg
-                  width="8"
-                  height="14"
-                  viewBox="0 0 8 14"
-                  fill="currentColor"
-                  aria-hidden="true"
-                  focusable="false"
-                >
-                  <circle cx="2" cy="3" r="1" />
-                  <circle cx="6" cy="3" r="1" />
-                  <circle cx="2" cy="7" r="1" />
-                  <circle cx="6" cy="7" r="1" />
-                  <circle cx="2" cy="11" r="1" />
-                  <circle cx="6" cy="11" r="1" />
-                </svg>
-              </span>
-            )}
+            {/* 変更(②③): ラベルを header-cell の直接子にして全幅化します。grip / 漏斗 /
+                ⋮ を常時並べていた旧構成(label-row)を廃止し、ラベル領域を最大化します。
+                title 属性で省略時のツールチップを出します(renderHeader 使用時はカスタム JSX の
+                ため付けません)。フィルター適用中はテキストがアクセント色になります。 */}
+            <div
+              className={cx(
+                'ssg-header-label',
+                isColumnFiltered && 'ssg-header-label--filtered',
+              )}
+              title={column.renderHeader ? undefined : column.title || column.key}
+            >
+              {column.renderHeader
+                ? column.renderHeader({
+                    colIndex,
+                    width: size,
+                    column,
+                    filterValue: columnFilterValues[column.key],
+                    isFiltered: isColumnFiltered,
+                  })
+                : column.title || column.key}
+            </div>
 
-            <div className="ssg-header-label-row">
-              <div
-                className={cx(
-                  'ssg-header-label',
-                  isColumnFiltered && 'ssg-header-label--filtered',
-                )}
-              >
-                {column.renderHeader
-                  ? column.renderHeader({
-                      colIndex,
-                      width: size,
-                      column,
-                      filterValue: columnFilterValues[column.key],
-                      isFiltered: isColumnFiltered,
-                    })
-                  : column.title || column.key}
-              </div>
-
-              {/* 変更(13-B4): ソートボタン(↕/↑/↓ のクリック対象)を廃止し、
-                  操作は列メニュー / コンテキストメニューへ移しました。ここはソート中の
-                  列にだけ「現在の方向」を受動表示する非インタラクティブな矢印です
-                  (未ソート時は何も出さない = 旧 idle の ↕ は廃止)。
-                  クリック対象が無くなったぶん、ヘッダーの横スペースが空きます。 */}
+            {/* 追加(②): 「状態」スロット(常時表示・非インタラクティブ)。ソート方向の受動表示と、
+                フィルター適用中マーク(小さな漏斗)を出します。操作ではないため hover の有無に
+                関わらず見えます(フィルターの操作は列メニュー ⋮ の「フィルター」へ集約=③)。 */}
+            <div className="ssg-header-status">
               {sortEntry && (
                 <span
                   aria-hidden="true"
@@ -361,45 +322,66 @@ function GridHeaderRowInner<T>({
                   className="ssg-header-sort"
                 >
                   {sortEntry.direction === 'asc' ? '↑' : '↓'}
-                  {/* 追加(MS-2): 複数ソート時のみ優先順位番号(1 始まり)を小さく併記。 */}
                   {sortState.length > 1 && (
-                    <span
-                      className="ssg-header-sort-priority"
-                    >
+                    <span className="ssg-header-sort-priority">
                       {sortIndex + 1}
                     </span>
                   )}
                 </span>
               )}
 
-              <HeaderActionButton
-                title="列フィルター"
-                isActive={isColumnFiltered}
-                className={iconButtonClassName}
-                onPointerDown={(event) =>
-                  onColumnFilterButtonPointerDown(column, event)
-                }
-              >
-                {/* 変更(UI): フィルターのアイコンを ●/○ から漏斗(ファネル)へ。未適用=枠線 /
-                    適用中=塗りつぶし で区別し、色はボタンの currentColor に追従します。 */}
-                <svg
-                  width="12"
-                  height="12"
-                  viewBox="0 0 16 16"
-                  fill={isColumnFiltered ? 'currentColor' : 'none'}
-                  stroke="currentColor"
-                  strokeWidth={isColumnFiltered ? 0 : 1.4}
-                  strokeLinejoin="round"
+              {isColumnFiltered && (
+                <span
                   aria-hidden="true"
-                  focusable="false"
+                  title="フィルター適用中"
+                  className="ssg-header-filtered-mark"
                 >
-                  <path d="M2 4 L14 4 L9.2 9.2 L9.2 13 L6.8 13 L6.8 9.2 Z" />
-                </svg>
-              </HeaderActionButton>
+                  <svg
+                    width="11"
+                    height="11"
+                    viewBox="0 0 16 16"
+                    fill="currentColor"
+                    aria-hidden="true"
+                    focusable="false"
+                  >
+                    <path d="M2 4 L14 4 L9.2 9.2 L9.2 13 L6.8 13 L6.8 9.2 Z" />
+                  </svg>
+                </span>
+              )}
+            </div>
 
-              {/* 変更(13-A2): 列メニュー(「⋮」)ボタンです。常時表示します
-                  (AG Grid の suppressMenuHide: true 相当。右クリックでも
-                   同じメニューが開きます)。 */}
+            {/* 追加(②): hover で右端にフェードインする操作群(grip + 列メニュー ⋮)。非hover では
+                CSS で opacity:0 / absolute となり幅を取らないため、ラベルが全幅使えます。
+                タッチ端末(hover 不可)は CSS の @media で常時表示の通常フローへ戻ります。
+                grip は onColumnDragHandlePointerDown 未指定(reorder 不可)時は出しません。 */}
+            <div className="ssg-header-actions">
+              {onColumnDragHandlePointerDown && (
+                <span
+                  onPointerDown={(event) =>
+                    onColumnDragHandlePointerDown(column, event)
+                  }
+                  title="ドラッグで列を移動"
+                  aria-hidden="true"
+                  className="ssg-header-grip"
+                >
+                  <svg
+                    width="8"
+                    height="14"
+                    viewBox="0 0 8 14"
+                    fill="currentColor"
+                    aria-hidden="true"
+                    focusable="false"
+                  >
+                    <circle cx="2" cy="3" r="1" />
+                    <circle cx="6" cy="3" r="1" />
+                    <circle cx="2" cy="7" r="1" />
+                    <circle cx="6" cy="7" r="1" />
+                    <circle cx="2" cy="11" r="1" />
+                    <circle cx="6" cy="11" r="1" />
+                  </svg>
+                </span>
+              )}
+
               {showColumnMenuButton && (
                 <HeaderActionButton
                   title="列メニュー"
