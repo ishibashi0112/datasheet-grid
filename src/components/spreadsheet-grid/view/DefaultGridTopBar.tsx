@@ -6,19 +6,25 @@ type DefaultGridTopBarProps<T> = {
   showSummary?: boolean;
   // 追加: グローバルフィルター入力欄を表示するかどうかです(既定 true)。
   showFilter?: boolean;
+  // 追加: summary 内の Rows / Columns 件数 chips を表示するかどうかです(既定 true)。
+  //   showSummary=true のときのみ効きます(Filter / Sort chips は本値の影響を受けません)。
+  showCounts?: boolean;
 };
 
 // 追加: Grid 上部の既定ツールバーです。summary chips(左) と グローバルフィルター入力(右) の
 //       2 パートからなり、それぞれ showSummary / showFilter で独立に出し分けできます。
-//       両方 false の場合は呼び出し側(SpreadsheetGrid)がそもそも本バーを描画しません
-//       (空バーは出しません)。
+//       summary 内の Rows / Columns 件数 chips はさらに showCounts で出し分けできます。
+//       summary / filter が両方 false の場合は呼び出し側(SpreadsheetGrid)がそもそも本バーを
+//       描画しません(空バーは出しません)。
 // 変更(UI CSS移行): インライン style(gridBarStyles)を撤去し、styles.css の .ssg-bar-* クラスへ移行。
 // 変更(バー内訳): summary / filter を showSummary / showFilter で条件描画します。filter 単独時の
 //       左寄せ・幅は styles.css の `.ssg-bar-input-group:only-child` が担います。
+// 変更(件数トグル): summary 内の Rows / Columns 件数 chips を showCounts で出し分けます。
 export function DefaultGridTopBar<T>({
   context,
   showSummary = true,
   showFilter = true,
+  showCounts = true,
 }: DefaultGridTopBarProps<T>) {
   // 追加: slot context が持つ派生 summary を使います。
   const { derivedSummary } = context;
@@ -30,13 +36,17 @@ export function DefaultGridTopBar<T>({
           <div className="ssg-bar-group ssg-bar-leading">
             <span className="ssg-bar-title">Toolbar</span>
 
-            <span className="ssg-bar-chip ssg-bar-chip--emphasis">
-              {derivedSummary.rowSummaryText}
-            </span>
+            {showCounts ? (
+              <>
+                <span className="ssg-bar-chip ssg-bar-chip--emphasis">
+                  {derivedSummary.rowSummaryText}
+                </span>
 
-            <span className="ssg-bar-chip ssg-bar-chip--emphasis">
-              {derivedSummary.columnSummaryText}
-            </span>
+                <span className="ssg-bar-chip ssg-bar-chip--emphasis">
+                  {derivedSummary.columnSummaryText}
+                </span>
+              </>
+            ) : null}
 
             <span className="ssg-bar-chip ssg-bar-chip--emphasis">
               {derivedSummary.filterSummaryText}

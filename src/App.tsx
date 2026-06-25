@@ -312,6 +312,10 @@ function App() {
   //   (showTopBarSummary / showTopBarFilter の確認用。トップバー非表示時は無効)。
   const [showTopBarSummary, setShowTopBarSummary] = useState(true);
   const [showTopBarFilter, setShowTopBarFilter] = useState(true);
+  // 追加(件数トグルデモ): 各バーの Rows / Columns 件数 chips の表示有無です
+  //   (showTopBarCounts / showBottomBarCounts の確認用)。
+  const [showTopBarCounts, setShowTopBarCounts] = useState(true);
+  const [showBottomBarCounts, setShowBottomBarCounts] = useState(true);
   const changeMode = (next: DemoMode) => {
     const wasServer = mode === 'server';
     const willServer = next === 'server';
@@ -434,6 +438,17 @@ function App() {
           </button>
           <button
             type="button"
+            disabled={!showTopBar || !showTopBarSummary}
+            onClick={() => setShowTopBarCounts((v) => !v)}
+            style={modeButtonStyle(
+              showTopBar && showTopBarSummary && showTopBarCounts,
+              !showTopBar || !showTopBarSummary,
+            )}
+          >
+            {`└─ 件数(Rows/Col): ${showTopBarCounts ? '表示' : '非表示'}`}
+          </button>
+          <button
+            type="button"
             disabled={!showTopBar}
             onClick={() => setShowTopBarFilter((v) => !v)}
             style={modeButtonStyle(showTopBar && showTopBarFilter, !showTopBar)}
@@ -446,6 +461,17 @@ function App() {
             style={modeButtonStyle(showBottomBar)}
           >
             {`ボトムバー: ${showBottomBar ? '表示' : '非表示'}`}
+          </button>
+          <button
+            type="button"
+            disabled={!showBottomBar}
+            onClick={() => setShowBottomBarCounts((v) => !v)}
+            style={modeButtonStyle(
+              showBottomBar && showBottomBarCounts,
+              !showBottomBar,
+            )}
+          >
+            {`└ 件数(Rows/Col): ${showBottomBarCounts ? '表示' : '非表示'}`}
           </button>
         </div>
 
@@ -529,6 +555,8 @@ function App() {
         showBottomBar={showBottomBar}
         showTopBarSummary={showTopBarSummary}
         showTopBarFilter={showTopBarFilter}
+        showTopBarCounts={showTopBarCounts}
+        showBottomBarCounts={showBottomBarCounts}
         // 追加(条件付きスタイル デモ): 「保留」行を薄オレンジでハイライトします(getRowClassName)。
         //   返り値の class は行コンテナ + 各データセルに付与されます(# 行ヘッダーセルは現状対象外)。
         getRowClassName={(row) =>

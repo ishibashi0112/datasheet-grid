@@ -468,6 +468,10 @@ export type SpreadsheetGridProps<T> = {
   //   既定トップバー(renderTopBar 未指定)のときのみ効きます。これと showTopBarFilter の両方が
   //   非表示(かつフィルター入力も出ない)場合、トップバーは描画されません(空バーは出しません)。
   showTopBarSummary?: boolean;
+  // 追加: 既定トップバーの Rows / Columns 件数 chips を表示するかどうかです。既定 true。
+  //   既定トップバー(renderTopBar 未指定)かつ showTopBarSummary=true のときのみ効きます
+  //   (Filter / Sort chips は本値の対象外で、showTopBarSummary に従います)。
+  showTopBarCounts?: boolean;
   // 追加: 既定トップバーのグローバルフィルター入力欄を表示するかどうかです。既定 true。
   //   既定トップバー(renderTopBar 未指定)のときのみ効きます。enableGlobalFilter=false のときは
   //   本値に関わらず入力欄を出しません(無効な機能の入力欄を出さないため)。
@@ -476,6 +480,10 @@ export type SpreadsheetGridProps<T> = {
   //   false にすると renderBottomBar に関わらず下部バーを一切描画しません
   //   (表示のマスタースイッチ。矛盾指定時は renderBottomBar より優先されます)。
   showBottomBar?: boolean;
+  // 追加: 既定ボトムバーの Rows / Columns 件数 chips(左側)を表示するかどうかです。既定 true。
+  //   既定ボトムバー(renderBottomBar 未指定)のときのみ効きます。右側の Active / Selection /
+  //   選択統計 / Cols chips は本値の対象外で常時表示です。
+  showBottomBarCounts?: boolean;
   // 追加: Grid 上部カスタム領域です。未指定時は既定ツールバー(summary chips + グローバルフィルター
   //   入力)を表示します。既定バーの内訳は showTopBarSummary / showTopBarFilter で出し分けできます
   //   (フィルター入力は enableGlobalFilter=true が前提)。showTopBar=false のときは本指定に関わらず

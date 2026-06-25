@@ -266,6 +266,10 @@ export function SpreadsheetGrid<T extends object>({
   //   renderTopBar 未指定時のみ効きます。フィルター入力は enableGlobalFilter=true が前提です。
   showTopBarSummary = true,
   showTopBarFilter = true,
+  // 追加: 各バーの Rows / Columns 件数 chips セットの表示有無です(既定 true)。
+  //   トップは showTopBarSummary=true のとき内側で効き、ボトムは左側の件数グループを制御します。
+  showTopBarCounts = true,
+  showBottomBarCounts = true,
   renderTopBar,
   renderBottomBar,
   className,
@@ -2872,6 +2876,7 @@ export function SpreadsheetGrid<T extends object>({
         context={slotContext}
         showSummary={showDefaultTopSummary}
         showFilter={showDefaultTopFilter}
+        showCounts={showTopBarCounts}
       />
     ) : null;
 
@@ -2885,7 +2890,10 @@ export function SpreadsheetGrid<T extends object>({
     : resolveGridSlot(
         renderBottomBar,
         slotContext,
-        <DefaultGridBottomBar context={slotContext} />,
+        <DefaultGridBottomBar
+          context={slotContext}
+          showCounts={showBottomBarCounts}
+        />,
       );
 
   // ── render ────────────────────────────────────────────

@@ -20,6 +20,7 @@ A high-performance, virtualized spreadsheet / data grid for **React 19**, writte
 - Optional auto-height rows for wrapped, variable-height content.
 - Both **client-side** (`rows`) and **server-side** (`dataSource`, SSRM) row models.
 - Themeable with CSS custom properties (`--ssg-*`) and a low-priority `@layer ssg-base`, so your own CSS or Tailwind utilities override the defaults without specificity battles. `className` / `classNames` slots are also provided.
+- Toggle the top / bottom bars and their parts via props — whole bars (`showTopBar` / `showBottomBar`), the default top bar's summary chips and global-filter input, and the Rows/Columns counts in each bar.
 - TypeScript-first, fully controlled API.
 
 ## Installation
@@ -132,6 +133,7 @@ The full prop and type reference lives in [`src/components/spreadsheet-grid/API_
 - 折り返し・可変行高に対応する auto-height 行（任意）。
 - **クライアントサイド**（`rows`）と**サーバーサイド**（`dataSource`、SSRM）の両行モデル。
 - CSS カスタムプロパティ（`--ssg-*`）と優先度の低い `@layer ssg-base` によるテーマ設定。利用側の通常 CSS や Tailwind ユーティリティが特異度の競合なしに既定を上書きできます。`className` / `classNames` スロットも用意。
+- トップ / ボトムバーとその構成要素（バー全体〔`showTopBar` / `showBottomBar`〕、既定トップバーの summary chips・グローバルフィルター入力、各バーの Rows/Columns 件数）を props で表示制御。
 - TypeScript ファースト、完全 controlled な API。
 
 ### インストール

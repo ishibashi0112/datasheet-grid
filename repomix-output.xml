@@ -608,6 +608,7 @@ A high-performance, virtualized spreadsheet / data grid for **React 19**, writte
 - Optional auto-height rows for wrapped, variable-height content.
 - Both **client-side** (`rows`) and **server-side** (`dataSource`, SSRM) row models.
 - Themeable with CSS custom properties (`--ssg-*`) and a low-priority `@layer ssg-base`, so your own CSS or Tailwind utilities override the defaults without specificity battles. `className` / `classNames` slots are also provided.
+- Toggle the top / bottom bars and their parts via props — whole bars (`showTopBar` / `showBottomBar`), the default top bar's summary chips and global-filter input, and the Rows/Columns counts in each bar.
 - TypeScript-first, fully controlled API.
 
 ## Installation
@@ -720,6 +721,7 @@ The full prop and type reference lives in [`src/components/spreadsheet-grid/API_
 - 折り返し・可変行高に対応する auto-height 行（任意）。
 - **クライアントサイド**（`rows`）と**サーバーサイド**（`dataSource`、SSRM）の両行モデル。
 - CSS カスタムプロパティ（`--ssg-*`）と優先度の低い `@layer ssg-base` によるテーマ設定。利用側の通常 CSS や Tailwind ユーティリティが特異度の競合なしに既定を上書きできます。`className` / `classNames` スロットも用意。
+- トップ / ボトムバーとその構成要素（バー全体〔`showTopBar` / `showBottomBar`〕、既定トップバーの summary chips・グローバルフィルター入力、各バーの Rows/Columns 件数）を props で表示制御。
 - TypeScript ファースト、完全 controlled な API。
 
 ### インストール
@@ -3608,6 +3610,209 @@ export const isSameCellCoord = (
 };
 </file>
 
+<file path="src/components/spreadsheet-grid/utils/clipboard.ts">
+import type { GridColumn } from '../model/gridTypes';
+import {
+  normalizeCellRange,
+  normalizeColumnRange,
+  normalizeRowRange,
+} from '../model/gridSelectors';
+import { getCellValue, setCellValue } from './permissions';
+
+// 追加: TSV の行列データ型です。
+export type ClipboardMatrix = string[][];
+
+// 追加: text/plain の TSV を 2次元配列へ変換します。
+export const parseClipboardText = (text: string): ClipboardMatrix => {
+  const normalized = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+  if (!normalized) {
+    return [];
+  }
+  return normalized
+    .split('\n')
+    .filter((line) => line.length > 0)
+    .map((line) => line.split('\t'));
+};
+
+// 追加: 選択範囲の rows/columns から TSV を生成します。
+export const serializeSelectionToTsv = <T,>(
+  // 変更(DS-3-10): rows: T[] → getRow/viewRowCount の seam-native 署名へ。
+  //   呼び出し側のビュー行 materialize を不要にします(関数側は選択レンジ or
+  //   0..viewRowCount-1 のみを getRow で引きます)。
+  getRow: (viewIndex: number) => T,
+  viewRowCount: number,
+  columns: GridColumn<T>[],
+  selection:
+    | {
+        type: 'cell';
+        range: {
+          start: { row: number; col: number };
+          end: { row: number; col: number };
+        };
+      }
+    | { type: 'row'; startRow: number; endRow: number }
+    | { type: 'col'; startCol: number; endCol: number }
+    | null,
+): string => {
+  if (!selection) {
+    return '';
+  }
+
+  const lines: string[] = [];
+
+  // 追加: セル範囲選択のコピーです。
+  if (selection.type === 'cell') {
+    const normalizedRange = normalizeCellRange(selection.range);
+    for (
+      let rowIndex = normalizedRange.start.row;
+      rowIndex <= normalizedRange.end.row;
+      rowIndex += 1
+    ) {
+      const row = getRow(rowIndex);
+      if (!row) {
+        continue;
+      }
+      const cells: string[] = [];
+      for (
+        let colIndex = normalizedRange.start.col;
+        colIndex <= normalizedRange.end.col;
+        colIndex += 1
+      ) {
+        const column = columns[colIndex];
+        if (!column) {
+          continue;
+        }
+        const rawValue = getCellValue(row, column);
+        const formattedValue = column.formatClipboardValue
+          ? column.formatClipboardValue(rawValue, row)
+          : String(rawValue ?? '');
+        cells.push(formattedValue);
+      }
+      lines.push(cells.join('\t'));
+    }
+    return lines.join('\n');
+  }
+
+  // 追加: 行選択のコピーです。選択された行 × visible columns 全体を対象にします。
+  if (selection.type === 'row') {
+    const normalizedRange = normalizeRowRange(selection.startRow, selection.endRow);
+    for (
+      let rowIndex = normalizedRange.startRow;
+      rowIndex <= normalizedRange.endRow;
+      rowIndex += 1
+    ) {
+      const row = getRow(rowIndex);
+      if (!row) {
+        continue;
+      }
+      const cells = columns.map((column) => {
+        const rawValue = getCellValue(row, column);
+        return column.formatClipboardValue
+          ? column.formatClipboardValue(rawValue, row)
+          : String(rawValue ?? '');
+      });
+      lines.push(cells.join('\t'));
+    }
+    return lines.join('\n');
+  }
+
+  // 追加: 列選択のコピーです。visible rows × 選択列 を対象にします。
+  const normalizedRange = normalizeColumnRange(selection.startCol, selection.endCol);
+  for (let rowIndex = 0; rowIndex < viewRowCount; rowIndex += 1) {
+    const row = getRow(rowIndex);
+    if (!row) {
+      continue;
+    }
+    const cells: string[] = [];
+    for (
+      let colIndex = normalizedRange.startCol;
+      colIndex <= normalizedRange.endCol;
+      colIndex += 1
+    ) {
+      const column = columns[colIndex];
+      if (!column) {
+        continue;
+      }
+      const rawValue = getCellValue(row, column);
+      const formattedValue = column.formatClipboardValue
+        ? column.formatClipboardValue(rawValue, row)
+        : String(rawValue ?? '');
+      cells.push(formattedValue);
+    }
+    lines.push(cells.join('\t'));
+  }
+
+  return lines.join('\n');
+};
+
+// 追加: 貼り付け matrix を rows へ適用します。
+export const applyClipboardMatrixToRows = <T extends object,>(
+  rows: T[],
+  // 変更(DS-3-10): sourceRowIndexes: number[] → view→source 解決クロージャへ。
+  //   N 個の配列 materialize を撤去します。範囲外 viewIndex に定義値が返っても、
+  //   下の !currentRow ガードで skip され従来の undefined→continue と同結果です。
+  resolveSourceIndex: (viewIndex: number) => number | undefined,
+  columns: GridColumn<T>[],
+  matrix: ClipboardMatrix,
+  startRowIndex: number,
+  startColIndex: number,
+  canWriteCell: (
+    originalRowIndex: number,
+    colIndex: number,
+    row: T,
+    column: GridColumn<T>,
+  ) => boolean,
+): T[] => {
+  if (matrix.length === 0) {
+    return rows;
+  }
+
+  const nextRows = [...rows];
+
+  for (let rowOffset = 0; rowOffset < matrix.length; rowOffset += 1) {
+    const filteredRowIndex = startRowIndex + rowOffset;
+    const originalRowIndex = resolveSourceIndex(filteredRowIndex);
+    if (originalRowIndex === undefined) {
+      continue;
+    }
+
+    const currentRow = nextRows[originalRowIndex];
+    if (!currentRow) {
+      continue;
+    }
+
+    let nextRow = currentRow;
+    let rowChanged = false;
+
+    for (let colOffset = 0; colOffset < matrix[rowOffset].length; colOffset += 1) {
+      const colIndex = startColIndex + colOffset;
+      const column = columns[colIndex];
+      if (!column) {
+        continue;
+      }
+
+      if (!canWriteCell(originalRowIndex, colIndex, currentRow, column)) {
+        continue;
+      }
+
+      const rawValue = matrix[rowOffset][colOffset];
+      const parsedValue = column.parseClipboardValue
+        ? column.parseClipboardValue(rawValue, currentRow)
+        : rawValue;
+
+      nextRow = setCellValue(nextRow, column, parsedValue);
+      rowChanged = true;
+    }
+
+    if (rowChanged) {
+      nextRows[originalRowIndex] = nextRow;
+    }
+  }
+
+  return nextRows;
+};
+</file>
+
 <file path="src/components/spreadsheet-grid/utils/excelColumnName.test.ts">
 // B: toExcelColumnName の境界 / 全域等価性テスト(純関数・node)。
 //   本番コードは無改修。0-based 列 index → Excel 列名(A, B, ... Z, AA, ...)の
@@ -3922,6 +4127,226 @@ dist-ssr
 
 backup
 repomix-output.xml
+</file>
+
+<file path="src/components/spreadsheet-grid/hooks/useGridKeyboardInteractions.ts">
+import { useCallback, type Dispatch, type KeyboardEvent } from 'react';
+import { gridActions, type GridUiAction } from '../model/gridActions';
+import type {
+  CellCoord,
+  GridColumn,
+  GridUiState,
+  RowModel,
+  SpreadsheetGridProps,
+} from '../model/gridTypes';
+import { clamp } from '../logic/geometry';
+import { isPrintableKey, shouldIgnoreGridKeydown } from '../logic/domGuards';
+import { isCellEditable } from '../utils/permissions';
+
+type UseGridKeyboardInteractionsArgs<T> = {
+  uiState: GridUiState;
+  // 変更(DS-3-1): filteredRows: T[] を RowModel シームへ置換しました(DS-3-0 の seam を消費)。
+  //   length は getRowCount()、行取得は getRow(viewIndex) 経由に切り替えます。
+  rowModel: RowModel<T>;
+  visibleColumns: GridColumn<T>[];
+  readOnly: boolean;
+  canEditCell: SpreadsheetGridProps<T>['canEditCell'];
+  // 変更(11-B6): ドラフト state の setter → 「編集開始時の初期値」setter になりました。
+  //   文字キー直打ちの編集開始では、押下キー 1 文字を初期値として渡します
+  //   （以後のタイピングは CellEditorLayer ローカル state が受け持ちます）。
+  setEditorInitialValue: (value: string) => void;
+  dispatch: Dispatch<GridUiAction>;
+  handleCopy: () => Promise<void>;
+  handleCellDoubleClick: (cell: CellCoord) => void;
+  isWholeGridSelected: boolean;
+  selectEntireGrid: () => void;
+};
+
+// 追加: keyboard interaction（arrow/tab/enter/copy/select-all/edit start）をまとめます。
+export const useGridKeyboardInteractions = <T,>({
+  uiState,
+  rowModel,
+  visibleColumns,
+  readOnly,
+  canEditCell,
+  setEditorInitialValue,
+  dispatch,
+  handleCopy,
+  handleCellDoubleClick,
+  isWholeGridSelected,
+  selectEntireGrid,
+}: UseGridKeyboardInteractionsArgs<T>) => {
+  // 追加(DS-3-1): 行数はシーム経由で取得します(= order.length / 旧 filteredRows.length と等価)。
+  //   各 useCallback の deps はこのプリミティブ rowCount を使い、rowModel オブジェクト参照を
+  //   deps に入れないことで、件数不変のソートで handler identity が変わらない 11系のメモ化を保ちます。
+  const rowCount = rowModel.getRowCount();
+
+  // 追加: 基準セルから移動先セルを計算します。
+  const getMovedCell = useCallback(
+    (baseCell: CellCoord, deltaRow: number, deltaCol: number): CellCoord => ({
+      row: clamp(
+        baseCell.row + deltaRow,
+        0,
+        Math.max(rowCount - 1, 0),
+      ),
+      col: clamp(
+        baseCell.col + deltaCol,
+        0,
+        Math.max(visibleColumns.length - 1, 0),
+      ),
+    }),
+    [rowCount, visibleColumns.length],
+  );
+
+  // 追加: active cell を移動します。shiftKey=true の場合は cell selection を拡張します。
+  const moveActiveCell = useCallback(
+    (deltaRow: number, deltaCol: number, extendSelection: boolean) => {
+      if (rowCount === 0 || visibleColumns.length === 0) {
+        return;
+      }
+      const currentCell = uiState.activeCell ?? { row: 0, col: 0 };
+      const nextCell = {
+        row: clamp(currentCell.row + deltaRow, 0, rowCount - 1),
+        col: clamp(currentCell.col + deltaCol, 0, visibleColumns.length - 1),
+      };
+      if (extendSelection) {
+        const anchor =
+          uiState.selection?.type === 'cell'
+            ? uiState.selection.range.start
+            : currentCell;
+        dispatch(gridActions.startSelection(anchor));
+        dispatch(gridActions.updateSelection(nextCell));
+        dispatch(gridActions.endSelection());
+        dispatch(gridActions.activateCell(nextCell));
+        return;
+      }
+      dispatch(gridActions.startSelection(nextCell));
+      dispatch(gridActions.endSelection());
+      dispatch(gridActions.activateCell(nextCell));
+    },
+    [
+      dispatch,
+      rowCount,
+      uiState.activeCell,
+      uiState.selection,
+      visibleColumns.length,
+    ],
+  );
+
+  // 追加: Ctrl/Cmd + C や Arrow/Enter を捕捉します。
+  const handleKeyDown = useCallback(
+    async (event: KeyboardEvent<HTMLDivElement>) => {
+      // 追加: filter input / select / button 等にフォーカス中は、
+      //       grid 側の keyboard 操作を無効化します。
+      if (shouldIgnoreGridKeydown(event.target)) {
+        return;
+      }
+
+      if (uiState.editingCell) {
+        return;
+      }
+
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'c') {
+        event.preventDefault();
+        await handleCopy();
+        return;
+      }
+
+      // 追加: Ctrl + A / Cmd + A で全体選択、2回目で解除します。
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'a') {
+        event.preventDefault();
+        if (isWholeGridSelected) {
+          dispatch(gridActions.clearSelection());
+          dispatch(gridActions.activateCell(null));
+          return;
+        }
+        selectEntireGrid();
+        return;
+      }
+
+      if (event.key === 'ArrowUp') {
+        event.preventDefault();
+        moveActiveCell(-1, 0, event.shiftKey);
+        return;
+      }
+      if (event.key === 'ArrowDown') {
+        event.preventDefault();
+        moveActiveCell(1, 0, event.shiftKey);
+        return;
+      }
+      if (event.key === 'ArrowLeft') {
+        event.preventDefault();
+        moveActiveCell(0, -1, event.shiftKey);
+        return;
+      }
+      if (event.key === 'ArrowRight') {
+        event.preventDefault();
+        moveActiveCell(0, 1, event.shiftKey);
+        return;
+      }
+      if (event.key === 'Tab') {
+        event.preventDefault();
+        moveActiveCell(0, event.shiftKey ? -1 : 1, false);
+        return;
+      }
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        dispatch(gridActions.clearSelection());
+        return;
+      }
+      if (event.key === 'Enter' || event.key === 'F2') {
+        event.preventDefault();
+        if (uiState.activeCell) {
+          handleCellDoubleClick(uiState.activeCell);
+        }
+        return;
+      }
+      if (isPrintableKey(event) && uiState.activeCell) {
+        const row = rowModel.getRow(uiState.activeCell.row);
+        const column = visibleColumns[uiState.activeCell.col];
+        if (!row || !column) {
+          return;
+        }
+        if (
+          !isCellEditable(
+            { readOnly, canEditCell },
+            uiState.activeCell.row,
+            uiState.activeCell.col,
+            row,
+            column,
+          )
+        ) {
+          return;
+        }
+        event.preventDefault();
+        setEditorInitialValue(event.key);
+        dispatch(gridActions.startEdit(uiState.activeCell));
+      }
+    },
+    [
+      canEditCell,
+      dispatch,
+      rowModel,
+      handleCellDoubleClick,
+      handleCopy,
+      isWholeGridSelected,
+      moveActiveCell,
+      readOnly,
+      selectEntireGrid,
+      setEditorInitialValue,
+      uiState.activeCell,
+      uiState.editingCell,
+      visibleColumns,
+    ],
+  );
+
+  return {
+    getMovedCell,
+    handleKeyDown,
+  };
+};
+
+export default useGridKeyboardInteractions;
 </file>
 
 <file path="src/components/spreadsheet-grid/index.ts">
@@ -4578,209 +5003,6 @@ export const gridActions = {
   clearSort: (): GridUiAction => ({
     type: 'sort/clear',
   }),
-};
-</file>
-
-<file path="src/components/spreadsheet-grid/utils/clipboard.ts">
-import type { GridColumn } from '../model/gridTypes';
-import {
-  normalizeCellRange,
-  normalizeColumnRange,
-  normalizeRowRange,
-} from '../model/gridSelectors';
-import { getCellValue, setCellValue } from './permissions';
-
-// 追加: TSV の行列データ型です。
-export type ClipboardMatrix = string[][];
-
-// 追加: text/plain の TSV を 2次元配列へ変換します。
-export const parseClipboardText = (text: string): ClipboardMatrix => {
-  const normalized = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
-  if (!normalized) {
-    return [];
-  }
-  return normalized
-    .split('\n')
-    .filter((line) => line.length > 0)
-    .map((line) => line.split('\t'));
-};
-
-// 追加: 選択範囲の rows/columns から TSV を生成します。
-export const serializeSelectionToTsv = <T,>(
-  // 変更(DS-3-10): rows: T[] → getRow/viewRowCount の seam-native 署名へ。
-  //   呼び出し側のビュー行 materialize を不要にします(関数側は選択レンジ or
-  //   0..viewRowCount-1 のみを getRow で引きます)。
-  getRow: (viewIndex: number) => T,
-  viewRowCount: number,
-  columns: GridColumn<T>[],
-  selection:
-    | {
-        type: 'cell';
-        range: {
-          start: { row: number; col: number };
-          end: { row: number; col: number };
-        };
-      }
-    | { type: 'row'; startRow: number; endRow: number }
-    | { type: 'col'; startCol: number; endCol: number }
-    | null,
-): string => {
-  if (!selection) {
-    return '';
-  }
-
-  const lines: string[] = [];
-
-  // 追加: セル範囲選択のコピーです。
-  if (selection.type === 'cell') {
-    const normalizedRange = normalizeCellRange(selection.range);
-    for (
-      let rowIndex = normalizedRange.start.row;
-      rowIndex <= normalizedRange.end.row;
-      rowIndex += 1
-    ) {
-      const row = getRow(rowIndex);
-      if (!row) {
-        continue;
-      }
-      const cells: string[] = [];
-      for (
-        let colIndex = normalizedRange.start.col;
-        colIndex <= normalizedRange.end.col;
-        colIndex += 1
-      ) {
-        const column = columns[colIndex];
-        if (!column) {
-          continue;
-        }
-        const rawValue = getCellValue(row, column);
-        const formattedValue = column.formatClipboardValue
-          ? column.formatClipboardValue(rawValue, row)
-          : String(rawValue ?? '');
-        cells.push(formattedValue);
-      }
-      lines.push(cells.join('\t'));
-    }
-    return lines.join('\n');
-  }
-
-  // 追加: 行選択のコピーです。選択された行 × visible columns 全体を対象にします。
-  if (selection.type === 'row') {
-    const normalizedRange = normalizeRowRange(selection.startRow, selection.endRow);
-    for (
-      let rowIndex = normalizedRange.startRow;
-      rowIndex <= normalizedRange.endRow;
-      rowIndex += 1
-    ) {
-      const row = getRow(rowIndex);
-      if (!row) {
-        continue;
-      }
-      const cells = columns.map((column) => {
-        const rawValue = getCellValue(row, column);
-        return column.formatClipboardValue
-          ? column.formatClipboardValue(rawValue, row)
-          : String(rawValue ?? '');
-      });
-      lines.push(cells.join('\t'));
-    }
-    return lines.join('\n');
-  }
-
-  // 追加: 列選択のコピーです。visible rows × 選択列 を対象にします。
-  const normalizedRange = normalizeColumnRange(selection.startCol, selection.endCol);
-  for (let rowIndex = 0; rowIndex < viewRowCount; rowIndex += 1) {
-    const row = getRow(rowIndex);
-    if (!row) {
-      continue;
-    }
-    const cells: string[] = [];
-    for (
-      let colIndex = normalizedRange.startCol;
-      colIndex <= normalizedRange.endCol;
-      colIndex += 1
-    ) {
-      const column = columns[colIndex];
-      if (!column) {
-        continue;
-      }
-      const rawValue = getCellValue(row, column);
-      const formattedValue = column.formatClipboardValue
-        ? column.formatClipboardValue(rawValue, row)
-        : String(rawValue ?? '');
-      cells.push(formattedValue);
-    }
-    lines.push(cells.join('\t'));
-  }
-
-  return lines.join('\n');
-};
-
-// 追加: 貼り付け matrix を rows へ適用します。
-export const applyClipboardMatrixToRows = <T extends object,>(
-  rows: T[],
-  // 変更(DS-3-10): sourceRowIndexes: number[] → view→source 解決クロージャへ。
-  //   N 個の配列 materialize を撤去します。範囲外 viewIndex に定義値が返っても、
-  //   下の !currentRow ガードで skip され従来の undefined→continue と同結果です。
-  resolveSourceIndex: (viewIndex: number) => number | undefined,
-  columns: GridColumn<T>[],
-  matrix: ClipboardMatrix,
-  startRowIndex: number,
-  startColIndex: number,
-  canWriteCell: (
-    originalRowIndex: number,
-    colIndex: number,
-    row: T,
-    column: GridColumn<T>,
-  ) => boolean,
-): T[] => {
-  if (matrix.length === 0) {
-    return rows;
-  }
-
-  const nextRows = [...rows];
-
-  for (let rowOffset = 0; rowOffset < matrix.length; rowOffset += 1) {
-    const filteredRowIndex = startRowIndex + rowOffset;
-    const originalRowIndex = resolveSourceIndex(filteredRowIndex);
-    if (originalRowIndex === undefined) {
-      continue;
-    }
-
-    const currentRow = nextRows[originalRowIndex];
-    if (!currentRow) {
-      continue;
-    }
-
-    let nextRow = currentRow;
-    let rowChanged = false;
-
-    for (let colOffset = 0; colOffset < matrix[rowOffset].length; colOffset += 1) {
-      const colIndex = startColIndex + colOffset;
-      const column = columns[colIndex];
-      if (!column) {
-        continue;
-      }
-
-      if (!canWriteCell(originalRowIndex, colIndex, currentRow, column)) {
-        continue;
-      }
-
-      const rawValue = matrix[rowOffset][colOffset];
-      const parsedValue = column.parseClipboardValue
-        ? column.parseClipboardValue(rawValue, currentRow)
-        : rawValue;
-
-      nextRow = setCellValue(nextRow, column, parsedValue);
-      rowChanged = true;
-    }
-
-    if (rowChanged) {
-      nextRows[originalRowIndex] = nextRow;
-    }
-  }
-
-  return nextRows;
 };
 </file>
 
@@ -5628,224 +5850,174 @@ export const useGridBarContext = <T,>({
 export default useGridBarContext;
 </file>
 
-<file path="src/components/spreadsheet-grid/hooks/useGridKeyboardInteractions.ts">
-import { useCallback, type Dispatch, type KeyboardEvent } from 'react';
-import { gridActions, type GridUiAction } from '../model/gridActions';
-import type {
-  CellCoord,
-  GridColumn,
-  GridUiState,
-  RowModel,
-  SpreadsheetGridProps,
-} from '../model/gridTypes';
-import { clamp } from '../logic/geometry';
-import { isPrintableKey, shouldIgnoreGridKeydown } from '../logic/domGuards';
-import { isCellEditable } from '../utils/permissions';
+<file path="src/components/spreadsheet-grid/hooks/useGridViewportSync.ts">
+import { useEffect, type RefObject } from 'react';
+import type { ActiveCellOverlayRect } from '../ActiveCellOverlay';
+import type { ColumnMeasurement } from '../logic/geometry';
+// 追加(scroll-space 仮想化): active cell 自動スクロール / clamp の物理↔論理換算。
+import {
+  logicalToPhysicalScrollTop,
+  physicalToLogicalScrollTop,
+} from '../logic/verticalGeometry';
 
-type UseGridKeyboardInteractionsArgs<T> = {
-  uiState: GridUiState;
-  // 変更(DS-3-1): filteredRows: T[] を RowModel シームへ置換しました(DS-3-0 の seam を消費)。
-  //   length は getRowCount()、行取得は getRow(viewIndex) 経由に切り替えます。
-  rowModel: RowModel<T>;
-  visibleColumns: GridColumn<T>[];
-  readOnly: boolean;
-  canEditCell: SpreadsheetGridProps<T>['canEditCell'];
-  // 変更(11-B6): ドラフト state の setter → 「編集開始時の初期値」setter になりました。
-  //   文字キー直打ちの編集開始では、押下キー 1 文字を初期値として渡します
-  //   （以後のタイピングは CellEditorLayer ローカル state が受け持ちます）。
-  setEditorInitialValue: (value: string) => void;
-  dispatch: Dispatch<GridUiAction>;
-  handleCopy: () => Promise<void>;
-  handleCellDoubleClick: (cell: CellCoord) => void;
-  isWholeGridSelected: boolean;
-  selectEntireGrid: () => void;
+type VirtualizerLike = {
+  measure: () => void;
 };
 
-// 追加: keyboard interaction（arrow/tab/enter/copy/select-all/edit start）をまとめます。
-export const useGridKeyboardInteractions = <T,>({
-  uiState,
-  rowModel,
-  visibleColumns,
-  readOnly,
-  canEditCell,
-  setEditorInitialValue,
-  dispatch,
-  handleCopy,
-  handleCellDoubleClick,
-  isWholeGridSelected,
-  selectEntireGrid,
-}: UseGridKeyboardInteractionsArgs<T>) => {
-  // 追加(DS-3-1): 行数はシーム経由で取得します(= order.length / 旧 filteredRows.length と等価)。
-  //   各 useCallback の deps はこのプリミティブ rowCount を使い、rowModel オブジェクト参照を
-  //   deps に入れないことで、件数不変のソートで handler identity が変わらない 11系のメモ化を保ちます。
-  const rowCount = rowModel.getRowCount();
-
-  // 追加: 基準セルから移動先セルを計算します。
-  const getMovedCell = useCallback(
-    (baseCell: CellCoord, deltaRow: number, deltaCol: number): CellCoord => ({
-      row: clamp(
-        baseCell.row + deltaRow,
-        0,
-        Math.max(rowCount - 1, 0),
-      ),
-      col: clamp(
-        baseCell.col + deltaCol,
-        0,
-        Math.max(visibleColumns.length - 1, 0),
-      ),
-    }),
-    [rowCount, visibleColumns.length],
-  );
-
-  // 追加: active cell を移動します。shiftKey=true の場合は cell selection を拡張します。
-  const moveActiveCell = useCallback(
-    (deltaRow: number, deltaCol: number, extendSelection: boolean) => {
-      if (rowCount === 0 || visibleColumns.length === 0) {
-        return;
-      }
-      const currentCell = uiState.activeCell ?? { row: 0, col: 0 };
-      const nextCell = {
-        row: clamp(currentCell.row + deltaRow, 0, rowCount - 1),
-        col: clamp(currentCell.col + deltaCol, 0, visibleColumns.length - 1),
-      };
-      if (extendSelection) {
-        const anchor =
-          uiState.selection?.type === 'cell'
-            ? uiState.selection.range.start
-            : currentCell;
-        dispatch(gridActions.startSelection(anchor));
-        dispatch(gridActions.updateSelection(nextCell));
-        dispatch(gridActions.endSelection());
-        dispatch(gridActions.activateCell(nextCell));
-        return;
-      }
-      dispatch(gridActions.startSelection(nextCell));
-      dispatch(gridActions.endSelection());
-      dispatch(gridActions.activateCell(nextCell));
-    },
-    [
-      dispatch,
-      rowCount,
-      uiState.activeCell,
-      uiState.selection,
-      visibleColumns.length,
-    ],
-  );
-
-  // 追加: Ctrl/Cmd + C や Arrow/Enter を捕捉します。
-  const handleKeyDown = useCallback(
-    async (event: KeyboardEvent<HTMLDivElement>) => {
-      // 追加: filter input / select / button 等にフォーカス中は、
-      //       grid 側の keyboard 操作を無効化します。
-      if (shouldIgnoreGridKeydown(event.target)) {
-        return;
-      }
-
-      if (uiState.editingCell) {
-        return;
-      }
-
-      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'c') {
-        event.preventDefault();
-        await handleCopy();
-        return;
-      }
-
-      // 追加: Ctrl + A / Cmd + A で全体選択、2回目で解除します。
-      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'a') {
-        event.preventDefault();
-        if (isWholeGridSelected) {
-          dispatch(gridActions.clearSelection());
-          dispatch(gridActions.activateCell(null));
-          return;
-        }
-        selectEntireGrid();
-        return;
-      }
-
-      if (event.key === 'ArrowUp') {
-        event.preventDefault();
-        moveActiveCell(-1, 0, event.shiftKey);
-        return;
-      }
-      if (event.key === 'ArrowDown') {
-        event.preventDefault();
-        moveActiveCell(1, 0, event.shiftKey);
-        return;
-      }
-      if (event.key === 'ArrowLeft') {
-        event.preventDefault();
-        moveActiveCell(0, -1, event.shiftKey);
-        return;
-      }
-      if (event.key === 'ArrowRight') {
-        event.preventDefault();
-        moveActiveCell(0, 1, event.shiftKey);
-        return;
-      }
-      if (event.key === 'Tab') {
-        event.preventDefault();
-        moveActiveCell(0, event.shiftKey ? -1 : 1, false);
-        return;
-      }
-      if (event.key === 'Escape') {
-        event.preventDefault();
-        dispatch(gridActions.clearSelection());
-        return;
-      }
-      if (event.key === 'Enter' || event.key === 'F2') {
-        event.preventDefault();
-        if (uiState.activeCell) {
-          handleCellDoubleClick(uiState.activeCell);
-        }
-        return;
-      }
-      if (isPrintableKey(event) && uiState.activeCell) {
-        const row = rowModel.getRow(uiState.activeCell.row);
-        const column = visibleColumns[uiState.activeCell.col];
-        if (!row || !column) {
-          return;
-        }
-        if (
-          !isCellEditable(
-            { readOnly, canEditCell },
-            uiState.activeCell.row,
-            uiState.activeCell.col,
-            row,
-            column,
-          )
-        ) {
-          return;
-        }
-        event.preventDefault();
-        setEditorInitialValue(event.key);
-        dispatch(gridActions.startEdit(uiState.activeCell));
-      }
-    },
-    [
-      canEditCell,
-      dispatch,
-      rowModel,
-      handleCellDoubleClick,
-      handleCopy,
-      isWholeGridSelected,
-      moveActiveCell,
-      readOnly,
-      selectEntireGrid,
-      setEditorInitialValue,
-      uiState.activeCell,
-      uiState.editingCell,
-      visibleColumns,
-    ],
-  );
-
-  return {
-    getMovedCell,
-    handleKeyDown,
-  };
+type UseGridViewportSyncArgs<T> = {
+  // 変更(10-G): 縦横ともに「外側スクロールコンテナ 1 本」がネイティブスクロールします。
+  //             旧 bodyScrollRef(中央ペイン)はスクロールしなくなったため、scroll clamp /
+  //             active cell 可視化はすべてこの共有スクロール要素に対して行います。
+  scrollRef: RefObject<HTMLDivElement | null>;
+  columnVirtualizer: VirtualizerLike;
+  // columnVirtualizer の再計測トリガー用の依存です（中身は座標計算には使いません）。
+  columnMeasurements: ColumnMeasurement<T>[];
+  // 変更(10-G): 共有スクロールコンテナの内側コンテンツ全幅です。
+  //             = 左固定ペイン幅 + 中央ペイン幅 + 右固定ペイン幅。
+  //             水平方向の scroll clamp(content shrink 対策)に使います。
+  totalScrollWidth: number;
+  // 変更(scroll-space 仮想化): content-shrink clamp は物理ボディ高さ基準にします
+  //   (旧 totalBodyHeight=論理全高 → physicalBodyHeight=ブラウザ上限内へ圧縮済みの高さ)。
+  physicalBodyHeight: number;
+  headerHeight: number;
+  // 追加(10-G): 左/右固定ペインの幅です。固定ペインは sticky で視界の左右端を覆うため、
+  //             active cell の可視判定では「固定ペインに隠れない領域」へ収める必要があります。
+  leftPaneWidth: number;
+  rightPaneWidth: number;
+  // 追加(10-G): 中央ペインが列の前に確保する先頭幅です（左固定なし時の行ヘッダー幅 / 左固定あり時 0）。
+  centerLeadingWidth: number;
+  // active cell が中央ペインにあるときの「中央ペインローカル矩形」です。
+  // 固定ペインにある場合は横スクロール不要なので null が渡されます。
+  activeCellRect: ActiveCellOverlayRect | null;
+  // 追加(scroll-space 仮想化): active cell 自動スクロールの論理↔物理換算倍率
+  //   (scaleFactor=1 のとき両変換は恒等＝現状と完全一致)。
+  verticalScaleFactor: number;
 };
 
-export default useGridKeyboardInteractions;
+// 追加: virtualizer 再計測、content shrink 時の scroll clamp、active cell 可視化をまとめます。
+// 変更(10-G): スクロールのマスターを中央ペインから「外側の共有スクロールコンテナ」へ移しました。
+//             これにより左右固定ペインは同一ネイティブスクロールで縦に動き、JS による
+//             transform 同期が不要になります（＝固定列のチカチカ/ティアリングが原理的に消えます）。
+export const useGridViewportSync = <T,>({
+  scrollRef,
+  columnVirtualizer,
+  columnMeasurements,
+  totalScrollWidth,
+  physicalBodyHeight,
+  headerHeight,
+  leftPaneWidth,
+  rightPaneWidth,
+  centerLeadingWidth,
+  activeCellRect,
+  verticalScaleFactor,
+}: UseGridViewportSyncArgs<T>) => {
+  // 追加: column geometry が変わった際に horizontal virtualizer を再計測します。
+  useEffect(() => {
+    columnVirtualizer.measure();
+  }, [columnVirtualizer, columnMeasurements]);
+
+  // 追加: content サイズが縮んだ場合に scroll を clamp します。
+  // 変更(10-G): 対象を中央ペインから共有スクロールコンテナへ。最大スクロール量は
+  //             コンテンツ全幅/全高 - クライアントサイズで求めます。
+  useEffect(() => {
+    if (!scrollRef.current) {
+      return;
+    }
+
+    const scrollElement = scrollRef.current;
+    const maxScrollLeft = Math.max(
+      totalScrollWidth - scrollElement.clientWidth,
+      0,
+    );
+    const maxScrollTop = Math.max(
+      headerHeight + physicalBodyHeight - scrollElement.clientHeight,
+      0,
+    );
+
+    if (scrollElement.scrollLeft > maxScrollLeft) {
+      scrollElement.scrollLeft = maxScrollLeft;
+    }
+    if (scrollElement.scrollTop > maxScrollTop) {
+      scrollElement.scrollTop = maxScrollTop;
+    }
+  }, [scrollRef, totalScrollWidth, physicalBodyHeight, headerHeight]);
+
+  // 追加: active cell が画面外へ出た場合に、scroll container を自動調整して常に表示領域内へ収めます。
+  // 注記(10-G): activeCellRect は中央ペインローカル座標です。中央ペイン以外（固定列）に
+  //             active cell がある場合は呼び出し側で null が渡るため、横スクロールは発生しません。
+  //   - 縦: ヘッダー(sticky)に隠れない領域 [scrollTop + headerHeight, scrollTop + clientHeight] に収めます。
+  //   - 横: 左右固定ペイン(sticky)に隠れない領域
+  //         [scrollLeft + leftPaneWidth, scrollLeft + clientWidth - rightPaneWidth] に収めます。
+  useEffect(() => {
+    if (!scrollRef.current || !activeCellRect) {
+      return;
+    }
+
+    const scrollElement = scrollRef.current;
+
+    // セルの「スクロールコンテンツ内」絶対座標(論理)です。
+    const cellTop = headerHeight + activeCellRect.top;
+    const cellBottom = cellTop + activeCellRect.height;
+    const cellLeft = leftPaneWidth + centerLeadingWidth + activeCellRect.left;
+    const cellRight = cellLeft + activeCellRect.width;
+
+    // 変更(scroll-space 仮想化): 縦の可視判定は論理座標で行い、設定時に物理 scrollTop へ戻します。
+    //   行は物理 36px のまま(サイズは非圧縮)なので可視域は実 viewportHeight のまま不変で、
+    //   縦のスクロール位置のみ scaleFactor 換算します(scaleFactor=1 のとき現状と完全一致)。
+    //   横(scrollLeft)は圧縮対象外のため物理値のまま据え置きです。
+    const currentScrollTop = physicalToLogicalScrollTop(
+      scrollElement.scrollTop,
+      verticalScaleFactor,
+    );
+    const currentScrollLeft = scrollElement.scrollLeft;
+    const viewportHeight = scrollElement.clientHeight;
+    const viewportWidth = scrollElement.clientWidth;
+
+    let nextScrollTop = currentScrollTop;
+    let nextScrollLeft = currentScrollLeft;
+
+    const visibleTop = currentScrollTop + headerHeight;
+    const visibleBottom = currentScrollTop + viewportHeight;
+    if (cellTop < visibleTop) {
+      nextScrollTop = Math.max(cellTop - headerHeight, 0);
+    } else if (cellBottom > visibleBottom) {
+      nextScrollTop = Math.max(cellBottom - viewportHeight, 0);
+    }
+
+    const visibleLeft = currentScrollLeft + leftPaneWidth;
+    const visibleRight = currentScrollLeft + viewportWidth - rightPaneWidth;
+    if (cellLeft < visibleLeft) {
+      nextScrollLeft = Math.max(cellLeft - leftPaneWidth, 0);
+    } else if (cellRight > visibleRight) {
+      nextScrollLeft = Math.max(
+        cellRight - viewportWidth + rightPaneWidth,
+        0,
+      );
+    }
+
+    if (
+      nextScrollTop !== currentScrollTop ||
+      nextScrollLeft !== currentScrollLeft
+    ) {
+      scrollElement.scrollTo({
+        // nextScrollTop は論理。実 scrollTop は物理なので戻します(横はそのまま)。
+        top: logicalToPhysicalScrollTop(nextScrollTop, verticalScaleFactor),
+        left: nextScrollLeft,
+        behavior: 'auto',
+      });
+    }
+  }, [
+    scrollRef,
+    activeCellRect,
+    headerHeight,
+    leftPaneWidth,
+    rightPaneWidth,
+    centerLeadingWidth,
+    verticalScaleFactor,
+  ]);
+};
+
+export default useGridViewportSync;
 </file>
 
 <file path="src/components/spreadsheet-grid/hooks/useServerSideRowModel.test.ts">
@@ -7606,176 +7778,6 @@ export const useGridEditController = <T extends object>({
 };
 
 export default useGridEditController;
-</file>
-
-<file path="src/components/spreadsheet-grid/hooks/useGridViewportSync.ts">
-import { useEffect, type RefObject } from 'react';
-import type { ActiveCellOverlayRect } from '../ActiveCellOverlay';
-import type { ColumnMeasurement } from '../logic/geometry';
-// 追加(scroll-space 仮想化): active cell 自動スクロール / clamp の物理↔論理換算。
-import {
-  logicalToPhysicalScrollTop,
-  physicalToLogicalScrollTop,
-} from '../logic/verticalGeometry';
-
-type VirtualizerLike = {
-  measure: () => void;
-};
-
-type UseGridViewportSyncArgs<T> = {
-  // 変更(10-G): 縦横ともに「外側スクロールコンテナ 1 本」がネイティブスクロールします。
-  //             旧 bodyScrollRef(中央ペイン)はスクロールしなくなったため、scroll clamp /
-  //             active cell 可視化はすべてこの共有スクロール要素に対して行います。
-  scrollRef: RefObject<HTMLDivElement | null>;
-  columnVirtualizer: VirtualizerLike;
-  // columnVirtualizer の再計測トリガー用の依存です（中身は座標計算には使いません）。
-  columnMeasurements: ColumnMeasurement<T>[];
-  // 変更(10-G): 共有スクロールコンテナの内側コンテンツ全幅です。
-  //             = 左固定ペイン幅 + 中央ペイン幅 + 右固定ペイン幅。
-  //             水平方向の scroll clamp(content shrink 対策)に使います。
-  totalScrollWidth: number;
-  // 変更(scroll-space 仮想化): content-shrink clamp は物理ボディ高さ基準にします
-  //   (旧 totalBodyHeight=論理全高 → physicalBodyHeight=ブラウザ上限内へ圧縮済みの高さ)。
-  physicalBodyHeight: number;
-  headerHeight: number;
-  // 追加(10-G): 左/右固定ペインの幅です。固定ペインは sticky で視界の左右端を覆うため、
-  //             active cell の可視判定では「固定ペインに隠れない領域」へ収める必要があります。
-  leftPaneWidth: number;
-  rightPaneWidth: number;
-  // 追加(10-G): 中央ペインが列の前に確保する先頭幅です（左固定なし時の行ヘッダー幅 / 左固定あり時 0）。
-  centerLeadingWidth: number;
-  // active cell が中央ペインにあるときの「中央ペインローカル矩形」です。
-  // 固定ペインにある場合は横スクロール不要なので null が渡されます。
-  activeCellRect: ActiveCellOverlayRect | null;
-  // 追加(scroll-space 仮想化): active cell 自動スクロールの論理↔物理換算倍率
-  //   (scaleFactor=1 のとき両変換は恒等＝現状と完全一致)。
-  verticalScaleFactor: number;
-};
-
-// 追加: virtualizer 再計測、content shrink 時の scroll clamp、active cell 可視化をまとめます。
-// 変更(10-G): スクロールのマスターを中央ペインから「外側の共有スクロールコンテナ」へ移しました。
-//             これにより左右固定ペインは同一ネイティブスクロールで縦に動き、JS による
-//             transform 同期が不要になります（＝固定列のチカチカ/ティアリングが原理的に消えます）。
-export const useGridViewportSync = <T,>({
-  scrollRef,
-  columnVirtualizer,
-  columnMeasurements,
-  totalScrollWidth,
-  physicalBodyHeight,
-  headerHeight,
-  leftPaneWidth,
-  rightPaneWidth,
-  centerLeadingWidth,
-  activeCellRect,
-  verticalScaleFactor,
-}: UseGridViewportSyncArgs<T>) => {
-  // 追加: column geometry が変わった際に horizontal virtualizer を再計測します。
-  useEffect(() => {
-    columnVirtualizer.measure();
-  }, [columnVirtualizer, columnMeasurements]);
-
-  // 追加: content サイズが縮んだ場合に scroll を clamp します。
-  // 変更(10-G): 対象を中央ペインから共有スクロールコンテナへ。最大スクロール量は
-  //             コンテンツ全幅/全高 - クライアントサイズで求めます。
-  useEffect(() => {
-    if (!scrollRef.current) {
-      return;
-    }
-
-    const scrollElement = scrollRef.current;
-    const maxScrollLeft = Math.max(
-      totalScrollWidth - scrollElement.clientWidth,
-      0,
-    );
-    const maxScrollTop = Math.max(
-      headerHeight + physicalBodyHeight - scrollElement.clientHeight,
-      0,
-    );
-
-    if (scrollElement.scrollLeft > maxScrollLeft) {
-      scrollElement.scrollLeft = maxScrollLeft;
-    }
-    if (scrollElement.scrollTop > maxScrollTop) {
-      scrollElement.scrollTop = maxScrollTop;
-    }
-  }, [scrollRef, totalScrollWidth, physicalBodyHeight, headerHeight]);
-
-  // 追加: active cell が画面外へ出た場合に、scroll container を自動調整して常に表示領域内へ収めます。
-  // 注記(10-G): activeCellRect は中央ペインローカル座標です。中央ペイン以外（固定列）に
-  //             active cell がある場合は呼び出し側で null が渡るため、横スクロールは発生しません。
-  //   - 縦: ヘッダー(sticky)に隠れない領域 [scrollTop + headerHeight, scrollTop + clientHeight] に収めます。
-  //   - 横: 左右固定ペイン(sticky)に隠れない領域
-  //         [scrollLeft + leftPaneWidth, scrollLeft + clientWidth - rightPaneWidth] に収めます。
-  useEffect(() => {
-    if (!scrollRef.current || !activeCellRect) {
-      return;
-    }
-
-    const scrollElement = scrollRef.current;
-
-    // セルの「スクロールコンテンツ内」絶対座標(論理)です。
-    const cellTop = headerHeight + activeCellRect.top;
-    const cellBottom = cellTop + activeCellRect.height;
-    const cellLeft = leftPaneWidth + centerLeadingWidth + activeCellRect.left;
-    const cellRight = cellLeft + activeCellRect.width;
-
-    // 変更(scroll-space 仮想化): 縦の可視判定は論理座標で行い、設定時に物理 scrollTop へ戻します。
-    //   行は物理 36px のまま(サイズは非圧縮)なので可視域は実 viewportHeight のまま不変で、
-    //   縦のスクロール位置のみ scaleFactor 換算します(scaleFactor=1 のとき現状と完全一致)。
-    //   横(scrollLeft)は圧縮対象外のため物理値のまま据え置きです。
-    const currentScrollTop = physicalToLogicalScrollTop(
-      scrollElement.scrollTop,
-      verticalScaleFactor,
-    );
-    const currentScrollLeft = scrollElement.scrollLeft;
-    const viewportHeight = scrollElement.clientHeight;
-    const viewportWidth = scrollElement.clientWidth;
-
-    let nextScrollTop = currentScrollTop;
-    let nextScrollLeft = currentScrollLeft;
-
-    const visibleTop = currentScrollTop + headerHeight;
-    const visibleBottom = currentScrollTop + viewportHeight;
-    if (cellTop < visibleTop) {
-      nextScrollTop = Math.max(cellTop - headerHeight, 0);
-    } else if (cellBottom > visibleBottom) {
-      nextScrollTop = Math.max(cellBottom - viewportHeight, 0);
-    }
-
-    const visibleLeft = currentScrollLeft + leftPaneWidth;
-    const visibleRight = currentScrollLeft + viewportWidth - rightPaneWidth;
-    if (cellLeft < visibleLeft) {
-      nextScrollLeft = Math.max(cellLeft - leftPaneWidth, 0);
-    } else if (cellRight > visibleRight) {
-      nextScrollLeft = Math.max(
-        cellRight - viewportWidth + rightPaneWidth,
-        0,
-      );
-    }
-
-    if (
-      nextScrollTop !== currentScrollTop ||
-      nextScrollLeft !== currentScrollLeft
-    ) {
-      scrollElement.scrollTo({
-        // nextScrollTop は論理。実 scrollTop は物理なので戻します(横はそのまま)。
-        top: logicalToPhysicalScrollTop(nextScrollTop, verticalScaleFactor),
-        left: nextScrollLeft,
-        behavior: 'auto',
-      });
-    }
-  }, [
-    scrollRef,
-    activeCellRect,
-    headerHeight,
-    leftPaneWidth,
-    rightPaneWidth,
-    centerLeadingWidth,
-    verticalScaleFactor,
-  ]);
-};
-
-export default useGridViewportSync;
 </file>
 
 <file path="src/components/spreadsheet-grid/hooks/useServerSideRowModel.ts">
@@ -12281,12 +12283,17 @@ import type { SpreadsheetGridSlotContext } from '../model/gridTypes';
 
 type DefaultGridBottomBarProps<T> = {
   context: SpreadsheetGridSlotContext<T>;
+  // 追加: Rows / Columns の件数 chips(左グループ)を表示するかどうかです(既定 true)。
+  showCounts?: boolean;
 };
 
 // 追加: Grid 下部の既定ステータスバーです。
 // 変更(UI CSS移行): インライン style(gridBarStyles)を撤去し、styles.css の .ssg-bar-* クラスへ移行。
+// 変更(件数トグル): Rows / Columns の件数 chips(左グループ)を showCounts で出し分けます。
+//   右グループ(Active / Selection / 選択統計 / Cols)は本値の影響を受けず常時表示します。
 export function DefaultGridBottomBar<T>({
   context,
+  showCounts = true,
 }: DefaultGridBottomBarProps<T>) {
   // 追加: slot context が持つ派生 summary を使います。
   const { derivedSummary } = context;
@@ -12294,12 +12301,14 @@ export function DefaultGridBottomBar<T>({
   return (
     <div className="ssg-bar--bottom">
       <div className="ssg-bar-container">
-        <div className="ssg-bar-group">
-          <span className="ssg-bar-chip">{derivedSummary.rowSummaryText}</span>
-          <span className="ssg-bar-chip">
-            {derivedSummary.columnSummaryText}
-          </span>
-        </div>
+        {showCounts ? (
+          <div className="ssg-bar-group">
+            <span className="ssg-bar-chip">{derivedSummary.rowSummaryText}</span>
+            <span className="ssg-bar-chip">
+              {derivedSummary.columnSummaryText}
+            </span>
+          </div>
+        ) : null}
 
         <div className="ssg-bar-group">
           <span className="ssg-bar-chip">
@@ -12321,246 +12330,6 @@ export function DefaultGridBottomBar<T>({
 }
 
 export default DefaultGridBottomBar;
-</file>
-
-<file path="src/components/spreadsheet-grid/view/DefaultGridTopBar.tsx">
-import type { SpreadsheetGridSlotContext } from '../model/gridTypes';
-
-type DefaultGridTopBarProps<T> = {
-  context: SpreadsheetGridSlotContext<T>;
-  // 追加: 件数/フィルター/ソートの summary chips を表示するかどうかです(既定 true)。
-  showSummary?: boolean;
-  // 追加: グローバルフィルター入力欄を表示するかどうかです(既定 true)。
-  showFilter?: boolean;
-};
-
-// 追加: Grid 上部の既定ツールバーです。summary chips(左) と グローバルフィルター入力(右) の
-//       2 パートからなり、それぞれ showSummary / showFilter で独立に出し分けできます。
-//       両方 false の場合は呼び出し側(SpreadsheetGrid)がそもそも本バーを描画しません
-//       (空バーは出しません)。
-// 変更(UI CSS移行): インライン style(gridBarStyles)を撤去し、styles.css の .ssg-bar-* クラスへ移行。
-// 変更(バー内訳): summary / filter を showSummary / showFilter で条件描画します。filter 単独時の
-//       左寄せ・幅は styles.css の `.ssg-bar-input-group:only-child` が担います。
-export function DefaultGridTopBar<T>({
-  context,
-  showSummary = true,
-  showFilter = true,
-}: DefaultGridTopBarProps<T>) {
-  // 追加: slot context が持つ派生 summary を使います。
-  const { derivedSummary } = context;
-
-  return (
-    <div className="ssg-bar--top">
-      <div className="ssg-bar-container">
-        {showSummary ? (
-          <div className="ssg-bar-group ssg-bar-leading">
-            <span className="ssg-bar-title">Toolbar</span>
-
-            <span className="ssg-bar-chip ssg-bar-chip--emphasis">
-              {derivedSummary.rowSummaryText}
-            </span>
-
-            <span className="ssg-bar-chip ssg-bar-chip--emphasis">
-              {derivedSummary.columnSummaryText}
-            </span>
-
-            <span className="ssg-bar-chip ssg-bar-chip--emphasis">
-              {derivedSummary.filterSummaryText}
-            </span>
-
-            <span className="ssg-bar-chip ssg-bar-chip--emphasis">
-              {derivedSummary.sortSummaryText}
-            </span>
-          </div>
-        ) : null}
-
-        {showFilter ? (
-          <div className="ssg-bar-input-group">
-            <input
-              type="text"
-              value={context.globalFilterText}
-              onChange={(event) => context.setGlobalFilterText(event.target.value)}
-              placeholder="グローバルフィルター"
-              className="ssg-bar-input"
-            />
-            {context.globalFilterText.trim().length > 0 ? (
-              <button
-                type="button"
-                onClick={() => context.setGlobalFilterText('')}
-                className="ssg-bar-clear-btn"
-              >
-                クリア
-              </button>
-            ) : null}
-          </div>
-        ) : null}
-      </div>
-    </div>
-  );
-}
-
-export default DefaultGridTopBar;
-</file>
-
-<file path="src/components/spreadsheet-grid/API_REFERENCE.md">
-# SpreadsheetGrid 公開 API リファレンス
-
-> このファイルは `model/gridTypes.ts`(`SpreadsheetGridProps<T>` / `GridColumn<T>` 他)と
-> `SpreadsheetGrid.tsx`(既定値の分割代入)から手で起こした公開 API のスナップショットです。
-> **型を変更したら本ファイルも同期してください。** 将来 `index.ts` バレル整備時に props メタデータを
-> single source of truth 化し、dev 実行時パネル + 自動生成へ移行する想定です(現状は手動同期)。
-
-最終更新: SSRM stage ②(query 配線)完了時点。
-
-## SpreadsheetGrid props (`SpreadsheetGridProps<T>`)
-
-| Name | Type | Default | Description |
-| --- | --- | --- | --- |
-| `rows` | `T[]` | — | clientSide モードの行データ。`dataSource` を指定した場合は無視され serverSide モードになる(両者は排他)。 |
-| `columns` | `GridColumn<T>[]` | (required) | 列定義の配列。 |
-| `onRowsChange` | `(nextRows: T[]) => void` | — | 行が変化したとき呼ばれる(rows を controlled にする)。 |
-| `dataSource` | `ServerSideDataSource<T>` | — | serverSide(SSRM)モードのデータ供給口。指定すると可視窓近傍のブロックだけを `getRows` で都度取得し、`rows` 系の clientSide パイプラインをバイパスする。 |
-| `serverSideRefreshToken` | `number` | — | serverSide のソフトリフレッシュ用トークン。値を増やすと、クエリ(フィルター/ソート/グローバル)を変えずにキャッシュを破棄して現在の可視レンジをサーバから取り直す。スクロール位置は保持し、件数は到着ブロックの `totalRowCount` で追従する(clientSide では無視)。 |
-| `onColumnsChange` | `(nextColumns: GridColumn<T>[]) => void` | — | 列が変化したとき呼ばれる。列メニューの固定切替はこれが指定されている場合のみ反映。 |
-| `rowKeyGetter` | `(row: T, index: number) => GridRowKey` | index ベース | 安定した行キーを返す。 |
-| `createRow` | `() => T` | — | 行追加時に使う新規行ファクトリ。 |
-| `createOverflowColumn` | `(columnIndex: number) => GridColumn<T>` | — | 列追加時に使う列ファクトリ。 |
-| `rowHeight` | `number` | `36` | uniform 行の行高(px)。 |
-| `autoHeight` | `boolean` | `false` | auto-height 行モードを有効化。 |
-| `estimateRowHeight` | `number` | `rowHeight` | 未測定行の推定行高(px)。 |
-| `headerHeight` | `number` | `40` | ヘッダー行の高さ(px)。 |
-| `rowHeaderWidth` | `number` | `56` | 行番号列の幅(px)。 |
-| `readOnly` | `boolean` | `false` | グリッド全体の編集を無効化。 |
-| `canEditCell` | `(rowIndex, colIndex, row, column) => boolean` | — | セル単位の編集可否ゲート。 |
-| `enableRangeSelection` | `boolean` | `true` | 複数セル範囲選択。 |
-| `enableGlobalFilter` | `boolean` | `true` | グローバルフィルター**機能**の有効化。`false` で機能が無効になり、既定トップバーのフィルター入力欄も出ない(summary は `showTopBarSummary` に従う。トップバー自体を消すには `showTopBar=false`)。 |
-| `enableColumnFilter` | `boolean` | `true` | 列ごとのフィルター。 |
-| `enableSorting` | `boolean` | `true` | ヘッダークリックでのソート。 |
-| `enableColumnMenu` | `boolean` | `true` | 列メニュー(⋮ + ヘッダー右クリック)。 |
-| `enableRowHover` | `boolean` | `true` | 行ホバー時に行全体を薄くハイライト。 |
-| `enableColumnHeaderHover` | `boolean` | `true` | 列ヘッダーのホバー時にヘッダーセルを薄くハイライト。 |
-| `noMatchingRowsText` | `string` | `'一致する行がありません'` | フィルター結果 0 行時のオーバーレイ文言。 |
-| `noRowsText` | `string` | `'表示する行がありません'` | rows が 0 件のときの文言。 |
-| `showTopBar` | `boolean` | `true` | 上部バー(ツールバー)の表示有無。`false` で `renderTopBar` / `enableGlobalFilter` に関わらず一切描画しない(表示のマスタースイッチ。矛盾指定時は `renderTopBar` より優先)。 |
-| `showTopBarSummary` | `boolean` | `true` | 既定トップバーの summary chips(件数/フィルター/ソート)の表示有無。`renderTopBar` 未指定時のみ有効。これと `showTopBarFilter` がともに非表示なら既定トップバーは描画されない(空バーを出さない)。 |
-| `showTopBarFilter` | `boolean` | `true` | 既定トップバーのグローバルフィルター入力欄の表示有無。`renderTopBar` 未指定時のみ有効。`enableGlobalFilter=false` のときは本値に関わらず非表示。 |
-| `showBottomBar` | `boolean` | `true` | 下部バー(ステータスバー)の表示有無。`false` で `renderBottomBar` に関わらず一切描画しない(表示のマスタースイッチ。矛盾指定時は `renderBottomBar` より優先)。 |
-| `renderTopBar` | `(ctx: SpreadsheetGridSlotContext<T>) => ReactNode` | 内蔵トップバー | 上部バーの差し替え。未指定時は内蔵トップバー(summary chips + フィルター入力。内訳は `showTopBarSummary` / `showTopBarFilter` で制御。フィルター入力は `enableGlobalFilter=true` が前提)。`showTopBar=false` 時は本指定に関わらず描画されない。 |
-| `renderBottomBar` | `(ctx: SpreadsheetGridSlotContext<T>) => ReactNode` | 内蔵ボトムバー | 下部バーの差し替え。未指定時は内蔵ステータスバー。`showBottomBar=false` 時は本指定に関わらず描画されない。 |
-| `className` | `string` | — | ルート要素の class。 |
-| `classNames` | `GridClassNames` | — | パーツ別の追加 class スロット。現状 `root` / `iconButton` / `bodyCell` / `bodyRow` が配線済み(他は順次)。基底 class は `@layer ssg-base` のため Tailwind 等の未レイヤー上書きが効く。 |
-| `getRowClassName` | `(row: T, rowIndex: number) => string \| undefined` | — | 行ごとの追加 class。行コンテナ + 各データセルに付与され、Tailwind 等での行ハイライトに使える。行ヘッダー「#」セルは現状対象外。 |
-
-### バーの表示制御(top / bottom)
-
-トップ / ボトムバーは次の優先順で解決される。
-
-- **`showTopBar` / `showBottomBar`(マスタースイッチ)**: `false` ならそのバーは一切描画されない(`render*` / `enable*` より優先)。
-- **`renderTopBar` / `renderBottomBar`(カスタム)**: 指定時はそのまま描画。トップバーの内訳 props(`showTopBarSummary` / `showTopBarFilter`)はカスタム側が中身を決めるため関与しない。
-- **既定バー**: `render*` 未指定時のフォールバック。
-
-既定トップバーは **summary chips(左)** と **グローバルフィルター入力(右)** の 2 パートからなり、独立に出し分けできる。
-
-| やりたいこと | 設定 |
-| --- | --- |
-| バーごと消す | `showTopBar={false}` |
-| summary だけ(フィルター入力なし) | `showTopBarFilter={false}` |
-| フィルター入力だけ(summary なし) | `showTopBarSummary={false}` |
-| フィルター機能ごと無効 + summary は残す | `enableGlobalFilter={false}` |
-| 完全に自前のバー | `renderTopBar={(ctx) => …}` |
-
-`showTopBarSummary` と `showTopBarFilter`(実効は `showTopBarFilter && enableGlobalFilter`)がともに `false` の場合、既定トップバーは描画されない(空バーを出さない)。
-
-ボトムバーは内訳 props を持たない(`showBottomBar` での表示有無のみ)。中身を変えたい場合は `renderBottomBar` を使う。
-
-## GridColumn props (`GridColumn<T>`)
-
-| Name | Type | Default | Description |
-| --- | --- | --- | --- |
-| `key` | `string` | (required) | 列の一意キー。 |
-| `title` | `string` | — | ヘッダーの表示ラベル。 |
-| `width` | `number` | (required) | 列幅(px)。 |
-| `minWidth` | `number` | — | リサイズ時の下限幅。 |
-| `maxWidth` | `number` | — | リサイズ時の上限幅。 |
-| `autoHeight` | `boolean` | — | この列が auto-height 行の高さを駆動(グリッドの `autoHeight` 有効時のみ)。 |
-| `visible` | `boolean` | — | 列の表示/非表示。 |
-| `editable` | `boolean` | — | この列の編集を許可。 |
-| `readOnly` | `boolean` | — | この列を読み取り専用にする。 |
-| `pinned` | `'left' \| 'right'` | undefined = 中央スクロール | 列固定の方向。 |
-| `getValue` | `(row: T) => unknown` | `row[key]` | 値アクセサ。 |
-| `setValue` | `(row: T, value: unknown) => T` | — | 値ライター(新しい行を返す)。 |
-| `renderCell` | `(ctx: CellRenderContext<T>) => ReactNode` | プレーン `<span>` | カスタムセル描画。 |
-| `cellClassName` | `string \| ((ctx: CellStyleContext<T>) => string \| undefined)` | — | セルへ付与する追加 class(条件付きスタイル)。関数版は値 / 状態に応じて class を返せる。基底 `.ssg-body-cell` は `@layer` のため上書きが効く。 |
-| `renderHeader` | `(ctx: HeaderRenderContext<T>) => ReactNode` | — | カスタムヘッダー描画。 |
-| `filterType` | `'text' \| 'number' \| 'date' \| 'select' \| 'set' \| 'custom'` | — | フィルター UI の種別。 |
-| `filterOptions` | `GridSelectFilterOption[]` | rows から自動収集 | select / set の候補。 |
-| `filterFn` | `(row: T, filterValue: unknown) => boolean` | — | カスタムフィルター述語。 |
-| `parseClipboardValue` | `(raw: string, row: T) => unknown` | — | 貼り付け時のパーサ。 |
-| `formatClipboardValue` | `(value: unknown, row: T) => string` | — | コピー時のフォーマッタ。 |
-
-## serverSide モード(SSRM / DS-4 ②)
-
-`dataSource` を渡すと serverSide モードになり、総行数ぶんの縦スクロール空間を保ったまま、可視窓に近いブロックだけを `getRows` で取得する(取得範囲を定数で縛りメモリを有界化)。未ロード行はスケルトン行として描画され、到着後に実データへ差し替わる。`rows`(clientSide)と `dataSource`(serverSide)は排他。
-
-### query 配線(stage ②)
-
-clientSide の操作状態(グローバルフィルター・列フィルター・ソート)を `ServerSideQuery` に組み立て、`getRows` の `params.query` として送出する(フィルター/ソートの実行はサーバへ委ねる)。
-
-- **`ServerSideQuery`**: `{ globalText?: string; columnFilters?: Record<string, ColumnFilterValue>; sort?: GridSortState }`。全フィールドが空のときは `{}` を渡す。
-- **列フィルターの wire format**: `ColumnFilterValue` は `kind` を持つ discriminated union で、**そのまま**送出される(サーバはこの記述子を解釈して WHERE を組む)。`kind` 別の shape:
-  - `{ kind: 'set'; mode?: 'include' | 'exclude'; values: string[] }` — `values` は常に小さい側のみ保持する(全候補が多いとき `mode: 'exclude'` で非選択側を送る)。サーバは `mode` に応じて IN / NOT IN を組む。
-  - `{ kind: 'number'; raw: string; parsed }` — `parsed` が `range` / `comparison` / `null`(=`raw` で部分一致)。
-  - `{ kind: 'text'; value }` / `{ kind: 'date'; value }` / `{ kind: 'select'; value }`
-  - `{ kind: 'custom'; value }` — `column.filterFn` 利用列の自由形値(サーバ解釈は利用側責務)。
-  - アクティブなフィルターのみ送出される。キーは安定 queryKey のため昇順整列される。
-- **debounce**: query(filter/sort)の変更は約 300ms 静止後に一度だけ送出する(キーストロークごとの再フェッチを合体)。入力欄の表示自体は即時反映される。
-- **scroll-reset**: query が変わると結果セットが総入れ替えされるため、スクロールは先頭に戻る。
-- **enable\* フラグ**: serverSide でも `enableSorting` / `enableColumnFilter` / `enableGlobalFilter`(いずれも既定 true)が有効。サーバ非対応の操作を塞ぎたい場合に false にする。
-
-### set / select フィルターの候補(SSRM)
-
-set / select の候補集合はクライアントが供給する必要がある。**clientSide** は `rows` 全件から自動収集できるが、**serverSide** はクライアントが全件を持たないため自動収集できず候補が空になる。
-
-- **低カーディナリティ列**(状態・区分など): 列定義に `filterOptions` を静的指定する(serverSide でも set として機能する)。
-- **高カーディナリティ列**(品番・ID など): そもそも set 不適。`filterType: 'text'`(部分一致)や `number` 範囲を使う。
-- `filterOptions` 未指定の set/select 列を serverSide で開くと、候補リストに「候補が未指定」である旨が表示される(バグではなく設定不足)。サーバから候補を非同期供給する仕組みは将来の拡張(別 stage)。
-
-### dataSource とパラメータ
-
-- **`initialRowCount`**: 初回 fetch 前から正しい総高さ/スクロールバーを出したい場合に渡す(未指定時は最初の `getRows` 結果が返るまで件数 0)。**mount 時に一度だけ読まれる**(下記 remount 契約を参照)。
-- **`blockSize`(既定 100)/ `maxCachedBlocks`(既定 64)**: 1 ブロックの行数とクライアント側 LRU 上限。超過分は画面外の古いブロックから退避する。
-- **`getRows(params)` 契約**: `params` は `{ startIndex, endIndex, query, signal }`。渡された `[startIndex, endIndex)`(view 空間・end 排他)を尊重し全件を返さないこと。`query` 適用後の**フィルター後総件数**を `result.totalRowCount` で返すこと(縦スクロール空間がこれに追従する)。`signal` が abort されたら速やかに reject すること。
-- **`result`**: `{ rows: T[]; totalRowCount: number }`。`rows` は要求レンジ内の存在ぶん(末端では要求幅より短くてよい)。
-
-### サーバ最新の取り直し(`serverSideRefreshToken`)
-
-サーバ側のデータが外部で更新された場合など、**クエリは変えずにサーバの最新を取り直したい**ときは `serverSideRefreshToken`(`number`)を増やす。controlled な設計に合わせた軽量な signal で、`forwardRef` の命令的 API は持たない。
-
-- **`queryKey` 変化との違い**: フィルター/ソート/グローバルフィルターの変更は結果セットの総入れ替えなので**先頭へスクロールリセット**してキャッシュを全破棄し block 0 から取り直す。一方 `serverSideRefreshToken` は**スクロール位置を保持**したままキャッシュを破棄し、**現在の可視レンジ**を即時(debounce なし)取り直す。
-- **件数**: リフレッシュ時に件数はリセットせず、到着ブロックの `totalRowCount` で更新する。外部更新で件数が増減していれば縦スクロール空間が追従する。
-- **挙動メモ**: 取り直し中は対象行が一瞬スケルトン表示になる(purge → 再取得)。`refreshToken` は単調増加で運用する(値が変わったときだけ取り直す)。初回 mount では発火しない。
-- **用途**: 外部での編集/追加削除(mutation)後の反映トリガーとして使う想定。mutation 自体のサーバ書き戻し契約は別途必要(本グリッドの `onRowsChange` は clientSide 前提)。
-
-### clientSide ↔ serverSide の切替(remount 契約)
-
-`initialRowCount` と内部の行数 state は mount 時に確定する。そのため **実行時にモードを切り替える場合は `key` を変えてグリッドを再マウントすること**(clientSide で mount 後に `dataSource` を後付けしても件数が初期化されない)。serverSide で直接 mount する通常利用ではこの限りではない。
-
-## 補助型(props で参照される shape)
-
-- `GridRowKey = string | number`
-- `GridColumnPinned = 'left' | 'right'`
-- `GridSelectFilterOption = { label: string; value: string }`
-- `CellRenderContext<T> = { row, rowIndex, colIndex, value, column, isActive, isSelected, isEditing, readOnly, setValue }`
-- `HeaderRenderContext<T> = { colIndex, width, column, filterValue?, isFiltered? }`
-- `SpreadsheetGridSlotContext<T> = { rows, filteredRows, columns, visibleColumns, globalFilterText, columnFilterValues, sortState, setGlobalFilterText, activeCell, selection, derivedSummary }`
-  - `derivedSummary` は `SpreadsheetGridDerivedSummary`(行/列/フィルター/ソートの summary 文字列・選択統計などを内包)。helper を import せずトップ/ボトムバーで使える。
-
-## ライブラリ化の宿題(現状把握)
-
-- 〔解消〕**no-op props**: `enableClipboard` / `enableColumnResize` を型から削除(常時 ON 固定の挙動は不変)。将来「無効化」が必要になれば配線つきで非破壊追加する。
-- **imperative API(ref ハンドル)なし**: `forwardRef` / `useImperativeHandle` 未使用。外部から「特定セルへスクロール」「選択クリア」等を命令的に呼ぶ口がない(状態は全て controlled)。〔一部解消〕serverSide の「クエリ不変での最新取り直し」は `serverSideRefreshToken`(controlled な token prop)で可能。それ以外の命令操作は未提供。
-- 〔解消〕**公開バレル(`index.ts`)**: 入口を `index.ts` に集約し、`SpreadsheetGrid`(named)と公開型群(serverSide 型・`RowModel` 含む)を再エクスポート。`default export` は廃止。
-- **テーマ/スタイリング API**: 公開されるのは `className`(ルート1個)のみ。パーツ単位のクラスや CSS トークンは未提供。
 </file>
 
 <file path="src/components/spreadsheet-grid/logic/filtering.ts">
@@ -13010,6 +12779,260 @@ export const filterOrderByColumns = <T,>(
 };
 </file>
 
+<file path="src/components/spreadsheet-grid/view/DefaultGridTopBar.tsx">
+import type { SpreadsheetGridSlotContext } from '../model/gridTypes';
+
+type DefaultGridTopBarProps<T> = {
+  context: SpreadsheetGridSlotContext<T>;
+  // 追加: 件数/フィルター/ソートの summary chips を表示するかどうかです(既定 true)。
+  showSummary?: boolean;
+  // 追加: グローバルフィルター入力欄を表示するかどうかです(既定 true)。
+  showFilter?: boolean;
+  // 追加: summary 内の Rows / Columns 件数 chips を表示するかどうかです(既定 true)。
+  //   showSummary=true のときのみ効きます(Filter / Sort chips は本値の影響を受けません)。
+  showCounts?: boolean;
+};
+
+// 追加: Grid 上部の既定ツールバーです。summary chips(左) と グローバルフィルター入力(右) の
+//       2 パートからなり、それぞれ showSummary / showFilter で独立に出し分けできます。
+//       summary 内の Rows / Columns 件数 chips はさらに showCounts で出し分けできます。
+//       summary / filter が両方 false の場合は呼び出し側(SpreadsheetGrid)がそもそも本バーを
+//       描画しません(空バーは出しません)。
+// 変更(UI CSS移行): インライン style(gridBarStyles)を撤去し、styles.css の .ssg-bar-* クラスへ移行。
+// 変更(バー内訳): summary / filter を showSummary / showFilter で条件描画します。filter 単独時の
+//       左寄せ・幅は styles.css の `.ssg-bar-input-group:only-child` が担います。
+// 変更(件数トグル): summary 内の Rows / Columns 件数 chips を showCounts で出し分けます。
+export function DefaultGridTopBar<T>({
+  context,
+  showSummary = true,
+  showFilter = true,
+  showCounts = true,
+}: DefaultGridTopBarProps<T>) {
+  // 追加: slot context が持つ派生 summary を使います。
+  const { derivedSummary } = context;
+
+  return (
+    <div className="ssg-bar--top">
+      <div className="ssg-bar-container">
+        {showSummary ? (
+          <div className="ssg-bar-group ssg-bar-leading">
+            <span className="ssg-bar-title">Toolbar</span>
+
+            {showCounts ? (
+              <>
+                <span className="ssg-bar-chip ssg-bar-chip--emphasis">
+                  {derivedSummary.rowSummaryText}
+                </span>
+
+                <span className="ssg-bar-chip ssg-bar-chip--emphasis">
+                  {derivedSummary.columnSummaryText}
+                </span>
+              </>
+            ) : null}
+
+            <span className="ssg-bar-chip ssg-bar-chip--emphasis">
+              {derivedSummary.filterSummaryText}
+            </span>
+
+            <span className="ssg-bar-chip ssg-bar-chip--emphasis">
+              {derivedSummary.sortSummaryText}
+            </span>
+          </div>
+        ) : null}
+
+        {showFilter ? (
+          <div className="ssg-bar-input-group">
+            <input
+              type="text"
+              value={context.globalFilterText}
+              onChange={(event) => context.setGlobalFilterText(event.target.value)}
+              placeholder="グローバルフィルター"
+              className="ssg-bar-input"
+            />
+            {context.globalFilterText.trim().length > 0 ? (
+              <button
+                type="button"
+                onClick={() => context.setGlobalFilterText('')}
+                className="ssg-bar-clear-btn"
+              >
+                クリア
+              </button>
+            ) : null}
+          </div>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+export default DefaultGridTopBar;
+</file>
+
+<file path="src/components/spreadsheet-grid/API_REFERENCE.md">
+# SpreadsheetGrid 公開 API リファレンス
+
+> このファイルは `model/gridTypes.ts`(`SpreadsheetGridProps<T>` / `GridColumn<T>` 他)と
+> `SpreadsheetGrid.tsx`(既定値の分割代入)から手で起こした公開 API のスナップショットです。
+> **型を変更したら本ファイルも同期してください。** 将来 `index.ts` バレル整備時に props メタデータを
+> single source of truth 化し、dev 実行時パネル + 自動生成へ移行する想定です(現状は手動同期)。
+
+最終更新: SSRM stage ②(query 配線)完了時点。
+
+## SpreadsheetGrid props (`SpreadsheetGridProps<T>`)
+
+| Name | Type | Default | Description |
+| --- | --- | --- | --- |
+| `rows` | `T[]` | — | clientSide モードの行データ。`dataSource` を指定した場合は無視され serverSide モードになる(両者は排他)。 |
+| `columns` | `GridColumn<T>[]` | (required) | 列定義の配列。 |
+| `onRowsChange` | `(nextRows: T[]) => void` | — | 行が変化したとき呼ばれる(rows を controlled にする)。 |
+| `dataSource` | `ServerSideDataSource<T>` | — | serverSide(SSRM)モードのデータ供給口。指定すると可視窓近傍のブロックだけを `getRows` で都度取得し、`rows` 系の clientSide パイプラインをバイパスする。 |
+| `serverSideRefreshToken` | `number` | — | serverSide のソフトリフレッシュ用トークン。値を増やすと、クエリ(フィルター/ソート/グローバル)を変えずにキャッシュを破棄して現在の可視レンジをサーバから取り直す。スクロール位置は保持し、件数は到着ブロックの `totalRowCount` で追従する(clientSide では無視)。 |
+| `onColumnsChange` | `(nextColumns: GridColumn<T>[]) => void` | — | 列が変化したとき呼ばれる。列メニューの固定切替はこれが指定されている場合のみ反映。 |
+| `rowKeyGetter` | `(row: T, index: number) => GridRowKey` | index ベース | 安定した行キーを返す。 |
+| `createRow` | `() => T` | — | 行追加時に使う新規行ファクトリ。 |
+| `createOverflowColumn` | `(columnIndex: number) => GridColumn<T>` | — | 列追加時に使う列ファクトリ。 |
+| `rowHeight` | `number` | `36` | uniform 行の行高(px)。 |
+| `autoHeight` | `boolean` | `false` | auto-height 行モードを有効化。 |
+| `estimateRowHeight` | `number` | `rowHeight` | 未測定行の推定行高(px)。 |
+| `headerHeight` | `number` | `40` | ヘッダー行の高さ(px)。 |
+| `rowHeaderWidth` | `number` | `56` | 行番号列の幅(px)。 |
+| `readOnly` | `boolean` | `false` | グリッド全体の編集を無効化。 |
+| `canEditCell` | `(rowIndex, colIndex, row, column) => boolean` | — | セル単位の編集可否ゲート。 |
+| `enableRangeSelection` | `boolean` | `true` | 複数セル範囲選択。 |
+| `enableGlobalFilter` | `boolean` | `true` | グローバルフィルター**機能**の有効化。`false` で機能が無効になり、既定トップバーのフィルター入力欄も出ない(summary は `showTopBarSummary` に従う。トップバー自体を消すには `showTopBar=false`)。 |
+| `enableColumnFilter` | `boolean` | `true` | 列ごとのフィルター。 |
+| `enableSorting` | `boolean` | `true` | ヘッダークリックでのソート。 |
+| `enableColumnMenu` | `boolean` | `true` | 列メニュー(⋮ + ヘッダー右クリック)。 |
+| `enableRowHover` | `boolean` | `true` | 行ホバー時に行全体を薄くハイライト。 |
+| `enableColumnHeaderHover` | `boolean` | `true` | 列ヘッダーのホバー時にヘッダーセルを薄くハイライト。 |
+| `noMatchingRowsText` | `string` | `'一致する行がありません'` | フィルター結果 0 行時のオーバーレイ文言。 |
+| `noRowsText` | `string` | `'表示する行がありません'` | rows が 0 件のときの文言。 |
+| `showTopBar` | `boolean` | `true` | 上部バー(ツールバー)の表示有無。`false` で `renderTopBar` / `enableGlobalFilter` に関わらず一切描画しない(表示のマスタースイッチ。矛盾指定時は `renderTopBar` より優先)。 |
+| `showTopBarSummary` | `boolean` | `true` | 既定トップバーの summary chips(件数/フィルター/ソート)の表示有無。`renderTopBar` 未指定時のみ有効。これと `showTopBarFilter` がともに非表示なら既定トップバーは描画されない(空バーを出さない)。 |
+| `showTopBarCounts` | `boolean` | `true` | 既定トップバーの Rows / Columns 件数 chips の表示有無。`showTopBarSummary=true`(かつ `renderTopBar` 未指定)のときのみ有効。Filter / Sort chips は対象外。 |
+| `showTopBarFilter` | `boolean` | `true` | 既定トップバーのグローバルフィルター入力欄の表示有無。`renderTopBar` 未指定時のみ有効。`enableGlobalFilter=false` のときは本値に関わらず非表示。 |
+| `showBottomBar` | `boolean` | `true` | 下部バー(ステータスバー)の表示有無。`false` で `renderBottomBar` に関わらず一切描画しない(表示のマスタースイッチ。矛盾指定時は `renderBottomBar` より優先)。 |
+| `showBottomBarCounts` | `boolean` | `true` | 既定ボトムバーの Rows / Columns 件数 chips(左側)の表示有無。`renderBottomBar` 未指定時のみ有効。右側の Active / Selection / 選択統計 / Cols は対象外。 |
+| `renderTopBar` | `(ctx: SpreadsheetGridSlotContext<T>) => ReactNode` | 内蔵トップバー | 上部バーの差し替え。未指定時は内蔵トップバー(summary chips + フィルター入力。内訳は `showTopBarSummary` / `showTopBarFilter` で制御。フィルター入力は `enableGlobalFilter=true` が前提)。`showTopBar=false` 時は本指定に関わらず描画されない。 |
+| `renderBottomBar` | `(ctx: SpreadsheetGridSlotContext<T>) => ReactNode` | 内蔵ボトムバー | 下部バーの差し替え。未指定時は内蔵ステータスバー。`showBottomBar=false` 時は本指定に関わらず描画されない。 |
+| `className` | `string` | — | ルート要素の class。 |
+| `classNames` | `GridClassNames` | — | パーツ別の追加 class スロット。現状 `root` / `iconButton` / `bodyCell` / `bodyRow` が配線済み(他は順次)。基底 class は `@layer ssg-base` のため Tailwind 等の未レイヤー上書きが効く。 |
+| `getRowClassName` | `(row: T, rowIndex: number) => string \| undefined` | — | 行ごとの追加 class。行コンテナ + 各データセルに付与され、Tailwind 等での行ハイライトに使える。行ヘッダー「#」セルは現状対象外。 |
+
+### バーの表示制御(top / bottom)
+
+トップ / ボトムバーは次の優先順で解決される。
+
+- **`showTopBar` / `showBottomBar`(マスタースイッチ)**: `false` ならそのバーは一切描画されない(`render*` / `enable*` より優先)。
+- **`renderTopBar` / `renderBottomBar`(カスタム)**: 指定時はそのまま描画。トップバーの内訳 props(`showTopBarSummary` / `showTopBarFilter`)はカスタム側が中身を決めるため関与しない。
+- **既定バー**: `render*` 未指定時のフォールバック。
+
+既定トップバーは **summary chips(左)** と **グローバルフィルター入力(右)** の 2 パートからなり、独立に出し分けできる。
+
+| やりたいこと | 設定 |
+| --- | --- |
+| バーごと消す | `showTopBar={false}` |
+| summary だけ(フィルター入力なし) | `showTopBarFilter={false}` |
+| フィルター入力だけ(summary なし) | `showTopBarSummary={false}` |
+| トップの Rows/Columns 件数だけ消す | `showTopBarCounts={false}` |
+| ボトムの Rows/Columns 件数だけ消す | `showBottomBarCounts={false}` |
+| フィルター機能ごと無効 + summary は残す | `enableGlobalFilter={false}` |
+| 完全に自前のバー | `renderTopBar={(ctx) => …}` |
+
+`showTopBarSummary` と `showTopBarFilter`(実効は `showTopBarFilter && enableGlobalFilter`)がともに `false` の場合、既定トップバーは描画されない(空バーを出さない)。
+
+ボトムバーは Rows / Columns 件数のみ `showBottomBarCounts` で出し分けできる(右側の Active / Selection / 選択統計 / Cols は対象外)。それ以外の内訳を変えたい場合は `renderBottomBar` を使う。
+
+## GridColumn props (`GridColumn<T>`)
+
+| Name | Type | Default | Description |
+| --- | --- | --- | --- |
+| `key` | `string` | (required) | 列の一意キー。 |
+| `title` | `string` | — | ヘッダーの表示ラベル。 |
+| `width` | `number` | (required) | 列幅(px)。 |
+| `minWidth` | `number` | — | リサイズ時の下限幅。 |
+| `maxWidth` | `number` | — | リサイズ時の上限幅。 |
+| `autoHeight` | `boolean` | — | この列が auto-height 行の高さを駆動(グリッドの `autoHeight` 有効時のみ)。 |
+| `visible` | `boolean` | — | 列の表示/非表示。 |
+| `editable` | `boolean` | — | この列の編集を許可。 |
+| `readOnly` | `boolean` | — | この列を読み取り専用にする。 |
+| `pinned` | `'left' \| 'right'` | undefined = 中央スクロール | 列固定の方向。 |
+| `getValue` | `(row: T) => unknown` | `row[key]` | 値アクセサ。 |
+| `setValue` | `(row: T, value: unknown) => T` | — | 値ライター(新しい行を返す)。 |
+| `renderCell` | `(ctx: CellRenderContext<T>) => ReactNode` | プレーン `<span>` | カスタムセル描画。 |
+| `cellClassName` | `string \| ((ctx: CellStyleContext<T>) => string \| undefined)` | — | セルへ付与する追加 class(条件付きスタイル)。関数版は値 / 状態に応じて class を返せる。基底 `.ssg-body-cell` は `@layer` のため上書きが効く。 |
+| `renderHeader` | `(ctx: HeaderRenderContext<T>) => ReactNode` | — | カスタムヘッダー描画。 |
+| `filterType` | `'text' \| 'number' \| 'date' \| 'select' \| 'set' \| 'custom'` | — | フィルター UI の種別。 |
+| `filterOptions` | `GridSelectFilterOption[]` | rows から自動収集 | select / set の候補。 |
+| `filterFn` | `(row: T, filterValue: unknown) => boolean` | — | カスタムフィルター述語。 |
+| `parseClipboardValue` | `(raw: string, row: T) => unknown` | — | 貼り付け時のパーサ。 |
+| `formatClipboardValue` | `(value: unknown, row: T) => string` | — | コピー時のフォーマッタ。 |
+
+## serverSide モード(SSRM / DS-4 ②)
+
+`dataSource` を渡すと serverSide モードになり、総行数ぶんの縦スクロール空間を保ったまま、可視窓に近いブロックだけを `getRows` で取得する(取得範囲を定数で縛りメモリを有界化)。未ロード行はスケルトン行として描画され、到着後に実データへ差し替わる。`rows`(clientSide)と `dataSource`(serverSide)は排他。
+
+### query 配線(stage ②)
+
+clientSide の操作状態(グローバルフィルター・列フィルター・ソート)を `ServerSideQuery` に組み立て、`getRows` の `params.query` として送出する(フィルター/ソートの実行はサーバへ委ねる)。
+
+- **`ServerSideQuery`**: `{ globalText?: string; columnFilters?: Record<string, ColumnFilterValue>; sort?: GridSortState }`。全フィールドが空のときは `{}` を渡す。
+- **列フィルターの wire format**: `ColumnFilterValue` は `kind` を持つ discriminated union で、**そのまま**送出される(サーバはこの記述子を解釈して WHERE を組む)。`kind` 別の shape:
+  - `{ kind: 'set'; mode?: 'include' | 'exclude'; values: string[] }` — `values` は常に小さい側のみ保持する(全候補が多いとき `mode: 'exclude'` で非選択側を送る)。サーバは `mode` に応じて IN / NOT IN を組む。
+  - `{ kind: 'number'; raw: string; parsed }` — `parsed` が `range` / `comparison` / `null`(=`raw` で部分一致)。
+  - `{ kind: 'text'; value }` / `{ kind: 'date'; value }` / `{ kind: 'select'; value }`
+  - `{ kind: 'custom'; value }` — `column.filterFn` 利用列の自由形値(サーバ解釈は利用側責務)。
+  - アクティブなフィルターのみ送出される。キーは安定 queryKey のため昇順整列される。
+- **debounce**: query(filter/sort)の変更は約 300ms 静止後に一度だけ送出する(キーストロークごとの再フェッチを合体)。入力欄の表示自体は即時反映される。
+- **scroll-reset**: query が変わると結果セットが総入れ替えされるため、スクロールは先頭に戻る。
+- **enable\* フラグ**: serverSide でも `enableSorting` / `enableColumnFilter` / `enableGlobalFilter`(いずれも既定 true)が有効。サーバ非対応の操作を塞ぎたい場合に false にする。
+
+### set / select フィルターの候補(SSRM)
+
+set / select の候補集合はクライアントが供給する必要がある。**clientSide** は `rows` 全件から自動収集できるが、**serverSide** はクライアントが全件を持たないため自動収集できず候補が空になる。
+
+- **低カーディナリティ列**(状態・区分など): 列定義に `filterOptions` を静的指定する(serverSide でも set として機能する)。
+- **高カーディナリティ列**(品番・ID など): そもそも set 不適。`filterType: 'text'`(部分一致)や `number` 範囲を使う。
+- `filterOptions` 未指定の set/select 列を serverSide で開くと、候補リストに「候補が未指定」である旨が表示される(バグではなく設定不足)。サーバから候補を非同期供給する仕組みは将来の拡張(別 stage)。
+
+### dataSource とパラメータ
+
+- **`initialRowCount`**: 初回 fetch 前から正しい総高さ/スクロールバーを出したい場合に渡す(未指定時は最初の `getRows` 結果が返るまで件数 0)。**mount 時に一度だけ読まれる**(下記 remount 契約を参照)。
+- **`blockSize`(既定 100)/ `maxCachedBlocks`(既定 64)**: 1 ブロックの行数とクライアント側 LRU 上限。超過分は画面外の古いブロックから退避する。
+- **`getRows(params)` 契約**: `params` は `{ startIndex, endIndex, query, signal }`。渡された `[startIndex, endIndex)`(view 空間・end 排他)を尊重し全件を返さないこと。`query` 適用後の**フィルター後総件数**を `result.totalRowCount` で返すこと(縦スクロール空間がこれに追従する)。`signal` が abort されたら速やかに reject すること。
+- **`result`**: `{ rows: T[]; totalRowCount: number }`。`rows` は要求レンジ内の存在ぶん(末端では要求幅より短くてよい)。
+
+### サーバ最新の取り直し(`serverSideRefreshToken`)
+
+サーバ側のデータが外部で更新された場合など、**クエリは変えずにサーバの最新を取り直したい**ときは `serverSideRefreshToken`(`number`)を増やす。controlled な設計に合わせた軽量な signal で、`forwardRef` の命令的 API は持たない。
+
+- **`queryKey` 変化との違い**: フィルター/ソート/グローバルフィルターの変更は結果セットの総入れ替えなので**先頭へスクロールリセット**してキャッシュを全破棄し block 0 から取り直す。一方 `serverSideRefreshToken` は**スクロール位置を保持**したままキャッシュを破棄し、**現在の可視レンジ**を即時(debounce なし)取り直す。
+- **件数**: リフレッシュ時に件数はリセットせず、到着ブロックの `totalRowCount` で更新する。外部更新で件数が増減していれば縦スクロール空間が追従する。
+- **挙動メモ**: 取り直し中は対象行が一瞬スケルトン表示になる(purge → 再取得)。`refreshToken` は単調増加で運用する(値が変わったときだけ取り直す)。初回 mount では発火しない。
+- **用途**: 外部での編集/追加削除(mutation)後の反映トリガーとして使う想定。mutation 自体のサーバ書き戻し契約は別途必要(本グリッドの `onRowsChange` は clientSide 前提)。
+
+### clientSide ↔ serverSide の切替(remount 契約)
+
+`initialRowCount` と内部の行数 state は mount 時に確定する。そのため **実行時にモードを切り替える場合は `key` を変えてグリッドを再マウントすること**(clientSide で mount 後に `dataSource` を後付けしても件数が初期化されない)。serverSide で直接 mount する通常利用ではこの限りではない。
+
+## 補助型(props で参照される shape)
+
+- `GridRowKey = string | number`
+- `GridColumnPinned = 'left' | 'right'`
+- `GridSelectFilterOption = { label: string; value: string }`
+- `CellRenderContext<T> = { row, rowIndex, colIndex, value, column, isActive, isSelected, isEditing, readOnly, setValue }`
+- `HeaderRenderContext<T> = { colIndex, width, column, filterValue?, isFiltered? }`
+- `SpreadsheetGridSlotContext<T> = { rows, filteredRows, columns, visibleColumns, globalFilterText, columnFilterValues, sortState, setGlobalFilterText, activeCell, selection, derivedSummary }`
+  - `derivedSummary` は `SpreadsheetGridDerivedSummary`(行/列/フィルター/ソートの summary 文字列・選択統計などを内包)。helper を import せずトップ/ボトムバーで使える。
+
+## ライブラリ化の宿題(現状把握)
+
+- 〔解消〕**no-op props**: `enableClipboard` / `enableColumnResize` を型から削除(常時 ON 固定の挙動は不変)。将来「無効化」が必要になれば配線つきで非破壊追加する。
+- **imperative API(ref ハンドル)なし**: `forwardRef` / `useImperativeHandle` 未使用。外部から「特定セルへスクロール」「選択クリア」等を命令的に呼ぶ口がない(状態は全て controlled)。〔一部解消〕serverSide の「クエリ不変での最新取り直し」は `serverSideRefreshToken`(controlled な token prop)で可能。それ以外の命令操作は未提供。
+- 〔解消〕**公開バレル(`index.ts`)**: 入口を `index.ts` に集約し、`SpreadsheetGrid`(named)と公開型群(serverSide 型・`RowModel` 含む)を再エクスポート。`default export` は廃止。
+- **テーマ/スタイリング API**: 公開されるのは `className`(ルート1個)のみ。パーツ単位のクラスや CSS トークンは未提供。
+</file>
+
 <file path="src/components/spreadsheet-grid/logic/sorting.ts">
 import type { GridColumn, GridSortState } from '../model/gridTypes';
 import { getCellValue } from '../utils/permissions';
@@ -13345,6 +13368,762 @@ export const sortOrder = <T,>(
     result[i] = order[positions[i]];
   }
   return result;
+};
+</file>
+
+<file path="src/components/spreadsheet-grid/view/ColumnMenuPopover.tsx">
+// 変更(13-A2): フラットな項目列挙 → AG Grid 同様のカスケード(サブメニュー)UI へ変更します。
+//             ルートメニューには「列の固定 ›」を置き、hover / クリックで右隣に
+//             サブメニュー(固定しない / 左に固定 / 右に固定)を開きます。
+// 変更(13-B1): 13-A2 セッションの設計決定どおり、サブメニュー開閉状態を
+//             isPinSubmenuOpen: boolean → openSubmenuKey: string | null へ一般化し、
+//             ルート項目に「この列の幅を自動調整」「すべての列の幅を自動調整」を
+//             追加します(AG Grid の Autosize This Column / Autosize All Columns 相当)。
+//             サブメニューを持たないルート項目への hover で openSubmenuKey を null に
+//             戻すことで、AG Grid の「別項目 hover でカスケードが閉じる」挙動になります。
+// 変更(13-B2-1): ルート項目「列の表示」を追加します(AG Grid の Choose Columns 相当)。
+//             サブメニューではなく別 popover(ColumnChooserPanel)を開くリーフ項目です。
+// 追加(13-B2-3 / gpt5.5対応): ルート項目「列のリセット」を追加します。
+//             既存の ColumnChooserPanel フッターと同じ reset 処理を呼び出し、列メニュー側からも
+//             AG Grid の Reset Columns 相当を実行できるようにします。
+import { useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
+import { cx } from '../logic/cx';
+import type {
+  CSSProperties,
+  KeyboardEvent,
+  PointerEvent,
+  RefObject,
+} from 'react';
+import type { GridColumnPinned, GridSortDirection } from '../model/gridTypes';
+import type { ColumnMenuLayout } from '../hooks/useColumnMenuController';
+
+type ColumnMenuPinnedItem = {
+  // 注記: undefined = 固定なし(中央スクロール領域)です。
+  value: GridColumnPinned | undefined;
+  label: string;
+};
+
+// 変更(13-A2): 項目順を AG Grid の Pin Column サブメニュー
+//             (No Pin / Pin Left / Pin Right)に合わせます。
+const PINNED_ITEMS: ColumnMenuPinnedItem[] = [
+  { value: undefined, label: '固定しない' },
+  { value: 'left', label: '左に固定' },
+  { value: 'right', label: '右に固定' },
+];
+
+// 追加(13-A2): サブメニューの幅と、ルートメニューとの水平間隔です。
+//             左右どちらへ開くかの判定(viewport はみ出し)にも使います。
+const SUBMENU_WIDTH = 180;
+const SUBMENU_GAP = 4;
+const VIEWPORT_MARGIN = 8;
+
+// 追加(13-B1): サブメニューを持つルート項目の識別キーです。
+//             openSubmenuKey(string | null) との比較で開閉を判定します。
+//             13-B 後続でサブメニュー持ち項目を増やす場合はキーを追加します。
+const PIN_SUBMENU_KEY = 'pin';
+
+type ColumnMenuPopoverProps = {
+  isOpen: boolean;
+  title: string;
+  columnKey: string;
+  // 追加(13-B4): ソート(昇順/降順)をメニューから操作するための状態とハンドラです。
+  //             canSort=false(enableSorting=false 相当)のときは項目自体を出しません
+  //             (AG Grid の sortable:false でソート項目が消えるのと同じ挙動です)。
+  //             sortDirection はこの列の現在のソート方向で、✓ 表示の単一ソースです。
+  //             同じ方向を再選択したときの「解除」判定は SpreadsheetGrid 側が行います。
+  canSort: boolean;
+  sortDirection: GridSortDirection;
+  onSortChange: (direction: Exclude<GridSortDirection, null>) => void;
+  // 追加(MS-3-1): 並び替え管理パネル(SortManagementPanel)を開くハンドラです。
+  //             canSort=true のときだけ、昇順/降順の下にリーフ項目として出します
+  //             (サブメニューではなく別 popover を開く点は「列の表示」と同じ作法です)。
+  //             クリックで列メニューを閉じてパネルを開く配線は SpreadsheetGrid 側が担います。
+  onOpenSortManager: () => void;
+  // 追加: 開いている列の現在の固定状態です(✓ 表示に使います)。
+  pinned: GridColumnPinned | undefined;
+  // 追加: onColumnsChange 未指定時は false になり、固定切替の項目を無効化します
+  //       (columns は controlled props のため、callback なしでは反映できません)。
+  canChangePinned: boolean;
+  layout: ColumnMenuLayout | null;
+  popoverRef: RefObject<HTMLDivElement | null>;
+  onPinnedChange: (
+    columnKey: string,
+    pinned: GridColumnPinned | undefined,
+  ) => void;
+  // 追加(13-B1): 幅自動調整のハンドラです。幅は grid 内部 state(columnWidths)で
+  //             管理されるため、pinned と違い onColumnsChange の有無に依存せず
+  //             常に有効です(手動リサイズと同じ扱い)。
+  onAutosizeColumn: (columnKey: string) => void;
+  onAutosizeAllColumns: () => void;
+  // 追加(13-B2-1): 列の表示/非表示パネル(ColumnChooserPanel)を開くハンドラです。
+  //             この項目はサブメニューではなく別 popover を開くリーフ項目です
+  //             (クリックで列メニューを閉じてパネルを開きます。配線は SpreadsheetGrid 側)。
+  onOpenColumnChooser: () => void;
+  // 追加(13-B2-3 / gpt5.5対応): 列メニュー root の「列のリセット」用です。
+  //             columns は controlled props のため、onColumnsChange 未指定時は無効化します。
+  canResetColumns: boolean;
+  onResetColumns: () => void;
+  onRequestClose: () => void;
+};
+
+export function ColumnMenuPopover({
+  isOpen,
+  title,
+  columnKey,
+  canSort,
+  sortDirection,
+  onSortChange,
+  onOpenSortManager,
+  pinned,
+  canChangePinned,
+  layout,
+  popoverRef,
+  onPinnedChange,
+  onAutosizeColumn,
+  onAutosizeAllColumns,
+  onOpenColumnChooser,
+  canResetColumns,
+  onResetColumns,
+  onRequestClose,
+}: ColumnMenuPopoverProps) {
+  // 変更(13-B1): isPinSubmenuOpen: boolean → openSubmenuKey: string | null へ一般化します
+  //             (13-A2 セッションの設計決定どおり)。
+  //   - サブメニューを持つルート項目: onPointerEnter で setOpenSubmenuKey(自分の key)
+  //   - サブメニューを持たないルート項目: onPointerEnter で setOpenSubmenuKey(null)
+  //     (= 開いているカスケードが閉じる。AG Grid の挙動の肝)
+  // 注記: AG Grid と同様、一度開いたサブメニューはポインタが離れても開いたままにし、
+  //       別のルート項目へ hover したとき・メニュー自体が閉じたときに閉じます。
+  //       チラつき防止のため pointerleave では閉じません。
+  const [openSubmenuKey, setOpenSubmenuKey] = useState<string | null>(null);
+
+  // 追加(13-A2): 開いたまま別列へ切り替えた場合(popover は mount されたまま
+  //             columnKey だけ変わる)に、サブメニューの開閉状態を初期化します。
+  // 変更(13-B1): リセット先を openSubmenuKey = null に読み替えます。
+  useEffect(() => {
+    setOpenSubmenuKey(null);
+  }, [columnKey, isOpen]);
+
+  if (!isOpen || !layout) {
+    return null;
+  }
+
+  const isPinSubmenuOpen = openSubmenuKey === PIN_SUBMENU_KEY;
+
+  // 追加(13-A2): サブメニューを右に開くと viewport をはみ出す場合は左へ開きます
+  //             (AG Grid と同じフリップ挙動です)。layout はルートメニューの
+  //             fixed 座標なので、右端 = layout.left + layout.width です。
+  const submenuOpensLeft =
+    layout.left + layout.width + SUBMENU_GAP + SUBMENU_WIDTH >
+    window.innerWidth - VIEWPORT_MARGIN;
+
+  const wrapperStyle: CSSProperties = {
+    position: 'fixed',
+    top: layout.top,
+    left: layout.left,
+    width: layout.width,
+    zIndex: 1000,
+  };
+
+  // 追加(13-A2): サブメニューはルート項目(position: relative の行)を基準に
+  //             絶対配置します。top: -9 はパネルの padding(8) + border(1) ぶんを
+  //             相殺し、サブメニューの先頭項目をルート項目と上端揃えにするためです。
+  const submenuStyle: CSSProperties = {
+    position: 'absolute',
+    top: -9,
+    ...(submenuOpensLeft
+      ? { right: `calc(100% + ${SUBMENU_GAP}px)` }
+      : { left: `calc(100% + ${SUBMENU_GAP}px)` }),
+    width: SUBMENU_WIDTH,
+    zIndex: 1,
+  };
+
+  const handlePointerDown = (event: PointerEvent<HTMLDivElement>) => {
+    // 追加: popover 内 pointer 操作を grid 側へ伝播させません
+    //       (列選択開始や outside click 判定との競合を避けます)。
+    event.stopPropagation();
+  };
+
+  const handleKeyDownCapture = (event: KeyboardEvent<HTMLDivElement>) => {
+    // 追加: portal 内 keyboard イベントを React ツリー上の parent へ流しません。
+    //       Escape での close は controller の window keydown リスナーが担当します。
+    event.stopPropagation();
+  };
+
+  return createPortal(
+    <div
+      ref={popoverRef}
+      onPointerDown={handlePointerDown}
+      onKeyDownCapture={handleKeyDownCapture}
+      onContextMenu={(event) => {
+        // 追加: メニュー上での右クリックはブラウザ標準メニューを出しません。
+        event.preventDefault();
+      }}
+      className="ssg-menu-panel"
+      style={wrapperStyle}
+    >
+      <div className="ssg-menu-title">{title}</div>
+
+      {/* ── ルート項目: 昇順 / 降順で並び替え(13-B4) ── */}
+      {/* 追加(13-B4): ヘッダーのソートボタンを廃止し、ソート操作をメニュー(と
+          コンテキストメニュー)へ集約します。AG Grid の Sort Ascending /
+          Sort Descending 相当のリーフ項目です。現在の方向に ✓ を出し、その方向を
+          もう一度選ぶと解除します(解除判定は SpreadsheetGrid 側)。
+          サブメニューを持たないリーフなので、hover で openSubmenuKey を null に戻し、
+          開いているカスケード(列の固定)を閉じます。hover ハイライトは CSS :hover で
+          行います(state hover を避け、memo 影響を出しません)。 */}
+      {canSort && (
+        <>
+          <button
+            type="button"
+            onPointerEnter={() => {
+              setOpenSubmenuKey(null);
+            }}
+            onClick={() => {
+              onSortChange('asc');
+            }}
+            className="ssg-menu-item"
+          >
+            {/* 注記: 14px 列は他項目の ✓ 列と左端を揃えます。
+                未適用時は方向アイコン(↑/↓)を、適用中は ✓ を出します。
+                ラベル自体が方向を示すため、適用中にアイコンが ✓ へ変わっても
+                意味は失われません。 */}
+            <span
+              className={cx(
+                'ssg-menu-sort-icon',
+                sortDirection === 'asc' && 'ssg-menu-sort-icon--active',
+              )}
+            >
+              {sortDirection === 'asc' ? '✓' : '↑'}
+            </span>
+            <span
+              className={cx(
+                'ssg-menu-label',
+                sortDirection === 'asc' && 'ssg-menu-label--sorted',
+              )}
+            >
+              昇順で並び替え
+            </span>
+          </button>
+
+          <button
+            type="button"
+            onPointerEnter={() => {
+              setOpenSubmenuKey(null);
+            }}
+            onClick={() => {
+              onSortChange('desc');
+            }}
+            className="ssg-menu-item"
+          >
+            <span
+              className={cx(
+                'ssg-menu-sort-icon',
+                sortDirection === 'desc' && 'ssg-menu-sort-icon--active',
+              )}
+            >
+              {sortDirection === 'desc' ? '✓' : '↓'}
+            </span>
+            <span
+              className={cx(
+                'ssg-menu-label',
+                sortDirection === 'desc' && 'ssg-menu-label--sorted',
+              )}
+            >
+              降順で並び替え
+            </span>
+          </button>
+
+          {/* ── ルート項目: 並び替えを管理…(MS-3-1) ── */}
+          {/* 追加(MS-3-1): サブメニューではなく別 popover(SortManagementPanel)を開く
+              リーフ項目です。昇順/降順の単発操作に対し、複数レベルの追加/削除・優先順位の
+              編集をマウス/タッチで行う経路を提供します(Shift+click ジェスチャに依りません)。
+              autosize / 列の表示と同じく hover で setOpenSubmenuKey(null) し、開いている
+              カスケード(列の固定)を閉じます。✓ 列ぶんのスペーサで他項目と左端を揃えます。
+              クリックで列メニューを閉じてパネルを開く処理は SpreadsheetGrid 側
+              (onOpenSortManager)が担います。 */}
+          <button
+            type="button"
+            onPointerEnter={() => {
+              setOpenSubmenuKey(null);
+            }}
+            onClick={() => {
+              onOpenSortManager();
+            }}
+            className="ssg-menu-item"
+          >
+            <span className="ssg-menu-icon" />
+            <span className="ssg-menu-label">並び替えを管理…</span>
+          </button>
+
+          {/* 追加(13-B4): ソート群と以降(固定/幅/表示)の区切りです。 */}
+          <div className="ssg-menu-separator" />
+        </>
+      )}
+
+      {/* ── ルート項目: 列の固定 ›(サブメニュー親) ── */}
+      {/* 追加(13-A2): サブメニューはこの行(position: relative)基準で絶対配置します。
+          パネル自体は overflow を持たないため、wrapper の外側(右隣 / 左隣)へ
+          はみ出して表示されます。popoverRef(wrapper)の子孫なので、controller の
+          outside-pointerdown 判定(contains)にもそのまま含まれます。 */}
+      <div className="ssg-menu-submenu-anchor">
+        <button
+          type="button"
+          onPointerEnter={() => {
+            // 変更(13-B1): AG Grid と同様、hover でこの項目のサブメニューを開きます
+            //             (他のサブメニューが開いていれば置き換わります)。
+            setOpenSubmenuKey(PIN_SUBMENU_KEY);
+          }}
+          onClick={() => {
+            // 変更(13-B1): クリックでもトグルできるようにします(タッチ環境向け)。
+            setOpenSubmenuKey((current) =>
+              current === PIN_SUBMENU_KEY ? null : PIN_SUBMENU_KEY,
+            );
+          }}
+          className={cx(
+            'ssg-menu-item',
+            isPinSubmenuOpen && 'ssg-menu-item--active',
+          )}
+        >
+          {/* 注記: ✓ 列との左端揃えのため、サブメニュー項目と同じ幅のスペーサを置きます。*/}
+          <span className="ssg-menu-icon" />
+          <span className="ssg-menu-label">列の固定</span>
+          <span className="ssg-menu-caret">›</span>
+        </button>
+
+        {/* ── サブメニュー: 固定しない / 左に固定 / 右に固定 ── */}
+        {isPinSubmenuOpen && (
+          <div className="ssg-menu-panel" style={submenuStyle}>
+            {PINNED_ITEMS.map((item) => {
+              const isSelected = pinned === item.value;
+              return (
+                <button
+                  key={item.label}
+                  type="button"
+                  disabled={!canChangePinned}
+                  onClick={() => {
+                    if (!canChangePinned) {
+                      return;
+                    }
+                    // 注記: 現在値と同じ項目を選んでも閉じるだけになります
+                    //       (no-op 判定は SpreadsheetGrid 側で行います)。
+                    onPinnedChange(columnKey, item.value);
+                  }}
+                  className="ssg-menu-item"
+                >
+                  {/* 追加: 現在の固定状態に ✓ を出します(未選択は幅だけ確保して揃えます)。*/}
+                  <span
+                    className={cx(
+                      'ssg-menu-check',
+                      !isSelected && 'ssg-menu-check--hidden',
+                    )}
+                  >
+                    ✓
+                  </span>
+                  <span className="ssg-menu-label">{item.label}</span>
+                </button>
+              );
+            })}
+
+            {!canChangePinned && (
+              <div className="ssg-menu-note">
+                onColumnsChange 未指定のため固定状態を変更できません
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* ── ルート項目: 幅の自動調整(13-B1) ── */}
+      {/* 追加(13-B1): サブメニューを持たないルート項目です。hover で
+          setOpenSubmenuKey(null) し、開いているカスケード(列の固定)を閉じます
+          (AG Grid の「別項目 hover でサブメニューが閉じる」挙動)。
+          hover ハイライトは CSS :hover で行います(state を使うと hover のたびに
+          popover 全体が再レンダーされるため)。
+          実際の close と幅反映は SpreadsheetGrid 側ハンドラが行います。 */}
+      <button
+        type="button"
+        onPointerEnter={() => {
+          setOpenSubmenuKey(null);
+        }}
+        onClick={() => {
+          onAutosizeColumn(columnKey);
+        }}
+        className="ssg-menu-item"
+      >
+        {/* 注記: ✓ 列との左端揃え用スペーサです(ピン行と同じ幅)。*/}
+        <span className="ssg-menu-icon" />
+        <span className="ssg-menu-label">この列の幅を自動調整</span>
+      </button>
+
+      <button
+        type="button"
+        onPointerEnter={() => {
+          setOpenSubmenuKey(null);
+        }}
+        onClick={() => {
+          onAutosizeAllColumns();
+        }}
+        className="ssg-menu-item"
+      >
+        <span className="ssg-menu-icon" />
+        <span className="ssg-menu-label">すべての列の幅を自動調整</span>
+      </button>
+
+      {/* ── ルート項目: 列の表示(13-B2-1) ── */}
+      {/* 追加(13-B2-1): サブメニューではなく別 popover(ColumnChooserPanel)を開く
+          リーフ項目です。autosize 項目と同じく hover で setOpenSubmenuKey(null) し、
+          開いているカスケード(列の固定)を閉じます。クリックで列メニューを閉じて
+          パネルを開く処理は SpreadsheetGrid 側(onOpenColumnChooser)が担います。 */}
+      <button
+        type="button"
+        onPointerEnter={() => {
+          setOpenSubmenuKey(null);
+        }}
+        onClick={() => {
+          onOpenColumnChooser();
+        }}
+        className="ssg-menu-item"
+      >
+        <span className="ssg-menu-icon" />
+        <span className="ssg-menu-label">列の表示</span>
+      </button>
+
+      {/* ── ルート項目: 列のリセット(13-B2-3 / gpt5.5対応) ── */}
+      {/* 追加(13-B2-3 / gpt5.5対応): 既存の ColumnChooserPanel フッターと同じ
+          リセット処理を列メニュー root からも呼べるようにします。サブメニューではない
+          リーフ項目なので、hover 時は openSubmenuKey を null に戻します。 */}
+      <button
+        type="button"
+        aria-disabled={!canResetColumns}
+        tabIndex={canResetColumns ? 0 : -1}
+        title={
+          canResetColumns
+            ? 'すべての列の幅・固定・表示を初期状態に戻します'
+            : 'onColumnsChange 未指定のため列をリセットできません'
+        }
+        onPointerEnter={() => {
+          setOpenSubmenuKey(null);
+        }}
+        onClick={() => {
+          if (!canResetColumns) {
+            return;
+          }
+          onResetColumns();
+        }}
+        className={cx(
+          'ssg-menu-item',
+          !canResetColumns && 'ssg-menu-item--disabled',
+        )}
+      >
+        <span className="ssg-menu-icon" />
+        <span className="ssg-menu-label">列のリセット</span>
+      </button>
+
+      <div className="ssg-menu-footer">
+        <button
+          type="button"
+          onClick={onRequestClose}
+          className="ssg-menu-close-btn"
+        >
+          閉じる
+        </button>
+      </div>
+    </div>,
+    document.body,
+  );
+}
+
+export default ColumnMenuPopover;
+</file>
+
+<file path="src/components/spreadsheet-grid/view/gridBarHelpers.ts">
+import type { ReactNode } from 'react';
+import type {
+  CellCoord,
+  ColumnFilterValue,
+  GridSelection,
+  GridColumn,
+  SpreadsheetGridSlotContext,
+  SpreadsheetGridDerivedSummary,
+  SpreadsheetGridSelectionStats,
+} from '../model/gridTypes';
+import { toExcelColumnName } from '../utils/excelColumnName';
+// 追加(12-A): set フィルター対応のフィルター有効判定を共有します。
+import { isActiveColumnFilterValue } from '../logic/filtering';
+
+// 追加: Grid の slot renderer を解決します。
+export const resolveGridSlot = <T,>(
+  slotRenderer:
+    | ((context: SpreadsheetGridSlotContext<T>) => ReactNode)
+    | undefined,
+  context: SpreadsheetGridSlotContext<T>,
+  fallback: ReactNode,
+) => {
+  if (slotRenderer) {
+    return slotRenderer(context);
+  }
+  return fallback;
+};
+
+// 追加: summary 用に長い文字列を短く丸めます。
+const truncateSummaryText = (value: string, maxLength = 16) => {
+  if (value.length <= maxLength) {
+    return value;
+  }
+  return `${value.slice(0, maxLength)}…`;
+};
+
+// 追加: ActiveCell を A1 形式へ整形します。
+export const formatGridCellLabel = (cell: CellCoord | null) => {
+  if (!cell) {
+    return 'なし';
+  }
+  return `${toExcelColumnName(cell.col)}${cell.row + 1}`;
+};
+
+// 追加: selection の概要を短く整形します。
+export const formatGridSelectionLabel = (selection: GridSelection) => {
+  if (!selection) {
+    return 'なし';
+  }
+
+  if (selection.type === 'cell') {
+    const startRow = Math.min(
+      selection.range.start.row,
+      selection.range.end.row,
+    );
+    const endRow = Math.max(
+      selection.range.start.row,
+      selection.range.end.row,
+    );
+    const startCol = Math.min(
+      selection.range.start.col,
+      selection.range.end.col,
+    );
+    const endCol = Math.max(
+      selection.range.start.col,
+      selection.range.end.col,
+    );
+
+    return `${toExcelColumnName(startCol)}${startRow + 1} - ${toExcelColumnName(
+      endCol,
+    )}${endRow + 1}`;
+  }
+
+  if (selection.type === 'row') {
+    const startRow = Math.min(selection.startRow, selection.endRow);
+    const endRow = Math.max(selection.startRow, selection.endRow);
+    return `Row ${startRow + 1} - ${endRow + 1}`;
+  }
+
+  const startCol = Math.min(selection.startCol, selection.endCol);
+  const endCol = Math.max(selection.startCol, selection.endCol);
+  return `Col ${toExcelColumnName(startCol)} - ${toExcelColumnName(endCol)}`;
+};
+
+// 追加: rows / filteredRows の概要テキストです。
+// 変更(DS-3-7): filteredRows(配列)依存をやめ、件数 filteredRowCount(数値)を引数で受けます。
+//   公開 slotContext.filteredRows は遅延 getter で別途供給され、サマリは件数しか使いません。
+export const formatGridRowSummary = <T,>(
+  context: Pick<SpreadsheetGridSlotContext<T>, 'rows'>,
+  filteredRowCount: number,
+) => `Rows: ${filteredRowCount} / ${context.rows.length}`;
+
+// 追加: columns / visibleColumns の概要テキストです。
+export const formatGridColumnSummary = <T,>(
+  context: Pick<SpreadsheetGridSlotContext<T>, 'columns' | 'visibleColumns'>,
+) => `Columns: ${context.visibleColumns.length} / ${context.columns.length}`;
+
+// 追加: selection から選択セル数 / 行数 / 列数を算出します。
+export const getGridSelectionStats = <T,>(
+  context: Pick<SpreadsheetGridSlotContext<T>, 'selection' | 'visibleColumns'>,
+  // 変更(DS-3-7): filteredRows(配列)→ 件数 filteredRowCount(数値)を引数で受けます。
+  filteredRowCount: number,
+): SpreadsheetGridSelectionStats => {
+  const selection = context.selection;
+  if (!selection) {
+    return {
+      selectedCellCount: 0,
+      selectedRowCount: 0,
+      selectedColumnCount: 0,
+    };
+  }
+
+  if (selection.type === 'cell') {
+    const startRow = Math.min(
+      selection.range.start.row,
+      selection.range.end.row,
+    );
+    const endRow = Math.max(
+      selection.range.start.row,
+      selection.range.end.row,
+    );
+    const startCol = Math.min(
+      selection.range.start.col,
+      selection.range.end.col,
+    );
+    const endCol = Math.max(
+      selection.range.start.col,
+      selection.range.end.col,
+    );
+    const selectedRowCount = endRow - startRow + 1;
+    const selectedColumnCount = endCol - startCol + 1;
+    return {
+      selectedCellCount: selectedRowCount * selectedColumnCount,
+      selectedRowCount,
+      selectedColumnCount,
+    };
+  }
+
+  if (selection.type === 'row') {
+    const startRow = Math.min(selection.startRow, selection.endRow);
+    const endRow = Math.max(selection.startRow, selection.endRow);
+    const selectedRowCount = endRow - startRow + 1;
+    const selectedColumnCount = context.visibleColumns.length;
+    return {
+      selectedCellCount: selectedRowCount * selectedColumnCount,
+      selectedRowCount,
+      selectedColumnCount,
+    };
+  }
+
+  const startCol = Math.min(selection.startCol, selection.endCol);
+  const endCol = Math.max(selection.startCol, selection.endCol);
+  const selectedColumnCount = endCol - startCol + 1;
+  const selectedRowCount = filteredRowCount;
+  return {
+    selectedCellCount: selectedRowCount * selectedColumnCount,
+    selectedRowCount,
+    selectedColumnCount,
+  };
+};
+
+// 追加: selection 数量の要約テキストです。
+export const formatGridSelectionStatsLabel = <T,>(
+  context: Pick<SpreadsheetGridSlotContext<T>, 'selection' | 'visibleColumns'>,
+  filteredRowCount: number,
+) => {
+  const stats = getGridSelectionStats(context, filteredRowCount);
+  return `Cells: ${stats.selectedCellCount} / Rows: ${stats.selectedRowCount}`;
+};
+
+// 変更(12-A): 列フィルターの有効件数を数えます。
+// 変更理由: set フィルター値はオブジェクトのため String(value).trim() 判定が
+//           成立しません(空配列も「全行除外」として有効に数える必要があります)。
+//           判定を logic/filtering.ts の isActiveColumnFilterValue へ一元化します。
+const countActiveColumnFilters = (
+  columnFilterValues: Record<string, ColumnFilterValue>,
+) =>
+  Object.values(columnFilterValues).filter((value) =>
+    isActiveColumnFilterValue(value),
+  ).length;
+
+// 追加: フィルター状態の要約テキストです。
+export const formatGridFilterSummary = <T,>(
+  context: Pick<
+    SpreadsheetGridSlotContext<T>,
+    'globalFilterText' | 'columnFilterValues'
+  >,
+) => {
+  const hasGlobalFilter = context.globalFilterText.trim().length > 0;
+  const globalFilterPreview = hasGlobalFilter
+    ? truncateSummaryText(context.globalFilterText.trim())
+    : null;
+  const columnFilterCount = countActiveColumnFilters(context.columnFilterValues);
+
+  if (!hasGlobalFilter && columnFilterCount === 0) {
+    return 'Filter: なし';
+  }
+
+  if (hasGlobalFilter && columnFilterCount === 0) {
+    return `Filter: Global("${globalFilterPreview}")`;
+  }
+
+  if (!hasGlobalFilter && columnFilterCount > 0) {
+    return `Filter: ${columnFilterCount}列`;
+  }
+
+  return `Filter: Global("${globalFilterPreview}") + ${columnFilterCount}列`;
+};
+
+// 変更(MS-1): ソート列名取得を「単一 key → ラベル」に一般化します
+//            (配列の各エントリ・主ソート列の双方から使い回せるように)。
+const getColumnLabelByKey = <T,>(
+  columns: GridColumn<T>[],
+  columnKey: string,
+) => {
+  const column = columns.find((item) => item.key === columnKey);
+  return column?.title || column?.key || columnKey;
+};
+
+// 追加: ソート状態の要約テキストです。
+export const formatGridSortSummary = <T,>(
+  context: Pick<SpreadsheetGridSlotContext<T>, 'columns' | 'sortState'>,
+) => {
+  // 変更(MS-1): 配列を優先順位順に「列名 (方向)」で連結します。
+  //   単一エントリのときは従来と同一の文字列(例: 'Sort: 金額 (昇順)')になります。
+  if (context.sortState.length === 0) {
+    return 'Sort: なし';
+  }
+
+  const parts = context.sortState.map((entry) => {
+    const label = getColumnLabelByKey(context.columns, entry.columnKey);
+    return `${label} (${entry.direction === 'asc' ? '昇順' : '降順'})`;
+  });
+
+  return `Sort: ${parts.join(', ')}`;
+};
+
+// 追加: slot context に載せる派生 summary を一括構築します。
+export const buildGridDerivedSummary = <T,>(
+  context: Pick<
+    SpreadsheetGridSlotContext<T>,
+    | 'rows'
+    | 'columns'
+    | 'visibleColumns'
+    | 'globalFilterText'
+    | 'columnFilterValues'
+    | 'sortState'
+    | 'activeCell'
+    | 'selection'
+  >,
+  // 変更(DS-3-7): filteredRows(配列)依存を除去し、件数を引数で各 format 関数へ流します。
+  filteredRowCount: number,
+): SpreadsheetGridDerivedSummary => {
+  const selectionStats = getGridSelectionStats(context, filteredRowCount);
+  const hasGlobalFilter = context.globalFilterText.trim().length > 0;
+  const globalFilterPreview = hasGlobalFilter
+    ? truncateSummaryText(context.globalFilterText.trim())
+    : null;
+  const activeColumnFilterCount = countActiveColumnFilters(
+    context.columnFilterValues,
+  );
+  const hasAnyFilter = hasGlobalFilter || activeColumnFilterCount > 0;
+  // 変更(MS-1): 配列ベースの判定に置き換えます。
+  //   sortedColumnLabel は後方互換のため「主ソート(先頭)列」のラベルを返します
+  //   (複数ソート時は先頭。全体の要約は sortSummaryText 側が担います)。
+  const hasSorting = context.sortState.length > 0;
+  const sortedColumnLabel = hasSorting
+    ? getColumnLabelByKey(context.columns, context.sortState[0].columnKey)
+    : null;
+
+  return {
+    rowSummaryText: formatGridRowSummary(context, filteredRowCount),
+    columnSummaryText: formatGridColumnSummary(context),
+    filterSummaryText: formatGridFilterSummary(context),
+    sortSummaryText: formatGridSortSummary(context),
+    activeCellLabel: formatGridCellLabel(context.activeCell),
+    selectionLabel: formatGridSelectionLabel(context.selection),
+    selectionStatsText: formatGridSelectionStatsLabel(context, filteredRowCount),
+    selectionStats,
+    hasGlobalFilter,
+    globalFilterPreview,
+    activeColumnFilterCount,
+    hasAnyFilter,
+    hasSorting,
+    sortedColumnLabel,
+  };
 };
 </file>
 
@@ -14554,760 +15333,571 @@ export const sortOrder = <T,>(
 }
 </file>
 
-<file path="src/components/spreadsheet-grid/view/ColumnMenuPopover.tsx">
-// 変更(13-A2): フラットな項目列挙 → AG Grid 同様のカスケード(サブメニュー)UI へ変更します。
-//             ルートメニューには「列の固定 ›」を置き、hover / クリックで右隣に
-//             サブメニュー(固定しない / 左に固定 / 右に固定)を開きます。
-// 変更(13-B1): 13-A2 セッションの設計決定どおり、サブメニュー開閉状態を
-//             isPinSubmenuOpen: boolean → openSubmenuKey: string | null へ一般化し、
-//             ルート項目に「この列の幅を自動調整」「すべての列の幅を自動調整」を
-//             追加します(AG Grid の Autosize This Column / Autosize All Columns 相当)。
-//             サブメニューを持たないルート項目への hover で openSubmenuKey を null に
-//             戻すことで、AG Grid の「別項目 hover でカスケードが閉じる」挙動になります。
-// 変更(13-B2-1): ルート項目「列の表示」を追加します(AG Grid の Choose Columns 相当)。
-//             サブメニューではなく別 popover(ColumnChooserPanel)を開くリーフ項目です。
-// 追加(13-B2-3 / gpt5.5対応): ルート項目「列のリセット」を追加します。
-//             既存の ColumnChooserPanel フッターと同じ reset 処理を呼び出し、列メニュー側からも
-//             AG Grid の Reset Columns 相当を実行できるようにします。
-import { useEffect, useState } from 'react';
-import { createPortal } from 'react-dom';
-import { cx } from '../logic/cx';
-import type {
-  CSSProperties,
-  KeyboardEvent,
-  PointerEvent,
-  RefObject,
+<file path="src/components/spreadsheet-grid/hooks/useGridPointerInteractions.ts">
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  type Dispatch,
+  type PointerEvent,
+  type RefObject,
 } from 'react';
-import type { GridColumnPinned, GridSortDirection } from '../model/gridTypes';
-import type { ColumnMenuLayout } from '../hooks/useColumnMenuController';
-
-type ColumnMenuPinnedItem = {
-  // 注記: undefined = 固定なし(中央スクロール領域)です。
-  value: GridColumnPinned | undefined;
-  label: string;
-};
-
-// 変更(13-A2): 項目順を AG Grid の Pin Column サブメニュー
-//             (No Pin / Pin Left / Pin Right)に合わせます。
-const PINNED_ITEMS: ColumnMenuPinnedItem[] = [
-  { value: undefined, label: '固定しない' },
-  { value: 'left', label: '左に固定' },
-  { value: 'right', label: '右に固定' },
-];
-
-// 追加(13-A2): サブメニューの幅と、ルートメニューとの水平間隔です。
-//             左右どちらへ開くかの判定(viewport はみ出し)にも使います。
-const SUBMENU_WIDTH = 180;
-const SUBMENU_GAP = 4;
-const VIEWPORT_MARGIN = 8;
-
-// 追加(13-B1): サブメニューを持つルート項目の識別キーです。
-//             openSubmenuKey(string | null) との比較で開閉を判定します。
-//             13-B 後続でサブメニュー持ち項目を増やす場合はキーを追加します。
-const PIN_SUBMENU_KEY = 'pin';
-
-type ColumnMenuPopoverProps = {
-  isOpen: boolean;
-  title: string;
-  columnKey: string;
-  // 追加(13-B4): ソート(昇順/降順)をメニューから操作するための状態とハンドラです。
-  //             canSort=false(enableSorting=false 相当)のときは項目自体を出しません
-  //             (AG Grid の sortable:false でソート項目が消えるのと同じ挙動です)。
-  //             sortDirection はこの列の現在のソート方向で、✓ 表示の単一ソースです。
-  //             同じ方向を再選択したときの「解除」判定は SpreadsheetGrid 側が行います。
-  canSort: boolean;
-  sortDirection: GridSortDirection;
-  onSortChange: (direction: Exclude<GridSortDirection, null>) => void;
-  // 追加(MS-3-1): 並び替え管理パネル(SortManagementPanel)を開くハンドラです。
-  //             canSort=true のときだけ、昇順/降順の下にリーフ項目として出します
-  //             (サブメニューではなく別 popover を開く点は「列の表示」と同じ作法です)。
-  //             クリックで列メニューを閉じてパネルを開く配線は SpreadsheetGrid 側が担います。
-  onOpenSortManager: () => void;
-  // 追加: 開いている列の現在の固定状態です(✓ 表示に使います)。
-  pinned: GridColumnPinned | undefined;
-  // 追加: onColumnsChange 未指定時は false になり、固定切替の項目を無効化します
-  //       (columns は controlled props のため、callback なしでは反映できません)。
-  canChangePinned: boolean;
-  layout: ColumnMenuLayout | null;
-  popoverRef: RefObject<HTMLDivElement | null>;
-  onPinnedChange: (
-    columnKey: string,
-    pinned: GridColumnPinned | undefined,
-  ) => void;
-  // 追加(13-B1): 幅自動調整のハンドラです。幅は grid 内部 state(columnWidths)で
-  //             管理されるため、pinned と違い onColumnsChange の有無に依存せず
-  //             常に有効です(手動リサイズと同じ扱い)。
-  onAutosizeColumn: (columnKey: string) => void;
-  onAutosizeAllColumns: () => void;
-  // 追加(13-B2-1): 列の表示/非表示パネル(ColumnChooserPanel)を開くハンドラです。
-  //             この項目はサブメニューではなく別 popover を開くリーフ項目です
-  //             (クリックで列メニューを閉じてパネルを開きます。配線は SpreadsheetGrid 側)。
-  onOpenColumnChooser: () => void;
-  // 追加(13-B2-3 / gpt5.5対応): 列メニュー root の「列のリセット」用です。
-  //             columns は controlled props のため、onColumnsChange 未指定時は無効化します。
-  canResetColumns: boolean;
-  onResetColumns: () => void;
-  onRequestClose: () => void;
-};
-
-export function ColumnMenuPopover({
-  isOpen,
-  title,
-  columnKey,
-  canSort,
-  sortDirection,
-  onSortChange,
-  onOpenSortManager,
-  pinned,
-  canChangePinned,
-  layout,
-  popoverRef,
-  onPinnedChange,
-  onAutosizeColumn,
-  onAutosizeAllColumns,
-  onOpenColumnChooser,
-  canResetColumns,
-  onResetColumns,
-  onRequestClose,
-}: ColumnMenuPopoverProps) {
-  // 変更(13-B1): isPinSubmenuOpen: boolean → openSubmenuKey: string | null へ一般化します
-  //             (13-A2 セッションの設計決定どおり)。
-  //   - サブメニューを持つルート項目: onPointerEnter で setOpenSubmenuKey(自分の key)
-  //   - サブメニューを持たないルート項目: onPointerEnter で setOpenSubmenuKey(null)
-  //     (= 開いているカスケードが閉じる。AG Grid の挙動の肝)
-  // 注記: AG Grid と同様、一度開いたサブメニューはポインタが離れても開いたままにし、
-  //       別のルート項目へ hover したとき・メニュー自体が閉じたときに閉じます。
-  //       チラつき防止のため pointerleave では閉じません。
-  const [openSubmenuKey, setOpenSubmenuKey] = useState<string | null>(null);
-
-  // 追加(13-A2): 開いたまま別列へ切り替えた場合(popover は mount されたまま
-  //             columnKey だけ変わる)に、サブメニューの開閉状態を初期化します。
-  // 変更(13-B1): リセット先を openSubmenuKey = null に読み替えます。
-  useEffect(() => {
-    setOpenSubmenuKey(null);
-  }, [columnKey, isOpen]);
-
-  if (!isOpen || !layout) {
-    return null;
-  }
-
-  const isPinSubmenuOpen = openSubmenuKey === PIN_SUBMENU_KEY;
-
-  // 追加(13-A2): サブメニューを右に開くと viewport をはみ出す場合は左へ開きます
-  //             (AG Grid と同じフリップ挙動です)。layout はルートメニューの
-  //             fixed 座標なので、右端 = layout.left + layout.width です。
-  const submenuOpensLeft =
-    layout.left + layout.width + SUBMENU_GAP + SUBMENU_WIDTH >
-    window.innerWidth - VIEWPORT_MARGIN;
-
-  const wrapperStyle: CSSProperties = {
-    position: 'fixed',
-    top: layout.top,
-    left: layout.left,
-    width: layout.width,
-    zIndex: 1000,
-  };
-
-  // 追加(13-A2): サブメニューはルート項目(position: relative の行)を基準に
-  //             絶対配置します。top: -9 はパネルの padding(8) + border(1) ぶんを
-  //             相殺し、サブメニューの先頭項目をルート項目と上端揃えにするためです。
-  const submenuStyle: CSSProperties = {
-    position: 'absolute',
-    top: -9,
-    ...(submenuOpensLeft
-      ? { right: `calc(100% + ${SUBMENU_GAP}px)` }
-      : { left: `calc(100% + ${SUBMENU_GAP}px)` }),
-    width: SUBMENU_WIDTH,
-    zIndex: 1,
-  };
-
-  const handlePointerDown = (event: PointerEvent<HTMLDivElement>) => {
-    // 追加: popover 内 pointer 操作を grid 側へ伝播させません
-    //       (列選択開始や outside click 判定との競合を避けます)。
-    event.stopPropagation();
-  };
-
-  const handleKeyDownCapture = (event: KeyboardEvent<HTMLDivElement>) => {
-    // 追加: portal 内 keyboard イベントを React ツリー上の parent へ流しません。
-    //       Escape での close は controller の window keydown リスナーが担当します。
-    event.stopPropagation();
-  };
-
-  return createPortal(
-    <div
-      ref={popoverRef}
-      onPointerDown={handlePointerDown}
-      onKeyDownCapture={handleKeyDownCapture}
-      onContextMenu={(event) => {
-        // 追加: メニュー上での右クリックはブラウザ標準メニューを出しません。
-        event.preventDefault();
-      }}
-      className="ssg-menu-panel"
-      style={wrapperStyle}
-    >
-      <div className="ssg-menu-title">{title}</div>
-
-      {/* ── ルート項目: 昇順 / 降順で並び替え(13-B4) ── */}
-      {/* 追加(13-B4): ヘッダーのソートボタンを廃止し、ソート操作をメニュー(と
-          コンテキストメニュー)へ集約します。AG Grid の Sort Ascending /
-          Sort Descending 相当のリーフ項目です。現在の方向に ✓ を出し、その方向を
-          もう一度選ぶと解除します(解除判定は SpreadsheetGrid 側)。
-          サブメニューを持たないリーフなので、hover で openSubmenuKey を null に戻し、
-          開いているカスケード(列の固定)を閉じます。hover ハイライトは CSS :hover で
-          行います(state hover を避け、memo 影響を出しません)。 */}
-      {canSort && (
-        <>
-          <button
-            type="button"
-            onPointerEnter={() => {
-              setOpenSubmenuKey(null);
-            }}
-            onClick={() => {
-              onSortChange('asc');
-            }}
-            className="ssg-menu-item"
-          >
-            {/* 注記: 14px 列は他項目の ✓ 列と左端を揃えます。
-                未適用時は方向アイコン(↑/↓)を、適用中は ✓ を出します。
-                ラベル自体が方向を示すため、適用中にアイコンが ✓ へ変わっても
-                意味は失われません。 */}
-            <span
-              className={cx(
-                'ssg-menu-sort-icon',
-                sortDirection === 'asc' && 'ssg-menu-sort-icon--active',
-              )}
-            >
-              {sortDirection === 'asc' ? '✓' : '↑'}
-            </span>
-            <span
-              className={cx(
-                'ssg-menu-label',
-                sortDirection === 'asc' && 'ssg-menu-label--sorted',
-              )}
-            >
-              昇順で並び替え
-            </span>
-          </button>
-
-          <button
-            type="button"
-            onPointerEnter={() => {
-              setOpenSubmenuKey(null);
-            }}
-            onClick={() => {
-              onSortChange('desc');
-            }}
-            className="ssg-menu-item"
-          >
-            <span
-              className={cx(
-                'ssg-menu-sort-icon',
-                sortDirection === 'desc' && 'ssg-menu-sort-icon--active',
-              )}
-            >
-              {sortDirection === 'desc' ? '✓' : '↓'}
-            </span>
-            <span
-              className={cx(
-                'ssg-menu-label',
-                sortDirection === 'desc' && 'ssg-menu-label--sorted',
-              )}
-            >
-              降順で並び替え
-            </span>
-          </button>
-
-          {/* ── ルート項目: 並び替えを管理…(MS-3-1) ── */}
-          {/* 追加(MS-3-1): サブメニューではなく別 popover(SortManagementPanel)を開く
-              リーフ項目です。昇順/降順の単発操作に対し、複数レベルの追加/削除・優先順位の
-              編集をマウス/タッチで行う経路を提供します(Shift+click ジェスチャに依りません)。
-              autosize / 列の表示と同じく hover で setOpenSubmenuKey(null) し、開いている
-              カスケード(列の固定)を閉じます。✓ 列ぶんのスペーサで他項目と左端を揃えます。
-              クリックで列メニューを閉じてパネルを開く処理は SpreadsheetGrid 側
-              (onOpenSortManager)が担います。 */}
-          <button
-            type="button"
-            onPointerEnter={() => {
-              setOpenSubmenuKey(null);
-            }}
-            onClick={() => {
-              onOpenSortManager();
-            }}
-            className="ssg-menu-item"
-          >
-            <span className="ssg-menu-icon" />
-            <span className="ssg-menu-label">並び替えを管理…</span>
-          </button>
-
-          {/* 追加(13-B4): ソート群と以降(固定/幅/表示)の区切りです。 */}
-          <div className="ssg-menu-separator" />
-        </>
-      )}
-
-      {/* ── ルート項目: 列の固定 ›(サブメニュー親) ── */}
-      {/* 追加(13-A2): サブメニューはこの行(position: relative)基準で絶対配置します。
-          パネル自体は overflow を持たないため、wrapper の外側(右隣 / 左隣)へ
-          はみ出して表示されます。popoverRef(wrapper)の子孫なので、controller の
-          outside-pointerdown 判定(contains)にもそのまま含まれます。 */}
-      <div className="ssg-menu-submenu-anchor">
-        <button
-          type="button"
-          onPointerEnter={() => {
-            // 変更(13-B1): AG Grid と同様、hover でこの項目のサブメニューを開きます
-            //             (他のサブメニューが開いていれば置き換わります)。
-            setOpenSubmenuKey(PIN_SUBMENU_KEY);
-          }}
-          onClick={() => {
-            // 変更(13-B1): クリックでもトグルできるようにします(タッチ環境向け)。
-            setOpenSubmenuKey((current) =>
-              current === PIN_SUBMENU_KEY ? null : PIN_SUBMENU_KEY,
-            );
-          }}
-          className={cx(
-            'ssg-menu-item',
-            isPinSubmenuOpen && 'ssg-menu-item--active',
-          )}
-        >
-          {/* 注記: ✓ 列との左端揃えのため、サブメニュー項目と同じ幅のスペーサを置きます。*/}
-          <span className="ssg-menu-icon" />
-          <span className="ssg-menu-label">列の固定</span>
-          <span className="ssg-menu-caret">›</span>
-        </button>
-
-        {/* ── サブメニュー: 固定しない / 左に固定 / 右に固定 ── */}
-        {isPinSubmenuOpen && (
-          <div className="ssg-menu-panel" style={submenuStyle}>
-            {PINNED_ITEMS.map((item) => {
-              const isSelected = pinned === item.value;
-              return (
-                <button
-                  key={item.label}
-                  type="button"
-                  disabled={!canChangePinned}
-                  onClick={() => {
-                    if (!canChangePinned) {
-                      return;
-                    }
-                    // 注記: 現在値と同じ項目を選んでも閉じるだけになります
-                    //       (no-op 判定は SpreadsheetGrid 側で行います)。
-                    onPinnedChange(columnKey, item.value);
-                  }}
-                  className="ssg-menu-item"
-                >
-                  {/* 追加: 現在の固定状態に ✓ を出します(未選択は幅だけ確保して揃えます)。*/}
-                  <span
-                    className={cx(
-                      'ssg-menu-check',
-                      !isSelected && 'ssg-menu-check--hidden',
-                    )}
-                  >
-                    ✓
-                  </span>
-                  <span className="ssg-menu-label">{item.label}</span>
-                </button>
-              );
-            })}
-
-            {!canChangePinned && (
-              <div className="ssg-menu-note">
-                onColumnsChange 未指定のため固定状態を変更できません
-              </div>
-            )}
-          </div>
-        )}
-      </div>
-
-      {/* ── ルート項目: 幅の自動調整(13-B1) ── */}
-      {/* 追加(13-B1): サブメニューを持たないルート項目です。hover で
-          setOpenSubmenuKey(null) し、開いているカスケード(列の固定)を閉じます
-          (AG Grid の「別項目 hover でサブメニューが閉じる」挙動)。
-          hover ハイライトは CSS :hover で行います(state を使うと hover のたびに
-          popover 全体が再レンダーされるため)。
-          実際の close と幅反映は SpreadsheetGrid 側ハンドラが行います。 */}
-      <button
-        type="button"
-        onPointerEnter={() => {
-          setOpenSubmenuKey(null);
-        }}
-        onClick={() => {
-          onAutosizeColumn(columnKey);
-        }}
-        className="ssg-menu-item"
-      >
-        {/* 注記: ✓ 列との左端揃え用スペーサです(ピン行と同じ幅)。*/}
-        <span className="ssg-menu-icon" />
-        <span className="ssg-menu-label">この列の幅を自動調整</span>
-      </button>
-
-      <button
-        type="button"
-        onPointerEnter={() => {
-          setOpenSubmenuKey(null);
-        }}
-        onClick={() => {
-          onAutosizeAllColumns();
-        }}
-        className="ssg-menu-item"
-      >
-        <span className="ssg-menu-icon" />
-        <span className="ssg-menu-label">すべての列の幅を自動調整</span>
-      </button>
-
-      {/* ── ルート項目: 列の表示(13-B2-1) ── */}
-      {/* 追加(13-B2-1): サブメニューではなく別 popover(ColumnChooserPanel)を開く
-          リーフ項目です。autosize 項目と同じく hover で setOpenSubmenuKey(null) し、
-          開いているカスケード(列の固定)を閉じます。クリックで列メニューを閉じて
-          パネルを開く処理は SpreadsheetGrid 側(onOpenColumnChooser)が担います。 */}
-      <button
-        type="button"
-        onPointerEnter={() => {
-          setOpenSubmenuKey(null);
-        }}
-        onClick={() => {
-          onOpenColumnChooser();
-        }}
-        className="ssg-menu-item"
-      >
-        <span className="ssg-menu-icon" />
-        <span className="ssg-menu-label">列の表示</span>
-      </button>
-
-      {/* ── ルート項目: 列のリセット(13-B2-3 / gpt5.5対応) ── */}
-      {/* 追加(13-B2-3 / gpt5.5対応): 既存の ColumnChooserPanel フッターと同じ
-          リセット処理を列メニュー root からも呼べるようにします。サブメニューではない
-          リーフ項目なので、hover 時は openSubmenuKey を null に戻します。 */}
-      <button
-        type="button"
-        aria-disabled={!canResetColumns}
-        tabIndex={canResetColumns ? 0 : -1}
-        title={
-          canResetColumns
-            ? 'すべての列の幅・固定・表示を初期状態に戻します'
-            : 'onColumnsChange 未指定のため列をリセットできません'
-        }
-        onPointerEnter={() => {
-          setOpenSubmenuKey(null);
-        }}
-        onClick={() => {
-          if (!canResetColumns) {
-            return;
-          }
-          onResetColumns();
-        }}
-        className={cx(
-          'ssg-menu-item',
-          !canResetColumns && 'ssg-menu-item--disabled',
-        )}
-      >
-        <span className="ssg-menu-icon" />
-        <span className="ssg-menu-label">列のリセット</span>
-      </button>
-
-      <div className="ssg-menu-footer">
-        <button
-          type="button"
-          onClick={onRequestClose}
-          className="ssg-menu-close-btn"
-        >
-          閉じる
-        </button>
-      </div>
-    </div>,
-    document.body,
-  );
-}
-
-export default ColumnMenuPopover;
-</file>
-
-<file path="src/components/spreadsheet-grid/view/gridBarHelpers.ts">
-import type { ReactNode } from 'react';
+import { gridActions, type GridUiAction } from '../model/gridActions';
+// 変更(MS-2): Shift+click ソートで colIndex(論理 index) → columnKey 解決に列配列を
+//            使うため GridColumn を追加 import します。
 import type {
   CellCoord,
-  ColumnFilterValue,
-  GridSelection,
   GridColumn,
-  SpreadsheetGridSlotContext,
-  SpreadsheetGridDerivedSummary,
-  SpreadsheetGridSelectionStats,
+  GridUiState,
 } from '../model/gridTypes';
-import { toExcelColumnName } from '../utils/excelColumnName';
-// 追加(12-A): set フィルター対応のフィルター有効判定を共有します。
-import { isActiveColumnFilterValue } from '../logic/filtering';
+// 追加(MS-2): ソートエントリ配列の次状態を求める純関数です(列メニューと共有)。
+import { nextSortEntries } from '../logic/sorting';
+// 変更(10-E): グローバル座標(columnMeasurements)前提の当たり判定から、
+//             ペイン別座標系の当たり判定へ切り替えます。
+// 変更理由: 10-B〜10-D で DOM を 3 ペインに物理分離し、UI state の col は
+//           「論理列 index（orderedColumns 空間＝左→中→右の視覚順）」になりました。
+//           ところがドラッグ選択の実体は grid root の onPointerMoveCapture →
+//           updateSelectionFromPointer であり、ここがグローバル座標 +
+//           columnMeasurements(visibleColumns 順) のままだと、pinned 列を入れた
+//           瞬間に「ドラッグ中の選択列がズレる」ため、ペイン別ヒットテストへ移行します。
+import {
+  clamp,
+  findLogicalIndexFromPaneOffset,
+  type GridPaneLayout,
+} from '../logic/geometry';
+// 追加(scroll-space 仮想化): clientY→row の物理→論理換算(scaleFactor=1 で従来式と一致)。
+import { clientYToRowIndex } from '../logic/verticalGeometry';
+import type { RowMetrics } from '../logic/verticalGeometry';
 
-// 追加: Grid の slot renderer を解決します。
-export const resolveGridSlot = <T,>(
-  slotRenderer:
-    | ((context: SpreadsheetGridSlotContext<T>) => ReactNode)
-    | undefined,
-  context: SpreadsheetGridSlotContext<T>,
-  fallback: ReactNode,
-) => {
-  if (slotRenderer) {
-    return slotRenderer(context);
-  }
-  return fallback;
+type UseGridPointerInteractionsArgs<T> = {
+  gridRootRef: RefObject<HTMLDivElement | null>;
+  // 中央ペイン要素です。ヒットテストの基準矩形に使います。
+  // 変更(10-G): 中央ペインはネイティブスクロールしなくなり（scrollTop/Left は常に 0）、
+  //             その getBoundingClientRect() がスクロール量を反映して移動するため、
+  //             当たり判定の式は従来のまま正しく機能します。
+  bodyScrollRef: RefObject<HTMLDivElement | null>;
+  // 追加(10-G): 縦横ともにスクロールする「外側の共有スクロールコンテナ」です。
+  //             ドラッグ選択中の自動スクロールはこの要素を動かします。
+  scrollContainerRef: RefObject<HTMLDivElement | null>;
+  // 追加(10-E): 左／右固定ペインのスクロール要素 ref です。clientX のペイン判定に使います。
+  leftPaneScrollRef: RefObject<HTMLDivElement | null>;
+  rightPaneScrollRef: RefObject<HTMLDivElement | null>;
+  pointerClientRef: RefObject<{ x: number; y: number } | null>;
+  autoScrollFrameRef: RefObject<number | null>;
+  uiState: GridUiState;
+  dispatch: Dispatch<GridUiAction>;
+  enableRangeSelection: boolean;
+  // 追加(MS-2): ヘッダー Shift+click ソート(発火口 a)の有効化フラグです。
+  //             enableSorting=false のときは Shift+click でも並べ替えしません。
+  enableSorting: boolean;
+  // 追加(MS-2): colIndex(= entry.logicalIndex / orderedColumns 空間)から
+  //             columnKey を引くための列配列です。selection/activeCell と同じ
+  //             論理 index 空間なので、orderedColumns[colIndex] で一意に解決できます。
+  orderedColumns: GridColumn<T>[];
+  filteredRowsLength: number;
+  visibleColumnsLength: number;
+  // 追加(10-E): 3 ペインの geometry です。当たり判定はこのペインローカル座標で行います。
+  paneLayout: GridPaneLayout<T>;
+  // 追加(10-E): 各ペインで列の前に確保する先頭幅です。
+  //             左固定あり: left=rowHeaderWidth / center=0 / right=0
+  //             左固定なし: center=rowHeaderWidth（従来と完全一致）
+  leftLeadingWidth: number;
+  centerLeadingWidth: number;
+  rightLeadingWidth: number;
+  headerHeight: number;
+  // 変更(auto-height シーム): ヒットテストの行解決は RowMetrics 経由(uniform で従来の floor(y/rowHeight) と一致)。
+  rowMetrics: RowMetrics;
+  // 追加(scroll-space 仮想化): clientY→row の物理→論理換算倍率(scaleFactor=1 で従来式)。
+  verticalScaleFactor: number;
+  // 追加(UI hover): 行ホバーの設定/クリア用 setter です。セル/行ヘッダー enter で行 index を
+  //   設定し、列ヘッダー enter ではクリアします(grid から出たときの clear は呼び出し側で行います)。
+  setHoveredRowIndex: (value: number | null) => void;
+  // 追加(UI hover): 列ヘッダーホバーの設定用 setter です(列ヘッダー enter で colIndex を設定)。
+  setHoveredColumnIndex: (value: number | null) => void;
+  // 追加(UI hover): 行ホバー(既定 true)/列ヘッダーホバー(既定 true)の有効化フラグです。
+  enableRowHover: boolean;
+  enableColumnHeaderHover: boolean;
 };
 
-// 追加: summary 用に長い文字列を短く丸めます。
-const truncateSummaryText = (value: string, maxLength = 16) => {
-  if (value.length <= maxLength) {
-    return value;
-  }
-  return `${value.slice(0, maxLength)}…`;
-};
+// 追加: pointer 系 interaction（cell/row/col selection + drag auto-scroll + window pointer sync）をまとめます。
+export const useGridPointerInteractions = <T,>({
+  gridRootRef,
+  bodyScrollRef,
+  scrollContainerRef,
+  leftPaneScrollRef,
+  rightPaneScrollRef,
+  pointerClientRef,
+  autoScrollFrameRef,
+  uiState,
+  dispatch,
+  enableRangeSelection,
+  // 追加(MS-2): Shift+click ソート用。
+  enableSorting,
+  orderedColumns,
+  filteredRowsLength,
+  visibleColumnsLength,
+  paneLayout,
+  leftLeadingWidth,
+  centerLeadingWidth,
+  rightLeadingWidth,
+  headerHeight,
+  rowMetrics,
+  verticalScaleFactor,
+  setHoveredRowIndex,
+  setHoveredColumnIndex,
+  enableRowHover,
+  enableColumnHeaderHover,
+}: UseGridPointerInteractionsArgs<T>) => {
+  // 追加(11-A2): dragState の最新値を ref で保持します(latest-ref パターン)。
+  // 変更理由: enter 系ハンドラ(handleCellPointerEnter 等)が uiState.dragState を
+  //           useCallback の依存に持つと、ドラッグ開始/終了のたびにハンドラの参照が
+  //           変わり、props として受け取る GridBodyRow(memo) が全行で再レンダー
+  //           されていました(クリック 1 回 = dragState が 2 回遷移 = 全行 ×2)。
+  //           ハンドラは ref 経由で最新の dragState を読むことで、参照を恒久的に
+  //           安定させます。render 中の代入は「最新値の読み出し専用 ref」という
+  //           標準的な latest-ref 用法であり、レンダー結果には影響しません。
+  const dragStateRef = useRef(uiState.dragState);
+  dragStateRef.current = uiState.dragState;
 
-// 追加: ActiveCell を A1 形式へ整形します。
-export const formatGridCellLabel = (cell: CellCoord | null) => {
-  if (!cell) {
-    return 'なし';
-  }
-  return `${toExcelColumnName(cell.col)}${cell.row + 1}`;
-};
+  // 追加(MS-2): handleColumnHeaderPointerDown の Shift 分岐で「最新の」ソート状態 /
+  //   列配列 / 有効化フラグを読むための latest-ref 群です(dragStateRef と同じ用法)。
+  // 変更理由: これらを useCallback の依存に入れると、ソートや列順が変わるたびに
+  //   handleColumnHeaderPointerDown の参照が変わり、これを props に持つ memo 済み
+  //   GridHeaderRow(3 ペイン)を破ってしまいます。ref 経由で読むことで、本ハンドラの
+  //   依存を [dispatch, gridRootRef] のまま恒久安定に保ちます。
+  const sortRef = useRef(uiState.sort);
+  sortRef.current = uiState.sort;
+  const orderedColumnsRef = useRef(orderedColumns);
+  orderedColumnsRef.current = orderedColumns;
+  const enableSortingRef = useRef(enableSorting);
+  enableSortingRef.current = enableSorting;
 
-// 追加: selection の概要を短く整形します。
-export const formatGridSelectionLabel = (selection: GridSelection) => {
-  if (!selection) {
-    return 'なし';
-  }
+  // 追加(11-B2): effect 依存用のプリミティブです。
+  // 変更理由: window pointer effect と自動スクロール effect が uiState.dragState
+  //           オブジェクトを依存に持つと、参照が変わるたびに listener 解除/再登録や
+  //           rAF ループの張り直しが発生します。両 effect が実際に分岐に使うのは
+  //           type のみのため、依存を文字列プリミティブへ縮小します。
+  //           11-B2 で update 系 action が dragState を再生成しなくなったため
+  //           ドラッグ中の参照は既に安定していますが、依存をプリミティブにする
+  //           ことで「dragState の内部構造変更」と「effect の貼り直し条件」を
+  //           恒久的に切り離します(start/end の 1 遷移ごとに 1 回だけ再実行)。
+  const dragType = uiState.dragState?.type ?? null;
 
-  if (selection.type === 'cell') {
-    const startRow = Math.min(
-      selection.range.start.row,
-      selection.range.end.row,
-    );
-    const endRow = Math.max(
-      selection.range.start.row,
-      selection.range.end.row,
-    );
-    const startCol = Math.min(
-      selection.range.start.col,
-      selection.range.end.col,
-    );
-    const endCol = Math.max(
-      selection.range.start.col,
-      selection.range.end.col,
-    );
+  // 変更(10-E): client 座標から rowIndex / 論理 colIndex を推定します（ペイン別）。
+  // 動作:
+  //   - 縦(row)は中央ペイン基準。中央ペインの矩形はスクロール量ぶん移動し、scrollTop は 0 のため、
+  //     scrollTop + clientY - rect.top - headerHeight がそのまま正しいコンテンツ内 y になります。
+  //   - 横(col)は clientX がどのペイン領域に入るかで判定し、各ペインのローカル x から
+  //     findLogicalIndexFromPaneOffset() で論理列 index を引きます。
+  //   - 返す col は orderedColumns 空間の論理 index です（UI state と一致）。
+  const getCellCoordFromClientPoint = useCallback(
+    (clientX: number, clientY: number): CellCoord | null => {
+      const centerEl = bodyScrollRef.current;
+      if (
+        !centerEl ||
+        filteredRowsLength === 0 ||
+        visibleColumnsLength === 0
+      ) {
+        return null;
+      }
 
-    return `${toExcelColumnName(startCol)}${startRow + 1} - ${toExcelColumnName(
-      endCol,
-    )}${endRow + 1}`;
-  }
+      // 縦方向（中央ペイン基準）。
+      const centerRect = centerEl.getBoundingClientRect();
+      const y = centerEl.scrollTop + clientY - centerRect.top - headerHeight;
+      // 変更(scroll-space 仮想化): y は moving rect 経由で物理スクロール量を含むため、
+      //   論理行へは clientYToRowIndex(y, 実 scrollTop, scaleFactor, rowMetrics) で換算します
+      //   (scaleFactor=1 のとき従来の floor(y / rowHeight) と一致)。rowMetrics.rowCount で clamp。
+      const row = clientYToRowIndex(
+        y,
+        scrollContainerRef.current?.scrollTop ?? 0,
+        verticalScaleFactor,
+        rowMetrics,
+      );
 
-  if (selection.type === 'row') {
-    const startRow = Math.min(selection.startRow, selection.endRow);
-    const endRow = Math.max(selection.startRow, selection.endRow);
-    return `Row ${startRow + 1} - ${endRow + 1}`;
-  }
+      // 横方向（ペイン判定）。
+      let col: number | null = null;
 
-  const startCol = Math.min(selection.startCol, selection.endCol);
-  const endCol = Math.max(selection.startCol, selection.endCol);
-  return `Col ${toExcelColumnName(startCol)} - ${toExcelColumnName(endCol)}`;
-};
+      // 左固定ペイン: 右端より左にあれば左ペイン扱い。
+      //   行ヘッダー上（localX < 0）は findLogicalIndexFromPaneOffset が先頭列へクランプします。
+      const leftEl = leftPaneScrollRef.current;
+      if (col === null && leftEl && paneLayout.left.entries.length > 0) {
+        const leftRect = leftEl.getBoundingClientRect();
+        if (clientX < leftRect.right) {
+          const localX = clientX - leftRect.left - leftLeadingWidth;
+          col = findLogicalIndexFromPaneOffset(paneLayout.left, localX);
+        }
+      }
 
-// 追加: rows / filteredRows の概要テキストです。
-// 変更(DS-3-7): filteredRows(配列)依存をやめ、件数 filteredRowCount(数値)を引数で受けます。
-//   公開 slotContext.filteredRows は遅延 getter で別途供給され、サマリは件数しか使いません。
-export const formatGridRowSummary = <T,>(
-  context: Pick<SpreadsheetGridSlotContext<T>, 'rows'>,
-  filteredRowCount: number,
-) => `Rows: ${filteredRowCount} / ${context.rows.length}`;
+      // 右固定ペイン: 左端以降にあれば右ペイン扱い。
+      const rightEl = rightPaneScrollRef.current;
+      if (col === null && rightEl && paneLayout.right.entries.length > 0) {
+        const rightRect = rightEl.getBoundingClientRect();
+        if (clientX >= rightRect.left) {
+          const localX = clientX - rightRect.left - rightLeadingWidth;
+          col = findLogicalIndexFromPaneOffset(paneLayout.right, localX);
+        }
+      }
 
-// 追加: columns / visibleColumns の概要テキストです。
-export const formatGridColumnSummary = <T,>(
-  context: Pick<SpreadsheetGridSlotContext<T>, 'columns' | 'visibleColumns'>,
-) => `Columns: ${context.visibleColumns.length} / ${context.columns.length}`;
+      // それ以外は中央ペイン。中央ペインは横スクロールしなくなった（scrollLeft===0）ため、
+      // 移動する rect.left を使うことで水平スクロール量が自動的に反映されます。
+      if (col === null && paneLayout.center.entries.length > 0) {
+        const localX =
+          centerEl.scrollLeft + clientX - centerRect.left - centerLeadingWidth;
+        col = findLogicalIndexFromPaneOffset(
+          paneLayout.center,
+          Math.max(localX, 0),
+        );
+      }
 
-// 追加: selection から選択セル数 / 行数 / 列数を算出します。
-export const getGridSelectionStats = <T,>(
-  context: Pick<SpreadsheetGridSlotContext<T>, 'selection' | 'visibleColumns'>,
-  // 変更(DS-3-7): filteredRows(配列)→ 件数 filteredRowCount(数値)を引数で受けます。
-  filteredRowCount: number,
-): SpreadsheetGridSelectionStats => {
-  const selection = context.selection;
-  if (!selection) {
-    return {
-      selectedCellCount: 0,
-      selectedRowCount: 0,
-      selectedColumnCount: 0,
-    };
-  }
+      if (col === null) {
+        return null;
+      }
 
-  if (selection.type === 'cell') {
-    const startRow = Math.min(
-      selection.range.start.row,
-      selection.range.end.row,
-    );
-    const endRow = Math.max(
-      selection.range.start.row,
-      selection.range.end.row,
-    );
-    const startCol = Math.min(
-      selection.range.start.col,
-      selection.range.end.col,
-    );
-    const endCol = Math.max(
-      selection.range.start.col,
-      selection.range.end.col,
-    );
-    const selectedRowCount = endRow - startRow + 1;
-    const selectedColumnCount = endCol - startCol + 1;
-    return {
-      selectedCellCount: selectedRowCount * selectedColumnCount,
-      selectedRowCount,
-      selectedColumnCount,
-    };
-  }
-
-  if (selection.type === 'row') {
-    const startRow = Math.min(selection.startRow, selection.endRow);
-    const endRow = Math.max(selection.startRow, selection.endRow);
-    const selectedRowCount = endRow - startRow + 1;
-    const selectedColumnCount = context.visibleColumns.length;
-    return {
-      selectedCellCount: selectedRowCount * selectedColumnCount,
-      selectedRowCount,
-      selectedColumnCount,
-    };
-  }
-
-  const startCol = Math.min(selection.startCol, selection.endCol);
-  const endCol = Math.max(selection.startCol, selection.endCol);
-  const selectedColumnCount = endCol - startCol + 1;
-  const selectedRowCount = filteredRowCount;
-  return {
-    selectedCellCount: selectedRowCount * selectedColumnCount,
-    selectedRowCount,
-    selectedColumnCount,
-  };
-};
-
-// 追加: selection 数量の要約テキストです。
-export const formatGridSelectionStatsLabel = <T,>(
-  context: Pick<SpreadsheetGridSlotContext<T>, 'selection' | 'visibleColumns'>,
-  filteredRowCount: number,
-) => {
-  const stats = getGridSelectionStats(context, filteredRowCount);
-  return `Cells: ${stats.selectedCellCount} / Rows: ${stats.selectedRowCount}`;
-};
-
-// 変更(12-A): 列フィルターの有効件数を数えます。
-// 変更理由: set フィルター値はオブジェクトのため String(value).trim() 判定が
-//           成立しません(空配列も「全行除外」として有効に数える必要があります)。
-//           判定を logic/filtering.ts の isActiveColumnFilterValue へ一元化します。
-const countActiveColumnFilters = (
-  columnFilterValues: Record<string, ColumnFilterValue>,
-) =>
-  Object.values(columnFilterValues).filter((value) =>
-    isActiveColumnFilterValue(value),
-  ).length;
-
-// 追加: フィルター状態の要約テキストです。
-export const formatGridFilterSummary = <T,>(
-  context: Pick<
-    SpreadsheetGridSlotContext<T>,
-    'globalFilterText' | 'columnFilterValues'
-  >,
-) => {
-  const hasGlobalFilter = context.globalFilterText.trim().length > 0;
-  const globalFilterPreview = hasGlobalFilter
-    ? truncateSummaryText(context.globalFilterText.trim())
-    : null;
-  const columnFilterCount = countActiveColumnFilters(context.columnFilterValues);
-
-  if (!hasGlobalFilter && columnFilterCount === 0) {
-    return 'Filter: なし';
-  }
-
-  if (hasGlobalFilter && columnFilterCount === 0) {
-    return `Filter: Global("${globalFilterPreview}")`;
-  }
-
-  if (!hasGlobalFilter && columnFilterCount > 0) {
-    return `Filter: ${columnFilterCount}列`;
-  }
-
-  return `Filter: Global("${globalFilterPreview}") + ${columnFilterCount}列`;
-};
-
-// 変更(MS-1): ソート列名取得を「単一 key → ラベル」に一般化します
-//            (配列の各エントリ・主ソート列の双方から使い回せるように)。
-const getColumnLabelByKey = <T,>(
-  columns: GridColumn<T>[],
-  columnKey: string,
-) => {
-  const column = columns.find((item) => item.key === columnKey);
-  return column?.title || column?.key || columnKey;
-};
-
-// 追加: ソート状態の要約テキストです。
-export const formatGridSortSummary = <T,>(
-  context: Pick<SpreadsheetGridSlotContext<T>, 'columns' | 'sortState'>,
-) => {
-  // 変更(MS-1): 配列を優先順位順に「列名 (方向)」で連結します。
-  //   単一エントリのときは従来と同一の文字列(例: 'Sort: 金額 (昇順)')になります。
-  if (context.sortState.length === 0) {
-    return 'Sort: なし';
-  }
-
-  const parts = context.sortState.map((entry) => {
-    const label = getColumnLabelByKey(context.columns, entry.columnKey);
-    return `${label} (${entry.direction === 'asc' ? '昇順' : '降順'})`;
-  });
-
-  return `Sort: ${parts.join(', ')}`;
-};
-
-// 追加: slot context に載せる派生 summary を一括構築します。
-export const buildGridDerivedSummary = <T,>(
-  context: Pick<
-    SpreadsheetGridSlotContext<T>,
-    | 'rows'
-    | 'columns'
-    | 'visibleColumns'
-    | 'globalFilterText'
-    | 'columnFilterValues'
-    | 'sortState'
-    | 'activeCell'
-    | 'selection'
-  >,
-  // 変更(DS-3-7): filteredRows(配列)依存を除去し、件数を引数で各 format 関数へ流します。
-  filteredRowCount: number,
-): SpreadsheetGridDerivedSummary => {
-  const selectionStats = getGridSelectionStats(context, filteredRowCount);
-  const hasGlobalFilter = context.globalFilterText.trim().length > 0;
-  const globalFilterPreview = hasGlobalFilter
-    ? truncateSummaryText(context.globalFilterText.trim())
-    : null;
-  const activeColumnFilterCount = countActiveColumnFilters(
-    context.columnFilterValues,
+      return {
+        row,
+        col: clamp(col, 0, visibleColumnsLength - 1),
+      };
+    },
+    [
+      bodyScrollRef,
+      leftPaneScrollRef,
+      rightPaneScrollRef,
+      scrollContainerRef,
+      filteredRowsLength,
+      visibleColumnsLength,
+      paneLayout,
+      leftLeadingWidth,
+      centerLeadingWidth,
+      rightLeadingWidth,
+      headerHeight,
+      rowMetrics,
+      verticalScaleFactor,
+    ],
   );
-  const hasAnyFilter = hasGlobalFilter || activeColumnFilterCount > 0;
-  // 変更(MS-1): 配列ベースの判定に置き換えます。
-  //   sortedColumnLabel は後方互換のため「主ソート(先頭)列」のラベルを返します
-  //   (複数ソート時は先頭。全体の要約は sortSummaryText 側が担います)。
-  const hasSorting = context.sortState.length > 0;
-  const sortedColumnLabel = hasSorting
-    ? getColumnLabelByKey(context.columns, context.sortState[0].columnKey)
-    : null;
+
+  // 追加: 現在の dragState に応じて selection を更新します。
+  // 変更(11-A2): dragState は ref から読み、useCallback 依存から外します。
+  //              これにより本関数の参照が安定し、これを依存に持つ自動スクロール
+  //              effect の貼り直しも dragState 遷移時のみで済みます。
+  const updateSelectionFromPointer = useCallback(
+    (clientX: number, clientY: number) => {
+      const dragState = dragStateRef.current;
+      if (!dragState || dragState.type !== 'selection') {
+        return;
+      }
+
+      const cell = getCellCoordFromClientPoint(clientX, clientY);
+      if (!cell) {
+        return;
+      }
+
+      if (dragState.selectionKind === 'cell') {
+        dispatch(gridActions.updateSelection(cell));
+        return;
+      }
+      if (dragState.selectionKind === 'row') {
+        dispatch(gridActions.updateRowSelection(cell.row));
+        return;
+      }
+      if (dragState.selectionKind === 'col') {
+        dispatch(gridActions.updateColumnSelection(cell.col));
+      }
+    },
+    [dispatch, getCellCoordFromClientPoint],
+  );
+
+  // 追加: selection drag / column resize drag 中の window pointer イベントを処理します。
+  // 変更(11-B2): 依存を uiState.dragState オブジェクトから dragType プリミティブへ縮小。
+  //              listener の解除/再登録は type 遷移時(ドラッグ開始/終了)のみになります。
+  useEffect(() => {
+    const handleWindowPointerMove = (event: globalThis.PointerEvent) => {
+      pointerClientRef.current = { x: event.clientX, y: event.clientY };
+      if (dragType === 'columnResize') {
+        dispatch(gridActions.updateColumnResize(event.clientX));
+      }
+    };
+
+    const handleWindowPointerUp = () => {
+      dispatch(gridActions.endSelection());
+      dispatch(gridActions.endColumnResize());
+    };
+
+    window.addEventListener('pointermove', handleWindowPointerMove);
+    window.addEventListener('pointerup', handleWindowPointerUp);
+    return () => {
+      window.removeEventListener('pointermove', handleWindowPointerMove);
+      window.removeEventListener('pointerup', handleWindowPointerUp);
+    };
+  }, [dispatch, pointerClientRef, dragType]);
+
+  // 追加: 範囲選択中、端に近づいたら自動スクロールします。
+  // 変更(10-G): スクロール対象を中央ペインから「共有スクロールコンテナ」へ。
+  //             縦横ともにこのコンテナがネイティブスクロールするため、固定ペインも一緒に追従します。
+  // 変更(11-B2): 依存を uiState.dragState から dragType へ縮小。rAF ループは
+  //              ドラッグ開始時に 1 回だけ起動し、ドラッグ中は張り直されません。
+  useEffect(() => {
+    if (dragType !== 'selection') {
+      if (autoScrollFrameRef.current !== null) {
+        cancelAnimationFrame(autoScrollFrameRef.current);
+        autoScrollFrameRef.current = null;
+      }
+      return;
+    }
+
+    const EDGE_THRESHOLD = 24;
+    const SCROLL_STEP = 18;
+
+    const tick = () => {
+      const scrollElement = scrollContainerRef.current;
+      const pointer = pointerClientRef.current;
+      if (!scrollElement || !pointer) {
+        autoScrollFrameRef.current = requestAnimationFrame(tick);
+        return;
+      }
+
+      const rect = scrollElement.getBoundingClientRect();
+      let nextScrollTop = scrollElement.scrollTop;
+      let nextScrollLeft = scrollElement.scrollLeft;
+
+      // 自動スクロールの軸ガード(症状2 と その横版):
+      //   - 列選択: ポインタが sticky ヘッダー帯(上端)に留まるため、縦の自動スクロールを行わない
+      //     (ヘッダー押下中に scrollTop が先頭まで連続で削られる問題を防止)。横は複数列ドラッグの追従のため維持。
+      //   - 行選択: ポインタが左の行ヘッダー帯(leadingWidth)に留まるため、横の自動スクロールを行わない
+      //     (行ヘッダー押下中に scrollLeft が左端まで連続で削られる問題を防止)。縦は複数行ドラッグの追従のため維持。
+      //     行選択は全列が対象なので、横スクロール位置は選択範囲に無関係で、無効化しても影響しません。
+      //   - セル選択: 従来どおり縦横とも自動スクロールします。
+      const isColumnSelection =
+        dragStateRef.current?.type === 'selection' &&
+        dragStateRef.current.selectionKind === 'col';
+      const isRowSelection =
+        dragStateRef.current?.type === 'selection' &&
+        dragStateRef.current.selectionKind === 'row';
+
+      if (!isColumnSelection) {
+        if (pointer.y < rect.top + EDGE_THRESHOLD) {
+          nextScrollTop = Math.max(scrollElement.scrollTop - SCROLL_STEP, 0);
+        } else if (pointer.y > rect.bottom - EDGE_THRESHOLD) {
+          nextScrollTop = scrollElement.scrollTop + SCROLL_STEP;
+        }
+      }
+
+      if (!isRowSelection) {
+        if (pointer.x < rect.left + EDGE_THRESHOLD) {
+          nextScrollLeft = Math.max(scrollElement.scrollLeft - SCROLL_STEP, 0);
+        } else if (pointer.x > rect.right - EDGE_THRESHOLD) {
+          nextScrollLeft = scrollElement.scrollLeft + SCROLL_STEP;
+        }
+      }
+
+      if (
+        nextScrollTop !== scrollElement.scrollTop ||
+        nextScrollLeft !== scrollElement.scrollLeft
+      ) {
+        scrollElement.scrollTo({
+          top: nextScrollTop,
+          left: nextScrollLeft,
+          behavior: 'auto',
+        });
+        updateSelectionFromPointer(pointer.x, pointer.y);
+      }
+
+      autoScrollFrameRef.current = requestAnimationFrame(tick);
+    };
+
+    autoScrollFrameRef.current = requestAnimationFrame(tick);
+    return () => {
+      if (autoScrollFrameRef.current !== null) {
+        cancelAnimationFrame(autoScrollFrameRef.current);
+        autoScrollFrameRef.current = null;
+      }
+    };
+  }, [
+    autoScrollFrameRef,
+    scrollContainerRef,
+    pointerClientRef,
+    dragType,
+    updateSelectionFromPointer,
+  ]);
+
+  // 追加: セルクリック/ドラッグ開始時の処理です。
+  // 注記(10-E): cell はペイン内の各セルから entry.logicalIndex がそのまま渡るため、
+  //             ここはペイン非依存で正しく動作します（pinned 対応済み）。
+  const handleCellPointerDown = useCallback(
+    (cell: CellCoord, event: PointerEvent<HTMLDivElement>) => {
+      event.preventDefault();
+      if (event.button !== 0) {
+        return;
+      }
+      gridRootRef.current?.focus();
+      dispatch(gridActions.activateCell(cell));
+      if (enableRangeSelection) {
+        dispatch(gridActions.startSelection(cell));
+      }
+    },
+    [dispatch, enableRangeSelection, gridRootRef],
+  );
+
+  // 追加: selection drag 中にセルへ入ったら範囲更新します。
+  // 変更(11-A2): dragState を ref から読み、依存から外して参照を恒久安定化します。
+  //              本ハンドラは GridBodyRow(memo) の props のため、参照の安定が
+  //              そのまま「全行再レンダーの回避」に直結します。
+  const handleCellPointerEnter = useCallback(
+    (cell: CellCoord, event: PointerEvent<HTMLDivElement>) => {
+      // 追加(UI hover): セルに入ったら行ホバーを設定します(enableRowHover 時のみ / 選択ドラッグの
+      //   有無に関わらず)。同一行内のセル移動では同値設定となり React が再描画を省くため、再描画は
+      //   行をまたいだときの該当 2 行のみで済みます。
+      if (enableRowHover) {
+        setHoveredRowIndex(cell.row);
+      }
+      if (!enableRangeSelection) {
+        return;
+      }
+      const dragState = dragStateRef.current;
+      if (
+        dragState?.type !== 'selection' ||
+        dragState.selectionKind !== 'cell'
+      ) {
+        return;
+      }
+      pointerClientRef.current = { x: event.clientX, y: event.clientY };
+      dispatch(gridActions.updateSelection(cell));
+    },
+    [
+      dispatch,
+      enableRangeSelection,
+      pointerClientRef,
+      setHoveredRowIndex,
+      enableRowHover,
+    ],
+  );
+
+  // 追加: ブラウザ標準の drag ghost を抑止します。
+  const handleNativeDragStart = useCallback(
+    (event: React.DragEvent<HTMLDivElement>) => {
+      event.preventDefault();
+    },
+    [],
+  );
+
+  // 追加: 行ヘッダー選択開始です。
+  const handleRowHeaderPointerDown = useCallback(
+    (rowIndex: number, event: PointerEvent<HTMLDivElement>) => {
+      event.preventDefault();
+      if (event.button !== 0) {
+        return;
+      }
+      gridRootRef.current?.focus();
+      dispatch(gridActions.startRowSelection(rowIndex));
+    },
+    [dispatch, gridRootRef],
+  );
+
+  // 追加: 行ヘッダードラッグ中の更新です。
+  // 変更(11-A2): dragState を ref から読み、依存から外します(理由は上と同じ)。
+  const handleRowHeaderPointerEnter = useCallback(
+    (rowIndex: number, event: PointerEvent<HTMLDivElement>) => {
+      // 追加(UI hover): 行ヘッダー(#セル)に入っても行ホバーを設定します(enableRowHover 時のみ)。
+      if (enableRowHover) {
+        setHoveredRowIndex(rowIndex);
+      }
+      const dragState = dragStateRef.current;
+      if (
+        dragState?.type !== 'selection' ||
+        dragState.selectionKind !== 'row'
+      ) {
+        return;
+      }
+      pointerClientRef.current = { x: event.clientX, y: event.clientY };
+      dispatch(gridActions.updateRowSelection(rowIndex));
+    },
+    [dispatch, pointerClientRef, setHoveredRowIndex, enableRowHover],
+  );
+
+  // 追加: 列ヘッダー選択開始です。
+  // 変更(MS-2): Shift+click(発火口 a)をソートのトグルへ分岐させます。
+  //   plain クリックは従来どおり列範囲選択を開始し、Shift とは排他なので衝突しません
+  //   (旧実装も shiftKey を参照していなかったため、列の Shift 範囲拡張という既存挙動は
+  //    奪いません)。サイクルは none → asc → desc → none。direction の決め方は
+  //     未登録(undefined) → 'asc'(末尾に追加)
+  //     'asc'            → 'desc'(同位置で方向更新)
+  //     'desc'           → 'desc'(nextSortEntries の「同方向トグル」で当該列のみ除去)
+  //   ⇒ existingDir ? 'desc' : 'asc' の 1 行に畳めます。最新値はすべて ref 経由で読み、
+  //   本ハンドラの依存は [dispatch, gridRootRef] のまま(参照恒久安定 = memo 維持)です。
+  const handleColumnHeaderPointerDown = useCallback(
+    (colIndex: number, event: PointerEvent<HTMLDivElement>) => {
+      event.preventDefault();
+      if (event.button !== 0) {
+        return;
+      }
+      gridRootRef.current?.focus();
+
+      if (event.shiftKey && enableSortingRef.current) {
+        const column = orderedColumnsRef.current[colIndex];
+        if (column) {
+          const current = sortRef.current;
+          const existingDir = current.find(
+            (entry) => entry.columnKey === column.key,
+          )?.direction;
+          const direction: 'asc' | 'desc' = existingDir ? 'desc' : 'asc';
+          const next = nextSortEntries(current, column.key, direction, true);
+          dispatch(
+            next.length === 0
+              ? gridActions.clearSort()
+              : gridActions.setSort(next),
+          );
+        }
+        // Shift+click では列範囲選択を開始しません(ソートと排他)。
+        return;
+      }
+
+      dispatch(gridActions.startColumnSelection(colIndex));
+    },
+    [dispatch, gridRootRef],
+  );
+
+  // 追加: 列ヘッダードラッグ中の更新です。
+  // 変更(11-A2): dragState を ref から読み、依存から外します(理由は上と同じ)。
+  const handleColumnHeaderPointerEnter = useCallback(
+    (colIndex: number, event: PointerEvent<HTMLDivElement>) => {
+      // 追加(UI hover): 列ヘッダーへ入ったら行ホバーをクリアします(本体→ヘッダー移動時に直前の
+      //   行ハイライトが残らないように)。enableColumnHeaderHover 時は列ヘッダーホバーを設定します
+      //   (クリアは列ヘッダー leave 側=handleColumnHeaderPointerLeaveStable が担います)。
+      setHoveredRowIndex(null);
+      if (enableColumnHeaderHover) {
+        setHoveredColumnIndex(colIndex);
+      }
+      const dragState = dragStateRef.current;
+      if (
+        dragState?.type !== 'selection' ||
+        dragState.selectionKind !== 'col'
+      ) {
+        return;
+      }
+      pointerClientRef.current = { x: event.clientX, y: event.clientY };
+      dispatch(gridActions.updateColumnSelection(colIndex));
+    },
+    [
+      dispatch,
+      pointerClientRef,
+      setHoveredRowIndex,
+      setHoveredColumnIndex,
+      enableColumnHeaderHover,
+    ],
+  );
 
   return {
-    rowSummaryText: formatGridRowSummary(context, filteredRowCount),
-    columnSummaryText: formatGridColumnSummary(context),
-    filterSummaryText: formatGridFilterSummary(context),
-    sortSummaryText: formatGridSortSummary(context),
-    activeCellLabel: formatGridCellLabel(context.activeCell),
-    selectionLabel: formatGridSelectionLabel(context.selection),
-    selectionStatsText: formatGridSelectionStatsLabel(context, filteredRowCount),
-    selectionStats,
-    hasGlobalFilter,
-    globalFilterPreview,
-    activeColumnFilterCount,
-    hasAnyFilter,
-    hasSorting,
-    sortedColumnLabel,
+    updateSelectionFromPointer,
+    handleCellPointerDown,
+    handleCellPointerEnter,
+    handleNativeDragStart,
+    handleRowHeaderPointerDown,
+    handleRowHeaderPointerEnter,
+    handleColumnHeaderPointerDown,
+    handleColumnHeaderPointerEnter,
   };
 };
+
+export default useGridPointerInteractions;
 </file>
 
 <file path="src/components/spreadsheet-grid/view/GridBodyLayer.tsx">
@@ -16003,573 +16593,6 @@ export function GridBodyLayer<T>({
 export default GridBodyLayer;
 </file>
 
-<file path="src/components/spreadsheet-grid/hooks/useGridPointerInteractions.ts">
-import {
-  useCallback,
-  useEffect,
-  useRef,
-  type Dispatch,
-  type PointerEvent,
-  type RefObject,
-} from 'react';
-import { gridActions, type GridUiAction } from '../model/gridActions';
-// 変更(MS-2): Shift+click ソートで colIndex(論理 index) → columnKey 解決に列配列を
-//            使うため GridColumn を追加 import します。
-import type {
-  CellCoord,
-  GridColumn,
-  GridUiState,
-} from '../model/gridTypes';
-// 追加(MS-2): ソートエントリ配列の次状態を求める純関数です(列メニューと共有)。
-import { nextSortEntries } from '../logic/sorting';
-// 変更(10-E): グローバル座標(columnMeasurements)前提の当たり判定から、
-//             ペイン別座標系の当たり判定へ切り替えます。
-// 変更理由: 10-B〜10-D で DOM を 3 ペインに物理分離し、UI state の col は
-//           「論理列 index（orderedColumns 空間＝左→中→右の視覚順）」になりました。
-//           ところがドラッグ選択の実体は grid root の onPointerMoveCapture →
-//           updateSelectionFromPointer であり、ここがグローバル座標 +
-//           columnMeasurements(visibleColumns 順) のままだと、pinned 列を入れた
-//           瞬間に「ドラッグ中の選択列がズレる」ため、ペイン別ヒットテストへ移行します。
-import {
-  clamp,
-  findLogicalIndexFromPaneOffset,
-  type GridPaneLayout,
-} from '../logic/geometry';
-// 追加(scroll-space 仮想化): clientY→row の物理→論理換算(scaleFactor=1 で従来式と一致)。
-import { clientYToRowIndex } from '../logic/verticalGeometry';
-import type { RowMetrics } from '../logic/verticalGeometry';
-
-type UseGridPointerInteractionsArgs<T> = {
-  gridRootRef: RefObject<HTMLDivElement | null>;
-  // 中央ペイン要素です。ヒットテストの基準矩形に使います。
-  // 変更(10-G): 中央ペインはネイティブスクロールしなくなり（scrollTop/Left は常に 0）、
-  //             その getBoundingClientRect() がスクロール量を反映して移動するため、
-  //             当たり判定の式は従来のまま正しく機能します。
-  bodyScrollRef: RefObject<HTMLDivElement | null>;
-  // 追加(10-G): 縦横ともにスクロールする「外側の共有スクロールコンテナ」です。
-  //             ドラッグ選択中の自動スクロールはこの要素を動かします。
-  scrollContainerRef: RefObject<HTMLDivElement | null>;
-  // 追加(10-E): 左／右固定ペインのスクロール要素 ref です。clientX のペイン判定に使います。
-  leftPaneScrollRef: RefObject<HTMLDivElement | null>;
-  rightPaneScrollRef: RefObject<HTMLDivElement | null>;
-  pointerClientRef: RefObject<{ x: number; y: number } | null>;
-  autoScrollFrameRef: RefObject<number | null>;
-  uiState: GridUiState;
-  dispatch: Dispatch<GridUiAction>;
-  enableRangeSelection: boolean;
-  // 追加(MS-2): ヘッダー Shift+click ソート(発火口 a)の有効化フラグです。
-  //             enableSorting=false のときは Shift+click でも並べ替えしません。
-  enableSorting: boolean;
-  // 追加(MS-2): colIndex(= entry.logicalIndex / orderedColumns 空間)から
-  //             columnKey を引くための列配列です。selection/activeCell と同じ
-  //             論理 index 空間なので、orderedColumns[colIndex] で一意に解決できます。
-  orderedColumns: GridColumn<T>[];
-  filteredRowsLength: number;
-  visibleColumnsLength: number;
-  // 追加(10-E): 3 ペインの geometry です。当たり判定はこのペインローカル座標で行います。
-  paneLayout: GridPaneLayout<T>;
-  // 追加(10-E): 各ペインで列の前に確保する先頭幅です。
-  //             左固定あり: left=rowHeaderWidth / center=0 / right=0
-  //             左固定なし: center=rowHeaderWidth（従来と完全一致）
-  leftLeadingWidth: number;
-  centerLeadingWidth: number;
-  rightLeadingWidth: number;
-  headerHeight: number;
-  // 変更(auto-height シーム): ヒットテストの行解決は RowMetrics 経由(uniform で従来の floor(y/rowHeight) と一致)。
-  rowMetrics: RowMetrics;
-  // 追加(scroll-space 仮想化): clientY→row の物理→論理換算倍率(scaleFactor=1 で従来式)。
-  verticalScaleFactor: number;
-  // 追加(UI hover): 行ホバーの設定/クリア用 setter です。セル/行ヘッダー enter で行 index を
-  //   設定し、列ヘッダー enter ではクリアします(grid から出たときの clear は呼び出し側で行います)。
-  setHoveredRowIndex: (value: number | null) => void;
-  // 追加(UI hover): 列ヘッダーホバーの設定用 setter です(列ヘッダー enter で colIndex を設定)。
-  setHoveredColumnIndex: (value: number | null) => void;
-  // 追加(UI hover): 行ホバー(既定 true)/列ヘッダーホバー(既定 true)の有効化フラグです。
-  enableRowHover: boolean;
-  enableColumnHeaderHover: boolean;
-};
-
-// 追加: pointer 系 interaction（cell/row/col selection + drag auto-scroll + window pointer sync）をまとめます。
-export const useGridPointerInteractions = <T,>({
-  gridRootRef,
-  bodyScrollRef,
-  scrollContainerRef,
-  leftPaneScrollRef,
-  rightPaneScrollRef,
-  pointerClientRef,
-  autoScrollFrameRef,
-  uiState,
-  dispatch,
-  enableRangeSelection,
-  // 追加(MS-2): Shift+click ソート用。
-  enableSorting,
-  orderedColumns,
-  filteredRowsLength,
-  visibleColumnsLength,
-  paneLayout,
-  leftLeadingWidth,
-  centerLeadingWidth,
-  rightLeadingWidth,
-  headerHeight,
-  rowMetrics,
-  verticalScaleFactor,
-  setHoveredRowIndex,
-  setHoveredColumnIndex,
-  enableRowHover,
-  enableColumnHeaderHover,
-}: UseGridPointerInteractionsArgs<T>) => {
-  // 追加(11-A2): dragState の最新値を ref で保持します(latest-ref パターン)。
-  // 変更理由: enter 系ハンドラ(handleCellPointerEnter 等)が uiState.dragState を
-  //           useCallback の依存に持つと、ドラッグ開始/終了のたびにハンドラの参照が
-  //           変わり、props として受け取る GridBodyRow(memo) が全行で再レンダー
-  //           されていました(クリック 1 回 = dragState が 2 回遷移 = 全行 ×2)。
-  //           ハンドラは ref 経由で最新の dragState を読むことで、参照を恒久的に
-  //           安定させます。render 中の代入は「最新値の読み出し専用 ref」という
-  //           標準的な latest-ref 用法であり、レンダー結果には影響しません。
-  const dragStateRef = useRef(uiState.dragState);
-  dragStateRef.current = uiState.dragState;
-
-  // 追加(MS-2): handleColumnHeaderPointerDown の Shift 分岐で「最新の」ソート状態 /
-  //   列配列 / 有効化フラグを読むための latest-ref 群です(dragStateRef と同じ用法)。
-  // 変更理由: これらを useCallback の依存に入れると、ソートや列順が変わるたびに
-  //   handleColumnHeaderPointerDown の参照が変わり、これを props に持つ memo 済み
-  //   GridHeaderRow(3 ペイン)を破ってしまいます。ref 経由で読むことで、本ハンドラの
-  //   依存を [dispatch, gridRootRef] のまま恒久安定に保ちます。
-  const sortRef = useRef(uiState.sort);
-  sortRef.current = uiState.sort;
-  const orderedColumnsRef = useRef(orderedColumns);
-  orderedColumnsRef.current = orderedColumns;
-  const enableSortingRef = useRef(enableSorting);
-  enableSortingRef.current = enableSorting;
-
-  // 追加(11-B2): effect 依存用のプリミティブです。
-  // 変更理由: window pointer effect と自動スクロール effect が uiState.dragState
-  //           オブジェクトを依存に持つと、参照が変わるたびに listener 解除/再登録や
-  //           rAF ループの張り直しが発生します。両 effect が実際に分岐に使うのは
-  //           type のみのため、依存を文字列プリミティブへ縮小します。
-  //           11-B2 で update 系 action が dragState を再生成しなくなったため
-  //           ドラッグ中の参照は既に安定していますが、依存をプリミティブにする
-  //           ことで「dragState の内部構造変更」と「effect の貼り直し条件」を
-  //           恒久的に切り離します(start/end の 1 遷移ごとに 1 回だけ再実行)。
-  const dragType = uiState.dragState?.type ?? null;
-
-  // 変更(10-E): client 座標から rowIndex / 論理 colIndex を推定します（ペイン別）。
-  // 動作:
-  //   - 縦(row)は中央ペイン基準。中央ペインの矩形はスクロール量ぶん移動し、scrollTop は 0 のため、
-  //     scrollTop + clientY - rect.top - headerHeight がそのまま正しいコンテンツ内 y になります。
-  //   - 横(col)は clientX がどのペイン領域に入るかで判定し、各ペインのローカル x から
-  //     findLogicalIndexFromPaneOffset() で論理列 index を引きます。
-  //   - 返す col は orderedColumns 空間の論理 index です（UI state と一致）。
-  const getCellCoordFromClientPoint = useCallback(
-    (clientX: number, clientY: number): CellCoord | null => {
-      const centerEl = bodyScrollRef.current;
-      if (
-        !centerEl ||
-        filteredRowsLength === 0 ||
-        visibleColumnsLength === 0
-      ) {
-        return null;
-      }
-
-      // 縦方向（中央ペイン基準）。
-      const centerRect = centerEl.getBoundingClientRect();
-      const y = centerEl.scrollTop + clientY - centerRect.top - headerHeight;
-      // 変更(scroll-space 仮想化): y は moving rect 経由で物理スクロール量を含むため、
-      //   論理行へは clientYToRowIndex(y, 実 scrollTop, scaleFactor, rowMetrics) で換算します
-      //   (scaleFactor=1 のとき従来の floor(y / rowHeight) と一致)。rowMetrics.rowCount で clamp。
-      const row = clientYToRowIndex(
-        y,
-        scrollContainerRef.current?.scrollTop ?? 0,
-        verticalScaleFactor,
-        rowMetrics,
-      );
-
-      // 横方向（ペイン判定）。
-      let col: number | null = null;
-
-      // 左固定ペイン: 右端より左にあれば左ペイン扱い。
-      //   行ヘッダー上（localX < 0）は findLogicalIndexFromPaneOffset が先頭列へクランプします。
-      const leftEl = leftPaneScrollRef.current;
-      if (col === null && leftEl && paneLayout.left.entries.length > 0) {
-        const leftRect = leftEl.getBoundingClientRect();
-        if (clientX < leftRect.right) {
-          const localX = clientX - leftRect.left - leftLeadingWidth;
-          col = findLogicalIndexFromPaneOffset(paneLayout.left, localX);
-        }
-      }
-
-      // 右固定ペイン: 左端以降にあれば右ペイン扱い。
-      const rightEl = rightPaneScrollRef.current;
-      if (col === null && rightEl && paneLayout.right.entries.length > 0) {
-        const rightRect = rightEl.getBoundingClientRect();
-        if (clientX >= rightRect.left) {
-          const localX = clientX - rightRect.left - rightLeadingWidth;
-          col = findLogicalIndexFromPaneOffset(paneLayout.right, localX);
-        }
-      }
-
-      // それ以外は中央ペイン。中央ペインは横スクロールしなくなった（scrollLeft===0）ため、
-      // 移動する rect.left を使うことで水平スクロール量が自動的に反映されます。
-      if (col === null && paneLayout.center.entries.length > 0) {
-        const localX =
-          centerEl.scrollLeft + clientX - centerRect.left - centerLeadingWidth;
-        col = findLogicalIndexFromPaneOffset(
-          paneLayout.center,
-          Math.max(localX, 0),
-        );
-      }
-
-      if (col === null) {
-        return null;
-      }
-
-      return {
-        row,
-        col: clamp(col, 0, visibleColumnsLength - 1),
-      };
-    },
-    [
-      bodyScrollRef,
-      leftPaneScrollRef,
-      rightPaneScrollRef,
-      scrollContainerRef,
-      filteredRowsLength,
-      visibleColumnsLength,
-      paneLayout,
-      leftLeadingWidth,
-      centerLeadingWidth,
-      rightLeadingWidth,
-      headerHeight,
-      rowMetrics,
-      verticalScaleFactor,
-    ],
-  );
-
-  // 追加: 現在の dragState に応じて selection を更新します。
-  // 変更(11-A2): dragState は ref から読み、useCallback 依存から外します。
-  //              これにより本関数の参照が安定し、これを依存に持つ自動スクロール
-  //              effect の貼り直しも dragState 遷移時のみで済みます。
-  const updateSelectionFromPointer = useCallback(
-    (clientX: number, clientY: number) => {
-      const dragState = dragStateRef.current;
-      if (!dragState || dragState.type !== 'selection') {
-        return;
-      }
-
-      const cell = getCellCoordFromClientPoint(clientX, clientY);
-      if (!cell) {
-        return;
-      }
-
-      if (dragState.selectionKind === 'cell') {
-        dispatch(gridActions.updateSelection(cell));
-        return;
-      }
-      if (dragState.selectionKind === 'row') {
-        dispatch(gridActions.updateRowSelection(cell.row));
-        return;
-      }
-      if (dragState.selectionKind === 'col') {
-        dispatch(gridActions.updateColumnSelection(cell.col));
-      }
-    },
-    [dispatch, getCellCoordFromClientPoint],
-  );
-
-  // 追加: selection drag / column resize drag 中の window pointer イベントを処理します。
-  // 変更(11-B2): 依存を uiState.dragState オブジェクトから dragType プリミティブへ縮小。
-  //              listener の解除/再登録は type 遷移時(ドラッグ開始/終了)のみになります。
-  useEffect(() => {
-    const handleWindowPointerMove = (event: globalThis.PointerEvent) => {
-      pointerClientRef.current = { x: event.clientX, y: event.clientY };
-      if (dragType === 'columnResize') {
-        dispatch(gridActions.updateColumnResize(event.clientX));
-      }
-    };
-
-    const handleWindowPointerUp = () => {
-      dispatch(gridActions.endSelection());
-      dispatch(gridActions.endColumnResize());
-    };
-
-    window.addEventListener('pointermove', handleWindowPointerMove);
-    window.addEventListener('pointerup', handleWindowPointerUp);
-    return () => {
-      window.removeEventListener('pointermove', handleWindowPointerMove);
-      window.removeEventListener('pointerup', handleWindowPointerUp);
-    };
-  }, [dispatch, pointerClientRef, dragType]);
-
-  // 追加: 範囲選択中、端に近づいたら自動スクロールします。
-  // 変更(10-G): スクロール対象を中央ペインから「共有スクロールコンテナ」へ。
-  //             縦横ともにこのコンテナがネイティブスクロールするため、固定ペインも一緒に追従します。
-  // 変更(11-B2): 依存を uiState.dragState から dragType へ縮小。rAF ループは
-  //              ドラッグ開始時に 1 回だけ起動し、ドラッグ中は張り直されません。
-  useEffect(() => {
-    if (dragType !== 'selection') {
-      if (autoScrollFrameRef.current !== null) {
-        cancelAnimationFrame(autoScrollFrameRef.current);
-        autoScrollFrameRef.current = null;
-      }
-      return;
-    }
-
-    const EDGE_THRESHOLD = 24;
-    const SCROLL_STEP = 18;
-
-    const tick = () => {
-      const scrollElement = scrollContainerRef.current;
-      const pointer = pointerClientRef.current;
-      if (!scrollElement || !pointer) {
-        autoScrollFrameRef.current = requestAnimationFrame(tick);
-        return;
-      }
-
-      const rect = scrollElement.getBoundingClientRect();
-      let nextScrollTop = scrollElement.scrollTop;
-      let nextScrollLeft = scrollElement.scrollLeft;
-
-      // 自動スクロールの軸ガード(症状2 と その横版):
-      //   - 列選択: ポインタが sticky ヘッダー帯(上端)に留まるため、縦の自動スクロールを行わない
-      //     (ヘッダー押下中に scrollTop が先頭まで連続で削られる問題を防止)。横は複数列ドラッグの追従のため維持。
-      //   - 行選択: ポインタが左の行ヘッダー帯(leadingWidth)に留まるため、横の自動スクロールを行わない
-      //     (行ヘッダー押下中に scrollLeft が左端まで連続で削られる問題を防止)。縦は複数行ドラッグの追従のため維持。
-      //     行選択は全列が対象なので、横スクロール位置は選択範囲に無関係で、無効化しても影響しません。
-      //   - セル選択: 従来どおり縦横とも自動スクロールします。
-      const isColumnSelection =
-        dragStateRef.current?.type === 'selection' &&
-        dragStateRef.current.selectionKind === 'col';
-      const isRowSelection =
-        dragStateRef.current?.type === 'selection' &&
-        dragStateRef.current.selectionKind === 'row';
-
-      if (!isColumnSelection) {
-        if (pointer.y < rect.top + EDGE_THRESHOLD) {
-          nextScrollTop = Math.max(scrollElement.scrollTop - SCROLL_STEP, 0);
-        } else if (pointer.y > rect.bottom - EDGE_THRESHOLD) {
-          nextScrollTop = scrollElement.scrollTop + SCROLL_STEP;
-        }
-      }
-
-      if (!isRowSelection) {
-        if (pointer.x < rect.left + EDGE_THRESHOLD) {
-          nextScrollLeft = Math.max(scrollElement.scrollLeft - SCROLL_STEP, 0);
-        } else if (pointer.x > rect.right - EDGE_THRESHOLD) {
-          nextScrollLeft = scrollElement.scrollLeft + SCROLL_STEP;
-        }
-      }
-
-      if (
-        nextScrollTop !== scrollElement.scrollTop ||
-        nextScrollLeft !== scrollElement.scrollLeft
-      ) {
-        scrollElement.scrollTo({
-          top: nextScrollTop,
-          left: nextScrollLeft,
-          behavior: 'auto',
-        });
-        updateSelectionFromPointer(pointer.x, pointer.y);
-      }
-
-      autoScrollFrameRef.current = requestAnimationFrame(tick);
-    };
-
-    autoScrollFrameRef.current = requestAnimationFrame(tick);
-    return () => {
-      if (autoScrollFrameRef.current !== null) {
-        cancelAnimationFrame(autoScrollFrameRef.current);
-        autoScrollFrameRef.current = null;
-      }
-    };
-  }, [
-    autoScrollFrameRef,
-    scrollContainerRef,
-    pointerClientRef,
-    dragType,
-    updateSelectionFromPointer,
-  ]);
-
-  // 追加: セルクリック/ドラッグ開始時の処理です。
-  // 注記(10-E): cell はペイン内の各セルから entry.logicalIndex がそのまま渡るため、
-  //             ここはペイン非依存で正しく動作します（pinned 対応済み）。
-  const handleCellPointerDown = useCallback(
-    (cell: CellCoord, event: PointerEvent<HTMLDivElement>) => {
-      event.preventDefault();
-      if (event.button !== 0) {
-        return;
-      }
-      gridRootRef.current?.focus();
-      dispatch(gridActions.activateCell(cell));
-      if (enableRangeSelection) {
-        dispatch(gridActions.startSelection(cell));
-      }
-    },
-    [dispatch, enableRangeSelection, gridRootRef],
-  );
-
-  // 追加: selection drag 中にセルへ入ったら範囲更新します。
-  // 変更(11-A2): dragState を ref から読み、依存から外して参照を恒久安定化します。
-  //              本ハンドラは GridBodyRow(memo) の props のため、参照の安定が
-  //              そのまま「全行再レンダーの回避」に直結します。
-  const handleCellPointerEnter = useCallback(
-    (cell: CellCoord, event: PointerEvent<HTMLDivElement>) => {
-      // 追加(UI hover): セルに入ったら行ホバーを設定します(enableRowHover 時のみ / 選択ドラッグの
-      //   有無に関わらず)。同一行内のセル移動では同値設定となり React が再描画を省くため、再描画は
-      //   行をまたいだときの該当 2 行のみで済みます。
-      if (enableRowHover) {
-        setHoveredRowIndex(cell.row);
-      }
-      if (!enableRangeSelection) {
-        return;
-      }
-      const dragState = dragStateRef.current;
-      if (
-        dragState?.type !== 'selection' ||
-        dragState.selectionKind !== 'cell'
-      ) {
-        return;
-      }
-      pointerClientRef.current = { x: event.clientX, y: event.clientY };
-      dispatch(gridActions.updateSelection(cell));
-    },
-    [
-      dispatch,
-      enableRangeSelection,
-      pointerClientRef,
-      setHoveredRowIndex,
-      enableRowHover,
-    ],
-  );
-
-  // 追加: ブラウザ標準の drag ghost を抑止します。
-  const handleNativeDragStart = useCallback(
-    (event: React.DragEvent<HTMLDivElement>) => {
-      event.preventDefault();
-    },
-    [],
-  );
-
-  // 追加: 行ヘッダー選択開始です。
-  const handleRowHeaderPointerDown = useCallback(
-    (rowIndex: number, event: PointerEvent<HTMLDivElement>) => {
-      event.preventDefault();
-      if (event.button !== 0) {
-        return;
-      }
-      gridRootRef.current?.focus();
-      dispatch(gridActions.startRowSelection(rowIndex));
-    },
-    [dispatch, gridRootRef],
-  );
-
-  // 追加: 行ヘッダードラッグ中の更新です。
-  // 変更(11-A2): dragState を ref から読み、依存から外します(理由は上と同じ)。
-  const handleRowHeaderPointerEnter = useCallback(
-    (rowIndex: number, event: PointerEvent<HTMLDivElement>) => {
-      // 追加(UI hover): 行ヘッダー(#セル)に入っても行ホバーを設定します(enableRowHover 時のみ)。
-      if (enableRowHover) {
-        setHoveredRowIndex(rowIndex);
-      }
-      const dragState = dragStateRef.current;
-      if (
-        dragState?.type !== 'selection' ||
-        dragState.selectionKind !== 'row'
-      ) {
-        return;
-      }
-      pointerClientRef.current = { x: event.clientX, y: event.clientY };
-      dispatch(gridActions.updateRowSelection(rowIndex));
-    },
-    [dispatch, pointerClientRef, setHoveredRowIndex, enableRowHover],
-  );
-
-  // 追加: 列ヘッダー選択開始です。
-  // 変更(MS-2): Shift+click(発火口 a)をソートのトグルへ分岐させます。
-  //   plain クリックは従来どおり列範囲選択を開始し、Shift とは排他なので衝突しません
-  //   (旧実装も shiftKey を参照していなかったため、列の Shift 範囲拡張という既存挙動は
-  //    奪いません)。サイクルは none → asc → desc → none。direction の決め方は
-  //     未登録(undefined) → 'asc'(末尾に追加)
-  //     'asc'            → 'desc'(同位置で方向更新)
-  //     'desc'           → 'desc'(nextSortEntries の「同方向トグル」で当該列のみ除去)
-  //   ⇒ existingDir ? 'desc' : 'asc' の 1 行に畳めます。最新値はすべて ref 経由で読み、
-  //   本ハンドラの依存は [dispatch, gridRootRef] のまま(参照恒久安定 = memo 維持)です。
-  const handleColumnHeaderPointerDown = useCallback(
-    (colIndex: number, event: PointerEvent<HTMLDivElement>) => {
-      event.preventDefault();
-      if (event.button !== 0) {
-        return;
-      }
-      gridRootRef.current?.focus();
-
-      if (event.shiftKey && enableSortingRef.current) {
-        const column = orderedColumnsRef.current[colIndex];
-        if (column) {
-          const current = sortRef.current;
-          const existingDir = current.find(
-            (entry) => entry.columnKey === column.key,
-          )?.direction;
-          const direction: 'asc' | 'desc' = existingDir ? 'desc' : 'asc';
-          const next = nextSortEntries(current, column.key, direction, true);
-          dispatch(
-            next.length === 0
-              ? gridActions.clearSort()
-              : gridActions.setSort(next),
-          );
-        }
-        // Shift+click では列範囲選択を開始しません(ソートと排他)。
-        return;
-      }
-
-      dispatch(gridActions.startColumnSelection(colIndex));
-    },
-    [dispatch, gridRootRef],
-  );
-
-  // 追加: 列ヘッダードラッグ中の更新です。
-  // 変更(11-A2): dragState を ref から読み、依存から外します(理由は上と同じ)。
-  const handleColumnHeaderPointerEnter = useCallback(
-    (colIndex: number, event: PointerEvent<HTMLDivElement>) => {
-      // 追加(UI hover): 列ヘッダーへ入ったら行ホバーをクリアします(本体→ヘッダー移動時に直前の
-      //   行ハイライトが残らないように)。enableColumnHeaderHover 時は列ヘッダーホバーを設定します
-      //   (クリアは列ヘッダー leave 側=handleColumnHeaderPointerLeaveStable が担います)。
-      setHoveredRowIndex(null);
-      if (enableColumnHeaderHover) {
-        setHoveredColumnIndex(colIndex);
-      }
-      const dragState = dragStateRef.current;
-      if (
-        dragState?.type !== 'selection' ||
-        dragState.selectionKind !== 'col'
-      ) {
-        return;
-      }
-      pointerClientRef.current = { x: event.clientX, y: event.clientY };
-      dispatch(gridActions.updateColumnSelection(colIndex));
-    },
-    [
-      dispatch,
-      pointerClientRef,
-      setHoveredRowIndex,
-      setHoveredColumnIndex,
-      enableColumnHeaderHover,
-    ],
-  );
-
-  return {
-    updateSelectionFromPointer,
-    handleCellPointerDown,
-    handleCellPointerEnter,
-    handleNativeDragStart,
-    handleRowHeaderPointerDown,
-    handleRowHeaderPointerEnter,
-    handleColumnHeaderPointerDown,
-    handleColumnHeaderPointerEnter,
-  };
-};
-
-export default useGridPointerInteractions;
-</file>
-
 <file path="src/App.tsx">
 import { useState, type CSSProperties } from 'react';
 import {
@@ -16885,6 +16908,10 @@ function App() {
   //   (showTopBarSummary / showTopBarFilter の確認用。トップバー非表示時は無効)。
   const [showTopBarSummary, setShowTopBarSummary] = useState(true);
   const [showTopBarFilter, setShowTopBarFilter] = useState(true);
+  // 追加(件数トグルデモ): 各バーの Rows / Columns 件数 chips の表示有無です
+  //   (showTopBarCounts / showBottomBarCounts の確認用)。
+  const [showTopBarCounts, setShowTopBarCounts] = useState(true);
+  const [showBottomBarCounts, setShowBottomBarCounts] = useState(true);
   const changeMode = (next: DemoMode) => {
     const wasServer = mode === 'server';
     const willServer = next === 'server';
@@ -17007,6 +17034,17 @@ function App() {
           </button>
           <button
             type="button"
+            disabled={!showTopBar || !showTopBarSummary}
+            onClick={() => setShowTopBarCounts((v) => !v)}
+            style={modeButtonStyle(
+              showTopBar && showTopBarSummary && showTopBarCounts,
+              !showTopBar || !showTopBarSummary,
+            )}
+          >
+            {`└─ 件数(Rows/Col): ${showTopBarCounts ? '表示' : '非表示'}`}
+          </button>
+          <button
+            type="button"
             disabled={!showTopBar}
             onClick={() => setShowTopBarFilter((v) => !v)}
             style={modeButtonStyle(showTopBar && showTopBarFilter, !showTopBar)}
@@ -17019,6 +17057,17 @@ function App() {
             style={modeButtonStyle(showBottomBar)}
           >
             {`ボトムバー: ${showBottomBar ? '表示' : '非表示'}`}
+          </button>
+          <button
+            type="button"
+            disabled={!showBottomBar}
+            onClick={() => setShowBottomBarCounts((v) => !v)}
+            style={modeButtonStyle(
+              showBottomBar && showBottomBarCounts,
+              !showBottomBar,
+            )}
+          >
+            {`└ 件数(Rows/Col): ${showBottomBarCounts ? '表示' : '非表示'}`}
           </button>
         </div>
 
@@ -17102,6 +17151,8 @@ function App() {
         showBottomBar={showBottomBar}
         showTopBarSummary={showTopBarSummary}
         showTopBarFilter={showTopBarFilter}
+        showTopBarCounts={showTopBarCounts}
+        showBottomBarCounts={showBottomBarCounts}
         // 追加(条件付きスタイル デモ): 「保留」行を薄オレンジでハイライトします(getRowClassName)。
         //   返り値の class は行コンテナ + 各データセルに付与されます(# 行ヘッダーセルは現状対象外)。
         getRowClassName={(row) =>
@@ -18035,6 +18086,10 @@ export type SpreadsheetGridProps<T> = {
   //   既定トップバー(renderTopBar 未指定)のときのみ効きます。これと showTopBarFilter の両方が
   //   非表示(かつフィルター入力も出ない)場合、トップバーは描画されません(空バーは出しません)。
   showTopBarSummary?: boolean;
+  // 追加: 既定トップバーの Rows / Columns 件数 chips を表示するかどうかです。既定 true。
+  //   既定トップバー(renderTopBar 未指定)かつ showTopBarSummary=true のときのみ効きます
+  //   (Filter / Sort chips は本値の対象外で、showTopBarSummary に従います)。
+  showTopBarCounts?: boolean;
   // 追加: 既定トップバーのグローバルフィルター入力欄を表示するかどうかです。既定 true。
   //   既定トップバー(renderTopBar 未指定)のときのみ効きます。enableGlobalFilter=false のときは
   //   本値に関わらず入力欄を出しません(無効な機能の入力欄を出さないため)。
@@ -18043,6 +18098,10 @@ export type SpreadsheetGridProps<T> = {
   //   false にすると renderBottomBar に関わらず下部バーを一切描画しません
   //   (表示のマスタースイッチ。矛盾指定時は renderBottomBar より優先されます)。
   showBottomBar?: boolean;
+  // 追加: 既定ボトムバーの Rows / Columns 件数 chips(左側)を表示するかどうかです。既定 true。
+  //   既定ボトムバー(renderBottomBar 未指定)のときのみ効きます。右側の Active / Selection /
+  //   選択統計 / Cols chips は本値の対象外で常時表示です。
+  showBottomBarCounts?: boolean;
   // 追加: Grid 上部カスタム領域です。未指定時は既定ツールバー(summary chips + グローバルフィルター
   //   入力)を表示します。既定バーの内訳は showTopBarSummary / showTopBarFilter で出し分けできます
   //   (フィルター入力は enableGlobalFilter=true が前提)。showTopBar=false のときは本指定に関わらず
@@ -18330,6 +18389,10 @@ export function SpreadsheetGrid<T extends object>({
   //   renderTopBar 未指定時のみ効きます。フィルター入力は enableGlobalFilter=true が前提です。
   showTopBarSummary = true,
   showTopBarFilter = true,
+  // 追加: 各バーの Rows / Columns 件数 chips セットの表示有無です(既定 true)。
+  //   トップは showTopBarSummary=true のとき内側で効き、ボトムは左側の件数グループを制御します。
+  showTopBarCounts = true,
+  showBottomBarCounts = true,
   renderTopBar,
   renderBottomBar,
   className,
@@ -20936,6 +20999,7 @@ export function SpreadsheetGrid<T extends object>({
         context={slotContext}
         showSummary={showDefaultTopSummary}
         showFilter={showDefaultTopFilter}
+        showCounts={showTopBarCounts}
       />
     ) : null;
 
@@ -20949,7 +21013,10 @@ export function SpreadsheetGrid<T extends object>({
     : resolveGridSlot(
         renderBottomBar,
         slotContext,
-        <DefaultGridBottomBar context={slotContext} />,
+        <DefaultGridBottomBar
+          context={slotContext}
+          showCounts={showBottomBarCounts}
+        />,
       );
 
   // ── render ────────────────────────────────────────────
