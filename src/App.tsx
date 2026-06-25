@@ -277,15 +277,17 @@ type DemoMode = 'client' | 'autoHeight' | 'server';
 const EMPTY_ROWS: DemoRow[] = [];
 
 // 追加(①-5): モード切替ボタンのスタイルです(選択中はハイライト)。
-const modeButtonStyle = (active: boolean): CSSProperties => ({
+// 変更(バー内訳デモ): disabled 引数を追加し、無効時は薄く/カーソル変更します。
+const modeButtonStyle = (active: boolean, disabled = false): CSSProperties => ({
   padding: '6px 12px',
   fontSize: 13,
   borderRadius: 8,
   border: '1px solid #94a3b8',
   backgroundColor: active ? '#dbeafe' : '#ffffff',
   color: '#0f172a',
-  cursor: 'pointer',
+  cursor: disabled ? 'not-allowed' : 'pointer',
   fontWeight: active ? 600 : 400,
+  opacity: disabled ? 0.45 : 1,
 });
 
 function App() {
@@ -302,6 +304,14 @@ function App() {
   const [mode, setMode] = useState<DemoMode>('client');
   // 追加(stage ③ デモ): serverSide ソフトリフレッシュ用トークン。下のボタンで増やします。
   const [serverRefreshToken, setServerRefreshToken] = useState(0);
+  // 追加(バー表示デモ): top/bottom バーの表示有無トグルです(showTopBar / showBottomBar の確認用)。
+  //   モードとは独立した設定で、どのモードでも見た目を切り替えられます。
+  const [showTopBar, setShowTopBar] = useState(true);
+  const [showBottomBar, setShowBottomBar] = useState(true);
+  // 追加(バー内訳デモ): 既定トップバーの summary chips / グローバルフィルター入力の独立トグルです
+  //   (showTopBarSummary / showTopBarFilter の確認用。トップバー非表示時は無効)。
+  const [showTopBarSummary, setShowTopBarSummary] = useState(true);
+  const [showTopBarFilter, setShowTopBarFilter] = useState(true);
   const changeMode = (next: DemoMode) => {
     const wasServer = mode === 'server';
     const willServer = next === 'server';
@@ -392,6 +402,53 @@ function App() {
           </button>
         </div>
 
+        {/* 追加(バー表示デモ): showTopBar / showBottomBar の ON/OFF トグル(モードと独立)。
+            グリッドのトップバー(ツールバー) / ボトムバー(ステータスバー)の表示有無を
+            その場で切り替えて見た目を確認できます。 */}
+        <div
+          style={{
+            marginTop: 8,
+            display: 'flex',
+            gap: 8,
+            flexWrap: 'wrap',
+            alignItems: 'center',
+          }}
+        >
+          <span style={{ fontSize: 13, color: '#475569', fontWeight: 600 }}>
+            バー表示:
+          </span>
+          <button
+            type="button"
+            onClick={() => setShowTopBar((v) => !v)}
+            style={modeButtonStyle(showTopBar)}
+          >
+            {`トップバー: ${showTopBar ? '表示' : '非表示'}`}
+          </button>
+          <button
+            type="button"
+            disabled={!showTopBar}
+            onClick={() => setShowTopBarSummary((v) => !v)}
+            style={modeButtonStyle(showTopBar && showTopBarSummary, !showTopBar)}
+          >
+            {`└ summary: ${showTopBarSummary ? '表示' : '非表示'}`}
+          </button>
+          <button
+            type="button"
+            disabled={!showTopBar}
+            onClick={() => setShowTopBarFilter((v) => !v)}
+            style={modeButtonStyle(showTopBar && showTopBarFilter, !showTopBar)}
+          >
+            {`└ フィルター入力: ${showTopBarFilter ? '表示' : '非表示'}`}
+          </button>
+          <button
+            type="button"
+            onClick={() => setShowBottomBar((v) => !v)}
+            style={modeButtonStyle(showBottomBar)}
+          >
+            {`ボトムバー: ${showBottomBar ? '表示' : '非表示'}`}
+          </button>
+        </div>
+
         {mode === 'server' && (
           <div style={{ marginTop: 8 }}>
             <button
@@ -467,6 +524,11 @@ function App() {
         rowHeaderWidth={56}
         enableRangeSelection
         enableGlobalFilter
+        // 追加(バー表示デモ): 上の「バー表示」トグルと連動します。
+        showTopBar={showTopBar}
+        showBottomBar={showBottomBar}
+        showTopBarSummary={showTopBarSummary}
+        showTopBarFilter={showTopBarFilter}
         // 追加(条件付きスタイル デモ): 「保留」行を薄オレンジでハイライトします(getRowClassName)。
         //   返り値の class は行コンテナ + 各データセルに付与されます(# 行ヘッダーセルは現状対象外)。
         getRowClassName={(row) =>

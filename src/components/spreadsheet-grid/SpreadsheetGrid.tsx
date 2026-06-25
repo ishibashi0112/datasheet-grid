@@ -258,6 +258,14 @@ export function SpreadsheetGrid<T extends object>({
   // 追加(12-B): 0 行時の空状態テキストです(AG Grid のオーバーレイ相当)。
   noMatchingRowsText = '一致する行がありません',
   noRowsText = '表示する行がありません',
+  // 追加: top/bottom バーの表示有無です(既定 true)。false で当該バーを一切描画しません
+  //   (renderTopBar / renderBottomBar / enableGlobalFilter より優先のマスタースイッチ)。
+  showTopBar = true,
+  showBottomBar = true,
+  // 追加: 既定トップバーの内訳(summary chips / グローバルフィルター入力)の表示有無です(既定 true)。
+  //   renderTopBar 未指定時のみ効きます。フィルター入力は enableGlobalFilter=true が前提です。
+  showTopBarSummary = true,
+  showTopBarFilter = true,
   renderTopBar,
   renderBottomBar,
   className,
@@ -2846,18 +2854,39 @@ export function SpreadsheetGrid<T extends object>({
 
   // ── slot bars ─────────────────────────────────────────
   // 追加: slot helper を使って top/bottom の描画を解決します。
-  const resolvedTopBar = resolveGridSlot(
-    renderTopBar,
-    slotContext,
-    globalFilterEnabled ? <DefaultGridTopBar context={slotContext} /> : null,
-  );
+  // 変更: showTopBar / showBottomBar(既定 true)を最優先のマスタースイッチにします。
+  //   false のときは renderTopBar / renderBottomBar / enableGlobalFilter に関わらず当該バーを
+  //   一切描画しません(矛盾指定時はキルスイッチ勝ち)。true のときは従来どおり
+  //   「カスタム renderer → 既定バー」の順で解決します。
+  // 変更(バー内訳): 既定トップバーの中身を 2 パート(summary / filter)に分け、show* で出し分けます。
+  //   - summary: showTopBarSummary に従う。
+  //   - filter : showTopBarFilter かつ globalFilterEnabled(機能有効)が前提
+  //              (無効な機能の入力欄は出さない)。
+  //   両方とも非表示(中身が空)になる場合は既定バー自体を描画しません(空バーを出さない)。
+  //   なお renderTopBar 指定時はカスタム側が中身を全て決めるため show* 内訳は関与しません。
+  const showDefaultTopSummary = showTopBarSummary;
+  const showDefaultTopFilter = showTopBarFilter && globalFilterEnabled;
+  const defaultTopBar =
+    showDefaultTopSummary || showDefaultTopFilter ? (
+      <DefaultGridTopBar
+        context={slotContext}
+        showSummary={showDefaultTopSummary}
+        showFilter={showDefaultTopFilter}
+      />
+    ) : null;
+
+  const resolvedTopBar = !showTopBar
+    ? null
+    : resolveGridSlot(renderTopBar, slotContext, defaultTopBar);
 
   // 追加: bottom は未指定時に既定ステータスバーを表示します。
-  const resolvedBottomBar = resolveGridSlot(
-    renderBottomBar,
-    slotContext,
-    <DefaultGridBottomBar context={slotContext} />,
-  );
+  const resolvedBottomBar = !showBottomBar
+    ? null
+    : resolveGridSlot(
+        renderBottomBar,
+        slotContext,
+        <DefaultGridBottomBar context={slotContext} />,
+      );
 
   // ── render ────────────────────────────────────────────
   return (

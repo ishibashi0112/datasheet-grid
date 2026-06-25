@@ -230,8 +230,8 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 12px;
-    padding: 10px 12px;
+    gap: 6px;
+    padding: 5px 10px;
     background-color: var(--ssg-header-bg);
     flex-wrap: wrap;
   }
@@ -239,7 +239,7 @@
   .ssg-bar-group {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: 4px;
     flex-wrap: wrap;
   }
 
@@ -248,46 +248,52 @@
     min-width: 0;
     flex: 1 1 auto;
     color: var(--ssg-header-text);
-    font-size: 13px;
+    font-size: 12px;
   }
 
+  /* 変更(シャープ化): 控えめな小見出し風(uppercase + 字間 + グレー)。スペースを取りすぎない。 */
   .ssg-bar-title {
-    font-size: 13px;
-    font-weight: 700;
-    color: var(--ssg-header-text);
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--ssg-glyph);
+    margin-right: 2px;
   }
 
-  /* 件数 chip。emphasis はやや濃い背景。 */
+  /* 件数 chip。変更(シャープ化): pill(9999px) → 角丸 5px・箱なしのテキスト主体・等幅数字で
+     必要最低限の表示にします。emphasis のみ薄い背景で強調します。 */
   .ssg-bar-chip {
     display: inline-flex;
     align-items: center;
-    padding: 4px 8px;
-    border-radius: 9999px;
-    background-color: var(--ssg-cell-bg);
-    border: 1px solid var(--ssg-header-hover-bg);
+    padding: 1px 6px;
+    border-radius: 5px;
+    background-color: transparent;
+    border: none;
     color: var(--ssg-header-text);
-    font-size: 12px;
+    font-size: 11.5px;
+    font-variant-numeric: tabular-nums;
     white-space: nowrap;
   }
   .ssg-bar-chip--emphasis {
     background-color: var(--ssg-header-hover-bg);
-    border-color: transparent;
+    color: var(--ssg-header-text);
     font-weight: 600;
   }
 
-  /* グローバルフィルター input + クリアボタン。 */
+  /* グローバルフィルター input + クリアボタン。変更(コンパクト化): 余白/フォントを圧縮。 */
   .ssg-bar-input {
     width: 100%;
     min-width: 0;
     box-sizing: border-box;
-    padding: 10px 12px;
+    padding: 6px 10px;
     border: 1px solid #cbd5e1;
-    border-radius: 8px;
+    border-radius: 6px;
     outline: none;
     background-color: var(--ssg-cell-bg);
     color: var(--ssg-cell-text);
     caret-color: var(--ssg-cell-text);
-    font-size: 14px;
+    font-size: 13px;
     line-height: 1.4;
     -webkit-text-fill-color: var(--ssg-cell-text);
   }
@@ -295,9 +301,15 @@
   .ssg-bar-input-group {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: 6px;
     width: 100%;
-    max-width: 420px;
+    max-width: 380px;
+  }
+
+  /* 追加(バー内訳): フィルター入力が単独(summary 非表示)のときは左寄せのまま少し広げます。 */
+  .ssg-bar-container > .ssg-bar-input-group:only-child {
+    max-width: 480px;
+    flex: 1 1 auto;
   }
 
   .ssg-bar-clear-btn {
@@ -305,8 +317,8 @@
     border: 1px solid #cbd5e1;
     background-color: var(--ssg-cell-bg);
     color: #475569;
-    border-radius: 8px;
-    padding: 10px 12px;
+    border-radius: 6px;
+    padding: 6px 10px;
     cursor: pointer;
     font-size: 12px;
     line-height: 1;

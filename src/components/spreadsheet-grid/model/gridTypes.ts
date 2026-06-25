@@ -460,9 +460,29 @@ export type SpreadsheetGridProps<T> = {
   // 追加(12-B): rows 自体が 0 件のときに表示するテキストです
   //             (AG Grid の "No Rows To Show" 相当)。
   noRowsText?: string;
-  // 追加: Grid 上部カスタム領域です。未指定時は default top bar を使えます。
+  // 追加: 上部バー(ツールバー)を表示するかどうかです。既定 true。
+  //   false にすると renderTopBar / enableGlobalFilter に関わらず上部バーを一切描画しません
+  //   (表示のマスタースイッチ。矛盾指定時は renderTopBar より優先されます)。
+  showTopBar?: boolean;
+  // 追加: 既定トップバーの summary chips(件数/フィルター/ソート)を表示するかどうかです。既定 true。
+  //   既定トップバー(renderTopBar 未指定)のときのみ効きます。これと showTopBarFilter の両方が
+  //   非表示(かつフィルター入力も出ない)場合、トップバーは描画されません(空バーは出しません)。
+  showTopBarSummary?: boolean;
+  // 追加: 既定トップバーのグローバルフィルター入力欄を表示するかどうかです。既定 true。
+  //   既定トップバー(renderTopBar 未指定)のときのみ効きます。enableGlobalFilter=false のときは
+  //   本値に関わらず入力欄を出しません(無効な機能の入力欄を出さないため)。
+  showTopBarFilter?: boolean;
+  // 追加: 下部バー(ステータスバー)を表示するかどうかです。既定 true。
+  //   false にすると renderBottomBar に関わらず下部バーを一切描画しません
+  //   (表示のマスタースイッチ。矛盾指定時は renderBottomBar より優先されます)。
+  showBottomBar?: boolean;
+  // 追加: Grid 上部カスタム領域です。未指定時は既定ツールバー(summary chips + グローバルフィルター
+  //   入力)を表示します。既定バーの内訳は showTopBarSummary / showTopBarFilter で出し分けできます
+  //   (フィルター入力は enableGlobalFilter=true が前提)。showTopBar=false のときは本指定に関わらず
+  //   描画しません。
   renderTopBar?: (context: SpreadsheetGridSlotContext<T>) => ReactNode;
-  // 追加: Grid 下部カスタム領域です。未指定時は何も表示しません。
+  // 追加: Grid 下部カスタム領域です。未指定時は既定ステータスバーを表示します。
+  //   showBottomBar=false のときは本指定に関わらず描画しません。
   renderBottomBar?: (context: SpreadsheetGridSlotContext<T>) => ReactNode;
   className?: string;
   // 追加(UI CSS移行): パーツ別の追加 className スロット(詳細は GridClassNames)。
