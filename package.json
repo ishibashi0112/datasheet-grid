@@ -1,6 +1,6 @@
 {
   "name": "@ishibashi0112/spreadsheet-grid",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "React 19 製のカスタム仮想化データグリッド。100 万行対応の仮想化・3 ペイン固定列・ソート/フィルター・クライアント/サーバーサイド行モデル対応。",
   "keywords": [
     "react",
