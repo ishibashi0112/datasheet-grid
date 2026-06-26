@@ -244,6 +244,10 @@ export function SpreadsheetGrid<T extends object>({
   estimateRowHeight,
   headerHeight = 40,
   rowHeaderWidth = 56,
+  // 追加: スクロールコンテナ高さの外部制御。height で明示高さ('100%'=親追従)、maxHeight で上限。
+  //   両者未指定時は CSS 既定(.ssg-scroll-container max-height:480px)に委ねます。
+  height,
+  maxHeight,
   readOnly = false,
   canEditCell,
   enableRangeSelection = true,
@@ -2911,6 +2915,21 @@ export function SpreadsheetGrid<T extends object>({
       );
 
   // ── render ────────────────────────────────────────────
+  // 追加: スクロールコンテナの高さ。height/maxHeight props を inline style で当て、
+  //   CSS 既定(.ssg-scroll-container max-height:480px)を必要時のみ上書きします。
+  //   - 両者未指定: inline を付けず CSS 既定 480px に委ねる(従来挙動・後方互換)。
+  //   - height 指定: 明示高さを採用('100%' で親要素に追従。親が確定高さを持つ前提)。
+  //     maxHeight 未指定時は CSS 既定 480 を打ち消すため max-height:'none' にします
+  //     (height をクリップさせない)。
+  //   - maxHeight 指定: その値を高さ上限に(height と併用可)。
+  const scrollContainerStyle: CSSProperties | undefined =
+    height === undefined && maxHeight === undefined
+      ? undefined
+      : {
+          ...(height !== undefined ? { height } : {}),
+          maxHeight: maxHeight ?? (height !== undefined ? 'none' : undefined),
+        };
+
   return (
     <div className={cx('ssg-root', className, classNames?.root)}>
       {resolvedTopBar}
@@ -2936,7 +2955,11 @@ export function SpreadsheetGrid<T extends object>({
         {/*   旧: 中央ペインのみ overflow:auto + 左右ペインを JS の transform で同期     */}
         {/*   新: 外側コンテナが縦横ともネイティブスクロール / 固定列は position: sticky  */}
         {/*   pinned 列がない場合は左右ペインが width:0 で非表示、中央ペインのみ表示。     */}
-        <div ref={scrollContainerRef} className="ssg-scroll-container">
+        <div
+          ref={scrollContainerRef}
+          className="ssg-scroll-container"
+          style={scrollContainerStyle}
+        >
           <div
             className="ssg-inner-row"
             style={{

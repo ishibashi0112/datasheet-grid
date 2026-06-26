@@ -434,6 +434,13 @@ export type SpreadsheetGridProps<T> = {
   estimateRowHeight?: number;
   headerHeight?: number;
   rowHeaderWidth?: number;
+  // 追加: スクロールコンテナの明示高さ。'100%' で親要素に追従(親が確定高さを持つ前提)。
+  //   number は px。未指定時は maxHeight によるクリップ挙動(従来)になります。
+  //   height と maxHeight は併用可です(height + 上限 maxHeight)。
+  height?: number | string;
+  // 追加: スクロールコンテナの高さ上限。height・maxHeight が共に未指定のときのみ
+  //   既定 480px が適用されます(従来挙動・後方互換)。明示時はその値を上限にします。
+  maxHeight?: number | string;
   readOnly?: boolean;
   canEditCell?: (
     rowIndex: number,

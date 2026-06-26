@@ -5,7 +5,7 @@
 > **型を変更したら本ファイルも同期してください。** 将来 `index.ts` バレル整備時に props メタデータを
 > single source of truth 化し、dev 実行時パネル + 自動生成へ移行する想定です(現状は手動同期)。
 
-最終更新: SSRM stage ②(query 配線)完了時点。
+最終更新: スクロールコンテナ高さの外部制御(`height` / `maxHeight` props)追加時点。
 
 ## SpreadsheetGrid props (`SpreadsheetGridProps<T>`)
 
@@ -25,6 +25,8 @@
 | `estimateRowHeight` | `number` | `rowHeight` | 未測定行の推定行高(px)。 |
 | `headerHeight` | `number` | `40` | ヘッダー行の高さ(px)。 |
 | `rowHeaderWidth` | `number` | `56` | 行番号列の幅(px)。 |
+| `height` | `number \| string` | `—` | スクロールコンテナの明示高さ。`'100%'` で親要素に追従（親要素が確定高さを持つ前提。祖先まで高さが確定している／flex 子なら `min-height: 0` が必要）。`number` は px。未指定時は `maxHeight` のクリップ挙動になる。 |
+| `maxHeight` | `number \| string` | `—`（既定 480px） | スクロールコンテナの高さ上限。`height`・`maxHeight` が**共に未指定のときのみ**既定の 480px が効く（従来挙動）。`height` と併用すると「明示高さ＋上限」。 |
 | `readOnly` | `boolean` | `false` | グリッド全体の編集を無効化。 |
 | `canEditCell` | `(rowIndex, colIndex, row, column) => boolean` | — | セル単位の編集可否ゲート。 |
 | `enableRangeSelection` | `boolean` | `true` | 複数セル範囲選択。 |

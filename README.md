@@ -18,6 +18,7 @@ A high-performance, virtualized spreadsheet / data grid for **React 19**, writte
 - Sorting, per-column filters (`text` / `number` / `date` / `select` / `set` / `custom`), and a global filter.
 - In-cell editing and clipboard copy / paste, with range selection and keyboard navigation.
 - Optional auto-height rows for wrapped, variable-height content.
+- External height control via `height` / `maxHeight` (e.g. `height="100%"` to follow the parent's height).
 - Both **client-side** (`rows`) and **server-side** (`dataSource`, SSRM) row models.
 - Themeable with CSS custom properties (`--ssg-*`) and a low-priority `@layer ssg-base`, so your own CSS or Tailwind utilities override the defaults without specificity battles. `className` / `classNames` slots are also provided.
 - Toggle the top / bottom bars and their parts via props — whole bars (`showTopBar` / `showBottomBar`), the default top bar's summary chips and global-filter input, and the Rows/Columns counts in each bar.
@@ -76,6 +77,18 @@ export function Example() {
 
 `rows` and `onRowsChange` make the grid a controlled component. A column needs at least `key` and `width`.
 
+## Sizing
+
+By default the grid caps its height at `480px` (`max-height`) and scrolls when the content is taller. Pass `height` to take explicit control — use `height="100%"` to follow the parent's height, or a pixel value:
+
+```tsx
+<div style={{ height: 600, minHeight: 0 }}>
+  <SpreadsheetGrid rows={rows} columns={columns} height="100%" />
+</div>
+```
+
+For `height="100%"` to work, the parent must have a resolved height (its ancestors are sized, and a flex child needs `min-height: 0`). This is standard CSS the library can't resolve for you. `maxHeight` sets an upper bound and can be combined with `height` (explicit height, capped at `maxHeight`).
+
 ## Server-side mode (SSRM)
 
 Pass a `dataSource` instead of `rows` to switch to server-side mode. The grid keeps the full scroll height for the total row count and fetches only the blocks near the viewport:
@@ -131,6 +144,7 @@ The full prop and type reference lives in [`src/components/spreadsheet-grid/API_
 - ソート、列ごとのフィルター（`text` / `number` / `date` / `select` / `set` / `custom`）、グローバルフィルター。
 - セル内編集とクリップボードのコピー／貼り付け、範囲選択、キーボード操作。
 - 折り返し・可変行高に対応する auto-height 行（任意）。
+- `height` / `maxHeight` によるスクロールコンテナ高さの外部制御（`height="100%"` で親要素の高さに追従）。
 - **クライアントサイド**（`rows`）と**サーバーサイド**（`dataSource`、SSRM）の両行モデル。
 - CSS カスタムプロパティ（`--ssg-*`）と優先度の低い `@layer ssg-base` によるテーマ設定。利用側の通常 CSS や Tailwind ユーティリティが特異度の競合なしに既定を上書きできます。`className` / `classNames` スロットも用意。
 - トップ / ボトムバーとその構成要素（バー全体〔`showTopBar` / `showBottomBar`〕、既定トップバーの summary chips・グローバルフィルター入力、各バーの Rows/Columns 件数）を props で表示制御。
@@ -188,6 +202,18 @@ export function Example() {
 ```
 
 `rows` と `onRowsChange` でグリッドは controlled になります。列には最低限 `key` と `width` が必要です。
+
+### サイズ（高さ）
+
+既定ではグリッドの高さは `480px`（`max-height`）で頭打ちになり、中身がそれより高いとスクロールします。`height` を渡すと高さを明示制御できます。`height="100%"` で親要素の高さに追従、`number` で px 指定です:
+
+```tsx
+<div style={{ height: 600, minHeight: 0 }}>
+  <SpreadsheetGrid rows={rows} columns={columns} height="100%" />
+</div>
+```
+
+`height="100%"` を効かせるには、**親要素が確定高さを持つ**必要があります（祖先まで高さが確定している／flex 子なら `min-height: 0` が必要）。これは CSS の一般則のため本ライブラリ側では解決できません。`maxHeight` は高さの上限で、`height` と併用できます（明示高さ＋上限）。
 
 ### サーバーサイドモード（SSRM）
 
