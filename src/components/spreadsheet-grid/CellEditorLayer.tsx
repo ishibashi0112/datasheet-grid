@@ -34,6 +34,8 @@ type CellEditorLayerProps = {
   // 変更(11-B6): (direction?) → (value, direction?) に変更。確定値を引数で受け取ります。
   onCommit: (value: string, direction?: EditorCommitDirection) => void;
   onCancel: () => void;
+  // 追加(③): 編集 input の text-align。列 align に追従(右寄せ数値列を編集中も右寄せ維持)。
+  align?: 'left' | 'center' | 'right';
 };
 
 // 追加: 編集中セルの上に input を重ねる editor layer です。
@@ -47,6 +49,7 @@ export function CellEditorLayer({
   initialValue,
   onCommit,
   onCancel,
+  align,
 }: CellEditorLayerProps) {
   const inputRef = useRef<HTMLInputElement | null>(null);
 
@@ -126,6 +129,7 @@ export function CellEditorLayer({
         onKeyDown={handleKeyDown}
         onBlur={() => onCommit(draftValue)}
         className="ssg-cell-editor-input"
+        style={align ? { textAlign: align } : undefined}
       />
     </div>
   );

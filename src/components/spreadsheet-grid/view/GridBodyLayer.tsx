@@ -250,6 +250,9 @@ function GridBodyRowInner<T>({
         }
         const cellClassName = cx(
           'ssg-body-cell',
+          // 追加(③): セル内容の水平寄せ(align)。未指定は従来どおり左。
+          column.align === 'center' && 'ssg-body-cell--align-center',
+          column.align === 'right' && 'ssg-body-cell--align-right',
           isAutoHeightCell && 'ssg-body-cell--autoheight',
           readOnlyCell && !isSelected && 'ssg-body-cell--readonly',
           isRowHovered && 'ssg-body-cell--row-hovered',

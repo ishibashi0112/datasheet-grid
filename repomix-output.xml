@@ -91,6 +91,8 @@ src/components/spreadsheet-grid/logic/serverSideQuery.test.ts
 src/components/spreadsheet-grid/logic/serverSideQuery.ts
 src/components/spreadsheet-grid/logic/sorting.test.ts
 src/components/spreadsheet-grid/logic/sorting.ts
+src/components/spreadsheet-grid/logic/valueFormatters.test.ts
+src/components/spreadsheet-grid/logic/valueFormatters.ts
 src/components/spreadsheet-grid/logic/verticalGeometry.test.ts
 src/components/spreadsheet-grid/logic/verticalGeometry.ts
 src/components/spreadsheet-grid/model/gridActions.ts
@@ -424,6 +426,133 @@ export const shouldIgnoreGridKeydown = (eventTarget: EventTarget | null) => {
 
   return interactiveElement !== null;
 };
+</file>
+
+<file path="src/components/spreadsheet-grid/logic/valueFormatters.test.ts">
+import { describe, it, expect } from 'vitest';
+
+import { numberFormatter, type NumberFormatterOptions } from './valueFormatters';
+import type { GridColumn } from '../model/gridTypes';
+
+// テスト専用のダミー row / column(numberFormatter は value のみ参照します)。
+type Row = Record<string, unknown>;
+const col = {} as GridColumn<Row>;
+const run = (value: unknown, options?: NumberFormatterOptions): string =>
+  numberFormatter<Row>(options)({ value, row: {}, column: col });
+
+// 区切り文字を環境非依存にするため locale を固定します。
+const enUS: NumberFormatterOptions = { locale: 'en-US' };
+
+describe('numberFormatter', () => {
+  it('整数を 3 桁区切りで整形する', () => {
+    expect(run(1234567, enUS)).toBe('1,234,567');
+  });
+
+  it('小数は元の精度を保持する(勝手に丸めない)', () => {
+    expect(run(1234.5, enUS)).toBe('1,234.5');
+    expect(run(1234.567, enUS)).toBe('1,234.567');
+  });
+
+  it('0 と負数を整形する', () => {
+    expect(run(0, enUS)).toBe('0');
+    expect(run(-1234567.89, enUS)).toBe('-1,234,567.89');
+  });
+
+  it('null / undefined / 空文字は emptyText(既定 "")', () => {
+    expect(run(null, enUS)).toBe('');
+    expect(run(undefined, enUS)).toBe('');
+    expect(run('', enUS)).toBe('');
+  });
+
+  it('emptyText を指定できる', () => {
+    expect(run(null, { ...enUS, emptyText: '-' })).toBe('-');
+    // 値があるときは emptyText を使わない。
+    expect(run(0, { ...enUS, emptyText: '-' })).toBe('0');
+  });
+
+  it('数値化できない値は原値の文字列をそのまま返す', () => {
+    expect(run('abc', enUS)).toBe('abc');
+  });
+
+  it('文字列の数値を取り込む(Number 化。末尾0は失われる)', () => {
+    expect(run('1234.50', enUS)).toBe('1,234.5');
+  });
+
+  it('useGrouping:false で区切りを無効化する', () => {
+    expect(run(1234567, { ...enUS, useGrouping: false })).toBe('1234567');
+  });
+
+  it('maximumFractionDigits で固定桁に丸める', () => {
+    expect(run(1234.5678, { ...enUS, maximumFractionDigits: 2 })).toBe('1,234.57');
+  });
+
+  it('minimumFractionDigits で桁を埋める', () => {
+    expect(run(5, { ...enUS, minimumFractionDigits: 2 })).toBe('5.00');
+  });
+});
+</file>
+
+<file path="src/components/spreadsheet-grid/logic/valueFormatters.ts">
+// 追加(③): セル表示値の整形(UI 表示のみ)の組み込みフォーマッタ集約です。
+//   - 返り値は表示文字列。元の値・編集・コピー・ソート・フィルターには一切影響しません。
+//   - 各フォーマッタは CellValueFormatter<T> を返すファクタです。将来パターン(日付/％/通貨等)は
+//     本ファイルへファクタを足し、index.ts でバレル公開すれば拡張できます。
+import type { CellValueFormatter } from '../model/gridTypes';
+
+// 追加(③): numberFormatter のオプションです。
+export type NumberFormatterOptions = {
+  // 整形ロケール。未指定時は実行環境の既定(日本/米国はいずれも 3 桁区切り「,」/小数点「.」)。
+  locale?: string;
+  // 3 桁区切りの有無。既定 true。
+  useGrouping?: boolean;
+  // 小数桁を固定したいとき指定。未指定時は「元の値の精度を保持」します。
+  minimumFractionDigits?: number;
+  maximumFractionDigits?: number;
+  // 値が null / undefined / '' のときの表示。既定 ''。
+  emptyText?: string;
+};
+
+// 追加(③): 数値を「桁区切り＋(既定では)元の精度保持」で整形するフォーマッタを生成します。
+//   - null / undefined / '' → emptyText('')。
+//   - 数値化できない値 → 原値の文字列(String(value))をそのまま返します(整形しません)。
+//   - min/maxFractionDigits 未指定時は値が本来持つ小数桁数をそのまま表示します
+//     (Intl 既定の 3 桁丸めで表示精度が変わるのを避けるため)。
+export function numberFormatter<T>(
+  options: NumberFormatterOptions = {},
+): CellValueFormatter<T> {
+  const {
+    locale,
+    useGrouping = true,
+    minimumFractionDigits,
+    maximumFractionDigits,
+    emptyText = '',
+  } = options;
+
+  return ({ value }) => {
+    if (value === null || value === undefined || value === '') {
+      return emptyText;
+    }
+    const n = typeof value === 'number' ? value : Number(value);
+    if (!Number.isFinite(n)) {
+      return String(value);
+    }
+
+    // 既定の小数桁: 値が本来持つ桁数(指数表記は 0 桁扱い・上限 20)。固定指定があればそれを優先。
+    const s = Math.abs(n).toString();
+    const dot = s.indexOf('.');
+    const naturalFractionLength = dot === -1 ? 0 : s.length - dot - 1;
+
+    const resolvedMin = minimumFractionDigits ?? 0;
+    const baseMax = maximumFractionDigits ?? Math.min(naturalFractionLength, 20);
+    const resolvedMax = Math.max(resolvedMin, baseMax);
+
+    return new Intl.NumberFormat(locale, {
+      useGrouping,
+      minimumFractionDigits: resolvedMin,
+      maximumFractionDigits: resolvedMax,
+    }).format(n);
+  };
+}
 </file>
 
 <file path="src/components/spreadsheet-grid/utils/excelColumnName.ts">
@@ -4123,6 +4252,8 @@ export default useGridKeyboardInteractions;
 
 // 公開コンポーネント(named のみ。default export は廃止しました)。
 export { SpreadsheetGrid } from './SpreadsheetGrid';
+// 値フォーマッタ(UI 表示のみ)の組み込みファクタ。利用側も CellValueFormatter で自作可。
+export { numberFormatter } from './logic/valueFormatters';
 
 // 公開型です。
 export type {
@@ -4138,6 +4269,9 @@ export type {
   // セル / ヘッダーのカスタム描画コンテキスト(renderCell / renderHeader 引数)。
   CellRenderContext,
   HeaderRenderContext,
+  // セル表示値の整形(UI 表示のみ)の契約。
+  CellValueFormatter,
+  CellValueFormatterParams,
   // top / bottom バーのスロットコンテキストと、そこに載る派生 summary。
   SpreadsheetGridSlotContext,
   SpreadsheetGridDerivedSummary,
@@ -4165,6 +4299,7 @@ export type {
   // 行モデル境界型(clientSide / serverSide 共通の行取得 seam)です。
   RowModel,
 } from './model/gridTypes';
+export type { NumberFormatterOptions } from './logic/valueFormatters';
 </file>
 
 <file path="src/components/spreadsheet-grid/logic/filtering.test.ts">
@@ -6311,6 +6446,60 @@ describe('useServerSideRowModel', () => {
     expect(rec.calls.length).toBe(before);
   });
 });
+</file>
+
+<file path="src/components/spreadsheet-grid/view/DefaultGridBottomBar.tsx">
+import type { SpreadsheetGridSlotContext } from '../model/gridTypes';
+
+type DefaultGridBottomBarProps<T> = {
+  context: SpreadsheetGridSlotContext<T>;
+  // 追加: Rows / Columns の件数 chips(左グループ)を表示するかどうかです(既定 true)。
+  showCounts?: boolean;
+};
+
+// 追加: Grid 下部の既定ステータスバーです。
+// 変更(UI CSS移行): インライン style(gridBarStyles)を撤去し、styles.css の .ssg-bar-* クラスへ移行。
+// 変更(件数トグル): Rows / Columns の件数 chips(左グループ)を showCounts で出し分けます。
+//   右グループ(Active / Selection / 選択統計 / Cols)は本値の影響を受けず常時表示します。
+export function DefaultGridBottomBar<T>({
+  context,
+  showCounts = true,
+}: DefaultGridBottomBarProps<T>) {
+  // 追加: slot context が持つ派生 summary を使います。
+  const { derivedSummary } = context;
+
+  return (
+    <div className="ssg-bar--bottom">
+      <div className="ssg-bar-container">
+        {showCounts ? (
+          <div className="ssg-bar-group">
+            <span className="ssg-bar-chip">{derivedSummary.rowSummaryText}</span>
+            <span className="ssg-bar-chip">
+              {derivedSummary.columnSummaryText}
+            </span>
+          </div>
+        ) : null}
+
+        <div className="ssg-bar-group">
+          <span className="ssg-bar-chip">
+            Active: {derivedSummary.activeCellLabel}
+          </span>
+          <span className="ssg-bar-chip">
+            Selection: {derivedSummary.selectionLabel}
+          </span>
+          <span className="ssg-bar-chip">
+            {derivedSummary.selectionStatsText}
+          </span>
+          <span className="ssg-bar-chip">
+            Cols: {derivedSummary.selectionStats.selectedColumnCount}
+          </span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export default DefaultGridBottomBar;
 </file>
 
 <file path="src/components/spreadsheet-grid/view/SortManagementPanel.tsx">
@@ -9539,58 +9728,93 @@ export const gridUiReducer = (
 };
 </file>
 
-<file path="src/components/spreadsheet-grid/view/DefaultGridBottomBar.tsx">
+<file path="src/components/spreadsheet-grid/view/DefaultGridTopBar.tsx">
 import type { SpreadsheetGridSlotContext } from '../model/gridTypes';
 
-type DefaultGridBottomBarProps<T> = {
+type DefaultGridTopBarProps<T> = {
   context: SpreadsheetGridSlotContext<T>;
-  // 追加: Rows / Columns の件数 chips(左グループ)を表示するかどうかです(既定 true)。
+  // 追加: 件数/フィルター/ソートの summary chips を表示するかどうかです(既定 true)。
+  showSummary?: boolean;
+  // 追加: グローバルフィルター入力欄を表示するかどうかです(既定 true)。
+  showFilter?: boolean;
+  // 追加: summary 内の Rows / Columns 件数 chips を表示するかどうかです(既定 true)。
+  //   showSummary=true のときのみ効きます(Filter / Sort chips は本値の影響を受けません)。
   showCounts?: boolean;
 };
 
-// 追加: Grid 下部の既定ステータスバーです。
+// 追加: Grid 上部の既定ツールバーです。summary chips(左) と グローバルフィルター入力(右) の
+//       2 パートからなり、それぞれ showSummary / showFilter で独立に出し分けできます。
+//       summary 内の Rows / Columns 件数 chips はさらに showCounts で出し分けできます。
+//       summary / filter が両方 false の場合は呼び出し側(SpreadsheetGrid)がそもそも本バーを
+//       描画しません(空バーは出しません)。
 // 変更(UI CSS移行): インライン style(gridBarStyles)を撤去し、styles.css の .ssg-bar-* クラスへ移行。
-// 変更(件数トグル): Rows / Columns の件数 chips(左グループ)を showCounts で出し分けます。
-//   右グループ(Active / Selection / 選択統計 / Cols)は本値の影響を受けず常時表示します。
-export function DefaultGridBottomBar<T>({
+// 変更(バー内訳): summary / filter を showSummary / showFilter で条件描画します。filter 単独時の
+//       左寄せ・幅は styles.css の `.ssg-bar-input-group:only-child` が担います。
+// 変更(件数トグル): summary 内の Rows / Columns 件数 chips を showCounts で出し分けます。
+export function DefaultGridTopBar<T>({
   context,
+  showSummary = true,
+  showFilter = true,
   showCounts = true,
-}: DefaultGridBottomBarProps<T>) {
+}: DefaultGridTopBarProps<T>) {
   // 追加: slot context が持つ派生 summary を使います。
   const { derivedSummary } = context;
 
   return (
-    <div className="ssg-bar--bottom">
+    <div className="ssg-bar--top">
       <div className="ssg-bar-container">
-        {showCounts ? (
-          <div className="ssg-bar-group">
-            <span className="ssg-bar-chip">{derivedSummary.rowSummaryText}</span>
-            <span className="ssg-bar-chip">
-              {derivedSummary.columnSummaryText}
+        {showSummary ? (
+          <div className="ssg-bar-group ssg-bar-leading">
+            <span className="ssg-bar-title">Toolbar</span>
+
+            {showCounts ? (
+              <>
+                <span className="ssg-bar-chip ssg-bar-chip--emphasis">
+                  {derivedSummary.rowSummaryText}
+                </span>
+
+                <span className="ssg-bar-chip ssg-bar-chip--emphasis">
+                  {derivedSummary.columnSummaryText}
+                </span>
+              </>
+            ) : null}
+
+            <span className="ssg-bar-chip ssg-bar-chip--emphasis">
+              {derivedSummary.filterSummaryText}
+            </span>
+
+            <span className="ssg-bar-chip ssg-bar-chip--emphasis">
+              {derivedSummary.sortSummaryText}
             </span>
           </div>
         ) : null}
 
-        <div className="ssg-bar-group">
-          <span className="ssg-bar-chip">
-            Active: {derivedSummary.activeCellLabel}
-          </span>
-          <span className="ssg-bar-chip">
-            Selection: {derivedSummary.selectionLabel}
-          </span>
-          <span className="ssg-bar-chip">
-            {derivedSummary.selectionStatsText}
-          </span>
-          <span className="ssg-bar-chip">
-            Cols: {derivedSummary.selectionStats.selectedColumnCount}
-          </span>
-        </div>
+        {showFilter ? (
+          <div className="ssg-bar-input-group">
+            <input
+              type="text"
+              value={context.globalFilterText}
+              onChange={(event) => context.setGlobalFilterText(event.target.value)}
+              placeholder="グローバルフィルター"
+              className="ssg-bar-input"
+            />
+            {context.globalFilterText.trim().length > 0 ? (
+              <button
+                type="button"
+                onClick={() => context.setGlobalFilterText('')}
+                className="ssg-bar-clear-btn"
+              >
+                クリア
+              </button>
+            ) : null}
+          </div>
+        ) : null}
       </div>
     </div>
   );
 }
 
-export default DefaultGridBottomBar;
+export default DefaultGridTopBar;
 </file>
 
 <file path="package.json">
@@ -9723,6 +9947,8 @@ type CellEditorLayerProps = {
   // 変更(11-B6): (direction?) → (value, direction?) に変更。確定値を引数で受け取ります。
   onCommit: (value: string, direction?: EditorCommitDirection) => void;
   onCancel: () => void;
+  // 追加(③): 編集 input の text-align。列 align に追従(右寄せ数値列を編集中も右寄せ維持)。
+  align?: 'left' | 'center' | 'right';
 };
 
 // 追加: 編集中セルの上に input を重ねる editor layer です。
@@ -9736,6 +9962,7 @@ export function CellEditorLayer({
   initialValue,
   onCommit,
   onCancel,
+  align,
 }: CellEditorLayerProps) {
   const inputRef = useRef<HTMLInputElement | null>(null);
 
@@ -9815,6 +10042,7 @@ export function CellEditorLayer({
         onKeyDown={handleKeyDown}
         onBlur={() => onCommit(draftValue)}
         className="ssg-cell-editor-input"
+        style={align ? { textAlign: align } : undefined}
       />
     </div>
   );
@@ -11527,93 +11755,294 @@ export function ColumnChooserPanel({
 export default ColumnChooserPanel;
 </file>
 
-<file path="src/components/spreadsheet-grid/view/DefaultGridTopBar.tsx">
-import type { SpreadsheetGridSlotContext } from '../model/gridTypes';
+<file path="src/components/spreadsheet-grid/view/gridBarHelpers.ts">
+import type { ReactNode } from 'react';
+import type {
+  CellCoord,
+  ColumnFilterValue,
+  GridSelection,
+  GridColumn,
+  SpreadsheetGridSlotContext,
+  SpreadsheetGridDerivedSummary,
+  SpreadsheetGridSelectionStats,
+} from '../model/gridTypes';
+import { toExcelColumnName } from '../utils/excelColumnName';
+// 追加(12-A): set フィルター対応のフィルター有効判定を共有します。
+import { isActiveColumnFilterValue } from '../logic/filtering';
 
-type DefaultGridTopBarProps<T> = {
-  context: SpreadsheetGridSlotContext<T>;
-  // 追加: 件数/フィルター/ソートの summary chips を表示するかどうかです(既定 true)。
-  showSummary?: boolean;
-  // 追加: グローバルフィルター入力欄を表示するかどうかです(既定 true)。
-  showFilter?: boolean;
-  // 追加: summary 内の Rows / Columns 件数 chips を表示するかどうかです(既定 true)。
-  //   showSummary=true のときのみ効きます(Filter / Sort chips は本値の影響を受けません)。
-  showCounts?: boolean;
+// 追加: Grid の slot renderer を解決します。
+export const resolveGridSlot = <T,>(
+  slotRenderer:
+    | ((context: SpreadsheetGridSlotContext<T>) => ReactNode)
+    | undefined,
+  context: SpreadsheetGridSlotContext<T>,
+  fallback: ReactNode,
+) => {
+  if (slotRenderer) {
+    return slotRenderer(context);
+  }
+  return fallback;
 };
 
-// 追加: Grid 上部の既定ツールバーです。summary chips(左) と グローバルフィルター入力(右) の
-//       2 パートからなり、それぞれ showSummary / showFilter で独立に出し分けできます。
-//       summary 内の Rows / Columns 件数 chips はさらに showCounts で出し分けできます。
-//       summary / filter が両方 false の場合は呼び出し側(SpreadsheetGrid)がそもそも本バーを
-//       描画しません(空バーは出しません)。
-// 変更(UI CSS移行): インライン style(gridBarStyles)を撤去し、styles.css の .ssg-bar-* クラスへ移行。
-// 変更(バー内訳): summary / filter を showSummary / showFilter で条件描画します。filter 単独時の
-//       左寄せ・幅は styles.css の `.ssg-bar-input-group:only-child` が担います。
-// 変更(件数トグル): summary 内の Rows / Columns 件数 chips を showCounts で出し分けます。
-export function DefaultGridTopBar<T>({
-  context,
-  showSummary = true,
-  showFilter = true,
-  showCounts = true,
-}: DefaultGridTopBarProps<T>) {
-  // 追加: slot context が持つ派生 summary を使います。
-  const { derivedSummary } = context;
+// 追加: summary 用に長い文字列を短く丸めます。
+const truncateSummaryText = (value: string, maxLength = 16) => {
+  if (value.length <= maxLength) {
+    return value;
+  }
+  return `${value.slice(0, maxLength)}…`;
+};
 
-  return (
-    <div className="ssg-bar--top">
-      <div className="ssg-bar-container">
-        {showSummary ? (
-          <div className="ssg-bar-group ssg-bar-leading">
-            <span className="ssg-bar-title">Toolbar</span>
+// 追加: ActiveCell を A1 形式へ整形します。
+export const formatGridCellLabel = (cell: CellCoord | null) => {
+  if (!cell) {
+    return 'なし';
+  }
+  return `${toExcelColumnName(cell.col)}${cell.row + 1}`;
+};
 
-            {showCounts ? (
-              <>
-                <span className="ssg-bar-chip ssg-bar-chip--emphasis">
-                  {derivedSummary.rowSummaryText}
-                </span>
+// 追加: selection の概要を短く整形します。
+export const formatGridSelectionLabel = (selection: GridSelection) => {
+  if (!selection) {
+    return 'なし';
+  }
 
-                <span className="ssg-bar-chip ssg-bar-chip--emphasis">
-                  {derivedSummary.columnSummaryText}
-                </span>
-              </>
-            ) : null}
+  if (selection.type === 'cell') {
+    const startRow = Math.min(
+      selection.range.start.row,
+      selection.range.end.row,
+    );
+    const endRow = Math.max(
+      selection.range.start.row,
+      selection.range.end.row,
+    );
+    const startCol = Math.min(
+      selection.range.start.col,
+      selection.range.end.col,
+    );
+    const endCol = Math.max(
+      selection.range.start.col,
+      selection.range.end.col,
+    );
 
-            <span className="ssg-bar-chip ssg-bar-chip--emphasis">
-              {derivedSummary.filterSummaryText}
-            </span>
+    return `${toExcelColumnName(startCol)}${startRow + 1} - ${toExcelColumnName(
+      endCol,
+    )}${endRow + 1}`;
+  }
 
-            <span className="ssg-bar-chip ssg-bar-chip--emphasis">
-              {derivedSummary.sortSummaryText}
-            </span>
-          </div>
-        ) : null}
+  if (selection.type === 'row') {
+    const startRow = Math.min(selection.startRow, selection.endRow);
+    const endRow = Math.max(selection.startRow, selection.endRow);
+    return `Row ${startRow + 1} - ${endRow + 1}`;
+  }
 
-        {showFilter ? (
-          <div className="ssg-bar-input-group">
-            <input
-              type="text"
-              value={context.globalFilterText}
-              onChange={(event) => context.setGlobalFilterText(event.target.value)}
-              placeholder="グローバルフィルター"
-              className="ssg-bar-input"
-            />
-            {context.globalFilterText.trim().length > 0 ? (
-              <button
-                type="button"
-                onClick={() => context.setGlobalFilterText('')}
-                className="ssg-bar-clear-btn"
-              >
-                クリア
-              </button>
-            ) : null}
-          </div>
-        ) : null}
-      </div>
-    </div>
+  const startCol = Math.min(selection.startCol, selection.endCol);
+  const endCol = Math.max(selection.startCol, selection.endCol);
+  return `Col ${toExcelColumnName(startCol)} - ${toExcelColumnName(endCol)}`;
+};
+
+// 追加: rows / filteredRows の概要テキストです。
+// 変更(DS-3-7): filteredRows(配列)依存をやめ、件数 filteredRowCount(数値)を引数で受けます。
+//   公開 slotContext.filteredRows は遅延 getter で別途供給され、サマリは件数しか使いません。
+export const formatGridRowSummary = <T,>(
+  context: Pick<SpreadsheetGridSlotContext<T>, 'rows'>,
+  filteredRowCount: number,
+) => `Rows: ${filteredRowCount} / ${context.rows.length}`;
+
+// 追加: columns / visibleColumns の概要テキストです。
+export const formatGridColumnSummary = <T,>(
+  context: Pick<SpreadsheetGridSlotContext<T>, 'columns' | 'visibleColumns'>,
+) => `Columns: ${context.visibleColumns.length} / ${context.columns.length}`;
+
+// 追加: selection から選択セル数 / 行数 / 列数を算出します。
+export const getGridSelectionStats = <T,>(
+  context: Pick<SpreadsheetGridSlotContext<T>, 'selection' | 'visibleColumns'>,
+  // 変更(DS-3-7): filteredRows(配列)→ 件数 filteredRowCount(数値)を引数で受けます。
+  filteredRowCount: number,
+): SpreadsheetGridSelectionStats => {
+  const selection = context.selection;
+  if (!selection) {
+    return {
+      selectedCellCount: 0,
+      selectedRowCount: 0,
+      selectedColumnCount: 0,
+    };
+  }
+
+  if (selection.type === 'cell') {
+    const startRow = Math.min(
+      selection.range.start.row,
+      selection.range.end.row,
+    );
+    const endRow = Math.max(
+      selection.range.start.row,
+      selection.range.end.row,
+    );
+    const startCol = Math.min(
+      selection.range.start.col,
+      selection.range.end.col,
+    );
+    const endCol = Math.max(
+      selection.range.start.col,
+      selection.range.end.col,
+    );
+    const selectedRowCount = endRow - startRow + 1;
+    const selectedColumnCount = endCol - startCol + 1;
+    return {
+      selectedCellCount: selectedRowCount * selectedColumnCount,
+      selectedRowCount,
+      selectedColumnCount,
+    };
+  }
+
+  if (selection.type === 'row') {
+    const startRow = Math.min(selection.startRow, selection.endRow);
+    const endRow = Math.max(selection.startRow, selection.endRow);
+    const selectedRowCount = endRow - startRow + 1;
+    const selectedColumnCount = context.visibleColumns.length;
+    return {
+      selectedCellCount: selectedRowCount * selectedColumnCount,
+      selectedRowCount,
+      selectedColumnCount,
+    };
+  }
+
+  const startCol = Math.min(selection.startCol, selection.endCol);
+  const endCol = Math.max(selection.startCol, selection.endCol);
+  const selectedColumnCount = endCol - startCol + 1;
+  const selectedRowCount = filteredRowCount;
+  return {
+    selectedCellCount: selectedRowCount * selectedColumnCount,
+    selectedRowCount,
+    selectedColumnCount,
+  };
+};
+
+// 追加: selection 数量の要約テキストです。
+export const formatGridSelectionStatsLabel = <T,>(
+  context: Pick<SpreadsheetGridSlotContext<T>, 'selection' | 'visibleColumns'>,
+  filteredRowCount: number,
+) => {
+  const stats = getGridSelectionStats(context, filteredRowCount);
+  return `Cells: ${stats.selectedCellCount} / Rows: ${stats.selectedRowCount}`;
+};
+
+// 変更(12-A): 列フィルターの有効件数を数えます。
+// 変更理由: set フィルター値はオブジェクトのため String(value).trim() 判定が
+//           成立しません(空配列も「全行除外」として有効に数える必要があります)。
+//           判定を logic/filtering.ts の isActiveColumnFilterValue へ一元化します。
+const countActiveColumnFilters = (
+  columnFilterValues: Record<string, ColumnFilterValue>,
+) =>
+  Object.values(columnFilterValues).filter((value) =>
+    isActiveColumnFilterValue(value),
+  ).length;
+
+// 追加: フィルター状態の要約テキストです。
+export const formatGridFilterSummary = <T,>(
+  context: Pick<
+    SpreadsheetGridSlotContext<T>,
+    'globalFilterText' | 'columnFilterValues'
+  >,
+) => {
+  const hasGlobalFilter = context.globalFilterText.trim().length > 0;
+  const globalFilterPreview = hasGlobalFilter
+    ? truncateSummaryText(context.globalFilterText.trim())
+    : null;
+  const columnFilterCount = countActiveColumnFilters(context.columnFilterValues);
+
+  if (!hasGlobalFilter && columnFilterCount === 0) {
+    return 'Filter: なし';
+  }
+
+  if (hasGlobalFilter && columnFilterCount === 0) {
+    return `Filter: Global("${globalFilterPreview}")`;
+  }
+
+  if (!hasGlobalFilter && columnFilterCount > 0) {
+    return `Filter: ${columnFilterCount}列`;
+  }
+
+  return `Filter: Global("${globalFilterPreview}") + ${columnFilterCount}列`;
+};
+
+// 変更(MS-1): ソート列名取得を「単一 key → ラベル」に一般化します
+//            (配列の各エントリ・主ソート列の双方から使い回せるように)。
+const getColumnLabelByKey = <T,>(
+  columns: GridColumn<T>[],
+  columnKey: string,
+) => {
+  const column = columns.find((item) => item.key === columnKey);
+  return column?.title || column?.key || columnKey;
+};
+
+// 追加: ソート状態の要約テキストです。
+export const formatGridSortSummary = <T,>(
+  context: Pick<SpreadsheetGridSlotContext<T>, 'columns' | 'sortState'>,
+) => {
+  // 変更(MS-1): 配列を優先順位順に「列名 (方向)」で連結します。
+  //   単一エントリのときは従来と同一の文字列(例: 'Sort: 金額 (昇順)')になります。
+  if (context.sortState.length === 0) {
+    return 'Sort: なし';
+  }
+
+  const parts = context.sortState.map((entry) => {
+    const label = getColumnLabelByKey(context.columns, entry.columnKey);
+    return `${label} (${entry.direction === 'asc' ? '昇順' : '降順'})`;
+  });
+
+  return `Sort: ${parts.join(', ')}`;
+};
+
+// 追加: slot context に載せる派生 summary を一括構築します。
+export const buildGridDerivedSummary = <T,>(
+  context: Pick<
+    SpreadsheetGridSlotContext<T>,
+    | 'rows'
+    | 'columns'
+    | 'visibleColumns'
+    | 'globalFilterText'
+    | 'columnFilterValues'
+    | 'sortState'
+    | 'activeCell'
+    | 'selection'
+  >,
+  // 変更(DS-3-7): filteredRows(配列)依存を除去し、件数を引数で各 format 関数へ流します。
+  filteredRowCount: number,
+): SpreadsheetGridDerivedSummary => {
+  const selectionStats = getGridSelectionStats(context, filteredRowCount);
+  const hasGlobalFilter = context.globalFilterText.trim().length > 0;
+  const globalFilterPreview = hasGlobalFilter
+    ? truncateSummaryText(context.globalFilterText.trim())
+    : null;
+  const activeColumnFilterCount = countActiveColumnFilters(
+    context.columnFilterValues,
   );
-}
+  const hasAnyFilter = hasGlobalFilter || activeColumnFilterCount > 0;
+  // 変更(MS-1): 配列ベースの判定に置き換えます。
+  //   sortedColumnLabel は後方互換のため「主ソート(先頭)列」のラベルを返します
+  //   (複数ソート時は先頭。全体の要約は sortSummaryText 側が担います)。
+  const hasSorting = context.sortState.length > 0;
+  const sortedColumnLabel = hasSorting
+    ? getColumnLabelByKey(context.columns, context.sortState[0].columnKey)
+    : null;
 
-export default DefaultGridTopBar;
+  return {
+    rowSummaryText: formatGridRowSummary(context, filteredRowCount),
+    columnSummaryText: formatGridColumnSummary(context),
+    filterSummaryText: formatGridFilterSummary(context),
+    sortSummaryText: formatGridSortSummary(context),
+    activeCellLabel: formatGridCellLabel(context.activeCell),
+    selectionLabel: formatGridSelectionLabel(context.selection),
+    selectionStatsText: formatGridSelectionStatsLabel(context, filteredRowCount),
+    selectionStats,
+    hasGlobalFilter,
+    globalFilterPreview,
+    activeColumnFilterCount,
+    hasAnyFilter,
+    hasSorting,
+    sortedColumnLabel,
+  };
+};
 </file>
 
 <file path="src/components/spreadsheet-grid/hooks/useColumnMenuController.ts">
@@ -12454,296 +12883,6 @@ export function ColumnFilterPopover({
 }
 
 export default ColumnFilterPopover;
-</file>
-
-<file path="src/components/spreadsheet-grid/view/gridBarHelpers.ts">
-import type { ReactNode } from 'react';
-import type {
-  CellCoord,
-  ColumnFilterValue,
-  GridSelection,
-  GridColumn,
-  SpreadsheetGridSlotContext,
-  SpreadsheetGridDerivedSummary,
-  SpreadsheetGridSelectionStats,
-} from '../model/gridTypes';
-import { toExcelColumnName } from '../utils/excelColumnName';
-// 追加(12-A): set フィルター対応のフィルター有効判定を共有します。
-import { isActiveColumnFilterValue } from '../logic/filtering';
-
-// 追加: Grid の slot renderer を解決します。
-export const resolveGridSlot = <T,>(
-  slotRenderer:
-    | ((context: SpreadsheetGridSlotContext<T>) => ReactNode)
-    | undefined,
-  context: SpreadsheetGridSlotContext<T>,
-  fallback: ReactNode,
-) => {
-  if (slotRenderer) {
-    return slotRenderer(context);
-  }
-  return fallback;
-};
-
-// 追加: summary 用に長い文字列を短く丸めます。
-const truncateSummaryText = (value: string, maxLength = 16) => {
-  if (value.length <= maxLength) {
-    return value;
-  }
-  return `${value.slice(0, maxLength)}…`;
-};
-
-// 追加: ActiveCell を A1 形式へ整形します。
-export const formatGridCellLabel = (cell: CellCoord | null) => {
-  if (!cell) {
-    return 'なし';
-  }
-  return `${toExcelColumnName(cell.col)}${cell.row + 1}`;
-};
-
-// 追加: selection の概要を短く整形します。
-export const formatGridSelectionLabel = (selection: GridSelection) => {
-  if (!selection) {
-    return 'なし';
-  }
-
-  if (selection.type === 'cell') {
-    const startRow = Math.min(
-      selection.range.start.row,
-      selection.range.end.row,
-    );
-    const endRow = Math.max(
-      selection.range.start.row,
-      selection.range.end.row,
-    );
-    const startCol = Math.min(
-      selection.range.start.col,
-      selection.range.end.col,
-    );
-    const endCol = Math.max(
-      selection.range.start.col,
-      selection.range.end.col,
-    );
-
-    return `${toExcelColumnName(startCol)}${startRow + 1} - ${toExcelColumnName(
-      endCol,
-    )}${endRow + 1}`;
-  }
-
-  if (selection.type === 'row') {
-    const startRow = Math.min(selection.startRow, selection.endRow);
-    const endRow = Math.max(selection.startRow, selection.endRow);
-    return `Row ${startRow + 1} - ${endRow + 1}`;
-  }
-
-  const startCol = Math.min(selection.startCol, selection.endCol);
-  const endCol = Math.max(selection.startCol, selection.endCol);
-  return `Col ${toExcelColumnName(startCol)} - ${toExcelColumnName(endCol)}`;
-};
-
-// 追加: rows / filteredRows の概要テキストです。
-// 変更(DS-3-7): filteredRows(配列)依存をやめ、件数 filteredRowCount(数値)を引数で受けます。
-//   公開 slotContext.filteredRows は遅延 getter で別途供給され、サマリは件数しか使いません。
-export const formatGridRowSummary = <T,>(
-  context: Pick<SpreadsheetGridSlotContext<T>, 'rows'>,
-  filteredRowCount: number,
-) => `Rows: ${filteredRowCount} / ${context.rows.length}`;
-
-// 追加: columns / visibleColumns の概要テキストです。
-export const formatGridColumnSummary = <T,>(
-  context: Pick<SpreadsheetGridSlotContext<T>, 'columns' | 'visibleColumns'>,
-) => `Columns: ${context.visibleColumns.length} / ${context.columns.length}`;
-
-// 追加: selection から選択セル数 / 行数 / 列数を算出します。
-export const getGridSelectionStats = <T,>(
-  context: Pick<SpreadsheetGridSlotContext<T>, 'selection' | 'visibleColumns'>,
-  // 変更(DS-3-7): filteredRows(配列)→ 件数 filteredRowCount(数値)を引数で受けます。
-  filteredRowCount: number,
-): SpreadsheetGridSelectionStats => {
-  const selection = context.selection;
-  if (!selection) {
-    return {
-      selectedCellCount: 0,
-      selectedRowCount: 0,
-      selectedColumnCount: 0,
-    };
-  }
-
-  if (selection.type === 'cell') {
-    const startRow = Math.min(
-      selection.range.start.row,
-      selection.range.end.row,
-    );
-    const endRow = Math.max(
-      selection.range.start.row,
-      selection.range.end.row,
-    );
-    const startCol = Math.min(
-      selection.range.start.col,
-      selection.range.end.col,
-    );
-    const endCol = Math.max(
-      selection.range.start.col,
-      selection.range.end.col,
-    );
-    const selectedRowCount = endRow - startRow + 1;
-    const selectedColumnCount = endCol - startCol + 1;
-    return {
-      selectedCellCount: selectedRowCount * selectedColumnCount,
-      selectedRowCount,
-      selectedColumnCount,
-    };
-  }
-
-  if (selection.type === 'row') {
-    const startRow = Math.min(selection.startRow, selection.endRow);
-    const endRow = Math.max(selection.startRow, selection.endRow);
-    const selectedRowCount = endRow - startRow + 1;
-    const selectedColumnCount = context.visibleColumns.length;
-    return {
-      selectedCellCount: selectedRowCount * selectedColumnCount,
-      selectedRowCount,
-      selectedColumnCount,
-    };
-  }
-
-  const startCol = Math.min(selection.startCol, selection.endCol);
-  const endCol = Math.max(selection.startCol, selection.endCol);
-  const selectedColumnCount = endCol - startCol + 1;
-  const selectedRowCount = filteredRowCount;
-  return {
-    selectedCellCount: selectedRowCount * selectedColumnCount,
-    selectedRowCount,
-    selectedColumnCount,
-  };
-};
-
-// 追加: selection 数量の要約テキストです。
-export const formatGridSelectionStatsLabel = <T,>(
-  context: Pick<SpreadsheetGridSlotContext<T>, 'selection' | 'visibleColumns'>,
-  filteredRowCount: number,
-) => {
-  const stats = getGridSelectionStats(context, filteredRowCount);
-  return `Cells: ${stats.selectedCellCount} / Rows: ${stats.selectedRowCount}`;
-};
-
-// 変更(12-A): 列フィルターの有効件数を数えます。
-// 変更理由: set フィルター値はオブジェクトのため String(value).trim() 判定が
-//           成立しません(空配列も「全行除外」として有効に数える必要があります)。
-//           判定を logic/filtering.ts の isActiveColumnFilterValue へ一元化します。
-const countActiveColumnFilters = (
-  columnFilterValues: Record<string, ColumnFilterValue>,
-) =>
-  Object.values(columnFilterValues).filter((value) =>
-    isActiveColumnFilterValue(value),
-  ).length;
-
-// 追加: フィルター状態の要約テキストです。
-export const formatGridFilterSummary = <T,>(
-  context: Pick<
-    SpreadsheetGridSlotContext<T>,
-    'globalFilterText' | 'columnFilterValues'
-  >,
-) => {
-  const hasGlobalFilter = context.globalFilterText.trim().length > 0;
-  const globalFilterPreview = hasGlobalFilter
-    ? truncateSummaryText(context.globalFilterText.trim())
-    : null;
-  const columnFilterCount = countActiveColumnFilters(context.columnFilterValues);
-
-  if (!hasGlobalFilter && columnFilterCount === 0) {
-    return 'Filter: なし';
-  }
-
-  if (hasGlobalFilter && columnFilterCount === 0) {
-    return `Filter: Global("${globalFilterPreview}")`;
-  }
-
-  if (!hasGlobalFilter && columnFilterCount > 0) {
-    return `Filter: ${columnFilterCount}列`;
-  }
-
-  return `Filter: Global("${globalFilterPreview}") + ${columnFilterCount}列`;
-};
-
-// 変更(MS-1): ソート列名取得を「単一 key → ラベル」に一般化します
-//            (配列の各エントリ・主ソート列の双方から使い回せるように)。
-const getColumnLabelByKey = <T,>(
-  columns: GridColumn<T>[],
-  columnKey: string,
-) => {
-  const column = columns.find((item) => item.key === columnKey);
-  return column?.title || column?.key || columnKey;
-};
-
-// 追加: ソート状態の要約テキストです。
-export const formatGridSortSummary = <T,>(
-  context: Pick<SpreadsheetGridSlotContext<T>, 'columns' | 'sortState'>,
-) => {
-  // 変更(MS-1): 配列を優先順位順に「列名 (方向)」で連結します。
-  //   単一エントリのときは従来と同一の文字列(例: 'Sort: 金額 (昇順)')になります。
-  if (context.sortState.length === 0) {
-    return 'Sort: なし';
-  }
-
-  const parts = context.sortState.map((entry) => {
-    const label = getColumnLabelByKey(context.columns, entry.columnKey);
-    return `${label} (${entry.direction === 'asc' ? '昇順' : '降順'})`;
-  });
-
-  return `Sort: ${parts.join(', ')}`;
-};
-
-// 追加: slot context に載せる派生 summary を一括構築します。
-export const buildGridDerivedSummary = <T,>(
-  context: Pick<
-    SpreadsheetGridSlotContext<T>,
-    | 'rows'
-    | 'columns'
-    | 'visibleColumns'
-    | 'globalFilterText'
-    | 'columnFilterValues'
-    | 'sortState'
-    | 'activeCell'
-    | 'selection'
-  >,
-  // 変更(DS-3-7): filteredRows(配列)依存を除去し、件数を引数で各 format 関数へ流します。
-  filteredRowCount: number,
-): SpreadsheetGridDerivedSummary => {
-  const selectionStats = getGridSelectionStats(context, filteredRowCount);
-  const hasGlobalFilter = context.globalFilterText.trim().length > 0;
-  const globalFilterPreview = hasGlobalFilter
-    ? truncateSummaryText(context.globalFilterText.trim())
-    : null;
-  const activeColumnFilterCount = countActiveColumnFilters(
-    context.columnFilterValues,
-  );
-  const hasAnyFilter = hasGlobalFilter || activeColumnFilterCount > 0;
-  // 変更(MS-1): 配列ベースの判定に置き換えます。
-  //   sortedColumnLabel は後方互換のため「主ソート(先頭)列」のラベルを返します
-  //   (複数ソート時は先頭。全体の要約は sortSummaryText 側が担います)。
-  const hasSorting = context.sortState.length > 0;
-  const sortedColumnLabel = hasSorting
-    ? getColumnLabelByKey(context.columns, context.sortState[0].columnKey)
-    : null;
-
-  return {
-    rowSummaryText: formatGridRowSummary(context, filteredRowCount),
-    columnSummaryText: formatGridColumnSummary(context),
-    filterSummaryText: formatGridFilterSummary(context),
-    sortSummaryText: formatGridSortSummary(context),
-    activeCellLabel: formatGridCellLabel(context.activeCell),
-    selectionLabel: formatGridSelectionLabel(context.selection),
-    selectionStatsText: formatGridSelectionStatsLabel(context, filteredRowCount),
-    selectionStats,
-    hasGlobalFilter,
-    globalFilterPreview,
-    activeColumnFilterCount,
-    hasAnyFilter,
-    hasSorting,
-    sortedColumnLabel,
-  };
-};
 </file>
 
 <file path="src/components/spreadsheet-grid/logic/filtering.ts">
@@ -14031,175 +14170,6 @@ export function ColumnMenuPopover({
 export default ColumnMenuPopover;
 </file>
 
-<file path="src/components/spreadsheet-grid/API_REFERENCE.md">
-# SpreadsheetGrid 公開 API リファレンス
-
-> このファイルは `model/gridTypes.ts`(`SpreadsheetGridProps<T>` / `GridColumn<T>` 他)と
-> `SpreadsheetGrid.tsx`(既定値の分割代入)から手で起こした公開 API のスナップショットです。
-> **型を変更したら本ファイルも同期してください。** 将来 `index.ts` バレル整備時に props メタデータを
-> single source of truth 化し、dev 実行時パネル + 自動生成へ移行する想定です(現状は手動同期)。
-
-最終更新: スクロールコンテナ高さの外部制御(`height` / `maxHeight` props)追加時点。
-
-## SpreadsheetGrid props (`SpreadsheetGridProps<T>`)
-
-| Name | Type | Default | Description |
-| --- | --- | --- | --- |
-| `rows` | `T[]` | — | clientSide モードの行データ。`dataSource` を指定した場合は無視され serverSide モードになる(両者は排他)。 |
-| `columns` | `GridColumn<T>[]` | (required) | 列定義の配列。 |
-| `onRowsChange` | `(nextRows: T[]) => void` | — | 行が変化したとき呼ばれる(rows を controlled にする)。 |
-| `dataSource` | `ServerSideDataSource<T>` | — | serverSide(SSRM)モードのデータ供給口。指定すると可視窓近傍のブロックだけを `getRows` で都度取得し、`rows` 系の clientSide パイプラインをバイパスする。 |
-| `serverSideRefreshToken` | `number` | — | serverSide のソフトリフレッシュ用トークン。値を増やすと、クエリ(フィルター/ソート/グローバル)を変えずにキャッシュを破棄して現在の可視レンジをサーバから取り直す。スクロール位置は保持し、件数は到着ブロックの `totalRowCount` で追従する(clientSide では無視)。 |
-| `onColumnsChange` | `(nextColumns: GridColumn<T>[]) => void` | — | 列が変化したとき呼ばれる。列メニューの固定切替はこれが指定されている場合のみ反映。 |
-| `rowKeyGetter` | `(row: T, index: number) => GridRowKey` | index ベース | 安定した行キーを返す。 |
-| `createRow` | `() => T` | — | 行追加時に使う新規行ファクトリ。 |
-| `createOverflowColumn` | `(columnIndex: number) => GridColumn<T>` | — | 列追加時に使う列ファクトリ。 |
-| `rowHeight` | `number` | `36` | uniform 行の行高(px)。 |
-| `autoHeight` | `boolean` | `false` | auto-height 行モードを有効化。 |
-| `estimateRowHeight` | `number` | `rowHeight` | 未測定行の推定行高(px)。 |
-| `headerHeight` | `number` | `40` | ヘッダー行の高さ(px)。 |
-| `rowHeaderWidth` | `number` | `56` | 行番号列の幅(px)。 |
-| `height` | `number \| string` | `—` | スクロールコンテナの明示高さ。`'100%'` で親要素に追従（親要素が確定高さを持つ前提。祖先まで高さが確定している／flex 子なら `min-height: 0` が必要）。`number` は px。未指定時は `maxHeight` のクリップ挙動になる。 |
-| `maxHeight` | `number \| string` | `—`（既定 480px） | スクロールコンテナの高さ上限。`height`・`maxHeight` が**共に未指定のときのみ**既定の 480px が効く（従来挙動）。`height` と併用すると「明示高さ＋上限」。 |
-| `readOnly` | `boolean` | `false` | グリッド全体の編集を無効化。 |
-| `canEditCell` | `(rowIndex, colIndex, row, column) => boolean` | — | セル単位の編集可否ゲート。 |
-| `enableRangeSelection` | `boolean` | `true` | 複数セル範囲選択。 |
-| `enableGlobalFilter` | `boolean` | `true` | グローバルフィルター**機能**の有効化。`false` で機能が無効になり、既定トップバーのフィルター入力欄も出ない(summary は `showTopBarSummary` に従う。トップバー自体を消すには `showTopBar=false`)。 |
-| `enableColumnFilter` | `boolean` | `true` | 列ごとのフィルター。 |
-| `enableSorting` | `boolean` | `true` | ヘッダークリックでのソート。 |
-| `enableColumnResize` | `boolean` | `true` | 列幅の手動リサイズ可否のグリッド既定。各列 `resizable` 未指定時に継承(`column.resizable ?? enableColumnResize`)。 |
-| `enableColumnMenu` | `boolean` | `true` | 列メニュー(⋮ + ヘッダー右クリック)。 |
-| `enableRowHover` | `boolean` | `true` | 行ホバー時に行全体を薄くハイライト。 |
-| `enableColumnHeaderHover` | `boolean` | `true` | 列ヘッダーのホバー時にヘッダーセルを薄くハイライト。 |
-| `noMatchingRowsText` | `string` | `'一致する行がありません'` | フィルター結果 0 行時のオーバーレイ文言。 |
-| `noRowsText` | `string` | `'表示する行がありません'` | rows が 0 件のときの文言。 |
-| `showTopBar` | `boolean` | `true` | 上部バー(ツールバー)の表示有無。`false` で `renderTopBar` / `enableGlobalFilter` に関わらず一切描画しない(表示のマスタースイッチ。矛盾指定時は `renderTopBar` より優先)。 |
-| `showTopBarSummary` | `boolean` | `true` | 既定トップバーの summary chips(件数/フィルター/ソート)の表示有無。`renderTopBar` 未指定時のみ有効。これと `showTopBarFilter` がともに非表示なら既定トップバーは描画されない(空バーを出さない)。 |
-| `showTopBarCounts` | `boolean` | `true` | 既定トップバーの Rows / Columns 件数 chips の表示有無。`showTopBarSummary=true`(かつ `renderTopBar` 未指定)のときのみ有効。Filter / Sort chips は対象外。 |
-| `showTopBarFilter` | `boolean` | `true` | 既定トップバーのグローバルフィルター入力欄の表示有無。`renderTopBar` 未指定時のみ有効。`enableGlobalFilter=false` のときは本値に関わらず非表示。 |
-| `showBottomBar` | `boolean` | `true` | 下部バー(ステータスバー)の表示有無。`false` で `renderBottomBar` に関わらず一切描画しない(表示のマスタースイッチ。矛盾指定時は `renderBottomBar` より優先)。 |
-| `showBottomBarCounts` | `boolean` | `true` | 既定ボトムバーの Rows / Columns 件数 chips(左側)の表示有無。`renderBottomBar` 未指定時のみ有効。右側の Active / Selection / 選択統計 / Cols は対象外。 |
-| `renderTopBar` | `(ctx: SpreadsheetGridSlotContext<T>) => ReactNode` | 内蔵トップバー | 上部バーの差し替え。未指定時は内蔵トップバー(summary chips + フィルター入力。内訳は `showTopBarSummary` / `showTopBarFilter` で制御。フィルター入力は `enableGlobalFilter=true` が前提)。`showTopBar=false` 時は本指定に関わらず描画されない。 |
-| `renderBottomBar` | `(ctx: SpreadsheetGridSlotContext<T>) => ReactNode` | 内蔵ボトムバー | 下部バーの差し替え。未指定時は内蔵ステータスバー。`showBottomBar=false` 時は本指定に関わらず描画されない。 |
-| `className` | `string` | — | ルート要素の class。 |
-| `classNames` | `GridClassNames` | — | パーツ別の追加 class スロット。現状 `root` / `iconButton` / `bodyCell` / `bodyRow` が配線済み(他は順次)。基底 class は `@layer ssg-base` のため Tailwind 等の未レイヤー上書きが効く。 |
-| `getRowClassName` | `(row: T, rowIndex: number) => string \| undefined` | — | 行ごとの追加 class。行コンテナ + 各データセルに付与され、Tailwind 等での行ハイライトに使える。行ヘッダー「#」セルは現状対象外。 |
-
-### バーの表示制御(top / bottom)
-
-トップ / ボトムバーは次の優先順で解決される。
-
-- **`showTopBar` / `showBottomBar`(マスタースイッチ)**: `false` ならそのバーは一切描画されない(`render*` / `enable*` より優先)。
-- **`renderTopBar` / `renderBottomBar`(カスタム)**: 指定時はそのまま描画。トップバーの内訳 props(`showTopBarSummary` / `showTopBarFilter`)はカスタム側が中身を決めるため関与しない。
-- **既定バー**: `render*` 未指定時のフォールバック。
-
-既定トップバーは **summary chips(左)** と **グローバルフィルター入力(右)** の 2 パートからなり、独立に出し分けできる。
-
-| やりたいこと | 設定 |
-| --- | --- |
-| バーごと消す | `showTopBar={false}` |
-| summary だけ(フィルター入力なし) | `showTopBarFilter={false}` |
-| フィルター入力だけ(summary なし) | `showTopBarSummary={false}` |
-| トップの Rows/Columns 件数だけ消す | `showTopBarCounts={false}` |
-| ボトムの Rows/Columns 件数だけ消す | `showBottomBarCounts={false}` |
-| フィルター機能ごと無効 + summary は残す | `enableGlobalFilter={false}` |
-| 完全に自前のバー | `renderTopBar={(ctx) => …}` |
-
-`showTopBarSummary` と `showTopBarFilter`(実効は `showTopBarFilter && enableGlobalFilter`)がともに `false` の場合、既定トップバーは描画されない(空バーを出さない)。
-
-ボトムバーは Rows / Columns 件数のみ `showBottomBarCounts` で出し分けできる(右側の Active / Selection / 選択統計 / Cols は対象外)。それ以外の内訳を変えたい場合は `renderBottomBar` を使う。
-
-## GridColumn props (`GridColumn<T>`)
-
-| Name | Type | Default | Description |
-| --- | --- | --- | --- |
-| `key` | `string` | (required) | 列の一意キー。 |
-| `title` | `string` | — | ヘッダーの表示ラベル。 |
-| `width` | `number` | (required) | 列幅(px)。 |
-| `minWidth` | `number` | — | リサイズ時の下限幅。 |
-| `maxWidth` | `number` | — | リサイズ時の上限幅。 |
-| `resizable` | `boolean` | グリッドの `enableColumnResize` を継承 | この列の手動リサイズ可否。`false` でヘッダーのリサイズハンドルを非表示。 |
-| `autoHeight` | `boolean` | — | この列が auto-height 行の高さを駆動(グリッドの `autoHeight` 有効時のみ)。 |
-| `visible` | `boolean` | — | 列の表示/非表示。 |
-| `editable` | `boolean` | — | この列の編集を許可。 |
-| `readOnly` | `boolean` | — | この列を読み取り専用にする。 |
-| `pinned` | `'left' \| 'right'` | undefined = 中央スクロール | 列固定の方向。 |
-| `getValue` | `(row: T) => unknown` | `row[key]` | 値アクセサ。 |
-| `setValue` | `(row: T, value: unknown) => T` | — | 値ライター(新しい行を返す)。 |
-| `renderCell` | `(ctx: CellRenderContext<T>) => ReactNode` | プレーン `<span>` | カスタムセル描画。 |
-| `cellClassName` | `string \| ((ctx: CellStyleContext<T>) => string \| undefined)` | — | セルへ付与する追加 class(条件付きスタイル)。関数版は値 / 状態に応じて class を返せる。基底 `.ssg-body-cell` は `@layer` のため上書きが効く。 |
-| `renderHeader` | `(ctx: HeaderRenderContext<T>) => ReactNode` | — | カスタムヘッダー描画。 |
-| `filterType` | `'text' \| 'number' \| 'date' \| 'select' \| 'set' \| 'custom'` | — | フィルター UI の種別。 |
-| `filterOptions` | `GridSelectFilterOption[]` | rows から自動収集 | select / set の候補。 |
-| `filterFn` | `(row: T, filterValue: unknown) => boolean` | — | カスタムフィルター述語。 |
-| `parseClipboardValue` | `(raw: string, row: T) => unknown` | — | 貼り付け時のパーサ。 |
-| `formatClipboardValue` | `(value: unknown, row: T) => string` | — | コピー時のフォーマッタ。 |
-
-## serverSide モード(SSRM / DS-4 ②)
-
-`dataSource` を渡すと serverSide モードになり、総行数ぶんの縦スクロール空間を保ったまま、可視窓に近いブロックだけを `getRows` で取得する(取得範囲を定数で縛りメモリを有界化)。未ロード行はスケルトン行として描画され、到着後に実データへ差し替わる。`rows`(clientSide)と `dataSource`(serverSide)は排他。
-
-### query 配線(stage ②)
-
-clientSide の操作状態(グローバルフィルター・列フィルター・ソート)を `ServerSideQuery` に組み立て、`getRows` の `params.query` として送出する(フィルター/ソートの実行はサーバへ委ねる)。
-
-- **`ServerSideQuery`**: `{ globalText?: string; columnFilters?: Record<string, ColumnFilterValue>; sort?: GridSortState }`。全フィールドが空のときは `{}` を渡す。
-- **列フィルターの wire format**: `ColumnFilterValue` は `kind` を持つ discriminated union で、**そのまま**送出される(サーバはこの記述子を解釈して WHERE を組む)。`kind` 別の shape:
-  - `{ kind: 'set'; mode?: 'include' | 'exclude'; values: string[] }` — `values` は常に小さい側のみ保持する(全候補が多いとき `mode: 'exclude'` で非選択側を送る)。サーバは `mode` に応じて IN / NOT IN を組む。
-  - `{ kind: 'number'; raw: string; parsed }` — `parsed` が `range` / `comparison` / `null`(=`raw` で部分一致)。
-  - `{ kind: 'text'; value }` / `{ kind: 'date'; value }` / `{ kind: 'select'; value }`
-  - `{ kind: 'custom'; value }` — `column.filterFn` 利用列の自由形値(サーバ解釈は利用側責務)。
-  - アクティブなフィルターのみ送出される。キーは安定 queryKey のため昇順整列される。
-- **debounce**: query(filter/sort)の変更は約 300ms 静止後に一度だけ送出する(キーストロークごとの再フェッチを合体)。入力欄の表示自体は即時反映される。
-- **scroll-reset**: query が変わると結果セットが総入れ替えされるため、スクロールは先頭に戻る。
-- **enable\* フラグ**: serverSide でも `enableSorting` / `enableColumnFilter` / `enableGlobalFilter`(いずれも既定 true)が有効。サーバ非対応の操作を塞ぎたい場合に false にする。
-
-### set / select フィルターの候補(SSRM)
-
-set / select の候補集合はクライアントが供給する必要がある。**clientSide** は `rows` 全件から自動収集できるが、**serverSide** はクライアントが全件を持たないため自動収集できず候補が空になる。
-
-- **低カーディナリティ列**(状態・区分など): 列定義に `filterOptions` を静的指定する(serverSide でも set として機能する)。
-- **高カーディナリティ列**(品番・ID など): そもそも set 不適。`filterType: 'text'`(部分一致)や `number` 範囲を使う。
-- `filterOptions` 未指定の set/select 列を serverSide で開くと、候補リストに「候補が未指定」である旨が表示される(バグではなく設定不足)。サーバから候補を非同期供給する仕組みは将来の拡張(別 stage)。
-
-### dataSource とパラメータ
-
-- **`initialRowCount`**: 初回 fetch 前から正しい総高さ/スクロールバーを出したい場合に渡す(未指定時は最初の `getRows` 結果が返るまで件数 0)。**mount 時に一度だけ読まれる**(下記 remount 契約を参照)。
-- **`blockSize`(既定 100)/ `maxCachedBlocks`(既定 64)**: 1 ブロックの行数とクライアント側 LRU 上限。超過分は画面外の古いブロックから退避する。
-- **`getRows(params)` 契約**: `params` は `{ startIndex, endIndex, query, signal }`。渡された `[startIndex, endIndex)`(view 空間・end 排他)を尊重し全件を返さないこと。`query` 適用後の**フィルター後総件数**を `result.totalRowCount` で返すこと(縦スクロール空間がこれに追従する)。`signal` が abort されたら速やかに reject すること。
-- **`result`**: `{ rows: T[]; totalRowCount: number }`。`rows` は要求レンジ内の存在ぶん(末端では要求幅より短くてよい)。
-
-### サーバ最新の取り直し(`serverSideRefreshToken`)
-
-サーバ側のデータが外部で更新された場合など、**クエリは変えずにサーバの最新を取り直したい**ときは `serverSideRefreshToken`(`number`)を増やす。controlled な設計に合わせた軽量な signal で、`forwardRef` の命令的 API は持たない。
-
-- **`queryKey` 変化との違い**: フィルター/ソート/グローバルフィルターの変更は結果セットの総入れ替えなので**先頭へスクロールリセット**してキャッシュを全破棄し block 0 から取り直す。一方 `serverSideRefreshToken` は**スクロール位置を保持**したままキャッシュを破棄し、**現在の可視レンジ**を即時(debounce なし)取り直す。
-- **件数**: リフレッシュ時に件数はリセットせず、到着ブロックの `totalRowCount` で更新する。外部更新で件数が増減していれば縦スクロール空間が追従する。
-- **挙動メモ**: 取り直し中は対象行が一瞬スケルトン表示になる(purge → 再取得)。`refreshToken` は単調増加で運用する(値が変わったときだけ取り直す)。初回 mount では発火しない。
-- **用途**: 外部での編集/追加削除(mutation)後の反映トリガーとして使う想定。mutation 自体のサーバ書き戻し契約は別途必要(本グリッドの `onRowsChange` は clientSide 前提)。
-
-### clientSide ↔ serverSide の切替(remount 契約)
-
-`initialRowCount` と内部の行数 state は mount 時に確定する。そのため **実行時にモードを切り替える場合は `key` を変えてグリッドを再マウントすること**(clientSide で mount 後に `dataSource` を後付けしても件数が初期化されない)。serverSide で直接 mount する通常利用ではこの限りではない。
-
-## 補助型(props で参照される shape)
-
-- `GridRowKey = string | number`
-- `GridColumnPinned = 'left' | 'right'`
-- `GridSelectFilterOption = { label: string; value: string }`
-- `CellRenderContext<T> = { row, rowIndex, colIndex, value, column, isActive, isSelected, isEditing, readOnly, setValue }`
-- `HeaderRenderContext<T> = { colIndex, width, column, filterValue?, isFiltered? }`
-- `SpreadsheetGridSlotContext<T> = { rows, filteredRows, columns, visibleColumns, globalFilterText, columnFilterValues, sortState, setGlobalFilterText, activeCell, selection, derivedSummary }`
-  - `derivedSummary` は `SpreadsheetGridDerivedSummary`(行/列/フィルター/ソートの summary 文字列・選択統計などを内包)。helper を import せずトップ/ボトムバーで使える。
-
-## ライブラリ化の宿題(現状把握)
-
-- 〔解消〕**no-op props**: `enableClipboard` / `enableColumnResize` を型から削除(常時 ON 固定の挙動は不変)。将来「無効化」が必要になれば配線つきで非破壊追加する。
-- **imperative API(ref ハンドル)なし**: `forwardRef` / `useImperativeHandle` 未使用。外部から「特定セルへスクロール」「選択クリア」等を命令的に呼ぶ口がない(状態は全て controlled)。〔一部解消〕serverSide の「クエリ不変での最新取り直し」は `serverSideRefreshToken`(controlled な token prop)で可能。それ以外の命令操作は未提供。
-- 〔解消〕**公開バレル(`index.ts`)**: 入口を `index.ts` に集約し、`SpreadsheetGrid`(named)と公開型群(serverSide 型・`RowModel` 含む)を再エクスポート。`default export` は廃止。
-- **テーマ/スタイリング API**: 公開されるのは `className`(ルート1個)のみ。パーツ単位のクラスや CSS トークンは未提供。
-</file>
-
 <file path="src/components/spreadsheet-grid/hooks/useGridPointerInteractions.ts">
 import {
   useCallback,
@@ -14878,6 +14848,18 @@ export default useGridPointerInteractions;
     white-space: normal;
     word-break: break-word;
     overflow: visible;
+  }
+
+  /* 追加(③): セル内容の水平寄せ(GridColumn.align)。基底に justify-content 未指定=左のため、
+     center / right のときだけ上書きします(text-align は autoHeight 折り返し時の行揃え用)。 */
+  .ssg-body-cell--align-center {
+    justify-content: center;
+    text-align: center;
+  }
+
+  .ssg-body-cell--align-right {
+    justify-content: flex-end;
+    text-align: right;
   }
 
   /* 行ホバー(hoveredRowIndex 由来。3 ペイン横断のため :hover では実装不可)。 */
@@ -16274,6 +16256,9 @@ function GridBodyRowInner<T>({
         }
         const cellClassName = cx(
           'ssg-body-cell',
+          // 追加(③): セル内容の水平寄せ(align)。未指定は従来どおり左。
+          column.align === 'center' && 'ssg-body-cell--align-center',
+          column.align === 'right' && 'ssg-body-cell--align-right',
           isAutoHeightCell && 'ssg-body-cell--autoheight',
           readOnlyCell && !isSelected && 'ssg-body-cell--readonly',
           isRowHovered && 'ssg-body-cell--row-hovered',
@@ -16714,10 +16699,198 @@ export function GridBodyLayer<T>({
 export default GridBodyLayer;
 </file>
 
+<file path="src/components/spreadsheet-grid/API_REFERENCE.md">
+# SpreadsheetGrid 公開 API リファレンス
+
+> このファイルは `model/gridTypes.ts`(`SpreadsheetGridProps<T>` / `GridColumn<T>` 他)と
+> `SpreadsheetGrid.tsx`(既定値の分割代入)から手で起こした公開 API のスナップショットです。
+> **型を変更したら本ファイルも同期してください。** 将来 `index.ts` バレル整備時に props メタデータを
+> single source of truth 化し、dev 実行時パネル + 自動生成へ移行する想定です(現状は手動同期)。
+
+最終更新: スクロールコンテナ高さの外部制御(`height` / `maxHeight` props)追加時点。
+
+## SpreadsheetGrid props (`SpreadsheetGridProps<T>`)
+
+| Name | Type | Default | Description |
+| --- | --- | --- | --- |
+| `rows` | `T[]` | — | clientSide モードの行データ。`dataSource` を指定した場合は無視され serverSide モードになる(両者は排他)。 |
+| `columns` | `GridColumn<T>[]` | (required) | 列定義の配列。 |
+| `onRowsChange` | `(nextRows: T[]) => void` | — | 行が変化したとき呼ばれる(rows を controlled にする)。 |
+| `dataSource` | `ServerSideDataSource<T>` | — | serverSide(SSRM)モードのデータ供給口。指定すると可視窓近傍のブロックだけを `getRows` で都度取得し、`rows` 系の clientSide パイプラインをバイパスする。 |
+| `serverSideRefreshToken` | `number` | — | serverSide のソフトリフレッシュ用トークン。値を増やすと、クエリ(フィルター/ソート/グローバル)を変えずにキャッシュを破棄して現在の可視レンジをサーバから取り直す。スクロール位置は保持し、件数は到着ブロックの `totalRowCount` で追従する(clientSide では無視)。 |
+| `onColumnsChange` | `(nextColumns: GridColumn<T>[]) => void` | — | 列が変化したとき呼ばれる。列メニューの固定切替はこれが指定されている場合のみ反映。 |
+| `rowKeyGetter` | `(row: T, index: number) => GridRowKey` | index ベース | 安定した行キーを返す。 |
+| `createRow` | `() => T` | — | 行追加時に使う新規行ファクトリ。 |
+| `createOverflowColumn` | `(columnIndex: number) => GridColumn<T>` | — | 列追加時に使う列ファクトリ。 |
+| `rowHeight` | `number` | `36` | uniform 行の行高(px)。 |
+| `autoHeight` | `boolean` | `false` | auto-height 行モードを有効化。 |
+| `estimateRowHeight` | `number` | `rowHeight` | 未測定行の推定行高(px)。 |
+| `headerHeight` | `number` | `40` | ヘッダー行の高さ(px)。 |
+| `rowHeaderWidth` | `number` | `56` | 行番号列の幅(px)。 |
+| `height` | `number \| string` | `—` | スクロールコンテナの明示高さ。`'100%'` で親要素に追従（親要素が確定高さを持つ前提。祖先まで高さが確定している／flex 子なら `min-height: 0` が必要）。`number` は px。未指定時は `maxHeight` のクリップ挙動になる。 |
+| `maxHeight` | `number \| string` | `—`（既定 480px） | スクロールコンテナの高さ上限。`height`・`maxHeight` が**共に未指定のときのみ**既定の 480px が効く（従来挙動）。`height` と併用すると「明示高さ＋上限」。 |
+| `readOnly` | `boolean` | `false` | グリッド全体の編集を無効化。 |
+| `canEditCell` | `(rowIndex, colIndex, row, column) => boolean` | — | セル単位の編集可否ゲート。 |
+| `enableRangeSelection` | `boolean` | `true` | 複数セル範囲選択。 |
+| `enableGlobalFilter` | `boolean` | `true` | グローバルフィルター**機能**の有効化。`false` で機能が無効になり、既定トップバーのフィルター入力欄も出ない(summary は `showTopBarSummary` に従う。トップバー自体を消すには `showTopBar=false`)。 |
+| `enableColumnFilter` | `boolean` | `true` | 列ごとのフィルター。 |
+| `enableSorting` | `boolean` | `true` | ヘッダークリックでのソート。 |
+| `enableColumnResize` | `boolean` | `true` | 列幅の手動リサイズ可否のグリッド既定。各列 `resizable` 未指定時に継承(`column.resizable ?? enableColumnResize`)。 |
+| `enableColumnMenu` | `boolean` | `true` | 列メニュー(⋮ + ヘッダー右クリック)。 |
+| `enableRowHover` | `boolean` | `true` | 行ホバー時に行全体を薄くハイライト。 |
+| `enableColumnHeaderHover` | `boolean` | `true` | 列ヘッダーのホバー時にヘッダーセルを薄くハイライト。 |
+| `noMatchingRowsText` | `string` | `'一致する行がありません'` | フィルター結果 0 行時のオーバーレイ文言。 |
+| `noRowsText` | `string` | `'表示する行がありません'` | rows が 0 件のときの文言。 |
+| `showTopBar` | `boolean` | `true` | 上部バー(ツールバー)の表示有無。`false` で `renderTopBar` / `enableGlobalFilter` に関わらず一切描画しない(表示のマスタースイッチ。矛盾指定時は `renderTopBar` より優先)。 |
+| `showTopBarSummary` | `boolean` | `true` | 既定トップバーの summary chips(件数/フィルター/ソート)の表示有無。`renderTopBar` 未指定時のみ有効。これと `showTopBarFilter` がともに非表示なら既定トップバーは描画されない(空バーを出さない)。 |
+| `showTopBarCounts` | `boolean` | `true` | 既定トップバーの Rows / Columns 件数 chips の表示有無。`showTopBarSummary=true`(かつ `renderTopBar` 未指定)のときのみ有効。Filter / Sort chips は対象外。 |
+| `showTopBarFilter` | `boolean` | `true` | 既定トップバーのグローバルフィルター入力欄の表示有無。`renderTopBar` 未指定時のみ有効。`enableGlobalFilter=false` のときは本値に関わらず非表示。 |
+| `showBottomBar` | `boolean` | `true` | 下部バー(ステータスバー)の表示有無。`false` で `renderBottomBar` に関わらず一切描画しない(表示のマスタースイッチ。矛盾指定時は `renderBottomBar` より優先)。 |
+| `showBottomBarCounts` | `boolean` | `true` | 既定ボトムバーの Rows / Columns 件数 chips(左側)の表示有無。`renderBottomBar` 未指定時のみ有効。右側の Active / Selection / 選択統計 / Cols は対象外。 |
+| `renderTopBar` | `(ctx: SpreadsheetGridSlotContext<T>) => ReactNode` | 内蔵トップバー | 上部バーの差し替え。未指定時は内蔵トップバー(summary chips + フィルター入力。内訳は `showTopBarSummary` / `showTopBarFilter` で制御。フィルター入力は `enableGlobalFilter=true` が前提)。`showTopBar=false` 時は本指定に関わらず描画されない。 |
+| `renderBottomBar` | `(ctx: SpreadsheetGridSlotContext<T>) => ReactNode` | 内蔵ボトムバー | 下部バーの差し替え。未指定時は内蔵ステータスバー。`showBottomBar=false` 時は本指定に関わらず描画されない。 |
+| `className` | `string` | — | ルート要素の class。 |
+| `classNames` | `GridClassNames` | — | パーツ別の追加 class スロット。現状 `root` / `iconButton` / `bodyCell` / `bodyRow` が配線済み(他は順次)。基底 class は `@layer ssg-base` のため Tailwind 等の未レイヤー上書きが効く。 |
+| `getRowClassName` | `(row: T, rowIndex: number) => string \| undefined` | — | 行ごとの追加 class。行コンテナ + 各データセルに付与され、Tailwind 等での行ハイライトに使える。行ヘッダー「#」セルは現状対象外。 |
+
+### バーの表示制御(top / bottom)
+
+トップ / ボトムバーは次の優先順で解決される。
+
+- **`showTopBar` / `showBottomBar`(マスタースイッチ)**: `false` ならそのバーは一切描画されない(`render*` / `enable*` より優先)。
+- **`renderTopBar` / `renderBottomBar`(カスタム)**: 指定時はそのまま描画。トップバーの内訳 props(`showTopBarSummary` / `showTopBarFilter`)はカスタム側が中身を決めるため関与しない。
+- **既定バー**: `render*` 未指定時のフォールバック。
+
+既定トップバーは **summary chips(左)** と **グローバルフィルター入力(右)** の 2 パートからなり、独立に出し分けできる。
+
+| やりたいこと | 設定 |
+| --- | --- |
+| バーごと消す | `showTopBar={false}` |
+| summary だけ(フィルター入力なし) | `showTopBarFilter={false}` |
+| フィルター入力だけ(summary なし) | `showTopBarSummary={false}` |
+| トップの Rows/Columns 件数だけ消す | `showTopBarCounts={false}` |
+| ボトムの Rows/Columns 件数だけ消す | `showBottomBarCounts={false}` |
+| フィルター機能ごと無効 + summary は残す | `enableGlobalFilter={false}` |
+| 完全に自前のバー | `renderTopBar={(ctx) => …}` |
+
+`showTopBarSummary` と `showTopBarFilter`(実効は `showTopBarFilter && enableGlobalFilter`)がともに `false` の場合、既定トップバーは描画されない(空バーを出さない)。
+
+ボトムバーは Rows / Columns 件数のみ `showBottomBarCounts` で出し分けできる(右側の Active / Selection / 選択統計 / Cols は対象外)。それ以外の内訳を変えたい場合は `renderBottomBar` を使う。
+
+## GridColumn props (`GridColumn<T>`)
+
+| Name | Type | Default | Description |
+| --- | --- | --- | --- |
+| `key` | `string` | (required) | 列の一意キー。 |
+| `title` | `string` | — | ヘッダーの表示ラベル。 |
+| `width` | `number` | (required) | 列幅(px)。 |
+| `minWidth` | `number` | — | リサイズ時の下限幅。 |
+| `maxWidth` | `number` | — | リサイズ時の上限幅。 |
+| `resizable` | `boolean` | グリッドの `enableColumnResize` を継承 | この列の手動リサイズ可否。`false` でヘッダーのリサイズハンドルを非表示。 |
+| `autoHeight` | `boolean` | — | この列が auto-height 行の高さを駆動(グリッドの `autoHeight` 有効時のみ)。 |
+| `visible` | `boolean` | — | 列の表示/非表示。 |
+| `editable` | `boolean` | — | この列の編集を許可。 |
+| `readOnly` | `boolean` | — | この列を読み取り専用にする。 |
+| `pinned` | `'left' \| 'right'` | undefined = 中央スクロール | 列固定の方向。 |
+| `getValue` | `(row: T) => unknown` | `row[key]` | 値アクセサ。 |
+| `setValue` | `(row: T, value: unknown) => T` | — | 値ライター(新しい行を返す)。 |
+| `renderCell` | `(ctx: CellRenderContext<T>) => ReactNode` | プレーン `<span>` | カスタムセル描画。 |
+| `align` | `'left' \| 'center' \| 'right'` | `'left'` | セル内容の水平寄せ(UI 表示のみ・元の値は不変)。セル表示と編集 input に反映。 |
+| `valueFormatter` | `(params: CellValueFormatterParams<T>) => string` | — | セル表示値の整形(UI 表示のみ)。`renderCell` 未指定の既定セルが返り値を表示。組み込み `numberFormatter` 等を渡せる。元の値/編集/コピー/ソート/フィルターには影響しない。 |
+| `cellClassName` | `string \| ((ctx: CellStyleContext<T>) => string \| undefined)` | — | セルへ付与する追加 class(条件付きスタイル)。関数版は値 / 状態に応じて class を返せる。基底 `.ssg-body-cell` は `@layer` のため上書きが効く。 |
+| `renderHeader` | `(ctx: HeaderRenderContext<T>) => ReactNode` | — | カスタムヘッダー描画。 |
+| `filterType` | `'text' \| 'number' \| 'date' \| 'select' \| 'set' \| 'custom'` | — | フィルター UI の種別。 |
+| `filterOptions` | `GridSelectFilterOption[]` | rows から自動収集 | select / set の候補。 |
+| `filterFn` | `(row: T, filterValue: unknown) => boolean` | — | カスタムフィルター述語。 |
+| `parseClipboardValue` | `(raw: string, row: T) => unknown` | — | 貼り付け時のパーサ。 |
+| `formatClipboardValue` | `(value: unknown, row: T) => string` | — | コピー時のフォーマッタ。 |
+
+### 値フォーマッタ(UI 表示)
+
+`valueFormatter` はセルの**表示文字列だけ**を変えます(元の値・編集・コピー・ソート・フィルターは生値のまま)。組み込みファクタは `logic/valueFormatters.ts` に集約し、バレルから公開します。利用側も同じ契約(`CellValueFormatter<T>`)で自作でき、将来パターン(日付/％/通貨等)はファクタ追加 + バレル公開で拡張できます。
+
+- `numberFormatter(options?)` — 数値を 3 桁区切りで整形。既定は**元の精度を保持**(小数桁を勝手に丸めない)。`minimumFractionDigits` / `maximumFractionDigits` で固定桁、`useGrouping: false` で区切り無効、`locale` 指定可。`null` / `undefined` / `''` は `emptyText`(既定 `''`)、数値化できない値は原値の文字列をそのまま表示。
+
+使用例:
+
+```ts
+import { numberFormatter } from '@ishibashi0112/spreadsheet-grid';
+
+const columns = [
+  { key: 'amount', title: '金額', width: 140, align: 'right', valueFormatter: numberFormatter() },
+];
+```
+
+## serverSide モード(SSRM / DS-4 ②)
+
+`dataSource` を渡すと serverSide モードになり、総行数ぶんの縦スクロール空間を保ったまま、可視窓に近いブロックだけを `getRows` で取得する(取得範囲を定数で縛りメモリを有界化)。未ロード行はスケルトン行として描画され、到着後に実データへ差し替わる。`rows`(clientSide)と `dataSource`(serverSide)は排他。
+
+### query 配線(stage ②)
+
+clientSide の操作状態(グローバルフィルター・列フィルター・ソート)を `ServerSideQuery` に組み立て、`getRows` の `params.query` として送出する(フィルター/ソートの実行はサーバへ委ねる)。
+
+- **`ServerSideQuery`**: `{ globalText?: string; columnFilters?: Record<string, ColumnFilterValue>; sort?: GridSortState }`。全フィールドが空のときは `{}` を渡す。
+- **列フィルターの wire format**: `ColumnFilterValue` は `kind` を持つ discriminated union で、**そのまま**送出される(サーバはこの記述子を解釈して WHERE を組む)。`kind` 別の shape:
+  - `{ kind: 'set'; mode?: 'include' | 'exclude'; values: string[] }` — `values` は常に小さい側のみ保持する(全候補が多いとき `mode: 'exclude'` で非選択側を送る)。サーバは `mode` に応じて IN / NOT IN を組む。
+  - `{ kind: 'number'; raw: string; parsed }` — `parsed` が `range` / `comparison` / `null`(=`raw` で部分一致)。
+  - `{ kind: 'text'; value }` / `{ kind: 'date'; value }` / `{ kind: 'select'; value }`
+  - `{ kind: 'custom'; value }` — `column.filterFn` 利用列の自由形値(サーバ解釈は利用側責務)。
+  - アクティブなフィルターのみ送出される。キーは安定 queryKey のため昇順整列される。
+- **debounce**: query(filter/sort)の変更は約 300ms 静止後に一度だけ送出する(キーストロークごとの再フェッチを合体)。入力欄の表示自体は即時反映される。
+- **scroll-reset**: query が変わると結果セットが総入れ替えされるため、スクロールは先頭に戻る。
+- **enable\* フラグ**: serverSide でも `enableSorting` / `enableColumnFilter` / `enableGlobalFilter`(いずれも既定 true)が有効。サーバ非対応の操作を塞ぎたい場合に false にする。
+
+### set / select フィルターの候補(SSRM)
+
+set / select の候補集合はクライアントが供給する必要がある。**clientSide** は `rows` 全件から自動収集できるが、**serverSide** はクライアントが全件を持たないため自動収集できず候補が空になる。
+
+- **低カーディナリティ列**(状態・区分など): 列定義に `filterOptions` を静的指定する(serverSide でも set として機能する)。
+- **高カーディナリティ列**(品番・ID など): そもそも set 不適。`filterType: 'text'`(部分一致)や `number` 範囲を使う。
+- `filterOptions` 未指定の set/select 列を serverSide で開くと、候補リストに「候補が未指定」である旨が表示される(バグではなく設定不足)。サーバから候補を非同期供給する仕組みは将来の拡張(別 stage)。
+
+### dataSource とパラメータ
+
+- **`initialRowCount`**: 初回 fetch 前から正しい総高さ/スクロールバーを出したい場合に渡す(未指定時は最初の `getRows` 結果が返るまで件数 0)。**mount 時に一度だけ読まれる**(下記 remount 契約を参照)。
+- **`blockSize`(既定 100)/ `maxCachedBlocks`(既定 64)**: 1 ブロックの行数とクライアント側 LRU 上限。超過分は画面外の古いブロックから退避する。
+- **`getRows(params)` 契約**: `params` は `{ startIndex, endIndex, query, signal }`。渡された `[startIndex, endIndex)`(view 空間・end 排他)を尊重し全件を返さないこと。`query` 適用後の**フィルター後総件数**を `result.totalRowCount` で返すこと(縦スクロール空間がこれに追従する)。`signal` が abort されたら速やかに reject すること。
+- **`result`**: `{ rows: T[]; totalRowCount: number }`。`rows` は要求レンジ内の存在ぶん(末端では要求幅より短くてよい)。
+
+### サーバ最新の取り直し(`serverSideRefreshToken`)
+
+サーバ側のデータが外部で更新された場合など、**クエリは変えずにサーバの最新を取り直したい**ときは `serverSideRefreshToken`(`number`)を増やす。controlled な設計に合わせた軽量な signal で、`forwardRef` の命令的 API は持たない。
+
+- **`queryKey` 変化との違い**: フィルター/ソート/グローバルフィルターの変更は結果セットの総入れ替えなので**先頭へスクロールリセット**してキャッシュを全破棄し block 0 から取り直す。一方 `serverSideRefreshToken` は**スクロール位置を保持**したままキャッシュを破棄し、**現在の可視レンジ**を即時(debounce なし)取り直す。
+- **件数**: リフレッシュ時に件数はリセットせず、到着ブロックの `totalRowCount` で更新する。外部更新で件数が増減していれば縦スクロール空間が追従する。
+- **挙動メモ**: 取り直し中は対象行が一瞬スケルトン表示になる(purge → 再取得)。`refreshToken` は単調増加で運用する(値が変わったときだけ取り直す)。初回 mount では発火しない。
+- **用途**: 外部での編集/追加削除(mutation)後の反映トリガーとして使う想定。mutation 自体のサーバ書き戻し契約は別途必要(本グリッドの `onRowsChange` は clientSide 前提)。
+
+### clientSide ↔ serverSide の切替(remount 契約)
+
+`initialRowCount` と内部の行数 state は mount 時に確定する。そのため **実行時にモードを切り替える場合は `key` を変えてグリッドを再マウントすること**(clientSide で mount 後に `dataSource` を後付けしても件数が初期化されない)。serverSide で直接 mount する通常利用ではこの限りではない。
+
+## 補助型(props で参照される shape)
+
+- `GridRowKey = string | number`
+- `GridColumnPinned = 'left' | 'right'`
+- `GridSelectFilterOption = { label: string; value: string }`
+- `CellRenderContext<T> = { row, rowIndex, colIndex, value, column, isActive, isSelected, isEditing, readOnly, setValue }`
+- `HeaderRenderContext<T> = { colIndex, width, column, filterValue?, isFiltered? }`
+- `SpreadsheetGridSlotContext<T> = { rows, filteredRows, columns, visibleColumns, globalFilterText, columnFilterValues, sortState, setGlobalFilterText, activeCell, selection, derivedSummary }`
+  - `derivedSummary` は `SpreadsheetGridDerivedSummary`(行/列/フィルター/ソートの summary 文字列・選択統計などを内包)。helper を import せずトップ/ボトムバーで使える。
+
+## ライブラリ化の宿題(現状把握)
+
+- 〔解消〕**no-op props**: `enableClipboard` / `enableColumnResize` を型から削除(常時 ON 固定の挙動は不変)。将来「無効化」が必要になれば配線つきで非破壊追加する。
+- **imperative API(ref ハンドル)なし**: `forwardRef` / `useImperativeHandle` 未使用。外部から「特定セルへスクロール」「選択クリア」等を命令的に呼ぶ口がない(状態は全て controlled)。〔一部解消〕serverSide の「クエリ不変での最新取り直し」は `serverSideRefreshToken`(controlled な token prop)で可能。それ以外の命令操作は未提供。
+- 〔解消〕**公開バレル(`index.ts`)**: 入口を `index.ts` に集約し、`SpreadsheetGrid`(named)と公開型群(serverSide 型・`RowModel` 含む)を再エクスポート。`default export` は廃止。
+- **テーマ/スタイリング API**: 公開されるのは `className`(ルート1個)のみ。パーツ単位のクラスや CSS トークンは未提供。
+</file>
+
 <file path="src/App.tsx">
 import { useState, type CSSProperties } from 'react';
 import {
   SpreadsheetGrid,
+  numberFormatter,
   type GridColumn,
   type ServerSideDataSource,
   type ServerSideGetRowsResult,
@@ -16739,6 +16912,8 @@ type DemoRow = {
   partNo: string;
   partName: string;
   qty: number;
+  // 追加(③デモ): 金額(右寄せ + 3 桁区切りフォーマッタの確認用。大きめの整数)。
+  amount: number;
   unit: string;
   status: string;
   // 追加(date デモ): 発注日です。date フィルター型(部分一致)の動作確認用に ISO 文字列で持ちます。
@@ -16800,6 +16975,8 @@ const createDemoRowAt = (index: number): DemoRow => {
       partNo: `A-${String(1001 + index).padStart(4, '0')}`,
       partName: `品名-${rowNumber}`,
       qty: (rowNumber % 25) + 1,
+      // 追加(③デモ): 大きめの整数(3 桁区切りが見えるように)。
+      amount: (rowNumber * 1234) % 10_000_000,
       unit: ['個', '本', '式', '枚'][index % 4],
       status: index % 11 === 0 ? '保留' : '有効',
       orderedAt,
@@ -16936,7 +17113,9 @@ const createInitialColumns = (
       filterType: 'text',
       pinned: "left" ,
     },
-    { key: 'qty', title: '数量', width: 90, filterType: 'number', resizable: false },
+    { key: 'qty', title: '数量', width: 90, filterType: 'number', resizable: false, align: 'right' },
+    // 追加(③デモ): 金額列。右寄せ + numberFormatter() で 3 桁区切り(既定は元の精度を保持)。
+    { key: 'amount', title: '金額', width: 140, filterType: 'number', align: 'right', valueFormatter: numberFormatter() },
     {
       key: 'unit',
       title: '単位',
@@ -17033,6 +17212,9 @@ function App() {
   //   (showTopBarCounts / showBottomBarCounts の確認用)。
   const [showTopBarCounts, setShowTopBarCounts] = useState(true);
   const [showBottomBarCounts, setShowBottomBarCounts] = useState(true);
+  // 追加(①デモ): 列リサイズ可否のグリッド既定(enableColumnResize)を切り替えます。
+  //   ON でも qty(数量)列は column.resizable:false のため常に不可(=個別上書きの確認)。
+  const [resizeEnabled, setResizeEnabled] = useState(true);
   const changeMode = (next: DemoMode) => {
     const wasServer = mode === 'server';
     const willServer = next === 'server';
@@ -17190,6 +17372,13 @@ function App() {
           >
             {`└ 件数(Rows/Col): ${showBottomBarCounts ? '表示' : '非表示'}`}
           </button>
+          <button
+            type="button"
+            onClick={() => setResizeEnabled((v) => !v)}
+            style={modeButtonStyle(resizeEnabled)}
+          >
+            {`列リサイズ(全体): ${resizeEnabled ? '可' : '不可'}`}
+          </button>
         </div>
 
         {mode === 'server' && (
@@ -17247,6 +17436,7 @@ function App() {
           partNo: '',
           partName: '',
           qty: 0,
+          amount: 0,
           unit: '',
           status: '',
           // 追加(date デモ): 新規行も orderedAt を持たせます(既定は空文字 = フィルター未該当)。
@@ -17267,6 +17457,8 @@ function App() {
         rowHeaderWidth={56}
         enableRangeSelection
         enableGlobalFilter
+        // 追加(①デモ): 上の「列リサイズ(全体)」トグルと連動します(qty 列は resizable:false で常に不可)。
+        enableColumnResize={resizeEnabled}
         // 追加(バー表示デモ): 上の「バー表示」トグルと連動します。
         showTopBar={showTopBar}
         showBottomBar={showBottomBar}
@@ -17985,6 +18177,15 @@ export type HeaderRenderContext<T> = {
 //             'left' = 左固定、'right' = 右固定、undefined = 固定なし（中央スクロール）。
 export type GridColumnPinned = 'left' | 'right';
 
+// 追加(③): セル表示値の整形関数の契約です(UI 表示のみ)。組み込みは logic/valueFormatters.ts に集約し、
+//   利用側も同じ契約で自作できます(将来パターン追加=ファクタ追加 + バレル公開で拡張)。
+export type CellValueFormatterParams<T> = {
+  value: unknown;
+  row: T;
+  column: GridColumn<T>;
+};
+export type CellValueFormatter<T> = (params: CellValueFormatterParams<T>) => string;
+
 // 追加: 列定義です。将来のカスタムセル/カスタムヘッダー拡張を見据えています。
 export type GridColumn<T> = {
   key: string;
@@ -18013,6 +18214,13 @@ export type GridColumn<T> = {
   //   基底クラス(.ssg-body-cell)は @layer ssg-base のため、ここで返したクラスが特異度を
   //   気にせず背景等を上書きできます(選択 / アクティブは別オーバーレイなので共存します)。
   cellClassName?: string | ((ctx: CellStyleContext<T>) => string | undefined);
+  // 追加(③): セル内容の水平寄せ(UI 表示のみ・元の値は不変)。未指定は左。
+  //   セル表示と編集 input の双方へ反映します(renderCell 指定時もセルコンテナへ適用)。
+  align?: 'left' | 'center' | 'right';
+  // 追加(③): セル表示値の整形(UI 表示のみ・元の値/編集/コピー/ソート/フィルターに影響しません)。
+  //   renderCell 未指定の既定セルが本関数の返り値を表示します(renderCell 指定時は無視)。
+  //   組み込みの numberFormatter 等を渡せます(バレルから公開)。
+  valueFormatter?: CellValueFormatter<T>;
   renderHeader?: (ctx: HeaderRenderContext<T>) => ReactNode;
   // 変更(12-A): 'set' を追加します。AG Grid の Set Filter 相当
   //             (チェックボックス一覧 + 検索 + Select All)の UI になります。
@@ -19739,6 +19947,11 @@ export function SpreadsheetGrid<T extends object>({
     editorActionGuardRef,
   });
 
+  // 追加(③): 編集中セルの列(編集 input の text-align=align を反映)。editingCell.col は orderedColumns 空間。
+  const editingColumn = uiState.editingCell
+    ? orderedColumns[uiState.editingCell.col]
+    : undefined;
+
   const handleCellDoubleClickWithController = useCallback(
     (cell: CellCoord) => {
       // 変更(DS-3-5): filteredRows[cell.row] → rowModel.getRow 経由(double-click consumer 移行)。
@@ -20875,7 +21088,11 @@ export function SpreadsheetGrid<T extends object>({
           },
         });
       }
-      return <span>{String(value ?? '')}</span>;
+      // 変更(③): valueFormatter 指定時はその返り値を表示します(UI 表示のみ・生値は不変)。
+      const formattedText = column.valueFormatter
+        ? column.valueFormatter({ value, row, column })
+        : String(value ?? '');
+      return <span>{formattedText}</span>;
     },
     [rowModel, onRowsChange, rows],
   );
@@ -21317,6 +21534,7 @@ export function SpreadsheetGrid<T extends object>({
                   initialValue={editorInitialValue}
                   onCommit={commitEdit}
                   onCancel={cancelEdit}
+                  align={editingColumn?.align}
                 />
 
                 <GridBodyLayer
@@ -21455,6 +21673,7 @@ export function SpreadsheetGrid<T extends object>({
                   initialValue={editorInitialValue}
                   onCommit={commitEdit}
                   onCancel={cancelEdit}
+                  align={editingColumn?.align}
                 />
 
                 <GridBodyLayer
@@ -21585,6 +21804,7 @@ export function SpreadsheetGrid<T extends object>({
                   initialValue={editorInitialValue}
                   onCommit={commitEdit}
                   onCancel={cancelEdit}
+                  align={editingColumn?.align}
                 />
 
                 <GridBodyLayer

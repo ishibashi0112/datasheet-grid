@@ -256,6 +256,15 @@ export type HeaderRenderContext<T> = {
 //             'left' = 左固定、'right' = 右固定、undefined = 固定なし（中央スクロール）。
 export type GridColumnPinned = 'left' | 'right';
 
+// 追加(③): セル表示値の整形関数の契約です(UI 表示のみ)。組み込みは logic/valueFormatters.ts に集約し、
+//   利用側も同じ契約で自作できます(将来パターン追加=ファクタ追加 + バレル公開で拡張)。
+export type CellValueFormatterParams<T> = {
+  value: unknown;
+  row: T;
+  column: GridColumn<T>;
+};
+export type CellValueFormatter<T> = (params: CellValueFormatterParams<T>) => string;
+
 // 追加: 列定義です。将来のカスタムセル/カスタムヘッダー拡張を見据えています。
 export type GridColumn<T> = {
   key: string;
@@ -284,6 +293,13 @@ export type GridColumn<T> = {
   //   基底クラス(.ssg-body-cell)は @layer ssg-base のため、ここで返したクラスが特異度を
   //   気にせず背景等を上書きできます(選択 / アクティブは別オーバーレイなので共存します)。
   cellClassName?: string | ((ctx: CellStyleContext<T>) => string | undefined);
+  // 追加(③): セル内容の水平寄せ(UI 表示のみ・元の値は不変)。未指定は左。
+  //   セル表示と編集 input の双方へ反映します(renderCell 指定時もセルコンテナへ適用)。
+  align?: 'left' | 'center' | 'right';
+  // 追加(③): セル表示値の整形(UI 表示のみ・元の値/編集/コピー/ソート/フィルターに影響しません)。
+  //   renderCell 未指定の既定セルが本関数の返り値を表示します(renderCell 指定時は無視)。
+  //   組み込みの numberFormatter 等を渡せます(バレルから公開)。
+  valueFormatter?: CellValueFormatter<T>;
   renderHeader?: (ctx: HeaderRenderContext<T>) => ReactNode;
   // 変更(12-A): 'set' を追加します。AG Grid の Set Filter 相当
   //             (チェックボックス一覧 + 検索 + Select All)の UI になります。

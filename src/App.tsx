@@ -1,6 +1,7 @@
 import { useState, type CSSProperties } from 'react';
 import {
   SpreadsheetGrid,
+  numberFormatter,
   type GridColumn,
   type ServerSideDataSource,
   type ServerSideGetRowsResult,
@@ -22,6 +23,8 @@ type DemoRow = {
   partNo: string;
   partName: string;
   qty: number;
+  // 追加(③デモ): 金額(右寄せ + 3 桁区切りフォーマッタの確認用。大きめの整数)。
+  amount: number;
   unit: string;
   status: string;
   // 追加(date デモ): 発注日です。date フィルター型(部分一致)の動作確認用に ISO 文字列で持ちます。
@@ -83,6 +86,8 @@ const createDemoRowAt = (index: number): DemoRow => {
       partNo: `A-${String(1001 + index).padStart(4, '0')}`,
       partName: `品名-${rowNumber}`,
       qty: (rowNumber % 25) + 1,
+      // 追加(③デモ): 大きめの整数(3 桁区切りが見えるように)。
+      amount: (rowNumber * 1234) % 10_000_000,
       unit: ['個', '本', '式', '枚'][index % 4],
       status: index % 11 === 0 ? '保留' : '有効',
       orderedAt,
@@ -219,7 +224,9 @@ const createInitialColumns = (
       filterType: 'text',
       pinned: "left" ,
     },
-    { key: 'qty', title: '数量', width: 90, filterType: 'number', resizable: false },
+    { key: 'qty', title: '数量', width: 90, filterType: 'number', resizable: false, align: 'right' },
+    // 追加(③デモ): 金額列。右寄せ + numberFormatter() で 3 桁区切り(既定は元の精度を保持)。
+    { key: 'amount', title: '金額', width: 140, filterType: 'number', align: 'right', valueFormatter: numberFormatter() },
     {
       key: 'unit',
       title: '単位',
@@ -540,6 +547,7 @@ function App() {
           partNo: '',
           partName: '',
           qty: 0,
+          amount: 0,
           unit: '',
           status: '',
           // 追加(date デモ): 新規行も orderedAt を持たせます(既定は空文字 = フィルター未該当)。

@@ -110,6 +110,18 @@
     overflow: visible;
   }
 
+  /* 追加(③): セル内容の水平寄せ(GridColumn.align)。基底に justify-content 未指定=左のため、
+     center / right のときだけ上書きします(text-align は autoHeight 折り返し時の行揃え用)。 */
+  .ssg-body-cell--align-center {
+    justify-content: center;
+    text-align: center;
+  }
+
+  .ssg-body-cell--align-right {
+    justify-content: flex-end;
+    text-align: right;
+  }
+
   /* 行ホバー(hoveredRowIndex 由来。3 ペイン横断のため :hover では実装不可)。 */
   .ssg-body-cell--row-hovered {
     background-color: var(--ssg-row-hover-bg);

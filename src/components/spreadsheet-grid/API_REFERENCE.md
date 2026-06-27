@@ -93,6 +93,8 @@
 | `getValue` | `(row: T) => unknown` | `row[key]` | 値アクセサ。 |
 | `setValue` | `(row: T, value: unknown) => T` | — | 値ライター(新しい行を返す)。 |
 | `renderCell` | `(ctx: CellRenderContext<T>) => ReactNode` | プレーン `<span>` | カスタムセル描画。 |
+| `align` | `'left' \| 'center' \| 'right'` | `'left'` | セル内容の水平寄せ(UI 表示のみ・元の値は不変)。セル表示と編集 input に反映。 |
+| `valueFormatter` | `(params: CellValueFormatterParams<T>) => string` | — | セル表示値の整形(UI 表示のみ)。`renderCell` 未指定の既定セルが返り値を表示。組み込み `numberFormatter` 等を渡せる。元の値/編集/コピー/ソート/フィルターには影響しない。 |
 | `cellClassName` | `string \| ((ctx: CellStyleContext<T>) => string \| undefined)` | — | セルへ付与する追加 class(条件付きスタイル)。関数版は値 / 状態に応じて class を返せる。基底 `.ssg-body-cell` は `@layer` のため上書きが効く。 |
 | `renderHeader` | `(ctx: HeaderRenderContext<T>) => ReactNode` | — | カスタムヘッダー描画。 |
 | `filterType` | `'text' \| 'number' \| 'date' \| 'select' \| 'set' \| 'custom'` | — | フィルター UI の種別。 |
@@ -100,6 +102,22 @@
 | `filterFn` | `(row: T, filterValue: unknown) => boolean` | — | カスタムフィルター述語。 |
 | `parseClipboardValue` | `(raw: string, row: T) => unknown` | — | 貼り付け時のパーサ。 |
 | `formatClipboardValue` | `(value: unknown, row: T) => string` | — | コピー時のフォーマッタ。 |
+
+### 値フォーマッタ(UI 表示)
+
+`valueFormatter` はセルの**表示文字列だけ**を変えます(元の値・編集・コピー・ソート・フィルターは生値のまま)。組み込みファクタは `logic/valueFormatters.ts` に集約し、バレルから公開します。利用側も同じ契約(`CellValueFormatter<T>`)で自作でき、将来パターン(日付/％/通貨等)はファクタ追加 + バレル公開で拡張できます。
+
+- `numberFormatter(options?)` — 数値を 3 桁区切りで整形。既定は**元の精度を保持**(小数桁を勝手に丸めない)。`minimumFractionDigits` / `maximumFractionDigits` で固定桁、`useGrouping: false` で区切り無効、`locale` 指定可。`null` / `undefined` / `''` は `emptyText`(既定 `''`)、数値化できない値は原値の文字列をそのまま表示。
+
+使用例:
+
+```ts
+import { numberFormatter } from '@ishibashi0112/spreadsheet-grid';
+
+const columns = [
+  { key: 'amount', title: '金額', width: 140, align: 'right', valueFormatter: numberFormatter() },
+];
+```
 
 ## serverSide モード(SSRM / DS-4 ②)
 

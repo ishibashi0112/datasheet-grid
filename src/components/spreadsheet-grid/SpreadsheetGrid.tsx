@@ -1491,6 +1491,11 @@ export function SpreadsheetGrid<T extends object>({
     editorActionGuardRef,
   });
 
+  // 追加(③): 編集中セルの列(編集 input の text-align=align を反映)。editingCell.col は orderedColumns 空間。
+  const editingColumn = uiState.editingCell
+    ? orderedColumns[uiState.editingCell.col]
+    : undefined;
+
   const handleCellDoubleClickWithController = useCallback(
     (cell: CellCoord) => {
       // 変更(DS-3-5): filteredRows[cell.row] → rowModel.getRow 経由(double-click consumer 移行)。
@@ -2627,7 +2632,11 @@ export function SpreadsheetGrid<T extends object>({
           },
         });
       }
-      return <span>{String(value ?? '')}</span>;
+      // 変更(③): valueFormatter 指定時はその返り値を表示します(UI 表示のみ・生値は不変)。
+      const formattedText = column.valueFormatter
+        ? column.valueFormatter({ value, row, column })
+        : String(value ?? '');
+      return <span>{formattedText}</span>;
     },
     [rowModel, onRowsChange, rows],
   );
@@ -3069,6 +3078,7 @@ export function SpreadsheetGrid<T extends object>({
                   initialValue={editorInitialValue}
                   onCommit={commitEdit}
                   onCancel={cancelEdit}
+                  align={editingColumn?.align}
                 />
 
                 <GridBodyLayer
@@ -3207,6 +3217,7 @@ export function SpreadsheetGrid<T extends object>({
                   initialValue={editorInitialValue}
                   onCommit={commitEdit}
                   onCancel={cancelEdit}
+                  align={editingColumn?.align}
                 />
 
                 <GridBodyLayer
@@ -3337,6 +3348,7 @@ export function SpreadsheetGrid<T extends object>({
                   initialValue={editorInitialValue}
                   onCommit={commitEdit}
                   onCancel={cancelEdit}
+                  align={editingColumn?.align}
                 />
 
                 <GridBodyLayer

@@ -4,6 +4,8 @@
 
 // 公開コンポーネント(named のみ。default export は廃止しました)。
 export { SpreadsheetGrid } from './SpreadsheetGrid';
+// 値フォーマッタ(UI 表示のみ)の組み込みファクタ。利用側も CellValueFormatter で自作可。
+export { numberFormatter } from './logic/valueFormatters';
 
 // 公開型です。
 export type {
@@ -19,6 +21,9 @@ export type {
   // セル / ヘッダーのカスタム描画コンテキスト(renderCell / renderHeader 引数)。
   CellRenderContext,
   HeaderRenderContext,
+  // セル表示値の整形(UI 表示のみ)の契約。
+  CellValueFormatter,
+  CellValueFormatterParams,
   // top / bottom バーのスロットコンテキストと、そこに載る派生 summary。
   SpreadsheetGridSlotContext,
   SpreadsheetGridDerivedSummary,
@@ -46,3 +51,4 @@ export type {
   // 行モデル境界型(clientSide / serverSide 共通の行取得 seam)です。
   RowModel,
 } from './model/gridTypes';
+export type { NumberFormatterOptions } from './logic/valueFormatters';
