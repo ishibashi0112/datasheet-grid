@@ -254,6 +254,8 @@ export function SpreadsheetGrid<T extends object>({
   enableGlobalFilter = true,
   enableColumnFilter = true,
   enableSorting = true,
+  // 追加(①): 列リサイズのグリッド既定(既定 true=現行挙動)。列の resizable で個別上書き可。
+  enableColumnResize = true,
   // 追加(UI hover): 行ホバー(既定 true) / 列ヘッダーホバー(既定 true)。
   enableRowHover = true,
   enableColumnHeaderHover = true,
@@ -3021,6 +3023,7 @@ export function SpreadsheetGrid<T extends object>({
                   onColumnHeaderPointerLeave={handleColumnHeaderPointerLeaveStable}
                   onColumnResizePointerDown={handleColumnResizePointerDown}
                   enableColumnMenu={enableColumnMenu}
+                  enableColumnResize={enableColumnResize}
                   openedMenuColumnKey={openedMenuColumnKey}
                   onColumnMenuButtonPointerDown={openColumnMenuFromButton}
                   onColumnHeaderContextMenu={openColumnMenuFromContextMenu}
@@ -3159,6 +3162,7 @@ export function SpreadsheetGrid<T extends object>({
                 onColumnHeaderPointerLeave={handleColumnHeaderPointerLeaveStable}
                 onColumnResizePointerDown={handleColumnResizePointerDown}
                 enableColumnMenu={enableColumnMenu}
+                enableColumnResize={enableColumnResize}
                 openedMenuColumnKey={openedMenuColumnKey}
                 onColumnMenuButtonPointerDown={openColumnMenuFromButton}
                 onColumnHeaderContextMenu={openColumnMenuFromContextMenu}
@@ -3290,6 +3294,7 @@ export function SpreadsheetGrid<T extends object>({
                   onColumnHeaderPointerLeave={handleColumnHeaderPointerLeaveStable}
                   onColumnResizePointerDown={handleColumnResizePointerDown}
                   enableColumnMenu={enableColumnMenu}
+                  enableColumnResize={enableColumnResize}
                   openedMenuColumnKey={openedMenuColumnKey}
                   onColumnMenuButtonPointerDown={openColumnMenuFromButton}
                   onColumnHeaderContextMenu={openColumnMenuFromContextMenu}

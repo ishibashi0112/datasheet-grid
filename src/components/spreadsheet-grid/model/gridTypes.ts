@@ -263,6 +263,10 @@ export type GridColumn<T> = {
   width: number;
   minWidth?: number;
   maxWidth?: number;
+  // 追加(①): この列のリサイズ可否です。未指定時はグリッドの enableColumnResize を継承します
+  //   (解決規則: column.resizable ?? enableColumnResize)。false でヘッダーのリサイズハンドルを
+  //   描画しません(手動リサイズ不可)。
+  resizable?: boolean;
   // 追加(C1): true の列が auto-height 行の高さを駆動します(複数列指定時は max を採用)。
   //   グリッド props の autoHeight 有効時のみ効きます(無効時はこのフラグは無視)。
   autoHeight?: boolean;
@@ -452,6 +456,9 @@ export type SpreadsheetGridProps<T> = {
   enableGlobalFilter?: boolean;
   enableColumnFilter?: boolean;
   enableSorting?: boolean;
+  // 追加(①): 列幅の手動リサイズ可否のグリッド既定です(既定 true=現行挙動)。
+  //   各列の column.resizable が未指定のとき本値を継承します(column.resizable ?? enableColumnResize)。
+  enableColumnResize?: boolean;
   // 追加(UI hover): 行ホバー時に行全体を薄くハイライトします。既定 true。
   enableRowHover?: boolean;
   // 追加(UI hover): 列ヘッダーのホバー時にヘッダーセルを薄くハイライトします。既定 true。

@@ -75,6 +75,9 @@ type GridHeaderRowProps<T> = {
     column: GridColumn<T>,
     event: PointerEvent<HTMLDivElement>,
   ) => void;
+  // 追加(①): 列リサイズ可否のグリッド既定です。各列のハンドル描画判定に
+  //   column.resizable ?? enableColumnResize で使います。
+  enableColumnResize: boolean;
   // 追加(13-A): 列メニュー(「⋮」ボタン + ヘッダー右クリック)関連の props です。
   //             enableColumnMenu=false のときはボタンを描画せず、右クリックも
   //             ブラウザ標準メニューのままにします(controller 側でガード済み)。
@@ -171,6 +174,7 @@ function GridHeaderRowInner<T>({
   onColumnHeaderPointerEnter,
   onColumnHeaderPointerLeave,
   onColumnResizePointerDown,
+  enableColumnResize,
   // 追加(13-A): 列メニュー関連 props です。
   enableColumnMenu,
   openedMenuColumnKey,
@@ -396,10 +400,14 @@ function GridHeaderRowInner<T>({
               )}
             </div>
 
-            <div
-              onPointerDown={(event) => onColumnResizePointerDown(column, event)}
-              className="ssg-header-resize"
-            />
+            {/* 変更(①): 可否ゲート。column.resizable ?? enableColumnResize が false の列は
+                ハンドルを描画せず、ドラッグ起点を持たせません(計測ロジックは不変)。 */}
+            {(column.resizable ?? enableColumnResize) && (
+              <div
+                onPointerDown={(event) => onColumnResizePointerDown(column, event)}
+                className="ssg-header-resize"
+              />
+            )}
           </div>
         );
       })}

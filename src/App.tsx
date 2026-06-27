@@ -219,7 +219,7 @@ const createInitialColumns = (
       filterType: 'text',
       pinned: "left" ,
     },
-    { key: 'qty', title: '数量', width: 90, filterType: 'number' },
+    { key: 'qty', title: '数量', width: 90, filterType: 'number', resizable: false },
     {
       key: 'unit',
       title: '単位',
@@ -316,6 +316,9 @@ function App() {
   //   (showTopBarCounts / showBottomBarCounts の確認用)。
   const [showTopBarCounts, setShowTopBarCounts] = useState(true);
   const [showBottomBarCounts, setShowBottomBarCounts] = useState(true);
+  // 追加(①デモ): 列リサイズ可否のグリッド既定(enableColumnResize)を切り替えます。
+  //   ON でも qty(数量)列は column.resizable:false のため常に不可(=個別上書きの確認)。
+  const [resizeEnabled, setResizeEnabled] = useState(true);
   const changeMode = (next: DemoMode) => {
     const wasServer = mode === 'server';
     const willServer = next === 'server';
@@ -473,6 +476,13 @@ function App() {
           >
             {`└ 件数(Rows/Col): ${showBottomBarCounts ? '表示' : '非表示'}`}
           </button>
+          <button
+            type="button"
+            onClick={() => setResizeEnabled((v) => !v)}
+            style={modeButtonStyle(resizeEnabled)}
+          >
+            {`列リサイズ(全体): ${resizeEnabled ? '可' : '不可'}`}
+          </button>
         </div>
 
         {mode === 'server' && (
@@ -550,6 +560,8 @@ function App() {
         rowHeaderWidth={56}
         enableRangeSelection
         enableGlobalFilter
+        // 追加(①デモ): 上の「列リサイズ(全体)」トグルと連動します(qty 列は resizable:false で常に不可)。
+        enableColumnResize={resizeEnabled}
         // 追加(バー表示デモ): 上の「バー表示」トグルと連動します。
         showTopBar={showTopBar}
         showBottomBar={showBottomBar}

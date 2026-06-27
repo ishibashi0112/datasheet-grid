@@ -33,6 +33,7 @@
 | `enableGlobalFilter` | `boolean` | `true` | グローバルフィルター**機能**の有効化。`false` で機能が無効になり、既定トップバーのフィルター入力欄も出ない(summary は `showTopBarSummary` に従う。トップバー自体を消すには `showTopBar=false`)。 |
 | `enableColumnFilter` | `boolean` | `true` | 列ごとのフィルター。 |
 | `enableSorting` | `boolean` | `true` | ヘッダークリックでのソート。 |
+| `enableColumnResize` | `boolean` | `true` | 列幅の手動リサイズ可否のグリッド既定。各列 `resizable` 未指定時に継承(`column.resizable ?? enableColumnResize`)。 |
 | `enableColumnMenu` | `boolean` | `true` | 列メニュー(⋮ + ヘッダー右クリック)。 |
 | `enableRowHover` | `boolean` | `true` | 行ホバー時に行全体を薄くハイライト。 |
 | `enableColumnHeaderHover` | `boolean` | `true` | 列ヘッダーのホバー時にヘッダーセルを薄くハイライト。 |
@@ -83,6 +84,7 @@
 | `width` | `number` | (required) | 列幅(px)。 |
 | `minWidth` | `number` | — | リサイズ時の下限幅。 |
 | `maxWidth` | `number` | — | リサイズ時の上限幅。 |
+| `resizable` | `boolean` | グリッドの `enableColumnResize` を継承 | この列の手動リサイズ可否。`false` でヘッダーのリサイズハンドルを非表示。 |
 | `autoHeight` | `boolean` | — | この列が auto-height 行の高さを駆動(グリッドの `autoHeight` 有効時のみ)。 |
 | `visible` | `boolean` | — | 列の表示/非表示。 |
 | `editable` | `boolean` | — | この列の編集を許可。 |
