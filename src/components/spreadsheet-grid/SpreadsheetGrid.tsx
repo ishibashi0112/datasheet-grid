@@ -1850,7 +1850,11 @@ export function SpreadsheetGrid<T extends object>({
           event.clientX,
           columnWidthsRef.current[column.key] ?? column.width,
           column.minWidth ?? 60,
-          column.maxWidth ?? 1000,
+          // 変更(②-S4 仕上げ): 旧 `?? 1000` を撤廃。maxWidth 未指定列は上限なし
+          //   (reducer で Number.POSITIVE_INFINITY)になり、autoSize で 1000px を
+          //   超えた幅から手動リサイズを始めても 1000 へスナップしなくなります
+          //   (autoSize は元から上限なしのため、両者の上限規則が一致します)。
+          column.maxWidth,
         ),
       );
     },

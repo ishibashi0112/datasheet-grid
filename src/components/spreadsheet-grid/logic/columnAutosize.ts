@@ -87,9 +87,9 @@ const HEADER_FIXED_CONTENT_WIDTH = 41;
 // ヘッダータイトルのフォントです(headerCellBaseStyle: fontSize 13 / fontWeight 600)。
 const HEADER_FONT_SIZE = 13;
 const HEADER_FONT_WEIGHT = 600;
-// リサイズ(column/resizeStart)と同じ既定 clamp 値です(gridReducer と同期)。
+// リサイズ(column/resizeStart)と同じ既定下限です(gridReducer と同期)。
+//   上限は既定で設けません(②-S4: 旧 DEFAULT_MAX_WIDTH=1000 を撤廃。明示 maxWidth のみ上限になります)。
 const DEFAULT_MIN_WIDTH = 60;
-const DEFAULT_MAX_WIDTH = 1000;
 
 // 追加(DS-4 ①-(1)): 列ごとに実 measureText する候補件数の上限です。
 //   推定幅(estimateTextWidthUnits)上位 TOP_K 件だけを実計測します。
@@ -472,7 +472,8 @@ export function createColumnWidthAccumulator<T>(
           clamp(
             Math.max(headerRequired, cellRequired),
             column.minWidth ?? DEFAULT_MIN_WIDTH,
-            column.maxWidth ?? DEFAULT_MAX_WIDTH,
+            // 変更(②-S4): 既定上限を撤廃。明示 maxWidth がなければ上限なし(内容にぴったり合わせます)。
+            column.maxWidth ?? Number.POSITIVE_INFINITY,
           ),
         );
 

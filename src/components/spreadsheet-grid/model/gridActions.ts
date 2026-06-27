@@ -19,7 +19,11 @@ export type GridUiAction =
       startX: number;
       startWidth: number;
       minWidth: number;
-      maxWidth: number;
+      // 変更(②-S4 仕上げ): maxWidth を任意化。未指定なら reducer 側で上限なし
+      //   (Number.POSITIVE_INFINITY)になります。呼び出し側が旧 1000 を渡していたため、
+      //   maxWidth 未指定列を autoSize(上限なし)後に手動リサイズすると 1000 へ
+      //   スナップしていた不具合を解消します(autoSize と手動リサイズの上限規則を一致)。
+      maxWidth?: number;
     }
   | { type: 'column/resizeUpdate'; clientX: number }
   | { type: 'column/resizeEnd' }
@@ -80,7 +84,8 @@ export const gridActions = {
     startX: number,
     startWidth: number,
     minWidth: number,
-    maxWidth: number,
+    // 変更(②-S4 仕上げ): 任意化。未指定は reducer で上限なしに既定化されます。
+    maxWidth?: number,
   ): GridUiAction => ({
     type: 'column/resizeStart',
     columnKey,

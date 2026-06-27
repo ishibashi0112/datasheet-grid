@@ -7,9 +7,6 @@ import { isFlexingColumn } from '../logic/columnFlex';
 // 追加: 列幅のデフォルト下限です。
 const DEFAULT_MIN_WIDTH = 60;
 
-// 追加: 列幅のデフォルト上限です。
-const DEFAULT_MAX_WIDTH = 1000;
-
 // 追加: 値を min/max に収めるユーティリティです。
 const clamp = (value: number, min: number, max: number) =>
   Math.min(Math.max(value, min), max);
@@ -239,7 +236,9 @@ export const gridUiReducer = (
           startX: action.startX,
           startWidth: action.startWidth,
           minWidth: action.minWidth || DEFAULT_MIN_WIDTH,
-          maxWidth: action.maxWidth || DEFAULT_MAX_WIDTH,
+          // 変更(②-S4): 既定の上限(旧 DEFAULT_MAX_WIDTH=1000)を撤廃。列が maxWidth を明示した時だけ
+          //   上限を課し、未指定なら上限なし(手動リサイズを既定で縛りません)。下限 minWidth は従来どおり。
+          maxWidth: action.maxWidth ?? Number.POSITIVE_INFINITY,
         },
       };
 
