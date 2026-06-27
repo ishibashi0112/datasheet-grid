@@ -59,6 +59,9 @@
 //     確定します(テキスト / 候補 / 実 DOM 計測を使わず、consumer 申告を信頼。React mount は行いません)。
 //   - suppressAutoSize: true の列は計測対象から除外し、consumer 指定の width を維持します
 //     (固定幅優先。collect でも候補を貯めず、finalize でも幅を出しません)。
+//   - autoHeight: true の列も計測対象外です(②-S3)。autoHeight 列は「幅固定 + 折り返し」が本来の姿で、
+//     autoSize は単一行幅で測るため、autoHeight 列を測ると長文を1行幅にし maxWidth で途切れる /
+//     極端に横長になります。consumer が選んだ width を維持し、折り返し(autoHeight 有効時)に委ねます。
 import type { GridColumn } from '../model/gridTypes';
 import { getCellValue } from '../utils/permissions';
 
@@ -259,6 +262,15 @@ export type ColumnWidthAccumulator<T> = {
   }) => Record<string, number>;
 };
 
+// 追加(②-S3): autoSize の計測対象外にする列の判定です。
+//   - suppressAutoSize(②-S1): consumer が固定幅を明示した列。
+//   - autoHeight: 折り返し前提の列。autoSize の計測は単一行(計測ノードは white-space:nowrap)で
+//     行うため、autoHeight 列を測ると「折り返したい長文」を1行幅にし、maxWidth に当たって途切れる
+//     / 極端に横長になります。autoHeight 列は consumer が選んだ width で折り返すのが本来の姿なので、
+//     autoSize では幅を変えません(グリッドの autoHeight 有効 / 無効に関わらず列フラグで判定)。
+const isAutosizeExcludedColumn = <T,>(column: GridColumn<T>): boolean =>
+  column.suppressAutoSize === true || column.autoHeight === true;
+
 // 列ごとの候補(推定幅 上位 TOP_K)を 1 パス collect で蓄積し、finalize で実 measureText
 // へ落とす accumulator を生成します。候補保持は列あたり最大 TOP_K 件で行数非依存です。
 export function createColumnWidthAccumulator<T>(
@@ -282,8 +294,8 @@ export function createColumnWidthAccumulator<T>(
 
   const collect = (row: T): void => {
     for (let ci = 0; ci < columns.length; ci += 1) {
-      // 固定幅優先(②-S1): suppressAutoSize 列は計測対象外なので候補も貯めません。
-      if (columns[ci].suppressAutoSize) {
+      // 計測対象外(②-S1/S3): suppressAutoSize / autoHeight 列はスキップ(候補も貯めません)。
+      if (isAutosizeExcludedColumn(columns[ci])) {
         continue;
       }
       // 追加(②-S2): estimateCellWidth 指定列は、consumer 申告の content 幅で全行 running-max を
@@ -372,7 +384,7 @@ export function createColumnWidthAccumulator<T>(
       if (container) {
         const nodesByCol: HTMLElement[][] = [];
         for (let ci = 0; ci < columns.length; ci += 1) {
-          if (columns[ci].suppressAutoSize) {
+          if (isAutosizeExcludedColumn(columns[ci])) {
             nodesByCol.push([]);
             continue;
           }
@@ -409,8 +421,8 @@ export function createColumnWidthAccumulator<T>(
 
       for (let ci = 0; ci < columns.length; ci += 1) {
         const column = columns[ci];
-        // 固定幅優先(②-S1): suppressAutoSize 列は計測せず、現在幅を維持します。
-        if (column.suppressAutoSize) {
+        // 計測対象外(②-S1/S3): suppressAutoSize / autoHeight 列は計測せず、現在幅を維持します。
+        if (isAutosizeExcludedColumn(column)) {
           continue;
         }
 

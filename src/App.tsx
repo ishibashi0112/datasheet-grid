@@ -307,7 +307,7 @@ const createInitialColumns = (
     // 追加(C1 auto-height デモ): 長文の備考列。autoHeight:true で、グリッド props の autoHeight 有効 +
     //   行数 gate 内のとき行高を内容に合わせて可変化します(折り返し表示)。
     // 追加(B3 デモ): flexEnabled で備考列を flex 化(備考=比率 2。余り幅を最も多く吸う)。
-    { key: 'note', title: '備考', width: 320, filterType: 'text', autoHeight: true, flex: flexEnabled ? 2 : undefined },
+    { key: 'note', title: '備考', width: 320, filterType: 'text', autoHeight: false, flex: flexEnabled ? 2 : undefined },
   ];
 
   // 変更(B3 デモ): includeExtraColumns=false のときは追加列を生成しません(基本列のみ)。
