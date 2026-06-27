@@ -51,12 +51,12 @@
 //     は不要です(DS-3-10 clipboard と同型の seam-native 署名)。getRow は 1 行につき
 //     1 回(行数ぶん)で、列数倍にはなりません。
 //
-// 既知の制限:
+// 既知の制限 / 拡張点:
 //   - Phase 2 は「デフォルトセルの表示テキスト」(valueFormatter 適用後 / 未指定は String(value))を
 //     実 DOM で測ります。整形・letter-spacing・フォントは反映されますが、renderCell で独自の DOM
-//     (アイコン / バッジ等)を描く列は、その実体までは測れません(テキスト相当のみ)。これは Phase 1 が
-//     テキストを proxy にする以上の構造的制約で、Stage 2 で estimateCellWidth(proxy 差し替え)+
-//     renderCell 実測を追加して対応する想定です。
+//     (アイコン / バッジ等)を描く列は、テキストを proxy にする Phase 1 では幅相関が崩れます。その
+//     場合は列に estimateCellWidth(②-S2)を指定すると、その列は「申告 content 幅の全行 running-max」で
+//     確定します(テキスト / 候補 / 実 DOM 計測を使わず、consumer 申告を信頼。React mount は行いません)。
 //   - suppressAutoSize: true の列は計測対象から除外し、consumer 指定の width を維持します
 //     (固定幅優先。collect でも候補を貯めず、finalize でも幅を出しません)。
 import type { GridColumn } from '../model/gridTypes';
@@ -64,8 +64,8 @@ import { getCellValue } from '../utils/permissions';
 
 // ── レイアウト定数(GridBodyLayer / GridHeaderRow の style と同期) ──
 // セル: padding '0 10px'(=20) + borderRight 1px、box-sizing: border-box。
-//   注記(②-S1): Phase 2 の実 DOM 計測では offsetWidth に padding / border が含まれるため不要です。
-//   下の TEXT_SAFETY と併せ、canvas フォールバック経路(DOM 不可時)でのみ使用します。
+//   注記(②-S1/S2): Phase 2 の実 DOM 計測では offsetWidth に padding / border が含まれるため不要です。
+//   canvas フォールバック経路(DOM 不可時)と、estimateCellWidth 列(申告 content 幅へ枠を加算)で使用します。
 const CELL_HORIZONTAL_FRAME = 21;
 // canvas 計測と DOM 描画の僅差(カーニング・サブピクセル丸め)の安全マージンです。
 //   注記(②-S1): Phase 2 の実 DOM 計測では実体を測るため不要。canvas フォールバックと、ヘッダー
@@ -276,11 +276,24 @@ export function createColumnWidthAccumulator<T>(
   const candidateMinEst: number[] = columns.map(
     () => Number.POSITIVE_INFINITY,
   );
+  // 追加(②-S2): estimateCellWidth 指定列用。候補 / テキスト計測を使わず、consumer 申告の content 幅
+  //   (px)の全行 running-max を保持します(finalize でセル枠を足して確定)。
+  const maxEstimateWidth: number[] = columns.map(() => 0);
 
   const collect = (row: T): void => {
     for (let ci = 0; ci < columns.length; ci += 1) {
       // 固定幅優先(②-S1): suppressAutoSize 列は計測対象外なので候補も貯めません。
       if (columns[ci].suppressAutoSize) {
+        continue;
+      }
+      // 追加(②-S2): estimateCellWidth 指定列は、consumer 申告の content 幅で全行 running-max を
+      //   取ります(テキスト proxy が効かないカスタムUI列向け。候補 / テキスト計測は使いません)。
+      const estimate = columns[ci].estimateCellWidth;
+      if (estimate) {
+        const w = estimate(row, columns[ci]);
+        if (w > maxEstimateWidth[ci]) {
+          maxEstimateWidth[ci] = w;
+        }
         continue;
       }
       const text = String(getCellValue(row, columns[ci]) ?? '');
@@ -363,6 +376,11 @@ export function createColumnWidthAccumulator<T>(
             nodesByCol.push([]);
             continue;
           }
+          // 追加(②-S2): estimateCellWidth 列は候補を使わないため計測ノードを作りません。
+          if (columns[ci].estimateCellWidth) {
+            nodesByCol.push([]);
+            continue;
+          }
           const rows = candidateRow[ci];
           const nodes: HTMLElement[] = [];
           for (let j = 0; j < rows.length; j += 1) {
@@ -406,7 +424,14 @@ export function createColumnWidthAccumulator<T>(
 
         // ── セル幅 ──
         let cellRequired: number;
-        if (cellWidthByCol) {
+        if (column.estimateCellWidth) {
+          // 追加(②-S2): estimateCellWidth 列は申告 content 幅の最大 + セル枠(padding / border)で確定。
+          //   DOM / canvas のテキスト計測は行いません(consumer 申告を信頼)。
+          cellRequired =
+            maxEstimateWidth[ci] > 0
+              ? maxEstimateWidth[ci] + CELL_HORIZONTAL_FRAME
+              : 0;
+        } else if (cellWidthByCol) {
           // Phase 2: 実 DOM の offsetWidth(padding / border / 字間 / 整形を内包。補正定数は加えません)。
           cellRequired = cellWidthByCol[ci];
         } else {

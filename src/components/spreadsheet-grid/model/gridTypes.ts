@@ -286,6 +286,12 @@ export type GridColumn<T> = {
   //   カスタムUI列(renderCell)や、固定幅で見せたい列に付ける per-column の opt-in です。
   //   未指定(undefined)は従来どおり autoSize 対象です(後方互換)。
   suppressAutoSize?: boolean;
+  // 追加(②-S2): autoSize の幅見積もり関数です。指定すると、その列の autoSize は「セル内容の
+  //   ピクセル幅(セルの padding / border を除く content 幅)」をこの関数から得て、全行の最大 +
+  //   セル枠で確定します(テキスト計測 / 候補 / 実 DOM 計測は使いません)。テキスト長が実描画幅と
+  //   相関しない renderCell カスタムUI列(例: 横並びのバッジ / チップ)向けの per-column opt-in です。
+  //   未指定時は通常の 2 段計測(全行 canvas 候補 → 候補のみ実 DOM 実測)になります。
+  estimateCellWidth?: (row: T, column: GridColumn<T>) => number;
   // 追加(C1): true の列が auto-height 行の高さを駆動します(複数列指定時は max を採用)。
   //   グリッド props の autoHeight 有効時のみ効きます(無効時はこのフラグは無視)。
   autoHeight?: boolean;

@@ -267,6 +267,40 @@ const createInitialColumns = (
         { label: '保留', value: '保留' },
       ],
     },
+    // 追加(②-S2 デモ): renderCell でバッジ(チップ)を横並び表示するカスタムUI列です。
+    //   セルの表示テキストは無いに等しいため、テキストを proxy にする autoSize では幅が出ません
+    //   (ヘッダー幅止まりでチップがはみ出す)。estimateCellWidth で「チップ群の content 幅(px)」を
+    //   申告すると、その列の autoSize は全行の最大幅に合わせて確定します(行ごとにチップ数が変わる例)。
+    {
+      key: 'tags',
+      title: 'タグ',
+      width: 80,
+      renderCell: ({ row }) => {
+        const count = (row.qty % 5) + 1;
+        return (
+          <div style={{ display: 'flex', gap: 4 }}>
+            {Array.from({ length: count }, (_, i) => (
+              <span
+                key={i}
+                style={{
+                  width: 16,
+                  height: 16,
+                  borderRadius: 4,
+                  background: '#c7d3ea',
+                  display: 'inline-block',
+                  flex: '0 0 auto',
+                }}
+              />
+            ))}
+          </div>
+        );
+      },
+      // チップ群の content 幅(px): count 個 × 16 + 隙間 (count-1) × 4。renderCell の実描画と一致させます。
+      estimateCellWidth: (row) => {
+        const count = (row.qty % 5) + 1;
+        return count * 16 + (count - 1) * 4;
+      },
+    },
     // 追加(date デモ): date フィルター型の動作確認用の列です。値は ISO 文字列(YYYY-MM-DD)で、
     //   フィルターは部分一致です('2024' で年 / '2024-03' で月 / '-15' で15日 を絞り込めます)。
     { key: 'orderedAt', title: '発注日', width: 130, filterType: 'date' },
@@ -373,8 +407,8 @@ function App() {
       ),
     );
   };
-  // 追加(B3 デモ): 列セット切替。'full'=全 32 列(列仮想化デモ用)/ 'basic'=基本列のみ。
-  //   全 32 列は固定列合計が利用可能幅を超えるため flex 列が min(50px)へ潰れます。
+  // 追加(B3 デモ): 列セット切替。'full'=全 33 列(列仮想化デモ用)/ 'basic'=基本列のみ。
+  //   全 33 列は固定列合計が利用可能幅を超えるため flex 列が min(50px)へ潰れます。
   //   基本列のみにすると余白ができ、flex ON で備考・状態が余白を 2:1 で吸う挙動を確認できます。
   const [columnSet, setColumnSet] = useState<'full' | 'basic'>('full');
   // 列セットを切り替えて columns を作り直します(現在の flex トグル状態とモード別 filterType は引き継ぎ)。
@@ -575,7 +609,7 @@ function App() {
             onClick={toggleColumnSet}
             style={modeButtonStyle(columnSet === 'basic')}
           >
-            {`列セット: ${columnSet === 'full' ? '全 32 列' : '基本列のみ(flex 確認用)'}`}
+            {`列セット: ${columnSet === 'full' ? '全 33 列' : '基本列のみ(flex 確認用)'}`}
           </button>
           <button
             type="button"
