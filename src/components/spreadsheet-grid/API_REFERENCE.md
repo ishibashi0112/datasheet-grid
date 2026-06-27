@@ -82,8 +82,9 @@
 | `key` | `string` | (required) | 列の一意キー。 |
 | `title` | `string` | — | ヘッダーの表示ラベル。 |
 | `width` | `number` | (required) | 列幅(px)。 |
-| `minWidth` | `number` | — | リサイズ時の下限幅。 |
-| `maxWidth` | `number` | — | リサイズ時の上限幅。 |
+| `minWidth` | `number` | — | リサイズ時の下限幅。flex 配分時の下限クランプにも使用(flex 列で未指定なら内部既定 50px)。 |
+| `maxWidth` | `number` | — | リサイズ時の上限幅。flex 配分時の上限クランプにも使用。 |
+| `flex` | `number` | — | center 列(非 pinned)の伸縮比。余り幅(コンテナ幅 − 行ヘッダー − pinned 合計 − `width` 固定列の合計)を flex 比で配分し `minWidth`/`maxWidth` でクランプ。コンテナ追従でリアクティブに伸縮。手動リサイズで固定 px へ変化(`columns` 変化まで固定 → 以後 flex 復帰)。pinned 列では無視。詳細は下記「flex と autoSize」節。 |
 | `resizable` | `boolean` | グリッドの `enableColumnResize` を継承 | この列の手動リサイズ可否。`false` でヘッダーのリサイズハンドルを非表示。 |
 | `autoHeight` | `boolean` | — | この列が auto-height 行の高さを駆動(グリッドの `autoHeight` 有効時のみ)。 |
 | `visible` | `boolean` | — | 列の表示/非表示。 |
@@ -118,6 +119,23 @@ const columns = [
   { key: 'amount', title: '金額', width: 140, align: 'right', valueFormatter: numberFormatter() },
 ];
 ```
+
+### flex と autoSize(列幅の決め方)
+
+列幅を「グリッドに決めさせる」方法は 2 つあり、**決め方が異なる別概念**です。列ごとに使い分けでき、混在も可能です。どちらを使うべきか迷ったら下表で選びます。
+
+| | flex(`column.flex`) | autoSize(列メニュー) |
+| --- | --- | --- |
+| 何に合わせる | **コンテナの余り幅**(中身は見ない) | **セルの中身の長さ**(コンテナは見ない) |
+| 反応性 | コンテナのリサイズに**追従してリアクティブに伸縮** | 実行時の内容で**固定 px を一度だけ算出**(以後自動追従しない) |
+| 起動 | 列定義の `flex` を指定(= 宣言的) | 列メニュー「この列の幅を自動調整 / すべての列の幅を自動調整」(= 操作) |
+| 適用範囲 | center 列(非 pinned)のみ | 任意の列 |
+| 典型用途 | テーブルを横いっぱいに使う / 余白を特定列に吸わせる | 中身が切れないようにする |
+
+- **flex** — `flex` を持つ center 列が「利用可能幅(コンテナ幅 − 行ヘッダー − pinned 合計 − `width` 固定列の合計)」を `flex` 比で分け合い、`minWidth`/`maxWidth` でクランプされます。固定列合計が利用可能幅を超えると flex 列は最小幅(`minWidth`、未指定時は内部既定 50px)まで潰れ、超過分は横スクロールになります。pinned 列では無視されます。
+- **autoSize** — セルの中身を走査して必要幅を測り、固定 px を一度だけ算出します(コンテナ幅は見ません)。算出時点の内容で幅が確定し、その後コンテナや内容が変わっても自動では追従しません。
+
+flex 列を**手動リサイズ**すると、その列はドラッグした幅で**固定 px**に変わります(以後その列は flex 対象外)。固定は `columns` prop が変化する(pin 切替 / 表示切替 / 並べ替え / 親による差し替え)まで維持され、変化後は再び flex に復帰します(手動幅を恒久固定する仕様ではありません)。
 
 ## serverSide モード(SSRM / DS-4 ②)
 

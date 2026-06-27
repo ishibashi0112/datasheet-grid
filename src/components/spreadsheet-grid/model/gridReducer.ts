@@ -1,5 +1,8 @@
 import type { GridUiAction } from './gridActions';
 import type { GridColumn, GridUiState } from './gridTypes';
+// 追加(B3): flex 列(center かつ flex>0)は columnWidths に固定エントリを持たせません。
+//   flex 算出が効くよう、初期生成・columns 同期の両方でこの判定でスキップします。
+import { isFlexingColumn } from '../logic/columnFlex';
 
 // 追加: 列幅のデフォルト下限です。
 const DEFAULT_MIN_WIDTH = 60;
@@ -12,8 +15,14 @@ const clamp = (value: number, min: number, max: number) =>
   Math.min(Math.max(value, min), max);
 
 // 追加: 初期 column width map を生成します。
+// 変更(B3): flex 列(center かつ flex>0)はエントリを作りません。columnWidths にエントリがあると
+//   flex 算出より優先され固定化されてしまうためです(手動リサイズ時のみ column/resizeUpdate が
+//   その列のエントリを書き、その列だけ固定になります)。
 const createColumnWidthMap = <T,>(columns: GridColumn<T>[]) =>
   columns.reduce<Record<string, number>>((acc, column) => {
+    if (isFlexingColumn(column)) {
+      return acc;
+    }
     acc[column.key] = column.width;
     return acc;
   }, {});
@@ -279,6 +288,15 @@ export const gridUiReducer = (
           ...state.columnWidths,
           ...action.widths,
         },
+      };
+
+    // 追加(B3): columns 同期用のフル置換です。merge ではなく置き換えるため、widths に無いキー
+    //   (= flex 列や除去された列)は捨てられます。これにより flex 列が固定エントリを持ち続けて
+    //   flex が効かなくなるのを防ぎます(autosize 経路の merge=columnWidths/sync とは別物)。
+    case 'columnWidths/reset':
+      return {
+        ...state,
+        columnWidths: action.widths,
       };
 
     case 'filter/setGlobal':

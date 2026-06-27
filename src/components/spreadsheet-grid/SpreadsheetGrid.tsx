@@ -89,6 +89,8 @@ import {
   type ColumnPane,
   type PaneColumnExtentMap,
 } from './logic/geometry';
+// 追加(B3): center 列の JS 算出 flex(利用可能幅を比率配分)。
+import { isFlexingColumn, computeCenterFlexWidths } from './logic/columnFlex';
 // 追加(scroll-space 仮想化): 縦ジオメトリのシーム(uniform window + pixel scaling)です。
 //   1M 行で innerRowStyle.height がブラウザ要素高さ上限を超える機能ブロッカーを解消します。
 import {
@@ -218,6 +220,9 @@ const EMPTY_ROWS: never[] = [];
 const EMPTY_SERVER_QUERY: ServerSideQuery = {};
 const EMPTY_COLUMN_FILTERS: Record<string, ColumnFilterValue> = {};
 const EMPTY_SORT: GridSortState = [];
+// 追加(B3): flex 非適用時(未計測 / flex 列なし)に返す共有の空 map です。参照同一性で
+//   「flex 素通し(= effectiveColumnWidths は uiState.columnWidths そのまま)」を判定します。
+const EMPTY_FLEX_WIDTHS: Record<string, number> = {};
 // query(filter/sort)変更をサーバへ送る前の debounce(ms)です。入力欄の即時反映とは別系統で、
 //   キーストロークごとの再フェッチ(block 0 取り直し)を合体します。フック内の 120ms(レンジ要求
 //   debounce)とは役割が異なり併存します。
@@ -366,8 +371,11 @@ export function SpreadsheetGrid<T extends object>({
   //           ハンドラ参照も毎フレーム変わり、GridHeaderRow(memo) の props 比較が
   //           3 ペインすべてで不一致になります。pointerdown 時点の「現在幅」さえ
   //           読めれば十分なので、ref 経由の読み出しに置き換えて依存から外します。
+  // 変更(B3): 指す対象を uiState.columnWidths → effectiveColumnWidths(flex 解決済み)へ変更します。
+  //           flex 列のリサイズ開始幅(handleColumnResizePointerDown)や pin/表示/並べ替え時の
+  //           幅書き戻しが「現在レンダリングされている幅(= flex 算出幅)」を拾えるようにするためです。
+  //           実際の代入は effectiveColumnWidths を算出した後(下の flex 算出ブロック末尾)で行います。
   const columnWidthsRef = useRef(uiState.columnWidths);
-  columnWidthsRef.current = uiState.columnWidths;
 
   // 追加(13-B2-2): 列リセット用の「初期 column defs スナップショット」です。
   // 設計メモ(スナップショット保持の方針 = (A) 内部 ref / 自己完結):
@@ -422,6 +430,85 @@ export function SpreadsheetGrid<T extends object>({
     [orderedColumns],
   );
 
+  // ── center 列の JS 算出 flex(B3) ───────────────────────
+  // 追加(B3): flex 列(center かつ flex>0)へ「利用可能幅 − 固定列合計」を比率配分します。
+  //   利用可能幅 = スクロールコンテナ可視幅 − 左固定ペイン幅 − 右固定ペイン幅 − center 先頭幅。
+  //   左右ペインは pinned(= flex 非対象)なので center 列幅に依存せず先に確定でき、循環しません。
+  //   ここでの固定ペイン幅は下流(§3ペイン派生値)の leftPaneTotalWidth 等と同値です
+  //   (左右ペインは columnWidths のみで解決され flex を含まないため)。
+  //
+  // viewportWidth: スクロールコンテナの clientWidth です。0 は未計測(初回レンダー前)を表し、その間は
+  //   flex を適用せず column.width にフォールバックします(計測は縦窓出しと同じ ResizeObserver に
+  //   相乗り。下の「縦スクロール計測」参照)。
+  const [viewportWidth, setViewportWidth] = useState(0);
+
+  // 左右固定ペインの「解決済み幅合計」です(flex 非対象なので uiState.columnWidths で解決)。
+  const leftPaneFixedWidth = paneSourceColumns.left.reduce(
+    (acc, { column }) => acc + (uiState.columnWidths[column.key] ?? column.width),
+    0,
+  );
+  const rightPaneFixedWidth = paneSourceColumns.right.reduce(
+    (acc, { column }) => acc + (uiState.columnWidths[column.key] ?? column.width),
+    0,
+  );
+  // 左固定列があれば行ヘッダーは左ペインが内包し、center 先頭幅は 0 になります(§3ペイン派生値と同判定)。
+  const hasLeftPinnedForFlex = paneSourceColumns.left.length > 0;
+  const flexLeftPaneTotalWidth = hasLeftPinnedForFlex
+    ? rowHeaderWidth + leftPaneFixedWidth
+    : 0;
+  const flexCenterLeadingWidth = hasLeftPinnedForFlex ? 0 : rowHeaderWidth;
+
+  // center 列(列のみ)と flex 列の有無です。flex 列が 1 本も無ければ flex 算出を完全にスキップします
+  //   (= 既存挙動・ゼロオーバーヘッド)。
+  const centerColumnsForFlex = useMemo(
+    () => paneSourceColumns.center.map(({ column }) => column),
+    [paneSourceColumns.center],
+  );
+  const hasFlexColumn = useMemo(
+    () => centerColumnsForFlex.some(isFlexingColumn),
+    [centerColumnsForFlex],
+  );
+
+  // 利用可能幅(center 列が使える幅)です。
+  const availableCenterFlexWidth =
+    viewportWidth -
+    flexLeftPaneTotalWidth -
+    rightPaneFixedWidth -
+    flexCenterLeadingWidth;
+
+  // flex 解決幅 map(flex 列のキーのみ)。未計測 / flex 列なしのときは共有の空 map(参照不変)です。
+  const centerFlexWidths = useMemo(() => {
+    if (!hasFlexColumn || viewportWidth <= 0) {
+      return EMPTY_FLEX_WIDTHS;
+    }
+    return computeCenterFlexWidths(
+      centerColumnsForFlex,
+      uiState.columnWidths,
+      availableCenterFlexWidth,
+    );
+  }, [
+    hasFlexColumn,
+    viewportWidth,
+    centerColumnsForFlex,
+    uiState.columnWidths,
+    availableCenterFlexWidth,
+  ]);
+
+  // 既存の columnWidths 解決の前段に flex を挟みます:
+  //   columnWidths[key] ?? flex算出[key] ?? column.width。
+  //   columnWidths が常に優先されるため、手動リサイズした列は固定になります。
+  //   flex 列が無いときは uiState.columnWidths をそのまま使い、参照を不変に保ちます。
+  const effectiveColumnWidths = useMemo(
+    () =>
+      centerFlexWidths === EMPTY_FLEX_WIDTHS
+        ? uiState.columnWidths
+        : { ...centerFlexWidths, ...uiState.columnWidths },
+    [centerFlexWidths, uiState.columnWidths],
+  );
+
+  // 変更(B3): latest-ref を effectiveColumnWidths(flex 解決済み)へ更新します(宣言は上、代入はここ)。
+  columnWidthsRef.current = effectiveColumnWidths;
+
   // 追加(11-B4): ペインごとの「解決済み幅 join キー」です。
   //             毎 render 計算しますが、列数ぶんの lookup + join のみで軽量です。
   //             columnWidths の参照が変わっても、そのペインの幅が実際に変わらない限り
@@ -430,9 +517,11 @@ export function SpreadsheetGrid<T extends object>({
     paneSourceColumns.left,
     uiState.columnWidths,
   );
+  // 変更(B3): center は flex 解決済み(effectiveColumnWidths)で幅キーを作ります
+  //   (left/right は flex 非対象なので uiState.columnWidths のまま)。
   const centerPaneWidthsKey = buildPaneWidthsKey(
     paneSourceColumns.center,
-    uiState.columnWidths,
+    effectiveColumnWidths,
   );
   const rightPaneWidthsKey = buildPaneWidthsKey(
     paneSourceColumns.right,
@@ -589,15 +678,23 @@ export function SpreadsheetGrid<T extends object>({
   });
 
   // ── column widths sync ────────────────────────────────
+  // 変更(B3): merge(syncColumnWidths)→ フル置換(resetColumnWidths)へ変更し、flex 列(center かつ
+  //   flex>0)はエントリを作りません。これにより (1) flex 列が固定エントリを持って flex が無効化される
+  //   のを防ぎ、(2) 実行時に fixed→flex へ切替えた列の古い固定エントリを一掃します。非 flex 列の手動
+  //   リサイズ幅は、pin/表示/並べ替えの書き戻しで column.width に焼かれてからここへ来るため保全されます
+  //   (merge 版と同じ挙動)。autosize は別経路(merge=syncColumnWidths)なので影響しません。
   useEffect(() => {
     const nextWidths = visibleColumns.reduce<Record<string, number>>(
       (acc, column) => {
+        if (isFlexingColumn(column)) {
+          return acc;
+        }
         acc[column.key] = column.width;
         return acc;
       },
       {},
     );
-    dispatch(gridActions.syncColumnWidths(nextWidths));
+    dispatch(gridActions.resetColumnWidths(nextWidths));
   }, [visibleColumns]);
 
   // ── row models (source → filtered → sorted) ──────────
@@ -886,9 +983,11 @@ export function SpreadsheetGrid<T extends object>({
   }, [order, rows]);
 
   // ── column measurements ───────────────────────────────
+  // 変更(B3): columnVirtualizer の再計測トリガーも flex 解決済み幅で作ります(flex 変化 = viewport
+  //   リサイズ等で列幅が変わったとき、仮想化の再計測を確実に発火させるため)。
   const columnMeasurements = useMemo(
-    () => buildColumnMeasurements(visibleColumns, uiState.columnWidths),
-    [visibleColumns, uiState.columnWidths],
+    () => buildColumnMeasurements(visibleColumns, effectiveColumnWidths),
+    [visibleColumns, effectiveColumnWidths],
   );
 
   // 注記(10-E): columnMeasurements は columnVirtualizer の再計測トリガーとしてのみ使います。
@@ -916,12 +1015,16 @@ export function SpreadsheetGrid<T extends object>({
     }
     setScrollTop(el.scrollTop);
     setViewportHeight(el.clientHeight);
+    // 追加(B3): center 列 flex の利用可能幅算出に使う可視幅も同じ effect で計測します。
+    setViewportWidth(el.clientWidth);
     const handleScroll = () => setScrollTop(el.scrollTop);
     el.addEventListener('scroll', handleScroll, { passive: true });
-    // viewport 高さ変化(リサイズ/レイアウト変動)で窓と倍率を再計算するためです。
-    const resizeObserver = new ResizeObserver(() =>
-      setViewportHeight(el.clientHeight),
-    );
+    // viewport サイズ変化(リサイズ/レイアウト変動)で窓・倍率・flex 配分を再計算するためです。
+    const resizeObserver = new ResizeObserver(() => {
+      setViewportHeight(el.clientHeight);
+      // 追加(B3): 幅変化で flex を再配分します。
+      setViewportWidth(el.clientWidth);
+    });
     resizeObserver.observe(el);
     return () => {
       el.removeEventListener('scroll', handleScroll);

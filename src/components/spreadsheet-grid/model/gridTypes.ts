@@ -272,6 +272,11 @@ export type GridColumn<T> = {
   width: number;
   minWidth?: number;
   maxWidth?: number;
+  // 追加(B3): JS 算出 flex(AG Grid の flex 相当)。center ペイン(非 pinned)の列でのみ有効で、
+  //   「利用可能幅 − 固定列合計」を flex 比で配分します(min/max でクランプ)。pinned 列では無視されます。
+  //   手動リサイズするとその列は固定 px に変わります(columns が変化するまで固定。以後は flex に復帰)。
+  //   ※ 中身の長さに合わせて固定 px を決めたい場合は flex ではなく autoSize を使ってください(別概念)。
+  flex?: number;
   // 追加(①): この列のリサイズ可否です。未指定時はグリッドの enableColumnResize を継承します
   //   (解決規則: column.resizable ?? enableColumnResize)。false でヘッダーのリサイズハンドルを
   //   描画しません(手動リサイズ不可)。

@@ -203,6 +203,11 @@ const createInitialColumns = (
   // 追加(stage ②): 品番列の filterType。clientSide は 'set'(大規模候補の仮想化デモ)、
   //   serverSide は 'text'(高カーディナリティのため set 不適 → 部分一致)を渡します。
   partNoFilterType: 'set' | 'text' = 'set',
+  // 追加(B3 デモ): true で center 列(備考=flex 2 / 状態=flex 1)に flex を付けます。
+  flexEnabled = false,
+  // 追加(B3 デモ): false で追加列(列仮想化用の 24 本)を外し、基本列だけにします。
+  //   固定列合計が利用可能幅を下回るため、flex の「余白を 2:1 で吸う」挙動が見えます。
+  includeExtraColumns = true,
 ): GridColumn<DemoRow>[] => {
   const baseColumns: GridColumn<DemoRow>[] = [
     // 追加: text / number / select / set のフィルター型を設定します。
@@ -246,6 +251,8 @@ const createInitialColumns = (
       key: 'status',
       title: '状態',
       width: 120,
+      // 追加(B3 デモ): flexEnabled で center 列を flex 化(状態=比率 1)。
+      flex: flexEnabled ? 1 : undefined,
       // 追加(条件付きスタイル デモ): 値が「保留」のセルだけ赤字にします(GridColumn.cellClassName)。
       cellClassName: (ctx) => (ctx.value === '保留' ? 'demo-cell-hold' : undefined),
       // 変更(12-A): select → set へ移行します。
@@ -261,19 +268,23 @@ const createInitialColumns = (
     { key: 'orderedAt', title: '発注日', width: 130, filterType: 'date' },
     // 追加(C1 auto-height デモ): 長文の備考列。autoHeight:true で、グリッド props の autoHeight 有効 +
     //   行数 gate 内のとき行高を内容に合わせて可変化します(折り返し表示)。
-    { key: 'note', title: '備考', width: 320, filterType: 'text', autoHeight: true },
+    // 追加(B3 デモ): flexEnabled で備考列を flex 化(備考=比率 2。余り幅を最も多く吸う)。
+    { key: 'note', title: '備考', width: 320, filterType: 'text', autoHeight: true, flex: flexEnabled ? 2 : undefined },
   ];
 
-  const extraColumns = Array.from(
-    { length: INITIAL_EXTRA_COLUMN_COUNT },
-    (_, index): GridColumn<DemoRow> => ({
-      key: getOverflowColumnKey(5 + index),
-      title: `追加列${index + 1}`,
-      width: 120,
-      // 追加: 追加列は text として扱います。
-      filterType: 'text',
-    }),
-  );
+  // 変更(B3 デモ): includeExtraColumns=false のときは追加列を生成しません(基本列のみ)。
+  const extraColumns: GridColumn<DemoRow>[] = includeExtraColumns
+    ? Array.from(
+        { length: INITIAL_EXTRA_COLUMN_COUNT },
+        (_, index): GridColumn<DemoRow> => ({
+          key: getOverflowColumnKey(5 + index),
+          title: `追加列${index + 1}`,
+          width: 120,
+          // 追加: 追加列は text として扱います。
+          filterType: 'text',
+        }),
+      )
+    : [];
 
   return [...baseColumns, ...extraColumns];
 };
@@ -326,6 +337,41 @@ function App() {
   // 追加(①デモ): 列リサイズ可否のグリッド既定(enableColumnResize)を切り替えます。
   //   ON でも qty(数量)列は column.resizable:false のため常に不可(=個別上書きの確認)。
   const [resizeEnabled, setResizeEnabled] = useState(true);
+  // 追加(B3 デモ): center 列の flex を付け外しします(備考=flex 2 / 状態=flex 1)。
+  const [flexEnabled, setFlexEnabled] = useState(false);
+  // 既存の幅/固定/並び/表示のカスタマイズは保持し、対象 2 列の flex だけ切替えます。
+  const toggleColumnFlex = () => {
+    const next = !flexEnabled;
+    setFlexEnabled(next);
+    setColumns((prev) =>
+      prev.map((column) => {
+        if (column.key === 'note') {
+          return { ...column, flex: next ? 2 : undefined };
+        }
+        if (column.key === 'status') {
+          return { ...column, flex: next ? 1 : undefined };
+        }
+        return column;
+      }),
+    );
+  };
+  // 追加(B3 デモ): 列セット切替。'full'=全 32 列(列仮想化デモ用)/ 'basic'=基本列のみ。
+  //   全 32 列は固定列合計が利用可能幅を超えるため flex 列が min(50px)へ潰れます。
+  //   基本列のみにすると余白ができ、flex ON で備考・状態が余白を 2:1 で吸う挙動を確認できます。
+  const [columnSet, setColumnSet] = useState<'full' | 'basic'>('full');
+  // 列セットを切り替えて columns を作り直します(現在の flex トグル状態とモード別 filterType は引き継ぎ)。
+  //   pin/幅/並べ替え等のカスタマイズは作り直しのためリセットされます(モード切替と同じ扱い)。
+  const toggleColumnSet = () => {
+    const nextSet = columnSet === 'full' ? 'basic' : 'full';
+    setColumnSet(nextSet);
+    setColumns(
+      createInitialColumns(
+        mode === 'server' ? 'text' : 'set',
+        flexEnabled,
+        nextSet === 'full',
+      ),
+    );
+  };
   const changeMode = (next: DemoMode) => {
     const wasServer = mode === 'server';
     const willServer = next === 'server';
@@ -342,7 +388,14 @@ function App() {
     //   するため列リセットは一貫します。client↔autoHeight(同 serverSide 性)では作り直さず、
     //   列のカスタマイズ(並び/幅/固定/表示)を保持します。
     if (wasServer !== willServer) {
-      setColumns(createInitialColumns(willServer ? 'text' : 'set'));
+      // 変更(B3 デモ): 列再構築時も現在の flex トグル状態と列セットを引き継ぎます。
+      setColumns(
+        createInitialColumns(
+          willServer ? 'text' : 'set',
+          flexEnabled,
+          columnSet === 'full',
+        ),
+      );
     }
   };
 
@@ -489,6 +542,20 @@ function App() {
             style={modeButtonStyle(resizeEnabled)}
           >
             {`列リサイズ(全体): ${resizeEnabled ? '可' : '不可'}`}
+          </button>
+          <button
+            type="button"
+            onClick={toggleColumnFlex}
+            style={modeButtonStyle(flexEnabled)}
+          >
+            {`列フレックス(備考/状態): ${flexEnabled ? 'ON' : 'OFF'}`}
+          </button>
+          <button
+            type="button"
+            onClick={toggleColumnSet}
+            style={modeButtonStyle(columnSet === 'basic')}
+          >
+            {`列セット: ${columnSet === 'full' ? '全 32 列' : '基本列のみ(flex 確認用)'}`}
           </button>
         </div>
 

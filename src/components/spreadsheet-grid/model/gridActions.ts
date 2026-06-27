@@ -24,6 +24,7 @@ export type GridUiAction =
   | { type: 'column/resizeUpdate'; clientX: number }
   | { type: 'column/resizeEnd' }
   | { type: 'columnWidths/sync'; widths: Record<string, number> }
+  | { type: 'columnWidths/reset'; widths: Record<string, number> }
   | { type: 'filter/setGlobal'; value: string }
   | { type: 'filter/setColumn'; columnKey: string; value: ColumnFilterValue }
   | { type: 'filter/clearColumn'; columnKey: string }
@@ -97,6 +98,13 @@ export const gridActions = {
   }),
   syncColumnWidths: (widths: Record<string, number>): GridUiAction => ({
     type: 'columnWidths/sync',
+    widths,
+  }),
+  // 追加(B3): columns 同期用のフル置換版です(merge の syncColumnWidths とは別物)。
+  //   列定義から columnWidths を作り直し、渡されていないキー(= flex 列や除去列)は捨てます。
+  //   これにより「実行時に fixed→flex へ切替えた列」の古い固定エントリを一掃できます。
+  resetColumnWidths: (widths: Record<string, number>): GridUiAction => ({
+    type: 'columnWidths/reset',
     widths,
   }),
   setGlobalFilter: (value: string): GridUiAction => ({
