@@ -11,7 +11,12 @@
 //       5,000 行 × 29 列では layout コストが大きく、分割実行が必要になります。
 //   (c) AG Grid 本家の方式: 「描画済み(仮想化で DOM に存在する)セル」だけを計測。
 //       高速ですが、画面外の行にある最長値が反映されないという既知の挙動があります。
-//   本実装は (a) を採用し、全表示行を対象にします。
+//   本実装は (a)[全行スクリーニング] と (b)[実 DOM 計測] を 2 段で組み合わせます(変更 ②-S1):
+//   Phase 1 = (a) の canvas 推定で全表示行から候補(TOP_K)を絞り、Phase 2 = (b) で候補だけを
+//   実 DOM(grid root 配下の計測セル)で実測します。全行カバレッジ((c) の弱点を回避)と、実描画
+//   忠実((a) の弱点を回避: padding / 字間 / kerning / valueFormatter を offsetWidth が内包)を
+//   両取りします。実測は候補のみ(列あたり最大 TOP_K 件)なので reflow は finalize で 1 回です。
+//   DOM 不可(SSR 等)では (a) の canvas 計測へフォールバックします。
 //
 // 計測回数の抑制方式(変更 DS-4 ①-(1)):
 //   旧版は列ごとに「ユニーク文字列の Set を全構築 → ユニーク数ぶん measureText」
@@ -47,16 +52,24 @@
 //     1 回(行数ぶん)で、列数倍にはなりません。
 //
 // 既知の制限:
-//   - 計測対象テキストはデフォルトセル描画と同じ String(getCellValue(row, column) ?? '')
-//     です。renderCell を指定した列では実描画と差が出得ます(必要になったら
-//     列定義に getAutosizeText のような拡張点を 13-B 後続で追加する想定です)。
+//   - Phase 2 は「デフォルトセルの表示テキスト」(valueFormatter 適用後 / 未指定は String(value))を
+//     実 DOM で測ります。整形・letter-spacing・フォントは反映されますが、renderCell で独自の DOM
+//     (アイコン / バッジ等)を描く列は、その実体までは測れません(テキスト相当のみ)。これは Phase 1 が
+//     テキストを proxy にする以上の構造的制約で、Stage 2 で estimateCellWidth(proxy 差し替え)+
+//     renderCell 実測を追加して対応する想定です。
+//   - suppressAutoSize: true の列は計測対象から除外し、consumer 指定の width を維持します
+//     (固定幅優先。collect でも候補を貯めず、finalize でも幅を出しません)。
 import type { GridColumn } from '../model/gridTypes';
 import { getCellValue } from '../utils/permissions';
 
 // ── レイアウト定数(GridBodyLayer / GridHeaderRow の style と同期) ──
 // セル: padding '0 10px'(=20) + borderRight 1px、box-sizing: border-box。
+//   注記(②-S1): Phase 2 の実 DOM 計測では offsetWidth に padding / border が含まれるため不要です。
+//   下の TEXT_SAFETY と併せ、canvas フォールバック経路(DOM 不可時)でのみ使用します。
 const CELL_HORIZONTAL_FRAME = 21;
 // canvas 計測と DOM 描画の僅差(カーニング・サブピクセル丸め)の安全マージンです。
+//   注記(②-S1): Phase 2 の実 DOM 計測では実体を測るため不要。canvas フォールバックと、ヘッダー
+//   計測(従来どおり canvas)でのみ使用します。
 const TEXT_SAFETY = 4;
 // ヘッダーセルのテキスト以外の固定幅です(現行の hover オーバーレイヘッダーと同期。styles.css):
 //   padding 0 6px(=12) + borderRight 1 + ラベル↔状態スロットの gap 4
@@ -166,6 +179,51 @@ const estimateTextWidthUnits = (text: string): number => {
   return units;
 };
 
+// 追加(②-S1): セルの表示テキストを返します(デフォルトセル描画と同一の規則)。
+//   valueFormatter 指定時はその返り値、未指定は String(value ?? '')。Phase 2 の実 DOM 計測で
+//   「実際に表示される文字列」を測るために使います(整形後の桁区切り等が幅へ反映されます)。
+const resolveCellDisplayText = <T,>(
+  row: T,
+  column: GridColumn<T>,
+): string => {
+  const value = getCellValue(row, column);
+  return column.valueFormatter
+    ? column.valueFormatter({ value, row, column })
+    : String(value ?? '');
+};
+
+// 追加(②-S1): Phase 2 の計測コンテナを grid root 配下に生成します(作れなければ null)。
+//   grid root 配下に置くことで font / letter-spacing 等の継承文脈を実セルと一致させます。
+//   コンテナ自体は画面外・不可視・レイアウト非干渉です。
+const createMeasuringContainer = (
+  gridRoot: HTMLElement | null,
+): HTMLElement | null => {
+  if (!gridRoot || typeof document === 'undefined') {
+    return null;
+  }
+  const container = document.createElement('div');
+  container.setAttribute('aria-hidden', 'true');
+  container.style.cssText =
+    'position:absolute;top:-99999px;left:-99999px;' +
+    'visibility:hidden;pointer-events:none;width:auto;height:auto;' +
+    'contain:layout style;';
+  gridRoot.appendChild(container);
+  return container;
+};
+
+// 追加(②-S1): 候補 1 件ぶんの計測ノードを作ります。実セル(.ssg-body-cell)の padding / border /
+//   box-sizing / フォント継承を流用しつつ、計測用に inline-block + width:auto + nowrap へ上書きします。
+//   offsetWidth = テキスト + padding + border = 必要列幅(箱まるごと)になります。
+const createMeasuringNode = (text: string): HTMLElement => {
+  const node = document.createElement('div');
+  node.className = 'ssg-body-cell';
+  node.style.cssText =
+    'display:inline-block;position:static;top:auto;left:auto;' +
+    'width:auto;height:auto;white-space:nowrap;overflow:visible;';
+  node.textContent = text;
+  return node;
+};
+
 export type ColumnAutosizeParams<T> = {
   // 計測対象の列です(1 列だけ / 全表示列のどちらも渡せます)。
   columns: GridColumn<T>[];
@@ -207,10 +265,13 @@ export function createColumnWidthAccumulator<T>(
   columns: GridColumn<T>[],
 ): ColumnWidthAccumulator<T> {
   // ── 候補状態(1 パス × 全列同時) ──
-  //   - candidates[ci]: 候補文字列(最大 TOP_K 件)
-  //   - candidateEst[ci]: 各候補の推定幅
+  //   変更(②-S1): 候補に「元の行」を保持します(candidateRow)。Phase 2 でその行から表示テキスト
+  //   (valueFormatter 適用後)を導出して実 DOM 計測するためです。推定 / 足切りは従来どおり生テキスト
+  //   (String(getCellValue))で行います(桁区切り等は単調なので候補順位は保たれ、推定は安いまま)。
+  //   - candidateRow[ci]: 候補の元行(最大 TOP_K 件)
+  //   - candidateEst[ci]: 各候補の推定幅(生テキスト基準)
   //   - candidateMinEst[ci]: 候補内の最小推定幅(満杯時の足切り用。満杯前は +∞)
-  const candidates: string[][] = columns.map(() => []);
+  const candidateRow: T[][] = columns.map(() => []);
   const candidateEst: number[][] = columns.map(() => []);
   const candidateMinEst: number[] = columns.map(
     () => Number.POSITIVE_INFINITY,
@@ -218,24 +279,28 @@ export function createColumnWidthAccumulator<T>(
 
   const collect = (row: T): void => {
     for (let ci = 0; ci < columns.length; ci += 1) {
+      // 固定幅優先(②-S1): suppressAutoSize 列は計測対象外なので候補も貯めません。
+      if (columns[ci].suppressAutoSize) {
+        continue;
+      }
       const text = String(getCellValue(row, columns[ci]) ?? '');
       if (text === '') {
         continue;
       }
-      const list = candidates[ci];
+      const rows = candidateRow[ci];
       const estList = candidateEst[ci];
       // 追加(DS-4 ①-(3a)): 候補が満杯なら、実推定幅を出す前に length で O(1) 足切りします。
       //   units ≤ 2*text.length のため、2*text.length ≤ 最小推定幅 なら推定幅も最小以下が
       //   確定し、estimateTextWidthUnits のコードポイント走査を省けます(結果は下の
       //   est <= candidateMinEst 棄却と一致)。満杯前(minEst=+∞)はこの分岐に入りません。
-      if (list.length === TOP_K && 2 * text.length <= candidateMinEst[ci]) {
+      if (rows.length === TOP_K && 2 * text.length <= candidateMinEst[ci]) {
         continue;
       }
       const est = estimateTextWidthUnits(text);
-      if (list.length < TOP_K) {
-        list.push(text);
+      if (rows.length < TOP_K) {
+        rows.push(row);
         estList.push(est);
-        if (list.length === TOP_K) {
+        if (rows.length === TOP_K) {
           // 満杯になった時点で最小推定幅を確定します(以後の足切りに使用)。
           let m = estList[0];
           for (let j = 1; j < TOP_K; j += 1) {
@@ -258,7 +323,7 @@ export function createColumnWidthAccumulator<T>(
           minIdx = j;
         }
       }
-      list[minIdx] = text;
+      rows[minIdx] = row;
       estList[minIdx] = est;
       let m = estList[0];
       for (let j = 1; j < TOP_K; j += 1) {
@@ -285,43 +350,102 @@ export function createColumnWidthAccumulator<T>(
     const { cellFont, headerFont } = resolveFonts(gridRoot);
     const nextWidths: Record<string, number> = {};
 
-    for (let ci = 0; ci < columns.length; ci += 1) {
-      const column = columns[ci];
+    // Phase 2(②-S1): 実 DOM 計測コンテナ。作れれば DOM 経路、ダメなら canvas フォールバック。
+    const container = createMeasuringContainer(gridRoot);
+    try {
+      // ── DOM 経路: 全列・全候補をノード化(write)してから offsetWidth をまとめて読みます。
+      //   write を全件終えてから read するため、強制レイアウトは read の最初の 1 回に集約されます。
+      let cellWidthByCol: number[] | null = null;
+      if (container) {
+        const nodesByCol: HTMLElement[][] = [];
+        for (let ci = 0; ci < columns.length; ci += 1) {
+          if (columns[ci].suppressAutoSize) {
+            nodesByCol.push([]);
+            continue;
+          }
+          const rows = candidateRow[ci];
+          const nodes: HTMLElement[] = [];
+          for (let j = 0; j < rows.length; j += 1) {
+            const text = resolveCellDisplayText(rows[j], columns[ci]);
+            if (text === '') {
+              continue;
+            }
+            const node = createMeasuringNode(text);
+            container.appendChild(node);
+            nodes.push(node);
+          }
+          nodesByCol.push(nodes);
+        }
+        // read 相(ここで初回のみレイアウトが走り、以後の offsetWidth は再計算なし)。
+        cellWidthByCol = nodesByCol.map((nodes) => {
+          let max = 0;
+          for (let j = 0; j < nodes.length; j += 1) {
+            const w = nodes[j].offsetWidth;
+            if (w > max) {
+              max = w;
+            }
+          }
+          return max;
+        });
+      }
 
-      // ── ヘッダー幅(タイトル + 固定要素) ──
-      context.font = headerFont;
-      const headerTitle = column.title || column.key;
-      const headerRequired =
-        context.measureText(headerTitle).width +
-        TEXT_SAFETY +
-        HEADER_FIXED_CONTENT_WIDTH;
+      for (let ci = 0; ci < columns.length; ci += 1) {
+        const column = columns[ci];
+        // 固定幅優先(②-S1): suppressAutoSize 列は計測せず、現在幅を維持します。
+        if (column.suppressAutoSize) {
+          continue;
+        }
 
-      // ── セル幅(候補 TOP_K 件の実 measureText の最大) ──
-      context.font = cellFont;
-      let maxCellTextWidth = 0;
-      const list = candidates[ci];
-      for (let j = 0; j < list.length; j += 1) {
-        const width = context.measureText(list[j]).width;
-        if (width > maxCellTextWidth) {
-          maxCellTextWidth = width;
+        // ── ヘッダー幅(従来どおり canvas + 固定要素) ──
+        context.font = headerFont;
+        const headerTitle = column.title || column.key;
+        const headerRequired =
+          context.measureText(headerTitle).width +
+          TEXT_SAFETY +
+          HEADER_FIXED_CONTENT_WIDTH;
+
+        // ── セル幅 ──
+        let cellRequired: number;
+        if (cellWidthByCol) {
+          // Phase 2: 実 DOM の offsetWidth(padding / border / 字間 / 整形を内包。補正定数は加えません)。
+          cellRequired = cellWidthByCol[ci];
+        } else {
+          // フォールバック(DOM 不可): 表示テキストを canvas 計測 + 補正定数。
+          context.font = cellFont;
+          let maxCellTextWidth = 0;
+          const rows = candidateRow[ci];
+          for (let j = 0; j < rows.length; j += 1) {
+            const text = resolveCellDisplayText(rows[j], column);
+            if (text === '') {
+              continue;
+            }
+            const width = context.measureText(text).width;
+            if (width > maxCellTextWidth) {
+              maxCellTextWidth = width;
+            }
+          }
+          cellRequired =
+            maxCellTextWidth > 0
+              ? maxCellTextWidth + TEXT_SAFETY + CELL_HORIZONTAL_FRAME
+              : 0;
+        }
+
+        // ── clamp + no-op 判定 ──
+        const resolved = Math.ceil(
+          clamp(
+            Math.max(headerRequired, cellRequired),
+            column.minWidth ?? DEFAULT_MIN_WIDTH,
+            column.maxWidth ?? DEFAULT_MAX_WIDTH,
+          ),
+        );
+
+        if (currentWidths[column.key] !== resolved) {
+          nextWidths[column.key] = resolved;
         }
       }
-      const cellRequired =
-        maxCellTextWidth > 0
-          ? maxCellTextWidth + TEXT_SAFETY + CELL_HORIZONTAL_FRAME
-          : 0;
-
-      // ── clamp + no-op 判定 ──
-      const resolved = Math.ceil(
-        clamp(
-          Math.max(headerRequired, cellRequired),
-          column.minWidth ?? DEFAULT_MIN_WIDTH,
-          column.maxWidth ?? DEFAULT_MAX_WIDTH,
-        ),
-      );
-
-      if (currentWidths[column.key] !== resolved) {
-        nextWidths[column.key] = resolved;
+    } finally {
+      if (container && container.parentNode) {
+        container.parentNode.removeChild(container);
       }
     }
 

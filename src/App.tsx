@@ -208,6 +208,8 @@ const createInitialColumns = (
   // 追加(B3 デモ): false で追加列(列仮想化用の 24 本)を外し、基本列だけにします。
   //   固定列合計が利用可能幅を下回るため、flex の「余白を 2:1 で吸う」挙動が見えます。
   includeExtraColumns = true,
+  // 追加(②-S1 デモ): true で品名(partName)列に suppressAutoSize を付け、autoSize 対象外にします。
+  suppressNameAutoSize = false,
 ): GridColumn<DemoRow>[] => {
   const baseColumns: GridColumn<DemoRow>[] = [
     // 追加: text / number / select / set のフィルター型を設定します。
@@ -228,6 +230,8 @@ const createInitialColumns = (
       // 注記(12-A): text フィルター(部分一致 + 適用ボタン)の動作確認用に残します。
       filterType: 'text',
       pinned: "left" ,
+      // 追加(②-S1 デモ): suppressAutoSize の効き確認用。ON で autoSize 対象外(width 維持)。
+      suppressAutoSize: suppressNameAutoSize ? true : undefined,
     },
     { key: 'qty', title: '数量', width: 90, filterType: 'number', resizable: false, align: 'right' },
     // 追加(③デモ): 金額列。右寄せ + numberFormatter() で 3 桁区切り(既定は元の精度を保持)。
@@ -355,6 +359,20 @@ function App() {
       }),
     );
   };
+  // 追加(②-S1 デモ): 品名(partName)列の suppressAutoSize を切替えます(幅/固定/並びは保持)。
+  //   ON にして「すべての列の幅を自動調整」しても、品名だけ幅が変わらないことを確認できます。
+  const [suppressNameAutoSize, setSuppressNameAutoSize] = useState(false);
+  const toggleSuppressNameAutoSize = () => {
+    const next = !suppressNameAutoSize;
+    setSuppressNameAutoSize(next);
+    setColumns((prev) =>
+      prev.map((column) =>
+        column.key === 'partName'
+          ? { ...column, suppressAutoSize: next ? true : undefined }
+          : column,
+      ),
+    );
+  };
   // 追加(B3 デモ): 列セット切替。'full'=全 32 列(列仮想化デモ用)/ 'basic'=基本列のみ。
   //   全 32 列は固定列合計が利用可能幅を超えるため flex 列が min(50px)へ潰れます。
   //   基本列のみにすると余白ができ、flex ON で備考・状態が余白を 2:1 で吸う挙動を確認できます。
@@ -369,6 +387,7 @@ function App() {
         mode === 'server' ? 'text' : 'set',
         flexEnabled,
         nextSet === 'full',
+        suppressNameAutoSize,
       ),
     );
   };
@@ -394,6 +413,7 @@ function App() {
           willServer ? 'text' : 'set',
           flexEnabled,
           columnSet === 'full',
+          suppressNameAutoSize,
         ),
       );
     }
@@ -556,6 +576,13 @@ function App() {
             style={modeButtonStyle(columnSet === 'basic')}
           >
             {`列セット: ${columnSet === 'full' ? '全 32 列' : '基本列のみ(flex 確認用)'}`}
+          </button>
+          <button
+            type="button"
+            onClick={toggleSuppressNameAutoSize}
+            style={modeButtonStyle(suppressNameAutoSize)}
+          >
+            {`品名 autoSize: ${suppressNameAutoSize ? '抑制(固定)' : '許可'}`}
           </button>
         </div>
 

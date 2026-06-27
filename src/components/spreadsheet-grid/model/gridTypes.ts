@@ -281,6 +281,11 @@ export type GridColumn<T> = {
   //   (解決規則: column.resizable ?? enableColumnResize)。false でヘッダーのリサイズハンドルを
   //   描画しません(手動リサイズ不可)。
   resizable?: boolean;
+  // 追加(②-S1): true の列を autoSize(列メニュー / ヘッダー境界ダブルクリック / すべての列の自動調整)の
+  //   対象から除外し、consumer が指定した width を維持します(固定幅優先)。テキストで幅を測れない
+  //   カスタムUI列(renderCell)や、固定幅で見せたい列に付ける per-column の opt-in です。
+  //   未指定(undefined)は従来どおり autoSize 対象です(後方互換)。
+  suppressAutoSize?: boolean;
   // 追加(C1): true の列が auto-height 行の高さを駆動します(複数列指定時は max を採用)。
   //   グリッド props の autoHeight 有効時のみ効きます(無効時はこのフラグは無視)。
   autoHeight?: boolean;
