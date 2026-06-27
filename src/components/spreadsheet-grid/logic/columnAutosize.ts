@@ -58,14 +58,16 @@ import { getCellValue } from '../utils/permissions';
 const CELL_HORIZONTAL_FRAME = 21;
 // canvas 計測と DOM 描画の僅差(カーニング・サブピクセル丸め)の安全マージンです。
 const TEXT_SAFETY = 4;
-// ヘッダーセルのテキスト以外の固定幅です(GridHeaderRow の構造と同期):
-//   padding 左右 10+10 + Excel 列名バッジ minWidth 22 + バッジ↔本文 gap 8
-//   + 本文内 gap 6×3(タイトル↔ソート↔フィルター↔メニュー)
-//   + アクションボタン 24×3(ソート / フィルター / メニュー) + borderRight 1
-//   = 141
-// 注記: メニュー経由で autosize する時点で enableColumnMenu=true のため、
-//       「⋮」ボタン込みの 3 ボタンで見積もります。
-const HEADER_FIXED_CONTENT_WIDTH = 141;
+// ヘッダーセルのテキスト以外の固定幅です(現行の hover オーバーレイヘッダーと同期。styles.css):
+//   padding 0 6px(=12) + borderRight 1 + ラベル↔状態スロットの gap 4
+//   + 状態スロット(ソート矢印 + フィルター漏斗 + 内部 gap)~24
+//   = 41
+// 注記(変更前は 141): grip / 列メニュー(⋮)は .ssg-header-actions が absolute + opacity:0 で
+//   非hover では幅 0(hover でタイトル末尾を覆うオーバーレイ)になったため、ボタン 3 つぶん(~90)は
+//   reserve しません。旧 Excel 列名バッジ(22)も廃止済みで、padding / gap も旧 20 / 18 から現行
+//   12 / 4 へ縮んでいます。ソート / フィルターのインジケータ枠(~24)だけ残し、autoSize 後に
+//   並べ替え / フィルターしてもタイトルがほぼ欠けないようにしています。
+const HEADER_FIXED_CONTENT_WIDTH = 41;
 // ヘッダータイトルのフォントです(headerCellBaseStyle: fontSize 13 / fontWeight 600)。
 const HEADER_FONT_SIZE = 13;
 const HEADER_FONT_WEIGHT = 600;

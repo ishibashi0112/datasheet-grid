@@ -223,6 +223,12 @@ const EMPTY_SORT: GridSortState = [];
 // 追加(B3): flex 非適用時(未計測 / flex 列なし)に返す共有の空 map です。参照同一性で
 //   「flex 素通し(= effectiveColumnWidths は uiState.columnWidths そのまま)」を判定します。
 const EMPTY_FLEX_WIDTHS: Record<string, number> = {};
+// 追加(#2): リサイズハンドルのダブルクリック判定しきい値です。native dblclick は pointerdown の
+//   preventDefault でブラウザ差により抑止されることがあるため、時刻 + 位置で自前判定します
+//   (native と同じ「短時間 + 近接位置」の 2 条件)。位置チェックは「リサイズ直後の再ドラッグ」を
+//   ダブルクリックと誤検知しないために必要です(リサイズで境界が動けば位置差で弾けます)。
+const RESIZE_HANDLE_DOUBLE_CLICK_MS = 300;
+const RESIZE_HANDLE_DOUBLE_CLICK_DIST = 4;
 // query(filter/sort)変更をサーバへ送る前の debounce(ms)です。入力欄の即時反映とは別系統で、
 //   キーストロークごとの再フェッチ(block 0 取り直し)を合体します。フック内の 120ms(レンジ要求
 //   debounce)とは役割が異なり併存します。
@@ -376,6 +382,14 @@ export function SpreadsheetGrid<T extends object>({
   //           幅書き戻しが「現在レンダリングされている幅(= flex 算出幅)」を拾えるようにするためです。
   //           実際の代入は effectiveColumnWidths を算出した後(下の flex 算出ブロック末尾)で行います。
   const columnWidthsRef = useRef(uiState.columnWidths);
+
+  // 追加(#2): リサイズハンドルの直近 pointerdown(ダブルクリック autoSize 判定用)。
+  //   key / 時刻 / clientX を保持し、次の pointerdown が短時間・近接位置なら「内容幅へ autoSize」。
+  const lastResizeHandleDownRef = useRef<{
+    key: string;
+    time: number;
+    x: number;
+  } | null>(null);
 
   // 追加(13-B2-2): 列リセット用の「初期 column defs スナップショット」です。
   // 設計メモ(スナップショット保持の方針 = (A) 内部 ref / 自己完結):
@@ -1806,6 +1820,30 @@ export function SpreadsheetGrid<T extends object>({
     (column: GridColumn<T>, event: PointerEvent<HTMLDivElement>) => {
       event.preventDefault();
       event.stopPropagation();
+
+      // 追加(#2): リサイズハンドルのダブルクリックで、その列を内容幅へ autoSize します
+      //   (AG Grid の境界ダブルクリック相当)。native dblclick は上の preventDefault で
+      //   ブラウザにより抑止され得るため、直近 pointerdown との時刻差(<300ms)+ 位置差(<4px)で
+      //   自前判定します。確定時はリサイズを開始せず autoSize に振り替えます。位置差の条件により
+      //   「リサイズで境界を動かした直後の再ドラッグ」は誤検知しません(境界が動けば位置差で弾く)。
+      const now = event.timeStamp;
+      const last = lastResizeHandleDownRef.current;
+      if (
+        last &&
+        last.key === column.key &&
+        now - last.time < RESIZE_HANDLE_DOUBLE_CLICK_MS &&
+        Math.abs(event.clientX - last.x) < RESIZE_HANDLE_DOUBLE_CLICK_DIST
+      ) {
+        lastResizeHandleDownRef.current = null;
+        void runAutosize([column]);
+        return;
+      }
+      lastResizeHandleDownRef.current = {
+        key: column.key,
+        time: now,
+        x: event.clientX,
+      };
+
       dispatch(
         gridActions.startColumnResize(
           column.key,
@@ -1816,7 +1854,7 @@ export function SpreadsheetGrid<T extends object>({
         ),
       );
     },
-    [dispatch],
+    [dispatch, runAutosize],
   );
 
   // ── column pinning(13-A) ─────────────────────────────
