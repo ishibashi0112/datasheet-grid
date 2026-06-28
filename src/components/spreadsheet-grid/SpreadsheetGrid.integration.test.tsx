@@ -1,14 +1,16 @@
 // SpreadsheetGrid を実際に render し、命令的ハンドル(getState / applyState)と onStateChange の
 //   「配線」を実行検証する結合テストです。純ロジック(logic/gridState.test.ts)では到達できない以下を、
 //   実コンポーネントを通して確認します:
-//   - getState がライブの uiState を読んでスナップショットを返す。
+//   - getState がライブの uiState / columns を読んでスナップショット(v2: 列メタ含む)を返す。
 //   - applyState が dispatch → reducer → 再レンダーを経て getState に反映される(往復)。
-//   - onStateChange effect が「初回マウント非発火 / 状態変化で発火 / 同値では再発火しない」を満たす。
+//   - applyState の列メタ(順序 / 可視 / ピン)が onColumnsChange 経由で controlled に反映される(往復)。
+//   - onStateChange effect が「初回マウント非発火 / 状態変化(列メタ含む)で発火 / 同値では再発火しない」。
 //   renderHook 系テストと同じく DOM を要するため、本ファイルのみ jsdom で回します。
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeAll, afterEach } from 'vitest';
 import { render, cleanup, act } from '@testing-library/react';
-import { createRef } from 'react';
+import { createRef, useState } from 'react';
+import type { Ref } from 'react';
 
 import { SpreadsheetGrid } from './SpreadsheetGrid';
 import { GRID_STATE_VERSION } from './logic/gridState';
@@ -66,6 +68,30 @@ const appliedState: GridState = {
   sort: [{ columnKey: 'qty', direction: 'desc' }],
 };
 
+// 追加(v2): controlled-columns ハーネスです。列メタ(可視 / 順序 / ピン)は consumer 所有のため、
+//   applyState の列メタ反映は onColumnsChange を通ります。ここで columns を useState で保持して
+//   onColumnsChange へ繋ぎ、applyState → onColumnsChange → 再レンダー → getState の往復を検証します。
+function ControlledGrid({
+  gridRef,
+  initialColumns,
+  onStateChange,
+}: {
+  gridRef: Ref<SpreadsheetGridHandle<Row>>;
+  initialColumns: GridColumn<Row>[];
+  onStateChange?: (state: GridState) => void;
+}) {
+  const [cols, setCols] = useState(initialColumns);
+  return (
+    <SpreadsheetGrid
+      ref={gridRef}
+      columns={cols}
+      onColumnsChange={setCols}
+      rows={rows}
+      onStateChange={onStateChange}
+    />
+  );
+}
+
 describe('SpreadsheetGrid 状態 API(結合)', () => {
   it('getState() が初期スナップショットを返す', () => {
     const ref = createRef<SpreadsheetGridHandle<Row>>();
@@ -78,6 +104,12 @@ describe('SpreadsheetGrid 状態 API(結合)', () => {
     expect(state?.columnWidths).toEqual({ id: 80, name: 160, qty: 100 });
     expect(state?.filters).toEqual({ globalText: '', columnFilters: {} });
     expect(state?.sort).toEqual([]);
+    // 追加(v2): 列メタは columns prop から配列順で抽出されます(visible/pinned 未指定は省略)。
+    expect(state?.columns).toEqual([
+      { key: 'id' },
+      { key: 'name' },
+      { key: 'qty' },
+    ]);
   });
 
   it('applyState() が reducer 経由で反映され getState() に出る', () => {
@@ -137,6 +169,9 @@ describe('SpreadsheetGrid 状態 API(結合)', () => {
         columnFilters: { name: { kind: 'text', value: 'be' } },
       },
       sort: [{ columnKey: 'qty', direction: 'desc' }],
+      // 追加(v2): この applyState は列メタ非適用(onColumnsChange 未指定)なので columns prop は不変。
+      //   snapshot には現 columns の抽出が載ります。
+      columns: [{ key: 'id' }, { key: 'name' }, { key: 'qty' }],
     });
   });
 
@@ -164,5 +199,89 @@ describe('SpreadsheetGrid 状態 API(結合)', () => {
       ref.current?.applyState(appliedState);
     });
     expect(onStateChange).toHaveBeenCalledTimes(1);
+  });
+
+  it('追加(v2): applyState の列メタ(順序 / 可視 / ピン)が onColumnsChange 経由で反映され getState に出る', () => {
+    const ref = createRef<SpreadsheetGridHandle<Row>>();
+    render(<ControlledGrid gridRef={ref} initialColumns={columns} />);
+
+    const v2State: GridState = {
+      version: GRID_STATE_VERSION,
+      columnWidths: {},
+      filters: { globalText: '', columnFilters: {} },
+      sort: [],
+      // qty を left 固定 + 先頭、id を非表示、name は既定。
+      columns: [
+        { key: 'qty', pinned: 'left' },
+        { key: 'id', visible: false },
+        { key: 'name' },
+      ],
+    };
+
+    act(() => {
+      ref.current?.applyState(v2State);
+    });
+
+    const after = ref.current?.getState();
+    // reorderColumnsByPane で qty(left)が先頭、続いて center の id, name。visible/pinned も復元。
+    expect(after?.columns).toEqual([
+      { key: 'qty', pinned: 'left' },
+      { key: 'id', visible: false },
+      { key: 'name' },
+    ]);
+  });
+
+  it('追加(v2): onColumnsChange 未指定なら applyState の列メタはスキップ(v1 と同一・列順不変)', () => {
+    const ref = createRef<SpreadsheetGridHandle<Row>>();
+    // onColumnsChange を渡さない(controlled でない)素の SpreadsheetGrid。
+    render(<SpreadsheetGrid ref={ref} columns={columns} rows={rows} />);
+
+    act(() => {
+      ref.current?.applyState({
+        version: GRID_STATE_VERSION,
+        columnWidths: {},
+        filters: { globalText: '', columnFilters: {} },
+        sort: [],
+        columns: [{ key: 'qty' }, { key: 'name' }, { key: 'id' }], // reorder 指示
+      });
+    });
+
+    // onColumnsChange が無いので列メタは適用されず、列順は初期のまま。
+    const after = ref.current?.getState();
+    expect(after?.columns).toEqual([
+      { key: 'id' },
+      { key: 'name' },
+      { key: 'qty' },
+    ]);
+  });
+
+  it('追加(v2): onStateChange は列メタ変化(applyState の reorder)でも発火し、最新の列メタを渡す', () => {
+    const onStateChange = vi.fn();
+    const ref = createRef<SpreadsheetGridHandle<Row>>();
+    render(
+      <ControlledGrid
+        gridRef={ref}
+        initialColumns={columns}
+        onStateChange={onStateChange}
+      />,
+    );
+
+    act(() => {
+      ref.current?.applyState({
+        version: GRID_STATE_VERSION,
+        columnWidths: {},
+        filters: { globalText: '', columnFilters: {} },
+        sort: [],
+        columns: [{ key: 'qty' }, { key: 'name' }, { key: 'id' }], // reorder
+      });
+    });
+
+    expect(onStateChange).toHaveBeenCalled();
+    const last = onStateChange.mock.calls.at(-1)?.[0] as GridState;
+    expect(last.columns).toEqual([
+      { key: 'qty' },
+      { key: 'name' },
+      { key: 'id' },
+    ]);
   });
 });

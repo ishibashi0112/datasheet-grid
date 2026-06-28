@@ -468,17 +468,38 @@ export type CsvExportOptions = {
   bom?: boolean;
 };
 
+// 追加(state v2): 列メタのシリアライズ単位です(getState / applyState の GridState.columns 要素)。
+//   grid UI が変更しうる列メタ(可視 / 順序 / ピン)だけを持ちます。
+//   - key     : 対象列の識別子(GridColumn.key)。applyState はこの key で現 columns へマージします。
+//   - visible : 列の表示 / 非表示(Column Chooser)。未指定=表示(既定)。
+//   - pinned  : 列固定(列メニュー / ヘッダー D&D)。未指定=非固定(center)。
+//   順序は「配列順」で表現します(GridState.columns の並び = 列順)。
+//   flex / width は意図的に持ちません:
+//   - flex は grid UI が変更しないため(consumer 宣言値が常に正)、保存すると古い値が再読込で
+//     上書きしてしまう(stale-override)だけで利得がありません。
+//   - width(手動リサイズ幅)は GridState.columnWidths で既にカバー済みです(二重表現の回避)。
+export type GridColumnState = {
+  key: string;
+  visible?: boolean;
+  pinned?: GridColumnPinned;
+};
+
 // 追加(state #1): 列状態のシリアライズ可能スナップショットです(getState / applyState の入出力)。
 //   永続化(localStorage 等)は consumer に委ね、グリッドは get/apply + version だけを提供します。
-//   対象は reducer 内の永続スライス(手動リサイズ幅 / フィルター / ソート)のみで、列の可視/順序/
-//   ピン/flex は columns prop 側(consumer 所有)のため含めません。activeCell / selection などの
-//   一時 UI も含めません。columnWidths は手動リサイズした列のみを含みます(flex 列はエントリを持たない
-//   規約)。version は将来の形式変更時に applyState 側で旧バージョンを移行するための番号です。
+//   対象は reducer 内の永続スライス(手動リサイズ幅 / フィルター / ソート)と、列メタ(v2: 可視 / 順序 /
+//   ピン)です。activeCell / selection などの一時 UI は含めません。columnWidths は手動リサイズした列
+//   のみを含みます(flex 列はエントリを持たない規約)。columns は列メタで、配列順 = 列順です。
+//   version は形式変更時に applyState 側で旧バージョンを移行するための番号です。
+//   - v1: columns フィールド無し。applyState では columns:undefined 扱いで列メタを触りません(後方互換)。
+//   - v2: columns を含めます。column 順序 / visible / pinned を get/apply します。
 export type GridState = {
   version: number;
   columnWidths: Record<string, number>;
   filters: GridFilterState;
   sort: GridSortState;
+  // 追加(state v2): 列メタ(可視 / 順序 / ピン)。配列順 = 列順。undefined = 列メタ未適用(v1 後方互換)。
+  //   applyState は onColumnsChange が指定されているときのみ反映します(getState は read-only で常に出力)。
+  columns?: GridColumnState[];
 };
 
 // 追加(imperative API #1): ref ハンドル(SpreadsheetGridProps.ref で受け取る命令的 API)です。
@@ -533,12 +554,16 @@ export type SpreadsheetGridHandle<T> = {
   downloadCsv: (filename?: string, options?: CsvExportOptions) => void;
 
   // ── 状態の保存 / 復元 ──
-  // 永続化対象(手動リサイズ幅 / フィルター / ソート)のスナップショット(GridState)を返します
-  //   (純粋・副作用なし)。返り値は新規オブジェクト/配列で、そのまま JSON.stringify して保存できます。
+  // 永続化対象(手動リサイズ幅 / フィルター / ソート / 列メタ=可視・順序・ピン)のスナップショット
+  //   (GridState v2)を返します(純粋・副作用なし・read-only)。列メタは columns prop から配列順で抽出
+  //   します。返り値は新規オブジェクト/配列で、そのまま JSON.stringify して保存できます。
   getState: () => GridState;
   // getState のスナップショット(または互換な部分形)を適用します。外部入力は内部で防御的に正規化され、
   //   幅 reset / フィルター一括 / ソート set の 3 dispatch(1 イベント = 1 再レンダー)で反映します。
   //   clientSide / serverSide 双方に効きます(SSRM では filters/sort 変化がクエリへ載り再取得)。
+  //   列メタ(columns)は onColumnsChange が指定されているときのみ、現 columns へ key ベースでマージして
+  //   onColumnsChange 経由で反映します(未指定時はスキップ=幅/フィルター/ソートのみ。v1 完全互換)。
+  //   v1 保存値(columns フィールド無し)も読めます(列メタは触りません)。
   applyState: (state: GridState) => void;
 };
 
@@ -547,12 +572,13 @@ export type SpreadsheetGridProps<T> = {
   //   forwardRef は使いません(React 19 で deprecated 予定のため)。状態は controlled のまま、prop で
   //   表現できない一発操作(スクロール/選択操作/CSV)だけをハンドルで提供します。
   ref?: Ref<SpreadsheetGridHandle<T>>;
-  // 追加(state #2): 永続スライス(手動リサイズ幅 / フィルター / ソート)が実際に変化したときに、
-  //   最新の GridState を渡して呼ばれる通知口です。consumer はこれを保存タイミングの signal にできます
-  //   (例: localStorage への自動保存)。発火規約:
+  // 追加(state #2): 永続スライス(手動リサイズ幅 / フィルター / ソート / 列メタ=可視・順序・ピン)が
+  //   実際に変化したときに、最新の GridState(v2)を渡して呼ばれる通知口です。consumer はこれを保存
+  //   タイミングの signal にできます(例: localStorage への自動保存)。発火規約:
   //   - 列リサイズ / 選択のドラッグ中は確定まで保留し、確定後に 1 回だけ評価します(毎フレーム発火しない)。
   //   - 初回マウントでは発火しません(初期状態は通知対象外)。
-  //   - 前回通知と構造等価(永続スライスが不変)なら発火しません(activeCell 等の一時 UI では発火しない)。
+  //   - 前回通知と構造等価(永続スライス + 列メタが不変)なら発火しません(activeCell 等の一時 UI では
+  //     発火しない)。列の可視 / 順序 / ピン変更でも発火します(columns prop 変化を監視)。
   //   - applyState による反映も「状態変化」として発火します(復元直後に同値を 1 回保存する可能性あり)。
   //   毎レンダーで新しいインライン関数を渡しても問題ありません(latest-ref 経由で読むため再評価しません)。
   onStateChange?: (state: GridState) => void;

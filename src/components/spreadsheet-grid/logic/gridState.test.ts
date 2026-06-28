@@ -7,9 +7,13 @@ import {
   migrateGridState,
   isSameGridState,
   decideStateChangeEmit,
+  extractColumnState,
+  applyColumnState,
 } from './gridState';
 import type {
   ColumnFilterValue,
+  GridColumn,
+  GridColumnState,
   GridFilterState,
   GridSortState,
   ParsedNumberFilter,
@@ -126,12 +130,28 @@ describe('buildGridState', () => {
   });
 
   it('version を明示指定できる', () => {
-    const state = buildGridState({}, emptyFilters(), [], 7);
+    const state = buildGridState({}, emptyFilters(), [], [], 7);
     expect(state.version).toBe(7);
   });
-});
 
-describe('migrateGridState', () => {
+  it('追加(v2): columns(列メタ)を複製して含める', () => {
+    const columns: GridColumnState[] = [
+      { key: 'a', visible: false },
+      { key: 'b', pinned: 'left' },
+    ];
+    const state = buildGridState({}, emptyFilters(), [], columns);
+    expect(state.columns).toEqual(columns);
+    expect(state.columns).not.toBe(columns);
+    expect(state.columns?.[0]).not.toBe(columns[0]);
+    // 返り値の mutate は元へ波及しない。
+    state.columns?.push({ key: 'c' });
+    expect(columns).toHaveLength(2);
+  });
+
+  it('追加(v2): columns 省略時は空配列', () => {
+    const state = buildGridState({}, emptyFilters(), []);
+    expect(state.columns).toEqual([]);
+  });
   it('buildGridState の出力を round-trip できる', () => {
     const filters: GridFilterState = {
       globalText: 'q',
@@ -229,6 +249,60 @@ describe('migrateGridState', () => {
     expect(migrated.filters.columnFilters.s).toEqual({ kind: 'set', values: ['x'] });
     expect(migrated.sort).toEqual([{ columnKey: 'a', direction: 'asc' }]);
   });
+
+  it('追加(v2): columns 無し(v1 保存値)は undefined になる(後方互換)', () => {
+    const migrated = migrateGridState({
+      version: 1,
+      columnWidths: { a: 100 },
+      filters: { globalText: '', columnFilters: {} },
+      sort: [],
+    });
+    expect(migrated.columns).toBeUndefined();
+  });
+
+  it('追加(v2): columns を正規化する(key 必須・visible は boolean のみ・pinned は left/right のみ)', () => {
+    const migrated = migrateGridState({
+      version: 2,
+      columnWidths: {},
+      filters: { globalText: '', columnFilters: {} },
+      sort: [],
+      columns: [
+        { key: 'a', visible: false, pinned: 'left' },
+        { key: 'b', visible: 'yes', pinned: 'middle' }, // visible/pinned 不正 → 当該フィールドは省略
+        { key: 'c' },
+        { visible: true }, // key 無し → drop
+        'broken', // オブジェクトでない → drop
+      ],
+    });
+    expect(migrated.columns).toEqual([
+      { key: 'a', visible: false, pinned: 'left' },
+      { key: 'b' },
+      { key: 'c' },
+    ]);
+  });
+
+  it('追加(v2): columns が配列でない(string 等)は undefined・空配列 / 全無効は空配列を保持', () => {
+    // 配列でない → undefined(列メタ未適用)。
+    expect(
+      migrateGridState({ version: 2, columns: 'x' }).columns,
+    ).toBeUndefined();
+    // 空配列 → 空配列(present だが列メタ無し。buildGridState 出力との往復一致のため潰さない)。
+    expect(migrateGridState({ version: 2, columns: [] }).columns).toEqual([]);
+    // 全無効エントリ → フィルター後の空配列(配列ではあるので [] を返す)。
+    expect(
+      migrateGridState({ version: 2, columns: [{ noKey: 1 }, 42] }).columns,
+    ).toEqual([]);
+  });
+
+  it('追加(v2): columns の返り値は入力と参照を共有しない', () => {
+    const input = {
+      version: 2,
+      columns: [{ key: 'a', visible: false }],
+    };
+    const migrated = migrateGridState(input);
+    input.columns[0].visible = true;
+    expect(migrated.columns).toEqual([{ key: 'a', visible: false }]);
+  });
 });
 // テスト用: GridState を手早く組み立てるヘルパ(columnWidths / columnFilters / sort / globalText)。
 const st = (
@@ -244,8 +318,8 @@ describe('isSameGridState', () => {
   });
 
   it('version 違いは false', () => {
-    const a = buildGridState({}, emptyFilters(), [], 1);
-    const b = buildGridState({}, emptyFilters(), [], 2);
+    const a = buildGridState({}, emptyFilters(), [], [], 1);
+    const b = buildGridState({}, emptyFilters(), [], [], 2);
     expect(isSameGridState(a, b)).toBe(false);
   });
 
@@ -402,6 +476,52 @@ describe('isSameGridState', () => {
       ),
     ).toBe(false);
   });
+
+  it('追加(v2): columns 順序違いは false', () => {
+    const a = buildGridState({}, emptyFilters(), [], [{ key: 'a' }, { key: 'b' }]);
+    const b = buildGridState({}, emptyFilters(), [], [{ key: 'b' }, { key: 'a' }]);
+    expect(isSameGridState(a, b)).toBe(false);
+  });
+
+  it('追加(v2): columns の visible / pinned 違いは false', () => {
+    const base = (cols: GridColumnState[]) =>
+      buildGridState({}, emptyFilters(), [], cols);
+    expect(
+      isSameGridState(
+        base([{ key: 'a', visible: false }]),
+        base([{ key: 'a', visible: true }]),
+      ),
+    ).toBe(false);
+    expect(
+      isSameGridState(
+        base([{ key: 'a', pinned: 'left' }]),
+        base([{ key: 'a', pinned: 'right' }]),
+      ),
+    ).toBe(false);
+  });
+
+  it('追加(v2): columns 同一(順序 + visible + pinned 一致)は別配列でも true', () => {
+    const cols: GridColumnState[] = [
+      { key: 'a', visible: false },
+      { key: 'b', pinned: 'left' },
+    ];
+    const a = buildGridState({}, emptyFilters(), [], cols.map((c) => ({ ...c })));
+    const b = buildGridState({}, emptyFilters(), [], cols.map((c) => ({ ...c })));
+    expect(isSameGridState(a, b)).toBe(true);
+  });
+
+  it('追加(v2): columns 未指定(undefined・v1 migrate)と空配列(buildGridState)は不等', () => {
+    const v1 = migrateGridState({
+      version: 1,
+      columnWidths: {},
+      filters: { globalText: '', columnFilters: {} },
+      sort: [],
+    });
+    const built = buildGridState({}, emptyFilters(), []); // columns: []
+    expect(v1.columns).toBeUndefined();
+    expect(built.columns).toEqual([]);
+    expect(isSameGridState(v1, built)).toBe(false);
+  });
 });
 
 describe('decideStateChangeEmit', () => {
@@ -437,5 +557,124 @@ describe('decideStateChangeEmit', () => {
     const d = decideStateChangeEmit(A, B, false);
     expect(d.emit).toBe(true);
     expect(d.nextLast).toBe(B);
+  });
+});
+
+// テスト用: GridColumn を手早く生成します(width 既定 100。visible / pinned / flex / 非シリアライズ
+//   項目を opts で上書き。key / width は確定値で常に上書きします)。
+type TestRow = { id: number };
+const col = (
+  key: string,
+  opts: Partial<GridColumn<TestRow>> = {},
+): GridColumn<TestRow> => ({
+  ...opts,
+  key,
+  width: opts.width ?? 100,
+});
+
+describe('extractColumnState (追加 v2)', () => {
+  it('key / visible / pinned を配列順で抽出する', () => {
+    const result = extractColumnState([
+      col('a', { visible: false }),
+      col('b', { pinned: 'left' }),
+      col('c'),
+    ]);
+    expect(result).toEqual([
+      { key: 'a', visible: false },
+      { key: 'b', pinned: 'left' },
+      { key: 'c' },
+    ]);
+  });
+
+  it('visible / pinned 未指定のフィールドは省略する(JSON 往復後の形と一致)', () => {
+    const [entry] = extractColumnState([col('a')]);
+    expect(entry).toEqual({ key: 'a' });
+    expect('visible' in entry).toBe(false);
+    expect('pinned' in entry).toBe(false);
+  });
+
+  it('flex / width は含めない', () => {
+    const [entry] = extractColumnState([col('a', { flex: 2, width: 250 })]);
+    expect(entry).toEqual({ key: 'a' });
+  });
+});
+
+describe('applyColumnState (追加 v2)', () => {
+  it('保存 key 順に並べ替える(reorder の復元)', () => {
+    const current = [col('a'), col('b'), col('c')];
+    const result = applyColumnState(
+      current,
+      [{ key: 'c' }, { key: 'a' }, { key: 'b' }],
+      {},
+    );
+    expect(result.map((c) => c.key)).toEqual(['c', 'a', 'b']);
+  });
+
+  it('visible / pinned を適用し、pane 連結正規化する(left→center→right)', () => {
+    const current = [col('a'), col('b'), col('c')];
+    const result = applyColumnState(
+      current,
+      [
+        { key: 'a', pinned: 'right' },
+        { key: 'b' },
+        { key: 'c', pinned: 'left' },
+      ],
+      {},
+    );
+    // reorderColumnsByPane: left=[c], center=[b], right=[a]
+    expect(result.map((c) => c.key)).toEqual(['c', 'b', 'a']);
+    expect(result.find((c) => c.key === 'a')?.pinned).toBe('right');
+    expect(result.find((c) => c.key === 'c')?.pinned).toBe('left');
+    expect(result.find((c) => c.key === 'b')?.pinned).toBeUndefined();
+  });
+
+  it('visible=undefined / pinned=undefined も反映する(既定へ戻す)', () => {
+    const current = [col('a', { visible: false, pinned: 'left' })];
+    const result = applyColumnState(current, [{ key: 'a' }], {});
+    expect(result[0].visible).toBeUndefined();
+    expect(result[0].pinned).toBeUndefined();
+  });
+
+  it('savedWidths を column.width へ焼き込む(非 flex)', () => {
+    const current = [col('a', { width: 100 }), col('b', { width: 200 })];
+    const result = applyColumnState(current, [{ key: 'a' }, { key: 'b' }], {
+      a: 150,
+    });
+    expect(result.find((c) => c.key === 'a')?.width).toBe(150);
+    expect(result.find((c) => c.key === 'b')?.width).toBe(200);
+  });
+
+  it('保存にあって現 columns に無い key は drop', () => {
+    const current = [col('a'), col('b')];
+    const result = applyColumnState(
+      current,
+      [{ key: 'a' }, { key: 'x' }, { key: 'b' }],
+      {},
+    );
+    expect(result.map((c) => c.key)).toEqual(['a', 'b']);
+  });
+
+  it('現 columns にあって保存に無い key は末尾へ追加(相対順を保持)', () => {
+    const current = [col('a'), col('b'), col('c')];
+    const result = applyColumnState(current, [{ key: 'c' }, { key: 'a' }], {});
+    // saved 順 [c, a] の後ろへ未保存の b を追加。
+    expect(result.map((c) => c.key)).toEqual(['c', 'a', 'b']);
+  });
+
+  it('render fn / title / flex など非シリアライズ項目を引き継ぐ', () => {
+    const renderCell = () => null;
+    const current = [col('a', { title: 'A', flex: 3, renderCell, visible: true })];
+    const result = applyColumnState(current, [{ key: 'a', visible: false }], {});
+    expect(result[0].title).toBe('A');
+    expect(result[0].flex).toBe(3);
+    expect(result[0].renderCell).toBe(renderCell);
+    expect(result[0].visible).toBe(false); // 保存値で上書き
+  });
+
+  it('変更不要な列(meta 無し + 保存幅無し)は要素参照を保持する', () => {
+    const a = col('a');
+    const result = applyColumnState([a], [], {});
+    // 保存メタ空 → a は新規列扱いで末尾追加。meta 無し + 幅無しなので同一要素参照。
+    expect(result[0]).toBe(a);
   });
 });

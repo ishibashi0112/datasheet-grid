@@ -349,8 +349,9 @@ const modeButtonStyle = (active: boolean, disabled = false): CSSProperties => ({
 });
 
 // 追加(state #3 デモ): onStateChange / applyState の永続デモで使う localStorage キーです。
-//   ページ再読込で「手動リサイズ幅 / フィルター / ソート」が復元されることを示します
-//   (列の可視/順序/ピン/flex は GridState の対象外=本デモの永続対象外)。
+//   ページ再読込で「手動リサイズ幅 / フィルター / ソート / 列メタ(可視・順序・ピン)」が復元される
+//   ことを示します(GridState v2)。flex / 列幅以外の width は GridState の対象外です
+//   (flex は consumer 宣言値が常に正・width は columnWidths でカバー)。
 const GRID_STATE_STORAGE_KEY = 'ssg-demo-grid-state';
 
 function App() {
@@ -398,14 +399,19 @@ function App() {
   };
 
   // 追加(state #3 デモ): 保存状態をクリアして現在のグリッドも初期状態へ戻します。
+  //   列メタ(可視 / 順序 / ピン)は consumer 所有のため、columns を初期定義へ戻すことでリセットします
+  //   (setColumns)。reducer スライス(手動リサイズ幅 / フィルター / ソート)は applyState の空状態で
+  //   リセットします。列メタは setColumns で直接戻すため、この applyState には columns を含めません
+  //   (= 列メタ非適用。version は v2)。
   const clearSavedGridState = () => {
     try {
       localStorage.removeItem(GRID_STATE_STORAGE_KEY);
     } catch {
       // 無視。
     }
+    setColumns(createInitialColumns());
     gridRef.current?.applyState({
-      version: 1,
+      version: 2,
       columnWidths: {},
       filters: { globalText: '', columnFilters: {} },
       sort: [],
@@ -770,8 +776,9 @@ function App() {
           >
             表示中を CSV 保存
           </button>
-          {/* 追加(state #3 デモ): onStateChange/applyState の永続デモ。列幅変更・フィルター・ソートは
-              自動保存され、ページ再読込で復元されます。下のボタンで保存をクリア(初期状態へ)できます。 */}
+          {/* 追加(state #3 デモ): onStateChange/applyState の永続デモ。列幅変更・フィルター・ソート・
+              列メタ(可視/順序/ピン)が自動保存され、ページ再読込で復元されます。下のボタンで保存を
+              クリア(初期状態へ)できます。 */}
           <button
             type="button"
             onClick={clearSavedGridState}

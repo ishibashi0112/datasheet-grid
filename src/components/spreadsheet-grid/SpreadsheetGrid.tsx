@@ -111,10 +111,13 @@ import type { RowMetrics } from './logic/verticalGeometry';
 import { serializeRowsToCsv } from './logic/exportCsv';
 // 追加(state #1): 列状態 get/apply の純ロジックです(snapshot 組み立て / 外部入力の正規化)。
 // 追加(state #2): onStateChange の発火可否判定(decideStateChangeEmit)も同モジュールから読みます。
+// 追加(state v2): 列メタ(可視 / 順序 / ピン)の抽出 / 適用(extractColumnState / applyColumnState)。
 import {
   buildGridState,
   migrateGridState,
   decideStateChangeEmit,
+  extractColumnState,
+  applyColumnState,
 } from './logic/gridState';
 import {
   computeVerticalScrollTarget,
@@ -3126,6 +3129,10 @@ export function SpreadsheetGrid<T extends object>({
     rowMetrics: RowMetrics;
     paneLayout: GridPaneLayout<T>;
     orderedColumns: GridColumn<T>[];
+    // 追加(state v2): getState の列メタ抽出 / applyState の列メタ適用に使う生 columns(consumer 宣言順)
+    //   と onColumnsChange(controlled 反映口)です。未指定時 applyState は列メタをスキップします。
+    columns: GridColumn<T>[];
+    onColumnsChange: ((nextColumns: GridColumn<T>[]) => void) | undefined;
     uiState: GridUiState;
     headerHeight: number;
     verticalScaleFactor: number;
@@ -3143,6 +3150,8 @@ export function SpreadsheetGrid<T extends object>({
     rowMetrics,
     paneLayout,
     orderedColumns,
+    columns,
+    onColumnsChange,
     uiState,
     headerHeight,
     verticalScaleFactor,
@@ -3435,14 +3444,21 @@ export function SpreadsheetGrid<T extends object>({
         getState: () => {
           const s = apiStateRef.current;
           if (!s) {
-            // ref 未確定時(通常起こりません)は現行スキーマの空状態を返します。
-            return buildGridState({}, { globalText: '', columnFilters: {} }, []);
+            // ref 未確定時(通常起こりません)は現行スキーマの空状態を返します(列メタは空配列)。
+            return buildGridState(
+              {},
+              { globalText: '', columnFilters: {} },
+              [],
+              [],
+            );
           }
-          // 永続スライス(手動リサイズ幅 / フィルター / ソート)を純粋にスナップショットします。
+          // 永続スライス(手動リサイズ幅 / フィルター / ソート)+ 列メタ(可視 / 順序 / ピン)を純粋に
+          //   スナップショットします。列メタは columns prop から配列順で抽出します(read-only)。
           return buildGridState(
             s.uiState.columnWidths,
             s.uiState.filters,
             s.uiState.sort,
+            extractColumnState(s.columns),
           );
         },
 
@@ -3451,8 +3467,23 @@ export function SpreadsheetGrid<T extends object>({
           if (!s) {
             return;
           }
-          // 外部入力(deserialize 結果)を現行スキーマへ防御的に正規化してから dispatch します。
+          // 外部入力(deserialize 結果)を現行スキーマへ防御的に正規化してから反映します。
           const normalized = migrateGridState(state);
+          // 列メタ(v2): onColumnsChange があり、かつ正規化後に columns があるときだけ反映します
+          //   (onColumnsChange 未指定 or v1 保存値=列メタ無しならスキップ。この場合は下の 3 dispatch
+          //   のみで v1 と完全同一の経路です)。現 columns へ key ベースでマージし(順序復元 +
+          //   visible/pinned 適用 + 手動リサイズ幅の column.width 焼き込み)、onColumnsChange で
+          //   controlled に返します。焼き込みは、columns 変化で走る列同期 effect が column.width 起点で
+          //   columnWidths を再構築する際に手動リサイズ幅を保全するためです(pin/visible/reorder と同型)。
+          if (s.onColumnsChange && normalized.columns) {
+            s.onColumnsChange(
+              applyColumnState(
+                s.columns,
+                normalized.columns,
+                normalized.columnWidths,
+              ),
+            );
+          }
           // 幅 reset / フィルター一括 / ソート set の 3 dispatch。同一イベント内で自動バッチされ
           //   再レンダーは 1 回。SSRM では filters/sort 変化が liveServerSideQuery へ載り再取得されます。
           //   幅は resetColumnWidths(フル置換)で、保存外(= flex 列など)のキーを残しません。
@@ -3465,21 +3496,31 @@ export function SpreadsheetGrid<T extends object>({
     [],
   );
 
-  // ── onStateChange(永続スライス変化の通知)──────────────
+  // ── onStateChange(永続スライス + 列メタ変化の通知)──────
   // 設計: 純ロジック decideStateChangeEmit に判定を委ね、ここは「現在 snapshot を作って判定 → 必要なら
-  //   通知 → lastEmitted を更新」の薄い配線に留めます。effect は永続 3 スライス + dragState の参照変化
-  //   でのみ走ります(activeCell / selection 等の一時 UI 変化では columnWidths/filters/sort/dragState の
-  //   参照が変わらないため走りません)。判定詳細(ドラッグ中保留 / 初回非発火 / 同値非発火)は純ロジック側。
+  //   通知 → lastEmitted を更新」の薄い配線に留めます。effect は永続 3 スライス + 列メタ(columns)+
+  //   dragState の参照変化でのみ走ります(activeCell / selection 等の一時 UI 変化では監視対象の参照が
+  //   変わらないため走りません)。判定詳細(ドラッグ中保留 / 初回非発火 / 同値非発火)は純ロジック側。
+  //   列メタ(可視 / 順序 / ピン)は columns prop なので、変化検出のため columns を監視 + snapshot に含め、
+  //   isSameGridState の列メタ比較で no-op 参照変化(同値の新配列)を握りつぶします。
   //   onStateChange は latest-ref 経由で読み、毎レンダーで新しいインライン関数が渡されても effect を
-  //   再実行しません(deps から外します)。
+  //   再実行しません(deps から外します)。先頭ガードで onStateChange 未使用時は snapshot+比較すら
+  //   行いません(計算ゼロ)。未使用時は lastEmitted が null のままですが、後から付いた初回は prev=null で
+  //   非発火→baseline 記録となり整合的です。
   const onStateChangeRef = useRef(onStateChange);
   onStateChangeRef.current = onStateChange;
   const lastEmittedStateRef = useRef<GridState | null>(null);
   useEffect(() => {
+    // onStateChange 未指定なら何もしません(snapshot 組み立て / 比較すら省略)。
+    if (!onStateChangeRef.current) {
+      return;
+    }
     const current = buildGridState(
       uiState.columnWidths,
       uiState.filters,
       uiState.sort,
+      // 列メタ(可視 / 順序 / ピン)を columns prop から抽出して snapshot へ含めます。
+      extractColumnState(columns),
     );
     const decision = decideStateChangeEmit(
       lastEmittedStateRef.current,
@@ -3489,9 +3530,15 @@ export function SpreadsheetGrid<T extends object>({
     );
     lastEmittedStateRef.current = decision.nextLast;
     if (decision.emit) {
-      onStateChangeRef.current?.(current);
+      onStateChangeRef.current(current);
     }
-  }, [uiState.columnWidths, uiState.filters, uiState.sort, uiState.dragState]);
+  }, [
+    uiState.columnWidths,
+    uiState.filters,
+    uiState.sort,
+    uiState.dragState,
+    columns,
+  ]);
 
   return (
     <div className={cx('ssg-root', className, classNames?.root)}>
