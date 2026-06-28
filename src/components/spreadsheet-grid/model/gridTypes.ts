@@ -468,10 +468,22 @@ export type CsvExportOptions = {
   bom?: boolean;
 };
 
+// 追加(state #1): 列状態のシリアライズ可能スナップショットです(getState / applyState の入出力)。
+//   永続化(localStorage 等)は consumer に委ね、グリッドは get/apply + version だけを提供します。
+//   対象は reducer 内の永続スライス(手動リサイズ幅 / フィルター / ソート)のみで、列の可視/順序/
+//   ピン/flex は columns prop 側(consumer 所有)のため含めません。activeCell / selection などの
+//   一時 UI も含めません。columnWidths は手動リサイズした列のみを含みます(flex 列はエントリを持たない
+//   規約)。version は将来の形式変更時に applyState 側で旧バージョンを移行するための番号です。
+export type GridState = {
+  version: number;
+  columnWidths: Record<string, number>;
+  filters: GridFilterState;
+  sort: GridSortState;
+};
+
 // 追加(imperative API #1): ref ハンドル(SpreadsheetGridProps.ref で受け取る命令的 API)です。
 //   設計方針: 状態(列幅/可視/sort/filter 等)は controlled のまま。ここには「prop で表現できない
-//   一発操作」だけを載せます(スクロール / 選択操作 / CSV)。列状態のシリアライズ(getState/applyState)
-//   は別途追加予定で、本ハンドルへ後方互換に足せます。
+//   一発操作」だけを載せます(スクロール / 選択操作 / CSV / 状態の保存・復元)。
 //   - viewRowIndex / colIndex は「ビュー座標」です(フィルター/ソート適用後の表示上の index。
 //     colIndex は視覚順 = 固定列を含む左→中央→右の並び)。範囲外の index は内部でクランプ/無視します。
 export type SpreadsheetGridHandle<T> = {
@@ -519,6 +531,15 @@ export type SpreadsheetGridHandle<T> = {
   // exportCsv の結果をファイルとしてダウンロードします(Blob + 一時 anchor の DOM 副作用)。
   //   bom は未指定時 true(Excel 互換)。filename 既定 'export.csv'。
   downloadCsv: (filename?: string, options?: CsvExportOptions) => void;
+
+  // ── 状態の保存 / 復元 ──
+  // 永続化対象(手動リサイズ幅 / フィルター / ソート)のスナップショット(GridState)を返します
+  //   (純粋・副作用なし)。返り値は新規オブジェクト/配列で、そのまま JSON.stringify して保存できます。
+  getState: () => GridState;
+  // getState のスナップショット(または互換な部分形)を適用します。外部入力は内部で防御的に正規化され、
+  //   幅 reset / フィルター一括 / ソート set の 3 dispatch(1 イベント = 1 再レンダー)で反映します。
+  //   clientSide / serverSide 双方に効きます(SSRM では filters/sort 変化がクエリへ載り再取得)。
+  applyState: (state: GridState) => void;
 };
 
 export type SpreadsheetGridProps<T> = {

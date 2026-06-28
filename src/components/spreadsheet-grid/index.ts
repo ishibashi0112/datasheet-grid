@@ -36,6 +36,8 @@ export type {
   GridSortEntry,
   GridSortDirection,
   ColumnFilterValue,
+  // フィルター状態(globalText + 列フィルター記述子)。getState/applyState の GridState から参照されます。
+  GridFilterState,
   SetColumnFilterValue,
   NumberColumnFilterValue,
   ParsedNumberFilter,
@@ -55,5 +57,7 @@ export type {
   ScrollAlign,
   CsvExportScope,
   CsvExportOptions,
+  // 追加(state #1): 列状態のシリアライズ型(getState / applyState の入出力)。
+  GridState,
 } from './model/gridTypes';
 export type { NumberFormatterOptions } from './logic/valueFormatters';

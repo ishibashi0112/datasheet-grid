@@ -1,4 +1,9 @@
-import type { CellCoord, ColumnFilterValue, GridSortEntry } from './gridTypes';
+import type {
+  CellCoord,
+  ColumnFilterValue,
+  GridFilterState,
+  GridSortEntry,
+} from './gridTypes';
 
 // 追加: Grid UI action の union 型です。
 export type GridUiAction =
@@ -33,6 +38,8 @@ export type GridUiAction =
   | { type: 'filter/setColumn'; columnKey: string; value: ColumnFilterValue }
   | { type: 'filter/clearColumn'; columnKey: string }
   | { type: 'filter/resetAll' }
+  // 追加(state #1): applyState 用に filters 全体を 1 dispatch で置換します(globalText + columnFilters)。
+  | { type: 'filter/setAll'; filters: GridFilterState }
   | { type: 'sort/set'; entries: GridSortEntry[] }
   | { type: 'sort/clear' };
 
@@ -130,6 +137,12 @@ export const gridActions = {
   }),
   resetAllFilters: (): GridUiAction => ({
     type: 'filter/resetAll',
+  }),
+  // 追加(state #1): filters 全体を 1 dispatch で置換します(applyState 用)。globalText + columnFilters を
+  //   まとめて差し替え、merge ではなくフル置換します(渡されない列フィルターは消えます)。
+  setAllFilters: (filters: GridFilterState): GridUiAction => ({
+    type: 'filter/setAll',
+    filters,
   }),
   // 変更(MS-1): 単一(columnKey, direction) → エントリ配列まるごと set にしました。
   //   配列の組み立て(置換/追加/除去)は呼び出し側で行い、reducer/action は薄いまま保ちます。

@@ -109,6 +109,8 @@ import {
 import type { RowMetrics } from './logic/verticalGeometry';
 // 追加(imperative API #1): CSV エクスポート / スクロール先算出の純ロジックです。
 import { serializeRowsToCsv } from './logic/exportCsv';
+// 追加(state #1): 列状態 get/apply の純ロジックです(snapshot 組み立て / 外部入力の正規化)。
+import { buildGridState, migrateGridState } from './logic/gridState';
 import {
   computeVerticalScrollTarget,
   computeHorizontalScrollTarget,
@@ -3418,6 +3420,36 @@ export function SpreadsheetGrid<T extends object>({
           anchor.click();
           document.body.removeChild(anchor);
           URL.revokeObjectURL(url);
+        },
+
+        // ── 状態の保存 / 復元 ──────────────────────────────
+        getState: () => {
+          const s = apiStateRef.current;
+          if (!s) {
+            // ref 未確定時(通常起こりません)は現行スキーマの空状態を返します。
+            return buildGridState({}, { globalText: '', columnFilters: {} }, []);
+          }
+          // 永続スライス(手動リサイズ幅 / フィルター / ソート)を純粋にスナップショットします。
+          return buildGridState(
+            s.uiState.columnWidths,
+            s.uiState.filters,
+            s.uiState.sort,
+          );
+        },
+
+        applyState: (state) => {
+          const s = apiStateRef.current;
+          if (!s) {
+            return;
+          }
+          // 外部入力(deserialize 結果)を現行スキーマへ防御的に正規化してから dispatch します。
+          const normalized = migrateGridState(state);
+          // 幅 reset / フィルター一括 / ソート set の 3 dispatch。同一イベント内で自動バッチされ
+          //   再レンダーは 1 回。SSRM では filters/sort 変化が liveServerSideQuery へ載り再取得されます。
+          //   幅は resetColumnWidths(フル置換)で、保存外(= flex 列など)のキーを残しません。
+          s.dispatch(gridActions.resetColumnWidths(normalized.columnWidths));
+          s.dispatch(gridActions.setAllFilters(normalized.filters));
+          s.dispatch(gridActions.setSort(normalized.sort));
         },
       };
     },

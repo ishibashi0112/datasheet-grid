@@ -341,6 +341,15 @@ export const gridUiReducer = (
         },
       };
 
+    // 追加(state #1): filters 全体のフル置換です(applyState 用)。merge ではなく丸ごと差し替え、
+    //   action.filters は呼び出し側(migrateGridState)が新規オブジェクトとして渡す前提です
+    //   (columnWidths/reset・sort/set と同じく payload を直接採用します)。
+    case 'filter/setAll':
+      return {
+        ...state,
+        filters: action.filters,
+      };
+
     case 'sort/set':
       // 変更(MS-1): 受け取ったエントリ配列をそのまま採用します。
       return {
