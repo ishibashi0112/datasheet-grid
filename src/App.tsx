@@ -776,6 +776,29 @@ function App() {
           >
             表示中を CSV 保存
           </button>
+          <button
+            type="button"
+            onClick={() => {
+              // 追加(getExportData デモ): エクスポート用の整形済みデータ(列メタ + 2 次元セル)を取得して
+              //   内容を確認するデモです。実際の xlsx 化はこの data を hucre / exceljs 等へ流します
+              //   (README / API_REFERENCE のレシピ参照)。本ライブラリは Excel ライブラリを同梱しません。
+              const data = gridRef.current?.getExportData({ scope: 'all' });
+              if (!data) {
+                return;
+              }
+              const header = data.columns.map((c) => c.title).join(', ');
+              const firstRow =
+                data.rows.length > 0
+                  ? data.rows[0].map((cell) => cell.text).join(', ')
+                  : '(行なし)';
+              window.alert(
+                `エクスポートデータ\n列数: ${data.columns.length} / 行数: ${data.rows.length}\n\nヘッダー: ${header}\n先頭行: ${firstRow}`,
+              );
+            }}
+            style={modeButtonStyle(false)}
+          >
+            エクスポートデータを確認
+          </button>
           {/* 追加(state #3 デモ): onStateChange/applyState の永続デモ。列幅変更・フィルター・ソート・
               列メタ(可視/順序/ピン)が自動保存され、ページ再読込で復元されます。下のボタンで保存を
               クリア(初期状態へ)できます。 */}

@@ -57,6 +57,10 @@ export type {
   ScrollAlign,
   CsvExportScope,
   CsvExportOptions,
+  // 追加(imperative API: getExportData): エクスポート用の整形済みデータ型族(導線)。
+  GridExportOptions,
+  GridExportCell,
+  GridExportData,
   // 追加(state #1): 列状態のシリアライズ型(getState / applyState の入出力)。
   GridState,
   // 追加(state v2): 列メタ(可視 / 順序 / ピン)のシリアライズ単位(GridState.columns 要素)。

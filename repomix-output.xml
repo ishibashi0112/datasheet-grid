@@ -1678,6 +1678,116 @@ export const useColumnSelectOptionsCollector = <T,>({
 export default useColumnSelectOptionsCollector;
 </file>
 
+<file path="src/components/spreadsheet-grid/hooks/useGridBarContext.ts">
+import { useMemo } from 'react';
+import { selectGlobalFilter } from '../model/gridSelectors';
+import type {
+  GridColumn,
+  GridUiState,
+  SpreadsheetGridSlotContext,
+} from '../model/gridTypes';
+import { buildGridDerivedSummary } from '../view/gridBarHelpers';
+
+// 追加: derivedSummary / setGlobalFilterText を載せる前の中間 slot context 型です。
+// 変更(DS-3-7): base から filteredRows(配列)を外します。サマリは件数のみ使用し、公開
+//   slotContext.filteredRows は最終 object で遅延 getter として付与します。
+type GridSlotContextBase<T> = Omit<
+  SpreadsheetGridSlotContext<T>,
+  'setGlobalFilterText' | 'derivedSummary' | 'filteredRows'
+>;
+
+type UseGridBarContextArgs<T> = {
+  rows: T[];
+  // 変更(DS-3-7): filteredRows(配列)→ 件数(viewRowCount)+ 遅延 factory(getFilteredRows)。
+  //   サマリは viewRowCount を使い、公開 slotContext.filteredRows は getFilteredRows() を
+  //   遅延 getter で返します(外部スロットが読んだ時だけ materialize)。
+  viewRowCount: number;
+  getFilteredRows: () => T[];
+  columns: GridColumn<T>[];
+  visibleColumns: GridColumn<T>[];
+  uiState: GridUiState;
+  setGlobalFilterText: (value: string) => void;
+};
+
+// 追加: topBar / bottomBar へ渡す slot context と derived summary をまとめて構築します。
+export const useGridBarContext = <T,>({
+  rows,
+  viewRowCount,
+  getFilteredRows,
+  columns,
+  visibleColumns,
+  uiState,
+  setGlobalFilterText,
+}: UseGridBarContextArgs<T>) => {
+  // 変更(11-B3): slotContextBase の依存を uiState 丸ごとから、bar が実際に参照する
+  //   5 フィールドへ分解します。
+  // 変更理由: uiState は columnWidths(ライブリサイズ中は毎 pointermove)、
+  //   editingCell、dragState など bar 表示と無関係な更新でも参照が変わります。
+  //   丸ごと依存のままだと slotContextBase → derivedSummary → slotContext が
+  //   その度に連鎖再生成され、topBar / bottomBar スロットの再レンダーを誘発します。
+  //   reducer は無関係フィールド更新時に filters / sort / activeCell / selection の
+  //   参照を温存する(スプレッドで該当キーのみ差し替える)ため、ここで個別に
+  //   取り出した参照は安定し、useMemo が正しくスキップされます。
+  const globalFilterText = selectGlobalFilter(uiState);
+  const columnFilterValues = uiState.filters.columnFilters;
+  const sortState = uiState.sort;
+  const activeCell = uiState.activeCell;
+  const selection = uiState.selection;
+
+  const slotContextBase = useMemo<GridSlotContextBase<T>>(
+    () => ({
+      rows,
+      columns,
+      visibleColumns,
+      globalFilterText,
+      columnFilterValues,
+      sortState,
+      activeCell,
+      selection,
+    }),
+    [
+      rows,
+      columns,
+      visibleColumns,
+      globalFilterText,
+      columnFilterValues,
+      sortState,
+      activeCell,
+      selection,
+    ],
+  );
+
+  const derivedSummary = useMemo(
+    // 変更(DS-3-7): 件数 viewRowCount を明示引数で渡します(filteredRows 配列は使いません)。
+    () => buildGridDerivedSummary(slotContextBase, viewRowCount),
+    [slotContextBase, viewRowCount],
+  );
+
+  const slotContext = useMemo<SpreadsheetGridSlotContext<T>>(
+    () => ({
+      ...slotContextBase,
+      // 追加(DS-3-7): 公開 filteredRows は遅延 getter。外部スロットが読んだ時だけ materialize し、
+      //   getFilteredRows() 内部キャッシュで同一世代([order,rows])は参照も安定します。
+      //   base には filteredRows が無いため、上の spread では materialize されません。
+      get filteredRows() {
+        return getFilteredRows();
+      },
+      setGlobalFilterText,
+      derivedSummary,
+    }),
+    [derivedSummary, getFilteredRows, setGlobalFilterText, slotContextBase],
+  );
+
+  return {
+    slotContextBase,
+    derivedSummary,
+    slotContext,
+  };
+};
+
+export default useGridBarContext;
+</file>
+
 <file path="src/components/spreadsheet-grid/hooks/useGridViewportSync.ts">
 import { useEffect, type RefObject } from 'react';
 import type { ActiveCellOverlayRect } from '../ActiveCellOverlay';
@@ -2533,6 +2643,486 @@ export const serializeRowsToCsv = <T,>({
 
   const body = lines.join('\r\n');
   return bom ? `\uFEFF${body}` : body;
+};
+</file>
+
+<file path="src/components/spreadsheet-grid/logic/geometry.ts">
+import type { GridColumn } from '../model/gridTypes';
+
+// ────────────────────────────────────────────────
+// 既存: 列の座標計算を共通化するための measurement 型です。
+// ────────────────────────────────────────────────
+
+export type ColumnMeasurement<T> = {
+  index: number;
+  column: GridColumn<T>;
+  start: number;
+  // 追加: 各列の実表示幅です。
+  size: number;
+  end: number;
+};
+
+// 追加: 値を min/max に収めるユーティリティです。
+export const clamp = (value: number, min: number, max: number) =>
+  Math.min(Math.max(value, min), max);
+
+// 追加: columns + columnWidths から、列座標の measurement 一覧を生成します。
+export const buildColumnMeasurements = <T,>(
+  columns: GridColumn<T>[],
+  columnWidths: Record<string, number>,
+): ColumnMeasurement<T>[] => {
+  let start = 0;
+  return columns.map((column, index) => {
+    const size = columnWidths[column.key] ?? column.width;
+    const measurement: ColumnMeasurement<T> = {
+      index,
+      column,
+      start,
+      size,
+      end: start + size,
+    };
+    start += size;
+    return measurement;
+  });
+};
+
+// 追加: x 座標から列 index を特定するための二分探索です。
+export const findColumnIndexFromOffset = <T,>(
+  measurements: ColumnMeasurement<T>[],
+  offset: number,
+) => {
+  if (measurements.length === 0) {
+    return -1;
+  }
+  if (offset <= 0) {
+    return 0;
+  }
+  let low = 0;
+  let high = measurements.length - 1;
+  while (low <= high) {
+    const mid = Math.floor((low + high) / 2);
+    const current = measurements[mid];
+    if (offset < current.start) {
+      high = mid - 1;
+      continue;
+    }
+    if (offset >= current.end) {
+      low = mid + 1;
+      continue;
+    }
+    return current.index;
+  }
+  return Math.max(0, Math.min(low, measurements.length - 1));
+};
+
+// ────────────────────────────────────────────────
+// 追加(10-A): 3 ペイン（pinned-left / center / pinned-right）
+//             分離に必要な型と helper 群です。
+//             ここでは型定義と純粋関数のみ追加し、
+//             レンダリングは一切変更しません。
+// ────────────────────────────────────────────────
+
+// 追加(10-A): 列が所属するペインの種別です。
+export type ColumnPane = 'left' | 'center' | 'right';
+
+// 追加(10-A): 列定義から所属ペインを判定します。
+export const getColumnPane = <T,>(column: GridColumn<T>): ColumnPane => {
+  if (column.pinned === 'left') return 'left';
+  if (column.pinned === 'right') return 'right';
+  return 'center';
+};
+
+// 追加(10-A): visibleColumns を AG Grid 互換の視覚順序に並べ替えます。
+//             pinned-left → center → pinned-right の順になります。
+//             各グループ内では元配列の相対順序が保持されます。
+//             ※ この関数で返る配列が「論理列 index」の基準になります。
+export const reorderColumnsByPane = <T,>(
+  columns: GridColumn<T>[],
+): GridColumn<T>[] => {
+  const left: GridColumn<T>[] = [];
+  const center: GridColumn<T>[] = [];
+  const right: GridColumn<T>[] = [];
+
+  for (const column of columns) {
+    const pane = getColumnPane(column);
+    if (pane === 'left') left.push(column);
+    else if (pane === 'right') right.push(column);
+    else center.push(column);
+  }
+
+  return [...left, ...center, ...right];
+};
+
+// 追加(10-A): 1 つのペイン内における列の座標情報です。
+//             paneLocalStart / paneLocalEnd はペイン内ローカル座標（0 始まり）です。
+//             logicalIndex は reorder 後の visibleColumns 配列上の index です。
+export type PaneColumnEntry<T> = {
+  column: GridColumn<T>;
+  logicalIndex: number;
+  paneLocalStart: number;
+  paneLocalSize: number;
+  paneLocalEnd: number;
+};
+
+// 追加(10-A): 1 つのペインの geometry 情報です。
+export type PaneGeometry<T> = {
+  pane: ColumnPane;
+  entries: PaneColumnEntry<T>[];
+  totalWidth: number;
+};
+
+// 追加(10-A): 3 ペイン全体のレイアウト情報です。
+export type GridPaneLayout<T> = {
+  left: PaneGeometry<T>;
+  center: PaneGeometry<T>;
+  right: PaneGeometry<T>;
+};
+
+// 追加(11-B4): ペイン分割後の「列ソース」（列 + 論理 index のペア）です。
+//             論理 index は reorder 済み orderedColumns 上の index で、
+//             ペイン geometry を個別に再構築しても不変です。
+export type PaneSourceColumn<T> = {
+  column: GridColumn<T>;
+  logicalIndex: number;
+};
+
+// 追加(11-B4): orderedColumns を 3 ペインの列ソースへ分割した結果です。
+export type PaneSourceColumns<T> = {
+  left: PaneSourceColumn<T>[];
+  center: PaneSourceColumn<T>[];
+  right: PaneSourceColumn<T>[];
+};
+
+// 追加(11-B4): reorder 済み orderedColumns を 3 ペインの列ソースへ分割します。
+//             columnWidths に依存しないため、列構成が変わらない限り
+//             結果を memo で固定できます（ライブリサイズ中も不変）。
+export const splitOrderedColumnsByPane = <T,>(
+  orderedColumns: GridColumn<T>[],
+): PaneSourceColumns<T> => {
+  const groups: PaneSourceColumns<T> = {
+    left: [],
+    center: [],
+    right: [],
+  };
+
+  orderedColumns.forEach((column, logicalIndex) => {
+    const pane = getColumnPane(column);
+    groups[pane].push({ column, logicalIndex });
+  });
+
+  return groups;
+};
+
+// 追加(11-B4): 1 ペイン分の解決済み列幅（columnWidths 優先 / column.width フォールバック）を
+//             ペイン内の列順で並べた配列として返す内部 helper です。
+const resolvePaneWidths = <T,>(
+  items: PaneSourceColumn<T>[],
+  columnWidths: Record<string, number>,
+): number[] =>
+  items.map(({ column }) => columnWidths[column.key] ?? column.width);
+
+// 追加(11-B4): 1 ペイン分の解決済み列幅を join した「幅キー文字列」を作ります。
+//             useMemo の依存値として使うことで、「そのペインの幅が実際に変わったとき」
+//             だけ geometry を再構築できます（columnWidths オブジェクトは毎 pointermove で
+//             参照が変わりますが、無関係ペインの幅キーは同一文字列のままです）。
+export const buildPaneWidthsKey = <T,>(
+  items: PaneSourceColumn<T>[],
+  columnWidths: Record<string, number>,
+): string => resolvePaneWidths(items, columnWidths).join(',');
+
+// 追加(11-B4): 幅キー文字列を解決済み幅配列へ戻します（buildPaneWidthsKey の逆変換）。
+const parsePaneWidthsKey = (widthsKey: string): number[] =>
+  widthsKey === '' ? [] : widthsKey.split(',').map(Number);
+
+// 追加(11-B4): 1 ペイン分の PaneGeometry を解決済み幅配列から構築する core です。
+//             旧 buildGridPaneLayout 内部の buildPane と同一ロジックです。
+export const buildPaneGeometry = <T,>(
+  pane: ColumnPane,
+  items: PaneSourceColumn<T>[],
+  resolvedWidths: number[],
+): PaneGeometry<T> => {
+  let offset = 0;
+  const entries: PaneColumnEntry<T>[] = items.map(
+    ({ column, logicalIndex }, indexInPane) => {
+      const size = resolvedWidths[indexInPane] ?? column.width;
+      const entry: PaneColumnEntry<T> = {
+        column,
+        logicalIndex,
+        paneLocalStart: offset,
+        paneLocalSize: size,
+        paneLocalEnd: offset + size,
+      };
+      offset += size;
+      return entry;
+    },
+  );
+  return { pane, entries, totalWidth: offset };
+};
+
+// 追加(11-B4): 幅キー文字列から 1 ペイン分の PaneGeometry を構築します。
+//             SpreadsheetGrid 側のペイン別 useMemo（依存 = 列ソース + 幅キー）から
+//             呼ぶ想定です。幅キーは buildPaneWidthsKey で生成された値を渡してください。
+export const buildPaneGeometryFromWidthsKey = <T,>(
+  pane: ColumnPane,
+  items: PaneSourceColumn<T>[],
+  widthsKey: string,
+): PaneGeometry<T> =>
+  buildPaneGeometry(pane, items, parsePaneWidthsKey(widthsKey));
+
+// 追加(10-A): reorder 済み visibleColumns + columnWidths から
+//             3 ペインレイアウトを構築します。
+//             引数の columns は reorderColumnsByPane() 済みを前提とします。
+// 変更(11-B4): 内部実装を splitOrderedColumnsByPane + buildPaneGeometry へ委譲しました。
+//             SpreadsheetGrid 本体はペイン別 useMemo へ移行済みですが、
+//             「一括構築」の互換 API としてテスト・将来利用向けに残しています。
+export const buildGridPaneLayout = <T,>(
+  orderedColumns: GridColumn<T>[],
+  columnWidths: Record<string, number>,
+): GridPaneLayout<T> => {
+  const groups = splitOrderedColumnsByPane(orderedColumns);
+  return {
+    left: buildPaneGeometry(
+      'left',
+      groups.left,
+      resolvePaneWidths(groups.left, columnWidths),
+    ),
+    center: buildPaneGeometry(
+      'center',
+      groups.center,
+      resolvePaneWidths(groups.center, columnWidths),
+    ),
+    right: buildPaneGeometry(
+      'right',
+      groups.right,
+      resolvePaneWidths(groups.right, columnWidths),
+    ),
+  };
+};
+
+// 追加(10-A): ペイン + エントリをまとめて返す lookup 結果型です。
+export type PaneColumnLookupResult<T> = {
+  pane: ColumnPane;
+  entry: PaneColumnEntry<T>;
+};
+
+// 追加(10-A): 論理列 index からペインとローカル座標を逆引きします。
+//             見つからない場合は null を返します。
+export const lookupPaneColumn = <T,>(
+  layout: GridPaneLayout<T>,
+  logicalIndex: number,
+): PaneColumnLookupResult<T> | null => {
+  const panes: [ColumnPane, PaneGeometry<T>][] = [
+    ['left', layout.left],
+    ['center', layout.center],
+    ['right', layout.right],
+  ];
+
+  for (const [pane, geometry] of panes) {
+    const entry = geometry.entries.find((e) => e.logicalIndex === logicalIndex);
+    if (entry) {
+      return { pane, entry };
+    }
+  }
+
+  return null;
+};
+
+// 追加(10-A): ペイン内ローカル x 座標から論理列 index を特定します。
+//             pointer interaction でペインごとにヒットテストするために使います。
+export const findLogicalIndexFromPaneOffset = <T,>(
+  paneGeometry: PaneGeometry<T>,
+  offset: number,
+): number => {
+  const { entries } = paneGeometry;
+  if (entries.length === 0) {
+    return -1;
+  }
+  if (offset <= 0) {
+    return entries[0].logicalIndex;
+  }
+
+  let low = 0;
+  let high = entries.length - 1;
+
+  while (low <= high) {
+    const mid = Math.floor((low + high) / 2);
+    const entry = entries[mid];
+
+    if (offset < entry.paneLocalStart) {
+      high = mid - 1;
+      continue;
+    }
+    if (offset >= entry.paneLocalEnd) {
+      low = mid + 1;
+      continue;
+    }
+    // 追加(10-A): ヒットしたエントリの論理 index を返します。
+    return entry.logicalIndex;
+  }
+
+  // 追加(10-A): 範囲外の場合は最も近いエントリの論理 index を返します。
+  const clampedIndex = Math.max(0, Math.min(low, entries.length - 1));
+  return entries[clampedIndex].logicalIndex;
+};
+
+// 追加(13-B3-2): pane-local x オフセットから「挿入スロット index(0..件数)」を返します。
+//   ColumnChooserPanel の DOM midpoint 走査(updateDropFromPointer)の幾何版です。
+//   各エントリの midpoint より左にポインタがあれば、その手前へ挿入(= そのエントリの index)。
+//   どの midpoint よりも右なら末尾(= entries.length)を返します。空ペインは 0。
+//   ※ ヘッダー D&D のドロップ先 slot 算出に使います(findLogicalIndexFromPaneOffset が
+//      「どのセル上か」を返すのに対し、こちらは「列と列の境界(=挿入位置)」を返します)。
+export const findPaneDropSlot = <T,>(
+  paneGeometry: PaneGeometry<T>,
+  paneLocalOffset: number,
+): number => {
+  const { entries } = paneGeometry;
+  for (let i = 0; i < entries.length; i += 1) {
+    const entry = entries[i];
+    const midpoint = entry.paneLocalStart + entry.paneLocalSize / 2;
+    if (paneLocalOffset < midpoint) {
+      return i;
+    }
+  }
+  return entries.length;
+};
+
+// 追加(13-B3-2): スロット index → ペインローカル境界 x(ドロップインジケータの描画位置)。
+//   slot<件数: そのエントリの paneLocalStart / slot>=件数: totalWidth(末尾) / 空ペイン: 0。
+export const paneDropSlotBoundaryX = <T,>(
+  paneGeometry: PaneGeometry<T>,
+  slot: number,
+): number => {
+  const { entries, totalWidth } = paneGeometry;
+  if (entries.length === 0) return 0;
+  if (slot <= 0) return entries[0].paneLocalStart;
+  if (slot >= entries.length) return totalWidth;
+  return entries[slot].paneLocalStart;
+};
+
+// 追加(10-A): 3 ペインそれぞれに pinned 列が何本あるかを返す convenience helper です。
+export const countPinnedColumns = <T,>(
+  layout: GridPaneLayout<T>,
+): { left: number; center: number; right: number } => ({
+  left: layout.left.entries.length,
+  center: layout.center.entries.length,
+  right: layout.right.entries.length,
+});
+
+// 追加(10-A): pinned 列が 1 本もなければ true を返します。
+//             10-B 以降で「従来の単一スクロール描画にフォールバックするか」の判定に使います。
+export const isPlainLayout = <T,>(layout: GridPaneLayout<T>): boolean =>
+  layout.left.entries.length === 0 && layout.right.entries.length === 0;
+// ────────────────────────────────────────────────
+// 追加(10-D): Overlay / Editor をペイン別座標系で描画するための helper 群です。
+//             10-C までで「セル本体・ヘッダー」はペインローカル座標になりましたが、
+//             SelectionOverlay / ActiveCellOverlay / CellEditorLayer はまだ
+//             グローバル座標（columnMeasurements + rowHeaderWidth）前提でした。
+//             ここで「論理列 index 範囲 → 各ペインのローカル水平 extent」を求める
+//             純粋関数を用意し、overlay を各ペイン内へ正しく配置できるようにします。
+//             ※ 返す座標は leadingWidth を含まない「列領域内ローカル座標」です。
+//               leadingWidth（行ヘッダー幅）は描画側で加算します。
+// ────────────────────────────────────────────────
+
+// 追加(10-D): 1 ペイン内における水平 extent（列領域ローカル座標, leadingWidth 非含有）です。
+//             start / end は paneLocalStart / paneLocalEnd 起点で、width = end - start です。
+export type PaneColumnExtent = {
+  start: number;
+  end: number;
+  width: number;
+};
+
+// 追加(10-D): 3 ペインそれぞれの水平 extent をまとめた結果です。
+//             該当ペインに範囲内の列が 1 本も無い場合は null になります。
+export type PaneColumnExtentMap = Record<ColumnPane, PaneColumnExtent | null>;
+
+// 追加(10-D): 1 ペイン分の extent を、論理列 index 範囲 [startLogicalIndex, endLogicalIndex]
+//             （両端含む）から求める内部 helper です。
+const computeExtentForPane = <T,>(
+  geometry: PaneGeometry<T>,
+  startLogicalIndex: number,
+  endLogicalIndex: number,
+): PaneColumnExtent | null => {
+  const lo = Math.min(startLogicalIndex, endLogicalIndex);
+  const hi = Math.max(startLogicalIndex, endLogicalIndex);
+
+  let start = Number.POSITIVE_INFINITY;
+  let end = Number.NEGATIVE_INFINITY;
+  let found = false;
+
+  for (const entry of geometry.entries) {
+    if (entry.logicalIndex < lo || entry.logicalIndex > hi) {
+      continue;
+    }
+    found = true;
+    if (entry.paneLocalStart < start) start = entry.paneLocalStart;
+    if (entry.paneLocalEnd > end) end = entry.paneLocalEnd;
+  }
+
+  if (!found) {
+    return null;
+  }
+  return { start, end, width: end - start };
+};
+
+// 追加(10-D): 論理列 index 範囲から、3 ペインそれぞれの水平 extent を求めます。
+//             cell / col 選択や行ヘッダー以外の overlay の水平範囲決定に使います。
+export const computePaneColumnExtents = <T,>(
+  layout: GridPaneLayout<T>,
+  startLogicalIndex: number,
+  endLogicalIndex: number,
+): PaneColumnExtentMap => ({
+  left: computeExtentForPane(layout.left, startLogicalIndex, endLogicalIndex),
+  center: computeExtentForPane(
+    layout.center,
+    startLogicalIndex,
+    endLogicalIndex,
+  ),
+  right: computeExtentForPane(layout.right, startLogicalIndex, endLogicalIndex),
+});
+
+// 追加(10-D): 「全列」を覆う extent を 3 ペイン分求めます（行選択 overlay 用）。
+//             各ペインは自分の列領域全幅（0 〜 totalWidth）を覆います。
+//             列が無いペインは null になります。
+export const computeFullWidthPaneExtents = <T,>(
+  layout: GridPaneLayout<T>,
+): PaneColumnExtentMap => {
+  const toExtent = (geometry: PaneGeometry<T>): PaneColumnExtent | null =>
+    geometry.entries.length === 0
+      ? null
+      : { start: 0, end: geometry.totalWidth, width: geometry.totalWidth };
+
+  return {
+    left: toExtent(layout.left),
+    center: toExtent(layout.center),
+    right: toExtent(layout.right),
+  };
+};
+
+// 追加(10-D): 単一論理列 index が属するペインと、その列のローカル extent を求めます。
+//             ActiveCellOverlay / CellEditorLayer のように単一セル列を扱う場合に使います。
+//             見つからなければ null を返します。
+export type SinglePaneColumnExtent = {
+  pane: ColumnPane;
+  extent: PaneColumnExtent;
+};
+
+export const computeSinglePaneColumnExtent = <T,>(
+  layout: GridPaneLayout<T>,
+  logicalIndex: number,
+): SinglePaneColumnExtent | null => {
+  const lookup = lookupPaneColumn(layout, logicalIndex);
+  if (!lookup) {
+    return null;
+  }
+  const { pane, entry } = lookup;
+  return {
+    pane,
+    extent: {
+      start: entry.paneLocalStart,
+      end: entry.paneLocalEnd,
+      width: entry.paneLocalSize,
+    },
+  };
 };
 </file>
 
@@ -4476,177 +5066,6 @@ describe('buildSelectionSnapshot is equivalent to the selectIs* selectors', () =
 });
 </file>
 
-<file path="src/components/spreadsheet-grid/SpreadsheetGrid.integration.test.tsx">
-// SpreadsheetGrid を実際に render し、命令的ハンドル(getState / applyState)と onStateChange の
-//   「配線」を実行検証する結合テストです。純ロジック(logic/gridState.test.ts)では到達できない以下を、
-//   実コンポーネントを通して確認します:
-//   - getState がライブの uiState を読んでスナップショットを返す。
-//   - applyState が dispatch → reducer → 再レンダーを経て getState に反映される(往復)。
-//   - onStateChange effect が「初回マウント非発火 / 状態変化で発火 / 同値では再発火しない」を満たす。
-//   renderHook 系テストと同じく DOM を要するため、本ファイルのみ jsdom で回します。
-// @vitest-environment jsdom
-import { describe, it, expect, vi, beforeAll, afterEach } from 'vitest';
-import { render, cleanup, act } from '@testing-library/react';
-import { createRef } from 'react';
-
-import { SpreadsheetGrid } from './SpreadsheetGrid';
-import { GRID_STATE_VERSION } from './logic/gridState';
-import type {
-  GridColumn,
-  GridState,
-  SpreadsheetGridHandle,
-} from './model/gridTypes';
-
-// jsdom には ResizeObserver / Element.scrollTo が無い(SpreadsheetGrid がマウント時に new / 呼び出す)
-//   ため、最小スタブを入れます。observe は no-op(コールバックを呼ばない)なので、これ起因の setState は
-//   発生せず、テストの決定性を保てます。
-beforeAll(() => {
-  if (!('ResizeObserver' in globalThis)) {
-    class ResizeObserverStub {
-      observe(): void {}
-      unobserve(): void {}
-      disconnect(): void {}
-    }
-    (globalThis as unknown as { ResizeObserver: unknown }).ResizeObserver =
-      ResizeObserverStub;
-  }
-  if (!Element.prototype.scrollTo) {
-    Element.prototype.scrollTo = () => {};
-  }
-});
-
-afterEach(() => {
-  cleanup();
-});
-
-type Row = { id: number; name: string; qty: number };
-
-const columns: GridColumn<Row>[] = [
-  { key: 'id', title: 'ID', width: 80 },
-  { key: 'name', title: 'Name', width: 160 },
-  { key: 'qty', title: 'Qty', width: 100 },
-];
-
-const rows: Row[] = [
-  { id: 1, name: 'alpha', qty: 10 },
-  { id: 2, name: 'beta', qty: 20 },
-  { id: 3, name: 'gamma', qty: 30 },
-];
-
-// テスト全体で使い回す「適用する状態」。columnWidths は 1 列だけ(resetColumnWidths がフル置換である
-//   ことの確認も兼ねる)、フィルター(global + 列)とソートも含めます。
-const appliedState: GridState = {
-  version: GRID_STATE_VERSION,
-  columnWidths: { id: 120 },
-  filters: {
-    globalText: 'be',
-    columnFilters: { name: { kind: 'text', value: 'be' } },
-  },
-  sort: [{ columnKey: 'qty', direction: 'desc' }],
-};
-
-describe('SpreadsheetGrid 状態 API(結合)', () => {
-  it('getState() が初期スナップショットを返す', () => {
-    const ref = createRef<SpreadsheetGridHandle<Row>>();
-    render(<SpreadsheetGrid ref={ref} columns={columns} rows={rows} />);
-
-    const state = ref.current?.getState();
-    expect(state).toBeDefined();
-    expect(state?.version).toBe(GRID_STATE_VERSION);
-    // 初期 columnWidths は非 flex 列の width から作られます(flex 列なし)。
-    expect(state?.columnWidths).toEqual({ id: 80, name: 160, qty: 100 });
-    expect(state?.filters).toEqual({ globalText: '', columnFilters: {} });
-    expect(state?.sort).toEqual([]);
-  });
-
-  it('applyState() が reducer 経由で反映され getState() に出る', () => {
-    const ref = createRef<SpreadsheetGridHandle<Row>>();
-    render(<SpreadsheetGrid ref={ref} columns={columns} rows={rows} />);
-
-    act(() => {
-      ref.current?.applyState(appliedState);
-    });
-
-    const after = ref.current?.getState();
-    expect(after?.version).toBe(GRID_STATE_VERSION);
-    // resetColumnWidths はフル置換なので、適用後は { id: 120 } のみ(他列のエントリは消える)。
-    expect(after?.columnWidths).toEqual({ id: 120 });
-    expect(after?.filters).toEqual({
-      globalText: 'be',
-      columnFilters: { name: { kind: 'text', value: 'be' } },
-    });
-    expect(after?.sort).toEqual([{ columnKey: 'qty', direction: 'desc' }]);
-  });
-
-  it('onStateChange は初回マウントで発火しない', () => {
-    const onStateChange = vi.fn();
-    render(
-      <SpreadsheetGrid
-        columns={columns}
-        rows={rows}
-        onStateChange={onStateChange}
-      />,
-    );
-
-    expect(onStateChange).not.toHaveBeenCalled();
-  });
-
-  it('onStateChange は applyState の状態変化で最新 state を 1 回渡して発火する', () => {
-    const onStateChange = vi.fn();
-    const ref = createRef<SpreadsheetGridHandle<Row>>();
-    render(
-      <SpreadsheetGrid
-        ref={ref}
-        columns={columns}
-        rows={rows}
-        onStateChange={onStateChange}
-      />,
-    );
-
-    act(() => {
-      ref.current?.applyState(appliedState);
-    });
-
-    expect(onStateChange).toHaveBeenCalledTimes(1);
-    expect(onStateChange).toHaveBeenLastCalledWith({
-      version: GRID_STATE_VERSION,
-      columnWidths: { id: 120 },
-      filters: {
-        globalText: 'be',
-        columnFilters: { name: { kind: 'text', value: 'be' } },
-      },
-      sort: [{ columnKey: 'qty', direction: 'desc' }],
-    });
-  });
-
-  it('onStateChange は同値の applyState では再発火しない(構造等価で抑止)', () => {
-    const onStateChange = vi.fn();
-    const ref = createRef<SpreadsheetGridHandle<Row>>();
-    render(
-      <SpreadsheetGrid
-        ref={ref}
-        columns={columns}
-        rows={rows}
-        onStateChange={onStateChange}
-      />,
-    );
-
-    // 1 回目: 初期状態 → appliedState への変化で発火。
-    act(() => {
-      ref.current?.applyState(appliedState);
-    });
-    expect(onStateChange).toHaveBeenCalledTimes(1);
-
-    // 2 回目: 同値を再適用。reducer は新規オブジェクト参照を入れる(columnWidths/filters の参照は変わる)が、
-    //   isSameGridState が構造等価と判定するため再発火しない。
-    act(() => {
-      ref.current?.applyState(appliedState);
-    });
-    expect(onStateChange).toHaveBeenCalledTimes(1);
-  });
-});
-</file>
-
 <file path="src/components/spreadsheet-grid/utils/clipboard.ts">
 import type { GridColumn } from '../model/gridTypes';
 import {
@@ -5118,116 +5537,6 @@ code {
   "include": ["src"],
   "exclude": []
 }
-</file>
-
-<file path="src/components/spreadsheet-grid/hooks/useGridBarContext.ts">
-import { useMemo } from 'react';
-import { selectGlobalFilter } from '../model/gridSelectors';
-import type {
-  GridColumn,
-  GridUiState,
-  SpreadsheetGridSlotContext,
-} from '../model/gridTypes';
-import { buildGridDerivedSummary } from '../view/gridBarHelpers';
-
-// 追加: derivedSummary / setGlobalFilterText を載せる前の中間 slot context 型です。
-// 変更(DS-3-7): base から filteredRows(配列)を外します。サマリは件数のみ使用し、公開
-//   slotContext.filteredRows は最終 object で遅延 getter として付与します。
-type GridSlotContextBase<T> = Omit<
-  SpreadsheetGridSlotContext<T>,
-  'setGlobalFilterText' | 'derivedSummary' | 'filteredRows'
->;
-
-type UseGridBarContextArgs<T> = {
-  rows: T[];
-  // 変更(DS-3-7): filteredRows(配列)→ 件数(viewRowCount)+ 遅延 factory(getFilteredRows)。
-  //   サマリは viewRowCount を使い、公開 slotContext.filteredRows は getFilteredRows() を
-  //   遅延 getter で返します(外部スロットが読んだ時だけ materialize)。
-  viewRowCount: number;
-  getFilteredRows: () => T[];
-  columns: GridColumn<T>[];
-  visibleColumns: GridColumn<T>[];
-  uiState: GridUiState;
-  setGlobalFilterText: (value: string) => void;
-};
-
-// 追加: topBar / bottomBar へ渡す slot context と derived summary をまとめて構築します。
-export const useGridBarContext = <T,>({
-  rows,
-  viewRowCount,
-  getFilteredRows,
-  columns,
-  visibleColumns,
-  uiState,
-  setGlobalFilterText,
-}: UseGridBarContextArgs<T>) => {
-  // 変更(11-B3): slotContextBase の依存を uiState 丸ごとから、bar が実際に参照する
-  //   5 フィールドへ分解します。
-  // 変更理由: uiState は columnWidths(ライブリサイズ中は毎 pointermove)、
-  //   editingCell、dragState など bar 表示と無関係な更新でも参照が変わります。
-  //   丸ごと依存のままだと slotContextBase → derivedSummary → slotContext が
-  //   その度に連鎖再生成され、topBar / bottomBar スロットの再レンダーを誘発します。
-  //   reducer は無関係フィールド更新時に filters / sort / activeCell / selection の
-  //   参照を温存する(スプレッドで該当キーのみ差し替える)ため、ここで個別に
-  //   取り出した参照は安定し、useMemo が正しくスキップされます。
-  const globalFilterText = selectGlobalFilter(uiState);
-  const columnFilterValues = uiState.filters.columnFilters;
-  const sortState = uiState.sort;
-  const activeCell = uiState.activeCell;
-  const selection = uiState.selection;
-
-  const slotContextBase = useMemo<GridSlotContextBase<T>>(
-    () => ({
-      rows,
-      columns,
-      visibleColumns,
-      globalFilterText,
-      columnFilterValues,
-      sortState,
-      activeCell,
-      selection,
-    }),
-    [
-      rows,
-      columns,
-      visibleColumns,
-      globalFilterText,
-      columnFilterValues,
-      sortState,
-      activeCell,
-      selection,
-    ],
-  );
-
-  const derivedSummary = useMemo(
-    // 変更(DS-3-7): 件数 viewRowCount を明示引数で渡します(filteredRows 配列は使いません)。
-    () => buildGridDerivedSummary(slotContextBase, viewRowCount),
-    [slotContextBase, viewRowCount],
-  );
-
-  const slotContext = useMemo<SpreadsheetGridSlotContext<T>>(
-    () => ({
-      ...slotContextBase,
-      // 追加(DS-3-7): 公開 filteredRows は遅延 getter。外部スロットが読んだ時だけ materialize し、
-      //   getFilteredRows() 内部キャッシュで同一世代([order,rows])は参照も安定します。
-      //   base には filteredRows が無いため、上の spread では materialize されません。
-      get filteredRows() {
-        return getFilteredRows();
-      },
-      setGlobalFilterText,
-      derivedSummary,
-    }),
-    [derivedSummary, getFilteredRows, setGlobalFilterText, slotContextBase],
-  );
-
-  return {
-    slotContextBase,
-    derivedSummary,
-    slotContext,
-  };
-};
-
-export default useGridBarContext;
 </file>
 
 <file path="src/components/spreadsheet-grid/hooks/useGridKeyboardInteractions.ts">
@@ -5923,1216 +6232,294 @@ describe('number filter descriptor helpers', () => {
 });
 </file>
 
-<file path="src/components/spreadsheet-grid/logic/geometry.ts">
-import type { GridColumn } from '../model/gridTypes';
+<file path="src/components/spreadsheet-grid/SpreadsheetGrid.integration.test.tsx">
+// SpreadsheetGrid を実際に render し、命令的ハンドル(getState / applyState)と onStateChange の
+//   「配線」を実行検証する結合テストです。純ロジック(logic/gridState.test.ts)では到達できない以下を、
+//   実コンポーネントを通して確認します:
+//   - getState がライブの uiState / columns を読んでスナップショット(v2: 列メタ含む)を返す。
+//   - applyState が dispatch → reducer → 再レンダーを経て getState に反映される(往復)。
+//   - applyState の列メタ(順序 / 可視 / ピン)が onColumnsChange 経由で controlled に反映される(往復)。
+//   - onStateChange effect が「初回マウント非発火 / 状態変化(列メタ含む)で発火 / 同値では再発火しない」。
+//   renderHook 系テストと同じく DOM を要するため、本ファイルのみ jsdom で回します。
+// @vitest-environment jsdom
+import { describe, it, expect, vi, beforeAll, afterEach } from 'vitest';
+import { render, cleanup, act } from '@testing-library/react';
+import { createRef, useState } from 'react';
+import type { Ref } from 'react';
 
-// ────────────────────────────────────────────────
-// 既存: 列の座標計算を共通化するための measurement 型です。
-// ────────────────────────────────────────────────
-
-export type ColumnMeasurement<T> = {
-  index: number;
-  column: GridColumn<T>;
-  start: number;
-  // 追加: 各列の実表示幅です。
-  size: number;
-  end: number;
-};
-
-// 追加: 値を min/max に収めるユーティリティです。
-export const clamp = (value: number, min: number, max: number) =>
-  Math.min(Math.max(value, min), max);
-
-// 追加: columns + columnWidths から、列座標の measurement 一覧を生成します。
-export const buildColumnMeasurements = <T,>(
-  columns: GridColumn<T>[],
-  columnWidths: Record<string, number>,
-): ColumnMeasurement<T>[] => {
-  let start = 0;
-  return columns.map((column, index) => {
-    const size = columnWidths[column.key] ?? column.width;
-    const measurement: ColumnMeasurement<T> = {
-      index,
-      column,
-      start,
-      size,
-      end: start + size,
-    };
-    start += size;
-    return measurement;
-  });
-};
-
-// 追加: x 座標から列 index を特定するための二分探索です。
-export const findColumnIndexFromOffset = <T,>(
-  measurements: ColumnMeasurement<T>[],
-  offset: number,
-) => {
-  if (measurements.length === 0) {
-    return -1;
-  }
-  if (offset <= 0) {
-    return 0;
-  }
-  let low = 0;
-  let high = measurements.length - 1;
-  while (low <= high) {
-    const mid = Math.floor((low + high) / 2);
-    const current = measurements[mid];
-    if (offset < current.start) {
-      high = mid - 1;
-      continue;
-    }
-    if (offset >= current.end) {
-      low = mid + 1;
-      continue;
-    }
-    return current.index;
-  }
-  return Math.max(0, Math.min(low, measurements.length - 1));
-};
-
-// ────────────────────────────────────────────────
-// 追加(10-A): 3 ペイン（pinned-left / center / pinned-right）
-//             分離に必要な型と helper 群です。
-//             ここでは型定義と純粋関数のみ追加し、
-//             レンダリングは一切変更しません。
-// ────────────────────────────────────────────────
-
-// 追加(10-A): 列が所属するペインの種別です。
-export type ColumnPane = 'left' | 'center' | 'right';
-
-// 追加(10-A): 列定義から所属ペインを判定します。
-export const getColumnPane = <T,>(column: GridColumn<T>): ColumnPane => {
-  if (column.pinned === 'left') return 'left';
-  if (column.pinned === 'right') return 'right';
-  return 'center';
-};
-
-// 追加(10-A): visibleColumns を AG Grid 互換の視覚順序に並べ替えます。
-//             pinned-left → center → pinned-right の順になります。
-//             各グループ内では元配列の相対順序が保持されます。
-//             ※ この関数で返る配列が「論理列 index」の基準になります。
-export const reorderColumnsByPane = <T,>(
-  columns: GridColumn<T>[],
-): GridColumn<T>[] => {
-  const left: GridColumn<T>[] = [];
-  const center: GridColumn<T>[] = [];
-  const right: GridColumn<T>[] = [];
-
-  for (const column of columns) {
-    const pane = getColumnPane(column);
-    if (pane === 'left') left.push(column);
-    else if (pane === 'right') right.push(column);
-    else center.push(column);
-  }
-
-  return [...left, ...center, ...right];
-};
-
-// 追加(10-A): 1 つのペイン内における列の座標情報です。
-//             paneLocalStart / paneLocalEnd はペイン内ローカル座標（0 始まり）です。
-//             logicalIndex は reorder 後の visibleColumns 配列上の index です。
-export type PaneColumnEntry<T> = {
-  column: GridColumn<T>;
-  logicalIndex: number;
-  paneLocalStart: number;
-  paneLocalSize: number;
-  paneLocalEnd: number;
-};
-
-// 追加(10-A): 1 つのペインの geometry 情報です。
-export type PaneGeometry<T> = {
-  pane: ColumnPane;
-  entries: PaneColumnEntry<T>[];
-  totalWidth: number;
-};
-
-// 追加(10-A): 3 ペイン全体のレイアウト情報です。
-export type GridPaneLayout<T> = {
-  left: PaneGeometry<T>;
-  center: PaneGeometry<T>;
-  right: PaneGeometry<T>;
-};
-
-// 追加(11-B4): ペイン分割後の「列ソース」（列 + 論理 index のペア）です。
-//             論理 index は reorder 済み orderedColumns 上の index で、
-//             ペイン geometry を個別に再構築しても不変です。
-export type PaneSourceColumn<T> = {
-  column: GridColumn<T>;
-  logicalIndex: number;
-};
-
-// 追加(11-B4): orderedColumns を 3 ペインの列ソースへ分割した結果です。
-export type PaneSourceColumns<T> = {
-  left: PaneSourceColumn<T>[];
-  center: PaneSourceColumn<T>[];
-  right: PaneSourceColumn<T>[];
-};
-
-// 追加(11-B4): reorder 済み orderedColumns を 3 ペインの列ソースへ分割します。
-//             columnWidths に依存しないため、列構成が変わらない限り
-//             結果を memo で固定できます（ライブリサイズ中も不変）。
-export const splitOrderedColumnsByPane = <T,>(
-  orderedColumns: GridColumn<T>[],
-): PaneSourceColumns<T> => {
-  const groups: PaneSourceColumns<T> = {
-    left: [],
-    center: [],
-    right: [],
-  };
-
-  orderedColumns.forEach((column, logicalIndex) => {
-    const pane = getColumnPane(column);
-    groups[pane].push({ column, logicalIndex });
-  });
-
-  return groups;
-};
-
-// 追加(11-B4): 1 ペイン分の解決済み列幅（columnWidths 優先 / column.width フォールバック）を
-//             ペイン内の列順で並べた配列として返す内部 helper です。
-const resolvePaneWidths = <T,>(
-  items: PaneSourceColumn<T>[],
-  columnWidths: Record<string, number>,
-): number[] =>
-  items.map(({ column }) => columnWidths[column.key] ?? column.width);
-
-// 追加(11-B4): 1 ペイン分の解決済み列幅を join した「幅キー文字列」を作ります。
-//             useMemo の依存値として使うことで、「そのペインの幅が実際に変わったとき」
-//             だけ geometry を再構築できます（columnWidths オブジェクトは毎 pointermove で
-//             参照が変わりますが、無関係ペインの幅キーは同一文字列のままです）。
-export const buildPaneWidthsKey = <T,>(
-  items: PaneSourceColumn<T>[],
-  columnWidths: Record<string, number>,
-): string => resolvePaneWidths(items, columnWidths).join(',');
-
-// 追加(11-B4): 幅キー文字列を解決済み幅配列へ戻します（buildPaneWidthsKey の逆変換）。
-const parsePaneWidthsKey = (widthsKey: string): number[] =>
-  widthsKey === '' ? [] : widthsKey.split(',').map(Number);
-
-// 追加(11-B4): 1 ペイン分の PaneGeometry を解決済み幅配列から構築する core です。
-//             旧 buildGridPaneLayout 内部の buildPane と同一ロジックです。
-export const buildPaneGeometry = <T,>(
-  pane: ColumnPane,
-  items: PaneSourceColumn<T>[],
-  resolvedWidths: number[],
-): PaneGeometry<T> => {
-  let offset = 0;
-  const entries: PaneColumnEntry<T>[] = items.map(
-    ({ column, logicalIndex }, indexInPane) => {
-      const size = resolvedWidths[indexInPane] ?? column.width;
-      const entry: PaneColumnEntry<T> = {
-        column,
-        logicalIndex,
-        paneLocalStart: offset,
-        paneLocalSize: size,
-        paneLocalEnd: offset + size,
-      };
-      offset += size;
-      return entry;
-    },
-  );
-  return { pane, entries, totalWidth: offset };
-};
-
-// 追加(11-B4): 幅キー文字列から 1 ペイン分の PaneGeometry を構築します。
-//             SpreadsheetGrid 側のペイン別 useMemo（依存 = 列ソース + 幅キー）から
-//             呼ぶ想定です。幅キーは buildPaneWidthsKey で生成された値を渡してください。
-export const buildPaneGeometryFromWidthsKey = <T,>(
-  pane: ColumnPane,
-  items: PaneSourceColumn<T>[],
-  widthsKey: string,
-): PaneGeometry<T> =>
-  buildPaneGeometry(pane, items, parsePaneWidthsKey(widthsKey));
-
-// 追加(10-A): reorder 済み visibleColumns + columnWidths から
-//             3 ペインレイアウトを構築します。
-//             引数の columns は reorderColumnsByPane() 済みを前提とします。
-// 変更(11-B4): 内部実装を splitOrderedColumnsByPane + buildPaneGeometry へ委譲しました。
-//             SpreadsheetGrid 本体はペイン別 useMemo へ移行済みですが、
-//             「一括構築」の互換 API としてテスト・将来利用向けに残しています。
-export const buildGridPaneLayout = <T,>(
-  orderedColumns: GridColumn<T>[],
-  columnWidths: Record<string, number>,
-): GridPaneLayout<T> => {
-  const groups = splitOrderedColumnsByPane(orderedColumns);
-  return {
-    left: buildPaneGeometry(
-      'left',
-      groups.left,
-      resolvePaneWidths(groups.left, columnWidths),
-    ),
-    center: buildPaneGeometry(
-      'center',
-      groups.center,
-      resolvePaneWidths(groups.center, columnWidths),
-    ),
-    right: buildPaneGeometry(
-      'right',
-      groups.right,
-      resolvePaneWidths(groups.right, columnWidths),
-    ),
-  };
-};
-
-// 追加(10-A): ペイン + エントリをまとめて返す lookup 結果型です。
-export type PaneColumnLookupResult<T> = {
-  pane: ColumnPane;
-  entry: PaneColumnEntry<T>;
-};
-
-// 追加(10-A): 論理列 index からペインとローカル座標を逆引きします。
-//             見つからない場合は null を返します。
-export const lookupPaneColumn = <T,>(
-  layout: GridPaneLayout<T>,
-  logicalIndex: number,
-): PaneColumnLookupResult<T> | null => {
-  const panes: [ColumnPane, PaneGeometry<T>][] = [
-    ['left', layout.left],
-    ['center', layout.center],
-    ['right', layout.right],
-  ];
-
-  for (const [pane, geometry] of panes) {
-    const entry = geometry.entries.find((e) => e.logicalIndex === logicalIndex);
-    if (entry) {
-      return { pane, entry };
-    }
-  }
-
-  return null;
-};
-
-// 追加(10-A): ペイン内ローカル x 座標から論理列 index を特定します。
-//             pointer interaction でペインごとにヒットテストするために使います。
-export const findLogicalIndexFromPaneOffset = <T,>(
-  paneGeometry: PaneGeometry<T>,
-  offset: number,
-): number => {
-  const { entries } = paneGeometry;
-  if (entries.length === 0) {
-    return -1;
-  }
-  if (offset <= 0) {
-    return entries[0].logicalIndex;
-  }
-
-  let low = 0;
-  let high = entries.length - 1;
-
-  while (low <= high) {
-    const mid = Math.floor((low + high) / 2);
-    const entry = entries[mid];
-
-    if (offset < entry.paneLocalStart) {
-      high = mid - 1;
-      continue;
-    }
-    if (offset >= entry.paneLocalEnd) {
-      low = mid + 1;
-      continue;
-    }
-    // 追加(10-A): ヒットしたエントリの論理 index を返します。
-    return entry.logicalIndex;
-  }
-
-  // 追加(10-A): 範囲外の場合は最も近いエントリの論理 index を返します。
-  const clampedIndex = Math.max(0, Math.min(low, entries.length - 1));
-  return entries[clampedIndex].logicalIndex;
-};
-
-// 追加(13-B3-2): pane-local x オフセットから「挿入スロット index(0..件数)」を返します。
-//   ColumnChooserPanel の DOM midpoint 走査(updateDropFromPointer)の幾何版です。
-//   各エントリの midpoint より左にポインタがあれば、その手前へ挿入(= そのエントリの index)。
-//   どの midpoint よりも右なら末尾(= entries.length)を返します。空ペインは 0。
-//   ※ ヘッダー D&D のドロップ先 slot 算出に使います(findLogicalIndexFromPaneOffset が
-//      「どのセル上か」を返すのに対し、こちらは「列と列の境界(=挿入位置)」を返します)。
-export const findPaneDropSlot = <T,>(
-  paneGeometry: PaneGeometry<T>,
-  paneLocalOffset: number,
-): number => {
-  const { entries } = paneGeometry;
-  for (let i = 0; i < entries.length; i += 1) {
-    const entry = entries[i];
-    const midpoint = entry.paneLocalStart + entry.paneLocalSize / 2;
-    if (paneLocalOffset < midpoint) {
-      return i;
-    }
-  }
-  return entries.length;
-};
-
-// 追加(13-B3-2): スロット index → ペインローカル境界 x(ドロップインジケータの描画位置)。
-//   slot<件数: そのエントリの paneLocalStart / slot>=件数: totalWidth(末尾) / 空ペイン: 0。
-export const paneDropSlotBoundaryX = <T,>(
-  paneGeometry: PaneGeometry<T>,
-  slot: number,
-): number => {
-  const { entries, totalWidth } = paneGeometry;
-  if (entries.length === 0) return 0;
-  if (slot <= 0) return entries[0].paneLocalStart;
-  if (slot >= entries.length) return totalWidth;
-  return entries[slot].paneLocalStart;
-};
-
-// 追加(10-A): 3 ペインそれぞれに pinned 列が何本あるかを返す convenience helper です。
-export const countPinnedColumns = <T,>(
-  layout: GridPaneLayout<T>,
-): { left: number; center: number; right: number } => ({
-  left: layout.left.entries.length,
-  center: layout.center.entries.length,
-  right: layout.right.entries.length,
-});
-
-// 追加(10-A): pinned 列が 1 本もなければ true を返します。
-//             10-B 以降で「従来の単一スクロール描画にフォールバックするか」の判定に使います。
-export const isPlainLayout = <T,>(layout: GridPaneLayout<T>): boolean =>
-  layout.left.entries.length === 0 && layout.right.entries.length === 0;
-// ────────────────────────────────────────────────
-// 追加(10-D): Overlay / Editor をペイン別座標系で描画するための helper 群です。
-//             10-C までで「セル本体・ヘッダー」はペインローカル座標になりましたが、
-//             SelectionOverlay / ActiveCellOverlay / CellEditorLayer はまだ
-//             グローバル座標（columnMeasurements + rowHeaderWidth）前提でした。
-//             ここで「論理列 index 範囲 → 各ペインのローカル水平 extent」を求める
-//             純粋関数を用意し、overlay を各ペイン内へ正しく配置できるようにします。
-//             ※ 返す座標は leadingWidth を含まない「列領域内ローカル座標」です。
-//               leadingWidth（行ヘッダー幅）は描画側で加算します。
-// ────────────────────────────────────────────────
-
-// 追加(10-D): 1 ペイン内における水平 extent（列領域ローカル座標, leadingWidth 非含有）です。
-//             start / end は paneLocalStart / paneLocalEnd 起点で、width = end - start です。
-export type PaneColumnExtent = {
-  start: number;
-  end: number;
-  width: number;
-};
-
-// 追加(10-D): 3 ペインそれぞれの水平 extent をまとめた結果です。
-//             該当ペインに範囲内の列が 1 本も無い場合は null になります。
-export type PaneColumnExtentMap = Record<ColumnPane, PaneColumnExtent | null>;
-
-// 追加(10-D): 1 ペイン分の extent を、論理列 index 範囲 [startLogicalIndex, endLogicalIndex]
-//             （両端含む）から求める内部 helper です。
-const computeExtentForPane = <T,>(
-  geometry: PaneGeometry<T>,
-  startLogicalIndex: number,
-  endLogicalIndex: number,
-): PaneColumnExtent | null => {
-  const lo = Math.min(startLogicalIndex, endLogicalIndex);
-  const hi = Math.max(startLogicalIndex, endLogicalIndex);
-
-  let start = Number.POSITIVE_INFINITY;
-  let end = Number.NEGATIVE_INFINITY;
-  let found = false;
-
-  for (const entry of geometry.entries) {
-    if (entry.logicalIndex < lo || entry.logicalIndex > hi) {
-      continue;
-    }
-    found = true;
-    if (entry.paneLocalStart < start) start = entry.paneLocalStart;
-    if (entry.paneLocalEnd > end) end = entry.paneLocalEnd;
-  }
-
-  if (!found) {
-    return null;
-  }
-  return { start, end, width: end - start };
-};
-
-// 追加(10-D): 論理列 index 範囲から、3 ペインそれぞれの水平 extent を求めます。
-//             cell / col 選択や行ヘッダー以外の overlay の水平範囲決定に使います。
-export const computePaneColumnExtents = <T,>(
-  layout: GridPaneLayout<T>,
-  startLogicalIndex: number,
-  endLogicalIndex: number,
-): PaneColumnExtentMap => ({
-  left: computeExtentForPane(layout.left, startLogicalIndex, endLogicalIndex),
-  center: computeExtentForPane(
-    layout.center,
-    startLogicalIndex,
-    endLogicalIndex,
-  ),
-  right: computeExtentForPane(layout.right, startLogicalIndex, endLogicalIndex),
-});
-
-// 追加(10-D): 「全列」を覆う extent を 3 ペイン分求めます（行選択 overlay 用）。
-//             各ペインは自分の列領域全幅（0 〜 totalWidth）を覆います。
-//             列が無いペインは null になります。
-export const computeFullWidthPaneExtents = <T,>(
-  layout: GridPaneLayout<T>,
-): PaneColumnExtentMap => {
-  const toExtent = (geometry: PaneGeometry<T>): PaneColumnExtent | null =>
-    geometry.entries.length === 0
-      ? null
-      : { start: 0, end: geometry.totalWidth, width: geometry.totalWidth };
-
-  return {
-    left: toExtent(layout.left),
-    center: toExtent(layout.center),
-    right: toExtent(layout.right),
-  };
-};
-
-// 追加(10-D): 単一論理列 index が属するペインと、その列のローカル extent を求めます。
-//             ActiveCellOverlay / CellEditorLayer のように単一セル列を扱う場合に使います。
-//             見つからなければ null を返します。
-export type SinglePaneColumnExtent = {
-  pane: ColumnPane;
-  extent: PaneColumnExtent;
-};
-
-export const computeSinglePaneColumnExtent = <T,>(
-  layout: GridPaneLayout<T>,
-  logicalIndex: number,
-): SinglePaneColumnExtent | null => {
-  const lookup = lookupPaneColumn(layout, logicalIndex);
-  if (!lookup) {
-    return null;
-  }
-  const { pane, entry } = lookup;
-  return {
-    pane,
-    extent: {
-      start: entry.paneLocalStart,
-      end: entry.paneLocalEnd,
-      width: entry.paneLocalSize,
-    },
-  };
-};
-</file>
-
-<file path="src/components/spreadsheet-grid/logic/gridState.test.ts">
-import { describe, it, expect } from 'vitest';
-
-import {
-  GRID_STATE_VERSION,
-  buildGridState,
-  cloneColumnFilterValue,
-  migrateGridState,
-  isSameGridState,
-  decideStateChangeEmit,
-} from './gridState';
+import { SpreadsheetGrid } from './SpreadsheetGrid';
+import { GRID_STATE_VERSION } from './logic/gridState';
 import type {
-  ColumnFilterValue,
-  GridFilterState,
-  GridSortState,
-  ParsedNumberFilter,
-} from '../model/gridTypes';
+  GridColumn,
+  GridState,
+  SpreadsheetGridHandle,
+} from './model/gridTypes';
 
-const emptyFilters = (): GridFilterState => ({
-  globalText: '',
-  columnFilters: {},
+// jsdom には ResizeObserver / Element.scrollTo が無い(SpreadsheetGrid がマウント時に new / 呼び出す)
+//   ため、最小スタブを入れます。observe は no-op(コールバックを呼ばない)なので、これ起因の setState は
+//   発生せず、テストの決定性を保てます。
+beforeAll(() => {
+  if (!('ResizeObserver' in globalThis)) {
+    class ResizeObserverStub {
+      observe(): void {}
+      unobserve(): void {}
+      disconnect(): void {}
+    }
+    (globalThis as unknown as { ResizeObserver: unknown }).ResizeObserver =
+      ResizeObserverStub;
+  }
+  if (!Element.prototype.scrollTo) {
+    Element.prototype.scrollTo = () => {};
+  }
 });
 
-describe('cloneColumnFilterValue', () => {
-  it('set: values 配列を複製する(複製の mutate は元へ波及しない)', () => {
-    const original: ColumnFilterValue = { kind: 'set', values: ['a', 'b'] };
-    const cloned = cloneColumnFilterValue(original);
-    expect(cloned).toEqual(original);
-    expect(cloned).not.toBe(original);
-    if (cloned.kind === 'set') {
-      expect(cloned.values).not.toBe(original.kind === 'set' ? original.values : undefined);
-      cloned.values.push('c');
-    }
-    expect(original).toEqual({ kind: 'set', values: ['a', 'b'] });
-  });
-
-  it('number: parsed(入れ子)も複製する', () => {
-    const original: ColumnFilterValue = {
-      kind: 'number',
-      raw: '>5',
-      parsed: { mode: 'comparison', operator: '>', value: 5 },
-    };
-    const cloned = cloneColumnFilterValue(original);
-    expect(cloned).toEqual(original);
-    if (cloned.kind === 'number' && original.kind === 'number') {
-      expect(cloned.parsed).not.toBe(original.parsed);
-    }
-  });
-
-  it('number: parsed=null はそのまま', () => {
-    const original: ColumnFilterValue = {
-      kind: 'number',
-      raw: 'foo',
-      parsed: null,
-    };
-    const cloned = cloneColumnFilterValue(original);
-    expect(cloned).toEqual(original);
-    if (cloned.kind === 'number') {
-      expect(cloned.parsed).toBeNull();
-    }
-  });
-
-  it('text / date / select: 値は等価で別オブジェクト', () => {
-    const text: ColumnFilterValue = { kind: 'text', value: 'abc' };
-    const date: ColumnFilterValue = { kind: 'date', value: '2024' };
-    const select: ColumnFilterValue = { kind: 'select', value: 'X' };
-    expect(cloneColumnFilterValue(text)).toEqual(text);
-    expect(cloneColumnFilterValue(text)).not.toBe(text);
-    expect(cloneColumnFilterValue(date)).toEqual(date);
-    expect(cloneColumnFilterValue(select)).toEqual(select);
-  });
-
-  it('custom: value(unknown)は参照共有のまま', () => {
-    const nested = { deep: 1 };
-    const original: ColumnFilterValue = { kind: 'custom', value: nested };
-    const cloned = cloneColumnFilterValue(original);
-    expect(cloned).toEqual(original);
-    if (cloned.kind === 'custom') {
-      // value は深いコピーをしない契約なので同一参照。
-      expect(cloned.value).toBe(nested);
-    }
-  });
+afterEach(() => {
+  cleanup();
 });
 
-describe('buildGridState', () => {
-  it('version を現行スキーマ番号で焼く', () => {
-    const state = buildGridState({}, emptyFilters(), []);
-    expect(state.version).toBe(GRID_STATE_VERSION);
+type Row = { id: number; name: string; qty: number };
+
+const columns: GridColumn<Row>[] = [
+  { key: 'id', title: 'ID', width: 80 },
+  { key: 'name', title: 'Name', width: 160 },
+  { key: 'qty', title: 'Qty', width: 100 },
+];
+
+const rows: Row[] = [
+  { id: 1, name: 'alpha', qty: 10 },
+  { id: 2, name: 'beta', qty: 20 },
+  { id: 3, name: 'gamma', qty: 30 },
+];
+
+// テスト全体で使い回す「適用する状態」。columnWidths は 1 列だけ(resetColumnWidths がフル置換である
+//   ことの確認も兼ねる)、フィルター(global + 列)とソートも含めます。
+const appliedState: GridState = {
+  version: GRID_STATE_VERSION,
+  columnWidths: { id: 120 },
+  filters: {
+    globalText: 'be',
+    columnFilters: { name: { kind: 'text', value: 'be' } },
+  },
+  sort: [{ columnKey: 'qty', direction: 'desc' }],
+};
+
+// 追加(v2): controlled-columns ハーネスです。列メタ(可視 / 順序 / ピン)は consumer 所有のため、
+//   applyState の列メタ反映は onColumnsChange を通ります。ここで columns を useState で保持して
+//   onColumnsChange へ繋ぎ、applyState → onColumnsChange → 再レンダー → getState の往復を検証します。
+function ControlledGrid({
+  gridRef,
+  initialColumns,
+  onStateChange,
+}: {
+  gridRef: Ref<SpreadsheetGridHandle<Row>>;
+  initialColumns: GridColumn<Row>[];
+  onStateChange?: (state: GridState) => void;
+}) {
+  const [cols, setCols] = useState(initialColumns);
+  return (
+    <SpreadsheetGrid
+      ref={gridRef}
+      columns={cols}
+      onColumnsChange={setCols}
+      rows={rows}
+      onStateChange={onStateChange}
+    />
+  );
+}
+
+describe('SpreadsheetGrid 状態 API(結合)', () => {
+  it('getState() が初期スナップショットを返す', () => {
+    const ref = createRef<SpreadsheetGridHandle<Row>>();
+    render(<SpreadsheetGrid ref={ref} columns={columns} rows={rows} />);
+
+    const state = ref.current?.getState();
+    expect(state).toBeDefined();
+    expect(state?.version).toBe(GRID_STATE_VERSION);
+    // 初期 columnWidths は非 flex 列の width から作られます(flex 列なし)。
+    expect(state?.columnWidths).toEqual({ id: 80, name: 160, qty: 100 });
+    expect(state?.filters).toEqual({ globalText: '', columnFilters: {} });
+    expect(state?.sort).toEqual([]);
+    // 追加(v2): 列メタは columns prop から配列順で抽出されます(visible/pinned 未指定は省略)。
+    expect(state?.columns).toEqual([
+      { key: 'id' },
+      { key: 'name' },
+      { key: 'qty' },
+    ]);
   });
 
-  it('columnWidths を複製する(返り値の mutate は元へ波及しない)', () => {
-    const widths = { a: 100, b: 200 };
-    const state = buildGridState(widths, emptyFilters(), []);
-    expect(state.columnWidths).toEqual(widths);
-    expect(state.columnWidths).not.toBe(widths);
-    state.columnWidths.a = 999;
-    expect(widths.a).toBe(100);
+  it('applyState() が reducer 経由で反映され getState() に出る', () => {
+    const ref = createRef<SpreadsheetGridHandle<Row>>();
+    render(<SpreadsheetGrid ref={ref} columns={columns} rows={rows} />);
+
+    act(() => {
+      ref.current?.applyState(appliedState);
+    });
+
+    const after = ref.current?.getState();
+    expect(after?.version).toBe(GRID_STATE_VERSION);
+    // resetColumnWidths はフル置換なので、適用後は { id: 120 } のみ(他列のエントリは消える)。
+    expect(after?.columnWidths).toEqual({ id: 120 });
+    expect(after?.filters).toEqual({
+      globalText: 'be',
+      columnFilters: { name: { kind: 'text', value: 'be' } },
+    });
+    expect(after?.sort).toEqual([{ columnKey: 'qty', direction: 'desc' }]);
   });
 
-  it('filters を複製する(globalText / columnFilters / 値まで切り離す)', () => {
-    const filters: GridFilterState = {
-      globalText: 'q',
-      columnFilters: {
-        s: { kind: 'set', values: ['x'] },
-        t: { kind: 'text', value: 'abc' },
+  it('onStateChange は初回マウントで発火しない', () => {
+    const onStateChange = vi.fn();
+    render(
+      <SpreadsheetGrid
+        columns={columns}
+        rows={rows}
+        onStateChange={onStateChange}
+      />,
+    );
+
+    expect(onStateChange).not.toHaveBeenCalled();
+  });
+
+  it('onStateChange は applyState の状態変化で最新 state を 1 回渡して発火する', () => {
+    const onStateChange = vi.fn();
+    const ref = createRef<SpreadsheetGridHandle<Row>>();
+    render(
+      <SpreadsheetGrid
+        ref={ref}
+        columns={columns}
+        rows={rows}
+        onStateChange={onStateChange}
+      />,
+    );
+
+    act(() => {
+      ref.current?.applyState(appliedState);
+    });
+
+    expect(onStateChange).toHaveBeenCalledTimes(1);
+    expect(onStateChange).toHaveBeenLastCalledWith({
+      version: GRID_STATE_VERSION,
+      columnWidths: { id: 120 },
+      filters: {
+        globalText: 'be',
+        columnFilters: { name: { kind: 'text', value: 'be' } },
       },
-    };
-    const state = buildGridState({}, filters, []);
-    expect(state.filters).toEqual(filters);
-    expect(state.filters).not.toBe(filters);
-    expect(state.filters.columnFilters).not.toBe(filters.columnFilters);
-    expect(state.filters.columnFilters.s).not.toBe(filters.columnFilters.s);
-    // 返り値の値を mutate しても元へ波及しない。
-    const cloned = state.filters.columnFilters.s;
-    if (cloned.kind === 'set') {
-      cloned.values.push('y');
-    }
-    expect(filters.columnFilters.s).toEqual({ kind: 'set', values: ['x'] });
+      sort: [{ columnKey: 'qty', direction: 'desc' }],
+      // 追加(v2): この applyState は列メタ非適用(onColumnsChange 未指定)なので columns prop は不変。
+      //   snapshot には現 columns の抽出が載ります。
+      columns: [{ key: 'id' }, { key: 'name' }, { key: 'qty' }],
+    });
   });
 
-  it('sort エントリを複製する', () => {
-    const sort: GridSortState = [{ columnKey: 'a', direction: 'asc' }];
-    const state = buildGridState({}, emptyFilters(), sort);
-    expect(state.sort).toEqual(sort);
-    expect(state.sort).not.toBe(sort);
-    expect(state.sort[0]).not.toBe(sort[0]);
+  it('onStateChange は同値の applyState では再発火しない(構造等価で抑止)', () => {
+    const onStateChange = vi.fn();
+    const ref = createRef<SpreadsheetGridHandle<Row>>();
+    render(
+      <SpreadsheetGrid
+        ref={ref}
+        columns={columns}
+        rows={rows}
+        onStateChange={onStateChange}
+      />,
+    );
+
+    // 1 回目: 初期状態 → appliedState への変化で発火。
+    act(() => {
+      ref.current?.applyState(appliedState);
+    });
+    expect(onStateChange).toHaveBeenCalledTimes(1);
+
+    // 2 回目: 同値を再適用。reducer は新規オブジェクト参照を入れる(columnWidths/filters の参照は変わる)が、
+    //   isSameGridState が構造等価と判定するため再発火しない。
+    act(() => {
+      ref.current?.applyState(appliedState);
+    });
+    expect(onStateChange).toHaveBeenCalledTimes(1);
   });
 
-  it('version を明示指定できる', () => {
-    const state = buildGridState({}, emptyFilters(), [], 7);
-    expect(state.version).toBe(7);
-  });
-});
+  it('追加(v2): applyState の列メタ(順序 / 可視 / ピン)が onColumnsChange 経由で反映され getState に出る', () => {
+    const ref = createRef<SpreadsheetGridHandle<Row>>();
+    render(<ControlledGrid gridRef={ref} initialColumns={columns} />);
 
-describe('migrateGridState', () => {
-  it('buildGridState の出力を round-trip できる', () => {
-    const filters: GridFilterState = {
-      globalText: 'q',
-      columnFilters: {
-        s: { kind: 'set', values: ['x', 'y'] },
-        n: { kind: 'number', raw: '>5', parsed: { mode: 'comparison', operator: '>', value: 5 } },
-      },
-    };
-    const sort: GridSortState = [
-      { columnKey: 'a', direction: 'asc' },
-      { columnKey: 'b', direction: 'desc' },
-    ];
-    const built = buildGridState({ a: 120 }, filters, sort);
-    const migrated = migrateGridState(built);
-    expect(migrated).toEqual(built);
-  });
-
-  it('非オブジェクト入力は空状態(現行 version)へ畳む', () => {
-    const expected = {
+    const v2State: GridState = {
       version: GRID_STATE_VERSION,
       columnWidths: {},
       filters: { globalText: '', columnFilters: {} },
       sort: [],
-    };
-    expect(migrateGridState(null)).toEqual(expected);
-    expect(migrateGridState(undefined)).toEqual(expected);
-    expect(migrateGridState('nope')).toEqual(expected);
-    expect(migrateGridState(42)).toEqual(expected);
-  });
-
-  it('columnWidths は有限数値のみ採用する', () => {
-    const migrated = migrateGridState({
-      columnWidths: { a: 100, b: 'x', c: NaN, d: Infinity, e: 50 },
-    });
-    expect(migrated.columnWidths).toEqual({ a: 100, e: 50 });
-  });
-
-  it('filters: globalText 非 string は空に、columnFilters は kind 必須', () => {
-    const migrated = migrateGridState({
-      filters: {
-        globalText: 123,
-        columnFilters: {
-          ok: { kind: 'text', value: 'abc' },
-          noKind: { value: 'abc' },
-          notObj: 'abc',
-        },
-      },
-    });
-    expect(migrated.filters.globalText).toBe('');
-    expect(Object.keys(migrated.filters.columnFilters)).toEqual(['ok']);
-    expect(migrated.filters.columnFilters.ok).toEqual({ kind: 'text', value: 'abc' });
-  });
-
-  it('filters 欠損 / columnFilters 非オブジェクトは既定へ', () => {
-    expect(migrateGridState({}).filters).toEqual({ globalText: '', columnFilters: {} });
-    expect(
-      migrateGridState({ filters: { columnFilters: 5 } }).filters,
-    ).toEqual({ globalText: '', columnFilters: {} });
-  });
-
-  it('sort: 配列以外は []、無効エントリは捨てる', () => {
-    expect(migrateGridState({ sort: 'x' }).sort).toEqual([]);
-    const migrated = migrateGridState({
-      sort: [
-        { columnKey: 'a', direction: 'asc' },
-        { columnKey: 'b', direction: 'sideways' },
-        { direction: 'asc' },
-        { columnKey: 'c', direction: 'desc' },
-        null,
+      // qty を left 固定 + 先頭、id を非表示、name は既定。
+      columns: [
+        { key: 'qty', pinned: 'left' },
+        { key: 'id', visible: false },
+        { key: 'name' },
       ],
+    };
+
+    act(() => {
+      ref.current?.applyState(v2State);
     });
-    expect(migrated.sort).toEqual([
-      { columnKey: 'a', direction: 'asc' },
-      { columnKey: 'c', direction: 'desc' },
+
+    const after = ref.current?.getState();
+    // reorderColumnsByPane で qty(left)が先頭、続いて center の id, name。visible/pinned も復元。
+    expect(after?.columns).toEqual([
+      { key: 'qty', pinned: 'left' },
+      { key: 'id', visible: false },
+      { key: 'name' },
     ]);
   });
 
-  it('version は入力値に関わらず現行へ揃える', () => {
-    expect(migrateGridState({ version: 999 }).version).toBe(GRID_STATE_VERSION);
+  it('追加(v2): onColumnsChange 未指定なら applyState の列メタはスキップ(v1 と同一・列順不変)', () => {
+    const ref = createRef<SpreadsheetGridHandle<Row>>();
+    // onColumnsChange を渡さない(controlled でない)素の SpreadsheetGrid。
+    render(<SpreadsheetGrid ref={ref} columns={columns} rows={rows} />);
+
+    act(() => {
+      ref.current?.applyState({
+        version: GRID_STATE_VERSION,
+        columnWidths: {},
+        filters: { globalText: '', columnFilters: {} },
+        sort: [],
+        columns: [{ key: 'qty' }, { key: 'name' }, { key: 'id' }], // reorder 指示
+      });
+    });
+
+    // onColumnsChange が無いので列メタは適用されず、列順は初期のまま。
+    const after = ref.current?.getState();
+    expect(after?.columns).toEqual([
+      { key: 'id' },
+      { key: 'name' },
+      { key: 'qty' },
+    ]);
   });
 
-  it('返り値は入力と参照を共有しない(入力 mutate は出力へ波及しない)', () => {
-    const input = {
-      version: 1,
-      columnWidths: { a: 100 },
-      filters: { globalText: 'q', columnFilters: { s: { kind: 'set', values: ['x'] } } },
-      sort: [{ columnKey: 'a', direction: 'asc' }],
-    };
-    const migrated = migrateGridState(input);
-    // 入力側を書き換える。
-    input.columnWidths.a = 999;
-    (input.filters.columnFilters.s as { values: string[] }).values.push('y');
-    input.sort.push({ columnKey: 'z', direction: 'desc' });
-    expect(migrated.columnWidths).toEqual({ a: 100 });
-    expect(migrated.filters.columnFilters.s).toEqual({ kind: 'set', values: ['x'] });
-    expect(migrated.sort).toEqual([{ columnKey: 'a', direction: 'asc' }]);
-  });
-});
-// テスト用: GridState を手早く組み立てるヘルパ(columnWidths / columnFilters / sort / globalText)。
-const st = (
-  columnWidths: Record<string, number> = {},
-  columnFilters: Record<string, ColumnFilterValue> = {},
-  sort: GridSortState = [],
-  globalText = '',
-) => buildGridState(columnWidths, { globalText, columnFilters }, sort);
+  it('追加(v2): onStateChange は列メタ変化(applyState の reorder)でも発火し、最新の列メタを渡す', () => {
+    const onStateChange = vi.fn();
+    const ref = createRef<SpreadsheetGridHandle<Row>>();
+    render(
+      <ControlledGrid
+        gridRef={ref}
+        initialColumns={columns}
+        onStateChange={onStateChange}
+      />,
+    );
 
-describe('isSameGridState', () => {
-  it('同一内容は true', () => {
-    expect(isSameGridState(st({ a: 100 }), st({ a: 100 }))).toBe(true);
-  });
+    act(() => {
+      ref.current?.applyState({
+        version: GRID_STATE_VERSION,
+        columnWidths: {},
+        filters: { globalText: '', columnFilters: {} },
+        sort: [],
+        columns: [{ key: 'qty' }, { key: 'name' }, { key: 'id' }], // reorder
+      });
+    });
 
-  it('version 違いは false', () => {
-    const a = buildGridState({}, emptyFilters(), [], 1);
-    const b = buildGridState({}, emptyFilters(), [], 2);
-    expect(isSameGridState(a, b)).toBe(false);
-  });
-
-  it('columnWidths: 値違い / キー集合違いは false', () => {
-    expect(isSameGridState(st({ a: 100 }), st({ a: 120 }))).toBe(false);
-    expect(isSameGridState(st({ a: 100 }), st({ a: 100, b: 50 }))).toBe(false);
-    expect(isSameGridState(st({ a: 100 }), st({ b: 100 }))).toBe(false);
-  });
-
-  it('globalText 違いは false', () => {
-    expect(isSameGridState(st({}, {}, [], 'x'), st({}, {}, [], 'y'))).toBe(false);
-  });
-
-  it('set フィルター: values / mode を比較', () => {
-    expect(
-      isSameGridState(
-        st({}, { c: { kind: 'set', values: ['a', 'b'] } }),
-        st({}, { c: { kind: 'set', values: ['a', 'b'] } }),
-      ),
-    ).toBe(true);
-    expect(
-      isSameGridState(
-        st({}, { c: { kind: 'set', values: ['a'] } }),
-        st({}, { c: { kind: 'set', values: ['a', 'b'] } }),
-      ),
-    ).toBe(false);
-    // mode 既定(include)vs 明示 include は等価。
-    expect(
-      isSameGridState(
-        st({}, { c: { kind: 'set', values: ['a'] } }),
-        st({}, { c: { kind: 'set', mode: 'include', values: ['a'] } }),
-      ),
-    ).toBe(true);
-    // include vs exclude は不等。
-    expect(
-      isSameGridState(
-        st({}, { c: { kind: 'set', mode: 'include', values: ['a'] } }),
-        st({}, { c: { kind: 'set', mode: 'exclude', values: ['a'] } }),
-      ),
-    ).toBe(false);
-  });
-
-  it('number フィルター: raw / parsed を比較', () => {
-    const mk = (
-      raw: string,
-      parsed: ParsedNumberFilter | null,
-    ): ColumnFilterValue => ({ kind: 'number', raw, parsed });
-    expect(
-      isSameGridState(
-        st({}, { n: mk('>5', { mode: 'comparison', operator: '>', value: 5 }) }),
-        st({}, { n: mk('>5', { mode: 'comparison', operator: '>', value: 5 }) }),
-      ),
-    ).toBe(true);
-    expect(
-      isSameGridState(
-        st({}, { n: mk('>5', { mode: 'comparison', operator: '>', value: 5 }) }),
-        st({}, { n: mk('>6', { mode: 'comparison', operator: '>', value: 6 }) }),
-      ),
-    ).toBe(false);
-    // parsed null vs 非 null は不等。
-    expect(
-      isSameGridState(
-        st({}, { n: mk('foo', null) }),
-        st({}, { n: mk('foo', { mode: 'comparison', operator: '=', value: 0 }) }),
-      ),
-    ).toBe(false);
-    // range の中身違い。
-    expect(
-      isSameGridState(
-        st({}, { n: mk('1-5', { mode: 'range', min: 1, max: 5 }) }),
-        st({}, { n: mk('1-5', { mode: 'range', min: 1, max: 9 }) }),
-      ),
-    ).toBe(false);
-  });
-
-  it('text/date/select: value を比較、同キー kind 違いは false', () => {
-    expect(
-      isSameGridState(
-        st({}, { t: { kind: 'text', value: 'x' } }),
-        st({}, { t: { kind: 'text', value: 'x' } }),
-      ),
-    ).toBe(true);
-    expect(
-      isSameGridState(
-        st({}, { t: { kind: 'text', value: 'x' } }),
-        st({}, { t: { kind: 'text', value: 'y' } }),
-      ),
-    ).toBe(false);
-    expect(
-      isSameGridState(
-        st({}, { t: { kind: 'text', value: 'x' } }),
-        st({}, { t: { kind: 'select', value: 'x' } }),
-      ),
-    ).toBe(false);
-  });
-
-  it('custom: value 参照同一なら true、別参照なら false', () => {
-    const shared = { deep: 1 };
-    expect(
-      isSameGridState(
-        st({}, { c: { kind: 'custom', value: shared } }),
-        st({}, { c: { kind: 'custom', value: shared } }),
-      ),
-    ).toBe(true);
-    expect(
-      isSameGridState(
-        st({}, { c: { kind: 'custom', value: { deep: 1 } } }),
-        st({}, { c: { kind: 'custom', value: { deep: 1 } } }),
-      ),
-    ).toBe(false);
-  });
-
-  it('columnFilters のキー集合違いは false', () => {
-    expect(
-      isSameGridState(
-        st({}, { a: { kind: 'text', value: 'x' } }),
-        st({}, {
-          a: { kind: 'text', value: 'x' },
-          b: { kind: 'text', value: 'y' },
-        }),
-      ),
-    ).toBe(false);
-  });
-
-  it('sort: 長さ / 順序 / direction を比較', () => {
-    expect(
-      isSameGridState(
-        st({}, {}, [{ columnKey: 'a', direction: 'asc' }]),
-        st({}, {}, [{ columnKey: 'a', direction: 'asc' }]),
-      ),
-    ).toBe(true);
-    expect(
-      isSameGridState(
-        st({}, {}, [{ columnKey: 'a', direction: 'asc' }]),
-        st({}, {}, [{ columnKey: 'a', direction: 'desc' }]),
-      ),
-    ).toBe(false);
-    expect(
-      isSameGridState(
-        st({}, {}, [
-          { columnKey: 'a', direction: 'asc' },
-          { columnKey: 'b', direction: 'asc' },
-        ]),
-        st({}, {}, [
-          { columnKey: 'b', direction: 'asc' },
-          { columnKey: 'a', direction: 'asc' },
-        ]),
-      ),
-    ).toBe(false);
-    expect(
-      isSameGridState(
-        st({}, {}, [{ columnKey: 'a', direction: 'asc' }]),
-        st({}, {}, []),
-      ),
-    ).toBe(false);
+    expect(onStateChange).toHaveBeenCalled();
+    const last = onStateChange.mock.calls.at(-1)?.[0] as GridState;
+    expect(last.columns).toEqual([
+      { key: 'qty' },
+      { key: 'name' },
+      { key: 'id' },
+    ]);
   });
 });
-
-describe('decideStateChangeEmit', () => {
-  const A = st({ a: 100 });
-  const B = st({ a: 200 });
-
-  it('ドラッグ中は発火せず lastEmitted を据え置く(prevLast を返す)', () => {
-    const d = decideStateChangeEmit(A, B, true);
-    expect(d.emit).toBe(false);
-    expect(d.nextLast).toBe(A);
-  });
-
-  it('ドラッグ中は current が prevLast と異なっても保留(中間幅を通知しない)', () => {
-    const d = decideStateChangeEmit(A, st({ a: 150 }), true);
-    expect(d.emit).toBe(false);
-    expect(d.nextLast).toBe(A);
-  });
-
-  it('初回(prevLast=null)は発火せず current を記録', () => {
-    const d = decideStateChangeEmit(null, A, false);
-    expect(d.emit).toBe(false);
-    expect(d.nextLast).toBe(A);
-  });
-
-  it('前回と同値なら発火せず current を記録', () => {
-    const same = st({ a: 100 });
-    const d = decideStateChangeEmit(A, same, false);
-    expect(d.emit).toBe(false);
-    expect(d.nextLast).toBe(same);
-  });
-
-  it('変化あり(非ドラッグ)は発火し current を記録', () => {
-    const d = decideStateChangeEmit(A, B, false);
-    expect(d.emit).toBe(true);
-    expect(d.nextLast).toBe(B);
-  });
-});
-</file>
-
-<file path="src/components/spreadsheet-grid/logic/gridState.ts">
-import type {
-  ColumnFilterValue,
-  GridFilterState,
-  GridSortState,
-  GridState,
-  ParsedNumberFilter,
-} from '../model/gridTypes';
-
-// 追加(state #1): 列状態のシリアライズ(getState / applyState)の純ロジックです。ハンドル
-//   (SpreadsheetGridHandle)から呼ばれ、DOM や reducer には触れません(値の組み立て / 複製 /
-//   正規化だけを行います)。永続化(localStorage 等)は consumer に委ね、ここは「純粋な snapshot と、
-//   外部入力を現行スキーマへ畳む migrate」だけを提供します。
-
-// 状態スキーマのバージョンです。GridState.version に焼き、将来形式が変わったとき applyState 側で
-//   旧バージョンを移行できるようにします(現行は 1)。
-export const GRID_STATE_VERSION = 1;
-
-// 列フィルター値(判別共用体)を 1 段深くコピーします。getState の snapshot / applyState の正規化で、
-//   reducer の現在オブジェクトと consumer 保持オブジェクトが参照を共有しないようにするためです。
-//   - set    : values 配列を複製(mode はプリミティブ)。
-//   - number : parsed(入れ子オブジェクト)も複製(null はそのまま)。
-//   - text / date / select : 浅いコピーで十分(中身はプリミティブ)。
-//   - custom : value は unknown(任意形)のため参照共有のまま(深いコピーは consumer 責務)。
-export const cloneColumnFilterValue = (
-  value: ColumnFilterValue,
-): ColumnFilterValue => {
-  switch (value.kind) {
-    case 'set':
-      return { ...value, values: [...value.values] };
-    case 'number':
-      return { ...value, parsed: value.parsed ? { ...value.parsed } : null };
-    case 'text':
-    case 'date':
-    case 'select':
-      return { ...value };
-    case 'custom':
-      return { ...value };
-  }
-};
-
-// columnFilters マップを値ごと clone して新規マップを返します(キー集合は同一)。
-const cloneColumnFilters = (
-  columnFilters: Record<string, ColumnFilterValue>,
-): Record<string, ColumnFilterValue> => {
-  const next: Record<string, ColumnFilterValue> = {};
-  for (const key of Object.keys(columnFilters)) {
-    next[key] = cloneColumnFilterValue(columnFilters[key]);
-  }
-  return next;
-};
-
-// 現在の永続スライス(手動リサイズ幅 / フィルター / ソート)から GridState snapshot を組み立てます
-//   (純粋・副作用なし)。返り値は全フィールドが新規オブジェクト/配列で、consumer がそのまま mutate
-//   しても reducer の内部状態へは波及しません(逆も同様)。そのまま JSON.stringify して保存できます。
-export const buildGridState = (
-  columnWidths: Record<string, number>,
-  filters: GridFilterState,
-  sort: GridSortState,
-  version: number = GRID_STATE_VERSION,
-): GridState => ({
-  version,
-  columnWidths: { ...columnWidths },
-  filters: {
-    globalText: filters.globalText,
-    columnFilters: cloneColumnFilters(filters.columnFilters),
-  },
-  // エントリ(columnKey / direction)も複製します。
-  sort: sort.map((entry) => ({ ...entry })),
-});
-
-// applyState に渡る外部入力(localStorage 等の deserialize 結果)を、現行スキーマの GridState へ
-//   防御的に正規化します。型不一致 / 欠損フィールドは既定へ畳み、reducer が消費できる形へ揃えます。
-//   - columnWidths : 有限数値のエントリだけ採用(それ以外は捨てる)。
-//   - filters      : globalText は string(既定 '')、columnFilters は kind を持つオブジェクトだけ採用。
-//                    値の kind 中身までは検証しません(getState 出力の往復を前提とします)。
-//   - sort         : columnKey(string)+ direction('asc' | 'desc')のエントリだけ採用。
-//   version は入力値に関わらず現行(GRID_STATE_VERSION)へ揃えます。返り値は新規オブジェクト/配列で、
-//   consumer 保持オブジェクトと参照を共有しません(applyState の dispatch ペイロードとして安全)。
-export const migrateGridState = (input: unknown): GridState => {
-  const source =
-    input && typeof input === 'object'
-      ? (input as Record<string, unknown>)
-      : {};
-
-  // columnWidths: number(有限)値のみ採用します。
-  const columnWidths: Record<string, number> = {};
-  const rawWidths = source.columnWidths;
-  if (rawWidths && typeof rawWidths === 'object') {
-    const widthMap = rawWidths as Record<string, unknown>;
-    for (const key of Object.keys(widthMap)) {
-      const w = widthMap[key];
-      if (typeof w === 'number' && Number.isFinite(w)) {
-        columnWidths[key] = w;
-      }
-    }
-  }
-
-  // filters: globalText(string)+ columnFilters(object)を防御的に取り出します。
-  const rawFilters =
-    source.filters && typeof source.filters === 'object'
-      ? (source.filters as Record<string, unknown>)
-      : {};
-  const globalText =
-    typeof rawFilters.globalText === 'string' ? rawFilters.globalText : '';
-  const columnFilters: Record<string, ColumnFilterValue> = {};
-  const rawColumnFilters = rawFilters.columnFilters;
-  if (rawColumnFilters && typeof rawColumnFilters === 'object') {
-    const filterMap = rawColumnFilters as Record<string, unknown>;
-    for (const key of Object.keys(filterMap)) {
-      const v = filterMap[key];
-      // kind を持つオブジェクトのみ採用(深い検証はしない)。値は clone して参照を切ります。
-      if (v && typeof v === 'object' && 'kind' in v) {
-        columnFilters[key] = cloneColumnFilterValue(v as ColumnFilterValue);
-      }
-    }
-  }
-
-  // sort: 配列のうち columnKey(string)+ direction('asc' | 'desc')のエントリだけ採用します。
-  const sort: GridSortState = [];
-  const rawSort = source.sort;
-  if (Array.isArray(rawSort)) {
-    for (const entry of rawSort) {
-      if (entry && typeof entry === 'object') {
-        const e = entry as Record<string, unknown>;
-        if (
-          typeof e.columnKey === 'string' &&
-          (e.direction === 'asc' || e.direction === 'desc')
-        ) {
-          sort.push({ columnKey: e.columnKey, direction: e.direction });
-        }
-      }
-    }
-  }
-
-  return {
-    version: GRID_STATE_VERSION,
-    columnWidths,
-    filters: { globalText, columnFilters },
-    sort,
-  };
-};
-// 追加(state #2 / onStateChange): number フィルターの parsed(解釈結果)の構造等価です。
-//   どちらか null なら参照(= null 同士)で判定。mode 不一致は不等、同一 mode は中身を比較します。
-const isSameParsedNumberFilter = (
-  a: ParsedNumberFilter | null,
-  b: ParsedNumberFilter | null,
-): boolean => {
-  if (a === null || b === null) {
-    return a === b;
-  }
-  if (a.mode === 'comparison' && b.mode === 'comparison') {
-    return a.operator === b.operator && a.value === b.value;
-  }
-  if (a.mode === 'range' && b.mode === 'range') {
-    return a.min === b.min && a.max === b.max;
-  }
-  return false;
-};
-
-// 追加(state #2 / onStateChange): 列フィルター値(判別共用体)の構造等価です。
-//   kind が異なれば不等。各 kind の中身(set の values 配列・number の raw/parsed・text/date/select の
-//   value)を比較します。custom の value(unknown)は深い比較が不能なため Object.is(参照同一)で判定し、
-//   buildGridState が参照共有でコピーする規約と整合させます(同じ filter なら同一参照 → 等価)。
-const isSameColumnFilterValue = (
-  a: ColumnFilterValue,
-  b: ColumnFilterValue,
-): boolean => {
-  switch (a.kind) {
-    case 'set':
-      return (
-        b.kind === 'set' &&
-        (a.mode ?? 'include') === (b.mode ?? 'include') &&
-        a.values.length === b.values.length &&
-        a.values.every((v, i) => v === b.values[i])
-      );
-    case 'number':
-      return (
-        b.kind === 'number' &&
-        a.raw === b.raw &&
-        isSameParsedNumberFilter(a.parsed, b.parsed)
-      );
-    case 'text':
-      return b.kind === 'text' && a.value === b.value;
-    case 'date':
-      return b.kind === 'date' && a.value === b.value;
-    case 'select':
-      return b.kind === 'select' && a.value === b.value;
-    case 'custom':
-      return b.kind === 'custom' && Object.is(a.value, b.value);
-  }
-};
-
-// number レコード(columnWidths)の構造等価です(キー集合 + 各値が一致)。
-const isSameNumberRecord = (
-  a: Record<string, number>,
-  b: Record<string, number>,
-): boolean => {
-  const aKeys = Object.keys(a);
-  if (aKeys.length !== Object.keys(b).length) {
-    return false;
-  }
-  for (const key of aKeys) {
-    if (!(key in b) || a[key] !== b[key]) {
-      return false;
-    }
-  }
-  return true;
-};
-
-// 列フィルターマップの構造等価です(キー集合 + 各値が isSameColumnFilterValue で一致)。
-const isSameColumnFilters = (
-  a: Record<string, ColumnFilterValue>,
-  b: Record<string, ColumnFilterValue>,
-): boolean => {
-  const aKeys = Object.keys(a);
-  if (aKeys.length !== Object.keys(b).length) {
-    return false;
-  }
-  for (const key of aKeys) {
-    if (!(key in b) || !isSameColumnFilterValue(a[key], b[key])) {
-      return false;
-    }
-  }
-  return true;
-};
-
-// 追加(state #2 / onStateChange): GridState 同士の構造等価です。version / columnWidths /
-//   filters(globalText + columnFilters)/ sort をすべて深く比較します。onStateChange の
-//   「永続スライスが実際に変化したか」判定に使います(参照比較では毎回不等になり得るため)。
-export const isSameGridState = (a: GridState, b: GridState): boolean => {
-  if (a.version !== b.version) {
-    return false;
-  }
-  if (!isSameNumberRecord(a.columnWidths, b.columnWidths)) {
-    return false;
-  }
-  if (a.filters.globalText !== b.filters.globalText) {
-    return false;
-  }
-  if (!isSameColumnFilters(a.filters.columnFilters, b.filters.columnFilters)) {
-    return false;
-  }
-  if (a.sort.length !== b.sort.length) {
-    return false;
-  }
-  for (let i = 0; i < a.sort.length; i += 1) {
-    if (
-      a.sort[i].columnKey !== b.sort[i].columnKey ||
-      a.sort[i].direction !== b.sort[i].direction
-    ) {
-      return false;
-    }
-  }
-  return true;
-};
-
-// 追加(state #2 / onStateChange): onStateChange を発火すべきかの判定結果です。
-//   emit=発火するか / nextLast=次に保持すべき「最後に通知した state」(発火しない場合も更新規約あり)。
-export type StateChangeDecision = {
-  emit: boolean;
-  nextLast: GridState | null;
-};
-
-// 追加(state #2 / onStateChange): onStateChange の発火可否を純粋に判定します(副作用なし)。
-//   - isDragging(列リサイズ / 選択のドラッグ中): 確定前なので発火せず、lastEmitted も据え置きます
-//     (prevLast を返す)。これで列リサイズの毎フレーム更新を握りつぶし、確定後 1 回に集約します。
-//   - prevLast === null(初回): 発火せず、現在値を記録(nextLast=current)。マウント直後の通知を防ぎます。
-//   - 前回通知と構造等価: 発火せず、記録は current で更新(参照だけ変わったケースを弾く)。
-//   - それ以外: 発火し(emit=true)、current を記録します。
-export const decideStateChangeEmit = (
-  prevLast: GridState | null,
-  current: GridState,
-  isDragging: boolean,
-): StateChangeDecision => {
-  if (isDragging) {
-    return { emit: false, nextLast: prevLast };
-  }
-  if (prevLast === null) {
-    return { emit: false, nextLast: current };
-  }
-  if (isSameGridState(prevLast, current)) {
-    return { emit: false, nextLast: current };
-  }
-  return { emit: true, nextLast: current };
-};
 </file>
 
 <file path="src/components/spreadsheet-grid/view/DefaultGridBottomBar.tsx">
@@ -8519,6 +7906,1155 @@ describe('useServerSideRowModel', () => {
     expect(rec.calls.length).toBe(before);
   });
 });
+</file>
+
+<file path="src/components/spreadsheet-grid/logic/gridState.test.ts">
+import { describe, it, expect } from 'vitest';
+
+import {
+  GRID_STATE_VERSION,
+  buildGridState,
+  cloneColumnFilterValue,
+  migrateGridState,
+  isSameGridState,
+  decideStateChangeEmit,
+  extractColumnState,
+  applyColumnState,
+} from './gridState';
+import type {
+  ColumnFilterValue,
+  GridColumn,
+  GridColumnState,
+  GridFilterState,
+  GridSortState,
+  ParsedNumberFilter,
+} from '../model/gridTypes';
+
+const emptyFilters = (): GridFilterState => ({
+  globalText: '',
+  columnFilters: {},
+});
+
+describe('cloneColumnFilterValue', () => {
+  it('set: values 配列を複製する(複製の mutate は元へ波及しない)', () => {
+    const original: ColumnFilterValue = { kind: 'set', values: ['a', 'b'] };
+    const cloned = cloneColumnFilterValue(original);
+    expect(cloned).toEqual(original);
+    expect(cloned).not.toBe(original);
+    if (cloned.kind === 'set') {
+      expect(cloned.values).not.toBe(original.kind === 'set' ? original.values : undefined);
+      cloned.values.push('c');
+    }
+    expect(original).toEqual({ kind: 'set', values: ['a', 'b'] });
+  });
+
+  it('number: parsed(入れ子)も複製する', () => {
+    const original: ColumnFilterValue = {
+      kind: 'number',
+      raw: '>5',
+      parsed: { mode: 'comparison', operator: '>', value: 5 },
+    };
+    const cloned = cloneColumnFilterValue(original);
+    expect(cloned).toEqual(original);
+    if (cloned.kind === 'number' && original.kind === 'number') {
+      expect(cloned.parsed).not.toBe(original.parsed);
+    }
+  });
+
+  it('number: parsed=null はそのまま', () => {
+    const original: ColumnFilterValue = {
+      kind: 'number',
+      raw: 'foo',
+      parsed: null,
+    };
+    const cloned = cloneColumnFilterValue(original);
+    expect(cloned).toEqual(original);
+    if (cloned.kind === 'number') {
+      expect(cloned.parsed).toBeNull();
+    }
+  });
+
+  it('text / date / select: 値は等価で別オブジェクト', () => {
+    const text: ColumnFilterValue = { kind: 'text', value: 'abc' };
+    const date: ColumnFilterValue = { kind: 'date', value: '2024' };
+    const select: ColumnFilterValue = { kind: 'select', value: 'X' };
+    expect(cloneColumnFilterValue(text)).toEqual(text);
+    expect(cloneColumnFilterValue(text)).not.toBe(text);
+    expect(cloneColumnFilterValue(date)).toEqual(date);
+    expect(cloneColumnFilterValue(select)).toEqual(select);
+  });
+
+  it('custom: value(unknown)は参照共有のまま', () => {
+    const nested = { deep: 1 };
+    const original: ColumnFilterValue = { kind: 'custom', value: nested };
+    const cloned = cloneColumnFilterValue(original);
+    expect(cloned).toEqual(original);
+    if (cloned.kind === 'custom') {
+      // value は深いコピーをしない契約なので同一参照。
+      expect(cloned.value).toBe(nested);
+    }
+  });
+});
+
+describe('buildGridState', () => {
+  it('version を現行スキーマ番号で焼く', () => {
+    const state = buildGridState({}, emptyFilters(), []);
+    expect(state.version).toBe(GRID_STATE_VERSION);
+  });
+
+  it('columnWidths を複製する(返り値の mutate は元へ波及しない)', () => {
+    const widths = { a: 100, b: 200 };
+    const state = buildGridState(widths, emptyFilters(), []);
+    expect(state.columnWidths).toEqual(widths);
+    expect(state.columnWidths).not.toBe(widths);
+    state.columnWidths.a = 999;
+    expect(widths.a).toBe(100);
+  });
+
+  it('filters を複製する(globalText / columnFilters / 値まで切り離す)', () => {
+    const filters: GridFilterState = {
+      globalText: 'q',
+      columnFilters: {
+        s: { kind: 'set', values: ['x'] },
+        t: { kind: 'text', value: 'abc' },
+      },
+    };
+    const state = buildGridState({}, filters, []);
+    expect(state.filters).toEqual(filters);
+    expect(state.filters).not.toBe(filters);
+    expect(state.filters.columnFilters).not.toBe(filters.columnFilters);
+    expect(state.filters.columnFilters.s).not.toBe(filters.columnFilters.s);
+    // 返り値の値を mutate しても元へ波及しない。
+    const cloned = state.filters.columnFilters.s;
+    if (cloned.kind === 'set') {
+      cloned.values.push('y');
+    }
+    expect(filters.columnFilters.s).toEqual({ kind: 'set', values: ['x'] });
+  });
+
+  it('sort エントリを複製する', () => {
+    const sort: GridSortState = [{ columnKey: 'a', direction: 'asc' }];
+    const state = buildGridState({}, emptyFilters(), sort);
+    expect(state.sort).toEqual(sort);
+    expect(state.sort).not.toBe(sort);
+    expect(state.sort[0]).not.toBe(sort[0]);
+  });
+
+  it('version を明示指定できる', () => {
+    const state = buildGridState({}, emptyFilters(), [], [], 7);
+    expect(state.version).toBe(7);
+  });
+
+  it('追加(v2): columns(列メタ)を複製して含める', () => {
+    const columns: GridColumnState[] = [
+      { key: 'a', visible: false },
+      { key: 'b', pinned: 'left' },
+    ];
+    const state = buildGridState({}, emptyFilters(), [], columns);
+    expect(state.columns).toEqual(columns);
+    expect(state.columns).not.toBe(columns);
+    expect(state.columns?.[0]).not.toBe(columns[0]);
+    // 返り値の mutate は元へ波及しない。
+    state.columns?.push({ key: 'c' });
+    expect(columns).toHaveLength(2);
+  });
+
+  it('追加(v2): columns 省略時は空配列', () => {
+    const state = buildGridState({}, emptyFilters(), []);
+    expect(state.columns).toEqual([]);
+  });
+  it('buildGridState の出力を round-trip できる', () => {
+    const filters: GridFilterState = {
+      globalText: 'q',
+      columnFilters: {
+        s: { kind: 'set', values: ['x', 'y'] },
+        n: { kind: 'number', raw: '>5', parsed: { mode: 'comparison', operator: '>', value: 5 } },
+      },
+    };
+    const sort: GridSortState = [
+      { columnKey: 'a', direction: 'asc' },
+      { columnKey: 'b', direction: 'desc' },
+    ];
+    const built = buildGridState({ a: 120 }, filters, sort);
+    const migrated = migrateGridState(built);
+    expect(migrated).toEqual(built);
+  });
+
+  it('非オブジェクト入力は空状態(現行 version)へ畳む', () => {
+    const expected = {
+      version: GRID_STATE_VERSION,
+      columnWidths: {},
+      filters: { globalText: '', columnFilters: {} },
+      sort: [],
+    };
+    expect(migrateGridState(null)).toEqual(expected);
+    expect(migrateGridState(undefined)).toEqual(expected);
+    expect(migrateGridState('nope')).toEqual(expected);
+    expect(migrateGridState(42)).toEqual(expected);
+  });
+
+  it('columnWidths は有限数値のみ採用する', () => {
+    const migrated = migrateGridState({
+      columnWidths: { a: 100, b: 'x', c: NaN, d: Infinity, e: 50 },
+    });
+    expect(migrated.columnWidths).toEqual({ a: 100, e: 50 });
+  });
+
+  it('filters: globalText 非 string は空に、columnFilters は kind 必須', () => {
+    const migrated = migrateGridState({
+      filters: {
+        globalText: 123,
+        columnFilters: {
+          ok: { kind: 'text', value: 'abc' },
+          noKind: { value: 'abc' },
+          notObj: 'abc',
+        },
+      },
+    });
+    expect(migrated.filters.globalText).toBe('');
+    expect(Object.keys(migrated.filters.columnFilters)).toEqual(['ok']);
+    expect(migrated.filters.columnFilters.ok).toEqual({ kind: 'text', value: 'abc' });
+  });
+
+  it('filters 欠損 / columnFilters 非オブジェクトは既定へ', () => {
+    expect(migrateGridState({}).filters).toEqual({ globalText: '', columnFilters: {} });
+    expect(
+      migrateGridState({ filters: { columnFilters: 5 } }).filters,
+    ).toEqual({ globalText: '', columnFilters: {} });
+  });
+
+  it('sort: 配列以外は []、無効エントリは捨てる', () => {
+    expect(migrateGridState({ sort: 'x' }).sort).toEqual([]);
+    const migrated = migrateGridState({
+      sort: [
+        { columnKey: 'a', direction: 'asc' },
+        { columnKey: 'b', direction: 'sideways' },
+        { direction: 'asc' },
+        { columnKey: 'c', direction: 'desc' },
+        null,
+      ],
+    });
+    expect(migrated.sort).toEqual([
+      { columnKey: 'a', direction: 'asc' },
+      { columnKey: 'c', direction: 'desc' },
+    ]);
+  });
+
+  it('version は入力値に関わらず現行へ揃える', () => {
+    expect(migrateGridState({ version: 999 }).version).toBe(GRID_STATE_VERSION);
+  });
+
+  it('返り値は入力と参照を共有しない(入力 mutate は出力へ波及しない)', () => {
+    const input = {
+      version: 1,
+      columnWidths: { a: 100 },
+      filters: { globalText: 'q', columnFilters: { s: { kind: 'set', values: ['x'] } } },
+      sort: [{ columnKey: 'a', direction: 'asc' }],
+    };
+    const migrated = migrateGridState(input);
+    // 入力側を書き換える。
+    input.columnWidths.a = 999;
+    (input.filters.columnFilters.s as { values: string[] }).values.push('y');
+    input.sort.push({ columnKey: 'z', direction: 'desc' });
+    expect(migrated.columnWidths).toEqual({ a: 100 });
+    expect(migrated.filters.columnFilters.s).toEqual({ kind: 'set', values: ['x'] });
+    expect(migrated.sort).toEqual([{ columnKey: 'a', direction: 'asc' }]);
+  });
+
+  it('追加(v2): columns 無し(v1 保存値)は undefined になる(後方互換)', () => {
+    const migrated = migrateGridState({
+      version: 1,
+      columnWidths: { a: 100 },
+      filters: { globalText: '', columnFilters: {} },
+      sort: [],
+    });
+    expect(migrated.columns).toBeUndefined();
+  });
+
+  it('追加(v2): columns を正規化する(key 必須・visible は boolean のみ・pinned は left/right のみ)', () => {
+    const migrated = migrateGridState({
+      version: 2,
+      columnWidths: {},
+      filters: { globalText: '', columnFilters: {} },
+      sort: [],
+      columns: [
+        { key: 'a', visible: false, pinned: 'left' },
+        { key: 'b', visible: 'yes', pinned: 'middle' }, // visible/pinned 不正 → 当該フィールドは省略
+        { key: 'c' },
+        { visible: true }, // key 無し → drop
+        'broken', // オブジェクトでない → drop
+      ],
+    });
+    expect(migrated.columns).toEqual([
+      { key: 'a', visible: false, pinned: 'left' },
+      { key: 'b' },
+      { key: 'c' },
+    ]);
+  });
+
+  it('追加(v2): columns が配列でない(string 等)は undefined・空配列 / 全無効は空配列を保持', () => {
+    // 配列でない → undefined(列メタ未適用)。
+    expect(
+      migrateGridState({ version: 2, columns: 'x' }).columns,
+    ).toBeUndefined();
+    // 空配列 → 空配列(present だが列メタ無し。buildGridState 出力との往復一致のため潰さない)。
+    expect(migrateGridState({ version: 2, columns: [] }).columns).toEqual([]);
+    // 全無効エントリ → フィルター後の空配列(配列ではあるので [] を返す)。
+    expect(
+      migrateGridState({ version: 2, columns: [{ noKey: 1 }, 42] }).columns,
+    ).toEqual([]);
+  });
+
+  it('追加(v2): columns の返り値は入力と参照を共有しない', () => {
+    const input = {
+      version: 2,
+      columns: [{ key: 'a', visible: false }],
+    };
+    const migrated = migrateGridState(input);
+    input.columns[0].visible = true;
+    expect(migrated.columns).toEqual([{ key: 'a', visible: false }]);
+  });
+});
+// テスト用: GridState を手早く組み立てるヘルパ(columnWidths / columnFilters / sort / globalText)。
+const st = (
+  columnWidths: Record<string, number> = {},
+  columnFilters: Record<string, ColumnFilterValue> = {},
+  sort: GridSortState = [],
+  globalText = '',
+) => buildGridState(columnWidths, { globalText, columnFilters }, sort);
+
+describe('isSameGridState', () => {
+  it('同一内容は true', () => {
+    expect(isSameGridState(st({ a: 100 }), st({ a: 100 }))).toBe(true);
+  });
+
+  it('version 違いは false', () => {
+    const a = buildGridState({}, emptyFilters(), [], [], 1);
+    const b = buildGridState({}, emptyFilters(), [], [], 2);
+    expect(isSameGridState(a, b)).toBe(false);
+  });
+
+  it('columnWidths: 値違い / キー集合違いは false', () => {
+    expect(isSameGridState(st({ a: 100 }), st({ a: 120 }))).toBe(false);
+    expect(isSameGridState(st({ a: 100 }), st({ a: 100, b: 50 }))).toBe(false);
+    expect(isSameGridState(st({ a: 100 }), st({ b: 100 }))).toBe(false);
+  });
+
+  it('globalText 違いは false', () => {
+    expect(isSameGridState(st({}, {}, [], 'x'), st({}, {}, [], 'y'))).toBe(false);
+  });
+
+  it('set フィルター: values / mode を比較', () => {
+    expect(
+      isSameGridState(
+        st({}, { c: { kind: 'set', values: ['a', 'b'] } }),
+        st({}, { c: { kind: 'set', values: ['a', 'b'] } }),
+      ),
+    ).toBe(true);
+    expect(
+      isSameGridState(
+        st({}, { c: { kind: 'set', values: ['a'] } }),
+        st({}, { c: { kind: 'set', values: ['a', 'b'] } }),
+      ),
+    ).toBe(false);
+    // mode 既定(include)vs 明示 include は等価。
+    expect(
+      isSameGridState(
+        st({}, { c: { kind: 'set', values: ['a'] } }),
+        st({}, { c: { kind: 'set', mode: 'include', values: ['a'] } }),
+      ),
+    ).toBe(true);
+    // include vs exclude は不等。
+    expect(
+      isSameGridState(
+        st({}, { c: { kind: 'set', mode: 'include', values: ['a'] } }),
+        st({}, { c: { kind: 'set', mode: 'exclude', values: ['a'] } }),
+      ),
+    ).toBe(false);
+  });
+
+  it('number フィルター: raw / parsed を比較', () => {
+    const mk = (
+      raw: string,
+      parsed: ParsedNumberFilter | null,
+    ): ColumnFilterValue => ({ kind: 'number', raw, parsed });
+    expect(
+      isSameGridState(
+        st({}, { n: mk('>5', { mode: 'comparison', operator: '>', value: 5 }) }),
+        st({}, { n: mk('>5', { mode: 'comparison', operator: '>', value: 5 }) }),
+      ),
+    ).toBe(true);
+    expect(
+      isSameGridState(
+        st({}, { n: mk('>5', { mode: 'comparison', operator: '>', value: 5 }) }),
+        st({}, { n: mk('>6', { mode: 'comparison', operator: '>', value: 6 }) }),
+      ),
+    ).toBe(false);
+    // parsed null vs 非 null は不等。
+    expect(
+      isSameGridState(
+        st({}, { n: mk('foo', null) }),
+        st({}, { n: mk('foo', { mode: 'comparison', operator: '=', value: 0 }) }),
+      ),
+    ).toBe(false);
+    // range の中身違い。
+    expect(
+      isSameGridState(
+        st({}, { n: mk('1-5', { mode: 'range', min: 1, max: 5 }) }),
+        st({}, { n: mk('1-5', { mode: 'range', min: 1, max: 9 }) }),
+      ),
+    ).toBe(false);
+  });
+
+  it('text/date/select: value を比較、同キー kind 違いは false', () => {
+    expect(
+      isSameGridState(
+        st({}, { t: { kind: 'text', value: 'x' } }),
+        st({}, { t: { kind: 'text', value: 'x' } }),
+      ),
+    ).toBe(true);
+    expect(
+      isSameGridState(
+        st({}, { t: { kind: 'text', value: 'x' } }),
+        st({}, { t: { kind: 'text', value: 'y' } }),
+      ),
+    ).toBe(false);
+    expect(
+      isSameGridState(
+        st({}, { t: { kind: 'text', value: 'x' } }),
+        st({}, { t: { kind: 'select', value: 'x' } }),
+      ),
+    ).toBe(false);
+  });
+
+  it('custom: value 参照同一なら true、別参照なら false', () => {
+    const shared = { deep: 1 };
+    expect(
+      isSameGridState(
+        st({}, { c: { kind: 'custom', value: shared } }),
+        st({}, { c: { kind: 'custom', value: shared } }),
+      ),
+    ).toBe(true);
+    expect(
+      isSameGridState(
+        st({}, { c: { kind: 'custom', value: { deep: 1 } } }),
+        st({}, { c: { kind: 'custom', value: { deep: 1 } } }),
+      ),
+    ).toBe(false);
+  });
+
+  it('columnFilters のキー集合違いは false', () => {
+    expect(
+      isSameGridState(
+        st({}, { a: { kind: 'text', value: 'x' } }),
+        st({}, {
+          a: { kind: 'text', value: 'x' },
+          b: { kind: 'text', value: 'y' },
+        }),
+      ),
+    ).toBe(false);
+  });
+
+  it('sort: 長さ / 順序 / direction を比較', () => {
+    expect(
+      isSameGridState(
+        st({}, {}, [{ columnKey: 'a', direction: 'asc' }]),
+        st({}, {}, [{ columnKey: 'a', direction: 'asc' }]),
+      ),
+    ).toBe(true);
+    expect(
+      isSameGridState(
+        st({}, {}, [{ columnKey: 'a', direction: 'asc' }]),
+        st({}, {}, [{ columnKey: 'a', direction: 'desc' }]),
+      ),
+    ).toBe(false);
+    expect(
+      isSameGridState(
+        st({}, {}, [
+          { columnKey: 'a', direction: 'asc' },
+          { columnKey: 'b', direction: 'asc' },
+        ]),
+        st({}, {}, [
+          { columnKey: 'b', direction: 'asc' },
+          { columnKey: 'a', direction: 'asc' },
+        ]),
+      ),
+    ).toBe(false);
+    expect(
+      isSameGridState(
+        st({}, {}, [{ columnKey: 'a', direction: 'asc' }]),
+        st({}, {}, []),
+      ),
+    ).toBe(false);
+  });
+
+  it('追加(v2): columns 順序違いは false', () => {
+    const a = buildGridState({}, emptyFilters(), [], [{ key: 'a' }, { key: 'b' }]);
+    const b = buildGridState({}, emptyFilters(), [], [{ key: 'b' }, { key: 'a' }]);
+    expect(isSameGridState(a, b)).toBe(false);
+  });
+
+  it('追加(v2): columns の visible / pinned 違いは false', () => {
+    const base = (cols: GridColumnState[]) =>
+      buildGridState({}, emptyFilters(), [], cols);
+    expect(
+      isSameGridState(
+        base([{ key: 'a', visible: false }]),
+        base([{ key: 'a', visible: true }]),
+      ),
+    ).toBe(false);
+    expect(
+      isSameGridState(
+        base([{ key: 'a', pinned: 'left' }]),
+        base([{ key: 'a', pinned: 'right' }]),
+      ),
+    ).toBe(false);
+  });
+
+  it('追加(v2): columns 同一(順序 + visible + pinned 一致)は別配列でも true', () => {
+    const cols: GridColumnState[] = [
+      { key: 'a', visible: false },
+      { key: 'b', pinned: 'left' },
+    ];
+    const a = buildGridState({}, emptyFilters(), [], cols.map((c) => ({ ...c })));
+    const b = buildGridState({}, emptyFilters(), [], cols.map((c) => ({ ...c })));
+    expect(isSameGridState(a, b)).toBe(true);
+  });
+
+  it('追加(v2): columns 未指定(undefined・v1 migrate)と空配列(buildGridState)は不等', () => {
+    const v1 = migrateGridState({
+      version: 1,
+      columnWidths: {},
+      filters: { globalText: '', columnFilters: {} },
+      sort: [],
+    });
+    const built = buildGridState({}, emptyFilters(), []); // columns: []
+    expect(v1.columns).toBeUndefined();
+    expect(built.columns).toEqual([]);
+    expect(isSameGridState(v1, built)).toBe(false);
+  });
+});
+
+describe('decideStateChangeEmit', () => {
+  const A = st({ a: 100 });
+  const B = st({ a: 200 });
+
+  it('ドラッグ中は発火せず lastEmitted を据え置く(prevLast を返す)', () => {
+    const d = decideStateChangeEmit(A, B, true);
+    expect(d.emit).toBe(false);
+    expect(d.nextLast).toBe(A);
+  });
+
+  it('ドラッグ中は current が prevLast と異なっても保留(中間幅を通知しない)', () => {
+    const d = decideStateChangeEmit(A, st({ a: 150 }), true);
+    expect(d.emit).toBe(false);
+    expect(d.nextLast).toBe(A);
+  });
+
+  it('初回(prevLast=null)は発火せず current を記録', () => {
+    const d = decideStateChangeEmit(null, A, false);
+    expect(d.emit).toBe(false);
+    expect(d.nextLast).toBe(A);
+  });
+
+  it('前回と同値なら発火せず current を記録', () => {
+    const same = st({ a: 100 });
+    const d = decideStateChangeEmit(A, same, false);
+    expect(d.emit).toBe(false);
+    expect(d.nextLast).toBe(same);
+  });
+
+  it('変化あり(非ドラッグ)は発火し current を記録', () => {
+    const d = decideStateChangeEmit(A, B, false);
+    expect(d.emit).toBe(true);
+    expect(d.nextLast).toBe(B);
+  });
+});
+
+// テスト用: GridColumn を手早く生成します(width 既定 100。visible / pinned / flex / 非シリアライズ
+//   項目を opts で上書き。key / width は確定値で常に上書きします)。
+type TestRow = { id: number };
+const col = (
+  key: string,
+  opts: Partial<GridColumn<TestRow>> = {},
+): GridColumn<TestRow> => ({
+  ...opts,
+  key,
+  width: opts.width ?? 100,
+});
+
+describe('extractColumnState (追加 v2)', () => {
+  it('key / visible / pinned を配列順で抽出する', () => {
+    const result = extractColumnState([
+      col('a', { visible: false }),
+      col('b', { pinned: 'left' }),
+      col('c'),
+    ]);
+    expect(result).toEqual([
+      { key: 'a', visible: false },
+      { key: 'b', pinned: 'left' },
+      { key: 'c' },
+    ]);
+  });
+
+  it('visible / pinned 未指定のフィールドは省略する(JSON 往復後の形と一致)', () => {
+    const [entry] = extractColumnState([col('a')]);
+    expect(entry).toEqual({ key: 'a' });
+    expect('visible' in entry).toBe(false);
+    expect('pinned' in entry).toBe(false);
+  });
+
+  it('flex / width は含めない', () => {
+    const [entry] = extractColumnState([col('a', { flex: 2, width: 250 })]);
+    expect(entry).toEqual({ key: 'a' });
+  });
+});
+
+describe('applyColumnState (追加 v2)', () => {
+  it('保存 key 順に並べ替える(reorder の復元)', () => {
+    const current = [col('a'), col('b'), col('c')];
+    const result = applyColumnState(
+      current,
+      [{ key: 'c' }, { key: 'a' }, { key: 'b' }],
+      {},
+    );
+    expect(result.map((c) => c.key)).toEqual(['c', 'a', 'b']);
+  });
+
+  it('visible / pinned を適用し、pane 連結正規化する(left→center→right)', () => {
+    const current = [col('a'), col('b'), col('c')];
+    const result = applyColumnState(
+      current,
+      [
+        { key: 'a', pinned: 'right' },
+        { key: 'b' },
+        { key: 'c', pinned: 'left' },
+      ],
+      {},
+    );
+    // reorderColumnsByPane: left=[c], center=[b], right=[a]
+    expect(result.map((c) => c.key)).toEqual(['c', 'b', 'a']);
+    expect(result.find((c) => c.key === 'a')?.pinned).toBe('right');
+    expect(result.find((c) => c.key === 'c')?.pinned).toBe('left');
+    expect(result.find((c) => c.key === 'b')?.pinned).toBeUndefined();
+  });
+
+  it('visible=undefined / pinned=undefined も反映する(既定へ戻す)', () => {
+    const current = [col('a', { visible: false, pinned: 'left' })];
+    const result = applyColumnState(current, [{ key: 'a' }], {});
+    expect(result[0].visible).toBeUndefined();
+    expect(result[0].pinned).toBeUndefined();
+  });
+
+  it('savedWidths を column.width へ焼き込む(非 flex)', () => {
+    const current = [col('a', { width: 100 }), col('b', { width: 200 })];
+    const result = applyColumnState(current, [{ key: 'a' }, { key: 'b' }], {
+      a: 150,
+    });
+    expect(result.find((c) => c.key === 'a')?.width).toBe(150);
+    expect(result.find((c) => c.key === 'b')?.width).toBe(200);
+  });
+
+  it('保存にあって現 columns に無い key は drop', () => {
+    const current = [col('a'), col('b')];
+    const result = applyColumnState(
+      current,
+      [{ key: 'a' }, { key: 'x' }, { key: 'b' }],
+      {},
+    );
+    expect(result.map((c) => c.key)).toEqual(['a', 'b']);
+  });
+
+  it('現 columns にあって保存に無い key は末尾へ追加(相対順を保持)', () => {
+    const current = [col('a'), col('b'), col('c')];
+    const result = applyColumnState(current, [{ key: 'c' }, { key: 'a' }], {});
+    // saved 順 [c, a] の後ろへ未保存の b を追加。
+    expect(result.map((c) => c.key)).toEqual(['c', 'a', 'b']);
+  });
+
+  it('render fn / title / flex など非シリアライズ項目を引き継ぐ', () => {
+    const renderCell = () => null;
+    const current = [col('a', { title: 'A', flex: 3, renderCell, visible: true })];
+    const result = applyColumnState(current, [{ key: 'a', visible: false }], {});
+    expect(result[0].title).toBe('A');
+    expect(result[0].flex).toBe(3);
+    expect(result[0].renderCell).toBe(renderCell);
+    expect(result[0].visible).toBe(false); // 保存値で上書き
+  });
+
+  it('変更不要な列(meta 無し + 保存幅無し)は要素参照を保持する', () => {
+    const a = col('a');
+    const result = applyColumnState([a], [], {});
+    // 保存メタ空 → a は新規列扱いで末尾追加。meta 無し + 幅無しなので同一要素参照。
+    expect(result[0]).toBe(a);
+  });
+});
+</file>
+
+<file path="src/components/spreadsheet-grid/logic/gridState.ts">
+import type {
+  ColumnFilterValue,
+  GridColumn,
+  GridColumnState,
+  GridFilterState,
+  GridSortState,
+  GridState,
+  ParsedNumberFilter,
+} from '../model/gridTypes';
+// 追加(state v2): 列メタ適用時、pinned/order を AG Grid 互換の視覚順(left→center→right)へ
+//   正規化するために再利用します。grid 本体の reorder 経路と同じ関数で、適用結果の pane 連結を
+//   一致させます(視覚順 = 論理 index 空間の不変条件を applyState でも守るため)。
+import { reorderColumnsByPane } from './geometry';
+
+// 追加(state #1): 列状態のシリアライズ(getState / applyState)の純ロジックです。ハンドル
+//   (SpreadsheetGridHandle)から呼ばれ、DOM や reducer には触れません(値の組み立て / 複製 /
+//   正規化だけを行います)。永続化(localStorage 等)は consumer に委ね、ここは「純粋な snapshot と、
+//   外部入力を現行スキーマへ畳む migrate」だけを提供します。
+
+// 状態スキーマのバージョンです。GridState.version に焼き、将来形式が変わったとき applyState 側で
+//   旧バージョンを移行できるようにします。
+//   - v1: columnWidths(手動リサイズ幅)/ filters / sort のみ。
+//   - v2: 上記に加え columns(列メタ: 可視 / 順序 / ピン)を含めます。flex / width は含めません
+//     (flex は grid UI で不変・width は columnWidths でカバー済みのため。詳細は GridColumnState 型参照)。
+//   v1 保存値(columns フィールド無し)は migrateGridState で columns:undefined となり、列メタを
+//   触らず幅 / フィルター / ソートのみ適用します(完全後方互換)。
+export const GRID_STATE_VERSION = 2;
+
+// 列フィルター値(判別共用体)を 1 段深くコピーします。getState の snapshot / applyState の正規化で、
+//   reducer の現在オブジェクトと consumer 保持オブジェクトが参照を共有しないようにするためです。
+//   - set    : values 配列を複製(mode はプリミティブ)。
+//   - number : parsed(入れ子オブジェクト)も複製(null はそのまま)。
+//   - text / date / select : 浅いコピーで十分(中身はプリミティブ)。
+//   - custom : value は unknown(任意形)のため参照共有のまま(深いコピーは consumer 責務)。
+export const cloneColumnFilterValue = (
+  value: ColumnFilterValue,
+): ColumnFilterValue => {
+  switch (value.kind) {
+    case 'set':
+      return { ...value, values: [...value.values] };
+    case 'number':
+      return { ...value, parsed: value.parsed ? { ...value.parsed } : null };
+    case 'text':
+    case 'date':
+    case 'select':
+      return { ...value };
+    case 'custom':
+      return { ...value };
+  }
+};
+
+// columnFilters マップを値ごと clone して新規マップを返します(キー集合は同一)。
+const cloneColumnFilters = (
+  columnFilters: Record<string, ColumnFilterValue>,
+): Record<string, ColumnFilterValue> => {
+  const next: Record<string, ColumnFilterValue> = {};
+  for (const key of Object.keys(columnFilters)) {
+    next[key] = cloneColumnFilterValue(columnFilters[key]);
+  }
+  return next;
+};
+
+// 追加(state v2): GridColumnState 1 件を新規オブジェクトとして複製します(buildGridState の
+//   「全フィールド新規」契約のため)。未指定(undefined)フィールドは付与しません。
+const cloneColumnStateEntry = (entry: GridColumnState): GridColumnState => {
+  const next: GridColumnState = { key: entry.key };
+  if (entry.visible !== undefined) {
+    next.visible = entry.visible;
+  }
+  if (entry.pinned !== undefined) {
+    next.pinned = entry.pinned;
+  }
+  return next;
+};
+
+// 追加(state v2): columns prop(consumer 所有・GridColumn 配列)から、シリアライズ対象の列メタ
+//   (key / visible / pinned)だけを配列順で抽出します(純粋・read-only)。
+//   - 配列順 = 列順です(grid は reorderColumnsByPane で pane 連結正規化済みの順序を columns へ載せます)。
+//   - visible / pinned が未指定(undefined)のエントリは当該フィールドを省略し、JSON 往復後の形
+//     (フィールド absent)と一致させます。これにより isSameColumnStateArray の比較が対称になります。
+//   - flex / width は意図的に含めません(flex は grid UI で不変・width は columnWidths でカバー済み)。
+export const extractColumnState = <T,>(
+  columns: GridColumn<T>[],
+): GridColumnState[] =>
+  columns.map((column) => {
+    const entry: GridColumnState = { key: column.key };
+    if (column.visible !== undefined) {
+      entry.visible = column.visible;
+    }
+    if (column.pinned !== undefined) {
+      entry.pinned = column.pinned;
+    }
+    return entry;
+  });
+
+// 現在の永続スライス(手動リサイズ幅 / フィルター / ソート)+ 列メタ(v2)から GridState snapshot を
+//   組み立てます(純粋・副作用なし)。返り値は全フィールドが新規オブジェクト/配列で、consumer がその
+//   まま mutate しても reducer の内部状態へは波及しません(逆も同様)。そのまま JSON.stringify して
+//   保存できます。columns は extractColumnState で抽出済みの GridColumnState 配列を渡します
+//   (空配列でも version は v2 のまま=列メタ「全列なし」ではなく「空グリッド」の意。実運用では
+//   getState が常に全列を渡すため、空配列は列ゼロのグリッドだけです)。
+export const buildGridState = (
+  columnWidths: Record<string, number>,
+  filters: GridFilterState,
+  sort: GridSortState,
+  columns: GridColumnState[] = [],
+  version: number = GRID_STATE_VERSION,
+): GridState => ({
+  version,
+  columnWidths: { ...columnWidths },
+  filters: {
+    globalText: filters.globalText,
+    columnFilters: cloneColumnFilters(filters.columnFilters),
+  },
+  // エントリ(columnKey / direction)も複製します。
+  sort: sort.map((entry) => ({ ...entry })),
+  // 列メタも 1 件ずつ新規オブジェクトへ複製します(呼び出し側が共有配列を渡しても安全)。
+  columns: columns.map(cloneColumnStateEntry),
+});
+
+// applyState に渡る外部入力(localStorage 等の deserialize 結果)を、現行スキーマの GridState へ
+//   防御的に正規化します。型不一致 / 欠損フィールドは既定へ畳み、reducer が消費できる形へ揃えます。
+//   - columnWidths : 有限数値のエントリだけ採用(それ以外は捨てる)。
+//   - filters      : globalText は string(既定 '')、columnFilters は kind を持つオブジェクトだけ採用。
+//                    値の kind 中身までは検証しません(getState 出力の往復を前提とします)。
+//   - sort         : columnKey(string)+ direction('asc' | 'desc')のエントリだけ採用。
+//   version は入力値に関わらず現行(GRID_STATE_VERSION)へ揃えます。返り値は新規オブジェクト/配列で、
+//   consumer 保持オブジェクトと参照を共有しません(applyState の dispatch ペイロードとして安全)。
+export const migrateGridState = (input: unknown): GridState => {
+  const source =
+    input && typeof input === 'object'
+      ? (input as Record<string, unknown>)
+      : {};
+
+  // columnWidths: number(有限)値のみ採用します。
+  const columnWidths: Record<string, number> = {};
+  const rawWidths = source.columnWidths;
+  if (rawWidths && typeof rawWidths === 'object') {
+    const widthMap = rawWidths as Record<string, unknown>;
+    for (const key of Object.keys(widthMap)) {
+      const w = widthMap[key];
+      if (typeof w === 'number' && Number.isFinite(w)) {
+        columnWidths[key] = w;
+      }
+    }
+  }
+
+  // filters: globalText(string)+ columnFilters(object)を防御的に取り出します。
+  const rawFilters =
+    source.filters && typeof source.filters === 'object'
+      ? (source.filters as Record<string, unknown>)
+      : {};
+  const globalText =
+    typeof rawFilters.globalText === 'string' ? rawFilters.globalText : '';
+  const columnFilters: Record<string, ColumnFilterValue> = {};
+  const rawColumnFilters = rawFilters.columnFilters;
+  if (rawColumnFilters && typeof rawColumnFilters === 'object') {
+    const filterMap = rawColumnFilters as Record<string, unknown>;
+    for (const key of Object.keys(filterMap)) {
+      const v = filterMap[key];
+      // kind を持つオブジェクトのみ採用(深い検証はしない)。値は clone して参照を切ります。
+      if (v && typeof v === 'object' && 'kind' in v) {
+        columnFilters[key] = cloneColumnFilterValue(v as ColumnFilterValue);
+      }
+    }
+  }
+
+  // sort: 配列のうち columnKey(string)+ direction('asc' | 'desc')のエントリだけ採用します。
+  const sort: GridSortState = [];
+  const rawSort = source.sort;
+  if (Array.isArray(rawSort)) {
+    for (const entry of rawSort) {
+      if (entry && typeof entry === 'object') {
+        const e = entry as Record<string, unknown>;
+        if (
+          typeof e.columnKey === 'string' &&
+          (e.direction === 'asc' || e.direction === 'desc')
+        ) {
+          sort.push({ columnKey: e.columnKey, direction: e.direction });
+        }
+      }
+    }
+  }
+
+  // 追加(state v2): columns(列メタ)。配列のときだけ、各エントリを防御的に正規化します。
+  //   - key は string 必須(無し/非 string は drop)。
+  //   - visible は boolean のときだけ採用(それ以外は省略 = 未指定)。
+  //   - pinned は 'left' | 'right' のときだけ採用(それ以外は省略 = 非固定)。
+  //   columns フィールドが配列なら正規化済み配列(全無効なら空配列)を、配列でない / 非存在なら undefined を
+  //   返します。undefined = 列メタ未適用(v1 後方互換: v1 保存値は columns フィールドが無いため undefined)。
+  //   空配列([])は「present だが列メタ無し(0 列 or 全無効)」で、buildGridState 出力との往復一致のため
+  //   undefined へ潰しません(applyState では [] 適用=実質 no-op)。
+  let columns: GridColumnState[] | undefined;
+  const rawColumns = source.columns;
+  if (Array.isArray(rawColumns)) {
+    const normalized: GridColumnState[] = [];
+    for (const item of rawColumns) {
+      if (!item || typeof item !== 'object') {
+        continue;
+      }
+      const e = item as Record<string, unknown>;
+      if (typeof e.key !== 'string') {
+        continue;
+      }
+      const entry: GridColumnState = { key: e.key };
+      if (typeof e.visible === 'boolean') {
+        entry.visible = e.visible;
+      }
+      if (e.pinned === 'left' || e.pinned === 'right') {
+        entry.pinned = e.pinned;
+      }
+      normalized.push(entry);
+    }
+    columns = normalized;
+  }
+
+  return {
+    version: GRID_STATE_VERSION,
+    columnWidths,
+    filters: { globalText, columnFilters },
+    sort,
+    columns,
+  };
+};
+
+// 追加(state v2): 保存列メタ(GridColumnState[])を現在の columns 定義へ key ベースでマージし、
+//   新しい columns 配列を返します(純粋・副作用なし)。applyState から onColumnsChange へ渡す前提です。
+//   方針:
+//   - 保存メタの key 順で現 columns を並べ替えます(reorder の復元)。保存に在って現 columns に無い
+//     key は drop(削除列)。現 columns に在って保存に無い key は末尾へ追加(新規列・相対順を保持)。
+//   - 各列へ保存の visible / pinned を適用します(undefined もそのまま反映 = 既定へ戻す)。新規列(保存
+//     メタ無し)は consumer 宣言の visible / pinned を保持します。
+//   - render fn / title / filterType / flex など非シリアライズ項目は現 columns から引き継ぎます
+//     ({ ...column } で spread。flex は触らないため素通しです)。
+//   - 【幅の保全】savedWidths(v1 columnWidths)にエントリがある列は column.width へ焼き込みます。
+//     列メタ適用で columns prop が変わると grid の「columns → columnWidths/sync」effect が
+//     column.width 起点で columnWidths を全置換するため、焼かないと手動リサイズ幅が消えます
+//     (grid 本体の pin / visible / reorder ハンドラと同じ"保全"方向)。
+//   - 最後に reorderColumnsByPane で pane 連結正規化します(視覚順 = 論理 index 空間。grid の reorder
+//     経路と一致させ、pinned 復元後のグルーピングを確定します)。
+export const applyColumnState = <T,>(
+  currentColumns: GridColumn<T>[],
+  savedColumnState: GridColumnState[],
+  savedWidths: Record<string, number>,
+): GridColumn<T>[] => {
+  const byKey = new Map(currentColumns.map((column) => [column.key, column]));
+  const consumedKeys = new Set<string>();
+
+  // 1 列分の適用(meta 有無 / 保存幅有無で分岐)。変更不要なら参照を保持します。
+  const applyOne = (
+    column: GridColumn<T>,
+    meta: GridColumnState | undefined,
+  ): GridColumn<T> => {
+    const savedWidth = savedWidths[column.key];
+    const hasSavedWidth = typeof savedWidth === 'number';
+    if (!meta && !hasSavedWidth) {
+      return column;
+    }
+    const next: GridColumn<T> = { ...column };
+    if (meta) {
+      // visible / pinned は保存値(undefined 含む)をそのまま反映=保存時のレイアウトへ復元。
+      next.visible = meta.visible;
+      next.pinned = meta.pinned;
+    }
+    if (hasSavedWidth) {
+      next.width = savedWidth;
+    }
+    return next;
+  };
+
+  // 1) 保存 key 順で並べ替え(現 columns に在るものだけ。無い key=削除列は drop)。
+  const ordered: GridColumn<T>[] = [];
+  for (const meta of savedColumnState) {
+    const column = byKey.get(meta.key);
+    if (!column) {
+      continue;
+    }
+    consumedKeys.add(meta.key);
+    ordered.push(applyOne(column, meta));
+  }
+  // 2) 保存に無い新規列を末尾へ(現 columns の相対順を保持。consumer 宣言の visible/pinned は維持)。
+  for (const column of currentColumns) {
+    if (consumedKeys.has(column.key)) {
+      continue;
+    }
+    ordered.push(applyOne(column, undefined));
+  }
+  // 3) pane 連結正規化(grid の reorder と同じ視覚順)。
+  return reorderColumnsByPane(ordered);
+};
+// 追加(state #2 / onStateChange): number フィルターの parsed(解釈結果)の構造等価です。
+//   どちらか null なら参照(= null 同士)で判定。mode 不一致は不等、同一 mode は中身を比較します。
+const isSameParsedNumberFilter = (
+  a: ParsedNumberFilter | null,
+  b: ParsedNumberFilter | null,
+): boolean => {
+  if (a === null || b === null) {
+    return a === b;
+  }
+  if (a.mode === 'comparison' && b.mode === 'comparison') {
+    return a.operator === b.operator && a.value === b.value;
+  }
+  if (a.mode === 'range' && b.mode === 'range') {
+    return a.min === b.min && a.max === b.max;
+  }
+  return false;
+};
+
+// 追加(state #2 / onStateChange): 列フィルター値(判別共用体)の構造等価です。
+//   kind が異なれば不等。各 kind の中身(set の values 配列・number の raw/parsed・text/date/select の
+//   value)を比較します。custom の value(unknown)は深い比較が不能なため Object.is(参照同一)で判定し、
+//   buildGridState が参照共有でコピーする規約と整合させます(同じ filter なら同一参照 → 等価)。
+const isSameColumnFilterValue = (
+  a: ColumnFilterValue,
+  b: ColumnFilterValue,
+): boolean => {
+  switch (a.kind) {
+    case 'set':
+      return (
+        b.kind === 'set' &&
+        (a.mode ?? 'include') === (b.mode ?? 'include') &&
+        a.values.length === b.values.length &&
+        a.values.every((v, i) => v === b.values[i])
+      );
+    case 'number':
+      return (
+        b.kind === 'number' &&
+        a.raw === b.raw &&
+        isSameParsedNumberFilter(a.parsed, b.parsed)
+      );
+    case 'text':
+      return b.kind === 'text' && a.value === b.value;
+    case 'date':
+      return b.kind === 'date' && a.value === b.value;
+    case 'select':
+      return b.kind === 'select' && a.value === b.value;
+    case 'custom':
+      return b.kind === 'custom' && Object.is(a.value, b.value);
+  }
+};
+
+// number レコード(columnWidths)の構造等価です(キー集合 + 各値が一致)。
+const isSameNumberRecord = (
+  a: Record<string, number>,
+  b: Record<string, number>,
+): boolean => {
+  const aKeys = Object.keys(a);
+  if (aKeys.length !== Object.keys(b).length) {
+    return false;
+  }
+  for (const key of aKeys) {
+    if (!(key in b) || a[key] !== b[key]) {
+      return false;
+    }
+  }
+  return true;
+};
+
+// 列フィルターマップの構造等価です(キー集合 + 各値が isSameColumnFilterValue で一致)。
+const isSameColumnFilters = (
+  a: Record<string, ColumnFilterValue>,
+  b: Record<string, ColumnFilterValue>,
+): boolean => {
+  const aKeys = Object.keys(a);
+  if (aKeys.length !== Object.keys(b).length) {
+    return false;
+  }
+  for (const key of aKeys) {
+    if (!(key in b) || !isSameColumnFilterValue(a[key], b[key])) {
+      return false;
+    }
+  }
+  return true;
+};
+
+// 追加(state v2): columns(列メタ)配列の構造等価です。順序 + key + visible + pinned を比較します。
+//   - undefined 同士は等価。片方だけ undefined は不等(v1↔v2 の取り違え / 列メタ有無の差を検出)。
+//   - visible / pinned は未指定(extractColumnState で省略 → 値は undefined)同士も等価になります。
+const isSameColumnStateArray = (
+  a: GridColumnState[] | undefined,
+  b: GridColumnState[] | undefined,
+): boolean => {
+  if (a === undefined || b === undefined) {
+    return a === b;
+  }
+  if (a.length !== b.length) {
+    return false;
+  }
+  for (let i = 0; i < a.length; i += 1) {
+    if (
+      a[i].key !== b[i].key ||
+      a[i].visible !== b[i].visible ||
+      a[i].pinned !== b[i].pinned
+    ) {
+      return false;
+    }
+  }
+  return true;
+};
+
+// 追加(state #2 / onStateChange): GridState 同士の構造等価です。version / columnWidths /
+//   filters(globalText + columnFilters)/ sort / columns(v2 列メタ)をすべて深く比較します。
+//   onStateChange の「永続スライスが実際に変化したか」判定に使います(参照比較では毎回不等になり得る
+//   ため)。columns は順序 + visible + pinned の変化を検出します(列の可視 / 順序 / ピン変更で発火)。
+export const isSameGridState = (a: GridState, b: GridState): boolean => {
+  if (a.version !== b.version) {
+    return false;
+  }
+  if (!isSameNumberRecord(a.columnWidths, b.columnWidths)) {
+    return false;
+  }
+  if (a.filters.globalText !== b.filters.globalText) {
+    return false;
+  }
+  if (!isSameColumnFilters(a.filters.columnFilters, b.filters.columnFilters)) {
+    return false;
+  }
+  if (a.sort.length !== b.sort.length) {
+    return false;
+  }
+  for (let i = 0; i < a.sort.length; i += 1) {
+    if (
+      a.sort[i].columnKey !== b.sort[i].columnKey ||
+      a.sort[i].direction !== b.sort[i].direction
+    ) {
+      return false;
+    }
+  }
+  if (!isSameColumnStateArray(a.columns, b.columns)) {
+    return false;
+  }
+  return true;
+};
+
+// 追加(state #2 / onStateChange): onStateChange を発火すべきかの判定結果です。
+//   emit=発火するか / nextLast=次に保持すべき「最後に通知した state」(発火しない場合も更新規約あり)。
+export type StateChangeDecision = {
+  emit: boolean;
+  nextLast: GridState | null;
+};
+
+// 追加(state #2 / onStateChange): onStateChange の発火可否を純粋に判定します(副作用なし)。
+//   - isDragging(列リサイズ / 選択のドラッグ中): 確定前なので発火せず、lastEmitted も据え置きます
+//     (prevLast を返す)。これで列リサイズの毎フレーム更新を握りつぶし、確定後 1 回に集約します。
+//   - prevLast === null(初回): 発火せず、現在値を記録(nextLast=current)。マウント直後の通知を防ぎます。
+//   - 前回通知と構造等価: 発火せず、記録は current で更新(参照だけ変わったケースを弾く)。
+//   - それ以外: 発火し(emit=true)、current を記録します。
+export const decideStateChangeEmit = (
+  prevLast: GridState | null,
+  current: GridState,
+  isDragging: boolean,
+): StateChangeDecision => {
+  if (isDragging) {
+    return { emit: false, nextLast: prevLast };
+  }
+  if (prevLast === null) {
+    return { emit: false, nextLast: current };
+  }
+  if (isSameGridState(prevLast, current)) {
+    return { emit: false, nextLast: current };
+  }
+  return { emit: true, nextLast: current };
+};
 </file>
 
 <file path="src/components/spreadsheet-grid/SelectionOverlay.tsx">
@@ -11443,72 +11979,6 @@ export function CellEditorLayer({
 export default CellEditorLayer;
 </file>
 
-<file path="src/components/spreadsheet-grid/index.ts">
-// SpreadsheetGrid の公開エントリ(バレル)です。
-// ライブラリ利用者はこの index 経由で import します。reducer / hooks / view / logic /
-// selectors などの内部実装は公開しません。公開する型は API_REFERENCE.md と対応します。
-
-// 公開コンポーネント(named のみ。default export は廃止しました)。
-export { SpreadsheetGrid } from './SpreadsheetGrid';
-// 値フォーマッタ(UI 表示のみ)の組み込みファクタ。利用側も CellValueFormatter で自作可。
-export { numberFormatter } from './logic/valueFormatters';
-
-// 公開型です。
-export type {
-  // コンポーネント props。
-  SpreadsheetGridProps,
-  // 列定義と固定方向。
-  GridColumn,
-  GridColumnPinned,
-  // 行キー。
-  GridRowKey,
-  // select / set フィルターの候補。
-  GridSelectFilterOption,
-  // セル / ヘッダーのカスタム描画コンテキスト(renderCell / renderHeader 引数)。
-  CellRenderContext,
-  HeaderRenderContext,
-  // セル表示値の整形(UI 表示のみ)の契約。
-  CellValueFormatter,
-  CellValueFormatterParams,
-  // top / bottom バーのスロットコンテキストと、そこに載る派生 summary。
-  SpreadsheetGridSlotContext,
-  SpreadsheetGridDerivedSummary,
-  SpreadsheetGridSelectionStats,
-  // スロットコンテキストが公開する選択 / ソート / 列フィルター値の型族です。
-  CellCoord,
-  CellRange,
-  GridSelection,
-  GridSortState,
-  GridSortEntry,
-  GridSortDirection,
-  ColumnFilterValue,
-  // フィルター状態(globalText + 列フィルター記述子)。getState/applyState の GridState から参照されます。
-  GridFilterState,
-  SetColumnFilterValue,
-  NumberColumnFilterValue,
-  ParsedNumberFilter,
-  TextColumnFilterValue,
-  DateColumnFilterValue,
-  SelectColumnFilterValue,
-  CustomColumnFilterValue,
-  // serverSide(SSRM)用の公開型族です。dataSource 指定時に serverSide モードへ切替わります。
-  ServerSideDataSource,
-  ServerSideQuery,
-  ServerSideGetRowsParams,
-  ServerSideGetRowsResult,
-  // 行モデル境界型(clientSide / serverSide 共通の行取得 seam)です。
-  RowModel,
-  // 追加(imperative API #1): ref ハンドル(SpreadsheetGridProps.ref)と関連型です。
-  SpreadsheetGridHandle,
-  ScrollAlign,
-  CsvExportScope,
-  CsvExportOptions,
-  // 追加(state #1): 列状態のシリアライズ型(getState / applyState の入出力)。
-  GridState,
-} from './model/gridTypes';
-export type { NumberFormatterOptions } from './logic/valueFormatters';
-</file>
-
 <file path="src/components/spreadsheet-grid/logic/verticalGeometry.test.ts">
 // V-1: verticalGeometry の等価性 / 不変条件テスト(旧 adhoc ハーネスの恒久化)。
 //   旧 rowVirtualizer(scrollMargin=headerHeight / estimateSize=rowHeight)は import できないため、
@@ -14217,6 +14687,74 @@ export const useGridPointerInteractions = <T,>({
 export default useGridPointerInteractions;
 </file>
 
+<file path="src/components/spreadsheet-grid/index.ts">
+// SpreadsheetGrid の公開エントリ(バレル)です。
+// ライブラリ利用者はこの index 経由で import します。reducer / hooks / view / logic /
+// selectors などの内部実装は公開しません。公開する型は API_REFERENCE.md と対応します。
+
+// 公開コンポーネント(named のみ。default export は廃止しました)。
+export { SpreadsheetGrid } from './SpreadsheetGrid';
+// 値フォーマッタ(UI 表示のみ)の組み込みファクタ。利用側も CellValueFormatter で自作可。
+export { numberFormatter } from './logic/valueFormatters';
+
+// 公開型です。
+export type {
+  // コンポーネント props。
+  SpreadsheetGridProps,
+  // 列定義と固定方向。
+  GridColumn,
+  GridColumnPinned,
+  // 行キー。
+  GridRowKey,
+  // select / set フィルターの候補。
+  GridSelectFilterOption,
+  // セル / ヘッダーのカスタム描画コンテキスト(renderCell / renderHeader 引数)。
+  CellRenderContext,
+  HeaderRenderContext,
+  // セル表示値の整形(UI 表示のみ)の契約。
+  CellValueFormatter,
+  CellValueFormatterParams,
+  // top / bottom バーのスロットコンテキストと、そこに載る派生 summary。
+  SpreadsheetGridSlotContext,
+  SpreadsheetGridDerivedSummary,
+  SpreadsheetGridSelectionStats,
+  // スロットコンテキストが公開する選択 / ソート / 列フィルター値の型族です。
+  CellCoord,
+  CellRange,
+  GridSelection,
+  GridSortState,
+  GridSortEntry,
+  GridSortDirection,
+  ColumnFilterValue,
+  // フィルター状態(globalText + 列フィルター記述子)。getState/applyState の GridState から参照されます。
+  GridFilterState,
+  SetColumnFilterValue,
+  NumberColumnFilterValue,
+  ParsedNumberFilter,
+  TextColumnFilterValue,
+  DateColumnFilterValue,
+  SelectColumnFilterValue,
+  CustomColumnFilterValue,
+  // serverSide(SSRM)用の公開型族です。dataSource 指定時に serverSide モードへ切替わります。
+  ServerSideDataSource,
+  ServerSideQuery,
+  ServerSideGetRowsParams,
+  ServerSideGetRowsResult,
+  // 行モデル境界型(clientSide / serverSide 共通の行取得 seam)です。
+  RowModel,
+  // 追加(imperative API #1): ref ハンドル(SpreadsheetGridProps.ref)と関連型です。
+  SpreadsheetGridHandle,
+  ScrollAlign,
+  CsvExportScope,
+  CsvExportOptions,
+  // 追加(state #1): 列状態のシリアライズ型(getState / applyState の入出力)。
+  GridState,
+  // 追加(state v2): 列メタ(可視 / 順序 / ピン)のシリアライズ単位(GridState.columns 要素)。
+  GridColumnState,
+} from './model/gridTypes';
+export type { NumberFormatterOptions } from './logic/valueFormatters';
+</file>
+
 <file path="src/components/spreadsheet-grid/view/ColumnFilterPopover.tsx">
 import { createPortal } from 'react-dom';
 // 変更(12-A): set フィルター(検索 + Select All + チェックボックス一覧)用に
@@ -14725,99 +15263,6 @@ export function ColumnFilterPopover({
 export default ColumnFilterPopover;
 </file>
 
-<file path="package.json">
-{
-  "name": "@ishibashi0112/spreadsheet-grid",
-  "version": "0.5.0",
-  "description": "React 19 製のカスタム仮想化データグリッド。100 万行対応の仮想化・3 ペイン固定列・ソート/フィルター・クライアント/サーバーサイド行モデル対応。",
-  "keywords": [
-    "react",
-    "react19",
-    "grid",
-    "datagrid",
-    "table",
-    "spreadsheet",
-    "virtualized",
-    "virtual-scroll",
-    "typescript",
-    "ssrm"
-  ],
-  "license": "MIT",
-  "author": "Yuki Sakakibara",
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/ishibashi0112/datasheet-grid.git"
-  },
-  "homepage": "https://github.com/ishibashi0112/datasheet-grid#readme",
-  "bugs": {
-    "url": "https://github.com/ishibashi0112/datasheet-grid/issues"
-  },
-  "type": "module",
-  "sideEffects": [
-    "**/*.css"
-  ],
-  "files": [
-    "dist"
-  ],
-  "main": "./dist/index.cjs",
-  "module": "./dist/index.js",
-  "types": "./dist/index.d.ts",
-  "exports": {
-    ".": {
-      "types": "./dist/index.d.ts",
-      "import": "./dist/index.js",
-      "require": "./dist/index.cjs"
-    },
-    "./style.css": "./dist/style.css"
-  },
-  "engines": {
-    "node": ">=18"
-  },
-  "publishConfig": {
-    "access": "public"
-  },
-  "scripts": {
-    "dev": "vite",
-    "build": "tsc -b && vite build",
-    "build:lib": "vite build --config vite.lib.config.ts && tsc -p tsconfig.lib.json",
-    "build:types": "tsc -p tsconfig.lib.json",
-    "prepublishOnly": "npm run build:lib",
-    "lint": "eslint .",
-    "preview": "vite preview",
-    "test": "vitest run",
-    "test:watch": "vitest",
-    "typecheck:test": "tsc --noEmit -p tsconfig.vitest.json"
-  },
-  "peerDependencies": {
-    "react": "^19.0.0",
-    "react-dom": "^19.0.0"
-  },
-  "dependencies": {
-    "@tanstack/react-virtual": "^3.14.2"
-  },
-  "devDependencies": {
-    "@eslint/js": "^10.0.1",
-    "@testing-library/dom": "^10.4.1",
-    "@testing-library/react": "^16.3.2",
-    "@types/node": "^24.12.3",
-    "@types/react": "^19.2.14",
-    "@types/react-dom": "^19.2.3",
-    "@vitejs/plugin-react": "^6.0.1",
-    "eslint": "^10.3.0",
-    "eslint-plugin-react-hooks": "^7.1.1",
-    "eslint-plugin-react-refresh": "^0.5.2",
-    "globals": "^17.6.0",
-    "jsdom": "^29.1.1",
-    "react": "^19.2.6",
-    "react-dom": "^19.2.6",
-    "typescript": "~6.0.2",
-    "typescript-eslint": "^8.59.2",
-    "vite": "^8.0.12",
-    "vitest": "^4.1.9"
-  }
-}
-</file>
-
 <file path="src/components/spreadsheet-grid/logic/filtering.ts">
 import type {
   ColumnFilterValue,
@@ -15263,6 +15708,99 @@ export const filterOrderByColumns = <T,>(
   }
   return result.slice(0, count);
 };
+</file>
+
+<file path="package.json">
+{
+  "name": "@ishibashi0112/spreadsheet-grid",
+  "version": "0.6.0",
+  "description": "React 19 製のカスタム仮想化データグリッド。100 万行対応の仮想化・3 ペイン固定列・ソート/フィルター・クライアント/サーバーサイド行モデル対応。",
+  "keywords": [
+    "react",
+    "react19",
+    "grid",
+    "datagrid",
+    "table",
+    "spreadsheet",
+    "virtualized",
+    "virtual-scroll",
+    "typescript",
+    "ssrm"
+  ],
+  "license": "MIT",
+  "author": "Yuki Sakakibara",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ishibashi0112/datasheet-grid.git"
+  },
+  "homepage": "https://github.com/ishibashi0112/datasheet-grid#readme",
+  "bugs": {
+    "url": "https://github.com/ishibashi0112/datasheet-grid/issues"
+  },
+  "type": "module",
+  "sideEffects": [
+    "**/*.css"
+  ],
+  "files": [
+    "dist"
+  ],
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    },
+    "./style.css": "./dist/style.css"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "build:lib": "vite build --config vite.lib.config.ts && tsc -p tsconfig.lib.json",
+    "build:types": "tsc -p tsconfig.lib.json",
+    "prepublishOnly": "npm run build:lib",
+    "lint": "eslint .",
+    "preview": "vite preview",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck:test": "tsc --noEmit -p tsconfig.vitest.json"
+  },
+  "peerDependencies": {
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  },
+  "dependencies": {
+    "@tanstack/react-virtual": "^3.14.2"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@testing-library/dom": "^10.4.1",
+    "@testing-library/react": "^16.3.2",
+    "@types/node": "^24.12.3",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^6.0.1",
+    "eslint": "^10.3.0",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "eslint-plugin-react-refresh": "^0.5.2",
+    "globals": "^17.6.0",
+    "jsdom": "^29.1.1",
+    "react": "^19.2.6",
+    "react-dom": "^19.2.6",
+    "typescript": "~6.0.2",
+    "typescript-eslint": "^8.59.2",
+    "vite": "^8.0.12",
+    "vitest": "^4.1.9"
+  }
+}
 </file>
 
 <file path="src/components/spreadsheet-grid/logic/sorting.ts">
@@ -19690,8 +20228,9 @@ const modeButtonStyle = (active: boolean, disabled = false): CSSProperties => ({
 });
 
 // 追加(state #3 デモ): onStateChange / applyState の永続デモで使う localStorage キーです。
-//   ページ再読込で「手動リサイズ幅 / フィルター / ソート」が復元されることを示します
-//   (列の可視/順序/ピン/flex は GridState の対象外=本デモの永続対象外)。
+//   ページ再読込で「手動リサイズ幅 / フィルター / ソート / 列メタ(可視・順序・ピン)」が復元される
+//   ことを示します(GridState v2)。flex / 列幅以外の width は GridState の対象外です
+//   (flex は consumer 宣言値が常に正・width は columnWidths でカバー)。
 const GRID_STATE_STORAGE_KEY = 'ssg-demo-grid-state';
 
 function App() {
@@ -19739,14 +20278,19 @@ function App() {
   };
 
   // 追加(state #3 デモ): 保存状態をクリアして現在のグリッドも初期状態へ戻します。
+  //   列メタ(可視 / 順序 / ピン)は consumer 所有のため、columns を初期定義へ戻すことでリセットします
+  //   (setColumns)。reducer スライス(手動リサイズ幅 / フィルター / ソート)は applyState の空状態で
+  //   リセットします。列メタは setColumns で直接戻すため、この applyState には columns を含めません
+  //   (= 列メタ非適用。version は v2)。
   const clearSavedGridState = () => {
     try {
       localStorage.removeItem(GRID_STATE_STORAGE_KEY);
     } catch {
       // 無視。
     }
+    setColumns(createInitialColumns());
     gridRef.current?.applyState({
-      version: 1,
+      version: 2,
       columnWidths: {},
       filters: { globalText: '', columnFilters: {} },
       sort: [],
@@ -20111,8 +20655,9 @@ function App() {
           >
             表示中を CSV 保存
           </button>
-          {/* 追加(state #3 デモ): onStateChange/applyState の永続デモ。列幅変更・フィルター・ソートは
-              自動保存され、ページ再読込で復元されます。下のボタンで保存をクリア(初期状態へ)できます。 */}
+          {/* 追加(state #3 デモ): onStateChange/applyState の永続デモ。列幅変更・フィルター・ソート・
+              列メタ(可視/順序/ピン)が自動保存され、ページ再読込で復元されます。下のボタンで保存を
+              クリア(初期状態へ)できます。 */}
           <button
             type="button"
             onClick={clearSavedGridState}
@@ -20666,17 +21211,38 @@ export type CsvExportOptions = {
   bom?: boolean;
 };
 
+// 追加(state v2): 列メタのシリアライズ単位です(getState / applyState の GridState.columns 要素)。
+//   grid UI が変更しうる列メタ(可視 / 順序 / ピン)だけを持ちます。
+//   - key     : 対象列の識別子(GridColumn.key)。applyState はこの key で現 columns へマージします。
+//   - visible : 列の表示 / 非表示(Column Chooser)。未指定=表示(既定)。
+//   - pinned  : 列固定(列メニュー / ヘッダー D&D)。未指定=非固定(center)。
+//   順序は「配列順」で表現します(GridState.columns の並び = 列順)。
+//   flex / width は意図的に持ちません:
+//   - flex は grid UI が変更しないため(consumer 宣言値が常に正)、保存すると古い値が再読込で
+//     上書きしてしまう(stale-override)だけで利得がありません。
+//   - width(手動リサイズ幅)は GridState.columnWidths で既にカバー済みです(二重表現の回避)。
+export type GridColumnState = {
+  key: string;
+  visible?: boolean;
+  pinned?: GridColumnPinned;
+};
+
 // 追加(state #1): 列状態のシリアライズ可能スナップショットです(getState / applyState の入出力)。
 //   永続化(localStorage 等)は consumer に委ね、グリッドは get/apply + version だけを提供します。
-//   対象は reducer 内の永続スライス(手動リサイズ幅 / フィルター / ソート)のみで、列の可視/順序/
-//   ピン/flex は columns prop 側(consumer 所有)のため含めません。activeCell / selection などの
-//   一時 UI も含めません。columnWidths は手動リサイズした列のみを含みます(flex 列はエントリを持たない
-//   規約)。version は将来の形式変更時に applyState 側で旧バージョンを移行するための番号です。
+//   対象は reducer 内の永続スライス(手動リサイズ幅 / フィルター / ソート)と、列メタ(v2: 可視 / 順序 /
+//   ピン)です。activeCell / selection などの一時 UI は含めません。columnWidths は手動リサイズした列
+//   のみを含みます(flex 列はエントリを持たない規約)。columns は列メタで、配列順 = 列順です。
+//   version は形式変更時に applyState 側で旧バージョンを移行するための番号です。
+//   - v1: columns フィールド無し。applyState では columns:undefined 扱いで列メタを触りません(後方互換)。
+//   - v2: columns を含めます。column 順序 / visible / pinned を get/apply します。
 export type GridState = {
   version: number;
   columnWidths: Record<string, number>;
   filters: GridFilterState;
   sort: GridSortState;
+  // 追加(state v2): 列メタ(可視 / 順序 / ピン)。配列順 = 列順。undefined = 列メタ未適用(v1 後方互換)。
+  //   applyState は onColumnsChange が指定されているときのみ反映します(getState は read-only で常に出力)。
+  columns?: GridColumnState[];
 };
 
 // 追加(imperative API #1): ref ハンドル(SpreadsheetGridProps.ref で受け取る命令的 API)です。
@@ -20731,12 +21297,16 @@ export type SpreadsheetGridHandle<T> = {
   downloadCsv: (filename?: string, options?: CsvExportOptions) => void;
 
   // ── 状態の保存 / 復元 ──
-  // 永続化対象(手動リサイズ幅 / フィルター / ソート)のスナップショット(GridState)を返します
-  //   (純粋・副作用なし)。返り値は新規オブジェクト/配列で、そのまま JSON.stringify して保存できます。
+  // 永続化対象(手動リサイズ幅 / フィルター / ソート / 列メタ=可視・順序・ピン)のスナップショット
+  //   (GridState v2)を返します(純粋・副作用なし・read-only)。列メタは columns prop から配列順で抽出
+  //   します。返り値は新規オブジェクト/配列で、そのまま JSON.stringify して保存できます。
   getState: () => GridState;
   // getState のスナップショット(または互換な部分形)を適用します。外部入力は内部で防御的に正規化され、
   //   幅 reset / フィルター一括 / ソート set の 3 dispatch(1 イベント = 1 再レンダー)で反映します。
   //   clientSide / serverSide 双方に効きます(SSRM では filters/sort 変化がクエリへ載り再取得)。
+  //   列メタ(columns)は onColumnsChange が指定されているときのみ、現 columns へ key ベースでマージして
+  //   onColumnsChange 経由で反映します(未指定時はスキップ=幅/フィルター/ソートのみ。v1 完全互換)。
+  //   v1 保存値(columns フィールド無し)も読めます(列メタは触りません)。
   applyState: (state: GridState) => void;
 };
 
@@ -20745,12 +21315,13 @@ export type SpreadsheetGridProps<T> = {
   //   forwardRef は使いません(React 19 で deprecated 予定のため)。状態は controlled のまま、prop で
   //   表現できない一発操作(スクロール/選択操作/CSV)だけをハンドルで提供します。
   ref?: Ref<SpreadsheetGridHandle<T>>;
-  // 追加(state #2): 永続スライス(手動リサイズ幅 / フィルター / ソート)が実際に変化したときに、
-  //   最新の GridState を渡して呼ばれる通知口です。consumer はこれを保存タイミングの signal にできます
-  //   (例: localStorage への自動保存)。発火規約:
+  // 追加(state #2): 永続スライス(手動リサイズ幅 / フィルター / ソート / 列メタ=可視・順序・ピン)が
+  //   実際に変化したときに、最新の GridState(v2)を渡して呼ばれる通知口です。consumer はこれを保存
+  //   タイミングの signal にできます(例: localStorage への自動保存)。発火規約:
   //   - 列リサイズ / 選択のドラッグ中は確定まで保留し、確定後に 1 回だけ評価します(毎フレーム発火しない)。
   //   - 初回マウントでは発火しません(初期状態は通知対象外)。
-  //   - 前回通知と構造等価(永続スライスが不変)なら発火しません(activeCell 等の一時 UI では発火しない)。
+  //   - 前回通知と構造等価(永続スライス + 列メタが不変)なら発火しません(activeCell 等の一時 UI では
+  //     発火しない)。列の可視 / 順序 / ピン変更でも発火します(columns prop 変化を監視)。
   //   - applyState による反映も「状態変化」として発火します(復元直後に同値を 1 回保存する可能性あり)。
   //   毎レンダーで新しいインライン関数を渡しても問題ありません(latest-ref 経由で読むため再評価しません)。
   onStateChange?: (state: GridState) => void;
@@ -20972,10 +21543,13 @@ import type { RowMetrics } from './logic/verticalGeometry';
 import { serializeRowsToCsv } from './logic/exportCsv';
 // 追加(state #1): 列状態 get/apply の純ロジックです(snapshot 組み立て / 外部入力の正規化)。
 // 追加(state #2): onStateChange の発火可否判定(decideStateChangeEmit)も同モジュールから読みます。
+// 追加(state v2): 列メタ(可視 / 順序 / ピン)の抽出 / 適用(extractColumnState / applyColumnState)。
 import {
   buildGridState,
   migrateGridState,
   decideStateChangeEmit,
+  extractColumnState,
+  applyColumnState,
 } from './logic/gridState';
 import {
   computeVerticalScrollTarget,
@@ -23987,6 +24561,10 @@ export function SpreadsheetGrid<T extends object>({
     rowMetrics: RowMetrics;
     paneLayout: GridPaneLayout<T>;
     orderedColumns: GridColumn<T>[];
+    // 追加(state v2): getState の列メタ抽出 / applyState の列メタ適用に使う生 columns(consumer 宣言順)
+    //   と onColumnsChange(controlled 反映口)です。未指定時 applyState は列メタをスキップします。
+    columns: GridColumn<T>[];
+    onColumnsChange: ((nextColumns: GridColumn<T>[]) => void) | undefined;
     uiState: GridUiState;
     headerHeight: number;
     verticalScaleFactor: number;
@@ -24004,6 +24582,8 @@ export function SpreadsheetGrid<T extends object>({
     rowMetrics,
     paneLayout,
     orderedColumns,
+    columns,
+    onColumnsChange,
     uiState,
     headerHeight,
     verticalScaleFactor,
@@ -24296,14 +24876,21 @@ export function SpreadsheetGrid<T extends object>({
         getState: () => {
           const s = apiStateRef.current;
           if (!s) {
-            // ref 未確定時(通常起こりません)は現行スキーマの空状態を返します。
-            return buildGridState({}, { globalText: '', columnFilters: {} }, []);
+            // ref 未確定時(通常起こりません)は現行スキーマの空状態を返します(列メタは空配列)。
+            return buildGridState(
+              {},
+              { globalText: '', columnFilters: {} },
+              [],
+              [],
+            );
           }
-          // 永続スライス(手動リサイズ幅 / フィルター / ソート)を純粋にスナップショットします。
+          // 永続スライス(手動リサイズ幅 / フィルター / ソート)+ 列メタ(可視 / 順序 / ピン)を純粋に
+          //   スナップショットします。列メタは columns prop から配列順で抽出します(read-only)。
           return buildGridState(
             s.uiState.columnWidths,
             s.uiState.filters,
             s.uiState.sort,
+            extractColumnState(s.columns),
           );
         },
 
@@ -24312,8 +24899,23 @@ export function SpreadsheetGrid<T extends object>({
           if (!s) {
             return;
           }
-          // 外部入力(deserialize 結果)を現行スキーマへ防御的に正規化してから dispatch します。
+          // 外部入力(deserialize 結果)を現行スキーマへ防御的に正規化してから反映します。
           const normalized = migrateGridState(state);
+          // 列メタ(v2): onColumnsChange があり、かつ正規化後に columns があるときだけ反映します
+          //   (onColumnsChange 未指定 or v1 保存値=列メタ無しならスキップ。この場合は下の 3 dispatch
+          //   のみで v1 と完全同一の経路です)。現 columns へ key ベースでマージし(順序復元 +
+          //   visible/pinned 適用 + 手動リサイズ幅の column.width 焼き込み)、onColumnsChange で
+          //   controlled に返します。焼き込みは、columns 変化で走る列同期 effect が column.width 起点で
+          //   columnWidths を再構築する際に手動リサイズ幅を保全するためです(pin/visible/reorder と同型)。
+          if (s.onColumnsChange && normalized.columns) {
+            s.onColumnsChange(
+              applyColumnState(
+                s.columns,
+                normalized.columns,
+                normalized.columnWidths,
+              ),
+            );
+          }
           // 幅 reset / フィルター一括 / ソート set の 3 dispatch。同一イベント内で自動バッチされ
           //   再レンダーは 1 回。SSRM では filters/sort 変化が liveServerSideQuery へ載り再取得されます。
           //   幅は resetColumnWidths(フル置換)で、保存外(= flex 列など)のキーを残しません。
@@ -24326,21 +24928,31 @@ export function SpreadsheetGrid<T extends object>({
     [],
   );
 
-  // ── onStateChange(永続スライス変化の通知)──────────────
+  // ── onStateChange(永続スライス + 列メタ変化の通知)──────
   // 設計: 純ロジック decideStateChangeEmit に判定を委ね、ここは「現在 snapshot を作って判定 → 必要なら
-  //   通知 → lastEmitted を更新」の薄い配線に留めます。effect は永続 3 スライス + dragState の参照変化
-  //   でのみ走ります(activeCell / selection 等の一時 UI 変化では columnWidths/filters/sort/dragState の
-  //   参照が変わらないため走りません)。判定詳細(ドラッグ中保留 / 初回非発火 / 同値非発火)は純ロジック側。
+  //   通知 → lastEmitted を更新」の薄い配線に留めます。effect は永続 3 スライス + 列メタ(columns)+
+  //   dragState の参照変化でのみ走ります(activeCell / selection 等の一時 UI 変化では監視対象の参照が
+  //   変わらないため走りません)。判定詳細(ドラッグ中保留 / 初回非発火 / 同値非発火)は純ロジック側。
+  //   列メタ(可視 / 順序 / ピン)は columns prop なので、変化検出のため columns を監視 + snapshot に含め、
+  //   isSameGridState の列メタ比較で no-op 参照変化(同値の新配列)を握りつぶします。
   //   onStateChange は latest-ref 経由で読み、毎レンダーで新しいインライン関数が渡されても effect を
-  //   再実行しません(deps から外します)。
+  //   再実行しません(deps から外します)。先頭ガードで onStateChange 未使用時は snapshot+比較すら
+  //   行いません(計算ゼロ)。未使用時は lastEmitted が null のままですが、後から付いた初回は prev=null で
+  //   非発火→baseline 記録となり整合的です。
   const onStateChangeRef = useRef(onStateChange);
   onStateChangeRef.current = onStateChange;
   const lastEmittedStateRef = useRef<GridState | null>(null);
   useEffect(() => {
+    // onStateChange 未指定なら何もしません(snapshot 組み立て / 比較すら省略)。
+    if (!onStateChangeRef.current) {
+      return;
+    }
     const current = buildGridState(
       uiState.columnWidths,
       uiState.filters,
       uiState.sort,
+      // 列メタ(可視 / 順序 / ピン)を columns prop から抽出して snapshot へ含めます。
+      extractColumnState(columns),
     );
     const decision = decideStateChangeEmit(
       lastEmittedStateRef.current,
@@ -24350,9 +24962,15 @@ export function SpreadsheetGrid<T extends object>({
     );
     lastEmittedStateRef.current = decision.nextLast;
     if (decision.emit) {
-      onStateChangeRef.current?.(current);
+      onStateChangeRef.current(current);
     }
-  }, [uiState.columnWidths, uiState.filters, uiState.sort, uiState.dragState]);
+  }, [
+    uiState.columnWidths,
+    uiState.filters,
+    uiState.sort,
+    uiState.dragState,
+    columns,
+  ]);
 
   return (
     <div className={cx('ssg-root', className, classNames?.root)}>

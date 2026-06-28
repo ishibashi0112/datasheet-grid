@@ -109,6 +109,7 @@ import {
 import type { RowMetrics } from './logic/verticalGeometry';
 // 追加(imperative API #1): CSV エクスポート / スクロール先算出の純ロジックです。
 import { serializeRowsToCsv } from './logic/exportCsv';
+import { buildGridExportData } from './logic/exportData';
 // 追加(state #1): 列状態 get/apply の純ロジックです(snapshot 組み立て / 外部入力の正規化)。
 // 追加(state #2): onStateChange の発火可否判定(decideStateChangeEmit)も同モジュールから読みます。
 // 追加(state v2): 列メタ(可視 / 順序 / ピン)の抽出 / 適用(extractColumnState / applyColumnState)。
@@ -177,6 +178,10 @@ import type {
   GridUiState,
   SpreadsheetGridHandle,
   CsvExportOptions,
+  // 追加(imperative API: getExportData): scope 解決と整形済みデータ型に使います。
+  CsvExportScope,
+  GridExportOptions,
+  GridExportData,
   ScrollAlign,
   SpreadsheetGridProps,
   // 追加(state #2): onStateChange の lastEmitted 保持 / snapshot 型に使います。
@@ -3244,53 +3249,102 @@ export function SpreadsheetGrid<T extends object>({
         );
       };
 
+      // scope(all/selection/visible)から、出力対象の行レンジ [startRow, endRow) と列集合を解決します。
+      //   exportCsv(buildCsv)と getExportData で共有します。scope='selection' で選択が無いときは null を
+      //   返し、呼び出し側が「空」を表現します(CSV は空文字 / 整形済みデータは空)。
+      const resolveExportScope = (
+        scope: CsvExportScope,
+      ): { startRow: number; endRow: number; columns: GridColumn<T>[] } | null => {
+        const s = apiStateRef.current;
+        if (!s) {
+          return null;
+        }
+        if (scope === 'visible') {
+          return {
+            startRow: s.windowFirstRow,
+            endRow:
+              s.windowLastRow >= s.windowFirstRow
+                ? s.windowLastRow + 1
+                : s.windowFirstRow,
+            columns: s.orderedColumns,
+          };
+        }
+        if (scope === 'selection') {
+          const sel = s.uiState.selection;
+          if (!sel) {
+            return null;
+          }
+          if (sel.type === 'cell') {
+            const r = normalizeCellRange(sel.range);
+            return {
+              startRow: r.start.row,
+              endRow: r.end.row + 1,
+              columns: s.orderedColumns.slice(r.start.col, r.end.col + 1),
+            };
+          }
+          if (sel.type === 'row') {
+            const r = normalizeRowRange(sel.startRow, sel.endRow);
+            return {
+              startRow: r.startRow,
+              endRow: r.endRow + 1,
+              columns: s.orderedColumns,
+            };
+          }
+          const r = normalizeColumnRange(sel.startCol, sel.endCol);
+          return {
+            startRow: 0,
+            endRow: s.viewRowCount,
+            columns: s.orderedColumns.slice(r.startCol, r.endCol + 1),
+          };
+        }
+        // scope === 'all'
+        return {
+          startRow: 0,
+          endRow: s.viewRowCount,
+          columns: s.orderedColumns,
+        };
+      };
+
       // CSV 文字列を組み立てます(exportCsv / downloadCsv で共有)。
       const buildCsv = (options?: CsvExportOptions): string => {
         const s = apiStateRef.current;
         if (!s) {
           return '';
         }
-        const scope = options?.scope ?? 'all';
-        let startRow = 0;
-        let endRow = s.viewRowCount;
-        let columns = s.orderedColumns;
-
-        if (scope === 'visible') {
-          startRow = s.windowFirstRow;
-          endRow =
-            s.windowLastRow >= s.windowFirstRow
-              ? s.windowLastRow + 1
-              : s.windowFirstRow;
-        } else if (scope === 'selection') {
-          const sel = s.uiState.selection;
-          if (!sel) {
-            return options?.bom ? '\uFEFF' : '';
-          }
-          if (sel.type === 'cell') {
-            const r = normalizeCellRange(sel.range);
-            startRow = r.start.row;
-            endRow = r.end.row + 1;
-            columns = s.orderedColumns.slice(r.start.col, r.end.col + 1);
-          } else if (sel.type === 'row') {
-            const r = normalizeRowRange(sel.startRow, sel.endRow);
-            startRow = r.startRow;
-            endRow = r.endRow + 1;
-          } else {
-            const r = normalizeColumnRange(sel.startCol, sel.endCol);
-            startRow = 0;
-            endRow = s.viewRowCount;
-            columns = s.orderedColumns.slice(r.startCol, r.endCol + 1);
-          }
+        const resolved = resolveExportScope(options?.scope ?? 'all');
+        // scope='selection' で選択無し。BOM 指定があれば BOM のみ、無ければ空文字。
+        if (!resolved) {
+          return options?.bom ? '\uFEFF' : '';
         }
-
         return serializeRowsToCsv({
           getRow: (index) => s.rowModel.getRow(index),
-          startRow,
-          endRow,
-          columns,
+          startRow: resolved.startRow,
+          endRow: resolved.endRow,
+          columns: resolved.columns,
           delimiter: options?.delimiter,
           includeHeaders: options?.includeHeaders,
           bom: options?.bom,
+        });
+      };
+
+      // エクスポート用の整形済みデータ(列メタ + 2 次元セル)を組み立てます(getExportData で使用)。
+      //   scope / 列順 / フィルター・ソート適用は buildCsv と同一(resolveExportScope を共有)。xlsx 等の
+      //   生成は consumer 側で行います(本ライブラリは Excel ライブラリを同梱しません)。
+      const buildExportData = (options?: GridExportOptions): GridExportData => {
+        const s = apiStateRef.current;
+        if (!s) {
+          return { columns: [], rows: [] };
+        }
+        const resolved = resolveExportScope(options?.scope ?? 'all');
+        // scope='selection' で選択無し → 空データ。
+        if (!resolved) {
+          return { columns: [], rows: [] };
+        }
+        return buildGridExportData({
+          getRow: (index) => s.rowModel.getRow(index),
+          startRow: resolved.startRow,
+          endRow: resolved.endRow,
+          columns: resolved.columns,
         });
       };
 
@@ -3439,6 +3493,8 @@ export function SpreadsheetGrid<T extends object>({
           document.body.removeChild(anchor);
           URL.revokeObjectURL(url);
         },
+
+        getExportData: (options) => buildExportData(options),
 
         // ── 状態の保存 / 復元 ──────────────────────────────
         getState: () => {

@@ -468,6 +468,34 @@ export type CsvExportOptions = {
   bom?: boolean;
 };
 
+// 追加(imperative API: getExportData): エクスポート用「整形済みデータ」のオプションです。CSV と同じ
+//   scope セマンティクスを共有します(出力範囲のみ)。直列化に関わる delimiter / bom / includeHeaders は
+//   持ちません(ヘッダーは columns として別途返すため、書き出すかは consumer 判断)。
+export type GridExportOptions = {
+  // 出力範囲(既定 'all')。CsvExportScope を共有します。
+  scope?: CsvExportScope;
+};
+
+// 追加(imperative API: getExportData): エクスポート 1 セルの内容です。
+//   - value: 生のセル値(getCellValue)。Excel の型付きセル / 数値書式に使えます。
+//   - text : 文字列表現。CSV / クリップボードと同じ規則(formatClipboardValue ?? String(value ?? ''))。
+export type GridExportCell = {
+  value: unknown;
+  text: string;
+};
+
+// 追加(imperative API: getExportData): 列メタ + 2 次元セルの、シリアライズ非依存なエクスポートモデルです。
+//   ライブラリは xlsx を同梱せず、この「整形済みデータ」を提供します(導線)。consumer は exceljs /
+//   hucre / SheetJS など任意のライブラリへ流し込みます(xlsx / ods / json など出力形式も自由)。
+//   - columns: 列メタ(視覚順 / scope='selection' では選択列のみ)。key はオブジェクト系ライブラリ
+//     (hucre の data / writeObjects、SheetJS の json_to_sheet 等)向け、title はヘッダー表示向けです。
+//   - rows   : scope の行レンジぶんのセル 2 次元配列(SSRM 未ロード行はスキップ)。各行のセル順は
+//     columns と同順です。
+export type GridExportData = {
+  columns: { key: string; title: string }[];
+  rows: GridExportCell[][];
+};
+
 // 追加(state v2): 列メタのシリアライズ単位です(getState / applyState の GridState.columns 要素)。
 //   grid UI が変更しうる列メタ(可視 / 順序 / ピン)だけを持ちます。
 //   - key     : 対象列の識別子(GridColumn.key)。applyState はこの key で現 columns へマージします。
@@ -552,6 +580,12 @@ export type SpreadsheetGridHandle<T> = {
   // exportCsv の結果をファイルとしてダウンロードします(Blob + 一時 anchor の DOM 副作用)。
   //   bom は未指定時 true(Excel 互換)。filename 既定 'export.csv'。
   downloadCsv: (filename?: string, options?: CsvExportOptions) => void;
+  // 追加(imperative API: getExportData): エクスポート用の整形済みデータ(列メタ + 2 次元セル)を返します
+  //   (純粋・副作用なし)。scope / 列順 / フィルター・ソート適用は exportCsv と同一規則です。xlsx 等の
+  //   生成は consumer 側で任意のライブラリ(exceljs / hucre / SheetJS …)を使って行います(本ライブラリは
+  //   Excel ライブラリを同梱しません)。複数シートは consumer 側で本メソッドを scope 別 / グリッド別に
+  //   呼び出して組み立てます(グリッドは「1 表」を返すプリミティブに徹します)。
+  getExportData: (options?: GridExportOptions) => GridExportData;
 
   // ── 状態の保存 / 復元 ──
   // 永続化対象(手動リサイズ幅 / フィルター / ソート / 列メタ=可視・順序・ピン)のスナップショット
