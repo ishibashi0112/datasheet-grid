@@ -3,6 +3,7 @@ import type {
   GridFilterState,
   GridSortState,
   GridState,
+  ParsedNumberFilter,
 } from '../model/gridTypes';
 
 // 追加(state #1): 列状態のシリアライズ(getState / applyState)の純ロジックです。ハンドル
@@ -137,4 +138,148 @@ export const migrateGridState = (input: unknown): GridState => {
     filters: { globalText, columnFilters },
     sort,
   };
+};
+// 追加(state #2 / onStateChange): number フィルターの parsed(解釈結果)の構造等価です。
+//   どちらか null なら参照(= null 同士)で判定。mode 不一致は不等、同一 mode は中身を比較します。
+const isSameParsedNumberFilter = (
+  a: ParsedNumberFilter | null,
+  b: ParsedNumberFilter | null,
+): boolean => {
+  if (a === null || b === null) {
+    return a === b;
+  }
+  if (a.mode === 'comparison' && b.mode === 'comparison') {
+    return a.operator === b.operator && a.value === b.value;
+  }
+  if (a.mode === 'range' && b.mode === 'range') {
+    return a.min === b.min && a.max === b.max;
+  }
+  return false;
+};
+
+// 追加(state #2 / onStateChange): 列フィルター値(判別共用体)の構造等価です。
+//   kind が異なれば不等。各 kind の中身(set の values 配列・number の raw/parsed・text/date/select の
+//   value)を比較します。custom の value(unknown)は深い比較が不能なため Object.is(参照同一)で判定し、
+//   buildGridState が参照共有でコピーする規約と整合させます(同じ filter なら同一参照 → 等価)。
+const isSameColumnFilterValue = (
+  a: ColumnFilterValue,
+  b: ColumnFilterValue,
+): boolean => {
+  switch (a.kind) {
+    case 'set':
+      return (
+        b.kind === 'set' &&
+        (a.mode ?? 'include') === (b.mode ?? 'include') &&
+        a.values.length === b.values.length &&
+        a.values.every((v, i) => v === b.values[i])
+      );
+    case 'number':
+      return (
+        b.kind === 'number' &&
+        a.raw === b.raw &&
+        isSameParsedNumberFilter(a.parsed, b.parsed)
+      );
+    case 'text':
+      return b.kind === 'text' && a.value === b.value;
+    case 'date':
+      return b.kind === 'date' && a.value === b.value;
+    case 'select':
+      return b.kind === 'select' && a.value === b.value;
+    case 'custom':
+      return b.kind === 'custom' && Object.is(a.value, b.value);
+  }
+};
+
+// number レコード(columnWidths)の構造等価です(キー集合 + 各値が一致)。
+const isSameNumberRecord = (
+  a: Record<string, number>,
+  b: Record<string, number>,
+): boolean => {
+  const aKeys = Object.keys(a);
+  if (aKeys.length !== Object.keys(b).length) {
+    return false;
+  }
+  for (const key of aKeys) {
+    if (!(key in b) || a[key] !== b[key]) {
+      return false;
+    }
+  }
+  return true;
+};
+
+// 列フィルターマップの構造等価です(キー集合 + 各値が isSameColumnFilterValue で一致)。
+const isSameColumnFilters = (
+  a: Record<string, ColumnFilterValue>,
+  b: Record<string, ColumnFilterValue>,
+): boolean => {
+  const aKeys = Object.keys(a);
+  if (aKeys.length !== Object.keys(b).length) {
+    return false;
+  }
+  for (const key of aKeys) {
+    if (!(key in b) || !isSameColumnFilterValue(a[key], b[key])) {
+      return false;
+    }
+  }
+  return true;
+};
+
+// 追加(state #2 / onStateChange): GridState 同士の構造等価です。version / columnWidths /
+//   filters(globalText + columnFilters)/ sort をすべて深く比較します。onStateChange の
+//   「永続スライスが実際に変化したか」判定に使います(参照比較では毎回不等になり得るため)。
+export const isSameGridState = (a: GridState, b: GridState): boolean => {
+  if (a.version !== b.version) {
+    return false;
+  }
+  if (!isSameNumberRecord(a.columnWidths, b.columnWidths)) {
+    return false;
+  }
+  if (a.filters.globalText !== b.filters.globalText) {
+    return false;
+  }
+  if (!isSameColumnFilters(a.filters.columnFilters, b.filters.columnFilters)) {
+    return false;
+  }
+  if (a.sort.length !== b.sort.length) {
+    return false;
+  }
+  for (let i = 0; i < a.sort.length; i += 1) {
+    if (
+      a.sort[i].columnKey !== b.sort[i].columnKey ||
+      a.sort[i].direction !== b.sort[i].direction
+    ) {
+      return false;
+    }
+  }
+  return true;
+};
+
+// 追加(state #2 / onStateChange): onStateChange を発火すべきかの判定結果です。
+//   emit=発火するか / nextLast=次に保持すべき「最後に通知した state」(発火しない場合も更新規約あり)。
+export type StateChangeDecision = {
+  emit: boolean;
+  nextLast: GridState | null;
+};
+
+// 追加(state #2 / onStateChange): onStateChange の発火可否を純粋に判定します(副作用なし)。
+//   - isDragging(列リサイズ / 選択のドラッグ中): 確定前なので発火せず、lastEmitted も据え置きます
+//     (prevLast を返す)。これで列リサイズの毎フレーム更新を握りつぶし、確定後 1 回に集約します。
+//   - prevLast === null(初回): 発火せず、現在値を記録(nextLast=current)。マウント直後の通知を防ぎます。
+//   - 前回通知と構造等価: 発火せず、記録は current で更新(参照だけ変わったケースを弾く)。
+//   - それ以外: 発火し(emit=true)、current を記録します。
+export const decideStateChangeEmit = (
+  prevLast: GridState | null,
+  current: GridState,
+  isDragging: boolean,
+): StateChangeDecision => {
+  if (isDragging) {
+    return { emit: false, nextLast: prevLast };
+  }
+  if (prevLast === null) {
+    return { emit: false, nextLast: current };
+  }
+  if (isSameGridState(prevLast, current)) {
+    return { emit: false, nextLast: current };
+  }
+  return { emit: true, nextLast: current };
 };

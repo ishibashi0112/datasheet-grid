@@ -547,6 +547,15 @@ export type SpreadsheetGridProps<T> = {
   //   forwardRef は使いません(React 19 で deprecated 予定のため)。状態は controlled のまま、prop で
   //   表現できない一発操作(スクロール/選択操作/CSV)だけをハンドルで提供します。
   ref?: Ref<SpreadsheetGridHandle<T>>;
+  // 追加(state #2): 永続スライス(手動リサイズ幅 / フィルター / ソート)が実際に変化したときに、
+  //   最新の GridState を渡して呼ばれる通知口です。consumer はこれを保存タイミングの signal にできます
+  //   (例: localStorage への自動保存)。発火規約:
+  //   - 列リサイズ / 選択のドラッグ中は確定まで保留し、確定後に 1 回だけ評価します(毎フレーム発火しない)。
+  //   - 初回マウントでは発火しません(初期状態は通知対象外)。
+  //   - 前回通知と構造等価(永続スライスが不変)なら発火しません(activeCell 等の一時 UI では発火しない)。
+  //   - applyState による反映も「状態変化」として発火します(復元直後に同値を 1 回保存する可能性あり)。
+  //   毎レンダーで新しいインライン関数を渡しても問題ありません(latest-ref 経由で読むため再評価しません)。
+  onStateChange?: (state: GridState) => void;
   // 変更(DS-4 ②/①-3): rows を optional 化しました。dataSource(serverSide)指定時は rows 不要のため。
   //   clientSide でも SpreadsheetGrid 側で既定値(EMPTY_ROWS)を当てるため、未指定でも従来どおり動作します。
   rows?: T[];

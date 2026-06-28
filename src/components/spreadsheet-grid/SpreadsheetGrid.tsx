@@ -110,7 +110,12 @@ import type { RowMetrics } from './logic/verticalGeometry';
 // 追加(imperative API #1): CSV エクスポート / スクロール先算出の純ロジックです。
 import { serializeRowsToCsv } from './logic/exportCsv';
 // 追加(state #1): 列状態 get/apply の純ロジックです(snapshot 組み立て / 外部入力の正規化)。
-import { buildGridState, migrateGridState } from './logic/gridState';
+// 追加(state #2): onStateChange の発火可否判定(decideStateChangeEmit)も同モジュールから読みます。
+import {
+  buildGridState,
+  migrateGridState,
+  decideStateChangeEmit,
+} from './logic/gridState';
 import {
   computeVerticalScrollTarget,
   computeHorizontalScrollTarget,
@@ -171,6 +176,8 @@ import type {
   CsvExportOptions,
   ScrollAlign,
   SpreadsheetGridProps,
+  // 追加(state #2): onStateChange の lastEmitted 保持 / snapshot 型に使います。
+  GridState,
 } from './model/gridTypes';
 import { getCellValue, isCellEditable, setCellValue } from './utils/permissions';
 import ColumnFilterPopover, {
@@ -313,6 +320,8 @@ export function SpreadsheetGrid<T extends object>({
   getRowClassName,
   // 追加(imperative API #1): React 19 の ref-as-prop。命令的ハンドルを受け取ります。
   ref,
+  // 追加(state #2): 永続スライス変化の通知口(保存タイミング signal)。発火規約は型定義のコメント参照。
+  onStateChange,
 }: SpreadsheetGridProps<T>) {
   // ── refs ──────────────────────────────────────────────
   const gridRootRef = useRef<HTMLDivElement | null>(null);
@@ -3455,6 +3464,34 @@ export function SpreadsheetGrid<T extends object>({
     },
     [],
   );
+
+  // ── onStateChange(永続スライス変化の通知)──────────────
+  // 設計: 純ロジック decideStateChangeEmit に判定を委ね、ここは「現在 snapshot を作って判定 → 必要なら
+  //   通知 → lastEmitted を更新」の薄い配線に留めます。effect は永続 3 スライス + dragState の参照変化
+  //   でのみ走ります(activeCell / selection 等の一時 UI 変化では columnWidths/filters/sort/dragState の
+  //   参照が変わらないため走りません)。判定詳細(ドラッグ中保留 / 初回非発火 / 同値非発火)は純ロジック側。
+  //   onStateChange は latest-ref 経由で読み、毎レンダーで新しいインライン関数が渡されても effect を
+  //   再実行しません(deps から外します)。
+  const onStateChangeRef = useRef(onStateChange);
+  onStateChangeRef.current = onStateChange;
+  const lastEmittedStateRef = useRef<GridState | null>(null);
+  useEffect(() => {
+    const current = buildGridState(
+      uiState.columnWidths,
+      uiState.filters,
+      uiState.sort,
+    );
+    const decision = decideStateChangeEmit(
+      lastEmittedStateRef.current,
+      current,
+      // 列リサイズ / 選択のドラッグ中は確定前。確定(drag 終了で dragState→null)後にまとめて評価します。
+      uiState.dragState !== null,
+    );
+    lastEmittedStateRef.current = decision.nextLast;
+    if (decision.emit) {
+      onStateChangeRef.current?.(current);
+    }
+  }, [uiState.columnWidths, uiState.filters, uiState.sort, uiState.dragState]);
 
   return (
     <div className={cx('ssg-root', className, classNames?.root)}>

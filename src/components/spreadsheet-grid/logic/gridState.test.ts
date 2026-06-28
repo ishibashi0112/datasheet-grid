@@ -5,11 +5,14 @@ import {
   buildGridState,
   cloneColumnFilterValue,
   migrateGridState,
+  isSameGridState,
+  decideStateChangeEmit,
 } from './gridState';
 import type {
   ColumnFilterValue,
   GridFilterState,
   GridSortState,
+  ParsedNumberFilter,
 } from '../model/gridTypes';
 
 const emptyFilters = (): GridFilterState => ({
@@ -225,5 +228,214 @@ describe('migrateGridState', () => {
     expect(migrated.columnWidths).toEqual({ a: 100 });
     expect(migrated.filters.columnFilters.s).toEqual({ kind: 'set', values: ['x'] });
     expect(migrated.sort).toEqual([{ columnKey: 'a', direction: 'asc' }]);
+  });
+});
+// テスト用: GridState を手早く組み立てるヘルパ(columnWidths / columnFilters / sort / globalText)。
+const st = (
+  columnWidths: Record<string, number> = {},
+  columnFilters: Record<string, ColumnFilterValue> = {},
+  sort: GridSortState = [],
+  globalText = '',
+) => buildGridState(columnWidths, { globalText, columnFilters }, sort);
+
+describe('isSameGridState', () => {
+  it('同一内容は true', () => {
+    expect(isSameGridState(st({ a: 100 }), st({ a: 100 }))).toBe(true);
+  });
+
+  it('version 違いは false', () => {
+    const a = buildGridState({}, emptyFilters(), [], 1);
+    const b = buildGridState({}, emptyFilters(), [], 2);
+    expect(isSameGridState(a, b)).toBe(false);
+  });
+
+  it('columnWidths: 値違い / キー集合違いは false', () => {
+    expect(isSameGridState(st({ a: 100 }), st({ a: 120 }))).toBe(false);
+    expect(isSameGridState(st({ a: 100 }), st({ a: 100, b: 50 }))).toBe(false);
+    expect(isSameGridState(st({ a: 100 }), st({ b: 100 }))).toBe(false);
+  });
+
+  it('globalText 違いは false', () => {
+    expect(isSameGridState(st({}, {}, [], 'x'), st({}, {}, [], 'y'))).toBe(false);
+  });
+
+  it('set フィルター: values / mode を比較', () => {
+    expect(
+      isSameGridState(
+        st({}, { c: { kind: 'set', values: ['a', 'b'] } }),
+        st({}, { c: { kind: 'set', values: ['a', 'b'] } }),
+      ),
+    ).toBe(true);
+    expect(
+      isSameGridState(
+        st({}, { c: { kind: 'set', values: ['a'] } }),
+        st({}, { c: { kind: 'set', values: ['a', 'b'] } }),
+      ),
+    ).toBe(false);
+    // mode 既定(include)vs 明示 include は等価。
+    expect(
+      isSameGridState(
+        st({}, { c: { kind: 'set', values: ['a'] } }),
+        st({}, { c: { kind: 'set', mode: 'include', values: ['a'] } }),
+      ),
+    ).toBe(true);
+    // include vs exclude は不等。
+    expect(
+      isSameGridState(
+        st({}, { c: { kind: 'set', mode: 'include', values: ['a'] } }),
+        st({}, { c: { kind: 'set', mode: 'exclude', values: ['a'] } }),
+      ),
+    ).toBe(false);
+  });
+
+  it('number フィルター: raw / parsed を比較', () => {
+    const mk = (
+      raw: string,
+      parsed: ParsedNumberFilter | null,
+    ): ColumnFilterValue => ({ kind: 'number', raw, parsed });
+    expect(
+      isSameGridState(
+        st({}, { n: mk('>5', { mode: 'comparison', operator: '>', value: 5 }) }),
+        st({}, { n: mk('>5', { mode: 'comparison', operator: '>', value: 5 }) }),
+      ),
+    ).toBe(true);
+    expect(
+      isSameGridState(
+        st({}, { n: mk('>5', { mode: 'comparison', operator: '>', value: 5 }) }),
+        st({}, { n: mk('>6', { mode: 'comparison', operator: '>', value: 6 }) }),
+      ),
+    ).toBe(false);
+    // parsed null vs 非 null は不等。
+    expect(
+      isSameGridState(
+        st({}, { n: mk('foo', null) }),
+        st({}, { n: mk('foo', { mode: 'comparison', operator: '=', value: 0 }) }),
+      ),
+    ).toBe(false);
+    // range の中身違い。
+    expect(
+      isSameGridState(
+        st({}, { n: mk('1-5', { mode: 'range', min: 1, max: 5 }) }),
+        st({}, { n: mk('1-5', { mode: 'range', min: 1, max: 9 }) }),
+      ),
+    ).toBe(false);
+  });
+
+  it('text/date/select: value を比較、同キー kind 違いは false', () => {
+    expect(
+      isSameGridState(
+        st({}, { t: { kind: 'text', value: 'x' } }),
+        st({}, { t: { kind: 'text', value: 'x' } }),
+      ),
+    ).toBe(true);
+    expect(
+      isSameGridState(
+        st({}, { t: { kind: 'text', value: 'x' } }),
+        st({}, { t: { kind: 'text', value: 'y' } }),
+      ),
+    ).toBe(false);
+    expect(
+      isSameGridState(
+        st({}, { t: { kind: 'text', value: 'x' } }),
+        st({}, { t: { kind: 'select', value: 'x' } }),
+      ),
+    ).toBe(false);
+  });
+
+  it('custom: value 参照同一なら true、別参照なら false', () => {
+    const shared = { deep: 1 };
+    expect(
+      isSameGridState(
+        st({}, { c: { kind: 'custom', value: shared } }),
+        st({}, { c: { kind: 'custom', value: shared } }),
+      ),
+    ).toBe(true);
+    expect(
+      isSameGridState(
+        st({}, { c: { kind: 'custom', value: { deep: 1 } } }),
+        st({}, { c: { kind: 'custom', value: { deep: 1 } } }),
+      ),
+    ).toBe(false);
+  });
+
+  it('columnFilters のキー集合違いは false', () => {
+    expect(
+      isSameGridState(
+        st({}, { a: { kind: 'text', value: 'x' } }),
+        st({}, {
+          a: { kind: 'text', value: 'x' },
+          b: { kind: 'text', value: 'y' },
+        }),
+      ),
+    ).toBe(false);
+  });
+
+  it('sort: 長さ / 順序 / direction を比較', () => {
+    expect(
+      isSameGridState(
+        st({}, {}, [{ columnKey: 'a', direction: 'asc' }]),
+        st({}, {}, [{ columnKey: 'a', direction: 'asc' }]),
+      ),
+    ).toBe(true);
+    expect(
+      isSameGridState(
+        st({}, {}, [{ columnKey: 'a', direction: 'asc' }]),
+        st({}, {}, [{ columnKey: 'a', direction: 'desc' }]),
+      ),
+    ).toBe(false);
+    expect(
+      isSameGridState(
+        st({}, {}, [
+          { columnKey: 'a', direction: 'asc' },
+          { columnKey: 'b', direction: 'asc' },
+        ]),
+        st({}, {}, [
+          { columnKey: 'b', direction: 'asc' },
+          { columnKey: 'a', direction: 'asc' },
+        ]),
+      ),
+    ).toBe(false);
+    expect(
+      isSameGridState(
+        st({}, {}, [{ columnKey: 'a', direction: 'asc' }]),
+        st({}, {}, []),
+      ),
+    ).toBe(false);
+  });
+});
+
+describe('decideStateChangeEmit', () => {
+  const A = st({ a: 100 });
+  const B = st({ a: 200 });
+
+  it('ドラッグ中は発火せず lastEmitted を据え置く(prevLast を返す)', () => {
+    const d = decideStateChangeEmit(A, B, true);
+    expect(d.emit).toBe(false);
+    expect(d.nextLast).toBe(A);
+  });
+
+  it('ドラッグ中は current が prevLast と異なっても保留(中間幅を通知しない)', () => {
+    const d = decideStateChangeEmit(A, st({ a: 150 }), true);
+    expect(d.emit).toBe(false);
+    expect(d.nextLast).toBe(A);
+  });
+
+  it('初回(prevLast=null)は発火せず current を記録', () => {
+    const d = decideStateChangeEmit(null, A, false);
+    expect(d.emit).toBe(false);
+    expect(d.nextLast).toBe(A);
+  });
+
+  it('前回と同値なら発火せず current を記録', () => {
+    const same = st({ a: 100 });
+    const d = decideStateChangeEmit(A, same, false);
+    expect(d.emit).toBe(false);
+    expect(d.nextLast).toBe(same);
+  });
+
+  it('変化あり(非ドラッグ)は発火し current を記録', () => {
+    const d = decideStateChangeEmit(A, B, false);
+    expect(d.emit).toBe(true);
+    expect(d.nextLast).toBe(B);
   });
 });
