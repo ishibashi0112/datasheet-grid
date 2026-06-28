@@ -1,8 +1,9 @@
-import { useRef, useState, type CSSProperties } from 'react';
+import { useEffect, useRef, useState, type CSSProperties } from 'react';
 import {
   SpreadsheetGrid,
   numberFormatter,
   type GridColumn,
+  type GridState,
   type ServerSideDataSource,
   type ServerSideGetRowsResult,
   type ServerSideQuery,
@@ -347,6 +348,11 @@ const modeButtonStyle = (active: boolean, disabled = false): CSSProperties => ({
   opacity: disabled ? 0.45 : 1,
 });
 
+// 追加(state #3 デモ): onStateChange / applyState の永続デモで使う localStorage キーです。
+//   ページ再読込で「手動リサイズ幅 / フィルター / ソート」が復元されることを示します
+//   (列の可視/順序/ピン/flex は GridState の対象外=本デモの永続対象外)。
+const GRID_STATE_STORAGE_KEY = 'ssg-demo-grid-state';
+
 function App() {
   // 追加: ダミー行を多めに生成します。
   const [rows, setRows] = useState<DemoRow[]>(() => createDemoRows(INITIAL_ROW_COUNT));
@@ -364,6 +370,47 @@ function App() {
 
   // 追加(imperative API #1): ref ハンドル経由でグリッドを命令的に操作するデモ用 ref です。
   const gridRef = useRef<SpreadsheetGridHandle<DemoRow>>(null);
+
+  // 追加(state #3 デモ): マウント時に localStorage から状態を復元します。子(グリッド)の effect は
+  //   親より先に走るため、ここが実行される時点で gridRef は確定済みです(applyState 可能)。
+  //   復元対象は手動リサイズ幅 / フィルター / ソート(GridState)。壊れた保存値は applyState 側で
+  //   防御的に正規化されます。例外(JSON 不正等)は握り潰してデモを止めません。
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem(GRID_STATE_STORAGE_KEY);
+      if (saved) {
+        gridRef.current?.applyState(JSON.parse(saved) as GridState);
+      }
+    } catch {
+      // 保存値が壊れている場合は無視します(次回の変更で上書き保存されます)。
+    }
+    // マウント時のみ。mode 切替によるグリッド再マウントでの再適用は本デモの対象外(再読込永続が主眼)。
+  }, []);
+
+  // 追加(state #3 デモ): 永続スライス変化のたびに localStorage へ自動保存します(onStateChange に渡す)。
+  //   発火規約はライブラリ側(ドラッグ中は確定後 1 回 / 初回非発火 / 同値非発火)。
+  const handleStateChange = (state: GridState) => {
+    try {
+      localStorage.setItem(GRID_STATE_STORAGE_KEY, JSON.stringify(state));
+    } catch {
+      // 保存失敗(容量超過等)は無視します。
+    }
+  };
+
+  // 追加(state #3 デモ): 保存状態をクリアして現在のグリッドも初期状態へ戻します。
+  const clearSavedGridState = () => {
+    try {
+      localStorage.removeItem(GRID_STATE_STORAGE_KEY);
+    } catch {
+      // 無視。
+    }
+    gridRef.current?.applyState({
+      version: 1,
+      columnWidths: {},
+      filters: { globalText: '', columnFilters: {} },
+      sort: [],
+    });
+  };
   // 追加(バー表示デモ): top/bottom バーの表示有無トグルです(showTopBar / showBottomBar の確認用)。
   //   モードとは独立した設定で、どのモードでも見た目を切り替えられます。
   const [showTopBar, setShowTopBar] = useState(true);
@@ -723,12 +770,23 @@ function App() {
           >
             表示中を CSV 保存
           </button>
+          {/* 追加(state #3 デモ): onStateChange/applyState の永続デモ。列幅変更・フィルター・ソートは
+              自動保存され、ページ再読込で復元されます。下のボタンで保存をクリア(初期状態へ)できます。 */}
+          <button
+            type="button"
+            onClick={clearSavedGridState}
+            style={modeButtonStyle(false)}
+          >
+            保存状態をクリア
+          </button>
         </div>
       </header>
 
       <SpreadsheetGrid
         ref={gridRef}
         // 追加(imperative API #1): 命令的ハンドル(SpreadsheetGridHandle)を受け取ります。
+        // 追加(state #3 デモ): 永続スライス変化を localStorage へ自動保存します(発火規約はライブラリ側)。
+        onStateChange={handleStateChange}
         // 追加(stage ②・デモ): clientSide↔serverSide はフックの初期件数読込が mount 限定のため、
         //   境界をまたぐ時だけ key で再マウントします(client↔autoHeight は同 key で再マウントなし)。
         key={mode === 'server' ? 'server' : 'client'}

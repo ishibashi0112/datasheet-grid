@@ -5,9 +5,12 @@ import { defineConfig } from 'vitest/config';
 //   - V-1 は純ロジック(verticalGeometry / sorting / filtering / selectOptions)のみで
 //     React 非依存のため environment は node。将来 V-2(collector フック)を足すときは
 //     該当テストだけ jsdom へ振り分けます(environmentMatchGlobs などで個別指定)。
+//   - 追加(state #3): SpreadsheetGrid を render する結合テスト(.test.tsx)を拾うため、include を
+//     ts/tsx 両対応にします。該当ファイルは先頭 docblock `// @vitest-environment jsdom` で個別に
+//     jsdom へ振り分けます(本設定の既定 environment は node のまま)。
 export default defineConfig({
   test: {
     environment: 'node',
-    include: ['src/**/*.test.ts'],
+    include: ['src/**/*.test.{ts,tsx}'],
   },
 });
