@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import type { ReactNode, Ref } from 'react';
 
 // 追加: row identity 用の key 型です。
 export type GridRowKey = string | number;
@@ -443,7 +443,89 @@ export type GridClassNames = {
   iconButton?: string;
 };
 
+// 追加(imperative API #1): ref ハンドルのスクロール整列指定です。
+//   'auto'  : 既に可視ならスクロールしない。はみ出す側の端へ最小スクロール。
+//   'start' : 対象を可視帯の先頭(ヘッダー直下 / 左固定直右)へ。
+//   'center': 対象を可視帯の中央へ。
+//   'end'   : 対象を可視帯の末尾(下端 / 右端)へ。
+export type ScrollAlign = 'auto' | 'start' | 'center' | 'end';
+
+// 追加(imperative API #1): CSV エクスポートの対象範囲です。
+//   'all'      : 全ビュー行 × visible 列(既定)。SSRM ではロード済み行のみ出力されます。
+//   'selection': 現在の選択範囲(セル/行/列)。選択なしのときは空文字を返します。
+//   'visible'  : 現在の描画ウィンドウ(画面に見えている近傍)の行のみ。
+export type CsvExportScope = 'all' | 'selection' | 'visible';
+
+// 追加(imperative API #1): CSV エクスポートのオプションです。
+export type CsvExportOptions = {
+  // 出力範囲(既定 'all')。
+  scope?: CsvExportScope;
+  // 先頭にヘッダー行(列タイトル)を付けるか(既定 true)。
+  includeHeaders?: boolean;
+  // 区切り文字(既定 ',')。'\t' を渡せば TSV になります。
+  delimiter?: string;
+  // 先頭に UTF-8 BOM を付けるか(exportCsv は既定 false / downloadCsv は既定 true)。
+  bom?: boolean;
+};
+
+// 追加(imperative API #1): ref ハンドル(SpreadsheetGridProps.ref で受け取る命令的 API)です。
+//   設計方針: 状態(列幅/可視/sort/filter 等)は controlled のまま。ここには「prop で表現できない
+//   一発操作」だけを載せます(スクロール / 選択操作 / CSV)。列状態のシリアライズ(getState/applyState)
+//   は別途追加予定で、本ハンドルへ後方互換に足せます。
+//   - viewRowIndex / colIndex は「ビュー座標」です(フィルター/ソート適用後の表示上の index。
+//     colIndex は視覚順 = 固定列を含む左→中央→右の並び)。範囲外の index は内部でクランプ/無視します。
+export type SpreadsheetGridHandle<T> = {
+  // ── viewport(スクロール)──
+  // 指定行が可視になるようスクロールします(align 既定 'auto')。
+  scrollToRow: (viewRowIndex: number, options?: { align?: ScrollAlign }) => void;
+  // 指定セルが可視になるよう縦横スクロールします(固定列は横スクロール対象外)。
+  scrollToCell: (
+    viewRowIndex: number,
+    colIndex: number,
+    options?: { align?: ScrollAlign },
+  ) => void;
+  // 先頭 / 末尾へスクロールします。
+  scrollToTop: () => void;
+  scrollToBottom: () => void;
+  // 現在描画中の行ウィンドウ [startIndex, endIndex)(end 排他)。空のときは null。
+  getVisibleRowRange: () => { startIndex: number; endIndex: number } | null;
+
+  // ── 選択 / アクティブセル ──
+  // 現在のアクティブセル座標(なければ null)。
+  getActiveCell: () => CellCoord | null;
+  // アクティブセルを設定(null で解除)。scrollIntoView:true で可視化も行います。
+  setActiveCell: (
+    cell: CellCoord | null,
+    options?: { scrollIntoView?: boolean },
+  ) => void;
+  // 現在の選択状態。
+  getSelection: () => GridSelection;
+  // 単一セルを選択(クリック相当)。scrollIntoView:true で可視化も行います。
+  selectCell: (
+    viewRowIndex: number,
+    colIndex: number,
+    options?: { scrollIntoView?: boolean },
+  ) => void;
+  // セル範囲を選択(ドラッグ選択相当)。アンカーは range.start です。
+  selectRange: (range: CellRange, options?: { scrollIntoView?: boolean }) => void;
+  // 選択を解除します。
+  clearSelection: () => void;
+  // 選択に交差する行(distinct)を返します。SSRM はロード済み行のみ。
+  getSelectedRows: () => T[];
+
+  // ── エクスポート ──
+  // CSV 文字列を返します(純粋・副作用なし)。
+  exportCsv: (options?: CsvExportOptions) => string;
+  // exportCsv の結果をファイルとしてダウンロードします(Blob + 一時 anchor の DOM 副作用)。
+  //   bom は未指定時 true(Excel 互換)。filename 既定 'export.csv'。
+  downloadCsv: (filename?: string, options?: CsvExportOptions) => void;
+};
+
 export type SpreadsheetGridProps<T> = {
+  // 追加(imperative API #1): React 19 の ref-as-prop。命令的ハンドル(SpreadsheetGridHandle)を受け取ります。
+  //   forwardRef は使いません(React 19 で deprecated 予定のため)。状態は controlled のまま、prop で
+  //   表現できない一発操作(スクロール/選択操作/CSV)だけをハンドルで提供します。
+  ref?: Ref<SpreadsheetGridHandle<T>>;
   // 変更(DS-4 ②/①-3): rows を optional 化しました。dataSource(serverSide)指定時は rows 不要のため。
   //   clientSide でも SpreadsheetGrid 側で既定値(EMPTY_ROWS)を当てるため、未指定でも従来どおり動作します。
   rows?: T[];

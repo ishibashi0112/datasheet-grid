@@ -6,6 +6,7 @@ import {
   useCallback,
   // 追加(11-B7): グローバルフィルタ評価の遅延化(Transition 化)に使います。
   useDeferredValue,
+  useImperativeHandle,
   useReducer,
   useRef,
   useState,
@@ -101,8 +102,17 @@ import {
   computeVerticalGeometry,
   createUniformRowMetrics,
   shouldUseAutoHeight,
+  // 追加(imperative API #1): 命令的スクロールの論理↔物理換算に使います。
+  logicalToPhysicalScrollTop,
+  physicalToLogicalScrollTop,
 } from './logic/verticalGeometry';
 import type { RowMetrics } from './logic/verticalGeometry';
+// 追加(imperative API #1): CSV エクスポート / スクロール先算出の純ロジックです。
+import { serializeRowsToCsv } from './logic/exportCsv';
+import {
+  computeVerticalScrollTarget,
+  computeHorizontalScrollTarget,
+} from './logic/scrollTargets';
 import {
   buildRowHeightStore,
   createAutoHeightRowMetrics,
@@ -153,6 +163,11 @@ import type {
   ServerSideQuery,
   // 追加(stage ②): serverSide query の sort 既定値の型です。
   GridSortState,
+  // 追加(imperative API #1): ref ハンドルと関連型です。
+  GridUiState,
+  SpreadsheetGridHandle,
+  CsvExportOptions,
+  ScrollAlign,
   SpreadsheetGridProps,
 } from './model/gridTypes';
 import { getCellValue, isCellEditable, setCellValue } from './utils/permissions';
@@ -294,6 +309,8 @@ export function SpreadsheetGrid<T extends object>({
   classNames,
   // 追加(UI CSS移行): 行ごとの条件付き className。
   getRowClassName,
+  // 追加(imperative API #1): React 19 の ref-as-prop。命令的ハンドルを受け取ります。
+  ref,
 }: SpreadsheetGridProps<T>) {
   // ── refs ──────────────────────────────────────────────
   const gridRootRef = useRef<HTMLDivElement | null>(null);
@@ -3085,6 +3102,327 @@ export function SpreadsheetGrid<T extends object>({
           ...(height !== undefined ? { height } : {}),
           maxHeight: maxHeight ?? (height !== undefined ? 'none' : undefined),
         };
+
+  // ── imperative API(ref ハンドル)──────────────────────
+  // 設計: 状態は controlled のまま、prop で表せない一発操作だけをハンドルで提供します。
+  //   メソッドは最新値を latest-ref(apiStateRef)越しに読み、ハンドル自体は1回だけ生成して参照を
+  //   安定させます(スクロール等の度に作り直しません)。useImperativeHandle の factory は ref /
+  //   module import しか参照しないため deps [] で exhaustive-deps もクリーンです。
+  const apiStateRef = useRef<{
+    dispatch: typeof dispatch;
+    rowModel: RowModel<T>;
+    viewRowCount: number;
+    rowMetrics: RowMetrics;
+    paneLayout: GridPaneLayout<T>;
+    orderedColumns: GridColumn<T>[];
+    uiState: GridUiState;
+    headerHeight: number;
+    verticalScaleFactor: number;
+    leftPaneTotalWidth: number;
+    rightPaneTotalWidth: number;
+    centerLeadingWidth: number;
+    windowFirstRow: number;
+    windowLastRow: number;
+    physicalBodyHeight: number;
+  } | null>(null);
+  apiStateRef.current = {
+    dispatch,
+    rowModel,
+    viewRowCount,
+    rowMetrics,
+    paneLayout,
+    orderedColumns,
+    uiState,
+    headerHeight,
+    verticalScaleFactor,
+    leftPaneTotalWidth,
+    rightPaneTotalWidth,
+    centerLeadingWidth,
+    windowFirstRow,
+    windowLastRow,
+    physicalBodyHeight,
+  };
+
+  useImperativeHandle(
+    ref,
+    (): SpreadsheetGridHandle<T> => {
+      // 論理 scrollTop を物理へ戻してスクロールコンテナへ適用します(横は圧縮対象外で物理=論理)。
+      const applyScroll = (logicalTop: number | null, left: number | null) => {
+        const el = scrollContainerRef.current;
+        const s = apiStateRef.current;
+        if (!el || !s) {
+          return;
+        }
+        el.scrollTo({
+          top:
+            logicalTop === null
+              ? el.scrollTop
+              : logicalToPhysicalScrollTop(logicalTop, s.verticalScaleFactor),
+          left: left === null ? el.scrollLeft : left,
+          behavior: 'auto',
+        });
+      };
+
+      // 縦の scroll target(論理)を求めます。範囲外 index はクランプします。
+      const verticalTargetFor = (
+        viewRowIndex: number,
+        align: ScrollAlign,
+      ): number | null => {
+        const el = scrollContainerRef.current;
+        const s = apiStateRef.current;
+        if (!el || !s || s.viewRowCount === 0) {
+          return null;
+        }
+        const clamped = Math.min(Math.max(viewRowIndex, 0), s.viewRowCount - 1);
+        return computeVerticalScrollTarget({
+          rowTop: s.rowMetrics.rowTop(clamped),
+          rowHeight: s.rowMetrics.rowsHeight(clamped, clamped),
+          headerHeight: s.headerHeight,
+          viewportHeight: el.clientHeight,
+          currentScrollTop: physicalToLogicalScrollTop(
+            el.scrollTop,
+            s.verticalScaleFactor,
+          ),
+          align,
+        });
+      };
+
+      // 横の scroll target(物理=論理)を求めます。中央ペインの列のみ対象(固定列は常に可視)。
+      const horizontalTargetFor = (
+        colIndex: number,
+        align: ScrollAlign,
+      ): number | null => {
+        const el = scrollContainerRef.current;
+        const s = apiStateRef.current;
+        if (!el || !s) {
+          return null;
+        }
+        const single = computeSinglePaneColumnExtent(s.paneLayout, colIndex);
+        if (!single || single.pane !== 'center') {
+          return null;
+        }
+        return computeHorizontalScrollTarget({
+          cellLeft:
+            s.leftPaneTotalWidth + s.centerLeadingWidth + single.extent.start,
+          cellWidth: single.extent.width,
+          leftPaneWidth: s.leftPaneTotalWidth,
+          rightPaneWidth: s.rightPaneTotalWidth,
+          viewportWidth: el.clientWidth,
+          currentScrollLeft: el.scrollLeft,
+          align,
+        });
+      };
+
+      const scrollToCellInternal = (
+        viewRowIndex: number,
+        colIndex: number,
+        align: ScrollAlign,
+      ) => {
+        applyScroll(
+          verticalTargetFor(viewRowIndex, align),
+          horizontalTargetFor(colIndex, align),
+        );
+      };
+
+      // CSV 文字列を組み立てます(exportCsv / downloadCsv で共有)。
+      const buildCsv = (options?: CsvExportOptions): string => {
+        const s = apiStateRef.current;
+        if (!s) {
+          return '';
+        }
+        const scope = options?.scope ?? 'all';
+        let startRow = 0;
+        let endRow = s.viewRowCount;
+        let columns = s.orderedColumns;
+
+        if (scope === 'visible') {
+          startRow = s.windowFirstRow;
+          endRow =
+            s.windowLastRow >= s.windowFirstRow
+              ? s.windowLastRow + 1
+              : s.windowFirstRow;
+        } else if (scope === 'selection') {
+          const sel = s.uiState.selection;
+          if (!sel) {
+            return options?.bom ? '\uFEFF' : '';
+          }
+          if (sel.type === 'cell') {
+            const r = normalizeCellRange(sel.range);
+            startRow = r.start.row;
+            endRow = r.end.row + 1;
+            columns = s.orderedColumns.slice(r.start.col, r.end.col + 1);
+          } else if (sel.type === 'row') {
+            const r = normalizeRowRange(sel.startRow, sel.endRow);
+            startRow = r.startRow;
+            endRow = r.endRow + 1;
+          } else {
+            const r = normalizeColumnRange(sel.startCol, sel.endCol);
+            startRow = 0;
+            endRow = s.viewRowCount;
+            columns = s.orderedColumns.slice(r.startCol, r.endCol + 1);
+          }
+        }
+
+        return serializeRowsToCsv({
+          getRow: (index) => s.rowModel.getRow(index),
+          startRow,
+          endRow,
+          columns,
+          delimiter: options?.delimiter,
+          includeHeaders: options?.includeHeaders,
+          bom: options?.bom,
+        });
+      };
+
+      return {
+        scrollToRow: (viewRowIndex, scrollOptions) =>
+          applyScroll(
+            verticalTargetFor(viewRowIndex, scrollOptions?.align ?? 'auto'),
+            null,
+          ),
+
+        scrollToCell: (viewRowIndex, colIndex, scrollOptions) =>
+          scrollToCellInternal(
+            viewRowIndex,
+            colIndex,
+            scrollOptions?.align ?? 'auto',
+          ),
+
+        scrollToTop: () => {
+          scrollContainerRef.current?.scrollTo({ top: 0, behavior: 'auto' });
+        },
+
+        scrollToBottom: () => {
+          const el = scrollContainerRef.current;
+          const s = apiStateRef.current;
+          if (!el || !s) {
+            return;
+          }
+          el.scrollTo({
+            top: Math.max(
+              s.headerHeight + s.physicalBodyHeight - el.clientHeight,
+              0,
+            ),
+            behavior: 'auto',
+          });
+        },
+
+        getVisibleRowRange: () => {
+          const s = apiStateRef.current;
+          if (!s || s.windowLastRow < s.windowFirstRow) {
+            return null;
+          }
+          return { startIndex: s.windowFirstRow, endIndex: s.windowLastRow + 1 };
+        },
+
+        getActiveCell: () => {
+          const cell = apiStateRef.current?.uiState.activeCell;
+          return cell ? { row: cell.row, col: cell.col } : null;
+        },
+
+        setActiveCell: (cell, cellOptions) => {
+          const s = apiStateRef.current;
+          if (!s) {
+            return;
+          }
+          s.dispatch(gridActions.activateCell(cell));
+          if (cell && cellOptions?.scrollIntoView) {
+            scrollToCellInternal(cell.row, cell.col, 'auto');
+          }
+        },
+
+        getSelection: () => apiStateRef.current?.uiState.selection ?? null,
+
+        selectCell: (viewRowIndex, colIndex, cellOptions) => {
+          const s = apiStateRef.current;
+          if (!s) {
+            return;
+          }
+          const cell = { row: viewRowIndex, col: colIndex };
+          // クリック相当: pointerdown(start)→ pointerup(end)。activeCell=cell / 単一セル選択 / dragState クリア。
+          s.dispatch(gridActions.startSelection(cell));
+          s.dispatch(gridActions.endSelection());
+          if (cellOptions?.scrollIntoView) {
+            scrollToCellInternal(viewRowIndex, colIndex, 'auto');
+          }
+        },
+
+        selectRange: (range, rangeOptions) => {
+          const s = apiStateRef.current;
+          if (!s) {
+            return;
+          }
+          // ドラッグ選択相当: start(anchor)→ update(focus)→ end。1 イベント内のため再レンダーは 1 回。
+          s.dispatch(gridActions.startSelection(range.start));
+          s.dispatch(gridActions.updateSelection(range.end));
+          s.dispatch(gridActions.endSelection());
+          if (rangeOptions?.scrollIntoView) {
+            scrollToCellInternal(range.end.row, range.end.col, 'auto');
+          }
+        },
+
+        clearSelection: () => {
+          apiStateRef.current?.dispatch(gridActions.clearSelection());
+        },
+
+        getSelectedRows: () => {
+          const s = apiStateRef.current;
+          if (!s) {
+            return [];
+          }
+          const sel = s.uiState.selection;
+          if (!sel) {
+            return [];
+          }
+          const result: T[] = [];
+          const pushRow = (index: number) => {
+            const row = s.rowModel.getRow(index);
+            // SSRM 未ロード行(undefined)はスキップします。
+            if (row) {
+              result.push(row);
+            }
+          };
+          if (sel.type === 'cell') {
+            const r = normalizeCellRange(sel.range);
+            for (let i = r.start.row; i <= r.end.row; i += 1) {
+              pushRow(i);
+            }
+          } else if (sel.type === 'row') {
+            const r = normalizeRowRange(sel.startRow, sel.endRow);
+            for (let i = r.startRow; i <= r.endRow; i += 1) {
+              pushRow(i);
+            }
+          } else {
+            // 列選択は全ビュー行が対象(コピーと同義)。
+            for (let i = 0; i < s.viewRowCount; i += 1) {
+              pushRow(i);
+            }
+          }
+          return result;
+        },
+
+        exportCsv: (options) => buildCsv(options),
+
+        downloadCsv: (filename, options) => {
+          if (typeof document === 'undefined') {
+            return;
+          }
+          // ファイル化では Excel 互換のため bom 既定を true にします(明示指定があればそれを尊重)。
+          const csv = buildCsv({ ...options, bom: options?.bom ?? true });
+          const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+          const url = URL.createObjectURL(blob);
+          const anchor = document.createElement('a');
+          anchor.href = url;
+          anchor.download = filename ?? 'export.csv';
+          document.body.appendChild(anchor);
+          anchor.click();
+          document.body.removeChild(anchor);
+          URL.revokeObjectURL(url);
+        },
+      };
+    },
+    [],
+  );
 
   return (
     <div className={cx('ssg-root', className, classNames?.root)}>

@@ -1,4 +1,4 @@
-import { useState, type CSSProperties } from 'react';
+import { useRef, useState, type CSSProperties } from 'react';
 import {
   SpreadsheetGrid,
   numberFormatter,
@@ -6,6 +6,7 @@ import {
   type ServerSideDataSource,
   type ServerSideGetRowsResult,
   type ServerSideQuery,
+  type SpreadsheetGridHandle,
 } from './components/spreadsheet-grid';
 // 注記(stage ②・デモ限定): モックサーバが query(フィルター/ソート)を実適用するため、グリッド内部の
 //   純関数を deep-import して再利用します。実サーバは SQL 等の自前クエリエンジンを使う想定で、これは
@@ -360,6 +361,9 @@ function App() {
   const [mode, setMode] = useState<DemoMode>('client');
   // 追加(stage ③ デモ): serverSide ソフトリフレッシュ用トークン。下のボタンで増やします。
   const [serverRefreshToken, setServerRefreshToken] = useState(0);
+
+  // 追加(imperative API #1): ref ハンドル経由でグリッドを命令的に操作するデモ用 ref です。
+  const gridRef = useRef<SpreadsheetGridHandle<DemoRow>>(null);
   // 追加(バー表示デモ): top/bottom バーの表示有無トグルです(showTopBar / showBottomBar の確認用)。
   //   モードとは独立した設定で、どのモードでも見た目を切り替えられます。
   const [showTopBar, setShowTopBar] = useState(true);
@@ -657,9 +661,74 @@ function App() {
             取り直します(再取得された行は備考の先頭に「取得#N」が付きます)。
           </p>
         )}
+        {/* 追加(imperative API #1): ref ハンドル(SpreadsheetGridHandle)の動作デモです。 */}
+        <div
+          style={{
+            display: 'flex',
+            flexWrap: 'wrap',
+            gap: 8,
+            marginTop: 12,
+            alignItems: 'center',
+          }}
+        >
+          <span style={{ fontSize: 13, color: '#475569', fontWeight: 600 }}>
+            命令的 API (ref):
+          </span>
+          <button
+            type="button"
+            onClick={() => gridRef.current?.scrollToTop()}
+            style={modeButtonStyle(false)}
+          >
+            先頭へ
+          </button>
+          <button
+            type="button"
+            onClick={() => gridRef.current?.scrollToBottom()}
+            style={modeButtonStyle(false)}
+          >
+            末尾へ
+          </button>
+          <button
+            type="button"
+            onClick={() => gridRef.current?.scrollToRow(5000, { align: 'center' })}
+            style={modeButtonStyle(false)}
+          >
+            5000 行目へ(中央)
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              const selected = gridRef.current?.getSelectedRows() ?? [];
+              window.alert(`選択中の行数: ${selected.length}`);
+            }}
+            style={modeButtonStyle(false)}
+          >
+            選択行数を表示
+          </button>
+          <button
+            type="button"
+            onClick={() =>
+              gridRef.current?.downloadCsv('selection.csv', { scope: 'selection' })
+            }
+            style={modeButtonStyle(false)}
+          >
+            選択を CSV 保存
+          </button>
+          <button
+            type="button"
+            onClick={() =>
+              gridRef.current?.downloadCsv('visible.csv', { scope: 'visible' })
+            }
+            style={modeButtonStyle(false)}
+          >
+            表示中を CSV 保存
+          </button>
+        </div>
       </header>
 
       <SpreadsheetGrid
+        ref={gridRef}
+        // 追加(imperative API #1): 命令的ハンドル(SpreadsheetGridHandle)を受け取ります。
         // 追加(stage ②・デモ): clientSide↔serverSide はフックの初期件数読込が mount 限定のため、
         //   境界をまたぐ時だけ key で再マウントします(client↔autoHeight は同 key で再マウントなし)。
         key={mode === 'server' ? 'server' : 'client'}

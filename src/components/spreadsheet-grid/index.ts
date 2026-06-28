@@ -50,5 +50,10 @@ export type {
   ServerSideGetRowsResult,
   // 行モデル境界型(clientSide / serverSide 共通の行取得 seam)です。
   RowModel,
+  // 追加(imperative API #1): ref ハンドル(SpreadsheetGridProps.ref)と関連型です。
+  SpreadsheetGridHandle,
+  ScrollAlign,
+  CsvExportScope,
+  CsvExportOptions,
 } from './model/gridTypes';
 export type { NumberFormatterOptions } from './logic/valueFormatters';
