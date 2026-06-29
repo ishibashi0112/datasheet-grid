@@ -80,6 +80,8 @@ src/components/spreadsheet-grid/logic/cx.ts
 src/components/spreadsheet-grid/logic/domGuards.ts
 src/components/spreadsheet-grid/logic/exportCsv.test.ts
 src/components/spreadsheet-grid/logic/exportCsv.ts
+src/components/spreadsheet-grid/logic/exportData.test.ts
+src/components/spreadsheet-grid/logic/exportData.ts
 src/components/spreadsheet-grid/logic/filtering.test.ts
 src/components/spreadsheet-grid/logic/filtering.ts
 src/components/spreadsheet-grid/logic/geometry.ts
@@ -1788,6 +1790,226 @@ export const useGridBarContext = <T,>({
 export default useGridBarContext;
 </file>
 
+<file path="src/components/spreadsheet-grid/hooks/useGridKeyboardInteractions.ts">
+import { useCallback, type Dispatch, type KeyboardEvent } from 'react';
+import { gridActions, type GridUiAction } from '../model/gridActions';
+import type {
+  CellCoord,
+  GridColumn,
+  GridUiState,
+  RowModel,
+  SpreadsheetGridProps,
+} from '../model/gridTypes';
+import { clamp } from '../logic/geometry';
+import { isPrintableKey, shouldIgnoreGridKeydown } from '../logic/domGuards';
+import { isCellEditable } from '../utils/permissions';
+
+type UseGridKeyboardInteractionsArgs<T> = {
+  uiState: GridUiState;
+  // 変更(DS-3-1): filteredRows: T[] を RowModel シームへ置換しました(DS-3-0 の seam を消費)。
+  //   length は getRowCount()、行取得は getRow(viewIndex) 経由に切り替えます。
+  rowModel: RowModel<T>;
+  visibleColumns: GridColumn<T>[];
+  readOnly: boolean;
+  canEditCell: SpreadsheetGridProps<T>['canEditCell'];
+  // 変更(11-B6): ドラフト state の setter → 「編集開始時の初期値」setter になりました。
+  //   文字キー直打ちの編集開始では、押下キー 1 文字を初期値として渡します
+  //   （以後のタイピングは CellEditorLayer ローカル state が受け持ちます）。
+  setEditorInitialValue: (value: string) => void;
+  dispatch: Dispatch<GridUiAction>;
+  handleCopy: () => Promise<void>;
+  handleCellDoubleClick: (cell: CellCoord) => void;
+  isWholeGridSelected: boolean;
+  selectEntireGrid: () => void;
+};
+
+// 追加: keyboard interaction（arrow/tab/enter/copy/select-all/edit start）をまとめます。
+export const useGridKeyboardInteractions = <T,>({
+  uiState,
+  rowModel,
+  visibleColumns,
+  readOnly,
+  canEditCell,
+  setEditorInitialValue,
+  dispatch,
+  handleCopy,
+  handleCellDoubleClick,
+  isWholeGridSelected,
+  selectEntireGrid,
+}: UseGridKeyboardInteractionsArgs<T>) => {
+  // 追加(DS-3-1): 行数はシーム経由で取得します(= order.length / 旧 filteredRows.length と等価)。
+  //   各 useCallback の deps はこのプリミティブ rowCount を使い、rowModel オブジェクト参照を
+  //   deps に入れないことで、件数不変のソートで handler identity が変わらない 11系のメモ化を保ちます。
+  const rowCount = rowModel.getRowCount();
+
+  // 追加: 基準セルから移動先セルを計算します。
+  const getMovedCell = useCallback(
+    (baseCell: CellCoord, deltaRow: number, deltaCol: number): CellCoord => ({
+      row: clamp(
+        baseCell.row + deltaRow,
+        0,
+        Math.max(rowCount - 1, 0),
+      ),
+      col: clamp(
+        baseCell.col + deltaCol,
+        0,
+        Math.max(visibleColumns.length - 1, 0),
+      ),
+    }),
+    [rowCount, visibleColumns.length],
+  );
+
+  // 追加: active cell を移動します。shiftKey=true の場合は cell selection を拡張します。
+  const moveActiveCell = useCallback(
+    (deltaRow: number, deltaCol: number, extendSelection: boolean) => {
+      if (rowCount === 0 || visibleColumns.length === 0) {
+        return;
+      }
+      const currentCell = uiState.activeCell ?? { row: 0, col: 0 };
+      const nextCell = {
+        row: clamp(currentCell.row + deltaRow, 0, rowCount - 1),
+        col: clamp(currentCell.col + deltaCol, 0, visibleColumns.length - 1),
+      };
+      if (extendSelection) {
+        const anchor =
+          uiState.selection?.type === 'cell'
+            ? uiState.selection.range.start
+            : currentCell;
+        dispatch(gridActions.startSelection(anchor));
+        dispatch(gridActions.updateSelection(nextCell));
+        dispatch(gridActions.endSelection());
+        dispatch(gridActions.activateCell(nextCell));
+        return;
+      }
+      dispatch(gridActions.startSelection(nextCell));
+      dispatch(gridActions.endSelection());
+      dispatch(gridActions.activateCell(nextCell));
+    },
+    [
+      dispatch,
+      rowCount,
+      uiState.activeCell,
+      uiState.selection,
+      visibleColumns.length,
+    ],
+  );
+
+  // 追加: Ctrl/Cmd + C や Arrow/Enter を捕捉します。
+  const handleKeyDown = useCallback(
+    async (event: KeyboardEvent<HTMLDivElement>) => {
+      // 追加: filter input / select / button 等にフォーカス中は、
+      //       grid 側の keyboard 操作を無効化します。
+      if (shouldIgnoreGridKeydown(event.target)) {
+        return;
+      }
+
+      if (uiState.editingCell) {
+        return;
+      }
+
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'c') {
+        event.preventDefault();
+        await handleCopy();
+        return;
+      }
+
+      // 追加: Ctrl + A / Cmd + A で全体選択、2回目で解除します。
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'a') {
+        event.preventDefault();
+        if (isWholeGridSelected) {
+          dispatch(gridActions.clearSelection());
+          dispatch(gridActions.activateCell(null));
+          return;
+        }
+        selectEntireGrid();
+        return;
+      }
+
+      if (event.key === 'ArrowUp') {
+        event.preventDefault();
+        moveActiveCell(-1, 0, event.shiftKey);
+        return;
+      }
+      if (event.key === 'ArrowDown') {
+        event.preventDefault();
+        moveActiveCell(1, 0, event.shiftKey);
+        return;
+      }
+      if (event.key === 'ArrowLeft') {
+        event.preventDefault();
+        moveActiveCell(0, -1, event.shiftKey);
+        return;
+      }
+      if (event.key === 'ArrowRight') {
+        event.preventDefault();
+        moveActiveCell(0, 1, event.shiftKey);
+        return;
+      }
+      if (event.key === 'Tab') {
+        event.preventDefault();
+        moveActiveCell(0, event.shiftKey ? -1 : 1, false);
+        return;
+      }
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        dispatch(gridActions.clearSelection());
+        return;
+      }
+      if (event.key === 'Enter' || event.key === 'F2') {
+        event.preventDefault();
+        if (uiState.activeCell) {
+          handleCellDoubleClick(uiState.activeCell);
+        }
+        return;
+      }
+      if (isPrintableKey(event) && uiState.activeCell) {
+        const row = rowModel.getRow(uiState.activeCell.row);
+        const column = visibleColumns[uiState.activeCell.col];
+        if (!row || !column) {
+          return;
+        }
+        if (
+          !isCellEditable(
+            { readOnly, canEditCell },
+            uiState.activeCell.row,
+            uiState.activeCell.col,
+            row,
+            column,
+          )
+        ) {
+          return;
+        }
+        event.preventDefault();
+        setEditorInitialValue(event.key);
+        dispatch(gridActions.startEdit(uiState.activeCell));
+      }
+    },
+    [
+      canEditCell,
+      dispatch,
+      rowModel,
+      handleCellDoubleClick,
+      handleCopy,
+      isWholeGridSelected,
+      moveActiveCell,
+      readOnly,
+      selectEntireGrid,
+      setEditorInitialValue,
+      uiState.activeCell,
+      uiState.editingCell,
+      visibleColumns,
+    ],
+  );
+
+  return {
+    getMovedCell,
+    handleKeyDown,
+  };
+};
+
+export default useGridKeyboardInteractions;
+</file>
+
 <file path="src/components/spreadsheet-grid/hooks/useGridViewportSync.ts">
 import { useEffect, type RefObject } from 'react';
 import type { ActiveCellOverlayRect } from '../ActiveCellOverlay';
@@ -2643,6 +2865,218 @@ export const serializeRowsToCsv = <T,>({
 
   const body = lines.join('\r\n');
   return bom ? `\uFEFF${body}` : body;
+};
+</file>
+
+<file path="src/components/spreadsheet-grid/logic/exportData.test.ts">
+import { describe, it, expect } from 'vitest';
+
+import { buildGridExportData } from './exportData';
+import type { GridColumn } from '../model/gridTypes';
+
+type Row = { a: string; b: number; c?: string };
+
+const columns: GridColumn<Row>[] = [
+  { key: 'a', title: 'A', width: 100 },
+  { key: 'b', title: 'B', width: 100 },
+];
+
+const rows: Row[] = [
+  { a: 'x', b: 1 },
+  { a: 'y', b: 2 },
+  { a: 'z', b: 3 },
+];
+
+const getRow = (i: number): Row => rows[i];
+
+describe('buildGridExportData', () => {
+  it('列メタ(key/title)と 2 次元セル(value/text)を返す', () => {
+    const data = buildGridExportData({
+      getRow,
+      startRow: 0,
+      endRow: rows.length,
+      columns,
+    });
+    expect(data.columns).toEqual([
+      { key: 'a', title: 'A' },
+      { key: 'b', title: 'B' },
+    ]);
+    expect(data.rows).toEqual([
+      [
+        { value: 'x', text: 'x' },
+        { value: 1, text: '1' },
+      ],
+      [
+        { value: 'y', text: 'y' },
+        { value: 2, text: '2' },
+      ],
+      [
+        { value: 'z', text: 'z' },
+        { value: 3, text: '3' },
+      ],
+    ]);
+  });
+
+  it('生値 value は型を保持する(数値は number のまま)', () => {
+    const data = buildGridExportData({
+      getRow,
+      startRow: 0,
+      endRow: 1,
+      columns,
+    });
+    expect(typeof data.rows[0][1].value).toBe('number');
+    expect(data.rows[0][1].value).toBe(1);
+  });
+
+  it('title 未指定の列は key をヘッダーに使う', () => {
+    const cols: GridColumn<Row>[] = [{ key: 'a', width: 100 }];
+    const data = buildGridExportData({
+      getRow,
+      startRow: 0,
+      endRow: 1,
+      columns: cols,
+    });
+    expect(data.columns).toEqual([{ key: 'a', title: 'a' }]);
+  });
+
+  it('レンジ [startRow, endRow) は end 排他', () => {
+    const data = buildGridExportData({
+      getRow,
+      startRow: 1,
+      endRow: 2,
+      columns,
+    });
+    expect(data.rows).toEqual([
+      [
+        { value: 'y', text: 'y' },
+        { value: 2, text: '2' },
+      ],
+    ]);
+  });
+
+  it('formatClipboardValue があれば text に反映する(value は生値のまま)', () => {
+    const cols: GridColumn<Row>[] = [
+      {
+        key: 'b',
+        title: 'B',
+        width: 100,
+        formatClipboardValue: (value) => `JPY${String(value)}`,
+      },
+    ];
+    const data = buildGridExportData({
+      getRow,
+      startRow: 0,
+      endRow: 1,
+      columns: cols,
+    });
+    expect(data.rows[0][0]).toEqual({ value: 1, text: 'JPY1' });
+  });
+
+  it('getValue で算出した値を value/text に使う', () => {
+    const cols: GridColumn<Row>[] = [
+      { key: 'sum', title: 'Sum', width: 100, getValue: (row) => row.b * 10 },
+    ];
+    const data = buildGridExportData({
+      getRow,
+      startRow: 0,
+      endRow: 1,
+      columns: cols,
+    });
+    expect(data.rows[0][0]).toEqual({ value: 10, text: '10' });
+  });
+
+  it('null/undefined のセルは text が空文字になる', () => {
+    const cols: GridColumn<Row>[] = [{ key: 'c', title: 'C', width: 100 }];
+    const data = buildGridExportData({
+      getRow,
+      startRow: 0,
+      endRow: 1,
+      columns: cols,
+    });
+    expect(data.rows[0][0]).toEqual({ value: undefined, text: '' });
+  });
+
+  it('未ロード行(undefined)をスキップする(SSRM)', () => {
+    const sparse: (Row | undefined)[] = [
+      { a: 'x', b: 1 },
+      undefined,
+      { a: 'z', b: 3 },
+    ];
+    const data = buildGridExportData({
+      getRow: (i: number): Row => sparse[i] as Row,
+      startRow: 0,
+      endRow: 3,
+      columns,
+    });
+    expect(data.rows).toEqual([
+      [
+        { value: 'x', text: 'x' },
+        { value: 1, text: '1' },
+      ],
+      [
+        { value: 'z', text: 'z' },
+        { value: 3, text: '3' },
+      ],
+    ]);
+  });
+});
+</file>
+
+<file path="src/components/spreadsheet-grid/logic/exportData.ts">
+import type { GridColumn, GridExportData } from '../model/gridTypes';
+import { getCellValue } from '../utils/permissions';
+
+// 追加(imperative API: getExportData): エクスポート用「整形済みデータ」の純ロジックです。ハンドル
+//   (SpreadsheetGridHandle の getExportData)から呼ばれ、DOM や副作用には一切触れません(列メタ +
+//   2 次元セル配列を返すだけ)。xlsx 等の生成はライブラリを同梱せず consumer 側に委ね、ここでは
+//   「現在の表(フィルター/ソート/可視列/固定順/scope 反映後)」をシリアライズ非依存のデータとして
+//   渡します(導線)。consumer は exceljs / hucre / SheetJS など任意のライブラリへ流し込みます。
+//   値整形は CSV と同じ規則に揃えます: 各セルは生値 value(getCellValue)と文字列 text の双方を持ち、
+//   text は formatClipboardValue があればそれ、無ければ String(value ?? '')。生値 value があることで、
+//   consumer は数値を数値・日付を日付のまま型付きセルとして書け、Excel 側の数値書式を効かせられます。
+
+export type BuildGridExportDataParams<T> = {
+  // 行モデルシーム。viewIndex の行を引きます(SSRM 未ロード行は undefined → スキップ)。
+  getRow: (viewIndex: number) => T;
+  // 出力対象のビュー行レンジ [startRow, endRow)(end 排他)です。
+  startRow: number;
+  endRow: number;
+  // 出力対象の列(視覚順 = orderedColumns の部分集合)です。columns / 各行セルの順序もこの配列順です。
+  columns: GridColumn<T>[];
+};
+
+// 行レンジ × 列集合から、列メタ(key / title)と 2 次元セル(value / text)を生成します。
+export const buildGridExportData = <T,>({
+  getRow,
+  startRow,
+  endRow,
+  columns,
+}: BuildGridExportDataParams<T>): GridExportData => {
+  // 列メタは key(オブジェクト系ライブラリ用)と title(ヘッダー表示用)の双方を持たせます。
+  const exportColumns = columns.map((column) => ({
+    key: column.key,
+    title: column.title ?? column.key,
+  }));
+
+  const rows: GridExportData['rows'] = [];
+  for (let rowIndex = startRow; rowIndex < endRow; rowIndex += 1) {
+    const row = getRow(rowIndex);
+    // SSRM 未ロード行(undefined)はスキップします。clientSide では常に行が存在します。
+    if (!row) {
+      continue;
+    }
+    rows.push(
+      columns.map((column) => {
+        const value = getCellValue(row, column);
+        const text = column.formatClipboardValue
+          ? column.formatClipboardValue(value, row)
+          : String(value ?? '');
+        return { value, text };
+      }),
+    );
+  }
+
+  return { columns: exportColumns, rows };
 };
 </file>
 
@@ -5539,224 +5973,165 @@ code {
 }
 </file>
 
-<file path="src/components/spreadsheet-grid/hooks/useGridKeyboardInteractions.ts">
-import { useCallback, type Dispatch, type KeyboardEvent } from 'react';
+<file path="src/components/spreadsheet-grid/hooks/useGridEditController.ts">
+import { useCallback, type Dispatch, type RefObject } from 'react';
 import { gridActions, type GridUiAction } from '../model/gridActions';
-import type {
-  CellCoord,
-  GridColumn,
-  GridUiState,
-  RowModel,
-  SpreadsheetGridProps,
-} from '../model/gridTypes';
-import { clamp } from '../logic/geometry';
-import { isPrintableKey, shouldIgnoreGridKeydown } from '../logic/domGuards';
-import { isCellEditable } from '../utils/permissions';
+import type { CellCoord, GridColumn, GridUiState, RowModel } from '../model/gridTypes';
+import type { EditorCommitDirection } from '../CellEditorLayer';
+import { setCellValue } from '../utils/permissions';
 
-type UseGridKeyboardInteractionsArgs<T> = {
+type UseGridEditControllerArgs<T extends object> = {
   uiState: GridUiState;
-  // 変更(DS-3-1): filteredRows: T[] を RowModel シームへ置換しました(DS-3-0 の seam を消費)。
-  //   length は getRowCount()、行取得は getRow(viewIndex) 経由に切り替えます。
-  rowModel: RowModel<T>;
+  rows: T[];
   visibleColumns: GridColumn<T>[];
-  readOnly: boolean;
-  canEditCell: SpreadsheetGridProps<T>['canEditCell'];
-  // 変更(11-B6): ドラフト state の setter → 「編集開始時の初期値」setter になりました。
-  //   文字キー直打ちの編集開始では、押下キー 1 文字を初期値として渡します
-  //   （以後のタイピングは CellEditorLayer ローカル state が受け持ちます）。
+  // 変更(DS-3-2): filteredRowSourceIndexes: number[] を RowModel シームへ置換しました
+  //   (DS-3-0 の seam を消費 / edit consumer 移行)。source index は
+  //   getSourceIndex(viewIndex) = order[viewIndex] で解決します
+  //   (旧 filteredRowSourceIndexes[i] = Array.from(order)[i] と参照値一致)。
+  //   ※ rows 自体は commit の rows.map / rows[originalRowIndex] で引き続き直接参照します
+  //     (書き込みは source index 基準で rows を再構築するため getRow では代替不可)。
+  rowModel: RowModel<T>;
+  // 変更(11-B6): editorValue / setEditorValue(ドラフト state)は廃止しました。
+  //              ドラフトは CellEditorLayer のローカル state へ移動し、
+  //              親は「編集開始時の初期値」を設定する setter だけを持ちます。
   setEditorInitialValue: (value: string) => void;
+  onRowsChange?: (nextRows: T[]) => void;
   dispatch: Dispatch<GridUiAction>;
-  handleCopy: () => Promise<void>;
-  handleCellDoubleClick: (cell: CellCoord) => void;
-  isWholeGridSelected: boolean;
-  selectEntireGrid: () => void;
+  getMovedCell: (baseCell: CellCoord, deltaRow: number, deltaCol: number) => CellCoord;
+  gridRootRef: RefObject<HTMLDivElement | null>;
+  editorActionGuardRef: RefObject<boolean>;
 };
 
-// 追加: keyboard interaction（arrow/tab/enter/copy/select-all/edit start）をまとめます。
-export const useGridKeyboardInteractions = <T,>({
+// 追加: edit 確定 / cancel / active cell 復帰をまとめる controller です。
+export const useGridEditController = <T extends object>({
   uiState,
-  rowModel,
+  rows,
   visibleColumns,
-  readOnly,
-  canEditCell,
+  rowModel,
   setEditorInitialValue,
+  onRowsChange,
   dispatch,
-  handleCopy,
-  handleCellDoubleClick,
-  isWholeGridSelected,
-  selectEntireGrid,
-}: UseGridKeyboardInteractionsArgs<T>) => {
-  // 追加(DS-3-1): 行数はシーム経由で取得します(= order.length / 旧 filteredRows.length と等価)。
-  //   各 useCallback の deps はこのプリミティブ rowCount を使い、rowModel オブジェクト参照を
-  //   deps に入れないことで、件数不変のソートで handler identity が変わらない 11系のメモ化を保ちます。
-  const rowCount = rowModel.getRowCount();
-
-  // 追加: 基準セルから移動先セルを計算します。
-  const getMovedCell = useCallback(
-    (baseCell: CellCoord, deltaRow: number, deltaCol: number): CellCoord => ({
-      row: clamp(
-        baseCell.row + deltaRow,
-        0,
-        Math.max(rowCount - 1, 0),
-      ),
-      col: clamp(
-        baseCell.col + deltaCol,
-        0,
-        Math.max(visibleColumns.length - 1, 0),
-      ),
-    }),
-    [rowCount, visibleColumns.length],
-  );
-
-  // 追加: active cell を移動します。shiftKey=true の場合は cell selection を拡張します。
-  const moveActiveCell = useCallback(
-    (deltaRow: number, deltaCol: number, extendSelection: boolean) => {
-      if (rowCount === 0 || visibleColumns.length === 0) {
-        return;
-      }
-      const currentCell = uiState.activeCell ?? { row: 0, col: 0 };
-      const nextCell = {
-        row: clamp(currentCell.row + deltaRow, 0, rowCount - 1),
-        col: clamp(currentCell.col + deltaCol, 0, visibleColumns.length - 1),
-      };
-      if (extendSelection) {
-        const anchor =
-          uiState.selection?.type === 'cell'
-            ? uiState.selection.range.start
-            : currentCell;
-        dispatch(gridActions.startSelection(anchor));
-        dispatch(gridActions.updateSelection(nextCell));
-        dispatch(gridActions.endSelection());
-        dispatch(gridActions.activateCell(nextCell));
-        return;
-      }
-      dispatch(gridActions.startSelection(nextCell));
+  getMovedCell,
+  gridRootRef,
+  editorActionGuardRef,
+}: UseGridEditControllerArgs<T>) => {
+  // 追加: 単一セルを active + selection へ反映するユーティリティです。
+  const activateSingleCell = useCallback(
+    (cell: CellCoord) => {
+      dispatch(gridActions.startSelection(cell));
       dispatch(gridActions.endSelection());
-      dispatch(gridActions.activateCell(nextCell));
+      dispatch(gridActions.activateCell(cell));
     },
-    [
-      dispatch,
-      rowCount,
-      uiState.activeCell,
-      uiState.selection,
-      visibleColumns.length,
-    ],
+    [dispatch],
   );
 
-  // 追加: Ctrl/Cmd + C や Arrow/Enter を捕捉します。
-  const handleKeyDown = useCallback(
-    async (event: KeyboardEvent<HTMLDivElement>) => {
-      // 追加: filter input / select / button 等にフォーカス中は、
-      //       grid 側の keyboard 操作を無効化します。
-      if (shouldIgnoreGridKeydown(event.target)) {
+  // 追加: 編集開始時に editor の初期値を設定する helper です。
+  // 変更(11-B6): 設定先はドラフト state ではなく「初期値 state」になりました。
+  //   setEditorInitialValue + startEdit は同一イベントハンドラ内で React が自動バッチ
+  //   するため、編集開始時の親レンダーは従来どおり 1 回です。
+  const startEditWithValue = useCallback(
+    (cell: CellCoord, initialValue: string) => {
+      setEditorInitialValue(initialValue);
+      dispatch(gridActions.startEdit(cell));
+    },
+    [dispatch, setEditorInitialValue],
+  );
+
+  // 追加: 編集確定です。確定値を rows へ反映し、必要なら次セルへ移動します。
+  // 変更(11-B6): (direction?) → (committedValue, direction?) に変更。
+  //   ドラフト値を閉包(editorValue 依存)で読むのをやめ、CellEditorLayer から
+  //   最終値を引数で受け取ります。これにより本ハンドラの参照は編集中のタイピングで
+  //   変化しなくなります（旧実装は毎キーストロークで editorValue 依存が更新され、
+  //   commitEdit → CellEditorLayer props の参照も毎回変わっていました）。
+  const commitEdit = useCallback(
+    (committedValue: string, direction?: EditorCommitDirection) => {
+      if (editorActionGuardRef.current || !uiState.editingCell) {
         return;
       }
 
-      if (uiState.editingCell) {
+      const editingCell = uiState.editingCell;
+      const nextCell =
+        direction === 'down'
+          ? getMovedCell(editingCell, 1, 0)
+          : direction === 'right'
+            ? getMovedCell(editingCell, 0, 1)
+            : direction === 'left'
+              ? getMovedCell(editingCell, 0, -1)
+              : editingCell;
+
+      const column = visibleColumns[editingCell.col];
+      // 変更(DS-3-9): レガシーの ?? editingCell.row フォールバックを撤去します。
+      //   getSourceIndex(viewIndex) = order[viewIndex]。編集中に件数変動でビュー index が範囲外に
+      //   なると order[OOB] = undefined を返します。旧版は ?? で editingCell.row(view index)を
+      //   source index に誤代入しており、フィルター/ソート中の OOB では誤行へ書き込む潜在バグでした。
+      //   撤去後は undefined がそのまま下流へ流れ、rows[undefined] = undefined → 直後の !row ガードで
+      //   編集をクリーンにキャンセルします(in-bounds 時は従来と完全一致)。
+      const originalRowIndex = rowModel.getSourceIndex(editingCell.row);
+      const row = rows[originalRowIndex];
+      if (!column || !row) {
+        dispatch(gridActions.stopEdit());
         return;
       }
 
-      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'c') {
-        event.preventDefault();
-        await handleCopy();
-        return;
+      if (onRowsChange) {
+        const parsedValue = column.parseClipboardValue
+          ? column.parseClipboardValue(committedValue, row)
+          : committedValue;
+        const nextRows = rows.map((currentRow, index) =>
+          index === originalRowIndex
+            ? setCellValue(currentRow, column, parsedValue)
+            : currentRow,
+        );
+        onRowsChange(nextRows);
       }
 
-      // 追加: Ctrl + A / Cmd + A で全体選択、2回目で解除します。
-      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'a') {
-        event.preventDefault();
-        if (isWholeGridSelected) {
-          dispatch(gridActions.clearSelection());
-          dispatch(gridActions.activateCell(null));
-          return;
-        }
-        selectEntireGrid();
-        return;
-      }
+      editorActionGuardRef.current = true;
+      requestAnimationFrame(() => {
+        gridRootRef.current?.focus();
+        activateSingleCell(nextCell);
+        editorActionGuardRef.current = false;
+      });
 
-      if (event.key === 'ArrowUp') {
-        event.preventDefault();
-        moveActiveCell(-1, 0, event.shiftKey);
-        return;
-      }
-      if (event.key === 'ArrowDown') {
-        event.preventDefault();
-        moveActiveCell(1, 0, event.shiftKey);
-        return;
-      }
-      if (event.key === 'ArrowLeft') {
-        event.preventDefault();
-        moveActiveCell(0, -1, event.shiftKey);
-        return;
-      }
-      if (event.key === 'ArrowRight') {
-        event.preventDefault();
-        moveActiveCell(0, 1, event.shiftKey);
-        return;
-      }
-      if (event.key === 'Tab') {
-        event.preventDefault();
-        moveActiveCell(0, event.shiftKey ? -1 : 1, false);
-        return;
-      }
-      if (event.key === 'Escape') {
-        event.preventDefault();
-        dispatch(gridActions.clearSelection());
-        return;
-      }
-      if (event.key === 'Enter' || event.key === 'F2') {
-        event.preventDefault();
-        if (uiState.activeCell) {
-          handleCellDoubleClick(uiState.activeCell);
-        }
-        return;
-      }
-      if (isPrintableKey(event) && uiState.activeCell) {
-        const row = rowModel.getRow(uiState.activeCell.row);
-        const column = visibleColumns[uiState.activeCell.col];
-        if (!row || !column) {
-          return;
-        }
-        if (
-          !isCellEditable(
-            { readOnly, canEditCell },
-            uiState.activeCell.row,
-            uiState.activeCell.col,
-            row,
-            column,
-          )
-        ) {
-          return;
-        }
-        event.preventDefault();
-        setEditorInitialValue(event.key);
-        dispatch(gridActions.startEdit(uiState.activeCell));
-      }
+      dispatch(gridActions.stopEdit());
     },
     [
-      canEditCell,
+      activateSingleCell,
       dispatch,
+      editorActionGuardRef,
       rowModel,
-      handleCellDoubleClick,
-      handleCopy,
-      isWholeGridSelected,
-      moveActiveCell,
-      readOnly,
-      selectEntireGrid,
-      setEditorInitialValue,
-      uiState.activeCell,
+      getMovedCell,
+      gridRootRef,
+      onRowsChange,
+      rows,
       uiState.editingCell,
       visibleColumns,
     ],
   );
 
+  // 追加: 編集キャンセルです。editor を閉じるだけです。
+  const cancelEdit = useCallback(() => {
+    if (editorActionGuardRef.current) {
+      return;
+    }
+
+    editorActionGuardRef.current = true;
+    dispatch(gridActions.stopEdit());
+
+    requestAnimationFrame(() => {
+      gridRootRef.current?.focus();
+      editorActionGuardRef.current = false;
+    });
+  }, [dispatch, editorActionGuardRef, gridRootRef]);
+
   return {
-    getMovedCell,
-    handleKeyDown,
+    activateSingleCell,
+    startEditWithValue,
+    commitEdit,
+    cancelEdit,
   };
 };
 
-export default useGridKeyboardInteractions;
+export default useGridEditController;
 </file>
 
 <file path="src/components/spreadsheet-grid/logic/filtering.test.ts">
@@ -6954,265 +7329,6 @@ export default defineConfig({
 });
 </file>
 
-<file path="README.md">
-# @ishibashi0112/spreadsheet-grid
-
-[![npm version](https://img.shields.io/npm/v/@ishibashi0112/spreadsheet-grid.svg)](https://www.npmjs.com/package/@ishibashi0112/spreadsheet-grid)
-[![license](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
-
-A high-performance, virtualized spreadsheet / data grid for **React 19**, written in TypeScript.
-
-高性能な仮想化スプレッドシート／データグリッド（**React 19**・TypeScript 製）。
-
-**English** | [日本語](#日本語)
-
----
-
-## Features
-
-- Scroll-space virtualization that handles up to ~1,000,000 rows.
-- Three-pane pinned columns (left / center / right) via sticky positioning.
-- Sorting, per-column filters (`text` / `number` / `date` / `select` / `set` / `custom`), and a global filter.
-- In-cell editing and clipboard copy / paste, with range selection and keyboard navigation.
-- Optional auto-height rows for wrapped, variable-height content.
-- External height control via `height` / `maxHeight` (e.g. `height="100%"` to follow the parent's height).
-- Both **client-side** (`rows`) and **server-side** (`dataSource`, SSRM) row models.
-- Themeable with CSS custom properties (`--ssg-*`) and a low-priority `@layer ssg-base`, so your own CSS or Tailwind utilities override the defaults without specificity battles. `className` / `classNames` slots are also provided.
-- Toggle the top / bottom bars and their parts via props — whole bars (`showTopBar` / `showBottomBar`), the default top bar's summary chips and global-filter input, and the Rows/Columns counts in each bar.
-- TypeScript-first, fully controlled API.
-
-## Installation
-
-```sh
-npm install @ishibashi0112/spreadsheet-grid
-# pnpm add @ishibashi0112/spreadsheet-grid
-# yarn add @ishibashi0112/spreadsheet-grid
-```
-
-Requires **react** and **react-dom** `>= 19` as peer dependencies (install them in your app if you have not already). `@tanstack/react-virtual` is a regular dependency and is installed automatically.
-
-## Styles
-
-The grid ships its CSS as a separate file. Import it once (for example, in your app entry):
-
-```ts
-import '@ishibashi0112/spreadsheet-grid/style.css'
-```
-
-The base styles live in `@layer ssg-base`, so any unlayered CSS or Tailwind utilities you write will win over the defaults.
-
-## Quick start
-
-```tsx
-import { useState } from 'react'
-import { SpreadsheetGrid, type GridColumn } from '@ishibashi0112/spreadsheet-grid'
-import '@ishibashi0112/spreadsheet-grid/style.css'
-
-type Row = { id: number; name: string; qty: number }
-
-const columns: GridColumn<Row>[] = [
-  { key: 'name', title: 'Name', width: 200, editable: true, filterType: 'text' },
-  { key: 'qty',  title: 'Qty',  width: 120, editable: true, filterType: 'number' },
-]
-
-export function Example() {
-  const [rows, setRows] = useState<Row[]>([
-    { id: 1, name: 'Apple',  qty: 3 },
-    { id: 2, name: 'Banana', qty: 5 },
-  ])
-
-  return (
-    <SpreadsheetGrid
-      rows={rows}
-      columns={columns}
-      onRowsChange={setRows}
-      rowKeyGetter={(row) => row.id}
-    />
-  )
-}
-```
-
-`rows` and `onRowsChange` make the grid a controlled component. A column needs at least `key` and `width`.
-
-## Sizing
-
-By default the grid caps its height at `480px` (`max-height`) and scrolls when the content is taller. Pass `height` to take explicit control — use `height="100%"` to follow the parent's height, or a pixel value:
-
-```tsx
-<div style={{ height: 600, minHeight: 0 }}>
-  <SpreadsheetGrid rows={rows} columns={columns} height="100%" />
-</div>
-```
-
-For `height="100%"` to work, the parent must have a resolved height (its ancestors are sized, and a flex child needs `min-height: 0`). This is standard CSS the library can't resolve for you. `maxHeight` sets an upper bound and can be combined with `height` (explicit height, capped at `maxHeight`).
-
-## Server-side mode (SSRM)
-
-Pass a `dataSource` instead of `rows` to switch to server-side mode. The grid keeps the full scroll height for the total row count and fetches only the blocks near the viewport:
-
-```tsx
-<SpreadsheetGrid
-  columns={columns}
-  dataSource={{
-    async getRows({ startIndex, endIndex, query, signal }) {
-      // Apply `query` (filters / sort) on the server and return only [startIndex, endIndex).
-      const { rows, totalRowCount } = await fetchPage({ startIndex, endIndex, query, signal })
-      return { rows, totalRowCount }
-    },
-  }}
-/>
-```
-
-Sorting, column filters, and the global filter stay enabled and are forwarded to the server through `query`. See the [API reference](./src/components/spreadsheet-grid/API_REFERENCE.md) for the full `getRows` contract, the filter wire format, and `serverSideRefreshToken`.
-
-## Styling & theming
-
-- Override the CSS variables on `.ssg-root` (or scope them via the `className` prop):
-
-  ```css
-  .ssg-root {
-    --ssg-accent: #16a34a;
-    --ssg-radius: 4px;
-  }
-  ```
-
-- Use the `classNames` prop for per-part class slots, `cellClassName` per column, and `getRowClassName` per row. Because the defaults are in `@layer ssg-base`, your overrides apply without `!important`.
-
-## API reference
-
-The full prop and type reference lives in [`src/components/spreadsheet-grid/API_REFERENCE.md`](./src/components/spreadsheet-grid/API_REFERENCE.md).
-
-## License
-
-[MIT](./LICENSE) © 2026 Yuki Sakakibara
-
----
-
-## 日本語
-
-[English](#ishibashi0112spreadsheet-grid)
-
-**React 19** 製の高性能な仮想化スプレッドシート／データグリッドです。TypeScript で書かれています。
-
-### 特徴
-
-- スクロール空間の仮想化により最大 100 万行規模に対応。
-- `position: sticky` による 3 ペイン固定列（左 / 中央 / 右）。
-- ソート、列ごとのフィルター（`text` / `number` / `date` / `select` / `set` / `custom`）、グローバルフィルター。
-- セル内編集とクリップボードのコピー／貼り付け、範囲選択、キーボード操作。
-- 折り返し・可変行高に対応する auto-height 行（任意）。
-- `height` / `maxHeight` によるスクロールコンテナ高さの外部制御（`height="100%"` で親要素の高さに追従）。
-- **クライアントサイド**（`rows`）と**サーバーサイド**（`dataSource`、SSRM）の両行モデル。
-- CSS カスタムプロパティ（`--ssg-*`）と優先度の低い `@layer ssg-base` によるテーマ設定。利用側の通常 CSS や Tailwind ユーティリティが特異度の競合なしに既定を上書きできます。`className` / `classNames` スロットも用意。
-- トップ / ボトムバーとその構成要素（バー全体〔`showTopBar` / `showBottomBar`〕、既定トップバーの summary chips・グローバルフィルター入力、各バーの Rows/Columns 件数）を props で表示制御。
-- TypeScript ファースト、完全 controlled な API。
-
-### インストール
-
-```sh
-npm install @ishibashi0112/spreadsheet-grid
-# pnpm add @ishibashi0112/spreadsheet-grid
-# yarn add @ishibashi0112/spreadsheet-grid
-```
-
-peer 依存として **react** / **react-dom** `>= 19` が必要です（未導入なら利用側で入れてください）。`@tanstack/react-virtual` は通常依存として自動的に入ります。
-
-### スタイル
-
-CSS は別ファイルとして同梱されます。アプリのエントリ等で 1 度だけ import してください:
-
-```ts
-import '@ishibashi0112/spreadsheet-grid/style.css'
-```
-
-基底スタイルは `@layer ssg-base` にあるため、利用側が書く未レイヤーの CSS や Tailwind ユーティリティが既定に必ず勝ちます。
-
-### クイックスタート
-
-```tsx
-import { useState } from 'react'
-import { SpreadsheetGrid, type GridColumn } from '@ishibashi0112/spreadsheet-grid'
-import '@ishibashi0112/spreadsheet-grid/style.css'
-
-type Row = { id: number; name: string; qty: number }
-
-const columns: GridColumn<Row>[] = [
-  { key: 'name', title: '名前', width: 200, editable: true, filterType: 'text' },
-  { key: 'qty',  title: '数量', width: 120, editable: true, filterType: 'number' },
-]
-
-export function Example() {
-  const [rows, setRows] = useState<Row[]>([
-    { id: 1, name: 'りんご', qty: 3 },
-    { id: 2, name: 'バナナ', qty: 5 },
-  ])
-
-  return (
-    <SpreadsheetGrid
-      rows={rows}
-      columns={columns}
-      onRowsChange={setRows}
-      rowKeyGetter={(row) => row.id}
-    />
-  )
-}
-```
-
-`rows` と `onRowsChange` でグリッドは controlled になります。列には最低限 `key` と `width` が必要です。
-
-### サイズ（高さ）
-
-既定ではグリッドの高さは `480px`（`max-height`）で頭打ちになり、中身がそれより高いとスクロールします。`height` を渡すと高さを明示制御できます。`height="100%"` で親要素の高さに追従、`number` で px 指定です:
-
-```tsx
-<div style={{ height: 600, minHeight: 0 }}>
-  <SpreadsheetGrid rows={rows} columns={columns} height="100%" />
-</div>
-```
-
-`height="100%"` を効かせるには、**親要素が確定高さを持つ**必要があります（祖先まで高さが確定している／flex 子なら `min-height: 0` が必要）。これは CSS の一般則のため本ライブラリ側では解決できません。`maxHeight` は高さの上限で、`height` と併用できます（明示高さ＋上限）。
-
-### サーバーサイドモード（SSRM）
-
-`rows` の代わりに `dataSource` を渡すとサーバーサイドモードになります。総行数ぶんのスクロール高さを保ったまま、可視窓に近いブロックだけを取得します:
-
-```tsx
-<SpreadsheetGrid
-  columns={columns}
-  dataSource={{
-    async getRows({ startIndex, endIndex, query, signal }) {
-      // query(フィルター/ソート)をサーバで適用し、[startIndex, endIndex) のみ返す。
-      const { rows, totalRowCount } = await fetchPage({ startIndex, endIndex, query, signal })
-      return { rows, totalRowCount }
-    },
-  }}
-/>
-```
-
-ソート・列フィルター・グローバルフィルターは有効なまま `query` 経由でサーバへ送られます。`getRows` の契約、フィルターの wire format、`serverSideRefreshToken` の詳細は [API リファレンス](./src/components/spreadsheet-grid/API_REFERENCE.md) を参照してください。
-
-### スタイリング / テーマ
-
-- `.ssg-root` 上で CSS 変数を上書きします（`className` prop でスコープも可能）:
-
-  ```css
-  .ssg-root {
-    --ssg-accent: #16a34a;
-    --ssg-radius: 4px;
-  }
-  ```
-
-- パーツ別の class は `classNames` prop、列単位は `cellClassName`、行単位は `getRowClassName` で付与できます。既定は `@layer ssg-base` にあるため、上書きに `!important` は不要です。
-
-### API リファレンス
-
-prop と型の完全なリファレンスは [`src/components/spreadsheet-grid/API_REFERENCE.md`](./src/components/spreadsheet-grid/API_REFERENCE.md) にあります。
-
-### ライセンス
-
-[MIT](./LICENSE) © 2026 Yuki Sakakibara
-</file>
-
 <file path="src/components/spreadsheet-grid/ActiveCellOverlay.tsx">
 import type { CSSProperties } from 'react';
 
@@ -7264,167 +7380,6 @@ export function ActiveCellOverlay({
 }
 
 export default ActiveCellOverlay;
-</file>
-
-<file path="src/components/spreadsheet-grid/hooks/useGridEditController.ts">
-import { useCallback, type Dispatch, type RefObject } from 'react';
-import { gridActions, type GridUiAction } from '../model/gridActions';
-import type { CellCoord, GridColumn, GridUiState, RowModel } from '../model/gridTypes';
-import type { EditorCommitDirection } from '../CellEditorLayer';
-import { setCellValue } from '../utils/permissions';
-
-type UseGridEditControllerArgs<T extends object> = {
-  uiState: GridUiState;
-  rows: T[];
-  visibleColumns: GridColumn<T>[];
-  // 変更(DS-3-2): filteredRowSourceIndexes: number[] を RowModel シームへ置換しました
-  //   (DS-3-0 の seam を消費 / edit consumer 移行)。source index は
-  //   getSourceIndex(viewIndex) = order[viewIndex] で解決します
-  //   (旧 filteredRowSourceIndexes[i] = Array.from(order)[i] と参照値一致)。
-  //   ※ rows 自体は commit の rows.map / rows[originalRowIndex] で引き続き直接参照します
-  //     (書き込みは source index 基準で rows を再構築するため getRow では代替不可)。
-  rowModel: RowModel<T>;
-  // 変更(11-B6): editorValue / setEditorValue(ドラフト state)は廃止しました。
-  //              ドラフトは CellEditorLayer のローカル state へ移動し、
-  //              親は「編集開始時の初期値」を設定する setter だけを持ちます。
-  setEditorInitialValue: (value: string) => void;
-  onRowsChange?: (nextRows: T[]) => void;
-  dispatch: Dispatch<GridUiAction>;
-  getMovedCell: (baseCell: CellCoord, deltaRow: number, deltaCol: number) => CellCoord;
-  gridRootRef: RefObject<HTMLDivElement | null>;
-  editorActionGuardRef: RefObject<boolean>;
-};
-
-// 追加: edit 確定 / cancel / active cell 復帰をまとめる controller です。
-export const useGridEditController = <T extends object>({
-  uiState,
-  rows,
-  visibleColumns,
-  rowModel,
-  setEditorInitialValue,
-  onRowsChange,
-  dispatch,
-  getMovedCell,
-  gridRootRef,
-  editorActionGuardRef,
-}: UseGridEditControllerArgs<T>) => {
-  // 追加: 単一セルを active + selection へ反映するユーティリティです。
-  const activateSingleCell = useCallback(
-    (cell: CellCoord) => {
-      dispatch(gridActions.startSelection(cell));
-      dispatch(gridActions.endSelection());
-      dispatch(gridActions.activateCell(cell));
-    },
-    [dispatch],
-  );
-
-  // 追加: 編集開始時に editor の初期値を設定する helper です。
-  // 変更(11-B6): 設定先はドラフト state ではなく「初期値 state」になりました。
-  //   setEditorInitialValue + startEdit は同一イベントハンドラ内で React が自動バッチ
-  //   するため、編集開始時の親レンダーは従来どおり 1 回です。
-  const startEditWithValue = useCallback(
-    (cell: CellCoord, initialValue: string) => {
-      setEditorInitialValue(initialValue);
-      dispatch(gridActions.startEdit(cell));
-    },
-    [dispatch, setEditorInitialValue],
-  );
-
-  // 追加: 編集確定です。確定値を rows へ反映し、必要なら次セルへ移動します。
-  // 変更(11-B6): (direction?) → (committedValue, direction?) に変更。
-  //   ドラフト値を閉包(editorValue 依存)で読むのをやめ、CellEditorLayer から
-  //   最終値を引数で受け取ります。これにより本ハンドラの参照は編集中のタイピングで
-  //   変化しなくなります（旧実装は毎キーストロークで editorValue 依存が更新され、
-  //   commitEdit → CellEditorLayer props の参照も毎回変わっていました）。
-  const commitEdit = useCallback(
-    (committedValue: string, direction?: EditorCommitDirection) => {
-      if (editorActionGuardRef.current || !uiState.editingCell) {
-        return;
-      }
-
-      const editingCell = uiState.editingCell;
-      const nextCell =
-        direction === 'down'
-          ? getMovedCell(editingCell, 1, 0)
-          : direction === 'right'
-            ? getMovedCell(editingCell, 0, 1)
-            : direction === 'left'
-              ? getMovedCell(editingCell, 0, -1)
-              : editingCell;
-
-      const column = visibleColumns[editingCell.col];
-      // 変更(DS-3-9): レガシーの ?? editingCell.row フォールバックを撤去します。
-      //   getSourceIndex(viewIndex) = order[viewIndex]。編集中に件数変動でビュー index が範囲外に
-      //   なると order[OOB] = undefined を返します。旧版は ?? で editingCell.row(view index)を
-      //   source index に誤代入しており、フィルター/ソート中の OOB では誤行へ書き込む潜在バグでした。
-      //   撤去後は undefined がそのまま下流へ流れ、rows[undefined] = undefined → 直後の !row ガードで
-      //   編集をクリーンにキャンセルします(in-bounds 時は従来と完全一致)。
-      const originalRowIndex = rowModel.getSourceIndex(editingCell.row);
-      const row = rows[originalRowIndex];
-      if (!column || !row) {
-        dispatch(gridActions.stopEdit());
-        return;
-      }
-
-      if (onRowsChange) {
-        const parsedValue = column.parseClipboardValue
-          ? column.parseClipboardValue(committedValue, row)
-          : committedValue;
-        const nextRows = rows.map((currentRow, index) =>
-          index === originalRowIndex
-            ? setCellValue(currentRow, column, parsedValue)
-            : currentRow,
-        );
-        onRowsChange(nextRows);
-      }
-
-      editorActionGuardRef.current = true;
-      requestAnimationFrame(() => {
-        gridRootRef.current?.focus();
-        activateSingleCell(nextCell);
-        editorActionGuardRef.current = false;
-      });
-
-      dispatch(gridActions.stopEdit());
-    },
-    [
-      activateSingleCell,
-      dispatch,
-      editorActionGuardRef,
-      rowModel,
-      getMovedCell,
-      gridRootRef,
-      onRowsChange,
-      rows,
-      uiState.editingCell,
-      visibleColumns,
-    ],
-  );
-
-  // 追加: 編集キャンセルです。editor を閉じるだけです。
-  const cancelEdit = useCallback(() => {
-    if (editorActionGuardRef.current) {
-      return;
-    }
-
-    editorActionGuardRef.current = true;
-    dispatch(gridActions.stopEdit());
-
-    requestAnimationFrame(() => {
-      gridRootRef.current?.focus();
-      editorActionGuardRef.current = false;
-    });
-  }, [dispatch, editorActionGuardRef, gridRootRef]);
-
-  return {
-    activateSingleCell,
-    startEditWithValue,
-    commitEdit,
-    cancelEdit,
-  };
-};
-
-export default useGridEditController;
 </file>
 
 <file path="src/components/spreadsheet-grid/hooks/useServerSideRowModel.test.ts">
@@ -9639,6 +9594,408 @@ export function SortManagementPanel({
 export default SortManagementPanel;
 </file>
 
+<file path="README.md">
+# @ishibashi0112/spreadsheet-grid
+
+[![npm version](https://img.shields.io/npm/v/@ishibashi0112/spreadsheet-grid.svg)](https://www.npmjs.com/package/@ishibashi0112/spreadsheet-grid)
+[![license](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
+
+A high-performance, virtualized spreadsheet / data grid for **React 19**, written in TypeScript.
+
+高性能な仮想化スプレッドシート／データグリッド（**React 19**・TypeScript 製）。
+
+**English** | [日本語](#日本語)
+
+---
+
+## Features
+
+- Scroll-space virtualization that handles up to ~1,000,000 rows.
+- Three-pane pinned columns (left / center / right) via sticky positioning.
+- Sorting, per-column filters (`text` / `number` / `date` / `select` / `set` / `custom`), and a global filter.
+- In-cell editing and clipboard copy / paste, with range selection and keyboard navigation.
+- Optional auto-height rows for wrapped, variable-height content.
+- External height control via `height` / `maxHeight` (e.g. `height="100%"` to follow the parent's height).
+- Both **client-side** (`rows`) and **server-side** (`dataSource`, SSRM) row models.
+- Themeable with CSS custom properties (`--ssg-*`) and a low-priority `@layer ssg-base`, so your own CSS or Tailwind utilities override the defaults without specificity battles. `className` / `classNames` slots are also provided.
+- Toggle the top / bottom bars and their parts via props — whole bars (`showTopBar` / `showBottomBar`), the default top bar's summary chips and global-filter input, and the Rows/Columns counts in each bar.
+- Built-in CSV export (`downloadCsv` / `exportCsv`), plus a library-agnostic `getExportData()` for Excel / XLSX / ODS — feed the shaped data (filter/sort/visible-order aware) to your own writer such as [hucre](https://github.com/productdevbook/hucre), ExcelJS, or SheetJS. No spreadsheet library is bundled; multi-sheet is composed on your side. See [`API_REFERENCE.md`](./src/components/spreadsheet-grid/API_REFERENCE.md).
+- TypeScript-first, fully controlled API.
+
+## Installation
+
+```sh
+npm install @ishibashi0112/spreadsheet-grid
+# pnpm add @ishibashi0112/spreadsheet-grid
+# yarn add @ishibashi0112/spreadsheet-grid
+```
+
+Requires **react** and **react-dom** `>= 19` as peer dependencies (install them in your app if you have not already). `@tanstack/react-virtual` is a regular dependency and is installed automatically.
+
+## Styles
+
+The grid ships its CSS as a separate file. Import it once (for example, in your app entry):
+
+```ts
+import '@ishibashi0112/spreadsheet-grid/style.css'
+```
+
+The base styles live in `@layer ssg-base`, so any unlayered CSS or Tailwind utilities you write will win over the defaults.
+
+## Quick start
+
+```tsx
+import { useState } from 'react'
+import { SpreadsheetGrid, type GridColumn } from '@ishibashi0112/spreadsheet-grid'
+import '@ishibashi0112/spreadsheet-grid/style.css'
+
+type Row = { id: number; name: string; qty: number }
+
+const columns: GridColumn<Row>[] = [
+  { key: 'name', title: 'Name', width: 200, editable: true, filterType: 'text' },
+  { key: 'qty',  title: 'Qty',  width: 120, editable: true, filterType: 'number' },
+]
+
+export function Example() {
+  const [rows, setRows] = useState<Row[]>([
+    { id: 1, name: 'Apple',  qty: 3 },
+    { id: 2, name: 'Banana', qty: 5 },
+  ])
+
+  return (
+    <SpreadsheetGrid
+      rows={rows}
+      columns={columns}
+      onRowsChange={setRows}
+      rowKeyGetter={(row) => row.id}
+    />
+  )
+}
+```
+
+`rows` and `onRowsChange` make the grid a controlled component. A column needs at least `key` and `width`.
+
+## Sizing
+
+By default the grid caps its height at `480px` (`max-height`) and scrolls when the content is taller. Pass `height` to take explicit control — use `height="100%"` to follow the parent's height, or a pixel value:
+
+```tsx
+<div style={{ height: 600, minHeight: 0 }}>
+  <SpreadsheetGrid rows={rows} columns={columns} height="100%" />
+</div>
+```
+
+For `height="100%"` to work, the parent must have a resolved height (its ancestors are sized, and a flex child needs `min-height: 0`). This is standard CSS the library can't resolve for you. `maxHeight` sets an upper bound and can be combined with `height` (explicit height, capped at `maxHeight`).
+
+## Server-side mode (SSRM)
+
+Pass a `dataSource` instead of `rows` to switch to server-side mode. The grid keeps the full scroll height for the total row count and fetches only the blocks near the viewport:
+
+```tsx
+<SpreadsheetGrid
+  columns={columns}
+  dataSource={{
+    async getRows({ startIndex, endIndex, query, signal }) {
+      // Apply `query` (filters / sort) on the server and return only [startIndex, endIndex).
+      const { rows, totalRowCount } = await fetchPage({ startIndex, endIndex, query, signal })
+      return { rows, totalRowCount }
+    },
+  }}
+/>
+```
+
+Sorting, column filters, and the global filter stay enabled and are forwarded to the server through `query`. See the [API reference](./src/components/spreadsheet-grid/API_REFERENCE.md) for the full `getRows` contract, the filter wire format, and `serverSideRefreshToken`.
+
+## Styling & theming
+
+- Override the CSS variables on `.ssg-root` (or scope them via the `className` prop):
+
+  ```css
+  .ssg-root {
+    --ssg-accent: #16a34a;
+    --ssg-radius: 4px;
+  }
+  ```
+
+- Use the `classNames` prop for per-part class slots, `cellClassName` per column, and `getRowClassName` per row. Because the defaults are in `@layer ssg-base`, your overrides apply without `!important`.
+
+## API reference
+
+The full prop and type reference lives in [`src/components/spreadsheet-grid/API_REFERENCE.md`](./src/components/spreadsheet-grid/API_REFERENCE.md).
+
+## License
+
+[MIT](./LICENSE) © 2026 Yuki Sakakibara
+
+---
+
+## 日本語
+
+[English](#ishibashi0112spreadsheet-grid)
+
+**React 19** 製の高性能な仮想化スプレッドシート／データグリッドです。TypeScript で書かれています。
+
+### 特徴
+
+- スクロール空間の仮想化により最大 100 万行規模に対応。
+- `position: sticky` による 3 ペイン固定列（左 / 中央 / 右）。
+- ソート、列ごとのフィルター（`text` / `number` / `date` / `select` / `set` / `custom`）、グローバルフィルター。
+- セル内編集とクリップボードのコピー／貼り付け、範囲選択、キーボード操作。
+- 折り返し・可変行高に対応する auto-height 行（任意）。
+- `height` / `maxHeight` によるスクロールコンテナ高さの外部制御（`height="100%"` で親要素の高さに追従）。
+- **クライアントサイド**（`rows`）と**サーバーサイド**（`dataSource`、SSRM）の両行モデル。
+- CSS カスタムプロパティ（`--ssg-*`）と優先度の低い `@layer ssg-base` によるテーマ設定。利用側の通常 CSS や Tailwind ユーティリティが特異度の競合なしに既定を上書きできます。`className` / `classNames` スロットも用意。
+- トップ / ボトムバーとその構成要素（バー全体〔`showTopBar` / `showBottomBar`〕、既定トップバーの summary chips・グローバルフィルター入力、各バーの Rows/Columns 件数）を props で表示制御。
+- CSV エクスポート（`downloadCsv` / `exportCsv`）を内蔵。Excel / XLSX / ODS はライブラリ非依存の `getExportData()` で、整形済みデータ（フィルター/ソート/可視列順を反映）を [hucre](https://github.com/productdevbook/hucre) / ExcelJS / SheetJS など任意の writer へ流す方式。xlsx ライブラリは同梱せず、マルチシートは利用側で合成。詳細は [`API_REFERENCE.md`](./src/components/spreadsheet-grid/API_REFERENCE.md)。
+- TypeScript ファースト、完全 controlled な API。
+
+### インストール
+
+```sh
+npm install @ishibashi0112/spreadsheet-grid
+# pnpm add @ishibashi0112/spreadsheet-grid
+# yarn add @ishibashi0112/spreadsheet-grid
+```
+
+peer 依存として **react** / **react-dom** `>= 19` が必要です（未導入なら利用側で入れてください）。`@tanstack/react-virtual` は通常依存として自動的に入ります。
+
+### スタイル
+
+CSS は別ファイルとして同梱されます。アプリのエントリ等で 1 度だけ import してください:
+
+```ts
+import '@ishibashi0112/spreadsheet-grid/style.css'
+```
+
+基底スタイルは `@layer ssg-base` にあるため、利用側が書く未レイヤーの CSS や Tailwind ユーティリティが既定に必ず勝ちます。
+
+### クイックスタート
+
+```tsx
+import { useState } from 'react'
+import { SpreadsheetGrid, type GridColumn } from '@ishibashi0112/spreadsheet-grid'
+import '@ishibashi0112/spreadsheet-grid/style.css'
+
+type Row = { id: number; name: string; qty: number }
+
+const columns: GridColumn<Row>[] = [
+  { key: 'name', title: '名前', width: 200, editable: true, filterType: 'text' },
+  { key: 'qty',  title: '数量', width: 120, editable: true, filterType: 'number' },
+]
+
+export function Example() {
+  const [rows, setRows] = useState<Row[]>([
+    { id: 1, name: 'りんご', qty: 3 },
+    { id: 2, name: 'バナナ', qty: 5 },
+  ])
+
+  return (
+    <SpreadsheetGrid
+      rows={rows}
+      columns={columns}
+      onRowsChange={setRows}
+      rowKeyGetter={(row) => row.id}
+    />
+  )
+}
+```
+
+`rows` と `onRowsChange` でグリッドは controlled になります。列には最低限 `key` と `width` が必要です。
+
+### サイズ（高さ）
+
+既定ではグリッドの高さは `480px`（`max-height`）で頭打ちになり、中身がそれより高いとスクロールします。`height` を渡すと高さを明示制御できます。`height="100%"` で親要素の高さに追従、`number` で px 指定です:
+
+```tsx
+<div style={{ height: 600, minHeight: 0 }}>
+  <SpreadsheetGrid rows={rows} columns={columns} height="100%" />
+</div>
+```
+
+`height="100%"` を効かせるには、**親要素が確定高さを持つ**必要があります（祖先まで高さが確定している／flex 子なら `min-height: 0` が必要）。これは CSS の一般則のため本ライブラリ側では解決できません。`maxHeight` は高さの上限で、`height` と併用できます（明示高さ＋上限）。
+
+### サーバーサイドモード（SSRM）
+
+`rows` の代わりに `dataSource` を渡すとサーバーサイドモードになります。総行数ぶんのスクロール高さを保ったまま、可視窓に近いブロックだけを取得します:
+
+```tsx
+<SpreadsheetGrid
+  columns={columns}
+  dataSource={{
+    async getRows({ startIndex, endIndex, query, signal }) {
+      // query(フィルター/ソート)をサーバで適用し、[startIndex, endIndex) のみ返す。
+      const { rows, totalRowCount } = await fetchPage({ startIndex, endIndex, query, signal })
+      return { rows, totalRowCount }
+    },
+  }}
+/>
+```
+
+ソート・列フィルター・グローバルフィルターは有効なまま `query` 経由でサーバへ送られます。`getRows` の契約、フィルターの wire format、`serverSideRefreshToken` の詳細は [API リファレンス](./src/components/spreadsheet-grid/API_REFERENCE.md) を参照してください。
+
+### スタイリング / テーマ
+
+- `.ssg-root` 上で CSS 変数を上書きします（`className` prop でスコープも可能）:
+
+  ```css
+  .ssg-root {
+    --ssg-accent: #16a34a;
+    --ssg-radius: 4px;
+  }
+  ```
+
+- パーツ別の class は `classNames` prop、列単位は `cellClassName`、行単位は `getRowClassName` で付与できます。既定は `@layer ssg-base` にあるため、上書きに `!important` は不要です。
+
+### API リファレンス
+
+prop と型の完全なリファレンスは [`src/components/spreadsheet-grid/API_REFERENCE.md`](./src/components/spreadsheet-grid/API_REFERENCE.md) にあります。
+
+### ライセンス
+
+[MIT](./LICENSE) © 2026 Yuki Sakakibara
+</file>
+
+<file path="src/components/spreadsheet-grid/CellEditorLayer.tsx">
+// 追加: editor 確定後の移動方向です。
+export type EditorCommitDirection = 'down' | 'right' | 'left';
+
+import {
+  useEffect,
+  useRef,
+  useState,
+  type CSSProperties,
+  type KeyboardEvent,
+} from 'react';
+
+// 変更(10-D): left は「ペイン列領域内ローカル座標」になりました（leadingWidth 非含有）。
+type CellEditorRect = {
+  left: number;
+  top: number;
+  width: number;
+  height: number;
+};
+
+type CellEditorLayerProps = {
+  rect: CellEditorRect | null;
+  headerHeight: number;
+  // 変更(10-D): rowHeaderWidth → leadingWidth に一般化しました。
+  //             editor は active cell が属するペインの relative コンテナ内へ配置されます。
+  leadingWidth: number;
+  // 追加(scroll-space 仮想化 修正): 絶対論理 top から差し引く描画ウィンドウ基準オフセット(px)。
+  //   no-op では 0(従来と同一配置)。scaling 時のみ正値です(詳細は ActiveCellOverlay と同様)。
+  baseOffset?: number;
+  // 変更(11-B6): 親が持つのは「編集開始時の初期値」だけになりました。
+  //              毎キーストロークのドラフト値は本コンポーネントのローカル state で管理し、
+  //              親(SpreadsheetGrid)へは commit 時に最終値だけを渡します。
+  //              これにより編集中のタイピングで親（＝3ペイン全体）が再レンダーされなくなります。
+  initialValue: string;
+  // 変更(11-B6): (direction?) → (value, direction?) に変更。確定値を引数で受け取ります。
+  onCommit: (value: string, direction?: EditorCommitDirection) => void;
+  onCancel: () => void;
+  // 追加(③): 編集 input の text-align。列 align に追従(右寄せ数値列を編集中も右寄せ維持)。
+  align?: 'left' | 'center' | 'right';
+};
+
+// 追加: 編集中セルの上に input を重ねる editor layer です。
+// 変更(10-D): ペイン別座標系に対応。
+// 変更(11-B6): ドラフト値をローカル state 化しました（コントロールドのまま、状態の置き場だけ移動）。
+export function CellEditorLayer({
+  rect,
+  headerHeight,
+  leadingWidth,
+  baseOffset = 0,
+  initialValue,
+  onCommit,
+  onCancel,
+  align,
+}: CellEditorLayerProps) {
+  const inputRef = useRef<HTMLInputElement | null>(null);
+
+  // 追加(11-B6): 編集中のドラフト値です。タイピングはこの state だけを更新します。
+  const [draftValue, setDraftValue] = useState('');
+
+  // 追加(11-B6): 「新しい編集セッションの開始」を rect の null → 非 null 遷移で検知し、
+  //              ドラフトを initialValue へリセットします。
+  // 実装メモ: これは React 公式ドキュメントの「レンダー中に過去の props と比較して
+  //   state を調整する」パターンです（effect ではなく render 中に setState することで、
+  //   古いドラフトが 1 フレームでも描画されるのを防ぎます。StrictMode 安全）。
+  //   commit / cancel で必ず rect が null に戻るため、「null → 非 null」は常に
+  //   新セッションを意味します。同一セルを連続編集（Esc キャンセル → 再 F2 等）しても
+  //   前回のドラフトが残りません。
+  const isOpen = rect !== null;
+  const [prevOpen, setPrevOpen] = useState(false);
+  if (isOpen !== prevOpen) {
+    setPrevOpen(isOpen);
+    if (isOpen) {
+      setDraftValue(initialValue);
+    }
+  }
+
+  // 追加: editor 表示時に自動フォーカスし、末尾へキャレット移動します。
+  useEffect(() => {
+    if (!rect || !inputRef.current) {
+      return;
+    }
+
+    inputRef.current.focus();
+    const end = inputRef.current.value.length;
+    inputRef.current.setSelectionRange(end, end);
+  }, [rect]);
+
+  if (!rect) {
+    return null;
+  }
+
+  // 変更(UI CSS移行): wrapper は座標のみインライン。zIndex / pointerEvents と input の静的
+  //   スタイルは styles.css(.ssg-cell-editor / .ssg-cell-editor-input)へ。枠色は accent 追従。
+  const wrapperStyle: CSSProperties = {
+    position: 'absolute',
+    left: leadingWidth + rect.left,
+    top: headerHeight + rect.top - baseOffset,
+    width: rect.width,
+    height: rect.height,
+  };
+
+  // 追加: Enter で下、Tab で左右へ移動する方向付き commit を呼びます。
+  // 変更(11-B6): commit にローカルのドラフト値を引数で渡します。
+  const handleKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      onCommit(draftValue, 'down');
+      return;
+    }
+
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      onCancel();
+      return;
+    }
+
+    if (event.key === 'Tab') {
+      event.preventDefault();
+      onCommit(draftValue, event.shiftKey ? 'left' : 'right');
+    }
+  };
+
+  return (
+    <div className="ssg-cell-editor" style={wrapperStyle}>
+      <input
+        ref={inputRef}
+        type="text"
+        value={draftValue}
+        onChange={(event) => setDraftValue(event.target.value)}
+        onKeyDown={handleKeyDown}
+        onBlur={() => onCommit(draftValue)}
+        className="ssg-cell-editor-input"
+        style={align ? { textAlign: align } : undefined}
+      />
+    </div>
+  );
+}
+
+export default CellEditorLayer;
+</file>
+
 <file path="src/components/spreadsheet-grid/hooks/useColumnHeaderDragController.ts">
 import {
   useCallback,
@@ -11836,147 +12193,6 @@ export const buildGridDerivedSummary = <T,>(
     sortedColumnLabel,
   };
 };
-</file>
-
-<file path="src/components/spreadsheet-grid/CellEditorLayer.tsx">
-// 追加: editor 確定後の移動方向です。
-export type EditorCommitDirection = 'down' | 'right' | 'left';
-
-import {
-  useEffect,
-  useRef,
-  useState,
-  type CSSProperties,
-  type KeyboardEvent,
-} from 'react';
-
-// 変更(10-D): left は「ペイン列領域内ローカル座標」になりました（leadingWidth 非含有）。
-type CellEditorRect = {
-  left: number;
-  top: number;
-  width: number;
-  height: number;
-};
-
-type CellEditorLayerProps = {
-  rect: CellEditorRect | null;
-  headerHeight: number;
-  // 変更(10-D): rowHeaderWidth → leadingWidth に一般化しました。
-  //             editor は active cell が属するペインの relative コンテナ内へ配置されます。
-  leadingWidth: number;
-  // 追加(scroll-space 仮想化 修正): 絶対論理 top から差し引く描画ウィンドウ基準オフセット(px)。
-  //   no-op では 0(従来と同一配置)。scaling 時のみ正値です(詳細は ActiveCellOverlay と同様)。
-  baseOffset?: number;
-  // 変更(11-B6): 親が持つのは「編集開始時の初期値」だけになりました。
-  //              毎キーストロークのドラフト値は本コンポーネントのローカル state で管理し、
-  //              親(SpreadsheetGrid)へは commit 時に最終値だけを渡します。
-  //              これにより編集中のタイピングで親（＝3ペイン全体）が再レンダーされなくなります。
-  initialValue: string;
-  // 変更(11-B6): (direction?) → (value, direction?) に変更。確定値を引数で受け取ります。
-  onCommit: (value: string, direction?: EditorCommitDirection) => void;
-  onCancel: () => void;
-  // 追加(③): 編集 input の text-align。列 align に追従(右寄せ数値列を編集中も右寄せ維持)。
-  align?: 'left' | 'center' | 'right';
-};
-
-// 追加: 編集中セルの上に input を重ねる editor layer です。
-// 変更(10-D): ペイン別座標系に対応。
-// 変更(11-B6): ドラフト値をローカル state 化しました（コントロールドのまま、状態の置き場だけ移動）。
-export function CellEditorLayer({
-  rect,
-  headerHeight,
-  leadingWidth,
-  baseOffset = 0,
-  initialValue,
-  onCommit,
-  onCancel,
-  align,
-}: CellEditorLayerProps) {
-  const inputRef = useRef<HTMLInputElement | null>(null);
-
-  // 追加(11-B6): 編集中のドラフト値です。タイピングはこの state だけを更新します。
-  const [draftValue, setDraftValue] = useState('');
-
-  // 追加(11-B6): 「新しい編集セッションの開始」を rect の null → 非 null 遷移で検知し、
-  //              ドラフトを initialValue へリセットします。
-  // 実装メモ: これは React 公式ドキュメントの「レンダー中に過去の props と比較して
-  //   state を調整する」パターンです（effect ではなく render 中に setState することで、
-  //   古いドラフトが 1 フレームでも描画されるのを防ぎます。StrictMode 安全）。
-  //   commit / cancel で必ず rect が null に戻るため、「null → 非 null」は常に
-  //   新セッションを意味します。同一セルを連続編集（Esc キャンセル → 再 F2 等）しても
-  //   前回のドラフトが残りません。
-  const isOpen = rect !== null;
-  const [prevOpen, setPrevOpen] = useState(false);
-  if (isOpen !== prevOpen) {
-    setPrevOpen(isOpen);
-    if (isOpen) {
-      setDraftValue(initialValue);
-    }
-  }
-
-  // 追加: editor 表示時に自動フォーカスし、末尾へキャレット移動します。
-  useEffect(() => {
-    if (!rect || !inputRef.current) {
-      return;
-    }
-
-    inputRef.current.focus();
-    const end = inputRef.current.value.length;
-    inputRef.current.setSelectionRange(end, end);
-  }, [rect]);
-
-  if (!rect) {
-    return null;
-  }
-
-  // 変更(UI CSS移行): wrapper は座標のみインライン。zIndex / pointerEvents と input の静的
-  //   スタイルは styles.css(.ssg-cell-editor / .ssg-cell-editor-input)へ。枠色は accent 追従。
-  const wrapperStyle: CSSProperties = {
-    position: 'absolute',
-    left: leadingWidth + rect.left,
-    top: headerHeight + rect.top - baseOffset,
-    width: rect.width,
-    height: rect.height,
-  };
-
-  // 追加: Enter で下、Tab で左右へ移動する方向付き commit を呼びます。
-  // 変更(11-B6): commit にローカルのドラフト値を引数で渡します。
-  const handleKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
-    if (event.key === 'Enter') {
-      event.preventDefault();
-      onCommit(draftValue, 'down');
-      return;
-    }
-
-    if (event.key === 'Escape') {
-      event.preventDefault();
-      onCancel();
-      return;
-    }
-
-    if (event.key === 'Tab') {
-      event.preventDefault();
-      onCommit(draftValue, event.shiftKey ? 'left' : 'right');
-    }
-  };
-
-  return (
-    <div className="ssg-cell-editor" style={wrapperStyle}>
-      <input
-        ref={inputRef}
-        type="text"
-        value={draftValue}
-        onChange={(event) => setDraftValue(event.target.value)}
-        onKeyDown={handleKeyDown}
-        onBlur={() => onCommit(draftValue)}
-        className="ssg-cell-editor-input"
-        style={align ? { textAlign: align } : undefined}
-      />
-    </div>
-  );
-}
-
-export default CellEditorLayer;
 </file>
 
 <file path="src/components/spreadsheet-grid/logic/verticalGeometry.test.ts">
@@ -14687,74 +14903,6 @@ export const useGridPointerInteractions = <T,>({
 export default useGridPointerInteractions;
 </file>
 
-<file path="src/components/spreadsheet-grid/index.ts">
-// SpreadsheetGrid の公開エントリ(バレル)です。
-// ライブラリ利用者はこの index 経由で import します。reducer / hooks / view / logic /
-// selectors などの内部実装は公開しません。公開する型は API_REFERENCE.md と対応します。
-
-// 公開コンポーネント(named のみ。default export は廃止しました)。
-export { SpreadsheetGrid } from './SpreadsheetGrid';
-// 値フォーマッタ(UI 表示のみ)の組み込みファクタ。利用側も CellValueFormatter で自作可。
-export { numberFormatter } from './logic/valueFormatters';
-
-// 公開型です。
-export type {
-  // コンポーネント props。
-  SpreadsheetGridProps,
-  // 列定義と固定方向。
-  GridColumn,
-  GridColumnPinned,
-  // 行キー。
-  GridRowKey,
-  // select / set フィルターの候補。
-  GridSelectFilterOption,
-  // セル / ヘッダーのカスタム描画コンテキスト(renderCell / renderHeader 引数)。
-  CellRenderContext,
-  HeaderRenderContext,
-  // セル表示値の整形(UI 表示のみ)の契約。
-  CellValueFormatter,
-  CellValueFormatterParams,
-  // top / bottom バーのスロットコンテキストと、そこに載る派生 summary。
-  SpreadsheetGridSlotContext,
-  SpreadsheetGridDerivedSummary,
-  SpreadsheetGridSelectionStats,
-  // スロットコンテキストが公開する選択 / ソート / 列フィルター値の型族です。
-  CellCoord,
-  CellRange,
-  GridSelection,
-  GridSortState,
-  GridSortEntry,
-  GridSortDirection,
-  ColumnFilterValue,
-  // フィルター状態(globalText + 列フィルター記述子)。getState/applyState の GridState から参照されます。
-  GridFilterState,
-  SetColumnFilterValue,
-  NumberColumnFilterValue,
-  ParsedNumberFilter,
-  TextColumnFilterValue,
-  DateColumnFilterValue,
-  SelectColumnFilterValue,
-  CustomColumnFilterValue,
-  // serverSide(SSRM)用の公開型族です。dataSource 指定時に serverSide モードへ切替わります。
-  ServerSideDataSource,
-  ServerSideQuery,
-  ServerSideGetRowsParams,
-  ServerSideGetRowsResult,
-  // 行モデル境界型(clientSide / serverSide 共通の行取得 seam)です。
-  RowModel,
-  // 追加(imperative API #1): ref ハンドル(SpreadsheetGridProps.ref)と関連型です。
-  SpreadsheetGridHandle,
-  ScrollAlign,
-  CsvExportScope,
-  CsvExportOptions,
-  // 追加(state #1): 列状態のシリアライズ型(getState / applyState の入出力)。
-  GridState,
-  // 追加(state v2): 列メタ(可視 / 順序 / ピン)のシリアライズ単位(GridState.columns 要素)。
-  GridColumnState,
-} from './model/gridTypes';
-export type { NumberFormatterOptions } from './logic/valueFormatters';
-</file>
-
 <file path="src/components/spreadsheet-grid/view/ColumnFilterPopover.tsx">
 import { createPortal } from 'react-dom';
 // 変更(12-A): set フィルター(検索 + Select All + チェックボックス一覧)用に
@@ -15263,6 +15411,78 @@ export function ColumnFilterPopover({
 export default ColumnFilterPopover;
 </file>
 
+<file path="src/components/spreadsheet-grid/index.ts">
+// SpreadsheetGrid の公開エントリ(バレル)です。
+// ライブラリ利用者はこの index 経由で import します。reducer / hooks / view / logic /
+// selectors などの内部実装は公開しません。公開する型は API_REFERENCE.md と対応します。
+
+// 公開コンポーネント(named のみ。default export は廃止しました)。
+export { SpreadsheetGrid } from './SpreadsheetGrid';
+// 値フォーマッタ(UI 表示のみ)の組み込みファクタ。利用側も CellValueFormatter で自作可。
+export { numberFormatter } from './logic/valueFormatters';
+
+// 公開型です。
+export type {
+  // コンポーネント props。
+  SpreadsheetGridProps,
+  // 列定義と固定方向。
+  GridColumn,
+  GridColumnPinned,
+  // 行キー。
+  GridRowKey,
+  // select / set フィルターの候補。
+  GridSelectFilterOption,
+  // セル / ヘッダーのカスタム描画コンテキスト(renderCell / renderHeader 引数)。
+  CellRenderContext,
+  HeaderRenderContext,
+  // セル表示値の整形(UI 表示のみ)の契約。
+  CellValueFormatter,
+  CellValueFormatterParams,
+  // top / bottom バーのスロットコンテキストと、そこに載る派生 summary。
+  SpreadsheetGridSlotContext,
+  SpreadsheetGridDerivedSummary,
+  SpreadsheetGridSelectionStats,
+  // スロットコンテキストが公開する選択 / ソート / 列フィルター値の型族です。
+  CellCoord,
+  CellRange,
+  GridSelection,
+  GridSortState,
+  GridSortEntry,
+  GridSortDirection,
+  ColumnFilterValue,
+  // フィルター状態(globalText + 列フィルター記述子)。getState/applyState の GridState から参照されます。
+  GridFilterState,
+  SetColumnFilterValue,
+  NumberColumnFilterValue,
+  ParsedNumberFilter,
+  TextColumnFilterValue,
+  DateColumnFilterValue,
+  SelectColumnFilterValue,
+  CustomColumnFilterValue,
+  // serverSide(SSRM)用の公開型族です。dataSource 指定時に serverSide モードへ切替わります。
+  ServerSideDataSource,
+  ServerSideQuery,
+  ServerSideGetRowsParams,
+  ServerSideGetRowsResult,
+  // 行モデル境界型(clientSide / serverSide 共通の行取得 seam)です。
+  RowModel,
+  // 追加(imperative API #1): ref ハンドル(SpreadsheetGridProps.ref)と関連型です。
+  SpreadsheetGridHandle,
+  ScrollAlign,
+  CsvExportScope,
+  CsvExportOptions,
+  // 追加(imperative API: getExportData): エクスポート用の整形済みデータ型族(導線)。
+  GridExportOptions,
+  GridExportCell,
+  GridExportData,
+  // 追加(state #1): 列状態のシリアライズ型(getState / applyState の入出力)。
+  GridState,
+  // 追加(state v2): 列メタ(可視 / 順序 / ピン)のシリアライズ単位(GridState.columns 要素)。
+  GridColumnState,
+} from './model/gridTypes';
+export type { NumberFormatterOptions } from './logic/valueFormatters';
+</file>
+
 <file path="src/components/spreadsheet-grid/logic/filtering.ts">
 import type {
   ColumnFilterValue,
@@ -15708,99 +15928,6 @@ export const filterOrderByColumns = <T,>(
   }
   return result.slice(0, count);
 };
-</file>
-
-<file path="package.json">
-{
-  "name": "@ishibashi0112/spreadsheet-grid",
-  "version": "0.6.0",
-  "description": "React 19 製のカスタム仮想化データグリッド。100 万行対応の仮想化・3 ペイン固定列・ソート/フィルター・クライアント/サーバーサイド行モデル対応。",
-  "keywords": [
-    "react",
-    "react19",
-    "grid",
-    "datagrid",
-    "table",
-    "spreadsheet",
-    "virtualized",
-    "virtual-scroll",
-    "typescript",
-    "ssrm"
-  ],
-  "license": "MIT",
-  "author": "Yuki Sakakibara",
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/ishibashi0112/datasheet-grid.git"
-  },
-  "homepage": "https://github.com/ishibashi0112/datasheet-grid#readme",
-  "bugs": {
-    "url": "https://github.com/ishibashi0112/datasheet-grid/issues"
-  },
-  "type": "module",
-  "sideEffects": [
-    "**/*.css"
-  ],
-  "files": [
-    "dist"
-  ],
-  "main": "./dist/index.cjs",
-  "module": "./dist/index.js",
-  "types": "./dist/index.d.ts",
-  "exports": {
-    ".": {
-      "types": "./dist/index.d.ts",
-      "import": "./dist/index.js",
-      "require": "./dist/index.cjs"
-    },
-    "./style.css": "./dist/style.css"
-  },
-  "engines": {
-    "node": ">=18"
-  },
-  "publishConfig": {
-    "access": "public"
-  },
-  "scripts": {
-    "dev": "vite",
-    "build": "tsc -b && vite build",
-    "build:lib": "vite build --config vite.lib.config.ts && tsc -p tsconfig.lib.json",
-    "build:types": "tsc -p tsconfig.lib.json",
-    "prepublishOnly": "npm run build:lib",
-    "lint": "eslint .",
-    "preview": "vite preview",
-    "test": "vitest run",
-    "test:watch": "vitest",
-    "typecheck:test": "tsc --noEmit -p tsconfig.vitest.json"
-  },
-  "peerDependencies": {
-    "react": "^19.0.0",
-    "react-dom": "^19.0.0"
-  },
-  "dependencies": {
-    "@tanstack/react-virtual": "^3.14.2"
-  },
-  "devDependencies": {
-    "@eslint/js": "^10.0.1",
-    "@testing-library/dom": "^10.4.1",
-    "@testing-library/react": "^16.3.2",
-    "@types/node": "^24.12.3",
-    "@types/react": "^19.2.14",
-    "@types/react-dom": "^19.2.3",
-    "@vitejs/plugin-react": "^6.0.1",
-    "eslint": "^10.3.0",
-    "eslint-plugin-react-hooks": "^7.1.1",
-    "eslint-plugin-react-refresh": "^0.5.2",
-    "globals": "^17.6.0",
-    "jsdom": "^29.1.1",
-    "react": "^19.2.6",
-    "react-dom": "^19.2.6",
-    "typescript": "~6.0.2",
-    "typescript-eslint": "^8.59.2",
-    "vite": "^8.0.12",
-    "vitest": "^4.1.9"
-  }
-}
 </file>
 
 <file path="src/components/spreadsheet-grid/logic/sorting.ts">
@@ -16835,6 +16962,99 @@ export function GridBodyLayer<T>({
 }
 
 export default GridBodyLayer;
+</file>
+
+<file path="package.json">
+{
+  "name": "@ishibashi0112/spreadsheet-grid",
+  "version": "0.7.0",
+  "description": "React 19 製のカスタム仮想化データグリッド。100 万行対応の仮想化・3 ペイン固定列・ソート/フィルター・クライアント/サーバーサイド行モデル対応。",
+  "keywords": [
+    "react",
+    "react19",
+    "grid",
+    "datagrid",
+    "table",
+    "spreadsheet",
+    "virtualized",
+    "virtual-scroll",
+    "typescript",
+    "ssrm"
+  ],
+  "license": "MIT",
+  "author": "Yuki Sakakibara",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ishibashi0112/datasheet-grid.git"
+  },
+  "homepage": "https://github.com/ishibashi0112/datasheet-grid#readme",
+  "bugs": {
+    "url": "https://github.com/ishibashi0112/datasheet-grid/issues"
+  },
+  "type": "module",
+  "sideEffects": [
+    "**/*.css"
+  ],
+  "files": [
+    "dist"
+  ],
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    },
+    "./style.css": "./dist/style.css"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "build:lib": "vite build --config vite.lib.config.ts && tsc -p tsconfig.lib.json",
+    "build:types": "tsc -p tsconfig.lib.json",
+    "prepublishOnly": "npm run build:lib",
+    "lint": "eslint .",
+    "preview": "vite preview",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck:test": "tsc --noEmit -p tsconfig.vitest.json"
+  },
+  "peerDependencies": {
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  },
+  "dependencies": {
+    "@tanstack/react-virtual": "^3.14.2"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@testing-library/dom": "^10.4.1",
+    "@testing-library/react": "^16.3.2",
+    "@types/node": "^24.12.3",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^6.0.1",
+    "eslint": "^10.3.0",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "eslint-plugin-react-refresh": "^0.5.2",
+    "globals": "^17.6.0",
+    "jsdom": "^29.1.1",
+    "react": "^19.2.6",
+    "react-dom": "^19.2.6",
+    "typescript": "~6.0.2",
+    "typescript-eslint": "^8.59.2",
+    "vite": "^8.0.12",
+    "vitest": "^4.1.9"
+  }
+}
 </file>
 
 <file path="src/components/spreadsheet-grid/logic/columnAutosize.ts">
@@ -19763,6 +19983,87 @@ const gridRef = useRef<SpreadsheetGridHandle<Row>>(null);
 
 `CsvExportOptions`: `scope`(`'all'`(既定) / `'selection'` / `'visible'`)、`includeHeaders`(既定 `true`)、`delimiter`(既定 `','`。`'\t'` で TSV)、`bom`(`exportCsv` は既定 `false` / `downloadCsv` は既定 `true` = Excel 互換)。値整形はコピー(クリップボード)と同じ規則(`formatClipboardValue` があればそれ、無ければ `String(value ?? '')`)。RFC 4180 のクォート、行区切りは CRLF。serverSide の `scope:'all'` は未ロード行をスキップするため、serverSide では `'visible'` か別途サーバ側エクスポートを推奨。
 
+### Excel / スプレッドシート エクスポート(getExportData)
+
+| メソッド | 説明 |
+| --- | --- |
+| `getExportData(options?)` | 列メタ + 2 次元セルの、シリアライズ非依存な整形済みデータを返す(純粋・副作用なし)。 |
+
+`GridExportOptions`: `scope`(`'all'`(既定) / `'selection'` / `'visible'`)。`exportCsv` と同じ scope 規則(フィルター/ソート/可視列/固定順/選択を反映)。
+
+戻り値 `GridExportData`:
+
+```ts
+type GridExportData = {
+  columns: { key: string; title: string }[];   // 視覚順(selection では選択列のみ)
+  rows: { value: unknown; text: string }[][];   // scope の行レンジ(SSRM 未ロード行はスキップ)
+};
+```
+
+各セルは生値 `value`(`getCellValue`)と文字列 `text`(CSV と同じ規則 = `formatClipboardValue ?? String(value ?? '')`)の双方を持つ。`value` があることで型付きセル(数値/日付のまま)+ Excel 側の数値書式へ流せる。`columns.key` はオブジェクト系ライブラリ向け、`title` はヘッダー表示向け。
+
+**方針**: 本ライブラリは xlsx ライブラリを**同梱しない**(バンドル肥大・ライブラリ選定の押し付けを避ける)。グリッドは「現在の表」を整形済みデータで渡す**導線**に徹し、`.xlsx` / `.ods` 等の生成は consumer が任意のライブラリで行う。**マルチシートは consumer 側で本メソッドを scope 別 / グリッド別に呼び出して組み立てる**(グリッドは「1 表」を返すプリミティブ)。
+
+#### レシピ: hucre(zero-dep・~14KB gzip・ESM/edge)
+
+```ts
+import { writeXlsx } from 'hucre/xlsx';
+
+const { columns, rows } = gridRef.current!.getExportData({ scope: 'all' });
+const buffer = await writeXlsx({
+  sheets: [
+    {
+      name: 'Sheet1',
+      columns: columns.map((c) => ({ header: c.title, key: c.key })),
+      // 生値 value を型付きセルとして書く(数値/日付はそのまま)。
+      data: rows.map((r) =>
+        Object.fromEntries(r.map((cell, i) => [columns[i].key, cell.value])),
+      ),
+    },
+  ],
+});
+// buffer(Uint8Array)を Blob 化してダウンロード。
+```
+
+#### レシピ: ExcelJS
+
+```ts
+import ExcelJS from 'exceljs';
+
+const { columns, rows } = gridRef.current!.getExportData({ scope: 'all' });
+const wb = new ExcelJS.Workbook();
+const ws = wb.addWorksheet('Sheet1');
+ws.addRow(columns.map((c) => c.title)); // ヘッダー
+for (const r of rows) ws.addRow(r.map((cell) => cell.value)); // 型付きセル
+const buffer = await wb.xlsx.writeBuffer();
+```
+
+#### レシピ: マルチシート
+
+scope 違い(または複数グリッド)を複数シートに:
+
+```ts
+import { writeXlsx } from 'hucre/xlsx';
+import type { GridExportData } from '@ishibashi0112/spreadsheet-grid';
+
+const toSheet = (name: string, d: GridExportData) => ({
+  name,
+  columns: d.columns.map((c) => ({ header: c.title, key: c.key })),
+  data: d.rows.map((r) =>
+    Object.fromEntries(r.map((cell, i) => [d.columns[i].key, cell.value])),
+  ),
+});
+
+const buffer = await writeXlsx({
+  sheets: [
+    toSheet('All', gridRef.current!.getExportData({ scope: 'all' })),
+    toSheet('Selection', gridRef.current!.getExportData({ scope: 'selection' })),
+  ],
+});
+```
+
+1 グリッドをカテゴリ列で分割して N シートにする場合は、`getExportData({ scope: 'all' })` の戻りを「分割キー列の `value`」で group して各 group を `toSheet` 化する(列 index は `columns.findIndex((c) => c.key === '...')` で解決)。
+
 ### 状態の保存 / 復元
 
 | メソッド | 説明 |
@@ -19871,7 +20172,7 @@ set / select の候補集合はクライアントが供給する必要がある�
 ## ライブラリ化の宿題(現状把握)
 
 - 〔解消〕**no-op props**: `enableClipboard` / `enableColumnResize` を型から削除(常時 ON 固定の挙動は不変)。将来「無効化」が必要になれば配線つきで非破壊追加する。
-- 〔追加済み〕**imperative API(ref ハンドル)**: `SpreadsheetGridProps.ref` で `SpreadsheetGridHandle<T>` を受け取り、スクロール / 選択操作 / CSV / 状態の保存・復元を命令的に呼べる(React 19 ref-as-prop、`forwardRef` 不使用)。詳細は「命令的 API」節。列状態のシリアライズ(`getState` / `applyState`)・変更通知 `onStateChange` prop は追加済み(対象は reducer 内の永続スライス = 手動リサイズ幅 / フィルター / ソート)。列の可視/順序/ピン/flex の状態化は `columns` prop 側で consumer 所有のため未対応(将来 columns 抽出/適用を入れるなら別途合意)。
+- 〔追加済み〕**imperative API(ref ハンドル)**: `SpreadsheetGridProps.ref` で `SpreadsheetGridHandle<T>` を受け取り、スクロール / 選択操作 / CSV / エクスポートデータ(`getExportData`)/ 状態の保存・復元を命令的に呼べる(React 19 ref-as-prop、`forwardRef` 不使用)。詳細は「命令的 API」節。列状態のシリアライズ(`getState` / `applyState`)・変更通知 `onStateChange` prop は追加済み(対象は reducer 内の永続スライス = 手動リサイズ幅 / フィルター / ソート)。列の可視/順序/ピン/flex の状態化は `columns` prop 側で consumer 所有のため未対応(将来 columns 抽出/適用を入れるなら別途合意)。
 - 〔解消〕**公開バレル(`index.ts`)**: 入口を `index.ts` に集約し、`SpreadsheetGrid`(named)と公開型群(serverSide 型・`RowModel` 含む)を再エクスポート。`default export` は廃止。
 - **テーマ/スタイリング API**: 公開されるのは `className`(ルート1個)のみ。パーツ単位のクラスや CSS トークンは未提供。
 </file>
@@ -20655,6 +20956,29 @@ function App() {
           >
             表示中を CSV 保存
           </button>
+          <button
+            type="button"
+            onClick={() => {
+              // 追加(getExportData デモ): エクスポート用の整形済みデータ(列メタ + 2 次元セル)を取得して
+              //   内容を確認するデモです。実際の xlsx 化はこの data を hucre / exceljs 等へ流します
+              //   (README / API_REFERENCE のレシピ参照)。本ライブラリは Excel ライブラリを同梱しません。
+              const data = gridRef.current?.getExportData({ scope: 'all' });
+              if (!data) {
+                return;
+              }
+              const header = data.columns.map((c) => c.title).join(', ');
+              const firstRow =
+                data.rows.length > 0
+                  ? data.rows[0].map((cell) => cell.text).join(', ')
+                  : '(行なし)';
+              window.alert(
+                `エクスポートデータ\n列数: ${data.columns.length} / 行数: ${data.rows.length}\n\nヘッダー: ${header}\n先頭行: ${firstRow}`,
+              );
+            }}
+            style={modeButtonStyle(false)}
+          >
+            エクスポートデータを確認
+          </button>
           {/* 追加(state #3 デモ): onStateChange/applyState の永続デモ。列幅変更・フィルター・ソート・
               列メタ(可視/順序/ピン)が自動保存され、ページ再読込で復元されます。下のボタンで保存を
               クリア(初期状態へ)できます。 */}
@@ -21211,6 +21535,34 @@ export type CsvExportOptions = {
   bom?: boolean;
 };
 
+// 追加(imperative API: getExportData): エクスポート用「整形済みデータ」のオプションです。CSV と同じ
+//   scope セマンティクスを共有します(出力範囲のみ)。直列化に関わる delimiter / bom / includeHeaders は
+//   持ちません(ヘッダーは columns として別途返すため、書き出すかは consumer 判断)。
+export type GridExportOptions = {
+  // 出力範囲(既定 'all')。CsvExportScope を共有します。
+  scope?: CsvExportScope;
+};
+
+// 追加(imperative API: getExportData): エクスポート 1 セルの内容です。
+//   - value: 生のセル値(getCellValue)。Excel の型付きセル / 数値書式に使えます。
+//   - text : 文字列表現。CSV / クリップボードと同じ規則(formatClipboardValue ?? String(value ?? ''))。
+export type GridExportCell = {
+  value: unknown;
+  text: string;
+};
+
+// 追加(imperative API: getExportData): 列メタ + 2 次元セルの、シリアライズ非依存なエクスポートモデルです。
+//   ライブラリは xlsx を同梱せず、この「整形済みデータ」を提供します(導線)。consumer は exceljs /
+//   hucre / SheetJS など任意のライブラリへ流し込みます(xlsx / ods / json など出力形式も自由)。
+//   - columns: 列メタ(視覚順 / scope='selection' では選択列のみ)。key はオブジェクト系ライブラリ
+//     (hucre の data / writeObjects、SheetJS の json_to_sheet 等)向け、title はヘッダー表示向けです。
+//   - rows   : scope の行レンジぶんのセル 2 次元配列(SSRM 未ロード行はスキップ)。各行のセル順は
+//     columns と同順です。
+export type GridExportData = {
+  columns: { key: string; title: string }[];
+  rows: GridExportCell[][];
+};
+
 // 追加(state v2): 列メタのシリアライズ単位です(getState / applyState の GridState.columns 要素)。
 //   grid UI が変更しうる列メタ(可視 / 順序 / ピン)だけを持ちます。
 //   - key     : 対象列の識別子(GridColumn.key)。applyState はこの key で現 columns へマージします。
@@ -21295,6 +21647,12 @@ export type SpreadsheetGridHandle<T> = {
   // exportCsv の結果をファイルとしてダウンロードします(Blob + 一時 anchor の DOM 副作用)。
   //   bom は未指定時 true(Excel 互換)。filename 既定 'export.csv'。
   downloadCsv: (filename?: string, options?: CsvExportOptions) => void;
+  // 追加(imperative API: getExportData): エクスポート用の整形済みデータ(列メタ + 2 次元セル)を返します
+  //   (純粋・副作用なし)。scope / 列順 / フィルター・ソート適用は exportCsv と同一規則です。xlsx 等の
+  //   生成は consumer 側で任意のライブラリ(exceljs / hucre / SheetJS …)を使って行います(本ライブラリは
+  //   Excel ライブラリを同梱しません)。複数シートは consumer 側で本メソッドを scope 別 / グリッド別に
+  //   呼び出して組み立てます(グリッドは「1 表」を返すプリミティブに徹します)。
+  getExportData: (options?: GridExportOptions) => GridExportData;
 
   // ── 状態の保存 / 復元 ──
   // 永続化対象(手動リサイズ幅 / フィルター / ソート / 列メタ=可視・順序・ピン)のスナップショット
@@ -21541,6 +21899,7 @@ import {
 import type { RowMetrics } from './logic/verticalGeometry';
 // 追加(imperative API #1): CSV エクスポート / スクロール先算出の純ロジックです。
 import { serializeRowsToCsv } from './logic/exportCsv';
+import { buildGridExportData } from './logic/exportData';
 // 追加(state #1): 列状態 get/apply の純ロジックです(snapshot 組み立て / 外部入力の正規化)。
 // 追加(state #2): onStateChange の発火可否判定(decideStateChangeEmit)も同モジュールから読みます。
 // 追加(state v2): 列メタ(可視 / 順序 / ピン)の抽出 / 適用(extractColumnState / applyColumnState)。
@@ -21609,6 +21968,10 @@ import type {
   GridUiState,
   SpreadsheetGridHandle,
   CsvExportOptions,
+  // 追加(imperative API: getExportData): scope 解決と整形済みデータ型に使います。
+  CsvExportScope,
+  GridExportOptions,
+  GridExportData,
   ScrollAlign,
   SpreadsheetGridProps,
   // 追加(state #2): onStateChange の lastEmitted 保持 / snapshot 型に使います。
@@ -24676,53 +25039,102 @@ export function SpreadsheetGrid<T extends object>({
         );
       };
 
+      // scope(all/selection/visible)から、出力対象の行レンジ [startRow, endRow) と列集合を解決します。
+      //   exportCsv(buildCsv)と getExportData で共有します。scope='selection' で選択が無いときは null を
+      //   返し、呼び出し側が「空」を表現します(CSV は空文字 / 整形済みデータは空)。
+      const resolveExportScope = (
+        scope: CsvExportScope,
+      ): { startRow: number; endRow: number; columns: GridColumn<T>[] } | null => {
+        const s = apiStateRef.current;
+        if (!s) {
+          return null;
+        }
+        if (scope === 'visible') {
+          return {
+            startRow: s.windowFirstRow,
+            endRow:
+              s.windowLastRow >= s.windowFirstRow
+                ? s.windowLastRow + 1
+                : s.windowFirstRow,
+            columns: s.orderedColumns,
+          };
+        }
+        if (scope === 'selection') {
+          const sel = s.uiState.selection;
+          if (!sel) {
+            return null;
+          }
+          if (sel.type === 'cell') {
+            const r = normalizeCellRange(sel.range);
+            return {
+              startRow: r.start.row,
+              endRow: r.end.row + 1,
+              columns: s.orderedColumns.slice(r.start.col, r.end.col + 1),
+            };
+          }
+          if (sel.type === 'row') {
+            const r = normalizeRowRange(sel.startRow, sel.endRow);
+            return {
+              startRow: r.startRow,
+              endRow: r.endRow + 1,
+              columns: s.orderedColumns,
+            };
+          }
+          const r = normalizeColumnRange(sel.startCol, sel.endCol);
+          return {
+            startRow: 0,
+            endRow: s.viewRowCount,
+            columns: s.orderedColumns.slice(r.startCol, r.endCol + 1),
+          };
+        }
+        // scope === 'all'
+        return {
+          startRow: 0,
+          endRow: s.viewRowCount,
+          columns: s.orderedColumns,
+        };
+      };
+
       // CSV 文字列を組み立てます(exportCsv / downloadCsv で共有)。
       const buildCsv = (options?: CsvExportOptions): string => {
         const s = apiStateRef.current;
         if (!s) {
           return '';
         }
-        const scope = options?.scope ?? 'all';
-        let startRow = 0;
-        let endRow = s.viewRowCount;
-        let columns = s.orderedColumns;
-
-        if (scope === 'visible') {
-          startRow = s.windowFirstRow;
-          endRow =
-            s.windowLastRow >= s.windowFirstRow
-              ? s.windowLastRow + 1
-              : s.windowFirstRow;
-        } else if (scope === 'selection') {
-          const sel = s.uiState.selection;
-          if (!sel) {
-            return options?.bom ? '\uFEFF' : '';
-          }
-          if (sel.type === 'cell') {
-            const r = normalizeCellRange(sel.range);
-            startRow = r.start.row;
-            endRow = r.end.row + 1;
-            columns = s.orderedColumns.slice(r.start.col, r.end.col + 1);
-          } else if (sel.type === 'row') {
-            const r = normalizeRowRange(sel.startRow, sel.endRow);
-            startRow = r.startRow;
-            endRow = r.endRow + 1;
-          } else {
-            const r = normalizeColumnRange(sel.startCol, sel.endCol);
-            startRow = 0;
-            endRow = s.viewRowCount;
-            columns = s.orderedColumns.slice(r.startCol, r.endCol + 1);
-          }
+        const resolved = resolveExportScope(options?.scope ?? 'all');
+        // scope='selection' で選択無し。BOM 指定があれば BOM のみ、無ければ空文字。
+        if (!resolved) {
+          return options?.bom ? '\uFEFF' : '';
         }
-
         return serializeRowsToCsv({
           getRow: (index) => s.rowModel.getRow(index),
-          startRow,
-          endRow,
-          columns,
+          startRow: resolved.startRow,
+          endRow: resolved.endRow,
+          columns: resolved.columns,
           delimiter: options?.delimiter,
           includeHeaders: options?.includeHeaders,
           bom: options?.bom,
+        });
+      };
+
+      // エクスポート用の整形済みデータ(列メタ + 2 次元セル)を組み立てます(getExportData で使用)。
+      //   scope / 列順 / フィルター・ソート適用は buildCsv と同一(resolveExportScope を共有)。xlsx 等の
+      //   生成は consumer 側で行います(本ライブラリは Excel ライブラリを同梱しません)。
+      const buildExportData = (options?: GridExportOptions): GridExportData => {
+        const s = apiStateRef.current;
+        if (!s) {
+          return { columns: [], rows: [] };
+        }
+        const resolved = resolveExportScope(options?.scope ?? 'all');
+        // scope='selection' で選択無し → 空データ。
+        if (!resolved) {
+          return { columns: [], rows: [] };
+        }
+        return buildGridExportData({
+          getRow: (index) => s.rowModel.getRow(index),
+          startRow: resolved.startRow,
+          endRow: resolved.endRow,
+          columns: resolved.columns,
         });
       };
 
@@ -24871,6 +25283,8 @@ export function SpreadsheetGrid<T extends object>({
           document.body.removeChild(anchor);
           URL.revokeObjectURL(url);
         },
+
+        getExportData: (options) => buildExportData(options),
 
         // ── 状態の保存 / 復元 ──────────────────────────────
         getState: () => {

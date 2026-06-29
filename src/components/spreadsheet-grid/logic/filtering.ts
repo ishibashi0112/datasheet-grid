@@ -344,8 +344,30 @@ const compileSingleColumnFilter = <T,>(
 //   (.filter は全通過でも新配列を返すため、参照節約という点でも改善です)。
 // ────────────────────────────────────────────────
 
+// 追加(F-async): 1 行がグローバルニードルに一致するか(可視列 some の部分一致)を判定します。
+//   normalizedNeedle は呼び出し側で trim + toLowerCase 済み・非空である前提です
+//   (空ニードルは全件一致＝呼び出し側が order をそのまま返すため、ここには来ません)。
+//   時間分割の非同期フィルタ(useGlobalFilteredOrder)が 1 行ごとにこれを呼び、同期版の
+//   filterOrderByGlobalText も内部でこれを使うため、両経路の合否は単一実装で一意になります。
+export const rowMatchesGlobalText = <T,>(
+  row: T,
+  columns: GridColumn<T>[],
+  normalizedNeedle: string,
+): boolean => {
+  const columnCount = columns.length;
+  for (let c = 0; c < columnCount; c += 1) {
+    const value = getCellValue(row, columns[c]);
+    if (String(value ?? '').toLowerCase().includes(normalizedNeedle)) {
+      return true;
+    }
+  }
+  return false;
+};
+
 // 追加(DS-1): グローバルフィルタの index 版です(columns.some の部分一致)。
 //   filter 文字列が空なら同一参照を返します。
+// 変更(F-async): 1 行判定を rowMatchesGlobalText へ抽出しました(挙動は不変・バイト等価)。
+//   これで同期版(本関数)と非同期版(useGlobalFilteredOrder のチャンク走査)が同じ述語を共有します。
 export const filterOrderByGlobalText = <T,>(
   rows: T[],
   order: RowOrder,
@@ -358,22 +380,12 @@ export const filterOrderByGlobalText = <T,>(
   }
 
   const length = order.length;
-  const columnCount = columns.length;
   const result = new Int32Array(length);
   let count = 0;
 
   for (let pos = 0; pos < length; pos += 1) {
     const sourceIndex = order[pos];
-    const row = rows[sourceIndex];
-    let matched = false;
-    for (let c = 0; c < columnCount; c += 1) {
-      const value = getCellValue(row, columns[c]);
-      if (String(value ?? '').toLowerCase().includes(normalizedFilter)) {
-        matched = true;
-        break;
-      }
-    }
-    if (matched) {
+    if (rowMatchesGlobalText(rows[sourceIndex], columns, normalizedFilter)) {
       result[count] = sourceIndex;
       count += 1;
     }

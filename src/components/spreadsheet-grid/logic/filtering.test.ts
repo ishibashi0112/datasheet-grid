@@ -19,6 +19,7 @@ import {
   isNumberColumnFilterValue,
   isSetColumnFilterValue,
   parseNumberFilterExpression,
+  rowMatchesGlobalText,
   type RowOrder,
 } from './filtering';
 import { getCellValue } from '../utils/permissions';
@@ -380,6 +381,53 @@ describe('filterOrderByGlobalText', () => {
       )
       .map(([, i]) => i);
     expect(actual).toEqual(expected);
+  });
+});
+
+describe('rowMatchesGlobalText (純述語: 同期/非同期で共有)', () => {
+  const cols = [textCol('t'), selectCol('g'), numberCol('n')];
+
+  it('いずれかの列が部分一致すれば true(大小無視)', () => {
+    // 'red' は g 列に一致。
+    expect(rowMatchesGlobalText({ n: 5, t: 'Apple', g: 'red' }, cols, 'red')).toBe(
+      true,
+    );
+    // 'app' は t 列('Apple' を小文字化)に一致。
+    expect(rowMatchesGlobalText({ n: 5, t: 'Apple', g: 'red' }, cols, 'app')).toBe(
+      true,
+    );
+  });
+
+  it('数値列も文字列化して部分一致する', () => {
+    expect(rowMatchesGlobalText({ n: 10, t: 'Cherry', g: 'red' }, cols, '10')).toBe(
+      true,
+    );
+  });
+
+  it('どの列も一致しなければ false', () => {
+    expect(
+      rowMatchesGlobalText({ n: 1, t: 'banana', g: 'yellow' }, cols, 'zzz'),
+    ).toBe(false);
+  });
+
+  it('null / undefined セルは空文字相当で不一致(非空ニードル)', () => {
+    expect(
+      rowMatchesGlobalText({ n: null, t: undefined, g: null }, cols, 'x'),
+    ).toBe(false);
+  });
+
+  it('filterOrderByGlobalText の合否と 1 行単位で一致する(等価性の土台)', () => {
+    const order = createSourceOrder(rows.length);
+    const needle = 'red';
+    const included = new Set(
+      asArray(filterOrderByGlobalText(rows, order, cols, needle)),
+    );
+    rows.forEach((row, i) => {
+      // filterOrderByGlobalText は trim + toLowerCase 済みニードルで判定するため、ここでも揃える。
+      expect(rowMatchesGlobalText(row, cols, needle.trim().toLowerCase())).toBe(
+        included.has(i),
+      );
+    });
   });
 });
 

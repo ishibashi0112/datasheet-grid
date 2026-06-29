@@ -56,7 +56,6 @@ import {
   // 行モデルチェーンは order(Int32Array)ベースに一本化しています
   //   (DS-2 で差し替え、旧オブジェクト配列版は DS-3-8 で削除)。
   createSourceOrder,
-  filterOrderByGlobalText,
   filterOrderByColumns,
 } from './logic/filtering';
 // 変更(10-C): 3ペインレイアウト構築用の helper / 型を追加インポートします。
@@ -149,6 +148,8 @@ import {
 import useColumnAutosizeRunner from './hooks/useColumnAutosizeRunner';
 // 追加(DS-4 #1): select / set 候補を「通常規模=同期 / 大規模=時間分割の非同期」で収集します。
 import useColumnSelectOptionsCollector from './hooks/useColumnSelectOptionsCollector';
+// 追加(F-async): グローバルフィルタの時間分割(非ブロック)適用フックです。
+import { useGlobalFilteredOrder } from './hooks/useGlobalFilteredOrder';
 // 追加(①-3): serverSide(SSRM)の RowModel を供給するフックです(dataSource 指定時に使用)。
 import { useServerSideRowModel } from './hooks/useServerSideRowModel';
 // 追加(stage ②): serverSide query の構築 / queryKey 直列化(純ロジック)です。
@@ -768,23 +769,12 @@ export function SpreadsheetGrid<T extends object>({
   //   丸ごと依存でした。
   const globalFilterText = uiState.filters.globalText;
 
-  // 追加(11-B7): グローバルフィルタの評価値を useDeferredValue で遅延化します。
-  // 変更理由: globalText は入力欄の毎キーストロークで更新され、従来はその同期レンダー内で
-  //   5,000 行のフィルタ計算(filterOrderByGlobalText)と下流チェーン
-  //   (columnFiltered → sorted → filteredRows / SourceIndexes / Keys → 仮想行再構築)が
-  //   毎回走っていました。タイピングが速いと入力欄の文字反映自体がこの計算にブロックされ、
-  //   「入力の引っかかり」として体感されます。
-  //   依存を deferred 値へ差し替えることで、キーストローク直後の緊急レンダーでは
-  //   deferred 値が旧値のままになり、この useMemo 以下の行モデルチェーンは全て
-  //   同一参照を返してスキップされます(=入力欄だけが即時更新)。フィルタ再計算は
-  //   React が低優先度で行う遅延レンダーへ移り、連続タイピング中は次のキーストロークで
-  //   中断・破棄されるため、中間値での計算が省かれ最終値での 1 回に収束します。
-  //   入力欄の value は従来どおり即時値 globalFilterText を参照する
-  //   (useGridBarContext → slotContext 経由)ため、表示が遅れることはありません。
-  // 注記: pending 表示が欲しくなった場合は
-  //   `const isGlobalFilterPending = deferredGlobalFilterText !== globalFilterText;`
-  //   を slotContext へ載せて top bar 側で薄く出せます(今回は見送り)。
-  const deferredGlobalFilterText = useDeferredValue(globalFilterText);
+  // 注記(F-async): グローバルフィルタの「入力非ブロック化」は useGlobalFilteredOrder へ移しました
+  //   (旧 11-B7 の useDeferredValue は同フック内部へ内包)。同フックは評価値の遅延化(連続入力の
+  //   合体)に加え、しきい値超では時間分割(yieldToMain)で適用するため、1M 行 × 多列でも入力/
+  //   スクロールが詰まりません。入力欄の value は従来どおり即時値 globalFilterText
+  //   (useGridBarContext → slotContext 経由)を参照します。pending 表示も同フックの status/
+  //   progress を slotContext へ載せて実現します(下記参照)。
 
   // 追加(12-B): 列フィルター評価値を useDeferredValue で遅延化します(11-B7 と同型)。
   // 変更理由: 12-A で set フィルターが「チェック操作ごとの即時適用」になったため、
@@ -818,16 +808,22 @@ export function SpreadsheetGrid<T extends object>({
   //   同一長なら参照が安定します(下流の filterOrder* は rows 依存で再計算)。
   const baseOrder = useMemo(() => createSourceOrder(rows.length), [rows.length]);
 
-  const globalFilteredOrder = useMemo(
-    () =>
-      filterOrderByGlobalText(
-        rows,
-        baseOrder,
-        visibleColumns,
-        deferredGlobalFilterText,
-      ),
-    [rows, baseOrder, visibleColumns, deferredGlobalFilterText],
-  );
+  // 変更(F-async): globalFilteredOrder の同期 useMemo を時間分割フックへ差し替えます。
+  //   返り値の order は「現在表示すべきビュー順」で、計算中は前回確定 order を維持します
+  //   (= 下流 columnFiltered / sorted / rowModel は order 参照が安定する限りスキップ＝
+  //   進捗 tick では本体行は再描画されず、トップバーの進捗表示だけが更新されます)。
+  //   status / progress は下のバーコンテキストへ渡してローディング表示に使います。
+  const {
+    order: globalFilteredOrder,
+    status: globalFilterStatus,
+    progress: globalFilterProgress,
+  } = useGlobalFilteredOrder({
+    rows,
+    baseOrder,
+    columns: visibleColumns,
+    globalText: globalFilterText,
+    enabled: globalFilterEnabled,
+  });
 
   // 追加(B-2): number 記述子が当たっている可視列の「集合シグネチャ」です。
   //   値編集(>50 → >500 等)では同一列のままなので signature 不変 → 下の numericFilterKeys を保持し、
@@ -2843,6 +2839,9 @@ export function SpreadsheetGrid<T extends object>({
     visibleColumns,
     uiState,
     setGlobalFilterText,
+    // 追加(F-async): グローバルフィルタの適用状態/進捗を slotContext へ渡します(ローディング表示用)。
+    globalFilterStatus,
+    globalFilterProgress,
   });
 
   // ── styles ────────────────────────────────────────────

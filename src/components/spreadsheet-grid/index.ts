@@ -28,6 +28,8 @@ export type {
   SpreadsheetGridSlotContext,
   SpreadsheetGridDerivedSummary,
   SpreadsheetGridSelectionStats,
+  // 追加(F-async): グローバルフィルタの適用状態(slotContext.globalFilterStatus の型)。
+  GlobalFilterStatus,
   // スロットコンテキストが公開する選択 / ソート / 列フィルター値の型族です。
   CellCoord,
   CellRange,

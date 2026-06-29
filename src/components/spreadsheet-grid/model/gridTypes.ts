@@ -407,6 +407,12 @@ export type SpreadsheetGridDerivedSummary = {
   sortedColumnLabel: string | null;
 };
 
+// 追加(F-async): グローバルテキストフィルタの適用状態です。大規模データ(しきい値超)では
+//   入力に対しビューを時間分割で適用するため、適用中は 'filtering'(進捗 0..1)になります。
+//   空/無効は 'idle'、確定は 'ready'。カスタムの renderTopBar でローディング表示の出し分けに
+//   使えます。serverSide では基本 'idle' / 'ready' です(取得中表示は行スケルトンが担当)。
+export type GlobalFilterStatus = 'idle' | 'filtering' | 'ready';
+
 // 追加: topBar / bottomBar へ渡す公開コンテキストです。
 export type SpreadsheetGridSlotContext<T> = {
   rows: T[];
@@ -424,6 +430,11 @@ export type SpreadsheetGridSlotContext<T> = {
   selection: GridSelection;
   // 追加: 利用側が helper import なしで使える派生 summary です。
   derivedSummary: SpreadsheetGridDerivedSummary;
+  // 追加(F-async): グローバルフィルタの適用状態と進捗です。大規模データで時間分割中のみ
+  //   'filtering'(progress 0..1)になります。既定トップバーはこれでスピナー/進捗%を出します。
+  //   カスタム renderTopBar もこの 2 値でローディング UI を実装できます。
+  globalFilterStatus: GlobalFilterStatus;
+  globalFilterProgress: number;
 };
 
 // 追加: 公開 props です。

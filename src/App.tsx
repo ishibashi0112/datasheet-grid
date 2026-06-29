@@ -56,6 +56,12 @@ const ORDERED_AT_SPAN_DAYS = 731; // 2023-01-01 〜 2024-12-31(約2年)を循環
 //   デモモードではこの行数に絞ります(uniform 性能確認の 1M とは別系統)。
 const AUTO_HEIGHT_DEMO_ROW_COUNT = 5000;
 
+// 追加(F-async デモ): clientSide の行数プリセットです。グローバルフィルタの非同期しきい値
+//   (50,000 行)の前後を体感するために用意しています。条件は `行数 > 50,000` で非同期のため、
+//   50,000 = 同期(スピナー無し・即結果) / 50,001 = 非同期(スピナー + 進捗%)になります。
+//   1,000,000 は旧来のストレス(同期だと数百 ms 級のブロック→非同期で入力が詰まらない)確認用です。
+const CLIENT_ROW_COUNT_PRESETS = [5_000, 50_000, 50_001, 1_000_000] as const;
+
 // 追加(C1 auto-height デモ): 備考の元になる文の候補です。
 const NOTE_PHRASES = [
   '在庫僅少のため早期手配が必要です。',
@@ -366,6 +372,9 @@ function App() {
   // 追加(①-5): デモモード。client=1M(uniform) / autoHeight=5,000(可変行高) / server=SSRM(都度取得)。
   // 追加(①-5): モード切替で rows を再生成します(server は dataSource 駆動のため空配列で解放)。
   const [mode, setMode] = useState<DemoMode>('client');
+  // 追加(F-async デモ): clientSide の現在行数です。下のプリセットで切り替えます(非同期しきい値の
+  //   前後体感用)。client モードのときだけ即 setRows し、他モード時は次に client へ来た時に効きます。
+  const [clientRowCount, setClientRowCount] = useState<number>(INITIAL_ROW_COUNT);
   // 追加(stage ③ デモ): serverSide ソフトリフレッシュ用トークン。下のボタンで増やします。
   const [serverRefreshToken, setServerRefreshToken] = useState(0);
 
@@ -491,7 +500,8 @@ function App() {
     } else if (next === 'autoHeight') {
       setRows(createDemoRows(AUTO_HEIGHT_DEMO_ROW_COUNT));
     } else {
-      setRows(createDemoRows(INITIAL_ROW_COUNT));
+      // 変更(F-async デモ): client は選択中の行数プリセットで再生成します。
+      setRows(createDemoRows(clientRowCount));
     }
     // 追加(stage ②): serverSide 境界をまたぐ時だけ列を作り直します。品番は serverSide では
     //   text フィルター、clientSide では set に切り替えます。同境界では grid も key で再マウント
@@ -507,6 +517,16 @@ function App() {
           suppressNameAutoSize,
         ),
       );
+    }
+  };
+
+  // 追加(F-async デモ): clientSide の行数を切り替えます。client モードのときだけ即反映し、
+  //   それ以外(autoHeight / server)では選択値だけ控えて次に client へ戻った時に効かせます
+  //   (clientSide は rows.length 変化で order パイプラインが再計算されるため再マウント不要)。
+  const selectClientRowCount = (count: number) => {
+    setClientRowCount(count);
+    if (mode === 'client') {
+      setRows(createDemoRows(count));
     }
   };
 
@@ -578,6 +598,40 @@ function App() {
           >
             {`serverSide / SSRM(${SERVER_ROW_COUNT.toLocaleString()} 行・都度取得)`}
           </button>
+        </div>
+
+        {/* 追加(F-async デモ): clientSide 行数プリセット。グローバルフィルタの非同期しきい値
+            (50,000 行)の前後を切り替えて、入力の体感差(同期=スピナー無し・即結果 /
+            非同期=スピナー + 進捗%)を確認できます。client モード以外では行数固定のため無効化します。 */}
+        <div
+          style={{
+            marginTop: 8,
+            display: 'flex',
+            gap: 8,
+            flexWrap: 'wrap',
+            alignItems: 'center',
+          }}
+        >
+          <span style={{ fontSize: 13, color: '#475569', fontWeight: 600 }}>
+            クライアント行数:
+          </span>
+          {CLIENT_ROW_COUNT_PRESETS.map((preset) => (
+            <button
+              key={preset}
+              type="button"
+              disabled={mode !== 'client'}
+              onClick={() => selectClientRowCount(preset)}
+              style={modeButtonStyle(
+                mode === 'client' && clientRowCount === preset,
+                mode !== 'client',
+              )}
+            >
+              {`${preset.toLocaleString()} 行`}
+            </button>
+          ))}
+          <span style={{ fontSize: 12, color: '#64748b' }}>
+            （非同期しきい値 50,000：50,000=同期 / 50,001=非同期）
+          </span>
         </div>
 
         {/* 追加(バー表示デモ): showTopBar / showBottomBar の ON/OFF トグル(モードと独立)。

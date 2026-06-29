@@ -339,6 +339,39 @@
     white-space: nowrap;
   }
 
+  /* 追加(F-async): グローバルフィルタ時間分割中のローディング表示(スピナー + 進捗%)。
+     入力欄の左に compact に並べます。filtering 中のみ描画されるため、非フィルタ時の
+     レイアウトには影響しません。 */
+  .ssg-bar-filtering {
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    color: var(--ssg-readonly-text);
+    font-size: 11.5px;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+  .ssg-bar-spinner {
+    width: 12px;
+    height: 12px;
+    border: 2px solid var(--ssg-line-strong);
+    border-top-color: var(--ssg-accent);
+    border-radius: 50%;
+    animation: ssg-bar-spin 0.7s linear infinite;
+  }
+  @keyframes ssg-bar-spin {
+    to {
+      transform: rotate(360deg);
+    }
+  }
+  /* モーション低減設定では回転を止めます(アクセシビリティ)。 */
+  @media (prefers-reduced-motion: reduce) {
+    .ssg-bar-spinner {
+      animation: none;
+    }
+  }
+
   /* ── ポップオーバー/パネル共通 ── */
   /* ポータルで body 直下に出るため、トークン(.ssg-root スコープ)は届かない。
      したがってポップオーバー系はリテラル色で定義する(クラス自体は未レイヤー CSS で上書き可能)。

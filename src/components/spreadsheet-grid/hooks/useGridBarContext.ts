@@ -1,6 +1,7 @@
 import { useMemo } from 'react';
 import { selectGlobalFilter } from '../model/gridSelectors';
 import type {
+  GlobalFilterStatus,
   GridColumn,
   GridUiState,
   SpreadsheetGridSlotContext,
@@ -12,7 +13,13 @@ import { buildGridDerivedSummary } from '../view/gridBarHelpers';
 //   slotContext.filteredRows は最終 object で遅延 getter として付与します。
 type GridSlotContextBase<T> = Omit<
   SpreadsheetGridSlotContext<T>,
-  'setGlobalFilterText' | 'derivedSummary' | 'filteredRows'
+  // 変更(F-async): globalFilterStatus / Progress も base から外します。これらは進捗 tick ごとに
+  //   変わるため、安定させたい slotContextBase(→ derivedSummary)には含めず、最終 object でのみ付与します。
+  | 'setGlobalFilterText'
+  | 'derivedSummary'
+  | 'filteredRows'
+  | 'globalFilterStatus'
+  | 'globalFilterProgress'
 >;
 
 type UseGridBarContextArgs<T> = {
@@ -26,6 +33,9 @@ type UseGridBarContextArgs<T> = {
   visibleColumns: GridColumn<T>[];
   uiState: GridUiState;
   setGlobalFilterText: (value: string) => void;
+  // 追加(F-async): グローバルフィルタの適用状態と進捗です(useGlobalFilteredOrder の戻り値)。
+  globalFilterStatus: GlobalFilterStatus;
+  globalFilterProgress: number;
 };
 
 // 追加: topBar / bottomBar へ渡す slot context と derived summary をまとめて構築します。
@@ -37,6 +47,8 @@ export const useGridBarContext = <T,>({
   visibleColumns,
   uiState,
   setGlobalFilterText,
+  globalFilterStatus,
+  globalFilterProgress,
 }: UseGridBarContextArgs<T>) => {
   // 変更(11-B3): slotContextBase の依存を uiState 丸ごとから、bar が実際に参照する
   //   5 フィールドへ分解します。
@@ -93,8 +105,19 @@ export const useGridBarContext = <T,>({
       },
       setGlobalFilterText,
       derivedSummary,
+      // 追加(F-async): 進捗 tick ごとに本 object のみ再生成されます(slotContextBase /
+      //   derivedSummary は不変＝サマリ chips は再計算されず、トップバーの進捗表示だけ更新)。
+      globalFilterStatus,
+      globalFilterProgress,
     }),
-    [derivedSummary, getFilteredRows, setGlobalFilterText, slotContextBase],
+    [
+      derivedSummary,
+      getFilteredRows,
+      setGlobalFilterText,
+      slotContextBase,
+      globalFilterStatus,
+      globalFilterProgress,
+    ],
   );
 
   return {
