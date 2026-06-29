@@ -4068,6 +4068,25 @@ export function SpreadsheetGrid<T extends object>({
             <span className="ssg-autosize-pill">列幅を計算中…</span>
           </div>
         )}
+
+        {/* 追加(F-async): グローバルフィルタ適用中のローディング overlay です。autosize overlay と
+            同じ作法(シェルに absolute で重ねる・中央配置・pointer-events:none)で、バーのフロー外に
+            z 方向で配置します。これによりトップバーのレイアウト/幅から独立します。
+            globalFilterStatus は大規模データ(しきい値超)の時間分割中のみ 'filtering' です。 */}
+        {globalFilterStatus === 'filtering' && (
+          <div className="ssg-filter-overlay">
+            <span
+              className="ssg-filter-overlay-chip"
+              role="status"
+              aria-live="polite"
+            >
+              <span className="ssg-filter-spinner" aria-hidden="true" />
+              <span className="ssg-filter-overlay-text">
+                適用中 {Math.round(globalFilterProgress * 100)}%
+              </span>
+            </span>
+          </div>
+        )}
       </div>
 
       {resolvedBottomBar}

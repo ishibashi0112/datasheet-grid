@@ -339,39 +339,6 @@
     white-space: nowrap;
   }
 
-  /* 追加(F-async): グローバルフィルタ時間分割中のローディング表示(スピナー + 進捗%)。
-     入力欄の左に compact に並べます。filtering 中のみ描画されるため、非フィルタ時の
-     レイアウトには影響しません。 */
-  .ssg-bar-filtering {
-    flex: 0 0 auto;
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    color: var(--ssg-readonly-text);
-    font-size: 11.5px;
-    font-variant-numeric: tabular-nums;
-    white-space: nowrap;
-  }
-  .ssg-bar-spinner {
-    width: 12px;
-    height: 12px;
-    border: 2px solid var(--ssg-line-strong);
-    border-top-color: var(--ssg-accent);
-    border-radius: 50%;
-    animation: ssg-bar-spin 0.7s linear infinite;
-  }
-  @keyframes ssg-bar-spin {
-    to {
-      transform: rotate(360deg);
-    }
-  }
-  /* モーション低減設定では回転を止めます(アクセシビリティ)。 */
-  @media (prefers-reduced-motion: reduce) {
-    .ssg-bar-spinner {
-      animation: none;
-    }
-  }
-
   /* ── ポップオーバー/パネル共通 ── */
   /* ポータルで body 直下に出るため、トークン(.ssg-root スコープ)は届かない。
      したがってポップオーバー系はリテラル色で定義する(クラス自体は未レイヤー CSS で上書き可能)。
@@ -1292,5 +1259,59 @@
     font-weight: 600;
     box-shadow: 0 6px 20px rgba(15, 23, 42, 0.25);
     user-select: none;
+  }
+
+  /* 追加(F-async): グローバルフィルタ適用中のローディング overlay です。autosize overlay と同じ
+     作法(シェルに absolute・中央配置・pointer-events:none)で本体へ重ねます。見た目は従来の
+     「スピナー + 適用中 NN%」を踏襲しつつ、本体に重ねても読めるよう淡いピル背景を敷きます。
+     バーのフロー外に z 方向で配置するため、トップバーの幅/レイアウトから独立します。 */
+  .ssg-filter-overlay {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    pointer-events: none;
+    z-index: 5;
+  }
+  .ssg-filter-overlay-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 12px;
+    border-radius: 999px;
+    background-color: var(--ssg-cell-bg);
+    border: 1px solid var(--ssg-line-strong);
+    box-shadow: 0 6px 20px rgba(15, 23, 42, 0.18);
+    color: var(--ssg-readonly-text);
+    font-size: 12px;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+    user-select: none;
+  }
+  /* 進捗テキストは最大表記("適用中 100%")ぶんの幅を確保し、桁が変わってもチップが伸縮せず
+     中央からぶれないようにします(等幅数字 + 固定幅)。 */
+  .ssg-filter-overlay-text {
+    min-width: 5.5em;
+    text-align: center;
+  }
+  .ssg-filter-spinner {
+    width: 14px;
+    height: 14px;
+    border: 2px solid var(--ssg-line-strong);
+    border-top-color: var(--ssg-accent);
+    border-radius: 50%;
+    animation: ssg-filter-spin 0.7s linear infinite;
+  }
+  @keyframes ssg-filter-spin {
+    to {
+      transform: rotate(360deg);
+    }
+  }
+  /* モーション低減設定では回転を止めます(アクセシビリティ)。 */
+  @media (prefers-reduced-motion: reduce) {
+    .ssg-filter-spinner {
+      animation: none;
+    }
   }
 }

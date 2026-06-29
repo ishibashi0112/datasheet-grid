@@ -409,8 +409,11 @@ export type SpreadsheetGridDerivedSummary = {
 
 // 追加(F-async): グローバルテキストフィルタの適用状態です。大規模データ(しきい値超)では
 //   入力に対しビューを時間分割で適用するため、適用中は 'filtering'(進捗 0..1)になります。
-//   空/無効は 'idle'、確定は 'ready'。カスタムの renderTopBar でローディング表示の出し分けに
-//   使えます。serverSide では基本 'idle' / 'ready' です(取得中表示は行スケルトンが担当)。
+//   空/無効は 'idle'、確定は 'ready'。serverSide では基本 'idle' / 'ready' です
+//   (取得中表示は行スケルトンが担当)。
+//   ローディング表示はグリッドが本体に重ねる組み込み overlay で行うため、通常はこの値を扱う必要は
+//   ありません。カスタム UI(入力の無効化や独自インジケータ等)を出したい場合に slotContext 経由で
+//   参照できます。
 export type GlobalFilterStatus = 'idle' | 'filtering' | 'ready';
 
 // 追加: topBar / bottomBar へ渡す公開コンテキストです。
@@ -431,8 +434,8 @@ export type SpreadsheetGridSlotContext<T> = {
   // 追加: 利用側が helper import なしで使える派生 summary です。
   derivedSummary: SpreadsheetGridDerivedSummary;
   // 追加(F-async): グローバルフィルタの適用状態と進捗です。大規模データで時間分割中のみ
-  //   'filtering'(progress 0..1)になります。既定トップバーはこれでスピナー/進捗%を出します。
-  //   カスタム renderTopBar もこの 2 値でローディング UI を実装できます。
+  //   'filtering'(progress 0..1)になります。ローディング表示はグリッドが本体へ重ねる組み込み
+  //   overlay で行うため、通常は不要です。カスタム UI を出したい場合の参照用に公開しています。
   globalFilterStatus: GlobalFilterStatus;
   globalFilterProgress: number;
 };

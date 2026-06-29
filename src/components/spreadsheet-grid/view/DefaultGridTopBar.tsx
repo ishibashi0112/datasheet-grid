@@ -59,21 +59,10 @@ export function DefaultGridTopBar<T>({
         ) : null}
 
         {showFilter ? (
+          // 注記(F-async UX): グローバルフィルタ適用中のローディング表示は、バーのフロー内ではなく
+          //   グリッド本体に重ねる overlay(.ssg-filter-overlay / SpreadsheetGrid が描画)へ移しました。
+          //   バーはローディング UI を持たないため、今後のバー改修で幅調整が不要になります。
           <div className="ssg-bar-input-group">
-            {/* 追加(F-async): 大規模データの時間分割適用中だけスピナー + 進捗% を出します。
-                小規模/空のときは何も出しません(同期で即確定するため)。 */}
-            {context.globalFilterStatus === 'filtering' ? (
-              <span
-                className="ssg-bar-filtering"
-                role="status"
-                aria-live="polite"
-              >
-                <span className="ssg-bar-spinner" aria-hidden="true" />
-                <span className="ssg-bar-filtering-text">
-                  適用中 {Math.round(context.globalFilterProgress * 100)}%
-                </span>
-              </span>
-            ) : null}
             <input
               type="text"
               value={context.globalFilterText}
