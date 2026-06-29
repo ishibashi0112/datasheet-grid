@@ -1,4 +1,41 @@
+import type { ReactNode } from 'react';
 import type { SpreadsheetGridSlotContext } from '../model/gridTypes';
+
+// 追加(F-filter UI): 既定の左アイコン(検索)です。zero-dep のためインライン SVG で持ち、currentColor で
+//   .ssg-bar-input-icon の color を継承します。グローバルフィルタ(全列横断のテキスト検索)を示す虫眼鏡。
+const DEFAULT_FILTER_ICON: ReactNode = (
+  <svg
+    width="14"
+    height="14"
+    viewBox="0 0 16 16"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="1.6"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    aria-hidden="true"
+  >
+    <circle cx="7" cy="7" r="4.5" />
+    <line x1="10.6" y1="10.6" x2="14.5" y2="14.5" />
+  </svg>
+);
+
+// 追加(F-filter UI): クリア(×)アイコンです。入力枠の内側右に置くボタンに使います。
+const CLEAR_ICON: ReactNode = (
+  <svg
+    width="12"
+    height="12"
+    viewBox="0 0 16 16"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="1.8"
+    strokeLinecap="round"
+    aria-hidden="true"
+  >
+    <line x1="4" y1="4" x2="12" y2="12" />
+    <line x1="12" y1="4" x2="4" y2="12" />
+  </svg>
+);
 
 type DefaultGridTopBarProps<T> = {
   context: SpreadsheetGridSlotContext<T>;
@@ -9,6 +46,11 @@ type DefaultGridTopBarProps<T> = {
   // 追加: summary 内の Rows / Columns 件数 chips を表示するかどうかです(既定 true)。
   //   showSummary=true のときのみ効きます(Filter / Sort chips は本値の影響を受けません)。
   showCounts?: boolean;
+  // 追加: グローバルフィルター入力の placeholder です(未指定時は既定文言)。
+  globalFilterPlaceholder?: string;
+  // 追加: グローバルフィルター入力の左アイコンです。undefined=組み込み検索アイコン / null(など falsy)=
+  //   アイコン無し / 任意 ReactNode=差し替え。
+  globalFilterIcon?: ReactNode;
 };
 
 // 追加: Grid 上部の既定ツールバーです。summary chips(左) と グローバルフィルター入力(右) の
@@ -20,14 +62,24 @@ type DefaultGridTopBarProps<T> = {
 // 変更(バー内訳): summary / filter を showSummary / showFilter で条件描画します。filter 単独時の
 //       左寄せ・幅は styles.css の `.ssg-bar-input-group:only-child` が担います。
 // 変更(件数トグル): summary 内の Rows / Columns 件数 chips を showCounts で出し分けます。
+// 変更(F-filter UI): フィルター入力を adornment 構造にしました。入力枠(.ssg-bar-input-group)の内側に
+//       [左アイコン][input][× クリア] を収め、クリアは外出しボタンから入力内側の × へ移行。
+//       placeholder は globalFilterPlaceholder、左アイコンは globalFilterIcon で差し替え可能です。
 export function DefaultGridTopBar<T>({
   context,
   showSummary = true,
   showFilter = true,
   showCounts = true,
+  globalFilterPlaceholder = 'グローバルフィルター',
+  globalFilterIcon,
 }: DefaultGridTopBarProps<T>) {
   // 追加: slot context が持つ派生 summary を使います。
   const { derivedSummary } = context;
+
+  // undefined のときだけ既定アイコン。null など falsy なら「アイコン無し」、ReactNode はそのまま差し替え。
+  const filterIconNode =
+    globalFilterIcon === undefined ? DEFAULT_FILTER_ICON : globalFilterIcon;
+  const hasFilterText = context.globalFilterText.trim().length > 0;
 
   return (
     <div className="ssg-bar--top">
@@ -61,22 +113,30 @@ export function DefaultGridTopBar<T>({
         {showFilter ? (
           // 注記(F-async UX): グローバルフィルタ適用中のローディング表示は、バーのフロー内ではなく
           //   グリッド本体に重ねる overlay(.ssg-filter-overlay / SpreadsheetGrid が描画)へ移しました。
-          //   バーはローディング UI を持たないため、今後のバー改修で幅調整が不要になります。
+          // 変更(F-filter UI): 入力枠の内側に [左アイコン][input][× クリア] を収めます。枠の border /
+          //   背景 / フォーカスリングは .ssg-bar-input-group 側、input 自身は枠なし・透明です。
           <div className="ssg-bar-input-group">
+            {filterIconNode ? (
+              <span className="ssg-bar-input-icon" aria-hidden="true">
+                {filterIconNode}
+              </span>
+            ) : null}
             <input
               type="text"
               value={context.globalFilterText}
               onChange={(event) => context.setGlobalFilterText(event.target.value)}
-              placeholder="グローバルフィルター"
+              placeholder={globalFilterPlaceholder}
               className="ssg-bar-input"
             />
-            {context.globalFilterText.trim().length > 0 ? (
+            {hasFilterText ? (
               <button
                 type="button"
                 onClick={() => context.setGlobalFilterText('')}
-                className="ssg-bar-clear-btn"
+                className="ssg-bar-input-clear"
+                aria-label="フィルターをクリア"
+                title="クリア"
               >
-                クリア
+                {CLEAR_ICON}
               </button>
             ) : null}
           </div>

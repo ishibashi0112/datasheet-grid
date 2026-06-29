@@ -296,15 +296,16 @@
   }
 
   /* グローバルフィルター input + クリアボタン。変更(コンパクト化): 余白/フォントを圧縮。 */
+  /* 変更(F-filter UI): 入力枠は .ssg-bar-input-group が担い、input 自身は枠なし・透明にします
+     (左アイコン / 内側 × クリアと 1 つの枠に収めるため)。縦 padding のみ持ち、横は枠側 padding + gap。 */
   .ssg-bar-input {
-    width: 100%;
+    flex: 1 1 auto;
     min-width: 0;
     box-sizing: border-box;
-    padding: 6px 10px;
-    border: 1px solid #cbd5e1;
-    border-radius: 6px;
+    padding: 6px 0;
+    border: none;
     outline: none;
-    background-color: var(--ssg-cell-bg);
+    background-color: transparent;
     color: var(--ssg-cell-text);
     caret-color: var(--ssg-cell-text);
     font-size: 13px;
@@ -312,12 +313,22 @@
     -webkit-text-fill-color: var(--ssg-cell-text);
   }
 
+  /* 変更(F-filter UI): 枠(border / 背景 / 角丸 / フォーカスリング)をここへ移し、内側に
+     [左アイコン][input][× クリア] を横並びで収めます。 */
   .ssg-bar-input-group {
     display: flex;
     align-items: center;
     gap: 6px;
     width: 100%;
     max-width: 380px;
+    box-sizing: border-box;
+    padding: 0 8px;
+    border: 1px solid #cbd5e1;
+    border-radius: 6px;
+    background-color: var(--ssg-cell-bg);
+  }
+  .ssg-bar-input-group:focus-within {
+    border-color: var(--ssg-accent);
   }
 
   /* 追加(バー内訳): フィルター入力が単独(summary 非表示)のときは左寄せのまま少し広げます。 */
@@ -326,17 +337,34 @@
     flex: 1 1 auto;
   }
 
-  .ssg-bar-clear-btn {
+  /* 追加(F-filter UI): 入力枠 内側左の装飾アイコンです(SVG は currentColor を継承)。 */
+  .ssg-bar-input-icon {
     flex: 0 0 auto;
-    border: 1px solid #cbd5e1;
-    background-color: var(--ssg-cell-bg);
-    color: #475569;
-    border-radius: 6px;
-    padding: 6px 10px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--ssg-glyph);
+    pointer-events: none;
+  }
+
+  /* 追加(F-filter UI): 入力枠 内側右のクリア(×)ボタンです(枠なし・hover で淡い背景)。 */
+  .ssg-bar-input-clear {
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 18px;
+    padding: 0;
+    border: none;
+    border-radius: 4px;
+    background-color: transparent;
+    color: var(--ssg-glyph);
     cursor: pointer;
-    font-size: 12px;
-    line-height: 1;
-    white-space: nowrap;
+  }
+  .ssg-bar-input-clear:hover {
+    background-color: var(--ssg-row-hover-bg);
+    color: var(--ssg-glyph-hover);
   }
 
   /* ── ポップオーバー/パネル共通 ── */

@@ -708,6 +708,13 @@ export type SpreadsheetGridProps<T> = {
   //   既定トップバー(renderTopBar 未指定)のときのみ効きます。enableGlobalFilter=false のときは
   //   本値に関わらず入力欄を出しません(無効な機能の入力欄を出さないため)。
   showTopBarFilter?: boolean;
+  // 追加: 既定トップバーのグローバルフィルター入力欄の placeholder です。
+  //   既定トップバー(renderTopBar 未指定)のときのみ効きます。未指定時は 'グローバルフィルター'。
+  globalFilterPlaceholder?: string;
+  // 追加: 既定トップバーのグローバルフィルター入力欄の「左アイコン」です。
+  //   既定トップバー(renderTopBar 未指定)のときのみ効きます。未指定(undefined)時は組み込みの
+  //   検索アイコンを表示します。null を渡すとアイコン無し、任意の ReactNode で差し替え可能です。
+  globalFilterIcon?: ReactNode;
   // 追加: 下部バー(ステータスバー)を表示するかどうかです。既定 true。
   //   false にすると renderBottomBar に関わらず下部バーを一切描画しません
   //   (表示のマスタースイッチ。矛盾指定時は renderBottomBar より優先されます)。

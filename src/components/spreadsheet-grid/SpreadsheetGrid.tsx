@@ -316,6 +316,10 @@ export function SpreadsheetGrid<T extends object>({
   //   renderTopBar 未指定時のみ効きます。フィルター入力は enableGlobalFilter=true が前提です。
   showTopBarSummary = true,
   showTopBarFilter = true,
+  // 追加: 既定トップバーのグローバルフィルター入力の placeholder / 左アイコンです。
+  //   既定はバー側(DefaultGridTopBar)で解決します(placeholder='グローバルフィルター'・icon=検索)。
+  globalFilterPlaceholder,
+  globalFilterIcon,
   // 追加: 各バーの Rows / Columns 件数 chips セットの表示有無です(既定 true)。
   //   トップは showTopBarSummary=true のとき内側で効き、ボトムは左側の件数グループを制御します。
   showTopBarCounts = true,
@@ -3086,6 +3090,8 @@ export function SpreadsheetGrid<T extends object>({
         showSummary={showDefaultTopSummary}
         showFilter={showDefaultTopFilter}
         showCounts={showTopBarCounts}
+        globalFilterPlaceholder={globalFilterPlaceholder}
+        globalFilterIcon={globalFilterIcon}
       />
     ) : null;
 
