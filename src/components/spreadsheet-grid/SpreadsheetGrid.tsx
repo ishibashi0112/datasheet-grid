@@ -2284,12 +2284,13 @@ export function SpreadsheetGrid<T extends object>({
   //   同じ高さ。relative コンテナも同じ高さを明示しているため値は不変です)。
   // 変更(scroll-space 仮想化): scaling 起動時はコンテナ高さが物理ボディ高さに揃うため、
   //   インジケータも physicalBodyHeight 基準にします(縦線は transform 外＝動かしません)。
+  // 変更(モノトーン): 色/幅/端ダイヤは CSS クラス .ssg-col-drop-indicator へ移行しました。
+  //   ここでは動的値(height)と位置/表示制御(transform/zIndex/display)のみ持ちます。
+  //   display/left は controller が ref 経由で imperative に切り替えます。
   const columnDropIndicatorStyle: CSSProperties = {
     position: 'absolute',
     top: 0,
     height: headerHeight + physicalBodyHeight,
-    width: 2,
-    backgroundColor: '#2563eb',
     transform: 'translateX(-1px)',
     pointerEvents: 'none',
     zIndex: 8,
@@ -3792,7 +3793,7 @@ export function SpreadsheetGrid<T extends object>({
                 wrapper(sticky;left:0 = absolute 子の containing block)直下へ移しました。
                 非空時は wrapper と内側 relative コンテナが原点(0,0)・高さ共通のため、
                 leftPx の意味・縦線位置は従来と不変です。 */}
-            <div ref={leftIndicatorRef} style={columnDropIndicatorStyle} />
+            <div ref={leftIndicatorRef} className="ssg-col-drop-indicator" style={columnDropIndicatorStyle} />
           </div>
 
           {/* ── 中央ペイン ── */}
@@ -3926,7 +3927,7 @@ export function SpreadsheetGrid<T extends object>({
               {/* 追加(13-B3-2): 中央ペインのドロップインジケータ(縦線)。
                   controller が ref 経由で display/left を imperative に制御します
                   (ドラッグ中の再レンダーなし → GridHeaderRow の memo を維持)。 */}
-              <div ref={centerIndicatorRef} style={columnDropIndicatorStyle} />
+              <div ref={centerIndicatorRef} className="ssg-col-drop-indicator" style={columnDropIndicatorStyle} />
             </div>
           </div>
 
@@ -4061,7 +4062,7 @@ export function SpreadsheetGrid<T extends object>({
                 wrapper(sticky;right:0 = absolute 子の containing block)直下へ移しました。
                 非空時は leftPx の意味・位置とも従来と不変です。空時は wrapper 原点が
                 ビューポート右端のため、controller が leftPx を負値(-inset)にして端の内側へ寄せます。 */}
-            <div ref={rightIndicatorRef} style={columnDropIndicatorStyle} />
+            <div ref={rightIndicatorRef} className="ssg-col-drop-indicator" style={columnDropIndicatorStyle} />
           </div>
 
           </div>

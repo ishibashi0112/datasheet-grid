@@ -184,12 +184,16 @@ const GHOST_ICON_OUT =
   '" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' +
   '<circle cx="12" cy="12" r="10"/><line x1="4.9" y1="4.9" x2="19.1" y2="19.1"/></svg>';
 
-// 追加(13-B3-5): ゴーストのピル配色。通常(move/pin)は青系、枠外(out)はミュートの赤系で
-//   「ここで離しても無効」を視覚化します(13-B3-4 のキャンセル挙動と一致)。
-const GHOST_PALETTE = {
-  normal: { border: '#2563eb', background: '#eff6ff', color: '#1d4ed8' },
-  out: { border: '#ef4444', background: '#fef2f2', color: '#dc2626' },
-} as const;
+// 変更(モノトーン): ゴーストは「チャコール無地の角丸チップ」(C2 の角丸 × C1 の色)です。
+//   状態は色ではなく「アイコン + 濃度」で出し分けます: center=move / left・right=pin /
+//   枠外(out)=禁止アイコン + 濃度↓。彩度を使わず洗練させる方針です。
+const GHOST_INK_BACKGROUND = '#1e293b';
+const GHOST_INK_COLOR = '#f8fafc';
+const GHOST_INK_BORDER = 'rgba(255,255,255,0.10)';
+const GHOST_INK_SHADOW =
+  '0 8px 20px rgba(2,6,23,0.34), 0 1px 2px rgba(2,6,23,0.24)';
+// 枠外(無効)時の濃度。色は変えず opacity だけ落として「ここで離しても無効」を示します。
+const GHOST_OUT_OPACITY = '0.5';
 
 // 追加(案A): 列の並べ替え確定時に「新しい位置へスライド」させる settle アニメの定数/ヘルパです。
 //   ドロップ commit 後、各列セルへ FLIP(transform)を 1 回だけ当てます(ドラッグ中は無関与)。
@@ -275,17 +279,18 @@ export const useColumnHeaderDragController = <T,>(
       'left:0',
       'display:inline-flex',
       'align-items:center',
-      'gap:6px',
-      'padding:4px 10px 4px 8px',
-      'border-radius:9999px',
-      'border:1px solid ' + GHOST_PALETTE.normal.border,
-      'background:' + GHOST_PALETTE.normal.background,
-      'color:' + GHOST_PALETTE.normal.color,
+      'gap:7px',
+      // 変更(モノトーン): 角丸 rect(C2 形状) + チャコール(C1 色)。
+      'padding:7px 12px 7px 10px',
+      'border-radius:9px',
+      'border:1px solid ' + GHOST_INK_BORDER,
+      'background:' + GHOST_INK_BACKGROUND,
+      'color:' + GHOST_INK_COLOR,
       'font-size:12px',
       'font-weight:600',
       'line-height:1',
       'white-space:nowrap',
-      'box-shadow:0 4px 12px rgba(15,23,42,0.18)',
+      'box-shadow:' + GHOST_INK_SHADOW,
       'pointer-events:none',
       'user-select:none',
       'z-index:' + GHOST_Z_INDEX,
@@ -331,17 +336,18 @@ export const useColumnHeaderDragController = <T,>(
     if (ghostStateRef.current === state) return;
     ghostStateRef.current = state;
 
+    // 変更(モノトーン): 色は固定(チャコール)。状態はアイコン + 濃度のみで出し分けます。
     const icon = ghostIconElRef.current;
     if (state === 'out') {
-      el.style.borderColor = GHOST_PALETTE.out.border;
-      el.style.background = GHOST_PALETTE.out.background;
-      el.style.color = GHOST_PALETTE.out.color;
+      // 枠外(無効): 濃度を落として禁止アイコンに。
+      el.style.opacity = GHOST_OUT_OPACITY;
       if (icon) icon.innerHTML = GHOST_ICON_OUT;
     } else {
-      el.style.borderColor = GHOST_PALETTE.normal.border;
-      el.style.background = GHOST_PALETTE.normal.background;
-      el.style.color = GHOST_PALETTE.normal.color;
-      if (icon) icon.innerHTML = state === 'center' ? GHOST_ICON_MOVE : GHOST_ICON_PIN;
+      // 有効: 全濃度。center=move / left・right=pin。
+      el.style.opacity = '1';
+      if (icon) {
+        icon.innerHTML = state === 'center' ? GHOST_ICON_MOVE : GHOST_ICON_PIN;
+      }
     }
   }, []);
 

@@ -1342,4 +1342,28 @@
       animation: none;
     }
   }
+
+  /* 追加(モノトーン): 列ドロップ位置のガイド線。near-black 2px + 端ダイヤ(キャレット)で
+     「挿入位置」を上質に示します。色/幅/キャップは本クラス、height/left/表示は
+     SpreadsheetGrid 側のインライン style + ref(display/left)で制御します。 */
+  .ssg-col-drop-indicator {
+    width: 2px;
+    background-color: #0f172a;
+  }
+  .ssg-col-drop-indicator::before,
+  .ssg-col-drop-indicator::after {
+    content: '';
+    position: absolute;
+    left: 50%;
+    width: 7px;
+    height: 7px;
+    background-color: #0f172a;
+    transform: translateX(-50%) rotate(45deg);
+  }
+  .ssg-col-drop-indicator::before {
+    top: -3px;
+  }
+  .ssg-col-drop-indicator::after {
+    bottom: -3px;
+  }
 }
