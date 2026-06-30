@@ -7443,6 +7443,297 @@ export function ActiveCellOverlay({
 export default ActiveCellOverlay;
 </file>
 
+<file path="src/components/spreadsheet-grid/hooks/useFilterPopoverController.ts">
+import {
+    useEffect,
+    useMemo,  
+    useCallback,
+    useRef,
+    useState,
+  type RefObject,
+} from 'react';
+import type { ColumnFilterValue, GridColumn } from '../model/gridTypes';
+// 追加(記述子化): number 記述子を含む列フィルター値を draft 用テキストへ整形します。
+import { columnFilterValueToDraftText } from '../logic/filtering';
+
+// 追加: 列フィルターポップオーバーの内部状態です。
+type HeaderFilterPopoverState = {
+  columnKey: string;
+  draftValue: string;
+};
+
+// 追加: body 直下 portal popover の配置情報です。
+export type FilterPopoverLayout = {
+  top: number;
+  left: number;
+  width: number;
+};
+
+type UseFilterPopoverControllerArgs<T> = {
+  visibleColumns: GridColumn<T>[];
+  columnFilterValues: Record<string, ColumnFilterValue>;
+  enableColumnFilter: boolean;
+  gridRootRef: RefObject<HTMLDivElement | null>;
+};
+
+const POPUP_WIDTH = 240;
+const VIEWPORT_MARGIN = 8;
+const OFFSET_Y = 8;
+const ESTIMATED_POPUP_HEIGHT = 260;
+// 追加(12-A): set フィルターは検索 + Select All + 候補リスト(208px)を含むため、
+//             上下フリップ判定用の見積もり高さを別に持ちます。
+const ESTIMATED_SET_POPUP_HEIGHT = 400;
+
+// 追加: 列フィルター popover の state / ref / focus / outside click / layout をまとめて管理します。
+export const useFilterPopoverController = <T,>({
+  visibleColumns,
+  columnFilterValues,
+  enableColumnFilter,
+  gridRootRef,
+}: UseFilterPopoverControllerArgs<T>) => {
+  const [filterPopoverState, setFilterPopoverState] =
+    useState<HeaderFilterPopoverState | null>(null);
+  const [filterPopoverLayout, setFilterPopoverLayout] =
+    useState<FilterPopoverLayout | null>(null);
+
+  // 追加: popover / anchor / autofocus 対象 input/select の ref 群です。
+  const filterPopoverRef = useRef<HTMLDivElement | null>(null);
+  const filterPopoverAnchorRef = useRef<HTMLElement | null>(null);
+  const filterTextInputRef = useRef<HTMLInputElement | null>(null);
+  const filterSelectRef = useRef<HTMLSelectElement | null>(null);
+
+  const isFilterPopoverOpen = filterPopoverState !== null;
+  const openedFilterColumnKey = filterPopoverState?.columnKey ?? null;
+
+  const openedFilterColumn = useMemo(
+    () =>
+      openedFilterColumnKey
+        ? visibleColumns.find((column) => column.key === openedFilterColumnKey) ??
+          null
+        : null,
+    [openedFilterColumnKey, visibleColumns],
+  );
+
+  // 追加: anchor button の位置から portal popover の fixed 座標を計算します。
+  const updateFilterPopoverLayout = useCallback(() => {
+    if (!openedFilterColumnKey || !filterPopoverAnchorRef.current) {
+      setFilterPopoverLayout(null);
+      return;
+    }
+
+    const anchorRect = filterPopoverAnchorRef.current.getBoundingClientRect();
+
+    // 追加(12-A): set フィルターは popover が縦に長いため、見積もり高さを切り替えます。
+    const estimatedPopupHeight =
+      openedFilterColumn?.filterType === 'set'
+        ? ESTIMATED_SET_POPUP_HEIGHT
+        : ESTIMATED_POPUP_HEIGHT;
+
+    let left = anchorRect.right - POPUP_WIDTH;
+    left = Math.max(VIEWPORT_MARGIN, left);
+    left = Math.min(left, window.innerWidth - POPUP_WIDTH - VIEWPORT_MARGIN);
+
+    let top = anchorRect.bottom + OFFSET_Y;
+    if (top + estimatedPopupHeight > window.innerHeight - VIEWPORT_MARGIN) {
+      top = anchorRect.top - estimatedPopupHeight - OFFSET_Y;
+    }
+    top = Math.max(VIEWPORT_MARGIN, top);
+
+    setFilterPopoverLayout((current) => {
+      if (
+        current &&
+        current.top === top &&
+        current.left === left &&
+        current.width === POPUP_WIDTH
+      ) {
+        return current;
+      }
+
+      return {
+        top,
+        left,
+        width: POPUP_WIDTH,
+      };
+    });
+    // 変更(12-A): 見積もり高さ切替のため openedFilterColumn(filterType)へ依存を追加します。
+  }, [openedFilterColumnKey, openedFilterColumn]);
+
+  // 追加: 列フィルターポップオーバーを開きます。
+  // 変更(③): フィルター操作を列メニュー(⋮)へ集約したため、起点のボタン要素(event)を取りません。
+  const openColumnFilterPopover = useCallback(
+    (column: GridColumn<T>) => {
+      if (!enableColumnFilter) {
+        return;
+      }
+
+      // 追加: grid root に残っているフォーカスを明示的に外します。
+      if (document.activeElement instanceof HTMLElement) {
+        document.activeElement.blur();
+      }
+      gridRootRef.current?.blur();
+
+      // 変更(③): anchor をフィルターボタン → 列ヘッダーセル(data-ssg-col-key)へ移します。
+      //   開く起点がメニュー項目でボタン要素が無いため、gridRoot 配下のヘッダーセルを key 一致で
+      //   走査して anchor を解決します(キーに特殊文字が含まれてもセレクタ文字列を組まないので安全。
+      //   1 列につきヘッダーセルは 1 つ)。横スクロールで対象列が画面外なら見つからず null となり、
+      //   updateFilterPopoverLayout 側で layout=null(従来のボタン仮想化時と同等)になります。
+      // 変更: NodeList を for...of で回すと lib に DOM.Iterable が無い設定/旧 TS では
+      //   TS2488 になるため、lib 非依存の Array.from + find で解決します(列数ぶんの小さな
+      //   配列化で早期終了。挙動は同じ。横スクロールで対象列が画面外なら見つからず null)。
+      const headerCells =
+        gridRootRef.current?.querySelectorAll<HTMLElement>('[data-ssg-col-key]');
+      const anchorEl = headerCells
+        ? Array.from(headerCells).find(
+            (cell) => cell.dataset.ssgColKey === column.key,
+          ) ?? null
+        : null;
+      filterPopoverAnchorRef.current = anchorEl;
+
+      setFilterPopoverState({
+        columnKey: column.key,
+        // 変更(記述子化): number 記述子は String() で "[object Object]" になるため、
+        //   raw を取り出す columnFilterValueToDraftText 経由にします(他種別は従来と同値)。
+        draftValue: columnFilterValueToDraftText(columnFilterValues[column.key]),
+      });
+    },
+    [columnFilterValues, enableColumnFilter, gridRootRef],
+  );
+
+  // 追加: 列フィルターポップオーバーを閉じます。
+  const closeColumnFilterPopover = useCallback(() => {
+    setFilterPopoverState(null);
+    setFilterPopoverLayout(null);
+    filterPopoverAnchorRef.current = null;
+    filterTextInputRef.current = null;
+    filterSelectRef.current = null;
+
+    // 追加: close 後は grid root にフォーカスを戻し、従来の keyboard 操作へ復帰させます。
+    requestAnimationFrame(() => {
+      gridRootRef.current?.focus();
+    });
+  }, [gridRootRef]);
+
+  // 追加: フィルター draft を更新します。
+  const updateFilterPopoverDraft = useCallback((value: string) => {
+    setFilterPopoverState((current) => {
+      if (!current) {
+        return current;
+      }
+      return {
+        ...current,
+        draftValue: value,
+      };
+    });
+  }, []);
+
+  // 追加: portal popover の位置を open / resize / scroll に応じて再計算します。
+  useEffect(() => {
+    if (!openedFilterColumnKey) {
+      return;
+    }
+
+    updateFilterPopoverLayout();
+
+    const handleReposition = () => {
+      updateFilterPopoverLayout();
+    };
+
+    window.addEventListener('resize', handleReposition);
+    window.addEventListener('scroll', handleReposition, true);
+
+    return () => {
+      window.removeEventListener('resize', handleReposition);
+      window.removeEventListener('scroll', handleReposition, true);
+    };
+  }, [openedFilterColumnKey, updateFilterPopoverLayout]);
+
+  // 追加: popover が実際に描画され、かつ「開いた直後 / 別列へ切替時」にだけ
+  //       input / select へ自動 focus します。
+  useEffect(() => {
+    if (!openedFilterColumn || !filterPopoverLayout) {
+      return;
+    }
+
+    const filterType = openedFilterColumn.filterType ?? 'text';
+
+    let frameId1 = 0;
+    let frameId2 = 0;
+
+    frameId1 = requestAnimationFrame(() => {
+      frameId2 = requestAnimationFrame(() => {
+        if (filterType === 'select') {
+          filterSelectRef.current?.focus();
+          return;
+        }
+
+        const inputElement = filterTextInputRef.current;
+        if (!inputElement) {
+          return;
+        }
+
+        inputElement.focus();
+        // 追加: 全文選択ではなく末尾へ caret を置き、半角入力時の全文置換を避けます。
+        const end = inputElement.value.length;
+        inputElement.setSelectionRange(end, end);
+      });
+    });
+
+    return () => {
+      cancelAnimationFrame(frameId1);
+      cancelAnimationFrame(frameId2);
+    };
+  }, [
+    openedFilterColumn,
+    filterPopoverLayout?.top,
+    filterPopoverLayout?.left,
+    filterPopoverLayout?.width,
+  ]);
+
+  // 追加: ポップオーバー表示中は、外側クリックで閉じます。
+  useEffect(() => {
+    if (!isFilterPopoverOpen) {
+      return;
+    }
+
+    const handleWindowPointerDown = (event: globalThis.PointerEvent) => {
+      const targetNode = event.target as Node | null;
+      if (!targetNode) {
+        return;
+      }
+
+      if (filterPopoverRef.current?.contains(targetNode)) {
+        return;
+      }
+
+      // 変更(③): フィルター操作は列メニューへ集約され、anchor は列ヘッダーセルになりました。
+      //   ヘッダーをクリックしたら(列選択など)フィルターは閉じるべきため、旧「anchor button を
+      //   押したら閉じない」除外は撤去します(popover 自身の内側クリックのみ上で除外済み)。
+      closeColumnFilterPopover();
+    };
+
+    window.addEventListener('pointerdown', handleWindowPointerDown);
+    return () => {
+      window.removeEventListener('pointerdown', handleWindowPointerDown);
+    };
+  }, [closeColumnFilterPopover, isFilterPopoverOpen]);
+
+  return {
+    filterPopoverState,
+    filterPopoverLayout,
+    filterPopoverRef,
+    filterTextInputRef,
+    filterSelectRef,
+    isFilterPopoverOpen,
+    openedFilterColumn,
+    openColumnFilterPopover,
+    closeColumnFilterPopover,
+    updateFilterPopoverDraft,
+  };
+};
+
+export default useFilterPopoverController;
+</file>
+
 <file path="src/components/spreadsheet-grid/hooks/useServerSideRowModel.test.ts">
 // useServerSideRowModel(SSRM フック)の挙動テストです(DS-4 ②)。
 //   性質ベースで検証します: 件数ブートストラップ(block 0 先行 fetch)/ debounce 合体 /
@@ -9648,6 +9939,296 @@ export function SelectionOverlay({
 export default SelectionOverlay;
 </file>
 
+<file path="src/components/spreadsheet-grid/view/gridBarHelpers.ts">
+import type { ReactNode } from 'react';
+import type {
+  CellCoord,
+  ColumnFilterValue,
+  GridSelection,
+  GridColumn,
+  SpreadsheetGridSlotContext,
+  SpreadsheetGridDerivedSummary,
+  SpreadsheetGridSelectionStats,
+} from '../model/gridTypes';
+import { toExcelColumnName } from '../utils/excelColumnName';
+// 追加(12-A): set フィルター対応のフィルター有効判定を共有します。
+import { isActiveColumnFilterValue } from '../logic/filtering';
+
+// 追加: Grid の slot renderer を解決します。
+export const resolveGridSlot = <T,>(
+  slotRenderer:
+    | ((context: SpreadsheetGridSlotContext<T>) => ReactNode)
+    | undefined,
+  context: SpreadsheetGridSlotContext<T>,
+  fallback: ReactNode,
+) => {
+  if (slotRenderer) {
+    return slotRenderer(context);
+  }
+  return fallback;
+};
+
+// 追加: summary 用に長い文字列を短く丸めます。
+const truncateSummaryText = (value: string, maxLength = 16) => {
+  if (value.length <= maxLength) {
+    return value;
+  }
+  return `${value.slice(0, maxLength)}…`;
+};
+
+// 追加: ActiveCell を A1 形式へ整形します。
+export const formatGridCellLabel = (cell: CellCoord | null) => {
+  if (!cell) {
+    return 'なし';
+  }
+  return `${toExcelColumnName(cell.col)}${cell.row + 1}`;
+};
+
+// 追加: selection の概要を短く整形します。
+export const formatGridSelectionLabel = (selection: GridSelection) => {
+  if (!selection) {
+    return 'なし';
+  }
+
+  if (selection.type === 'cell') {
+    const startRow = Math.min(
+      selection.range.start.row,
+      selection.range.end.row,
+    );
+    const endRow = Math.max(
+      selection.range.start.row,
+      selection.range.end.row,
+    );
+    const startCol = Math.min(
+      selection.range.start.col,
+      selection.range.end.col,
+    );
+    const endCol = Math.max(
+      selection.range.start.col,
+      selection.range.end.col,
+    );
+
+    return `${toExcelColumnName(startCol)}${startRow + 1} - ${toExcelColumnName(
+      endCol,
+    )}${endRow + 1}`;
+  }
+
+  if (selection.type === 'row') {
+    const startRow = Math.min(selection.startRow, selection.endRow);
+    const endRow = Math.max(selection.startRow, selection.endRow);
+    return `Row ${startRow + 1} - ${endRow + 1}`;
+  }
+
+  const startCol = Math.min(selection.startCol, selection.endCol);
+  const endCol = Math.max(selection.startCol, selection.endCol);
+  return `Col ${toExcelColumnName(startCol)} - ${toExcelColumnName(endCol)}`;
+};
+
+// 追加: rows / filteredRows の概要テキストです。
+// 変更(DS-3-7): filteredRows(配列)依存をやめ、件数 filteredRowCount(数値)を引数で受けます。
+//   公開 slotContext.filteredRows は遅延 getter で別途供給され、サマリは件数しか使いません。
+export const formatGridRowSummary = <T,>(
+  context: Pick<SpreadsheetGridSlotContext<T>, 'rows'>,
+  filteredRowCount: number,
+) => `Rows: ${filteredRowCount} / ${context.rows.length}`;
+
+// 追加: columns / visibleColumns の概要テキストです。
+export const formatGridColumnSummary = <T,>(
+  context: Pick<SpreadsheetGridSlotContext<T>, 'columns' | 'visibleColumns'>,
+) => `Columns: ${context.visibleColumns.length} / ${context.columns.length}`;
+
+// 追加: selection から選択セル数 / 行数 / 列数を算出します。
+export const getGridSelectionStats = <T,>(
+  context: Pick<SpreadsheetGridSlotContext<T>, 'selection' | 'visibleColumns'>,
+  // 変更(DS-3-7): filteredRows(配列)→ 件数 filteredRowCount(数値)を引数で受けます。
+  filteredRowCount: number,
+): SpreadsheetGridSelectionStats => {
+  const selection = context.selection;
+  if (!selection) {
+    return {
+      selectedCellCount: 0,
+      selectedRowCount: 0,
+      selectedColumnCount: 0,
+    };
+  }
+
+  if (selection.type === 'cell') {
+    const startRow = Math.min(
+      selection.range.start.row,
+      selection.range.end.row,
+    );
+    const endRow = Math.max(
+      selection.range.start.row,
+      selection.range.end.row,
+    );
+    const startCol = Math.min(
+      selection.range.start.col,
+      selection.range.end.col,
+    );
+    const endCol = Math.max(
+      selection.range.start.col,
+      selection.range.end.col,
+    );
+    const selectedRowCount = endRow - startRow + 1;
+    const selectedColumnCount = endCol - startCol + 1;
+    return {
+      selectedCellCount: selectedRowCount * selectedColumnCount,
+      selectedRowCount,
+      selectedColumnCount,
+    };
+  }
+
+  if (selection.type === 'row') {
+    const startRow = Math.min(selection.startRow, selection.endRow);
+    const endRow = Math.max(selection.startRow, selection.endRow);
+    const selectedRowCount = endRow - startRow + 1;
+    const selectedColumnCount = context.visibleColumns.length;
+    return {
+      selectedCellCount: selectedRowCount * selectedColumnCount,
+      selectedRowCount,
+      selectedColumnCount,
+    };
+  }
+
+  const startCol = Math.min(selection.startCol, selection.endCol);
+  const endCol = Math.max(selection.startCol, selection.endCol);
+  const selectedColumnCount = endCol - startCol + 1;
+  const selectedRowCount = filteredRowCount;
+  return {
+    selectedCellCount: selectedRowCount * selectedColumnCount,
+    selectedRowCount,
+    selectedColumnCount,
+  };
+};
+
+// 追加: selection 数量の要約テキストです。
+export const formatGridSelectionStatsLabel = <T,>(
+  context: Pick<SpreadsheetGridSlotContext<T>, 'selection' | 'visibleColumns'>,
+  filteredRowCount: number,
+) => {
+  const stats = getGridSelectionStats(context, filteredRowCount);
+  return `Cells: ${stats.selectedCellCount} / Rows: ${stats.selectedRowCount}`;
+};
+
+// 変更(12-A): 列フィルターの有効件数を数えます。
+// 変更理由: set フィルター値はオブジェクトのため String(value).trim() 判定が
+//           成立しません(空配列も「全行除外」として有効に数える必要があります)。
+//           判定を logic/filtering.ts の isActiveColumnFilterValue へ一元化します。
+const countActiveColumnFilters = (
+  columnFilterValues: Record<string, ColumnFilterValue>,
+) =>
+  Object.values(columnFilterValues).filter((value) =>
+    isActiveColumnFilterValue(value),
+  ).length;
+
+// 追加: フィルター状態の要約テキストです。
+export const formatGridFilterSummary = <T,>(
+  context: Pick<
+    SpreadsheetGridSlotContext<T>,
+    'globalFilterText' | 'columnFilterValues'
+  >,
+) => {
+  const hasGlobalFilter = context.globalFilterText.trim().length > 0;
+  const globalFilterPreview = hasGlobalFilter
+    ? truncateSummaryText(context.globalFilterText.trim())
+    : null;
+  const columnFilterCount = countActiveColumnFilters(context.columnFilterValues);
+
+  if (!hasGlobalFilter && columnFilterCount === 0) {
+    return 'Filter: なし';
+  }
+
+  if (hasGlobalFilter && columnFilterCount === 0) {
+    return `Filter: Global("${globalFilterPreview}")`;
+  }
+
+  if (!hasGlobalFilter && columnFilterCount > 0) {
+    return `Filter: ${columnFilterCount}列`;
+  }
+
+  return `Filter: Global("${globalFilterPreview}") + ${columnFilterCount}列`;
+};
+
+// 変更(MS-1): ソート列名取得を「単一 key → ラベル」に一般化します
+//            (配列の各エントリ・主ソート列の双方から使い回せるように)。
+const getColumnLabelByKey = <T,>(
+  columns: GridColumn<T>[],
+  columnKey: string,
+) => {
+  const column = columns.find((item) => item.key === columnKey);
+  return column?.title || column?.key || columnKey;
+};
+
+// 追加: ソート状態の要約テキストです。
+export const formatGridSortSummary = <T,>(
+  context: Pick<SpreadsheetGridSlotContext<T>, 'columns' | 'sortState'>,
+) => {
+  // 変更(MS-1): 配列を優先順位順に「列名 (方向)」で連結します。
+  //   単一エントリのときは従来と同一の文字列(例: 'Sort: 金額 (昇順)')になります。
+  if (context.sortState.length === 0) {
+    return 'Sort: なし';
+  }
+
+  const parts = context.sortState.map((entry) => {
+    const label = getColumnLabelByKey(context.columns, entry.columnKey);
+    return `${label} (${entry.direction === 'asc' ? '昇順' : '降順'})`;
+  });
+
+  return `Sort: ${parts.join(', ')}`;
+};
+
+// 追加: slot context に載せる派生 summary を一括構築します。
+export const buildGridDerivedSummary = <T,>(
+  context: Pick<
+    SpreadsheetGridSlotContext<T>,
+    | 'rows'
+    | 'columns'
+    | 'visibleColumns'
+    | 'globalFilterText'
+    | 'columnFilterValues'
+    | 'sortState'
+    | 'activeCell'
+    | 'selection'
+  >,
+  // 変更(DS-3-7): filteredRows(配列)依存を除去し、件数を引数で各 format 関数へ流します。
+  filteredRowCount: number,
+): SpreadsheetGridDerivedSummary => {
+  const selectionStats = getGridSelectionStats(context, filteredRowCount);
+  const hasGlobalFilter = context.globalFilterText.trim().length > 0;
+  const globalFilterPreview = hasGlobalFilter
+    ? truncateSummaryText(context.globalFilterText.trim())
+    : null;
+  const activeColumnFilterCount = countActiveColumnFilters(
+    context.columnFilterValues,
+  );
+  const hasAnyFilter = hasGlobalFilter || activeColumnFilterCount > 0;
+  // 変更(MS-1): 配列ベースの判定に置き換えます。
+  //   sortedColumnLabel は後方互換のため「主ソート(先頭)列」のラベルを返します
+  //   (複数ソート時は先頭。全体の要約は sortSummaryText 側が担います)。
+  const hasSorting = context.sortState.length > 0;
+  const sortedColumnLabel = hasSorting
+    ? getColumnLabelByKey(context.columns, context.sortState[0].columnKey)
+    : null;
+
+  return {
+    rowSummaryText: formatGridRowSummary(context, filteredRowCount),
+    columnSummaryText: formatGridColumnSummary(context),
+    filterSummaryText: formatGridFilterSummary(context),
+    sortSummaryText: formatGridSortSummary(context),
+    activeCellLabel: formatGridCellLabel(context.activeCell),
+    selectionLabel: formatGridSelectionLabel(context.selection),
+    selectionStatsText: formatGridSelectionStatsLabel(context, filteredRowCount),
+    selectionStats,
+    hasGlobalFilter,
+    globalFilterPreview,
+    activeColumnFilterCount,
+    hasAnyFilter,
+    hasSorting,
+    sortedColumnLabel,
+  };
+};
+</file>
+
 <file path="src/components/spreadsheet-grid/view/SortManagementPanel.tsx">
 // 追加(MS-3-1 / 並び替え管理パネル): 複数レベルの並び替えをマウス/タッチで編集する
 //   独立 popover です(Excel の「並べ替え」ダイアログ相当 / ColumnChooserPanel の兄弟)。
@@ -10683,6 +11264,36 @@ const GHOST_PALETTE = {
   out: { border: '#ef4444', background: '#fef2f2', color: '#dc2626' },
 } as const;
 
+// 追加(案A): 列の並べ替え確定時に「新しい位置へスライド」させる settle アニメの定数/ヘルパです。
+//   ドロップ commit 後、各列セルへ FLIP(transform)を 1 回だけ当てます(ドラッグ中は無関与)。
+//   対象は「画面に見えているセル」だけ(行・列とも仮想化)で、transform は GPU 合成のため軽量です。
+const SETTLE_MS = 200;
+const SETTLE_EASING = 'cubic-bezier(0.2, 0.7, 0.3, 1)';
+
+// prefers-reduced-motion ではアニメせずスナップします(アクセシビリティ)。
+const prefersReducedMotion = (): boolean =>
+  typeof window !== 'undefined' &&
+  typeof window.matchMedia === 'function' &&
+  window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+// 現在の各列の screen-x(getBoundingClientRect().left)を列キーで記録します(FLIP の before)。
+//   同じ列のヘッダー/本体セルは同じ x のため、列キーごとに最初の 1 セルだけ測れば十分です。
+const captureColumnLefts = (
+  container: HTMLElement | null,
+): Map<string, number> | null => {
+  if (!container) return null;
+  const map = new Map<string, number>();
+  container
+    .querySelectorAll<HTMLElement>('[data-ssg-col-key]')
+    .forEach((cell) => {
+      const key = cell.dataset.ssgColKey;
+      if (key && !map.has(key)) {
+        map.set(key, cell.getBoundingClientRect().left);
+      }
+    });
+  return map;
+};
+
 export const useColumnHeaderDragController = <T,>(
   args: UseColumnHeaderDragControllerArgs<T>,
 ) => {
@@ -10697,6 +11308,10 @@ export const useColumnHeaderDragController = <T,>(
   // ドラッグセッション state(すべて ref。ドラッグ中の再レンダーを発生させません)。
   const draggingKeyRef = useRef<string | null>(null);
   const dropTargetRef = useRef<{ pane: ColumnPane; slot: number } | null>(null);
+  // 追加(案A): 並べ替え確定時の FLIP 用に、commit 直前の各列 screen-x を保持します。
+  //   same-pane(ピン変更なし)の並べ替えのときだけセットし、列レイアウト確定後の
+  //   applyReorderSettle で消費します(cross-pane / reduced-motion は null＝スナップ)。
+  const settlePendingRef = useRef<Map<string, number> | null>(null);
   const pointerRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
   const rafRef = useRef<number | null>(null);
 
@@ -11002,7 +11617,8 @@ export const useColumnHeaderDragController = <T,>(
 
       if (!commit || !draggedKey || !target) return;
 
-      const { columns, applyColumnOrderAndPin } = latestRef.current;
+      const { columns, applyColumnOrderAndPin, scrollContainerRef } =
+        latestRef.current;
       const keys = computeHeaderReorderedKeys(
         columns,
         draggedKey,
@@ -11010,6 +11626,19 @@ export const useColumnHeaderDragController = <T,>(
         target.slot,
       );
       if (!keys) return; // no-op ドラッグ(同一 pane・同一 slot)
+
+      // 追加(案A): same-pane(ピン変更なし)の並べ替えのみ settle アニメを準備します。
+      //   cross-pane(ドラッグでのピン留め)はペインの幅/位置が変わりクリップが生じ得るため、
+      //   従来どおりスナップさせます(アニメ対象外)。reduced-motion でもスナップします。
+      //   capture は commit 前に行う必要があるため、ここで各列の現在 x を記録します。
+      const draggedColumn = columns.find((column) => column.key === draggedKey);
+      const sourcePane = draggedColumn ? getColumnPane(draggedColumn) : null;
+      const samePaneReorder = sourcePane !== null && sourcePane === target.pane;
+      settlePendingRef.current =
+        samePaneReorder && !prefersReducedMotion()
+          ? captureColumnLefts(scrollContainerRef.current)
+          : null;
+
       const pinOverride = new Map<string, GridColumnPinned | undefined>([
         [draggedKey, target.pane === 'center' ? undefined : target.pane],
       ]);
@@ -11017,6 +11646,69 @@ export const useColumnHeaderDragController = <T,>(
     },
     [hideAllIndicators, destroyGhost],
   );
+
+  // 追加(案A): 並べ替え確定後(commit 済みの DOM)に呼ばれ、各列セルへ FLIP を 1 回当てて
+  //   「新しい位置へスライド」させます。settlePendingRef(commit 前の各列 x)が無ければ即 return。
+  //   SpreadsheetGrid が列レイアウト確定後の useLayoutEffect から呼びます(paint 前のため瞬間移動は不可視)。
+  const applyReorderSettle = useCallback(() => {
+    const before = settlePendingRef.current;
+    settlePendingRef.current = null;
+    if (!before) return;
+    const container = latestRef.current.scrollContainerRef.current;
+    if (!container) return;
+
+    // commit 後の現在セルを列キーで集約し、新しい screen-x を測ります。
+    const cellsByKey = new Map<string, HTMLElement[]>();
+    const newLeftByKey = new Map<string, number>();
+    container
+      .querySelectorAll<HTMLElement>('[data-ssg-col-key]')
+      .forEach((cell) => {
+        const key = cell.dataset.ssgColKey;
+        if (!key || !before.has(key)) return;
+        const arr = cellsByKey.get(key);
+        if (arr) {
+          arr.push(cell);
+        } else {
+          cellsByKey.set(key, [cell]);
+          newLeftByKey.set(key, cell.getBoundingClientRect().left);
+        }
+      });
+
+    // FLIP: 各列 delta = oldX - newX。動いた列だけ「逆 transform」で一旦元位置へ見せます。
+    const animatedCells: HTMLElement[] = [];
+    cellsByKey.forEach((cells, key) => {
+      const oldX = before.get(key);
+      const newX = newLeftByKey.get(key);
+      if (oldX === undefined || newX === undefined) return;
+      const delta = oldX - newX;
+      if (Math.abs(delta) < 0.5) return;
+      for (const cell of cells) {
+        cell.style.transition = 'none';
+        cell.style.transform = `translateX(${delta}px)`;
+        cell.style.willChange = 'transform';
+        animatedCells.push(cell);
+      }
+    });
+    if (animatedCells.length === 0) return;
+
+    // 初期(逆 transform)を確定させるため 1 回だけ強制リフロー。
+    void container.getBoundingClientRect();
+
+    // トランジションを付けて transform を 0 へ＝新しい位置へスライド。
+    for (const cell of animatedCells) {
+      cell.style.transition = `transform ${SETTLE_MS}ms ${SETTLE_EASING}`;
+      cell.style.transform = 'translateX(0)';
+    }
+
+    // 後始末: インライン style を消します(次のドラッグ/再レンダーと競合させない)。
+    window.setTimeout(() => {
+      for (const cell of animatedCells) {
+        cell.style.transition = '';
+        cell.style.transform = '';
+        cell.style.willChange = '';
+      }
+    }, SETTLE_MS + 80);
+  }, []);
 
   const onColumnDragHandlePointerDown = useCallback(
     (column: GridColumn<T>, event: PointerEvent<HTMLElement>) => {
@@ -11109,301 +11801,12 @@ export const useColumnHeaderDragController = <T,>(
     leftIndicatorRef,
     centerIndicatorRef,
     rightIndicatorRef,
+    // 追加(案A): 並べ替え確定後に呼ぶ settle アニメ発火関数(armed 時のみ動作)。
+    applyReorderSettle,
   };
 };
 
 export default useColumnHeaderDragController;
-</file>
-
-<file path="src/components/spreadsheet-grid/hooks/useFilterPopoverController.ts">
-import {
-    useEffect,
-    useMemo,  
-    useCallback,
-    useRef,
-    useState,
-  type RefObject,
-} from 'react';
-import type { ColumnFilterValue, GridColumn } from '../model/gridTypes';
-// 追加(記述子化): number 記述子を含む列フィルター値を draft 用テキストへ整形します。
-import { columnFilterValueToDraftText } from '../logic/filtering';
-
-// 追加: 列フィルターポップオーバーの内部状態です。
-type HeaderFilterPopoverState = {
-  columnKey: string;
-  draftValue: string;
-};
-
-// 追加: body 直下 portal popover の配置情報です。
-export type FilterPopoverLayout = {
-  top: number;
-  left: number;
-  width: number;
-};
-
-type UseFilterPopoverControllerArgs<T> = {
-  visibleColumns: GridColumn<T>[];
-  columnFilterValues: Record<string, ColumnFilterValue>;
-  enableColumnFilter: boolean;
-  gridRootRef: RefObject<HTMLDivElement | null>;
-};
-
-const POPUP_WIDTH = 240;
-const VIEWPORT_MARGIN = 8;
-const OFFSET_Y = 8;
-const ESTIMATED_POPUP_HEIGHT = 260;
-// 追加(12-A): set フィルターは検索 + Select All + 候補リスト(208px)を含むため、
-//             上下フリップ判定用の見積もり高さを別に持ちます。
-const ESTIMATED_SET_POPUP_HEIGHT = 400;
-
-// 追加: 列フィルター popover の state / ref / focus / outside click / layout をまとめて管理します。
-export const useFilterPopoverController = <T,>({
-  visibleColumns,
-  columnFilterValues,
-  enableColumnFilter,
-  gridRootRef,
-}: UseFilterPopoverControllerArgs<T>) => {
-  const [filterPopoverState, setFilterPopoverState] =
-    useState<HeaderFilterPopoverState | null>(null);
-  const [filterPopoverLayout, setFilterPopoverLayout] =
-    useState<FilterPopoverLayout | null>(null);
-
-  // 追加: popover / anchor / autofocus 対象 input/select の ref 群です。
-  const filterPopoverRef = useRef<HTMLDivElement | null>(null);
-  const filterPopoverAnchorRef = useRef<HTMLElement | null>(null);
-  const filterTextInputRef = useRef<HTMLInputElement | null>(null);
-  const filterSelectRef = useRef<HTMLSelectElement | null>(null);
-
-  const isFilterPopoverOpen = filterPopoverState !== null;
-  const openedFilterColumnKey = filterPopoverState?.columnKey ?? null;
-
-  const openedFilterColumn = useMemo(
-    () =>
-      openedFilterColumnKey
-        ? visibleColumns.find((column) => column.key === openedFilterColumnKey) ??
-          null
-        : null,
-    [openedFilterColumnKey, visibleColumns],
-  );
-
-  // 追加: anchor button の位置から portal popover の fixed 座標を計算します。
-  const updateFilterPopoverLayout = useCallback(() => {
-    if (!openedFilterColumnKey || !filterPopoverAnchorRef.current) {
-      setFilterPopoverLayout(null);
-      return;
-    }
-
-    const anchorRect = filterPopoverAnchorRef.current.getBoundingClientRect();
-
-    // 追加(12-A): set フィルターは popover が縦に長いため、見積もり高さを切り替えます。
-    const estimatedPopupHeight =
-      openedFilterColumn?.filterType === 'set'
-        ? ESTIMATED_SET_POPUP_HEIGHT
-        : ESTIMATED_POPUP_HEIGHT;
-
-    let left = anchorRect.right - POPUP_WIDTH;
-    left = Math.max(VIEWPORT_MARGIN, left);
-    left = Math.min(left, window.innerWidth - POPUP_WIDTH - VIEWPORT_MARGIN);
-
-    let top = anchorRect.bottom + OFFSET_Y;
-    if (top + estimatedPopupHeight > window.innerHeight - VIEWPORT_MARGIN) {
-      top = anchorRect.top - estimatedPopupHeight - OFFSET_Y;
-    }
-    top = Math.max(VIEWPORT_MARGIN, top);
-
-    setFilterPopoverLayout((current) => {
-      if (
-        current &&
-        current.top === top &&
-        current.left === left &&
-        current.width === POPUP_WIDTH
-      ) {
-        return current;
-      }
-
-      return {
-        top,
-        left,
-        width: POPUP_WIDTH,
-      };
-    });
-    // 変更(12-A): 見積もり高さ切替のため openedFilterColumn(filterType)へ依存を追加します。
-  }, [openedFilterColumnKey, openedFilterColumn]);
-
-  // 追加: 列フィルターポップオーバーを開きます。
-  // 変更(③): フィルター操作を列メニュー(⋮)へ集約したため、起点のボタン要素(event)を取りません。
-  const openColumnFilterPopover = useCallback(
-    (column: GridColumn<T>) => {
-      if (!enableColumnFilter) {
-        return;
-      }
-
-      // 追加: grid root に残っているフォーカスを明示的に外します。
-      if (document.activeElement instanceof HTMLElement) {
-        document.activeElement.blur();
-      }
-      gridRootRef.current?.blur();
-
-      // 変更(③): anchor をフィルターボタン → 列ヘッダーセル(data-ssg-col-key)へ移します。
-      //   開く起点がメニュー項目でボタン要素が無いため、gridRoot 配下のヘッダーセルを key 一致で
-      //   走査して anchor を解決します(キーに特殊文字が含まれてもセレクタ文字列を組まないので安全。
-      //   1 列につきヘッダーセルは 1 つ)。横スクロールで対象列が画面外なら見つからず null となり、
-      //   updateFilterPopoverLayout 側で layout=null(従来のボタン仮想化時と同等)になります。
-      // 変更: NodeList を for...of で回すと lib に DOM.Iterable が無い設定/旧 TS では
-      //   TS2488 になるため、lib 非依存の Array.from + find で解決します(列数ぶんの小さな
-      //   配列化で早期終了。挙動は同じ。横スクロールで対象列が画面外なら見つからず null)。
-      const headerCells =
-        gridRootRef.current?.querySelectorAll<HTMLElement>('[data-ssg-col-key]');
-      const anchorEl = headerCells
-        ? Array.from(headerCells).find(
-            (cell) => cell.dataset.ssgColKey === column.key,
-          ) ?? null
-        : null;
-      filterPopoverAnchorRef.current = anchorEl;
-
-      setFilterPopoverState({
-        columnKey: column.key,
-        // 変更(記述子化): number 記述子は String() で "[object Object]" になるため、
-        //   raw を取り出す columnFilterValueToDraftText 経由にします(他種別は従来と同値)。
-        draftValue: columnFilterValueToDraftText(columnFilterValues[column.key]),
-      });
-    },
-    [columnFilterValues, enableColumnFilter, gridRootRef],
-  );
-
-  // 追加: 列フィルターポップオーバーを閉じます。
-  const closeColumnFilterPopover = useCallback(() => {
-    setFilterPopoverState(null);
-    setFilterPopoverLayout(null);
-    filterPopoverAnchorRef.current = null;
-    filterTextInputRef.current = null;
-    filterSelectRef.current = null;
-
-    // 追加: close 後は grid root にフォーカスを戻し、従来の keyboard 操作へ復帰させます。
-    requestAnimationFrame(() => {
-      gridRootRef.current?.focus();
-    });
-  }, [gridRootRef]);
-
-  // 追加: フィルター draft を更新します。
-  const updateFilterPopoverDraft = useCallback((value: string) => {
-    setFilterPopoverState((current) => {
-      if (!current) {
-        return current;
-      }
-      return {
-        ...current,
-        draftValue: value,
-      };
-    });
-  }, []);
-
-  // 追加: portal popover の位置を open / resize / scroll に応じて再計算します。
-  useEffect(() => {
-    if (!openedFilterColumnKey) {
-      return;
-    }
-
-    updateFilterPopoverLayout();
-
-    const handleReposition = () => {
-      updateFilterPopoverLayout();
-    };
-
-    window.addEventListener('resize', handleReposition);
-    window.addEventListener('scroll', handleReposition, true);
-
-    return () => {
-      window.removeEventListener('resize', handleReposition);
-      window.removeEventListener('scroll', handleReposition, true);
-    };
-  }, [openedFilterColumnKey, updateFilterPopoverLayout]);
-
-  // 追加: popover が実際に描画され、かつ「開いた直後 / 別列へ切替時」にだけ
-  //       input / select へ自動 focus します。
-  useEffect(() => {
-    if (!openedFilterColumn || !filterPopoverLayout) {
-      return;
-    }
-
-    const filterType = openedFilterColumn.filterType ?? 'text';
-
-    let frameId1 = 0;
-    let frameId2 = 0;
-
-    frameId1 = requestAnimationFrame(() => {
-      frameId2 = requestAnimationFrame(() => {
-        if (filterType === 'select') {
-          filterSelectRef.current?.focus();
-          return;
-        }
-
-        const inputElement = filterTextInputRef.current;
-        if (!inputElement) {
-          return;
-        }
-
-        inputElement.focus();
-        // 追加: 全文選択ではなく末尾へ caret を置き、半角入力時の全文置換を避けます。
-        const end = inputElement.value.length;
-        inputElement.setSelectionRange(end, end);
-      });
-    });
-
-    return () => {
-      cancelAnimationFrame(frameId1);
-      cancelAnimationFrame(frameId2);
-    };
-  }, [
-    openedFilterColumn,
-    filterPopoverLayout?.top,
-    filterPopoverLayout?.left,
-    filterPopoverLayout?.width,
-  ]);
-
-  // 追加: ポップオーバー表示中は、外側クリックで閉じます。
-  useEffect(() => {
-    if (!isFilterPopoverOpen) {
-      return;
-    }
-
-    const handleWindowPointerDown = (event: globalThis.PointerEvent) => {
-      const targetNode = event.target as Node | null;
-      if (!targetNode) {
-        return;
-      }
-
-      if (filterPopoverRef.current?.contains(targetNode)) {
-        return;
-      }
-
-      // 変更(③): フィルター操作は列メニューへ集約され、anchor は列ヘッダーセルになりました。
-      //   ヘッダーをクリックしたら(列選択など)フィルターは閉じるべきため、旧「anchor button を
-      //   押したら閉じない」除外は撤去します(popover 自身の内側クリックのみ上で除外済み)。
-      closeColumnFilterPopover();
-    };
-
-    window.addEventListener('pointerdown', handleWindowPointerDown);
-    return () => {
-      window.removeEventListener('pointerdown', handleWindowPointerDown);
-    };
-  }, [closeColumnFilterPopover, isFilterPopoverOpen]);
-
-  return {
-    filterPopoverState,
-    filterPopoverLayout,
-    filterPopoverRef,
-    filterTextInputRef,
-    filterSelectRef,
-    isFilterPopoverOpen,
-    openedFilterColumn,
-    openColumnFilterPopover,
-    closeColumnFilterPopover,
-    updateFilterPopoverDraft,
-  };
-};
-
-export default useFilterPopoverController;
 </file>
 
 <file path="src/components/spreadsheet-grid/hooks/useGridClipboardController.ts">
@@ -12395,388 +12798,6 @@ export const gridUiReducer = (
     default:
       return state;
   }
-};
-</file>
-
-<file path="src/components/spreadsheet-grid/view/DefaultGridTopBar.tsx">
-import type { SpreadsheetGridSlotContext } from '../model/gridTypes';
-
-type DefaultGridTopBarProps<T> = {
-  context: SpreadsheetGridSlotContext<T>;
-  // 追加: 件数/フィルター/ソートの summary chips を表示するかどうかです(既定 true)。
-  showSummary?: boolean;
-  // 追加: グローバルフィルター入力欄を表示するかどうかです(既定 true)。
-  showFilter?: boolean;
-  // 追加: summary 内の Rows / Columns 件数 chips を表示するかどうかです(既定 true)。
-  //   showSummary=true のときのみ効きます(Filter / Sort chips は本値の影響を受けません)。
-  showCounts?: boolean;
-};
-
-// 追加: Grid 上部の既定ツールバーです。summary chips(左) と グローバルフィルター入力(右) の
-//       2 パートからなり、それぞれ showSummary / showFilter で独立に出し分けできます。
-//       summary 内の Rows / Columns 件数 chips はさらに showCounts で出し分けできます。
-//       summary / filter が両方 false の場合は呼び出し側(SpreadsheetGrid)がそもそも本バーを
-//       描画しません(空バーは出しません)。
-// 変更(UI CSS移行): インライン style(gridBarStyles)を撤去し、styles.css の .ssg-bar-* クラスへ移行。
-// 変更(バー内訳): summary / filter を showSummary / showFilter で条件描画します。filter 単独時の
-//       左寄せ・幅は styles.css の `.ssg-bar-input-group:only-child` が担います。
-// 変更(件数トグル): summary 内の Rows / Columns 件数 chips を showCounts で出し分けます。
-export function DefaultGridTopBar<T>({
-  context,
-  showSummary = true,
-  showFilter = true,
-  showCounts = true,
-}: DefaultGridTopBarProps<T>) {
-  // 追加: slot context が持つ派生 summary を使います。
-  const { derivedSummary } = context;
-
-  return (
-    <div className="ssg-bar--top">
-      <div className="ssg-bar-container">
-        {showSummary ? (
-          <div className="ssg-bar-group ssg-bar-leading">
-            <span className="ssg-bar-title">Toolbar</span>
-
-            {showCounts ? (
-              <>
-                <span className="ssg-bar-chip ssg-bar-chip--emphasis">
-                  {derivedSummary.rowSummaryText}
-                </span>
-
-                <span className="ssg-bar-chip ssg-bar-chip--emphasis">
-                  {derivedSummary.columnSummaryText}
-                </span>
-              </>
-            ) : null}
-
-            <span className="ssg-bar-chip ssg-bar-chip--emphasis">
-              {derivedSummary.filterSummaryText}
-            </span>
-
-            <span className="ssg-bar-chip ssg-bar-chip--emphasis">
-              {derivedSummary.sortSummaryText}
-            </span>
-          </div>
-        ) : null}
-
-        {showFilter ? (
-          // 注記(F-async UX): グローバルフィルタ適用中のローディング表示は、バーのフロー内ではなく
-          //   グリッド本体に重ねる overlay(.ssg-filter-overlay / SpreadsheetGrid が描画)へ移しました。
-          //   バーはローディング UI を持たないため、今後のバー改修で幅調整が不要になります。
-          <div className="ssg-bar-input-group">
-            <input
-              type="text"
-              value={context.globalFilterText}
-              onChange={(event) => context.setGlobalFilterText(event.target.value)}
-              placeholder="グローバルフィルター"
-              className="ssg-bar-input"
-            />
-            {context.globalFilterText.trim().length > 0 ? (
-              <button
-                type="button"
-                onClick={() => context.setGlobalFilterText('')}
-                className="ssg-bar-clear-btn"
-              >
-                クリア
-              </button>
-            ) : null}
-          </div>
-        ) : null}
-      </div>
-    </div>
-  );
-}
-
-export default DefaultGridTopBar;
-</file>
-
-<file path="src/components/spreadsheet-grid/view/gridBarHelpers.ts">
-import type { ReactNode } from 'react';
-import type {
-  CellCoord,
-  ColumnFilterValue,
-  GridSelection,
-  GridColumn,
-  SpreadsheetGridSlotContext,
-  SpreadsheetGridDerivedSummary,
-  SpreadsheetGridSelectionStats,
-} from '../model/gridTypes';
-import { toExcelColumnName } from '../utils/excelColumnName';
-// 追加(12-A): set フィルター対応のフィルター有効判定を共有します。
-import { isActiveColumnFilterValue } from '../logic/filtering';
-
-// 追加: Grid の slot renderer を解決します。
-export const resolveGridSlot = <T,>(
-  slotRenderer:
-    | ((context: SpreadsheetGridSlotContext<T>) => ReactNode)
-    | undefined,
-  context: SpreadsheetGridSlotContext<T>,
-  fallback: ReactNode,
-) => {
-  if (slotRenderer) {
-    return slotRenderer(context);
-  }
-  return fallback;
-};
-
-// 追加: summary 用に長い文字列を短く丸めます。
-const truncateSummaryText = (value: string, maxLength = 16) => {
-  if (value.length <= maxLength) {
-    return value;
-  }
-  return `${value.slice(0, maxLength)}…`;
-};
-
-// 追加: ActiveCell を A1 形式へ整形します。
-export const formatGridCellLabel = (cell: CellCoord | null) => {
-  if (!cell) {
-    return 'なし';
-  }
-  return `${toExcelColumnName(cell.col)}${cell.row + 1}`;
-};
-
-// 追加: selection の概要を短く整形します。
-export const formatGridSelectionLabel = (selection: GridSelection) => {
-  if (!selection) {
-    return 'なし';
-  }
-
-  if (selection.type === 'cell') {
-    const startRow = Math.min(
-      selection.range.start.row,
-      selection.range.end.row,
-    );
-    const endRow = Math.max(
-      selection.range.start.row,
-      selection.range.end.row,
-    );
-    const startCol = Math.min(
-      selection.range.start.col,
-      selection.range.end.col,
-    );
-    const endCol = Math.max(
-      selection.range.start.col,
-      selection.range.end.col,
-    );
-
-    return `${toExcelColumnName(startCol)}${startRow + 1} - ${toExcelColumnName(
-      endCol,
-    )}${endRow + 1}`;
-  }
-
-  if (selection.type === 'row') {
-    const startRow = Math.min(selection.startRow, selection.endRow);
-    const endRow = Math.max(selection.startRow, selection.endRow);
-    return `Row ${startRow + 1} - ${endRow + 1}`;
-  }
-
-  const startCol = Math.min(selection.startCol, selection.endCol);
-  const endCol = Math.max(selection.startCol, selection.endCol);
-  return `Col ${toExcelColumnName(startCol)} - ${toExcelColumnName(endCol)}`;
-};
-
-// 追加: rows / filteredRows の概要テキストです。
-// 変更(DS-3-7): filteredRows(配列)依存をやめ、件数 filteredRowCount(数値)を引数で受けます。
-//   公開 slotContext.filteredRows は遅延 getter で別途供給され、サマリは件数しか使いません。
-export const formatGridRowSummary = <T,>(
-  context: Pick<SpreadsheetGridSlotContext<T>, 'rows'>,
-  filteredRowCount: number,
-) => `Rows: ${filteredRowCount} / ${context.rows.length}`;
-
-// 追加: columns / visibleColumns の概要テキストです。
-export const formatGridColumnSummary = <T,>(
-  context: Pick<SpreadsheetGridSlotContext<T>, 'columns' | 'visibleColumns'>,
-) => `Columns: ${context.visibleColumns.length} / ${context.columns.length}`;
-
-// 追加: selection から選択セル数 / 行数 / 列数を算出します。
-export const getGridSelectionStats = <T,>(
-  context: Pick<SpreadsheetGridSlotContext<T>, 'selection' | 'visibleColumns'>,
-  // 変更(DS-3-7): filteredRows(配列)→ 件数 filteredRowCount(数値)を引数で受けます。
-  filteredRowCount: number,
-): SpreadsheetGridSelectionStats => {
-  const selection = context.selection;
-  if (!selection) {
-    return {
-      selectedCellCount: 0,
-      selectedRowCount: 0,
-      selectedColumnCount: 0,
-    };
-  }
-
-  if (selection.type === 'cell') {
-    const startRow = Math.min(
-      selection.range.start.row,
-      selection.range.end.row,
-    );
-    const endRow = Math.max(
-      selection.range.start.row,
-      selection.range.end.row,
-    );
-    const startCol = Math.min(
-      selection.range.start.col,
-      selection.range.end.col,
-    );
-    const endCol = Math.max(
-      selection.range.start.col,
-      selection.range.end.col,
-    );
-    const selectedRowCount = endRow - startRow + 1;
-    const selectedColumnCount = endCol - startCol + 1;
-    return {
-      selectedCellCount: selectedRowCount * selectedColumnCount,
-      selectedRowCount,
-      selectedColumnCount,
-    };
-  }
-
-  if (selection.type === 'row') {
-    const startRow = Math.min(selection.startRow, selection.endRow);
-    const endRow = Math.max(selection.startRow, selection.endRow);
-    const selectedRowCount = endRow - startRow + 1;
-    const selectedColumnCount = context.visibleColumns.length;
-    return {
-      selectedCellCount: selectedRowCount * selectedColumnCount,
-      selectedRowCount,
-      selectedColumnCount,
-    };
-  }
-
-  const startCol = Math.min(selection.startCol, selection.endCol);
-  const endCol = Math.max(selection.startCol, selection.endCol);
-  const selectedColumnCount = endCol - startCol + 1;
-  const selectedRowCount = filteredRowCount;
-  return {
-    selectedCellCount: selectedRowCount * selectedColumnCount,
-    selectedRowCount,
-    selectedColumnCount,
-  };
-};
-
-// 追加: selection 数量の要約テキストです。
-export const formatGridSelectionStatsLabel = <T,>(
-  context: Pick<SpreadsheetGridSlotContext<T>, 'selection' | 'visibleColumns'>,
-  filteredRowCount: number,
-) => {
-  const stats = getGridSelectionStats(context, filteredRowCount);
-  return `Cells: ${stats.selectedCellCount} / Rows: ${stats.selectedRowCount}`;
-};
-
-// 変更(12-A): 列フィルターの有効件数を数えます。
-// 変更理由: set フィルター値はオブジェクトのため String(value).trim() 判定が
-//           成立しません(空配列も「全行除外」として有効に数える必要があります)。
-//           判定を logic/filtering.ts の isActiveColumnFilterValue へ一元化します。
-const countActiveColumnFilters = (
-  columnFilterValues: Record<string, ColumnFilterValue>,
-) =>
-  Object.values(columnFilterValues).filter((value) =>
-    isActiveColumnFilterValue(value),
-  ).length;
-
-// 追加: フィルター状態の要約テキストです。
-export const formatGridFilterSummary = <T,>(
-  context: Pick<
-    SpreadsheetGridSlotContext<T>,
-    'globalFilterText' | 'columnFilterValues'
-  >,
-) => {
-  const hasGlobalFilter = context.globalFilterText.trim().length > 0;
-  const globalFilterPreview = hasGlobalFilter
-    ? truncateSummaryText(context.globalFilterText.trim())
-    : null;
-  const columnFilterCount = countActiveColumnFilters(context.columnFilterValues);
-
-  if (!hasGlobalFilter && columnFilterCount === 0) {
-    return 'Filter: なし';
-  }
-
-  if (hasGlobalFilter && columnFilterCount === 0) {
-    return `Filter: Global("${globalFilterPreview}")`;
-  }
-
-  if (!hasGlobalFilter && columnFilterCount > 0) {
-    return `Filter: ${columnFilterCount}列`;
-  }
-
-  return `Filter: Global("${globalFilterPreview}") + ${columnFilterCount}列`;
-};
-
-// 変更(MS-1): ソート列名取得を「単一 key → ラベル」に一般化します
-//            (配列の各エントリ・主ソート列の双方から使い回せるように)。
-const getColumnLabelByKey = <T,>(
-  columns: GridColumn<T>[],
-  columnKey: string,
-) => {
-  const column = columns.find((item) => item.key === columnKey);
-  return column?.title || column?.key || columnKey;
-};
-
-// 追加: ソート状態の要約テキストです。
-export const formatGridSortSummary = <T,>(
-  context: Pick<SpreadsheetGridSlotContext<T>, 'columns' | 'sortState'>,
-) => {
-  // 変更(MS-1): 配列を優先順位順に「列名 (方向)」で連結します。
-  //   単一エントリのときは従来と同一の文字列(例: 'Sort: 金額 (昇順)')になります。
-  if (context.sortState.length === 0) {
-    return 'Sort: なし';
-  }
-
-  const parts = context.sortState.map((entry) => {
-    const label = getColumnLabelByKey(context.columns, entry.columnKey);
-    return `${label} (${entry.direction === 'asc' ? '昇順' : '降順'})`;
-  });
-
-  return `Sort: ${parts.join(', ')}`;
-};
-
-// 追加: slot context に載せる派生 summary を一括構築します。
-export const buildGridDerivedSummary = <T,>(
-  context: Pick<
-    SpreadsheetGridSlotContext<T>,
-    | 'rows'
-    | 'columns'
-    | 'visibleColumns'
-    | 'globalFilterText'
-    | 'columnFilterValues'
-    | 'sortState'
-    | 'activeCell'
-    | 'selection'
-  >,
-  // 変更(DS-3-7): filteredRows(配列)依存を除去し、件数を引数で各 format 関数へ流します。
-  filteredRowCount: number,
-): SpreadsheetGridDerivedSummary => {
-  const selectionStats = getGridSelectionStats(context, filteredRowCount);
-  const hasGlobalFilter = context.globalFilterText.trim().length > 0;
-  const globalFilterPreview = hasGlobalFilter
-    ? truncateSummaryText(context.globalFilterText.trim())
-    : null;
-  const activeColumnFilterCount = countActiveColumnFilters(
-    context.columnFilterValues,
-  );
-  const hasAnyFilter = hasGlobalFilter || activeColumnFilterCount > 0;
-  // 変更(MS-1): 配列ベースの判定に置き換えます。
-  //   sortedColumnLabel は後方互換のため「主ソート(先頭)列」のラベルを返します
-  //   (複数ソート時は先頭。全体の要約は sortSummaryText 側が担います)。
-  const hasSorting = context.sortState.length > 0;
-  const sortedColumnLabel = hasSorting
-    ? getColumnLabelByKey(context.columns, context.sortState[0].columnKey)
-    : null;
-
-  return {
-    rowSummaryText: formatGridRowSummary(context, filteredRowCount),
-    columnSummaryText: formatGridColumnSummary(context),
-    filterSummaryText: formatGridFilterSummary(context),
-    sortSummaryText: formatGridSortSummary(context),
-    activeCellLabel: formatGridCellLabel(context.activeCell),
-    selectionLabel: formatGridSelectionLabel(context.selection),
-    selectionStatsText: formatGridSelectionStatsLabel(context, filteredRowCount),
-    selectionStats,
-    hasGlobalFilter,
-    globalFilterPreview,
-    activeColumnFilterCount,
-    hasAnyFilter,
-    hasSorting,
-    sortedColumnLabel,
-  };
 };
 </file>
 
@@ -14589,6 +14610,514 @@ export function ColumnChooserPanel({
 export default ColumnChooserPanel;
 </file>
 
+<file path="src/components/spreadsheet-grid/view/ColumnFilterPopover.tsx">
+import { createPortal } from 'react-dom';
+// 変更(12-A): set フィルター(検索 + Select All + チェックボックス一覧)用に
+//             hooks と useVirtualizer を追加 import します。
+//             候補リストは品番のように 5,000 件規模になり得るため、
+//             本体グリッドと同じ @tanstack/react-virtual で行仮想化します。
+import {
+  useDeferredValue,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+  type KeyboardEvent,
+  type PointerEvent,
+  type RefObject,
+} from 'react';
+import { useVirtualizer } from '@tanstack/react-virtual';
+
+// 追加: popover のレイアウト情報です。
+export type ColumnFilterPopoverLayout = {
+  top: number;
+  left: number;
+  width: number;
+};
+
+// 追加: select / set フィルター候補の最小型です。
+export type ColumnFilterPopoverOption = {
+  label: string;
+  value: string;
+};
+
+// 追加(反転set): set フィルターの選択状態です。null = 全選択(フィルターなし)。
+//   巨大側を作らないため「選択集合」ではなく { mode, values } で持ち、values は常に
+//   小さい側のみ(include=選択値 / exclude=非選択値)。判定は mode で行います。
+export type ColumnFilterSetSelection = {
+  mode: 'include' | 'exclude';
+  values: ReadonlySet<string>;
+};
+
+// 追加(反転set): ある候補値が「選択中」かを mode 適用で判定します(巨大側を materialize しません)。
+export const isSetValueSelected = (
+  selection: ColumnFilterSetSelection | null,
+  value: string,
+): boolean =>
+  selection === null
+    ? true
+    : selection.mode === 'include'
+      ? selection.values.has(value)
+      : !selection.values.has(value);
+
+type ColumnFilterPopoverProps = {
+  isOpen: boolean;
+  title: string;
+  // 変更(12-A): 'set' を追加します。
+  filterType: 'text' | 'number' | 'date' | 'select' | 'set' | 'custom';
+  draftValue: string;
+  currentValueText: string;
+  layout: ColumnFilterPopoverLayout | null;
+  selectOptions: ColumnFilterPopoverOption[];
+  // 追加(DS-4 #1): 候補収集の状態です。'collecting' の間は universe(総数 / 全値集合)が未確定の
+  //   ため、set / select の操作 UI を出さず「収集中」を表示します(部分集合での誤確定を防ぐ)。
+  optionsStatus: 'idle' | 'collecting' | 'ready';
+  optionsProgress: number;
+  // 変更(反転set): set 選択状態を { mode, values }(小さい側のみ)で受けます。null = 全選択。
+  setSelection: ColumnFilterSetSelection | null;
+  popoverRef: RefObject<HTMLDivElement | null>;
+  // 注記(12-A): set フィルターでは検索ボックスへこの ref を割り当て、
+  //             useFilterPopoverController の autofocus をそのまま流用します。
+  textInputRef: RefObject<HTMLInputElement | null>;
+  selectRef: RefObject<HTMLSelectElement | null>;
+  onRequestClose: () => void;
+  onDraftChange: (value: string) => void;
+  onApply: () => void;
+  onClear: () => void;
+  // 追加(12-A): set フィルターのチェックボックス 1 件トグルです(即時適用)。
+  onSetValueToggle: (value: string) => void;
+  // 追加(12-A): (Select All) の一括トグルです。検索中は「表示中の候補のみ」を
+  //             対象にするため、対象 values を popover 側から渡します(AG Grid と同挙動)。
+  // 変更(反転set): scope='all'(非検索=全候補) か 表示中候補の values(検索中=小さい側)。
+  //   非検索の全選択/全解除で 30 万件配列を作らないため 'all' を区別します。
+  onSetSelectAllChange: (
+    scope: 'all' | string[],
+    nextSelected: boolean,
+  ) => void;
+  // 追加(12-A): set フィルターの「クリア」です。popover を閉じずに全選択へ戻します
+  //             (即時適用のため、結果を見ながら操作を続けられるようにします)。
+  onSetClear: () => void;
+  // 追加(stage ②): serverSide か否か。set/select で候補が空のとき、空表示の文言を
+  //   「検索ヒット無し」と「候補未供給(serverSide では filterOptions / サーバ供給が必要)」で
+  //   出し分けるために使います(既定 false = clientSide で従来表示)。
+  isServerSide?: boolean;
+};
+
+// 追加(12-A): set フィルター候補リストの行高です(仮想化の estimateSize と一致させます)。
+const SET_FILTER_OPTION_ROW_HEIGHT = 28;
+
+// ── set フィルター本体 ──────────────────────────────────
+// 追加(12-A): set フィルターの検索 state / 仮想化は popover 全体とライフサイクルが
+//             異なる(開閉でリセットしたい・親 SpreadsheetGrid を再レンダーさせたくない)
+//             ため、独立した子 component に切り出して hooks を持たせます。
+//             検索テキストはこのローカル state に閉じるため、タイピングしても
+//             再レンダーは popover 内部のみで完結します(本体 5,000 行は無関係)。
+type SetFilterBodyProps = {
+  options: ColumnFilterPopoverOption[];
+  // 変更(反転set): { mode, values }(小さい側のみ)。null = 全選択(フィルターなし)です。
+  setSelection: ColumnFilterSetSelection | null;
+  searchInputRef: RefObject<HTMLInputElement | null>;
+  onValueToggle: (value: string) => void;
+  onSelectAllChange: (scope: 'all' | string[], nextSelected: boolean) => void;
+  onRequestClose: () => void;
+  // 追加(stage ②): 候補空時の空表示文言を出し分けるために親から受けます。
+  isServerSide: boolean;
+};
+
+function SetFilterBody({
+  options,
+  setSelection,
+  searchInputRef,
+  onValueToggle,
+  onSelectAllChange,
+  onRequestClose,
+  isServerSide,
+}: SetFilterBodyProps) {
+  const [searchText, setSearchText] = useState('');
+  // 追加(12-A): 候補 5,000 件規模での連続タイピングに備え、絞り込み計算は
+  //             低優先度レンダーへ遅延します(11-B7 のグローバルフィルタと同型)。
+  const deferredSearchText = useDeferredValue(searchText);
+
+  const visibleOptions = useMemo(() => {
+    const normalized = deferredSearchText.trim().toLowerCase();
+    if (!normalized) {
+      return options;
+    }
+    return options.filter((option) =>
+      option.label.toLowerCase().includes(normalized),
+    );
+  }, [options, deferredSearchText]);
+
+  const isSearching = deferredSearchText.trim().length > 0;
+
+  // 追加(12-A): 候補リストの行仮想化です。表示領域ぶん + overscan のみ DOM 化します。
+  const listScrollRef = useRef<HTMLDivElement | null>(null);
+  const optionVirtualizer = useVirtualizer({
+    count: visibleOptions.length,
+    getScrollElement: () => listScrollRef.current,
+    estimateSize: () => SET_FILTER_OPTION_ROW_HEIGHT,
+    overscan: 10,
+  });
+
+  // ── (Select All) の 3 状態判定(表示中候補が対象) ──
+  const visibleSelectedCount = useMemo(() => {
+    if (setSelection === null) {
+      return visibleOptions.length;
+    }
+    let count = 0;
+    for (const option of visibleOptions) {
+      if (isSetValueSelected(setSelection, option.value)) {
+        count += 1;
+      }
+    }
+    return count;
+  }, [setSelection, visibleOptions]);
+
+  const isAllVisibleSelected =
+    visibleOptions.length > 0 && visibleSelectedCount === visibleOptions.length;
+  const isSomeVisibleSelected =
+    visibleSelectedCount > 0 && !isAllVisibleSelected;
+
+  // 変更(反転set): mode から O(1) 算出します(巨大側を materialize しません)。
+  const totalSelectedCount =
+    setSelection === null
+      ? options.length
+      : setSelection.mode === 'include'
+        ? setSelection.values.size
+        : options.length - setSelection.values.size;
+
+  const handleSelectAllToggle = () => {
+    // 変更(反転set): 非検索時は scope='all' を渡し、30 万件の values 配列を作りません。
+    //   検索中のみ表示中候補(=小さい側)の values を渡します。
+    onSelectAllChange(
+      isSearching ? visibleOptions.map((option) => option.value) : 'all',
+      !isAllVisibleSelected,
+    );
+  };
+
+  return (
+    <>
+      <input
+        ref={searchInputRef}
+        type="text"
+        value={searchText}
+        onChange={(event) => setSearchText(event.target.value)}
+        onKeyDown={(event) => {
+          // 追加: 検索ボックス内入力を grid 側へ伝播させません。
+          event.stopPropagation();
+          if (event.key === 'Escape') {
+            event.preventDefault();
+            onRequestClose();
+          }
+        }}
+        placeholder="検索..."
+        className="ssg-filter-input"
+      />
+
+      {/* (Select All) 行: 検索中は表示中候補のみが対象です(AG Grid と同挙動) */}
+      <label className="ssg-filter-selectall">
+        <input
+          type="checkbox"
+          checked={isAllVisibleSelected}
+          ref={(element) => {
+            // 追加(12-A): 一部のみ選択中は indeterminate 表示にします。
+            if (element) {
+              element.indeterminate = isSomeVisibleSelected;
+            }
+          }}
+          onChange={handleSelectAllToggle}
+        />
+        <span className="ssg-filter-selectall-label">
+          {isSearching ? '（検索結果をすべて選択）' : '（すべて選択）'}
+        </span>
+      </label>
+
+      {/* 候補リスト(仮想化) */}
+      <div ref={listScrollRef} className="ssg-filter-list">
+        {visibleOptions.length === 0 ? (
+          <div className="ssg-filter-empty">
+            {options.length === 0
+              ? isServerSide
+                ? '候補が未指定です（serverSide では列に filterOptions などの候補供給が必要）'
+                : '候補がありません'
+              : '一致する候補がありません'}
+          </div>
+        ) : (
+          <div
+            className="ssg-filter-virt"
+            style={{ height: optionVirtualizer.getTotalSize() }}
+          >
+            {optionVirtualizer.getVirtualItems().map((virtualItem) => {
+              const option = visibleOptions[virtualItem.index];
+              if (!option) {
+                return null;
+              }
+              const isChecked = isSetValueSelected(setSelection, option.value);
+              return (
+                <label
+                  key={option.value}
+                  className="ssg-filter-option"
+                  style={{
+                    transform: `translateY(${virtualItem.start}px)`,
+                    height: virtualItem.size,
+                  }}
+                >
+                  <input
+                    type="checkbox"
+                    checked={isChecked}
+                    onChange={() => onValueToggle(option.value)}
+                  />
+                  <span className="ssg-filter-option-label">
+                    {option.label}
+                  </span>
+                </label>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      <div className="ssg-filter-meta">
+        選択中: {totalSelectedCount} / {options.length} 件
+        {isSearching ? `（表示中 ${visibleOptions.length} 件）` : ''}
+      </div>
+    </>
+  );
+}
+
+// 追加: 列フィルター popover の view component です。
+export function ColumnFilterPopover({
+  isOpen,
+  title,
+  filterType,
+  draftValue,
+  currentValueText,
+  layout,
+  selectOptions,
+  optionsStatus,
+  optionsProgress,
+  setSelection,
+  popoverRef,
+  textInputRef,
+  selectRef,
+  onRequestClose,
+  onDraftChange,
+  onApply,
+  onClear,
+  onSetValueToggle,
+  onSetSelectAllChange,
+  onSetClear,
+  isServerSide = false,
+}: ColumnFilterPopoverProps) {
+  if (typeof document === 'undefined' || !isOpen || !layout) {
+    return null;
+  }
+
+  const wrapperStyle: CSSProperties = {
+    top: layout.top,
+    left: layout.left,
+    width: layout.width,
+  };
+
+  const handleKeyDownCapture = (event: KeyboardEvent<HTMLDivElement>) => {
+    // 追加: portal 内 keyboard イベントを React ツリー上の parent へ流しません。
+    event.stopPropagation();
+  };
+
+  const handlePointerDown = (event: PointerEvent<HTMLDivElement>) => {
+    // 追加: popover 内 pointer 操作を外側へ伝播させません。
+    event.stopPropagation();
+  };
+
+  const isSetFilter = filterType === 'set';
+
+  return createPortal(
+    <div
+      ref={popoverRef}
+      onPointerDown={handlePointerDown}
+      onKeyDownCapture={handleKeyDownCapture}
+      onPasteCapture={(event) => {
+        // 追加: portal 内 paste も grid 側へ流しません。
+        event.stopPropagation();
+      }}
+      className="ssg-filter-popover"
+      style={wrapperStyle}
+    >
+      <div className="ssg-filter-title">列フィルター: {title}</div>
+
+      {(isSetFilter || filterType === 'select') &&
+      optionsStatus === 'collecting' ? (
+        // 追加(DS-4 #1): 大規模列(>閾値)の候補収集中です。universe 未確定のため操作 UI は出さず、
+        //   進捗のみ表示します(収集完了 = ready で本来の set / select UI へ切り替わります)。
+        <div className="ssg-filter-collecting">
+          候補を収集中… {Math.round(optionsProgress * 100)}%
+        </div>
+      ) : isSetFilter ? (
+        // 追加(12-A): AG Grid の Set Filter 相当 UI です(チェック操作は即時適用)。
+        <SetFilterBody
+          options={selectOptions}
+          setSelection={setSelection}
+          searchInputRef={textInputRef}
+          onValueToggle={onSetValueToggle}
+          onSelectAllChange={onSetSelectAllChange}
+          onRequestClose={onRequestClose}
+          isServerSide={isServerSide}
+        />
+      ) : filterType === 'select' ? (
+        <>
+          <div className="ssg-filter-hint">フィルター種別: select</div>
+          <select
+            ref={selectRef}
+            value={draftValue}
+            onChange={(event) => onDraftChange(event.target.value)}
+            onKeyDown={(event) => {
+              // 追加: select 内操作を grid 側へ伝播させません。
+              event.stopPropagation();
+              if (event.key === 'Enter') {
+                event.preventDefault();
+                onApply();
+                return;
+              }
+              if (event.key === 'Escape') {
+                event.preventDefault();
+                onRequestClose();
+              }
+            }}
+            className="ssg-filter-select"
+          >
+            <option value="">（すべて）</option>
+            {selectOptions.map((option) => (
+              <option key={`${title}-${option.value}`} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+          <div className="ssg-filter-meta">候補数: {selectOptions.length}</div>
+        </>
+      ) : (
+        <>
+          <div className="ssg-filter-hint">
+            フィルター種別: {filterType === 'number' ? 'number' : 'text'}
+          </div>
+          <input
+            ref={textInputRef}
+            type="text"
+            value={draftValue}
+            onChange={(event) => onDraftChange(event.target.value)}
+            onKeyDown={(event) => {
+              // 追加: filter input 内入力を grid 側へ伝播させません。
+              event.stopPropagation();
+              if (event.key === 'Enter') {
+                event.preventDefault();
+                onApply();
+                return;
+              }
+              if (event.key === 'Escape') {
+                event.preventDefault();
+                onRequestClose();
+              }
+            }}
+            placeholder={
+              filterType === 'number'
+                ? '例: >=10 / <20 / 10..20 / =5'
+                : '部分一致で絞り込み'
+            }
+            className="ssg-filter-input"
+          />
+          <div className="ssg-filter-meta ssg-filter-meta--ellipsis">
+            {filterType === 'number'
+              ? '数量系は =, >, >=, <, <=, .. が使えます'
+              : 'text は部分一致検索です'}
+          </div>
+        </>
+      )}
+
+      {/* 変更(12-A): set フィルターは即時適用のため現在値テキスト行を出しません
+          (選択件数カウンタを SetFilterBody 側で表示します)。 */}
+      {!isSetFilter && (
+        <div className="ssg-filter-meta ssg-filter-meta--ellipsis">
+          現在値: {currentValueText}
+        </div>
+      )}
+
+      <div className="ssg-filter-footer">
+        {isSetFilter ? (
+          // 変更(12-A): set フィルターは即時適用のため「適用」を持ちません。
+          //             クリアは popover を閉じず全選択へ戻し、閉じるで終了します。
+          <>
+            <button
+              type="button"
+              onPointerDown={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                onSetClear();
+              }}
+              onKeyDown={(event) => {
+                // 追加: popover 内 button の key 操作を grid 側へ流しません。
+                event.stopPropagation();
+              }}
+              className="ssg-filter-btn-secondary"
+            >
+              クリア
+            </button>
+            <button
+              type="button"
+              onPointerDown={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                onRequestClose();
+              }}
+              onKeyDown={(event) => {
+                event.stopPropagation();
+              }}
+              className="ssg-filter-btn-primary"
+            >
+              閉じる
+            </button>
+          </>
+        ) : (
+          <>
+            <button
+              type="button"
+              onPointerDown={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                onClear();
+              }}
+              onKeyDown={(event) => {
+                // 追加: popover 内 button の key 操作を grid 側へ流しません。
+                event.stopPropagation();
+              }}
+              className="ssg-filter-btn-secondary"
+            >
+              クリア
+            </button>
+            <button
+              type="button"
+              onPointerDown={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                onApply();
+              }}
+              onKeyDown={(event) => {
+                // 追加: popover 内 button の key 操作を grid 側へ流しません。
+                event.stopPropagation();
+              }}
+              className="ssg-filter-btn-primary"
+            >
+              適用
+            </button>
+          </>
+        )}
+      </div>
+    </div>,
+    document.body,
+  );
+}
+
+export default ColumnFilterPopover;
+</file>
+
 <file path="src/components/spreadsheet-grid/hooks/useColumnMenuController.ts">
 import {
   useCallback,
@@ -15488,586 +16017,156 @@ export const useGridPointerInteractions = <T,>({
 export default useGridPointerInteractions;
 </file>
 
-<file path="src/components/spreadsheet-grid/view/ColumnFilterPopover.tsx">
-import { createPortal } from 'react-dom';
-// 変更(12-A): set フィルター(検索 + Select All + チェックボックス一覧)用に
-//             hooks と useVirtualizer を追加 import します。
-//             候補リストは品番のように 5,000 件規模になり得るため、
-//             本体グリッドと同じ @tanstack/react-virtual で行仮想化します。
-import {
-  useDeferredValue,
-  useMemo,
-  useRef,
-  useState,
-  type CSSProperties,
-  type KeyboardEvent,
-  type PointerEvent,
-  type RefObject,
-} from 'react';
-import { useVirtualizer } from '@tanstack/react-virtual';
+<file path="src/components/spreadsheet-grid/view/DefaultGridTopBar.tsx">
+import type { ReactNode } from 'react';
+import type { SpreadsheetGridSlotContext } from '../model/gridTypes';
 
-// 追加: popover のレイアウト情報です。
-export type ColumnFilterPopoverLayout = {
-  top: number;
-  left: number;
-  width: number;
+// 追加(F-filter UI): 既定の左アイコン(検索)です。zero-dep のためインライン SVG で持ち、currentColor で
+//   .ssg-bar-input-icon の color を継承します。グローバルフィルタ(全列横断のテキスト検索)を示す虫眼鏡。
+const DEFAULT_FILTER_ICON: ReactNode = (
+  <svg
+    width="14"
+    height="14"
+    viewBox="0 0 16 16"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="1.6"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    aria-hidden="true"
+  >
+    <circle cx="7" cy="7" r="4.5" />
+    <line x1="10.6" y1="10.6" x2="14.5" y2="14.5" />
+  </svg>
+);
+
+// 追加(F-filter UI): クリア(×)アイコンです。入力枠の内側右に置くボタンに使います。
+const CLEAR_ICON: ReactNode = (
+  <svg
+    width="12"
+    height="12"
+    viewBox="0 0 16 16"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="1.8"
+    strokeLinecap="round"
+    aria-hidden="true"
+  >
+    <line x1="4" y1="4" x2="12" y2="12" />
+    <line x1="12" y1="4" x2="4" y2="12" />
+  </svg>
+);
+
+type DefaultGridTopBarProps<T> = {
+  context: SpreadsheetGridSlotContext<T>;
+  // 追加: 件数/フィルター/ソートの summary chips を表示するかどうかです(既定 true)。
+  showSummary?: boolean;
+  // 追加: グローバルフィルター入力欄を表示するかどうかです(既定 true)。
+  showFilter?: boolean;
+  // 追加: summary 内の Rows / Columns 件数 chips を表示するかどうかです(既定 true)。
+  //   showSummary=true のときのみ効きます(Filter / Sort chips は本値の影響を受けません)。
+  showCounts?: boolean;
+  // 追加: グローバルフィルター入力の placeholder です(未指定時は既定文言)。
+  globalFilterPlaceholder?: string;
+  // 追加: グローバルフィルター入力の左アイコンです。undefined=組み込み検索アイコン / null(など falsy)=
+  //   アイコン無し / 任意 ReactNode=差し替え。
+  globalFilterIcon?: ReactNode;
 };
 
-// 追加: select / set フィルター候補の最小型です。
-export type ColumnFilterPopoverOption = {
-  label: string;
-  value: string;
-};
+// 追加: Grid 上部の既定ツールバーです。summary chips(左) と グローバルフィルター入力(右) の
+//       2 パートからなり、それぞれ showSummary / showFilter で独立に出し分けできます。
+//       summary 内の Rows / Columns 件数 chips はさらに showCounts で出し分けできます。
+//       summary / filter が両方 false の場合は呼び出し側(SpreadsheetGrid)がそもそも本バーを
+//       描画しません(空バーは出しません)。
+// 変更(UI CSS移行): インライン style(gridBarStyles)を撤去し、styles.css の .ssg-bar-* クラスへ移行。
+// 変更(バー内訳): summary / filter を showSummary / showFilter で条件描画します。filter 単独時の
+//       左寄せ・幅は styles.css の `.ssg-bar-input-group:only-child` が担います。
+// 変更(件数トグル): summary 内の Rows / Columns 件数 chips を showCounts で出し分けます。
+// 変更(F-filter UI): フィルター入力を adornment 構造にしました。入力枠(.ssg-bar-input-group)の内側に
+//       [左アイコン][input][× クリア] を収め、クリアは外出しボタンから入力内側の × へ移行。
+//       placeholder は globalFilterPlaceholder、左アイコンは globalFilterIcon で差し替え可能です。
+export function DefaultGridTopBar<T>({
+  context,
+  showSummary = true,
+  showFilter = true,
+  showCounts = true,
+  globalFilterPlaceholder = 'グローバルフィルター',
+  globalFilterIcon,
+}: DefaultGridTopBarProps<T>) {
+  // 追加: slot context が持つ派生 summary を使います。
+  const { derivedSummary } = context;
 
-// 追加(反転set): set フィルターの選択状態です。null = 全選択(フィルターなし)。
-//   巨大側を作らないため「選択集合」ではなく { mode, values } で持ち、values は常に
-//   小さい側のみ(include=選択値 / exclude=非選択値)。判定は mode で行います。
-export type ColumnFilterSetSelection = {
-  mode: 'include' | 'exclude';
-  values: ReadonlySet<string>;
-};
-
-// 追加(反転set): ある候補値が「選択中」かを mode 適用で判定します(巨大側を materialize しません)。
-export const isSetValueSelected = (
-  selection: ColumnFilterSetSelection | null,
-  value: string,
-): boolean =>
-  selection === null
-    ? true
-    : selection.mode === 'include'
-      ? selection.values.has(value)
-      : !selection.values.has(value);
-
-type ColumnFilterPopoverProps = {
-  isOpen: boolean;
-  title: string;
-  // 変更(12-A): 'set' を追加します。
-  filterType: 'text' | 'number' | 'date' | 'select' | 'set' | 'custom';
-  draftValue: string;
-  currentValueText: string;
-  layout: ColumnFilterPopoverLayout | null;
-  selectOptions: ColumnFilterPopoverOption[];
-  // 追加(DS-4 #1): 候補収集の状態です。'collecting' の間は universe(総数 / 全値集合)が未確定の
-  //   ため、set / select の操作 UI を出さず「収集中」を表示します(部分集合での誤確定を防ぐ)。
-  optionsStatus: 'idle' | 'collecting' | 'ready';
-  optionsProgress: number;
-  // 変更(反転set): set 選択状態を { mode, values }(小さい側のみ)で受けます。null = 全選択。
-  setSelection: ColumnFilterSetSelection | null;
-  popoverRef: RefObject<HTMLDivElement | null>;
-  // 注記(12-A): set フィルターでは検索ボックスへこの ref を割り当て、
-  //             useFilterPopoverController の autofocus をそのまま流用します。
-  textInputRef: RefObject<HTMLInputElement | null>;
-  selectRef: RefObject<HTMLSelectElement | null>;
-  onRequestClose: () => void;
-  onDraftChange: (value: string) => void;
-  onApply: () => void;
-  onClear: () => void;
-  // 追加(12-A): set フィルターのチェックボックス 1 件トグルです(即時適用)。
-  onSetValueToggle: (value: string) => void;
-  // 追加(12-A): (Select All) の一括トグルです。検索中は「表示中の候補のみ」を
-  //             対象にするため、対象 values を popover 側から渡します(AG Grid と同挙動)。
-  // 変更(反転set): scope='all'(非検索=全候補) か 表示中候補の values(検索中=小さい側)。
-  //   非検索の全選択/全解除で 30 万件配列を作らないため 'all' を区別します。
-  onSetSelectAllChange: (
-    scope: 'all' | string[],
-    nextSelected: boolean,
-  ) => void;
-  // 追加(12-A): set フィルターの「クリア」です。popover を閉じずに全選択へ戻します
-  //             (即時適用のため、結果を見ながら操作を続けられるようにします)。
-  onSetClear: () => void;
-  // 追加(stage ②): serverSide か否か。set/select で候補が空のとき、空表示の文言を
-  //   「検索ヒット無し」と「候補未供給(serverSide では filterOptions / サーバ供給が必要)」で
-  //   出し分けるために使います(既定 false = clientSide で従来表示)。
-  isServerSide?: boolean;
-};
-
-// 追加(12-A): set フィルター候補リストの行高です(仮想化の estimateSize と一致させます)。
-const SET_FILTER_OPTION_ROW_HEIGHT = 28;
-
-// ── set フィルター本体 ──────────────────────────────────
-// 追加(12-A): set フィルターの検索 state / 仮想化は popover 全体とライフサイクルが
-//             異なる(開閉でリセットしたい・親 SpreadsheetGrid を再レンダーさせたくない)
-//             ため、独立した子 component に切り出して hooks を持たせます。
-//             検索テキストはこのローカル state に閉じるため、タイピングしても
-//             再レンダーは popover 内部のみで完結します(本体 5,000 行は無関係)。
-type SetFilterBodyProps = {
-  options: ColumnFilterPopoverOption[];
-  // 変更(反転set): { mode, values }(小さい側のみ)。null = 全選択(フィルターなし)です。
-  setSelection: ColumnFilterSetSelection | null;
-  searchInputRef: RefObject<HTMLInputElement | null>;
-  onValueToggle: (value: string) => void;
-  onSelectAllChange: (scope: 'all' | string[], nextSelected: boolean) => void;
-  onRequestClose: () => void;
-  // 追加(stage ②): 候補空時の空表示文言を出し分けるために親から受けます。
-  isServerSide: boolean;
-};
-
-function SetFilterBody({
-  options,
-  setSelection,
-  searchInputRef,
-  onValueToggle,
-  onSelectAllChange,
-  onRequestClose,
-  isServerSide,
-}: SetFilterBodyProps) {
-  const [searchText, setSearchText] = useState('');
-  // 追加(12-A): 候補 5,000 件規模での連続タイピングに備え、絞り込み計算は
-  //             低優先度レンダーへ遅延します(11-B7 のグローバルフィルタと同型)。
-  const deferredSearchText = useDeferredValue(searchText);
-
-  const visibleOptions = useMemo(() => {
-    const normalized = deferredSearchText.trim().toLowerCase();
-    if (!normalized) {
-      return options;
-    }
-    return options.filter((option) =>
-      option.label.toLowerCase().includes(normalized),
-    );
-  }, [options, deferredSearchText]);
-
-  const isSearching = deferredSearchText.trim().length > 0;
-
-  // 追加(12-A): 候補リストの行仮想化です。表示領域ぶん + overscan のみ DOM 化します。
-  const listScrollRef = useRef<HTMLDivElement | null>(null);
-  const optionVirtualizer = useVirtualizer({
-    count: visibleOptions.length,
-    getScrollElement: () => listScrollRef.current,
-    estimateSize: () => SET_FILTER_OPTION_ROW_HEIGHT,
-    overscan: 10,
-  });
-
-  // ── (Select All) の 3 状態判定(表示中候補が対象) ──
-  const visibleSelectedCount = useMemo(() => {
-    if (setSelection === null) {
-      return visibleOptions.length;
-    }
-    let count = 0;
-    for (const option of visibleOptions) {
-      if (isSetValueSelected(setSelection, option.value)) {
-        count += 1;
-      }
-    }
-    return count;
-  }, [setSelection, visibleOptions]);
-
-  const isAllVisibleSelected =
-    visibleOptions.length > 0 && visibleSelectedCount === visibleOptions.length;
-  const isSomeVisibleSelected =
-    visibleSelectedCount > 0 && !isAllVisibleSelected;
-
-  // 変更(反転set): mode から O(1) 算出します(巨大側を materialize しません)。
-  const totalSelectedCount =
-    setSelection === null
-      ? options.length
-      : setSelection.mode === 'include'
-        ? setSelection.values.size
-        : options.length - setSelection.values.size;
-
-  const handleSelectAllToggle = () => {
-    // 変更(反転set): 非検索時は scope='all' を渡し、30 万件の values 配列を作りません。
-    //   検索中のみ表示中候補(=小さい側)の values を渡します。
-    onSelectAllChange(
-      isSearching ? visibleOptions.map((option) => option.value) : 'all',
-      !isAllVisibleSelected,
-    );
-  };
+  // undefined のときだけ既定アイコン。null など falsy なら「アイコン無し」、ReactNode はそのまま差し替え。
+  const filterIconNode =
+    globalFilterIcon === undefined ? DEFAULT_FILTER_ICON : globalFilterIcon;
+  const hasFilterText = context.globalFilterText.trim().length > 0;
 
   return (
-    <>
-      <input
-        ref={searchInputRef}
-        type="text"
-        value={searchText}
-        onChange={(event) => setSearchText(event.target.value)}
-        onKeyDown={(event) => {
-          // 追加: 検索ボックス内入力を grid 側へ伝播させません。
-          event.stopPropagation();
-          if (event.key === 'Escape') {
-            event.preventDefault();
-            onRequestClose();
-          }
-        }}
-        placeholder="検索..."
-        className="ssg-filter-input"
-      />
+    <div className="ssg-bar--top">
+      <div className="ssg-bar-container">
+        {showSummary ? (
+          <div className="ssg-bar-group ssg-bar-leading">
+            <span className="ssg-bar-title">Toolbar</span>
 
-      {/* (Select All) 行: 検索中は表示中候補のみが対象です(AG Grid と同挙動) */}
-      <label className="ssg-filter-selectall">
-        <input
-          type="checkbox"
-          checked={isAllVisibleSelected}
-          ref={(element) => {
-            // 追加(12-A): 一部のみ選択中は indeterminate 表示にします。
-            if (element) {
-              element.indeterminate = isSomeVisibleSelected;
-            }
-          }}
-          onChange={handleSelectAllToggle}
-        />
-        <span className="ssg-filter-selectall-label">
-          {isSearching ? '（検索結果をすべて選択）' : '（すべて選択）'}
-        </span>
-      </label>
+            {showCounts ? (
+              <>
+                <span className="ssg-bar-chip ssg-bar-chip--emphasis">
+                  {derivedSummary.rowSummaryText}
+                </span>
 
-      {/* 候補リスト(仮想化) */}
-      <div ref={listScrollRef} className="ssg-filter-list">
-        {visibleOptions.length === 0 ? (
-          <div className="ssg-filter-empty">
-            {options.length === 0
-              ? isServerSide
-                ? '候補が未指定です（serverSide では列に filterOptions などの候補供給が必要）'
-                : '候補がありません'
-              : '一致する候補がありません'}
+                <span className="ssg-bar-chip ssg-bar-chip--emphasis">
+                  {derivedSummary.columnSummaryText}
+                </span>
+              </>
+            ) : null}
+
+            <span className="ssg-bar-chip ssg-bar-chip--emphasis">
+              {derivedSummary.filterSummaryText}
+            </span>
+
+            <span className="ssg-bar-chip ssg-bar-chip--emphasis">
+              {derivedSummary.sortSummaryText}
+            </span>
           </div>
-        ) : (
-          <div
-            className="ssg-filter-virt"
-            style={{ height: optionVirtualizer.getTotalSize() }}
-          >
-            {optionVirtualizer.getVirtualItems().map((virtualItem) => {
-              const option = visibleOptions[virtualItem.index];
-              if (!option) {
-                return null;
-              }
-              const isChecked = isSetValueSelected(setSelection, option.value);
-              return (
-                <label
-                  key={option.value}
-                  className="ssg-filter-option"
-                  style={{
-                    transform: `translateY(${virtualItem.start}px)`,
-                    height: virtualItem.size,
-                  }}
-                >
-                  <input
-                    type="checkbox"
-                    checked={isChecked}
-                    onChange={() => onValueToggle(option.value)}
-                  />
-                  <span className="ssg-filter-option-label">
-                    {option.label}
-                  </span>
-                </label>
-              );
-            })}
-          </div>
-        )}
-      </div>
+        ) : null}
 
-      <div className="ssg-filter-meta">
-        選択中: {totalSelectedCount} / {options.length} 件
-        {isSearching ? `（表示中 ${visibleOptions.length} 件）` : ''}
+        {showFilter ? (
+          // 注記(F-async UX): グローバルフィルタ適用中のローディング表示は、バーのフロー内ではなく
+          //   グリッド本体に重ねる overlay(.ssg-filter-overlay / SpreadsheetGrid が描画)へ移しました。
+          // 変更(F-filter UI): 入力枠の内側に [左アイコン][input][× クリア] を収めます。枠の border /
+          //   背景 / フォーカスリングは .ssg-bar-input-group 側、input 自身は枠なし・透明です。
+          <div className="ssg-bar-input-group">
+            {filterIconNode ? (
+              <span className="ssg-bar-input-icon" aria-hidden="true">
+                {filterIconNode}
+              </span>
+            ) : null}
+            <input
+              type="text"
+              value={context.globalFilterText}
+              onChange={(event) => context.setGlobalFilterText(event.target.value)}
+              placeholder={globalFilterPlaceholder}
+              className="ssg-bar-input"
+            />
+            {hasFilterText ? (
+              <button
+                type="button"
+                onClick={() => context.setGlobalFilterText('')}
+                className="ssg-bar-input-clear"
+                aria-label="フィルターをクリア"
+                title="クリア"
+              >
+                {CLEAR_ICON}
+              </button>
+            ) : null}
+          </div>
+        ) : null}
       </div>
-    </>
+    </div>
   );
 }
 
-// 追加: 列フィルター popover の view component です。
-export function ColumnFilterPopover({
-  isOpen,
-  title,
-  filterType,
-  draftValue,
-  currentValueText,
-  layout,
-  selectOptions,
-  optionsStatus,
-  optionsProgress,
-  setSelection,
-  popoverRef,
-  textInputRef,
-  selectRef,
-  onRequestClose,
-  onDraftChange,
-  onApply,
-  onClear,
-  onSetValueToggle,
-  onSetSelectAllChange,
-  onSetClear,
-  isServerSide = false,
-}: ColumnFilterPopoverProps) {
-  if (typeof document === 'undefined' || !isOpen || !layout) {
-    return null;
-  }
-
-  const wrapperStyle: CSSProperties = {
-    top: layout.top,
-    left: layout.left,
-    width: layout.width,
-  };
-
-  const handleKeyDownCapture = (event: KeyboardEvent<HTMLDivElement>) => {
-    // 追加: portal 内 keyboard イベントを React ツリー上の parent へ流しません。
-    event.stopPropagation();
-  };
-
-  const handlePointerDown = (event: PointerEvent<HTMLDivElement>) => {
-    // 追加: popover 内 pointer 操作を外側へ伝播させません。
-    event.stopPropagation();
-  };
-
-  const isSetFilter = filterType === 'set';
-
-  return createPortal(
-    <div
-      ref={popoverRef}
-      onPointerDown={handlePointerDown}
-      onKeyDownCapture={handleKeyDownCapture}
-      onPasteCapture={(event) => {
-        // 追加: portal 内 paste も grid 側へ流しません。
-        event.stopPropagation();
-      }}
-      className="ssg-filter-popover"
-      style={wrapperStyle}
-    >
-      <div className="ssg-filter-title">列フィルター: {title}</div>
-
-      {(isSetFilter || filterType === 'select') &&
-      optionsStatus === 'collecting' ? (
-        // 追加(DS-4 #1): 大規模列(>閾値)の候補収集中です。universe 未確定のため操作 UI は出さず、
-        //   進捗のみ表示します(収集完了 = ready で本来の set / select UI へ切り替わります)。
-        <div className="ssg-filter-collecting">
-          候補を収集中… {Math.round(optionsProgress * 100)}%
-        </div>
-      ) : isSetFilter ? (
-        // 追加(12-A): AG Grid の Set Filter 相当 UI です(チェック操作は即時適用)。
-        <SetFilterBody
-          options={selectOptions}
-          setSelection={setSelection}
-          searchInputRef={textInputRef}
-          onValueToggle={onSetValueToggle}
-          onSelectAllChange={onSetSelectAllChange}
-          onRequestClose={onRequestClose}
-          isServerSide={isServerSide}
-        />
-      ) : filterType === 'select' ? (
-        <>
-          <div className="ssg-filter-hint">フィルター種別: select</div>
-          <select
-            ref={selectRef}
-            value={draftValue}
-            onChange={(event) => onDraftChange(event.target.value)}
-            onKeyDown={(event) => {
-              // 追加: select 内操作を grid 側へ伝播させません。
-              event.stopPropagation();
-              if (event.key === 'Enter') {
-                event.preventDefault();
-                onApply();
-                return;
-              }
-              if (event.key === 'Escape') {
-                event.preventDefault();
-                onRequestClose();
-              }
-            }}
-            className="ssg-filter-select"
-          >
-            <option value="">（すべて）</option>
-            {selectOptions.map((option) => (
-              <option key={`${title}-${option.value}`} value={option.value}>
-                {option.label}
-              </option>
-            ))}
-          </select>
-          <div className="ssg-filter-meta">候補数: {selectOptions.length}</div>
-        </>
-      ) : (
-        <>
-          <div className="ssg-filter-hint">
-            フィルター種別: {filterType === 'number' ? 'number' : 'text'}
-          </div>
-          <input
-            ref={textInputRef}
-            type="text"
-            value={draftValue}
-            onChange={(event) => onDraftChange(event.target.value)}
-            onKeyDown={(event) => {
-              // 追加: filter input 内入力を grid 側へ伝播させません。
-              event.stopPropagation();
-              if (event.key === 'Enter') {
-                event.preventDefault();
-                onApply();
-                return;
-              }
-              if (event.key === 'Escape') {
-                event.preventDefault();
-                onRequestClose();
-              }
-            }}
-            placeholder={
-              filterType === 'number'
-                ? '例: >=10 / <20 / 10..20 / =5'
-                : '部分一致で絞り込み'
-            }
-            className="ssg-filter-input"
-          />
-          <div className="ssg-filter-meta ssg-filter-meta--ellipsis">
-            {filterType === 'number'
-              ? '数量系は =, >, >=, <, <=, .. が使えます'
-              : 'text は部分一致検索です'}
-          </div>
-        </>
-      )}
-
-      {/* 変更(12-A): set フィルターは即時適用のため現在値テキスト行を出しません
-          (選択件数カウンタを SetFilterBody 側で表示します)。 */}
-      {!isSetFilter && (
-        <div className="ssg-filter-meta ssg-filter-meta--ellipsis">
-          現在値: {currentValueText}
-        </div>
-      )}
-
-      <div className="ssg-filter-footer">
-        {isSetFilter ? (
-          // 変更(12-A): set フィルターは即時適用のため「適用」を持ちません。
-          //             クリアは popover を閉じず全選択へ戻し、閉じるで終了します。
-          <>
-            <button
-              type="button"
-              onPointerDown={(event) => {
-                event.preventDefault();
-                event.stopPropagation();
-                onSetClear();
-              }}
-              onKeyDown={(event) => {
-                // 追加: popover 内 button の key 操作を grid 側へ流しません。
-                event.stopPropagation();
-              }}
-              className="ssg-filter-btn-secondary"
-            >
-              クリア
-            </button>
-            <button
-              type="button"
-              onPointerDown={(event) => {
-                event.preventDefault();
-                event.stopPropagation();
-                onRequestClose();
-              }}
-              onKeyDown={(event) => {
-                event.stopPropagation();
-              }}
-              className="ssg-filter-btn-primary"
-            >
-              閉じる
-            </button>
-          </>
-        ) : (
-          <>
-            <button
-              type="button"
-              onPointerDown={(event) => {
-                event.preventDefault();
-                event.stopPropagation();
-                onClear();
-              }}
-              onKeyDown={(event) => {
-                // 追加: popover 内 button の key 操作を grid 側へ流しません。
-                event.stopPropagation();
-              }}
-              className="ssg-filter-btn-secondary"
-            >
-              クリア
-            </button>
-            <button
-              type="button"
-              onPointerDown={(event) => {
-                event.preventDefault();
-                event.stopPropagation();
-                onApply();
-              }}
-              onKeyDown={(event) => {
-                // 追加: popover 内 button の key 操作を grid 側へ流しません。
-                event.stopPropagation();
-              }}
-              className="ssg-filter-btn-primary"
-            >
-              適用
-            </button>
-          </>
-        )}
-      </div>
-    </div>,
-    document.body,
-  );
-}
-
-export default ColumnFilterPopover;
-</file>
-
-<file path="src/components/spreadsheet-grid/index.ts">
-// SpreadsheetGrid の公開エントリ(バレル)です。
-// ライブラリ利用者はこの index 経由で import します。reducer / hooks / view / logic /
-// selectors などの内部実装は公開しません。公開する型は API_REFERENCE.md と対応します。
-
-// 公開コンポーネント(named のみ。default export は廃止しました)。
-export { SpreadsheetGrid } from './SpreadsheetGrid';
-// 値フォーマッタ(UI 表示のみ)の組み込みファクタ。利用側も CellValueFormatter で自作可。
-export { numberFormatter } from './logic/valueFormatters';
-
-// 公開型です。
-export type {
-  // コンポーネント props。
-  SpreadsheetGridProps,
-  // 列定義と固定方向。
-  GridColumn,
-  GridColumnPinned,
-  // 行キー。
-  GridRowKey,
-  // select / set フィルターの候補。
-  GridSelectFilterOption,
-  // セル / ヘッダーのカスタム描画コンテキスト(renderCell / renderHeader 引数)。
-  CellRenderContext,
-  HeaderRenderContext,
-  // セル表示値の整形(UI 表示のみ)の契約。
-  CellValueFormatter,
-  CellValueFormatterParams,
-  // top / bottom バーのスロットコンテキストと、そこに載る派生 summary。
-  SpreadsheetGridSlotContext,
-  SpreadsheetGridDerivedSummary,
-  SpreadsheetGridSelectionStats,
-  // 追加(F-async): グローバルフィルタの適用状態(slotContext.globalFilterStatus の型)。
-  GlobalFilterStatus,
-  // スロットコンテキストが公開する選択 / ソート / 列フィルター値の型族です。
-  CellCoord,
-  CellRange,
-  GridSelection,
-  GridSortState,
-  GridSortEntry,
-  GridSortDirection,
-  ColumnFilterValue,
-  // フィルター状態(globalText + 列フィルター記述子)。getState/applyState の GridState から参照されます。
-  GridFilterState,
-  SetColumnFilterValue,
-  NumberColumnFilterValue,
-  ParsedNumberFilter,
-  TextColumnFilterValue,
-  DateColumnFilterValue,
-  SelectColumnFilterValue,
-  CustomColumnFilterValue,
-  // serverSide(SSRM)用の公開型族です。dataSource 指定時に serverSide モードへ切替わります。
-  ServerSideDataSource,
-  ServerSideQuery,
-  ServerSideGetRowsParams,
-  ServerSideGetRowsResult,
-  // 行モデル境界型(clientSide / serverSide 共通の行取得 seam)です。
-  RowModel,
-  // 追加(imperative API #1): ref ハンドル(SpreadsheetGridProps.ref)と関連型です。
-  SpreadsheetGridHandle,
-  ScrollAlign,
-  CsvExportScope,
-  CsvExportOptions,
-  // 追加(imperative API: getExportData): エクスポート用の整形済みデータ型族(導線)。
-  GridExportOptions,
-  GridExportCell,
-  GridExportData,
-  // 追加(state #1): 列状態のシリアライズ型(getState / applyState の入出力)。
-  GridState,
-  // 追加(state v2): 列メタ(可視 / 順序 / ピン)のシリアライズ単位(GridState.columns 要素)。
-  GridColumnState,
-} from './model/gridTypes';
-export type { NumberFormatterOptions } from './logic/valueFormatters';
+export default DefaultGridTopBar;
 </file>
 
 <file path="src/components/spreadsheet-grid/logic/filtering.ts">
@@ -16527,6 +16626,80 @@ export const filterOrderByColumns = <T,>(
   }
   return result.slice(0, count);
 };
+</file>
+
+<file path="src/components/spreadsheet-grid/index.ts">
+// SpreadsheetGrid の公開エントリ(バレル)です。
+// ライブラリ利用者はこの index 経由で import します。reducer / hooks / view / logic /
+// selectors などの内部実装は公開しません。公開する型は API_REFERENCE.md と対応します。
+
+// 公開コンポーネント(named のみ。default export は廃止しました)。
+export { SpreadsheetGrid } from './SpreadsheetGrid';
+// 値フォーマッタ(UI 表示のみ)の組み込みファクタ。利用側も CellValueFormatter で自作可。
+export { numberFormatter } from './logic/valueFormatters';
+
+// 公開型です。
+export type {
+  // コンポーネント props。
+  SpreadsheetGridProps,
+  // 列定義と固定方向。
+  GridColumn,
+  GridColumnPinned,
+  // 行キー。
+  GridRowKey,
+  // select / set フィルターの候補。
+  GridSelectFilterOption,
+  // セル / ヘッダーのカスタム描画コンテキスト(renderCell / renderHeader 引数)。
+  CellRenderContext,
+  HeaderRenderContext,
+  // セル表示値の整形(UI 表示のみ)の契約。
+  CellValueFormatter,
+  CellValueFormatterParams,
+  // top / bottom バーのスロットコンテキストと、そこに載る派生 summary。
+  SpreadsheetGridSlotContext,
+  SpreadsheetGridDerivedSummary,
+  SpreadsheetGridSelectionStats,
+  // 追加(F-async): グローバルフィルタの適用状態(slotContext.globalFilterStatus の型)。
+  GlobalFilterStatus,
+  // スロットコンテキストが公開する選択 / ソート / 列フィルター値の型族です。
+  CellCoord,
+  CellRange,
+  GridSelection,
+  GridSortState,
+  GridSortEntry,
+  GridSortDirection,
+  ColumnFilterValue,
+  // フィルター状態(globalText + 列フィルター記述子)。getState/applyState の GridState から参照されます。
+  GridFilterState,
+  SetColumnFilterValue,
+  NumberColumnFilterValue,
+  ParsedNumberFilter,
+  TextColumnFilterValue,
+  DateColumnFilterValue,
+  SelectColumnFilterValue,
+  CustomColumnFilterValue,
+  // serverSide(SSRM)用の公開型族です。dataSource 指定時に serverSide モードへ切替わります。
+  ServerSideDataSource,
+  ServerSideQuery,
+  ServerSideGetRowsParams,
+  ServerSideGetRowsResult,
+  // 行モデル境界型(clientSide / serverSide 共通の行取得 seam)です。
+  RowModel,
+  // 追加(imperative API #1): ref ハンドル(SpreadsheetGridProps.ref)と関連型です。
+  SpreadsheetGridHandle,
+  ScrollAlign,
+  CsvExportScope,
+  CsvExportOptions,
+  // 追加(imperative API: getExportData): エクスポート用の整形済みデータ型族(導線)。
+  GridExportOptions,
+  GridExportCell,
+  GridExportData,
+  // 追加(state #1): 列状態のシリアライズ型(getState / applyState の入出力)。
+  GridState,
+  // 追加(state v2): 列メタ(可視 / 順序 / ピン)のシリアライズ単位(GridState.columns 要素)。
+  GridColumnState,
+} from './model/gridTypes';
+export type { NumberFormatterOptions } from './logic/valueFormatters';
 </file>
 
 <file path="src/components/spreadsheet-grid/logic/sorting.ts">
@@ -17134,6 +17307,7 @@ function GridBodyRowInner<T>({
         return (
           <div
             key={`${String(rowKey)}-${column.key}`}
+            data-ssg-col-key={column.key}
             data-autoheight-cell={isAutoHeightCell ? '' : undefined}
             className={cellClassName}
             onPointerDown={(event) =>
@@ -18691,6 +18865,436 @@ export function ColumnMenuPopover({
 export default ColumnMenuPopover;
 </file>
 
+<file path="src/components/spreadsheet-grid/view/GridHeaderRow.tsx">
+// 変更(11-B5): GridHeaderRow を React.memo 化するため memo を追加 import します。
+// 変更(13-A): ヘッダー右クリック(contextmenu)用に MouseEvent 型を追加 import します。
+import {
+  memo,
+  type CSSProperties,
+  type MouseEvent,
+  type PointerEvent,
+  type ReactNode,
+} from 'react';
+// 追加(UI CSS移行): className 合成ヘルパー。
+import { cx } from '../logic/cx';
+// 変更(11-A): uiState 丸ごと依存を撤廃し、正規化済み SelectionSnapshot を受け取ります。
+// 変更理由: GridBodyRow と同じく、uiState のあらゆる更新で props が変わるのを防ぎ、
+//           将来ヘッダー行を memo 化する際の布石にもなります。
+import type { SelectionSnapshot } from '../model/gridSelectors';
+import type {
+  ColumnFilterValue,
+  GridColumn,
+  GridSortState,
+} from '../model/gridTypes';
+// 変更(10-C): 列座標を ColumnMeasurement(グローバル) から
+//             PaneColumnEntry(ペインローカル) へ切り替えます。
+import type { PaneColumnEntry } from '../logic/geometry';
+// 追加(12-A): set フィルター対応のフィルター有効判定を共有します。
+import { isActiveColumnFilterValue } from '../logic/filtering';
+
+// 追加(10-C): このヘッダーがどのペインを描画しているかの種別です。
+export type GridPaneKind = 'left' | 'center' | 'right';
+
+type GridHeaderRowProps<T> = {
+  // 追加(10-C): 描画対象のペイン種別です。
+  pane: GridPaneKind;
+  // 追加(10-C): true のときだけ左上コーナーセル(#)を描画します。
+  //             行ヘッダーを持つペイン(左固定があれば左、無ければ中央)だけが true です。
+  ownsRowHeader: boolean;
+  // 追加(10-C): 列の前に確保する先頭幅です。
+  //             行ヘッダーを持つペインでは rowHeaderWidth、それ以外は 0 です。
+  //             各列は leadingWidth + entry.paneLocalStart に配置されます。
+  leadingWidth: number;
+  headerHeight: number;
+  rowHeaderCellStyle: CSSProperties;
+  // 追加(UI CSS移行): ヘッダー系スロット(すべて文字列=memo 安全)。基底は @layer ssg-base。
+  headerRowClassName?: string;
+  headerCellClassName?: string;
+  rowHeaderCellClassName?: string;
+  isCornerHovered: boolean;
+  isWholeGridSelected: boolean;
+  filteredRowsLength: number;
+  visibleColumnsLength: number;
+  // 変更(10-C): 描画対象の列エントリです。
+  //             中央ペインは仮想化済みの部分集合、固定ペインは全エントリが渡されます。
+  //             座標はすべてペインローカル(entry.paneLocalStart 起点)です。
+  renderEntries: PaneColumnEntry<T>[];
+  // 注記(10-C): hoveredColumnIndex / 各種 colIndex は entry.logicalIndex 空間です。
+  hoveredColumnIndex: number | null;
+  // 変更(11-A): 列選択判定用の正規化済みスナップショットです(uiState の置き換え)。
+  selectionSnapshot: SelectionSnapshot;
+  columnFilterValues: Record<string, ColumnFilterValue>;
+  sortState: GridSortState;
+  // 追加(UI CSS移行): ヘッダーのアイコンボタンへ差し込む追加 className(classNames.iconButton)。
+  iconButtonClassName?: string;
+  onCornerPointerDown: (event: PointerEvent<HTMLDivElement>) => void;
+  onCornerPointerEnter: () => void;
+  onCornerPointerLeave: () => void;
+  onColumnHeaderPointerDown: (
+    colIndex: number,
+    event: PointerEvent<HTMLDivElement>,
+  ) => void;
+  onColumnHeaderPointerEnter: (
+    colIndex: number,
+    event: PointerEvent<HTMLDivElement>,
+  ) => void;
+  onColumnHeaderPointerLeave: (colIndex: number) => void;
+  onColumnResizePointerDown: (
+    column: GridColumn<T>,
+    event: PointerEvent<HTMLDivElement>,
+  ) => void;
+  // 追加(①): 列リサイズ可否のグリッド既定です。各列のハンドル描画判定に
+  //   column.resizable ?? enableColumnResize で使います。
+  enableColumnResize: boolean;
+  // 追加(13-A): 列メニュー(「⋮」ボタン + ヘッダー右クリック)関連の props です。
+  //             enableColumnMenu=false のときはボタンを描画せず、右クリックも
+  //             ブラウザ標準メニューのままにします(controller 側でガード済み)。
+  enableColumnMenu: boolean;
+  // 追加(13-A): メニューを開いている列の key です(「⋮」ボタンの active 表示と、
+  //             hover が外れてもボタンを出し続ける判定に使います)。
+  // 注記: open/close の 1 回ずつだけ値が変わる string | null のため、
+  //       memo(GridHeaderRow) への影響は開閉時の 3 ペイン各 1 レンダーのみです。
+  openedMenuColumnKey: string | null;
+  onColumnMenuButtonPointerDown: (
+    column: GridColumn<T>,
+    event: PointerEvent<HTMLButtonElement>,
+  ) => void;
+  onColumnHeaderContextMenu: (
+    column: GridColumn<T>,
+    event: MouseEvent<HTMLDivElement>,
+  ) => void;
+  // 追加(13-B3-2): バッジ(Excel 列名)を grip にした列 D&D 並べ替えの pointerdown です。
+  //   latest-ref 安定のため参照は不変。未指定(reorder 不可)時はバッジを通常表示にします
+  //   (ハンドラ内で stopPropagation し、ヘッダー本体の列範囲選択とは衝突させません)。
+  onColumnDragHandlePointerDown?: (
+    column: GridColumn<T>,
+    event: PointerEvent<HTMLSpanElement>,
+  ) => void;
+};
+
+// 変更(10-C): sticky header 行を「1ペイン分」描画する汎用コンポーネントにしました。
+//             ownsRowHeader が true のペインのみ左上コーナーセルを描画します。
+// 追加(UI hover): ヘッダーのアイコンボタンです。各ボタンが自分のホバー状態を持ち、ホバー時のみ
+//   背景を出します(:hover 相当をインラインスタイルで実現)。ホバー変化で再描画されるのは当該
+//   ボタンのみで、ヘッダー全体や他ボタンには波及しません。
+function HeaderActionButton({
+  isActive,
+  title,
+  className,
+  onPointerDown,
+  children,
+}: {
+  isActive: boolean;
+  title: string;
+  className?: string;
+  onPointerDown: (event: PointerEvent<HTMLButtonElement>) => void;
+  children: ReactNode;
+}) {
+  // 変更(UI CSS移行): JS ホバー state を撤去し、:hover を CSS(.ssg-icon-btn)へ委譲します。
+  //   ホバーで再描画されなくなり、active 表示はクラス修飾子(--active)で行います。利用側は
+  //   classNames.iconButton(className)で局所上書きできます。
+  return (
+    <button
+      type="button"
+      title={title}
+      onPointerDown={onPointerDown}
+      className={cx(
+        'ssg-icon-btn',
+        isActive && 'ssg-icon-btn--active',
+        className,
+      )}
+    >
+      {children}
+    </button>
+  );
+}
+
+// 変更(11-B5): React.memo 化のため実装本体を Inner に分離します(export は末尾参照)。
+// 変更理由: ライブリサイズ中、幅が変わっていない固定ペインのヘッダーまで親再レンダーに
+//           引きずられて再描画されていました。11-B4 で renderEntries はペイン単位で
+//           安定済み、11-B5 で onColumnResizePointerDown も latest-ref 化により恒久安定と
+//           なったため、shallow 比較で props 全一致が成立し memo が機能します。
+//           なお中央ペインは virtualColumns 依存で renderEntries が横スクロール/リサイズの
+//           たびに変わるため再レンダーされますが、これは表示更新に必要な仕様どおりの挙動です。
+function GridHeaderRowInner<T>({
+  pane,
+  ownsRowHeader,
+  leadingWidth,
+  headerHeight,
+  rowHeaderCellStyle,
+  headerRowClassName,
+  headerCellClassName,
+  rowHeaderCellClassName,
+  isCornerHovered,
+  isWholeGridSelected,
+  filteredRowsLength,
+  visibleColumnsLength,
+  renderEntries,
+  hoveredColumnIndex,
+  selectionSnapshot,
+  columnFilterValues,
+  sortState,
+  iconButtonClassName,
+  onCornerPointerDown,
+  onCornerPointerEnter,
+  onCornerPointerLeave,
+  onColumnHeaderPointerDown,
+  onColumnHeaderPointerEnter,
+  onColumnHeaderPointerLeave,
+  onColumnResizePointerDown,
+  enableColumnResize,
+  // 追加(13-A): 列メニュー関連 props です。
+  enableColumnMenu,
+  openedMenuColumnKey,
+  onColumnMenuButtonPointerDown,
+  onColumnHeaderContextMenu,
+  // 追加(13-B3-2): バッジ grip の pointerdown(列 D&D)。
+  onColumnDragHandlePointerDown,
+}: GridHeaderRowProps<T>) {
+  return (
+    <div
+      data-pane={pane}
+      className={cx('ssg-header-row', headerRowClassName)}
+      style={{
+        height: headerHeight,
+      }}
+    >
+      {ownsRowHeader && (
+        <div
+          onPointerDown={onCornerPointerDown}
+          onPointerEnter={onCornerPointerEnter}
+          onPointerLeave={onCornerPointerLeave}
+          className={cx(
+            'ssg-header-cell',
+            'ssg-corner-cell',
+            isWholeGridSelected && 'ssg-header-cell--selected',
+            isCornerHovered && 'ssg-header-cell--hovered',
+            rowHeaderCellClassName,
+          )}
+          style={{
+            ...rowHeaderCellStyle,
+            height: headerHeight,
+            cursor:
+              filteredRowsLength > 0 && visibleColumnsLength > 0
+                ? 'pointer'
+                : 'default',
+          }}
+        >
+          #
+        </div>
+      )}
+
+      {renderEntries.map((entry) => {
+        // 変更(10-C): 仮想化のガードは SpreadsheetGrid 側で済ませているため、
+        //             ここでは渡されたエントリをそのまま描画します。
+        if (!entry) {
+          return null;
+        }
+
+        const colIndex = entry.logicalIndex;
+        const column = entry.column;
+        const left = leadingWidth + entry.paneLocalStart;
+        const size = entry.paneLocalSize;
+
+        // 変更(12-A): set フィルター値(オブジェクト)も正しく「フィルター済み」と
+        //             判定できるよう、共通 helper へ置き換えます。
+        const isColumnFiltered = isActiveColumnFilterValue(
+          columnFilterValues[column.key],
+        );
+        // 変更(11-A): selectIsColumnSelected(uiState, ...) と等価の判定を
+        //             SelectionSnapshot のプリミティブ比較で行います。
+        const isColumnSelected =
+          selectionSnapshot.kind === 'col' &&
+          colIndex >= selectionSnapshot.startCol &&
+          colIndex <= selectionSnapshot.endCol;
+
+        // 追加(MS-1): 受動矢印はこの列の sort エントリ(配列)から方向を導出します。
+        // 変更(MS-2): 順序番号バッジ用に findIndex 化し、index も引きます。未ソート列は
+        //            sortIndex===-1 / sortEntry===null。複数ソート(length>1)のときだけ、
+        //            矢印に 1 始まりの優先順位番号を併記します(単一ソート時は番号なし)。
+        const sortIndex = sortState.findIndex(
+          (entry) => entry.columnKey === column.key,
+        );
+        const sortEntry = sortIndex === -1 ? null : sortState[sortIndex];
+
+        // 追加(13-A): この列のメニューを開いているかです(「⋮」の active 表示に使います)。
+        // 変更(13-A2): 「⋮」ボタンを hover 時表示 → 常時表示へ変更します。
+        // 変更理由: 旧実装は hoveredColumnIndex === colIndex を表示条件にしていましたが、
+        //           ヘッダーに配線している onColumnHeaderPointerEnter は
+        //           useGridPointerInteractions のドラッグ選択更新ハンドラであり、
+        //           hoveredColumnIndex を set する経路がどこにも無いため、
+        //           ボタンは「メニューが開いている列」でしか表示されませんでした
+        //           (= 右クリックでメニューを開いたときだけ「⋮」が出現する症状)。
+        //           hover 表示を復活させる案もありますが、hover のたびに memo 化済み
+        //           ヘッダー 3 ペインが再レンダーされるため、常時表示(AG Grid の
+        //           suppressMenuHide 相当)を採用します。anchor ボタンが常に DOM に
+        //           存在するため、開いている列の表示継続ガードも不要になります。
+        const isMenuOpenForColumn = openedMenuColumnKey === column.key;
+        const showColumnMenuButton = enableColumnMenu;
+
+        return (
+          <div
+            key={column.key}
+            data-ssg-col-key={column.key}
+            onPointerDown={(event) => onColumnHeaderPointerDown(colIndex, event)}
+            onPointerEnter={(event) =>
+              onColumnHeaderPointerEnter(colIndex, event)
+            }
+            onPointerLeave={() => onColumnHeaderPointerLeave(colIndex)}
+            onContextMenu={(event) => onColumnHeaderContextMenu(column, event)}
+            className={cx(
+              'ssg-header-cell',
+              (isWholeGridSelected || isColumnSelected) &&
+                'ssg-header-cell--selected',
+              hoveredColumnIndex === colIndex && 'ssg-header-cell--hovered',
+              headerCellClassName,
+            )}
+            style={{
+              left,
+              width: size,
+              minWidth: size,
+              height: headerHeight,
+            }}
+          >
+            {/* 変更(②③): ラベルを header-cell の直接子にして全幅化します。grip / 漏斗 /
+                ⋮ を常時並べていた旧構成(label-row)を廃止し、ラベル領域を最大化します。
+                title 属性で省略時のツールチップを出します(renderHeader 使用時はカスタム JSX の
+                ため付けません)。フィルター適用中はテキストがアクセント色になります。 */}
+            <div
+              className={cx(
+                'ssg-header-label',
+                isColumnFiltered && 'ssg-header-label--filtered',
+              )}
+              title={column.renderHeader ? undefined : column.title || column.key}
+            >
+              {column.renderHeader
+                ? column.renderHeader({
+                    colIndex,
+                    width: size,
+                    column,
+                    filterValue: columnFilterValues[column.key],
+                    isFiltered: isColumnFiltered,
+                  })
+                : column.title || column.key}
+            </div>
+
+            {/* 追加(②): 「状態」スロット(常時表示・非インタラクティブ)。ソート方向の受動表示と、
+                フィルター適用中マーク(小さな漏斗)を出します。操作ではないため hover の有無に
+                関わらず見えます(フィルターの操作は列メニュー ⋮ の「フィルター」へ集約=③)。 */}
+            <div className="ssg-header-status">
+              {sortEntry && (
+                <span
+                  aria-hidden="true"
+                  title={
+                    (sortEntry.direction === 'asc'
+                      ? '昇順で並び替え中'
+                      : '降順で並び替え中') +
+                    (sortState.length > 1 ? ` (優先度 ${sortIndex + 1})` : '')
+                  }
+                  className="ssg-header-sort"
+                >
+                  {sortEntry.direction === 'asc' ? '↑' : '↓'}
+                  {sortState.length > 1 && (
+                    <span className="ssg-header-sort-priority">
+                      {sortIndex + 1}
+                    </span>
+                  )}
+                </span>
+              )}
+
+              {isColumnFiltered && (
+                <span
+                  aria-hidden="true"
+                  title="フィルター適用中"
+                  className="ssg-header-filtered-mark"
+                >
+                  <svg
+                    width="11"
+                    height="11"
+                    viewBox="0 0 16 16"
+                    fill="currentColor"
+                    aria-hidden="true"
+                    focusable="false"
+                  >
+                    <path d="M2 4 L14 4 L9.2 9.2 L9.2 13 L6.8 13 L6.8 9.2 Z" />
+                  </svg>
+                </span>
+              )}
+            </div>
+
+            {/* 追加(②): hover で右端にフェードインする操作群(grip + 列メニュー ⋮)。非hover では
+                CSS で opacity:0 / absolute となり幅を取らないため、ラベルが全幅使えます。
+                タッチ端末(hover 不可)は CSS の @media で常時表示の通常フローへ戻ります。
+                grip は onColumnDragHandlePointerDown 未指定(reorder 不可)時は出しません。 */}
+            <div className="ssg-header-actions">
+              {onColumnDragHandlePointerDown && (
+                <span
+                  onPointerDown={(event) =>
+                    onColumnDragHandlePointerDown(column, event)
+                  }
+                  title="ドラッグで列を移動"
+                  aria-hidden="true"
+                  className="ssg-header-grip"
+                >
+                  <svg
+                    width="8"
+                    height="14"
+                    viewBox="0 0 8 14"
+                    fill="currentColor"
+                    aria-hidden="true"
+                    focusable="false"
+                  >
+                    <circle cx="2" cy="3" r="1" />
+                    <circle cx="6" cy="3" r="1" />
+                    <circle cx="2" cy="7" r="1" />
+                    <circle cx="6" cy="7" r="1" />
+                    <circle cx="2" cy="11" r="1" />
+                    <circle cx="6" cy="11" r="1" />
+                  </svg>
+                </span>
+              )}
+
+              {showColumnMenuButton && (
+                <HeaderActionButton
+                  title="列メニュー"
+                  isActive={isMenuOpenForColumn}
+                  className={iconButtonClassName}
+                  onPointerDown={(event) =>
+                    onColumnMenuButtonPointerDown(column, event)
+                  }
+                >
+                  ⋮
+                </HeaderActionButton>
+              )}
+            </div>
+
+            {/* 変更(①): 可否ゲート。column.resizable ?? enableColumnResize が false の列は
+                ハンドルを描画せず、ドラッグ起点を持たせません(計測ロジックは不変)。 */}
+            {(column.resizable ?? enableColumnResize) && (
+              <div
+                onPointerDown={(event) => onColumnResizePointerDown(column, event)}
+                className="ssg-header-resize"
+              />
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// 追加(11-B5): memo ラップ本体です。
+// 注記: ジェネリックコンポーネントを memo すると型引数 <T> が失われるため、
+//       `as typeof GridHeaderRowInner` でジェネリックシグネチャを復元します。
+//       比較関数は渡さず既定の shallow 比較を使います(全 props がプリミティブ or
+//       親側で useMemo / useCallback / latest-ref により参照安定化済みのため)。
+export const GridHeaderRow = memo(
+  GridHeaderRowInner,
+) as typeof GridHeaderRowInner;
+
+export default GridHeaderRow;
+</file>
+
 <file path="src/components/spreadsheet-grid/styles.css">
 /* SpreadsheetGrid のスタイル(段階移行中)。
    方針:
@@ -18990,15 +19594,16 @@ export default ColumnMenuPopover;
   }
 
   /* グローバルフィルター input + クリアボタン。変更(コンパクト化): 余白/フォントを圧縮。 */
+  /* 変更(F-filter UI): 入力枠は .ssg-bar-input-group が担い、input 自身は枠なし・透明にします
+     (左アイコン / 内側 × クリアと 1 つの枠に収めるため)。縦 padding のみ持ち、横は枠側 padding + gap。 */
   .ssg-bar-input {
-    width: 100%;
+    flex: 1 1 auto;
     min-width: 0;
     box-sizing: border-box;
-    padding: 6px 10px;
-    border: 1px solid #cbd5e1;
-    border-radius: 6px;
+    padding: 6px 0;
+    border: none;
     outline: none;
-    background-color: var(--ssg-cell-bg);
+    background-color: transparent;
     color: var(--ssg-cell-text);
     caret-color: var(--ssg-cell-text);
     font-size: 13px;
@@ -19006,12 +19611,22 @@ export default ColumnMenuPopover;
     -webkit-text-fill-color: var(--ssg-cell-text);
   }
 
+  /* 変更(F-filter UI): 枠(border / 背景 / 角丸 / フォーカスリング)をここへ移し、内側に
+     [左アイコン][input][× クリア] を横並びで収めます。 */
   .ssg-bar-input-group {
     display: flex;
     align-items: center;
     gap: 6px;
     width: 100%;
     max-width: 380px;
+    box-sizing: border-box;
+    padding: 0 8px;
+    border: 1px solid #cbd5e1;
+    border-radius: 6px;
+    background-color: var(--ssg-cell-bg);
+  }
+  .ssg-bar-input-group:focus-within {
+    border-color: var(--ssg-accent);
   }
 
   /* 追加(バー内訳): フィルター入力が単独(summary 非表示)のときは左寄せのまま少し広げます。 */
@@ -19020,17 +19635,34 @@ export default ColumnMenuPopover;
     flex: 1 1 auto;
   }
 
-  .ssg-bar-clear-btn {
+  /* 追加(F-filter UI): 入力枠 内側左の装飾アイコンです(SVG は currentColor を継承)。 */
+  .ssg-bar-input-icon {
     flex: 0 0 auto;
-    border: 1px solid #cbd5e1;
-    background-color: var(--ssg-cell-bg);
-    color: #475569;
-    border-radius: 6px;
-    padding: 6px 10px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--ssg-glyph);
+    pointer-events: none;
+  }
+
+  /* 追加(F-filter UI): 入力枠 内側右のクリア(×)ボタンです(枠なし・hover で淡い背景)。 */
+  .ssg-bar-input-clear {
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 18px;
+    padding: 0;
+    border: none;
+    border-radius: 4px;
+    background-color: transparent;
+    color: var(--ssg-glyph);
     cursor: pointer;
-    font-size: 12px;
-    line-height: 1;
-    white-space: nowrap;
+  }
+  .ssg-bar-input-clear:hover {
+    background-color: var(--ssg-row-hover-bg);
+    color: var(--ssg-glyph-hover);
   }
 
   /* ── ポップオーバー/パネル共通 ── */
@@ -20011,826 +20643,6 @@ export default ColumnMenuPopover;
 }
 </file>
 
-<file path="src/components/spreadsheet-grid/view/GridHeaderRow.tsx">
-// 変更(11-B5): GridHeaderRow を React.memo 化するため memo を追加 import します。
-// 変更(13-A): ヘッダー右クリック(contextmenu)用に MouseEvent 型を追加 import します。
-import {
-  memo,
-  type CSSProperties,
-  type MouseEvent,
-  type PointerEvent,
-  type ReactNode,
-} from 'react';
-// 追加(UI CSS移行): className 合成ヘルパー。
-import { cx } from '../logic/cx';
-// 変更(11-A): uiState 丸ごと依存を撤廃し、正規化済み SelectionSnapshot を受け取ります。
-// 変更理由: GridBodyRow と同じく、uiState のあらゆる更新で props が変わるのを防ぎ、
-//           将来ヘッダー行を memo 化する際の布石にもなります。
-import type { SelectionSnapshot } from '../model/gridSelectors';
-import type {
-  ColumnFilterValue,
-  GridColumn,
-  GridSortState,
-} from '../model/gridTypes';
-// 変更(10-C): 列座標を ColumnMeasurement(グローバル) から
-//             PaneColumnEntry(ペインローカル) へ切り替えます。
-import type { PaneColumnEntry } from '../logic/geometry';
-// 追加(12-A): set フィルター対応のフィルター有効判定を共有します。
-import { isActiveColumnFilterValue } from '../logic/filtering';
-
-// 追加(10-C): このヘッダーがどのペインを描画しているかの種別です。
-export type GridPaneKind = 'left' | 'center' | 'right';
-
-type GridHeaderRowProps<T> = {
-  // 追加(10-C): 描画対象のペイン種別です。
-  pane: GridPaneKind;
-  // 追加(10-C): true のときだけ左上コーナーセル(#)を描画します。
-  //             行ヘッダーを持つペイン(左固定があれば左、無ければ中央)だけが true です。
-  ownsRowHeader: boolean;
-  // 追加(10-C): 列の前に確保する先頭幅です。
-  //             行ヘッダーを持つペインでは rowHeaderWidth、それ以外は 0 です。
-  //             各列は leadingWidth + entry.paneLocalStart に配置されます。
-  leadingWidth: number;
-  headerHeight: number;
-  rowHeaderCellStyle: CSSProperties;
-  // 追加(UI CSS移行): ヘッダー系スロット(すべて文字列=memo 安全)。基底は @layer ssg-base。
-  headerRowClassName?: string;
-  headerCellClassName?: string;
-  rowHeaderCellClassName?: string;
-  isCornerHovered: boolean;
-  isWholeGridSelected: boolean;
-  filteredRowsLength: number;
-  visibleColumnsLength: number;
-  // 変更(10-C): 描画対象の列エントリです。
-  //             中央ペインは仮想化済みの部分集合、固定ペインは全エントリが渡されます。
-  //             座標はすべてペインローカル(entry.paneLocalStart 起点)です。
-  renderEntries: PaneColumnEntry<T>[];
-  // 注記(10-C): hoveredColumnIndex / 各種 colIndex は entry.logicalIndex 空間です。
-  hoveredColumnIndex: number | null;
-  // 変更(11-A): 列選択判定用の正規化済みスナップショットです(uiState の置き換え)。
-  selectionSnapshot: SelectionSnapshot;
-  columnFilterValues: Record<string, ColumnFilterValue>;
-  sortState: GridSortState;
-  // 追加(UI CSS移行): ヘッダーのアイコンボタンへ差し込む追加 className(classNames.iconButton)。
-  iconButtonClassName?: string;
-  onCornerPointerDown: (event: PointerEvent<HTMLDivElement>) => void;
-  onCornerPointerEnter: () => void;
-  onCornerPointerLeave: () => void;
-  onColumnHeaderPointerDown: (
-    colIndex: number,
-    event: PointerEvent<HTMLDivElement>,
-  ) => void;
-  onColumnHeaderPointerEnter: (
-    colIndex: number,
-    event: PointerEvent<HTMLDivElement>,
-  ) => void;
-  onColumnHeaderPointerLeave: (colIndex: number) => void;
-  onColumnResizePointerDown: (
-    column: GridColumn<T>,
-    event: PointerEvent<HTMLDivElement>,
-  ) => void;
-  // 追加(①): 列リサイズ可否のグリッド既定です。各列のハンドル描画判定に
-  //   column.resizable ?? enableColumnResize で使います。
-  enableColumnResize: boolean;
-  // 追加(13-A): 列メニュー(「⋮」ボタン + ヘッダー右クリック)関連の props です。
-  //             enableColumnMenu=false のときはボタンを描画せず、右クリックも
-  //             ブラウザ標準メニューのままにします(controller 側でガード済み)。
-  enableColumnMenu: boolean;
-  // 追加(13-A): メニューを開いている列の key です(「⋮」ボタンの active 表示と、
-  //             hover が外れてもボタンを出し続ける判定に使います)。
-  // 注記: open/close の 1 回ずつだけ値が変わる string | null のため、
-  //       memo(GridHeaderRow) への影響は開閉時の 3 ペイン各 1 レンダーのみです。
-  openedMenuColumnKey: string | null;
-  onColumnMenuButtonPointerDown: (
-    column: GridColumn<T>,
-    event: PointerEvent<HTMLButtonElement>,
-  ) => void;
-  onColumnHeaderContextMenu: (
-    column: GridColumn<T>,
-    event: MouseEvent<HTMLDivElement>,
-  ) => void;
-  // 追加(13-B3-2): バッジ(Excel 列名)を grip にした列 D&D 並べ替えの pointerdown です。
-  //   latest-ref 安定のため参照は不変。未指定(reorder 不可)時はバッジを通常表示にします
-  //   (ハンドラ内で stopPropagation し、ヘッダー本体の列範囲選択とは衝突させません)。
-  onColumnDragHandlePointerDown?: (
-    column: GridColumn<T>,
-    event: PointerEvent<HTMLSpanElement>,
-  ) => void;
-};
-
-// 変更(10-C): sticky header 行を「1ペイン分」描画する汎用コンポーネントにしました。
-//             ownsRowHeader が true のペインのみ左上コーナーセルを描画します。
-// 追加(UI hover): ヘッダーのアイコンボタンです。各ボタンが自分のホバー状態を持ち、ホバー時のみ
-//   背景を出します(:hover 相当をインラインスタイルで実現)。ホバー変化で再描画されるのは当該
-//   ボタンのみで、ヘッダー全体や他ボタンには波及しません。
-function HeaderActionButton({
-  isActive,
-  title,
-  className,
-  onPointerDown,
-  children,
-}: {
-  isActive: boolean;
-  title: string;
-  className?: string;
-  onPointerDown: (event: PointerEvent<HTMLButtonElement>) => void;
-  children: ReactNode;
-}) {
-  // 変更(UI CSS移行): JS ホバー state を撤去し、:hover を CSS(.ssg-icon-btn)へ委譲します。
-  //   ホバーで再描画されなくなり、active 表示はクラス修飾子(--active)で行います。利用側は
-  //   classNames.iconButton(className)で局所上書きできます。
-  return (
-    <button
-      type="button"
-      title={title}
-      onPointerDown={onPointerDown}
-      className={cx(
-        'ssg-icon-btn',
-        isActive && 'ssg-icon-btn--active',
-        className,
-      )}
-    >
-      {children}
-    </button>
-  );
-}
-
-// 変更(11-B5): React.memo 化のため実装本体を Inner に分離します(export は末尾参照)。
-// 変更理由: ライブリサイズ中、幅が変わっていない固定ペインのヘッダーまで親再レンダーに
-//           引きずられて再描画されていました。11-B4 で renderEntries はペイン単位で
-//           安定済み、11-B5 で onColumnResizePointerDown も latest-ref 化により恒久安定と
-//           なったため、shallow 比較で props 全一致が成立し memo が機能します。
-//           なお中央ペインは virtualColumns 依存で renderEntries が横スクロール/リサイズの
-//           たびに変わるため再レンダーされますが、これは表示更新に必要な仕様どおりの挙動です。
-function GridHeaderRowInner<T>({
-  pane,
-  ownsRowHeader,
-  leadingWidth,
-  headerHeight,
-  rowHeaderCellStyle,
-  headerRowClassName,
-  headerCellClassName,
-  rowHeaderCellClassName,
-  isCornerHovered,
-  isWholeGridSelected,
-  filteredRowsLength,
-  visibleColumnsLength,
-  renderEntries,
-  hoveredColumnIndex,
-  selectionSnapshot,
-  columnFilterValues,
-  sortState,
-  iconButtonClassName,
-  onCornerPointerDown,
-  onCornerPointerEnter,
-  onCornerPointerLeave,
-  onColumnHeaderPointerDown,
-  onColumnHeaderPointerEnter,
-  onColumnHeaderPointerLeave,
-  onColumnResizePointerDown,
-  enableColumnResize,
-  // 追加(13-A): 列メニュー関連 props です。
-  enableColumnMenu,
-  openedMenuColumnKey,
-  onColumnMenuButtonPointerDown,
-  onColumnHeaderContextMenu,
-  // 追加(13-B3-2): バッジ grip の pointerdown(列 D&D)。
-  onColumnDragHandlePointerDown,
-}: GridHeaderRowProps<T>) {
-  return (
-    <div
-      data-pane={pane}
-      className={cx('ssg-header-row', headerRowClassName)}
-      style={{
-        height: headerHeight,
-      }}
-    >
-      {ownsRowHeader && (
-        <div
-          onPointerDown={onCornerPointerDown}
-          onPointerEnter={onCornerPointerEnter}
-          onPointerLeave={onCornerPointerLeave}
-          className={cx(
-            'ssg-header-cell',
-            'ssg-corner-cell',
-            isWholeGridSelected && 'ssg-header-cell--selected',
-            isCornerHovered && 'ssg-header-cell--hovered',
-            rowHeaderCellClassName,
-          )}
-          style={{
-            ...rowHeaderCellStyle,
-            height: headerHeight,
-            cursor:
-              filteredRowsLength > 0 && visibleColumnsLength > 0
-                ? 'pointer'
-                : 'default',
-          }}
-        >
-          #
-        </div>
-      )}
-
-      {renderEntries.map((entry) => {
-        // 変更(10-C): 仮想化のガードは SpreadsheetGrid 側で済ませているため、
-        //             ここでは渡されたエントリをそのまま描画します。
-        if (!entry) {
-          return null;
-        }
-
-        const colIndex = entry.logicalIndex;
-        const column = entry.column;
-        const left = leadingWidth + entry.paneLocalStart;
-        const size = entry.paneLocalSize;
-
-        // 変更(12-A): set フィルター値(オブジェクト)も正しく「フィルター済み」と
-        //             判定できるよう、共通 helper へ置き換えます。
-        const isColumnFiltered = isActiveColumnFilterValue(
-          columnFilterValues[column.key],
-        );
-        // 変更(11-A): selectIsColumnSelected(uiState, ...) と等価の判定を
-        //             SelectionSnapshot のプリミティブ比較で行います。
-        const isColumnSelected =
-          selectionSnapshot.kind === 'col' &&
-          colIndex >= selectionSnapshot.startCol &&
-          colIndex <= selectionSnapshot.endCol;
-
-        // 追加(MS-1): 受動矢印はこの列の sort エントリ(配列)から方向を導出します。
-        // 変更(MS-2): 順序番号バッジ用に findIndex 化し、index も引きます。未ソート列は
-        //            sortIndex===-1 / sortEntry===null。複数ソート(length>1)のときだけ、
-        //            矢印に 1 始まりの優先順位番号を併記します(単一ソート時は番号なし)。
-        const sortIndex = sortState.findIndex(
-          (entry) => entry.columnKey === column.key,
-        );
-        const sortEntry = sortIndex === -1 ? null : sortState[sortIndex];
-
-        // 追加(13-A): この列のメニューを開いているかです(「⋮」の active 表示に使います)。
-        // 変更(13-A2): 「⋮」ボタンを hover 時表示 → 常時表示へ変更します。
-        // 変更理由: 旧実装は hoveredColumnIndex === colIndex を表示条件にしていましたが、
-        //           ヘッダーに配線している onColumnHeaderPointerEnter は
-        //           useGridPointerInteractions のドラッグ選択更新ハンドラであり、
-        //           hoveredColumnIndex を set する経路がどこにも無いため、
-        //           ボタンは「メニューが開いている列」でしか表示されませんでした
-        //           (= 右クリックでメニューを開いたときだけ「⋮」が出現する症状)。
-        //           hover 表示を復活させる案もありますが、hover のたびに memo 化済み
-        //           ヘッダー 3 ペインが再レンダーされるため、常時表示(AG Grid の
-        //           suppressMenuHide 相当)を採用します。anchor ボタンが常に DOM に
-        //           存在するため、開いている列の表示継続ガードも不要になります。
-        const isMenuOpenForColumn = openedMenuColumnKey === column.key;
-        const showColumnMenuButton = enableColumnMenu;
-
-        return (
-          <div
-            key={column.key}
-            data-ssg-col-key={column.key}
-            onPointerDown={(event) => onColumnHeaderPointerDown(colIndex, event)}
-            onPointerEnter={(event) =>
-              onColumnHeaderPointerEnter(colIndex, event)
-            }
-            onPointerLeave={() => onColumnHeaderPointerLeave(colIndex)}
-            onContextMenu={(event) => onColumnHeaderContextMenu(column, event)}
-            className={cx(
-              'ssg-header-cell',
-              (isWholeGridSelected || isColumnSelected) &&
-                'ssg-header-cell--selected',
-              hoveredColumnIndex === colIndex && 'ssg-header-cell--hovered',
-              headerCellClassName,
-            )}
-            style={{
-              left,
-              width: size,
-              minWidth: size,
-              height: headerHeight,
-            }}
-          >
-            {/* 変更(②③): ラベルを header-cell の直接子にして全幅化します。grip / 漏斗 /
-                ⋮ を常時並べていた旧構成(label-row)を廃止し、ラベル領域を最大化します。
-                title 属性で省略時のツールチップを出します(renderHeader 使用時はカスタム JSX の
-                ため付けません)。フィルター適用中はテキストがアクセント色になります。 */}
-            <div
-              className={cx(
-                'ssg-header-label',
-                isColumnFiltered && 'ssg-header-label--filtered',
-              )}
-              title={column.renderHeader ? undefined : column.title || column.key}
-            >
-              {column.renderHeader
-                ? column.renderHeader({
-                    colIndex,
-                    width: size,
-                    column,
-                    filterValue: columnFilterValues[column.key],
-                    isFiltered: isColumnFiltered,
-                  })
-                : column.title || column.key}
-            </div>
-
-            {/* 追加(②): 「状態」スロット(常時表示・非インタラクティブ)。ソート方向の受動表示と、
-                フィルター適用中マーク(小さな漏斗)を出します。操作ではないため hover の有無に
-                関わらず見えます(フィルターの操作は列メニュー ⋮ の「フィルター」へ集約=③)。 */}
-            <div className="ssg-header-status">
-              {sortEntry && (
-                <span
-                  aria-hidden="true"
-                  title={
-                    (sortEntry.direction === 'asc'
-                      ? '昇順で並び替え中'
-                      : '降順で並び替え中') +
-                    (sortState.length > 1 ? ` (優先度 ${sortIndex + 1})` : '')
-                  }
-                  className="ssg-header-sort"
-                >
-                  {sortEntry.direction === 'asc' ? '↑' : '↓'}
-                  {sortState.length > 1 && (
-                    <span className="ssg-header-sort-priority">
-                      {sortIndex + 1}
-                    </span>
-                  )}
-                </span>
-              )}
-
-              {isColumnFiltered && (
-                <span
-                  aria-hidden="true"
-                  title="フィルター適用中"
-                  className="ssg-header-filtered-mark"
-                >
-                  <svg
-                    width="11"
-                    height="11"
-                    viewBox="0 0 16 16"
-                    fill="currentColor"
-                    aria-hidden="true"
-                    focusable="false"
-                  >
-                    <path d="M2 4 L14 4 L9.2 9.2 L9.2 13 L6.8 13 L6.8 9.2 Z" />
-                  </svg>
-                </span>
-              )}
-            </div>
-
-            {/* 追加(②): hover で右端にフェードインする操作群(grip + 列メニュー ⋮)。非hover では
-                CSS で opacity:0 / absolute となり幅を取らないため、ラベルが全幅使えます。
-                タッチ端末(hover 不可)は CSS の @media で常時表示の通常フローへ戻ります。
-                grip は onColumnDragHandlePointerDown 未指定(reorder 不可)時は出しません。 */}
-            <div className="ssg-header-actions">
-              {onColumnDragHandlePointerDown && (
-                <span
-                  onPointerDown={(event) =>
-                    onColumnDragHandlePointerDown(column, event)
-                  }
-                  title="ドラッグで列を移動"
-                  aria-hidden="true"
-                  className="ssg-header-grip"
-                >
-                  <svg
-                    width="8"
-                    height="14"
-                    viewBox="0 0 8 14"
-                    fill="currentColor"
-                    aria-hidden="true"
-                    focusable="false"
-                  >
-                    <circle cx="2" cy="3" r="1" />
-                    <circle cx="6" cy="3" r="1" />
-                    <circle cx="2" cy="7" r="1" />
-                    <circle cx="6" cy="7" r="1" />
-                    <circle cx="2" cy="11" r="1" />
-                    <circle cx="6" cy="11" r="1" />
-                  </svg>
-                </span>
-              )}
-
-              {showColumnMenuButton && (
-                <HeaderActionButton
-                  title="列メニュー"
-                  isActive={isMenuOpenForColumn}
-                  className={iconButtonClassName}
-                  onPointerDown={(event) =>
-                    onColumnMenuButtonPointerDown(column, event)
-                  }
-                >
-                  ⋮
-                </HeaderActionButton>
-              )}
-            </div>
-
-            {/* 変更(①): 可否ゲート。column.resizable ?? enableColumnResize が false の列は
-                ハンドルを描画せず、ドラッグ起点を持たせません(計測ロジックは不変)。 */}
-            {(column.resizable ?? enableColumnResize) && (
-              <div
-                onPointerDown={(event) => onColumnResizePointerDown(column, event)}
-                className="ssg-header-resize"
-              />
-            )}
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
-// 追加(11-B5): memo ラップ本体です。
-// 注記: ジェネリックコンポーネントを memo すると型引数 <T> が失われるため、
-//       `as typeof GridHeaderRowInner` でジェネリックシグネチャを復元します。
-//       比較関数は渡さず既定の shallow 比較を使います(全 props がプリミティブ or
-//       親側で useMemo / useCallback / latest-ref により参照安定化済みのため)。
-export const GridHeaderRow = memo(
-  GridHeaderRowInner,
-) as typeof GridHeaderRowInner;
-
-export default GridHeaderRow;
-</file>
-
-<file path="src/components/spreadsheet-grid/API_REFERENCE.md">
-# SpreadsheetGrid 公開 API リファレンス
-
-> このファイルは `model/gridTypes.ts`(`SpreadsheetGridProps<T>` / `GridColumn<T>` 他)と
-> `SpreadsheetGrid.tsx`(既定値の分割代入)から手で起こした公開 API のスナップショットです。
-> **型を変更したら本ファイルも同期してください。** 将来 `index.ts` バレル整備時に props メタデータを
-> single source of truth 化し、dev 実行時パネル + 自動生成へ移行する想定です(現状は手動同期)。
-
-最終更新: スクロールコンテナ高さの外部制御(`height` / `maxHeight` props)追加時点。
-
-## SpreadsheetGrid props (`SpreadsheetGridProps<T>`)
-
-| Name | Type | Default | Description |
-| --- | --- | --- | --- |
-| `rows` | `T[]` | — | clientSide モードの行データ。`dataSource` を指定した場合は無視され serverSide モードになる(両者は排他)。 |
-| `columns` | `GridColumn<T>[]` | (required) | 列定義の配列。 |
-| `onRowsChange` | `(nextRows: T[]) => void` | — | 行が変化したとき呼ばれる(rows を controlled にする)。 |
-| `dataSource` | `ServerSideDataSource<T>` | — | serverSide(SSRM)モードのデータ供給口。指定すると可視窓近傍のブロックだけを `getRows` で都度取得し、`rows` 系の clientSide パイプラインをバイパスする。 |
-| `serverSideRefreshToken` | `number` | — | serverSide のソフトリフレッシュ用トークン。値を増やすと、クエリ(フィルター/ソート/グローバル)を変えずにキャッシュを破棄して現在の可視レンジをサーバから取り直す。スクロール位置は保持し、件数は到着ブロックの `totalRowCount` で追従する(clientSide では無視)。 |
-| `onColumnsChange` | `(nextColumns: GridColumn<T>[]) => void` | — | 列が変化したとき呼ばれる。列メニューの固定切替はこれが指定されている場合のみ反映。 |
-| `rowKeyGetter` | `(row: T, index: number) => GridRowKey` | index ベース | 安定した行キーを返す。 |
-| `createRow` | `() => T` | — | 行追加時に使う新規行ファクトリ。 |
-| `createOverflowColumn` | `(columnIndex: number) => GridColumn<T>` | — | 列追加時に使う列ファクトリ。 |
-| `rowHeight` | `number` | `36` | uniform 行の行高(px)。 |
-| `autoHeight` | `boolean` | `false` | auto-height 行モードを有効化。 |
-| `estimateRowHeight` | `number` | `rowHeight` | 未測定行の推定行高(px)。 |
-| `headerHeight` | `number` | `40` | ヘッダー行の高さ(px)。 |
-| `rowHeaderWidth` | `number` | `56` | 行番号列の幅(px)。 |
-| `height` | `number \| string` | `—` | スクロールコンテナの明示高さ。`'100%'` で親要素に追従（親要素が確定高さを持つ前提。祖先まで高さが確定している／flex 子なら `min-height: 0` が必要）。`number` は px。未指定時は `maxHeight` のクリップ挙動になる。 |
-| `maxHeight` | `number \| string` | `—`（既定 480px） | スクロールコンテナの高さ上限。`height`・`maxHeight` が**共に未指定のときのみ**既定の 480px が効く（従来挙動）。`height` と併用すると「明示高さ＋上限」。 |
-| `readOnly` | `boolean` | `false` | グリッド全体の編集を無効化。 |
-| `canEditCell` | `(rowIndex, colIndex, row, column) => boolean` | — | セル単位の編集可否ゲート。 |
-| `enableRangeSelection` | `boolean` | `true` | 複数セル範囲選択。 |
-| `enableGlobalFilter` | `boolean` | `true` | グローバルフィルター**機能**の有効化。`false` で機能が無効になり、既定トップバーのフィルター入力欄も出ない(summary は `showTopBarSummary` に従う。トップバー自体を消すには `showTopBar=false`)。 |
-| `enableColumnFilter` | `boolean` | `true` | 列ごとのフィルター。 |
-| `enableSorting` | `boolean` | `true` | ヘッダークリックでのソート。 |
-| `enableColumnResize` | `boolean` | `true` | 列幅の手動リサイズ可否のグリッド既定。各列 `resizable` 未指定時に継承(`column.resizable ?? enableColumnResize`)。 |
-| `enableColumnMenu` | `boolean` | `true` | 列メニュー(⋮ + ヘッダー右クリック)。 |
-| `enableRowHover` | `boolean` | `true` | 行ホバー時に行全体を薄くハイライト。 |
-| `enableColumnHeaderHover` | `boolean` | `true` | 列ヘッダーのホバー時にヘッダーセルを薄くハイライト。 |
-| `noMatchingRowsText` | `string` | `'一致する行がありません'` | フィルター結果 0 行時のオーバーレイ文言。 |
-| `noRowsText` | `string` | `'表示する行がありません'` | rows が 0 件のときの文言。 |
-| `showTopBar` | `boolean` | `true` | 上部バー(ツールバー)の表示有無。`false` で `renderTopBar` / `enableGlobalFilter` に関わらず一切描画しない(表示のマスタースイッチ。矛盾指定時は `renderTopBar` より優先)。 |
-| `showTopBarSummary` | `boolean` | `true` | 既定トップバーの summary chips(件数/フィルター/ソート)の表示有無。`renderTopBar` 未指定時のみ有効。これと `showTopBarFilter` がともに非表示なら既定トップバーは描画されない(空バーを出さない)。 |
-| `showTopBarCounts` | `boolean` | `true` | 既定トップバーの Rows / Columns 件数 chips の表示有無。`showTopBarSummary=true`(かつ `renderTopBar` 未指定)のときのみ有効。Filter / Sort chips は対象外。 |
-| `showTopBarFilter` | `boolean` | `true` | 既定トップバーのグローバルフィルター入力欄の表示有無。`renderTopBar` 未指定時のみ有効。`enableGlobalFilter=false` のときは本値に関わらず非表示。 |
-| `showBottomBar` | `boolean` | `true` | 下部バー(ステータスバー)の表示有無。`false` で `renderBottomBar` に関わらず一切描画しない(表示のマスタースイッチ。矛盾指定時は `renderBottomBar` より優先)。 |
-| `showBottomBarCounts` | `boolean` | `true` | 既定ボトムバーの Rows / Columns 件数 chips(左側)の表示有無。`renderBottomBar` 未指定時のみ有効。右側の Active / Selection / 選択統計 / Cols は対象外。 |
-| `renderTopBar` | `(ctx: SpreadsheetGridSlotContext<T>) => ReactNode` | 内蔵トップバー | 上部バーの差し替え。未指定時は内蔵トップバー(summary chips + フィルター入力。内訳は `showTopBarSummary` / `showTopBarFilter` で制御。フィルター入力は `enableGlobalFilter=true` が前提)。`showTopBar=false` 時は本指定に関わらず描画されない。 |
-| `renderBottomBar` | `(ctx: SpreadsheetGridSlotContext<T>) => ReactNode` | 内蔵ボトムバー | 下部バーの差し替え。未指定時は内蔵ステータスバー。`showBottomBar=false` 時は本指定に関わらず描画されない。 |
-| `className` | `string` | — | ルート要素の class。 |
-| `classNames` | `GridClassNames` | — | パーツ別の追加 class スロット。現状 `root` / `iconButton` / `bodyCell` / `bodyRow` が配線済み(他は順次)。基底 class は `@layer ssg-base` のため Tailwind 等の未レイヤー上書きが効く。 |
-| `getRowClassName` | `(row: T, rowIndex: number) => string \| undefined` | — | 行ごとの追加 class。行コンテナ + 各データセルに付与され、Tailwind 等での行ハイライトに使える。行ヘッダー「#」セルは現状対象外。 |
-| `onStateChange` | `(state: GridState) => void` | — | 永続スライス(手動リサイズ幅 / フィルター / ソート)が**実際に変化したとき**に最新 `GridState` を渡して呼ばれる。保存タイミングの signal(例: localStorage 自動保存)。発火規約は「状態の保存 / 復元」節を参照。 |
-
-### バーの表示制御(top / bottom)
-
-トップ / ボトムバーは次の優先順で解決される。
-
-- **`showTopBar` / `showBottomBar`(マスタースイッチ)**: `false` ならそのバーは一切描画されない(`render*` / `enable*` より優先)。
-- **`renderTopBar` / `renderBottomBar`(カスタム)**: 指定時はそのまま描画。トップバーの内訳 props(`showTopBarSummary` / `showTopBarFilter`)はカスタム側が中身を決めるため関与しない。
-- **既定バー**: `render*` 未指定時のフォールバック。
-
-既定トップバーは **summary chips(左)** と **グローバルフィルター入力(右)** の 2 パートからなり、独立に出し分けできる。
-
-| やりたいこと | 設定 |
-| --- | --- |
-| バーごと消す | `showTopBar={false}` |
-| summary だけ(フィルター入力なし) | `showTopBarFilter={false}` |
-| フィルター入力だけ(summary なし) | `showTopBarSummary={false}` |
-| トップの Rows/Columns 件数だけ消す | `showTopBarCounts={false}` |
-| ボトムの Rows/Columns 件数だけ消す | `showBottomBarCounts={false}` |
-| フィルター機能ごと無効 + summary は残す | `enableGlobalFilter={false}` |
-| 完全に自前のバー | `renderTopBar={(ctx) => …}` |
-
-`showTopBarSummary` と `showTopBarFilter`(実効は `showTopBarFilter && enableGlobalFilter`)がともに `false` の場合、既定トップバーは描画されない(空バーを出さない)。
-
-ボトムバーは Rows / Columns 件数のみ `showBottomBarCounts` で出し分けできる(右側の Active / Selection / 選択統計 / Cols は対象外)。それ以外の内訳を変えたい場合は `renderBottomBar` を使う。
-
-## GridColumn props (`GridColumn<T>`)
-
-| Name | Type | Default | Description |
-| --- | --- | --- | --- |
-| `key` | `string` | (required) | 列の一意キー。 |
-| `title` | `string` | — | ヘッダーの表示ラベル。 |
-| `width` | `number` | (required) | 列幅(px)。 |
-| `minWidth` | `number` | — | リサイズ時の下限幅。flex 配分時の下限クランプにも使用(flex 列で未指定なら内部既定 50px)。 |
-| `maxWidth` | `number` | — | 上限幅。**未指定なら上限なし**(autoSize は内容にぴったり合わせ、手動リサイズも自由に広げられます。既定の上限は設けません)。指定すると autoSize / 手動リサイズ / flex 配分の上限クランプに使われます。 |
-| `flex` | `number` | — | center 列(非 pinned)の伸縮比。余り幅(コンテナ幅 − 行ヘッダー − pinned 合計 − `width` 固定列の合計)を flex 比で配分し `minWidth`/`maxWidth` でクランプ。コンテナ追従でリアクティブに伸縮。手動リサイズで固定 px へ変化(`columns` 変化まで固定 → 以後 flex 復帰)。pinned 列では無視。詳細は下記「flex と autoSize」節。 |
-| `resizable` | `boolean` | グリッドの `enableColumnResize` を継承 | この列の手動リサイズ可否。`false` でヘッダーのリサイズハンドルを非表示。リサイズハンドルの**ダブルクリック**でその列を内容幅へ autoSize(`false` 時はハンドルが無いため不可。列メニューからの autoSize は引き続き可能)。 |
-| `suppressAutoSize` | `boolean` | `false` | `true` で autoSize の対象外(列メニュー / 境界ダブルクリック / すべての列の自動調整すべてでスキップ)。consumer 指定の `width` を維持(固定幅優先)。テキストで測れないカスタムUI列や固定で見せたい列向けの per-column opt-in。 |
-| `estimateCellWidth` | `(row, column) => number` | — | autoSize の幅見積もり。指定列は「セル内容の content 幅(px・セルの padding/border を除く)」をこの関数から得て、**全行の最大 + セル枠**で確定します(テキスト/候補/実 DOM 計測を使わず、React mount もしません)。テキスト長が実描画幅と相関しない renderCell カスタムUI列(横並びバッジ等)向けの opt-in。返す値は `renderCell` の実描画幅と一致させること。 |
-| `autoHeight` | `boolean` | — | この列が auto-height 行の高さを駆動(グリッドの `autoHeight` 有効時のみ)。**autoSize の対象外**(折り返し前提のため。下記「flex と autoSize」の制約を参照)。 |
-| `visible` | `boolean` | — | 列の表示/非表示。 |
-| `editable` | `boolean` | — | この列の編集を許可。 |
-| `readOnly` | `boolean` | — | この列を読み取り専用にする。 |
-| `pinned` | `'left' \| 'right'` | undefined = 中央スクロール | 列固定の方向。 |
-| `getValue` | `(row: T) => unknown` | `row[key]` | 値アクセサ。 |
-| `setValue` | `(row: T, value: unknown) => T` | — | 値ライター(新しい行を返す)。 |
-| `renderCell` | `(ctx: CellRenderContext<T>) => ReactNode` | プレーン `<span>` | カスタムセル描画。 |
-| `align` | `'left' \| 'center' \| 'right'` | `'left'` | セル内容の水平寄せ(UI 表示のみ・元の値は不変)。セル表示と編集 input に反映。 |
-| `valueFormatter` | `(params: CellValueFormatterParams<T>) => string` | — | セル表示値の整形(UI 表示のみ)。`renderCell` 未指定の既定セルが返り値を表示。組み込み `numberFormatter` 等を渡せる。元の値/編集/コピー/ソート/フィルターには影響しない。 |
-| `cellClassName` | `string \| ((ctx: CellStyleContext<T>) => string \| undefined)` | — | セルへ付与する追加 class(条件付きスタイル)。関数版は値 / 状態に応じて class を返せる。基底 `.ssg-body-cell` は `@layer` のため上書きが効く。 |
-| `renderHeader` | `(ctx: HeaderRenderContext<T>) => ReactNode` | — | カスタムヘッダー描画。 |
-| `filterType` | `'text' \| 'number' \| 'date' \| 'select' \| 'set' \| 'custom'` | — | フィルター UI の種別。 |
-| `filterOptions` | `GridSelectFilterOption[]` | rows から自動収集 | select / set の候補。 |
-| `filterFn` | `(row: T, filterValue: unknown) => boolean` | — | カスタムフィルター述語。 |
-| `parseClipboardValue` | `(raw: string, row: T) => unknown` | — | 貼り付け時のパーサ。 |
-| `formatClipboardValue` | `(value: unknown, row: T) => string` | — | コピー時のフォーマッタ。 |
-
-### 値フォーマッタ(UI 表示)
-
-`valueFormatter` はセルの**表示文字列だけ**を変えます(元の値・編集・コピー・ソート・フィルターは生値のまま)。組み込みファクタは `logic/valueFormatters.ts` に集約し、バレルから公開します。利用側も同じ契約(`CellValueFormatter<T>`)で自作でき、将来パターン(日付/％/通貨等)はファクタ追加 + バレル公開で拡張できます。
-
-- `numberFormatter(options?)` — 数値を 3 桁区切りで整形。既定は**元の精度を保持**(小数桁を勝手に丸めない)。`minimumFractionDigits` / `maximumFractionDigits` で固定桁、`useGrouping: false` で区切り無効、`locale` 指定可。`null` / `undefined` / `''` は `emptyText`(既定 `''`)、数値化できない値は原値の文字列をそのまま表示。
-
-使用例:
-
-```ts
-import { numberFormatter } from '@ishibashi0112/spreadsheet-grid';
-
-const columns = [
-  { key: 'amount', title: '金額', width: 140, align: 'right', valueFormatter: numberFormatter() },
-];
-```
-
-### flex と autoSize(列幅の決め方)
-
-列幅を「グリッドに決めさせる」方法は 2 つあり、**決め方が異なる別概念**です。列ごとに使い分けでき、混在も可能です。どちらを使うべきか迷ったら下表で選びます。
-
-| | flex(`column.flex`) | autoSize(列メニュー / 境界ダブルクリック) |
-| --- | --- | --- |
-| 何に合わせる | **コンテナの余り幅**(中身は見ない) | **セルの中身の長さ**(コンテナは見ない) |
-| 反応性 | コンテナのリサイズに**追従してリアクティブに伸縮** | 実行時の内容で**固定 px を一度だけ算出**(以後自動追従しない) |
-| 起動 | 列定義の `flex` を指定(= 宣言的) | 列メニュー「この列の幅を自動調整 / すべての列の幅を自動調整」、またはヘッダー境界(リサイズハンドル)の**ダブルクリック**でその列だけ(= 操作) |
-| 適用範囲 | center 列(非 pinned)のみ | 任意の列 |
-| 典型用途 | テーブルを横いっぱいに使う / 余白を特定列に吸わせる | 中身が切れないようにする |
-
-- **flex** — `flex` を持つ center 列が「利用可能幅(コンテナ幅 − 行ヘッダー − pinned 合計 − `width` 固定列の合計)」を `flex` 比で分け合い、`minWidth`/`maxWidth` でクランプされます。固定列合計が利用可能幅を超えると flex 列は最小幅(`minWidth`、未指定時は内部既定 50px)まで潰れ、超過分は横スクロールになります。pinned 列では無視されます。
-- **autoSize** — セルの中身に合わせて固定 px を一度だけ算出します(コンテナ幅は見ません)。算出時点の内容で幅が確定し、その後コンテナや内容が変わっても自動では追従しません。起動は列メニューのほか、ヘッダー境界(リサイズハンドル)の**ダブルクリック**でもその列を内容幅へ合わせられます(リサイズ可能な列のみ。AG Grid の境界ダブルクリック相当)。\
-  計測は 2 段方式です。**Phase 1** で全表示行を canvas で概算して列ごとの最長候補を絞り、**Phase 2** で候補だけを grid root 配下の隠しセルで**実 DOM 実測**します。これにより**全行を見つつ**(画面外の最長値も反映)、**`valueFormatter` の整形結果・letter-spacing・padding まで実描画どおりに反映**され、はみ出しません。`suppressAutoSize: true` の列は計測対象から外れ `width` を維持します。\
-  renderCell で独自 DOM(バッジ等)を描く列は、テキストでは幅が出ないため `estimateCellWidth` を指定します。指定列は Phase 1/2 のテキスト計測を使わず、**`estimateCellWidth(row)` が返す content 幅の全行 running-max + セル枠**で確定します(consumer 申告を信頼。mount なし)。\
-  **制約 — `autoHeight: true` の列は autoSize の対象外です**(列メニュー / 境界ダブルクリック / すべての列の自動調整すべてでスキップし、`width` を維持)。autoHeight 列は「幅を固定して長文を**折り返す**」のが本来の挙動ですが、autoSize の計測は**単一行**で行うため、autoHeight 列を測ると折り返したい長文を1行幅にし、**極端に横長になる**ためです(列幅に既定の上限は無いため、長文ぶんだけ際限なく広がります)。長文列は autoHeight(折り返し)か、`maxWidth` 付きの固定幅(切り詰め)で運用してください。
-
-flex 列を**手動リサイズ**すると、その列はドラッグした幅で**固定 px**に変わります(以後その列は flex 対象外)。固定は `columns` prop が変化する(pin 切替 / 表示切替 / 並べ替え / 親による差し替え)まで維持され、変化後は再び flex に復帰します(手動幅を恒久固定する仕様ではありません)。
-
-## 命令的 API(ref ハンドル / `SpreadsheetGridHandle<T>`)
-
-状態(列幅・可視・sort・filter 等)は controlled のまま、**prop では表現しづらい一発操作**だけを ref ハンドルで提供する。React 19 の **ref-as-prop**(`forwardRef` 不使用)で受け取る。
-
-```tsx
-import { useRef } from 'react';
-import {
-  SpreadsheetGrid,
-  type SpreadsheetGridHandle,
-} from '@ishibashi0112/spreadsheet-grid';
-
-const gridRef = useRef<SpreadsheetGridHandle<Row>>(null);
-<SpreadsheetGrid<Row> ref={gridRef} columns={cols} rows={rows} />;
-// gridRef.current?.scrollToRow(5000, { align: 'center' });
-// const csv = gridRef.current?.exportCsv({ scope: 'selection' });
-```
-
-`viewRowIndex` / `colIndex` は**ビュー座標**(フィルター/ソート適用後の表示 index。`colIndex` は固定列を含む視覚順 = 左→中央→右)。範囲外 index は内部でクランプ/無視する。
-
-### スクロール
-
-| メソッド | 説明 |
-| --- | --- |
-| `scrollToRow(viewRowIndex, { align? })` | 指定行を可視域へ。`align`(既定 `'auto'`): `'auto'`(最小スクロール) / `'start'` / `'center'` / `'end'`。 |
-| `scrollToCell(viewRowIndex, colIndex, { align? })` | 指定セルを縦横とも可視域へ。固定列(左右ピン)は常に可視のため横スクロールしない。 |
-| `scrollToTop()` / `scrollToBottom()` | 先頭 / 末尾へ。 |
-| `getVisibleRowRange()` | 現在描画中の行ウィンドウ `{ startIndex, endIndex }`(end 排他)。空は `null`。 |
-
-### 選択 / アクティブセル
-
-| メソッド | 説明 |
-| --- | --- |
-| `getActiveCell()` | 現在のアクティブセル `{ row, col }`(なければ `null`)。 |
-| `setActiveCell(cell \| null, { scrollIntoView? })` | アクティブセル設定(`null` で解除)。`scrollIntoView` で可視化も行う。 |
-| `getSelection()` | 現在の選択状態(`GridSelection`)。 |
-| `selectCell(viewRowIndex, colIndex, { scrollIntoView? })` | 単一セル選択(クリック相当)。 |
-| `selectRange(range, { scrollIntoView? })` | セル範囲選択(ドラッグ相当)。アンカーは `range.start`。 |
-| `clearSelection()` | 選択解除。 |
-| `getSelectedRows()` | 選択に交差する行(distinct)を返す。serverSide はロード済み行のみ。 |
-
-### CSV エクスポート
-
-| メソッド | 説明 |
-| --- | --- |
-| `exportCsv(options?)` | CSV 文字列を返す(純粋・副作用なし)。 |
-| `downloadCsv(filename?, options?)` | `exportCsv` の結果を `.csv` としてダウンロード(`filename` 既定 `'export.csv'`、`bom` 既定 `true`)。 |
-
-`CsvExportOptions`: `scope`(`'all'`(既定) / `'selection'` / `'visible'`)、`includeHeaders`(既定 `true`)、`delimiter`(既定 `','`。`'\t'` で TSV)、`bom`(`exportCsv` は既定 `false` / `downloadCsv` は既定 `true` = Excel 互換)。値整形はコピー(クリップボード)と同じ規則(`formatClipboardValue` があればそれ、無ければ `String(value ?? '')`)。RFC 4180 のクォート、行区切りは CRLF。serverSide の `scope:'all'` は未ロード行をスキップするため、serverSide では `'visible'` か別途サーバ側エクスポートを推奨。
-
-### Excel / スプレッドシート エクスポート(getExportData)
-
-| メソッド | 説明 |
-| --- | --- |
-| `getExportData(options?)` | 列メタ + 2 次元セルの、シリアライズ非依存な整形済みデータを返す(純粋・副作用なし)。 |
-
-`GridExportOptions`: `scope`(`'all'`(既定) / `'selection'` / `'visible'`)。`exportCsv` と同じ scope 規則(フィルター/ソート/可視列/固定順/選択を反映)。
-
-戻り値 `GridExportData`:
-
-```ts
-type GridExportData = {
-  columns: { key: string; title: string }[];   // 視覚順(selection では選択列のみ)
-  rows: { value: unknown; text: string }[][];   // scope の行レンジ(SSRM 未ロード行はスキップ)
-};
-```
-
-各セルは生値 `value`(`getCellValue`)と文字列 `text`(CSV と同じ規則 = `formatClipboardValue ?? String(value ?? '')`)の双方を持つ。`value` があることで型付きセル(数値/日付のまま)+ Excel 側の数値書式へ流せる。`columns.key` はオブジェクト系ライブラリ向け、`title` はヘッダー表示向け。
-
-**方針**: 本ライブラリは xlsx ライブラリを**同梱しない**(バンドル肥大・ライブラリ選定の押し付けを避ける)。グリッドは「現在の表」を整形済みデータで渡す**導線**に徹し、`.xlsx` / `.ods` 等の生成は consumer が任意のライブラリで行う。**マルチシートは consumer 側で本メソッドを scope 別 / グリッド別に呼び出して組み立てる**(グリッドは「1 表」を返すプリミティブ)。
-
-#### レシピ: hucre(zero-dep・~14KB gzip・ESM/edge)
-
-```ts
-import { writeXlsx } from 'hucre/xlsx';
-
-const { columns, rows } = gridRef.current!.getExportData({ scope: 'all' });
-const buffer = await writeXlsx({
-  sheets: [
-    {
-      name: 'Sheet1',
-      columns: columns.map((c) => ({ header: c.title, key: c.key })),
-      // 生値 value を型付きセルとして書く(数値/日付はそのまま)。
-      data: rows.map((r) =>
-        Object.fromEntries(r.map((cell, i) => [columns[i].key, cell.value])),
-      ),
-    },
-  ],
-});
-// buffer(Uint8Array)を Blob 化してダウンロード。
-```
-
-#### レシピ: ExcelJS
-
-```ts
-import ExcelJS from 'exceljs';
-
-const { columns, rows } = gridRef.current!.getExportData({ scope: 'all' });
-const wb = new ExcelJS.Workbook();
-const ws = wb.addWorksheet('Sheet1');
-ws.addRow(columns.map((c) => c.title)); // ヘッダー
-for (const r of rows) ws.addRow(r.map((cell) => cell.value)); // 型付きセル
-const buffer = await wb.xlsx.writeBuffer();
-```
-
-#### レシピ: マルチシート
-
-scope 違い(または複数グリッド)を複数シートに:
-
-```ts
-import { writeXlsx } from 'hucre/xlsx';
-import type { GridExportData } from '@ishibashi0112/spreadsheet-grid';
-
-const toSheet = (name: string, d: GridExportData) => ({
-  name,
-  columns: d.columns.map((c) => ({ header: c.title, key: c.key })),
-  data: d.rows.map((r) =>
-    Object.fromEntries(r.map((cell, i) => [d.columns[i].key, cell.value])),
-  ),
-});
-
-const buffer = await writeXlsx({
-  sheets: [
-    toSheet('All', gridRef.current!.getExportData({ scope: 'all' })),
-    toSheet('Selection', gridRef.current!.getExportData({ scope: 'selection' })),
-  ],
-});
-```
-
-1 グリッドをカテゴリ列で分割して N シートにする場合は、`getExportData({ scope: 'all' })` の戻りを「分割キー列の `value`」で group して各 group を `toSheet` 化する(列 index は `columns.findIndex((c) => c.key === '...')` で解決)。
-
-### 状態の保存 / 復元
-
-| メソッド | 説明 |
-| --- | --- |
-| `getState()` | 永続化対象(手動リサイズ幅 / フィルター / ソート)のスナップショット `GridState` を返す(純粋・副作用なし)。新規オブジェクトなのでそのまま `JSON.stringify` して保存できる。 |
-| `applyState(state)` | `getState()` の値(または互換な部分形)を適用する。外部入力は内部で防御的に正規化され、幅 reset / フィルター一括 / ソート set の 3 dispatch(1 イベント = 1 再レンダー)で反映。clientSide / serverSide 双方に効く(SSRM は `filters`/`sort` 変化がクエリへ載り再取得)。 |
-
-`GridState`: `{ version, columnWidths, filters, sort }`。`version` はマイグレーション用(現行 `1`)。対象は reducer 内の永続スライスのみで、列の可視/順序/ピン/flex は `columns` prop 側(consumer 所有)のため**含めない**。`activeCell` / `selection` などの一時 UI も含めない。`columnWidths` は手動リサイズした列のみを含む(flex 列はエントリを持たない規約)。`custom` フィルターの `value`(`unknown`)は深いコピーをしないため、シリアライズ可能性は consumer 責務。`applyState` は壊れた/部分的な入力にも耐える(非数値の幅・`kind` 無しの列フィルター・不正な `direction` は捨てる)が、列フィルター値の `kind` 中身までは検証しないため `getState` 出力の往復を前提とする。
-
-```ts
-// 保存(任意の永続先へ)。
-const state = gridRef.current?.getState();
-localStorage.setItem('grid-state', JSON.stringify(state));
-
-// 復元。
-const saved = localStorage.getItem('grid-state');
-if (saved) gridRef.current?.applyState(JSON.parse(saved));
-```
-
-#### 変更通知 `onStateChange`
-
-`onStateChange?: (state: GridState) => void`(prop)は、永続スライスが**実際に変化したとき**だけ最新 `GridState` を渡して呼ばれる。保存タイミングの signal として使える(`getState()` を別途叩く必要がない)。発火規約:
-
-- **ドラッグ中は保留**: 列リサイズ / 範囲選択のドラッグ中は確定前のため発火しない。確定(ドラッグ終了)後に 1 回だけ評価する。これにより列リサイズの毎フレーム更新では発火せず、**確定幅で 1 回だけ**通知される。
-- **初回マウントでは発火しない**: 初期状態は通知対象外(復元は `applyState` 側の責務)。
-- **同値では発火しない**: 前回通知と構造等価(永続スライスが不変)なら発火しない。`activeCell` / `selection` などの一時 UI 変化では発火しない。
-- **`applyState` も「状態変化」として発火する**: 復元直後に同値を 1 回保存し直す可能性がある(冪等なので実害はない。避けたい場合は consumer 側で直前値と比較してスキップ)。
-- インライン関数を毎レンダー渡してよい(内部で latest-ref 経由で読むため、関数の参照変化では再評価しない)。
-
-```ts
-// 自動保存(変化時)+ マウント時復元。
-const gridRef = useRef<SpreadsheetGridHandle<Row>>(null);
-
-useEffect(() => {
-  const saved = localStorage.getItem('grid-state');
-  if (saved) gridRef.current?.applyState(JSON.parse(saved));
-}, []);
-
-<SpreadsheetGrid
-  ref={gridRef}
-  columns={columns}
-  rows={rows}
-  onStateChange={(state) =>
-    localStorage.setItem('grid-state', JSON.stringify(state))
-  }
-/>
-```
-
-## serverSide モード(SSRM / DS-4 ②)
-
-`dataSource` を渡すと serverSide モードになり、総行数ぶんの縦スクロール空間を保ったまま、可視窓に近いブロックだけを `getRows` で取得する(取得範囲を定数で縛りメモリを有界化)。未ロード行はスケルトン行として描画され、到着後に実データへ差し替わる。`rows`(clientSide)と `dataSource`(serverSide)は排他。
-
-### query 配線(stage ②)
-
-clientSide の操作状態(グローバルフィルター・列フィルター・ソート)を `ServerSideQuery` に組み立て、`getRows` の `params.query` として送出する(フィルター/ソートの実行はサーバへ委ねる)。
-
-- **`ServerSideQuery`**: `{ globalText?: string; columnFilters?: Record<string, ColumnFilterValue>; sort?: GridSortState }`。全フィールドが空のときは `{}` を渡す。
-- **列フィルターの wire format**: `ColumnFilterValue` は `kind` を持つ discriminated union で、**そのまま**送出される(サーバはこの記述子を解釈して WHERE を組む)。`kind` 別の shape:
-  - `{ kind: 'set'; mode?: 'include' | 'exclude'; values: string[] }` — `values` は常に小さい側のみ保持する(全候補が多いとき `mode: 'exclude'` で非選択側を送る)。サーバは `mode` に応じて IN / NOT IN を組む。
-  - `{ kind: 'number'; raw: string; parsed }` — `parsed` が `range` / `comparison` / `null`(=`raw` で部分一致)。
-  - `{ kind: 'text'; value }` / `{ kind: 'date'; value }` / `{ kind: 'select'; value }`
-  - `{ kind: 'custom'; value }` — `column.filterFn` 利用列の自由形値(サーバ解釈は利用側責務)。
-  - アクティブなフィルターのみ送出される。キーは安定 queryKey のため昇順整列される。
-- **debounce**: query(filter/sort)の変更は約 300ms 静止後に一度だけ送出する(キーストロークごとの再フェッチを合体)。入力欄の表示自体は即時反映される。
-- **scroll-reset**: query が変わると結果セットが総入れ替えされるため、スクロールは先頭に戻る。
-- **enable\* フラグ**: serverSide でも `enableSorting` / `enableColumnFilter` / `enableGlobalFilter`(いずれも既定 true)が有効。サーバ非対応の操作を塞ぎたい場合に false にする。
-
-### set / select フィルターの候補(SSRM)
-
-set / select の候補集合はクライアントが供給する必要がある。**clientSide** は `rows` 全件から自動収集できるが、**serverSide** はクライアントが全件を持たないため自動収集できず候補が空になる。
-
-- **低カーディナリティ列**(状態・区分など): 列定義に `filterOptions` を静的指定する(serverSide でも set として機能する)。
-- **高カーディナリティ列**(品番・ID など): そもそも set 不適。`filterType: 'text'`(部分一致)や `number` 範囲を使う。
-- `filterOptions` 未指定の set/select 列を serverSide で開くと、候補リストに「候補が未指定」である旨が表示される(バグではなく設定不足)。サーバから候補を非同期供給する仕組みは将来の拡張(別 stage)。
-
-### dataSource とパラメータ
-
-- **`initialRowCount`**: 初回 fetch 前から正しい総高さ/スクロールバーを出したい場合に渡す(未指定時は最初の `getRows` 結果が返るまで件数 0)。**mount 時に一度だけ読まれる**(下記 remount 契約を参照)。
-- **`blockSize`(既定 100)/ `maxCachedBlocks`(既定 64)**: 1 ブロックの行数とクライアント側 LRU 上限。超過分は画面外の古いブロックから退避する。
-- **`getRows(params)` 契約**: `params` は `{ startIndex, endIndex, query, signal }`。渡された `[startIndex, endIndex)`(view 空間・end 排他)を尊重し全件を返さないこと。`query` 適用後の**フィルター後総件数**を `result.totalRowCount` で返すこと(縦スクロール空間がこれに追従する)。`signal` が abort されたら速やかに reject すること。
-- **`result`**: `{ rows: T[]; totalRowCount: number }`。`rows` は要求レンジ内の存在ぶん(末端では要求幅より短くてよい)。
-
-### サーバ最新の取り直し(`serverSideRefreshToken`)
-
-サーバ側のデータが外部で更新された場合など、**クエリは変えずにサーバの最新を取り直したい**ときは `serverSideRefreshToken`(`number`)を増やす。controlled な設計に合わせた軽量な signal。serverSide の取り直しは命令的ハンドル(`SpreadsheetGridHandle`)ではなくこの token で行う(本バッチではハンドルに serverSide refresh を含めていない)。
-
-- **`queryKey` 変化との違い**: フィルター/ソート/グローバルフィルターの変更は結果セットの総入れ替えなので**先頭へスクロールリセット**してキャッシュを全破棄し block 0 から取り直す。一方 `serverSideRefreshToken` は**スクロール位置を保持**したままキャッシュを破棄し、**現在の可視レンジ**を即時(debounce なし)取り直す。
-- **件数**: リフレッシュ時に件数はリセットせず、到着ブロックの `totalRowCount` で更新する。外部更新で件数が増減していれば縦スクロール空間が追従する。
-- **挙動メモ**: 取り直し中は対象行が一瞬スケルトン表示になる(purge → 再取得)。`refreshToken` は単調増加で運用する(値が変わったときだけ取り直す)。初回 mount では発火しない。
-- **用途**: 外部での編集/追加削除(mutation)後の反映トリガーとして使う想定。mutation 自体のサーバ書き戻し契約は別途必要(本グリッドの `onRowsChange` は clientSide 前提)。
-
-### clientSide ↔ serverSide の切替(remount 契約)
-
-`initialRowCount` と内部の行数 state は mount 時に確定する。そのため **実行時にモードを切り替える場合は `key` を変えてグリッドを再マウントすること**(clientSide で mount 後に `dataSource` を後付けしても件数が初期化されない)。serverSide で直接 mount する通常利用ではこの限りではない。
-
-## 補助型(props で参照される shape)
-
-- `GridRowKey = string | number`
-- `GridColumnPinned = 'left' | 'right'`
-- `GridSelectFilterOption = { label: string; value: string }`
-- `CellRenderContext<T> = { row, rowIndex, colIndex, value, column, isActive, isSelected, isEditing, readOnly, setValue }`
-- `HeaderRenderContext<T> = { colIndex, width, column, filterValue?, isFiltered? }`
-- `SpreadsheetGridSlotContext<T> = { rows, filteredRows, columns, visibleColumns, globalFilterText, columnFilterValues, sortState, setGlobalFilterText, activeCell, selection, derivedSummary, globalFilterStatus, globalFilterProgress }`
-  - `derivedSummary` は `SpreadsheetGridDerivedSummary`(行/列/フィルター/ソートの summary 文字列・選択統計などを内包)。helper を import せずトップ/ボトムバーで使える。
-  - `globalFilterStatus: GlobalFilterStatus`(`'idle' | 'filtering' | 'ready'`)/ `globalFilterProgress: number`(0..1)。グローバルテキストフィルタは行数が大きい(しきい値 50,000 行・条件は `rows.length > 50000`)とき、入力を主スレッドを塞がず時間分割で適用する。適用中は `status='filtering'`・`progress` が進捗(0..1)になる。空/無効は `'idle'`、確定は `'ready'`(progress=1)。50,000 行以下は同期適用のため即 `'ready'`(`'filtering'` を経由しない)。**ローディング表示はグリッドが本体に重ねる組み込み overlay(autosize の計測中 overlay と同じ作法)で行うため、トップバーやカスタム UI 側で扱う必要は通常ない。** この 2 値は、入力の無効化や独自インジケータなどカスタム UI を出したい場合の参照用に公開している。serverSide では基本 `'idle'` / `'ready'`(取得中表示は行スケルトンが担当)。
-
-## ライブラリ化の宿題(現状把握)
-
-- 〔解消〕**no-op props**: `enableClipboard` / `enableColumnResize` を型から削除(常時 ON 固定の挙動は不変)。将来「無効化」が必要になれば配線つきで非破壊追加する。
-- 〔追加済み〕**imperative API(ref ハンドル)**: `SpreadsheetGridProps.ref` で `SpreadsheetGridHandle<T>` を受け取り、スクロール / 選択操作 / CSV / エクスポートデータ(`getExportData`)/ 状態の保存・復元を命令的に呼べる(React 19 ref-as-prop、`forwardRef` 不使用)。詳細は「命令的 API」節。列状態のシリアライズ(`getState` / `applyState`)・変更通知 `onStateChange` prop は追加済み(対象は reducer 内の永続スライス = 手動リサイズ幅 / フィルター / ソート)。列の可視/順序/ピン/flex の状態化は `columns` prop 側で consumer 所有のため未対応(将来 columns 抽出/適用を入れるなら別途合意)。
-- 〔解消〕**公開バレル(`index.ts`)**: 入口を `index.ts` に集約し、`SpreadsheetGrid`(named)と公開型群(serverSide 型・`RowModel` 含む)を再エクスポート。`default export` は廃止。
-- **テーマ/スタイリング API**: 公開されるのは `className`(ルート1個)のみ。パーツ単位のクラスや CSS トークンは未提供。
-</file>
-
 <file path="src/App.tsx">
 import { useEffect, useRef, useState, type CSSProperties } from 'react';
 import {
@@ -21772,6 +21584,398 @@ function App() {
 export default App;
 </file>
 
+<file path="src/components/spreadsheet-grid/API_REFERENCE.md">
+# SpreadsheetGrid 公開 API リファレンス
+
+> このファイルは `model/gridTypes.ts`(`SpreadsheetGridProps<T>` / `GridColumn<T>` 他)と
+> `SpreadsheetGrid.tsx`(既定値の分割代入)から手で起こした公開 API のスナップショットです。
+> **型を変更したら本ファイルも同期してください。** 将来 `index.ts` バレル整備時に props メタデータを
+> single source of truth 化し、dev 実行時パネル + 自動生成へ移行する想定です(現状は手動同期)。
+
+最終更新: スクロールコンテナ高さの外部制御(`height` / `maxHeight` props)追加時点。
+
+## SpreadsheetGrid props (`SpreadsheetGridProps<T>`)
+
+| Name | Type | Default | Description |
+| --- | --- | --- | --- |
+| `rows` | `T[]` | — | clientSide モードの行データ。`dataSource` を指定した場合は無視され serverSide モードになる(両者は排他)。 |
+| `columns` | `GridColumn<T>[]` | (required) | 列定義の配列。 |
+| `onRowsChange` | `(nextRows: T[]) => void` | — | 行が変化したとき呼ばれる(rows を controlled にする)。 |
+| `dataSource` | `ServerSideDataSource<T>` | — | serverSide(SSRM)モードのデータ供給口。指定すると可視窓近傍のブロックだけを `getRows` で都度取得し、`rows` 系の clientSide パイプラインをバイパスする。 |
+| `serverSideRefreshToken` | `number` | — | serverSide のソフトリフレッシュ用トークン。値を増やすと、クエリ(フィルター/ソート/グローバル)を変えずにキャッシュを破棄して現在の可視レンジをサーバから取り直す。スクロール位置は保持し、件数は到着ブロックの `totalRowCount` で追従する(clientSide では無視)。 |
+| `onColumnsChange` | `(nextColumns: GridColumn<T>[]) => void` | — | 列が変化したとき呼ばれる。列メニューの固定切替はこれが指定されている場合のみ反映。 |
+| `rowKeyGetter` | `(row: T, index: number) => GridRowKey` | index ベース | 安定した行キーを返す。 |
+| `createRow` | `() => T` | — | 行追加時に使う新規行ファクトリ。 |
+| `createOverflowColumn` | `(columnIndex: number) => GridColumn<T>` | — | 列追加時に使う列ファクトリ。 |
+| `rowHeight` | `number` | `36` | uniform 行の行高(px)。 |
+| `autoHeight` | `boolean` | `false` | auto-height 行モードを有効化。 |
+| `estimateRowHeight` | `number` | `rowHeight` | 未測定行の推定行高(px)。 |
+| `headerHeight` | `number` | `40` | ヘッダー行の高さ(px)。 |
+| `rowHeaderWidth` | `number` | `56` | 行番号列の幅(px)。 |
+| `height` | `number \| string` | `—` | スクロールコンテナの明示高さ。`'100%'` で親要素に追従（親要素が確定高さを持つ前提。祖先まで高さが確定している／flex 子なら `min-height: 0` が必要）。`number` は px。未指定時は `maxHeight` のクリップ挙動になる。 |
+| `maxHeight` | `number \| string` | `—`（既定 480px） | スクロールコンテナの高さ上限。`height`・`maxHeight` が**共に未指定のときのみ**既定の 480px が効く（従来挙動）。`height` と併用すると「明示高さ＋上限」。 |
+| `readOnly` | `boolean` | `false` | グリッド全体の編集を無効化。 |
+| `canEditCell` | `(rowIndex, colIndex, row, column) => boolean` | — | セル単位の編集可否ゲート。 |
+| `enableRangeSelection` | `boolean` | `true` | 複数セル範囲選択。 |
+| `enableGlobalFilter` | `boolean` | `true` | グローバルフィルター**機能**の有効化。`false` で機能が無効になり、既定トップバーのフィルター入力欄も出ない(summary は `showTopBarSummary` に従う。トップバー自体を消すには `showTopBar=false`)。 |
+| `enableColumnFilter` | `boolean` | `true` | 列ごとのフィルター。 |
+| `enableSorting` | `boolean` | `true` | ヘッダークリックでのソート。 |
+| `enableColumnResize` | `boolean` | `true` | 列幅の手動リサイズ可否のグリッド既定。各列 `resizable` 未指定時に継承(`column.resizable ?? enableColumnResize`)。 |
+| `enableColumnMenu` | `boolean` | `true` | 列メニュー(⋮ + ヘッダー右クリック)。 |
+| `enableRowHover` | `boolean` | `true` | 行ホバー時に行全体を薄くハイライト。 |
+| `enableColumnHeaderHover` | `boolean` | `true` | 列ヘッダーのホバー時にヘッダーセルを薄くハイライト。 |
+| `noMatchingRowsText` | `string` | `'一致する行がありません'` | フィルター結果 0 行時のオーバーレイ文言。 |
+| `noRowsText` | `string` | `'表示する行がありません'` | rows が 0 件のときの文言。 |
+| `showTopBar` | `boolean` | `true` | 上部バー(ツールバー)の表示有無。`false` で `renderTopBar` / `enableGlobalFilter` に関わらず一切描画しない(表示のマスタースイッチ。矛盾指定時は `renderTopBar` より優先)。 |
+| `showTopBarSummary` | `boolean` | `true` | 既定トップバーの summary chips(件数/フィルター/ソート)の表示有無。`renderTopBar` 未指定時のみ有効。これと `showTopBarFilter` がともに非表示なら既定トップバーは描画されない(空バーを出さない)。 |
+| `showTopBarCounts` | `boolean` | `true` | 既定トップバーの Rows / Columns 件数 chips の表示有無。`showTopBarSummary=true`(かつ `renderTopBar` 未指定)のときのみ有効。Filter / Sort chips は対象外。 |
+| `showTopBarFilter` | `boolean` | `true` | 既定トップバーのグローバルフィルター入力欄の表示有無。`renderTopBar` 未指定時のみ有効。`enableGlobalFilter=false` のときは本値に関わらず非表示。 |
+| `globalFilterPlaceholder` | `string` | `'グローバルフィルター'` | 既定トップバーのグローバルフィルター入力の placeholder。`renderTopBar` 未指定時のみ有効。 |
+| `globalFilterIcon` | `ReactNode` | 組み込み検索アイコン | 既定トップバーのグローバルフィルター入力の左アイコン。`renderTopBar` 未指定時のみ有効。`undefined`=組み込みの検索(虫眼鏡)アイコン / `null`(など falsy)=アイコン無し / 任意 `ReactNode`=差し替え。クリアボタンは入力枠の内側右に `×` で表示され、入力が空のときは出ない。 |
+| `showBottomBar` | `boolean` | `true` | 下部バー(ステータスバー)の表示有無。`false` で `renderBottomBar` に関わらず一切描画しない(表示のマスタースイッチ。矛盾指定時は `renderBottomBar` より優先)。 |
+| `showBottomBarCounts` | `boolean` | `true` | 既定ボトムバーの Rows / Columns 件数 chips(左側)の表示有無。`renderBottomBar` 未指定時のみ有効。右側の Active / Selection / 選択統計 / Cols は対象外。 |
+| `renderTopBar` | `(ctx: SpreadsheetGridSlotContext<T>) => ReactNode` | 内蔵トップバー | 上部バーの差し替え。未指定時は内蔵トップバー(summary chips + フィルター入力。内訳は `showTopBarSummary` / `showTopBarFilter` で制御。フィルター入力は `enableGlobalFilter=true` が前提)。`showTopBar=false` 時は本指定に関わらず描画されない。 |
+| `renderBottomBar` | `(ctx: SpreadsheetGridSlotContext<T>) => ReactNode` | 内蔵ボトムバー | 下部バーの差し替え。未指定時は内蔵ステータスバー。`showBottomBar=false` 時は本指定に関わらず描画されない。 |
+| `className` | `string` | — | ルート要素の class。 |
+| `classNames` | `GridClassNames` | — | パーツ別の追加 class スロット。現状 `root` / `iconButton` / `bodyCell` / `bodyRow` が配線済み(他は順次)。基底 class は `@layer ssg-base` のため Tailwind 等の未レイヤー上書きが効く。 |
+| `getRowClassName` | `(row: T, rowIndex: number) => string \| undefined` | — | 行ごとの追加 class。行コンテナ + 各データセルに付与され、Tailwind 等での行ハイライトに使える。行ヘッダー「#」セルは現状対象外。 |
+| `onStateChange` | `(state: GridState) => void` | — | 永続スライス(手動リサイズ幅 / フィルター / ソート)が**実際に変化したとき**に最新 `GridState` を渡して呼ばれる。保存タイミングの signal(例: localStorage 自動保存)。発火規約は「状態の保存 / 復元」節を参照。 |
+
+### バーの表示制御(top / bottom)
+
+トップ / ボトムバーは次の優先順で解決される。
+
+- **`showTopBar` / `showBottomBar`(マスタースイッチ)**: `false` ならそのバーは一切描画されない(`render*` / `enable*` より優先)。
+- **`renderTopBar` / `renderBottomBar`(カスタム)**: 指定時はそのまま描画。トップバーの内訳 props(`showTopBarSummary` / `showTopBarFilter`)はカスタム側が中身を決めるため関与しない。
+- **既定バー**: `render*` 未指定時のフォールバック。
+
+既定トップバーは **summary chips(左)** と **グローバルフィルター入力(右)** の 2 パートからなり、独立に出し分けできる。
+
+| やりたいこと | 設定 |
+| --- | --- |
+| バーごと消す | `showTopBar={false}` |
+| summary だけ(フィルター入力なし) | `showTopBarFilter={false}` |
+| フィルター入力だけ(summary なし) | `showTopBarSummary={false}` |
+| トップの Rows/Columns 件数だけ消す | `showTopBarCounts={false}` |
+| ボトムの Rows/Columns 件数だけ消す | `showBottomBarCounts={false}` |
+| フィルター機能ごと無効 + summary は残す | `enableGlobalFilter={false}` |
+| 完全に自前のバー | `renderTopBar={(ctx) => …}` |
+
+`showTopBarSummary` と `showTopBarFilter`(実効は `showTopBarFilter && enableGlobalFilter`)がともに `false` の場合、既定トップバーは描画されない(空バーを出さない)。
+
+ボトムバーは Rows / Columns 件数のみ `showBottomBarCounts` で出し分けできる(右側の Active / Selection / 選択統計 / Cols は対象外)。それ以外の内訳を変えたい場合は `renderBottomBar` を使う。
+
+## GridColumn props (`GridColumn<T>`)
+
+| Name | Type | Default | Description |
+| --- | --- | --- | --- |
+| `key` | `string` | (required) | 列の一意キー。 |
+| `title` | `string` | — | ヘッダーの表示ラベル。 |
+| `width` | `number` | (required) | 列幅(px)。 |
+| `minWidth` | `number` | — | リサイズ時の下限幅。flex 配分時の下限クランプにも使用(flex 列で未指定なら内部既定 50px)。 |
+| `maxWidth` | `number` | — | 上限幅。**未指定なら上限なし**(autoSize は内容にぴったり合わせ、手動リサイズも自由に広げられます。既定の上限は設けません)。指定すると autoSize / 手動リサイズ / flex 配分の上限クランプに使われます。 |
+| `flex` | `number` | — | center 列(非 pinned)の伸縮比。余り幅(コンテナ幅 − 行ヘッダー − pinned 合計 − `width` 固定列の合計)を flex 比で配分し `minWidth`/`maxWidth` でクランプ。コンテナ追従でリアクティブに伸縮。手動リサイズで固定 px へ変化(`columns` 変化まで固定 → 以後 flex 復帰)。pinned 列では無視。詳細は下記「flex と autoSize」節。 |
+| `resizable` | `boolean` | グリッドの `enableColumnResize` を継承 | この列の手動リサイズ可否。`false` でヘッダーのリサイズハンドルを非表示。リサイズハンドルの**ダブルクリック**でその列を内容幅へ autoSize(`false` 時はハンドルが無いため不可。列メニューからの autoSize は引き続き可能)。 |
+| `suppressAutoSize` | `boolean` | `false` | `true` で autoSize の対象外(列メニュー / 境界ダブルクリック / すべての列の自動調整すべてでスキップ)。consumer 指定の `width` を維持(固定幅優先)。テキストで測れないカスタムUI列や固定で見せたい列向けの per-column opt-in。 |
+| `estimateCellWidth` | `(row, column) => number` | — | autoSize の幅見積もり。指定列は「セル内容の content 幅(px・セルの padding/border を除く)」をこの関数から得て、**全行の最大 + セル枠**で確定します(テキスト/候補/実 DOM 計測を使わず、React mount もしません)。テキスト長が実描画幅と相関しない renderCell カスタムUI列(横並びバッジ等)向けの opt-in。返す値は `renderCell` の実描画幅と一致させること。 |
+| `autoHeight` | `boolean` | — | この列が auto-height 行の高さを駆動(グリッドの `autoHeight` 有効時のみ)。**autoSize の対象外**(折り返し前提のため。下記「flex と autoSize」の制約を参照)。 |
+| `visible` | `boolean` | — | 列の表示/非表示。 |
+| `editable` | `boolean` | — | この列の編集を許可。 |
+| `readOnly` | `boolean` | — | この列を読み取り専用にする。 |
+| `pinned` | `'left' \| 'right'` | undefined = 中央スクロール | 列固定の方向。 |
+| `getValue` | `(row: T) => unknown` | `row[key]` | 値アクセサ。 |
+| `setValue` | `(row: T, value: unknown) => T` | — | 値ライター(新しい行を返す)。 |
+| `renderCell` | `(ctx: CellRenderContext<T>) => ReactNode` | プレーン `<span>` | カスタムセル描画。 |
+| `align` | `'left' \| 'center' \| 'right'` | `'left'` | セル内容の水平寄せ(UI 表示のみ・元の値は不変)。セル表示と編集 input に反映。 |
+| `valueFormatter` | `(params: CellValueFormatterParams<T>) => string` | — | セル表示値の整形(UI 表示のみ)。`renderCell` 未指定の既定セルが返り値を表示。組み込み `numberFormatter` 等を渡せる。元の値/編集/コピー/ソート/フィルターには影響しない。 |
+| `cellClassName` | `string \| ((ctx: CellStyleContext<T>) => string \| undefined)` | — | セルへ付与する追加 class(条件付きスタイル)。関数版は値 / 状態に応じて class を返せる。基底 `.ssg-body-cell` は `@layer` のため上書きが効く。 |
+| `renderHeader` | `(ctx: HeaderRenderContext<T>) => ReactNode` | — | カスタムヘッダー描画。 |
+| `filterType` | `'text' \| 'number' \| 'date' \| 'select' \| 'set' \| 'custom'` | — | フィルター UI の種別。 |
+| `filterOptions` | `GridSelectFilterOption[]` | rows から自動収集 | select / set の候補。 |
+| `filterFn` | `(row: T, filterValue: unknown) => boolean` | — | カスタムフィルター述語。 |
+| `parseClipboardValue` | `(raw: string, row: T) => unknown` | — | 貼り付け時のパーサ。 |
+| `formatClipboardValue` | `(value: unknown, row: T) => string` | — | コピー時のフォーマッタ。 |
+
+### 値フォーマッタ(UI 表示)
+
+`valueFormatter` はセルの**表示文字列だけ**を変えます(元の値・編集・コピー・ソート・フィルターは生値のまま)。組み込みファクタは `logic/valueFormatters.ts` に集約し、バレルから公開します。利用側も同じ契約(`CellValueFormatter<T>`)で自作でき、将来パターン(日付/％/通貨等)はファクタ追加 + バレル公開で拡張できます。
+
+- `numberFormatter(options?)` — 数値を 3 桁区切りで整形。既定は**元の精度を保持**(小数桁を勝手に丸めない)。`minimumFractionDigits` / `maximumFractionDigits` で固定桁、`useGrouping: false` で区切り無効、`locale` 指定可。`null` / `undefined` / `''` は `emptyText`(既定 `''`)、数値化できない値は原値の文字列をそのまま表示。
+
+使用例:
+
+```ts
+import { numberFormatter } from '@ishibashi0112/spreadsheet-grid';
+
+const columns = [
+  { key: 'amount', title: '金額', width: 140, align: 'right', valueFormatter: numberFormatter() },
+];
+```
+
+### flex と autoSize(列幅の決め方)
+
+列幅を「グリッドに決めさせる」方法は 2 つあり、**決め方が異なる別概念**です。列ごとに使い分けでき、混在も可能です。どちらを使うべきか迷ったら下表で選びます。
+
+| | flex(`column.flex`) | autoSize(列メニュー / 境界ダブルクリック) |
+| --- | --- | --- |
+| 何に合わせる | **コンテナの余り幅**(中身は見ない) | **セルの中身の長さ**(コンテナは見ない) |
+| 反応性 | コンテナのリサイズに**追従してリアクティブに伸縮** | 実行時の内容で**固定 px を一度だけ算出**(以後自動追従しない) |
+| 起動 | 列定義の `flex` を指定(= 宣言的) | 列メニュー「この列の幅を自動調整 / すべての列の幅を自動調整」、またはヘッダー境界(リサイズハンドル)の**ダブルクリック**でその列だけ(= 操作) |
+| 適用範囲 | center 列(非 pinned)のみ | 任意の列 |
+| 典型用途 | テーブルを横いっぱいに使う / 余白を特定列に吸わせる | 中身が切れないようにする |
+
+- **flex** — `flex` を持つ center 列が「利用可能幅(コンテナ幅 − 行ヘッダー − pinned 合計 − `width` 固定列の合計)」を `flex` 比で分け合い、`minWidth`/`maxWidth` でクランプされます。固定列合計が利用可能幅を超えると flex 列は最小幅(`minWidth`、未指定時は内部既定 50px)まで潰れ、超過分は横スクロールになります。pinned 列では無視されます。
+- **autoSize** — セルの中身に合わせて固定 px を一度だけ算出します(コンテナ幅は見ません)。算出時点の内容で幅が確定し、その後コンテナや内容が変わっても自動では追従しません。起動は列メニューのほか、ヘッダー境界(リサイズハンドル)の**ダブルクリック**でもその列を内容幅へ合わせられます(リサイズ可能な列のみ。AG Grid の境界ダブルクリック相当)。\
+  計測は 2 段方式です。**Phase 1** で全表示行を canvas で概算して列ごとの最長候補を絞り、**Phase 2** で候補だけを grid root 配下の隠しセルで**実 DOM 実測**します。これにより**全行を見つつ**(画面外の最長値も反映)、**`valueFormatter` の整形結果・letter-spacing・padding まで実描画どおりに反映**され、はみ出しません。`suppressAutoSize: true` の列は計測対象から外れ `width` を維持します。\
+  renderCell で独自 DOM(バッジ等)を描く列は、テキストでは幅が出ないため `estimateCellWidth` を指定します。指定列は Phase 1/2 のテキスト計測を使わず、**`estimateCellWidth(row)` が返す content 幅の全行 running-max + セル枠**で確定します(consumer 申告を信頼。mount なし)。\
+  **制約 — `autoHeight: true` の列は autoSize の対象外です**(列メニュー / 境界ダブルクリック / すべての列の自動調整すべてでスキップし、`width` を維持)。autoHeight 列は「幅を固定して長文を**折り返す**」のが本来の挙動ですが、autoSize の計測は**単一行**で行うため、autoHeight 列を測ると折り返したい長文を1行幅にし、**極端に横長になる**ためです(列幅に既定の上限は無いため、長文ぶんだけ際限なく広がります)。長文列は autoHeight(折り返し)か、`maxWidth` 付きの固定幅(切り詰め)で運用してください。
+
+flex 列を**手動リサイズ**すると、その列はドラッグした幅で**固定 px**に変わります(以後その列は flex 対象外)。固定は `columns` prop が変化する(pin 切替 / 表示切替 / 並べ替え / 親による差し替え)まで維持され、変化後は再び flex に復帰します(手動幅を恒久固定する仕様ではありません)。
+
+## 命令的 API(ref ハンドル / `SpreadsheetGridHandle<T>`)
+
+状態(列幅・可視・sort・filter 等)は controlled のまま、**prop では表現しづらい一発操作**だけを ref ハンドルで提供する。React 19 の **ref-as-prop**(`forwardRef` 不使用)で受け取る。
+
+```tsx
+import { useRef } from 'react';
+import {
+  SpreadsheetGrid,
+  type SpreadsheetGridHandle,
+} from '@ishibashi0112/spreadsheet-grid';
+
+const gridRef = useRef<SpreadsheetGridHandle<Row>>(null);
+<SpreadsheetGrid<Row> ref={gridRef} columns={cols} rows={rows} />;
+// gridRef.current?.scrollToRow(5000, { align: 'center' });
+// const csv = gridRef.current?.exportCsv({ scope: 'selection' });
+```
+
+`viewRowIndex` / `colIndex` は**ビュー座標**(フィルター/ソート適用後の表示 index。`colIndex` は固定列を含む視覚順 = 左→中央→右)。範囲外 index は内部でクランプ/無視する。
+
+### スクロール
+
+| メソッド | 説明 |
+| --- | --- |
+| `scrollToRow(viewRowIndex, { align? })` | 指定行を可視域へ。`align`(既定 `'auto'`): `'auto'`(最小スクロール) / `'start'` / `'center'` / `'end'`。 |
+| `scrollToCell(viewRowIndex, colIndex, { align? })` | 指定セルを縦横とも可視域へ。固定列(左右ピン)は常に可視のため横スクロールしない。 |
+| `scrollToTop()` / `scrollToBottom()` | 先頭 / 末尾へ。 |
+| `getVisibleRowRange()` | 現在描画中の行ウィンドウ `{ startIndex, endIndex }`(end 排他)。空は `null`。 |
+
+### 選択 / アクティブセル
+
+| メソッド | 説明 |
+| --- | --- |
+| `getActiveCell()` | 現在のアクティブセル `{ row, col }`(なければ `null`)。 |
+| `setActiveCell(cell \| null, { scrollIntoView? })` | アクティブセル設定(`null` で解除)。`scrollIntoView` で可視化も行う。 |
+| `getSelection()` | 現在の選択状態(`GridSelection`)。 |
+| `selectCell(viewRowIndex, colIndex, { scrollIntoView? })` | 単一セル選択(クリック相当)。 |
+| `selectRange(range, { scrollIntoView? })` | セル範囲選択(ドラッグ相当)。アンカーは `range.start`。 |
+| `clearSelection()` | 選択解除。 |
+| `getSelectedRows()` | 選択に交差する行(distinct)を返す。serverSide はロード済み行のみ。 |
+
+### CSV エクスポート
+
+| メソッド | 説明 |
+| --- | --- |
+| `exportCsv(options?)` | CSV 文字列を返す(純粋・副作用なし)。 |
+| `downloadCsv(filename?, options?)` | `exportCsv` の結果を `.csv` としてダウンロード(`filename` 既定 `'export.csv'`、`bom` 既定 `true`)。 |
+
+`CsvExportOptions`: `scope`(`'all'`(既定) / `'selection'` / `'visible'`)、`includeHeaders`(既定 `true`)、`delimiter`(既定 `','`。`'\t'` で TSV)、`bom`(`exportCsv` は既定 `false` / `downloadCsv` は既定 `true` = Excel 互換)。値整形はコピー(クリップボード)と同じ規則(`formatClipboardValue` があればそれ、無ければ `String(value ?? '')`)。RFC 4180 のクォート、行区切りは CRLF。serverSide の `scope:'all'` は未ロード行をスキップするため、serverSide では `'visible'` か別途サーバ側エクスポートを推奨。
+
+### Excel / スプレッドシート エクスポート(getExportData)
+
+| メソッド | 説明 |
+| --- | --- |
+| `getExportData(options?)` | 列メタ + 2 次元セルの、シリアライズ非依存な整形済みデータを返す(純粋・副作用なし)。 |
+
+`GridExportOptions`: `scope`(`'all'`(既定) / `'selection'` / `'visible'`)。`exportCsv` と同じ scope 規則(フィルター/ソート/可視列/固定順/選択を反映)。
+
+戻り値 `GridExportData`:
+
+```ts
+type GridExportData = {
+  columns: { key: string; title: string }[];   // 視覚順(selection では選択列のみ)
+  rows: { value: unknown; text: string }[][];   // scope の行レンジ(SSRM 未ロード行はスキップ)
+};
+```
+
+各セルは生値 `value`(`getCellValue`)と文字列 `text`(CSV と同じ規則 = `formatClipboardValue ?? String(value ?? '')`)の双方を持つ。`value` があることで型付きセル(数値/日付のまま)+ Excel 側の数値書式へ流せる。`columns.key` はオブジェクト系ライブラリ向け、`title` はヘッダー表示向け。
+
+**方針**: 本ライブラリは xlsx ライブラリを**同梱しない**(バンドル肥大・ライブラリ選定の押し付けを避ける)。グリッドは「現在の表」を整形済みデータで渡す**導線**に徹し、`.xlsx` / `.ods` 等の生成は consumer が任意のライブラリで行う。**マルチシートは consumer 側で本メソッドを scope 別 / グリッド別に呼び出して組み立てる**(グリッドは「1 表」を返すプリミティブ)。
+
+#### レシピ: hucre(zero-dep・~14KB gzip・ESM/edge)
+
+```ts
+import { writeXlsx } from 'hucre/xlsx';
+
+const { columns, rows } = gridRef.current!.getExportData({ scope: 'all' });
+const buffer = await writeXlsx({
+  sheets: [
+    {
+      name: 'Sheet1',
+      columns: columns.map((c) => ({ header: c.title, key: c.key })),
+      // 生値 value を型付きセルとして書く(数値/日付はそのまま)。
+      data: rows.map((r) =>
+        Object.fromEntries(r.map((cell, i) => [columns[i].key, cell.value])),
+      ),
+    },
+  ],
+});
+// buffer(Uint8Array)を Blob 化してダウンロード。
+```
+
+#### レシピ: ExcelJS
+
+```ts
+import ExcelJS from 'exceljs';
+
+const { columns, rows } = gridRef.current!.getExportData({ scope: 'all' });
+const wb = new ExcelJS.Workbook();
+const ws = wb.addWorksheet('Sheet1');
+ws.addRow(columns.map((c) => c.title)); // ヘッダー
+for (const r of rows) ws.addRow(r.map((cell) => cell.value)); // 型付きセル
+const buffer = await wb.xlsx.writeBuffer();
+```
+
+#### レシピ: マルチシート
+
+scope 違い(または複数グリッド)を複数シートに:
+
+```ts
+import { writeXlsx } from 'hucre/xlsx';
+import type { GridExportData } from '@ishibashi0112/spreadsheet-grid';
+
+const toSheet = (name: string, d: GridExportData) => ({
+  name,
+  columns: d.columns.map((c) => ({ header: c.title, key: c.key })),
+  data: d.rows.map((r) =>
+    Object.fromEntries(r.map((cell, i) => [d.columns[i].key, cell.value])),
+  ),
+});
+
+const buffer = await writeXlsx({
+  sheets: [
+    toSheet('All', gridRef.current!.getExportData({ scope: 'all' })),
+    toSheet('Selection', gridRef.current!.getExportData({ scope: 'selection' })),
+  ],
+});
+```
+
+1 グリッドをカテゴリ列で分割して N シートにする場合は、`getExportData({ scope: 'all' })` の戻りを「分割キー列の `value`」で group して各 group を `toSheet` 化する(列 index は `columns.findIndex((c) => c.key === '...')` で解決)。
+
+### 状態の保存 / 復元
+
+| メソッド | 説明 |
+| --- | --- |
+| `getState()` | 永続化対象(手動リサイズ幅 / フィルター / ソート)のスナップショット `GridState` を返す(純粋・副作用なし)。新規オブジェクトなのでそのまま `JSON.stringify` して保存できる。 |
+| `applyState(state)` | `getState()` の値(または互換な部分形)を適用する。外部入力は内部で防御的に正規化され、幅 reset / フィルター一括 / ソート set の 3 dispatch(1 イベント = 1 再レンダー)で反映。clientSide / serverSide 双方に効く(SSRM は `filters`/`sort` 変化がクエリへ載り再取得)。 |
+
+`GridState`: `{ version, columnWidths, filters, sort }`。`version` はマイグレーション用(現行 `1`)。対象は reducer 内の永続スライスのみで、列の可視/順序/ピン/flex は `columns` prop 側(consumer 所有)のため**含めない**。`activeCell` / `selection` などの一時 UI も含めない。`columnWidths` は手動リサイズした列のみを含む(flex 列はエントリを持たない規約)。`custom` フィルターの `value`(`unknown`)は深いコピーをしないため、シリアライズ可能性は consumer 責務。`applyState` は壊れた/部分的な入力にも耐える(非数値の幅・`kind` 無しの列フィルター・不正な `direction` は捨てる)が、列フィルター値の `kind` 中身までは検証しないため `getState` 出力の往復を前提とする。
+
+```ts
+// 保存(任意の永続先へ)。
+const state = gridRef.current?.getState();
+localStorage.setItem('grid-state', JSON.stringify(state));
+
+// 復元。
+const saved = localStorage.getItem('grid-state');
+if (saved) gridRef.current?.applyState(JSON.parse(saved));
+```
+
+#### 変更通知 `onStateChange`
+
+`onStateChange?: (state: GridState) => void`(prop)は、永続スライスが**実際に変化したとき**だけ最新 `GridState` を渡して呼ばれる。保存タイミングの signal として使える(`getState()` を別途叩く必要がない)。発火規約:
+
+- **ドラッグ中は保留**: 列リサイズ / 範囲選択のドラッグ中は確定前のため発火しない。確定(ドラッグ終了)後に 1 回だけ評価する。これにより列リサイズの毎フレーム更新では発火せず、**確定幅で 1 回だけ**通知される。
+- **初回マウントでは発火しない**: 初期状態は通知対象外(復元は `applyState` 側の責務)。
+- **同値では発火しない**: 前回通知と構造等価(永続スライスが不変)なら発火しない。`activeCell` / `selection` などの一時 UI 変化では発火しない。
+- **`applyState` も「状態変化」として発火する**: 復元直後に同値を 1 回保存し直す可能性がある(冪等なので実害はない。避けたい場合は consumer 側で直前値と比較してスキップ)。
+- インライン関数を毎レンダー渡してよい(内部で latest-ref 経由で読むため、関数の参照変化では再評価しない)。
+
+```ts
+// 自動保存(変化時)+ マウント時復元。
+const gridRef = useRef<SpreadsheetGridHandle<Row>>(null);
+
+useEffect(() => {
+  const saved = localStorage.getItem('grid-state');
+  if (saved) gridRef.current?.applyState(JSON.parse(saved));
+}, []);
+
+<SpreadsheetGrid
+  ref={gridRef}
+  columns={columns}
+  rows={rows}
+  onStateChange={(state) =>
+    localStorage.setItem('grid-state', JSON.stringify(state))
+  }
+/>
+```
+
+## serverSide モード(SSRM / DS-4 ②)
+
+`dataSource` を渡すと serverSide モードになり、総行数ぶんの縦スクロール空間を保ったまま、可視窓に近いブロックだけを `getRows` で取得する(取得範囲を定数で縛りメモリを有界化)。未ロード行はスケルトン行として描画され、到着後に実データへ差し替わる。`rows`(clientSide)と `dataSource`(serverSide)は排他。
+
+### query 配線(stage ②)
+
+clientSide の操作状態(グローバルフィルター・列フィルター・ソート)を `ServerSideQuery` に組み立て、`getRows` の `params.query` として送出する(フィルター/ソートの実行はサーバへ委ねる)。
+
+- **`ServerSideQuery`**: `{ globalText?: string; columnFilters?: Record<string, ColumnFilterValue>; sort?: GridSortState }`。全フィールドが空のときは `{}` を渡す。
+- **列フィルターの wire format**: `ColumnFilterValue` は `kind` を持つ discriminated union で、**そのまま**送出される(サーバはこの記述子を解釈して WHERE を組む)。`kind` 別の shape:
+  - `{ kind: 'set'; mode?: 'include' | 'exclude'; values: string[] }` — `values` は常に小さい側のみ保持する(全候補が多いとき `mode: 'exclude'` で非選択側を送る)。サーバは `mode` に応じて IN / NOT IN を組む。
+  - `{ kind: 'number'; raw: string; parsed }` — `parsed` が `range` / `comparison` / `null`(=`raw` で部分一致)。
+  - `{ kind: 'text'; value }` / `{ kind: 'date'; value }` / `{ kind: 'select'; value }`
+  - `{ kind: 'custom'; value }` — `column.filterFn` 利用列の自由形値(サーバ解釈は利用側責務)。
+  - アクティブなフィルターのみ送出される。キーは安定 queryKey のため昇順整列される。
+- **debounce**: query(filter/sort)の変更は約 300ms 静止後に一度だけ送出する(キーストロークごとの再フェッチを合体)。入力欄の表示自体は即時反映される。
+- **scroll-reset**: query が変わると結果セットが総入れ替えされるため、スクロールは先頭に戻る。
+- **enable\* フラグ**: serverSide でも `enableSorting` / `enableColumnFilter` / `enableGlobalFilter`(いずれも既定 true)が有効。サーバ非対応の操作を塞ぎたい場合に false にする。
+
+### set / select フィルターの候補(SSRM)
+
+set / select の候補集合はクライアントが供給する必要がある。**clientSide** は `rows` 全件から自動収集できるが、**serverSide** はクライアントが全件を持たないため自動収集できず候補が空になる。
+
+- **低カーディナリティ列**(状態・区分など): 列定義に `filterOptions` を静的指定する(serverSide でも set として機能する)。
+- **高カーディナリティ列**(品番・ID など): そもそも set 不適。`filterType: 'text'`(部分一致)や `number` 範囲を使う。
+- `filterOptions` 未指定の set/select 列を serverSide で開くと、候補リストに「候補が未指定」である旨が表示される(バグではなく設定不足)。サーバから候補を非同期供給する仕組みは将来の拡張(別 stage)。
+
+### dataSource とパラメータ
+
+- **`initialRowCount`**: 初回 fetch 前から正しい総高さ/スクロールバーを出したい場合に渡す(未指定時は最初の `getRows` 結果が返るまで件数 0)。**mount 時に一度だけ読まれる**(下記 remount 契約を参照)。
+- **`blockSize`(既定 100)/ `maxCachedBlocks`(既定 64)**: 1 ブロックの行数とクライアント側 LRU 上限。超過分は画面外の古いブロックから退避する。
+- **`getRows(params)` 契約**: `params` は `{ startIndex, endIndex, query, signal }`。渡された `[startIndex, endIndex)`(view 空間・end 排他)を尊重し全件を返さないこと。`query` 適用後の**フィルター後総件数**を `result.totalRowCount` で返すこと(縦スクロール空間がこれに追従する)。`signal` が abort されたら速やかに reject すること。
+- **`result`**: `{ rows: T[]; totalRowCount: number }`。`rows` は要求レンジ内の存在ぶん(末端では要求幅より短くてよい)。
+
+### サーバ最新の取り直し(`serverSideRefreshToken`)
+
+サーバ側のデータが外部で更新された場合など、**クエリは変えずにサーバの最新を取り直したい**ときは `serverSideRefreshToken`(`number`)を増やす。controlled な設計に合わせた軽量な signal。serverSide の取り直しは命令的ハンドル(`SpreadsheetGridHandle`)ではなくこの token で行う(本バッチではハンドルに serverSide refresh を含めていない)。
+
+- **`queryKey` 変化との違い**: フィルター/ソート/グローバルフィルターの変更は結果セットの総入れ替えなので**先頭へスクロールリセット**してキャッシュを全破棄し block 0 から取り直す。一方 `serverSideRefreshToken` は**スクロール位置を保持**したままキャッシュを破棄し、**現在の可視レンジ**を即時(debounce なし)取り直す。
+- **件数**: リフレッシュ時に件数はリセットせず、到着ブロックの `totalRowCount` で更新する。外部更新で件数が増減していれば縦スクロール空間が追従する。
+- **挙動メモ**: 取り直し中は対象行が一瞬スケルトン表示になる(purge → 再取得)。`refreshToken` は単調増加で運用する(値が変わったときだけ取り直す)。初回 mount では発火しない。
+- **用途**: 外部での編集/追加削除(mutation)後の反映トリガーとして使う想定。mutation 自体のサーバ書き戻し契約は別途必要(本グリッドの `onRowsChange` は clientSide 前提)。
+
+### clientSide ↔ serverSide の切替(remount 契約)
+
+`initialRowCount` と内部の行数 state は mount 時に確定する。そのため **実行時にモードを切り替える場合は `key` を変えてグリッドを再マウントすること**(clientSide で mount 後に `dataSource` を後付けしても件数が初期化されない)。serverSide で直接 mount する通常利用ではこの限りではない。
+
+## 補助型(props で参照される shape)
+
+- `GridRowKey = string | number`
+- `GridColumnPinned = 'left' | 'right'`
+- `GridSelectFilterOption = { label: string; value: string }`
+- `CellRenderContext<T> = { row, rowIndex, colIndex, value, column, isActive, isSelected, isEditing, readOnly, setValue }`
+- `HeaderRenderContext<T> = { colIndex, width, column, filterValue?, isFiltered? }`
+- `SpreadsheetGridSlotContext<T> = { rows, filteredRows, columns, visibleColumns, globalFilterText, columnFilterValues, sortState, setGlobalFilterText, activeCell, selection, derivedSummary, globalFilterStatus, globalFilterProgress }`
+  - `derivedSummary` は `SpreadsheetGridDerivedSummary`(行/列/フィルター/ソートの summary 文字列・選択統計などを内包)。helper を import せずトップ/ボトムバーで使える。
+  - `globalFilterStatus: GlobalFilterStatus`(`'idle' | 'filtering' | 'ready'`)/ `globalFilterProgress: number`(0..1)。グローバルテキストフィルタは行数が大きい(しきい値 50,000 行・条件は `rows.length > 50000`)とき、入力を主スレッドを塞がず時間分割で適用する。適用中は `status='filtering'`・`progress` が進捗(0..1)になる。空/無効は `'idle'`、確定は `'ready'`(progress=1)。50,000 行以下は同期適用のため即 `'ready'`(`'filtering'` を経由しない)。**ローディング表示はグリッドが本体に重ねる組み込み overlay(autosize の計測中 overlay と同じ作法)で行うため、トップバーやカスタム UI 側で扱う必要は通常ない。** この 2 値は、入力の無効化や独自インジケータなどカスタム UI を出したい場合の参照用に公開している。serverSide では基本 `'idle'` / `'ready'`(取得中表示は行スケルトンが担当)。
+
+## ライブラリ化の宿題(現状把握)
+
+- 〔解消〕**no-op props**: `enableClipboard` / `enableColumnResize` を型から削除(常時 ON 固定の挙動は不変)。将来「無効化」が必要になれば配線つきで非破壊追加する。
+- 〔追加済み〕**imperative API(ref ハンドル)**: `SpreadsheetGridProps.ref` で `SpreadsheetGridHandle<T>` を受け取り、スクロール / 選択操作 / CSV / エクスポートデータ(`getExportData`)/ 状態の保存・復元を命令的に呼べる(React 19 ref-as-prop、`forwardRef` 不使用)。詳細は「命令的 API」節。列状態のシリアライズ(`getState` / `applyState`)・変更通知 `onStateChange` prop は追加済み(対象は reducer 内の永続スライス = 手動リサイズ幅 / フィルター / ソート)。列の可視/順序/ピン/flex の状態化は `columns` prop 側で consumer 所有のため未対応(将来 columns 抽出/適用を入れるなら別途合意)。
+- 〔解消〕**公開バレル(`index.ts`)**: 入口を `index.ts` に集約し、`SpreadsheetGrid`(named)と公開型群(serverSide 型・`RowModel` 含む)を再エクスポート。`default export` は廃止。
+- **テーマ/スタイリング API**: 公開されるのは `className`(ルート1個)のみ。パーツ単位のクラスや CSS トークンは未提供。
+</file>
+
 <file path="src/components/spreadsheet-grid/model/gridTypes.ts">
 import type { ReactNode, Ref } from 'react';
 
@@ -22483,6 +22687,13 @@ export type SpreadsheetGridProps<T> = {
   //   既定トップバー(renderTopBar 未指定)のときのみ効きます。enableGlobalFilter=false のときは
   //   本値に関わらず入力欄を出しません(無効な機能の入力欄を出さないため)。
   showTopBarFilter?: boolean;
+  // 追加: 既定トップバーのグローバルフィルター入力欄の placeholder です。
+  //   既定トップバー(renderTopBar 未指定)のときのみ効きます。未指定時は 'グローバルフィルター'。
+  globalFilterPlaceholder?: string;
+  // 追加: 既定トップバーのグローバルフィルター入力欄の「左アイコン」です。
+  //   既定トップバー(renderTopBar 未指定)のときのみ効きます。未指定(undefined)時は組み込みの
+  //   検索アイコンを表示します。null を渡すとアイコン無し、任意の ReactNode で差し替え可能です。
+  globalFilterIcon?: ReactNode;
   // 追加: 下部バー(ステータスバー)を表示するかどうかです。既定 true。
   //   false にすると renderBottomBar に関わらず下部バーを一切描画しません
   //   (表示のマスタースイッチ。矛盾指定時は renderBottomBar より優先されます)。
@@ -22828,6 +23039,10 @@ export function SpreadsheetGrid<T extends object>({
   //   renderTopBar 未指定時のみ効きます。フィルター入力は enableGlobalFilter=true が前提です。
   showTopBarSummary = true,
   showTopBarFilter = true,
+  // 追加: 既定トップバーのグローバルフィルター入力の placeholder / 左アイコンです。
+  //   既定はバー側(DefaultGridTopBar)で解決します(placeholder='グローバルフィルター'・icon=検索)。
+  globalFilterPlaceholder,
+  globalFilterIcon,
   // 追加: 各バーの Rows / Columns 件数 chips セットの表示有無です(既定 true)。
   //   トップは showTopBarSummary=true のとき内側で効き、ボトムは左側の件数グループを制御します。
   showTopBarCounts = true,
@@ -24753,6 +24968,8 @@ export function SpreadsheetGrid<T extends object>({
     leftIndicatorRef,
     centerIndicatorRef,
     rightIndicatorRef,
+    // 追加(案A): 並べ替え確定後に呼ぶ settle アニメ発火関数です。
+    applyReorderSettle,
   } = useColumnHeaderDragController<T>({
     enabled: Boolean(onColumnsChange),
     columns,
@@ -24766,6 +24983,14 @@ export function SpreadsheetGrid<T extends object>({
     rightLeadingWidth,
     applyColumnOrderAndPin,
   });
+
+  // 追加(案A): 列レイアウト確定(並べ替え commit を含む)後に settle アニメを発火します。
+  //   applyReorderSettle は「直前のドラッグが same-pane 並べ替えで armed のとき」だけ動き、
+  //   それ以外(初回 / リサイズ / ピン / 非表示)は即 return するため本 effect が走っても無害です。
+  //   useLayoutEffect は paint 前に走るため、瞬間移動は見えず最初から「元位置→新位置」へ滑ります。
+  useLayoutEffect(() => {
+    applyReorderSettle();
+  }, [paneLayout, applyReorderSettle]);
 
   // 追加(13-B3-2): reorder 可能(controlled columns)なときだけバッジを grip 化します。
   //   未指定時はバッジが通常表示になり、列範囲選択など既存挙動は完全に従来どおりです。
@@ -25598,6 +25823,8 @@ export function SpreadsheetGrid<T extends object>({
         showSummary={showDefaultTopSummary}
         showFilter={showDefaultTopFilter}
         showCounts={showTopBarCounts}
+        globalFilterPlaceholder={globalFilterPlaceholder}
+        globalFilterIcon={globalFilterIcon}
       />
     ) : null;
 

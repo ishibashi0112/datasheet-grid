@@ -2245,6 +2245,8 @@ export function SpreadsheetGrid<T extends object>({
     leftIndicatorRef,
     centerIndicatorRef,
     rightIndicatorRef,
+    // 追加(案A): 並べ替え確定後に呼ぶ settle アニメ発火関数です。
+    applyReorderSettle,
   } = useColumnHeaderDragController<T>({
     enabled: Boolean(onColumnsChange),
     columns,
@@ -2258,6 +2260,14 @@ export function SpreadsheetGrid<T extends object>({
     rightLeadingWidth,
     applyColumnOrderAndPin,
   });
+
+  // 追加(案A): 列レイアウト確定(並べ替え commit を含む)後に settle アニメを発火します。
+  //   applyReorderSettle は「直前のドラッグが same-pane 並べ替えで armed のとき」だけ動き、
+  //   それ以外(初回 / リサイズ / ピン / 非表示)は即 return するため本 effect が走っても無害です。
+  //   useLayoutEffect は paint 前に走るため、瞬間移動は見えず最初から「元位置→新位置」へ滑ります。
+  useLayoutEffect(() => {
+    applyReorderSettle();
+  }, [paneLayout, applyReorderSettle]);
 
   // 追加(13-B3-2): reorder 可能(controlled columns)なときだけバッジを grip 化します。
   //   未指定時はバッジが通常表示になり、列範囲選択など既存挙動は完全に従来どおりです。

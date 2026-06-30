@@ -191,6 +191,36 @@ const GHOST_PALETTE = {
   out: { border: '#ef4444', background: '#fef2f2', color: '#dc2626' },
 } as const;
 
+// 追加(案A): 列の並べ替え確定時に「新しい位置へスライド」させる settle アニメの定数/ヘルパです。
+//   ドロップ commit 後、各列セルへ FLIP(transform)を 1 回だけ当てます(ドラッグ中は無関与)。
+//   対象は「画面に見えているセル」だけ(行・列とも仮想化)で、transform は GPU 合成のため軽量です。
+const SETTLE_MS = 200;
+const SETTLE_EASING = 'cubic-bezier(0.2, 0.7, 0.3, 1)';
+
+// prefers-reduced-motion ではアニメせずスナップします(アクセシビリティ)。
+const prefersReducedMotion = (): boolean =>
+  typeof window !== 'undefined' &&
+  typeof window.matchMedia === 'function' &&
+  window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+// 現在の各列の screen-x(getBoundingClientRect().left)を列キーで記録します(FLIP の before)。
+//   同じ列のヘッダー/本体セルは同じ x のため、列キーごとに最初の 1 セルだけ測れば十分です。
+const captureColumnLefts = (
+  container: HTMLElement | null,
+): Map<string, number> | null => {
+  if (!container) return null;
+  const map = new Map<string, number>();
+  container
+    .querySelectorAll<HTMLElement>('[data-ssg-col-key]')
+    .forEach((cell) => {
+      const key = cell.dataset.ssgColKey;
+      if (key && !map.has(key)) {
+        map.set(key, cell.getBoundingClientRect().left);
+      }
+    });
+  return map;
+};
+
 export const useColumnHeaderDragController = <T,>(
   args: UseColumnHeaderDragControllerArgs<T>,
 ) => {
@@ -205,6 +235,10 @@ export const useColumnHeaderDragController = <T,>(
   // ドラッグセッション state(すべて ref。ドラッグ中の再レンダーを発生させません)。
   const draggingKeyRef = useRef<string | null>(null);
   const dropTargetRef = useRef<{ pane: ColumnPane; slot: number } | null>(null);
+  // 追加(案A): 並べ替え確定時の FLIP 用に、commit 直前の各列 screen-x を保持します。
+  //   same-pane(ピン変更なし)の並べ替えのときだけセットし、列レイアウト確定後の
+  //   applyReorderSettle で消費します(cross-pane / reduced-motion は null＝スナップ)。
+  const settlePendingRef = useRef<Map<string, number> | null>(null);
   const pointerRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
   const rafRef = useRef<number | null>(null);
 
@@ -510,7 +544,8 @@ export const useColumnHeaderDragController = <T,>(
 
       if (!commit || !draggedKey || !target) return;
 
-      const { columns, applyColumnOrderAndPin } = latestRef.current;
+      const { columns, applyColumnOrderAndPin, scrollContainerRef } =
+        latestRef.current;
       const keys = computeHeaderReorderedKeys(
         columns,
         draggedKey,
@@ -518,6 +553,19 @@ export const useColumnHeaderDragController = <T,>(
         target.slot,
       );
       if (!keys) return; // no-op ドラッグ(同一 pane・同一 slot)
+
+      // 追加(案A): same-pane(ピン変更なし)の並べ替えのみ settle アニメを準備します。
+      //   cross-pane(ドラッグでのピン留め)はペインの幅/位置が変わりクリップが生じ得るため、
+      //   従来どおりスナップさせます(アニメ対象外)。reduced-motion でもスナップします。
+      //   capture は commit 前に行う必要があるため、ここで各列の現在 x を記録します。
+      const draggedColumn = columns.find((column) => column.key === draggedKey);
+      const sourcePane = draggedColumn ? getColumnPane(draggedColumn) : null;
+      const samePaneReorder = sourcePane !== null && sourcePane === target.pane;
+      settlePendingRef.current =
+        samePaneReorder && !prefersReducedMotion()
+          ? captureColumnLefts(scrollContainerRef.current)
+          : null;
+
       const pinOverride = new Map<string, GridColumnPinned | undefined>([
         [draggedKey, target.pane === 'center' ? undefined : target.pane],
       ]);
@@ -525,6 +573,69 @@ export const useColumnHeaderDragController = <T,>(
     },
     [hideAllIndicators, destroyGhost],
   );
+
+  // 追加(案A): 並べ替え確定後(commit 済みの DOM)に呼ばれ、各列セルへ FLIP を 1 回当てて
+  //   「新しい位置へスライド」させます。settlePendingRef(commit 前の各列 x)が無ければ即 return。
+  //   SpreadsheetGrid が列レイアウト確定後の useLayoutEffect から呼びます(paint 前のため瞬間移動は不可視)。
+  const applyReorderSettle = useCallback(() => {
+    const before = settlePendingRef.current;
+    settlePendingRef.current = null;
+    if (!before) return;
+    const container = latestRef.current.scrollContainerRef.current;
+    if (!container) return;
+
+    // commit 後の現在セルを列キーで集約し、新しい screen-x を測ります。
+    const cellsByKey = new Map<string, HTMLElement[]>();
+    const newLeftByKey = new Map<string, number>();
+    container
+      .querySelectorAll<HTMLElement>('[data-ssg-col-key]')
+      .forEach((cell) => {
+        const key = cell.dataset.ssgColKey;
+        if (!key || !before.has(key)) return;
+        const arr = cellsByKey.get(key);
+        if (arr) {
+          arr.push(cell);
+        } else {
+          cellsByKey.set(key, [cell]);
+          newLeftByKey.set(key, cell.getBoundingClientRect().left);
+        }
+      });
+
+    // FLIP: 各列 delta = oldX - newX。動いた列だけ「逆 transform」で一旦元位置へ見せます。
+    const animatedCells: HTMLElement[] = [];
+    cellsByKey.forEach((cells, key) => {
+      const oldX = before.get(key);
+      const newX = newLeftByKey.get(key);
+      if (oldX === undefined || newX === undefined) return;
+      const delta = oldX - newX;
+      if (Math.abs(delta) < 0.5) return;
+      for (const cell of cells) {
+        cell.style.transition = 'none';
+        cell.style.transform = `translateX(${delta}px)`;
+        cell.style.willChange = 'transform';
+        animatedCells.push(cell);
+      }
+    });
+    if (animatedCells.length === 0) return;
+
+    // 初期(逆 transform)を確定させるため 1 回だけ強制リフロー。
+    void container.getBoundingClientRect();
+
+    // トランジションを付けて transform を 0 へ＝新しい位置へスライド。
+    for (const cell of animatedCells) {
+      cell.style.transition = `transform ${SETTLE_MS}ms ${SETTLE_EASING}`;
+      cell.style.transform = 'translateX(0)';
+    }
+
+    // 後始末: インライン style を消します(次のドラッグ/再レンダーと競合させない)。
+    window.setTimeout(() => {
+      for (const cell of animatedCells) {
+        cell.style.transition = '';
+        cell.style.transform = '';
+        cell.style.willChange = '';
+      }
+    }, SETTLE_MS + 80);
+  }, []);
 
   const onColumnDragHandlePointerDown = useCallback(
     (column: GridColumn<T>, event: PointerEvent<HTMLElement>) => {
@@ -617,6 +728,8 @@ export const useColumnHeaderDragController = <T,>(
     leftIndicatorRef,
     centerIndicatorRef,
     rightIndicatorRef,
+    // 追加(案A): 並べ替え確定後に呼ぶ settle アニメ発火関数(armed 時のみ動作)。
+    applyReorderSettle,
   };
 };
 

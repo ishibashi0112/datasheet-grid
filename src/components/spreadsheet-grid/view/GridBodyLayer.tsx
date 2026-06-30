@@ -264,6 +264,7 @@ function GridBodyRowInner<T>({
         return (
           <div
             key={`${String(rowKey)}-${column.key}`}
+            data-ssg-col-key={column.key}
             data-autoheight-cell={isAutoHeightCell ? '' : undefined}
             className={cellClassName}
             onPointerDown={(event) =>
