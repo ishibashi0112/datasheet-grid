@@ -16,8 +16,13 @@ import type {
   GridRowKey,
   // 追加(DS-3-0): 行モデルのシーム契約型です(filteredRows/Keys props を置換)。
   RowModel,
+  // 追加(行選択): チェックボックス行選択の状態型です。
+  RowSelectionState,
   SpreadsheetGridProps,
 } from '../model/gridTypes';
+// 追加(行選択): O(1) 選択判定と、共用チェックボックス glyph です。
+import { resolveIsRowSelected } from '../logic/rowSelection';
+import { RowSelectionCheckbox } from './RowSelectionCheckbox';
 // 変更(10-C): 列座標を ColumnMeasurement(グローバル) から
 //             PaneColumnEntry(ペインローカル) へ切り替えます。
 import type { PaneColumnEntry } from '../logic/geometry';
@@ -78,6 +83,10 @@ type GridBodyRowProps<T> = {
   isWholeGridSelected: boolean;
   // 追加(11-A): 行ごとの選択状態プリミティブです(uiState 丸ごと渡しの置き換え)。
   isRowSelected: boolean;
+  // 追加(行選択): 行ヘッダにチェックボックスを描画するか(=enableRowSelection)。
+  showRowCheckbox: boolean;
+  // 追加(行選択): この行がチェック選択されているか(プリミティブ=memo 安全)。
+  isRowChecked: boolean;
   activeColInRow: number;
   editingColInRow: number;
   selectedColStart: number;
@@ -138,6 +147,8 @@ function GridBodyRowInner<T>({
   isRowHovered,
   isWholeGridSelected,
   isRowSelected,
+  showRowCheckbox,
+  isRowChecked,
   activeColInRow,
   editingColInRow,
   selectedColStart,
@@ -160,7 +171,13 @@ function GridBodyRowInner<T>({
     <div
       data-pane={pane}
       data-row-index={rowIndex}
-      className={cx('ssg-body-row', rowClassName, bodyRowClassName)}
+      className={cx(
+        'ssg-body-row',
+        // 追加(行選択): チェック選択された行のハイライト。
+        isRowChecked && 'ssg-body-row--checked',
+        rowClassName,
+        bodyRowClassName,
+      )}
       style={{
         height: rowHeight,
         transform: `translateY(${top}px)`,
@@ -168,12 +185,17 @@ function GridBodyRowInner<T>({
     >
       {ownsRowHeader && (
         <div
+          // 追加(行選択): enableRowSelection 時はガター全体がチェックボックスとして振る舞います。
+          role={showRowCheckbox ? 'checkbox' : undefined}
+          aria-checked={showRowCheckbox ? isRowChecked : undefined}
           onPointerDown={(event) => onRowHeaderPointerDown(rowIndex, event)}
           onPointerEnter={(event) => onRowHeaderPointerEnter(rowIndex, event)}
           onPointerLeave={() => onRowHeaderPointerLeave(rowIndex)}
           className={cx(
             'ssg-header-cell',
             'ssg-row-header-cell',
+            // 追加(行選択): チェックボックス表示時の見た目調整用フック。
+            showRowCheckbox && 'ssg-row-header-cell--checkbox',
             (isWholeGridSelected || isRowSelected) &&
               'ssg-header-cell--selected',
             isRowHovered && 'ssg-header-cell--hovered',
@@ -185,7 +207,13 @@ function GridBodyRowInner<T>({
             height: rowHeight,
           }}
         >
-          {rowIndex + 1}
+          {showRowCheckbox ? (
+            <RowSelectionCheckbox
+              state={isRowChecked ? 'checked' : 'unchecked'}
+            />
+          ) : (
+            rowIndex + 1
+          )}
         </div>
       )}
 
@@ -329,6 +357,8 @@ type GridBodySkeletonRowProps<T> = {
   renderEntries: PaneColumnEntry<T>[];
   rowHeaderCellStyle: CSSProperties;
   isRowHovered: boolean;
+  // 追加(行選択): 行ヘッダにチェックボックス枠を描画するか(未ロードのため常に無効表示)。
+  showRowCheckbox: boolean;
   onRowHeaderPointerDown: (
     rowIndex: number,
     event: PointerEvent<HTMLDivElement>,
@@ -366,6 +396,7 @@ function GridBodySkeletonRowInner<T>({
   renderEntries,
   rowHeaderCellStyle,
   isRowHovered,
+  showRowCheckbox,
   onRowHeaderPointerDown,
   onRowHeaderPointerEnter,
   onRowHeaderPointerLeave,
@@ -395,6 +426,7 @@ function GridBodySkeletonRowInner<T>({
             'ssg-header-cell',
             'ssg-row-header-cell',
             'ssg-skeleton-rowheader',
+            showRowCheckbox && 'ssg-row-header-cell--checkbox',
             isRowHovered && 'ssg-header-cell--hovered',
             rowHeaderCellClassName,
           )}
@@ -403,7 +435,11 @@ function GridBodySkeletonRowInner<T>({
             height: rowHeight,
           }}
         >
-          {rowIndex + 1}
+          {showRowCheckbox ? (
+            <RowSelectionCheckbox state="unchecked" disabled />
+          ) : (
+            rowIndex + 1
+          )}
         </div>
       )}
 
@@ -480,6 +516,9 @@ type GridBodyLayerProps<T> = {
   rowHeaderCellStyle: CSSProperties;
   hoveredRowIndex: number | null;
   isWholeGridSelected: boolean;
+  // 追加(行選択): チェックボックス行選択の有効化と状態(参照は選択変化時のみ変わる)。
+  enableRowSelection: boolean;
+  rowSelectionState: RowSelectionState;
   // 変更(11-A): uiState の代わりに、行プリミティブの導出に必要な最小の状態だけを
   //             受け取ります。GridBodyLayer 自体は memo していない(親と同時に
   //             再レンダーされる)ため、ここは参照安定でなくても問題ありません。
@@ -541,6 +580,8 @@ export function GridBodyLayer<T>({
   rowHeaderCellStyle,
   hoveredRowIndex,
   isWholeGridSelected,
+  enableRowSelection,
+  rowSelectionState,
   activeCell,
   editingCell,
   selectionSnapshot,
@@ -602,6 +643,7 @@ export function GridBodyLayer<T>({
               renderEntries={renderEntries}
               rowHeaderCellStyle={rowHeaderCellStyle}
               isRowHovered={hoveredRowIndex === rowIndex}
+              showRowCheckbox={enableRowSelection}
               onRowHeaderPointerDown={onRowHeaderPointerDown}
               onRowHeaderPointerEnter={onRowHeaderPointerEnter}
               onRowHeaderPointerLeave={onRowHeaderPointerLeave}
@@ -614,6 +656,11 @@ export function GridBodyLayer<T>({
           );
         }
         const rowKey = rowModel.getRowKey(rowIndex) ?? rowIndex;
+
+        // 追加(行選択): この行がチェック選択されているか(O(1))。無効時は常に false。
+        const isRowChecked = enableRowSelection
+          ? resolveIsRowSelected(rowSelectionState, rowKey)
+          : false;
 
         // 追加(11-A): この行に関係する選択状態だけをプリミティブへ分解します。
         const isRowSelected =
@@ -667,6 +714,8 @@ export function GridBodyLayer<T>({
             isRowHovered={hoveredRowIndex === rowIndex}
             isWholeGridSelected={isWholeGridSelected}
             isRowSelected={isRowSelected}
+            showRowCheckbox={enableRowSelection}
+            isRowChecked={isRowChecked}
             activeColInRow={activeColInRow}
             editingColInRow={editingColInRow}
             selectedColStart={selectedColStart}

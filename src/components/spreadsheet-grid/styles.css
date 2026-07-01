@@ -34,6 +34,13 @@
     --ssg-header-hover-bg: #e2e8f0;
     --ssg-select-bg: #e3e9f5;
     --ssg-select-bg-hover: #ccd7ee;
+    /* 行選択(チェックボックス) */
+    --ssg-row-selected-bg: #eff4ff;
+    --ssg-checkbox-border: #94a3b8;
+    --ssg-checkbox-bg: #ffffff;
+    --ssg-checkbox-checked-bg: var(--ssg-accent);
+    --ssg-checkbox-checked-mark: #ffffff;
+    --ssg-checkbox-hover-border: var(--ssg-accent);
     /* オーバーレイ */
     --ssg-selection-fill: rgba(52, 97, 201, 0.08);
     /* 寸法トークン */
@@ -192,6 +199,58 @@
     padding: 0;
     border-right: 1px solid var(--ssg-line-strong);
     line-height: 1;
+  }
+
+  /* ── 行選択チェックボックス(CSS 描画・視覚専用。操作はガター/コーナーセル側)── */
+  .ssg-row-checkbox {
+    box-sizing: border-box;
+    position: relative;
+    display: inline-block;
+    width: 16px;
+    height: 16px;
+    border: 1.5px solid var(--ssg-checkbox-border);
+    border-radius: 4px;
+    background-color: var(--ssg-checkbox-bg);
+    transition:
+      background-color 120ms ease,
+      border-color 120ms ease;
+  }
+  /* チェック済み: accent 塗り + 白いチェックマーク(::after を回転ボーダーで描画)。 */
+  .ssg-row-checkbox[data-state='checked'],
+  .ssg-row-checkbox[data-state='indeterminate'] {
+    border-color: var(--ssg-checkbox-checked-bg);
+    background-color: var(--ssg-checkbox-checked-bg);
+  }
+  .ssg-row-checkbox[data-state='checked']::after {
+    content: '';
+    position: absolute;
+    left: 4.5px;
+    top: 1.5px;
+    width: 4px;
+    height: 8px;
+    border: solid var(--ssg-checkbox-checked-mark);
+    border-width: 0 2px 2px 0;
+    transform: rotate(45deg);
+  }
+  /* 一部選択(indeterminate): 白い横棒。 */
+  .ssg-row-checkbox[data-state='indeterminate']::after {
+    content: '';
+    position: absolute;
+    left: 3px;
+    right: 3px;
+    top: 6.5px;
+    height: 2px;
+    border-radius: 1px;
+    background-color: var(--ssg-checkbox-checked-mark);
+  }
+  /* 未ロード(SSRM)等の無効表示。 */
+  .ssg-row-checkbox[data-disabled='true'] {
+    opacity: 0.45;
+  }
+  /* ガター/コーナーがチェックボックス表示のとき、ホバーで未選択枠を accent に。 */
+  .ssg-row-header-cell--checkbox:hover .ssg-row-checkbox[data-state='unchecked'],
+  .ssg-corner-cell--checkbox:hover .ssg-row-checkbox[data-state='unchecked'] {
+    border-color: var(--ssg-checkbox-hover-border);
   }
 
   /* ── オーバーレイ / エディタ ── */
@@ -1114,6 +1173,16 @@
     top: 0;
     width: 100%;
     contain: layout style paint;
+  }
+
+  /* 追加(行選択): チェック選択された行のハイライト。行 div に背景を敷き、非ホバーの
+     本体セルを透過にして下地(選択色)を見せます(ホバーセルはホバー色を優先)。
+     行ヘッダ(ガター)セルは対象外なので番号/チェック欄の色はそのまま保ちます。 */
+  .ssg-body-row--checked {
+    background-color: var(--ssg-row-selected-bg);
+  }
+  .ssg-body-row--checked .ssg-body-cell:not(.ssg-body-cell--row-hovered) {
+    background-color: transparent;
   }
 
   /* ── ヘッダー内要素(GridHeaderRow) ── */

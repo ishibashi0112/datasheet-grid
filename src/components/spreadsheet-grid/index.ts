@@ -56,6 +56,9 @@ export type {
   RowModel,
   // 追加(imperative API #1): ref ハンドル(SpreadsheetGridProps.ref)と関連型です。
   SpreadsheetGridHandle,
+  // 追加(行選択): 行選択の公開記述子とモードです。
+  RowSelectionModel,
+  RowSelectionMode,
   ScrollAlign,
   CsvExportScope,
   CsvExportOptions,

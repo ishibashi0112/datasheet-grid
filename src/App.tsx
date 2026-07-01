@@ -441,6 +441,12 @@ function App() {
   // 追加(①デモ): 列リサイズ可否のグリッド既定(enableColumnResize)を切り替えます。
   //   ON でも qty(数量)列は column.resizable:false のため常に不可(=個別上書きの確認)。
   const [resizeEnabled, setResizeEnabled] = useState(true);
+
+  // 追加(行選択デモ): チェックボックス行選択のトグルと、選択件数表示用の state です。
+  const [rowSelectionEnabled, setRowSelectionEnabled] = useState(false);
+  const [rowSelectionModeState, setRowSelectionModeState] =
+    useState<'single' | 'multiple'>('multiple');
+  const [rowSelectionCount, setRowSelectionCount] = useState(0);
   // 追加(B3 デモ): center 列の flex を付け外しします(備考=flex 2 / 状態=flex 1)。
   const [flexEnabled, setFlexEnabled] = useState(false);
   // 既存の幅/固定/並び/表示のカスタマイズは保持し、対象 2 列の flex だけ切替えます。
@@ -853,6 +859,61 @@ function App() {
           >
             エクスポートデータを確認
           </button>
+          {/* 追加(行選択デモ): チェックボックス行選択の ON/OFF・モード切替・全選択/解除・選択キー確認。 */}
+          <button
+            type="button"
+            onClick={() => setRowSelectionEnabled((v) => !v)}
+            style={modeButtonStyle(rowSelectionEnabled)}
+          >
+            行選択: {rowSelectionEnabled ? 'ON' : 'OFF'}
+          </button>
+          <button
+            type="button"
+            onClick={() =>
+              setRowSelectionModeState((m) =>
+                m === 'multiple' ? 'single' : 'multiple',
+              )
+            }
+            disabled={!rowSelectionEnabled}
+            style={modeButtonStyle(false)}
+          >
+            選択モード: {rowSelectionModeState === 'multiple' ? '複数' : '単一'}
+          </button>
+          <button
+            type="button"
+            onClick={() => gridRef.current?.selectAllRows()}
+            disabled={!rowSelectionEnabled || rowSelectionModeState === 'single'}
+            style={modeButtonStyle(false)}
+          >
+            全選択
+          </button>
+          <button
+            type="button"
+            onClick={() => gridRef.current?.clearRowSelection()}
+            disabled={!rowSelectionEnabled}
+            style={modeButtonStyle(false)}
+          >
+            選択解除
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              const keys = gridRef.current?.getSelectedRowKeys() ?? [];
+              const count = gridRef.current?.getSelectedRowCount() ?? 0;
+              window.alert(
+                `行選択(チェックボックス)\n件数: ${count}\n先頭キー: ${
+                  keys.slice(0, 5).map(String).join(', ') || '(なし)'
+                }${keys.length > 5 ? ' ...' : ''}`,
+              );
+            }}
+            disabled={!rowSelectionEnabled}
+            style={modeButtonStyle(false)}
+          >
+            選択キーを確認
+          </button>
+          <span style={{ alignSelf: 'center', fontSize: 13, color: '#475569' }}>
+            選択件数: {rowSelectionCount}
+          </span>
           {/* 追加(state #3 デモ): onStateChange/applyState の永続デモ。列幅変更・フィルター・ソート・
               列メタ(可視/順序/ピン)が自動保存され、ページ再読込で復元されます。下のボタンで保存を
               クリア(初期状態へ)できます。 */}
@@ -906,6 +967,21 @@ function App() {
         headerHeight={42}
         rowHeaderWidth={56}
         enableRangeSelection
+        // 追加(行選択デモ): 上の「行選択」トグルと連動します。onRowSelectionChange で件数を更新。
+        enableRowSelection={rowSelectionEnabled}
+        rowSelectionMode={rowSelectionModeState}
+        onRowSelectionChange={(model) => {
+          // onChange は選択の反映(再レンダー)より前に発火するため、件数は引数 model から
+          //   算出します(この時点で gridRef.getSelectedRowCount() を読むと 1 つ前の状態)。
+          if (model.type === 'include') {
+            setRowSelectionCount(model.rowKeys.length);
+          } else {
+            // exclude(全選択のうち除外)。総数は選択で変わらないので反映後にハンドルから読む。
+            requestAnimationFrame(() =>
+              setRowSelectionCount(gridRef.current?.getSelectedRowCount() ?? 0),
+            );
+          }
+        }}
         enableGlobalFilter
         // 追加(①デモ): 上の「列リサイズ(全体)」トグルと連動します(qty 列は resizable:false で常に不可)。
         enableColumnResize={resizeEnabled}

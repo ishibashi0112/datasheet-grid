@@ -81,6 +81,16 @@ type UseGridPointerInteractionsArgs<T> = {
   // 追加(UI hover): 行ホバー(既定 true)/列ヘッダーホバー(既定 true)の有効化フラグです。
   enableRowHover: boolean;
   enableColumnHeaderHover: boolean;
+  // 追加(行選択): チェックボックス行選択の有効化と、ガター操作のコールバックです。
+  //   true のときガター(行NO)の pointerdown/drag は行選択へ委譲します(Excel 風の
+  //   ガター起点セル範囲選択は off)。callback は component 側(rowModel を持つ)で
+  //   view index→key を解決してコミットします(参照は安定 = memo 維持)。
+  enableRowSelection: boolean;
+  onGutterRowSelect: (
+    viewIndex: number,
+    opts: { shiftKey: boolean },
+  ) => void;
+  onGutterRowSelectDrag: (viewIndex: number) => void;
 };
 
 // 追加: pointer 系 interaction（cell/row/col selection + drag auto-scroll + window pointer sync）をまとめます。
@@ -111,6 +121,9 @@ export const useGridPointerInteractions = <T,>({
   setHoveredColumnIndex,
   enableRowHover,
   enableColumnHeaderHover,
+  enableRowSelection,
+  onGutterRowSelect,
+  onGutterRowSelectDrag,
 }: UseGridPointerInteractionsArgs<T>) => {
   // 追加(11-A2): dragState の最新値を ref で保持します(latest-ref パターン)。
   // 変更理由: enter 系ハンドラ(handleCellPointerEnter 等)が uiState.dragState を
@@ -122,6 +135,12 @@ export const useGridPointerInteractions = <T,>({
   //           標準的な latest-ref 用法であり、レンダー結果には影響しません。
   const dragStateRef = useRef(uiState.dragState);
   dragStateRef.current = uiState.dragState;
+
+  // ガター行選択ドラッグ中かどうかのフラグです(window pointerup でクリア)。
+  //   注記: enableRowSelection / onGutterRowSelect(Drag) は component 側で参照安定
+  //   (useCallback)なため、latest-ref を挟まず該当ハンドラの deps へ直接入れます
+  //   (安定値なのでハンドラ参照は変わらず memo を保てます。render 時の ref 代入も増やしません)。
+  const rowSelectionDraggingRef = useRef(false);
 
   // 追加(MS-2): handleColumnHeaderPointerDown の Shift 分岐で「最新の」ソート状態 /
   //   列配列 / 有効化フラグを読むための latest-ref 群です(dragStateRef と同じ用法)。
@@ -282,6 +301,8 @@ export const useGridPointerInteractions = <T,>({
     };
 
     const handleWindowPointerUp = () => {
+      // 追加(行選択): ガター行選択ドラッグの終了です(ref のみ・再レンダー不要)。
+      rowSelectionDraggingRef.current = false;
       dispatch(gridActions.endSelection());
       dispatch(gridActions.endColumnResize());
     };
@@ -451,9 +472,15 @@ export const useGridPointerInteractions = <T,>({
         return;
       }
       gridRootRef.current?.focus();
+      // 追加(行選択): enableRowSelection 時はガター起点セル範囲選択に代えて行選択を行います。
+      if (enableRowSelection) {
+        rowSelectionDraggingRef.current = true;
+        onGutterRowSelect(rowIndex, { shiftKey: event.shiftKey });
+        return;
+      }
       dispatch(gridActions.startRowSelection(rowIndex));
     },
-    [dispatch, gridRootRef],
+    [dispatch, gridRootRef, enableRowSelection, onGutterRowSelect],
   );
 
   // 追加: 行ヘッダードラッグ中の更新です。
@@ -463,6 +490,12 @@ export const useGridPointerInteractions = <T,>({
       // 追加(UI hover): 行ヘッダー(#セル)に入っても行ホバーを設定します(enableRowHover 時のみ)。
       if (enableRowHover) {
         setHoveredRowIndex(rowIndex);
+      }
+      // 追加(行選択): ガター行選択ドラッグ中なら範囲を更新します(既存のセル範囲選択とは排他)。
+      if (rowSelectionDraggingRef.current) {
+        pointerClientRef.current = { x: event.clientX, y: event.clientY };
+        onGutterRowSelectDrag(rowIndex);
+        return;
       }
       const dragState = dragStateRef.current;
       if (
@@ -474,7 +507,13 @@ export const useGridPointerInteractions = <T,>({
       pointerClientRef.current = { x: event.clientX, y: event.clientY };
       dispatch(gridActions.updateRowSelection(rowIndex));
     },
-    [dispatch, pointerClientRef, setHoveredRowIndex, enableRowHover],
+    [
+      dispatch,
+      pointerClientRef,
+      setHoveredRowIndex,
+      enableRowHover,
+      onGutterRowSelectDrag,
+    ],
   );
 
   // 追加: 列ヘッダー選択開始です。

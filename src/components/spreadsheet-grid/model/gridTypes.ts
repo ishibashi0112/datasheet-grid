@@ -87,6 +87,28 @@ export type GridSelection =
   | { type: 'col'; startCol: number; endCol: number }
   | null;
 
+// 追加(行選択): チェックボックス行選択の内部状態です(セル範囲選択 GridSelection とは別レイヤー)。
+//   参照性能を落とさないため判定は Set の O(1)、「全選択」は exclude モード(除外集合)で
+//   キーを materialize せずに表現します。純ロジックは logic/rowSelection.ts。
+//   mode 'include': keys は選択キー集合 / mode 'exclude': keys は除外キー集合(全選択の裏)。
+export type RowSelectionState = {
+  mode: 'include' | 'exclude';
+  keys: ReadonlySet<GridRowKey>;
+};
+
+// 追加(行選択): 公開の行選択記述子です(controlled prop rowSelection /
+//   onRowSelectionChange / handle でやり取り)。exclude を素直に表現できるため、
+//   controlled でも全選択をキー列挙せずに扱えます。
+export type RowSelectionModel =
+  | { type: 'include'; rowKeys: GridRowKey[] }
+  | { type: 'exclude'; rowKeys: GridRowKey[] };
+
+// 追加(行選択): 行選択モードです。'single'=単一 / 'multiple'=複数(既定)。
+export type RowSelectionMode = 'single' | 'multiple';
+
+// 追加(行選択): ヘッダ全選択チェックの 3 状態です。
+export type SelectAllState = 'none' | 'some' | 'all';
+
 // 追加: フィルター状態です。初版はグローバル + 列単位の最小構成です。
 // 変更(記述子化): columnFilters の値型を unknown → ColumnFilterValue(判別共用体)へ閉じました。
 //   従来 set / number だけがタグ付き記述子で、text / select / date は生文字列のまま混在していました。
@@ -369,6 +391,8 @@ export type ColumnSelectionDragState = {
 export type GridUiState = {
   activeCell: CellCoord | null;
   selection: GridSelection;
+  // 追加(行選択): チェックボックス行選択の状態(セル範囲選択 selection とは別)。
+  rowSelection: RowSelectionState;
   editingCell: CellCoord | null;
   dragState:
     | CellSelectionDragState
@@ -613,6 +637,26 @@ export type SpreadsheetGridHandle<T> = {
   //   onColumnsChange 経由で反映します(未指定時はスキップ=幅/フィルター/ソートのみ。v1 完全互換)。
   //   v1 保存値(columns フィールド無し)も読めます(列メタは触りません)。
   applyState: (state: GridState) => void;
+
+  // ── 行選択(チェックボックス選択。getSelectedRows()=セル範囲由来とは別物)──
+  // 現在の行選択記述子を返します(include/exclude)。
+  getRowSelection: () => RowSelectionModel;
+  // 行選択記述子を設定します(controlled 時は onRowSelectionChange 経由で親へ委譲)。
+  setRowSelection: (model: RowSelectionModel) => void;
+  // 選択されている行キーの配列です。include はそのまま、exclude は現在の全行から
+  //   除外を差し引いて列挙します(SSRM はロード済みキーのみ)。
+  getSelectedRowKeys: () => GridRowKey[];
+  // 選択されている行データです(SSRM はロード済み行のみ)。大規模データでは行の探索が
+  //   必要なため、キーだけで足りる場合は getSelectedRowKeys を推奨します。
+  getSelectedRowData: () => T[];
+  // 選択件数です(exclude 時は 総行数 − 除外数 で一定コスト)。
+  getSelectedRowCount: () => number;
+  // 指定キーが選択中かを O(1) で判定します。
+  isRowSelected: (rowKey: GridRowKey) => boolean;
+  // 全行を選択します(exclude モード=キーを列挙しません)。
+  selectAllRows: () => void;
+  // 行選択をすべて解除します。
+  clearRowSelection: () => void;
 };
 
 export type SpreadsheetGridProps<T> = {
@@ -671,6 +715,25 @@ export type SpreadsheetGridProps<T> = {
     column: GridColumn<T>,
   ) => boolean;
   enableRangeSelection?: boolean;
+  // ── 追加(行選択): チェックボックス行選択(セル範囲選択とは別レイヤー)──
+  //   参照性能を落とさない設計(判定 O(1) / 全選択は除外集合)。既定 false で完全に無効。
+  //   有効時は行ヘッダ(行NO)ガターが行選択のヒット領域になり、Excel 風のガター起点セル範囲
+  //   選択は off になります(ボディ側セルのドラッグ範囲選択は不変)。
+  // 行選択を有効化するマスタースイッチです(既定 false)。
+  enableRowSelection?: boolean;
+  // 単一/複数の選択モードです(既定 'multiple')。single は常に 1 行だけ。
+  rowSelectionMode?: RowSelectionMode;
+  // ヘッダの全選択チェック(tri-state)の有効化です。
+  //   既定は enableRowSelection && rowSelectionMode==='multiple'。
+  enableSelectAllRows?: boolean;
+  // controlled: 行選択の記述子です(指定時は controlled。未指定は内部 state=uncontrolled)。
+  //   include=これらを選択 / exclude=全選択のうち除外。全選択をキー列挙せず表現できます。
+  rowSelection?: RowSelectionModel;
+  // controlled 簡易版: 選択キー配列です({ type:'include', rowKeys } の糖衣)。
+  //   rowSelection と併用時は rowSelection を優先します。全選択(exclude)は表現できません。
+  selectedRowKeys?: GridRowKey[];
+  // 選択変化の通知です(controlled/uncontrolled いずれでも発火)。
+  onRowSelectionChange?: (model: RowSelectionModel) => void;
   enableGlobalFilter?: boolean;
   enableColumnFilter?: boolean;
   enableSorting?: boolean;

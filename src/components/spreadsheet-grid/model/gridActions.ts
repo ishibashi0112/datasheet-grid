@@ -3,6 +3,7 @@ import type {
   ColumnFilterValue,
   GridFilterState,
   GridSortEntry,
+  RowSelectionState,
 } from './gridTypes';
 
 // 追加: Grid UI action の union 型です。
@@ -41,7 +42,10 @@ export type GridUiAction =
   // 追加(state #1): applyState 用に filters 全体を 1 dispatch で置換します(globalText + columnFilters)。
   | { type: 'filter/setAll'; filters: GridFilterState }
   | { type: 'sort/set'; entries: GridSortEntry[] }
-  | { type: 'sort/clear' };
+  | { type: 'sort/clear' }
+  // 追加(行選択): チェックボックス行選択の状態を丸ごと設定します(次状態は純ロジックで算出済み)。
+  //   既存の rowSelection/start|update(セル範囲の行選択)とは別物です。
+  | { type: 'rowSelect/set'; state: RowSelectionState };
 
 // 追加: action creator 群です。UI から文字列リテラルを散らさないために定義します。
 export const gridActions = {
@@ -152,5 +156,10 @@ export const gridActions = {
   }),
   clearSort: (): GridUiAction => ({
     type: 'sort/clear',
+  }),
+  // 追加(行選択): 算出済みの行選択状態を設定します。
+  setRowSelectionState: (state: RowSelectionState): GridUiAction => ({
+    type: 'rowSelect/set',
+    state,
   }),
 };

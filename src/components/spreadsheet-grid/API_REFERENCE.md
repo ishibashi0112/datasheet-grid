@@ -30,6 +30,12 @@
 | `readOnly` | `boolean` | `false` | グリッド全体の編集を無効化。 |
 | `canEditCell` | `(rowIndex, colIndex, row, column) => boolean` | — | セル単位の編集可否ゲート。 |
 | `enableRangeSelection` | `boolean` | `true` | 複数セル範囲選択。 |
+| `enableRowSelection` | `boolean` | `false` | チェックボックス行選択の有効化(マスタースイッチ)。`true` で行ヘッダ(行NO)ガターが行選択のヒット領域になり、Excel 風のガター起点セル範囲選択は off(ボディ側セルのドラッグ範囲選択は不変)。判定は O(1)・全選択は除外集合でキーを列挙しない(1M 行でも一定コスト)。 |
+| `rowSelectionMode` | `'single' \| 'multiple'` | `'multiple'` | 単一/複数の選択モード。single は常に 1 行。multiple はクリックでトグル、shift+クリック/ガタードラッグで範囲選択。 |
+| `enableSelectAllRows` | `boolean` | `enableRowSelection && multiple` | ヘッダ左上コーナーの全選択チェック(tri-state: none/some/all)の有効化。 |
+| `rowSelection` | `RowSelectionModel` | — | **controlled** の行選択記述子。`{ type:'include', rowKeys }`=これらを選択 / `{ type:'exclude', rowKeys }`=全選択のうち除外。全選択をキー列挙せず表現できる。指定時は controlled(内部 state を使わない)。 |
+| `selectedRowKeys` | `GridRowKey[]` | — | controlled 簡易版(`{ type:'include', rowKeys }` の糖衣)。`rowSelection` と併用時は `rowSelection` を優先。全選択(exclude)は表現不可。 |
+| `onRowSelectionChange` | `(model: RowSelectionModel) => void` | — | 行選択変化の通知(controlled/uncontrolled いずれでも発火)。 |
 | `enableGlobalFilter` | `boolean` | `true` | グローバルフィルター**機能**の有効化。`false` で機能が無効になり、既定トップバーのフィルター入力欄も出ない(summary は `showTopBarSummary` に従う。トップバー自体を消すには `showTopBar=false`)。 |
 | `enableColumnFilter` | `boolean` | `true` | 列ごとのフィルター。 |
 | `enableSorting` | `boolean` | `true` | ヘッダークリックでのソート。 |
@@ -184,6 +190,27 @@ const gridRef = useRef<SpreadsheetGridHandle<Row>>(null);
 | `selectRange(range, { scrollIntoView? })` | セル範囲選択(ドラッグ相当)。アンカーは `range.start`。 |
 | `clearSelection()` | 選択解除。 |
 | `getSelectedRows()` | 選択に交差する行(distinct)を返す。serverSide はロード済み行のみ。 |
+
+> 注: `getSelectedRows()` は**セル範囲選択**に交差する行です。下の**チェックボックス行選択**(`enableRowSelection`)とは別レイヤーで、そちらは `getSelectedRowKeys()` / `getSelectedRowData()` を使います。
+
+### 行選択(チェックボックス選択)
+
+`enableRowSelection` を有効にしたチェックボックス行選択の状態を操作します(`getSelectedRows()`=セル範囲由来とは別物)。記述子は `RowSelectionModel = { type: 'include'; rowKeys } | { type: 'exclude'; rowKeys }`(exclude=全選択のうち除外。全選択をキー列挙せず表現)。
+
+| メソッド | 説明 |
+| --- | --- |
+| `getRowSelection()` | 現在の行選択記述子(`RowSelectionModel`)。 |
+| `setRowSelection(model)` | 行選択記述子を設定。controlled 時は `onRowSelectionChange` 経由で親へ委譲(内部 state は書かない)。 |
+| `getSelectedRowKeys()` | 選択中の行キー配列。`include` はそのまま O(選択数)、`exclude` は現在の全行から除外を差し引いて列挙(O(行数))。serverSide はロード済みキーのみ。 |
+| `getSelectedRowData()` | 選択中の行データ。行の探索が要るため O(行数)。キーで足りるなら `getSelectedRowKeys()` を推奨。serverSide はロード済み行のみ。 |
+| `getSelectedRowCount()` | 選択件数。`exclude` は 総行数 − 除外数 で一定コスト。 |
+| `isRowSelected(rowKey)` | 指定キーが選択中かを O(1) 判定。 |
+| `selectAllRows()` | 全行を選択(exclude モード=キーを列挙しない)。 |
+| `clearRowSelection()` | 行選択をすべて解除。 |
+
+**操作(有効時)**: 行ヘッダ(行NO)ガター全体が選択のヒット領域。multiple はクリックでトグル・shift+クリック/ガタードラッグで範囲、single は常に 1 行。ヘッダ左上コーナーは tri-state の全選択チェック(`enableSelectAllRows`)。参照性能維持のため判定は Set の O(1)、全選択は除外集合でキーを materialize しません。
+
+**controlled**: `rowSelection`(記述子)または `selectedRowKeys`(include 糖衣)を渡すと controlled。`onRowSelectionChange` で変化を受け、親が prop を更新して反映します。
 
 ### CSV エクスポート
 

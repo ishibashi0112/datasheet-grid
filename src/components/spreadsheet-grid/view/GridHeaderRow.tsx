@@ -17,7 +17,11 @@ import type {
   ColumnFilterValue,
   GridColumn,
   GridSortState,
+  // 追加(行選択): ヘッダ全選択チェックの 3 状態です。
+  SelectAllState,
 } from '../model/gridTypes';
+// 追加(行選択): 共用チェックボックス glyph です。
+import { RowSelectionCheckbox } from './RowSelectionCheckbox';
 // 変更(10-C): 列座標を ColumnMeasurement(グローバル) から
 //             PaneColumnEntry(ペインローカル) へ切り替えます。
 import type { PaneColumnEntry } from '../logic/geometry';
@@ -45,6 +49,10 @@ type GridHeaderRowProps<T> = {
   rowHeaderCellClassName?: string;
   isCornerHovered: boolean;
   isWholeGridSelected: boolean;
+  // 追加(行選択): コーナーに全選択チェック(tri-state)を描画するか(=enableSelectAllRows)。
+  showSelectAllCheckbox: boolean;
+  // 追加(行選択): 全選択チェックの現在状態(none/some/all)。
+  selectAllState: SelectAllState;
   filteredRowsLength: number;
   visibleColumnsLength: number;
   // 変更(10-C): 描画対象の列エントリです。
@@ -159,6 +167,8 @@ function GridHeaderRowInner<T>({
   rowHeaderCellClassName,
   isCornerHovered,
   isWholeGridSelected,
+  showSelectAllCheckbox,
+  selectAllState,
   filteredRowsLength,
   visibleColumnsLength,
   renderEntries,
@@ -193,12 +203,24 @@ function GridHeaderRowInner<T>({
     >
       {ownsRowHeader && (
         <div
+          // 追加(行選択): 全選択チェック表示時はコーナーが tri-state チェックとして振る舞います。
+          role={showSelectAllCheckbox ? 'checkbox' : undefined}
+          aria-checked={
+            showSelectAllCheckbox
+              ? selectAllState === 'all'
+                ? true
+                : selectAllState === 'some'
+                  ? 'mixed'
+                  : false
+              : undefined
+          }
           onPointerDown={onCornerPointerDown}
           onPointerEnter={onCornerPointerEnter}
           onPointerLeave={onCornerPointerLeave}
           className={cx(
             'ssg-header-cell',
             'ssg-corner-cell',
+            showSelectAllCheckbox && 'ssg-corner-cell--checkbox',
             isWholeGridSelected && 'ssg-header-cell--selected',
             isCornerHovered && 'ssg-header-cell--hovered',
             rowHeaderCellClassName,
@@ -212,7 +234,19 @@ function GridHeaderRowInner<T>({
                 : 'default',
           }}
         >
-          #
+          {showSelectAllCheckbox ? (
+            <RowSelectionCheckbox
+              state={
+                selectAllState === 'all'
+                  ? 'checked'
+                  : selectAllState === 'some'
+                    ? 'indeterminate'
+                    : 'unchecked'
+              }
+            />
+          ) : (
+            '#'
+          )}
         </div>
       )}
 

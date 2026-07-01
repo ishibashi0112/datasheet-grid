@@ -4,6 +4,8 @@
 //   であること(11-A の memo 最適化はこの等価性に依存します)。
 import { describe, it, expect } from 'vitest';
 import type { GridSelection, GridUiState } from './gridTypes';
+// 追加(行選択): テスト用の空行選択を組みます。
+import { createEmptyRowSelection } from '../logic/rowSelection';
 import {
   buildSelectionSnapshot,
   isSameCellCoord,
@@ -22,6 +24,7 @@ import {
 const makeState = (overrides: Partial<GridUiState> = {}): GridUiState => ({
   activeCell: null,
   selection: null,
+  rowSelection: createEmptyRowSelection(),
   editingCell: null,
   dragState: null,
   columnWidths: {},

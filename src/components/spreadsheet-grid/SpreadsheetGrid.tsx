@@ -109,6 +109,20 @@ import type { RowMetrics } from './logic/verticalGeometry';
 // 追加(imperative API #1): CSV エクスポート / スクロール先算出の純ロジックです。
 import { serializeRowsToCsv } from './logic/exportCsv';
 import { buildGridExportData } from './logic/exportData';
+// 追加(行選択): チェックボックス行選択の純ロジックです。
+import {
+  clearRowSelection,
+  countSelectedRows,
+  getSelectAllState,
+  resolveIsRowSelected,
+  rowSelectionFromModel,
+  rowSelectionStateEquals,
+  rowSelectionToModel,
+  selectAllRows,
+  selectRowRange,
+  selectSingleRow,
+  toggleRowKey,
+} from './logic/rowSelection';
 // 追加(state #1): 列状態 get/apply の純ロジックです(snapshot 組み立て / 外部入力の正規化)。
 // 追加(state #2): onStateChange の発火可否判定(decideStateChangeEmit)も同モジュールから読みます。
 // 追加(state v2): 列メタ(可視 / 順序 / ピン)の抽出 / 適用(extractColumnState / applyColumnState)。
@@ -178,6 +192,9 @@ import type {
   // 追加(imperative API #1): ref ハンドルと関連型です。
   GridUiState,
   SpreadsheetGridHandle,
+  // 追加(行選択): 公開記述子と内部状態型です。
+  RowSelectionModel,
+  RowSelectionState,
   CsvExportOptions,
   // 追加(imperative API: getExportData): scope 解決と整形済みデータ型に使います。
   CsvExportScope,
@@ -295,6 +312,14 @@ export function SpreadsheetGrid<T extends object>({
   readOnly = false,
   canEditCell,
   enableRangeSelection = true,
+  // ── 追加(行選択): チェックボックス行選択(既定 false=完全無効) ──
+  enableRowSelection = false,
+  rowSelectionMode = 'multiple',
+  // enableSelectAllRows は既定を後段で解決します(enableRowSelection && multiple)。
+  enableSelectAllRows: enableSelectAllRowsProp,
+  rowSelection: rowSelectionProp,
+  selectedRowKeys: selectedRowKeysProp,
+  onRowSelectionChange,
   enableGlobalFilter = true,
   enableColumnFilter = true,
   enableSorting = true,
@@ -1494,6 +1519,155 @@ export function SpreadsheetGrid<T extends object>({
   //             縦横スクロールの 1 本化により不要になったため削除しました。
   //             固定列は position: sticky で横方向だけ留まり、縦は共有スクロールで一緒に動きます。
 
+  // ── 行選択(チェックボックス選択)─────────────────────────
+  //   controlled の記述子を解決します(rowSelection 優先、無ければ selectedRowKeys の糖衣)。
+  const controlledRowSelectionModel = useMemo<RowSelectionModel | undefined>(
+    () => {
+      if (rowSelectionProp !== undefined) {
+        return rowSelectionProp;
+      }
+      if (selectedRowKeysProp !== undefined) {
+        return { type: 'include', rowKeys: selectedRowKeysProp };
+      }
+      return undefined;
+    },
+    [rowSelectionProp, selectedRowKeysProp],
+  );
+  const isRowSelectionControlled = controlledRowSelectionModel !== undefined;
+
+  // enableSelectAllRows の既定解決(未指定なら enableRowSelection && multiple)。
+  const enableSelectAllRows =
+    enableSelectAllRowsProp ??
+    (enableRowSelection && rowSelectionMode === 'multiple');
+
+  // 現在の行選択状態(reducer が単一の作業状態。controlled では下の effect で prop を反映)。
+  const rowSelectionState = uiState.rowSelection;
+  // ヘッダ全選択チェックの 3 状態(none/some/all)。件数は O(1) で求まります。
+  const selectAllRowsState = getSelectAllState(rowSelectionState, viewRowCount);
+
+  // 安定コールバック用の latest-ref 群(参照を変えず GridBodyRow memo を保つため)。
+  const rowSelectionStateRef = useRef(rowSelectionState);
+  rowSelectionStateRef.current = rowSelectionState;
+  const rowSelectionModeRef = useRef(rowSelectionMode);
+  rowSelectionModeRef.current = rowSelectionMode;
+  const onRowSelectionChangeRef = useRef(onRowSelectionChange);
+  onRowSelectionChangeRef.current = onRowSelectionChange;
+  const isRowSelectionControlledRef = useRef(isRowSelectionControlled);
+  isRowSelectionControlledRef.current = isRowSelectionControlled;
+  // shift / ドラッグ範囲のアンカー(view index。揮発 UI 状態のため ref)。
+  const rowSelectionAnchorRef = useRef<number | null>(null);
+
+  // 選択コミット: uncontrolled は reducer 反映 + onChange 通知、controlled は onChange のみ
+  //   (親が prop を更新→下の sync effect で reducer 反映)。両モードで変化時に onChange 発火。
+  const commitRowSelection = useCallback(
+    (next: RowSelectionState) => {
+      const changed = !rowSelectionStateEquals(rowSelectionStateRef.current, next);
+      if (changed) {
+        onRowSelectionChangeRef.current?.(rowSelectionToModel(next));
+      }
+      if (!isRowSelectionControlledRef.current) {
+        dispatch(gridActions.setRowSelectionState(next));
+      }
+    },
+    [dispatch],
+  );
+  // handle(deps=[])から呼ぶための latest-ref です。
+  const commitRowSelectionRef = useRef(commitRowSelection);
+  commitRowSelectionRef.current = commitRowSelection;
+
+  // view index 範囲 → 行キー配列(SSRM 未ロードはスキップ)。
+  const resolveRowKeysBetween = useCallback(
+    (aIndex: number, bIndex: number): GridRowKey[] => {
+      const rm = rowModelRef.current;
+      const start = Math.min(aIndex, bIndex);
+      const end = Math.max(aIndex, bIndex);
+      const keys: GridRowKey[] = [];
+      for (let i = start; i <= end; i += 1) {
+        const row = rm.getRow(i);
+        if (!row) {
+          continue;
+        }
+        keys.push(rm.getRowKey(i) ?? i);
+      }
+      return keys;
+    },
+    [],
+  );
+
+  // ガター pointerdown: single=単一選択 / multiple=トグル、shift=アンカーから範囲。
+  const handleGutterRowSelect = useCallback(
+    (viewIndex: number, opts: { shiftKey: boolean }) => {
+      const rm = rowModelRef.current;
+      const row = rm.getRow(viewIndex);
+      if (!row) {
+        return; // SSRM 未ロード行は選択しません。
+      }
+      const rowKey = rm.getRowKey(viewIndex) ?? viewIndex;
+
+      if (rowSelectionModeRef.current === 'single') {
+        rowSelectionAnchorRef.current = viewIndex;
+        commitRowSelection(selectSingleRow(rowKey));
+        return;
+      }
+      if (opts.shiftKey && rowSelectionAnchorRef.current !== null) {
+        commitRowSelection(
+          selectRowRange(
+            resolveRowKeysBetween(rowSelectionAnchorRef.current, viewIndex),
+          ),
+        );
+        return;
+      }
+      rowSelectionAnchorRef.current = viewIndex;
+      commitRowSelection(toggleRowKey(rowSelectionStateRef.current, rowKey));
+    },
+    [commitRowSelection, resolveRowKeysBetween],
+  );
+
+  // ガタードラッグ中の範囲更新(multiple)。single はポインタ下の行を単一選択します。
+  const handleGutterRowSelectDrag = useCallback(
+    (viewIndex: number) => {
+      const rm = rowModelRef.current;
+      const row = rm.getRow(viewIndex);
+      if (!row) {
+        return;
+      }
+      if (rowSelectionModeRef.current === 'single') {
+        commitRowSelection(selectSingleRow(rm.getRowKey(viewIndex) ?? viewIndex));
+        return;
+      }
+      if (rowSelectionAnchorRef.current === null) {
+        return;
+      }
+      commitRowSelection(
+        selectRowRange(
+          resolveRowKeysBetween(rowSelectionAnchorRef.current, viewIndex),
+        ),
+      );
+    },
+    [commitRowSelection, resolveRowKeysBetween],
+  );
+
+  // 全選択トグル(ヘッダコーナー)。全選択済みなら解除、そうでなければ全選択。
+  const handleToggleSelectAllRows = useCallback(() => {
+    const rm = rowModelRef.current;
+    const cur = getSelectAllState(
+      rowSelectionStateRef.current,
+      rm.getRowCount(),
+    );
+    commitRowSelection(cur === 'all' ? clearRowSelection() : selectAllRows());
+  }, [commitRowSelection]);
+
+  // controlled: prop の記述子を reducer へ同期します(差分時のみ。reducer 側も同値 no-op)。
+  useEffect(() => {
+    if (!isRowSelectionControlled || !controlledRowSelectionModel) {
+      return;
+    }
+    const next = rowSelectionFromModel(controlledRowSelectionModel);
+    if (!rowSelectionStateEquals(rowSelectionStateRef.current, next)) {
+      dispatch(gridActions.setRowSelectionState(next));
+    }
+  }, [isRowSelectionControlled, controlledRowSelectionModel, dispatch]);
+
   // ── pointer interactions ──────────────────────────────
   const {
     updateSelectionFromPointer,
@@ -1539,6 +1713,10 @@ export function SpreadsheetGrid<T extends object>({
     setHoveredColumnIndex,
     enableRowHover,
     enableColumnHeaderHover,
+    // 追加(行選択): ガター行選択の有効化とコールバックです。
+    enableRowSelection,
+    onGutterRowSelect: handleGutterRowSelect,
+    onGutterRowSelectDrag: handleGutterRowSelectDrag,
   });
 
   // ── clipboard ─────────────────────────────────────────
@@ -1801,6 +1979,12 @@ export function SpreadsheetGrid<T extends object>({
         return;
       }
       gridRootRef.current?.focus();
+      // 追加(行選択): 全選択チェック有効時はコーナーで行選択の全選択/解除をトグルします
+      //   (従来のグリッド全体セル選択より優先)。
+      if (enableSelectAllRows) {
+        handleToggleSelectAllRows();
+        return;
+      }
       if (isWholeGridSelected) {
         dispatch(gridActions.clearSelection());
         dispatch(gridActions.activateCell(null));
@@ -1814,6 +1998,8 @@ export function SpreadsheetGrid<T extends object>({
       isWholeGridSelected,
       selectEntireGrid,
       visibleColumns.length,
+      enableSelectAllRows,
+      handleToggleSelectAllRows,
     ],
   );
 
@@ -3563,6 +3749,79 @@ export function SpreadsheetGrid<T extends object>({
           s.dispatch(gridActions.setAllFilters(normalized.filters));
           s.dispatch(gridActions.setSort(normalized.sort));
         },
+
+        // ── 行選択(チェックボックス選択)────────────────────
+        getRowSelection: () => {
+          const s = apiStateRef.current;
+          return s
+            ? rowSelectionToModel(s.uiState.rowSelection)
+            : { type: 'include', rowKeys: [] };
+        },
+        setRowSelection: (model) => {
+          commitRowSelectionRef.current(rowSelectionFromModel(model));
+        },
+        getSelectedRowKeys: () => {
+          const s = apiStateRef.current;
+          if (!s) {
+            return [];
+          }
+          const sel = s.uiState.rowSelection;
+          // include はキーをそのまま返します(exclude のみ全行を走査)。
+          if (sel.mode === 'include') {
+            return Array.from(sel.keys);
+          }
+          const keys: GridRowKey[] = [];
+          const count = s.rowModel.getRowCount();
+          for (let i = 0; i < count; i += 1) {
+            const row = s.rowModel.getRow(i);
+            // SSRM 未ロード行はスキップ(ロード済みキーのみ列挙)。
+            if (!row) {
+              continue;
+            }
+            const key = s.rowModel.getRowKey(i) ?? i;
+            if (!sel.keys.has(key)) {
+              keys.push(key);
+            }
+          }
+          return keys;
+        },
+        getSelectedRowData: () => {
+          const s = apiStateRef.current;
+          if (!s) {
+            return [];
+          }
+          const sel = s.uiState.rowSelection;
+          const result: T[] = [];
+          const count = s.rowModel.getRowCount();
+          // 行の探索が必要なため O(rowCount)。キーで足りるなら getSelectedRowKeys を推奨。
+          for (let i = 0; i < count; i += 1) {
+            const row = s.rowModel.getRow(i);
+            if (!row) {
+              continue;
+            }
+            const key = s.rowModel.getRowKey(i) ?? i;
+            if (resolveIsRowSelected(sel, key)) {
+              result.push(row);
+            }
+          }
+          return result;
+        },
+        getSelectedRowCount: () => {
+          const s = apiStateRef.current;
+          return s
+            ? countSelectedRows(s.uiState.rowSelection, s.rowModel.getRowCount())
+            : 0;
+        },
+        isRowSelected: (rowKey) => {
+          const s = apiStateRef.current;
+          return s ? resolveIsRowSelected(s.uiState.rowSelection, rowKey) : false;
+        },
+        selectAllRows: () => {
+          commitRowSelectionRef.current(selectAllRows());
+        },
+        clearRowSelection: () => {
+          commitRowSelectionRef.current(clearRowSelection());
+        },
       };
     },
     [],
@@ -3687,6 +3946,8 @@ export function SpreadsheetGrid<T extends object>({
                   rowHeaderCellClassName={classNames?.rowHeaderCell}
                   isCornerHovered={isCornerHovered}
                   isWholeGridSelected={isWholeGridSelected}
+                  showSelectAllCheckbox={enableSelectAllRows}
+                  selectAllState={selectAllRowsState}
                   filteredRowsLength={viewRowCount}
                   visibleColumnsLength={visibleColumns.length}
                   renderEntries={leftRenderEntries}
@@ -3766,6 +4027,8 @@ export function SpreadsheetGrid<T extends object>({
                   rowHeaderCellStyle={rowHeaderCellStyle}
                   hoveredRowIndex={hoveredRowIndex}
                   isWholeGridSelected={isWholeGridSelected}
+                  enableRowSelection={enableRowSelection}
+                  rowSelectionState={rowSelectionState}
                   activeCell={uiState.activeCell}
                   editingCell={uiState.editingCell}
                   selectionSnapshot={selectionSnapshot}
@@ -3827,6 +4090,8 @@ export function SpreadsheetGrid<T extends object>({
                 rowHeaderCellClassName={classNames?.rowHeaderCell}
                 isCornerHovered={isCornerHovered}
                 isWholeGridSelected={isWholeGridSelected}
+                showSelectAllCheckbox={enableSelectAllRows}
+                selectAllState={selectAllRowsState}
                 filteredRowsLength={viewRowCount}
                 visibleColumnsLength={visibleColumns.length}
                 renderEntries={centerRenderEntries}
@@ -3905,6 +4170,8 @@ export function SpreadsheetGrid<T extends object>({
                   rowHeaderCellStyle={rowHeaderCellStyle}
                   hoveredRowIndex={hoveredRowIndex}
                   isWholeGridSelected={isWholeGridSelected}
+                  enableRowSelection={enableRowSelection}
+                  rowSelectionState={rowSelectionState}
                   activeCell={uiState.activeCell}
                   editingCell={uiState.editingCell}
                   selectionSnapshot={selectionSnapshot}
@@ -3960,6 +4227,8 @@ export function SpreadsheetGrid<T extends object>({
                   rowHeaderCellClassName={classNames?.rowHeaderCell}
                   isCornerHovered={isCornerHovered}
                   isWholeGridSelected={isWholeGridSelected}
+                  showSelectAllCheckbox={enableSelectAllRows}
+                  selectAllState={selectAllRowsState}
                   filteredRowsLength={viewRowCount}
                   visibleColumnsLength={visibleColumns.length}
                   renderEntries={rightRenderEntries}
@@ -4036,6 +4305,8 @@ export function SpreadsheetGrid<T extends object>({
                   rowHeaderCellStyle={rowHeaderCellStyle}
                   hoveredRowIndex={hoveredRowIndex}
                   isWholeGridSelected={isWholeGridSelected}
+                  enableRowSelection={enableRowSelection}
+                  rowSelectionState={rowSelectionState}
                   activeCell={uiState.activeCell}
                   editingCell={uiState.editingCell}
                   selectionSnapshot={selectionSnapshot}

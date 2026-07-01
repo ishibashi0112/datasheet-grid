@@ -3,6 +3,11 @@ import type { GridColumn, GridUiState } from './gridTypes';
 // 追加(B3): flex 列(center かつ flex>0)は columnWidths に固定エントリを持たせません。
 //   flex 算出が効くよう、初期生成・columns 同期の両方でこの判定でスキップします。
 import { isFlexingColumn } from '../logic/columnFlex';
+// 追加(行選択): 初期状態と同値判定(同値 set は no-op 化して無駄な再レンダーを避ける)。
+import {
+  createEmptyRowSelection,
+  rowSelectionStateEquals,
+} from '../logic/rowSelection';
 
 // 追加: 列幅のデフォルト下限です。
 const DEFAULT_MIN_WIDTH = 60;
@@ -30,6 +35,8 @@ export const createInitialGridUiState = <T,>(
 ): GridUiState => ({
   activeCell: null,
   selection: null,
+  // 追加(行選択): 空(未選択)で開始します。
+  rowSelection: createEmptyRowSelection(),
   editingCell: null,
   dragState: null,
   columnWidths: createColumnWidthMap(columns),
@@ -362,6 +369,17 @@ export const gridUiReducer = (
       return {
         ...state,
         sort: [],
+      };
+
+    // 追加(行選択): 算出済みの行選択状態を採用します。同値なら no-op(参照維持で
+    //   ドラッグ中などの無駄な再レンダーを抑止)。次状態の生成は logic/rowSelection.ts。
+    case 'rowSelect/set':
+      if (rowSelectionStateEquals(state.rowSelection, action.state)) {
+        return state;
+      }
+      return {
+        ...state,
+        rowSelection: action.state,
       };
 
     default:
