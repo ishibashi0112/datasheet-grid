@@ -371,7 +371,9 @@ export function SpreadsheetGrid<T extends object>({
   classNames,
   // 追加(UI CSS移行): 行ごとの条件付き className。
   getRowClassName,
-  // 追加(バッチ②/コンテキストメニュー): セル/行の完全カスタムメニューの項目供給 / 開通知。
+  // 追加(バッチ②/コンテキストメニュー): 有効化フラグ(既定 false=OFF)+ 項目供給 / 開通知。
+  //   他機能の enable* と同じく既定無効。true かつ getContextMenuItems 指定時のみ発火します。
+  enableContextMenu = false,
   getContextMenuItems,
   onContextMenuOpen,
   // 追加(imperative API #1): React 19 の ref-as-prop。命令的ハンドルを受け取ります。
@@ -1060,8 +1062,9 @@ export function SpreadsheetGrid<T extends object>({
   //   本ハンドラは常時再レンダーされる shell 上に置くため latest-ref 不要(参照安定は不問)です。
   const handleBodyContextMenu = useCallback(
     (event: ReactMouseEvent<HTMLDivElement>) => {
-      // opt-in 判定: getContextMenuItems 未指定なら何もしません(= 標準メニュー)。
-      if (!getContextMenuItems) {
+      // opt-in 判定: マスタースイッチ OFF(既定)/ getContextMenuItems 未指定なら何もしません
+      //   (= ブラウザ標準メニュー)。両方そろって初めて独自メニューの検討に入ります。
+      if (!enableContextMenu || !getContextMenuItems) {
         return;
       }
       const targetEl = event.target as HTMLElement | null;
@@ -1139,6 +1142,7 @@ export function SpreadsheetGrid<T extends object>({
       openContextMenu(params, items);
     },
     [
+      enableContextMenu,
       getContextMenuItems,
       onContextMenuOpen,
       rowModel,

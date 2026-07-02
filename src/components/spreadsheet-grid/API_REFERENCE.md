@@ -59,7 +59,8 @@
 | `classNames` | `GridClassNames` | — | パーツ別の追加 class スロット。現状 `root` / `iconButton` / `bodyCell` / `bodyRow` が配線済み(他は順次)。基底 class は `@layer ssg-base` のため Tailwind 等の未レイヤー上書きが効く。 |
 | `getRowClassName` | `(row: T, rowIndex: number) => string \| undefined` | — | 行ごとの追加 class。行コンテナ + 各データセルに付与され、Tailwind 等での行ハイライトに使える。行ヘッダー「#」セルは現状対象外。 |
 | `onStateChange` | `(state: GridState) => void` | — | 永続スライス(手動リサイズ幅 / フィルター / ソート)が**実際に変化したとき**に最新 `GridState` を渡して呼ばれる。保存タイミングの signal(例: localStorage 自動保存)。発火規約は「状態の保存 / 復元」節を参照。 |
-| `getContextMenuItems` | `(params: GridContextMenuParams<T>) => GridContextMenuItem[]` | — | セル/行の**完全カスタム**コンテキストメニュー。右クリック時のみ呼ばれ、返した項目でメニューを描画する(ライブラリは固定の既定項目を持たない)。opt-in はこの prop の指定そのもの。**未指定、または `[]` を返したときはブラウザ標準の右クリックメニューへフォールスルー**(空パネルは出さない)。SSRM 未ロード行では開かない。ヘッダー右クリックは列メニュー(`enableColumnMenu`)が担当し、本メニューはボディ(セル / 行NO ガター)専用。詳細は「コンテキストメニュー」節を参照。 |
+| `enableContextMenu` | `boolean` | `false` | コンテキストメニュー機能の有効化(マスタースイッチ)。他機能の `enable*` と同じく**既定 OFF**。`false` のあいだは `getContextMenuItems` を渡しても発火せず、右クリックはブラウザ標準メニューのまま。現状はまだ機能 / UI に改善余地があるため既定 OFF で提供する(利用側で明示 opt-in)。 |
+| `getContextMenuItems` | `(params: GridContextMenuParams<T>) => GridContextMenuItem[]` | — | セル/行の**完全カスタム**コンテキストメニュー。右クリック時のみ呼ばれ、返した項目でメニューを描画する(ライブラリは固定の既定項目を持たない)。opt-in は `enableContextMenu={true}` かつ本コールバックの指定の両方。**未指定、または `[]` を返したときはブラウザ標準の右クリックメニューへフォールスルー**(空パネルは出さない)。SSRM 未ロード行では開かない。ヘッダー右クリックは列メニュー(`enableColumnMenu`)が担当し、本メニューはボディ(セル / 行NO ガター)専用。詳細は「コンテキストメニュー」節を参照。 |
 | `onContextMenuOpen` | `(params: GridContextMenuParams<T>) => void` | — | コンテキストメニューが実際に開いた直後の通知(項目が 1 件以上あり表示された場合のみ)。
 
 ### バーの表示制御(top / bottom)
@@ -86,15 +87,15 @@
 
 ボトムバーは Rows / Columns 件数のみ `showBottomBarCounts` で出し分けできる(右側の Active / Selection / 選択統計 / Cols は対象外)。それ以外の内訳を変えたい場合は `renderBottomBar` を使う。
 
-### コンテキストメニュー(`getContextMenuItems`)
+### コンテキストメニュー(`enableContextMenu` / `getContextMenuItems`)
 
-セル / 行の右クリックで開く**完全カスタム**メニュー。ライブラリは固定項目を一切持たず、`getContextMenuItems` が返した項目配列だけを描画する。用意されるのは「窓」(パネル外装 + 右クリック座標配置 + 開閉 / Escape / 外側クリック / スクロール close)だけで、中身(ラベル / アイコン / `onSelect`)はすべて利用側が渡す。列メニューと同じ `.ssg-menu-panel` / `.ssg-menu-item` 外装を再利用する。
+セル / 行の右クリックで開く**完全カスタム**メニュー。**既定は OFF**(`enableContextMenu={false}`)で、他機能の `enable*` と同じくマスタースイッチで有効化する(現状はまだ機能 / UI に改善余地があるため既定 OFF)。ライブラリは固定項目を一切持たず、`getContextMenuItems` が返した項目配列だけを描画する。用意されるのは「窓」(パネル外装 + 右クリック座標配置 + 開閉 / Escape / 外側クリック / スクロール close)だけで、中身(ラベル / アイコン / `onSelect`)はすべて利用側が渡す。列メニューと同じ `.ssg-menu-panel` / `.ssg-menu-item` 外装を再利用する。
 
 **opt-in と標準メニューへのフォールスルー**
 
-- `getContextMenuItems` 未指定 → ブラウザ標準の右クリックメニュー。
-- 指定したが `[]` を返した(この対象では項目なし)→ 同上(**空パネルは浮かせない**)。
-- 項目を返した → その項目が並んだメニューを右クリック座標に表示。
+- `enableContextMenu` 未設定 / `false`(既定)→ ブラウザ標準の右クリックメニュー(`getContextMenuItems` を渡していても発火しない)。
+- `enableContextMenu={true}` かつ `getContextMenuItems` が項目を返した → その項目が並んだメニューを右クリック座標に表示。
+- `enableContextMenu={true}` でも `getContextMenuItems` 未指定 / `[]` を返した(対象で項目なし)→ ブラウザ標準メニュー(**空パネルは浮かせない**)。
 
 **対象と挙動**
 
@@ -126,6 +127,7 @@
 ```tsx
 <SpreadsheetGrid
   // …
+  enableContextMenu // 既定 false。機能を使うにはこのマスタースイッチが必要
   getContextMenuItems={(params) => {
     const items: GridContextMenuItem[] = [];
     if (params.target.type === 'cell') {

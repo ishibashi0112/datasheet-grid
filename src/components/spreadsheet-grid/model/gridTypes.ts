@@ -879,10 +879,15 @@ export type SpreadsheetGridProps<T> = {
   //   (注記: 行ヘッダー「#」セルはヘッダー系スタイルと共有のため現状この対象外です。)
   getRowClassName?: (row: T, rowIndex: number) => string | undefined;
   // ── 追加(バッチ②/コンテキストメニュー): セル/行の汎用コンテキストメニュー(完全カスタム) ──
+  //   有効化のマスタースイッチです(既定 false=OFF)。他機能の enable* と同じく、機能自体は既定で無効。
+  //   false のあいだは getContextMenuItems を渡しても発火せず、右クリックはブラウザ標準メニューのままです。
+  //   注記: 現状はまだ機能面/UI 面に改善余地があるため既定 OFF で提供します(利用側で明示 opt-in)。
+  enableContextMenu?: boolean;
   //   右クリック時のみ呼ばれ、返した項目でメニューを描画します(ライブラリは固定の既定項目を持ちません)。
-  //   opt-in はこの prop の指定そのもの: 未指定、または [] を返したときはブラウザ標準の右クリック
-  //   メニューにフォールスルーします(空のパネルは表示しません)。SSRM 未ロード行では開きません。
-  //   ヘッダー右クリックは列メニュー(enableColumnMenu)が担当し、本メニューはボディ(セル/行NO ガター)専用です。
+  //   opt-in は enableContextMenu={true} かつ本コールバックの指定の両方が必要です。未指定、または [] を
+  //   返したときはブラウザ標準の右クリックメニューへフォールスルーします(空のパネルは表示しません)。
+  //   SSRM 未ロード行では開きません。ヘッダー右クリックは列メニュー(enableColumnMenu)が担当し、本メニューは
+  //   ボディ(セル/行NO ガター)専用です。
   getContextMenuItems?: (
     params: GridContextMenuParams<T>,
   ) => GridContextMenuItem[];
