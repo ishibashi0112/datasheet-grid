@@ -507,16 +507,25 @@ export type GridContextMenuParams<T> = {
 };
 
 // アクション項目です。クリックで onSelect 実行後にメニューを自動で閉じます。
-//   - id   : React key 用(省略時は配列 index)。
-//   - icon : 左 14px アイコン枠に表示(省略時は空スペーサで他項目とラベル左端を揃えます)。
-//   - kind : 省略可(既定 'action')。
+//   - id     : React key 用(省略時は配列 index)。
+//   - icon   : 左 14px アイコン枠に表示(省略時は空スペーサで他項目とラベル左端を揃えます)。
+//   - danger : 危険操作(削除等)の赤系強調(Mantine の color="red" 相当)。既定 false。
+//   - kind   : 省略可(既定 'action')。
 export type GridContextMenuActionItem = {
   kind?: 'action';
   id?: string;
   label: ReactNode;
   icon?: ReactNode;
   disabled?: boolean;
+  danger?: boolean;
   onSelect: () => void;
+};
+
+// セクション見出し(非インタラクティブ / Mantine の Menu.Label 相当)です。項目群のグルーピング表示に使います。
+export type GridContextMenuLabelItem = {
+  kind: 'label';
+  id?: string;
+  label: ReactNode;
 };
 
 // 区切り線です。
@@ -533,11 +542,12 @@ export type GridContextMenuCustomItem = {
   render: (ctx: { close: () => void }) => ReactNode;
 };
 
-// コンテキストメニュー項目の判別共用体です(action=既定 / separator / custom)。
+// コンテキストメニュー項目の判別共用体です(action=既定 / label=見出し / separator / custom)。
 //   ライブラリは既定項目を一切持たず、この配列が空(または getContextMenuItems 未指定)なら
 //   ブラウザ標準メニューへフォールスルーします。
 export type GridContextMenuItem =
   | GridContextMenuActionItem
+  | GridContextMenuLabelItem
   | GridContextMenuSeparatorItem
   | GridContextMenuCustomItem;
 

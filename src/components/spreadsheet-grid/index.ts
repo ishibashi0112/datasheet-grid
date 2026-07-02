@@ -75,6 +75,7 @@ export type {
   GridContextMenuParams,
   GridContextMenuItem,
   GridContextMenuActionItem,
+  GridContextMenuLabelItem,
   GridContextMenuSeparatorItem,
   GridContextMenuCustomItem,
 } from './model/gridTypes';

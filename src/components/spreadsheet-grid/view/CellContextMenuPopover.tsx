@@ -76,6 +76,19 @@ export function CellContextMenuPopover({
           );
         }
 
+        // セクション見出し(非インタラクティブ / Menu.Label 相当)。
+        if (item.kind === 'label') {
+          return (
+            <div
+              key={item.id ?? `label-${index}`}
+              className="ssg-menu-section-label"
+              role="presentation"
+            >
+              {item.label}
+            </div>
+          );
+        }
+
         // 完全自由描画のエスケープハッチ(レンダラ)。close を渡します。
         if (item.kind === 'custom') {
           return (
@@ -99,6 +112,7 @@ export function CellContextMenuPopover({
             }}
             className={cx(
               'ssg-menu-item',
+              item.danger && 'ssg-menu-item--danger',
               item.disabled && 'ssg-menu-item--disabled',
             )}
           >

@@ -1003,6 +1003,8 @@ function App() {
         //   onSelect のクロージャへ渡しています(target 参照の絞り込みはクロージャ跨ぎで保持されないため)。
         getContextMenuItems={(params): GridContextMenuItem[] => {
           const items: GridContextMenuItem[] = [];
+          // label(見出し): 非インタラクティブなセクションラベル。Mantine の Menu.Label 相当。
+          items.push({ kind: 'label', label: '操作' });
           if (params.target.type === 'cell') {
             const cellValue = params.target.value;
             const colTitle =
@@ -1034,6 +1036,17 @@ function App() {
               }),
           });
           items.push({ kind: 'separator' });
+          // danger(赤系強調): 危険操作。Mantine の color="red" 相当。
+          items.push({
+            label: 'この行を削除',
+            danger: true,
+            onSelect: () =>
+              window.alert(
+                `削除(デモ): 行 ${params.target.rowIndex} / キー ${String(
+                  params.target.rowKey,
+                )}`,
+              ),
+          });
           // custom item(レンダラ): 完全自由描画 + close() で任意に閉じられます。
           items.push({
             kind: 'custom',

@@ -1092,6 +1092,24 @@
     background-color: #f1f5f9;
   }
 
+  /* 追加(バッチ②/語彙拡張): セクション見出し(Mantine Menu.Label 相当)。非インタラクティブ。 */
+  .ssg-menu-section-label {
+    font-size: 11px;
+    font-weight: 600;
+    color: #94a3b8;
+    padding: 6px 8px 2px;
+    user-select: none;
+  }
+
+  /* 追加(バッチ②/語彙拡張): 危険操作(削除等)の赤系強調(Mantine color="red" 相当)。
+     base の color / hover と同 specificity のため、後勝ちで上書きされるようここに置きます。 */
+  .ssg-menu-item--danger {
+    color: #dc2626;
+  }
+  .ssg-menu-item--danger:not(:disabled):not(.ssg-menu-item--disabled):hover {
+    background-color: #fef2f2;
+  }
+
   .ssg-menu-submenu-anchor {
     position: relative;
   }

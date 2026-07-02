@@ -116,8 +116,9 @@
 
 **`GridContextMenuItem`**(判別共用体)
 
-- **action(既定)**: `{ kind?: 'action'; id?; label: ReactNode; icon?: ReactNode; disabled?; onSelect: () => void }` — クリックで `onSelect` 実行後に自動で閉じる。`icon` 省略時も左 14px 枠が空スペーサになりラベル左端が揃う。
-- **separator**: `{ kind: 'separator'; id? }` — 区切り線。
+- **action(既定)**: `{ kind?: 'action'; id?; label: ReactNode; icon?: ReactNode; disabled?; danger?; onSelect: () => void }` — クリックで `onSelect` 実行後に自動で閉じる。`icon` 省略時も左 14px 枠が空スペーサになりラベル左端が揃う。`danger` は削除など危険操作の赤系強調(Mantine の `color="red"` 相当)。
+- **label(見出し)**: `{ kind: 'label'; id?; label: ReactNode }` — 非インタラクティブなセクション見出し(Mantine の `Menu.Label` 相当)。項目群のグルーピング表示に使う。
+- **separator**: `{ kind: 'separator'; id? }` — 区切り線(Mantine の `Menu.Divider` 相当)。
 - **custom(レンダラ / エスケープハッチ)**: `{ kind: 'custom'; id?; render: (ctx: { close: () => void }) => ReactNode }` — パネル内に任意 JSX を差し込む。`close()` で任意タイミングに閉じられる。
 
 `id` は React key 用(省略時は配列 index)。項目は非ジェネリック: 行データは `getContextMenuItems` 内で `params` を通じてクロージャに閉じ込める。
@@ -130,6 +131,7 @@
   enableContextMenu // 既定 false。機能を使うにはこのマスタースイッチが必要
   getContextMenuItems={(params) => {
     const items: GridContextMenuItem[] = [];
+    items.push({ kind: 'label', label: '操作' }); // セクション見出し
     if (params.target.type === 'cell') {
       const value = params.target.value; // narrowing はローカルへ退避してから onSelect で使う
       items.push({
@@ -138,6 +140,12 @@
         onSelect: () => navigator.clipboard?.writeText(String(value ?? '')),
       });
     }
+    items.push({ kind: 'separator' });
+    items.push({
+      label: 'この行を削除',
+      danger: true, // 赤系強調
+      onSelect: () => deleteRow(params.target.rowKey),
+    });
     items.push({ kind: 'separator' });
     items.push({
       label: '選択範囲を CSV 出力',
