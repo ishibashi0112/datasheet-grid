@@ -464,6 +464,83 @@ export type SpreadsheetGridSlotContext<T> = {
   globalFilterProgress: number;
 };
 
+// ── 追加(バッチ②/コンテキストメニュー): セル/行の汎用コンテキストメニュー(完全カスタム)の公開型群 ──
+//   完全カスタム設計: ライブラリは固定の既定項目を一切持ちません。右クリック時のみ getContextMenuItems が
+//   呼ばれ、返した項目でメニューを描画します。項目が空([])または getContextMenuItems 未指定のときは
+//   ブラウザ標準の右クリックメニューへフォールスルーします(空のパネルは表示しません)。
+//   ヘッダー右クリックは列メニュー(enableColumnMenu)が担当し、本メニューはボディ(セル/行NO ガター)専用です。
+
+// 右クリック対象の識別です。
+//   'cell'      : ボディのデータセル(列あり)。
+//   'rowHeader' : 行NO ガター(列なし = 行そのものが対象)。
+//   rowIndex はビュー行 index、colIndex は論理列 index(視覚順 左→中央→右 = handle.selectCell と同一空間)。
+export type GridContextMenuTarget<T> =
+  | {
+      type: 'cell';
+      rowIndex: number;
+      colIndex: number;
+      rowKey: GridRowKey;
+      row: T;
+      column: GridColumn<T>;
+      value: unknown;
+    }
+  | {
+      type: 'rowHeader';
+      rowIndex: number;
+      rowKey: GridRowKey;
+      row: T;
+    };
+
+// getContextMenuItems / onContextMenuOpen に渡す右クリックコンテキストです。
+//   - clientX/clientY : 右クリックのビューポート座標(メニュー配置に使用済み。consumer の判断材料にも)。
+//   - selection       : 現在のセル範囲選択(チェックボックス行選択は handle.getRowSelection で別途取得)。
+//   - activeCell      : 現在のアクティブセル。
+//   - isTargetSelected: 対象(cell はそのセル / rowHeader はその行)が selection に含まれるか。
+//     「選択範囲に対する操作」か「単一対象への操作」かを consumer が分岐するための簡便値です。
+export type GridContextMenuParams<T> = {
+  target: GridContextMenuTarget<T>;
+  clientX: number;
+  clientY: number;
+  selection: GridSelection;
+  activeCell: CellCoord | null;
+  isTargetSelected: boolean;
+};
+
+// アクション項目です。クリックで onSelect 実行後にメニューを自動で閉じます。
+//   - id   : React key 用(省略時は配列 index)。
+//   - icon : 左 14px アイコン枠に表示(省略時は空スペーサで他項目とラベル左端を揃えます)。
+//   - kind : 省略可(既定 'action')。
+export type GridContextMenuActionItem = {
+  kind?: 'action';
+  id?: string;
+  label: ReactNode;
+  icon?: ReactNode;
+  disabled?: boolean;
+  onSelect: () => void;
+};
+
+// 区切り線です。
+export type GridContextMenuSeparatorItem = {
+  kind: 'separator';
+  id?: string;
+};
+
+// 完全自由描画のエスケープハッチ項目(「レンダラ」)です。
+//   render に渡る close() でメニューを閉じられます(項目内のボタン等から任意タイミングで)。
+export type GridContextMenuCustomItem = {
+  kind: 'custom';
+  id?: string;
+  render: (ctx: { close: () => void }) => ReactNode;
+};
+
+// コンテキストメニュー項目の判別共用体です(action=既定 / separator / custom)。
+//   ライブラリは既定項目を一切持たず、この配列が空(または getContextMenuItems 未指定)なら
+//   ブラウザ標準メニューへフォールスルーします。
+export type GridContextMenuItem =
+  | GridContextMenuActionItem
+  | GridContextMenuSeparatorItem
+  | GridContextMenuCustomItem;
+
 // 追加: 公開 props です。
 // 追加(UI CSS移行): 各パーツへ追加 className を差し込むスロットです。利用側はここに任意のクラス
 //   (例: 別プロジェクトの Tailwind ユーティリティ)を渡して局所調整できます。基底クラスは
@@ -801,4 +878,14 @@ export type SpreadsheetGridProps<T> = {
   //   返り値は行コンテナと各データセルへ付与され、Tailwind 等での行ハイライトに使えます。
   //   (注記: 行ヘッダー「#」セルはヘッダー系スタイルと共有のため現状この対象外です。)
   getRowClassName?: (row: T, rowIndex: number) => string | undefined;
+  // ── 追加(バッチ②/コンテキストメニュー): セル/行の汎用コンテキストメニュー(完全カスタム) ──
+  //   右クリック時のみ呼ばれ、返した項目でメニューを描画します(ライブラリは固定の既定項目を持ちません)。
+  //   opt-in はこの prop の指定そのもの: 未指定、または [] を返したときはブラウザ標準の右クリック
+  //   メニューにフォールスルーします(空のパネルは表示しません)。SSRM 未ロード行では開きません。
+  //   ヘッダー右クリックは列メニュー(enableColumnMenu)が担当し、本メニューはボディ(セル/行NO ガター)専用です。
+  getContextMenuItems?: (
+    params: GridContextMenuParams<T>,
+  ) => GridContextMenuItem[];
+  // 追加(バッチ②): コンテキストメニューが実際に開いた直後の通知です(項目が 1 件以上あり表示された場合のみ)。
+  onContextMenuOpen?: (params: GridContextMenuParams<T>) => void;
 };

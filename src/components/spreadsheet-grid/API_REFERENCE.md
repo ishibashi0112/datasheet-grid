@@ -59,6 +59,8 @@
 | `classNames` | `GridClassNames` | — | パーツ別の追加 class スロット。現状 `root` / `iconButton` / `bodyCell` / `bodyRow` が配線済み(他は順次)。基底 class は `@layer ssg-base` のため Tailwind 等の未レイヤー上書きが効く。 |
 | `getRowClassName` | `(row: T, rowIndex: number) => string \| undefined` | — | 行ごとの追加 class。行コンテナ + 各データセルに付与され、Tailwind 等での行ハイライトに使える。行ヘッダー「#」セルは現状対象外。 |
 | `onStateChange` | `(state: GridState) => void` | — | 永続スライス(手動リサイズ幅 / フィルター / ソート)が**実際に変化したとき**に最新 `GridState` を渡して呼ばれる。保存タイミングの signal(例: localStorage 自動保存)。発火規約は「状態の保存 / 復元」節を参照。 |
+| `getContextMenuItems` | `(params: GridContextMenuParams<T>) => GridContextMenuItem[]` | — | セル/行の**完全カスタム**コンテキストメニュー。右クリック時のみ呼ばれ、返した項目でメニューを描画する(ライブラリは固定の既定項目を持たない)。opt-in はこの prop の指定そのもの。**未指定、または `[]` を返したときはブラウザ標準の右クリックメニューへフォールスルー**(空パネルは出さない)。SSRM 未ロード行では開かない。ヘッダー右クリックは列メニュー(`enableColumnMenu`)が担当し、本メニューはボディ(セル / 行NO ガター)専用。詳細は「コンテキストメニュー」節を参照。 |
+| `onContextMenuOpen` | `(params: GridContextMenuParams<T>) => void` | — | コンテキストメニューが実際に開いた直後の通知(項目が 1 件以上あり表示された場合のみ)。
 
 ### バーの表示制御(top / bottom)
 
@@ -83,6 +85,77 @@
 `showTopBarSummary` と `showTopBarFilter`(実効は `showTopBarFilter && enableGlobalFilter`)がともに `false` の場合、既定トップバーは描画されない(空バーを出さない)。
 
 ボトムバーは Rows / Columns 件数のみ `showBottomBarCounts` で出し分けできる(右側の Active / Selection / 選択統計 / Cols は対象外)。それ以外の内訳を変えたい場合は `renderBottomBar` を使う。
+
+### コンテキストメニュー(`getContextMenuItems`)
+
+セル / 行の右クリックで開く**完全カスタム**メニュー。ライブラリは固定項目を一切持たず、`getContextMenuItems` が返した項目配列だけを描画する。用意されるのは「窓」(パネル外装 + 右クリック座標配置 + 開閉 / Escape / 外側クリック / スクロール close)だけで、中身(ラベル / アイコン / `onSelect`)はすべて利用側が渡す。列メニューと同じ `.ssg-menu-panel` / `.ssg-menu-item` 外装を再利用する。
+
+**opt-in と標準メニューへのフォールスルー**
+
+- `getContextMenuItems` 未指定 → ブラウザ標準の右クリックメニュー。
+- 指定したが `[]` を返した(この対象では項目なし)→ 同上(**空パネルは浮かせない**)。
+- 項目を返した → その項目が並んだメニューを右クリック座標に表示。
+
+**対象と挙動**
+
+- **ヘッダー右クリックは対象外**(列メニュー `enableColumnMenu` が担当)。本メニューはボディの **データセル**と **行NO ガター**専用。
+- **SSRM 未ロード行**(まだ取得できていない行)の上では開かない(標準メニューになる)。
+- uncontrolled のみ。右クリックしても**セル選択は変化しない**(対象セル/行の情報は `params` で受け取る)。
+- close 契機: 項目選択 / 外側クリック / Escape / スクロール。項目間のキーボード移動(矢印キー)は持たない。
+
+**`GridContextMenuParams<T>`**(コールバック引数)
+
+| フィールド | 型 | 説明 |
+| --- | --- | --- |
+| `target` | `GridContextMenuTarget<T>` | 右クリック対象。`{ type:'cell', rowIndex, colIndex, rowKey, row, column, value }` か `{ type:'rowHeader', rowIndex, rowKey, row }`(行NO ガター)。`rowIndex` はビュー行 index、`colIndex` は論理列 index(視覚順 左→中央→右 = `handle.selectCell` と同一空間)。 |
+| `clientX` / `clientY` | `number` | 右クリックのビューポート座標(メニュー配置に使用済み。分岐の判断材料にも)。 |
+| `selection` | `GridSelection` | 現在のセル範囲選択。チェックボックス行選択は `handle.getRowSelection()` で別途取得。 |
+| `activeCell` | `CellCoord \| null` | 現在のアクティブセル。 |
+| `isTargetSelected` | `boolean` | 対象(cell はそのセル / rowHeader はその行)が `selection` に含まれるか。「選択範囲への操作」か「単一対象への操作」かを分岐する簡便値。 |
+
+**`GridContextMenuItem`**(判別共用体)
+
+- **action(既定)**: `{ kind?: 'action'; id?; label: ReactNode; icon?: ReactNode; disabled?; onSelect: () => void }` — クリックで `onSelect` 実行後に自動で閉じる。`icon` 省略時も左 14px 枠が空スペーサになりラベル左端が揃う。
+- **separator**: `{ kind: 'separator'; id? }` — 区切り線。
+- **custom(レンダラ / エスケープハッチ)**: `{ kind: 'custom'; id?; render: (ctx: { close: () => void }) => ReactNode }` — パネル内に任意 JSX を差し込む。`close()` で任意タイミングに閉じられる。
+
+`id` は React key 用(省略時は配列 index)。項目は非ジェネリック: 行データは `getContextMenuItems` 内で `params` を通じてクロージャに閉じ込める。
+
+**例**
+
+```tsx
+<SpreadsheetGrid
+  // …
+  getContextMenuItems={(params) => {
+    const items: GridContextMenuItem[] = [];
+    if (params.target.type === 'cell') {
+      const value = params.target.value; // narrowing はローカルへ退避してから onSelect で使う
+      items.push({
+        label: '値をコピー',
+        icon: '📋',
+        onSelect: () => navigator.clipboard?.writeText(String(value ?? '')),
+      });
+    }
+    items.push({ kind: 'separator' });
+    items.push({
+      label: '選択範囲を CSV 出力',
+      disabled: !params.isTargetSelected,
+      onSelect: () => gridRef.current?.downloadCsv('selection.csv', { scope: 'selection' }),
+    });
+    items.push({
+      kind: 'custom',
+      render: ({ close }) => (
+        <div style={{ padding: '6px 8px' }}>
+          行 {params.target.rowIndex}
+          <button type="button" onClick={close}>閉じる</button>
+        </div>
+      ),
+    });
+    return items; // [] を返すと標準メニューへフォールスルー
+  }}
+  onContextMenuOpen={(params) => console.log('opened at', params.target)}
+/>
+```
 
 ## GridColumn props (`GridColumn<T>`)
 

@@ -3,6 +3,8 @@ import {
   SpreadsheetGrid,
   numberFormatter,
   type GridColumn,
+  // 追加(バッチ②デモ): コンテキストメニュー項目の型。
+  type GridContextMenuItem,
   type GridState,
   type ServerSideDataSource,
   type ServerSideGetRowsResult,
@@ -981,6 +983,63 @@ function App() {
               setRowSelectionCount(gridRef.current?.getSelectedRowCount() ?? 0),
             );
           }
+        }}
+        // 追加(バッチ②デモ): セル/行の完全カスタムコンテキストメニューです。項目を返した時だけ独自メニューを
+        //   出し、[] を返す/未指定ならブラウザ標準メニューになります(ここでは常に項目を返します)。
+        //   narrowing 用に params.target.type==='cell' 内でプリミティブ(値/列タイトル)を捕捉してから
+        //   onSelect のクロージャへ渡しています(target 参照の絞り込みはクロージャ跨ぎで保持されないため)。
+        getContextMenuItems={(params): GridContextMenuItem[] => {
+          const items: GridContextMenuItem[] = [];
+          if (params.target.type === 'cell') {
+            const cellValue = params.target.value;
+            const colTitle =
+              params.target.column.title ?? params.target.column.key;
+            items.push({
+              label: `「${colTitle}」の値をコピー`,
+              icon: '📋',
+              onSelect: () => {
+                void navigator.clipboard?.writeText(String(cellValue ?? ''));
+              },
+            });
+          }
+          items.push({ kind: 'separator' });
+          items.push({
+            label: `この行(キー: ${String(params.target.rowKey)})を選択`,
+            onSelect: () =>
+              gridRef.current?.selectCell(params.target.rowIndex, 0, {
+                scrollIntoView: true,
+              }),
+          });
+          items.push({
+            label: params.isTargetSelected
+              ? '選択範囲を CSV 出力'
+              : '（選択範囲なし）',
+            disabled: !params.isTargetSelected,
+            onSelect: () =>
+              gridRef.current?.downloadCsv('selection.csv', {
+                scope: 'selection',
+              }),
+          });
+          items.push({ kind: 'separator' });
+          // custom item(レンダラ): 完全自由描画 + close() で任意に閉じられます。
+          items.push({
+            kind: 'custom',
+            render: ({ close }) => (
+              <div
+                style={{ padding: '6px 8px', fontSize: 12, color: '#64748b' }}
+              >
+                右クリック行: {params.target.rowIndex}
+                <button
+                  type="button"
+                  onClick={close}
+                  style={{ marginLeft: 8, fontSize: 12 }}
+                >
+                  閉じる
+                </button>
+              </div>
+            ),
+          });
+          return items;
         }}
         enableGlobalFilter
         // 追加(①デモ): 上の「列リサイズ(全体)」トグルと連動します(qty 列は resizable:false で常に不可)。

@@ -12,6 +12,7 @@ import {
   useState,
   type CSSProperties,
   type PointerEvent,
+  type MouseEvent as ReactMouseEvent,
 } from 'react';
 
 // 追加(UI CSS移行): 基底スタイル(トークン + @layer ssg-base)を読み込みます。
@@ -204,6 +205,10 @@ import type {
   SpreadsheetGridProps,
   // 追加(state #2): onStateChange の lastEmitted 保持 / snapshot 型に使います。
   GridState,
+  // 追加(バッチ②/コンテキストメニュー): 対象/params/項目の公開型。
+  GridContextMenuTarget,
+  GridContextMenuParams,
+  GridContextMenuItem,
 } from './model/gridTypes';
 import { getCellValue, isCellEditable, setCellValue } from './utils/permissions';
 import ColumnFilterPopover, {
@@ -227,6 +232,14 @@ import useSortManagementController from './hooks/useSortManagementController';
 import SortManagementPanel, {
   type SortManagementColumn,
 } from './view/SortManagementPanel';
+// 追加(バッチ②/コンテキストメニュー): 対象解決(純ロジック)/ controller / portal popover。
+import {
+  resolveContextMenuColIndex,
+  isContextMenuCellSelected,
+  isContextMenuRowSelected,
+} from './logic/contextMenuTarget';
+import useCellContextMenuController from './hooks/useCellContextMenuController';
+import CellContextMenuPopover from './view/CellContextMenuPopover';
 // import ColumnChooserPanel, {
 //   type ColumnChooserItem,
 // } from './view/ColumnChooserPanel';
@@ -273,6 +286,8 @@ const EMPTY_SORT: GridSortState = [];
 // 追加(B3): flex 非適用時(未計測 / flex 列なし)に返す共有の空 map です。参照同一性で
 //   「flex 素通し(= effectiveColumnWidths は uiState.columnWidths そのまま)」を判定します。
 const EMPTY_FLEX_WIDTHS: Record<string, number> = {};
+// 追加(バッチ②): コンテキストメニュー closed 時に popover へ渡す空 items(参照不変)。
+const EMPTY_CONTEXT_MENU_ITEMS: GridContextMenuItem[] = [];
 // 追加(#2): リサイズハンドルのダブルクリック判定しきい値です。native dblclick は pointerdown の
 //   preventDefault でブラウザ差により抑止されることがあるため、時刻 + 位置で自前判定します
 //   (native と同じ「短時間 + 近接位置」の 2 条件)。位置チェックは「リサイズ直後の再ドラッグ」を
@@ -356,6 +371,9 @@ export function SpreadsheetGrid<T extends object>({
   classNames,
   // 追加(UI CSS移行): 行ごとの条件付き className。
   getRowClassName,
+  // 追加(バッチ②/コンテキストメニュー): セル/行の完全カスタムメニューの項目供給 / 開通知。
+  getContextMenuItems,
+  onContextMenuOpen,
   // 追加(imperative API #1): React 19 の ref-as-prop。命令的ハンドルを受け取ります。
   ref,
   // 追加(state #2): 永続スライス変化の通知口(保存タイミング signal)。発火規約は型定義のコメント参照。
@@ -757,6 +775,20 @@ export function SpreadsheetGrid<T extends object>({
     gridRootRef,
   });
 
+  // ── cell context menu(バッチ②) ──────────────────────
+  // 追加(バッチ②): セル/行の汎用コンテキストメニュー(完全カスタム)の controller です。
+  //             配置(右クリック座標)/ outside click / Escape / scroll close を管理します。
+  //             対象解決・項目供給は下の handleBodyContextMenu(委譲)で行い、確定 params + items を
+  //             openContextMenu へ渡します。相互排他は他 popover と同じく outside-pointerdown が担います。
+  const {
+    contextMenuState,
+    contextMenuLayout,
+    contextMenuRef,
+    isContextMenuOpen,
+    openContextMenu,
+    closeContextMenu,
+  } = useCellContextMenuController<T>({ gridRootRef });
+
   // ── column widths sync ────────────────────────────────
   // 変更(B3): merge(syncColumnWidths)→ フル置換(resetColumnWidths)へ変更し、flex 列(center かつ
   //   flex>0)はエントリを作りません。これにより (1) flex 列が固定エントリを持って flex が無効化される
@@ -1018,6 +1050,104 @@ export function SpreadsheetGrid<T extends object>({
   //   キャプチャし、実行中に参照が変わった(= order/rows 変化)ら計測を中断するために使います。
   const rowModelRef = useRef(rowModel);
   rowModelRef.current = rowModel;
+
+  // ── body context menu(バッチ②) ──────────────────────
+  // 追加(バッチ②): ボディ右クリックの委譲ハンドラです。ssg-shell 上の 1 ハンドラで対象セル/行を
+  //   DOM(data-row-index / data-ssg-col-key)から逆引きし、getContextMenuItems の項目でメニューを
+  //   開きます(memo 済みの行/セルへ props を足さない設計)。opt-in はこの prop の指定そのもので、
+  //   未指定・項目空・SSRM 未ロード行ではブラウザ標準メニューへフォールスルーします(空パネルは出さない)。
+  //   ヘッダーは [data-row-index] を持たないため必ず早期 return し、列メニューと自然排他になります。
+  //   本ハンドラは常時再レンダーされる shell 上に置くため latest-ref 不要(参照安定は不問)です。
+  const handleBodyContextMenu = useCallback(
+    (event: ReactMouseEvent<HTMLDivElement>) => {
+      // opt-in 判定: getContextMenuItems 未指定なら何もしません(= 標準メニュー)。
+      if (!getContextMenuItems) {
+        return;
+      }
+      const targetEl = event.target as HTMLElement | null;
+      if (!targetEl) {
+        return;
+      }
+      // ボディ行コンテナ(行NO ガター含む)。ヘッダーはこれを持たないため null → 早期 return。
+      const rowEl = targetEl.closest<HTMLElement>('[data-row-index]');
+      if (!rowEl) {
+        return;
+      }
+      const rowIndexRaw = rowEl.dataset.rowIndex;
+      if (rowIndexRaw === undefined) {
+        return;
+      }
+      const rowIndex = Number(rowIndexRaw);
+      if (!Number.isInteger(rowIndex)) {
+        return;
+      }
+      const row = rowModel.getRow(rowIndex);
+      // SSRM 未ロード / OOB は開きません(標準メニューへ)。
+      if (!row) {
+        return;
+      }
+      const rowKey = rowModel.getRowKey(rowIndex) ?? rowIndex;
+
+      // セル(data-ssg-col-key あり)か、行NO ガター(なし)かで target を分けます。
+      let target: GridContextMenuTarget<T>;
+      let isTargetSelected: boolean;
+      const cellEl = targetEl.closest<HTMLElement>('[data-ssg-col-key]');
+      const colKey = cellEl?.dataset.ssgColKey;
+      if (cellEl && colKey !== undefined) {
+        const colIndex = resolveContextMenuColIndex(orderedColumns, colKey);
+        if (colIndex < 0) {
+          return;
+        }
+        const column = orderedColumns[colIndex];
+        target = {
+          type: 'cell',
+          rowIndex,
+          colIndex,
+          rowKey,
+          row,
+          column,
+          value: getCellValue(row, column),
+        };
+        isTargetSelected = isContextMenuCellSelected(
+          uiState.selection,
+          rowIndex,
+          colIndex,
+        );
+      } else {
+        target = { type: 'rowHeader', rowIndex, rowKey, row };
+        isTargetSelected = isContextMenuRowSelected(uiState.selection, rowIndex);
+      }
+
+      const params: GridContextMenuParams<T> = {
+        target,
+        clientX: event.clientX,
+        clientY: event.clientY,
+        selection: uiState.selection,
+        activeCell: uiState.activeCell,
+        isTargetSelected,
+      };
+
+      const items = getContextMenuItems(params);
+      // 空(または未定義)なら標準メニューへフォールスルー(空パネルは出さない)。
+      if (!items || items.length === 0) {
+        return;
+      }
+
+      // ここで初めて標準メニューを抑止し、独自メニューを開きます。
+      event.preventDefault();
+      onContextMenuOpen?.(params);
+      openContextMenu(params, items);
+    },
+    [
+      getContextMenuItems,
+      onContextMenuOpen,
+      rowModel,
+      orderedColumns,
+      uiState.selection,
+      uiState.activeCell,
+      openContextMenu,
+    ],
+  );
 
   // 追加(DS-4 ①-(2)): autosize 計測を「単一経路の時間分割(async)」で実行するランナーです。
   //   overlay は遅延表示で、重い時だけ Pending を出し、メインスレッドを塞ぎません
@@ -3253,6 +3383,19 @@ export function SpreadsheetGrid<T extends object>({
     />
   );
 
+  // ── cell context menu popover(バッチ②) ───────────────
+  // 追加(バッチ②): コンテキストメニュー popover の描画です(portal で body 直下へ出します)。
+  //             closed 時はコンポーネント側が null を返すため、常時この 1 要素を tail に置きます。
+  const renderedCellContextMenuPopover = (
+    <CellContextMenuPopover
+      isOpen={isContextMenuOpen}
+      items={contextMenuState?.items ?? EMPTY_CONTEXT_MENU_ITEMS}
+      layout={contextMenuLayout}
+      popoverRef={contextMenuRef}
+      onRequestClose={closeContextMenu}
+    />
+  );
+
   // 追加(13-A): いずれかの popup(フィルター / 列メニュー)表示中かどうかです。
   //             grid root の tab フォーカス / keyboard / paste handler の一時停止に使います
   //             (従来は isFilterPopoverOpen のみで判定していました)。
@@ -3264,7 +3407,9 @@ export function SpreadsheetGrid<T extends object>({
     isFilterPopoverOpen ||
     isColumnMenuOpen ||
     isColumnChooserOpen ||
-    isSortManagerOpen;
+    isSortManagerOpen ||
+    // 追加(バッチ②): コンテキストメニュー表示中も grid の tab/keyboard/paste を止めます。
+    isContextMenuOpen;
 
   // ── slot bars ─────────────────────────────────────────
   // 追加: slot helper を使って top/bottom の描画を解決します。
@@ -3891,6 +4036,8 @@ export function SpreadsheetGrid<T extends object>({
         // 追加: popup open 中は root の keyboard/paste handler 自体を外します。
         onKeyDown={isAnyGridPopupOpen ? undefined : handleKeyDown}
         onPaste={isAnyGridPopupOpen ? undefined : handlePaste}
+        // 追加(バッチ②): ボディ右クリックの委譲。未 opt-in / 対象外は素通しで標準メニューになります。
+        onContextMenu={handleBodyContextMenu}
       >
         {/* ── 変更(10-G): 縦横スクロールを 1 本化した共有スクロールコンテナ ── */}
         {/*   旧: 中央ペインのみ overflow:auto + 左右ペインを JS の transform で同期     */}
@@ -4385,6 +4532,8 @@ export function SpreadsheetGrid<T extends object>({
       {renderedColumnChooserPanel}
       {/* 追加(MS-3-1): 並び替え管理パネル(並べ替えダイアログ相当)です。*/}
       {renderedSortManagementPanel}
+      {/* 追加(バッチ②): セル/行の汎用コンテキストメニュー(完全カスタム)です。*/}
+      {renderedCellContextMenuPopover}
     </div>
   );
 }

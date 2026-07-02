@@ -70,5 +70,12 @@ export type {
   GridState,
   // 追加(state v2): 列メタ(可視 / 順序 / ピン)のシリアライズ単位(GridState.columns 要素)。
   GridColumnState,
+  // 追加(バッチ②/コンテキストメニュー): セル/行の汎用コンテキストメニュー(完全カスタム)の公開型群。
+  GridContextMenuTarget,
+  GridContextMenuParams,
+  GridContextMenuItem,
+  GridContextMenuActionItem,
+  GridContextMenuSeparatorItem,
+  GridContextMenuCustomItem,
 } from './model/gridTypes';
 export type { NumberFormatterOptions } from './logic/valueFormatters';
