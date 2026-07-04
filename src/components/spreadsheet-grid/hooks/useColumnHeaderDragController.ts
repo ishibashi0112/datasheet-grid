@@ -260,6 +260,10 @@ export const useColumnHeaderDragController = <T,>(
   //   起点として記録し、AUTO_SCROLL_ACTIVATION_DISTANCE 以上動くまで発動しません。
   const dragOriginRef = useRef<{ x: number; y: number } | null>(null);
   const autoScrollArmedRef = useRef(false);
+  // 追加(13-B3-7): 進行中ドラッグの window リスナー解除関数です(pointerdown 内で登録)。
+  //   コントローラ自体がドラッグ中に unmount した場合、最終後始末ネットからこれを呼んで
+  //   window リスナーの残留(リーク)を防ぎます。正常経路では cleanup 自身が null 化します。
+  const activeDragDisposeRef = useRef<(() => void) | null>(null);
   const rafRef = useRef<number | null>(null);
 
   // 追加(13-B3-5): ドラッグゴースト(ポインタ追従ピル)の ref 群です。すべて imperative に
@@ -523,6 +527,14 @@ export const useColumnHeaderDragController = <T,>(
   // rAF 端 autoscroll(共有スクロールコンテナ)。自己再帰のため ref 経由で参照します。
   const autoScrollTickRef = useRef<() => void>(() => {});
   const autoScrollTick = useCallback(() => {
+    // 追加(13-B3-7): ゾンビ化防止の自己停止ガード。ドラッグ終了済み(draggingKey なし)なら
+    //   次フレームを予約せずループ自体を終了します。正常経路では endDrag が rAF を cancel
+    //   するため踏みませんが、万一 endDrag 不達の経路が生じても「勝手にスクロールし続ける /
+    //   ガイド線が残る」暴走を構造的に不可能にします。
+    if (draggingKeyRef.current === null) {
+      rafRef.current = null;
+      return;
+    }
     const el = latestRef.current.scrollContainerRef.current;
     if (el) {
       const pointer = pointerRef.current;
@@ -717,46 +729,59 @@ export const useColumnHeaderDragController = <T,>(
 
       const target = event.currentTarget;
       const pointerId = event.pointerId;
+      // 変更(13-B3-7): capture は「グリップ存命中」の保護(スクロールバー等へのイベント横取り
+      //   防止)として維持しますが、リスナーの付け先は要素直付けから window へ移します(下記)。
       try {
         target.setPointerCapture(pointerId);
       } catch {
         /* capture 不可環境は無視 */
       }
 
+      // 変更(13-B3-7): move/up/cancel を window 登録へ変更します(このドラッグの pointerId のみ
+      //   処理)。理由: 中央ペインのヘッダーセルは列仮想化されており、autoscroll で掴んだ列が
+      //   仮想化ウィンドウ外へ出るとグリップごと unmount します。Pointer Events 仕様では
+      //   capture 対象が document から削除されると capture は暗黙解除され、lostpointercapture
+      //   は「要素ではなく document」に対して発火します。そのため要素直付けの旧リスナー群
+      //   (13-B3-3)には以後の pointerup が届かず endDrag 不達 → rAF ループがゾンビ化して
+      //   「離した後も端方向へスクロールし続ける + ガイド線が残る」不具合になっていました。
+      //   window 登録なら capture の有無・グリップの生死に関わらずイベントを受けられ、
+      //   掴んだ列が画面外へ出てもドラッグを継続して正常に commit/cancel できます。
+      //   同趣旨で、要素直付けの lostpointercapture ネット(13-B3-3)は撤去しました
+      //   (removal 時は document 発火のため守りたかったケースで機能せず、window リスナー化後は
+      //    「グリップ unmount 即キャンセル」の誤動作リスクにしかならないため)。
       const handleMove = (nativeEvent: globalThis.PointerEvent) => {
+        if (nativeEvent.pointerId !== pointerId) return;
         pointerRef.current = { x: nativeEvent.clientX, y: nativeEvent.clientY };
         updateIndicator();
       };
-      function handleUp() {
+      function handleUp(nativeEvent: globalThis.PointerEvent) {
+        if (nativeEvent.pointerId !== pointerId) return;
         cleanup();
         endDrag(true);
       }
-      function handleCancel() {
+      function handleCancel(nativeEvent: globalThis.PointerEvent) {
+        if (nativeEvent.pointerId !== pointerId) return;
         cleanup();
         endDrag(false);
       }
       const cleanup = () => {
-        target.removeEventListener('pointermove', handleMove);
-        target.removeEventListener('pointerup', handleUp);
-        target.removeEventListener('pointercancel', handleCancel);
-        // 追加(13-B3-3): capture 喪失ネットも解除します。releasePointerCapture より「前」に
-        //   外すことで、release が誘発する lostpointercapture では handleCancel が走らず
-        //   (= 正常 up と二重発火しない)。なお endDrag は draggingKeyRef を null 化するため
-        //   仮に二重で呼ばれても安全(冪等)です。
-        target.removeEventListener('lostpointercapture', handleCancel);
+        window.removeEventListener('pointermove', handleMove);
+        window.removeEventListener('pointerup', handleUp);
+        window.removeEventListener('pointercancel', handleCancel);
+        activeDragDisposeRef.current = null;
         try {
           target.releasePointerCapture(pointerId);
         } catch {
-          /* noop */
+          /* noop(グリップが unmount 済みでも無害) */
         }
       };
 
-      target.addEventListener('pointermove', handleMove);
-      target.addEventListener('pointerup', handleUp);
-      target.addEventListener('pointercancel', handleCancel);
-      // 追加(13-B3-3): ブラウザが capture を奪う等で pointerup/cancel が来ない経路の保険。
-      //   capture 喪失を cancel 扱いにして rAF・body cursor を確実に後始末します。
-      target.addEventListener('lostpointercapture', handleCancel);
+      window.addEventListener('pointermove', handleMove);
+      window.addEventListener('pointerup', handleUp);
+      window.addEventListener('pointercancel', handleCancel);
+      // 追加(13-B3-7): コントローラ自体がドラッグ中に unmount した場合へ備え、解除関数を
+      //   最終後始末ネットから呼べるように公開します。
+      activeDragDisposeRef.current = cleanup;
 
       updateIndicator();
       rafRef.current = requestAnimationFrame(autoScrollTickRef.current);
@@ -772,6 +797,10 @@ export const useColumnHeaderDragController = <T,>(
   //   (依存を増やさないよう、destroyGhost を介さず ghostElRef から直接外します)。
   useEffect(
     () => () => {
+      // 追加(13-B3-7): 進行中ドラッグの window リスナーを解除します(リーク防止)。
+      //   cleanup は capture release まで面倒を見ます(要素 detach 済みでも try/catch で無害)。
+      activeDragDisposeRef.current?.();
+      activeDragDisposeRef.current = null;
       if (rafRef.current !== null) {
         cancelAnimationFrame(rafRef.current);
         rafRef.current = null;
