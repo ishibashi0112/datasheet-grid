@@ -13,6 +13,17 @@ import {
   type ColumnPane,
   type GridPaneLayout,
 } from '../logic/geometry';
+// 追加(scroll-fix): 端 autoscroll の判定純関数と共通定数です(armed ガード /
+//   コンテンツ領域基準の端帯判定 / [0, max] clamp)。詳細は autoScrollGeometry 冒頭コメント参照。
+import {
+  AUTO_SCROLL_ACTIVATION_DISTANCE,
+  AUTO_SCROLL_EDGE_THRESHOLD,
+  AUTO_SCROLL_STEP,
+  computeNextScrollPosition,
+  hasPointerLeftActivationRadius,
+  resolveAutoScrollAxisDirection,
+  resolveScrollContentBox,
+} from '../logic/autoScrollGeometry';
 
 // 追加(13-B3-2): ヘッダーのバッジ(Excel 列名)を grip にした列の D&D 並べ替え controller です。
 // 設計メモ:
@@ -128,13 +139,14 @@ type UseColumnHeaderDragControllerArgs<T> = {
   applyColumnOrderAndPin: ApplyColumnOrderAndPin;
 };
 
-const EDGE_THRESHOLD = 24;
-const SCROLL_STEP = 18;
+// 変更(scroll-fix): 端 autoscroll の定数(端帯 24px / 1 フレーム 18px)は範囲選択側と共通化し、
+//   logic/autoScrollGeometry(AUTO_SCROLL_EDGE_THRESHOLD / AUTO_SCROLL_STEP)へ移動しました
+//   (値は従来と同じです)。
 
 // 追加(13-B3-3): 空の固定ペイン(pinned 列 0 本)への「最初の 1 列」を作るためのドロップ帯です。
 //   空ペインは幅 0・非レンダーで物理的に狙える場所が無いため、ドラッグ中だけビューポート端の
 //   EMPTY_PANE_DROP_BAND px を pin 用ホット帯として有効化します(帯は通常時は無効＝行ヘッダ操作に非干渉)。
-//   方針: autoscroll 帯(EDGE_THRESHOLD=24)⊂ ドロップ帯(32)。端でスクロールしつつ、指を離した
+//   方針: autoscroll 帯(AUTO_SCROLL_EDGE_THRESHOLD=24)⊂ ドロップ帯(32)。端でスクロールしつつ、指を離した
 //   瞬間の判定で pin 確定する「共存」方式です。
 const EMPTY_PANE_DROP_BAND = 32;
 // 追加(13-B3-3): 空ペインのインジケータをビューポート端の数 px 内側へ寄せる量です(端ぴったりだと
@@ -244,6 +256,10 @@ export const useColumnHeaderDragController = <T,>(
   //   applyReorderSettle で消費します(cross-pane / reduced-motion は null＝スナップ)。
   const settlePendingRef = useRef<Map<string, number> | null>(null);
   const pointerRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
+  // 追加(scroll-fix): 端 autoscroll の armed 管理です(範囲選択側と同方針)。掴んだ座標を
+  //   起点として記録し、AUTO_SCROLL_ACTIVATION_DISTANCE 以上動くまで発動しません。
+  const dragOriginRef = useRef<{ x: number; y: number } | null>(null);
+  const autoScrollArmedRef = useRef(false);
   const rafRef = useRef<number | null>(null);
 
   // 追加(13-B3-5): ドラッグゴースト(ポインタ追従ピル)の ref 群です。すべて imperative に
@@ -383,7 +399,7 @@ export const useColumnHeaderDragController = <T,>(
       //     (= 枠外ドロップはキャンセル/no-op)。
       //   注意: この判定は空ペイン帯より「前」に置きます。右空ペイン帯は clientX に上限が無く、
       //   枠の右外でもマッチしてしまうため、先に枠外を弾く必要があります。autoscroll は枠の
-      //   「内側」EDGE_THRESHOLD で発火し、空ペイン帯も端の内側のため、いずれもこのガードと非干渉です。
+      //   「内側」AUTO_SCROLL_EDGE_THRESHOLD で発火し、空ペイン帯も端の内側のため、いずれもこのガードと非干渉です。
       const containerEl = scrollContainerRef.current;
       if (containerEl) {
         const r = containerEl.getBoundingClientRect();
@@ -509,21 +525,58 @@ export const useColumnHeaderDragController = <T,>(
   const autoScrollTick = useCallback(() => {
     const el = latestRef.current.scrollContainerRef.current;
     if (el) {
-      const rect = el.getBoundingClientRect();
       const pointer = pointerRef.current;
-      let nextLeft = el.scrollLeft;
+      // 追加(scroll-fix): armed ガード。掴んだ位置(dragOriginRef)から
+      //   AUTO_SCROLL_ACTIVATION_DISTANCE 以上動くまで autoscroll を発動しません。
+      //   13-B3-6 で縦の自己発火(sticky ヘッダー最上部が常時上端帯内)は撤去済みですが、
+      //   横にも「右端付近の列グリップを掴んだだけで右へスクロールし始める」同型の
+      //   自己発火が残っていました。一度 armed になったらドラッグ終了まで維持します。
+      if (!autoScrollArmedRef.current) {
+        const origin = dragOriginRef.current;
+        if (
+          !origin ||
+          hasPointerLeftActivationRadius(
+            origin,
+            pointer,
+            AUTO_SCROLL_ACTIVATION_DISTANCE,
+          )
+        ) {
+          autoScrollArmedRef.current = true;
+        }
+      }
       // 修正(13-B3-6): 水平方向のみ autoscroll します。列の並べ替え先(pane/slot)は clientX で
       //   決まり縦スクロールは不要なうえ、グリップは position:sticky のヘッダー＝スクロール
-      //   コンテナ最上部にあり、縦の上端バンド(rect.top + EDGE_THRESHOLD)へ常時侵入して
-      //   「掴んだだけ/水平ドラッグ中」に上方向 autoscroll を自己発火させていました(縦の
-      //   pointer.y / nextTop 分岐を撤去)。水平は画面外の列を手繰るため有用なので維持します。
-      if (pointer.x < rect.left + EDGE_THRESHOLD) {
-        nextLeft = Math.max(el.scrollLeft - SCROLL_STEP, 0);
-      } else if (pointer.x > rect.right - EDGE_THRESHOLD) {
-        nextLeft = el.scrollLeft + SCROLL_STEP;
-      }
-      if (nextLeft !== el.scrollLeft) {
-        el.scrollTo({ left: nextLeft, behavior: 'auto' });
+      //   コンテナ最上部にあり、縦の上端バンドへ常時侵入して「掴んだだけ/水平ドラッグ中」に
+      //   上方向 autoscroll を自己発火させていました(縦の pointer.y / nextTop 分岐を撤去)。
+      //   水平は画面外の列を手繰るため有用なので維持します。
+      // 変更(scroll-fix): 端帯の基準をコンテンツ領域へ(右端帯の大半が縦スクロールバー上に
+      //   乗っていた食われを解消)。次位置は [0, max] へ clamp し、右端到達後の毎フレーム
+      //   scrollTo も停止します。
+      if (autoScrollArmedRef.current) {
+        const rect = el.getBoundingClientRect();
+        const contentBox = resolveScrollContentBox({
+          rectLeft: rect.left,
+          rectTop: rect.top,
+          clientLeft: el.clientLeft,
+          clientTop: el.clientTop,
+          clientWidth: el.clientWidth,
+          clientHeight: el.clientHeight,
+        });
+        const direction = resolveAutoScrollAxisDirection(
+          pointer.x,
+          contentBox.left,
+          contentBox.right,
+          AUTO_SCROLL_EDGE_THRESHOLD,
+        );
+        const nextLeft = computeNextScrollPosition(
+          el.scrollLeft,
+          direction,
+          AUTO_SCROLL_STEP,
+          el.scrollWidth - el.clientWidth,
+        );
+        if (nextLeft !== el.scrollLeft) {
+          el.scrollTo({ left: nextLeft, behavior: 'auto' });
+        }
       }
     }
     // 端スクロールで rect が動くため、停止中の指でも毎フレーム slot を再計算します。
@@ -653,6 +706,10 @@ export const useColumnHeaderDragController = <T,>(
 
       draggingKeyRef.current = column.key;
       pointerRef.current = { x: event.clientX, y: event.clientY };
+      // 追加(scroll-fix): 掴んだ座標を armed ガードの起点として記録します(発動は
+      //   AUTO_SCROLL_ACTIVATION_DISTANCE 以上動いてから)。
+      dragOriginRef.current = { x: event.clientX, y: event.clientY };
+      autoScrollArmedRef.current = false;
       document.body.style.cursor = 'grabbing';
       // 追加(13-B3-5): ドラッグゴースト(ピル)を生成します。ラベルは列名(title || key)で確定。
       //   直後の updateIndicator → updateGhost でポインタ位置・アイコンが正規化されます。

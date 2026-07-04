@@ -32,6 +32,17 @@ import {
 // 追加(scroll-space 仮想化): clientY→row の物理→論理換算(scaleFactor=1 で従来式と一致)。
 import { clientYToRowIndex } from '../logic/verticalGeometry';
 import type { RowMetrics } from '../logic/verticalGeometry';
+// 追加(scroll-fix): 端 auto-scroll の判定純関数と共通定数です(armed ガード /
+//   コンテンツ領域基準の端帯判定 / [0, max] clamp)。詳細は autoScrollGeometry 冒頭コメント参照。
+import {
+  AUTO_SCROLL_ACTIVATION_DISTANCE,
+  AUTO_SCROLL_EDGE_THRESHOLD,
+  AUTO_SCROLL_STEP,
+  computeNextScrollPosition,
+  hasPointerLeftActivationRadius,
+  resolveAutoScrollAxisDirection,
+  resolveScrollContentBox,
+} from '../logic/autoScrollGeometry';
 
 type UseGridPointerInteractionsArgs<T> = {
   gridRootRef: RefObject<HTMLDivElement | null>;
@@ -141,6 +152,15 @@ export const useGridPointerInteractions = <T,>({
   //   (useCallback)なため、latest-ref を挟まず該当ハンドラの deps へ直接入れます
   //   (安定値なのでハンドラ参照は変わらず memo を保てます。render 時の ref 代入も増やしません)。
   const rowSelectionDraggingRef = useRef(false);
+
+  // 追加(scroll-fix): 端 auto-scroll の armed 管理です。pointerdown の座標を起点として
+  //   記録し、そこから AUTO_SCROLL_ACTIVATION_DISTANCE 以上ポインタが動くまで
+  //   auto-scroll を発動しません。従来は「startSelection → rAF 起動 → ポインタが端帯内」
+  //   だけで発動したため、端付近のセルを押しただけ(1px も動かさない)で毎フレーム
+  //   スクロールし続けていました。一度 armed になったらドラッグ終了まで維持します
+  //   (途中で起点付近へ戻っても解除しません)。書き込みはイベントハンドラ/rAF 内のみです。
+  const autoScrollOriginRef = useRef<{ x: number; y: number } | null>(null);
+  const autoScrollArmedRef = useRef(false);
 
   // 追加(MS-2): handleColumnHeaderPointerDown の Shift 分岐で「最新の」ソート状態 /
   //   列配列 / 有効化フラグを読むための latest-ref 群です(dragStateRef と同じ用法)。
@@ -329,9 +349,6 @@ export const useGridPointerInteractions = <T,>({
       return;
     }
 
-    const EDGE_THRESHOLD = 24;
-    const SCROLL_STEP = 18;
-
     const tick = () => {
       const scrollElement = scrollContainerRef.current;
       const pointer = pointerClientRef.current;
@@ -340,9 +357,40 @@ export const useGridPointerInteractions = <T,>({
         return;
       }
 
+      // 追加(scroll-fix): armed ガード。ドラッグ起点(pointerdown 座標)から
+      //   AUTO_SCROLL_ACTIVATION_DISTANCE 以上動くまでは何もしません(「押しただけ」や
+      //   クリック時の手ブレでは発動させない)。起点未記録の経路(現状は存在しない)は
+      //   従来挙動維持のため即 armed 扱いです。
+      if (!autoScrollArmedRef.current) {
+        const origin = autoScrollOriginRef.current;
+        if (
+          origin &&
+          !hasPointerLeftActivationRadius(
+            origin,
+            pointer,
+            AUTO_SCROLL_ACTIVATION_DISTANCE,
+          )
+        ) {
+          autoScrollFrameRef.current = requestAnimationFrame(tick);
+          return;
+        }
+        autoScrollArmedRef.current = true;
+      }
+
+      // 変更(scroll-fix): 端帯の基準を rect(ボーダー・スクロールバー込みの外形)から
+      //   コンテンツ領域へ変更します。旧実装は 24px 帯を外形から測っていたため、右端帯は
+      //   その大半(縦スクロールバー ≒15px + ボーダー)がスクロールバー上に乗り、実セル上の
+      //   帯は 8px 程度しか残っていませんでした(下端も横スクロールバーで同様)。コンテンツ
+      //   基準にすることで、ドラッグ中の端帯が意図どおり実セル上の 24px になります。
       const rect = scrollElement.getBoundingClientRect();
-      let nextScrollTop = scrollElement.scrollTop;
-      let nextScrollLeft = scrollElement.scrollLeft;
+      const contentBox = resolveScrollContentBox({
+        rectLeft: rect.left,
+        rectTop: rect.top,
+        clientLeft: scrollElement.clientLeft,
+        clientTop: scrollElement.clientTop,
+        clientWidth: scrollElement.clientWidth,
+        clientHeight: scrollElement.clientHeight,
+      });
 
       // 自動スクロールの軸ガード(症状2 と その横版):
       //   - 列選択: ポインタが sticky ヘッダー帯(上端)に留まるため、縦の自動スクロールを行わない
@@ -358,21 +406,38 @@ export const useGridPointerInteractions = <T,>({
         dragStateRef.current?.type === 'selection' &&
         dragStateRef.current.selectionKind === 'row';
 
-      if (!isColumnSelection) {
-        if (pointer.y < rect.top + EDGE_THRESHOLD) {
-          nextScrollTop = Math.max(scrollElement.scrollTop - SCROLL_STEP, 0);
-        } else if (pointer.y > rect.bottom - EDGE_THRESHOLD) {
-          nextScrollTop = scrollElement.scrollTop + SCROLL_STEP;
-        }
-      }
+      const verticalDirection = isColumnSelection
+        ? 0
+        : resolveAutoScrollAxisDirection(
+            pointer.y,
+            contentBox.top,
+            contentBox.bottom,
+            AUTO_SCROLL_EDGE_THRESHOLD,
+          );
+      const horizontalDirection = isRowSelection
+        ? 0
+        : resolveAutoScrollAxisDirection(
+            pointer.x,
+            contentBox.left,
+            contentBox.right,
+            AUTO_SCROLL_EDGE_THRESHOLD,
+          );
 
-      if (!isRowSelection) {
-        if (pointer.x < rect.left + EDGE_THRESHOLD) {
-          nextScrollLeft = Math.max(scrollElement.scrollLeft - SCROLL_STEP, 0);
-        } else if (pointer.x > rect.right - EDGE_THRESHOLD) {
-          nextScrollLeft = scrollElement.scrollLeft + SCROLL_STEP;
-        }
-      }
+      // 変更(scroll-fix): 次位置は [0, max] へ clamp します。従来は正方向の上限が無く、
+      //   スクロール端到達後も「next !== current」が真のまま毎フレーム scrollTo + 選択更新
+      //   dispatch が走り続けていました(clamp により端到達後は完全に停止します)。
+      const nextScrollTop = computeNextScrollPosition(
+        scrollElement.scrollTop,
+        verticalDirection,
+        AUTO_SCROLL_STEP,
+        scrollElement.scrollHeight - scrollElement.clientHeight,
+      );
+      const nextScrollLeft = computeNextScrollPosition(
+        scrollElement.scrollLeft,
+        horizontalDirection,
+        AUTO_SCROLL_STEP,
+        scrollElement.scrollWidth - scrollElement.clientWidth,
+      );
 
       if (
         nextScrollTop !== scrollElement.scrollTop ||
@@ -414,12 +479,19 @@ export const useGridPointerInteractions = <T,>({
         return;
       }
       gridRootRef.current?.focus();
+      // 追加(scroll-fix): 押下座標で pointer/armed 状態を初期化します。pointerClientRef は
+      //   従来 move/enter 系でしか更新されず、押下直後の auto-scroll tick が古い座標を読む
+      //   余地がありました。origin は armed ガードの起点です(pointerClientRef は安定参照の
+      //   ref のため、deps へ加えてもハンドラ参照は変わらず memo を保てます)。
+      pointerClientRef.current = { x: event.clientX, y: event.clientY };
+      autoScrollOriginRef.current = { x: event.clientX, y: event.clientY };
+      autoScrollArmedRef.current = false;
       dispatch(gridActions.activateCell(cell));
       if (enableRangeSelection) {
         dispatch(gridActions.startSelection(cell));
       }
     },
-    [dispatch, enableRangeSelection, gridRootRef],
+    [dispatch, enableRangeSelection, gridRootRef, pointerClientRef],
   );
 
   // 追加: selection drag 中にセルへ入ったら範囲更新します。
@@ -472,6 +544,12 @@ export const useGridPointerInteractions = <T,>({
         return;
       }
       gridRootRef.current?.focus();
+      // 追加(scroll-fix): 押下座標で pointer/armed 状態を初期化します(セル押下と同方針)。
+      //   ガター行選択(enableRowSelection)経路は dragState を使わず auto-scroll 対象外
+      //   ですが、無害なので分岐前に一括で初期化します。
+      pointerClientRef.current = { x: event.clientX, y: event.clientY };
+      autoScrollOriginRef.current = { x: event.clientX, y: event.clientY };
+      autoScrollArmedRef.current = false;
       // 追加(行選択): enableRowSelection 時はガター起点セル範囲選択に代えて行選択を行います。
       if (enableRowSelection) {
         rowSelectionDraggingRef.current = true;
@@ -480,7 +558,13 @@ export const useGridPointerInteractions = <T,>({
       }
       dispatch(gridActions.startRowSelection(rowIndex));
     },
-    [dispatch, gridRootRef, enableRowSelection, onGutterRowSelect],
+    [
+      dispatch,
+      gridRootRef,
+      enableRowSelection,
+      onGutterRowSelect,
+      pointerClientRef,
+    ],
   );
 
   // 追加: 行ヘッダードラッグ中の更新です。
@@ -525,7 +609,8 @@ export const useGridPointerInteractions = <T,>({
   //     'asc'            → 'desc'(同位置で方向更新)
   //     'desc'           → 'desc'(nextSortEntries の「同方向トグル」で当該列のみ除去)
   //   ⇒ existingDir ? 'desc' : 'asc' の 1 行に畳めます。最新値はすべて ref 経由で読み、
-  //   本ハンドラの依存は [dispatch, gridRootRef] のまま(参照恒久安定 = memo 維持)です。
+  //   本ハンドラの依存は [dispatch, gridRootRef, pointerClientRef](すべて安定参照)で、
+  //   参照恒久安定 = memo 維持です。
   const handleColumnHeaderPointerDown = useCallback(
     (colIndex: number, event: PointerEvent<HTMLDivElement>) => {
       event.preventDefault();
@@ -533,6 +618,10 @@ export const useGridPointerInteractions = <T,>({
         return;
       }
       gridRootRef.current?.focus();
+      // 追加(scroll-fix): 押下座標で pointer/armed 状態を初期化します(セル押下と同方針)。
+      pointerClientRef.current = { x: event.clientX, y: event.clientY };
+      autoScrollOriginRef.current = { x: event.clientX, y: event.clientY };
+      autoScrollArmedRef.current = false;
 
       if (event.shiftKey && enableSortingRef.current) {
         const column = orderedColumnsRef.current[colIndex];
@@ -555,7 +644,7 @@ export const useGridPointerInteractions = <T,>({
 
       dispatch(gridActions.startColumnSelection(colIndex));
     },
-    [dispatch, gridRootRef],
+    [dispatch, gridRootRef, pointerClientRef],
   );
 
   // 追加: 列ヘッダードラッグ中の更新です。
