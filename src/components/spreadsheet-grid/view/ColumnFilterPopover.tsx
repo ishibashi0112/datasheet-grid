@@ -14,6 +14,13 @@ import {
   type RefObject,
 } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
+// 追加(SF-ENTER): set フィルター検索の一致関数と Enter 確定の振る舞い判定です(純関数)。
+//   view ファイルからの非コンポーネント export は react-refresh 制約(eslint baseline)に
+//   触れるため、logic/setFilterSearch.ts に置いて共有しています。
+import {
+  filterSetOptionsBySearch,
+  resolveSetFilterEnterAction,
+} from '../logic/setFilterSearch';
 
 // 追加: popover のレイアウト情報です。
 export type ColumnFilterPopoverLayout = {
@@ -84,6 +91,9 @@ type ColumnFilterPopoverProps = {
   // 追加(12-A): set フィルターの「クリア」です。popover を閉じずに全選択へ戻します
   //             (即時適用のため、結果を見ながら操作を続けられるようにします)。
   onSetClear: () => void;
+  // 追加(SF-ENTER): 検索 Enter 確定です。選択を「検索一致値のみ」へ置換します
+  //   (Excel の検索 → OK 相当。0 件一致は popover 側で no-op 済みです)。
+  onSetReplaceSelection: (values: string[]) => void;
   // 追加(stage ②): serverSide か否か。set/select で候補が空のとき、空表示の文言を
   //   「検索ヒット無し」と「候補未供給(serverSide では filterOptions / サーバ供給が必要)」で
   //   出し分けるために使います(既定 false = clientSide で従来表示)。
@@ -106,6 +116,9 @@ type SetFilterBodyProps = {
   searchInputRef: RefObject<HTMLInputElement | null>;
   onValueToggle: (value: string) => void;
   onSelectAllChange: (scope: 'all' | string[], nextSelected: boolean) => void;
+  // 追加(SF-ENTER): 検索 Enter 確定です。選択を「一致値のみ」へ置換します(親側で
+  //   include 集合として commit され、全候補一致は clear へ正規化されます)。
+  onReplaceSelection: (values: string[]) => void;
   onRequestClose: () => void;
   // 追加(stage ②): 候補空時の空表示文言を出し分けるために親から受けます。
   isServerSide: boolean;
@@ -117,6 +130,7 @@ function SetFilterBody({
   searchInputRef,
   onValueToggle,
   onSelectAllChange,
+  onReplaceSelection,
   onRequestClose,
   isServerSide,
 }: SetFilterBodyProps) {
@@ -125,15 +139,12 @@ function SetFilterBody({
   //             低優先度レンダーへ遅延します(11-B7 のグローバルフィルタと同型)。
   const deferredSearchText = useDeferredValue(searchText);
 
-  const visibleOptions = useMemo(() => {
-    const normalized = deferredSearchText.trim().toLowerCase();
-    if (!normalized) {
-      return options;
-    }
-    return options.filter((option) =>
-      option.label.toLowerCase().includes(normalized),
-    );
-  }, [options, deferredSearchText]);
+  // 変更(SF-ENTER): 絞り込みを filterSetOptionsBySearch へ共通化します(Enter 確定の
+  //   再マッチと一致基準を共有するため。挙動は従来と同一です)。
+  const visibleOptions = useMemo(
+    () => filterSetOptionsBySearch(options, deferredSearchText),
+    [options, deferredSearchText],
+  );
 
   const isSearching = deferredSearchText.trim().length > 0;
 
@@ -196,8 +207,28 @@ function SetFilterBody({
             event.preventDefault();
             onRequestClose();
           }
+          // 追加(SF-ENTER): Enter で「検索一致値のみ」へ置換確定して閉じます
+          //   (Excel の検索 → OK と同挙動。積み増しは(検索結果をすべて選択)チェックで)。
+          if (event.key === 'Enter') {
+            // IME 変換確定の Enter では発火させません(日本語入力で必須のガードです)。
+            if (event.nativeEvent.isComposing) {
+              return;
+            }
+            event.preventDefault();
+            // 注記: visibleOptions は useDeferredValue 由来で高速タイプ直後は古い結果を
+            //   指しうるため、確定は「現在の searchText」からの同期再マッチで行います
+            //   (全候補走査は Enter 1 回きりのため、候補数が大きくても許容します)。
+            const action = resolveSetFilterEnterAction(options, searchText);
+            if (action.kind === 'none') {
+              return;
+            }
+            if (action.kind === 'replace') {
+              onReplaceSelection(action.values);
+            }
+            onRequestClose();
+          }
         }}
-        placeholder="検索..."
+        placeholder="検索（Enter で確定）"
         className="ssg-filter-input"
       />
 
@@ -294,6 +325,7 @@ export function ColumnFilterPopover({
   onSetValueToggle,
   onSetSelectAllChange,
   onSetClear,
+  onSetReplaceSelection,
   isServerSide = false,
 }: ColumnFilterPopoverProps) {
   if (typeof document === 'undefined' || !isOpen || !layout) {
@@ -306,8 +338,17 @@ export function ColumnFilterPopover({
     width: layout.width,
   };
 
-  const handleKeyDownCapture = (event: KeyboardEvent<HTMLDivElement>) => {
+  const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     // 追加: portal 内 keyboard イベントを React ツリー上の parent へ流しません。
+    // 変更(SF-ENTER fix): capture 相(onKeyDownCapture)→ bubble 相(onKeyDown)へ変更します。
+    // 変更理由: React 合成イベントで capture 相の stopPropagation() はネイティブ伝播ごと
+    //   停止するため、popover 内部要素の bubble 相 onKeyDown ── 検索ボックスの
+    //   Enter 確定(SF-ENTER)/ Escape close / text フィルターの Enter 適用 ── が
+    //   一切発火しませんでした(文字入力は input イベント経由のため絞り込みだけ動く)。
+    //   bubble 相なら「内部要素のハンドラが先に処理 → 最後にここで外側(React ツリー上の
+    //   grid root / App)への合成バブリングだけを遮断」となり、本来の意図を保てます。
+    //   なお grid root 側の onKeyDown は popup 開放中 undefined にゲート済みのため、
+    //   capture で先回りする必要はもともとありません。
     event.stopPropagation();
   };
 
@@ -322,7 +363,7 @@ export function ColumnFilterPopover({
     <div
       ref={popoverRef}
       onPointerDown={handlePointerDown}
-      onKeyDownCapture={handleKeyDownCapture}
+      onKeyDown={handleKeyDown}
       onPasteCapture={(event) => {
         // 追加: portal 内 paste も grid 側へ流しません。
         event.stopPropagation();
@@ -347,6 +388,7 @@ export function ColumnFilterPopover({
           searchInputRef={textInputRef}
           onValueToggle={onSetValueToggle}
           onSelectAllChange={onSetSelectAllChange}
+          onReplaceSelection={onSetReplaceSelection}
           onRequestClose={onRequestClose}
           isServerSide={isServerSide}
         />

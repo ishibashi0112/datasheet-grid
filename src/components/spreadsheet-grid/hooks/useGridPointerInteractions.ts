@@ -153,6 +153,12 @@ export const useGridPointerInteractions = <T,>({
   //   (安定値なのでハンドラ参照は変わらず memo を保てます。render 時の ref 代入も増やしません)。
   const rowSelectionDraggingRef = useRef(false);
 
+  // 追加(RS-AS): ガター行選択ドラッグ用の端 auto-scroll rAF ハンドルです。ガター経路は
+  //   dragState を使わない ref フラグ運用(再レンダーなし)のため、既存の
+  //   dragType === 'selection' ゲートの effect ループ(autoScrollFrameRef)では起動できません。
+  //   pointerdown から命令的に起動し、tick 冒頭の自己停止ガード(13-B3-7 と同型)で終了します。
+  const gutterAutoScrollFrameRef = useRef<number | null>(null);
+
   // 追加(scroll-fix): 端 auto-scroll の armed 管理です。pointerdown の座標を起点として
   //   記録し、そこから AUTO_SCROLL_ACTIVATION_DISTANCE 以上ポインタが動くまで
   //   auto-scroll を発動しません。従来は「startSelection → rAF 起動 → ポインタが端帯内」
@@ -277,6 +283,16 @@ export const useGridPointerInteractions = <T,>({
       verticalScaleFactor,
     ],
   );
+
+  // 追加(RS-AS): ガター auto-scroll の rAF tick から最新の座標解決を読むための ref です。
+  //   getCellCoordFromClientPoint は paneLayout / rowMetrics 等に依存して参照が変わるため、
+  //   起動側 useCallback の deps へ直接入れると handleRowHeaderPointerDown の参照安定が
+  //   崩れます(memo 破り)。render 時代入(eslint baseline 対象)を増やさないよう
+  //   effect 内で同期します(レイアウト変化は commit 後に tick へ反映されれば十分です)。
+  const getCellCoordFromClientPointRef = useRef(getCellCoordFromClientPoint);
+  useEffect(() => {
+    getCellCoordFromClientPointRef.current = getCellCoordFromClientPoint;
+  }, [getCellCoordFromClientPoint]);
 
   // 追加: 現在の dragState に応じて selection を更新します。
   // 変更(11-A2): dragState は ref から読み、useCallback 依存から外します。
@@ -536,6 +552,108 @@ export const useGridPointerInteractions = <T,>({
     [],
   );
 
+  // 追加(RS-AS): ガター行選択ドラッグの端 auto-scroll ループを起動します(縦のみ)。
+  //   背景: 既存の auto-scroll は dragType === 'selection' ゲートの effect で起動しますが、
+  //   ガター行選択(enableRowSelection)は dragState を使わない ref フラグ経路のため対象外で、
+  //   端まで引っ張ってもスクロールしませんでした(ハンドオフ §8-④)。本ループの構造:
+  //     - 自己停止ガード: rowSelectionDraggingRef が false になった次フレームで終了します
+  //       (window pointerup がフラグを落とす。13-B3-7 の構造ガードと同型で、ゾンビ化しません)。
+  //     - armed ガード / コンテンツ領域基準 / [0, max] clamp は autoScrollGeometry の
+  //       既存純関数を流用します(scroll-fix と同一挙動)。
+  //     - 行選択に横スクロール位置は無関係なため、横は動かしません(既存 rAF ループの
+  //       isRowSelection 軸ガードと同理由)。
+  //     - スクロール後はポインタ直下の行を解決して onGutterRowSelectDrag へ渡します。
+  //       スクロールで要素がポインタ下を流れても pointerenter は発火しないため、
+  //       ここで更新しないと選択端がスクロールに追従しません(既存ループの
+  //       updateSelectionFromPointer と同役割)。
+  //   deps はすべて安定参照(props の ref / 参照安定 callback)のため本 callback も恒久安定で、
+  //   handleRowHeaderPointerDown の deps に入れても memo を破りません。
+  const startGutterRowSelectionAutoScroll = useCallback(() => {
+    // 二重起動防止(既にループ中なら何もしません)。
+    if (gutterAutoScrollFrameRef.current !== null) {
+      return;
+    }
+    const tick = () => {
+      // 自己停止ガード: ドラッグ終了後の最初のフレームでループを畳みます。
+      if (!rowSelectionDraggingRef.current) {
+        gutterAutoScrollFrameRef.current = null;
+        return;
+      }
+      const scrollElement = scrollContainerRef.current;
+      const pointer = pointerClientRef.current;
+      if (!scrollElement || !pointer) {
+        gutterAutoScrollFrameRef.current = requestAnimationFrame(tick);
+        return;
+      }
+      // armed ガード(scroll-fix): 押下起点から規定距離動くまで発動しません。
+      if (!autoScrollArmedRef.current) {
+        const origin = autoScrollOriginRef.current;
+        if (
+          origin &&
+          !hasPointerLeftActivationRadius(
+            origin,
+            pointer,
+            AUTO_SCROLL_ACTIVATION_DISTANCE,
+          )
+        ) {
+          gutterAutoScrollFrameRef.current = requestAnimationFrame(tick);
+          return;
+        }
+        autoScrollArmedRef.current = true;
+      }
+      const rect = scrollElement.getBoundingClientRect();
+      const contentBox = resolveScrollContentBox({
+        rectLeft: rect.left,
+        rectTop: rect.top,
+        clientLeft: scrollElement.clientLeft,
+        clientTop: scrollElement.clientTop,
+        clientWidth: scrollElement.clientWidth,
+        clientHeight: scrollElement.clientHeight,
+      });
+      const verticalDirection = resolveAutoScrollAxisDirection(
+        pointer.y,
+        contentBox.top,
+        contentBox.bottom,
+        AUTO_SCROLL_EDGE_THRESHOLD,
+      );
+      const nextScrollTop = computeNextScrollPosition(
+        scrollElement.scrollTop,
+        verticalDirection,
+        AUTO_SCROLL_STEP,
+        scrollElement.scrollHeight - scrollElement.clientHeight,
+      );
+      if (nextScrollTop !== scrollElement.scrollTop) {
+        scrollElement.scrollTo({
+          top: nextScrollTop,
+          left: scrollElement.scrollLeft,
+          behavior: 'auto',
+        });
+        // スクロール後のポインタ直下の行で選択範囲を更新します(latest-ref 経由)。
+        const cell = getCellCoordFromClientPointRef.current(
+          pointer.x,
+          pointer.y,
+        );
+        if (cell) {
+          onGutterRowSelectDrag(cell.row);
+        }
+      }
+      gutterAutoScrollFrameRef.current = requestAnimationFrame(tick);
+    };
+    gutterAutoScrollFrameRef.current = requestAnimationFrame(tick);
+  }, [scrollContainerRef, pointerClientRef, onGutterRowSelectDrag]);
+
+  // 追加(RS-AS): ドラッグ中に本フックごと unmount された場合の rAF 取りこぼし防止です
+  //   (通常経路は tick 冒頭の自己停止ガードで終了するため、これは保険です)。
+  useEffect(
+    () => () => {
+      if (gutterAutoScrollFrameRef.current !== null) {
+        cancelAnimationFrame(gutterAutoScrollFrameRef.current);
+        gutterAutoScrollFrameRef.current = null;
+      }
+    },
+    [],
+  );
+
   // 追加: 行ヘッダー選択開始です。
   const handleRowHeaderPointerDown = useCallback(
     (rowIndex: number, event: PointerEvent<HTMLDivElement>) => {
@@ -545,8 +663,8 @@ export const useGridPointerInteractions = <T,>({
       }
       gridRootRef.current?.focus();
       // 追加(scroll-fix): 押下座標で pointer/armed 状態を初期化します(セル押下と同方針)。
-      //   ガター行選択(enableRowSelection)経路は dragState を使わず auto-scroll 対象外
-      //   ですが、無害なので分岐前に一括で初期化します。
+      // 変更(RS-AS): ガター行選択(enableRowSelection)経路も専用ループ(下の分岐内で起動)の
+      //   auto-scroll 対象になったため、この初期化(起点 / armed)は両経路の共有になりました。
       pointerClientRef.current = { x: event.clientX, y: event.clientY };
       autoScrollOriginRef.current = { x: event.clientX, y: event.clientY };
       autoScrollArmedRef.current = false;
@@ -554,6 +672,9 @@ export const useGridPointerInteractions = <T,>({
       if (enableRowSelection) {
         rowSelectionDraggingRef.current = true;
         onGutterRowSelect(rowIndex, { shiftKey: event.shiftKey });
+        // 追加(RS-AS): 端 auto-scroll ループを起動します(終了は window pointerup が
+        //   rowSelectionDraggingRef を落とした次フレームの自己停止ガードです)。
+        startGutterRowSelectionAutoScroll();
         return;
       }
       dispatch(gridActions.startRowSelection(rowIndex));
@@ -563,6 +684,7 @@ export const useGridPointerInteractions = <T,>({
       gridRootRef,
       enableRowSelection,
       onGutterRowSelect,
+      startGutterRowSelectionAutoScroll,
       pointerClientRef,
     ],
   );

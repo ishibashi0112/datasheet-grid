@@ -2903,6 +2903,25 @@ export function SpreadsheetGrid<T extends object>({
     ],
   );
 
+  // 追加(SF-ENTER): 検索 Enter 確定です。選択を「検索一致候補のみ」の include 集合へ
+  //   置換します(Excel の検索 → OK と同挙動)。全候補一致は commitSetFilterSelection の
+  //   既存正規化で clear(フィルターなし)へ、0 件一致は popover 側で no-op 済みです。
+  //   注記: 一致が候補の過半でも include のまま持ちます(検索確定は絞り込み用途が主で、
+  //   反転(exclude)最適化は complement の全候補走査を要するため見送り。必要なら追補)。
+  const handleSetFilterReplaceSelection = useCallback(
+    (values: string[]) => {
+      if (!filterPopoverState) {
+        return;
+      }
+      commitSetFilterSelection(
+        filterPopoverState.columnKey,
+        { mode: 'include', values: new Set(values) },
+        openedFilterSelectOptions.length,
+      );
+    },
+    [filterPopoverState, commitSetFilterSelection, openedFilterSelectOptions],
+  );
+
   // 追加(12-A): set フィルターの「クリア」です。即時適用 UI のため popover は閉じず、
   //             全選択(フィルターなし)へ戻して結果を見ながら操作を続けられるようにします。
   const clearSetFilterPopoverValue = useCallback(() => {
@@ -3316,6 +3335,7 @@ export function SpreadsheetGrid<T extends object>({
       onSetValueToggle={handleSetFilterValueToggle}
       onSetSelectAllChange={handleSetFilterSelectAllChange}
       onSetClear={clearSetFilterPopoverValue}
+      onSetReplaceSelection={handleSetFilterReplaceSelection}
     />
   ) : null;
 
