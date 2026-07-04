@@ -110,6 +110,8 @@ import type { RowMetrics } from './logic/verticalGeometry';
 // 追加(imperative API #1): CSV エクスポート / スクロール先算出の純ロジックです。
 import { serializeRowsToCsv } from './logic/exportCsv';
 import { buildGridExportData } from './logic/exportData';
+// 追加(export-scope 再編): 旧 'all' / 'visible' エイリアスの正規化に使います。
+import { normalizeExportScope } from './logic/exportScope';
 // 追加(行選択): チェックボックス行選択の純ロジックです。
 import {
   clearRowSelection,
@@ -3498,6 +3500,10 @@ export function SpreadsheetGrid<T extends object>({
     windowFirstRow: number;
     windowLastRow: number;
     physicalBodyHeight: number;
+    // 追加(export-scope 再編): scope='raw'(フィルター/ソート無視の全ソース行)の直接参照と、
+    //   serverSide での 'raw' → 'view' フォールバック判定に使います。
+    rows: T[];
+    isServerSide: boolean;
   } | null>(null);
   apiStateRef.current = {
     dispatch,
@@ -3517,6 +3523,8 @@ export function SpreadsheetGrid<T extends object>({
     windowFirstRow,
     windowLastRow,
     physicalBodyHeight,
+    rows,
+    isServerSide,
   };
 
   useImperativeHandle(
@@ -3600,18 +3608,53 @@ export function SpreadsheetGrid<T extends object>({
         );
       };
 
-      // scope(all/selection/visible)から、出力対象の行レンジ [startRow, endRow) と列集合を解決します。
-      //   exportCsv(buildCsv)と getExportData で共有します。scope='selection' で選択が無いときは null を
-      //   返し、呼び出し側が「空」を表現します(CSV は空文字 / 整形済みデータは空)。
+      // 変更(export-scope 再編): scope('view' / 'raw' / 'rendered' / 'selection' + 後方互換 'all' /
+      //   'visible')から、出力対象の行アクセサ getRow / 行レンジ [startRow, endRow) / 列集合を解決します。
+      //   exportCsv(buildCsv)と getExportData で共有します。旧エイリアスは normalizeExportScope で
+      //   'view' / 'rendered' へ正規化されます(実行時挙動は従来と完全同一 = 後方互換)。
+      //   'view' / 'raw' は windowFirstRow / windowLastRow(描画ウィンドウ)を一切読まないため、
+      //   結果は構造上スクロール位置に依存しません。scope='selection' で選択が無いときは null を返し、
+      //   呼び出し側が「空」を表現します(CSV は空文字 / 整形済みデータは空)。
       const resolveExportScope = (
         scope: CsvExportScope,
-      ): { startRow: number; endRow: number; columns: GridColumn<T>[] } | null => {
+      ): {
+        getRow: (index: number) => T;
+        startRow: number;
+        endRow: number;
+        columns: GridColumn<T>[];
+      } | null => {
         const s = apiStateRef.current;
         if (!s) {
           return null;
         }
-        if (scope === 'visible') {
+        // ビュー行アクセサ(フィルター/ソート適用後の viewIndex → 行)。'raw' 以外はこれを使います。
+        const getViewRow = (index: number) => s.rowModel.getRow(index);
+        const normalized = normalizeExportScope(scope);
+        if (normalized === 'raw') {
+          // 'raw': フィルターもソートも無視した全ソース行(rows 配列順)です。列は可視列・固定順に
+          //   従います。serverSide はソース行配列を持たない(未ロード行が存在する)ため 'view' 相当へ
+          //   フォールバックし警告します(auto-height 非対応時と同じ「警告 + フォールバック」の流儀)。
+          if (s.isServerSide) {
+            console.warn(
+              "SpreadsheetGrid: scope 'raw' は serverSide では未ロード行を取得できないため、'view'(ロード済みビュー行)として扱います。全件エクスポートはサーバ側での実施を推奨します。",
+            );
+            return {
+              getRow: getViewRow,
+              startRow: 0,
+              endRow: s.viewRowCount,
+              columns: s.orderedColumns,
+            };
+          }
           return {
+            getRow: (index: number) => s.rows[index],
+            startRow: 0,
+            endRow: s.rows.length,
+            columns: s.orderedColumns,
+          };
+        }
+        if (normalized === 'rendered') {
+          return {
+            getRow: getViewRow,
             startRow: s.windowFirstRow,
             endRow:
               s.windowLastRow >= s.windowFirstRow
@@ -3620,7 +3663,7 @@ export function SpreadsheetGrid<T extends object>({
             columns: s.orderedColumns,
           };
         }
-        if (scope === 'selection') {
+        if (normalized === 'selection') {
           const sel = s.uiState.selection;
           if (!sel) {
             return null;
@@ -3628,6 +3671,7 @@ export function SpreadsheetGrid<T extends object>({
           if (sel.type === 'cell') {
             const r = normalizeCellRange(sel.range);
             return {
+              getRow: getViewRow,
               startRow: r.start.row,
               endRow: r.end.row + 1,
               columns: s.orderedColumns.slice(r.start.col, r.end.col + 1),
@@ -3636,6 +3680,7 @@ export function SpreadsheetGrid<T extends object>({
           if (sel.type === 'row') {
             const r = normalizeRowRange(sel.startRow, sel.endRow);
             return {
+              getRow: getViewRow,
               startRow: r.startRow,
               endRow: r.endRow + 1,
               columns: s.orderedColumns,
@@ -3643,32 +3688,31 @@ export function SpreadsheetGrid<T extends object>({
           }
           const r = normalizeColumnRange(sel.startCol, sel.endCol);
           return {
+            getRow: getViewRow,
             startRow: 0,
             endRow: s.viewRowCount,
             columns: s.orderedColumns.slice(r.startCol, r.endCol + 1),
           };
         }
-        // scope === 'all'
+        // normalized === 'view': ビュー行全体(フィルター/ソート/列可視・固定順を反映)です。
         return {
+          getRow: getViewRow,
           startRow: 0,
           endRow: s.viewRowCount,
           columns: s.orderedColumns,
         };
       };
 
-      // CSV 文字列を組み立てます(exportCsv / downloadCsv で共有)。
+      // CSV 文字列を組み立てます(exportCsv / downloadCsv で共有)。既定 scope は 'view'(旧 'all' と
+      //   同実装のため挙動不変)。行アクセサは resolveExportScope が scope に応じて返します。
       const buildCsv = (options?: CsvExportOptions): string => {
-        const s = apiStateRef.current;
-        if (!s) {
-          return '';
-        }
-        const resolved = resolveExportScope(options?.scope ?? 'all');
-        // scope='selection' で選択無し。BOM 指定があれば BOM のみ、無ければ空文字。
+        const resolved = resolveExportScope(options?.scope ?? 'view');
+        // scope='selection' で選択無し(または state 未初期化)。BOM 指定があれば BOM のみ、無ければ空文字。
         if (!resolved) {
           return options?.bom ? '\uFEFF' : '';
         }
         return serializeRowsToCsv({
-          getRow: (index) => s.rowModel.getRow(index),
+          getRow: resolved.getRow,
           startRow: resolved.startRow,
           endRow: resolved.endRow,
           columns: resolved.columns,
@@ -3682,17 +3726,13 @@ export function SpreadsheetGrid<T extends object>({
       //   scope / 列順 / フィルター・ソート適用は buildCsv と同一(resolveExportScope を共有)。xlsx 等の
       //   生成は consumer 側で行います(本ライブラリは Excel ライブラリを同梱しません)。
       const buildExportData = (options?: GridExportOptions): GridExportData => {
-        const s = apiStateRef.current;
-        if (!s) {
-          return { columns: [], rows: [] };
-        }
-        const resolved = resolveExportScope(options?.scope ?? 'all');
-        // scope='selection' で選択無し → 空データ。
+        const resolved = resolveExportScope(options?.scope ?? 'view');
+        // scope='selection' で選択無し(または state 未初期化) → 空データ。
         if (!resolved) {
           return { columns: [], rows: [] };
         }
         return buildGridExportData({
-          getRow: (index) => s.rowModel.getRow(index),
+          getRow: resolved.getRow,
           startRow: resolved.startRow,
           endRow: resolved.endRow,
           columns: resolved.columns,

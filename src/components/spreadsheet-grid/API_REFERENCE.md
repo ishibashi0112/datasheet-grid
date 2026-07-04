@@ -302,7 +302,20 @@ const gridRef = useRef<SpreadsheetGridHandle<Row>>(null);
 | `exportCsv(options?)` | CSV 文字列を返す(純粋・副作用なし)。 |
 | `downloadCsv(filename?, options?)` | `exportCsv` の結果を `.csv` としてダウンロード(`filename` 既定 `'export.csv'`、`bom` 既定 `true`)。 |
 
-`CsvExportOptions`: `scope`(`'all'`(既定) / `'selection'` / `'visible'`)、`includeHeaders`(既定 `true`)、`delimiter`(既定 `','`。`'\t'` で TSV)、`bom`(`exportCsv` は既定 `false` / `downloadCsv` は既定 `true` = Excel 互換)。値整形はコピー(クリップボード)と同じ規則(`formatClipboardValue` があればそれ、無ければ `String(value ?? '')`)。RFC 4180 のクォート、行区切りは CRLF。serverSide の `scope:'all'` は未ロード行をスキップするため、serverSide では `'visible'` か別途サーバ側エクスポートを推奨。
+`CsvExportOptions`: `scope`(下表)、`includeHeaders`(既定 `true`)、`delimiter`(既定 `','`。`'\t'` で TSV)、`bom`(`exportCsv` は既定 `false` / `downloadCsv` は既定 `true` = Excel 互換)。値整形はコピー(クリップボード)と同じ規則(`formatClipboardValue` があればそれ、無ければ `String(value ?? '')`)。RFC 4180 のクォート、行区切りは CRLF。
+
+**scope 対応表**(`exportCsv` / `downloadCsv` / `getExportData` 共通):
+
+| scope | 意味 | スクロール位置 |
+| --- | --- | --- |
+| `'view'`(**既定**) | ビュー行全体(フィルター/ソート/列可視・固定順を反映) | 非依存 |
+| `'raw'` | 全ソース行(`rows` 配列順)。**フィルターもソートも無視**(列は可視列・固定順に従う) | 非依存 |
+| `'rendered'` | 仮想化ウィンドウ(いま**描画中**の行のみ・オーバースキャン込み) | **依存** |
+| `'selection'` | 現在の選択範囲(セル/行/列)。選択なしは空 | — |
+| `'all'` | **@deprecated** `'view'` のエイリアス(挙動同一) | 非依存 |
+| `'visible'` | **@deprecated** `'rendered'` のエイリアス(挙動同一)。「フィルターで見えている行」では**ない**点に注意 | **依存** |
+
+serverSide(SSRM)の注意: `'view'` は未ロード行をスキップ(= ロード済みビュー行のみ)。`'raw'` はソース行配列を持たないため `'view'` 相当へフォールバックし `console.warn` を出す。**全件エクスポートはサーバ側での実施を推奨**。
 
 ### Excel / スプレッドシート エクスポート(getExportData)
 
@@ -310,7 +323,7 @@ const gridRef = useRef<SpreadsheetGridHandle<Row>>(null);
 | --- | --- |
 | `getExportData(options?)` | 列メタ + 2 次元セルの、シリアライズ非依存な整形済みデータを返す(純粋・副作用なし)。 |
 
-`GridExportOptions`: `scope`(`'all'`(既定) / `'selection'` / `'visible'`)。`exportCsv` と同じ scope 規則(フィルター/ソート/可視列/固定順/選択を反映)。
+`GridExportOptions`: `scope`(既定 `'view'`。上記 **scope 対応表**と同一規則を共有)。
 
 戻り値 `GridExportData`:
 
@@ -330,7 +343,7 @@ type GridExportData = {
 ```ts
 import { writeXlsx } from 'hucre/xlsx';
 
-const { columns, rows } = gridRef.current!.getExportData({ scope: 'all' });
+const { columns, rows } = gridRef.current!.getExportData({ scope: 'view' });
 const buffer = await writeXlsx({
   sheets: [
     {
@@ -351,7 +364,7 @@ const buffer = await writeXlsx({
 ```ts
 import ExcelJS from 'exceljs';
 
-const { columns, rows } = gridRef.current!.getExportData({ scope: 'all' });
+const { columns, rows } = gridRef.current!.getExportData({ scope: 'view' });
 const wb = new ExcelJS.Workbook();
 const ws = wb.addWorksheet('Sheet1');
 ws.addRow(columns.map((c) => c.title)); // ヘッダー
@@ -377,13 +390,13 @@ const toSheet = (name: string, d: GridExportData) => ({
 
 const buffer = await writeXlsx({
   sheets: [
-    toSheet('All', gridRef.current!.getExportData({ scope: 'all' })),
+    toSheet('View', gridRef.current!.getExportData({ scope: 'view' })),
     toSheet('Selection', gridRef.current!.getExportData({ scope: 'selection' })),
   ],
 });
 ```
 
-1 グリッドをカテゴリ列で分割して N シートにする場合は、`getExportData({ scope: 'all' })` の戻りを「分割キー列の `value`」で group して各 group を `toSheet` 化する(列 index は `columns.findIndex((c) => c.key === '...')` で解決)。
+1 グリッドをカテゴリ列で分割して N シートにする場合は、`getExportData({ scope: 'view' })` の戻りを「分割キー列の `value`」で group して各 group を `toSheet` 化する(列 index は `columns.findIndex((c) => c.key === '...')` で解決)。
 
 ### 状態の保存 / 復元
 

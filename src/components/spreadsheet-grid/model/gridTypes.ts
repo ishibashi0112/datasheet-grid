@@ -575,15 +575,36 @@ export type GridClassNames = {
 //   'end'   : 対象を可視帯の末尾(下端 / 右端)へ。
 export type ScrollAlign = 'auto' | 'start' | 'center' | 'end';
 
-// 追加(imperative API #1): CSV エクスポートの対象範囲です。
-//   'all'      : 全ビュー行 × visible 列(既定)。SSRM ではロード済み行のみ出力されます。
-//   'selection': 現在の選択範囲(セル/行/列)。選択なしのときは空文字を返します。
-//   'visible'  : 現在の描画ウィンドウ(画面に見えている近傍)の行のみ。
-export type CsvExportScope = 'all' | 'selection' | 'visible';
+// 変更(export-scope 再編): エクスポートの対象範囲を「意味論ベース」の 4 値へ再編します。実利用で
+//   「'visible' = フィルターで見えている行」という誤読が発生した(実体は仮想化ウィンドウ = 描画中の
+//   行のため、出力行数がスクロール位置に依存して変わる)ことを受け、仮想化の内部事情が名前に漏れない
+//   語彙に改めました。旧 'all' / 'visible' は後方互換エイリアスとして受け付け続けます(実行時挙動は
+//   従来と完全同一)。正規化は logic/exportScope.ts の normalizeExportScope が担います。
+/**
+ * エクスポートの対象範囲です(exportCsv / downloadCsv / getExportData で共通)。
+ * - `'view'`     : ビュー行全体(フィルター/ソート/列可視・固定順を反映)。**既定値**。スクロール位置に依存しません。
+ * - `'raw'`      : 全ソース行(`rows` 配列順)。フィルターもソートも無視します(列は可視列・固定順に従います)。
+ *                  serverSide はソース行配列を持たないため `'view'` 相当へフォールバックします(console.warn を出力)。
+ * - `'rendered'` : 仮想化ウィンドウ(いま描画中の行のみ・オーバースキャン込み)。結果はスクロール位置に依存します。
+ * - `'selection'`: 現在の選択範囲(セル/行/列)。選択なしのときは空(CSV は空文字 / データは空配列)を返します。
+ */
+export type CsvExportScope =
+  | 'view'
+  | 'raw'
+  | 'rendered'
+  | 'selection'
+  | DeprecatedCsvExportScope;
+
+/**
+ * 後方互換エイリアスです(実行時挙動は新名称と完全同一): `'all'` → `'view'` / `'visible'` → `'rendered'`。
+ * @deprecated `'visible'` は「フィルターで見えている行」ではなく「描画中の行(仮想化ウィンドウ)」を
+ *   指すため誤読のもとになります。新規コードでは `'view'` / `'rendered'` を使用してください。
+ */
+export type DeprecatedCsvExportScope = 'all' | 'visible';
 
 // 追加(imperative API #1): CSV エクスポートのオプションです。
 export type CsvExportOptions = {
-  // 出力範囲(既定 'all')。
+  // 出力範囲(既定 'view' = フィルター/ソート後のビュー行全体)。各値の意味は CsvExportScope の JSDoc 参照。
   scope?: CsvExportScope;
   // 先頭にヘッダー行(列タイトル)を付けるか(既定 true)。
   includeHeaders?: boolean;
@@ -597,7 +618,7 @@ export type CsvExportOptions = {
 //   scope セマンティクスを共有します(出力範囲のみ)。直列化に関わる delimiter / bom / includeHeaders は
 //   持ちません(ヘッダーは columns として別途返すため、書き出すかは consumer 判断)。
 export type GridExportOptions = {
-  // 出力範囲(既定 'all')。CsvExportScope を共有します。
+  // 出力範囲(既定 'view')。CsvExportScope を共有します(各値の意味は型定義の JSDoc 参照)。
   scope?: CsvExportScope;
 };
 

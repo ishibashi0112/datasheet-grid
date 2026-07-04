@@ -61,6 +61,8 @@ export type {
   RowSelectionMode,
   ScrollAlign,
   CsvExportScope,
+  // 追加(export-scope 再編): 後方互換エイリアス('all' / 'visible')の deprecated 型です。
+  DeprecatedCsvExportScope,
   CsvExportOptions,
   // 追加(imperative API: getExportData): エクスポート用の整形済みデータ型族(導線)。
   GridExportOptions,

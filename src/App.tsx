@@ -834,11 +834,13 @@ function App() {
           <button
             type="button"
             onClick={() =>
-              gridRef.current?.downloadCsv('visible.csv', { scope: 'visible' })
+              // 変更(export-scope 再編): 旧 'visible' は「描画中の行(仮想化ウィンドウ)」の意のため
+              //   'rendered' へ改名(旧名もエイリアスとして動作)。フィルター後の全行は 'view'。
+              gridRef.current?.downloadCsv('rendered.csv', { scope: 'rendered' })
             }
             style={modeButtonStyle(false)}
           >
-            表示中を CSV 保存
+            描画中の行を CSV 保存
           </button>
           <button
             type="button"
@@ -846,7 +848,7 @@ function App() {
               // 追加(getExportData デモ): エクスポート用の整形済みデータ(列メタ + 2 次元セル)を取得して
               //   内容を確認するデモです。実際の xlsx 化はこの data を hucre / exceljs 等へ流します
               //   (README / API_REFERENCE のレシピ参照)。本ライブラリは Excel ライブラリを同梱しません。
-              const data = gridRef.current?.getExportData({ scope: 'all' });
+              const data = gridRef.current?.getExportData({ scope: 'view' });
               if (!data) {
                 return;
               }
