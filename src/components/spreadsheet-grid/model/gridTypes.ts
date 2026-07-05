@@ -816,6 +816,10 @@ export type SpreadsheetGridProps<T> = {
   //   既定 480px が適用されます(従来挙動・後方互換)。明示時はその値を上限にします。
   maxHeight?: number | string;
   readOnly?: boolean;
+  // 追加(THEME-3): readonly セルの組み込み淡色表示(背景 + 文字色)の opt-in です。
+  //   既定 false = readonly でも色変化なし。false でもセマンティッククラス
+  //   (.ssg-body-cell--readonly)は常時付与されるため、利用側 CSS のフックとして使えます。
+  dimReadOnlyCells?: boolean;
   canEditCell?: (
     rowIndex: number,
     colIndex: number,

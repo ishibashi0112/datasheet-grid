@@ -158,13 +158,18 @@
     background-color: var(--ssg-row-hover-bg);
   }
 
-  /* 読み取り専用セル(選択時は通常背景へ戻し、選択塗りを素直に見せる)。 */
-  .ssg-body-cell--readonly {
+  /* 読み取り専用セル(選択時は通常背景へ戻し、選択塗りを素直に見せる)。
+     変更(THEME-3): 組み込みの淡色表示(背景 + 文字色)は dimReadOnlyCells prop
+     (root の ssg-root--dim-readonly)による opt-in にしました(既定 false = 色変化なし)。
+     .ssg-body-cell--readonly 自体は常時付与されるセマンティッククラスで、利用側 CSS の
+     フックとして機能します。root 修飾子は :where(特異度 0)で包み、従来の特異度関係
+     ((0,1,0) / hover 複合 (0,2,0))を維持します(利用側の連結上書きが従来どおり勝てる)。 */
+  :where(.ssg-root--dim-readonly) .ssg-body-cell--readonly {
     background-color: var(--ssg-readonly-bg);
     color: var(--ssg-readonly-text);
   }
 
-  .ssg-body-cell--readonly.ssg-body-cell--row-hovered {
+  :where(.ssg-root--dim-readonly) .ssg-body-cell--readonly.ssg-body-cell--row-hovered {
     background-color: var(--ssg-readonly-hover-bg);
   }
 

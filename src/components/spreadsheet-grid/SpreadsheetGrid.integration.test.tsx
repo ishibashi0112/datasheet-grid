@@ -285,3 +285,26 @@ describe('SpreadsheetGrid 状態 API(結合)', () => {
     ]);
   });
 });
+
+// 追加(THEME-3): dimReadOnlyCells の root 修飾子配線を検証します。淡色表示そのもの(CSS)は
+//   jsdom では検証できないため、「opt-in で ssg-root--dim-readonly が付く / 既定では付かない」
+//   というクラス配線を固定します(セマンティッククラス .ssg-body-cell--readonly の常時付与は
+//   GridBodyLayer 側の既存経路で不変)。
+describe('THEME-3: dimReadOnlyCells(readonly 淡色表示の opt-in)', () => {
+  it('既定(未指定)では root に ssg-root--dim-readonly が付かない', () => {
+    const { container } = render(
+      <SpreadsheetGrid columns={columns} rows={rows} />,
+    );
+    const root = container.querySelector('.ssg-root');
+    expect(root).not.toBeNull();
+    expect(root?.classList.contains('ssg-root--dim-readonly')).toBe(false);
+  });
+
+  it('dimReadOnlyCells で root に ssg-root--dim-readonly が付く', () => {
+    const { container } = render(
+      <SpreadsheetGrid columns={columns} rows={rows} dimReadOnlyCells />,
+    );
+    const root = container.querySelector('.ssg-root');
+    expect(root?.classList.contains('ssg-root--dim-readonly')).toBe(true);
+  });
+});

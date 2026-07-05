@@ -448,6 +448,8 @@ function App() {
   const [rowSelectionEnabled, setRowSelectionEnabled] = useState(false);
   // 追加(バッチ②デモ): コンテキストメニュー(完全カスタム)の ON/OFF トグルです。既定 OFF。
   const [contextMenuEnabled, setContextMenuEnabled] = useState(false);
+  // 追加(THEME-3 デモ): readonly セル(「単位」列)の淡色表示 opt-in(既定 OFF=色変化なし)。
+  const [dimReadOnlyCells, setDimReadOnlyCells] = useState(false);
   const [rowSelectionModeState, setRowSelectionModeState] =
     useState<'single' | 'multiple'>('multiple');
   const [rowSelectionCount, setRowSelectionCount] = useState(0);
@@ -928,6 +930,14 @@ function App() {
           >
             右クリックメニュー: {contextMenuEnabled ? 'ON' : 'OFF'}
           </button>
+          {/* 追加(THEME-3 デモ): readonly セル(「単位」列)の淡色表示 ON/OFF。既定 OFF。 */}
+          <button
+            type="button"
+            onClick={() => setDimReadOnlyCells((v) => !v)}
+            style={modeButtonStyle(dimReadOnlyCells)}
+          >
+            readonly淡色: {dimReadOnlyCells ? 'ON' : 'OFF'}
+          </button>
           {/* 追加(state #3 デモ): onStateChange/applyState の永続デモ。列幅変更・フィルター・ソート・
               列メタ(可視/順序/ピン)が自動保存され、ページ再読込で復元されます。下のボタンで保存を
               クリア(初期状態へ)できます。 */}
@@ -999,6 +1009,8 @@ function App() {
         // 追加(バッチ②デモ): マスタースイッチ(上の「右クリックメニュー」トグルと連動。既定 OFF)。
         //   OFF のあいだは getContextMenuItems を渡していてもブラウザ標準メニューになります。
         enableContextMenu={contextMenuEnabled}
+        // 追加(THEME-3 デモ): readonly セルの淡色表示(上の「readonly淡色」トグルと連動。既定 OFF)。
+        dimReadOnlyCells={dimReadOnlyCells}
         // 追加(バッチ②デモ): セル/行の完全カスタムコンテキストメニューです。項目を返した時だけ独自メニューを
         //   出し、[] を返す/未指定ならブラウザ標準メニューになります(ここでは常に項目を返します)。
         //   narrowing 用に params.target.type==='cell' 内でプリミティブ(値/列タイトル)を捕捉してから

@@ -28,6 +28,7 @@
 | `height` | `number \| string` | `—` | スクロールコンテナの明示高さ。`'100%'` で親要素に追従（親要素が確定高さを持つ前提。祖先まで高さが確定している／flex 子なら `min-height: 0` が必要）。`number` は px。未指定時は `maxHeight` のクリップ挙動になる。 |
 | `maxHeight` | `number \| string` | `—`（既定 480px） | スクロールコンテナの高さ上限。`height`・`maxHeight` が**共に未指定のときのみ**既定の 480px が効く（従来挙動）。`height` と併用すると「明示高さ＋上限」。 |
 | `readOnly` | `boolean` | `false` | グリッド全体の編集を無効化。 |
+| `dimReadOnlyCells` | `boolean` | `false` | readonly セルの組み込み淡色表示(背景 + 文字色)を有効化(THEME-3)。`false` でもセマンティッククラス `.ssg-body-cell--readonly` は常時付与され、利用側 CSS のフックに使える。 |
 | `canEditCell` | `(rowIndex, colIndex, row, column) => boolean` | — | セル単位の編集可否ゲート。 |
 | `enableRangeSelection` | `boolean` | `true` | 複数セル範囲選択。 |
 | `enableRowSelection` | `boolean` | `false` | チェックボックス行選択の有効化(マスタースイッチ)。`true` で行ヘッダ(行NO)ガターが行選択のヒット領域になり、Excel 風のガター起点セル範囲選択は off(ボディ側セルのドラッグ範囲選択は不変)。判定は O(1)・全選択は除外集合でキーを列挙しない(1M 行でも一定コスト)。 |

@@ -327,6 +327,8 @@ export function SpreadsheetGrid<T extends object>({
   height,
   maxHeight,
   readOnly = false,
+  // 追加(THEME-3): readonly セルの組み込み淡色表示の opt-in(既定 false = 色変化なし)。
+  dimReadOnlyCells = false,
   canEditCell,
   enableRangeSelection = true,
   // ── 追加(行選択): チェックボックス行選択(既定 false=完全無効) ──
@@ -4081,7 +4083,15 @@ export function SpreadsheetGrid<T extends object>({
   ]);
 
   return (
-    <div className={cx('ssg-root', className, classNames?.root)}>
+    <div
+      className={cx(
+        'ssg-root',
+        // 追加(THEME-3): readonly 淡色表示の opt-in 修飾子(styles.css 側で :where ゲート)。
+        dimReadOnlyCells && 'ssg-root--dim-readonly',
+        className,
+        classNames?.root,
+      )}
+    >
       {resolvedTopBar}
 
       <div
