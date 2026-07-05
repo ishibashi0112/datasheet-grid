@@ -1,5 +1,8 @@
 import { useCallback, useEffect, useRef, useState, type RefObject } from 'react';
 
+// 追加(FM-4): ドラッグ位置のビューポート clamp(3 パネル共有の純ロジック)です。
+import { clampPanelDragPosition } from '../logic/panelDragGeometry';
+
 // 追加(MS-3-1 / 並び替え管理パネル): 並び替え管理パネル(SortManagementPanel)の
 //                 open / close / layout / outside click / Escape を管理するコントローラです。
 // 設計メモ:
@@ -44,8 +47,38 @@ export const useSortManagementController = ({
   // 追加(MS-3-1): パネル本体の ref です(outside click 判定に使います)。
   const sortManagerRef = useRef<HTMLDivElement | null>(null);
 
+  // 追加(FM-4): ヘッダードラッグで移動した位置です(null = 既定の gridRoot 追従)。
+  //   close で null へ戻します(再オープンは既定位置)。ref なのは pointermove の高頻度
+  //   更新で layout state と二重の再レンダーを起こさないためです(layout が表示の真実)。
+  const draggedPositionRef = useRef<{ top: number; left: number } | null>(null);
+
   // 追加(MS-3-1): gridRoot 矩形の右上を基準に fixed 座標を計算します。
   const updateSortManagerLayout = useCallback(() => {
+    // 追加(FM-4): ドラッグ済みなら gridRoot 追従をやめ、ビューポートへの clamp だけを行います
+    //   (resize での再 clamp 用。window scroll で gridRoot が動いてもパネルは動かない =
+    //    フローティングダイアログ挙動)。
+    const dragged = draggedPositionRef.current;
+    if (dragged) {
+      const clamped = clampPanelDragPosition({
+        top: dragged.top,
+        left: dragged.left,
+        panelWidth: PANEL_WIDTH,
+        viewportWidth: window.innerWidth,
+        viewportHeight: window.innerHeight,
+      });
+      setSortManagerLayout((current) => {
+        if (
+          current &&
+          current.top === clamped.top &&
+          current.left === clamped.left &&
+          current.width === PANEL_WIDTH
+        ) {
+          return current;
+        }
+        return { top: clamped.top, left: clamped.left, width: PANEL_WIDTH };
+      });
+      return;
+    }
     const root = gridRootRef.current;
     if (!root) {
       setSortManagerLayout(null);
@@ -86,6 +119,8 @@ export const useSortManagementController = ({
   }, [enableSorting, gridRootRef]);
 
   const closeSortManager = useCallback(() => {
+    // 追加(FM-4): ドラッグ位置を破棄します(再オープンは既定の gridRoot アンカー位置)。
+    draggedPositionRef.current = null;
     setIsSortManagerOpen(false);
     setSortManagerLayout(null);
     // 追加: close 後は grid root にフォーカスを戻し、keyboard 操作へ復帰させます。
@@ -93,6 +128,23 @@ export const useSortManagementController = ({
       gridRootRef.current?.focus();
     });
   }, [gridRootRef]);
+
+  // 追加(FM-4): ヘッダードラッグからの移動です(view の usePanelHeaderDrag が pointermove
+  //   ごとに呼びます)。位置は clamp して layout へ即時反映し、以後 updateSortManagerLayout は
+  //   gridRoot 追従をやめてこの位置を保持します(closeSortManager で解除 = 再オープンは既定位置)。
+  //   注記: view 側がドラッグ session の closure に閉じ込めて呼ぶため、本関数は参照安定
+  //   (deps [])であることが契約です。
+  const moveSortManager = useCallback((top: number, left: number) => {
+    const clamped = clampPanelDragPosition({
+      top,
+      left,
+      panelWidth: PANEL_WIDTH,
+      viewportWidth: window.innerWidth,
+      viewportHeight: window.innerHeight,
+    });
+    draggedPositionRef.current = clamped;
+    setSortManagerLayout({ top: clamped.top, left: clamped.left, width: PANEL_WIDTH });
+  }, []);
 
   // 追加(MS-3-1): open 時の初期配置 + resize / window scroll への追従です。
   //               gridRoot 基準のため、グリッド内部スクロールでは動かしません。
@@ -170,6 +222,7 @@ export const useSortManagementController = ({
     sortManagerRef,
     openSortManager,
     closeSortManager,
+    moveSortManager,
   };
 };
 

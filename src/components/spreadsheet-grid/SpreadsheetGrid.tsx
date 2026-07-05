@@ -795,6 +795,7 @@ export function SpreadsheetGrid<T extends object>({
     columnChooserRef,
     openColumnChooser,
     closeColumnChooser,
+    moveColumnChooser,
   } = useColumnChooserController({
     enableColumnMenu,
     gridRootRef,
@@ -810,6 +811,7 @@ export function SpreadsheetGrid<T extends object>({
     sortManagerRef,
     openSortManager,
     closeSortManager,
+    moveSortManager,
   } = useSortManagementController({
     enableSorting: sortingEnabled,
     gridRootRef,
@@ -829,6 +831,7 @@ export function SpreadsheetGrid<T extends object>({
     filterManagerRef,
     openFilterManager,
     closeFilterManager,
+    moveFilterManager,
   } = useFilterManagementController({
     enableColumnFilter: columnFilterEnabled,
     gridRootRef,
@@ -3630,6 +3633,7 @@ export function SpreadsheetGrid<T extends object>({
       onResetColumns={handleColumnChooserReset}
       onReorderColumns={handleColumnChooserReorder}
       onRequestClose={closeColumnChooser}
+      onPanelMove={moveColumnChooser}
     />
   );
 
@@ -3650,6 +3654,7 @@ export function SpreadsheetGrid<T extends object>({
       onClearAll={handleSortManagerClearAll}
       onMove={handleSortManagerMove}
       onRequestClose={closeSortManager}
+      onPanelMove={moveSortManager}
     />
   );
 
@@ -3674,6 +3679,7 @@ export function SpreadsheetGrid<T extends object>({
       onClearAllFilters={handleFilterManagerClearAll}
       onClearGlobalFilter={handleFilterManagerClearGlobal}
       onRequestClose={closeFilterManager}
+      onPanelMove={moveFilterManager}
     />
   );
 

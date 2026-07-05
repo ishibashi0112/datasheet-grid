@@ -46,6 +46,7 @@ const makeProps = () => ({
   onClearAllFilters: vi.fn(),
   onClearGlobalFilter: vi.fn(),
   onRequestClose: vi.fn(),
+  onPanelMove: vi.fn(),
 });
 
 describe('FilterManagementPanel', () => {
@@ -147,5 +148,45 @@ describe('FilterManagementPanel', () => {
     const noLayout = { ...makeProps(), layout: null };
     render(<FilterManagementPanel {...noLayout} />);
     expect(screen.queryByText('フィルター管理')).toBeNull();
+  });
+
+  // 追加(FM-4): ヘッダードラッグ(usePanelHeaderDrag)の配線固定です。共有フックのため、
+  //   本 view のテストで機構を固定すれば Sort / ColumnChooser にも同じ挙動が及びます。
+  it('ヘッダードラッグで onPanelMove(開始位置+差分) を呼び、pointerup 後は呼ばない(FM-4)', () => {
+    const props = makeProps();
+    render(<FilterManagementPanel {...props} />);
+    const header = document.querySelector('.ssg-popover-header') as HTMLElement;
+    expect(header.classList.contains('ssg-popover-header--draggable')).toBe(
+      true,
+    );
+    fireEvent.pointerDown(header, {
+      button: 0,
+      pointerId: 1,
+      clientX: 100,
+      clientY: 60,
+    });
+    fireEvent.pointerMove(window, { pointerId: 1, clientX: 130, clientY: 90 });
+    // layout = { top: 20, left: 40 } + 差分(+30, +30)です。
+    expect(props.onPanelMove).toHaveBeenLastCalledWith(50, 70);
+    // pointerId 不一致の move は無視されます。
+    fireEvent.pointerMove(window, { pointerId: 2, clientX: 999, clientY: 999 });
+    expect(props.onPanelMove).toHaveBeenCalledTimes(1);
+    // pointerup 後の move では呼ばれません(リスナー解除)。
+    fireEvent.pointerUp(window, { pointerId: 1 });
+    fireEvent.pointerMove(window, { pointerId: 1, clientX: 200, clientY: 200 });
+    expect(props.onPanelMove).toHaveBeenCalledTimes(1);
+  });
+
+  it('ヘッダー内の button(× 閉じる)からはドラッグを開始しない(FM-4)', () => {
+    const props = makeProps();
+    render(<FilterManagementPanel {...props} />);
+    fireEvent.pointerDown(screen.getByLabelText('閉じる'), {
+      button: 0,
+      pointerId: 1,
+      clientX: 10,
+      clientY: 10,
+    });
+    fireEvent.pointerMove(window, { pointerId: 1, clientX: 50, clientY: 50 });
+    expect(props.onPanelMove).not.toHaveBeenCalled();
   });
 });

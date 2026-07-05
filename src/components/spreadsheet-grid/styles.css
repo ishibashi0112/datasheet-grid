@@ -666,6 +666,17 @@
     gap: 8px;
   }
 
+  /* 追加(FM-4): ドラッグ可能パネルのヘッダー(掴み領域)。Filter / Sort / ColumnChooser の
+     3 パネル共通。ドラッグ中の位置 clamp・保持は controller 側(panelDragGeometry)が担う。
+     touch-action: none はタッチでの pointermove をスクロールに取られないための指定。 */
+  .ssg-popover-header--draggable {
+    cursor: grab;
+    touch-action: none;
+  }
+  .ssg-popover-header--draggable:active {
+    cursor: grabbing;
+  }
+
   /* ── 並び替え管理パネル(SortManagementPanel) ── */
   .ssg-sort-panel {
     max-height: 420px;

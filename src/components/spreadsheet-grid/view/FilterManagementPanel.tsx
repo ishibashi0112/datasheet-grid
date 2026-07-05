@@ -15,6 +15,8 @@
 import { createPortal } from 'react-dom';
 import type { CSSProperties, KeyboardEvent, PointerEvent, RefObject } from 'react';
 import type { FilterManagementLayout } from '../hooks/useFilterManagementController';
+// 追加(FM-4): ヘッダーを掴んでパネルを移動する共有フックです(3 パネル共通)。
+import { usePanelHeaderDrag } from '../hooks/usePanelHeaderDrag';
 
 // 追加(FM-1): 一覧 1 行ぶんの情報です(要約文字列は logic/filterSummary.ts で生成済み)。
 export type FilterManagementEntry = {
@@ -52,6 +54,9 @@ type FilterManagementPanelProps = {
   onClearAllFilters: () => void;
   onClearGlobalFilter: () => void;
   onRequestClose: () => void;
+  // 追加(FM-4): ヘッダードラッグによるパネル移動です(controller の moveFilterManager を
+  //   受け取ります。位置の clamp・保持・close 時リセットは controller 側の責務)。
+  onPanelMove: (top: number, left: number) => void;
 };
 
 // 追加(FM-1): 漏斗グリフです(GridHeaderRow のフィルター適用中マークと同一パス)。
@@ -104,7 +109,15 @@ export function FilterManagementPanel({
   onClearAllFilters,
   onClearGlobalFilter,
   onRequestClose,
+  onPanelMove,
 }: FilterManagementPanelProps) {
+  // 追加(FM-4): ヘッダーを掴んでパネルを移動します(hooks は早期 return より前・無条件で
+  //   呼びます。layout=null のときはフック側が開始しません)。
+  const { handleHeaderPointerDown } = usePanelHeaderDrag({
+    layout,
+    onPanelMove,
+  });
+
   if (!isOpen || !layout) {
     return null;
   }
@@ -141,7 +154,10 @@ export function FilterManagementPanel({
       style={wrapperStyle}
     >
       {/* ── ヘッダー: タイトル + × ── */}
-      <div className="ssg-popover-header">
+      <div
+        className="ssg-popover-header ssg-popover-header--draggable"
+        onPointerDown={handleHeaderPointerDown}
+      >
         <span className="ssg-popover-title">フィルター管理</span>
         <button
           type="button"

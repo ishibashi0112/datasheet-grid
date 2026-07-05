@@ -20,6 +20,8 @@ import { cx } from '../logic/cx';
 import type { CSSProperties, KeyboardEvent, PointerEvent, RefObject } from 'react';
 import type { GridSortEntry } from '../model/gridTypes';
 import type { SortManagementLayout } from '../hooks/useSortManagementController';
+// 追加(FM-4): ヘッダーを掴んでパネルを移動する共有フックです(3 パネル共通)。
+import { usePanelHeaderDrag } from '../hooks/usePanelHeaderDrag';
 
 // 追加(MS-3-1): パネルが必要とする最小の列情報です(並び替え可能な列のみを渡します)。
 export type SortManagementColumn = {
@@ -49,6 +51,9 @@ type SortManagementPanelProps = {
   //   レベル 2 件以上のときのみ、かつ実際に位置が動いたときのみ呼ばれます。
   onMove: (from: number, to: number) => void;
   onRequestClose: () => void;
+  // 追加(FM-4): ヘッダードラッグによるパネル移動です(controller の moveSortManager を
+  //   受け取ります。位置の clamp・保持・close 時リセットは controller 側の責務)。
+  onPanelMove: (top: number, left: number) => void;
 };
 
 // 追加(MS-3-2): ⠿ ドラッグハンドルの見た目です(2×3 の点)。ColumnChooserPanel と同型。
@@ -85,6 +90,7 @@ export function SortManagementPanel({
   onClearAll,
   onMove,
   onRequestClose,
+  onPanelMove,
 }: SortManagementPanelProps) {
   // 既に並び替えに使われている列キーの集合です(列セレクトの候補絞り込みに使います)。
   const usedKeys = useMemo(
@@ -208,6 +214,13 @@ export function SortManagementPanel({
     }
   }, [isOpen]);
 
+  // 追加(FM-4): ヘッダーを掴んでパネルを移動します(hooks は早期 return より前・無条件で
+  //   呼びます。layout=null のときはフック側が開始しません)。
+  const { handleHeaderPointerDown } = usePanelHeaderDrag({
+    layout,
+    onPanelMove,
+  });
+
   if (!isOpen || !layout) {
     return null;
   }
@@ -249,7 +262,10 @@ export function SortManagementPanel({
       style={wrapperStyle}
     >
       {/* ── ヘッダー: タイトル + × ── */}
-      <div className="ssg-popover-header">
+      <div
+        className="ssg-popover-header ssg-popover-header--draggable"
+        onPointerDown={handleHeaderPointerDown}
+      >
         <span className="ssg-popover-title">並び替え</span>
         <button
           type="button"
