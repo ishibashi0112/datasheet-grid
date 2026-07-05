@@ -308,3 +308,47 @@ describe('THEME-3: dimReadOnlyCells(readonly 淡色表示の opt-in)', () => {
     expect(root?.classList.contains('ssg-root--dim-readonly')).toBe(true);
   });
 });
+
+// 追加(THEME-2): density プリセットの配線を検証します。root 修飾子と、rowHeight / headerHeight
+//   既定値の解決(明示 prop 優先)を、ヘッダー行のインライン height で観測します(jsdom でも
+//   インライン style は評価可能。寸法トークンの CSS 適用そのものは実機確認)。
+describe('THEME-2: density(密度プリセット)', () => {
+  const headerRowHeight = (container: HTMLElement): string => {
+    const headerRow = container.querySelector('.ssg-header-row');
+    return headerRow instanceof HTMLElement ? headerRow.style.height : '';
+  };
+
+  it('既定(standard)では density 修飾子なし・headerHeight は従来既定 40px', () => {
+    const { container } = render(
+      <SpreadsheetGrid columns={columns} rows={rows} />,
+    );
+    const root = container.querySelector('.ssg-root');
+    expect(root).not.toBeNull();
+    expect(root?.className).not.toContain('ssg-root--density-');
+    expect(headerRowHeight(container)).toBe('40px');
+  });
+
+  it("density='compact' で root 修飾子が付き headerHeight 既定が 32px になる", () => {
+    const { container } = render(
+      <SpreadsheetGrid columns={columns} rows={rows} density="compact" />,
+    );
+    expect(
+      container
+        .querySelector('.ssg-root')
+        ?.classList.contains('ssg-root--density-compact'),
+    ).toBe(true);
+    expect(headerRowHeight(container)).toBe('32px');
+  });
+
+  it('明示 headerHeight は density プリセットより常に優先される', () => {
+    const { container } = render(
+      <SpreadsheetGrid
+        columns={columns}
+        rows={rows}
+        density="compact"
+        headerHeight={50}
+      />,
+    );
+    expect(headerRowHeight(container)).toBe('50px');
+  });
+});

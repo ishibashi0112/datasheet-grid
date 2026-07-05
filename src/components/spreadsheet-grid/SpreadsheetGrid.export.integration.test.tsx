@@ -1,28 +1,27 @@
-// SpreadsheetGrid を実際に render し、命令的ハンドル(getState / applyState)と onStateChange の
-//   「配線」を実行検証する結合テストです。純ロジック(logic/gridState.test.ts)では到達できない以下を、
-//   実コンポーネントを通して確認します:
-//   - getState がライブの uiState / columns を読んでスナップショット(v2: 列メタ含む)を返す。
-//   - applyState が dispatch → reducer → 再レンダーを経て getState に反映される(往復)。
-//   - applyState の列メタ(順序 / 可視 / ピン)が onColumnsChange 経由で controlled に反映される(往復)。
-//   - onStateChange effect が「初回マウント非発火 / 状態変化(列メタ含む)で発火 / 同値では再発火しない」。
-//   renderHook 系テストと同じく DOM を要するため、本ファイルのみ jsdom で回します。
+// エクスポート scope('view' / 'raw' / 'rendered' / 'selection' + 後方互換 'all' / 'visible')の
+//   「配線」を実行検証する結合テストです。純ロジック(logic/exportScope.test.ts)は正規化のみを固定し、
+//   ここでは実コンポーネントを通して SS2603 のバグ報告(「'visible' が描画中の行だけを返し、出力が
+//   スクロール位置に依存して変わる」)の再発防止を確認します:
+//   - 'view'(既定)がフィルター/ソート適用後の「全」ビュー行を返す(描画ウィンドウ非依存。jsdom は
+//     viewport 実測 0 で描画ウィンドウが極小のため、全行が返ること自体がウィンドウ非依存の証明になる)。
+//   - 'raw' がフィルターもソートも無視した全ソース行を rows 配列順で返す。
+//   - 旧 'all' / 'visible' が新 'view' / 'rendered' と厳密に同一の結果を返す(後方互換)。
+//   既存の結合テストと同じく DOM を要するため、本ファイルは jsdom で回します。
 // @vitest-environment jsdom
-import { describe, it, expect, vi, beforeAll, afterEach } from 'vitest';
+import { describe, it, expect, beforeAll, afterEach } from 'vitest';
 import { render, cleanup, act } from '@testing-library/react';
-import { createRef, useState } from 'react';
-import type { Ref } from 'react';
+import { createRef } from 'react';
 
 import { SpreadsheetGrid } from './SpreadsheetGrid';
 import { GRID_STATE_VERSION } from './logic/gridState';
 import type {
   GridColumn,
+  GridExportData,
   GridState,
   SpreadsheetGridHandle,
 } from './model/gridTypes';
 
-// jsdom には ResizeObserver / Element.scrollTo が無い(SpreadsheetGrid がマウント時に new / 呼び出す)
-//   ため、最小スタブを入れます。observe は no-op(コールバックを呼ばない)なので、これ起因の setState は
-//   発生せず、テストの決定性を保てます。
+// jsdom には ResizeObserver / Element.scrollTo が無いため、最小スタブを入れます(既存の結合テストと同じ)。
 beforeAll(() => {
   if (!('ResizeObserver' in globalThis)) {
     class ResizeObserverStub {
@@ -50,305 +49,104 @@ const columns: GridColumn<Row>[] = [
   { key: 'qty', title: 'Qty', width: 100 },
 ];
 
+// フィルター('be' 部分一致)とソート(qty 昇順)の効果が判別できるデータです。
+//   ソース順 = id [1,2,3,4,5] / フィルター後 = id {2,3,5} / ソート後ビュー順 = id [5,2,3] と、
+//   3 つの並びがすべて異なるため、各 scope がどの段階を読んでいるかを一意に識別できます。
 const rows: Row[] = [
-  { id: 1, name: 'alpha', qty: 10 },
-  { id: 2, name: 'beta', qty: 20 },
-  { id: 3, name: 'gamma', qty: 30 },
+  { id: 1, name: 'alpha', qty: 30 },
+  { id: 2, name: 'beta', qty: 10 },
+  { id: 3, name: 'abbey', qty: 20 },
+  { id: 4, name: 'gamma', qty: 40 },
+  { id: 5, name: 'berry', qty: 5 },
 ];
 
-// テスト全体で使い回す「適用する状態」。columnWidths は 1 列だけ(resetColumnWidths がフル置換である
-//   ことの確認も兼ねる)、フィルター(global + 列)とソートも含めます。
-const appliedState: GridState = {
+// name 列に text フィルター('be' 部分一致) + qty 昇順ソートを適用する状態です。
+const filteredSortedState: GridState = {
   version: GRID_STATE_VERSION,
-  columnWidths: { id: 120 },
+  columnWidths: {},
   filters: {
-    globalText: 'be',
+    globalText: '',
     columnFilters: { name: { kind: 'text', value: 'be' } },
   },
-  sort: [{ columnKey: 'qty', direction: 'desc' }],
+  sort: [{ columnKey: 'qty', direction: 'asc' }],
 };
 
-// 追加(v2): controlled-columns ハーネスです。列メタ(可視 / 順序 / ピン)は consumer 所有のため、
-//   applyState の列メタ反映は onColumnsChange を通ります。ここで columns を useState で保持して
-//   onColumnsChange へ繋ぎ、applyState → onColumnsChange → 再レンダー → getState の往復を検証します。
-function ControlledGrid({
-  gridRef,
-  initialColumns,
-  onStateChange,
-}: {
-  gridRef: Ref<SpreadsheetGridHandle<Row>>;
-  initialColumns: GridColumn<Row>[];
-  onStateChange?: (state: GridState) => void;
-}) {
-  const [cols, setCols] = useState(initialColumns);
-  return (
-    <SpreadsheetGrid
-      ref={gridRef}
-      columns={cols}
-      onColumnsChange={setCols}
-      rows={rows}
-      onStateChange={onStateChange}
-    />
-  );
-}
+// エクスポートデータから id 列(先頭列)の生値を並びで取り出します。
+const idsOf = (data: GridExportData): unknown[] =>
+  data.rows.map((cells) => cells[0].value);
 
-describe('SpreadsheetGrid 状態 API(結合)', () => {
-  it('getState() が初期スナップショットを返す', () => {
-    const ref = createRef<SpreadsheetGridHandle<Row>>();
-    render(<SpreadsheetGrid ref={ref} columns={columns} rows={rows} />);
+// グリッドを mount し、フィルター + ソートを適用済みのハンドルを返します。
+const setupFilteredSorted = (): SpreadsheetGridHandle<Row> => {
+  const ref = createRef<SpreadsheetGridHandle<Row>>();
+  render(<SpreadsheetGrid ref={ref} columns={columns} rows={rows} />);
+  act(() => {
+    ref.current?.applyState(filteredSortedState);
+  });
+  const handle = ref.current;
+  expect(handle).not.toBeNull();
+  return handle as SpreadsheetGridHandle<Row>;
+};
 
-    const state = ref.current?.getState();
-    expect(state).toBeDefined();
-    expect(state?.version).toBe(GRID_STATE_VERSION);
-    // 初期 columnWidths は非 flex 列の width から作られます(flex 列なし)。
-    expect(state?.columnWidths).toEqual({ id: 80, name: 160, qty: 100 });
-    expect(state?.filters).toEqual({ globalText: '', columnFilters: {} });
-    expect(state?.sort).toEqual([]);
-    // 追加(v2): 列メタは columns prop から配列順で抽出されます(visible/pinned 未指定は省略)。
-    expect(state?.columns).toEqual([
-      { key: 'id' },
-      { key: 'name' },
-      { key: 'qty' },
-    ]);
+describe('SpreadsheetGrid エクスポート scope(結合)', () => {
+  it("'view' はフィルター/ソート適用後の全ビュー行を返す(描画ウィンドウ非依存)", () => {
+    const handle = setupFilteredSorted();
+
+    const view = handle.getExportData({ scope: 'view' });
+    // フィルター後 3 行がソート順(qty 昇順 = id 5,2,3)で「すべて」返ること。jsdom の描画ウィンドウは
+    //   極小(viewport 実測 0)のため、3 行全部が返る = ウィンドウ非依存であることの実証になります。
+    expect(idsOf(view)).toEqual([5, 2, 3]);
+
+    // CSV も同一規則(resolveExportScope を共有)。
+    const csv = handle.exportCsv({ scope: 'view', includeHeaders: false });
+    expect(csv).toBe('5,berry,5\r\n2,beta,10\r\n3,abbey,20');
   });
 
-  it('applyState() が reducer 経由で反映され getState() に出る', () => {
-    const ref = createRef<SpreadsheetGridHandle<Row>>();
-    render(<SpreadsheetGrid ref={ref} columns={columns} rows={rows} />);
-
-    act(() => {
-      ref.current?.applyState(appliedState);
-    });
-
-    const after = ref.current?.getState();
-    expect(after?.version).toBe(GRID_STATE_VERSION);
-    // resetColumnWidths はフル置換なので、適用後は { id: 120 } のみ(他列のエントリは消える)。
-    expect(after?.columnWidths).toEqual({ id: 120 });
-    expect(after?.filters).toEqual({
-      globalText: 'be',
-      columnFilters: { name: { kind: 'text', value: 'be' } },
-    });
-    expect(after?.sort).toEqual([{ columnKey: 'qty', direction: 'desc' }]);
+  it("既定 scope は 'view'(オプション省略時も同一結果)", () => {
+    const handle = setupFilteredSorted();
+    expect(handle.getExportData()).toEqual(handle.getExportData({ scope: 'view' }));
+    expect(handle.exportCsv()).toBe(handle.exportCsv({ scope: 'view' }));
   });
 
-  it('onStateChange は初回マウントで発火しない', () => {
-    const onStateChange = vi.fn();
-    render(
-      <SpreadsheetGrid
-        columns={columns}
-        rows={rows}
-        onStateChange={onStateChange}
-      />,
+  it("'raw' はフィルターもソートも無視した全ソース行を rows 配列順で返す", () => {
+    const handle = setupFilteredSorted();
+
+    const raw = handle.getExportData({ scope: 'raw' });
+    // フィルター前の 5 行がソース順(id 1..5)で返ること(= フィルターにもソートにも影響されない)。
+    expect(idsOf(raw)).toEqual([1, 2, 3, 4, 5]);
+
+    // 列は可視列・固定順に従います(本テストでは宣言順 = ID / Name / Qty)。
+    expect(raw.columns.map((c) => c.key)).toEqual(['id', 'name', 'qty']);
+  });
+
+  it("後方互換: 'all' は 'view' と、'visible' は 'rendered' と厳密に同一の結果を返す", () => {
+    const handle = setupFilteredSorted();
+
+    // deprecated エイリアスの実行時挙動は新名称と完全同一(既存利用者を壊さない)。
+    expect(handle.getExportData({ scope: 'all' })).toEqual(
+      handle.getExportData({ scope: 'view' }),
     );
-
-    expect(onStateChange).not.toHaveBeenCalled();
-  });
-
-  it('onStateChange は applyState の状態変化で最新 state を 1 回渡して発火する', () => {
-    const onStateChange = vi.fn();
-    const ref = createRef<SpreadsheetGridHandle<Row>>();
-    render(
-      <SpreadsheetGrid
-        ref={ref}
-        columns={columns}
-        rows={rows}
-        onStateChange={onStateChange}
-      />,
+    expect(handle.getExportData({ scope: 'visible' })).toEqual(
+      handle.getExportData({ scope: 'rendered' }),
     );
-
-    act(() => {
-      ref.current?.applyState(appliedState);
-    });
-
-    expect(onStateChange).toHaveBeenCalledTimes(1);
-    expect(onStateChange).toHaveBeenLastCalledWith({
-      version: GRID_STATE_VERSION,
-      columnWidths: { id: 120 },
-      filters: {
-        globalText: 'be',
-        columnFilters: { name: { kind: 'text', value: 'be' } },
-      },
-      sort: [{ columnKey: 'qty', direction: 'desc' }],
-      // 追加(v2): この applyState は列メタ非適用(onColumnsChange 未指定)なので columns prop は不変。
-      //   snapshot には現 columns の抽出が載ります。
-      columns: [{ key: 'id' }, { key: 'name' }, { key: 'qty' }],
-    });
-  });
-
-  it('onStateChange は同値の applyState では再発火しない(構造等価で抑止)', () => {
-    const onStateChange = vi.fn();
-    const ref = createRef<SpreadsheetGridHandle<Row>>();
-    render(
-      <SpreadsheetGrid
-        ref={ref}
-        columns={columns}
-        rows={rows}
-        onStateChange={onStateChange}
-      />,
+    expect(handle.exportCsv({ scope: 'all' })).toBe(
+      handle.exportCsv({ scope: 'view' }),
     );
-
-    // 1 回目: 初期状態 → appliedState への変化で発火。
-    act(() => {
-      ref.current?.applyState(appliedState);
-    });
-    expect(onStateChange).toHaveBeenCalledTimes(1);
-
-    // 2 回目: 同値を再適用。reducer は新規オブジェクト参照を入れる(columnWidths/filters の参照は変わる)が、
-    //   isSameGridState が構造等価と判定するため再発火しない。
-    act(() => {
-      ref.current?.applyState(appliedState);
-    });
-    expect(onStateChange).toHaveBeenCalledTimes(1);
-  });
-
-  it('追加(v2): applyState の列メタ(順序 / 可視 / ピン)が onColumnsChange 経由で反映され getState に出る', () => {
-    const ref = createRef<SpreadsheetGridHandle<Row>>();
-    render(<ControlledGrid gridRef={ref} initialColumns={columns} />);
-
-    const v2State: GridState = {
-      version: GRID_STATE_VERSION,
-      columnWidths: {},
-      filters: { globalText: '', columnFilters: {} },
-      sort: [],
-      // qty を left 固定 + 先頭、id を非表示、name は既定。
-      columns: [
-        { key: 'qty', pinned: 'left' },
-        { key: 'id', visible: false },
-        { key: 'name' },
-      ],
-    };
-
-    act(() => {
-      ref.current?.applyState(v2State);
-    });
-
-    const after = ref.current?.getState();
-    // reorderColumnsByPane で qty(left)が先頭、続いて center の id, name。visible/pinned も復元。
-    expect(after?.columns).toEqual([
-      { key: 'qty', pinned: 'left' },
-      { key: 'id', visible: false },
-      { key: 'name' },
-    ]);
-  });
-
-  it('追加(v2): onColumnsChange 未指定なら applyState の列メタはスキップ(v1 と同一・列順不変)', () => {
-    const ref = createRef<SpreadsheetGridHandle<Row>>();
-    // onColumnsChange を渡さない(controlled でない)素の SpreadsheetGrid。
-    render(<SpreadsheetGrid ref={ref} columns={columns} rows={rows} />);
-
-    act(() => {
-      ref.current?.applyState({
-        version: GRID_STATE_VERSION,
-        columnWidths: {},
-        filters: { globalText: '', columnFilters: {} },
-        sort: [],
-        columns: [{ key: 'qty' }, { key: 'name' }, { key: 'id' }], // reorder 指示
-      });
-    });
-
-    // onColumnsChange が無いので列メタは適用されず、列順は初期のまま。
-    const after = ref.current?.getState();
-    expect(after?.columns).toEqual([
-      { key: 'id' },
-      { key: 'name' },
-      { key: 'qty' },
-    ]);
-  });
-
-  it('追加(v2): onStateChange は列メタ変化(applyState の reorder)でも発火し、最新の列メタを渡す', () => {
-    const onStateChange = vi.fn();
-    const ref = createRef<SpreadsheetGridHandle<Row>>();
-    render(
-      <ControlledGrid
-        gridRef={ref}
-        initialColumns={columns}
-        onStateChange={onStateChange}
-      />,
+    expect(handle.exportCsv({ scope: 'visible' })).toBe(
+      handle.exportCsv({ scope: 'rendered' }),
     );
-
-    act(() => {
-      ref.current?.applyState({
-        version: GRID_STATE_VERSION,
-        columnWidths: {},
-        filters: { globalText: '', columnFilters: {} },
-        sort: [],
-        columns: [{ key: 'qty' }, { key: 'name' }, { key: 'id' }], // reorder
-      });
-    });
-
-    expect(onStateChange).toHaveBeenCalled();
-    const last = onStateChange.mock.calls.at(-1)?.[0] as GridState;
-    expect(last.columns).toEqual([
-      { key: 'qty' },
-      { key: 'name' },
-      { key: 'id' },
-    ]);
-  });
-});
-
-// 追加(THEME-3): dimReadOnlyCells の root 修飾子配線を検証します。淡色表示そのもの(CSS)は
-//   jsdom では検証できないため、「opt-in で ssg-root--dim-readonly が付く / 既定では付かない」
-//   というクラス配線を固定します(セマンティッククラス .ssg-body-cell--readonly の常時付与は
-//   GridBodyLayer 側の既存経路で不変)。
-describe('THEME-3: dimReadOnlyCells(readonly 淡色表示の opt-in)', () => {
-  it('既定(未指定)では root に ssg-root--dim-readonly が付かない', () => {
-    const { container } = render(
-      <SpreadsheetGrid columns={columns} rows={rows} />,
-    );
-    const root = container.querySelector('.ssg-root');
-    expect(root).not.toBeNull();
-    expect(root?.classList.contains('ssg-root--dim-readonly')).toBe(false);
   });
 
-  it('dimReadOnlyCells で root に ssg-root--dim-readonly が付く', () => {
-    const { container } = render(
-      <SpreadsheetGrid columns={columns} rows={rows} dimReadOnlyCells />,
-    );
-    const root = container.querySelector('.ssg-root');
-    expect(root?.classList.contains('ssg-root--dim-readonly')).toBe(true);
-  });
-});
+  it("'rendered' は描画ウィンドウのみを対象にする(ビュー全体とは独立の範囲)", () => {
+    const handle = setupFilteredSorted();
 
-// 追加(THEME-2): density プリセットの配線を検証します。root 修飾子と、rowHeight / headerHeight
-//   既定値の解決(明示 prop 優先)を、ヘッダー行のインライン height で観測します(jsdom でも
-//   インライン style は評価可能。寸法トークンの CSS 適用そのものは実機確認)。
-describe('THEME-2: density(密度プリセット)', () => {
-  const headerRowHeight = (container: HTMLElement): string => {
-    const headerRow = container.querySelector('.ssg-header-row');
-    return headerRow instanceof HTMLElement ? headerRow.style.height : '';
-  };
-
-  it('既定(standard)では density 修飾子なし・headerHeight は従来既定 40px', () => {
-    const { container } = render(
-      <SpreadsheetGrid columns={columns} rows={rows} />,
-    );
-    const root = container.querySelector('.ssg-root');
-    expect(root).not.toBeNull();
-    expect(root?.className).not.toContain('ssg-root--density-');
-    expect(headerRowHeight(container)).toBe('40px');
-  });
-
-  it("density='compact' で root 修飾子が付き headerHeight 既定が 32px になる", () => {
-    const { container } = render(
-      <SpreadsheetGrid columns={columns} rows={rows} density="compact" />,
-    );
-    expect(
-      container
-        .querySelector('.ssg-root')
-        ?.classList.contains('ssg-root--density-compact'),
-    ).toBe(true);
-    expect(headerRowHeight(container)).toBe('32px');
-  });
-
-  it('明示 headerHeight は density プリセットより常に優先される', () => {
-    const { container } = render(
-      <SpreadsheetGrid
-        columns={columns}
-        rows={rows}
-        density="compact"
-        headerHeight={50}
-      />,
-    );
-    expect(headerRowHeight(container)).toBe('50px');
+    const rendered = handle.getExportData({ scope: 'rendered' });
+    const view = handle.getExportData({ scope: 'view' });
+    // 'rendered' の行集合は 'view'(ビュー全体)の部分集合(jsdom では viewport 実測 0 のため極小)。
+    expect(rendered.rows.length).toBeLessThanOrEqual(view.rows.length);
+    // 'rendered' に含まれる行は必ずビュー行(フィルター後集合)に属します。
+    const viewIds = new Set(idsOf(view));
+    for (const id of idsOf(rendered)) {
+      expect(viewIds.has(id)).toBe(true);
+    }
   });
 });
