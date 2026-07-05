@@ -469,6 +469,226 @@ export default defineConfig([
 <svg xmlns="http://www.w3.org/2000/svg" width="77" height="47" fill="none" aria-labelledby="vite-logo-title" viewBox="0 0 77 47"><title id="vite-logo-title">Vite</title><style>.parenthesis{fill:#000}@media (prefers-color-scheme:dark){.parenthesis{fill:#fff}}</style><path fill="#9135ff" d="M40.151 45.71c-.663.844-2.02.374-2.02-.699V34.708a2.26 2.26 0 0 0-2.262-2.262H24.493c-.92 0-1.457-1.04-.92-1.788l7.479-10.471c1.07-1.498 0-3.578-1.842-3.578H15.443c-.92 0-1.456-1.04-.92-1.788l9.696-13.576c.213-.297.556-.474.92-.474h28.894c.92 0 1.456 1.04.92 1.788l-7.48 10.472c-1.07 1.497 0 3.578 1.842 3.578h11.376c.944 0 1.474 1.087.89 1.83L40.153 45.712z"/><mask id="a" width="48" height="47" x="14" y="0" maskUnits="userSpaceOnUse" style="mask-type:alpha"><path fill="#000" d="M40.047 45.71c-.663.843-2.02.374-2.02-.699V34.708a2.26 2.26 0 0 0-2.262-2.262H24.389c-.92 0-1.457-1.04-.92-1.788l7.479-10.472c1.07-1.497 0-3.578-1.842-3.578H15.34c-.92 0-1.456-1.04-.92-1.788l9.696-13.575c.213-.297.556-.474.92-.474H53.93c.92 0 1.456 1.04.92 1.788L47.37 13.03c-1.07 1.498 0 3.578 1.842 3.578h11.376c.944 0 1.474 1.088.89 1.831L40.049 45.712z"/></mask><g mask="url(#a)"><g filter="url(#b)"><ellipse cx="5.508" cy="14.704" fill="#eee6ff" rx="5.508" ry="14.704" transform="rotate(269.814 20.96 11.29)scale(-1 1)"/></g><g filter="url(#c)"><ellipse cx="10.399" cy="29.851" fill="#eee6ff" rx="10.399" ry="29.851" transform="rotate(89.814 -16.902 -8.275)scale(1 -1)"/></g><g filter="url(#d)"><ellipse cx="5.508" cy="30.487" fill="#8900ff" rx="5.508" ry="30.487" transform="rotate(89.814 -19.197 -7.127)scale(1 -1)"/></g><g filter="url(#e)"><ellipse cx="5.508" cy="30.599" fill="#8900ff" rx="5.508" ry="30.599" transform="rotate(89.814 -25.928 4.177)scale(1 -1)"/></g><g filter="url(#f)"><ellipse cx="5.508" cy="30.599" fill="#8900ff" rx="5.508" ry="30.599" transform="rotate(89.814 -25.738 5.52)scale(1 -1)"/></g><g filter="url(#g)"><ellipse cx="14.072" cy="22.078" fill="#eee6ff" rx="14.072" ry="22.078" transform="rotate(93.35 31.245 55.578)scale(-1 1)"/></g><g filter="url(#h)"><ellipse cx="3.47" cy="21.501" fill="#8900ff" rx="3.47" ry="21.501" transform="rotate(89.009 35.419 55.202)scale(-1 1)"/></g><g filter="url(#i)"><ellipse cx="3.47" cy="21.501" fill="#8900ff" rx="3.47" ry="21.501" transform="rotate(89.009 35.419 55.202)scale(-1 1)"/></g><g filter="url(#j)"><ellipse cx="14.592" cy="9.743" fill="#8900ff" rx="4.407" ry="29.108" transform="rotate(39.51 14.592 9.743)"/></g><g filter="url(#k)"><ellipse cx="61.728" cy="-5.321" fill="#8900ff" rx="4.407" ry="29.108" transform="rotate(37.892 61.728 -5.32)"/></g><g filter="url(#l)"><ellipse cx="55.618" cy="7.104" fill="#00c2ff" rx="5.971" ry="9.665" transform="rotate(37.892 55.618 7.104)"/></g><g filter="url(#m)"><ellipse cx="12.326" cy="39.103" fill="#8900ff" rx="4.407" ry="29.108" transform="rotate(37.892 12.326 39.103)"/></g><g filter="url(#n)"><ellipse cx="12.326" cy="39.103" fill="#8900ff" rx="4.407" ry="29.108" transform="rotate(37.892 12.326 39.103)"/></g><g filter="url(#o)"><ellipse cx="49.857" cy="30.678" fill="#8900ff" rx="4.407" ry="29.108" transform="rotate(37.892 49.857 30.678)"/></g><g filter="url(#p)"><ellipse cx="52.623" cy="33.171" fill="#00c2ff" rx="5.971" ry="15.297" transform="rotate(37.892 52.623 33.17)"/></g></g><path d="M6.919 0c-9.198 13.166-9.252 33.575 0 46.789h6.215c-9.25-13.214-9.196-33.623 0-46.789zm62.424 0h-6.215c9.198 13.166 9.252 33.575 0 46.789h6.215c9.25-13.214 9.196-33.623 0-46.789" class="parenthesis"/><defs><filter id="b" width="60.045" height="41.654" x="-5.564" y="16.92" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17286" stdDeviation="7.659"/></filter><filter id="c" width="90.34" height="51.437" x="-40.407" y="-6.762" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17286" stdDeviation="7.659"/></filter><filter id="d" width="79.355" height="29.4" x="-35.435" y="2.801" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17286" stdDeviation="4.596"/></filter><filter id="e" width="79.579" height="29.4" x="-30.84" y="20.8" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17286" stdDeviation="4.596"/></filter><filter id="f" width="79.579" height="29.4" x="-29.307" y="21.949" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17286" stdDeviation="4.596"/></filter><filter id="g" width="74.749" height="58.852" x="29.961" y="-17.13" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17286" stdDeviation="7.659"/></filter><filter id="h" width="61.377" height="25.362" x="37.754" y="3.055" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17286" stdDeviation="4.596"/></filter><filter id="i" width="61.377" height="25.362" x="37.754" y="3.055" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17286" stdDeviation="4.596"/></filter><filter id="j" width="56.045" height="63.649" x="-13.43" y="-22.082" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17286" stdDeviation="4.596"/></filter><filter id="k" width="54.814" height="64.646" x="34.321" y="-37.644" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17286" stdDeviation="4.596"/></filter><filter id="l" width="33.541" height="35.313" x="38.847" y="-10.552" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17286" stdDeviation="4.596"/></filter><filter id="m" width="54.814" height="64.646" x="-15.081" y="6.78" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17286" stdDeviation="4.596"/></filter><filter id="n" width="54.814" height="64.646" x="-15.081" y="6.78" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17286" stdDeviation="4.596"/></filter><filter id="o" width="54.814" height="64.646" x="22.45" y="-1.645" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17286" stdDeviation="4.596"/></filter><filter id="p" width="39.409" height="43.623" x="32.919" y="11.36" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17286" stdDeviation="4.596"/></filter></defs></svg>
 </file>
 
+<file path="src/components/spreadsheet-grid/hooks/useGridKeyboardInteractions.ts">
+import { useCallback, type Dispatch, type KeyboardEvent } from 'react';
+import { gridActions, type GridUiAction } from '../model/gridActions';
+import type {
+  CellCoord,
+  GridColumn,
+  GridUiState,
+  RowModel,
+  SpreadsheetGridProps,
+} from '../model/gridTypes';
+import { clamp } from '../logic/geometry';
+import { isPrintableKey, shouldIgnoreGridKeydown } from '../logic/domGuards';
+import { isCellEditable } from '../utils/permissions';
+
+type UseGridKeyboardInteractionsArgs<T> = {
+  uiState: GridUiState;
+  // 変更(DS-3-1): filteredRows: T[] を RowModel シームへ置換しました(DS-3-0 の seam を消費)。
+  //   length は getRowCount()、行取得は getRow(viewIndex) 経由に切り替えます。
+  rowModel: RowModel<T>;
+  visibleColumns: GridColumn<T>[];
+  readOnly: boolean;
+  canEditCell: SpreadsheetGridProps<T>['canEditCell'];
+  // 変更(11-B6): ドラフト state の setter → 「編集開始時の初期値」setter になりました。
+  //   文字キー直打ちの編集開始では、押下キー 1 文字を初期値として渡します
+  //   （以後のタイピングは CellEditorLayer ローカル state が受け持ちます）。
+  setEditorInitialValue: (value: string) => void;
+  dispatch: Dispatch<GridUiAction>;
+  handleCopy: () => Promise<void>;
+  handleCellDoubleClick: (cell: CellCoord) => void;
+  isWholeGridSelected: boolean;
+  selectEntireGrid: () => void;
+};
+
+// 追加: keyboard interaction（arrow/tab/enter/copy/select-all/edit start）をまとめます。
+export const useGridKeyboardInteractions = <T,>({
+  uiState,
+  rowModel,
+  visibleColumns,
+  readOnly,
+  canEditCell,
+  setEditorInitialValue,
+  dispatch,
+  handleCopy,
+  handleCellDoubleClick,
+  isWholeGridSelected,
+  selectEntireGrid,
+}: UseGridKeyboardInteractionsArgs<T>) => {
+  // 追加(DS-3-1): 行数はシーム経由で取得します(= order.length / 旧 filteredRows.length と等価)。
+  //   各 useCallback の deps はこのプリミティブ rowCount を使い、rowModel オブジェクト参照を
+  //   deps に入れないことで、件数不変のソートで handler identity が変わらない 11系のメモ化を保ちます。
+  const rowCount = rowModel.getRowCount();
+
+  // 追加: 基準セルから移動先セルを計算します。
+  const getMovedCell = useCallback(
+    (baseCell: CellCoord, deltaRow: number, deltaCol: number): CellCoord => ({
+      row: clamp(
+        baseCell.row + deltaRow,
+        0,
+        Math.max(rowCount - 1, 0),
+      ),
+      col: clamp(
+        baseCell.col + deltaCol,
+        0,
+        Math.max(visibleColumns.length - 1, 0),
+      ),
+    }),
+    [rowCount, visibleColumns.length],
+  );
+
+  // 追加: active cell を移動します。shiftKey=true の場合は cell selection を拡張します。
+  const moveActiveCell = useCallback(
+    (deltaRow: number, deltaCol: number, extendSelection: boolean) => {
+      if (rowCount === 0 || visibleColumns.length === 0) {
+        return;
+      }
+      const currentCell = uiState.activeCell ?? { row: 0, col: 0 };
+      const nextCell = {
+        row: clamp(currentCell.row + deltaRow, 0, rowCount - 1),
+        col: clamp(currentCell.col + deltaCol, 0, visibleColumns.length - 1),
+      };
+      if (extendSelection) {
+        const anchor =
+          uiState.selection?.type === 'cell'
+            ? uiState.selection.range.start
+            : currentCell;
+        dispatch(gridActions.startSelection(anchor));
+        dispatch(gridActions.updateSelection(nextCell));
+        dispatch(gridActions.endSelection());
+        dispatch(gridActions.activateCell(nextCell));
+        return;
+      }
+      dispatch(gridActions.startSelection(nextCell));
+      dispatch(gridActions.endSelection());
+      dispatch(gridActions.activateCell(nextCell));
+    },
+    [
+      dispatch,
+      rowCount,
+      uiState.activeCell,
+      uiState.selection,
+      visibleColumns.length,
+    ],
+  );
+
+  // 追加: Ctrl/Cmd + C や Arrow/Enter を捕捉します。
+  const handleKeyDown = useCallback(
+    async (event: KeyboardEvent<HTMLDivElement>) => {
+      // 追加: filter input / select / button 等にフォーカス中は、
+      //       grid 側の keyboard 操作を無効化します。
+      if (shouldIgnoreGridKeydown(event.target)) {
+        return;
+      }
+
+      if (uiState.editingCell) {
+        return;
+      }
+
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'c') {
+        event.preventDefault();
+        await handleCopy();
+        return;
+      }
+
+      // 追加: Ctrl + A / Cmd + A で全体選択、2回目で解除します。
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'a') {
+        event.preventDefault();
+        if (isWholeGridSelected) {
+          dispatch(gridActions.clearSelection());
+          dispatch(gridActions.activateCell(null));
+          return;
+        }
+        selectEntireGrid();
+        return;
+      }
+
+      if (event.key === 'ArrowUp') {
+        event.preventDefault();
+        moveActiveCell(-1, 0, event.shiftKey);
+        return;
+      }
+      if (event.key === 'ArrowDown') {
+        event.preventDefault();
+        moveActiveCell(1, 0, event.shiftKey);
+        return;
+      }
+      if (event.key === 'ArrowLeft') {
+        event.preventDefault();
+        moveActiveCell(0, -1, event.shiftKey);
+        return;
+      }
+      if (event.key === 'ArrowRight') {
+        event.preventDefault();
+        moveActiveCell(0, 1, event.shiftKey);
+        return;
+      }
+      if (event.key === 'Tab') {
+        event.preventDefault();
+        moveActiveCell(0, event.shiftKey ? -1 : 1, false);
+        return;
+      }
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        dispatch(gridActions.clearSelection());
+        return;
+      }
+      if (event.key === 'Enter' || event.key === 'F2') {
+        event.preventDefault();
+        if (uiState.activeCell) {
+          handleCellDoubleClick(uiState.activeCell);
+        }
+        return;
+      }
+      if (isPrintableKey(event) && uiState.activeCell) {
+        const row = rowModel.getRow(uiState.activeCell.row);
+        const column = visibleColumns[uiState.activeCell.col];
+        if (!row || !column) {
+          return;
+        }
+        if (
+          !isCellEditable(
+            { readOnly, canEditCell },
+            uiState.activeCell.row,
+            uiState.activeCell.col,
+            row,
+            column,
+          )
+        ) {
+          return;
+        }
+        event.preventDefault();
+        setEditorInitialValue(event.key);
+        dispatch(gridActions.startEdit(uiState.activeCell));
+      }
+    },
+    [
+      canEditCell,
+      dispatch,
+      rowModel,
+      handleCellDoubleClick,
+      handleCopy,
+      isWholeGridSelected,
+      moveActiveCell,
+      readOnly,
+      selectEntireGrid,
+      setEditorInitialValue,
+      uiState.activeCell,
+      uiState.editingCell,
+      visibleColumns,
+    ],
+  );
+
+  return {
+    getMovedCell,
+    handleKeyDown,
+  };
+};
+
+export default useGridKeyboardInteractions;
+</file>
+
 <file path="src/components/spreadsheet-grid/logic/domGuards.ts">
 // 追加: 文字キー入力で編集開始する判定です。
 export const isPrintableKey = (event: {
@@ -1270,205 +1490,6 @@ export const setCellValue = <T,>(
     [column.key]: value,
   } as T;
 };
-</file>
-
-<file path="src/components/spreadsheet-grid/view/GridFilterChipBar.test.tsx">
-// 追加(FM-2)の view テスト: GridFilterChipBar の表示と操作コールバックの配線を固定します。
-//   - チップ(列名 + 要約)の描画と、非表示列ラベルの disabled + 注記。
-//   - ラベルクリック → onEditFilter / × → onClearFilter / すべてクリア → onClearAllFilters。
-//   - entries 0 件で null を返すこと(空バーは出さない = ユーザー合意)。
-//   CSS の見た目(トークン適用)は jsdom で検証できないため、表示テキストと
-//   コールバック発火のみを固定します(FilterManagementPanel.test と同じ方針)。
-// @vitest-environment jsdom
-import { describe, it, expect, afterEach, vi } from 'vitest';
-import { render, screen, fireEvent, cleanup } from '@testing-library/react';
-
-import GridFilterChipBar from './GridFilterChipBar';
-import type { FilterManagementEntry } from './FilterManagementPanel';
-
-afterEach(() => {
-  cleanup();
-});
-
-const makeEntries = (): FilterManagementEntry[] => [
-  { columnKey: 'price', title: '単価', summaryText: '>= 1000', isHidden: false },
-  {
-    columnKey: 'due',
-    title: '納期',
-    summaryText: '"2026-07" を含む',
-    isHidden: true,
-  },
-];
-
-const makeProps = () => ({
-  entries: makeEntries(),
-  canFilter: true,
-  onEditFilter: vi.fn(),
-  onClearFilter: vi.fn(),
-  onClearAllFilters: vi.fn(),
-});
-
-describe('GridFilterChipBar', () => {
-  it('チップ(列名 + 要約)と「すべてクリア」を描画する', () => {
-    render(<GridFilterChipBar {...makeProps()} />);
-    expect(screen.getByText('単価')).toBeTruthy();
-    expect(screen.getByText('>= 1000')).toBeTruthy();
-    expect(screen.getByText('納期(非表示列)')).toBeTruthy();
-    expect(screen.getByText('"2026-07" を含む')).toBeTruthy();
-    expect(screen.getByText('すべてクリア')).toBeTruthy();
-  });
-
-  it('ラベルクリックで onEditFilter(columnKey) を呼ぶ / 非表示列のラベルは disabled', () => {
-    const props = makeProps();
-    render(<GridFilterChipBar {...props} />);
-    fireEvent.click(screen.getByLabelText('単価 のフィルターを編集'));
-    expect(props.onEditFilter).toHaveBeenCalledWith('price');
-    const hiddenLabel = screen.getByLabelText(
-      '納期 のフィルターを編集',
-    ) as HTMLButtonElement;
-    expect(hiddenLabel.disabled).toBe(true);
-  });
-
-  it('× で onClearFilter(columnKey) を呼ぶ(非表示列でも可)', () => {
-    const props = makeProps();
-    render(<GridFilterChipBar {...props} />);
-    const hiddenClear = screen.getByLabelText(
-      '納期 のフィルターをクリア',
-    ) as HTMLButtonElement;
-    expect(hiddenClear.disabled).toBe(false);
-    fireEvent.click(hiddenClear);
-    expect(props.onClearFilter).toHaveBeenCalledWith('due');
-  });
-
-  it('「すべてクリア」で onClearAllFilters を呼ぶ', () => {
-    const props = makeProps();
-    render(<GridFilterChipBar {...props} />);
-    fireEvent.click(screen.getByText('すべてクリア'));
-    expect(props.onClearAllFilters).toHaveBeenCalledTimes(1);
-  });
-
-  it('canFilter=false では全ボタンが disabled になる', () => {
-    const props = { ...makeProps(), canFilter: false };
-    render(<GridFilterChipBar {...props} />);
-    const label = screen.getByLabelText(
-      '単価 のフィルターを編集',
-    ) as HTMLButtonElement;
-    const clear = screen.getByLabelText(
-      '単価 のフィルターをクリア',
-    ) as HTMLButtonElement;
-    const clearAll = screen.getByText('すべてクリア') as HTMLButtonElement;
-    expect(label.disabled).toBe(true);
-    expect(clear.disabled).toBe(true);
-    expect(clearAll.disabled).toBe(true);
-  });
-
-  it('entries 0 件では何も描画しない(空バーを出さない)', () => {
-    const props = { ...makeProps(), entries: [] };
-    const { container } = render(<GridFilterChipBar {...props} />);
-    expect(container.firstChild).toBeNull();
-  });
-});
-</file>
-
-<file path="src/components/spreadsheet-grid/view/GridFilterChipBar.tsx">
-// 追加(FM-2 / フィルターチップバー): 適用中の列フィルターをトップバー直下にチップで常時
-//   一覧表示する opt-in バーです(showFilterChipBar prop・既定 false)。
-//   - チップ本体クリック = 対象列へジャンプして既存のフィルター popover を開きます
-//     (フィルター管理パネルの ✎ と同じ経路。配線は SpreadsheetGrid 側)。
-//     × = その列のフィルターをクリア。末尾の「すべてクリア」は列フィルターのみ対象です
-//     (グローバルフィルターは対象外 = フィルター管理パネルと同じ切り分け)。
-//   - entries は FilterManagementPanel と完全共用です(要約文字列・非表示列の扱いが自動で
-//     一致します)。グローバルフィルターのチップは出しません(入力欄とパネルが担当)。
-//   - 有効フィルター 0 件のときは null を返します(空バーで縦領域を取らない = ユーザー合意)。
-//   - ネスト <button> は不正 HTML のため、チップは <div> コンテナ + 「ラベル button(ジャンプ)」
-//     「× button(クリア)」の 2 ボタン構成です。非表示列はラベル側を disabled にします
-//     (ジャンプ先が無いため。× でのクリアは可能)。
-//   - .ssg-root 内で描画されるため、ポータル系(popover/panel)と違いデザイントークン
-//     (--ssg-*)が届きます(padding は --ssg-bar-pad-* で density 連動)。
-import type { FilterManagementEntry } from './FilterManagementPanel';
-
-type GridFilterChipBarProps = {
-  // 適用中フィルターの一覧です(FilterManagementPanel と同じ構築物を受け取ります)。
-  entries: FilterManagementEntry[];
-  // enableColumnFilter 相当。false のときは操作を無効化します(保険)。
-  canFilter: boolean;
-  onEditFilter: (columnKey: string) => void;
-  onClearFilter: (columnKey: string) => void;
-  onClearAllFilters: () => void;
-};
-
-export function GridFilterChipBar({
-  entries,
-  canFilter,
-  onEditFilter,
-  onClearFilter,
-  onClearAllFilters,
-}: GridFilterChipBarProps) {
-  // 有効フィルター 0 件は非表示です(合意 b: 空バーは出さない)。
-  if (entries.length === 0) {
-    return null;
-  }
-
-  return (
-    <div className="ssg-filter-chip-bar">
-      {entries.map((entry) => (
-        <div
-          key={entry.columnKey}
-          className={
-            entry.isHidden
-              ? 'ssg-filter-chip ssg-filter-chip--hidden'
-              : 'ssg-filter-chip'
-          }
-        >
-          <button
-            type="button"
-            className="ssg-filter-chip-label"
-            disabled={!canFilter || entry.isHidden}
-            title={
-              entry.isHidden
-                ? '非表示列のためジャンプ編集できません(× でクリアは可能)'
-                : 'この列へジャンプして編集'
-            }
-            aria-label={`${entry.title} のフィルターを編集`}
-            onClick={() => {
-              onEditFilter(entry.columnKey);
-            }}
-          >
-            <span className="ssg-filter-chip-name">
-              {entry.title}
-              {entry.isHidden ? '(非表示列)' : ''}
-            </span>
-            <span className="ssg-filter-chip-summary">
-              {entry.summaryText}
-            </span>
-          </button>
-          <button
-            type="button"
-            className="ssg-filter-chip-clear"
-            disabled={!canFilter}
-            title="この列のフィルターをクリア"
-            aria-label={`${entry.title} のフィルターをクリア`}
-            onClick={() => {
-              onClearFilter(entry.columnKey);
-            }}
-          >
-            ×
-          </button>
-        </div>
-      ))}
-      <button
-        type="button"
-        className="ssg-filter-chip-bar-clear-all"
-        disabled={!canFilter}
-        onClick={onClearAllFilters}
-      >
-        すべてクリア
-      </button>
-    </div>
-  );
-}
-
-export default GridFilterChipBar;
 </file>
 
 <file path="src/main.tsx">
@@ -3652,226 +3673,6 @@ export const useGlobalFilteredOrder = <T,>({
 };
 
 export default useGlobalFilteredOrder;
-</file>
-
-<file path="src/components/spreadsheet-grid/hooks/useGridKeyboardInteractions.ts">
-import { useCallback, type Dispatch, type KeyboardEvent } from 'react';
-import { gridActions, type GridUiAction } from '../model/gridActions';
-import type {
-  CellCoord,
-  GridColumn,
-  GridUiState,
-  RowModel,
-  SpreadsheetGridProps,
-} from '../model/gridTypes';
-import { clamp } from '../logic/geometry';
-import { isPrintableKey, shouldIgnoreGridKeydown } from '../logic/domGuards';
-import { isCellEditable } from '../utils/permissions';
-
-type UseGridKeyboardInteractionsArgs<T> = {
-  uiState: GridUiState;
-  // 変更(DS-3-1): filteredRows: T[] を RowModel シームへ置換しました(DS-3-0 の seam を消費)。
-  //   length は getRowCount()、行取得は getRow(viewIndex) 経由に切り替えます。
-  rowModel: RowModel<T>;
-  visibleColumns: GridColumn<T>[];
-  readOnly: boolean;
-  canEditCell: SpreadsheetGridProps<T>['canEditCell'];
-  // 変更(11-B6): ドラフト state の setter → 「編集開始時の初期値」setter になりました。
-  //   文字キー直打ちの編集開始では、押下キー 1 文字を初期値として渡します
-  //   （以後のタイピングは CellEditorLayer ローカル state が受け持ちます）。
-  setEditorInitialValue: (value: string) => void;
-  dispatch: Dispatch<GridUiAction>;
-  handleCopy: () => Promise<void>;
-  handleCellDoubleClick: (cell: CellCoord) => void;
-  isWholeGridSelected: boolean;
-  selectEntireGrid: () => void;
-};
-
-// 追加: keyboard interaction（arrow/tab/enter/copy/select-all/edit start）をまとめます。
-export const useGridKeyboardInteractions = <T,>({
-  uiState,
-  rowModel,
-  visibleColumns,
-  readOnly,
-  canEditCell,
-  setEditorInitialValue,
-  dispatch,
-  handleCopy,
-  handleCellDoubleClick,
-  isWholeGridSelected,
-  selectEntireGrid,
-}: UseGridKeyboardInteractionsArgs<T>) => {
-  // 追加(DS-3-1): 行数はシーム経由で取得します(= order.length / 旧 filteredRows.length と等価)。
-  //   各 useCallback の deps はこのプリミティブ rowCount を使い、rowModel オブジェクト参照を
-  //   deps に入れないことで、件数不変のソートで handler identity が変わらない 11系のメモ化を保ちます。
-  const rowCount = rowModel.getRowCount();
-
-  // 追加: 基準セルから移動先セルを計算します。
-  const getMovedCell = useCallback(
-    (baseCell: CellCoord, deltaRow: number, deltaCol: number): CellCoord => ({
-      row: clamp(
-        baseCell.row + deltaRow,
-        0,
-        Math.max(rowCount - 1, 0),
-      ),
-      col: clamp(
-        baseCell.col + deltaCol,
-        0,
-        Math.max(visibleColumns.length - 1, 0),
-      ),
-    }),
-    [rowCount, visibleColumns.length],
-  );
-
-  // 追加: active cell を移動します。shiftKey=true の場合は cell selection を拡張します。
-  const moveActiveCell = useCallback(
-    (deltaRow: number, deltaCol: number, extendSelection: boolean) => {
-      if (rowCount === 0 || visibleColumns.length === 0) {
-        return;
-      }
-      const currentCell = uiState.activeCell ?? { row: 0, col: 0 };
-      const nextCell = {
-        row: clamp(currentCell.row + deltaRow, 0, rowCount - 1),
-        col: clamp(currentCell.col + deltaCol, 0, visibleColumns.length - 1),
-      };
-      if (extendSelection) {
-        const anchor =
-          uiState.selection?.type === 'cell'
-            ? uiState.selection.range.start
-            : currentCell;
-        dispatch(gridActions.startSelection(anchor));
-        dispatch(gridActions.updateSelection(nextCell));
-        dispatch(gridActions.endSelection());
-        dispatch(gridActions.activateCell(nextCell));
-        return;
-      }
-      dispatch(gridActions.startSelection(nextCell));
-      dispatch(gridActions.endSelection());
-      dispatch(gridActions.activateCell(nextCell));
-    },
-    [
-      dispatch,
-      rowCount,
-      uiState.activeCell,
-      uiState.selection,
-      visibleColumns.length,
-    ],
-  );
-
-  // 追加: Ctrl/Cmd + C や Arrow/Enter を捕捉します。
-  const handleKeyDown = useCallback(
-    async (event: KeyboardEvent<HTMLDivElement>) => {
-      // 追加: filter input / select / button 等にフォーカス中は、
-      //       grid 側の keyboard 操作を無効化します。
-      if (shouldIgnoreGridKeydown(event.target)) {
-        return;
-      }
-
-      if (uiState.editingCell) {
-        return;
-      }
-
-      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'c') {
-        event.preventDefault();
-        await handleCopy();
-        return;
-      }
-
-      // 追加: Ctrl + A / Cmd + A で全体選択、2回目で解除します。
-      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'a') {
-        event.preventDefault();
-        if (isWholeGridSelected) {
-          dispatch(gridActions.clearSelection());
-          dispatch(gridActions.activateCell(null));
-          return;
-        }
-        selectEntireGrid();
-        return;
-      }
-
-      if (event.key === 'ArrowUp') {
-        event.preventDefault();
-        moveActiveCell(-1, 0, event.shiftKey);
-        return;
-      }
-      if (event.key === 'ArrowDown') {
-        event.preventDefault();
-        moveActiveCell(1, 0, event.shiftKey);
-        return;
-      }
-      if (event.key === 'ArrowLeft') {
-        event.preventDefault();
-        moveActiveCell(0, -1, event.shiftKey);
-        return;
-      }
-      if (event.key === 'ArrowRight') {
-        event.preventDefault();
-        moveActiveCell(0, 1, event.shiftKey);
-        return;
-      }
-      if (event.key === 'Tab') {
-        event.preventDefault();
-        moveActiveCell(0, event.shiftKey ? -1 : 1, false);
-        return;
-      }
-      if (event.key === 'Escape') {
-        event.preventDefault();
-        dispatch(gridActions.clearSelection());
-        return;
-      }
-      if (event.key === 'Enter' || event.key === 'F2') {
-        event.preventDefault();
-        if (uiState.activeCell) {
-          handleCellDoubleClick(uiState.activeCell);
-        }
-        return;
-      }
-      if (isPrintableKey(event) && uiState.activeCell) {
-        const row = rowModel.getRow(uiState.activeCell.row);
-        const column = visibleColumns[uiState.activeCell.col];
-        if (!row || !column) {
-          return;
-        }
-        if (
-          !isCellEditable(
-            { readOnly, canEditCell },
-            uiState.activeCell.row,
-            uiState.activeCell.col,
-            row,
-            column,
-          )
-        ) {
-          return;
-        }
-        event.preventDefault();
-        setEditorInitialValue(event.key);
-        dispatch(gridActions.startEdit(uiState.activeCell));
-      }
-    },
-    [
-      canEditCell,
-      dispatch,
-      rowModel,
-      handleCellDoubleClick,
-      handleCopy,
-      isWholeGridSelected,
-      moveActiveCell,
-      readOnly,
-      selectEntireGrid,
-      setEditorInitialValue,
-      uiState.activeCell,
-      uiState.editingCell,
-      visibleColumns,
-    ],
-  );
-
-  return {
-    getMovedCell,
-    handleKeyDown,
-  };
-};
-
-export default useGridKeyboardInteractions;
 </file>
 
 <file path="src/components/spreadsheet-grid/hooks/useGridPointerInteractions.test.ts">
@@ -9008,6 +8809,205 @@ export function FilterManagementPanel({
 }
 
 export default FilterManagementPanel;
+</file>
+
+<file path="src/components/spreadsheet-grid/view/GridFilterChipBar.test.tsx">
+// 追加(FM-2)の view テスト: GridFilterChipBar の表示と操作コールバックの配線を固定します。
+//   - チップ(列名 + 要約)の描画と、非表示列ラベルの disabled + 注記。
+//   - ラベルクリック → onEditFilter / × → onClearFilter / すべてクリア → onClearAllFilters。
+//   - entries 0 件で null を返すこと(空バーは出さない = ユーザー合意)。
+//   CSS の見た目(トークン適用)は jsdom で検証できないため、表示テキストと
+//   コールバック発火のみを固定します(FilterManagementPanel.test と同じ方針)。
+// @vitest-environment jsdom
+import { describe, it, expect, afterEach, vi } from 'vitest';
+import { render, screen, fireEvent, cleanup } from '@testing-library/react';
+
+import GridFilterChipBar from './GridFilterChipBar';
+import type { FilterManagementEntry } from './FilterManagementPanel';
+
+afterEach(() => {
+  cleanup();
+});
+
+const makeEntries = (): FilterManagementEntry[] => [
+  { columnKey: 'price', title: '単価', summaryText: '>= 1000', isHidden: false },
+  {
+    columnKey: 'due',
+    title: '納期',
+    summaryText: '"2026-07" を含む',
+    isHidden: true,
+  },
+];
+
+const makeProps = () => ({
+  entries: makeEntries(),
+  canFilter: true,
+  onEditFilter: vi.fn(),
+  onClearFilter: vi.fn(),
+  onClearAllFilters: vi.fn(),
+});
+
+describe('GridFilterChipBar', () => {
+  it('チップ(列名 + 要約)と「すべてクリア」を描画する', () => {
+    render(<GridFilterChipBar {...makeProps()} />);
+    expect(screen.getByText('単価')).toBeTruthy();
+    expect(screen.getByText('>= 1000')).toBeTruthy();
+    expect(screen.getByText('納期(非表示列)')).toBeTruthy();
+    expect(screen.getByText('"2026-07" を含む')).toBeTruthy();
+    expect(screen.getByText('すべてクリア')).toBeTruthy();
+  });
+
+  it('ラベルクリックで onEditFilter(columnKey) を呼ぶ / 非表示列のラベルは disabled', () => {
+    const props = makeProps();
+    render(<GridFilterChipBar {...props} />);
+    fireEvent.click(screen.getByLabelText('単価 のフィルターを編集'));
+    expect(props.onEditFilter).toHaveBeenCalledWith('price');
+    const hiddenLabel = screen.getByLabelText(
+      '納期 のフィルターを編集',
+    ) as HTMLButtonElement;
+    expect(hiddenLabel.disabled).toBe(true);
+  });
+
+  it('× で onClearFilter(columnKey) を呼ぶ(非表示列でも可)', () => {
+    const props = makeProps();
+    render(<GridFilterChipBar {...props} />);
+    const hiddenClear = screen.getByLabelText(
+      '納期 のフィルターをクリア',
+    ) as HTMLButtonElement;
+    expect(hiddenClear.disabled).toBe(false);
+    fireEvent.click(hiddenClear);
+    expect(props.onClearFilter).toHaveBeenCalledWith('due');
+  });
+
+  it('「すべてクリア」で onClearAllFilters を呼ぶ', () => {
+    const props = makeProps();
+    render(<GridFilterChipBar {...props} />);
+    fireEvent.click(screen.getByText('すべてクリア'));
+    expect(props.onClearAllFilters).toHaveBeenCalledTimes(1);
+  });
+
+  it('canFilter=false では全ボタンが disabled になる', () => {
+    const props = { ...makeProps(), canFilter: false };
+    render(<GridFilterChipBar {...props} />);
+    const label = screen.getByLabelText(
+      '単価 のフィルターを編集',
+    ) as HTMLButtonElement;
+    const clear = screen.getByLabelText(
+      '単価 のフィルターをクリア',
+    ) as HTMLButtonElement;
+    const clearAll = screen.getByText('すべてクリア') as HTMLButtonElement;
+    expect(label.disabled).toBe(true);
+    expect(clear.disabled).toBe(true);
+    expect(clearAll.disabled).toBe(true);
+  });
+
+  it('entries 0 件では何も描画しない(空バーを出さない)', () => {
+    const props = { ...makeProps(), entries: [] };
+    const { container } = render(<GridFilterChipBar {...props} />);
+    expect(container.firstChild).toBeNull();
+  });
+});
+</file>
+
+<file path="src/components/spreadsheet-grid/view/GridFilterChipBar.tsx">
+// 追加(FM-2 / フィルターチップバー): 適用中の列フィルターをトップバー直下にチップで常時
+//   一覧表示する opt-in バーです(showFilterChipBar prop・既定 false)。
+//   - チップ本体クリック = 対象列へジャンプして既存のフィルター popover を開きます
+//     (フィルター管理パネルの ✎ と同じ経路。配線は SpreadsheetGrid 側)。
+//     × = その列のフィルターをクリア。末尾の「すべてクリア」は列フィルターのみ対象です
+//     (グローバルフィルターは対象外 = フィルター管理パネルと同じ切り分け)。
+//   - entries は FilterManagementPanel と完全共用です(要約文字列・非表示列の扱いが自動で
+//     一致します)。グローバルフィルターのチップは出しません(入力欄とパネルが担当)。
+//   - 有効フィルター 0 件のときは null を返します(空バーで縦領域を取らない = ユーザー合意)。
+//   - ネスト <button> は不正 HTML のため、チップは <div> コンテナ + 「ラベル button(ジャンプ)」
+//     「× button(クリア)」の 2 ボタン構成です。非表示列はラベル側を disabled にします
+//     (ジャンプ先が無いため。× でのクリアは可能)。
+//   - .ssg-root 内で描画されるため、ポータル系(popover/panel)と違いデザイントークン
+//     (--ssg-*)が届きます(padding は --ssg-bar-pad-* で density 連動)。
+import type { FilterManagementEntry } from './FilterManagementPanel';
+
+type GridFilterChipBarProps = {
+  // 適用中フィルターの一覧です(FilterManagementPanel と同じ構築物を受け取ります)。
+  entries: FilterManagementEntry[];
+  // enableColumnFilter 相当。false のときは操作を無効化します(保険)。
+  canFilter: boolean;
+  onEditFilter: (columnKey: string) => void;
+  onClearFilter: (columnKey: string) => void;
+  onClearAllFilters: () => void;
+};
+
+export function GridFilterChipBar({
+  entries,
+  canFilter,
+  onEditFilter,
+  onClearFilter,
+  onClearAllFilters,
+}: GridFilterChipBarProps) {
+  // 有効フィルター 0 件は非表示です(合意 b: 空バーは出さない)。
+  if (entries.length === 0) {
+    return null;
+  }
+
+  return (
+    <div className="ssg-filter-chip-bar">
+      {entries.map((entry) => (
+        <div
+          key={entry.columnKey}
+          className={
+            entry.isHidden
+              ? 'ssg-filter-chip ssg-filter-chip--hidden'
+              : 'ssg-filter-chip'
+          }
+        >
+          <button
+            type="button"
+            className="ssg-filter-chip-label"
+            disabled={!canFilter || entry.isHidden}
+            title={
+              entry.isHidden
+                ? '非表示列のためジャンプ編集できません(× でクリアは可能)'
+                : 'この列へジャンプして編集'
+            }
+            aria-label={`${entry.title} のフィルターを編集`}
+            onClick={() => {
+              onEditFilter(entry.columnKey);
+            }}
+          >
+            <span className="ssg-filter-chip-name">
+              {entry.title}
+              {entry.isHidden ? '(非表示列)' : ''}
+            </span>
+            <span className="ssg-filter-chip-summary">
+              {entry.summaryText}
+            </span>
+          </button>
+          <button
+            type="button"
+            className="ssg-filter-chip-clear"
+            disabled={!canFilter}
+            title="この列のフィルターをクリア"
+            aria-label={`${entry.title} のフィルターをクリア`}
+            onClick={() => {
+              onClearFilter(entry.columnKey);
+            }}
+          >
+            ×
+          </button>
+        </div>
+      ))}
+      <button
+        type="button"
+        className="ssg-filter-chip-bar-clear-all"
+        disabled={!canFilter}
+        onClick={onClearAllFilters}
+      >
+        すべてクリア
+      </button>
+    </div>
+  );
+}
+
+export default GridFilterChipBar;
 </file>
 
 <file path="src/components/spreadsheet-grid/view/RowSelectionCheckbox.tsx">
@@ -16409,427 +16409,6 @@ export const gridUiReducer = (
 };
 </file>
 
-<file path="src/components/spreadsheet-grid/SpreadsheetGrid.integration.test.tsx">
-// SpreadsheetGrid を実際に render し、命令的ハンドル(getState / applyState)と onStateChange の
-//   「配線」を実行検証する結合テストです。純ロジック(logic/gridState.test.ts)では到達できない以下を、
-//   実コンポーネントを通して確認します:
-//   - getState がライブの uiState / columns を読んでスナップショット(v2: 列メタ含む)を返す。
-//   - applyState が dispatch → reducer → 再レンダーを経て getState に反映される(往復)。
-//   - applyState の列メタ(順序 / 可視 / ピン)が onColumnsChange 経由で controlled に反映される(往復)。
-//   - onStateChange effect が「初回マウント非発火 / 状態変化(列メタ含む)で発火 / 同値では再発火しない」。
-//   renderHook 系テストと同じく DOM を要するため、本ファイルのみ jsdom で回します。
-// @vitest-environment jsdom
-import { describe, it, expect, vi, beforeAll, afterEach } from 'vitest';
-import { render, cleanup, act, screen, fireEvent } from '@testing-library/react';
-import { createRef, useState } from 'react';
-import type { Ref } from 'react';
-
-import { SpreadsheetGrid } from './SpreadsheetGrid';
-import { GRID_STATE_VERSION } from './logic/gridState';
-import type {
-  GridColumn,
-  GridState,
-  SpreadsheetGridHandle,
-} from './model/gridTypes';
-
-// jsdom には ResizeObserver / Element.scrollTo が無い(SpreadsheetGrid がマウント時に new / 呼び出す)
-//   ため、最小スタブを入れます。observe は no-op(コールバックを呼ばない)なので、これ起因の setState は
-//   発生せず、テストの決定性を保てます。
-beforeAll(() => {
-  if (!('ResizeObserver' in globalThis)) {
-    class ResizeObserverStub {
-      observe(): void {}
-      unobserve(): void {}
-      disconnect(): void {}
-    }
-    (globalThis as unknown as { ResizeObserver: unknown }).ResizeObserver =
-      ResizeObserverStub;
-  }
-  if (!Element.prototype.scrollTo) {
-    Element.prototype.scrollTo = () => {};
-  }
-});
-
-afterEach(() => {
-  cleanup();
-});
-
-type Row = { id: number; name: string; qty: number };
-
-const columns: GridColumn<Row>[] = [
-  { key: 'id', title: 'ID', width: 80 },
-  { key: 'name', title: 'Name', width: 160 },
-  { key: 'qty', title: 'Qty', width: 100 },
-];
-
-const rows: Row[] = [
-  { id: 1, name: 'alpha', qty: 10 },
-  { id: 2, name: 'beta', qty: 20 },
-  { id: 3, name: 'gamma', qty: 30 },
-];
-
-// テスト全体で使い回す「適用する状態」。columnWidths は 1 列だけ(resetColumnWidths がフル置換である
-//   ことの確認も兼ねる)、フィルター(global + 列)とソートも含めます。
-const appliedState: GridState = {
-  version: GRID_STATE_VERSION,
-  columnWidths: { id: 120 },
-  filters: {
-    globalText: 'be',
-    columnFilters: { name: { kind: 'text', value: 'be' } },
-  },
-  sort: [{ columnKey: 'qty', direction: 'desc' }],
-};
-
-// 追加(v2): controlled-columns ハーネスです。列メタ(可視 / 順序 / ピン)は consumer 所有のため、
-//   applyState の列メタ反映は onColumnsChange を通ります。ここで columns を useState で保持して
-//   onColumnsChange へ繋ぎ、applyState → onColumnsChange → 再レンダー → getState の往復を検証します。
-function ControlledGrid({
-  gridRef,
-  initialColumns,
-  onStateChange,
-}: {
-  gridRef: Ref<SpreadsheetGridHandle<Row>>;
-  initialColumns: GridColumn<Row>[];
-  onStateChange?: (state: GridState) => void;
-}) {
-  const [cols, setCols] = useState(initialColumns);
-  return (
-    <SpreadsheetGrid
-      ref={gridRef}
-      columns={cols}
-      onColumnsChange={setCols}
-      rows={rows}
-      onStateChange={onStateChange}
-    />
-  );
-}
-
-describe('SpreadsheetGrid 状態 API(結合)', () => {
-  it('getState() が初期スナップショットを返す', () => {
-    const ref = createRef<SpreadsheetGridHandle<Row>>();
-    render(<SpreadsheetGrid ref={ref} columns={columns} rows={rows} />);
-
-    const state = ref.current?.getState();
-    expect(state).toBeDefined();
-    expect(state?.version).toBe(GRID_STATE_VERSION);
-    // 初期 columnWidths は非 flex 列の width から作られます(flex 列なし)。
-    expect(state?.columnWidths).toEqual({ id: 80, name: 160, qty: 100 });
-    expect(state?.filters).toEqual({ globalText: '', columnFilters: {} });
-    expect(state?.sort).toEqual([]);
-    // 追加(v2): 列メタは columns prop から配列順で抽出されます(visible/pinned 未指定は省略)。
-    expect(state?.columns).toEqual([
-      { key: 'id' },
-      { key: 'name' },
-      { key: 'qty' },
-    ]);
-  });
-
-  it('applyState() が reducer 経由で反映され getState() に出る', () => {
-    const ref = createRef<SpreadsheetGridHandle<Row>>();
-    render(<SpreadsheetGrid ref={ref} columns={columns} rows={rows} />);
-
-    act(() => {
-      ref.current?.applyState(appliedState);
-    });
-
-    const after = ref.current?.getState();
-    expect(after?.version).toBe(GRID_STATE_VERSION);
-    // resetColumnWidths はフル置換なので、適用後は { id: 120 } のみ(他列のエントリは消える)。
-    expect(after?.columnWidths).toEqual({ id: 120 });
-    expect(after?.filters).toEqual({
-      globalText: 'be',
-      columnFilters: { name: { kind: 'text', value: 'be' } },
-    });
-    expect(after?.sort).toEqual([{ columnKey: 'qty', direction: 'desc' }]);
-  });
-
-  it('onStateChange は初回マウントで発火しない', () => {
-    const onStateChange = vi.fn();
-    render(
-      <SpreadsheetGrid
-        columns={columns}
-        rows={rows}
-        onStateChange={onStateChange}
-      />,
-    );
-
-    expect(onStateChange).not.toHaveBeenCalled();
-  });
-
-  it('onStateChange は applyState の状態変化で最新 state を 1 回渡して発火する', () => {
-    const onStateChange = vi.fn();
-    const ref = createRef<SpreadsheetGridHandle<Row>>();
-    render(
-      <SpreadsheetGrid
-        ref={ref}
-        columns={columns}
-        rows={rows}
-        onStateChange={onStateChange}
-      />,
-    );
-
-    act(() => {
-      ref.current?.applyState(appliedState);
-    });
-
-    expect(onStateChange).toHaveBeenCalledTimes(1);
-    expect(onStateChange).toHaveBeenLastCalledWith({
-      version: GRID_STATE_VERSION,
-      columnWidths: { id: 120 },
-      filters: {
-        globalText: 'be',
-        columnFilters: { name: { kind: 'text', value: 'be' } },
-      },
-      sort: [{ columnKey: 'qty', direction: 'desc' }],
-      // 追加(v2): この applyState は列メタ非適用(onColumnsChange 未指定)なので columns prop は不変。
-      //   snapshot には現 columns の抽出が載ります。
-      columns: [{ key: 'id' }, { key: 'name' }, { key: 'qty' }],
-    });
-  });
-
-  it('onStateChange は同値の applyState では再発火しない(構造等価で抑止)', () => {
-    const onStateChange = vi.fn();
-    const ref = createRef<SpreadsheetGridHandle<Row>>();
-    render(
-      <SpreadsheetGrid
-        ref={ref}
-        columns={columns}
-        rows={rows}
-        onStateChange={onStateChange}
-      />,
-    );
-
-    // 1 回目: 初期状態 → appliedState への変化で発火。
-    act(() => {
-      ref.current?.applyState(appliedState);
-    });
-    expect(onStateChange).toHaveBeenCalledTimes(1);
-
-    // 2 回目: 同値を再適用。reducer は新規オブジェクト参照を入れる(columnWidths/filters の参照は変わる)が、
-    //   isSameGridState が構造等価と判定するため再発火しない。
-    act(() => {
-      ref.current?.applyState(appliedState);
-    });
-    expect(onStateChange).toHaveBeenCalledTimes(1);
-  });
-
-  it('追加(v2): applyState の列メタ(順序 / 可視 / ピン)が onColumnsChange 経由で反映され getState に出る', () => {
-    const ref = createRef<SpreadsheetGridHandle<Row>>();
-    render(<ControlledGrid gridRef={ref} initialColumns={columns} />);
-
-    const v2State: GridState = {
-      version: GRID_STATE_VERSION,
-      columnWidths: {},
-      filters: { globalText: '', columnFilters: {} },
-      sort: [],
-      // qty を left 固定 + 先頭、id を非表示、name は既定。
-      columns: [
-        { key: 'qty', pinned: 'left' },
-        { key: 'id', visible: false },
-        { key: 'name' },
-      ],
-    };
-
-    act(() => {
-      ref.current?.applyState(v2State);
-    });
-
-    const after = ref.current?.getState();
-    // reorderColumnsByPane で qty(left)が先頭、続いて center の id, name。visible/pinned も復元。
-    expect(after?.columns).toEqual([
-      { key: 'qty', pinned: 'left' },
-      { key: 'id', visible: false },
-      { key: 'name' },
-    ]);
-  });
-
-  it('追加(v2): onColumnsChange 未指定なら applyState の列メタはスキップ(v1 と同一・列順不変)', () => {
-    const ref = createRef<SpreadsheetGridHandle<Row>>();
-    // onColumnsChange を渡さない(controlled でない)素の SpreadsheetGrid。
-    render(<SpreadsheetGrid ref={ref} columns={columns} rows={rows} />);
-
-    act(() => {
-      ref.current?.applyState({
-        version: GRID_STATE_VERSION,
-        columnWidths: {},
-        filters: { globalText: '', columnFilters: {} },
-        sort: [],
-        columns: [{ key: 'qty' }, { key: 'name' }, { key: 'id' }], // reorder 指示
-      });
-    });
-
-    // onColumnsChange が無いので列メタは適用されず、列順は初期のまま。
-    const after = ref.current?.getState();
-    expect(after?.columns).toEqual([
-      { key: 'id' },
-      { key: 'name' },
-      { key: 'qty' },
-    ]);
-  });
-
-  it('追加(v2): onStateChange は列メタ変化(applyState の reorder)でも発火し、最新の列メタを渡す', () => {
-    const onStateChange = vi.fn();
-    const ref = createRef<SpreadsheetGridHandle<Row>>();
-    render(
-      <ControlledGrid
-        gridRef={ref}
-        initialColumns={columns}
-        onStateChange={onStateChange}
-      />,
-    );
-
-    act(() => {
-      ref.current?.applyState({
-        version: GRID_STATE_VERSION,
-        columnWidths: {},
-        filters: { globalText: '', columnFilters: {} },
-        sort: [],
-        columns: [{ key: 'qty' }, { key: 'name' }, { key: 'id' }], // reorder
-      });
-    });
-
-    expect(onStateChange).toHaveBeenCalled();
-    const last = onStateChange.mock.calls.at(-1)?.[0] as GridState;
-    expect(last.columns).toEqual([
-      { key: 'qty' },
-      { key: 'name' },
-      { key: 'id' },
-    ]);
-  });
-});
-
-// 追加(THEME-3): dimReadOnlyCells の root 修飾子配線を検証します。淡色表示そのもの(CSS)は
-//   jsdom では検証できないため、「opt-in で ssg-root--dim-readonly が付く / 既定では付かない」
-//   というクラス配線を固定します(セマンティッククラス .ssg-body-cell--readonly の常時付与は
-//   GridBodyLayer 側の既存経路で不変)。
-describe('THEME-3: dimReadOnlyCells(readonly 淡色表示の opt-in)', () => {
-  it('既定(未指定)では root に ssg-root--dim-readonly が付かない', () => {
-    const { container } = render(
-      <SpreadsheetGrid columns={columns} rows={rows} />,
-    );
-    const root = container.querySelector('.ssg-root');
-    expect(root).not.toBeNull();
-    expect(root?.classList.contains('ssg-root--dim-readonly')).toBe(false);
-  });
-
-  it('dimReadOnlyCells で root に ssg-root--dim-readonly が付く', () => {
-    const { container } = render(
-      <SpreadsheetGrid columns={columns} rows={rows} dimReadOnlyCells />,
-    );
-    const root = container.querySelector('.ssg-root');
-    expect(root?.classList.contains('ssg-root--dim-readonly')).toBe(true);
-  });
-});
-
-// 追加(THEME-2): density プリセットの配線を検証します。root 修飾子と、rowHeight / headerHeight
-//   既定値の解決(明示 prop 優先)を、ヘッダー行のインライン height で観測します(jsdom でも
-//   インライン style は評価可能。寸法トークンの CSS 適用そのものは実機確認)。
-describe('THEME-2: density(密度プリセット)', () => {
-  const headerRowHeight = (container: HTMLElement): string => {
-    const headerRow = container.querySelector('.ssg-header-row');
-    return headerRow instanceof HTMLElement ? headerRow.style.height : '';
-  };
-
-  it('既定(standard)では density 修飾子なし・headerHeight は従来既定 40px', () => {
-    const { container } = render(
-      <SpreadsheetGrid columns={columns} rows={rows} />,
-    );
-    const root = container.querySelector('.ssg-root');
-    expect(root).not.toBeNull();
-    expect(root?.className).not.toContain('ssg-root--density-');
-    expect(headerRowHeight(container)).toBe('40px');
-  });
-
-  it("density='compact' で root 修飾子が付き headerHeight 既定が 32px になる", () => {
-    const { container } = render(
-      <SpreadsheetGrid columns={columns} rows={rows} density="compact" />,
-    );
-    expect(
-      container
-        .querySelector('.ssg-root')
-        ?.classList.contains('ssg-root--density-compact'),
-    ).toBe(true);
-    expect(headerRowHeight(container)).toBe('32px');
-  });
-
-  it('明示 headerHeight は density プリセットより常に優先される', () => {
-    const { container } = render(
-      <SpreadsheetGrid
-        columns={columns}
-        rows={rows}
-        density="compact"
-        headerHeight={50}
-      />,
-    );
-    expect(headerRowHeight(container)).toBe('50px');
-  });
-});
-
-// 追加(FM-2): フィルターチップバー(showFilterChipBar)の配線テストです。
-//   チップバーは列仮想化の外(トップバー直下)で描画されるため、jsdom の 0 列描画の制約を
-//   受けません。フィルターは applyState で注入します(状態 API 経由 = 既存テストと同じ作法)。
-describe('SpreadsheetGrid フィルターチップバー(FM-2・結合)', () => {
-  // name 列に text フィルターを掛けた状態です(チップ要約は「"be" を含む」になります)。
-  const chipState: GridState = {
-    version: GRID_STATE_VERSION,
-    columnWidths: {},
-    filters: {
-      globalText: '',
-      columnFilters: { name: { kind: 'text', value: 'be' } },
-    },
-    sort: [],
-  };
-
-  it('showFilterChipBar=true + 有効フィルターでチップと「すべてクリア」を描画する', () => {
-    const ref = createRef<SpreadsheetGridHandle<Row>>();
-    render(
-      <SpreadsheetGrid
-        ref={ref}
-        columns={columns}
-        rows={rows}
-        showFilterChipBar
-      />,
-    );
-    act(() => {
-      ref.current?.applyState(chipState);
-    });
-    expect(screen.getByLabelText('Name のフィルターを編集')).toBeTruthy();
-    expect(screen.getByText('"be" を含む')).toBeTruthy();
-    expect(screen.getByText('すべてクリア')).toBeTruthy();
-  });
-
-  it('× でその列のフィルターがクリアされ、0 件になるとバーごと消える', () => {
-    const ref = createRef<SpreadsheetGridHandle<Row>>();
-    render(
-      <SpreadsheetGrid
-        ref={ref}
-        columns={columns}
-        rows={rows}
-        showFilterChipBar
-      />,
-    );
-    act(() => {
-      ref.current?.applyState(chipState);
-    });
-    fireEvent.click(screen.getByLabelText('Name のフィルターをクリア'));
-    expect(ref.current?.getState().filters.columnFilters).toEqual({});
-    // 0 件 → バーごと非表示(チップも「すべてクリア」も無くなります)。
-    expect(screen.queryByText('すべてクリア')).toBeNull();
-    expect(screen.queryByLabelText('Name のフィルターを編集')).toBeNull();
-  });
-
-  it('既定(showFilterChipBar 未指定 = false)では有効フィルターがあっても描画しない', () => {
-    const ref = createRef<SpreadsheetGridHandle<Row>>();
-    render(<SpreadsheetGrid ref={ref} columns={columns} rows={rows} />);
-    act(() => {
-      ref.current?.applyState(chipState);
-    });
-    expect(screen.queryByText('すべてクリア')).toBeNull();
-    expect(screen.queryByLabelText('Name のフィルターを編集')).toBeNull();
-  });
-});
-</file>
-
 <file path="src/components/spreadsheet-grid/view/ColumnMenuPopover.tsx">
 // 変更(13-A2): フラットな項目列挙 → AG Grid 同様のカスケード(サブメニュー)UI へ変更します。
 //             ルートメニューには「列の固定 ›」を置き、hover / クリックで右隣に
@@ -19368,6 +18947,489 @@ export const gridActions = {
 };
 </file>
 
+<file path="src/components/spreadsheet-grid/SpreadsheetGrid.integration.test.tsx">
+// SpreadsheetGrid を実際に render し、命令的ハンドル(getState / applyState)と onStateChange の
+//   「配線」を実行検証する結合テストです。純ロジック(logic/gridState.test.ts)では到達できない以下を、
+//   実コンポーネントを通して確認します:
+//   - getState がライブの uiState / columns を読んでスナップショット(v2: 列メタ含む)を返す。
+//   - applyState が dispatch → reducer → 再レンダーを経て getState に反映される(往復)。
+//   - applyState の列メタ(順序 / 可視 / ピン)が onColumnsChange 経由で controlled に反映される(往復)。
+//   - onStateChange effect が「初回マウント非発火 / 状態変化(列メタ含む)で発火 / 同値では再発火しない」。
+//   renderHook 系テストと同じく DOM を要するため、本ファイルのみ jsdom で回します。
+// @vitest-environment jsdom
+import { describe, it, expect, vi, beforeAll, afterEach } from 'vitest';
+import { render, cleanup, act, screen, fireEvent } from '@testing-library/react';
+import { createRef, useState } from 'react';
+import type { Ref } from 'react';
+
+import { SpreadsheetGrid } from './SpreadsheetGrid';
+import { GRID_STATE_VERSION } from './logic/gridState';
+import type {
+  GridColumn,
+  GridState,
+  SpreadsheetGridHandle,
+} from './model/gridTypes';
+
+// jsdom には ResizeObserver / Element.scrollTo が無い(SpreadsheetGrid がマウント時に new / 呼び出す)
+//   ため、最小スタブを入れます。observe は no-op(コールバックを呼ばない)なので、これ起因の setState は
+//   発生せず、テストの決定性を保てます。
+beforeAll(() => {
+  if (!('ResizeObserver' in globalThis)) {
+    class ResizeObserverStub {
+      observe(): void {}
+      unobserve(): void {}
+      disconnect(): void {}
+    }
+    (globalThis as unknown as { ResizeObserver: unknown }).ResizeObserver =
+      ResizeObserverStub;
+  }
+  if (!Element.prototype.scrollTo) {
+    Element.prototype.scrollTo = () => {};
+  }
+});
+
+afterEach(() => {
+  cleanup();
+});
+
+type Row = { id: number; name: string; qty: number };
+
+const columns: GridColumn<Row>[] = [
+  { key: 'id', title: 'ID', width: 80 },
+  { key: 'name', title: 'Name', width: 160 },
+  { key: 'qty', title: 'Qty', width: 100 },
+];
+
+const rows: Row[] = [
+  { id: 1, name: 'alpha', qty: 10 },
+  { id: 2, name: 'beta', qty: 20 },
+  { id: 3, name: 'gamma', qty: 30 },
+];
+
+// テスト全体で使い回す「適用する状態」。columnWidths は 1 列だけ(resetColumnWidths がフル置換である
+//   ことの確認も兼ねる)、フィルター(global + 列)とソートも含めます。
+const appliedState: GridState = {
+  version: GRID_STATE_VERSION,
+  columnWidths: { id: 120 },
+  filters: {
+    globalText: 'be',
+    columnFilters: { name: { kind: 'text', value: 'be' } },
+  },
+  sort: [{ columnKey: 'qty', direction: 'desc' }],
+};
+
+// 追加(v2): controlled-columns ハーネスです。列メタ(可視 / 順序 / ピン)は consumer 所有のため、
+//   applyState の列メタ反映は onColumnsChange を通ります。ここで columns を useState で保持して
+//   onColumnsChange へ繋ぎ、applyState → onColumnsChange → 再レンダー → getState の往復を検証します。
+function ControlledGrid({
+  gridRef,
+  initialColumns,
+  onStateChange,
+}: {
+  gridRef: Ref<SpreadsheetGridHandle<Row>>;
+  initialColumns: GridColumn<Row>[];
+  onStateChange?: (state: GridState) => void;
+}) {
+  const [cols, setCols] = useState(initialColumns);
+  return (
+    <SpreadsheetGrid
+      ref={gridRef}
+      columns={cols}
+      onColumnsChange={setCols}
+      rows={rows}
+      onStateChange={onStateChange}
+    />
+  );
+}
+
+describe('SpreadsheetGrid 状態 API(結合)', () => {
+  it('getState() が初期スナップショットを返す', () => {
+    const ref = createRef<SpreadsheetGridHandle<Row>>();
+    render(<SpreadsheetGrid ref={ref} columns={columns} rows={rows} />);
+
+    const state = ref.current?.getState();
+    expect(state).toBeDefined();
+    expect(state?.version).toBe(GRID_STATE_VERSION);
+    // 初期 columnWidths は非 flex 列の width から作られます(flex 列なし)。
+    expect(state?.columnWidths).toEqual({ id: 80, name: 160, qty: 100 });
+    expect(state?.filters).toEqual({ globalText: '', columnFilters: {} });
+    expect(state?.sort).toEqual([]);
+    // 追加(v2): 列メタは columns prop から配列順で抽出されます(visible/pinned 未指定は省略)。
+    expect(state?.columns).toEqual([
+      { key: 'id' },
+      { key: 'name' },
+      { key: 'qty' },
+    ]);
+  });
+
+  it('applyState() が reducer 経由で反映され getState() に出る', () => {
+    const ref = createRef<SpreadsheetGridHandle<Row>>();
+    render(<SpreadsheetGrid ref={ref} columns={columns} rows={rows} />);
+
+    act(() => {
+      ref.current?.applyState(appliedState);
+    });
+
+    const after = ref.current?.getState();
+    expect(after?.version).toBe(GRID_STATE_VERSION);
+    // resetColumnWidths はフル置換なので、適用後は { id: 120 } のみ(他列のエントリは消える)。
+    expect(after?.columnWidths).toEqual({ id: 120 });
+    expect(after?.filters).toEqual({
+      globalText: 'be',
+      columnFilters: { name: { kind: 'text', value: 'be' } },
+    });
+    expect(after?.sort).toEqual([{ columnKey: 'qty', direction: 'desc' }]);
+  });
+
+  it('onStateChange は初回マウントで発火しない', () => {
+    const onStateChange = vi.fn();
+    render(
+      <SpreadsheetGrid
+        columns={columns}
+        rows={rows}
+        onStateChange={onStateChange}
+      />,
+    );
+
+    expect(onStateChange).not.toHaveBeenCalled();
+  });
+
+  it('onStateChange は applyState の状態変化で最新 state を 1 回渡して発火する', () => {
+    const onStateChange = vi.fn();
+    const ref = createRef<SpreadsheetGridHandle<Row>>();
+    render(
+      <SpreadsheetGrid
+        ref={ref}
+        columns={columns}
+        rows={rows}
+        onStateChange={onStateChange}
+      />,
+    );
+
+    act(() => {
+      ref.current?.applyState(appliedState);
+    });
+
+    expect(onStateChange).toHaveBeenCalledTimes(1);
+    expect(onStateChange).toHaveBeenLastCalledWith({
+      version: GRID_STATE_VERSION,
+      columnWidths: { id: 120 },
+      filters: {
+        globalText: 'be',
+        columnFilters: { name: { kind: 'text', value: 'be' } },
+      },
+      sort: [{ columnKey: 'qty', direction: 'desc' }],
+      // 追加(v2): この applyState は列メタ非適用(onColumnsChange 未指定)なので columns prop は不変。
+      //   snapshot には現 columns の抽出が載ります。
+      columns: [{ key: 'id' }, { key: 'name' }, { key: 'qty' }],
+    });
+  });
+
+  it('onStateChange は同値の applyState では再発火しない(構造等価で抑止)', () => {
+    const onStateChange = vi.fn();
+    const ref = createRef<SpreadsheetGridHandle<Row>>();
+    render(
+      <SpreadsheetGrid
+        ref={ref}
+        columns={columns}
+        rows={rows}
+        onStateChange={onStateChange}
+      />,
+    );
+
+    // 1 回目: 初期状態 → appliedState への変化で発火。
+    act(() => {
+      ref.current?.applyState(appliedState);
+    });
+    expect(onStateChange).toHaveBeenCalledTimes(1);
+
+    // 2 回目: 同値を再適用。reducer は新規オブジェクト参照を入れる(columnWidths/filters の参照は変わる)が、
+    //   isSameGridState が構造等価と判定するため再発火しない。
+    act(() => {
+      ref.current?.applyState(appliedState);
+    });
+    expect(onStateChange).toHaveBeenCalledTimes(1);
+  });
+
+  it('追加(v2): applyState の列メタ(順序 / 可視 / ピン)が onColumnsChange 経由で反映され getState に出る', () => {
+    const ref = createRef<SpreadsheetGridHandle<Row>>();
+    render(<ControlledGrid gridRef={ref} initialColumns={columns} />);
+
+    const v2State: GridState = {
+      version: GRID_STATE_VERSION,
+      columnWidths: {},
+      filters: { globalText: '', columnFilters: {} },
+      sort: [],
+      // qty を left 固定 + 先頭、id を非表示、name は既定。
+      columns: [
+        { key: 'qty', pinned: 'left' },
+        { key: 'id', visible: false },
+        { key: 'name' },
+      ],
+    };
+
+    act(() => {
+      ref.current?.applyState(v2State);
+    });
+
+    const after = ref.current?.getState();
+    // reorderColumnsByPane で qty(left)が先頭、続いて center の id, name。visible/pinned も復元。
+    expect(after?.columns).toEqual([
+      { key: 'qty', pinned: 'left' },
+      { key: 'id', visible: false },
+      { key: 'name' },
+    ]);
+  });
+
+  it('追加(v2): onColumnsChange 未指定なら applyState の列メタはスキップ(v1 と同一・列順不変)', () => {
+    const ref = createRef<SpreadsheetGridHandle<Row>>();
+    // onColumnsChange を渡さない(controlled でない)素の SpreadsheetGrid。
+    render(<SpreadsheetGrid ref={ref} columns={columns} rows={rows} />);
+
+    act(() => {
+      ref.current?.applyState({
+        version: GRID_STATE_VERSION,
+        columnWidths: {},
+        filters: { globalText: '', columnFilters: {} },
+        sort: [],
+        columns: [{ key: 'qty' }, { key: 'name' }, { key: 'id' }], // reorder 指示
+      });
+    });
+
+    // onColumnsChange が無いので列メタは適用されず、列順は初期のまま。
+    const after = ref.current?.getState();
+    expect(after?.columns).toEqual([
+      { key: 'id' },
+      { key: 'name' },
+      { key: 'qty' },
+    ]);
+  });
+
+  it('追加(v2): onStateChange は列メタ変化(applyState の reorder)でも発火し、最新の列メタを渡す', () => {
+    const onStateChange = vi.fn();
+    const ref = createRef<SpreadsheetGridHandle<Row>>();
+    render(
+      <ControlledGrid
+        gridRef={ref}
+        initialColumns={columns}
+        onStateChange={onStateChange}
+      />,
+    );
+
+    act(() => {
+      ref.current?.applyState({
+        version: GRID_STATE_VERSION,
+        columnWidths: {},
+        filters: { globalText: '', columnFilters: {} },
+        sort: [],
+        columns: [{ key: 'qty' }, { key: 'name' }, { key: 'id' }], // reorder
+      });
+    });
+
+    expect(onStateChange).toHaveBeenCalled();
+    const last = onStateChange.mock.calls.at(-1)?.[0] as GridState;
+    expect(last.columns).toEqual([
+      { key: 'qty' },
+      { key: 'name' },
+      { key: 'id' },
+    ]);
+  });
+});
+
+// 追加(THEME-3): dimReadOnlyCells の root 修飾子配線を検証します。淡色表示そのもの(CSS)は
+//   jsdom では検証できないため、「opt-in で ssg-root--dim-readonly が付く / 既定では付かない」
+//   というクラス配線を固定します(セマンティッククラス .ssg-body-cell--readonly の常時付与は
+//   GridBodyLayer 側の既存経路で不変)。
+describe('THEME-3: dimReadOnlyCells(readonly 淡色表示の opt-in)', () => {
+  it('既定(未指定)では root に ssg-root--dim-readonly が付かない', () => {
+    const { container } = render(
+      <SpreadsheetGrid columns={columns} rows={rows} />,
+    );
+    const root = container.querySelector('.ssg-root');
+    expect(root).not.toBeNull();
+    expect(root?.classList.contains('ssg-root--dim-readonly')).toBe(false);
+  });
+
+  it('dimReadOnlyCells で root に ssg-root--dim-readonly が付く', () => {
+    const { container } = render(
+      <SpreadsheetGrid columns={columns} rows={rows} dimReadOnlyCells />,
+    );
+    const root = container.querySelector('.ssg-root');
+    expect(root?.classList.contains('ssg-root--dim-readonly')).toBe(true);
+  });
+});
+
+// 追加(THEME-2): density プリセットの配線を検証します。root 修飾子と、rowHeight / headerHeight
+//   既定値の解決(明示 prop 優先)を、ヘッダー行のインライン height で観測します(jsdom でも
+//   インライン style は評価可能。寸法トークンの CSS 適用そのものは実機確認)。
+describe('THEME-2: density(密度プリセット)', () => {
+  const headerRowHeight = (container: HTMLElement): string => {
+    const headerRow = container.querySelector('.ssg-header-row');
+    return headerRow instanceof HTMLElement ? headerRow.style.height : '';
+  };
+
+  it('既定(standard)では density 修飾子なし・headerHeight は従来既定 40px', () => {
+    const { container } = render(
+      <SpreadsheetGrid columns={columns} rows={rows} />,
+    );
+    const root = container.querySelector('.ssg-root');
+    expect(root).not.toBeNull();
+    expect(root?.className).not.toContain('ssg-root--density-');
+    expect(headerRowHeight(container)).toBe('40px');
+  });
+
+  it("density='compact' で root 修飾子が付き headerHeight 既定が 32px になる", () => {
+    const { container } = render(
+      <SpreadsheetGrid columns={columns} rows={rows} density="compact" />,
+    );
+    expect(
+      container
+        .querySelector('.ssg-root')
+        ?.classList.contains('ssg-root--density-compact'),
+    ).toBe(true);
+    expect(headerRowHeight(container)).toBe('32px');
+  });
+
+  it('明示 headerHeight は density プリセットより常に優先される', () => {
+    const { container } = render(
+      <SpreadsheetGrid
+        columns={columns}
+        rows={rows}
+        density="compact"
+        headerHeight={50}
+      />,
+    );
+    expect(headerRowHeight(container)).toBe('50px');
+  });
+});
+
+// 追加(FM-2): フィルターチップバー(showFilterChipBar)の配線テストです。
+//   チップバーは列仮想化の外(トップバー直下)で描画されるため、jsdom の 0 列描画の制約を
+//   受けません。フィルターは applyState で注入します(状態 API 経由 = 既存テストと同じ作法)。
+describe('SpreadsheetGrid フィルターチップバー(FM-2・結合)', () => {
+  // name 列に text フィルターを掛けた状態です(チップ要約は「"be" を含む」になります)。
+  const chipState: GridState = {
+    version: GRID_STATE_VERSION,
+    columnWidths: {},
+    filters: {
+      globalText: '',
+      columnFilters: { name: { kind: 'text', value: 'be' } },
+    },
+    sort: [],
+  };
+
+  it('showFilterChipBar=true + 有効フィルターでチップと「すべてクリア」を描画する', () => {
+    const ref = createRef<SpreadsheetGridHandle<Row>>();
+    render(
+      <SpreadsheetGrid
+        ref={ref}
+        columns={columns}
+        rows={rows}
+        showFilterChipBar
+      />,
+    );
+    act(() => {
+      ref.current?.applyState(chipState);
+    });
+    expect(screen.getByLabelText('Name のフィルターを編集')).toBeTruthy();
+    expect(screen.getByText('"be" を含む')).toBeTruthy();
+    expect(screen.getByText('すべてクリア')).toBeTruthy();
+  });
+
+  it('× でその列のフィルターがクリアされ、0 件になるとバーごと消える', () => {
+    const ref = createRef<SpreadsheetGridHandle<Row>>();
+    render(
+      <SpreadsheetGrid
+        ref={ref}
+        columns={columns}
+        rows={rows}
+        showFilterChipBar
+      />,
+    );
+    act(() => {
+      ref.current?.applyState(chipState);
+    });
+    fireEvent.click(screen.getByLabelText('Name のフィルターをクリア'));
+    expect(ref.current?.getState().filters.columnFilters).toEqual({});
+    // 0 件 → バーごと非表示(チップも「すべてクリア」も無くなります)。
+    expect(screen.queryByText('すべてクリア')).toBeNull();
+    expect(screen.queryByLabelText('Name のフィルターを編集')).toBeNull();
+  });
+
+  it('既定(showFilterChipBar 未指定 = false)では有効フィルターがあっても描画しない', () => {
+    const ref = createRef<SpreadsheetGridHandle<Row>>();
+    render(<SpreadsheetGrid ref={ref} columns={columns} rows={rows} />);
+    act(() => {
+      ref.current?.applyState(chipState);
+    });
+    expect(screen.queryByText('すべてクリア')).toBeNull();
+    expect(screen.queryByLabelText('Name のフィルターを編集')).toBeNull();
+  });
+});
+
+// 追加(FM-3): フィルター管理パネル導線(ハンドル API / Filters chip クリック)の配線テストです。
+//   パネルは portal(body 直下)+ gridRoot 右上アンカーで、jsdom の 0 矩形でもビューポート
+//   margin へクランプした layout が計算されるため、描画有無を検証できます。
+describe('SpreadsheetGrid フィルター管理パネル導線(FM-3・結合)', () => {
+  it('handle.openFilterManager() でパネルが開き、closeFilterManager() で閉じる', () => {
+    const ref = createRef<SpreadsheetGridHandle<Row>>();
+    render(<SpreadsheetGrid ref={ref} columns={columns} rows={rows} />);
+    expect(screen.queryByText('フィルター管理')).toBeNull();
+    act(() => {
+      ref.current?.openFilterManager();
+    });
+    expect(screen.getByText('フィルター管理')).toBeTruthy();
+    act(() => {
+      ref.current?.closeFilterManager();
+    });
+    expect(screen.queryByText('フィルター管理')).toBeNull();
+  });
+
+  it('enableColumnFilter=false では openFilterManager() は何もしない', () => {
+    const ref = createRef<SpreadsheetGridHandle<Row>>();
+    render(
+      <SpreadsheetGrid
+        ref={ref}
+        columns={columns}
+        rows={rows}
+        enableColumnFilter={false}
+      />,
+    );
+    act(() => {
+      ref.current?.openFilterManager();
+    });
+    expect(screen.queryByText('フィルター管理')).toBeNull();
+  });
+
+  it('既定トップバーの Filters chip クリックでパネルがトグルする(pointerdown で閉じ戻らない)', () => {
+    render(<SpreadsheetGrid columns={columns} rows={rows} />);
+    const chip = screen.getByLabelText('フィルター管理パネルを開閉');
+    // 実イベント順(pointerdown → click)で開きます。
+    fireEvent.pointerDown(chip);
+    fireEvent.click(chip);
+    expect(screen.getByText('フィルター管理')).toBeTruthy();
+    // もう一度同じ順で押すと閉じます(chip の onPointerDown stopPropagation により、
+    //   「pointerdown の outside-close → click の再オープン」で開いたままにならないこと)。
+    fireEvent.pointerDown(chip);
+    fireEvent.click(chip);
+    expect(screen.queryByText('フィルター管理')).toBeNull();
+  });
+
+  it('enableColumnFilter=false では Filters chip はクリック可能にならない(span のまま)', () => {
+    render(
+      <SpreadsheetGrid
+        columns={columns}
+        rows={rows}
+        enableColumnFilter={false}
+      />,
+    );
+    expect(
+      screen.queryByLabelText('フィルター管理パネルを開閉'),
+    ).toBeNull();
+  });
+});
+</file>
+
 <file path="src/components/spreadsheet-grid/logic/filtering.ts">
 import type {
   ColumnFilterValue,
@@ -20431,6 +20493,10 @@ type DefaultGridTopBarProps<T> = {
   // 追加: グローバルフィルター入力の左アイコンです。undefined=組み込み検索アイコン / null(など falsy)=
   //   アイコン無し / 任意 ReactNode=差し替え。
   globalFilterIcon?: ReactNode;
+  // 追加(FM-3): Filters chip クリック時のハンドラです(SpreadsheetGrid がフィルター管理
+  //   パネルのトグルを渡します)。指定時のみ chip を button 化し(.ssg-bar-chip--action)、
+  //   未指定時は従来どおり非クリックの span です(フィルター機能無効時の互換)。
+  onFilterSummaryClick?: () => void;
 };
 
 // 追加: Grid 上部の既定ツールバーです。summary chips(左) と グローバルフィルター入力(右) の
@@ -20452,6 +20518,7 @@ export function DefaultGridTopBar<T>({
   showCounts = true,
   globalFilterPlaceholder = 'グローバルフィルター',
   globalFilterIcon,
+  onFilterSummaryClick,
 }: DefaultGridTopBarProps<T>) {
   // 追加: slot context が持つ派生 summary を使います。
   const { derivedSummary } = context;
@@ -20480,9 +20547,28 @@ export function DefaultGridTopBar<T>({
               </>
             ) : null}
 
-            <span className="ssg-bar-chip ssg-bar-chip--emphasis">
-              {derivedSummary.filterSummaryText}
-            </span>
+            {/* 追加(FM-3): onFilterSummaryClick 指定時は Filters chip をクリック可能にします
+                (クリックでフィルター管理パネルをトグル)。pointerdown を stopPropagation する
+                のは、パネル表示中の chip クリックが「pointerdown の outside-close → click の
+                再オープン」と相殺してトグルにならないのを防ぐためです(パネル root と同じ作法)。 */}
+            {onFilterSummaryClick ? (
+              <button
+                type="button"
+                className="ssg-bar-chip ssg-bar-chip--emphasis ssg-bar-chip--action"
+                onPointerDown={(event) => {
+                  event.stopPropagation();
+                }}
+                onClick={onFilterSummaryClick}
+                title="フィルター管理パネルを開閉"
+                aria-label="フィルター管理パネルを開閉"
+              >
+                {derivedSummary.filterSummaryText}
+              </button>
+            ) : (
+              <span className="ssg-bar-chip ssg-bar-chip--emphasis">
+                {derivedSummary.filterSummaryText}
+              </span>
+            )}
 
             <span className="ssg-bar-chip ssg-bar-chip--emphasis">
               {derivedSummary.sortSummaryText}
@@ -20554,6 +20640,7 @@ A high-performance, virtualized spreadsheet / data grid for **React 19**, writte
 - Both **client-side** (`rows`) and **server-side** (`dataSource`, SSRM) row models.
 - Themeable with CSS custom properties (`--ssg-*`, defined at zero specificity so your overrides always win). Base styles are plain unlayered CSS with single-class specificity, so they survive CSS resets such as Tailwind Preflight; a cascade-layers variant (`style.layer.css`) is also shipped. `className` / `classNames` slots are provided.
 - Toggle the top / bottom bars and their parts via props — whole bars (`showTopBar` / `showBottomBar`), the default top bar's summary chips and global-filter input, and the Rows/Columns counts in each bar.
+- Filter management panel — review every active column filter in one place (jump to the column & edit, clear one / all, add new), opened from the column menu, the default top bar's clickable Filters chip, or `openFilterManager()` on the imperative handle. An optional filter chip bar (`showFilterChipBar`) keeps active filters visible right below the top bar.
 - Built-in CSV export (`downloadCsv` / `exportCsv`), plus a library-agnostic `getExportData()` for Excel / XLSX / ODS — feed the shaped data (filter/sort/visible-order aware) to your own writer such as [hucre](https://github.com/productdevbook/hucre), ExcelJS, or SheetJS. No spreadsheet library is bundled; multi-sheet is composed on your side. See [`API_REFERENCE.md`](./src/components/spreadsheet-grid/API_REFERENCE.md).
 - Export scopes: `'view'` (default — every filtered/sorted view row, scroll-independent), `'raw'` (every source row, ignoring filter & sort), `'rendered'` (only the rows currently rendered by virtualization — scroll-dependent), `'selection'`. Legacy `'all'` / `'visible'` keep working as deprecated aliases of `'view'` / `'rendered'`.
 - TypeScript-first, fully controlled API.
@@ -20720,6 +20807,7 @@ The full prop and type reference lives in [`src/components/spreadsheet-grid/API_
 - **クライアントサイド**（`rows`）と**サーバーサイド**（`dataSource`、SSRM）の両行モデル。
 - CSS カスタムプロパティ（`--ssg-*`。特異度 0 で定義され、利用側の上書きが常に勝ちます）によるテーマ設定。基底スタイルは未レイヤーの単一クラス特異度で、Tailwind Preflight などの CSS リセットに壊されません。カスケードレイヤー版（`style.layer.css`）も同梱。`className` / `classNames` スロットも用意。
 - トップ / ボトムバーとその構成要素（バー全体〔`showTopBar` / `showBottomBar`〕、既定トップバーの summary chips・グローバルフィルター入力、各バーの Rows/Columns 件数）を props で表示制御。
+- フィルター管理パネル — 適用中の列フィルターを 1 箇所で確認・操作（該当列へジャンプして編集 / 個別・全クリア / 追加）。列メニュー、既定トップバーの Filters chip クリック、ハンドルの `openFilterManager()` から開けます。トップバー直下に常時表示するフィルターチップバー（`showFilterChipBar`）もオプションで利用可。
 - CSV エクスポート（`downloadCsv` / `exportCsv`）を内蔵。Excel / XLSX / ODS はライブラリ非依存の `getExportData()` で、整形済みデータ（フィルター/ソート/可視列順を反映）を [hucre](https://github.com/productdevbook/hucre) / ExcelJS / SheetJS など任意の writer へ流す方式。xlsx ライブラリは同梱せず、マルチシートは利用側で合成。詳細は [`API_REFERENCE.md`](./src/components/spreadsheet-grid/API_REFERENCE.md)。
 - エクスポート scope: `'view'`（既定＝フィルター/ソート後の全ビュー行。スクロール位置に非依存）/ `'raw'`（フィルター/ソート無視の全ソース行）/ `'rendered'`（描画中の行のみ＝スクロール位置に依存）/ `'selection'`（選択範囲）。旧 `'all'` / `'visible'` は `'view'` / `'rendered'` の deprecated エイリアスとして従来どおり動作。
 - TypeScript ファースト、完全 controlled な API。
@@ -24038,6 +24126,18 @@ export type { NumberFormatterOptions } from './logic/valueFormatters';
     color: var(--ssg-header-text);
     font-weight: 600;
   }
+  /* 追加(FM-3): クリック可能 chip(既定トップバーの Filters chip → フィルター管理パネル開閉)。
+     button 化しても span 時と同じ見た目になるよう font を継承し(button は font-family を
+     継承しない)、hover でアクセント色に変えて操作可能であることを示す。 */
+  .ssg-bar-chip--action {
+    font-family: inherit;
+    line-height: inherit;
+    cursor: pointer;
+  }
+  .ssg-bar-chip--action:hover {
+    background-color: var(--ssg-icon-active-bg);
+    color: var(--ssg-accent-strong);
+  }
 
   /* グローバルフィルター input + クリアボタン。変更(コンパクト化): 余白/フォントを圧縮。 */
   /* 変更(F-filter UI): 入力枠は .ssg-bar-input-group が担い、input 自身は枠なし・透明にします
@@ -26745,6 +26845,25 @@ export default App;
 />
 ```
 
+**レシピ: 右クリックからフィルター管理パネルを開く**
+
+適用中フィルターの一覧 / 編集 / クリアを行うフィルター管理パネル(列メニュー「フィルターを管理…」と同じもの)は、ハンドルの `openFilterManager()` で任意の場所から開ける。コンテキストメニューに載せる場合:
+
+```tsx
+const gridRef = useRef<SpreadsheetGridHandle<Row>>(null);
+
+<SpreadsheetGrid
+  ref={gridRef}
+  enableContextMenu
+  getContextMenuItems={() => [
+    {
+      label: 'フィルターを管理…',
+      onSelect: () => gridRef.current?.openFilterManager(),
+    },
+  ]}
+/>;
+```
+
 ## GridColumn props (`GridColumn<T>`)
 
 | Name | Type | Default | Description |
@@ -26975,6 +27094,13 @@ const buffer = await writeXlsx({
 ```
 
 1 グリッドをカテゴリ列で分割して N シートにする場合は、`getExportData({ scope: 'view' })` の戻りを「分割キー列の `value`」で group して各 group を `toSheet` 化する(列 index は `columns.findIndex((c) => c.key === '...')` で解決)。
+
+### UI パネル
+
+| メソッド | 説明 |
+| --- | --- |
+| `openFilterManager()` | フィルター管理パネル(適用中の列フィルターの一覧 / 該当列へジャンプして編集 / 個別・全クリア / 追加)を開く。`enableColumnFilter=false` のときは何もしない。列メニューの「フィルターを管理…」/ 既定トップバーの **Filters chip クリック**(`enableColumnFilter=true` 時にクリック可能)と同じパネル。 |
+| `closeFilterManager()` | フィルター管理パネルを閉じる(開いていなければ何もしない)。 |
 
 ### 状態の保存 / 復元
 
@@ -27858,6 +27984,16 @@ export type SpreadsheetGridHandle<T> = {
   selectAllRows: () => void;
   // 行選択をすべて解除します。
   clearRowSelection: () => void;
+
+  // ── UI パネル(FM-3)──
+  // フィルター管理パネル(FM-1: 適用中の列フィルターの一覧 / ジャンプ編集 / 個別・全クリア /
+  //   追加)を開きます。enableColumnFilter=false のときは何もしません。列メニューの
+  //   「フィルターを管理…」/ 既定トップバーの Filters chip クリックと同じパネルです。
+  //   getContextMenuItems から呼べば「右クリック → フィルターを管理…」の導線を利用側で
+  //   作れます(API_REFERENCE のコンテキストメニュー節のレシピ参照)。
+  openFilterManager: () => void;
+  // フィルター管理パネルを閉じます(開いていなければ何もしません)。
+  closeFilterManager: () => void;
 };
 
 // 追加(THEME-2): グリッド全体の密度プリセットです。'standard' が従来既定と同値。
@@ -30535,6 +30671,17 @@ export function SpreadsheetGrid<T extends object>({
     openFilterManager();
   }, [closeColumnMenu, openFilterManager]);
 
+  // 追加(FM-3): 既定トップバーの Filters chip クリックでパネルをトグルします。
+  //   chip 側は onPointerDown を stopPropagation して window の outside-close へ届かせない
+  //   ため(DefaultGridTopBar 参照)、ここは click 時点の開閉状態で素直に分岐できます。
+  const handleFilterSummaryChipClick = useCallback(() => {
+    if (isFilterManagerOpen) {
+      closeFilterManager();
+    } else {
+      openFilterManager();
+    }
+  }, [closeFilterManager, isFilterManagerOpen, openFilterManager]);
+
   // 追加(FM-1): 対象列まで横スクロールしてからフィルター popover を開きます(パネルの
   //   ✎ 編集 / フィルターを追加)。openColumnFilterPopover は anchor(ヘッダーセル
   //   data-ssg-col-key)を開いた時点の DOM から解決するため、列仮想化で対象列が未描画の
@@ -31766,6 +31913,11 @@ export function SpreadsheetGrid<T extends object>({
         showCounts={showTopBarCounts}
         globalFilterPlaceholder={globalFilterPlaceholder}
         globalFilterIcon={globalFilterIcon}
+        // 追加(FM-3): Filters chip クリックでフィルター管理パネルをトグルします
+        //   (フィルター機能が無効なら渡さない = chip は従来どおり非クリックの span)。
+        onFilterSummaryClick={
+          columnFilterEnabled ? handleFilterSummaryChipClick : undefined
+        }
       />
     ) : null;
 
@@ -31830,6 +31982,11 @@ export function SpreadsheetGrid<T extends object>({
     //   serverSide での 'raw' → 'view' フォールバック判定に使います。
     rows: T[];
     isServerSide: boolean;
+    // 追加(FM-3): 安定ハンドル(useImperativeHandle deps [])から最新の controller コールバック
+    //   を読むための搭載です(stale closure 回避)。既存の単一 render 代入に載せるだけなので、
+    //   ESLint の render ref-write は増えません(commitRowSelectionRef と同趣旨の最新参照)。
+    openFilterManager: () => void;
+    closeFilterManager: () => void;
   } | null>(null);
   apiStateRef.current = {
     dispatch,
@@ -31851,6 +32008,8 @@ export function SpreadsheetGrid<T extends object>({
     physicalBodyHeight,
     rows,
     isServerSide,
+    openFilterManager,
+    closeFilterManager,
   };
 
   useImperativeHandle(
@@ -32336,6 +32495,16 @@ export function SpreadsheetGrid<T extends object>({
         },
         clearRowSelection: () => {
           commitRowSelectionRef.current(clearRowSelection());
+        },
+
+        // ── UI パネル(FM-3)──
+        // 追加(FM-3): フィルター管理パネルの開閉です。factory は deps [] で安定のため、
+        //   controller のコールバックは apiStateRef(毎レンダー更新)経由で最新を読みます。
+        openFilterManager: () => {
+          apiStateRef.current?.openFilterManager();
+        },
+        closeFilterManager: () => {
+          apiStateRef.current?.closeFilterManager();
         },
       };
     },

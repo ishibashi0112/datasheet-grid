@@ -416,3 +416,65 @@ describe('SpreadsheetGrid フィルターチップバー(FM-2・結合)', () => 
     expect(screen.queryByLabelText('Name のフィルターを編集')).toBeNull();
   });
 });
+
+// 追加(FM-3): フィルター管理パネル導線(ハンドル API / Filters chip クリック)の配線テストです。
+//   パネルは portal(body 直下)+ gridRoot 右上アンカーで、jsdom の 0 矩形でもビューポート
+//   margin へクランプした layout が計算されるため、描画有無を検証できます。
+describe('SpreadsheetGrid フィルター管理パネル導線(FM-3・結合)', () => {
+  it('handle.openFilterManager() でパネルが開き、closeFilterManager() で閉じる', () => {
+    const ref = createRef<SpreadsheetGridHandle<Row>>();
+    render(<SpreadsheetGrid ref={ref} columns={columns} rows={rows} />);
+    expect(screen.queryByText('フィルター管理')).toBeNull();
+    act(() => {
+      ref.current?.openFilterManager();
+    });
+    expect(screen.getByText('フィルター管理')).toBeTruthy();
+    act(() => {
+      ref.current?.closeFilterManager();
+    });
+    expect(screen.queryByText('フィルター管理')).toBeNull();
+  });
+
+  it('enableColumnFilter=false では openFilterManager() は何もしない', () => {
+    const ref = createRef<SpreadsheetGridHandle<Row>>();
+    render(
+      <SpreadsheetGrid
+        ref={ref}
+        columns={columns}
+        rows={rows}
+        enableColumnFilter={false}
+      />,
+    );
+    act(() => {
+      ref.current?.openFilterManager();
+    });
+    expect(screen.queryByText('フィルター管理')).toBeNull();
+  });
+
+  it('既定トップバーの Filters chip クリックでパネルがトグルする(pointerdown で閉じ戻らない)', () => {
+    render(<SpreadsheetGrid columns={columns} rows={rows} />);
+    const chip = screen.getByLabelText('フィルター管理パネルを開閉');
+    // 実イベント順(pointerdown → click)で開きます。
+    fireEvent.pointerDown(chip);
+    fireEvent.click(chip);
+    expect(screen.getByText('フィルター管理')).toBeTruthy();
+    // もう一度同じ順で押すと閉じます(chip の onPointerDown stopPropagation により、
+    //   「pointerdown の outside-close → click の再オープン」で開いたままにならないこと)。
+    fireEvent.pointerDown(chip);
+    fireEvent.click(chip);
+    expect(screen.queryByText('フィルター管理')).toBeNull();
+  });
+
+  it('enableColumnFilter=false では Filters chip はクリック可能にならない(span のまま)', () => {
+    render(
+      <SpreadsheetGrid
+        columns={columns}
+        rows={rows}
+        enableColumnFilter={false}
+      />,
+    );
+    expect(
+      screen.queryByLabelText('フィルター管理パネルを開閉'),
+    ).toBeNull();
+  });
+});

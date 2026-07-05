@@ -765,6 +765,16 @@ export type SpreadsheetGridHandle<T> = {
   selectAllRows: () => void;
   // 行選択をすべて解除します。
   clearRowSelection: () => void;
+
+  // ── UI パネル(FM-3)──
+  // フィルター管理パネル(FM-1: 適用中の列フィルターの一覧 / ジャンプ編集 / 個別・全クリア /
+  //   追加)を開きます。enableColumnFilter=false のときは何もしません。列メニューの
+  //   「フィルターを管理…」/ 既定トップバーの Filters chip クリックと同じパネルです。
+  //   getContextMenuItems から呼べば「右クリック → フィルターを管理…」の導線を利用側で
+  //   作れます(API_REFERENCE のコンテキストメニュー節のレシピ参照)。
+  openFilterManager: () => void;
+  // フィルター管理パネルを閉じます(開いていなければ何もしません)。
+  closeFilterManager: () => void;
 };
 
 // 追加(THEME-2): グリッド全体の密度プリセットです。'standard' が従来既定と同値。

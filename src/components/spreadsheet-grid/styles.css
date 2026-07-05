@@ -422,6 +422,18 @@
     color: var(--ssg-header-text);
     font-weight: 600;
   }
+  /* 追加(FM-3): クリック可能 chip(既定トップバーの Filters chip → フィルター管理パネル開閉)。
+     button 化しても span 時と同じ見た目になるよう font を継承し(button は font-family を
+     継承しない)、hover でアクセント色に変えて操作可能であることを示す。 */
+  .ssg-bar-chip--action {
+    font-family: inherit;
+    line-height: inherit;
+    cursor: pointer;
+  }
+  .ssg-bar-chip--action:hover {
+    background-color: var(--ssg-icon-active-bg);
+    color: var(--ssg-accent-strong);
+  }
 
   /* グローバルフィルター input + クリアボタン。変更(コンパクト化): 余白/フォントを圧縮。 */
   /* 変更(F-filter UI): 入力枠は .ssg-bar-input-group が担い、input 自身は枠なし・透明にします

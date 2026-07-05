@@ -51,6 +51,10 @@ type DefaultGridTopBarProps<T> = {
   // 追加: グローバルフィルター入力の左アイコンです。undefined=組み込み検索アイコン / null(など falsy)=
   //   アイコン無し / 任意 ReactNode=差し替え。
   globalFilterIcon?: ReactNode;
+  // 追加(FM-3): Filters chip クリック時のハンドラです(SpreadsheetGrid がフィルター管理
+  //   パネルのトグルを渡します)。指定時のみ chip を button 化し(.ssg-bar-chip--action)、
+  //   未指定時は従来どおり非クリックの span です(フィルター機能無効時の互換)。
+  onFilterSummaryClick?: () => void;
 };
 
 // 追加: Grid 上部の既定ツールバーです。summary chips(左) と グローバルフィルター入力(右) の
@@ -72,6 +76,7 @@ export function DefaultGridTopBar<T>({
   showCounts = true,
   globalFilterPlaceholder = 'グローバルフィルター',
   globalFilterIcon,
+  onFilterSummaryClick,
 }: DefaultGridTopBarProps<T>) {
   // 追加: slot context が持つ派生 summary を使います。
   const { derivedSummary } = context;
@@ -100,9 +105,28 @@ export function DefaultGridTopBar<T>({
               </>
             ) : null}
 
-            <span className="ssg-bar-chip ssg-bar-chip--emphasis">
-              {derivedSummary.filterSummaryText}
-            </span>
+            {/* 追加(FM-3): onFilterSummaryClick 指定時は Filters chip をクリック可能にします
+                (クリックでフィルター管理パネルをトグル)。pointerdown を stopPropagation する
+                のは、パネル表示中の chip クリックが「pointerdown の outside-close → click の
+                再オープン」と相殺してトグルにならないのを防ぐためです(パネル root と同じ作法)。 */}
+            {onFilterSummaryClick ? (
+              <button
+                type="button"
+                className="ssg-bar-chip ssg-bar-chip--emphasis ssg-bar-chip--action"
+                onPointerDown={(event) => {
+                  event.stopPropagation();
+                }}
+                onClick={onFilterSummaryClick}
+                title="フィルター管理パネルを開閉"
+                aria-label="フィルター管理パネルを開閉"
+              >
+                {derivedSummary.filterSummaryText}
+              </button>
+            ) : (
+              <span className="ssg-bar-chip ssg-bar-chip--emphasis">
+                {derivedSummary.filterSummaryText}
+              </span>
+            )}
 
             <span className="ssg-bar-chip ssg-bar-chip--emphasis">
               {derivedSummary.sortSummaryText}

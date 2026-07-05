@@ -171,6 +171,25 @@
 />
 ```
 
+**レシピ: 右クリックからフィルター管理パネルを開く**
+
+適用中フィルターの一覧 / 編集 / クリアを行うフィルター管理パネル(列メニュー「フィルターを管理…」と同じもの)は、ハンドルの `openFilterManager()` で任意の場所から開ける。コンテキストメニューに載せる場合:
+
+```tsx
+const gridRef = useRef<SpreadsheetGridHandle<Row>>(null);
+
+<SpreadsheetGrid
+  ref={gridRef}
+  enableContextMenu
+  getContextMenuItems={() => [
+    {
+      label: 'フィルターを管理…',
+      onSelect: () => gridRef.current?.openFilterManager(),
+    },
+  ]}
+/>;
+```
+
 ## GridColumn props (`GridColumn<T>`)
 
 | Name | Type | Default | Description |
@@ -401,6 +420,13 @@ const buffer = await writeXlsx({
 ```
 
 1 グリッドをカテゴリ列で分割して N シートにする場合は、`getExportData({ scope: 'view' })` の戻りを「分割キー列の `value`」で group して各 group を `toSheet` 化する(列 index は `columns.findIndex((c) => c.key === '...')` で解決)。
+
+### UI パネル
+
+| メソッド | 説明 |
+| --- | --- |
+| `openFilterManager()` | フィルター管理パネル(適用中の列フィルターの一覧 / 該当列へジャンプして編集 / 個別・全クリア / 追加)を開く。`enableColumnFilter=false` のときは何もしない。列メニューの「フィルターを管理…」/ 既定トップバーの **Filters chip クリック**(`enableColumnFilter=true` 時にクリック可能)と同じパネル。 |
+| `closeFilterManager()` | フィルター管理パネルを閉じる(開いていなければ何もしない)。 |
 
 ### 状態の保存 / 復元
 

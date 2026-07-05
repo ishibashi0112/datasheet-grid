@@ -2486,6 +2486,17 @@ export function SpreadsheetGrid<T extends object>({
     openFilterManager();
   }, [closeColumnMenu, openFilterManager]);
 
+  // 追加(FM-3): 既定トップバーの Filters chip クリックでパネルをトグルします。
+  //   chip 側は onPointerDown を stopPropagation して window の outside-close へ届かせない
+  //   ため(DefaultGridTopBar 参照)、ここは click 時点の開閉状態で素直に分岐できます。
+  const handleFilterSummaryChipClick = useCallback(() => {
+    if (isFilterManagerOpen) {
+      closeFilterManager();
+    } else {
+      openFilterManager();
+    }
+  }, [closeFilterManager, isFilterManagerOpen, openFilterManager]);
+
   // 追加(FM-1): 対象列まで横スクロールしてからフィルター popover を開きます(パネルの
   //   ✎ 編集 / フィルターを追加)。openColumnFilterPopover は anchor(ヘッダーセル
   //   data-ssg-col-key)を開いた時点の DOM から解決するため、列仮想化で対象列が未描画の
@@ -3717,6 +3728,11 @@ export function SpreadsheetGrid<T extends object>({
         showCounts={showTopBarCounts}
         globalFilterPlaceholder={globalFilterPlaceholder}
         globalFilterIcon={globalFilterIcon}
+        // 追加(FM-3): Filters chip クリックでフィルター管理パネルをトグルします
+        //   (フィルター機能が無効なら渡さない = chip は従来どおり非クリックの span)。
+        onFilterSummaryClick={
+          columnFilterEnabled ? handleFilterSummaryChipClick : undefined
+        }
       />
     ) : null;
 
@@ -3781,6 +3797,11 @@ export function SpreadsheetGrid<T extends object>({
     //   serverSide での 'raw' → 'view' フォールバック判定に使います。
     rows: T[];
     isServerSide: boolean;
+    // 追加(FM-3): 安定ハンドル(useImperativeHandle deps [])から最新の controller コールバック
+    //   を読むための搭載です(stale closure 回避)。既存の単一 render 代入に載せるだけなので、
+    //   ESLint の render ref-write は増えません(commitRowSelectionRef と同趣旨の最新参照)。
+    openFilterManager: () => void;
+    closeFilterManager: () => void;
   } | null>(null);
   apiStateRef.current = {
     dispatch,
@@ -3802,6 +3823,8 @@ export function SpreadsheetGrid<T extends object>({
     physicalBodyHeight,
     rows,
     isServerSide,
+    openFilterManager,
+    closeFilterManager,
   };
 
   useImperativeHandle(
@@ -4287,6 +4310,16 @@ export function SpreadsheetGrid<T extends object>({
         },
         clearRowSelection: () => {
           commitRowSelectionRef.current(clearRowSelection());
+        },
+
+        // ── UI パネル(FM-3)──
+        // 追加(FM-3): フィルター管理パネルの開閉です。factory は deps [] で安定のため、
+        //   controller のコールバックは apiStateRef(毎レンダー更新)経由で最新を読みます。
+        openFilterManager: () => {
+          apiStateRef.current?.openFilterManager();
+        },
+        closeFilterManager: () => {
+          apiStateRef.current?.closeFilterManager();
         },
       };
     },
