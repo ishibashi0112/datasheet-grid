@@ -767,6 +767,11 @@ export type SpreadsheetGridHandle<T> = {
   clearRowSelection: () => void;
 };
 
+// 追加(THEME-2): グリッド全体の密度プリセットです。'standard' が従来既定と同値。
+//   rowHeight / headerHeight の既定値と寸法トークン(styles.css の ssg-root--density-*)を
+//   一括切替します。
+export type GridDensity = 'compact' | 'standard' | 'comfortable';
+
 export type SpreadsheetGridProps<T> = {
   // 追加(imperative API #1): React 19 の ref-as-prop。命令的ハンドル(SpreadsheetGridHandle)を受け取ります。
   //   forwardRef は使いません(React 19 で deprecated 予定のため)。状態は controlled のまま、prop で
@@ -799,6 +804,8 @@ export type SpreadsheetGridProps<T> = {
   rowKeyGetter?: (row: T, index: number) => GridRowKey;
   createRow?: () => T;
   createOverflowColumn?: (columnIndex: number) => GridColumn<T>;
+  // 変更(THEME-2): 未指定時の既定は density プリセットから解決します(standard: 36 /
+  //   compact: 28 / comfortable: 44)。明示指定はプリセットより常に優先されます。
   rowHeight?: number;
   // 追加(C1): auto-height 行モードを有効化します。autoHeight:true の列が行高を駆動し、
   //   行ごとに内容量で高さが変わります。論理全高が行数 gate を超える場合は uniform 行高へ
@@ -806,7 +813,15 @@ export type SpreadsheetGridProps<T> = {
   autoHeight?: boolean;
   // 追加(C1): auto-height の未測定行に使う 1 行の推定高さ(px)。未指定時は rowHeight。
   estimateRowHeight?: number;
+  // 変更(THEME-2): 未指定時の既定は density プリセットから解決します(standard: 40 /
+  //   compact: 32 / comfortable: 48)。明示指定はプリセットより常に優先されます。
   headerHeight?: number;
+  // 追加(THEME-2): グリッド全体の密度プリセットです(既定 'standard' = 従来と同値)。
+  //   rowHeight / headerHeight の既定値(上記)と、寸法トークン(セル横 padding / バー padding /
+  //   アイコンボタン寸法 / セル文字の相対拡縮)を root 修飾子(ssg-root--density-*)経由で
+  //   一括切替します。個別の微調整はトークン(--ssg-cell-pad-x 等)の上書きで可能です。
+  //   popover / menu 等のポータルは対象外です。
+  density?: GridDensity;
   rowHeaderWidth?: number;
   // 追加: スクロールコンテナの明示高さ。'100%' で親要素に追従(親が確定高さを持つ前提)。
   //   number は px。未指定時は maxHeight によるクリップ挙動(従来)になります。

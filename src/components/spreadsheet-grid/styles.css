@@ -56,6 +56,41 @@
     /* 寸法トークン */
     --ssg-radius: 8px;
     --ssg-icon-btn-size: 20px;
+    /* 寸法トークン(THEME-2): density プリセットの切替対象。standard は下記既定と同値。 */
+    --ssg-cell-pad-x: 10px;
+    --ssg-bar-pad-x: 10px;
+    --ssg-bar-pad-y: 5px;
+  }
+
+  /* 密度プリセット(THEME-2)。density prop が root へ付与する修飾子で寸法トークンを一括切替します。
+     'standard' は修飾子なし(既定値のまま=従来と同値)。:where(特異度 0)なので、利用側のトークン
+     上書き(特異度 (0,1,0) 以上)が常に勝ちます。rowHeight / headerHeight の既定値切替は JS 側
+     (SpreadsheetGrid.tsx の DENSITY_DIMENSIONS)。チェックボックスは glyph 幾何が px 同期のため、
+     ヘッダー文字サイズは autosize 定数(columnAutosize.ts の HEADER_FONT_SIZE)と同期のため固定です。
+     popover / menu 等のポータルは .ssg-root 外のため対象外(必要なら後続バッチ)。 */
+  :where(.ssg-root--density-compact) {
+    --ssg-cell-pad-x: 6px;
+    --ssg-bar-pad-x: 8px;
+    --ssg-bar-pad-y: 3px;
+    --ssg-icon-btn-size: 18px;
+  }
+
+  :where(.ssg-root--density-comfortable) {
+    --ssg-cell-pad-x: 14px;
+    --ssg-bar-pad-x: 12px;
+    --ssg-bar-pad-y: 7px;
+    --ssg-icon-btn-size: 22px;
+  }
+
+  /* セル文字サイズは既定で親から継承(利用側のフォント環境を尊重)のため、プリセットは相対値(em)で
+     拡縮します(継承サイズ基準・standard は無指定=継承のまま)。autosize の実 DOM 計測ノードは
+     .ssg-root 内へ append される .ssg-body-cell のため、この拡縮/padding トークンを自動で内包します。 */
+  :where(.ssg-root--density-compact) .ssg-body-cell {
+    font-size: 0.85em;
+  }
+
+  :where(.ssg-root--density-comfortable) .ssg-body-cell {
+    font-size: 1.1em;
   }
 
   /* box-sizing の自前正規化(THEME-1)。従来は一部要素が利用側グローバルリセットの有無で
@@ -121,7 +156,8 @@
     box-sizing: border-box;
     display: flex;
     align-items: center;
-    padding: 0 10px;
+    /* 変更(THEME-2): 横 padding をトークン化(密度プリセットの切替対象)。 */
+    padding: 0 var(--ssg-cell-pad-x);
     border-right: 1px solid var(--ssg-line);
     border-bottom: 1px solid var(--ssg-line-strong);
     background-color: var(--ssg-cell-bg);
@@ -313,7 +349,8 @@
     box-sizing: border-box;
     border: 2px solid var(--ssg-accent);
     outline: none;
-    padding: 0 10px;
+    /* 変更(THEME-2): セル本体と同じ横 padding トークン(編集中も文字位置が揃う)。 */
+    padding: 0 var(--ssg-cell-pad-x);
     margin: 0;
     font-size: 16px;
     color: var(--ssg-cell-text);
@@ -335,7 +372,8 @@
     align-items: center;
     justify-content: space-between;
     gap: 6px;
-    padding: 5px 10px;
+    /* 変更(THEME-2): padding をトークン化(密度プリセットの切替対象)。 */
+    padding: var(--ssg-bar-pad-y) var(--ssg-bar-pad-x);
     background-color: var(--ssg-header-bg);
     flex-wrap: wrap;
   }

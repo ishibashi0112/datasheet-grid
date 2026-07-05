@@ -119,6 +119,16 @@ By default the grid caps its height at `480px` (`max-height`) and scrolls when t
 
 For `height="100%"` to work, the parent must have a resolved height (its ancestors are sized, and a flex child needs `min-height: 0`). This is standard CSS the library can't resolve for you. `maxHeight` sets an upper bound and can be combined with `height` (explicit height, capped at `maxHeight`).
 
+### Density
+
+Set `density` to switch the overall sizing with one prop — `'compact' | 'standard' | 'comfortable'` (default `'standard'`, identical to previous versions):
+
+```tsx
+<SpreadsheetGrid rows={rows} columns={columns} density="compact" />
+```
+
+The preset drives the default `rowHeight` / `headerHeight` (compact: 28/32, standard: 36/40, comfortable: 44/48 — explicit props always win) and switches sizing tokens (cell horizontal padding, bar padding, icon-button size, relative cell font scale) via a root modifier class. Individual tokens (e.g. `--ssg-cell-pad-x`) can still be overridden for fine-tuning. Popovers/menus are not affected.
+
 ## Server-side mode (SSRM)
 
 Pass a `dataSource` instead of `rows` to switch to server-side mode. The grid keeps the full scroll height for the total row count and fetches only the blocks near the viewport:
@@ -274,6 +284,16 @@ export function Example() {
 ```
 
 `height="100%"` を効かせるには、**親要素が確定高さを持つ**必要があります（祖先まで高さが確定している／flex 子なら `min-height: 0` が必要）。これは CSS の一般則のため本ライブラリ側では解決できません。`maxHeight` は高さの上限で、`height` と併用できます（明示高さ＋上限）。
+
+#### 密度（density）
+
+`density` プロップ 1 つで全体のサイズ感を切り替えられます — `'compact' | 'standard' | 'comfortable'`（既定 `'standard'` = 従来と同値）:
+
+```tsx
+<SpreadsheetGrid rows={rows} columns={columns} density="compact" />
+```
+
+プリセットは `rowHeight` / `headerHeight` の既定値（compact: 28/32・standard: 36/40・comfortable: 44/48。明示 prop が常に優先）と、寸法トークン（セル横 padding・バー padding・アイコンボタン寸法・セル文字の相対拡縮）を root 修飾子経由で一括切替します。個別の微調整はトークン（例: `--ssg-cell-pad-x`）の上書きで可能です。popover / メニューは対象外です。
 
 ### サーバーサイドモード（SSRM）
 

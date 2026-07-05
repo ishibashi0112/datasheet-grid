@@ -178,6 +178,8 @@ import type {
   CellCoord,
   CellRenderState,
   GridColumn,
+  // 追加(THEME-2): 密度プリセットの型です。
+  GridDensity,
   // 追加(13-A): 列メニューからの固定切替に使います。
   GridColumnPinned,
   // 追加(C1): auto-height 実測キャッシュのキー型です。
@@ -285,6 +287,18 @@ const EMPTY_ROWS: never[] = [];
 const EMPTY_SERVER_QUERY: ServerSideQuery = {};
 const EMPTY_COLUMN_FILTERS: Record<string, ColumnFilterValue> = {};
 const EMPTY_SORT: GridSortState = [];
+
+// 追加(THEME-2): density プリセット別の既定寸法です(明示 rowHeight / headerHeight prop が優先)。
+//   'standard' は従来既定(36 / 40)と同値。CSS 側の寸法トークン切替は styles.css の
+//   ssg-root--density-* 修飾子を参照。
+const DENSITY_DIMENSIONS: Record<
+  GridDensity,
+  { rowHeight: number; headerHeight: number }
+> = {
+  compact: { rowHeight: 28, headerHeight: 32 },
+  standard: { rowHeight: 36, headerHeight: 40 },
+  comfortable: { rowHeight: 44, headerHeight: 48 },
+};
 // 追加(B3): flex 非適用時(未計測 / flex 列なし)に返す共有の空 map です。参照同一性で
 //   「flex 素通し(= effectiveColumnWidths は uiState.columnWidths そのまま)」を判定します。
 const EMPTY_FLEX_WIDTHS: Record<string, number> = {};
@@ -317,10 +331,12 @@ export function SpreadsheetGrid<T extends object>({
   rowKeyGetter,
   createRow,
   createOverflowColumn,
-  rowHeight = 36,
+  // 変更(THEME-2): rowHeight / headerHeight の既定は density プリセットから解決します(本体冒頭)。
+  rowHeight: rowHeightProp,
   autoHeight = false,
   estimateRowHeight,
-  headerHeight = 40,
+  headerHeight: headerHeightProp,
+  density = 'standard',
   rowHeaderWidth = 56,
   // 追加: スクロールコンテナ高さの外部制御。height で明示高さ('100%'=親追従)、maxHeight で上限。
   //   両者未指定時は CSS 既定(.ssg-scroll-container max-height:480px)に委ねます。
@@ -385,6 +401,10 @@ export function SpreadsheetGrid<T extends object>({
   // 追加(state #2): 永続スライス変化の通知口(保存タイミング signal)。発火規約は型定義のコメント参照。
   onStateChange,
 }: SpreadsheetGridProps<T>) {
+  // 追加(THEME-2): density プリセットの既定寸法を解決します(明示 prop が常に優先)。
+  const rowHeight = rowHeightProp ?? DENSITY_DIMENSIONS[density].rowHeight;
+  const headerHeight = headerHeightProp ?? DENSITY_DIMENSIONS[density].headerHeight;
+
   // ── refs ──────────────────────────────────────────────
   const gridRootRef = useRef<HTMLDivElement | null>(null);
   const pointerClientRef = useRef<{ x: number; y: number } | null>(null);
@@ -4086,6 +4106,8 @@ export function SpreadsheetGrid<T extends object>({
     <div
       className={cx(
         'ssg-root',
+        // 追加(THEME-2): density プリセット修飾子(standard は付与なし=既定寸法のまま)。
+        density !== 'standard' && `ssg-root--density-${density}`,
         // 追加(THEME-3): readonly 淡色表示の opt-in 修飾子(styles.css 側で :where ゲート)。
         dimReadOnlyCells && 'ssg-root--dim-readonly',
         className,

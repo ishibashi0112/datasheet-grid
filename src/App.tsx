@@ -3,6 +3,8 @@ import {
   SpreadsheetGrid,
   numberFormatter,
   type GridColumn,
+  // 追加(THEME-2 デモ): 密度プリセットの型。
+  type GridDensity,
   // 追加(バッチ②デモ): コンテキストメニュー項目の型。
   type GridContextMenuItem,
   type GridState,
@@ -450,6 +452,8 @@ function App() {
   const [contextMenuEnabled, setContextMenuEnabled] = useState(false);
   // 追加(THEME-3 デモ): readonly セル(「単位」列)の淡色表示 opt-in(既定 OFF=色変化なし)。
   const [dimReadOnlyCells, setDimReadOnlyCells] = useState(false);
+  // 追加(THEME-2 デモ): 密度プリセット(rowHeight/headerHeight 既定と寸法トークンを一括切替)。
+  const [density, setDensity] = useState<GridDensity>('standard');
   const [rowSelectionModeState, setRowSelectionModeState] =
     useState<'single' | 'multiple'>('multiple');
   const [rowSelectionCount, setRowSelectionCount] = useState(0);
@@ -938,6 +942,22 @@ function App() {
           >
             readonly淡色: {dimReadOnlyCells ? 'ON' : 'OFF'}
           </button>
+          {/* 追加(THEME-2 デモ): 密度プリセット(クリックで standard → compact → comfortable を巡回)。 */}
+          <button
+            type="button"
+            onClick={() =>
+              setDensity((v) =>
+                v === 'standard'
+                  ? 'compact'
+                  : v === 'compact'
+                    ? 'comfortable'
+                    : 'standard',
+              )
+            }
+            style={modeButtonStyle(density !== 'standard')}
+          >
+            密度: {density}
+          </button>
           {/* 追加(state #3 デモ): onStateChange/applyState の永続デモ。列幅変更・フィルター・ソート・
               列メタ(可視/順序/ピン)が自動保存され、ページ再読込で復元されます。下のボタンで保存を
               クリア(初期状態へ)できます。 */}
@@ -986,9 +1006,10 @@ function App() {
           // 追加: 後から増える列も text フィルター対象に揃えます。
           filterType: 'text',
         })}
-        rowHeight={38}
+        // 変更(THEME-2 デモ): rowHeight={38} / headerHeight={42} の明示指定を撤去し、density
+        //   プリセットの既定(standard: 36/40・compact: 28/32・comfortable: 44/48)へ委ねます
+        //   (明示 prop はプリセットより優先のため、指定したままだと密度が高さへ効きません)。
         autoHeight={mode === 'autoHeight'}
-        headerHeight={42}
         rowHeaderWidth={56}
         enableRangeSelection
         // 追加(行選択デモ): 上の「行選択」トグルと連動します。onRowSelectionChange で件数を更新。
@@ -1011,6 +1032,8 @@ function App() {
         enableContextMenu={contextMenuEnabled}
         // 追加(THEME-3 デモ): readonly セルの淡色表示(上の「readonly淡色」トグルと連動。既定 OFF)。
         dimReadOnlyCells={dimReadOnlyCells}
+        // 追加(THEME-2 デモ): 密度プリセット(上の「密度」トグルと連動。既定 standard)。
+        density={density}
         // 追加(バッチ②デモ): セル/行の完全カスタムコンテキストメニューです。項目を返した時だけ独自メニューを
         //   出し、[] を返す/未指定ならブラウザ標準メニューになります(ここでは常に項目を返します)。
         //   narrowing 用に params.target.type==='cell' 内でプリミティブ(値/列タイトル)を捕捉してから
