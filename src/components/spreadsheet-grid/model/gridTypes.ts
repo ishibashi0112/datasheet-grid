@@ -913,6 +913,13 @@ export type SpreadsheetGridProps<T> = {
   //   既定ボトムバー(renderBottomBar 未指定)のときのみ効きます。右側の Active / Selection /
   //   選択統計 / Cols chips は本値の対象外で常時表示です。
   showBottomBarCounts?: boolean;
+  // 追加(FM-2): フィルターチップバー(適用中の列フィルターをトップバー直下にチップで常時
+  //   一覧表示)の表示有無です。既定 false(opt-in)。有効フィルター 0 件のときはバーごと
+  //   非表示です(空バーは出しません)。showTopBar とは独立です(トップバー非表示でも出せます)。
+  //   チップ本体クリックで対象列へジャンプしてフィルター popover を開き、× でその列を
+  //   クリア、末尾の「すべてクリア」は列フィルターのみ対象です(グローバルフィルターは
+  //   対象外 = フィルター管理パネルと同じ切り分け)。
+  showFilterChipBar?: boolean;
   // 追加: Grid 上部カスタム領域です。未指定時は既定ツールバー(summary chips + グローバルフィルター
   //   入力)を表示します。既定バーの内訳は showTopBarSummary / showTopBarFilter で出し分けできます
   //   (フィルター入力は enableGlobalFilter=true が前提)。showTopBar=false のときは本指定に関わらず

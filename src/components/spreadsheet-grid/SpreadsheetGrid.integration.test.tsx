@@ -8,7 +8,7 @@
 //   renderHook 系テストと同じく DOM を要するため、本ファイルのみ jsdom で回します。
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeAll, afterEach } from 'vitest';
-import { render, cleanup, act } from '@testing-library/react';
+import { render, cleanup, act, screen, fireEvent } from '@testing-library/react';
 import { createRef, useState } from 'react';
 import type { Ref } from 'react';
 
@@ -350,5 +350,69 @@ describe('THEME-2: density(密度プリセット)', () => {
       />,
     );
     expect(headerRowHeight(container)).toBe('50px');
+  });
+});
+
+// 追加(FM-2): フィルターチップバー(showFilterChipBar)の配線テストです。
+//   チップバーは列仮想化の外(トップバー直下)で描画されるため、jsdom の 0 列描画の制約を
+//   受けません。フィルターは applyState で注入します(状態 API 経由 = 既存テストと同じ作法)。
+describe('SpreadsheetGrid フィルターチップバー(FM-2・結合)', () => {
+  // name 列に text フィルターを掛けた状態です(チップ要約は「"be" を含む」になります)。
+  const chipState: GridState = {
+    version: GRID_STATE_VERSION,
+    columnWidths: {},
+    filters: {
+      globalText: '',
+      columnFilters: { name: { kind: 'text', value: 'be' } },
+    },
+    sort: [],
+  };
+
+  it('showFilterChipBar=true + 有効フィルターでチップと「すべてクリア」を描画する', () => {
+    const ref = createRef<SpreadsheetGridHandle<Row>>();
+    render(
+      <SpreadsheetGrid
+        ref={ref}
+        columns={columns}
+        rows={rows}
+        showFilterChipBar
+      />,
+    );
+    act(() => {
+      ref.current?.applyState(chipState);
+    });
+    expect(screen.getByLabelText('Name のフィルターを編集')).toBeTruthy();
+    expect(screen.getByText('"be" を含む')).toBeTruthy();
+    expect(screen.getByText('すべてクリア')).toBeTruthy();
+  });
+
+  it('× でその列のフィルターがクリアされ、0 件になるとバーごと消える', () => {
+    const ref = createRef<SpreadsheetGridHandle<Row>>();
+    render(
+      <SpreadsheetGrid
+        ref={ref}
+        columns={columns}
+        rows={rows}
+        showFilterChipBar
+      />,
+    );
+    act(() => {
+      ref.current?.applyState(chipState);
+    });
+    fireEvent.click(screen.getByLabelText('Name のフィルターをクリア'));
+    expect(ref.current?.getState().filters.columnFilters).toEqual({});
+    // 0 件 → バーごと非表示(チップも「すべてクリア」も無くなります)。
+    expect(screen.queryByText('すべてクリア')).toBeNull();
+    expect(screen.queryByLabelText('Name のフィルターを編集')).toBeNull();
+  });
+
+  it('既定(showFilterChipBar 未指定 = false)では有効フィルターがあっても描画しない', () => {
+    const ref = createRef<SpreadsheetGridHandle<Row>>();
+    render(<SpreadsheetGrid ref={ref} columns={columns} rows={rows} />);
+    act(() => {
+      ref.current?.applyState(chipState);
+    });
+    expect(screen.queryByText('すべてクリア')).toBeNull();
+    expect(screen.queryByLabelText('Name のフィルターを編集')).toBeNull();
   });
 });

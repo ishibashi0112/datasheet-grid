@@ -452,6 +452,9 @@ function App() {
   const [contextMenuEnabled, setContextMenuEnabled] = useState(false);
   // 追加(THEME-3 デモ): readonly セル(「単位」列)の淡色表示 opt-in(既定 OFF=色変化なし)。
   const [dimReadOnlyCells, setDimReadOnlyCells] = useState(false);
+  // 追加(FM-2 デモ): フィルターチップバー(適用中の列フィルターをトップバー直下に常時表示)。
+  //   既定 OFF(opt-in)。ON にして列フィルターを掛けるとチップが出ます(0 件時は非表示)。
+  const [showFilterChipBar, setShowFilterChipBar] = useState(false);
   // 追加(THEME-2 デモ): 密度プリセット(rowHeight/headerHeight 既定と寸法トークンを一括切替)。
   const [density, setDensity] = useState<GridDensity>('standard');
   const [rowSelectionModeState, setRowSelectionModeState] =
@@ -942,6 +945,14 @@ function App() {
           >
             readonly淡色: {dimReadOnlyCells ? 'ON' : 'OFF'}
           </button>
+          {/* 追加(FM-2 デモ): フィルターチップバー ON/OFF。既定 OFF(opt-in)。 */}
+          <button
+            type="button"
+            onClick={() => setShowFilterChipBar((v) => !v)}
+            style={modeButtonStyle(showFilterChipBar)}
+          >
+            フィルターチップバー: {showFilterChipBar ? 'ON' : 'OFF'}
+          </button>
           {/* 追加(THEME-2 デモ): 密度プリセット(クリックで standard → compact → comfortable を巡回)。 */}
           <button
             type="button"
@@ -1114,6 +1125,8 @@ function App() {
         showTopBarFilter={showTopBarFilter}
         showTopBarCounts={showTopBarCounts}
         showBottomBarCounts={showBottomBarCounts}
+        // 追加(FM-2 デモ): 上の「フィルターチップバー」トグルと連動します(既定 OFF)。
+        showFilterChipBar={showFilterChipBar}
         // 追加(条件付きスタイル デモ): 「保留」行を薄オレンジでハイライトします(getRowClassName)。
         //   返り値の class は行コンテナ + 各データセルに付与されます(# 行ヘッダーセルは現状対象外)。
         getRowClassName={(row) =>

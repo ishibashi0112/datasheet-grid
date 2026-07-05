@@ -246,6 +246,8 @@ import FilterManagementPanel, {
   type FilterManagementEntry,
   type FilterManagementAddableColumn,
 } from './view/FilterManagementPanel';
+// 追加(FM-2): フィルターチップバー(適用中の列フィルターの常時表示 / opt-in)です。
+import GridFilterChipBar from './view/GridFilterChipBar';
 // 追加(バッチ②/コンテキストメニュー): 対象解決(純ロジック)/ controller / portal popover。
 import {
   resolveContextMenuColIndex,
@@ -394,6 +396,8 @@ export function SpreadsheetGrid<T extends object>({
   //   トップは showTopBarSummary=true のとき内側で効き、ボトムは左側の件数グループを制御します。
   showTopBarCounts = true,
   showBottomBarCounts = true,
+  // 追加(FM-2): フィルターチップバー(適用中の列フィルターの常時表示)。既定 false(opt-in)。
+  showFilterChipBar = false,
   renderTopBar,
   renderBottomBar,
   className,
@@ -4346,6 +4350,19 @@ export function SpreadsheetGrid<T extends object>({
       )}
     >
       {resolvedTopBar}
+
+      {/* 追加(FM-2): フィルターチップバー(opt-in)。適用中の列フィルターをチップで常時表示します。
+          entries / ハンドラはフィルター管理パネル(FM-1)と完全共用です(要約・非表示列の扱いが
+          自動で一致)。0 件時はコンポーネント側が null を返すため、条件は prop のみで判定します。 */}
+      {showFilterChipBar && (
+        <GridFilterChipBar
+          entries={filterManagerEntries}
+          canFilter={columnFilterEnabled}
+          onEditFilter={jumpToColumnFilter}
+          onClearFilter={handleFilterManagerClearFilter}
+          onClearAllFilters={handleFilterManagerClearAll}
+        />
+      )}
 
       <div
         ref={gridRootRef}

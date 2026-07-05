@@ -151,6 +151,8 @@ src/components/spreadsheet-grid/view/FilterManagementPanel.tsx
 src/components/spreadsheet-grid/view/gridBarHelpers.test.ts
 src/components/spreadsheet-grid/view/gridBarHelpers.ts
 src/components/spreadsheet-grid/view/GridBodyLayer.tsx
+src/components/spreadsheet-grid/view/GridFilterChipBar.test.tsx
+src/components/spreadsheet-grid/view/GridFilterChipBar.tsx
 src/components/spreadsheet-grid/view/GridHeaderRow.tsx
 src/components/spreadsheet-grid/view/PopoverEscapeClose.test.tsx
 src/components/spreadsheet-grid/view/RowSelectionCheckbox.tsx
@@ -467,220 +469,6 @@ export default defineConfig([
 <svg xmlns="http://www.w3.org/2000/svg" width="77" height="47" fill="none" aria-labelledby="vite-logo-title" viewBox="0 0 77 47"><title id="vite-logo-title">Vite</title><style>.parenthesis{fill:#000}@media (prefers-color-scheme:dark){.parenthesis{fill:#fff}}</style><path fill="#9135ff" d="M40.151 45.71c-.663.844-2.02.374-2.02-.699V34.708a2.26 2.26 0 0 0-2.262-2.262H24.493c-.92 0-1.457-1.04-.92-1.788l7.479-10.471c1.07-1.498 0-3.578-1.842-3.578H15.443c-.92 0-1.456-1.04-.92-1.788l9.696-13.576c.213-.297.556-.474.92-.474h28.894c.92 0 1.456 1.04.92 1.788l-7.48 10.472c-1.07 1.497 0 3.578 1.842 3.578h11.376c.944 0 1.474 1.087.89 1.83L40.153 45.712z"/><mask id="a" width="48" height="47" x="14" y="0" maskUnits="userSpaceOnUse" style="mask-type:alpha"><path fill="#000" d="M40.047 45.71c-.663.843-2.02.374-2.02-.699V34.708a2.26 2.26 0 0 0-2.262-2.262H24.389c-.92 0-1.457-1.04-.92-1.788l7.479-10.472c1.07-1.497 0-3.578-1.842-3.578H15.34c-.92 0-1.456-1.04-.92-1.788l9.696-13.575c.213-.297.556-.474.92-.474H53.93c.92 0 1.456 1.04.92 1.788L47.37 13.03c-1.07 1.498 0 3.578 1.842 3.578h11.376c.944 0 1.474 1.088.89 1.831L40.049 45.712z"/></mask><g mask="url(#a)"><g filter="url(#b)"><ellipse cx="5.508" cy="14.704" fill="#eee6ff" rx="5.508" ry="14.704" transform="rotate(269.814 20.96 11.29)scale(-1 1)"/></g><g filter="url(#c)"><ellipse cx="10.399" cy="29.851" fill="#eee6ff" rx="10.399" ry="29.851" transform="rotate(89.814 -16.902 -8.275)scale(1 -1)"/></g><g filter="url(#d)"><ellipse cx="5.508" cy="30.487" fill="#8900ff" rx="5.508" ry="30.487" transform="rotate(89.814 -19.197 -7.127)scale(1 -1)"/></g><g filter="url(#e)"><ellipse cx="5.508" cy="30.599" fill="#8900ff" rx="5.508" ry="30.599" transform="rotate(89.814 -25.928 4.177)scale(1 -1)"/></g><g filter="url(#f)"><ellipse cx="5.508" cy="30.599" fill="#8900ff" rx="5.508" ry="30.599" transform="rotate(89.814 -25.738 5.52)scale(1 -1)"/></g><g filter="url(#g)"><ellipse cx="14.072" cy="22.078" fill="#eee6ff" rx="14.072" ry="22.078" transform="rotate(93.35 31.245 55.578)scale(-1 1)"/></g><g filter="url(#h)"><ellipse cx="3.47" cy="21.501" fill="#8900ff" rx="3.47" ry="21.501" transform="rotate(89.009 35.419 55.202)scale(-1 1)"/></g><g filter="url(#i)"><ellipse cx="3.47" cy="21.501" fill="#8900ff" rx="3.47" ry="21.501" transform="rotate(89.009 35.419 55.202)scale(-1 1)"/></g><g filter="url(#j)"><ellipse cx="14.592" cy="9.743" fill="#8900ff" rx="4.407" ry="29.108" transform="rotate(39.51 14.592 9.743)"/></g><g filter="url(#k)"><ellipse cx="61.728" cy="-5.321" fill="#8900ff" rx="4.407" ry="29.108" transform="rotate(37.892 61.728 -5.32)"/></g><g filter="url(#l)"><ellipse cx="55.618" cy="7.104" fill="#00c2ff" rx="5.971" ry="9.665" transform="rotate(37.892 55.618 7.104)"/></g><g filter="url(#m)"><ellipse cx="12.326" cy="39.103" fill="#8900ff" rx="4.407" ry="29.108" transform="rotate(37.892 12.326 39.103)"/></g><g filter="url(#n)"><ellipse cx="12.326" cy="39.103" fill="#8900ff" rx="4.407" ry="29.108" transform="rotate(37.892 12.326 39.103)"/></g><g filter="url(#o)"><ellipse cx="49.857" cy="30.678" fill="#8900ff" rx="4.407" ry="29.108" transform="rotate(37.892 49.857 30.678)"/></g><g filter="url(#p)"><ellipse cx="52.623" cy="33.171" fill="#00c2ff" rx="5.971" ry="15.297" transform="rotate(37.892 52.623 33.17)"/></g></g><path d="M6.919 0c-9.198 13.166-9.252 33.575 0 46.789h6.215c-9.25-13.214-9.196-33.623 0-46.789zm62.424 0h-6.215c9.198 13.166 9.252 33.575 0 46.789h6.215c9.25-13.214 9.196-33.623 0-46.789" class="parenthesis"/><defs><filter id="b" width="60.045" height="41.654" x="-5.564" y="16.92" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17286" stdDeviation="7.659"/></filter><filter id="c" width="90.34" height="51.437" x="-40.407" y="-6.762" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17286" stdDeviation="7.659"/></filter><filter id="d" width="79.355" height="29.4" x="-35.435" y="2.801" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17286" stdDeviation="4.596"/></filter><filter id="e" width="79.579" height="29.4" x="-30.84" y="20.8" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17286" stdDeviation="4.596"/></filter><filter id="f" width="79.579" height="29.4" x="-29.307" y="21.949" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17286" stdDeviation="4.596"/></filter><filter id="g" width="74.749" height="58.852" x="29.961" y="-17.13" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17286" stdDeviation="7.659"/></filter><filter id="h" width="61.377" height="25.362" x="37.754" y="3.055" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17286" stdDeviation="4.596"/></filter><filter id="i" width="61.377" height="25.362" x="37.754" y="3.055" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17286" stdDeviation="4.596"/></filter><filter id="j" width="56.045" height="63.649" x="-13.43" y="-22.082" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17286" stdDeviation="4.596"/></filter><filter id="k" width="54.814" height="64.646" x="34.321" y="-37.644" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17286" stdDeviation="4.596"/></filter><filter id="l" width="33.541" height="35.313" x="38.847" y="-10.552" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17286" stdDeviation="4.596"/></filter><filter id="m" width="54.814" height="64.646" x="-15.081" y="6.78" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17286" stdDeviation="4.596"/></filter><filter id="n" width="54.814" height="64.646" x="-15.081" y="6.78" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17286" stdDeviation="4.596"/></filter><filter id="o" width="54.814" height="64.646" x="22.45" y="-1.645" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17286" stdDeviation="4.596"/></filter><filter id="p" width="39.409" height="43.623" x="32.919" y="11.36" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17286" stdDeviation="4.596"/></filter></defs></svg>
 </file>
 
-<file path="src/components/spreadsheet-grid/hooks/useFilterManagementController.ts">
-import { useCallback, useEffect, useRef, useState, type RefObject } from 'react';
-
-// 追加(FM-1 / フィルター管理パネル): フィルター管理パネル(FilterManagementPanel)の
-//                 open / close / layout / outside click / Escape を管理するコントローラです。
-// 設計メモ:
-//   - useSortManagementController と同型です(「同型だが別物」を許容する本コードベースの
-//     作法に倣い、共通化はせずコピー流用します。将来の共通化余地はこの注記で残します)。
-//     相違はフィルター popover と「共存」するための次の 2 点だけです:
-//       1) alliedRef: パネルと共存させる要素(フィルター popover)の ref です。その内側での
-//          pointerdown では outside-close しません(✎ で popover を開いて編集 → 別の行の ✎ …
-//          と、パネルを開いたまま連続編集できるようにします)。
-//       2) suppressEscape / onSuppressedEscape: suppressEscape=true(フィルター popover
-//          open 中)の間は本パネルの Escape close を抑止し、代わりに onSuppressedEscape
-//          (通常は popover の close)へ委譲します。popover の Escape close は検索/入力
-//          要素の onKeyDown が担当のため、フォーカスがパネル側にあるときは Escape が
-//          どこにも届かず「押しても何も起きない」穴ができます。window capture で受ける
-//          本 controller から委譲することで、フォーカス位置に依らず
-//          「1 押し目 = popover / 2 押し目 = パネル」の 1 押し 1 階層に揃えます
-//          (フォーカスが popover 内なら input 側 onKeyDown も同じ close を呼びますが冪等)。
-//   - anchor は gridRoot 矩形の右上に固定します。パネルは列メニューの項目
-//     「フィルターを管理…」から開くため、開いた時点でメニュー(と anchor ボタン)は閉じて
-//     います。gridRoot 基準にすることで anchor ボタンの unmount(横スクロール仮想化)に
-//     依存せず、グリッド内部スクロールではパネルが動かず、window scroll/resize でのみ
-//     再配置されます。
-//   - パネルには <select> 等のフォーカス可能要素があるため、Escape は入力にフォーカスが
-//     あっても効くよう window で拾います(並び替え管理パネルと同じ作法 / capture 登録)。
-
-// 追加(FM-1): body 直下 portal パネルの配置情報です(position: fixed 座標)。
-export type FilterManagementLayout = {
-  top: number;
-  left: number;
-  width: number;
-};
-
-type UseFilterManagementControllerArgs = {
-  // 注記: フィルター管理は enableColumnFilter に紐づきます(開く導線は columnFilterEnabled の
-  //       ときだけ出る列メニュー項目です)。保険として open 側でも本フラグでガードします。
-  enableColumnFilter: boolean;
-  gridRootRef: RefObject<HTMLDivElement | null>;
-  // 追加(FM-1): 共存要素(フィルター popover)の ref です(outside-close の除外対象)。
-  alliedRef?: RefObject<HTMLDivElement | null>;
-  // 追加(FM-1): true の間は Escape close を抑止し、onSuppressedEscape へ委譲します。
-  suppressEscape?: boolean;
-  onSuppressedEscape?: () => void;
-};
-
-// 注記: 行は「漏斗 + 列名/要約(2 段)+ ✎ + ×」で要約文字列が主役のため、
-//       並び替え管理パネル(320)より少し広めにします。
-const PANEL_WIDTH = 360;
-const VIEWPORT_MARGIN = 8;
-// 追加(FM-1): gridRoot の右上から内側へのオフセットです(パネルがヘッダーに被る位置)。
-const GRID_INSET = 12;
-
-export const useFilterManagementController = ({
-  enableColumnFilter,
-  gridRootRef,
-  alliedRef,
-  suppressEscape = false,
-  onSuppressedEscape,
-}: UseFilterManagementControllerArgs) => {
-  const [isFilterManagerOpen, setIsFilterManagerOpen] = useState(false);
-  const [filterManagerLayout, setFilterManagerLayout] =
-    useState<FilterManagementLayout | null>(null);
-
-  // 追加(FM-1): パネル本体の ref です(outside click 判定に使います)。
-  const filterManagerRef = useRef<HTMLDivElement | null>(null);
-
-  // 追加(FM-1): gridRoot 矩形の右上を基準に fixed 座標を計算します。
-  const updateFilterManagerLayout = useCallback(() => {
-    const root = gridRootRef.current;
-    if (!root) {
-      setFilterManagerLayout(null);
-      return;
-    }
-
-    const rect = root.getBoundingClientRect();
-    let left = rect.right - PANEL_WIDTH - GRID_INSET;
-    let top = rect.top + GRID_INSET;
-
-    left = Math.max(VIEWPORT_MARGIN, left);
-    left = Math.min(left, window.innerWidth - PANEL_WIDTH - VIEWPORT_MARGIN);
-    top = Math.max(VIEWPORT_MARGIN, top);
-
-    setFilterManagerLayout((current) => {
-      if (
-        current &&
-        current.top === top &&
-        current.left === left &&
-        current.width === PANEL_WIDTH
-      ) {
-        return current;
-      }
-      return { top, left, width: PANEL_WIDTH };
-    });
-  }, [gridRootRef]);
-
-  const openFilterManager = useCallback(() => {
-    if (!enableColumnFilter) {
-      return;
-    }
-    // 追加: grid root に残っているフォーカスを外します(列メニューと同じ作法)。
-    if (document.activeElement instanceof HTMLElement) {
-      document.activeElement.blur();
-    }
-    gridRootRef.current?.blur();
-    setIsFilterManagerOpen(true);
-  }, [enableColumnFilter, gridRootRef]);
-
-  const closeFilterManager = useCallback(() => {
-    setIsFilterManagerOpen(false);
-    setFilterManagerLayout(null);
-    // 追加: close 後は grid root にフォーカスを戻し、keyboard 操作へ復帰させます。
-    requestAnimationFrame(() => {
-      gridRootRef.current?.focus();
-    });
-  }, [gridRootRef]);
-
-  // 追加(FM-1): open 時の初期配置 + resize / window scroll への追従です。
-  //               gridRoot 基準のため、グリッド内部スクロールでは動かしません。
-  useEffect(() => {
-    if (!isFilterManagerOpen) {
-      return;
-    }
-
-    updateFilterManagerLayout();
-
-    const handle = () => {
-      updateFilterManagerLayout();
-    };
-
-    window.addEventListener('resize', handle);
-    window.addEventListener('scroll', handle, true);
-
-    return () => {
-      window.removeEventListener('resize', handle);
-      window.removeEventListener('scroll', handle, true);
-    };
-  }, [isFilterManagerOpen, updateFilterManagerLayout]);
-
-  // 追加(FM-1): 表示中は outside click で閉じます(列メニューと同じ作法)。
-  //   相違: alliedRef(フィルター popover)内の pointerdown は「内側」とみなして閉じません
-  //   (✎ 編集で開いた popover の操作中にパネルが消えないようにします)。
-  useEffect(() => {
-    if (!isFilterManagerOpen) {
-      return;
-    }
-
-    const handleWindowPointerDown = (event: globalThis.PointerEvent) => {
-      const targetNode = event.target as Node | null;
-      if (!targetNode) {
-        return;
-      }
-      if (filterManagerRef.current?.contains(targetNode)) {
-        return;
-      }
-      if (alliedRef?.current?.contains(targetNode)) {
-        return;
-      }
-      closeFilterManager();
-    };
-
-    window.addEventListener('pointerdown', handleWindowPointerDown);
-    return () => {
-      window.removeEventListener('pointerdown', handleWindowPointerDown);
-    };
-  }, [alliedRef, closeFilterManager, isFilterManagerOpen]);
-
-  // 追加(FM-1): 表示中は Escape で閉じます(フォーカス位置に依らず効くよう window で拾います)。
-  //   POP-KEY: capture 登録(第 3 引数 true)。パネル root の bubble 相遮断や内部要素の
-  //   stopPropagation に依らず、window で最初に Escape を受けられます。
-  //   相違: suppressEscape=true(フィルター popover open 中)の間は本パネルを閉じず、
-  //   onSuppressedEscape(popover の close)へ委譲します。preventDefault はしません
-  //   (フォーカスが popover 内のときの input 側 onKeyDown の処理を妨げないため。
-  //    同じ close が二重に呼ばれても冪等です)。
-  useEffect(() => {
-    if (!isFilterManagerOpen) {
-      return;
-    }
-
-    const handleWindowKeyDown = (event: globalThis.KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        if (suppressEscape) {
-          onSuppressedEscape?.();
-          return;
-        }
-        event.preventDefault();
-        closeFilterManager();
-      }
-    };
-
-    window.addEventListener('keydown', handleWindowKeyDown, true);
-    return () => {
-      window.removeEventListener('keydown', handleWindowKeyDown, true);
-    };
-  }, [
-    closeFilterManager,
-    isFilterManagerOpen,
-    onSuppressedEscape,
-    suppressEscape,
-  ]);
-
-  return {
-    isFilterManagerOpen,
-    filterManagerLayout,
-    filterManagerRef,
-    openFilterManager,
-    closeFilterManager,
-  };
-};
-
-export default useFilterManagementController;
-</file>
-
 <file path="src/components/spreadsheet-grid/logic/domGuards.ts">
 // 追加: 文字キー入力で編集開始する判定です。
 export const isPrintableKey = (event: {
@@ -706,164 +494,6 @@ export const shouldIgnoreGridKeydown = (eventTarget: EventTarget | null) => {
   );
 
   return interactiveElement !== null;
-};
-</file>
-
-<file path="src/components/spreadsheet-grid/logic/filterSummary.test.ts">
-// 追加(FM-1)の単体テスト: describeColumnFilterValue(列フィルター値 → 人間可読要約)の
-//   仕様固定です。
-//   - text / date: 「"x" を含む」(trim 後)。select: 「"x" に一致」。number: raw 式そのまま。
-//   - set: include 1〜2 件は値列挙(空文字は「(空白)」)/ 3 件以上・0 件は「N 件を選択」/
-//     exclude は「N 件を除外」/ mode 省略は include 扱い(後方互換)。
-//   - custom: 非空 string は「"x"」(trim)、それ以外は「カスタム条件」。
-import { describe, it, expect } from 'vitest';
-import { describeColumnFilterValue } from './filterSummary';
-
-describe('describeColumnFilterValue', () => {
-  it('text / date は trim して「"x" を含む」', () => {
-    expect(describeColumnFilterValue({ kind: 'text', value: ' SUS ' })).toBe(
-      '"SUS" を含む',
-    );
-    expect(
-      describeColumnFilterValue({ kind: 'date', value: '2026-07' }),
-    ).toBe('"2026-07" を含む');
-  });
-
-  it('select は「"x" に一致」(trim しない = 判定側と同じ生値)', () => {
-    expect(
-      describeColumnFilterValue({ kind: 'select', value: '締結部品' }),
-    ).toBe('"締結部品" に一致');
-  });
-
-  it('number は raw 式そのまま(解釈可否に依らない)', () => {
-    expect(
-      describeColumnFilterValue({
-        kind: 'number',
-        raw: '>= 1000',
-        parsed: { mode: 'comparison', operator: '>=', value: 1000 },
-      }),
-    ).toBe('>= 1000');
-    expect(
-      describeColumnFilterValue({ kind: 'number', raw: 'abc', parsed: null }),
-    ).toBe('abc');
-  });
-
-  it('set(include)1〜2 件は値を列挙し、空文字は「(空白)」と表示する', () => {
-    expect(
-      describeColumnFilterValue({
-        kind: 'set',
-        mode: 'include',
-        values: ['締結部品'],
-      }),
-    ).toBe('"締結部品"');
-    expect(
-      describeColumnFilterValue({
-        kind: 'set',
-        mode: 'include',
-        values: ['締結部品', ''],
-      }),
-    ).toBe('"締結部品", (空白)');
-  });
-
-  it('set の mode 省略は include 扱い(後方互換)', () => {
-    expect(
-      describeColumnFilterValue({ kind: 'set', values: ['A', 'B'] }),
-    ).toBe('"A", "B"');
-  });
-
-  it('set(include)3 件以上と 0 件は「N 件を選択」', () => {
-    expect(
-      describeColumnFilterValue({
-        kind: 'set',
-        mode: 'include',
-        values: ['A', 'B', 'C'],
-      }),
-    ).toBe('3 件を選択');
-    expect(
-      describeColumnFilterValue({ kind: 'set', mode: 'include', values: [] }),
-    ).toBe('0 件を選択');
-  });
-
-  it('set(exclude)は件数に依らず「N 件を除外」(1 件でも列挙しない)', () => {
-    expect(
-      describeColumnFilterValue({ kind: 'set', mode: 'exclude', values: ['A'] }),
-    ).toBe('1 件を除外');
-    expect(
-      describeColumnFilterValue({
-        kind: 'set',
-        mode: 'exclude',
-        values: ['A', 'B', 'C'],
-      }),
-    ).toBe('3 件を除外');
-  });
-
-  it('custom は非空 string なら「"x"」(trim)、それ以外は「カスタム条件」', () => {
-    expect(
-      describeColumnFilterValue({ kind: 'custom', value: ' my-cond ' }),
-    ).toBe('"my-cond"');
-    expect(describeColumnFilterValue({ kind: 'custom', value: '' })).toBe(
-      'カスタム条件',
-    );
-    expect(
-      describeColumnFilterValue({ kind: 'custom', value: { min: 1 } }),
-    ).toBe('カスタム条件');
-  });
-});
-</file>
-
-<file path="src/components/spreadsheet-grid/logic/filterSummary.ts">
-import type { ColumnFilterValue } from '../model/gridTypes';
-
-// 追加(FM-1 / フィルター管理パネル): 列フィルター値(判別共用体)を人間可読な要約文字列へ
-//   変換する純関数です。FilterManagementPanel の一覧行で使い、FM-2(フィルターチップバー)
-//   でも共用予定です。
-// 仕様(ユーザー合意済み):
-//   - text / date  : 「"x" を含む」(部分一致。判定側と同じく trim 後の値を表示)
-//   - select       : 「"x" に一致」(完全一致)
-//   - number       : raw 式そのまま(">= 1000" / "100..500" 等。式として解釈不可のときも
-//                    raw = contains のフォールバック needle なのでそのまま出します)
-//   - set(include): 1〜2 件は値を列挙(空文字セル値は Excel 流に「(空白)」)。3 件以上は
-//                    「N 件を選択」。0 件 = 全行非表示も「0 件を選択」(reducer 側で通常は
-//                    clear 済みの防御表示)。母数(全候補数)はフィルター値に保存されない
-//                    (収集コストが高い)ため出しません。
-//   - set(exclude): 「N 件を除外」(values は非選択値 = 除外対象そのもの)
-//   - custom       : value が非空 string なら「"x"」(trim)、それ以外は「カスタム条件」
-//     (custom の中身は利用側 filterFn の自由形のため、汎用の安全側表示に留めます)
-
-// set の値表示です。空文字セル値は「(空白)」と表示します(セル値の String 化で空になった
-//   値も候補として選択できる仕様のため、無表示だと「", "」のような欠けた列挙になります)。
-const formatSetValue = (value: string): string =>
-  value === '' ? '(空白)' : `"${value}"`;
-
-// 列フィルター値の要約文字列を返します。有効判定(isActiveColumnFilterValue)は呼び出し側の
-//   責務です(無効値でも安全に文字列を返しますが、一覧に載せる/載せないの判断は行いません)。
-export const describeColumnFilterValue = (value: ColumnFilterValue): string => {
-  switch (value.kind) {
-    case 'text':
-    case 'date':
-      return `"${value.value.trim()}" を含む`;
-    case 'select':
-      return `"${value.value}" に一致`;
-    case 'number':
-      return value.raw;
-    case 'set': {
-      // mode 省略は include 扱いです(反転set 導入前の値との後方互換)。
-      const mode = value.mode ?? 'include';
-      if (mode === 'exclude') {
-        return `${value.values.length} 件を除外`;
-      }
-      if (value.values.length > 0 && value.values.length <= 2) {
-        return value.values.map(formatSetValue).join(', ');
-      }
-      return `${value.values.length} 件を選択`;
-    }
-    case 'custom': {
-      if (typeof value.value === 'string' && value.value.trim().length > 0) {
-        return `"${value.value.trim()}"`;
-      }
-      return 'カスタム条件';
-    }
-  }
 };
 </file>
 
@@ -1642,29 +1272,23 @@ export const setCellValue = <T,>(
 };
 </file>
 
-<file path="src/components/spreadsheet-grid/view/FilterManagementPanel.test.tsx">
-// 追加(FM-1)の view テスト: FilterManagementPanel の表示と操作コールバックの配線を固定します。
-//   - 適用中フィルターの行(列名 / 要約)の描画と、非表示列の ✎ disabled。
-//   - ✎ / × / すべてクリア / フィルターを追加 / グローバル行 × の各コールバック発火。
-//   - フッターの disabled 条件(entries 0 件 / addable 0 件)と空表示。
-//   - isOpen=false / layout=null で描画しないこと。
+<file path="src/components/spreadsheet-grid/view/GridFilterChipBar.test.tsx">
+// 追加(FM-2)の view テスト: GridFilterChipBar の表示と操作コールバックの配線を固定します。
+//   - チップ(列名 + 要約)の描画と、非表示列ラベルの disabled + 注記。
+//   - ラベルクリック → onEditFilter / × → onClearFilter / すべてクリア → onClearAllFilters。
+//   - entries 0 件で null を返すこと(空バーは出さない = ユーザー合意)。
 //   CSS の見た目(トークン適用)は jsdom で検証できないため、表示テキストと
-//   コールバック発火のみを固定します(THEME-2/3 と同じ方針)。
+//   コールバック発火のみを固定します(FilterManagementPanel.test と同じ方針)。
 // @vitest-environment jsdom
 import { describe, it, expect, afterEach, vi } from 'vitest';
 import { render, screen, fireEvent, cleanup } from '@testing-library/react';
-import { createRef } from 'react';
 
-import FilterManagementPanel, {
-  type FilterManagementEntry,
-} from './FilterManagementPanel';
-import type { FilterManagementLayout } from '../hooks/useFilterManagementController';
+import GridFilterChipBar from './GridFilterChipBar';
+import type { FilterManagementEntry } from './FilterManagementPanel';
 
 afterEach(() => {
   cleanup();
 });
-
-const layout: FilterManagementLayout = { top: 20, left: 40, width: 360 };
 
 const makeEntries = (): FilterManagementEntry[] => [
   { columnKey: 'price', title: '単価', summaryText: '>= 1000', isHidden: false },
@@ -1677,48 +1301,37 @@ const makeEntries = (): FilterManagementEntry[] => [
 ];
 
 const makeProps = () => ({
-  isOpen: true,
   entries: makeEntries(),
-  addableColumns: [{ key: 'name', title: '品名' }],
-  showGlobalFilterRow: false,
-  globalFilterText: '',
   canFilter: true,
-  layout,
-  panelRef: createRef<HTMLDivElement>(),
   onEditFilter: vi.fn(),
-  onAddFilter: vi.fn(),
   onClearFilter: vi.fn(),
   onClearAllFilters: vi.fn(),
-  onClearGlobalFilter: vi.fn(),
-  onRequestClose: vi.fn(),
 });
 
-describe('FilterManagementPanel', () => {
-  it('適用中フィルターの行(列名 / 要約)を描画する', () => {
-    render(<FilterManagementPanel {...makeProps()} />);
-    expect(screen.getByText('フィルター管理')).toBeTruthy();
+describe('GridFilterChipBar', () => {
+  it('チップ(列名 + 要約)と「すべてクリア」を描画する', () => {
+    render(<GridFilterChipBar {...makeProps()} />);
     expect(screen.getByText('単価')).toBeTruthy();
     expect(screen.getByText('>= 1000')).toBeTruthy();
-    expect(screen.getByText('納期')).toBeTruthy();
+    expect(screen.getByText('納期(非表示列)')).toBeTruthy();
     expect(screen.getByText('"2026-07" を含む')).toBeTruthy();
-    // 非表示列には注記が付きます。
-    expect(screen.getByText('(非表示列)')).toBeTruthy();
+    expect(screen.getByText('すべてクリア')).toBeTruthy();
   });
 
-  it('✎ で onEditFilter(columnKey) を呼ぶ / 非表示列の ✎ は disabled', () => {
+  it('ラベルクリックで onEditFilter(columnKey) を呼ぶ / 非表示列のラベルは disabled', () => {
     const props = makeProps();
-    render(<FilterManagementPanel {...props} />);
+    render(<GridFilterChipBar {...props} />);
     fireEvent.click(screen.getByLabelText('単価 のフィルターを編集'));
     expect(props.onEditFilter).toHaveBeenCalledWith('price');
-    const hiddenEdit = screen.getByLabelText(
+    const hiddenLabel = screen.getByLabelText(
       '納期 のフィルターを編集',
     ) as HTMLButtonElement;
-    expect(hiddenEdit.disabled).toBe(true);
+    expect(hiddenLabel.disabled).toBe(true);
   });
 
   it('× で onClearFilter(columnKey) を呼ぶ(非表示列でも可)', () => {
     const props = makeProps();
-    render(<FilterManagementPanel {...props} />);
+    render(<GridFilterChipBar {...props} />);
     const hiddenClear = screen.getByLabelText(
       '納期 のフィルターをクリア',
     ) as HTMLButtonElement;
@@ -1727,369 +1340,135 @@ describe('FilterManagementPanel', () => {
     expect(props.onClearFilter).toHaveBeenCalledWith('due');
   });
 
-  it('「すべてクリア」で onClearAllFilters を呼ぶ / 0 件時は disabled + 空表示', () => {
+  it('「すべてクリア」で onClearAllFilters を呼ぶ', () => {
     const props = makeProps();
-    const { unmount } = render(<FilterManagementPanel {...props} />);
+    render(<GridFilterChipBar {...props} />);
     fireEvent.click(screen.getByText('すべてクリア'));
     expect(props.onClearAllFilters).toHaveBeenCalledTimes(1);
-    unmount();
+  });
 
-    const emptyProps = { ...makeProps(), entries: [] };
-    render(<FilterManagementPanel {...emptyProps} />);
-    expect(screen.getByText('適用中の列フィルターはありません')).toBeTruthy();
+  it('canFilter=false では全ボタンが disabled になる', () => {
+    const props = { ...makeProps(), canFilter: false };
+    render(<GridFilterChipBar {...props} />);
+    const label = screen.getByLabelText(
+      '単価 のフィルターを編集',
+    ) as HTMLButtonElement;
+    const clear = screen.getByLabelText(
+      '単価 のフィルターをクリア',
+    ) as HTMLButtonElement;
     const clearAll = screen.getByText('すべてクリア') as HTMLButtonElement;
+    expect(label.disabled).toBe(true);
+    expect(clear.disabled).toBe(true);
     expect(clearAll.disabled).toBe(true);
   });
 
-  it('「フィルターを追加」の <select> で onAddFilter(columnKey) を呼ぶ / 候補 0 件時は disabled', () => {
-    const props = makeProps();
-    const { unmount } = render(<FilterManagementPanel {...props} />);
-    fireEvent.change(screen.getByLabelText('フィルターを追加する列を選択'), {
-      target: { value: 'name' },
-    });
-    expect(props.onAddFilter).toHaveBeenCalledWith('name');
-    unmount();
-
-    const noAdd = { ...makeProps(), addableColumns: [] };
-    render(<FilterManagementPanel {...noAdd} />);
-    const select = screen.getByLabelText(
-      'フィルターを追加する列を選択',
-    ) as HTMLSelectElement;
-    expect(select.disabled).toBe(true);
-    expect(screen.getByText('+ 追加できる列がありません')).toBeTruthy();
-  });
-
-  it('グローバルフィルター行は showGlobalFilterRow=true のときだけ描画し、× で onClearGlobalFilter を呼ぶ', () => {
-    const props = {
-      ...makeProps(),
-      showGlobalFilterRow: true,
-      globalFilterText: 'ねじ',
-    };
-    const { unmount } = render(<FilterManagementPanel {...props} />);
-    expect(screen.getByText('グローバルフィルター')).toBeTruthy();
-    expect(screen.getByText('"ねじ" を含む行')).toBeTruthy();
-    fireEvent.click(screen.getByLabelText('グローバルフィルターをクリア'));
-    expect(props.onClearGlobalFilter).toHaveBeenCalledTimes(1);
-    unmount();
-
-    render(<FilterManagementPanel {...makeProps()} />);
-    expect(screen.queryByText('グローバルフィルター')).toBeNull();
-  });
-
-  it('タイトルの × で onRequestClose を呼ぶ', () => {
-    const props = makeProps();
-    render(<FilterManagementPanel {...props} />);
-    fireEvent.click(screen.getByLabelText('閉じる'));
-    expect(props.onRequestClose).toHaveBeenCalledTimes(1);
-  });
-
-  it('isOpen=false / layout=null では描画しない', () => {
-    const closed = { ...makeProps(), isOpen: false };
-    const { unmount } = render(<FilterManagementPanel {...closed} />);
-    expect(screen.queryByText('フィルター管理')).toBeNull();
-    unmount();
-
-    const noLayout = { ...makeProps(), layout: null };
-    render(<FilterManagementPanel {...noLayout} />);
-    expect(screen.queryByText('フィルター管理')).toBeNull();
+  it('entries 0 件では何も描画しない(空バーを出さない)', () => {
+    const props = { ...makeProps(), entries: [] };
+    const { container } = render(<GridFilterChipBar {...props} />);
+    expect(container.firstChild).toBeNull();
   });
 });
 </file>
 
-<file path="src/components/spreadsheet-grid/view/FilterManagementPanel.tsx">
-// 追加(FM-1 / フィルター管理パネル): 適用中のフィルターを一覧し、編集(ジャンプ)/ 個別
-//   クリア / 追加 / すべてクリアを行う独立 popover です(SortManagementPanel の兄弟)。
-//   - タイトル + × クローズ / (任意)グローバルフィルター行 / 適用中フィルター一覧 /
-//     フッター(フィルターを追加 <select> / すべてクリア)で構成します。
-//   - 本コンポーネントは非ジェネリックです(ColumnChooserPanel / SortManagementPanel と
-//     同様、プリミティブな entries / addableColumns だけを受け取ります)。
-//   - フィルターの評価・状態は持ちません。操作は columnKey の「意図」を emit し、
-//     ジャンプ + popover open(✎ / 追加)や dispatch(× / すべてクリア)は呼び出し側
-//     (SpreadsheetGrid)が担います。
-//   - パネルは操作後も開いたまま(× / outside click / Escape でのみ閉じます。Sort と同じ。
-//     フィルター popover との共存 = alliedRef / suppressEscape は controller 側の責務です)。
-//   - 非表示列のフィルターも一覧に出します(「見えない列に絞り込みが残っている」という
-//     発見性の穴を塞ぐのが本機能の主目的のためです)。✎ はジャンプ先が無いため disabled に
-//     し、title で理由を出します(× でのクリアは可能)。
-import { createPortal } from 'react-dom';
-import type { CSSProperties, KeyboardEvent, PointerEvent, RefObject } from 'react';
-import type { FilterManagementLayout } from '../hooks/useFilterManagementController';
+<file path="src/components/spreadsheet-grid/view/GridFilterChipBar.tsx">
+// 追加(FM-2 / フィルターチップバー): 適用中の列フィルターをトップバー直下にチップで常時
+//   一覧表示する opt-in バーです(showFilterChipBar prop・既定 false)。
+//   - チップ本体クリック = 対象列へジャンプして既存のフィルター popover を開きます
+//     (フィルター管理パネルの ✎ と同じ経路。配線は SpreadsheetGrid 側)。
+//     × = その列のフィルターをクリア。末尾の「すべてクリア」は列フィルターのみ対象です
+//     (グローバルフィルターは対象外 = フィルター管理パネルと同じ切り分け)。
+//   - entries は FilterManagementPanel と完全共用です(要約文字列・非表示列の扱いが自動で
+//     一致します)。グローバルフィルターのチップは出しません(入力欄とパネルが担当)。
+//   - 有効フィルター 0 件のときは null を返します(空バーで縦領域を取らない = ユーザー合意)。
+//   - ネスト <button> は不正 HTML のため、チップは <div> コンテナ + 「ラベル button(ジャンプ)」
+//     「× button(クリア)」の 2 ボタン構成です。非表示列はラベル側を disabled にします
+//     (ジャンプ先が無いため。× でのクリアは可能)。
+//   - .ssg-root 内で描画されるため、ポータル系(popover/panel)と違いデザイントークン
+//     (--ssg-*)が届きます(padding は --ssg-bar-pad-* で density 連動)。
+import type { FilterManagementEntry } from './FilterManagementPanel';
 
-// 追加(FM-1): 一覧 1 行ぶんの情報です(要約文字列は logic/filterSummary.ts で生成済み)。
-export type FilterManagementEntry = {
-  columnKey: string;
-  title: string;
-  summaryText: string;
-  // 非表示列(visible=false)のフィルターです。✎(ジャンプ編集)を無効化します。
-  isHidden: boolean;
-};
-
-// 追加(FM-1): 「フィルターを追加」<select> の候補です(可視・filterType あり・未適用)。
-export type FilterManagementAddableColumn = {
-  key: string;
-  title: string;
-};
-
-type FilterManagementPanelProps = {
-  isOpen: boolean;
-  // 適用中フィルターの一覧です(可視列の視覚順 → 非表示列の順。呼び出し側で構築)。
+type GridFilterChipBarProps = {
+  // 適用中フィルターの一覧です(FilterManagementPanel と同じ構築物を受け取ります)。
   entries: FilterManagementEntry[];
-  addableColumns: FilterManagementAddableColumn[];
-  // グローバルフィルター行の表示可否です(enableGlobalFilter かつ非空のとき true)。
-  showGlobalFilterRow: boolean;
-  globalFilterText: string;
-  // enableColumnFilter 相当。false のときは操作を無効化します(保険。通常は開きません)。
+  // enableColumnFilter 相当。false のときは操作を無効化します(保険)。
   canFilter: boolean;
-  layout: FilterManagementLayout | null;
-  panelRef: RefObject<HTMLDivElement | null>;
-  // ✎: 対象列へジャンプして既存のフィルター popover を開きます(配線は呼び出し側)。
   onEditFilter: (columnKey: string) => void;
-  // フィルターを追加: 選択列へジャンプして popover を開きます(✎ と同じ経路)。
-  onAddFilter: (columnKey: string) => void;
   onClearFilter: (columnKey: string) => void;
-  // すべてクリア: 列フィルターのみ対象です(グローバルは行の × のみ = ユーザー合意)。
   onClearAllFilters: () => void;
-  onClearGlobalFilter: () => void;
-  onRequestClose: () => void;
 };
 
-// 追加(FM-1): 漏斗グリフです(GridHeaderRow のフィルター適用中マークと同一パス)。
-function FunnelGlyph() {
-  return (
-    <svg
-      width="11"
-      height="11"
-      viewBox="0 0 16 16"
-      fill="currentColor"
-      aria-hidden="true"
-      focusable="false"
-    >
-      <path d="M2 4 L14 4 L9.2 9.2 L9.2 13 L6.8 13 L6.8 9.2 Z" />
-    </svg>
-  );
-}
-
-// 追加(FM-1): 虫めがねグリフです(トップバーのグローバルフィルター入力アイコンと同形)。
-function SearchGlyph() {
-  return (
-    <svg
-      width="11"
-      height="11"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2.4"
-      aria-hidden="true"
-      focusable="false"
-    >
-      <circle cx="11" cy="11" r="7" />
-      <path d="m20 20-3.5-3.5" />
-    </svg>
-  );
-}
-
-export function FilterManagementPanel({
-  isOpen,
+export function GridFilterChipBar({
   entries,
-  addableColumns,
-  showGlobalFilterRow,
-  globalFilterText,
   canFilter,
-  layout,
-  panelRef,
   onEditFilter,
-  onAddFilter,
   onClearFilter,
   onClearAllFilters,
-  onClearGlobalFilter,
-  onRequestClose,
-}: FilterManagementPanelProps) {
-  if (!isOpen || !layout) {
+}: GridFilterChipBarProps) {
+  // 有効フィルター 0 件は非表示です(合意 b: 空バーは出さない)。
+  if (entries.length === 0) {
     return null;
   }
 
-  const wrapperStyle: CSSProperties = {
-    top: layout.top,
-    left: layout.left,
-    width: layout.width,
-  };
-
-  const handlePointerDown = (event: PointerEvent<HTMLDivElement>) => {
-    // パネル内 pointer 操作を grid 側へ伝播させません(セル選択開始 / outside click 競合回避)。
-    event.stopPropagation();
-  };
-
-  const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
-    // portal 内 keyboard を React ツリー上の parent へ流しません。
-    // Escape での close は controller の window keydown(capture / POP-KEY)が担当します。
-    event.stopPropagation();
-  };
-
-  const canClearAll = canFilter && entries.length > 0;
-  const canAdd = canFilter && addableColumns.length > 0;
-
-  return createPortal(
-    <div
-      ref={panelRef}
-      onPointerDown={handlePointerDown}
-      onKeyDown={handleKeyDown}
-      onContextMenu={(event) => {
-        event.preventDefault();
-      }}
-      className="ssg-popover ssg-filter-manage-panel"
-      style={wrapperStyle}
-    >
-      {/* ── ヘッダー: タイトル + × ── */}
-      <div className="ssg-popover-header">
-        <span className="ssg-popover-title">フィルター管理</span>
-        <button
-          type="button"
-          onClick={onRequestClose}
-          aria-label="閉じる"
-          className="ssg-popover-close"
+  return (
+    <div className="ssg-filter-chip-bar">
+      {entries.map((entry) => (
+        <div
+          key={entry.columnKey}
+          className={
+            entry.isHidden
+              ? 'ssg-filter-chip ssg-filter-chip--hidden'
+              : 'ssg-filter-chip'
+          }
         >
-          ×
-        </button>
-      </div>
-
-      {/* ── グローバルフィルター行(先頭・区切り付き) ── */}
-      {/* 追加(FM-1): 列フィルターと別枠で先頭に出します。「すべてクリア」の対象外で、
-          解除はこの行の × のみです(ユーザー合意の切り分け)。 */}
-      {showGlobalFilterRow && (
-        <div className="ssg-filter-manage-row ssg-filter-manage-row--global">
-          <span
-            className="ssg-filter-manage-glyph ssg-filter-manage-glyph--global"
-            aria-hidden="true"
-          >
-            <SearchGlyph />
-          </span>
-          <span className="ssg-filter-manage-main">
-            <span className="ssg-filter-manage-name">グローバルフィルター</span>
-            <span
-              className="ssg-filter-manage-summary"
-              title={globalFilterText}
-            >
-              "{globalFilterText}" を含む行
-            </span>
-          </span>
-          <span className="ssg-filter-manage-actions">
-            <button
-              type="button"
-              className="ssg-filter-manage-icon-btn ssg-filter-manage-icon-btn--danger"
-              disabled={!canFilter}
-              title="グローバルフィルターをクリア"
-              aria-label="グローバルフィルターをクリア"
-              onClick={onClearGlobalFilter}
-            >
-              ×
-            </button>
-          </span>
-        </div>
-      )}
-
-      {/* ── 適用中フィルター一覧(スクロール) ── */}
-      <div className="ssg-filter-manage-list">
-        {entries.length === 0 ? (
-          <div className="ssg-filter-manage-empty">
-            適用中の列フィルターはありません
-          </div>
-        ) : (
-          entries.map((entry) => (
-            <div key={entry.columnKey} className="ssg-filter-manage-row">
-              <span className="ssg-filter-manage-glyph" aria-hidden="true">
-                <FunnelGlyph />
-              </span>
-              <span className="ssg-filter-manage-main">
-                <span className="ssg-filter-manage-name">
-                  {entry.title}
-                  {entry.isHidden && (
-                    <span className="ssg-filter-manage-hidden-note">
-                      (非表示列)
-                    </span>
-                  )}
-                </span>
-                <span
-                  className="ssg-filter-manage-summary"
-                  title={entry.summaryText}
-                >
-                  {entry.summaryText}
-                </span>
-              </span>
-              <span className="ssg-filter-manage-actions">
-                <button
-                  type="button"
-                  className="ssg-filter-manage-icon-btn"
-                  disabled={!canFilter || entry.isHidden}
-                  title={
-                    entry.isHidden
-                      ? '非表示列のためジャンプ編集できません(× でクリアは可能)'
-                      : 'この列へジャンプして編集'
-                  }
-                  aria-label={`${entry.title} のフィルターを編集`}
-                  onClick={() => {
-                    onEditFilter(entry.columnKey);
-                  }}
-                >
-                  ✎
-                </button>
-                <button
-                  type="button"
-                  className="ssg-filter-manage-icon-btn ssg-filter-manage-icon-btn--danger"
-                  disabled={!canFilter}
-                  title="この列のフィルターをクリア"
-                  aria-label={`${entry.title} のフィルターをクリア`}
-                  onClick={() => {
-                    onClearFilter(entry.columnKey);
-                  }}
-                >
-                  ×
-                </button>
-              </span>
-            </div>
-          ))
-        )}
-      </div>
-
-      {/* ── フッター: フィルターを追加 + すべてクリア ── */}
-      {/* 追加(FM-1): 追加は <select> の 1 操作で列を選ぶ形です(選択で即ジャンプ + popover。
-          value は常に '' の controlled のため、選択後は自動でプレースホルダへ戻ります)。 */}
-      <div className="ssg-popover-footer">
-        <select
-          className="ssg-filter-manage-add"
-          value=""
-          disabled={!canAdd}
-          aria-label="フィルターを追加する列を選択"
-          onChange={(event) => {
-            const key = event.target.value;
-            if (key) {
-              onAddFilter(key);
+          <button
+            type="button"
+            className="ssg-filter-chip-label"
+            disabled={!canFilter || entry.isHidden}
+            title={
+              entry.isHidden
+                ? '非表示列のためジャンプ編集できません(× でクリアは可能)'
+                : 'この列へジャンプして編集'
             }
-          }}
-        >
-          <option value="">
-            {canAdd ? '+ フィルターを追加…' : '+ 追加できる列がありません'}
-          </option>
-          {addableColumns.map((column) => (
-            <option key={column.key} value={column.key}>
-              {column.title}
-            </option>
-          ))}
-        </select>
-        <button
-          type="button"
-          className="ssg-filter-manage-clear-all"
-          disabled={!canClearAll}
-          onClick={onClearAllFilters}
-        >
-          すべてクリア
-        </button>
-      </div>
-    </div>,
-    document.body,
+            aria-label={`${entry.title} のフィルターを編集`}
+            onClick={() => {
+              onEditFilter(entry.columnKey);
+            }}
+          >
+            <span className="ssg-filter-chip-name">
+              {entry.title}
+              {entry.isHidden ? '(非表示列)' : ''}
+            </span>
+            <span className="ssg-filter-chip-summary">
+              {entry.summaryText}
+            </span>
+          </button>
+          <button
+            type="button"
+            className="ssg-filter-chip-clear"
+            disabled={!canFilter}
+            title="この列のフィルターをクリア"
+            aria-label={`${entry.title} のフィルターをクリア`}
+            onClick={() => {
+              onClearFilter(entry.columnKey);
+            }}
+          >
+            ×
+          </button>
+        </div>
+      ))}
+      <button
+        type="button"
+        className="ssg-filter-chip-bar-clear-all"
+        disabled={!canFilter}
+        onClick={onClearAllFilters}
+      >
+        すべてクリア
+      </button>
+    </div>
   );
 }
 
-export default FilterManagementPanel;
+export default GridFilterChipBar;
 </file>
 
 <file path="src/main.tsx">
@@ -3550,6 +2929,220 @@ export const useColumnSelectOptionsCollector = <T,>({
 };
 
 export default useColumnSelectOptionsCollector;
+</file>
+
+<file path="src/components/spreadsheet-grid/hooks/useFilterManagementController.ts">
+import { useCallback, useEffect, useRef, useState, type RefObject } from 'react';
+
+// 追加(FM-1 / フィルター管理パネル): フィルター管理パネル(FilterManagementPanel)の
+//                 open / close / layout / outside click / Escape を管理するコントローラです。
+// 設計メモ:
+//   - useSortManagementController と同型です(「同型だが別物」を許容する本コードベースの
+//     作法に倣い、共通化はせずコピー流用します。将来の共通化余地はこの注記で残します)。
+//     相違はフィルター popover と「共存」するための次の 2 点だけです:
+//       1) alliedRef: パネルと共存させる要素(フィルター popover)の ref です。その内側での
+//          pointerdown では outside-close しません(✎ で popover を開いて編集 → 別の行の ✎ …
+//          と、パネルを開いたまま連続編集できるようにします)。
+//       2) suppressEscape / onSuppressedEscape: suppressEscape=true(フィルター popover
+//          open 中)の間は本パネルの Escape close を抑止し、代わりに onSuppressedEscape
+//          (通常は popover の close)へ委譲します。popover の Escape close は検索/入力
+//          要素の onKeyDown が担当のため、フォーカスがパネル側にあるときは Escape が
+//          どこにも届かず「押しても何も起きない」穴ができます。window capture で受ける
+//          本 controller から委譲することで、フォーカス位置に依らず
+//          「1 押し目 = popover / 2 押し目 = パネル」の 1 押し 1 階層に揃えます
+//          (フォーカスが popover 内なら input 側 onKeyDown も同じ close を呼びますが冪等)。
+//   - anchor は gridRoot 矩形の右上に固定します。パネルは列メニューの項目
+//     「フィルターを管理…」から開くため、開いた時点でメニュー(と anchor ボタン)は閉じて
+//     います。gridRoot 基準にすることで anchor ボタンの unmount(横スクロール仮想化)に
+//     依存せず、グリッド内部スクロールではパネルが動かず、window scroll/resize でのみ
+//     再配置されます。
+//   - パネルには <select> 等のフォーカス可能要素があるため、Escape は入力にフォーカスが
+//     あっても効くよう window で拾います(並び替え管理パネルと同じ作法 / capture 登録)。
+
+// 追加(FM-1): body 直下 portal パネルの配置情報です(position: fixed 座標)。
+export type FilterManagementLayout = {
+  top: number;
+  left: number;
+  width: number;
+};
+
+type UseFilterManagementControllerArgs = {
+  // 注記: フィルター管理は enableColumnFilter に紐づきます(開く導線は columnFilterEnabled の
+  //       ときだけ出る列メニュー項目です)。保険として open 側でも本フラグでガードします。
+  enableColumnFilter: boolean;
+  gridRootRef: RefObject<HTMLDivElement | null>;
+  // 追加(FM-1): 共存要素(フィルター popover)の ref です(outside-close の除外対象)。
+  alliedRef?: RefObject<HTMLDivElement | null>;
+  // 追加(FM-1): true の間は Escape close を抑止し、onSuppressedEscape へ委譲します。
+  suppressEscape?: boolean;
+  onSuppressedEscape?: () => void;
+};
+
+// 注記: 行は「漏斗 + 列名/要約(2 段)+ ✎ + ×」で要約文字列が主役のため、
+//       並び替え管理パネル(320)より少し広めにします。
+const PANEL_WIDTH = 360;
+const VIEWPORT_MARGIN = 8;
+// 追加(FM-1): gridRoot の右上から内側へのオフセットです(パネルがヘッダーに被る位置)。
+const GRID_INSET = 12;
+
+export const useFilterManagementController = ({
+  enableColumnFilter,
+  gridRootRef,
+  alliedRef,
+  suppressEscape = false,
+  onSuppressedEscape,
+}: UseFilterManagementControllerArgs) => {
+  const [isFilterManagerOpen, setIsFilterManagerOpen] = useState(false);
+  const [filterManagerLayout, setFilterManagerLayout] =
+    useState<FilterManagementLayout | null>(null);
+
+  // 追加(FM-1): パネル本体の ref です(outside click 判定に使います)。
+  const filterManagerRef = useRef<HTMLDivElement | null>(null);
+
+  // 追加(FM-1): gridRoot 矩形の右上を基準に fixed 座標を計算します。
+  const updateFilterManagerLayout = useCallback(() => {
+    const root = gridRootRef.current;
+    if (!root) {
+      setFilterManagerLayout(null);
+      return;
+    }
+
+    const rect = root.getBoundingClientRect();
+    let left = rect.right - PANEL_WIDTH - GRID_INSET;
+    let top = rect.top + GRID_INSET;
+
+    left = Math.max(VIEWPORT_MARGIN, left);
+    left = Math.min(left, window.innerWidth - PANEL_WIDTH - VIEWPORT_MARGIN);
+    top = Math.max(VIEWPORT_MARGIN, top);
+
+    setFilterManagerLayout((current) => {
+      if (
+        current &&
+        current.top === top &&
+        current.left === left &&
+        current.width === PANEL_WIDTH
+      ) {
+        return current;
+      }
+      return { top, left, width: PANEL_WIDTH };
+    });
+  }, [gridRootRef]);
+
+  const openFilterManager = useCallback(() => {
+    if (!enableColumnFilter) {
+      return;
+    }
+    // 追加: grid root に残っているフォーカスを外します(列メニューと同じ作法)。
+    if (document.activeElement instanceof HTMLElement) {
+      document.activeElement.blur();
+    }
+    gridRootRef.current?.blur();
+    setIsFilterManagerOpen(true);
+  }, [enableColumnFilter, gridRootRef]);
+
+  const closeFilterManager = useCallback(() => {
+    setIsFilterManagerOpen(false);
+    setFilterManagerLayout(null);
+    // 追加: close 後は grid root にフォーカスを戻し、keyboard 操作へ復帰させます。
+    requestAnimationFrame(() => {
+      gridRootRef.current?.focus();
+    });
+  }, [gridRootRef]);
+
+  // 追加(FM-1): open 時の初期配置 + resize / window scroll への追従です。
+  //               gridRoot 基準のため、グリッド内部スクロールでは動かしません。
+  useEffect(() => {
+    if (!isFilterManagerOpen) {
+      return;
+    }
+
+    updateFilterManagerLayout();
+
+    const handle = () => {
+      updateFilterManagerLayout();
+    };
+
+    window.addEventListener('resize', handle);
+    window.addEventListener('scroll', handle, true);
+
+    return () => {
+      window.removeEventListener('resize', handle);
+      window.removeEventListener('scroll', handle, true);
+    };
+  }, [isFilterManagerOpen, updateFilterManagerLayout]);
+
+  // 追加(FM-1): 表示中は outside click で閉じます(列メニューと同じ作法)。
+  //   相違: alliedRef(フィルター popover)内の pointerdown は「内側」とみなして閉じません
+  //   (✎ 編集で開いた popover の操作中にパネルが消えないようにします)。
+  useEffect(() => {
+    if (!isFilterManagerOpen) {
+      return;
+    }
+
+    const handleWindowPointerDown = (event: globalThis.PointerEvent) => {
+      const targetNode = event.target as Node | null;
+      if (!targetNode) {
+        return;
+      }
+      if (filterManagerRef.current?.contains(targetNode)) {
+        return;
+      }
+      if (alliedRef?.current?.contains(targetNode)) {
+        return;
+      }
+      closeFilterManager();
+    };
+
+    window.addEventListener('pointerdown', handleWindowPointerDown);
+    return () => {
+      window.removeEventListener('pointerdown', handleWindowPointerDown);
+    };
+  }, [alliedRef, closeFilterManager, isFilterManagerOpen]);
+
+  // 追加(FM-1): 表示中は Escape で閉じます(フォーカス位置に依らず効くよう window で拾います)。
+  //   POP-KEY: capture 登録(第 3 引数 true)。パネル root の bubble 相遮断や内部要素の
+  //   stopPropagation に依らず、window で最初に Escape を受けられます。
+  //   相違: suppressEscape=true(フィルター popover open 中)の間は本パネルを閉じず、
+  //   onSuppressedEscape(popover の close)へ委譲します。preventDefault はしません
+  //   (フォーカスが popover 内のときの input 側 onKeyDown の処理を妨げないため。
+  //    同じ close が二重に呼ばれても冪等です)。
+  useEffect(() => {
+    if (!isFilterManagerOpen) {
+      return;
+    }
+
+    const handleWindowKeyDown = (event: globalThis.KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        if (suppressEscape) {
+          onSuppressedEscape?.();
+          return;
+        }
+        event.preventDefault();
+        closeFilterManager();
+      }
+    };
+
+    window.addEventListener('keydown', handleWindowKeyDown, true);
+    return () => {
+      window.removeEventListener('keydown', handleWindowKeyDown, true);
+    };
+  }, [
+    closeFilterManager,
+    isFilterManagerOpen,
+    onSuppressedEscape,
+    suppressEscape,
+  ]);
+
+  return {
+    isFilterManagerOpen,
+    filterManagerLayout,
+    filterManagerRef,
+    openFilterManager,
+    closeFilterManager,
+  };
+};
+
+export default useFilterManagementController;
 </file>
 
 <file path="src/components/spreadsheet-grid/hooks/useGlobalFilteredOrder.test.ts">
@@ -6205,6 +5798,164 @@ export const normalizeExportScope = (
 };
 </file>
 
+<file path="src/components/spreadsheet-grid/logic/filterSummary.test.ts">
+// 追加(FM-1)の単体テスト: describeColumnFilterValue(列フィルター値 → 人間可読要約)の
+//   仕様固定です。
+//   - text / date: 「"x" を含む」(trim 後)。select: 「"x" に一致」。number: raw 式そのまま。
+//   - set: include 1〜2 件は値列挙(空文字は「(空白)」)/ 3 件以上・0 件は「N 件を選択」/
+//     exclude は「N 件を除外」/ mode 省略は include 扱い(後方互換)。
+//   - custom: 非空 string は「"x"」(trim)、それ以外は「カスタム条件」。
+import { describe, it, expect } from 'vitest';
+import { describeColumnFilterValue } from './filterSummary';
+
+describe('describeColumnFilterValue', () => {
+  it('text / date は trim して「"x" を含む」', () => {
+    expect(describeColumnFilterValue({ kind: 'text', value: ' SUS ' })).toBe(
+      '"SUS" を含む',
+    );
+    expect(
+      describeColumnFilterValue({ kind: 'date', value: '2026-07' }),
+    ).toBe('"2026-07" を含む');
+  });
+
+  it('select は「"x" に一致」(trim しない = 判定側と同じ生値)', () => {
+    expect(
+      describeColumnFilterValue({ kind: 'select', value: '締結部品' }),
+    ).toBe('"締結部品" に一致');
+  });
+
+  it('number は raw 式そのまま(解釈可否に依らない)', () => {
+    expect(
+      describeColumnFilterValue({
+        kind: 'number',
+        raw: '>= 1000',
+        parsed: { mode: 'comparison', operator: '>=', value: 1000 },
+      }),
+    ).toBe('>= 1000');
+    expect(
+      describeColumnFilterValue({ kind: 'number', raw: 'abc', parsed: null }),
+    ).toBe('abc');
+  });
+
+  it('set(include)1〜2 件は値を列挙し、空文字は「(空白)」と表示する', () => {
+    expect(
+      describeColumnFilterValue({
+        kind: 'set',
+        mode: 'include',
+        values: ['締結部品'],
+      }),
+    ).toBe('"締結部品"');
+    expect(
+      describeColumnFilterValue({
+        kind: 'set',
+        mode: 'include',
+        values: ['締結部品', ''],
+      }),
+    ).toBe('"締結部品", (空白)');
+  });
+
+  it('set の mode 省略は include 扱い(後方互換)', () => {
+    expect(
+      describeColumnFilterValue({ kind: 'set', values: ['A', 'B'] }),
+    ).toBe('"A", "B"');
+  });
+
+  it('set(include)3 件以上と 0 件は「N 件を選択」', () => {
+    expect(
+      describeColumnFilterValue({
+        kind: 'set',
+        mode: 'include',
+        values: ['A', 'B', 'C'],
+      }),
+    ).toBe('3 件を選択');
+    expect(
+      describeColumnFilterValue({ kind: 'set', mode: 'include', values: [] }),
+    ).toBe('0 件を選択');
+  });
+
+  it('set(exclude)は件数に依らず「N 件を除外」(1 件でも列挙しない)', () => {
+    expect(
+      describeColumnFilterValue({ kind: 'set', mode: 'exclude', values: ['A'] }),
+    ).toBe('1 件を除外');
+    expect(
+      describeColumnFilterValue({
+        kind: 'set',
+        mode: 'exclude',
+        values: ['A', 'B', 'C'],
+      }),
+    ).toBe('3 件を除外');
+  });
+
+  it('custom は非空 string なら「"x"」(trim)、それ以外は「カスタム条件」', () => {
+    expect(
+      describeColumnFilterValue({ kind: 'custom', value: ' my-cond ' }),
+    ).toBe('"my-cond"');
+    expect(describeColumnFilterValue({ kind: 'custom', value: '' })).toBe(
+      'カスタム条件',
+    );
+    expect(
+      describeColumnFilterValue({ kind: 'custom', value: { min: 1 } }),
+    ).toBe('カスタム条件');
+  });
+});
+</file>
+
+<file path="src/components/spreadsheet-grid/logic/filterSummary.ts">
+import type { ColumnFilterValue } from '../model/gridTypes';
+
+// 追加(FM-1 / フィルター管理パネル): 列フィルター値(判別共用体)を人間可読な要約文字列へ
+//   変換する純関数です。FilterManagementPanel の一覧行で使い、FM-2(フィルターチップバー)
+//   でも共用予定です。
+// 仕様(ユーザー合意済み):
+//   - text / date  : 「"x" を含む」(部分一致。判定側と同じく trim 後の値を表示)
+//   - select       : 「"x" に一致」(完全一致)
+//   - number       : raw 式そのまま(">= 1000" / "100..500" 等。式として解釈不可のときも
+//                    raw = contains のフォールバック needle なのでそのまま出します)
+//   - set(include): 1〜2 件は値を列挙(空文字セル値は Excel 流に「(空白)」)。3 件以上は
+//                    「N 件を選択」。0 件 = 全行非表示も「0 件を選択」(reducer 側で通常は
+//                    clear 済みの防御表示)。母数(全候補数)はフィルター値に保存されない
+//                    (収集コストが高い)ため出しません。
+//   - set(exclude): 「N 件を除外」(values は非選択値 = 除外対象そのもの)
+//   - custom       : value が非空 string なら「"x"」(trim)、それ以外は「カスタム条件」
+//     (custom の中身は利用側 filterFn の自由形のため、汎用の安全側表示に留めます)
+
+// set の値表示です。空文字セル値は「(空白)」と表示します(セル値の String 化で空になった
+//   値も候補として選択できる仕様のため、無表示だと「", "」のような欠けた列挙になります)。
+const formatSetValue = (value: string): string =>
+  value === '' ? '(空白)' : `"${value}"`;
+
+// 列フィルター値の要約文字列を返します。有効判定(isActiveColumnFilterValue)は呼び出し側の
+//   責務です(無効値でも安全に文字列を返しますが、一覧に載せる/載せないの判断は行いません)。
+export const describeColumnFilterValue = (value: ColumnFilterValue): string => {
+  switch (value.kind) {
+    case 'text':
+    case 'date':
+      return `"${value.value.trim()}" を含む`;
+    case 'select':
+      return `"${value.value}" に一致`;
+    case 'number':
+      return value.raw;
+    case 'set': {
+      // mode 省略は include 扱いです(反転set 導入前の値との後方互換)。
+      const mode = value.mode ?? 'include';
+      if (mode === 'exclude') {
+        return `${value.values.length} 件を除外`;
+      }
+      if (value.values.length > 0 && value.values.length <= 2) {
+        return value.values.map(formatSetValue).join(', ');
+      }
+      return `${value.values.length} 件を選択`;
+    }
+    case 'custom': {
+      if (typeof value.value === 'string' && value.value.trim().length > 0) {
+        return `"${value.value.trim()}"`;
+      }
+      return 'カスタム条件';
+    }
+  }
+};
+</file>
+
 <file path="src/components/spreadsheet-grid/logic/rowHeightStore.test.ts">
 // C1-1: rowHeightStore の prefix-sum / measured キャッシュ / 前方更新 / 二分探索の検査と、
 //   uniform 行高(estimate 一様・measured 空)での createUniformRowMetrics 等価性。
@@ -8809,302 +8560,454 @@ describe('ColumnFilterPopover のキー操作(SF-ENTER fix)', () => {
 });
 </file>
 
-<file path="src/components/spreadsheet-grid/view/PopoverEscapeClose.test.tsx">
-// 追加(POP-KEY)の回帰テスト: popover / panel の Escape close が「フォーカスがパネル内」
-//   でも効くことを検証します。
-//   背景: パネル root の keydown 遮断が capture 相(onKeyDownCapture)+ controller の
-//   Escape close が window bubble 登録だったため、パネル内要素からの keydown はネイティブ
-//   伝播が root で止まり window リスナーへ届かず、Escape で閉じられませんでした
-//   (フォーカスがパネル外にある間だけ偶然動作)。POP-KEY で view 側は bubble 相遮断へ
-//   統一(SF-ENTER fix と同一パターン)し、controller 側は capture 登録(window で最初に
-//   走る = フォーカス位置に非依存)へ変更しています。
-//   - 合成テスト: controller + view を実配線した最小ハーネス(props 最少の
-//     CellContextMenu で代表)。修正前の実装では 1 件目が落ちます。
-//   - 登録相テスト: 5 controller(FM-1 で FilterManagement を追加)の keydown 登録/解除が
-//     capture(第 3 引数 true)で
-//     あることを固定します(bubble へ戻すとパネル内フォーカス時の Escape が再び壊れます)。
+<file path="src/components/spreadsheet-grid/view/FilterManagementPanel.test.tsx">
+// 追加(FM-1)の view テスト: FilterManagementPanel の表示と操作コールバックの配線を固定します。
+//   - 適用中フィルターの行(列名 / 要約)の描画と、非表示列の ✎ disabled。
+//   - ✎ / × / すべてクリア / フィルターを追加 / グローバル行 × の各コールバック発火。
+//   - フッターの disabled 条件(entries 0 件 / addable 0 件)と空表示。
+//   - isOpen=false / layout=null で描画しないこと。
+//   CSS の見た目(トークン適用)は jsdom で検証できないため、表示テキストと
+//   コールバック発火のみを固定します(THEME-2/3 と同じ方針)。
 // @vitest-environment jsdom
 import { describe, it, expect, afterEach, vi } from 'vitest';
-import {
-  render,
-  screen,
-  fireEvent,
-  cleanup,
-  renderHook,
-  act,
-} from '@testing-library/react';
-import { useRef } from 'react';
-import type { MouseEvent as ReactMouseEvent, RefObject } from 'react';
+import { render, screen, fireEvent, cleanup } from '@testing-library/react';
+import { createRef } from 'react';
 
-import { CellContextMenuPopover } from './CellContextMenuPopover';
-import { useCellContextMenuController } from '../hooks/useCellContextMenuController';
-import { useColumnMenuController } from '../hooks/useColumnMenuController';
-import { useColumnChooserController } from '../hooks/useColumnChooserController';
-import { useSortManagementController } from '../hooks/useSortManagementController';
-// 追加(FM-1): フィルター管理パネル controller(POP-KEY 準拠 + 共存拡張)です。
-import { useFilterManagementController } from '../hooks/useFilterManagementController';
-import type {
-  GridColumn,
-  GridContextMenuItem,
-  GridContextMenuParams,
-} from '../model/gridTypes';
+import FilterManagementPanel, {
+  type FilterManagementEntry,
+} from './FilterManagementPanel';
+import type { FilterManagementLayout } from '../hooks/useFilterManagementController';
 
 afterEach(() => {
   cleanup();
-  vi.restoreAllMocks();
 });
 
-type Row = { id: number };
+const layout: FilterManagementLayout = { top: 20, left: 40, width: 360 };
 
-const column: GridColumn<Row> = { key: 'id', title: 'ID', width: 100 };
-
-const makeParams = (): GridContextMenuParams<Row> => ({
-  target: {
-    type: 'cell',
-    rowIndex: 0,
-    colIndex: 0,
-    rowKey: 1,
-    row: { id: 1 },
-    column,
-    value: 1,
+const makeEntries = (): FilterManagementEntry[] => [
+  { columnKey: 'price', title: '単価', summaryText: '>= 1000', isHidden: false },
+  {
+    columnKey: 'due',
+    title: '納期',
+    summaryText: '"2026-07" を含む',
+    isHidden: true,
   },
-  clientX: 100,
-  clientY: 100,
-  selection: null,
-  activeCell: null,
-  isTargetSelected: false,
-});
-
-const menuItems: GridContextMenuItem[] = [
-  { label: 'コピー', onSelect: () => {} },
 ];
 
-const makeGridRootRef = (): RefObject<HTMLDivElement | null> => ({
-  current: document.createElement('div'),
+const makeProps = () => ({
+  isOpen: true,
+  entries: makeEntries(),
+  addableColumns: [{ key: 'name', title: '品名' }],
+  showGlobalFilterRow: false,
+  globalFilterText: '',
+  canFilter: true,
+  layout,
+  panelRef: createRef<HTMLDivElement>(),
+  onEditFilter: vi.fn(),
+  onAddFilter: vi.fn(),
+  onClearFilter: vi.fn(),
+  onClearAllFilters: vi.fn(),
+  onClearGlobalFilter: vi.fn(),
+  onRequestClose: vi.fn(),
 });
 
-// controller + view を実配線した最小ハーネスです(SpreadsheetGrid の配線を最小再現)。
-function ContextMenuHarness({
-  onOuterKeyDown,
-}: {
-  onOuterKeyDown?: () => void;
-}) {
-  const gridRootRef = useRef<HTMLDivElement | null>(null);
-  const controller = useCellContextMenuController<Row>({ gridRootRef });
+describe('FilterManagementPanel', () => {
+  it('適用中フィルターの行(列名 / 要約)を描画する', () => {
+    render(<FilterManagementPanel {...makeProps()} />);
+    expect(screen.getByText('フィルター管理')).toBeTruthy();
+    expect(screen.getByText('単価')).toBeTruthy();
+    expect(screen.getByText('>= 1000')).toBeTruthy();
+    expect(screen.getByText('納期')).toBeTruthy();
+    expect(screen.getByText('"2026-07" を含む')).toBeTruthy();
+    // 非表示列には注記が付きます。
+    expect(screen.getByText('(非表示列)')).toBeTruthy();
+  });
+
+  it('✎ で onEditFilter(columnKey) を呼ぶ / 非表示列の ✎ は disabled', () => {
+    const props = makeProps();
+    render(<FilterManagementPanel {...props} />);
+    fireEvent.click(screen.getByLabelText('単価 のフィルターを編集'));
+    expect(props.onEditFilter).toHaveBeenCalledWith('price');
+    const hiddenEdit = screen.getByLabelText(
+      '納期 のフィルターを編集',
+    ) as HTMLButtonElement;
+    expect(hiddenEdit.disabled).toBe(true);
+  });
+
+  it('× で onClearFilter(columnKey) を呼ぶ(非表示列でも可)', () => {
+    const props = makeProps();
+    render(<FilterManagementPanel {...props} />);
+    const hiddenClear = screen.getByLabelText(
+      '納期 のフィルターをクリア',
+    ) as HTMLButtonElement;
+    expect(hiddenClear.disabled).toBe(false);
+    fireEvent.click(hiddenClear);
+    expect(props.onClearFilter).toHaveBeenCalledWith('due');
+  });
+
+  it('「すべてクリア」で onClearAllFilters を呼ぶ / 0 件時は disabled + 空表示', () => {
+    const props = makeProps();
+    const { unmount } = render(<FilterManagementPanel {...props} />);
+    fireEvent.click(screen.getByText('すべてクリア'));
+    expect(props.onClearAllFilters).toHaveBeenCalledTimes(1);
+    unmount();
+
+    const emptyProps = { ...makeProps(), entries: [] };
+    render(<FilterManagementPanel {...emptyProps} />);
+    expect(screen.getByText('適用中の列フィルターはありません')).toBeTruthy();
+    const clearAll = screen.getByText('すべてクリア') as HTMLButtonElement;
+    expect(clearAll.disabled).toBe(true);
+  });
+
+  it('「フィルターを追加」の <select> で onAddFilter(columnKey) を呼ぶ / 候補 0 件時は disabled', () => {
+    const props = makeProps();
+    const { unmount } = render(<FilterManagementPanel {...props} />);
+    fireEvent.change(screen.getByLabelText('フィルターを追加する列を選択'), {
+      target: { value: 'name' },
+    });
+    expect(props.onAddFilter).toHaveBeenCalledWith('name');
+    unmount();
+
+    const noAdd = { ...makeProps(), addableColumns: [] };
+    render(<FilterManagementPanel {...noAdd} />);
+    const select = screen.getByLabelText(
+      'フィルターを追加する列を選択',
+    ) as HTMLSelectElement;
+    expect(select.disabled).toBe(true);
+    expect(screen.getByText('+ 追加できる列がありません')).toBeTruthy();
+  });
+
+  it('グローバルフィルター行は showGlobalFilterRow=true のときだけ描画し、× で onClearGlobalFilter を呼ぶ', () => {
+    const props = {
+      ...makeProps(),
+      showGlobalFilterRow: true,
+      globalFilterText: 'ねじ',
+    };
+    const { unmount } = render(<FilterManagementPanel {...props} />);
+    expect(screen.getByText('グローバルフィルター')).toBeTruthy();
+    expect(screen.getByText('"ねじ" を含む行')).toBeTruthy();
+    fireEvent.click(screen.getByLabelText('グローバルフィルターをクリア'));
+    expect(props.onClearGlobalFilter).toHaveBeenCalledTimes(1);
+    unmount();
+
+    render(<FilterManagementPanel {...makeProps()} />);
+    expect(screen.queryByText('グローバルフィルター')).toBeNull();
+  });
+
+  it('タイトルの × で onRequestClose を呼ぶ', () => {
+    const props = makeProps();
+    render(<FilterManagementPanel {...props} />);
+    fireEvent.click(screen.getByLabelText('閉じる'));
+    expect(props.onRequestClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('isOpen=false / layout=null では描画しない', () => {
+    const closed = { ...makeProps(), isOpen: false };
+    const { unmount } = render(<FilterManagementPanel {...closed} />);
+    expect(screen.queryByText('フィルター管理')).toBeNull();
+    unmount();
+
+    const noLayout = { ...makeProps(), layout: null };
+    render(<FilterManagementPanel {...noLayout} />);
+    expect(screen.queryByText('フィルター管理')).toBeNull();
+  });
+});
+</file>
+
+<file path="src/components/spreadsheet-grid/view/FilterManagementPanel.tsx">
+// 追加(FM-1 / フィルター管理パネル): 適用中のフィルターを一覧し、編集(ジャンプ)/ 個別
+//   クリア / 追加 / すべてクリアを行う独立 popover です(SortManagementPanel の兄弟)。
+//   - タイトル + × クローズ / (任意)グローバルフィルター行 / 適用中フィルター一覧 /
+//     フッター(フィルターを追加 <select> / すべてクリア)で構成します。
+//   - 本コンポーネントは非ジェネリックです(ColumnChooserPanel / SortManagementPanel と
+//     同様、プリミティブな entries / addableColumns だけを受け取ります)。
+//   - フィルターの評価・状態は持ちません。操作は columnKey の「意図」を emit し、
+//     ジャンプ + popover open(✎ / 追加)や dispatch(× / すべてクリア)は呼び出し側
+//     (SpreadsheetGrid)が担います。
+//   - パネルは操作後も開いたまま(× / outside click / Escape でのみ閉じます。Sort と同じ。
+//     フィルター popover との共存 = alliedRef / suppressEscape は controller 側の責務です)。
+//   - 非表示列のフィルターも一覧に出します(「見えない列に絞り込みが残っている」という
+//     発見性の穴を塞ぐのが本機能の主目的のためです)。✎ はジャンプ先が無いため disabled に
+//     し、title で理由を出します(× でのクリアは可能)。
+import { createPortal } from 'react-dom';
+import type { CSSProperties, KeyboardEvent, PointerEvent, RefObject } from 'react';
+import type { FilterManagementLayout } from '../hooks/useFilterManagementController';
+
+// 追加(FM-1): 一覧 1 行ぶんの情報です(要約文字列は logic/filterSummary.ts で生成済み)。
+export type FilterManagementEntry = {
+  columnKey: string;
+  title: string;
+  summaryText: string;
+  // 非表示列(visible=false)のフィルターです。✎(ジャンプ編集)を無効化します。
+  isHidden: boolean;
+};
+
+// 追加(FM-1): 「フィルターを追加」<select> の候補です(可視・filterType あり・未適用)。
+export type FilterManagementAddableColumn = {
+  key: string;
+  title: string;
+};
+
+type FilterManagementPanelProps = {
+  isOpen: boolean;
+  // 適用中フィルターの一覧です(可視列の視覚順 → 非表示列の順。呼び出し側で構築)。
+  entries: FilterManagementEntry[];
+  addableColumns: FilterManagementAddableColumn[];
+  // グローバルフィルター行の表示可否です(enableGlobalFilter かつ非空のとき true)。
+  showGlobalFilterRow: boolean;
+  globalFilterText: string;
+  // enableColumnFilter 相当。false のときは操作を無効化します(保険。通常は開きません)。
+  canFilter: boolean;
+  layout: FilterManagementLayout | null;
+  panelRef: RefObject<HTMLDivElement | null>;
+  // ✎: 対象列へジャンプして既存のフィルター popover を開きます(配線は呼び出し側)。
+  onEditFilter: (columnKey: string) => void;
+  // フィルターを追加: 選択列へジャンプして popover を開きます(✎ と同じ経路)。
+  onAddFilter: (columnKey: string) => void;
+  onClearFilter: (columnKey: string) => void;
+  // すべてクリア: 列フィルターのみ対象です(グローバルは行の × のみ = ユーザー合意)。
+  onClearAllFilters: () => void;
+  onClearGlobalFilter: () => void;
+  onRequestClose: () => void;
+};
+
+// 追加(FM-1): 漏斗グリフです(GridHeaderRow のフィルター適用中マークと同一パス)。
+function FunnelGlyph() {
   return (
-    <div ref={gridRootRef} tabIndex={-1} onKeyDown={onOuterKeyDown}>
-      <button
-        type="button"
-        onClick={() => controller.openContextMenu(makeParams(), menuItems)}
-      >
-        open
-      </button>
-      <CellContextMenuPopover
-        isOpen={controller.isContextMenuOpen}
-        items={controller.contextMenuState?.items ?? []}
-        layout={controller.contextMenuLayout}
-        popoverRef={controller.contextMenuRef}
-        onRequestClose={controller.closeContextMenu}
-      />
-    </div>
+    <svg
+      width="11"
+      height="11"
+      viewBox="0 0 16 16"
+      fill="currentColor"
+      aria-hidden="true"
+      focusable="false"
+    >
+      <path d="M2 4 L14 4 L9.2 9.2 L9.2 13 L6.8 13 L6.8 9.2 Z" />
+    </svg>
   );
 }
 
-describe('POP-KEY: パネル内フォーカスでの Escape close(controller + view 合成)', () => {
-  it('メニュー内要素への Escape keydown で閉じる', () => {
-    render(<ContextMenuHarness />);
-    fireEvent.click(screen.getByText('open'));
-    expect(screen.getByRole('menu')).toBeTruthy();
-    // パネル内の要素へ直接 keydown します(フォーカスがパネル内にある状況の再現)。
-    fireEvent.keyDown(screen.getByRole('menu'), { key: 'Escape' });
-    expect(screen.queryByRole('menu')).toBeNull();
-  });
+// 追加(FM-1): 虫めがねグリフです(トップバーのグローバルフィルター入力アイコンと同形)。
+function SearchGlyph() {
+  return (
+    <svg
+      width="11"
+      height="11"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2.4"
+      aria-hidden="true"
+      focusable="false"
+    >
+      <circle cx="11" cy="11" r="7" />
+      <path d="m20 20-3.5-3.5" />
+    </svg>
+  );
+}
 
-  it('メニュー内の keydown は外側(React ツリー上の親)へ合成バブリングしない(遮断維持)', () => {
-    const outerKeyDown = vi.fn();
-    render(<ContextMenuHarness onOuterKeyDown={outerKeyDown} />);
-    fireEvent.click(screen.getByText('open'));
-    fireEvent.keyDown(screen.getByRole('menu'), { key: 'a' });
-    expect(outerKeyDown).not.toHaveBeenCalled();
-  });
-});
+export function FilterManagementPanel({
+  isOpen,
+  entries,
+  addableColumns,
+  showGlobalFilterRow,
+  globalFilterText,
+  canFilter,
+  layout,
+  panelRef,
+  onEditFilter,
+  onAddFilter,
+  onClearFilter,
+  onClearAllFilters,
+  onClearGlobalFilter,
+  onRequestClose,
+}: FilterManagementPanelProps) {
+  if (!isOpen || !layout) {
+    return null;
+  }
 
-describe('POP-KEY: 5 controller の keydown は capture 登録(第 3 引数 true)', () => {
-  // 開時に登録される keydown リスナーが capture であること、unmount(close)時の解除も
-  // capture 指定で対になっていること(不一致だと解除漏れになります)を固定します。
-  const expectCaptureRegistration = (
-    addSpy: { mock: { calls: Parameters<typeof window.addEventListener>[] } },
-    removeSpy: {
-      mock: { calls: Parameters<typeof window.removeEventListener>[] };
-    },
-    unmount: () => void,
-  ) => {
-    const added = addSpy.mock.calls.filter(([type]) => type === 'keydown');
-    expect(added.length).toBeGreaterThan(0);
-    expect(added.every((call) => call[2] === true)).toBe(true);
-    unmount();
-    const removed = removeSpy.mock.calls.filter(
-      ([type]) => type === 'keydown',
-    );
-    expect(removed.length).toBeGreaterThan(0);
-    expect(removed.every((call) => call[2] === true)).toBe(true);
+  const wrapperStyle: CSSProperties = {
+    top: layout.top,
+    left: layout.left,
+    width: layout.width,
   };
 
-  it('useCellContextMenuController', () => {
-    const addSpy = vi.spyOn(window, 'addEventListener');
-    const removeSpy = vi.spyOn(window, 'removeEventListener');
-    const { result, unmount } = renderHook(() =>
-      useCellContextMenuController<Row>({ gridRootRef: makeGridRootRef() }),
-    );
-    act(() => {
-      result.current.openContextMenu(makeParams(), menuItems);
-    });
-    expectCaptureRegistration(addSpy, removeSpy, unmount);
-  });
+  const handlePointerDown = (event: PointerEvent<HTMLDivElement>) => {
+    // パネル内 pointer 操作を grid 側へ伝播させません(セル選択開始 / outside click 競合回避)。
+    event.stopPropagation();
+  };
 
-  it('useColumnMenuController', () => {
-    const addSpy = vi.spyOn(window, 'addEventListener');
-    const removeSpy = vi.spyOn(window, 'removeEventListener');
-    const { result, unmount } = renderHook(() =>
-      useColumnMenuController<Row>({
-        visibleColumns: [column],
-        enableColumnMenu: true,
-        gridRootRef: makeGridRootRef(),
-      }),
-    );
-    const fakeContextMenuEvent = {
-      preventDefault: () => {},
-      stopPropagation: () => {},
-      clientX: 100,
-      clientY: 100,
-    } as unknown as ReactMouseEvent<HTMLDivElement>;
-    act(() => {
-      result.current.openColumnMenuFromContextMenu(column, fakeContextMenuEvent);
-    });
-    expectCaptureRegistration(addSpy, removeSpy, unmount);
-  });
+  const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    // portal 内 keyboard を React ツリー上の parent へ流しません。
+    // Escape での close は controller の window keydown(capture / POP-KEY)が担当します。
+    event.stopPropagation();
+  };
 
-  it('useColumnChooserController', () => {
-    const addSpy = vi.spyOn(window, 'addEventListener');
-    const removeSpy = vi.spyOn(window, 'removeEventListener');
-    const { result, unmount } = renderHook(() =>
-      useColumnChooserController({
-        enableColumnMenu: true,
-        gridRootRef: makeGridRootRef(),
-      }),
-    );
-    act(() => {
-      result.current.openColumnChooser();
-    });
-    expectCaptureRegistration(addSpy, removeSpy, unmount);
-  });
+  const canClearAll = canFilter && entries.length > 0;
+  const canAdd = canFilter && addableColumns.length > 0;
 
-  it('useSortManagementController', () => {
-    const addSpy = vi.spyOn(window, 'addEventListener');
-    const removeSpy = vi.spyOn(window, 'removeEventListener');
-    const { result, unmount } = renderHook(() =>
-      useSortManagementController({
-        enableSorting: true,
-        gridRootRef: makeGridRootRef(),
-      }),
-    );
-    act(() => {
-      result.current.openSortManager();
-    });
-    expectCaptureRegistration(addSpy, removeSpy, unmount);
-  });
+  return createPortal(
+    <div
+      ref={panelRef}
+      onPointerDown={handlePointerDown}
+      onKeyDown={handleKeyDown}
+      onContextMenu={(event) => {
+        event.preventDefault();
+      }}
+      className="ssg-popover ssg-filter-manage-panel"
+      style={wrapperStyle}
+    >
+      {/* ── ヘッダー: タイトル + × ── */}
+      <div className="ssg-popover-header">
+        <span className="ssg-popover-title">フィルター管理</span>
+        <button
+          type="button"
+          onClick={onRequestClose}
+          aria-label="閉じる"
+          className="ssg-popover-close"
+        >
+          ×
+        </button>
+      </div>
 
-  it('useFilterManagementController', () => {
-    const addSpy = vi.spyOn(window, 'addEventListener');
-    const removeSpy = vi.spyOn(window, 'removeEventListener');
-    const { result, unmount } = renderHook(() =>
-      useFilterManagementController({
-        enableColumnFilter: true,
-        gridRootRef: makeGridRootRef(),
-      }),
-    );
-    act(() => {
-      result.current.openFilterManager();
-    });
-    expectCaptureRegistration(addSpy, removeSpy, unmount);
-  });
-});
+      {/* ── グローバルフィルター行(先頭・区切り付き) ── */}
+      {/* 追加(FM-1): 列フィルターと別枠で先頭に出します。「すべてクリア」の対象外で、
+          解除はこの行の × のみです(ユーザー合意の切り分け)。 */}
+      {showGlobalFilterRow && (
+        <div className="ssg-filter-manage-row ssg-filter-manage-row--global">
+          <span
+            className="ssg-filter-manage-glyph ssg-filter-manage-glyph--global"
+            aria-hidden="true"
+          >
+            <SearchGlyph />
+          </span>
+          <span className="ssg-filter-manage-main">
+            <span className="ssg-filter-manage-name">グローバルフィルター</span>
+            <span
+              className="ssg-filter-manage-summary"
+              title={globalFilterText}
+            >
+              "{globalFilterText}" を含む行
+            </span>
+          </span>
+          <span className="ssg-filter-manage-actions">
+            <button
+              type="button"
+              className="ssg-filter-manage-icon-btn ssg-filter-manage-icon-btn--danger"
+              disabled={!canFilter}
+              title="グローバルフィルターをクリア"
+              aria-label="グローバルフィルターをクリア"
+              onClick={onClearGlobalFilter}
+            >
+              ×
+            </button>
+          </span>
+        </div>
+      )}
 
-// 追加(FM-1): フィルター管理パネルとフィルター popover の「共存」拡張の挙動固定です。
-//   - suppressEscape=true(popover open 中)の Escape はパネルを閉じず onSuppressedEscape
-//     (popover close)へ委譲し、false へ戻った後の Escape でパネルが閉じること。
-//   - alliedRef(popover)内の pointerdown では outside-close しないこと。
-describe('FM-1: フィルター管理パネルとフィルター popover の共存', () => {
-  it('suppressEscape=true の Escape は閉じずに委譲し、false 後の Escape で閉じる', () => {
-    const onSuppressedEscape = vi.fn();
-    const { result, rerender } = renderHook(
-      ({ suppressEscape }: { suppressEscape: boolean }) =>
-        useFilterManagementController({
-          enableColumnFilter: true,
-          gridRootRef: makeGridRootRef(),
-          suppressEscape,
-          onSuppressedEscape,
-        }),
-      { initialProps: { suppressEscape: true } },
-    );
-    act(() => {
-      result.current.openFilterManager();
-    });
-    expect(result.current.isFilterManagerOpen).toBe(true);
-    // popover open 中(抑止): パネルは閉じず、popover close(委譲先)が呼ばれます。
-    act(() => {
-      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
-    });
-    expect(result.current.isFilterManagerOpen).toBe(true);
-    expect(onSuppressedEscape).toHaveBeenCalledTimes(1);
-    // popover が閉じた後(抑止解除): 次の Escape でパネルが閉じます。
-    rerender({ suppressEscape: false });
-    act(() => {
-      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
-    });
-    expect(result.current.isFilterManagerOpen).toBe(false);
-    expect(onSuppressedEscape).toHaveBeenCalledTimes(1);
-  });
+      {/* ── 適用中フィルター一覧(スクロール) ── */}
+      <div className="ssg-filter-manage-list">
+        {entries.length === 0 ? (
+          <div className="ssg-filter-manage-empty">
+            適用中の列フィルターはありません
+          </div>
+        ) : (
+          entries.map((entry) => (
+            <div key={entry.columnKey} className="ssg-filter-manage-row">
+              <span className="ssg-filter-manage-glyph" aria-hidden="true">
+                <FunnelGlyph />
+              </span>
+              <span className="ssg-filter-manage-main">
+                <span className="ssg-filter-manage-name">
+                  {entry.title}
+                  {entry.isHidden && (
+                    <span className="ssg-filter-manage-hidden-note">
+                      (非表示列)
+                    </span>
+                  )}
+                </span>
+                <span
+                  className="ssg-filter-manage-summary"
+                  title={entry.summaryText}
+                >
+                  {entry.summaryText}
+                </span>
+              </span>
+              <span className="ssg-filter-manage-actions">
+                <button
+                  type="button"
+                  className="ssg-filter-manage-icon-btn"
+                  disabled={!canFilter || entry.isHidden}
+                  title={
+                    entry.isHidden
+                      ? '非表示列のためジャンプ編集できません(× でクリアは可能)'
+                      : 'この列へジャンプして編集'
+                  }
+                  aria-label={`${entry.title} のフィルターを編集`}
+                  onClick={() => {
+                    onEditFilter(entry.columnKey);
+                  }}
+                >
+                  ✎
+                </button>
+                <button
+                  type="button"
+                  className="ssg-filter-manage-icon-btn ssg-filter-manage-icon-btn--danger"
+                  disabled={!canFilter}
+                  title="この列のフィルターをクリア"
+                  aria-label={`${entry.title} のフィルターをクリア`}
+                  onClick={() => {
+                    onClearFilter(entry.columnKey);
+                  }}
+                >
+                  ×
+                </button>
+              </span>
+            </div>
+          ))
+        )}
+      </div>
 
-  it('alliedRef(popover)内の pointerdown では閉じず、外側の pointerdown で閉じる', () => {
-    const allied = document.createElement('div');
-    const alliedChild = document.createElement('button');
-    allied.appendChild(alliedChild);
-    document.body.appendChild(allied);
-    const outside = document.createElement('div');
-    document.body.appendChild(outside);
-    try {
-      const { result } = renderHook(() =>
-        useFilterManagementController({
-          enableColumnFilter: true,
-          gridRootRef: makeGridRootRef(),
-          alliedRef: { current: allied },
-        }),
-      );
-      act(() => {
-        result.current.openFilterManager();
-      });
-      expect(result.current.isFilterManagerOpen).toBe(true);
-      // allied(popover 相当)内の pointerdown → 閉じません。
-      act(() => {
-        alliedChild.dispatchEvent(
-          new PointerEvent('pointerdown', { bubbles: true }),
-        );
-      });
-      expect(result.current.isFilterManagerOpen).toBe(true);
-      // 外側の pointerdown → 閉じます。
-      act(() => {
-        outside.dispatchEvent(
-          new PointerEvent('pointerdown', { bubbles: true }),
-        );
-      });
-      expect(result.current.isFilterManagerOpen).toBe(false);
-    } finally {
-      allied.remove();
-      outside.remove();
-    }
-  });
-});
+      {/* ── フッター: フィルターを追加 + すべてクリア ── */}
+      {/* 追加(FM-1): 追加は <select> の 1 操作で列を選ぶ形です(選択で即ジャンプ + popover。
+          value は常に '' の controlled のため、選択後は自動でプレースホルダへ戻ります)。 */}
+      <div className="ssg-popover-footer">
+        <select
+          className="ssg-filter-manage-add"
+          value=""
+          disabled={!canAdd}
+          aria-label="フィルターを追加する列を選択"
+          onChange={(event) => {
+            const key = event.target.value;
+            if (key) {
+              onAddFilter(key);
+            }
+          }}
+        >
+          <option value="">
+            {canAdd ? '+ フィルターを追加…' : '+ 追加できる列がありません'}
+          </option>
+          {addableColumns.map((column) => (
+            <option key={column.key} value={column.key}>
+              {column.title}
+            </option>
+          ))}
+        </select>
+        <button
+          type="button"
+          className="ssg-filter-manage-clear-all"
+          disabled={!canClearAll}
+          onClick={onClearAllFilters}
+        >
+          すべてクリア
+        </button>
+      </div>
+    </div>,
+    document.body,
+  );
+}
+
+export default FilterManagementPanel;
 </file>
 
 <file path="src/components/spreadsheet-grid/view/RowSelectionCheckbox.tsx">
@@ -11237,6 +11140,304 @@ export const buildGridDerivedSummary = <T,>(
     sortedColumnLabel,
   };
 };
+</file>
+
+<file path="src/components/spreadsheet-grid/view/PopoverEscapeClose.test.tsx">
+// 追加(POP-KEY)の回帰テスト: popover / panel の Escape close が「フォーカスがパネル内」
+//   でも効くことを検証します。
+//   背景: パネル root の keydown 遮断が capture 相(onKeyDownCapture)+ controller の
+//   Escape close が window bubble 登録だったため、パネル内要素からの keydown はネイティブ
+//   伝播が root で止まり window リスナーへ届かず、Escape で閉じられませんでした
+//   (フォーカスがパネル外にある間だけ偶然動作)。POP-KEY で view 側は bubble 相遮断へ
+//   統一(SF-ENTER fix と同一パターン)し、controller 側は capture 登録(window で最初に
+//   走る = フォーカス位置に非依存)へ変更しています。
+//   - 合成テスト: controller + view を実配線した最小ハーネス(props 最少の
+//     CellContextMenu で代表)。修正前の実装では 1 件目が落ちます。
+//   - 登録相テスト: 5 controller(FM-1 で FilterManagement を追加)の keydown 登録/解除が
+//     capture(第 3 引数 true)で
+//     あることを固定します(bubble へ戻すとパネル内フォーカス時の Escape が再び壊れます)。
+// @vitest-environment jsdom
+import { describe, it, expect, afterEach, vi } from 'vitest';
+import {
+  render,
+  screen,
+  fireEvent,
+  cleanup,
+  renderHook,
+  act,
+} from '@testing-library/react';
+import { useRef } from 'react';
+import type { MouseEvent as ReactMouseEvent, RefObject } from 'react';
+
+import { CellContextMenuPopover } from './CellContextMenuPopover';
+import { useCellContextMenuController } from '../hooks/useCellContextMenuController';
+import { useColumnMenuController } from '../hooks/useColumnMenuController';
+import { useColumnChooserController } from '../hooks/useColumnChooserController';
+import { useSortManagementController } from '../hooks/useSortManagementController';
+// 追加(FM-1): フィルター管理パネル controller(POP-KEY 準拠 + 共存拡張)です。
+import { useFilterManagementController } from '../hooks/useFilterManagementController';
+import type {
+  GridColumn,
+  GridContextMenuItem,
+  GridContextMenuParams,
+} from '../model/gridTypes';
+
+afterEach(() => {
+  cleanup();
+  vi.restoreAllMocks();
+});
+
+type Row = { id: number };
+
+const column: GridColumn<Row> = { key: 'id', title: 'ID', width: 100 };
+
+const makeParams = (): GridContextMenuParams<Row> => ({
+  target: {
+    type: 'cell',
+    rowIndex: 0,
+    colIndex: 0,
+    rowKey: 1,
+    row: { id: 1 },
+    column,
+    value: 1,
+  },
+  clientX: 100,
+  clientY: 100,
+  selection: null,
+  activeCell: null,
+  isTargetSelected: false,
+});
+
+const menuItems: GridContextMenuItem[] = [
+  { label: 'コピー', onSelect: () => {} },
+];
+
+const makeGridRootRef = (): RefObject<HTMLDivElement | null> => ({
+  current: document.createElement('div'),
+});
+
+// controller + view を実配線した最小ハーネスです(SpreadsheetGrid の配線を最小再現)。
+function ContextMenuHarness({
+  onOuterKeyDown,
+}: {
+  onOuterKeyDown?: () => void;
+}) {
+  const gridRootRef = useRef<HTMLDivElement | null>(null);
+  const controller = useCellContextMenuController<Row>({ gridRootRef });
+  return (
+    <div ref={gridRootRef} tabIndex={-1} onKeyDown={onOuterKeyDown}>
+      <button
+        type="button"
+        onClick={() => controller.openContextMenu(makeParams(), menuItems)}
+      >
+        open
+      </button>
+      <CellContextMenuPopover
+        isOpen={controller.isContextMenuOpen}
+        items={controller.contextMenuState?.items ?? []}
+        layout={controller.contextMenuLayout}
+        popoverRef={controller.contextMenuRef}
+        onRequestClose={controller.closeContextMenu}
+      />
+    </div>
+  );
+}
+
+describe('POP-KEY: パネル内フォーカスでの Escape close(controller + view 合成)', () => {
+  it('メニュー内要素への Escape keydown で閉じる', () => {
+    render(<ContextMenuHarness />);
+    fireEvent.click(screen.getByText('open'));
+    expect(screen.getByRole('menu')).toBeTruthy();
+    // パネル内の要素へ直接 keydown します(フォーカスがパネル内にある状況の再現)。
+    fireEvent.keyDown(screen.getByRole('menu'), { key: 'Escape' });
+    expect(screen.queryByRole('menu')).toBeNull();
+  });
+
+  it('メニュー内の keydown は外側(React ツリー上の親)へ合成バブリングしない(遮断維持)', () => {
+    const outerKeyDown = vi.fn();
+    render(<ContextMenuHarness onOuterKeyDown={outerKeyDown} />);
+    fireEvent.click(screen.getByText('open'));
+    fireEvent.keyDown(screen.getByRole('menu'), { key: 'a' });
+    expect(outerKeyDown).not.toHaveBeenCalled();
+  });
+});
+
+describe('POP-KEY: 5 controller の keydown は capture 登録(第 3 引数 true)', () => {
+  // 開時に登録される keydown リスナーが capture であること、unmount(close)時の解除も
+  // capture 指定で対になっていること(不一致だと解除漏れになります)を固定します。
+  const expectCaptureRegistration = (
+    addSpy: { mock: { calls: Parameters<typeof window.addEventListener>[] } },
+    removeSpy: {
+      mock: { calls: Parameters<typeof window.removeEventListener>[] };
+    },
+    unmount: () => void,
+  ) => {
+    const added = addSpy.mock.calls.filter(([type]) => type === 'keydown');
+    expect(added.length).toBeGreaterThan(0);
+    expect(added.every((call) => call[2] === true)).toBe(true);
+    unmount();
+    const removed = removeSpy.mock.calls.filter(
+      ([type]) => type === 'keydown',
+    );
+    expect(removed.length).toBeGreaterThan(0);
+    expect(removed.every((call) => call[2] === true)).toBe(true);
+  };
+
+  it('useCellContextMenuController', () => {
+    const addSpy = vi.spyOn(window, 'addEventListener');
+    const removeSpy = vi.spyOn(window, 'removeEventListener');
+    const { result, unmount } = renderHook(() =>
+      useCellContextMenuController<Row>({ gridRootRef: makeGridRootRef() }),
+    );
+    act(() => {
+      result.current.openContextMenu(makeParams(), menuItems);
+    });
+    expectCaptureRegistration(addSpy, removeSpy, unmount);
+  });
+
+  it('useColumnMenuController', () => {
+    const addSpy = vi.spyOn(window, 'addEventListener');
+    const removeSpy = vi.spyOn(window, 'removeEventListener');
+    const { result, unmount } = renderHook(() =>
+      useColumnMenuController<Row>({
+        visibleColumns: [column],
+        enableColumnMenu: true,
+        gridRootRef: makeGridRootRef(),
+      }),
+    );
+    const fakeContextMenuEvent = {
+      preventDefault: () => {},
+      stopPropagation: () => {},
+      clientX: 100,
+      clientY: 100,
+    } as unknown as ReactMouseEvent<HTMLDivElement>;
+    act(() => {
+      result.current.openColumnMenuFromContextMenu(column, fakeContextMenuEvent);
+    });
+    expectCaptureRegistration(addSpy, removeSpy, unmount);
+  });
+
+  it('useColumnChooserController', () => {
+    const addSpy = vi.spyOn(window, 'addEventListener');
+    const removeSpy = vi.spyOn(window, 'removeEventListener');
+    const { result, unmount } = renderHook(() =>
+      useColumnChooserController({
+        enableColumnMenu: true,
+        gridRootRef: makeGridRootRef(),
+      }),
+    );
+    act(() => {
+      result.current.openColumnChooser();
+    });
+    expectCaptureRegistration(addSpy, removeSpy, unmount);
+  });
+
+  it('useSortManagementController', () => {
+    const addSpy = vi.spyOn(window, 'addEventListener');
+    const removeSpy = vi.spyOn(window, 'removeEventListener');
+    const { result, unmount } = renderHook(() =>
+      useSortManagementController({
+        enableSorting: true,
+        gridRootRef: makeGridRootRef(),
+      }),
+    );
+    act(() => {
+      result.current.openSortManager();
+    });
+    expectCaptureRegistration(addSpy, removeSpy, unmount);
+  });
+
+  it('useFilterManagementController', () => {
+    const addSpy = vi.spyOn(window, 'addEventListener');
+    const removeSpy = vi.spyOn(window, 'removeEventListener');
+    const { result, unmount } = renderHook(() =>
+      useFilterManagementController({
+        enableColumnFilter: true,
+        gridRootRef: makeGridRootRef(),
+      }),
+    );
+    act(() => {
+      result.current.openFilterManager();
+    });
+    expectCaptureRegistration(addSpy, removeSpy, unmount);
+  });
+});
+
+// 追加(FM-1): フィルター管理パネルとフィルター popover の「共存」拡張の挙動固定です。
+//   - suppressEscape=true(popover open 中)の Escape はパネルを閉じず onSuppressedEscape
+//     (popover close)へ委譲し、false へ戻った後の Escape でパネルが閉じること。
+//   - alliedRef(popover)内の pointerdown では outside-close しないこと。
+describe('FM-1: フィルター管理パネルとフィルター popover の共存', () => {
+  it('suppressEscape=true の Escape は閉じずに委譲し、false 後の Escape で閉じる', () => {
+    const onSuppressedEscape = vi.fn();
+    const { result, rerender } = renderHook(
+      ({ suppressEscape }: { suppressEscape: boolean }) =>
+        useFilterManagementController({
+          enableColumnFilter: true,
+          gridRootRef: makeGridRootRef(),
+          suppressEscape,
+          onSuppressedEscape,
+        }),
+      { initialProps: { suppressEscape: true } },
+    );
+    act(() => {
+      result.current.openFilterManager();
+    });
+    expect(result.current.isFilterManagerOpen).toBe(true);
+    // popover open 中(抑止): パネルは閉じず、popover close(委譲先)が呼ばれます。
+    act(() => {
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+    });
+    expect(result.current.isFilterManagerOpen).toBe(true);
+    expect(onSuppressedEscape).toHaveBeenCalledTimes(1);
+    // popover が閉じた後(抑止解除): 次の Escape でパネルが閉じます。
+    rerender({ suppressEscape: false });
+    act(() => {
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+    });
+    expect(result.current.isFilterManagerOpen).toBe(false);
+    expect(onSuppressedEscape).toHaveBeenCalledTimes(1);
+  });
+
+  it('alliedRef(popover)内の pointerdown では閉じず、外側の pointerdown で閉じる', () => {
+    const allied = document.createElement('div');
+    const alliedChild = document.createElement('button');
+    allied.appendChild(alliedChild);
+    document.body.appendChild(allied);
+    const outside = document.createElement('div');
+    document.body.appendChild(outside);
+    try {
+      const { result } = renderHook(() =>
+        useFilterManagementController({
+          enableColumnFilter: true,
+          gridRootRef: makeGridRootRef(),
+          alliedRef: { current: allied },
+        }),
+      );
+      act(() => {
+        result.current.openFilterManager();
+      });
+      expect(result.current.isFilterManagerOpen).toBe(true);
+      // allied(popover 相当)内の pointerdown → 閉じません。
+      act(() => {
+        alliedChild.dispatchEvent(
+          new PointerEvent('pointerdown', { bubbles: true }),
+        );
+      });
+      expect(result.current.isFilterManagerOpen).toBe(true);
+      // 外側の pointerdown → 閉じます。
+      act(() => {
+        outside.dispatchEvent(
+          new PointerEvent('pointerdown', { bubbles: true }),
+        );
+      });
+      expect(result.current.isFilterManagerOpen).toBe(false);
+    } finally {
+      allied.remove();
+      outside.remove();
+    }
+  });
+});
 </file>
 
 <file path="src/components/spreadsheet-grid/view/SortManagementPanel.tsx">
@@ -15010,547 +15211,6 @@ export function CellContextMenuPopover({
 export default CellContextMenuPopover;
 </file>
 
-<file path="src/components/spreadsheet-grid/view/ColumnMenuPopover.tsx">
-// 変更(13-A2): フラットな項目列挙 → AG Grid 同様のカスケード(サブメニュー)UI へ変更します。
-//             ルートメニューには「列の固定 ›」を置き、hover / クリックで右隣に
-//             サブメニュー(固定しない / 左に固定 / 右に固定)を開きます。
-// 変更(13-B1): 13-A2 セッションの設計決定どおり、サブメニュー開閉状態を
-//             isPinSubmenuOpen: boolean → openSubmenuKey: string | null へ一般化し、
-//             ルート項目に「この列の幅を自動調整」「すべての列の幅を自動調整」を
-//             追加します(AG Grid の Autosize This Column / Autosize All Columns 相当)。
-//             サブメニューを持たないルート項目への hover で openSubmenuKey を null に
-//             戻すことで、AG Grid の「別項目 hover でカスケードが閉じる」挙動になります。
-// 変更(13-B2-1): ルート項目「列の表示」を追加します(AG Grid の Choose Columns 相当)。
-//             サブメニューではなく別 popover(ColumnChooserPanel)を開くリーフ項目です。
-// 追加(13-B2-3 / gpt5.5対応): ルート項目「列のリセット」を追加します。
-//             既存の ColumnChooserPanel フッターと同じ reset 処理を呼び出し、列メニュー側からも
-//             AG Grid の Reset Columns 相当を実行できるようにします。
-import { useEffect, useState } from 'react';
-import { createPortal } from 'react-dom';
-import { cx } from '../logic/cx';
-import type {
-  CSSProperties,
-  KeyboardEvent,
-  PointerEvent,
-  RefObject,
-} from 'react';
-import type { GridColumnPinned, GridSortDirection } from '../model/gridTypes';
-import type { ColumnMenuLayout } from '../hooks/useColumnMenuController';
-
-type ColumnMenuPinnedItem = {
-  // 注記: undefined = 固定なし(中央スクロール領域)です。
-  value: GridColumnPinned | undefined;
-  label: string;
-};
-
-// 変更(13-A2): 項目順を AG Grid の Pin Column サブメニュー
-//             (No Pin / Pin Left / Pin Right)に合わせます。
-const PINNED_ITEMS: ColumnMenuPinnedItem[] = [
-  { value: undefined, label: '固定しない' },
-  { value: 'left', label: '左に固定' },
-  { value: 'right', label: '右に固定' },
-];
-
-// 追加(13-A2): サブメニューの幅と、ルートメニューとの水平間隔です。
-//             左右どちらへ開くかの判定(viewport はみ出し)にも使います。
-const SUBMENU_WIDTH = 180;
-const SUBMENU_GAP = 4;
-const VIEWPORT_MARGIN = 8;
-
-// 追加(13-B1): サブメニューを持つルート項目の識別キーです。
-//             openSubmenuKey(string | null) との比較で開閉を判定します。
-//             13-B 後続でサブメニュー持ち項目を増やす場合はキーを追加します。
-const PIN_SUBMENU_KEY = 'pin';
-
-type ColumnMenuPopoverProps = {
-  isOpen: boolean;
-  title: string;
-  columnKey: string;
-  // 追加(③): フィルターをメニューへ集約します。canFilter=false(enableColumnFilter=false や
-  //          この列に filterType 未設定)のときは項目を出しません。クリックで列メニューを閉じて
-  //          フィルター popover を開く配線は SpreadsheetGrid 側(onOpenFilter)が担います。
-  canFilter: boolean;
-  onOpenFilter: () => void;
-  // 追加(13-B4): ソート(昇順/降順)をメニューから操作するための状態とハンドラです。
-  //             canSort=false(enableSorting=false 相当)のときは項目自体を出しません
-  //             (AG Grid の sortable:false でソート項目が消えるのと同じ挙動です)。
-  //             sortDirection はこの列の現在のソート方向で、✓ 表示の単一ソースです。
-  //             同じ方向を再選択したときの「解除」判定は SpreadsheetGrid 側が行います。
-  canSort: boolean;
-  sortDirection: GridSortDirection;
-  onSortChange: (direction: Exclude<GridSortDirection, null>) => void;
-  // 追加(MS-3-1): 並び替え管理パネル(SortManagementPanel)を開くハンドラです。
-  //             canSort=true のときだけ、昇順/降順の下にリーフ項目として出します
-  //             (サブメニューではなく別 popover を開く点は「列の表示」と同じ作法です)。
-  //             クリックで列メニューを閉じてパネルを開く配線は SpreadsheetGrid 側が担います。
-  onOpenSortManager: () => void;
-  // 追加(FM-1): フィルター管理パネル(FilterManagementPanel)を開くハンドラです。
-  //             canManageFilters はグリッドレベルの enableColumnFilter 相当です(canFilter と
-  //             違い「この列に filterType があるか」は見ません — パネルは全列のフィルターを
-  //             扱うためです)。canSort=false でも項目は出ます(並び替えブロックの直後)。
-  //             クリックで列メニューを閉じてパネルを開く配線は SpreadsheetGrid 側が担います。
-  canManageFilters: boolean;
-  onOpenFilterManager: () => void;
-  // 追加: 開いている列の現在の固定状態です(✓ 表示に使います)。
-  pinned: GridColumnPinned | undefined;
-  // 追加: onColumnsChange 未指定時は false になり、固定切替の項目を無効化します
-  //       (columns は controlled props のため、callback なしでは反映できません)。
-  canChangePinned: boolean;
-  layout: ColumnMenuLayout | null;
-  popoverRef: RefObject<HTMLDivElement | null>;
-  onPinnedChange: (
-    columnKey: string,
-    pinned: GridColumnPinned | undefined,
-  ) => void;
-  // 追加(13-B1): 幅自動調整のハンドラです。幅は grid 内部 state(columnWidths)で
-  //             管理されるため、pinned と違い onColumnsChange の有無に依存せず
-  //             常に有効です(手動リサイズと同じ扱い)。
-  onAutosizeColumn: (columnKey: string) => void;
-  onAutosizeAllColumns: () => void;
-  // 追加(13-B2-1): 列の表示/非表示パネル(ColumnChooserPanel)を開くハンドラです。
-  //             この項目はサブメニューではなく別 popover を開くリーフ項目です
-  //             (クリックで列メニューを閉じてパネルを開きます。配線は SpreadsheetGrid 側)。
-  onOpenColumnChooser: () => void;
-  // 追加(13-B2-3 / gpt5.5対応): 列メニュー root の「列のリセット」用です。
-  //             columns は controlled props のため、onColumnsChange 未指定時は無効化します。
-  canResetColumns: boolean;
-  onResetColumns: () => void;
-  onRequestClose: () => void;
-};
-
-export function ColumnMenuPopover({
-  isOpen,
-  title,
-  columnKey,
-  canFilter,
-  onOpenFilter,
-  canSort,
-  sortDirection,
-  onSortChange,
-  onOpenSortManager,
-  canManageFilters,
-  onOpenFilterManager,
-  pinned,
-  canChangePinned,
-  layout,
-  popoverRef,
-  onPinnedChange,
-  onAutosizeColumn,
-  onAutosizeAllColumns,
-  onOpenColumnChooser,
-  canResetColumns,
-  onResetColumns,
-  onRequestClose,
-}: ColumnMenuPopoverProps) {
-  // 変更(13-B1): isPinSubmenuOpen: boolean → openSubmenuKey: string | null へ一般化します
-  //             (13-A2 セッションの設計決定どおり)。
-  //   - サブメニューを持つルート項目: onPointerEnter で setOpenSubmenuKey(自分の key)
-  //   - サブメニューを持たないルート項目: onPointerEnter で setOpenSubmenuKey(null)
-  //     (= 開いているカスケードが閉じる。AG Grid の挙動の肝)
-  // 注記: AG Grid と同様、一度開いたサブメニューはポインタが離れても開いたままにし、
-  //       別のルート項目へ hover したとき・メニュー自体が閉じたときに閉じます。
-  //       チラつき防止のため pointerleave では閉じません。
-  const [openSubmenuKey, setOpenSubmenuKey] = useState<string | null>(null);
-
-  // 追加(13-A2): 開いたまま別列へ切り替えた場合(popover は mount されたまま
-  //             columnKey だけ変わる)に、サブメニューの開閉状態を初期化します。
-  // 変更(13-B1): リセット先を openSubmenuKey = null に読み替えます。
-  useEffect(() => {
-    setOpenSubmenuKey(null);
-  }, [columnKey, isOpen]);
-
-  if (!isOpen || !layout) {
-    return null;
-  }
-
-  const isPinSubmenuOpen = openSubmenuKey === PIN_SUBMENU_KEY;
-
-  // 追加(13-A2): サブメニューを右に開くと viewport をはみ出す場合は左へ開きます
-  //             (AG Grid と同じフリップ挙動です)。layout はルートメニューの
-  //             fixed 座標なので、右端 = layout.left + layout.width です。
-  const submenuOpensLeft =
-    layout.left + layout.width + SUBMENU_GAP + SUBMENU_WIDTH >
-    window.innerWidth - VIEWPORT_MARGIN;
-
-  const wrapperStyle: CSSProperties = {
-    position: 'fixed',
-    top: layout.top,
-    left: layout.left,
-    width: layout.width,
-    zIndex: 1000,
-  };
-
-  // 追加(13-A2): サブメニューはルート項目(position: relative の行)を基準に
-  //             絶対配置します。top: -9 はパネルの padding(8) + border(1) ぶんを
-  //             相殺し、サブメニューの先頭項目をルート項目と上端揃えにするためです。
-  const submenuStyle: CSSProperties = {
-    position: 'absolute',
-    top: -9,
-    ...(submenuOpensLeft
-      ? { right: `calc(100% + ${SUBMENU_GAP}px)` }
-      : { left: `calc(100% + ${SUBMENU_GAP}px)` }),
-    width: SUBMENU_WIDTH,
-    zIndex: 1,
-  };
-
-  const handlePointerDown = (event: PointerEvent<HTMLDivElement>) => {
-    // 追加: popover 内 pointer 操作を grid 側へ伝播させません
-    //       (列選択開始や outside click 判定との競合を避けます)。
-    event.stopPropagation();
-  };
-
-  const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
-    // 追加: portal 内 keyboard イベントを React ツリー上の parent へ流しません。
-    //       Escape での close は controller の window keydown リスナーが担当します。
-    // 変更(POP-KEY): capture 相(onKeyDownCapture)→ bubble 相(onKeyDown)へ変更します。
-    //   capture 相の stopPropagation() はネイティブ伝播ごと止めるため、パネル内部要素の
-    //   bubble 相 onKeyDown や window(bubble)リスナーまで殺してしまいます
-    //   (ColumnFilterPopover の SF-ENTER fix と同一パターンの統一です)。bubble 相なら
-    //   「内部要素のハンドラが先に処理 → 最後にここで外側への合成バブリングだけ遮断」に
-    //   なり、Escape close は controller 側の capture 登録(POP-KEY)が受けます。
-    event.stopPropagation();
-  };
-
-  return createPortal(
-    <div
-      ref={popoverRef}
-      onPointerDown={handlePointerDown}
-      onKeyDown={handleKeyDown}
-      onContextMenu={(event) => {
-        // 追加: メニュー上での右クリックはブラウザ標準メニューを出しません。
-        event.preventDefault();
-      }}
-      className="ssg-menu-panel"
-      style={wrapperStyle}
-    >
-      <div className="ssg-menu-title">{title}</div>
-
-      {/* ── ルート項目: フィルター…(③) ── */}
-      {/* 追加(③): ヘッダーの常時フィルターボタンを廃止し、フィルター操作をここへ集約します。
-          サブメニューではなく別 popover(フィルター)を開くリーフ項目です。autosize / 列の表示と
-          同じく hover で setOpenSubmenuKey(null) し、開いているカスケード(列の固定)を閉じます。
-          ✓ 列ぶんのスペーサで他項目と左端を揃えます。クリックで列メニューを閉じてフィルター
-          popover を開く処理は SpreadsheetGrid 側(onOpenFilter)が担います。canFilter=false の
-          ときは項目を出しません(enableColumnFilter=false / この列に filterType 未設定)。 */}
-      {canFilter && (
-        <>
-          <button
-            type="button"
-            onPointerEnter={() => {
-              setOpenSubmenuKey(null);
-            }}
-            onClick={() => {
-              onOpenFilter();
-            }}
-            className="ssg-menu-item"
-          >
-            <span className="ssg-menu-icon" />
-            <span className="ssg-menu-label">フィルター…</span>
-          </button>
-
-          <div className="ssg-menu-separator" />
-        </>
-      )}
-
-      {/* ── ルート項目: 昇順 / 降順で並び替え(13-B4) ── */}
-      {/* 追加(13-B4): ヘッダーのソートボタンを廃止し、ソート操作をメニュー(と
-          コンテキストメニュー)へ集約します。AG Grid の Sort Ascending /
-          Sort Descending 相当のリーフ項目です。現在の方向に ✓ を出し、その方向を
-          もう一度選ぶと解除します(解除判定は SpreadsheetGrid 側)。
-          サブメニューを持たないリーフなので、hover で openSubmenuKey を null に戻し、
-          開いているカスケード(列の固定)を閉じます。hover ハイライトは CSS :hover で
-          行います(state hover を避け、memo 影響を出しません)。 */}
-      {canSort && (
-        <>
-          <button
-            type="button"
-            onPointerEnter={() => {
-              setOpenSubmenuKey(null);
-            }}
-            onClick={() => {
-              onSortChange('asc');
-            }}
-            className="ssg-menu-item"
-          >
-            {/* 注記: 14px 列は他項目の ✓ 列と左端を揃えます。
-                未適用時は方向アイコン(↑/↓)を、適用中は ✓ を出します。
-                ラベル自体が方向を示すため、適用中にアイコンが ✓ へ変わっても
-                意味は失われません。 */}
-            <span
-              className={cx(
-                'ssg-menu-sort-icon',
-                sortDirection === 'asc' && 'ssg-menu-sort-icon--active',
-              )}
-            >
-              {sortDirection === 'asc' ? '✓' : '↑'}
-            </span>
-            <span
-              className={cx(
-                'ssg-menu-label',
-                sortDirection === 'asc' && 'ssg-menu-label--sorted',
-              )}
-            >
-              昇順で並び替え
-            </span>
-          </button>
-
-          <button
-            type="button"
-            onPointerEnter={() => {
-              setOpenSubmenuKey(null);
-            }}
-            onClick={() => {
-              onSortChange('desc');
-            }}
-            className="ssg-menu-item"
-          >
-            <span
-              className={cx(
-                'ssg-menu-sort-icon',
-                sortDirection === 'desc' && 'ssg-menu-sort-icon--active',
-              )}
-            >
-              {sortDirection === 'desc' ? '✓' : '↓'}
-            </span>
-            <span
-              className={cx(
-                'ssg-menu-label',
-                sortDirection === 'desc' && 'ssg-menu-label--sorted',
-              )}
-            >
-              降順で並び替え
-            </span>
-          </button>
-
-          {/* ── ルート項目: 並び替えを管理…(MS-3-1) ── */}
-          {/* 追加(MS-3-1): サブメニューではなく別 popover(SortManagementPanel)を開く
-              リーフ項目です。昇順/降順の単発操作に対し、複数レベルの追加/削除・優先順位の
-              編集をマウス/タッチで行う経路を提供します(Shift+click ジェスチャに依りません)。
-              autosize / 列の表示と同じく hover で setOpenSubmenuKey(null) し、開いている
-              カスケード(列の固定)を閉じます。✓ 列ぶんのスペーサで他項目と左端を揃えます。
-              クリックで列メニューを閉じてパネルを開く処理は SpreadsheetGrid 側
-              (onOpenSortManager)が担います。 */}
-          <button
-            type="button"
-            onPointerEnter={() => {
-              setOpenSubmenuKey(null);
-            }}
-            onClick={() => {
-              onOpenSortManager();
-            }}
-            className="ssg-menu-item"
-          >
-            <span className="ssg-menu-icon" />
-            <span className="ssg-menu-label">並び替えを管理…</span>
-          </button>
-        </>
-      )}
-
-      {/* ── ルート項目: フィルターを管理…(FM-1) ── */}
-      {/* 追加(FM-1): 適用中フィルターの一覧 / 編集 / クリアを行うパネル
-          (FilterManagementPanel)を開くリーフ項目です。gate はグリッドレベルの
-          canManageFilters(enableColumnFilter 相当)で、canFilter(この列の filterType
-          有無)には依りません(パネルは全列のフィルターを扱うため)。位置は
-          「並び替えを管理…」の直後(canSort=false のときはソート群を飛ばしてここから)。
-          hover で開いているカスケード(列の固定)を閉じ、✓ 列ぶんのスペーサで左端を
-          揃えます。クリックで列メニューを閉じてパネルを開く処理は SpreadsheetGrid 側
-          (onOpenFilterManager)が担います。 */}
-      {canManageFilters && (
-        <button
-          type="button"
-          onPointerEnter={() => {
-            setOpenSubmenuKey(null);
-          }}
-          onClick={() => {
-            onOpenFilterManager();
-          }}
-          className="ssg-menu-item"
-        >
-          <span className="ssg-menu-icon" />
-          <span className="ssg-menu-label">フィルターを管理…</span>
-        </button>
-      )}
-
-      {/* 変更(FM-1): 区切り(旧 13-B4)の条件を「ソート群のみ」→「ソート群または
-          フィルターを管理…のいずれかが出ているとき」へ広げます(位置は不変)。 */}
-      {(canSort || canManageFilters) && <div className="ssg-menu-separator" />}
-
-      {/* ── ルート項目: 列の固定 ›(サブメニュー親) ── */}
-      {/* 追加(13-A2): サブメニューはこの行(position: relative)基準で絶対配置します。
-          パネル自体は overflow を持たないため、wrapper の外側(右隣 / 左隣)へ
-          はみ出して表示されます。popoverRef(wrapper)の子孫なので、controller の
-          outside-pointerdown 判定(contains)にもそのまま含まれます。 */}
-      <div className="ssg-menu-submenu-anchor">
-        <button
-          type="button"
-          onPointerEnter={() => {
-            // 変更(13-B1): AG Grid と同様、hover でこの項目のサブメニューを開きます
-            //             (他のサブメニューが開いていれば置き換わります)。
-            setOpenSubmenuKey(PIN_SUBMENU_KEY);
-          }}
-          onClick={() => {
-            // 変更(13-B1): クリックでもトグルできるようにします(タッチ環境向け)。
-            setOpenSubmenuKey((current) =>
-              current === PIN_SUBMENU_KEY ? null : PIN_SUBMENU_KEY,
-            );
-          }}
-          className={cx(
-            'ssg-menu-item',
-            isPinSubmenuOpen && 'ssg-menu-item--active',
-          )}
-        >
-          {/* 注記: ✓ 列との左端揃えのため、サブメニュー項目と同じ幅のスペーサを置きます。*/}
-          <span className="ssg-menu-icon" />
-          <span className="ssg-menu-label">列の固定</span>
-          <span className="ssg-menu-caret">›</span>
-        </button>
-
-        {/* ── サブメニュー: 固定しない / 左に固定 / 右に固定 ── */}
-        {isPinSubmenuOpen && (
-          <div className="ssg-menu-panel" style={submenuStyle}>
-            {PINNED_ITEMS.map((item) => {
-              const isSelected = pinned === item.value;
-              return (
-                <button
-                  key={item.label}
-                  type="button"
-                  disabled={!canChangePinned}
-                  onClick={() => {
-                    if (!canChangePinned) {
-                      return;
-                    }
-                    // 注記: 現在値と同じ項目を選んでも閉じるだけになります
-                    //       (no-op 判定は SpreadsheetGrid 側で行います)。
-                    onPinnedChange(columnKey, item.value);
-                  }}
-                  className="ssg-menu-item"
-                >
-                  {/* 追加: 現在の固定状態に ✓ を出します(未選択は幅だけ確保して揃えます)。*/}
-                  <span
-                    className={cx(
-                      'ssg-menu-check',
-                      !isSelected && 'ssg-menu-check--hidden',
-                    )}
-                  >
-                    ✓
-                  </span>
-                  <span className="ssg-menu-label">{item.label}</span>
-                </button>
-              );
-            })}
-
-            {!canChangePinned && (
-              <div className="ssg-menu-note">
-                onColumnsChange 未指定のため固定状態を変更できません
-              </div>
-            )}
-          </div>
-        )}
-      </div>
-
-      {/* ── ルート項目: 幅の自動調整(13-B1) ── */}
-      {/* 追加(13-B1): サブメニューを持たないルート項目です。hover で
-          setOpenSubmenuKey(null) し、開いているカスケード(列の固定)を閉じます
-          (AG Grid の「別項目 hover でサブメニューが閉じる」挙動)。
-          hover ハイライトは CSS :hover で行います(state を使うと hover のたびに
-          popover 全体が再レンダーされるため)。
-          実際の close と幅反映は SpreadsheetGrid 側ハンドラが行います。 */}
-      <button
-        type="button"
-        onPointerEnter={() => {
-          setOpenSubmenuKey(null);
-        }}
-        onClick={() => {
-          onAutosizeColumn(columnKey);
-        }}
-        className="ssg-menu-item"
-      >
-        {/* 注記: ✓ 列との左端揃え用スペーサです(ピン行と同じ幅)。*/}
-        <span className="ssg-menu-icon" />
-        <span className="ssg-menu-label">この列の幅を自動調整</span>
-      </button>
-
-      <button
-        type="button"
-        onPointerEnter={() => {
-          setOpenSubmenuKey(null);
-        }}
-        onClick={() => {
-          onAutosizeAllColumns();
-        }}
-        className="ssg-menu-item"
-      >
-        <span className="ssg-menu-icon" />
-        <span className="ssg-menu-label">すべての列の幅を自動調整</span>
-      </button>
-
-      {/* ── ルート項目: 列の表示(13-B2-1) ── */}
-      {/* 追加(13-B2-1): サブメニューではなく別 popover(ColumnChooserPanel)を開く
-          リーフ項目です。autosize 項目と同じく hover で setOpenSubmenuKey(null) し、
-          開いているカスケード(列の固定)を閉じます。クリックで列メニューを閉じて
-          パネルを開く処理は SpreadsheetGrid 側(onOpenColumnChooser)が担います。 */}
-      <button
-        type="button"
-        onPointerEnter={() => {
-          setOpenSubmenuKey(null);
-        }}
-        onClick={() => {
-          onOpenColumnChooser();
-        }}
-        className="ssg-menu-item"
-      >
-        <span className="ssg-menu-icon" />
-        <span className="ssg-menu-label">列の表示</span>
-      </button>
-
-      {/* ── ルート項目: 列のリセット(13-B2-3 / gpt5.5対応) ── */}
-      {/* 追加(13-B2-3 / gpt5.5対応): 既存の ColumnChooserPanel フッターと同じ
-          リセット処理を列メニュー root からも呼べるようにします。サブメニューではない
-          リーフ項目なので、hover 時は openSubmenuKey を null に戻します。 */}
-      <button
-        type="button"
-        aria-disabled={!canResetColumns}
-        tabIndex={canResetColumns ? 0 : -1}
-        title={
-          canResetColumns
-            ? 'すべての列の幅・固定・表示を初期状態に戻します'
-            : 'onColumnsChange 未指定のため列をリセットできません'
-        }
-        onPointerEnter={() => {
-          setOpenSubmenuKey(null);
-        }}
-        onClick={() => {
-          if (!canResetColumns) {
-            return;
-          }
-          onResetColumns();
-        }}
-        className={cx(
-          'ssg-menu-item',
-          !canResetColumns && 'ssg-menu-item--disabled',
-        )}
-      >
-        <span className="ssg-menu-icon" />
-        <span className="ssg-menu-label">列のリセット</span>
-      </button>
-
-      <div className="ssg-menu-footer">
-        <button
-          type="button"
-          onClick={onRequestClose}
-          className="ssg-menu-close-btn"
-        >
-          閉じる
-        </button>
-      </div>
-    </div>,
-    document.body,
-  );
-}
-
-export default ColumnMenuPopover;
-</file>
-
 <file path="vite.lib.config.ts">
 import { resolve } from 'node:path'
 import { defineConfig } from 'vite'
@@ -16760,7 +16420,7 @@ export const gridUiReducer = (
 //   renderHook 系テストと同じく DOM を要するため、本ファイルのみ jsdom で回します。
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeAll, afterEach } from 'vitest';
-import { render, cleanup, act } from '@testing-library/react';
+import { render, cleanup, act, screen, fireEvent } from '@testing-library/react';
 import { createRef, useState } from 'react';
 import type { Ref } from 'react';
 
@@ -17104,6 +16764,611 @@ describe('THEME-2: density(密度プリセット)', () => {
     expect(headerRowHeight(container)).toBe('50px');
   });
 });
+
+// 追加(FM-2): フィルターチップバー(showFilterChipBar)の配線テストです。
+//   チップバーは列仮想化の外(トップバー直下)で描画されるため、jsdom の 0 列描画の制約を
+//   受けません。フィルターは applyState で注入します(状態 API 経由 = 既存テストと同じ作法)。
+describe('SpreadsheetGrid フィルターチップバー(FM-2・結合)', () => {
+  // name 列に text フィルターを掛けた状態です(チップ要約は「"be" を含む」になります)。
+  const chipState: GridState = {
+    version: GRID_STATE_VERSION,
+    columnWidths: {},
+    filters: {
+      globalText: '',
+      columnFilters: { name: { kind: 'text', value: 'be' } },
+    },
+    sort: [],
+  };
+
+  it('showFilterChipBar=true + 有効フィルターでチップと「すべてクリア」を描画する', () => {
+    const ref = createRef<SpreadsheetGridHandle<Row>>();
+    render(
+      <SpreadsheetGrid
+        ref={ref}
+        columns={columns}
+        rows={rows}
+        showFilterChipBar
+      />,
+    );
+    act(() => {
+      ref.current?.applyState(chipState);
+    });
+    expect(screen.getByLabelText('Name のフィルターを編集')).toBeTruthy();
+    expect(screen.getByText('"be" を含む')).toBeTruthy();
+    expect(screen.getByText('すべてクリア')).toBeTruthy();
+  });
+
+  it('× でその列のフィルターがクリアされ、0 件になるとバーごと消える', () => {
+    const ref = createRef<SpreadsheetGridHandle<Row>>();
+    render(
+      <SpreadsheetGrid
+        ref={ref}
+        columns={columns}
+        rows={rows}
+        showFilterChipBar
+      />,
+    );
+    act(() => {
+      ref.current?.applyState(chipState);
+    });
+    fireEvent.click(screen.getByLabelText('Name のフィルターをクリア'));
+    expect(ref.current?.getState().filters.columnFilters).toEqual({});
+    // 0 件 → バーごと非表示(チップも「すべてクリア」も無くなります)。
+    expect(screen.queryByText('すべてクリア')).toBeNull();
+    expect(screen.queryByLabelText('Name のフィルターを編集')).toBeNull();
+  });
+
+  it('既定(showFilterChipBar 未指定 = false)では有効フィルターがあっても描画しない', () => {
+    const ref = createRef<SpreadsheetGridHandle<Row>>();
+    render(<SpreadsheetGrid ref={ref} columns={columns} rows={rows} />);
+    act(() => {
+      ref.current?.applyState(chipState);
+    });
+    expect(screen.queryByText('すべてクリア')).toBeNull();
+    expect(screen.queryByLabelText('Name のフィルターを編集')).toBeNull();
+  });
+});
+</file>
+
+<file path="src/components/spreadsheet-grid/view/ColumnMenuPopover.tsx">
+// 変更(13-A2): フラットな項目列挙 → AG Grid 同様のカスケード(サブメニュー)UI へ変更します。
+//             ルートメニューには「列の固定 ›」を置き、hover / クリックで右隣に
+//             サブメニュー(固定しない / 左に固定 / 右に固定)を開きます。
+// 変更(13-B1): 13-A2 セッションの設計決定どおり、サブメニュー開閉状態を
+//             isPinSubmenuOpen: boolean → openSubmenuKey: string | null へ一般化し、
+//             ルート項目に「この列の幅を自動調整」「すべての列の幅を自動調整」を
+//             追加します(AG Grid の Autosize This Column / Autosize All Columns 相当)。
+//             サブメニューを持たないルート項目への hover で openSubmenuKey を null に
+//             戻すことで、AG Grid の「別項目 hover でカスケードが閉じる」挙動になります。
+// 変更(13-B2-1): ルート項目「列の表示」を追加します(AG Grid の Choose Columns 相当)。
+//             サブメニューではなく別 popover(ColumnChooserPanel)を開くリーフ項目です。
+// 追加(13-B2-3 / gpt5.5対応): ルート項目「列のリセット」を追加します。
+//             既存の ColumnChooserPanel フッターと同じ reset 処理を呼び出し、列メニュー側からも
+//             AG Grid の Reset Columns 相当を実行できるようにします。
+import { useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
+import { cx } from '../logic/cx';
+import type {
+  CSSProperties,
+  KeyboardEvent,
+  PointerEvent,
+  RefObject,
+} from 'react';
+import type { GridColumnPinned, GridSortDirection } from '../model/gridTypes';
+import type { ColumnMenuLayout } from '../hooks/useColumnMenuController';
+
+type ColumnMenuPinnedItem = {
+  // 注記: undefined = 固定なし(中央スクロール領域)です。
+  value: GridColumnPinned | undefined;
+  label: string;
+};
+
+// 変更(13-A2): 項目順を AG Grid の Pin Column サブメニュー
+//             (No Pin / Pin Left / Pin Right)に合わせます。
+const PINNED_ITEMS: ColumnMenuPinnedItem[] = [
+  { value: undefined, label: '固定しない' },
+  { value: 'left', label: '左に固定' },
+  { value: 'right', label: '右に固定' },
+];
+
+// 追加(13-A2): サブメニューの幅と、ルートメニューとの水平間隔です。
+//             左右どちらへ開くかの判定(viewport はみ出し)にも使います。
+const SUBMENU_WIDTH = 180;
+const SUBMENU_GAP = 4;
+const VIEWPORT_MARGIN = 8;
+
+// 追加(13-B1): サブメニューを持つルート項目の識別キーです。
+//             openSubmenuKey(string | null) との比較で開閉を判定します。
+//             13-B 後続でサブメニュー持ち項目を増やす場合はキーを追加します。
+const PIN_SUBMENU_KEY = 'pin';
+
+type ColumnMenuPopoverProps = {
+  isOpen: boolean;
+  title: string;
+  columnKey: string;
+  // 追加(③): フィルターをメニューへ集約します。canFilter=false(enableColumnFilter=false や
+  //          この列に filterType 未設定)のときは項目を出しません。クリックで列メニューを閉じて
+  //          フィルター popover を開く配線は SpreadsheetGrid 側(onOpenFilter)が担います。
+  canFilter: boolean;
+  onOpenFilter: () => void;
+  // 追加(13-B4): ソート(昇順/降順)をメニューから操作するための状態とハンドラです。
+  //             canSort=false(enableSorting=false 相当)のときは項目自体を出しません
+  //             (AG Grid の sortable:false でソート項目が消えるのと同じ挙動です)。
+  //             sortDirection はこの列の現在のソート方向で、✓ 表示の単一ソースです。
+  //             同じ方向を再選択したときの「解除」判定は SpreadsheetGrid 側が行います。
+  canSort: boolean;
+  sortDirection: GridSortDirection;
+  onSortChange: (direction: Exclude<GridSortDirection, null>) => void;
+  // 追加(MS-3-1): 並び替え管理パネル(SortManagementPanel)を開くハンドラです。
+  //             canSort=true のときだけ、昇順/降順の下にリーフ項目として出します
+  //             (サブメニューではなく別 popover を開く点は「列の表示」と同じ作法です)。
+  //             クリックで列メニューを閉じてパネルを開く配線は SpreadsheetGrid 側が担います。
+  onOpenSortManager: () => void;
+  // 追加(FM-1): フィルター管理パネル(FilterManagementPanel)を開くハンドラです。
+  //             canManageFilters はグリッドレベルの enableColumnFilter 相当です(canFilter と
+  //             違い「この列に filterType があるか」は見ません — パネルは全列のフィルターを
+  //             扱うためです)。canSort=false でも項目は出ます(並び替えブロックの直後)。
+  //             クリックで列メニューを閉じてパネルを開く配線は SpreadsheetGrid 側が担います。
+  canManageFilters: boolean;
+  onOpenFilterManager: () => void;
+  // 追加: 開いている列の現在の固定状態です(✓ 表示に使います)。
+  pinned: GridColumnPinned | undefined;
+  // 追加: onColumnsChange 未指定時は false になり、固定切替の項目を無効化します
+  //       (columns は controlled props のため、callback なしでは反映できません)。
+  canChangePinned: boolean;
+  layout: ColumnMenuLayout | null;
+  popoverRef: RefObject<HTMLDivElement | null>;
+  onPinnedChange: (
+    columnKey: string,
+    pinned: GridColumnPinned | undefined,
+  ) => void;
+  // 追加(13-B1): 幅自動調整のハンドラです。幅は grid 内部 state(columnWidths)で
+  //             管理されるため、pinned と違い onColumnsChange の有無に依存せず
+  //             常に有効です(手動リサイズと同じ扱い)。
+  onAutosizeColumn: (columnKey: string) => void;
+  onAutosizeAllColumns: () => void;
+  // 追加(13-B2-1): 列の表示/非表示パネル(ColumnChooserPanel)を開くハンドラです。
+  //             この項目はサブメニューではなく別 popover を開くリーフ項目です
+  //             (クリックで列メニューを閉じてパネルを開きます。配線は SpreadsheetGrid 側)。
+  onOpenColumnChooser: () => void;
+  // 追加(13-B2-3 / gpt5.5対応): 列メニュー root の「列のリセット」用です。
+  //             columns は controlled props のため、onColumnsChange 未指定時は無効化します。
+  canResetColumns: boolean;
+  onResetColumns: () => void;
+  onRequestClose: () => void;
+};
+
+export function ColumnMenuPopover({
+  isOpen,
+  title,
+  columnKey,
+  canFilter,
+  onOpenFilter,
+  canSort,
+  sortDirection,
+  onSortChange,
+  onOpenSortManager,
+  canManageFilters,
+  onOpenFilterManager,
+  pinned,
+  canChangePinned,
+  layout,
+  popoverRef,
+  onPinnedChange,
+  onAutosizeColumn,
+  onAutosizeAllColumns,
+  onOpenColumnChooser,
+  canResetColumns,
+  onResetColumns,
+  onRequestClose,
+}: ColumnMenuPopoverProps) {
+  // 変更(13-B1): isPinSubmenuOpen: boolean → openSubmenuKey: string | null へ一般化します
+  //             (13-A2 セッションの設計決定どおり)。
+  //   - サブメニューを持つルート項目: onPointerEnter で setOpenSubmenuKey(自分の key)
+  //   - サブメニューを持たないルート項目: onPointerEnter で setOpenSubmenuKey(null)
+  //     (= 開いているカスケードが閉じる。AG Grid の挙動の肝)
+  // 注記: AG Grid と同様、一度開いたサブメニューはポインタが離れても開いたままにし、
+  //       別のルート項目へ hover したとき・メニュー自体が閉じたときに閉じます。
+  //       チラつき防止のため pointerleave では閉じません。
+  const [openSubmenuKey, setOpenSubmenuKey] = useState<string | null>(null);
+
+  // 追加(13-A2): 開いたまま別列へ切り替えた場合(popover は mount されたまま
+  //             columnKey だけ変わる)に、サブメニューの開閉状態を初期化します。
+  // 変更(13-B1): リセット先を openSubmenuKey = null に読み替えます。
+  useEffect(() => {
+    setOpenSubmenuKey(null);
+  }, [columnKey, isOpen]);
+
+  if (!isOpen || !layout) {
+    return null;
+  }
+
+  const isPinSubmenuOpen = openSubmenuKey === PIN_SUBMENU_KEY;
+
+  // 追加(13-A2): サブメニューを右に開くと viewport をはみ出す場合は左へ開きます
+  //             (AG Grid と同じフリップ挙動です)。layout はルートメニューの
+  //             fixed 座標なので、右端 = layout.left + layout.width です。
+  const submenuOpensLeft =
+    layout.left + layout.width + SUBMENU_GAP + SUBMENU_WIDTH >
+    window.innerWidth - VIEWPORT_MARGIN;
+
+  const wrapperStyle: CSSProperties = {
+    position: 'fixed',
+    top: layout.top,
+    left: layout.left,
+    width: layout.width,
+    zIndex: 1000,
+  };
+
+  // 追加(13-A2): サブメニューはルート項目(position: relative の行)を基準に
+  //             絶対配置します。top: -9 はパネルの padding(8) + border(1) ぶんを
+  //             相殺し、サブメニューの先頭項目をルート項目と上端揃えにするためです。
+  const submenuStyle: CSSProperties = {
+    position: 'absolute',
+    top: -9,
+    ...(submenuOpensLeft
+      ? { right: `calc(100% + ${SUBMENU_GAP}px)` }
+      : { left: `calc(100% + ${SUBMENU_GAP}px)` }),
+    width: SUBMENU_WIDTH,
+    zIndex: 1,
+  };
+
+  const handlePointerDown = (event: PointerEvent<HTMLDivElement>) => {
+    // 追加: popover 内 pointer 操作を grid 側へ伝播させません
+    //       (列選択開始や outside click 判定との競合を避けます)。
+    event.stopPropagation();
+  };
+
+  const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    // 追加: portal 内 keyboard イベントを React ツリー上の parent へ流しません。
+    //       Escape での close は controller の window keydown リスナーが担当します。
+    // 変更(POP-KEY): capture 相(onKeyDownCapture)→ bubble 相(onKeyDown)へ変更します。
+    //   capture 相の stopPropagation() はネイティブ伝播ごと止めるため、パネル内部要素の
+    //   bubble 相 onKeyDown や window(bubble)リスナーまで殺してしまいます
+    //   (ColumnFilterPopover の SF-ENTER fix と同一パターンの統一です)。bubble 相なら
+    //   「内部要素のハンドラが先に処理 → 最後にここで外側への合成バブリングだけ遮断」に
+    //   なり、Escape close は controller 側の capture 登録(POP-KEY)が受けます。
+    event.stopPropagation();
+  };
+
+  return createPortal(
+    <div
+      ref={popoverRef}
+      onPointerDown={handlePointerDown}
+      onKeyDown={handleKeyDown}
+      onContextMenu={(event) => {
+        // 追加: メニュー上での右クリックはブラウザ標準メニューを出しません。
+        event.preventDefault();
+      }}
+      className="ssg-menu-panel"
+      style={wrapperStyle}
+    >
+      <div className="ssg-menu-title">{title}</div>
+
+      {/* ── ルート項目: フィルター…(③) ── */}
+      {/* 追加(③): ヘッダーの常時フィルターボタンを廃止し、フィルター操作をここへ集約します。
+          サブメニューではなく別 popover(フィルター)を開くリーフ項目です。autosize / 列の表示と
+          同じく hover で setOpenSubmenuKey(null) し、開いているカスケード(列の固定)を閉じます。
+          ✓ 列ぶんのスペーサで他項目と左端を揃えます。クリックで列メニューを閉じてフィルター
+          popover を開く処理は SpreadsheetGrid 側(onOpenFilter)が担います。canFilter=false の
+          ときは項目を出しません(enableColumnFilter=false / この列に filterType 未設定)。 */}
+      {canFilter && (
+        <>
+          <button
+            type="button"
+            onPointerEnter={() => {
+              setOpenSubmenuKey(null);
+            }}
+            onClick={() => {
+              onOpenFilter();
+            }}
+            className="ssg-menu-item"
+          >
+            <span className="ssg-menu-icon" />
+            <span className="ssg-menu-label">フィルター…</span>
+          </button>
+
+          <div className="ssg-menu-separator" />
+        </>
+      )}
+
+      {/* ── ルート項目: 昇順 / 降順で並び替え(13-B4) ── */}
+      {/* 追加(13-B4): ヘッダーのソートボタンを廃止し、ソート操作をメニュー(と
+          コンテキストメニュー)へ集約します。AG Grid の Sort Ascending /
+          Sort Descending 相当のリーフ項目です。現在の方向に ✓ を出し、その方向を
+          もう一度選ぶと解除します(解除判定は SpreadsheetGrid 側)。
+          サブメニューを持たないリーフなので、hover で openSubmenuKey を null に戻し、
+          開いているカスケード(列の固定)を閉じます。hover ハイライトは CSS :hover で
+          行います(state hover を避け、memo 影響を出しません)。 */}
+      {canSort && (
+        <>
+          <button
+            type="button"
+            onPointerEnter={() => {
+              setOpenSubmenuKey(null);
+            }}
+            onClick={() => {
+              onSortChange('asc');
+            }}
+            className="ssg-menu-item"
+          >
+            {/* 注記: 14px 列は他項目の ✓ 列と左端を揃えます。
+                未適用時は方向アイコン(↑/↓)を、適用中は ✓ を出します。
+                ラベル自体が方向を示すため、適用中にアイコンが ✓ へ変わっても
+                意味は失われません。 */}
+            <span
+              className={cx(
+                'ssg-menu-sort-icon',
+                sortDirection === 'asc' && 'ssg-menu-sort-icon--active',
+              )}
+            >
+              {sortDirection === 'asc' ? '✓' : '↑'}
+            </span>
+            <span
+              className={cx(
+                'ssg-menu-label',
+                sortDirection === 'asc' && 'ssg-menu-label--sorted',
+              )}
+            >
+              昇順で並び替え
+            </span>
+          </button>
+
+          <button
+            type="button"
+            onPointerEnter={() => {
+              setOpenSubmenuKey(null);
+            }}
+            onClick={() => {
+              onSortChange('desc');
+            }}
+            className="ssg-menu-item"
+          >
+            <span
+              className={cx(
+                'ssg-menu-sort-icon',
+                sortDirection === 'desc' && 'ssg-menu-sort-icon--active',
+              )}
+            >
+              {sortDirection === 'desc' ? '✓' : '↓'}
+            </span>
+            <span
+              className={cx(
+                'ssg-menu-label',
+                sortDirection === 'desc' && 'ssg-menu-label--sorted',
+              )}
+            >
+              降順で並び替え
+            </span>
+          </button>
+
+          {/* ── ルート項目: 並び替えを管理…(MS-3-1) ── */}
+          {/* 追加(MS-3-1): サブメニューではなく別 popover(SortManagementPanel)を開く
+              リーフ項目です。昇順/降順の単発操作に対し、複数レベルの追加/削除・優先順位の
+              編集をマウス/タッチで行う経路を提供します(Shift+click ジェスチャに依りません)。
+              autosize / 列の表示と同じく hover で setOpenSubmenuKey(null) し、開いている
+              カスケード(列の固定)を閉じます。✓ 列ぶんのスペーサで他項目と左端を揃えます。
+              クリックで列メニューを閉じてパネルを開く処理は SpreadsheetGrid 側
+              (onOpenSortManager)が担います。 */}
+          <button
+            type="button"
+            onPointerEnter={() => {
+              setOpenSubmenuKey(null);
+            }}
+            onClick={() => {
+              onOpenSortManager();
+            }}
+            className="ssg-menu-item"
+          >
+            <span className="ssg-menu-icon" />
+            <span className="ssg-menu-label">並び替えを管理…</span>
+          </button>
+        </>
+      )}
+
+      {/* ── ルート項目: フィルターを管理…(FM-1) ── */}
+      {/* 追加(FM-1): 適用中フィルターの一覧 / 編集 / クリアを行うパネル
+          (FilterManagementPanel)を開くリーフ項目です。gate はグリッドレベルの
+          canManageFilters(enableColumnFilter 相当)で、canFilter(この列の filterType
+          有無)には依りません(パネルは全列のフィルターを扱うため)。位置は
+          「並び替えを管理…」の直後(canSort=false のときはソート群を飛ばしてここから)。
+          hover で開いているカスケード(列の固定)を閉じ、✓ 列ぶんのスペーサで左端を
+          揃えます。クリックで列メニューを閉じてパネルを開く処理は SpreadsheetGrid 側
+          (onOpenFilterManager)が担います。 */}
+      {canManageFilters && (
+        <button
+          type="button"
+          onPointerEnter={() => {
+            setOpenSubmenuKey(null);
+          }}
+          onClick={() => {
+            onOpenFilterManager();
+          }}
+          className="ssg-menu-item"
+        >
+          <span className="ssg-menu-icon" />
+          <span className="ssg-menu-label">フィルターを管理…</span>
+        </button>
+      )}
+
+      {/* 変更(FM-1): 区切り(旧 13-B4)の条件を「ソート群のみ」→「ソート群または
+          フィルターを管理…のいずれかが出ているとき」へ広げます(位置は不変)。 */}
+      {(canSort || canManageFilters) && <div className="ssg-menu-separator" />}
+
+      {/* ── ルート項目: 列の固定 ›(サブメニュー親) ── */}
+      {/* 追加(13-A2): サブメニューはこの行(position: relative)基準で絶対配置します。
+          パネル自体は overflow を持たないため、wrapper の外側(右隣 / 左隣)へ
+          はみ出して表示されます。popoverRef(wrapper)の子孫なので、controller の
+          outside-pointerdown 判定(contains)にもそのまま含まれます。 */}
+      <div className="ssg-menu-submenu-anchor">
+        <button
+          type="button"
+          onPointerEnter={() => {
+            // 変更(13-B1): AG Grid と同様、hover でこの項目のサブメニューを開きます
+            //             (他のサブメニューが開いていれば置き換わります)。
+            setOpenSubmenuKey(PIN_SUBMENU_KEY);
+          }}
+          onClick={() => {
+            // 変更(13-B1): クリックでもトグルできるようにします(タッチ環境向け)。
+            setOpenSubmenuKey((current) =>
+              current === PIN_SUBMENU_KEY ? null : PIN_SUBMENU_KEY,
+            );
+          }}
+          className={cx(
+            'ssg-menu-item',
+            isPinSubmenuOpen && 'ssg-menu-item--active',
+          )}
+        >
+          {/* 注記: ✓ 列との左端揃えのため、サブメニュー項目と同じ幅のスペーサを置きます。*/}
+          <span className="ssg-menu-icon" />
+          <span className="ssg-menu-label">列の固定</span>
+          <span className="ssg-menu-caret">›</span>
+        </button>
+
+        {/* ── サブメニュー: 固定しない / 左に固定 / 右に固定 ── */}
+        {isPinSubmenuOpen && (
+          <div className="ssg-menu-panel" style={submenuStyle}>
+            {PINNED_ITEMS.map((item) => {
+              const isSelected = pinned === item.value;
+              return (
+                <button
+                  key={item.label}
+                  type="button"
+                  disabled={!canChangePinned}
+                  onClick={() => {
+                    if (!canChangePinned) {
+                      return;
+                    }
+                    // 注記: 現在値と同じ項目を選んでも閉じるだけになります
+                    //       (no-op 判定は SpreadsheetGrid 側で行います)。
+                    onPinnedChange(columnKey, item.value);
+                  }}
+                  className="ssg-menu-item"
+                >
+                  {/* 追加: 現在の固定状態に ✓ を出します(未選択は幅だけ確保して揃えます)。*/}
+                  <span
+                    className={cx(
+                      'ssg-menu-check',
+                      !isSelected && 'ssg-menu-check--hidden',
+                    )}
+                  >
+                    ✓
+                  </span>
+                  <span className="ssg-menu-label">{item.label}</span>
+                </button>
+              );
+            })}
+
+            {!canChangePinned && (
+              <div className="ssg-menu-note">
+                onColumnsChange 未指定のため固定状態を変更できません
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* ── ルート項目: 幅の自動調整(13-B1) ── */}
+      {/* 追加(13-B1): サブメニューを持たないルート項目です。hover で
+          setOpenSubmenuKey(null) し、開いているカスケード(列の固定)を閉じます
+          (AG Grid の「別項目 hover でサブメニューが閉じる」挙動)。
+          hover ハイライトは CSS :hover で行います(state を使うと hover のたびに
+          popover 全体が再レンダーされるため)。
+          実際の close と幅反映は SpreadsheetGrid 側ハンドラが行います。 */}
+      <button
+        type="button"
+        onPointerEnter={() => {
+          setOpenSubmenuKey(null);
+        }}
+        onClick={() => {
+          onAutosizeColumn(columnKey);
+        }}
+        className="ssg-menu-item"
+      >
+        {/* 注記: ✓ 列との左端揃え用スペーサです(ピン行と同じ幅)。*/}
+        <span className="ssg-menu-icon" />
+        <span className="ssg-menu-label">この列の幅を自動調整</span>
+      </button>
+
+      <button
+        type="button"
+        onPointerEnter={() => {
+          setOpenSubmenuKey(null);
+        }}
+        onClick={() => {
+          onAutosizeAllColumns();
+        }}
+        className="ssg-menu-item"
+      >
+        <span className="ssg-menu-icon" />
+        <span className="ssg-menu-label">すべての列の幅を自動調整</span>
+      </button>
+
+      {/* ── ルート項目: 列の表示(13-B2-1) ── */}
+      {/* 追加(13-B2-1): サブメニューではなく別 popover(ColumnChooserPanel)を開く
+          リーフ項目です。autosize 項目と同じく hover で setOpenSubmenuKey(null) し、
+          開いているカスケード(列の固定)を閉じます。クリックで列メニューを閉じて
+          パネルを開く処理は SpreadsheetGrid 側(onOpenColumnChooser)が担います。 */}
+      <button
+        type="button"
+        onPointerEnter={() => {
+          setOpenSubmenuKey(null);
+        }}
+        onClick={() => {
+          onOpenColumnChooser();
+        }}
+        className="ssg-menu-item"
+      >
+        <span className="ssg-menu-icon" />
+        <span className="ssg-menu-label">列の表示</span>
+      </button>
+
+      {/* ── ルート項目: 列のリセット(13-B2-3 / gpt5.5対応) ── */}
+      {/* 追加(13-B2-3 / gpt5.5対応): 既存の ColumnChooserPanel フッターと同じ
+          リセット処理を列メニュー root からも呼べるようにします。サブメニューではない
+          リーフ項目なので、hover 時は openSubmenuKey を null に戻します。 */}
+      <button
+        type="button"
+        aria-disabled={!canResetColumns}
+        tabIndex={canResetColumns ? 0 : -1}
+        title={
+          canResetColumns
+            ? 'すべての列の幅・固定・表示を初期状態に戻します'
+            : 'onColumnsChange 未指定のため列をリセットできません'
+        }
+        onPointerEnter={() => {
+          setOpenSubmenuKey(null);
+        }}
+        onClick={() => {
+          if (!canResetColumns) {
+            return;
+          }
+          onResetColumns();
+        }}
+        className={cx(
+          'ssg-menu-item',
+          !canResetColumns && 'ssg-menu-item--disabled',
+        )}
+      >
+        <span className="ssg-menu-icon" />
+        <span className="ssg-menu-label">列のリセット</span>
+      </button>
+
+      <div className="ssg-menu-footer">
+        <button
+          type="button"
+          onClick={onRequestClose}
+          className="ssg-menu-close-btn"
+        >
+          閉じる
+        </button>
+      </div>
+    </div>,
+    document.body,
+  );
+}
+
+export default ColumnMenuPopover;
 </file>
 
 <file path="src/components/spreadsheet-grid/hooks/useColumnHeaderDragController.ts">
@@ -23846,6 +24111,105 @@ export type { NumberFormatterOptions } from './logic/valueFormatters';
     color: var(--ssg-glyph-hover);
   }
 
+  /* ── フィルターチップバー(GridFilterChipBar / FM-2) ── */
+  /* showFilterChipBar(既定 false)の opt-in。トップバー直下・.ssg-root 内のためトークンが
+     届く(padding は --ssg-bar-pad-* で density 連動)。有効フィルター 0 件時はコンポーネント
+     側が null を返すため、空バーの領域は生じない。 */
+  .ssg-filter-chip-bar {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-wrap: wrap;
+    padding: var(--ssg-bar-pad-y) var(--ssg-bar-pad-x);
+    background-color: var(--ssg-header-bg);
+    border-bottom: 1px solid var(--ssg-divider);
+  }
+
+  /* チップ本体。ネスト button 回避のため div コンテナ + 2 ボタン(ラベル / ×)構成。 */
+  .ssg-filter-chip {
+    display: inline-flex;
+    align-items: center;
+    border: 1px solid var(--ssg-icon-active-border);
+    border-radius: 6px;
+    background-color: var(--ssg-icon-active-bg);
+    overflow: hidden;
+  }
+  .ssg-filter-chip--hidden {
+    opacity: 0.75;
+  }
+
+  /* ラベルボタン(列名 + 要約)。クリックで対象列へジャンプ + popover(パネルの ✎ と同経路)。 */
+  .ssg-filter-chip-label {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    max-width: 260px;
+    padding: 2px 6px 2px 8px;
+    border: none;
+    background-color: transparent;
+    color: var(--ssg-accent-strong);
+    font-size: 11.5px;
+    line-height: 1.5;
+    cursor: pointer;
+  }
+  .ssg-filter-chip-label:disabled {
+    cursor: default;
+  }
+  .ssg-filter-chip-label:not(:disabled):hover {
+    background-color: var(--ssg-icon-active-bg-hover);
+  }
+  .ssg-filter-chip-name {
+    font-weight: 700;
+    white-space: nowrap;
+  }
+  .ssg-filter-chip-summary {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  /* × ボタン(この列のフィルターをクリア)。 */
+  .ssg-filter-chip-clear {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    align-self: stretch;
+    border: none;
+    background-color: transparent;
+    color: var(--ssg-accent-strong);
+    font-size: 12px;
+    line-height: 1;
+    cursor: pointer;
+  }
+  .ssg-filter-chip-clear:disabled {
+    cursor: default;
+    color: var(--ssg-glyph);
+  }
+  .ssg-filter-chip-clear:not(:disabled):hover {
+    background-color: var(--ssg-icon-active-bg-hover);
+  }
+
+  /* すべてクリア(列フィルターのみ対象 = フィルター管理パネルと同じ切り分け)。 */
+  .ssg-filter-chip-bar-clear-all {
+    border: none;
+    background-color: transparent;
+    color: var(--ssg-glyph-hover);
+    font-size: 11.5px;
+    cursor: pointer;
+    padding: 2px 6px;
+    border-radius: 5px;
+    white-space: nowrap;
+  }
+  .ssg-filter-chip-bar-clear-all:disabled {
+    color: var(--ssg-glyph);
+    cursor: default;
+  }
+  .ssg-filter-chip-bar-clear-all:not(:disabled):hover {
+    background-color: var(--ssg-header-hover-bg);
+  }
+
   /* ── ポップオーバー/パネル共通 ── */
   /* ポータルで body 直下に出るため、トークン(.ssg-root スコープ)は届かない。
      したがってポップオーバー系はリテラル色で定義する(クラス自体は未レイヤー CSS で上書き可能)。
@@ -25510,6 +25874,9 @@ function App() {
   const [contextMenuEnabled, setContextMenuEnabled] = useState(false);
   // 追加(THEME-3 デモ): readonly セル(「単位」列)の淡色表示 opt-in(既定 OFF=色変化なし)。
   const [dimReadOnlyCells, setDimReadOnlyCells] = useState(false);
+  // 追加(FM-2 デモ): フィルターチップバー(適用中の列フィルターをトップバー直下に常時表示)。
+  //   既定 OFF(opt-in)。ON にして列フィルターを掛けるとチップが出ます(0 件時は非表示)。
+  const [showFilterChipBar, setShowFilterChipBar] = useState(false);
   // 追加(THEME-2 デモ): 密度プリセット(rowHeight/headerHeight 既定と寸法トークンを一括切替)。
   const [density, setDensity] = useState<GridDensity>('standard');
   const [rowSelectionModeState, setRowSelectionModeState] =
@@ -26000,6 +26367,14 @@ function App() {
           >
             readonly淡色: {dimReadOnlyCells ? 'ON' : 'OFF'}
           </button>
+          {/* 追加(FM-2 デモ): フィルターチップバー ON/OFF。既定 OFF(opt-in)。 */}
+          <button
+            type="button"
+            onClick={() => setShowFilterChipBar((v) => !v)}
+            style={modeButtonStyle(showFilterChipBar)}
+          >
+            フィルターチップバー: {showFilterChipBar ? 'ON' : 'OFF'}
+          </button>
           {/* 追加(THEME-2 デモ): 密度プリセット(クリックで standard → compact → comfortable を巡回)。 */}
           <button
             type="button"
@@ -26172,6 +26547,8 @@ function App() {
         showTopBarFilter={showTopBarFilter}
         showTopBarCounts={showTopBarCounts}
         showBottomBarCounts={showBottomBarCounts}
+        // 追加(FM-2 デモ): 上の「フィルターチップバー」トグルと連動します(既定 OFF)。
+        showFilterChipBar={showFilterChipBar}
         // 追加(条件付きスタイル デモ): 「保留」行を薄オレンジでハイライトします(getRowClassName)。
         //   返り値の class は行コンテナ + 各データセルに付与されます(# 行ヘッダーセルは現状対象外)。
         getRowClassName={(row) =>
@@ -26252,6 +26629,7 @@ export default App;
 | `globalFilterIcon` | `ReactNode` | 組み込み検索アイコン | 既定トップバーのグローバルフィルター入力の左アイコン。`renderTopBar` 未指定時のみ有効。`undefined`=組み込みの検索(虫眼鏡)アイコン / `null`(など falsy)=アイコン無し / 任意 `ReactNode`=差し替え。クリアボタンは入力枠の内側右に `×` で表示され、入力が空のときは出ない。 |
 | `showBottomBar` | `boolean` | `true` | 下部バー(ステータスバー)の表示有無。`false` で `renderBottomBar` に関わらず一切描画しない(表示のマスタースイッチ。矛盾指定時は `renderBottomBar` より優先)。 |
 | `showBottomBarCounts` | `boolean` | `true` | 既定ボトムバーの Rows / Columns 件数 chips(左側)の表示有無。`renderBottomBar` 未指定時のみ有効。右側の Active / Selection / 選択統計 / Cols は対象外。 |
+| `showFilterChipBar` | `boolean` | `false` | フィルターチップバー(適用中の列フィルターをトップバー直下にチップで常時表示)の表示有無(opt-in)。有効フィルター 0 件時はバーごと非表示(空バーは出さない)。`showTopBar` とは独立。チップ本体クリックで対象列へジャンプしてフィルター popover を開き、× で個別クリア、「すべてクリア」は列フィルターのみ対象(グローバルフィルターは対象外)。 |
 | `renderTopBar` | `(ctx: SpreadsheetGridSlotContext<T>) => ReactNode` | 内蔵トップバー | 上部バーの差し替え。未指定時は内蔵トップバー(summary chips + フィルター入力。内訳は `showTopBarSummary` / `showTopBarFilter` で制御。フィルター入力は `enableGlobalFilter=true` が前提)。`showTopBar=false` 時は本指定に関わらず描画されない。 |
 | `renderBottomBar` | `(ctx: SpreadsheetGridSlotContext<T>) => ReactNode` | 内蔵ボトムバー | 下部バーの差し替え。未指定時は内蔵ステータスバー。`showBottomBar=false` 時は本指定に関わらず描画されない。 |
 | `className` | `string` | — | ルート要素の class。 |
@@ -26279,6 +26657,7 @@ export default App;
 | フィルター入力だけ(summary なし) | `showTopBarSummary={false}` |
 | トップの Rows/Columns 件数だけ消す | `showTopBarCounts={false}` |
 | ボトムの Rows/Columns 件数だけ消す | `showBottomBarCounts={false}` |
+| 適用中の列フィルターをチップで常時表示 | `showFilterChipBar`(既定 OFF) |
 | フィルター機能ごと無効 + summary は残す | `enableGlobalFilter={false}` |
 | 完全に自前のバー | `renderTopBar={(ctx) => …}` |
 
@@ -27627,6 +28006,13 @@ export type SpreadsheetGridProps<T> = {
   //   既定ボトムバー(renderBottomBar 未指定)のときのみ効きます。右側の Active / Selection /
   //   選択統計 / Cols chips は本値の対象外で常時表示です。
   showBottomBarCounts?: boolean;
+  // 追加(FM-2): フィルターチップバー(適用中の列フィルターをトップバー直下にチップで常時
+  //   一覧表示)の表示有無です。既定 false(opt-in)。有効フィルター 0 件のときはバーごと
+  //   非表示です(空バーは出しません)。showTopBar とは独立です(トップバー非表示でも出せます)。
+  //   チップ本体クリックで対象列へジャンプしてフィルター popover を開き、× でその列を
+  //   クリア、末尾の「すべてクリア」は列フィルターのみ対象です(グローバルフィルターは
+  //   対象外 = フィルター管理パネルと同じ切り分け)。
+  showFilterChipBar?: boolean;
   // 追加: Grid 上部カスタム領域です。未指定時は既定ツールバー(summary chips + グローバルフィルター
   //   入力)を表示します。既定バーの内訳は showTopBarSummary / showTopBarFilter で出し分けできます
   //   (フィルター入力は enableGlobalFilter=true が前提)。showTopBar=false のときは本指定に関わらず
@@ -27909,6 +28295,8 @@ import FilterManagementPanel, {
   type FilterManagementEntry,
   type FilterManagementAddableColumn,
 } from './view/FilterManagementPanel';
+// 追加(FM-2): フィルターチップバー(適用中の列フィルターの常時表示 / opt-in)です。
+import GridFilterChipBar from './view/GridFilterChipBar';
 // 追加(バッチ②/コンテキストメニュー): 対象解決(純ロジック)/ controller / portal popover。
 import {
   resolveContextMenuColIndex,
@@ -28057,6 +28445,8 @@ export function SpreadsheetGrid<T extends object>({
   //   トップは showTopBarSummary=true のとき内側で効き、ボトムは左側の件数グループを制御します。
   showTopBarCounts = true,
   showBottomBarCounts = true,
+  // 追加(FM-2): フィルターチップバー(適用中の列フィルターの常時表示)。既定 false(opt-in)。
+  showFilterChipBar = false,
   renderTopBar,
   renderBottomBar,
   className,
@@ -32009,6 +32399,19 @@ export function SpreadsheetGrid<T extends object>({
       )}
     >
       {resolvedTopBar}
+
+      {/* 追加(FM-2): フィルターチップバー(opt-in)。適用中の列フィルターをチップで常時表示します。
+          entries / ハンドラはフィルター管理パネル(FM-1)と完全共用です(要約・非表示列の扱いが
+          自動で一致)。0 件時はコンポーネント側が null を返すため、条件は prop のみで判定します。 */}
+      {showFilterChipBar && (
+        <GridFilterChipBar
+          entries={filterManagerEntries}
+          canFilter={columnFilterEnabled}
+          onEditFilter={jumpToColumnFilter}
+          onClearFilter={handleFilterManagerClearFilter}
+          onClearAllFilters={handleFilterManagerClearAll}
+        />
+      )}
 
       <div
         ref={gridRootRef}

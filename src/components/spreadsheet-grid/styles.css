@@ -495,6 +495,105 @@
     color: var(--ssg-glyph-hover);
   }
 
+  /* ── フィルターチップバー(GridFilterChipBar / FM-2) ── */
+  /* showFilterChipBar(既定 false)の opt-in。トップバー直下・.ssg-root 内のためトークンが
+     届く(padding は --ssg-bar-pad-* で density 連動)。有効フィルター 0 件時はコンポーネント
+     側が null を返すため、空バーの領域は生じない。 */
+  .ssg-filter-chip-bar {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-wrap: wrap;
+    padding: var(--ssg-bar-pad-y) var(--ssg-bar-pad-x);
+    background-color: var(--ssg-header-bg);
+    border-bottom: 1px solid var(--ssg-divider);
+  }
+
+  /* チップ本体。ネスト button 回避のため div コンテナ + 2 ボタン(ラベル / ×)構成。 */
+  .ssg-filter-chip {
+    display: inline-flex;
+    align-items: center;
+    border: 1px solid var(--ssg-icon-active-border);
+    border-radius: 6px;
+    background-color: var(--ssg-icon-active-bg);
+    overflow: hidden;
+  }
+  .ssg-filter-chip--hidden {
+    opacity: 0.75;
+  }
+
+  /* ラベルボタン(列名 + 要約)。クリックで対象列へジャンプ + popover(パネルの ✎ と同経路)。 */
+  .ssg-filter-chip-label {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    max-width: 260px;
+    padding: 2px 6px 2px 8px;
+    border: none;
+    background-color: transparent;
+    color: var(--ssg-accent-strong);
+    font-size: 11.5px;
+    line-height: 1.5;
+    cursor: pointer;
+  }
+  .ssg-filter-chip-label:disabled {
+    cursor: default;
+  }
+  .ssg-filter-chip-label:not(:disabled):hover {
+    background-color: var(--ssg-icon-active-bg-hover);
+  }
+  .ssg-filter-chip-name {
+    font-weight: 700;
+    white-space: nowrap;
+  }
+  .ssg-filter-chip-summary {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  /* × ボタン(この列のフィルターをクリア)。 */
+  .ssg-filter-chip-clear {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    align-self: stretch;
+    border: none;
+    background-color: transparent;
+    color: var(--ssg-accent-strong);
+    font-size: 12px;
+    line-height: 1;
+    cursor: pointer;
+  }
+  .ssg-filter-chip-clear:disabled {
+    cursor: default;
+    color: var(--ssg-glyph);
+  }
+  .ssg-filter-chip-clear:not(:disabled):hover {
+    background-color: var(--ssg-icon-active-bg-hover);
+  }
+
+  /* すべてクリア(列フィルターのみ対象 = フィルター管理パネルと同じ切り分け)。 */
+  .ssg-filter-chip-bar-clear-all {
+    border: none;
+    background-color: transparent;
+    color: var(--ssg-glyph-hover);
+    font-size: 11.5px;
+    cursor: pointer;
+    padding: 2px 6px;
+    border-radius: 5px;
+    white-space: nowrap;
+  }
+  .ssg-filter-chip-bar-clear-all:disabled {
+    color: var(--ssg-glyph);
+    cursor: default;
+  }
+  .ssg-filter-chip-bar-clear-all:not(:disabled):hover {
+    background-color: var(--ssg-header-hover-bg);
+  }
+
   /* ── ポップオーバー/パネル共通 ── */
   /* ポータルで body 直下に出るため、トークン(.ssg-root スコープ)は届かない。
      したがってポップオーバー系はリテラル色で定義する(クラス自体は未レイヤー CSS で上書き可能)。
