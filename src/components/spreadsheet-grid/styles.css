@@ -745,6 +745,166 @@
     user-select: none;
   }
 
+  /* ── フィルター管理パネル(FilterManagementPanel / FM-1) ── */
+  /* SortManagementPanel の兄弟。portal で body 直下に出るためリテラル色(トークン不達)。 */
+  .ssg-filter-manage-panel {
+    max-height: 420px;
+  }
+
+  .ssg-filter-manage-list {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    margin: 0 -4px;
+    padding: 0 4px;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .ssg-filter-manage-empty {
+    font-size: 12px;
+    color: #94a3b8;
+    padding: 10px 4px;
+    user-select: none;
+  }
+
+  /* 一覧行。hover で淡背景(✎ / × の操作対象を示す)。 */
+  .ssg-filter-manage-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 5px 6px;
+    border-radius: 8px;
+  }
+  .ssg-filter-manage-row:hover {
+    background-color: #f8fafc;
+  }
+  /* グローバルフィルター行。一覧(列フィルター)との区切りを持ち、hover 強調はしません。 */
+  .ssg-filter-manage-row--global {
+    border-bottom: 1px solid #e2e8f0;
+    border-radius: 0;
+    margin-bottom: 6px;
+    padding-bottom: 9px;
+  }
+  .ssg-filter-manage-row--global:hover {
+    background-color: transparent;
+  }
+
+  /* 左端グリフ(漏斗 / 虫めがね)。漏斗はヘッダーのフィルター適用中マークと同アクセント。 */
+  .ssg-filter-manage-glyph {
+    display: flex;
+    align-items: center;
+    flex: 0 0 auto;
+    color: #1d4ed8;
+  }
+  .ssg-filter-manage-glyph--global {
+    color: #64748b;
+  }
+
+  /* 列名(上段)+ 要約(下段)。どちらも 1 行 ellipsis(はみ出しは title 属性で補完)。 */
+  .ssg-filter-manage-main {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+  }
+  .ssg-filter-manage-name {
+    font-size: 12.5px;
+    font-weight: 700;
+    color: #1e293b;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .ssg-filter-manage-hidden-note {
+    margin-left: 4px;
+    font-size: 10.5px;
+    font-weight: 500;
+    color: #94a3b8;
+  }
+  .ssg-filter-manage-summary {
+    font-size: 11.5px;
+    color: #64748b;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  /* 行内アクション(✎ / ×)。--danger は hover で赤系(列メニューの危険操作と同系色)。 */
+  .ssg-filter-manage-actions {
+    display: flex;
+    gap: 2px;
+    flex: 0 0 auto;
+  }
+  .ssg-filter-manage-icon-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    border: none;
+    border-radius: 6px;
+    background-color: transparent;
+    color: #64748b;
+    cursor: pointer;
+    font-size: 13px;
+    line-height: 1;
+  }
+  .ssg-filter-manage-icon-btn:disabled {
+    color: #cbd5e1;
+    cursor: default;
+  }
+  .ssg-filter-manage-icon-btn:not(:disabled):hover {
+    background-color: #f1f5f9;
+    color: #1e293b;
+  }
+  .ssg-filter-manage-icon-btn--danger:not(:disabled):hover {
+    background-color: #fef2f2;
+    color: #dc2626;
+  }
+
+  /* フッター: 追加セレクト + すべてクリア。 */
+  .ssg-filter-manage-add {
+    flex: 1;
+    min-width: 0;
+    font-size: 12px;
+    padding: 5px 6px;
+    border: 1px solid #cbd5e1;
+    border-radius: 6px;
+    background-color: #ffffff;
+    color: #334155;
+    cursor: pointer;
+    outline: none;
+  }
+  .ssg-filter-manage-add:focus {
+    border-color: #2563eb;
+  }
+  .ssg-filter-manage-add:disabled {
+    color: #94a3b8;
+    cursor: default;
+  }
+  .ssg-filter-manage-clear-all {
+    flex: 0 0 auto;
+    border: none;
+    background-color: transparent;
+    color: #64748b;
+    font-size: 12px;
+    cursor: pointer;
+    padding: 5px 8px;
+    border-radius: 6px;
+    white-space: nowrap;
+  }
+  .ssg-filter-manage-clear-all:disabled {
+    color: #cbd5e1;
+    cursor: default;
+  }
+  .ssg-filter-manage-clear-all:not(:disabled):hover {
+    background-color: #fef2f2;
+    color: #dc2626;
+  }
+
   /* ── 列の表示パネル(ColumnChooserPanel) ── */
   .ssg-chooser-panel {
     max-height: 420px;
@@ -1367,6 +1527,26 @@
     align-items: center;
     color: var(--ssg-accent-strong);
     flex: 0 0 auto;
+  }
+  /* 追加(FM-1): フィルター管理パネルからのジャンプ先ヘッダーを一瞬強調するフラッシュです。
+     クラス(--jump-flash)は JS が直付けし animationend で除去します(状態を持たない一過性の
+     視認補助。React はヘッダーセルの className prop が変化したときだけ属性を書き戻すため、
+     直付けクラスは通常アニメ完了まで残ります)。トークン参照のため .ssg-root 内専用です。 */
+  @keyframes ssg-header-jump-flash {
+    0% {
+      box-shadow: inset 0 0 0 2px var(--ssg-accent);
+      background-color: var(--ssg-select-bg);
+    }
+    70% {
+      box-shadow: inset 0 0 0 2px var(--ssg-accent);
+      background-color: var(--ssg-select-bg);
+    }
+    100% {
+      box-shadow: none;
+    }
+  }
+  .ssg-header-cell--jump-flash {
+    animation: ssg-header-jump-flash 1.2s ease-out;
   }
   /* 列リサイズ把手。 */
   .ssg-header-resize {

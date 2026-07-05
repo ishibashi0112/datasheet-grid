@@ -65,6 +65,7 @@ src/components/spreadsheet-grid/hooks/useColumnHeaderDragController.ts
 src/components/spreadsheet-grid/hooks/useColumnMenuController.ts
 src/components/spreadsheet-grid/hooks/useColumnSelectOptionsCollector.test.ts
 src/components/spreadsheet-grid/hooks/useColumnSelectOptionsCollector.ts
+src/components/spreadsheet-grid/hooks/useFilterManagementController.ts
 src/components/spreadsheet-grid/hooks/useFilterPopoverController.ts
 src/components/spreadsheet-grid/hooks/useGlobalFilteredOrder.test.ts
 src/components/spreadsheet-grid/hooks/useGlobalFilteredOrder.ts
@@ -96,6 +97,8 @@ src/components/spreadsheet-grid/logic/exportScope.test.ts
 src/components/spreadsheet-grid/logic/exportScope.ts
 src/components/spreadsheet-grid/logic/filtering.test.ts
 src/components/spreadsheet-grid/logic/filtering.ts
+src/components/spreadsheet-grid/logic/filterSummary.test.ts
+src/components/spreadsheet-grid/logic/filterSummary.ts
 src/components/spreadsheet-grid/logic/geometry.ts
 src/components/spreadsheet-grid/logic/gridState.test.ts
 src/components/spreadsheet-grid/logic/gridState.ts
@@ -143,6 +146,8 @@ src/components/spreadsheet-grid/view/ColumnFilterPopover.tsx
 src/components/spreadsheet-grid/view/ColumnMenuPopover.tsx
 src/components/spreadsheet-grid/view/DefaultGridBottomBar.tsx
 src/components/spreadsheet-grid/view/DefaultGridTopBar.tsx
+src/components/spreadsheet-grid/view/FilterManagementPanel.test.tsx
+src/components/spreadsheet-grid/view/FilterManagementPanel.tsx
 src/components/spreadsheet-grid/view/gridBarHelpers.test.ts
 src/components/spreadsheet-grid/view/gridBarHelpers.ts
 src/components/spreadsheet-grid/view/GridBodyLayer.tsx
@@ -462,6 +467,220 @@ export default defineConfig([
 <svg xmlns="http://www.w3.org/2000/svg" width="77" height="47" fill="none" aria-labelledby="vite-logo-title" viewBox="0 0 77 47"><title id="vite-logo-title">Vite</title><style>.parenthesis{fill:#000}@media (prefers-color-scheme:dark){.parenthesis{fill:#fff}}</style><path fill="#9135ff" d="M40.151 45.71c-.663.844-2.02.374-2.02-.699V34.708a2.26 2.26 0 0 0-2.262-2.262H24.493c-.92 0-1.457-1.04-.92-1.788l7.479-10.471c1.07-1.498 0-3.578-1.842-3.578H15.443c-.92 0-1.456-1.04-.92-1.788l9.696-13.576c.213-.297.556-.474.92-.474h28.894c.92 0 1.456 1.04.92 1.788l-7.48 10.472c-1.07 1.497 0 3.578 1.842 3.578h11.376c.944 0 1.474 1.087.89 1.83L40.153 45.712z"/><mask id="a" width="48" height="47" x="14" y="0" maskUnits="userSpaceOnUse" style="mask-type:alpha"><path fill="#000" d="M40.047 45.71c-.663.843-2.02.374-2.02-.699V34.708a2.26 2.26 0 0 0-2.262-2.262H24.389c-.92 0-1.457-1.04-.92-1.788l7.479-10.472c1.07-1.497 0-3.578-1.842-3.578H15.34c-.92 0-1.456-1.04-.92-1.788l9.696-13.575c.213-.297.556-.474.92-.474H53.93c.92 0 1.456 1.04.92 1.788L47.37 13.03c-1.07 1.498 0 3.578 1.842 3.578h11.376c.944 0 1.474 1.088.89 1.831L40.049 45.712z"/></mask><g mask="url(#a)"><g filter="url(#b)"><ellipse cx="5.508" cy="14.704" fill="#eee6ff" rx="5.508" ry="14.704" transform="rotate(269.814 20.96 11.29)scale(-1 1)"/></g><g filter="url(#c)"><ellipse cx="10.399" cy="29.851" fill="#eee6ff" rx="10.399" ry="29.851" transform="rotate(89.814 -16.902 -8.275)scale(1 -1)"/></g><g filter="url(#d)"><ellipse cx="5.508" cy="30.487" fill="#8900ff" rx="5.508" ry="30.487" transform="rotate(89.814 -19.197 -7.127)scale(1 -1)"/></g><g filter="url(#e)"><ellipse cx="5.508" cy="30.599" fill="#8900ff" rx="5.508" ry="30.599" transform="rotate(89.814 -25.928 4.177)scale(1 -1)"/></g><g filter="url(#f)"><ellipse cx="5.508" cy="30.599" fill="#8900ff" rx="5.508" ry="30.599" transform="rotate(89.814 -25.738 5.52)scale(1 -1)"/></g><g filter="url(#g)"><ellipse cx="14.072" cy="22.078" fill="#eee6ff" rx="14.072" ry="22.078" transform="rotate(93.35 31.245 55.578)scale(-1 1)"/></g><g filter="url(#h)"><ellipse cx="3.47" cy="21.501" fill="#8900ff" rx="3.47" ry="21.501" transform="rotate(89.009 35.419 55.202)scale(-1 1)"/></g><g filter="url(#i)"><ellipse cx="3.47" cy="21.501" fill="#8900ff" rx="3.47" ry="21.501" transform="rotate(89.009 35.419 55.202)scale(-1 1)"/></g><g filter="url(#j)"><ellipse cx="14.592" cy="9.743" fill="#8900ff" rx="4.407" ry="29.108" transform="rotate(39.51 14.592 9.743)"/></g><g filter="url(#k)"><ellipse cx="61.728" cy="-5.321" fill="#8900ff" rx="4.407" ry="29.108" transform="rotate(37.892 61.728 -5.32)"/></g><g filter="url(#l)"><ellipse cx="55.618" cy="7.104" fill="#00c2ff" rx="5.971" ry="9.665" transform="rotate(37.892 55.618 7.104)"/></g><g filter="url(#m)"><ellipse cx="12.326" cy="39.103" fill="#8900ff" rx="4.407" ry="29.108" transform="rotate(37.892 12.326 39.103)"/></g><g filter="url(#n)"><ellipse cx="12.326" cy="39.103" fill="#8900ff" rx="4.407" ry="29.108" transform="rotate(37.892 12.326 39.103)"/></g><g filter="url(#o)"><ellipse cx="49.857" cy="30.678" fill="#8900ff" rx="4.407" ry="29.108" transform="rotate(37.892 49.857 30.678)"/></g><g filter="url(#p)"><ellipse cx="52.623" cy="33.171" fill="#00c2ff" rx="5.971" ry="15.297" transform="rotate(37.892 52.623 33.17)"/></g></g><path d="M6.919 0c-9.198 13.166-9.252 33.575 0 46.789h6.215c-9.25-13.214-9.196-33.623 0-46.789zm62.424 0h-6.215c9.198 13.166 9.252 33.575 0 46.789h6.215c9.25-13.214 9.196-33.623 0-46.789" class="parenthesis"/><defs><filter id="b" width="60.045" height="41.654" x="-5.564" y="16.92" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17286" stdDeviation="7.659"/></filter><filter id="c" width="90.34" height="51.437" x="-40.407" y="-6.762" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17286" stdDeviation="7.659"/></filter><filter id="d" width="79.355" height="29.4" x="-35.435" y="2.801" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17286" stdDeviation="4.596"/></filter><filter id="e" width="79.579" height="29.4" x="-30.84" y="20.8" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17286" stdDeviation="4.596"/></filter><filter id="f" width="79.579" height="29.4" x="-29.307" y="21.949" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17286" stdDeviation="4.596"/></filter><filter id="g" width="74.749" height="58.852" x="29.961" y="-17.13" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17286" stdDeviation="7.659"/></filter><filter id="h" width="61.377" height="25.362" x="37.754" y="3.055" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17286" stdDeviation="4.596"/></filter><filter id="i" width="61.377" height="25.362" x="37.754" y="3.055" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17286" stdDeviation="4.596"/></filter><filter id="j" width="56.045" height="63.649" x="-13.43" y="-22.082" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17286" stdDeviation="4.596"/></filter><filter id="k" width="54.814" height="64.646" x="34.321" y="-37.644" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17286" stdDeviation="4.596"/></filter><filter id="l" width="33.541" height="35.313" x="38.847" y="-10.552" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17286" stdDeviation="4.596"/></filter><filter id="m" width="54.814" height="64.646" x="-15.081" y="6.78" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17286" stdDeviation="4.596"/></filter><filter id="n" width="54.814" height="64.646" x="-15.081" y="6.78" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17286" stdDeviation="4.596"/></filter><filter id="o" width="54.814" height="64.646" x="22.45" y="-1.645" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17286" stdDeviation="4.596"/></filter><filter id="p" width="39.409" height="43.623" x="32.919" y="11.36" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17286" stdDeviation="4.596"/></filter></defs></svg>
 </file>
 
+<file path="src/components/spreadsheet-grid/hooks/useFilterManagementController.ts">
+import { useCallback, useEffect, useRef, useState, type RefObject } from 'react';
+
+// 追加(FM-1 / フィルター管理パネル): フィルター管理パネル(FilterManagementPanel)の
+//                 open / close / layout / outside click / Escape を管理するコントローラです。
+// 設計メモ:
+//   - useSortManagementController と同型です(「同型だが別物」を許容する本コードベースの
+//     作法に倣い、共通化はせずコピー流用します。将来の共通化余地はこの注記で残します)。
+//     相違はフィルター popover と「共存」するための次の 2 点だけです:
+//       1) alliedRef: パネルと共存させる要素(フィルター popover)の ref です。その内側での
+//          pointerdown では outside-close しません(✎ で popover を開いて編集 → 別の行の ✎ …
+//          と、パネルを開いたまま連続編集できるようにします)。
+//       2) suppressEscape / onSuppressedEscape: suppressEscape=true(フィルター popover
+//          open 中)の間は本パネルの Escape close を抑止し、代わりに onSuppressedEscape
+//          (通常は popover の close)へ委譲します。popover の Escape close は検索/入力
+//          要素の onKeyDown が担当のため、フォーカスがパネル側にあるときは Escape が
+//          どこにも届かず「押しても何も起きない」穴ができます。window capture で受ける
+//          本 controller から委譲することで、フォーカス位置に依らず
+//          「1 押し目 = popover / 2 押し目 = パネル」の 1 押し 1 階層に揃えます
+//          (フォーカスが popover 内なら input 側 onKeyDown も同じ close を呼びますが冪等)。
+//   - anchor は gridRoot 矩形の右上に固定します。パネルは列メニューの項目
+//     「フィルターを管理…」から開くため、開いた時点でメニュー(と anchor ボタン)は閉じて
+//     います。gridRoot 基準にすることで anchor ボタンの unmount(横スクロール仮想化)に
+//     依存せず、グリッド内部スクロールではパネルが動かず、window scroll/resize でのみ
+//     再配置されます。
+//   - パネルには <select> 等のフォーカス可能要素があるため、Escape は入力にフォーカスが
+//     あっても効くよう window で拾います(並び替え管理パネルと同じ作法 / capture 登録)。
+
+// 追加(FM-1): body 直下 portal パネルの配置情報です(position: fixed 座標)。
+export type FilterManagementLayout = {
+  top: number;
+  left: number;
+  width: number;
+};
+
+type UseFilterManagementControllerArgs = {
+  // 注記: フィルター管理は enableColumnFilter に紐づきます(開く導線は columnFilterEnabled の
+  //       ときだけ出る列メニュー項目です)。保険として open 側でも本フラグでガードします。
+  enableColumnFilter: boolean;
+  gridRootRef: RefObject<HTMLDivElement | null>;
+  // 追加(FM-1): 共存要素(フィルター popover)の ref です(outside-close の除外対象)。
+  alliedRef?: RefObject<HTMLDivElement | null>;
+  // 追加(FM-1): true の間は Escape close を抑止し、onSuppressedEscape へ委譲します。
+  suppressEscape?: boolean;
+  onSuppressedEscape?: () => void;
+};
+
+// 注記: 行は「漏斗 + 列名/要約(2 段)+ ✎ + ×」で要約文字列が主役のため、
+//       並び替え管理パネル(320)より少し広めにします。
+const PANEL_WIDTH = 360;
+const VIEWPORT_MARGIN = 8;
+// 追加(FM-1): gridRoot の右上から内側へのオフセットです(パネルがヘッダーに被る位置)。
+const GRID_INSET = 12;
+
+export const useFilterManagementController = ({
+  enableColumnFilter,
+  gridRootRef,
+  alliedRef,
+  suppressEscape = false,
+  onSuppressedEscape,
+}: UseFilterManagementControllerArgs) => {
+  const [isFilterManagerOpen, setIsFilterManagerOpen] = useState(false);
+  const [filterManagerLayout, setFilterManagerLayout] =
+    useState<FilterManagementLayout | null>(null);
+
+  // 追加(FM-1): パネル本体の ref です(outside click 判定に使います)。
+  const filterManagerRef = useRef<HTMLDivElement | null>(null);
+
+  // 追加(FM-1): gridRoot 矩形の右上を基準に fixed 座標を計算します。
+  const updateFilterManagerLayout = useCallback(() => {
+    const root = gridRootRef.current;
+    if (!root) {
+      setFilterManagerLayout(null);
+      return;
+    }
+
+    const rect = root.getBoundingClientRect();
+    let left = rect.right - PANEL_WIDTH - GRID_INSET;
+    let top = rect.top + GRID_INSET;
+
+    left = Math.max(VIEWPORT_MARGIN, left);
+    left = Math.min(left, window.innerWidth - PANEL_WIDTH - VIEWPORT_MARGIN);
+    top = Math.max(VIEWPORT_MARGIN, top);
+
+    setFilterManagerLayout((current) => {
+      if (
+        current &&
+        current.top === top &&
+        current.left === left &&
+        current.width === PANEL_WIDTH
+      ) {
+        return current;
+      }
+      return { top, left, width: PANEL_WIDTH };
+    });
+  }, [gridRootRef]);
+
+  const openFilterManager = useCallback(() => {
+    if (!enableColumnFilter) {
+      return;
+    }
+    // 追加: grid root に残っているフォーカスを外します(列メニューと同じ作法)。
+    if (document.activeElement instanceof HTMLElement) {
+      document.activeElement.blur();
+    }
+    gridRootRef.current?.blur();
+    setIsFilterManagerOpen(true);
+  }, [enableColumnFilter, gridRootRef]);
+
+  const closeFilterManager = useCallback(() => {
+    setIsFilterManagerOpen(false);
+    setFilterManagerLayout(null);
+    // 追加: close 後は grid root にフォーカスを戻し、keyboard 操作へ復帰させます。
+    requestAnimationFrame(() => {
+      gridRootRef.current?.focus();
+    });
+  }, [gridRootRef]);
+
+  // 追加(FM-1): open 時の初期配置 + resize / window scroll への追従です。
+  //               gridRoot 基準のため、グリッド内部スクロールでは動かしません。
+  useEffect(() => {
+    if (!isFilterManagerOpen) {
+      return;
+    }
+
+    updateFilterManagerLayout();
+
+    const handle = () => {
+      updateFilterManagerLayout();
+    };
+
+    window.addEventListener('resize', handle);
+    window.addEventListener('scroll', handle, true);
+
+    return () => {
+      window.removeEventListener('resize', handle);
+      window.removeEventListener('scroll', handle, true);
+    };
+  }, [isFilterManagerOpen, updateFilterManagerLayout]);
+
+  // 追加(FM-1): 表示中は outside click で閉じます(列メニューと同じ作法)。
+  //   相違: alliedRef(フィルター popover)内の pointerdown は「内側」とみなして閉じません
+  //   (✎ 編集で開いた popover の操作中にパネルが消えないようにします)。
+  useEffect(() => {
+    if (!isFilterManagerOpen) {
+      return;
+    }
+
+    const handleWindowPointerDown = (event: globalThis.PointerEvent) => {
+      const targetNode = event.target as Node | null;
+      if (!targetNode) {
+        return;
+      }
+      if (filterManagerRef.current?.contains(targetNode)) {
+        return;
+      }
+      if (alliedRef?.current?.contains(targetNode)) {
+        return;
+      }
+      closeFilterManager();
+    };
+
+    window.addEventListener('pointerdown', handleWindowPointerDown);
+    return () => {
+      window.removeEventListener('pointerdown', handleWindowPointerDown);
+    };
+  }, [alliedRef, closeFilterManager, isFilterManagerOpen]);
+
+  // 追加(FM-1): 表示中は Escape で閉じます(フォーカス位置に依らず効くよう window で拾います)。
+  //   POP-KEY: capture 登録(第 3 引数 true)。パネル root の bubble 相遮断や内部要素の
+  //   stopPropagation に依らず、window で最初に Escape を受けられます。
+  //   相違: suppressEscape=true(フィルター popover open 中)の間は本パネルを閉じず、
+  //   onSuppressedEscape(popover の close)へ委譲します。preventDefault はしません
+  //   (フォーカスが popover 内のときの input 側 onKeyDown の処理を妨げないため。
+  //    同じ close が二重に呼ばれても冪等です)。
+  useEffect(() => {
+    if (!isFilterManagerOpen) {
+      return;
+    }
+
+    const handleWindowKeyDown = (event: globalThis.KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        if (suppressEscape) {
+          onSuppressedEscape?.();
+          return;
+        }
+        event.preventDefault();
+        closeFilterManager();
+      }
+    };
+
+    window.addEventListener('keydown', handleWindowKeyDown, true);
+    return () => {
+      window.removeEventListener('keydown', handleWindowKeyDown, true);
+    };
+  }, [
+    closeFilterManager,
+    isFilterManagerOpen,
+    onSuppressedEscape,
+    suppressEscape,
+  ]);
+
+  return {
+    isFilterManagerOpen,
+    filterManagerLayout,
+    filterManagerRef,
+    openFilterManager,
+    closeFilterManager,
+  };
+};
+
+export default useFilterManagementController;
+</file>
+
 <file path="src/components/spreadsheet-grid/logic/domGuards.ts">
 // 追加: 文字キー入力で編集開始する判定です。
 export const isPrintableKey = (event: {
@@ -487,6 +706,164 @@ export const shouldIgnoreGridKeydown = (eventTarget: EventTarget | null) => {
   );
 
   return interactiveElement !== null;
+};
+</file>
+
+<file path="src/components/spreadsheet-grid/logic/filterSummary.test.ts">
+// 追加(FM-1)の単体テスト: describeColumnFilterValue(列フィルター値 → 人間可読要約)の
+//   仕様固定です。
+//   - text / date: 「"x" を含む」(trim 後)。select: 「"x" に一致」。number: raw 式そのまま。
+//   - set: include 1〜2 件は値列挙(空文字は「(空白)」)/ 3 件以上・0 件は「N 件を選択」/
+//     exclude は「N 件を除外」/ mode 省略は include 扱い(後方互換)。
+//   - custom: 非空 string は「"x"」(trim)、それ以外は「カスタム条件」。
+import { describe, it, expect } from 'vitest';
+import { describeColumnFilterValue } from './filterSummary';
+
+describe('describeColumnFilterValue', () => {
+  it('text / date は trim して「"x" を含む」', () => {
+    expect(describeColumnFilterValue({ kind: 'text', value: ' SUS ' })).toBe(
+      '"SUS" を含む',
+    );
+    expect(
+      describeColumnFilterValue({ kind: 'date', value: '2026-07' }),
+    ).toBe('"2026-07" を含む');
+  });
+
+  it('select は「"x" に一致」(trim しない = 判定側と同じ生値)', () => {
+    expect(
+      describeColumnFilterValue({ kind: 'select', value: '締結部品' }),
+    ).toBe('"締結部品" に一致');
+  });
+
+  it('number は raw 式そのまま(解釈可否に依らない)', () => {
+    expect(
+      describeColumnFilterValue({
+        kind: 'number',
+        raw: '>= 1000',
+        parsed: { mode: 'comparison', operator: '>=', value: 1000 },
+      }),
+    ).toBe('>= 1000');
+    expect(
+      describeColumnFilterValue({ kind: 'number', raw: 'abc', parsed: null }),
+    ).toBe('abc');
+  });
+
+  it('set(include)1〜2 件は値を列挙し、空文字は「(空白)」と表示する', () => {
+    expect(
+      describeColumnFilterValue({
+        kind: 'set',
+        mode: 'include',
+        values: ['締結部品'],
+      }),
+    ).toBe('"締結部品"');
+    expect(
+      describeColumnFilterValue({
+        kind: 'set',
+        mode: 'include',
+        values: ['締結部品', ''],
+      }),
+    ).toBe('"締結部品", (空白)');
+  });
+
+  it('set の mode 省略は include 扱い(後方互換)', () => {
+    expect(
+      describeColumnFilterValue({ kind: 'set', values: ['A', 'B'] }),
+    ).toBe('"A", "B"');
+  });
+
+  it('set(include)3 件以上と 0 件は「N 件を選択」', () => {
+    expect(
+      describeColumnFilterValue({
+        kind: 'set',
+        mode: 'include',
+        values: ['A', 'B', 'C'],
+      }),
+    ).toBe('3 件を選択');
+    expect(
+      describeColumnFilterValue({ kind: 'set', mode: 'include', values: [] }),
+    ).toBe('0 件を選択');
+  });
+
+  it('set(exclude)は件数に依らず「N 件を除外」(1 件でも列挙しない)', () => {
+    expect(
+      describeColumnFilterValue({ kind: 'set', mode: 'exclude', values: ['A'] }),
+    ).toBe('1 件を除外');
+    expect(
+      describeColumnFilterValue({
+        kind: 'set',
+        mode: 'exclude',
+        values: ['A', 'B', 'C'],
+      }),
+    ).toBe('3 件を除外');
+  });
+
+  it('custom は非空 string なら「"x"」(trim)、それ以外は「カスタム条件」', () => {
+    expect(
+      describeColumnFilterValue({ kind: 'custom', value: ' my-cond ' }),
+    ).toBe('"my-cond"');
+    expect(describeColumnFilterValue({ kind: 'custom', value: '' })).toBe(
+      'カスタム条件',
+    );
+    expect(
+      describeColumnFilterValue({ kind: 'custom', value: { min: 1 } }),
+    ).toBe('カスタム条件');
+  });
+});
+</file>
+
+<file path="src/components/spreadsheet-grid/logic/filterSummary.ts">
+import type { ColumnFilterValue } from '../model/gridTypes';
+
+// 追加(FM-1 / フィルター管理パネル): 列フィルター値(判別共用体)を人間可読な要約文字列へ
+//   変換する純関数です。FilterManagementPanel の一覧行で使い、FM-2(フィルターチップバー)
+//   でも共用予定です。
+// 仕様(ユーザー合意済み):
+//   - text / date  : 「"x" を含む」(部分一致。判定側と同じく trim 後の値を表示)
+//   - select       : 「"x" に一致」(完全一致)
+//   - number       : raw 式そのまま(">= 1000" / "100..500" 等。式として解釈不可のときも
+//                    raw = contains のフォールバック needle なのでそのまま出します)
+//   - set(include): 1〜2 件は値を列挙(空文字セル値は Excel 流に「(空白)」)。3 件以上は
+//                    「N 件を選択」。0 件 = 全行非表示も「0 件を選択」(reducer 側で通常は
+//                    clear 済みの防御表示)。母数(全候補数)はフィルター値に保存されない
+//                    (収集コストが高い)ため出しません。
+//   - set(exclude): 「N 件を除外」(values は非選択値 = 除外対象そのもの)
+//   - custom       : value が非空 string なら「"x"」(trim)、それ以外は「カスタム条件」
+//     (custom の中身は利用側 filterFn の自由形のため、汎用の安全側表示に留めます)
+
+// set の値表示です。空文字セル値は「(空白)」と表示します(セル値の String 化で空になった
+//   値も候補として選択できる仕様のため、無表示だと「", "」のような欠けた列挙になります)。
+const formatSetValue = (value: string): string =>
+  value === '' ? '(空白)' : `"${value}"`;
+
+// 列フィルター値の要約文字列を返します。有効判定(isActiveColumnFilterValue)は呼び出し側の
+//   責務です(無効値でも安全に文字列を返しますが、一覧に載せる/載せないの判断は行いません)。
+export const describeColumnFilterValue = (value: ColumnFilterValue): string => {
+  switch (value.kind) {
+    case 'text':
+    case 'date':
+      return `"${value.value.trim()}" を含む`;
+    case 'select':
+      return `"${value.value}" に一致`;
+    case 'number':
+      return value.raw;
+    case 'set': {
+      // mode 省略は include 扱いです(反転set 導入前の値との後方互換)。
+      const mode = value.mode ?? 'include';
+      if (mode === 'exclude') {
+        return `${value.values.length} 件を除外`;
+      }
+      if (value.values.length > 0 && value.values.length <= 2) {
+        return value.values.map(formatSetValue).join(', ');
+      }
+      return `${value.values.length} 件を選択`;
+    }
+    case 'custom': {
+      if (typeof value.value === 'string' && value.value.trim().length > 0) {
+        return `"${value.value.trim()}"`;
+      }
+      return 'カスタム条件';
+    }
+  }
 };
 </file>
 
@@ -1263,6 +1640,456 @@ export const setCellValue = <T,>(
     [column.key]: value,
   } as T;
 };
+</file>
+
+<file path="src/components/spreadsheet-grid/view/FilterManagementPanel.test.tsx">
+// 追加(FM-1)の view テスト: FilterManagementPanel の表示と操作コールバックの配線を固定します。
+//   - 適用中フィルターの行(列名 / 要約)の描画と、非表示列の ✎ disabled。
+//   - ✎ / × / すべてクリア / フィルターを追加 / グローバル行 × の各コールバック発火。
+//   - フッターの disabled 条件(entries 0 件 / addable 0 件)と空表示。
+//   - isOpen=false / layout=null で描画しないこと。
+//   CSS の見た目(トークン適用)は jsdom で検証できないため、表示テキストと
+//   コールバック発火のみを固定します(THEME-2/3 と同じ方針)。
+// @vitest-environment jsdom
+import { describe, it, expect, afterEach, vi } from 'vitest';
+import { render, screen, fireEvent, cleanup } from '@testing-library/react';
+import { createRef } from 'react';
+
+import FilterManagementPanel, {
+  type FilterManagementEntry,
+} from './FilterManagementPanel';
+import type { FilterManagementLayout } from '../hooks/useFilterManagementController';
+
+afterEach(() => {
+  cleanup();
+});
+
+const layout: FilterManagementLayout = { top: 20, left: 40, width: 360 };
+
+const makeEntries = (): FilterManagementEntry[] => [
+  { columnKey: 'price', title: '単価', summaryText: '>= 1000', isHidden: false },
+  {
+    columnKey: 'due',
+    title: '納期',
+    summaryText: '"2026-07" を含む',
+    isHidden: true,
+  },
+];
+
+const makeProps = () => ({
+  isOpen: true,
+  entries: makeEntries(),
+  addableColumns: [{ key: 'name', title: '品名' }],
+  showGlobalFilterRow: false,
+  globalFilterText: '',
+  canFilter: true,
+  layout,
+  panelRef: createRef<HTMLDivElement>(),
+  onEditFilter: vi.fn(),
+  onAddFilter: vi.fn(),
+  onClearFilter: vi.fn(),
+  onClearAllFilters: vi.fn(),
+  onClearGlobalFilter: vi.fn(),
+  onRequestClose: vi.fn(),
+});
+
+describe('FilterManagementPanel', () => {
+  it('適用中フィルターの行(列名 / 要約)を描画する', () => {
+    render(<FilterManagementPanel {...makeProps()} />);
+    expect(screen.getByText('フィルター管理')).toBeTruthy();
+    expect(screen.getByText('単価')).toBeTruthy();
+    expect(screen.getByText('>= 1000')).toBeTruthy();
+    expect(screen.getByText('納期')).toBeTruthy();
+    expect(screen.getByText('"2026-07" を含む')).toBeTruthy();
+    // 非表示列には注記が付きます。
+    expect(screen.getByText('(非表示列)')).toBeTruthy();
+  });
+
+  it('✎ で onEditFilter(columnKey) を呼ぶ / 非表示列の ✎ は disabled', () => {
+    const props = makeProps();
+    render(<FilterManagementPanel {...props} />);
+    fireEvent.click(screen.getByLabelText('単価 のフィルターを編集'));
+    expect(props.onEditFilter).toHaveBeenCalledWith('price');
+    const hiddenEdit = screen.getByLabelText(
+      '納期 のフィルターを編集',
+    ) as HTMLButtonElement;
+    expect(hiddenEdit.disabled).toBe(true);
+  });
+
+  it('× で onClearFilter(columnKey) を呼ぶ(非表示列でも可)', () => {
+    const props = makeProps();
+    render(<FilterManagementPanel {...props} />);
+    const hiddenClear = screen.getByLabelText(
+      '納期 のフィルターをクリア',
+    ) as HTMLButtonElement;
+    expect(hiddenClear.disabled).toBe(false);
+    fireEvent.click(hiddenClear);
+    expect(props.onClearFilter).toHaveBeenCalledWith('due');
+  });
+
+  it('「すべてクリア」で onClearAllFilters を呼ぶ / 0 件時は disabled + 空表示', () => {
+    const props = makeProps();
+    const { unmount } = render(<FilterManagementPanel {...props} />);
+    fireEvent.click(screen.getByText('すべてクリア'));
+    expect(props.onClearAllFilters).toHaveBeenCalledTimes(1);
+    unmount();
+
+    const emptyProps = { ...makeProps(), entries: [] };
+    render(<FilterManagementPanel {...emptyProps} />);
+    expect(screen.getByText('適用中の列フィルターはありません')).toBeTruthy();
+    const clearAll = screen.getByText('すべてクリア') as HTMLButtonElement;
+    expect(clearAll.disabled).toBe(true);
+  });
+
+  it('「フィルターを追加」の <select> で onAddFilter(columnKey) を呼ぶ / 候補 0 件時は disabled', () => {
+    const props = makeProps();
+    const { unmount } = render(<FilterManagementPanel {...props} />);
+    fireEvent.change(screen.getByLabelText('フィルターを追加する列を選択'), {
+      target: { value: 'name' },
+    });
+    expect(props.onAddFilter).toHaveBeenCalledWith('name');
+    unmount();
+
+    const noAdd = { ...makeProps(), addableColumns: [] };
+    render(<FilterManagementPanel {...noAdd} />);
+    const select = screen.getByLabelText(
+      'フィルターを追加する列を選択',
+    ) as HTMLSelectElement;
+    expect(select.disabled).toBe(true);
+    expect(screen.getByText('+ 追加できる列がありません')).toBeTruthy();
+  });
+
+  it('グローバルフィルター行は showGlobalFilterRow=true のときだけ描画し、× で onClearGlobalFilter を呼ぶ', () => {
+    const props = {
+      ...makeProps(),
+      showGlobalFilterRow: true,
+      globalFilterText: 'ねじ',
+    };
+    const { unmount } = render(<FilterManagementPanel {...props} />);
+    expect(screen.getByText('グローバルフィルター')).toBeTruthy();
+    expect(screen.getByText('"ねじ" を含む行')).toBeTruthy();
+    fireEvent.click(screen.getByLabelText('グローバルフィルターをクリア'));
+    expect(props.onClearGlobalFilter).toHaveBeenCalledTimes(1);
+    unmount();
+
+    render(<FilterManagementPanel {...makeProps()} />);
+    expect(screen.queryByText('グローバルフィルター')).toBeNull();
+  });
+
+  it('タイトルの × で onRequestClose を呼ぶ', () => {
+    const props = makeProps();
+    render(<FilterManagementPanel {...props} />);
+    fireEvent.click(screen.getByLabelText('閉じる'));
+    expect(props.onRequestClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('isOpen=false / layout=null では描画しない', () => {
+    const closed = { ...makeProps(), isOpen: false };
+    const { unmount } = render(<FilterManagementPanel {...closed} />);
+    expect(screen.queryByText('フィルター管理')).toBeNull();
+    unmount();
+
+    const noLayout = { ...makeProps(), layout: null };
+    render(<FilterManagementPanel {...noLayout} />);
+    expect(screen.queryByText('フィルター管理')).toBeNull();
+  });
+});
+</file>
+
+<file path="src/components/spreadsheet-grid/view/FilterManagementPanel.tsx">
+// 追加(FM-1 / フィルター管理パネル): 適用中のフィルターを一覧し、編集(ジャンプ)/ 個別
+//   クリア / 追加 / すべてクリアを行う独立 popover です(SortManagementPanel の兄弟)。
+//   - タイトル + × クローズ / (任意)グローバルフィルター行 / 適用中フィルター一覧 /
+//     フッター(フィルターを追加 <select> / すべてクリア)で構成します。
+//   - 本コンポーネントは非ジェネリックです(ColumnChooserPanel / SortManagementPanel と
+//     同様、プリミティブな entries / addableColumns だけを受け取ります)。
+//   - フィルターの評価・状態は持ちません。操作は columnKey の「意図」を emit し、
+//     ジャンプ + popover open(✎ / 追加)や dispatch(× / すべてクリア)は呼び出し側
+//     (SpreadsheetGrid)が担います。
+//   - パネルは操作後も開いたまま(× / outside click / Escape でのみ閉じます。Sort と同じ。
+//     フィルター popover との共存 = alliedRef / suppressEscape は controller 側の責務です)。
+//   - 非表示列のフィルターも一覧に出します(「見えない列に絞り込みが残っている」という
+//     発見性の穴を塞ぐのが本機能の主目的のためです)。✎ はジャンプ先が無いため disabled に
+//     し、title で理由を出します(× でのクリアは可能)。
+import { createPortal } from 'react-dom';
+import type { CSSProperties, KeyboardEvent, PointerEvent, RefObject } from 'react';
+import type { FilterManagementLayout } from '../hooks/useFilterManagementController';
+
+// 追加(FM-1): 一覧 1 行ぶんの情報です(要約文字列は logic/filterSummary.ts で生成済み)。
+export type FilterManagementEntry = {
+  columnKey: string;
+  title: string;
+  summaryText: string;
+  // 非表示列(visible=false)のフィルターです。✎(ジャンプ編集)を無効化します。
+  isHidden: boolean;
+};
+
+// 追加(FM-1): 「フィルターを追加」<select> の候補です(可視・filterType あり・未適用)。
+export type FilterManagementAddableColumn = {
+  key: string;
+  title: string;
+};
+
+type FilterManagementPanelProps = {
+  isOpen: boolean;
+  // 適用中フィルターの一覧です(可視列の視覚順 → 非表示列の順。呼び出し側で構築)。
+  entries: FilterManagementEntry[];
+  addableColumns: FilterManagementAddableColumn[];
+  // グローバルフィルター行の表示可否です(enableGlobalFilter かつ非空のとき true)。
+  showGlobalFilterRow: boolean;
+  globalFilterText: string;
+  // enableColumnFilter 相当。false のときは操作を無効化します(保険。通常は開きません)。
+  canFilter: boolean;
+  layout: FilterManagementLayout | null;
+  panelRef: RefObject<HTMLDivElement | null>;
+  // ✎: 対象列へジャンプして既存のフィルター popover を開きます(配線は呼び出し側)。
+  onEditFilter: (columnKey: string) => void;
+  // フィルターを追加: 選択列へジャンプして popover を開きます(✎ と同じ経路)。
+  onAddFilter: (columnKey: string) => void;
+  onClearFilter: (columnKey: string) => void;
+  // すべてクリア: 列フィルターのみ対象です(グローバルは行の × のみ = ユーザー合意)。
+  onClearAllFilters: () => void;
+  onClearGlobalFilter: () => void;
+  onRequestClose: () => void;
+};
+
+// 追加(FM-1): 漏斗グリフです(GridHeaderRow のフィルター適用中マークと同一パス)。
+function FunnelGlyph() {
+  return (
+    <svg
+      width="11"
+      height="11"
+      viewBox="0 0 16 16"
+      fill="currentColor"
+      aria-hidden="true"
+      focusable="false"
+    >
+      <path d="M2 4 L14 4 L9.2 9.2 L9.2 13 L6.8 13 L6.8 9.2 Z" />
+    </svg>
+  );
+}
+
+// 追加(FM-1): 虫めがねグリフです(トップバーのグローバルフィルター入力アイコンと同形)。
+function SearchGlyph() {
+  return (
+    <svg
+      width="11"
+      height="11"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2.4"
+      aria-hidden="true"
+      focusable="false"
+    >
+      <circle cx="11" cy="11" r="7" />
+      <path d="m20 20-3.5-3.5" />
+    </svg>
+  );
+}
+
+export function FilterManagementPanel({
+  isOpen,
+  entries,
+  addableColumns,
+  showGlobalFilterRow,
+  globalFilterText,
+  canFilter,
+  layout,
+  panelRef,
+  onEditFilter,
+  onAddFilter,
+  onClearFilter,
+  onClearAllFilters,
+  onClearGlobalFilter,
+  onRequestClose,
+}: FilterManagementPanelProps) {
+  if (!isOpen || !layout) {
+    return null;
+  }
+
+  const wrapperStyle: CSSProperties = {
+    top: layout.top,
+    left: layout.left,
+    width: layout.width,
+  };
+
+  const handlePointerDown = (event: PointerEvent<HTMLDivElement>) => {
+    // パネル内 pointer 操作を grid 側へ伝播させません(セル選択開始 / outside click 競合回避)。
+    event.stopPropagation();
+  };
+
+  const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    // portal 内 keyboard を React ツリー上の parent へ流しません。
+    // Escape での close は controller の window keydown(capture / POP-KEY)が担当します。
+    event.stopPropagation();
+  };
+
+  const canClearAll = canFilter && entries.length > 0;
+  const canAdd = canFilter && addableColumns.length > 0;
+
+  return createPortal(
+    <div
+      ref={panelRef}
+      onPointerDown={handlePointerDown}
+      onKeyDown={handleKeyDown}
+      onContextMenu={(event) => {
+        event.preventDefault();
+      }}
+      className="ssg-popover ssg-filter-manage-panel"
+      style={wrapperStyle}
+    >
+      {/* ── ヘッダー: タイトル + × ── */}
+      <div className="ssg-popover-header">
+        <span className="ssg-popover-title">フィルター管理</span>
+        <button
+          type="button"
+          onClick={onRequestClose}
+          aria-label="閉じる"
+          className="ssg-popover-close"
+        >
+          ×
+        </button>
+      </div>
+
+      {/* ── グローバルフィルター行(先頭・区切り付き) ── */}
+      {/* 追加(FM-1): 列フィルターと別枠で先頭に出します。「すべてクリア」の対象外で、
+          解除はこの行の × のみです(ユーザー合意の切り分け)。 */}
+      {showGlobalFilterRow && (
+        <div className="ssg-filter-manage-row ssg-filter-manage-row--global">
+          <span
+            className="ssg-filter-manage-glyph ssg-filter-manage-glyph--global"
+            aria-hidden="true"
+          >
+            <SearchGlyph />
+          </span>
+          <span className="ssg-filter-manage-main">
+            <span className="ssg-filter-manage-name">グローバルフィルター</span>
+            <span
+              className="ssg-filter-manage-summary"
+              title={globalFilterText}
+            >
+              "{globalFilterText}" を含む行
+            </span>
+          </span>
+          <span className="ssg-filter-manage-actions">
+            <button
+              type="button"
+              className="ssg-filter-manage-icon-btn ssg-filter-manage-icon-btn--danger"
+              disabled={!canFilter}
+              title="グローバルフィルターをクリア"
+              aria-label="グローバルフィルターをクリア"
+              onClick={onClearGlobalFilter}
+            >
+              ×
+            </button>
+          </span>
+        </div>
+      )}
+
+      {/* ── 適用中フィルター一覧(スクロール) ── */}
+      <div className="ssg-filter-manage-list">
+        {entries.length === 0 ? (
+          <div className="ssg-filter-manage-empty">
+            適用中の列フィルターはありません
+          </div>
+        ) : (
+          entries.map((entry) => (
+            <div key={entry.columnKey} className="ssg-filter-manage-row">
+              <span className="ssg-filter-manage-glyph" aria-hidden="true">
+                <FunnelGlyph />
+              </span>
+              <span className="ssg-filter-manage-main">
+                <span className="ssg-filter-manage-name">
+                  {entry.title}
+                  {entry.isHidden && (
+                    <span className="ssg-filter-manage-hidden-note">
+                      (非表示列)
+                    </span>
+                  )}
+                </span>
+                <span
+                  className="ssg-filter-manage-summary"
+                  title={entry.summaryText}
+                >
+                  {entry.summaryText}
+                </span>
+              </span>
+              <span className="ssg-filter-manage-actions">
+                <button
+                  type="button"
+                  className="ssg-filter-manage-icon-btn"
+                  disabled={!canFilter || entry.isHidden}
+                  title={
+                    entry.isHidden
+                      ? '非表示列のためジャンプ編集できません(× でクリアは可能)'
+                      : 'この列へジャンプして編集'
+                  }
+                  aria-label={`${entry.title} のフィルターを編集`}
+                  onClick={() => {
+                    onEditFilter(entry.columnKey);
+                  }}
+                >
+                  ✎
+                </button>
+                <button
+                  type="button"
+                  className="ssg-filter-manage-icon-btn ssg-filter-manage-icon-btn--danger"
+                  disabled={!canFilter}
+                  title="この列のフィルターをクリア"
+                  aria-label={`${entry.title} のフィルターをクリア`}
+                  onClick={() => {
+                    onClearFilter(entry.columnKey);
+                  }}
+                >
+                  ×
+                </button>
+              </span>
+            </div>
+          ))
+        )}
+      </div>
+
+      {/* ── フッター: フィルターを追加 + すべてクリア ── */}
+      {/* 追加(FM-1): 追加は <select> の 1 操作で列を選ぶ形です(選択で即ジャンプ + popover。
+          value は常に '' の controlled のため、選択後は自動でプレースホルダへ戻ります)。 */}
+      <div className="ssg-popover-footer">
+        <select
+          className="ssg-filter-manage-add"
+          value=""
+          disabled={!canAdd}
+          aria-label="フィルターを追加する列を選択"
+          onChange={(event) => {
+            const key = event.target.value;
+            if (key) {
+              onAddFilter(key);
+            }
+          }}
+        >
+          <option value="">
+            {canAdd ? '+ フィルターを追加…' : '+ 追加できる列がありません'}
+          </option>
+          {addableColumns.map((column) => (
+            <option key={column.key} value={column.key}>
+              {column.title}
+            </option>
+          ))}
+        </select>
+        <button
+          type="button"
+          className="ssg-filter-manage-clear-all"
+          disabled={!canClearAll}
+          onClick={onClearAllFilters}
+        >
+          すべてクリア
+        </button>
+      </div>
+    </div>,
+    document.body,
+  );
+}
+
+export default FilterManagementPanel;
 </file>
 
 <file path="src/main.tsx">
@@ -7568,363 +8395,6 @@ export function numberFormatter<T>(
 }
 </file>
 
-<file path="src/components/spreadsheet-grid/SpreadsheetGrid.export.integration.test.tsx">
-// SpreadsheetGrid を実際に render し、命令的ハンドル(getState / applyState)と onStateChange の
-//   「配線」を実行検証する結合テストです。純ロジック(logic/gridState.test.ts)では到達できない以下を、
-//   実コンポーネントを通して確認します:
-//   - getState がライブの uiState / columns を読んでスナップショット(v2: 列メタ含む)を返す。
-//   - applyState が dispatch → reducer → 再レンダーを経て getState に反映される(往復)。
-//   - applyState の列メタ(順序 / 可視 / ピン)が onColumnsChange 経由で controlled に反映される(往復)。
-//   - onStateChange effect が「初回マウント非発火 / 状態変化(列メタ含む)で発火 / 同値では再発火しない」。
-//   renderHook 系テストと同じく DOM を要するため、本ファイルのみ jsdom で回します。
-// @vitest-environment jsdom
-import { describe, it, expect, vi, beforeAll, afterEach } from 'vitest';
-import { render, cleanup, act } from '@testing-library/react';
-import { createRef, useState } from 'react';
-import type { Ref } from 'react';
-
-import { SpreadsheetGrid } from './SpreadsheetGrid';
-import { GRID_STATE_VERSION } from './logic/gridState';
-import type {
-  GridColumn,
-  GridState,
-  SpreadsheetGridHandle,
-} from './model/gridTypes';
-
-// jsdom には ResizeObserver / Element.scrollTo が無い(SpreadsheetGrid がマウント時に new / 呼び出す)
-//   ため、最小スタブを入れます。observe は no-op(コールバックを呼ばない)なので、これ起因の setState は
-//   発生せず、テストの決定性を保てます。
-beforeAll(() => {
-  if (!('ResizeObserver' in globalThis)) {
-    class ResizeObserverStub {
-      observe(): void {}
-      unobserve(): void {}
-      disconnect(): void {}
-    }
-    (globalThis as unknown as { ResizeObserver: unknown }).ResizeObserver =
-      ResizeObserverStub;
-  }
-  if (!Element.prototype.scrollTo) {
-    Element.prototype.scrollTo = () => {};
-  }
-});
-
-afterEach(() => {
-  cleanup();
-});
-
-type Row = { id: number; name: string; qty: number };
-
-const columns: GridColumn<Row>[] = [
-  { key: 'id', title: 'ID', width: 80 },
-  { key: 'name', title: 'Name', width: 160 },
-  { key: 'qty', title: 'Qty', width: 100 },
-];
-
-const rows: Row[] = [
-  { id: 1, name: 'alpha', qty: 10 },
-  { id: 2, name: 'beta', qty: 20 },
-  { id: 3, name: 'gamma', qty: 30 },
-];
-
-// テスト全体で使い回す「適用する状態」。columnWidths は 1 列だけ(resetColumnWidths がフル置換である
-//   ことの確認も兼ねる)、フィルター(global + 列)とソートも含めます。
-const appliedState: GridState = {
-  version: GRID_STATE_VERSION,
-  columnWidths: { id: 120 },
-  filters: {
-    globalText: 'be',
-    columnFilters: { name: { kind: 'text', value: 'be' } },
-  },
-  sort: [{ columnKey: 'qty', direction: 'desc' }],
-};
-
-// 追加(v2): controlled-columns ハーネスです。列メタ(可視 / 順序 / ピン)は consumer 所有のため、
-//   applyState の列メタ反映は onColumnsChange を通ります。ここで columns を useState で保持して
-//   onColumnsChange へ繋ぎ、applyState → onColumnsChange → 再レンダー → getState の往復を検証します。
-function ControlledGrid({
-  gridRef,
-  initialColumns,
-  onStateChange,
-}: {
-  gridRef: Ref<SpreadsheetGridHandle<Row>>;
-  initialColumns: GridColumn<Row>[];
-  onStateChange?: (state: GridState) => void;
-}) {
-  const [cols, setCols] = useState(initialColumns);
-  return (
-    <SpreadsheetGrid
-      ref={gridRef}
-      columns={cols}
-      onColumnsChange={setCols}
-      rows={rows}
-      onStateChange={onStateChange}
-    />
-  );
-}
-
-describe('SpreadsheetGrid 状態 API(結合)', () => {
-  it('getState() が初期スナップショットを返す', () => {
-    const ref = createRef<SpreadsheetGridHandle<Row>>();
-    render(<SpreadsheetGrid ref={ref} columns={columns} rows={rows} />);
-
-    const state = ref.current?.getState();
-    expect(state).toBeDefined();
-    expect(state?.version).toBe(GRID_STATE_VERSION);
-    // 初期 columnWidths は非 flex 列の width から作られます(flex 列なし)。
-    expect(state?.columnWidths).toEqual({ id: 80, name: 160, qty: 100 });
-    expect(state?.filters).toEqual({ globalText: '', columnFilters: {} });
-    expect(state?.sort).toEqual([]);
-    // 追加(v2): 列メタは columns prop から配列順で抽出されます(visible/pinned 未指定は省略)。
-    expect(state?.columns).toEqual([
-      { key: 'id' },
-      { key: 'name' },
-      { key: 'qty' },
-    ]);
-  });
-
-  it('applyState() が reducer 経由で反映され getState() に出る', () => {
-    const ref = createRef<SpreadsheetGridHandle<Row>>();
-    render(<SpreadsheetGrid ref={ref} columns={columns} rows={rows} />);
-
-    act(() => {
-      ref.current?.applyState(appliedState);
-    });
-
-    const after = ref.current?.getState();
-    expect(after?.version).toBe(GRID_STATE_VERSION);
-    // resetColumnWidths はフル置換なので、適用後は { id: 120 } のみ(他列のエントリは消える)。
-    expect(after?.columnWidths).toEqual({ id: 120 });
-    expect(after?.filters).toEqual({
-      globalText: 'be',
-      columnFilters: { name: { kind: 'text', value: 'be' } },
-    });
-    expect(after?.sort).toEqual([{ columnKey: 'qty', direction: 'desc' }]);
-  });
-
-  it('onStateChange は初回マウントで発火しない', () => {
-    const onStateChange = vi.fn();
-    render(
-      <SpreadsheetGrid
-        columns={columns}
-        rows={rows}
-        onStateChange={onStateChange}
-      />,
-    );
-
-    expect(onStateChange).not.toHaveBeenCalled();
-  });
-
-  it('onStateChange は applyState の状態変化で最新 state を 1 回渡して発火する', () => {
-    const onStateChange = vi.fn();
-    const ref = createRef<SpreadsheetGridHandle<Row>>();
-    render(
-      <SpreadsheetGrid
-        ref={ref}
-        columns={columns}
-        rows={rows}
-        onStateChange={onStateChange}
-      />,
-    );
-
-    act(() => {
-      ref.current?.applyState(appliedState);
-    });
-
-    expect(onStateChange).toHaveBeenCalledTimes(1);
-    expect(onStateChange).toHaveBeenLastCalledWith({
-      version: GRID_STATE_VERSION,
-      columnWidths: { id: 120 },
-      filters: {
-        globalText: 'be',
-        columnFilters: { name: { kind: 'text', value: 'be' } },
-      },
-      sort: [{ columnKey: 'qty', direction: 'desc' }],
-      // 追加(v2): この applyState は列メタ非適用(onColumnsChange 未指定)なので columns prop は不変。
-      //   snapshot には現 columns の抽出が載ります。
-      columns: [{ key: 'id' }, { key: 'name' }, { key: 'qty' }],
-    });
-  });
-
-  it('onStateChange は同値の applyState では再発火しない(構造等価で抑止)', () => {
-    const onStateChange = vi.fn();
-    const ref = createRef<SpreadsheetGridHandle<Row>>();
-    render(
-      <SpreadsheetGrid
-        ref={ref}
-        columns={columns}
-        rows={rows}
-        onStateChange={onStateChange}
-      />,
-    );
-
-    // 1 回目: 初期状態 → appliedState への変化で発火。
-    act(() => {
-      ref.current?.applyState(appliedState);
-    });
-    expect(onStateChange).toHaveBeenCalledTimes(1);
-
-    // 2 回目: 同値を再適用。reducer は新規オブジェクト参照を入れる(columnWidths/filters の参照は変わる)が、
-    //   isSameGridState が構造等価と判定するため再発火しない。
-    act(() => {
-      ref.current?.applyState(appliedState);
-    });
-    expect(onStateChange).toHaveBeenCalledTimes(1);
-  });
-
-  it('追加(v2): applyState の列メタ(順序 / 可視 / ピン)が onColumnsChange 経由で反映され getState に出る', () => {
-    const ref = createRef<SpreadsheetGridHandle<Row>>();
-    render(<ControlledGrid gridRef={ref} initialColumns={columns} />);
-
-    const v2State: GridState = {
-      version: GRID_STATE_VERSION,
-      columnWidths: {},
-      filters: { globalText: '', columnFilters: {} },
-      sort: [],
-      // qty を left 固定 + 先頭、id を非表示、name は既定。
-      columns: [
-        { key: 'qty', pinned: 'left' },
-        { key: 'id', visible: false },
-        { key: 'name' },
-      ],
-    };
-
-    act(() => {
-      ref.current?.applyState(v2State);
-    });
-
-    const after = ref.current?.getState();
-    // reorderColumnsByPane で qty(left)が先頭、続いて center の id, name。visible/pinned も復元。
-    expect(after?.columns).toEqual([
-      { key: 'qty', pinned: 'left' },
-      { key: 'id', visible: false },
-      { key: 'name' },
-    ]);
-  });
-
-  it('追加(v2): onColumnsChange 未指定なら applyState の列メタはスキップ(v1 と同一・列順不変)', () => {
-    const ref = createRef<SpreadsheetGridHandle<Row>>();
-    // onColumnsChange を渡さない(controlled でない)素の SpreadsheetGrid。
-    render(<SpreadsheetGrid ref={ref} columns={columns} rows={rows} />);
-
-    act(() => {
-      ref.current?.applyState({
-        version: GRID_STATE_VERSION,
-        columnWidths: {},
-        filters: { globalText: '', columnFilters: {} },
-        sort: [],
-        columns: [{ key: 'qty' }, { key: 'name' }, { key: 'id' }], // reorder 指示
-      });
-    });
-
-    // onColumnsChange が無いので列メタは適用されず、列順は初期のまま。
-    const after = ref.current?.getState();
-    expect(after?.columns).toEqual([
-      { key: 'id' },
-      { key: 'name' },
-      { key: 'qty' },
-    ]);
-  });
-
-  it('追加(v2): onStateChange は列メタ変化(applyState の reorder)でも発火し、最新の列メタを渡す', () => {
-    const onStateChange = vi.fn();
-    const ref = createRef<SpreadsheetGridHandle<Row>>();
-    render(
-      <ControlledGrid
-        gridRef={ref}
-        initialColumns={columns}
-        onStateChange={onStateChange}
-      />,
-    );
-
-    act(() => {
-      ref.current?.applyState({
-        version: GRID_STATE_VERSION,
-        columnWidths: {},
-        filters: { globalText: '', columnFilters: {} },
-        sort: [],
-        columns: [{ key: 'qty' }, { key: 'name' }, { key: 'id' }], // reorder
-      });
-    });
-
-    expect(onStateChange).toHaveBeenCalled();
-    const last = onStateChange.mock.calls.at(-1)?.[0] as GridState;
-    expect(last.columns).toEqual([
-      { key: 'qty' },
-      { key: 'name' },
-      { key: 'id' },
-    ]);
-  });
-});
-
-// 追加(THEME-3): dimReadOnlyCells の root 修飾子配線を検証します。淡色表示そのもの(CSS)は
-//   jsdom では検証できないため、「opt-in で ssg-root--dim-readonly が付く / 既定では付かない」
-//   というクラス配線を固定します(セマンティッククラス .ssg-body-cell--readonly の常時付与は
-//   GridBodyLayer 側の既存経路で不変)。
-describe('THEME-3: dimReadOnlyCells(readonly 淡色表示の opt-in)', () => {
-  it('既定(未指定)では root に ssg-root--dim-readonly が付かない', () => {
-    const { container } = render(
-      <SpreadsheetGrid columns={columns} rows={rows} />,
-    );
-    const root = container.querySelector('.ssg-root');
-    expect(root).not.toBeNull();
-    expect(root?.classList.contains('ssg-root--dim-readonly')).toBe(false);
-  });
-
-  it('dimReadOnlyCells で root に ssg-root--dim-readonly が付く', () => {
-    const { container } = render(
-      <SpreadsheetGrid columns={columns} rows={rows} dimReadOnlyCells />,
-    );
-    const root = container.querySelector('.ssg-root');
-    expect(root?.classList.contains('ssg-root--dim-readonly')).toBe(true);
-  });
-});
-
-// 追加(THEME-2): density プリセットの配線を検証します。root 修飾子と、rowHeight / headerHeight
-//   既定値の解決(明示 prop 優先)を、ヘッダー行のインライン height で観測します(jsdom でも
-//   インライン style は評価可能。寸法トークンの CSS 適用そのものは実機確認)。
-describe('THEME-2: density(密度プリセット)', () => {
-  const headerRowHeight = (container: HTMLElement): string => {
-    const headerRow = container.querySelector('.ssg-header-row');
-    return headerRow instanceof HTMLElement ? headerRow.style.height : '';
-  };
-
-  it('既定(standard)では density 修飾子なし・headerHeight は従来既定 40px', () => {
-    const { container } = render(
-      <SpreadsheetGrid columns={columns} rows={rows} />,
-    );
-    const root = container.querySelector('.ssg-root');
-    expect(root).not.toBeNull();
-    expect(root?.className).not.toContain('ssg-root--density-');
-    expect(headerRowHeight(container)).toBe('40px');
-  });
-
-  it("density='compact' で root 修飾子が付き headerHeight 既定が 32px になる", () => {
-    const { container } = render(
-      <SpreadsheetGrid columns={columns} rows={rows} density="compact" />,
-    );
-    expect(
-      container
-        .querySelector('.ssg-root')
-        ?.classList.contains('ssg-root--density-compact'),
-    ).toBe(true);
-    expect(headerRowHeight(container)).toBe('32px');
-  });
-
-  it('明示 headerHeight は density プリセットより常に優先される', () => {
-    const { container } = render(
-      <SpreadsheetGrid
-        columns={columns}
-        rows={rows}
-        density="compact"
-        headerHeight={50}
-      />,
-    );
-    expect(headerRowHeight(container)).toBe('50px');
-  });
-});
-</file>
-
 <file path="src/components/spreadsheet-grid/utils/clipboard.ts">
 import type { GridColumn } from '../model/gridTypes';
 import {
@@ -8350,7 +8820,8 @@ describe('ColumnFilterPopover のキー操作(SF-ENTER fix)', () => {
 //   走る = フォーカス位置に非依存)へ変更しています。
 //   - 合成テスト: controller + view を実配線した最小ハーネス(props 最少の
 //     CellContextMenu で代表)。修正前の実装では 1 件目が落ちます。
-//   - 登録相テスト: 4 controller の keydown 登録/解除が capture(第 3 引数 true)で
+//   - 登録相テスト: 5 controller(FM-1 で FilterManagement を追加)の keydown 登録/解除が
+//     capture(第 3 引数 true)で
 //     あることを固定します(bubble へ戻すとパネル内フォーカス時の Escape が再び壊れます)。
 // @vitest-environment jsdom
 import { describe, it, expect, afterEach, vi } from 'vitest';
@@ -8370,6 +8841,8 @@ import { useCellContextMenuController } from '../hooks/useCellContextMenuControl
 import { useColumnMenuController } from '../hooks/useColumnMenuController';
 import { useColumnChooserController } from '../hooks/useColumnChooserController';
 import { useSortManagementController } from '../hooks/useSortManagementController';
+// 追加(FM-1): フィルター管理パネル controller(POP-KEY 準拠 + 共存拡張)です。
+import { useFilterManagementController } from '../hooks/useFilterManagementController';
 import type {
   GridColumn,
   GridContextMenuItem,
@@ -8456,7 +8929,7 @@ describe('POP-KEY: パネル内フォーカスでの Escape close(controller + v
   });
 });
 
-describe('POP-KEY: 4 controller の keydown は capture 登録(第 3 引数 true)', () => {
+describe('POP-KEY: 5 controller の keydown は capture 登録(第 3 引数 true)', () => {
   // 開時に登録される keydown リスナーが capture であること、unmount(close)時の解除も
   // capture 指定で対になっていること(不一致だと解除漏れになります)を固定します。
   const expectCaptureRegistration = (
@@ -8539,6 +9012,97 @@ describe('POP-KEY: 4 controller の keydown は capture 登録(第 3 引数 true
       result.current.openSortManager();
     });
     expectCaptureRegistration(addSpy, removeSpy, unmount);
+  });
+
+  it('useFilterManagementController', () => {
+    const addSpy = vi.spyOn(window, 'addEventListener');
+    const removeSpy = vi.spyOn(window, 'removeEventListener');
+    const { result, unmount } = renderHook(() =>
+      useFilterManagementController({
+        enableColumnFilter: true,
+        gridRootRef: makeGridRootRef(),
+      }),
+    );
+    act(() => {
+      result.current.openFilterManager();
+    });
+    expectCaptureRegistration(addSpy, removeSpy, unmount);
+  });
+});
+
+// 追加(FM-1): フィルター管理パネルとフィルター popover の「共存」拡張の挙動固定です。
+//   - suppressEscape=true(popover open 中)の Escape はパネルを閉じず onSuppressedEscape
+//     (popover close)へ委譲し、false へ戻った後の Escape でパネルが閉じること。
+//   - alliedRef(popover)内の pointerdown では outside-close しないこと。
+describe('FM-1: フィルター管理パネルとフィルター popover の共存', () => {
+  it('suppressEscape=true の Escape は閉じずに委譲し、false 後の Escape で閉じる', () => {
+    const onSuppressedEscape = vi.fn();
+    const { result, rerender } = renderHook(
+      ({ suppressEscape }: { suppressEscape: boolean }) =>
+        useFilterManagementController({
+          enableColumnFilter: true,
+          gridRootRef: makeGridRootRef(),
+          suppressEscape,
+          onSuppressedEscape,
+        }),
+      { initialProps: { suppressEscape: true } },
+    );
+    act(() => {
+      result.current.openFilterManager();
+    });
+    expect(result.current.isFilterManagerOpen).toBe(true);
+    // popover open 中(抑止): パネルは閉じず、popover close(委譲先)が呼ばれます。
+    act(() => {
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+    });
+    expect(result.current.isFilterManagerOpen).toBe(true);
+    expect(onSuppressedEscape).toHaveBeenCalledTimes(1);
+    // popover が閉じた後(抑止解除): 次の Escape でパネルが閉じます。
+    rerender({ suppressEscape: false });
+    act(() => {
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+    });
+    expect(result.current.isFilterManagerOpen).toBe(false);
+    expect(onSuppressedEscape).toHaveBeenCalledTimes(1);
+  });
+
+  it('alliedRef(popover)内の pointerdown では閉じず、外側の pointerdown で閉じる', () => {
+    const allied = document.createElement('div');
+    const alliedChild = document.createElement('button');
+    allied.appendChild(alliedChild);
+    document.body.appendChild(allied);
+    const outside = document.createElement('div');
+    document.body.appendChild(outside);
+    try {
+      const { result } = renderHook(() =>
+        useFilterManagementController({
+          enableColumnFilter: true,
+          gridRootRef: makeGridRootRef(),
+          alliedRef: { current: allied },
+        }),
+      );
+      act(() => {
+        result.current.openFilterManager();
+      });
+      expect(result.current.isFilterManagerOpen).toBe(true);
+      // allied(popover 相当)内の pointerdown → 閉じません。
+      act(() => {
+        alliedChild.dispatchEvent(
+          new PointerEvent('pointerdown', { bubbles: true }),
+        );
+      });
+      expect(result.current.isFilterManagerOpen).toBe(true);
+      // 外側の pointerdown → 閉じます。
+      act(() => {
+        outside.dispatchEvent(
+          new PointerEvent('pointerdown', { bubbles: true }),
+        );
+      });
+      expect(result.current.isFilterManagerOpen).toBe(false);
+    } finally {
+      allied.remove();
+      outside.remove();
+    }
   });
 });
 </file>
@@ -13760,6 +14324,344 @@ export const decideStateChangeEmit = (
 };
 </file>
 
+<file path="src/components/spreadsheet-grid/logic/sorting.ts">
+import type { GridColumn, GridSortState } from '../model/gridTypes';
+import { getCellValue } from '../utils/permissions';
+import type { RowOrder } from './filtering';
+
+// 追加(DS-1 / perf): 文字列比較用の共有コレーターです。
+//   従来は compareUnknownValues 内で String.prototype.localeCompare(_, 'ja', opts) を
+//   ペアごとに呼んでおり、これが文字列ソートの致命的なボトルネックでした
+//   (20 万行・文字列キーの実測で約 7.5 秒)。同一オプションの Intl.Collator を
+//   モジュールスコープで 1 度だけ生成して使い回すと、照合順序は localeCompare と
+//   等価のまま約 30 倍高速になります(同条件で約 0.25 秒)。
+//   仕様上 String.prototype.localeCompare(that, 'ja', opts) は
+//   new Intl.Collator('ja', opts).compare(this, that) と同じ照合(符号が一致)です。
+// 変更(Set Filter perf): getColumnSelectOptions の候補ソートからも再利用するため
+//   export します(照合オプションは不変・並び順は従来と等価)。
+export const STRING_COLLATOR = new Intl.Collator('ja', {
+  numeric: true,
+  sensitivity: 'base',
+});
+
+// 追加: 値比較を行います。数値化できるものは数値比較し、
+//       それ以外は文字列比較へフォールバックします。
+// 変更(DS-1 / perf): 文字列フォールバックを共有 Intl.Collator 経由にしました
+//   (順序は従来と等価)。数値判定・数値パスは不変です。
+export const compareUnknownValues = (left: unknown, right: unknown) => {
+  const leftNumber = Number(left);
+  const rightNumber = Number(right);
+  const bothNumeric =
+    Number.isFinite(leftNumber) && Number.isFinite(rightNumber);
+
+  if (bothNumeric) {
+    return leftNumber - rightNumber;
+  }
+
+  return STRING_COLLATOR.compare(String(left ?? ''), String(right ?? ''));
+};
+
+// 追加(MS-2 / マルチソート本体): ソートエントリ配列の「次状態」を返す純関数です。
+//   発火口を 1 か所に集約し、列メニュー(単一置換)とヘッダー Shift+click(トグル)で
+//   同じロジックを共有します。入力配列は破壊せず、常に新しい配列を返します。
+//
+//   additive=false (列メニュー / 単一置換):
+//     - 現在がちょうど [{columnKey, direction}] の「単一・同方向」なら [](解除)。
+//     - それ以外は [{columnKey, direction}] へ置換します(他列のソートは捨てます)。
+//     ⇒ MS-1 の handleColumnMenuSortChange の inline 判定と完全同値です。
+//
+//   additive=true (ヘッダー Shift+click / トグル):
+//     - 当該列が未登録            → 末尾(最低優先)に {columnKey, direction} を追加。
+//     - 登録済みで direction が別  → 位置を保ったまま direction を更新。
+//     - 登録済みで direction が同じ → 当該列のエントリのみ除去。
+//   呼び出し側(controller)が direction を
+//     existingDir ? 'desc' : 'asc'
+//   で決めることで、ユーザー体験としては none → asc → desc → none の
+//   サイクルになります(desc のときは direction='desc' を渡し、上記「同方向 → 除去」で
+//   消えます)。
+export const nextSortEntries = (
+  current: GridSortState,
+  columnKey: string,
+  direction: 'asc' | 'desc',
+  additive: boolean,
+): GridSortState => {
+  if (!additive) {
+    const isSameSingle =
+      current.length === 1 &&
+      current[0].columnKey === columnKey &&
+      current[0].direction === direction;
+    return isSameSingle ? [] : [{ columnKey, direction }];
+  }
+
+  const index = current.findIndex((entry) => entry.columnKey === columnKey);
+  if (index === -1) {
+    // 未登録 → 末尾(最低優先)に追加。
+    return [...current, { columnKey, direction }];
+  }
+  if (current[index].direction !== direction) {
+    // 別方向 → 位置を保ったまま方向だけ更新。
+    return current.map((entry, i) =>
+      i === index ? { columnKey, direction } : entry,
+    );
+  }
+  // 同方向 → 当該列のみ除去(残りの優先順位は維持)。
+  return current.filter((_, i) => i !== index);
+};
+
+// 追加(MS-3-1 / 並び替え管理パネル): 管理パネルの明示編集用の純関数群です。
+//   nextSortEntries(additive=true) は「同方向＝除去」のトグル意味論で Shift ジェスチャ
+//   向けのため、ドロップダウン編集(同方向の再選択は no-op であるべき)・列差し替え・
+//   優先順位の入れ替えには素直に乗りません。そこで管理パネル用に下記を分離します。
+//   - すべて入力非破壊(常に新しい配列を返す)・単体テスト可で、nextSortEntries と同じ規約です。
+//   - 単一ソース(uiState.sort)は不変。呼び出し側(SpreadsheetGrid)が結果を
+//     setSort / clearSort へ流します(reducer / actions は不変)。
+//
+// addSortEntry: 末尾(最低優先)へレベルを追加します。
+//   既に同じ列が含まれている場合は何もしません(パネル側は未使用列だけを「追加」候補に
+//   出すため通常は起きませんが、純関数としての不変条件『1 列につき高々 1 エントリ』を守ります)。
+export const addSortEntry = (
+  current: GridSortState,
+  columnKey: string,
+  direction: 'asc' | 'desc',
+): GridSortState => {
+  if (current.some((entry) => entry.columnKey === columnKey)) {
+    return current;
+  }
+  return [...current, { columnKey, direction }];
+};
+
+// setSortEntryDirection: 指定レベルの方向を「冪等にセット」します(トグルしません)。
+//   index 範囲外や同方向(変化なし)のときは元配列をそのまま返します(無駄な参照変化を抑止)。
+export const setSortEntryDirection = (
+  current: GridSortState,
+  index: number,
+  direction: 'asc' | 'desc',
+): GridSortState => {
+  if (index < 0 || index >= current.length) {
+    return current;
+  }
+  if (current[index].direction === direction) {
+    return current;
+  }
+  return current.map((entry, i) =>
+    i === index ? { ...entry, direction } : entry,
+  );
+};
+
+// setSortEntryColumn: 指定レベルの対象列を差し替えます(Excel のレベル列変更相当)。
+//   - 方向は当該レベルのものを維持します。
+//   - 差し替え先の列が他レベルで既に使われている場合は、その他レベルを除去して
+//     『1 列につき高々 1 エントリ』を保ちます(当該レベルの位置・優先順位は維持)。
+//     パネル側は他レベルで使用中の列を選択肢から除くため通常は起きませんが、保険です。
+//   - index 範囲外、または変化なし(同一列)のときは元配列をそのまま返します。
+export const setSortEntryColumn = (
+  current: GridSortState,
+  index: number,
+  columnKey: string,
+): GridSortState => {
+  if (index < 0 || index >= current.length) {
+    return current;
+  }
+  if (current[index].columnKey === columnKey) {
+    return current;
+  }
+  return current
+    .map((entry, i) => (i === index ? { ...entry, columnKey } : entry))
+    .filter((entry, i) => i === index || entry.columnKey !== columnKey);
+};
+
+// removeSortEntryAt: 指定レベルを除去します(残りの優先順位は維持)。
+//   index 範囲外のときは元配列をそのまま返します。
+export const removeSortEntryAt = (
+  current: GridSortState,
+  index: number,
+): GridSortState => {
+  if (index < 0 || index >= current.length) {
+    return current;
+  }
+  return current.filter((_, i) => i !== index);
+};
+
+// 追加(MS-3-2 / 優先順位 DnD): 指定レベルを from から to へ移動します(配列 move)。
+//   - 標準的な「配列 move」意味論です。to は除去後の挿入先 index(0..length-1)。
+//     ドロップ位置(挿入スロット 0..length)からの -1 補正は呼び出し側(管理パネルの
+//     finishDrag)が担います。ColumnChooser で computeSectionReorderedKeys が補正を持ち、
+//     配列プリミティブを汚さない役割分担と同じです。
+//   - すべて入力非破壊(常に新しい配列を返す)・単体テスト可で、他の sort 純関数と同規約です。
+//   - from / to が範囲外、または from === to(動かない)のときは元配列をそのまま返します
+//     (no-op ドラッグで参照を変えないため。setSort へ流しても再レンダーを誘発しません)。
+export const moveSortEntry = (
+  current: GridSortState,
+  from: number,
+  to: number,
+): GridSortState => {
+  if (from < 0 || from >= current.length || to < 0 || to >= current.length) {
+    return current;
+  }
+  if (from === to) {
+    return current;
+  }
+  const next = [...current];
+  const [moved] = next.splice(from, 1);
+  next.splice(to, 0, moved);
+  return next;
+};
+
+// 追加(DS-1 / index ベースパイプライン): order(RowOrder) を受け、並べ替えた order を
+//   返す多列ソートです(本体のソート経路はこれに一本化済み。旧オブジェクト配列版は
+//   DS-3-8 で削除)。規約:
+//     - 多列の優先順位適用(resolved を先頭から比較、0 のとき次のキーへ)、
+//     - 未解決(列が見つからない)エントリのスキップ、有効キー 0 件なら元 order を返す、
+//     - 最終タイブレークは元 source index(= order[pos])で安定化、
+//   sort が空 / 有効キー 0 件のときは同一参照を返します。
+//
+//   パフォーマンス上の要点(decorate-sort-undecorate / B-1: 数値列 Float64 typed key):
+//     - 比較子の内側で getCellValue を毎回呼ぶ素朴な実装だと、呼び出し回数が
+//       O(行数 × log 行数 × ソート列数) に膨らみます。アクティブ sort 列ごとに
+//       「order 各位置のセル値」を事前に 1 回だけ取り出して配列化(decorate)し、
+//       比較は decorate 済み値に対して行うことで O(行数 × ソート列数) に下げます。
+//     - B-1(Float64 typed key): さらに「全アクティブ sort 列が数値」のときは、
+//       decorate を unknown[] ではなく Float64Array(typed key)で行い、比較を
+//       純粋な数値差分(分岐レス)にします。compareUnknownValues は比較ごとに
+//       Number(...) を 2 回・Number.isFinite を 2 回呼ぶため、数値が文字列で
+//       hydrate された列(CSV 由来など)では再 coercion が O(行数 × log 行数 × 列数)
+//       に膨らみます。typed key 化でこれを「列ごと 1 回(O(行数))」へ前倒しし、比較は
+//       key[a] - key[b] のみになります(500k 実測で約 +30〜57%。文字列で持つ数値列ほど効く)。
+//     - 等価性: compareUnknownValues は両値が Number.isFinite のときだけ数値比較し、
+//       片方でも非有限なら STRING_COLLATOR へフォールバックします(列単位ではなく
+//       ペア単位の判定)。よって Float64 経路は「列の全値が Number.isFinite」のときに
+//       限り compareUnknownValues の数値枝と恒等です(key は Number(値) を格納し、
+//       key[a]-key[b] は Number(a)-Number(b) とビット等価)。非有限値が 1 つでも混じる
+//       列があれば、その列だけでなく全体を従来の unknown[] + compareUnknownValues 経路へ
+//       フォールバックさせ、コンパレータを単形(分岐レス)に保ちます(混在ソートの安全側)。
+//     - 数値判定は filterType に依存させず、compareUnknownValues と同じ「値駆動」で
+//       行います(挙動の決定権は一貫して値側にあります)。
+//     - 実際の sort 対象は「位置(0..length-1)の number[]」で、確定後に
+//       result[i] = order[positions[i]] で undecorate して Int32Array へ書き戻します。
+export const sortOrder = <T,>(
+  rows: T[],
+  order: RowOrder,
+  columns: GridColumn<T>[],
+  sort: GridSortState,
+): RowOrder => {
+  if (sort.length === 0) {
+    return order;
+  }
+
+  // 列解決はソート前に 1 回だけ(比較関数内で find を毎回呼ばない)。
+  const resolved = sort
+    .map((entry) => {
+      const column = columns.find((item) => item.key === entry.columnKey);
+      return column
+        ? { column, multiplier: entry.direction === 'asc' ? 1 : -1 }
+        : null;
+    })
+    .filter(
+      (item): item is { column: GridColumn<T>; multiplier: number } =>
+        item !== null,
+    );
+
+  if (resolved.length === 0) {
+    return order;
+  }
+
+  const length = order.length;
+  const columnCount = resolved.length;
+
+  const multipliers = resolved.map((item) => item.multiplier);
+
+  // decorate(B-1): まず「全アクティブ sort 列が数値」かを試行しつつ、数値列の
+  //   typed key(Float64Array)を構築します。各列は最初の非有限値で打ち切るため、
+  //   文字列列はほぼ先頭で抜け(実質ゼロコスト)、全数値列のみ全長を走査します。
+  //   非有限値を 1 つでも含む列に当たった時点で allNumeric=false にして以降の列も
+  //   試さず、下の fallback(従来 unknown[] 経路)へ倒します(構築済みの typed key は
+  //   破棄。fallback は稀かつ Collator 律速のため、この破棄コストは無視できます)。
+  const numericKeyColumns: Float64Array[] = new Array<Float64Array>(columnCount);
+  let allNumeric = true;
+  for (let c = 0; c < columnCount; c += 1) {
+    const column = resolved[c].column;
+    const keys = new Float64Array(length);
+    let columnIsNumeric = true;
+    for (let pos = 0; pos < length; pos += 1) {
+      const numeric = Number(getCellValue(rows[order[pos]], column));
+      if (!Number.isFinite(numeric)) {
+        columnIsNumeric = false;
+        break;
+      }
+      keys[pos] = numeric;
+    }
+    if (!columnIsNumeric) {
+      allNumeric = false;
+      break;
+    }
+    numericKeyColumns[c] = keys;
+  }
+
+  // 位置(0..length-1)を並べ替えます。比較は decorate 済みキー、
+  // タイブレークは元 source index(order[a]/order[b])で安定化します。
+  const positions = new Array<number>(length);
+  for (let i = 0; i < length; i += 1) {
+    positions[i] = i;
+  }
+
+  if (allNumeric) {
+    // fast path: 全列が数値。Float64 typed key の差分のみで比較します(分岐レス)。
+    //   単一列ソートは最頻ケースのため、列ループ・列添字を畳んだ専用形へ特化します
+    //   (この特化で単一数値列でも従来 boxed 経路に対し非回帰になります)。
+    if (columnCount === 1) {
+      const keys = numericKeyColumns[0];
+      const multiplier = multipliers[0];
+      positions.sort((a, b) => {
+        const diff = keys[a] - keys[b];
+        if (diff !== 0) {
+          return diff * multiplier;
+        }
+        return order[a] - order[b];
+      });
+    } else {
+      positions.sort((a, b) => {
+        for (let c = 0; c < columnCount; c += 1) {
+          const diff = numericKeyColumns[c][a] - numericKeyColumns[c][b];
+          if (diff !== 0) {
+            return diff * multipliers[c];
+          }
+        }
+        return order[a] - order[b];
+      });
+    }
+  } else {
+    // fallback: 1 列でも非数値を含む。従来どおり全列を unknown[] へ decorate し、
+    //   compareUnknownValues(ペア単位の数値/文字列判定)で比較します(現状とバイト等価)。
+    const keyColumns: unknown[][] = resolved.map(({ column }) => {
+      const keys = new Array<unknown>(length);
+      for (let pos = 0; pos < length; pos += 1) {
+        keys[pos] = getCellValue(rows[order[pos]], column);
+      }
+      return keys;
+    });
+    positions.sort((a, b) => {
+      for (let c = 0; c < columnCount; c += 1) {
+        const compared = compareUnknownValues(
+          keyColumns[c][a],
+          keyColumns[c][b],
+        );
+        if (compared !== 0) {
+          return compared * multipliers[c];
+        }
+      }
+      return order[a] - order[b];
+    });
+  }
+
+  // undecorate: 並べ替えた位置を元 source index へ戻して Int32Array を組み立てます。
+  const result = new Int32Array(length);
+  for (let i = 0; i < length; i += 1) {
+    result[i] = order[positions[i]];
+  }
+  return result;
+};
+</file>
+
 <file path="src/components/spreadsheet-grid/SelectionOverlay.tsx">
 import type { CSSProperties } from 'react';
 
@@ -13814,32 +14716,31 @@ export function SelectionOverlay({
 export default SelectionOverlay;
 </file>
 
-<file path="src/components/spreadsheet-grid/SpreadsheetGrid.integration.test.tsx">
-// SpreadsheetGrid を実際に render し、命令的ハンドル(getState / applyState)と onStateChange の
-//   「配線」を実行検証する結合テストです。純ロジック(logic/gridState.test.ts)では到達できない以下を、
-//   実コンポーネントを通して確認します:
-//   - getState がライブの uiState / columns を読んでスナップショット(v2: 列メタ含む)を返す。
-//   - applyState が dispatch → reducer → 再レンダーを経て getState に反映される(往復)。
-//   - applyState の列メタ(順序 / 可視 / ピン)が onColumnsChange 経由で controlled に反映される(往復)。
-//   - onStateChange effect が「初回マウント非発火 / 状態変化(列メタ含む)で発火 / 同値では再発火しない」。
-//   renderHook 系テストと同じく DOM を要するため、本ファイルのみ jsdom で回します。
+<file path="src/components/spreadsheet-grid/SpreadsheetGrid.export.integration.test.tsx">
+// エクスポート scope('view' / 'raw' / 'rendered' / 'selection' + 後方互換 'all' / 'visible')の
+//   「配線」を実行検証する結合テストです。純ロジック(logic/exportScope.test.ts)は正規化のみを固定し、
+//   ここでは実コンポーネントを通して SS2603 のバグ報告(「'visible' が描画中の行だけを返し、出力が
+//   スクロール位置に依存して変わる」)の再発防止を確認します:
+//   - 'view'(既定)がフィルター/ソート適用後の「全」ビュー行を返す(描画ウィンドウ非依存。jsdom は
+//     viewport 実測 0 で描画ウィンドウが極小のため、全行が返ること自体がウィンドウ非依存の証明になる)。
+//   - 'raw' がフィルターもソートも無視した全ソース行を rows 配列順で返す。
+//   - 旧 'all' / 'visible' が新 'view' / 'rendered' と厳密に同一の結果を返す(後方互換)。
+//   既存の結合テストと同じく DOM を要するため、本ファイルは jsdom で回します。
 // @vitest-environment jsdom
-import { describe, it, expect, vi, beforeAll, afterEach } from 'vitest';
+import { describe, it, expect, beforeAll, afterEach } from 'vitest';
 import { render, cleanup, act } from '@testing-library/react';
-import { createRef, useState } from 'react';
-import type { Ref } from 'react';
+import { createRef } from 'react';
 
 import { SpreadsheetGrid } from './SpreadsheetGrid';
 import { GRID_STATE_VERSION } from './logic/gridState';
 import type {
   GridColumn,
+  GridExportData,
   GridState,
   SpreadsheetGridHandle,
 } from './model/gridTypes';
 
-// jsdom には ResizeObserver / Element.scrollTo が無い(SpreadsheetGrid がマウント時に new / 呼び出す)
-//   ため、最小スタブを入れます。observe は no-op(コールバックを呼ばない)なので、これ起因の setState は
-//   発生せず、テストの決定性を保てます。
+// jsdom には ResizeObserver / Element.scrollTo が無いため、最小スタブを入れます(既存の結合テストと同じ)。
 beforeAll(() => {
   if (!('ResizeObserver' in globalThis)) {
     class ResizeObserverStub {
@@ -13867,262 +14768,105 @@ const columns: GridColumn<Row>[] = [
   { key: 'qty', title: 'Qty', width: 100 },
 ];
 
+// フィルター('be' 部分一致)とソート(qty 昇順)の効果が判別できるデータです。
+//   ソース順 = id [1,2,3,4,5] / フィルター後 = id {2,3,5} / ソート後ビュー順 = id [5,2,3] と、
+//   3 つの並びがすべて異なるため、各 scope がどの段階を読んでいるかを一意に識別できます。
 const rows: Row[] = [
-  { id: 1, name: 'alpha', qty: 10 },
-  { id: 2, name: 'beta', qty: 20 },
-  { id: 3, name: 'gamma', qty: 30 },
+  { id: 1, name: 'alpha', qty: 30 },
+  { id: 2, name: 'beta', qty: 10 },
+  { id: 3, name: 'abbey', qty: 20 },
+  { id: 4, name: 'gamma', qty: 40 },
+  { id: 5, name: 'berry', qty: 5 },
 ];
 
-// テスト全体で使い回す「適用する状態」。columnWidths は 1 列だけ(resetColumnWidths がフル置換である
-//   ことの確認も兼ねる)、フィルター(global + 列)とソートも含めます。
-const appliedState: GridState = {
+// name 列に text フィルター('be' 部分一致) + qty 昇順ソートを適用する状態です。
+const filteredSortedState: GridState = {
   version: GRID_STATE_VERSION,
-  columnWidths: { id: 120 },
+  columnWidths: {},
   filters: {
-    globalText: 'be',
+    globalText: '',
     columnFilters: { name: { kind: 'text', value: 'be' } },
   },
-  sort: [{ columnKey: 'qty', direction: 'desc' }],
+  sort: [{ columnKey: 'qty', direction: 'asc' }],
 };
 
-// 追加(v2): controlled-columns ハーネスです。列メタ(可視 / 順序 / ピン)は consumer 所有のため、
-//   applyState の列メタ反映は onColumnsChange を通ります。ここで columns を useState で保持して
-//   onColumnsChange へ繋ぎ、applyState → onColumnsChange → 再レンダー → getState の往復を検証します。
-function ControlledGrid({
-  gridRef,
-  initialColumns,
-  onStateChange,
-}: {
-  gridRef: Ref<SpreadsheetGridHandle<Row>>;
-  initialColumns: GridColumn<Row>[];
-  onStateChange?: (state: GridState) => void;
-}) {
-  const [cols, setCols] = useState(initialColumns);
-  return (
-    <SpreadsheetGrid
-      ref={gridRef}
-      columns={cols}
-      onColumnsChange={setCols}
-      rows={rows}
-      onStateChange={onStateChange}
-    />
-  );
-}
+// エクスポートデータから id 列(先頭列)の生値を並びで取り出します。
+const idsOf = (data: GridExportData): unknown[] =>
+  data.rows.map((cells) => cells[0].value);
 
-describe('SpreadsheetGrid 状態 API(結合)', () => {
-  it('getState() が初期スナップショットを返す', () => {
-    const ref = createRef<SpreadsheetGridHandle<Row>>();
-    render(<SpreadsheetGrid ref={ref} columns={columns} rows={rows} />);
+// グリッドを mount し、フィルター + ソートを適用済みのハンドルを返します。
+const setupFilteredSorted = (): SpreadsheetGridHandle<Row> => {
+  const ref = createRef<SpreadsheetGridHandle<Row>>();
+  render(<SpreadsheetGrid ref={ref} columns={columns} rows={rows} />);
+  act(() => {
+    ref.current?.applyState(filteredSortedState);
+  });
+  const handle = ref.current;
+  expect(handle).not.toBeNull();
+  return handle as SpreadsheetGridHandle<Row>;
+};
 
-    const state = ref.current?.getState();
-    expect(state).toBeDefined();
-    expect(state?.version).toBe(GRID_STATE_VERSION);
-    // 初期 columnWidths は非 flex 列の width から作られます(flex 列なし)。
-    expect(state?.columnWidths).toEqual({ id: 80, name: 160, qty: 100 });
-    expect(state?.filters).toEqual({ globalText: '', columnFilters: {} });
-    expect(state?.sort).toEqual([]);
-    // 追加(v2): 列メタは columns prop から配列順で抽出されます(visible/pinned 未指定は省略)。
-    expect(state?.columns).toEqual([
-      { key: 'id' },
-      { key: 'name' },
-      { key: 'qty' },
-    ]);
+describe('SpreadsheetGrid エクスポート scope(結合)', () => {
+  it("'view' はフィルター/ソート適用後の全ビュー行を返す(描画ウィンドウ非依存)", () => {
+    const handle = setupFilteredSorted();
+
+    const view = handle.getExportData({ scope: 'view' });
+    // フィルター後 3 行がソート順(qty 昇順 = id 5,2,3)で「すべて」返ること。jsdom の描画ウィンドウは
+    //   極小(viewport 実測 0)のため、3 行全部が返る = ウィンドウ非依存であることの実証になります。
+    expect(idsOf(view)).toEqual([5, 2, 3]);
+
+    // CSV も同一規則(resolveExportScope を共有)。
+    const csv = handle.exportCsv({ scope: 'view', includeHeaders: false });
+    expect(csv).toBe('5,berry,5\r\n2,beta,10\r\n3,abbey,20');
   });
 
-  it('applyState() が reducer 経由で反映され getState() に出る', () => {
-    const ref = createRef<SpreadsheetGridHandle<Row>>();
-    render(<SpreadsheetGrid ref={ref} columns={columns} rows={rows} />);
-
-    act(() => {
-      ref.current?.applyState(appliedState);
-    });
-
-    const after = ref.current?.getState();
-    expect(after?.version).toBe(GRID_STATE_VERSION);
-    // resetColumnWidths はフル置換なので、適用後は { id: 120 } のみ(他列のエントリは消える)。
-    expect(after?.columnWidths).toEqual({ id: 120 });
-    expect(after?.filters).toEqual({
-      globalText: 'be',
-      columnFilters: { name: { kind: 'text', value: 'be' } },
-    });
-    expect(after?.sort).toEqual([{ columnKey: 'qty', direction: 'desc' }]);
+  it("既定 scope は 'view'(オプション省略時も同一結果)", () => {
+    const handle = setupFilteredSorted();
+    expect(handle.getExportData()).toEqual(handle.getExportData({ scope: 'view' }));
+    expect(handle.exportCsv()).toBe(handle.exportCsv({ scope: 'view' }));
   });
 
-  it('onStateChange は初回マウントで発火しない', () => {
-    const onStateChange = vi.fn();
-    render(
-      <SpreadsheetGrid
-        columns={columns}
-        rows={rows}
-        onStateChange={onStateChange}
-      />,
+  it("'raw' はフィルターもソートも無視した全ソース行を rows 配列順で返す", () => {
+    const handle = setupFilteredSorted();
+
+    const raw = handle.getExportData({ scope: 'raw' });
+    // フィルター前の 5 行がソース順(id 1..5)で返ること(= フィルターにもソートにも影響されない)。
+    expect(idsOf(raw)).toEqual([1, 2, 3, 4, 5]);
+
+    // 列は可視列・固定順に従います(本テストでは宣言順 = ID / Name / Qty)。
+    expect(raw.columns.map((c) => c.key)).toEqual(['id', 'name', 'qty']);
+  });
+
+  it("後方互換: 'all' は 'view' と、'visible' は 'rendered' と厳密に同一の結果を返す", () => {
+    const handle = setupFilteredSorted();
+
+    // deprecated エイリアスの実行時挙動は新名称と完全同一(既存利用者を壊さない)。
+    expect(handle.getExportData({ scope: 'all' })).toEqual(
+      handle.getExportData({ scope: 'view' }),
     );
-
-    expect(onStateChange).not.toHaveBeenCalled();
-  });
-
-  it('onStateChange は applyState の状態変化で最新 state を 1 回渡して発火する', () => {
-    const onStateChange = vi.fn();
-    const ref = createRef<SpreadsheetGridHandle<Row>>();
-    render(
-      <SpreadsheetGrid
-        ref={ref}
-        columns={columns}
-        rows={rows}
-        onStateChange={onStateChange}
-      />,
+    expect(handle.getExportData({ scope: 'visible' })).toEqual(
+      handle.getExportData({ scope: 'rendered' }),
     );
-
-    act(() => {
-      ref.current?.applyState(appliedState);
-    });
-
-    expect(onStateChange).toHaveBeenCalledTimes(1);
-    expect(onStateChange).toHaveBeenLastCalledWith({
-      version: GRID_STATE_VERSION,
-      columnWidths: { id: 120 },
-      filters: {
-        globalText: 'be',
-        columnFilters: { name: { kind: 'text', value: 'be' } },
-      },
-      sort: [{ columnKey: 'qty', direction: 'desc' }],
-      // 追加(v2): この applyState は列メタ非適用(onColumnsChange 未指定)なので columns prop は不変。
-      //   snapshot には現 columns の抽出が載ります。
-      columns: [{ key: 'id' }, { key: 'name' }, { key: 'qty' }],
-    });
-  });
-
-  it('onStateChange は同値の applyState では再発火しない(構造等価で抑止)', () => {
-    const onStateChange = vi.fn();
-    const ref = createRef<SpreadsheetGridHandle<Row>>();
-    render(
-      <SpreadsheetGrid
-        ref={ref}
-        columns={columns}
-        rows={rows}
-        onStateChange={onStateChange}
-      />,
+    expect(handle.exportCsv({ scope: 'all' })).toBe(
+      handle.exportCsv({ scope: 'view' }),
     );
-
-    // 1 回目: 初期状態 → appliedState への変化で発火。
-    act(() => {
-      ref.current?.applyState(appliedState);
-    });
-    expect(onStateChange).toHaveBeenCalledTimes(1);
-
-    // 2 回目: 同値を再適用。reducer は新規オブジェクト参照を入れる(columnWidths/filters の参照は変わる)が、
-    //   isSameGridState が構造等価と判定するため再発火しない。
-    act(() => {
-      ref.current?.applyState(appliedState);
-    });
-    expect(onStateChange).toHaveBeenCalledTimes(1);
-  });
-
-  it('追加(v2): applyState の列メタ(順序 / 可視 / ピン)が onColumnsChange 経由で反映され getState に出る', () => {
-    const ref = createRef<SpreadsheetGridHandle<Row>>();
-    render(<ControlledGrid gridRef={ref} initialColumns={columns} />);
-
-    const v2State: GridState = {
-      version: GRID_STATE_VERSION,
-      columnWidths: {},
-      filters: { globalText: '', columnFilters: {} },
-      sort: [],
-      // qty を left 固定 + 先頭、id を非表示、name は既定。
-      columns: [
-        { key: 'qty', pinned: 'left' },
-        { key: 'id', visible: false },
-        { key: 'name' },
-      ],
-    };
-
-    act(() => {
-      ref.current?.applyState(v2State);
-    });
-
-    const after = ref.current?.getState();
-    // reorderColumnsByPane で qty(left)が先頭、続いて center の id, name。visible/pinned も復元。
-    expect(after?.columns).toEqual([
-      { key: 'qty', pinned: 'left' },
-      { key: 'id', visible: false },
-      { key: 'name' },
-    ]);
-  });
-
-  it('追加(v2): onColumnsChange 未指定なら applyState の列メタはスキップ(v1 と同一・列順不変)', () => {
-    const ref = createRef<SpreadsheetGridHandle<Row>>();
-    // onColumnsChange を渡さない(controlled でない)素の SpreadsheetGrid。
-    render(<SpreadsheetGrid ref={ref} columns={columns} rows={rows} />);
-
-    act(() => {
-      ref.current?.applyState({
-        version: GRID_STATE_VERSION,
-        columnWidths: {},
-        filters: { globalText: '', columnFilters: {} },
-        sort: [],
-        columns: [{ key: 'qty' }, { key: 'name' }, { key: 'id' }], // reorder 指示
-      });
-    });
-
-    // onColumnsChange が無いので列メタは適用されず、列順は初期のまま。
-    const after = ref.current?.getState();
-    expect(after?.columns).toEqual([
-      { key: 'id' },
-      { key: 'name' },
-      { key: 'qty' },
-    ]);
-  });
-
-  it('追加(v2): onStateChange は列メタ変化(applyState の reorder)でも発火し、最新の列メタを渡す', () => {
-    const onStateChange = vi.fn();
-    const ref = createRef<SpreadsheetGridHandle<Row>>();
-    render(
-      <ControlledGrid
-        gridRef={ref}
-        initialColumns={columns}
-        onStateChange={onStateChange}
-      />,
+    expect(handle.exportCsv({ scope: 'visible' })).toBe(
+      handle.exportCsv({ scope: 'rendered' }),
     );
-
-    act(() => {
-      ref.current?.applyState({
-        version: GRID_STATE_VERSION,
-        columnWidths: {},
-        filters: { globalText: '', columnFilters: {} },
-        sort: [],
-        columns: [{ key: 'qty' }, { key: 'name' }, { key: 'id' }], // reorder
-      });
-    });
-
-    expect(onStateChange).toHaveBeenCalled();
-    const last = onStateChange.mock.calls.at(-1)?.[0] as GridState;
-    expect(last.columns).toEqual([
-      { key: 'qty' },
-      { key: 'name' },
-      { key: 'id' },
-    ]);
-  });
-});
-
-// 追加(THEME-3): dimReadOnlyCells の root 修飾子配線を検証します。淡色表示そのもの(CSS)は
-//   jsdom では検証できないため、「opt-in で ssg-root--dim-readonly が付く / 既定では付かない」
-//   というクラス配線を固定します(セマンティッククラス .ssg-body-cell--readonly の常時付与は
-//   GridBodyLayer 側の既存経路で不変)。
-describe('THEME-3: dimReadOnlyCells(readonly 淡色表示の opt-in)', () => {
-  it('既定(未指定)では root に ssg-root--dim-readonly が付かない', () => {
-    const { container } = render(
-      <SpreadsheetGrid columns={columns} rows={rows} />,
-    );
-    const root = container.querySelector('.ssg-root');
-    expect(root).not.toBeNull();
-    expect(root?.classList.contains('ssg-root--dim-readonly')).toBe(false);
   });
 
-  it('dimReadOnlyCells で root に ssg-root--dim-readonly が付く', () => {
-    const { container } = render(
-      <SpreadsheetGrid columns={columns} rows={rows} dimReadOnlyCells />,
-    );
-    const root = container.querySelector('.ssg-root');
-    expect(root?.classList.contains('ssg-root--dim-readonly')).toBe(true);
+  it("'rendered' は描画ウィンドウのみを対象にする(ビュー全体とは独立の範囲)", () => {
+    const handle = setupFilteredSorted();
+
+    const rendered = handle.getExportData({ scope: 'rendered' });
+    const view = handle.getExportData({ scope: 'view' });
+    // 'rendered' の行集合は 'view'(ビュー全体)の部分集合(jsdom では viewport 実測 0 のため極小)。
+    expect(rendered.rows.length).toBeLessThanOrEqual(view.rows.length);
+    // 'rendered' に含まれる行は必ずビュー行(フィルター後集合)に属します。
+    const viewIds = new Set(idsOf(view));
+    for (const id of idsOf(rendered)) {
+      expect(viewIds.has(id)).toBe(true);
+    }
   });
 });
 </file>
@@ -14340,6 +15084,13 @@ type ColumnMenuPopoverProps = {
   //             (サブメニューではなく別 popover を開く点は「列の表示」と同じ作法です)。
   //             クリックで列メニューを閉じてパネルを開く配線は SpreadsheetGrid 側が担います。
   onOpenSortManager: () => void;
+  // 追加(FM-1): フィルター管理パネル(FilterManagementPanel)を開くハンドラです。
+  //             canManageFilters はグリッドレベルの enableColumnFilter 相当です(canFilter と
+  //             違い「この列に filterType があるか」は見ません — パネルは全列のフィルターを
+  //             扱うためです)。canSort=false でも項目は出ます(並び替えブロックの直後)。
+  //             クリックで列メニューを閉じてパネルを開く配線は SpreadsheetGrid 側が担います。
+  canManageFilters: boolean;
+  onOpenFilterManager: () => void;
   // 追加: 開いている列の現在の固定状態です(✓ 表示に使います)。
   pinned: GridColumnPinned | undefined;
   // 追加: onColumnsChange 未指定時は false になり、固定切替の項目を無効化します
@@ -14377,6 +15128,8 @@ export function ColumnMenuPopover({
   sortDirection,
   onSortChange,
   onOpenSortManager,
+  canManageFilters,
+  onOpenFilterManager,
   pinned,
   canChangePinned,
   layout,
@@ -14590,11 +15343,37 @@ export function ColumnMenuPopover({
             <span className="ssg-menu-icon" />
             <span className="ssg-menu-label">並び替えを管理…</span>
           </button>
-
-          {/* 追加(13-B4): ソート群と以降(固定/幅/表示)の区切りです。 */}
-          <div className="ssg-menu-separator" />
         </>
       )}
+
+      {/* ── ルート項目: フィルターを管理…(FM-1) ── */}
+      {/* 追加(FM-1): 適用中フィルターの一覧 / 編集 / クリアを行うパネル
+          (FilterManagementPanel)を開くリーフ項目です。gate はグリッドレベルの
+          canManageFilters(enableColumnFilter 相当)で、canFilter(この列の filterType
+          有無)には依りません(パネルは全列のフィルターを扱うため)。位置は
+          「並び替えを管理…」の直後(canSort=false のときはソート群を飛ばしてここから)。
+          hover で開いているカスケード(列の固定)を閉じ、✓ 列ぶんのスペーサで左端を
+          揃えます。クリックで列メニューを閉じてパネルを開く処理は SpreadsheetGrid 側
+          (onOpenFilterManager)が担います。 */}
+      {canManageFilters && (
+        <button
+          type="button"
+          onPointerEnter={() => {
+            setOpenSubmenuKey(null);
+          }}
+          onClick={() => {
+            onOpenFilterManager();
+          }}
+          className="ssg-menu-item"
+        >
+          <span className="ssg-menu-icon" />
+          <span className="ssg-menu-label">フィルターを管理…</span>
+        </button>
+      )}
+
+      {/* 変更(FM-1): 区切り(旧 13-B4)の条件を「ソート群のみ」→「ソート群または
+          フィルターを管理…のいずれかが出ているとき」へ広げます(位置は不変)。 */}
+      {(canSort || canManageFilters) && <div className="ssg-menu-separator" />}
 
       {/* ── ルート項目: 列の固定 ›(サブメニュー親) ── */}
       {/* 追加(13-A2): サブメニューはこの行(position: relative)基準で絶対配置します。
@@ -15579,344 +16358,6 @@ export function useServerSideRowModel<T>(
 }
 </file>
 
-<file path="src/components/spreadsheet-grid/logic/sorting.ts">
-import type { GridColumn, GridSortState } from '../model/gridTypes';
-import { getCellValue } from '../utils/permissions';
-import type { RowOrder } from './filtering';
-
-// 追加(DS-1 / perf): 文字列比較用の共有コレーターです。
-//   従来は compareUnknownValues 内で String.prototype.localeCompare(_, 'ja', opts) を
-//   ペアごとに呼んでおり、これが文字列ソートの致命的なボトルネックでした
-//   (20 万行・文字列キーの実測で約 7.5 秒)。同一オプションの Intl.Collator を
-//   モジュールスコープで 1 度だけ生成して使い回すと、照合順序は localeCompare と
-//   等価のまま約 30 倍高速になります(同条件で約 0.25 秒)。
-//   仕様上 String.prototype.localeCompare(that, 'ja', opts) は
-//   new Intl.Collator('ja', opts).compare(this, that) と同じ照合(符号が一致)です。
-// 変更(Set Filter perf): getColumnSelectOptions の候補ソートからも再利用するため
-//   export します(照合オプションは不変・並び順は従来と等価)。
-export const STRING_COLLATOR = new Intl.Collator('ja', {
-  numeric: true,
-  sensitivity: 'base',
-});
-
-// 追加: 値比較を行います。数値化できるものは数値比較し、
-//       それ以外は文字列比較へフォールバックします。
-// 変更(DS-1 / perf): 文字列フォールバックを共有 Intl.Collator 経由にしました
-//   (順序は従来と等価)。数値判定・数値パスは不変です。
-export const compareUnknownValues = (left: unknown, right: unknown) => {
-  const leftNumber = Number(left);
-  const rightNumber = Number(right);
-  const bothNumeric =
-    Number.isFinite(leftNumber) && Number.isFinite(rightNumber);
-
-  if (bothNumeric) {
-    return leftNumber - rightNumber;
-  }
-
-  return STRING_COLLATOR.compare(String(left ?? ''), String(right ?? ''));
-};
-
-// 追加(MS-2 / マルチソート本体): ソートエントリ配列の「次状態」を返す純関数です。
-//   発火口を 1 か所に集約し、列メニュー(単一置換)とヘッダー Shift+click(トグル)で
-//   同じロジックを共有します。入力配列は破壊せず、常に新しい配列を返します。
-//
-//   additive=false (列メニュー / 単一置換):
-//     - 現在がちょうど [{columnKey, direction}] の「単一・同方向」なら [](解除)。
-//     - それ以外は [{columnKey, direction}] へ置換します(他列のソートは捨てます)。
-//     ⇒ MS-1 の handleColumnMenuSortChange の inline 判定と完全同値です。
-//
-//   additive=true (ヘッダー Shift+click / トグル):
-//     - 当該列が未登録            → 末尾(最低優先)に {columnKey, direction} を追加。
-//     - 登録済みで direction が別  → 位置を保ったまま direction を更新。
-//     - 登録済みで direction が同じ → 当該列のエントリのみ除去。
-//   呼び出し側(controller)が direction を
-//     existingDir ? 'desc' : 'asc'
-//   で決めることで、ユーザー体験としては none → asc → desc → none の
-//   サイクルになります(desc のときは direction='desc' を渡し、上記「同方向 → 除去」で
-//   消えます)。
-export const nextSortEntries = (
-  current: GridSortState,
-  columnKey: string,
-  direction: 'asc' | 'desc',
-  additive: boolean,
-): GridSortState => {
-  if (!additive) {
-    const isSameSingle =
-      current.length === 1 &&
-      current[0].columnKey === columnKey &&
-      current[0].direction === direction;
-    return isSameSingle ? [] : [{ columnKey, direction }];
-  }
-
-  const index = current.findIndex((entry) => entry.columnKey === columnKey);
-  if (index === -1) {
-    // 未登録 → 末尾(最低優先)に追加。
-    return [...current, { columnKey, direction }];
-  }
-  if (current[index].direction !== direction) {
-    // 別方向 → 位置を保ったまま方向だけ更新。
-    return current.map((entry, i) =>
-      i === index ? { columnKey, direction } : entry,
-    );
-  }
-  // 同方向 → 当該列のみ除去(残りの優先順位は維持)。
-  return current.filter((_, i) => i !== index);
-};
-
-// 追加(MS-3-1 / 並び替え管理パネル): 管理パネルの明示編集用の純関数群です。
-//   nextSortEntries(additive=true) は「同方向＝除去」のトグル意味論で Shift ジェスチャ
-//   向けのため、ドロップダウン編集(同方向の再選択は no-op であるべき)・列差し替え・
-//   優先順位の入れ替えには素直に乗りません。そこで管理パネル用に下記を分離します。
-//   - すべて入力非破壊(常に新しい配列を返す)・単体テスト可で、nextSortEntries と同じ規約です。
-//   - 単一ソース(uiState.sort)は不変。呼び出し側(SpreadsheetGrid)が結果を
-//     setSort / clearSort へ流します(reducer / actions は不変)。
-//
-// addSortEntry: 末尾(最低優先)へレベルを追加します。
-//   既に同じ列が含まれている場合は何もしません(パネル側は未使用列だけを「追加」候補に
-//   出すため通常は起きませんが、純関数としての不変条件『1 列につき高々 1 エントリ』を守ります)。
-export const addSortEntry = (
-  current: GridSortState,
-  columnKey: string,
-  direction: 'asc' | 'desc',
-): GridSortState => {
-  if (current.some((entry) => entry.columnKey === columnKey)) {
-    return current;
-  }
-  return [...current, { columnKey, direction }];
-};
-
-// setSortEntryDirection: 指定レベルの方向を「冪等にセット」します(トグルしません)。
-//   index 範囲外や同方向(変化なし)のときは元配列をそのまま返します(無駄な参照変化を抑止)。
-export const setSortEntryDirection = (
-  current: GridSortState,
-  index: number,
-  direction: 'asc' | 'desc',
-): GridSortState => {
-  if (index < 0 || index >= current.length) {
-    return current;
-  }
-  if (current[index].direction === direction) {
-    return current;
-  }
-  return current.map((entry, i) =>
-    i === index ? { ...entry, direction } : entry,
-  );
-};
-
-// setSortEntryColumn: 指定レベルの対象列を差し替えます(Excel のレベル列変更相当)。
-//   - 方向は当該レベルのものを維持します。
-//   - 差し替え先の列が他レベルで既に使われている場合は、その他レベルを除去して
-//     『1 列につき高々 1 エントリ』を保ちます(当該レベルの位置・優先順位は維持)。
-//     パネル側は他レベルで使用中の列を選択肢から除くため通常は起きませんが、保険です。
-//   - index 範囲外、または変化なし(同一列)のときは元配列をそのまま返します。
-export const setSortEntryColumn = (
-  current: GridSortState,
-  index: number,
-  columnKey: string,
-): GridSortState => {
-  if (index < 0 || index >= current.length) {
-    return current;
-  }
-  if (current[index].columnKey === columnKey) {
-    return current;
-  }
-  return current
-    .map((entry, i) => (i === index ? { ...entry, columnKey } : entry))
-    .filter((entry, i) => i === index || entry.columnKey !== columnKey);
-};
-
-// removeSortEntryAt: 指定レベルを除去します(残りの優先順位は維持)。
-//   index 範囲外のときは元配列をそのまま返します。
-export const removeSortEntryAt = (
-  current: GridSortState,
-  index: number,
-): GridSortState => {
-  if (index < 0 || index >= current.length) {
-    return current;
-  }
-  return current.filter((_, i) => i !== index);
-};
-
-// 追加(MS-3-2 / 優先順位 DnD): 指定レベルを from から to へ移動します(配列 move)。
-//   - 標準的な「配列 move」意味論です。to は除去後の挿入先 index(0..length-1)。
-//     ドロップ位置(挿入スロット 0..length)からの -1 補正は呼び出し側(管理パネルの
-//     finishDrag)が担います。ColumnChooser で computeSectionReorderedKeys が補正を持ち、
-//     配列プリミティブを汚さない役割分担と同じです。
-//   - すべて入力非破壊(常に新しい配列を返す)・単体テスト可で、他の sort 純関数と同規約です。
-//   - from / to が範囲外、または from === to(動かない)のときは元配列をそのまま返します
-//     (no-op ドラッグで参照を変えないため。setSort へ流しても再レンダーを誘発しません)。
-export const moveSortEntry = (
-  current: GridSortState,
-  from: number,
-  to: number,
-): GridSortState => {
-  if (from < 0 || from >= current.length || to < 0 || to >= current.length) {
-    return current;
-  }
-  if (from === to) {
-    return current;
-  }
-  const next = [...current];
-  const [moved] = next.splice(from, 1);
-  next.splice(to, 0, moved);
-  return next;
-};
-
-// 追加(DS-1 / index ベースパイプライン): order(RowOrder) を受け、並べ替えた order を
-//   返す多列ソートです(本体のソート経路はこれに一本化済み。旧オブジェクト配列版は
-//   DS-3-8 で削除)。規約:
-//     - 多列の優先順位適用(resolved を先頭から比較、0 のとき次のキーへ)、
-//     - 未解決(列が見つからない)エントリのスキップ、有効キー 0 件なら元 order を返す、
-//     - 最終タイブレークは元 source index(= order[pos])で安定化、
-//   sort が空 / 有効キー 0 件のときは同一参照を返します。
-//
-//   パフォーマンス上の要点(decorate-sort-undecorate / B-1: 数値列 Float64 typed key):
-//     - 比較子の内側で getCellValue を毎回呼ぶ素朴な実装だと、呼び出し回数が
-//       O(行数 × log 行数 × ソート列数) に膨らみます。アクティブ sort 列ごとに
-//       「order 各位置のセル値」を事前に 1 回だけ取り出して配列化(decorate)し、
-//       比較は decorate 済み値に対して行うことで O(行数 × ソート列数) に下げます。
-//     - B-1(Float64 typed key): さらに「全アクティブ sort 列が数値」のときは、
-//       decorate を unknown[] ではなく Float64Array(typed key)で行い、比較を
-//       純粋な数値差分(分岐レス)にします。compareUnknownValues は比較ごとに
-//       Number(...) を 2 回・Number.isFinite を 2 回呼ぶため、数値が文字列で
-//       hydrate された列(CSV 由来など)では再 coercion が O(行数 × log 行数 × 列数)
-//       に膨らみます。typed key 化でこれを「列ごと 1 回(O(行数))」へ前倒しし、比較は
-//       key[a] - key[b] のみになります(500k 実測で約 +30〜57%。文字列で持つ数値列ほど効く)。
-//     - 等価性: compareUnknownValues は両値が Number.isFinite のときだけ数値比較し、
-//       片方でも非有限なら STRING_COLLATOR へフォールバックします(列単位ではなく
-//       ペア単位の判定)。よって Float64 経路は「列の全値が Number.isFinite」のときに
-//       限り compareUnknownValues の数値枝と恒等です(key は Number(値) を格納し、
-//       key[a]-key[b] は Number(a)-Number(b) とビット等価)。非有限値が 1 つでも混じる
-//       列があれば、その列だけでなく全体を従来の unknown[] + compareUnknownValues 経路へ
-//       フォールバックさせ、コンパレータを単形(分岐レス)に保ちます(混在ソートの安全側)。
-//     - 数値判定は filterType に依存させず、compareUnknownValues と同じ「値駆動」で
-//       行います(挙動の決定権は一貫して値側にあります)。
-//     - 実際の sort 対象は「位置(0..length-1)の number[]」で、確定後に
-//       result[i] = order[positions[i]] で undecorate して Int32Array へ書き戻します。
-export const sortOrder = <T,>(
-  rows: T[],
-  order: RowOrder,
-  columns: GridColumn<T>[],
-  sort: GridSortState,
-): RowOrder => {
-  if (sort.length === 0) {
-    return order;
-  }
-
-  // 列解決はソート前に 1 回だけ(比較関数内で find を毎回呼ばない)。
-  const resolved = sort
-    .map((entry) => {
-      const column = columns.find((item) => item.key === entry.columnKey);
-      return column
-        ? { column, multiplier: entry.direction === 'asc' ? 1 : -1 }
-        : null;
-    })
-    .filter(
-      (item): item is { column: GridColumn<T>; multiplier: number } =>
-        item !== null,
-    );
-
-  if (resolved.length === 0) {
-    return order;
-  }
-
-  const length = order.length;
-  const columnCount = resolved.length;
-
-  const multipliers = resolved.map((item) => item.multiplier);
-
-  // decorate(B-1): まず「全アクティブ sort 列が数値」かを試行しつつ、数値列の
-  //   typed key(Float64Array)を構築します。各列は最初の非有限値で打ち切るため、
-  //   文字列列はほぼ先頭で抜け(実質ゼロコスト)、全数値列のみ全長を走査します。
-  //   非有限値を 1 つでも含む列に当たった時点で allNumeric=false にして以降の列も
-  //   試さず、下の fallback(従来 unknown[] 経路)へ倒します(構築済みの typed key は
-  //   破棄。fallback は稀かつ Collator 律速のため、この破棄コストは無視できます)。
-  const numericKeyColumns: Float64Array[] = new Array<Float64Array>(columnCount);
-  let allNumeric = true;
-  for (let c = 0; c < columnCount; c += 1) {
-    const column = resolved[c].column;
-    const keys = new Float64Array(length);
-    let columnIsNumeric = true;
-    for (let pos = 0; pos < length; pos += 1) {
-      const numeric = Number(getCellValue(rows[order[pos]], column));
-      if (!Number.isFinite(numeric)) {
-        columnIsNumeric = false;
-        break;
-      }
-      keys[pos] = numeric;
-    }
-    if (!columnIsNumeric) {
-      allNumeric = false;
-      break;
-    }
-    numericKeyColumns[c] = keys;
-  }
-
-  // 位置(0..length-1)を並べ替えます。比較は decorate 済みキー、
-  // タイブレークは元 source index(order[a]/order[b])で安定化します。
-  const positions = new Array<number>(length);
-  for (let i = 0; i < length; i += 1) {
-    positions[i] = i;
-  }
-
-  if (allNumeric) {
-    // fast path: 全列が数値。Float64 typed key の差分のみで比較します(分岐レス)。
-    //   単一列ソートは最頻ケースのため、列ループ・列添字を畳んだ専用形へ特化します
-    //   (この特化で単一数値列でも従来 boxed 経路に対し非回帰になります)。
-    if (columnCount === 1) {
-      const keys = numericKeyColumns[0];
-      const multiplier = multipliers[0];
-      positions.sort((a, b) => {
-        const diff = keys[a] - keys[b];
-        if (diff !== 0) {
-          return diff * multiplier;
-        }
-        return order[a] - order[b];
-      });
-    } else {
-      positions.sort((a, b) => {
-        for (let c = 0; c < columnCount; c += 1) {
-          const diff = numericKeyColumns[c][a] - numericKeyColumns[c][b];
-          if (diff !== 0) {
-            return diff * multipliers[c];
-          }
-        }
-        return order[a] - order[b];
-      });
-    }
-  } else {
-    // fallback: 1 列でも非数値を含む。従来どおり全列を unknown[] へ decorate し、
-    //   compareUnknownValues(ペア単位の数値/文字列判定)で比較します(現状とバイト等価)。
-    const keyColumns: unknown[][] = resolved.map(({ column }) => {
-      const keys = new Array<unknown>(length);
-      for (let pos = 0; pos < length; pos += 1) {
-        keys[pos] = getCellValue(rows[order[pos]], column);
-      }
-      return keys;
-    });
-    positions.sort((a, b) => {
-      for (let c = 0; c < columnCount; c += 1) {
-        const compared = compareUnknownValues(
-          keyColumns[c][a],
-          keyColumns[c][b],
-        );
-        if (compared !== 0) {
-          return compared * multipliers[c];
-        }
-      }
-      return order[a] - order[b];
-    });
-  }
-
-  // undecorate: 並べ替えた位置を元 source index へ戻して Int32Array を組み立てます。
-  const result = new Int32Array(length);
-  for (let i = 0; i < length; i += 1) {
-    result[i] = order[positions[i]];
-  }
-  return result;
-};
-</file>
-
 <file path="src/components/spreadsheet-grid/model/gridReducer.ts">
 import type { GridUiAction } from './gridActions';
 import type { GridColumn, GridUiState } from './gridTypes';
@@ -16306,6 +16747,363 @@ export const gridUiReducer = (
       return state;
   }
 };
+</file>
+
+<file path="src/components/spreadsheet-grid/SpreadsheetGrid.integration.test.tsx">
+// SpreadsheetGrid を実際に render し、命令的ハンドル(getState / applyState)と onStateChange の
+//   「配線」を実行検証する結合テストです。純ロジック(logic/gridState.test.ts)では到達できない以下を、
+//   実コンポーネントを通して確認します:
+//   - getState がライブの uiState / columns を読んでスナップショット(v2: 列メタ含む)を返す。
+//   - applyState が dispatch → reducer → 再レンダーを経て getState に反映される(往復)。
+//   - applyState の列メタ(順序 / 可視 / ピン)が onColumnsChange 経由で controlled に反映される(往復)。
+//   - onStateChange effect が「初回マウント非発火 / 状態変化(列メタ含む)で発火 / 同値では再発火しない」。
+//   renderHook 系テストと同じく DOM を要するため、本ファイルのみ jsdom で回します。
+// @vitest-environment jsdom
+import { describe, it, expect, vi, beforeAll, afterEach } from 'vitest';
+import { render, cleanup, act } from '@testing-library/react';
+import { createRef, useState } from 'react';
+import type { Ref } from 'react';
+
+import { SpreadsheetGrid } from './SpreadsheetGrid';
+import { GRID_STATE_VERSION } from './logic/gridState';
+import type {
+  GridColumn,
+  GridState,
+  SpreadsheetGridHandle,
+} from './model/gridTypes';
+
+// jsdom には ResizeObserver / Element.scrollTo が無い(SpreadsheetGrid がマウント時に new / 呼び出す)
+//   ため、最小スタブを入れます。observe は no-op(コールバックを呼ばない)なので、これ起因の setState は
+//   発生せず、テストの決定性を保てます。
+beforeAll(() => {
+  if (!('ResizeObserver' in globalThis)) {
+    class ResizeObserverStub {
+      observe(): void {}
+      unobserve(): void {}
+      disconnect(): void {}
+    }
+    (globalThis as unknown as { ResizeObserver: unknown }).ResizeObserver =
+      ResizeObserverStub;
+  }
+  if (!Element.prototype.scrollTo) {
+    Element.prototype.scrollTo = () => {};
+  }
+});
+
+afterEach(() => {
+  cleanup();
+});
+
+type Row = { id: number; name: string; qty: number };
+
+const columns: GridColumn<Row>[] = [
+  { key: 'id', title: 'ID', width: 80 },
+  { key: 'name', title: 'Name', width: 160 },
+  { key: 'qty', title: 'Qty', width: 100 },
+];
+
+const rows: Row[] = [
+  { id: 1, name: 'alpha', qty: 10 },
+  { id: 2, name: 'beta', qty: 20 },
+  { id: 3, name: 'gamma', qty: 30 },
+];
+
+// テスト全体で使い回す「適用する状態」。columnWidths は 1 列だけ(resetColumnWidths がフル置換である
+//   ことの確認も兼ねる)、フィルター(global + 列)とソートも含めます。
+const appliedState: GridState = {
+  version: GRID_STATE_VERSION,
+  columnWidths: { id: 120 },
+  filters: {
+    globalText: 'be',
+    columnFilters: { name: { kind: 'text', value: 'be' } },
+  },
+  sort: [{ columnKey: 'qty', direction: 'desc' }],
+};
+
+// 追加(v2): controlled-columns ハーネスです。列メタ(可視 / 順序 / ピン)は consumer 所有のため、
+//   applyState の列メタ反映は onColumnsChange を通ります。ここで columns を useState で保持して
+//   onColumnsChange へ繋ぎ、applyState → onColumnsChange → 再レンダー → getState の往復を検証します。
+function ControlledGrid({
+  gridRef,
+  initialColumns,
+  onStateChange,
+}: {
+  gridRef: Ref<SpreadsheetGridHandle<Row>>;
+  initialColumns: GridColumn<Row>[];
+  onStateChange?: (state: GridState) => void;
+}) {
+  const [cols, setCols] = useState(initialColumns);
+  return (
+    <SpreadsheetGrid
+      ref={gridRef}
+      columns={cols}
+      onColumnsChange={setCols}
+      rows={rows}
+      onStateChange={onStateChange}
+    />
+  );
+}
+
+describe('SpreadsheetGrid 状態 API(結合)', () => {
+  it('getState() が初期スナップショットを返す', () => {
+    const ref = createRef<SpreadsheetGridHandle<Row>>();
+    render(<SpreadsheetGrid ref={ref} columns={columns} rows={rows} />);
+
+    const state = ref.current?.getState();
+    expect(state).toBeDefined();
+    expect(state?.version).toBe(GRID_STATE_VERSION);
+    // 初期 columnWidths は非 flex 列の width から作られます(flex 列なし)。
+    expect(state?.columnWidths).toEqual({ id: 80, name: 160, qty: 100 });
+    expect(state?.filters).toEqual({ globalText: '', columnFilters: {} });
+    expect(state?.sort).toEqual([]);
+    // 追加(v2): 列メタは columns prop から配列順で抽出されます(visible/pinned 未指定は省略)。
+    expect(state?.columns).toEqual([
+      { key: 'id' },
+      { key: 'name' },
+      { key: 'qty' },
+    ]);
+  });
+
+  it('applyState() が reducer 経由で反映され getState() に出る', () => {
+    const ref = createRef<SpreadsheetGridHandle<Row>>();
+    render(<SpreadsheetGrid ref={ref} columns={columns} rows={rows} />);
+
+    act(() => {
+      ref.current?.applyState(appliedState);
+    });
+
+    const after = ref.current?.getState();
+    expect(after?.version).toBe(GRID_STATE_VERSION);
+    // resetColumnWidths はフル置換なので、適用後は { id: 120 } のみ(他列のエントリは消える)。
+    expect(after?.columnWidths).toEqual({ id: 120 });
+    expect(after?.filters).toEqual({
+      globalText: 'be',
+      columnFilters: { name: { kind: 'text', value: 'be' } },
+    });
+    expect(after?.sort).toEqual([{ columnKey: 'qty', direction: 'desc' }]);
+  });
+
+  it('onStateChange は初回マウントで発火しない', () => {
+    const onStateChange = vi.fn();
+    render(
+      <SpreadsheetGrid
+        columns={columns}
+        rows={rows}
+        onStateChange={onStateChange}
+      />,
+    );
+
+    expect(onStateChange).not.toHaveBeenCalled();
+  });
+
+  it('onStateChange は applyState の状態変化で最新 state を 1 回渡して発火する', () => {
+    const onStateChange = vi.fn();
+    const ref = createRef<SpreadsheetGridHandle<Row>>();
+    render(
+      <SpreadsheetGrid
+        ref={ref}
+        columns={columns}
+        rows={rows}
+        onStateChange={onStateChange}
+      />,
+    );
+
+    act(() => {
+      ref.current?.applyState(appliedState);
+    });
+
+    expect(onStateChange).toHaveBeenCalledTimes(1);
+    expect(onStateChange).toHaveBeenLastCalledWith({
+      version: GRID_STATE_VERSION,
+      columnWidths: { id: 120 },
+      filters: {
+        globalText: 'be',
+        columnFilters: { name: { kind: 'text', value: 'be' } },
+      },
+      sort: [{ columnKey: 'qty', direction: 'desc' }],
+      // 追加(v2): この applyState は列メタ非適用(onColumnsChange 未指定)なので columns prop は不変。
+      //   snapshot には現 columns の抽出が載ります。
+      columns: [{ key: 'id' }, { key: 'name' }, { key: 'qty' }],
+    });
+  });
+
+  it('onStateChange は同値の applyState では再発火しない(構造等価で抑止)', () => {
+    const onStateChange = vi.fn();
+    const ref = createRef<SpreadsheetGridHandle<Row>>();
+    render(
+      <SpreadsheetGrid
+        ref={ref}
+        columns={columns}
+        rows={rows}
+        onStateChange={onStateChange}
+      />,
+    );
+
+    // 1 回目: 初期状態 → appliedState への変化で発火。
+    act(() => {
+      ref.current?.applyState(appliedState);
+    });
+    expect(onStateChange).toHaveBeenCalledTimes(1);
+
+    // 2 回目: 同値を再適用。reducer は新規オブジェクト参照を入れる(columnWidths/filters の参照は変わる)が、
+    //   isSameGridState が構造等価と判定するため再発火しない。
+    act(() => {
+      ref.current?.applyState(appliedState);
+    });
+    expect(onStateChange).toHaveBeenCalledTimes(1);
+  });
+
+  it('追加(v2): applyState の列メタ(順序 / 可視 / ピン)が onColumnsChange 経由で反映され getState に出る', () => {
+    const ref = createRef<SpreadsheetGridHandle<Row>>();
+    render(<ControlledGrid gridRef={ref} initialColumns={columns} />);
+
+    const v2State: GridState = {
+      version: GRID_STATE_VERSION,
+      columnWidths: {},
+      filters: { globalText: '', columnFilters: {} },
+      sort: [],
+      // qty を left 固定 + 先頭、id を非表示、name は既定。
+      columns: [
+        { key: 'qty', pinned: 'left' },
+        { key: 'id', visible: false },
+        { key: 'name' },
+      ],
+    };
+
+    act(() => {
+      ref.current?.applyState(v2State);
+    });
+
+    const after = ref.current?.getState();
+    // reorderColumnsByPane で qty(left)が先頭、続いて center の id, name。visible/pinned も復元。
+    expect(after?.columns).toEqual([
+      { key: 'qty', pinned: 'left' },
+      { key: 'id', visible: false },
+      { key: 'name' },
+    ]);
+  });
+
+  it('追加(v2): onColumnsChange 未指定なら applyState の列メタはスキップ(v1 と同一・列順不変)', () => {
+    const ref = createRef<SpreadsheetGridHandle<Row>>();
+    // onColumnsChange を渡さない(controlled でない)素の SpreadsheetGrid。
+    render(<SpreadsheetGrid ref={ref} columns={columns} rows={rows} />);
+
+    act(() => {
+      ref.current?.applyState({
+        version: GRID_STATE_VERSION,
+        columnWidths: {},
+        filters: { globalText: '', columnFilters: {} },
+        sort: [],
+        columns: [{ key: 'qty' }, { key: 'name' }, { key: 'id' }], // reorder 指示
+      });
+    });
+
+    // onColumnsChange が無いので列メタは適用されず、列順は初期のまま。
+    const after = ref.current?.getState();
+    expect(after?.columns).toEqual([
+      { key: 'id' },
+      { key: 'name' },
+      { key: 'qty' },
+    ]);
+  });
+
+  it('追加(v2): onStateChange は列メタ変化(applyState の reorder)でも発火し、最新の列メタを渡す', () => {
+    const onStateChange = vi.fn();
+    const ref = createRef<SpreadsheetGridHandle<Row>>();
+    render(
+      <ControlledGrid
+        gridRef={ref}
+        initialColumns={columns}
+        onStateChange={onStateChange}
+      />,
+    );
+
+    act(() => {
+      ref.current?.applyState({
+        version: GRID_STATE_VERSION,
+        columnWidths: {},
+        filters: { globalText: '', columnFilters: {} },
+        sort: [],
+        columns: [{ key: 'qty' }, { key: 'name' }, { key: 'id' }], // reorder
+      });
+    });
+
+    expect(onStateChange).toHaveBeenCalled();
+    const last = onStateChange.mock.calls.at(-1)?.[0] as GridState;
+    expect(last.columns).toEqual([
+      { key: 'qty' },
+      { key: 'name' },
+      { key: 'id' },
+    ]);
+  });
+});
+
+// 追加(THEME-3): dimReadOnlyCells の root 修飾子配線を検証します。淡色表示そのもの(CSS)は
+//   jsdom では検証できないため、「opt-in で ssg-root--dim-readonly が付く / 既定では付かない」
+//   というクラス配線を固定します(セマンティッククラス .ssg-body-cell--readonly の常時付与は
+//   GridBodyLayer 側の既存経路で不変)。
+describe('THEME-3: dimReadOnlyCells(readonly 淡色表示の opt-in)', () => {
+  it('既定(未指定)では root に ssg-root--dim-readonly が付かない', () => {
+    const { container } = render(
+      <SpreadsheetGrid columns={columns} rows={rows} />,
+    );
+    const root = container.querySelector('.ssg-root');
+    expect(root).not.toBeNull();
+    expect(root?.classList.contains('ssg-root--dim-readonly')).toBe(false);
+  });
+
+  it('dimReadOnlyCells で root に ssg-root--dim-readonly が付く', () => {
+    const { container } = render(
+      <SpreadsheetGrid columns={columns} rows={rows} dimReadOnlyCells />,
+    );
+    const root = container.querySelector('.ssg-root');
+    expect(root?.classList.contains('ssg-root--dim-readonly')).toBe(true);
+  });
+});
+
+// 追加(THEME-2): density プリセットの配線を検証します。root 修飾子と、rowHeight / headerHeight
+//   既定値の解決(明示 prop 優先)を、ヘッダー行のインライン height で観測します(jsdom でも
+//   インライン style は評価可能。寸法トークンの CSS 適用そのものは実機確認)。
+describe('THEME-2: density(密度プリセット)', () => {
+  const headerRowHeight = (container: HTMLElement): string => {
+    const headerRow = container.querySelector('.ssg-header-row');
+    return headerRow instanceof HTMLElement ? headerRow.style.height : '';
+  };
+
+  it('既定(standard)では density 修飾子なし・headerHeight は従来既定 40px', () => {
+    const { container } = render(
+      <SpreadsheetGrid columns={columns} rows={rows} />,
+    );
+    const root = container.querySelector('.ssg-root');
+    expect(root).not.toBeNull();
+    expect(root?.className).not.toContain('ssg-root--density-');
+    expect(headerRowHeight(container)).toBe('40px');
+  });
+
+  it("density='compact' で root 修飾子が付き headerHeight 既定が 32px になる", () => {
+    const { container } = render(
+      <SpreadsheetGrid columns={columns} rows={rows} density="compact" />,
+    );
+    expect(
+      container
+        .querySelector('.ssg-root')
+        ?.classList.contains('ssg-root--density-compact'),
+    ).toBe(true);
+    expect(headerRowHeight(container)).toBe('32px');
+  });
+
+  it('明示 headerHeight は density プリセットより常に優先される', () => {
+    const { container } = render(
+      <SpreadsheetGrid
+        columns={columns}
+        rows={rows}
+        density="compact"
+        headerHeight={50}
+      />,
+    );
+    expect(headerRowHeight(container)).toBe('50px');
+  });
+});
 </file>
 
 <file path="src/components/spreadsheet-grid/hooks/useColumnHeaderDragController.ts">
@@ -18305,343 +19103,463 @@ export const gridActions = {
 };
 </file>
 
-<file path="README.md">
-# @ishibashi0112/spreadsheet-grid
+<file path="src/components/spreadsheet-grid/logic/filtering.ts">
+import type {
+  ColumnFilterValue,
+  GridColumn,
+  NumberColumnFilterValue,
+  ParsedNumberFilter,
+  SetColumnFilterValue,
+} from '../model/gridTypes';
+import { getCellValue } from '../utils/permissions';
 
-[![npm version](https://img.shields.io/npm/v/@ishibashi0112/spreadsheet-grid.svg)](https://www.npmjs.com/package/@ishibashi0112/spreadsheet-grid)
-[![license](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
+// 追加(DS-1 / index ベースパイプライン): 「ビュー順に並んだ元 rows の index 列」です。
+//   オブジェクト配列({row, sourceIndex, ...})を各段で割り当て直す従来方式に代えて、
+//   フィルタ/ソートはこの index 列(Int32Array)だけを生成・受け渡しします。
+//   - 1,000,000 行でも 4MB(= 4byte × N)に収まり、割り当て/GC が行オブジェクト方式から桁で下がります。
+//   - 将来 Web Worker へ渡す際に transferable(ゼロコピー)になります。
+//   - ビュー位置 i の元行は rows[order[i]] で引きます(この対応付けが後段のシームの土台)。
+//   DS-1 は純関数の追加のみで、配線(SpreadsheetGrid 側のチェーン差し替え)は DS-2 で行います。
+export type RowOrder = Int32Array;
 
-A high-performance, virtualized spreadsheet / data grid for **React 19**, written in TypeScript.
-
-高性能な仮想化スプレッドシート／データグリッド（**React 19**・TypeScript 製）。
-
-**English** | [日本語](#日本語)
-
----
-
-## Features
-
-- Scroll-space virtualization that handles up to ~1,000,000 rows.
-- Three-pane pinned columns (left / center / right) via sticky positioning.
-- Sorting, per-column filters (`text` / `number` / `date` / `select` / `set` / `custom`), and a global filter.
-- In-cell editing and clipboard copy / paste, with range selection and keyboard navigation.
-- Optional auto-height rows for wrapped, variable-height content.
-- External height control via `height` / `maxHeight` (e.g. `height="100%"` to follow the parent's height).
-- Both **client-side** (`rows`) and **server-side** (`dataSource`, SSRM) row models.
-- Themeable with CSS custom properties (`--ssg-*`, defined at zero specificity so your overrides always win). Base styles are plain unlayered CSS with single-class specificity, so they survive CSS resets such as Tailwind Preflight; a cascade-layers variant (`style.layer.css`) is also shipped. `className` / `classNames` slots are provided.
-- Toggle the top / bottom bars and their parts via props — whole bars (`showTopBar` / `showBottomBar`), the default top bar's summary chips and global-filter input, and the Rows/Columns counts in each bar.
-- Built-in CSV export (`downloadCsv` / `exportCsv`), plus a library-agnostic `getExportData()` for Excel / XLSX / ODS — feed the shaped data (filter/sort/visible-order aware) to your own writer such as [hucre](https://github.com/productdevbook/hucre), ExcelJS, or SheetJS. No spreadsheet library is bundled; multi-sheet is composed on your side. See [`API_REFERENCE.md`](./src/components/spreadsheet-grid/API_REFERENCE.md).
-- Export scopes: `'view'` (default — every filtered/sorted view row, scroll-independent), `'raw'` (every source row, ignoring filter & sort), `'rendered'` (only the rows currently rendered by virtualization — scroll-dependent), `'selection'`. Legacy `'all'` / `'visible'` keep working as deprecated aliases of `'view'` / `'rendered'`.
-- TypeScript-first, fully controlled API.
-
-## Installation
-
-```sh
-npm install @ishibashi0112/spreadsheet-grid
-# pnpm add @ishibashi0112/spreadsheet-grid
-# yarn add @ishibashi0112/spreadsheet-grid
-```
-
-Requires **react** and **react-dom** `>= 19` as peer dependencies (install them in your app if you have not already). `@tanstack/react-virtual` is a regular dependency and is installed automatically.
-
-## Styles
-
-The grid ships its CSS as a separate file. Import it once (for example, in your app entry):
-
-```ts
-import '@ishibashi0112/spreadsheet-grid/style.css'
-```
-
-The base styles are plain (unlayered) CSS scoped to `.ssg-*` classes, and all design tokens are defined at zero specificity (`:where(.ssg-root)`), so your token overrides always win regardless of import order.
-
-### Using with Tailwind CSS / HeroUI / Mantine
-
-- **Tailwind CSS v3 (and HeroUI on v3)** — works out of the box. Preflight cannot break the grid: its element/universal resets lose to the grid's class selectors by specificity.
-- **Tailwind CSS v4 (and HeroUI on v4)** — works out of the box. If you additionally want Tailwind utilities to override grid defaults without the `!` modifier, put the grid CSS into a cascade layer below `utilities`:
-
-  ```css
-  @import 'tailwindcss';
-  @import '@ishibashi0112/spreadsheet-grid/style.css' layer(components);
-  ```
-
-  Alternatively, use the pre-layered variant `style.layer.css` (everything wrapped in `@layer ssg-base`) and declare the layer order yourself:
-
-  ```css
-  @layer theme, base, ssg-base, components, utilities;
-  @import 'tailwindcss';
-  @import '@ishibashi0112/spreadsheet-grid/style.layer.css';
-  ```
-
-- **Mantine** — works out of the box (no class-name or reset conflicts; grid popovers use `z-index: 1000`, above Mantine's default modal z-index).
-
-To override a grid default reliably in plain CSS, chain your class with the grid's base class so it wins by specificity, independent of import order:
-
-```css
-.ssg-body-cell.my-warn-cell {
-  background-color: #fff7ed;
-}
-```
-
-## Quick start
-
-```tsx
-import { useState } from 'react'
-import { SpreadsheetGrid, type GridColumn } from '@ishibashi0112/spreadsheet-grid'
-import '@ishibashi0112/spreadsheet-grid/style.css'
-
-type Row = { id: number; name: string; qty: number }
-
-const columns: GridColumn<Row>[] = [
-  { key: 'name', title: 'Name', width: 200, editable: true, filterType: 'text' },
-  { key: 'qty',  title: 'Qty',  width: 120, editable: true, filterType: 'number' },
-]
-
-export function Example() {
-  const [rows, setRows] = useState<Row[]>([
-    { id: 1, name: 'Apple',  qty: 3 },
-    { id: 2, name: 'Banana', qty: 5 },
-  ])
-
-  return (
-    <SpreadsheetGrid
-      rows={rows}
-      columns={columns}
-      onRowsChange={setRows}
-      rowKeyGetter={(row) => row.id}
-    />
-  )
-}
-```
-
-`rows` and `onRowsChange` make the grid a controlled component. A column needs at least `key` and `width`.
-
-## Sizing
-
-By default the grid caps its height at `480px` (`max-height`) and scrolls when the content is taller. Pass `height` to take explicit control — use `height="100%"` to follow the parent's height, or a pixel value:
-
-```tsx
-<div style={{ height: 600, minHeight: 0 }}>
-  <SpreadsheetGrid rows={rows} columns={columns} height="100%" />
-</div>
-```
-
-For `height="100%"` to work, the parent must have a resolved height (its ancestors are sized, and a flex child needs `min-height: 0`). This is standard CSS the library can't resolve for you. `maxHeight` sets an upper bound and can be combined with `height` (explicit height, capped at `maxHeight`).
-
-### Density
-
-Set `density` to switch the overall sizing with one prop — `'compact' | 'standard' | 'comfortable'` (default `'standard'`, identical to previous versions):
-
-```tsx
-<SpreadsheetGrid rows={rows} columns={columns} density="compact" />
-```
-
-The preset drives the default `rowHeight` / `headerHeight` (compact: 28/32, standard: 36/40, comfortable: 44/48 — explicit props always win) and switches sizing tokens (cell horizontal padding, bar padding, icon-button size, relative cell font scale) via a root modifier class. Individual tokens (e.g. `--ssg-cell-pad-x`) can still be overridden for fine-tuning. Popovers/menus are not affected.
-
-## Server-side mode (SSRM)
-
-Pass a `dataSource` instead of `rows` to switch to server-side mode. The grid keeps the full scroll height for the total row count and fetches only the blocks near the viewport:
-
-```tsx
-<SpreadsheetGrid
-  columns={columns}
-  dataSource={{
-    async getRows({ startIndex, endIndex, query, signal }) {
-      // Apply `query` (filters / sort) on the server and return only [startIndex, endIndex).
-      const { rows, totalRowCount } = await fetchPage({ startIndex, endIndex, query, signal })
-      return { rows, totalRowCount }
-    },
-  }}
-/>
-```
-
-Sorting, column filters, and the global filter stay enabled and are forwarded to the server through `query`. See the [API reference](./src/components/spreadsheet-grid/API_REFERENCE.md) for the full `getRows` contract, the filter wire format, and `serverSideRefreshToken`.
-
-## Styling & theming
-
-- Override the CSS variables on `.ssg-root` (or scope them via the `className` prop):
-
-  ```css
-  .ssg-root {
-    --ssg-accent: #16a34a;
-    --ssg-radius: 4px;
+// 追加(DS-1): 恒等 order [0, 1, ..., rowCount-1] を生成します(パイプラインの起点)。
+export const createSourceOrder = (rowCount: number): RowOrder => {
+  const order = new Int32Array(rowCount);
+  for (let i = 0; i < rowCount; i += 1) {
+    order[i] = i;
   }
-  ```
+  return order;
+};
 
-- Use the `classNames` prop for per-part class slots, `cellClassName` per column, and `getRowClassName` per row. Token overrides always apply (tokens are defined at zero specificity). For property overrides, chain with the base class (e.g. `.ssg-body-cell.my-class`) to win regardless of import order — see the Styles section above.
+// 追加(12-A → 記述子化): set フィルター値の type guard です。
+// 変更(記述子化): columnFilters の値が ColumnFilterValue(判別共用体)へ閉じたため、
+//   typeof / Array.isArray の実行時ダックタイピングは不要になり、kind の絞り込みだけで足ります。
+//   外部呼び出し側(SpreadsheetGrid の表示・署名計算)の narrowing を据え置くため guard は残します。
+export const isSetColumnFilterValue = (
+  value: ColumnFilterValue | undefined,
+): value is SetColumnFilterValue => value?.kind === 'set';
 
-## API reference
-
-The full prop and type reference lives in [`src/components/spreadsheet-grid/API_REFERENCE.md`](./src/components/spreadsheet-grid/API_REFERENCE.md).
-
-## License
-
-[MIT](./LICENSE) © 2026 Yuki Sakakibara
-
----
-
-## 日本語
-
-[English](#ishibashi0112spreadsheet-grid)
-
-**React 19** 製の高性能な仮想化スプレッドシート／データグリッドです。TypeScript で書かれています。
-
-### 特徴
-
-- スクロール空間の仮想化により最大 100 万行規模に対応。
-- `position: sticky` による 3 ペイン固定列（左 / 中央 / 右）。
-- ソート、列ごとのフィルター（`text` / `number` / `date` / `select` / `set` / `custom`）、グローバルフィルター。
-- セル内編集とクリップボードのコピー／貼り付け、範囲選択、キーボード操作。
-- 折り返し・可変行高に対応する auto-height 行（任意）。
-- `height` / `maxHeight` によるスクロールコンテナ高さの外部制御（`height="100%"` で親要素の高さに追従）。
-- **クライアントサイド**（`rows`）と**サーバーサイド**（`dataSource`、SSRM）の両行モデル。
-- CSS カスタムプロパティ（`--ssg-*`。特異度 0 で定義され、利用側の上書きが常に勝ちます）によるテーマ設定。基底スタイルは未レイヤーの単一クラス特異度で、Tailwind Preflight などの CSS リセットに壊されません。カスケードレイヤー版（`style.layer.css`）も同梱。`className` / `classNames` スロットも用意。
-- トップ / ボトムバーとその構成要素（バー全体〔`showTopBar` / `showBottomBar`〕、既定トップバーの summary chips・グローバルフィルター入力、各バーの Rows/Columns 件数）を props で表示制御。
-- CSV エクスポート（`downloadCsv` / `exportCsv`）を内蔵。Excel / XLSX / ODS はライブラリ非依存の `getExportData()` で、整形済みデータ（フィルター/ソート/可視列順を反映）を [hucre](https://github.com/productdevbook/hucre) / ExcelJS / SheetJS など任意の writer へ流す方式。xlsx ライブラリは同梱せず、マルチシートは利用側で合成。詳細は [`API_REFERENCE.md`](./src/components/spreadsheet-grid/API_REFERENCE.md)。
-- エクスポート scope: `'view'`（既定＝フィルター/ソート後の全ビュー行。スクロール位置に非依存）/ `'raw'`（フィルター/ソート無視の全ソース行）/ `'rendered'`（描画中の行のみ＝スクロール位置に依存）/ `'selection'`（選択範囲）。旧 `'all'` / `'visible'` は `'view'` / `'rendered'` の deprecated エイリアスとして従来どおり動作。
-- TypeScript ファースト、完全 controlled な API。
-
-### インストール
-
-```sh
-npm install @ishibashi0112/spreadsheet-grid
-# pnpm add @ishibashi0112/spreadsheet-grid
-# yarn add @ishibashi0112/spreadsheet-grid
-```
-
-peer 依存として **react** / **react-dom** `>= 19` が必要です（未導入なら利用側で入れてください）。`@tanstack/react-virtual` は通常依存として自動的に入ります。
-
-### スタイル
-
-CSS は別ファイルとして同梱されます。アプリのエントリ等で 1 度だけ import してください:
-
-```ts
-import '@ishibashi0112/spreadsheet-grid/style.css'
-```
-
-基底スタイルは `.ssg-*` クラスにスコープした未レイヤーの素の CSS で、デザイントークンはすべて特異度 0（`:where(.ssg-root)`）で定義されています。トークンの上書きは読み込み順に依らず必ず勝ちます。
-
-#### Tailwind CSS / HeroUI / Mantine との共存
-
-- **Tailwind CSS v3（HeroUI の v3 世代）** — そのままで動作します。preflight（要素 / `*` セレクタのリセット）は本グリッドのクラスセレクタに特異度で負けるため、グリッドを壊せません。
-- **Tailwind CSS v4（HeroUI の v4 世代）** — そのままで動作します。さらに Tailwind ユーティリティで `!` 修飾子なしにグリッド既定を上書きしたい場合は、グリッド CSS を `utilities` より下のレイヤーへ入れてください:
-
-  ```css
-  @import 'tailwindcss';
-  @import '@ishibashi0112/spreadsheet-grid/style.css' layer(components);
-  ```
-
-  もしくは全体を `@layer ssg-base` に包んだ `style.layer.css` を使い、レイヤー順を自分で宣言します:
-
-  ```css
-  @layer theme, base, ssg-base, components, utilities;
-  @import 'tailwindcss';
-  @import '@ishibashi0112/spreadsheet-grid/style.layer.css';
-  ```
-
-- **Mantine** — そのままで動作します（クラス名・リセットの衝突なし。グリッドの popover は `z-index: 1000` で Mantine の既定モーダルより前面）。
-
-素の CSS でグリッド既定を確実に上書きするには、基底クラスと連結して特異度で勝たせてください（読み込み順に依存しません）:
-
-```css
-.ssg-body-cell.my-warn-cell {
-  background-color: #fff7ed;
-}
-```
-
-### クイックスタート
-
-```tsx
-import { useState } from 'react'
-import { SpreadsheetGrid, type GridColumn } from '@ishibashi0112/spreadsheet-grid'
-import '@ishibashi0112/spreadsheet-grid/style.css'
-
-type Row = { id: number; name: string; qty: number }
-
-const columns: GridColumn<Row>[] = [
-  { key: 'name', title: '名前', width: 200, editable: true, filterType: 'text' },
-  { key: 'qty',  title: '数量', width: 120, editable: true, filterType: 'number' },
-]
-
-export function Example() {
-  const [rows, setRows] = useState<Row[]>([
-    { id: 1, name: 'りんご', qty: 3 },
-    { id: 2, name: 'バナナ', qty: 5 },
-  ])
-
-  return (
-    <SpreadsheetGrid
-      rows={rows}
-      columns={columns}
-      onRowsChange={setRows}
-      rowKeyGetter={(row) => row.id}
-    />
-  )
-}
-```
-
-`rows` と `onRowsChange` でグリッドは controlled になります。列には最低限 `key` と `width` が必要です。
-
-### サイズ（高さ）
-
-既定ではグリッドの高さは `480px`（`max-height`）で頭打ちになり、中身がそれより高いとスクロールします。`height` を渡すと高さを明示制御できます。`height="100%"` で親要素の高さに追従、`number` で px 指定です:
-
-```tsx
-<div style={{ height: 600, minHeight: 0 }}>
-  <SpreadsheetGrid rows={rows} columns={columns} height="100%" />
-</div>
-```
-
-`height="100%"` を効かせるには、**親要素が確定高さを持つ**必要があります（祖先まで高さが確定している／flex 子なら `min-height: 0` が必要）。これは CSS の一般則のため本ライブラリ側では解決できません。`maxHeight` は高さの上限で、`height` と併用できます（明示高さ＋上限）。
-
-#### 密度（density）
-
-`density` プロップ 1 つで全体のサイズ感を切り替えられます — `'compact' | 'standard' | 'comfortable'`（既定 `'standard'` = 従来と同値）:
-
-```tsx
-<SpreadsheetGrid rows={rows} columns={columns} density="compact" />
-```
-
-プリセットは `rowHeight` / `headerHeight` の既定値（compact: 28/32・standard: 36/40・comfortable: 44/48。明示 prop が常に優先）と、寸法トークン（セル横 padding・バー padding・アイコンボタン寸法・セル文字の相対拡縮）を root 修飾子経由で一括切替します。個別の微調整はトークン（例: `--ssg-cell-pad-x`）の上書きで可能です。popover / メニューは対象外です。
-
-### サーバーサイドモード（SSRM）
-
-`rows` の代わりに `dataSource` を渡すとサーバーサイドモードになります。総行数ぶんのスクロール高さを保ったまま、可視窓に近いブロックだけを取得します:
-
-```tsx
-<SpreadsheetGrid
-  columns={columns}
-  dataSource={{
-    async getRows({ startIndex, endIndex, query, signal }) {
-      // query(フィルター/ソート)をサーバで適用し、[startIndex, endIndex) のみ返す。
-      const { rows, totalRowCount } = await fetchPage({ startIndex, endIndex, query, signal })
-      return { rows, totalRowCount }
-    },
-  }}
-/>
-```
-
-ソート・列フィルター・グローバルフィルターは有効なまま `query` 経由でサーバへ送られます。`getRows` の契約、フィルターの wire format、`serverSideRefreshToken` の詳細は [API リファレンス](./src/components/spreadsheet-grid/API_REFERENCE.md) を参照してください。
-
-### スタイリング / テーマ
-
-- `.ssg-root` 上で CSS 変数を上書きします（`className` prop でスコープも可能）:
-
-  ```css
-  .ssg-root {
-    --ssg-accent: #16a34a;
-    --ssg-radius: 4px;
+// 追加(12-A): 列フィルター値が「有効」かを判定する共通 helper です。
+// 変更理由: 従来は GridHeaderRow(フィルター済みバッジ) / gridBarHelpers(有効件数) /
+//   列フィルタの適用処理がそれぞれ String(value).trim() で判定していました。
+//   set フィルター値はオブジェクトのため String() 判定が成立しません
+//   (空配列 = 全行除外でも「有効」と数える必要があります)。
+//   有効判定をここへ一元化し、3 箇所すべてが同じ規則を共有します。
+// 変更(記述子化): 判別共用体の kind で網羅判定します。set / number / custom は存在時点で有効
+//   (set/number は reducer/build 側で空を clear 済み、custom は利用者が明示的に set した値)。
+//   text / date は trim 後非空、select は値非空のときだけ有効です(旧・生文字列時代と等価)。
+export const isActiveColumnFilterValue = (
+  value: ColumnFilterValue | undefined,
+): boolean => {
+  if (!value) {
+    return false;
   }
-  ```
+  switch (value.kind) {
+    case 'set':
+    case 'number':
+    case 'custom':
+      return true;
+    case 'select':
+      return value.value.length > 0;
+    case 'text':
+    case 'date':
+      return value.value.trim().length > 0;
+  }
+};
 
-- パーツ別の class は `classNames` prop、列単位は `cellClassName`、行単位は `getRowClassName` で付与できます。トークン上書きは常に効きます（特異度 0 で定義）。プロパティ上書きは基底クラスとの連結（例: `.ssg-body-cell.my-class`）で読み込み順に依らず確実になります — 上記「スタイル」参照。
+// 注記(記述子化): ParsedNumberFilter 型は gridTypes へ移設しました(ColumnFilterValue が
+//   number 記述子を内包する都合)。parse の「ロジック」は引き続きこちらにあります。
+// 追加: number フィルター式を解釈します。
+export const parseNumberFilterExpression = (
+  rawValue: string,
+): ParsedNumberFilter | null => {
+  const normalized = rawValue.trim();
+  if (!normalized) {
+    return null;
+  }
 
-### API リファレンス
+  const rangeMatch = normalized.match(
+    /^(-?\d+(?:\.\d+)?)\s*\.\.\s*(-?\d+(?:\.\d+)?)$/,
+  );
+  if (rangeMatch) {
+    const first = Number(rangeMatch[1]);
+    const second = Number(rangeMatch[2]);
+    if (!Number.isFinite(first) || !Number.isFinite(second)) {
+      return null;
+    }
+    return {
+      mode: 'range',
+      min: Math.min(first, second),
+      max: Math.max(first, second),
+    };
+  }
 
-prop と型の完全なリファレンスは [`src/components/spreadsheet-grid/API_REFERENCE.md`](./src/components/spreadsheet-grid/API_REFERENCE.md) にあります。
+  const comparisonMatch = normalized.match(
+    /^(<=|>=|=|<|>)?\s*(-?\d+(?:\.\d+)?)$/,
+  );
+  if (!comparisonMatch) {
+    return null;
+  }
 
-### ライセンス
+  return {
+    mode: 'comparison',
+    operator: (comparisonMatch[1] ?? '=') as '>' | '>=' | '<' | '<=' | '=',
+    value: Number(comparisonMatch[2]),
+  };
+};
 
-[MIT](./LICENSE) © 2026 Yuki Sakakibara
+// 注記(記述子化 / number): NumberColumnFilterValue 型は gridTypes へ移設しました。
+//   raw は再オープン時の draft seed / 現在値表示 / 解釈不可時の contains needle に使い、
+//   parsed は commit 時 1 回の parse 結果(B-2 の Float64 key 最適化が依存する形)です。
+
+// 追加(記述子化 / number → 記述子化): number 記述子の type guard です。
+// 変更(記述子化): 入力が ColumnFilterValue へ閉じたため kind の絞り込みだけで足ります。
+//   外部呼び出し側(B-2 署名計算・現在値表示)の narrowing 据え置きのため guard は残します。
+export const isNumberColumnFilterValue = (
+  value: ColumnFilterValue | undefined,
+): value is NumberColumnFilterValue => value?.kind === 'number';
+
+// 追加(記述子化 / number): 生入力から number 記述子を構築します。
+//   - trim 後が空なら null(= フィルターなしへ正規化。呼び出し側で clearColumn 相当に倒す)。
+//   - parse は parseNumberFilterExpression 1 回のみ。挙動は従来 applyNumberFilter の
+//     「trim → parse → 不可なら contains」と厳密に等価です(raw は trim 済みを保持)。
+export const buildNumberColumnFilterValue = (
+  rawInput: string,
+): NumberColumnFilterValue | null => {
+  const raw = rawInput.trim();
+  if (!raw) {
+    return null;
+  }
+  return { kind: 'number', raw, parsed: parseNumberFilterExpression(raw) };
+};
+
+// 追加(記述子化): 列フィルター値を「テキスト入力の編集用文字列」へ整形します。
+//   popover 再オープン時の draft seed の単一窓口です。
+// 変更(記述子化): 全種別が記述子になったため kind で分岐します。
+//   - number → raw(式そのもの) / text・date・select → value(検索/選択文字列)。
+//   - set はチェックボックス UI、custom は自由形 UI のため text 入力 draft を持ちません(空)。
+export const columnFilterValueToDraftText = (
+  value: ColumnFilterValue | undefined,
+): string => {
+  if (!value) {
+    return '';
+  }
+  switch (value.kind) {
+    case 'number':
+      return value.raw;
+    case 'text':
+    case 'date':
+    case 'select':
+      return value.value;
+    case 'set':
+    case 'custom':
+      return '';
+  }
+};
+
+// 追加: number 型フィルターの評価です。
+export const applyNumberFilter = (
+  cellValue: unknown,
+  filterValue: unknown,
+) => {
+  const normalizedFilter = String(filterValue ?? '').trim();
+  if (!normalizedFilter) {
+    return true;
+  }
+
+  const parsedFilter = parseNumberFilterExpression(normalizedFilter);
+  if (!parsedFilter) {
+    // 追加: 式として解釈できない場合は contains にフォールバックします。
+    return String(cellValue ?? '')
+      .toLowerCase()
+      .includes(normalizedFilter.toLowerCase());
+  }
+
+  const numericCellValue = Number(cellValue);
+  if (!Number.isFinite(numericCellValue)) {
+    return false;
+  }
+
+  if (parsedFilter.mode === 'range') {
+    return (
+      numericCellValue >= parsedFilter.min &&
+      numericCellValue <= parsedFilter.max
+    );
+  }
+
+  switch (parsedFilter.operator) {
+    case '>':
+      return numericCellValue > parsedFilter.value;
+    case '>=':
+      return numericCellValue >= parsedFilter.value;
+    case '<':
+      return numericCellValue < parsedFilter.value;
+    case '<=':
+      return numericCellValue <= parsedFilter.value;
+    case '=':
+    default:
+      return numericCellValue === parsedFilter.value;
+  }
+};
+
+// 列フィルターの「行ループ前の事前コンパイル方式」のための型・helper 群です(12-A)。
+//   set フィルターは候補が多い列(例: 品番 5,000 種)でも O(1) 判定にしたく、
+//   行ループの外で一度だけ Set を構築する必要があります。また有効な列フィルターだけを
+//   predicate へ事前コンパイルすることで、行ループは「有効フィルター数 × 行数」に縮小し、
+//   フィルター未設定列ぶんの String(...).trim().toLowerCase() 正規化を省けます
+//   (text / number / select の判定結果は単一実装で一意です)。
+//   現在の利用者は index 版 filterOrderByColumns です
+//   (旧オブジェクト配列版は DS-3-8 で削除しました)。
+// 変更(B-2): predicate に sourceIndex を渡せるよう第 2 引数を追加します。
+//   number(comparison/range)で「事前計算した Float64 key[sourceIndex]」を引くために使います。
+//   TS 上 (row) => boolean は (row, sourceIndex) => boolean へ代入可能なので、
+//   key を使わない既存クロージャ(filterFn / set / contains / select / text)は無改修のまま通ります。
+type CompiledColumnFilterPredicate<T> = (row: T, sourceIndex: number) => boolean;
+
+// 追加(12-A): 1 列ぶんのフィルター値を predicate へコンパイルします。
+//             無効(未設定)なら null を返し、行ループから除外します。
+// 変更(記述子化): filterValue を ColumnFilterValue へ閉じ、判別を switch(value.kind) 一本に
+//   統一しました(従来の column.filterType 突き合わせ・生文字列 number の後方互換フォールバックを撤去)。
+//   合否はいずれも旧経路と厳密に等価です(select=完全一致 / text・date=部分一致 / number=下記)。
+const compileSingleColumnFilter = <T,>(
+  column: GridColumn<T>,
+  filterValue: ColumnFilterValue | undefined,
+  // 追加(B-2): この列ぶんの Float64 key(rows 全長・sourceIndex 添字)。
+  //   渡されたときだけ comparison/range が key[sourceIndex] を引きます。
+  //   未指定(set 列 / key 未構築)なら従来の Number(getCellValue(...)) 経路に倒れ、挙動は等価です。
+  numericKey?: Float64Array,
+): CompiledColumnFilterPredicate<T> | null => {
+  if (!isActiveColumnFilterValue(filterValue)) {
+    return null;
+  }
+  // 注記: isActiveColumnFilterValue を通った時点で filterValue は存在します(undefined 除外)。
+  const value = filterValue as ColumnFilterValue;
+
+  // 注記: 従来どおり column.filterFn を最優先します(記述子オブジェクトをそのまま渡す契約。
+  //       custom 列の自由形値もここで利用側 filterFn の責務として解釈されます)。
+  if (column.filterFn) {
+    const filterFn = column.filterFn;
+    return (row) => filterFn(row, value);
+  }
+
+  switch (value.kind) {
+    // 追加(12-A / 反転set): set フィルターは「対象値の Set」を一度だけ構築し、O(1) 照合します。
+    //   values は mode により「選択値(include)」か「非選択値(exclude)」のいずれか(常に小さい側)。
+    //   include: 行値が対象に含まれれば通過 / exclude: 行値が対象に含まれなければ通過。
+    case 'set': {
+      const targetValues = new Set(value.values);
+      if (value.mode === 'exclude') {
+        return (row) =>
+          !targetValues.has(String(getCellValue(row, column) ?? ''));
+      }
+      return (row) => targetValues.has(String(getCellValue(row, column) ?? ''));
+    }
+
+    // 追加(記述子化 / number): number 記述子は parse 済みのため、行ループ外で評価器を確定します。
+    //   合否は旧 applyNumberFilter と厳密に等価:
+    //     - parsed=null  → raw で contains(大文字小文字無視)。
+    //     - range        → Number(cell) が有限かつ [min,max]。
+    //     - comparison   → Number(cell) が有限かつ op 比較(= は ===)。
+    case 'number': {
+      const parsed = value.parsed;
+      if (parsed === null) {
+        const needle = value.raw.toLowerCase();
+        return (row) =>
+          String(getCellValue(row, column) ?? '')
+            .toLowerCase()
+            .includes(needle);
+      }
+      if (parsed.mode === 'range') {
+        const { min, max } = parsed;
+        // 変更(B-2): numericKey があれば key[sourceIndex] を、無ければ従来どおり
+        //   Number(getCellValue(...)) を読みます。値の取得元だけが変わり、判定本体は不変です。
+        return (row, sourceIndex) => {
+          const numericCellValue = numericKey
+            ? numericKey[sourceIndex]
+            : Number(getCellValue(row, column));
+          return (
+            Number.isFinite(numericCellValue) &&
+            numericCellValue >= min &&
+            numericCellValue <= max
+          );
+        };
+      }
+      const { operator, value: threshold } = parsed;
+      // 変更(B-2): comparison も numericKey 経路を併設します(無ければ従来 getCellValue 経路)。
+      return (row, sourceIndex) => {
+        const numericCellValue = numericKey
+          ? numericKey[sourceIndex]
+          : Number(getCellValue(row, column));
+        if (!Number.isFinite(numericCellValue)) {
+          return false;
+        }
+        switch (operator) {
+          case '>':
+            return numericCellValue > threshold;
+          case '>=':
+            return numericCellValue >= threshold;
+          case '<':
+            return numericCellValue < threshold;
+          case '<=':
+            return numericCellValue <= threshold;
+          case '=':
+          default:
+            return numericCellValue === threshold;
+        }
+      };
+    }
+
+    // 追加(記述子化 / select): 完全一致です(旧 String(filterValue ?? '') と等価)。
+    case 'select': {
+      const expectedValue = value.value;
+      return (row) =>
+        String(getCellValue(row, column) ?? '') === expectedValue;
+    }
+
+    // 追加(記述子化 / text・date): 部分一致です(旧 text/date と等価)。date は現状 text と
+    //   同述語を共有しますが、将来の相対日付は評価時解決の専用分岐をここに足して切り出せます。
+    case 'text':
+    case 'date': {
+      const normalizedFilter = value.value.trim().toLowerCase();
+      return (row) =>
+        String(getCellValue(row, column) ?? '')
+          .toLowerCase()
+          .includes(normalizedFilter);
+    }
+
+    // 追加(記述子化 / custom): filterFn 不在の custom 列は、旧 text/custom 経路と等価に
+    //   String(value) の部分一致へフォールバックします(filterFn を持つ列は上で処理済み)。
+    case 'custom': {
+      const needle = String(value.value ?? '')
+        .trim()
+        .toLowerCase();
+      return (row) =>
+        String(getCellValue(row, column) ?? '')
+          .toLowerCase()
+          .includes(needle);
+    }
+  }
+};
+
+// ────────────────────────────────────────────────
+// 追加(DS-1 / index ベースパイプライン): order(RowOrder)を受けて order を返すフィルタ群。
+//   本体のフィルタ経路はこの index 版に一本化済みです(DS-2 で差し替え、
+//   旧オブジェクト配列版は DS-3-8 で削除)。いずれも「合格行を元の相対順で詰め直す」処理で、
+//   入出力が {row,...}[] ではなく元 rows + index 列(Int32Array)である点が要点です。
+//   「全件通過」のときは同一参照(引数 order)を返し、下流 useMemo のスキップを最大化します
+//   (.filter は全通過でも新配列を返すため、参照節約という点でも改善です)。
+// ────────────────────────────────────────────────
+
+// 追加(F-async): 1 行がグローバルニードルに一致するか(可視列 some の部分一致)を判定します。
+//   normalizedNeedle は呼び出し側で trim + toLowerCase 済み・非空である前提です
+//   (空ニードルは全件一致＝呼び出し側が order をそのまま返すため、ここには来ません)。
+//   時間分割の非同期フィルタ(useGlobalFilteredOrder)が 1 行ごとにこれを呼び、同期版の
+//   filterOrderByGlobalText も内部でこれを使うため、両経路の合否は単一実装で一意になります。
+export const rowMatchesGlobalText = <T,>(
+  row: T,
+  columns: GridColumn<T>[],
+  normalizedNeedle: string,
+): boolean => {
+  const columnCount = columns.length;
+  for (let c = 0; c < columnCount; c += 1) {
+    const value = getCellValue(row, columns[c]);
+    if (String(value ?? '').toLowerCase().includes(normalizedNeedle)) {
+      return true;
+    }
+  }
+  return false;
+};
+
+// 追加(DS-1): グローバルフィルタの index 版です(columns.some の部分一致)。
+//   filter 文字列が空なら同一参照を返します。
+// 変更(F-async): 1 行判定を rowMatchesGlobalText へ抽出しました(挙動は不変・バイト等価)。
+//   これで同期版(本関数)と非同期版(useGlobalFilteredOrder のチャンク走査)が同じ述語を共有します。
+export const filterOrderByGlobalText = <T,>(
+  rows: T[],
+  order: RowOrder,
+  columns: GridColumn<T>[],
+  globalText: string,
+): RowOrder => {
+  const normalizedFilter = globalText.trim().toLowerCase();
+  if (!normalizedFilter) {
+    return order;
+  }
+
+  const length = order.length;
+  const result = new Int32Array(length);
+  let count = 0;
+
+  for (let pos = 0; pos < length; pos += 1) {
+    const sourceIndex = order[pos];
+    if (rowMatchesGlobalText(rows[sourceIndex], columns, normalizedFilter)) {
+      result[count] = sourceIndex;
+      count += 1;
+    }
+  }
+
+  // 全件通過なら参照を変えません(no-op スキップ最大化)。
+  if (count === length) {
+    return order;
+  }
+  // 余剰バッファを抱えないよう、右サイズへ slice(コピー)します。
+  return result.slice(0, count);
+};
+
+// 追加(DS-1): 列フィルタの index 版です(有効フィルタの predicates.every)。
+//   事前コンパイルは compileSingleColumnFilter を再利用します
+//   (text / number / select / set / filterFn の判定は単一実装)。
+//   有効フィルタが 0 件なら同一参照を返します。
+export const filterOrderByColumns = <T,>(
+  rows: T[],
+  order: RowOrder,
+  columns: GridColumn<T>[],
+  columnFilters: Record<string, ColumnFilterValue>,
+  // 追加(B-2): 列キー → Float64 key の table(任意)。number(comparison/range)列のみ収録。
+  //   未指定なら全列が従来経路へ倒れ、現状とバイト等価です(set/text/select/filterFn は元から key 不使用)。
+  numericKeys?: ReadonlyMap<string, Float64Array>,
+): RowOrder => {
+  const predicates: CompiledColumnFilterPredicate<T>[] = [];
+  for (const column of columns) {
+    const predicate = compileSingleColumnFilter(
+      column,
+      columnFilters[column.key],
+      numericKeys?.get(column.key),
+    );
+    if (predicate) {
+      predicates.push(predicate);
+    }
+  }
+
+  if (predicates.length === 0) {
+    return order;
+  }
+
+  const length = order.length;
+  const predicateCount = predicates.length;
+  const result = new Int32Array(length);
+  let count = 0;
+
+  for (let pos = 0; pos < length; pos += 1) {
+    const sourceIndex = order[pos];
+    const row = rows[sourceIndex];
+    let ok = true;
+    for (let p = 0; p < predicateCount; p += 1) {
+      if (!predicates[p](row, sourceIndex)) {
+        ok = false;
+        break;
+      }
+    }
+    if (ok) {
+      result[count] = sourceIndex;
+      count += 1;
+    }
+  }
+
+  if (count === length) {
+    return order;
+  }
+  return result.slice(0, count);
+};
 </file>
 
 <file path="src/components/spreadsheet-grid/view/ColumnFilterPopover.tsx">
@@ -19346,463 +20264,343 @@ export function DefaultGridTopBar<T>({
 export default DefaultGridTopBar;
 </file>
 
-<file path="src/components/spreadsheet-grid/logic/filtering.ts">
-import type {
-  ColumnFilterValue,
-  GridColumn,
-  NumberColumnFilterValue,
-  ParsedNumberFilter,
-  SetColumnFilterValue,
-} from '../model/gridTypes';
-import { getCellValue } from '../utils/permissions';
+<file path="README.md">
+# @ishibashi0112/spreadsheet-grid
 
-// 追加(DS-1 / index ベースパイプライン): 「ビュー順に並んだ元 rows の index 列」です。
-//   オブジェクト配列({row, sourceIndex, ...})を各段で割り当て直す従来方式に代えて、
-//   フィルタ/ソートはこの index 列(Int32Array)だけを生成・受け渡しします。
-//   - 1,000,000 行でも 4MB(= 4byte × N)に収まり、割り当て/GC が行オブジェクト方式から桁で下がります。
-//   - 将来 Web Worker へ渡す際に transferable(ゼロコピー)になります。
-//   - ビュー位置 i の元行は rows[order[i]] で引きます(この対応付けが後段のシームの土台)。
-//   DS-1 は純関数の追加のみで、配線(SpreadsheetGrid 側のチェーン差し替え)は DS-2 で行います。
-export type RowOrder = Int32Array;
+[![npm version](https://img.shields.io/npm/v/@ishibashi0112/spreadsheet-grid.svg)](https://www.npmjs.com/package/@ishibashi0112/spreadsheet-grid)
+[![license](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
 
-// 追加(DS-1): 恒等 order [0, 1, ..., rowCount-1] を生成します(パイプラインの起点)。
-export const createSourceOrder = (rowCount: number): RowOrder => {
-  const order = new Int32Array(rowCount);
-  for (let i = 0; i < rowCount; i += 1) {
-    order[i] = i;
+A high-performance, virtualized spreadsheet / data grid for **React 19**, written in TypeScript.
+
+高性能な仮想化スプレッドシート／データグリッド（**React 19**・TypeScript 製）。
+
+**English** | [日本語](#日本語)
+
+---
+
+## Features
+
+- Scroll-space virtualization that handles up to ~1,000,000 rows.
+- Three-pane pinned columns (left / center / right) via sticky positioning.
+- Sorting, per-column filters (`text` / `number` / `date` / `select` / `set` / `custom`), and a global filter.
+- In-cell editing and clipboard copy / paste, with range selection and keyboard navigation.
+- Optional auto-height rows for wrapped, variable-height content.
+- External height control via `height` / `maxHeight` (e.g. `height="100%"` to follow the parent's height).
+- Both **client-side** (`rows`) and **server-side** (`dataSource`, SSRM) row models.
+- Themeable with CSS custom properties (`--ssg-*`, defined at zero specificity so your overrides always win). Base styles are plain unlayered CSS with single-class specificity, so they survive CSS resets such as Tailwind Preflight; a cascade-layers variant (`style.layer.css`) is also shipped. `className` / `classNames` slots are provided.
+- Toggle the top / bottom bars and their parts via props — whole bars (`showTopBar` / `showBottomBar`), the default top bar's summary chips and global-filter input, and the Rows/Columns counts in each bar.
+- Built-in CSV export (`downloadCsv` / `exportCsv`), plus a library-agnostic `getExportData()` for Excel / XLSX / ODS — feed the shaped data (filter/sort/visible-order aware) to your own writer such as [hucre](https://github.com/productdevbook/hucre), ExcelJS, or SheetJS. No spreadsheet library is bundled; multi-sheet is composed on your side. See [`API_REFERENCE.md`](./src/components/spreadsheet-grid/API_REFERENCE.md).
+- Export scopes: `'view'` (default — every filtered/sorted view row, scroll-independent), `'raw'` (every source row, ignoring filter & sort), `'rendered'` (only the rows currently rendered by virtualization — scroll-dependent), `'selection'`. Legacy `'all'` / `'visible'` keep working as deprecated aliases of `'view'` / `'rendered'`.
+- TypeScript-first, fully controlled API.
+
+## Installation
+
+```sh
+npm install @ishibashi0112/spreadsheet-grid
+# pnpm add @ishibashi0112/spreadsheet-grid
+# yarn add @ishibashi0112/spreadsheet-grid
+```
+
+Requires **react** and **react-dom** `>= 19` as peer dependencies (install them in your app if you have not already). `@tanstack/react-virtual` is a regular dependency and is installed automatically.
+
+## Styles
+
+The grid ships its CSS as a separate file. Import it once (for example, in your app entry):
+
+```ts
+import '@ishibashi0112/spreadsheet-grid/style.css'
+```
+
+The base styles are plain (unlayered) CSS scoped to `.ssg-*` classes, and all design tokens are defined at zero specificity (`:where(.ssg-root)`), so your token overrides always win regardless of import order.
+
+### Using with Tailwind CSS / HeroUI / Mantine
+
+- **Tailwind CSS v3 (and HeroUI on v3)** — works out of the box. Preflight cannot break the grid: its element/universal resets lose to the grid's class selectors by specificity.
+- **Tailwind CSS v4 (and HeroUI on v4)** — works out of the box. If you additionally want Tailwind utilities to override grid defaults without the `!` modifier, put the grid CSS into a cascade layer below `utilities`:
+
+  ```css
+  @import 'tailwindcss';
+  @import '@ishibashi0112/spreadsheet-grid/style.css' layer(components);
+  ```
+
+  Alternatively, use the pre-layered variant `style.layer.css` (everything wrapped in `@layer ssg-base`) and declare the layer order yourself:
+
+  ```css
+  @layer theme, base, ssg-base, components, utilities;
+  @import 'tailwindcss';
+  @import '@ishibashi0112/spreadsheet-grid/style.layer.css';
+  ```
+
+- **Mantine** — works out of the box (no class-name or reset conflicts; grid popovers use `z-index: 1000`, above Mantine's default modal z-index).
+
+To override a grid default reliably in plain CSS, chain your class with the grid's base class so it wins by specificity, independent of import order:
+
+```css
+.ssg-body-cell.my-warn-cell {
+  background-color: #fff7ed;
+}
+```
+
+## Quick start
+
+```tsx
+import { useState } from 'react'
+import { SpreadsheetGrid, type GridColumn } from '@ishibashi0112/spreadsheet-grid'
+import '@ishibashi0112/spreadsheet-grid/style.css'
+
+type Row = { id: number; name: string; qty: number }
+
+const columns: GridColumn<Row>[] = [
+  { key: 'name', title: 'Name', width: 200, editable: true, filterType: 'text' },
+  { key: 'qty',  title: 'Qty',  width: 120, editable: true, filterType: 'number' },
+]
+
+export function Example() {
+  const [rows, setRows] = useState<Row[]>([
+    { id: 1, name: 'Apple',  qty: 3 },
+    { id: 2, name: 'Banana', qty: 5 },
+  ])
+
+  return (
+    <SpreadsheetGrid
+      rows={rows}
+      columns={columns}
+      onRowsChange={setRows}
+      rowKeyGetter={(row) => row.id}
+    />
+  )
+}
+```
+
+`rows` and `onRowsChange` make the grid a controlled component. A column needs at least `key` and `width`.
+
+## Sizing
+
+By default the grid caps its height at `480px` (`max-height`) and scrolls when the content is taller. Pass `height` to take explicit control — use `height="100%"` to follow the parent's height, or a pixel value:
+
+```tsx
+<div style={{ height: 600, minHeight: 0 }}>
+  <SpreadsheetGrid rows={rows} columns={columns} height="100%" />
+</div>
+```
+
+For `height="100%"` to work, the parent must have a resolved height (its ancestors are sized, and a flex child needs `min-height: 0`). This is standard CSS the library can't resolve for you. `maxHeight` sets an upper bound and can be combined with `height` (explicit height, capped at `maxHeight`).
+
+### Density
+
+Set `density` to switch the overall sizing with one prop — `'compact' | 'standard' | 'comfortable'` (default `'standard'`, identical to previous versions):
+
+```tsx
+<SpreadsheetGrid rows={rows} columns={columns} density="compact" />
+```
+
+The preset drives the default `rowHeight` / `headerHeight` (compact: 28/32, standard: 36/40, comfortable: 44/48 — explicit props always win) and switches sizing tokens (cell horizontal padding, bar padding, icon-button size, relative cell font scale) via a root modifier class. Individual tokens (e.g. `--ssg-cell-pad-x`) can still be overridden for fine-tuning. Popovers/menus are not affected.
+
+## Server-side mode (SSRM)
+
+Pass a `dataSource` instead of `rows` to switch to server-side mode. The grid keeps the full scroll height for the total row count and fetches only the blocks near the viewport:
+
+```tsx
+<SpreadsheetGrid
+  columns={columns}
+  dataSource={{
+    async getRows({ startIndex, endIndex, query, signal }) {
+      // Apply `query` (filters / sort) on the server and return only [startIndex, endIndex).
+      const { rows, totalRowCount } = await fetchPage({ startIndex, endIndex, query, signal })
+      return { rows, totalRowCount }
+    },
+  }}
+/>
+```
+
+Sorting, column filters, and the global filter stay enabled and are forwarded to the server through `query`. See the [API reference](./src/components/spreadsheet-grid/API_REFERENCE.md) for the full `getRows` contract, the filter wire format, and `serverSideRefreshToken`.
+
+## Styling & theming
+
+- Override the CSS variables on `.ssg-root` (or scope them via the `className` prop):
+
+  ```css
+  .ssg-root {
+    --ssg-accent: #16a34a;
+    --ssg-radius: 4px;
   }
-  return order;
-};
+  ```
 
-// 追加(12-A → 記述子化): set フィルター値の type guard です。
-// 変更(記述子化): columnFilters の値が ColumnFilterValue(判別共用体)へ閉じたため、
-//   typeof / Array.isArray の実行時ダックタイピングは不要になり、kind の絞り込みだけで足ります。
-//   外部呼び出し側(SpreadsheetGrid の表示・署名計算)の narrowing を据え置くため guard は残します。
-export const isSetColumnFilterValue = (
-  value: ColumnFilterValue | undefined,
-): value is SetColumnFilterValue => value?.kind === 'set';
+- Use the `classNames` prop for per-part class slots, `cellClassName` per column, and `getRowClassName` per row. Token overrides always apply (tokens are defined at zero specificity). For property overrides, chain with the base class (e.g. `.ssg-body-cell.my-class`) to win regardless of import order — see the Styles section above.
 
-// 追加(12-A): 列フィルター値が「有効」かを判定する共通 helper です。
-// 変更理由: 従来は GridHeaderRow(フィルター済みバッジ) / gridBarHelpers(有効件数) /
-//   列フィルタの適用処理がそれぞれ String(value).trim() で判定していました。
-//   set フィルター値はオブジェクトのため String() 判定が成立しません
-//   (空配列 = 全行除外でも「有効」と数える必要があります)。
-//   有効判定をここへ一元化し、3 箇所すべてが同じ規則を共有します。
-// 変更(記述子化): 判別共用体の kind で網羅判定します。set / number / custom は存在時点で有効
-//   (set/number は reducer/build 側で空を clear 済み、custom は利用者が明示的に set した値)。
-//   text / date は trim 後非空、select は値非空のときだけ有効です(旧・生文字列時代と等価)。
-export const isActiveColumnFilterValue = (
-  value: ColumnFilterValue | undefined,
-): boolean => {
-  if (!value) {
-    return false;
+## API reference
+
+The full prop and type reference lives in [`src/components/spreadsheet-grid/API_REFERENCE.md`](./src/components/spreadsheet-grid/API_REFERENCE.md).
+
+## License
+
+[MIT](./LICENSE) © 2026 Yuki Sakakibara
+
+---
+
+## 日本語
+
+[English](#ishibashi0112spreadsheet-grid)
+
+**React 19** 製の高性能な仮想化スプレッドシート／データグリッドです。TypeScript で書かれています。
+
+### 特徴
+
+- スクロール空間の仮想化により最大 100 万行規模に対応。
+- `position: sticky` による 3 ペイン固定列（左 / 中央 / 右）。
+- ソート、列ごとのフィルター（`text` / `number` / `date` / `select` / `set` / `custom`）、グローバルフィルター。
+- セル内編集とクリップボードのコピー／貼り付け、範囲選択、キーボード操作。
+- 折り返し・可変行高に対応する auto-height 行（任意）。
+- `height` / `maxHeight` によるスクロールコンテナ高さの外部制御（`height="100%"` で親要素の高さに追従）。
+- **クライアントサイド**（`rows`）と**サーバーサイド**（`dataSource`、SSRM）の両行モデル。
+- CSS カスタムプロパティ（`--ssg-*`。特異度 0 で定義され、利用側の上書きが常に勝ちます）によるテーマ設定。基底スタイルは未レイヤーの単一クラス特異度で、Tailwind Preflight などの CSS リセットに壊されません。カスケードレイヤー版（`style.layer.css`）も同梱。`className` / `classNames` スロットも用意。
+- トップ / ボトムバーとその構成要素（バー全体〔`showTopBar` / `showBottomBar`〕、既定トップバーの summary chips・グローバルフィルター入力、各バーの Rows/Columns 件数）を props で表示制御。
+- CSV エクスポート（`downloadCsv` / `exportCsv`）を内蔵。Excel / XLSX / ODS はライブラリ非依存の `getExportData()` で、整形済みデータ（フィルター/ソート/可視列順を反映）を [hucre](https://github.com/productdevbook/hucre) / ExcelJS / SheetJS など任意の writer へ流す方式。xlsx ライブラリは同梱せず、マルチシートは利用側で合成。詳細は [`API_REFERENCE.md`](./src/components/spreadsheet-grid/API_REFERENCE.md)。
+- エクスポート scope: `'view'`（既定＝フィルター/ソート後の全ビュー行。スクロール位置に非依存）/ `'raw'`（フィルター/ソート無視の全ソース行）/ `'rendered'`（描画中の行のみ＝スクロール位置に依存）/ `'selection'`（選択範囲）。旧 `'all'` / `'visible'` は `'view'` / `'rendered'` の deprecated エイリアスとして従来どおり動作。
+- TypeScript ファースト、完全 controlled な API。
+
+### インストール
+
+```sh
+npm install @ishibashi0112/spreadsheet-grid
+# pnpm add @ishibashi0112/spreadsheet-grid
+# yarn add @ishibashi0112/spreadsheet-grid
+```
+
+peer 依存として **react** / **react-dom** `>= 19` が必要です（未導入なら利用側で入れてください）。`@tanstack/react-virtual` は通常依存として自動的に入ります。
+
+### スタイル
+
+CSS は別ファイルとして同梱されます。アプリのエントリ等で 1 度だけ import してください:
+
+```ts
+import '@ishibashi0112/spreadsheet-grid/style.css'
+```
+
+基底スタイルは `.ssg-*` クラスにスコープした未レイヤーの素の CSS で、デザイントークンはすべて特異度 0（`:where(.ssg-root)`）で定義されています。トークンの上書きは読み込み順に依らず必ず勝ちます。
+
+#### Tailwind CSS / HeroUI / Mantine との共存
+
+- **Tailwind CSS v3（HeroUI の v3 世代）** — そのままで動作します。preflight（要素 / `*` セレクタのリセット）は本グリッドのクラスセレクタに特異度で負けるため、グリッドを壊せません。
+- **Tailwind CSS v4（HeroUI の v4 世代）** — そのままで動作します。さらに Tailwind ユーティリティで `!` 修飾子なしにグリッド既定を上書きしたい場合は、グリッド CSS を `utilities` より下のレイヤーへ入れてください:
+
+  ```css
+  @import 'tailwindcss';
+  @import '@ishibashi0112/spreadsheet-grid/style.css' layer(components);
+  ```
+
+  もしくは全体を `@layer ssg-base` に包んだ `style.layer.css` を使い、レイヤー順を自分で宣言します:
+
+  ```css
+  @layer theme, base, ssg-base, components, utilities;
+  @import 'tailwindcss';
+  @import '@ishibashi0112/spreadsheet-grid/style.layer.css';
+  ```
+
+- **Mantine** — そのままで動作します（クラス名・リセットの衝突なし。グリッドの popover は `z-index: 1000` で Mantine の既定モーダルより前面）。
+
+素の CSS でグリッド既定を確実に上書きするには、基底クラスと連結して特異度で勝たせてください（読み込み順に依存しません）:
+
+```css
+.ssg-body-cell.my-warn-cell {
+  background-color: #fff7ed;
+}
+```
+
+### クイックスタート
+
+```tsx
+import { useState } from 'react'
+import { SpreadsheetGrid, type GridColumn } from '@ishibashi0112/spreadsheet-grid'
+import '@ishibashi0112/spreadsheet-grid/style.css'
+
+type Row = { id: number; name: string; qty: number }
+
+const columns: GridColumn<Row>[] = [
+  { key: 'name', title: '名前', width: 200, editable: true, filterType: 'text' },
+  { key: 'qty',  title: '数量', width: 120, editable: true, filterType: 'number' },
+]
+
+export function Example() {
+  const [rows, setRows] = useState<Row[]>([
+    { id: 1, name: 'りんご', qty: 3 },
+    { id: 2, name: 'バナナ', qty: 5 },
+  ])
+
+  return (
+    <SpreadsheetGrid
+      rows={rows}
+      columns={columns}
+      onRowsChange={setRows}
+      rowKeyGetter={(row) => row.id}
+    />
+  )
+}
+```
+
+`rows` と `onRowsChange` でグリッドは controlled になります。列には最低限 `key` と `width` が必要です。
+
+### サイズ（高さ）
+
+既定ではグリッドの高さは `480px`（`max-height`）で頭打ちになり、中身がそれより高いとスクロールします。`height` を渡すと高さを明示制御できます。`height="100%"` で親要素の高さに追従、`number` で px 指定です:
+
+```tsx
+<div style={{ height: 600, minHeight: 0 }}>
+  <SpreadsheetGrid rows={rows} columns={columns} height="100%" />
+</div>
+```
+
+`height="100%"` を効かせるには、**親要素が確定高さを持つ**必要があります（祖先まで高さが確定している／flex 子なら `min-height: 0` が必要）。これは CSS の一般則のため本ライブラリ側では解決できません。`maxHeight` は高さの上限で、`height` と併用できます（明示高さ＋上限）。
+
+#### 密度（density）
+
+`density` プロップ 1 つで全体のサイズ感を切り替えられます — `'compact' | 'standard' | 'comfortable'`（既定 `'standard'` = 従来と同値）:
+
+```tsx
+<SpreadsheetGrid rows={rows} columns={columns} density="compact" />
+```
+
+プリセットは `rowHeight` / `headerHeight` の既定値（compact: 28/32・standard: 36/40・comfortable: 44/48。明示 prop が常に優先）と、寸法トークン（セル横 padding・バー padding・アイコンボタン寸法・セル文字の相対拡縮）を root 修飾子経由で一括切替します。個別の微調整はトークン（例: `--ssg-cell-pad-x`）の上書きで可能です。popover / メニューは対象外です。
+
+### サーバーサイドモード（SSRM）
+
+`rows` の代わりに `dataSource` を渡すとサーバーサイドモードになります。総行数ぶんのスクロール高さを保ったまま、可視窓に近いブロックだけを取得します:
+
+```tsx
+<SpreadsheetGrid
+  columns={columns}
+  dataSource={{
+    async getRows({ startIndex, endIndex, query, signal }) {
+      // query(フィルター/ソート)をサーバで適用し、[startIndex, endIndex) のみ返す。
+      const { rows, totalRowCount } = await fetchPage({ startIndex, endIndex, query, signal })
+      return { rows, totalRowCount }
+    },
+  }}
+/>
+```
+
+ソート・列フィルター・グローバルフィルターは有効なまま `query` 経由でサーバへ送られます。`getRows` の契約、フィルターの wire format、`serverSideRefreshToken` の詳細は [API リファレンス](./src/components/spreadsheet-grid/API_REFERENCE.md) を参照してください。
+
+### スタイリング / テーマ
+
+- `.ssg-root` 上で CSS 変数を上書きします（`className` prop でスコープも可能）:
+
+  ```css
+  .ssg-root {
+    --ssg-accent: #16a34a;
+    --ssg-radius: 4px;
   }
-  switch (value.kind) {
-    case 'set':
-    case 'number':
-    case 'custom':
-      return true;
-    case 'select':
-      return value.value.length > 0;
-    case 'text':
-    case 'date':
-      return value.value.trim().length > 0;
-  }
-};
+  ```
 
-// 注記(記述子化): ParsedNumberFilter 型は gridTypes へ移設しました(ColumnFilterValue が
-//   number 記述子を内包する都合)。parse の「ロジック」は引き続きこちらにあります。
-// 追加: number フィルター式を解釈します。
-export const parseNumberFilterExpression = (
-  rawValue: string,
-): ParsedNumberFilter | null => {
-  const normalized = rawValue.trim();
-  if (!normalized) {
-    return null;
-  }
+- パーツ別の class は `classNames` prop、列単位は `cellClassName`、行単位は `getRowClassName` で付与できます。トークン上書きは常に効きます（特異度 0 で定義）。プロパティ上書きは基底クラスとの連結（例: `.ssg-body-cell.my-class`）で読み込み順に依らず確実になります — 上記「スタイル」参照。
 
-  const rangeMatch = normalized.match(
-    /^(-?\d+(?:\.\d+)?)\s*\.\.\s*(-?\d+(?:\.\d+)?)$/,
-  );
-  if (rangeMatch) {
-    const first = Number(rangeMatch[1]);
-    const second = Number(rangeMatch[2]);
-    if (!Number.isFinite(first) || !Number.isFinite(second)) {
-      return null;
-    }
-    return {
-      mode: 'range',
-      min: Math.min(first, second),
-      max: Math.max(first, second),
-    };
-  }
+### API リファレンス
 
-  const comparisonMatch = normalized.match(
-    /^(<=|>=|=|<|>)?\s*(-?\d+(?:\.\d+)?)$/,
-  );
-  if (!comparisonMatch) {
-    return null;
-  }
+prop と型の完全なリファレンスは [`src/components/spreadsheet-grid/API_REFERENCE.md`](./src/components/spreadsheet-grid/API_REFERENCE.md) にあります。
 
-  return {
-    mode: 'comparison',
-    operator: (comparisonMatch[1] ?? '=') as '>' | '>=' | '<' | '<=' | '=',
-    value: Number(comparisonMatch[2]),
-  };
-};
+### ライセンス
 
-// 注記(記述子化 / number): NumberColumnFilterValue 型は gridTypes へ移設しました。
-//   raw は再オープン時の draft seed / 現在値表示 / 解釈不可時の contains needle に使い、
-//   parsed は commit 時 1 回の parse 結果(B-2 の Float64 key 最適化が依存する形)です。
-
-// 追加(記述子化 / number → 記述子化): number 記述子の type guard です。
-// 変更(記述子化): 入力が ColumnFilterValue へ閉じたため kind の絞り込みだけで足ります。
-//   外部呼び出し側(B-2 署名計算・現在値表示)の narrowing 据え置きのため guard は残します。
-export const isNumberColumnFilterValue = (
-  value: ColumnFilterValue | undefined,
-): value is NumberColumnFilterValue => value?.kind === 'number';
-
-// 追加(記述子化 / number): 生入力から number 記述子を構築します。
-//   - trim 後が空なら null(= フィルターなしへ正規化。呼び出し側で clearColumn 相当に倒す)。
-//   - parse は parseNumberFilterExpression 1 回のみ。挙動は従来 applyNumberFilter の
-//     「trim → parse → 不可なら contains」と厳密に等価です(raw は trim 済みを保持)。
-export const buildNumberColumnFilterValue = (
-  rawInput: string,
-): NumberColumnFilterValue | null => {
-  const raw = rawInput.trim();
-  if (!raw) {
-    return null;
-  }
-  return { kind: 'number', raw, parsed: parseNumberFilterExpression(raw) };
-};
-
-// 追加(記述子化): 列フィルター値を「テキスト入力の編集用文字列」へ整形します。
-//   popover 再オープン時の draft seed の単一窓口です。
-// 変更(記述子化): 全種別が記述子になったため kind で分岐します。
-//   - number → raw(式そのもの) / text・date・select → value(検索/選択文字列)。
-//   - set はチェックボックス UI、custom は自由形 UI のため text 入力 draft を持ちません(空)。
-export const columnFilterValueToDraftText = (
-  value: ColumnFilterValue | undefined,
-): string => {
-  if (!value) {
-    return '';
-  }
-  switch (value.kind) {
-    case 'number':
-      return value.raw;
-    case 'text':
-    case 'date':
-    case 'select':
-      return value.value;
-    case 'set':
-    case 'custom':
-      return '';
-  }
-};
-
-// 追加: number 型フィルターの評価です。
-export const applyNumberFilter = (
-  cellValue: unknown,
-  filterValue: unknown,
-) => {
-  const normalizedFilter = String(filterValue ?? '').trim();
-  if (!normalizedFilter) {
-    return true;
-  }
-
-  const parsedFilter = parseNumberFilterExpression(normalizedFilter);
-  if (!parsedFilter) {
-    // 追加: 式として解釈できない場合は contains にフォールバックします。
-    return String(cellValue ?? '')
-      .toLowerCase()
-      .includes(normalizedFilter.toLowerCase());
-  }
-
-  const numericCellValue = Number(cellValue);
-  if (!Number.isFinite(numericCellValue)) {
-    return false;
-  }
-
-  if (parsedFilter.mode === 'range') {
-    return (
-      numericCellValue >= parsedFilter.min &&
-      numericCellValue <= parsedFilter.max
-    );
-  }
-
-  switch (parsedFilter.operator) {
-    case '>':
-      return numericCellValue > parsedFilter.value;
-    case '>=':
-      return numericCellValue >= parsedFilter.value;
-    case '<':
-      return numericCellValue < parsedFilter.value;
-    case '<=':
-      return numericCellValue <= parsedFilter.value;
-    case '=':
-    default:
-      return numericCellValue === parsedFilter.value;
-  }
-};
-
-// 列フィルターの「行ループ前の事前コンパイル方式」のための型・helper 群です(12-A)。
-//   set フィルターは候補が多い列(例: 品番 5,000 種)でも O(1) 判定にしたく、
-//   行ループの外で一度だけ Set を構築する必要があります。また有効な列フィルターだけを
-//   predicate へ事前コンパイルすることで、行ループは「有効フィルター数 × 行数」に縮小し、
-//   フィルター未設定列ぶんの String(...).trim().toLowerCase() 正規化を省けます
-//   (text / number / select の判定結果は単一実装で一意です)。
-//   現在の利用者は index 版 filterOrderByColumns です
-//   (旧オブジェクト配列版は DS-3-8 で削除しました)。
-// 変更(B-2): predicate に sourceIndex を渡せるよう第 2 引数を追加します。
-//   number(comparison/range)で「事前計算した Float64 key[sourceIndex]」を引くために使います。
-//   TS 上 (row) => boolean は (row, sourceIndex) => boolean へ代入可能なので、
-//   key を使わない既存クロージャ(filterFn / set / contains / select / text)は無改修のまま通ります。
-type CompiledColumnFilterPredicate<T> = (row: T, sourceIndex: number) => boolean;
-
-// 追加(12-A): 1 列ぶんのフィルター値を predicate へコンパイルします。
-//             無効(未設定)なら null を返し、行ループから除外します。
-// 変更(記述子化): filterValue を ColumnFilterValue へ閉じ、判別を switch(value.kind) 一本に
-//   統一しました(従来の column.filterType 突き合わせ・生文字列 number の後方互換フォールバックを撤去)。
-//   合否はいずれも旧経路と厳密に等価です(select=完全一致 / text・date=部分一致 / number=下記)。
-const compileSingleColumnFilter = <T,>(
-  column: GridColumn<T>,
-  filterValue: ColumnFilterValue | undefined,
-  // 追加(B-2): この列ぶんの Float64 key(rows 全長・sourceIndex 添字)。
-  //   渡されたときだけ comparison/range が key[sourceIndex] を引きます。
-  //   未指定(set 列 / key 未構築)なら従来の Number(getCellValue(...)) 経路に倒れ、挙動は等価です。
-  numericKey?: Float64Array,
-): CompiledColumnFilterPredicate<T> | null => {
-  if (!isActiveColumnFilterValue(filterValue)) {
-    return null;
-  }
-  // 注記: isActiveColumnFilterValue を通った時点で filterValue は存在します(undefined 除外)。
-  const value = filterValue as ColumnFilterValue;
-
-  // 注記: 従来どおり column.filterFn を最優先します(記述子オブジェクトをそのまま渡す契約。
-  //       custom 列の自由形値もここで利用側 filterFn の責務として解釈されます)。
-  if (column.filterFn) {
-    const filterFn = column.filterFn;
-    return (row) => filterFn(row, value);
-  }
-
-  switch (value.kind) {
-    // 追加(12-A / 反転set): set フィルターは「対象値の Set」を一度だけ構築し、O(1) 照合します。
-    //   values は mode により「選択値(include)」か「非選択値(exclude)」のいずれか(常に小さい側)。
-    //   include: 行値が対象に含まれれば通過 / exclude: 行値が対象に含まれなければ通過。
-    case 'set': {
-      const targetValues = new Set(value.values);
-      if (value.mode === 'exclude') {
-        return (row) =>
-          !targetValues.has(String(getCellValue(row, column) ?? ''));
-      }
-      return (row) => targetValues.has(String(getCellValue(row, column) ?? ''));
-    }
-
-    // 追加(記述子化 / number): number 記述子は parse 済みのため、行ループ外で評価器を確定します。
-    //   合否は旧 applyNumberFilter と厳密に等価:
-    //     - parsed=null  → raw で contains(大文字小文字無視)。
-    //     - range        → Number(cell) が有限かつ [min,max]。
-    //     - comparison   → Number(cell) が有限かつ op 比較(= は ===)。
-    case 'number': {
-      const parsed = value.parsed;
-      if (parsed === null) {
-        const needle = value.raw.toLowerCase();
-        return (row) =>
-          String(getCellValue(row, column) ?? '')
-            .toLowerCase()
-            .includes(needle);
-      }
-      if (parsed.mode === 'range') {
-        const { min, max } = parsed;
-        // 変更(B-2): numericKey があれば key[sourceIndex] を、無ければ従来どおり
-        //   Number(getCellValue(...)) を読みます。値の取得元だけが変わり、判定本体は不変です。
-        return (row, sourceIndex) => {
-          const numericCellValue = numericKey
-            ? numericKey[sourceIndex]
-            : Number(getCellValue(row, column));
-          return (
-            Number.isFinite(numericCellValue) &&
-            numericCellValue >= min &&
-            numericCellValue <= max
-          );
-        };
-      }
-      const { operator, value: threshold } = parsed;
-      // 変更(B-2): comparison も numericKey 経路を併設します(無ければ従来 getCellValue 経路)。
-      return (row, sourceIndex) => {
-        const numericCellValue = numericKey
-          ? numericKey[sourceIndex]
-          : Number(getCellValue(row, column));
-        if (!Number.isFinite(numericCellValue)) {
-          return false;
-        }
-        switch (operator) {
-          case '>':
-            return numericCellValue > threshold;
-          case '>=':
-            return numericCellValue >= threshold;
-          case '<':
-            return numericCellValue < threshold;
-          case '<=':
-            return numericCellValue <= threshold;
-          case '=':
-          default:
-            return numericCellValue === threshold;
-        }
-      };
-    }
-
-    // 追加(記述子化 / select): 完全一致です(旧 String(filterValue ?? '') と等価)。
-    case 'select': {
-      const expectedValue = value.value;
-      return (row) =>
-        String(getCellValue(row, column) ?? '') === expectedValue;
-    }
-
-    // 追加(記述子化 / text・date): 部分一致です(旧 text/date と等価)。date は現状 text と
-    //   同述語を共有しますが、将来の相対日付は評価時解決の専用分岐をここに足して切り出せます。
-    case 'text':
-    case 'date': {
-      const normalizedFilter = value.value.trim().toLowerCase();
-      return (row) =>
-        String(getCellValue(row, column) ?? '')
-          .toLowerCase()
-          .includes(normalizedFilter);
-    }
-
-    // 追加(記述子化 / custom): filterFn 不在の custom 列は、旧 text/custom 経路と等価に
-    //   String(value) の部分一致へフォールバックします(filterFn を持つ列は上で処理済み)。
-    case 'custom': {
-      const needle = String(value.value ?? '')
-        .trim()
-        .toLowerCase();
-      return (row) =>
-        String(getCellValue(row, column) ?? '')
-          .toLowerCase()
-          .includes(needle);
-    }
-  }
-};
-
-// ────────────────────────────────────────────────
-// 追加(DS-1 / index ベースパイプライン): order(RowOrder)を受けて order を返すフィルタ群。
-//   本体のフィルタ経路はこの index 版に一本化済みです(DS-2 で差し替え、
-//   旧オブジェクト配列版は DS-3-8 で削除)。いずれも「合格行を元の相対順で詰め直す」処理で、
-//   入出力が {row,...}[] ではなく元 rows + index 列(Int32Array)である点が要点です。
-//   「全件通過」のときは同一参照(引数 order)を返し、下流 useMemo のスキップを最大化します
-//   (.filter は全通過でも新配列を返すため、参照節約という点でも改善です)。
-// ────────────────────────────────────────────────
-
-// 追加(F-async): 1 行がグローバルニードルに一致するか(可視列 some の部分一致)を判定します。
-//   normalizedNeedle は呼び出し側で trim + toLowerCase 済み・非空である前提です
-//   (空ニードルは全件一致＝呼び出し側が order をそのまま返すため、ここには来ません)。
-//   時間分割の非同期フィルタ(useGlobalFilteredOrder)が 1 行ごとにこれを呼び、同期版の
-//   filterOrderByGlobalText も内部でこれを使うため、両経路の合否は単一実装で一意になります。
-export const rowMatchesGlobalText = <T,>(
-  row: T,
-  columns: GridColumn<T>[],
-  normalizedNeedle: string,
-): boolean => {
-  const columnCount = columns.length;
-  for (let c = 0; c < columnCount; c += 1) {
-    const value = getCellValue(row, columns[c]);
-    if (String(value ?? '').toLowerCase().includes(normalizedNeedle)) {
-      return true;
-    }
-  }
-  return false;
-};
-
-// 追加(DS-1): グローバルフィルタの index 版です(columns.some の部分一致)。
-//   filter 文字列が空なら同一参照を返します。
-// 変更(F-async): 1 行判定を rowMatchesGlobalText へ抽出しました(挙動は不変・バイト等価)。
-//   これで同期版(本関数)と非同期版(useGlobalFilteredOrder のチャンク走査)が同じ述語を共有します。
-export const filterOrderByGlobalText = <T,>(
-  rows: T[],
-  order: RowOrder,
-  columns: GridColumn<T>[],
-  globalText: string,
-): RowOrder => {
-  const normalizedFilter = globalText.trim().toLowerCase();
-  if (!normalizedFilter) {
-    return order;
-  }
-
-  const length = order.length;
-  const result = new Int32Array(length);
-  let count = 0;
-
-  for (let pos = 0; pos < length; pos += 1) {
-    const sourceIndex = order[pos];
-    if (rowMatchesGlobalText(rows[sourceIndex], columns, normalizedFilter)) {
-      result[count] = sourceIndex;
-      count += 1;
-    }
-  }
-
-  // 全件通過なら参照を変えません(no-op スキップ最大化)。
-  if (count === length) {
-    return order;
-  }
-  // 余剰バッファを抱えないよう、右サイズへ slice(コピー)します。
-  return result.slice(0, count);
-};
-
-// 追加(DS-1): 列フィルタの index 版です(有効フィルタの predicates.every)。
-//   事前コンパイルは compileSingleColumnFilter を再利用します
-//   (text / number / select / set / filterFn の判定は単一実装)。
-//   有効フィルタが 0 件なら同一参照を返します。
-export const filterOrderByColumns = <T,>(
-  rows: T[],
-  order: RowOrder,
-  columns: GridColumn<T>[],
-  columnFilters: Record<string, ColumnFilterValue>,
-  // 追加(B-2): 列キー → Float64 key の table(任意)。number(comparison/range)列のみ収録。
-  //   未指定なら全列が従来経路へ倒れ、現状とバイト等価です(set/text/select/filterFn は元から key 不使用)。
-  numericKeys?: ReadonlyMap<string, Float64Array>,
-): RowOrder => {
-  const predicates: CompiledColumnFilterPredicate<T>[] = [];
-  for (const column of columns) {
-    const predicate = compileSingleColumnFilter(
-      column,
-      columnFilters[column.key],
-      numericKeys?.get(column.key),
-    );
-    if (predicate) {
-      predicates.push(predicate);
-    }
-  }
-
-  if (predicates.length === 0) {
-    return order;
-  }
-
-  const length = order.length;
-  const predicateCount = predicates.length;
-  const result = new Int32Array(length);
-  let count = 0;
-
-  for (let pos = 0; pos < length; pos += 1) {
-    const sourceIndex = order[pos];
-    const row = rows[sourceIndex];
-    let ok = true;
-    for (let p = 0; p < predicateCount; p += 1) {
-      if (!predicates[p](row, sourceIndex)) {
-        ok = false;
-        break;
-      }
-    }
-    if (ok) {
-      result[count] = sourceIndex;
-      count += 1;
-    }
-  }
-
-  if (count === length) {
-    return order;
-  }
-  return result.slice(0, count);
-};
+[MIT](./LICENSE) © 2026 Yuki Sakakibara
 </file>
 
 <file path="src/components/spreadsheet-grid/hooks/useGridPointerInteractions.ts">
@@ -23298,6 +24096,166 @@ export type { NumberFormatterOptions } from './logic/valueFormatters';
     user-select: none;
   }
 
+  /* ── フィルター管理パネル(FilterManagementPanel / FM-1) ── */
+  /* SortManagementPanel の兄弟。portal で body 直下に出るためリテラル色(トークン不達)。 */
+  .ssg-filter-manage-panel {
+    max-height: 420px;
+  }
+
+  .ssg-filter-manage-list {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    margin: 0 -4px;
+    padding: 0 4px;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .ssg-filter-manage-empty {
+    font-size: 12px;
+    color: #94a3b8;
+    padding: 10px 4px;
+    user-select: none;
+  }
+
+  /* 一覧行。hover で淡背景(✎ / × の操作対象を示す)。 */
+  .ssg-filter-manage-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 5px 6px;
+    border-radius: 8px;
+  }
+  .ssg-filter-manage-row:hover {
+    background-color: #f8fafc;
+  }
+  /* グローバルフィルター行。一覧(列フィルター)との区切りを持ち、hover 強調はしません。 */
+  .ssg-filter-manage-row--global {
+    border-bottom: 1px solid #e2e8f0;
+    border-radius: 0;
+    margin-bottom: 6px;
+    padding-bottom: 9px;
+  }
+  .ssg-filter-manage-row--global:hover {
+    background-color: transparent;
+  }
+
+  /* 左端グリフ(漏斗 / 虫めがね)。漏斗はヘッダーのフィルター適用中マークと同アクセント。 */
+  .ssg-filter-manage-glyph {
+    display: flex;
+    align-items: center;
+    flex: 0 0 auto;
+    color: #1d4ed8;
+  }
+  .ssg-filter-manage-glyph--global {
+    color: #64748b;
+  }
+
+  /* 列名(上段)+ 要約(下段)。どちらも 1 行 ellipsis(はみ出しは title 属性で補完)。 */
+  .ssg-filter-manage-main {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+  }
+  .ssg-filter-manage-name {
+    font-size: 12.5px;
+    font-weight: 700;
+    color: #1e293b;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .ssg-filter-manage-hidden-note {
+    margin-left: 4px;
+    font-size: 10.5px;
+    font-weight: 500;
+    color: #94a3b8;
+  }
+  .ssg-filter-manage-summary {
+    font-size: 11.5px;
+    color: #64748b;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  /* 行内アクション(✎ / ×)。--danger は hover で赤系(列メニューの危険操作と同系色)。 */
+  .ssg-filter-manage-actions {
+    display: flex;
+    gap: 2px;
+    flex: 0 0 auto;
+  }
+  .ssg-filter-manage-icon-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    border: none;
+    border-radius: 6px;
+    background-color: transparent;
+    color: #64748b;
+    cursor: pointer;
+    font-size: 13px;
+    line-height: 1;
+  }
+  .ssg-filter-manage-icon-btn:disabled {
+    color: #cbd5e1;
+    cursor: default;
+  }
+  .ssg-filter-manage-icon-btn:not(:disabled):hover {
+    background-color: #f1f5f9;
+    color: #1e293b;
+  }
+  .ssg-filter-manage-icon-btn--danger:not(:disabled):hover {
+    background-color: #fef2f2;
+    color: #dc2626;
+  }
+
+  /* フッター: 追加セレクト + すべてクリア。 */
+  .ssg-filter-manage-add {
+    flex: 1;
+    min-width: 0;
+    font-size: 12px;
+    padding: 5px 6px;
+    border: 1px solid #cbd5e1;
+    border-radius: 6px;
+    background-color: #ffffff;
+    color: #334155;
+    cursor: pointer;
+    outline: none;
+  }
+  .ssg-filter-manage-add:focus {
+    border-color: #2563eb;
+  }
+  .ssg-filter-manage-add:disabled {
+    color: #94a3b8;
+    cursor: default;
+  }
+  .ssg-filter-manage-clear-all {
+    flex: 0 0 auto;
+    border: none;
+    background-color: transparent;
+    color: #64748b;
+    font-size: 12px;
+    cursor: pointer;
+    padding: 5px 8px;
+    border-radius: 6px;
+    white-space: nowrap;
+  }
+  .ssg-filter-manage-clear-all:disabled {
+    color: #cbd5e1;
+    cursor: default;
+  }
+  .ssg-filter-manage-clear-all:not(:disabled):hover {
+    background-color: #fef2f2;
+    color: #dc2626;
+  }
+
   /* ── 列の表示パネル(ColumnChooserPanel) ── */
   .ssg-chooser-panel {
     max-height: 420px;
@@ -23920,6 +24878,26 @@ export type { NumberFormatterOptions } from './logic/valueFormatters';
     align-items: center;
     color: var(--ssg-accent-strong);
     flex: 0 0 auto;
+  }
+  /* 追加(FM-1): フィルター管理パネルからのジャンプ先ヘッダーを一瞬強調するフラッシュです。
+     クラス(--jump-flash)は JS が直付けし animationend で除去します(状態を持たない一過性の
+     視認補助。React はヘッダーセルの className prop が変化したときだけ属性を書き戻すため、
+     直付けクラスは通常アニメ完了まで残ります)。トークン参照のため .ssg-root 内専用です。 */
+  @keyframes ssg-header-jump-flash {
+    0% {
+      box-shadow: inset 0 0 0 2px var(--ssg-accent);
+      background-color: var(--ssg-select-bg);
+    }
+    70% {
+      box-shadow: inset 0 0 0 2px var(--ssg-accent);
+      background-color: var(--ssg-select-bg);
+    }
+    100% {
+      box-shadow: none;
+    }
+  }
+  .ssg-header-cell--jump-flash {
+    animation: ssg-header-jump-flash 1.2s ease-out;
   }
   /* 列リサイズ把手。 */
   .ssg-header-resize {
@@ -26739,11 +27717,15 @@ import {
   buildNumberColumnFilterValue,
   // 追加(記述子化): 現在値表示の text 整形に使います(記述子 → 表示文字列)。
   columnFilterValueToDraftText,
+  // 追加(FM-1): フィルター管理パネルの一覧行(有効フィルターの抽出)に使います。
+  isActiveColumnFilterValue,
   // 行モデルチェーンは order(Int32Array)ベースに一本化しています
   //   (DS-2 で差し替え、旧オブジェクト配列版は DS-3-8 で削除)。
   createSourceOrder,
   filterOrderByColumns,
 } from './logic/filtering';
+// 追加(FM-1): 列フィルター値 → 人間可読要約(フィルター管理パネルの一覧行)です。
+import { describeColumnFilterValue } from './logic/filterSummary';
 // 変更(10-C): 3ペインレイアウト構築用の helper / 型を追加インポートします。
 // 変更理由: reorderColumnsByPane / buildGridPaneLayout を SpreadsheetGrid で使い、
 //           PaneColumnEntry 型を各ペインの描画エントリ受け渡しに使うためです。
@@ -26921,6 +27903,12 @@ import useSortManagementController from './hooks/useSortManagementController';
 import SortManagementPanel, {
   type SortManagementColumn,
 } from './view/SortManagementPanel';
+// 追加(FM-1): フィルター管理パネル(適用中フィルターの一覧 / 編集 / クリア)です。
+import useFilterManagementController from './hooks/useFilterManagementController';
+import FilterManagementPanel, {
+  type FilterManagementEntry,
+  type FilterManagementAddableColumn,
+} from './view/FilterManagementPanel';
 // 追加(バッチ②/コンテキストメニュー): 対象解決(純ロジック)/ controller / portal popover。
 import {
   resolveContextMenuColIndex,
@@ -27484,6 +28472,28 @@ export function SpreadsheetGrid<T extends object>({
   } = useSortManagementController({
     enableSorting: sortingEnabled,
     gridRootRef,
+  });
+
+  // ── filter management panel(FM-1) ─────────────────────
+  // 追加(FM-1): フィルター管理パネルの controller です。列メニューの項目
+  //             「フィルターを管理…」から開きます(その際メニューは閉じます)。
+  //             並び替え管理パネルと違いフィルター popover と共存します(✎ 編集で popover を
+  //             開いてもパネルは開いたまま):
+  //               - outside-close: alliedRef(filterPopoverRef)内の pointerdown では閉じない
+  //               - Escape: popover open 中は本パネルを閉じず popover の close へ委譲
+  //                 (1 押し目 = popover / 2 押し目 = パネル。フォーカス位置に依りません)
+  const {
+    isFilterManagerOpen,
+    filterManagerLayout,
+    filterManagerRef,
+    openFilterManager,
+    closeFilterManager,
+  } = useFilterManagementController({
+    enableColumnFilter: columnFilterEnabled,
+    gridRootRef,
+    alliedRef: filterPopoverRef,
+    suppressEscape: isFilterPopoverOpen,
+    onSuppressedEscape: closeColumnFilterPopover,
   });
 
   // ── cell context menu(バッチ②) ──────────────────────
@@ -29078,6 +30088,179 @@ export function SpreadsheetGrid<T extends object>({
     [closeColumnMenu, openColumnFilterPopover],
   );
 
+  // ── filter management panel actions(FM-1) ────────────
+  // 追加(FM-1): パネルへ渡す「適用中フィルター」一覧です。可視列(視覚順)→ 非表示列
+  //   (columns 定義順)の順で、isActiveColumnFilterValue な値だけを載せます。非表示列も
+  //   出すのは「見えない列に絞り込みが残っている」という発見性の穴を塞ぐのが本機能の主目的
+  //   のためです(非表示列はジャンプ先が無いため ✎ 不可・× のみ可 = isHidden で view が判別)。
+  const filterManagerEntries = useMemo<FilterManagementEntry[]>(() => {
+    const entries: FilterManagementEntry[] = [];
+    const pushEntry = (column: GridColumn<T>, isHidden: boolean) => {
+      const value = columnFilters[column.key];
+      if (!value || !isActiveColumnFilterValue(value)) {
+        return;
+      }
+      entries.push({
+        columnKey: column.key,
+        title: column.title || column.key,
+        summaryText: describeColumnFilterValue(value),
+        isHidden,
+      });
+    };
+    for (const column of orderedColumns) {
+      pushEntry(column, false);
+    }
+    for (const column of columns) {
+      if (column.visible === false) {
+        pushEntry(column, true);
+      }
+    }
+    return entries;
+  }, [columnFilters, columns, orderedColumns]);
+
+  // 追加(FM-1): 「フィルターを追加」の候補列です(可視・filterType あり・未適用)。
+  //   非表示列は除外します(追加 = ✎ と同じ「ジャンプ + popover」で、非表示列は開けないため)。
+  //   filterType 条件は列メニューの「フィルター…」項目(canFilter)と同じ規約です。
+  const filterManagerAddableColumns = useMemo<
+    FilterManagementAddableColumn[]
+  >(
+    () =>
+      visibleColumns
+        .filter(
+          (column) =>
+            Boolean(column.filterType) &&
+            !isActiveColumnFilterValue(columnFilters[column.key]),
+        )
+        .map((column) => ({
+          key: column.key,
+          title: column.title || column.key,
+        })),
+    [columnFilters, visibleColumns],
+  );
+
+  // 追加(FM-1): 列メニューの「フィルターを管理…」項目からパネルを開きます
+  //             (メニューを閉じてからパネルを開きます。sort manager / chooser と同型)。
+  const handleColumnMenuOpenFilterManager = useCallback(() => {
+    closeColumnMenu();
+    openFilterManager();
+  }, [closeColumnMenu, openFilterManager]);
+
+  // 追加(FM-1): 対象列まで横スクロールしてからフィルター popover を開きます(パネルの
+  //   ✎ 編集 / フィルターを追加)。openColumnFilterPopover は anchor(ヘッダーセル
+  //   data-ssg-col-key)を開いた時点の DOM から解決するため、列仮想化で対象列が未描画の
+  //   まま開くと layout=null で表示されません。そこで
+  //     ① 横スクロール(center ペインのみ。固定列は常時可視のためスクロール不要)
+  //     ② rAF リトライ(上限 8 フレーム)でヘッダーセルの出現を待つ
+  //     ③ open + ジャンプ先ヘッダーのフラッシュ(ssg-header-cell--jump-flash)
+  //   の順に組み立てます。リトライは上限付きの有限ループでゾンビ化しません(13-B3-7 の
+  //   自己停止ガードと同趣旨)。上限まで出現しなければ開かず終了します(非表示化直後など。
+  //   無表示 popover 状態を作らないため)。
+  const jumpToColumnFilter = useCallback(
+    (columnKey: string) => {
+      const s = apiStateRef.current;
+      const el = scrollContainerRef.current;
+      if (!s) {
+        return;
+      }
+      const colIndex = s.orderedColumns.findIndex(
+        (column) => column.key === columnKey,
+      );
+      if (colIndex < 0) {
+        return;
+      }
+      const column = s.orderedColumns[colIndex];
+      if (el) {
+        const single = computeSinglePaneColumnExtent(s.paneLayout, colIndex);
+        if (single && single.pane === 'center') {
+          const target = computeHorizontalScrollTarget({
+            cellLeft:
+              s.leftPaneTotalWidth + s.centerLeadingWidth + single.extent.start,
+            cellWidth: single.extent.width,
+            leftPaneWidth: s.leftPaneTotalWidth,
+            rightPaneWidth: s.rightPaneTotalWidth,
+            viewportWidth: el.clientWidth,
+            currentScrollLeft: el.scrollLeft,
+            align: 'auto',
+            maxScrollLeft: el.scrollWidth - el.clientWidth,
+          });
+          if (target !== el.scrollLeft) {
+            el.scrollTo({ left: target, behavior: 'auto' });
+          }
+        }
+      }
+      const findHeaderCell = (): HTMLElement | null => {
+        const cells =
+          gridRootRef.current?.querySelectorAll<HTMLElement>(
+            '[data-ssg-col-key]',
+          );
+        if (!cells) {
+          return null;
+        }
+        return (
+          Array.from(cells).find(
+            (cell) => cell.dataset.ssgColKey === columnKey,
+          ) ?? null
+        );
+      };
+      const tryOpen = (attempt: number) => {
+        // unmount 後の遅延実行ガードです(root が消えていたら何もしません)。
+        if (!gridRootRef.current) {
+          return;
+        }
+        const cell = findHeaderCell();
+        if (cell === null) {
+          if (attempt < 8) {
+            requestAnimationFrame(() => tryOpen(attempt + 1));
+          }
+          return;
+        }
+        openColumnFilterPopover(column);
+        // ジャンプ先の視認補助フラッシュです。React はヘッダーセルの className prop が
+        //   変化したときだけ属性を書き戻すため、直付けクラスは通常アニメ完了まで残ります
+        //   (途中で hover 等により書き戻されても視認補助が早く消えるだけで実害なし)。
+        cell.classList.remove('ssg-header-cell--jump-flash');
+        // reflow を挟み、連続ジャンプでも再アニメーションさせます。
+        void cell.offsetWidth;
+        cell.classList.add('ssg-header-cell--jump-flash');
+        cell.addEventListener(
+          'animationend',
+          () => {
+            cell.classList.remove('ssg-header-cell--jump-flash');
+          },
+          { once: true },
+        );
+      };
+      requestAnimationFrame(() => {
+        tryOpen(0);
+      });
+    },
+    [gridRootRef, openColumnFilterPopover],
+  );
+
+  // 追加(FM-1): パネルの ×(単一クリア)/ すべてクリア / グローバル解除です。
+  //   すべてクリアはグローバルフィルターを保全したまま columnFilters だけを空にします
+  //   (setAllFilters のフル置換を 1 dispatch で。globalText は現値を引き継ぎます。
+  //    グローバルの解除はパネル先頭行の × のみ = ユーザー合意の切り分け)。
+  const handleFilterManagerClearFilter = useCallback(
+    (columnKey: string) => {
+      dispatch(gridActions.clearColumnFilter(columnKey));
+    },
+    [dispatch],
+  );
+
+  const handleFilterManagerClearAll = useCallback(() => {
+    dispatch(
+      gridActions.setAllFilters({
+        globalText: uiState.filters.globalText,
+        columnFilters: {},
+      }),
+    );
+  }, [dispatch, uiState.filters.globalText]);
+
+  const handleFilterManagerClearGlobal = useCallback(() => {
+    dispatch(gridActions.setGlobalFilter(''));
+  }, [dispatch]);
+
   // 追加(13-B2-1): パネルでの 1 列の表示/非表示トグルです。
   // 設計メモ(handleColumnMenuPinnedChange と同型):
   //   - columns は controlled props のため onColumnsChange 経由で反映します。
@@ -30065,6 +31248,8 @@ export function SpreadsheetGrid<T extends object>({
         handleColumnMenuSortChange(openedMenuColumn.key, direction)
       }
       onOpenSortManager={handleColumnMenuOpenSortManager}
+      canManageFilters={columnFilterEnabled}
+      onOpenFilterManager={handleColumnMenuOpenFilterManager}
       pinned={openedMenuColumn.pinned}
       canChangePinned={Boolean(onColumnsChange)}
       layout={columnMenuLayout}
@@ -30113,6 +31298,30 @@ export function SpreadsheetGrid<T extends object>({
       onClearAll={handleSortManagerClearAll}
       onMove={handleSortManagerMove}
       onRequestClose={closeSortManager}
+    />
+  );
+
+  // ── filter management panel(FM-1) ────────────────────
+  // 追加(FM-1): フィルター管理パネルの描画です(portal で body 直下へ出します)。
+  //             ✎(編集)と「フィルターを追加」は同じジャンプ経路(jumpToColumnFilter)です。
+  const renderedFilterManagementPanel = (
+    <FilterManagementPanel
+      isOpen={isFilterManagerOpen}
+      entries={filterManagerEntries}
+      addableColumns={filterManagerAddableColumns}
+      showGlobalFilterRow={
+        globalFilterEnabled && globalFilterText.trim().length > 0
+      }
+      globalFilterText={globalFilterText}
+      canFilter={columnFilterEnabled}
+      layout={filterManagerLayout}
+      panelRef={filterManagerRef}
+      onEditFilter={jumpToColumnFilter}
+      onAddFilter={jumpToColumnFilter}
+      onClearFilter={handleFilterManagerClearFilter}
+      onClearAllFilters={handleFilterManagerClearAll}
+      onClearGlobalFilter={handleFilterManagerClearGlobal}
+      onRequestClose={closeFilterManager}
     />
   );
 
@@ -31313,6 +32522,8 @@ export function SpreadsheetGrid<T extends object>({
       {renderedColumnChooserPanel}
       {/* 追加(MS-3-1): 並び替え管理パネル(並べ替えダイアログ相当)です。*/}
       {renderedSortManagementPanel}
+      {/* 追加(FM-1): フィルター管理パネル(適用中フィルターの一覧/編集/クリア)です。*/}
+      {renderedFilterManagementPanel}
       {/* 追加(バッチ②): セル/行の汎用コンテキストメニュー(完全カスタム)です。*/}
       {renderedCellContextMenuPopover}
     </div>

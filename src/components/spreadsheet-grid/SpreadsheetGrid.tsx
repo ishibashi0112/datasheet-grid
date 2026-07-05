@@ -54,11 +54,15 @@ import {
   buildNumberColumnFilterValue,
   // 追加(記述子化): 現在値表示の text 整形に使います(記述子 → 表示文字列)。
   columnFilterValueToDraftText,
+  // 追加(FM-1): フィルター管理パネルの一覧行(有効フィルターの抽出)に使います。
+  isActiveColumnFilterValue,
   // 行モデルチェーンは order(Int32Array)ベースに一本化しています
   //   (DS-2 で差し替え、旧オブジェクト配列版は DS-3-8 で削除)。
   createSourceOrder,
   filterOrderByColumns,
 } from './logic/filtering';
+// 追加(FM-1): 列フィルター値 → 人間可読要約(フィルター管理パネルの一覧行)です。
+import { describeColumnFilterValue } from './logic/filterSummary';
 // 変更(10-C): 3ペインレイアウト構築用の helper / 型を追加インポートします。
 // 変更理由: reorderColumnsByPane / buildGridPaneLayout を SpreadsheetGrid で使い、
 //           PaneColumnEntry 型を各ペインの描画エントリ受け渡しに使うためです。
@@ -236,6 +240,12 @@ import useSortManagementController from './hooks/useSortManagementController';
 import SortManagementPanel, {
   type SortManagementColumn,
 } from './view/SortManagementPanel';
+// 追加(FM-1): フィルター管理パネル(適用中フィルターの一覧 / 編集 / クリア)です。
+import useFilterManagementController from './hooks/useFilterManagementController';
+import FilterManagementPanel, {
+  type FilterManagementEntry,
+  type FilterManagementAddableColumn,
+} from './view/FilterManagementPanel';
 // 追加(バッチ②/コンテキストメニュー): 対象解決(純ロジック)/ controller / portal popover。
 import {
   resolveContextMenuColIndex,
@@ -799,6 +809,28 @@ export function SpreadsheetGrid<T extends object>({
   } = useSortManagementController({
     enableSorting: sortingEnabled,
     gridRootRef,
+  });
+
+  // ── filter management panel(FM-1) ─────────────────────
+  // 追加(FM-1): フィルター管理パネルの controller です。列メニューの項目
+  //             「フィルターを管理…」から開きます(その際メニューは閉じます)。
+  //             並び替え管理パネルと違いフィルター popover と共存します(✎ 編集で popover を
+  //             開いてもパネルは開いたまま):
+  //               - outside-close: alliedRef(filterPopoverRef)内の pointerdown では閉じない
+  //               - Escape: popover open 中は本パネルを閉じず popover の close へ委譲
+  //                 (1 押し目 = popover / 2 押し目 = パネル。フォーカス位置に依りません)
+  const {
+    isFilterManagerOpen,
+    filterManagerLayout,
+    filterManagerRef,
+    openFilterManager,
+    closeFilterManager,
+  } = useFilterManagementController({
+    enableColumnFilter: columnFilterEnabled,
+    gridRootRef,
+    alliedRef: filterPopoverRef,
+    suppressEscape: isFilterPopoverOpen,
+    onSuppressedEscape: closeColumnFilterPopover,
   });
 
   // ── cell context menu(バッチ②) ──────────────────────
@@ -2393,6 +2425,179 @@ export function SpreadsheetGrid<T extends object>({
     [closeColumnMenu, openColumnFilterPopover],
   );
 
+  // ── filter management panel actions(FM-1) ────────────
+  // 追加(FM-1): パネルへ渡す「適用中フィルター」一覧です。可視列(視覚順)→ 非表示列
+  //   (columns 定義順)の順で、isActiveColumnFilterValue な値だけを載せます。非表示列も
+  //   出すのは「見えない列に絞り込みが残っている」という発見性の穴を塞ぐのが本機能の主目的
+  //   のためです(非表示列はジャンプ先が無いため ✎ 不可・× のみ可 = isHidden で view が判別)。
+  const filterManagerEntries = useMemo<FilterManagementEntry[]>(() => {
+    const entries: FilterManagementEntry[] = [];
+    const pushEntry = (column: GridColumn<T>, isHidden: boolean) => {
+      const value = columnFilters[column.key];
+      if (!value || !isActiveColumnFilterValue(value)) {
+        return;
+      }
+      entries.push({
+        columnKey: column.key,
+        title: column.title || column.key,
+        summaryText: describeColumnFilterValue(value),
+        isHidden,
+      });
+    };
+    for (const column of orderedColumns) {
+      pushEntry(column, false);
+    }
+    for (const column of columns) {
+      if (column.visible === false) {
+        pushEntry(column, true);
+      }
+    }
+    return entries;
+  }, [columnFilters, columns, orderedColumns]);
+
+  // 追加(FM-1): 「フィルターを追加」の候補列です(可視・filterType あり・未適用)。
+  //   非表示列は除外します(追加 = ✎ と同じ「ジャンプ + popover」で、非表示列は開けないため)。
+  //   filterType 条件は列メニューの「フィルター…」項目(canFilter)と同じ規約です。
+  const filterManagerAddableColumns = useMemo<
+    FilterManagementAddableColumn[]
+  >(
+    () =>
+      visibleColumns
+        .filter(
+          (column) =>
+            Boolean(column.filterType) &&
+            !isActiveColumnFilterValue(columnFilters[column.key]),
+        )
+        .map((column) => ({
+          key: column.key,
+          title: column.title || column.key,
+        })),
+    [columnFilters, visibleColumns],
+  );
+
+  // 追加(FM-1): 列メニューの「フィルターを管理…」項目からパネルを開きます
+  //             (メニューを閉じてからパネルを開きます。sort manager / chooser と同型)。
+  const handleColumnMenuOpenFilterManager = useCallback(() => {
+    closeColumnMenu();
+    openFilterManager();
+  }, [closeColumnMenu, openFilterManager]);
+
+  // 追加(FM-1): 対象列まで横スクロールしてからフィルター popover を開きます(パネルの
+  //   ✎ 編集 / フィルターを追加)。openColumnFilterPopover は anchor(ヘッダーセル
+  //   data-ssg-col-key)を開いた時点の DOM から解決するため、列仮想化で対象列が未描画の
+  //   まま開くと layout=null で表示されません。そこで
+  //     ① 横スクロール(center ペインのみ。固定列は常時可視のためスクロール不要)
+  //     ② rAF リトライ(上限 8 フレーム)でヘッダーセルの出現を待つ
+  //     ③ open + ジャンプ先ヘッダーのフラッシュ(ssg-header-cell--jump-flash)
+  //   の順に組み立てます。リトライは上限付きの有限ループでゾンビ化しません(13-B3-7 の
+  //   自己停止ガードと同趣旨)。上限まで出現しなければ開かず終了します(非表示化直後など。
+  //   無表示 popover 状態を作らないため)。
+  const jumpToColumnFilter = useCallback(
+    (columnKey: string) => {
+      const s = apiStateRef.current;
+      const el = scrollContainerRef.current;
+      if (!s) {
+        return;
+      }
+      const colIndex = s.orderedColumns.findIndex(
+        (column) => column.key === columnKey,
+      );
+      if (colIndex < 0) {
+        return;
+      }
+      const column = s.orderedColumns[colIndex];
+      if (el) {
+        const single = computeSinglePaneColumnExtent(s.paneLayout, colIndex);
+        if (single && single.pane === 'center') {
+          const target = computeHorizontalScrollTarget({
+            cellLeft:
+              s.leftPaneTotalWidth + s.centerLeadingWidth + single.extent.start,
+            cellWidth: single.extent.width,
+            leftPaneWidth: s.leftPaneTotalWidth,
+            rightPaneWidth: s.rightPaneTotalWidth,
+            viewportWidth: el.clientWidth,
+            currentScrollLeft: el.scrollLeft,
+            align: 'auto',
+            maxScrollLeft: el.scrollWidth - el.clientWidth,
+          });
+          if (target !== el.scrollLeft) {
+            el.scrollTo({ left: target, behavior: 'auto' });
+          }
+        }
+      }
+      const findHeaderCell = (): HTMLElement | null => {
+        const cells =
+          gridRootRef.current?.querySelectorAll<HTMLElement>(
+            '[data-ssg-col-key]',
+          );
+        if (!cells) {
+          return null;
+        }
+        return (
+          Array.from(cells).find(
+            (cell) => cell.dataset.ssgColKey === columnKey,
+          ) ?? null
+        );
+      };
+      const tryOpen = (attempt: number) => {
+        // unmount 後の遅延実行ガードです(root が消えていたら何もしません)。
+        if (!gridRootRef.current) {
+          return;
+        }
+        const cell = findHeaderCell();
+        if (cell === null) {
+          if (attempt < 8) {
+            requestAnimationFrame(() => tryOpen(attempt + 1));
+          }
+          return;
+        }
+        openColumnFilterPopover(column);
+        // ジャンプ先の視認補助フラッシュです。React はヘッダーセルの className prop が
+        //   変化したときだけ属性を書き戻すため、直付けクラスは通常アニメ完了まで残ります
+        //   (途中で hover 等により書き戻されても視認補助が早く消えるだけで実害なし)。
+        cell.classList.remove('ssg-header-cell--jump-flash');
+        // reflow を挟み、連続ジャンプでも再アニメーションさせます。
+        void cell.offsetWidth;
+        cell.classList.add('ssg-header-cell--jump-flash');
+        cell.addEventListener(
+          'animationend',
+          () => {
+            cell.classList.remove('ssg-header-cell--jump-flash');
+          },
+          { once: true },
+        );
+      };
+      requestAnimationFrame(() => {
+        tryOpen(0);
+      });
+    },
+    [gridRootRef, openColumnFilterPopover],
+  );
+
+  // 追加(FM-1): パネルの ×(単一クリア)/ すべてクリア / グローバル解除です。
+  //   すべてクリアはグローバルフィルターを保全したまま columnFilters だけを空にします
+  //   (setAllFilters のフル置換を 1 dispatch で。globalText は現値を引き継ぎます。
+  //    グローバルの解除はパネル先頭行の × のみ = ユーザー合意の切り分け)。
+  const handleFilterManagerClearFilter = useCallback(
+    (columnKey: string) => {
+      dispatch(gridActions.clearColumnFilter(columnKey));
+    },
+    [dispatch],
+  );
+
+  const handleFilterManagerClearAll = useCallback(() => {
+    dispatch(
+      gridActions.setAllFilters({
+        globalText: uiState.filters.globalText,
+        columnFilters: {},
+      }),
+    );
+  }, [dispatch, uiState.filters.globalText]);
+
+  const handleFilterManagerClearGlobal = useCallback(() => {
+    dispatch(gridActions.setGlobalFilter(''));
+  }, [dispatch]);
+
   // 追加(13-B2-1): パネルでの 1 列の表示/非表示トグルです。
   // 設計メモ(handleColumnMenuPinnedChange と同型):
   //   - columns は controlled props のため onColumnsChange 経由で反映します。
@@ -3380,6 +3585,8 @@ export function SpreadsheetGrid<T extends object>({
         handleColumnMenuSortChange(openedMenuColumn.key, direction)
       }
       onOpenSortManager={handleColumnMenuOpenSortManager}
+      canManageFilters={columnFilterEnabled}
+      onOpenFilterManager={handleColumnMenuOpenFilterManager}
       pinned={openedMenuColumn.pinned}
       canChangePinned={Boolean(onColumnsChange)}
       layout={columnMenuLayout}
@@ -3428,6 +3635,30 @@ export function SpreadsheetGrid<T extends object>({
       onClearAll={handleSortManagerClearAll}
       onMove={handleSortManagerMove}
       onRequestClose={closeSortManager}
+    />
+  );
+
+  // ── filter management panel(FM-1) ────────────────────
+  // 追加(FM-1): フィルター管理パネルの描画です(portal で body 直下へ出します)。
+  //             ✎(編集)と「フィルターを追加」は同じジャンプ経路(jumpToColumnFilter)です。
+  const renderedFilterManagementPanel = (
+    <FilterManagementPanel
+      isOpen={isFilterManagerOpen}
+      entries={filterManagerEntries}
+      addableColumns={filterManagerAddableColumns}
+      showGlobalFilterRow={
+        globalFilterEnabled && globalFilterText.trim().length > 0
+      }
+      globalFilterText={globalFilterText}
+      canFilter={columnFilterEnabled}
+      layout={filterManagerLayout}
+      panelRef={filterManagerRef}
+      onEditFilter={jumpToColumnFilter}
+      onAddFilter={jumpToColumnFilter}
+      onClearFilter={handleFilterManagerClearFilter}
+      onClearAllFilters={handleFilterManagerClearAll}
+      onClearGlobalFilter={handleFilterManagerClearGlobal}
+      onRequestClose={closeFilterManager}
     />
   );
 
@@ -4628,6 +4859,8 @@ export function SpreadsheetGrid<T extends object>({
       {renderedColumnChooserPanel}
       {/* 追加(MS-3-1): 並び替え管理パネル(並べ替えダイアログ相当)です。*/}
       {renderedSortManagementPanel}
+      {/* 追加(FM-1): フィルター管理パネル(適用中フィルターの一覧/編集/クリア)です。*/}
+      {renderedFilterManagementPanel}
       {/* 追加(バッチ②): セル/行の汎用コンテキストメニュー(完全カスタム)です。*/}
       {renderedCellContextMenuPopover}
     </div>

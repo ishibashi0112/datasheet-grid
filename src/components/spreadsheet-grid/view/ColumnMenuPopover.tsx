@@ -71,6 +71,13 @@ type ColumnMenuPopoverProps = {
   //             (サブメニューではなく別 popover を開く点は「列の表示」と同じ作法です)。
   //             クリックで列メニューを閉じてパネルを開く配線は SpreadsheetGrid 側が担います。
   onOpenSortManager: () => void;
+  // 追加(FM-1): フィルター管理パネル(FilterManagementPanel)を開くハンドラです。
+  //             canManageFilters はグリッドレベルの enableColumnFilter 相当です(canFilter と
+  //             違い「この列に filterType があるか」は見ません — パネルは全列のフィルターを
+  //             扱うためです)。canSort=false でも項目は出ます(並び替えブロックの直後)。
+  //             クリックで列メニューを閉じてパネルを開く配線は SpreadsheetGrid 側が担います。
+  canManageFilters: boolean;
+  onOpenFilterManager: () => void;
   // 追加: 開いている列の現在の固定状態です(✓ 表示に使います)。
   pinned: GridColumnPinned | undefined;
   // 追加: onColumnsChange 未指定時は false になり、固定切替の項目を無効化します
@@ -108,6 +115,8 @@ export function ColumnMenuPopover({
   sortDirection,
   onSortChange,
   onOpenSortManager,
+  canManageFilters,
+  onOpenFilterManager,
   pinned,
   canChangePinned,
   layout,
@@ -321,11 +330,37 @@ export function ColumnMenuPopover({
             <span className="ssg-menu-icon" />
             <span className="ssg-menu-label">並び替えを管理…</span>
           </button>
-
-          {/* 追加(13-B4): ソート群と以降(固定/幅/表示)の区切りです。 */}
-          <div className="ssg-menu-separator" />
         </>
       )}
+
+      {/* ── ルート項目: フィルターを管理…(FM-1) ── */}
+      {/* 追加(FM-1): 適用中フィルターの一覧 / 編集 / クリアを行うパネル
+          (FilterManagementPanel)を開くリーフ項目です。gate はグリッドレベルの
+          canManageFilters(enableColumnFilter 相当)で、canFilter(この列の filterType
+          有無)には依りません(パネルは全列のフィルターを扱うため)。位置は
+          「並び替えを管理…」の直後(canSort=false のときはソート群を飛ばしてここから)。
+          hover で開いているカスケード(列の固定)を閉じ、✓ 列ぶんのスペーサで左端を
+          揃えます。クリックで列メニューを閉じてパネルを開く処理は SpreadsheetGrid 側
+          (onOpenFilterManager)が担います。 */}
+      {canManageFilters && (
+        <button
+          type="button"
+          onPointerEnter={() => {
+            setOpenSubmenuKey(null);
+          }}
+          onClick={() => {
+            onOpenFilterManager();
+          }}
+          className="ssg-menu-item"
+        >
+          <span className="ssg-menu-icon" />
+          <span className="ssg-menu-label">フィルターを管理…</span>
+        </button>
+      )}
+
+      {/* 変更(FM-1): 区切り(旧 13-B4)の条件を「ソート群のみ」→「ソート群または
+          フィルターを管理…のいずれかが出ているとき」へ広げます(位置は不変)。 */}
+      {(canSort || canManageFilters) && <div className="ssg-menu-separator" />}
 
       {/* ── ルート項目: 列の固定 ›(サブメニュー親) ── */}
       {/* 追加(13-A2): サブメニューはこの行(position: relative)基準で絶対配置します。
