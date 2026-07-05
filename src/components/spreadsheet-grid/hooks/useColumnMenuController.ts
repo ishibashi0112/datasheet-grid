@@ -308,9 +308,15 @@ export const useColumnMenuController = <T,>({
       }
     };
 
-    window.addEventListener('keydown', handleWindowKeyDown);
+    // 変更(POP-KEY): capture 登録(第 3 引数 true)へ変更します。
+    // 変更理由: パネル root の keydown 遮断(bubble 相 stopPropagation)や内部要素の
+    //   stopPropagation はネイティブ伝播を止めるため、bubble 登録の window リスナーには
+    //   フォーカスがパネル内にあるとき Escape が届きませんでした。capture は window で
+    //   最初に走るため、フォーカス位置に依存せず確実に close を受けられます
+    //   (add / remove の capture 指定は一致必須です)。
+    window.addEventListener('keydown', handleWindowKeyDown, true);
     return () => {
-      window.removeEventListener('keydown', handleWindowKeyDown);
+      window.removeEventListener('keydown', handleWindowKeyDown, true);
     };
   }, [closeColumnMenu, isColumnMenuOpen]);
 

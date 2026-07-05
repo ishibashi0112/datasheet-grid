@@ -177,9 +177,15 @@ export function ColumnMenuPopover({
     event.stopPropagation();
   };
 
-  const handleKeyDownCapture = (event: KeyboardEvent<HTMLDivElement>) => {
+  const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     // 追加: portal 内 keyboard イベントを React ツリー上の parent へ流しません。
     //       Escape での close は controller の window keydown リスナーが担当します。
+    // 変更(POP-KEY): capture 相(onKeyDownCapture)→ bubble 相(onKeyDown)へ変更します。
+    //   capture 相の stopPropagation() はネイティブ伝播ごと止めるため、パネル内部要素の
+    //   bubble 相 onKeyDown や window(bubble)リスナーまで殺してしまいます
+    //   (ColumnFilterPopover の SF-ENTER fix と同一パターンの統一です)。bubble 相なら
+    //   「内部要素のハンドラが先に処理 → 最後にここで外側への合成バブリングだけ遮断」に
+    //   なり、Escape close は controller 側の capture 登録(POP-KEY)が受けます。
     event.stopPropagation();
   };
 
@@ -187,7 +193,7 @@ export function ColumnMenuPopover({
     <div
       ref={popoverRef}
       onPointerDown={handlePointerDown}
-      onKeyDownCapture={handleKeyDownCapture}
+      onKeyDown={handleKeyDown}
       onContextMenu={(event) => {
         // 追加: メニュー上での右クリックはブラウザ標準メニューを出しません。
         event.preventDefault();
