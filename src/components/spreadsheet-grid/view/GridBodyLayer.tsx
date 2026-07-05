@@ -255,8 +255,8 @@ function GridBodyRowInner<T>({
 
         // 追加(UI CSS移行): セルの className を合成します。基底(.ssg-body-cell)+ 状態修飾子
         //   (autoheight / readonly / row-hovered)+ 条件付き(行=rowClassName / 列=cellClassName)
-        //   + スロット(bodyCellClassName)。状態系は @layer ssg-base なので、条件付き / スロットの
-        //   クラスが特異度を気にせず背景等を上書きできます。列 cellClassName が関数のときだけ
+        //   + スロット(bodyCellClassName)。基底/状態系は未レイヤー・特異度 (0,1,0)(THEME-1)。
+        //   条件付き / スロットで確実に上書きするには連結セレクタを推奨。列 cellClassName が関数のときだけ
         //   値解決(getCellValue)します(未指定列は無コスト)。
         let conditionalCellClass: string | undefined;
         const columnCellClassName = column.cellClassName;

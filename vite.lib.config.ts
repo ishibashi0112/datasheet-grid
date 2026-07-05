@@ -7,7 +7,8 @@ import react from '@vitejs/plugin-react'
 //   - entry は公開バレル index.ts。react / react-dom / @tanstack/react-virtual はバンドルせず
 //     外部化し、利用側(peer / 依存)が解決します。サブパス import も正規表現で除外します。
 //   - styles.css は JS から分離して単一の dist/style.css へ抽出します(自動注入はしません)。
-//     利用側は `import '<pkg>/style.css'` で読み込みます(@layer ssg-base の上書き設計と整合)。
+//     利用側は `import '<pkg>/style.css'` で読み込みます。@layer ssg-base 版の style.layer.css は
+//     build:lib 最終ステップの scripts/emit-layer-css.mjs が生成します(THEME-1)。
 export default defineConfig({
   plugins: [react()],
   // public/ はデモ専用資産(favicon / icons)。ライブラリ配布物には含めません。

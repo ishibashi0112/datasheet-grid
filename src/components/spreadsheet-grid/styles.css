@@ -1,14 +1,24 @@
-/* SpreadsheetGrid のスタイル(段階移行中)。
-   方針:
-   - デザイントークンは CSS 変数(--ssg-*)で定義。利用側はこれを上書きするだけでテーマ変更できます。
-   - 基底スタイルは @layer ssg-base に入れます。@layer のスタイルは「未レイヤーのスタイル」
-     (利用側の通常 CSS / Tailwind ユーティリティ等)に必ず負けるため、利用側の className 上書きが
-     特異度を気にせず効きます。
+/* SpreadsheetGrid のスタイル。
+   方針(THEME-1 で @layer を撤去し未レイヤー化):
+   - 旧 @layer ssg-base は Tailwind v3 preflight(未レイヤーの `* { border-width: 0 }` 等)に
+     特異度無関係で必ず負け、罫線・枠線が消える致命的な共存問題がありました(CSS カスケードでは
+     未レイヤー > レイヤー)。未レイヤーの単一クラス(特異度 (0,1,0))なら preflight
+     (`*` / 要素セレクタ = (0,0,1) 以下)に構造的に勝ちます。Tailwind v4 の preflight は
+     レイヤー内のため、未レイヤーの本 CSS が常に勝ちます。
+   - デザイントークンは CSS 変数(--ssg-*)。定義は :where(.ssg-root)(特異度 0)に置くため、
+     利用側のトークン上書きは読み込み順に依らず必ず勝ちます(テーマ変更の主 API)。
+   - プロパティ上書きは同特異度なら読み込み順依存です。確実にするには
+     `.ssg-body-cell.my-class` のように基底クラスと連結してください(README「Styles」参照)。
+     Tailwind v4 で utilities を優先したい場合は `@import "...style.css" layer(components);`
+     または @layer ssg-base 版の style.layer.css を使います。
    - 動的に決まる値(座標 / 解決済み列幅 / オーバーレイ位置など)は引き続きインライン style です。
-   - トークンは .ssg-root にスコープし、グローバル(:root)を汚しません。 */
+   - トークンは .ssg-root にスコープし、グローバル(:root)を汚しません。
+   - 注記: ルール本体の 2 スペースインデントは旧 @layer ブロック時代の名残です(diff 最小化のため
+     維持。CSS 上は無害)。 */
 
-@layer ssg-base {
-  .ssg-root {
+  /* デザイントークン(既定値)。:where は特異度 0 — 利用側の `.ssg-root { --ssg-accent: ... }`
+     等の上書きが読み込み順に依らず必ず勝ちます。 */
+  :where(.ssg-root) {
     /* 色トークン */
     --ssg-accent: #3461c9;
     --ssg-accent-strong: #1d4ed8;
@@ -46,8 +56,22 @@
     /* 寸法トークン */
     --ssg-radius: 8px;
     --ssg-icon-btn-size: 20px;
+  }
 
-    /* 外枠 frame(top バー+本体+bottom バーを 1 枠に収める境界/角丸/影/クリップ)。 */
+  /* box-sizing の自前正規化(THEME-1)。従来は一部要素が利用側グローバルリセットの有無で
+     content-box / border-box が揺れ、素の環境と Tailwind 環境(preflight が全要素 border-box)で
+     描画が食い違っていました。ルート/ポータル(popover / menu)配下を一律 border-box に固定して
+     環境差を排除します。:where(特異度 0)なので、利用側が明示した box-sizing はそのまま勝ちます。
+     注記: 擬似要素は :is()/:where() の引数に書けないため、::before / ::after は外側に付けます。 */
+  :where(.ssg-root, .ssg-popover, .ssg-menu-panel, .ssg-filter-popover),
+  :where(.ssg-root, .ssg-popover, .ssg-menu-panel, .ssg-filter-popover) :where(*),
+  :where(.ssg-root, .ssg-popover, .ssg-menu-panel, .ssg-filter-popover) :where(*)::before,
+  :where(.ssg-root, .ssg-popover, .ssg-menu-panel, .ssg-filter-popover) :where(*)::after {
+    box-sizing: border-box;
+  }
+
+  /* 外枠 frame(top バー+本体+bottom バーを 1 枠に収める境界/角丸/影/クリップ)。 */
+  .ssg-root {
     border: 1px solid var(--ssg-divider);
     border-radius: var(--ssg-radius);
     overflow: hidden;
@@ -226,8 +250,10 @@
     position: absolute;
     left: 4.5px;
     top: 1.5px;
-    width: 4px;
-    height: 8px;
+    /* 変更(THEME-1): box-sizing 正規化(border-box)に伴う等価換算。旧 content-box の
+       4×8 + 右下 2px ボーダー = ボーダー領域 6×10 を width/height で表現(描画は不変)。 */
+    width: 6px;
+    height: 10px;
     border: solid var(--ssg-checkbox-checked-mark);
     border-width: 0 2px 2px 0;
     transform: rotate(45deg);
@@ -1453,4 +1479,3 @@
   .ssg-col-drop-indicator::after {
     bottom: -3px;
   }
-}

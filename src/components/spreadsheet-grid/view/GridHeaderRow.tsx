@@ -43,7 +43,7 @@ type GridHeaderRowProps<T> = {
   leadingWidth: number;
   headerHeight: number;
   rowHeaderCellStyle: CSSProperties;
-  // 追加(UI CSS移行): ヘッダー系スロット(すべて文字列=memo 安全)。基底は @layer ssg-base。
+  // 追加(UI CSS移行): ヘッダー系スロット(すべて文字列=memo 安全)。基底は未レイヤー .ssg-*(THEME-1)。
   headerRowClassName?: string;
   headerCellClassName?: string;
   rowHeaderCellClassName?: string;

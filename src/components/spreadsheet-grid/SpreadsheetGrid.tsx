@@ -15,7 +15,7 @@ import {
   type MouseEvent as ReactMouseEvent,
 } from 'react';
 
-// 追加(UI CSS移行): 基底スタイル(トークン + @layer ssg-base)を読み込みます。
+// 追加(UI CSS移行): 基底スタイル(トークン + .ssg-* クラス)を読み込みます(THEME-1 で未レイヤー化)。
 import './styles.css';
 import { cx } from './logic/cx';
 
