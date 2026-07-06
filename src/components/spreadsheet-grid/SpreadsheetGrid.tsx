@@ -3515,12 +3515,13 @@ export function SpreadsheetGrid<T extends object>({
     ...(hasContent
       ? side === 'left'
         ? {
-            borderRight: '1px solid #cbd5e1',
-            boxShadow: '6px 0 8px -6px rgba(15, 23, 42, 0.35)',
+            // 変更(TH-DK-1): 境界/影はトークン参照(要素は .ssg-root 内のため var() が解決されます)。
+            borderRight: '1px solid var(--ssg-pane-border)',
+            boxShadow: 'var(--ssg-pane-shadow-left)',
           }
         : {
-            borderLeft: '1px solid #cbd5e1',
-            boxShadow: '-6px 0 8px -6px rgba(15, 23, 42, 0.35)',
+            borderLeft: '1px solid var(--ssg-pane-border)',
+            boxShadow: 'var(--ssg-pane-shadow-right)',
           }
       : {}),
   });

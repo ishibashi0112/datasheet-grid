@@ -199,11 +199,13 @@ const GHOST_ICON_OUT =
 // 変更(モノトーン): ゴーストは「チャコール無地の角丸チップ」(C2 の角丸 × C1 の色)です。
 //   状態は色ではなく「アイコン + 濃度」で出し分けます: center=move / left・right=pin /
 //   枠外(out)=禁止アイコン + 濃度↓。彩度を使わず洗練させる方針です。
-const GHOST_INK_BACKGROUND = '#1e293b';
-const GHOST_INK_COLOR = '#f8fafc';
-const GHOST_INK_BORDER = 'rgba(255,255,255,0.10)';
-const GHOST_INK_SHADOW =
-  '0 8px 20px rgba(2,6,23,0.34), 0 1px 2px rgba(2,6,23,0.24)';
+// 変更(TH-DK-1): 色はデザイントークン参照へ移行。ゴースト root(data-grid-drag-ghost)は
+//   styles.css のトークン定義セレクタリストに含まれるため、inline style の var() が解決されます
+//   (既定値は従来のリテラル値と同一 = 見た目不変)。テーマ切替はトークン側で行います。
+const GHOST_INK_BACKGROUND = 'var(--ssg-ghost-bg)';
+const GHOST_INK_COLOR = 'var(--ssg-ghost-text)';
+const GHOST_INK_BORDER = 'var(--ssg-ghost-border)';
+const GHOST_INK_SHADOW = 'var(--ssg-ghost-shadow)';
 // 枠外(無効)時の濃度。色は変えず opacity だけ落として「ここで離しても無効」を示します。
 const GHOST_OUT_OPACITY = '0.5';
 

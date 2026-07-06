@@ -64,7 +64,12 @@ function DragHandleGlyph({ disabled }: { disabled: boolean }) {
       width="10"
       height="16"
       viewBox="0 0 10 16"
-      fill={disabled ? '#cbd5e1' : '#94a3b8'}
+      // 変更(TH-DK-1): fill はプレゼンテーション属性だと var() を解釈しないため style で指定します。
+      style={{
+        fill: disabled
+          ? 'var(--ssg-panel-text-disabled)'
+          : 'var(--ssg-panel-text-faint)',
+      }}
       aria-hidden
     >
       {[3, 8, 13].map((cy) =>

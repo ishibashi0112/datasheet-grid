@@ -17,8 +17,11 @@
      維持。CSS 上は無害)。 */
 
   /* デザイントークン(既定値)。:where は特異度 0 — 利用側の `.ssg-root { --ssg-accent: ... }`
-     等の上書きが読み込み順に依らず必ず勝ちます。 */
-  :where(.ssg-root) {
+     等の上書きが読み込み順に依らず必ず勝ちます。
+     セレクタリストについて(TH-DK-1): popover / menu / filter popover / ドラッグゴーストは
+     document.body 直下のポータルで .ssg-root の継承が届かないため、各ポータル root にも
+     同じトークンを直接定義します(テーマ切替はこのリストへ修飾子を足すだけで全面に効きます)。 */
+  :where(.ssg-root, .ssg-popover, .ssg-menu-panel, .ssg-filter-popover, [data-grid-drag-ghost]) {
     /* 色トークン */
     --ssg-accent: #3461c9;
     --ssg-accent-strong: #1d4ed8;
@@ -60,6 +63,52 @@
     --ssg-cell-pad-x: 10px;
     --ssg-bar-pad-x: 10px;
     --ssg-bar-pad-y: 5px;
+    /* ── 以下 TH-DK-1 追加: ポータル/パネル面・影・インク系のトークン化 ──
+       ダーク対応(TH-DK-2)の前提。色味調整はこのブロックの値だけ変えれば全体に効きます。 */
+    /* パネル面(popover / menu / filter popover / 管理系パネル共通) */
+    --ssg-panel-bg: #ffffff;
+    --ssg-panel-border: #cbd5e1;
+    --ssg-panel-separator: #e2e8f0;
+    /* パネル文字(強→弱の 6 段階) */
+    --ssg-panel-text-strong: #1e293b;
+    --ssg-panel-text: #334155;
+    --ssg-panel-text-sub: #475569;
+    --ssg-panel-text-muted: #64748b;
+    --ssg-panel-text-faint: #94a3b8;
+    --ssg-panel-text-disabled: #cbd5e1;
+    /* パネル hover 面 */
+    --ssg-panel-hover-bg: #f1f5f9;
+    --ssg-panel-hover-bg-subtle: #f8fafc;
+    /* パネルアクセント(意図的にグリッド accent #3461c9 より明るい系統) */
+    --ssg-panel-accent: #2563eb;
+    --ssg-panel-accent-bg: #eff6ff;
+    --ssg-panel-accent-text: var(--ssg-accent-strong);
+    --ssg-panel-accent-contrast: #ffffff;
+    /* 危険操作(削除系 hover) */
+    --ssg-danger: #dc2626;
+    --ssg-danger-bg: #fef2f2;
+    /* 影(要素種別ごと) */
+    --ssg-root-shadow: 0 4px 14px rgba(15, 23, 42, 0.04);
+    --ssg-panel-shadow: 0 12px 28px rgba(15, 23, 42, 0.16);
+    --ssg-popover-shadow: 0 10px 24px rgba(15, 23, 42, 0.12);
+    --ssg-overlay-chip-shadow: 0 6px 20px rgba(15, 23, 42, 0.18);
+    /* ピン留めペインの境界/影(SpreadsheetGrid.tsx の inline style から var() 参照) */
+    --ssg-pane-border: #cbd5e1;
+    --ssg-pane-shadow-left: 6px 0 8px -6px rgba(15, 23, 42, 0.35);
+    --ssg-pane-shadow-right: -6px 0 8px -6px rgba(15, 23, 42, 0.35);
+    /* インク系(暗色チップ): autosize pill / 列 D&D ゴースト(ghost は JS の inline style から
+       var() 参照。トークン定義は本ブロックのセレクタリスト [data-grid-drag-ghost] で届きます) */
+    --ssg-pill-bg: rgba(15, 23, 42, 0.82);
+    --ssg-pill-text: #f8fafc;
+    --ssg-pill-shadow: 0 6px 20px rgba(15, 23, 42, 0.25);
+    --ssg-ghost-bg: #1e293b;
+    --ssg-ghost-text: #f8fafc;
+    --ssg-ghost-border: rgba(255, 255, 255, 0.10);
+    --ssg-ghost-shadow: 0 8px 20px rgba(2, 6, 23, 0.34), 0 1px 2px rgba(2, 6, 23, 0.24);
+    /* その他 */
+    --ssg-drop-indicator: #0f172a;
+    --ssg-glyph-faint: #cbd5e1;
+    --ssg-skeleton-bar: #e2e8f0;
   }
 
   /* 密度プリセット(THEME-2)。density prop が root へ付与する修飾子で寸法トークンを一括切替します。
@@ -111,7 +160,7 @@
     border-radius: var(--ssg-radius);
     overflow: hidden;
     background-color: var(--ssg-cell-bg);
-    box-shadow: 0 4px 14px rgba(15, 23, 42, 0.04);
+    box-shadow: var(--ssg-root-shadow);
   }
 
   /* ヘッダーのアイコンボタン(フィルター / メニュー) */
@@ -463,7 +512,7 @@
     max-width: 380px;
     box-sizing: border-box;
     padding: 0 8px;
-    border: 1px solid #cbd5e1;
+    border: 1px solid var(--ssg-panel-border);
     border-radius: 6px;
     background-color: var(--ssg-cell-bg);
   }
@@ -607,19 +656,19 @@
   }
 
   /* ── ポップオーバー/パネル共通 ── */
-  /* ポータルで body 直下に出るため、トークン(.ssg-root スコープ)は届かない。
-     したがってポップオーバー系はリテラル色で定義する(クラス自体は未レイヤー CSS で上書き可能)。
-     アクセントは意図的にグリッド(#3461c9)より明るい #2563eb を用いる。 */
+  /* ポータルで body 直下に出るため .ssg-root からの継承は届かないが、TH-DK-1 でトークン定義
+     セレクタリストに各ポータル root を加えたため、以降は --ssg-panel-* トークンで参照する。
+     パネルアクセント(--ssg-panel-accent)は意図的にグリッド accent より明るい系統。 */
   .ssg-popover {
     position: fixed;
     box-sizing: border-box;
     display: flex;
     flex-direction: column;
     padding: 12px;
-    border: 1px solid #cbd5e1;
+    border: 1px solid var(--ssg-panel-border);
     border-radius: 12px;
-    background-color: #ffffff;
-    box-shadow: 0 12px 28px rgba(15, 23, 42, 0.16);
+    background-color: var(--ssg-panel-bg);
+    box-shadow: var(--ssg-panel-shadow);
     z-index: 1000;
   }
 
@@ -630,13 +679,13 @@
     gap: 8px;
     padding-bottom: 8px;
     margin-bottom: 8px;
-    border-bottom: 1px solid #e2e8f0;
+    border-bottom: 1px solid var(--ssg-panel-separator);
   }
 
   .ssg-popover-title {
     font-size: 13px;
     font-weight: 700;
-    color: #1e293b;
+    color: var(--ssg-panel-text-strong);
     user-select: none;
   }
 
@@ -649,19 +698,19 @@
     border: none;
     border-radius: 6px;
     background-color: transparent;
-    color: #64748b;
+    color: var(--ssg-panel-text-muted);
     cursor: pointer;
     font-size: 16px;
     line-height: 1;
   }
   .ssg-popover-close:hover {
-    background-color: #f1f5f9;
+    background-color: var(--ssg-panel-hover-bg);
   }
 
   .ssg-popover-footer {
     padding-top: 8px;
     margin-top: 8px;
-    border-top: 1px solid #e2e8f0;
+    border-top: 1px solid var(--ssg-panel-separator);
     display: flex;
     gap: 8px;
   }
@@ -695,7 +744,7 @@
 
   .ssg-sort-empty {
     font-size: 12px;
-    color: #94a3b8;
+    color: var(--ssg-panel-text-faint);
     padding: 10px 4px;
     user-select: none;
   }
@@ -709,7 +758,7 @@
     opacity: 1;
   }
   .ssg-sort-level--drop-before {
-    border-top-color: #2563eb;
+    border-top-color: var(--ssg-panel-accent);
   }
   .ssg-sort-level--dragging {
     opacity: 0.4;
@@ -734,7 +783,7 @@
     cursor: default;
   }
   .ssg-sort-handle:not(.ssg-sort-handle--disabled):hover {
-    background-color: #f1f5f9;
+    background-color: var(--ssg-panel-hover-bg);
   }
 
   .ssg-sort-badge {
@@ -745,8 +794,8 @@
     width: 18px;
     height: 18px;
     border-radius: 9px;
-    background-color: #eff6ff;
-    color: #2563eb;
+    background-color: var(--ssg-panel-accent-bg);
+    color: var(--ssg-panel-accent);
     font-size: 11px;
     font-weight: 700;
     user-select: none;
@@ -757,11 +806,11 @@
     min-width: 0;
     box-sizing: border-box;
     padding: 5px 6px;
-    border: 1px solid #cbd5e1;
+    border: 1px solid var(--ssg-panel-border);
     border-radius: 6px;
     font-size: 13px;
-    color: #334155;
-    background-color: #ffffff;
+    color: var(--ssg-panel-text);
+    background-color: var(--ssg-panel-bg);
     cursor: pointer;
   }
   .ssg-sort-select:disabled {
@@ -777,9 +826,9 @@
     flex: 0 0 auto;
     box-sizing: border-box;
     padding: 4px 9px;
-    border: 1px solid #cbd5e1;
-    background-color: #ffffff;
-    color: #475569;
+    border: 1px solid var(--ssg-panel-border);
+    background-color: var(--ssg-panel-bg);
+    color: var(--ssg-panel-text-sub);
     font-size: 12px;
     line-height: 1.4;
     cursor: pointer;
@@ -794,12 +843,12 @@
     border-bottom-right-radius: 6px;
   }
   .ssg-sort-dir-btn--active {
-    border-color: #2563eb;
-    background-color: #2563eb;
-    color: #ffffff;
+    border-color: var(--ssg-panel-accent);
+    background-color: var(--ssg-panel-accent);
+    color: var(--ssg-panel-accent-contrast);
   }
   .ssg-sort-dir-btn:disabled {
-    color: #cbd5e1;
+    color: var(--ssg-panel-text-disabled);
     cursor: default;
   }
 
@@ -813,32 +862,32 @@
     border: none;
     border-radius: 6px;
     background-color: transparent;
-    color: #64748b;
+    color: var(--ssg-panel-text-muted);
     cursor: pointer;
     font-size: 15px;
     line-height: 1;
   }
   .ssg-sort-delete:disabled {
-    color: #cbd5e1;
+    color: var(--ssg-panel-text-disabled);
     cursor: default;
   }
   .ssg-sort-delete:not(:disabled):hover {
-    background-color: #fef2f2;
-    color: #dc2626;
+    background-color: var(--ssg-danger-bg);
+    color: var(--ssg-danger);
   }
 
   .ssg-sort-drop-end {
     height: 0;
-    border-top: 2px solid #2563eb;
+    border-top: 2px solid var(--ssg-panel-accent);
   }
 
   /* フッターボタン(基準を追加 / すべてクリア)。 */
   .ssg-sort-footer-btn {
     box-sizing: border-box;
-    border: 1px solid #e2e8f0;
+    border: 1px solid var(--ssg-panel-separator);
     border-radius: 8px;
     background-color: transparent;
-    color: #334155;
+    color: var(--ssg-panel-text);
     cursor: pointer;
     font-size: 13px;
     text-align: center;
@@ -853,16 +902,16 @@
     padding: 7px 12px;
   }
   .ssg-sort-footer-btn:disabled {
-    color: #cbd5e1;
+    color: var(--ssg-panel-text-disabled);
     cursor: default;
   }
   .ssg-sort-footer-btn:not(:disabled):hover {
-    background-color: #f1f5f9;
+    background-color: var(--ssg-panel-hover-bg);
   }
 
   .ssg-sort-note {
     font-size: 11px;
-    color: #94a3b8;
+    color: var(--ssg-panel-text-faint);
     margin-top: 8px;
     user-select: none;
   }
@@ -886,7 +935,7 @@
 
   .ssg-filter-manage-empty {
     font-size: 12px;
-    color: #94a3b8;
+    color: var(--ssg-panel-text-faint);
     padding: 10px 4px;
     user-select: none;
   }
@@ -900,11 +949,11 @@
     border-radius: 8px;
   }
   .ssg-filter-manage-row:hover {
-    background-color: #f8fafc;
+    background-color: var(--ssg-panel-hover-bg-subtle);
   }
   /* グローバルフィルター行。一覧(列フィルター)との区切りを持ち、hover 強調はしません。 */
   .ssg-filter-manage-row--global {
-    border-bottom: 1px solid #e2e8f0;
+    border-bottom: 1px solid var(--ssg-panel-separator);
     border-radius: 0;
     margin-bottom: 6px;
     padding-bottom: 9px;
@@ -918,10 +967,10 @@
     display: flex;
     align-items: center;
     flex: 0 0 auto;
-    color: #1d4ed8;
+    color: var(--ssg-panel-accent-text);
   }
   .ssg-filter-manage-glyph--global {
-    color: #64748b;
+    color: var(--ssg-panel-text-muted);
   }
 
   /* 列名(上段)+ 要約(下段)。どちらも 1 行 ellipsis(はみ出しは title 属性で補完)。 */
@@ -935,7 +984,7 @@
   .ssg-filter-manage-name {
     font-size: 12.5px;
     font-weight: 700;
-    color: #1e293b;
+    color: var(--ssg-panel-text-strong);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -944,11 +993,11 @@
     margin-left: 4px;
     font-size: 10.5px;
     font-weight: 500;
-    color: #94a3b8;
+    color: var(--ssg-panel-text-faint);
   }
   .ssg-filter-manage-summary {
     font-size: 11.5px;
-    color: #64748b;
+    color: var(--ssg-panel-text-muted);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -969,22 +1018,22 @@
     border: none;
     border-radius: 6px;
     background-color: transparent;
-    color: #64748b;
+    color: var(--ssg-panel-text-muted);
     cursor: pointer;
     font-size: 13px;
     line-height: 1;
   }
   .ssg-filter-manage-icon-btn:disabled {
-    color: #cbd5e1;
+    color: var(--ssg-panel-text-disabled);
     cursor: default;
   }
   .ssg-filter-manage-icon-btn:not(:disabled):hover {
-    background-color: #f1f5f9;
-    color: #1e293b;
+    background-color: var(--ssg-panel-hover-bg);
+    color: var(--ssg-panel-text-strong);
   }
   .ssg-filter-manage-icon-btn--danger:not(:disabled):hover {
-    background-color: #fef2f2;
-    color: #dc2626;
+    background-color: var(--ssg-danger-bg);
+    color: var(--ssg-danger);
   }
 
   /* フッター: 追加セレクト + すべてクリア。 */
@@ -993,25 +1042,25 @@
     min-width: 0;
     font-size: 12px;
     padding: 5px 6px;
-    border: 1px solid #cbd5e1;
+    border: 1px solid var(--ssg-panel-border);
     border-radius: 6px;
-    background-color: #ffffff;
-    color: #334155;
+    background-color: var(--ssg-panel-bg);
+    color: var(--ssg-panel-text);
     cursor: pointer;
     outline: none;
   }
   .ssg-filter-manage-add:focus {
-    border-color: #2563eb;
+    border-color: var(--ssg-panel-accent);
   }
   .ssg-filter-manage-add:disabled {
-    color: #94a3b8;
+    color: var(--ssg-panel-text-faint);
     cursor: default;
   }
   .ssg-filter-manage-clear-all {
     flex: 0 0 auto;
     border: none;
     background-color: transparent;
-    color: #64748b;
+    color: var(--ssg-panel-text-muted);
     font-size: 12px;
     cursor: pointer;
     padding: 5px 8px;
@@ -1019,12 +1068,12 @@
     white-space: nowrap;
   }
   .ssg-filter-manage-clear-all:disabled {
-    color: #cbd5e1;
+    color: var(--ssg-panel-text-disabled);
     cursor: default;
   }
   .ssg-filter-manage-clear-all:not(:disabled):hover {
-    background-color: #fef2f2;
-    color: #dc2626;
+    background-color: var(--ssg-danger-bg);
+    color: var(--ssg-danger);
   }
 
   /* ── 列の表示パネル(ColumnChooserPanel) ── */
@@ -1062,7 +1111,7 @@
     left: 9px;
     top: 50%;
     transform: translateY(-50%);
-    color: #94a3b8;
+    color: var(--ssg-panel-text-faint);
     font-size: 13px;
     line-height: 1;
     pointer-events: none;
@@ -1071,10 +1120,10 @@
     width: 100%;
     box-sizing: border-box;
     padding: 7px 10px 7px 26px;
-    border: 1px solid #cbd5e1;
+    border: 1px solid var(--ssg-panel-border);
     border-radius: 8px;
     font-size: 13px;
-    color: #334155;
+    color: var(--ssg-panel-text);
     outline: none;
   }
 
@@ -1089,7 +1138,7 @@
 
   .ssg-chooser-empty {
     font-size: 12px;
-    color: #94a3b8;
+    color: var(--ssg-panel-text-faint);
     padding: 10px 4px;
     user-select: none;
   }
@@ -1097,7 +1146,7 @@
   .ssg-chooser-section-heading {
     font-size: 11px;
     font-weight: 700;
-    color: #94a3b8;
+    color: var(--ssg-panel-text-faint);
     letter-spacing: 0.4px;
     padding: 8px 4px 4px;
     user-select: none;
@@ -1112,7 +1161,7 @@
     opacity: 1;
   }
   .ssg-chooser-row--drop-before {
-    border-top-color: #2563eb;
+    border-top-color: var(--ssg-panel-accent);
   }
   .ssg-chooser-row--dragging {
     opacity: 0.4;
@@ -1137,7 +1186,7 @@
     cursor: default;
   }
   .ssg-chooser-handle:not(.ssg-chooser-handle--disabled):hover {
-    background-color: #f1f5f9;
+    background-color: var(--ssg-panel-hover-bg);
   }
 
   /* 表示/非表示トグル(チェックボックス + ラベル)。 */
@@ -1159,58 +1208,58 @@
     cursor: default;
   }
   .ssg-chooser-toggle:not(:disabled):hover {
-    background-color: #f1f5f9;
+    background-color: var(--ssg-panel-hover-bg);
   }
 
   .ssg-chooser-label {
     min-width: 0;
     flex: 1;
     font-size: 13px;
-    color: #334155;
+    color: var(--ssg-panel-text);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
   .ssg-chooser-label--muted {
-    color: #94a3b8;
+    color: var(--ssg-panel-text-faint);
   }
 
   .ssg-chooser-drop-end {
     height: 0;
-    border-top: 2px solid #2563eb;
+    border-top: 2px solid var(--ssg-panel-accent);
   }
 
   /* フッター(リセットボタン + 注記)。sort と異なり縦積み。 */
   .ssg-chooser-footer {
     padding-top: 8px;
     margin-top: 8px;
-    border-top: 1px solid #e2e8f0;
+    border-top: 1px solid var(--ssg-panel-separator);
   }
   .ssg-chooser-reset-btn {
     display: block;
     width: 100%;
     box-sizing: border-box;
     padding: 7px 8px;
-    border: 1px solid #e2e8f0;
+    border: 1px solid var(--ssg-panel-separator);
     border-radius: 8px;
     background-color: transparent;
-    color: #334155;
+    color: var(--ssg-panel-text);
     cursor: pointer;
     font-size: 13px;
     text-align: center;
     user-select: none;
   }
   .ssg-chooser-reset-btn:disabled {
-    color: #cbd5e1;
+    color: var(--ssg-panel-text-disabled);
     cursor: default;
   }
   .ssg-chooser-reset-btn:not(:disabled):hover {
-    background-color: #f1f5f9;
+    background-color: var(--ssg-panel-hover-bg);
   }
 
   .ssg-chooser-note {
     font-size: 11px;
-    color: #94a3b8;
+    color: var(--ssg-panel-text-faint);
     margin-top: 8px;
     user-select: none;
   }
@@ -1221,26 +1270,26 @@
     height: 18px;
     flex: 0 0 auto;
     border-radius: 5px;
-    border: 1.5px solid #94a3b8;
-    background-color: #ffffff;
+    border: 1.5px solid var(--ssg-checkbox-border);
+    background-color: var(--ssg-panel-bg);
     display: flex;
     align-items: center;
     justify-content: center;
     transition: background-color 80ms ease, border-color 80ms ease;
   }
   .ssg-checkbox--filled {
-    border-color: #2563eb;
-    background-color: #2563eb;
+    border-color: var(--ssg-panel-accent);
+    background-color: var(--ssg-panel-accent);
   }
   .ssg-checkbox--disabled {
-    border-color: #cbd5e1;
-    background-color: #f1f5f9;
+    border-color: var(--ssg-panel-border);
+    background-color: var(--ssg-panel-hover-bg);
   }
   .ssg-checkbox-dash {
     width: 9px;
     height: 2px;
     border-radius: 1px;
-    background-color: #ffffff;
+    background-color: var(--ssg-panel-accent-contrast);
   }
 
   /* ── 列フィルター popover(ColumnFilterPopover) ── */
@@ -1249,29 +1298,29 @@
     position: fixed;
     box-sizing: border-box;
     padding: 12px;
-    border: 1px solid #cbd5e1;
+    border: 1px solid var(--ssg-panel-border);
     border-radius: 10px;
-    background-color: #ffffff;
-    box-shadow: 0 10px 24px rgba(15, 23, 42, 0.12);
+    background-color: var(--ssg-panel-bg);
+    box-shadow: var(--ssg-popover-shadow);
     z-index: 1000;
   }
 
   .ssg-filter-title {
     font-size: 12px;
     font-weight: 700;
-    color: #334155;
+    color: var(--ssg-panel-text);
     margin-bottom: 8px;
   }
 
   /* 種別ヒント / メタ情報行。--ellipsis は省略表示を足す。 */
   .ssg-filter-hint {
     font-size: 11px;
-    color: #64748b;
+    color: var(--ssg-panel-text-muted);
     margin-bottom: 8px;
   }
   .ssg-filter-meta {
     font-size: 11px;
-    color: #64748b;
+    color: var(--ssg-panel-text-muted);
     margin-bottom: 10px;
   }
   .ssg-filter-meta--ellipsis {
@@ -1284,7 +1333,7 @@
     padding: 24px;
     text-align: center;
     font-size: 12px;
-    color: #64748b;
+    color: var(--ssg-panel-text-muted);
   }
 
   /* テキスト/数値入力 + select。 */
@@ -1292,7 +1341,7 @@
     width: 100%;
     box-sizing: border-box;
     padding: 8px 10px;
-    border: 1px solid #cbd5e1;
+    border: 1px solid var(--ssg-panel-border);
     border-radius: 8px;
     outline: none;
     margin-bottom: 8px;
@@ -1301,11 +1350,11 @@
     width: 100%;
     box-sizing: border-box;
     padding: 8px 10px;
-    border: 1px solid #cbd5e1;
+    border: 1px solid var(--ssg-panel-border);
     border-radius: 8px;
     outline: none;
     margin-bottom: 8px;
-    background-color: #ffffff;
+    background-color: var(--ssg-panel-bg);
   }
 
   /* set フィルター: 全選択行 / 候補リスト / 行 / 件数。 */
@@ -1317,8 +1366,8 @@
     padding: 0 8px;
     cursor: pointer;
     font-size: 12px;
-    color: #334155;
-    border-bottom: 1px solid #e2e8f0;
+    color: var(--ssg-panel-text);
+    border-bottom: 1px solid var(--ssg-panel-separator);
     user-select: none;
   }
   .ssg-filter-selectall-label {
@@ -1327,7 +1376,7 @@
   .ssg-filter-list {
     height: 208px;
     overflow-y: auto;
-    border: 1px solid #e2e8f0;
+    border: 1px solid var(--ssg-panel-separator);
     border-top: none;
     border-radius: 0 0 8px 8px;
     margin-bottom: 8px;
@@ -1335,7 +1384,7 @@
   .ssg-filter-empty {
     padding: 12px;
     font-size: 12px;
-    color: #94a3b8;
+    color: var(--ssg-panel-text-faint);
     text-align: center;
   }
   /* 仮想化スペーサ。高さ(getTotalSize)は inline で与える。 */
@@ -1356,7 +1405,7 @@
     box-sizing: border-box;
     cursor: pointer;
     font-size: 12px;
-    color: #334155;
+    color: var(--ssg-panel-text);
     user-select: none;
   }
   .ssg-filter-option-label {
@@ -1372,18 +1421,18 @@
     justify-content: flex-end;
   }
   .ssg-filter-btn-secondary {
-    border: 1px solid #cbd5e1;
-    background-color: #ffffff;
-    color: #475569;
+    border: 1px solid var(--ssg-panel-border);
+    background-color: var(--ssg-panel-bg);
+    color: var(--ssg-panel-text-sub);
     border-radius: 8px;
     padding: 6px 10px;
     cursor: pointer;
     font-size: 12px;
   }
   .ssg-filter-btn-primary {
-    border: 1px solid #2563eb;
-    background-color: #2563eb;
-    color: #ffffff;
+    border: 1px solid var(--ssg-panel-accent);
+    background-color: var(--ssg-panel-accent);
+    color: var(--ssg-panel-accent-contrast);
     border-radius: 8px;
     padding: 6px 10px;
     cursor: pointer;
@@ -1395,21 +1444,21 @@
   .ssg-menu-panel {
     padding: 8px;
     box-sizing: border-box;
-    border: 1px solid #cbd5e1;
+    border: 1px solid var(--ssg-panel-border);
     border-radius: 10px;
-    background-color: #ffffff;
-    box-shadow: 0 10px 24px rgba(15, 23, 42, 0.12);
+    background-color: var(--ssg-panel-bg);
+    box-shadow: var(--ssg-popover-shadow);
   }
 
   .ssg-menu-title {
     font-size: 12px;
     font-weight: 700;
-    color: #334155;
+    color: var(--ssg-panel-text);
     padding: 2px 8px 6px;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    border-bottom: 1px solid #e2e8f0;
+    border-bottom: 1px solid var(--ssg-panel-separator);
     margin-bottom: 4px;
     user-select: none;
   }
@@ -1426,28 +1475,28 @@
     border: none;
     border-radius: 8px;
     background-color: transparent;
-    color: #334155;
+    color: var(--ssg-panel-text);
     font-size: 13px;
     text-align: left;
     cursor: pointer;
   }
   .ssg-menu-item:disabled,
   .ssg-menu-item--disabled {
-    color: #94a3b8;
+    color: var(--ssg-panel-text-faint);
     cursor: default;
   }
   .ssg-menu-item--active {
-    background-color: #f1f5f9;
+    background-color: var(--ssg-panel-hover-bg);
   }
   .ssg-menu-item:not(:disabled):not(.ssg-menu-item--disabled):hover {
-    background-color: #f1f5f9;
+    background-color: var(--ssg-panel-hover-bg);
   }
 
   /* 追加(バッチ②/語彙拡張): セクション見出し(Mantine Menu.Label 相当)。非インタラクティブ。 */
   .ssg-menu-section-label {
     font-size: 11px;
     font-weight: 600;
-    color: #94a3b8;
+    color: var(--ssg-panel-text-faint);
     padding: 6px 8px 2px;
     user-select: none;
   }
@@ -1455,10 +1504,10 @@
   /* 追加(バッチ②/語彙拡張): 危険操作(削除等)の赤系強調(Mantine color="red" 相当)。
      base の color / hover と同 specificity のため、後勝ちで上書きされるようここに置きます。 */
   .ssg-menu-item--danger {
-    color: #dc2626;
+    color: var(--ssg-danger);
   }
   .ssg-menu-item--danger:not(:disabled):not(.ssg-menu-item--disabled):hover {
-    background-color: #fef2f2;
+    background-color: var(--ssg-danger-bg);
   }
 
   .ssg-menu-submenu-anchor {
@@ -1475,18 +1524,18 @@
     width: 14px;
     flex: 0 0 auto;
     text-align: center;
-    color: #94a3b8;
+    color: var(--ssg-panel-text-faint);
     font-weight: 400;
   }
   .ssg-menu-sort-icon--active {
-    color: #2563eb;
+    color: var(--ssg-panel-accent);
     font-weight: 700;
   }
   .ssg-menu-check {
     width: 14px;
     flex: 0 0 auto;
     text-align: center;
-    color: #2563eb;
+    color: var(--ssg-panel-accent);
     font-weight: 700;
   }
   .ssg-menu-check--hidden {
@@ -1497,38 +1546,38 @@
     flex: 1;
   }
   .ssg-menu-label--sorted {
-    color: #1d4ed8;
+    color: var(--ssg-panel-accent-text);
   }
   .ssg-menu-caret {
     flex: 0 0 auto;
-    color: #94a3b8;
+    color: var(--ssg-panel-text-faint);
     font-size: 12px;
     line-height: 1;
   }
 
   .ssg-menu-separator {
-    border-top: 1px solid #e2e8f0;
+    border-top: 1px solid var(--ssg-panel-separator);
     margin: 4px 0;
   }
   .ssg-menu-note {
     font-size: 11px;
-    color: #94a3b8;
+    color: var(--ssg-panel-text-faint);
     padding: 4px 8px 2px;
     user-select: none;
   }
 
   /* フッター(閉じる)。 */
   .ssg-menu-footer {
-    border-top: 1px solid #e2e8f0;
+    border-top: 1px solid var(--ssg-panel-separator);
     margin-top: 4px;
     padding-top: 6px;
     display: flex;
     justify-content: flex-end;
   }
   .ssg-menu-close-btn {
-    border: 1px solid #cbd5e1;
-    background-color: #ffffff;
-    color: #475569;
+    border: 1px solid var(--ssg-panel-border);
+    background-color: var(--ssg-panel-bg);
+    color: var(--ssg-panel-text-sub);
     border-radius: 8px;
     padding: 5px 10px;
     cursor: pointer;
@@ -1563,7 +1612,7 @@
     width: 12px;
     height: 20px;
     flex: 0 0 auto;
-    color: #cbd5e1;
+    color: var(--ssg-glyph-faint);
     cursor: grab;
     touch-action: none;
     user-select: none;
@@ -1612,7 +1661,7 @@
      メニュー表示中の ⋮ のアクセント色(--active)は :not(--active) で除外し、従来どおり優先します。 */
   .ssg-header-actions .ssg-header-grip,
   .ssg-header-actions .ssg-icon-btn:not(.ssg-icon-btn--active) {
-    color: #475569;
+    color: var(--ssg-glyph-hover);
   }
   /* ヘッダーテキスト。フィルター適用中はアクセント色。 */
   .ssg-header-label {
@@ -1683,13 +1732,13 @@
 
   /* ── スケルトン(GridBodyLayer 読み込み中) ── */
   .ssg-skeleton-rowheader {
-    color: #94a3b8;
+    color: var(--ssg-glyph);
   }
   /* バーの幅は inline(barWidth)で与える。 */
   .ssg-skeleton-bar {
     height: 10px;
     border-radius: 4px;
-    background-color: #e2e8f0;
+    background-color: var(--ssg-skeleton-bar);
   }
 
   /* ── グリッド本体シェル / スクロール(SpreadsheetGrid) ── */
@@ -1722,7 +1771,7 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    color: #94a3b8;
+    color: var(--ssg-panel-text-faint);
     font-size: 13px;
     user-select: none;
   }
@@ -1739,11 +1788,11 @@
   .ssg-autosize-pill {
     padding: 8px 14px;
     border-radius: 8px;
-    background-color: rgba(15, 23, 42, 0.82);
-    color: #f8fafc;
+    background-color: var(--ssg-pill-bg);
+    color: var(--ssg-pill-text);
     font-size: 13px;
     font-weight: 600;
-    box-shadow: 0 6px 20px rgba(15, 23, 42, 0.25);
+    box-shadow: var(--ssg-pill-shadow);
     user-select: none;
   }
 
@@ -1768,7 +1817,7 @@
     border-radius: 999px;
     background-color: var(--ssg-cell-bg);
     border: 1px solid var(--ssg-line-strong);
-    box-shadow: 0 6px 20px rgba(15, 23, 42, 0.18);
+    box-shadow: var(--ssg-overlay-chip-shadow);
     color: var(--ssg-readonly-text);
     font-size: 12px;
     font-variant-numeric: tabular-nums;
@@ -1806,7 +1855,7 @@
      SpreadsheetGrid 側のインライン style + ref(display/left)で制御します。 */
   .ssg-col-drop-indicator {
     width: 2px;
-    background-color: #0f172a;
+    background-color: var(--ssg-drop-indicator);
   }
   .ssg-col-drop-indicator::before,
   .ssg-col-drop-indicator::after {
@@ -1815,7 +1864,7 @@
     left: 50%;
     width: 7px;
     height: 7px;
-    background-color: #0f172a;
+    background-color: var(--ssg-drop-indicator);
     transform: translateX(-50%) rotate(45deg);
   }
   .ssg-col-drop-indicator::before {

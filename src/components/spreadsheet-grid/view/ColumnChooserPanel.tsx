@@ -164,7 +164,8 @@ function CheckBox({
         <svg width="11" height="11" viewBox="0 0 12 12" fill="none">
           <path
             d="M2.5 6.2 4.7 8.4 9.5 3.6"
-            stroke="#ffffff"
+            // 変更(TH-DK-1): stroke も属性では var() 不可のため style で指定します。
+            style={{ stroke: 'var(--ssg-panel-accent-contrast)' }}
             strokeWidth="1.8"
             strokeLinecap="round"
             strokeLinejoin="round"
@@ -184,7 +185,12 @@ function DragHandleGlyph({ disabled }: { disabled: boolean }) {
       width="10"
       height="16"
       viewBox="0 0 10 16"
-      fill={disabled ? '#cbd5e1' : '#94a3b8'}
+      // 変更(TH-DK-1): fill はプレゼンテーション属性だと var() を解釈しないため style で指定します。
+      style={{
+        fill: disabled
+          ? 'var(--ssg-panel-text-disabled)'
+          : 'var(--ssg-panel-text-faint)',
+      }}
       aria-hidden
     >
       {[3, 8, 13].map((cy) =>
