@@ -46,6 +46,8 @@ import { useGridPointerInteractions } from './hooks/useGridPointerInteractions';
 import { useGridViewportSync } from './hooks/useGridViewportSync';
 // 追加(TT-1): title 属性置き換えのカスタムツールチップ(data-ssg-tooltip 委譲)です。
 import { useGridTooltip } from './hooks/useGridTooltip';
+// 追加(TH-DK-2): theme prop('light' | 'dark' | 'auto')の実効テーマ解決フックです。
+import { useResolvedGridTheme } from './hooks/useResolvedGridTheme';
 // 追加(13-B3-2): ヘッダー D&D 列並べ替え controller です。
 import { useColumnHeaderDragController } from './hooks/useColumnHeaderDragController';
 import {
@@ -351,6 +353,7 @@ export function SpreadsheetGrid<T extends object>({
   estimateRowHeight,
   headerHeight: headerHeightProp,
   density = 'standard',
+  theme = 'light',
   rowHeaderWidth = 56,
   // 追加: スクロールコンテナ高さの外部制御。height で明示高さ('100%'=親追従)、maxHeight で上限。
   //   両者未指定時は CSS 既定(.ssg-scroll-container max-height:480px)に委ねます。
@@ -1697,6 +1700,14 @@ export function SpreadsheetGrid<T extends object>({
   //   - totalScrollWidth: コンテンツ全幅（左固定 + 中央 + 右固定）
   //   - leftPaneWidth / rightPaneWidth: sticky 固定ペインに隠れない領域へ active cell を収めるため
   //   - centerLeadingWidth: 中央ペインの先頭幅（左固定なし=rowHeaderWidth / 左固定あり=0）
+  // 追加(TH-DK-2): theme prop を実効テーマへ解決します('auto' は prefers-color-scheme 追従)。
+  //   ダーク時は root と全ポータル root へ .ssg-theme-dark を付与し、ダークプリセット
+  //   (styles.css のトークン一括上書き)を効かせます。ゴースト / ツールチップは各自が
+  //   DOM(root への closest / scrollContainer の祖先)から解決するため props 伝播は不要です。
+  const resolvedTheme = useResolvedGridTheme(theme);
+  const themeClassName =
+    resolvedTheme === 'dark' ? 'ssg-theme-dark' : undefined;
+
   // 追加(TT-1): カスタムツールチップの表示制御です(body 直下シングルトン + window 委譲。
   //   複数グリッド同居時はフック内の refCount で共有されます)。
   useGridTooltip();
@@ -3564,6 +3575,7 @@ export function SpreadsheetGrid<T extends object>({
 
   const renderedFilterPopover = openedFilterColumn ? (
     <ColumnFilterPopover
+      themeClassName={themeClassName}
       isOpen={Boolean(filterPopoverState)}
       title={openedFilterColumn.title || openedFilterColumn.key}
       filterType={openedFilterColumn.filterType ?? 'text'}
@@ -3595,6 +3607,7 @@ export function SpreadsheetGrid<T extends object>({
   // 追加(13-A): 列メニュー popover の描画です(portal で body 直下へ出します)。
   const renderedColumnMenuPopover = openedMenuColumn ? (
     <ColumnMenuPopover
+      themeClassName={themeClassName}
       isOpen={isColumnMenuOpen}
       title={openedMenuColumn.title || openedMenuColumn.key}
       columnKey={openedMenuColumn.key}
@@ -3630,6 +3643,7 @@ export function SpreadsheetGrid<T extends object>({
   // 追加(13-B2-1): 列の表示/非表示パネルの描画です(portal で body 直下へ出します)。
   const renderedColumnChooserPanel = (
     <ColumnChooserPanel
+      themeClassName={themeClassName}
       isOpen={isColumnChooserOpen}
       items={columnChooserItems}
       canToggle={Boolean(onColumnsChange)}
@@ -3648,6 +3662,7 @@ export function SpreadsheetGrid<T extends object>({
   // 追加(MS-3-1): 並び替え管理パネルの描画です(portal で body 直下へ出します)。
   const renderedSortManagementPanel = (
     <SortManagementPanel
+      themeClassName={themeClassName}
       isOpen={isSortManagerOpen}
       entries={uiState.sort}
       columns={sortManagerColumns}
@@ -3670,6 +3685,7 @@ export function SpreadsheetGrid<T extends object>({
   //             ✎(編集)と「フィルターを追加」は同じジャンプ経路(jumpToColumnFilter)です。
   const renderedFilterManagementPanel = (
     <FilterManagementPanel
+      themeClassName={themeClassName}
       isOpen={isFilterManagerOpen}
       entries={filterManagerEntries}
       addableColumns={filterManagerAddableColumns}
@@ -3695,6 +3711,7 @@ export function SpreadsheetGrid<T extends object>({
   //             closed 時はコンポーネント側が null を返すため、常時この 1 要素を tail に置きます。
   const renderedCellContextMenuPopover = (
     <CellContextMenuPopover
+      themeClassName={themeClassName}
       isOpen={isContextMenuOpen}
       items={contextMenuState?.items ?? EMPTY_CONTEXT_MENU_ITEMS}
       layout={contextMenuLayout}
@@ -4389,6 +4406,8 @@ export function SpreadsheetGrid<T extends object>({
         'ssg-root',
         // 追加(THEME-2): density プリセット修飾子(standard は付与なし=既定寸法のまま)。
         density !== 'standard' && `ssg-root--density-${density}`,
+        // 追加(TH-DK-2): ダークテーマ修飾子(light は付与なし=既定トークンのまま)。
+        themeClassName,
         // 追加(THEME-3): readonly 淡色表示の opt-in 修飾子(styles.css 側で :where ゲート)。
         dimReadOnlyCells && 'ssg-root--dim-readonly',
         className,

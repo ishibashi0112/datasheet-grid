@@ -58,6 +58,9 @@ export type ColumnChooserItem = {
 
 type ColumnChooserPanelProps = {
   isOpen: boolean;
+  // 追加(TH-DK-2): ダークテーマ修飾子クラス('ssg-theme-dark' | undefined)。ポータルは
+  //   .ssg-root 外のため、root と同じ修飾子を自身の root 要素へ直接付与します。
+  themeClassName?: string;
   items: ColumnChooserItem[];
   // 追加: onColumnsChange 未指定時は false。チェックボックスを無効化し注記を出します。
   canToggle: boolean;
@@ -204,6 +207,7 @@ function DragHandleGlyph({ disabled }: { disabled: boolean }) {
 
 export function ColumnChooserPanel({
   isOpen,
+  themeClassName,
   items,
   canToggle,
   layout,
@@ -574,7 +578,7 @@ export function ColumnChooserPanel({
       onContextMenu={(event) => {
         event.preventDefault();
       }}
-      className="ssg-popover ssg-chooser-panel"
+      className={cx('ssg-popover', 'ssg-chooser-panel', themeClassName)}
       style={wrapperStyle}
     >
       {/* ── ヘッダー: タイトル + × ── */}

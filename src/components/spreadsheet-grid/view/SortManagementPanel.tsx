@@ -31,6 +31,9 @@ export type SortManagementColumn = {
 
 type SortManagementPanelProps = {
   isOpen: boolean;
+  // 追加(TH-DK-2): ダークテーマ修飾子クラス('ssg-theme-dark' | undefined)。ポータルは
+  //   .ssg-root 外のため、root と同じ修飾子を自身の root 要素へ直接付与します。
+  themeClassName?: string;
   // 現在の並び替え(優先順位順)です。uiState.sort をそのまま渡せます。
   entries: GridSortEntry[];
   // 並び替え対象に選べる列の一覧です(呼び出し側で visibleColumns から作ります)。
@@ -83,6 +86,7 @@ function DragHandleGlyph({ disabled }: { disabled: boolean }) {
 
 export function SortManagementPanel({
   isOpen,
+  themeClassName,
   entries,
   columns,
   canSort,
@@ -263,7 +267,7 @@ export function SortManagementPanel({
       onContextMenu={(event) => {
         event.preventDefault();
       }}
-      className="ssg-popover ssg-sort-panel"
+      className={cx('ssg-popover', 'ssg-sort-panel', themeClassName)}
       style={wrapperStyle}
     >
       {/* ── ヘッダー: タイトル + × ── */}

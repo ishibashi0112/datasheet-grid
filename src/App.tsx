@@ -5,6 +5,7 @@ import {
   type GridColumn,
   // 追加(THEME-2 デモ): 密度プリセットの型。
   type GridDensity,
+  type GridTheme,
   // 追加(バッチ②デモ): コンテキストメニュー項目の型。
   type GridContextMenuItem,
   type GridState,
@@ -457,6 +458,8 @@ function App() {
   const [showFilterChipBar, setShowFilterChipBar] = useState(false);
   // 追加(THEME-2 デモ): 密度プリセット(rowHeight/headerHeight 既定と寸法トークンを一括切替)。
   const [density, setDensity] = useState<GridDensity>('standard');
+  // 追加(TH-DK-2 デモ): カラーテーマ(light → dark → auto 巡回。auto は OS 設定へ追従)。
+  const [theme, setTheme] = useState<GridTheme>('light');
   const [rowSelectionModeState, setRowSelectionModeState] =
     useState<'single' | 'multiple'>('multiple');
   const [rowSelectionCount, setRowSelectionCount] = useState(0);
@@ -969,6 +972,18 @@ function App() {
           >
             密度: {density}
           </button>
+          {/* 追加(TH-DK-2 デモ): カラーテーマ(クリックで light → dark → auto を巡回)。 */}
+          <button
+            type="button"
+            onClick={() =>
+              setTheme((v) =>
+                v === 'light' ? 'dark' : v === 'dark' ? 'auto' : 'light',
+              )
+            }
+            style={modeButtonStyle(theme !== 'light')}
+          >
+            テーマ: {theme}
+          </button>
           {/* 追加(state #3 デモ): onStateChange/applyState の永続デモ。列幅変更・フィルター・ソート・
               列メタ(可視/順序/ピン)が自動保存され、ページ再読込で復元されます。下のボタンで保存を
               クリア(初期状態へ)できます。 */}
@@ -1045,6 +1060,7 @@ function App() {
         dimReadOnlyCells={dimReadOnlyCells}
         // 追加(THEME-2 デモ): 密度プリセット(上の「密度」トグルと連動。既定 standard)。
         density={density}
+        theme={theme}
         // 追加(バッチ②デモ): セル/行の完全カスタムコンテキストメニューです。項目を返した時だけ独自メニューを
         //   出し、[] を返す/未指定ならブラウザ標準メニューになります(ここでは常に項目を返します)。
         //   narrowing 用に params.target.type==='cell' 内でプリミティブ(値/列タイトル)を捕捉してから

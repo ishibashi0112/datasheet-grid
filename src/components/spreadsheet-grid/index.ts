@@ -74,6 +74,8 @@ export type {
   GridColumnState,
   // 追加(THEME-2): 密度プリセットの型。
   GridDensity,
+  // 追加(TH-DK-2): カラーテーマ('light' | 'dark' | 'auto')。
+  GridTheme,
   // 追加(バッチ②/コンテキストメニュー): セル/行の汎用コンテキストメニュー(完全カスタム)の公開型群。
   GridContextMenuTarget,
   GridContextMenuParams,

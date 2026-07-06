@@ -309,6 +309,42 @@ describe('THEME-3: dimReadOnlyCells(readonly 淡色表示の opt-in)', () => {
   });
 });
 
+// 追加(TH-DK-2): theme prop の root 修飾子配線を検証します。ダークプリセットそのもの(CSS の
+//   トークン上書き)は jsdom では検証できないため、クラス配線だけを固定します。'auto' の
+//   matchMedia 解決は useResolvedGridTheme.test.ts 側で検証済み(jsdom 素では light 扱い)。
+describe('TH-DK-2: theme(カラーテーマ)', () => {
+  it('既定(未指定)では root に ssg-theme-dark が付かない', () => {
+    const { container } = render(
+      <SpreadsheetGrid columns={columns} rows={rows} />,
+    );
+    const root = container.querySelector('.ssg-root');
+    expect(root).not.toBeNull();
+    expect(root?.classList.contains('ssg-theme-dark')).toBe(false);
+  });
+
+  it("theme='dark' で root に ssg-theme-dark が付く", () => {
+    const { container } = render(
+      <SpreadsheetGrid columns={columns} rows={rows} theme="dark" />,
+    );
+    expect(
+      container.querySelector('.ssg-root')?.classList.contains(
+        'ssg-theme-dark',
+      ),
+    ).toBe(true);
+  });
+
+  it("theme='auto' は matchMedia 非対応環境(jsdom 素)では light 扱い", () => {
+    const { container } = render(
+      <SpreadsheetGrid columns={columns} rows={rows} theme="auto" />,
+    );
+    expect(
+      container.querySelector('.ssg-root')?.classList.contains(
+        'ssg-theme-dark',
+      ),
+    ).toBe(false);
+  });
+});
+
 // 追加(THEME-2): density プリセットの配線を検証します。root 修飾子と、rowHeight / headerHeight
 //   既定値の解決(明示 prop 優先)を、ヘッダー行のインライン height で観測します(jsdom でも
 //   インライン style は評価可能。寸法トークンの CSS 適用そのものは実機確認)。

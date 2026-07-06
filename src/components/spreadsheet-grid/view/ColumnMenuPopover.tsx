@@ -51,6 +51,9 @@ const PIN_SUBMENU_KEY = 'pin';
 
 type ColumnMenuPopoverProps = {
   isOpen: boolean;
+  // 追加(TH-DK-2): ダークテーマ修飾子クラス('ssg-theme-dark' | undefined)。ポータルは
+  //   .ssg-root 外のため、root と同じ修飾子を自身の root 要素へ直接付与します。
+  themeClassName?: string;
   title: string;
   columnKey: string;
   // 追加(③): フィルターをメニューへ集約します。canFilter=false(enableColumnFilter=false や
@@ -107,6 +110,7 @@ type ColumnMenuPopoverProps = {
 
 export function ColumnMenuPopover({
   isOpen,
+  themeClassName,
   title,
   columnKey,
   canFilter,
@@ -207,7 +211,7 @@ export function ColumnMenuPopover({
         // 追加: メニュー上での右クリックはブラウザ標準メニューを出しません。
         event.preventDefault();
       }}
-      className="ssg-menu-panel"
+      className={cx('ssg-menu-panel', themeClassName)}
       style={wrapperStyle}
     >
       <div className="ssg-menu-title">{title}</div>
@@ -394,7 +398,10 @@ export function ColumnMenuPopover({
 
         {/* ── サブメニュー: 固定しない / 左に固定 / 右に固定 ── */}
         {isPinSubmenuOpen && (
-          <div className="ssg-menu-panel" style={submenuStyle}>
+          <div
+            className={cx('ssg-menu-panel', themeClassName)}
+            style={submenuStyle}
+          >
             {PINNED_ITEMS.map((item) => {
               const isSelected = pinned === item.value;
               return (

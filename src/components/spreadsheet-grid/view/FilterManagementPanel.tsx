@@ -13,6 +13,7 @@
 //     発見性の穴を塞ぐのが本機能の主目的のためです)。✎ はジャンプ先が無いため disabled に
 //     し、title で理由を出します(× でのクリアは可能)。
 import { createPortal } from 'react-dom';
+import { cx } from '../logic/cx';
 import type { CSSProperties, KeyboardEvent, PointerEvent, RefObject } from 'react';
 import type { FilterManagementLayout } from '../hooks/useFilterManagementController';
 // 追加(FM-4): ヘッダーを掴んでパネルを移動する共有フックです(3 パネル共通)。
@@ -35,6 +36,9 @@ export type FilterManagementAddableColumn = {
 
 type FilterManagementPanelProps = {
   isOpen: boolean;
+  // 追加(TH-DK-2): ダークテーマ修飾子クラス('ssg-theme-dark' | undefined)。ポータルは
+  //   .ssg-root 外のため、root と同じ修飾子を自身の root 要素へ直接付与します。
+  themeClassName?: string;
   // 適用中フィルターの一覧です(可視列の視覚順 → 非表示列の順。呼び出し側で構築)。
   entries: FilterManagementEntry[];
   addableColumns: FilterManagementAddableColumn[];
@@ -96,6 +100,7 @@ function SearchGlyph() {
 
 export function FilterManagementPanel({
   isOpen,
+  themeClassName,
   entries,
   addableColumns,
   showGlobalFilterRow,
@@ -150,7 +155,7 @@ export function FilterManagementPanel({
       onContextMenu={(event) => {
         event.preventDefault();
       }}
-      className="ssg-popover ssg-filter-manage-panel"
+      className={cx('ssg-popover', 'ssg-filter-manage-panel', themeClassName)}
       style={wrapperStyle}
     >
       {/* ── ヘッダー: タイトル + × ── */}

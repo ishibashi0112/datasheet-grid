@@ -1,4 +1,5 @@
 import { createPortal } from 'react-dom';
+import { cx } from '../logic/cx';
 // 変更(12-A): set フィルター(検索 + Select All + チェックボックス一覧)用に
 //             hooks と useVirtualizer を追加 import します。
 //             候補リストは品番のように 5,000 件規模になり得るため、
@@ -56,6 +57,9 @@ export const isSetValueSelected = (
 
 type ColumnFilterPopoverProps = {
   isOpen: boolean;
+  // 追加(TH-DK-2): ダークテーマ修飾子クラス('ssg-theme-dark' | undefined)。ポータルは
+  //   .ssg-root 外のため、root と同じ修飾子を自身の root 要素へ直接付与します。
+  themeClassName?: string;
   title: string;
   // 変更(12-A): 'set' を追加します。
   filterType: 'text' | 'number' | 'date' | 'select' | 'set' | 'custom';
@@ -306,6 +310,7 @@ function SetFilterBody({
 // 追加: 列フィルター popover の view component です。
 export function ColumnFilterPopover({
   isOpen,
+  themeClassName,
   title,
   filterType,
   draftValue,
@@ -368,7 +373,7 @@ export function ColumnFilterPopover({
         // 追加: portal 内 paste も grid 側へ流しません。
         event.stopPropagation();
       }}
-      className="ssg-filter-popover"
+      className={cx('ssg-filter-popover', themeClassName)}
       style={wrapperStyle}
     >
       <div className="ssg-filter-title">列フィルター: {title}</div>

@@ -22,6 +22,9 @@
      document.body 直下のポータルで .ssg-root の継承が届かないため、各ポータル root にも
      同じトークンを直接定義します(テーマ切替はこのリストへ修飾子を足すだけで全面に効きます)。 */
   :where(.ssg-root, .ssg-popover, .ssg-menu-panel, .ssg-filter-popover, [data-grid-drag-ghost], .ssg-tooltip) {
+    /* ネイティブ UI(スクロールバー / select 等)の描画をテーマへ揃えます(TH-DK-2)。
+       ダーク時は .ssg-theme-dark 側で dark に切替。:where のため利用側上書きが常に勝ちます。 */
+    color-scheme: light;
     /* 色トークン */
     --ssg-accent: #3461c9;
     --ssg-accent-strong: #1d4ed8;
@@ -144,6 +147,99 @@
 
   :where(.ssg-root--density-comfortable) .ssg-body-cell {
     font-size: 1.1em;
+  }
+
+  /* ── ダークテーマプリセット(TH-DK-2 / 案C: Mantine dark 系) ──
+     theme='dark'(または 'auto' 解決)時に、グリッド root・全ポータル root(popover /
+     menu / filter popover)・ドラッグゴースト・ツールチップへ .ssg-theme-dark が付与され、
+     本ブロックが全色トークンを一括上書きします(:where 特異度 0 = 利用側の上書きが常に勝つ。
+     既定ブロックより後方にあるため、クラス保持要素では dark 値が勝ちます)。
+     パレットは Mantine の dark 階調(#1a1b1e / #25262b / #2c2e33 / #373a40)+ Mantine blue
+     (#4dabf7 / #74c0fc)。色味調整はプレビュー HTML(dark-theme-preview.html)の JSON
+     エディタで試してから本ブロックへ反映する運用を想定しています。
+     寸法トークン(radius / padding / icon-btn-size)はテーマ対象外です。
+     注記: --ssg-checkbox-checked-bg / --ssg-checkbox-hover-border / --ssg-panel-accent-text は
+     既定が var() 参照(accent / accent-strong)のため、上書き不要で自動追従します。 */
+  :where(.ssg-theme-dark) {
+    color-scheme: dark;
+    /* 色トークン */
+    --ssg-accent: #4dabf7;
+    --ssg-accent-strong: #74c0fc;
+    --ssg-line: #212226;
+    --ssg-line-strong: #2c2e33;
+    --ssg-divider: #373a40;
+    --ssg-header-bg: #25262b;
+    --ssg-row-hover-bg: #25262b;
+    --ssg-glyph: #909296;
+    --ssg-glyph-hover: #c1c2c5;
+    --ssg-glyph-faint: #5c5f66;
+    --ssg-icon-hover-bg: #2c2e33;
+    --ssg-icon-active-bg: #24344d;
+    --ssg-icon-active-bg-hover: #2b3f5e;
+    --ssg-icon-active-border: #3a5378;
+    /* 本体セル */
+    --ssg-cell-bg: #1a1b1e;
+    --ssg-cell-text: #c1c2c5;
+    --ssg-readonly-bg: #1f2023;
+    --ssg-readonly-text: #909296;
+    --ssg-readonly-hover-bg: #26272c;
+    /* ヘッダー */
+    --ssg-header-text: #c1c2c5;
+    --ssg-header-hover-bg: #2c2e33;
+    --ssg-select-bg: #24344d;
+    --ssg-select-bg-hover: #2b3f5e;
+    /* 行選択(チェックボックス) */
+    --ssg-row-selected-bg: #1e2c44;
+    --ssg-checkbox-border: #5c5f66;
+    --ssg-checkbox-bg: #1a1b1e;
+    --ssg-checkbox-checked-mark: #141517;
+    /* オーバーレイ */
+    --ssg-selection-fill: rgba(77, 171, 247, 0.13);
+    /* パネル面 */
+    --ssg-panel-bg: #25262b;
+    --ssg-panel-border: #373a40;
+    --ssg-panel-separator: #2c2e33;
+    /* パネル文字 */
+    --ssg-panel-text-strong: #f1f3f5;
+    --ssg-panel-text: #c1c2c5;
+    --ssg-panel-text-sub: #a6a7ab;
+    --ssg-panel-text-muted: #909296;
+    --ssg-panel-text-faint: #5c5f66;
+    --ssg-panel-text-disabled: #43464d;
+    /* パネル hover 面 */
+    --ssg-panel-hover-bg: #2c2e33;
+    --ssg-panel-hover-bg-subtle: #26272c;
+    /* パネルアクセント */
+    --ssg-panel-accent: #4dabf7;
+    --ssg-panel-accent-bg: #1d3450;
+    --ssg-panel-accent-contrast: #141517;
+    /* 危険操作 */
+    --ssg-danger: #ff6b6b;
+    --ssg-danger-bg: #3a2325;
+    /* 影(ダークでは黒ベースで深めに) */
+    --ssg-root-shadow: 0 4px 14px rgba(0, 0, 0, 0.4);
+    --ssg-panel-shadow: 0 12px 28px rgba(0, 0, 0, 0.55);
+    --ssg-popover-shadow: 0 10px 24px rgba(0, 0, 0, 0.5);
+    --ssg-overlay-chip-shadow: 0 6px 20px rgba(0, 0, 0, 0.45);
+    /* ピン留めペイン */
+    --ssg-pane-border: #373a40;
+    --ssg-pane-shadow-left: 6px 0 8px -6px rgba(0, 0, 0, 0.55);
+    --ssg-pane-shadow-right: -6px 0 8px -6px rgba(0, 0, 0, 0.55);
+    /* インク系(ダークでは一段浮いた明るめの面) */
+    --ssg-pill-bg: rgba(55, 58, 64, 0.95);
+    --ssg-pill-text: #f1f3f5;
+    --ssg-pill-shadow: 0 6px 20px rgba(0, 0, 0, 0.45);
+    --ssg-ghost-bg: #373a40;
+    --ssg-ghost-text: #f1f3f5;
+    --ssg-ghost-border: rgba(255, 255, 255, 0.12);
+    --ssg-ghost-shadow: 0 8px 20px rgba(0, 0, 0, 0.5), 0 1px 2px rgba(0, 0, 0, 0.35);
+    /* ツールチップ */
+    --ssg-tooltip-bg: #373a40;
+    --ssg-tooltip-text: #f1f3f5;
+    --ssg-tooltip-shadow: 0 4px 12px rgba(0, 0, 0, 0.45);
+    /* その他 */
+    --ssg-drop-indicator: #c1c2c5;
+    --ssg-skeleton-bar: #2c2e33;
   }
 
   /* box-sizing の自前正規化(THEME-1)。従来は一部要素が利用側グローバルリセットの有無で

@@ -15,6 +15,9 @@ import type { CellContextMenuLayout } from '../hooks/useCellContextMenuControlle
 
 type CellContextMenuPopoverProps = {
   isOpen: boolean;
+  // 追加(TH-DK-2): ダークテーマ修飾子クラス('ssg-theme-dark' | undefined)。ポータルは
+  //   .ssg-root 外のため、root と同じ修飾子を自身の root 要素へ直接付与します。
+  themeClassName?: string;
   items: GridContextMenuItem[];
   layout: CellContextMenuLayout | null;
   popoverRef: RefObject<HTMLDivElement | null>;
@@ -23,6 +26,7 @@ type CellContextMenuPopoverProps = {
 
 export function CellContextMenuPopover({
   isOpen,
+  themeClassName,
   items,
   layout,
   popoverRef,
@@ -68,7 +72,7 @@ export function CellContextMenuPopover({
         // 追加: メニュー上での右クリックはブラウザ標準メニューを出しません。
         event.preventDefault();
       }}
-      className="ssg-menu-panel"
+      className={cx('ssg-menu-panel', themeClassName)}
       style={wrapperStyle}
     >
       {items.map((item, index) => {

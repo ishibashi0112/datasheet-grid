@@ -73,6 +73,13 @@ function showTooltipFor(target: Element) {
     return;
   }
   const el = ensureTooltipElement();
+  // 追加(TH-DK-2): 表示対象の祖先(.ssg-theme-dark = グリッド root またはダーク化した
+  //   ポータル root)からテーマを解決します。tooltip はグリッド横断のシングルトンのため、
+  //   複数グリッドがテーマ混在していても「hover した要素側のテーマ」で表示されます。
+  el.classList.toggle(
+    'ssg-theme-dark',
+    target.closest('.ssg-theme-dark') !== null,
+  );
   el.textContent = text;
   // 実寸(offsetWidth/Height)を得るため、いったん原点へ置いてから配置します
   // (opacity 0 のまま座標だけ動かすので、ちらつきはありません)。

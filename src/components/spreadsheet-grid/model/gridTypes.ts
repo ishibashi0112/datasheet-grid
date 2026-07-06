@@ -782,6 +782,12 @@ export type SpreadsheetGridHandle<T> = {
 //   一括切替します。
 export type GridDensity = 'compact' | 'standard' | 'comfortable';
 
+// 追加(TH-DK-2): グリッドのカラーテーマです。'auto' は OS / ブラウザの配色設定
+//   (prefers-color-scheme)へ追従します。Mantine / HeroUI 等のクラスベース dark 運用では、
+//   利用側のカラースキーム(useMantineColorScheme 等)の解決値を 'light' | 'dark' で
+//   渡す使い方が本命です。
+export type GridTheme = 'light' | 'dark' | 'auto';
+
 export type SpreadsheetGridProps<T> = {
   // 追加(imperative API #1): React 19 の ref-as-prop。命令的ハンドル(SpreadsheetGridHandle)を受け取ります。
   //   forwardRef は使いません(React 19 で deprecated 予定のため)。状態は controlled のまま、prop で
@@ -832,6 +838,11 @@ export type SpreadsheetGridProps<T> = {
   //   一括切替します。個別の微調整はトークン(--ssg-cell-pad-x 等)の上書きで可能です。
   //   popover / menu 等のポータルは対象外です。
   density?: GridDensity;
+  // 追加(TH-DK-2): カラーテーマです(既定 'light' = 従来と同値)。'dark' でダークプリセット
+  //   (.ssg-theme-dark のトークン一括上書き)を、グリッド本体・全ポータル(popover / menu /
+  //   panel)・ドラッグゴースト・ツールチップへ適用します。'auto' は prefers-color-scheme へ
+  //   追従します。個別の色調整はトークン(--ssg-* )の上書きで可能です。
+  theme?: GridTheme;
   rowHeaderWidth?: number;
   // 追加: スクロールコンテナの明示高さ。'100%' で親要素に追従(親が確定高さを持つ前提)。
   //   number は px。未指定時は maxHeight によるクリップ挙動(従来)になります。

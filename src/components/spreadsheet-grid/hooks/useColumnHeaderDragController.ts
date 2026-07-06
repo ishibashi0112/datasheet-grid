@@ -295,6 +295,16 @@ export const useColumnHeaderDragController = <T,>(
     if (ghostElRef.current) return;
     const el = document.createElement('div');
     el.setAttribute('data-grid-drag-ghost', '');
+    // 追加(TH-DK-2): グリッド root のダークテーマ修飾子をゴーストへ引き継ぎます
+    //   (scrollContainer の祖先 .ssg-theme-dark = root。drag session ごとの生成なので
+    //   ドラッグ開始時点のテーマで固定されます。ref 読みのため deps は不変)。
+    if (
+      latestRef.current.scrollContainerRef.current?.closest(
+        '.ssg-theme-dark',
+      ) != null
+    ) {
+      el.classList.add('ssg-theme-dark');
+    }
     el.style.cssText = [
       'position:fixed',
       'top:0',
