@@ -22,6 +22,7 @@ A high-performance, virtualized spreadsheet / data grid for **React 19**, writte
 - Both **client-side** (`rows`) and **server-side** (`dataSource`, SSRM) row models.
 - Themeable with CSS custom properties (`--ssg-*`, defined at zero specificity so your overrides always win). Base styles are plain unlayered CSS with single-class specificity, so they survive CSS resets such as Tailwind Preflight; a cascade-layers variant (`style.layer.css`) is also shipped. `className` / `classNames` slots are provided.
 - Styled tooltips out of the box — action hints and truncated-text previews use a custom dark-chip tooltip (no browser-default `title` look). Add `data-ssg-tooltip="text"` to your own elements (custom cells, headers) to get the same tooltip; colors are themeable via `--ssg-tooltip-*` tokens.
+- Built-in dark theme — `theme="light" | "dark" | "auto"` switches the grid, every popover / panel / menu, the drag ghost and tooltips through a single token preset. `"auto"` follows `prefers-color-scheme`; with class-based dark frameworks (Mantine / HeroUI / Tailwind) pass your resolved color scheme instead.
 - Toggle the top / bottom bars and their parts via props — whole bars (`showTopBar` / `showBottomBar`), the default top bar's summary chips and global-filter input, and the Rows/Columns counts in each bar.
 - Filter management panel — review every active column filter in one place (jump to the column & edit, clear one / all, add new), opened from the column menu, the default top bar's clickable Filters chip, or `openFilterManager()` on the imperative handle. An optional filter chip bar (`showFilterChipBar`) keeps active filters visible right below the top bar.
 - Built-in CSV export (`downloadCsv` / `exportCsv`), plus a library-agnostic `getExportData()` for Excel / XLSX / ODS — feed the shaped data (filter/sort/visible-order aware) to your own writer such as [hucre](https://github.com/productdevbook/hucre), ExcelJS, or SheetJS. No spreadsheet library is bundled; multi-sheet is composed on your side. See [`API_REFERENCE.md`](./src/components/spreadsheet-grid/API_REFERENCE.md).
@@ -163,6 +164,43 @@ Sorting, column filters, and the global filter stay enabled and are forwarded to
 
 - Use the `classNames` prop for per-part class slots, `cellClassName` per column, and `getRowClassName` per row. Token overrides always apply (tokens are defined at zero specificity). For property overrides, chain with the base class (e.g. `.ssg-body-cell.my-class`) to win regardless of import order — see the Styles section above.
 
+### Dark theme
+
+Pass `theme` to switch the whole surface — the grid itself, every popover / panel / menu (they are portalled to `document.body` and carry the theme class themselves), the column drag ghost and tooltips:
+
+```tsx
+<SpreadsheetGrid theme="dark" columns={columns} rows={rows} />
+```
+
+- `"light"` (default) / `"dark"` — explicit. `"auto"` follows the OS / browser `prefers-color-scheme` and updates live.
+- `color-scheme` is set accordingly, so native scrollbars and `<select>` controls follow the theme too.
+- The dark preset only redefines color tokens (`.ssg-theme-dark`); sizing tokens (radius, paddings) are theme-independent.
+
+**With Mantine / HeroUI / Tailwind (class-based dark):** the page's actual theme may not match `prefers-color-scheme`, so pass your resolved color scheme instead of `"auto"`:
+
+```tsx
+// Mantine
+import { useComputedColorScheme } from '@mantine/core';
+const colorScheme = useComputedColorScheme('light'); // 'light' | 'dark'
+<SpreadsheetGrid theme={colorScheme} ... />
+
+// HeroUI / Tailwind (next-themes)
+import { useTheme } from 'next-themes';
+const { resolvedTheme } = useTheme();
+<SpreadsheetGrid theme={resolvedTheme === 'dark' ? 'dark' : 'light'} ... />
+```
+
+**Customizing dark colors:** override tokens under `.ssg-theme-dark` — the class is present on the grid root and on every portal root, so one rule covers all surfaces:
+
+```css
+.ssg-theme-dark {
+  --ssg-cell-bg: #0d0d0f;
+  --ssg-panel-bg: #1b1c20;
+}
+```
+
+Note: a plain `.ssg-root { --ssg-* }` override wins over **both** themes (theme presets are defined at zero specificity). To target light only, scope it with `.ssg-root:not(.ssg-theme-dark)`.
+
 ## API reference
 
 The full prop and type reference lives in [`src/components/spreadsheet-grid/API_REFERENCE.md`](./src/components/spreadsheet-grid/API_REFERENCE.md).
@@ -190,6 +228,7 @@ The full prop and type reference lives in [`src/components/spreadsheet-grid/API_
 - **クライアントサイド**（`rows`）と**サーバーサイド**（`dataSource`、SSRM）の両行モデル。
 - CSS カスタムプロパティ（`--ssg-*`。特異度 0 で定義され、利用側の上書きが常に勝ちます）によるテーマ設定。基底スタイルは未レイヤーの単一クラス特異度で、Tailwind Preflight などの CSS リセットに壊されません。カスケードレイヤー版（`style.layer.css`）も同梱。`className` / `classNames` スロットも用意。
 - スタイル付きツールチップを標準装備 — 操作ヒントや切り詰めテキストの全文表示は、ブラウザ標準の `title` ではなくダークチップのカスタムツールチップで表示。利用側の要素(カスタムセルやヘッダー)にも `data-ssg-tooltip="文言"` を付けるだけで同じ見た目になります。配色は `--ssg-tooltip-*` トークンで調整可。
+- ダークテーマを標準装備 — `theme="light" | "dark" | "auto"` で、グリッド本体・全ポップオーバー / パネル / メニュー・ドラッグゴースト・ツールチップをトークンプリセット 1 つで一括切替。`"auto"` は `prefers-color-scheme` に追従(Mantine / HeroUI / Tailwind のクラスベース dark 運用では、解決済みのカラースキームを渡す使い方を推奨)。
 - トップ / ボトムバーとその構成要素（バー全体〔`showTopBar` / `showBottomBar`〕、既定トップバーの summary chips・グローバルフィルター入力、各バーの Rows/Columns 件数）を props で表示制御。
 - フィルター管理パネル — 適用中の列フィルターを 1 箇所で確認・操作（該当列へジャンプして編集 / 個別・全クリア / 追加）。列メニュー、既定トップバーの Filters chip クリック、ハンドルの `openFilterManager()` から開けます。トップバー直下に常時表示するフィルターチップバー（`showFilterChipBar`）もオプションで利用可。
 - CSV エクスポート（`downloadCsv` / `exportCsv`）を内蔵。Excel / XLSX / ODS はライブラリ非依存の `getExportData()` で、整形済みデータ（フィルター/ソート/可視列順を反映）を [hucre](https://github.com/productdevbook/hucre) / ExcelJS / SheetJS など任意の writer へ流す方式。xlsx ライブラリは同梱せず、マルチシートは利用側で合成。詳細は [`API_REFERENCE.md`](./src/components/spreadsheet-grid/API_REFERENCE.md)。
@@ -330,6 +369,43 @@ export function Example() {
   ```
 
 - パーツ別の class は `classNames` prop、列単位は `cellClassName`、行単位は `getRowClassName` で付与できます。トークン上書きは常に効きます（特異度 0 で定義）。プロパティ上書きは基底クラスとの連結（例: `.ssg-body-cell.my-class`）で読み込み順に依らず確実になります — 上記「スタイル」参照。
+
+#### ダークテーマ
+
+`theme` を渡すだけで全サーフェス — グリッド本体・全ポップオーバー / パネル / メニュー(`document.body` 直下のポータルですが、自身がテーマクラスを保持します)・列ドラッグゴースト・ツールチップ — が一括で切り替わります:
+
+```tsx
+<SpreadsheetGrid theme="dark" columns={columns} rows={rows} />
+```
+
+- `"light"`(既定)/ `"dark"` は明示指定。`"auto"` は OS / ブラウザの `prefers-color-scheme` に追従し、設定変更にもライブで反応します。
+- `color-scheme` も併せて切り替わるため、ネイティブのスクロールバーや `<select>` もテーマに揃います。
+- ダークプリセットが上書きするのは色トークンのみ(`.ssg-theme-dark`)。寸法トークン(radius / padding 等)はテーマ非依存です。
+
+**Mantine / HeroUI / Tailwind(クラスベース dark)との連動:** ページの実テーマと `prefers-color-scheme` は一致しないことがあるため、`"auto"` ではなく利用側カラースキームの解決値を渡してください:
+
+```tsx
+// Mantine
+import { useComputedColorScheme } from '@mantine/core';
+const colorScheme = useComputedColorScheme('light'); // 'light' | 'dark'
+<SpreadsheetGrid theme={colorScheme} ... />
+
+// HeroUI / Tailwind(next-themes)
+import { useTheme } from 'next-themes';
+const { resolvedTheme } = useTheme();
+<SpreadsheetGrid theme={resolvedTheme === 'dark' ? 'dark' : 'light'} ... />
+```
+
+**ダーク時の色調整:** `.ssg-theme-dark` 配下でトークンを上書きします。このクラスはグリッド root と全ポータル root に付与されるため、1 ルールで全サーフェスに効きます:
+
+```css
+.ssg-theme-dark {
+  --ssg-cell-bg: #0d0d0f;
+  --ssg-panel-bg: #1b1c20;
+}
+```
+
+注意: 素の `.ssg-root { --ssg-* }` 上書きは**両テーマ**に勝ちます(テーマプリセットは特異度 0 で定義)。ライトのみを対象にしたい場合は `.ssg-root:not(.ssg-theme-dark)` でスコープしてください。
 
 ### API リファレンス
 
