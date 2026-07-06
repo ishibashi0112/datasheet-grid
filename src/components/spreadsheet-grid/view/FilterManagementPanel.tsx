@@ -184,7 +184,7 @@ export function FilterManagementPanel({
             <span className="ssg-filter-manage-name">グローバルフィルター</span>
             <span
               className="ssg-filter-manage-summary"
-              title={globalFilterText}
+              data-ssg-tooltip={globalFilterText}
             >
               "{globalFilterText}" を含む行
             </span>
@@ -194,7 +194,7 @@ export function FilterManagementPanel({
               type="button"
               className="ssg-filter-manage-icon-btn ssg-filter-manage-icon-btn--danger"
               disabled={!canFilter}
-              title="グローバルフィルターをクリア"
+              data-ssg-tooltip="グローバルフィルターをクリア"
               aria-label="グローバルフィルターをクリア"
               onClick={onClearGlobalFilter}
             >
@@ -227,7 +227,7 @@ export function FilterManagementPanel({
                 </span>
                 <span
                   className="ssg-filter-manage-summary"
-                  title={entry.summaryText}
+                  data-ssg-tooltip={entry.summaryText}
                 >
                   {entry.summaryText}
                 </span>
@@ -237,7 +237,7 @@ export function FilterManagementPanel({
                   type="button"
                   className="ssg-filter-manage-icon-btn"
                   disabled={!canFilter || entry.isHidden}
-                  title={
+                  data-ssg-tooltip={
                     entry.isHidden
                       ? '非表示列のためジャンプ編集できません(× でクリアは可能)'
                       : 'この列へジャンプして編集'
@@ -253,7 +253,7 @@ export function FilterManagementPanel({
                   type="button"
                   className="ssg-filter-manage-icon-btn ssg-filter-manage-icon-btn--danger"
                   disabled={!canFilter}
-                  title="この列のフィルターをクリア"
+                  data-ssg-tooltip="この列のフィルターをクリア"
                   aria-label={`${entry.title} のフィルターをクリア`}
                   onClick={() => {
                     onClearFilter(entry.columnKey);

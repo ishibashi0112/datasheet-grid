@@ -498,7 +498,7 @@ export function ColumnMenuPopover({
         type="button"
         aria-disabled={!canResetColumns}
         tabIndex={canResetColumns ? 0 : -1}
-        title={
+        data-ssg-tooltip={
           canResetColumns
             ? 'すべての列の幅・固定・表示を初期状態に戻します'
             : 'onColumnsChange 未指定のため列をリセットできません'

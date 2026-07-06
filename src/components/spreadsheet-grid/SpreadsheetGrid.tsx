@@ -44,6 +44,8 @@ import { useGridEditController } from './hooks/useGridEditController';
 import { useGridKeyboardInteractions } from './hooks/useGridKeyboardInteractions';
 import { useGridPointerInteractions } from './hooks/useGridPointerInteractions';
 import { useGridViewportSync } from './hooks/useGridViewportSync';
+// 追加(TT-1): title 属性置き換えのカスタムツールチップ(data-ssg-tooltip 委譲)です。
+import { useGridTooltip } from './hooks/useGridTooltip';
 // 追加(13-B3-2): ヘッダー D&D 列並べ替え controller です。
 import { useColumnHeaderDragController } from './hooks/useColumnHeaderDragController';
 import {
@@ -1695,6 +1697,10 @@ export function SpreadsheetGrid<T extends object>({
   //   - totalScrollWidth: コンテンツ全幅（左固定 + 中央 + 右固定）
   //   - leftPaneWidth / rightPaneWidth: sticky 固定ペインに隠れない領域へ active cell を収めるため
   //   - centerLeadingWidth: 中央ペインの先頭幅（左固定なし=rowHeaderWidth / 左固定あり=0）
+  // 追加(TT-1): カスタムツールチップの表示制御です(body 直下シングルトン + window 委譲。
+  //   複数グリッド同居時はフック内の refCount で共有されます)。
+  useGridTooltip();
+
   useGridViewportSync({
     scrollRef: scrollContainerRef,
     columnVirtualizer,

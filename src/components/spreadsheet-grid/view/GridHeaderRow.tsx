@@ -136,7 +136,8 @@ function HeaderActionButton({
   return (
     <button
       type="button"
-      title={title}
+      data-ssg-tooltip={title}
+      aria-label={title}
       onPointerDown={onPointerDown}
       className={cx(
         'ssg-icon-btn',
@@ -331,7 +332,9 @@ function GridHeaderRowInner<T>({
                 'ssg-header-label',
                 isColumnFiltered && 'ssg-header-label--filtered',
               )}
-              title={column.renderHeader ? undefined : column.title || column.key}
+              data-ssg-tooltip={
+                column.renderHeader ? undefined : column.title || column.key
+              }
             >
               {column.renderHeader
                 ? column.renderHeader({
@@ -351,7 +354,7 @@ function GridHeaderRowInner<T>({
               {sortEntry && (
                 <span
                   aria-hidden="true"
-                  title={
+                  data-ssg-tooltip={
                     (sortEntry.direction === 'asc'
                       ? '昇順で並び替え中'
                       : '降順で並び替え中') +
@@ -371,7 +374,7 @@ function GridHeaderRowInner<T>({
               {isColumnFiltered && (
                 <span
                   aria-hidden="true"
-                  title="フィルター適用中"
+                  data-ssg-tooltip="フィルター適用中"
                   className="ssg-header-filtered-mark"
                 >
                   <svg
@@ -398,7 +401,7 @@ function GridHeaderRowInner<T>({
                   onPointerDown={(event) =>
                     onColumnDragHandlePointerDown(column, event)
                   }
-                  title="ドラッグで列を移動"
+                  data-ssg-tooltip="ドラッグで列を移動"
                   aria-hidden="true"
                   className="ssg-header-grip"
                 >

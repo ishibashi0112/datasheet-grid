@@ -21,7 +21,7 @@
      セレクタリストについて(TH-DK-1): popover / menu / filter popover / ドラッグゴーストは
      document.body 直下のポータルで .ssg-root の継承が届かないため、各ポータル root にも
      同じトークンを直接定義します(テーマ切替はこのリストへ修飾子を足すだけで全面に効きます)。 */
-  :where(.ssg-root, .ssg-popover, .ssg-menu-panel, .ssg-filter-popover, [data-grid-drag-ghost]) {
+  :where(.ssg-root, .ssg-popover, .ssg-menu-panel, .ssg-filter-popover, [data-grid-drag-ghost], .ssg-tooltip) {
     /* 色トークン */
     --ssg-accent: #3461c9;
     --ssg-accent-strong: #1d4ed8;
@@ -105,6 +105,10 @@
     --ssg-ghost-text: #f8fafc;
     --ssg-ghost-border: rgba(255, 255, 255, 0.10);
     --ssg-ghost-shadow: 0 8px 20px rgba(2, 6, 23, 0.34), 0 1px 2px rgba(2, 6, 23, 0.24);
+    /* ツールチップ(TT-1。インク系 = ghost / pill と同系のダークチップ) */
+    --ssg-tooltip-bg: #1e293b;
+    --ssg-tooltip-text: #f8fafc;
+    --ssg-tooltip-shadow: 0 4px 12px rgba(2, 6, 23, 0.25);
     /* その他 */
     --ssg-drop-indicator: #0f172a;
     --ssg-glyph-faint: #cbd5e1;
@@ -147,10 +151,10 @@
      描画が食い違っていました。ルート/ポータル(popover / menu)配下を一律 border-box に固定して
      環境差を排除します。:where(特異度 0)なので、利用側が明示した box-sizing はそのまま勝ちます。
      注記: 擬似要素は :is()/:where() の引数に書けないため、::before / ::after は外側に付けます。 */
-  :where(.ssg-root, .ssg-popover, .ssg-menu-panel, .ssg-filter-popover),
-  :where(.ssg-root, .ssg-popover, .ssg-menu-panel, .ssg-filter-popover) :where(*),
-  :where(.ssg-root, .ssg-popover, .ssg-menu-panel, .ssg-filter-popover) :where(*)::before,
-  :where(.ssg-root, .ssg-popover, .ssg-menu-panel, .ssg-filter-popover) :where(*)::after {
+  :where(.ssg-root, .ssg-popover, .ssg-menu-panel, .ssg-filter-popover, .ssg-tooltip),
+  :where(.ssg-root, .ssg-popover, .ssg-menu-panel, .ssg-filter-popover, .ssg-tooltip) :where(*),
+  :where(.ssg-root, .ssg-popover, .ssg-menu-panel, .ssg-filter-popover, .ssg-tooltip) :where(*)::before,
+  :where(.ssg-root, .ssg-popover, .ssg-menu-panel, .ssg-filter-popover, .ssg-tooltip) :where(*)::after {
     box-sizing: border-box;
   }
 
@@ -1872,4 +1876,36 @@
   }
   .ssg-col-drop-indicator::after {
     bottom: -3px;
+  }
+
+  /* ── カスタムツールチップ(TT-1) ── */
+  /* title 属性のブラウザ標準ツールチップを置き換える表示です(Mantine 風・矢印なし)。
+     body 直下シングルトン(hooks/useGridTooltip.ts が生成・表示制御)。表示対象は
+     data-ssg-tooltip 属性。色はトークン(テーマ対象サーフェス — トークン定義セレクタ
+     リストに .ssg-tooltip を含む)。z-index はポップオーバー(1000)より上・
+     ドラッグゴースト(9999)より下の 9000。opacity/transform のみ遷移し、非表示中の
+     座標移動はアニメしません(left/top は transition 対象外)。 */
+  .ssg-tooltip {
+    position: fixed;
+    z-index: 9000;
+    pointer-events: none;
+    opacity: 0;
+    transform: translateY(2px);
+    transition: opacity 120ms ease, transform 120ms ease;
+    max-width: 260px;
+    white-space: pre-line;
+    overflow-wrap: break-word;
+    line-height: 1.45;
+    background-color: var(--ssg-tooltip-bg);
+    color: var(--ssg-tooltip-text);
+    font-size: 12px;
+    font-weight: 500;
+    padding: 5px 10px;
+    border-radius: 6px;
+    box-shadow: var(--ssg-tooltip-shadow);
+  }
+
+  .ssg-tooltip--visible {
+    opacity: 1;
+    transform: translateY(0);
   }

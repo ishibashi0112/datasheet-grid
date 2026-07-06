@@ -76,6 +76,8 @@ src/components/spreadsheet-grid/hooks/useGridEditController.ts
 src/components/spreadsheet-grid/hooks/useGridKeyboardInteractions.ts
 src/components/spreadsheet-grid/hooks/useGridPointerInteractions.test.ts
 src/components/spreadsheet-grid/hooks/useGridPointerInteractions.ts
+src/components/spreadsheet-grid/hooks/useGridTooltip.test.ts
+src/components/spreadsheet-grid/hooks/useGridTooltip.ts
 src/components/spreadsheet-grid/hooks/useGridViewportSync.ts
 src/components/spreadsheet-grid/hooks/usePanelHeaderDrag.ts
 src/components/spreadsheet-grid/hooks/useServerSideRowModel.test.ts
@@ -124,6 +126,8 @@ src/components/spreadsheet-grid/logic/setFilterSearch.test.ts
 src/components/spreadsheet-grid/logic/setFilterSearch.ts
 src/components/spreadsheet-grid/logic/sorting.test.ts
 src/components/spreadsheet-grid/logic/sorting.ts
+src/components/spreadsheet-grid/logic/tooltipGeometry.test.ts
+src/components/spreadsheet-grid/logic/tooltipGeometry.ts
 src/components/spreadsheet-grid/logic/valueFormatters.test.ts
 src/components/spreadsheet-grid/logic/valueFormatters.ts
 src/components/spreadsheet-grid/logic/verticalGeometry.test.ts
@@ -693,6 +697,345 @@ export const useGridKeyboardInteractions = <T,>({
 export default useGridKeyboardInteractions;
 </file>
 
+<file path="src/components/spreadsheet-grid/hooks/useGridTooltip.test.ts">
+// @vitest-environment jsdom
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { renderHook } from '@testing-library/react';
+import { act } from 'react';
+import { useGridTooltip } from './useGridTooltip';
+
+// jsdom 上の DOM 動作テストです。表示遅延はフェイクタイマーで進めます。
+// 位置(left/top)は jsdom の getBoundingClientRect が全 0 のため検証対象外とし、
+// 「表示/非表示」「文言」「ライフサイクル」を固定します。
+
+function findTooltip(): HTMLElement | null {
+  return document.querySelector('.ssg-tooltip');
+}
+
+function isVisible(): boolean {
+  const el = findTooltip();
+  return el !== null && el.classList.contains('ssg-tooltip--visible');
+}
+
+describe('useGridTooltip', () => {
+  let target: HTMLButtonElement;
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    target = document.createElement('button');
+    target.setAttribute('data-ssg-tooltip', '列メニュー');
+    document.body.appendChild(target);
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    target.remove();
+  });
+
+  it('pointerover から遅延後に文言つきで表示される', () => {
+    const hook = renderHook(() => useGridTooltip());
+    act(() => {
+      target.dispatchEvent(new PointerEvent('pointerover', { bubbles: true }));
+    });
+    // 遅延前は未表示です。
+    expect(isVisible()).toBe(false);
+    act(() => {
+      vi.advanceTimersByTime(400);
+    });
+    expect(isVisible()).toBe(true);
+    expect(findTooltip()?.textContent).toBe('列メニュー');
+    hook.unmount();
+  });
+
+  it('遅延前に pointerout すると表示されない', () => {
+    const hook = renderHook(() => useGridTooltip());
+    act(() => {
+      target.dispatchEvent(new PointerEvent('pointerover', { bubbles: true }));
+    });
+    act(() => {
+      target.dispatchEvent(new PointerEvent('pointerout', { bubbles: true }));
+    });
+    act(() => {
+      vi.advanceTimersByTime(1000);
+    });
+    expect(isVisible()).toBe(false);
+    hook.unmount();
+  });
+
+  it('表示後の pointerout で非表示になり、ウォームアップ内の再 hover は即時表示', () => {
+    const hook = renderHook(() => useGridTooltip());
+    act(() => {
+      target.dispatchEvent(new PointerEvent('pointerover', { bubbles: true }));
+      vi.advanceTimersByTime(400);
+    });
+    expect(isVisible()).toBe(true);
+    act(() => {
+      target.dispatchEvent(new PointerEvent('pointerout', { bubbles: true }));
+    });
+    expect(isVisible()).toBe(false);
+    // ウォームアップ(800ms)内の再 hover → 遅延なしで即時表示されます。
+    act(() => {
+      vi.advanceTimersByTime(200);
+      target.dispatchEvent(new PointerEvent('pointerover', { bubbles: true }));
+    });
+    expect(isVisible()).toBe(true);
+    hook.unmount();
+  });
+
+  it('focusin でも表示される(キーボード操作)', () => {
+    const hook = renderHook(() => useGridTooltip());
+    act(() => {
+      target.dispatchEvent(new FocusEvent('focusin', { bubbles: true }));
+      vi.advanceTimersByTime(400);
+    });
+    expect(isVisible()).toBe(true);
+    hook.unmount();
+  });
+
+  it('Escape / pointerdown で非表示になる', () => {
+    const hook = renderHook(() => useGridTooltip());
+    act(() => {
+      target.dispatchEvent(new PointerEvent('pointerover', { bubbles: true }));
+      vi.advanceTimersByTime(400);
+    });
+    expect(isVisible()).toBe(true);
+    act(() => {
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+    });
+    expect(isVisible()).toBe(false);
+    // 再表示(ウォームアップ内 → 即時)して pointerdown でも消えることを確認します。
+    act(() => {
+      target.dispatchEvent(new PointerEvent('pointerover', { bubbles: true }));
+    });
+    expect(isVisible()).toBe(true);
+    act(() => {
+      target.dispatchEvent(
+        new PointerEvent('pointerdown', { bubbles: true }),
+      );
+    });
+    expect(isVisible()).toBe(false);
+    hook.unmount();
+  });
+
+  it('data-ssg-tooltip が空文字の要素では表示しない', () => {
+    const hook = renderHook(() => useGridTooltip());
+    target.setAttribute('data-ssg-tooltip', '');
+    act(() => {
+      target.dispatchEvent(new PointerEvent('pointerover', { bubbles: true }));
+      vi.advanceTimersByTime(1000);
+    });
+    expect(isVisible()).toBe(false);
+    hook.unmount();
+  });
+
+  it('最後のアンマウントで要素が撤去される(refCount 共有)', () => {
+    const first = renderHook(() => useGridTooltip());
+    const second = renderHook(() => useGridTooltip());
+    act(() => {
+      target.dispatchEvent(new PointerEvent('pointerover', { bubbles: true }));
+      vi.advanceTimersByTime(400);
+    });
+    expect(findTooltip()).not.toBeNull();
+    // 片方のアンマウントでは残ります(もう一方のグリッドが使用中)。
+    first.unmount();
+    expect(findTooltip()).not.toBeNull();
+    second.unmount();
+    expect(findTooltip()).toBeNull();
+    // 全撤去後はイベントに反応しません。
+    act(() => {
+      target.dispatchEvent(new PointerEvent('pointerover', { bubbles: true }));
+      vi.advanceTimersByTime(1000);
+    });
+    expect(findTooltip()).toBeNull();
+  });
+});
+</file>
+
+<file path="src/components/spreadsheet-grid/hooks/useGridTooltip.ts">
+// 追加(TT-1 / カスタムツールチップ): title 属性のブラウザ標準ツールチップを置き換える
+//   表示制御フックです。SpreadsheetGrid 本体から 1 回呼びます。
+//
+// 仕組み:
+//   - 表示対象は `data-ssg-tooltip=\"文言\"` 属性を持つ要素です。window の pointerover /
+//     focusin(capture)委譲 + closest() で拾うため、グリッド内・ポータル(popover / panel /
+//     menu)内のどちらでも 1 系統で動きます(本プロジェクトの window リスナー作法に準拠)。
+//   - 表示要素は body 直下シングルトンの `.ssg-tooltip` 1 枚です。複数グリッドが同居しても
+//     モジュールスコープの refCount で共有し、最後のアンマウントで撤去します(文言は
+//     data 属性から都度読むため、インスタンス別の状態は不要です)。
+//   - 表示は SHOW_DELAY_MS 遅延。一度表示した後 WARMUP_MS 以内の連続 hover は即時表示します
+//     (Mantine 等と同じ操作感)。位置計算は logic/tooltipGeometry.ts の純関数です。
+//   - 非表示条件: 対象からの pointerout / focusout・pointerdown・scroll(capture)・Escape。
+//     Escape は window keydown capture で拾いますが、hide のみで stopPropagation しません
+//     (POP-KEY の popover close 系と干渉させないため)。
+//
+// 既知の制約(実機確認ポイント):
+//   - `disabled` 属性付きフォーム要素上の pointer イベントはブラウザ差があります(近年の
+//     Chrome / Edge は pointerover が発火・旧挙動のブラウザは抑止)。disabled 時の説明
+//     ツールチップ(「非表示列のため…」等)が出ないブラウザがあれば、該当ボタンのみ
+//     wrapper 方式へ切り替える後続対応とします。
+import { useEffect } from 'react';
+import { computeTooltipPlacement } from '../logic/tooltipGeometry';
+
+const TOOLTIP_ATTRIBUTE = 'data-ssg-tooltip';
+const TOOLTIP_SELECTOR = `[${TOOLTIP_ATTRIBUTE}]`;
+const SHOW_DELAY_MS = 350;
+const WARMUP_MS = 800;
+
+// モジュールスコープの共有状態です(シングルトン。複数グリッド同居時は refCount で共有)。
+let refCount = 0;
+let tooltipEl: HTMLDivElement | null = null;
+let showTimerId: number | null = null;
+let warmupUntil = 0;
+let currentTarget: Element | null = null;
+
+function ensureTooltipElement(): HTMLDivElement {
+  if (tooltipEl !== null) {
+    return tooltipEl;
+  }
+  const el = document.createElement('div');
+  el.className = 'ssg-tooltip';
+  // スクリーンリーダーには読ませません(文言は対象側の aria-label / テキストが担うため、
+  // 二重読み上げを避けます)。
+  el.setAttribute('aria-hidden', 'true');
+  document.body.appendChild(el);
+  tooltipEl = el;
+  return el;
+}
+
+function clearShowTimer() {
+  if (showTimerId !== null) {
+    window.clearTimeout(showTimerId);
+    showTimerId = null;
+  }
+}
+
+function hideTooltip() {
+  clearShowTimer();
+  if (currentTarget !== null) {
+    // 表示中からの hide のみウォームアップを開始します(未表示の hide で延長しないため)。
+    warmupUntil = Date.now() + WARMUP_MS;
+  }
+  currentTarget = null;
+  if (tooltipEl !== null) {
+    tooltipEl.classList.remove('ssg-tooltip--visible');
+  }
+}
+
+function showTooltipFor(target: Element) {
+  const text = target.getAttribute(TOOLTIP_ATTRIBUTE);
+  if (text === null || text === '') {
+    return;
+  }
+  const el = ensureTooltipElement();
+  el.textContent = text;
+  // 実寸(offsetWidth/Height)を得るため、いったん原点へ置いてから配置します
+  // (opacity 0 のまま座標だけ動かすので、ちらつきはありません)。
+  el.style.left = '0px';
+  el.style.top = '0px';
+  const placement = computeTooltipPlacement({
+    targetRect: target.getBoundingClientRect(),
+    tipWidth: el.offsetWidth,
+    tipHeight: el.offsetHeight,
+    viewportWidth: window.innerWidth,
+  });
+  el.style.left = `${placement.left}px`;
+  el.style.top = `${placement.top}px`;
+  el.classList.add('ssg-tooltip--visible');
+  currentTarget = target;
+}
+
+function handlePointerOverOrFocusIn(event: Event) {
+  const node = event.target;
+  if (!(node instanceof Element)) {
+    return;
+  }
+  const target = node.closest(TOOLTIP_SELECTOR);
+  if (target === null || target === currentTarget) {
+    return;
+  }
+  const wasVisible = currentTarget !== null;
+  hideTooltip();
+  if (wasVisible || Date.now() < warmupUntil) {
+    // 表示中の乗り換え / ウォームアップ内は即時表示します。
+    showTooltipFor(target);
+  } else {
+    showTimerId = window.setTimeout(() => {
+      showTimerId = null;
+      showTooltipFor(target);
+    }, SHOW_DELAY_MS);
+  }
+}
+
+function handlePointerOutOrFocusOut(event: Event) {
+  const node = event.target;
+  if (!(node instanceof Element)) {
+    return;
+  }
+  const target = node.closest(TOOLTIP_SELECTOR);
+  if (target === null) {
+    return;
+  }
+  // 対象の内側要素間の移動(relatedTarget が対象内)は無視します。
+  const related = (event as PointerEvent | FocusEvent).relatedTarget;
+  if (related instanceof Node && target.contains(related)) {
+    return;
+  }
+  hideTooltip();
+}
+
+function handleGlobalHide() {
+  hideTooltip();
+}
+
+function handleKeyDown(event: KeyboardEvent) {
+  if (event.key === 'Escape') {
+    // hide のみ。preventDefault / stopPropagation はしません(popover close を妨げないため)。
+    hideTooltip();
+  }
+}
+
+function installListeners() {
+  window.addEventListener('pointerover', handlePointerOverOrFocusIn, true);
+  window.addEventListener('pointerout', handlePointerOutOrFocusOut, true);
+  window.addEventListener('focusin', handlePointerOverOrFocusIn, true);
+  window.addEventListener('focusout', handlePointerOutOrFocusOut, true);
+  window.addEventListener('pointerdown', handleGlobalHide, true);
+  window.addEventListener('scroll', handleGlobalHide, true);
+  window.addEventListener('keydown', handleKeyDown, true);
+}
+
+function uninstallListeners() {
+  window.removeEventListener('pointerover', handlePointerOverOrFocusIn, true);
+  window.removeEventListener('pointerout', handlePointerOutOrFocusOut, true);
+  window.removeEventListener('focusin', handlePointerOverOrFocusIn, true);
+  window.removeEventListener('focusout', handlePointerOutOrFocusOut, true);
+  window.removeEventListener('pointerdown', handleGlobalHide, true);
+  window.removeEventListener('scroll', handleGlobalHide, true);
+  window.removeEventListener('keydown', handleKeyDown, true);
+}
+
+export function useGridTooltip() {
+  useEffect(() => {
+    refCount += 1;
+    if (refCount === 1) {
+      installListeners();
+    }
+    return () => {
+      refCount -= 1;
+      if (refCount === 0) {
+        uninstallListeners();
+        clearShowTimer();
+        currentTarget = null;
+        if (tooltipEl !== null) {
+          tooltipEl.remove();
+          tooltipEl = null;
+        }
+      }
+    };
+  }, []);
+}
+</file>
+
 <file path="src/components/spreadsheet-grid/logic/domGuards.ts">
 // 追加: 文字キー入力で編集開始する判定です。
 export const isPrintableKey = (event: {
@@ -1199,6 +1542,148 @@ export const computeSinglePaneColumnExtent = <T,>(
     },
   };
 };
+</file>
+
+<file path="src/components/spreadsheet-grid/logic/tooltipGeometry.test.ts">
+import { describe, expect, it } from 'vitest';
+import {
+  computeTooltipPlacement,
+  TOOLTIP_GAP_PX,
+  TOOLTIP_VIEWPORT_MARGIN_PX,
+} from './tooltipGeometry';
+
+// 対象 rect のショートハンドです(width と top/left/bottom だけ使います)。
+function rect(top: number, left: number, width: number, height: number) {
+  return { top, left, width, bottom: top + height };
+}
+
+describe('computeTooltipPlacement', () => {
+  it('基本は対象の上・水平中央に置く', () => {
+    // 対象: top=100 left=200 width=40 → 中心 x=220。tip 100x20。
+    const p = computeTooltipPlacement({
+      targetRect: rect(100, 200, 40, 24),
+      tipWidth: 100,
+      tipHeight: 20,
+      viewportWidth: 1000,
+    });
+    expect(p.below).toBe(false);
+    expect(p.left).toBe(170); // 220 - 100/2
+    expect(p.top).toBe(100 - 20 - TOOLTIP_GAP_PX);
+  });
+
+  it('左端は margin へ clamp する', () => {
+    const p = computeTooltipPlacement({
+      targetRect: rect(100, 0, 20, 24),
+      tipWidth: 120,
+      tipHeight: 20,
+      viewportWidth: 1000,
+    });
+    expect(p.left).toBe(TOOLTIP_VIEWPORT_MARGIN_PX);
+  });
+
+  it('右端は viewportWidth - tipWidth - margin へ clamp する', () => {
+    const p = computeTooltipPlacement({
+      targetRect: rect(100, 980, 20, 24),
+      tipWidth: 120,
+      tipHeight: 20,
+      viewportWidth: 1000,
+    });
+    expect(p.left).toBe(1000 - 120 - TOOLTIP_VIEWPORT_MARGIN_PX);
+  });
+
+  it('極小画面では左端 margin を優先する(clamp の反転時)', () => {
+    // viewport 100 に対して tip 200 → min 側が負になるが、左端 margin を優先。
+    const p = computeTooltipPlacement({
+      targetRect: rect(100, 10, 20, 24),
+      tipWidth: 200,
+      tipHeight: 20,
+      viewportWidth: 100,
+    });
+    expect(p.left).toBe(TOOLTIP_VIEWPORT_MARGIN_PX);
+  });
+
+  it('上に入らないときは対象の下へフリップする', () => {
+    // top=10 で tip 高 20 + gap 7 → 上端 -17 < margin → below。
+    const p = computeTooltipPlacement({
+      targetRect: rect(10, 200, 40, 24),
+      tipWidth: 100,
+      tipHeight: 20,
+      viewportWidth: 1000,
+    });
+    expect(p.below).toBe(true);
+    expect(p.top).toBe(10 + 24 + TOOLTIP_GAP_PX);
+  });
+
+  it('上端がちょうど margin のときは上に置く(フリップしない)', () => {
+    // top = margin + tipHeight + gap → aboveTop がちょうど margin。
+    const top = TOOLTIP_VIEWPORT_MARGIN_PX + 20 + TOOLTIP_GAP_PX;
+    const p = computeTooltipPlacement({
+      targetRect: rect(top, 200, 40, 24),
+      tipWidth: 100,
+      tipHeight: 20,
+      viewportWidth: 1000,
+    });
+    expect(p.below).toBe(false);
+    expect(p.top).toBe(TOOLTIP_VIEWPORT_MARGIN_PX);
+  });
+});
+</file>
+
+<file path="src/components/spreadsheet-grid/logic/tooltipGeometry.ts">
+// 追加(TT-1 / カスタムツールチップ): ツールチップの表示位置を計算する純ロジックです。
+//   useGridTooltip(表示制御フック)が使います。
+// 方針:
+//   - 基本は「対象の上・水平中央」。左右はビューポートへ clamp します
+//     (margin を残して [margin, viewportWidth - tipWidth - margin] に収める。
+//     clamp が反転する極小画面では Math.max を後に適用して左端 margin を優先します)。
+//   - 上に入らない(上端が margin を割る)場合だけ対象の下へフリップします。
+//     下方向のはみ出しはそれ以上追わない仕様です(ツールチップは小型で、対象の直上/直下
+//     以外に出すと紐付きが失われるため。パネルドラッグの clamp と同じ「シンプル優先」)。
+export const TOOLTIP_GAP_PX = 7;
+export const TOOLTIP_VIEWPORT_MARGIN_PX = 8;
+
+export type TooltipPlacementArgs = {
+  /* 対象要素の getBoundingClientRect 相当(fixed 配置のためビューポート座標) */
+  targetRect: {
+    top: number;
+    left: number;
+    width: number;
+    bottom: number;
+  };
+  tipWidth: number;
+  tipHeight: number;
+  viewportWidth: number;
+};
+
+export type TooltipPlacement = {
+  top: number;
+  left: number;
+  /* true = 上に入らず対象の下へフリップした */
+  below: boolean;
+};
+
+export function computeTooltipPlacement(
+  args: TooltipPlacementArgs,
+): TooltipPlacement {
+  const { targetRect, tipWidth, tipHeight, viewportWidth } = args;
+  const centerX = targetRect.left + targetRect.width / 2;
+  const left = Math.max(
+    TOOLTIP_VIEWPORT_MARGIN_PX,
+    Math.min(
+      Math.round(centerX - tipWidth / 2),
+      viewportWidth - tipWidth - TOOLTIP_VIEWPORT_MARGIN_PX,
+    ),
+  );
+  const aboveTop = Math.round(targetRect.top - tipHeight - TOOLTIP_GAP_PX);
+  if (aboveTop < TOOLTIP_VIEWPORT_MARGIN_PX) {
+    return {
+      top: Math.round(targetRect.bottom + TOOLTIP_GAP_PX),
+      left,
+      below: true,
+    };
+  }
+  return { top: aboveTop, left, below: false };
+}
 </file>
 
 <file path="src/components/spreadsheet-grid/model/gridSelectors.ts">
@@ -8486,7 +8971,7 @@ export function GridFilterChipBar({
             type="button"
             className="ssg-filter-chip-label"
             disabled={!canFilter || entry.isHidden}
-            title={
+            data-ssg-tooltip={
               entry.isHidden
                 ? '非表示列のためジャンプ編集できません(× でクリアは可能)'
                 : 'この列へジャンプして編集'
@@ -8508,7 +8993,7 @@ export function GridFilterChipBar({
             type="button"
             className="ssg-filter-chip-clear"
             disabled={!canFilter}
-            title="この列のフィルターをクリア"
+            data-ssg-tooltip="この列のフィルターをクリア"
             aria-label={`${entry.title} のフィルターをクリア`}
             onClick={() => {
               onClearFilter(entry.columnKey);
@@ -10355,7 +10840,7 @@ export function FilterManagementPanel({
             <span className="ssg-filter-manage-name">グローバルフィルター</span>
             <span
               className="ssg-filter-manage-summary"
-              title={globalFilterText}
+              data-ssg-tooltip={globalFilterText}
             >
               "{globalFilterText}" を含む行
             </span>
@@ -10365,7 +10850,7 @@ export function FilterManagementPanel({
               type="button"
               className="ssg-filter-manage-icon-btn ssg-filter-manage-icon-btn--danger"
               disabled={!canFilter}
-              title="グローバルフィルターをクリア"
+              data-ssg-tooltip="グローバルフィルターをクリア"
               aria-label="グローバルフィルターをクリア"
               onClick={onClearGlobalFilter}
             >
@@ -10398,7 +10883,7 @@ export function FilterManagementPanel({
                 </span>
                 <span
                   className="ssg-filter-manage-summary"
-                  title={entry.summaryText}
+                  data-ssg-tooltip={entry.summaryText}
                 >
                   {entry.summaryText}
                 </span>
@@ -10408,7 +10893,7 @@ export function FilterManagementPanel({
                   type="button"
                   className="ssg-filter-manage-icon-btn"
                   disabled={!canFilter || entry.isHidden}
-                  title={
+                  data-ssg-tooltip={
                     entry.isHidden
                       ? '非表示列のためジャンプ編集できません(× でクリアは可能)'
                       : 'この列へジャンプして編集'
@@ -10424,7 +10909,7 @@ export function FilterManagementPanel({
                   type="button"
                   className="ssg-filter-manage-icon-btn ssg-filter-manage-icon-btn--danger"
                   disabled={!canFilter}
-                  title="この列のフィルターをクリア"
+                  data-ssg-tooltip="この列のフィルターをクリア"
                   aria-label={`${entry.title} のフィルターをクリア`}
                   onClick={() => {
                     onClearFilter(entry.columnKey);
@@ -11868,6 +12353,286 @@ export const useFilterPopoverController = <T,>({
 };
 
 export default useFilterPopoverController;
+</file>
+
+<file path="src/components/spreadsheet-grid/hooks/useGridClipboardController.ts">
+import { useCallback, type Dispatch } from 'react';
+import { gridActions, type GridUiAction } from '../model/gridActions';
+import type {
+  GridColumn,
+  SpreadsheetGridProps,
+  GridUiState,
+  RowModel,
+} from '../model/gridTypes';
+import { clamp } from '../logic/geometry';
+import { getCellValue, isCellEditable } from '../utils/permissions';
+import {
+  applyClipboardMatrixToRows,
+  parseClipboardText,
+  serializeSelectionToTsv,
+} from '../utils/clipboard';
+
+type UseGridClipboardControllerArgs<T extends object> = {
+  rows: T[];
+  // 変更(DS-3-3): filteredRows / filteredRowSourceIndexes 配列 → rowModel シームへ集約。
+  //   copy 時のセル値取得は getRow(i)、paste 書き込みの source 解決は getSourceIndex(i)、
+  //   範囲判定の行数は getRowCount() を使い分けます。順序契約は order と同一(viewIndex 空間)。
+  rowModel: RowModel<T>;
+  visibleColumns: GridColumn<T>[];
+  uiState: GridUiState;
+  readOnly: boolean;
+  canEditCell: SpreadsheetGridProps<T>['canEditCell'];
+  createRow?: () => T;
+  createOverflowColumn?: (columnIndex: number) => GridColumn<T>;
+  onRowsChange?: (nextRows: T[]) => void;
+  onColumnsChange?: (nextColumns: GridColumn<T>[]) => void;
+  dispatch: Dispatch<GridUiAction>;
+};
+
+// 追加: copy / paste と行列自動拡張をまとめる clipboard controller です。
+export const useGridClipboardController = <T extends object>({
+  rows,
+  rowModel,
+  visibleColumns,
+  uiState,
+  readOnly,
+  canEditCell,
+  createRow,
+  createOverflowColumn,
+  onRowsChange,
+  onColumnsChange,
+  dispatch,
+}: UseGridClipboardControllerArgs<T>) => {
+  // 追加: 現在の selection が「表全体選択」かどうかを判定します。
+  // 変更(DS-3-3): filteredRows.length → rowModel.getRowCount()。
+  const viewRowCount = rowModel.getRowCount();
+  const isWholeGridSelected =
+    viewRowCount > 0 &&
+    visibleColumns.length > 0 &&
+    uiState.selection?.type === 'cell' &&
+    (() => {
+      const start = uiState.selection.range.start;
+      const end = uiState.selection.range.end;
+      const startRow = Math.min(start.row, end.row);
+      const startCol = Math.min(start.col, end.col);
+      const endRow = Math.max(start.row, end.row);
+      const endCol = Math.max(start.col, end.col);
+      return (
+        startRow === 0 &&
+        startCol === 0 &&
+        endRow === viewRowCount - 1 &&
+        endCol === visibleColumns.length - 1
+      );
+    })();
+
+  // 追加: 全体選択時の copy を専用経路で行います。
+  // 変更(DS-3-3): filteredRows.map → getRowCount()/getRow(i) のビュー順走査へ置換。
+  const serializeWholeGridToTsv = useCallback(() => {
+    const rowCount = rowModel.getRowCount();
+    if (rowCount === 0 || visibleColumns.length === 0) {
+      return '';
+    }
+
+    const lines: string[] = [];
+    for (let viewIndex = 0; viewIndex < rowCount; viewIndex += 1) {
+      const row = rowModel.getRow(viewIndex);
+      // 追加(①-3): serverSide の未ロード行(getRow===undefined)は getCellValue が throw する
+      //   ため skip します(serializeSelectionToTsv と同方針)。clientSide は全行ロード済みの
+      //   ため、この guard は実質 no-op です。
+      if (!row) {
+        continue;
+      }
+      const cells = visibleColumns.map((column) => {
+        const rawValue = getCellValue(row, column);
+        return column.formatClipboardValue
+          ? column.formatClipboardValue(rawValue, row)
+          : String(rawValue ?? '');
+      });
+      lines.push(cells.join('\t'));
+    }
+    return lines.join('\n');
+  }, [rowModel, visibleColumns]);
+
+  // 追加: copy 処理です。selection を TSV にしてクリップボードへ書き込みます。
+  const handleCopy = useCallback(async () => {
+    // 変更(DS-3-10): serializeSelectionToTsv を seam-native 化。view 行の一時 materialize
+    //   (Array.from + getRow)を撤去し、getRow / getRowCount をそのまま渡します。関数側は
+    //   選択レンジ(cell/row)または 0..viewRowCount-1(col)だけを getRow で引きます。
+    const text = isWholeGridSelected
+      ? serializeWholeGridToTsv()
+      : serializeSelectionToTsv(
+          rowModel.getRow,
+          rowModel.getRowCount(),
+          visibleColumns,
+          uiState.selection as
+            | {
+                type: 'cell';
+                range: {
+                  start: { row: number; col: number };
+                  end: { row: number; col: number };
+                };
+              }
+            | { type: 'row'; startRow: number; endRow: number }
+            | { type: 'col'; startCol: number; endCol: number }
+            | null,
+        );
+
+    if (!text) {
+      return;
+    }
+
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text);
+    }
+  }, [
+    isWholeGridSelected,
+    rowModel,
+    serializeWholeGridToTsv,
+    uiState.selection,
+    visibleColumns,
+  ]);
+
+  // 追加: paste 処理です。TSV を activeCell 起点に適用し、必要なら行/列を自動拡張します。
+  const handlePaste = useCallback(
+    (event: React.ClipboardEvent<HTMLDivElement>) => {
+      if (!onRowsChange || !uiState.activeCell) {
+        return;
+      }
+
+      const text = event.clipboardData.getData('text/plain');
+      if (!text) {
+        return;
+      }
+
+      event.preventDefault();
+
+      const matrix = parseClipboardText(text);
+      if (matrix.length === 0) {
+        return;
+      }
+
+      const startFilteredRowIndex = uiState.activeCell.row;
+      // 変更(DS-3-9): レガシーの ?? startFilteredRowIndex フォールバックを撤去します。
+      //   getSourceIndex(=order[i]) は OOB(activeCell が縮小後の order を超える)で undefined を
+      //   返します。旧版は ?? で view index を source index に誤代入していました。撤去後は
+      //   undefined をそのまま判定し、OOB の paste 起点は no-op で抜けます(下流の startOriginalRowIndex +
+      //   matrix.length が NaN になるのを防ぎ、誤行 append も回避)。in-bounds 時は従来と完全一致。
+      const startOriginalRowIndex =
+        rowModel.getSourceIndex(startFilteredRowIndex);
+      if (startOriginalRowIndex === undefined) {
+        return;
+      }
+      const startColIndex = uiState.activeCell.col;
+
+      let workingRows = [...rows];
+      let workingColumns = [...visibleColumns];
+      // 変更(DS-3-10): workingSourceIndexes 配列(N 個の Array.from)を撤去し、view→source の
+      //   解決をクロージャ resolveSourceIndex に置換します。返り値は旧配列と完全一致:
+      //     v < N            : rowModel.getSourceIndex(v)  (= order[v])
+      //     v >= N(append 行): appendBaseSource + (v - N)
+      //   appendBaseSource = 拡張前 rows.length、N = paste 時点の getRowCount()。旧 append は
+      //   workingSourceIndexes.push(workingRows.length - 1) で appendBaseSource から連番を積んで
+      //   いたため式が一致します。append していない範囲外 v は定義値(OOB の source index)を返し
+      //   ますが、下流 applyClipboardMatrixToRows の !currentRow ガードで skip され、旧の
+      //   undefined→continue と同一結果になります。
+      const viewRowCountForPaste = rowModel.getRowCount();
+      const appendBaseSource = workingRows.length;
+      const resolveSourceIndex = (viewIndex: number): number | undefined =>
+        viewIndex < viewRowCountForPaste
+          ? rowModel.getSourceIndex(viewIndex)
+          : appendBaseSource + (viewIndex - viewRowCountForPaste);
+
+      // 追加: 行不足分を createRow で自動追加します。
+      const requiredOriginalRowCount = startOriginalRowIndex + matrix.length;
+      if (requiredOriginalRowCount > workingRows.length && createRow) {
+        while (workingRows.length < requiredOriginalRowCount) {
+          workingRows.push(createRow());
+        }
+      }
+
+      // 追加: 列不足分を createOverflowColumn で自動追加します。
+      const maxPasteWidth = matrix.reduce(
+        (max, currentRow) => Math.max(max, currentRow.length),
+        0,
+      );
+      if (maxPasteWidth === 0) {
+        return;
+      }
+
+      const requiredColumnCount = startColIndex + maxPasteWidth;
+      if (requiredColumnCount > workingColumns.length) {
+        if (onColumnsChange && createOverflowColumn) {
+          while (workingColumns.length < requiredColumnCount) {
+            workingColumns.push(createOverflowColumn(workingColumns.length));
+          }
+          onColumnsChange(workingColumns);
+        }
+      }
+
+      const nextRows = applyClipboardMatrixToRows(
+        workingRows,
+        resolveSourceIndex,
+        workingColumns,
+        matrix,
+        startFilteredRowIndex,
+        startColIndex,
+        (originalRowIndex, colIndex, row, column) =>
+          isCellEditable(
+            { readOnly, canEditCell },
+            originalRowIndex,
+            colIndex,
+            row,
+            column,
+          ),
+      );
+
+      const endRow = clamp(
+        uiState.activeCell.row + Math.max(matrix.length - 1, 0),
+        0,
+        Math.max(
+          // 変更(DS-3-3): filteredRows.length - 1 → getRowCount() - 1。
+          Math.max(rowModel.getRowCount() - 1, 0),
+          startFilteredRowIndex + matrix.length - 1,
+        ),
+      );
+      const endCol = clamp(
+        uiState.activeCell.col + Math.max((matrix[0]?.length ?? 1) - 1, 0),
+        0,
+        Math.max(
+          Math.max(workingColumns.length - 1, 0),
+          startColIndex + maxPasteWidth - 1,
+        ),
+      );
+
+      onRowsChange(nextRows);
+      dispatch(gridActions.startSelection(uiState.activeCell));
+      dispatch(gridActions.updateSelection({ row: endRow, col: endCol }));
+      dispatch(gridActions.endSelection());
+      dispatch(gridActions.activateCell(uiState.activeCell));
+    },
+    [
+      canEditCell,
+      createOverflowColumn,
+      createRow,
+      dispatch,
+      onColumnsChange,
+      onRowsChange,
+      readOnly,
+      rowModel,
+      rows,
+      uiState.activeCell,
+      visibleColumns,
+    ],
+  );
+
+  return {
+    isWholeGridSelected,
+    handleCopy,
+    handlePaste,
+  };
+};
+
+export default useGridClipboardController;
 </file>
 
 <file path="src/components/spreadsheet-grid/hooks/useServerSideRowModel.test.ts">
@@ -14707,1152 +15472,6 @@ export function CellContextMenuPopover({
 export default CellContextMenuPopover;
 </file>
 
-<file path="src/components/spreadsheet-grid/view/ColumnChooserPanel.tsx">
-// 追加(13-B2-1): 列の表示/非表示パネル(AG Grid の Columns Tool Panel 相当)です。
-//   - タイトル + × クローズ / 検索ボックス / 3 状態の全選択チェックボックス /
-//     列ごとのチェックボックス一覧(チェックで即 表示/非表示)で構成します。
-//   - 本コンポーネントは非ジェネリックです(ColumnMenuPopover と同様、プリミティブな
-//     items だけを受け取ります)。一覧は「全列(非表示列を含む)」を渡す必要があるため、
-//     呼び出し側は visibleColumns ではなく columns から items を作ります。
-// 変更(13-B2-2): フッターに「すべての列を初期状態に戻す」ボタンを追加します
-//   (AG Grid の Columns Tool Panel 末尾 "Reset Columns" 相当)。幅 / 固定 / 表示を
-//   初期 column defs へ戻す操作で、ロジックは呼び出し側(onResetColumns)が持ちます。
-//   canToggle(= onColumnsChange 指定あり)が false のときは無効化します。
-// 変更(13-B3-1): 各行に ⠿ ドラッグハンドルを追加し、pointer ベースで一覧を並べ替えます
-//   (AG Grid の Columns Tool Panel のドラッグ並べ替え相当の第 1 段階)。
-//   - 並べ替えは items(= columns の定義配列順)の順序のみを変更します。pinned の変更や
-//     ペイン跨ぎは本バッチでは扱いません(ヘッダー D&D の 13-B3-2 で対応)。確定した
-//     キー順は onReorderColumns(orderedKeys) で呼び出し側へ渡し、commit は呼び出し側が
-//     担います(表示/非表示・リセットと同じく onColumnsChange 経由)。
-//   - ドラッグ可否は canToggle(= onColumnsChange あり)かつ「検索語が空」のときのみ。
-//     検索で一覧が絞り込まれているときは、絞り込みビュー上の並べ替えが曖昧なため
-//     ハンドルを無効化します(AG Grid 同様)。
-//   - ドラッグ中はドロップ位置インジケータ(行間の細線)を表示し、一覧端付近では
-//     一覧コンテナを自動スクロールします(29 列で一覧が パネル上限高 を超えるため)。
-// 変更(13-B3-1.5): 一覧を pinned ペイン(left / center / right)ごとの小見出しセクションへ
-//   分割します(AG Grid 着想の独自解。AG Grid 本家のツールパネルは pinned ではセクション
-//   分けしませんが、本実装は「パネル = 定義配列素順 / グリッド = reorderColumnsByPane 後の
-//   pane 順」の体感ズレを解消するため、各列を所属ペインのセクションへ表示します)。
-//   - 並べ替えは「同一セクション内のみ」許可します(pinned 不変。pinned 変更はヘッダー D&D
-//     の 13-B3-2 の領分)。セクション跨ぎドロップはドロップ線をソースセクション内へ留める
-//     ことで実質不可にします。
-//   - commit 時に返す orderedKeys は left 群 → center 群 → right 群を各セクションの表示順で
-//     連結した「全列キー順」です(合意ポイント①=A: columns 配列が pane 順に正規化され、
-//     reorderColumnsByPane が冪等化します)。セクション内が実際に動かない no-op ドラッグでは
-//     正規化も行わず null を返します。
-//   - 非空セクションが 1 つだけ(= 固定列なし)のときは小見出しを出さずフラット表示します。
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { createPortal } from 'react-dom';
-import { cx } from '../logic/cx';
-import type {
-  CSSProperties,
-  KeyboardEvent,
-  PointerEvent,
-  RefObject,
-} from 'react';
-import type { ColumnChooserLayout } from '../hooks/useColumnChooserController';
-// 追加(FM-4): ヘッダーを掴んでパネルを移動する共有フックです(3 パネル共通)。
-import { usePanelHeaderDrag } from '../hooks/usePanelHeaderDrag';
-// 追加(13-B3-1.5): セクション分けの所属ペイン種別です(pinned 由来)。
-import type { ColumnPane } from '../logic/geometry';
-
-// 追加(13-B2-1): パネルが必要とする最小の列情報です。
-// 変更(13-B3-1.5): 所属ペイン(pinned 由来。left / center / right)を追加します。
-//   呼び出し側(SpreadsheetGrid)が getColumnPane 相当で算出して渡します。
-export type ColumnChooserItem = {
-  key: string;
-  title: string;
-  visible: boolean;
-  pane: ColumnPane;
-};
-
-type ColumnChooserPanelProps = {
-  isOpen: boolean;
-  items: ColumnChooserItem[];
-  // 追加: onColumnsChange 未指定時は false。チェックボックスを無効化し注記を出します。
-  canToggle: boolean;
-  layout: ColumnChooserLayout | null;
-  panelRef: RefObject<HTMLDivElement | null>;
-  onToggleColumnVisibility: (columnKey: string, nextVisible: boolean) => void;
-  // 追加: 全選択(= すべて表示)。最後の 1 列ガードのため「全消し」はサポートしません。
-  onShowAllColumns: () => void;
-  // 追加(13-B2-2): 全列を初期状態(幅 / 固定 / 表示)へ戻します。
-  //   ロジックは呼び出し側。canToggle が false のときフッターのボタンは無効化されます。
-  onResetColumns: () => void;
-  // 追加(13-B3-1): ドラッグ並べ替えの確定ハンドラです。並べ替え後の「全列キー順」を
-  //   渡します(items と同一集合の permutation)。commit(onColumnsChange 経由)は
-  //   呼び出し側が担います。検索中・canToggle=false 時は呼ばれません。
-  onReorderColumns: (orderedKeys: string[]) => void;
-  onRequestClose: () => void;
-  // 追加(FM-4): ヘッダードラッグによるパネル移動です(controller の moveColumnChooser を
-  //   受け取ります。位置の clamp・保持・close 時リセットは controller 側の責務)。
-  onPanelMove: (top: number, left: number) => void;
-};
-
-// 追加(13-B3-1): ドラッグ中の一覧端オートスクロールのしきい値 / 速度です。
-//   一覧コンテナの上下端から EDGE px 以内にポインタが入ったら、毎フレーム SPEED px ずつ
-//   スクロールします(29 列で一覧が パネル上限高 を超えるための補助)。
-const AUTO_SCROLL_EDGE = 28;
-const AUTO_SCROLL_SPEED = 12;
-
-// 追加(13-B3-1.5): セクション(所属ペイン)の小見出しラベルです。
-const PANE_ORDER: ColumnPane[] = ['left', 'center', 'right'];
-const SECTION_LABELS: Record<ColumnPane, string> = {
-  left: '左固定',
-  center: '固定なし',
-  right: '右固定',
-};
-
-// 変更(13-B3-1.5): セクション内(= fromKey と同一ペイン)でのみ並べ替え、確定時に
-//   left 群 → center 群 → right 群を各セクションの表示順で連結した「全列キー順」を返します
-//   (合意ポイント①=A: 書き戻すと columns 配列が pane 順へ正規化されます)。
-//   dropIndexInPane は「ソースペイン内での挿入位置(0..そのペインの件数)」です。
-//   セクション内が実際に動かない no-op の場合は正規化も行わず null を返します。
-//   ※ ドラッグは検索語が空のときのみ可能なため、items は常に「全列(絞り込み前)」です。
-function computeSectionReorderedKeys(
-  items: ColumnChooserItem[],
-  fromKey: string,
-  dropIndexInPane: number,
-): string[] | null {
-  const from = items.find((item) => item.key === fromKey);
-  if (!from) {
-    return null;
-  }
-  const sourcePane = from.pane;
-
-  // items 順を保ったままペインごとのキー配列へ分割します。
-  const groups: Record<ColumnPane, string[]> = { left: [], center: [], right: [] };
-  for (const item of items) {
-    groups[item.pane].push(item.key);
-  }
-
-  const src = groups[sourcePane];
-  const fromIndex = src.indexOf(fromKey);
-  if (fromIndex < 0) {
-    return null;
-  }
-  // 挿入位置は除去前基準。除去で fromIndex 以降が 1 つ詰まるため to を補正します。
-  let to = dropIndexInPane;
-  if (to > fromIndex) {
-    to -= 1;
-  }
-  to = Math.max(0, Math.min(to, src.length - 1));
-  if (to === fromIndex) {
-    // セクション内 no-op → 正規化もしません(no-op ドラッグで配列を動かさないため)。
-    return null;
-  }
-  const [moved] = src.splice(fromIndex, 1);
-  src.splice(to, 0, moved);
-
-  return [...groups.left, ...groups.center, ...groups.right];
-}
-
-type CheckState = 'checked' | 'unchecked' | 'indeterminate';
-
-// 追加(13-B2-1): 3 状態に対応した自作チェックボックスです。
-//   native input の indeterminate は ref 経由でしか設定できず、角丸の見た目も
-//   ブラウザ差が出るため、見た目は div で描画します(GIF の角丸チェックに寄せます)。
-function CheckBox({
-  state,
-  disabled,
-}: {
-  state: CheckState;
-  disabled: boolean;
-}) {
-  const filled = state === 'checked' || state === 'indeterminate';
-
-  return (
-    <span
-      className={cx(
-        'ssg-checkbox',
-        filled && 'ssg-checkbox--filled',
-        disabled && 'ssg-checkbox--disabled',
-      )}
-      aria-hidden
-    >
-      {state === 'checked' && (
-        <svg width="11" height="11" viewBox="0 0 12 12" fill="none">
-          <path
-            d="M2.5 6.2 4.7 8.4 9.5 3.6"
-            // 変更(TH-DK-1): stroke も属性では var() 不可のため style で指定します。
-            style={{ stroke: 'var(--ssg-panel-accent-contrast)' }}
-            strokeWidth="1.8"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          />
-        </svg>
-      )}
-      {state === 'indeterminate' && <span className="ssg-checkbox-dash" />}
-    </span>
-  );
-}
-
-// 追加(13-B3-1): ⠿ ドラッグハンドルの見た目です(2×3 の点)。
-//   操作系(pointerdown / capture)は行側に配線し、ここは見た目のみを描画します。
-function DragHandleGlyph({ disabled }: { disabled: boolean }) {
-  return (
-    <svg
-      width="10"
-      height="16"
-      viewBox="0 0 10 16"
-      // 変更(TH-DK-1): fill はプレゼンテーション属性だと var() を解釈しないため style で指定します。
-      style={{
-        fill: disabled
-          ? 'var(--ssg-panel-text-disabled)'
-          : 'var(--ssg-panel-text-faint)',
-      }}
-      aria-hidden
-    >
-      {[3, 8, 13].map((cy) =>
-        [3, 7].map((cx) => (
-          <circle key={`${cx}-${cy}`} cx={cx} cy={cy} r="1.2" />
-        )),
-      )}
-    </svg>
-  );
-}
-
-export function ColumnChooserPanel({
-  isOpen,
-  items,
-  canToggle,
-  layout,
-  panelRef,
-  onToggleColumnVisibility,
-  onShowAllColumns,
-  onResetColumns,
-  onReorderColumns,
-  onRequestClose,
-  onPanelMove,
-}: ColumnChooserPanelProps) {
-  const [query, setQuery] = useState('');
-  const searchInputRef = useRef<HTMLInputElement | null>(null);
-
-  // 追加: 開くたびに検索語をリセットし、検索入力へフォーカスします。
-  useEffect(() => {
-    if (isOpen) {
-      setQuery('');
-      // portal mount 後にフォーカスを当てます。
-      const id = requestAnimationFrame(() => {
-        searchInputRef.current?.focus();
-      });
-      return () => cancelAnimationFrame(id);
-    }
-    return undefined;
-  }, [isOpen]);
-
-  // 注記: master / guard の判定は「全列(検索フィルタ前)」を基準にします。
-  //       検索はあくまで一覧の絞り込み表示で、全選択の意味は変えません。
-  const visibleCount = useMemo(
-    () => items.filter((item) => item.visible).length,
-    [items],
-  );
-  const allVisible = visibleCount === items.length && items.length > 0;
-//   const hasHidden = items.some((item) => !item.visible);
-
-  // 全選択の状態: 全表示 = checked、一部非表示 = indeterminate。
-  // 最後の 1 列ガードにより「全非表示」は発生しないため unchecked にはなりません。
-  const masterState: CheckState = allVisible ? 'checked' : 'indeterminate';
-
-  const filteredItems = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    if (!q) {
-      return items;
-    }
-    return items.filter((item) => item.title.toLowerCase().includes(q));
-  }, [items, query]);
-
-  // 追加(13-B3-1.5): filteredItems を所属ペインのセクションへ分割します。
-  //   空セクションは除外し、PANE_ORDER(left → center → right)で並べます。
-  //   各セクション内は filteredItems の相対順(= columns 配列の pane 内相対順)を保ちます。
-  const sections = useMemo(() => {
-    const groups: Record<ColumnPane, ColumnChooserItem[]> = {
-      left: [],
-      center: [],
-      right: [],
-    };
-    for (const item of filteredItems) {
-      groups[item.pane].push(item);
-    }
-    return PANE_ORDER.map((pane) => ({ pane, items: groups[pane] })).filter(
-      (section) => section.items.length > 0,
-    );
-  }, [filteredItems]);
-
-  // 非空セクションが 2 つ以上(= 固定列あり)のときだけ小見出しを出します。
-  // 固定列が無いときは従来どおりフラット一覧になります。
-  const showHeadings = sections.length >= 2;
-
-  // ── ドラッグ並べ替え(13-B3-1) ─────────────────────────
-  // ドラッグ可否: onColumnsChange あり(canToggle)かつ検索語が空のときのみ。
-  // 検索中は一覧が絞り込み表示のため、並べ替え対象の全体像が見えず曖昧になるので無効化します。
-  const canDrag = canToggle && query.trim() === '';
-
-  const listRef = useRef<HTMLDivElement | null>(null);
-  // ドラッグ中の列キー(null = 非ドラッグ)。dragActiveRef は pointer ハンドラ内の
-  // 早期 return 判定用(state 反映前の連続イベントでも確実に効くよう ref で持ちます)。
-  const [draggingKey, setDraggingKey] = useState<string | null>(null);
-  const dragActiveRef = useRef(false);
-  // 追加(13-B3-1.5): ドラッグ元のペインです。ドロップ位置走査をこのペインの行へ限定し、
-  //   セクション跨ぎを実質不可にします(ref は走査ハンドラから同期読みするため)。
-  const draggingPaneRef = useRef<ColumnPane | null>(null);
-  // ドロップ挿入位置(items 上の 0..length。length = 末尾へ)。インジケータ描画に使います。
-  const [dropIndex, setDropIndex] = useState<number | null>(null);
-  const pointerYRef = useRef(0);
-  const autoScrollRafRef = useRef<number | null>(null);
-
-  // ポインタ Y から「行 midpoint より上にある行数」= 挿入インデックスを求めます。
-  // 変更(13-B3-1.5): 走査対象をドラッグ元ペイン(draggingPaneRef)の行へ限定します。
-  //   これにより別セクション上にポインタがあってもドロップ位置はソースセクション内へ
-  //   留まり、セクション跨ぎが実質不可になります(pinned 不変)。
-  const updateDropFromPointer = useCallback(() => {
-    const list = listRef.current;
-    const pane = draggingPaneRef.current;
-    if (!list || !pane) {
-      return;
-    }
-    const rows = list.querySelectorAll<HTMLElement>(
-      `[data-chooser-row][data-chooser-pane="${pane}"]`,
-    );
-    const y = pointerYRef.current;
-    let index = rows.length;
-    for (let i = 0; i < rows.length; i += 1) {
-      const rect = rows[i].getBoundingClientRect();
-      if (y < rect.top + rect.height / 2) {
-        index = i;
-        break;
-      }
-    }
-    setDropIndex(index);
-  }, []);
-
-  // ドラッグ中、一覧コンテナの上下端付近へポインタが入ったらオートスクロールします。
-  const autoScrollTick = useCallback(() => {
-    const list = listRef.current;
-    if (!list || !dragActiveRef.current) {
-      autoScrollRafRef.current = null;
-      return;
-    }
-    const rect = list.getBoundingClientRect();
-    const y = pointerYRef.current;
-    let delta = 0;
-    if (y < rect.top + AUTO_SCROLL_EDGE) {
-      delta = -AUTO_SCROLL_SPEED;
-    } else if (y > rect.bottom - AUTO_SCROLL_EDGE) {
-      delta = AUTO_SCROLL_SPEED;
-    }
-    if (delta !== 0) {
-      const before = list.scrollTop;
-      list.scrollTop += delta;
-      if (list.scrollTop !== before) {
-        updateDropFromPointer();
-      }
-    }
-    autoScrollRafRef.current = requestAnimationFrame(autoScrollTick);
-  }, [updateDropFromPointer]);
-
-  const finishDrag = useCallback(
-    (commit: boolean) => {
-      if (autoScrollRafRef.current !== null) {
-        cancelAnimationFrame(autoScrollRafRef.current);
-        autoScrollRafRef.current = null;
-      }
-      const key = draggingKey;
-      const targetIndex = dropIndex;
-      dragActiveRef.current = false;
-      draggingPaneRef.current = null;
-      setDraggingKey(null);
-      setDropIndex(null);
-      if (commit && key !== null && targetIndex !== null) {
-        const next = computeSectionReorderedKeys(items, key, targetIndex);
-        if (next) {
-          onReorderColumns(next);
-        }
-      }
-    },
-    [draggingKey, dropIndex, items, onReorderColumns],
-  );
-
-  const handleDragHandlePointerDown = useCallback(
-    (key: string, pane: ColumnPane, event: PointerEvent<HTMLElement>) => {
-      if (!canDrag) {
-        return;
-      }
-      // 既定のテキスト選択 / 行クリックを抑止し、grid 側へも伝播させません。
-      event.preventDefault();
-      event.stopPropagation();
-      event.currentTarget.setPointerCapture(event.pointerId);
-      dragActiveRef.current = true;
-      draggingPaneRef.current = pane;
-      pointerYRef.current = event.clientY;
-      setDraggingKey(key);
-      updateDropFromPointer();
-      if (autoScrollRafRef.current === null) {
-        autoScrollRafRef.current = requestAnimationFrame(autoScrollTick);
-      }
-    },
-    [canDrag, updateDropFromPointer, autoScrollTick],
-  );
-
-  const handleDragHandlePointerMove = useCallback(
-    (event: PointerEvent<HTMLElement>) => {
-      if (!dragActiveRef.current) {
-        return;
-      }
-      pointerYRef.current = event.clientY;
-      updateDropFromPointer();
-    },
-    [updateDropFromPointer],
-  );
-
-  const handleDragHandlePointerUp = useCallback(() => {
-    if (!dragActiveRef.current) {
-      return;
-    }
-    finishDrag(true);
-  }, [finishDrag]);
-
-  const handleDragHandlePointerCancel = useCallback(() => {
-    if (!dragActiveRef.current) {
-      return;
-    }
-    finishDrag(false);
-  }, [finishDrag]);
-
-  // panel が閉じる / アンマウントされるときはドラッグ状態と rAF を確実に後始末します。
-  useEffect(() => {
-    if (!isOpen) {
-      dragActiveRef.current = false;
-      draggingPaneRef.current = null;
-      setDraggingKey(null);
-      setDropIndex(null);
-      if (autoScrollRafRef.current !== null) {
-        cancelAnimationFrame(autoScrollRafRef.current);
-        autoScrollRafRef.current = null;
-      }
-    }
-  }, [isOpen]);
-
-  useEffect(
-    () => () => {
-      if (autoScrollRafRef.current !== null) {
-        cancelAnimationFrame(autoScrollRafRef.current);
-        autoScrollRafRef.current = null;
-      }
-    },
-    [],
-  );
-
-  // 追加(FM-4): ヘッダーを掴んでパネルを移動します(hooks は早期 return より前・無条件で
-  //   呼びます。layout=null のときはフック側が開始しません)。
-  const { handleHeaderPointerDown } = usePanelHeaderDrag({
-    layout,
-    onPanelMove,
-  });
-
-  if (!isOpen || !layout) {
-    return null;
-  }
-
-  const wrapperStyle: CSSProperties = {
-    top: layout.top,
-    left: layout.left,
-    width: layout.width,
-  };
-
-  const handlePointerDown = (event: PointerEvent<HTMLDivElement>) => {
-    // 追加: パネル内 pointer 操作を grid 側へ伝播させません
-    //       (列選択開始や outside click 判定との競合を避けます)。
-    event.stopPropagation();
-  };
-
-  const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
-    // 追加: portal 内 keyboard を React ツリー上の parent へ流しません。
-    //       Escape での close は controller の window keydown が担当します。
-    // 変更(POP-KEY): capture 相(onKeyDownCapture)→ bubble 相(onKeyDown)へ変更します。
-    //   capture 相の stopPropagation() はネイティブ伝播ごと止めるため、パネル内部要素の
-    //   bubble 相 onKeyDown や window(bubble)リスナーまで殺してしまいます
-    //   (ColumnFilterPopover の SF-ENTER fix と同一パターンの統一です)。bubble 相なら
-    //   「内部要素のハンドラが先に処理 → 最後にここで外側への合成バブリングだけ遮断」に
-    //   なり、Escape close は controller 側の capture 登録(POP-KEY)が受けます。
-    event.stopPropagation();
-  };
-
-  const handleMasterClick = () => {
-    if (!canToggle) {
-      return;
-    }
-    // 全表示状態では何もしません(全消しは最後の 1 列ガードで不可のため)。
-    if (!allVisible) {
-      onShowAllColumns();
-    }
-  };
-
-  // 追加(13-B3-1.5): ドラッグ中の列が属するペインです(インジケータをソース
-  //   セクションにのみ出すために使います)。ドラッグは検索語が空のときのみなので
-  //   draggingKey は必ず filteredItems(= items)内に存在します。
-  const draggingPane: ColumnPane | null =
-    draggingKey !== null
-      ? (items.find((item) => item.key === draggingKey)?.pane ?? null)
-      : null;
-
-  // 追加(13-B3-1.5): 1 行分の描画です(セクションをまたいで再利用します)。
-  //   indexInPane はそのセクション内での 0 始まり index で、ドロップ前線の判定に使います。
-  const renderRow = (
-    item: ColumnChooserItem,
-    indexInPane: number,
-    pane: ColumnPane,
-  ) => {
-    // 最後の 1 列ガード: 表示中が 1 列だけのとき、その列はチェックを外せません。
-    const isOnlyVisible = item.visible && visibleCount === 1;
-    const disabled = !canToggle || isOnlyVisible;
-    const isDragging = draggingKey === item.key;
-    // ドロップインジケータ: ソースペインのこの行の直前に挿入される位置のとき細線を出します。
-    // 末尾(dropIndex === セクション件数)はセクション描画後に別途描画します。
-    const showDropBefore =
-      draggingKey !== null && draggingPane === pane && dropIndex === indexInPane;
-    return (
-      <div
-        key={item.key}
-        data-chooser-row=""
-        data-chooser-pane={pane}
-        className={cx(
-          'ssg-chooser-row',
-          showDropBefore && 'ssg-chooser-row--drop-before',
-          isDragging && 'ssg-chooser-row--dragging',
-        )}
-      >
-        {/* ⠿ ドラッグハンドル(13-B3-1) */}
-        <span
-          role="button"
-          aria-label="ドラッグして並べ替え"
-          title={
-            !canToggle
-              ? 'onColumnsChange 未指定のため並べ替えできません'
-              : query.trim() !== ''
-                ? '検索中は並べ替えできません'
-                : 'ドラッグして並べ替え(同じセクション内のみ)'
-          }
-          onPointerDown={(event) =>
-            handleDragHandlePointerDown(item.key, pane, event)
-          }
-          onPointerMove={handleDragHandlePointerMove}
-          onPointerUp={handleDragHandlePointerUp}
-          onPointerCancel={handleDragHandlePointerCancel}
-          className={cx(
-            'ssg-chooser-handle',
-            !canDrag && 'ssg-chooser-handle--disabled',
-            isDragging && 'ssg-chooser-handle--dragging',
-          )}
-        >
-          <DragHandleGlyph disabled={!canDrag} />
-        </span>
-
-        <button
-          type="button"
-          disabled={disabled}
-          onClick={() => {
-            if (disabled) {
-              return;
-            }
-            onToggleColumnVisibility(item.key, !item.visible);
-          }}
-          className="ssg-chooser-toggle"
-        >
-          <CheckBox
-            state={item.visible ? 'checked' : 'unchecked'}
-            disabled={disabled}
-          />
-          <span
-            className={cx(
-              'ssg-chooser-label',
-              disabled && !item.visible && 'ssg-chooser-label--muted',
-            )}
-          >
-            {item.title}
-          </span>
-        </button>
-      </div>
-    );
-  };
-
-  return createPortal(
-    <div
-      ref={panelRef}
-      onPointerDown={handlePointerDown}
-      onKeyDown={handleKeyDown}
-      onContextMenu={(event) => {
-        event.preventDefault();
-      }}
-      className="ssg-popover ssg-chooser-panel"
-      style={wrapperStyle}
-    >
-      {/* ── ヘッダー: タイトル + × ── */}
-      <div
-        className="ssg-popover-header ssg-popover-header--draggable"
-        onPointerDown={handleHeaderPointerDown}
-      >
-        <span className="ssg-popover-title">列の表示</span>
-        <button
-          type="button"
-          onClick={onRequestClose}
-          aria-label="閉じる"
-          className="ssg-popover-close"
-        >
-          ×
-        </button>
-      </div>
-
-      {/* ── 検索行: 全選択チェック + 検索入力 ── */}
-      <div className="ssg-chooser-search-row">
-        <button
-          type="button"
-          disabled={!canToggle}
-          onClick={handleMasterClick}
-          aria-label="すべての列を表示"
-          title="すべての列を表示"
-          className="ssg-chooser-master-btn"
-        >
-          <CheckBox state={masterState} disabled={!canToggle} />
-        </button>
-        <div className="ssg-chooser-search-field">
-          <span aria-hidden className="ssg-chooser-search-icon">
-            ⌕
-          </span>
-          <input
-            ref={searchInputRef}
-            type="text"
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-            placeholder="検索..."
-            className="ssg-chooser-search-input"
-          />
-        </div>
-      </div>
-
-      {/* ── 列一覧(スクロール) ── */}
-      <div ref={listRef} className="ssg-chooser-list">
-        {filteredItems.length === 0 ? (
-          <div className="ssg-chooser-empty">該当する列がありません</div>
-        ) : (
-          sections.map((section) => (
-            <div key={section.pane} data-chooser-section={section.pane}>
-              {showHeadings && (
-                <div className="ssg-chooser-section-heading">
-                  {SECTION_LABELS[section.pane]}
-                </div>
-              )}
-              {section.items.map((item, indexInPane) =>
-                renderRow(item, indexInPane, section.pane),
-              )}
-              {/* セクション末尾へのドロップインジケータ(13-B3-1.5) */}
-              {draggingKey !== null &&
-                draggingPane === section.pane &&
-                dropIndex === section.items.length && (
-                  <div className="ssg-chooser-drop-end" />
-                )}
-            </div>
-          ))
-        )}
-      </div>
-
-      {/* ── フッター: 列のリセット + (無効時)注記 ── */}
-      <div className="ssg-chooser-footer">
-        <button
-          type="button"
-          disabled={!canToggle}
-          onClick={() => {
-            if (!canToggle) {
-              return;
-            }
-            onResetColumns();
-          }}
-          title="すべての列の幅・固定・表示を初期状態に戻します"
-          className="ssg-chooser-reset-btn"
-        >
-          すべての列を初期状態に戻す
-        </button>
-
-        {!canToggle && (
-          <div className="ssg-chooser-note">
-            onColumnsChange 未指定のため表示/非表示・リセットを変更できません
-          </div>
-        )}
-      </div>
-    </div>,
-    document.body,
-  );
-}
-
-export default ColumnChooserPanel;
-</file>
-
-<file path="src/components/spreadsheet-grid/view/SortManagementPanel.tsx">
-// 追加(MS-3-1 / 並び替え管理パネル): 複数レベルの並び替えをマウス/タッチで編集する
-//   独立 popover です(Excel の「並べ替え」ダイアログ相当 / ColumnChooserPanel の兄弟)。
-//   - タイトル + × クローズ / レベル一覧(優先度・列セレクト・方向・削除) /
-//     フッター(基準を追加 / すべてクリア)で構成します。
-//   - 本コンポーネントは非ジェネリックです(ColumnChooserPanel と同様、プリミティブな
-//     entries / columns だけを受け取ります)。編集はライブ適用で、各操作は即座に
-//     呼び出し側(SpreadsheetGrid)のハンドラ経由で uiState.sort(単一ソース)へ反映します。
-//     パネルは編集後も開いたまま(× / outside click / Escape でのみ閉じます)。
-//   - 並び替えロジックは持ちません。操作は index / key / direction の「意図」を emit し、
-//     次状態の算出(logic/sorting.ts の純関数)と dispatch は呼び出し側が担います。
-//   - 変更(MS-3-2 / 優先順位 DnD): 各レベル行の左端に ⠿ ドラッグハンドルを追加し、
-//     pointer ベースで優先順位を並べ替えます(ColumnChooserPanel の DnD 機構を移植。ただし
-//     単一フラットリストのためセクション分け・オートスクロールは省略。ドロップ前線インジ
-//     ケータは踏襲)。確定時は from / 補正済み to を onMove へ emit し、次状態の算出
-//     (moveSortEntry)と dispatch は呼び出し側が担います。ドラッグは canSort かつ
-//     レベル 2 件以上のときのみ可能です。
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { createPortal } from 'react-dom';
-import { cx } from '../logic/cx';
-import type { CSSProperties, KeyboardEvent, PointerEvent, RefObject } from 'react';
-import type { GridSortEntry } from '../model/gridTypes';
-import type { SortManagementLayout } from '../hooks/useSortManagementController';
-// 追加(FM-4): ヘッダーを掴んでパネルを移動する共有フックです(3 パネル共通)。
-import { usePanelHeaderDrag } from '../hooks/usePanelHeaderDrag';
-
-// 追加(MS-3-1): パネルが必要とする最小の列情報です(並び替え可能な列のみを渡します)。
-export type SortManagementColumn = {
-  key: string;
-  title: string;
-};
-
-type SortManagementPanelProps = {
-  isOpen: boolean;
-  // 現在の並び替え(優先順位順)です。uiState.sort をそのまま渡せます。
-  entries: GridSortEntry[];
-  // 並び替え対象に選べる列の一覧です(呼び出し側で visibleColumns から作ります)。
-  columns: SortManagementColumn[];
-  // enableSorting 相当。false のときは編集を無効化し注記を出します(保険。通常は開きません)。
-  canSort: boolean;
-  layout: SortManagementLayout | null;
-  panelRef: RefObject<HTMLDivElement | null>;
-  // レベルを末尾へ追加します(呼び出し側が未使用列を選んで渡すか、ここで渡す key を採用)。
-  onAddLevel: (columnKey: string, direction: 'asc' | 'desc') => void;
-  onChangeDirection: (index: number, direction: 'asc' | 'desc') => void;
-  onChangeColumn: (index: number, columnKey: string) => void;
-  onRemoveLevel: (index: number) => void;
-  onClearAll: () => void;
-  // 追加(MS-3-2): 優先順位 DnD の確定ハンドラです。from(掴んだレベル)と to(除去後の
-  //   挿入先 index)を渡します。ドロップ位置からの -1 補正はパネル内で済ませているため、
-  //   呼び出し側は moveSortEntry(sort, from, to) をそのまま呼べます。canSort かつ
-  //   レベル 2 件以上のときのみ、かつ実際に位置が動いたときのみ呼ばれます。
-  onMove: (from: number, to: number) => void;
-  onRequestClose: () => void;
-  // 追加(FM-4): ヘッダードラッグによるパネル移動です(controller の moveSortManager を
-  //   受け取ります。位置の clamp・保持・close 時リセットは controller 側の責務)。
-  onPanelMove: (top: number, left: number) => void;
-};
-
-// 追加(MS-3-2): ⠿ ドラッグハンドルの見た目です(2×3 の点)。ColumnChooserPanel と同型。
-//   操作系(pointerdown / capture)は行側に配線し、ここは見た目のみを描画します。
-function DragHandleGlyph({ disabled }: { disabled: boolean }) {
-  return (
-    <svg
-      width="10"
-      height="16"
-      viewBox="0 0 10 16"
-      // 変更(TH-DK-1): fill はプレゼンテーション属性だと var() を解釈しないため style で指定します。
-      style={{
-        fill: disabled
-          ? 'var(--ssg-panel-text-disabled)'
-          : 'var(--ssg-panel-text-faint)',
-      }}
-      aria-hidden
-    >
-      {[3, 8, 13].map((cy) =>
-        [3, 7].map((cx) => (
-          <circle key={`${cx}-${cy}`} cx={cx} cy={cy} r="1.2" />
-        )),
-      )}
-    </svg>
-  );
-}
-
-export function SortManagementPanel({
-  isOpen,
-  entries,
-  columns,
-  canSort,
-  layout,
-  panelRef,
-  onAddLevel,
-  onChangeDirection,
-  onChangeColumn,
-  onRemoveLevel,
-  onClearAll,
-  onMove,
-  onRequestClose,
-  onPanelMove,
-}: SortManagementPanelProps) {
-  // 既に並び替えに使われている列キーの集合です(列セレクトの候補絞り込みに使います)。
-  const usedKeys = useMemo(
-    () => new Set(entries.map((entry) => entry.columnKey)),
-    [entries],
-  );
-
-  // 未使用の最初の列(「基準を追加」で追加する列)です。なければ追加不可。
-  const firstUnusedColumn = useMemo(
-    () => columns.find((column) => !usedKeys.has(column.key)) ?? null,
-    [columns, usedKeys],
-  );
-
-  const titleOf = (key: string) =>
-    columns.find((column) => column.key === key)?.title ?? key;
-
-  // ── 優先順位 DnD(MS-3-2) ───────────────────────────────
-  //   ColumnChooserPanel の pointer 機構を移植。単一フラットリストのため pane 走査・
-  //   オートスクロールは省略し、ドロップ前線インジケータのみ踏襲します。
-  //   ※ 下記フックはすべて早期 return (!isOpen || !layout) より前に置きます
-  //     (条件付き hook 呼び出しを避けるため)。
-  // ドラッグ可否: 並び替え有効、かつレベルが 2 件以上のときのみ。
-  const canDrag = canSort && entries.length >= 2;
-  const listRef = useRef<HTMLDivElement | null>(null);
-  // ドラッグ中のレベル index(null = 非ドラッグ)。dragActiveRef は state 反映前の連続
-  //   pointer イベントでも確実に効くよう、早期 return 判定を ref で持ちます。
-  const [draggingIndex, setDraggingIndex] = useState<number | null>(null);
-  const dragActiveRef = useRef(false);
-  // ドロップ挿入スロット(0..entries.length。length = 末尾)。インジケータ描画に使います。
-  const [dropIndex, setDropIndex] = useState<number | null>(null);
-  const pointerYRef = useRef(0);
-
-  // ポインタ Y から「行 midpoint より上にある行数」= 挿入スロットを求めます。
-  const updateDropFromPointer = useCallback(() => {
-    const list = listRef.current;
-    if (!list) {
-      return;
-    }
-    const rows = list.querySelectorAll<HTMLElement>('[data-sort-level]');
-    const y = pointerYRef.current;
-    let index = rows.length;
-    for (let i = 0; i < rows.length; i += 1) {
-      const rect = rows[i].getBoundingClientRect();
-      if (y < rect.top + rect.height / 2) {
-        index = i;
-        break;
-      }
-    }
-    setDropIndex(index);
-  }, []);
-
-  const finishDrag = useCallback(
-    (commit: boolean) => {
-      const from = draggingIndex;
-      const rawTo = dropIndex;
-      dragActiveRef.current = false;
-      setDraggingIndex(null);
-      setDropIndex(null);
-      if (commit && from !== null && rawTo !== null) {
-        // 挿入スロット(除去前基準 0..length)→ 除去後 index へ補正します。
-        let to = rawTo;
-        if (to > from) {
-          to -= 1;
-        }
-        // moveSortEntry 側で from === to / 範囲外は同一参照になるため、no-op ドラッグでも
-        //   無駄な setSort 参照変化は起きません。
-        onMove(from, to);
-      }
-    },
-    [draggingIndex, dropIndex, onMove],
-  );
-
-  const handleHandlePointerDown = useCallback(
-    (index: number, event: PointerEvent<HTMLElement>) => {
-      if (!canDrag) {
-        return;
-      }
-      // 既定のテキスト選択 / 行操作を抑止し、grid 側へも伝播させません。
-      event.preventDefault();
-      event.stopPropagation();
-      event.currentTarget.setPointerCapture(event.pointerId);
-      dragActiveRef.current = true;
-      pointerYRef.current = event.clientY;
-      setDraggingIndex(index);
-      updateDropFromPointer();
-    },
-    [canDrag, updateDropFromPointer],
-  );
-
-  const handleHandlePointerMove = useCallback(
-    (event: PointerEvent<HTMLElement>) => {
-      if (!dragActiveRef.current) {
-        return;
-      }
-      pointerYRef.current = event.clientY;
-      updateDropFromPointer();
-    },
-    [updateDropFromPointer],
-  );
-
-  const handleHandlePointerUp = useCallback(() => {
-    if (!dragActiveRef.current) {
-      return;
-    }
-    finishDrag(true);
-  }, [finishDrag]);
-
-  const handleHandlePointerCancel = useCallback(() => {
-    if (!dragActiveRef.current) {
-      return;
-    }
-    finishDrag(false);
-  }, [finishDrag]);
-
-  // panel が閉じるときはドラッグ状態を確実に後始末します(rAF は持たないため不要)。
-  useEffect(() => {
-    if (!isOpen) {
-      dragActiveRef.current = false;
-      setDraggingIndex(null);
-      setDropIndex(null);
-    }
-  }, [isOpen]);
-
-  // 追加(FM-4): ヘッダーを掴んでパネルを移動します(hooks は早期 return より前・無条件で
-  //   呼びます。layout=null のときはフック側が開始しません)。
-  const { handleHeaderPointerDown } = usePanelHeaderDrag({
-    layout,
-    onPanelMove,
-  });
-
-  if (!isOpen || !layout) {
-    return null;
-  }
-
-  const wrapperStyle: CSSProperties = {
-    top: layout.top,
-    left: layout.left,
-    width: layout.width,
-  };
-
-  const handlePointerDown = (event: PointerEvent<HTMLDivElement>) => {
-    // パネル内 pointer 操作を grid 側へ伝播させません(列選択開始 / outside click 競合回避)。
-    event.stopPropagation();
-  };
-
-  const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
-    // portal 内 keyboard を React ツリー上の parent へ流しません。
-    // Escape での close は controller の window keydown が担当します。
-    // 変更(POP-KEY): capture 相(onKeyDownCapture)→ bubble 相(onKeyDown)へ変更します。
-    //   capture 相の stopPropagation() はネイティブ伝播ごと止めるため、パネル内部要素の
-    //   bubble 相 onKeyDown や window(bubble)リスナーまで殺してしまいます
-    //   (ColumnFilterPopover の SF-ENTER fix と同一パターンの統一です)。bubble 相なら
-    //   「内部要素のハンドラが先に処理 → 最後にここで外側への合成バブリングだけ遮断」に
-    //   なり、Escape close は controller 側の capture 登録(POP-KEY)が受けます。
-    event.stopPropagation();
-  };
-
-  const canAddLevel = canSort && firstUnusedColumn !== null;
-
-  return createPortal(
-    <div
-      ref={panelRef}
-      onPointerDown={handlePointerDown}
-      onKeyDown={handleKeyDown}
-      onContextMenu={(event) => {
-        event.preventDefault();
-      }}
-      className="ssg-popover ssg-sort-panel"
-      style={wrapperStyle}
-    >
-      {/* ── ヘッダー: タイトル + × ── */}
-      <div
-        className="ssg-popover-header ssg-popover-header--draggable"
-        onPointerDown={handleHeaderPointerDown}
-      >
-        <span className="ssg-popover-title">並び替え</span>
-        <button
-          type="button"
-          onClick={onRequestClose}
-          aria-label="閉じる"
-          className="ssg-popover-close"
-        >
-          ×
-        </button>
-      </div>
-
-      {/* ── レベル一覧(スクロール) ── */}
-      <div ref={listRef} className="ssg-sort-list">
-        {entries.length === 0 ? (
-          <div className="ssg-sort-empty">並び替えは設定されていません</div>
-        ) : (
-          entries.map((entry, index) => {
-            // この行の列セレクト候補: 自分の列 + 他レベルで未使用の列。
-            const options = columns.filter(
-              (column) =>
-                column.key === entry.columnKey || !usedKeys.has(column.key),
-            );
-            // 万一この列が columns(= 可視列)に無い(後から非表示化された等)場合でも、
-            // セレクトの value が候補に無いと表示が崩れるため、合成候補を先頭に補います。
-            const hasOwn = options.some(
-              (column) => column.key === entry.columnKey,
-            );
-            const resolvedOptions = hasOwn
-              ? options
-              : [{ key: entry.columnKey, title: titleOf(entry.columnKey) }, ...options];
-
-            // 優先順位 DnD(MS-3-2): この行を掴んでいるか / この行の直前に挿入するか。
-            const isDragging = draggingIndex === index;
-            const showDropBefore =
-              draggingIndex !== null && dropIndex === index;
-
-            return (
-              <div
-                key={entry.columnKey}
-                data-sort-level=""
-                className={cx(
-                  'ssg-sort-level',
-                  showDropBefore && 'ssg-sort-level--drop-before',
-                  isDragging && 'ssg-sort-level--dragging',
-                )}
-              >
-                {/* ⠿ ドラッグハンドル(MS-3-2) */}
-                <span
-                  role="button"
-                  aria-label="ドラッグして優先順位を変更"
-                  title={
-                    !canSort
-                      ? '並び替えが無効です'
-                      : entries.length < 2
-                        ? 'レベルが 2 件以上のとき並べ替えできます'
-                        : 'ドラッグして優先順位を変更'
-                  }
-                  onPointerDown={(event) =>
-                    handleHandlePointerDown(index, event)
-                  }
-                  onPointerMove={handleHandlePointerMove}
-                  onPointerUp={handleHandlePointerUp}
-                  onPointerCancel={handleHandlePointerCancel}
-                  className={cx(
-                    'ssg-sort-handle',
-                    !canDrag && 'ssg-sort-handle--disabled',
-                    isDragging && 'ssg-sort-handle--dragging',
-                  )}
-                >
-                  <DragHandleGlyph disabled={!canDrag} />
-                </span>
-
-                {/* 優先度バッジ(1 始まり)。ヘッダーの優先順位番号と意味を揃えます。 */}
-                <span aria-hidden className="ssg-sort-badge">
-                  {index + 1}
-                </span>
-
-                {/* 列セレクト */}
-                <select
-                  value={entry.columnKey}
-                  disabled={!canSort}
-                  onChange={(event) => onChangeColumn(index, event.target.value)}
-                  className="ssg-sort-select"
-                >
-                  {resolvedOptions.map((column) => (
-                    <option key={column.key} value={column.key}>
-                      {column.title}
-                    </option>
-                  ))}
-                </select>
-
-                {/* 方向セグメント(昇順 / 降順) */}
-                <div className="ssg-sort-dir-group">
-                  <button
-                    type="button"
-                    disabled={!canSort}
-                    onClick={() => onChangeDirection(index, 'asc')}
-                    title="昇順"
-                    className={cx(
-                      'ssg-sort-dir-btn',
-                      entry.direction === 'asc' && 'ssg-sort-dir-btn--active',
-                    )}
-                  >
-                    ↑ 昇順
-                  </button>
-                  <button
-                    type="button"
-                    disabled={!canSort}
-                    onClick={() => onChangeDirection(index, 'desc')}
-                    title="降順"
-                    className={cx(
-                      'ssg-sort-dir-btn',
-                      entry.direction === 'desc' && 'ssg-sort-dir-btn--active',
-                    )}
-                  >
-                    ↓ 降順
-                  </button>
-                </div>
-
-                {/* 削除 */}
-                <button
-                  type="button"
-                  disabled={!canSort}
-                  onClick={() => onRemoveLevel(index)}
-                  aria-label="このレベルを削除"
-                  title="このレベルを削除"
-                  className="ssg-sort-delete"
-                >
-                  ×
-                </button>
-              </div>
-            );
-          })
-        )}
-        {/* 末尾へのドロップインジケータ(MS-3-2): 最後の行の後ろに挿入される位置のとき。 */}
-        {draggingIndex !== null && dropIndex === entries.length && (
-          <div className="ssg-sort-drop-end" />
-        )}
-      </div>
-
-      {/* ── フッター: 基準を追加 / すべてクリア ── */}
-      <div className="ssg-popover-footer">
-        <button
-          type="button"
-          disabled={!canAddLevel}
-          onClick={() => {
-            if (!canAddLevel || !firstUnusedColumn) {
-              return;
-            }
-            onAddLevel(firstUnusedColumn.key, 'asc');
-          }}
-          title={
-            !canSort
-              ? '並び替えが無効です'
-              : firstUnusedColumn === null
-                ? 'すべての列が並び替えに使われています'
-                : '並び替えの基準を追加します'
-          }
-          className="ssg-sort-footer-btn ssg-sort-footer-btn--add"
-        >
-          ＋ 基準を追加
-        </button>
-
-        <button
-          type="button"
-          disabled={!canSort || entries.length === 0}
-          onClick={() => {
-            if (!canSort || entries.length === 0) {
-              return;
-            }
-            onClearAll();
-          }}
-          title="すべての並び替えを解除します"
-          className="ssg-sort-footer-btn ssg-sort-footer-btn--clear"
-        >
-          すべてクリア
-        </button>
-      </div>
-
-      {!canSort && (
-        <div className="ssg-sort-note">
-          並び替えが無効のため編集できません
-        </div>
-      )}
-    </div>,
-    document.body,
-  );
-}
-
-export default SortManagementPanel;
-</file>
-
 <file path="vite.lib.config.ts">
 import { resolve } from 'node:path'
 import { defineConfig } from 'vite'
@@ -16039,286 +15658,6 @@ export function CellEditorLayer({
 }
 
 export default CellEditorLayer;
-</file>
-
-<file path="src/components/spreadsheet-grid/hooks/useGridClipboardController.ts">
-import { useCallback, type Dispatch } from 'react';
-import { gridActions, type GridUiAction } from '../model/gridActions';
-import type {
-  GridColumn,
-  SpreadsheetGridProps,
-  GridUiState,
-  RowModel,
-} from '../model/gridTypes';
-import { clamp } from '../logic/geometry';
-import { getCellValue, isCellEditable } from '../utils/permissions';
-import {
-  applyClipboardMatrixToRows,
-  parseClipboardText,
-  serializeSelectionToTsv,
-} from '../utils/clipboard';
-
-type UseGridClipboardControllerArgs<T extends object> = {
-  rows: T[];
-  // 変更(DS-3-3): filteredRows / filteredRowSourceIndexes 配列 → rowModel シームへ集約。
-  //   copy 時のセル値取得は getRow(i)、paste 書き込みの source 解決は getSourceIndex(i)、
-  //   範囲判定の行数は getRowCount() を使い分けます。順序契約は order と同一(viewIndex 空間)。
-  rowModel: RowModel<T>;
-  visibleColumns: GridColumn<T>[];
-  uiState: GridUiState;
-  readOnly: boolean;
-  canEditCell: SpreadsheetGridProps<T>['canEditCell'];
-  createRow?: () => T;
-  createOverflowColumn?: (columnIndex: number) => GridColumn<T>;
-  onRowsChange?: (nextRows: T[]) => void;
-  onColumnsChange?: (nextColumns: GridColumn<T>[]) => void;
-  dispatch: Dispatch<GridUiAction>;
-};
-
-// 追加: copy / paste と行列自動拡張をまとめる clipboard controller です。
-export const useGridClipboardController = <T extends object>({
-  rows,
-  rowModel,
-  visibleColumns,
-  uiState,
-  readOnly,
-  canEditCell,
-  createRow,
-  createOverflowColumn,
-  onRowsChange,
-  onColumnsChange,
-  dispatch,
-}: UseGridClipboardControllerArgs<T>) => {
-  // 追加: 現在の selection が「表全体選択」かどうかを判定します。
-  // 変更(DS-3-3): filteredRows.length → rowModel.getRowCount()。
-  const viewRowCount = rowModel.getRowCount();
-  const isWholeGridSelected =
-    viewRowCount > 0 &&
-    visibleColumns.length > 0 &&
-    uiState.selection?.type === 'cell' &&
-    (() => {
-      const start = uiState.selection.range.start;
-      const end = uiState.selection.range.end;
-      const startRow = Math.min(start.row, end.row);
-      const startCol = Math.min(start.col, end.col);
-      const endRow = Math.max(start.row, end.row);
-      const endCol = Math.max(start.col, end.col);
-      return (
-        startRow === 0 &&
-        startCol === 0 &&
-        endRow === viewRowCount - 1 &&
-        endCol === visibleColumns.length - 1
-      );
-    })();
-
-  // 追加: 全体選択時の copy を専用経路で行います。
-  // 変更(DS-3-3): filteredRows.map → getRowCount()/getRow(i) のビュー順走査へ置換。
-  const serializeWholeGridToTsv = useCallback(() => {
-    const rowCount = rowModel.getRowCount();
-    if (rowCount === 0 || visibleColumns.length === 0) {
-      return '';
-    }
-
-    const lines: string[] = [];
-    for (let viewIndex = 0; viewIndex < rowCount; viewIndex += 1) {
-      const row = rowModel.getRow(viewIndex);
-      // 追加(①-3): serverSide の未ロード行(getRow===undefined)は getCellValue が throw する
-      //   ため skip します(serializeSelectionToTsv と同方針)。clientSide は全行ロード済みの
-      //   ため、この guard は実質 no-op です。
-      if (!row) {
-        continue;
-      }
-      const cells = visibleColumns.map((column) => {
-        const rawValue = getCellValue(row, column);
-        return column.formatClipboardValue
-          ? column.formatClipboardValue(rawValue, row)
-          : String(rawValue ?? '');
-      });
-      lines.push(cells.join('\t'));
-    }
-    return lines.join('\n');
-  }, [rowModel, visibleColumns]);
-
-  // 追加: copy 処理です。selection を TSV にしてクリップボードへ書き込みます。
-  const handleCopy = useCallback(async () => {
-    // 変更(DS-3-10): serializeSelectionToTsv を seam-native 化。view 行の一時 materialize
-    //   (Array.from + getRow)を撤去し、getRow / getRowCount をそのまま渡します。関数側は
-    //   選択レンジ(cell/row)または 0..viewRowCount-1(col)だけを getRow で引きます。
-    const text = isWholeGridSelected
-      ? serializeWholeGridToTsv()
-      : serializeSelectionToTsv(
-          rowModel.getRow,
-          rowModel.getRowCount(),
-          visibleColumns,
-          uiState.selection as
-            | {
-                type: 'cell';
-                range: {
-                  start: { row: number; col: number };
-                  end: { row: number; col: number };
-                };
-              }
-            | { type: 'row'; startRow: number; endRow: number }
-            | { type: 'col'; startCol: number; endCol: number }
-            | null,
-        );
-
-    if (!text) {
-      return;
-    }
-
-    if (navigator.clipboard?.writeText) {
-      await navigator.clipboard.writeText(text);
-    }
-  }, [
-    isWholeGridSelected,
-    rowModel,
-    serializeWholeGridToTsv,
-    uiState.selection,
-    visibleColumns,
-  ]);
-
-  // 追加: paste 処理です。TSV を activeCell 起点に適用し、必要なら行/列を自動拡張します。
-  const handlePaste = useCallback(
-    (event: React.ClipboardEvent<HTMLDivElement>) => {
-      if (!onRowsChange || !uiState.activeCell) {
-        return;
-      }
-
-      const text = event.clipboardData.getData('text/plain');
-      if (!text) {
-        return;
-      }
-
-      event.preventDefault();
-
-      const matrix = parseClipboardText(text);
-      if (matrix.length === 0) {
-        return;
-      }
-
-      const startFilteredRowIndex = uiState.activeCell.row;
-      // 変更(DS-3-9): レガシーの ?? startFilteredRowIndex フォールバックを撤去します。
-      //   getSourceIndex(=order[i]) は OOB(activeCell が縮小後の order を超える)で undefined を
-      //   返します。旧版は ?? で view index を source index に誤代入していました。撤去後は
-      //   undefined をそのまま判定し、OOB の paste 起点は no-op で抜けます(下流の startOriginalRowIndex +
-      //   matrix.length が NaN になるのを防ぎ、誤行 append も回避)。in-bounds 時は従来と完全一致。
-      const startOriginalRowIndex =
-        rowModel.getSourceIndex(startFilteredRowIndex);
-      if (startOriginalRowIndex === undefined) {
-        return;
-      }
-      const startColIndex = uiState.activeCell.col;
-
-      let workingRows = [...rows];
-      let workingColumns = [...visibleColumns];
-      // 変更(DS-3-10): workingSourceIndexes 配列(N 個の Array.from)を撤去し、view→source の
-      //   解決をクロージャ resolveSourceIndex に置換します。返り値は旧配列と完全一致:
-      //     v < N            : rowModel.getSourceIndex(v)  (= order[v])
-      //     v >= N(append 行): appendBaseSource + (v - N)
-      //   appendBaseSource = 拡張前 rows.length、N = paste 時点の getRowCount()。旧 append は
-      //   workingSourceIndexes.push(workingRows.length - 1) で appendBaseSource から連番を積んで
-      //   いたため式が一致します。append していない範囲外 v は定義値(OOB の source index)を返し
-      //   ますが、下流 applyClipboardMatrixToRows の !currentRow ガードで skip され、旧の
-      //   undefined→continue と同一結果になります。
-      const viewRowCountForPaste = rowModel.getRowCount();
-      const appendBaseSource = workingRows.length;
-      const resolveSourceIndex = (viewIndex: number): number | undefined =>
-        viewIndex < viewRowCountForPaste
-          ? rowModel.getSourceIndex(viewIndex)
-          : appendBaseSource + (viewIndex - viewRowCountForPaste);
-
-      // 追加: 行不足分を createRow で自動追加します。
-      const requiredOriginalRowCount = startOriginalRowIndex + matrix.length;
-      if (requiredOriginalRowCount > workingRows.length && createRow) {
-        while (workingRows.length < requiredOriginalRowCount) {
-          workingRows.push(createRow());
-        }
-      }
-
-      // 追加: 列不足分を createOverflowColumn で自動追加します。
-      const maxPasteWidth = matrix.reduce(
-        (max, currentRow) => Math.max(max, currentRow.length),
-        0,
-      );
-      if (maxPasteWidth === 0) {
-        return;
-      }
-
-      const requiredColumnCount = startColIndex + maxPasteWidth;
-      if (requiredColumnCount > workingColumns.length) {
-        if (onColumnsChange && createOverflowColumn) {
-          while (workingColumns.length < requiredColumnCount) {
-            workingColumns.push(createOverflowColumn(workingColumns.length));
-          }
-          onColumnsChange(workingColumns);
-        }
-      }
-
-      const nextRows = applyClipboardMatrixToRows(
-        workingRows,
-        resolveSourceIndex,
-        workingColumns,
-        matrix,
-        startFilteredRowIndex,
-        startColIndex,
-        (originalRowIndex, colIndex, row, column) =>
-          isCellEditable(
-            { readOnly, canEditCell },
-            originalRowIndex,
-            colIndex,
-            row,
-            column,
-          ),
-      );
-
-      const endRow = clamp(
-        uiState.activeCell.row + Math.max(matrix.length - 1, 0),
-        0,
-        Math.max(
-          // 変更(DS-3-3): filteredRows.length - 1 → getRowCount() - 1。
-          Math.max(rowModel.getRowCount() - 1, 0),
-          startFilteredRowIndex + matrix.length - 1,
-        ),
-      );
-      const endCol = clamp(
-        uiState.activeCell.col + Math.max((matrix[0]?.length ?? 1) - 1, 0),
-        0,
-        Math.max(
-          Math.max(workingColumns.length - 1, 0),
-          startColIndex + maxPasteWidth - 1,
-        ),
-      );
-
-      onRowsChange(nextRows);
-      dispatch(gridActions.startSelection(uiState.activeCell));
-      dispatch(gridActions.updateSelection({ row: endRow, col: endCol }));
-      dispatch(gridActions.endSelection());
-      dispatch(gridActions.activateCell(uiState.activeCell));
-    },
-    [
-      canEditCell,
-      createOverflowColumn,
-      createRow,
-      dispatch,
-      onColumnsChange,
-      onRowsChange,
-      readOnly,
-      rowModel,
-      rows,
-      uiState.activeCell,
-      visibleColumns,
-    ],
-  );
-
-  return {
-    isWholeGridSelected,
-    handleCopy,
-    handlePaste,
-  };
-};
-
-export default useGridClipboardController;
 </file>
 
 <file path="src/components/spreadsheet-grid/hooks/useServerSideRowModel.ts">
@@ -17051,6 +16390,686 @@ export const gridUiReducer = (
 };
 </file>
 
+<file path="src/components/spreadsheet-grid/view/ColumnChooserPanel.tsx">
+// 追加(13-B2-1): 列の表示/非表示パネル(AG Grid の Columns Tool Panel 相当)です。
+//   - タイトル + × クローズ / 検索ボックス / 3 状態の全選択チェックボックス /
+//     列ごとのチェックボックス一覧(チェックで即 表示/非表示)で構成します。
+//   - 本コンポーネントは非ジェネリックです(ColumnMenuPopover と同様、プリミティブな
+//     items だけを受け取ります)。一覧は「全列(非表示列を含む)」を渡す必要があるため、
+//     呼び出し側は visibleColumns ではなく columns から items を作ります。
+// 変更(13-B2-2): フッターに「すべての列を初期状態に戻す」ボタンを追加します
+//   (AG Grid の Columns Tool Panel 末尾 "Reset Columns" 相当)。幅 / 固定 / 表示を
+//   初期 column defs へ戻す操作で、ロジックは呼び出し側(onResetColumns)が持ちます。
+//   canToggle(= onColumnsChange 指定あり)が false のときは無効化します。
+// 変更(13-B3-1): 各行に ⠿ ドラッグハンドルを追加し、pointer ベースで一覧を並べ替えます
+//   (AG Grid の Columns Tool Panel のドラッグ並べ替え相当の第 1 段階)。
+//   - 並べ替えは items(= columns の定義配列順)の順序のみを変更します。pinned の変更や
+//     ペイン跨ぎは本バッチでは扱いません(ヘッダー D&D の 13-B3-2 で対応)。確定した
+//     キー順は onReorderColumns(orderedKeys) で呼び出し側へ渡し、commit は呼び出し側が
+//     担います(表示/非表示・リセットと同じく onColumnsChange 経由)。
+//   - ドラッグ可否は canToggle(= onColumnsChange あり)かつ「検索語が空」のときのみ。
+//     検索で一覧が絞り込まれているときは、絞り込みビュー上の並べ替えが曖昧なため
+//     ハンドルを無効化します(AG Grid 同様)。
+//   - ドラッグ中はドロップ位置インジケータ(行間の細線)を表示し、一覧端付近では
+//     一覧コンテナを自動スクロールします(29 列で一覧が パネル上限高 を超えるため)。
+// 変更(13-B3-1.5): 一覧を pinned ペイン(left / center / right)ごとの小見出しセクションへ
+//   分割します(AG Grid 着想の独自解。AG Grid 本家のツールパネルは pinned ではセクション
+//   分けしませんが、本実装は「パネル = 定義配列素順 / グリッド = reorderColumnsByPane 後の
+//   pane 順」の体感ズレを解消するため、各列を所属ペインのセクションへ表示します)。
+//   - 並べ替えは「同一セクション内のみ」許可します(pinned 不変。pinned 変更はヘッダー D&D
+//     の 13-B3-2 の領分)。セクション跨ぎドロップはドロップ線をソースセクション内へ留める
+//     ことで実質不可にします。
+//   - commit 時に返す orderedKeys は left 群 → center 群 → right 群を各セクションの表示順で
+//     連結した「全列キー順」です(合意ポイント①=A: columns 配列が pane 順に正規化され、
+//     reorderColumnsByPane が冪等化します)。セクション内が実際に動かない no-op ドラッグでは
+//     正規化も行わず null を返します。
+//   - 非空セクションが 1 つだけ(= 固定列なし)のときは小見出しを出さずフラット表示します。
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
+import { cx } from '../logic/cx';
+import type {
+  CSSProperties,
+  KeyboardEvent,
+  PointerEvent,
+  RefObject,
+} from 'react';
+import type { ColumnChooserLayout } from '../hooks/useColumnChooserController';
+// 追加(FM-4): ヘッダーを掴んでパネルを移動する共有フックです(3 パネル共通)。
+import { usePanelHeaderDrag } from '../hooks/usePanelHeaderDrag';
+// 追加(13-B3-1.5): セクション分けの所属ペイン種別です(pinned 由来)。
+import type { ColumnPane } from '../logic/geometry';
+
+// 追加(13-B2-1): パネルが必要とする最小の列情報です。
+// 変更(13-B3-1.5): 所属ペイン(pinned 由来。left / center / right)を追加します。
+//   呼び出し側(SpreadsheetGrid)が getColumnPane 相当で算出して渡します。
+export type ColumnChooserItem = {
+  key: string;
+  title: string;
+  visible: boolean;
+  pane: ColumnPane;
+};
+
+type ColumnChooserPanelProps = {
+  isOpen: boolean;
+  items: ColumnChooserItem[];
+  // 追加: onColumnsChange 未指定時は false。チェックボックスを無効化し注記を出します。
+  canToggle: boolean;
+  layout: ColumnChooserLayout | null;
+  panelRef: RefObject<HTMLDivElement | null>;
+  onToggleColumnVisibility: (columnKey: string, nextVisible: boolean) => void;
+  // 追加: 全選択(= すべて表示)。最後の 1 列ガードのため「全消し」はサポートしません。
+  onShowAllColumns: () => void;
+  // 追加(13-B2-2): 全列を初期状態(幅 / 固定 / 表示)へ戻します。
+  //   ロジックは呼び出し側。canToggle が false のときフッターのボタンは無効化されます。
+  onResetColumns: () => void;
+  // 追加(13-B3-1): ドラッグ並べ替えの確定ハンドラです。並べ替え後の「全列キー順」を
+  //   渡します(items と同一集合の permutation)。commit(onColumnsChange 経由)は
+  //   呼び出し側が担います。検索中・canToggle=false 時は呼ばれません。
+  onReorderColumns: (orderedKeys: string[]) => void;
+  onRequestClose: () => void;
+  // 追加(FM-4): ヘッダードラッグによるパネル移動です(controller の moveColumnChooser を
+  //   受け取ります。位置の clamp・保持・close 時リセットは controller 側の責務)。
+  onPanelMove: (top: number, left: number) => void;
+};
+
+// 追加(13-B3-1): ドラッグ中の一覧端オートスクロールのしきい値 / 速度です。
+//   一覧コンテナの上下端から EDGE px 以内にポインタが入ったら、毎フレーム SPEED px ずつ
+//   スクロールします(29 列で一覧が パネル上限高 を超えるための補助)。
+const AUTO_SCROLL_EDGE = 28;
+const AUTO_SCROLL_SPEED = 12;
+
+// 追加(13-B3-1.5): セクション(所属ペイン)の小見出しラベルです。
+const PANE_ORDER: ColumnPane[] = ['left', 'center', 'right'];
+const SECTION_LABELS: Record<ColumnPane, string> = {
+  left: '左固定',
+  center: '固定なし',
+  right: '右固定',
+};
+
+// 変更(13-B3-1.5): セクション内(= fromKey と同一ペイン)でのみ並べ替え、確定時に
+//   left 群 → center 群 → right 群を各セクションの表示順で連結した「全列キー順」を返します
+//   (合意ポイント①=A: 書き戻すと columns 配列が pane 順へ正規化されます)。
+//   dropIndexInPane は「ソースペイン内での挿入位置(0..そのペインの件数)」です。
+//   セクション内が実際に動かない no-op の場合は正規化も行わず null を返します。
+//   ※ ドラッグは検索語が空のときのみ可能なため、items は常に「全列(絞り込み前)」です。
+function computeSectionReorderedKeys(
+  items: ColumnChooserItem[],
+  fromKey: string,
+  dropIndexInPane: number,
+): string[] | null {
+  const from = items.find((item) => item.key === fromKey);
+  if (!from) {
+    return null;
+  }
+  const sourcePane = from.pane;
+
+  // items 順を保ったままペインごとのキー配列へ分割します。
+  const groups: Record<ColumnPane, string[]> = { left: [], center: [], right: [] };
+  for (const item of items) {
+    groups[item.pane].push(item.key);
+  }
+
+  const src = groups[sourcePane];
+  const fromIndex = src.indexOf(fromKey);
+  if (fromIndex < 0) {
+    return null;
+  }
+  // 挿入位置は除去前基準。除去で fromIndex 以降が 1 つ詰まるため to を補正します。
+  let to = dropIndexInPane;
+  if (to > fromIndex) {
+    to -= 1;
+  }
+  to = Math.max(0, Math.min(to, src.length - 1));
+  if (to === fromIndex) {
+    // セクション内 no-op → 正規化もしません(no-op ドラッグで配列を動かさないため)。
+    return null;
+  }
+  const [moved] = src.splice(fromIndex, 1);
+  src.splice(to, 0, moved);
+
+  return [...groups.left, ...groups.center, ...groups.right];
+}
+
+type CheckState = 'checked' | 'unchecked' | 'indeterminate';
+
+// 追加(13-B2-1): 3 状態に対応した自作チェックボックスです。
+//   native input の indeterminate は ref 経由でしか設定できず、角丸の見た目も
+//   ブラウザ差が出るため、見た目は div で描画します(GIF の角丸チェックに寄せます)。
+function CheckBox({
+  state,
+  disabled,
+}: {
+  state: CheckState;
+  disabled: boolean;
+}) {
+  const filled = state === 'checked' || state === 'indeterminate';
+
+  return (
+    <span
+      className={cx(
+        'ssg-checkbox',
+        filled && 'ssg-checkbox--filled',
+        disabled && 'ssg-checkbox--disabled',
+      )}
+      aria-hidden
+    >
+      {state === 'checked' && (
+        <svg width="11" height="11" viewBox="0 0 12 12" fill="none">
+          <path
+            d="M2.5 6.2 4.7 8.4 9.5 3.6"
+            // 変更(TH-DK-1): stroke も属性では var() 不可のため style で指定します。
+            style={{ stroke: 'var(--ssg-panel-accent-contrast)' }}
+            strokeWidth="1.8"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        </svg>
+      )}
+      {state === 'indeterminate' && <span className="ssg-checkbox-dash" />}
+    </span>
+  );
+}
+
+// 追加(13-B3-1): ⠿ ドラッグハンドルの見た目です(2×3 の点)。
+//   操作系(pointerdown / capture)は行側に配線し、ここは見た目のみを描画します。
+function DragHandleGlyph({ disabled }: { disabled: boolean }) {
+  return (
+    <svg
+      width="10"
+      height="16"
+      viewBox="0 0 10 16"
+      // 変更(TH-DK-1): fill はプレゼンテーション属性だと var() を解釈しないため style で指定します。
+      style={{
+        fill: disabled
+          ? 'var(--ssg-panel-text-disabled)'
+          : 'var(--ssg-panel-text-faint)',
+      }}
+      aria-hidden
+    >
+      {[3, 8, 13].map((cy) =>
+        [3, 7].map((cx) => (
+          <circle key={`${cx}-${cy}`} cx={cx} cy={cy} r="1.2" />
+        )),
+      )}
+    </svg>
+  );
+}
+
+export function ColumnChooserPanel({
+  isOpen,
+  items,
+  canToggle,
+  layout,
+  panelRef,
+  onToggleColumnVisibility,
+  onShowAllColumns,
+  onResetColumns,
+  onReorderColumns,
+  onRequestClose,
+  onPanelMove,
+}: ColumnChooserPanelProps) {
+  const [query, setQuery] = useState('');
+  const searchInputRef = useRef<HTMLInputElement | null>(null);
+
+  // 追加: 開くたびに検索語をリセットし、検索入力へフォーカスします。
+  useEffect(() => {
+    if (isOpen) {
+      setQuery('');
+      // portal mount 後にフォーカスを当てます。
+      const id = requestAnimationFrame(() => {
+        searchInputRef.current?.focus();
+      });
+      return () => cancelAnimationFrame(id);
+    }
+    return undefined;
+  }, [isOpen]);
+
+  // 注記: master / guard の判定は「全列(検索フィルタ前)」を基準にします。
+  //       検索はあくまで一覧の絞り込み表示で、全選択の意味は変えません。
+  const visibleCount = useMemo(
+    () => items.filter((item) => item.visible).length,
+    [items],
+  );
+  const allVisible = visibleCount === items.length && items.length > 0;
+//   const hasHidden = items.some((item) => !item.visible);
+
+  // 全選択の状態: 全表示 = checked、一部非表示 = indeterminate。
+  // 最後の 1 列ガードにより「全非表示」は発生しないため unchecked にはなりません。
+  const masterState: CheckState = allVisible ? 'checked' : 'indeterminate';
+
+  const filteredItems = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) {
+      return items;
+    }
+    return items.filter((item) => item.title.toLowerCase().includes(q));
+  }, [items, query]);
+
+  // 追加(13-B3-1.5): filteredItems を所属ペインのセクションへ分割します。
+  //   空セクションは除外し、PANE_ORDER(left → center → right)で並べます。
+  //   各セクション内は filteredItems の相対順(= columns 配列の pane 内相対順)を保ちます。
+  const sections = useMemo(() => {
+    const groups: Record<ColumnPane, ColumnChooserItem[]> = {
+      left: [],
+      center: [],
+      right: [],
+    };
+    for (const item of filteredItems) {
+      groups[item.pane].push(item);
+    }
+    return PANE_ORDER.map((pane) => ({ pane, items: groups[pane] })).filter(
+      (section) => section.items.length > 0,
+    );
+  }, [filteredItems]);
+
+  // 非空セクションが 2 つ以上(= 固定列あり)のときだけ小見出しを出します。
+  // 固定列が無いときは従来どおりフラット一覧になります。
+  const showHeadings = sections.length >= 2;
+
+  // ── ドラッグ並べ替え(13-B3-1) ─────────────────────────
+  // ドラッグ可否: onColumnsChange あり(canToggle)かつ検索語が空のときのみ。
+  // 検索中は一覧が絞り込み表示のため、並べ替え対象の全体像が見えず曖昧になるので無効化します。
+  const canDrag = canToggle && query.trim() === '';
+
+  const listRef = useRef<HTMLDivElement | null>(null);
+  // ドラッグ中の列キー(null = 非ドラッグ)。dragActiveRef は pointer ハンドラ内の
+  // 早期 return 判定用(state 反映前の連続イベントでも確実に効くよう ref で持ちます)。
+  const [draggingKey, setDraggingKey] = useState<string | null>(null);
+  const dragActiveRef = useRef(false);
+  // 追加(13-B3-1.5): ドラッグ元のペインです。ドロップ位置走査をこのペインの行へ限定し、
+  //   セクション跨ぎを実質不可にします(ref は走査ハンドラから同期読みするため)。
+  const draggingPaneRef = useRef<ColumnPane | null>(null);
+  // ドロップ挿入位置(items 上の 0..length。length = 末尾へ)。インジケータ描画に使います。
+  const [dropIndex, setDropIndex] = useState<number | null>(null);
+  const pointerYRef = useRef(0);
+  const autoScrollRafRef = useRef<number | null>(null);
+
+  // ポインタ Y から「行 midpoint より上にある行数」= 挿入インデックスを求めます。
+  // 変更(13-B3-1.5): 走査対象をドラッグ元ペイン(draggingPaneRef)の行へ限定します。
+  //   これにより別セクション上にポインタがあってもドロップ位置はソースセクション内へ
+  //   留まり、セクション跨ぎが実質不可になります(pinned 不変)。
+  const updateDropFromPointer = useCallback(() => {
+    const list = listRef.current;
+    const pane = draggingPaneRef.current;
+    if (!list || !pane) {
+      return;
+    }
+    const rows = list.querySelectorAll<HTMLElement>(
+      `[data-chooser-row][data-chooser-pane="${pane}"]`,
+    );
+    const y = pointerYRef.current;
+    let index = rows.length;
+    for (let i = 0; i < rows.length; i += 1) {
+      const rect = rows[i].getBoundingClientRect();
+      if (y < rect.top + rect.height / 2) {
+        index = i;
+        break;
+      }
+    }
+    setDropIndex(index);
+  }, []);
+
+  // ドラッグ中、一覧コンテナの上下端付近へポインタが入ったらオートスクロールします。
+  const autoScrollTick = useCallback(() => {
+    const list = listRef.current;
+    if (!list || !dragActiveRef.current) {
+      autoScrollRafRef.current = null;
+      return;
+    }
+    const rect = list.getBoundingClientRect();
+    const y = pointerYRef.current;
+    let delta = 0;
+    if (y < rect.top + AUTO_SCROLL_EDGE) {
+      delta = -AUTO_SCROLL_SPEED;
+    } else if (y > rect.bottom - AUTO_SCROLL_EDGE) {
+      delta = AUTO_SCROLL_SPEED;
+    }
+    if (delta !== 0) {
+      const before = list.scrollTop;
+      list.scrollTop += delta;
+      if (list.scrollTop !== before) {
+        updateDropFromPointer();
+      }
+    }
+    autoScrollRafRef.current = requestAnimationFrame(autoScrollTick);
+  }, [updateDropFromPointer]);
+
+  const finishDrag = useCallback(
+    (commit: boolean) => {
+      if (autoScrollRafRef.current !== null) {
+        cancelAnimationFrame(autoScrollRafRef.current);
+        autoScrollRafRef.current = null;
+      }
+      const key = draggingKey;
+      const targetIndex = dropIndex;
+      dragActiveRef.current = false;
+      draggingPaneRef.current = null;
+      setDraggingKey(null);
+      setDropIndex(null);
+      if (commit && key !== null && targetIndex !== null) {
+        const next = computeSectionReorderedKeys(items, key, targetIndex);
+        if (next) {
+          onReorderColumns(next);
+        }
+      }
+    },
+    [draggingKey, dropIndex, items, onReorderColumns],
+  );
+
+  const handleDragHandlePointerDown = useCallback(
+    (key: string, pane: ColumnPane, event: PointerEvent<HTMLElement>) => {
+      if (!canDrag) {
+        return;
+      }
+      // 既定のテキスト選択 / 行クリックを抑止し、grid 側へも伝播させません。
+      event.preventDefault();
+      event.stopPropagation();
+      event.currentTarget.setPointerCapture(event.pointerId);
+      dragActiveRef.current = true;
+      draggingPaneRef.current = pane;
+      pointerYRef.current = event.clientY;
+      setDraggingKey(key);
+      updateDropFromPointer();
+      if (autoScrollRafRef.current === null) {
+        autoScrollRafRef.current = requestAnimationFrame(autoScrollTick);
+      }
+    },
+    [canDrag, updateDropFromPointer, autoScrollTick],
+  );
+
+  const handleDragHandlePointerMove = useCallback(
+    (event: PointerEvent<HTMLElement>) => {
+      if (!dragActiveRef.current) {
+        return;
+      }
+      pointerYRef.current = event.clientY;
+      updateDropFromPointer();
+    },
+    [updateDropFromPointer],
+  );
+
+  const handleDragHandlePointerUp = useCallback(() => {
+    if (!dragActiveRef.current) {
+      return;
+    }
+    finishDrag(true);
+  }, [finishDrag]);
+
+  const handleDragHandlePointerCancel = useCallback(() => {
+    if (!dragActiveRef.current) {
+      return;
+    }
+    finishDrag(false);
+  }, [finishDrag]);
+
+  // panel が閉じる / アンマウントされるときはドラッグ状態と rAF を確実に後始末します。
+  useEffect(() => {
+    if (!isOpen) {
+      dragActiveRef.current = false;
+      draggingPaneRef.current = null;
+      setDraggingKey(null);
+      setDropIndex(null);
+      if (autoScrollRafRef.current !== null) {
+        cancelAnimationFrame(autoScrollRafRef.current);
+        autoScrollRafRef.current = null;
+      }
+    }
+  }, [isOpen]);
+
+  useEffect(
+    () => () => {
+      if (autoScrollRafRef.current !== null) {
+        cancelAnimationFrame(autoScrollRafRef.current);
+        autoScrollRafRef.current = null;
+      }
+    },
+    [],
+  );
+
+  // 追加(FM-4): ヘッダーを掴んでパネルを移動します(hooks は早期 return より前・無条件で
+  //   呼びます。layout=null のときはフック側が開始しません)。
+  const { handleHeaderPointerDown } = usePanelHeaderDrag({
+    layout,
+    onPanelMove,
+  });
+
+  if (!isOpen || !layout) {
+    return null;
+  }
+
+  const wrapperStyle: CSSProperties = {
+    top: layout.top,
+    left: layout.left,
+    width: layout.width,
+  };
+
+  const handlePointerDown = (event: PointerEvent<HTMLDivElement>) => {
+    // 追加: パネル内 pointer 操作を grid 側へ伝播させません
+    //       (列選択開始や outside click 判定との競合を避けます)。
+    event.stopPropagation();
+  };
+
+  const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    // 追加: portal 内 keyboard を React ツリー上の parent へ流しません。
+    //       Escape での close は controller の window keydown が担当します。
+    // 変更(POP-KEY): capture 相(onKeyDownCapture)→ bubble 相(onKeyDown)へ変更します。
+    //   capture 相の stopPropagation() はネイティブ伝播ごと止めるため、パネル内部要素の
+    //   bubble 相 onKeyDown や window(bubble)リスナーまで殺してしまいます
+    //   (ColumnFilterPopover の SF-ENTER fix と同一パターンの統一です)。bubble 相なら
+    //   「内部要素のハンドラが先に処理 → 最後にここで外側への合成バブリングだけ遮断」に
+    //   なり、Escape close は controller 側の capture 登録(POP-KEY)が受けます。
+    event.stopPropagation();
+  };
+
+  const handleMasterClick = () => {
+    if (!canToggle) {
+      return;
+    }
+    // 全表示状態では何もしません(全消しは最後の 1 列ガードで不可のため)。
+    if (!allVisible) {
+      onShowAllColumns();
+    }
+  };
+
+  // 追加(13-B3-1.5): ドラッグ中の列が属するペインです(インジケータをソース
+  //   セクションにのみ出すために使います)。ドラッグは検索語が空のときのみなので
+  //   draggingKey は必ず filteredItems(= items)内に存在します。
+  const draggingPane: ColumnPane | null =
+    draggingKey !== null
+      ? (items.find((item) => item.key === draggingKey)?.pane ?? null)
+      : null;
+
+  // 追加(13-B3-1.5): 1 行分の描画です(セクションをまたいで再利用します)。
+  //   indexInPane はそのセクション内での 0 始まり index で、ドロップ前線の判定に使います。
+  const renderRow = (
+    item: ColumnChooserItem,
+    indexInPane: number,
+    pane: ColumnPane,
+  ) => {
+    // 最後の 1 列ガード: 表示中が 1 列だけのとき、その列はチェックを外せません。
+    const isOnlyVisible = item.visible && visibleCount === 1;
+    const disabled = !canToggle || isOnlyVisible;
+    const isDragging = draggingKey === item.key;
+    // ドロップインジケータ: ソースペインのこの行の直前に挿入される位置のとき細線を出します。
+    // 末尾(dropIndex === セクション件数)はセクション描画後に別途描画します。
+    const showDropBefore =
+      draggingKey !== null && draggingPane === pane && dropIndex === indexInPane;
+    return (
+      <div
+        key={item.key}
+        data-chooser-row=""
+        data-chooser-pane={pane}
+        className={cx(
+          'ssg-chooser-row',
+          showDropBefore && 'ssg-chooser-row--drop-before',
+          isDragging && 'ssg-chooser-row--dragging',
+        )}
+      >
+        {/* ⠿ ドラッグハンドル(13-B3-1) */}
+        <span
+          role="button"
+          aria-label="ドラッグして並べ替え"
+          data-ssg-tooltip={
+            !canToggle
+              ? 'onColumnsChange 未指定のため並べ替えできません'
+              : query.trim() !== ''
+                ? '検索中は並べ替えできません'
+                : 'ドラッグして並べ替え(同じセクション内のみ)'
+          }
+          onPointerDown={(event) =>
+            handleDragHandlePointerDown(item.key, pane, event)
+          }
+          onPointerMove={handleDragHandlePointerMove}
+          onPointerUp={handleDragHandlePointerUp}
+          onPointerCancel={handleDragHandlePointerCancel}
+          className={cx(
+            'ssg-chooser-handle',
+            !canDrag && 'ssg-chooser-handle--disabled',
+            isDragging && 'ssg-chooser-handle--dragging',
+          )}
+        >
+          <DragHandleGlyph disabled={!canDrag} />
+        </span>
+
+        <button
+          type="button"
+          disabled={disabled}
+          onClick={() => {
+            if (disabled) {
+              return;
+            }
+            onToggleColumnVisibility(item.key, !item.visible);
+          }}
+          className="ssg-chooser-toggle"
+        >
+          <CheckBox
+            state={item.visible ? 'checked' : 'unchecked'}
+            disabled={disabled}
+          />
+          <span
+            className={cx(
+              'ssg-chooser-label',
+              disabled && !item.visible && 'ssg-chooser-label--muted',
+            )}
+          >
+            {item.title}
+          </span>
+        </button>
+      </div>
+    );
+  };
+
+  return createPortal(
+    <div
+      ref={panelRef}
+      onPointerDown={handlePointerDown}
+      onKeyDown={handleKeyDown}
+      onContextMenu={(event) => {
+        event.preventDefault();
+      }}
+      className="ssg-popover ssg-chooser-panel"
+      style={wrapperStyle}
+    >
+      {/* ── ヘッダー: タイトル + × ── */}
+      <div
+        className="ssg-popover-header ssg-popover-header--draggable"
+        onPointerDown={handleHeaderPointerDown}
+      >
+        <span className="ssg-popover-title">列の表示</span>
+        <button
+          type="button"
+          onClick={onRequestClose}
+          aria-label="閉じる"
+          className="ssg-popover-close"
+        >
+          ×
+        </button>
+      </div>
+
+      {/* ── 検索行: 全選択チェック + 検索入力 ── */}
+      <div className="ssg-chooser-search-row">
+        <button
+          type="button"
+          disabled={!canToggle}
+          onClick={handleMasterClick}
+          aria-label="すべての列を表示"
+          data-ssg-tooltip="すべての列を表示"
+          className="ssg-chooser-master-btn"
+        >
+          <CheckBox state={masterState} disabled={!canToggle} />
+        </button>
+        <div className="ssg-chooser-search-field">
+          <span aria-hidden className="ssg-chooser-search-icon">
+            ⌕
+          </span>
+          <input
+            ref={searchInputRef}
+            type="text"
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder="検索..."
+            className="ssg-chooser-search-input"
+          />
+        </div>
+      </div>
+
+      {/* ── 列一覧(スクロール) ── */}
+      <div ref={listRef} className="ssg-chooser-list">
+        {filteredItems.length === 0 ? (
+          <div className="ssg-chooser-empty">該当する列がありません</div>
+        ) : (
+          sections.map((section) => (
+            <div key={section.pane} data-chooser-section={section.pane}>
+              {showHeadings && (
+                <div className="ssg-chooser-section-heading">
+                  {SECTION_LABELS[section.pane]}
+                </div>
+              )}
+              {section.items.map((item, indexInPane) =>
+                renderRow(item, indexInPane, section.pane),
+              )}
+              {/* セクション末尾へのドロップインジケータ(13-B3-1.5) */}
+              {draggingKey !== null &&
+                draggingPane === section.pane &&
+                dropIndex === section.items.length && (
+                  <div className="ssg-chooser-drop-end" />
+                )}
+            </div>
+          ))
+        )}
+      </div>
+
+      {/* ── フッター: 列のリセット + (無効時)注記 ── */}
+      <div className="ssg-chooser-footer">
+        <button
+          type="button"
+          disabled={!canToggle}
+          onClick={() => {
+            if (!canToggle) {
+              return;
+            }
+            onResetColumns();
+          }}
+          data-ssg-tooltip="すべての列の幅・固定・表示を初期状態に戻します"
+          className="ssg-chooser-reset-btn"
+        >
+          すべての列を初期状態に戻す
+        </button>
+
+        {!canToggle && (
+          <div className="ssg-chooser-note">
+            onColumnsChange 未指定のため表示/非表示・リセットを変更できません
+          </div>
+        )}
+      </div>
+    </div>,
+    document.body,
+  );
+}
+
+export default ColumnChooserPanel;
+</file>
+
 <file path="src/components/spreadsheet-grid/view/ColumnMenuPopover.tsx">
 // 変更(13-A2): フラットな項目列挙 → AG Grid 同様のカスケード(サブメニュー)UI へ変更します。
 //             ルートメニューには「列の固定 ›」を置き、hover / クリックで右隣に
@@ -17552,7 +17571,7 @@ export function ColumnMenuPopover({
         type="button"
         aria-disabled={!canResetColumns}
         tabIndex={canResetColumns ? 0 : -1}
-        title={
+        data-ssg-tooltip={
           canResetColumns
             ? 'すべての列の幅・固定・表示を初期状態に戻します'
             : 'onColumnsChange 未指定のため列をリセットできません'
@@ -17592,837 +17611,470 @@ export function ColumnMenuPopover({
 export default ColumnMenuPopover;
 </file>
 
-<file path="src/components/spreadsheet-grid/hooks/useColumnHeaderDragController.ts">
-import {
-  useCallback,
-  useEffect,
-  useRef,
-  type PointerEvent,
-  type RefObject,
-} from 'react';
-import type { GridColumn, GridColumnPinned } from '../model/gridTypes';
-import {
-  findPaneDropSlot,
-  paneDropSlotBoundaryX,
-  getColumnPane,
-  type ColumnPane,
-  type GridPaneLayout,
-} from '../logic/geometry';
-// 追加(scroll-fix): 端 autoscroll の判定純関数と共通定数です(armed ガード /
-//   コンテンツ領域基準の端帯判定 / [0, max] clamp)。詳細は autoScrollGeometry 冒頭コメント参照。
-import {
-  AUTO_SCROLL_ACTIVATION_DISTANCE,
-  AUTO_SCROLL_EDGE_THRESHOLD,
-  AUTO_SCROLL_STEP,
-  computeNextScrollPosition,
-  hasPointerLeftActivationRadius,
-  resolveAutoScrollAxisDirection,
-  resolveScrollContentBox,
-} from '../logic/autoScrollGeometry';
+<file path="src/components/spreadsheet-grid/view/SortManagementPanel.tsx">
+// 追加(MS-3-1 / 並び替え管理パネル): 複数レベルの並び替えをマウス/タッチで編集する
+//   独立 popover です(Excel の「並べ替え」ダイアログ相当 / ColumnChooserPanel の兄弟)。
+//   - タイトル + × クローズ / レベル一覧(優先度・列セレクト・方向・削除) /
+//     フッター(基準を追加 / すべてクリア)で構成します。
+//   - 本コンポーネントは非ジェネリックです(ColumnChooserPanel と同様、プリミティブな
+//     entries / columns だけを受け取ります)。編集はライブ適用で、各操作は即座に
+//     呼び出し側(SpreadsheetGrid)のハンドラ経由で uiState.sort(単一ソース)へ反映します。
+//     パネルは編集後も開いたまま(× / outside click / Escape でのみ閉じます)。
+//   - 並び替えロジックは持ちません。操作は index / key / direction の「意図」を emit し、
+//     次状態の算出(logic/sorting.ts の純関数)と dispatch は呼び出し側が担います。
+//   - 変更(MS-3-2 / 優先順位 DnD): 各レベル行の左端に ⠿ ドラッグハンドルを追加し、
+//     pointer ベースで優先順位を並べ替えます(ColumnChooserPanel の DnD 機構を移植。ただし
+//     単一フラットリストのためセクション分け・オートスクロールは省略。ドロップ前線インジ
+//     ケータは踏襲)。確定時は from / 補正済み to を onMove へ emit し、次状態の算出
+//     (moveSortEntry)と dispatch は呼び出し側が担います。ドラッグは canSort かつ
+//     レベル 2 件以上のときのみ可能です。
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
+import { cx } from '../logic/cx';
+import type { CSSProperties, KeyboardEvent, PointerEvent, RefObject } from 'react';
+import type { GridSortEntry } from '../model/gridTypes';
+import type { SortManagementLayout } from '../hooks/useSortManagementController';
+// 追加(FM-4): ヘッダーを掴んでパネルを移動する共有フックです(3 パネル共通)。
+import { usePanelHeaderDrag } from '../hooks/usePanelHeaderDrag';
 
-// 追加(13-B3-2): ヘッダーのバッジ(Excel 列名)を grip にした列の D&D 並べ替え controller です。
-// 設計メモ:
-//   - ドラッグ中は React state を更新しません。ドロップインジケータ(縦線)は各 pane に常設した
-//     div を ref 経由で imperative に表示/移動します(SpreadsheetGrid は再レンダーせず、
-//     GridHeaderRow の memo を完全維持。観点⑦)。
-//   - pointerdown(バッジ) → setPointerCapture → captured 要素へ pointermove/up/cancel を直付け
-//     (ephemeral listener。常駐 effect を増やしません)。
-//   - ヒットテストは useGridPointerInteractions.getCellCoordFromClientPoint と同じ pane 判定式
-//     (left.right より左=左 / right.left 以降=右 / それ以外=中央。中央は移動する rect.left で
-//      横スクロール量を吸収。観点⑧)。slot は findPaneDropSlot(pane-local midpoint)で算出。
-//   - up で computeHeaderReorderedKeys(全列の permutation を生成。非表示列も保全)→
-//     applyColumnOrderAndPin(keys, pinOverride)。ドロップ先 pane → 'left'|undefined|'right'。
-//   - 公開ハンドラは latest-ref で恒久安定化(GridHeaderRow memo 維持)。
-//   - 範囲: center 内 / center↔left / center↔right が本命ですが、pane 判定が幾何的に一様な
-//     ため left 内 / right 内 / left↔right も同一経路で成立します(13-B3-2b を実質吸収)。
+// 追加(MS-3-1): パネルが必要とする最小の列情報です(並び替え可能な列のみを渡します)。
+export type SortManagementColumn = {
+  key: string;
+  title: string;
+};
 
-type ApplyColumnOrderAndPin = (
-  orderedKeys: string[],
-  pinOverride?: Map<string, GridColumnPinned | undefined>,
-) => void;
+type SortManagementPanelProps = {
+  isOpen: boolean;
+  // 現在の並び替え(優先順位順)です。uiState.sort をそのまま渡せます。
+  entries: GridSortEntry[];
+  // 並び替え対象に選べる列の一覧です(呼び出し側で visibleColumns から作ります)。
+  columns: SortManagementColumn[];
+  // enableSorting 相当。false のときは編集を無効化し注記を出します(保険。通常は開きません)。
+  canSort: boolean;
+  layout: SortManagementLayout | null;
+  panelRef: RefObject<HTMLDivElement | null>;
+  // レベルを末尾へ追加します(呼び出し側が未使用列を選んで渡すか、ここで渡す key を採用)。
+  onAddLevel: (columnKey: string, direction: 'asc' | 'desc') => void;
+  onChangeDirection: (index: number, direction: 'asc' | 'desc') => void;
+  onChangeColumn: (index: number, columnKey: string) => void;
+  onRemoveLevel: (index: number) => void;
+  onClearAll: () => void;
+  // 追加(MS-3-2): 優先順位 DnD の確定ハンドラです。from(掴んだレベル)と to(除去後の
+  //   挿入先 index)を渡します。ドロップ位置からの -1 補正はパネル内で済ませているため、
+  //   呼び出し側は moveSortEntry(sort, from, to) をそのまま呼べます。canSort かつ
+  //   レベル 2 件以上のときのみ、かつ実際に位置が動いたときのみ呼ばれます。
+  onMove: (from: number, to: number) => void;
+  onRequestClose: () => void;
+  // 追加(FM-4): ヘッダードラッグによるパネル移動です(controller の moveSortManager を
+  //   受け取ります。位置の clamp・保持・close 時リセットは controller 側の責務)。
+  onPanelMove: (top: number, left: number) => void;
+};
 
-// 追加(13-B3-2): ドラッグ列を target pane の「表示列内 slot」へ移動した全列キー順を返します。
-//   - 非表示列も含む columns 全体を pane ごとにキー配列へ分割 → ドラッグ列を source から除去 →
-//     target pane の「表示列(visible)」基準の slot 位置へ挿入 → left+center+right を連結。
-//   - same-pane では除去で後方が詰まるため slot を 1 補正し、同一 slot は no-op として null。
-//   - slot は paneLayout.entries(表示列のみ)基準で来るため、ここでも visible 列でアンカーします。
-//   - 返す配列は length === columns.length の permutation です(1 列のみ移動するため)。
-//   ※ computeSectionReorderedKeys(ColumnChooserPanel)のクロスペイン版に相当します。
-function computeHeaderReorderedKeys<T>(
-  columns: GridColumn<T>[],
-  draggedKey: string,
-  targetPane: ColumnPane,
-  slotInTargetVisible: number,
-): string[] | null {
-  const dragged = columns.find((column) => column.key === draggedKey);
-  if (!dragged) return null;
-  const sourcePane = getColumnPane(dragged);
-
-  const groups: Record<ColumnPane, string[]> = { left: [], center: [], right: [] };
-  const visibleByKey = new Map<string, boolean>();
-  for (const column of columns) {
-    groups[getColumnPane(column)].push(column.key);
-    visibleByKey.set(column.key, column.visible !== false);
-  }
-
-  // ドラッグ前の「target pane 表示列内 index」(same-pane 補正 / no-op 判定用。cross-pane は -1)。
-  const targetVisibleBefore = groups[targetPane].filter((key) =>
-    visibleByKey.get(key),
+// 追加(MS-3-2): ⠿ ドラッグハンドルの見た目です(2×3 の点)。ColumnChooserPanel と同型。
+//   操作系(pointerdown / capture)は行側に配線し、ここは見た目のみを描画します。
+function DragHandleGlyph({ disabled }: { disabled: boolean }) {
+  return (
+    <svg
+      width="10"
+      height="16"
+      viewBox="0 0 10 16"
+      // 変更(TH-DK-1): fill はプレゼンテーション属性だと var() を解釈しないため style で指定します。
+      style={{
+        fill: disabled
+          ? 'var(--ssg-panel-text-disabled)'
+          : 'var(--ssg-panel-text-faint)',
+      }}
+      aria-hidden
+    >
+      {[3, 8, 13].map((cy) =>
+        [3, 7].map((cx) => (
+          <circle key={`${cx}-${cy}`} cx={cx} cy={cy} r="1.2" />
+        )),
+      )}
+    </svg>
   );
-  const fromVisibleIndex = targetVisibleBefore.indexOf(draggedKey);
+}
 
-  // source から除去。
-  const sourceIndex = groups[sourcePane].indexOf(draggedKey);
-  if (sourceIndex < 0) return null;
-  groups[sourcePane].splice(sourceIndex, 1);
-
-  // slot 補正(same-pane で除去により後方が詰まる)。
-  let slot = slotInTargetVisible;
-  if (
-    sourcePane === targetPane &&
-    fromVisibleIndex >= 0 &&
-    slot > fromVisibleIndex
-  ) {
-    slot -= 1;
-  }
-
-  // 除去後の target pane 表示列を基準に slot をクランプ。
-  const targetVisibleAfter = groups[targetPane].filter((key) =>
-    visibleByKey.get(key),
+export function SortManagementPanel({
+  isOpen,
+  entries,
+  columns,
+  canSort,
+  layout,
+  panelRef,
+  onAddLevel,
+  onChangeDirection,
+  onChangeColumn,
+  onRemoveLevel,
+  onClearAll,
+  onMove,
+  onRequestClose,
+  onPanelMove,
+}: SortManagementPanelProps) {
+  // 既に並び替えに使われている列キーの集合です(列セレクトの候補絞り込みに使います)。
+  const usedKeys = useMemo(
+    () => new Set(entries.map((entry) => entry.columnKey)),
+    [entries],
   );
-  slot = Math.max(0, Math.min(slot, targetVisibleAfter.length));
 
-  // same-pane・同一 slot は no-op(配列を動かさない)。
-  if (
-    sourcePane === targetPane &&
-    fromVisibleIndex >= 0 &&
-    slot === fromVisibleIndex
-  ) {
+  // 未使用の最初の列(「基準を追加」で追加する列)です。なければ追加不可。
+  const firstUnusedColumn = useMemo(
+    () => columns.find((column) => !usedKeys.has(column.key)) ?? null,
+    [columns, usedKeys],
+  );
+
+  const titleOf = (key: string) =>
+    columns.find((column) => column.key === key)?.title ?? key;
+
+  // ── 優先順位 DnD(MS-3-2) ───────────────────────────────
+  //   ColumnChooserPanel の pointer 機構を移植。単一フラットリストのため pane 走査・
+  //   オートスクロールは省略し、ドロップ前線インジケータのみ踏襲します。
+  //   ※ 下記フックはすべて早期 return (!isOpen || !layout) より前に置きます
+  //     (条件付き hook 呼び出しを避けるため)。
+  // ドラッグ可否: 並び替え有効、かつレベルが 2 件以上のときのみ。
+  const canDrag = canSort && entries.length >= 2;
+  const listRef = useRef<HTMLDivElement | null>(null);
+  // ドラッグ中のレベル index(null = 非ドラッグ)。dragActiveRef は state 反映前の連続
+  //   pointer イベントでも確実に効くよう、早期 return 判定を ref で持ちます。
+  const [draggingIndex, setDraggingIndex] = useState<number | null>(null);
+  const dragActiveRef = useRef(false);
+  // ドロップ挿入スロット(0..entries.length。length = 末尾)。インジケータ描画に使います。
+  const [dropIndex, setDropIndex] = useState<number | null>(null);
+  const pointerYRef = useRef(0);
+
+  // ポインタ Y から「行 midpoint より上にある行数」= 挿入スロットを求めます。
+  const updateDropFromPointer = useCallback(() => {
+    const list = listRef.current;
+    if (!list) {
+      return;
+    }
+    const rows = list.querySelectorAll<HTMLElement>('[data-sort-level]');
+    const y = pointerYRef.current;
+    let index = rows.length;
+    for (let i = 0; i < rows.length; i += 1) {
+      const rect = rows[i].getBoundingClientRect();
+      if (y < rect.top + rect.height / 2) {
+        index = i;
+        break;
+      }
+    }
+    setDropIndex(index);
+  }, []);
+
+  const finishDrag = useCallback(
+    (commit: boolean) => {
+      const from = draggingIndex;
+      const rawTo = dropIndex;
+      dragActiveRef.current = false;
+      setDraggingIndex(null);
+      setDropIndex(null);
+      if (commit && from !== null && rawTo !== null) {
+        // 挿入スロット(除去前基準 0..length)→ 除去後 index へ補正します。
+        let to = rawTo;
+        if (to > from) {
+          to -= 1;
+        }
+        // moveSortEntry 側で from === to / 範囲外は同一参照になるため、no-op ドラッグでも
+        //   無駄な setSort 参照変化は起きません。
+        onMove(from, to);
+      }
+    },
+    [draggingIndex, dropIndex, onMove],
+  );
+
+  const handleHandlePointerDown = useCallback(
+    (index: number, event: PointerEvent<HTMLElement>) => {
+      if (!canDrag) {
+        return;
+      }
+      // 既定のテキスト選択 / 行操作を抑止し、grid 側へも伝播させません。
+      event.preventDefault();
+      event.stopPropagation();
+      event.currentTarget.setPointerCapture(event.pointerId);
+      dragActiveRef.current = true;
+      pointerYRef.current = event.clientY;
+      setDraggingIndex(index);
+      updateDropFromPointer();
+    },
+    [canDrag, updateDropFromPointer],
+  );
+
+  const handleHandlePointerMove = useCallback(
+    (event: PointerEvent<HTMLElement>) => {
+      if (!dragActiveRef.current) {
+        return;
+      }
+      pointerYRef.current = event.clientY;
+      updateDropFromPointer();
+    },
+    [updateDropFromPointer],
+  );
+
+  const handleHandlePointerUp = useCallback(() => {
+    if (!dragActiveRef.current) {
+      return;
+    }
+    finishDrag(true);
+  }, [finishDrag]);
+
+  const handleHandlePointerCancel = useCallback(() => {
+    if (!dragActiveRef.current) {
+      return;
+    }
+    finishDrag(false);
+  }, [finishDrag]);
+
+  // panel が閉じるときはドラッグ状態を確実に後始末します(rAF は持たないため不要)。
+  useEffect(() => {
+    if (!isOpen) {
+      dragActiveRef.current = false;
+      setDraggingIndex(null);
+      setDropIndex(null);
+    }
+  }, [isOpen]);
+
+  // 追加(FM-4): ヘッダーを掴んでパネルを移動します(hooks は早期 return より前・無条件で
+  //   呼びます。layout=null のときはフック側が開始しません)。
+  const { handleHeaderPointerDown } = usePanelHeaderDrag({
+    layout,
+    onPanelMove,
+  });
+
+  if (!isOpen || !layout) {
     return null;
   }
 
-  // 挿入位置(groups[targetPane] 実配列 index)を決定。
-  let insertAt: number;
-  if (slot >= targetVisibleAfter.length) {
-    insertAt = groups[targetPane].length; // 末尾(後続の非表示列の後ろ)
-  } else {
-    insertAt = groups[targetPane].indexOf(targetVisibleAfter[slot]); // アンカー表示列の手前
-  }
-  groups[targetPane].splice(insertAt, 0, draggedKey);
+  const wrapperStyle: CSSProperties = {
+    top: layout.top,
+    left: layout.left,
+    width: layout.width,
+  };
 
-  return [...groups.left, ...groups.center, ...groups.right];
+  const handlePointerDown = (event: PointerEvent<HTMLDivElement>) => {
+    // パネル内 pointer 操作を grid 側へ伝播させません(列選択開始 / outside click 競合回避)。
+    event.stopPropagation();
+  };
+
+  const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    // portal 内 keyboard を React ツリー上の parent へ流しません。
+    // Escape での close は controller の window keydown が担当します。
+    // 変更(POP-KEY): capture 相(onKeyDownCapture)→ bubble 相(onKeyDown)へ変更します。
+    //   capture 相の stopPropagation() はネイティブ伝播ごと止めるため、パネル内部要素の
+    //   bubble 相 onKeyDown や window(bubble)リスナーまで殺してしまいます
+    //   (ColumnFilterPopover の SF-ENTER fix と同一パターンの統一です)。bubble 相なら
+    //   「内部要素のハンドラが先に処理 → 最後にここで外側への合成バブリングだけ遮断」に
+    //   なり、Escape close は controller 側の capture 登録(POP-KEY)が受けます。
+    event.stopPropagation();
+  };
+
+  const canAddLevel = canSort && firstUnusedColumn !== null;
+
+  return createPortal(
+    <div
+      ref={panelRef}
+      onPointerDown={handlePointerDown}
+      onKeyDown={handleKeyDown}
+      onContextMenu={(event) => {
+        event.preventDefault();
+      }}
+      className="ssg-popover ssg-sort-panel"
+      style={wrapperStyle}
+    >
+      {/* ── ヘッダー: タイトル + × ── */}
+      <div
+        className="ssg-popover-header ssg-popover-header--draggable"
+        onPointerDown={handleHeaderPointerDown}
+      >
+        <span className="ssg-popover-title">並び替え</span>
+        <button
+          type="button"
+          onClick={onRequestClose}
+          aria-label="閉じる"
+          className="ssg-popover-close"
+        >
+          ×
+        </button>
+      </div>
+
+      {/* ── レベル一覧(スクロール) ── */}
+      <div ref={listRef} className="ssg-sort-list">
+        {entries.length === 0 ? (
+          <div className="ssg-sort-empty">並び替えは設定されていません</div>
+        ) : (
+          entries.map((entry, index) => {
+            // この行の列セレクト候補: 自分の列 + 他レベルで未使用の列。
+            const options = columns.filter(
+              (column) =>
+                column.key === entry.columnKey || !usedKeys.has(column.key),
+            );
+            // 万一この列が columns(= 可視列)に無い(後から非表示化された等)場合でも、
+            // セレクトの value が候補に無いと表示が崩れるため、合成候補を先頭に補います。
+            const hasOwn = options.some(
+              (column) => column.key === entry.columnKey,
+            );
+            const resolvedOptions = hasOwn
+              ? options
+              : [{ key: entry.columnKey, title: titleOf(entry.columnKey) }, ...options];
+
+            // 優先順位 DnD(MS-3-2): この行を掴んでいるか / この行の直前に挿入するか。
+            const isDragging = draggingIndex === index;
+            const showDropBefore =
+              draggingIndex !== null && dropIndex === index;
+
+            return (
+              <div
+                key={entry.columnKey}
+                data-sort-level=""
+                className={cx(
+                  'ssg-sort-level',
+                  showDropBefore && 'ssg-sort-level--drop-before',
+                  isDragging && 'ssg-sort-level--dragging',
+                )}
+              >
+                {/* ⠿ ドラッグハンドル(MS-3-2) */}
+                <span
+                  role="button"
+                  aria-label="ドラッグして優先順位を変更"
+                  data-ssg-tooltip={
+                    !canSort
+                      ? '並び替えが無効です'
+                      : entries.length < 2
+                        ? 'レベルが 2 件以上のとき並べ替えできます'
+                        : 'ドラッグして優先順位を変更'
+                  }
+                  onPointerDown={(event) =>
+                    handleHandlePointerDown(index, event)
+                  }
+                  onPointerMove={handleHandlePointerMove}
+                  onPointerUp={handleHandlePointerUp}
+                  onPointerCancel={handleHandlePointerCancel}
+                  className={cx(
+                    'ssg-sort-handle',
+                    !canDrag && 'ssg-sort-handle--disabled',
+                    isDragging && 'ssg-sort-handle--dragging',
+                  )}
+                >
+                  <DragHandleGlyph disabled={!canDrag} />
+                </span>
+
+                {/* 優先度バッジ(1 始まり)。ヘッダーの優先順位番号と意味を揃えます。 */}
+                <span aria-hidden className="ssg-sort-badge">
+                  {index + 1}
+                </span>
+
+                {/* 列セレクト */}
+                <select
+                  value={entry.columnKey}
+                  disabled={!canSort}
+                  onChange={(event) => onChangeColumn(index, event.target.value)}
+                  className="ssg-sort-select"
+                >
+                  {resolvedOptions.map((column) => (
+                    <option key={column.key} value={column.key}>
+                      {column.title}
+                    </option>
+                  ))}
+                </select>
+
+                {/* 方向セグメント(昇順 / 降順) */}
+                <div className="ssg-sort-dir-group">
+                  <button
+                    type="button"
+                    disabled={!canSort}
+                    onClick={() => onChangeDirection(index, 'asc')}
+                    data-ssg-tooltip="昇順"
+                    className={cx(
+                      'ssg-sort-dir-btn',
+                      entry.direction === 'asc' && 'ssg-sort-dir-btn--active',
+                    )}
+                  >
+                    ↑ 昇順
+                  </button>
+                  <button
+                    type="button"
+                    disabled={!canSort}
+                    onClick={() => onChangeDirection(index, 'desc')}
+                    data-ssg-tooltip="降順"
+                    className={cx(
+                      'ssg-sort-dir-btn',
+                      entry.direction === 'desc' && 'ssg-sort-dir-btn--active',
+                    )}
+                  >
+                    ↓ 降順
+                  </button>
+                </div>
+
+                {/* 削除 */}
+                <button
+                  type="button"
+                  disabled={!canSort}
+                  onClick={() => onRemoveLevel(index)}
+                  aria-label="このレベルを削除"
+                  data-ssg-tooltip="このレベルを削除"
+                  className="ssg-sort-delete"
+                >
+                  ×
+                </button>
+              </div>
+            );
+          })
+        )}
+        {/* 末尾へのドロップインジケータ(MS-3-2): 最後の行の後ろに挿入される位置のとき。 */}
+        {draggingIndex !== null && dropIndex === entries.length && (
+          <div className="ssg-sort-drop-end" />
+        )}
+      </div>
+
+      {/* ── フッター: 基準を追加 / すべてクリア ── */}
+      <div className="ssg-popover-footer">
+        <button
+          type="button"
+          disabled={!canAddLevel}
+          onClick={() => {
+            if (!canAddLevel || !firstUnusedColumn) {
+              return;
+            }
+            onAddLevel(firstUnusedColumn.key, 'asc');
+          }}
+          data-ssg-tooltip={
+            !canSort
+              ? '並び替えが無効です'
+              : firstUnusedColumn === null
+                ? 'すべての列が並び替えに使われています'
+                : '並び替えの基準を追加します'
+          }
+          className="ssg-sort-footer-btn ssg-sort-footer-btn--add"
+        >
+          ＋ 基準を追加
+        </button>
+
+        <button
+          type="button"
+          disabled={!canSort || entries.length === 0}
+          onClick={() => {
+            if (!canSort || entries.length === 0) {
+              return;
+            }
+            onClearAll();
+          }}
+          data-ssg-tooltip="すべての並び替えを解除します"
+          className="ssg-sort-footer-btn ssg-sort-footer-btn--clear"
+        >
+          すべてクリア
+        </button>
+      </div>
+
+      {!canSort && (
+        <div className="ssg-sort-note">
+          並び替えが無効のため編集できません
+        </div>
+      )}
+    </div>,
+    document.body,
+  );
 }
 
-type UseColumnHeaderDragControllerArgs<T> = {
-  // controlled columns(onColumnsChange あり)のときだけ true。false ならドラッグ開始しません。
-  enabled: boolean;
-  // 全列(非表示含む)。permutation 生成と pane grouping に使います。
-  columns: GridColumn<T>[];
-  // 3 ペイン geometry。当たり判定 / slot / インジケータ位置の基準です。
-  paneLayout: GridPaneLayout<T>;
-  // 各ペイン要素 ref。clientX のペイン判定 + ローカル座標換算に使います。
-  leftPaneScrollRef: RefObject<HTMLDivElement | null>;
-  rightPaneScrollRef: RefObject<HTMLDivElement | null>;
-  bodyScrollRef: RefObject<HTMLDivElement | null>;
-  // 端 autoscroll で動かす共有スクロールコンテナです。
-  scrollContainerRef: RefObject<HTMLDivElement | null>;
-  // 各ペインで列の前に確保する先頭幅(left=rowHeaderWidth / center=0 or rowHeaderWidth / right=0)。
-  leftLeadingWidth: number;
-  centerLeadingWidth: number;
-  rightLeadingWidth: number;
-  // 並べ替え + 任意 pin 変更の共通 commit。
-  applyColumnOrderAndPin: ApplyColumnOrderAndPin;
-};
-
-// 変更(scroll-fix): 端 autoscroll の定数(端帯 24px / 1 フレーム 18px)は範囲選択側と共通化し、
-//   logic/autoScrollGeometry(AUTO_SCROLL_EDGE_THRESHOLD / AUTO_SCROLL_STEP)へ移動しました
-//   (値は従来と同じです)。
-
-// 追加(13-B3-3): 空の固定ペイン(pinned 列 0 本)への「最初の 1 列」を作るためのドロップ帯です。
-//   空ペインは幅 0・非レンダーで物理的に狙える場所が無いため、ドラッグ中だけビューポート端の
-//   EMPTY_PANE_DROP_BAND px を pin 用ホット帯として有効化します(帯は通常時は無効＝行ヘッダ操作に非干渉)。
-//   方針: autoscroll 帯(AUTO_SCROLL_EDGE_THRESHOLD=24)⊂ ドロップ帯(32)。端でスクロールしつつ、指を離した
-//   瞬間の判定で pin 確定する「共存」方式です。
-const EMPTY_PANE_DROP_BAND = 32;
-// 追加(13-B3-3): 空ペインのインジケータをビューポート端の数 px 内側へ寄せる量です(端ぴったりだと
-//   2px 線が overflow:auto でクリップされ視認しづらいため)。左は +inset、右は -inset(wrapper 原点が
-//   width:0・sticky で左:ビューポート左端 / 右:ビューポート右端のため符号が反転します)。
-const EMPTY_PANE_INDICATOR_INSET = 2;
-
-// 追加(13-B3-5): ドラッグゴースト(ポインタ追従のピル)関連の定数です。
-//   ゴーストは body 直下に imperative 生成する fixed 要素で、pointermove / autoscroll の
-//   毎フレームに transform: translate で追従します(React state は触らず、再レンダーゼロを維持)。
-//   位置はポインタからわずかに右下へオフセットして、指/カーソルにピルが隠れないようにします。
-const GHOST_OFFSET_X = 14;
-const GHOST_OFFSET_Y = 12;
-// popover(createPortal の fixed 要素)より前面に出します。ドラッグ中だけ DOM に存在します。
-const GHOST_Z_INDEX = 9999;
-// アイコンの一辺(px)。ピル内のアイコンスロットと SVG の width/height を揃えます。
-const GHOST_ICON_SIZE = 14;
-
-// 追加(13-B3-5): ゴーストのアイコン(軽量 inline SVG)。computeHit の pane で出し分けます。
-//   - move(四方向矢印): center へ移動。
-//   - pin(ピン): left / right へ固定(空ペイン帯を含む)。
-//   - out(スラッシュ円): 枠外(hit=null)。13-B3-4 の「離しても何もしない(キャンセル)」を表す
-//     無効サインです(将来 AG Grid 風の「枠外=非表示」を採るなら別アイコンへ差し替え)。
-//   いずれも stroke="currentColor" のため、ピル側の color を継承して着色されます。
-const GHOST_ICON_MOVE =
-  '<svg viewBox="0 0 24 24" width="' +
-  GHOST_ICON_SIZE +
-  '" height="' +
-  GHOST_ICON_SIZE +
-  '" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' +
-  '<polyline points="5 9 2 12 5 15"/><polyline points="9 5 12 2 15 5"/>' +
-  '<polyline points="15 19 12 22 9 19"/><polyline points="19 9 22 12 19 15"/>' +
-  '<line x1="2" y1="12" x2="22" y2="12"/><line x1="12" y1="2" x2="12" y2="22"/></svg>';
-const GHOST_ICON_PIN =
-  '<svg viewBox="0 0 24 24" width="' +
-  GHOST_ICON_SIZE +
-  '" height="' +
-  GHOST_ICON_SIZE +
-  '" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' +
-  '<line x1="12" y1="17" x2="12" y2="22"/>' +
-  '<path d="M5 17h14v-1.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V6h1a2 2 0 0 0 0-4H8a2 2 0 0 0 0 4h1v4.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24Z"/></svg>';
-const GHOST_ICON_OUT =
-  '<svg viewBox="0 0 24 24" width="' +
-  GHOST_ICON_SIZE +
-  '" height="' +
-  GHOST_ICON_SIZE +
-  '" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' +
-  '<circle cx="12" cy="12" r="10"/><line x1="4.9" y1="4.9" x2="19.1" y2="19.1"/></svg>';
-
-// 変更(モノトーン): ゴーストは「チャコール無地の角丸チップ」(C2 の角丸 × C1 の色)です。
-//   状態は色ではなく「アイコン + 濃度」で出し分けます: center=move / left・right=pin /
-//   枠外(out)=禁止アイコン + 濃度↓。彩度を使わず洗練させる方針です。
-// 変更(TH-DK-1): 色はデザイントークン参照へ移行。ゴースト root(data-grid-drag-ghost)は
-//   styles.css のトークン定義セレクタリストに含まれるため、inline style の var() が解決されます
-//   (既定値は従来のリテラル値と同一 = 見た目不変)。テーマ切替はトークン側で行います。
-const GHOST_INK_BACKGROUND = 'var(--ssg-ghost-bg)';
-const GHOST_INK_COLOR = 'var(--ssg-ghost-text)';
-const GHOST_INK_BORDER = 'var(--ssg-ghost-border)';
-const GHOST_INK_SHADOW = 'var(--ssg-ghost-shadow)';
-// 枠外(無効)時の濃度。色は変えず opacity だけ落として「ここで離しても無効」を示します。
-const GHOST_OUT_OPACITY = '0.5';
-
-// 追加(案A): 列の並べ替え確定時に「新しい位置へスライド」させる settle アニメの定数/ヘルパです。
-//   ドロップ commit 後、各列セルへ FLIP(transform)を 1 回だけ当てます(ドラッグ中は無関与)。
-//   対象は「画面に見えているセル」だけ(行・列とも仮想化)で、transform は GPU 合成のため軽量です。
-const SETTLE_MS = 200;
-const SETTLE_EASING = 'cubic-bezier(0.2, 0.7, 0.3, 1)';
-
-// prefers-reduced-motion ではアニメせずスナップします(アクセシビリティ)。
-const prefersReducedMotion = (): boolean =>
-  typeof window !== 'undefined' &&
-  typeof window.matchMedia === 'function' &&
-  window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-
-// 現在の各列の screen-x(getBoundingClientRect().left)を列キーで記録します(FLIP の before)。
-//   同じ列のヘッダー/本体セルは同じ x のため、列キーごとに最初の 1 セルだけ測れば十分です。
-const captureColumnLefts = (
-  container: HTMLElement | null,
-): Map<string, number> | null => {
-  if (!container) return null;
-  const map = new Map<string, number>();
-  container
-    .querySelectorAll<HTMLElement>('[data-ssg-col-key]')
-    .forEach((cell) => {
-      const key = cell.dataset.ssgColKey;
-      if (key && !map.has(key)) {
-        map.set(key, cell.getBoundingClientRect().left);
-      }
-    });
-  return map;
-};
-
-export const useColumnHeaderDragController = <T,>(
-  args: UseColumnHeaderDragControllerArgs<T>,
-) => {
-  // latest-ref: 公開ハンドラを恒久安定化するため、変化する引数はここから読みます。
-  const latestRef = useRef(args);
-  latestRef.current = args;
-
-  const leftIndicatorRef = useRef<HTMLDivElement | null>(null);
-  const centerIndicatorRef = useRef<HTMLDivElement | null>(null);
-  const rightIndicatorRef = useRef<HTMLDivElement | null>(null);
-
-  // ドラッグセッション state(すべて ref。ドラッグ中の再レンダーを発生させません)。
-  const draggingKeyRef = useRef<string | null>(null);
-  const dropTargetRef = useRef<{ pane: ColumnPane; slot: number } | null>(null);
-  // 追加(案A): 並べ替え確定時の FLIP 用に、commit 直前の各列 screen-x を保持します。
-  //   same-pane(ピン変更なし)の並べ替えのときだけセットし、列レイアウト確定後の
-  //   applyReorderSettle で消費します(cross-pane / reduced-motion は null＝スナップ)。
-  const settlePendingRef = useRef<Map<string, number> | null>(null);
-  const pointerRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
-  // 追加(scroll-fix): 端 autoscroll の armed 管理です(範囲選択側と同方針)。掴んだ座標を
-  //   起点として記録し、AUTO_SCROLL_ACTIVATION_DISTANCE 以上動くまで発動しません。
-  const dragOriginRef = useRef<{ x: number; y: number } | null>(null);
-  const autoScrollArmedRef = useRef(false);
-  // 追加(13-B3-7): 進行中ドラッグの window リスナー解除関数です(pointerdown 内で登録)。
-  //   コントローラ自体がドラッグ中に unmount した場合、最終後始末ネットからこれを呼んで
-  //   window リスナーの残留(リーク)を防ぎます。正常経路では cleanup 自身が null 化します。
-  const activeDragDisposeRef = useRef<(() => void) | null>(null);
-  const rafRef = useRef<number | null>(null);
-
-  // 追加(13-B3-5): ドラッグゴースト(ポインタ追従ピル)の ref 群です。すべて imperative に
-  //   操作し、ドラッグ中の再レンダーは発生させません。ゴーストはドラッグ中だけ DOM に存在します。
-  const ghostElRef = useRef<HTMLDivElement | null>(null); // ピル本体(body 直下 fixed)。
-  const ghostIconElRef = useRef<HTMLSpanElement | null>(null); // アイコンスロット(innerHTML 差替)。
-  // 直近のアイコン/配色状態。同状態のフレームでは innerHTML / style 差替をスキップします。
-  const ghostStateRef = useRef<ColumnPane | 'out' | null>(null);
-
-  const hideAllIndicators = useCallback(() => {
-    for (const ref of [
-      leftIndicatorRef,
-      centerIndicatorRef,
-      rightIndicatorRef,
-    ]) {
-      if (ref.current) ref.current.style.display = 'none';
-    }
-  }, []);
-
-  // 追加(13-B3-5): ドラッグ開始時にゴースト(ピル)を body 直下へ生成します(冪等)。
-  //   - fixed + translate で追従。pointer-events:none で当たり判定(getBoundingClientRect ベース)に
-  //     も将来の elementFromPoint にも非干渉。user-select:none でテキスト選択を抑止します。
-  //   - ラベルはドラッグ開始時の列名(title || key)で確定します(renderHeader のカスタム JSX は
-  //     imperative 描画が複雑なため、ゴーストではプレーン文字列にフォールバックします)。
-  //   - アイコンは初回 updateGhost で必ずセットされるよう、state を null にしておきます。
-  const createGhost = useCallback((label: string) => {
-    if (ghostElRef.current) return;
-    const el = document.createElement('div');
-    el.setAttribute('data-grid-drag-ghost', '');
-    el.style.cssText = [
-      'position:fixed',
-      'top:0',
-      'left:0',
-      'display:inline-flex',
-      'align-items:center',
-      'gap:7px',
-      // 変更(モノトーン): 角丸 rect(C2 形状) + チャコール(C1 色)。
-      'padding:7px 12px 7px 10px',
-      'border-radius:9px',
-      'border:1px solid ' + GHOST_INK_BORDER,
-      'background:' + GHOST_INK_BACKGROUND,
-      'color:' + GHOST_INK_COLOR,
-      'font-size:12px',
-      'font-weight:600',
-      'line-height:1',
-      'white-space:nowrap',
-      'box-shadow:' + GHOST_INK_SHADOW,
-      'pointer-events:none',
-      'user-select:none',
-      'z-index:' + GHOST_Z_INDEX,
-      'will-change:transform',
-      // 初期は画面外へ逃がし、最初の updateGhost でポインタ位置へ正規化します
-      // (生成直後の 1 フレーム、原点(0,0)にちらつかせないため)。
-      'transform:translate(-9999px,-9999px)',
-    ].join(';');
-
-    const icon = document.createElement('span');
-    icon.style.cssText =
-      'display:inline-flex;align-items:center;justify-content:center;width:' +
-      GHOST_ICON_SIZE +
-      'px;height:' +
-      GHOST_ICON_SIZE +
-      'px;flex:none';
-
-    const text = document.createElement('span');
-    text.textContent = label;
-
-    el.appendChild(icon);
-    el.appendChild(text);
-    document.body.appendChild(el);
-
-    ghostElRef.current = el;
-    ghostIconElRef.current = icon;
-    ghostStateRef.current = null;
-  }, []);
-
-  // 追加(13-B3-5): ゴーストの位置(常にポインタ基準)とアイコン/配色(pane で出し分け)を更新します。
-  //   - 位置は hit の有無に関わらずポインタへ追従します(枠外でも追従。capture 中のため枠外でも
-  //     pointermove は届きます)。
-  //   - center=move / left・right(空ペイン帯含む)=pin / null=out(無効サイン)。
-  //   - 同状態のフレームは innerHTML / style の差替をスキップします(無駄な DOM 触りを抑制)。
-  const updateGhost = useCallback((pane: ColumnPane | null) => {
-    const el = ghostElRef.current;
-    if (!el) return;
-    const { x, y } = pointerRef.current;
-    el.style.transform =
-      'translate(' + (x + GHOST_OFFSET_X) + 'px,' + (y + GHOST_OFFSET_Y) + 'px)';
-
-    const state: ColumnPane | 'out' = pane ?? 'out';
-    if (ghostStateRef.current === state) return;
-    ghostStateRef.current = state;
-
-    // 変更(モノトーン): 色は固定(チャコール)。状態はアイコン + 濃度のみで出し分けます。
-    const icon = ghostIconElRef.current;
-    if (state === 'out') {
-      // 枠外(無効): 濃度を落として禁止アイコンに。
-      el.style.opacity = GHOST_OUT_OPACITY;
-      if (icon) icon.innerHTML = GHOST_ICON_OUT;
-    } else {
-      // 有効: 全濃度。center=move / left・right=pin。
-      el.style.opacity = '1';
-      if (icon) {
-        icon.innerHTML = state === 'center' ? GHOST_ICON_MOVE : GHOST_ICON_PIN;
-      }
-    }
-  }, []);
-
-  // 追加(13-B3-5): ゴーストを DOM から除去します(冪等)。endDrag / unmount で呼びます。
-  const destroyGhost = useCallback(() => {
-    const el = ghostElRef.current;
-    if (el && el.parentNode) el.parentNode.removeChild(el);
-    ghostElRef.current = null;
-    ghostIconElRef.current = null;
-    ghostStateRef.current = null;
-  }, []);
-
-  // clientX/clientY → { pane, slot, leftPx(ペインローカル境界 x + leadingWidth) }。
-  // 変更(13-B3-4): 枠外判定のため clientY も受け取ります。
-  const computeHit = useCallback(
-    (
-      clientX: number,
-      clientY: number,
-    ): { pane: ColumnPane; slot: number; leftPx: number } | null => {
-      const {
-        paneLayout,
-        leftPaneScrollRef,
-        rightPaneScrollRef,
-        bodyScrollRef,
-        scrollContainerRef,
-        leftLeadingWidth,
-        centerLeadingWidth,
-        rightLeadingWidth,
-      } = latestRef.current;
-
-      // 追加(13-B3-4): 表の枠(共有スクロールコンテナ)の外へポインタが出たら hit なし(null)。
-      //   → updateIndicator がインジケータを消し、endDrag は dropTarget=null で commit しません
-      //     (= 枠外ドロップはキャンセル/no-op)。
-      //   注意: この判定は空ペイン帯より「前」に置きます。右空ペイン帯は clientX に上限が無く、
-      //   枠の右外でもマッチしてしまうため、先に枠外を弾く必要があります。autoscroll は枠の
-      //   「内側」AUTO_SCROLL_EDGE_THRESHOLD で発火し、空ペイン帯も端の内側のため、いずれもこのガードと非干渉です。
-      const containerEl = scrollContainerRef.current;
-      if (containerEl) {
-        const r = containerEl.getBoundingClientRect();
-        if (
-          clientX < r.left ||
-          clientX > r.right ||
-          clientY < r.top ||
-          clientY > r.bottom
-        ) {
-          return null;
-        }
-      }
-
-      const leftEl = leftPaneScrollRef.current;
-      const rightEl = rightPaneScrollRef.current;
-
-      // 追加(13-B3-3): 空の左固定ペインへのドロップ帯(最初の左固定列を作る)。
-      //   left wrapper は sticky;left:0 なので rect.left === ビューポート左端。
-      //   そこから EMPTY_PANE_DROP_BAND 以内なら slot 0 で left へ pin します。
-      //   ※ 左ペインが空のとき行ヘッダーは中央が持つため、この帯は行ヘッダ左端 32px と重なります
-      //     (列ドラッグ中のみ有効。中央 slot 0 は帯の右側＝最初の列上で従来どおり狙えます)。
-      if (leftEl && paneLayout.left.entries.length === 0) {
-        const rect = leftEl.getBoundingClientRect();
-        if (clientX <= rect.left + EMPTY_PANE_DROP_BAND) {
-          return { pane: 'left', slot: 0, leftPx: EMPTY_PANE_INDICATOR_INSET };
-        }
-      }
-
-      // 左固定ペイン(非空)。右端より左。
-      if (leftEl && paneLayout.left.entries.length > 0) {
-        const rect = leftEl.getBoundingClientRect();
-        if (clientX < rect.right) {
-          const localX = clientX - rect.left - leftLeadingWidth;
-          const slot = findPaneDropSlot(paneLayout.left, localX);
-          return {
-            pane: 'left',
-            slot,
-            leftPx: leftLeadingWidth + paneDropSlotBoundaryX(paneLayout.left, slot),
-          };
-        }
-      }
-
-      // 追加(13-B3-3): 空の右固定ペインへのドロップ帯(最初の右固定列を作る)。
-      //   right wrapper は sticky;right:0・width:0 なので rect.left === ビューポート右端。
-      //   そこから EMPTY_PANE_DROP_BAND 以内なら slot 0 で right へ pin します。
-      //   インジケータは原点(ビューポート右端)から負方向へ inset して端の内側に見せます。
-      if (rightEl && paneLayout.right.entries.length === 0) {
-        const rect = rightEl.getBoundingClientRect();
-        if (clientX >= rect.left - EMPTY_PANE_DROP_BAND) {
-          return {
-            pane: 'right',
-            slot: 0,
-            leftPx: -EMPTY_PANE_INDICATOR_INSET,
-          };
-        }
-      }
-
-      // 右固定ペイン(非空)。左端以降。
-      if (rightEl && paneLayout.right.entries.length > 0) {
-        const rect = rightEl.getBoundingClientRect();
-        if (clientX >= rect.left) {
-          const localX = clientX - rect.left - rightLeadingWidth;
-          const slot = findPaneDropSlot(paneLayout.right, localX);
-          return {
-            pane: 'right',
-            slot,
-            leftPx:
-              rightLeadingWidth + paneDropSlotBoundaryX(paneLayout.right, slot),
-          };
-        }
-      }
-
-      // それ以外は中央ペイン。中央は scrollLeft===0、移動する rect.left が横スクロールを吸収します。
-      const centerEl = bodyScrollRef.current;
-      if (centerEl && paneLayout.center.entries.length > 0) {
-        const rect = centerEl.getBoundingClientRect();
-        const localX =
-          centerEl.scrollLeft + clientX - rect.left - centerLeadingWidth;
-        const slot = findPaneDropSlot(paneLayout.center, Math.max(localX, 0));
-        return {
-          pane: 'center',
-          slot,
-          leftPx:
-            centerLeadingWidth + paneDropSlotBoundaryX(paneLayout.center, slot),
-        };
-      }
-
-      return null;
-    },
-    [],
-  );
-
-  const updateIndicator = useCallback(() => {
-    const hit = computeHit(pointerRef.current.x, pointerRef.current.y);
-    // 追加(13-B3-5): ゴーストは hit の有無に関わらずポインタへ追従し、アイコン/配色を pane で
-    //   出し分けます(枠外=null は 'out' 表現)。インジケータ(縦線)の表示判定は従来どおり hit 基準。
-    updateGhost(hit ? hit.pane : null);
-    if (!hit) {
-      dropTargetRef.current = null;
-      hideAllIndicators();
-      return;
-    }
-    dropTargetRef.current = { pane: hit.pane, slot: hit.slot };
-    const indicatorByPane: Record<ColumnPane, HTMLDivElement | null> = {
-      left: leftIndicatorRef.current,
-      center: centerIndicatorRef.current,
-      right: rightIndicatorRef.current,
-    };
-    for (const pane of ['left', 'center', 'right'] as ColumnPane[]) {
-      const el = indicatorByPane[pane];
-      if (!el) continue;
-      if (pane === hit.pane) {
-        el.style.left = `${hit.leftPx}px`;
-        el.style.display = 'block';
-      } else {
-        el.style.display = 'none';
-      }
-    }
-  }, [computeHit, hideAllIndicators, updateGhost]);
-
-  // rAF 端 autoscroll(共有スクロールコンテナ)。自己再帰のため ref 経由で参照します。
-  const autoScrollTickRef = useRef<() => void>(() => {});
-  const autoScrollTick = useCallback(() => {
-    // 追加(13-B3-7): ゾンビ化防止の自己停止ガード。ドラッグ終了済み(draggingKey なし)なら
-    //   次フレームを予約せずループ自体を終了します。正常経路では endDrag が rAF を cancel
-    //   するため踏みませんが、万一 endDrag 不達の経路が生じても「勝手にスクロールし続ける /
-    //   ガイド線が残る」暴走を構造的に不可能にします。
-    if (draggingKeyRef.current === null) {
-      rafRef.current = null;
-      return;
-    }
-    const el = latestRef.current.scrollContainerRef.current;
-    if (el) {
-      const pointer = pointerRef.current;
-      // 追加(scroll-fix): armed ガード。掴んだ位置(dragOriginRef)から
-      //   AUTO_SCROLL_ACTIVATION_DISTANCE 以上動くまで autoscroll を発動しません。
-      //   13-B3-6 で縦の自己発火(sticky ヘッダー最上部が常時上端帯内)は撤去済みですが、
-      //   横にも「右端付近の列グリップを掴んだだけで右へスクロールし始める」同型の
-      //   自己発火が残っていました。一度 armed になったらドラッグ終了まで維持します。
-      if (!autoScrollArmedRef.current) {
-        const origin = dragOriginRef.current;
-        if (
-          !origin ||
-          hasPointerLeftActivationRadius(
-            origin,
-            pointer,
-            AUTO_SCROLL_ACTIVATION_DISTANCE,
-          )
-        ) {
-          autoScrollArmedRef.current = true;
-        }
-      }
-      // 修正(13-B3-6): 水平方向のみ autoscroll します。列の並べ替え先(pane/slot)は clientX で
-      //   決まり縦スクロールは不要なうえ、グリップは position:sticky のヘッダー＝スクロール
-      //   コンテナ最上部にあり、縦の上端バンドへ常時侵入して「掴んだだけ/水平ドラッグ中」に
-      //   上方向 autoscroll を自己発火させていました(縦の pointer.y / nextTop 分岐を撤去)。
-      //   水平は画面外の列を手繰るため有用なので維持します。
-      // 変更(scroll-fix): 端帯の基準をコンテンツ領域へ(右端帯の大半が縦スクロールバー上に
-      //   乗っていた食われを解消)。次位置は [0, max] へ clamp し、右端到達後の毎フレーム
-      //   scrollTo も停止します。
-      if (autoScrollArmedRef.current) {
-        const rect = el.getBoundingClientRect();
-        const contentBox = resolveScrollContentBox({
-          rectLeft: rect.left,
-          rectTop: rect.top,
-          clientLeft: el.clientLeft,
-          clientTop: el.clientTop,
-          clientWidth: el.clientWidth,
-          clientHeight: el.clientHeight,
-        });
-        const direction = resolveAutoScrollAxisDirection(
-          pointer.x,
-          contentBox.left,
-          contentBox.right,
-          AUTO_SCROLL_EDGE_THRESHOLD,
-        );
-        const nextLeft = computeNextScrollPosition(
-          el.scrollLeft,
-          direction,
-          AUTO_SCROLL_STEP,
-          el.scrollWidth - el.clientWidth,
-        );
-        if (nextLeft !== el.scrollLeft) {
-          el.scrollTo({ left: nextLeft, behavior: 'auto' });
-        }
-      }
-    }
-    // 端スクロールで rect が動くため、停止中の指でも毎フレーム slot を再計算します。
-    updateIndicator();
-    rafRef.current = requestAnimationFrame(autoScrollTickRef.current);
-  }, [updateIndicator]);
-  autoScrollTickRef.current = autoScrollTick;
-
-  const endDrag = useCallback(
-    (commit: boolean) => {
-      if (rafRef.current !== null) {
-        cancelAnimationFrame(rafRef.current);
-        rafRef.current = null;
-      }
-      document.body.style.cursor = '';
-      hideAllIndicators();
-      // 追加(13-B3-5): ゴーストを除去します(commit/cancel いずれの経路でも必ず)。
-      destroyGhost();
-
-      const draggedKey = draggingKeyRef.current;
-      const target = dropTargetRef.current;
-      draggingKeyRef.current = null;
-      dropTargetRef.current = null;
-
-      if (!commit || !draggedKey || !target) return;
-
-      const { columns, applyColumnOrderAndPin, scrollContainerRef } =
-        latestRef.current;
-      const keys = computeHeaderReorderedKeys(
-        columns,
-        draggedKey,
-        target.pane,
-        target.slot,
-      );
-      if (!keys) return; // no-op ドラッグ(同一 pane・同一 slot)
-
-      // 追加(案A): same-pane(ピン変更なし)の並べ替えのみ settle アニメを準備します。
-      //   cross-pane(ドラッグでのピン留め)はペインの幅/位置が変わりクリップが生じ得るため、
-      //   従来どおりスナップさせます(アニメ対象外)。reduced-motion でもスナップします。
-      //   capture は commit 前に行う必要があるため、ここで各列の現在 x を記録します。
-      const draggedColumn = columns.find((column) => column.key === draggedKey);
-      const sourcePane = draggedColumn ? getColumnPane(draggedColumn) : null;
-      const samePaneReorder = sourcePane !== null && sourcePane === target.pane;
-      settlePendingRef.current =
-        samePaneReorder && !prefersReducedMotion()
-          ? captureColumnLefts(scrollContainerRef.current)
-          : null;
-
-      const pinOverride = new Map<string, GridColumnPinned | undefined>([
-        [draggedKey, target.pane === 'center' ? undefined : target.pane],
-      ]);
-      applyColumnOrderAndPin(keys, pinOverride);
-    },
-    [hideAllIndicators, destroyGhost],
-  );
-
-  // 追加(案A): 並べ替え確定後(commit 済みの DOM)に呼ばれ、各列セルへ FLIP を 1 回当てて
-  //   「新しい位置へスライド」させます。settlePendingRef(commit 前の各列 x)が無ければ即 return。
-  //   SpreadsheetGrid が列レイアウト確定後の useLayoutEffect から呼びます(paint 前のため瞬間移動は不可視)。
-  const applyReorderSettle = useCallback(() => {
-    const before = settlePendingRef.current;
-    settlePendingRef.current = null;
-    if (!before) return;
-    const container = latestRef.current.scrollContainerRef.current;
-    if (!container) return;
-
-    // commit 後の現在セルを列キーで集約し、新しい screen-x を測ります。
-    const cellsByKey = new Map<string, HTMLElement[]>();
-    const newLeftByKey = new Map<string, number>();
-    container
-      .querySelectorAll<HTMLElement>('[data-ssg-col-key]')
-      .forEach((cell) => {
-        const key = cell.dataset.ssgColKey;
-        if (!key || !before.has(key)) return;
-        const arr = cellsByKey.get(key);
-        if (arr) {
-          arr.push(cell);
-        } else {
-          cellsByKey.set(key, [cell]);
-          newLeftByKey.set(key, cell.getBoundingClientRect().left);
-        }
-      });
-
-    // FLIP: 各列 delta = oldX - newX。動いた列だけ「逆 transform」で一旦元位置へ見せます。
-    const animatedCells: HTMLElement[] = [];
-    cellsByKey.forEach((cells, key) => {
-      const oldX = before.get(key);
-      const newX = newLeftByKey.get(key);
-      if (oldX === undefined || newX === undefined) return;
-      const delta = oldX - newX;
-      if (Math.abs(delta) < 0.5) return;
-      for (const cell of cells) {
-        cell.style.transition = 'none';
-        cell.style.transform = `translateX(${delta}px)`;
-        cell.style.willChange = 'transform';
-        animatedCells.push(cell);
-      }
-    });
-    if (animatedCells.length === 0) return;
-
-    // 初期(逆 transform)を確定させるため 1 回だけ強制リフロー。
-    void container.getBoundingClientRect();
-
-    // トランジションを付けて transform を 0 へ＝新しい位置へスライド。
-    for (const cell of animatedCells) {
-      cell.style.transition = `transform ${SETTLE_MS}ms ${SETTLE_EASING}`;
-      cell.style.transform = 'translateX(0)';
-    }
-
-    // 後始末: インライン style を消します(次のドラッグ/再レンダーと競合させない)。
-    window.setTimeout(() => {
-      for (const cell of animatedCells) {
-        cell.style.transition = '';
-        cell.style.transform = '';
-        cell.style.willChange = '';
-      }
-    }, SETTLE_MS + 80);
-  }, []);
-
-  const onColumnDragHandlePointerDown = useCallback(
-    (column: GridColumn<T>, event: PointerEvent<HTMLElement>) => {
-      if (!latestRef.current.enabled) return;
-      if (event.button !== 0) return;
-      // 重要: ヘッダー本体の列範囲選択(onColumnHeaderPointerDown)へ伝播させない(掴み手方式)。
-      event.stopPropagation();
-      event.preventDefault();
-
-      draggingKeyRef.current = column.key;
-      pointerRef.current = { x: event.clientX, y: event.clientY };
-      // 追加(scroll-fix): 掴んだ座標を armed ガードの起点として記録します(発動は
-      //   AUTO_SCROLL_ACTIVATION_DISTANCE 以上動いてから)。
-      dragOriginRef.current = { x: event.clientX, y: event.clientY };
-      autoScrollArmedRef.current = false;
-      document.body.style.cursor = 'grabbing';
-      // 追加(13-B3-5): ドラッグゴースト(ピル)を生成します。ラベルは列名(title || key)で確定。
-      //   直後の updateIndicator → updateGhost でポインタ位置・アイコンが正規化されます。
-      createGhost(column.title || column.key);
-
-      const target = event.currentTarget;
-      const pointerId = event.pointerId;
-      // 変更(13-B3-7): capture は「グリップ存命中」の保護(スクロールバー等へのイベント横取り
-      //   防止)として維持しますが、リスナーの付け先は要素直付けから window へ移します(下記)。
-      try {
-        target.setPointerCapture(pointerId);
-      } catch {
-        /* capture 不可環境は無視 */
-      }
-
-      // 変更(13-B3-7): move/up/cancel を window 登録へ変更します(このドラッグの pointerId のみ
-      //   処理)。理由: 中央ペインのヘッダーセルは列仮想化されており、autoscroll で掴んだ列が
-      //   仮想化ウィンドウ外へ出るとグリップごと unmount します。Pointer Events 仕様では
-      //   capture 対象が document から削除されると capture は暗黙解除され、lostpointercapture
-      //   は「要素ではなく document」に対して発火します。そのため要素直付けの旧リスナー群
-      //   (13-B3-3)には以後の pointerup が届かず endDrag 不達 → rAF ループがゾンビ化して
-      //   「離した後も端方向へスクロールし続ける + ガイド線が残る」不具合になっていました。
-      //   window 登録なら capture の有無・グリップの生死に関わらずイベントを受けられ、
-      //   掴んだ列が画面外へ出てもドラッグを継続して正常に commit/cancel できます。
-      //   同趣旨で、要素直付けの lostpointercapture ネット(13-B3-3)は撤去しました
-      //   (removal 時は document 発火のため守りたかったケースで機能せず、window リスナー化後は
-      //    「グリップ unmount 即キャンセル」の誤動作リスクにしかならないため)。
-      const handleMove = (nativeEvent: globalThis.PointerEvent) => {
-        if (nativeEvent.pointerId !== pointerId) return;
-        pointerRef.current = { x: nativeEvent.clientX, y: nativeEvent.clientY };
-        updateIndicator();
-      };
-      function handleUp(nativeEvent: globalThis.PointerEvent) {
-        if (nativeEvent.pointerId !== pointerId) return;
-        cleanup();
-        endDrag(true);
-      }
-      function handleCancel(nativeEvent: globalThis.PointerEvent) {
-        if (nativeEvent.pointerId !== pointerId) return;
-        cleanup();
-        endDrag(false);
-      }
-      const cleanup = () => {
-        window.removeEventListener('pointermove', handleMove);
-        window.removeEventListener('pointerup', handleUp);
-        window.removeEventListener('pointercancel', handleCancel);
-        activeDragDisposeRef.current = null;
-        try {
-          target.releasePointerCapture(pointerId);
-        } catch {
-          /* noop(グリップが unmount 済みでも無害) */
-        }
-      };
-
-      window.addEventListener('pointermove', handleMove);
-      window.addEventListener('pointerup', handleUp);
-      window.addEventListener('pointercancel', handleCancel);
-      // 追加(13-B3-7): コントローラ自体がドラッグ中に unmount した場合へ備え、解除関数を
-      //   最終後始末ネットから呼べるように公開します。
-      activeDragDisposeRef.current = cleanup;
-
-      updateIndicator();
-      rafRef.current = requestAnimationFrame(autoScrollTickRef.current);
-    },
-    [updateIndicator, endDrag, createGhost],
-  );
-
-  // 追加(13-B3-3): アンマウント時の最終後始末ネット。ドラッグ中(grip 掴み中)に grid 側が
-  //   再マウントする等で grip 要素が unmount すると pointerup/cancel が来ず、autoscroll の rAF が
-  //   回りっぱなし・body cursor が 'grabbing' のまま残り得ます。これを確実に解放します。
-  //   (再レンダーゼロ設計のため実際に踏む確率は低いものの、堅牢性の保険です。)
-  // 変更(13-B3-5): ゴースト(body 直下 fixed)も同じ最終後始末ネットで確実に除去します
-  //   (依存を増やさないよう、destroyGhost を介さず ghostElRef から直接外します)。
-  useEffect(
-    () => () => {
-      // 追加(13-B3-7): 進行中ドラッグの window リスナーを解除します(リーク防止)。
-      //   cleanup は capture release まで面倒を見ます(要素 detach 済みでも try/catch で無害)。
-      activeDragDisposeRef.current?.();
-      activeDragDisposeRef.current = null;
-      if (rafRef.current !== null) {
-        cancelAnimationFrame(rafRef.current);
-        rafRef.current = null;
-      }
-      document.body.style.cursor = '';
-      const ghost = ghostElRef.current;
-      if (ghost && ghost.parentNode) ghost.parentNode.removeChild(ghost);
-      ghostElRef.current = null;
-      ghostIconElRef.current = null;
-      ghostStateRef.current = null;
-    },
-    [],
-  );
-
-  return {
-    onColumnDragHandlePointerDown,
-    leftIndicatorRef,
-    centerIndicatorRef,
-    rightIndicatorRef,
-    // 追加(案A): 並べ替え確定後に呼ぶ settle アニメ発火関数(armed 時のみ動作)。
-    applyReorderSettle,
-  };
-};
-
-export default useColumnHeaderDragController;
+export default SortManagementPanel;
 </file>
 
 <file path="src/components/spreadsheet-grid/logic/verticalGeometry.test.ts">
@@ -19589,6 +19241,839 @@ export const gridActions = {
     state,
   }),
 };
+</file>
+
+<file path="src/components/spreadsheet-grid/hooks/useColumnHeaderDragController.ts">
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  type PointerEvent,
+  type RefObject,
+} from 'react';
+import type { GridColumn, GridColumnPinned } from '../model/gridTypes';
+import {
+  findPaneDropSlot,
+  paneDropSlotBoundaryX,
+  getColumnPane,
+  type ColumnPane,
+  type GridPaneLayout,
+} from '../logic/geometry';
+// 追加(scroll-fix): 端 autoscroll の判定純関数と共通定数です(armed ガード /
+//   コンテンツ領域基準の端帯判定 / [0, max] clamp)。詳細は autoScrollGeometry 冒頭コメント参照。
+import {
+  AUTO_SCROLL_ACTIVATION_DISTANCE,
+  AUTO_SCROLL_EDGE_THRESHOLD,
+  AUTO_SCROLL_STEP,
+  computeNextScrollPosition,
+  hasPointerLeftActivationRadius,
+  resolveAutoScrollAxisDirection,
+  resolveScrollContentBox,
+} from '../logic/autoScrollGeometry';
+
+// 追加(13-B3-2): ヘッダーのバッジ(Excel 列名)を grip にした列の D&D 並べ替え controller です。
+// 設計メモ:
+//   - ドラッグ中は React state を更新しません。ドロップインジケータ(縦線)は各 pane に常設した
+//     div を ref 経由で imperative に表示/移動します(SpreadsheetGrid は再レンダーせず、
+//     GridHeaderRow の memo を完全維持。観点⑦)。
+//   - pointerdown(バッジ) → setPointerCapture → captured 要素へ pointermove/up/cancel を直付け
+//     (ephemeral listener。常駐 effect を増やしません)。
+//   - ヒットテストは useGridPointerInteractions.getCellCoordFromClientPoint と同じ pane 判定式
+//     (left.right より左=左 / right.left 以降=右 / それ以外=中央。中央は移動する rect.left で
+//      横スクロール量を吸収。観点⑧)。slot は findPaneDropSlot(pane-local midpoint)で算出。
+//   - up で computeHeaderReorderedKeys(全列の permutation を生成。非表示列も保全)→
+//     applyColumnOrderAndPin(keys, pinOverride)。ドロップ先 pane → 'left'|undefined|'right'。
+//   - 公開ハンドラは latest-ref で恒久安定化(GridHeaderRow memo 維持)。
+//   - 範囲: center 内 / center↔left / center↔right が本命ですが、pane 判定が幾何的に一様な
+//     ため left 内 / right 内 / left↔right も同一経路で成立します(13-B3-2b を実質吸収)。
+
+type ApplyColumnOrderAndPin = (
+  orderedKeys: string[],
+  pinOverride?: Map<string, GridColumnPinned | undefined>,
+) => void;
+
+// 追加(13-B3-2): ドラッグ列を target pane の「表示列内 slot」へ移動した全列キー順を返します。
+//   - 非表示列も含む columns 全体を pane ごとにキー配列へ分割 → ドラッグ列を source から除去 →
+//     target pane の「表示列(visible)」基準の slot 位置へ挿入 → left+center+right を連結。
+//   - same-pane では除去で後方が詰まるため slot を 1 補正し、同一 slot は no-op として null。
+//   - slot は paneLayout.entries(表示列のみ)基準で来るため、ここでも visible 列でアンカーします。
+//   - 返す配列は length === columns.length の permutation です(1 列のみ移動するため)。
+//   ※ computeSectionReorderedKeys(ColumnChooserPanel)のクロスペイン版に相当します。
+function computeHeaderReorderedKeys<T>(
+  columns: GridColumn<T>[],
+  draggedKey: string,
+  targetPane: ColumnPane,
+  slotInTargetVisible: number,
+): string[] | null {
+  const dragged = columns.find((column) => column.key === draggedKey);
+  if (!dragged) return null;
+  const sourcePane = getColumnPane(dragged);
+
+  const groups: Record<ColumnPane, string[]> = { left: [], center: [], right: [] };
+  const visibleByKey = new Map<string, boolean>();
+  for (const column of columns) {
+    groups[getColumnPane(column)].push(column.key);
+    visibleByKey.set(column.key, column.visible !== false);
+  }
+
+  // ドラッグ前の「target pane 表示列内 index」(same-pane 補正 / no-op 判定用。cross-pane は -1)。
+  const targetVisibleBefore = groups[targetPane].filter((key) =>
+    visibleByKey.get(key),
+  );
+  const fromVisibleIndex = targetVisibleBefore.indexOf(draggedKey);
+
+  // source から除去。
+  const sourceIndex = groups[sourcePane].indexOf(draggedKey);
+  if (sourceIndex < 0) return null;
+  groups[sourcePane].splice(sourceIndex, 1);
+
+  // slot 補正(same-pane で除去により後方が詰まる)。
+  let slot = slotInTargetVisible;
+  if (
+    sourcePane === targetPane &&
+    fromVisibleIndex >= 0 &&
+    slot > fromVisibleIndex
+  ) {
+    slot -= 1;
+  }
+
+  // 除去後の target pane 表示列を基準に slot をクランプ。
+  const targetVisibleAfter = groups[targetPane].filter((key) =>
+    visibleByKey.get(key),
+  );
+  slot = Math.max(0, Math.min(slot, targetVisibleAfter.length));
+
+  // same-pane・同一 slot は no-op(配列を動かさない)。
+  if (
+    sourcePane === targetPane &&
+    fromVisibleIndex >= 0 &&
+    slot === fromVisibleIndex
+  ) {
+    return null;
+  }
+
+  // 挿入位置(groups[targetPane] 実配列 index)を決定。
+  let insertAt: number;
+  if (slot >= targetVisibleAfter.length) {
+    insertAt = groups[targetPane].length; // 末尾(後続の非表示列の後ろ)
+  } else {
+    insertAt = groups[targetPane].indexOf(targetVisibleAfter[slot]); // アンカー表示列の手前
+  }
+  groups[targetPane].splice(insertAt, 0, draggedKey);
+
+  return [...groups.left, ...groups.center, ...groups.right];
+}
+
+type UseColumnHeaderDragControllerArgs<T> = {
+  // controlled columns(onColumnsChange あり)のときだけ true。false ならドラッグ開始しません。
+  enabled: boolean;
+  // 全列(非表示含む)。permutation 生成と pane grouping に使います。
+  columns: GridColumn<T>[];
+  // 3 ペイン geometry。当たり判定 / slot / インジケータ位置の基準です。
+  paneLayout: GridPaneLayout<T>;
+  // 各ペイン要素 ref。clientX のペイン判定 + ローカル座標換算に使います。
+  leftPaneScrollRef: RefObject<HTMLDivElement | null>;
+  rightPaneScrollRef: RefObject<HTMLDivElement | null>;
+  bodyScrollRef: RefObject<HTMLDivElement | null>;
+  // 端 autoscroll で動かす共有スクロールコンテナです。
+  scrollContainerRef: RefObject<HTMLDivElement | null>;
+  // 各ペインで列の前に確保する先頭幅(left=rowHeaderWidth / center=0 or rowHeaderWidth / right=0)。
+  leftLeadingWidth: number;
+  centerLeadingWidth: number;
+  rightLeadingWidth: number;
+  // 並べ替え + 任意 pin 変更の共通 commit。
+  applyColumnOrderAndPin: ApplyColumnOrderAndPin;
+};
+
+// 変更(scroll-fix): 端 autoscroll の定数(端帯 24px / 1 フレーム 18px)は範囲選択側と共通化し、
+//   logic/autoScrollGeometry(AUTO_SCROLL_EDGE_THRESHOLD / AUTO_SCROLL_STEP)へ移動しました
+//   (値は従来と同じです)。
+
+// 追加(13-B3-3): 空の固定ペイン(pinned 列 0 本)への「最初の 1 列」を作るためのドロップ帯です。
+//   空ペインは幅 0・非レンダーで物理的に狙える場所が無いため、ドラッグ中だけビューポート端の
+//   EMPTY_PANE_DROP_BAND px を pin 用ホット帯として有効化します(帯は通常時は無効＝行ヘッダ操作に非干渉)。
+//   方針: autoscroll 帯(AUTO_SCROLL_EDGE_THRESHOLD=24)⊂ ドロップ帯(32)。端でスクロールしつつ、指を離した
+//   瞬間の判定で pin 確定する「共存」方式です。
+const EMPTY_PANE_DROP_BAND = 32;
+// 追加(13-B3-3): 空ペインのインジケータをビューポート端の数 px 内側へ寄せる量です(端ぴったりだと
+//   2px 線が overflow:auto でクリップされ視認しづらいため)。左は +inset、右は -inset(wrapper 原点が
+//   width:0・sticky で左:ビューポート左端 / 右:ビューポート右端のため符号が反転します)。
+const EMPTY_PANE_INDICATOR_INSET = 2;
+
+// 追加(13-B3-5): ドラッグゴースト(ポインタ追従のピル)関連の定数です。
+//   ゴーストは body 直下に imperative 生成する fixed 要素で、pointermove / autoscroll の
+//   毎フレームに transform: translate で追従します(React state は触らず、再レンダーゼロを維持)。
+//   位置はポインタからわずかに右下へオフセットして、指/カーソルにピルが隠れないようにします。
+const GHOST_OFFSET_X = 14;
+const GHOST_OFFSET_Y = 12;
+// popover(createPortal の fixed 要素)より前面に出します。ドラッグ中だけ DOM に存在します。
+const GHOST_Z_INDEX = 9999;
+// アイコンの一辺(px)。ピル内のアイコンスロットと SVG の width/height を揃えます。
+const GHOST_ICON_SIZE = 14;
+
+// 追加(13-B3-5): ゴーストのアイコン(軽量 inline SVG)。computeHit の pane で出し分けます。
+//   - move(四方向矢印): center へ移動。
+//   - pin(ピン): left / right へ固定(空ペイン帯を含む)。
+//   - out(スラッシュ円): 枠外(hit=null)。13-B3-4 の「離しても何もしない(キャンセル)」を表す
+//     無効サインです(将来 AG Grid 風の「枠外=非表示」を採るなら別アイコンへ差し替え)。
+//   いずれも stroke="currentColor" のため、ピル側の color を継承して着色されます。
+const GHOST_ICON_MOVE =
+  '<svg viewBox="0 0 24 24" width="' +
+  GHOST_ICON_SIZE +
+  '" height="' +
+  GHOST_ICON_SIZE +
+  '" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' +
+  '<polyline points="5 9 2 12 5 15"/><polyline points="9 5 12 2 15 5"/>' +
+  '<polyline points="15 19 12 22 9 19"/><polyline points="19 9 22 12 19 15"/>' +
+  '<line x1="2" y1="12" x2="22" y2="12"/><line x1="12" y1="2" x2="12" y2="22"/></svg>';
+const GHOST_ICON_PIN =
+  '<svg viewBox="0 0 24 24" width="' +
+  GHOST_ICON_SIZE +
+  '" height="' +
+  GHOST_ICON_SIZE +
+  '" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' +
+  '<line x1="12" y1="17" x2="12" y2="22"/>' +
+  '<path d="M5 17h14v-1.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V6h1a2 2 0 0 0 0-4H8a2 2 0 0 0 0 4h1v4.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24Z"/></svg>';
+const GHOST_ICON_OUT =
+  '<svg viewBox="0 0 24 24" width="' +
+  GHOST_ICON_SIZE +
+  '" height="' +
+  GHOST_ICON_SIZE +
+  '" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' +
+  '<circle cx="12" cy="12" r="10"/><line x1="4.9" y1="4.9" x2="19.1" y2="19.1"/></svg>';
+
+// 変更(モノトーン): ゴーストは「チャコール無地の角丸チップ」(C2 の角丸 × C1 の色)です。
+//   状態は色ではなく「アイコン + 濃度」で出し分けます: center=move / left・right=pin /
+//   枠外(out)=禁止アイコン + 濃度↓。彩度を使わず洗練させる方針です。
+// 変更(TH-DK-1): 色はデザイントークン参照へ移行。ゴースト root(data-grid-drag-ghost)は
+//   styles.css のトークン定義セレクタリストに含まれるため、inline style の var() が解決されます
+//   (既定値は従来のリテラル値と同一 = 見た目不変)。テーマ切替はトークン側で行います。
+const GHOST_INK_BACKGROUND = 'var(--ssg-ghost-bg)';
+const GHOST_INK_COLOR = 'var(--ssg-ghost-text)';
+const GHOST_INK_BORDER = 'var(--ssg-ghost-border)';
+const GHOST_INK_SHADOW = 'var(--ssg-ghost-shadow)';
+// 枠外(無効)時の濃度。色は変えず opacity だけ落として「ここで離しても無効」を示します。
+const GHOST_OUT_OPACITY = '0.5';
+
+// 追加(案A): 列の並べ替え確定時に「新しい位置へスライド」させる settle アニメの定数/ヘルパです。
+//   ドロップ commit 後、各列セルへ FLIP(transform)を 1 回だけ当てます(ドラッグ中は無関与)。
+//   対象は「画面に見えているセル」だけ(行・列とも仮想化)で、transform は GPU 合成のため軽量です。
+const SETTLE_MS = 200;
+const SETTLE_EASING = 'cubic-bezier(0.2, 0.7, 0.3, 1)';
+
+// prefers-reduced-motion ではアニメせずスナップします(アクセシビリティ)。
+const prefersReducedMotion = (): boolean =>
+  typeof window !== 'undefined' &&
+  typeof window.matchMedia === 'function' &&
+  window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+// 現在の各列の screen-x(getBoundingClientRect().left)を列キーで記録します(FLIP の before)。
+//   同じ列のヘッダー/本体セルは同じ x のため、列キーごとに最初の 1 セルだけ測れば十分です。
+const captureColumnLefts = (
+  container: HTMLElement | null,
+): Map<string, number> | null => {
+  if (!container) return null;
+  const map = new Map<string, number>();
+  container
+    .querySelectorAll<HTMLElement>('[data-ssg-col-key]')
+    .forEach((cell) => {
+      const key = cell.dataset.ssgColKey;
+      if (key && !map.has(key)) {
+        map.set(key, cell.getBoundingClientRect().left);
+      }
+    });
+  return map;
+};
+
+export const useColumnHeaderDragController = <T,>(
+  args: UseColumnHeaderDragControllerArgs<T>,
+) => {
+  // latest-ref: 公開ハンドラを恒久安定化するため、変化する引数はここから読みます。
+  const latestRef = useRef(args);
+  latestRef.current = args;
+
+  const leftIndicatorRef = useRef<HTMLDivElement | null>(null);
+  const centerIndicatorRef = useRef<HTMLDivElement | null>(null);
+  const rightIndicatorRef = useRef<HTMLDivElement | null>(null);
+
+  // ドラッグセッション state(すべて ref。ドラッグ中の再レンダーを発生させません)。
+  const draggingKeyRef = useRef<string | null>(null);
+  const dropTargetRef = useRef<{ pane: ColumnPane; slot: number } | null>(null);
+  // 追加(案A): 並べ替え確定時の FLIP 用に、commit 直前の各列 screen-x を保持します。
+  //   same-pane(ピン変更なし)の並べ替えのときだけセットし、列レイアウト確定後の
+  //   applyReorderSettle で消費します(cross-pane / reduced-motion は null＝スナップ)。
+  const settlePendingRef = useRef<Map<string, number> | null>(null);
+  const pointerRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
+  // 追加(scroll-fix): 端 autoscroll の armed 管理です(範囲選択側と同方針)。掴んだ座標を
+  //   起点として記録し、AUTO_SCROLL_ACTIVATION_DISTANCE 以上動くまで発動しません。
+  const dragOriginRef = useRef<{ x: number; y: number } | null>(null);
+  const autoScrollArmedRef = useRef(false);
+  // 追加(13-B3-7): 進行中ドラッグの window リスナー解除関数です(pointerdown 内で登録)。
+  //   コントローラ自体がドラッグ中に unmount した場合、最終後始末ネットからこれを呼んで
+  //   window リスナーの残留(リーク)を防ぎます。正常経路では cleanup 自身が null 化します。
+  const activeDragDisposeRef = useRef<(() => void) | null>(null);
+  const rafRef = useRef<number | null>(null);
+
+  // 追加(13-B3-5): ドラッグゴースト(ポインタ追従ピル)の ref 群です。すべて imperative に
+  //   操作し、ドラッグ中の再レンダーは発生させません。ゴーストはドラッグ中だけ DOM に存在します。
+  const ghostElRef = useRef<HTMLDivElement | null>(null); // ピル本体(body 直下 fixed)。
+  const ghostIconElRef = useRef<HTMLSpanElement | null>(null); // アイコンスロット(innerHTML 差替)。
+  // 直近のアイコン/配色状態。同状態のフレームでは innerHTML / style 差替をスキップします。
+  const ghostStateRef = useRef<ColumnPane | 'out' | null>(null);
+
+  const hideAllIndicators = useCallback(() => {
+    for (const ref of [
+      leftIndicatorRef,
+      centerIndicatorRef,
+      rightIndicatorRef,
+    ]) {
+      if (ref.current) ref.current.style.display = 'none';
+    }
+  }, []);
+
+  // 追加(13-B3-5): ドラッグ開始時にゴースト(ピル)を body 直下へ生成します(冪等)。
+  //   - fixed + translate で追従。pointer-events:none で当たり判定(getBoundingClientRect ベース)に
+  //     も将来の elementFromPoint にも非干渉。user-select:none でテキスト選択を抑止します。
+  //   - ラベルはドラッグ開始時の列名(title || key)で確定します(renderHeader のカスタム JSX は
+  //     imperative 描画が複雑なため、ゴーストではプレーン文字列にフォールバックします)。
+  //   - アイコンは初回 updateGhost で必ずセットされるよう、state を null にしておきます。
+  const createGhost = useCallback((label: string) => {
+    if (ghostElRef.current) return;
+    const el = document.createElement('div');
+    el.setAttribute('data-grid-drag-ghost', '');
+    el.style.cssText = [
+      'position:fixed',
+      'top:0',
+      'left:0',
+      'display:inline-flex',
+      'align-items:center',
+      'gap:7px',
+      // 変更(モノトーン): 角丸 rect(C2 形状) + チャコール(C1 色)。
+      'padding:7px 12px 7px 10px',
+      'border-radius:9px',
+      'border:1px solid ' + GHOST_INK_BORDER,
+      'background:' + GHOST_INK_BACKGROUND,
+      'color:' + GHOST_INK_COLOR,
+      'font-size:12px',
+      'font-weight:600',
+      'line-height:1',
+      'white-space:nowrap',
+      'box-shadow:' + GHOST_INK_SHADOW,
+      'pointer-events:none',
+      'user-select:none',
+      'z-index:' + GHOST_Z_INDEX,
+      'will-change:transform',
+      // 初期は画面外へ逃がし、最初の updateGhost でポインタ位置へ正規化します
+      // (生成直後の 1 フレーム、原点(0,0)にちらつかせないため)。
+      'transform:translate(-9999px,-9999px)',
+    ].join(';');
+
+    const icon = document.createElement('span');
+    icon.style.cssText =
+      'display:inline-flex;align-items:center;justify-content:center;width:' +
+      GHOST_ICON_SIZE +
+      'px;height:' +
+      GHOST_ICON_SIZE +
+      'px;flex:none';
+
+    const text = document.createElement('span');
+    text.textContent = label;
+
+    el.appendChild(icon);
+    el.appendChild(text);
+    document.body.appendChild(el);
+
+    ghostElRef.current = el;
+    ghostIconElRef.current = icon;
+    ghostStateRef.current = null;
+  }, []);
+
+  // 追加(13-B3-5): ゴーストの位置(常にポインタ基準)とアイコン/配色(pane で出し分け)を更新します。
+  //   - 位置は hit の有無に関わらずポインタへ追従します(枠外でも追従。capture 中のため枠外でも
+  //     pointermove は届きます)。
+  //   - center=move / left・right(空ペイン帯含む)=pin / null=out(無効サイン)。
+  //   - 同状態のフレームは innerHTML / style の差替をスキップします(無駄な DOM 触りを抑制)。
+  const updateGhost = useCallback((pane: ColumnPane | null) => {
+    const el = ghostElRef.current;
+    if (!el) return;
+    const { x, y } = pointerRef.current;
+    el.style.transform =
+      'translate(' + (x + GHOST_OFFSET_X) + 'px,' + (y + GHOST_OFFSET_Y) + 'px)';
+
+    const state: ColumnPane | 'out' = pane ?? 'out';
+    if (ghostStateRef.current === state) return;
+    ghostStateRef.current = state;
+
+    // 変更(モノトーン): 色は固定(チャコール)。状態はアイコン + 濃度のみで出し分けます。
+    const icon = ghostIconElRef.current;
+    if (state === 'out') {
+      // 枠外(無効): 濃度を落として禁止アイコンに。
+      el.style.opacity = GHOST_OUT_OPACITY;
+      if (icon) icon.innerHTML = GHOST_ICON_OUT;
+    } else {
+      // 有効: 全濃度。center=move / left・right=pin。
+      el.style.opacity = '1';
+      if (icon) {
+        icon.innerHTML = state === 'center' ? GHOST_ICON_MOVE : GHOST_ICON_PIN;
+      }
+    }
+  }, []);
+
+  // 追加(13-B3-5): ゴーストを DOM から除去します(冪等)。endDrag / unmount で呼びます。
+  const destroyGhost = useCallback(() => {
+    const el = ghostElRef.current;
+    if (el && el.parentNode) el.parentNode.removeChild(el);
+    ghostElRef.current = null;
+    ghostIconElRef.current = null;
+    ghostStateRef.current = null;
+  }, []);
+
+  // clientX/clientY → { pane, slot, leftPx(ペインローカル境界 x + leadingWidth) }。
+  // 変更(13-B3-4): 枠外判定のため clientY も受け取ります。
+  const computeHit = useCallback(
+    (
+      clientX: number,
+      clientY: number,
+    ): { pane: ColumnPane; slot: number; leftPx: number } | null => {
+      const {
+        paneLayout,
+        leftPaneScrollRef,
+        rightPaneScrollRef,
+        bodyScrollRef,
+        scrollContainerRef,
+        leftLeadingWidth,
+        centerLeadingWidth,
+        rightLeadingWidth,
+      } = latestRef.current;
+
+      // 追加(13-B3-4): 表の枠(共有スクロールコンテナ)の外へポインタが出たら hit なし(null)。
+      //   → updateIndicator がインジケータを消し、endDrag は dropTarget=null で commit しません
+      //     (= 枠外ドロップはキャンセル/no-op)。
+      //   注意: この判定は空ペイン帯より「前」に置きます。右空ペイン帯は clientX に上限が無く、
+      //   枠の右外でもマッチしてしまうため、先に枠外を弾く必要があります。autoscroll は枠の
+      //   「内側」AUTO_SCROLL_EDGE_THRESHOLD で発火し、空ペイン帯も端の内側のため、いずれもこのガードと非干渉です。
+      const containerEl = scrollContainerRef.current;
+      if (containerEl) {
+        const r = containerEl.getBoundingClientRect();
+        if (
+          clientX < r.left ||
+          clientX > r.right ||
+          clientY < r.top ||
+          clientY > r.bottom
+        ) {
+          return null;
+        }
+      }
+
+      const leftEl = leftPaneScrollRef.current;
+      const rightEl = rightPaneScrollRef.current;
+
+      // 追加(13-B3-3): 空の左固定ペインへのドロップ帯(最初の左固定列を作る)。
+      //   left wrapper は sticky;left:0 なので rect.left === ビューポート左端。
+      //   そこから EMPTY_PANE_DROP_BAND 以内なら slot 0 で left へ pin します。
+      //   ※ 左ペインが空のとき行ヘッダーは中央が持つため、この帯は行ヘッダ左端 32px と重なります
+      //     (列ドラッグ中のみ有効。中央 slot 0 は帯の右側＝最初の列上で従来どおり狙えます)。
+      if (leftEl && paneLayout.left.entries.length === 0) {
+        const rect = leftEl.getBoundingClientRect();
+        if (clientX <= rect.left + EMPTY_PANE_DROP_BAND) {
+          return { pane: 'left', slot: 0, leftPx: EMPTY_PANE_INDICATOR_INSET };
+        }
+      }
+
+      // 左固定ペイン(非空)。右端より左。
+      if (leftEl && paneLayout.left.entries.length > 0) {
+        const rect = leftEl.getBoundingClientRect();
+        if (clientX < rect.right) {
+          const localX = clientX - rect.left - leftLeadingWidth;
+          const slot = findPaneDropSlot(paneLayout.left, localX);
+          return {
+            pane: 'left',
+            slot,
+            leftPx: leftLeadingWidth + paneDropSlotBoundaryX(paneLayout.left, slot),
+          };
+        }
+      }
+
+      // 追加(13-B3-3): 空の右固定ペインへのドロップ帯(最初の右固定列を作る)。
+      //   right wrapper は sticky;right:0・width:0 なので rect.left === ビューポート右端。
+      //   そこから EMPTY_PANE_DROP_BAND 以内なら slot 0 で right へ pin します。
+      //   インジケータは原点(ビューポート右端)から負方向へ inset して端の内側に見せます。
+      if (rightEl && paneLayout.right.entries.length === 0) {
+        const rect = rightEl.getBoundingClientRect();
+        if (clientX >= rect.left - EMPTY_PANE_DROP_BAND) {
+          return {
+            pane: 'right',
+            slot: 0,
+            leftPx: -EMPTY_PANE_INDICATOR_INSET,
+          };
+        }
+      }
+
+      // 右固定ペイン(非空)。左端以降。
+      if (rightEl && paneLayout.right.entries.length > 0) {
+        const rect = rightEl.getBoundingClientRect();
+        if (clientX >= rect.left) {
+          const localX = clientX - rect.left - rightLeadingWidth;
+          const slot = findPaneDropSlot(paneLayout.right, localX);
+          return {
+            pane: 'right',
+            slot,
+            leftPx:
+              rightLeadingWidth + paneDropSlotBoundaryX(paneLayout.right, slot),
+          };
+        }
+      }
+
+      // それ以外は中央ペイン。中央は scrollLeft===0、移動する rect.left が横スクロールを吸収します。
+      const centerEl = bodyScrollRef.current;
+      if (centerEl && paneLayout.center.entries.length > 0) {
+        const rect = centerEl.getBoundingClientRect();
+        const localX =
+          centerEl.scrollLeft + clientX - rect.left - centerLeadingWidth;
+        const slot = findPaneDropSlot(paneLayout.center, Math.max(localX, 0));
+        return {
+          pane: 'center',
+          slot,
+          leftPx:
+            centerLeadingWidth + paneDropSlotBoundaryX(paneLayout.center, slot),
+        };
+      }
+
+      return null;
+    },
+    [],
+  );
+
+  const updateIndicator = useCallback(() => {
+    const hit = computeHit(pointerRef.current.x, pointerRef.current.y);
+    // 追加(13-B3-5): ゴーストは hit の有無に関わらずポインタへ追従し、アイコン/配色を pane で
+    //   出し分けます(枠外=null は 'out' 表現)。インジケータ(縦線)の表示判定は従来どおり hit 基準。
+    updateGhost(hit ? hit.pane : null);
+    if (!hit) {
+      dropTargetRef.current = null;
+      hideAllIndicators();
+      return;
+    }
+    dropTargetRef.current = { pane: hit.pane, slot: hit.slot };
+    const indicatorByPane: Record<ColumnPane, HTMLDivElement | null> = {
+      left: leftIndicatorRef.current,
+      center: centerIndicatorRef.current,
+      right: rightIndicatorRef.current,
+    };
+    for (const pane of ['left', 'center', 'right'] as ColumnPane[]) {
+      const el = indicatorByPane[pane];
+      if (!el) continue;
+      if (pane === hit.pane) {
+        el.style.left = `${hit.leftPx}px`;
+        el.style.display = 'block';
+      } else {
+        el.style.display = 'none';
+      }
+    }
+  }, [computeHit, hideAllIndicators, updateGhost]);
+
+  // rAF 端 autoscroll(共有スクロールコンテナ)。自己再帰のため ref 経由で参照します。
+  const autoScrollTickRef = useRef<() => void>(() => {});
+  const autoScrollTick = useCallback(() => {
+    // 追加(13-B3-7): ゾンビ化防止の自己停止ガード。ドラッグ終了済み(draggingKey なし)なら
+    //   次フレームを予約せずループ自体を終了します。正常経路では endDrag が rAF を cancel
+    //   するため踏みませんが、万一 endDrag 不達の経路が生じても「勝手にスクロールし続ける /
+    //   ガイド線が残る」暴走を構造的に不可能にします。
+    if (draggingKeyRef.current === null) {
+      rafRef.current = null;
+      return;
+    }
+    const el = latestRef.current.scrollContainerRef.current;
+    if (el) {
+      const pointer = pointerRef.current;
+      // 追加(scroll-fix): armed ガード。掴んだ位置(dragOriginRef)から
+      //   AUTO_SCROLL_ACTIVATION_DISTANCE 以上動くまで autoscroll を発動しません。
+      //   13-B3-6 で縦の自己発火(sticky ヘッダー最上部が常時上端帯内)は撤去済みですが、
+      //   横にも「右端付近の列グリップを掴んだだけで右へスクロールし始める」同型の
+      //   自己発火が残っていました。一度 armed になったらドラッグ終了まで維持します。
+      if (!autoScrollArmedRef.current) {
+        const origin = dragOriginRef.current;
+        if (
+          !origin ||
+          hasPointerLeftActivationRadius(
+            origin,
+            pointer,
+            AUTO_SCROLL_ACTIVATION_DISTANCE,
+          )
+        ) {
+          autoScrollArmedRef.current = true;
+        }
+      }
+      // 修正(13-B3-6): 水平方向のみ autoscroll します。列の並べ替え先(pane/slot)は clientX で
+      //   決まり縦スクロールは不要なうえ、グリップは position:sticky のヘッダー＝スクロール
+      //   コンテナ最上部にあり、縦の上端バンドへ常時侵入して「掴んだだけ/水平ドラッグ中」に
+      //   上方向 autoscroll を自己発火させていました(縦の pointer.y / nextTop 分岐を撤去)。
+      //   水平は画面外の列を手繰るため有用なので維持します。
+      // 変更(scroll-fix): 端帯の基準をコンテンツ領域へ(右端帯の大半が縦スクロールバー上に
+      //   乗っていた食われを解消)。次位置は [0, max] へ clamp し、右端到達後の毎フレーム
+      //   scrollTo も停止します。
+      if (autoScrollArmedRef.current) {
+        const rect = el.getBoundingClientRect();
+        const contentBox = resolveScrollContentBox({
+          rectLeft: rect.left,
+          rectTop: rect.top,
+          clientLeft: el.clientLeft,
+          clientTop: el.clientTop,
+          clientWidth: el.clientWidth,
+          clientHeight: el.clientHeight,
+        });
+        const direction = resolveAutoScrollAxisDirection(
+          pointer.x,
+          contentBox.left,
+          contentBox.right,
+          AUTO_SCROLL_EDGE_THRESHOLD,
+        );
+        const nextLeft = computeNextScrollPosition(
+          el.scrollLeft,
+          direction,
+          AUTO_SCROLL_STEP,
+          el.scrollWidth - el.clientWidth,
+        );
+        if (nextLeft !== el.scrollLeft) {
+          el.scrollTo({ left: nextLeft, behavior: 'auto' });
+        }
+      }
+    }
+    // 端スクロールで rect が動くため、停止中の指でも毎フレーム slot を再計算します。
+    updateIndicator();
+    rafRef.current = requestAnimationFrame(autoScrollTickRef.current);
+  }, [updateIndicator]);
+  autoScrollTickRef.current = autoScrollTick;
+
+  const endDrag = useCallback(
+    (commit: boolean) => {
+      if (rafRef.current !== null) {
+        cancelAnimationFrame(rafRef.current);
+        rafRef.current = null;
+      }
+      document.body.style.cursor = '';
+      hideAllIndicators();
+      // 追加(13-B3-5): ゴーストを除去します(commit/cancel いずれの経路でも必ず)。
+      destroyGhost();
+
+      const draggedKey = draggingKeyRef.current;
+      const target = dropTargetRef.current;
+      draggingKeyRef.current = null;
+      dropTargetRef.current = null;
+
+      if (!commit || !draggedKey || !target) return;
+
+      const { columns, applyColumnOrderAndPin, scrollContainerRef } =
+        latestRef.current;
+      const keys = computeHeaderReorderedKeys(
+        columns,
+        draggedKey,
+        target.pane,
+        target.slot,
+      );
+      if (!keys) return; // no-op ドラッグ(同一 pane・同一 slot)
+
+      // 追加(案A): same-pane(ピン変更なし)の並べ替えのみ settle アニメを準備します。
+      //   cross-pane(ドラッグでのピン留め)はペインの幅/位置が変わりクリップが生じ得るため、
+      //   従来どおりスナップさせます(アニメ対象外)。reduced-motion でもスナップします。
+      //   capture は commit 前に行う必要があるため、ここで各列の現在 x を記録します。
+      const draggedColumn = columns.find((column) => column.key === draggedKey);
+      const sourcePane = draggedColumn ? getColumnPane(draggedColumn) : null;
+      const samePaneReorder = sourcePane !== null && sourcePane === target.pane;
+      settlePendingRef.current =
+        samePaneReorder && !prefersReducedMotion()
+          ? captureColumnLefts(scrollContainerRef.current)
+          : null;
+
+      const pinOverride = new Map<string, GridColumnPinned | undefined>([
+        [draggedKey, target.pane === 'center' ? undefined : target.pane],
+      ]);
+      applyColumnOrderAndPin(keys, pinOverride);
+    },
+    [hideAllIndicators, destroyGhost],
+  );
+
+  // 追加(案A): 並べ替え確定後(commit 済みの DOM)に呼ばれ、各列セルへ FLIP を 1 回当てて
+  //   「新しい位置へスライド」させます。settlePendingRef(commit 前の各列 x)が無ければ即 return。
+  //   SpreadsheetGrid が列レイアウト確定後の useLayoutEffect から呼びます(paint 前のため瞬間移動は不可視)。
+  const applyReorderSettle = useCallback(() => {
+    const before = settlePendingRef.current;
+    settlePendingRef.current = null;
+    if (!before) return;
+    const container = latestRef.current.scrollContainerRef.current;
+    if (!container) return;
+
+    // commit 後の現在セルを列キーで集約し、新しい screen-x を測ります。
+    const cellsByKey = new Map<string, HTMLElement[]>();
+    const newLeftByKey = new Map<string, number>();
+    container
+      .querySelectorAll<HTMLElement>('[data-ssg-col-key]')
+      .forEach((cell) => {
+        const key = cell.dataset.ssgColKey;
+        if (!key || !before.has(key)) return;
+        const arr = cellsByKey.get(key);
+        if (arr) {
+          arr.push(cell);
+        } else {
+          cellsByKey.set(key, [cell]);
+          newLeftByKey.set(key, cell.getBoundingClientRect().left);
+        }
+      });
+
+    // FLIP: 各列 delta = oldX - newX。動いた列だけ「逆 transform」で一旦元位置へ見せます。
+    const animatedCells: HTMLElement[] = [];
+    cellsByKey.forEach((cells, key) => {
+      const oldX = before.get(key);
+      const newX = newLeftByKey.get(key);
+      if (oldX === undefined || newX === undefined) return;
+      const delta = oldX - newX;
+      if (Math.abs(delta) < 0.5) return;
+      for (const cell of cells) {
+        cell.style.transition = 'none';
+        cell.style.transform = `translateX(${delta}px)`;
+        cell.style.willChange = 'transform';
+        animatedCells.push(cell);
+      }
+    });
+    if (animatedCells.length === 0) return;
+
+    // 初期(逆 transform)を確定させるため 1 回だけ強制リフロー。
+    void container.getBoundingClientRect();
+
+    // トランジションを付けて transform を 0 へ＝新しい位置へスライド。
+    for (const cell of animatedCells) {
+      cell.style.transition = `transform ${SETTLE_MS}ms ${SETTLE_EASING}`;
+      cell.style.transform = 'translateX(0)';
+    }
+
+    // 後始末: インライン style を消します(次のドラッグ/再レンダーと競合させない)。
+    window.setTimeout(() => {
+      for (const cell of animatedCells) {
+        cell.style.transition = '';
+        cell.style.transform = '';
+        cell.style.willChange = '';
+      }
+    }, SETTLE_MS + 80);
+  }, []);
+
+  const onColumnDragHandlePointerDown = useCallback(
+    (column: GridColumn<T>, event: PointerEvent<HTMLElement>) => {
+      if (!latestRef.current.enabled) return;
+      if (event.button !== 0) return;
+      // 重要: ヘッダー本体の列範囲選択(onColumnHeaderPointerDown)へ伝播させない(掴み手方式)。
+      event.stopPropagation();
+      event.preventDefault();
+
+      draggingKeyRef.current = column.key;
+      pointerRef.current = { x: event.clientX, y: event.clientY };
+      // 追加(scroll-fix): 掴んだ座標を armed ガードの起点として記録します(発動は
+      //   AUTO_SCROLL_ACTIVATION_DISTANCE 以上動いてから)。
+      dragOriginRef.current = { x: event.clientX, y: event.clientY };
+      autoScrollArmedRef.current = false;
+      document.body.style.cursor = 'grabbing';
+      // 追加(13-B3-5): ドラッグゴースト(ピル)を生成します。ラベルは列名(title || key)で確定。
+      //   直後の updateIndicator → updateGhost でポインタ位置・アイコンが正規化されます。
+      createGhost(column.title || column.key);
+
+      const target = event.currentTarget;
+      const pointerId = event.pointerId;
+      // 変更(13-B3-7): capture は「グリップ存命中」の保護(スクロールバー等へのイベント横取り
+      //   防止)として維持しますが、リスナーの付け先は要素直付けから window へ移します(下記)。
+      try {
+        target.setPointerCapture(pointerId);
+      } catch {
+        /* capture 不可環境は無視 */
+      }
+
+      // 変更(13-B3-7): move/up/cancel を window 登録へ変更します(このドラッグの pointerId のみ
+      //   処理)。理由: 中央ペインのヘッダーセルは列仮想化されており、autoscroll で掴んだ列が
+      //   仮想化ウィンドウ外へ出るとグリップごと unmount します。Pointer Events 仕様では
+      //   capture 対象が document から削除されると capture は暗黙解除され、lostpointercapture
+      //   は「要素ではなく document」に対して発火します。そのため要素直付けの旧リスナー群
+      //   (13-B3-3)には以後の pointerup が届かず endDrag 不達 → rAF ループがゾンビ化して
+      //   「離した後も端方向へスクロールし続ける + ガイド線が残る」不具合になっていました。
+      //   window 登録なら capture の有無・グリップの生死に関わらずイベントを受けられ、
+      //   掴んだ列が画面外へ出てもドラッグを継続して正常に commit/cancel できます。
+      //   同趣旨で、要素直付けの lostpointercapture ネット(13-B3-3)は撤去しました
+      //   (removal 時は document 発火のため守りたかったケースで機能せず、window リスナー化後は
+      //    「グリップ unmount 即キャンセル」の誤動作リスクにしかならないため)。
+      const handleMove = (nativeEvent: globalThis.PointerEvent) => {
+        if (nativeEvent.pointerId !== pointerId) return;
+        pointerRef.current = { x: nativeEvent.clientX, y: nativeEvent.clientY };
+        updateIndicator();
+      };
+      function handleUp(nativeEvent: globalThis.PointerEvent) {
+        if (nativeEvent.pointerId !== pointerId) return;
+        cleanup();
+        endDrag(true);
+      }
+      function handleCancel(nativeEvent: globalThis.PointerEvent) {
+        if (nativeEvent.pointerId !== pointerId) return;
+        cleanup();
+        endDrag(false);
+      }
+      const cleanup = () => {
+        window.removeEventListener('pointermove', handleMove);
+        window.removeEventListener('pointerup', handleUp);
+        window.removeEventListener('pointercancel', handleCancel);
+        activeDragDisposeRef.current = null;
+        try {
+          target.releasePointerCapture(pointerId);
+        } catch {
+          /* noop(グリップが unmount 済みでも無害) */
+        }
+      };
+
+      window.addEventListener('pointermove', handleMove);
+      window.addEventListener('pointerup', handleUp);
+      window.addEventListener('pointercancel', handleCancel);
+      // 追加(13-B3-7): コントローラ自体がドラッグ中に unmount した場合へ備え、解除関数を
+      //   最終後始末ネットから呼べるように公開します。
+      activeDragDisposeRef.current = cleanup;
+
+      updateIndicator();
+      rafRef.current = requestAnimationFrame(autoScrollTickRef.current);
+    },
+    [updateIndicator, endDrag, createGhost],
+  );
+
+  // 追加(13-B3-3): アンマウント時の最終後始末ネット。ドラッグ中(grip 掴み中)に grid 側が
+  //   再マウントする等で grip 要素が unmount すると pointerup/cancel が来ず、autoscroll の rAF が
+  //   回りっぱなし・body cursor が 'grabbing' のまま残り得ます。これを確実に解放します。
+  //   (再レンダーゼロ設計のため実際に踏む確率は低いものの、堅牢性の保険です。)
+  // 変更(13-B3-5): ゴースト(body 直下 fixed)も同じ最終後始末ネットで確実に除去します
+  //   (依存を増やさないよう、destroyGhost を介さず ghostElRef から直接外します)。
+  useEffect(
+    () => () => {
+      // 追加(13-B3-7): 進行中ドラッグの window リスナーを解除します(リーク防止)。
+      //   cleanup は capture release まで面倒を見ます(要素 detach 済みでも try/catch で無害)。
+      activeDragDisposeRef.current?.();
+      activeDragDisposeRef.current = null;
+      if (rafRef.current !== null) {
+        cancelAnimationFrame(rafRef.current);
+        rafRef.current = null;
+      }
+      document.body.style.cursor = '';
+      const ghost = ghostElRef.current;
+      if (ghost && ghost.parentNode) ghost.parentNode.removeChild(ghost);
+      ghostElRef.current = null;
+      ghostIconElRef.current = null;
+      ghostStateRef.current = null;
+    },
+    [],
+  );
+
+  return {
+    onColumnDragHandlePointerDown,
+    leftIndicatorRef,
+    centerIndicatorRef,
+    rightIndicatorRef,
+    // 追加(案A): 並べ替え確定後に呼ぶ settle アニメ発火関数(armed 時のみ動作)。
+    applyReorderSettle,
+  };
+};
+
+export default useColumnHeaderDragController;
 </file>
 
 <file path="src/components/spreadsheet-grid/logic/filtering.ts">
@@ -21203,7 +21688,7 @@ export function DefaultGridTopBar<T>({
                   event.stopPropagation();
                 }}
                 onClick={onFilterSummaryClick}
-                title="フィルター管理パネルを開閉"
+                data-ssg-tooltip="フィルター管理パネルを開閉"
                 aria-label="フィルター管理パネルを開閉"
               >
                 {derivedSummary.filterSummaryText}
@@ -21244,7 +21729,7 @@ export function DefaultGridTopBar<T>({
                 onClick={() => context.setGlobalFilterText('')}
                 className="ssg-bar-input-clear"
                 aria-label="フィルターをクリア"
-                title="クリア"
+                data-ssg-tooltip="クリア"
               >
                 {CLEAR_ICON}
               </button>
@@ -21283,6 +21768,7 @@ A high-performance, virtualized spreadsheet / data grid for **React 19**, writte
 - External height control via `height` / `maxHeight` (e.g. `height="100%"` to follow the parent's height).
 - Both **client-side** (`rows`) and **server-side** (`dataSource`, SSRM) row models.
 - Themeable with CSS custom properties (`--ssg-*`, defined at zero specificity so your overrides always win). Base styles are plain unlayered CSS with single-class specificity, so they survive CSS resets such as Tailwind Preflight; a cascade-layers variant (`style.layer.css`) is also shipped. `className` / `classNames` slots are provided.
+- Styled tooltips out of the box — action hints and truncated-text previews use a custom dark-chip tooltip (no browser-default `title` look). Add `data-ssg-tooltip="text"` to your own elements (custom cells, headers) to get the same tooltip; colors are themeable via `--ssg-tooltip-*` tokens.
 - Toggle the top / bottom bars and their parts via props — whole bars (`showTopBar` / `showBottomBar`), the default top bar's summary chips and global-filter input, and the Rows/Columns counts in each bar.
 - Filter management panel — review every active column filter in one place (jump to the column & edit, clear one / all, add new), opened from the column menu, the default top bar's clickable Filters chip, or `openFilterManager()` on the imperative handle. An optional filter chip bar (`showFilterChipBar`) keeps active filters visible right below the top bar.
 - Built-in CSV export (`downloadCsv` / `exportCsv`), plus a library-agnostic `getExportData()` for Excel / XLSX / ODS — feed the shaped data (filter/sort/visible-order aware) to your own writer such as [hucre](https://github.com/productdevbook/hucre), ExcelJS, or SheetJS. No spreadsheet library is bundled; multi-sheet is composed on your side. See [`API_REFERENCE.md`](./src/components/spreadsheet-grid/API_REFERENCE.md).
@@ -21450,6 +21936,7 @@ The full prop and type reference lives in [`src/components/spreadsheet-grid/API_
 - `height` / `maxHeight` によるスクロールコンテナ高さの外部制御（`height="100%"` で親要素の高さに追従）。
 - **クライアントサイド**（`rows`）と**サーバーサイド**（`dataSource`、SSRM）の両行モデル。
 - CSS カスタムプロパティ（`--ssg-*`。特異度 0 で定義され、利用側の上書きが常に勝ちます）によるテーマ設定。基底スタイルは未レイヤーの単一クラス特異度で、Tailwind Preflight などの CSS リセットに壊されません。カスケードレイヤー版（`style.layer.css`）も同梱。`className` / `classNames` スロットも用意。
+- スタイル付きツールチップを標準装備 — 操作ヒントや切り詰めテキストの全文表示は、ブラウザ標準の `title` ではなくダークチップのカスタムツールチップで表示。利用側の要素(カスタムセルやヘッダー)にも `data-ssg-tooltip="文言"` を付けるだけで同じ見た目になります。配色は `--ssg-tooltip-*` トークンで調整可。
 - トップ / ボトムバーとその構成要素（バー全体〔`showTopBar` / `showBottomBar`〕、既定トップバーの summary chips・グローバルフィルター入力、各バーの Rows/Columns 件数）を props で表示制御。
 - フィルター管理パネル — 適用中の列フィルターを 1 箇所で確認・操作（該当列へジャンプして編集 / 個別・全クリア / 追加）。列メニュー、既定トップバーの Filters chip クリック、ハンドルの `openFilterManager()` から開けます。トップバー直下に常時表示するフィルターチップバー（`showFilterChipBar`）もオプションで利用可。
 - CSV エクスポート（`downloadCsv` / `exportCsv`）を内蔵。Excel / XLSX / ODS はライブラリ非依存の `getExportData()` で、整形済みデータ（フィルター/ソート/可視列順を反映）を [hucre](https://github.com/productdevbook/hucre) / ExcelJS / SheetJS など任意の writer へ流す方式。xlsx ライブラリは同梱せず、マルチシートは利用側で合成。詳細は [`API_REFERENCE.md`](./src/components/spreadsheet-grid/API_REFERENCE.md)。
@@ -23091,7 +23578,8 @@ function HeaderActionButton({
   return (
     <button
       type="button"
-      title={title}
+      data-ssg-tooltip={title}
+      aria-label={title}
       onPointerDown={onPointerDown}
       className={cx(
         'ssg-icon-btn',
@@ -23286,7 +23774,9 @@ function GridHeaderRowInner<T>({
                 'ssg-header-label',
                 isColumnFiltered && 'ssg-header-label--filtered',
               )}
-              title={column.renderHeader ? undefined : column.title || column.key}
+              data-ssg-tooltip={
+                column.renderHeader ? undefined : column.title || column.key
+              }
             >
               {column.renderHeader
                 ? column.renderHeader({
@@ -23306,7 +23796,7 @@ function GridHeaderRowInner<T>({
               {sortEntry && (
                 <span
                   aria-hidden="true"
-                  title={
+                  data-ssg-tooltip={
                     (sortEntry.direction === 'asc'
                       ? '昇順で並び替え中'
                       : '降順で並び替え中') +
@@ -23326,7 +23816,7 @@ function GridHeaderRowInner<T>({
               {isColumnFiltered && (
                 <span
                   aria-hidden="true"
-                  title="フィルター適用中"
+                  data-ssg-tooltip="フィルター適用中"
                   className="ssg-header-filtered-mark"
                 >
                   <svg
@@ -23353,7 +23843,7 @@ function GridHeaderRowInner<T>({
                   onPointerDown={(event) =>
                     onColumnDragHandlePointerDown(column, event)
                   }
-                  title="ドラッグで列を移動"
+                  data-ssg-tooltip="ドラッグで列を移動"
                   aria-hidden="true"
                   className="ssg-header-grip"
                 >
@@ -24369,7 +24859,7 @@ export type { NumberFormatterOptions } from './logic/valueFormatters';
      セレクタリストについて(TH-DK-1): popover / menu / filter popover / ドラッグゴーストは
      document.body 直下のポータルで .ssg-root の継承が届かないため、各ポータル root にも
      同じトークンを直接定義します(テーマ切替はこのリストへ修飾子を足すだけで全面に効きます)。 */
-  :where(.ssg-root, .ssg-popover, .ssg-menu-panel, .ssg-filter-popover, [data-grid-drag-ghost]) {
+  :where(.ssg-root, .ssg-popover, .ssg-menu-panel, .ssg-filter-popover, [data-grid-drag-ghost], .ssg-tooltip) {
     /* 色トークン */
     --ssg-accent: #3461c9;
     --ssg-accent-strong: #1d4ed8;
@@ -24453,6 +24943,10 @@ export type { NumberFormatterOptions } from './logic/valueFormatters';
     --ssg-ghost-text: #f8fafc;
     --ssg-ghost-border: rgba(255, 255, 255, 0.10);
     --ssg-ghost-shadow: 0 8px 20px rgba(2, 6, 23, 0.34), 0 1px 2px rgba(2, 6, 23, 0.24);
+    /* ツールチップ(TT-1。インク系 = ghost / pill と同系のダークチップ) */
+    --ssg-tooltip-bg: #1e293b;
+    --ssg-tooltip-text: #f8fafc;
+    --ssg-tooltip-shadow: 0 4px 12px rgba(2, 6, 23, 0.25);
     /* その他 */
     --ssg-drop-indicator: #0f172a;
     --ssg-glyph-faint: #cbd5e1;
@@ -24495,10 +24989,10 @@ export type { NumberFormatterOptions } from './logic/valueFormatters';
      描画が食い違っていました。ルート/ポータル(popover / menu)配下を一律 border-box に固定して
      環境差を排除します。:where(特異度 0)なので、利用側が明示した box-sizing はそのまま勝ちます。
      注記: 擬似要素は :is()/:where() の引数に書けないため、::before / ::after は外側に付けます。 */
-  :where(.ssg-root, .ssg-popover, .ssg-menu-panel, .ssg-filter-popover),
-  :where(.ssg-root, .ssg-popover, .ssg-menu-panel, .ssg-filter-popover) :where(*),
-  :where(.ssg-root, .ssg-popover, .ssg-menu-panel, .ssg-filter-popover) :where(*)::before,
-  :where(.ssg-root, .ssg-popover, .ssg-menu-panel, .ssg-filter-popover) :where(*)::after {
+  :where(.ssg-root, .ssg-popover, .ssg-menu-panel, .ssg-filter-popover, .ssg-tooltip),
+  :where(.ssg-root, .ssg-popover, .ssg-menu-panel, .ssg-filter-popover, .ssg-tooltip) :where(*),
+  :where(.ssg-root, .ssg-popover, .ssg-menu-panel, .ssg-filter-popover, .ssg-tooltip) :where(*)::before,
+  :where(.ssg-root, .ssg-popover, .ssg-menu-panel, .ssg-filter-popover, .ssg-tooltip) :where(*)::after {
     box-sizing: border-box;
   }
 
@@ -26221,6 +26715,38 @@ export type { NumberFormatterOptions } from './logic/valueFormatters';
   .ssg-col-drop-indicator::after {
     bottom: -3px;
   }
+
+  /* ── カスタムツールチップ(TT-1) ── */
+  /* title 属性のブラウザ標準ツールチップを置き換える表示です(Mantine 風・矢印なし)。
+     body 直下シングルトン(hooks/useGridTooltip.ts が生成・表示制御)。表示対象は
+     data-ssg-tooltip 属性。色はトークン(テーマ対象サーフェス — トークン定義セレクタ
+     リストに .ssg-tooltip を含む)。z-index はポップオーバー(1000)より上・
+     ドラッグゴースト(9999)より下の 9000。opacity/transform のみ遷移し、非表示中の
+     座標移動はアニメしません(left/top は transition 対象外)。 */
+  .ssg-tooltip {
+    position: fixed;
+    z-index: 9000;
+    pointer-events: none;
+    opacity: 0;
+    transform: translateY(2px);
+    transition: opacity 120ms ease, transform 120ms ease;
+    max-width: 260px;
+    white-space: pre-line;
+    overflow-wrap: break-word;
+    line-height: 1.45;
+    background-color: var(--ssg-tooltip-bg);
+    color: var(--ssg-tooltip-text);
+    font-size: 12px;
+    font-weight: 500;
+    padding: 5px 10px;
+    border-radius: 6px;
+    box-shadow: var(--ssg-tooltip-shadow);
+  }
+
+  .ssg-tooltip--visible {
+    opacity: 1;
+    transform: translateY(0);
+  }
 </file>
 
 <file path="src/App.tsx">
@@ -27806,6 +28332,10 @@ const buffer = await writeXlsx({
 | `openFilterManager()` | フィルター管理パネル(適用中の列フィルターの一覧 / 該当列へジャンプして編集 / 個別・全クリア / 追加)を開く。`enableColumnFilter=false` のときは何もしない。列メニューの「フィルターを管理…」/ 既定トップバーの **Filters chip クリック**(`enableColumnFilter=true` 時にクリック可能)と同じパネル。 |
 | `closeFilterManager()` | フィルター管理パネルを閉じる(開いていなければ何もしない)。 |
 
+### ツールチップ(TT-1)
+
+グリッド内・ポータル内の操作ヒント / 切り詰めテキスト全文表示は、`title` 属性ではなく**カスタムツールチップ**(`.ssg-tooltip`・body 直下シングルトン)で表示される。表示対象は `data-ssg-tooltip="文言"` 属性で、window の pointerover / focusin 委譲で拾うため、**利用側が自前の要素(カスタムセル / renderHeader 等)へ同属性を付けても同じ見た目のツールチップが出る**。配色は `--ssg-tooltip-bg / --ssg-tooltip-text / --ssg-tooltip-shadow` トークンで調整可能。公開 props / ハンドルの追加はなし。
+
 ### 状態の保存 / 復元
 
 | メソッド | 説明 |
@@ -28933,6 +29463,8 @@ import { useGridEditController } from './hooks/useGridEditController';
 import { useGridKeyboardInteractions } from './hooks/useGridKeyboardInteractions';
 import { useGridPointerInteractions } from './hooks/useGridPointerInteractions';
 import { useGridViewportSync } from './hooks/useGridViewportSync';
+// 追加(TT-1): title 属性置き換えのカスタムツールチップ(data-ssg-tooltip 委譲)です。
+import { useGridTooltip } from './hooks/useGridTooltip';
 // 追加(13-B3-2): ヘッダー D&D 列並べ替え controller です。
 import { useColumnHeaderDragController } from './hooks/useColumnHeaderDragController';
 import {
@@ -30584,6 +31116,10 @@ export function SpreadsheetGrid<T extends object>({
   //   - totalScrollWidth: コンテンツ全幅（左固定 + 中央 + 右固定）
   //   - leftPaneWidth / rightPaneWidth: sticky 固定ペインに隠れない領域へ active cell を収めるため
   //   - centerLeadingWidth: 中央ペインの先頭幅（左固定なし=rowHeaderWidth / 左固定あり=0）
+  // 追加(TT-1): カスタムツールチップの表示制御です(body 直下シングルトン + window 委譲。
+  //   複数グリッド同居時はフック内の refCount で共有されます)。
+  useGridTooltip();
+
   useGridViewportSync({
     scrollRef: scrollContainerRef,
     columnVirtualizer,

@@ -516,7 +516,7 @@ export function ColumnChooserPanel({
         <span
           role="button"
           aria-label="ドラッグして並べ替え"
-          title={
+          data-ssg-tooltip={
             !canToggle
               ? 'onColumnsChange 未指定のため並べ替えできません'
               : query.trim() !== ''
@@ -600,7 +600,7 @@ export function ColumnChooserPanel({
           disabled={!canToggle}
           onClick={handleMasterClick}
           aria-label="すべての列を表示"
-          title="すべての列を表示"
+          data-ssg-tooltip="すべての列を表示"
           className="ssg-chooser-master-btn"
         >
           <CheckBox state={masterState} disabled={!canToggle} />
@@ -657,7 +657,7 @@ export function ColumnChooserPanel({
             }
             onResetColumns();
           }}
-          title="すべての列の幅・固定・表示を初期状態に戻します"
+          data-ssg-tooltip="すべての列の幅・固定・表示を初期状態に戻します"
           className="ssg-chooser-reset-btn"
         >
           すべての列を初期状態に戻す

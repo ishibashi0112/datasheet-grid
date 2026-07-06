@@ -51,7 +51,7 @@ export function GridFilterChipBar({
             type="button"
             className="ssg-filter-chip-label"
             disabled={!canFilter || entry.isHidden}
-            title={
+            data-ssg-tooltip={
               entry.isHidden
                 ? '非表示列のためジャンプ編集できません(× でクリアは可能)'
                 : 'この列へジャンプして編集'
@@ -73,7 +73,7 @@ export function GridFilterChipBar({
             type="button"
             className="ssg-filter-chip-clear"
             disabled={!canFilter}
-            title="この列のフィルターをクリア"
+            data-ssg-tooltip="この列のフィルターをクリア"
             aria-label={`${entry.title} のフィルターをクリア`}
             onClick={() => {
               onClearFilter(entry.columnKey);

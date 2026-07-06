@@ -428,6 +428,10 @@ const buffer = await writeXlsx({
 | `openFilterManager()` | フィルター管理パネル(適用中の列フィルターの一覧 / 該当列へジャンプして編集 / 個別・全クリア / 追加)を開く。`enableColumnFilter=false` のときは何もしない。列メニューの「フィルターを管理…」/ 既定トップバーの **Filters chip クリック**(`enableColumnFilter=true` 時にクリック可能)と同じパネル。 |
 | `closeFilterManager()` | フィルター管理パネルを閉じる(開いていなければ何もしない)。 |
 
+### ツールチップ(TT-1)
+
+グリッド内・ポータル内の操作ヒント / 切り詰めテキスト全文表示は、`title` 属性ではなく**カスタムツールチップ**(`.ssg-tooltip`・body 直下シングルトン)で表示される。表示対象は `data-ssg-tooltip="文言"` 属性で、window の pointerover / focusin 委譲で拾うため、**利用側が自前の要素(カスタムセル / renderHeader 等)へ同属性を付けても同じ見た目のツールチップが出る**。配色は `--ssg-tooltip-bg / --ssg-tooltip-text / --ssg-tooltip-shadow` トークンで調整可能。公開 props / ハンドルの追加はなし。
+
 ### 状態の保存 / 復元
 
 | メソッド | 説明 |

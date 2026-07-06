@@ -321,7 +321,7 @@ export function SortManagementPanel({
                 <span
                   role="button"
                   aria-label="ドラッグして優先順位を変更"
-                  title={
+                  data-ssg-tooltip={
                     !canSort
                       ? '並び替えが無効です'
                       : entries.length < 2
@@ -368,7 +368,7 @@ export function SortManagementPanel({
                     type="button"
                     disabled={!canSort}
                     onClick={() => onChangeDirection(index, 'asc')}
-                    title="昇順"
+                    data-ssg-tooltip="昇順"
                     className={cx(
                       'ssg-sort-dir-btn',
                       entry.direction === 'asc' && 'ssg-sort-dir-btn--active',
@@ -380,7 +380,7 @@ export function SortManagementPanel({
                     type="button"
                     disabled={!canSort}
                     onClick={() => onChangeDirection(index, 'desc')}
-                    title="降順"
+                    data-ssg-tooltip="降順"
                     className={cx(
                       'ssg-sort-dir-btn',
                       entry.direction === 'desc' && 'ssg-sort-dir-btn--active',
@@ -396,7 +396,7 @@ export function SortManagementPanel({
                   disabled={!canSort}
                   onClick={() => onRemoveLevel(index)}
                   aria-label="このレベルを削除"
-                  title="このレベルを削除"
+                  data-ssg-tooltip="このレベルを削除"
                   className="ssg-sort-delete"
                 >
                   ×
@@ -422,7 +422,7 @@ export function SortManagementPanel({
             }
             onAddLevel(firstUnusedColumn.key, 'asc');
           }}
-          title={
+          data-ssg-tooltip={
             !canSort
               ? '並び替えが無効です'
               : firstUnusedColumn === null
@@ -443,7 +443,7 @@ export function SortManagementPanel({
             }
             onClearAll();
           }}
-          title="すべての並び替えを解除します"
+          data-ssg-tooltip="すべての並び替えを解除します"
           className="ssg-sort-footer-btn ssg-sort-footer-btn--clear"
         >
           すべてクリア

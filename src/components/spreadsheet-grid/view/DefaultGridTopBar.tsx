@@ -117,7 +117,7 @@ export function DefaultGridTopBar<T>({
                   event.stopPropagation();
                 }}
                 onClick={onFilterSummaryClick}
-                title="フィルター管理パネルを開閉"
+                data-ssg-tooltip="フィルター管理パネルを開閉"
                 aria-label="フィルター管理パネルを開閉"
               >
                 {derivedSummary.filterSummaryText}
@@ -158,7 +158,7 @@ export function DefaultGridTopBar<T>({
                 onClick={() => context.setGlobalFilterText('')}
                 className="ssg-bar-input-clear"
                 aria-label="フィルターをクリア"
-                title="クリア"
+                data-ssg-tooltip="クリア"
               >
                 {CLEAR_ICON}
               </button>
