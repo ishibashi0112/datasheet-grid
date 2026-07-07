@@ -677,7 +677,7 @@ export function ColumnChooserPanel({
             }
             onResetColumns();
           }}
-          data-ssg-tooltip="すべての列の幅・固定・表示を初期状態に戻します"
+          data-ssg-tooltip="すべての列の幅・固定・表示・並び順を初期状態に戻します"
           className="ssg-chooser-reset-btn"
         >
           すべての列を初期状態に戻す

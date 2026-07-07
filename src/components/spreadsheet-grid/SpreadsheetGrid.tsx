@@ -100,6 +100,9 @@ import {
 } from './logic/geometry';
 // 追加(B3): center 列の JS 算出 flex(利用可能幅を比率配分)。
 import { isFlexingColumn, computeCenterFlexWidths } from './logic/columnFlex';
+// 追加(13-B2-5): 列リセットの再構成純ロジック(幅 / 固定 / 表示 / 並び順の完全復元)です。
+import { buildResetColumns } from './logic/columnReset';
+import type { InitialColumnState } from './logic/columnReset';
 // 追加(scroll-space 仮想化): 縦ジオメトリのシーム(uniform window + pixel scaling)です。
 //   1M 行で innerRowStyle.height がブラウザ要素高さ上限を超える機能ブロッカーを解消します。
 import {
@@ -526,6 +529,8 @@ export function SpreadsheetGrid<T extends object>({
   //     遅延初期化(current が null のときだけ構築)なので構築は一度きりで、以後は
   //     columns prop が変わっても更新しません(= ユーザー操作後の状態を「初期」と
   //     誤認しないため)。リセットはここに退避した値へ戻します。
+  //   - 変更(13-B2-5): Map の挿入順 = 初回マウント時の columns 順が「初期の並び順」を
+  //     兼ねます(リセット時の並び順復元は buildResetColumns がこの挿入順から行います)。
   //   - 明示 API(initialColumns prop / onResetColumns)による consumer 制御リセット
   //     (方針 (B))は、将来必要になればこの ref を prop 優先へ差し替えるだけで載せ替え
   //     可能です。現時点では追加 props を増やさず自己完結を優先します。
@@ -533,10 +538,9 @@ export function SpreadsheetGrid<T extends object>({
   //     退避内容は同一になります(再 mount 時は再構築されますが結果は不変)。
   //   - マウント後に追加された列(createOverflowColumn)は本スナップショットに存在せず、
   //     リセット対象外になります(handleColumnChooserReset 側で対象外扱い)。
-  const initialColumnStateRef = useRef<Map<
-    string,
-    { width: number; pinned: GridColumn<T>['pinned']; visible: boolean | undefined }
-  > | null>(null);
+  const initialColumnStateRef = useRef<Map<string, InitialColumnState> | null>(
+    null,
+  );
   if (initialColumnStateRef.current === null) {
     initialColumnStateRef.current = new Map(
       columns.map((column) => [
@@ -2926,7 +2930,9 @@ export function SpreadsheetGrid<T extends object>({
     display: 'none',
   };
 
-  // 追加(13-B2-2): 全列を初期 column defs の値(幅 / 固定 / 表示)へ戻します。
+  // 追加(13-B2-2): 全列を初期 column defs の値(幅 / 固定 / 表示 / 並び順)へ戻します。
+  // 変更(13-B2-5): 並び順の復元を追加し、再構成を logic/columnReset.ts の buildResetColumns
+  //   へ抽出しました(幅の戻し方 / overflow 列 / no-op の方針は同モジュールの doc を参照)。
   // 設計メモ:
   //   - columns は controlled props のため onColumnsChange 経由で反映します
   //     (pin / 表示トグルと同じ経路。内部 state は持ちません)。
@@ -2937,14 +2943,16 @@ export function SpreadsheetGrid<T extends object>({
   //     live 幅は自動的に破棄され初期幅へ戻ります。
   //     ※ pin / 表示ハンドラが「対象外の列の live 幅を defs へ書き戻して"保全"」するのと
   //       ちょうど逆向きの操作です(リセットは live 幅を意図的に"破棄"します)。
-  //   - 【スナップショット外の列】マウント後に追加された列(createOverflowColumn)は
-  //     初期スナップショットを持たないためリセット対象外です。ただし commit する場合は
-  //     その列の live 幅を defs へ書き戻して保全します(他ハンドラと同型。書き戻さないと
-  //     上記 sync effect でそれらの列の手動リサイズも巻き添えで消えるため)。
-  //   - 【no-op】初期スナップショットを持つ列がどれも初期状態と差分なしなら dispatch も
-  //     onColumnsChange も行いません(changed フラグ。無駄な再レンダー抑止)。
-  //   - 固定 / 表示の復元で orderedColumns の視覚順(= selection / activeCell の論理 index
-  //     空間)が変わり得るため、選択・アクティブセル・編集は破棄します(pin / 表示と同理由)。
+  //   - 【並び順の戻し方(13-B2-5)】初期順はスナップショット Map の挿入順から復元します。
+  //     ヘッダー D&D / チューザー並べ替え(applyColumnOrderAndPin)が columns 配列の順序を
+  //     恒久的に書き換えるため、属性だけ戻す従来実装では「左固定 → 中央へ移動 → リセット」
+  //     でペイン内の相対順が初期と逆転していました。復元順は consumer 宣言の初期配列と
+  //     1:1 で一致させ、pane 連結正規化は初期マウントと同じく描画側の reorderColumnsByPane
+  //     に委ねます(初期状態の完全再現を優先)。
+  //   - 【no-op】初期列の幅 / 固定 / 表示 / 並び順がすべて初期状態と差分なしなら dispatch も
+  //     onColumnsChange も行いません(buildResetColumns が null を返します)。
+  //   - 固定 / 表示 / 並び順の復元で orderedColumns の視覚順(= selection / activeCell の論理
+  //     index 空間)が変わり得るため、選択・アクティブセル・編集は破棄します(pin / 表示と同理由)。
   //   - 追加(13-B2-3 / gpt5.5対応): 列メニュー root の「列のリセット」からも
   //     本ハンドラを再利用します。列メニュー側では薄い wrapper で menu close だけを
   //     追加し、ColumnChooserPanel 側の挙動(押下後もパネルを残す)とは分離します。
@@ -2957,44 +2965,13 @@ export function SpreadsheetGrid<T extends object>({
       return;
     }
 
-    let changed = false;
-    const nextColumns = columns.map((column) => {
-      const resolvedWidth =
-        columnWidthsRef.current[column.key] ?? column.width;
-      const initial = snapshot.get(column.key);
-
-      if (!initial) {
-        // マウント後に追加された列はリセット対象外。解決済み幅だけ defs へ
-        // 書き戻して保全します(commit される場合の sync effect による消失を防止)。
-        return resolvedWidth === column.width
-          ? column
-          : { ...column, width: resolvedWidth };
-      }
-
-      const initialPinned = initial.pinned ?? undefined;
-      const widthDiff = resolvedWidth !== initial.width;
-      const pinnedDiff = (column.pinned ?? undefined) !== initialPinned;
-      const visibleDiff =
-        (column.visible !== false) !== (initial.visible !== false);
-
-      if (widthDiff || pinnedDiff || visibleDiff) {
-        changed = true;
-      }
-
-      // 注記: 初期幅を column.width にセットするのが重要です。これにより commit 後の
-      //       sync effect が columnWidths を初期幅で上書きし、live 幅が破棄されます。
-      //       差分なしの列も同じ正規化を行い、column.width と初期幅の不整合
-      //       (過去の書き戻しで def 幅がずれているケース)による幅ジャンプを防ぎます。
-      return {
-        ...column,
-        width: initial.width,
-        pinned: initial.pinned,
-        visible: initial.visible,
-      };
-    });
-
-    if (!changed) {
-      // どの初期列も初期状態のまま → 何もしません(再レンダー抑止)。
+    const nextColumns = buildResetColumns(
+      columns,
+      snapshot,
+      columnWidthsRef.current,
+    );
+    if (nextColumns === null) {
+      // 幅 / 固定 / 表示 / 並び順すべて初期状態のまま → 何もしません(再レンダー抑止)。
       return;
     }
 

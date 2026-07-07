@@ -91,6 +91,8 @@ src/components/spreadsheet-grid/logic/autoScrollGeometry.ts
 src/components/spreadsheet-grid/logic/columnAutosize.ts
 src/components/spreadsheet-grid/logic/columnFlex.test.ts
 src/components/spreadsheet-grid/logic/columnFlex.ts
+src/components/spreadsheet-grid/logic/columnReset.test.ts
+src/components/spreadsheet-grid/logic/columnReset.ts
 src/components/spreadsheet-grid/logic/contextMenuTarget.test.ts
 src/components/spreadsheet-grid/logic/contextMenuTarget.ts
 src/components/spreadsheet-grid/logic/cx.ts
@@ -150,6 +152,7 @@ src/components/spreadsheet-grid/utils/excelColumnName.ts
 src/components/spreadsheet-grid/utils/permissions.ts
 src/components/spreadsheet-grid/utils/scheduler.ts
 src/components/spreadsheet-grid/view/CellContextMenuPopover.tsx
+src/components/spreadsheet-grid/view/ColumnChooserPanel.test.tsx
 src/components/spreadsheet-grid/view/ColumnChooserPanel.tsx
 src/components/spreadsheet-grid/view/ColumnFilterPopover.test.tsx
 src/components/spreadsheet-grid/view/ColumnFilterPopover.tsx
@@ -697,6 +700,258 @@ export const useGridKeyboardInteractions = <T,>({
 };
 
 export default useGridKeyboardInteractions;
+</file>
+
+<file path="src/components/spreadsheet-grid/logic/columnReset.test.ts">
+// 追加(13-B2-5)の単体テスト: buildResetColumns(列リセットの再構成)の仕様固定です。
+//   - 幅 / 固定 / 表示の初期値復元(13-B2-2 からの継承挙動)。
+//   - 並び順の初期順復元(13-B2-5 の本体)。「左固定 → 中央へ移動 → リセット」で
+//     ペイン内相対順が初期と逆転していた不完全復元の回帰テストを含みます。
+//   - スナップショット外の列(マウント後追加)は末尾・相対順維持・幅書き戻し保全。
+//   - no-op(null)判定: 全差分なし / overflow 幅書き戻しのみのケース。
+import { describe, it, expect } from 'vitest';
+import { buildResetColumns } from './columnReset';
+import type { InitialColumnState } from './columnReset';
+import type { GridColumn } from '../model/gridTypes';
+
+type Row = { id: number };
+
+const col = (
+  key: string,
+  extra: Partial<GridColumn<Row>> = {},
+): GridColumn<Row> => ({
+  key,
+  width: 100,
+  ...extra,
+});
+
+// 初期 columns 配列からスナップショット(Map 挿入順 = 初期順)を作ります
+// (SpreadsheetGrid の initialColumnStateRef 構築と同型)。
+const makeSnapshot = (
+  initial: GridColumn<Row>[],
+): Map<string, InitialColumnState> =>
+  new Map(
+    initial.map((column) => [
+      column.key,
+      {
+        width: column.width,
+        pinned: column.pinned,
+        visible: column.visible,
+      },
+    ]),
+  );
+
+describe('buildResetColumns(列リセット再構成 13-B2-5)', () => {
+  it('幅 / 固定 / 表示を初期値へ戻す(手動リサイズの live 幅は破棄)', () => {
+    const initial = [col('a', { pinned: 'left' }), col('b'), col('c')];
+    const snapshot = makeSnapshot(initial);
+    // a: pin 解除 + def 幅ずれ / b: 非表示 / c: 手動リサイズ(live 幅 240)
+    const current = [
+      col('a', { width: 150 }),
+      col('b', { visible: false }),
+      col('c'),
+    ];
+
+    const result = buildResetColumns(current, snapshot, { c: 240 });
+
+    expect(result).not.toBeNull();
+    expect(result!.map((column) => column.key)).toEqual(['a', 'b', 'c']);
+    expect(result![0].pinned).toBe('left');
+    expect(result![0].width).toBe(100);
+    expect(result![1].visible).toBeUndefined();
+    expect(result![2].width).toBe(100); // live 幅 240 は破棄され初期幅へ
+  });
+
+  it('並び順を初期順へ戻す(左固定 → 中央移動 → リセットの回帰: ペイン内逆転を修正)', () => {
+    // 初期: [品番(left), 品名(left), 単価]。品番を中央へ D&D すると
+    // applyColumnOrderAndPin の pane 正規化で配列は [品名(left), 単価, 品番] になる。
+    const initial = [
+      col('品番', { pinned: 'left' }),
+      col('品名', { pinned: 'left' }),
+      col('単価'),
+    ];
+    const snapshot = makeSnapshot(initial);
+    const current = [
+      col('品名', { pinned: 'left' }),
+      col('単価'),
+      col('品番'), // pin 解除済み
+    ];
+
+    const result = buildResetColumns(current, snapshot, {});
+
+    expect(result).not.toBeNull();
+    // 旧実装は属性のみ復元で ['品名', '単価', '品番'] の順のまま
+    // → 左ペインが [品名, 品番] と初期の逆になっていた。
+    expect(result!.map((column) => column.key)).toEqual([
+      '品番',
+      '品名',
+      '単価',
+    ]);
+    expect(result![0].pinned).toBe('left');
+    expect(result![1].pinned).toBe('left');
+    expect(result![2].pinned).toBeUndefined();
+  });
+
+  it('属性が全一致でも並び順が違えば commit する(順序のみの差分)', () => {
+    const initial = [col('a'), col('b'), col('c')];
+    const snapshot = makeSnapshot(initial);
+    const current = [col('b'), col('a'), col('c')];
+
+    const result = buildResetColumns(current, snapshot, {});
+
+    expect(result).not.toBeNull();
+    expect(result!.map((column) => column.key)).toEqual(['a', 'b', 'c']);
+  });
+
+  it('スナップショット外の列は末尾へ相対順維持で置き、live 幅を defs へ書き戻す', () => {
+    const initial = [col('a'), col('b')];
+    const snapshot = makeSnapshot(initial);
+    // マウント後追加の x, y(overflow 列)。y は手動リサイズ済み(live 200)。
+    const current = [
+      col('x'),
+      col('a', { width: 150 }),
+      col('y'),
+      col('b'),
+    ];
+
+    const result = buildResetColumns(current, snapshot, { y: 200 });
+
+    expect(result).not.toBeNull();
+    expect(result!.map((column) => column.key)).toEqual(['a', 'b', 'x', 'y']);
+    expect(result![0].width).toBe(100); // 初期列は初期幅へ
+    expect(result![3].width).toBe(200); // overflow 列は live 幅を書き戻して保全
+  });
+
+  it('スナップショットに在って現 columns に無い列(削除列)はスキップする', () => {
+    const initial = [col('a'), col('gone'), col('b')];
+    const snapshot = makeSnapshot(initial);
+    const current = [col('b', { width: 130 }), col('a')];
+
+    const result = buildResetColumns(current, snapshot, {});
+
+    expect(result).not.toBeNull();
+    expect(result!.map((column) => column.key)).toEqual(['a', 'b']);
+    expect(result![1].width).toBe(100);
+  });
+
+  it('幅 / 固定 / 表示 / 並び順すべて初期状態なら null(no-op)', () => {
+    const initial = [col('a', { pinned: 'left' }), col('b')];
+    const snapshot = makeSnapshot(initial);
+    const current = [col('a', { pinned: 'left' }), col('b')];
+
+    expect(buildResetColumns(current, snapshot, {})).toBeNull();
+    // live 幅が def と同値のエントリがあっても no-op のまま。
+    expect(buildResetColumns(current, snapshot, { a: 100 })).toBeNull();
+  });
+
+  it('overflow 列の幅書き戻しだけが必要なケースは no-op(リセット対象外のため)', () => {
+    const initial = [col('a')];
+    const snapshot = makeSnapshot(initial);
+    const current = [col('a'), col('x')];
+
+    // x(スナップショット外)だけ live 幅 180。初期列 a と並び順に差分なし。
+    expect(buildResetColumns(current, snapshot, { x: 180 })).toBeNull();
+  });
+});
+</file>
+
+<file path="src/components/spreadsheet-grid/logic/columnReset.ts">
+// 追加(13-B2-5): 列リセット(パネルフッター「すべての列を初期状態に戻す」/ 列メニュー
+//   「列のリセット」)の再構成純ロジックです。SpreadsheetGrid の handleColumnChooserReset
+//   から呼びます。
+// 設計メモ:
+//   - 13-B2-2 のリセットは幅 / 固定 / 表示のみを初期値へ戻し、並び順は現在の配列順のまま
+//     でした。ヘッダー D&D / チューザー並べ替え(applyColumnOrderAndPin)は columns 配列の
+//     順序を恒久的に書き換えるため、「左固定 → 中央へ移動 → リセット」で pinned は戻るのに
+//     ペイン内の相対順が初期と逆転する、という不完全復元が起きていました。本モジュールは
+//     並び順まで含めた完全復元を行います。
+//   - 初期順はスナップショット Map の挿入順(= 初回マウント時の columns 順)から得ます。
+//     復元順は consumer 宣言の初期配列と 1:1 で一致させ、pane 連結正規化は初期マウントと
+//     同じく描画側の reorderColumnsByPane に委ねます(初期状態の完全再現を優先)。
+//   - スナップショット外の列(マウント後追加 = createOverflowColumn)はリセット対象外で、
+//     現在の相対順のまま末尾へ置きます(applyColumnState の「新規列は末尾」方針と同型)。
+//     幅は解決済み幅を defs へ書き戻して保全します(commit 時の sync effect による消失防止)。
+//   - 返り値 null = no-op(初期列の幅 / 固定 / 表示 / 並び順すべて差分なし)。overflow 列の
+//     幅書き戻しだけが必要なケースは従来どおり no-op です(リセット対象外のため)。
+import type { GridColumn, GridColumnPinned } from '../model/gridTypes';
+
+// 追加(13-B2-5): 初回マウント時に退避する per-column の初期状態です。Map の挿入順が
+//   初期の列順を兼ねます(SpreadsheetGrid の initialColumnStateRef が保持)。
+export type InitialColumnState = {
+  width: number;
+  pinned: GridColumnPinned | undefined;
+  visible: boolean | undefined;
+};
+
+// 追加(13-B2-5): リセット後の columns 配列を組み立てます。差分がなければ null(no-op)。
+export const buildResetColumns = <T,>(
+  columns: GridColumn<T>[],
+  snapshot: Map<string, InitialColumnState>,
+  resolvedWidths: Record<string, number>,
+): GridColumn<T>[] | null => {
+  let changed = false;
+
+  // ① 各列の属性(幅 / 固定 / 表示)を初期値へ戻します(並び順はまだ現在のまま)。
+  const restored = columns.map((column) => {
+    const resolvedWidth = resolvedWidths[column.key] ?? column.width;
+    const initial = snapshot.get(column.key);
+
+    if (!initial) {
+      // マウント後に追加された列はリセット対象外。解決済み幅だけ defs へ書き戻して
+      // 保全します(commit される場合の sync effect による消失を防止)。
+      return resolvedWidth === column.width
+        ? column
+        : { ...column, width: resolvedWidth };
+    }
+
+    const initialPinned = initial.pinned ?? undefined;
+    const widthDiff = resolvedWidth !== initial.width;
+    const pinnedDiff = (column.pinned ?? undefined) !== initialPinned;
+    const visibleDiff =
+      (column.visible !== false) !== (initial.visible !== false);
+
+    if (widthDiff || pinnedDiff || visibleDiff) {
+      changed = true;
+    }
+
+    // 注記: 初期幅を column.width にセットするのが重要です。これにより commit 後の
+    //       sync effect が columnWidths を初期幅で上書きし、live 幅が破棄されます。
+    //       差分なしの列も同じ正規化を行い、column.width と初期幅の不整合
+    //       (過去の書き戻しで def 幅がずれているケース)による幅ジャンプを防ぎます。
+    return {
+      ...column,
+      width: initial.width,
+      pinned: initial.pinned,
+      visible: initial.visible,
+    };
+  });
+
+  // ② 並び順を初期順へ戻します。スナップショット挿入順 = 初期順を正とし、現在の
+  //    columns に存在する初期列をその順で先頭へ、スナップショット外の列を現在の
+  //    相対順のまま末尾へ連結します(初期スナップショットに在って現 columns に無い
+  //    key = 削除列は自然にスキップされます)。
+  const byKey = new Map(restored.map((column) => [column.key, column]));
+  const initialOrdered: GridColumn<T>[] = [];
+  for (const key of snapshot.keys()) {
+    const column = byKey.get(key);
+    if (column) {
+      initialOrdered.push(column);
+    }
+  }
+  const extras = restored.filter((column) => !snapshot.has(column.key));
+  const nextColumns = [...initialOrdered, ...extras];
+
+  // ③ 並び順の差分検出です。属性差分(changed)がなくても順序が違えば commit します
+  //    (nextColumns と columns は同一集合の permutation のため長さは常に一致します)。
+  const orderChanged = nextColumns.some(
+    (column, index) => columns[index].key !== column.key,
+  );
+
+  if (!changed && !orderChanged) {
+    return null;
+  }
+  return nextColumns;
+};
 </file>
 
 <file path="src/components/spreadsheet-grid/logic/domGuards.ts">
@@ -3456,6 +3711,139 @@ export const useGlobalFilteredOrder = <T,>({
 };
 
 export default useGlobalFilteredOrder;
+</file>
+
+<file path="src/components/spreadsheet-grid/hooks/useGridBarContext.ts">
+import { useMemo } from 'react';
+import { selectGlobalFilter } from '../model/gridSelectors';
+import type {
+  GlobalFilterStatus,
+  GridColumn,
+  GridUiState,
+  SpreadsheetGridSlotContext,
+} from '../model/gridTypes';
+import { buildGridDerivedSummary } from '../view/gridBarHelpers';
+
+// 追加: derivedSummary / setGlobalFilterText を載せる前の中間 slot context 型です。
+// 変更(DS-3-7): base から filteredRows(配列)を外します。サマリは件数のみ使用し、公開
+//   slotContext.filteredRows は最終 object で遅延 getter として付与します。
+type GridSlotContextBase<T> = Omit<
+  SpreadsheetGridSlotContext<T>,
+  // 変更(F-async): globalFilterStatus / Progress も base から外します。これらは進捗 tick ごとに
+  //   変わるため、安定させたい slotContextBase(→ derivedSummary)には含めず、最終 object でのみ付与します。
+  | 'setGlobalFilterText'
+  | 'derivedSummary'
+  | 'filteredRows'
+  | 'globalFilterStatus'
+  | 'globalFilterProgress'
+>;
+
+type UseGridBarContextArgs<T> = {
+  rows: T[];
+  // 変更(DS-3-7): filteredRows(配列)→ 件数(viewRowCount)+ 遅延 factory(getFilteredRows)。
+  //   サマリは viewRowCount を使い、公開 slotContext.filteredRows は getFilteredRows() を
+  //   遅延 getter で返します(外部スロットが読んだ時だけ materialize)。
+  viewRowCount: number;
+  getFilteredRows: () => T[];
+  columns: GridColumn<T>[];
+  visibleColumns: GridColumn<T>[];
+  uiState: GridUiState;
+  setGlobalFilterText: (value: string) => void;
+  // 追加(F-async): グローバルフィルタの適用状態と進捗です(useGlobalFilteredOrder の戻り値)。
+  globalFilterStatus: GlobalFilterStatus;
+  globalFilterProgress: number;
+};
+
+// 追加: topBar / bottomBar へ渡す slot context と derived summary をまとめて構築します。
+export const useGridBarContext = <T,>({
+  rows,
+  viewRowCount,
+  getFilteredRows,
+  columns,
+  visibleColumns,
+  uiState,
+  setGlobalFilterText,
+  globalFilterStatus,
+  globalFilterProgress,
+}: UseGridBarContextArgs<T>) => {
+  // 変更(11-B3): slotContextBase の依存を uiState 丸ごとから、bar が実際に参照する
+  //   5 フィールドへ分解します。
+  // 変更理由: uiState は columnWidths(ライブリサイズ中は毎 pointermove)、
+  //   editingCell、dragState など bar 表示と無関係な更新でも参照が変わります。
+  //   丸ごと依存のままだと slotContextBase → derivedSummary → slotContext が
+  //   その度に連鎖再生成され、topBar / bottomBar スロットの再レンダーを誘発します。
+  //   reducer は無関係フィールド更新時に filters / sort / activeCell / selection の
+  //   参照を温存する(スプレッドで該当キーのみ差し替える)ため、ここで個別に
+  //   取り出した参照は安定し、useMemo が正しくスキップされます。
+  const globalFilterText = selectGlobalFilter(uiState);
+  const columnFilterValues = uiState.filters.columnFilters;
+  const sortState = uiState.sort;
+  const activeCell = uiState.activeCell;
+  const selection = uiState.selection;
+
+  const slotContextBase = useMemo<GridSlotContextBase<T>>(
+    () => ({
+      rows,
+      columns,
+      visibleColumns,
+      globalFilterText,
+      columnFilterValues,
+      sortState,
+      activeCell,
+      selection,
+    }),
+    [
+      rows,
+      columns,
+      visibleColumns,
+      globalFilterText,
+      columnFilterValues,
+      sortState,
+      activeCell,
+      selection,
+    ],
+  );
+
+  const derivedSummary = useMemo(
+    // 変更(DS-3-7): 件数 viewRowCount を明示引数で渡します(filteredRows 配列は使いません)。
+    () => buildGridDerivedSummary(slotContextBase, viewRowCount),
+    [slotContextBase, viewRowCount],
+  );
+
+  const slotContext = useMemo<SpreadsheetGridSlotContext<T>>(
+    () => ({
+      ...slotContextBase,
+      // 追加(DS-3-7): 公開 filteredRows は遅延 getter。外部スロットが読んだ時だけ materialize し、
+      //   getFilteredRows() 内部キャッシュで同一世代([order,rows])は参照も安定します。
+      //   base には filteredRows が無いため、上の spread では materialize されません。
+      get filteredRows() {
+        return getFilteredRows();
+      },
+      setGlobalFilterText,
+      derivedSummary,
+      // 追加(F-async): 進捗 tick ごとに本 object のみ再生成されます(slotContextBase /
+      //   derivedSummary は不変＝サマリ chips は再計算されず、トップバーの進捗表示だけ更新)。
+      globalFilterStatus,
+      globalFilterProgress,
+    }),
+    [
+      derivedSummary,
+      getFilteredRows,
+      setGlobalFilterText,
+      slotContextBase,
+      globalFilterStatus,
+      globalFilterProgress,
+    ],
+  );
+
+  return {
+    slotContextBase,
+    derivedSummary,
+    slotContext,
+  };
+};
+
+export default useGridBarContext;
 </file>
 
 <file path="src/components/spreadsheet-grid/hooks/useGridEditController.ts">
@@ -8654,6 +9042,136 @@ export const yieldToMain = (): Promise<void> =>
   });
 </file>
 
+<file path="src/components/spreadsheet-grid/view/ColumnChooserPanel.test.tsx">
+// 追加(13-B2-4)の view テスト: ColumnChooserPanel の全選択トグルの配線を固定します。
+//   - 全表示時の master クリック → onHideAllColumns(全解除・1 列残し側)のみ発火。
+//   - 一部非表示時の master クリック → onShowAllColumns(すべて表示側)のみ発火。
+//   - canToggle=false では master は disabled でどちらも発火しない。
+//   - ツールチップ / aria-label が状態で切り替わる。
+//   - 最後の 1 列(表示中が 1 列だけ)の個別チェックは disabled(既存挙動の固定)。
+//   CSS の見た目は jsdom で検証できないため、ラベルとコールバック発火のみを固定します
+//   (FilterManagementPanel.test.tsx と同じ方針)。
+// @vitest-environment jsdom
+import { describe, it, expect, afterEach, vi } from 'vitest';
+import { render, screen, fireEvent, cleanup } from '@testing-library/react';
+import { createRef } from 'react';
+
+import ColumnChooserPanel, {
+  type ColumnChooserItem,
+} from './ColumnChooserPanel';
+import type { ColumnChooserLayout } from '../hooks/useColumnChooserController';
+
+afterEach(() => {
+  cleanup();
+});
+
+const layout: ColumnChooserLayout = { top: 20, left: 40, width: 280 };
+
+const makeItems = (visibles: boolean[]): ColumnChooserItem[] =>
+  visibles.map((visible, index) => ({
+    key: `col${index}`,
+    title: `列${index}`,
+    visible,
+    pane: 'center',
+  }));
+
+const makeProps = (items: ColumnChooserItem[], canToggle = true) => ({
+  isOpen: true,
+  items,
+  canToggle,
+  layout,
+  panelRef: createRef<HTMLDivElement>(),
+  onToggleColumnVisibility: vi.fn(),
+  onShowAllColumns: vi.fn(),
+  onHideAllColumns: vi.fn(),
+  onResetColumns: vi.fn(),
+  onReorderColumns: vi.fn(),
+  onRequestClose: vi.fn(),
+  onPanelMove: vi.fn(),
+});
+
+describe('ColumnChooserPanel(全選択トグル 13-B2-4)', () => {
+  it('全表示時の master クリックで onHideAllColumns のみ発火する', () => {
+    const props = makeProps(makeItems([true, true, true]));
+    render(<ColumnChooserPanel {...props} />);
+
+    const master = screen.getByRole('button', {
+      name: 'すべての列を非表示(先頭の列は残ります)',
+    });
+    fireEvent.click(master);
+
+    expect(props.onHideAllColumns).toHaveBeenCalledTimes(1);
+    expect(props.onShowAllColumns).not.toHaveBeenCalled();
+  });
+
+  it('一部非表示時の master クリックで onShowAllColumns のみ発火する', () => {
+    const props = makeProps(makeItems([true, false, true]));
+    render(<ColumnChooserPanel {...props} />);
+
+    const master = screen.getByRole('button', { name: 'すべての列を表示' });
+    fireEvent.click(master);
+
+    expect(props.onShowAllColumns).toHaveBeenCalledTimes(1);
+    expect(props.onHideAllColumns).not.toHaveBeenCalled();
+  });
+
+  it('ツールチップ(data-ssg-tooltip)が状態で切り替わる', () => {
+    const allVisibleProps = makeProps(makeItems([true, true]));
+    const { unmount } = render(<ColumnChooserPanel {...allVisibleProps} />);
+    expect(
+      screen
+        .getByRole('button', {
+          name: 'すべての列を非表示(先頭の列は残ります)',
+        })
+        .getAttribute('data-ssg-tooltip'),
+    ).toBe('すべての列を非表示(先頭の列は残ります)');
+    unmount();
+
+    const partialProps = makeProps(makeItems([true, false]));
+    render(<ColumnChooserPanel {...partialProps} />);
+    expect(
+      screen
+        .getByRole('button', { name: 'すべての列を表示' })
+        .getAttribute('data-ssg-tooltip'),
+    ).toBe('すべての列を表示');
+  });
+
+  it('canToggle=false では master は disabled でどちらも発火しない', () => {
+    const props = makeProps(makeItems([true, true]), false);
+    render(<ColumnChooserPanel {...props} />);
+
+    const master = screen.getByRole('button', {
+      name: 'すべての列を非表示(先頭の列は残ります)',
+    });
+    expect((master as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(master);
+
+    expect(props.onHideAllColumns).not.toHaveBeenCalled();
+    expect(props.onShowAllColumns).not.toHaveBeenCalled();
+  });
+
+  it('最後の 1 列(表示中 1 列)の個別チェックは disabled で発火しない', () => {
+    const props = makeProps(makeItems([true, false, false]));
+    render(<ColumnChooserPanel {...props} />);
+
+    // 表示中の col0 だけがガード対象。非表示列(col1)のチェックは有効なままです。
+    const onlyVisibleToggle = screen
+      .getByText('列0')
+      .closest('button') as HTMLButtonElement;
+    expect(onlyVisibleToggle.disabled).toBe(true);
+    fireEvent.click(onlyVisibleToggle);
+    expect(props.onToggleColumnVisibility).not.toHaveBeenCalled();
+
+    const hiddenToggle = screen
+      .getByText('列1')
+      .closest('button') as HTMLButtonElement;
+    expect(hiddenToggle.disabled).toBe(false);
+    fireEvent.click(hiddenToggle);
+    expect(props.onToggleColumnVisibility).toHaveBeenCalledWith('col1', true);
+  });
+});
+</file>
+
 <file path="src/components/spreadsheet-grid/view/ColumnFilterPopover.test.tsx">
 // 修正(SF-ENTER fix)の回帰テスト: フィルター popover 内のキー操作が「popover ルートの
 //   keydown 遮断」に殺されないことを検証します。
@@ -8773,6 +9291,296 @@ describe('ColumnFilterPopover のキー操作(SF-ENTER fix)', () => {
     expect(outerKeyDown).not.toHaveBeenCalled();
   });
 });
+</file>
+
+<file path="src/components/spreadsheet-grid/view/gridBarHelpers.ts">
+import type { ReactNode } from 'react';
+import type {
+  CellCoord,
+  ColumnFilterValue,
+  GridSelection,
+  GridColumn,
+  SpreadsheetGridSlotContext,
+  SpreadsheetGridDerivedSummary,
+  SpreadsheetGridSelectionStats,
+} from '../model/gridTypes';
+import { toExcelColumnName } from '../utils/excelColumnName';
+// 追加(12-A): set フィルター対応のフィルター有効判定を共有します。
+import { isActiveColumnFilterValue } from '../logic/filtering';
+
+// 追加: Grid の slot renderer を解決します。
+export const resolveGridSlot = <T,>(
+  slotRenderer:
+    | ((context: SpreadsheetGridSlotContext<T>) => ReactNode)
+    | undefined,
+  context: SpreadsheetGridSlotContext<T>,
+  fallback: ReactNode,
+) => {
+  if (slotRenderer) {
+    return slotRenderer(context);
+  }
+  return fallback;
+};
+
+// 追加: summary 用に長い文字列を短く丸めます。
+const truncateSummaryText = (value: string, maxLength = 16) => {
+  if (value.length <= maxLength) {
+    return value;
+  }
+  return `${value.slice(0, maxLength)}…`;
+};
+
+// 追加: ActiveCell を A1 形式へ整形します。
+export const formatGridCellLabel = (cell: CellCoord | null) => {
+  if (!cell) {
+    return 'なし';
+  }
+  return `${toExcelColumnName(cell.col)}${cell.row + 1}`;
+};
+
+// 追加: selection の概要を短く整形します。
+export const formatGridSelectionLabel = (selection: GridSelection) => {
+  if (!selection) {
+    return 'なし';
+  }
+
+  if (selection.type === 'cell') {
+    const startRow = Math.min(
+      selection.range.start.row,
+      selection.range.end.row,
+    );
+    const endRow = Math.max(
+      selection.range.start.row,
+      selection.range.end.row,
+    );
+    const startCol = Math.min(
+      selection.range.start.col,
+      selection.range.end.col,
+    );
+    const endCol = Math.max(
+      selection.range.start.col,
+      selection.range.end.col,
+    );
+
+    return `${toExcelColumnName(startCol)}${startRow + 1} - ${toExcelColumnName(
+      endCol,
+    )}${endRow + 1}`;
+  }
+
+  if (selection.type === 'row') {
+    const startRow = Math.min(selection.startRow, selection.endRow);
+    const endRow = Math.max(selection.startRow, selection.endRow);
+    return `Row ${startRow + 1} - ${endRow + 1}`;
+  }
+
+  const startCol = Math.min(selection.startCol, selection.endCol);
+  const endCol = Math.max(selection.startCol, selection.endCol);
+  return `Col ${toExcelColumnName(startCol)} - ${toExcelColumnName(endCol)}`;
+};
+
+// 追加: rows / filteredRows の概要テキストです。
+// 変更(DS-3-7): filteredRows(配列)依存をやめ、件数 filteredRowCount(数値)を引数で受けます。
+//   公開 slotContext.filteredRows は遅延 getter で別途供給され、サマリは件数しか使いません。
+export const formatGridRowSummary = <T,>(
+  context: Pick<SpreadsheetGridSlotContext<T>, 'rows'>,
+  filteredRowCount: number,
+) => `Rows: ${filteredRowCount} / ${context.rows.length}`;
+
+// 追加: columns / visibleColumns の概要テキストです。
+export const formatGridColumnSummary = <T,>(
+  context: Pick<SpreadsheetGridSlotContext<T>, 'columns' | 'visibleColumns'>,
+) => `Columns: ${context.visibleColumns.length} / ${context.columns.length}`;
+
+// 追加: selection から選択セル数 / 行数 / 列数を算出します。
+export const getGridSelectionStats = <T,>(
+  context: Pick<SpreadsheetGridSlotContext<T>, 'selection' | 'visibleColumns'>,
+  // 変更(DS-3-7): filteredRows(配列)→ 件数 filteredRowCount(数値)を引数で受けます。
+  filteredRowCount: number,
+): SpreadsheetGridSelectionStats => {
+  const selection = context.selection;
+  if (!selection) {
+    return {
+      selectedCellCount: 0,
+      selectedRowCount: 0,
+      selectedColumnCount: 0,
+    };
+  }
+
+  if (selection.type === 'cell') {
+    const startRow = Math.min(
+      selection.range.start.row,
+      selection.range.end.row,
+    );
+    const endRow = Math.max(
+      selection.range.start.row,
+      selection.range.end.row,
+    );
+    const startCol = Math.min(
+      selection.range.start.col,
+      selection.range.end.col,
+    );
+    const endCol = Math.max(
+      selection.range.start.col,
+      selection.range.end.col,
+    );
+    const selectedRowCount = endRow - startRow + 1;
+    const selectedColumnCount = endCol - startCol + 1;
+    return {
+      selectedCellCount: selectedRowCount * selectedColumnCount,
+      selectedRowCount,
+      selectedColumnCount,
+    };
+  }
+
+  if (selection.type === 'row') {
+    const startRow = Math.min(selection.startRow, selection.endRow);
+    const endRow = Math.max(selection.startRow, selection.endRow);
+    const selectedRowCount = endRow - startRow + 1;
+    const selectedColumnCount = context.visibleColumns.length;
+    return {
+      selectedCellCount: selectedRowCount * selectedColumnCount,
+      selectedRowCount,
+      selectedColumnCount,
+    };
+  }
+
+  const startCol = Math.min(selection.startCol, selection.endCol);
+  const endCol = Math.max(selection.startCol, selection.endCol);
+  const selectedColumnCount = endCol - startCol + 1;
+  const selectedRowCount = filteredRowCount;
+  return {
+    selectedCellCount: selectedRowCount * selectedColumnCount,
+    selectedRowCount,
+    selectedColumnCount,
+  };
+};
+
+// 追加: selection 数量の要約テキストです。
+export const formatGridSelectionStatsLabel = <T,>(
+  context: Pick<SpreadsheetGridSlotContext<T>, 'selection' | 'visibleColumns'>,
+  filteredRowCount: number,
+) => {
+  const stats = getGridSelectionStats(context, filteredRowCount);
+  return `Cells: ${stats.selectedCellCount} / Rows: ${stats.selectedRowCount}`;
+};
+
+// 変更(12-A): 列フィルターの有効件数を数えます。
+// 変更理由: set フィルター値はオブジェクトのため String(value).trim() 判定が
+//           成立しません(空配列も「全行除外」として有効に数える必要があります)。
+//           判定を logic/filtering.ts の isActiveColumnFilterValue へ一元化します。
+const countActiveColumnFilters = (
+  columnFilterValues: Record<string, ColumnFilterValue>,
+) =>
+  Object.values(columnFilterValues).filter((value) =>
+    isActiveColumnFilterValue(value),
+  ).length;
+
+// 追加: フィルター状態の要約テキストです。
+export const formatGridFilterSummary = <T,>(
+  context: Pick<
+    SpreadsheetGridSlotContext<T>,
+    'globalFilterText' | 'columnFilterValues'
+  >,
+) => {
+  const hasGlobalFilter = context.globalFilterText.trim().length > 0;
+  const globalFilterPreview = hasGlobalFilter
+    ? truncateSummaryText(context.globalFilterText.trim())
+    : null;
+  const columnFilterCount = countActiveColumnFilters(context.columnFilterValues);
+
+  if (!hasGlobalFilter && columnFilterCount === 0) {
+    return 'Filter: なし';
+  }
+
+  if (hasGlobalFilter && columnFilterCount === 0) {
+    return `Filter: Global("${globalFilterPreview}")`;
+  }
+
+  if (!hasGlobalFilter && columnFilterCount > 0) {
+    return `Filter: ${columnFilterCount}列`;
+  }
+
+  return `Filter: Global("${globalFilterPreview}") + ${columnFilterCount}列`;
+};
+
+// 変更(MS-1): ソート列名取得を「単一 key → ラベル」に一般化します
+//            (配列の各エントリ・主ソート列の双方から使い回せるように)。
+const getColumnLabelByKey = <T,>(
+  columns: GridColumn<T>[],
+  columnKey: string,
+) => {
+  const column = columns.find((item) => item.key === columnKey);
+  return column?.title || column?.key || columnKey;
+};
+
+// 追加: ソート状態の要約テキストです。
+export const formatGridSortSummary = <T,>(
+  context: Pick<SpreadsheetGridSlotContext<T>, 'columns' | 'sortState'>,
+) => {
+  // 変更(MS-1): 配列を優先順位順に「列名 (方向)」で連結します。
+  //   単一エントリのときは従来と同一の文字列(例: 'Sort: 金額 (昇順)')になります。
+  if (context.sortState.length === 0) {
+    return 'Sort: なし';
+  }
+
+  const parts = context.sortState.map((entry) => {
+    const label = getColumnLabelByKey(context.columns, entry.columnKey);
+    return `${label} (${entry.direction === 'asc' ? '昇順' : '降順'})`;
+  });
+
+  return `Sort: ${parts.join(', ')}`;
+};
+
+// 追加: slot context に載せる派生 summary を一括構築します。
+export const buildGridDerivedSummary = <T,>(
+  context: Pick<
+    SpreadsheetGridSlotContext<T>,
+    | 'rows'
+    | 'columns'
+    | 'visibleColumns'
+    | 'globalFilterText'
+    | 'columnFilterValues'
+    | 'sortState'
+    | 'activeCell'
+    | 'selection'
+  >,
+  // 変更(DS-3-7): filteredRows(配列)依存を除去し、件数を引数で各 format 関数へ流します。
+  filteredRowCount: number,
+): SpreadsheetGridDerivedSummary => {
+  const selectionStats = getGridSelectionStats(context, filteredRowCount);
+  const hasGlobalFilter = context.globalFilterText.trim().length > 0;
+  const globalFilterPreview = hasGlobalFilter
+    ? truncateSummaryText(context.globalFilterText.trim())
+    : null;
+  const activeColumnFilterCount = countActiveColumnFilters(
+    context.columnFilterValues,
+  );
+  const hasAnyFilter = hasGlobalFilter || activeColumnFilterCount > 0;
+  // 変更(MS-1): 配列ベースの判定に置き換えます。
+  //   sortedColumnLabel は後方互換のため「主ソート(先頭)列」のラベルを返します
+  //   (複数ソート時は先頭。全体の要約は sortSummaryText 側が担います)。
+  const hasSorting = context.sortState.length > 0;
+  const sortedColumnLabel = hasSorting
+    ? getColumnLabelByKey(context.columns, context.sortState[0].columnKey)
+    : null;
+
+  return {
+    rowSummaryText: formatGridRowSummary(context, filteredRowCount),
+    columnSummaryText: formatGridColumnSummary(context),
+    filterSummaryText: formatGridFilterSummary(context),
+    sortSummaryText: formatGridSortSummary(context),
+    activeCellLabel: formatGridCellLabel(context.activeCell),
+    selectionLabel: formatGridSelectionLabel(context.selection),
+    selectionStatsText: formatGridSelectionStatsLabel(context, filteredRowCount),
+    selectionStats,
+    hasGlobalFilter,
+    globalFilterPreview,
+    activeColumnFilterCount,
+    hasAnyFilter,
+    hasSorting,
+    sortedColumnLabel,
+  };
+};
 </file>
 
 <file path="src/components/spreadsheet-grid/view/GridFilterChipBar.test.tsx">
@@ -9670,139 +10478,6 @@ export const useFilterManagementController = ({
 };
 
 export default useFilterManagementController;
-</file>
-
-<file path="src/components/spreadsheet-grid/hooks/useGridBarContext.ts">
-import { useMemo } from 'react';
-import { selectGlobalFilter } from '../model/gridSelectors';
-import type {
-  GlobalFilterStatus,
-  GridColumn,
-  GridUiState,
-  SpreadsheetGridSlotContext,
-} from '../model/gridTypes';
-import { buildGridDerivedSummary } from '../view/gridBarHelpers';
-
-// 追加: derivedSummary / setGlobalFilterText を載せる前の中間 slot context 型です。
-// 変更(DS-3-7): base から filteredRows(配列)を外します。サマリは件数のみ使用し、公開
-//   slotContext.filteredRows は最終 object で遅延 getter として付与します。
-type GridSlotContextBase<T> = Omit<
-  SpreadsheetGridSlotContext<T>,
-  // 変更(F-async): globalFilterStatus / Progress も base から外します。これらは進捗 tick ごとに
-  //   変わるため、安定させたい slotContextBase(→ derivedSummary)には含めず、最終 object でのみ付与します。
-  | 'setGlobalFilterText'
-  | 'derivedSummary'
-  | 'filteredRows'
-  | 'globalFilterStatus'
-  | 'globalFilterProgress'
->;
-
-type UseGridBarContextArgs<T> = {
-  rows: T[];
-  // 変更(DS-3-7): filteredRows(配列)→ 件数(viewRowCount)+ 遅延 factory(getFilteredRows)。
-  //   サマリは viewRowCount を使い、公開 slotContext.filteredRows は getFilteredRows() を
-  //   遅延 getter で返します(外部スロットが読んだ時だけ materialize)。
-  viewRowCount: number;
-  getFilteredRows: () => T[];
-  columns: GridColumn<T>[];
-  visibleColumns: GridColumn<T>[];
-  uiState: GridUiState;
-  setGlobalFilterText: (value: string) => void;
-  // 追加(F-async): グローバルフィルタの適用状態と進捗です(useGlobalFilteredOrder の戻り値)。
-  globalFilterStatus: GlobalFilterStatus;
-  globalFilterProgress: number;
-};
-
-// 追加: topBar / bottomBar へ渡す slot context と derived summary をまとめて構築します。
-export const useGridBarContext = <T,>({
-  rows,
-  viewRowCount,
-  getFilteredRows,
-  columns,
-  visibleColumns,
-  uiState,
-  setGlobalFilterText,
-  globalFilterStatus,
-  globalFilterProgress,
-}: UseGridBarContextArgs<T>) => {
-  // 変更(11-B3): slotContextBase の依存を uiState 丸ごとから、bar が実際に参照する
-  //   5 フィールドへ分解します。
-  // 変更理由: uiState は columnWidths(ライブリサイズ中は毎 pointermove)、
-  //   editingCell、dragState など bar 表示と無関係な更新でも参照が変わります。
-  //   丸ごと依存のままだと slotContextBase → derivedSummary → slotContext が
-  //   その度に連鎖再生成され、topBar / bottomBar スロットの再レンダーを誘発します。
-  //   reducer は無関係フィールド更新時に filters / sort / activeCell / selection の
-  //   参照を温存する(スプレッドで該当キーのみ差し替える)ため、ここで個別に
-  //   取り出した参照は安定し、useMemo が正しくスキップされます。
-  const globalFilterText = selectGlobalFilter(uiState);
-  const columnFilterValues = uiState.filters.columnFilters;
-  const sortState = uiState.sort;
-  const activeCell = uiState.activeCell;
-  const selection = uiState.selection;
-
-  const slotContextBase = useMemo<GridSlotContextBase<T>>(
-    () => ({
-      rows,
-      columns,
-      visibleColumns,
-      globalFilterText,
-      columnFilterValues,
-      sortState,
-      activeCell,
-      selection,
-    }),
-    [
-      rows,
-      columns,
-      visibleColumns,
-      globalFilterText,
-      columnFilterValues,
-      sortState,
-      activeCell,
-      selection,
-    ],
-  );
-
-  const derivedSummary = useMemo(
-    // 変更(DS-3-7): 件数 viewRowCount を明示引数で渡します(filteredRows 配列は使いません)。
-    () => buildGridDerivedSummary(slotContextBase, viewRowCount),
-    [slotContextBase, viewRowCount],
-  );
-
-  const slotContext = useMemo<SpreadsheetGridSlotContext<T>>(
-    () => ({
-      ...slotContextBase,
-      // 追加(DS-3-7): 公開 filteredRows は遅延 getter。外部スロットが読んだ時だけ materialize し、
-      //   getFilteredRows() 内部キャッシュで同一世代([order,rows])は参照も安定します。
-      //   base には filteredRows が無いため、上の spread では materialize されません。
-      get filteredRows() {
-        return getFilteredRows();
-      },
-      setGlobalFilterText,
-      derivedSummary,
-      // 追加(F-async): 進捗 tick ごとに本 object のみ再生成されます(slotContextBase /
-      //   derivedSummary は不変＝サマリ chips は再計算されず、トップバーの進捗表示だけ更新)。
-      globalFilterStatus,
-      globalFilterProgress,
-    }),
-    [
-      derivedSummary,
-      getFilteredRows,
-      setGlobalFilterText,
-      slotContextBase,
-      globalFilterStatus,
-      globalFilterProgress,
-    ],
-  );
-
-  return {
-    slotContextBase,
-    derivedSummary,
-    slotContext,
-  };
-};
-
-export default useGridBarContext;
 </file>
 
 <file path="src/components/spreadsheet-grid/hooks/useGridTooltip.ts">
@@ -11011,296 +11686,6 @@ describe('buildGridDerivedSummary composes the individual helpers', () => {
     expect(summary.sortedColumnLabel).toBe('金額');
   });
 });
-</file>
-
-<file path="src/components/spreadsheet-grid/view/gridBarHelpers.ts">
-import type { ReactNode } from 'react';
-import type {
-  CellCoord,
-  ColumnFilterValue,
-  GridSelection,
-  GridColumn,
-  SpreadsheetGridSlotContext,
-  SpreadsheetGridDerivedSummary,
-  SpreadsheetGridSelectionStats,
-} from '../model/gridTypes';
-import { toExcelColumnName } from '../utils/excelColumnName';
-// 追加(12-A): set フィルター対応のフィルター有効判定を共有します。
-import { isActiveColumnFilterValue } from '../logic/filtering';
-
-// 追加: Grid の slot renderer を解決します。
-export const resolveGridSlot = <T,>(
-  slotRenderer:
-    | ((context: SpreadsheetGridSlotContext<T>) => ReactNode)
-    | undefined,
-  context: SpreadsheetGridSlotContext<T>,
-  fallback: ReactNode,
-) => {
-  if (slotRenderer) {
-    return slotRenderer(context);
-  }
-  return fallback;
-};
-
-// 追加: summary 用に長い文字列を短く丸めます。
-const truncateSummaryText = (value: string, maxLength = 16) => {
-  if (value.length <= maxLength) {
-    return value;
-  }
-  return `${value.slice(0, maxLength)}…`;
-};
-
-// 追加: ActiveCell を A1 形式へ整形します。
-export const formatGridCellLabel = (cell: CellCoord | null) => {
-  if (!cell) {
-    return 'なし';
-  }
-  return `${toExcelColumnName(cell.col)}${cell.row + 1}`;
-};
-
-// 追加: selection の概要を短く整形します。
-export const formatGridSelectionLabel = (selection: GridSelection) => {
-  if (!selection) {
-    return 'なし';
-  }
-
-  if (selection.type === 'cell') {
-    const startRow = Math.min(
-      selection.range.start.row,
-      selection.range.end.row,
-    );
-    const endRow = Math.max(
-      selection.range.start.row,
-      selection.range.end.row,
-    );
-    const startCol = Math.min(
-      selection.range.start.col,
-      selection.range.end.col,
-    );
-    const endCol = Math.max(
-      selection.range.start.col,
-      selection.range.end.col,
-    );
-
-    return `${toExcelColumnName(startCol)}${startRow + 1} - ${toExcelColumnName(
-      endCol,
-    )}${endRow + 1}`;
-  }
-
-  if (selection.type === 'row') {
-    const startRow = Math.min(selection.startRow, selection.endRow);
-    const endRow = Math.max(selection.startRow, selection.endRow);
-    return `Row ${startRow + 1} - ${endRow + 1}`;
-  }
-
-  const startCol = Math.min(selection.startCol, selection.endCol);
-  const endCol = Math.max(selection.startCol, selection.endCol);
-  return `Col ${toExcelColumnName(startCol)} - ${toExcelColumnName(endCol)}`;
-};
-
-// 追加: rows / filteredRows の概要テキストです。
-// 変更(DS-3-7): filteredRows(配列)依存をやめ、件数 filteredRowCount(数値)を引数で受けます。
-//   公開 slotContext.filteredRows は遅延 getter で別途供給され、サマリは件数しか使いません。
-export const formatGridRowSummary = <T,>(
-  context: Pick<SpreadsheetGridSlotContext<T>, 'rows'>,
-  filteredRowCount: number,
-) => `Rows: ${filteredRowCount} / ${context.rows.length}`;
-
-// 追加: columns / visibleColumns の概要テキストです。
-export const formatGridColumnSummary = <T,>(
-  context: Pick<SpreadsheetGridSlotContext<T>, 'columns' | 'visibleColumns'>,
-) => `Columns: ${context.visibleColumns.length} / ${context.columns.length}`;
-
-// 追加: selection から選択セル数 / 行数 / 列数を算出します。
-export const getGridSelectionStats = <T,>(
-  context: Pick<SpreadsheetGridSlotContext<T>, 'selection' | 'visibleColumns'>,
-  // 変更(DS-3-7): filteredRows(配列)→ 件数 filteredRowCount(数値)を引数で受けます。
-  filteredRowCount: number,
-): SpreadsheetGridSelectionStats => {
-  const selection = context.selection;
-  if (!selection) {
-    return {
-      selectedCellCount: 0,
-      selectedRowCount: 0,
-      selectedColumnCount: 0,
-    };
-  }
-
-  if (selection.type === 'cell') {
-    const startRow = Math.min(
-      selection.range.start.row,
-      selection.range.end.row,
-    );
-    const endRow = Math.max(
-      selection.range.start.row,
-      selection.range.end.row,
-    );
-    const startCol = Math.min(
-      selection.range.start.col,
-      selection.range.end.col,
-    );
-    const endCol = Math.max(
-      selection.range.start.col,
-      selection.range.end.col,
-    );
-    const selectedRowCount = endRow - startRow + 1;
-    const selectedColumnCount = endCol - startCol + 1;
-    return {
-      selectedCellCount: selectedRowCount * selectedColumnCount,
-      selectedRowCount,
-      selectedColumnCount,
-    };
-  }
-
-  if (selection.type === 'row') {
-    const startRow = Math.min(selection.startRow, selection.endRow);
-    const endRow = Math.max(selection.startRow, selection.endRow);
-    const selectedRowCount = endRow - startRow + 1;
-    const selectedColumnCount = context.visibleColumns.length;
-    return {
-      selectedCellCount: selectedRowCount * selectedColumnCount,
-      selectedRowCount,
-      selectedColumnCount,
-    };
-  }
-
-  const startCol = Math.min(selection.startCol, selection.endCol);
-  const endCol = Math.max(selection.startCol, selection.endCol);
-  const selectedColumnCount = endCol - startCol + 1;
-  const selectedRowCount = filteredRowCount;
-  return {
-    selectedCellCount: selectedRowCount * selectedColumnCount,
-    selectedRowCount,
-    selectedColumnCount,
-  };
-};
-
-// 追加: selection 数量の要約テキストです。
-export const formatGridSelectionStatsLabel = <T,>(
-  context: Pick<SpreadsheetGridSlotContext<T>, 'selection' | 'visibleColumns'>,
-  filteredRowCount: number,
-) => {
-  const stats = getGridSelectionStats(context, filteredRowCount);
-  return `Cells: ${stats.selectedCellCount} / Rows: ${stats.selectedRowCount}`;
-};
-
-// 変更(12-A): 列フィルターの有効件数を数えます。
-// 変更理由: set フィルター値はオブジェクトのため String(value).trim() 判定が
-//           成立しません(空配列も「全行除外」として有効に数える必要があります)。
-//           判定を logic/filtering.ts の isActiveColumnFilterValue へ一元化します。
-const countActiveColumnFilters = (
-  columnFilterValues: Record<string, ColumnFilterValue>,
-) =>
-  Object.values(columnFilterValues).filter((value) =>
-    isActiveColumnFilterValue(value),
-  ).length;
-
-// 追加: フィルター状態の要約テキストです。
-export const formatGridFilterSummary = <T,>(
-  context: Pick<
-    SpreadsheetGridSlotContext<T>,
-    'globalFilterText' | 'columnFilterValues'
-  >,
-) => {
-  const hasGlobalFilter = context.globalFilterText.trim().length > 0;
-  const globalFilterPreview = hasGlobalFilter
-    ? truncateSummaryText(context.globalFilterText.trim())
-    : null;
-  const columnFilterCount = countActiveColumnFilters(context.columnFilterValues);
-
-  if (!hasGlobalFilter && columnFilterCount === 0) {
-    return 'Filter: なし';
-  }
-
-  if (hasGlobalFilter && columnFilterCount === 0) {
-    return `Filter: Global("${globalFilterPreview}")`;
-  }
-
-  if (!hasGlobalFilter && columnFilterCount > 0) {
-    return `Filter: ${columnFilterCount}列`;
-  }
-
-  return `Filter: Global("${globalFilterPreview}") + ${columnFilterCount}列`;
-};
-
-// 変更(MS-1): ソート列名取得を「単一 key → ラベル」に一般化します
-//            (配列の各エントリ・主ソート列の双方から使い回せるように)。
-const getColumnLabelByKey = <T,>(
-  columns: GridColumn<T>[],
-  columnKey: string,
-) => {
-  const column = columns.find((item) => item.key === columnKey);
-  return column?.title || column?.key || columnKey;
-};
-
-// 追加: ソート状態の要約テキストです。
-export const formatGridSortSummary = <T,>(
-  context: Pick<SpreadsheetGridSlotContext<T>, 'columns' | 'sortState'>,
-) => {
-  // 変更(MS-1): 配列を優先順位順に「列名 (方向)」で連結します。
-  //   単一エントリのときは従来と同一の文字列(例: 'Sort: 金額 (昇順)')になります。
-  if (context.sortState.length === 0) {
-    return 'Sort: なし';
-  }
-
-  const parts = context.sortState.map((entry) => {
-    const label = getColumnLabelByKey(context.columns, entry.columnKey);
-    return `${label} (${entry.direction === 'asc' ? '昇順' : '降順'})`;
-  });
-
-  return `Sort: ${parts.join(', ')}`;
-};
-
-// 追加: slot context に載せる派生 summary を一括構築します。
-export const buildGridDerivedSummary = <T,>(
-  context: Pick<
-    SpreadsheetGridSlotContext<T>,
-    | 'rows'
-    | 'columns'
-    | 'visibleColumns'
-    | 'globalFilterText'
-    | 'columnFilterValues'
-    | 'sortState'
-    | 'activeCell'
-    | 'selection'
-  >,
-  // 変更(DS-3-7): filteredRows(配列)依存を除去し、件数を引数で各 format 関数へ流します。
-  filteredRowCount: number,
-): SpreadsheetGridDerivedSummary => {
-  const selectionStats = getGridSelectionStats(context, filteredRowCount);
-  const hasGlobalFilter = context.globalFilterText.trim().length > 0;
-  const globalFilterPreview = hasGlobalFilter
-    ? truncateSummaryText(context.globalFilterText.trim())
-    : null;
-  const activeColumnFilterCount = countActiveColumnFilters(
-    context.columnFilterValues,
-  );
-  const hasAnyFilter = hasGlobalFilter || activeColumnFilterCount > 0;
-  // 変更(MS-1): 配列ベースの判定に置き換えます。
-  //   sortedColumnLabel は後方互換のため「主ソート(先頭)列」のラベルを返します
-  //   (複数ソート時は先頭。全体の要約は sortSummaryText 側が担います)。
-  const hasSorting = context.sortState.length > 0;
-  const sortedColumnLabel = hasSorting
-    ? getColumnLabelByKey(context.columns, context.sortState[0].columnKey)
-    : null;
-
-  return {
-    rowSummaryText: formatGridRowSummary(context, filteredRowCount),
-    columnSummaryText: formatGridColumnSummary(context),
-    filterSummaryText: formatGridFilterSummary(context),
-    sortSummaryText: formatGridSortSummary(context),
-    activeCellLabel: formatGridCellLabel(context.activeCell),
-    selectionLabel: formatGridSelectionLabel(context.selection),
-    selectionStatsText: formatGridSelectionStatsLabel(context, filteredRowCount),
-    selectionStats,
-    hasGlobalFilter,
-    globalFilterPreview,
-    activeColumnFilterCount,
-    hasAnyFilter,
-    hasSorting,
-    sortedColumnLabel,
-  };
-};
 </file>
 
 <file path="src/components/spreadsheet-grid/view/GridFilterChipBar.tsx">
@@ -19015,690 +19400,6 @@ export const filterOrderByColumns = <T,>(
 };
 </file>
 
-<file path="src/components/spreadsheet-grid/view/ColumnChooserPanel.tsx">
-// 追加(13-B2-1): 列の表示/非表示パネル(AG Grid の Columns Tool Panel 相当)です。
-//   - タイトル + × クローズ / 検索ボックス / 3 状態の全選択チェックボックス /
-//     列ごとのチェックボックス一覧(チェックで即 表示/非表示)で構成します。
-//   - 本コンポーネントは非ジェネリックです(ColumnMenuPopover と同様、プリミティブな
-//     items だけを受け取ります)。一覧は「全列(非表示列を含む)」を渡す必要があるため、
-//     呼び出し側は visibleColumns ではなく columns から items を作ります。
-// 変更(13-B2-2): フッターに「すべての列を初期状態に戻す」ボタンを追加します
-//   (AG Grid の Columns Tool Panel 末尾 "Reset Columns" 相当)。幅 / 固定 / 表示を
-//   初期 column defs へ戻す操作で、ロジックは呼び出し側(onResetColumns)が持ちます。
-//   canToggle(= onColumnsChange 指定あり)が false のときは無効化します。
-// 変更(13-B3-1): 各行に ⠿ ドラッグハンドルを追加し、pointer ベースで一覧を並べ替えます
-//   (AG Grid の Columns Tool Panel のドラッグ並べ替え相当の第 1 段階)。
-//   - 並べ替えは items(= columns の定義配列順)の順序のみを変更します。pinned の変更や
-//     ペイン跨ぎは本バッチでは扱いません(ヘッダー D&D の 13-B3-2 で対応)。確定した
-//     キー順は onReorderColumns(orderedKeys) で呼び出し側へ渡し、commit は呼び出し側が
-//     担います(表示/非表示・リセットと同じく onColumnsChange 経由)。
-//   - ドラッグ可否は canToggle(= onColumnsChange あり)かつ「検索語が空」のときのみ。
-//     検索で一覧が絞り込まれているときは、絞り込みビュー上の並べ替えが曖昧なため
-//     ハンドルを無効化します(AG Grid 同様)。
-//   - ドラッグ中はドロップ位置インジケータ(行間の細線)を表示し、一覧端付近では
-//     一覧コンテナを自動スクロールします(29 列で一覧が パネル上限高 を超えるため)。
-// 変更(13-B3-1.5): 一覧を pinned ペイン(left / center / right)ごとの小見出しセクションへ
-//   分割します(AG Grid 着想の独自解。AG Grid 本家のツールパネルは pinned ではセクション
-//   分けしませんが、本実装は「パネル = 定義配列素順 / グリッド = reorderColumnsByPane 後の
-//   pane 順」の体感ズレを解消するため、各列を所属ペインのセクションへ表示します)。
-//   - 並べ替えは「同一セクション内のみ」許可します(pinned 不変。pinned 変更はヘッダー D&D
-//     の 13-B3-2 の領分)。セクション跨ぎドロップはドロップ線をソースセクション内へ留める
-//     ことで実質不可にします。
-//   - commit 時に返す orderedKeys は left 群 → center 群 → right 群を各セクションの表示順で
-//     連結した「全列キー順」です(合意ポイント①=A: columns 配列が pane 順に正規化され、
-//     reorderColumnsByPane が冪等化します)。セクション内が実際に動かない no-op ドラッグでは
-//     正規化も行わず null を返します。
-//   - 非空セクションが 1 つだけ(= 固定列なし)のときは小見出しを出さずフラット表示します。
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { createPortal } from 'react-dom';
-import { cx } from '../logic/cx';
-import type {
-  CSSProperties,
-  KeyboardEvent,
-  PointerEvent,
-  RefObject,
-} from 'react';
-import type { ColumnChooserLayout } from '../hooks/useColumnChooserController';
-// 追加(FM-4): ヘッダーを掴んでパネルを移動する共有フックです(3 パネル共通)。
-import { usePanelHeaderDrag } from '../hooks/usePanelHeaderDrag';
-// 追加(13-B3-1.5): セクション分けの所属ペイン種別です(pinned 由来)。
-import type { ColumnPane } from '../logic/geometry';
-
-// 追加(13-B2-1): パネルが必要とする最小の列情報です。
-// 変更(13-B3-1.5): 所属ペイン(pinned 由来。left / center / right)を追加します。
-//   呼び出し側(SpreadsheetGrid)が getColumnPane 相当で算出して渡します。
-export type ColumnChooserItem = {
-  key: string;
-  title: string;
-  visible: boolean;
-  pane: ColumnPane;
-};
-
-type ColumnChooserPanelProps = {
-  isOpen: boolean;
-  // 追加(TH-DK-2): ダークテーマ修飾子クラス('ssg-theme-dark' | undefined)。ポータルは
-  //   .ssg-root 外のため、root と同じ修飾子を自身の root 要素へ直接付与します。
-  themeClassName?: string;
-  items: ColumnChooserItem[];
-  // 追加: onColumnsChange 未指定時は false。チェックボックスを無効化し注記を出します。
-  canToggle: boolean;
-  layout: ColumnChooserLayout | null;
-  panelRef: RefObject<HTMLDivElement | null>;
-  onToggleColumnVisibility: (columnKey: string, nextVisible: boolean) => void;
-  // 追加: 全選択(= すべて表示)。最後の 1 列ガードのため「全消し」はサポートしません。
-  onShowAllColumns: () => void;
-  // 追加(13-B2-2): 全列を初期状態(幅 / 固定 / 表示)へ戻します。
-  //   ロジックは呼び出し側。canToggle が false のときフッターのボタンは無効化されます。
-  onResetColumns: () => void;
-  // 追加(13-B3-1): ドラッグ並べ替えの確定ハンドラです。並べ替え後の「全列キー順」を
-  //   渡します(items と同一集合の permutation)。commit(onColumnsChange 経由)は
-  //   呼び出し側が担います。検索中・canToggle=false 時は呼ばれません。
-  onReorderColumns: (orderedKeys: string[]) => void;
-  onRequestClose: () => void;
-  // 追加(FM-4): ヘッダードラッグによるパネル移動です(controller の moveColumnChooser を
-  //   受け取ります。位置の clamp・保持・close 時リセットは controller 側の責務)。
-  onPanelMove: (top: number, left: number) => void;
-};
-
-// 追加(13-B3-1): ドラッグ中の一覧端オートスクロールのしきい値 / 速度です。
-//   一覧コンテナの上下端から EDGE px 以内にポインタが入ったら、毎フレーム SPEED px ずつ
-//   スクロールします(29 列で一覧が パネル上限高 を超えるための補助)。
-const AUTO_SCROLL_EDGE = 28;
-const AUTO_SCROLL_SPEED = 12;
-
-// 追加(13-B3-1.5): セクション(所属ペイン)の小見出しラベルです。
-const PANE_ORDER: ColumnPane[] = ['left', 'center', 'right'];
-const SECTION_LABELS: Record<ColumnPane, string> = {
-  left: '左固定',
-  center: '固定なし',
-  right: '右固定',
-};
-
-// 変更(13-B3-1.5): セクション内(= fromKey と同一ペイン)でのみ並べ替え、確定時に
-//   left 群 → center 群 → right 群を各セクションの表示順で連結した「全列キー順」を返します
-//   (合意ポイント①=A: 書き戻すと columns 配列が pane 順へ正規化されます)。
-//   dropIndexInPane は「ソースペイン内での挿入位置(0..そのペインの件数)」です。
-//   セクション内が実際に動かない no-op の場合は正規化も行わず null を返します。
-//   ※ ドラッグは検索語が空のときのみ可能なため、items は常に「全列(絞り込み前)」です。
-function computeSectionReorderedKeys(
-  items: ColumnChooserItem[],
-  fromKey: string,
-  dropIndexInPane: number,
-): string[] | null {
-  const from = items.find((item) => item.key === fromKey);
-  if (!from) {
-    return null;
-  }
-  const sourcePane = from.pane;
-
-  // items 順を保ったままペインごとのキー配列へ分割します。
-  const groups: Record<ColumnPane, string[]> = { left: [], center: [], right: [] };
-  for (const item of items) {
-    groups[item.pane].push(item.key);
-  }
-
-  const src = groups[sourcePane];
-  const fromIndex = src.indexOf(fromKey);
-  if (fromIndex < 0) {
-    return null;
-  }
-  // 挿入位置は除去前基準。除去で fromIndex 以降が 1 つ詰まるため to を補正します。
-  let to = dropIndexInPane;
-  if (to > fromIndex) {
-    to -= 1;
-  }
-  to = Math.max(0, Math.min(to, src.length - 1));
-  if (to === fromIndex) {
-    // セクション内 no-op → 正規化もしません(no-op ドラッグで配列を動かさないため)。
-    return null;
-  }
-  const [moved] = src.splice(fromIndex, 1);
-  src.splice(to, 0, moved);
-
-  return [...groups.left, ...groups.center, ...groups.right];
-}
-
-type CheckState = 'checked' | 'unchecked' | 'indeterminate';
-
-// 追加(13-B2-1): 3 状態に対応した自作チェックボックスです。
-//   native input の indeterminate は ref 経由でしか設定できず、角丸の見た目も
-//   ブラウザ差が出るため、見た目は div で描画します(GIF の角丸チェックに寄せます)。
-function CheckBox({
-  state,
-  disabled,
-}: {
-  state: CheckState;
-  disabled: boolean;
-}) {
-  const filled = state === 'checked' || state === 'indeterminate';
-
-  return (
-    <span
-      className={cx(
-        'ssg-checkbox',
-        filled && 'ssg-checkbox--filled',
-        disabled && 'ssg-checkbox--disabled',
-      )}
-      aria-hidden
-    >
-      {state === 'checked' && (
-        <svg width="11" height="11" viewBox="0 0 12 12" fill="none">
-          <path
-            d="M2.5 6.2 4.7 8.4 9.5 3.6"
-            // 変更(TH-DK-1): stroke も属性では var() 不可のため style で指定します。
-            style={{ stroke: 'var(--ssg-panel-accent-contrast)' }}
-            strokeWidth="1.8"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          />
-        </svg>
-      )}
-      {state === 'indeterminate' && <span className="ssg-checkbox-dash" />}
-    </span>
-  );
-}
-
-// 追加(13-B3-1): ⠿ ドラッグハンドルの見た目です(2×3 の点)。
-//   操作系(pointerdown / capture)は行側に配線し、ここは見た目のみを描画します。
-function DragHandleGlyph({ disabled }: { disabled: boolean }) {
-  return (
-    <svg
-      width="10"
-      height="16"
-      viewBox="0 0 10 16"
-      // 変更(TH-DK-1): fill はプレゼンテーション属性だと var() を解釈しないため style で指定します。
-      style={{
-        fill: disabled
-          ? 'var(--ssg-panel-text-disabled)'
-          : 'var(--ssg-panel-text-faint)',
-      }}
-      aria-hidden
-    >
-      {[3, 8, 13].map((cy) =>
-        [3, 7].map((cx) => (
-          <circle key={`${cx}-${cy}`} cx={cx} cy={cy} r="1.2" />
-        )),
-      )}
-    </svg>
-  );
-}
-
-export function ColumnChooserPanel({
-  isOpen,
-  themeClassName,
-  items,
-  canToggle,
-  layout,
-  panelRef,
-  onToggleColumnVisibility,
-  onShowAllColumns,
-  onResetColumns,
-  onReorderColumns,
-  onRequestClose,
-  onPanelMove,
-}: ColumnChooserPanelProps) {
-  const [query, setQuery] = useState('');
-  const searchInputRef = useRef<HTMLInputElement | null>(null);
-
-  // 追加: 開くたびに検索語をリセットし、検索入力へフォーカスします。
-  useEffect(() => {
-    if (isOpen) {
-      setQuery('');
-      // portal mount 後にフォーカスを当てます。
-      const id = requestAnimationFrame(() => {
-        searchInputRef.current?.focus();
-      });
-      return () => cancelAnimationFrame(id);
-    }
-    return undefined;
-  }, [isOpen]);
-
-  // 注記: master / guard の判定は「全列(検索フィルタ前)」を基準にします。
-  //       検索はあくまで一覧の絞り込み表示で、全選択の意味は変えません。
-  const visibleCount = useMemo(
-    () => items.filter((item) => item.visible).length,
-    [items],
-  );
-  const allVisible = visibleCount === items.length && items.length > 0;
-//   const hasHidden = items.some((item) => !item.visible);
-
-  // 全選択の状態: 全表示 = checked、一部非表示 = indeterminate。
-  // 最後の 1 列ガードにより「全非表示」は発生しないため unchecked にはなりません。
-  const masterState: CheckState = allVisible ? 'checked' : 'indeterminate';
-
-  const filteredItems = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    if (!q) {
-      return items;
-    }
-    return items.filter((item) => item.title.toLowerCase().includes(q));
-  }, [items, query]);
-
-  // 追加(13-B3-1.5): filteredItems を所属ペインのセクションへ分割します。
-  //   空セクションは除外し、PANE_ORDER(left → center → right)で並べます。
-  //   各セクション内は filteredItems の相対順(= columns 配列の pane 内相対順)を保ちます。
-  const sections = useMemo(() => {
-    const groups: Record<ColumnPane, ColumnChooserItem[]> = {
-      left: [],
-      center: [],
-      right: [],
-    };
-    for (const item of filteredItems) {
-      groups[item.pane].push(item);
-    }
-    return PANE_ORDER.map((pane) => ({ pane, items: groups[pane] })).filter(
-      (section) => section.items.length > 0,
-    );
-  }, [filteredItems]);
-
-  // 非空セクションが 2 つ以上(= 固定列あり)のときだけ小見出しを出します。
-  // 固定列が無いときは従来どおりフラット一覧になります。
-  const showHeadings = sections.length >= 2;
-
-  // ── ドラッグ並べ替え(13-B3-1) ─────────────────────────
-  // ドラッグ可否: onColumnsChange あり(canToggle)かつ検索語が空のときのみ。
-  // 検索中は一覧が絞り込み表示のため、並べ替え対象の全体像が見えず曖昧になるので無効化します。
-  const canDrag = canToggle && query.trim() === '';
-
-  const listRef = useRef<HTMLDivElement | null>(null);
-  // ドラッグ中の列キー(null = 非ドラッグ)。dragActiveRef は pointer ハンドラ内の
-  // 早期 return 判定用(state 反映前の連続イベントでも確実に効くよう ref で持ちます)。
-  const [draggingKey, setDraggingKey] = useState<string | null>(null);
-  const dragActiveRef = useRef(false);
-  // 追加(13-B3-1.5): ドラッグ元のペインです。ドロップ位置走査をこのペインの行へ限定し、
-  //   セクション跨ぎを実質不可にします(ref は走査ハンドラから同期読みするため)。
-  const draggingPaneRef = useRef<ColumnPane | null>(null);
-  // ドロップ挿入位置(items 上の 0..length。length = 末尾へ)。インジケータ描画に使います。
-  const [dropIndex, setDropIndex] = useState<number | null>(null);
-  const pointerYRef = useRef(0);
-  const autoScrollRafRef = useRef<number | null>(null);
-
-  // ポインタ Y から「行 midpoint より上にある行数」= 挿入インデックスを求めます。
-  // 変更(13-B3-1.5): 走査対象をドラッグ元ペイン(draggingPaneRef)の行へ限定します。
-  //   これにより別セクション上にポインタがあってもドロップ位置はソースセクション内へ
-  //   留まり、セクション跨ぎが実質不可になります(pinned 不変)。
-  const updateDropFromPointer = useCallback(() => {
-    const list = listRef.current;
-    const pane = draggingPaneRef.current;
-    if (!list || !pane) {
-      return;
-    }
-    const rows = list.querySelectorAll<HTMLElement>(
-      `[data-chooser-row][data-chooser-pane="${pane}"]`,
-    );
-    const y = pointerYRef.current;
-    let index = rows.length;
-    for (let i = 0; i < rows.length; i += 1) {
-      const rect = rows[i].getBoundingClientRect();
-      if (y < rect.top + rect.height / 2) {
-        index = i;
-        break;
-      }
-    }
-    setDropIndex(index);
-  }, []);
-
-  // ドラッグ中、一覧コンテナの上下端付近へポインタが入ったらオートスクロールします。
-  const autoScrollTick = useCallback(() => {
-    const list = listRef.current;
-    if (!list || !dragActiveRef.current) {
-      autoScrollRafRef.current = null;
-      return;
-    }
-    const rect = list.getBoundingClientRect();
-    const y = pointerYRef.current;
-    let delta = 0;
-    if (y < rect.top + AUTO_SCROLL_EDGE) {
-      delta = -AUTO_SCROLL_SPEED;
-    } else if (y > rect.bottom - AUTO_SCROLL_EDGE) {
-      delta = AUTO_SCROLL_SPEED;
-    }
-    if (delta !== 0) {
-      const before = list.scrollTop;
-      list.scrollTop += delta;
-      if (list.scrollTop !== before) {
-        updateDropFromPointer();
-      }
-    }
-    autoScrollRafRef.current = requestAnimationFrame(autoScrollTick);
-  }, [updateDropFromPointer]);
-
-  const finishDrag = useCallback(
-    (commit: boolean) => {
-      if (autoScrollRafRef.current !== null) {
-        cancelAnimationFrame(autoScrollRafRef.current);
-        autoScrollRafRef.current = null;
-      }
-      const key = draggingKey;
-      const targetIndex = dropIndex;
-      dragActiveRef.current = false;
-      draggingPaneRef.current = null;
-      setDraggingKey(null);
-      setDropIndex(null);
-      if (commit && key !== null && targetIndex !== null) {
-        const next = computeSectionReorderedKeys(items, key, targetIndex);
-        if (next) {
-          onReorderColumns(next);
-        }
-      }
-    },
-    [draggingKey, dropIndex, items, onReorderColumns],
-  );
-
-  const handleDragHandlePointerDown = useCallback(
-    (key: string, pane: ColumnPane, event: PointerEvent<HTMLElement>) => {
-      if (!canDrag) {
-        return;
-      }
-      // 既定のテキスト選択 / 行クリックを抑止し、grid 側へも伝播させません。
-      event.preventDefault();
-      event.stopPropagation();
-      event.currentTarget.setPointerCapture(event.pointerId);
-      dragActiveRef.current = true;
-      draggingPaneRef.current = pane;
-      pointerYRef.current = event.clientY;
-      setDraggingKey(key);
-      updateDropFromPointer();
-      if (autoScrollRafRef.current === null) {
-        autoScrollRafRef.current = requestAnimationFrame(autoScrollTick);
-      }
-    },
-    [canDrag, updateDropFromPointer, autoScrollTick],
-  );
-
-  const handleDragHandlePointerMove = useCallback(
-    (event: PointerEvent<HTMLElement>) => {
-      if (!dragActiveRef.current) {
-        return;
-      }
-      pointerYRef.current = event.clientY;
-      updateDropFromPointer();
-    },
-    [updateDropFromPointer],
-  );
-
-  const handleDragHandlePointerUp = useCallback(() => {
-    if (!dragActiveRef.current) {
-      return;
-    }
-    finishDrag(true);
-  }, [finishDrag]);
-
-  const handleDragHandlePointerCancel = useCallback(() => {
-    if (!dragActiveRef.current) {
-      return;
-    }
-    finishDrag(false);
-  }, [finishDrag]);
-
-  // panel が閉じる / アンマウントされるときはドラッグ状態と rAF を確実に後始末します。
-  useEffect(() => {
-    if (!isOpen) {
-      dragActiveRef.current = false;
-      draggingPaneRef.current = null;
-      setDraggingKey(null);
-      setDropIndex(null);
-      if (autoScrollRafRef.current !== null) {
-        cancelAnimationFrame(autoScrollRafRef.current);
-        autoScrollRafRef.current = null;
-      }
-    }
-  }, [isOpen]);
-
-  useEffect(
-    () => () => {
-      if (autoScrollRafRef.current !== null) {
-        cancelAnimationFrame(autoScrollRafRef.current);
-        autoScrollRafRef.current = null;
-      }
-    },
-    [],
-  );
-
-  // 追加(FM-4): ヘッダーを掴んでパネルを移動します(hooks は早期 return より前・無条件で
-  //   呼びます。layout=null のときはフック側が開始しません)。
-  const { handleHeaderPointerDown } = usePanelHeaderDrag({
-    layout,
-    onPanelMove,
-  });
-
-  if (!isOpen || !layout) {
-    return null;
-  }
-
-  const wrapperStyle: CSSProperties = {
-    top: layout.top,
-    left: layout.left,
-    width: layout.width,
-  };
-
-  const handlePointerDown = (event: PointerEvent<HTMLDivElement>) => {
-    // 追加: パネル内 pointer 操作を grid 側へ伝播させません
-    //       (列選択開始や outside click 判定との競合を避けます)。
-    event.stopPropagation();
-  };
-
-  const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
-    // 追加: portal 内 keyboard を React ツリー上の parent へ流しません。
-    //       Escape での close は controller の window keydown が担当します。
-    // 変更(POP-KEY): capture 相(onKeyDownCapture)→ bubble 相(onKeyDown)へ変更します。
-    //   capture 相の stopPropagation() はネイティブ伝播ごと止めるため、パネル内部要素の
-    //   bubble 相 onKeyDown や window(bubble)リスナーまで殺してしまいます
-    //   (ColumnFilterPopover の SF-ENTER fix と同一パターンの統一です)。bubble 相なら
-    //   「内部要素のハンドラが先に処理 → 最後にここで外側への合成バブリングだけ遮断」に
-    //   なり、Escape close は controller 側の capture 登録(POP-KEY)が受けます。
-    event.stopPropagation();
-  };
-
-  const handleMasterClick = () => {
-    if (!canToggle) {
-      return;
-    }
-    // 全表示状態では何もしません(全消しは最後の 1 列ガードで不可のため)。
-    if (!allVisible) {
-      onShowAllColumns();
-    }
-  };
-
-  // 追加(13-B3-1.5): ドラッグ中の列が属するペインです(インジケータをソース
-  //   セクションにのみ出すために使います)。ドラッグは検索語が空のときのみなので
-  //   draggingKey は必ず filteredItems(= items)内に存在します。
-  const draggingPane: ColumnPane | null =
-    draggingKey !== null
-      ? (items.find((item) => item.key === draggingKey)?.pane ?? null)
-      : null;
-
-  // 追加(13-B3-1.5): 1 行分の描画です(セクションをまたいで再利用します)。
-  //   indexInPane はそのセクション内での 0 始まり index で、ドロップ前線の判定に使います。
-  const renderRow = (
-    item: ColumnChooserItem,
-    indexInPane: number,
-    pane: ColumnPane,
-  ) => {
-    // 最後の 1 列ガード: 表示中が 1 列だけのとき、その列はチェックを外せません。
-    const isOnlyVisible = item.visible && visibleCount === 1;
-    const disabled = !canToggle || isOnlyVisible;
-    const isDragging = draggingKey === item.key;
-    // ドロップインジケータ: ソースペインのこの行の直前に挿入される位置のとき細線を出します。
-    // 末尾(dropIndex === セクション件数)はセクション描画後に別途描画します。
-    const showDropBefore =
-      draggingKey !== null && draggingPane === pane && dropIndex === indexInPane;
-    return (
-      <div
-        key={item.key}
-        data-chooser-row=""
-        data-chooser-pane={pane}
-        className={cx(
-          'ssg-chooser-row',
-          showDropBefore && 'ssg-chooser-row--drop-before',
-          isDragging && 'ssg-chooser-row--dragging',
-        )}
-      >
-        {/* ⠿ ドラッグハンドル(13-B3-1) */}
-        <span
-          role="button"
-          aria-label="ドラッグして並べ替え"
-          data-ssg-tooltip={
-            !canToggle
-              ? 'onColumnsChange 未指定のため並べ替えできません'
-              : query.trim() !== ''
-                ? '検索中は並べ替えできません'
-                : 'ドラッグして並べ替え(同じセクション内のみ)'
-          }
-          onPointerDown={(event) =>
-            handleDragHandlePointerDown(item.key, pane, event)
-          }
-          onPointerMove={handleDragHandlePointerMove}
-          onPointerUp={handleDragHandlePointerUp}
-          onPointerCancel={handleDragHandlePointerCancel}
-          className={cx(
-            'ssg-chooser-handle',
-            !canDrag && 'ssg-chooser-handle--disabled',
-            isDragging && 'ssg-chooser-handle--dragging',
-          )}
-        >
-          <DragHandleGlyph disabled={!canDrag} />
-        </span>
-
-        <button
-          type="button"
-          disabled={disabled}
-          onClick={() => {
-            if (disabled) {
-              return;
-            }
-            onToggleColumnVisibility(item.key, !item.visible);
-          }}
-          className="ssg-chooser-toggle"
-        >
-          <CheckBox
-            state={item.visible ? 'checked' : 'unchecked'}
-            disabled={disabled}
-          />
-          <span
-            className={cx(
-              'ssg-chooser-label',
-              disabled && !item.visible && 'ssg-chooser-label--muted',
-            )}
-          >
-            {item.title}
-          </span>
-        </button>
-      </div>
-    );
-  };
-
-  return createPortal(
-    <div
-      ref={panelRef}
-      onPointerDown={handlePointerDown}
-      onKeyDown={handleKeyDown}
-      onContextMenu={(event) => {
-        event.preventDefault();
-      }}
-      className={cx('ssg-popover', 'ssg-chooser-panel', themeClassName)}
-      style={wrapperStyle}
-    >
-      {/* ── ヘッダー: タイトル + × ── */}
-      <div
-        className="ssg-popover-header ssg-popover-header--draggable"
-        onPointerDown={handleHeaderPointerDown}
-      >
-        <span className="ssg-popover-title">列の表示</span>
-        <button
-          type="button"
-          onClick={onRequestClose}
-          aria-label="閉じる"
-          className="ssg-popover-close"
-        >
-          ×
-        </button>
-      </div>
-
-      {/* ── 検索行: 全選択チェック + 検索入力 ── */}
-      <div className="ssg-chooser-search-row">
-        <button
-          type="button"
-          disabled={!canToggle}
-          onClick={handleMasterClick}
-          aria-label="すべての列を表示"
-          data-ssg-tooltip="すべての列を表示"
-          className="ssg-chooser-master-btn"
-        >
-          <CheckBox state={masterState} disabled={!canToggle} />
-        </button>
-        <div className="ssg-chooser-search-field">
-          <span aria-hidden className="ssg-chooser-search-icon">
-            ⌕
-          </span>
-          <input
-            ref={searchInputRef}
-            type="text"
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-            placeholder="検索..."
-            className="ssg-chooser-search-input"
-          />
-        </div>
-      </div>
-
-      {/* ── 列一覧(スクロール) ── */}
-      <div ref={listRef} className="ssg-chooser-list">
-        {filteredItems.length === 0 ? (
-          <div className="ssg-chooser-empty">該当する列がありません</div>
-        ) : (
-          sections.map((section) => (
-            <div key={section.pane} data-chooser-section={section.pane}>
-              {showHeadings && (
-                <div className="ssg-chooser-section-heading">
-                  {SECTION_LABELS[section.pane]}
-                </div>
-              )}
-              {section.items.map((item, indexInPane) =>
-                renderRow(item, indexInPane, section.pane),
-              )}
-              {/* セクション末尾へのドロップインジケータ(13-B3-1.5) */}
-              {draggingKey !== null &&
-                draggingPane === section.pane &&
-                dropIndex === section.items.length && (
-                  <div className="ssg-chooser-drop-end" />
-                )}
-            </div>
-          ))
-        )}
-      </div>
-
-      {/* ── フッター: 列のリセット + (無効時)注記 ── */}
-      <div className="ssg-chooser-footer">
-        <button
-          type="button"
-          disabled={!canToggle}
-          onClick={() => {
-            if (!canToggle) {
-              return;
-            }
-            onResetColumns();
-          }}
-          data-ssg-tooltip="すべての列の幅・固定・表示を初期状態に戻します"
-          className="ssg-chooser-reset-btn"
-        >
-          すべての列を初期状態に戻す
-        </button>
-
-        {!canToggle && (
-          <div className="ssg-chooser-note">
-            onColumnsChange 未指定のため表示/非表示・リセットを変更できません
-          </div>
-        )}
-      </div>
-    </div>,
-    document.body,
-  );
-}
-
-export default ColumnChooserPanel;
-</file>
-
 <file path="src/components/spreadsheet-grid/view/ColumnMenuPopover.tsx">
 // 変更(13-A2): フラットな項目列挙 → AG Grid 同様のカスケード(サブメニュー)UI へ変更します。
 //             ルートメニューには「列の固定 ›」を置き、hover / クリックで右隣に
@@ -20209,7 +19910,7 @@ export function ColumnMenuPopover({
         tabIndex={canResetColumns ? 0 : -1}
         data-ssg-tooltip={
           canResetColumns
-            ? 'すべての列の幅・固定・表示を初期状態に戻します'
+            ? 'すべての列の幅・固定・表示・並び順を初期状態に戻します'
             : 'onColumnsChange 未指定のため列をリセットできません'
         }
         onPointerEnter={() => {
@@ -21234,6 +20935,706 @@ describe('SpreadsheetGrid フィルター管理パネル導線(FM-3・結合)', 
     ).toBeNull();
   });
 });
+</file>
+
+<file path="src/components/spreadsheet-grid/view/ColumnChooserPanel.tsx">
+// 追加(13-B2-1): 列の表示/非表示パネル(AG Grid の Columns Tool Panel 相当)です。
+//   - タイトル + × クローズ / 検索ボックス / 3 状態の全選択チェックボックス /
+//     列ごとのチェックボックス一覧(チェックで即 表示/非表示)で構成します。
+//   - 本コンポーネントは非ジェネリックです(ColumnMenuPopover と同様、プリミティブな
+//     items だけを受け取ります)。一覧は「全列(非表示列を含む)」を渡す必要があるため、
+//     呼び出し側は visibleColumns ではなく columns から items を作ります。
+// 変更(13-B2-2): フッターに「すべての列を初期状態に戻す」ボタンを追加します
+//   (AG Grid の Columns Tool Panel 末尾 "Reset Columns" 相当)。幅 / 固定 / 表示を
+//   初期 column defs へ戻す操作で、ロジックは呼び出し側(onResetColumns)が持ちます。
+//   canToggle(= onColumnsChange 指定あり)が false のときは無効化します。
+// 変更(13-B3-1): 各行に ⠿ ドラッグハンドルを追加し、pointer ベースで一覧を並べ替えます
+//   (AG Grid の Columns Tool Panel のドラッグ並べ替え相当の第 1 段階)。
+//   - 並べ替えは items(= columns の定義配列順)の順序のみを変更します。pinned の変更や
+//     ペイン跨ぎは本バッチでは扱いません(ヘッダー D&D の 13-B3-2 で対応)。確定した
+//     キー順は onReorderColumns(orderedKeys) で呼び出し側へ渡し、commit は呼び出し側が
+//     担います(表示/非表示・リセットと同じく onColumnsChange 経由)。
+//   - ドラッグ可否は canToggle(= onColumnsChange あり)かつ「検索語が空」のときのみ。
+//     検索で一覧が絞り込まれているときは、絞り込みビュー上の並べ替えが曖昧なため
+//     ハンドルを無効化します(AG Grid 同様)。
+//   - ドラッグ中はドロップ位置インジケータ(行間の細線)を表示し、一覧端付近では
+//     一覧コンテナを自動スクロールします(29 列で一覧が パネル上限高 を超えるため)。
+// 変更(13-B3-1.5): 一覧を pinned ペイン(left / center / right)ごとの小見出しセクションへ
+//   分割します(AG Grid 着想の独自解。AG Grid 本家のツールパネルは pinned ではセクション
+//   分けしませんが、本実装は「パネル = 定義配列素順 / グリッド = reorderColumnsByPane 後の
+//   pane 順」の体感ズレを解消するため、各列を所属ペインのセクションへ表示します)。
+//   - 並べ替えは「同一セクション内のみ」許可します(pinned 不変。pinned 変更はヘッダー D&D
+//     の 13-B3-2 の領分)。セクション跨ぎドロップはドロップ線をソースセクション内へ留める
+//     ことで実質不可にします。
+//   - commit 時に返す orderedKeys は left 群 → center 群 → right 群を各セクションの表示順で
+//     連結した「全列キー順」です(合意ポイント①=A: columns 配列が pane 順に正規化され、
+//     reorderColumnsByPane が冪等化します)。セクション内が実際に動かない no-op ドラッグでは
+//     正規化も行わず null を返します。
+//   - 非空セクションが 1 つだけ(= 固定列なし)のときは小見出しを出さずフラット表示します。
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
+import { cx } from '../logic/cx';
+import type {
+  CSSProperties,
+  KeyboardEvent,
+  PointerEvent,
+  RefObject,
+} from 'react';
+import type { ColumnChooserLayout } from '../hooks/useColumnChooserController';
+// 追加(FM-4): ヘッダーを掴んでパネルを移動する共有フックです(3 パネル共通)。
+import { usePanelHeaderDrag } from '../hooks/usePanelHeaderDrag';
+// 追加(13-B3-1.5): セクション分けの所属ペイン種別です(pinned 由来)。
+import type { ColumnPane } from '../logic/geometry';
+
+// 追加(13-B2-1): パネルが必要とする最小の列情報です。
+// 変更(13-B3-1.5): 所属ペイン(pinned 由来。left / center / right)を追加します。
+//   呼び出し側(SpreadsheetGrid)が getColumnPane 相当で算出して渡します。
+export type ColumnChooserItem = {
+  key: string;
+  title: string;
+  visible: boolean;
+  pane: ColumnPane;
+};
+
+type ColumnChooserPanelProps = {
+  isOpen: boolean;
+  // 追加(TH-DK-2): ダークテーマ修飾子クラス('ssg-theme-dark' | undefined)。ポータルは
+  //   .ssg-root 外のため、root と同じ修飾子を自身の root 要素へ直接付与します。
+  themeClassName?: string;
+  items: ColumnChooserItem[];
+  // 追加: onColumnsChange 未指定時は false。チェックボックスを無効化し注記を出します。
+  canToggle: boolean;
+  layout: ColumnChooserLayout | null;
+  panelRef: RefObject<HTMLDivElement | null>;
+  onToggleColumnVisibility: (columnKey: string, nextVisible: boolean) => void;
+  // 変更(13-B2-4): 全選択トグルの「すべて表示」側です(一部非表示時のクリックで発火)。
+  onShowAllColumns: () => void;
+  // 追加(13-B2-4): 全選択トグルの「全解除」側です(全表示時のクリックで発火)。視覚順
+  //   (left → center → right)先頭の 1 列だけ残して非表示にします。個別チェックの
+  //   最後の 1 列ガードと無矛盾のため、0 列表示は引き続き発生しません。keep 列の決定と
+  //   commit(onColumnsChange 経由)は呼び出し側が担います。
+  onHideAllColumns: () => void;
+  // 追加(13-B2-2): 全列を初期状態(幅 / 固定 / 表示)へ戻します。
+  //   ロジックは呼び出し側。canToggle が false のときフッターのボタンは無効化されます。
+  onResetColumns: () => void;
+  // 追加(13-B3-1): ドラッグ並べ替えの確定ハンドラです。並べ替え後の「全列キー順」を
+  //   渡します(items と同一集合の permutation)。commit(onColumnsChange 経由)は
+  //   呼び出し側が担います。検索中・canToggle=false 時は呼ばれません。
+  onReorderColumns: (orderedKeys: string[]) => void;
+  onRequestClose: () => void;
+  // 追加(FM-4): ヘッダードラッグによるパネル移動です(controller の moveColumnChooser を
+  //   受け取ります。位置の clamp・保持・close 時リセットは controller 側の責務)。
+  onPanelMove: (top: number, left: number) => void;
+};
+
+// 追加(13-B3-1): ドラッグ中の一覧端オートスクロールのしきい値 / 速度です。
+//   一覧コンテナの上下端から EDGE px 以内にポインタが入ったら、毎フレーム SPEED px ずつ
+//   スクロールします(29 列で一覧が パネル上限高 を超えるための補助)。
+const AUTO_SCROLL_EDGE = 28;
+const AUTO_SCROLL_SPEED = 12;
+
+// 追加(13-B3-1.5): セクション(所属ペイン)の小見出しラベルです。
+const PANE_ORDER: ColumnPane[] = ['left', 'center', 'right'];
+const SECTION_LABELS: Record<ColumnPane, string> = {
+  left: '左固定',
+  center: '固定なし',
+  right: '右固定',
+};
+
+// 変更(13-B3-1.5): セクション内(= fromKey と同一ペイン)でのみ並べ替え、確定時に
+//   left 群 → center 群 → right 群を各セクションの表示順で連結した「全列キー順」を返します
+//   (合意ポイント①=A: 書き戻すと columns 配列が pane 順へ正規化されます)。
+//   dropIndexInPane は「ソースペイン内での挿入位置(0..そのペインの件数)」です。
+//   セクション内が実際に動かない no-op の場合は正規化も行わず null を返します。
+//   ※ ドラッグは検索語が空のときのみ可能なため、items は常に「全列(絞り込み前)」です。
+function computeSectionReorderedKeys(
+  items: ColumnChooserItem[],
+  fromKey: string,
+  dropIndexInPane: number,
+): string[] | null {
+  const from = items.find((item) => item.key === fromKey);
+  if (!from) {
+    return null;
+  }
+  const sourcePane = from.pane;
+
+  // items 順を保ったままペインごとのキー配列へ分割します。
+  const groups: Record<ColumnPane, string[]> = { left: [], center: [], right: [] };
+  for (const item of items) {
+    groups[item.pane].push(item.key);
+  }
+
+  const src = groups[sourcePane];
+  const fromIndex = src.indexOf(fromKey);
+  if (fromIndex < 0) {
+    return null;
+  }
+  // 挿入位置は除去前基準。除去で fromIndex 以降が 1 つ詰まるため to を補正します。
+  let to = dropIndexInPane;
+  if (to > fromIndex) {
+    to -= 1;
+  }
+  to = Math.max(0, Math.min(to, src.length - 1));
+  if (to === fromIndex) {
+    // セクション内 no-op → 正規化もしません(no-op ドラッグで配列を動かさないため)。
+    return null;
+  }
+  const [moved] = src.splice(fromIndex, 1);
+  src.splice(to, 0, moved);
+
+  return [...groups.left, ...groups.center, ...groups.right];
+}
+
+type CheckState = 'checked' | 'unchecked' | 'indeterminate';
+
+// 追加(13-B2-1): 3 状態に対応した自作チェックボックスです。
+//   native input の indeterminate は ref 経由でしか設定できず、角丸の見た目も
+//   ブラウザ差が出るため、見た目は div で描画します(GIF の角丸チェックに寄せます)。
+function CheckBox({
+  state,
+  disabled,
+}: {
+  state: CheckState;
+  disabled: boolean;
+}) {
+  const filled = state === 'checked' || state === 'indeterminate';
+
+  return (
+    <span
+      className={cx(
+        'ssg-checkbox',
+        filled && 'ssg-checkbox--filled',
+        disabled && 'ssg-checkbox--disabled',
+      )}
+      aria-hidden
+    >
+      {state === 'checked' && (
+        <svg width="11" height="11" viewBox="0 0 12 12" fill="none">
+          <path
+            d="M2.5 6.2 4.7 8.4 9.5 3.6"
+            // 変更(TH-DK-1): stroke も属性では var() 不可のため style で指定します。
+            style={{ stroke: 'var(--ssg-panel-accent-contrast)' }}
+            strokeWidth="1.8"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        </svg>
+      )}
+      {state === 'indeterminate' && <span className="ssg-checkbox-dash" />}
+    </span>
+  );
+}
+
+// 追加(13-B3-1): ⠿ ドラッグハンドルの見た目です(2×3 の点)。
+//   操作系(pointerdown / capture)は行側に配線し、ここは見た目のみを描画します。
+function DragHandleGlyph({ disabled }: { disabled: boolean }) {
+  return (
+    <svg
+      width="10"
+      height="16"
+      viewBox="0 0 10 16"
+      // 変更(TH-DK-1): fill はプレゼンテーション属性だと var() を解釈しないため style で指定します。
+      style={{
+        fill: disabled
+          ? 'var(--ssg-panel-text-disabled)'
+          : 'var(--ssg-panel-text-faint)',
+      }}
+      aria-hidden
+    >
+      {[3, 8, 13].map((cy) =>
+        [3, 7].map((cx) => (
+          <circle key={`${cx}-${cy}`} cx={cx} cy={cy} r="1.2" />
+        )),
+      )}
+    </svg>
+  );
+}
+
+export function ColumnChooserPanel({
+  isOpen,
+  themeClassName,
+  items,
+  canToggle,
+  layout,
+  panelRef,
+  onToggleColumnVisibility,
+  onShowAllColumns,
+  onHideAllColumns,
+  onResetColumns,
+  onReorderColumns,
+  onRequestClose,
+  onPanelMove,
+}: ColumnChooserPanelProps) {
+  const [query, setQuery] = useState('');
+  const searchInputRef = useRef<HTMLInputElement | null>(null);
+
+  // 追加: 開くたびに検索語をリセットし、検索入力へフォーカスします。
+  useEffect(() => {
+    if (isOpen) {
+      setQuery('');
+      // portal mount 後にフォーカスを当てます。
+      const id = requestAnimationFrame(() => {
+        searchInputRef.current?.focus();
+      });
+      return () => cancelAnimationFrame(id);
+    }
+    return undefined;
+  }, [isOpen]);
+
+  // 注記: master / guard の判定は「全列(検索フィルタ前)」を基準にします。
+  //       検索はあくまで一覧の絞り込み表示で、全選択の意味は変えません。
+  const visibleCount = useMemo(
+    () => items.filter((item) => item.visible).length,
+    [items],
+  );
+  const allVisible = visibleCount === items.length && items.length > 0;
+//   const hasHidden = items.some((item) => !item.visible);
+
+  // 全選択の状態: 全表示 = checked、一部非表示 = indeterminate。
+  // 最後の 1 列ガードにより「全非表示」は発生しないため unchecked にはなりません。
+  const masterState: CheckState = allVisible ? 'checked' : 'indeterminate';
+
+  // 追加(13-B2-4): 全選択トグルのラベルです。状態でクリック時の動作が変わるため、
+  //   ツールチップ / aria-label を切り替えます。
+  const masterActionLabel = allVisible
+    ? 'すべての列を非表示(先頭の列は残ります)'
+    : 'すべての列を表示';
+
+  const filteredItems = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) {
+      return items;
+    }
+    return items.filter((item) => item.title.toLowerCase().includes(q));
+  }, [items, query]);
+
+  // 追加(13-B3-1.5): filteredItems を所属ペインのセクションへ分割します。
+  //   空セクションは除外し、PANE_ORDER(left → center → right)で並べます。
+  //   各セクション内は filteredItems の相対順(= columns 配列の pane 内相対順)を保ちます。
+  const sections = useMemo(() => {
+    const groups: Record<ColumnPane, ColumnChooserItem[]> = {
+      left: [],
+      center: [],
+      right: [],
+    };
+    for (const item of filteredItems) {
+      groups[item.pane].push(item);
+    }
+    return PANE_ORDER.map((pane) => ({ pane, items: groups[pane] })).filter(
+      (section) => section.items.length > 0,
+    );
+  }, [filteredItems]);
+
+  // 非空セクションが 2 つ以上(= 固定列あり)のときだけ小見出しを出します。
+  // 固定列が無いときは従来どおりフラット一覧になります。
+  const showHeadings = sections.length >= 2;
+
+  // ── ドラッグ並べ替え(13-B3-1) ─────────────────────────
+  // ドラッグ可否: onColumnsChange あり(canToggle)かつ検索語が空のときのみ。
+  // 検索中は一覧が絞り込み表示のため、並べ替え対象の全体像が見えず曖昧になるので無効化します。
+  const canDrag = canToggle && query.trim() === '';
+
+  const listRef = useRef<HTMLDivElement | null>(null);
+  // ドラッグ中の列キー(null = 非ドラッグ)。dragActiveRef は pointer ハンドラ内の
+  // 早期 return 判定用(state 反映前の連続イベントでも確実に効くよう ref で持ちます)。
+  const [draggingKey, setDraggingKey] = useState<string | null>(null);
+  const dragActiveRef = useRef(false);
+  // 追加(13-B3-1.5): ドラッグ元のペインです。ドロップ位置走査をこのペインの行へ限定し、
+  //   セクション跨ぎを実質不可にします(ref は走査ハンドラから同期読みするため)。
+  const draggingPaneRef = useRef<ColumnPane | null>(null);
+  // ドロップ挿入位置(items 上の 0..length。length = 末尾へ)。インジケータ描画に使います。
+  const [dropIndex, setDropIndex] = useState<number | null>(null);
+  const pointerYRef = useRef(0);
+  const autoScrollRafRef = useRef<number | null>(null);
+
+  // ポインタ Y から「行 midpoint より上にある行数」= 挿入インデックスを求めます。
+  // 変更(13-B3-1.5): 走査対象をドラッグ元ペイン(draggingPaneRef)の行へ限定します。
+  //   これにより別セクション上にポインタがあってもドロップ位置はソースセクション内へ
+  //   留まり、セクション跨ぎが実質不可になります(pinned 不変)。
+  const updateDropFromPointer = useCallback(() => {
+    const list = listRef.current;
+    const pane = draggingPaneRef.current;
+    if (!list || !pane) {
+      return;
+    }
+    const rows = list.querySelectorAll<HTMLElement>(
+      `[data-chooser-row][data-chooser-pane="${pane}"]`,
+    );
+    const y = pointerYRef.current;
+    let index = rows.length;
+    for (let i = 0; i < rows.length; i += 1) {
+      const rect = rows[i].getBoundingClientRect();
+      if (y < rect.top + rect.height / 2) {
+        index = i;
+        break;
+      }
+    }
+    setDropIndex(index);
+  }, []);
+
+  // ドラッグ中、一覧コンテナの上下端付近へポインタが入ったらオートスクロールします。
+  const autoScrollTick = useCallback(() => {
+    const list = listRef.current;
+    if (!list || !dragActiveRef.current) {
+      autoScrollRafRef.current = null;
+      return;
+    }
+    const rect = list.getBoundingClientRect();
+    const y = pointerYRef.current;
+    let delta = 0;
+    if (y < rect.top + AUTO_SCROLL_EDGE) {
+      delta = -AUTO_SCROLL_SPEED;
+    } else if (y > rect.bottom - AUTO_SCROLL_EDGE) {
+      delta = AUTO_SCROLL_SPEED;
+    }
+    if (delta !== 0) {
+      const before = list.scrollTop;
+      list.scrollTop += delta;
+      if (list.scrollTop !== before) {
+        updateDropFromPointer();
+      }
+    }
+    autoScrollRafRef.current = requestAnimationFrame(autoScrollTick);
+  }, [updateDropFromPointer]);
+
+  const finishDrag = useCallback(
+    (commit: boolean) => {
+      if (autoScrollRafRef.current !== null) {
+        cancelAnimationFrame(autoScrollRafRef.current);
+        autoScrollRafRef.current = null;
+      }
+      const key = draggingKey;
+      const targetIndex = dropIndex;
+      dragActiveRef.current = false;
+      draggingPaneRef.current = null;
+      setDraggingKey(null);
+      setDropIndex(null);
+      if (commit && key !== null && targetIndex !== null) {
+        const next = computeSectionReorderedKeys(items, key, targetIndex);
+        if (next) {
+          onReorderColumns(next);
+        }
+      }
+    },
+    [draggingKey, dropIndex, items, onReorderColumns],
+  );
+
+  const handleDragHandlePointerDown = useCallback(
+    (key: string, pane: ColumnPane, event: PointerEvent<HTMLElement>) => {
+      if (!canDrag) {
+        return;
+      }
+      // 既定のテキスト選択 / 行クリックを抑止し、grid 側へも伝播させません。
+      event.preventDefault();
+      event.stopPropagation();
+      event.currentTarget.setPointerCapture(event.pointerId);
+      dragActiveRef.current = true;
+      draggingPaneRef.current = pane;
+      pointerYRef.current = event.clientY;
+      setDraggingKey(key);
+      updateDropFromPointer();
+      if (autoScrollRafRef.current === null) {
+        autoScrollRafRef.current = requestAnimationFrame(autoScrollTick);
+      }
+    },
+    [canDrag, updateDropFromPointer, autoScrollTick],
+  );
+
+  const handleDragHandlePointerMove = useCallback(
+    (event: PointerEvent<HTMLElement>) => {
+      if (!dragActiveRef.current) {
+        return;
+      }
+      pointerYRef.current = event.clientY;
+      updateDropFromPointer();
+    },
+    [updateDropFromPointer],
+  );
+
+  const handleDragHandlePointerUp = useCallback(() => {
+    if (!dragActiveRef.current) {
+      return;
+    }
+    finishDrag(true);
+  }, [finishDrag]);
+
+  const handleDragHandlePointerCancel = useCallback(() => {
+    if (!dragActiveRef.current) {
+      return;
+    }
+    finishDrag(false);
+  }, [finishDrag]);
+
+  // panel が閉じる / アンマウントされるときはドラッグ状態と rAF を確実に後始末します。
+  useEffect(() => {
+    if (!isOpen) {
+      dragActiveRef.current = false;
+      draggingPaneRef.current = null;
+      setDraggingKey(null);
+      setDropIndex(null);
+      if (autoScrollRafRef.current !== null) {
+        cancelAnimationFrame(autoScrollRafRef.current);
+        autoScrollRafRef.current = null;
+      }
+    }
+  }, [isOpen]);
+
+  useEffect(
+    () => () => {
+      if (autoScrollRafRef.current !== null) {
+        cancelAnimationFrame(autoScrollRafRef.current);
+        autoScrollRafRef.current = null;
+      }
+    },
+    [],
+  );
+
+  // 追加(FM-4): ヘッダーを掴んでパネルを移動します(hooks は早期 return より前・無条件で
+  //   呼びます。layout=null のときはフック側が開始しません)。
+  const { handleHeaderPointerDown } = usePanelHeaderDrag({
+    layout,
+    onPanelMove,
+  });
+
+  if (!isOpen || !layout) {
+    return null;
+  }
+
+  const wrapperStyle: CSSProperties = {
+    top: layout.top,
+    left: layout.left,
+    width: layout.width,
+  };
+
+  const handlePointerDown = (event: PointerEvent<HTMLDivElement>) => {
+    // 追加: パネル内 pointer 操作を grid 側へ伝播させません
+    //       (列選択開始や outside click 判定との競合を避けます)。
+    event.stopPropagation();
+  };
+
+  const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    // 追加: portal 内 keyboard を React ツリー上の parent へ流しません。
+    //       Escape での close は controller の window keydown が担当します。
+    // 変更(POP-KEY): capture 相(onKeyDownCapture)→ bubble 相(onKeyDown)へ変更します。
+    //   capture 相の stopPropagation() はネイティブ伝播ごと止めるため、パネル内部要素の
+    //   bubble 相 onKeyDown や window(bubble)リスナーまで殺してしまいます
+    //   (ColumnFilterPopover の SF-ENTER fix と同一パターンの統一です)。bubble 相なら
+    //   「内部要素のハンドラが先に処理 → 最後にここで外側への合成バブリングだけ遮断」に
+    //   なり、Escape close は controller 側の capture 登録(POP-KEY)が受けます。
+    event.stopPropagation();
+  };
+
+  const handleMasterClick = () => {
+    if (!canToggle) {
+      return;
+    }
+    // 変更(13-B2-4): 真のトグルにします。全表示時は「視覚順先頭の 1 列を残して全解除」、
+    //   一部非表示時は「すべて表示」です(個別の最後の 1 列ガードは従来どおりのため、
+    //   どちらの経路でも 0 列表示は発生しません)。
+    if (allVisible) {
+      onHideAllColumns();
+    } else {
+      onShowAllColumns();
+    }
+  };
+
+  // 追加(13-B3-1.5): ドラッグ中の列が属するペインです(インジケータをソース
+  //   セクションにのみ出すために使います)。ドラッグは検索語が空のときのみなので
+  //   draggingKey は必ず filteredItems(= items)内に存在します。
+  const draggingPane: ColumnPane | null =
+    draggingKey !== null
+      ? (items.find((item) => item.key === draggingKey)?.pane ?? null)
+      : null;
+
+  // 追加(13-B3-1.5): 1 行分の描画です(セクションをまたいで再利用します)。
+  //   indexInPane はそのセクション内での 0 始まり index で、ドロップ前線の判定に使います。
+  const renderRow = (
+    item: ColumnChooserItem,
+    indexInPane: number,
+    pane: ColumnPane,
+  ) => {
+    // 最後の 1 列ガード: 表示中が 1 列だけのとき、その列はチェックを外せません。
+    const isOnlyVisible = item.visible && visibleCount === 1;
+    const disabled = !canToggle || isOnlyVisible;
+    const isDragging = draggingKey === item.key;
+    // ドロップインジケータ: ソースペインのこの行の直前に挿入される位置のとき細線を出します。
+    // 末尾(dropIndex === セクション件数)はセクション描画後に別途描画します。
+    const showDropBefore =
+      draggingKey !== null && draggingPane === pane && dropIndex === indexInPane;
+    return (
+      <div
+        key={item.key}
+        data-chooser-row=""
+        data-chooser-pane={pane}
+        className={cx(
+          'ssg-chooser-row',
+          showDropBefore && 'ssg-chooser-row--drop-before',
+          isDragging && 'ssg-chooser-row--dragging',
+        )}
+      >
+        {/* ⠿ ドラッグハンドル(13-B3-1) */}
+        <span
+          role="button"
+          aria-label="ドラッグして並べ替え"
+          data-ssg-tooltip={
+            !canToggle
+              ? 'onColumnsChange 未指定のため並べ替えできません'
+              : query.trim() !== ''
+                ? '検索中は並べ替えできません'
+                : 'ドラッグして並べ替え(同じセクション内のみ)'
+          }
+          onPointerDown={(event) =>
+            handleDragHandlePointerDown(item.key, pane, event)
+          }
+          onPointerMove={handleDragHandlePointerMove}
+          onPointerUp={handleDragHandlePointerUp}
+          onPointerCancel={handleDragHandlePointerCancel}
+          className={cx(
+            'ssg-chooser-handle',
+            !canDrag && 'ssg-chooser-handle--disabled',
+            isDragging && 'ssg-chooser-handle--dragging',
+          )}
+        >
+          <DragHandleGlyph disabled={!canDrag} />
+        </span>
+
+        <button
+          type="button"
+          disabled={disabled}
+          onClick={() => {
+            if (disabled) {
+              return;
+            }
+            onToggleColumnVisibility(item.key, !item.visible);
+          }}
+          className="ssg-chooser-toggle"
+        >
+          <CheckBox
+            state={item.visible ? 'checked' : 'unchecked'}
+            disabled={disabled}
+          />
+          <span
+            className={cx(
+              'ssg-chooser-label',
+              disabled && !item.visible && 'ssg-chooser-label--muted',
+            )}
+          >
+            {item.title}
+          </span>
+        </button>
+      </div>
+    );
+  };
+
+  return createPortal(
+    <div
+      ref={panelRef}
+      onPointerDown={handlePointerDown}
+      onKeyDown={handleKeyDown}
+      onContextMenu={(event) => {
+        event.preventDefault();
+      }}
+      className={cx('ssg-popover', 'ssg-chooser-panel', themeClassName)}
+      style={wrapperStyle}
+    >
+      {/* ── ヘッダー: タイトル + × ── */}
+      <div
+        className="ssg-popover-header ssg-popover-header--draggable"
+        onPointerDown={handleHeaderPointerDown}
+      >
+        <span className="ssg-popover-title">列の表示</span>
+        <button
+          type="button"
+          onClick={onRequestClose}
+          aria-label="閉じる"
+          className="ssg-popover-close"
+        >
+          ×
+        </button>
+      </div>
+
+      {/* ── 検索行: 全選択チェック + 検索入力 ── */}
+      <div className="ssg-chooser-search-row">
+        <button
+          type="button"
+          disabled={!canToggle}
+          onClick={handleMasterClick}
+          aria-label={masterActionLabel}
+          data-ssg-tooltip={masterActionLabel}
+          className="ssg-chooser-master-btn"
+        >
+          <CheckBox state={masterState} disabled={!canToggle} />
+        </button>
+        <div className="ssg-chooser-search-field">
+          <span aria-hidden className="ssg-chooser-search-icon">
+            ⌕
+          </span>
+          <input
+            ref={searchInputRef}
+            type="text"
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder="検索..."
+            className="ssg-chooser-search-input"
+          />
+        </div>
+      </div>
+
+      {/* ── 列一覧(スクロール) ── */}
+      <div ref={listRef} className="ssg-chooser-list">
+        {filteredItems.length === 0 ? (
+          <div className="ssg-chooser-empty">該当する列がありません</div>
+        ) : (
+          sections.map((section) => (
+            <div key={section.pane} data-chooser-section={section.pane}>
+              {showHeadings && (
+                <div className="ssg-chooser-section-heading">
+                  {SECTION_LABELS[section.pane]}
+                </div>
+              )}
+              {section.items.map((item, indexInPane) =>
+                renderRow(item, indexInPane, section.pane),
+              )}
+              {/* セクション末尾へのドロップインジケータ(13-B3-1.5) */}
+              {draggingKey !== null &&
+                draggingPane === section.pane &&
+                dropIndex === section.items.length && (
+                  <div className="ssg-chooser-drop-end" />
+                )}
+            </div>
+          ))
+        )}
+      </div>
+
+      {/* ── フッター: 列のリセット + (無効時)注記 ── */}
+      <div className="ssg-chooser-footer">
+        <button
+          type="button"
+          disabled={!canToggle}
+          onClick={() => {
+            if (!canToggle) {
+              return;
+            }
+            onResetColumns();
+          }}
+          data-ssg-tooltip="すべての列の幅・固定・表示・並び順を初期状態に戻します"
+          className="ssg-chooser-reset-btn"
+        >
+          すべての列を初期状態に戻す
+        </button>
+
+        {!canToggle && (
+          <div className="ssg-chooser-note">
+            onColumnsChange 未指定のため表示/非表示・リセットを変更できません
+          </div>
+        )}
+      </div>
+    </div>,
+    document.body,
+  );
+}
+
+export default ColumnChooserPanel;
 </file>
 
 <file path="src/components/spreadsheet-grid/view/ColumnFilterPopover.tsx">
@@ -29944,6 +30345,9 @@ import {
 } from './logic/geometry';
 // 追加(B3): center 列の JS 算出 flex(利用可能幅を比率配分)。
 import { isFlexingColumn, computeCenterFlexWidths } from './logic/columnFlex';
+// 追加(13-B2-5): 列リセットの再構成純ロジック(幅 / 固定 / 表示 / 並び順の完全復元)です。
+import { buildResetColumns } from './logic/columnReset';
+import type { InitialColumnState } from './logic/columnReset';
 // 追加(scroll-space 仮想化): 縦ジオメトリのシーム(uniform window + pixel scaling)です。
 //   1M 行で innerRowStyle.height がブラウザ要素高さ上限を超える機能ブロッカーを解消します。
 import {
@@ -30370,6 +30774,8 @@ export function SpreadsheetGrid<T extends object>({
   //     遅延初期化(current が null のときだけ構築)なので構築は一度きりで、以後は
   //     columns prop が変わっても更新しません(= ユーザー操作後の状態を「初期」と
   //     誤認しないため)。リセットはここに退避した値へ戻します。
+  //   - 変更(13-B2-5): Map の挿入順 = 初回マウント時の columns 順が「初期の並び順」を
+  //     兼ねます(リセット時の並び順復元は buildResetColumns がこの挿入順から行います)。
   //   - 明示 API(initialColumns prop / onResetColumns)による consumer 制御リセット
   //     (方針 (B))は、将来必要になればこの ref を prop 優先へ差し替えるだけで載せ替え
   //     可能です。現時点では追加 props を増やさず自己完結を優先します。
@@ -30377,10 +30783,9 @@ export function SpreadsheetGrid<T extends object>({
   //     退避内容は同一になります(再 mount 時は再構築されますが結果は不変)。
   //   - マウント後に追加された列(createOverflowColumn)は本スナップショットに存在せず、
   //     リセット対象外になります(handleColumnChooserReset 側で対象外扱い)。
-  const initialColumnStateRef = useRef<Map<
-    string,
-    { width: number; pinned: GridColumn<T>['pinned']; visible: boolean | undefined }
-  > | null>(null);
+  const initialColumnStateRef = useRef<Map<string, InitialColumnState> | null>(
+    null,
+  );
   if (initialColumnStateRef.current === null) {
     initialColumnStateRef.current = new Map(
       columns.map((column) => [
@@ -32565,6 +32970,51 @@ export function SpreadsheetGrid<T extends object>({
     dispatch(gridActions.activateCell(null));
   }, [columns, dispatch, onColumnsChange]);
 
+  // 追加(13-B2-4): パネルの全解除(視覚順先頭の 1 列だけ残して非表示)です。
+  //   全選択トグルの checked 側クリックで呼ばれます(ShowAll と対称の作法)。
+  //   - keep 列 = orderedColumns[0](left → center → right の視覚順先頭 = 画面最左の
+  //     表示列)。個別の最後の 1 列ガードと同じく 0 列表示を作らないための 1 列残しです。
+  //   - 既に keep のみ表示なら no-op。幅書き戻し・選択破棄の作法はトグルと同じです。
+  const handleColumnChooserHideAll = useCallback(() => {
+    if (!onColumnsChange) {
+      return;
+    }
+
+    const keepKey = orderedColumns[0]?.key;
+    if (keepKey === undefined) {
+      // 表示列なし(全列 visible:false の columns が渡された場合)。全解除の対象が
+      // 存在しないため何もしません。
+      return;
+    }
+
+    const hasHideTarget = columns.some(
+      (column) => column.visible !== false && column.key !== keepKey,
+    );
+    if (!hasHideTarget) {
+      // keep 列だけが表示されている状態。no-op。
+      return;
+    }
+
+    const nextColumns = columns.map((column) => {
+      const resolvedWidth =
+        columnWidthsRef.current[column.key] ?? column.width;
+      const needsWidth = resolvedWidth !== column.width;
+      const needsHide = column.visible !== false && column.key !== keepKey;
+      if (!needsWidth && !needsHide) {
+        return column;
+      }
+      return needsHide
+        ? { ...column, width: resolvedWidth, visible: false }
+        : { ...column, width: resolvedWidth };
+    });
+
+    onColumnsChange(nextColumns);
+
+    dispatch(gridActions.stopEdit());
+    dispatch(gridActions.clearSelection());
+    dispatch(gridActions.activateCell(null));
+  }, [columns, dispatch, onColumnsChange, orderedColumns]);
+
   // 追加(13-B3-1): パネルのドラッグ並べ替えの commit です。
   // 設計メモ(pin / 表示トグルと同型の作法):
   //   - columns は controlled props のため onColumnsChange 経由で反映します。
@@ -32725,7 +33175,9 @@ export function SpreadsheetGrid<T extends object>({
     display: 'none',
   };
 
-  // 追加(13-B2-2): 全列を初期 column defs の値(幅 / 固定 / 表示)へ戻します。
+  // 追加(13-B2-2): 全列を初期 column defs の値(幅 / 固定 / 表示 / 並び順)へ戻します。
+  // 変更(13-B2-5): 並び順の復元を追加し、再構成を logic/columnReset.ts の buildResetColumns
+  //   へ抽出しました(幅の戻し方 / overflow 列 / no-op の方針は同モジュールの doc を参照)。
   // 設計メモ:
   //   - columns は controlled props のため onColumnsChange 経由で反映します
   //     (pin / 表示トグルと同じ経路。内部 state は持ちません)。
@@ -32736,14 +33188,16 @@ export function SpreadsheetGrid<T extends object>({
   //     live 幅は自動的に破棄され初期幅へ戻ります。
   //     ※ pin / 表示ハンドラが「対象外の列の live 幅を defs へ書き戻して"保全"」するのと
   //       ちょうど逆向きの操作です(リセットは live 幅を意図的に"破棄"します)。
-  //   - 【スナップショット外の列】マウント後に追加された列(createOverflowColumn)は
-  //     初期スナップショットを持たないためリセット対象外です。ただし commit する場合は
-  //     その列の live 幅を defs へ書き戻して保全します(他ハンドラと同型。書き戻さないと
-  //     上記 sync effect でそれらの列の手動リサイズも巻き添えで消えるため)。
-  //   - 【no-op】初期スナップショットを持つ列がどれも初期状態と差分なしなら dispatch も
-  //     onColumnsChange も行いません(changed フラグ。無駄な再レンダー抑止)。
-  //   - 固定 / 表示の復元で orderedColumns の視覚順(= selection / activeCell の論理 index
-  //     空間)が変わり得るため、選択・アクティブセル・編集は破棄します(pin / 表示と同理由)。
+  //   - 【並び順の戻し方(13-B2-5)】初期順はスナップショット Map の挿入順から復元します。
+  //     ヘッダー D&D / チューザー並べ替え(applyColumnOrderAndPin)が columns 配列の順序を
+  //     恒久的に書き換えるため、属性だけ戻す従来実装では「左固定 → 中央へ移動 → リセット」
+  //     でペイン内の相対順が初期と逆転していました。復元順は consumer 宣言の初期配列と
+  //     1:1 で一致させ、pane 連結正規化は初期マウントと同じく描画側の reorderColumnsByPane
+  //     に委ねます(初期状態の完全再現を優先)。
+  //   - 【no-op】初期列の幅 / 固定 / 表示 / 並び順がすべて初期状態と差分なしなら dispatch も
+  //     onColumnsChange も行いません(buildResetColumns が null を返します)。
+  //   - 固定 / 表示 / 並び順の復元で orderedColumns の視覚順(= selection / activeCell の論理
+  //     index 空間)が変わり得るため、選択・アクティブセル・編集は破棄します(pin / 表示と同理由)。
   //   - 追加(13-B2-3 / gpt5.5対応): 列メニュー root の「列のリセット」からも
   //     本ハンドラを再利用します。列メニュー側では薄い wrapper で menu close だけを
   //     追加し、ColumnChooserPanel 側の挙動(押下後もパネルを残す)とは分離します。
@@ -32756,44 +33210,13 @@ export function SpreadsheetGrid<T extends object>({
       return;
     }
 
-    let changed = false;
-    const nextColumns = columns.map((column) => {
-      const resolvedWidth =
-        columnWidthsRef.current[column.key] ?? column.width;
-      const initial = snapshot.get(column.key);
-
-      if (!initial) {
-        // マウント後に追加された列はリセット対象外。解決済み幅だけ defs へ
-        // 書き戻して保全します(commit される場合の sync effect による消失を防止)。
-        return resolvedWidth === column.width
-          ? column
-          : { ...column, width: resolvedWidth };
-      }
-
-      const initialPinned = initial.pinned ?? undefined;
-      const widthDiff = resolvedWidth !== initial.width;
-      const pinnedDiff = (column.pinned ?? undefined) !== initialPinned;
-      const visibleDiff =
-        (column.visible !== false) !== (initial.visible !== false);
-
-      if (widthDiff || pinnedDiff || visibleDiff) {
-        changed = true;
-      }
-
-      // 注記: 初期幅を column.width にセットするのが重要です。これにより commit 後の
-      //       sync effect が columnWidths を初期幅で上書きし、live 幅が破棄されます。
-      //       差分なしの列も同じ正規化を行い、column.width と初期幅の不整合
-      //       (過去の書き戻しで def 幅がずれているケース)による幅ジャンプを防ぎます。
-      return {
-        ...column,
-        width: initial.width,
-        pinned: initial.pinned,
-        visible: initial.visible,
-      };
-    });
-
-    if (!changed) {
-      // どの初期列も初期状態のまま → 何もしません(再レンダー抑止)。
+    const nextColumns = buildResetColumns(
+      columns,
+      snapshot,
+      columnWidthsRef.current,
+    );
+    if (nextColumns === null) {
+      // 幅 / 固定 / 表示 / 並び順すべて初期状態のまま → 何もしません(再レンダー抑止)。
       return;
     }
 
@@ -33495,6 +33918,7 @@ export function SpreadsheetGrid<T extends object>({
       panelRef={columnChooserRef}
       onToggleColumnVisibility={handleColumnChooserToggleVisibility}
       onShowAllColumns={handleColumnChooserShowAll}
+      onHideAllColumns={handleColumnChooserHideAll}
       onResetColumns={handleColumnChooserReset}
       onReorderColumns={handleColumnChooserReorder}
       onRequestClose={closeColumnChooser}

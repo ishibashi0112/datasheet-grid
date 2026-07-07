@@ -507,7 +507,7 @@ export function ColumnMenuPopover({
         tabIndex={canResetColumns ? 0 : -1}
         data-ssg-tooltip={
           canResetColumns
-            ? 'すべての列の幅・固定・表示を初期状態に戻します'
+            ? 'すべての列の幅・固定・表示・並び順を初期状態に戻します'
             : 'onColumnsChange 未指定のため列をリセットできません'
         }
         onPointerEnter={() => {
