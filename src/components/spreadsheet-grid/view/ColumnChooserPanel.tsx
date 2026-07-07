@@ -67,8 +67,13 @@ type ColumnChooserPanelProps = {
   layout: ColumnChooserLayout | null;
   panelRef: RefObject<HTMLDivElement | null>;
   onToggleColumnVisibility: (columnKey: string, nextVisible: boolean) => void;
-  // 追加: 全選択(= すべて表示)。最後の 1 列ガードのため「全消し」はサポートしません。
+  // 変更(13-B2-4): 全選択トグルの「すべて表示」側です(一部非表示時のクリックで発火)。
   onShowAllColumns: () => void;
+  // 追加(13-B2-4): 全選択トグルの「全解除」側です(全表示時のクリックで発火)。視覚順
+  //   (left → center → right)先頭の 1 列だけ残して非表示にします。個別チェックの
+  //   最後の 1 列ガードと無矛盾のため、0 列表示は引き続き発生しません。keep 列の決定と
+  //   commit(onColumnsChange 経由)は呼び出し側が担います。
+  onHideAllColumns: () => void;
   // 追加(13-B2-2): 全列を初期状態(幅 / 固定 / 表示)へ戻します。
   //   ロジックは呼び出し側。canToggle が false のときフッターのボタンは無効化されます。
   onResetColumns: () => void;
@@ -214,6 +219,7 @@ export function ColumnChooserPanel({
   panelRef,
   onToggleColumnVisibility,
   onShowAllColumns,
+  onHideAllColumns,
   onResetColumns,
   onReorderColumns,
   onRequestClose,
@@ -247,6 +253,12 @@ export function ColumnChooserPanel({
   // 全選択の状態: 全表示 = checked、一部非表示 = indeterminate。
   // 最後の 1 列ガードにより「全非表示」は発生しないため unchecked にはなりません。
   const masterState: CheckState = allVisible ? 'checked' : 'indeterminate';
+
+  // 追加(13-B2-4): 全選択トグルのラベルです。状態でクリック時の動作が変わるため、
+  //   ツールチップ / aria-label を切り替えます。
+  const masterActionLabel = allVisible
+    ? 'すべての列を非表示(先頭の列は残ります)'
+    : 'すべての列を表示';
 
   const filteredItems = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -476,8 +488,12 @@ export function ColumnChooserPanel({
     if (!canToggle) {
       return;
     }
-    // 全表示状態では何もしません(全消しは最後の 1 列ガードで不可のため)。
-    if (!allVisible) {
+    // 変更(13-B2-4): 真のトグルにします。全表示時は「視覚順先頭の 1 列を残して全解除」、
+    //   一部非表示時は「すべて表示」です(個別の最後の 1 列ガードは従来どおりのため、
+    //   どちらの経路でも 0 列表示は発生しません)。
+    if (allVisible) {
+      onHideAllColumns();
+    } else {
       onShowAllColumns();
     }
   };
@@ -603,8 +619,8 @@ export function ColumnChooserPanel({
           type="button"
           disabled={!canToggle}
           onClick={handleMasterClick}
-          aria-label="すべての列を表示"
-          data-ssg-tooltip="すべての列を表示"
+          aria-label={masterActionLabel}
+          data-ssg-tooltip={masterActionLabel}
           className="ssg-chooser-master-btn"
         >
           <CheckBox state={masterState} disabled={!canToggle} />

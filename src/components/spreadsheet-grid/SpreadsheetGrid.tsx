@@ -2721,6 +2721,51 @@ export function SpreadsheetGrid<T extends object>({
     dispatch(gridActions.activateCell(null));
   }, [columns, dispatch, onColumnsChange]);
 
+  // 追加(13-B2-4): パネルの全解除(視覚順先頭の 1 列だけ残して非表示)です。
+  //   全選択トグルの checked 側クリックで呼ばれます(ShowAll と対称の作法)。
+  //   - keep 列 = orderedColumns[0](left → center → right の視覚順先頭 = 画面最左の
+  //     表示列)。個別の最後の 1 列ガードと同じく 0 列表示を作らないための 1 列残しです。
+  //   - 既に keep のみ表示なら no-op。幅書き戻し・選択破棄の作法はトグルと同じです。
+  const handleColumnChooserHideAll = useCallback(() => {
+    if (!onColumnsChange) {
+      return;
+    }
+
+    const keepKey = orderedColumns[0]?.key;
+    if (keepKey === undefined) {
+      // 表示列なし(全列 visible:false の columns が渡された場合)。全解除の対象が
+      // 存在しないため何もしません。
+      return;
+    }
+
+    const hasHideTarget = columns.some(
+      (column) => column.visible !== false && column.key !== keepKey,
+    );
+    if (!hasHideTarget) {
+      // keep 列だけが表示されている状態。no-op。
+      return;
+    }
+
+    const nextColumns = columns.map((column) => {
+      const resolvedWidth =
+        columnWidthsRef.current[column.key] ?? column.width;
+      const needsWidth = resolvedWidth !== column.width;
+      const needsHide = column.visible !== false && column.key !== keepKey;
+      if (!needsWidth && !needsHide) {
+        return column;
+      }
+      return needsHide
+        ? { ...column, width: resolvedWidth, visible: false }
+        : { ...column, width: resolvedWidth };
+    });
+
+    onColumnsChange(nextColumns);
+
+    dispatch(gridActions.stopEdit());
+    dispatch(gridActions.clearSelection());
+    dispatch(gridActions.activateCell(null));
+  }, [columns, dispatch, onColumnsChange, orderedColumns]);
+
   // 追加(13-B3-1): パネルのドラッグ並べ替えの commit です。
   // 設計メモ(pin / 表示トグルと同型の作法):
   //   - columns は controlled props のため onColumnsChange 経由で反映します。
@@ -3651,6 +3696,7 @@ export function SpreadsheetGrid<T extends object>({
       panelRef={columnChooserRef}
       onToggleColumnVisibility={handleColumnChooserToggleVisibility}
       onShowAllColumns={handleColumnChooserShowAll}
+      onHideAllColumns={handleColumnChooserHideAll}
       onResetColumns={handleColumnChooserReset}
       onReorderColumns={handleColumnChooserReorder}
       onRequestClose={closeColumnChooser}
