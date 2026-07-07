@@ -456,19 +456,22 @@ describe('SpreadsheetGrid フィルターチップバー(FM-2・結合)', () => 
 // 追加(FM-3): フィルター管理パネル導線(ハンドル API / Filters chip クリック)の配線テストです。
 //   パネルは portal(body 直下)+ gridRoot 右上アンカーで、jsdom の 0 矩形でもビューポート
 //   margin へクランプした layout が計算されるため、描画有無を検証できます。
+// 変更(UP-1): パネルは統合ツールパネル(タブ切替)になり、旧タイトル「フィルター管理」は
+//   消えました。「フィルタータブのコンテンツが表示されている」ことの目印には、フィルター
+//   タブ固有の要素(「フィルターを追加する列を選択」<select>)を使います。
 describe('SpreadsheetGrid フィルター管理パネル導線(FM-3・結合)', () => {
   it('handle.openFilterManager() でパネルが開き、closeFilterManager() で閉じる', () => {
     const ref = createRef<SpreadsheetGridHandle<Row>>();
     render(<SpreadsheetGrid ref={ref} columns={columns} rows={rows} />);
-    expect(screen.queryByText('フィルター管理')).toBeNull();
+    expect(screen.queryByLabelText('フィルターを追加する列を選択')).toBeNull();
     act(() => {
       ref.current?.openFilterManager();
     });
-    expect(screen.getByText('フィルター管理')).toBeTruthy();
+    expect(screen.getByLabelText('フィルターを追加する列を選択')).toBeTruthy();
     act(() => {
       ref.current?.closeFilterManager();
     });
-    expect(screen.queryByText('フィルター管理')).toBeNull();
+    expect(screen.queryByLabelText('フィルターを追加する列を選択')).toBeNull();
   });
 
   it('enableColumnFilter=false では openFilterManager() は何もしない', () => {
@@ -484,7 +487,7 @@ describe('SpreadsheetGrid フィルター管理パネル導線(FM-3・結合)', 
     act(() => {
       ref.current?.openFilterManager();
     });
-    expect(screen.queryByText('フィルター管理')).toBeNull();
+    expect(screen.queryByLabelText('フィルターを追加する列を選択')).toBeNull();
   });
 
   it('既定トップバーの Filters chip クリックでパネルがトグルする(pointerdown で閉じ戻らない)', () => {
@@ -493,12 +496,12 @@ describe('SpreadsheetGrid フィルター管理パネル導線(FM-3・結合)', 
     // 実イベント順(pointerdown → click)で開きます。
     fireEvent.pointerDown(chip);
     fireEvent.click(chip);
-    expect(screen.getByText('フィルター管理')).toBeTruthy();
+    expect(screen.getByLabelText('フィルターを追加する列を選択')).toBeTruthy();
     // もう一度同じ順で押すと閉じます(chip の onPointerDown stopPropagation により、
     //   「pointerdown の outside-close → click の再オープン」で開いたままにならないこと)。
     fireEvent.pointerDown(chip);
     fireEvent.click(chip);
-    expect(screen.queryByText('フィルター管理')).toBeNull();
+    expect(screen.queryByLabelText('フィルターを追加する列を選択')).toBeNull();
   });
 
   it('enableColumnFilter=false では Filters chip はクリック可能にならない(span のまま)', () => {

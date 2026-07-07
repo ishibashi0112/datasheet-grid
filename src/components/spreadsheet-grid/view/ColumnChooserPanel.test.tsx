@@ -6,21 +6,20 @@
 //   - 最後の 1 列(表示中が 1 列だけ)の個別チェックは disabled(既存挙動の固定)。
 //   CSS の見た目は jsdom で検証できないため、ラベルとコールバック発火のみを固定します
 //   (FilterManagementPanel.test.tsx と同じ方針)。
+// 変更(UP-1): ColumnChooserPanel は統合ツールパネル(ToolPanel)の「列」タブのコンテンツに
+//   なりました(フレーム / open-close / ドラッグはシェル側の責務)。props からシェル系
+//   (isOpen / layout / panelRef / onRequestClose / onPanelMove)が消えたため縮小しています。
 // @vitest-environment jsdom
 import { describe, it, expect, afterEach, vi } from 'vitest';
 import { render, screen, fireEvent, cleanup } from '@testing-library/react';
-import { createRef } from 'react';
 
 import ColumnChooserPanel, {
   type ColumnChooserItem,
 } from './ColumnChooserPanel';
-import type { ColumnChooserLayout } from '../hooks/useColumnChooserController';
 
 afterEach(() => {
   cleanup();
 });
-
-const layout: ColumnChooserLayout = { top: 20, left: 40, width: 280 };
 
 const makeItems = (visibles: boolean[]): ColumnChooserItem[] =>
   visibles.map((visible, index) => ({
@@ -31,18 +30,13 @@ const makeItems = (visibles: boolean[]): ColumnChooserItem[] =>
   }));
 
 const makeProps = (items: ColumnChooserItem[], canToggle = true) => ({
-  isOpen: true,
   items,
   canToggle,
-  layout,
-  panelRef: createRef<HTMLDivElement>(),
   onToggleColumnVisibility: vi.fn(),
   onShowAllColumns: vi.fn(),
   onHideAllColumns: vi.fn(),
   onResetColumns: vi.fn(),
   onReorderColumns: vi.fn(),
-  onRequestClose: vi.fn(),
-  onPanelMove: vi.fn(),
 });
 
 describe('ColumnChooserPanel(全選択トグル 13-B2-4)', () => {

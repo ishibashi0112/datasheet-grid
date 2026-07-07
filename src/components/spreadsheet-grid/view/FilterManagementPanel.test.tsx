@@ -2,24 +2,23 @@
 //   - 適用中フィルターの行(列名 / 要約)の描画と、非表示列の ✎ disabled。
 //   - ✎ / × / すべてクリア / フィルターを追加 / グローバル行 × の各コールバック発火。
 //   - フッターの disabled 条件(entries 0 件 / addable 0 件)と空表示。
-//   - isOpen=false / layout=null で描画しないこと。
 //   CSS の見た目(トークン適用)は jsdom で検証できないため、表示テキストと
 //   コールバック発火のみを固定します(THEME-2/3 と同じ方針)。
+// 変更(UP-1): FilterManagementPanel は統合ツールパネル(ToolPanel)の「フィルター」タブの
+//   コンテンツになりました(フレーム / open-close / ドラッグはシェル側の責務)。props から
+//   シェル系(isOpen / layout / panelRef / onRequestClose / onPanelMove)が消えたため縮小し、
+//   タイトル・× close・非描画・ヘッダードラッグの各テストは ToolPanel.test.tsx へ移設しています。
 // @vitest-environment jsdom
 import { describe, it, expect, afterEach, vi } from 'vitest';
 import { render, screen, fireEvent, cleanup } from '@testing-library/react';
-import { createRef } from 'react';
 
 import FilterManagementPanel, {
   type FilterManagementEntry,
 } from './FilterManagementPanel';
-import type { FilterManagementLayout } from '../hooks/useFilterManagementController';
 
 afterEach(() => {
   cleanup();
 });
-
-const layout: FilterManagementLayout = { top: 20, left: 40, width: 360 };
 
 const makeEntries = (): FilterManagementEntry[] => [
   { columnKey: 'price', title: '単価', summaryText: '>= 1000', isHidden: false },
@@ -32,27 +31,21 @@ const makeEntries = (): FilterManagementEntry[] => [
 ];
 
 const makeProps = () => ({
-  isOpen: true,
   entries: makeEntries(),
   addableColumns: [{ key: 'name', title: '品名' }],
   showGlobalFilterRow: false,
   globalFilterText: '',
   canFilter: true,
-  layout,
-  panelRef: createRef<HTMLDivElement>(),
   onEditFilter: vi.fn(),
   onAddFilter: vi.fn(),
   onClearFilter: vi.fn(),
   onClearAllFilters: vi.fn(),
   onClearGlobalFilter: vi.fn(),
-  onRequestClose: vi.fn(),
-  onPanelMove: vi.fn(),
 });
 
 describe('FilterManagementPanel', () => {
   it('適用中フィルターの行(列名 / 要約)を描画する', () => {
     render(<FilterManagementPanel {...makeProps()} />);
-    expect(screen.getByText('フィルター管理')).toBeTruthy();
     expect(screen.getByText('単価')).toBeTruthy();
     expect(screen.getByText('>= 1000')).toBeTruthy();
     expect(screen.getByText('納期')).toBeTruthy();
@@ -132,61 +125,6 @@ describe('FilterManagementPanel', () => {
     expect(screen.queryByText('グローバルフィルター')).toBeNull();
   });
 
-  it('タイトルの × で onRequestClose を呼ぶ', () => {
-    const props = makeProps();
-    render(<FilterManagementPanel {...props} />);
-    fireEvent.click(screen.getByLabelText('閉じる'));
-    expect(props.onRequestClose).toHaveBeenCalledTimes(1);
-  });
-
-  it('isOpen=false / layout=null では描画しない', () => {
-    const closed = { ...makeProps(), isOpen: false };
-    const { unmount } = render(<FilterManagementPanel {...closed} />);
-    expect(screen.queryByText('フィルター管理')).toBeNull();
-    unmount();
-
-    const noLayout = { ...makeProps(), layout: null };
-    render(<FilterManagementPanel {...noLayout} />);
-    expect(screen.queryByText('フィルター管理')).toBeNull();
-  });
-
-  // 追加(FM-4): ヘッダードラッグ(usePanelHeaderDrag)の配線固定です。共有フックのため、
-  //   本 view のテストで機構を固定すれば Sort / ColumnChooser にも同じ挙動が及びます。
-  it('ヘッダードラッグで onPanelMove(開始位置+差分) を呼び、pointerup 後は呼ばない(FM-4)', () => {
-    const props = makeProps();
-    render(<FilterManagementPanel {...props} />);
-    const header = document.querySelector('.ssg-popover-header') as HTMLElement;
-    expect(header.classList.contains('ssg-popover-header--draggable')).toBe(
-      true,
-    );
-    fireEvent.pointerDown(header, {
-      button: 0,
-      pointerId: 1,
-      clientX: 100,
-      clientY: 60,
-    });
-    fireEvent.pointerMove(window, { pointerId: 1, clientX: 130, clientY: 90 });
-    // layout = { top: 20, left: 40 } + 差分(+30, +30)です。
-    expect(props.onPanelMove).toHaveBeenLastCalledWith(50, 70);
-    // pointerId 不一致の move は無視されます。
-    fireEvent.pointerMove(window, { pointerId: 2, clientX: 999, clientY: 999 });
-    expect(props.onPanelMove).toHaveBeenCalledTimes(1);
-    // pointerup 後の move では呼ばれません(リスナー解除)。
-    fireEvent.pointerUp(window, { pointerId: 1 });
-    fireEvent.pointerMove(window, { pointerId: 1, clientX: 200, clientY: 200 });
-    expect(props.onPanelMove).toHaveBeenCalledTimes(1);
-  });
-
-  it('ヘッダー内の button(× 閉じる)からはドラッグを開始しない(FM-4)', () => {
-    const props = makeProps();
-    render(<FilterManagementPanel {...props} />);
-    fireEvent.pointerDown(screen.getByLabelText('閉じる'), {
-      button: 0,
-      pointerId: 1,
-      clientX: 10,
-      clientY: 10,
-    });
-    fireEvent.pointerMove(window, { pointerId: 1, clientX: 50, clientY: 50 });
-    expect(props.onPanelMove).not.toHaveBeenCalled();
-  });
+  // 注記(UP-1): タイトル × close / isOpen・layout 非描画 / ヘッダードラッグ(FM-4)の
+  //   各テストはシェル(ToolPanel)の責務になったため ToolPanel.test.tsx へ移設しました。
 });

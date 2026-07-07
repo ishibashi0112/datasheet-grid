@@ -90,6 +90,10 @@
     /* 危険操作(削除系 hover) */
     --ssg-danger: #dc2626;
     --ssg-danger-bg: #fef2f2;
+    /* SegmentedControl(UP-1 / 統合ツールパネルのタブ切替。Mantine 風のトラック + 白インジケータ) */
+    --ssg-seg-track-bg: #f1f3f5;
+    --ssg-seg-indicator-bg: #ffffff;
+    --ssg-seg-indicator-shadow: 0 1px 3px rgba(15, 23, 42, 0.18);
     /* 影(要素種別ごと) */
     --ssg-root-shadow: 0 4px 14px rgba(15, 23, 42, 0.04);
     --ssg-panel-shadow: 0 12px 28px rgba(15, 23, 42, 0.16);
@@ -216,6 +220,10 @@
     /* 危険操作 */
     --ssg-danger: #ff6b6b;
     --ssg-danger-bg: #3a2325;
+    /* SegmentedControl(トラックは面より一段沈め、インジケータは一段浮いた面) */
+    --ssg-seg-track-bg: #1e1f23;
+    --ssg-seg-indicator-bg: #373a40;
+    --ssg-seg-indicator-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
     /* 影(ダークでは黒ベースで深めに) */
     --ssg-root-shadow: 0 4px 14px rgba(0, 0, 0, 0.4);
     --ssg-panel-shadow: 0 12px 28px rgba(0, 0, 0, 0.55);
@@ -815,9 +823,10 @@
     gap: 8px;
   }
 
-  /* 追加(FM-4): ドラッグ可能パネルのヘッダー(掴み領域)。Filter / Sort / ColumnChooser の
-     3 パネル共通。ドラッグ中の位置 clamp・保持は controller 側(panelDragGeometry)が担う。
-     touch-action: none はタッチでの pointermove をスクロールに取られないための指定。 */
+  /* 追加(FM-4): ドラッグ可能パネルのヘッダー(掴み領域)。ドラッグ中の位置 clamp・保持は
+     controller 側(panelDragGeometry)が担う。touch-action: none はタッチでの pointermove を
+     スクロールに取られないための指定。
+     変更(UP-1): 使用箇所は統合ツールパネル(ToolPanel)のヘッダー 1 箇所になった。 */
   .ssg-popover-header--draggable {
     cursor: grab;
     touch-action: none;
@@ -826,11 +835,108 @@
     cursor: grabbing;
   }
 
-  /* ── 並び替え管理パネル(SortManagementPanel) ── */
-  .ssg-sort-panel {
+  /* ── 統合ツールパネル(UP-1 / ToolPanel) ── */
+  /* フレームは .ssg-popover(radius 12 / padding 12 / flex column)。フィルター管理 /
+     列の表示 / 並び替えのコンテンツを SegmentedControl で切り替える。全体は max-height で
+     キャップし、各コンテンツのリスト(flex: 1 / overflow-y: auto)がスクロールを担う
+     (旧 3 パネルの max-height: 420px を継承)。 */
+  .ssg-toolpanel {
     max-height: 420px;
   }
 
+  /* ヘッダー(SegmentedControl + ×)。--draggable(FM-4)併用で掴んで移動できる。 */
+  .ssg-toolpanel-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding-bottom: 8px;
+    margin-bottom: 8px;
+    border-bottom: 1px solid var(--ssg-panel-separator);
+  }
+
+  /* SegmentedControl(Mantine 風)。セグメントは等幅で、インジケータは CSS 変数
+     (--ssg-seg-count / --ssg-seg-index。ToolPanel が inline style で与える)駆動の
+     translateX だけで追従する(実測不要 = resize / タブ数変化に自動追従)。 */
+  .ssg-toolpanel-seg {
+    position: relative;
+    display: flex;
+    flex: 1 1 auto;
+    min-width: 0;
+    padding: 3px;
+    border-radius: 9px;
+    background-color: var(--ssg-seg-track-bg);
+  }
+  .ssg-toolpanel-seg-indicator {
+    position: absolute;
+    top: 3px;
+    bottom: 3px;
+    left: 3px;
+    width: calc((100% - 6px) / var(--ssg-seg-count));
+    border-radius: 7px;
+    background-color: var(--ssg-seg-indicator-bg);
+    box-shadow: var(--ssg-seg-indicator-shadow);
+    transform: translateX(calc(var(--ssg-seg-index) * 100%));
+    transition: transform 160ms ease;
+  }
+  .ssg-toolpanel-seg-btn {
+    position: relative;
+    z-index: 1;
+    flex: 1 1 0;
+    min-width: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 5px;
+    padding: 4px 6px;
+    border: none;
+    border-radius: 7px;
+    background: transparent;
+    color: var(--ssg-panel-text-muted);
+    font-size: 12.5px;
+    font-weight: 500;
+    line-height: 1.3;
+    white-space: nowrap;
+    cursor: pointer;
+    user-select: none;
+    transition: color 120ms ease;
+  }
+  .ssg-toolpanel-seg-btn:not(.ssg-toolpanel-seg-btn--active):hover {
+    color: var(--ssg-panel-text-sub);
+  }
+  .ssg-toolpanel-seg-btn--active {
+    color: var(--ssg-panel-text-strong);
+    font-weight: 600;
+    cursor: default;
+  }
+
+  /* 件数バッジ(適用中フィルター数 / ソート基準数)。0 件は view 側で非描画。 */
+  .ssg-toolpanel-seg-badge {
+    min-width: 16px;
+    height: 16px;
+    padding: 0 4px;
+    border-radius: 8px;
+    background-color: var(--ssg-panel-accent);
+    color: var(--ssg-panel-accent-contrast);
+    font-size: 10px;
+    font-weight: 700;
+    line-height: 16px;
+    text-align: center;
+  }
+
+  /* ボディ(アクティブタブのコンテンツ)。自然高 + min-height 方式: タブごとの内容高で
+     伸縮しつつ min-height で切替時のガタつきを抑える。内容が短いタブでは各コンテンツの
+     リスト(flex: 1)が伸びてフッターが下端に揃う。frame の max-height(420)に達したら
+     flex 連鎖(flex: 1 1 auto / リストの min-height: 0)でリスト側がスクロールする。 */
+  .ssg-toolpanel-body {
+    display: flex;
+    flex-direction: column;
+    flex: 1 1 auto;
+    min-height: 240px;
+    min-width: 0;
+  }
+
+  /* ── 並び替えタブのコンテンツ(SortManagementPanel) ── */
+  /* 変更(UP-1): 旧 .ssg-sort-panel(独立フレーム)は統合ツールパネルへ集約し撤去。 */
   .ssg-sort-list {
     flex: 1;
     min-height: 0;
@@ -1016,12 +1122,8 @@
     user-select: none;
   }
 
-  /* ── フィルター管理パネル(FilterManagementPanel / FM-1) ── */
-  /* SortManagementPanel の兄弟。portal で body 直下に出るためリテラル色(トークン不達)。 */
-  .ssg-filter-manage-panel {
-    max-height: 420px;
-  }
-
+  /* ── フィルタータブのコンテンツ(FilterManagementPanel / FM-1) ── */
+  /* 変更(UP-1): 旧 .ssg-filter-manage-panel(独立フレーム)は統合ツールパネルへ集約し撤去。 */
   .ssg-filter-manage-list {
     flex: 1;
     min-height: 0;
@@ -1176,11 +1278,8 @@
     color: var(--ssg-danger);
   }
 
-  /* ── 列の表示パネル(ColumnChooserPanel) ── */
-  .ssg-chooser-panel {
-    max-height: 420px;
-  }
-
+  /* ── 列タブのコンテンツ(ColumnChooserPanel) ── */
+  /* 変更(UP-1): 旧 .ssg-chooser-panel(独立フレーム)は統合ツールパネルへ集約し撤去。 */
   .ssg-chooser-search-row {
     display: flex;
     align-items: center;

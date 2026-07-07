@@ -13,6 +13,8 @@ import {
   type CSSProperties,
   type PointerEvent,
   type MouseEvent as ReactMouseEvent,
+  // 追加(UP-1): 統合ツールパネルのタブ別コンテンツテーブルの型に使います。
+  type ReactNode,
 } from 'react';
 
 // 追加(UI CSS移行): 基底スタイル(トークン + .ssg-* クラス)を読み込みます(THEME-1 で未レイヤー化)。
@@ -239,16 +241,17 @@ import GridBodyLayer from './view/GridBodyLayer';
 import GridHeaderRow from './view/GridHeaderRow';
 import useColumnMenuController from './hooks/useColumnMenuController';
 import ColumnMenuPopover from './view/ColumnMenuPopover';
-// 追加(13-B2-1): 列の表示/非表示パネル(AG Grid の Choose Columns 相当)です。
-import useColumnChooserController from './hooks/useColumnChooserController';
+// 変更(UP-1): フィルター管理 / 列の表示 / 並び替えの独立 3 パネルを統合ツールパネル
+//   (ToolPanel + useToolPanelController)へ集約しました。旧 3 controller
+//   (useColumnChooserController / useSortManagementController / useFilterManagementController)
+//   は削除し、各 view はタブコンテンツ(フレームなし)として ToolPanel の children に入ります。
+import useToolPanelController from './hooks/useToolPanelController';
+import type { ToolPanelTab } from './hooks/useToolPanelController';
+import ToolPanel, { type ToolPanelTabDescriptor } from './view/ToolPanel';
 import ColumnChooserPanel, { type ColumnChooserItem } from './view/ColumnChooserPanel';
-// 追加(MS-3-1): 並び替え管理パネル(Excel の「並べ替え」ダイアログ相当)です。
-import useSortManagementController from './hooks/useSortManagementController';
 import SortManagementPanel, {
   type SortManagementColumn,
 } from './view/SortManagementPanel';
-// 追加(FM-1): フィルター管理パネル(適用中フィルターの一覧 / 編集 / クリア)です。
-import useFilterManagementController from './hooks/useFilterManagementController';
 import FilterManagementPanel, {
   type FilterManagementEntry,
   type FilterManagementAddableColumn,
@@ -794,55 +797,27 @@ export function SpreadsheetGrid<T extends object>({
     gridRootRef,
   });
 
-  // ── column chooser(13-B2-1) ──────────────────────────
-  // 追加(13-B2-1): 列の表示/非表示パネルの controller です。列メニューの項目
-  //             「列の表示」から開きます(その際メニューは閉じます)。
-  //             相互排他は各 controller の outside-pointerdown close が自然に担います。
-  const {
-    isColumnChooserOpen,
-    columnChooserLayout,
-    columnChooserRef,
-    openColumnChooser,
-    closeColumnChooser,
-    moveColumnChooser,
-  } = useColumnChooserController({
-    enableColumnMenu,
-    gridRootRef,
-  });
-
-  // ── sort management(MS-3-1) ──────────────────────────
-  // 追加(MS-3-1): 並び替え管理パネルの controller です。列メニューの項目
-  //             「並び替えを管理…」から開きます(その際メニューは閉じます)。
-  //             相互排他は各 controller の outside-pointerdown close が自然に担います。
-  const {
-    isSortManagerOpen,
-    sortManagerLayout,
-    sortManagerRef,
-    openSortManager,
-    closeSortManager,
-    moveSortManager,
-  } = useSortManagementController({
-    enableSorting: sortingEnabled,
-    gridRootRef,
-  });
-
-  // ── filter management panel(FM-1) ─────────────────────
-  // 追加(FM-1): フィルター管理パネルの controller です。列メニューの項目
-  //             「フィルターを管理…」から開きます(その際メニューは閉じます)。
-  //             並び替え管理パネルと違いフィルター popover と共存します(✎ 編集で popover を
-  //             開いてもパネルは開いたまま):
+  // ── tool panel(UP-1) ─────────────────────────────────
+  // 変更(UP-1): フィルター管理 / 列の表示 / 並び替えの独立 3 パネルを、SegmentedControl で
+  //             タブ切替する統合ツールパネル 1 枚へ集約しました。controller も 1 本です。
+  //             タブ可用性は各機能フラグに紐づきます(filter=enableColumnFilter /
+  //             columns=enableColumnMenu / sort=enableSorting)。
+  //             フィルター popover との共存(旧 FM-1 拡張)はパネル全体へ引き継ぎます:
   //               - outside-close: alliedRef(filterPopoverRef)内の pointerdown では閉じない
-  //               - Escape: popover open 中は本パネルを閉じず popover の close へ委譲
+  //               - Escape: popover open 中はパネルを閉じず popover の close へ委譲
   //                 (1 押し目 = popover / 2 押し目 = パネル。フォーカス位置に依りません)
   const {
-    isFilterManagerOpen,
-    filterManagerLayout,
-    filterManagerRef,
-    openFilterManager,
-    closeFilterManager,
-    moveFilterManager,
-  } = useFilterManagementController({
-    enableColumnFilter: columnFilterEnabled,
+    activeToolPanelTab,
+    availableToolPanelTabs,
+    toolPanelLayout,
+    toolPanelRef,
+    openToolPanel,
+    closeToolPanel,
+    moveToolPanel,
+  } = useToolPanelController({
+    canUseFilterTab: columnFilterEnabled,
+    canUseColumnsTab: enableColumnMenu,
+    canUseSortTab: sortingEnabled,
     gridRootRef,
     alliedRef: filterPopoverRef,
     suppressEscape: isFilterPopoverOpen,
@@ -2417,10 +2392,11 @@ export function SpreadsheetGrid<T extends object>({
 
   // 追加(13-B2-1): 列メニューの「列の表示」項目からパネルを開きます
   //             (メニューを閉じてからパネルを開きます)。
+  // 変更(UP-1): 統合ツールパネルの「列」タブを開きます(既に開いていればタブ切替のみ)。
   const handleColumnMenuOpenChooser = useCallback(() => {
     closeColumnMenu();
-    openColumnChooser();
-  }, [closeColumnMenu, openColumnChooser]);
+    openToolPanel('columns');
+  }, [closeColumnMenu, openToolPanel]);
 
   // 追加(MS-3-1): 並び替え管理パネルへ渡す「並び替え可能な列」一覧です。
   //             visibleColumns を母集合にします(見えている列だけを並び替え対象に出す＝
@@ -2436,10 +2412,11 @@ export function SpreadsheetGrid<T extends object>({
 
   // 追加(MS-3-1): 列メニューの「並び替えを管理…」項目からパネルを開きます
   //             (メニューを閉じてからパネルを開きます。chooser と同型)。
+  // 変更(UP-1): 統合ツールパネルの「並び替え」タブを開きます。
   const handleColumnMenuOpenSortManager = useCallback(() => {
     closeColumnMenu();
-    openSortManager();
-  }, [closeColumnMenu, openSortManager]);
+    openToolPanel('sort');
+  }, [closeColumnMenu, openToolPanel]);
 
   // 追加(③): 列メニューの「フィルター…」項目からフィルター popover を開きます
   //          (メニューを閉じてから開きます。sort manager / chooser と同型)。
@@ -2505,21 +2482,24 @@ export function SpreadsheetGrid<T extends object>({
 
   // 追加(FM-1): 列メニューの「フィルターを管理…」項目からパネルを開きます
   //             (メニューを閉じてからパネルを開きます。sort manager / chooser と同型)。
+  // 変更(UP-1): 統合ツールパネルの「フィルター」タブを開きます。
   const handleColumnMenuOpenFilterManager = useCallback(() => {
     closeColumnMenu();
-    openFilterManager();
-  }, [closeColumnMenu, openFilterManager]);
+    openToolPanel('filter');
+  }, [closeColumnMenu, openToolPanel]);
 
   // 追加(FM-3): 既定トップバーの Filters chip クリックでパネルをトグルします。
   //   chip 側は onPointerDown を stopPropagation して window の outside-close へ届かせない
   //   ため(DefaultGridTopBar 参照)、ここは click 時点の開閉状態で素直に分岐できます。
+  // 変更(UP-1): トグル判定は「フィルタータブが表示中か」です(別タブ表示中のクリックは
+  //   タブ切替として振る舞います = 閉じずにフィルタータブへ)。
   const handleFilterSummaryChipClick = useCallback(() => {
-    if (isFilterManagerOpen) {
-      closeFilterManager();
+    if (activeToolPanelTab === 'filter') {
+      closeToolPanel();
     } else {
-      openFilterManager();
+      openToolPanel('filter');
     }
-  }, [closeFilterManager, isFilterManagerOpen, openFilterManager]);
+  }, [activeToolPanelTab, closeToolPanel, openToolPanel]);
 
   // 追加(FM-1): 対象列まで横スクロールしてからフィルター popover を開きます(パネルの
   //   ✎ 編集 / フィルターを追加)。openColumnFilterPopover は anchor(ヘッダーセル
@@ -3661,72 +3641,87 @@ export function SpreadsheetGrid<T extends object>({
     />
   ) : null;
 
-  // ── column chooser panel(13-B2-1) ────────────────────
-  // 追加(13-B2-1): 列の表示/非表示パネルの描画です(portal で body 直下へ出します)。
-  const renderedColumnChooserPanel = (
-    <ColumnChooserPanel
-      themeClassName={themeClassName}
-      isOpen={isColumnChooserOpen}
-      items={columnChooserItems}
-      canToggle={Boolean(onColumnsChange)}
-      layout={columnChooserLayout}
-      panelRef={columnChooserRef}
-      onToggleColumnVisibility={handleColumnChooserToggleVisibility}
-      onShowAllColumns={handleColumnChooserShowAll}
-      onHideAllColumns={handleColumnChooserHideAll}
-      onResetColumns={handleColumnChooserReset}
-      onReorderColumns={handleColumnChooserReorder}
-      onRequestClose={closeColumnChooser}
-      onPanelMove={moveColumnChooser}
-    />
-  );
-
-  // ── sort management panel(MS-3-1) ────────────────────
-  // 追加(MS-3-1): 並び替え管理パネルの描画です(portal で body 直下へ出します)。
-  const renderedSortManagementPanel = (
-    <SortManagementPanel
-      themeClassName={themeClassName}
-      isOpen={isSortManagerOpen}
-      entries={uiState.sort}
-      columns={sortManagerColumns}
-      canSort={sortingEnabled}
-      layout={sortManagerLayout}
-      panelRef={sortManagerRef}
-      onAddLevel={handleSortManagerAddLevel}
-      onChangeDirection={handleSortManagerChangeDirection}
-      onChangeColumn={handleSortManagerChangeColumn}
-      onRemoveLevel={handleSortManagerRemoveLevel}
-      onClearAll={handleSortManagerClearAll}
-      onMove={handleSortManagerMove}
-      onRequestClose={closeSortManager}
-      onPanelMove={moveSortManager}
-    />
-  );
-
-  // ── filter management panel(FM-1) ────────────────────
-  // 追加(FM-1): フィルター管理パネルの描画です(portal で body 直下へ出します)。
-  //             ✎(編集)と「フィルターを追加」は同じジャンプ経路(jumpToColumnFilter)です。
-  const renderedFilterManagementPanel = (
-    <FilterManagementPanel
-      themeClassName={themeClassName}
-      isOpen={isFilterManagerOpen}
-      entries={filterManagerEntries}
-      addableColumns={filterManagerAddableColumns}
-      showGlobalFilterRow={
-        globalFilterEnabled && globalFilterText.trim().length > 0
+  // ── tool panel(UP-1) ─────────────────────────────────
+  // 変更(UP-1): 旧 3 パネル(列の表示 / 並び替え / フィルター管理)の描画を統合ツール
+  //   パネル 1 本へ集約しました(portal で body 直下へ出すのはシェル ToolPanel の責務)。
+  //   コンテンツはアクティブタブに応じて選んで children へ渡します(非アクティブタブは
+  //   アンマウント = タブ内の一時状態はタブ切替でリセット)。
+  //   SegmentedControl のバッジ: フィルター = 適用中の列フィルター数 + グローバル(適用時 1)/
+  //   並び替え = 基準数。0 件は非表示です。
+  const showGlobalFilterRow =
+    globalFilterEnabled && globalFilterText.trim().length > 0;
+  const filterTabBadge =
+    filterManagerEntries.length + (showGlobalFilterRow ? 1 : 0);
+  const toolPanelTabs: ToolPanelTabDescriptor[] = availableToolPanelTabs.map(
+    (tab): ToolPanelTabDescriptor => {
+      if (tab === 'filter') {
+        return { tab, label: 'フィルター', badge: filterTabBadge };
       }
-      globalFilterText={globalFilterText}
-      canFilter={columnFilterEnabled}
-      layout={filterManagerLayout}
-      panelRef={filterManagerRef}
-      onEditFilter={jumpToColumnFilter}
-      onAddFilter={jumpToColumnFilter}
-      onClearFilter={handleFilterManagerClearFilter}
-      onClearAllFilters={handleFilterManagerClearAll}
-      onClearGlobalFilter={handleFilterManagerClearGlobal}
-      onRequestClose={closeFilterManager}
-      onPanelMove={moveFilterManager}
-    />
+      if (tab === 'sort') {
+        return { tab, label: '並び替え', badge: uiState.sort.length };
+      }
+      return { tab, label: '列' };
+    },
+  );
+
+  // アクティブタブのコンテンツです。✎(編集)と「フィルターを追加」は同じジャンプ経路
+  // (jumpToColumnFilter)です(FM-1 から不変)。
+  const toolPanelContent: Record<ToolPanelTab, () => ReactNode> = {
+    filter: () => (
+      <FilterManagementPanel
+        entries={filterManagerEntries}
+        addableColumns={filterManagerAddableColumns}
+        showGlobalFilterRow={showGlobalFilterRow}
+        globalFilterText={globalFilterText}
+        canFilter={columnFilterEnabled}
+        onEditFilter={jumpToColumnFilter}
+        onAddFilter={jumpToColumnFilter}
+        onClearFilter={handleFilterManagerClearFilter}
+        onClearAllFilters={handleFilterManagerClearAll}
+        onClearGlobalFilter={handleFilterManagerClearGlobal}
+      />
+    ),
+    columns: () => (
+      <ColumnChooserPanel
+        items={columnChooserItems}
+        canToggle={Boolean(onColumnsChange)}
+        onToggleColumnVisibility={handleColumnChooserToggleVisibility}
+        onShowAllColumns={handleColumnChooserShowAll}
+        onHideAllColumns={handleColumnChooserHideAll}
+        onResetColumns={handleColumnChooserReset}
+        onReorderColumns={handleColumnChooserReorder}
+      />
+    ),
+    sort: () => (
+      <SortManagementPanel
+        entries={uiState.sort}
+        columns={sortManagerColumns}
+        canSort={sortingEnabled}
+        onAddLevel={handleSortManagerAddLevel}
+        onChangeDirection={handleSortManagerChangeDirection}
+        onChangeColumn={handleSortManagerChangeColumn}
+        onRemoveLevel={handleSortManagerRemoveLevel}
+        onClearAll={handleSortManagerClearAll}
+        onMove={handleSortManagerMove}
+      />
+    ),
+  };
+
+  const renderedToolPanel = (
+    <ToolPanel
+      themeClassName={themeClassName}
+      activeTab={activeToolPanelTab}
+      tabs={toolPanelTabs}
+      layout={toolPanelLayout}
+      panelRef={toolPanelRef}
+      onSelectTab={openToolPanel}
+      onRequestClose={closeToolPanel}
+      onPanelMove={moveToolPanel}
+    >
+      {activeToolPanelTab !== null
+        ? toolPanelContent[activeToolPanelTab]()
+        : null}
+    </ToolPanel>
   );
 
   // ── cell context menu popover(バッチ②) ───────────────
@@ -3753,8 +3748,9 @@ export function SpreadsheetGrid<T extends object>({
   const isAnyGridPopupOpen =
     isFilterPopoverOpen ||
     isColumnMenuOpen ||
-    isColumnChooserOpen ||
-    isSortManagerOpen ||
+    // 変更(UP-1): 統合ツールパネル(旧: 列の表示 / 並び替えパネル)表示中も止めます
+    //             (パネル内の検索入力 / <select> 等にフォーカスが入るため)。
+    activeToolPanelTab !== null ||
     // 追加(バッチ②): コンテキストメニュー表示中も grid の tab/keyboard/paste を止めます。
     isContextMenuOpen;
 
@@ -3876,8 +3872,18 @@ export function SpreadsheetGrid<T extends object>({
     physicalBodyHeight,
     rows,
     isServerSide,
-    openFilterManager,
-    closeFilterManager,
+    // 変更(UP-1): 公開 API openFilterManager / closeFilterManager は統合ツールパネルの
+    //   フィルタータブへ委譲します(名前・意味は従来どおり)。close は「フィルタータブ
+    //   表示中」のときだけ閉じます(別タブ表示中の統合パネルを巻き込まないため。従来の
+    //   「フィルター管理パネルが開いていなければ何もしない」と意味が揃います)。
+    openFilterManager: () => {
+      openToolPanel('filter');
+    },
+    closeFilterManager: () => {
+      if (activeToolPanelTab === 'filter') {
+        closeToolPanel();
+      }
+    },
   };
 
   useImperativeHandle(
@@ -4960,12 +4966,8 @@ export function SpreadsheetGrid<T extends object>({
       {renderedFilterPopover}
       {/* 追加(13-A): 列メニュー popover(列固定の切替 UI)です。*/}
       {renderedColumnMenuPopover}
-      {/* 追加(13-B2-1): 列の表示/非表示パネル(Choose Columns 相当)です。*/}
-      {renderedColumnChooserPanel}
-      {/* 追加(MS-3-1): 並び替え管理パネル(並べ替えダイアログ相当)です。*/}
-      {renderedSortManagementPanel}
-      {/* 追加(FM-1): フィルター管理パネル(適用中フィルターの一覧/編集/クリア)です。*/}
-      {renderedFilterManagementPanel}
+      {/* 変更(UP-1): 統合ツールパネル(フィルター管理 / 列の表示 / 並び替えのタブ切替)です。*/}
+      {renderedToolPanel}
       {/* 追加(バッチ②): セル/行の汎用コンテキストメニュー(完全カスタム)です。*/}
       {renderedCellContextMenuPopover}
     </div>

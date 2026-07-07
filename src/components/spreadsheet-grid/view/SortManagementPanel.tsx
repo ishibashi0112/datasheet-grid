@@ -14,14 +14,15 @@
 //     ケータは踏襲)。確定時は from / 補正済み to を onMove へ emit し、次状態の算出
 //     (moveSortEntry)と dispatch は呼び出し側が担います。ドラッグは canSort かつ
 //     レベル 2 件以上のときのみ可能です。
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { createPortal } from 'react-dom';
+// 変更(UP-1): 統合ツールパネル(ToolPanel)の「並び替え」タブのコンテンツへ変更しました。
+//   フレーム(portal / .ssg-popover / ドラッグヘッダー / ×)・テーマ修飾子・open/close・
+//   ドラッグ移動はシェル(ToolPanel)と useToolPanelController の責務になり、本コンポーネント
+//   は中身(レベル一覧 / フッター / 注記)だけを描画します。タブ非アクティブ時はアンマウント
+//   されるため isOpen prop は不要になり、DnD の後始末も unmount(state 破棄)で足ります。
+import { useCallback, useMemo, useRef, useState } from 'react';
 import { cx } from '../logic/cx';
-import type { CSSProperties, KeyboardEvent, PointerEvent, RefObject } from 'react';
+import type { PointerEvent } from 'react';
 import type { GridSortEntry } from '../model/gridTypes';
-import type { SortManagementLayout } from '../hooks/useSortManagementController';
-// 追加(FM-4): ヘッダーを掴んでパネルを移動する共有フックです(3 パネル共通)。
-import { usePanelHeaderDrag } from '../hooks/usePanelHeaderDrag';
 
 // 追加(MS-3-1): パネルが必要とする最小の列情報です(並び替え可能な列のみを渡します)。
 export type SortManagementColumn = {
@@ -30,18 +31,12 @@ export type SortManagementColumn = {
 };
 
 type SortManagementPanelProps = {
-  isOpen: boolean;
-  // 追加(TH-DK-2): ダークテーマ修飾子クラス('ssg-theme-dark' | undefined)。ポータルは
-  //   .ssg-root 外のため、root と同じ修飾子を自身の root 要素へ直接付与します。
-  themeClassName?: string;
   // 現在の並び替え(優先順位順)です。uiState.sort をそのまま渡せます。
   entries: GridSortEntry[];
   // 並び替え対象に選べる列の一覧です(呼び出し側で visibleColumns から作ります)。
   columns: SortManagementColumn[];
   // enableSorting 相当。false のときは編集を無効化し注記を出します(保険。通常は開きません)。
   canSort: boolean;
-  layout: SortManagementLayout | null;
-  panelRef: RefObject<HTMLDivElement | null>;
   // レベルを末尾へ追加します(呼び出し側が未使用列を選んで渡すか、ここで渡す key を採用)。
   onAddLevel: (columnKey: string, direction: 'asc' | 'desc') => void;
   onChangeDirection: (index: number, direction: 'asc' | 'desc') => void;
@@ -53,10 +48,6 @@ type SortManagementPanelProps = {
   //   呼び出し側は moveSortEntry(sort, from, to) をそのまま呼べます。canSort かつ
   //   レベル 2 件以上のときのみ、かつ実際に位置が動いたときのみ呼ばれます。
   onMove: (from: number, to: number) => void;
-  onRequestClose: () => void;
-  // 追加(FM-4): ヘッダードラッグによるパネル移動です(controller の moveSortManager を
-  //   受け取ります。位置の clamp・保持・close 時リセットは controller 側の責務)。
-  onPanelMove: (top: number, left: number) => void;
 };
 
 // 追加(MS-3-2): ⠿ ドラッグハンドルの見た目です(2×3 の点)。ColumnChooserPanel と同型。
@@ -85,21 +76,15 @@ function DragHandleGlyph({ disabled }: { disabled: boolean }) {
 }
 
 export function SortManagementPanel({
-  isOpen,
-  themeClassName,
   entries,
   columns,
   canSort,
-  layout,
-  panelRef,
   onAddLevel,
   onChangeDirection,
   onChangeColumn,
   onRemoveLevel,
   onClearAll,
   onMove,
-  onRequestClose,
-  onPanelMove,
 }: SortManagementPanelProps) {
   // 既に並び替えに使われている列キーの集合です(列セレクトの候補絞り込みに使います)。
   const usedKeys = useMemo(
@@ -214,78 +199,13 @@ export function SortManagementPanel({
     finishDrag(false);
   }, [finishDrag]);
 
-  // panel が閉じるときはドラッグ状態を確実に後始末します(rAF は持たないため不要)。
-  useEffect(() => {
-    if (!isOpen) {
-      dragActiveRef.current = false;
-      setDraggingIndex(null);
-      setDropIndex(null);
-    }
-  }, [isOpen]);
-
-  // 追加(FM-4): ヘッダーを掴んでパネルを移動します(hooks は早期 return より前・無条件で
-  //   呼びます。layout=null のときはフック側が開始しません)。
-  const { handleHeaderPointerDown } = usePanelHeaderDrag({
-    layout,
-    onPanelMove,
-  });
-
-  if (!isOpen || !layout) {
-    return null;
-  }
-
-  const wrapperStyle: CSSProperties = {
-    top: layout.top,
-    left: layout.left,
-    width: layout.width,
-  };
-
-  const handlePointerDown = (event: PointerEvent<HTMLDivElement>) => {
-    // パネル内 pointer 操作を grid 側へ伝播させません(列選択開始 / outside click 競合回避)。
-    event.stopPropagation();
-  };
-
-  const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
-    // portal 内 keyboard を React ツリー上の parent へ流しません。
-    // Escape での close は controller の window keydown が担当します。
-    // 変更(POP-KEY): capture 相(onKeyDownCapture)→ bubble 相(onKeyDown)へ変更します。
-    //   capture 相の stopPropagation() はネイティブ伝播ごと止めるため、パネル内部要素の
-    //   bubble 相 onKeyDown や window(bubble)リスナーまで殺してしまいます
-    //   (ColumnFilterPopover の SF-ENTER fix と同一パターンの統一です)。bubble 相なら
-    //   「内部要素のハンドラが先に処理 → 最後にここで外側への合成バブリングだけ遮断」に
-    //   なり、Escape close は controller 側の capture 登録(POP-KEY)が受けます。
-    event.stopPropagation();
-  };
+  // 注記(UP-1): 旧「panel close 時のドラッグ後始末 effect」は、タブ非アクティブ時に
+  //   本コンポーネントがアンマウントされ state ごと破棄されるため不要になりました。
 
   const canAddLevel = canSort && firstUnusedColumn !== null;
 
-  return createPortal(
-    <div
-      ref={panelRef}
-      onPointerDown={handlePointerDown}
-      onKeyDown={handleKeyDown}
-      onContextMenu={(event) => {
-        event.preventDefault();
-      }}
-      className={cx('ssg-popover', 'ssg-sort-panel', themeClassName)}
-      style={wrapperStyle}
-    >
-      {/* ── ヘッダー: タイトル + × ── */}
-      <div
-        className="ssg-popover-header ssg-popover-header--draggable"
-        onPointerDown={handleHeaderPointerDown}
-      >
-        <span className="ssg-popover-title">並び替え</span>
-        <button
-          type="button"
-          onClick={onRequestClose}
-          aria-label="閉じる"
-          className="ssg-popover-close"
-        >
-          ×
-        </button>
-      </div>
-
+  return (
+    <>
       {/* ── レベル一覧(スクロール) ── */}
       <div ref={listRef} className="ssg-sort-list">
         {entries.length === 0 ? (
@@ -459,8 +379,7 @@ export function SortManagementPanel({
           並び替えが無効のため編集できません
         </div>
       )}
-    </div>,
-    document.body,
+    </>
   );
 }
 

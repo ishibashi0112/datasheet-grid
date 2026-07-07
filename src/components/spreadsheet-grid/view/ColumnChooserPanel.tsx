@@ -31,18 +31,15 @@
 //     reorderColumnsByPane が冪等化します)。セクション内が実際に動かない no-op ドラッグでは
 //     正規化も行わず null を返します。
 //   - 非空セクションが 1 つだけ(= 固定列なし)のときは小見出しを出さずフラット表示します。
+// 変更(UP-1): 統合ツールパネル(ToolPanel)の「列」タブのコンテンツへ変更しました。
+//   フレーム(portal / .ssg-popover / ドラッグヘッダー / ×)・テーマ修飾子・open/close・
+//   ドラッグ移動はシェル(ToolPanel)と useToolPanelController の責務になり、本コンポーネント
+//   は中身(検索行 / セクション一覧 / フッター)だけを描画します。タブ非アクティブ時は
+//   アンマウントされるため isOpen prop は不要になり、検索語のリセットは初期 state、開時
+//   フォーカスはマウント effect、DnD の後始末は unmount(state 破棄 + rAF cleanup)で足ります。
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { createPortal } from 'react-dom';
 import { cx } from '../logic/cx';
-import type {
-  CSSProperties,
-  KeyboardEvent,
-  PointerEvent,
-  RefObject,
-} from 'react';
-import type { ColumnChooserLayout } from '../hooks/useColumnChooserController';
-// 追加(FM-4): ヘッダーを掴んでパネルを移動する共有フックです(3 パネル共通)。
-import { usePanelHeaderDrag } from '../hooks/usePanelHeaderDrag';
+import type { PointerEvent } from 'react';
 // 追加(13-B3-1.5): セクション分けの所属ペイン種別です(pinned 由来)。
 import type { ColumnPane } from '../logic/geometry';
 
@@ -57,15 +54,9 @@ export type ColumnChooserItem = {
 };
 
 type ColumnChooserPanelProps = {
-  isOpen: boolean;
-  // 追加(TH-DK-2): ダークテーマ修飾子クラス('ssg-theme-dark' | undefined)。ポータルは
-  //   .ssg-root 外のため、root と同じ修飾子を自身の root 要素へ直接付与します。
-  themeClassName?: string;
   items: ColumnChooserItem[];
   // 追加: onColumnsChange 未指定時は false。チェックボックスを無効化し注記を出します。
   canToggle: boolean;
-  layout: ColumnChooserLayout | null;
-  panelRef: RefObject<HTMLDivElement | null>;
   onToggleColumnVisibility: (columnKey: string, nextVisible: boolean) => void;
   // 変更(13-B2-4): 全選択トグルの「すべて表示」側です(一部非表示時のクリックで発火)。
   onShowAllColumns: () => void;
@@ -81,10 +72,6 @@ type ColumnChooserPanelProps = {
   //   渡します(items と同一集合の permutation)。commit(onColumnsChange 経由)は
   //   呼び出し側が担います。検索中・canToggle=false 時は呼ばれません。
   onReorderColumns: (orderedKeys: string[]) => void;
-  onRequestClose: () => void;
-  // 追加(FM-4): ヘッダードラッグによるパネル移動です(controller の moveColumnChooser を
-  //   受け取ります。位置の clamp・保持・close 時リセットは controller 側の責務)。
-  onPanelMove: (top: number, left: number) => void;
 };
 
 // 追加(13-B3-1): ドラッグ中の一覧端オートスクロールのしきい値 / 速度です。
@@ -211,35 +198,25 @@ function DragHandleGlyph({ disabled }: { disabled: boolean }) {
 }
 
 export function ColumnChooserPanel({
-  isOpen,
-  themeClassName,
   items,
   canToggle,
-  layout,
-  panelRef,
   onToggleColumnVisibility,
   onShowAllColumns,
   onHideAllColumns,
   onResetColumns,
   onReorderColumns,
-  onRequestClose,
-  onPanelMove,
 }: ColumnChooserPanelProps) {
   const [query, setQuery] = useState('');
   const searchInputRef = useRef<HTMLInputElement | null>(null);
 
-  // 追加: 開くたびに検索語をリセットし、検索入力へフォーカスします。
+  // 変更(UP-1): タブ表示(= マウント)のたびに検索入力へフォーカスします。検索語の
+  //   リセットは初期 state('')が担います(タブ非アクティブ時はアンマウントされるため)。
   useEffect(() => {
-    if (isOpen) {
-      setQuery('');
-      // portal mount 後にフォーカスを当てます。
-      const id = requestAnimationFrame(() => {
-        searchInputRef.current?.focus();
-      });
-      return () => cancelAnimationFrame(id);
-    }
-    return undefined;
-  }, [isOpen]);
+    const id = requestAnimationFrame(() => {
+      searchInputRef.current?.focus();
+    });
+    return () => cancelAnimationFrame(id);
+  }, []);
 
   // 注記: master / guard の判定は「全列(検索フィルタ前)」を基準にします。
   //       検索はあくまで一覧の絞り込み表示で、全選択の意味は変えません。
@@ -425,20 +402,9 @@ export function ColumnChooserPanel({
     finishDrag(false);
   }, [finishDrag]);
 
-  // panel が閉じる / アンマウントされるときはドラッグ状態と rAF を確実に後始末します。
-  useEffect(() => {
-    if (!isOpen) {
-      dragActiveRef.current = false;
-      draggingPaneRef.current = null;
-      setDraggingKey(null);
-      setDropIndex(null);
-      if (autoScrollRafRef.current !== null) {
-        cancelAnimationFrame(autoScrollRafRef.current);
-        autoScrollRafRef.current = null;
-      }
-    }
-  }, [isOpen]);
-
+  // 注記(UP-1): 旧「panel close 時のドラッグ後始末 effect」は、タブ非アクティブ時に本
+  //   コンポーネントがアンマウントされ state ごと破棄されるため不要になりました
+  //   (rAF の後始末は下の unmount cleanup が引き続き担います)。
   useEffect(
     () => () => {
       if (autoScrollRafRef.current !== null) {
@@ -448,41 +414,6 @@ export function ColumnChooserPanel({
     },
     [],
   );
-
-  // 追加(FM-4): ヘッダーを掴んでパネルを移動します(hooks は早期 return より前・無条件で
-  //   呼びます。layout=null のときはフック側が開始しません)。
-  const { handleHeaderPointerDown } = usePanelHeaderDrag({
-    layout,
-    onPanelMove,
-  });
-
-  if (!isOpen || !layout) {
-    return null;
-  }
-
-  const wrapperStyle: CSSProperties = {
-    top: layout.top,
-    left: layout.left,
-    width: layout.width,
-  };
-
-  const handlePointerDown = (event: PointerEvent<HTMLDivElement>) => {
-    // 追加: パネル内 pointer 操作を grid 側へ伝播させません
-    //       (列選択開始や outside click 判定との競合を避けます)。
-    event.stopPropagation();
-  };
-
-  const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
-    // 追加: portal 内 keyboard を React ツリー上の parent へ流しません。
-    //       Escape での close は controller の window keydown が担当します。
-    // 変更(POP-KEY): capture 相(onKeyDownCapture)→ bubble 相(onKeyDown)へ変更します。
-    //   capture 相の stopPropagation() はネイティブ伝播ごと止めるため、パネル内部要素の
-    //   bubble 相 onKeyDown や window(bubble)リスナーまで殺してしまいます
-    //   (ColumnFilterPopover の SF-ENTER fix と同一パターンの統一です)。bubble 相なら
-    //   「内部要素のハンドラが先に処理 → 最後にここで外側への合成バブリングだけ遮断」に
-    //   なり、Escape close は controller 側の capture 登録(POP-KEY)が受けます。
-    event.stopPropagation();
-  };
 
   const handleMasterClick = () => {
     if (!canToggle) {
@@ -586,33 +517,8 @@ export function ColumnChooserPanel({
     );
   };
 
-  return createPortal(
-    <div
-      ref={panelRef}
-      onPointerDown={handlePointerDown}
-      onKeyDown={handleKeyDown}
-      onContextMenu={(event) => {
-        event.preventDefault();
-      }}
-      className={cx('ssg-popover', 'ssg-chooser-panel', themeClassName)}
-      style={wrapperStyle}
-    >
-      {/* ── ヘッダー: タイトル + × ── */}
-      <div
-        className="ssg-popover-header ssg-popover-header--draggable"
-        onPointerDown={handleHeaderPointerDown}
-      >
-        <span className="ssg-popover-title">列の表示</span>
-        <button
-          type="button"
-          onClick={onRequestClose}
-          aria-label="閉じる"
-          className="ssg-popover-close"
-        >
-          ×
-        </button>
-      </div>
-
+  return (
+    <>
       {/* ── 検索行: 全選択チェック + 検索入力 ── */}
       <div className="ssg-chooser-search-row">
         <button
@@ -689,8 +595,7 @@ export function ColumnChooserPanel({
           </div>
         )}
       </div>
-    </div>,
-    document.body,
+    </>
   );
 }
 

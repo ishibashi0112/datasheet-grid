@@ -12,12 +12,11 @@
 //   - 非表示列のフィルターも一覧に出します(「見えない列に絞り込みが残っている」という
 //     発見性の穴を塞ぐのが本機能の主目的のためです)。✎ はジャンプ先が無いため disabled に
 //     し、title で理由を出します(× でのクリアは可能)。
-import { createPortal } from 'react-dom';
-import { cx } from '../logic/cx';
-import type { CSSProperties, KeyboardEvent, PointerEvent, RefObject } from 'react';
-import type { FilterManagementLayout } from '../hooks/useFilterManagementController';
-// 追加(FM-4): ヘッダーを掴んでパネルを移動する共有フックです(3 パネル共通)。
-import { usePanelHeaderDrag } from '../hooks/usePanelHeaderDrag';
+// 変更(UP-1): 統合ツールパネル(ToolPanel)の「フィルター」タブのコンテンツへ変更しました。
+//   フレーム(portal / .ssg-popover / ドラッグヘッダー / ×)・テーマ修飾子・open/close・
+//   ドラッグ移動はシェル(ToolPanel)と useToolPanelController の責務になり、本コンポーネント
+//   は中身(グローバル行 / 一覧 / フッター)だけを描画します。タブ非アクティブ時は
+//   アンマウントされるため、isOpen prop は不要になりました。
 
 // 追加(FM-1): 一覧 1 行ぶんの情報です(要約文字列は logic/filterSummary.ts で生成済み)。
 export type FilterManagementEntry = {
@@ -35,10 +34,6 @@ export type FilterManagementAddableColumn = {
 };
 
 type FilterManagementPanelProps = {
-  isOpen: boolean;
-  // 追加(TH-DK-2): ダークテーマ修飾子クラス('ssg-theme-dark' | undefined)。ポータルは
-  //   .ssg-root 外のため、root と同じ修飾子を自身の root 要素へ直接付与します。
-  themeClassName?: string;
   // 適用中フィルターの一覧です(可視列の視覚順 → 非表示列の順。呼び出し側で構築)。
   entries: FilterManagementEntry[];
   addableColumns: FilterManagementAddableColumn[];
@@ -47,8 +42,6 @@ type FilterManagementPanelProps = {
   globalFilterText: string;
   // enableColumnFilter 相当。false のときは操作を無効化します(保険。通常は開きません)。
   canFilter: boolean;
-  layout: FilterManagementLayout | null;
-  panelRef: RefObject<HTMLDivElement | null>;
   // ✎: 対象列へジャンプして既存のフィルター popover を開きます(配線は呼び出し側)。
   onEditFilter: (columnKey: string) => void;
   // フィルターを追加: 選択列へジャンプして popover を開きます(✎ と同じ経路)。
@@ -57,10 +50,6 @@ type FilterManagementPanelProps = {
   // すべてクリア: 列フィルターのみ対象です(グローバルは行の × のみ = ユーザー合意)。
   onClearAllFilters: () => void;
   onClearGlobalFilter: () => void;
-  onRequestClose: () => void;
-  // 追加(FM-4): ヘッダードラッグによるパネル移動です(controller の moveFilterManager を
-  //   受け取ります。位置の clamp・保持・close 時リセットは controller 側の責務)。
-  onPanelMove: (top: number, left: number) => void;
 };
 
 // 追加(FM-1): 漏斗グリフです(GridHeaderRow のフィルター適用中マークと同一パス)。
@@ -99,81 +88,22 @@ function SearchGlyph() {
 }
 
 export function FilterManagementPanel({
-  isOpen,
-  themeClassName,
   entries,
   addableColumns,
   showGlobalFilterRow,
   globalFilterText,
   canFilter,
-  layout,
-  panelRef,
   onEditFilter,
   onAddFilter,
   onClearFilter,
   onClearAllFilters,
   onClearGlobalFilter,
-  onRequestClose,
-  onPanelMove,
 }: FilterManagementPanelProps) {
-  // 追加(FM-4): ヘッダーを掴んでパネルを移動します(hooks は早期 return より前・無条件で
-  //   呼びます。layout=null のときはフック側が開始しません)。
-  const { handleHeaderPointerDown } = usePanelHeaderDrag({
-    layout,
-    onPanelMove,
-  });
-
-  if (!isOpen || !layout) {
-    return null;
-  }
-
-  const wrapperStyle: CSSProperties = {
-    top: layout.top,
-    left: layout.left,
-    width: layout.width,
-  };
-
-  const handlePointerDown = (event: PointerEvent<HTMLDivElement>) => {
-    // パネル内 pointer 操作を grid 側へ伝播させません(セル選択開始 / outside click 競合回避)。
-    event.stopPropagation();
-  };
-
-  const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
-    // portal 内 keyboard を React ツリー上の parent へ流しません。
-    // Escape での close は controller の window keydown(capture / POP-KEY)が担当します。
-    event.stopPropagation();
-  };
-
   const canClearAll = canFilter && entries.length > 0;
   const canAdd = canFilter && addableColumns.length > 0;
 
-  return createPortal(
-    <div
-      ref={panelRef}
-      onPointerDown={handlePointerDown}
-      onKeyDown={handleKeyDown}
-      onContextMenu={(event) => {
-        event.preventDefault();
-      }}
-      className={cx('ssg-popover', 'ssg-filter-manage-panel', themeClassName)}
-      style={wrapperStyle}
-    >
-      {/* ── ヘッダー: タイトル + × ── */}
-      <div
-        className="ssg-popover-header ssg-popover-header--draggable"
-        onPointerDown={handleHeaderPointerDown}
-      >
-        <span className="ssg-popover-title">フィルター管理</span>
-        <button
-          type="button"
-          onClick={onRequestClose}
-          aria-label="閉じる"
-          className="ssg-popover-close"
-        >
-          ×
-        </button>
-      </div>
-
+  return (
+    <>
       {/* ── グローバルフィルター行(先頭・区切り付き) ── */}
       {/* 追加(FM-1): 列フィルターと別枠で先頭に出します。「すべてクリア」の対象外で、
           解除はこの行の × のみです(ユーザー合意の切り分け)。 */}
@@ -306,8 +236,7 @@ export function FilterManagementPanel({
           すべてクリア
         </button>
       </div>
-    </div>,
-    document.body,
+    </>
   );
 }
 
