@@ -810,6 +810,7 @@ export function SpreadsheetGrid<T extends object>({
     activeToolPanelTab,
     availableToolPanelTabs,
     toolPanelLayout,
+    toolPanelFlashTick,
     toolPanelRef,
     openToolPanel,
     closeToolPanel,
@@ -3711,6 +3712,7 @@ export function SpreadsheetGrid<T extends object>({
     <ToolPanel
       themeClassName={themeClassName}
       activeTab={activeToolPanelTab}
+      flashTick={toolPanelFlashTick}
       tabs={toolPanelTabs}
       layout={toolPanelLayout}
       panelRef={toolPanelRef}

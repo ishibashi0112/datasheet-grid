@@ -10,6 +10,7 @@
 //   - SegmentedControl は Mantine 風のスライドインジケータです。セグメントは等幅のため、
 //     インジケータは CSS 変数(--ssg-seg-count / --ssg-seg-index)による translateX だけで
 //     追従し、実測(offsetWidth)を使いません(resize / タブ数変化に自動追従)。
+import { useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { cx } from '../logic/cx';
 import type { CSSProperties, KeyboardEvent, PointerEvent, ReactNode, RefObject } from 'react';
@@ -34,6 +35,9 @@ type ToolPanelProps = {
   themeClassName?: string;
   // アクティブタブです(null = closed。描画しません)。
   activeTab: ToolPanelTab | null;
+  // 追加(UP-2): 既開時フラッシュのトリガーです(controller の toolPanelFlashTick)。
+  //   値が増えるたびにパネル枠を一瞬フラッシュします(閉→開では増えないため光りません)。
+  flashTick: number;
   // 表示順どおりの可用タブです(controller の availableToolPanelTabs から作ります)。
   tabs: ToolPanelTabDescriptor[];
   layout: ToolPanelLayout | null;
@@ -50,6 +54,7 @@ type ToolPanelProps = {
 export function ToolPanel({
   themeClassName,
   activeTab,
+  flashTick,
   tabs,
   layout,
   panelRef,
@@ -63,6 +68,30 @@ export function ToolPanel({
     layout,
     onPanelMove,
   });
+
+  // 追加(UP-2 / 既開時フラッシュ): flashTick が増えたら panelRef の枠を一瞬フラッシュします。
+  //   既存のヘッダージャンプ(ssg-header-cell--jump-flash)と同じ「JS 直付け + animationend
+  //   除去」方式です。className prop には載せません(React の再レンダーでクラスが消えると
+  //   アニメが途中で止まるため。直付けなら animationend まで残ります)。初回(tick=0 → mount)は
+  //   effect が走りますが、閉→開では controller が increment しないため通常は光りません。
+  //   一度付いているクラスは先に除去してから付け直し、連打でも再生させます(reflow を挟む)。
+  useEffect(() => {
+    const el = panelRef.current;
+    if (!el || flashTick === 0) {
+      return;
+    }
+    el.classList.remove('ssg-toolpanel--flash');
+    // 強制 reflow でアニメを確実に再スタートさせます(連続クリック対策)。
+    void el.offsetWidth;
+    el.classList.add('ssg-toolpanel--flash');
+    const handleEnd = () => {
+      el.classList.remove('ssg-toolpanel--flash');
+    };
+    el.addEventListener('animationend', handleEnd);
+    return () => {
+      el.removeEventListener('animationend', handleEnd);
+    };
+  }, [flashTick, panelRef]);
 
   if (activeTab === null || !layout) {
     return null;

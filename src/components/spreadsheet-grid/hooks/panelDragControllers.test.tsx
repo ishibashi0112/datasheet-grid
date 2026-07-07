@@ -54,7 +54,7 @@ describe('UP-1: 統合ツールパネル(controller の move / clamp / リセッ
     });
   });
 
-  it('ドラッグ後に close → 再 open すると既定位置(gridRoot アンカー)へ戻る', () => {
+  it('ドラッグ後に close → 再 open すると前回のドラッグ位置へ復元する(UP-2 位置記憶)', () => {
     const { result } = renderHook(() => useToolPanelController(makeArgs()));
     act(() => {
       result.current.openToolPanel('filter');
@@ -64,15 +64,18 @@ describe('UP-1: 統合ツールパネル(controller の move / clamp / リセッ
     act(() => {
       result.current.moveToolPanel(200, 300);
     });
-    expect(result.current.toolPanelLayout).not.toEqual(initial);
+    const moved = result.current.toolPanelLayout;
+    expect(moved).toEqual({ top: 200, left: 300, width: 360 });
+    expect(moved).not.toEqual(initial);
     act(() => {
       result.current.closeToolPanel();
     });
     expect(result.current.activeToolPanelTab).toBeNull();
+    // 変更(UP-2): 既定位置ではなく前回のドラッグ位置へ戻ります(in-memory 保持)。
     act(() => {
-      result.current.openToolPanel('filter');
+      result.current.openToolPanel('columns');
     });
-    expect(result.current.toolPanelLayout).toEqual(initial);
+    expect(result.current.toolPanelLayout).toEqual(moved);
   });
 
   it('ドラッグ後の resize はビューポートへ再 clamp する(gridRoot アンカーへは戻らない)', () => {
@@ -194,5 +197,52 @@ describe('UP-1: 統合ツールパネル(タブと可用性)', () => {
     // 可用へ戻れば元のタブへ復帰します(requestedTab は保持しているため)。
     rerender({ canUseSortTab: true });
     expect(result.current.activeToolPanelTab).toBe('sort');
+  });
+});
+
+describe('UP-2: 統合ツールパネル(既開時フラッシュ toolPanelFlashTick)', () => {
+  it('閉→開では increment しない / 既に開いているときの open で increment する', () => {
+    const { result } = renderHook(() => useToolPanelController(makeArgs()));
+    // 初期値は 0。
+    expect(result.current.toolPanelFlashTick).toBe(0);
+    // 閉→開(1 回目)では増えません。
+    act(() => {
+      result.current.openToolPanel('filter');
+    });
+    expect(result.current.toolPanelFlashTick).toBe(0);
+    // 既に開いている状態での open(別タブ切替)で increment します。
+    act(() => {
+      result.current.openToolPanel('columns');
+    });
+    expect(result.current.toolPanelFlashTick).toBe(1);
+    // 同一タブの再 open(導線の再クリック相当)でも increment します。
+    act(() => {
+      result.current.openToolPanel('columns');
+    });
+    expect(result.current.toolPanelFlashTick).toBe(2);
+    // close を挟むと次の open は「閉→開」なので増えません。
+    act(() => {
+      result.current.closeToolPanel();
+    });
+    act(() => {
+      result.current.openToolPanel('sort');
+    });
+    expect(result.current.toolPanelFlashTick).toBe(2);
+  });
+
+  it('不可用タブへの open は no-op のため increment しない', () => {
+    const { result } = renderHook(() =>
+      useToolPanelController(makeArgs({ canUseSortTab: false })),
+    );
+    act(() => {
+      result.current.openToolPanel('filter');
+    });
+    expect(result.current.toolPanelFlashTick).toBe(0);
+    // 開いている状態でも、不可用タブ(sort)への open は弾かれるので増えません。
+    act(() => {
+      result.current.openToolPanel('sort');
+    });
+    expect(result.current.toolPanelFlashTick).toBe(0);
+    expect(result.current.activeToolPanelTab).toBe('filter');
   });
 });

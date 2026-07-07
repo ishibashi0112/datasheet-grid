@@ -844,6 +844,31 @@
     max-height: 420px;
   }
 
+  /* 追加(UP-2 / 既開時フラッシュ): 既に開いているパネルへ再度 open(導線の再クリック /
+     別タブ切替)したとき、パネルがどこに出ているかを一瞬示すフラッシュ。クラス
+     (--flash)は JS(ToolPanel の flashTick effect)が直付けし animationend で除去する
+     一過性演出(ヘッダージャンプ ssg-header-cell--jump-flash と同方式)。accent リングを
+     出して通常影へ戻す。prefers-reduced-motion では抑制する。 */
+  @keyframes ssg-toolpanel-flash {
+    0% {
+      box-shadow:
+        0 0 0 3px var(--ssg-panel-accent-bg),
+        0 0 0 4px var(--ssg-panel-accent),
+        var(--ssg-panel-shadow);
+    }
+    100% {
+      box-shadow: var(--ssg-panel-shadow);
+    }
+  }
+  .ssg-toolpanel--flash {
+    animation: ssg-toolpanel-flash 0.45s ease-out;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .ssg-toolpanel--flash {
+      animation: none;
+    }
+  }
+
   /* ヘッダー(SegmentedControl + ×)。--draggable(FM-4)併用で掴んで移動できる。 */
   .ssg-toolpanel-header {
     display: flex;

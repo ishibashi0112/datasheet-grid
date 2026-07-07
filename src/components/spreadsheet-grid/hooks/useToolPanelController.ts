@@ -10,8 +10,15 @@ import { clampPanelDragPosition } from '../logic/panelDragGeometry';
 //   SegmentedControl のタブ(filter / columns / sort)で切り替えます。
 // 設計メモ:
 //   - open / close / layout / ドラッグ移動 / outside click / Escape の機構は旧 3 controller
-//     と同一です(gridRoot 右上アンカー、ドラッグ後はフローティング + resize 再 clamp、
-//     close でドラッグ位置破棄 = 再オープンは既定位置)。
+//     と同一です(gridRoot 右上アンカー、ドラッグ後はフローティング + resize 再 clamp)。
+//   - 変更(UP-2 / 位置記憶): ドラッグ位置は close しても破棄せず保持します(in-memory /
+//     コンポーネント lifetime 内)。再オープン時はビューポートへ clamp した上で前回位置へ
+//     復元します(旧 3 パネルの「close で既定位置へリセット」から変更。GridState には
+//     保存しません = リマウントで既定位置に戻ります)。
+//   - 追加(UP-2 / 既開時フラッシュ): 既に開いている状態での openToolPanel(導線の再クリック /
+//     別タブへの切替)では toolPanelFlashTick を increment します。view(ToolPanel)はこれを
+//     契機に枠をフラッシュし、「パネルはここに出ている」ことを示します(タブだけ静かに
+//     切り替わって気づかれない、を防ぐため)。
 //   - フィルター popover との「共存」拡張(alliedRef / suppressEscape / onSuppressedEscape)
 //     は旧 FM controller の挙動をパネル全体へ引き継ぎます(どのタブ表示中でも popover 内
 //     クリックで閉じず、popover open 中の Escape は popover close へ委譲 = 1 押し 1 階層)。
@@ -68,13 +75,18 @@ export const useToolPanelController = ({
   const [requestedTab, setRequestedTab] = useState<ToolPanelTab | null>(null);
   const [toolPanelLayout, setToolPanelLayout] =
     useState<ToolPanelLayout | null>(null);
+  // 追加(UP-2): 既開時フラッシュのトリガーです(既に開いている状態での open で increment。
+  //   view はこの値の変化を契機に枠をフラッシュします。閉→開では増えません)。
+  const [toolPanelFlashTick, setToolPanelFlashTick] = useState(0);
 
   // パネル本体の ref です(outside click 判定に使います)。
   const toolPanelRef = useRef<HTMLDivElement | null>(null);
 
   // 追加(FM-4 由来): ヘッダードラッグで移動した位置です(null = 既定の gridRoot 追従)。
-  //   close で null へ戻します(再オープンは既定位置)。ref なのは pointermove の高頻度
-  //   更新で layout state と二重の再レンダーを起こさないためです(layout が表示の真実)。
+  //   ref なのは pointermove の高頻度更新で layout state と二重の再レンダーを起こさない
+  //   ためです(layout が表示の真実)。
+  //   変更(UP-2 / 位置記憶): close では破棄しません(再オープンは clamp 済みの前回位置)。
+  //   破棄されるのはコンポーネントの unmount(= グリッドのリマウント)時だけです。
   const draggedPositionRef = useRef<{ top: number; left: number } | null>(null);
 
   // 表示順どおりの「可用タブ」一覧です(ToolPanel の SegmentedControl がそのまま描画します)。
@@ -155,6 +167,10 @@ export const useToolPanelController = ({
 
   // パネルを指定タブで開きます。既に開いているときはタブ切替のみ(位置は不動)です。
   // 不可用タブに対しては no-op(導線が出ない前提の保険ガード)。
+  // 追加(UP-2): 既に開いているときの open(同一タブの再オープン導線を含む)では
+  //   toolPanelFlashTick を increment し、view に枠フラッシュを促します。
+  //   注記: requestedTab を読むため本関数の参照は open/close のたびに変わります
+  //   (参照安定契約があるのは moveToolPanel のみ。利用側は通常の deps 管理で足ります)。
   const openToolPanel = useCallback(
     (tab: ToolPanelTab) => {
       const flags: Record<ToolPanelTab, boolean> = {
@@ -165,6 +181,9 @@ export const useToolPanelController = ({
       if (!flags[tab]) {
         return;
       }
+      if (requestedTab !== null) {
+        setToolPanelFlashTick((tick) => tick + 1);
+      }
       // grid root に残っているフォーカスを外します(旧 3 controller と同じ作法)。
       if (document.activeElement instanceof HTMLElement) {
         document.activeElement.blur();
@@ -172,12 +191,13 @@ export const useToolPanelController = ({
       gridRootRef.current?.blur();
       setRequestedTab(tab);
     },
-    [canUseFilterTab, canUseColumnsTab, canUseSortTab, gridRootRef],
+    [canUseFilterTab, canUseColumnsTab, canUseSortTab, gridRootRef, requestedTab],
   );
 
   const closeToolPanel = useCallback(() => {
-    // ドラッグ位置を破棄します(再オープンは既定の gridRoot アンカー位置)。
-    draggedPositionRef.current = null;
+    // 変更(UP-2 / 位置記憶): ドラッグ位置(draggedPositionRef)は破棄しません。
+    //   再オープン時は updateToolPanelLayout がビューポートへ clamp した上で前回位置へ
+    //   復元します(close 中に resize されても画面外には出ません)。
     setRequestedTab(null);
     setToolPanelLayout(null);
     // close 後は grid root にフォーカスを戻し、keyboard 操作へ復帰させます。
@@ -188,7 +208,7 @@ export const useToolPanelController = ({
 
   // ヘッダードラッグからの移動です(view の usePanelHeaderDrag が pointermove ごとに呼びます)。
   // 位置は clamp して layout へ即時反映し、以後 updateToolPanelLayout は gridRoot 追従を
-  // やめてこの位置を保持します(closeToolPanel で解除 = 再オープンは既定位置)。
+  // やめてこの位置を保持します(UP-2: close を跨いでも保持。解除は unmount のみ)。
   // 注記: view 側がドラッグ session の closure に閉じ込めて呼ぶため、本関数は参照安定
   // (deps [])であることが契約です。
   const moveToolPanel = useCallback((top: number, left: number) => {
@@ -293,6 +313,7 @@ export const useToolPanelController = ({
     activeToolPanelTab,
     availableToolPanelTabs,
     toolPanelLayout,
+    toolPanelFlashTick,
     toolPanelRef,
     openToolPanel,
     closeToolPanel,

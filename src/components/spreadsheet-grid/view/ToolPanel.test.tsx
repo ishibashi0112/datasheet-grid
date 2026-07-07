@@ -33,6 +33,7 @@ const makeTabs = (): ToolPanelTabDescriptor[] => [
 
 const makeProps = (activeTab: ToolPanelTab | null = 'columns') => ({
   activeTab,
+  flashTick: 0,
   tabs: makeTabs(),
   layout,
   panelRef: createRef<HTMLDivElement>(),
@@ -136,5 +137,50 @@ describe('ToolPanel(統合ツールパネルのシェル UP-1)', () => {
     });
     fireEvent.pointerMove(window, { pointerId: 2, clientX: 50, clientY: 50 });
     expect(props.onPanelMove).not.toHaveBeenCalled();
+  });
+
+  // 追加(UP-2 / 既開時フラッシュ): flashTick の変化でパネル枠へ --flash クラスが直付けされ、
+  //   animationend で除去されること。クラスは className prop ではなく JS 直付けのため、
+  //   flashTick を変えた再レンダーでも(props 変化による再レンダーで)消えないことを確認します。
+  it('flashTick が増えると --flash クラスが付き、animationend で除去される(UP-2)', () => {
+    const panelRef = createRef<HTMLDivElement>();
+    const base = { ...makeProps(), panelRef };
+    const { rerender } = render(
+      <ToolPanel {...base} flashTick={0}>
+        content
+      </ToolPanel>,
+    );
+    const panel = panelRef.current as HTMLDivElement;
+    expect(panel).toBeTruthy();
+    // flashTick=0(初期)ではフラッシュしません。
+    expect(panel.classList.contains('ssg-toolpanel--flash')).toBe(false);
+
+    // flashTick を増やすと --flash が付きます(既開時 open 相当)。
+    rerender(
+      <ToolPanel {...base} flashTick={1}>
+        content
+      </ToolPanel>,
+    );
+    expect(panel.classList.contains('ssg-toolpanel--flash')).toBe(true);
+
+    // props 変化による再レンダー(flashTick 据え置き)ではクラスは残ります(直付けのため)。
+    rerender(
+      <ToolPanel {...base} flashTick={1}>
+        content-changed
+      </ToolPanel>,
+    );
+    expect(panel.classList.contains('ssg-toolpanel--flash')).toBe(true);
+
+    // animationend で除去されます。
+    fireEvent.animationEnd(panel);
+    expect(panel.classList.contains('ssg-toolpanel--flash')).toBe(false);
+
+    // さらに flashTick を増やすと再びフラッシュします(連続既開 open)。
+    rerender(
+      <ToolPanel {...base} flashTick={2}>
+        content-changed
+      </ToolPanel>,
+    );
+    expect(panel.classList.contains('ssg-toolpanel--flash')).toBe(true);
   });
 });
