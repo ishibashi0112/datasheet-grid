@@ -388,6 +388,8 @@ export function SpreadsheetGrid<T extends object>({
   // 追加: データ投入時に全列幅を内容へ自動フィットさせるモード(既定 false)。
   //   詳細は gridTypes の AutoSizeColumnsMode。列個別の除外は列の suppressAutoSize で行います。
   autoSizeColumns = false,
+  // 追加: セル省略(…)時にホバーで全文ツールチップを表示(既定 false)。既定テキストセルのみ対象。
+  showCellOverflowTooltip = false,
   // 追加(UI hover): 行ホバー(既定 true) / 列ヘッダーホバー(既定 true)。
   enableRowHover = true,
   enableColumnHeaderHover = true,
@@ -4647,6 +4649,7 @@ export function SpreadsheetGrid<T extends object>({
                   renderEntries={leftRenderEntries}
                   rowHeight={rowHeight}
                   autoHeight={autoHeightActive}
+                  showCellOverflowTooltip={showCellOverflowTooltip}
                   isServerSide={isServerSide}
                   rowHeaderCellStyle={rowHeaderCellStyle}
                   hoveredRowIndex={hoveredRowIndex}
@@ -4790,6 +4793,7 @@ export function SpreadsheetGrid<T extends object>({
                   renderEntries={centerRenderEntries}
                   rowHeight={rowHeight}
                   autoHeight={autoHeightActive}
+                  showCellOverflowTooltip={showCellOverflowTooltip}
                   isServerSide={isServerSide}
                   rowHeaderCellStyle={rowHeaderCellStyle}
                   hoveredRowIndex={hoveredRowIndex}
@@ -4925,6 +4929,7 @@ export function SpreadsheetGrid<T extends object>({
                   renderEntries={rightRenderEntries}
                   rowHeight={rowHeight}
                   autoHeight={autoHeightActive}
+                  showCellOverflowTooltip={showCellOverflowTooltip}
                   isServerSide={isServerSide}
                   rowHeaderCellStyle={rowHeaderCellStyle}
                   hoveredRowIndex={hoveredRowIndex}

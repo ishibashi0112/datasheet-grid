@@ -22,6 +22,8 @@ import type {
 } from '../model/gridTypes';
 // 追加(行選択): O(1) 選択判定と、共用チェックボックス glyph です。
 import { resolveIsRowSelected } from '../logic/rowSelection';
+// 追加: 省略時ツールチップのマーカー付与判定(純関数)です。
+import { shouldMarkCellOverflowTooltip } from '../logic/cellOverflowTooltip';
 import { RowSelectionCheckbox } from './RowSelectionCheckbox';
 // 変更(10-C): 列座標を ColumnMeasurement(グローバル) から
 //             PaneColumnEntry(ペインローカル) へ切り替えます。
@@ -71,6 +73,8 @@ type GridBodyRowProps<T> = {
   // 追加(C1): auto-height 行モードか。true かつ column.autoHeight のセルは内容駆動レイアウト
   //   (min-height + white-space:normal + 測定マーカー)になります。uniform では常に false。
   autoHeight: boolean;
+  // 追加: 省略時ツールチップ(既定テキストセルに data-ssg-tooltip-overflow を付与)を有効化するか。
+  showCellOverflowTooltip: boolean;
   // 追加(C1-6): auto-height セルの min-height 下限(基準行高=estimate)。rowHeight(=解決済み行高/
   //   実測由来)を下限にすると一度伸びた行が縮まなくなる(min-height で測定が下げ止まる)ため、
   //   下限は実測に依存しない固定値(基準行高)にして shrink を可能にします。GridBodyLayer の基準
@@ -142,6 +146,7 @@ function GridBodyRowInner<T>({
   renderEntries,
   rowHeight,
   autoHeight,
+  showCellOverflowTooltip,
   autoHeightMinHeight,
   rowHeaderCellStyle,
   isRowHovered,
@@ -289,11 +294,28 @@ function GridBodyRowInner<T>({
           bodyCellClassName,
         );
 
+        // 追加: 折り返し列(autoHeight)の word-break / line-break を CSS へ反映します。
+        //   'auto-phrase' 等 csstype 未収載の値も通すため、値の代入は緩い型経由にします。
+        const wrapStyle: CSSProperties = {};
+        if (column.wordBreak !== undefined) {
+          (wrapStyle as Record<string, unknown>).wordBreak = column.wordBreak;
+        }
+        if (column.lineBreak !== undefined) {
+          (wrapStyle as Record<string, unknown>).lineBreak = column.lineBreak;
+        }
+        // 追加: 省略時ツールチップのマーカー付与可否(既定テキストセルのみ)。
+        const markOverflowTooltip = shouldMarkCellOverflowTooltip({
+          enabled: showCellOverflowTooltip,
+          isAutoHeightCell,
+          hasRenderCell: column.renderCell !== undefined,
+        });
+
         return (
           <div
             key={`${String(rowKey)}-${column.key}`}
             data-ssg-col-key={column.key}
             data-autoheight-cell={isAutoHeightCell ? '' : undefined}
+            data-ssg-tooltip-overflow={markOverflowTooltip ? '' : undefined}
             className={cellClassName}
             onPointerDown={(event) =>
               onCellPointerDown({ row: rowIndex, col: colIndex }, event)
@@ -320,6 +342,7 @@ function GridBodyRowInner<T>({
               ...(isAutoHeightCell
                 ? { minHeight: autoHeightMinHeight }
                 : { height: rowHeight }),
+              ...wrapStyle,
               zIndex: isActive ? 3 : 1,
             }}
           >
@@ -510,6 +533,8 @@ type GridBodyLayerProps<T> = {
   rowHeight: number;
   // 追加(C1): auto-height 行モード。未指定時 false(供給側 C1-3 まで uniform 経路で不変)。
   autoHeight?: boolean;
+  // 追加: 省略時ツールチップ(既定 false)。既定テキストセルの省略時にホバーで全文を表示します。
+  showCellOverflowTooltip?: boolean;
   // 追加(①-4): serverSide(SSRM)モードか。true のとき未ロード行をスケルトン描画します。
   //   未指定時 false(clientSide は従来どおり未ロード=OOB を null 返し)。
   isServerSide?: boolean;
@@ -576,6 +601,7 @@ export function GridBodyLayer<T>({
   renderEntries,
   rowHeight,
   autoHeight = false,
+  showCellOverflowTooltip = false,
   isServerSide = false,
   rowHeaderCellStyle,
   hoveredRowIndex,
@@ -709,6 +735,7 @@ export function GridBodyLayer<T>({
             renderEntries={renderEntries}
             rowHeight={rowSize}
             autoHeight={autoHeight}
+            showCellOverflowTooltip={showCellOverflowTooltip}
             autoHeightMinHeight={rowHeight}
             rowHeaderCellStyle={rowHeaderCellStyle}
             isRowHovered={hoveredRowIndex === rowIndex}

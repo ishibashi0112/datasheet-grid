@@ -23,7 +23,11 @@ import { useEffect } from 'react';
 import { computeTooltipPlacement } from '../logic/tooltipGeometry';
 
 const TOOLTIP_ATTRIBUTE = 'data-ssg-tooltip';
-const TOOLTIP_SELECTOR = `[${TOOLTIP_ATTRIBUTE}]`;
+// 追加(overflow tooltip): 省略(…)されているときだけ全文を表示するセル用のマーカー属性です。
+//   静的な data-ssg-tooltip と違い、文言は要素の textContent、表示可否はホバー時の実クリップ判定
+//   (scrollWidth > clientWidth)で決めます(GridBodyLayer が既定テキストセルへ付与)。
+const TOOLTIP_OVERFLOW_ATTRIBUTE = 'data-ssg-tooltip-overflow';
+const TOOLTIP_SELECTOR = `[${TOOLTIP_ATTRIBUTE}], [${TOOLTIP_OVERFLOW_ATTRIBUTE}]`;
 const SHOW_DELAY_MS = 350;
 const WARMUP_MS = 800;
 
@@ -68,8 +72,13 @@ function hideTooltip() {
 }
 
 function showTooltipFor(target: Element) {
-  const text = target.getAttribute(TOOLTIP_ATTRIBUTE);
-  if (text === null || text === '') {
+  // 静的 data-ssg-tooltip があればその値を、無ければ overflow マーカーとみなし textContent を使います。
+  const staticText = target.getAttribute(TOOLTIP_ATTRIBUTE);
+  const text =
+    staticText !== null && staticText !== ''
+      ? staticText
+      : (target.textContent ?? '').trim();
+  if (text === '') {
     return;
   }
   const el = ensureTooltipElement();
@@ -104,6 +113,14 @@ function handlePointerOverOrFocusIn(event: Event) {
   }
   const target = node.closest(TOOLTIP_SELECTOR);
   if (target === null || target === currentTarget) {
+    return;
+  }
+  // overflow マーカー(静的 data-ssg-tooltip は持たない)は、実際にクリップされている
+  //   (scrollWidth > clientWidth)ときだけ対象にします。非クリップ時は何も出しません。
+  if (
+    !target.hasAttribute(TOOLTIP_ATTRIBUTE) &&
+    target.scrollWidth <= target.clientWidth + 1
+  ) {
     return;
   }
   const wasVisible = currentTarget !== null;

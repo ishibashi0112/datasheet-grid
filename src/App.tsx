@@ -320,7 +320,7 @@ const createInitialColumns = (
     // 追加(C1 auto-height デモ): 長文の備考列。autoHeight:true で、グリッド props の autoHeight 有効 +
     //   行数 gate 内のとき行高を内容に合わせて可変化します(折り返し表示)。
     // 追加(B3 デモ): flexEnabled で備考列を flex 化(備考=比率 2。余り幅を最も多く吸う)。
-    { key: 'note', title: '備考', width: 320, filterType: 'text', autoHeight: false, flex: flexEnabled ? 2 : undefined },
+    { key: 'note', title: '備考', width: 320, filterType: 'text', autoHeight: true, flex: flexEnabled ? 2 : undefined },
   ];
 
   // 変更(B3 デモ): includeExtraColumns=false のときは追加列を生成しません(基本列のみ)。
@@ -491,6 +491,24 @@ function App() {
       prev.map((column) =>
         column.key === 'partName'
           ? { ...column, suppressAutoSize: next ? true : undefined }
+          : column,
+      ),
+    );
+  };
+  // 追加(デモ: 省略ツールチップ): セル省略(…)時にホバーで全文表示するトグルです(既定 ON)。
+  //   client モードでは備考列(width 320・長文)が省略されるので、備考セルにホバーして確認できます。
+  const [overflowTooltipEnabled, setOverflowTooltipEnabled] = useState(true);
+  // 追加(デモ: 日本語折り返し): 備考列(autoHeight)の word-break を切替えます。'auto-phrase' は
+  //   Chromium(Chrome / Edge)で文節折り返し。autoHeight モードに切替えて効果を比較できます。
+  const [noteWordBreak, setNoteWordBreak] = useState<
+    'none' | 'auto-phrase' | 'keep-all'
+  >('none');
+  const changeNoteWordBreak = (next: 'none' | 'auto-phrase' | 'keep-all') => {
+    setNoteWordBreak(next);
+    setColumns((prev) =>
+      prev.map((column) =>
+        column.key === 'note'
+          ? { ...column, wordBreak: next === 'none' ? undefined : next }
           : column,
       ),
     );
@@ -737,6 +755,30 @@ function App() {
           >
             {`列フレックス(備考/状態): ${flexEnabled ? 'ON' : 'OFF'}`}
           </button>
+          <button
+            type="button"
+            onClick={() => setOverflowTooltipEnabled((v) => !v)}
+            style={modeButtonStyle(overflowTooltipEnabled)}
+          >
+            {`セル省略ツールチップ: ${overflowTooltipEnabled ? 'ON' : 'OFF'}`}
+          </button>
+          <label
+            style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}
+          >
+            {'折り返し(備考/autoHeight時):'}
+            <select
+              value={noteWordBreak}
+              onChange={(event) =>
+                changeNoteWordBreak(
+                  event.target.value as 'none' | 'auto-phrase' | 'keep-all',
+                )
+              }
+            >
+              <option value="none">なし(文字単位)</option>
+              <option value="auto-phrase">auto-phrase(文節 / Chromium)</option>
+              <option value="keep-all">keep-all</option>
+            </select>
+          </label>
           <button
             type="button"
             onClick={toggleColumnSet}
@@ -1036,6 +1078,7 @@ function App() {
         //   プリセットの既定(standard: 36/40・compact: 28/32・comfortable: 44/48)へ委ねます
         //   (明示 prop はプリセットより優先のため、指定したままだと密度が高さへ効きません)。
         autoHeight={mode === 'autoHeight'}
+        showCellOverflowTooltip={overflowTooltipEnabled}
         rowHeaderWidth={56}
         enableRangeSelection
         // 追加(行選択デモ): 上の「行選択」トグルと連動します。onRowSelectionChange で件数を更新。

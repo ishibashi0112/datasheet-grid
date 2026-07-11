@@ -294,6 +294,12 @@ export type GridColumn<T> = {
   width: number;
   minWidth?: number;
   maxWidth?: number;
+  // 追加: 折り返し時(= autoHeight 列)の CSS word-break です。'auto-phrase' は Chromium(Chrome / Edge)で
+  //   BudouX による文節折り返しを行います(Firefox / 一部 Safari は未対応)。nowrap(非 autoHeight)列では
+  //   折り返し自体が起きないため視覚的効果はありません。既定は未指定(ブラウザ標準 = 禁則つき文字折り返し)。
+  wordBreak?: 'normal' | 'break-all' | 'keep-all' | 'break-word' | 'auto-phrase';
+  // 追加: 折り返し時の CSS line-break です(禁則処理の強さ)。'strict' で禁則を厳格化します。既定は未指定。
+  lineBreak?: 'auto' | 'loose' | 'normal' | 'strict' | 'anywhere';
   // 追加(B3): JS 算出 flex(AG Grid の flex 相当)。center ペイン(非 pinned)の列でのみ有効で、
   //   「利用可能幅 − 固定列合計」を flex 比で配分します(min/max でクランプ)。pinned 列では無視されます。
   //   手動リサイズするとその列は固定 px に変わります(columns が変化するまで固定。以後は flex に復帰)。
@@ -903,6 +909,11 @@ export type SpreadsheetGridProps<T> = {
   // 追加: データ投入時に全列幅を内容へ自動フィットさせるモードです(既定 false)。
   //   詳細と suppressAutoSize / autoHeight 列の除外については AutoSizeColumnsMode を参照。
   autoSizeColumns?: AutoSizeColumnsMode;
+  // 追加: セル内容が省略(…)される列で、ホバー時に全文ツールチップを表示します(既定 false)。
+  //   対象は既定テキストセルのみ(renderCell 列 / autoHeight 折り返し列は対象外)。表示はホバー時に
+  //   scrollWidth > clientWidth を判定し、実際にクリップされているセルのみ出します(全文はセルの
+  //   表示テキストをそのまま使用)。既存のカスタムツールチップ機構(data-ssg-tooltip)を共有します。
+  showCellOverflowTooltip?: boolean;
   // 追加(UI hover): 行ホバー時に行全体を薄くハイライトします。既定 true。
   enableRowHover?: boolean;
   // 追加(UI hover): 列ヘッダーのホバー時にヘッダーセルを薄くハイライトします。既定 true。
