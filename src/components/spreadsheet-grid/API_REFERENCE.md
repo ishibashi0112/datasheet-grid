@@ -43,6 +43,7 @@
 | `enableColumnFilter` | `boolean` | `true` | 列ごとのフィルター。 |
 | `enableSorting` | `boolean` | `true` | ヘッダークリックでのソート。 |
 | `enableColumnResize` | `boolean` | `true` | 列幅の手動リサイズ可否のグリッド既定。各列 `resizable` 未指定時に継承(`column.resizable ?? enableColumnResize`)。 |
+| `autoSizeColumns` | `'onMount' \| 'onDataChange' \| false` | `false` | データ投入時に全列幅を内容へ自動フィット。`'onMount'`=初回にデータが載った一度きり / `'onDataChange'`=`rows`(参照)が変わるたび(= データ差し替えのたび。手動リサイズは上書き) / `false`=無効。計測は列メニュー「すべての列の幅を自動調整」と同一エンジン(`suppressAutoSize` / `autoHeight` 列は除外)。フィルター / ソート / 列並べ替えでは再フィットしません。serverSide(`dataSource`)では無効。詳細は「flex と autoSize」節。 |
 | `enableColumnMenu` | `boolean` | `true` | 列メニュー(⋮ + ヘッダー右クリック)。 |
 | `enableRowHover` | `boolean` | `true` | 行ホバー時に行全体を薄くハイライト。 |
 | `enableColumnHeaderHover` | `boolean` | `true` | 列ヘッダーのホバー時にヘッダーセルを薄くハイライト。 |
@@ -257,6 +258,26 @@ const columns = [
   **制約 — `autoHeight: true` の列は autoSize の対象外です**(列メニュー / 境界ダブルクリック / すべての列の自動調整すべてでスキップし、`width` を維持)。autoHeight 列は「幅を固定して長文を**折り返す**」のが本来の挙動ですが、autoSize の計測は**単一行**で行うため、autoHeight 列を測ると折り返したい長文を1行幅にし、**極端に横長になる**ためです(列幅に既定の上限は無いため、長文ぶんだけ際限なく広がります)。長文列は autoHeight(折り返し)か、`maxWidth` 付きの固定幅(切り詰め)で運用してください。
 
 flex 列を**手動リサイズ**すると、その列はドラッグした幅で**固定 px**に変わります(以後その列は flex 対象外)。固定は `columns` prop が変化する(pin 切替 / 表示切替 / 並べ替え / 親による差し替え)まで維持され、変化後は再び flex に復帰します(手動幅を恒久固定する仕様ではありません)。
+
+### autoSizeColumns(データ投入時の自動フィット)
+
+グリッド prop `autoSizeColumns?: 'onMount' | 'onDataChange' | false`(既定 `false`)で、**データ投入時に全列幅を内容へ自動フィット**できます。フィットの計測は上記 autoSize(列メニュー「すべての列の幅を自動調整」)と**同一エンジン**で、`'onMount'` は初回にデータが載った一度きり、`'onDataChange'` は `rows`(参照)が変わるたび(= データ差し替えのたび)に走ります。フォーム送信結果などを丸ごと差し替えて毎回合わせ直す用途は `'onDataChange'` が該当します。
+
+- **`GridColumn.suppressAutoSize` との関係**: 同一エンジンのため、`suppressAutoSize: true` の列(および `autoHeight: true` の列)は**この自動フィットの対象からも外れ**、`width` を維持します。「大半の列は内容へ合わせつつ、特定の列だけ固定幅で見せたい」場合は、その列に `suppressAutoSize: true` + `width` を付けてください(per-column の opt-out)。`estimateCellWidth` を指定した列も、通常の autoSize と同じ規則(申告 content 幅の全行 running-max)で見積もられます。
+- **発火 signal は `rows`(データ)の変化のみ**です。フィルター / ソート、列の並べ替え / 表示切替 / 固定(= `columns` 変化)では再フィットしません(手動操作の直後に幅が飛ぶのを避けるため)。したがって手動リサイズした幅は、次のデータ投入(`'onDataChange'`)で上書きされます(合わせ直したくない列は上記 `suppressAutoSize` で外します)。
+- フィット幅は**内部の列幅 state に反映され、`onColumnsChange` は呼びません**。`columns` を controlled で保持していても競合しません。
+- **serverSide(`dataSource`)では無効**です(未ロード行を測れないため。clientSide 限定)。
+- 計測が重い場合は本番でも既存の計測オーバーレイが出ます(小規模データでは体感差はありません)。
+
+```tsx
+// 例: フォーム送信結果を丸ごと差し替え、そのたびに列幅を内容へ合わせ直す。
+//   consumer 側は autoSizeColumns を渡すだけ(トークンや effect は不要)。
+<SpreadsheetGrid
+  rows={rows}                     // 送信のたびに新しい配列参照へ差し替える
+  columns={columns}
+  autoSizeColumns="onDataChange"
+/>
+```
 
 ## 命令的 API(ref ハンドル / `SpreadsheetGridHandle<T>`)
 

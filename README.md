@@ -18,6 +18,7 @@ A high-performance, virtualized spreadsheet / data grid for **React 19**, writte
 - Sorting, per-column filters (`text` / `number` / `date` / `select` / `set` / `custom`), and a global filter.
 - In-cell editing and clipboard copy / paste, with range selection and keyboard navigation.
 - Optional auto-height rows for wrapped, variable-height content.
+- Auto-fit column widths to content on data load — `autoSizeColumns="onMount"` (once, on first data) or `"onDataChange"` (every time `rows` changes, e.g. after a form submit). Same engine as the column menu's "Autosize All Columns"; opt individual columns out with `suppressAutoSize`.
 - External height control via `height` / `maxHeight` (e.g. `height="100%"` to follow the parent's height).
 - Both **client-side** (`rows`) and **server-side** (`dataSource`, SSRM) row models.
 - Themeable with CSS custom properties (`--ssg-*`, defined at zero specificity so your overrides always win). Base styles are plain unlayered CSS with single-class specificity, so they survive CSS resets such as Tailwind Preflight; a cascade-layers variant (`style.layer.css`) is also shipped. `className` / `classNames` slots are provided.
@@ -122,6 +123,17 @@ By default the grid caps its height at `480px` (`max-height`) and scrolls when t
 
 For `height="100%"` to work, the parent must have a resolved height (its ancestors are sized, and a flex child needs `min-height: 0`). This is standard CSS the library can't resolve for you. `maxHeight` sets an upper bound and can be combined with `height` (explicit height, capped at `maxHeight`).
 
+### Auto-sizing columns
+
+Set `autoSizeColumns` to fit column widths to their content when data arrives — no imperative calls or effects needed on your side:
+
+```tsx
+// Refit every time a new result set replaces `rows` (e.g. after a form submit).
+<SpreadsheetGrid rows={rows} columns={columns} autoSizeColumns="onDataChange" />
+```
+
+`'onMount'` fits once on first data; `'onDataChange'` refits whenever the `rows` reference changes; `false` (default) does nothing. It reuses the same measurement as the column menu's "Autosize All Columns", so per-column opt-outs apply: columns with `suppressAutoSize: true` (and `autoHeight: true` columns) keep their `width`. The trigger only reacts to `rows` — filtering, sorting and column reordering do **not** refit — and it writes to internal widths without calling `onColumnsChange`, so it coexists with controlled `columns`. Server-side (`dataSource`) is not supported. See [`API_REFERENCE.md`](./src/components/spreadsheet-grid/API_REFERENCE.md) for details.
+
 ### Density
 
 Set `density` to switch the overall sizing with one prop — `'compact' | 'standard' | 'comfortable'` (default `'standard'`, identical to previous versions):
@@ -224,6 +236,7 @@ The full prop and type reference lives in [`src/components/spreadsheet-grid/API_
 - ソート、列ごとのフィルター（`text` / `number` / `date` / `select` / `set` / `custom`）、グローバルフィルター。
 - セル内編集とクリップボードのコピー／貼り付け、範囲選択、キーボード操作。
 - 折り返し・可変行高に対応する auto-height 行（任意）。
+- データ投入時に列幅を内容へ自動フィット — `autoSizeColumns="onMount"`（初回にデータが載った一度きり）/ `"onDataChange"`（`rows` が変わるたび。フォーム送信結果の差し替え等）。列メニュー「すべての列の幅を自動調整」と同一エンジンで、列個別の除外は `suppressAutoSize`。
 - `height` / `maxHeight` によるスクロールコンテナ高さの外部制御（`height="100%"` で親要素の高さに追従）。
 - **クライアントサイド**（`rows`）と**サーバーサイド**（`dataSource`、SSRM）の両行モデル。
 - CSS カスタムプロパティ（`--ssg-*`。特異度 0 で定義され、利用側の上書きが常に勝ちます）によるテーマ設定。基底スタイルは未レイヤーの単一クラス特異度で、Tailwind Preflight などの CSS リセットに壊されません。カスケードレイヤー版（`style.layer.css`）も同梱。`className` / `classNames` スロットも用意。
@@ -327,6 +340,17 @@ export function Example() {
 ```
 
 `height="100%"` を効かせるには、**親要素が確定高さを持つ**必要があります（祖先まで高さが確定している／flex 子なら `min-height: 0` が必要）。これは CSS の一般則のため本ライブラリ側では解決できません。`maxHeight` は高さの上限で、`height` と併用できます（明示高さ＋上限）。
+
+#### 列幅の自動調整（autoSizeColumns）
+
+`autoSizeColumns` を渡すと、データ投入時に列幅を内容へ自動フィットします（利用側でトークンや effect は不要）:
+
+```tsx
+// フォーム送信結果などで rows を丸ごと差し替えるたびに合わせ直す。
+<SpreadsheetGrid rows={rows} columns={columns} autoSizeColumns="onDataChange" />
+```
+
+`'onMount'` は初回にデータが載った一度きり、`'onDataChange'` は `rows`（参照）が変わるたび、`false`（既定）は無効です。計測は列メニュー「すべての列の幅を自動調整」と同一エンジンのため、列個別の除外がそのまま効きます — `suppressAutoSize: true` の列（および `autoHeight: true` の列）は `width` を維持します。発火 signal は `rows` のみで、フィルター / ソート / 列並べ替えでは**再フィットしません**。フィット幅は内部の列幅 state に反映され `onColumnsChange` を呼ばないため、controlled な `columns` とも競合しません。serverSide（`dataSource`）では無効です。詳細は [`API_REFERENCE.md`](./src/components/spreadsheet-grid/API_REFERENCE.md)。
 
 #### 密度（density）
 

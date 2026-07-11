@@ -102,6 +102,8 @@ import {
 } from './logic/geometry';
 // 追加(B3): center 列の JS 算出 flex(利用可能幅を比率配分)。
 import { isFlexingColumn, computeCenterFlexWidths } from './logic/columnFlex';
+// 追加: データ投入時の列幅自動フィットの発火判定(純関数)です。
+import { resolveAutoSizeOnData } from './logic/autoSizeOnData';
 // 追加(13-B2-5): 列リセットの再構成純ロジック(幅 / 固定 / 表示 / 並び順の完全復元)です。
 import { buildResetColumns } from './logic/columnReset';
 import type { InitialColumnState } from './logic/columnReset';
@@ -383,6 +385,9 @@ export function SpreadsheetGrid<T extends object>({
   enableSorting = true,
   // 追加(①): 列リサイズのグリッド既定(既定 true=現行挙動)。列の resizable で個別上書き可。
   enableColumnResize = true,
+  // 追加: データ投入時に全列幅を内容へ自動フィットさせるモード(既定 false)。
+  //   詳細は gridTypes の AutoSizeColumnsMode。列個別の除外は列の suppressAutoSize で行います。
+  autoSizeColumns = false,
   // 追加(UI hover): 行ホバー(既定 true) / 列ヘッダーホバー(既定 true)。
   enableRowHover = true,
   enableColumnHeaderHover = true,
@@ -1210,6 +1215,38 @@ export function SpreadsheetGrid<T extends object>({
     columnWidthsRef,
     dispatch,
   });
+
+  // ── autoSize on data(データ投入時の列幅自動フィット)────────────
+  // 追加: prop autoSizeColumns による宣言的トリガーです。列メニュー「すべての列の幅を自動調整」と
+  //   同一エンジン(runAutosize)を、rows(データ)の変化を signal に発火させるだけの薄い配線です。
+  //   - 'onMount'      : 初回にデータが載った一度きり(hasAutoSizedOnDataRef で二度目以降を抑止)。
+  //   - 'onDataChange' : rows(参照)が変わるたび(= データ差し替えのたび)。手動リサイズは上書きされます。
+  //   - false(既定)   : 何もしません(後方互換)。
+  //   発火 signal は rows のみです(effect deps)。フィルター/ソートは rows 参照を変えないため
+  //   再フィットしません。列の並べ替え/表示切替/固定(= visibleColumns 変化)でも再フィットしません
+  //   (手動操作の直後に幅が飛ぶのを避けるため、visibleColumns は deps に入れず latest-ref で読みます)。
+  //   suppressAutoSize / autoHeight 列は runAutosize 内部で除外されます。serverSide(dataSource)は
+  //   resolveAutoSizeOnData が isServerSide で弾きます(未ロード行を測れないため)。
+  //   runAutosize は effect(commit 後)で呼ぶため、rows 変化ぶんのパイプライン(order/rowModel)が
+  //   再計算済み・gridRoot mount 済みの状態で計測されます(列メニュー経路と同じ計測作法)。
+  //   フィット幅は内部 columnWidths に反映され onColumnsChange は呼ばないため、controlled columns とも
+  //   競合しません。runAutosize は安定参照(useCallback + ref deps)なので、幅反映の再レンダーで本 effect
+  //   が再発火することはありません(無限ループなし)。
+  const visibleColumnsRef = useRef(visibleColumns);
+  visibleColumnsRef.current = visibleColumns;
+  const hasAutoSizedOnDataRef = useRef(false);
+  useEffect(() => {
+    const { shouldRun, nextHasAutoSizedOnMount } = resolveAutoSizeOnData({
+      mode: autoSizeColumns,
+      isServerSide,
+      rowCount: rows.length,
+      hasAutoSizedOnMount: hasAutoSizedOnDataRef.current,
+    });
+    hasAutoSizedOnDataRef.current = nextHasAutoSizedOnMount;
+    if (shouldRun) {
+      void runAutosize(visibleColumnsRef.current);
+    }
+  }, [autoSizeColumns, rows, isServerSide, runAutosize]);
 
   // 追加(DS-3-6): ビュー行数の単一ソースを seam(getRowCount)経由へ移します。
   //   値は order.length(= 旧 filteredRows.length)で常に等価。プリミティブ number のため

@@ -76,6 +76,8 @@ export type {
   GridDensity,
   // 追加(TH-DK-2): カラーテーマ('light' | 'dark' | 'auto')。
   GridTheme,
+  // 追加: データ投入時の列幅自動フィットの発火モード('onMount' | 'onDataChange' | false)。
+  AutoSizeColumnsMode,
   // 追加(バッチ②/コンテキストメニュー): セル/行の汎用コンテキストメニュー(完全カスタム)の公開型群。
   GridContextMenuTarget,
   GridContextMenuParams,

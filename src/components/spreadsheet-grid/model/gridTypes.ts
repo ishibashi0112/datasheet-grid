@@ -792,6 +792,14 @@ export type GridDensity = 'compact' | 'standard' | 'comfortable';
 //   渡す使い方が本命です。
 export type GridTheme = 'light' | 'dark' | 'auto';
 
+// 追加: データ投入時に全列幅を内容へ自動フィットさせる発火モードです。
+//   'onMount'      = 初回にデータが載った一度きり。
+//   'onDataChange' = rows(参照)が変わるたび(= データ差し替えのたび)。手動リサイズは上書きされます。
+//   false(既定)   = 何もしません。列個別の除外は列の suppressAutoSize(+ 固定 width)で行います。
+//   計測は列メニュー「すべての列の幅を自動調整」と同一エンジンで、suppressAutoSize / autoHeight 列は
+//   除外されます。serverSide(dataSource)では未ロード行を測れないため無効です(clientSide 限定)。
+export type AutoSizeColumnsMode = 'onMount' | 'onDataChange' | false;
+
 export type SpreadsheetGridProps<T> = {
   // 追加(imperative API #1): React 19 の ref-as-prop。命令的ハンドル(SpreadsheetGridHandle)を受け取ります。
   //   forwardRef は使いません(React 19 で deprecated 予定のため)。状態は controlled のまま、prop で
@@ -892,6 +900,9 @@ export type SpreadsheetGridProps<T> = {
   // 追加(①): 列幅の手動リサイズ可否のグリッド既定です(既定 true=現行挙動)。
   //   各列の column.resizable が未指定のとき本値を継承します(column.resizable ?? enableColumnResize)。
   enableColumnResize?: boolean;
+  // 追加: データ投入時に全列幅を内容へ自動フィットさせるモードです(既定 false)。
+  //   詳細と suppressAutoSize / autoHeight 列の除外については AutoSizeColumnsMode を参照。
+  autoSizeColumns?: AutoSizeColumnsMode;
   // 追加(UI hover): 行ホバー時に行全体を薄くハイライトします。既定 true。
   enableRowHover?: boolean;
   // 追加(UI hover): 列ヘッダーのホバー時にヘッダーセルを薄くハイライトします。既定 true。

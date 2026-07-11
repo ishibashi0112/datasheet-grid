@@ -86,6 +86,8 @@ src/components/spreadsheet-grid/hooks/useToolPanelController.ts
 src/components/spreadsheet-grid/index.ts
 src/components/spreadsheet-grid/logic/autoScrollGeometry.test.ts
 src/components/spreadsheet-grid/logic/autoScrollGeometry.ts
+src/components/spreadsheet-grid/logic/autoSizeOnData.test.ts
+src/components/spreadsheet-grid/logic/autoSizeOnData.ts
 src/components/spreadsheet-grid/logic/columnAutosize.ts
 src/components/spreadsheet-grid/logic/columnFlex.test.ts
 src/components/spreadsheet-grid/logic/columnFlex.ts
@@ -863,6 +865,139 @@ export const useGridKeyboardInteractions = <T,>({
 export default useGridKeyboardInteractions;
 </file>
 
+<file path="src/components/spreadsheet-grid/logic/autoSizeOnData.test.ts">
+import { describe, it, expect } from 'vitest';
+import { resolveAutoSizeOnData } from './autoSizeOnData';
+
+// 追加: autoSizeColumns の発火判定(純関数)のテストです。実計測は canvas 依存で jsdom では
+//   検証できないため、ここでは「いつ shouldRun=true になるか / mount フラグの遷移」だけを固定します。
+describe('resolveAutoSizeOnData', () => {
+  it('mode=false は行数によらず発火しない(フラグ据え置き)', () => {
+    expect(
+      resolveAutoSizeOnData({
+        mode: false,
+        isServerSide: false,
+        rowCount: 100,
+        hasAutoSizedOnMount: false,
+      }),
+    ).toEqual({ shouldRun: false, nextHasAutoSizedOnMount: false });
+  });
+
+  it('serverSide は発火しない(未ロード行を測れないため)', () => {
+    expect(
+      resolveAutoSizeOnData({
+        mode: 'onDataChange',
+        isServerSide: true,
+        rowCount: 100,
+        hasAutoSizedOnMount: false,
+      }),
+    ).toEqual({ shouldRun: false, nextHasAutoSizedOnMount: false });
+  });
+
+  it('rowCount=0(空データ)は発火しない', () => {
+    expect(
+      resolveAutoSizeOnData({
+        mode: 'onMount',
+        isServerSide: false,
+        rowCount: 0,
+        hasAutoSizedOnMount: false,
+      }),
+    ).toEqual({ shouldRun: false, nextHasAutoSizedOnMount: false });
+  });
+
+  it("'onMount' 未発火 + 行あり → 発火し、フラグを true にする", () => {
+    expect(
+      resolveAutoSizeOnData({
+        mode: 'onMount',
+        isServerSide: false,
+        rowCount: 100,
+        hasAutoSizedOnMount: false,
+      }),
+    ).toEqual({ shouldRun: true, nextHasAutoSizedOnMount: true });
+  });
+
+  it("'onMount' 発火済み → 二度目以降は発火しない(フラグ true 維持)", () => {
+    expect(
+      resolveAutoSizeOnData({
+        mode: 'onMount',
+        isServerSide: false,
+        rowCount: 100,
+        hasAutoSizedOnMount: true,
+      }),
+    ).toEqual({ shouldRun: false, nextHasAutoSizedOnMount: true });
+  });
+
+  it("'onDataChange' 行あり → 発火し、mount フラグは使わない(据え置き)", () => {
+    expect(
+      resolveAutoSizeOnData({
+        mode: 'onDataChange',
+        isServerSide: false,
+        rowCount: 100,
+        hasAutoSizedOnMount: false,
+      }),
+    ).toEqual({ shouldRun: true, nextHasAutoSizedOnMount: false });
+  });
+
+  it("'onDataChange' は連続呼び出しでも毎回発火する", () => {
+    const first = resolveAutoSizeOnData({
+      mode: 'onDataChange',
+      isServerSide: false,
+      rowCount: 10,
+      hasAutoSizedOnMount: false,
+    });
+    const second = resolveAutoSizeOnData({
+      mode: 'onDataChange',
+      isServerSide: false,
+      rowCount: 20,
+      hasAutoSizedOnMount: first.nextHasAutoSizedOnMount,
+    });
+    expect(first.shouldRun).toBe(true);
+    expect(second.shouldRun).toBe(true);
+  });
+});
+</file>
+
+<file path="src/components/spreadsheet-grid/logic/autoSizeOnData.ts">
+// 追加: prop autoSizeColumns による「データ投入時の列幅自動フィット」の発火判定です。
+//   計測本体(canvas / 実 DOM)は列メニュー「すべての列の幅を自動調整」と同一エンジン
+//   (useColumnAutosizeRunner の runAutosize)を再利用し、本モジュールは「いつ叩くか」だけを
+//   純関数として切り出します。jsdom では canvas 計測が no-op になり幅を直接検証できないため、
+//   発火判定をここへ分離して単体テスト可能にしています(logic/ への純関数抽出方針)。
+import type { AutoSizeColumnsMode } from '../model/gridTypes';
+
+// autoSizeColumns の発火判定です。effect はこの結果に従って runAutosize を呼びます。
+//   戻り値:
+//     shouldRun               = runAutosize を呼ぶべきか。
+//     nextHasAutoSizedOnMount  = 'onMount' の「発火済み」フラグの次値(呼び出し側が ref へ書き戻す)。
+export const resolveAutoSizeOnData = (params: {
+  // グリッド prop の autoSizeColumns(既定 false)。
+  mode: AutoSizeColumnsMode;
+  // serverSide(dataSource)か。true のときは常に発火しません(未ロード行を測れないため)。
+  isServerSide: boolean;
+  // clientSide のビュー元データ件数(= rows.length)。0 のときは測る対象が無いため発火しません。
+  rowCount: number;
+  // 'onMount' の発火済みフラグの現在値。
+  hasAutoSizedOnMount: boolean;
+}): { shouldRun: boolean; nextHasAutoSizedOnMount: boolean } => {
+  const { mode, isServerSide, rowCount, hasAutoSizedOnMount } = params;
+
+  // 無効 / serverSide / 空データは発火しません(フラグは据え置き)。
+  if (mode === false || isServerSide || rowCount === 0) {
+    return { shouldRun: false, nextHasAutoSizedOnMount: hasAutoSizedOnMount };
+  }
+
+  // 'onMount' は初回にデータが載った一度きり。以後(フラグ true)は発火しません。
+  if (mode === 'onMount') {
+    return hasAutoSizedOnMount
+      ? { shouldRun: false, nextHasAutoSizedOnMount: true }
+      : { shouldRun: true, nextHasAutoSizedOnMount: true };
+  }
+
+  // 'onDataChange' は rows 変化のたびに発火します(発火済みフラグは使いません)。
+  return { shouldRun: true, nextHasAutoSizedOnMount: hasAutoSizedOnMount };
+};
+</file>
+
 <file path="src/components/spreadsheet-grid/logic/domGuards.ts">
 // 追加: 文字キー入力で編集開始する判定です。
 export const isPrintableKey = (event: {
@@ -1588,6 +1723,209 @@ export const isSameCellCoord = (
   }
 
   return left.row === right.row && left.col === right.col;
+};
+</file>
+
+<file path="src/components/spreadsheet-grid/utils/clipboard.ts">
+import type { GridColumn } from '../model/gridTypes';
+import {
+  normalizeCellRange,
+  normalizeColumnRange,
+  normalizeRowRange,
+} from '../model/gridSelectors';
+import { getCellValue, setCellValue } from './permissions';
+
+// 追加: TSV の行列データ型です。
+export type ClipboardMatrix = string[][];
+
+// 追加: text/plain の TSV を 2次元配列へ変換します。
+export const parseClipboardText = (text: string): ClipboardMatrix => {
+  const normalized = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+  if (!normalized) {
+    return [];
+  }
+  return normalized
+    .split('\n')
+    .filter((line) => line.length > 0)
+    .map((line) => line.split('\t'));
+};
+
+// 追加: 選択範囲の rows/columns から TSV を生成します。
+export const serializeSelectionToTsv = <T,>(
+  // 変更(DS-3-10): rows: T[] → getRow/viewRowCount の seam-native 署名へ。
+  //   呼び出し側のビュー行 materialize を不要にします(関数側は選択レンジ or
+  //   0..viewRowCount-1 のみを getRow で引きます)。
+  getRow: (viewIndex: number) => T,
+  viewRowCount: number,
+  columns: GridColumn<T>[],
+  selection:
+    | {
+        type: 'cell';
+        range: {
+          start: { row: number; col: number };
+          end: { row: number; col: number };
+        };
+      }
+    | { type: 'row'; startRow: number; endRow: number }
+    | { type: 'col'; startCol: number; endCol: number }
+    | null,
+): string => {
+  if (!selection) {
+    return '';
+  }
+
+  const lines: string[] = [];
+
+  // 追加: セル範囲選択のコピーです。
+  if (selection.type === 'cell') {
+    const normalizedRange = normalizeCellRange(selection.range);
+    for (
+      let rowIndex = normalizedRange.start.row;
+      rowIndex <= normalizedRange.end.row;
+      rowIndex += 1
+    ) {
+      const row = getRow(rowIndex);
+      if (!row) {
+        continue;
+      }
+      const cells: string[] = [];
+      for (
+        let colIndex = normalizedRange.start.col;
+        colIndex <= normalizedRange.end.col;
+        colIndex += 1
+      ) {
+        const column = columns[colIndex];
+        if (!column) {
+          continue;
+        }
+        const rawValue = getCellValue(row, column);
+        const formattedValue = column.formatClipboardValue
+          ? column.formatClipboardValue(rawValue, row)
+          : String(rawValue ?? '');
+        cells.push(formattedValue);
+      }
+      lines.push(cells.join('\t'));
+    }
+    return lines.join('\n');
+  }
+
+  // 追加: 行選択のコピーです。選択された行 × visible columns 全体を対象にします。
+  if (selection.type === 'row') {
+    const normalizedRange = normalizeRowRange(selection.startRow, selection.endRow);
+    for (
+      let rowIndex = normalizedRange.startRow;
+      rowIndex <= normalizedRange.endRow;
+      rowIndex += 1
+    ) {
+      const row = getRow(rowIndex);
+      if (!row) {
+        continue;
+      }
+      const cells = columns.map((column) => {
+        const rawValue = getCellValue(row, column);
+        return column.formatClipboardValue
+          ? column.formatClipboardValue(rawValue, row)
+          : String(rawValue ?? '');
+      });
+      lines.push(cells.join('\t'));
+    }
+    return lines.join('\n');
+  }
+
+  // 追加: 列選択のコピーです。visible rows × 選択列 を対象にします。
+  const normalizedRange = normalizeColumnRange(selection.startCol, selection.endCol);
+  for (let rowIndex = 0; rowIndex < viewRowCount; rowIndex += 1) {
+    const row = getRow(rowIndex);
+    if (!row) {
+      continue;
+    }
+    const cells: string[] = [];
+    for (
+      let colIndex = normalizedRange.startCol;
+      colIndex <= normalizedRange.endCol;
+      colIndex += 1
+    ) {
+      const column = columns[colIndex];
+      if (!column) {
+        continue;
+      }
+      const rawValue = getCellValue(row, column);
+      const formattedValue = column.formatClipboardValue
+        ? column.formatClipboardValue(rawValue, row)
+        : String(rawValue ?? '');
+      cells.push(formattedValue);
+    }
+    lines.push(cells.join('\t'));
+  }
+
+  return lines.join('\n');
+};
+
+// 追加: 貼り付け matrix を rows へ適用します。
+export const applyClipboardMatrixToRows = <T extends object,>(
+  rows: T[],
+  // 変更(DS-3-10): sourceRowIndexes: number[] → view→source 解決クロージャへ。
+  //   N 個の配列 materialize を撤去します。範囲外 viewIndex に定義値が返っても、
+  //   下の !currentRow ガードで skip され従来の undefined→continue と同結果です。
+  resolveSourceIndex: (viewIndex: number) => number | undefined,
+  columns: GridColumn<T>[],
+  matrix: ClipboardMatrix,
+  startRowIndex: number,
+  startColIndex: number,
+  canWriteCell: (
+    originalRowIndex: number,
+    colIndex: number,
+    row: T,
+    column: GridColumn<T>,
+  ) => boolean,
+): T[] => {
+  if (matrix.length === 0) {
+    return rows;
+  }
+
+  const nextRows = [...rows];
+
+  for (let rowOffset = 0; rowOffset < matrix.length; rowOffset += 1) {
+    const filteredRowIndex = startRowIndex + rowOffset;
+    const originalRowIndex = resolveSourceIndex(filteredRowIndex);
+    if (originalRowIndex === undefined) {
+      continue;
+    }
+
+    const currentRow = nextRows[originalRowIndex];
+    if (!currentRow) {
+      continue;
+    }
+
+    let nextRow = currentRow;
+    let rowChanged = false;
+
+    for (let colOffset = 0; colOffset < matrix[rowOffset].length; colOffset += 1) {
+      const colIndex = startColIndex + colOffset;
+      const column = columns[colIndex];
+      if (!column) {
+        continue;
+      }
+
+      if (!canWriteCell(originalRowIndex, colIndex, currentRow, column)) {
+        continue;
+      }
+
+      const rawValue = matrix[rowOffset][colOffset];
+      const parsedValue = column.parseClipboardValue
+        ? column.parseClipboardValue(rawValue, currentRow)
+        : rawValue;
+
+      nextRow = setCellValue(nextRow, column, parsedValue);
+      rowChanged = true;
+    }
+
+    if (rowChanged) {
+      nextRows[originalRowIndex] = nextRow;
+    }
+  }
+
+  return nextRows;
 };
 </file>
 
@@ -3590,6 +3928,286 @@ export const useGridBarContext = <T,>({
 export default useGridBarContext;
 </file>
 
+<file path="src/components/spreadsheet-grid/hooks/useGridClipboardController.ts">
+import { useCallback, type Dispatch } from 'react';
+import { gridActions, type GridUiAction } from '../model/gridActions';
+import type {
+  GridColumn,
+  SpreadsheetGridProps,
+  GridUiState,
+  RowModel,
+} from '../model/gridTypes';
+import { clamp } from '../logic/geometry';
+import { getCellValue, isCellEditable } from '../utils/permissions';
+import {
+  applyClipboardMatrixToRows,
+  parseClipboardText,
+  serializeSelectionToTsv,
+} from '../utils/clipboard';
+
+type UseGridClipboardControllerArgs<T extends object> = {
+  rows: T[];
+  // 変更(DS-3-3): filteredRows / filteredRowSourceIndexes 配列 → rowModel シームへ集約。
+  //   copy 時のセル値取得は getRow(i)、paste 書き込みの source 解決は getSourceIndex(i)、
+  //   範囲判定の行数は getRowCount() を使い分けます。順序契約は order と同一(viewIndex 空間)。
+  rowModel: RowModel<T>;
+  visibleColumns: GridColumn<T>[];
+  uiState: GridUiState;
+  readOnly: boolean;
+  canEditCell: SpreadsheetGridProps<T>['canEditCell'];
+  createRow?: () => T;
+  createOverflowColumn?: (columnIndex: number) => GridColumn<T>;
+  onRowsChange?: (nextRows: T[]) => void;
+  onColumnsChange?: (nextColumns: GridColumn<T>[]) => void;
+  dispatch: Dispatch<GridUiAction>;
+};
+
+// 追加: copy / paste と行列自動拡張をまとめる clipboard controller です。
+export const useGridClipboardController = <T extends object>({
+  rows,
+  rowModel,
+  visibleColumns,
+  uiState,
+  readOnly,
+  canEditCell,
+  createRow,
+  createOverflowColumn,
+  onRowsChange,
+  onColumnsChange,
+  dispatch,
+}: UseGridClipboardControllerArgs<T>) => {
+  // 追加: 現在の selection が「表全体選択」かどうかを判定します。
+  // 変更(DS-3-3): filteredRows.length → rowModel.getRowCount()。
+  const viewRowCount = rowModel.getRowCount();
+  const isWholeGridSelected =
+    viewRowCount > 0 &&
+    visibleColumns.length > 0 &&
+    uiState.selection?.type === 'cell' &&
+    (() => {
+      const start = uiState.selection.range.start;
+      const end = uiState.selection.range.end;
+      const startRow = Math.min(start.row, end.row);
+      const startCol = Math.min(start.col, end.col);
+      const endRow = Math.max(start.row, end.row);
+      const endCol = Math.max(start.col, end.col);
+      return (
+        startRow === 0 &&
+        startCol === 0 &&
+        endRow === viewRowCount - 1 &&
+        endCol === visibleColumns.length - 1
+      );
+    })();
+
+  // 追加: 全体選択時の copy を専用経路で行います。
+  // 変更(DS-3-3): filteredRows.map → getRowCount()/getRow(i) のビュー順走査へ置換。
+  const serializeWholeGridToTsv = useCallback(() => {
+    const rowCount = rowModel.getRowCount();
+    if (rowCount === 0 || visibleColumns.length === 0) {
+      return '';
+    }
+
+    const lines: string[] = [];
+    for (let viewIndex = 0; viewIndex < rowCount; viewIndex += 1) {
+      const row = rowModel.getRow(viewIndex);
+      // 追加(①-3): serverSide の未ロード行(getRow===undefined)は getCellValue が throw する
+      //   ため skip します(serializeSelectionToTsv と同方針)。clientSide は全行ロード済みの
+      //   ため、この guard は実質 no-op です。
+      if (!row) {
+        continue;
+      }
+      const cells = visibleColumns.map((column) => {
+        const rawValue = getCellValue(row, column);
+        return column.formatClipboardValue
+          ? column.formatClipboardValue(rawValue, row)
+          : String(rawValue ?? '');
+      });
+      lines.push(cells.join('\t'));
+    }
+    return lines.join('\n');
+  }, [rowModel, visibleColumns]);
+
+  // 追加: copy 処理です。selection を TSV にしてクリップボードへ書き込みます。
+  const handleCopy = useCallback(async () => {
+    // 変更(DS-3-10): serializeSelectionToTsv を seam-native 化。view 行の一時 materialize
+    //   (Array.from + getRow)を撤去し、getRow / getRowCount をそのまま渡します。関数側は
+    //   選択レンジ(cell/row)または 0..viewRowCount-1(col)だけを getRow で引きます。
+    const text = isWholeGridSelected
+      ? serializeWholeGridToTsv()
+      : serializeSelectionToTsv(
+          rowModel.getRow,
+          rowModel.getRowCount(),
+          visibleColumns,
+          uiState.selection as
+            | {
+                type: 'cell';
+                range: {
+                  start: { row: number; col: number };
+                  end: { row: number; col: number };
+                };
+              }
+            | { type: 'row'; startRow: number; endRow: number }
+            | { type: 'col'; startCol: number; endCol: number }
+            | null,
+        );
+
+    if (!text) {
+      return;
+    }
+
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text);
+    }
+  }, [
+    isWholeGridSelected,
+    rowModel,
+    serializeWholeGridToTsv,
+    uiState.selection,
+    visibleColumns,
+  ]);
+
+  // 追加: paste 処理です。TSV を activeCell 起点に適用し、必要なら行/列を自動拡張します。
+  const handlePaste = useCallback(
+    (event: React.ClipboardEvent<HTMLDivElement>) => {
+      if (!onRowsChange || !uiState.activeCell) {
+        return;
+      }
+
+      const text = event.clipboardData.getData('text/plain');
+      if (!text) {
+        return;
+      }
+
+      event.preventDefault();
+
+      const matrix = parseClipboardText(text);
+      if (matrix.length === 0) {
+        return;
+      }
+
+      const startFilteredRowIndex = uiState.activeCell.row;
+      // 変更(DS-3-9): レガシーの ?? startFilteredRowIndex フォールバックを撤去します。
+      //   getSourceIndex(=order[i]) は OOB(activeCell が縮小後の order を超える)で undefined を
+      //   返します。旧版は ?? で view index を source index に誤代入していました。撤去後は
+      //   undefined をそのまま判定し、OOB の paste 起点は no-op で抜けます(下流の startOriginalRowIndex +
+      //   matrix.length が NaN になるのを防ぎ、誤行 append も回避)。in-bounds 時は従来と完全一致。
+      const startOriginalRowIndex =
+        rowModel.getSourceIndex(startFilteredRowIndex);
+      if (startOriginalRowIndex === undefined) {
+        return;
+      }
+      const startColIndex = uiState.activeCell.col;
+
+      let workingRows = [...rows];
+      let workingColumns = [...visibleColumns];
+      // 変更(DS-3-10): workingSourceIndexes 配列(N 個の Array.from)を撤去し、view→source の
+      //   解決をクロージャ resolveSourceIndex に置換します。返り値は旧配列と完全一致:
+      //     v < N            : rowModel.getSourceIndex(v)  (= order[v])
+      //     v >= N(append 行): appendBaseSource + (v - N)
+      //   appendBaseSource = 拡張前 rows.length、N = paste 時点の getRowCount()。旧 append は
+      //   workingSourceIndexes.push(workingRows.length - 1) で appendBaseSource から連番を積んで
+      //   いたため式が一致します。append していない範囲外 v は定義値(OOB の source index)を返し
+      //   ますが、下流 applyClipboardMatrixToRows の !currentRow ガードで skip され、旧の
+      //   undefined→continue と同一結果になります。
+      const viewRowCountForPaste = rowModel.getRowCount();
+      const appendBaseSource = workingRows.length;
+      const resolveSourceIndex = (viewIndex: number): number | undefined =>
+        viewIndex < viewRowCountForPaste
+          ? rowModel.getSourceIndex(viewIndex)
+          : appendBaseSource + (viewIndex - viewRowCountForPaste);
+
+      // 追加: 行不足分を createRow で自動追加します。
+      const requiredOriginalRowCount = startOriginalRowIndex + matrix.length;
+      if (requiredOriginalRowCount > workingRows.length && createRow) {
+        while (workingRows.length < requiredOriginalRowCount) {
+          workingRows.push(createRow());
+        }
+      }
+
+      // 追加: 列不足分を createOverflowColumn で自動追加します。
+      const maxPasteWidth = matrix.reduce(
+        (max, currentRow) => Math.max(max, currentRow.length),
+        0,
+      );
+      if (maxPasteWidth === 0) {
+        return;
+      }
+
+      const requiredColumnCount = startColIndex + maxPasteWidth;
+      if (requiredColumnCount > workingColumns.length) {
+        if (onColumnsChange && createOverflowColumn) {
+          while (workingColumns.length < requiredColumnCount) {
+            workingColumns.push(createOverflowColumn(workingColumns.length));
+          }
+          onColumnsChange(workingColumns);
+        }
+      }
+
+      const nextRows = applyClipboardMatrixToRows(
+        workingRows,
+        resolveSourceIndex,
+        workingColumns,
+        matrix,
+        startFilteredRowIndex,
+        startColIndex,
+        (originalRowIndex, colIndex, row, column) =>
+          isCellEditable(
+            { readOnly, canEditCell },
+            originalRowIndex,
+            colIndex,
+            row,
+            column,
+          ),
+      );
+
+      const endRow = clamp(
+        uiState.activeCell.row + Math.max(matrix.length - 1, 0),
+        0,
+        Math.max(
+          // 変更(DS-3-3): filteredRows.length - 1 → getRowCount() - 1。
+          Math.max(rowModel.getRowCount() - 1, 0),
+          startFilteredRowIndex + matrix.length - 1,
+        ),
+      );
+      const endCol = clamp(
+        uiState.activeCell.col + Math.max((matrix[0]?.length ?? 1) - 1, 0),
+        0,
+        Math.max(
+          Math.max(workingColumns.length - 1, 0),
+          startColIndex + maxPasteWidth - 1,
+        ),
+      );
+
+      onRowsChange(nextRows);
+      dispatch(gridActions.startSelection(uiState.activeCell));
+      dispatch(gridActions.updateSelection({ row: endRow, col: endCol }));
+      dispatch(gridActions.endSelection());
+      dispatch(gridActions.activateCell(uiState.activeCell));
+    },
+    [
+      canEditCell,
+      createOverflowColumn,
+      createRow,
+      dispatch,
+      onColumnsChange,
+      onRowsChange,
+      readOnly,
+      rowModel,
+      rows,
+      uiState.activeCell,
+      visibleColumns,
+    ],
+  );
+
+  return {
+    isWholeGridSelected,
+    handleCopy,
+    handlePaste,
+  };
+};
+
+export default useGridClipboardController;
+</file>
+
 <file path="src/components/spreadsheet-grid/hooks/useGridPointerInteractions.test.ts">
 // 追加(RS-AS)の回帰テスト: ガター行選択ドラッグ(enableRowSelection)の端 auto-scroll です。
 //   ガター経路は dragState を使わない ref フラグ運用のため、既存の dragType ゲートの
@@ -4536,333 +5154,6 @@ export function useResolvedGridTheme(theme: GridTheme): 'light' | 'dark' {
   }
   return 'light';
 }
-</file>
-
-<file path="src/components/spreadsheet-grid/hooks/useToolPanelController.ts">
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { RefObject } from 'react';
-
-// 追加(FM-4): ドラッグ位置のビューポート clamp(パネル共有の純ロジック)です。
-import { clampPanelDragPosition } from '../logic/panelDragGeometry';
-
-// 追加(UP-1 / 統合ツールパネル): フィルター管理 / 列の表示 / 並び替えの独立 3 パネル
-//   (useFilterManagementController / useColumnChooserController / useSortManagementController)
-//   を 1 本へ統合した controller です。パネルは 1 枚(ToolPanel)になり、中身は
-//   SegmentedControl のタブ(filter / columns / sort)で切り替えます。
-// 設計メモ:
-//   - open / close / layout / ドラッグ移動 / outside click / Escape の機構は旧 3 controller
-//     と同一です(gridRoot 右上アンカー、ドラッグ後はフローティング + resize 再 clamp)。
-//   - 変更(UP-2 / 位置記憶): ドラッグ位置は close しても破棄せず保持します(in-memory /
-//     コンポーネント lifetime 内)。再オープン時はビューポートへ clamp した上で前回位置へ
-//     復元します(旧 3 パネルの「close で既定位置へリセット」から変更。GridState には
-//     保存しません = リマウントで既定位置に戻ります)。
-//   - 追加(UP-2 / 既開時フラッシュ): 既に開いている状態での openToolPanel(導線の再クリック /
-//     別タブへの切替)では toolPanelFlashTick を increment します。view(ToolPanel)はこれを
-//     契機に枠をフラッシュし、「パネルはここに出ている」ことを示します(タブだけ静かに
-//     切り替わって気づかれない、を防ぐため)。
-//   - フィルター popover との「共存」拡張(alliedRef / suppressEscape / onSuppressedEscape)
-//     は旧 FM controller の挙動をパネル全体へ引き継ぎます(どのタブ表示中でも popover 内
-//     クリックで閉じず、popover open 中の Escape は popover close へ委譲 = 1 押し 1 階層)。
-//   - タブの可用性は機能フラグに紐づきます(filter=enableColumnFilter / columns=enableColumnMenu /
-//     sort=enableSorting)。open は不可用タブに対して no-op です。表示中に可用性が変わった
-//     場合は「先頭の可用タブへ退避 / 可用タブなしなら閉じる」を派生値(activeToolPanelTab)
-//     で解決します(effect の setState を避けるため、requestedTab は state のまま
-//     表示タブだけを派生させます)。
-//   - 幅は 3 パネル中最大の旧フィルター管理(360)へ統一します(フィルター行の要約文字列が
-//     最も幅を要するため。列 / 並び替えタブは従来よりゆとりが出ます)。
-
-// 追加(UP-1): 統合ツールパネルのタブ種別です(表示順も TAB_ORDER に従います)。
-export type ToolPanelTab = 'filter' | 'columns' | 'sort';
-
-// 追加(UP-1): body 直下 portal パネルの配置情報です(position: fixed 座標)。
-export type ToolPanelLayout = {
-  top: number;
-  left: number;
-  width: number;
-};
-
-type UseToolPanelControllerArgs = {
-  // タブの可用性です(不可用タブは availableToolPanelTabs から除外され、open も no-op)。
-  canUseFilterTab: boolean;
-  canUseColumnsTab: boolean;
-  canUseSortTab: boolean;
-  gridRootRef: RefObject<HTMLDivElement | null>;
-  // 追加(FM-1 由来): 共存要素(フィルター popover)の ref です(outside-close の除外対象)。
-  alliedRef?: RefObject<HTMLDivElement | null>;
-  // 追加(FM-1 由来): true の間は Escape close を抑止し、onSuppressedEscape へ委譲します。
-  suppressEscape?: boolean;
-  onSuppressedEscape?: () => void;
-};
-
-// 注記: 幅は旧 3 パネル(chooser 280 / sort 320 / filter 360)の最大へ統一します。
-const PANEL_WIDTH = 360;
-const VIEWPORT_MARGIN = 8;
-// gridRoot の右上から内側へのオフセットです(パネルがヘッダーに被る位置)。
-const GRID_INSET = 12;
-
-// 追加(UP-1): タブの表示順です(SegmentedControl の並び)。
-const TAB_ORDER: ToolPanelTab[] = ['filter', 'columns', 'sort'];
-
-export const useToolPanelController = ({
-  canUseFilterTab,
-  canUseColumnsTab,
-  canUseSortTab,
-  gridRootRef,
-  alliedRef,
-  suppressEscape = false,
-  onSuppressedEscape,
-}: UseToolPanelControllerArgs) => {
-  // 開閉とタブを 1 つの state で持ちます(null = closed)。
-  const [requestedTab, setRequestedTab] = useState<ToolPanelTab | null>(null);
-  const [toolPanelLayout, setToolPanelLayout] =
-    useState<ToolPanelLayout | null>(null);
-  // 追加(UP-2): 既開時フラッシュのトリガーです(既に開いている状態での open で increment。
-  //   view はこの値の変化を契機に枠をフラッシュします。閉→開では増えません)。
-  const [toolPanelFlashTick, setToolPanelFlashTick] = useState(0);
-
-  // パネル本体の ref です(outside click 判定に使います)。
-  const toolPanelRef = useRef<HTMLDivElement | null>(null);
-
-  // 追加(FM-4 由来): ヘッダードラッグで移動した位置です(null = 既定の gridRoot 追従)。
-  //   ref なのは pointermove の高頻度更新で layout state と二重の再レンダーを起こさない
-  //   ためです(layout が表示の真実)。
-  //   変更(UP-2 / 位置記憶): close では破棄しません(再オープンは clamp 済みの前回位置)。
-  //   破棄されるのはコンポーネントの unmount(= グリッドのリマウント)時だけです。
-  const draggedPositionRef = useRef<{ top: number; left: number } | null>(null);
-
-  // 表示順どおりの「可用タブ」一覧です(ToolPanel の SegmentedControl がそのまま描画します)。
-  const availableToolPanelTabs = useMemo<ToolPanelTab[]>(() => {
-    const flags: Record<ToolPanelTab, boolean> = {
-      filter: canUseFilterTab,
-      columns: canUseColumnsTab,
-      sort: canUseSortTab,
-    };
-    return TAB_ORDER.filter((tab) => flags[tab]);
-  }, [canUseFilterTab, canUseColumnsTab, canUseSortTab]);
-
-  // 表示タブの派生解決です: requestedTab が可用ならそのまま、表示中に不可用化されたら
-  // 先頭の可用タブへ退避、可用タブが 1 つもなければ閉扱い(null)。effect での setState を
-  // 使わない収束のため、requestedTab 自体は書き換えません(次の open / close で更新されます)。
-  const activeToolPanelTab: ToolPanelTab | null =
-    requestedTab === null
-      ? null
-      : availableToolPanelTabs.includes(requestedTab)
-        ? requestedTab
-        : (availableToolPanelTabs[0] ?? null);
-
-  const isToolPanelOpen = activeToolPanelTab !== null;
-
-  // gridRoot 矩形の右上を基準に fixed 座標を計算します(旧 3 controller と同一機構)。
-  const updateToolPanelLayout = useCallback(() => {
-    // ドラッグ済みなら gridRoot 追従をやめ、ビューポートへの clamp だけを行います
-    // (resize での再 clamp 用。window scroll で gridRoot が動いてもパネルは動かない =
-    //  フローティングダイアログ挙動)。
-    const dragged = draggedPositionRef.current;
-    if (dragged) {
-      const clamped = clampPanelDragPosition({
-        top: dragged.top,
-        left: dragged.left,
-        panelWidth: PANEL_WIDTH,
-        viewportWidth: window.innerWidth,
-        viewportHeight: window.innerHeight,
-      });
-      setToolPanelLayout((current) => {
-        if (
-          current &&
-          current.top === clamped.top &&
-          current.left === clamped.left &&
-          current.width === PANEL_WIDTH
-        ) {
-          return current;
-        }
-        return { top: clamped.top, left: clamped.left, width: PANEL_WIDTH };
-      });
-      return;
-    }
-    const root = gridRootRef.current;
-    if (!root) {
-      setToolPanelLayout(null);
-      return;
-    }
-
-    const rect = root.getBoundingClientRect();
-    let left = rect.right - PANEL_WIDTH - GRID_INSET;
-    let top = rect.top + GRID_INSET;
-
-    left = Math.max(VIEWPORT_MARGIN, left);
-    left = Math.min(left, window.innerWidth - PANEL_WIDTH - VIEWPORT_MARGIN);
-    top = Math.max(VIEWPORT_MARGIN, top);
-
-    setToolPanelLayout((current) => {
-      if (
-        current &&
-        current.top === top &&
-        current.left === left &&
-        current.width === PANEL_WIDTH
-      ) {
-        return current;
-      }
-      return { top, left, width: PANEL_WIDTH };
-    });
-  }, [gridRootRef]);
-
-  // パネルを指定タブで開きます。既に開いているときはタブ切替のみ(位置は不動)です。
-  // 不可用タブに対しては no-op(導線が出ない前提の保険ガード)。
-  // 追加(UP-2): 既に開いているときの open(同一タブの再オープン導線を含む)では
-  //   toolPanelFlashTick を increment し、view に枠フラッシュを促します。
-  //   注記: requestedTab を読むため本関数の参照は open/close のたびに変わります
-  //   (参照安定契約があるのは moveToolPanel のみ。利用側は通常の deps 管理で足ります)。
-  const openToolPanel = useCallback(
-    (tab: ToolPanelTab) => {
-      const flags: Record<ToolPanelTab, boolean> = {
-        filter: canUseFilterTab,
-        columns: canUseColumnsTab,
-        sort: canUseSortTab,
-      };
-      if (!flags[tab]) {
-        return;
-      }
-      if (requestedTab !== null) {
-        setToolPanelFlashTick((tick) => tick + 1);
-      }
-      // grid root に残っているフォーカスを外します(旧 3 controller と同じ作法)。
-      if (document.activeElement instanceof HTMLElement) {
-        document.activeElement.blur();
-      }
-      gridRootRef.current?.blur();
-      setRequestedTab(tab);
-    },
-    [canUseFilterTab, canUseColumnsTab, canUseSortTab, gridRootRef, requestedTab],
-  );
-
-  const closeToolPanel = useCallback(() => {
-    // 変更(UP-2 / 位置記憶): ドラッグ位置(draggedPositionRef)は破棄しません。
-    //   再オープン時は updateToolPanelLayout がビューポートへ clamp した上で前回位置へ
-    //   復元します(close 中に resize されても画面外には出ません)。
-    setRequestedTab(null);
-    setToolPanelLayout(null);
-    // close 後は grid root にフォーカスを戻し、keyboard 操作へ復帰させます。
-    requestAnimationFrame(() => {
-      gridRootRef.current?.focus();
-    });
-  }, [gridRootRef]);
-
-  // ヘッダードラッグからの移動です(view の usePanelHeaderDrag が pointermove ごとに呼びます)。
-  // 位置は clamp して layout へ即時反映し、以後 updateToolPanelLayout は gridRoot 追従を
-  // やめてこの位置を保持します(UP-2: close を跨いでも保持。解除は unmount のみ)。
-  // 注記: view 側がドラッグ session の closure に閉じ込めて呼ぶため、本関数は参照安定
-  // (deps [])であることが契約です。
-  const moveToolPanel = useCallback((top: number, left: number) => {
-    const clamped = clampPanelDragPosition({
-      top,
-      left,
-      panelWidth: PANEL_WIDTH,
-      viewportWidth: window.innerWidth,
-      viewportHeight: window.innerHeight,
-    });
-    draggedPositionRef.current = clamped;
-    setToolPanelLayout({
-      top: clamped.top,
-      left: clamped.left,
-      width: PANEL_WIDTH,
-    });
-  }, []);
-
-  // open 時の初期配置 + resize / window scroll への追従です。gridRoot 基準のため、
-  // グリッド内部スクロールでは動かしません(capture: true の scroll は内部スクロールでも
-  // 発火しますが、gridRoot 矩形は内部スクロールで変わらないため layout は不変です)。
-  useEffect(() => {
-    if (!isToolPanelOpen) {
-      return;
-    }
-
-    updateToolPanelLayout();
-
-    const handle = () => {
-      updateToolPanelLayout();
-    };
-
-    window.addEventListener('resize', handle);
-    window.addEventListener('scroll', handle, true);
-
-    return () => {
-      window.removeEventListener('resize', handle);
-      window.removeEventListener('scroll', handle, true);
-    };
-  }, [isToolPanelOpen, updateToolPanelLayout]);
-
-  // 表示中は outside click で閉じます。
-  // 相違(FM-1 由来): alliedRef(フィルター popover)内の pointerdown は「内側」とみなして
-  // 閉じません(✎ で popover を開いて編集 → 別の行の ✎ …と、パネルを開いたまま連続編集
-  // できるようにします。どのタブ表示中でも同じ扱いです)。
-  useEffect(() => {
-    if (!isToolPanelOpen) {
-      return;
-    }
-
-    const handleWindowPointerDown = (event: globalThis.PointerEvent) => {
-      const targetNode = event.target as Node | null;
-      if (!targetNode) {
-        return;
-      }
-      if (toolPanelRef.current?.contains(targetNode)) {
-        return;
-      }
-      if (alliedRef?.current?.contains(targetNode)) {
-        return;
-      }
-      closeToolPanel();
-    };
-
-    window.addEventListener('pointerdown', handleWindowPointerDown);
-    return () => {
-      window.removeEventListener('pointerdown', handleWindowPointerDown);
-    };
-  }, [alliedRef, closeToolPanel, isToolPanelOpen]);
-
-  // 表示中は Escape で閉じます(パネル内入力へフォーカスがあっても効くよう window で
-  // 拾います / POP-KEY: capture 登録)。
-  // 相違(FM-1 由来): suppressEscape=true(フィルター popover open 中)の間は本パネルを
-  // 閉じず、onSuppressedEscape(popover の close)へ委譲します。preventDefault はしません
-  // (1 押し目 = popover / 2 押し目 = パネル、の 1 押し 1 階層に揃えるため)。
-  useEffect(() => {
-    if (!isToolPanelOpen) {
-      return;
-    }
-
-    const handleWindowKeyDown = (event: globalThis.KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        if (suppressEscape) {
-          onSuppressedEscape?.();
-          return;
-        }
-        event.preventDefault();
-        closeToolPanel();
-      }
-    };
-
-    // 変更(POP-KEY 由来): capture 登録(第 3 引数 true)です。パネル root の bubble 相
-    // stopPropagation やパネル内要素の stopPropagation に依らず、フォーカス位置に関係なく
-    // Escape を受けられます(add / remove の capture 指定は一致必須です)。
-    window.addEventListener('keydown', handleWindowKeyDown, true);
-    return () => {
-      window.removeEventListener('keydown', handleWindowKeyDown, true);
-    };
-  }, [closeToolPanel, isToolPanelOpen, onSuppressedEscape, suppressEscape]);
-
-  return {
-    activeToolPanelTab,
-    availableToolPanelTabs,
-    toolPanelLayout,
-    toolPanelFlashTick,
-    toolPanelRef,
-    openToolPanel,
-    closeToolPanel,
-    moveToolPanel,
-  };
-};
-
-export default useToolPanelController;
 </file>
 
 <file path="src/components/spreadsheet-grid/logic/autoScrollGeometry.test.ts">
@@ -8911,209 +9202,6 @@ export function numberFormatter<T>(
 }
 </file>
 
-<file path="src/components/spreadsheet-grid/utils/clipboard.ts">
-import type { GridColumn } from '../model/gridTypes';
-import {
-  normalizeCellRange,
-  normalizeColumnRange,
-  normalizeRowRange,
-} from '../model/gridSelectors';
-import { getCellValue, setCellValue } from './permissions';
-
-// 追加: TSV の行列データ型です。
-export type ClipboardMatrix = string[][];
-
-// 追加: text/plain の TSV を 2次元配列へ変換します。
-export const parseClipboardText = (text: string): ClipboardMatrix => {
-  const normalized = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
-  if (!normalized) {
-    return [];
-  }
-  return normalized
-    .split('\n')
-    .filter((line) => line.length > 0)
-    .map((line) => line.split('\t'));
-};
-
-// 追加: 選択範囲の rows/columns から TSV を生成します。
-export const serializeSelectionToTsv = <T,>(
-  // 変更(DS-3-10): rows: T[] → getRow/viewRowCount の seam-native 署名へ。
-  //   呼び出し側のビュー行 materialize を不要にします(関数側は選択レンジ or
-  //   0..viewRowCount-1 のみを getRow で引きます)。
-  getRow: (viewIndex: number) => T,
-  viewRowCount: number,
-  columns: GridColumn<T>[],
-  selection:
-    | {
-        type: 'cell';
-        range: {
-          start: { row: number; col: number };
-          end: { row: number; col: number };
-        };
-      }
-    | { type: 'row'; startRow: number; endRow: number }
-    | { type: 'col'; startCol: number; endCol: number }
-    | null,
-): string => {
-  if (!selection) {
-    return '';
-  }
-
-  const lines: string[] = [];
-
-  // 追加: セル範囲選択のコピーです。
-  if (selection.type === 'cell') {
-    const normalizedRange = normalizeCellRange(selection.range);
-    for (
-      let rowIndex = normalizedRange.start.row;
-      rowIndex <= normalizedRange.end.row;
-      rowIndex += 1
-    ) {
-      const row = getRow(rowIndex);
-      if (!row) {
-        continue;
-      }
-      const cells: string[] = [];
-      for (
-        let colIndex = normalizedRange.start.col;
-        colIndex <= normalizedRange.end.col;
-        colIndex += 1
-      ) {
-        const column = columns[colIndex];
-        if (!column) {
-          continue;
-        }
-        const rawValue = getCellValue(row, column);
-        const formattedValue = column.formatClipboardValue
-          ? column.formatClipboardValue(rawValue, row)
-          : String(rawValue ?? '');
-        cells.push(formattedValue);
-      }
-      lines.push(cells.join('\t'));
-    }
-    return lines.join('\n');
-  }
-
-  // 追加: 行選択のコピーです。選択された行 × visible columns 全体を対象にします。
-  if (selection.type === 'row') {
-    const normalizedRange = normalizeRowRange(selection.startRow, selection.endRow);
-    for (
-      let rowIndex = normalizedRange.startRow;
-      rowIndex <= normalizedRange.endRow;
-      rowIndex += 1
-    ) {
-      const row = getRow(rowIndex);
-      if (!row) {
-        continue;
-      }
-      const cells = columns.map((column) => {
-        const rawValue = getCellValue(row, column);
-        return column.formatClipboardValue
-          ? column.formatClipboardValue(rawValue, row)
-          : String(rawValue ?? '');
-      });
-      lines.push(cells.join('\t'));
-    }
-    return lines.join('\n');
-  }
-
-  // 追加: 列選択のコピーです。visible rows × 選択列 を対象にします。
-  const normalizedRange = normalizeColumnRange(selection.startCol, selection.endCol);
-  for (let rowIndex = 0; rowIndex < viewRowCount; rowIndex += 1) {
-    const row = getRow(rowIndex);
-    if (!row) {
-      continue;
-    }
-    const cells: string[] = [];
-    for (
-      let colIndex = normalizedRange.startCol;
-      colIndex <= normalizedRange.endCol;
-      colIndex += 1
-    ) {
-      const column = columns[colIndex];
-      if (!column) {
-        continue;
-      }
-      const rawValue = getCellValue(row, column);
-      const formattedValue = column.formatClipboardValue
-        ? column.formatClipboardValue(rawValue, row)
-        : String(rawValue ?? '');
-      cells.push(formattedValue);
-    }
-    lines.push(cells.join('\t'));
-  }
-
-  return lines.join('\n');
-};
-
-// 追加: 貼り付け matrix を rows へ適用します。
-export const applyClipboardMatrixToRows = <T extends object,>(
-  rows: T[],
-  // 変更(DS-3-10): sourceRowIndexes: number[] → view→source 解決クロージャへ。
-  //   N 個の配列 materialize を撤去します。範囲外 viewIndex に定義値が返っても、
-  //   下の !currentRow ガードで skip され従来の undefined→continue と同結果です。
-  resolveSourceIndex: (viewIndex: number) => number | undefined,
-  columns: GridColumn<T>[],
-  matrix: ClipboardMatrix,
-  startRowIndex: number,
-  startColIndex: number,
-  canWriteCell: (
-    originalRowIndex: number,
-    colIndex: number,
-    row: T,
-    column: GridColumn<T>,
-  ) => boolean,
-): T[] => {
-  if (matrix.length === 0) {
-    return rows;
-  }
-
-  const nextRows = [...rows];
-
-  for (let rowOffset = 0; rowOffset < matrix.length; rowOffset += 1) {
-    const filteredRowIndex = startRowIndex + rowOffset;
-    const originalRowIndex = resolveSourceIndex(filteredRowIndex);
-    if (originalRowIndex === undefined) {
-      continue;
-    }
-
-    const currentRow = nextRows[originalRowIndex];
-    if (!currentRow) {
-      continue;
-    }
-
-    let nextRow = currentRow;
-    let rowChanged = false;
-
-    for (let colOffset = 0; colOffset < matrix[rowOffset].length; colOffset += 1) {
-      const colIndex = startColIndex + colOffset;
-      const column = columns[colIndex];
-      if (!column) {
-        continue;
-      }
-
-      if (!canWriteCell(originalRowIndex, colIndex, currentRow, column)) {
-        continue;
-      }
-
-      const rawValue = matrix[rowOffset][colOffset];
-      const parsedValue = column.parseClipboardValue
-        ? column.parseClipboardValue(rawValue, currentRow)
-        : rawValue;
-
-      nextRow = setCellValue(nextRow, column, parsedValue);
-      rowChanged = true;
-    }
-
-    if (rowChanged) {
-      nextRows[originalRowIndex] = nextRow;
-    }
-  }
-
-  return nextRows;
-};
-</file>
-
 <file path="src/components/spreadsheet-grid/utils/excelColumnName.test.ts">
 // B: toExcelColumnName の境界 / 全域等価性テスト(純関数・node)。
 //   本番コードは無改修。0-based 列 index → Excel 列名(A, B, ... Z, AA, ...)の
@@ -9749,391 +9837,6 @@ export const RowSelectionCheckbox = memo(RowSelectionCheckboxInner);
 export default RowSelectionCheckbox;
 </file>
 
-<file path="src/components/spreadsheet-grid/view/ToolPanel.test.tsx">
-// 追加(UP-1)の view テスト: 統合ツールパネルのシェル(ToolPanel)の配線を固定します。
-//   - SegmentedControl: タブの描画 / クリックで onSelectTab(アクティブタブの再クリックは
-//     発火しない)/ 件数バッジ(0 / undefined は非表示)。
-//   - × クローズで onRequestClose。
-//   - activeTab=null / layout=null では描画しない。
-//   - children(アクティブタブのコンテンツ)の描画。
-//   - ヘッダードラッグ(usePanelHeaderDrag / FM-4)の配線
-//     (旧 FilterManagementPanel.test.tsx から移設。共有フックのため本シェルで固定します)。
-//   CSS の見た目(インジケータの位置など)は jsdom で検証できないため、構造と
-//   コールバック発火のみを固定します。
-// @vitest-environment jsdom
-import { describe, it, expect, afterEach, vi } from 'vitest';
-import { render, screen, fireEvent, cleanup } from '@testing-library/react';
-import { createRef } from 'react';
-
-import ToolPanel, { type ToolPanelTabDescriptor } from './ToolPanel';
-import type {
-  ToolPanelLayout,
-  ToolPanelTab,
-} from '../hooks/useToolPanelController';
-
-afterEach(() => {
-  cleanup();
-});
-
-const layout: ToolPanelLayout = { top: 20, left: 40, width: 360 };
-
-const makeTabs = (): ToolPanelTabDescriptor[] => [
-  { tab: 'filter', label: 'フィルター', badge: 2 },
-  { tab: 'columns', label: '列' },
-  { tab: 'sort', label: '並び替え', badge: 0 },
-];
-
-const makeProps = (activeTab: ToolPanelTab | null = 'columns') => ({
-  activeTab,
-  flashTick: 0,
-  tabs: makeTabs(),
-  layout,
-  panelRef: createRef<HTMLDivElement>(),
-  onSelectTab: vi.fn(),
-  onRequestClose: vi.fn(),
-  onPanelMove: vi.fn(),
-});
-
-describe('ToolPanel(統合ツールパネルのシェル UP-1)', () => {
-  it('タブを表示順で描画し、アクティブタブに aria-selected が付く', () => {
-    render(<ToolPanel {...makeProps('columns')}>content</ToolPanel>);
-    const tabs = screen.getAllByRole('tab');
-    expect(tabs.map((tab) => tab.textContent)).toEqual([
-      'フィルター2',
-      '列',
-      '並び替え',
-    ]);
-    expect(tabs[0].getAttribute('aria-selected')).toBe('false');
-    expect(tabs[1].getAttribute('aria-selected')).toBe('true');
-  });
-
-  it('非アクティブタブのクリックで onSelectTab(tab)、アクティブタブの再クリックは発火しない', () => {
-    const props = makeProps('columns');
-    render(<ToolPanel {...props}>content</ToolPanel>);
-    fireEvent.click(screen.getByRole('tab', { name: /フィルター/ }));
-    expect(props.onSelectTab).toHaveBeenCalledWith('filter');
-    fireEvent.click(screen.getByRole('tab', { name: '列' }));
-    expect(props.onSelectTab).toHaveBeenCalledTimes(1);
-  });
-
-  it('件数バッジは正の値のみ表示する(0 / undefined は非表示)', () => {
-    render(<ToolPanel {...makeProps()}>content</ToolPanel>);
-    // filter: badge=2 → 表示 / columns: undefined・sort: 0 → 非表示。
-    const badges = document.querySelectorAll('.ssg-toolpanel-seg-badge');
-    expect(badges.length).toBe(1);
-    expect(badges[0].textContent).toBe('2');
-  });
-
-  it('× で onRequestClose を呼ぶ / children を描画する', () => {
-    const props = makeProps();
-    render(<ToolPanel {...props}>タブコンテンツ</ToolPanel>);
-    expect(screen.getByText('タブコンテンツ')).toBeTruthy();
-    fireEvent.click(screen.getByLabelText('閉じる'));
-    expect(props.onRequestClose).toHaveBeenCalledTimes(1);
-  });
-
-  it('activeTab=null / layout=null では描画しない', () => {
-    const closed = makeProps(null);
-    const { unmount } = render(<ToolPanel {...closed}>content</ToolPanel>);
-    expect(screen.queryByRole('tab')).toBeNull();
-    unmount();
-
-    const noLayout = { ...makeProps(), layout: null };
-    render(<ToolPanel {...noLayout}>content</ToolPanel>);
-    expect(screen.queryByRole('tab')).toBeNull();
-  });
-
-  // 移設(FM-4 → UP-1): ヘッダードラッグ(usePanelHeaderDrag)の配線固定です。
-  it('ヘッダードラッグで onPanelMove(開始位置+差分) を呼び、pointerup 後は呼ばない(FM-4)', () => {
-    const props = makeProps();
-    render(<ToolPanel {...props}>content</ToolPanel>);
-    const header = document.querySelector('.ssg-toolpanel-header') as HTMLElement;
-    expect(header.classList.contains('ssg-popover-header--draggable')).toBe(
-      true,
-    );
-    fireEvent.pointerDown(header, {
-      button: 0,
-      pointerId: 1,
-      clientX: 100,
-      clientY: 60,
-    });
-    fireEvent.pointerMove(window, { pointerId: 1, clientX: 130, clientY: 90 });
-    // layout = { top: 20, left: 40 } + 差分(+30, +30)です。
-    expect(props.onPanelMove).toHaveBeenLastCalledWith(50, 70);
-    // pointerId 不一致の move は無視されます。
-    fireEvent.pointerMove(window, { pointerId: 2, clientX: 999, clientY: 999 });
-    expect(props.onPanelMove).toHaveBeenCalledTimes(1);
-    // pointerup 後の move では呼ばれません(リスナー解除)。
-    fireEvent.pointerUp(window, { pointerId: 1 });
-    fireEvent.pointerMove(window, { pointerId: 1, clientX: 200, clientY: 200 });
-    expect(props.onPanelMove).toHaveBeenCalledTimes(1);
-  });
-
-  it('ヘッダー内の button(SegmentedControl / × 閉じる)からはドラッグを開始しない(FM-4)', () => {
-    const props = makeProps();
-    render(<ToolPanel {...props}>content</ToolPanel>);
-    fireEvent.pointerDown(screen.getByLabelText('閉じる'), {
-      button: 0,
-      pointerId: 1,
-      clientX: 10,
-      clientY: 10,
-    });
-    fireEvent.pointerMove(window, { pointerId: 1, clientX: 50, clientY: 50 });
-    expect(props.onPanelMove).not.toHaveBeenCalled();
-
-    fireEvent.pointerDown(screen.getByRole('tab', { name: /フィルター/ }), {
-      button: 0,
-      pointerId: 2,
-      clientX: 10,
-      clientY: 10,
-    });
-    fireEvent.pointerMove(window, { pointerId: 2, clientX: 50, clientY: 50 });
-    expect(props.onPanelMove).not.toHaveBeenCalled();
-  });
-
-  // 追加(UP-2 / 既開時フラッシュ): flashTick の変化でパネル枠へ --flash クラスが直付けされ、
-  //   animationend で除去されること。クラスは className prop ではなく JS 直付けのため、
-  //   flashTick を変えた再レンダーでも(props 変化による再レンダーで)消えないことを確認します。
-  it('flashTick が増えると --flash クラスが付き、animationend で除去される(UP-2)', () => {
-    const panelRef = createRef<HTMLDivElement>();
-    const base = { ...makeProps(), panelRef };
-    const { rerender } = render(
-      <ToolPanel {...base} flashTick={0}>
-        content
-      </ToolPanel>,
-    );
-    const panel = panelRef.current as HTMLDivElement;
-    expect(panel).toBeTruthy();
-    // flashTick=0(初期)ではフラッシュしません。
-    expect(panel.classList.contains('ssg-toolpanel--flash')).toBe(false);
-
-    // flashTick を増やすと --flash が付きます(既開時 open 相当)。
-    rerender(
-      <ToolPanel {...base} flashTick={1}>
-        content
-      </ToolPanel>,
-    );
-    expect(panel.classList.contains('ssg-toolpanel--flash')).toBe(true);
-
-    // props 変化による再レンダー(flashTick 据え置き)ではクラスは残ります(直付けのため)。
-    rerender(
-      <ToolPanel {...base} flashTick={1}>
-        content-changed
-      </ToolPanel>,
-    );
-    expect(panel.classList.contains('ssg-toolpanel--flash')).toBe(true);
-
-    // animationend で除去されます。
-    fireEvent.animationEnd(panel);
-    expect(panel.classList.contains('ssg-toolpanel--flash')).toBe(false);
-
-    // さらに flashTick を増やすと再びフラッシュします(連続既開 open)。
-    rerender(
-      <ToolPanel {...base} flashTick={2}>
-        content-changed
-      </ToolPanel>,
-    );
-    expect(panel.classList.contains('ssg-toolpanel--flash')).toBe(true);
-  });
-});
-</file>
-
-<file path="src/components/spreadsheet-grid/view/ToolPanel.tsx">
-// 追加(UP-1 / 統合ツールパネル): フィルター管理 / 列の表示 / 並び替えを 1 枚に統合した
-//   フローティングパネルのシェルです(portal で body 直下へ出します)。
-//   - ヘッダー: SegmentedControl(タブ切替 + 件数バッジ)+ × クローズ。ヘッダーを掴んで
-//     パネルを移動できます(usePanelHeaderDrag / 旧 3 パネルの FM-4 挙動を継承)。
-//   - ボディ: アクティブタブのコンテンツ(children)を描画します。コンテンツは
-//     FilterManagementPanel / ColumnChooserPanel / SortManagementPanel(UP-1 でコンテンツ化)
-//     を呼び出し側(SpreadsheetGrid)がタブに応じて選んで渡します。タブ切替でコンテンツは
-//     マウントし直され、タブ内の一時状態(検索語など)はリセットされます(旧パネルの
-//     「閉じたらリセット」と同じ整理)。
-//   - SegmentedControl は Mantine 風のスライドインジケータです。セグメントは等幅のため、
-//     インジケータは CSS 変数(--ssg-seg-count / --ssg-seg-index)による translateX だけで
-//     追従し、実測(offsetWidth)を使いません(resize / タブ数変化に自動追従)。
-import { useEffect } from 'react';
-import { createPortal } from 'react-dom';
-import { cx } from '../logic/cx';
-import type { CSSProperties, KeyboardEvent, PointerEvent, ReactNode, RefObject } from 'react';
-import type {
-  ToolPanelLayout,
-  ToolPanelTab,
-} from '../hooks/useToolPanelController';
-// ヘッダーを掴んでパネルを移動する共有フックです(FM-4)。
-import { usePanelHeaderDrag } from '../hooks/usePanelHeaderDrag';
-
-// 追加(UP-1): SegmentedControl の 1 セグメント分の表示情報です。
-//   badge は件数バッジ(適用中フィルター数 / ソート基準数)。undefined / 0 は非表示です。
-export type ToolPanelTabDescriptor = {
-  tab: ToolPanelTab;
-  label: string;
-  badge?: number;
-};
-
-type ToolPanelProps = {
-  // 追加(TH-DK-2): ダークテーマ修飾子クラス('ssg-theme-dark' | undefined)。ポータルは
-  //   .ssg-root 外のため、root と同じ修飾子を自身の root 要素へ直接付与します。
-  themeClassName?: string;
-  // アクティブタブです(null = closed。描画しません)。
-  activeTab: ToolPanelTab | null;
-  // 追加(UP-2): 既開時フラッシュのトリガーです(controller の toolPanelFlashTick)。
-  //   値が増えるたびにパネル枠を一瞬フラッシュします(閉→開では増えないため光りません)。
-  flashTick: number;
-  // 表示順どおりの可用タブです(controller の availableToolPanelTabs から作ります)。
-  tabs: ToolPanelTabDescriptor[];
-  layout: ToolPanelLayout | null;
-  panelRef: RefObject<HTMLDivElement | null>;
-  onSelectTab: (tab: ToolPanelTab) => void;
-  onRequestClose: () => void;
-  // ヘッダードラッグによるパネル移動です(controller の moveToolPanel を受け取ります。
-  // 位置の clamp・保持・close 時リセットは controller 側の責務)。
-  onPanelMove: (top: number, left: number) => void;
-  // アクティブタブのコンテンツです(呼び出し側がタブに応じて選んで渡します)。
-  children: ReactNode;
-};
-
-export function ToolPanel({
-  themeClassName,
-  activeTab,
-  flashTick,
-  tabs,
-  layout,
-  panelRef,
-  onSelectTab,
-  onRequestClose,
-  onPanelMove,
-  children,
-}: ToolPanelProps) {
-  // hooks は早期 return より前・無条件で呼びます(layout=null のときはフック側が開始しません)。
-  const { handleHeaderPointerDown } = usePanelHeaderDrag({
-    layout,
-    onPanelMove,
-  });
-
-  // 追加(UP-2 / 既開時フラッシュ): flashTick が増えたら panelRef の枠を一瞬フラッシュします。
-  //   既存のヘッダージャンプ(ssg-header-cell--jump-flash)と同じ「JS 直付け + animationend
-  //   除去」方式です。className prop には載せません(React の再レンダーでクラスが消えると
-  //   アニメが途中で止まるため。直付けなら animationend まで残ります)。初回(tick=0 → mount)は
-  //   effect が走りますが、閉→開では controller が increment しないため通常は光りません。
-  //   一度付いているクラスは先に除去してから付け直し、連打でも再生させます(reflow を挟む)。
-  useEffect(() => {
-    const el = panelRef.current;
-    if (!el || flashTick === 0) {
-      return;
-    }
-    el.classList.remove('ssg-toolpanel--flash');
-    // 強制 reflow でアニメを確実に再スタートさせます(連続クリック対策)。
-    void el.offsetWidth;
-    el.classList.add('ssg-toolpanel--flash');
-    const handleEnd = () => {
-      el.classList.remove('ssg-toolpanel--flash');
-    };
-    el.addEventListener('animationend', handleEnd);
-    return () => {
-      el.removeEventListener('animationend', handleEnd);
-    };
-  }, [flashTick, panelRef]);
-
-  if (activeTab === null || !layout) {
-    return null;
-  }
-
-  const activeIndex = Math.max(
-    0,
-    tabs.findIndex((descriptor) => descriptor.tab === activeTab),
-  );
-
-  const wrapperStyle: CSSProperties = {
-    top: layout.top,
-    left: layout.left,
-    width: layout.width,
-  };
-
-  const handlePointerDown = (event: PointerEvent<HTMLDivElement>) => {
-    // パネル内 pointer 操作を grid 側へ伝播させません(セル選択開始 / outside click 競合回避)。
-    event.stopPropagation();
-  };
-
-  const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
-    // portal 内 keyboard を React ツリー上の parent へ流しません。
-    // Escape での close は controller の window keydown(capture / POP-KEY)が担当します。
-    event.stopPropagation();
-  };
-
-  // SegmentedControl のインジケータ位置です(等幅前提の CSS 変数駆動)。
-  const segmentedStyle = {
-    '--ssg-seg-count': tabs.length,
-    '--ssg-seg-index': activeIndex,
-  } as CSSProperties;
-
-  return createPortal(
-    <div
-      ref={panelRef}
-      onPointerDown={handlePointerDown}
-      onKeyDown={handleKeyDown}
-      onContextMenu={(event) => {
-        event.preventDefault();
-      }}
-      className={cx('ssg-popover', 'ssg-toolpanel', themeClassName)}
-      style={wrapperStyle}
-    >
-      {/* ── ヘッダー: SegmentedControl + × クローズ(掴んで移動可) ── */}
-      <div
-        className="ssg-toolpanel-header ssg-popover-header--draggable"
-        onPointerDown={handleHeaderPointerDown}
-      >
-        <div className="ssg-toolpanel-seg" role="tablist" style={segmentedStyle}>
-          <span className="ssg-toolpanel-seg-indicator" aria-hidden />
-          {tabs.map((descriptor) => {
-            const isActive = descriptor.tab === activeTab;
-            return (
-              <button
-                key={descriptor.tab}
-                type="button"
-                role="tab"
-                aria-selected={isActive}
-                onClick={() => {
-                  if (!isActive) {
-                    onSelectTab(descriptor.tab);
-                  }
-                }}
-                className={cx(
-                  'ssg-toolpanel-seg-btn',
-                  isActive && 'ssg-toolpanel-seg-btn--active',
-                )}
-              >
-                {descriptor.label}
-                {descriptor.badge ? (
-                  <span className="ssg-toolpanel-seg-badge">
-                    {descriptor.badge}
-                  </span>
-                ) : null}
-              </button>
-            );
-          })}
-        </div>
-        <button
-          type="button"
-          onClick={onRequestClose}
-          aria-label="閉じる"
-          className="ssg-popover-close"
-        >
-          ×
-        </button>
-      </div>
-
-      {/* ── ボディ: アクティブタブのコンテンツ ── */}
-      {/* min-height でタブ間の高さのガタつきを緩和しつつ、内容が短いタブでは各コンテンツの
-          リスト(flex: 1)が伸びてフッターが下端に揃います(自然高 + min-height 方式)。 */}
-      <div className="ssg-toolpanel-body">{children}</div>
-    </div>,
-    document.body,
-  );
-}
-
-export default ToolPanel;
-</file>
-
 <file path="tsconfig.app.json">
 {
   "compilerOptions": {
@@ -10187,257 +9890,6 @@ export default ToolPanel;
   "include": ["src"],
   "exclude": []
 }
-</file>
-
-<file path="src/components/spreadsheet-grid/hooks/panelDragControllers.test.tsx">
-// 変更(UP-1)の controller テスト: 統合ツールパネル controller(useToolPanelController)の
-//   開閉 / タブ / ドラッグ移動の挙動固定です(旧 FM-4: 3 パネル controller のテストを継承)。
-//   - move で layout が即時反映され、範囲外はビューポートへ clamp されること。
-//   - ドラッグ後に close → 再 open で既定位置(gridRoot アンカー)へ戻ること(合意 d)。
-//   - ドラッグ後の resize はビューポートへ再 clamp すること(gridRoot へは戻らない)。
-//   - 既に開いているときの open(tab) はタブ切替のみで、位置(layout)が不動なこと。
-//   - 不可用タブへの open は no-op なこと / availableToolPanelTabs が可用性と表示順を反映すること。
-//   - 表示中にアクティブタブが不可用化されたら先頭の可用タブへ退避すること(派生解決)。
-// @vitest-environment jsdom
-import { describe, it, expect } from 'vitest';
-import { renderHook, act } from '@testing-library/react';
-import type { RefObject } from 'react';
-
-import { useToolPanelController } from './useToolPanelController';
-
-const makeGridRootRef = (): RefObject<HTMLDivElement | null> => ({
-  current: document.createElement('div'),
-});
-
-// 既定引数(全タブ可用)です。テストごとに可用性フラグを上書きします。
-const makeArgs = (overrides?: {
-  canUseFilterTab?: boolean;
-  canUseColumnsTab?: boolean;
-  canUseSortTab?: boolean;
-}) => ({
-  canUseFilterTab: overrides?.canUseFilterTab ?? true,
-  canUseColumnsTab: overrides?.canUseColumnsTab ?? true,
-  canUseSortTab: overrides?.canUseSortTab ?? true,
-  gridRootRef: makeGridRootRef(),
-});
-
-describe('UP-1: 統合ツールパネル(controller の move / clamp / リセット)', () => {
-  it('moveToolPanel で layout が移動し、範囲外はビューポートへ clamp される', () => {
-    const { result } = renderHook(() => useToolPanelController(makeArgs()));
-    act(() => {
-      result.current.openToolPanel('filter');
-    });
-    act(() => {
-      result.current.moveToolPanel(200, 300);
-    });
-    expect(result.current.toolPanelLayout).toEqual({
-      top: 200,
-      left: 300,
-      width: 360,
-    });
-    // 範囲外(右下遠方)は clamp されます(左右: vw - 幅 - 8 / 上下: vh - 40)。
-    act(() => {
-      result.current.moveToolPanel(99999, 99999);
-    });
-    expect(result.current.toolPanelLayout).toEqual({
-      top: window.innerHeight - 40,
-      left: window.innerWidth - 360 - 8,
-      width: 360,
-    });
-  });
-
-  it('ドラッグ後に close → 再 open すると前回のドラッグ位置へ復元する(UP-2 位置記憶)', () => {
-    const { result } = renderHook(() => useToolPanelController(makeArgs()));
-    act(() => {
-      result.current.openToolPanel('filter');
-    });
-    const initial = result.current.toolPanelLayout;
-    expect(initial).not.toBeNull();
-    act(() => {
-      result.current.moveToolPanel(200, 300);
-    });
-    const moved = result.current.toolPanelLayout;
-    expect(moved).toEqual({ top: 200, left: 300, width: 360 });
-    expect(moved).not.toEqual(initial);
-    act(() => {
-      result.current.closeToolPanel();
-    });
-    expect(result.current.activeToolPanelTab).toBeNull();
-    // 変更(UP-2): 既定位置ではなく前回のドラッグ位置へ戻ります(in-memory 保持)。
-    act(() => {
-      result.current.openToolPanel('columns');
-    });
-    expect(result.current.toolPanelLayout).toEqual(moved);
-  });
-
-  it('ドラッグ後の resize はビューポートへ再 clamp する(gridRoot アンカーへは戻らない)', () => {
-    const { result } = renderHook(() => useToolPanelController(makeArgs()));
-    act(() => {
-      result.current.openToolPanel('filter');
-    });
-    act(() => {
-      result.current.moveToolPanel(500, 600);
-    });
-    expect(result.current.toolPanelLayout).toEqual({
-      top: 500,
-      left: 600,
-      width: 360,
-    });
-    const originalWidth = window.innerWidth;
-    const originalHeight = window.innerHeight;
-    try {
-      // jsdom の innerWidth / innerHeight を縮めて resize を発火します。
-      act(() => {
-        Object.defineProperty(window, 'innerWidth', {
-          value: 500,
-          configurable: true,
-        });
-        Object.defineProperty(window, 'innerHeight', {
-          value: 400,
-          configurable: true,
-        });
-        window.dispatchEvent(new Event('resize'));
-      });
-      expect(result.current.toolPanelLayout).toEqual({
-        top: 400 - 40,
-        left: 500 - 360 - 8,
-        width: 360,
-      });
-    } finally {
-      Object.defineProperty(window, 'innerWidth', {
-        value: originalWidth,
-        configurable: true,
-      });
-      Object.defineProperty(window, 'innerHeight', {
-        value: originalHeight,
-        configurable: true,
-      });
-    }
-  });
-});
-
-describe('UP-1: 統合ツールパネル(タブと可用性)', () => {
-  it('既に開いているときの open(tab) はタブ切替のみで layout が不動', () => {
-    const { result } = renderHook(() => useToolPanelController(makeArgs()));
-    act(() => {
-      result.current.openToolPanel('filter');
-    });
-    act(() => {
-      // ドラッグ位置でも既定位置でも「切替で動かない」は同じですが、
-      // ドラッグ後の方が回帰に敏感なため移動してから切り替えます。
-      result.current.moveToolPanel(150, 250);
-    });
-    const moved = result.current.toolPanelLayout;
-    act(() => {
-      result.current.openToolPanel('columns');
-    });
-    expect(result.current.activeToolPanelTab).toBe('columns');
-    expect(result.current.toolPanelLayout).toEqual(moved);
-    act(() => {
-      result.current.openToolPanel('sort');
-    });
-    expect(result.current.activeToolPanelTab).toBe('sort');
-    expect(result.current.toolPanelLayout).toEqual(moved);
-  });
-
-  it('不可用タブへの open は no-op(閉じたまま / 表示タブ不変)', () => {
-    const { result } = renderHook(() =>
-      useToolPanelController(makeArgs({ canUseSortTab: false })),
-    );
-    act(() => {
-      result.current.openToolPanel('sort');
-    });
-    expect(result.current.activeToolPanelTab).toBeNull();
-    act(() => {
-      result.current.openToolPanel('filter');
-    });
-    act(() => {
-      result.current.openToolPanel('sort');
-    });
-    expect(result.current.activeToolPanelTab).toBe('filter');
-  });
-
-  it('availableToolPanelTabs は可用性と表示順(filter → columns → sort)を反映する', () => {
-    const all = renderHook(() => useToolPanelController(makeArgs()));
-    expect(all.result.current.availableToolPanelTabs).toEqual([
-      'filter',
-      'columns',
-      'sort',
-    ]);
-
-    const partial = renderHook(() =>
-      useToolPanelController(makeArgs({ canUseFilterTab: false })),
-    );
-    expect(partial.result.current.availableToolPanelTabs).toEqual([
-      'columns',
-      'sort',
-    ]);
-  });
-
-  it('表示中にアクティブタブが不可用化されたら先頭の可用タブへ退避する(派生解決)', () => {
-    const { result, rerender } = renderHook(
-      ({ canUseSortTab }: { canUseSortTab: boolean }) =>
-        useToolPanelController(makeArgs({ canUseSortTab })),
-      { initialProps: { canUseSortTab: true } },
-    );
-    act(() => {
-      result.current.openToolPanel('sort');
-    });
-    expect(result.current.activeToolPanelTab).toBe('sort');
-    rerender({ canUseSortTab: false });
-    expect(result.current.activeToolPanelTab).toBe('filter');
-    // 可用へ戻れば元のタブへ復帰します(requestedTab は保持しているため)。
-    rerender({ canUseSortTab: true });
-    expect(result.current.activeToolPanelTab).toBe('sort');
-  });
-});
-
-describe('UP-2: 統合ツールパネル(既開時フラッシュ toolPanelFlashTick)', () => {
-  it('閉→開では increment しない / 既に開いているときの open で increment する', () => {
-    const { result } = renderHook(() => useToolPanelController(makeArgs()));
-    // 初期値は 0。
-    expect(result.current.toolPanelFlashTick).toBe(0);
-    // 閉→開(1 回目)では増えません。
-    act(() => {
-      result.current.openToolPanel('filter');
-    });
-    expect(result.current.toolPanelFlashTick).toBe(0);
-    // 既に開いている状態での open(別タブ切替)で increment します。
-    act(() => {
-      result.current.openToolPanel('columns');
-    });
-    expect(result.current.toolPanelFlashTick).toBe(1);
-    // 同一タブの再 open(導線の再クリック相当)でも increment します。
-    act(() => {
-      result.current.openToolPanel('columns');
-    });
-    expect(result.current.toolPanelFlashTick).toBe(2);
-    // close を挟むと次の open は「閉→開」なので増えません。
-    act(() => {
-      result.current.closeToolPanel();
-    });
-    act(() => {
-      result.current.openToolPanel('sort');
-    });
-    expect(result.current.toolPanelFlashTick).toBe(2);
-  });
-
-  it('不可用タブへの open は no-op のため increment しない', () => {
-    const { result } = renderHook(() =>
-      useToolPanelController(makeArgs({ canUseSortTab: false })),
-    );
-    act(() => {
-      result.current.openToolPanel('filter');
-    });
-    expect(result.current.toolPanelFlashTick).toBe(0);
-    // 開いている状態でも、不可用タブ(sort)への open は弾かれるので増えません。
-    act(() => {
-      result.current.openToolPanel('sort');
-    });
-    expect(result.current.toolPanelFlashTick).toBe(0);
-    expect(result.current.activeToolPanelTab).toBe('filter');
-  });
-});
 </file>
 
 <file path="src/components/spreadsheet-grid/hooks/useCellContextMenuController.ts">
@@ -10650,286 +10102,6 @@ export const useCellContextMenuController = <T,>({
 export default useCellContextMenuController;
 </file>
 
-<file path="src/components/spreadsheet-grid/hooks/useGridClipboardController.ts">
-import { useCallback, type Dispatch } from 'react';
-import { gridActions, type GridUiAction } from '../model/gridActions';
-import type {
-  GridColumn,
-  SpreadsheetGridProps,
-  GridUiState,
-  RowModel,
-} from '../model/gridTypes';
-import { clamp } from '../logic/geometry';
-import { getCellValue, isCellEditable } from '../utils/permissions';
-import {
-  applyClipboardMatrixToRows,
-  parseClipboardText,
-  serializeSelectionToTsv,
-} from '../utils/clipboard';
-
-type UseGridClipboardControllerArgs<T extends object> = {
-  rows: T[];
-  // 変更(DS-3-3): filteredRows / filteredRowSourceIndexes 配列 → rowModel シームへ集約。
-  //   copy 時のセル値取得は getRow(i)、paste 書き込みの source 解決は getSourceIndex(i)、
-  //   範囲判定の行数は getRowCount() を使い分けます。順序契約は order と同一(viewIndex 空間)。
-  rowModel: RowModel<T>;
-  visibleColumns: GridColumn<T>[];
-  uiState: GridUiState;
-  readOnly: boolean;
-  canEditCell: SpreadsheetGridProps<T>['canEditCell'];
-  createRow?: () => T;
-  createOverflowColumn?: (columnIndex: number) => GridColumn<T>;
-  onRowsChange?: (nextRows: T[]) => void;
-  onColumnsChange?: (nextColumns: GridColumn<T>[]) => void;
-  dispatch: Dispatch<GridUiAction>;
-};
-
-// 追加: copy / paste と行列自動拡張をまとめる clipboard controller です。
-export const useGridClipboardController = <T extends object>({
-  rows,
-  rowModel,
-  visibleColumns,
-  uiState,
-  readOnly,
-  canEditCell,
-  createRow,
-  createOverflowColumn,
-  onRowsChange,
-  onColumnsChange,
-  dispatch,
-}: UseGridClipboardControllerArgs<T>) => {
-  // 追加: 現在の selection が「表全体選択」かどうかを判定します。
-  // 変更(DS-3-3): filteredRows.length → rowModel.getRowCount()。
-  const viewRowCount = rowModel.getRowCount();
-  const isWholeGridSelected =
-    viewRowCount > 0 &&
-    visibleColumns.length > 0 &&
-    uiState.selection?.type === 'cell' &&
-    (() => {
-      const start = uiState.selection.range.start;
-      const end = uiState.selection.range.end;
-      const startRow = Math.min(start.row, end.row);
-      const startCol = Math.min(start.col, end.col);
-      const endRow = Math.max(start.row, end.row);
-      const endCol = Math.max(start.col, end.col);
-      return (
-        startRow === 0 &&
-        startCol === 0 &&
-        endRow === viewRowCount - 1 &&
-        endCol === visibleColumns.length - 1
-      );
-    })();
-
-  // 追加: 全体選択時の copy を専用経路で行います。
-  // 変更(DS-3-3): filteredRows.map → getRowCount()/getRow(i) のビュー順走査へ置換。
-  const serializeWholeGridToTsv = useCallback(() => {
-    const rowCount = rowModel.getRowCount();
-    if (rowCount === 0 || visibleColumns.length === 0) {
-      return '';
-    }
-
-    const lines: string[] = [];
-    for (let viewIndex = 0; viewIndex < rowCount; viewIndex += 1) {
-      const row = rowModel.getRow(viewIndex);
-      // 追加(①-3): serverSide の未ロード行(getRow===undefined)は getCellValue が throw する
-      //   ため skip します(serializeSelectionToTsv と同方針)。clientSide は全行ロード済みの
-      //   ため、この guard は実質 no-op です。
-      if (!row) {
-        continue;
-      }
-      const cells = visibleColumns.map((column) => {
-        const rawValue = getCellValue(row, column);
-        return column.formatClipboardValue
-          ? column.formatClipboardValue(rawValue, row)
-          : String(rawValue ?? '');
-      });
-      lines.push(cells.join('\t'));
-    }
-    return lines.join('\n');
-  }, [rowModel, visibleColumns]);
-
-  // 追加: copy 処理です。selection を TSV にしてクリップボードへ書き込みます。
-  const handleCopy = useCallback(async () => {
-    // 変更(DS-3-10): serializeSelectionToTsv を seam-native 化。view 行の一時 materialize
-    //   (Array.from + getRow)を撤去し、getRow / getRowCount をそのまま渡します。関数側は
-    //   選択レンジ(cell/row)または 0..viewRowCount-1(col)だけを getRow で引きます。
-    const text = isWholeGridSelected
-      ? serializeWholeGridToTsv()
-      : serializeSelectionToTsv(
-          rowModel.getRow,
-          rowModel.getRowCount(),
-          visibleColumns,
-          uiState.selection as
-            | {
-                type: 'cell';
-                range: {
-                  start: { row: number; col: number };
-                  end: { row: number; col: number };
-                };
-              }
-            | { type: 'row'; startRow: number; endRow: number }
-            | { type: 'col'; startCol: number; endCol: number }
-            | null,
-        );
-
-    if (!text) {
-      return;
-    }
-
-    if (navigator.clipboard?.writeText) {
-      await navigator.clipboard.writeText(text);
-    }
-  }, [
-    isWholeGridSelected,
-    rowModel,
-    serializeWholeGridToTsv,
-    uiState.selection,
-    visibleColumns,
-  ]);
-
-  // 追加: paste 処理です。TSV を activeCell 起点に適用し、必要なら行/列を自動拡張します。
-  const handlePaste = useCallback(
-    (event: React.ClipboardEvent<HTMLDivElement>) => {
-      if (!onRowsChange || !uiState.activeCell) {
-        return;
-      }
-
-      const text = event.clipboardData.getData('text/plain');
-      if (!text) {
-        return;
-      }
-
-      event.preventDefault();
-
-      const matrix = parseClipboardText(text);
-      if (matrix.length === 0) {
-        return;
-      }
-
-      const startFilteredRowIndex = uiState.activeCell.row;
-      // 変更(DS-3-9): レガシーの ?? startFilteredRowIndex フォールバックを撤去します。
-      //   getSourceIndex(=order[i]) は OOB(activeCell が縮小後の order を超える)で undefined を
-      //   返します。旧版は ?? で view index を source index に誤代入していました。撤去後は
-      //   undefined をそのまま判定し、OOB の paste 起点は no-op で抜けます(下流の startOriginalRowIndex +
-      //   matrix.length が NaN になるのを防ぎ、誤行 append も回避)。in-bounds 時は従来と完全一致。
-      const startOriginalRowIndex =
-        rowModel.getSourceIndex(startFilteredRowIndex);
-      if (startOriginalRowIndex === undefined) {
-        return;
-      }
-      const startColIndex = uiState.activeCell.col;
-
-      let workingRows = [...rows];
-      let workingColumns = [...visibleColumns];
-      // 変更(DS-3-10): workingSourceIndexes 配列(N 個の Array.from)を撤去し、view→source の
-      //   解決をクロージャ resolveSourceIndex に置換します。返り値は旧配列と完全一致:
-      //     v < N            : rowModel.getSourceIndex(v)  (= order[v])
-      //     v >= N(append 行): appendBaseSource + (v - N)
-      //   appendBaseSource = 拡張前 rows.length、N = paste 時点の getRowCount()。旧 append は
-      //   workingSourceIndexes.push(workingRows.length - 1) で appendBaseSource から連番を積んで
-      //   いたため式が一致します。append していない範囲外 v は定義値(OOB の source index)を返し
-      //   ますが、下流 applyClipboardMatrixToRows の !currentRow ガードで skip され、旧の
-      //   undefined→continue と同一結果になります。
-      const viewRowCountForPaste = rowModel.getRowCount();
-      const appendBaseSource = workingRows.length;
-      const resolveSourceIndex = (viewIndex: number): number | undefined =>
-        viewIndex < viewRowCountForPaste
-          ? rowModel.getSourceIndex(viewIndex)
-          : appendBaseSource + (viewIndex - viewRowCountForPaste);
-
-      // 追加: 行不足分を createRow で自動追加します。
-      const requiredOriginalRowCount = startOriginalRowIndex + matrix.length;
-      if (requiredOriginalRowCount > workingRows.length && createRow) {
-        while (workingRows.length < requiredOriginalRowCount) {
-          workingRows.push(createRow());
-        }
-      }
-
-      // 追加: 列不足分を createOverflowColumn で自動追加します。
-      const maxPasteWidth = matrix.reduce(
-        (max, currentRow) => Math.max(max, currentRow.length),
-        0,
-      );
-      if (maxPasteWidth === 0) {
-        return;
-      }
-
-      const requiredColumnCount = startColIndex + maxPasteWidth;
-      if (requiredColumnCount > workingColumns.length) {
-        if (onColumnsChange && createOverflowColumn) {
-          while (workingColumns.length < requiredColumnCount) {
-            workingColumns.push(createOverflowColumn(workingColumns.length));
-          }
-          onColumnsChange(workingColumns);
-        }
-      }
-
-      const nextRows = applyClipboardMatrixToRows(
-        workingRows,
-        resolveSourceIndex,
-        workingColumns,
-        matrix,
-        startFilteredRowIndex,
-        startColIndex,
-        (originalRowIndex, colIndex, row, column) =>
-          isCellEditable(
-            { readOnly, canEditCell },
-            originalRowIndex,
-            colIndex,
-            row,
-            column,
-          ),
-      );
-
-      const endRow = clamp(
-        uiState.activeCell.row + Math.max(matrix.length - 1, 0),
-        0,
-        Math.max(
-          // 変更(DS-3-3): filteredRows.length - 1 → getRowCount() - 1。
-          Math.max(rowModel.getRowCount() - 1, 0),
-          startFilteredRowIndex + matrix.length - 1,
-        ),
-      );
-      const endCol = clamp(
-        uiState.activeCell.col + Math.max((matrix[0]?.length ?? 1) - 1, 0),
-        0,
-        Math.max(
-          Math.max(workingColumns.length - 1, 0),
-          startColIndex + maxPasteWidth - 1,
-        ),
-      );
-
-      onRowsChange(nextRows);
-      dispatch(gridActions.startSelection(uiState.activeCell));
-      dispatch(gridActions.updateSelection({ row: endRow, col: endCol }));
-      dispatch(gridActions.endSelection());
-      dispatch(gridActions.activateCell(uiState.activeCell));
-    },
-    [
-      canEditCell,
-      createOverflowColumn,
-      createRow,
-      dispatch,
-      onColumnsChange,
-      onRowsChange,
-      readOnly,
-      rowModel,
-      rows,
-      uiState.activeCell,
-      visibleColumns,
-    ],
-  );
-
-  return {
-    isWholeGridSelected,
-    handleCopy,
-    handlePaste,
-  };
-};
-
-export default useGridClipboardController;
-</file>
-
 <file path="src/components/spreadsheet-grid/hooks/useGridTooltip.ts">
 // 追加(TT-1 / カスタムツールチップ): title 属性のブラウザ標準ツールチップを置き換える
 //   表示制御フックです。SpreadsheetGrid 本体から 1 回呼びます。
@@ -11120,6 +10292,333 @@ export function useGridTooltip() {
     };
   }, []);
 }
+</file>
+
+<file path="src/components/spreadsheet-grid/hooks/useToolPanelController.ts">
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import type { RefObject } from 'react';
+
+// 追加(FM-4): ドラッグ位置のビューポート clamp(パネル共有の純ロジック)です。
+import { clampPanelDragPosition } from '../logic/panelDragGeometry';
+
+// 追加(UP-1 / 統合ツールパネル): フィルター管理 / 列の表示 / 並び替えの独立 3 パネル
+//   (useFilterManagementController / useColumnChooserController / useSortManagementController)
+//   を 1 本へ統合した controller です。パネルは 1 枚(ToolPanel)になり、中身は
+//   SegmentedControl のタブ(filter / columns / sort)で切り替えます。
+// 設計メモ:
+//   - open / close / layout / ドラッグ移動 / outside click / Escape の機構は旧 3 controller
+//     と同一です(gridRoot 右上アンカー、ドラッグ後はフローティング + resize 再 clamp)。
+//   - 変更(UP-2 / 位置記憶): ドラッグ位置は close しても破棄せず保持します(in-memory /
+//     コンポーネント lifetime 内)。再オープン時はビューポートへ clamp した上で前回位置へ
+//     復元します(旧 3 パネルの「close で既定位置へリセット」から変更。GridState には
+//     保存しません = リマウントで既定位置に戻ります)。
+//   - 追加(UP-2 / 既開時フラッシュ): 既に開いている状態での openToolPanel(導線の再クリック /
+//     別タブへの切替)では toolPanelFlashTick を increment します。view(ToolPanel)はこれを
+//     契機に枠をフラッシュし、「パネルはここに出ている」ことを示します(タブだけ静かに
+//     切り替わって気づかれない、を防ぐため)。
+//   - フィルター popover との「共存」拡張(alliedRef / suppressEscape / onSuppressedEscape)
+//     は旧 FM controller の挙動をパネル全体へ引き継ぎます(どのタブ表示中でも popover 内
+//     クリックで閉じず、popover open 中の Escape は popover close へ委譲 = 1 押し 1 階層)。
+//   - タブの可用性は機能フラグに紐づきます(filter=enableColumnFilter / columns=enableColumnMenu /
+//     sort=enableSorting)。open は不可用タブに対して no-op です。表示中に可用性が変わった
+//     場合は「先頭の可用タブへ退避 / 可用タブなしなら閉じる」を派生値(activeToolPanelTab)
+//     で解決します(effect の setState を避けるため、requestedTab は state のまま
+//     表示タブだけを派生させます)。
+//   - 幅は 3 パネル中最大の旧フィルター管理(360)へ統一します(フィルター行の要約文字列が
+//     最も幅を要するため。列 / 並び替えタブは従来よりゆとりが出ます)。
+
+// 追加(UP-1): 統合ツールパネルのタブ種別です(表示順も TAB_ORDER に従います)。
+export type ToolPanelTab = 'filter' | 'columns' | 'sort';
+
+// 追加(UP-1): body 直下 portal パネルの配置情報です(position: fixed 座標)。
+export type ToolPanelLayout = {
+  top: number;
+  left: number;
+  width: number;
+};
+
+type UseToolPanelControllerArgs = {
+  // タブの可用性です(不可用タブは availableToolPanelTabs から除外され、open も no-op)。
+  canUseFilterTab: boolean;
+  canUseColumnsTab: boolean;
+  canUseSortTab: boolean;
+  gridRootRef: RefObject<HTMLDivElement | null>;
+  // 追加(FM-1 由来): 共存要素(フィルター popover)の ref です(outside-close の除外対象)。
+  alliedRef?: RefObject<HTMLDivElement | null>;
+  // 追加(FM-1 由来): true の間は Escape close を抑止し、onSuppressedEscape へ委譲します。
+  suppressEscape?: boolean;
+  onSuppressedEscape?: () => void;
+};
+
+// 注記: 幅は旧 3 パネル(chooser 280 / sort 320 / filter 360)の最大へ統一します。
+const PANEL_WIDTH = 360;
+const VIEWPORT_MARGIN = 8;
+// gridRoot の右上から内側へのオフセットです(パネルがヘッダーに被る位置)。
+const GRID_INSET = 12;
+
+// 追加(UP-1): タブの表示順です(SegmentedControl の並び)。
+const TAB_ORDER: ToolPanelTab[] = ['filter', 'columns', 'sort'];
+
+export const useToolPanelController = ({
+  canUseFilterTab,
+  canUseColumnsTab,
+  canUseSortTab,
+  gridRootRef,
+  alliedRef,
+  suppressEscape = false,
+  onSuppressedEscape,
+}: UseToolPanelControllerArgs) => {
+  // 開閉とタブを 1 つの state で持ちます(null = closed)。
+  const [requestedTab, setRequestedTab] = useState<ToolPanelTab | null>(null);
+  const [toolPanelLayout, setToolPanelLayout] =
+    useState<ToolPanelLayout | null>(null);
+  // 追加(UP-2): 既開時フラッシュのトリガーです(既に開いている状態での open で increment。
+  //   view はこの値の変化を契機に枠をフラッシュします。閉→開では増えません)。
+  const [toolPanelFlashTick, setToolPanelFlashTick] = useState(0);
+
+  // パネル本体の ref です(outside click 判定に使います)。
+  const toolPanelRef = useRef<HTMLDivElement | null>(null);
+
+  // 追加(FM-4 由来): ヘッダードラッグで移動した位置です(null = 既定の gridRoot 追従)。
+  //   ref なのは pointermove の高頻度更新で layout state と二重の再レンダーを起こさない
+  //   ためです(layout が表示の真実)。
+  //   変更(UP-2 / 位置記憶): close では破棄しません(再オープンは clamp 済みの前回位置)。
+  //   破棄されるのはコンポーネントの unmount(= グリッドのリマウント)時だけです。
+  const draggedPositionRef = useRef<{ top: number; left: number } | null>(null);
+
+  // 表示順どおりの「可用タブ」一覧です(ToolPanel の SegmentedControl がそのまま描画します)。
+  const availableToolPanelTabs = useMemo<ToolPanelTab[]>(() => {
+    const flags: Record<ToolPanelTab, boolean> = {
+      filter: canUseFilterTab,
+      columns: canUseColumnsTab,
+      sort: canUseSortTab,
+    };
+    return TAB_ORDER.filter((tab) => flags[tab]);
+  }, [canUseFilterTab, canUseColumnsTab, canUseSortTab]);
+
+  // 表示タブの派生解決です: requestedTab が可用ならそのまま、表示中に不可用化されたら
+  // 先頭の可用タブへ退避、可用タブが 1 つもなければ閉扱い(null)。effect での setState を
+  // 使わない収束のため、requestedTab 自体は書き換えません(次の open / close で更新されます)。
+  const activeToolPanelTab: ToolPanelTab | null =
+    requestedTab === null
+      ? null
+      : availableToolPanelTabs.includes(requestedTab)
+        ? requestedTab
+        : (availableToolPanelTabs[0] ?? null);
+
+  const isToolPanelOpen = activeToolPanelTab !== null;
+
+  // gridRoot 矩形の右上を基準に fixed 座標を計算します(旧 3 controller と同一機構)。
+  const updateToolPanelLayout = useCallback(() => {
+    // ドラッグ済みなら gridRoot 追従をやめ、ビューポートへの clamp だけを行います
+    // (resize での再 clamp 用。window scroll で gridRoot が動いてもパネルは動かない =
+    //  フローティングダイアログ挙動)。
+    const dragged = draggedPositionRef.current;
+    if (dragged) {
+      const clamped = clampPanelDragPosition({
+        top: dragged.top,
+        left: dragged.left,
+        panelWidth: PANEL_WIDTH,
+        viewportWidth: window.innerWidth,
+        viewportHeight: window.innerHeight,
+      });
+      setToolPanelLayout((current) => {
+        if (
+          current &&
+          current.top === clamped.top &&
+          current.left === clamped.left &&
+          current.width === PANEL_WIDTH
+        ) {
+          return current;
+        }
+        return { top: clamped.top, left: clamped.left, width: PANEL_WIDTH };
+      });
+      return;
+    }
+    const root = gridRootRef.current;
+    if (!root) {
+      setToolPanelLayout(null);
+      return;
+    }
+
+    const rect = root.getBoundingClientRect();
+    let left = rect.right - PANEL_WIDTH - GRID_INSET;
+    let top = rect.top + GRID_INSET;
+
+    left = Math.max(VIEWPORT_MARGIN, left);
+    left = Math.min(left, window.innerWidth - PANEL_WIDTH - VIEWPORT_MARGIN);
+    top = Math.max(VIEWPORT_MARGIN, top);
+
+    setToolPanelLayout((current) => {
+      if (
+        current &&
+        current.top === top &&
+        current.left === left &&
+        current.width === PANEL_WIDTH
+      ) {
+        return current;
+      }
+      return { top, left, width: PANEL_WIDTH };
+    });
+  }, [gridRootRef]);
+
+  // パネルを指定タブで開きます。既に開いているときはタブ切替のみ(位置は不動)です。
+  // 不可用タブに対しては no-op(導線が出ない前提の保険ガード)。
+  // 追加(UP-2): 既に開いているときの open(同一タブの再オープン導線を含む)では
+  //   toolPanelFlashTick を increment し、view に枠フラッシュを促します。
+  //   注記: requestedTab を読むため本関数の参照は open/close のたびに変わります
+  //   (参照安定契約があるのは moveToolPanel のみ。利用側は通常の deps 管理で足ります)。
+  const openToolPanel = useCallback(
+    (tab: ToolPanelTab) => {
+      const flags: Record<ToolPanelTab, boolean> = {
+        filter: canUseFilterTab,
+        columns: canUseColumnsTab,
+        sort: canUseSortTab,
+      };
+      if (!flags[tab]) {
+        return;
+      }
+      if (requestedTab !== null) {
+        setToolPanelFlashTick((tick) => tick + 1);
+      }
+      // grid root に残っているフォーカスを外します(旧 3 controller と同じ作法)。
+      if (document.activeElement instanceof HTMLElement) {
+        document.activeElement.blur();
+      }
+      gridRootRef.current?.blur();
+      setRequestedTab(tab);
+    },
+    [canUseFilterTab, canUseColumnsTab, canUseSortTab, gridRootRef, requestedTab],
+  );
+
+  const closeToolPanel = useCallback(() => {
+    // 変更(UP-2 / 位置記憶): ドラッグ位置(draggedPositionRef)は破棄しません。
+    //   再オープン時は updateToolPanelLayout がビューポートへ clamp した上で前回位置へ
+    //   復元します(close 中に resize されても画面外には出ません)。
+    setRequestedTab(null);
+    setToolPanelLayout(null);
+    // close 後は grid root にフォーカスを戻し、keyboard 操作へ復帰させます。
+    requestAnimationFrame(() => {
+      gridRootRef.current?.focus();
+    });
+  }, [gridRootRef]);
+
+  // ヘッダードラッグからの移動です(view の usePanelHeaderDrag が pointermove ごとに呼びます)。
+  // 位置は clamp して layout へ即時反映し、以後 updateToolPanelLayout は gridRoot 追従を
+  // やめてこの位置を保持します(UP-2: close を跨いでも保持。解除は unmount のみ)。
+  // 注記: view 側がドラッグ session の closure に閉じ込めて呼ぶため、本関数は参照安定
+  // (deps [])であることが契約です。
+  const moveToolPanel = useCallback((top: number, left: number) => {
+    const clamped = clampPanelDragPosition({
+      top,
+      left,
+      panelWidth: PANEL_WIDTH,
+      viewportWidth: window.innerWidth,
+      viewportHeight: window.innerHeight,
+    });
+    draggedPositionRef.current = clamped;
+    setToolPanelLayout({
+      top: clamped.top,
+      left: clamped.left,
+      width: PANEL_WIDTH,
+    });
+  }, []);
+
+  // open 時の初期配置 + resize / window scroll への追従です。gridRoot 基準のため、
+  // グリッド内部スクロールでは動かしません(capture: true の scroll は内部スクロールでも
+  // 発火しますが、gridRoot 矩形は内部スクロールで変わらないため layout は不変です)。
+  useEffect(() => {
+    if (!isToolPanelOpen) {
+      return;
+    }
+
+    updateToolPanelLayout();
+
+    const handle = () => {
+      updateToolPanelLayout();
+    };
+
+    window.addEventListener('resize', handle);
+    window.addEventListener('scroll', handle, true);
+
+    return () => {
+      window.removeEventListener('resize', handle);
+      window.removeEventListener('scroll', handle, true);
+    };
+  }, [isToolPanelOpen, updateToolPanelLayout]);
+
+  // 表示中は outside click で閉じます。
+  // 相違(FM-1 由来): alliedRef(フィルター popover)内の pointerdown は「内側」とみなして
+  // 閉じません(✎ で popover を開いて編集 → 別の行の ✎ …と、パネルを開いたまま連続編集
+  // できるようにします。どのタブ表示中でも同じ扱いです)。
+  useEffect(() => {
+    if (!isToolPanelOpen) {
+      return;
+    }
+
+    const handleWindowPointerDown = (event: globalThis.PointerEvent) => {
+      const targetNode = event.target as Node | null;
+      if (!targetNode) {
+        return;
+      }
+      if (toolPanelRef.current?.contains(targetNode)) {
+        return;
+      }
+      if (alliedRef?.current?.contains(targetNode)) {
+        return;
+      }
+      closeToolPanel();
+    };
+
+    window.addEventListener('pointerdown', handleWindowPointerDown);
+    return () => {
+      window.removeEventListener('pointerdown', handleWindowPointerDown);
+    };
+  }, [alliedRef, closeToolPanel, isToolPanelOpen]);
+
+  // 表示中は Escape で閉じます(パネル内入力へフォーカスがあっても効くよう window で
+  // 拾います / POP-KEY: capture 登録)。
+  // 相違(FM-1 由来): suppressEscape=true(フィルター popover open 中)の間は本パネルを
+  // 閉じず、onSuppressedEscape(popover の close)へ委譲します。preventDefault はしません
+  // (1 押し目 = popover / 2 押し目 = パネル、の 1 押し 1 階層に揃えるため)。
+  useEffect(() => {
+    if (!isToolPanelOpen) {
+      return;
+    }
+
+    const handleWindowKeyDown = (event: globalThis.KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        if (suppressEscape) {
+          onSuppressedEscape?.();
+          return;
+        }
+        event.preventDefault();
+        closeToolPanel();
+      }
+    };
+
+    // 変更(POP-KEY 由来): capture 登録(第 3 引数 true)です。パネル root の bubble 相
+    // stopPropagation やパネル内要素の stopPropagation に依らず、フォーカス位置に関係なく
+    // Escape を受けられます(add / remove の capture 指定は一致必須です)。
+    window.addEventListener('keydown', handleWindowKeyDown, true);
+    return () => {
+      window.removeEventListener('keydown', handleWindowKeyDown, true);
+    };
+  }, [closeToolPanel, isToolPanelOpen, onSuppressedEscape, suppressEscape]);
+
+  return {
+    activeToolPanelTab,
+    availableToolPanelTabs,
+    toolPanelLayout,
+    toolPanelFlashTick,
+    toolPanelRef,
+    openToolPanel,
+    closeToolPanel,
+    moveToolPanel,
+  };
+};
+
+export default useToolPanelController;
 </file>
 
 <file path="src/components/spreadsheet-grid/logic/sorting.ts">
@@ -12274,6 +11773,391 @@ export function GridFilterChipBar({
 export default GridFilterChipBar;
 </file>
 
+<file path="src/components/spreadsheet-grid/view/ToolPanel.test.tsx">
+// 追加(UP-1)の view テスト: 統合ツールパネルのシェル(ToolPanel)の配線を固定します。
+//   - SegmentedControl: タブの描画 / クリックで onSelectTab(アクティブタブの再クリックは
+//     発火しない)/ 件数バッジ(0 / undefined は非表示)。
+//   - × クローズで onRequestClose。
+//   - activeTab=null / layout=null では描画しない。
+//   - children(アクティブタブのコンテンツ)の描画。
+//   - ヘッダードラッグ(usePanelHeaderDrag / FM-4)の配線
+//     (旧 FilterManagementPanel.test.tsx から移設。共有フックのため本シェルで固定します)。
+//   CSS の見た目(インジケータの位置など)は jsdom で検証できないため、構造と
+//   コールバック発火のみを固定します。
+// @vitest-environment jsdom
+import { describe, it, expect, afterEach, vi } from 'vitest';
+import { render, screen, fireEvent, cleanup } from '@testing-library/react';
+import { createRef } from 'react';
+
+import ToolPanel, { type ToolPanelTabDescriptor } from './ToolPanel';
+import type {
+  ToolPanelLayout,
+  ToolPanelTab,
+} from '../hooks/useToolPanelController';
+
+afterEach(() => {
+  cleanup();
+});
+
+const layout: ToolPanelLayout = { top: 20, left: 40, width: 360 };
+
+const makeTabs = (): ToolPanelTabDescriptor[] => [
+  { tab: 'filter', label: 'フィルター', badge: 2 },
+  { tab: 'columns', label: '列' },
+  { tab: 'sort', label: '並び替え', badge: 0 },
+];
+
+const makeProps = (activeTab: ToolPanelTab | null = 'columns') => ({
+  activeTab,
+  flashTick: 0,
+  tabs: makeTabs(),
+  layout,
+  panelRef: createRef<HTMLDivElement>(),
+  onSelectTab: vi.fn(),
+  onRequestClose: vi.fn(),
+  onPanelMove: vi.fn(),
+});
+
+describe('ToolPanel(統合ツールパネルのシェル UP-1)', () => {
+  it('タブを表示順で描画し、アクティブタブに aria-selected が付く', () => {
+    render(<ToolPanel {...makeProps('columns')}>content</ToolPanel>);
+    const tabs = screen.getAllByRole('tab');
+    expect(tabs.map((tab) => tab.textContent)).toEqual([
+      'フィルター2',
+      '列',
+      '並び替え',
+    ]);
+    expect(tabs[0].getAttribute('aria-selected')).toBe('false');
+    expect(tabs[1].getAttribute('aria-selected')).toBe('true');
+  });
+
+  it('非アクティブタブのクリックで onSelectTab(tab)、アクティブタブの再クリックは発火しない', () => {
+    const props = makeProps('columns');
+    render(<ToolPanel {...props}>content</ToolPanel>);
+    fireEvent.click(screen.getByRole('tab', { name: /フィルター/ }));
+    expect(props.onSelectTab).toHaveBeenCalledWith('filter');
+    fireEvent.click(screen.getByRole('tab', { name: '列' }));
+    expect(props.onSelectTab).toHaveBeenCalledTimes(1);
+  });
+
+  it('件数バッジは正の値のみ表示する(0 / undefined は非表示)', () => {
+    render(<ToolPanel {...makeProps()}>content</ToolPanel>);
+    // filter: badge=2 → 表示 / columns: undefined・sort: 0 → 非表示。
+    const badges = document.querySelectorAll('.ssg-toolpanel-seg-badge');
+    expect(badges.length).toBe(1);
+    expect(badges[0].textContent).toBe('2');
+  });
+
+  it('× で onRequestClose を呼ぶ / children を描画する', () => {
+    const props = makeProps();
+    render(<ToolPanel {...props}>タブコンテンツ</ToolPanel>);
+    expect(screen.getByText('タブコンテンツ')).toBeTruthy();
+    fireEvent.click(screen.getByLabelText('閉じる'));
+    expect(props.onRequestClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('activeTab=null / layout=null では描画しない', () => {
+    const closed = makeProps(null);
+    const { unmount } = render(<ToolPanel {...closed}>content</ToolPanel>);
+    expect(screen.queryByRole('tab')).toBeNull();
+    unmount();
+
+    const noLayout = { ...makeProps(), layout: null };
+    render(<ToolPanel {...noLayout}>content</ToolPanel>);
+    expect(screen.queryByRole('tab')).toBeNull();
+  });
+
+  // 移設(FM-4 → UP-1): ヘッダードラッグ(usePanelHeaderDrag)の配線固定です。
+  it('ヘッダードラッグで onPanelMove(開始位置+差分) を呼び、pointerup 後は呼ばない(FM-4)', () => {
+    const props = makeProps();
+    render(<ToolPanel {...props}>content</ToolPanel>);
+    const header = document.querySelector('.ssg-toolpanel-header') as HTMLElement;
+    expect(header.classList.contains('ssg-popover-header--draggable')).toBe(
+      true,
+    );
+    fireEvent.pointerDown(header, {
+      button: 0,
+      pointerId: 1,
+      clientX: 100,
+      clientY: 60,
+    });
+    fireEvent.pointerMove(window, { pointerId: 1, clientX: 130, clientY: 90 });
+    // layout = { top: 20, left: 40 } + 差分(+30, +30)です。
+    expect(props.onPanelMove).toHaveBeenLastCalledWith(50, 70);
+    // pointerId 不一致の move は無視されます。
+    fireEvent.pointerMove(window, { pointerId: 2, clientX: 999, clientY: 999 });
+    expect(props.onPanelMove).toHaveBeenCalledTimes(1);
+    // pointerup 後の move では呼ばれません(リスナー解除)。
+    fireEvent.pointerUp(window, { pointerId: 1 });
+    fireEvent.pointerMove(window, { pointerId: 1, clientX: 200, clientY: 200 });
+    expect(props.onPanelMove).toHaveBeenCalledTimes(1);
+  });
+
+  it('ヘッダー内の button(SegmentedControl / × 閉じる)からはドラッグを開始しない(FM-4)', () => {
+    const props = makeProps();
+    render(<ToolPanel {...props}>content</ToolPanel>);
+    fireEvent.pointerDown(screen.getByLabelText('閉じる'), {
+      button: 0,
+      pointerId: 1,
+      clientX: 10,
+      clientY: 10,
+    });
+    fireEvent.pointerMove(window, { pointerId: 1, clientX: 50, clientY: 50 });
+    expect(props.onPanelMove).not.toHaveBeenCalled();
+
+    fireEvent.pointerDown(screen.getByRole('tab', { name: /フィルター/ }), {
+      button: 0,
+      pointerId: 2,
+      clientX: 10,
+      clientY: 10,
+    });
+    fireEvent.pointerMove(window, { pointerId: 2, clientX: 50, clientY: 50 });
+    expect(props.onPanelMove).not.toHaveBeenCalled();
+  });
+
+  // 追加(UP-2 / 既開時フラッシュ): flashTick の変化でパネル枠へ --flash クラスが直付けされ、
+  //   animationend で除去されること。クラスは className prop ではなく JS 直付けのため、
+  //   flashTick を変えた再レンダーでも(props 変化による再レンダーで)消えないことを確認します。
+  it('flashTick が増えると --flash クラスが付き、animationend で除去される(UP-2)', () => {
+    const panelRef = createRef<HTMLDivElement>();
+    const base = { ...makeProps(), panelRef };
+    const { rerender } = render(
+      <ToolPanel {...base} flashTick={0}>
+        content
+      </ToolPanel>,
+    );
+    const panel = panelRef.current as HTMLDivElement;
+    expect(panel).toBeTruthy();
+    // flashTick=0(初期)ではフラッシュしません。
+    expect(panel.classList.contains('ssg-toolpanel--flash')).toBe(false);
+
+    // flashTick を増やすと --flash が付きます(既開時 open 相当)。
+    rerender(
+      <ToolPanel {...base} flashTick={1}>
+        content
+      </ToolPanel>,
+    );
+    expect(panel.classList.contains('ssg-toolpanel--flash')).toBe(true);
+
+    // props 変化による再レンダー(flashTick 据え置き)ではクラスは残ります(直付けのため)。
+    rerender(
+      <ToolPanel {...base} flashTick={1}>
+        content-changed
+      </ToolPanel>,
+    );
+    expect(panel.classList.contains('ssg-toolpanel--flash')).toBe(true);
+
+    // animationend で除去されます。
+    fireEvent.animationEnd(panel);
+    expect(panel.classList.contains('ssg-toolpanel--flash')).toBe(false);
+
+    // さらに flashTick を増やすと再びフラッシュします(連続既開 open)。
+    rerender(
+      <ToolPanel {...base} flashTick={2}>
+        content-changed
+      </ToolPanel>,
+    );
+    expect(panel.classList.contains('ssg-toolpanel--flash')).toBe(true);
+  });
+});
+</file>
+
+<file path="src/components/spreadsheet-grid/view/ToolPanel.tsx">
+// 追加(UP-1 / 統合ツールパネル): フィルター管理 / 列の表示 / 並び替えを 1 枚に統合した
+//   フローティングパネルのシェルです(portal で body 直下へ出します)。
+//   - ヘッダー: SegmentedControl(タブ切替 + 件数バッジ)+ × クローズ。ヘッダーを掴んで
+//     パネルを移動できます(usePanelHeaderDrag / 旧 3 パネルの FM-4 挙動を継承)。
+//   - ボディ: アクティブタブのコンテンツ(children)を描画します。コンテンツは
+//     FilterManagementPanel / ColumnChooserPanel / SortManagementPanel(UP-1 でコンテンツ化)
+//     を呼び出し側(SpreadsheetGrid)がタブに応じて選んで渡します。タブ切替でコンテンツは
+//     マウントし直され、タブ内の一時状態(検索語など)はリセットされます(旧パネルの
+//     「閉じたらリセット」と同じ整理)。
+//   - SegmentedControl は Mantine 風のスライドインジケータです。セグメントは等幅のため、
+//     インジケータは CSS 変数(--ssg-seg-count / --ssg-seg-index)による translateX だけで
+//     追従し、実測(offsetWidth)を使いません(resize / タブ数変化に自動追従)。
+import { useEffect } from 'react';
+import { createPortal } from 'react-dom';
+import { cx } from '../logic/cx';
+import type { CSSProperties, KeyboardEvent, PointerEvent, ReactNode, RefObject } from 'react';
+import type {
+  ToolPanelLayout,
+  ToolPanelTab,
+} from '../hooks/useToolPanelController';
+// ヘッダーを掴んでパネルを移動する共有フックです(FM-4)。
+import { usePanelHeaderDrag } from '../hooks/usePanelHeaderDrag';
+
+// 追加(UP-1): SegmentedControl の 1 セグメント分の表示情報です。
+//   badge は件数バッジ(適用中フィルター数 / ソート基準数)。undefined / 0 は非表示です。
+export type ToolPanelTabDescriptor = {
+  tab: ToolPanelTab;
+  label: string;
+  badge?: number;
+};
+
+type ToolPanelProps = {
+  // 追加(TH-DK-2): ダークテーマ修飾子クラス('ssg-theme-dark' | undefined)。ポータルは
+  //   .ssg-root 外のため、root と同じ修飾子を自身の root 要素へ直接付与します。
+  themeClassName?: string;
+  // アクティブタブです(null = closed。描画しません)。
+  activeTab: ToolPanelTab | null;
+  // 追加(UP-2): 既開時フラッシュのトリガーです(controller の toolPanelFlashTick)。
+  //   値が増えるたびにパネル枠を一瞬フラッシュします(閉→開では増えないため光りません)。
+  flashTick: number;
+  // 表示順どおりの可用タブです(controller の availableToolPanelTabs から作ります)。
+  tabs: ToolPanelTabDescriptor[];
+  layout: ToolPanelLayout | null;
+  panelRef: RefObject<HTMLDivElement | null>;
+  onSelectTab: (tab: ToolPanelTab) => void;
+  onRequestClose: () => void;
+  // ヘッダードラッグによるパネル移動です(controller の moveToolPanel を受け取ります。
+  // 位置の clamp・保持・close 時リセットは controller 側の責務)。
+  onPanelMove: (top: number, left: number) => void;
+  // アクティブタブのコンテンツです(呼び出し側がタブに応じて選んで渡します)。
+  children: ReactNode;
+};
+
+export function ToolPanel({
+  themeClassName,
+  activeTab,
+  flashTick,
+  tabs,
+  layout,
+  panelRef,
+  onSelectTab,
+  onRequestClose,
+  onPanelMove,
+  children,
+}: ToolPanelProps) {
+  // hooks は早期 return より前・無条件で呼びます(layout=null のときはフック側が開始しません)。
+  const { handleHeaderPointerDown } = usePanelHeaderDrag({
+    layout,
+    onPanelMove,
+  });
+
+  // 追加(UP-2 / 既開時フラッシュ): flashTick が増えたら panelRef の枠を一瞬フラッシュします。
+  //   既存のヘッダージャンプ(ssg-header-cell--jump-flash)と同じ「JS 直付け + animationend
+  //   除去」方式です。className prop には載せません(React の再レンダーでクラスが消えると
+  //   アニメが途中で止まるため。直付けなら animationend まで残ります)。初回(tick=0 → mount)は
+  //   effect が走りますが、閉→開では controller が increment しないため通常は光りません。
+  //   一度付いているクラスは先に除去してから付け直し、連打でも再生させます(reflow を挟む)。
+  useEffect(() => {
+    const el = panelRef.current;
+    if (!el || flashTick === 0) {
+      return;
+    }
+    el.classList.remove('ssg-toolpanel--flash');
+    // 強制 reflow でアニメを確実に再スタートさせます(連続クリック対策)。
+    void el.offsetWidth;
+    el.classList.add('ssg-toolpanel--flash');
+    const handleEnd = () => {
+      el.classList.remove('ssg-toolpanel--flash');
+    };
+    el.addEventListener('animationend', handleEnd);
+    return () => {
+      el.removeEventListener('animationend', handleEnd);
+    };
+  }, [flashTick, panelRef]);
+
+  if (activeTab === null || !layout) {
+    return null;
+  }
+
+  const activeIndex = Math.max(
+    0,
+    tabs.findIndex((descriptor) => descriptor.tab === activeTab),
+  );
+
+  const wrapperStyle: CSSProperties = {
+    top: layout.top,
+    left: layout.left,
+    width: layout.width,
+  };
+
+  const handlePointerDown = (event: PointerEvent<HTMLDivElement>) => {
+    // パネル内 pointer 操作を grid 側へ伝播させません(セル選択開始 / outside click 競合回避)。
+    event.stopPropagation();
+  };
+
+  const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    // portal 内 keyboard を React ツリー上の parent へ流しません。
+    // Escape での close は controller の window keydown(capture / POP-KEY)が担当します。
+    event.stopPropagation();
+  };
+
+  // SegmentedControl のインジケータ位置です(等幅前提の CSS 変数駆動)。
+  const segmentedStyle = {
+    '--ssg-seg-count': tabs.length,
+    '--ssg-seg-index': activeIndex,
+  } as CSSProperties;
+
+  return createPortal(
+    <div
+      ref={panelRef}
+      onPointerDown={handlePointerDown}
+      onKeyDown={handleKeyDown}
+      onContextMenu={(event) => {
+        event.preventDefault();
+      }}
+      className={cx('ssg-popover', 'ssg-toolpanel', themeClassName)}
+      style={wrapperStyle}
+    >
+      {/* ── ヘッダー: SegmentedControl + × クローズ(掴んで移動可) ── */}
+      <div
+        className="ssg-toolpanel-header ssg-popover-header--draggable"
+        onPointerDown={handleHeaderPointerDown}
+      >
+        <div className="ssg-toolpanel-seg" role="tablist" style={segmentedStyle}>
+          <span className="ssg-toolpanel-seg-indicator" aria-hidden />
+          {tabs.map((descriptor) => {
+            const isActive = descriptor.tab === activeTab;
+            return (
+              <button
+                key={descriptor.tab}
+                type="button"
+                role="tab"
+                aria-selected={isActive}
+                onClick={() => {
+                  if (!isActive) {
+                    onSelectTab(descriptor.tab);
+                  }
+                }}
+                className={cx(
+                  'ssg-toolpanel-seg-btn',
+                  isActive && 'ssg-toolpanel-seg-btn--active',
+                )}
+              >
+                {descriptor.label}
+                {descriptor.badge ? (
+                  <span className="ssg-toolpanel-seg-badge">
+                    {descriptor.badge}
+                  </span>
+                ) : null}
+              </button>
+            );
+          })}
+        </div>
+        <button
+          type="button"
+          onClick={onRequestClose}
+          aria-label="閉じる"
+          className="ssg-popover-close"
+        >
+          ×
+        </button>
+      </div>
+
+      {/* ── ボディ: アクティブタブのコンテンツ ── */}
+      {/* min-height でタブ間の高さのガタつきを緩和しつつ、内容が短いタブでは各コンテンツの
+          リスト(flex: 1)が伸びてフッターが下端に揃います(自然高 + min-height 方式)。 */}
+      <div className="ssg-toolpanel-body">{children}</div>
+    </div>,
+    document.body,
+  );
+}
+
+export default ToolPanel;
+</file>
+
 <file path="src/index.css">
 :root {
   --text: #6b6375;
@@ -12470,6 +12354,257 @@ export function ActiveCellOverlay({
 }
 
 export default ActiveCellOverlay;
+</file>
+
+<file path="src/components/spreadsheet-grid/hooks/panelDragControllers.test.tsx">
+// 変更(UP-1)の controller テスト: 統合ツールパネル controller(useToolPanelController)の
+//   開閉 / タブ / ドラッグ移動の挙動固定です(旧 FM-4: 3 パネル controller のテストを継承)。
+//   - move で layout が即時反映され、範囲外はビューポートへ clamp されること。
+//   - ドラッグ後に close → 再 open で既定位置(gridRoot アンカー)へ戻ること(合意 d)。
+//   - ドラッグ後の resize はビューポートへ再 clamp すること(gridRoot へは戻らない)。
+//   - 既に開いているときの open(tab) はタブ切替のみで、位置(layout)が不動なこと。
+//   - 不可用タブへの open は no-op なこと / availableToolPanelTabs が可用性と表示順を反映すること。
+//   - 表示中にアクティブタブが不可用化されたら先頭の可用タブへ退避すること(派生解決)。
+// @vitest-environment jsdom
+import { describe, it, expect } from 'vitest';
+import { renderHook, act } from '@testing-library/react';
+import type { RefObject } from 'react';
+
+import { useToolPanelController } from './useToolPanelController';
+
+const makeGridRootRef = (): RefObject<HTMLDivElement | null> => ({
+  current: document.createElement('div'),
+});
+
+// 既定引数(全タブ可用)です。テストごとに可用性フラグを上書きします。
+const makeArgs = (overrides?: {
+  canUseFilterTab?: boolean;
+  canUseColumnsTab?: boolean;
+  canUseSortTab?: boolean;
+}) => ({
+  canUseFilterTab: overrides?.canUseFilterTab ?? true,
+  canUseColumnsTab: overrides?.canUseColumnsTab ?? true,
+  canUseSortTab: overrides?.canUseSortTab ?? true,
+  gridRootRef: makeGridRootRef(),
+});
+
+describe('UP-1: 統合ツールパネル(controller の move / clamp / リセット)', () => {
+  it('moveToolPanel で layout が移動し、範囲外はビューポートへ clamp される', () => {
+    const { result } = renderHook(() => useToolPanelController(makeArgs()));
+    act(() => {
+      result.current.openToolPanel('filter');
+    });
+    act(() => {
+      result.current.moveToolPanel(200, 300);
+    });
+    expect(result.current.toolPanelLayout).toEqual({
+      top: 200,
+      left: 300,
+      width: 360,
+    });
+    // 範囲外(右下遠方)は clamp されます(左右: vw - 幅 - 8 / 上下: vh - 40)。
+    act(() => {
+      result.current.moveToolPanel(99999, 99999);
+    });
+    expect(result.current.toolPanelLayout).toEqual({
+      top: window.innerHeight - 40,
+      left: window.innerWidth - 360 - 8,
+      width: 360,
+    });
+  });
+
+  it('ドラッグ後に close → 再 open すると前回のドラッグ位置へ復元する(UP-2 位置記憶)', () => {
+    const { result } = renderHook(() => useToolPanelController(makeArgs()));
+    act(() => {
+      result.current.openToolPanel('filter');
+    });
+    const initial = result.current.toolPanelLayout;
+    expect(initial).not.toBeNull();
+    act(() => {
+      result.current.moveToolPanel(200, 300);
+    });
+    const moved = result.current.toolPanelLayout;
+    expect(moved).toEqual({ top: 200, left: 300, width: 360 });
+    expect(moved).not.toEqual(initial);
+    act(() => {
+      result.current.closeToolPanel();
+    });
+    expect(result.current.activeToolPanelTab).toBeNull();
+    // 変更(UP-2): 既定位置ではなく前回のドラッグ位置へ戻ります(in-memory 保持)。
+    act(() => {
+      result.current.openToolPanel('columns');
+    });
+    expect(result.current.toolPanelLayout).toEqual(moved);
+  });
+
+  it('ドラッグ後の resize はビューポートへ再 clamp する(gridRoot アンカーへは戻らない)', () => {
+    const { result } = renderHook(() => useToolPanelController(makeArgs()));
+    act(() => {
+      result.current.openToolPanel('filter');
+    });
+    act(() => {
+      result.current.moveToolPanel(500, 600);
+    });
+    expect(result.current.toolPanelLayout).toEqual({
+      top: 500,
+      left: 600,
+      width: 360,
+    });
+    const originalWidth = window.innerWidth;
+    const originalHeight = window.innerHeight;
+    try {
+      // jsdom の innerWidth / innerHeight を縮めて resize を発火します。
+      act(() => {
+        Object.defineProperty(window, 'innerWidth', {
+          value: 500,
+          configurable: true,
+        });
+        Object.defineProperty(window, 'innerHeight', {
+          value: 400,
+          configurable: true,
+        });
+        window.dispatchEvent(new Event('resize'));
+      });
+      expect(result.current.toolPanelLayout).toEqual({
+        top: 400 - 40,
+        left: 500 - 360 - 8,
+        width: 360,
+      });
+    } finally {
+      Object.defineProperty(window, 'innerWidth', {
+        value: originalWidth,
+        configurable: true,
+      });
+      Object.defineProperty(window, 'innerHeight', {
+        value: originalHeight,
+        configurable: true,
+      });
+    }
+  });
+});
+
+describe('UP-1: 統合ツールパネル(タブと可用性)', () => {
+  it('既に開いているときの open(tab) はタブ切替のみで layout が不動', () => {
+    const { result } = renderHook(() => useToolPanelController(makeArgs()));
+    act(() => {
+      result.current.openToolPanel('filter');
+    });
+    act(() => {
+      // ドラッグ位置でも既定位置でも「切替で動かない」は同じですが、
+      // ドラッグ後の方が回帰に敏感なため移動してから切り替えます。
+      result.current.moveToolPanel(150, 250);
+    });
+    const moved = result.current.toolPanelLayout;
+    act(() => {
+      result.current.openToolPanel('columns');
+    });
+    expect(result.current.activeToolPanelTab).toBe('columns');
+    expect(result.current.toolPanelLayout).toEqual(moved);
+    act(() => {
+      result.current.openToolPanel('sort');
+    });
+    expect(result.current.activeToolPanelTab).toBe('sort');
+    expect(result.current.toolPanelLayout).toEqual(moved);
+  });
+
+  it('不可用タブへの open は no-op(閉じたまま / 表示タブ不変)', () => {
+    const { result } = renderHook(() =>
+      useToolPanelController(makeArgs({ canUseSortTab: false })),
+    );
+    act(() => {
+      result.current.openToolPanel('sort');
+    });
+    expect(result.current.activeToolPanelTab).toBeNull();
+    act(() => {
+      result.current.openToolPanel('filter');
+    });
+    act(() => {
+      result.current.openToolPanel('sort');
+    });
+    expect(result.current.activeToolPanelTab).toBe('filter');
+  });
+
+  it('availableToolPanelTabs は可用性と表示順(filter → columns → sort)を反映する', () => {
+    const all = renderHook(() => useToolPanelController(makeArgs()));
+    expect(all.result.current.availableToolPanelTabs).toEqual([
+      'filter',
+      'columns',
+      'sort',
+    ]);
+
+    const partial = renderHook(() =>
+      useToolPanelController(makeArgs({ canUseFilterTab: false })),
+    );
+    expect(partial.result.current.availableToolPanelTabs).toEqual([
+      'columns',
+      'sort',
+    ]);
+  });
+
+  it('表示中にアクティブタブが不可用化されたら先頭の可用タブへ退避する(派生解決)', () => {
+    const { result, rerender } = renderHook(
+      ({ canUseSortTab }: { canUseSortTab: boolean }) =>
+        useToolPanelController(makeArgs({ canUseSortTab })),
+      { initialProps: { canUseSortTab: true } },
+    );
+    act(() => {
+      result.current.openToolPanel('sort');
+    });
+    expect(result.current.activeToolPanelTab).toBe('sort');
+    rerender({ canUseSortTab: false });
+    expect(result.current.activeToolPanelTab).toBe('filter');
+    // 可用へ戻れば元のタブへ復帰します(requestedTab は保持しているため)。
+    rerender({ canUseSortTab: true });
+    expect(result.current.activeToolPanelTab).toBe('sort');
+  });
+});
+
+describe('UP-2: 統合ツールパネル(既開時フラッシュ toolPanelFlashTick)', () => {
+  it('閉→開では increment しない / 既に開いているときの open で increment する', () => {
+    const { result } = renderHook(() => useToolPanelController(makeArgs()));
+    // 初期値は 0。
+    expect(result.current.toolPanelFlashTick).toBe(0);
+    // 閉→開(1 回目)では増えません。
+    act(() => {
+      result.current.openToolPanel('filter');
+    });
+    expect(result.current.toolPanelFlashTick).toBe(0);
+    // 既に開いている状態での open(別タブ切替)で increment します。
+    act(() => {
+      result.current.openToolPanel('columns');
+    });
+    expect(result.current.toolPanelFlashTick).toBe(1);
+    // 同一タブの再 open(導線の再クリック相当)でも increment します。
+    act(() => {
+      result.current.openToolPanel('columns');
+    });
+    expect(result.current.toolPanelFlashTick).toBe(2);
+    // close を挟むと次の open は「閉→開」なので増えません。
+    act(() => {
+      result.current.closeToolPanel();
+    });
+    act(() => {
+      result.current.openToolPanel('sort');
+    });
+    expect(result.current.toolPanelFlashTick).toBe(2);
+  });
+
+  it('不可用タブへの open は no-op のため increment しない', () => {
+    const { result } = renderHook(() =>
+      useToolPanelController(makeArgs({ canUseSortTab: false })),
+    );
+    act(() => {
+      result.current.openToolPanel('filter');
+    });
+    expect(result.current.toolPanelFlashTick).toBe(0);
+    // 開いている状態でも、不可用タブ(sort)への open は弾かれるので増えません。
+    act(() => {
+      result.current.openToolPanel('sort');
+    });
+    expect(result.current.toolPanelFlashTick).toBe(0);
+    expect(result.current.activeToolPanelTab).toBe('filter');
+  });
+});
 </file>
 
 <file path="src/components/spreadsheet-grid/hooks/useFilterPopoverController.ts">
@@ -19306,6 +19441,541 @@ export const useColumnHeaderDragController = <T,>(
 export default useColumnHeaderDragController;
 </file>
 
+<file path="src/components/spreadsheet-grid/logic/columnAutosize.ts">
+// 追加(13-B1): 列幅の自動調整(AG Grid の Autosize This Column /
+//             Autosize All Columns 相当)の計測ロジックです。
+//
+// 方式の選定メモ(canvas measureText 方式を採用):
+//   (a) canvas measureText: フォントを実セルと揃えて文字列幅を計測します。
+//       同期・高速で、reflow を発生させません。
+//       デメリットは renderCell カスタム描画を反映できないことと、
+//       DOM レンダリング(カーニング / サブピクセル)との僅差です
+//       (僅差は TEXT_SAFETY で吸収します)。
+//   (b) オフスクリーン DOM 計測: 実 DOM へ流し込んで幅を読む方式。正確ですが
+//       5,000 行 × 29 列では layout コストが大きく、分割実行が必要になります。
+//   (c) AG Grid 本家の方式: 「描画済み(仮想化で DOM に存在する)セル」だけを計測。
+//       高速ですが、画面外の行にある最長値が反映されないという既知の挙動があります。
+//   本実装は (a)[全行スクリーニング] と (b)[実 DOM 計測] を 2 段で組み合わせます(変更 ②-S1):
+//   Phase 1 = (a) の canvas 推定で全表示行から候補(TOP_K)を絞り、Phase 2 = (b) で候補だけを
+//   実 DOM(grid root 配下の計測セル)で実測します。全行カバレッジ((c) の弱点を回避)と、実描画
+//   忠実((a) の弱点を回避: padding / 字間 / kerning / valueFormatter を offsetWidth が内包)を
+//   両取りします。実測は候補のみ(列あたり最大 TOP_K 件)なので reflow は finalize で 1 回です。
+//   DOM 不可(SSR 等)では (a) の canvas 計測へフォールバックします。
+//
+// 計測回数の抑制方式(変更 DS-4 ①-(1)):
+//   旧版は列ごとに「ユニーク文字列の Set を全構築 → ユニーク数ぶん measureText」
+//   していました。実データは値の重複が多いため Set dedupe が効きますが、全列ユニーク
+//   (例: 30万行 ?stress)では dedupe が無効化し、列あたり数万回の measureText で
+//   クリックハンドラが同期フリーズします。
+//   そこで本版は次の 2 段構えに変えます:
+//     1. 行を 1 パス走査し(全列同時)、列ごとに「推定幅が大きい上位 TOP_K 件の
+//        文字列候補」だけを保持します(Set 全構築は撤去)。推定幅は measureText を
+//        使わず、コードポイント単位の全角=2 / 半角=1 の整数ウェイト和です
+//        (estimateTextWidthUnits)。
+//     2. パス後、列ごとに候補 TOP_K 件だけを実 measureText し、最大値を採用します。
+//   推定ウェイトは「どの候補を残すか」だけに効き、最終的な列幅は必ず実 measureText
+//   から出すため、幅の値自体は常に正確です。日本語(全角)混在列で「文字数は少ないが
+//   実幅は最大」の行が候補から押し出される取りこぼしを、全角ウェイトで防ぎます。
+//   推定がラフでも候補選択が当たれば結果は正確で、残差は TEXT_SAFETY が吸収します。
+//
+// estimate ループの回避(追加 DS-4 ①-(3a)):
+//   上記 1 の候補収集で、候補が TOP_K 件で満杯になった後は、各セルの実推定幅を
+//   出す前に text.length だけで O(1) 足切りします。推定幅 units は「全角=2 / 半角=1」の
+//   和で、コードポイント数 P に対し P ≤ units ≤ 2P、かつ P ≤ text.length(サロゲートは
+//   length 側が大)なので units ≤ 2*text.length が常に成立します。したがって
+//   2*text.length ≤ 最小推定幅 なら units ≤ 最小推定幅 が確定し、estimateTextWidthUnits の
+//   コードポイント走査を回さずに棄却できます。30万行級では満杯後の estimate が collect の
+//   支配項のため、候補が温まれば大多数のセルがここで走査ゼロで弾かれます。結果は
+//   ①-(1)/①-(2) とバイト等価です(2*length ≤ minEst ⇒ est ≤ minEst で、既存の
+//   est ≤ 最小推定幅 棄却と一致。候補集合・順序・minEst とも不変)。
+// メモリ / 走査特性:
+//   - 候補保持は列あたり最大 TOP_K 件で、行数に依存しません(旧 Set はユニーク数=
+//     最悪 行数 ぶん成長していました)。
+//   - 行の取得は rowModel シーム越し(getRow)で、呼び出し側のビュー順全行 materialize
+//     は不要です(DS-3-10 clipboard と同型の seam-native 署名)。getRow は 1 行につき
+//     1 回(行数ぶん)で、列数倍にはなりません。
+//
+// 既知の制限 / 拡張点:
+//   - Phase 2 は「デフォルトセルの表示テキスト」(valueFormatter 適用後 / 未指定は String(value))を
+//     実 DOM で測ります。整形・letter-spacing・フォントは反映されますが、renderCell で独自の DOM
+//     (アイコン / バッジ等)を描く列は、テキストを proxy にする Phase 1 では幅相関が崩れます。その
+//     場合は列に estimateCellWidth(②-S2)を指定すると、その列は「申告 content 幅の全行 running-max」で
+//     確定します(テキスト / 候補 / 実 DOM 計測を使わず、consumer 申告を信頼。React mount は行いません)。
+//   - suppressAutoSize: true の列は計測対象から除外し、consumer 指定の width を維持します
+//     (固定幅優先。collect でも候補を貯めず、finalize でも幅を出しません)。
+//   - autoHeight: true の列も計測対象外です(②-S3)。autoHeight 列は「幅固定 + 折り返し」が本来の姿で、
+//     autoSize は単一行幅で測るため、autoHeight 列を測ると長文を1行幅にし maxWidth で途切れる /
+//     極端に横長になります。consumer が選んだ width を維持し、折り返し(autoHeight 有効時)に委ねます。
+import type { GridColumn } from '../model/gridTypes';
+import { getCellValue } from '../utils/permissions';
+
+// ── レイアウト定数(GridBodyLayer / GridHeaderRow の style と同期) ──
+// セル: padding '0 10px'(=20) + borderRight 1px、box-sizing: border-box。
+//   注記(②-S1/S2): Phase 2 の実 DOM 計測では offsetWidth に padding / border が含まれるため不要です。
+//   canvas フォールバック経路(DOM 不可時)と、estimateCellWidth 列(申告 content 幅へ枠を加算)で使用します。
+const CELL_HORIZONTAL_FRAME = 21;
+// canvas 計測と DOM 描画の僅差(カーニング・サブピクセル丸め)の安全マージンです。
+//   注記(②-S1): Phase 2 の実 DOM 計測では実体を測るため不要。canvas フォールバックと、ヘッダー
+//   計測(従来どおり canvas)でのみ使用します。
+const TEXT_SAFETY = 4;
+// ヘッダーセルのテキスト以外の固定幅です(現行の hover オーバーレイヘッダーと同期。styles.css):
+//   padding 0 6px(=12) + borderRight 1 + ラベル↔状態スロットの gap 4
+//   + 状態スロット(ソート矢印 + フィルター漏斗 + 内部 gap)~24
+//   = 41
+// 注記(変更前は 141): grip / 列メニュー(⋮)は .ssg-header-actions が absolute + opacity:0 で
+//   非hover では幅 0(hover でタイトル末尾を覆うオーバーレイ)になったため、ボタン 3 つぶん(~90)は
+//   reserve しません。旧 Excel 列名バッジ(22)も廃止済みで、padding / gap も旧 20 / 18 から現行
+//   12 / 4 へ縮んでいます。ソート / フィルターのインジケータ枠(~24)だけ残し、autoSize 後に
+//   並べ替え / フィルターしてもタイトルがほぼ欠けないようにしています。
+const HEADER_FIXED_CONTENT_WIDTH = 41;
+// ヘッダータイトルのフォントです(headerCellBaseStyle: fontSize 13 / fontWeight 600)。
+const HEADER_FONT_SIZE = 13;
+const HEADER_FONT_WEIGHT = 600;
+// リサイズ(column/resizeStart)と同じ既定下限です(gridReducer と同期)。
+//   上限は既定で設けません(②-S4: 旧 DEFAULT_MAX_WIDTH=1000 を撤廃。明示 maxWidth のみ上限になります)。
+const DEFAULT_MIN_WIDTH = 60;
+
+// 追加(DS-4 ①-(1)): 列ごとに実 measureText する候補件数の上限です。
+//   推定幅(estimateTextWidthUnits)上位 TOP_K 件だけを実計測します。
+//   16 は「最長文字数 ≒ 最大ピクセル幅」がほぼ成立する実データで、推定の取りこぼしを
+//   吸収できる十分な余裕値です(measureText 回数を 列あたり数万 → 最大 16 へ抑えます)。
+const TOP_K = 16;
+
+// ── 共有 canvas context(モジュールローカル・遅延生成) ──
+let sharedContext: CanvasRenderingContext2D | null = null;
+
+const getSharedContext = (): CanvasRenderingContext2D | null => {
+  if (sharedContext) {
+    return sharedContext;
+  }
+  // 注記: SSR / canvas 非対応環境では null を返し、呼び出し側で no-op になります。
+  if (typeof document === 'undefined') {
+    return null;
+  }
+  sharedContext = document.createElement('canvas').getContext('2d');
+  return sharedContext;
+};
+
+// ── フォント解決 ──
+// セルは自前の font 指定を持たず祖先から継承するため、grid root の computed style を
+// そのまま使えばセルの実フォント(size / family / weight)と一致します。
+// ヘッダーは fontSize 13 / fontWeight 600 を明示しているため、family のみ共有します。
+type ResolvedFonts = {
+  cellFont: string;
+  headerFont: string;
+};
+
+const FALLBACK_FONT_FAMILY = 'system-ui, sans-serif';
+
+const resolveFonts = (gridRoot: HTMLElement | null): ResolvedFonts => {
+  let fontFamily = FALLBACK_FONT_FAMILY;
+  let cellFontSize = 13;
+  let cellFontWeight = '400';
+
+  if (gridRoot && typeof window !== 'undefined') {
+    const computed = window.getComputedStyle(gridRoot);
+    if (computed.fontFamily) {
+      fontFamily = computed.fontFamily;
+    }
+    const parsedSize = Number.parseFloat(computed.fontSize);
+    if (Number.isFinite(parsedSize) && parsedSize > 0) {
+      cellFontSize = parsedSize;
+    }
+    if (computed.fontWeight) {
+      cellFontWeight = computed.fontWeight;
+    }
+  }
+
+  return {
+    cellFont: `${cellFontWeight} ${cellFontSize}px ${fontFamily}`,
+    headerFont: `${HEADER_FONT_WEIGHT} ${HEADER_FONT_SIZE}px ${fontFamily}`,
+  };
+};
+
+const clamp = (value: number, min: number, max: number): number =>
+  Math.min(Math.max(value, min), max);
+
+// 追加(DS-4 ①-(1)): コードポイントが「全角(East Asian Wide / Fullwidth)」かを判定します。
+//   measureText を使わず候補選別の推定幅に使うための近似で、CJK・かな・ハングル・
+//   全角形・絵文字などの主要レンジを 2 ウェイト、その他を 1 ウェイト扱いにします。
+//   厳密な East Asian Width テーブルではありませんが、候補選別用途には十分です
+//   (最終幅は実 measureText で確定するため、ここの僅差は結果に乗りません)。
+const isWideCodePoint = (cp: number): boolean =>
+  (cp >= 0x1100 && cp <= 0x115f) || // Hangul Jamo
+  (cp >= 0x2e80 && cp <= 0x303e) || // CJK 部首補助 〜 康熙部首 〜 CJK 記号
+  (cp >= 0x3041 && cp <= 0x33ff) || // ひらがな・カタカナ 〜 CJK 互換
+  (cp >= 0x3400 && cp <= 0x4dbf) || // CJK 拡張 A
+  (cp >= 0x4e00 && cp <= 0x9fff) || // CJK 統合漢字
+  (cp >= 0xa000 && cp <= 0xa4cf) || // ヤオ文字(Yi)
+  (cp >= 0xac00 && cp <= 0xd7a3) || // ハングル音節
+  (cp >= 0xf900 && cp <= 0xfaff) || // CJK 互換漢字
+  (cp >= 0xfe30 && cp <= 0xfe4f) || // CJK 互換形
+  (cp >= 0xff00 && cp <= 0xff60) || // 全角 ASCII 形
+  (cp >= 0xffe0 && cp <= 0xffe6) || // 全角記号
+  (cp >= 0x1f300 && cp <= 0x1faff) || // 絵文字(近似で全角扱い)
+  (cp >= 0x20000 && cp <= 0x3fffd); // CJK 拡張 B 以降
+
+// 追加(DS-4 ①-(1)): 文字列の推定幅ユニットです(全角=2 / 半角=1 の和)。
+//   for...of でコードポイント単位に走査するためサロゲートペアも 1 文字として数えます。
+const estimateTextWidthUnits = (text: string): number => {
+  let units = 0;
+  for (const ch of text) {
+    const cp = ch.codePointAt(0) ?? 0;
+    units += isWideCodePoint(cp) ? 2 : 1;
+  }
+  return units;
+};
+
+// 追加(②-S1): セルの表示テキストを返します(デフォルトセル描画と同一の規則)。
+//   valueFormatter 指定時はその返り値、未指定は String(value ?? '')。Phase 2 の実 DOM 計測で
+//   「実際に表示される文字列」を測るために使います(整形後の桁区切り等が幅へ反映されます)。
+const resolveCellDisplayText = <T,>(
+  row: T,
+  column: GridColumn<T>,
+): string => {
+  const value = getCellValue(row, column);
+  return column.valueFormatter
+    ? column.valueFormatter({ value, row, column })
+    : String(value ?? '');
+};
+
+// 追加(②-S1): Phase 2 の計測コンテナを grid root 配下に生成します(作れなければ null)。
+//   grid root 配下に置くことで font / letter-spacing 等の継承文脈を実セルと一致させます。
+//   コンテナ自体は画面外・不可視・レイアウト非干渉です。
+const createMeasuringContainer = (
+  gridRoot: HTMLElement | null,
+): HTMLElement | null => {
+  if (!gridRoot || typeof document === 'undefined') {
+    return null;
+  }
+  const container = document.createElement('div');
+  container.setAttribute('aria-hidden', 'true');
+  container.style.cssText =
+    'position:absolute;top:-99999px;left:-99999px;' +
+    'visibility:hidden;pointer-events:none;width:auto;height:auto;' +
+    'contain:layout style;';
+  gridRoot.appendChild(container);
+  return container;
+};
+
+// 追加(②-S1): 候補 1 件ぶんの計測ノードを作ります。実セル(.ssg-body-cell)の padding / border /
+//   box-sizing / フォント継承を流用しつつ、計測用に inline-block + width:auto + nowrap へ上書きします。
+//   offsetWidth = テキスト + padding + border = 必要列幅(箱まるごと)になります。
+const createMeasuringNode = (text: string): HTMLElement => {
+  const node = document.createElement('div');
+  node.className = 'ssg-body-cell';
+  node.style.cssText =
+    'display:inline-block;position:static;top:auto;left:auto;' +
+    'width:auto;height:auto;white-space:nowrap;overflow:visible;';
+  node.textContent = text;
+  return node;
+};
+
+export type ColumnAutosizeParams<T> = {
+  // 計測対象の列です(1 列だけ / 全表示列のどちらも渡せます)。
+  columns: GridColumn<T>[];
+  // 変更(DS-4 ①-(1)): rows: T[] → seam-native(getRow + viewRowCount)。
+  //   呼び出し側のビュー順全行 materialize を不要にします(DS-3-10 clipboard と同型)。
+  //   getRow(viewIndex) はビュー位置(グローバル / 列フィルター適用後)の行を返します。
+  //   ソート順は計測結果に影響しません(集合としての最大幅を見るため)。
+  getRow: (viewIndex: number) => T;
+  // ビュー行数です(= rowModel.getRowCount())。走査は 0..viewRowCount-1 です。
+  viewRowCount: number;
+  // セルフォント解決に使う grid root 要素です。
+  gridRoot: HTMLElement | null;
+  // 現在の解決済み幅です。計測結果が同じ列は戻り値から除外します(no-op 判定)。
+  currentWidths: Record<string, number>;
+};
+
+// 追加(DS-4 ①-(2)): 計測を「行 collect 相」と「幅 finalize 相」に分離した accumulator です。
+//   ①-(1) の 2 段方式(候補 TOP_K 収集 → 実 measureText)のうち、collect が候補収集を、
+//   finalize がヘッダー / セルの実 measureText + clamp + no-op 判定を担います。
+//   sync 版(computeAutosizedColumnWidths)と DS-4 ①-(2) の時間分割ランナーは、どちらも
+//   この同一 accumulator を共有するため、走査の刻み方によらず結果が一致します
+//   (同期一括 collect でも、チャンク分割 collect でも、collect の呼び出し順が同じなら
+//    候補配列の最終状態は同値になります)。
+export type ColumnWidthAccumulator<T> = {
+  // 1 行ぶんを候補へ反映します(全列同時)。getRow の OOB(undefined)は呼び出し側で
+  //   吸収する前提で、ここへは非 null の行だけ渡します。
+  collect: (row: T) => void;
+  // 候補から各列幅を確定し、現在幅から変化がある列だけの { columnKey: width } を返します
+  //   (空オブジェクトなら呼び出し側は dispatch をスキップできます)。
+  finalize: (params: {
+    gridRoot: HTMLElement | null;
+    currentWidths: Record<string, number>;
+  }) => Record<string, number>;
+};
+
+// 追加(②-S3): autoSize の計測対象外にする列の判定です。
+//   - suppressAutoSize(②-S1): consumer が固定幅を明示した列。
+//   - autoHeight: 折り返し前提の列。autoSize の計測は単一行(計測ノードは white-space:nowrap)で
+//     行うため、autoHeight 列を測ると「折り返したい長文」を1行幅にし、maxWidth に当たって途切れる
+//     / 極端に横長になります。autoHeight 列は consumer が選んだ width で折り返すのが本来の姿なので、
+//     autoSize では幅を変えません(グリッドの autoHeight 有効 / 無効に関わらず列フラグで判定)。
+const isAutosizeExcludedColumn = <T,>(column: GridColumn<T>): boolean =>
+  column.suppressAutoSize === true || column.autoHeight === true;
+
+// 列ごとの候補(推定幅 上位 TOP_K)を 1 パス collect で蓄積し、finalize で実 measureText
+// へ落とす accumulator を生成します。候補保持は列あたり最大 TOP_K 件で行数非依存です。
+export function createColumnWidthAccumulator<T>(
+  columns: GridColumn<T>[],
+): ColumnWidthAccumulator<T> {
+  // ── 候補状態(1 パス × 全列同時) ──
+  //   変更(②-S1): 候補に「元の行」を保持します(candidateRow)。Phase 2 でその行から表示テキスト
+  //   (valueFormatter 適用後)を導出して実 DOM 計測するためです。推定 / 足切りは従来どおり生テキスト
+  //   (String(getCellValue))で行います(桁区切り等は単調なので候補順位は保たれ、推定は安いまま)。
+  //   - candidateRow[ci]: 候補の元行(最大 TOP_K 件)
+  //   - candidateEst[ci]: 各候補の推定幅(生テキスト基準)
+  //   - candidateMinEst[ci]: 候補内の最小推定幅(満杯時の足切り用。満杯前は +∞)
+  const candidateRow: T[][] = columns.map(() => []);
+  const candidateEst: number[][] = columns.map(() => []);
+  const candidateMinEst: number[] = columns.map(
+    () => Number.POSITIVE_INFINITY,
+  );
+  // 追加(②-S2): estimateCellWidth 指定列用。候補 / テキスト計測を使わず、consumer 申告の content 幅
+  //   (px)の全行 running-max を保持します(finalize でセル枠を足して確定)。
+  const maxEstimateWidth: number[] = columns.map(() => 0);
+
+  const collect = (row: T): void => {
+    for (let ci = 0; ci < columns.length; ci += 1) {
+      // 計測対象外(②-S1/S3): suppressAutoSize / autoHeight 列はスキップ(候補も貯めません)。
+      if (isAutosizeExcludedColumn(columns[ci])) {
+        continue;
+      }
+      // 追加(②-S2): estimateCellWidth 指定列は、consumer 申告の content 幅で全行 running-max を
+      //   取ります(テキスト proxy が効かないカスタムUI列向け。候補 / テキスト計測は使いません)。
+      const estimate = columns[ci].estimateCellWidth;
+      if (estimate) {
+        const w = estimate(row, columns[ci]);
+        if (w > maxEstimateWidth[ci]) {
+          maxEstimateWidth[ci] = w;
+        }
+        continue;
+      }
+      const text = String(getCellValue(row, columns[ci]) ?? '');
+      if (text === '') {
+        continue;
+      }
+      const rows = candidateRow[ci];
+      const estList = candidateEst[ci];
+      // 追加(DS-4 ①-(3a)): 候補が満杯なら、実推定幅を出す前に length で O(1) 足切りします。
+      //   units ≤ 2*text.length のため、2*text.length ≤ 最小推定幅 なら推定幅も最小以下が
+      //   確定し、estimateTextWidthUnits のコードポイント走査を省けます(結果は下の
+      //   est <= candidateMinEst 棄却と一致)。満杯前(minEst=+∞)はこの分岐に入りません。
+      if (rows.length === TOP_K && 2 * text.length <= candidateMinEst[ci]) {
+        continue;
+      }
+      const est = estimateTextWidthUnits(text);
+      if (rows.length < TOP_K) {
+        rows.push(row);
+        estList.push(est);
+        if (rows.length === TOP_K) {
+          // 満杯になった時点で最小推定幅を確定します(以後の足切りに使用)。
+          let m = estList[0];
+          for (let j = 1; j < TOP_K; j += 1) {
+            if (estList[j] < m) {
+              m = estList[j];
+            }
+          }
+          candidateMinEst[ci] = m;
+        }
+        continue;
+      }
+      // 満杯。length 足切りを通過した残りを、実推定幅で最終判定します。
+      if (est <= candidateMinEst[ci]) {
+        continue;
+      }
+      // 最小推定幅の候補を入れ替え、最小推定幅を再計算します。
+      let minIdx = 0;
+      for (let j = 1; j < TOP_K; j += 1) {
+        if (estList[j] < estList[minIdx]) {
+          minIdx = j;
+        }
+      }
+      rows[minIdx] = row;
+      estList[minIdx] = est;
+      let m = estList[0];
+      for (let j = 1; j < TOP_K; j += 1) {
+        if (estList[j] < m) {
+          m = estList[j];
+        }
+      }
+      candidateMinEst[ci] = m;
+    }
+  };
+
+  const finalize = ({
+    gridRoot,
+    currentWidths,
+  }: {
+    gridRoot: HTMLElement | null;
+    currentWidths: Record<string, number>;
+  }): Record<string, number> => {
+    const context = getSharedContext();
+    if (!context || columns.length === 0) {
+      return {};
+    }
+
+    const { cellFont, headerFont } = resolveFonts(gridRoot);
+    const nextWidths: Record<string, number> = {};
+
+    // Phase 2(②-S1): 実 DOM 計測コンテナ。作れれば DOM 経路、ダメなら canvas フォールバック。
+    const container = createMeasuringContainer(gridRoot);
+    try {
+      // ── DOM 経路: 全列・全候補をノード化(write)してから offsetWidth をまとめて読みます。
+      //   write を全件終えてから read するため、強制レイアウトは read の最初の 1 回に集約されます。
+      let cellWidthByCol: number[] | null = null;
+      if (container) {
+        const nodesByCol: HTMLElement[][] = [];
+        for (let ci = 0; ci < columns.length; ci += 1) {
+          if (isAutosizeExcludedColumn(columns[ci])) {
+            nodesByCol.push([]);
+            continue;
+          }
+          // 追加(②-S2): estimateCellWidth 列は候補を使わないため計測ノードを作りません。
+          if (columns[ci].estimateCellWidth) {
+            nodesByCol.push([]);
+            continue;
+          }
+          const rows = candidateRow[ci];
+          const nodes: HTMLElement[] = [];
+          for (let j = 0; j < rows.length; j += 1) {
+            const text = resolveCellDisplayText(rows[j], columns[ci]);
+            if (text === '') {
+              continue;
+            }
+            const node = createMeasuringNode(text);
+            container.appendChild(node);
+            nodes.push(node);
+          }
+          nodesByCol.push(nodes);
+        }
+        // read 相(ここで初回のみレイアウトが走り、以後の offsetWidth は再計算なし)。
+        cellWidthByCol = nodesByCol.map((nodes) => {
+          let max = 0;
+          for (let j = 0; j < nodes.length; j += 1) {
+            const w = nodes[j].offsetWidth;
+            if (w > max) {
+              max = w;
+            }
+          }
+          return max;
+        });
+      }
+
+      for (let ci = 0; ci < columns.length; ci += 1) {
+        const column = columns[ci];
+        // 計測対象外(②-S1/S3): suppressAutoSize / autoHeight 列は計測せず、現在幅を維持します。
+        if (isAutosizeExcludedColumn(column)) {
+          continue;
+        }
+
+        // ── ヘッダー幅(従来どおり canvas + 固定要素) ──
+        context.font = headerFont;
+        const headerTitle = column.title || column.key;
+        const headerRequired =
+          context.measureText(headerTitle).width +
+          TEXT_SAFETY +
+          HEADER_FIXED_CONTENT_WIDTH;
+
+        // ── セル幅 ──
+        let cellRequired: number;
+        if (column.estimateCellWidth) {
+          // 追加(②-S2): estimateCellWidth 列は申告 content 幅の最大 + セル枠(padding / border)で確定。
+          //   DOM / canvas のテキスト計測は行いません(consumer 申告を信頼)。
+          cellRequired =
+            maxEstimateWidth[ci] > 0
+              ? maxEstimateWidth[ci] + CELL_HORIZONTAL_FRAME
+              : 0;
+        } else if (cellWidthByCol) {
+          // Phase 2: 実 DOM の offsetWidth(padding / border / 字間 / 整形を内包。補正定数は加えません)。
+          cellRequired = cellWidthByCol[ci];
+        } else {
+          // フォールバック(DOM 不可): 表示テキストを canvas 計測 + 補正定数。
+          context.font = cellFont;
+          let maxCellTextWidth = 0;
+          const rows = candidateRow[ci];
+          for (let j = 0; j < rows.length; j += 1) {
+            const text = resolveCellDisplayText(rows[j], column);
+            if (text === '') {
+              continue;
+            }
+            const width = context.measureText(text).width;
+            if (width > maxCellTextWidth) {
+              maxCellTextWidth = width;
+            }
+          }
+          cellRequired =
+            maxCellTextWidth > 0
+              ? maxCellTextWidth + TEXT_SAFETY + CELL_HORIZONTAL_FRAME
+              : 0;
+        }
+
+        // ── clamp + no-op 判定 ──
+        const resolved = Math.ceil(
+          clamp(
+            Math.max(headerRequired, cellRequired),
+            column.minWidth ?? DEFAULT_MIN_WIDTH,
+            // 変更(②-S4): 既定上限を撤廃。明示 maxWidth がなければ上限なし(内容にぴったり合わせます)。
+            column.maxWidth ?? Number.POSITIVE_INFINITY,
+          ),
+        );
+
+        if (currentWidths[column.key] !== resolved) {
+          nextWidths[column.key] = resolved;
+        }
+      }
+    } finally {
+      if (container && container.parentNode) {
+        container.parentNode.removeChild(container);
+      }
+    }
+
+    return nextWidths;
+  };
+
+  return { collect, finalize };
+}
+
+// 追加(DS-4 ①-(2)): autosize 計測が可能か(canvas 2d context が得られるか)を返します。
+//   時間分割ランナーが「行走査を始める前に」no-op 判定するために使います(非対応環境で
+//   30万行級の空振り走査をしないため)。sync 版は従来どおり内部の早期 return で吸収します。
+export function canMeasureAutosize(): boolean {
+  return getSharedContext() !== null;
+}
+
+// 列ごとの自動調整幅を計測します(同期一括版)。
+// 戻り値は「現在幅から変化がある列だけ」の { columnKey: width } です
+// (空オブジェクトなら呼び出し側は dispatch をスキップできます)。
+// 変更(DS-4 ①-(2)): 計測本体を createColumnWidthAccumulator へ集約しました。本 sync 版は
+//   「全行を一括 collect → finalize」で、DS-4 ①-(1) と結果はバイト等価です(等価検証で確認)。
+//   早期 return(context 無し / 列 0)も従来どおり維持し、無駄な行走査を避けます。
+export function computeAutosizedColumnWidths<T>({
+  columns,
+  getRow,
+  viewRowCount,
+  gridRoot,
+  currentWidths,
+}: ColumnAutosizeParams<T>): Record<string, number> {
+  if (columns.length === 0 || getSharedContext() === null) {
+    return {};
+  }
+
+  const accumulator = createColumnWidthAccumulator(columns);
+
+  for (let viewIndex = 0; viewIndex < viewRowCount; viewIndex += 1) {
+    const row = getRow(viewIndex);
+    // 注記(DS-3-9/3-10 と同方針): seam の OOB は実行時ガードで吸収します。
+    if (!row) {
+      continue;
+    }
+    accumulator.collect(row);
+  }
+
+  return accumulator.finalize({ gridRoot, currentWidths });
+}
+</file>
+
 <file path="src/components/spreadsheet-grid/view/ColumnFilterPopover.tsx">
 import { createPortal } from 'react-dom';
 import { cx } from '../logic/cx';
@@ -21615,541 +22285,6 @@ export const useGridPointerInteractions = <T,>({
 export default useGridPointerInteractions;
 </file>
 
-<file path="src/components/spreadsheet-grid/logic/columnAutosize.ts">
-// 追加(13-B1): 列幅の自動調整(AG Grid の Autosize This Column /
-//             Autosize All Columns 相当)の計測ロジックです。
-//
-// 方式の選定メモ(canvas measureText 方式を採用):
-//   (a) canvas measureText: フォントを実セルと揃えて文字列幅を計測します。
-//       同期・高速で、reflow を発生させません。
-//       デメリットは renderCell カスタム描画を反映できないことと、
-//       DOM レンダリング(カーニング / サブピクセル)との僅差です
-//       (僅差は TEXT_SAFETY で吸収します)。
-//   (b) オフスクリーン DOM 計測: 実 DOM へ流し込んで幅を読む方式。正確ですが
-//       5,000 行 × 29 列では layout コストが大きく、分割実行が必要になります。
-//   (c) AG Grid 本家の方式: 「描画済み(仮想化で DOM に存在する)セル」だけを計測。
-//       高速ですが、画面外の行にある最長値が反映されないという既知の挙動があります。
-//   本実装は (a)[全行スクリーニング] と (b)[実 DOM 計測] を 2 段で組み合わせます(変更 ②-S1):
-//   Phase 1 = (a) の canvas 推定で全表示行から候補(TOP_K)を絞り、Phase 2 = (b) で候補だけを
-//   実 DOM(grid root 配下の計測セル)で実測します。全行カバレッジ((c) の弱点を回避)と、実描画
-//   忠実((a) の弱点を回避: padding / 字間 / kerning / valueFormatter を offsetWidth が内包)を
-//   両取りします。実測は候補のみ(列あたり最大 TOP_K 件)なので reflow は finalize で 1 回です。
-//   DOM 不可(SSR 等)では (a) の canvas 計測へフォールバックします。
-//
-// 計測回数の抑制方式(変更 DS-4 ①-(1)):
-//   旧版は列ごとに「ユニーク文字列の Set を全構築 → ユニーク数ぶん measureText」
-//   していました。実データは値の重複が多いため Set dedupe が効きますが、全列ユニーク
-//   (例: 30万行 ?stress)では dedupe が無効化し、列あたり数万回の measureText で
-//   クリックハンドラが同期フリーズします。
-//   そこで本版は次の 2 段構えに変えます:
-//     1. 行を 1 パス走査し(全列同時)、列ごとに「推定幅が大きい上位 TOP_K 件の
-//        文字列候補」だけを保持します(Set 全構築は撤去)。推定幅は measureText を
-//        使わず、コードポイント単位の全角=2 / 半角=1 の整数ウェイト和です
-//        (estimateTextWidthUnits)。
-//     2. パス後、列ごとに候補 TOP_K 件だけを実 measureText し、最大値を採用します。
-//   推定ウェイトは「どの候補を残すか」だけに効き、最終的な列幅は必ず実 measureText
-//   から出すため、幅の値自体は常に正確です。日本語(全角)混在列で「文字数は少ないが
-//   実幅は最大」の行が候補から押し出される取りこぼしを、全角ウェイトで防ぎます。
-//   推定がラフでも候補選択が当たれば結果は正確で、残差は TEXT_SAFETY が吸収します。
-//
-// estimate ループの回避(追加 DS-4 ①-(3a)):
-//   上記 1 の候補収集で、候補が TOP_K 件で満杯になった後は、各セルの実推定幅を
-//   出す前に text.length だけで O(1) 足切りします。推定幅 units は「全角=2 / 半角=1」の
-//   和で、コードポイント数 P に対し P ≤ units ≤ 2P、かつ P ≤ text.length(サロゲートは
-//   length 側が大)なので units ≤ 2*text.length が常に成立します。したがって
-//   2*text.length ≤ 最小推定幅 なら units ≤ 最小推定幅 が確定し、estimateTextWidthUnits の
-//   コードポイント走査を回さずに棄却できます。30万行級では満杯後の estimate が collect の
-//   支配項のため、候補が温まれば大多数のセルがここで走査ゼロで弾かれます。結果は
-//   ①-(1)/①-(2) とバイト等価です(2*length ≤ minEst ⇒ est ≤ minEst で、既存の
-//   est ≤ 最小推定幅 棄却と一致。候補集合・順序・minEst とも不変)。
-// メモリ / 走査特性:
-//   - 候補保持は列あたり最大 TOP_K 件で、行数に依存しません(旧 Set はユニーク数=
-//     最悪 行数 ぶん成長していました)。
-//   - 行の取得は rowModel シーム越し(getRow)で、呼び出し側のビュー順全行 materialize
-//     は不要です(DS-3-10 clipboard と同型の seam-native 署名)。getRow は 1 行につき
-//     1 回(行数ぶん)で、列数倍にはなりません。
-//
-// 既知の制限 / 拡張点:
-//   - Phase 2 は「デフォルトセルの表示テキスト」(valueFormatter 適用後 / 未指定は String(value))を
-//     実 DOM で測ります。整形・letter-spacing・フォントは反映されますが、renderCell で独自の DOM
-//     (アイコン / バッジ等)を描く列は、テキストを proxy にする Phase 1 では幅相関が崩れます。その
-//     場合は列に estimateCellWidth(②-S2)を指定すると、その列は「申告 content 幅の全行 running-max」で
-//     確定します(テキスト / 候補 / 実 DOM 計測を使わず、consumer 申告を信頼。React mount は行いません)。
-//   - suppressAutoSize: true の列は計測対象から除外し、consumer 指定の width を維持します
-//     (固定幅優先。collect でも候補を貯めず、finalize でも幅を出しません)。
-//   - autoHeight: true の列も計測対象外です(②-S3)。autoHeight 列は「幅固定 + 折り返し」が本来の姿で、
-//     autoSize は単一行幅で測るため、autoHeight 列を測ると長文を1行幅にし maxWidth で途切れる /
-//     極端に横長になります。consumer が選んだ width を維持し、折り返し(autoHeight 有効時)に委ねます。
-import type { GridColumn } from '../model/gridTypes';
-import { getCellValue } from '../utils/permissions';
-
-// ── レイアウト定数(GridBodyLayer / GridHeaderRow の style と同期) ──
-// セル: padding '0 10px'(=20) + borderRight 1px、box-sizing: border-box。
-//   注記(②-S1/S2): Phase 2 の実 DOM 計測では offsetWidth に padding / border が含まれるため不要です。
-//   canvas フォールバック経路(DOM 不可時)と、estimateCellWidth 列(申告 content 幅へ枠を加算)で使用します。
-const CELL_HORIZONTAL_FRAME = 21;
-// canvas 計測と DOM 描画の僅差(カーニング・サブピクセル丸め)の安全マージンです。
-//   注記(②-S1): Phase 2 の実 DOM 計測では実体を測るため不要。canvas フォールバックと、ヘッダー
-//   計測(従来どおり canvas)でのみ使用します。
-const TEXT_SAFETY = 4;
-// ヘッダーセルのテキスト以外の固定幅です(現行の hover オーバーレイヘッダーと同期。styles.css):
-//   padding 0 6px(=12) + borderRight 1 + ラベル↔状態スロットの gap 4
-//   + 状態スロット(ソート矢印 + フィルター漏斗 + 内部 gap)~24
-//   = 41
-// 注記(変更前は 141): grip / 列メニュー(⋮)は .ssg-header-actions が absolute + opacity:0 で
-//   非hover では幅 0(hover でタイトル末尾を覆うオーバーレイ)になったため、ボタン 3 つぶん(~90)は
-//   reserve しません。旧 Excel 列名バッジ(22)も廃止済みで、padding / gap も旧 20 / 18 から現行
-//   12 / 4 へ縮んでいます。ソート / フィルターのインジケータ枠(~24)だけ残し、autoSize 後に
-//   並べ替え / フィルターしてもタイトルがほぼ欠けないようにしています。
-const HEADER_FIXED_CONTENT_WIDTH = 41;
-// ヘッダータイトルのフォントです(headerCellBaseStyle: fontSize 13 / fontWeight 600)。
-const HEADER_FONT_SIZE = 13;
-const HEADER_FONT_WEIGHT = 600;
-// リサイズ(column/resizeStart)と同じ既定下限です(gridReducer と同期)。
-//   上限は既定で設けません(②-S4: 旧 DEFAULT_MAX_WIDTH=1000 を撤廃。明示 maxWidth のみ上限になります)。
-const DEFAULT_MIN_WIDTH = 60;
-
-// 追加(DS-4 ①-(1)): 列ごとに実 measureText する候補件数の上限です。
-//   推定幅(estimateTextWidthUnits)上位 TOP_K 件だけを実計測します。
-//   16 は「最長文字数 ≒ 最大ピクセル幅」がほぼ成立する実データで、推定の取りこぼしを
-//   吸収できる十分な余裕値です(measureText 回数を 列あたり数万 → 最大 16 へ抑えます)。
-const TOP_K = 16;
-
-// ── 共有 canvas context(モジュールローカル・遅延生成) ──
-let sharedContext: CanvasRenderingContext2D | null = null;
-
-const getSharedContext = (): CanvasRenderingContext2D | null => {
-  if (sharedContext) {
-    return sharedContext;
-  }
-  // 注記: SSR / canvas 非対応環境では null を返し、呼び出し側で no-op になります。
-  if (typeof document === 'undefined') {
-    return null;
-  }
-  sharedContext = document.createElement('canvas').getContext('2d');
-  return sharedContext;
-};
-
-// ── フォント解決 ──
-// セルは自前の font 指定を持たず祖先から継承するため、grid root の computed style を
-// そのまま使えばセルの実フォント(size / family / weight)と一致します。
-// ヘッダーは fontSize 13 / fontWeight 600 を明示しているため、family のみ共有します。
-type ResolvedFonts = {
-  cellFont: string;
-  headerFont: string;
-};
-
-const FALLBACK_FONT_FAMILY = 'system-ui, sans-serif';
-
-const resolveFonts = (gridRoot: HTMLElement | null): ResolvedFonts => {
-  let fontFamily = FALLBACK_FONT_FAMILY;
-  let cellFontSize = 13;
-  let cellFontWeight = '400';
-
-  if (gridRoot && typeof window !== 'undefined') {
-    const computed = window.getComputedStyle(gridRoot);
-    if (computed.fontFamily) {
-      fontFamily = computed.fontFamily;
-    }
-    const parsedSize = Number.parseFloat(computed.fontSize);
-    if (Number.isFinite(parsedSize) && parsedSize > 0) {
-      cellFontSize = parsedSize;
-    }
-    if (computed.fontWeight) {
-      cellFontWeight = computed.fontWeight;
-    }
-  }
-
-  return {
-    cellFont: `${cellFontWeight} ${cellFontSize}px ${fontFamily}`,
-    headerFont: `${HEADER_FONT_WEIGHT} ${HEADER_FONT_SIZE}px ${fontFamily}`,
-  };
-};
-
-const clamp = (value: number, min: number, max: number): number =>
-  Math.min(Math.max(value, min), max);
-
-// 追加(DS-4 ①-(1)): コードポイントが「全角(East Asian Wide / Fullwidth)」かを判定します。
-//   measureText を使わず候補選別の推定幅に使うための近似で、CJK・かな・ハングル・
-//   全角形・絵文字などの主要レンジを 2 ウェイト、その他を 1 ウェイト扱いにします。
-//   厳密な East Asian Width テーブルではありませんが、候補選別用途には十分です
-//   (最終幅は実 measureText で確定するため、ここの僅差は結果に乗りません)。
-const isWideCodePoint = (cp: number): boolean =>
-  (cp >= 0x1100 && cp <= 0x115f) || // Hangul Jamo
-  (cp >= 0x2e80 && cp <= 0x303e) || // CJK 部首補助 〜 康熙部首 〜 CJK 記号
-  (cp >= 0x3041 && cp <= 0x33ff) || // ひらがな・カタカナ 〜 CJK 互換
-  (cp >= 0x3400 && cp <= 0x4dbf) || // CJK 拡張 A
-  (cp >= 0x4e00 && cp <= 0x9fff) || // CJK 統合漢字
-  (cp >= 0xa000 && cp <= 0xa4cf) || // ヤオ文字(Yi)
-  (cp >= 0xac00 && cp <= 0xd7a3) || // ハングル音節
-  (cp >= 0xf900 && cp <= 0xfaff) || // CJK 互換漢字
-  (cp >= 0xfe30 && cp <= 0xfe4f) || // CJK 互換形
-  (cp >= 0xff00 && cp <= 0xff60) || // 全角 ASCII 形
-  (cp >= 0xffe0 && cp <= 0xffe6) || // 全角記号
-  (cp >= 0x1f300 && cp <= 0x1faff) || // 絵文字(近似で全角扱い)
-  (cp >= 0x20000 && cp <= 0x3fffd); // CJK 拡張 B 以降
-
-// 追加(DS-4 ①-(1)): 文字列の推定幅ユニットです(全角=2 / 半角=1 の和)。
-//   for...of でコードポイント単位に走査するためサロゲートペアも 1 文字として数えます。
-const estimateTextWidthUnits = (text: string): number => {
-  let units = 0;
-  for (const ch of text) {
-    const cp = ch.codePointAt(0) ?? 0;
-    units += isWideCodePoint(cp) ? 2 : 1;
-  }
-  return units;
-};
-
-// 追加(②-S1): セルの表示テキストを返します(デフォルトセル描画と同一の規則)。
-//   valueFormatter 指定時はその返り値、未指定は String(value ?? '')。Phase 2 の実 DOM 計測で
-//   「実際に表示される文字列」を測るために使います(整形後の桁区切り等が幅へ反映されます)。
-const resolveCellDisplayText = <T,>(
-  row: T,
-  column: GridColumn<T>,
-): string => {
-  const value = getCellValue(row, column);
-  return column.valueFormatter
-    ? column.valueFormatter({ value, row, column })
-    : String(value ?? '');
-};
-
-// 追加(②-S1): Phase 2 の計測コンテナを grid root 配下に生成します(作れなければ null)。
-//   grid root 配下に置くことで font / letter-spacing 等の継承文脈を実セルと一致させます。
-//   コンテナ自体は画面外・不可視・レイアウト非干渉です。
-const createMeasuringContainer = (
-  gridRoot: HTMLElement | null,
-): HTMLElement | null => {
-  if (!gridRoot || typeof document === 'undefined') {
-    return null;
-  }
-  const container = document.createElement('div');
-  container.setAttribute('aria-hidden', 'true');
-  container.style.cssText =
-    'position:absolute;top:-99999px;left:-99999px;' +
-    'visibility:hidden;pointer-events:none;width:auto;height:auto;' +
-    'contain:layout style;';
-  gridRoot.appendChild(container);
-  return container;
-};
-
-// 追加(②-S1): 候補 1 件ぶんの計測ノードを作ります。実セル(.ssg-body-cell)の padding / border /
-//   box-sizing / フォント継承を流用しつつ、計測用に inline-block + width:auto + nowrap へ上書きします。
-//   offsetWidth = テキスト + padding + border = 必要列幅(箱まるごと)になります。
-const createMeasuringNode = (text: string): HTMLElement => {
-  const node = document.createElement('div');
-  node.className = 'ssg-body-cell';
-  node.style.cssText =
-    'display:inline-block;position:static;top:auto;left:auto;' +
-    'width:auto;height:auto;white-space:nowrap;overflow:visible;';
-  node.textContent = text;
-  return node;
-};
-
-export type ColumnAutosizeParams<T> = {
-  // 計測対象の列です(1 列だけ / 全表示列のどちらも渡せます)。
-  columns: GridColumn<T>[];
-  // 変更(DS-4 ①-(1)): rows: T[] → seam-native(getRow + viewRowCount)。
-  //   呼び出し側のビュー順全行 materialize を不要にします(DS-3-10 clipboard と同型)。
-  //   getRow(viewIndex) はビュー位置(グローバル / 列フィルター適用後)の行を返します。
-  //   ソート順は計測結果に影響しません(集合としての最大幅を見るため)。
-  getRow: (viewIndex: number) => T;
-  // ビュー行数です(= rowModel.getRowCount())。走査は 0..viewRowCount-1 です。
-  viewRowCount: number;
-  // セルフォント解決に使う grid root 要素です。
-  gridRoot: HTMLElement | null;
-  // 現在の解決済み幅です。計測結果が同じ列は戻り値から除外します(no-op 判定)。
-  currentWidths: Record<string, number>;
-};
-
-// 追加(DS-4 ①-(2)): 計測を「行 collect 相」と「幅 finalize 相」に分離した accumulator です。
-//   ①-(1) の 2 段方式(候補 TOP_K 収集 → 実 measureText)のうち、collect が候補収集を、
-//   finalize がヘッダー / セルの実 measureText + clamp + no-op 判定を担います。
-//   sync 版(computeAutosizedColumnWidths)と DS-4 ①-(2) の時間分割ランナーは、どちらも
-//   この同一 accumulator を共有するため、走査の刻み方によらず結果が一致します
-//   (同期一括 collect でも、チャンク分割 collect でも、collect の呼び出し順が同じなら
-//    候補配列の最終状態は同値になります)。
-export type ColumnWidthAccumulator<T> = {
-  // 1 行ぶんを候補へ反映します(全列同時)。getRow の OOB(undefined)は呼び出し側で
-  //   吸収する前提で、ここへは非 null の行だけ渡します。
-  collect: (row: T) => void;
-  // 候補から各列幅を確定し、現在幅から変化がある列だけの { columnKey: width } を返します
-  //   (空オブジェクトなら呼び出し側は dispatch をスキップできます)。
-  finalize: (params: {
-    gridRoot: HTMLElement | null;
-    currentWidths: Record<string, number>;
-  }) => Record<string, number>;
-};
-
-// 追加(②-S3): autoSize の計測対象外にする列の判定です。
-//   - suppressAutoSize(②-S1): consumer が固定幅を明示した列。
-//   - autoHeight: 折り返し前提の列。autoSize の計測は単一行(計測ノードは white-space:nowrap)で
-//     行うため、autoHeight 列を測ると「折り返したい長文」を1行幅にし、maxWidth に当たって途切れる
-//     / 極端に横長になります。autoHeight 列は consumer が選んだ width で折り返すのが本来の姿なので、
-//     autoSize では幅を変えません(グリッドの autoHeight 有効 / 無効に関わらず列フラグで判定)。
-const isAutosizeExcludedColumn = <T,>(column: GridColumn<T>): boolean =>
-  column.suppressAutoSize === true || column.autoHeight === true;
-
-// 列ごとの候補(推定幅 上位 TOP_K)を 1 パス collect で蓄積し、finalize で実 measureText
-// へ落とす accumulator を生成します。候補保持は列あたり最大 TOP_K 件で行数非依存です。
-export function createColumnWidthAccumulator<T>(
-  columns: GridColumn<T>[],
-): ColumnWidthAccumulator<T> {
-  // ── 候補状態(1 パス × 全列同時) ──
-  //   変更(②-S1): 候補に「元の行」を保持します(candidateRow)。Phase 2 でその行から表示テキスト
-  //   (valueFormatter 適用後)を導出して実 DOM 計測するためです。推定 / 足切りは従来どおり生テキスト
-  //   (String(getCellValue))で行います(桁区切り等は単調なので候補順位は保たれ、推定は安いまま)。
-  //   - candidateRow[ci]: 候補の元行(最大 TOP_K 件)
-  //   - candidateEst[ci]: 各候補の推定幅(生テキスト基準)
-  //   - candidateMinEst[ci]: 候補内の最小推定幅(満杯時の足切り用。満杯前は +∞)
-  const candidateRow: T[][] = columns.map(() => []);
-  const candidateEst: number[][] = columns.map(() => []);
-  const candidateMinEst: number[] = columns.map(
-    () => Number.POSITIVE_INFINITY,
-  );
-  // 追加(②-S2): estimateCellWidth 指定列用。候補 / テキスト計測を使わず、consumer 申告の content 幅
-  //   (px)の全行 running-max を保持します(finalize でセル枠を足して確定)。
-  const maxEstimateWidth: number[] = columns.map(() => 0);
-
-  const collect = (row: T): void => {
-    for (let ci = 0; ci < columns.length; ci += 1) {
-      // 計測対象外(②-S1/S3): suppressAutoSize / autoHeight 列はスキップ(候補も貯めません)。
-      if (isAutosizeExcludedColumn(columns[ci])) {
-        continue;
-      }
-      // 追加(②-S2): estimateCellWidth 指定列は、consumer 申告の content 幅で全行 running-max を
-      //   取ります(テキスト proxy が効かないカスタムUI列向け。候補 / テキスト計測は使いません)。
-      const estimate = columns[ci].estimateCellWidth;
-      if (estimate) {
-        const w = estimate(row, columns[ci]);
-        if (w > maxEstimateWidth[ci]) {
-          maxEstimateWidth[ci] = w;
-        }
-        continue;
-      }
-      const text = String(getCellValue(row, columns[ci]) ?? '');
-      if (text === '') {
-        continue;
-      }
-      const rows = candidateRow[ci];
-      const estList = candidateEst[ci];
-      // 追加(DS-4 ①-(3a)): 候補が満杯なら、実推定幅を出す前に length で O(1) 足切りします。
-      //   units ≤ 2*text.length のため、2*text.length ≤ 最小推定幅 なら推定幅も最小以下が
-      //   確定し、estimateTextWidthUnits のコードポイント走査を省けます(結果は下の
-      //   est <= candidateMinEst 棄却と一致)。満杯前(minEst=+∞)はこの分岐に入りません。
-      if (rows.length === TOP_K && 2 * text.length <= candidateMinEst[ci]) {
-        continue;
-      }
-      const est = estimateTextWidthUnits(text);
-      if (rows.length < TOP_K) {
-        rows.push(row);
-        estList.push(est);
-        if (rows.length === TOP_K) {
-          // 満杯になった時点で最小推定幅を確定します(以後の足切りに使用)。
-          let m = estList[0];
-          for (let j = 1; j < TOP_K; j += 1) {
-            if (estList[j] < m) {
-              m = estList[j];
-            }
-          }
-          candidateMinEst[ci] = m;
-        }
-        continue;
-      }
-      // 満杯。length 足切りを通過した残りを、実推定幅で最終判定します。
-      if (est <= candidateMinEst[ci]) {
-        continue;
-      }
-      // 最小推定幅の候補を入れ替え、最小推定幅を再計算します。
-      let minIdx = 0;
-      for (let j = 1; j < TOP_K; j += 1) {
-        if (estList[j] < estList[minIdx]) {
-          minIdx = j;
-        }
-      }
-      rows[minIdx] = row;
-      estList[minIdx] = est;
-      let m = estList[0];
-      for (let j = 1; j < TOP_K; j += 1) {
-        if (estList[j] < m) {
-          m = estList[j];
-        }
-      }
-      candidateMinEst[ci] = m;
-    }
-  };
-
-  const finalize = ({
-    gridRoot,
-    currentWidths,
-  }: {
-    gridRoot: HTMLElement | null;
-    currentWidths: Record<string, number>;
-  }): Record<string, number> => {
-    const context = getSharedContext();
-    if (!context || columns.length === 0) {
-      return {};
-    }
-
-    const { cellFont, headerFont } = resolveFonts(gridRoot);
-    const nextWidths: Record<string, number> = {};
-
-    // Phase 2(②-S1): 実 DOM 計測コンテナ。作れれば DOM 経路、ダメなら canvas フォールバック。
-    const container = createMeasuringContainer(gridRoot);
-    try {
-      // ── DOM 経路: 全列・全候補をノード化(write)してから offsetWidth をまとめて読みます。
-      //   write を全件終えてから read するため、強制レイアウトは read の最初の 1 回に集約されます。
-      let cellWidthByCol: number[] | null = null;
-      if (container) {
-        const nodesByCol: HTMLElement[][] = [];
-        for (let ci = 0; ci < columns.length; ci += 1) {
-          if (isAutosizeExcludedColumn(columns[ci])) {
-            nodesByCol.push([]);
-            continue;
-          }
-          // 追加(②-S2): estimateCellWidth 列は候補を使わないため計測ノードを作りません。
-          if (columns[ci].estimateCellWidth) {
-            nodesByCol.push([]);
-            continue;
-          }
-          const rows = candidateRow[ci];
-          const nodes: HTMLElement[] = [];
-          for (let j = 0; j < rows.length; j += 1) {
-            const text = resolveCellDisplayText(rows[j], columns[ci]);
-            if (text === '') {
-              continue;
-            }
-            const node = createMeasuringNode(text);
-            container.appendChild(node);
-            nodes.push(node);
-          }
-          nodesByCol.push(nodes);
-        }
-        // read 相(ここで初回のみレイアウトが走り、以後の offsetWidth は再計算なし)。
-        cellWidthByCol = nodesByCol.map((nodes) => {
-          let max = 0;
-          for (let j = 0; j < nodes.length; j += 1) {
-            const w = nodes[j].offsetWidth;
-            if (w > max) {
-              max = w;
-            }
-          }
-          return max;
-        });
-      }
-
-      for (let ci = 0; ci < columns.length; ci += 1) {
-        const column = columns[ci];
-        // 計測対象外(②-S1/S3): suppressAutoSize / autoHeight 列は計測せず、現在幅を維持します。
-        if (isAutosizeExcludedColumn(column)) {
-          continue;
-        }
-
-        // ── ヘッダー幅(従来どおり canvas + 固定要素) ──
-        context.font = headerFont;
-        const headerTitle = column.title || column.key;
-        const headerRequired =
-          context.measureText(headerTitle).width +
-          TEXT_SAFETY +
-          HEADER_FIXED_CONTENT_WIDTH;
-
-        // ── セル幅 ──
-        let cellRequired: number;
-        if (column.estimateCellWidth) {
-          // 追加(②-S2): estimateCellWidth 列は申告 content 幅の最大 + セル枠(padding / border)で確定。
-          //   DOM / canvas のテキスト計測は行いません(consumer 申告を信頼)。
-          cellRequired =
-            maxEstimateWidth[ci] > 0
-              ? maxEstimateWidth[ci] + CELL_HORIZONTAL_FRAME
-              : 0;
-        } else if (cellWidthByCol) {
-          // Phase 2: 実 DOM の offsetWidth(padding / border / 字間 / 整形を内包。補正定数は加えません)。
-          cellRequired = cellWidthByCol[ci];
-        } else {
-          // フォールバック(DOM 不可): 表示テキストを canvas 計測 + 補正定数。
-          context.font = cellFont;
-          let maxCellTextWidth = 0;
-          const rows = candidateRow[ci];
-          for (let j = 0; j < rows.length; j += 1) {
-            const text = resolveCellDisplayText(rows[j], column);
-            if (text === '') {
-              continue;
-            }
-            const width = context.measureText(text).width;
-            if (width > maxCellTextWidth) {
-              maxCellTextWidth = width;
-            }
-          }
-          cellRequired =
-            maxCellTextWidth > 0
-              ? maxCellTextWidth + TEXT_SAFETY + CELL_HORIZONTAL_FRAME
-              : 0;
-        }
-
-        // ── clamp + no-op 判定 ──
-        const resolved = Math.ceil(
-          clamp(
-            Math.max(headerRequired, cellRequired),
-            column.minWidth ?? DEFAULT_MIN_WIDTH,
-            // 変更(②-S4): 既定上限を撤廃。明示 maxWidth がなければ上限なし(内容にぴったり合わせます)。
-            column.maxWidth ?? Number.POSITIVE_INFINITY,
-          ),
-        );
-
-        if (currentWidths[column.key] !== resolved) {
-          nextWidths[column.key] = resolved;
-        }
-      }
-    } finally {
-      if (container && container.parentNode) {
-        container.parentNode.removeChild(container);
-      }
-    }
-
-    return nextWidths;
-  };
-
-  return { collect, finalize };
-}
-
-// 追加(DS-4 ①-(2)): autosize 計測が可能か(canvas 2d context が得られるか)を返します。
-//   時間分割ランナーが「行走査を始める前に」no-op 判定するために使います(非対応環境で
-//   30万行級の空振り走査をしないため)。sync 版は従来どおり内部の早期 return で吸収します。
-export function canMeasureAutosize(): boolean {
-  return getSharedContext() !== null;
-}
-
-// 列ごとの自動調整幅を計測します(同期一括版)。
-// 戻り値は「現在幅から変化がある列だけ」の { columnKey: width } です
-// (空オブジェクトなら呼び出し側は dispatch をスキップできます)。
-// 変更(DS-4 ①-(2)): 計測本体を createColumnWidthAccumulator へ集約しました。本 sync 版は
-//   「全行を一括 collect → finalize」で、DS-4 ①-(1) と結果はバイト等価です(等価検証で確認)。
-//   早期 return(context 無し / 列 0)も従来どおり維持し、無駄な行走査を避けます。
-export function computeAutosizedColumnWidths<T>({
-  columns,
-  getRow,
-  viewRowCount,
-  gridRoot,
-  currentWidths,
-}: ColumnAutosizeParams<T>): Record<string, number> {
-  if (columns.length === 0 || getSharedContext() === null) {
-    return {};
-  }
-
-  const accumulator = createColumnWidthAccumulator(columns);
-
-  for (let viewIndex = 0; viewIndex < viewRowCount; viewIndex += 1) {
-    const row = getRow(viewIndex);
-    // 注記(DS-3-9/3-10 と同方針): seam の OOB は実行時ガードで吸収します。
-    if (!row) {
-      continue;
-    }
-    accumulator.collect(row);
-  }
-
-  return accumulator.finalize({ gridRoot, currentWidths });
-}
-</file>
-
 <file path="src/components/spreadsheet-grid/SpreadsheetGrid.integration.test.tsx">
 // SpreadsheetGrid を実際に render し、命令的ハンドル(getState / applyState)と onStateChange の
 //   「配線」を実行検証する結合テストです。純ロジック(logic/gridState.test.ts)では到達できない以下を、
@@ -23474,6 +23609,7 @@ A high-performance, virtualized spreadsheet / data grid for **React 19**, writte
 - Sorting, per-column filters (`text` / `number` / `date` / `select` / `set` / `custom`), and a global filter.
 - In-cell editing and clipboard copy / paste, with range selection and keyboard navigation.
 - Optional auto-height rows for wrapped, variable-height content.
+- Auto-fit column widths to content on data load — `autoSizeColumns="onMount"` (once, on first data) or `"onDataChange"` (every time `rows` changes, e.g. after a form submit). Same engine as the column menu's "Autosize All Columns"; opt individual columns out with `suppressAutoSize`.
 - External height control via `height` / `maxHeight` (e.g. `height="100%"` to follow the parent's height).
 - Both **client-side** (`rows`) and **server-side** (`dataSource`, SSRM) row models.
 - Themeable with CSS custom properties (`--ssg-*`, defined at zero specificity so your overrides always win). Base styles are plain unlayered CSS with single-class specificity, so they survive CSS resets such as Tailwind Preflight; a cascade-layers variant (`style.layer.css`) is also shipped. `className` / `classNames` slots are provided.
@@ -23578,6 +23714,17 @@ By default the grid caps its height at `480px` (`max-height`) and scrolls when t
 
 For `height="100%"` to work, the parent must have a resolved height (its ancestors are sized, and a flex child needs `min-height: 0`). This is standard CSS the library can't resolve for you. `maxHeight` sets an upper bound and can be combined with `height` (explicit height, capped at `maxHeight`).
 
+### Auto-sizing columns
+
+Set `autoSizeColumns` to fit column widths to their content when data arrives — no imperative calls or effects needed on your side:
+
+```tsx
+// Refit every time a new result set replaces `rows` (e.g. after a form submit).
+<SpreadsheetGrid rows={rows} columns={columns} autoSizeColumns="onDataChange" />
+```
+
+`'onMount'` fits once on first data; `'onDataChange'` refits whenever the `rows` reference changes; `false` (default) does nothing. It reuses the same measurement as the column menu's "Autosize All Columns", so per-column opt-outs apply: columns with `suppressAutoSize: true` (and `autoHeight: true` columns) keep their `width`. The trigger only reacts to `rows` — filtering, sorting and column reordering do **not** refit — and it writes to internal widths without calling `onColumnsChange`, so it coexists with controlled `columns`. Server-side (`dataSource`) is not supported. See [`API_REFERENCE.md`](./src/components/spreadsheet-grid/API_REFERENCE.md) for details.
+
 ### Density
 
 Set `density` to switch the overall sizing with one prop — `'compact' | 'standard' | 'comfortable'` (default `'standard'`, identical to previous versions):
@@ -23680,6 +23827,7 @@ The full prop and type reference lives in [`src/components/spreadsheet-grid/API_
 - ソート、列ごとのフィルター（`text` / `number` / `date` / `select` / `set` / `custom`）、グローバルフィルター。
 - セル内編集とクリップボードのコピー／貼り付け、範囲選択、キーボード操作。
 - 折り返し・可変行高に対応する auto-height 行（任意）。
+- データ投入時に列幅を内容へ自動フィット — `autoSizeColumns="onMount"`（初回にデータが載った一度きり）/ `"onDataChange"`（`rows` が変わるたび。フォーム送信結果の差し替え等）。列メニュー「すべての列の幅を自動調整」と同一エンジンで、列個別の除外は `suppressAutoSize`。
 - `height` / `maxHeight` によるスクロールコンテナ高さの外部制御（`height="100%"` で親要素の高さに追従）。
 - **クライアントサイド**（`rows`）と**サーバーサイド**（`dataSource`、SSRM）の両行モデル。
 - CSS カスタムプロパティ（`--ssg-*`。特異度 0 で定義され、利用側の上書きが常に勝ちます）によるテーマ設定。基底スタイルは未レイヤーの単一クラス特異度で、Tailwind Preflight などの CSS リセットに壊されません。カスケードレイヤー版（`style.layer.css`）も同梱。`className` / `classNames` スロットも用意。
@@ -23783,6 +23931,17 @@ export function Example() {
 ```
 
 `height="100%"` を効かせるには、**親要素が確定高さを持つ**必要があります（祖先まで高さが確定している／flex 子なら `min-height: 0` が必要）。これは CSS の一般則のため本ライブラリ側では解決できません。`maxHeight` は高さの上限で、`height` と併用できます（明示高さ＋上限）。
+
+#### 列幅の自動調整（autoSizeColumns）
+
+`autoSizeColumns` を渡すと、データ投入時に列幅を内容へ自動フィットします（利用側でトークンや effect は不要）:
+
+```tsx
+// フォーム送信結果などで rows を丸ごと差し替えるたびに合わせ直す。
+<SpreadsheetGrid rows={rows} columns={columns} autoSizeColumns="onDataChange" />
+```
+
+`'onMount'` は初回にデータが載った一度きり、`'onDataChange'` は `rows`（参照）が変わるたび、`false`（既定）は無効です。計測は列メニュー「すべての列の幅を自動調整」と同一エンジンのため、列個別の除外がそのまま効きます — `suppressAutoSize: true` の列（および `autoHeight: true` の列）は `width` を維持します。発火 signal は `rows` のみで、フィルター / ソート / 列並べ替えでは**再フィットしません**。フィット幅は内部の列幅 state に反映され `onColumnsChange` を呼ばないため、controlled な `columns` とも競合しません。serverSide（`dataSource`）では無効です。詳細は [`API_REFERENCE.md`](./src/components/spreadsheet-grid/API_REFERENCE.md)。
 
 #### 密度（density）
 
@@ -25088,7 +25247,7 @@ export default GridHeaderRow;
 <file path="package.json">
 {
   "name": "@ishibashi0112/spreadsheet-grid",
-  "version": "0.10.0",
+  "version": "0.11.0",
   "description": "React 19 製のカスタム仮想化データグリッド。100 万行対応の仮想化・3 ペイン固定列・ソート/フィルター・クライアント/サーバーサイド行モデル対応。",
   "keywords": [
     "react",
@@ -25258,6 +25417,8 @@ export type {
   GridDensity,
   // 追加(TH-DK-2): カラーテーマ('light' | 'dark' | 'auto')。
   GridTheme,
+  // 追加: データ投入時の列幅自動フィットの発火モード('onMount' | 'onDataChange' | false)。
+  AutoSizeColumnsMode,
   // 追加(バッチ②/コンテキストメニュー): セル/行の汎用コンテキストメニュー(完全カスタム)の公開型群。
   GridContextMenuTarget,
   GridContextMenuParams,
@@ -28618,6 +28779,7 @@ export default App;
 | `enableColumnFilter` | `boolean` | `true` | 列ごとのフィルター。 |
 | `enableSorting` | `boolean` | `true` | ヘッダークリックでのソート。 |
 | `enableColumnResize` | `boolean` | `true` | 列幅の手動リサイズ可否のグリッド既定。各列 `resizable` 未指定時に継承(`column.resizable ?? enableColumnResize`)。 |
+| `autoSizeColumns` | `'onMount' \| 'onDataChange' \| false` | `false` | データ投入時に全列幅を内容へ自動フィット。`'onMount'`=初回にデータが載った一度きり / `'onDataChange'`=`rows`(参照)が変わるたび(= データ差し替えのたび。手動リサイズは上書き) / `false`=無効。計測は列メニュー「すべての列の幅を自動調整」と同一エンジン(`suppressAutoSize` / `autoHeight` 列は除外)。フィルター / ソート / 列並べ替えでは再フィットしません。serverSide(`dataSource`)では無効。詳細は「flex と autoSize」節。 |
 | `enableColumnMenu` | `boolean` | `true` | 列メニュー(⋮ + ヘッダー右クリック)。 |
 | `enableRowHover` | `boolean` | `true` | 行ホバー時に行全体を薄くハイライト。 |
 | `enableColumnHeaderHover` | `boolean` | `true` | 列ヘッダーのホバー時にヘッダーセルを薄くハイライト。 |
@@ -28832,6 +28994,26 @@ const columns = [
   **制約 — `autoHeight: true` の列は autoSize の対象外です**(列メニュー / 境界ダブルクリック / すべての列の自動調整すべてでスキップし、`width` を維持)。autoHeight 列は「幅を固定して長文を**折り返す**」のが本来の挙動ですが、autoSize の計測は**単一行**で行うため、autoHeight 列を測ると折り返したい長文を1行幅にし、**極端に横長になる**ためです(列幅に既定の上限は無いため、長文ぶんだけ際限なく広がります)。長文列は autoHeight(折り返し)か、`maxWidth` 付きの固定幅(切り詰め)で運用してください。
 
 flex 列を**手動リサイズ**すると、その列はドラッグした幅で**固定 px**に変わります(以後その列は flex 対象外)。固定は `columns` prop が変化する(pin 切替 / 表示切替 / 並べ替え / 親による差し替え)まで維持され、変化後は再び flex に復帰します(手動幅を恒久固定する仕様ではありません)。
+
+### autoSizeColumns(データ投入時の自動フィット)
+
+グリッド prop `autoSizeColumns?: 'onMount' | 'onDataChange' | false`(既定 `false`)で、**データ投入時に全列幅を内容へ自動フィット**できます。フィットの計測は上記 autoSize(列メニュー「すべての列の幅を自動調整」)と**同一エンジン**で、`'onMount'` は初回にデータが載った一度きり、`'onDataChange'` は `rows`(参照)が変わるたび(= データ差し替えのたび)に走ります。フォーム送信結果などを丸ごと差し替えて毎回合わせ直す用途は `'onDataChange'` が該当します。
+
+- **`GridColumn.suppressAutoSize` との関係**: 同一エンジンのため、`suppressAutoSize: true` の列(および `autoHeight: true` の列)は**この自動フィットの対象からも外れ**、`width` を維持します。「大半の列は内容へ合わせつつ、特定の列だけ固定幅で見せたい」場合は、その列に `suppressAutoSize: true` + `width` を付けてください(per-column の opt-out)。`estimateCellWidth` を指定した列も、通常の autoSize と同じ規則(申告 content 幅の全行 running-max)で見積もられます。
+- **発火 signal は `rows`(データ)の変化のみ**です。フィルター / ソート、列の並べ替え / 表示切替 / 固定(= `columns` 変化)では再フィットしません(手動操作の直後に幅が飛ぶのを避けるため)。したがって手動リサイズした幅は、次のデータ投入(`'onDataChange'`)で上書きされます(合わせ直したくない列は上記 `suppressAutoSize` で外します)。
+- フィット幅は**内部の列幅 state に反映され、`onColumnsChange` は呼びません**。`columns` を controlled で保持していても競合しません。
+- **serverSide(`dataSource`)では無効**です(未ロード行を測れないため。clientSide 限定)。
+- 計測が重い場合は本番でも既存の計測オーバーレイが出ます(小規模データでは体感差はありません)。
+
+```tsx
+// 例: フォーム送信結果を丸ごと差し替え、そのたびに列幅を内容へ合わせ直す。
+//   consumer 側は autoSizeColumns を渡すだけ(トークンや effect は不要)。
+<SpreadsheetGrid
+  rows={rows}                     // 送信のたびに新しい配列参照へ差し替える
+  columns={columns}
+  autoSizeColumns="onDataChange"
+/>
+```
 
 ## 命令的 API(ref ハンドル / `SpreadsheetGridHandle<T>`)
 
@@ -29917,6 +30099,14 @@ export type GridDensity = 'compact' | 'standard' | 'comfortable';
 //   渡す使い方が本命です。
 export type GridTheme = 'light' | 'dark' | 'auto';
 
+// 追加: データ投入時に全列幅を内容へ自動フィットさせる発火モードです。
+//   'onMount'      = 初回にデータが載った一度きり。
+//   'onDataChange' = rows(参照)が変わるたび(= データ差し替えのたび)。手動リサイズは上書きされます。
+//   false(既定)   = 何もしません。列個別の除外は列の suppressAutoSize(+ 固定 width)で行います。
+//   計測は列メニュー「すべての列の幅を自動調整」と同一エンジンで、suppressAutoSize / autoHeight 列は
+//   除外されます。serverSide(dataSource)では未ロード行を測れないため無効です(clientSide 限定)。
+export type AutoSizeColumnsMode = 'onMount' | 'onDataChange' | false;
+
 export type SpreadsheetGridProps<T> = {
   // 追加(imperative API #1): React 19 の ref-as-prop。命令的ハンドル(SpreadsheetGridHandle)を受け取ります。
   //   forwardRef は使いません(React 19 で deprecated 予定のため)。状態は controlled のまま、prop で
@@ -30017,6 +30207,9 @@ export type SpreadsheetGridProps<T> = {
   // 追加(①): 列幅の手動リサイズ可否のグリッド既定です(既定 true=現行挙動)。
   //   各列の column.resizable が未指定のとき本値を継承します(column.resizable ?? enableColumnResize)。
   enableColumnResize?: boolean;
+  // 追加: データ投入時に全列幅を内容へ自動フィットさせるモードです(既定 false)。
+  //   詳細と suppressAutoSize / autoHeight 列の除外については AutoSizeColumnsMode を参照。
+  autoSizeColumns?: AutoSizeColumnsMode;
   // 追加(UI hover): 行ホバー時に行全体を薄くハイライトします。既定 true。
   enableRowHover?: boolean;
   // 追加(UI hover): 列ヘッダーのホバー時にヘッダーセルを薄くハイライトします。既定 true。
@@ -30208,6 +30401,8 @@ import {
 } from './logic/geometry';
 // 追加(B3): center 列の JS 算出 flex(利用可能幅を比率配分)。
 import { isFlexingColumn, computeCenterFlexWidths } from './logic/columnFlex';
+// 追加: データ投入時の列幅自動フィットの発火判定(純関数)です。
+import { resolveAutoSizeOnData } from './logic/autoSizeOnData';
 // 追加(13-B2-5): 列リセットの再構成純ロジック(幅 / 固定 / 表示 / 並び順の完全復元)です。
 import { buildResetColumns } from './logic/columnReset';
 import type { InitialColumnState } from './logic/columnReset';
@@ -30489,6 +30684,9 @@ export function SpreadsheetGrid<T extends object>({
   enableSorting = true,
   // 追加(①): 列リサイズのグリッド既定(既定 true=現行挙動)。列の resizable で個別上書き可。
   enableColumnResize = true,
+  // 追加: データ投入時に全列幅を内容へ自動フィットさせるモード(既定 false)。
+  //   詳細は gridTypes の AutoSizeColumnsMode。列個別の除外は列の suppressAutoSize で行います。
+  autoSizeColumns = false,
   // 追加(UI hover): 行ホバー(既定 true) / 列ヘッダーホバー(既定 true)。
   enableRowHover = true,
   enableColumnHeaderHover = true,
@@ -31316,6 +31514,38 @@ export function SpreadsheetGrid<T extends object>({
     columnWidthsRef,
     dispatch,
   });
+
+  // ── autoSize on data(データ投入時の列幅自動フィット)────────────
+  // 追加: prop autoSizeColumns による宣言的トリガーです。列メニュー「すべての列の幅を自動調整」と
+  //   同一エンジン(runAutosize)を、rows(データ)の変化を signal に発火させるだけの薄い配線です。
+  //   - 'onMount'      : 初回にデータが載った一度きり(hasAutoSizedOnDataRef で二度目以降を抑止)。
+  //   - 'onDataChange' : rows(参照)が変わるたび(= データ差し替えのたび)。手動リサイズは上書きされます。
+  //   - false(既定)   : 何もしません(後方互換)。
+  //   発火 signal は rows のみです(effect deps)。フィルター/ソートは rows 参照を変えないため
+  //   再フィットしません。列の並べ替え/表示切替/固定(= visibleColumns 変化)でも再フィットしません
+  //   (手動操作の直後に幅が飛ぶのを避けるため、visibleColumns は deps に入れず latest-ref で読みます)。
+  //   suppressAutoSize / autoHeight 列は runAutosize 内部で除外されます。serverSide(dataSource)は
+  //   resolveAutoSizeOnData が isServerSide で弾きます(未ロード行を測れないため)。
+  //   runAutosize は effect(commit 後)で呼ぶため、rows 変化ぶんのパイプライン(order/rowModel)が
+  //   再計算済み・gridRoot mount 済みの状態で計測されます(列メニュー経路と同じ計測作法)。
+  //   フィット幅は内部 columnWidths に反映され onColumnsChange は呼ばないため、controlled columns とも
+  //   競合しません。runAutosize は安定参照(useCallback + ref deps)なので、幅反映の再レンダーで本 effect
+  //   が再発火することはありません(無限ループなし)。
+  const visibleColumnsRef = useRef(visibleColumns);
+  visibleColumnsRef.current = visibleColumns;
+  const hasAutoSizedOnDataRef = useRef(false);
+  useEffect(() => {
+    const { shouldRun, nextHasAutoSizedOnMount } = resolveAutoSizeOnData({
+      mode: autoSizeColumns,
+      isServerSide,
+      rowCount: rows.length,
+      hasAutoSizedOnMount: hasAutoSizedOnDataRef.current,
+    });
+    hasAutoSizedOnDataRef.current = nextHasAutoSizedOnMount;
+    if (shouldRun) {
+      void runAutosize(visibleColumnsRef.current);
+    }
+  }, [autoSizeColumns, rows, isServerSide, runAutosize]);
 
   // 追加(DS-3-6): ビュー行数の単一ソースを seam(getRowCount)経由へ移します。
   //   値は order.length(= 旧 filteredRows.length)で常に等価。プリミティブ number のため
