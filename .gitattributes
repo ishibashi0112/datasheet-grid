@@ -1,0 +1,16 @@
+# 改行コードを LF に統一する(git 正本・作業ツリーとも)。
+# 正本は元から LF のため、これは実体を変えず「宣言的に固定する」だけ。
+# Windows で clone しても CRLF 化しなくなる。
+* text=auto eol=lf
+
+# バイナリは変換対象外(text=auto でも概ね自動判定されるが明示して堅くする)
+*.png  binary
+*.jpg  binary
+*.jpeg binary
+*.gif  binary
+*.webp binary
+*.ico  binary
+*.woff  binary
+*.woff2 binary
+*.ttf  binary
+*.eot  binary
