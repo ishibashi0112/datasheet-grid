@@ -19,13 +19,13 @@ React 19 + TypeScript + Vite 製のカスタム AG Grid 風・仮想化データ
 
 ### eslint
 
-- baseline を **1 件も増やさない**。現状 **16 problems(13 errors / 3 warnings)** ── ただしセッション冒頭に実測で確定する。対象は `**/*.{ts,tsx}` のみ(`.mjs` スクリプトは対象外)。
+- baseline を **1 件も増やさない**。現状 **3 problems(0 errors / 3 warnings)** ── ただしセッション冒頭に実測で確定する。対象は `**/*.{ts,tsx}` のみ(`.mjs` スクリプトは対象外)。errors は 2026-07 に全件解消済み(修正 or 理由付き disable)。CI で lint はブロッキング。
 - `react-hooks/set-state-in-effect` は「effect 内の**先頭** setState のみ報告」する。先頭でない setState に disable を付けると Unused directive warning になる。
 - render 中の `ref.current = x` 代入は baseline にカウントされる。新しい安定コールバックは latest-ref を増やさず `useCallback` の deps に直接入れる。rAF tick から不安定な関数を読む必要がある場合は useEffect 内で同期する latest-ref(RS-AS 方式)。
 
 ### TypeScript
 
-- `strictNullChecks` on / `noUncheckedIndexedAccess` OFF / `verbatimModuleSyntax` on(型は必ず `import type`)。null 安全は実行時ガードで担保。
+- `strict` on(2026-07 に全 tsconfig へ明示) / `noUncheckedIndexedAccess` OFF / `verbatimModuleSyntax` on(型は必ず `import type`)。index アクセスの null 安全は実行時ガードで担保。
 
 ### その他
 
@@ -46,7 +46,7 @@ React 19 + TypeScript + Vite 製のカスタム AG Grid 風・仮想化データ
 | --- | --- | --- |
 | tsc(build) | `npx tsc -b` | 0 |
 | tsc(test) | `npm run typecheck:test` | 0 |
-| eslint | `npm run lint` | baseline 維持(現状 16) |
+| eslint | `npm run lint` | baseline 維持(現状 0 errors / 3 warnings) |
 | test | `npm test` | 全緑(現状 ~509 tests / 44 files) |
 | build | `npm run build` | 0 |
 

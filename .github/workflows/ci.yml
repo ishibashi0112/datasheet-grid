@@ -40,7 +40,5 @@ jobs:
       - name: Build library
         run: pnpm run build:lib
 
-      # TODO: 既存の lint エラー 13 件を解消したら continue-on-error を外してブロッキングにする
-      - name: Lint (non-blocking)
+      - name: Lint
         run: pnpm lint
-        continue-on-error: true
