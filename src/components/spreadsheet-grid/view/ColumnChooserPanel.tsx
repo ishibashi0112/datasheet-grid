@@ -310,29 +310,35 @@ export function ColumnChooserPanel({
   }, []);
 
   // ドラッグ中、一覧コンテナの上下端付近へポインタが入ったらオートスクロールします。
-  const autoScrollTick = useCallback(() => {
-    const list = listRef.current;
-    if (!list || !dragActiveRef.current) {
-      autoScrollRafRef.current = null;
-      return;
-    }
-    const rect = list.getBoundingClientRect();
-    const y = pointerYRef.current;
-    let delta = 0;
-    if (y < rect.top + AUTO_SCROLL_EDGE) {
-      delta = -AUTO_SCROLL_SPEED;
-    } else if (y > rect.bottom - AUTO_SCROLL_EDGE) {
-      delta = AUTO_SCROLL_SPEED;
-    }
-    if (delta !== 0) {
-      const before = list.scrollTop;
-      list.scrollTop += delta;
-      if (list.scrollTop !== before) {
-        updateDropFromPointer();
+  //   変更(LINT-2): rAF 自己再帰の参照を外側 const から名前付き関数式の自己名へ変更します。
+  //   外側 const は宣言完了前アクセス扱い(TDZ)で React Compiler の最適化対象外になるため。
+  //   挙動は同一です(rAF 発火時点では従来も宣言済みで、実行時 TDZ エラーは発生しない)。
+  const autoScrollTick = useCallback(
+    function autoScrollTick() {
+      const list = listRef.current;
+      if (!list || !dragActiveRef.current) {
+        autoScrollRafRef.current = null;
+        return;
       }
-    }
-    autoScrollRafRef.current = requestAnimationFrame(autoScrollTick);
-  }, [updateDropFromPointer]);
+      const rect = list.getBoundingClientRect();
+      const y = pointerYRef.current;
+      let delta = 0;
+      if (y < rect.top + AUTO_SCROLL_EDGE) {
+        delta = -AUTO_SCROLL_SPEED;
+      } else if (y > rect.bottom - AUTO_SCROLL_EDGE) {
+        delta = AUTO_SCROLL_SPEED;
+      }
+      if (delta !== 0) {
+        const before = list.scrollTop;
+        list.scrollTop += delta;
+        if (list.scrollTop !== before) {
+          updateDropFromPointer();
+        }
+      }
+      autoScrollRafRef.current = requestAnimationFrame(autoScrollTick);
+    },
+    [updateDropFromPointer],
+  );
 
   const finishDrag = useCallback(
     (commit: boolean) => {
