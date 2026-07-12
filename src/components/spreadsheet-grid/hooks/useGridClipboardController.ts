@@ -166,8 +166,8 @@ export const useGridClipboardController = <T extends object>({
       }
       const startColIndex = uiState.activeCell.col;
 
-      let workingRows = [...rows];
-      let workingColumns = [...visibleColumns];
+      const workingRows = [...rows];
+      const workingColumns = [...visibleColumns];
       // 変更(DS-3-10): workingSourceIndexes 配列(N 個の Array.from)を撤去し、view→source の
       //   解決をクロージャ resolveSourceIndex に置換します。返り値は旧配列と完全一致:
       //     v < N            : rowModel.getSourceIndex(v)  (= order[v])

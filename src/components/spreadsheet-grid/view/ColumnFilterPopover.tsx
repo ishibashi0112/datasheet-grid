@@ -22,6 +22,12 @@ import {
   filterSetOptionsBySearch,
   resolveSetFilterEnterAction,
 } from '../logic/setFilterSearch';
+// 追加(LINT-1): set 選択状態 { mode, values } 型と mode 判定ヘルパです。react-refresh 制約
+//   (view からの非コンポーネント export)解消のため logic/setFilterSelection.ts へ移設しました。
+import {
+  isSetValueSelected,
+  type ColumnFilterSetSelection,
+} from '../logic/setFilterSelection';
 
 // 追加: popover のレイアウト情報です。
 export type ColumnFilterPopoverLayout = {
@@ -35,25 +41,6 @@ export type ColumnFilterPopoverOption = {
   label: string;
   value: string;
 };
-
-// 追加(反転set): set フィルターの選択状態です。null = 全選択(フィルターなし)。
-//   巨大側を作らないため「選択集合」ではなく { mode, values } で持ち、values は常に
-//   小さい側のみ(include=選択値 / exclude=非選択値)。判定は mode で行います。
-export type ColumnFilterSetSelection = {
-  mode: 'include' | 'exclude';
-  values: ReadonlySet<string>;
-};
-
-// 追加(反転set): ある候補値が「選択中」かを mode 適用で判定します(巨大側を materialize しません)。
-export const isSetValueSelected = (
-  selection: ColumnFilterSetSelection | null,
-  value: string,
-): boolean =>
-  selection === null
-    ? true
-    : selection.mode === 'include'
-      ? selection.values.has(value)
-      : !selection.values.has(value);
 
 type ColumnFilterPopoverProps = {
   isOpen: boolean;

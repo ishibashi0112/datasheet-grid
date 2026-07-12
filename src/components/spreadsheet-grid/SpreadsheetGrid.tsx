@@ -230,11 +230,13 @@ import type {
   GridContextMenuItem,
 } from './model/gridTypes';
 import { getCellValue, isCellEditable, setCellValue } from './utils/permissions';
-import ColumnFilterPopover, {
-  // 追加(反転set): set 選択状態 { mode, values } 型と mode 判定ヘルパです。
-  type ColumnFilterSetSelection,
+import ColumnFilterPopover from './view/ColumnFilterPopover';
+// 追加(反転set): set 選択状態 { mode, values } 型と mode 判定ヘルパです。
+//   変更(LINT-1): react-refresh 制約解消のため logic/setFilterSelection.ts へ移設しました。
+import {
   isSetValueSelected,
-} from './view/ColumnFilterPopover';
+  type ColumnFilterSetSelection,
+} from './logic/setFilterSelection';
 // 追加(13-A): 列メニュー popover(列固定の切替 UI)です。
 import DefaultGridBottomBar from './view/DefaultGridBottomBar';
 import DefaultGridTopBar from './view/DefaultGridTopBar';
