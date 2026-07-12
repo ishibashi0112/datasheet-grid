@@ -78,6 +78,7 @@ export const useColumnMenuController = <T,>({
   //       updater 二重実行で開閉が反転するため、判定・ref 更新はハンドラ本体
   //       (1 回だけ実行される側)で行います。
   const columnMenuStateRef = useRef(columnMenuState);
+  // eslint-disable-next-line react-hooks/refs -- 意図的な latest-ref 同期です。読み手は openColumnMenuFromButton(イベントハンドラ)のみ。React Compiler 導入時に useLayoutEffect 同期へ書き換え予定。
   columnMenuStateRef.current = columnMenuState;
 
   const isColumnMenuOpen = columnMenuState !== null;
@@ -239,6 +240,7 @@ export const useColumnMenuController = <T,>({
       return;
     }
 
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- open 直後の初期配置です。anchor の DOM 矩形を commit 後に測ってから layout state を確定する必要があるため、effect 内 setState が本質的に必要なパターン(React docs の DOM 計測パターン)です。
     updateColumnMenuLayout();
 
     const handleResize = () => {

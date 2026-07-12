@@ -244,6 +244,7 @@ export const useColumnHeaderDragController = <T,>(
 ) => {
   // latest-ref: 公開ハンドラを恒久安定化するため、変化する引数はここから読みます。
   const latestRef = useRef(args);
+  // eslint-disable-next-line react-hooks/refs -- 意図的な latest-ref 同期です。読み手はイベントハンドラ / rAF / layout effect(applyReorderSettle)のみ。React Compiler 導入時に useLayoutEffect 同期へ書き換え予定。
   latestRef.current = args;
 
   const leftIndicatorRef = useRef<HTMLDivElement | null>(null);
@@ -607,6 +608,7 @@ export const useColumnHeaderDragController = <T,>(
     updateIndicator();
     rafRef.current = requestAnimationFrame(autoScrollTickRef.current);
   }, [updateIndicator]);
+  // eslint-disable-next-line react-hooks/refs -- 意図的な latest-callback 同期です(rAF ループが常に最新の tick を掴むため)。読み手は rAF / pointerdown ハンドラのみ。React Compiler 導入時に useLayoutEffect 同期へ書き換え予定。
   autoScrollTickRef.current = autoScrollTick;
 
   const endDrag = useCallback(

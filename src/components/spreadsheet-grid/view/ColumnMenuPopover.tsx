@@ -147,6 +147,7 @@ export function ColumnMenuPopover({
   //             columnKey だけ変わる)に、サブメニューの開閉状態を初期化します。
   // 変更(13-B1): リセット先を openSubmenuKey = null に読み替えます。
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- prop(columnKey / isOpen)変更時のサブメニュー状態リセットです。render 中調整パターンへの書き換えは可能ですが、動作実績を優先して現状維持しています(React Compiler 導入時に再検討)。
     setOpenSubmenuKey(null);
   }, [columnKey, isOpen]);
 

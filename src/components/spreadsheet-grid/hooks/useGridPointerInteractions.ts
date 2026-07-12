@@ -145,6 +145,7 @@ export const useGridPointerInteractions = <T,>({
   //           安定させます。render 中の代入は「最新値の読み出し専用 ref」という
   //           標準的な latest-ref 用法であり、レンダー結果には影響しません。
   const dragStateRef = useRef(uiState.dragState);
+  // eslint-disable-next-line react-hooks/refs -- 意図的な latest-ref 同期です。読み手はイベントハンドラ / rAF のみ(render 中の読み取りなし)。React Compiler 導入時に useLayoutEffect 同期へ書き換え予定。
   dragStateRef.current = uiState.dragState;
 
   // ガター行選択ドラッグ中かどうかのフラグです(window pointerup でクリア)。
@@ -174,11 +175,16 @@ export const useGridPointerInteractions = <T,>({
   //   handleColumnHeaderPointerDown の参照が変わり、これを props に持つ memo 済み
   //   GridHeaderRow(3 ペイン)を破ってしまいます。ref 経由で読むことで、本ハンドラの
   //   依存を [dispatch, gridRootRef] のまま恒久安定に保ちます。
+  // eslint-disable 3 行: dragStateRef と同じ意図的な latest-ref 同期です(読み手は
+  //   handleColumnHeaderPointerDown のみ)。React Compiler 導入時に書き換え予定。
   const sortRef = useRef(uiState.sort);
+  // eslint-disable-next-line react-hooks/refs -- 上記コメント参照
   sortRef.current = uiState.sort;
   const orderedColumnsRef = useRef(orderedColumns);
+  // eslint-disable-next-line react-hooks/refs -- 上記コメント参照
   orderedColumnsRef.current = orderedColumns;
   const enableSortingRef = useRef(enableSorting);
+  // eslint-disable-next-line react-hooks/refs -- 上記コメント参照
   enableSortingRef.current = enableSorting;
 
   // 追加(11-B2): effect 依存用のプリミティブです。
