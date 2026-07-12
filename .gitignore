@@ -25,3 +25,4 @@ dist-ssr
 
 backup
 repomix-output.xml
+*.tgz
