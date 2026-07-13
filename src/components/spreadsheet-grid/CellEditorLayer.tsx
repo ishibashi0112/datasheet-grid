@@ -101,6 +101,14 @@ export function CellEditorLayer({
   // 追加: Enter で下、Tab で左右へ移動する方向付き commit を呼びます。
   // 変更(11-B6): commit にローカルのドラフト値を引数で渡します。
   const handleKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
+    // 追加(IME): 変換中(isComposing)の Enter / Escape / Tab は IME の確定・取り消し・
+    //   候補操作なので、セル編集の commit / cancel には使いません(日本語入力で変換確定の
+    //   Enter がセル確定まで巻き込む誤動作の防止)。変換確定後のキーは isComposing=false で
+    //   届くため、通常の commit / cancel は従来どおり動きます。
+    if (event.nativeEvent.isComposing) {
+      return;
+    }
+
     if (event.key === 'Enter') {
       event.preventDefault();
       onCommit(draftValue, 'down');
