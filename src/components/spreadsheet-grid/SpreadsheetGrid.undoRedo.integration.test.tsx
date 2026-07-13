@@ -9,13 +9,25 @@
 //   編集経路はペースト(onPaste)で代表させます(セル編集 commit と同じ handleRowsChange 集約点を
 //   通るため。仮想化行の DOM は jsdom では描画されず、ダブルクリック編集はここでは扱えません)。
 // @vitest-environment jsdom
-import { describe, it, expect, beforeAll, beforeEach, afterEach } from 'vitest';
+import {
+  describe,
+  it,
+  expect,
+  vi,
+  beforeAll,
+  beforeEach,
+  afterEach,
+} from 'vitest';
 import { render, cleanup, act, fireEvent } from '@testing-library/react';
 import { createRef, useEffect, useState } from 'react';
 import type { Ref, RefObject } from 'react';
 
 import { SpreadsheetGrid } from './SpreadsheetGrid';
-import type { GridColumn, SpreadsheetGridHandle } from './model/gridTypes';
+import type {
+  GridColumn,
+  SpreadsheetGridHandle,
+  UndoRedoState,
+} from './model/gridTypes';
 
 // jsdom には ResizeObserver / Element.scrollTo が無いため、最小スタブを入れます
 //   (SpreadsheetGrid.integration.test.tsx と同じ流儀)。
@@ -69,11 +81,13 @@ function UndoRedoHarness({
   readOnly = false,
   enableUndoRedo = true,
   undoHistoryLimit,
+  onUndoRedoStateChange,
 }: {
   gridRef: Ref<SpreadsheetGridHandle<Row>>;
   readOnly?: boolean;
   enableUndoRedo?: boolean;
   undoHistoryLimit?: number;
+  onUndoRedoStateChange?: (state: UndoRedoState) => void;
 }) {
   const [rows, setRows] = useState<Row[]>(initialRows);
   useEffect(() => {
@@ -91,6 +105,7 @@ function UndoRedoHarness({
       readOnly={readOnly}
       enableUndoRedo={enableUndoRedo}
       undoHistoryLimit={undoHistoryLimit}
+      onUndoRedoStateChange={onUndoRedoStateChange}
     />
   );
 }
@@ -223,9 +238,9 @@ describe('SpreadsheetGrid undo/redo(結合)', () => {
     const { container } = render(<UndoRedoHarness gridRef={ref} readOnly />);
     const shell = getShell(container);
 
-    // readOnly ではセルへの適用自体が isCellEditable で弾かれ、値は変わりません。
+    // readOnly ではペースト自体が no-op で、onRowsChange も呼ばれません(参照ごと不変)。
     pasteIntoCell(container, ref, { row: 0, col: 1 }, 'BLOCKED');
-    expect(currentRows[0].name).toBe('alpha');
+    expect(currentRows).toBe(initialRows);
     expect(ref.current?.canUndo()).toBe(false);
 
     fireEvent.keyDown(shell, { key: 'z', ctrlKey: true });
@@ -245,6 +260,130 @@ describe('SpreadsheetGrid undo/redo(結合)', () => {
 
     fireEvent.keyDown(shell, { key: 'z', ctrlKey: true });
     expect(currentRows[0].name).toBe('EDITED');
+  });
+
+  it('Delete で選択範囲、Backspace でアクティブセルの値をクリアでき、undo で戻る', () => {
+    const ref = createRef<SpreadsheetGridHandle<Row>>();
+    const { container } = render(<UndoRedoHarness gridRef={ref} />);
+    const shell = getShell(container);
+
+    // 範囲選択(name / qty 列 × 先頭 2 行)を Delete でクリアします(1 undo ステップ)。
+    act(() => {
+      ref.current?.selectRange({
+        start: { row: 0, col: 1 },
+        end: { row: 1, col: 2 },
+      });
+    });
+    fireEvent.keyDown(shell, { key: 'Delete' });
+    expect(currentRows[0]).toEqual({ id: 1, name: '', qty: '' });
+    expect(currentRows[1]).toEqual({ id: 2, name: '', qty: '' });
+    expect(currentRows[2]).toBe(initialRows[2]);
+
+    // クリア値のままの再 Delete は no-op(履歴に積まれない)。
+    const afterClear = currentRows;
+    fireEvent.keyDown(shell, { key: 'Delete' });
+    expect(currentRows).toBe(afterClear);
+
+    fireEvent.keyDown(shell, { key: 'z', ctrlKey: true });
+    expect(currentRows).toBe(initialRows);
+    expect(ref.current?.canUndo()).toBe(false);
+
+    // 選択なし + アクティブセルのみの Backspace は単一セルをクリアします。
+    act(() => {
+      ref.current?.clearSelection();
+      ref.current?.setActiveCell({ row: 2, col: 1 });
+    });
+    fireEvent.keyDown(shell, { key: 'Backspace' });
+    expect(currentRows[2]).toEqual({ id: 3, name: '', qty: 30 });
+    expect(currentRows[0]).toBe(initialRows[0]);
+  });
+
+  it('readOnly では Delete によるクリアも no-op', () => {
+    const ref = createRef<SpreadsheetGridHandle<Row>>();
+    const { container } = render(<UndoRedoHarness gridRef={ref} readOnly />);
+    const shell = getShell(container);
+
+    act(() => {
+      ref.current?.selectRange({
+        start: { row: 0, col: 0 },
+        end: { row: 2, col: 2 },
+      });
+    });
+    fireEvent.keyDown(shell, { key: 'Delete' });
+    expect(currentRows).toBe(initialRows);
+  });
+
+  it('onUndoRedoStateChange は可否が変化したときだけ発火する', () => {
+    const ref = createRef<SpreadsheetGridHandle<Row>>();
+    const spy = vi.fn();
+    const { container } = render(
+      <UndoRedoHarness gridRef={ref} onUndoRedoStateChange={spy} />,
+    );
+    const shell = getShell(container);
+
+    // 初回マウントでは発火しません。
+    expect(spy).not.toHaveBeenCalled();
+
+    pasteIntoCell(container, ref, { row: 0, col: 1 }, 'A');
+    expect(spy).toHaveBeenCalledTimes(1);
+    expect(spy).toHaveBeenLastCalledWith({ canUndo: true, canRedo: false });
+
+    // 2 回目の編集では可否が変わらないため再発火しません。
+    pasteIntoCell(container, ref, { row: 1, col: 1 }, 'B');
+    expect(spy).toHaveBeenCalledTimes(1);
+
+    fireEvent.keyDown(shell, { key: 'z', ctrlKey: true });
+    expect(spy).toHaveBeenLastCalledWith({ canUndo: true, canRedo: true });
+    fireEvent.keyDown(shell, { key: 'z', ctrlKey: true });
+    expect(spy).toHaveBeenLastCalledWith({ canUndo: false, canRedo: true });
+    fireEvent.keyDown(shell, { key: 'y', ctrlKey: true });
+    expect(spy).toHaveBeenLastCalledWith({ canUndo: true, canRedo: true });
+
+    // 履歴破棄(外部差し替え)で両方 false へ。
+    act(() => {
+      externalSetRows([{ id: 9, name: 'ext', qty: 0 }]);
+    });
+    expect(spy).toHaveBeenLastCalledWith({ canUndo: false, canRedo: false });
+  });
+
+  it('undo / redo で編集時のアクティブセルとセレクションが復元される', () => {
+    const ref = createRef<SpreadsheetGridHandle<Row>>();
+    const { container } = render(<UndoRedoHarness gridRef={ref} />);
+    const shell = getShell(container);
+
+    // (1,1) で編集(ペースト)→ 別セル (2,2) へ移動 → undo で (1,1) に戻る。
+    pasteIntoCell(container, ref, { row: 1, col: 1 }, 'EDITED');
+    act(() => {
+      ref.current?.selectCell(2, 2);
+    });
+    expect(ref.current?.getActiveCell()).toEqual({ row: 2, col: 2 });
+
+    fireEvent.keyDown(shell, { key: 'z', ctrlKey: true });
+    expect(currentRows).toBe(initialRows);
+    expect(ref.current?.getActiveCell()).toEqual({ row: 1, col: 1 });
+
+    // redo は undo 時点の位置(= (2,2))へ戻します。
+    fireEvent.keyDown(shell, { key: 'z', ctrlKey: true, shiftKey: true });
+    expect(currentRows[1].name).toBe('EDITED');
+    expect(ref.current?.getActiveCell()).toEqual({ row: 2, col: 2 });
+
+    // 範囲選択でのクリア → undo で範囲選択ごと復元されることも確認します。
+    act(() => {
+      ref.current?.selectRange({
+        start: { row: 0, col: 1 },
+        end: { row: 1, col: 2 },
+      });
+    });
+    fireEvent.keyDown(shell, { key: 'Delete' });
+    act(() => {
+      ref.current?.selectCell(0, 0);
+    });
+    fireEvent.keyDown(shell, { key: 'z', ctrlKey: true });
+    expect(ref.current?.getSelection()).toEqual({
+      type: 'cell',
+      range: { start: { row: 0, col: 1 }, end: { row: 1, col: 2 } },
+    });
+    expect(ref.current?.getActiveCell()).toEqual({ row: 0, col: 1 });
   });
 
   it('undoHistoryLimit を超えた履歴は最古から破棄される', () => {

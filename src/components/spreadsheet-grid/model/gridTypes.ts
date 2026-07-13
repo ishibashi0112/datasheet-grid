@@ -80,6 +80,12 @@ export type CellRange = {
   end: CellCoord;
 };
 
+// 追加(undo/redo 通知): onUndoRedoStateChange の通知ペイロードです。
+export type UndoRedoState = {
+  canUndo: boolean;
+  canRedo: boolean;
+};
+
 // 追加: Grid の選択状態です。初版は cell selection を主対象にします。
 export type GridSelection =
   | { type: 'cell'; range: CellRange }
@@ -907,6 +913,13 @@ export type SpreadsheetGridProps<T> = {
   enableUndoRedo?: boolean;
   // 追加(undo/redo): 保持する undo ステップ数の上限です(既定 100)。超過分は古い順に破棄します。
   undoHistoryLimit?: number;
+  // 追加(undo/redo 通知): undo / redo 可能状態が変化したときに呼ばれます(ツールバーの
+  //   undo/redo ボタンの disabled 表示など、リアクティブな UI 用。命令的な canUndo()/canRedo()
+  //   のポーリングを不要にします)。発火規約:
+  //   - 初回マウントでは発火しません({canUndo:false, canRedo:false} が基準)。
+  //   - 値が実際に変化したときだけ発火します(同値では再発火しない)。
+  //   - 毎レンダーで新しいインライン関数を渡しても問題ありません。
+  onUndoRedoStateChange?: (state: UndoRedoState) => void;
   enableRangeSelection?: boolean;
   // ── 追加(行選択): チェックボックス行選択(セル範囲選択とは別レイヤー)──
   //   参照性能を落とさない設計(判定 O(1) / 全選択は除外集合)。既定 false で完全に無効。

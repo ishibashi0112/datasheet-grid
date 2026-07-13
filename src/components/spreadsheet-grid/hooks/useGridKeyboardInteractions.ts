@@ -32,6 +32,9 @@ type UseGridKeyboardInteractionsArgs<T> = {
   //   履歴なし)は history controller 側で吸収するため、ここでは常に呼び出します。
   onUndo: () => void;
   onRedo: () => void;
+  // 追加(clear): Delete / Backspace で選択セル(なければアクティブセル)の値をクリアします。
+  //   編集不可セルの除外・変更なしの no-op(履歴に積まない)は呼び出し側で吸収します。
+  onClearSelection: () => void;
 };
 
 // 追加: keyboard interaction（arrow/tab/enter/copy/select-all/edit start）をまとめます。
@@ -49,6 +52,7 @@ export const useGridKeyboardInteractions = <T,>({
   selectEntireGrid,
   onUndo,
   onRedo,
+  onClearSelection,
 }: UseGridKeyboardInteractionsArgs<T>) => {
   // 追加(DS-3-1): 行数はシーム経由で取得します(= order.length / 旧 filteredRows.length と等価)。
   //   各 useCallback の deps はこのプリミティブ rowCount を使い、rowModel オブジェクト参照を
@@ -188,6 +192,12 @@ export const useGridKeyboardInteractions = <T,>({
         dispatch(gridActions.clearSelection());
         return;
       }
+      // 追加(clear): Delete / Backspace で選択セルの値クリアです(Excel / AG Grid の標準操作)。
+      if (event.key === 'Delete' || event.key === 'Backspace') {
+        event.preventDefault();
+        onClearSelection();
+        return;
+      }
       if (event.key === 'Enter' || event.key === 'F2') {
         event.preventDefault();
         if (uiState.activeCell) {
@@ -225,6 +235,7 @@ export const useGridKeyboardInteractions = <T,>({
       handleCopy,
       isWholeGridSelected,
       moveActiveCell,
+      onClearSelection,
       onRedo,
       onUndo,
       readOnly,

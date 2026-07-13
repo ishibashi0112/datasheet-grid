@@ -137,7 +137,11 @@ export const useGridClipboardController = <T extends object>({
   // 追加: paste 処理です。TSV を activeCell 起点に適用し、必要なら行/列を自動拡張します。
   const handlePaste = useCallback(
     (event: React.ClipboardEvent<HTMLDivElement>) => {
-      if (!onRowsChange || !uiState.activeCell) {
+      // 変更(readOnly paste): readOnly では冒頭で no-op にします。従来は全セルが
+      //   isCellEditable で弾かれても onRowsChange が内容同一の新配列で呼ばれており、
+      //   無駄な親 setState / 再レンダー(および undo 履歴の no-op エントリ相当)が
+      //   発生していました。列自動拡張(onColumnsChange)も readOnly では行いません。
+      if (readOnly || !onRowsChange || !uiState.activeCell) {
         return;
       }
 

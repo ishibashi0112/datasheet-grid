@@ -103,6 +103,7 @@ import {
 } from './logic/geometry';
 // 追加(B3): center 列の JS 算出 flex(利用可能幅を比率配分)。
 import { isFlexingColumn, computeCenterFlexWidths } from './logic/columnFlex';
+import { clearCellsInSelection } from './logic/clearCells';
 // 追加: データ投入時の列幅自動フィットの発火判定(純関数)です。
 import { resolveAutoSizeOnData } from './logic/autoSizeOnData';
 // 追加(13-B2-5): 列リセットの再構成純ロジック(幅 / 固定 / 表示 / 並び順の完全復元)です。
@@ -377,6 +378,7 @@ export function SpreadsheetGrid<T extends object>({
   // 追加(undo/redo): 編集の取り消し/やり直しです(既定 on)。clientSide + onRowsChange 時のみ実効。
   enableUndoRedo = true,
   undoHistoryLimit = 100,
+  onUndoRedoStateChange,
   enableRangeSelection = true,
   // ── 追加(行選択): チェックボックス行選択(既定 false=完全無効) ──
   enableRowSelection = false,
@@ -1974,10 +1976,57 @@ export function SpreadsheetGrid<T extends object>({
     clearHistory: clearUndoHistory,
   } = useGridHistoryController({
     rows,
+    // 追加(undo/redo 復元): 履歴エントリへ同梱する現在の UI 状態です。undo/redo 時に
+    //   「その編集をしていた場所」へ選択とアクティブセルを戻します。
+    selection: uiState.selection,
+    activeCell: uiState.activeCell,
     onRowsChange,
+    dispatch,
     enabled: undoRedoEnabled,
     limit: undoHistoryLimit,
+    onUndoRedoStateChange,
   });
+
+  // ── clear(Delete / Backspace)─────────────────────────
+  // 追加(clear): 選択セル(なければアクティブセル)の値クリアです。書き込みは paste と同じ
+  //   view→source 解決 + isCellEditable ガードで、変更が 1 セルも無ければ emit しません
+  //   (undo 履歴に no-op を積まない)。クリア値は「空文字のペースト」と同じ規則
+  //   (parseClipboardValue('') 経由、未定義なら '')です。
+  const clearSelectedCells = useCallback(() => {
+    if (!handleRowsChange) {
+      return;
+    }
+    const { nextRows, changed } = clearCellsInSelection({
+      rows,
+      resolveSourceIndex: (viewIndex) => rowModel.getSourceIndex(viewIndex),
+      columns: orderedColumns,
+      selection: uiState.selection,
+      activeCell: uiState.activeCell,
+      viewRowCount,
+      canWriteCell: (originalRowIndex, colIndex, row, column) =>
+        isCellEditable(
+          { readOnly, canEditCell },
+          originalRowIndex,
+          colIndex,
+          row,
+          column,
+        ),
+    });
+    if (!changed) {
+      return;
+    }
+    handleRowsChange(nextRows);
+  }, [
+    canEditCell,
+    handleRowsChange,
+    orderedColumns,
+    readOnly,
+    rowModel,
+    rows,
+    uiState.activeCell,
+    uiState.selection,
+    viewRowCount,
+  ]);
 
   // ── clipboard ─────────────────────────────────────────
   const { isWholeGridSelected, handleCopy, handlePaste } =
@@ -2068,6 +2117,8 @@ export function SpreadsheetGrid<T extends object>({
     //   history controller 側で吸収します(無効時は no-op)。
     onUndo: undoRows,
     onRedo: redoRows,
+    // 追加(clear): Delete / Backspace の選択セルクリア配線です。
+    onClearSelection: clearSelectedCells,
   });
 
   // ── edit controller ───────────────────────────────────
