@@ -772,6 +772,21 @@ export type SpreadsheetGridHandle<T> = {
   // 行選択をすべて解除します。
   clearRowSelection: () => void;
 
+  // ── undo / redo(編集履歴)──
+  // 直近のグリッド編集(セル編集 / ペースト / renderCell の setValue)を取り消します。
+  //   キーボードの Ctrl/Cmd+Z と同じ操作です。有効条件(enableUndoRedo(既定 on)+ clientSide +
+  //   onRowsChange 指定 + readOnly=false)を満たさないときは no-op です。
+  undo: () => void;
+  // undo で取り消した編集をやり直します(Ctrl/Cmd+Shift+Z / Ctrl/Cmd+Y と同じ)。
+  //   undo 後に新しい編集が入った時点で redo 系譜は破棄されます。
+  redo: () => void;
+  // undo / redo 可能か(履歴が空でなく、上記の有効条件を満たすか)を返します。
+  canUndo: () => boolean;
+  canRedo: () => boolean;
+  // 編集履歴を破棄します(rows は変更しません)。rows を外部から大きく差し替える前などに
+  //   明示的に呼べますが、外部差し替えはグリッド側でも自動検知して履歴を破棄します。
+  clearUndoHistory: () => void;
+
   // ── UI パネル(FM-3)──
   // フィルター管理パネル(FM-1: 適用中の列フィルターの一覧 / ジャンプ編集 / 個別・全クリア /
   //   追加)を開きます。enableColumnFilter=false のときは何もしません。列メニューの
@@ -880,6 +895,18 @@ export type SpreadsheetGridProps<T> = {
     row: T,
     column: GridColumn<T>,
   ) => boolean;
+  // 追加(undo/redo): グリッド編集(セル編集 / ペースト / renderCell の setValue)の取り消し/やり直し
+  //   です(既定 true)。Ctrl/Cmd+Z = undo、Ctrl/Cmd+Shift+Z / Ctrl/Cmd+Y = redo。ハンドルの
+  //   undo() / redo() でも操作できます。clientSide(rows + onRowsChange)専用で、serverSide
+  //   (dataSource)/ readOnly / onRowsChange 未指定のときは無効です。履歴は「変更前 rows 配列」の
+  //   参照スナップショットです(rows.map 由来の新配列は未変更行を構造共有するため、メモリ負荷は
+  //   配列 1 本分)。rows が grid 起点以外(親の直接 setState 等)で差し替わると、履歴は現データと
+  //   不整合になるため自動破棄されます。onRowsChange で受け取った配列は参照そのまま rows へ戻すのが
+  //   前提です(map 等で作り直して渡すと毎回「外部変更」と見なされ履歴が消えます)。
+  //   エディタで編集中の文字入力の取り消しは対象外です(input のネイティブ undo に委譲)。
+  enableUndoRedo?: boolean;
+  // 追加(undo/redo): 保持する undo ステップ数の上限です(既定 100)。超過分は古い順に破棄します。
+  undoHistoryLimit?: number;
   enableRangeSelection?: boolean;
   // ── 追加(行選択): チェックボックス行選択(セル範囲選択とは別レイヤー)──
   //   参照性能を落とさない設計(判定 O(1) / 全選択は除外集合)。既定 false で完全に無効。

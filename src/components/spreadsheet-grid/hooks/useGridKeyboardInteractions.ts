@@ -28,6 +28,10 @@ type UseGridKeyboardInteractionsArgs<T> = {
   handleCellDoubleClick: (cell: CellCoord) => void;
   isWholeGridSelected: boolean;
   selectEntireGrid: () => void;
+  // 追加(undo/redo): Ctrl/Cmd+Z / Shift+Z / Y で呼ぶ履歴操作です。無効条件(readOnly / serverSide /
+  //   履歴なし)は history controller 側で吸収するため、ここでは常に呼び出します。
+  onUndo: () => void;
+  onRedo: () => void;
 };
 
 // 追加: keyboard interaction（arrow/tab/enter/copy/select-all/edit start）をまとめます。
@@ -43,6 +47,8 @@ export const useGridKeyboardInteractions = <T,>({
   handleCellDoubleClick,
   isWholeGridSelected,
   selectEntireGrid,
+  onUndo,
+  onRedo,
 }: UseGridKeyboardInteractionsArgs<T>) => {
   // 追加(DS-3-1): 行数はシーム経由で取得します(= order.length / 旧 filteredRows.length と等価)。
   //   各 useCallback の deps はこのプリミティブ rowCount を使い、rowModel オブジェクト参照を
@@ -132,6 +138,26 @@ export const useGridKeyboardInteractions = <T,>({
         return;
       }
 
+      // 追加(undo/redo): Ctrl/Cmd + Z = undo、Ctrl/Cmd + Shift + Z / Ctrl/Cmd + Y = redo です。
+      //   編集中(editingCell)は上の早期 return で到達せず、エディタ input のネイティブ undo に
+      //   委譲されます。IME 変換中(isComposing)は変換取り消し操作と衝突するため発火しません。
+      if ((event.ctrlKey || event.metaKey) && !event.nativeEvent.isComposing) {
+        if (event.key.toLowerCase() === 'z') {
+          event.preventDefault();
+          if (event.shiftKey) {
+            onRedo();
+          } else {
+            onUndo();
+          }
+          return;
+        }
+        if (event.key.toLowerCase() === 'y' && !event.shiftKey) {
+          event.preventDefault();
+          onRedo();
+          return;
+        }
+      }
+
       if (event.key === 'ArrowUp') {
         event.preventDefault();
         moveActiveCell(-1, 0, event.shiftKey);
@@ -199,6 +225,8 @@ export const useGridKeyboardInteractions = <T,>({
       handleCopy,
       isWholeGridSelected,
       moveActiveCell,
+      onRedo,
+      onUndo,
       readOnly,
       selectEntireGrid,
       setEditorInitialValue,

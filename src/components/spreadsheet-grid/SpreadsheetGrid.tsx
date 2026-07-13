@@ -43,6 +43,7 @@ import { useFilterPopoverController } from './hooks/useFilterPopoverController';
 import { useGridClipboardController } from './hooks/useGridClipboardController';
 import { useGridBarContext } from './hooks/useGridBarContext';
 import { useGridEditController } from './hooks/useGridEditController';
+import { useGridHistoryController } from './hooks/useGridHistoryController';
 import { useGridKeyboardInteractions } from './hooks/useGridKeyboardInteractions';
 import { useGridPointerInteractions } from './hooks/useGridPointerInteractions';
 import { useGridViewportSync } from './hooks/useGridViewportSync';
@@ -373,6 +374,9 @@ export function SpreadsheetGrid<T extends object>({
   // 追加(THEME-3): readonly セルの組み込み淡色表示の opt-in(既定 false = 色変化なし)。
   dimReadOnlyCells = false,
   canEditCell,
+  // 追加(undo/redo): 編集の取り消し/やり直しです(既定 on)。clientSide + onRowsChange 時のみ実効。
+  enableUndoRedo = true,
+  undoHistoryLimit = 100,
   enableRangeSelection = true,
   // ── 追加(行選択): チェックボックス行選択(既定 false=完全無効) ──
   enableRowSelection = false,
@@ -1954,6 +1958,27 @@ export function SpreadsheetGrid<T extends object>({
     onGutterRowSelectDrag: handleGutterRowSelectDrag,
   });
 
+  // ── undo/redo(編集履歴)───────────────────────────────
+  // 追加(undo/redo): grid 起点の全データ変更(セル編集 commit / ペースト / renderCell の setValue)を
+  //   handleRowsChange(生 onRowsChange のラッパ)へ集約し、変更前 rows の参照スナップショットを
+  //   履歴に積みます。以降の各 controller へは onRowsChange の代わりに handleRowsChange を配ります
+  //   (onRowsChange 未指定時は undefined のままで、各所の `if (!onRowsChange)` ガード挙動は不変)。
+  //   serverSide は rows 配列を持たず undo の適用先がないため無効です。
+  const undoRedoEnabled = enableUndoRedo && !readOnly && !isServerSide;
+  const {
+    handleRowsChange,
+    undo: undoRows,
+    redo: redoRows,
+    canUndo: canUndoRows,
+    canRedo: canRedoRows,
+    clearHistory: clearUndoHistory,
+  } = useGridHistoryController({
+    rows,
+    onRowsChange,
+    enabled: undoRedoEnabled,
+    limit: undoHistoryLimit,
+  });
+
   // ── clipboard ─────────────────────────────────────────
   const { isWholeGridSelected, handleCopy, handlePaste } =
     useGridClipboardController({
@@ -1970,7 +1995,9 @@ export function SpreadsheetGrid<T extends object>({
       canEditCell,
       createRow,
       createOverflowColumn,
-      onRowsChange,
+      // 変更(undo/redo): paste の変更前 rows を履歴へ積むため、生の onRowsChange ではなく
+      //   history controller のラッパを渡します(未指定時は undefined 素通しで挙動不変)。
+      onRowsChange: handleRowsChange,
       onColumnsChange,
       dispatch,
     });
@@ -2037,6 +2064,10 @@ export function SpreadsheetGrid<T extends object>({
     handleCellDoubleClick,
     isWholeGridSelected,
     selectEntireGrid,
+    // 追加(undo/redo): Ctrl/Cmd+Z / Shift+Z / Y のショートカット配線です。無効条件は
+    //   history controller 側で吸収します(無効時は no-op)。
+    onUndo: undoRows,
+    onRedo: redoRows,
   });
 
   // ── edit controller ───────────────────────────────────
@@ -2050,7 +2081,9 @@ export function SpreadsheetGrid<T extends object>({
     //   に統一され、materialize 済み filteredRowSourceIndexes は DS-3-3(clipboard 移行)で撤去済みです。
     rowModel,
     setEditorInitialValue,
-    onRowsChange,
+    // 変更(undo/redo): commit の変更前 rows を履歴へ積むため、生の onRowsChange ではなく
+    //   history controller のラッパを渡します(未指定時は undefined 素通しで挙動不変)。
+    onRowsChange: handleRowsChange,
     dispatch,
     getMovedCell,
     gridRootRef,
@@ -3449,8 +3482,9 @@ export function SpreadsheetGrid<T extends object>({
           isEditing: cellState.isEditing,
           readOnly: cellState.readOnly,
           // 追加: 実編集は CellEditorLayer で行いますが、将来の API 互換のため setValue も残します。
+          // 変更(undo/redo): 変更前 rows を履歴へ積むため handleRowsChange(ラッパ)経由にします。
           setValue: (nextValue) => {
-            if (!onRowsChange) {
+            if (!handleRowsChange) {
               return;
             }
             // 変更(DS-3-9): レガシーの ?? rowIndex フォールバックを撤去します。
@@ -3467,7 +3501,7 @@ export function SpreadsheetGrid<T extends object>({
                 ? setCellValue(currentRow, column, nextValue)
                 : currentRow,
             );
-            onRowsChange(nextRows);
+            handleRowsChange(nextRows);
           },
         });
       }
@@ -3477,7 +3511,7 @@ export function SpreadsheetGrid<T extends object>({
         : String(value ?? '');
       return <span>{formattedText}</span>;
     },
-    [rowModel, onRowsChange, rows],
+    [rowModel, handleRowsChange, rows],
   );
 
   // ── global filter setter ──────────────────────────────
@@ -3894,6 +3928,13 @@ export function SpreadsheetGrid<T extends object>({
     //   ESLint の render ref-write は増えません(commitRowSelectionRef と同趣旨の最新参照)。
     openFilterManager: () => void;
     closeFilterManager: () => void;
+    // 追加(undo/redo): 安定ハンドル(deps [])から最新の履歴操作を読むための搭載です
+    //   (openFilterManager と同趣旨の最新参照)。
+    undoRows: () => void;
+    redoRows: () => void;
+    canUndoRows: () => boolean;
+    canRedoRows: () => boolean;
+    clearUndoHistory: () => void;
   } | null>(null);
   apiStateRef.current = {
     dispatch,
@@ -3927,6 +3968,11 @@ export function SpreadsheetGrid<T extends object>({
         closeToolPanel();
       }
     },
+    undoRows,
+    redoRows,
+    canUndoRows,
+    canRedoRows,
+    clearUndoHistory,
   };
 
   useImperativeHandle(
@@ -4412,6 +4458,21 @@ export function SpreadsheetGrid<T extends object>({
         },
         clearRowSelection: () => {
           commitRowSelectionRef.current(clearRowSelection());
+        },
+
+        // ── undo / redo(編集履歴)──
+        // 追加(undo/redo): 直近のグリッド編集の取り消し/やり直しです。無効条件(readOnly /
+        //   serverSide / onRowsChange 未指定 / 履歴なし)は history controller 側で吸収します。
+        undo: () => {
+          apiStateRef.current?.undoRows();
+        },
+        redo: () => {
+          apiStateRef.current?.redoRows();
+        },
+        canUndo: () => apiStateRef.current?.canUndoRows() ?? false,
+        canRedo: () => apiStateRef.current?.canRedoRows() ?? false,
+        clearUndoHistory: () => {
+          apiStateRef.current?.clearUndoHistory();
         },
 
         // ── UI パネル(FM-3)──

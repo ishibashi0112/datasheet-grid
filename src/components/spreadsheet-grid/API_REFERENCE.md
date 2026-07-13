@@ -32,6 +32,8 @@
 | `readOnly` | `boolean` | `false` | グリッド全体の編集を無効化。 |
 | `dimReadOnlyCells` | `boolean` | `false` | readonly セルの組み込み淡色表示(背景 + 文字色)を有効化(THEME-3)。`false` でもセマンティッククラス `.ssg-body-cell--readonly` は常時付与され、利用側 CSS のフックに使える。 |
 | `canEditCell` | `(rowIndex, colIndex, row, column) => boolean` | — | セル単位の編集可否ゲート。 |
+| `enableUndoRedo` | `boolean` | `true` | グリッド編集(セル編集 / ペースト / `renderCell` の `setValue`)の取り消し/やり直し。`Ctrl/Cmd+Z` = undo、`Ctrl/Cmd+Shift+Z` / `Ctrl/Cmd+Y` = redo(ハンドルの `undo()` / `redo()` でも可)。clientSide(`rows` + `onRowsChange`)専用で、serverSide(`dataSource`)/ `readOnly` / `onRowsChange` 未指定時は無効。履歴は「変更前 rows 配列」の参照スナップショット(未変更行は構造共有されるため低コスト)。**`onRowsChange` で受け取った配列は参照そのまま `rows` へ戻すのが前提**(map 等で作り直すと毎回「外部変更」と見なされ履歴が消える)。rows が grid 起点以外(親の直接 setState 等)で差し替わると履歴は自動破棄。エディタ内の文字入力の取り消しは input のネイティブ undo に委譲(グリッドの undo は**確定済みの編集**が対象)。 |
+| `undoHistoryLimit` | `number` | `100` | 保持する undo ステップ数の上限。超過分は古い順に破棄。 |
 | `enableRangeSelection` | `boolean` | `true` | 複数セル範囲選択。 |
 | `enableRowSelection` | `boolean` | `false` | チェックボックス行選択の有効化(マスタースイッチ)。`true` で行ヘッダ(行NO)ガターが行選択のヒット領域になり、Excel 風のガター起点セル範囲選択は off(ボディ側セルのドラッグ範囲選択は不変)。判定は O(1)・全選択は除外集合でキーを列挙しない(1M 行でも一定コスト)。 |
 | `rowSelectionMode` | `'single' \| 'multiple'` | `'multiple'` | 単一/複数の選択モード。single は常に 1 行。multiple はクリックでトグル、shift+クリック/ガタードラッグで範囲選択。 |
@@ -401,6 +403,24 @@ const gridRef = useRef<SpreadsheetGridHandle<Row>>(null);
 **操作(有効時)**: 行ヘッダ(行NO)ガター全体が選択のヒット領域。multiple はクリックでトグル・shift+クリック/ガタードラッグで範囲、single は常に 1 行。ヘッダ左上コーナーは tri-state の全選択チェック(`enableSelectAllRows`)。参照性能維持のため判定は Set の O(1)、全選択は除外集合でキーを materialize しません。
 
 **controlled**: `rowSelection`(記述子)または `selectedRowKeys`(include 糖衣)を渡すと controlled。`onRowSelectionChange` で変化を受け、親が prop を更新して反映します。
+
+### undo / redo(編集履歴)
+
+グリッド編集(セル編集 / ペースト / `renderCell` の `setValue`)の取り消し/やり直しです。キーボード(`Ctrl/Cmd+Z` / `Ctrl/Cmd+Shift+Z` / `Ctrl/Cmd+Y`)と同じ操作をハンドルからも行えます。有効条件・制約は props の `enableUndoRedo` を参照(clientSide + `onRowsChange` + `readOnly=false` が前提)。
+
+| メソッド | 説明 |
+| --- | --- |
+| `undo()` | 直近のグリッド編集を取り消す(`Ctrl/Cmd+Z` 相当)。無効条件下・履歴が空のときは no-op。 |
+| `redo()` | undo で取り消した編集をやり直す(`Ctrl/Cmd+Shift+Z` / `Ctrl/Cmd+Y` 相当)。undo 後に新しい編集が入った時点で redo 系譜は破棄される。 |
+| `canUndo()` / `canRedo()` | undo / redo 可能かを返す(無効条件下では常に `false`)。 |
+| `clearUndoHistory()` | 編集履歴を破棄する(rows は変更しない)。rows の外部差し替えはグリッド側でも自動検知して破棄するため、通常は呼ばなくてよい。 |
+
+**挙動メモ**:
+
+- 1 回の `onRowsChange`(= 1 回のセル確定 / 1 回のペースト)が 1 undo ステップ。複数セルへのペーストも 1 ステップでまとめて戻る。
+- undo は「変更前 rows 配列」をそのまま `onRowsChange` へ返す(セル値の逆適用ではなくスナップショット復元)。
+- ペーストの行自動拡張(`createRow`)も rows の一部なので undo で戻る。一方、列自動拡張(`createOverflowColumn` → `onColumnsChange`)は列が対象のため undo では戻らない。
+- 編集エディタ内(`editingCell` 中)の `Ctrl+Z` はグリッドでは扱わず、input のネイティブ undo が効く。IME 変換中(`isComposing`)もグリッド側では発火しない。
 
 ### CSV エクスポート
 
