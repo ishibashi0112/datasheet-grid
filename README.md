@@ -16,7 +16,8 @@ A high-performance, virtualized spreadsheet / data grid for **React 19**, writte
 - Scroll-space virtualization that handles up to ~1,000,000 rows.
 - Three-pane pinned columns (left / center / right) via sticky positioning.
 - Sorting, per-column filters (`text` / `number` / `date` / `select` / `set` / `custom`), and a global filter.
-- In-cell editing and clipboard copy / paste, with range selection and keyboard navigation.
+- In-cell editing and clipboard copy / paste, with range selection, keyboard navigation, and Delete / Backspace to clear selected cells. Cell editing is IME-aware (composing Enter never commits the cell).
+- Undo / redo for grid edits (cell edits, paste, clear) — `Ctrl/Cmd+Z`, `Ctrl/Cmd+Shift+Z` / `Ctrl/Cmd+Y`, plus `undo()` / `redo()` / `canUndo()` / `canRedo()` on the imperative handle and an `onUndoRedoStateChange` callback for toolbars. Restores the edited cell's active cell & selection and scrolls it back into view. History is snapshot-based with structural sharing, capped by `undoHistoryLimit` (default 100), and clears automatically when `rows` is replaced externally (client-side row model only).
 - Optional auto-height rows for wrapped, variable-height content.
 - Auto-fit column widths to content on data load — `autoSizeColumns="onMount"` (once, on first data) or `"onDataChange"` (every time `rows` changes, e.g. after a form submit). Same engine as the column menu's "Autosize All Columns"; opt individual columns out with `suppressAutoSize`.
 - Full-text tooltip on truncated cells — `showCellOverflowTooltip` shows the full value on hover, but only when the cell is actually clipped (…).
@@ -248,7 +249,8 @@ The full prop and type reference lives in [`src/components/spreadsheet-grid/API_
 - スクロール空間の仮想化により最大 100 万行規模に対応。
 - `position: sticky` による 3 ペイン固定列（左 / 中央 / 右）。
 - ソート、列ごとのフィルター（`text` / `number` / `date` / `select` / `set` / `custom`）、グローバルフィルター。
-- セル内編集とクリップボードのコピー／貼り付け、範囲選択、キーボード操作。
+- セル内編集とクリップボードのコピー／貼り付け、範囲選択、キーボード操作、Delete / Backspace による選択セルのクリア。セル編集は IME 対応（変換確定の Enter でセルが確定されない）。
+- グリッド編集の undo / redo（セル編集・貼り付け・クリア）— `Ctrl/Cmd+Z`、`Ctrl/Cmd+Shift+Z` / `Ctrl/Cmd+Y` に加え、ハンドルの `undo()` / `redo()` / `canUndo()` / `canRedo()` とツールバー向けの `onUndoRedoStateChange` コールバック。編集時のアクティブセル・選択範囲まで復元し、画面外なら可視位置へスクロールで追従。履歴は構造共有のスナップショット方式で `undoHistoryLimit`（既定 100）まで保持し、`rows` が外部から差し替えられたときは自動破棄（クライアントサイド行モデル専用）。
 - 折り返し・可変行高に対応する auto-height 行（任意）。
 - データ投入時に列幅を内容へ自動フィット — `autoSizeColumns="onMount"`（初回にデータが載った一度きり）/ `"onDataChange"`（`rows` が変わるたび。フォーム送信結果の差し替え等）。列メニュー「すべての列の幅を自動調整」と同一エンジンで、列個別の除外は `suppressAutoSize`。
 - 省略（…）セルの全文ツールチップ — `showCellOverflowTooltip` でホバー時に全文表示（実際にクリップされているセルのみ）。
