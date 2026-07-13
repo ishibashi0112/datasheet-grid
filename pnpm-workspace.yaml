@@ -1,0 +1,8 @@
+# 追加(vite+ 統合): vp のツールチェーン(vp test / vp build 等)を使うための overrides です。
+#   vp は同梱ツール(~/.vite-plus/<ver>/)へフォールバックすると、環境パッケージ(jsdom 等)を
+#   同梱側から解決できず DOM 系テストが起動しません(CLAUDE.md「vite+ のツールチェーン」の項)。
+#   vite を vite-plus-core へエイリアスし、vitest を vp 同梱バージョンへ pin することで、
+#   プロジェクト側と vp 側のツールが一本化され、jsdom はプロジェクトの node_modules から解決されます。
+overrides:
+  vite: npm:@voidzero-dev/vite-plus-core@latest
+  vitest: 4.1.10

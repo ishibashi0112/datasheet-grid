@@ -57,13 +57,13 @@
     "access": "public"
   },
   "scripts": {
-    "dev": "vite",
-    "build": "tsc -b && vite build",
-    "build:lib": "vite build --config vite.lib.config.ts && tsc -p tsconfig.lib.json && node scripts/emit-layer-css.mjs",
+    "dev": "vp dev",
+    "build": "tsc -b && vp build",
+    "build:lib": "vp build --config vite.lib.config.ts && tsc -p tsconfig.lib.json && node scripts/emit-layer-css.mjs",
     "build:types": "tsc -p tsconfig.lib.json",
-    "prepublishOnly": "npm run build:lib",
+    "prepublishOnly": "pnpm run build:lib",
     "lint": "eslint .",
-    "preview": "vite preview",
+    "preview": "vp preview",
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck:test": "tsc --noEmit -p tsconfig.vitest.json"
@@ -93,6 +93,7 @@
     "typescript": "~6.0.2",
     "typescript-eslint": "^8.59.2",
     "vite": "^8.0.12",
+    "vite-plus": "^0.2.4",
     "vitest": "^4.1.9"
   }
 }

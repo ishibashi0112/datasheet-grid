@@ -44,14 +44,14 @@ React 19 + TypeScript + Vite 製のカスタム AG Grid 風・仮想化データ
 
 | ゲート | コマンド | 期待値 |
 | --- | --- | --- |
-| tsc(build) | `npx tsc -b` | 0 |
-| tsc(test) | `npm run typecheck:test` | 0 |
-| eslint | `npm run lint` | baseline 維持(現状 0 errors / 3 warnings) |
-| test | `npm test` | 全緑(現状 ~509 tests / 44 files) |
-| build | `npm run build` | 0 |
+| tsc(build) | `vp exec tsc -b` | 0 |
+| tsc(test) | `vp exec tsc -p tsconfig.vitest.json --noEmit` | 0 |
+| eslint | `vp exec eslint .` | baseline 維持(現状 0 errors / 3 warnings) |
+| test | `vp test` | 全緑(現状 ~546 tests / 48 files) |
+| build | `vp build`(publish 経路は `build:lib` = `vp build --config vite.lib.config.ts` + `tsc -p tsconfig.lib.json` + emit-layer-css) | 0 |
 
-- 依存インストールは `vp install`(pnpm へ委譲)。lint / test / build / tsc は上記 npm スクリプトをそのまま使う。
-- vite+ のツールチェーン(`vp dev` / `vp test` / `vp build`)を使う場合のみ、`pnpm-workspace.yaml` に vite/vitest の overrides 設定が別途必要(install だけなら不要)。
+- 依存インストールは `vp install`(pnpm へ委譲)。この Mac では npm が devEngines(pnpm 指定)で弾かれるため、ローカルのゲートは上記 vp 経由で実行する。CI(GitHub Actions)は pnpm で package.json スクリプトを実行する(`pnpm test` / `pnpm run build:lib` 等)。
+- vite+ 統合は **2026-07-13 に設定済み**: `pnpm-workspace.yaml` の overrides(`vite` → `@voidzero-dev/vite-plus-core` エイリアス / `vitest` を vp 同梱版へ pin)+ devDependency `vite-plus`(native binding 供給)。これにより `vite` の bin は `vp` に置き換わり、package.json scripts も vp 化済み。この構成を崩すと `vp test` が同梱 vitest へフォールバックし、jsdom を解決できず DOM 系テストが起動しなくなる(2026-07 の障害の原因)。vitest の pin は `vp --version` の同梱バージョンと揃えること。
 
 ## アーキテクチャ要点(詳細は HANDOFF §2 / §3 / §5)
 
