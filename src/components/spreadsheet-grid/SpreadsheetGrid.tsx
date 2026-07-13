@@ -1960,6 +1960,33 @@ export function SpreadsheetGrid<T extends object>({
     onGutterRowSelectDrag: handleGutterRowSelectDrag,
   });
 
+  // ── undo/redo 復元先セルのスクロール追従 ───────────────
+  // 追加(undo/redo scroll): undo/redo の復元先アクティブセルを可視化するスクロールです。
+  //   スクロール計算の実体(scrollToCellInternal)は imperative handle 部(下方)で定義されるため、
+  //   useEffect で同期する latest-ref(RS-AS 方式)越しに rAF tick から読みます。復元の dispatch /
+  //   onRowsChange と同一イベント内ではレイアウト(rowMetrics / ペイン幅)が復元後の値へ確定して
+  //   いないため、rAF で 1 フレーム遅らせてから align 'auto'(最小スクロール・可視中は no-op)で
+  //   可視化します。
+  //   既存の activeCell 可視化 effect(useGridViewportSync)との関係: あちらは activeCellRect の
+  //   「変化」にしか反応しないため、(a) 復元前後で activeCell が同一のままスクロール位置だけ
+  //   遠くにあるケース(編集 → スクロール → Ctrl+Z の典型動線)、(b) 固定列セル(rect=null)の
+  //   縦追従、をカバーしません。本追従はその補完で、既に可視の場合は 'auto' 計算が no-op に
+  //   なるため二重スクロールの実害はありません。
+  const scrollToCellInternalRef = useRef<
+    (viewRowIndex: number, colIndex: number, align: ScrollAlign) => void
+  >(() => {});
+  const scrollRestoredCellIntoView = useCallback(
+    (activeCell: CellCoord | null) => {
+      if (!activeCell) {
+        return;
+      }
+      requestAnimationFrame(() => {
+        scrollToCellInternalRef.current(activeCell.row, activeCell.col, 'auto');
+      });
+    },
+    [],
+  );
+
   // ── undo/redo(編集履歴)───────────────────────────────
   // 追加(undo/redo): grid 起点の全データ変更(セル編集 commit / ペースト / renderCell の setValue)を
   //   handleRowsChange(生 onRowsChange のラッパ)へ集約し、変更前 rows の参照スナップショットを
@@ -1985,6 +2012,8 @@ export function SpreadsheetGrid<T extends object>({
     enabled: undoRedoEnabled,
     limit: undoHistoryLimit,
     onUndoRedoStateChange,
+    // 追加(undo/redo scroll): 復元後に復元先アクティブセルを可視化します。
+    onAfterRestore: scrollRestoredCellIntoView,
   });
 
   // ── clear(Delete / Backspace)─────────────────────────
@@ -3949,7 +3978,8 @@ export function SpreadsheetGrid<T extends object>({
   // 設計: 状態は controlled のまま、prop で表せない一発操作だけをハンドルで提供します。
   //   メソッドは最新値を latest-ref(apiStateRef)越しに読み、ハンドル自体は1回だけ生成して参照を
   //   安定させます(スクロール等の度に作り直しません)。useImperativeHandle の factory は ref /
-  //   module import しか参照しないため deps [] で exhaustive-deps もクリーンです。
+  //   module import / 参照不変の安定コールバック(下のスクロール計算群)しか参照しないため、
+  //   deps は全て安定でハンドル生成は 1 回のままです(exhaustive-deps もクリーン)。
   const apiStateRef = useRef<{
     dispatch: typeof dispatch;
     rowModel: RowModel<T>;
@@ -4026,86 +4056,100 @@ export function SpreadsheetGrid<T extends object>({
     clearUndoHistory,
   };
 
+  // 追加(undo/redo scroll): 以下のスクロール計算群は従来 useImperativeHandle の factory 内
+  //   ローカル関数でしたが、undo/redo の復元先セル可視化(history controller 経由)でも必要に
+  //   なったため component スコープの安定コールバックへ切り出しました。参照するのは refs
+  //   (scrollContainerRef / apiStateRef)と module 純関数のみのため deps は空 = 参照不変で、
+  //   factory の deps に入れてもハンドル生成は従来どおり 1 回です。
+  // 論理 scrollTop を物理へ戻してスクロールコンテナへ適用します(横は圧縮対象外で物理=論理)。
+  const applyScroll = useCallback(
+    (logicalTop: number | null, left: number | null) => {
+      const el = scrollContainerRef.current;
+      const s = apiStateRef.current;
+      if (!el || !s) {
+        return;
+      }
+      el.scrollTo({
+        top:
+          logicalTop === null
+            ? el.scrollTop
+            : logicalToPhysicalScrollTop(logicalTop, s.verticalScaleFactor),
+        left: left === null ? el.scrollLeft : left,
+        behavior: 'auto',
+      });
+    },
+    [],
+  );
+
+  // 縦の scroll target(論理)を求めます。範囲外 index はクランプします。
+  const verticalTargetFor = useCallback(
+    (viewRowIndex: number, align: ScrollAlign): number | null => {
+      const el = scrollContainerRef.current;
+      const s = apiStateRef.current;
+      if (!el || !s || s.viewRowCount === 0) {
+        return null;
+      }
+      const clamped = Math.min(Math.max(viewRowIndex, 0), s.viewRowCount - 1);
+      return computeVerticalScrollTarget({
+        rowTop: s.rowMetrics.rowTop(clamped),
+        rowHeight: s.rowMetrics.rowsHeight(clamped, clamped),
+        headerHeight: s.headerHeight,
+        viewportHeight: el.clientHeight,
+        currentScrollTop: physicalToLogicalScrollTop(
+          el.scrollTop,
+          s.verticalScaleFactor,
+        ),
+        align,
+      });
+    },
+    [],
+  );
+
+  // 横の scroll target(物理=論理)を求めます。中央ペインの列のみ対象(固定列は常に可視)。
+  const horizontalTargetFor = useCallback(
+    (colIndex: number, align: ScrollAlign): number | null => {
+      const el = scrollContainerRef.current;
+      const s = apiStateRef.current;
+      if (!el || !s) {
+        return null;
+      }
+      const single = computeSinglePaneColumnExtent(s.paneLayout, colIndex);
+      if (!single || single.pane !== 'center') {
+        return null;
+      }
+      return computeHorizontalScrollTarget({
+        cellLeft:
+          s.leftPaneTotalWidth + s.centerLeadingWidth + single.extent.start,
+        cellWidth: single.extent.width,
+        leftPaneWidth: s.leftPaneTotalWidth,
+        rightPaneWidth: s.rightPaneTotalWidth,
+        viewportWidth: el.clientWidth,
+        currentScrollLeft: el.scrollLeft,
+        align,
+      });
+    },
+    [],
+  );
+
+  const scrollToCellInternal = useCallback(
+    (viewRowIndex: number, colIndex: number, align: ScrollAlign) => {
+      applyScroll(
+        verticalTargetFor(viewRowIndex, align),
+        horizontalTargetFor(colIndex, align),
+      );
+    },
+    [applyScroll, horizontalTargetFor, verticalTargetFor],
+  );
+
+  // 追加(undo/redo scroll): 上流(history controller 配線部)の latest-ref へ同期します
+  //   (RS-AS 方式)。scrollToCellInternal は参照不変のため実質 1 回だけ走ります。
+  useEffect(() => {
+    scrollToCellInternalRef.current = scrollToCellInternal;
+  }, [scrollToCellInternal]);
+
   useImperativeHandle(
     ref,
     (): SpreadsheetGridHandle<T> => {
-      // 論理 scrollTop を物理へ戻してスクロールコンテナへ適用します(横は圧縮対象外で物理=論理)。
-      const applyScroll = (logicalTop: number | null, left: number | null) => {
-        const el = scrollContainerRef.current;
-        const s = apiStateRef.current;
-        if (!el || !s) {
-          return;
-        }
-        el.scrollTo({
-          top:
-            logicalTop === null
-              ? el.scrollTop
-              : logicalToPhysicalScrollTop(logicalTop, s.verticalScaleFactor),
-          left: left === null ? el.scrollLeft : left,
-          behavior: 'auto',
-        });
-      };
-
-      // 縦の scroll target(論理)を求めます。範囲外 index はクランプします。
-      const verticalTargetFor = (
-        viewRowIndex: number,
-        align: ScrollAlign,
-      ): number | null => {
-        const el = scrollContainerRef.current;
-        const s = apiStateRef.current;
-        if (!el || !s || s.viewRowCount === 0) {
-          return null;
-        }
-        const clamped = Math.min(Math.max(viewRowIndex, 0), s.viewRowCount - 1);
-        return computeVerticalScrollTarget({
-          rowTop: s.rowMetrics.rowTop(clamped),
-          rowHeight: s.rowMetrics.rowsHeight(clamped, clamped),
-          headerHeight: s.headerHeight,
-          viewportHeight: el.clientHeight,
-          currentScrollTop: physicalToLogicalScrollTop(
-            el.scrollTop,
-            s.verticalScaleFactor,
-          ),
-          align,
-        });
-      };
-
-      // 横の scroll target(物理=論理)を求めます。中央ペインの列のみ対象(固定列は常に可視)。
-      const horizontalTargetFor = (
-        colIndex: number,
-        align: ScrollAlign,
-      ): number | null => {
-        const el = scrollContainerRef.current;
-        const s = apiStateRef.current;
-        if (!el || !s) {
-          return null;
-        }
-        const single = computeSinglePaneColumnExtent(s.paneLayout, colIndex);
-        if (!single || single.pane !== 'center') {
-          return null;
-        }
-        return computeHorizontalScrollTarget({
-          cellLeft:
-            s.leftPaneTotalWidth + s.centerLeadingWidth + single.extent.start,
-          cellWidth: single.extent.width,
-          leftPaneWidth: s.leftPaneTotalWidth,
-          rightPaneWidth: s.rightPaneTotalWidth,
-          viewportWidth: el.clientWidth,
-          currentScrollLeft: el.scrollLeft,
-          align,
-        });
-      };
-
-      const scrollToCellInternal = (
-        viewRowIndex: number,
-        colIndex: number,
-        align: ScrollAlign,
-      ) => {
-        applyScroll(
-          verticalTargetFor(viewRowIndex, align),
-          horizontalTargetFor(colIndex, align),
-        );
-      };
 
       // 変更(export-scope 再編): scope('view' / 'raw' / 'rendered' / 'selection' + 後方互換 'all' /
       //   'visible')から、出力対象の行アクセサ getRow / 行レンジ [startRow, endRow) / 列集合を解決します。
@@ -4537,7 +4581,10 @@ export function SpreadsheetGrid<T extends object>({
         },
       };
     },
-    [],
+    // 変更(undo/redo scroll): スクロール計算群を component スコープへ切り出したため deps に
+    //   加えます。いずれも deps [] の useCallback で参照不変のため、ハンドル生成は従来どおり
+    //   1 回です(exhaustive-deps もクリーン)。
+    [applyScroll, scrollToCellInternal, verticalTargetFor],
   );
 
   // ── onStateChange(永続スライス + 列メタ変化の通知)──────

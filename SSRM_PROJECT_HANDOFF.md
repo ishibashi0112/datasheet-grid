@@ -98,7 +98,8 @@
 
 - **undo/redo**: `logic/history.ts`(純粋スタック)+ `useGridHistoryController`。
   「変更前 rows 配列」の参照スナップショット + 編集時の selection / activeCell を履歴化し、
-  undo/redo で rows と選択位置を復元。外部からの rows 差し替えは参照比較で検知して履歴を自動破棄。
+  undo/redo で rows と選択位置を復元(復元先セルが画面外なら scrollToCell 'auto' 相当で
+  可視化まで追従)。外部からの rows 差し替えは参照比較で検知して履歴を自動破棄。
   `Ctrl/Cmd+Z / Shift+Z / Y`、ハンドル `undo()/redo()/canUndo()/canRedo()/clearUndoHistory()`、
   props `enableUndoRedo` / `undoHistoryLimit` / `onUndoRedoStateChange`。
 - **セル値クリア**: `Delete` / `Backspace` で選択セル(なければアクティブセル)をクリア

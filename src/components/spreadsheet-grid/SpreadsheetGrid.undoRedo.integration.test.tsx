@@ -386,6 +386,49 @@ describe('SpreadsheetGrid undo/redo(結合)', () => {
     expect(ref.current?.getActiveCell()).toEqual({ row: 0, col: 1 });
   });
 
+  it('undo / redo 後に復元先セルへのスクロール(scrollToCell 相当)が rAF 後に走る', async () => {
+    const ref = createRef<SpreadsheetGridHandle<Row>>();
+    const { container } = render(<UndoRedoHarness gridRef={ref} />);
+    const shell = getShell(container);
+
+    pasteIntoCell(container, ref, { row: 1, col: 1 }, 'EDITED');
+    act(() => {
+      ref.current?.selectCell(2, 2);
+    });
+
+    // スクロールコンテナの scrollTo を監視します(グローバルスタブとは別にインスタンスへ直付け)。
+    const scroller = container.querySelector<HTMLElement>(
+      '.ssg-scroll-container',
+    );
+    if (!scroller) {
+      throw new Error('ssg-scroll-container が見つかりません');
+    }
+    const scrollSpy = vi.fn();
+    scroller.scrollTo = scrollSpy as unknown as HTMLElement['scrollTo'];
+
+    // 復元スクロールは rAF で 1 フレーム遅延して実行されます。加えて既存の
+    //   「activeCell 可視化 effect」(useGridViewportSync)も activeCell の復元に反応して
+    //   同期発火し得るため、回数は固定せず「undo / redo それぞれで発火が増えること」を
+    //   検証します(タイミング・重複非依存)。
+    fireEvent.keyDown(shell, { key: 'z', ctrlKey: true });
+    await act(async () => {
+      await new Promise((resolve) =>
+        requestAnimationFrame(() => resolve(null)),
+      );
+    });
+    expect(scrollSpy).toHaveBeenCalled();
+    const callsAfterUndo = scrollSpy.mock.calls.length;
+
+    // redo でも同様に追従します。
+    fireEvent.keyDown(shell, { key: 'y', ctrlKey: true });
+    await act(async () => {
+      await new Promise((resolve) =>
+        requestAnimationFrame(() => resolve(null)),
+      );
+    });
+    expect(scrollSpy.mock.calls.length).toBeGreaterThan(callsAfterUndo);
+  });
+
   it('undoHistoryLimit を超えた履歴は最古から破棄される', () => {
     const ref = createRef<SpreadsheetGridHandle<Row>>();
     const { container } = render(

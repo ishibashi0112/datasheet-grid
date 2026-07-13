@@ -42,6 +42,10 @@ type UseGridHistoryControllerArgs<T> = {
   limit: number;
   // undo/redo 可能状態が「変化したとき」だけ呼ぶ通知口です(ツールバーの disabled 表示用)。
   onUndoRedoStateChange?: (state: UndoRedoState) => void;
+  // undo/redo の UI 復元後に呼ぶ後処理です(SpreadsheetGrid 側で「復元先アクティブセルへの
+  //   スクロール追従」を配線します。restore の dispatch と同一イベント内で呼ばれるため、
+  //   レイアウト確定を要する処理は受け手側で rAF 等へ遅延させます)。
+  onAfterRestore?: (activeCell: CellCoord | null) => void;
 };
 
 // 追加(undo/redo): グリッド編集の取り消し/やり直しをまとめる history controller です。
@@ -59,6 +63,7 @@ export const useGridHistoryController = <T,>({
   enabled,
   limit,
   onUndoRedoStateChange,
+  onAfterRestore,
 }: UseGridHistoryControllerArgs<T>) => {
   const historyRef = useRef<HistoryStack<GridHistoryEntry<T>>>(
     createHistoryStack<GridHistoryEntry<T>>(),
@@ -188,11 +193,13 @@ export const useGridHistoryController = <T,>({
     selfEmittedRowsRef.current = result.snapshot.rows;
     onRowsChange(result.snapshot.rows);
     restoreUiSnapshot(result.snapshot);
+    onAfterRestore?.(result.snapshot.activeCell);
     notifyUndoRedoState();
   }, [
     activeCell,
     enabled,
     notifyUndoRedoState,
+    onAfterRestore,
     onRowsChange,
     restoreUiSnapshot,
     rows,
@@ -215,11 +222,13 @@ export const useGridHistoryController = <T,>({
     selfEmittedRowsRef.current = result.snapshot.rows;
     onRowsChange(result.snapshot.rows);
     restoreUiSnapshot(result.snapshot);
+    onAfterRestore?.(result.snapshot.activeCell);
     notifyUndoRedoState();
   }, [
     activeCell,
     enabled,
     notifyUndoRedoState,
+    onAfterRestore,
     onRowsChange,
     restoreUiSnapshot,
     rows,

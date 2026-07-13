@@ -436,7 +436,7 @@ const gridRef = useRef<SpreadsheetGridHandle<Row>>(null);
 
 - 1 回の `onRowsChange`(= 1 回のセル確定 / 1 回のペースト / 1 回の Delete クリア)が 1 undo ステップ。複数セルへのペースト・範囲クリアも 1 ステップでまとめて戻る。
 - undo は「変更前 rows 配列」をそのまま `onRowsChange` へ返す(セル値の逆適用ではなくスナップショット復元)。
-- undo / redo は**編集時のアクティブセルとセレクションも復元**する(undo = 編集前の位置へ、redo = undo した時点の位置へ)。スクロール位置の自動追従は行わない。
+- undo / redo は**編集時のアクティブセルとセレクションも復元**する(undo = 編集前の位置へ、redo = undo した時点の位置へ)。復元先のアクティブセルが画面外の場合は **`scrollToCell` の `'auto'` 相当(最小スクロール)で可視化まで追従**する(既に可視なら動かない)。
 - ペーストの行自動拡張(`createRow`)も rows の一部なので undo で戻る。一方、列自動拡張(`createOverflowColumn` → `onColumnsChange`)は列が対象のため undo では戻らない。
 - 編集エディタ内(`editingCell` 中)の `Ctrl+Z` はグリッドでは扱わず、input のネイティブ undo が効く。IME 変換中(`isComposing`)もグリッド側では発火しない。
 - 可否の変化をリアクティブに受けたい場合は props の `onUndoRedoStateChange` を使う(`canUndo()` / `canRedo()` はポーリング用の命令的 API)。
