@@ -1,6 +1,6 @@
 # CLAUDE.md — SpreadsheetGrid 開発ガイド
 
-React 19 + TypeScript + Vite 製のカスタム AG Grid 風・仮想化データグリッドのライブラリ化プロジェクト。**すべて日本語で対応する。** 現状・アーキテクチャ・残タスクの詳細は `SSRM_PROJECT_HANDOFF.md` を参照(本書は規約とワークフローに集中し、詳細は同ドキュメントに委ねる)。
+React 19 + TypeScript + Vite 製のカスタム AG Grid 風・仮想化データグリッドのライブラリ化プロジェクト。**すべて日本語で対応する。** 現状・アーキテクチャ・残タスクの詳細は `SSRM_PROJECT_HANDOFF.md` を参照(本書は規約とワークフローに集中し、詳細は同ドキュメントに委ねる。同ドキュメントはオリジナル消失のため 2026-07-13 に現行コードベースから再作成)。
 
 ## 技術スタック
 
@@ -53,7 +53,7 @@ React 19 + TypeScript + Vite 製のカスタム AG Grid 風・仮想化データ
 - 依存インストールは `vp install`(pnpm へ委譲)。lint / test / build / tsc は上記 npm スクリプトをそのまま使う。
 - vite+ のツールチェーン(`vp dev` / `vp test` / `vp build`)を使う場合のみ、`pnpm-workspace.yaml` に vite/vitest の overrides 設定が別途必要(install だけなら不要)。
 
-## アーキテクチャ要点(詳細は HANDOFF §2 / §6.5 / §7)
+## アーキテクチャ要点(詳細は HANDOFF §2 / §3 / §5)
 
 - reducer ベースの状態管理、命令的 ref API、3 ペイン固定列レイアウト、SSRM(サーバーサイド行モデル)。
 - `SpreadsheetGrid.tsx` は既知の God component(~5,000 行)。リファクタは保留。
@@ -61,7 +61,7 @@ React 19 + TypeScript + Vite 製のカスタム AG Grid 風・仮想化データ
 - CSS: 未レイヤー単一クラス基底(Tailwind/Mantine/HeroUI 共存のため `@layer` は使わない ── 未レイヤーはレイヤー付きに特異度無関係で勝つため)。Portal 系(popover/tooltip)は `.ssg-root` 外に描画されるためリテラル色を使う。
 - 仮想化 DOM 上のドラッグは window レベルのリスナ + `pointerId` フィルタ(要素直付けは capture 対象の unmount で壊れる)。
 
-## 現状と残タスク(詳細は HANDOFF §8)
+## 現状と残タスク(詳細は HANDOFF §4 / §7 / §8)
 
 - 最新 v0.13.0。
 - SSRM は骨格のみ ── `refreshServerSide()` ハンドル / エラー・リトライ UI / サーバーサイド変更が未実装。
