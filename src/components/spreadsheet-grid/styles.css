@@ -561,6 +561,17 @@
     color: var(--ssg-panel-text-muted);
   }
 
+  /* ── checkbox セル(editor: checkbox / 直接トグル) ── */
+  /* glyph は行選択の .ssg-row-checkbox を再利用。wrapper はクリック領域と縦位置合わせのみ。 */
+  .ssg-cell-checkbox {
+    display: inline-flex;
+    align-items: center;
+    cursor: pointer;
+  }
+  .ssg-cell-checkbox[aria-disabled='true'] {
+    cursor: default;
+  }
+
   /* ── バー(ツールバー / ステータスバー) ── */
   /* 外枠。本体との境界は 1px divider のみ(top は下境界 / bottom は上境界)。 */
   .ssg-bar--top {

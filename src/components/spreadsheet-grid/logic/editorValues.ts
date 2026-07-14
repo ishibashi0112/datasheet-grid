@@ -4,6 +4,7 @@
 //   個別に parseClipboardValue 分岐と rows.map を持っていたため、ここへ集約します。
 import type { GridColumn } from '../model/gridTypes';
 import { setCellValue } from '../utils/permissions';
+import { parseCheckboxEditorValue } from './checkboxEditor';
 
 // 追加(editor: number): number エディタの既定パーサです。mark 思想(不正値も一旦受け入れて
 //   表示側で警告)に合わせ、パース不可の文字列は破壊せずそのまま返します。
@@ -67,6 +68,10 @@ export const resolveCellParser = <T,>(
   }
   if (column.editor?.type === 'date') {
     return parseDateEditorValue;
+  }
+  if (column.editor?.type === 'checkbox') {
+    const editor = column.editor;
+    return (raw) => parseCheckboxEditorValue(raw, editor);
   }
   return (raw) => raw;
 };

@@ -329,6 +329,15 @@ export type GridColumnEditor<T> =
       //   既定パーサ: '' → null / 日付として解釈可能な文字列 → 'YYYY-MM-DD' へ正規化 /
       //   解釈不可 → 生文字列のまま(logic/editorValues.ts の toDateInputValue 参照)。
       type: 'date';
+    }
+  | {
+      // checkbox エディタ(直接トグル方式)。編集セッションを開かず、クリック / Space で即トグル
+      //   します(ダブルクリック / Enter / F2 でもエディタは開きません)。renderCell 未指定時は
+      //   組み込みのチェックボックスセルを描画します(renderCell 指定時はそちらが優先)。
+      //   checked 判定は Object.is(value, checkedValue) のみ、それ以外はすべて unchecked 扱い。
+      type: 'checkbox';
+      checkedValue?: unknown; // 既定 true
+      uncheckedValue?: unknown; // 既定 false
     };
 
 // 追加: 列定義です。将来のカスタムセル/カスタムヘッダー拡張を見据えています。

@@ -233,6 +233,8 @@ import type {
 } from './model/gridTypes';
 import { getCellValue, isCellEditable } from './utils/permissions';
 import { writeRowsCell } from './logic/editorValues';
+import { isCheckboxChecked, toggleCheckboxValue } from './logic/checkboxEditor';
+import { CheckboxCell } from './editors/CheckboxCell';
 import ColumnFilterPopover from './view/ColumnFilterPopover';
 // 追加(反転set): set 選択状態 { mode, values } 型と mode 判定ヘルパです。
 //   変更(LINT-1): react-refresh 制約解消のため logic/setFilterSelection.ts へ移設しました。
@@ -2119,12 +2121,53 @@ export function SpreadsheetGrid<T extends object>({
       ) {
         return;
       }
+      // 追加(editor: checkbox): checkbox 列は直接トグル方式のため編集セッションを開きません
+      //   (Enter / F2 もここを通るため、このガード 1 箇所で済みます)。
+      if (column.editor?.type === 'checkbox') {
+        return;
+      }
       const currentValue = getCellValue(row, column);
       // 変更(11-B6): ドラフト setter → 初期値 setter へ置き換え（挙動等価）。
       setEditorInitialValue(String(currentValue ?? ''));
       dispatch(gridActions.startEdit(cell));
     },
     [canEditCell, dispatch, rowModel, readOnly, orderedColumns],
+  );
+
+  // 追加(editor: checkbox): checkbox セルの直接トグルです(クリック / Space 共通の集約点)。
+  //   isCellEditable ガードを通し、履歴ラッパ(handleRowsChange)経由で undo/redo 対象にします。
+  const toggleCheckboxCell = useCallback(
+    (cell: CellCoord) => {
+      if (!handleRowsChange) {
+        return;
+      }
+      const row = rowModel.getRow(cell.row);
+      const column = orderedColumns[cell.col];
+      if (!row || !column || column.editor?.type !== 'checkbox') {
+        return;
+      }
+      if (
+        !isCellEditable(
+          { readOnly, canEditCell },
+          cell.row,
+          cell.col,
+          row,
+          column,
+        )
+      ) {
+        return;
+      }
+      const originalRowIndex = rowModel.getSourceIndex(cell.row);
+      if (originalRowIndex === undefined) {
+        return;
+      }
+      const nextValue = toggleCheckboxValue(
+        getCellValue(row, column),
+        column.editor,
+      );
+      handleRowsChange(writeRowsCell(rows, originalRowIndex, column, nextValue));
+    },
+    [canEditCell, handleRowsChange, orderedColumns, readOnly, rowModel, rows],
   );
 
   // ── keyboard ──────────────────────────────────────────
@@ -2149,6 +2192,8 @@ export function SpreadsheetGrid<T extends object>({
     onRedo: redoRows,
     // 追加(clear): Delete / Backspace の選択セルクリア配線です。
     onClearSelection: clearSelectedCells,
+    // 追加(editor: checkbox): checkbox 列の Space 直接トグル配線です。
+    onToggleCheckboxCell: toggleCheckboxCell,
   });
 
   // ── edit controller ───────────────────────────────────
@@ -2211,6 +2256,11 @@ export function SpreadsheetGrid<T extends object>({
           column,
         )
       ) {
+        return;
+      }
+      // 追加(editor: checkbox): checkbox 列は直接トグル方式のため編集セッションを開きません
+      //   (トグルはクリック / Space。ダブルクリックは click 2 回として扱われます)。
+      if (column.editor?.type === 'checkbox') {
         return;
       }
       const currentValue = getCellValue(row, column);
@@ -3598,13 +3648,26 @@ export function SpreadsheetGrid<T extends object>({
           },
         });
       }
+      // 追加(editor: checkbox): checkbox 列の既定セルは組み込みのトグルセルを描画します
+      //   (renderCell 指定時は上の分岐が優先)。書き込みは toggleCheckboxCell(履歴ラッパ経由)。
+      if (column.editor?.type === 'checkbox') {
+        return (
+          <CheckboxCell
+            checked={isCheckboxChecked(value, column.editor)}
+            readOnly={cellState.readOnly}
+            onToggle={() =>
+              toggleCheckboxCell({ row: rowIndex, col: colIndex })
+            }
+          />
+        );
+      }
       // 変更(③): valueFormatter 指定時はその返り値を表示します(UI 表示のみ・生値は不変)。
       const formattedText = column.valueFormatter
         ? column.valueFormatter({ value, row, column })
         : String(value ?? '');
       return <span>{formattedText}</span>;
     },
-    [rowModel, handleRowsChange, rows],
+    [rowModel, handleRowsChange, rows, toggleCheckboxCell],
   );
 
   // ── global filter setter ──────────────────────────────
