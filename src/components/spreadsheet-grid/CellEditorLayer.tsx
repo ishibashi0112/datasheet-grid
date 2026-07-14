@@ -3,6 +3,8 @@ import type { EditorCommitDirection, GridColumnEditor } from './model/gridTypes'
 import { TextCellEditor } from './editors/TextCellEditor';
 import { NumberCellEditor } from './editors/NumberCellEditor';
 import { SelectCellEditor } from './editors/SelectCellEditor';
+import { DateCellEditor } from './editors/DateCellEditor';
+import { toDateInputValue } from './logic/editorValues';
 
 // 変更(editor 基盤): EditorCommitDirection は model/gridTypes.ts へ移設しました(公開型化)。
 //   既存 import 互換のため re-export を残します。
@@ -115,6 +117,20 @@ export function CellEditorLayer<T>({
         min={editor.min}
         max={editor.max}
         step={editor.step}
+        onCommit={onCommit}
+        onCancel={onCancel}
+        align={align}
+      />
+    );
+  } else if (editor?.type === 'date') {
+    // date は印字キー開始の initialText を無視し、常に現セル値から開始します
+    //   (editorSession 不在時のみ initialValue でフォールバック)。
+    editorNode = (
+      <DateCellEditor
+        key={sessionId}
+        initialValue={toDateInputValue(
+          editorSession ? editorSession.value : initialValue,
+        )}
         onCommit={onCommit}
         onCancel={onCancel}
         align={align}

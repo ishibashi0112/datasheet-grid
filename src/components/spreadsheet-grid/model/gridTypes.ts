@@ -323,6 +323,12 @@ export type GridColumnEditor<T> =
       options:
         | GridSelectEditorOption[]
         | ((row: T) => GridSelectEditorOption[]);
+    }
+  | {
+      // 日付エディタ(ネイティブ <input type="date">)。ドラフトは 'YYYY-MM-DD' | ''。
+      //   既定パーサ: '' → null / 日付として解釈可能な文字列 → 'YYYY-MM-DD' へ正規化 /
+      //   解釈不可 → 生文字列のまま(logic/editorValues.ts の toDateInputValue 参照)。
+      type: 'date';
     };
 
 // 追加: 列定義です。将来のカスタムセル/カスタムヘッダー拡張を見据えています。

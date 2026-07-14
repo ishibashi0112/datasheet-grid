@@ -16,6 +16,44 @@ const parseNumberEditorValue = (raw: string): unknown => {
   return Number.isFinite(parsed) ? parsed : raw;
 };
 
+// 追加(editor: date): Date を 'YYYY-MM-DD'(ローカル日付)へ整形します。
+const formatDateParts = (date: Date): string => {
+  const year = String(date.getFullYear()).padStart(4, '0');
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
+// 追加(editor: date): セル生値を <input type="date"> の value('YYYY-MM-DD' | '')へ正規化します。
+//   Date インスタンス / 'YYYY-MM-DD' 先頭の文字列(ISO 日時含む)/ Date.parse 可能な文字列を
+//   受け付け、解釈できない値は ''(未入力扱い)を返します。
+export const toDateInputValue = (value: unknown): string => {
+  if (value instanceof Date) {
+    return Number.isNaN(value.getTime()) ? '' : formatDateParts(value);
+  }
+  if (typeof value === 'string' && value.trim() !== '') {
+    const isoPrefix = /^(\d{4}-\d{2}-\d{2})/.exec(value);
+    if (isoPrefix) {
+      return isoPrefix[1];
+    }
+    const parsed = new Date(value);
+    if (!Number.isNaN(parsed.getTime())) {
+      return formatDateParts(parsed);
+    }
+  }
+  return '';
+};
+
+// 追加(editor: date): date エディタの既定パーサです。'' → null / 解釈可能 → 'YYYY-MM-DD' へ
+//   正規化(ペースト経由の '2026/07/14' 等も揃う)/ 解釈不可 → 生文字列のまま(mark が拾う)。
+const parseDateEditorValue = (raw: string): unknown => {
+  if (raw === '') {
+    return null;
+  }
+  const normalized = toDateInputValue(raw);
+  return normalized !== '' ? normalized : raw;
+};
+
 // 列のパーサを解決します。明示指定の parseClipboardValue が常に勝ち、未指定なら
 //   editor 種別の既定パーサ(なければ identity = 生文字列のまま)を供給します。
 export const resolveCellParser = <T,>(
@@ -26,6 +64,9 @@ export const resolveCellParser = <T,>(
   }
   if (column.editor?.type === 'number') {
     return parseNumberEditorValue;
+  }
+  if (column.editor?.type === 'date') {
+    return parseDateEditorValue;
   }
   return (raw) => raw;
 };

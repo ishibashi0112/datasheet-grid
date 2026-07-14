@@ -4,6 +4,7 @@ import type { GridColumn } from '../model/gridTypes';
 import {
   parseCommittedValue,
   resolveCellParser,
+  toDateInputValue,
   writeRowsCell,
 } from './editorValues';
 
@@ -61,6 +62,40 @@ describe('resolveCellParser', () => {
       parseClipboardValue: (raw) => `custom:${raw}`,
     };
     expect(resolveCellParser(column)('12', makeRow())).toBe('custom:12');
+  });
+
+  it('editor:date の既定パーサ: 空→null / 解釈可→正規化 / 解釈不可→生文字列のまま', () => {
+    const column: GridColumn<Row> = {
+      key: 'name',
+      width: 120,
+      editor: { type: 'date' },
+    };
+    const parser = resolveCellParser(column);
+    expect(parser('', makeRow())).toBeNull();
+    expect(parser('2026-07-14', makeRow())).toBe('2026-07-14');
+    expect(parser('2026/07/14', makeRow())).toBe('2026-07-14');
+    expect(parser('日付でない', makeRow())).toBe('日付でない');
+  });
+});
+
+describe('toDateInputValue', () => {
+  it('Date インスタンスをローカル日付の YYYY-MM-DD へ整形する', () => {
+    expect(toDateInputValue(new Date(2026, 6, 14))).toBe('2026-07-14');
+    expect(toDateInputValue(new Date(999, 0, 2))).toBe('0999-01-02');
+  });
+
+  it('YYYY-MM-DD 先頭の文字列(ISO 日時含む)は先頭 10 文字を採用する', () => {
+    expect(toDateInputValue('2026-07-14')).toBe('2026-07-14');
+    expect(toDateInputValue('2026-07-14T12:34:56Z')).toBe('2026-07-14');
+  });
+
+  it('Date.parse 可能な文字列は正規化し、解釈できない値は空文字を返す', () => {
+    expect(toDateInputValue('2026/07/14')).toBe('2026-07-14');
+    expect(toDateInputValue('not-a-date')).toBe('');
+    expect(toDateInputValue('')).toBe('');
+    expect(toDateInputValue(null)).toBe('');
+    expect(toDateInputValue(12345)).toBe('');
+    expect(toDateInputValue(new Date('invalid'))).toBe('');
   });
 });
 
