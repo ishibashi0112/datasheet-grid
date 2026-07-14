@@ -2237,6 +2237,7 @@ export function SpreadsheetGrid<T extends object>({
           row: editingRow,
           rowIndex: uiState.editingCell.row,
           colIndex: uiState.editingCell.col,
+          column: editingColumn,
           value: getCellValue(editingRow, editingColumn),
         }
       : null;

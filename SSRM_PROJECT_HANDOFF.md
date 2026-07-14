@@ -125,7 +125,8 @@
 3. 多段カラムヘッダー(ヘッダーグループ)。
 4. ピン留め行(上下固定行)。
 5. フィルハンドル(セル右下ドラッグでの連続コピー/連番)。
-6. プレーンテキスト以外のエディタ種別(select / date / checkbox など)。
+
+~~6. プレーンテキスト以外のエディタ種別(select / date / checkbox など)。~~ → **2026-07-14 実装済み**: `GridColumn.editor`(text / number / select / date / checkbox / custom)+ セル編集バリデーション(`validate` / `validationMode: 'mark' | 'reject'`、`getInvalidCells()`)。エディタ実体は `editors/` 配下、純ロジックは `logic/editorValues.ts` / `logic/selectEditorState.ts` / `logic/checkboxEditor.ts` / `logic/validation.ts`。詳細は API_REFERENCE の「セルエディタ」「バリデーション」節。
 
 ## §8 既知の保留(react-doctor 由来)
 

@@ -45,6 +45,7 @@ const renderSelectEditor = ({
         row: { fruit: 'banana' },
         rowIndex: 0,
         colIndex: 0,
+        column: { key: 'fruit', width: 120 },
         value,
       }}
       themeClassName={themeClassName}

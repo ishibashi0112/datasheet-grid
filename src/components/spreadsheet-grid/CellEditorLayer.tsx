@@ -2,12 +2,14 @@ import { useState, type CSSProperties, type ReactNode } from 'react';
 import type {
   EditorCommitDirection,
   EditorCommitResult,
+  GridColumn,
   GridColumnEditor,
 } from './model/gridTypes';
 import { TextCellEditor } from './editors/TextCellEditor';
 import { NumberCellEditor } from './editors/NumberCellEditor';
 import { SelectCellEditor } from './editors/SelectCellEditor';
 import { DateCellEditor } from './editors/DateCellEditor';
+import { CustomCellEditor } from './editors/CustomCellEditor';
 import { toDateInputValue } from './logic/editorValues';
 
 // 変更(editor 基盤): EditorCommitDirection は model/gridTypes.ts へ移設しました(公開型化)。
@@ -23,11 +25,12 @@ type CellEditorRect = {
 };
 
 // 追加(editor: select): 編集中セルのセッション情報です。SpreadsheetGrid が editingCell から
-//   解決して渡します(select の動的 options 解決・初期ハイライト、将来の custom エディタ ctx 用)。
+//   解決して渡します(select の動的 options 解決・初期ハイライト・custom エディタの ctx 用)。
 export type CellEditorSession<T> = {
   row: T;
   rowIndex: number;
   colIndex: number;
+  column: GridColumn<T>;
   value: unknown;
 };
 
@@ -145,6 +148,27 @@ export function CellEditorLayer<T>({
         align={align}
       />
     );
+  } else if (editor?.type === 'custom') {
+    // custom は編集セッション情報が揃っているときだけ描画します(通常、編集中は常に非 null)。
+    editorNode = editorSession ? (
+      <CustomCellEditor
+        key={sessionId}
+        render={editor.render}
+        context={{
+          row: editorSession.row,
+          rowIndex: editorSession.rowIndex,
+          colIndex: editorSession.colIndex,
+          column: editorSession.column,
+          value: editorSession.value,
+          initialText: initialValue,
+          align,
+          // void 戻り(モック等)は noop へ正規化して consumer の分岐を単純にします。
+          commit: (value, direction) =>
+            onCommit(value, direction) ?? { status: 'noop' },
+          cancel: onCancel,
+        }}
+      />
+    ) : null;
   } else if (editor?.type === 'select') {
     // 動的 options(行依存)は編集中の行で解決します(消費側関数はレンダー中に呼ばれるため純粋前提)。
     const options =

@@ -338,7 +338,37 @@ export type GridColumnEditor<T> =
       type: 'checkbox';
       checkedValue?: unknown; // 既定 true
       uncheckedValue?: unknown; // 既定 false
+    }
+  | {
+      // カスタムエディタ。render(ctx) の返り値を編集セルのオーバーレイ内に描画します。
+      //   フォーカス管理・キーバインド(Enter / Tab / Esc)は consumer 側の責務で、確定 /
+      //   キャンセルは ctx.commit / ctx.cancel を呼びます(組み込みの既定バインドは供給しません)。
+      type: 'custom';
+      render: (ctx: CellEditorContext<T>) => ReactNode;
     };
+
+// 追加(editor: custom): custom エディタの render へ渡すコンテキストです。
+export type CellEditorContext<T> = {
+  row: T;
+  // ビュー行 index(ソート / フィルター適用後)です。
+  rowIndex: number;
+  // 論理列 index(視覚順)です。
+  colIndex: number;
+  column: GridColumn<T>;
+  // 編集開始時のセル生値です。
+  value: unknown;
+  // 印字キー開始時はそのキー 1 文字 / それ以外は String(value ?? '') です。
+  initialText: string;
+  align?: 'left' | 'center' | 'right';
+  // 確定します。string は列パーサ(parseClipboardValue ?? editor 既定)を通し、非 string は
+  //   ドメイン値としてそのまま書き込みます(パースのバイパス)。返り値で reject 列の検証結果
+  //   (rejected)を受け取れます(無視しても安全 — その場合は編集継続になるだけです)。
+  commit: (
+    value: unknown,
+    direction?: EditorCommitDirection,
+  ) => EditorCommitResult;
+  cancel: () => void;
+};
 
 // 追加(validation): セル編集バリデーションの動作モードです。
 //   'mark'(既定): 検証 NG でも値は書き込み、セルに invalid 表示 + メッセージツールチップを出します

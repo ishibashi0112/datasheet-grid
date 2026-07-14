@@ -13,6 +13,8 @@ import {
   type ServerSideGetRowsResult,
   type ServerSideQuery,
   type SpreadsheetGridHandle,
+  // 追加(editor: custom デモ): カスタムエディタの render コンテキスト型。
+  type CellEditorContext,
 } from './components/spreadsheet-grid';
 // 注記(stage ②・デモ限定): モックサーバが query(フィルター/ソート)を実適用するため、グリッド内部の
 //   純関数を deep-import して再利用します。実サーバは SQL 等の自前クエリエンジンを使う想定で、これは
@@ -36,10 +38,12 @@ type DemoRow = {
   status: string;
   // 追加(date デモ): 発注日です。date フィルター型(部分一致)の動作確認用に ISO 文字列で持ちます。
   orderedAt: string;
+  // 追加(editor: checkbox デモ): 承認フラグ。checkbox エディタ(直接トグル)の動作確認用です。
+  approved: boolean;
   // 追加(C1 auto-height デモ): 備考。行ごとに長さが変わる長文で、auto-height 列の折り返し/可変行高を
   //   確認します(autoHeight デモモード時のみ駆動)。
   note: string;
-  [key: string]: string | number;
+  [key: string]: string | number | boolean;
 };
 
 // 追加: 初期ダミー行数です。UX確認用に少し多めにしています。
@@ -104,6 +108,8 @@ const createDemoRowAt = (index: number): DemoRow => {
       unit: ['個', '本', '式', '枚'][index % 4],
       status: index % 11 === 0 ? '保留' : '有効',
       orderedAt,
+      // 追加(editor: checkbox デモ): index から決定的に割り当てます(約 1/3 が承認済み)。
+      approved: index % 3 === 0,
       note: buildNote(index),
     };
     for (let extraIndex = 0; extraIndex < INITIAL_EXTRA_COLUMN_COUNT; extraIndex += 1) {
@@ -115,6 +121,51 @@ const createDemoRowAt = (index: number): DemoRow => {
 // 追加(①-5): 単一行ビルダーを総数ぶん適用してダミー行配列を生成します。
 const createDemoRows = (count: number): DemoRow[] =>
   Array.from({ length: count }, (_, index) => createDemoRowAt(index));
+
+// 追加(editor: custom デモ): 金額用のカスタムエディタです。フォーカス管理・キーバインドは
+//   consumer 責務(このコンポーネント)で、Enter / Tab は ctx.commit(数値)(列パーサをバイパス
+//   するドメイン値の直接確定)、Escape は ctx.cancel を呼びます。
+function AmountCustomEditor({ ctx }: { ctx: CellEditorContext<DemoRow> }) {
+  const inputRef = useRef<HTMLInputElement | null>(null);
+  const [draft, setDraft] = useState(ctx.initialText);
+  useEffect(() => {
+    inputRef.current?.focus();
+    inputRef.current?.select();
+  }, []);
+  const commitDraft = (direction?: 'down' | 'right' | 'left') => {
+    ctx.commit(draft === '' ? null : Number(draft), direction);
+  };
+  return (
+    <input
+      ref={inputRef}
+      type="number"
+      className="ssg-cell-editor-input"
+      style={{ textAlign: 'right' }}
+      value={draft}
+      onChange={(event) => setDraft(event.target.value)}
+      onKeyDown={(event) => {
+        if (event.nativeEvent.isComposing) {
+          return;
+        }
+        if (event.key === 'Enter') {
+          event.preventDefault();
+          commitDraft('down');
+          return;
+        }
+        if (event.key === 'Escape') {
+          event.preventDefault();
+          ctx.cancel();
+          return;
+        }
+        if (event.key === 'Tab') {
+          event.preventDefault();
+          commitDraft(event.shiftKey ? 'left' : 'right');
+        }
+      }}
+      onBlur={() => commitDraft()}
+    />
+  );
+}
 
 // 追加(①-5 / stage ②): serverSide(SSRM)デモ用のモックデータ供給口です。実サーバの代わりに
 //   setTimeout で遅延を模し、query(グローバル/列フィルター・ソート)を全件データセットへ実適用してから、
@@ -245,10 +296,29 @@ const createInitialColumns = (
       pinned: "left" ,
       // 追加(②-S1 デモ): suppressAutoSize の効き確認用。ON で autoSize 対象外(width 維持)。
       suppressAutoSize: suppressNameAutoSize ? true : undefined,
+      // 追加(validation reject デモ): 品名は必須です。空にする確定(エディタ)・ペースト・
+      //   Delete クリアが拒否されます(reject 型: 不正値は決して rows に入らない)。
+      validate: ({ value }) =>
+        String(value ?? '').length > 0 ? true : '品名は必須です',
+      validationMode: 'reject',
     },
-    { key: 'qty', title: '数量', width: 90, filterType: 'number', resizable: false, align: 'right' },
+    {
+      key: 'qty', title: '数量', width: 90, filterType: 'number', resizable: false, align: 'right',
+      // 追加(editor: number + validation mark デモ): 数値エディタ(スピナー / ArrowUp・Down)+
+      //   mark 検証(既定)。不正値も一旦入り、セルに invalid 表示 + hover でメッセージが出ます。
+      editor: { type: 'number', min: 0, step: 1 },
+      validate: ({ value }) =>
+        typeof value === 'number' && Number.isFinite(value) && value >= 0
+          ? true
+          : '0 以上の数値を入力してください',
+    },
     // 追加(③デモ): 金額列。右寄せ + numberFormatter() で 3 桁区切り(既定は元の精度を保持)。
-    { key: 'amount', title: '金額', width: 140, filterType: 'number', align: 'right', valueFormatter: numberFormatter() },
+    // 追加(editor: custom デモ): カスタムエディタ(AmountCustomEditor)。ctx.commit(数値) で
+    //   列パーサをバイパスしてドメイン値を直接確定します。
+    {
+      key: 'amount', title: '金額', width: 140, filterType: 'number', align: 'right', valueFormatter: numberFormatter(),
+      editor: { type: 'custom', render: (ctx) => <AmountCustomEditor ctx={ctx} /> },
+    },
     {
       key: 'unit',
       title: '単位',
@@ -279,6 +349,24 @@ const createInitialColumns = (
         { label: '有効', value: '有効' },
         { label: '保留', value: '保留' },
       ],
+      // 追加(editor: select デモ): 候補ドロップダウンで編集します(↑↓ + Enter / クリック /
+      //   タイプアヘッド)。候補はフィルターと同じ 2 値です。
+      editor: {
+        type: 'select',
+        options: [
+          { label: '有効', value: '有効' },
+          { label: '保留', value: '保留' },
+        ],
+      },
+    },
+    // 追加(editor: checkbox デモ): 直接トグル(クリック / Space)の列です。編集セッションは
+    //   開きません(Enter / F2 / ダブルクリックでもエディタは出ない)。undo/redo 対象です。
+    {
+      key: 'approved',
+      title: '承認',
+      width: 90,
+      align: 'center',
+      editor: { type: 'checkbox' },
     },
     // 追加(②-S2 デモ): renderCell でバッジ(チップ)を横並び表示するカスタムUI列です。
     //   セルの表示テキストは無いに等しいため、テキストを proxy にする autoSize では幅が出ません
@@ -316,7 +404,9 @@ const createInitialColumns = (
     },
     // 追加(date デモ): date フィルター型の動作確認用の列です。値は ISO 文字列(YYYY-MM-DD)で、
     //   フィルターは部分一致です('2024' で年 / '2024-03' で月 / '-15' で15日 を絞り込めます)。
-    { key: 'orderedAt', title: '発注日', width: 130, filterType: 'date' },
+    // 追加(editor: date デモ): ネイティブ日付ピッカーで編集します(Tab=確定 + 移動、
+    //   ピッカー内のセグメント移動は ←→ 矢印)。
+    { key: 'orderedAt', title: '発注日', width: 130, filterType: 'date', editor: { type: 'date' } },
     // 追加(C1 auto-height デモ): 長文の備考列。autoHeight:true で、グリッド props の autoHeight 有効 +
     //   行数 gate 内のとき行高を内容に合わせて可変化します(折り返し表示)。
     // 追加(B3 デモ): flexEnabled で備考列を flex 化(備考=比率 2。余り幅を最も多く吸う)。
@@ -1064,6 +1154,8 @@ function App() {
           status: '',
           // 追加(date デモ): 新規行も orderedAt を持たせます(既定は空文字 = フィルター未該当)。
           orderedAt: '',
+          // 追加(editor: checkbox デモ): 新規行は未承認から開始します。
+          approved: false,
           // 追加(C1 auto-height デモ): 新規行の備考は空文字。
           note: '',
         })}

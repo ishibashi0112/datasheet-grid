@@ -47,7 +47,7 @@ React 19 + TypeScript + Vite 製のカスタム AG Grid 風・仮想化データ
 | tsc(build) | `vp exec tsc -b` | 0 |
 | tsc(test) | `vp exec tsc -p tsconfig.vitest.json --noEmit` | 0 |
 | eslint | `vp exec eslint .` | baseline 維持(現状 0 errors / 3 warnings) |
-| test | `vp test` | 全緑(現状 ~546 tests / 48 files) |
+| test | `vp test` | 全緑(現状 ~624 tests / 60 files) |
 | build | `vp build`(publish 経路は `build:lib` = `vp build --config vite.lib.config.ts` + `tsc -p tsconfig.lib.json` + emit-layer-css) | 0 |
 
 - 依存インストールは `vp install`(pnpm へ委譲)。この Mac では npm が devEngines(pnpm 指定)で弾かれるため、ローカルのゲートは上記 vp 経由で実行する。CI(GitHub Actions)は pnpm で package.json スクリプトを実行する(`pnpm test` / `pnpm run build:lib` 等)。
@@ -65,5 +65,5 @@ React 19 + TypeScript + Vite 製のカスタム AG Grid 風・仮想化データ
 
 - 最新 v0.13.0。
 - SSRM は骨格のみ ── `refreshServerSide()` ハンドル / エラー・リトライ UI / サーバーサイド変更が未実装。
-- 大きな未実装: 行グルーピング + 集計(AG Grid 競合上の最大の欠落)、SSRM 完成、多段カラムヘッダー、ピン留め行、フィルハンドル、プレーンテキスト以外のエディタ種別。
+- 大きな未実装: 行グルーピング + 集計(AG Grid 競合上の最大の欠落)、SSRM 完成、多段カラムヘッダー、ピン留め行、フィルハンドル。※エディタ種別(text / number / select / date / checkbox / custom)とセル編集バリデーション(mark / reject)は 2026-07-14 に実装済み。
 - react-doctor 由来の保留: `no-giant-component`(App.tsx + SpreadsheetGrid.tsx)、`require-pnpm-hardening`(`pnpm-workspace.yaml` 判断待ち)、`prefer-module-scope-pure-function`(ハンドラ巻き上げ Batch A 未実行)。

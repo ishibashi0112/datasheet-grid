@@ -242,7 +242,10 @@ const gridRef = useRef<SpreadsheetGridHandle<Row>>(null);
 | `filterType` | `'text' \| 'number' \| 'date' \| 'select' \| 'set' \| 'custom'` | — | フィルター UI の種別。 |
 | `filterOptions` | `GridSelectFilterOption[]` | rows から自動収集 | select / set の候補。 |
 | `filterFn` | `(row: T, filterValue: unknown) => boolean` | — | カスタムフィルター述語。 |
-| `parseClipboardValue` | `(raw: string, row: T) => unknown` | — | 貼り付け時のパーサ。 |
+| `editor` | `GridColumnEditor<T>` | text 相当 | セルエディタ種別(判別共用体)。`{ type: 'text' \| 'number' \| 'select' \| 'date' \| 'checkbox' \| 'custom', ... }`。詳細は「セルエディタ」節。 |
+| `validate` | `(ctx: CellValidationContext<T>) => CellValidationResult` | — | セル値の検証。`true`=有効 / `false`=無効(既定メッセージ)/ `string`・`{ message }`=無効+メッセージ。**純粋・軽量であること**(描画中の可視セルごとに毎レンダー評価。`cellClassName` 関数と同コスト階級)。詳細は「バリデーション」節。 |
+| `validationMode` | `'mark' \| 'reject'` | `'mark'` | 検証 NG 時の動作。`'mark'`=値は入るがセルに invalid 表示 / `'reject'`=書き込み自体を拒否。 |
+| `parseClipboardValue` | `(raw: string, row: T) => unknown` | editor 既定パーサ | 「文字列 → セル値」のパーサ(貼り付け / クリア / エディタ commit で共通)。**明示指定が常に優先**。未指定で `editor` が number / date / checkbox のときは種別の既定パーサが自動供給されます(「セルエディタ」節の表参照)。 |
 | `formatClipboardValue` | `(value: unknown, row: T) => string` | — | コピー時のフォーマッタ。 |
 
 ### 値フォーマッタ(UI 表示)
@@ -260,6 +263,47 @@ const columns = [
   { key: 'amount', title: '金額', width: 140, align: 'right', valueFormatter: numberFormatter() },
 ];
 ```
+
+### セルエディタ(editor)
+
+`column.editor` で列のエディタ種別を指定します(未指定 = `text`)。判別共用体 `GridColumnEditor<T>` で、種別ごとの付随オプションは型で強制されます。編集可否は従来どおり `editable` / `readOnly` / `canEditCell` で判定されます(`editor` は種別のみ)。
+
+| type | UI / 操作 | オプション | 既定パーサ(`parseClipboardValue` 未指定時) |
+| --- | --- | --- | --- |
+| `'text'` | 従来のテキスト input(既定) | — | パススルー(生文字列のまま) |
+| `'number'` | `<input type="number">`(スピナー / ↑↓ステップ / 不正文字抑止) | `min` / `max` / `step` | `''`→`null` / 有限数値文字列→`number` / 非数値→生文字列のまま(mark が拾う) |
+| `'select'` | 候補ドロップダウン(body 直下ポータル)。↑↓=ハイライト移動 / Enter=確定(下へ)/ Tab=確定(左右へ)/ クリック=確定 / 印字キー=label 前方一致のタイプアヘッド(約 700ms でリセット) | `options: GridSelectEditorOption[] \| (row) => GridSelectEditorOption[]`(静的 or 行依存。関数はレンダー中に呼ばれるため純粋であること) | パススルー(`option.value` は string。型変換したい場合は `parseClipboardValue` を併用) |
+| `'date'` | ネイティブ `<input type="date">`。ドラフトは `'YYYY-MM-DD' \| ''` | — | `''`→`null` / 解釈可能→`'YYYY-MM-DD'` へ正規化 / 解釈不可→生文字列のまま |
+| `'checkbox'` | **直接トグル**(編集セッションなし)。クリック / Space で即トグル。Enter / F2 / ダブルクリックではエディタが開かない | `checkedValue`(既定 `true`)/ `uncheckedValue`(既定 `false`)。checked 判定は `Object.is(value, checkedValue)` のみ | `''`→unchecked / checked・unchecked の文字列表現→対応値 / `'true'`・`'1'`→checked / その他→unchecked |
+| `'custom'` | `render(ctx)` の返り値を編集オーバーレイ内に描画。**フォーカス管理・キーバインドは利用側の責務** | `render: (ctx: CellEditorContext<T>) => ReactNode` | パススルー |
+
+注意点:
+
+- **既定パーサはエディタ commit / 貼り付け / Delete クリアで共通**に効きます(例: number 列は Delete クリアで `null` になる)。明示の `parseClipboardValue` が常に優先です。
+- **select の blur は cancel**(値不変)です。text / number / date の blur = 確定と非対称ですが、select は「選択 = 即確定」でドラフト概念がないためです。
+- **date の Tab はグリッド流(確定 + 移動)**です。ピッカー内のセグメント移動は ← → 矢印で行えます。
+- **checkbox のダブルクリックは click 2 回**(トグル往復)として扱われます(Excel / AG Grid と同様)。`renderCell` 指定時はそちらが優先され、組み込みチェックボックスセルは描画されません。
+- **custom の `ctx.commit(value)`** は、`value` が string なら列パーサ(`parseClipboardValue` ?? editor 既定)を通し、**非 string ならパースをバイパスしてドメイン値をそのまま書き込みます**。`ctx` には `row` / `rowIndex`(ビュー行)/ `colIndex` / `column` / `value`(編集開始時の生値)/ `initialText`(印字キー開始時はそのキー)/ `align` / `commit` / `cancel` が入ります。`commit` の返り値(`EditorCommitResult`)で reject 列の検証結果を受け取れます(無視しても安全)。
+
+### バリデーション(validate / validationMode)
+
+`column.validate` でセル値を検証します。返り値は `true`(有効)/ `false`(無効・既定メッセージ)/ `string` または `{ message }`(無効 + メッセージ)。
+
+動作モード(`validationMode`、既定 `'mark'`):
+
+- **`'mark'`(既定)** — 値は書き込み、セルに invalid 表示(背景 + 右上マーカー)+ ホバーでメッセージのツールチップを出します。invalid 判定は**表示時導出**(state 非保持)のため、貼り付け・クリア・初期データ・undo/redo・外部からの `rows` 差し替え後も常に `rows` と整合します。
+- **`'reject'`** — 検証 NG の書き込み自体を拒否します。経路ごとの挙動:
+  - エディタ確定(Enter / Tab): **確定拒否・編集継続**。エディタ枠が赤くなり、即時のエラーバブルでメッセージを表示します。blur(フォーカスが外れた)の場合は cancel(値不変でエディタを閉じる)へフォールバックします。
+  - 貼り付け: 検証 NG の**セルだけスキップ**します(他のセルは書き込まれる。readonly セルのスキップと同じ意味論)。
+  - Delete / Backspace クリア: クリア値が検証 NG ならスキップします(「必須列は Delete で空にできない」を表現できます)。
+  - `renderCell` の `setValue` / checkbox トグル: no-op になります。
+
+契約と注意:
+
+- `validate` は**純粋・軽量**であること。mark 表示のため、描画中の可視セル(validate 指定列のみ)ごとに毎レンダー評価されます(`cellClassName` 関数と同じコスト階級)。
+- 検証コンテキストは `{ value, row, column }` です(`row` は書き込み前の行。ビュー index はソート / フィルターで不安定なため渡しません)。
+- 保存前の一括チェックはハンドルの `getInvalidCells()` を使います(「命令的 API」節参照)。
+- invalid 表示の配色はトークン `--ssg-invalid` / `--ssg-invalid-bg` で調整できます(light / dark 両対応)。
 
 ### flex と autoSize(列幅の決め方)
 
@@ -440,6 +484,12 @@ const gridRef = useRef<SpreadsheetGridHandle<Row>>(null);
 - ペーストの行自動拡張(`createRow`)も rows の一部なので undo で戻る。一方、列自動拡張(`createOverflowColumn` → `onColumnsChange`)は列が対象のため undo では戻らない。
 - 編集エディタ内(`editingCell` 中)の `Ctrl+Z` はグリッドでは扱わず、input のネイティブ undo が効く。IME 変換中(`isComposing`)もグリッド側では発火しない。
 - 可否の変化をリアクティブに受けたい場合は props の `onUndoRedoStateChange` を使う(`canUndo()` / `canRedo()` はポーリング用の命令的 API)。
+
+### バリデーション
+
+| メソッド | 説明 |
+| --- | --- |
+| `getInvalidCells()` | `validate` 指定列 × 全ソース行をオンデマンドで全走査し、invalid セルの一覧(`GridInvalidCell[]` = `{ rowKey, sourceRowIndex, columnKey, message }`)を返す。保存前チェック用。invalid 表示は表示時導出のため状態を持たず、**呼ばれた時だけ計算**する(明示的な呼び出し = 明示的なコスト)。非表示列も対象(見えない列の不正値も検出)。clientSide 専用で、serverSide は全行を保持しないため空配列 + `console.warn`。 |
 
 ### CSV エクスポート
 

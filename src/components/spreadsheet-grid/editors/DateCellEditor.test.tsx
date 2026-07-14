@@ -24,7 +24,13 @@ const renderDateEditor = (value: unknown = '2026-07-14') => {
       leadingWidth={56}
       initialValue={String(value ?? '')}
       editor={{ type: 'date' }}
-      editorSession={{ row: { orderedAt: value }, rowIndex: 0, colIndex: 0, value }}
+      editorSession={{
+        row: { orderedAt: value },
+        rowIndex: 0,
+        colIndex: 0,
+        column: { key: 'orderedAt', width: 140 },
+        value,
+      }}
       onCommit={onCommit}
       onCancel={onCancel}
     />,

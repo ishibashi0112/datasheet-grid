@@ -121,7 +121,13 @@ describe('エディタの reject 継続(validation)', () => {
             { value: 'b', label: 'B' },
           ],
         }}
-        editorSession={{ row: { id: 1 }, rowIndex: 0, colIndex: 0, value: 'a' }}
+        editorSession={{
+          row: { id: 1 },
+          rowIndex: 0,
+          colIndex: 0,
+          column: { key: 'id', width: 80 },
+          value: 'a',
+        }}
         onCommit={onCommit}
         onCancel={onCancel}
       />,
