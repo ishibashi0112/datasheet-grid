@@ -1,5 +1,9 @@
 import { useState, type CSSProperties, type ReactNode } from 'react';
-import type { EditorCommitDirection, GridColumnEditor } from './model/gridTypes';
+import type {
+  EditorCommitDirection,
+  EditorCommitResult,
+  GridColumnEditor,
+} from './model/gridTypes';
 import { TextCellEditor } from './editors/TextCellEditor';
 import { NumberCellEditor } from './editors/NumberCellEditor';
 import { SelectCellEditor } from './editors/SelectCellEditor';
@@ -51,7 +55,12 @@ type CellEditorLayerProps<T> = {
   // 変更(editor 基盤): value を unknown 化しました。組み込みエディタはドラフト文字列を、
   //   将来のカスタムエディタは型付きのドメイン値を直接渡せます(string は commit 側で
   //   列パーサを通し、非 string はそのまま書き込む共通規則 = logic/editorValues.ts)。
-  onCommit: (value: unknown, direction?: EditorCommitDirection) => void;
+  // 変更(validation): 結果(committed / rejected / noop)を返せます。rejected は reject 列の
+  //   検証 NG で、各エディタがエラー表示 + 編集継続で扱います(void 戻りも許容)。
+  onCommit: (
+    value: unknown,
+    direction?: EditorCommitDirection,
+  ) => EditorCommitResult | void;
   onCancel: () => void;
   // 追加(③): 編集 input の text-align。列 align に追従(右寄せ数値列を編集中も右寄せ維持)。
   align?: 'left' | 'center' | 'right';

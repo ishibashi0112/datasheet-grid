@@ -116,6 +116,9 @@
     --ssg-tooltip-bg: #1e293b;
     --ssg-tooltip-text: #f8fafc;
     --ssg-tooltip-shadow: 0 4px 12px rgba(2, 6, 23, 0.25);
+    /* バリデーション(validation): invalid セル / reject エラーバブル */
+    --ssg-invalid: #ef4444;
+    --ssg-invalid-bg: rgba(239, 68, 68, 0.08);
     /* その他 */
     --ssg-drop-indicator: #0f172a;
     --ssg-glyph-faint: #cbd5e1;
@@ -245,6 +248,9 @@
     --ssg-tooltip-bg: #373a40;
     --ssg-tooltip-text: #f1f3f5;
     --ssg-tooltip-shadow: 0 4px 12px rgba(0, 0, 0, 0.45);
+    /* バリデーション */
+    --ssg-invalid: #f87171;
+    --ssg-invalid-bg: rgba(248, 113, 113, 0.14);
     /* その他 */
     --ssg-drop-indicator: #c1c2c5;
     --ssg-skeleton-bar: #2c2e33;
@@ -570,6 +576,50 @@
   }
   .ssg-cell-checkbox[aria-disabled='true'] {
     cursor: default;
+  }
+
+  /* ── バリデーション(validation) ── */
+  /* mark 表示: invalid セルの背景 + 右上三角マーカー(表示時導出のため常に rows と整合)。
+     メッセージはカスタムツールチップ(data-ssg-tooltip)で hover 表示。 */
+  .ssg-body-cell--invalid {
+    background-color: var(--ssg-invalid-bg);
+  }
+  .ssg-body-cell--invalid::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    right: 0;
+    border-top: 6px solid var(--ssg-invalid);
+    border-left: 6px solid transparent;
+    pointer-events: none;
+  }
+  /* reject 表示: エディタ input の枠色 + 即時エラーバブル(hover 遅延のある tooltip は使わない)。
+     バブルはエディタ wrapper(.ssg-cell-editor / absolute)基準で下側、ビューポート下端では
+     --above 修飾子で上側へフリップ。 */
+  .ssg-cell-editor-input--invalid {
+    border-color: var(--ssg-invalid);
+  }
+  .ssg-cell-editor-error {
+    position: absolute;
+    top: calc(100% + 4px);
+    left: 0;
+    max-width: 280px;
+    padding: 4px 8px;
+    border-radius: 6px;
+    font-size: 12px;
+    line-height: 1.5;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    color: #ffffff;
+    background-color: var(--ssg-invalid);
+    box-shadow: var(--ssg-popover-shadow);
+    pointer-events: none;
+    z-index: 6;
+  }
+  .ssg-cell-editor-error--above {
+    top: auto;
+    bottom: calc(100% + 4px);
   }
 
   /* ── バー(ツールバー / ステータスバー) ── */

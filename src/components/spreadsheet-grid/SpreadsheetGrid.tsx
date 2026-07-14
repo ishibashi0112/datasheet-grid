@@ -235,6 +235,7 @@ import { getCellValue, isCellEditable } from './utils/permissions';
 import { writeRowsCell } from './logic/editorValues';
 import { isCheckboxChecked, toggleCheckboxValue } from './logic/checkboxEditor';
 import { CheckboxCell } from './editors/CheckboxCell';
+import { decideCellWrite, scanInvalidCells } from './logic/validation';
 import ColumnFilterPopover from './view/ColumnFilterPopover';
 // 追加(反転set): set 選択状態 { mode, values } 型と mode 判定ヘルパです。
 //   変更(LINT-1): react-refresh 制約解消のため logic/setFilterSelection.ts へ移設しました。
@@ -2165,6 +2166,10 @@ export function SpreadsheetGrid<T extends object>({
         getCellValue(row, column),
         column.editor,
       );
+      // 追加(validation): reject 列は検証 NG のトグルを no-op に倒します(経路 D)。
+      if (decideCellWrite(column, row, nextValue).action === 'reject') {
+        return;
+      }
       handleRowsChange(writeRowsCell(rows, originalRowIndex, column, nextValue));
     },
     [canEditCell, handleRowsChange, orderedColumns, readOnly, rowModel, rows],
@@ -3642,6 +3647,11 @@ export function SpreadsheetGrid<T extends object>({
             if (originalRowIndex === undefined) {
               return;
             }
+            // 追加(validation): reject 列は検証 NG の書き込みを no-op に倒します(経路 D。
+            //   setValue はパースを通らないドメイン値直書きのため、ここが唯一のガードです)。
+            if (decideCellWrite(column, row, nextValue).action === 'reject') {
+              return;
+            }
             // 変更(editor 基盤): rows 再構築を logic/editorValues.ts の writeRowsCell へ集約しました。
             const nextRows = writeRowsCell(rows, originalRowIndex, column, nextValue);
             handleRowsChange(nextRows);
@@ -4080,6 +4090,8 @@ export function SpreadsheetGrid<T extends object>({
     //   serverSide での 'raw' → 'view' フォールバック判定に使います。
     rows: T[];
     isServerSide: boolean;
+    // 追加(validation): getInvalidCells の rowKey 解決に使います(source index 基準)。
+    resolvedRowKeyGetter: (row: T, sourceRowIndex: number) => GridRowKey;
     // 追加(FM-3): 安定ハンドル(useImperativeHandle deps [])から最新の controller コールバック
     //   を読むための搭載です(stale closure 回避)。既存の単一 render 代入に載せるだけなので、
     //   ESLint の render ref-write は増えません(commitRowSelectionRef と同趣旨の最新参照)。
@@ -4113,6 +4125,7 @@ export function SpreadsheetGrid<T extends object>({
     physicalBodyHeight,
     rows,
     isServerSide,
+    resolvedRowKeyGetter,
     // 変更(UP-1): 公開 API openFilterManager / closeFilterManager は統合ツールパネルの
     //   フィルタータブへ委譲します(名前・意味は従来どおり)。close は「フィルタータブ
     //   表示中」のときだけ閉じます(別タブ表示中の統合パネルを巻き込まないため。従来の
@@ -4644,6 +4657,24 @@ export function SpreadsheetGrid<T extends object>({
         canRedo: () => apiStateRef.current?.canRedoRows() ?? false,
         clearUndoHistory: () => {
           apiStateRef.current?.clearUndoHistory();
+        },
+
+        // ── バリデーション ──
+        // 追加(validation): validate 指定列 × 全ソース行のオンデマンド全走査です(保存前チェック用)。
+        //   invalid 表示は表示時導出のため状態を持たず、本メソッドは呼ばれた時だけ計算します。
+        //   clientSide 専用(serverSide は全行を保持しないため空配列 + warn)。
+        getInvalidCells: () => {
+          const s = apiStateRef.current;
+          if (!s) {
+            return [];
+          }
+          if (s.isServerSide) {
+            console.warn(
+              '[SpreadsheetGrid] getInvalidCells は serverSide モードでは利用できません(空配列を返します)。',
+            );
+            return [];
+          }
+          return scanInvalidCells(s.rows, s.columns, s.resolvedRowKeyGetter);
         },
 
         // ── UI パネル(FM-3)──

@@ -3,11 +3,13 @@ import { gridActions, type GridUiAction } from '../model/gridActions';
 import type {
   CellCoord,
   EditorCommitDirection,
+  EditorCommitResult,
   GridColumn,
   GridUiState,
   RowModel,
 } from '../model/gridTypes';
 import { parseCommittedValue, writeRowsCell } from '../logic/editorValues';
+import { decideCellWrite } from '../logic/validation';
 
 type UseGridEditControllerArgs<T extends object> = {
   uiState: GridUiState;
@@ -74,10 +76,15 @@ export const useGridEditController = <T extends object>({
   //   commitEdit → CellEditorLayer props の参照も毎回変わっていました）。
   // 変更(editor 基盤): committedValue を unknown 化しました。string は列パーサを通し、
   //   非 string はドメイン値としてそのまま書き込みます(logic/editorValues.ts の共通規則)。
+  // 変更(validation): 結果(committed / rejected / noop)を返します。rejected は reject 列の
+  //   検証 NG で、確定を拒否してエディタを継続します(呼び出し側のエラー表示用)。
   const commitEdit = useCallback(
-    (committedValue: unknown, direction?: EditorCommitDirection) => {
+    (
+      committedValue: unknown,
+      direction?: EditorCommitDirection,
+    ): EditorCommitResult => {
       if (editorActionGuardRef.current || !uiState.editingCell) {
-        return;
+        return { status: 'noop' };
       }
 
       const editingCell = uiState.editingCell;
@@ -101,11 +108,18 @@ export const useGridEditController = <T extends object>({
       const row = rows[originalRowIndex];
       if (!column || !row) {
         dispatch(gridActions.stopEdit());
-        return;
+        return { status: 'noop' };
       }
 
       if (onRowsChange) {
         const parsedValue = parseCommittedValue(column, committedValue, row);
+        // 追加(validation): reject 列は検証 NG の確定を拒否し、エディタを継続します。
+        //   繊細な後続機構(editorActionGuardRef / rAF フォーカス復帰 / stopEdit)には一切
+        //   触れずに return します(guard を立てると継続編集後の commit が無視されるため)。
+        const decision = decideCellWrite(column, row, parsedValue);
+        if (decision.action === 'reject') {
+          return { status: 'rejected', message: decision.message };
+        }
         const nextRows = writeRowsCell(rows, originalRowIndex, column, parsedValue);
         onRowsChange(nextRows);
       }
@@ -118,6 +132,7 @@ export const useGridEditController = <T extends object>({
       });
 
       dispatch(gridActions.stopEdit());
+      return { status: 'committed' };
     },
     [
       activateSingleCell,

@@ -340,6 +340,40 @@ export type GridColumnEditor<T> =
       uncheckedValue?: unknown; // 既定 false
     };
 
+// 追加(validation): セル編集バリデーションの動作モードです。
+//   'mark'(既定): 検証 NG でも値は書き込み、セルに invalid 表示 + メッセージツールチップを出します
+//     (ペースト / クリア / 初期データ / undo 復元後も rows と常に整合する表示時導出)。
+//   'reject': 検証 NG の書き込み自体を拒否します(エディタ commit は確定拒否・編集継続、
+//     ペースト / クリアは該当セルのみスキップ、renderCell setValue / checkbox トグルは no-op)。
+export type GridValidationMode = 'mark' | 'reject';
+
+// 追加(validation): validate へ渡す検証コンテキストです。row は書き込み前の行です
+//   (ビュー index はソート / フィルターで不安定なため渡しません)。
+export type CellValidationContext<T> = {
+  value: unknown;
+  row: T;
+  column: GridColumn<T>;
+};
+
+// 追加(validation): validate の返り値です。true = 有効 / false = 無効(既定メッセージ)/
+//   string・{ message } = 無効 + メッセージ。
+export type CellValidationResult = boolean | string | { message: string };
+
+// 追加(validation): getInvalidCells が返す invalid セルの記述子です(source 行基準)。
+export type GridInvalidCell = {
+  rowKey: GridRowKey;
+  sourceRowIndex: number;
+  columnKey: string;
+  message: string;
+};
+
+// 追加(validation): エディタ commit の結果です。'rejected' は reject 列の検証 NG
+//   (確定拒否・エディタ継続)、'noop' は二重発火ガード等で何もしなかったことを表します。
+export type EditorCommitResult =
+  | { status: 'committed' }
+  | { status: 'rejected'; message: string }
+  | { status: 'noop' };
+
 // 追加: 列定義です。将来のカスタムセル/カスタムヘッダー拡張を見据えています。
 export type GridColumn<T> = {
   key: string;
@@ -407,6 +441,11 @@ export type GridColumn<T> = {
   // 追加(editor 基盤): セルエディタ種別です。未指定は text(プレーンテキスト編集)。
   //   編集可否は従来どおり editable / readOnly / canEditCell で判定されます(editor は種別のみ)。
   editor?: GridColumnEditor<T>;
+  // 追加(validation): セル値の検証関数です。純粋・軽量であること(cellClassName 関数と同じ
+  //   コスト階級で、描画中の可視セルごとに毎レンダー評価されます)。
+  validate?: (ctx: CellValidationContext<T>) => CellValidationResult;
+  // 追加(validation): 検証 NG 時の動作です。既定 'mark'(値は入るが invalid 表示)。
+  validationMode?: GridValidationMode;
   parseClipboardValue?: (raw: string, row: T) => unknown;
   formatClipboardValue?: (value: unknown, row: T) => string;
 };
@@ -842,6 +881,13 @@ export type SpreadsheetGridHandle<T> = {
   // 編集履歴を破棄します(rows は変更しません)。rows を外部から大きく差し替える前などに
   //   明示的に呼べますが、外部差し替えはグリッド側でも自動検知して履歴を破棄します。
   clearUndoHistory: () => void;
+
+  // ── バリデーション ──
+  // 追加(validation): validate 指定列 × 全ソース行のオンデマンド全走査です(保存前チェック用)。
+  //   invalid 表示は表示時導出のため状態を持たず、本メソッドは呼ばれた時だけ計算します
+  //   (明示的な呼び出し = 明示的なコスト)。clientSide 専用で、serverSide は全行を保持しない
+  //   ため空配列を返します(console.warn 付き)。
+  getInvalidCells: () => GridInvalidCell[];
 
   // ── UI パネル(FM-3)──
   // フィルター管理パネル(FM-1: 適用中の列フィルターの一覧 / ジャンプ編集 / 個別・全クリア /

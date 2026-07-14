@@ -9,8 +9,10 @@ import { useCallback, useEffect, useRef, useState, type KeyboardEvent } from 're
 import { createPortal } from 'react-dom';
 import type {
   EditorCommitDirection,
+  EditorCommitResult,
   GridSelectEditorOption,
 } from '../model/gridTypes';
+import { CellEditorErrorBubble } from './CellEditorErrorBubble';
 import {
   computeSelectPopoverPlacement,
   createTypeaheadState,
@@ -25,7 +27,10 @@ type SelectCellEditorProps = {
   options: GridSelectEditorOption[];
   // 編集開始時のセル生値です(初期ハイライトの解決に使用)。
   value: unknown;
-  onCommit: (value: unknown, direction?: EditorCommitDirection) => void;
+  onCommit: (
+    value: unknown,
+    direction?: EditorCommitDirection,
+  ) => EditorCommitResult | void;
   onCancel: () => void;
   align?: 'left' | 'center' | 'right';
   // ポータル root へ直接付与するテーマ修飾子('ssg-theme-dark' | undefined)です。
@@ -47,6 +52,8 @@ export function SelectCellEditor({
     resolveInitialHighlight(options, value),
   );
   const [placement, setPlacement] = useState<SelectPopoverPlacement | null>(null);
+  // 追加(validation): reject 列の検証 NG メッセージです(表示中も選択操作は継続できます)。
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   // アンカー(インセル input)の callback ref です。マウント時にフォーカスし初期配置を計測します
   //   (effect 冒頭 setState の lint 制約を避けるため、計測は ref callback とイベントリスナ内
@@ -104,13 +111,21 @@ export function SelectCellEditor({
     optionElement?.scrollIntoView?.({ block: 'nearest' });
   }, [highlight]);
 
+  // 追加(validation): rejected はエラーバブルを表示して選択を継続します。
+  const commitValue = (optionValue: string, direction?: EditorCommitDirection) => {
+    const result = onCommit(optionValue, direction);
+    if (result && result.status === 'rejected') {
+      setErrorMessage(result.message);
+    }
+  };
+
   const commitHighlighted = (direction?: EditorCommitDirection) => {
     const option = options[highlight];
     if (!option) {
       onCancel();
       return;
     }
-    onCommit(option.value, direction);
+    commitValue(option.value, direction);
   };
 
   const handleKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
@@ -123,6 +138,7 @@ export function SelectCellEditor({
       event.preventDefault();
       const delta = event.key === 'ArrowDown' ? 1 : -1;
       setHighlight((current) => moveHighlight(current, delta, options.length));
+      setErrorMessage(null);
       return;
     }
 
@@ -161,6 +177,7 @@ export function SelectCellEditor({
       typeaheadRef.current = result.state;
       if (result.index !== null) {
         setHighlight(result.index);
+        setErrorMessage(null);
       }
     }
   };
@@ -176,9 +193,15 @@ export function SelectCellEditor({
         value={highlightedOption?.label ?? String(value ?? '')}
         onKeyDown={handleKeyDown}
         onBlur={() => onCancel()}
-        className="ssg-cell-editor-input ssg-cell-editor-input--select"
+        className={cx(
+          'ssg-cell-editor-input ssg-cell-editor-input--select',
+          errorMessage !== null && 'ssg-cell-editor-input--invalid',
+        )}
         style={align ? { textAlign: align } : undefined}
       />
+      {errorMessage !== null ? (
+        <CellEditorErrorBubble message={errorMessage} />
+      ) : null}
       {placement
         ? createPortal(
             <div
@@ -209,7 +232,7 @@ export function SelectCellEditor({
                       index === highlight &&
                         'ssg-select-editor-option--highlighted',
                     )}
-                    onClick={() => onCommit(option.value)}
+                    onClick={() => commitValue(option.value)}
                     onPointerEnter={() => setHighlight(index)}
                   >
                     {option.label}

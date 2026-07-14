@@ -19,6 +19,13 @@ export type {
   EditorCommitDirection,
   // 追加(editor: select): select エディタの候補型(GridSelectFilterOption と同一形)。
   GridSelectEditorOption,
+  // 追加(validation): セル編集バリデーションの公開型族(GridColumn.validate / validationMode、
+  //   handle.getInvalidCells、エディタ commit の結果)。
+  GridValidationMode,
+  CellValidationContext,
+  CellValidationResult,
+  GridInvalidCell,
+  EditorCommitResult,
   // 行キー。
   GridRowKey,
   // select / set フィルターの候補。

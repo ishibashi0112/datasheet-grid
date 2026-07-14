@@ -24,6 +24,7 @@ import type {
 import { resolveIsRowSelected } from '../logic/rowSelection';
 // 追加: 省略時ツールチップのマーカー付与判定(純関数)です。
 import { shouldMarkCellOverflowTooltip } from '../logic/cellOverflowTooltip';
+import { getInvalidMessage } from '../logic/validation';
 import { RowSelectionCheckbox } from './RowSelectionCheckbox';
 // 変更(10-C): 列座標を ColumnMeasurement(グローバル) から
 //             PaneColumnEntry(ペインローカル) へ切り替えます。
@@ -281,6 +282,14 @@ function GridBodyRowInner<T>({
                 })
               : columnCellClassName;
         }
+        // 追加(validation): mark 表示の導出です。validate 指定列だけ値解決して評価します
+        //   (未指定列は無コスト)。state を持たないため、undo/redo・外部 rows 差し替え後も
+        //   常に rows と整合します。メッセージはカスタムツールチップ(data-ssg-tooltip)で
+        //   表示します(静的属性は overflow マーカーより優先される仕様)。
+        const invalidMessage = column.validate
+          ? getInvalidMessage(column, row, getCellValue(row, column))
+          : null;
+
         const cellClassName = cx(
           'ssg-body-cell',
           // 追加(③): セル内容の水平寄せ(align)。未指定は従来どおり左。
@@ -288,6 +297,7 @@ function GridBodyRowInner<T>({
           column.align === 'right' && 'ssg-body-cell--align-right',
           isAutoHeightCell && 'ssg-body-cell--autoheight',
           readOnlyCell && !isSelected && 'ssg-body-cell--readonly',
+          invalidMessage !== null && 'ssg-body-cell--invalid',
           isRowHovered && 'ssg-body-cell--row-hovered',
           rowClassName,
           conditionalCellClass,
@@ -315,6 +325,7 @@ function GridBodyRowInner<T>({
             key={`${String(rowKey)}-${column.key}`}
             data-ssg-col-key={column.key}
             data-autoheight-cell={isAutoHeightCell ? '' : undefined}
+            data-ssg-tooltip={invalidMessage ?? undefined}
             data-ssg-tooltip-overflow={markOverflowTooltip ? '' : undefined}
             className={cellClassName}
             onPointerDown={(event) =>

@@ -106,7 +106,7 @@ describe('SelectCellEditor', () => {
     const optionElements = popover.querySelectorAll('[role="option"]');
     fireEvent.click(optionElements[0]);
     expect(onCommit).toHaveBeenCalledTimes(1);
-    expect(onCommit).toHaveBeenCalledWith('apple');
+    expect(onCommit).toHaveBeenCalledWith('apple', undefined);
   });
 
   it('IME 変換中(isComposing)の Enter は commit しない', () => {

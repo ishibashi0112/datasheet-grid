@@ -6,6 +6,7 @@ import {
 } from '../model/gridSelectors';
 import { getCellValue, setCellValue } from './permissions';
 import { resolveCellParser } from '../logic/editorValues';
+import { decideCellWrite } from '../logic/validation';
 
 // 追加: TSV の行列データ型です。
 export type ClipboardMatrix = string[][];
@@ -186,6 +187,13 @@ export const applyClipboardMatrixToRows = <T extends object,>(
       const rawValue = matrix[rowOffset][colOffset];
       // 変更(editor 基盤): パーサ解決を logic/editorValues.ts の共通規則へ集約しました。
       const parsedValue = resolveCellParser(column)(rawValue, currentRow);
+
+      // 追加(validation): reject 列は検証 NG のセルのみスキップします(readonly セルの
+      //   canWriteCell skip と同じ意味論 — reject 列の「不正値は決して入らない」契約を
+      //   ペースト経由でも維持します)。mark 列(既定)はそのまま書き込みます。
+      if (decideCellWrite(column, currentRow, parsedValue).action === 'reject') {
+        continue;
+      }
 
       nextRow = setCellValue(nextRow, column, parsedValue);
       rowChanged = true;

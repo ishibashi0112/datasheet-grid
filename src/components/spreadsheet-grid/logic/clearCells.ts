@@ -13,6 +13,7 @@ import {
 import { clamp } from './geometry';
 import { getCellValue, setCellValue } from '../utils/permissions';
 import { resolveCellParser } from './editorValues';
+import { decideCellWrite } from './validation';
 
 // クリア対象のビュー座標レンジです(両端 inclusive)。対象なしは null。
 type ClearTarget = {
@@ -151,6 +152,11 @@ export const clearCellsInSelection = <T extends object>({
       const clearedValue = resolveCellParser(column)('', currentRow);
       // 既にクリア値と同値なら書き込まず、no-op エントリを避けます。
       if (Object.is(getCellValue(nextRow, column), clearedValue)) {
+        continue;
+      }
+      // 追加(validation): reject 列はクリア値が検証 NG ならスキップします
+      //   (「必須列は Delete で空にできない」を表現)。mark 列(既定)は従来どおりクリア。
+      if (decideCellWrite(column, currentRow, clearedValue).action === 'reject') {
         continue;
       }
       nextRow = setCellValue(nextRow, column, clearedValue);
