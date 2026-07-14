@@ -1,11 +1,7 @@
-import {
-  useEffect,
-  useRef,
-  useState,
-  type CSSProperties,
-  type KeyboardEvent,
-} from 'react';
-import type { EditorCommitDirection } from './model/gridTypes';
+import { useState, type CSSProperties } from 'react';
+import type { EditorCommitDirection, GridColumnEditor } from './model/gridTypes';
+import { TextCellEditor } from './editors/TextCellEditor';
+import { NumberCellEditor } from './editors/NumberCellEditor';
 
 // 変更(editor 基盤): EditorCommitDirection は model/gridTypes.ts へ移設しました(公開型化)。
 //   既存 import 互換のため re-export を残します。
@@ -29,10 +25,12 @@ type CellEditorLayerProps = {
   //   no-op では 0(従来と同一配置)。scaling 時のみ正値です(詳細は ActiveCellOverlay と同様)。
   baseOffset?: number;
   // 変更(11-B6): 親が持つのは「編集開始時の初期値」だけになりました。
-  //              毎キーストロークのドラフト値は本コンポーネントのローカル state で管理し、
+  //              毎キーストロークのドラフト値は各エディタのローカル state で管理し、
   //              親(SpreadsheetGrid)へは commit 時に最終値だけを渡します。
   //              これにより編集中のタイピングで親（＝3ペイン全体）が再レンダーされなくなります。
   initialValue: string;
+  // 追加(editor 基盤): 編集中列のエディタ種別です。未指定は text(従来と同一)。
+  editor?: GridColumnEditor;
   // 変更(11-B6): (direction?) → (value, direction?) に変更。確定値を引数で受け取ります。
   // 変更(editor 基盤): value を unknown 化しました。組み込みエディタはドラフト文字列を、
   //   将来のカスタムエディタは型付きのドメイン値を直接渡せます(string は commit 側で
@@ -43,51 +41,39 @@ type CellEditorLayerProps = {
   align?: 'left' | 'center' | 'right';
 };
 
-// 追加: 編集中セルの上に input を重ねる editor layer です。
+// 追加: 編集中セルの上にエディタを重ねる editor layer です。
 // 変更(10-D): ペイン別座標系に対応。
-// 変更(11-B6): ドラフト値をローカル state 化しました（コントロールドのまま、状態の置き場だけ移動）。
+// 変更(editor 基盤): 単一 input からエディタ種別ディスパッチ層になりました。本コンポーネントは
+//   「座標計算・セッション検知・種別分岐」だけを担い、input 実体とドラフト state は
+//   editors/ 配下の各エディタが持ちます。
 export function CellEditorLayer({
   rect,
   headerHeight,
   leadingWidth,
   baseOffset = 0,
   initialValue,
+  editor,
   onCommit,
   onCancel,
   align,
 }: CellEditorLayerProps) {
-  const inputRef = useRef<HTMLInputElement | null>(null);
-
-  // 追加(11-B6): 編集中のドラフト値です。タイピングはこの state だけを更新します。
-  const [draftValue, setDraftValue] = useState('');
-
-  // 追加(11-B6): 「新しい編集セッションの開始」を rect の null → 非 null 遷移で検知し、
-  //              ドラフトを initialValue へリセットします。
-  // 実装メモ: これは React 公式ドキュメントの「レンダー中に過去の props と比較して
-  //   state を調整する」パターンです（effect ではなく render 中に setState することで、
-  //   古いドラフトが 1 フレームでも描画されるのを防ぎます。StrictMode 安全）。
-  //   commit / cancel で必ず rect が null に戻るため、「null → 非 null」は常に
-  //   新セッションを意味します。同一セルを連続編集（Esc キャンセル → 再 F2 等）しても
-  //   前回のドラフトが残りません。
+  // 変更(editor 基盤): 「新しい編集セッションの開始」検知を、ドラフト直接リセットから
+  //   sessionId カウンタ + key 再マウントへ置き換えました。rect の null → 非 null 遷移を
+  //   レンダー中に検知して sessionId を進め、子エディタを key={sessionId} で再マウントします。
+  //   各エディタは useState(initialValue) で素直にドラフトを初期化でき、同一セルの連続編集
+  //   (Esc → 再 F2 等)でも前回ドラフトが残りません。
+  // 実装メモ: 「レンダー中に過去の props と比較して state を調整する」React 公式パターンです
+  //   (StrictMode 安全・従来実装と同型)。commit / cancel で必ず rect が null に戻るため、
+  //   「null → 非 null」は常に新セッションを意味します。
   const isOpen = rect !== null;
   const [prevOpen, setPrevOpen] = useState(false);
+  const [sessionId, setSessionId] = useState(0);
   if (isOpen !== prevOpen) {
     setPrevOpen(isOpen);
     if (isOpen) {
-      setDraftValue(initialValue);
+      setSessionId(sessionId + 1);
     }
   }
-
-  // 追加: editor 表示時に自動フォーカスし、末尾へキャレット移動します。
-  useEffect(() => {
-    if (!rect || !inputRef.current) {
-      return;
-    }
-
-    inputRef.current.focus();
-    const end = inputRef.current.value.length;
-    inputRef.current.setSelectionRange(end, end);
-  }, [rect]);
 
   if (!rect) {
     return null;
@@ -103,47 +89,32 @@ export function CellEditorLayer({
     height: rect.height,
   };
 
-  // 追加: Enter で下、Tab で左右へ移動する方向付き commit を呼びます。
-  // 変更(11-B6): commit にローカルのドラフト値を引数で渡します。
-  const handleKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
-    // 追加(IME): 変換中(isComposing)の Enter / Escape / Tab は IME の確定・取り消し・
-    //   候補操作なので、セル編集の commit / cancel には使いません(日本語入力で変換確定の
-    //   Enter がセル確定まで巻き込む誤動作の防止)。変換確定後のキーは isComposing=false で
-    //   届くため、通常の commit / cancel は従来どおり動きます。
-    if (event.nativeEvent.isComposing) {
-      return;
-    }
-
-    if (event.key === 'Enter') {
-      event.preventDefault();
-      onCommit(draftValue, 'down');
-      return;
-    }
-
-    if (event.key === 'Escape') {
-      event.preventDefault();
-      onCancel();
-      return;
-    }
-
-    if (event.key === 'Tab') {
-      event.preventDefault();
-      onCommit(draftValue, event.shiftKey ? 'left' : 'right');
-    }
-  };
+  // 追加(editor 基盤): エディタ種別ディスパッチです。未指定 / 'text' は従来の text エディタ。
+  const editorNode =
+    editor?.type === 'number' ? (
+      <NumberCellEditor
+        key={sessionId}
+        initialValue={initialValue}
+        min={editor.min}
+        max={editor.max}
+        step={editor.step}
+        onCommit={onCommit}
+        onCancel={onCancel}
+        align={align}
+      />
+    ) : (
+      <TextCellEditor
+        key={sessionId}
+        initialValue={initialValue}
+        onCommit={onCommit}
+        onCancel={onCancel}
+        align={align}
+      />
+    );
 
   return (
     <div className="ssg-cell-editor" style={wrapperStyle}>
-      <input
-        ref={inputRef}
-        type="text"
-        value={draftValue}
-        onChange={(event) => setDraftValue(event.target.value)}
-        onKeyDown={handleKeyDown}
-        onBlur={() => onCommit(draftValue)}
-        className="ssg-cell-editor-input"
-        style={align ? { textAlign: align } : undefined}
-      />
+      {editorNode}
     </div>
   );
 }

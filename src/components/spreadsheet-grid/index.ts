@@ -14,6 +14,9 @@ export type {
   // 列定義と固定方向。
   GridColumn,
   GridColumnPinned,
+  // 追加(editor 基盤): セルエディタ種別(GridColumn.editor)と確定方向。
+  GridColumnEditor,
+  EditorCommitDirection,
   // 行キー。
   GridRowKey,
   // select / set フィルターの候補。

@@ -37,6 +37,31 @@ describe('resolveCellParser', () => {
     expect(parser('12', makeRow())).toBe(12);
     expect(parser('', makeRow())).toBeNull();
   });
+
+  it('editor:number の既定パーサ: 空→null / 数値→number / 非数値→生文字列のまま', () => {
+    const column: GridColumn<Row> = {
+      key: 'qty',
+      width: 80,
+      editor: { type: 'number' },
+    };
+    const parser = resolveCellParser(column);
+    expect(parser('', makeRow())).toBeNull();
+    expect(parser('12.5', makeRow())).toBe(12.5);
+    expect(parser('-3', makeRow())).toBe(-3);
+    expect(parser('abc', makeRow())).toBe('abc');
+    // 非有限(Infinity / NaN)は数値化せず生文字列のまま。
+    expect(parser('Infinity', makeRow())).toBe('Infinity');
+  });
+
+  it('editor:number でも parseClipboardValue 明示指定が勝つ', () => {
+    const column: GridColumn<Row> = {
+      key: 'qty',
+      width: 80,
+      editor: { type: 'number' },
+      parseClipboardValue: (raw) => `custom:${raw}`,
+    };
+    expect(resolveCellParser(column)('12', makeRow())).toBe('custom:12');
+  });
 });
 
 describe('parseCommittedValue', () => {

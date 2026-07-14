@@ -4793,6 +4793,7 @@ export function SpreadsheetGrid<T extends object>({
                   baseOffset={overlayBaseOffset}
                   leadingWidth={leftLeadingWidth}
                   initialValue={editorInitialValue}
+                  editor={editingColumn?.editor}
                   onCommit={commitEdit}
                   onCancel={cancelEdit}
                   align={editingColumn?.align}
@@ -4937,6 +4938,7 @@ export function SpreadsheetGrid<T extends object>({
                   baseOffset={overlayBaseOffset}
                   leadingWidth={centerLeadingWidth}
                   initialValue={editorInitialValue}
+                  editor={editingColumn?.editor}
                   onCommit={commitEdit}
                   onCancel={cancelEdit}
                   align={editingColumn?.align}
@@ -5073,6 +5075,7 @@ export function SpreadsheetGrid<T extends object>({
                   baseOffset={overlayBaseOffset}
                   leadingWidth={rightLeadingWidth}
                   initialValue={editorInitialValue}
+                  editor={editingColumn?.editor}
                   onCommit={commitEdit}
                   onCancel={cancelEdit}
                   align={editingColumn?.align}

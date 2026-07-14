@@ -297,6 +297,21 @@ export type CellValueFormatter<T> = (params: CellValueFormatterParams<T>) => str
 //   CellEditorLayer.tsx から移設しました(エディタ種別 API の公開型化に伴い model へ集約)。
 export type EditorCommitDirection = 'down' | 'right' | 'left';
 
+// 追加(editor 基盤): 列のセルエディタ種別です(判別キーは type。ColumnFilterValue の kind と
+//   同じ判別共用体の流儀で、種別ごとの付随オプションを型で強制します)。未指定は text と同じ
+//   既定エディタです。種別は段階的に追加します(select / date / checkbox / custom は後続)。
+export type GridColumnEditor =
+  | { type: 'text' }
+  | {
+      // 数値エディタ(<input type="number">)。min / max / step はネイティブ属性へ反映します。
+      //   既定パーサ: '' → null / 数値文字列 → number / 非数値 → 生文字列のまま
+      //   (parseClipboardValue 明示指定が常に優先。logic/editorValues.ts 参照)。
+      type: 'number';
+      min?: number;
+      max?: number;
+      step?: number;
+    };
+
 // 追加: 列定義です。将来のカスタムセル/カスタムヘッダー拡張を見据えています。
 export type GridColumn<T> = {
   key: string;
@@ -361,6 +376,9 @@ export type GridColumn<T> = {
   // 追加: select / set フィルター時の候補です。未指定時は rows から自動収集します。
   filterOptions?: GridSelectFilterOption[];
   filterFn?: (row: T, filterValue: unknown) => boolean;
+  // 追加(editor 基盤): セルエディタ種別です。未指定は text(プレーンテキスト編集)。
+  //   編集可否は従来どおり editable / readOnly / canEditCell で判定されます(editor は種別のみ)。
+  editor?: GridColumnEditor;
   parseClipboardValue?: (raw: string, row: T) => unknown;
   formatClipboardValue?: (value: unknown, row: T) => string;
 };
