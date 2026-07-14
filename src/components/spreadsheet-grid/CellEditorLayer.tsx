@@ -1,7 +1,8 @@
-import { useState, type CSSProperties } from 'react';
+import { useState, type CSSProperties, type ReactNode } from 'react';
 import type { EditorCommitDirection, GridColumnEditor } from './model/gridTypes';
 import { TextCellEditor } from './editors/TextCellEditor';
 import { NumberCellEditor } from './editors/NumberCellEditor';
+import { SelectCellEditor } from './editors/SelectCellEditor';
 
 // 変更(editor 基盤): EditorCommitDirection は model/gridTypes.ts へ移設しました(公開型化)。
 //   既存 import 互換のため re-export を残します。
@@ -15,7 +16,16 @@ type CellEditorRect = {
   height: number;
 };
 
-type CellEditorLayerProps = {
+// 追加(editor: select): 編集中セルのセッション情報です。SpreadsheetGrid が editingCell から
+//   解決して渡します(select の動的 options 解決・初期ハイライト、将来の custom エディタ ctx 用)。
+export type CellEditorSession<T> = {
+  row: T;
+  rowIndex: number;
+  colIndex: number;
+  value: unknown;
+};
+
+type CellEditorLayerProps<T> = {
   rect: CellEditorRect | null;
   headerHeight: number;
   // 変更(10-D): rowHeaderWidth → leadingWidth に一般化しました。
@@ -30,7 +40,11 @@ type CellEditorLayerProps = {
   //              これにより編集中のタイピングで親（＝3ペイン全体）が再レンダーされなくなります。
   initialValue: string;
   // 追加(editor 基盤): 編集中列のエディタ種別です。未指定は text(従来と同一)。
-  editor?: GridColumnEditor;
+  editor?: GridColumnEditor<T>;
+  // 追加(editor: select): 編集中セルのセッション情報(編集中のみ非 null)。
+  editorSession?: CellEditorSession<T> | null;
+  // 追加(editor: select): ポータル系エディタへ渡すテーマ修飾子('ssg-theme-dark' | undefined)。
+  themeClassName?: string;
   // 変更(11-B6): (direction?) → (value, direction?) に変更。確定値を引数で受け取ります。
   // 変更(editor 基盤): value を unknown 化しました。組み込みエディタはドラフト文字列を、
   //   将来のカスタムエディタは型付きのドメイン値を直接渡せます(string は commit 側で
@@ -46,17 +60,19 @@ type CellEditorLayerProps = {
 // 変更(editor 基盤): 単一 input からエディタ種別ディスパッチ層になりました。本コンポーネントは
 //   「座標計算・セッション検知・種別分岐」だけを担い、input 実体とドラフト state は
 //   editors/ 配下の各エディタが持ちます。
-export function CellEditorLayer({
+export function CellEditorLayer<T>({
   rect,
   headerHeight,
   leadingWidth,
   baseOffset = 0,
   initialValue,
   editor,
+  editorSession,
+  themeClassName,
   onCommit,
   onCancel,
   align,
-}: CellEditorLayerProps) {
+}: CellEditorLayerProps<T>) {
   // 変更(editor 基盤): 「新しい編集セッションの開始」検知を、ドラフト直接リセットから
   //   sessionId カウンタ + key 再マウントへ置き換えました。rect の null → 非 null 遷移を
   //   レンダー中に検知して sessionId を進め、子エディタを key={sessionId} で再マウントします。
@@ -90,8 +106,9 @@ export function CellEditorLayer({
   };
 
   // 追加(editor 基盤): エディタ種別ディスパッチです。未指定 / 'text' は従来の text エディタ。
-  const editorNode =
-    editor?.type === 'number' ? (
+  let editorNode: ReactNode;
+  if (editor?.type === 'number') {
+    editorNode = (
       <NumberCellEditor
         key={sessionId}
         initialValue={initialValue}
@@ -102,7 +119,28 @@ export function CellEditorLayer({
         onCancel={onCancel}
         align={align}
       />
-    ) : (
+    );
+  } else if (editor?.type === 'select') {
+    // 動的 options(行依存)は編集中の行で解決します(消費側関数はレンダー中に呼ばれるため純粋前提)。
+    const options =
+      typeof editor.options === 'function'
+        ? editorSession
+          ? editor.options(editorSession.row)
+          : []
+        : editor.options;
+    editorNode = (
+      <SelectCellEditor
+        key={sessionId}
+        options={options}
+        value={editorSession?.value}
+        onCommit={onCommit}
+        onCancel={onCancel}
+        align={align}
+        themeClassName={themeClassName}
+      />
+    );
+  } else {
+    editorNode = (
       <TextCellEditor
         key={sessionId}
         initialValue={initialValue}
@@ -111,6 +149,7 @@ export function CellEditorLayer({
         align={align}
       />
     );
+  }
 
   return (
     <div className="ssg-cell-editor" style={wrapperStyle}>

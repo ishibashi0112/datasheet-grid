@@ -2176,6 +2176,21 @@ export function SpreadsheetGrid<T extends object>({
     ? orderedColumns[uiState.editingCell.col]
     : undefined;
 
+  // 追加(editor: select): 編集中セルのセッション情報(行 / ビュー座標 / 生値)です。
+  //   CellEditorLayer へ渡し、select の動的 options 解決・初期ハイライトに使います(編集中のみ非 null)。
+  const editingRow = uiState.editingCell
+    ? rowModel.getRow(uiState.editingCell.row)
+    : undefined;
+  const editorSession =
+    uiState.editingCell && editingColumn && editingRow
+      ? {
+          row: editingRow,
+          rowIndex: uiState.editingCell.row,
+          colIndex: uiState.editingCell.col,
+          value: getCellValue(editingRow, editingColumn),
+        }
+      : null;
+
   const handleCellDoubleClickWithController = useCallback(
     (cell: CellCoord) => {
       // 変更(DS-3-5): filteredRows[cell.row] → rowModel.getRow 経由(double-click consumer 移行)。
@@ -4794,6 +4809,8 @@ export function SpreadsheetGrid<T extends object>({
                   leadingWidth={leftLeadingWidth}
                   initialValue={editorInitialValue}
                   editor={editingColumn?.editor}
+                  editorSession={editorSession}
+                  themeClassName={themeClassName}
                   onCommit={commitEdit}
                   onCancel={cancelEdit}
                   align={editingColumn?.align}
@@ -4939,6 +4956,8 @@ export function SpreadsheetGrid<T extends object>({
                   leadingWidth={centerLeadingWidth}
                   initialValue={editorInitialValue}
                   editor={editingColumn?.editor}
+                  editorSession={editorSession}
+                  themeClassName={themeClassName}
                   onCommit={commitEdit}
                   onCancel={cancelEdit}
                   align={editingColumn?.align}
@@ -5076,6 +5095,8 @@ export function SpreadsheetGrid<T extends object>({
                   leadingWidth={rightLeadingWidth}
                   initialValue={editorInitialValue}
                   editor={editingColumn?.editor}
+                  editorSession={editorSession}
+                  themeClassName={themeClassName}
                   onCommit={commitEdit}
                   onCancel={cancelEdit}
                   align={editingColumn?.align}

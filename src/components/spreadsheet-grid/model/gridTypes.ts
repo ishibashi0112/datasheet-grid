@@ -297,10 +297,14 @@ export type CellValueFormatter<T> = (params: CellValueFormatterParams<T>) => str
 //   CellEditorLayer.tsx から移設しました(エディタ種別 API の公開型化に伴い model へ集約)。
 export type EditorCommitDirection = 'down' | 'right' | 'left';
 
+// 追加(editor: select): select エディタの候補型です。select / set フィルターの候補
+//   (GridSelectFilterOption)と共有し、同じ配列を filterOptions と使い回せます。
+export type GridSelectEditorOption = GridSelectFilterOption;
+
 // 追加(editor 基盤): 列のセルエディタ種別です(判別キーは type。ColumnFilterValue の kind と
 //   同じ判別共用体の流儀で、種別ごとの付随オプションを型で強制します)。未指定は text と同じ
-//   既定エディタです。種別は段階的に追加します(select / date / checkbox / custom は後続)。
-export type GridColumnEditor =
+//   既定エディタです。種別は段階的に追加します(date / checkbox / custom は後続)。
+export type GridColumnEditor<T> =
   | { type: 'text' }
   | {
       // 数値エディタ(<input type="number">)。min / max / step はネイティブ属性へ反映します。
@@ -310,6 +314,15 @@ export type GridColumnEditor =
       min?: number;
       max?: number;
       step?: number;
+    }
+  | {
+      // select エディタ(候補ドロップダウン)。候補は静的配列 or 行依存の動的関数で指定します
+      //   (動的関数はレンダー中に呼ばれるため純粋であること)。確定値は option.value(string)を
+      //   列パーサへ流します(候補は「許可される値」なので rows からの自動収集はしません)。
+      type: 'select';
+      options:
+        | GridSelectEditorOption[]
+        | ((row: T) => GridSelectEditorOption[]);
     };
 
 // 追加: 列定義です。将来のカスタムセル/カスタムヘッダー拡張を見据えています。
@@ -378,7 +391,7 @@ export type GridColumn<T> = {
   filterFn?: (row: T, filterValue: unknown) => boolean;
   // 追加(editor 基盤): セルエディタ種別です。未指定は text(プレーンテキスト編集)。
   //   編集可否は従来どおり editable / readOnly / canEditCell で判定されます(editor は種別のみ)。
-  editor?: GridColumnEditor;
+  editor?: GridColumnEditor<T>;
   parseClipboardValue?: (raw: string, row: T) => unknown;
   formatClipboardValue?: (value: unknown, row: T) => string;
 };

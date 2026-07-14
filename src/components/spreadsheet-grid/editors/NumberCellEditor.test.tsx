@@ -14,7 +14,7 @@ afterEach(() => {
 const rect = { left: 0, top: 0, width: 120, height: 32 };
 
 const renderNumberEditor = (
-  editor: GridColumnEditor = { type: 'number', min: 0, max: 100, step: 5 },
+  editor: GridColumnEditor<object> = { type: 'number', min: 0, max: 100, step: 5 },
 ) => {
   const onCommit = vi.fn();
   const onCancel = vi.fn();

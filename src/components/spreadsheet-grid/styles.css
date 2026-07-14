@@ -21,7 +21,7 @@
      セレクタリストについて(TH-DK-1): popover / menu / filter popover / ドラッグゴーストは
      document.body 直下のポータルで .ssg-root の継承が届かないため、各ポータル root にも
      同じトークンを直接定義します(テーマ切替はこのリストへ修飾子を足すだけで全面に効きます)。 */
-  :where(.ssg-root, .ssg-popover, .ssg-menu-panel, .ssg-filter-popover, [data-grid-drag-ghost], .ssg-tooltip) {
+  :where(.ssg-root, .ssg-popover, .ssg-menu-panel, .ssg-filter-popover, .ssg-select-editor-popover, [data-grid-drag-ghost], .ssg-tooltip) {
     /* ネイティブ UI(スクロールバー / select 等)の描画をテーマへ揃えます(TH-DK-2)。
        ダーク時は .ssg-theme-dark 側で dark に切替。:where のため利用側上書きが常に勝ちます。 */
     color-scheme: light;
@@ -513,6 +513,52 @@
     color: var(--ssg-cell-text);
     background-color: var(--ssg-cell-bg);
     pointer-events: auto;
+  }
+
+  /* ── select エディタ(editor: select) ── */
+  /* インセルの readOnly アンカー input(候補選択は下のポップオーバーで行う)。 */
+  .ssg-cell-editor-input--select {
+    cursor: default;
+    caret-color: transparent;
+  }
+  /* ドロップダウン(document.body 直下ポータル)。トークンは前掲 :where セレクタリストで供給。
+     行高 28px は logic/selectEditorState.ts の SELECT_OPTION_ROW_HEIGHT と揃える。 */
+  .ssg-select-editor-popover {
+    position: fixed;
+    box-sizing: border-box;
+    padding: 4px;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    border: 1px solid var(--ssg-panel-border);
+    border-radius: 8px;
+    background-color: var(--ssg-panel-bg);
+    box-shadow: var(--ssg-popover-shadow);
+    z-index: 1000;
+  }
+  .ssg-select-editor-option {
+    box-sizing: border-box;
+    height: 28px;
+    line-height: 28px;
+    padding: 0 10px;
+    border-radius: 6px;
+    font-size: 13px;
+    color: var(--ssg-panel-text);
+    cursor: pointer;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    user-select: none;
+  }
+  .ssg-select-editor-option--highlighted {
+    background-color: var(--ssg-panel-accent-bg);
+    color: var(--ssg-panel-accent-text);
+  }
+  .ssg-select-editor-empty {
+    height: 28px;
+    line-height: 28px;
+    padding: 0 10px;
+    font-size: 12px;
+    color: var(--ssg-panel-text-muted);
   }
 
   /* ── バー(ツールバー / ステータスバー) ── */
