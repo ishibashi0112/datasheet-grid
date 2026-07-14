@@ -12,6 +12,7 @@ import {
 } from '../model/gridSelectors';
 import { clamp } from './geometry';
 import { getCellValue, setCellValue } from '../utils/permissions';
+import { resolveCellParser } from './editorValues';
 
 // クリア対象のビュー座標レンジです(両端 inclusive)。対象なしは null。
 type ClearTarget = {
@@ -146,9 +147,8 @@ export const clearCellsInSelection = <T extends object>({
       if (!canWriteCell(originalRowIndex, colIndex, currentRow, column)) {
         continue;
       }
-      const clearedValue = column.parseClipboardValue
-        ? column.parseClipboardValue('', currentRow)
-        : '';
+      // 変更(editor 基盤): パーサ解決を logic/editorValues.ts の共通規則へ集約しました。
+      const clearedValue = resolveCellParser(column)('', currentRow);
       // 既にクリア値と同値なら書き込まず、no-op エントリを避けます。
       if (Object.is(getCellValue(nextRow, column), clearedValue)) {
         continue;

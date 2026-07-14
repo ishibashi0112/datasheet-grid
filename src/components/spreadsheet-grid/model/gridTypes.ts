@@ -293,6 +293,10 @@ export type CellValueFormatterParams<T> = {
 };
 export type CellValueFormatter<T> = (params: CellValueFormatterParams<T>) => string;
 
+// 追加(editor 基盤): editor 確定後の移動方向です(Enter=down / Tab=right / Shift+Tab=left)。
+//   CellEditorLayer.tsx から移設しました(エディタ種別 API の公開型化に伴い model へ集約)。
+export type EditorCommitDirection = 'down' | 'right' | 'left';
+
 // 追加: 列定義です。将来のカスタムセル/カスタムヘッダー拡張を見据えています。
 export type GridColumn<T> = {
   key: string;

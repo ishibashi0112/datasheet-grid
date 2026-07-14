@@ -1,8 +1,13 @@
 import { useCallback, type Dispatch, type RefObject } from 'react';
 import { gridActions, type GridUiAction } from '../model/gridActions';
-import type { CellCoord, GridColumn, GridUiState, RowModel } from '../model/gridTypes';
-import type { EditorCommitDirection } from '../CellEditorLayer';
-import { setCellValue } from '../utils/permissions';
+import type {
+  CellCoord,
+  EditorCommitDirection,
+  GridColumn,
+  GridUiState,
+  RowModel,
+} from '../model/gridTypes';
+import { parseCommittedValue, writeRowsCell } from '../logic/editorValues';
 
 type UseGridEditControllerArgs<T extends object> = {
   uiState: GridUiState;
@@ -67,8 +72,10 @@ export const useGridEditController = <T extends object>({
   //   最終値を引数で受け取ります。これにより本ハンドラの参照は編集中のタイピングで
   //   変化しなくなります（旧実装は毎キーストロークで editorValue 依存が更新され、
   //   commitEdit → CellEditorLayer props の参照も毎回変わっていました）。
+  // 変更(editor 基盤): committedValue を unknown 化しました。string は列パーサを通し、
+  //   非 string はドメイン値としてそのまま書き込みます(logic/editorValues.ts の共通規則)。
   const commitEdit = useCallback(
-    (committedValue: string, direction?: EditorCommitDirection) => {
+    (committedValue: unknown, direction?: EditorCommitDirection) => {
       if (editorActionGuardRef.current || !uiState.editingCell) {
         return;
       }
@@ -98,14 +105,8 @@ export const useGridEditController = <T extends object>({
       }
 
       if (onRowsChange) {
-        const parsedValue = column.parseClipboardValue
-          ? column.parseClipboardValue(committedValue, row)
-          : committedValue;
-        const nextRows = rows.map((currentRow, index) =>
-          index === originalRowIndex
-            ? setCellValue(currentRow, column, parsedValue)
-            : currentRow,
-        );
+        const parsedValue = parseCommittedValue(column, committedValue, row);
+        const nextRows = writeRowsCell(rows, originalRowIndex, column, parsedValue);
         onRowsChange(nextRows);
       }
 

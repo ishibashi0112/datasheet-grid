@@ -231,7 +231,8 @@ import type {
   GridContextMenuParams,
   GridContextMenuItem,
 } from './model/gridTypes';
-import { getCellValue, isCellEditable, setCellValue } from './utils/permissions';
+import { getCellValue, isCellEditable } from './utils/permissions';
+import { writeRowsCell } from './logic/editorValues';
 import ColumnFilterPopover from './view/ColumnFilterPopover';
 // 追加(反転set): set 選択状態 { mode, values } 型と mode 判定ヘルパです。
 //   変更(LINT-1): react-refresh 制約解消のため logic/setFilterSelection.ts へ移設しました。
@@ -3576,11 +3577,8 @@ export function SpreadsheetGrid<T extends object>({
             if (originalRowIndex === undefined) {
               return;
             }
-            const nextRows = rows.map((currentRow, index) =>
-              index === originalRowIndex
-                ? setCellValue(currentRow, column, nextValue)
-                : currentRow,
-            );
+            // 変更(editor 基盤): rows 再構築を logic/editorValues.ts の writeRowsCell へ集約しました。
+            const nextRows = writeRowsCell(rows, originalRowIndex, column, nextValue);
             handleRowsChange(nextRows);
           },
         });

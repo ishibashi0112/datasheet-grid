@@ -1,6 +1,3 @@
-// 追加: editor 確定後の移動方向です。
-export type EditorCommitDirection = 'down' | 'right' | 'left';
-
 import {
   useEffect,
   useRef,
@@ -8,6 +5,11 @@ import {
   type CSSProperties,
   type KeyboardEvent,
 } from 'react';
+import type { EditorCommitDirection } from './model/gridTypes';
+
+// 変更(editor 基盤): EditorCommitDirection は model/gridTypes.ts へ移設しました(公開型化)。
+//   既存 import 互換のため re-export を残します。
+export type { EditorCommitDirection };
 
 // 変更(10-D): left は「ペイン列領域内ローカル座標」になりました（leadingWidth 非含有）。
 type CellEditorRect = {
@@ -32,7 +34,10 @@ type CellEditorLayerProps = {
   //              これにより編集中のタイピングで親（＝3ペイン全体）が再レンダーされなくなります。
   initialValue: string;
   // 変更(11-B6): (direction?) → (value, direction?) に変更。確定値を引数で受け取ります。
-  onCommit: (value: string, direction?: EditorCommitDirection) => void;
+  // 変更(editor 基盤): value を unknown 化しました。組み込みエディタはドラフト文字列を、
+  //   将来のカスタムエディタは型付きのドメイン値を直接渡せます(string は commit 側で
+  //   列パーサを通し、非 string はそのまま書き込む共通規則 = logic/editorValues.ts)。
+  onCommit: (value: unknown, direction?: EditorCommitDirection) => void;
   onCancel: () => void;
   // 追加(③): 編集 input の text-align。列 align に追従(右寄せ数値列を編集中も右寄せ維持)。
   align?: 'left' | 'center' | 'right';

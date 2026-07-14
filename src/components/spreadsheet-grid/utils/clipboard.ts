@@ -5,6 +5,7 @@ import {
   normalizeRowRange,
 } from '../model/gridSelectors';
 import { getCellValue, setCellValue } from './permissions';
+import { resolveCellParser } from '../logic/editorValues';
 
 // 追加: TSV の行列データ型です。
 export type ClipboardMatrix = string[][];
@@ -183,9 +184,8 @@ export const applyClipboardMatrixToRows = <T extends object,>(
       }
 
       const rawValue = matrix[rowOffset][colOffset];
-      const parsedValue = column.parseClipboardValue
-        ? column.parseClipboardValue(rawValue, currentRow)
-        : rawValue;
+      // 変更(editor 基盤): パーサ解決を logic/editorValues.ts の共通規則へ集約しました。
+      const parsedValue = resolveCellParser(column)(rawValue, currentRow);
 
       nextRow = setCellValue(nextRow, column, parsedValue);
       rowChanged = true;
