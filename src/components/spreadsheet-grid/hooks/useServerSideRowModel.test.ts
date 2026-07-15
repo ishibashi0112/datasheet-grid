@@ -558,6 +558,235 @@ describe('useServerSideRowModel', () => {
     expect(result.current.rowCount).toBe(0);
   });
 
+  it('getRows の reject で loadError が立ち、onLoadError に error とレンジが渡る', async () => {
+    let rejectFn: ((error: Error) => void) | null = null;
+    const calls: ServerSideGetRowsParams[] = [];
+    const dataSource: ServerSideDataSource<Row> = {
+      initialRowCount: 1000,
+      getRows: (params) => {
+        calls.push(params);
+        return new Promise<ServerSideGetRowsResult<Row>>((_, reject) => {
+          rejectFn = reject;
+        });
+      },
+    };
+    const onLoadError = vi.fn();
+    const { result } = renderHook(() =>
+      useServerSideRowModel<Row>({
+        dataSource,
+        rowKeyGetter,
+        query: EMPTY_QUERY,
+        queryKey: 'a',
+        onLoadError,
+      }),
+    );
+    await flush();
+    act(() => {
+      result.current.requestRange(0, 100);
+    });
+    await advance(DEBOUNCE);
+    expect(calls.length).toBe(1);
+    expect(result.current.loadError).toBeNull();
+
+    const boom = new Error('boom');
+    await act(async () => {
+      rejectFn?.(boom);
+      await Promise.resolve();
+    });
+    expect(result.current.loadError).toEqual({ failedBlockCount: 1 });
+    expect(onLoadError).toHaveBeenCalledTimes(1);
+    expect(onLoadError).toHaveBeenCalledWith(boom, {
+      startIndex: 0,
+      endIndex: 100,
+    });
+  });
+
+  it('abort された getRows の reject は失敗扱いにしない(loadError も onLoadError も発火しない)', async () => {
+    const calls: ServerSideGetRowsParams[] = [];
+    const dataSource: ServerSideDataSource<Row> = {
+      initialRowCount: 1000,
+      getRows: (params) => {
+        calls.push(params);
+        return new Promise<ServerSideGetRowsResult<Row>>((_, reject) => {
+          params.signal.addEventListener('abort', () =>
+            reject(new Error('aborted')),
+          );
+        });
+      },
+    };
+    const onLoadError = vi.fn();
+    const { result } = renderHook(() =>
+      useServerSideRowModel<Row>({
+        dataSource,
+        rowKeyGetter,
+        query: EMPTY_QUERY,
+        queryKey: 'a',
+        onLoadError,
+      }),
+    );
+    await flush();
+    act(() => {
+      result.current.requestRange(0, 100);
+    });
+    await advance(DEBOUNCE);
+    expect(calls.length).toBe(1);
+    // 遠くへスクロール → block 0 が abort され reject するが、失敗扱いにならない。
+    act(() => {
+      result.current.requestRange(500, 600);
+    });
+    await advance(DEBOUNCE);
+    expect(result.current.loadError).toBeNull();
+    expect(onLoadError).not.toHaveBeenCalled();
+  });
+
+  it('retryFailedBlocks() は失敗ブロックだけを即時再取得し、成功で loadError が下りる', async () => {
+    let failMode = true;
+    const calls: ServerSideGetRowsParams[] = [];
+    const dataSource: ServerSideDataSource<Row> = {
+      initialRowCount: 1000,
+      getRows: (params) => {
+        calls.push(params);
+        if (failMode) {
+          return Promise.reject(new Error('boom'));
+        }
+        const rows: Row[] = [];
+        for (let i = params.startIndex; i < params.endIndex; i += 1) {
+          rows.push({ v: i });
+        }
+        return Promise.resolve({ rows, totalRowCount: 1000 });
+      },
+    };
+    const { result } = renderHook(() =>
+      useServerSideRowModel<Row>({
+        dataSource,
+        rowKeyGetter,
+        query: EMPTY_QUERY,
+        queryKey: 'a',
+      }),
+    );
+    await flush();
+    // block 0,1 の両方が失敗する。
+    act(() => {
+      result.current.requestRange(0, 200);
+    });
+    await advance(DEBOUNCE);
+    await flush();
+    expect(calls.length).toBe(2);
+    expect(result.current.loadError).toEqual({ failedBlockCount: 2 });
+
+    // 再試行 → 失敗集合は即クリア(バーは消える)+ 2 ブロックが debounce なしで再 fetch。
+    failMode = false;
+    act(() => {
+      result.current.retryFailedBlocks();
+    });
+    expect(result.current.loadError).toBeNull();
+    expect(calls.length).toBe(4);
+    await flush();
+    expect(result.current.loadError).toBeNull();
+    expect(result.current.rowModel.getRow(0)).toEqual({ v: 0 });
+    expect(result.current.rowModel.getRow(150)).toEqual({ v: 150 });
+  });
+
+  it('失敗ブロックへの再訪 fetch が成功すると失敗が自然回復する', async () => {
+    let failMode = true;
+    const dataSource: ServerSideDataSource<Row> = {
+      initialRowCount: 1000,
+      getRows: (params) => {
+        if (failMode) {
+          return Promise.reject(new Error('boom'));
+        }
+        const rows: Row[] = [];
+        for (let i = params.startIndex; i < params.endIndex; i += 1) {
+          rows.push({ v: i });
+        }
+        return Promise.resolve({ rows, totalRowCount: 1000 });
+      },
+    };
+    const { result } = renderHook(() =>
+      useServerSideRowModel<Row>({
+        dataSource,
+        rowKeyGetter,
+        query: EMPTY_QUERY,
+        queryKey: 'a',
+      }),
+    );
+    await flush();
+    act(() => {
+      result.current.requestRange(0, 100);
+    });
+    await advance(DEBOUNCE);
+    await flush();
+    expect(result.current.loadError).toEqual({ failedBlockCount: 1 });
+
+    // サーバ回復後、同レンジの再要求(スクロール再訪相当)→ 失敗ブロックは cache に無いため
+    //   再 fetch され、成功到着で失敗が解除される。
+    failMode = false;
+    act(() => {
+      result.current.requestRange(0, 100);
+    });
+    await advance(DEBOUNCE);
+    await flush();
+    expect(result.current.loadError).toBeNull();
+    expect(result.current.rowModel.getRow(0)).toEqual({ v: 0 });
+  });
+
+  it('queryKey 変化と refresh() は失敗状態をクリアする', async () => {
+    let failMode = true;
+    const dataSource: ServerSideDataSource<Row> = {
+      initialRowCount: 1000,
+      getRows: (params) => {
+        if (failMode) {
+          return Promise.reject(new Error('boom'));
+        }
+        const rows: Row[] = [];
+        for (let i = params.startIndex; i < params.endIndex; i += 1) {
+          rows.push({ v: i });
+        }
+        return Promise.resolve({ rows, totalRowCount: 1000 });
+      },
+    };
+    const { result, rerender } = renderHook(
+      ({ queryKey }: { queryKey: string }) =>
+        useServerSideRowModel<Row>({
+          dataSource,
+          rowKeyGetter,
+          query: EMPTY_QUERY,
+          queryKey,
+        }),
+      { initialProps: { queryKey: 'a' } },
+    );
+    await flush();
+    act(() => {
+      result.current.requestRange(0, 100);
+    });
+    await advance(DEBOUNCE);
+    await flush();
+    expect(result.current.loadError).toEqual({ failedBlockCount: 1 });
+
+    // queryKey 変化 → 旧クエリの失敗は無効(以降の block 0 再取得は成功)。
+    failMode = false;
+    rerender({ queryKey: 'b' });
+    await flush();
+    expect(result.current.loadError).toBeNull();
+
+    // 再び失敗させ(block 0 は再取得済みキャッシュのため、未キャッシュの block 1 で)、
+    //   refresh() でもクリアされることを確認する。
+    failMode = true;
+    act(() => {
+      result.current.requestRange(100, 200);
+    });
+    await advance(DEBOUNCE);
+    await flush();
+    expect(result.current.loadError).toEqual({ failedBlockCount: 1 });
+    failMode = false;
+    act(() => {
+      result.current.refresh();
+    });
+    expect(result.current.loadError).toBeNull();
+    await flush();
+    expect(result.current.loadError).toBeNull();
+  });
+
   it('refreshToken 未指定では無関係な rerender で再取得しない(inert)', async () => {
     const rec = createRecording({ totalRowCount: 1000, initialRowCount: 1000 });
     const { result, rerender } = renderHook(

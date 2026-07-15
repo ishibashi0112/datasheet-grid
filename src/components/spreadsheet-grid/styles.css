@@ -2181,6 +2181,68 @@
     }
   }
 
+  /* ── 追加(batch 9): SSRM エラーバー(getRows 失敗の再試行 UI) ── */
+  /* シェル下部中央に浮かぶインク系チップ(autosize pill / tooltip と同系の意匠)。overlay 系と
+     違いボタン操作があるため pointer-events はバー自身にのみ生かします(絶対配置の小要素なので
+     行操作は遮りません)。z-index は autosize / filter overlay(5)と同じ層です。 */
+  .ssg-ssrm-error-bar {
+    position: absolute;
+    left: 50%;
+    bottom: 12px;
+    transform: translateX(-50%);
+    z-index: 5;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    max-width: calc(100% - 24px);
+    padding: 6px 8px 6px 14px;
+    border-radius: 999px;
+    background-color: var(--ssg-pill-bg);
+    color: var(--ssg-pill-text);
+    box-shadow: var(--ssg-pill-shadow);
+    font-size: 12.5px;
+    white-space: nowrap;
+    user-select: none;
+  }
+  /* 失敗を示す色ドット(バリデーションと同じ invalid トークン)。 */
+  .ssg-ssrm-error-bar-dot {
+    flex: none;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background-color: var(--ssg-invalid);
+  }
+  .ssg-ssrm-error-bar-msg {
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  /* 再試行はチップ内の反転ボタン(明面 = pill-text 面)にして主操作を目立たせます。 */
+  .ssg-ssrm-error-bar-retry {
+    appearance: none;
+    border: none;
+    border-radius: 999px;
+    padding: 3px 12px;
+    font: inherit;
+    font-weight: 600;
+    cursor: pointer;
+    background-color: var(--ssg-pill-text);
+    color: var(--ssg-ghost-bg);
+  }
+  .ssg-ssrm-error-bar-close {
+    appearance: none;
+    background: none;
+    border: none;
+    padding: 2px 6px;
+    font-size: 13px;
+    line-height: 1;
+    color: inherit;
+    opacity: 0.7;
+    cursor: pointer;
+  }
+  .ssg-ssrm-error-bar-close:hover {
+    opacity: 1;
+  }
+
   /* 追加(モノトーン): 列ドロップ位置のガイド線。near-black 2px + 端ダイヤ(キャレット)で
      「挿入位置」を上質に示します。色/幅/キャップは本クラス、height/left/表示は
      SpreadsheetGrid 側のインライン style + ref(display/left)で制御します。 */

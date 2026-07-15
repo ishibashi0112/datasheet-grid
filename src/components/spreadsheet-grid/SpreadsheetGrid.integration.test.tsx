@@ -571,3 +571,71 @@ describe('SpreadsheetGrid refreshServerSide(結合)', () => {
     }
   });
 });
+
+// 追加(batch 9): SSRM エラーバー(getRows 失敗の再試行 UI)の配線検証です。失敗追跡・retry の
+//   挙動そのものは useServerSideRowModel.test.ts が正本で、ここでは「失敗 → バー表示 →
+//   再試行 → 回復 → バー消滅」の UI 往復と、onServerSideLoadError prop・閉じるボタンを
+//   実コンポーネント越しに確認します。
+describe('SpreadsheetGrid SSRM エラーバー(結合)', () => {
+  // getRows の reject → catch → setState のマイクロタスク連鎖を流します。
+  const flushMicrotasks = async (): Promise<void> => {
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+  };
+
+  it('getRows 失敗でエラーバーが表示され、再試行で回復すると消える', async () => {
+    let failMode = true;
+    const calls: ServerSideGetRowsParams[] = [];
+    const onServerSideLoadError = vi.fn();
+    const dataSource: ServerSideDataSource<Row> = {
+      getRows: (params) => {
+        calls.push(params);
+        if (failMode) {
+          return Promise.reject(new Error('boom'));
+        }
+        return Promise.resolve({
+          rows: rows.slice(params.startIndex, params.endIndex),
+          totalRowCount: rows.length,
+        });
+      },
+    };
+    render(
+      <SpreadsheetGrid
+        columns={columns}
+        dataSource={dataSource}
+        onServerSideLoadError={onServerSideLoadError}
+      />,
+    );
+    // 件数未知 → mount で block 0 をブートストラップ → reject → バー表示。
+    await flushMicrotasks();
+    expect(calls.length).toBe(1);
+    const alert = screen.getByRole('alert');
+    expect(alert.textContent).toContain('行の取得に失敗しました');
+    expect(alert.textContent).toContain('1 ブロック');
+    expect(onServerSideLoadError).toHaveBeenCalledTimes(1);
+    expect(onServerSideLoadError.mock.calls[0][0]).toBeInstanceOf(Error);
+    expect(onServerSideLoadError.mock.calls[0][1]).toMatchObject({
+      startIndex: 0,
+    });
+
+    // 再試行 → 失敗ブロックのみ再 fetch(成功)→ バー消滅。
+    failMode = false;
+    fireEvent.click(screen.getByText('再試行'));
+    await flushMicrotasks();
+    expect(screen.queryByRole('alert')).toBeNull();
+    expect(calls.length).toBe(2);
+  });
+
+  it('エラーバーは × で閉じられる', async () => {
+    const dataSource: ServerSideDataSource<Row> = {
+      getRows: () => Promise.reject(new Error('boom')),
+    };
+    render(<SpreadsheetGrid columns={columns} dataSource={dataSource} />);
+    await flushMicrotasks();
+    expect(screen.getByRole('alert')).toBeTruthy();
+    fireEvent.click(screen.getByLabelText('エラー通知を閉じる'));
+    expect(screen.queryByRole('alert')).toBeNull();
+  });
+});

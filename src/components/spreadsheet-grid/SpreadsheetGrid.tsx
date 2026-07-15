@@ -186,6 +186,7 @@ import useColumnSelectOptionsCollector from './hooks/useColumnSelectOptionsColle
 import { useGlobalFilteredOrder } from './hooks/useGlobalFilteredOrder';
 // 追加(①-3): serverSide(SSRM)の RowModel を供給するフックです(dataSource 指定時に使用)。
 import { useServerSideRowModel } from './hooks/useServerSideRowModel';
+import type { ServerSideLoadErrorState } from './hooks/useServerSideRowModel';
 // 追加(stage ②): serverSide query の構築 / queryKey 直列化(純ロジック)です。
 import {
   buildServerSideQuery,
@@ -357,6 +358,8 @@ export function SpreadsheetGrid<T extends object>({
   // 追加(stage ③): serverSide ソフトリフレッシュ用トークン。値を増やすと query 不変のまま
   //   キャッシュ破棄+可視レンジ取り直し(スクロール保持)。フックへ refreshToken として渡します。
   serverSideRefreshToken,
+  // 追加(batch 9): getRows 失敗の外部通知です(内蔵エラーバーとは独立)。フックへ渡します。
+  onServerSideLoadError,
   columns,
   onRowsChange,
   onColumnsChange,
@@ -1107,7 +1110,15 @@ export function SpreadsheetGrid<T extends object>({
     queryKey: serverSideQueryKey,
     // 追加(stage ③): ソフトリフレッシュ signal。queryKey と独立にキャッシュ破棄+可視レンジ取り直しを起こす。
     refreshToken: serverSideRefreshToken,
+    // 追加(batch 9): getRows 失敗の外部通知(abort 除く)。hook 内 latest-ref で読むため
+    //   インライン関数でも fetch 系の再生成は起きません。
+    onLoadError: onServerSideLoadError,
   });
+  // 追加(batch 9): 内蔵エラーバーの「閉じる」状態です。閉じた時点の loadError 参照を記録し、
+  //   同一参照の間だけ非表示にします(失敗集合が変わる = 新しい失敗イベントで新参照になり
+  //   再表示。クエリ変化 / retry / 全回復で loadError が null に戻れば記録は自然に無効化)。
+  const [dismissedLoadError, setDismissedLoadError] =
+    useState<ServerSideLoadErrorState | null>(null);
   // 可視レンジ通知に使う stable 参照(useCallback)だけを抜き出します。serverSide オブジェクト
   //   自体は毎 render 生成のため、effect 依存にはこの requestRange のみを使います。
   const requestServerSideRange = serverSide.requestRange;
@@ -5305,6 +5316,37 @@ export function SpreadsheetGrid<T extends object>({
             </span>
           </div>
         )}
+
+        {/* 追加(batch 9): SSRM エラーバー(getRows 失敗の再試行 UI)です。autosize / filter overlay と
+            同じくシェルへの絶対配置ですが、下部中央に浮かべ、ボタン操作のため pointer-events は
+            生かします(バー自身のみ。行操作は遮りません)。「閉じる」は同一 loadError 参照の間だけ
+            有効で、新しい失敗(参照変化)で再表示されます。 */}
+        {isServerSide &&
+          serverSide.loadError !== null &&
+          serverSide.loadError !== dismissedLoadError && (
+            <div className="ssg-ssrm-error-bar" role="alert">
+              <span className="ssg-ssrm-error-bar-dot" aria-hidden="true" />
+              <span className="ssg-ssrm-error-bar-msg">
+                行の取得に失敗しました(
+                {serverSide.loadError.failedBlockCount} ブロック)
+              </span>
+              <button
+                type="button"
+                className="ssg-ssrm-error-bar-retry"
+                onClick={serverSide.retryFailedBlocks}
+              >
+                再試行
+              </button>
+              <button
+                type="button"
+                className="ssg-ssrm-error-bar-close"
+                aria-label="エラー通知を閉じる"
+                onClick={() => setDismissedLoadError(serverSide.loadError)}
+              >
+                ×
+              </button>
+            </div>
+          )}
       </div>
 
       {resolvedBottomBar}

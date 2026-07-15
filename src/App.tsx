@@ -222,6 +222,10 @@ const resolveServerOrder = (query: ServerSideQuery): Int32Array => {
   return order;
 };
 
+// 追加(batch 9 デモ): モックサーバの障害モードです。ON の間は getRows がレイテンシ後に
+//   reject し、グリッド内蔵のエラーバー(再試行 UI)と onServerSideLoadError を確認できます。
+let serverFailureMode = false;
+
 const serverSideDataSource: ServerSideDataSource<DemoRow> = {
   // 初回 fetch 前から正しい総高さ/スクロールバーを出すため総件数を即時提示します。
   initialRowCount: SERVER_ROW_COUNT,
@@ -232,6 +236,12 @@ const serverSideDataSource: ServerSideDataSource<DemoRow> = {
         return;
       }
       const timer = setTimeout(() => {
+        // 追加(batch 9 デモ): 障害モード中は本物のサーバエラーを模して reject します
+        //   (abort ではないため、グリッド側で失敗として扱われます)。
+        if (serverFailureMode) {
+          reject(new Error(`モックサーバ障害(rows [${startIndex}, ${endIndex}))`));
+          return;
+        }
         const rows = getServerRows();
         // query を全件へ実適用(フィルター→ソート)。order.length がフィルター後の総件数です。
         const order = resolveServerOrder(query);
@@ -666,6 +676,15 @@ function App() {
     gridRef.current?.refreshServerSide();
   };
 
+  // 追加(batch 9 デモ): モックサーバの障害モードのトグルです(module 変数 + 表示用 state の対)。
+  //   ON にしてスクロール or 再取得すると getRows が reject し、エラーバー(再試行 UI)が出ます。
+  //   OFF に戻してからバーの「再試行」を押すと失敗ブロックだけが取り直されて復帰します。
+  const [serverFailureDemo, setServerFailureDemo] = useState(false);
+  const toggleServerFailure = () => {
+    serverFailureMode = !serverFailureMode;
+    setServerFailureDemo(serverFailureMode);
+  };
+
   // 追加(①-5): ヘッダー表示用の行数です(server はサーバ総件数を提示)。
   const displayRowCount = mode === 'server' ? SERVER_ROW_COUNT : rows.length;
 
@@ -885,13 +904,20 @@ function App() {
         </div>
 
         {mode === 'server' && (
-          <div style={{ marginTop: 8 }}>
+          <div style={{ marginTop: 8, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             <button
               type="button"
               onClick={refreshServerData}
               style={modeButtonStyle(false)}
             >
               サーバデータを更新して再取得(refreshServerSide)
+            </button>
+            <button
+              type="button"
+              onClick={toggleServerFailure}
+              style={modeButtonStyle(serverFailureDemo)}
+            >
+              {`モックサーバ障害: ${serverFailureDemo ? 'ON(getRows が失敗)' : 'OFF'}`}
             </button>
           </div>
         )}
@@ -919,6 +945,9 @@ function App() {
             ヘッダーの行数はフィルター前のデータセット総件数です。上の「再取得」ボタン
             (ハンドル refreshServerSide())で、クエリを変えずスクロール位置を保ったまま
             現在の可視レンジを取り直します(再取得された行は備考の先頭に「取得#N」が付きます)。
+            「モックサーバ障害」を ON にしてスクロールすると getRows が失敗し、グリッド下部に
+            エラーバー(再試行 UI)が出ます。OFF に戻して「再試行」を押すと失敗ブロックだけが
+            取り直されます(失敗の詳細は onServerSideLoadError で console にも出ます)。
           </p>
         )}
         {/* 追加(imperative API #1): ref ハンドル(SpreadsheetGridHandle)の動作デモです。 */}
@@ -1138,6 +1167,17 @@ function App() {
         key={mode === 'server' ? 'server' : 'client'}
         rows={mode === 'server' ? undefined : rows}
         dataSource={mode === 'server' ? serverSideDataSource : undefined}
+        // 追加(batch 9 デモ): getRows 失敗の外部通知(トースト等の代わりに console へ)。
+        onServerSideLoadError={
+          mode === 'server'
+            ? (error, params) => {
+                console.info(
+                  `[demo] getRows 失敗: rows [${params.startIndex}, ${params.endIndex})`,
+                  error,
+                );
+              }
+            : undefined
+        }
         columns={columns}
         onRowsChange={mode === 'server' ? undefined : setRows}
         onColumnsChange={setColumns}

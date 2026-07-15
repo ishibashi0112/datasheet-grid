@@ -68,6 +68,14 @@ export type ServerSideDataSource<T> = {
   maxCachedBlocks?: number;
 };
 
+// 追加(batch 9): getRows 失敗通知(onServerSideLoadError)のパラメータです。失敗した要求の
+//   view 空間レンジ([startIndex, endIndex)・end 排他)を渡します。error は getRows の reject 値
+//   そのもの(unknown)で、コールバック第 1 引数に載せます(abort は失敗扱いにしません)。
+export type ServerSideLoadErrorParams = {
+  startIndex: number;
+  endIndex: number;
+};
+
 // 追加: セル座標を表す基本型です。
 export type CellCoord = {
   row: number;
@@ -986,6 +994,14 @@ export type SpreadsheetGridProps<T> = {
   //   取り直します。スクロール位置は保持し、件数は到着ブロックの totalRowCount で追従します
   //   (queryKey 変化=結果総入れ替え→先頭リセットとは別物)。clientSide では無視されます。
   serverSideRefreshToken?: number;
+  // 追加(batch 9): serverSide の getRows が reject したときの通知です(abort は失敗扱いにせず
+  //   通知しません)。利用側のトースト / ログ用で、グリッド内蔵のエラーバー(再試行 UI)とは
+  //   独立に呼ばれます。毎レンダーで新しいインライン関数を渡しても問題ありません
+  //   (latest-ref 経由で読むため)。clientSide では発火しません。
+  onServerSideLoadError?: (
+    error: unknown,
+    params: ServerSideLoadErrorParams,
+  ) => void;
   columns: GridColumn<T>[];
   onRowsChange?: (nextRows: T[]) => void;
   onColumnsChange?: (nextColumns: GridColumn<T>[]) => void;

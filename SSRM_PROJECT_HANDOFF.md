@@ -7,7 +7,7 @@
 ## §1 プロジェクト概要
 
 - React 19 + TypeScript + Vite 製のカスタム AG Grid 風・仮想化データグリッドのライブラリ化プロジェクト。
-- 公開パッケージ: `@ishibashi0112/spreadsheet-grid`(npm)。現行 **v0.13.0**。
+- 公開パッケージ: `@ishibashi0112/spreadsheet-grid`(npm)。現行 **v0.15.0**。
 - ツールチェーンは vite+(VoidZero 統合、`vp` コマンド)。仮想化は `@tanstack/react-virtual` v3、テストは Vitest。
 - 消費側 UI 例: Mantine / HeroUI / Tailwind(v3・v4)。共存が設計要件。
 - 公開 API の詳細は `src/components/spreadsheet-grid/API_REFERENCE.md` を参照。
@@ -86,13 +86,21 @@
 - フィルター / ソート / グローバルフィルターの `ServerSideQuery` 化(300ms debounce)と、
   クエリ不変のキャッシュ破棄 + 取り直し(`serverSideRefreshToken`)。
 - set / select フィルター候補の供給、エクスポート(ロード済み範囲)、行選択。
+- `refreshServerSide()` 命令的ハンドル(**2026-07-15 実装済み・batch 8**)。ソフトリフレッシュ
+  本体は `useServerSideRowModel` の `refresh()` に関数化され、token prop と共用。可視レンジ
+  未確立 / 件数 0 では block 0 をブートストラップ取り直し(空結果からの復帰)。
+- `getRows` 失敗時のエラー表示・リトライ UI(**2026-07-15 実装済み・batch 9**)。フックが
+  失敗ブロック集合を追跡(abort は対象外)し、グリッド下部中央のエラーバー(`.ssg-ssrm-error-bar`、
+  案 A: フローティングバー)から失敗ブロックのみ再試行。成功到着で自然回復。「閉じる」は
+  同一 loadError 参照の間のみ有効。外部通知 prop `onServerSideLoadError` あり。
 
 未実装(残タスク):
 
-- `refreshServerSide()` 命令的ハンドル(現状は prop トークン方式のみ)。
-- `getRows` 失敗時のエラー表示・リトライ UI(現状は console 警告どまり)。
 - サーバーサイド変更(セル編集 / 行追加削除の書き戻し)。編集系は clientSide 専用
   (SSRM では `onRowsChange` の適用先 rows が存在しない)。undo/redo も SSRM では無効。
+  ※スコープ合意済み(2026-07-15): セル編集(edit commit / paste / Delete クリア / setValue)の
+  書き戻し + 楽観更新のみ実装し、行追加削除は「サーバ反映後に `refreshServerSide()`」運用に
+  寄せる(AG Grid も実質この形)。
 
 ## §5 編集系サブシステム(2026-07 追加分)
 
@@ -121,7 +129,8 @@
 ## §7 残タスク(大きい順)
 
 1. **行グルーピング + 集計**(AG Grid 競合上の最大の欠落)。
-2. **SSRM 完成**(§4 の未実装 3 点)。
+2. **SSRM 完成**(§4 参照。残りはサーバーサイド変更 = セル編集書き戻しのみ。
+   `refreshServerSide()` とエラー・リトライ UI は 2026-07-15 実装済み)。
 3. 多段カラムヘッダー(ヘッダーグループ)。
 4. ピン留め行(上下固定行)。
 5. フィルハンドル(セル右下ドラッグでの連続コピー/連番)。

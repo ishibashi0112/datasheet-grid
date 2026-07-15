@@ -22,6 +22,7 @@ import type {
   GridRowKey,
   RowModel,
   ServerSideDataSource,
+  ServerSideLoadErrorParams,
   ServerSideQuery,
 } from '../model/gridTypes';
 import { createServerSideRowCache } from '../logic/serverSideCache';
@@ -43,7 +44,17 @@ export type UseServerSideRowModelParams<T> = {
   // 追加(stage ③): ソフトリフレッシュ用トークン。値の変化で「query 不変のまま」キャッシュを
   //   破棄し可視レンジを取り直します(queryKey 無効化とは独立。未指定/clientSide では inert)。
   refreshToken?: number;
+  // 追加(batch 9): getRows 失敗(abort 以外の reject)の通知です。latest-ref 経由で読むため
+  //   毎レンダーで新しい関数が渡されても fetch 系 callback は再生成されません。
+  onLoadError?: (error: unknown, params: ServerSideLoadErrorParams) => void;
   debounceMs?: number;
+};
+
+// 追加(batch 9): getRows 失敗の集約状態です(グリッド内蔵エラーバーの表示用)。
+//   failedBlockCount は現在失敗中(未回復)のブロック数。失敗集合が変わるたびに新しい
+//   オブジェクト参照になります(UI 側は参照比較で「閉じる」後の再表示を判定します)。
+export type ServerSideLoadErrorState = {
+  failedBlockCount: number;
 };
 
 export type UseServerSideRowModelResult<T> = {
@@ -55,12 +66,18 @@ export type UseServerSideRowModelResult<T> = {
   //   (クエリ不変のままキャッシュ破棄 + 可視レンジ即時取り直し)を、ハンドル
   //   refreshServerSide() から直接呼べるようにします。clientSide(inert)では no-op。
   refresh: () => void;
+  // 追加(batch 9): 現在失敗中のブロックがあるときの集約状態です(なければ null)。
+  loadError: ServerSideLoadErrorState | null;
+  // 追加(batch 9): 失敗中ブロックだけを再取得します(キャッシュ済みブロックは触りません =
+  //   refresh() のような全破棄はしない)。失敗が無ければ no-op。
+  retryFailedBlocks: () => void;
 };
 
 export function useServerSideRowModel<T>(
   params: UseServerSideRowModelParams<T>,
 ): UseServerSideRowModelResult<T> {
-  const { dataSource, rowKeyGetter, query, queryKey, refreshToken } = params;
+  const { dataSource, rowKeyGetter, query, queryKey, refreshToken, onLoadError } =
+    params;
   // 変更(①-3): dataSource 不在(clientSide)でも安全に評価できるよう optional-chain します。
   //   inert 時は既定値で空キャッシュを作るだけで、書き込みも fetch も発生しません。
   const blockSize = dataSource?.blockSize ?? DEFAULT_BLOCK_SIZE;
@@ -90,6 +107,31 @@ export function useServerSideRowModel<T>(
 
   // in-flight な block fetch(blockIndex -> AbortController)です。重複排除とキャンセルに使います。
   const inFlightRef = useRef<Map<number, AbortController>>(new Map());
+  // 追加(batch 9): 失敗中(未回復)のブロック index 集合です。abort 以外の reject で追加し、
+  //   成功到着 / retry / クエリ変化 / refresh で解除します。UI へは loadError state(集約)で
+  //   伝えます(集合の変化時のみ新参照を発行 = 「閉じる」後の再表示判定に使う契約)。
+  const failedBlocksRef = useRef<Set<number>>(new Set());
+  const [loadError, setLoadError] = useState<ServerSideLoadErrorState | null>(
+    null,
+  );
+  // onLoadError は latest-ref 経由で読みます(RS-AS 方式: render 中代入ではなく effect で同期し、
+  //   毎レンダーの新しいインライン関数が fetchBlock 系の再生成連鎖を起こさないようにします)。
+  const onLoadErrorRef = useRef(onLoadError);
+  useEffect(() => {
+    onLoadErrorRef.current = onLoadError;
+  }, [onLoadError]);
+
+  // 失敗集合 → loadError state の同期です。集合が実際に変わった時だけ呼びます
+  //   (成功のたびに無条件で新参照を発行すると、「閉じる」判定が毎回無効化されるため)。
+  const syncLoadError = useCallback((): void => {
+    const size = failedBlocksRef.current.size;
+    setLoadError((prev) => {
+      if (size === 0) {
+        return prev === null ? prev : null;
+      }
+      return { failedBlockCount: size };
+    });
+  }, []);
   // debounce タイマーと最新の要求レンジです。
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const latestRangeRef = useRef<{ start: number; end: number }>({
@@ -134,20 +176,35 @@ export function useServerSideRowModel<T>(
           }
           inFlightRef.current.delete(blockIndex);
           cache.setBlock(blockIndex, result.rows);
+          // 追加(batch 9): 失敗中だったブロックの成功到着は失敗解除です(retry を経ない自然回復
+          //   = スクロール離脱→再訪の再 fetch 成功でもエラーバーが消えます)。
+          if (failedBlocksRef.current.delete(blockIndex)) {
+            syncLoadError();
+          }
           if (result.totalRowCount !== rowCountRef.current) {
             rowCountRef.current = result.totalRowCount;
             setRowCount(result.totalRowCount);
           }
           setVersion((value) => value + 1);
         })
-        .catch(() => {
-          // abort は無視します。その他エラーは in-flight を解放し、次の requestRange で再試行します。
+        .catch((error: unknown) => {
+          // abort は失敗扱いにしません(スクロール通過 / クエリ変化 / unmount の正常キャンセル)。
+          //   abort 時は必ず呼び出し元が in-flight から削除済みのため、下の同一性チェックで弾かれます。
+          if (controller.signal.aborted) {
+            return;
+          }
+          // その他エラーは in-flight を解放して失敗として記録します(スケルトンは残り、次の
+          //   requestRange = スクロールでの自然再試行は従来どおり)。同じブロックの再失敗でも
+          //   新参照を発行します(新しい失敗イベントとして「閉じた」エラーバーを再表示するため)。
           if (inFlightRef.current.get(blockIndex) === controller) {
             inFlightRef.current.delete(blockIndex);
+            failedBlocksRef.current.add(blockIndex);
+            syncLoadError();
+            onLoadErrorRef.current?.(error, { startIndex, endIndex });
           }
         });
     },
-    [cache, blockSize, dataSource, query],
+    [cache, blockSize, dataSource, query, syncLoadError],
   );
 
   const runFetch = useCallback((): void => {
@@ -216,6 +273,9 @@ export function useServerSideRowModel<T>(
       timerRef.current = null;
     }
     cache.clear();
+    // 追加(batch 9): クエリが変われば旧クエリの失敗は無効です(エラーバーも下ろします)。
+    failedBlocksRef.current.clear();
+    syncLoadError();
 
     // 変更(stage ②): 件数をここでリセットしません。
     //   - 初回 mount: rowCount は useState 初期値(initialRowCount ?? 0)のまま。initialRowCount 既知なら
@@ -269,6 +329,9 @@ export function useServerSideRowModel<T>(
       timerRef.current = null;
     }
     cache.clear();
+    // 追加(batch 9): 明示的な取り直しなので失敗状態もリセットします(エラーバーを下ろす)。
+    failedBlocksRef.current.clear();
+    syncLoadError();
 
     // 破棄済みキャッシュをスケルトンとして即時再描画させます(件数は保持)。
     setVersion((value) => value + 1);
@@ -287,7 +350,23 @@ export function useServerSideRowModel<T>(
       return;
     }
     runFetch();
-  }, [cache, dataSource, blockSize, fetchBlock, runFetch]);
+  }, [cache, dataSource, blockSize, fetchBlock, runFetch, syncLoadError]);
+
+  // 追加(batch 9): 失敗中ブロックだけを再取得します(エラーバーの「再試行」)。
+  //   先に失敗集合をクリアして loadError を下ろし(バーは即時消え、スケルトンがローディングを
+  //   表現)、各ブロックを debounce なしで再 fetch します(再び失敗すれば catch が失敗を
+  //   積み直してバーが再表示されます)。キャッシュ済みブロックには触りません。
+  const retryFailedBlocks = useCallback((): void => {
+    if (dataSource == null || failedBlocksRef.current.size === 0) {
+      return;
+    }
+    const blocks = Array.from(failedBlocksRef.current);
+    failedBlocksRef.current.clear();
+    syncLoadError();
+    for (const blockIndex of blocks) {
+      fetchBlock(blockIndex);
+    }
+  }, [dataSource, fetchBlock, syncLoadError]);
 
   // 追加(stage ③): refreshToken 変化でのソフトリフレッシュ effect です(本体は上の refresh)。
   //   マウント時の no-op は前回値比較で実現し、dev StrictMode の二重実行でも余計な再取得を
@@ -359,5 +438,13 @@ export function useServerSideRowModel<T>(
     [cache, rowKeyGetter, version],
   );
 
-  return { rowModel, rowCount, isRowLoaded, requestRange, refresh };
+  return {
+    rowModel,
+    rowCount,
+    isRowLoaded,
+    requestRange,
+    refresh,
+    loadError,
+    retryFailedBlocks,
+  };
 }
