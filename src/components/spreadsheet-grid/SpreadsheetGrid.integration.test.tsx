@@ -17,6 +17,8 @@ import { GRID_STATE_VERSION } from './logic/gridState';
 import type {
   GridColumn,
   GridState,
+  ServerSideDataSource,
+  ServerSideGetRowsParams,
   SpreadsheetGridHandle,
 } from './model/gridTypes';
 
@@ -515,5 +517,57 @@ describe('SpreadsheetGrid フィルター管理パネル導線(FM-3・結合)', 
     expect(
       screen.queryByLabelText('フィルター管理パネルを開閉'),
     ).toBeNull();
+  });
+});
+
+// 追加(batch 8): ハンドル refreshServerSide() の配線検証です。フックのソフトリフレッシュ挙動
+//   そのものは useServerSideRowModel.test.ts が正本で、ここでは「ハンドル → hook.refresh 委譲」と
+//   「clientSide での警告付き no-op」だけを実コンポーネント越しに確認します。
+//   jsdom では仮想化窓が空(requestRange 未到達)のため、refresh() の block 0 ブートストラップ
+//   フォールバックで再取得を観測します。
+describe('SpreadsheetGrid refreshServerSide(結合)', () => {
+  it('serverSide では getRows の再取得が起きる(キャッシュ破棄 + 取り直し)', async () => {
+    const calls: ServerSideGetRowsParams[] = [];
+    const dataSource: ServerSideDataSource<Row> = {
+      getRows: (params) => {
+        calls.push(params);
+        return Promise.resolve({
+          rows: rows.slice(params.startIndex, params.endIndex),
+          totalRowCount: rows.length,
+        });
+      },
+    };
+    const ref = createRef<SpreadsheetGridHandle<Row>>();
+    render(<SpreadsheetGrid ref={ref} columns={columns} dataSource={dataSource} />);
+    // 件数未知 → mount で block 0 をブートストラップ(1 回目)。
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(calls.length).toBe(1);
+
+    act(() => {
+      ref.current?.refreshServerSide();
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+    // キャッシュ破棄後に block 0 が取り直される(2 回目)。
+    expect(calls.length).toBe(2);
+    expect(calls[1]).toMatchObject({ startIndex: 0 });
+  });
+
+  it('clientSide(rows)では警告付き no-op', () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      const ref = createRef<SpreadsheetGridHandle<Row>>();
+      render(<SpreadsheetGrid ref={ref} columns={columns} rows={rows} />);
+      act(() => {
+        ref.current?.refreshServerSide();
+      });
+      expect(warnSpy).toHaveBeenCalledTimes(1);
+      expect(String(warnSpy.mock.calls[0][0])).toContain('refreshServerSide');
+    } finally {
+      warnSpy.mockRestore();
+    }
   });
 });

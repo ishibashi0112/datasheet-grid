@@ -450,6 +450,114 @@ describe('useServerSideRowModel', () => {
     expect(rec.calls.length).toBe(0);
   });
 
+  it('refresh() でキャッシュを破棄し、現在の可視レンジを即時取り直す(refreshToken の命令的版)', async () => {
+    const rec = createRecording({ totalRowCount: 1000, initialRowCount: 1000 });
+    const { result } = renderHook(() =>
+      useServerSideRowModel<Row>({
+        dataSource: rec.dataSource,
+        rowKeyGetter,
+        query: EMPTY_QUERY,
+        queryKey: 'a',
+        // refreshToken 未指定でも refresh() は使える(prop 方式から独立)。
+      }),
+    );
+    await flush();
+    // 可視レンジ [0,200) を取得 → block 0,1 がキャッシュされる。
+    act(() => {
+      result.current.requestRange(0, 200);
+    });
+    await advance(DEBOUNCE);
+    expect(startedBlocks(rec.calls, 100)).toEqual([0, 1]);
+    expect(rec.calls.length).toBe(2);
+
+    // refresh() → キャッシュ破棄 + 可視レンジ(block 0,1)を debounce なしで即時取り直す。
+    act(() => {
+      result.current.refresh();
+    });
+    await flush();
+    expect(rec.calls.length).toBe(4);
+    expect(startedBlocks(rec.calls, 100)).toEqual([0, 1]);
+    expect(result.current.rowModel.getRow(0)).toEqual({ v: 0 });
+    expect(result.current.rowCount).toBe(1000);
+  });
+
+  it('refresh() は可視レンジ未確立(requestRange 未到達)なら block 0 をブートストラップする', async () => {
+    const rec = createRecording({ totalRowCount: 1000, initialRowCount: 1000 });
+    const { result } = renderHook(() =>
+      useServerSideRowModel<Row>({
+        dataSource: rec.dataSource,
+        rowKeyGetter,
+        query: EMPTY_QUERY,
+        queryKey: 'a',
+      }),
+    );
+    // initialRowCount 既知 → mount ではブートストラップしない。
+    await flush();
+    expect(rec.calls.length).toBe(0);
+    // 可視レンジ未確立のまま refresh() → 対象ブロック集合が空のため block 0 を取り直す。
+    act(() => {
+      result.current.refresh();
+    });
+    await flush();
+    expect(startedBlocks(rec.calls, 100)).toEqual([0]);
+    expect(result.current.rowModel.getRow(0)).toEqual({ v: 0 });
+  });
+
+  it('refresh() は件数 0(空結果)からでも block 0 を取り直して復帰できる', async () => {
+    // サーバ件数が 0 → 500 に変わる想定(空テーブルが外部更新でデータを得るケース)。
+    let total = 0;
+    const calls: ServerSideGetRowsParams[] = [];
+    const dataSource: ServerSideDataSource<Row> = {
+      getRows: (params) => {
+        calls.push(params);
+        const rows: Row[] = [];
+        for (let i = params.startIndex; i < params.endIndex && i < total; i += 1) {
+          rows.push({ v: i });
+        }
+        return Promise.resolve({ rows, totalRowCount: total });
+      },
+    };
+    const { result } = renderHook(() =>
+      useServerSideRowModel<Row>({
+        dataSource,
+        rowKeyGetter,
+        query: EMPTY_QUERY,
+        queryKey: 'a',
+      }),
+    );
+    // 件数未知 → mount で block 0 をブートストラップし、件数 0 が確定する。
+    await flush();
+    expect(calls.length).toBe(1);
+    expect(result.current.rowCount).toBe(0);
+
+    // サーバ側でデータが増えた後の refresh() → rowCount=0 でも block 0 を取り直して復帰。
+    total = 500;
+    act(() => {
+      result.current.refresh();
+    });
+    await flush();
+    expect(calls.length).toBe(2);
+    expect(result.current.rowCount).toBe(500);
+    expect(result.current.rowModel.getRow(0)).toEqual({ v: 0 });
+  });
+
+  it('clientSide(dataSource なし)では refresh() は no-op', async () => {
+    const { result } = renderHook(() =>
+      useServerSideRowModel<Row>({
+        rowKeyGetter,
+        query: EMPTY_QUERY,
+        queryKey: '',
+      }),
+    );
+    await flush();
+    // 例外なく no-op(fetch も件数変化も起きない)。
+    act(() => {
+      result.current.refresh();
+    });
+    await flush();
+    expect(result.current.rowCount).toBe(0);
+  });
+
   it('refreshToken 未指定では無関係な rerender で再取得しない(inert)', async () => {
     const rec = createRecording({ totalRowCount: 1000, initialRowCount: 1000 });
     const { result, rerender } = renderHook(

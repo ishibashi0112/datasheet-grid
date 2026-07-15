@@ -241,7 +241,7 @@ const serverSideDataSource: ServerSideDataSource<DemoRow> = {
         const slice: DemoRow[] = [];
         for (let i = from; i < to; i += 1) {
           const row = rows[order[i]];
-          // デモ: リフレッシュ(refreshToken 増加)で再取得が起きたことが見えるよう、改訂番号を
+          // デモ: リフレッシュ(refreshServerSide())で再取得が起きたことが見えるよう、改訂番号を
           //   備考へ浅いコピーで刻印します(>0 のときのみ。元データは不変なので改訂は累積しません)。
           slice.push(
             serverDataRevision > 0
@@ -470,8 +470,6 @@ function App() {
   // 追加(F-async デモ): clientSide の現在行数です。下のプリセットで切り替えます(非同期しきい値の
   //   前後体感用)。client モードのときだけ即 setRows し、他モード時は次に client へ来た時に効きます。
   const [clientRowCount, setClientRowCount] = useState<number>(INITIAL_ROW_COUNT);
-  // 追加(stage ③ デモ): serverSide ソフトリフレッシュ用トークン。下のボタンで増やします。
-  const [serverRefreshToken, setServerRefreshToken] = useState(0);
 
   // 追加(imperative API #1): ref ハンドル経由でグリッドを命令的に操作するデモ用 ref です。
   const gridRef = useRef<SpreadsheetGridHandle<DemoRow>>(null);
@@ -660,11 +658,12 @@ function App() {
     }
   };
 
-  // 追加(stage ③ デモ): モックサーバのデータ更新を模し(改訂番号を増やす)、再取得トークンを増やします。
-  //   グリッドは query 不変のままスクロール位置を保って現在の可視レンジを取り直します。
+  // 追加(stage ③ デモ / batch 8 でハンドル化): モックサーバのデータ更新を模し(改訂番号を増やす)、
+  //   ハンドル refreshServerSide() でソフトリフレッシュします(旧 serverSideRefreshToken prop 方式と
+  //   同挙動の命令的版)。グリッドは query 不変のままスクロール位置を保って現在の可視レンジを取り直します。
   const refreshServerData = () => {
     serverDataRevision += 1;
-    setServerRefreshToken((n) => n + 1);
+    gridRef.current?.refreshServerSide();
   };
 
   // 追加(①-5): ヘッダー表示用の行数です(server はサーバ総件数を提示)。
@@ -892,7 +891,7 @@ function App() {
               onClick={refreshServerData}
               style={modeButtonStyle(false)}
             >
-              {`サーバデータを更新して再取得(refreshToken: ${serverRefreshToken})`}
+              サーバデータを更新して再取得(refreshServerSide)
             </button>
           </div>
         )}
@@ -917,9 +916,9 @@ function App() {
             います(clientSide は set フィルター = 大規模候補の仮想化デモ)。単位 / 状態は
             列定義に候補(filterOptions)を持つため両モードで set として機能します。候補を
             供給しない set/select 列は serverSide では候補を自動収集できず空になります。
-            ヘッダーの行数はフィルター前のデータセット総件数です。上の「再取得」ボタンで
-            refreshToken を増やすと、クエリを変えずスクロール位置を保ったまま現在の可視レンジを
-            取り直します(再取得された行は備考の先頭に「取得#N」が付きます)。
+            ヘッダーの行数はフィルター前のデータセット総件数です。上の「再取得」ボタン
+            (ハンドル refreshServerSide())で、クエリを変えずスクロール位置を保ったまま
+            現在の可視レンジを取り直します(再取得された行は備考の先頭に「取得#N」が付きます)。
           </p>
         )}
         {/* 追加(imperative API #1): ref ハンドル(SpreadsheetGridHandle)の動作デモです。 */}
@@ -1139,8 +1138,6 @@ function App() {
         key={mode === 'server' ? 'server' : 'client'}
         rows={mode === 'server' ? undefined : rows}
         dataSource={mode === 'server' ? serverSideDataSource : undefined}
-        // 追加(stage ③): serverSide ソフトリフレッシュ用トークン(server mode 以外は undefined=inert)。
-        serverSideRefreshToken={mode === 'server' ? serverRefreshToken : undefined}
         columns={columns}
         onRowsChange={mode === 'server' ? undefined : setRows}
         onColumnsChange={setColumns}

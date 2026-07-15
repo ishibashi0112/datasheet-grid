@@ -4091,6 +4091,10 @@ export function SpreadsheetGrid<T extends object>({
     //   serverSide での 'raw' → 'view' フォールバック判定に使います。
     rows: T[];
     isServerSide: boolean;
+    // 追加(batch 8): ハンドル refreshServerSide() の委譲先です(useServerSideRowModel の
+    //   ソフトリフレッシュ。clientSide では hook 側が inert のため呼ばれても no-op ですが、
+    //   ハンドル側で警告を出して弾きます)。
+    serverSideRefresh: () => void;
     // 追加(validation): getInvalidCells の rowKey 解決に使います(source index 基準)。
     resolvedRowKeyGetter: (row: T, sourceRowIndex: number) => GridRowKey;
     // 追加(FM-3): 安定ハンドル(useImperativeHandle deps [])から最新の controller コールバック
@@ -4126,6 +4130,7 @@ export function SpreadsheetGrid<T extends object>({
     physicalBodyHeight,
     rows,
     isServerSide,
+    serverSideRefresh: serverSide.refresh,
     resolvedRowKeyGetter,
     // 変更(UP-1): 公開 API openFilterManager / closeFilterManager は統合ツールパネルの
     //   フィルタータブへ委譲します(名前・意味は従来どおり)。close は「フィルタータブ
@@ -4676,6 +4681,24 @@ export function SpreadsheetGrid<T extends object>({
             return [];
           }
           return scanInvalidCells(s.rows, s.columns, s.resolvedRowKeyGetter);
+        },
+
+        // ── serverSide(SSRM)──
+        // 追加(batch 8): serverSide のソフトリフレッシュです(serverSideRefreshToken の命令的版)。
+        //   クエリ不変のままキャッシュを破棄し、スクロール位置を保って現在の可視レンジを即時
+        //   取り直します。clientSide では警告付き no-op(getInvalidCells と同じ流儀)。
+        refreshServerSide: () => {
+          const s = apiStateRef.current;
+          if (!s) {
+            return;
+          }
+          if (!s.isServerSide) {
+            console.warn(
+              '[SpreadsheetGrid] refreshServerSide は clientSide(rows)モードでは何もしません(dataSource 指定時のみ有効です)。',
+            );
+            return;
+          }
+          s.serverSideRefresh();
         },
 
         // ── UI パネル(FM-3)──

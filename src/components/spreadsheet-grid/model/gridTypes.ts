@@ -919,6 +919,13 @@ export type SpreadsheetGridHandle<T> = {
   //   ため空配列を返します(console.warn 付き)。
   getInvalidCells: () => GridInvalidCell[];
 
+  // ── serverSide(SSRM)──
+  // 追加(batch 8): serverSide(dataSource)のソフトリフレッシュです。クエリ(フィルター/
+  //   ソート/グローバル)を変えずにキャッシュを破棄し、スクロール位置を保ったまま現在の
+  //   可視レンジを即時取り直します(`serverSideRefreshToken` を増やすのと同じ挙動の命令的版)。
+  //   件数は到着ブロックの totalRowCount で追従します。clientSide(rows)では警告付き no-op です。
+  refreshServerSide: () => void;
+
   // ── UI パネル(FM-3)──
   // フィルター管理パネル(FM-1: 適用中の列フィルターの一覧 / ジャンプ編集 / 個別・全クリア /
   //   追加)を開きます。enableColumnFilter=false のときは何もしません。列メニューの
