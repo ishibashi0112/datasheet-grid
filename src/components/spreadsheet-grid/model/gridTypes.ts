@@ -1060,6 +1060,15 @@ export type SpreadsheetGridProps<T> = {
     error: unknown,
     params: ServerSideLoadErrorParams,
   ) => void;
+  // 追加(SSRM 書き戻し): serverSide の updateRows が reject したときの通知です。グリッド側は
+  //   楽観更新をロールバック済みで、params.updates に失敗した行更新(rowKey / changes /
+  //   previousRow)が入ります(利用側のトースト / リトライ導線用)。グリッド内蔵の保存失敗
+  //   バーとは独立に呼ばれます。毎レンダーで新しいインライン関数を渡しても問題ありません
+  //   (latest-ref 経由で読むため)。clientSide では発火しません。
+  onServerSideWriteError?: (
+    error: unknown,
+    params: ServerSideWriteErrorParams<T>,
+  ) => void;
   columns: GridColumn<T>[];
   onRowsChange?: (nextRows: T[]) => void;
   onColumnsChange?: (nextColumns: GridColumn<T>[]) => void;

@@ -2184,17 +2184,26 @@
   /* ── 追加(batch 9): SSRM エラーバー(getRows 失敗の再試行 UI) ── */
   /* シェル下部中央に浮かぶインク系チップ(autosize pill / tooltip と同系の意匠)。overlay 系と
      違いボタン操作があるため pointer-events はバー自身にのみ生かします(絶対配置の小要素なので
-     行操作は遮りません)。z-index は autosize / filter overlay(5)と同じ層です。 */
-  .ssg-ssrm-error-bar {
+     行操作は遮りません)。z-index は autosize / filter overlay(5)と同じ層です。
+     変更(SSRM 書き戻し): 絶対配置(下部中央)は縦積みコンテナ .ssg-ssrm-error-bars へ移し、
+     取得失敗と保存失敗のバーが同時に出ても重ならないようにしました(単独表示は従来と同見た目)。 */
+  .ssg-ssrm-error-bars {
     position: absolute;
     left: 50%;
     bottom: 12px;
     transform: translateX(-50%);
     z-index: 5;
     display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    max-width: calc(100% - 24px);
+  }
+  .ssg-ssrm-error-bar {
+    display: flex;
     align-items: center;
     gap: 10px;
-    max-width: calc(100% - 24px);
+    max-width: 100%;
     padding: 6px 8px 6px 14px;
     border-radius: 999px;
     background-color: var(--ssg-pill-bg);

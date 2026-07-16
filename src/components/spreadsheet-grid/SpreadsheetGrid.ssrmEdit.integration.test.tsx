@@ -311,6 +311,80 @@ describe('SpreadsheetGrid SSRM セル編集書き戻し(結合)', () => {
     expect(updateCalls).toHaveLength(0);
   });
 
+  it('書き戻し失敗で保存失敗バーが表示され、閉じた後も新しい失敗で再表示される', async () => {
+    // updateRows が常に失敗する dataSource です(ロールバック挙動はフックテストが正本。
+    //   ここではバー表示・外部通知・「閉じる」の配線を確認します)。
+    const failure = new Error('save failed');
+    const onServerSideWriteError = vi.fn();
+    const dataSource: ServerSideDataSource<Row> = {
+      getRows: (params) =>
+        Promise.resolve({
+          rows: serverRows.slice(params.startIndex, params.endIndex),
+          totalRowCount: serverRows.length,
+        }),
+      updateRows: () => Promise.reject(failure),
+    };
+    const ref = createRef<SpreadsheetGridHandle<Row>>();
+    const { container } = render(
+      <SpreadsheetGrid
+        ref={ref}
+        columns={columns}
+        dataSource={dataSource}
+        rowKeyGetter={(row) => row.id}
+        onServerSideWriteError={onServerSideWriteError}
+      />,
+    );
+    await flushMicrotasks();
+    const shell = getShell(container);
+
+    // ペースト → updateRows reject → 保存失敗バー表示 + 外部通知。
+    act(() => {
+      ref.current?.setActiveCell({ row: 0, col: 1 });
+    });
+    fireEvent.paste(shell, { clipboardData: { getData: () => 'X' } });
+    await flushMicrotasks();
+
+    const alert = container.querySelector('[role="alert"]');
+    expect(alert).not.toBeNull();
+    expect(alert!.textContent).toContain('変更の保存に失敗しました');
+    expect(alert!.textContent).toContain('1 行');
+    expect(alert!.textContent).toContain('値を元に戻しました');
+    expect(onServerSideWriteError).toHaveBeenCalledTimes(1);
+    expect(onServerSideWriteError.mock.calls[0][0]).toBe(failure);
+    expect(onServerSideWriteError.mock.calls[0][1].updates).toHaveLength(1);
+    expect(onServerSideWriteError.mock.calls[0][1].updates[0]).toMatchObject({
+      rowKey: 1,
+      changes: [{ columnKey: 'name', previousValue: 'alpha', newValue: 'X' }],
+    });
+
+    // × で閉じる(同一 writeError 参照の間は非表示)。
+    fireEvent.click(
+      container.querySelector('[aria-label="保存エラー通知を閉じる"]')!,
+    );
+    expect(container.querySelector('[role="alert"]')).toBeNull();
+
+    // 新しい書き戻し失敗(新参照)で再表示される。
+    act(() => {
+      ref.current?.setActiveCell({ row: 1, col: 1 });
+    });
+    fireEvent.paste(shell, { clipboardData: { getData: () => 'Y' } });
+    await flushMicrotasks();
+    expect(container.querySelector('[role="alert"]')).not.toBeNull();
+    expect(onServerSideWriteError).toHaveBeenCalledTimes(2);
+  });
+
+  it('書き戻し成功では保存失敗バーは出ない', async () => {
+    const { container, ref, updateCalls } = await renderSsrmGrid();
+    const shell = getShell(container);
+    act(() => {
+      ref.current?.setActiveCell({ row: 0, col: 1 });
+    });
+    fireEvent.paste(shell, { clipboardData: { getData: () => 'X' } });
+    await flushMicrotasks();
+    expect(updateCalls).toHaveLength(1);
+    expect(container.querySelector('[role="alert"]')).toBeNull();
+  });
+
   it('readOnly の serverSide では updateRows 指定でも書き込みが起きない', async () => {
     const { dataSource, updateCalls } = createWritableDataSource();
     const ref = createRef<SpreadsheetGridHandle<Row>>();

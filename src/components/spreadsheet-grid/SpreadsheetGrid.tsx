@@ -186,7 +186,10 @@ import useColumnSelectOptionsCollector from './hooks/useColumnSelectOptionsColle
 import { useGlobalFilteredOrder } from './hooks/useGlobalFilteredOrder';
 // 追加(①-3): serverSide(SSRM)の RowModel を供給するフックです(dataSource 指定時に使用)。
 import { useServerSideRowModel } from './hooks/useServerSideRowModel';
-import type { ServerSideLoadErrorState } from './hooks/useServerSideRowModel';
+import type {
+  ServerSideLoadErrorState,
+  ServerSideWriteErrorState,
+} from './hooks/useServerSideRowModel';
 // 追加(stage ②): serverSide query の構築 / queryKey 直列化(純ロジック)です。
 import {
   buildServerSideQuery,
@@ -360,6 +363,7 @@ export function SpreadsheetGrid<T extends object>({
   serverSideRefreshToken,
   // 追加(batch 9): getRows 失敗の外部通知です(内蔵エラーバーとは独立)。フックへ渡します。
   onServerSideLoadError,
+  onServerSideWriteError,
   columns,
   onRowsChange,
   onColumnsChange,
@@ -1118,12 +1122,18 @@ export function SpreadsheetGrid<T extends object>({
     // 追加(batch 9): getRows 失敗の外部通知(abort 除く)。hook 内 latest-ref で読むため
     //   インライン関数でも fetch 系の再生成は起きません。
     onLoadError: onServerSideLoadError,
+    // 追加(SSRM 書き戻し): updateRows 失敗(ロールバック済み)の外部通知です(同じく latest-ref)。
+    onWriteError: onServerSideWriteError,
   });
   // 追加(batch 9): 内蔵エラーバーの「閉じる」状態です。閉じた時点の loadError 参照を記録し、
   //   同一参照の間だけ非表示にします(失敗集合が変わる = 新しい失敗イベントで新参照になり
   //   再表示。クエリ変化 / retry / 全回復で loadError が null に戻れば記録は自然に無効化)。
   const [dismissedLoadError, setDismissedLoadError] =
     useState<ServerSideLoadErrorState | null>(null);
+  // 追加(SSRM 書き戻し): 保存失敗バーの「閉じる」状態です(loadError と同じ参照比較の契約。
+  //   新しい書き戻し失敗のたびに writeError が新参照になり再表示されます)。
+  const [dismissedWriteError, setDismissedWriteError] =
+    useState<ServerSideWriteErrorState | null>(null);
   // 可視レンジ通知に使う stable 参照(useCallback)だけを抜き出します。serverSide オブジェクト
   //   自体は毎 render 生成のため、effect 依存にはこの requestRange のみを使います。
   const requestServerSideRange = serverSide.requestRange;
@@ -5417,31 +5427,61 @@ export function SpreadsheetGrid<T extends object>({
         {/* 追加(batch 9): SSRM エラーバー(getRows 失敗の再試行 UI)です。autosize / filter overlay と
             同じくシェルへの絶対配置ですが、下部中央に浮かべ、ボタン操作のため pointer-events は
             生かします(バー自身のみ。行操作は遮りません)。「閉じる」は同一 loadError 参照の間だけ
-            有効で、新しい失敗(参照変化)で再表示されます。 */}
+            有効で、新しい失敗(参照変化)で再表示されます。
+            変更(SSRM 書き戻し): 保存失敗バー(writeError)と同時表示できるよう、絶対配置を
+            縦積みコンテナ(.ssg-ssrm-error-bars)へ移しました(単独表示の見た目は従来と同一)。 */}
         {isServerSide &&
-          serverSide.loadError !== null &&
-          serverSide.loadError !== dismissedLoadError && (
-            <div className="ssg-ssrm-error-bar" role="alert">
-              <span className="ssg-ssrm-error-bar-dot" aria-hidden="true" />
-              <span className="ssg-ssrm-error-bar-msg">
-                行の取得に失敗しました(
-                {serverSide.loadError.failedBlockCount} ブロック)
-              </span>
-              <button
-                type="button"
-                className="ssg-ssrm-error-bar-retry"
-                onClick={serverSide.retryFailedBlocks}
-              >
-                再試行
-              </button>
-              <button
-                type="button"
-                className="ssg-ssrm-error-bar-close"
-                aria-label="エラー通知を閉じる"
-                onClick={() => setDismissedLoadError(serverSide.loadError)}
-              >
-                ×
-              </button>
+          ((serverSide.loadError !== null &&
+            serverSide.loadError !== dismissedLoadError) ||
+            (serverSide.writeError !== null &&
+              serverSide.writeError !== dismissedWriteError)) && (
+            <div className="ssg-ssrm-error-bars">
+              {serverSide.loadError !== null &&
+                serverSide.loadError !== dismissedLoadError && (
+                  <div className="ssg-ssrm-error-bar" role="alert">
+                    <span className="ssg-ssrm-error-bar-dot" aria-hidden="true" />
+                    <span className="ssg-ssrm-error-bar-msg">
+                      行の取得に失敗しました(
+                      {serverSide.loadError.failedBlockCount} ブロック)
+                    </span>
+                    <button
+                      type="button"
+                      className="ssg-ssrm-error-bar-retry"
+                      onClick={serverSide.retryFailedBlocks}
+                    >
+                      再試行
+                    </button>
+                    <button
+                      type="button"
+                      className="ssg-ssrm-error-bar-close"
+                      aria-label="エラー通知を閉じる"
+                      onClick={() => setDismissedLoadError(serverSide.loadError)}
+                    >
+                      ×
+                    </button>
+                  </div>
+                )}
+              {/* 追加(SSRM 書き戻し): 保存失敗バーです。フック側でロールバック済みのため再試行は
+                  提供しません(値は既に元へ戻っている)。「閉じる」は同一 writeError 参照の間だけ
+                  有効で、新しい書き戻し失敗(参照変化)で再表示されます。 */}
+              {serverSide.writeError !== null &&
+                serverSide.writeError !== dismissedWriteError && (
+                  <div className="ssg-ssrm-error-bar" role="alert">
+                    <span className="ssg-ssrm-error-bar-dot" aria-hidden="true" />
+                    <span className="ssg-ssrm-error-bar-msg">
+                      変更の保存に失敗しました(
+                      {serverSide.writeError.failedRowCount} 行)。値を元に戻しました
+                    </span>
+                    <button
+                      type="button"
+                      className="ssg-ssrm-error-bar-close"
+                      aria-label="保存エラー通知を閉じる"
+                      onClick={() => setDismissedWriteError(serverSide.writeError)}
+                    >
+                      ×
+                    </button>
+                  </div>
+                )}
             </div>
           )}
       </div>
