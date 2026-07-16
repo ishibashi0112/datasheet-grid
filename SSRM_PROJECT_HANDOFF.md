@@ -76,7 +76,9 @@
 
 ## §4 SSRM(サーバーサイド行モデル)の現状
 
-**骨格は動作するが未完成**(CLAUDE.md の「SSRM は骨格のみ」)。
+**完成**(2026-07-16)。読み取り系(取得 / クエリ送出 / refresh / エラーリトライ)に加え、
+セル編集の書き戻し(`dataSource.updateRows` + 楽観更新)まで実装済み。合意済みスコープ外は
+行追加削除の書き戻し(refresh 運用)と SSRM での undo/redo のみ。
 
 実装済み:
 
@@ -94,13 +96,21 @@
   案 A: フローティングバー)から失敗ブロックのみ再試行。成功到着で自然回復。「閉じる」は
   同一 loadError 参照の間のみ有効。外部通知 prop `onServerSideLoadError` あり。
 
-未実装(残タスク):
+- セル編集の書き戻し(**2026-07-16 実装済み・書き戻し batch 1〜5**)。`dataSource.updateRows`
+  (任意)指定で全編集経路(edit commit / paste / Delete クリア / setValue / checkbox)が
+  楽観更新つきの書き戻しになる。構成: 型 + `serverSideCache.updateRow` + 楽観オーバーレイ純
+  ロジック(`logic/serverSideEdits.ts`、writeId 世代ガード)→ フックの `applyCellEdits`
+  オーケストレーション(成功でキャッシュ確定・結果 rows マージ / 失敗でロールバック、epoch
+  ガードで refresh/クエリ変化をまたいだ遅延決着を無視)→ 各経路の配線(`canEditCell` 合成で
+  updateRows 未指定の SSRM は編集 UI ごと無効)→ 保存失敗バー(`.ssg-ssrm-error-bars` 縦積み
+  コンテナ)+ `onServerSideWriteError`。バリデーション(mark / reject)は clientSide と同一
+  規則で機能。
 
-- サーバーサイド変更(セル編集 / 行追加削除の書き戻し)。編集系は clientSide 専用
-  (SSRM では `onRowsChange` の適用先 rows が存在しない)。undo/redo も SSRM では無効。
-  ※スコープ合意済み(2026-07-15): セル編集(edit commit / paste / Delete クリア / setValue)の
-  書き戻し + 楽観更新のみ実装し、行追加削除は「サーバ反映後に `refreshServerSide()`」運用に
-  寄せる(AG Grid も実質この形)。
+未実装(残タスク・スコープ外として合意済み):
+
+- 行追加削除の書き戻し(2026-07-15 合意: 「サーバ反映後に `refreshServerSide()`」運用に
+  寄せる。AG Grid も実質この形)。undo/redo は SSRM では引き続き無効(適用先の全件 rows が
+  無いため。取り消しはサーバ側の履歴で扱う)。`getInvalidCells()` も SSRM では空配列 + warn。
 
 ## §5 編集系サブシステム(2026-07 追加分)
 
@@ -129,11 +139,13 @@
 ## §7 残タスク(大きい順)
 
 1. **行グルーピング + 集計**(AG Grid 競合上の最大の欠落)。
-2. **SSRM 完成**(§4 参照。残りはサーバーサイド変更 = セル編集書き戻しのみ。
-   `refreshServerSide()` とエラー・リトライ UI は 2026-07-15 実装済み)。
-3. 多段カラムヘッダー(ヘッダーグループ)。
-4. ピン留め行(上下固定行)。
-5. フィルハンドル(セル右下ドラッグでの連続コピー/連番)。
+2. 多段カラムヘッダー(ヘッダーグループ)。
+3. ピン留め行(上下固定行)。
+4. フィルハンドル(セル右下ドラッグでの連続コピー/連番)。
+
+~~SSRM 完成(サーバーサイド変更 = セル編集書き戻し)~~ → **2026-07-16 実装済み**(§4 参照。
+`refreshServerSide()` とエラー・リトライ UI は 2026-07-15、セル編集書き戻し + 楽観更新は
+2026-07-16 の書き戻し batch 1〜5)。行追加削除は refresh 運用で対応(スコープ外として合意)。
 
 ~~6. プレーンテキスト以外のエディタ種別(select / date / checkbox など)。~~ → **2026-07-14 実装済み**: `GridColumn.editor`(text / number / select / date / checkbox / custom)+ セル編集バリデーション(`validate` / `validationMode: 'mark' | 'reject'`、`getInvalidCells()`)。エディタ実体は `editors/` 配下、純ロジックは `logic/editorValues.ts` / `logic/selectEditorState.ts` / `logic/checkboxEditor.ts` / `logic/validation.ts`。詳細は API_REFERENCE の「セルエディタ」「バリデーション」節。
 

@@ -25,7 +25,7 @@ A high-performance, virtualized spreadsheet / data grid for **React 19**, writte
 - Full-text tooltip on truncated cells — `showCellOverflowTooltip` shows the full value on hover, but only when the cell is actually clipped (…).
 - Japanese-aware line wrapping — per-column `wordBreak` / `lineBreak`, including `wordBreak: 'auto-phrase'` for phrase-based breaks on Chromium (BudouX). Cross-browser BudouX recipe in the API reference.
 - External height control via `height` / `maxHeight` (e.g. `height="100%"` to follow the parent's height).
-- Both **client-side** (`rows`) and **server-side** (`dataSource`, SSRM) row models.
+- Both **client-side** (`rows`) and **server-side** (`dataSource`, SSRM) row models — server-side includes query forwarding (filter / sort / global filter), soft refresh (`refreshServerSide()`), load-error retry UI, and cell-edit write-back via `dataSource.updateRows` with optimistic updates and automatic rollback on failure.
 - Themeable with CSS custom properties (`--ssg-*`, defined at zero specificity so your overrides always win). Base styles are plain unlayered CSS with single-class specificity, so they survive CSS resets such as Tailwind Preflight; a cascade-layers variant (`style.layer.css`) is also shipped. `className` / `classNames` slots are provided.
 - Styled tooltips out of the box — action hints and truncated-text previews use a custom dark-chip tooltip (no browser-default `title` look). Add `data-ssg-tooltip="text"` to your own elements (custom cells, headers) to get the same tooltip; colors are themeable via `--ssg-tooltip-*` tokens.
 - Built-in dark theme — `theme="light" | "dark" | "auto"` switches the grid, every popover / panel / menu, the drag ghost and tooltips through a single token preset. `"auto"` follows `prefers-color-scheme`; with class-based dark frameworks (Mantine / HeroUI / Tailwind) pass your resolved color scheme instead.
@@ -222,11 +222,15 @@ Pass a `dataSource` instead of `rows` to switch to server-side mode. The grid ke
       const { rows, totalRowCount } = await fetchPage({ startIndex, endIndex, query, signal })
       return { rows, totalRowCount }
     },
+    // Optional: enables cell editing in server-side mode (optimistic update + rollback on failure).
+    async updateRows({ updates }) {
+      await patchRows(updates) // updates: [{ rowKey, rowIndex, row, previousRow, changes }]
+    },
   }}
 />
 ```
 
-Sorting, column filters, and the global filter stay enabled and are forwarded to the server through `query`. See the [API reference](./src/components/spreadsheet-grid/API_REFERENCE.md) for the full `getRows` contract, the filter wire format, and `serverSideRefreshToken`.
+Sorting, column filters, and the global filter stay enabled and are forwarded to the server through `query`. Cell edits (editor commit / paste / Delete-clear / checkbox) are written back through `updateRows` with optimistic updates — the grid rolls the cells back and shows a dismissible error bar if the write fails (`onServerSideWriteError` fires for toasts/logging). Without `updateRows`, server-side cells are read-only. Row add/remove has no write-back API; apply it on the server and call `refreshServerSide()`. See the [API reference](./src/components/spreadsheet-grid/API_REFERENCE.md) for the full `getRows` / `updateRows` contracts, the filter wire format, and `serverSideRefreshToken`.
 
 ## Styling & theming
 
@@ -308,7 +312,7 @@ The full prop and type reference lives in [`src/components/spreadsheet-grid/API_
 - 省略（…）セルの全文ツールチップ — `showCellOverflowTooltip` でホバー時に全文表示（実際にクリップされているセルのみ）。
 - 日本語対応の折り返し — 列ごとの `wordBreak` / `lineBreak`。`wordBreak: 'auto-phrase'` で Chromium（Chrome / Edge）の文節折り返し（BudouX）。クロスブラウザの BudouX レシピは API リファレンス参照。
 - `height` / `maxHeight` によるスクロールコンテナ高さの外部制御（`height="100%"` で親要素の高さに追従）。
-- **クライアントサイド**（`rows`）と**サーバーサイド**（`dataSource`、SSRM）の両行モデル。
+- **クライアントサイド**（`rows`）と**サーバーサイド**（`dataSource`、SSRM）の両行モデル — サーバーサイドはクエリ送出（フィルター / ソート / グローバルフィルター）、ソフトリフレッシュ（`refreshServerSide()`）、取得失敗の再試行 UI に加え、`dataSource.updateRows` によるセル編集の書き戻し（楽観更新 + 失敗時の自動ロールバック）まで対応。
 - CSS カスタムプロパティ（`--ssg-*`。特異度 0 で定義され、利用側の上書きが常に勝ちます）によるテーマ設定。基底スタイルは未レイヤーの単一クラス特異度で、Tailwind Preflight などの CSS リセットに壊されません。カスケードレイヤー版（`style.layer.css`）も同梱。`className` / `classNames` スロットも用意。
 - スタイル付きツールチップを標準装備 — 操作ヒントや切り詰めテキストの全文表示は、ブラウザ標準の `title` ではなくダークチップのカスタムツールチップで表示。利用側の要素(カスタムセルやヘッダー)にも `data-ssg-tooltip="文言"` を付けるだけで同じ見た目になります。配色は `--ssg-tooltip-*` トークンで調整可。
 - ダークテーマを標準装備 — `theme="light" | "dark" | "auto"` で、グリッド本体・全ポップオーバー / パネル / メニュー・ドラッグゴースト・ツールチップをトークンプリセット 1 つで一括切替。`"auto"` は `prefers-color-scheme` に追従(Mantine / HeroUI / Tailwind のクラスベース dark 運用では、解決済みのカラースキームを渡す使い方を推奨)。
@@ -505,11 +509,15 @@ const invalid = gridRef.current?.getInvalidCells()
       const { rows, totalRowCount } = await fetchPage({ startIndex, endIndex, query, signal })
       return { rows, totalRowCount }
     },
+    // 任意: serverSide のセル編集を有効化(楽観更新 + 失敗時ロールバック)。
+    async updateRows({ updates }) {
+      await patchRows(updates) // updates: [{ rowKey, rowIndex, row, previousRow, changes }]
+    },
   }}
 />
 ```
 
-ソート・列フィルター・グローバルフィルターは有効なまま `query` 経由でサーバへ送られます。`getRows` の契約、フィルターの wire format、`serverSideRefreshToken` の詳細は [API リファレンス](./src/components/spreadsheet-grid/API_REFERENCE.md) を参照してください。
+ソート・列フィルター・グローバルフィルターは有効なまま `query` 経由でサーバへ送られます。セル編集(エディタ確定 / ペースト / Delete クリア / checkbox)は `updateRows` で楽観更新つきの書き戻しになり、保存失敗時はセルが自動で元に戻って保存失敗バーが表示されます(`onServerSideWriteError` でトースト / ログ通知も可)。`updateRows` 未指定の serverSide セルは読み取り専用です。行の追加削除は書き戻し API を持たないため、サーバへ反映後に `refreshServerSide()` を呼ぶ運用にしてください。`getRows` / `updateRows` の契約、フィルターの wire format、`serverSideRefreshToken` の詳細は [API リファレンス](./src/components/spreadsheet-grid/API_REFERENCE.md) を参照してください。
 
 ### スタイリング / テーマ
 

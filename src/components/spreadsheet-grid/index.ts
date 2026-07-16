@@ -67,6 +67,13 @@ export type {
   ServerSideGetRowsParams,
   ServerSideGetRowsResult,
   ServerSideLoadErrorParams,
+  // 追加(SSRM 書き戻し): dataSource.updateRows(セル編集の書き戻し)の型族と失敗通知
+  //   (onServerSideWriteError)のパラメータです。
+  ServerSideCellChange,
+  ServerSideRowUpdate,
+  ServerSideUpdateRowsParams,
+  ServerSideUpdateRowsResult,
+  ServerSideWriteErrorParams,
   // 行モデル境界型(clientSide / serverSide 共通の行取得 seam)です。
   RowModel,
   // 追加(imperative API #1): ref ハンドル(SpreadsheetGridProps.ref)と関連型です。

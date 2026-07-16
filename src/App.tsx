@@ -226,6 +226,26 @@ const resolveServerOrder = (query: ServerSideQuery): Int32Array => {
 //   reject し、グリッド内蔵のエラーバー(再試行 UI)と onServerSideLoadError を確認できます。
 let serverFailureMode = false;
 
+// 追加(SSRM 書き戻しデモ): モックサーバの「保存失敗」モードです。ON の間は updateRows が
+//   レイテンシ後に reject し、楽観更新のロールバック・保存失敗バー・onServerSideWriteError を
+//   確認できます(getRows の障害モードとは独立)。
+let serverWriteFailureMode = false;
+
+// 追加(SSRM 書き戻しデモ): partNo(一意)→ モック DB の行 index です。updateRows が対象行を
+//   O(1) で特定するために初回書き込み時に一度だけ構築します(実サーバの主キー索引の代用)。
+//   partNo 自体が編集されたときは索引を追従更新します。
+let serverRowIndexByPartNo: Map<string, number> | null = null;
+const getServerRowIndex = (partNo: string): number => {
+  if (serverRowIndexByPartNo === null) {
+    const map = new Map<string, number>();
+    getServerRows().forEach((row, index) => {
+      map.set(row.partNo, index);
+    });
+    serverRowIndexByPartNo = map;
+  }
+  return serverRowIndexByPartNo.get(partNo) ?? -1;
+};
+
 const serverSideDataSource: ServerSideDataSource<DemoRow> = {
   // 初回 fetch 前から正しい総高さ/スクロールバーを出すため総件数を即時提示します。
   initialRowCount: SERVER_ROW_COUNT,
@@ -269,6 +289,46 @@ const serverSideDataSource: ServerSideDataSource<DemoRow> = {
         },
         { once: true },
       );
+    }),
+  // 追加(SSRM 書き戻しデモ): セル編集の書き戻し口です(実サーバの PATCH/PUT 相当)。
+  //   previousRow.partNo(編集前の主キー)で モック DB の行を特定し、changes だけを適用します
+  //   (update.row を丸ごと書かないのは、リフレッシュ刻印(取得#N 付き note)のような表示上の
+  //   加工を DB へ持ち込まないため)。rows は返さない = グリッドは楽観値をそのまま確定します。
+  updateRows: ({ updates }) =>
+    new Promise<void>((resolve, reject) => {
+      setTimeout(() => {
+        if (serverWriteFailureMode) {
+          reject(new Error(`モックサーバ保存失敗(${updates.length} 行)`));
+          return;
+        }
+        const rows = getServerRows();
+        for (const update of updates) {
+          const dbIndex = getServerRowIndex(update.previousRow.partNo);
+          if (dbIndex < 0) {
+            continue;
+          }
+          let nextRow = rows[dbIndex];
+          for (const change of update.changes) {
+            // newValue は unknown(グリッドは列パーサ済みのドメイン値を渡す)。デモの DemoRow は
+            //   index signature が string | number | boolean のためここで絞ります。
+            nextRow = {
+              ...nextRow,
+              [change.columnKey]: change.newValue as string | number | boolean,
+            };
+          }
+          rows[dbIndex] = nextRow;
+          // 主キー(partNo)自体の編集は索引を追従させます。
+          if (update.previousRow.partNo !== nextRow.partNo) {
+            serverRowIndexByPartNo?.delete(update.previousRow.partNo);
+            serverRowIndexByPartNo?.set(nextRow.partNo, dbIndex);
+          }
+        }
+        // フィルター/ソート済み order のキャッシュは書き込みで無効化します(次のクエリ変更や
+        //   refreshServerSide() での再取得時に、更新後の値で並びが再解決されます)。
+        lastServerQueryKey = null;
+        lastServerOrder = null;
+        resolve();
+      }, SERVER_LATENCY_MS);
     }),
 };
 
@@ -685,6 +745,14 @@ function App() {
     setServerFailureDemo(serverFailureMode);
   };
 
+  // 追加(SSRM 書き戻しデモ): モックサーバの保存失敗モードのトグルです。ON にしてセルを編集
+  //   すると updateRows が reject し、楽観更新のロールバックと保存失敗バーが確認できます。
+  const [serverWriteFailureDemo, setServerWriteFailureDemo] = useState(false);
+  const toggleServerWriteFailure = () => {
+    serverWriteFailureMode = !serverWriteFailureMode;
+    setServerWriteFailureDemo(serverWriteFailureMode);
+  };
+
   // 追加(①-5): ヘッダー表示用の行数です(server はサーバ総件数を提示)。
   const displayRowCount = mode === 'server' ? SERVER_ROW_COUNT : rows.length;
 
@@ -919,6 +987,13 @@ function App() {
             >
               {`モックサーバ障害: ${serverFailureDemo ? 'ON(getRows が失敗)' : 'OFF'}`}
             </button>
+            <button
+              type="button"
+              onClick={toggleServerWriteFailure}
+              style={modeButtonStyle(serverWriteFailureDemo)}
+            >
+              {`モックサーバ保存失敗: ${serverWriteFailureDemo ? 'ON(updateRows が失敗)' : 'OFF'}`}
+            </button>
           </div>
         )}
 
@@ -948,6 +1023,11 @@ function App() {
             「モックサーバ障害」を ON にしてスクロールすると getRows が失敗し、グリッド下部に
             エラーバー(再試行 UI)が出ます。OFF に戻して「再試行」を押すと失敗ブロックだけが
             取り直されます(失敗の詳細は onServerSideLoadError で console にも出ます)。
+            セル編集(ダブルクリック / Enter / ペースト / Delete / checkbox)は
+            dataSource.updateRows でモックサーバへ書き戻されます(楽観更新 = 入力は即時表示、
+            約 {SERVER_LATENCY_MS}ms 後にサーバ確定)。「モックサーバ保存失敗」を ON にして編集
+            すると保存が失敗し、値が自動で元へ戻って保存失敗バーが出ます(詳細は
+            onServerSideWriteError で console にも出ます)。undo/redo は serverSide では無効です。
           </p>
         )}
         {/* 追加(imperative API #1): ref ハンドル(SpreadsheetGridHandle)の動作デモです。 */}
@@ -1174,6 +1254,18 @@ function App() {
                 console.info(
                   `[demo] getRows 失敗: rows [${params.startIndex}, ${params.endIndex})`,
                   error,
+                );
+              }
+            : undefined
+        }
+        // 追加(SSRM 書き戻しデモ): updateRows 失敗(ロールバック済み)の外部通知です。
+        onServerSideWriteError={
+          mode === 'server'
+            ? (error, params) => {
+                console.info(
+                  `[demo] updateRows 失敗: ${params.updates.length} 行をロールバック`,
+                  error,
+                  params.updates,
                 );
               }
             : undefined
