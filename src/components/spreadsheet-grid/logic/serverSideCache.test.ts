@@ -100,4 +100,59 @@ describe('createServerSideRowCache', () => {
     expect(cache.getRow(50)).toBeUndefined();
     expect(cache.hasBlock(0)).toBe(false);
   });
+
+  describe('updateRow(SSRM 書き戻し)', () => {
+    it('ロード済みブロックの単一行を差し替えて true を返す', () => {
+      const cache = createServerSideRowCache<Row>({ blockSize: 100, maxBlocks: 4 });
+      cache.setBlock(2, makeBlock(2, 100, 100));
+      expect(cache.updateRow(250, { v: 9999 })).toBe(true);
+      expect(cache.getRow(250)).toEqual({ v: 9999 });
+      // 同一ブロックの他行は不変。
+      expect(cache.getRow(249)).toEqual({ v: 249 });
+      expect(cache.getRow(251)).toEqual({ v: 251 });
+    });
+
+    it('コピーオンライトで差し替える(旧配列参照は不変)', () => {
+      const cache = createServerSideRowCache<Row>({ blockSize: 100, maxBlocks: 4 });
+      const original = makeBlock(0, 100, 100);
+      cache.setBlock(0, original);
+      cache.updateRow(10, { v: -1 });
+      // setBlock に渡した元配列は書き換えられない(rowModel memo が旧参照を掴んでいても安全)。
+      expect(original[10]).toEqual({ v: 10 });
+      expect(cache.getRow(10)).toEqual({ v: -1 });
+    });
+
+    it('未ロードブロックは false(ブロックを復活させない)', () => {
+      const cache = createServerSideRowCache<Row>({ blockSize: 100, maxBlocks: 4 });
+      expect(cache.updateRow(250, { v: 1 })).toBe(false);
+      expect(cache.hasBlock(2)).toBe(false);
+      expect(cache.getRow(250)).toBeUndefined();
+    });
+
+    it('部分末端ブロックの範囲外オフセットは false', () => {
+      const cache = createServerSideRowCache<Row>({ blockSize: 100, maxBlocks: 4 });
+      cache.setBlock(3, makeBlock(3, 100, 3));
+      expect(cache.updateRow(302, { v: 1 })).toBe(true);
+      expect(cache.updateRow(303, { v: 1 })).toBe(false);
+      expect(cache.getRow(303)).toBeUndefined();
+    });
+
+    it('負の viewIndex は false', () => {
+      const cache = createServerSideRowCache<Row>({ blockSize: 100, maxBlocks: 4 });
+      cache.setBlock(0, makeBlock(0, 100, 100));
+      expect(cache.updateRow(-1, { v: 1 })).toBe(false);
+    });
+
+    it('recency(LRU 順)を変えない', () => {
+      const cache = createServerSideRowCache<Row>({ blockSize: 100, maxBlocks: 2 });
+      cache.setBlock(0, makeBlock(0, 100, 100));
+      cache.setBlock(1, makeBlock(1, 100, 100));
+      // 最古の block0 の行を更新しても順序は [0,1] のまま。
+      cache.updateRow(10, { v: -1 });
+      expect(cache.loadedBlockIndexes()).toEqual([0, 1]);
+      // 新ブロック投入で退避されるのは依然 block0(更新が MRU 化しない)。
+      cache.setBlock(2, makeBlock(2, 100, 100));
+      expect(cache.loadedBlockIndexes()).toEqual([1, 2]);
+    });
+  });
 });

@@ -32,6 +32,11 @@ export type ServerSideRowCache<T> = {
   hasBlock: (blockIndex: number) => boolean;
   // ブロックの行配列を格納します(MRU 化)。maxBlocks 超過時は最古を退避します。
   setBlock: (blockIndex: number, rows: T[]) => void;
+  // 追加(SSRM 書き戻し): 単一行を差し替えます(該当ブロックの行配列をコピーオンライトで再構築)。
+  //   未ロードブロック / 部分末端ブロックの範囲外は false を返し、何もしません(退避済みブロックを
+  //   ここで復活させない — 次の fetch がサーバー正本を取り直します)。recency は変更しません
+  //   (編集対象ブロックは可視帯として requestRange の touchBlocks が MRU 化済みのため)。
+  updateRow: (viewIndex: number, row: T) => boolean;
   // 指定ブロックを MRU(最新)へ更新します(可視帯の保護用・effect から呼びます)。
   touchBlocks: (blockIndexes: number[]) => void;
   // 全ブロックを破棄します(rows / dataSource 切替時など)。
@@ -94,6 +99,28 @@ export function createServerSideRowCache<T>(
     evictIfNeeded();
   };
 
+  const updateRow = (viewIndex: number, row: T): boolean => {
+    if (blockSize <= 0 || viewIndex < 0) {
+      return false;
+    }
+    const blockIndex = Math.floor(viewIndex / blockSize);
+    const rows = blocks.get(blockIndex);
+    if (rows === undefined) {
+      return false;
+    }
+    const offset = viewIndex - blockIndex * blockSize;
+    // 部分末端ブロックの範囲外は存在しない行なので書きません(getRow の undefined と対称)。
+    if (offset >= rows.length) {
+      return false;
+    }
+    // コピーオンライトで差し替えます(rowModel の memo が古い配列参照を掴んでいても安全)。
+    //   Map.set は既存キーの挿入順を変えないため recency(LRU 順)は不変です。
+    const nextRows = rows.slice();
+    nextRows[offset] = row;
+    blocks.set(blockIndex, nextRows);
+    return true;
+  };
+
   const touchBlocks = (blockIndexes: number[]): void => {
     for (const blockIndex of blockIndexes) {
       moveToNewest(blockIndex);
@@ -110,6 +137,7 @@ export function createServerSideRowCache<T>(
     getRow,
     hasBlock,
     setBlock,
+    updateRow,
     touchBlocks,
     clear,
     loadedBlockIndexes,

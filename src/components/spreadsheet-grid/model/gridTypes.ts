@@ -63,9 +63,47 @@ export type ServerSideGetRowsResult<T> = {
 //     (広い範囲を返すとクライアントで全件保持と同義になり SSRM の意義が消えます)。
 export type ServerSideDataSource<T> = {
   getRows: (params: ServerSideGetRowsParams) => Promise<ServerSideGetRowsResult<T>>;
+  // 追加(SSRM 書き戻し): セル編集の書き戻し口です(任意)。指定するとセル編集(エディタ確定 /
+  //   ペースト / Delete クリア / setValue / checkbox)が楽観更新つきでここへ届きます。
+  //   resolve = 確定(rows を返せばサーバー確定行をキャッシュへマージ)/ reject = ロールバック
+  //   (グリッドが編集前の値へ自動で戻します)。未指定なら SSRM では編集が従来どおり無効です。
+  updateRows?: (
+    params: ServerSideUpdateRowsParams<T>,
+  ) => Promise<ServerSideUpdateRowsResult<T> | void>;
   initialRowCount?: number;
   blockSize?: number;
   maxCachedBlocks?: number;
+};
+
+// 追加(SSRM 書き戻し): セル単位の変更内容です(columnKey は GridColumn.key)。
+//   previousValue は「直前に表示されていた値」(確定済み or 先行する楽観値)です。
+export type ServerSideCellChange = {
+  columnKey: string;
+  previousValue: unknown;
+  newValue: unknown;
+};
+
+// 追加(SSRM 書き戻し): updateRows へ渡す行単位の更新記述子です。同一行への複数セル変更
+//   (ペースト等)は 1 エントリに集約されます。rowIndex は view 空間(フィルター/ソート適用後)、
+//   row は楽観更新後の行、previousRow は更新前の行です。
+export type ServerSideRowUpdate<T> = {
+  rowKey: GridRowKey;
+  rowIndex: number;
+  row: T;
+  previousRow: T;
+  changes: ServerSideCellChange[];
+};
+
+// 追加(SSRM 書き戻し): updateRows の引数です。1 回のユーザー操作 = 1 呼び出しに束ねます。
+export type ServerSideUpdateRowsParams<T> = {
+  updates: ServerSideRowUpdate<T>[];
+};
+
+// 追加(SSRM 書き戻し): updateRows の戻り値です。rows を返す場合は updates と同順・同長で
+//   「サーバー確定後の行」を返してください(サーバー計算列の反映用にキャッシュへマージされます)。
+//   void / rows 省略は「楽観値をそのまま確定」を意味します。
+export type ServerSideUpdateRowsResult<T> = {
+  rows?: T[];
 };
 
 // 追加(batch 9): getRows 失敗通知(onServerSideLoadError)のパラメータです。失敗した要求の
