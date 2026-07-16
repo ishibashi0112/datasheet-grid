@@ -53,6 +53,9 @@ const renderCustomEditor = () => {
       editorSession={{
         row: { id: 1, qty: 10 },
         rowIndex: 3,
+        // 追加(context 拡張): view とは別空間であることをテストデータでも表現します。
+        sourceRowIndex: 5,
+        rowKey: 'row-5',
         colIndex: 2,
         column,
         value: 10,
@@ -72,6 +75,9 @@ describe('CustomCellEditor', () => {
     const ctx = contexts[0];
     expect(ctx.row).toEqual({ id: 1, qty: 10 });
     expect(ctx.rowIndex).toBe(3);
+    // 追加(context 拡張): source 行 index / rowKey が view index と独立に引き渡される。
+    expect(ctx.sourceRowIndex).toBe(5);
+    expect(ctx.rowKey).toBe('row-5');
     expect(ctx.colIndex).toBe(2);
     expect(ctx.column).toBe(column);
     expect(ctx.value).toBe(10);

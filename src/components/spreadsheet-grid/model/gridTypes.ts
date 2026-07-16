@@ -238,9 +238,15 @@ export type ColumnFilterValue =
   | CustomColumnFilterValue;
 
 // 追加: セル描画に渡すコンテキストです。
+// 追加(context 拡張): rowIndex は「ビュー行 index」(ソート / フィルター適用後の表示位置)で、
+//   並べ替えで source と別空間になります。source 行基準の突き合わせ(例: getInvalidCells の
+//   結果や外部のエラー行 index 集合との照合)には sourceRowIndex / rowKey を使ってください
+//   (sourceRowIndex = 元 rows の index。serverSide では view 順が正準のため viewIndex と同値)。
 export type CellRenderContext<T> = {
   row: T;
   rowIndex: number;
+  sourceRowIndex: number;
+  rowKey: GridRowKey;
   colIndex: number;
   value: unknown;
   column: GridColumn<T>;
@@ -254,9 +260,12 @@ export type CellRenderContext<T> = {
 // 追加(UI CSS移行): 条件付きセル className(GridColumn.cellClassName)の関数版へ渡す
 //   コンテキストです。CellRenderContext から setValue を除いた読み取り専用版で、
 //   className 算出に副作用(setValue)は不要なため値解決(getCellValue)のみを伴います。
+//   rowIndex(view)と sourceRowIndex(source)の違いは CellRenderContext の注記を参照。
 export type CellStyleContext<T> = {
   row: T;
   rowIndex: number;
+  sourceRowIndex: number;
+  rowKey: GridRowKey;
   colIndex: number;
   value: unknown;
   column: GridColumn<T>;
@@ -360,6 +369,10 @@ export type CellEditorContext<T> = {
   row: T;
   // ビュー行 index(ソート / フィルター適用後)です。
   rowIndex: number;
+  // 追加(context 拡張): source 行 index(元 rows の index)と行キーです。ソート / フィルター
+  //   に依らず安定な行参照が要る場合はこちらを使います(CellRenderContext の注記と同じ規則)。
+  sourceRowIndex: number;
+  rowKey: GridRowKey;
   // 論理列 index(視覚順)です。
   colIndex: number;
   column: GridColumn<T>;

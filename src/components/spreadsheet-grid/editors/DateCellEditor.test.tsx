@@ -27,6 +27,8 @@ const renderDateEditor = (value: unknown = '2026-07-14') => {
       editorSession={{
         row: { orderedAt: value },
         rowIndex: 0,
+        sourceRowIndex: 0,
+        rowKey: 0,
         colIndex: 0,
         column: { key: 'orderedAt', width: 140 },
         value,

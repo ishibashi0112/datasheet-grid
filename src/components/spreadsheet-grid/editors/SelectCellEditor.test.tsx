@@ -44,6 +44,8 @@ const renderSelectEditor = ({
       editorSession={{
         row: { fruit: 'banana' },
         rowIndex: 0,
+        sourceRowIndex: 0,
+        rowKey: 0,
         colIndex: 0,
         column: { key: 'fruit', width: 120 },
         value,

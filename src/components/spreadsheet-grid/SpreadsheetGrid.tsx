@@ -2250,6 +2250,14 @@ export function SpreadsheetGrid<T extends object>({
       ? {
           row: editingRow,
           rowIndex: uiState.editingCell.row,
+          // 追加(context 拡張): custom エディタの CellEditorContext 用に source 行 index / rowKey
+          //   も解決します(editingRow が非 undefined と確定済みのため in-bounds)。
+          sourceRowIndex:
+            rowModel.getSourceIndex(uiState.editingCell.row) ??
+            uiState.editingCell.row,
+          rowKey:
+            rowModel.getRowKey(uiState.editingCell.row) ??
+            uiState.editingCell.row,
           colIndex: uiState.editingCell.col,
           column: editingColumn,
           value: getCellValue(editingRow, editingColumn),
@@ -3637,9 +3645,15 @@ export function SpreadsheetGrid<T extends object>({
       const value = getCellValue(row, column);
 
       if (column.renderCell) {
+        // 追加(context 拡張): source 行 index / rowKey を公開します(view の rowIndex は
+        //   ソート / フィルターで source と別空間のため。setValue の解決と同じ seam を使い、
+        //   ここは描画対象=ロード済み行のため in-bounds で undefined は実際には発生しません)。
+        const sourceRowIndex = rowModel.getSourceIndex(rowIndex) ?? rowIndex;
         return column.renderCell({
           row,
           rowIndex,
+          sourceRowIndex,
+          rowKey: rowModel.getRowKey(rowIndex) ?? rowIndex,
           colIndex,
           value,
           column,

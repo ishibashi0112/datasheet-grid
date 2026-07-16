@@ -124,6 +124,8 @@ describe('エディタの reject 継続(validation)', () => {
         editorSession={{
           row: { id: 1 },
           rowIndex: 0,
+          sourceRowIndex: 0,
+          rowKey: 0,
           colIndex: 0,
           column: { key: 'id', width: 80 },
           value: 'a',

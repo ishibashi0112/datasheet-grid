@@ -64,6 +64,9 @@ type GridBodyRowProps<T> = {
   leadingWidth: number;
   rowIndex: number;
   rowKey: GridRowKey;
+  // 追加(context 拡張): source 行 index(= rowModel.getSourceIndex(rowIndex)。プリミティブ=
+  //   memo 安全)。cellClassName / renderCell の各コンテキストへ view index と併せて公開します。
+  sourceRowIndex: number;
   row: T;
   // virtualRow.start(scrollMargin=headerHeight 込み)。行全体の translateY に使います。
   top: number;
@@ -146,6 +149,7 @@ function GridBodyRowInner<T>({
   leadingWidth,
   rowIndex,
   rowKey,
+  sourceRowIndex,
   row,
   top,
   renderEntries,
@@ -277,6 +281,9 @@ function GridBodyRowInner<T>({
               ? columnCellClassName({
                   row,
                   rowIndex,
+                  // 追加(context 拡張): source 行基準の突き合わせ用(view index と別空間)。
+                  sourceRowIndex,
+                  rowKey,
                   colIndex,
                   value: getCellValue(row, column),
                   column,
@@ -704,6 +711,10 @@ export function GridBodyLayer<T>({
           );
         }
         const rowKey = rowModel.getRowKey(rowIndex) ?? rowIndex;
+        // 追加(context 拡張): source 行 index を解決します(clientSide = order[i] / serverSide =
+        //   恒等)。row が valid と確定した後のため in-bounds で undefined は実際には発生しません
+        //   (万一の OOB は view index へ倒します — 表示用コンテキスト専用のため誤書き込みの危険なし)。
+        const sourceRowIndex = rowModel.getSourceIndex(rowIndex) ?? rowIndex;
 
         // 追加(行選択): この行がチェック選択されているか(O(1))。無効時は常に false。
         const isRowChecked = enableRowSelection
@@ -752,6 +763,7 @@ export function GridBodyLayer<T>({
             leadingWidth={leadingWidth}
             rowIndex={rowIndex}
             rowKey={rowKey}
+            sourceRowIndex={sourceRowIndex}
             row={row}
             top={virtualRow.start}
             renderEntries={renderEntries}

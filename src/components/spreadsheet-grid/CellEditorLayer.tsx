@@ -4,6 +4,7 @@ import type {
   EditorCommitResult,
   GridColumn,
   GridColumnEditor,
+  GridRowKey,
 } from './model/gridTypes';
 import { TextCellEditor } from './editors/TextCellEditor';
 import { NumberCellEditor } from './editors/NumberCellEditor';
@@ -26,9 +27,13 @@ type CellEditorRect = {
 
 // 追加(editor: select): 編集中セルのセッション情報です。SpreadsheetGrid が editingCell から
 //   解決して渡します(select の動的 options 解決・初期ハイライト・custom エディタの ctx 用)。
+// 追加(context 拡張): sourceRowIndex / rowKey は custom エディタの CellEditorContext へ
+//   引き渡すために保持します(rowIndex は view index で、ソート / フィルターで source と別空間)。
 export type CellEditorSession<T> = {
   row: T;
   rowIndex: number;
+  sourceRowIndex: number;
+  rowKey: GridRowKey;
   colIndex: number;
   column: GridColumn<T>;
   value: unknown;
@@ -157,6 +162,8 @@ export function CellEditorLayer<T>({
         context={{
           row: editorSession.row,
           rowIndex: editorSession.rowIndex,
+          sourceRowIndex: editorSession.sourceRowIndex,
+          rowKey: editorSession.rowKey,
           colIndex: editorSession.colIndex,
           column: editorSession.column,
           value: editorSession.value,
