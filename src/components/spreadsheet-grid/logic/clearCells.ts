@@ -5,6 +5,7 @@
 //   変更が 1 セルも無ければ rows の参照をそのまま返します(呼び出し側は changed=false で
 //   emit をスキップでき、undo 履歴に no-op を積みません)。
 import type { CellCoord, GridColumn, GridSelection } from '../model/gridTypes';
+import type { ServerSideCellEditInput } from './serverSideEdits';
 import {
   normalizeCellRange,
   normalizeColumnRange,
@@ -170,4 +171,75 @@ export const clearCellsInSelection = <T extends object>({
   }
 
   return changed ? { nextRows, changed } : { nextRows: rows, changed: false };
+};
+
+// 追加(SSRM 書き戻し): serverSide 用に「クリアすべきセル編集の集合」を作ります
+//   (clearCellsInSelection のビュー走査版。rows 再構築の代わりに ServerSideCellEditInput を
+//   返し、書き込みはフックの applyCellEdits が担います)。対象レンジ解決・ガード・クリア値・
+//   同値/reject スキップの規則は clientSide 版と同一で、未ロード行(getRow undefined =
+//   スケルトン)だけを追加でスキップします。
+export const buildClearCellEdits = <T extends object>({
+  getRow,
+  columns,
+  selection,
+  activeCell,
+  viewRowCount,
+  canWriteCell,
+}: {
+  getRow: (viewIndex: number) => T | undefined;
+  columns: GridColumn<T>[];
+  selection: GridSelection;
+  activeCell: CellCoord | null;
+  viewRowCount: number;
+  // SSRM に source 空間は無いため、第 1 引数は view index です(getSourceIndex 恒等と同義)。
+  canWriteCell: (
+    viewIndex: number,
+    colIndex: number,
+    row: T,
+    column: GridColumn<T>,
+  ) => boolean;
+}): ServerSideCellEditInput<T>[] => {
+  const target = resolveClearTarget(
+    selection,
+    activeCell,
+    viewRowCount,
+    columns.length,
+  );
+  if (!target) {
+    return [];
+  }
+
+  const edits: ServerSideCellEditInput<T>[] = [];
+  for (
+    let viewIndex = target.startRow;
+    viewIndex <= target.endRow;
+    viewIndex += 1
+  ) {
+    const row = getRow(viewIndex);
+    if (!row) {
+      continue;
+    }
+    for (
+      let colIndex = target.startCol;
+      colIndex <= target.endCol;
+      colIndex += 1
+    ) {
+      const column = columns[colIndex];
+      if (!column) {
+        continue;
+      }
+      if (!canWriteCell(viewIndex, colIndex, row, column)) {
+        continue;
+      }
+      const clearedValue = resolveCellParser(column)('', row);
+      if (Object.is(getCellValue(row, column), clearedValue)) {
+        continue;
+      }
+      if (decideCellWrite(column, row, clearedValue).action === 'reject') {
+        continue;
+      }
+      edits.push({ viewIndex, column, value: clearedValue });
+    }
+  }
+  return edits;
 };

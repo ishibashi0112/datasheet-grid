@@ -103,7 +103,7 @@ import {
 } from './logic/geometry';
 // 追加(B3): center 列の JS 算出 flex(利用可能幅を比率配分)。
 import { isFlexingColumn, computeCenterFlexWidths } from './logic/columnFlex';
-import { clearCellsInSelection } from './logic/clearCells';
+import { buildClearCellEdits, clearCellsInSelection } from './logic/clearCells';
 // 追加: データ投入時の列幅自動フィットの発火判定(純関数)です。
 import { resolveAutoSizeOnData } from './logic/autoSizeOnData';
 // 追加(13-B2-5): 列リセットの再構成純ロジック(幅 / 固定 / 表示 / 並び順の完全復元)です。
@@ -381,7 +381,9 @@ export function SpreadsheetGrid<T extends object>({
   readOnly = false,
   // 追加(THEME-3): readonly セルの組み込み淡色表示の opt-in(既定 false = 色変化なし)。
   dimReadOnlyCells = false,
-  canEditCell,
+  // 変更(SSRM 書き戻し): 生 prop は canEditCellProp として受け、serverSide の書き戻し可否と
+  //   合成した canEditCell を下(serverSide フック直後)で再定義します(下流の consumer は従来名のまま)。
+  canEditCell: canEditCellProp,
   // 追加(undo/redo): 編集の取り消し/やり直しです(既定 on)。clientSide + onRowsChange 時のみ実効。
   enableUndoRedo = true,
   undoHistoryLimit = 100,
@@ -1128,6 +1130,26 @@ export function SpreadsheetGrid<T extends object>({
   // 以降の全 consumer(rowModelRef / viewRowCount / keyboard / edit / clipboard / body /
   //   rowHeightStore)はこの rowModel シーム越しで透過に動きます。
   const rowModel = isServerSide ? serverSide.rowModel : clientSideRowModel;
+
+  // 追加(SSRM 書き戻し): 編集可否の合成です。serverSide で dataSource.updateRows が無い間は
+  //   全セルを編集不可へ倒します(書き戻し先が無い編集セッションは commit 時に静かに破棄される
+  //   だけのため、そもそも開かせない)。編集開始の全経路(dblclick / Enter / F2 / 印字キー /
+  //   checkbox トグル / clear / paste)と cellState.readOnly(表示)がこの 1 箇所で揃います。
+  const canEditCell = useMemo(() => {
+    if (isServerSide && !serverSide.canUpdateRows) {
+      return () => false;
+    }
+    return canEditCellProp;
+  }, [isServerSide, serverSide.canUpdateRows, canEditCellProp]);
+
+  // 追加(SSRM 書き戻し): serverSide のセル書き込み口です(dataSource.updateRows 指定時のみ定義)。
+  //   定義時、各編集経路(エディタ commit / paste / clear / setValue / checkbox)は rows 再構築
+  //   (onRowsChange)の代わりにここへ書きます(楽観更新・ロールバック・失敗通知はフック側)。
+  //   undefined = clientSide または書き戻し不可で、各経路は従来どおりです。
+  const applyServerSideCellEdits =
+    isServerSide && serverSide.canUpdateRows
+      ? serverSide.applyCellEdits
+      : undefined;
 
   // 追加(DS-4 ①-(2)): 最新 rowModel を指す latest-ref です。autosize ランナーが run 開始時に
   //   キャプチャし、実行中に参照が変わった(= order/rows 変化)ら計測を中断するために使います。
@@ -2040,6 +2062,29 @@ export function SpreadsheetGrid<T extends object>({
   //   (undo 履歴に no-op を積まない)。クリア値は「空文字のペースト」と同じ規則
   //   (parseClipboardValue('') 経由、未定義なら '')です。
   const clearSelectedCells = useCallback(() => {
+    // 追加(SSRM 書き戻し): serverSide はビュー走査でセル編集集合を作り、書き戻しへ流します
+    //   (全件 rows が無いため rows 再構築は不可)。未ロード行(スケルトン)はスキップされます。
+    if (applyServerSideCellEdits) {
+      const edits = buildClearCellEdits({
+        getRow: (viewIndex) => rowModel.getRow(viewIndex),
+        columns: orderedColumns,
+        selection: uiState.selection,
+        activeCell: uiState.activeCell,
+        viewRowCount,
+        canWriteCell: (viewIndex, colIndex, row, column) =>
+          isCellEditable(
+            { readOnly, canEditCell },
+            viewIndex,
+            colIndex,
+            row,
+            column,
+          ),
+      });
+      if (edits.length > 0) {
+        applyServerSideCellEdits(edits);
+      }
+      return;
+    }
     if (!handleRowsChange) {
       return;
     }
@@ -2064,6 +2109,7 @@ export function SpreadsheetGrid<T extends object>({
     }
     handleRowsChange(nextRows);
   }, [
+    applyServerSideCellEdits,
     canEditCell,
     handleRowsChange,
     orderedColumns,
@@ -2095,6 +2141,8 @@ export function SpreadsheetGrid<T extends object>({
       //   history controller のラッパを渡します(未指定時は undefined 素通しで挙動不変)。
       onRowsChange: handleRowsChange,
       onColumnsChange,
+      // 追加(SSRM 書き戻し): serverSide の paste 書き込み口です(updateRows 指定時のみ定義)。
+      applyServerSideCellEdits,
       dispatch,
     });
 
@@ -2153,7 +2201,9 @@ export function SpreadsheetGrid<T extends object>({
   //   isCellEditable ガードを通し、履歴ラッパ(handleRowsChange)経由で undo/redo 対象にします。
   const toggleCheckboxCell = useCallback(
     (cell: CellCoord) => {
-      if (!handleRowsChange) {
+      // 変更(SSRM 書き戻し): 書き込み口はどちらか(clientSide=handleRowsChange /
+      //   serverSide=applyServerSideCellEdits)があれば進みます。
+      if (!handleRowsChange && !applyServerSideCellEdits) {
         return;
       }
       const row = rowModel.getRow(cell.row);
@@ -2172,10 +2222,6 @@ export function SpreadsheetGrid<T extends object>({
       ) {
         return;
       }
-      const originalRowIndex = rowModel.getSourceIndex(cell.row);
-      if (originalRowIndex === undefined) {
-        return;
-      }
       const nextValue = toggleCheckboxValue(
         getCellValue(row, column),
         column.editor,
@@ -2184,9 +2230,31 @@ export function SpreadsheetGrid<T extends object>({
       if (decideCellWrite(column, row, nextValue).action === 'reject') {
         return;
       }
+      // 追加(SSRM 書き戻し): serverSide は書き戻しへ流します(楽観更新はフック側)。
+      if (applyServerSideCellEdits) {
+        applyServerSideCellEdits([
+          { viewIndex: cell.row, column, value: nextValue },
+        ]);
+        return;
+      }
+      if (!handleRowsChange) {
+        return;
+      }
+      const originalRowIndex = rowModel.getSourceIndex(cell.row);
+      if (originalRowIndex === undefined) {
+        return;
+      }
       handleRowsChange(writeRowsCell(rows, originalRowIndex, column, nextValue));
     },
-    [canEditCell, handleRowsChange, orderedColumns, readOnly, rowModel, rows],
+    [
+      applyServerSideCellEdits,
+      canEditCell,
+      handleRowsChange,
+      orderedColumns,
+      readOnly,
+      rowModel,
+      rows,
+    ],
   );
 
   // ── keyboard ──────────────────────────────────────────
@@ -2229,6 +2297,8 @@ export function SpreadsheetGrid<T extends object>({
     // 変更(undo/redo): commit の変更前 rows を履歴へ積むため、生の onRowsChange ではなく
     //   history controller のラッパを渡します(未指定時は undefined 素通しで挙動不変)。
     onRowsChange: handleRowsChange,
+    // 追加(SSRM 書き戻し): serverSide の commit 書き込み口です(updateRows 指定時のみ定義)。
+    applyServerSideCellEdits,
     dispatch,
     getMovedCell,
     gridRootRef,
@@ -3664,6 +3734,18 @@ export function SpreadsheetGrid<T extends object>({
           // 追加: 実編集は CellEditorLayer で行いますが、将来の API 互換のため setValue も残します。
           // 変更(undo/redo): 変更前 rows を履歴へ積むため handleRowsChange(ラッパ)経由にします。
           setValue: (nextValue) => {
+            // 追加(validation): reject 列は検証 NG の書き込みを no-op に倒します(経路 D。
+            //   setValue はパースを通らないドメイン値直書きのため、ここが唯一のガードです)。
+            if (decideCellWrite(column, row, nextValue).action === 'reject') {
+              return;
+            }
+            // 追加(SSRM 書き戻し): serverSide は書き戻しへ流します(楽観更新はフック側)。
+            if (applyServerSideCellEdits) {
+              applyServerSideCellEdits([
+                { viewIndex: rowIndex, column, value: nextValue },
+              ]);
+              return;
+            }
             if (!handleRowsChange) {
               return;
             }
@@ -3674,11 +3756,6 @@ export function SpreadsheetGrid<T extends object>({
             //   早期 return で no-op に倒します(旧 ?? は view index を source index に誤代入していた)。
             const originalRowIndex = rowModel.getSourceIndex(rowIndex);
             if (originalRowIndex === undefined) {
-              return;
-            }
-            // 追加(validation): reject 列は検証 NG の書き込みを no-op に倒します(経路 D。
-            //   setValue はパースを通らないドメイン値直書きのため、ここが唯一のガードです)。
-            if (decideCellWrite(column, row, nextValue).action === 'reject') {
               return;
             }
             // 変更(editor 基盤): rows 再構築を logic/editorValues.ts の writeRowsCell へ集約しました。
@@ -3706,7 +3783,7 @@ export function SpreadsheetGrid<T extends object>({
         : String(value ?? '');
       return <span>{formattedText}</span>;
     },
-    [rowModel, handleRowsChange, rows, toggleCheckboxCell],
+    [rowModel, handleRowsChange, rows, toggleCheckboxCell, applyServerSideCellEdits],
   );
 
   // ── global filter setter ──────────────────────────────

@@ -1,4 +1,5 @@
 import type { GridColumn } from '../model/gridTypes';
+import type { ServerSideCellEditInput } from '../logic/serverSideEdits';
 import {
   normalizeCellRange,
   normalizeColumnRange,
@@ -205,4 +206,53 @@ export const applyClipboardMatrixToRows = <T extends object,>(
   }
 
   return nextRows;
+};
+
+// 追加(SSRM 書き戻し): serverSide 用に「ペーストすべきセル編集の集合」を作ります
+//   (applyClipboardMatrixToRows のビュー走査版。rows 再構築の代わりに ServerSideCellEditInput を
+//   返し、書き込みはフックの applyCellEdits が担います)。ガード(canWriteCell)・パーサ解決・
+//   reject スキップの規則は clientSide 版と同一です。差分は 2 点:
+//   - 未ロード行(getRow undefined = スケルトン)はスキップします。
+//   - 行/列の自動拡張は行いません(SSRM の行追加は「サーバ反映後に refreshServerSide()」運用)。
+export const buildClipboardCellEdits = <T extends object,>(
+  getRow: (viewIndex: number) => T | undefined,
+  columns: GridColumn<T>[],
+  matrix: ClipboardMatrix,
+  startRowIndex: number,
+  startColIndex: number,
+  // SSRM に source 空間は無いため、第 1 引数は view index です(getSourceIndex 恒等と同義)。
+  canWriteCell: (
+    viewIndex: number,
+    colIndex: number,
+    row: T,
+    column: GridColumn<T>,
+  ) => boolean,
+): ServerSideCellEditInput<T>[] => {
+  const edits: ServerSideCellEditInput<T>[] = [];
+  for (let rowOffset = 0; rowOffset < matrix.length; rowOffset += 1) {
+    const viewIndex = startRowIndex + rowOffset;
+    const row = getRow(viewIndex);
+    if (!row) {
+      continue;
+    }
+    for (let colOffset = 0; colOffset < matrix[rowOffset].length; colOffset += 1) {
+      const colIndex = startColIndex + colOffset;
+      const column = columns[colIndex];
+      if (!column) {
+        continue;
+      }
+      if (!canWriteCell(viewIndex, colIndex, row, column)) {
+        continue;
+      }
+      const parsedValue = resolveCellParser(column)(
+        matrix[rowOffset][colOffset],
+        row,
+      );
+      if (decideCellWrite(column, row, parsedValue).action === 'reject') {
+        continue;
+      }
+      edits.push({ viewIndex, column, value: parsedValue });
+    }
+  }
+  return edits;
 };

@@ -10,6 +10,7 @@ import type {
 } from '../model/gridTypes';
 import { parseCommittedValue, writeRowsCell } from '../logic/editorValues';
 import { decideCellWrite } from '../logic/validation';
+import type { ServerSideCellEditInput } from '../logic/serverSideEdits';
 
 type UseGridEditControllerArgs<T extends object> = {
   uiState: GridUiState;
@@ -27,6 +28,10 @@ type UseGridEditControllerArgs<T extends object> = {
   //              親は「編集開始時の初期値」を設定する setter だけを持ちます。
   setEditorInitialValue: (value: string) => void;
   onRowsChange?: (nextRows: T[]) => void;
+  // 追加(SSRM 書き戻し): serverSide のセル書き込み口です(dataSource.updateRows 指定時のみ定義)。
+  //   定義時は rows / onRowsChange の代わりにここへ書きます(楽観更新・ロールバックはフック側)。
+  //   行の解決も rows ではなく seam の getRow 経由になります(serverSide は全件 rows を持たないため)。
+  applyServerSideCellEdits?: (edits: ServerSideCellEditInput<T>[]) => number;
   dispatch: Dispatch<GridUiAction>;
   getMovedCell: (baseCell: CellCoord, deltaRow: number, deltaCol: number) => CellCoord;
   gridRootRef: RefObject<HTMLDivElement | null>;
@@ -41,6 +46,7 @@ export const useGridEditController = <T extends object>({
   rowModel,
   setEditorInitialValue,
   onRowsChange,
+  applyServerSideCellEdits,
   dispatch,
   getMovedCell,
   gridRootRef,
@@ -105,13 +111,30 @@ export const useGridEditController = <T extends object>({
       //   撤去後は undefined がそのまま下流へ流れ、rows[undefined] = undefined → 直後の !row ガードで
       //   編集をクリーンにキャンセルします(in-bounds 時は従来と完全一致)。
       const originalRowIndex = rowModel.getSourceIndex(editingCell.row);
-      const row = rows[originalRowIndex];
+      // 追加(SSRM 書き戻し): serverSide は全件 rows を持たないため、行は seam の getRow で
+      //   引きます(未ロード = 実行時 undefined は下の !row ガードでクリーンにキャンセル)。
+      //   clientSide は従来どおり source index で rows を引きます。
+      const row = applyServerSideCellEdits
+        ? rowModel.getRow(editingCell.row)
+        : rows[originalRowIndex];
       if (!column || !row) {
         dispatch(gridActions.stopEdit());
         return { status: 'noop' };
       }
 
-      if (onRowsChange) {
+      if (applyServerSideCellEdits) {
+        const parsedValue = parseCommittedValue(column, committedValue, row);
+        // reject 検証は clientSide と同一規則です(確定拒否・エディタ継続・guard 不触)。
+        const decision = decideCellWrite(column, row, parsedValue);
+        if (decision.action === 'reject') {
+          return { status: 'rejected', message: decision.message };
+        }
+        // 書き戻し(楽観更新つき)。失敗時のロールバック・通知はフック側が担うため、
+        //   ここでは fire-and-forget で確定フロー(guard / rAF / stopEdit)へ進みます。
+        applyServerSideCellEdits([
+          { viewIndex: editingCell.row, column, value: parsedValue },
+        ]);
+      } else if (onRowsChange) {
         const parsedValue = parseCommittedValue(column, committedValue, row);
         // 追加(validation): reject 列は検証 NG の確定を拒否し、エディタを継続します。
         //   繊細な後続機構(editorActionGuardRef / rAF フォーカス復帰 / stopEdit)には一切
@@ -136,6 +159,7 @@ export const useGridEditController = <T extends object>({
     },
     [
       activateSingleCell,
+      applyServerSideCellEdits,
       dispatch,
       editorActionGuardRef,
       rowModel,

@@ -10,9 +10,11 @@ import { clamp } from '../logic/geometry';
 import { getCellValue, isCellEditable } from '../utils/permissions';
 import {
   applyClipboardMatrixToRows,
+  buildClipboardCellEdits,
   parseClipboardText,
   serializeSelectionToTsv,
 } from '../utils/clipboard';
+import type { ServerSideCellEditInput } from '../logic/serverSideEdits';
 
 type UseGridClipboardControllerArgs<T extends object> = {
   rows: T[];
@@ -28,6 +30,10 @@ type UseGridClipboardControllerArgs<T extends object> = {
   createOverflowColumn?: (columnIndex: number) => GridColumn<T>;
   onRowsChange?: (nextRows: T[]) => void;
   onColumnsChange?: (nextColumns: GridColumn<T>[]) => void;
+  // 追加(SSRM 書き戻し): serverSide のセル書き込み口です(dataSource.updateRows 指定時のみ定義)。
+  //   定義時、paste は rows 再構築(onRowsChange)の代わりにビュー走査のセル編集集合を作って
+  //   ここへ流します(楽観更新・ロールバックはフック側)。
+  applyServerSideCellEdits?: (edits: ServerSideCellEditInput<T>[]) => number;
   dispatch: Dispatch<GridUiAction>;
 };
 
@@ -43,6 +49,7 @@ export const useGridClipboardController = <T extends object>({
   createOverflowColumn,
   onRowsChange,
   onColumnsChange,
+  applyServerSideCellEdits,
   dispatch,
 }: UseGridClipboardControllerArgs<T>) => {
   // 追加: 現在の selection が「表全体選択」かどうかを判定します。
@@ -141,7 +148,13 @@ export const useGridClipboardController = <T extends object>({
       //   isCellEditable で弾かれても onRowsChange が内容同一の新配列で呼ばれており、
       //   無駄な親 setState / 再レンダー(および undo 履歴の no-op エントリ相当)が
       //   発生していました。列自動拡張(onColumnsChange)も readOnly では行いません。
-      if (readOnly || !onRowsChange || !uiState.activeCell) {
+      // 変更(SSRM 書き戻し): 書き込み口は onRowsChange(clientSide)/
+      //   applyServerSideCellEdits(serverSide)のどちらかがあれば進みます。
+      if (
+        readOnly ||
+        (!onRowsChange && !applyServerSideCellEdits) ||
+        !uiState.activeCell
+      ) {
         return;
       }
 
@@ -157,7 +170,68 @@ export const useGridClipboardController = <T extends object>({
         return;
       }
 
+      // 変更(SSRM 書き戻し): serverSide 分岐でも選択レンジ更新に使うため、列幅の算出を
+      //   分岐より前へ移動しました(matrix のみに依存する純計算で挙動不変)。
+      const maxPasteWidth = matrix.reduce(
+        (max, currentRow) => Math.max(max, currentRow.length),
+        0,
+      );
+      if (maxPasteWidth === 0) {
+        return;
+      }
+
       const startFilteredRowIndex = uiState.activeCell.row;
+      const startColIndexForEdits = uiState.activeCell.col;
+
+      // 追加(SSRM 書き戻し): serverSide はビュー走査でセル編集集合を作り、書き戻しへ流します
+      //   (全件 rows が無いため rows 再構築は不可)。未ロード行(スケルトン)はスキップ、
+      //   行/列の自動拡張は行いません(SSRM の行追加はサーバ反映後 refreshServerSide() 運用)。
+      //   ペースト後の選択レンジ更新は clientSide と同様ですが、拡張が無いため現在のビュー
+      //   範囲へクランプします。
+      if (applyServerSideCellEdits) {
+        const edits = buildClipboardCellEdits(
+          (viewIndex) => rowModel.getRow(viewIndex),
+          visibleColumns,
+          matrix,
+          startFilteredRowIndex,
+          startColIndexForEdits,
+          (viewIndex, colIndex, row, column) =>
+            isCellEditable(
+              { readOnly, canEditCell },
+              viewIndex,
+              colIndex,
+              row,
+              column,
+            ),
+        );
+        if (edits.length > 0) {
+          applyServerSideCellEdits(edits);
+        }
+        const serverSideEndRow = clamp(
+          uiState.activeCell.row + Math.max(matrix.length - 1, 0),
+          0,
+          Math.max(rowModel.getRowCount() - 1, 0),
+        );
+        const serverSideEndCol = clamp(
+          uiState.activeCell.col + Math.max(maxPasteWidth - 1, 0),
+          0,
+          Math.max(visibleColumns.length - 1, 0),
+        );
+        dispatch(gridActions.startSelection(uiState.activeCell));
+        dispatch(
+          gridActions.updateSelection({
+            row: serverSideEndRow,
+            col: serverSideEndCol,
+          }),
+        );
+        dispatch(gridActions.endSelection());
+        dispatch(gridActions.activateCell(uiState.activeCell));
+        return;
+      }
+      if (!onRowsChange) {
+        return;
+      }
+
       // 変更(DS-3-9): レガシーの ?? startFilteredRowIndex フォールバックを撤去します。
       //   getSourceIndex(=order[i]) は OOB(activeCell が縮小後の order を超える)で undefined を
       //   返します。旧版は ?? で view index を source index に誤代入していました。撤去後は
@@ -196,15 +270,7 @@ export const useGridClipboardController = <T extends object>({
         }
       }
 
-      // 追加: 列不足分を createOverflowColumn で自動追加します。
-      const maxPasteWidth = matrix.reduce(
-        (max, currentRow) => Math.max(max, currentRow.length),
-        0,
-      );
-      if (maxPasteWidth === 0) {
-        return;
-      }
-
+      // 追加: 列不足分を createOverflowColumn で自動追加します(maxPasteWidth は上で算出済み)。
       const requiredColumnCount = startColIndex + maxPasteWidth;
       if (requiredColumnCount > workingColumns.length) {
         if (onColumnsChange && createOverflowColumn) {
@@ -257,6 +323,7 @@ export const useGridClipboardController = <T extends object>({
       dispatch(gridActions.activateCell(uiState.activeCell));
     },
     [
+      applyServerSideCellEdits,
       canEditCell,
       createOverflowColumn,
       createRow,
