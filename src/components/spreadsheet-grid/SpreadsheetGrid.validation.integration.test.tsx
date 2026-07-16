@@ -69,8 +69,12 @@ let currentRows: Row[] = initialRows;
 
 function ValidationHarness({
   gridRef,
+  showValidationMarks,
 }: {
   gridRef: Ref<SpreadsheetGridHandle<Row>>;
+  // 追加(validation 表示制御): 未指定=既定(true 相当)。false のケースで
+  //   「表示 off でも検証系 API / reject が機能する」ことを検証します。
+  showValidationMarks?: boolean;
 }) {
   const [rows, setRows] = useState<Row[]>(initialRows);
   useEffect(() => {
@@ -82,6 +86,7 @@ function ValidationHarness({
       columns={columns}
       rows={rows}
       onRowsChange={setRows}
+      showValidationMarks={showValidationMarks}
     />
   );
 }
@@ -197,5 +202,41 @@ describe('SpreadsheetGrid バリデーション(結合)', () => {
         message: '数値を入力してください',
       },
     ]);
+  });
+
+  it('showValidationMarks=false でも getInvalidCells は表示状態と無関係に全件を返す', () => {
+    const ref = createRef<SpreadsheetGridHandle<Row>>();
+    const { container } = render(
+      <ValidationHarness gridRef={ref} showValidationMarks={false} />,
+    );
+
+    // mark 列(qty)へ不正値をペースト(マーク非表示中でも書き込み自体は mark 動作で通る)。
+    pasteIntoCell(container, ref, { row: 1, col: 2 }, 'abc');
+    expect(currentRows[1].qty).toBe('abc');
+
+    // マーク非表示中でも送信前チェック(全走査)は正しく全件を返す。
+    expect(ref.current?.getInvalidCells()).toEqual([
+      {
+        rowKey: 1,
+        sourceRowIndex: 1,
+        columnKey: 'qty',
+        message: '数値を入力してください',
+      },
+    ]);
+  });
+
+  it('showValidationMarks=false でも reject 列の書き込み拒否は機能する(表示と write ゲートは独立)', () => {
+    const ref = createRef<SpreadsheetGridHandle<Row>>();
+    const { container } = render(
+      <ValidationHarness gridRef={ref} showValidationMarks={false} />,
+    );
+
+    // reject 列(name)への不正ペースト → マーク非表示中でも従来どおりスキップ(rows 不変)。
+    pasteIntoCell(container, ref, { row: 0, col: 1 }, '');
+    expect(currentRows).toBe(initialRows);
+
+    // 有効値は書き込まれる。
+    pasteIntoCell(container, ref, { row: 0, col: 1 }, 'RENAMED');
+    expect(currentRows[0].name).toBe('RENAMED');
   });
 });

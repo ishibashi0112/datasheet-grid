@@ -76,6 +76,10 @@ type GridBodyRowProps<T> = {
   autoHeight: boolean;
   // 追加: 省略時ツールチップ(既定テキストセルに data-ssg-tooltip-overflow を付与)を有効化するか。
   showCellOverflowTooltip: boolean;
+  // 追加(validation 表示制御): invalid マークを表示するか(プリミティブ=memo 安全)。
+  //   false ではマークを出さず、可視セルごとの validate 評価もスキップします
+  //   (評価結果はマーク表示にしか使わないため、評価ごと省くのが最小コスト)。
+  showValidationMarks: boolean;
   // 追加(C1-6): auto-height セルの min-height 下限(基準行高=estimate)。rowHeight(=解決済み行高/
   //   実測由来)を下限にすると一度伸びた行が縮まなくなる(min-height で測定が下げ止まる)ため、
   //   下限は実測に依存しない固定値(基準行高)にして shrink を可能にします。GridBodyLayer の基準
@@ -148,6 +152,7 @@ function GridBodyRowInner<T>({
   rowHeight,
   autoHeight,
   showCellOverflowTooltip,
+  showValidationMarks,
   autoHeightMinHeight,
   rowHeaderCellStyle,
   isRowHovered,
@@ -286,9 +291,12 @@ function GridBodyRowInner<T>({
         //   (未指定列は無コスト)。state を持たないため、undo/redo・外部 rows 差し替え後も
         //   常に rows と整合します。メッセージはカスタムツールチップ(data-ssg-tooltip)で
         //   表示します(静的属性は overflow マーカーより優先される仕様)。
-        const invalidMessage = column.validate
-          ? getInvalidMessage(column, row, getCellValue(row, column))
-          : null;
+        // 変更(validation 表示制御): showValidationMarks=false ではマークを出さないため
+        //   評価自体をスキップします(reject の write ゲート / getInvalidCells は別経路で不変)。
+        const invalidMessage =
+          showValidationMarks && column.validate
+            ? getInvalidMessage(column, row, getCellValue(row, column))
+            : null;
 
         const cellClassName = cx(
           'ssg-body-cell',
@@ -546,6 +554,8 @@ type GridBodyLayerProps<T> = {
   autoHeight?: boolean;
   // 追加: 省略時ツールチップ(既定 false)。既定テキストセルの省略時にホバーで全文を表示します。
   showCellOverflowTooltip?: boolean;
+  // 追加(validation 表示制御): invalid マークの表示可否です。未指定時 true(現行の常時表示)。
+  showValidationMarks?: boolean;
   // 追加(①-4): serverSide(SSRM)モードか。true のとき未ロード行をスケルトン描画します。
   //   未指定時 false(clientSide は従来どおり未ロード=OOB を null 返し)。
   isServerSide?: boolean;
@@ -613,6 +623,7 @@ export function GridBodyLayer<T>({
   rowHeight,
   autoHeight = false,
   showCellOverflowTooltip = false,
+  showValidationMarks = true,
   isServerSide = false,
   rowHeaderCellStyle,
   hoveredRowIndex,
@@ -747,6 +758,7 @@ export function GridBodyLayer<T>({
             rowHeight={rowSize}
             autoHeight={autoHeight}
             showCellOverflowTooltip={showCellOverflowTooltip}
+            showValidationMarks={showValidationMarks}
             autoHeightMinHeight={rowHeight}
             rowHeaderCellStyle={rowHeaderCellStyle}
             isRowHovered={hoveredRowIndex === rowIndex}

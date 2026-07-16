@@ -405,6 +405,9 @@ export function SpreadsheetGrid<T extends object>({
   autoSizeColumns = false,
   // 追加: セル省略(…)時にホバーで全文ツールチップを表示(既定 false)。既定テキストセルのみ対象。
   showCellOverflowTooltip = false,
+  // 追加(validation 表示制御): invalid マークの表示可否(既定 true=現行の常時表示)。
+  //   false でマーク非表示 + 可視セルの validate 評価スキップ。getInvalidCells / reject は不変。
+  showValidationMarks = true,
   // 追加(UI hover): 行ホバー(既定 true) / 列ヘッダーホバー(既定 true)。
   enableRowHover = true,
   enableColumnHeaderHover = true,
@@ -4956,6 +4959,7 @@ export function SpreadsheetGrid<T extends object>({
                   rowHeight={rowHeight}
                   autoHeight={autoHeightActive}
                   showCellOverflowTooltip={showCellOverflowTooltip}
+                  showValidationMarks={showValidationMarks}
                   isServerSide={isServerSide}
                   rowHeaderCellStyle={rowHeaderCellStyle}
                   hoveredRowIndex={hoveredRowIndex}
@@ -5103,6 +5107,7 @@ export function SpreadsheetGrid<T extends object>({
                   rowHeight={rowHeight}
                   autoHeight={autoHeightActive}
                   showCellOverflowTooltip={showCellOverflowTooltip}
+                  showValidationMarks={showValidationMarks}
                   isServerSide={isServerSide}
                   rowHeaderCellStyle={rowHeaderCellStyle}
                   hoveredRowIndex={hoveredRowIndex}
@@ -5242,6 +5247,7 @@ export function SpreadsheetGrid<T extends object>({
                   rowHeight={rowHeight}
                   autoHeight={autoHeightActive}
                   showCellOverflowTooltip={showCellOverflowTooltip}
+                  showValidationMarks={showValidationMarks}
                   isServerSide={isServerSide}
                   rowHeaderCellStyle={rowHeaderCellStyle}
                   hoveredRowIndex={hoveredRowIndex}

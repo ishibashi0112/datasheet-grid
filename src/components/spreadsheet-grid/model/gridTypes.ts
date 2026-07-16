@@ -1103,6 +1103,14 @@ export type SpreadsheetGridProps<T> = {
   //   scrollWidth > clientWidth を判定し、実際にクリップされているセルのみ出します(全文はセルの
   //   表示テキストをそのまま使用)。既存のカスタムツールチップ機構(data-ssg-tooltip)を共有します。
   showCellOverflowTooltip?: boolean;
+  // 追加(validation 表示制御): invalid マーク(背景 + コーナーマーカー + ホバーツールチップ)を
+  //   表示するかどうかです。既定 true = 現行挙動(常時リアルタイム表示)。false では表示を出さず、
+  //   可視セルごとの validate 評価もスキップします(評価結果はマーク表示にしか使わないため)。
+  //   送信時にだけマークを出す UX は、利用側の state でこの prop を切り替えて実現します
+  //   (宣言的・stateless — 表示時導出の設計を維持し、undo / 外部 rows 差し替え後も rows と整合)。
+  //   注意: getInvalidCells() は表示状態と無関係に常に全走査で動作します。validationMode 'reject'
+  //   の書き込み拒否(エディタのエラーバブル含む)は write 時ゲートであり本 prop の影響を受けません。
+  showValidationMarks?: boolean;
   // 追加(UI hover): 行ホバー時に行全体を薄くハイライトします。既定 true。
   enableRowHover?: boolean;
   // 追加(UI hover): 列ヘッダーのホバー時にヘッダーセルを薄くハイライトします。既定 true。
