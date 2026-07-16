@@ -18,7 +18,7 @@ A high-performance, virtualized spreadsheet / data grid for **React 19**, writte
 - Sorting, per-column filters (`text` / `number` / `date` / `select` / `set` / `custom`), and a global filter.
 - In-cell editing and clipboard copy / paste, with range selection, keyboard navigation, and Delete / Backspace to clear selected cells. Cell editing is IME-aware (composing Enter never commits the cell).
 - Built-in cell editor types via `column.editor` — `text` (default), `number` (`min` / `max` / `step`), `select` (dropdown with keyboard navigation & type-ahead; static or per-row options), `date` (native date picker), `checkbox` (direct toggle by click / Space, no edit session, custom checked/unchecked value mapping), and `custom` (render your own editor with `ctx.commit` / `ctx.cancel`; committing a non-string value bypasses parsing). Built-in editors auto-supply a default string→value parser (an explicit `parseClipboardValue` always wins) so paste and clear stay type-consistent.
-- Cell validation via `column.validate` — default `'mark'` mode accepts the value but flags the cell (background + corner marker + hover tooltip message, derived at render time so it always matches `rows`, including after undo or external replacement); opt-in `'reject'` mode (`validationMode: 'reject'`) refuses invalid writes: the editor keeps editing with an inline error bubble, paste / clear skip the offending cells. `getInvalidCells()` on the imperative handle scans all rows for a pre-save check.
+- Cell validation via `column.validate` — default `'mark'` mode accepts the value but flags the cell (background + corner marker + hover tooltip message, derived at render time so it always matches `rows`, including after undo or external replacement); opt-in `'reject'` mode (`validationMode: 'reject'`) refuses invalid writes: the editor keeps editing with an inline error bubble, paste / clear skip the offending cells. `getInvalidCells()` on the imperative handle scans all rows for a pre-save check. Mark visibility is controlled declaratively with the `showValidationMarks` prop (default `true`) — flip it from state to show marks only on submit; `getInvalidCells()` and `'reject'` keep working regardless.
 - Undo / redo for grid edits (cell edits, paste, clear) — `Ctrl/Cmd+Z`, `Ctrl/Cmd+Shift+Z` / `Ctrl/Cmd+Y`, plus `undo()` / `redo()` / `canUndo()` / `canRedo()` on the imperative handle and an `onUndoRedoStateChange` callback for toolbars. Restores the edited cell's active cell & selection and scrolls it back into view. History is snapshot-based with structural sharing, capped by `undoHistoryLimit` (default 100), and clears automatically when `rows` is replaced externally (client-side row model only).
 - Optional auto-height rows for wrapped, variable-height content.
 - Auto-fit column widths to content on data load — `autoSizeColumns="onMount"` (once, on first data) or `"onDataChange"` (every time `rows` changes, e.g. after a form submit). Same engine as the column menu's "Autosize All Columns"; opt individual columns out with `suppressAutoSize`.
@@ -162,6 +162,8 @@ const invalid = gridRef.current?.getInvalidCells()
 // -> [{ rowKey, sourceRowIndex, columnKey, message }, ...]
 ```
 
+Marks are shown in real time by default. For the classic "validate on submit" flow, keep the rules on the columns and toggle mark visibility from state — `showValidationMarks={showErrors}` (default `true`). `getInvalidCells()` and `'reject'` are unaffected by the toggle. See the recipe in [`API_REFERENCE.md`](./src/components/spreadsheet-grid/API_REFERENCE.md).
+
 ## Sizing
 
 By default the grid caps its height at `480px` (`max-height`) and scrolls when the content is taller. Pass `height` to take explicit control — use `height="100%"` to follow the parent's height, or a pixel value:
@@ -299,7 +301,7 @@ The full prop and type reference lives in [`src/components/spreadsheet-grid/API_
 - ソート、列ごとのフィルター（`text` / `number` / `date` / `select` / `set` / `custom`）、グローバルフィルター。
 - セル内編集とクリップボードのコピー／貼り付け、範囲選択、キーボード操作、Delete / Backspace による選択セルのクリア。セル編集は IME 対応（変換確定の Enter でセルが確定されない）。
 - `column.editor` による組み込みエディタ種別 — `text`（既定）/ `number`（`min` / `max` / `step`）/ `select`（キーボード操作・タイプアヘッド付きドロップダウン。候補は静的配列 or 行依存関数）/ `date`（ネイティブ日付ピッカー）/ `checkbox`（クリック / Space の直接トグル。編集セッションなし、checked/unchecked の値マッピング可）/ `custom`（`ctx.commit` / `ctx.cancel` で自作エディタを差し込み。非 string の commit はパースをバイパス）。組み込みエディタは「文字列 → 値」の既定パーサを自動供給し（明示の `parseClipboardValue` が常に優先）、貼り付け・クリアでも型が揃います。
-- `column.validate` によるセル検証 — 既定の `'mark'` モードは値を受け入れつつセルへ invalid 表示（背景 + 右上マーカー + ホバーでメッセージ。表示時導出のため undo や外部差し替え後も常に `rows` と整合）。`validationMode: 'reject'` で不正な書き込み自体を拒否（エディタはエラーバブル表示で編集継続、貼り付け / クリアは該当セルのみスキップ）。ハンドルの `getInvalidCells()` で保存前の全行チェックができます。
+- `column.validate` によるセル検証 — 既定の `'mark'` モードは値を受け入れつつセルへ invalid 表示（背景 + 右上マーカー + ホバーでメッセージ。表示時導出のため undo や外部差し替え後も常に `rows` と整合）。`validationMode: 'reject'` で不正な書き込み自体を拒否（エディタはエラーバブル表示で編集継続、貼り付け / クリアは該当セルのみスキップ）。ハンドルの `getInvalidCells()` で保存前の全行チェックができます。マークの表示可否は `showValidationMarks` prop（既定 `true`）で宣言的に切り替えられ、「送信時にだけマークを出す」UX を state 1 つで実現できます（`getInvalidCells()` / `'reject'` は表示状態と無関係に機能）。
 - グリッド編集の undo / redo（セル編集・貼り付け・クリア）— `Ctrl/Cmd+Z`、`Ctrl/Cmd+Shift+Z` / `Ctrl/Cmd+Y` に加え、ハンドルの `undo()` / `redo()` / `canUndo()` / `canRedo()` とツールバー向けの `onUndoRedoStateChange` コールバック。編集時のアクティブセル・選択範囲まで復元し、画面外なら可視位置へスクロールで追従。履歴は構造共有のスナップショット方式で `undoHistoryLimit`（既定 100）まで保持し、`rows` が外部から差し替えられたときは自動破棄（クライアントサイド行モデル専用）。
 - 折り返し・可変行高に対応する auto-height 行（任意）。
 - データ投入時に列幅を内容へ自動フィット — `autoSizeColumns="onMount"`（初回にデータが載った一度きり）/ `"onDataChange"`（`rows` が変わるたび。フォーム送信結果の差し替え等）。列メニュー「すべての列の幅を自動調整」と同一エンジンで、列個別の除外は `suppressAutoSize`。
@@ -442,6 +444,8 @@ const columns: GridColumn<Row>[] = [
 const invalid = gridRef.current?.getInvalidCells()
 // -> [{ rowKey, sourceRowIndex, columnKey, message }, ...]
 ```
+
+マークは既定でリアルタイム表示です。「送信時にまとめて検証」の定番フローは、ルールを列に定義したまま `showValidationMarks={showErrors}`(既定 `true`)を state で切り替えて実現します。`getInvalidCells()` と `'reject'` は表示状態の影響を受けません。完結したコード例は [`API_REFERENCE.md`](./src/components/spreadsheet-grid/API_REFERENCE.md) のレシピを参照してください。
 
 ### サイズ（高さ）
 
