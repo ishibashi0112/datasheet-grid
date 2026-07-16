@@ -114,6 +114,13 @@ export type ServerSideLoadErrorParams = {
   endIndex: number;
 };
 
+// 追加(SSRM 書き戻し): updateRows 失敗通知(onServerSideWriteError)のパラメータです。
+//   updates は失敗した updateRows 呼び出しへ渡した行更新(グリッド側はロールバック済み)です。
+//   error は updateRows の reject 値そのもの(unknown)で、コールバック第 1 引数に載せます。
+export type ServerSideWriteErrorParams<T> = {
+  updates: ServerSideRowUpdate<T>[];
+};
+
 // 追加: セル座標を表す基本型です。
 export type CellCoord = {
   row: number;

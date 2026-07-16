@@ -8,9 +8,12 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
 import { useServerSideRowModel } from './useServerSideRowModel';
 import type {
+  GridColumn,
   ServerSideDataSource,
   ServerSideGetRowsParams,
   ServerSideGetRowsResult,
+  ServerSideUpdateRowsParams,
+  ServerSideUpdateRowsResult,
 } from '../model/gridTypes';
 
 type Row = { v: number };
@@ -811,5 +814,282 @@ describe('useServerSideRowModel', () => {
     rerender({ k: 'a' });
     await flush();
     expect(rec.calls.length).toBe(before);
+  });
+
+  describe('applyCellEdits(書き戻し + 楽観更新)', () => {
+    const column: GridColumn<Row> = { key: 'v', width: 100 };
+
+    // updateRows を手動決着(deferred)にした書き込み可能 dataSource を作ります。
+    const createWritable = (opts: { totalRowCount: number }) => {
+      const base = createRecording({ totalRowCount: opts.totalRowCount });
+      const updateCalls: ServerSideUpdateRowsParams<Row>[] = [];
+      const deferred: Array<{
+        resolve: (result?: ServerSideUpdateRowsResult<Row>) => void;
+        reject: (error: unknown) => void;
+      }> = [];
+      const updateRows = vi.fn(
+        (
+          params: ServerSideUpdateRowsParams<Row>,
+        ): Promise<ServerSideUpdateRowsResult<Row> | void> => {
+          updateCalls.push(params);
+          return new Promise((resolve, reject) => {
+            deferred.push({ resolve, reject });
+          });
+        },
+      );
+      return {
+        dataSource: { ...base.dataSource, updateRows } satisfies ServerSideDataSource<Row>,
+        getRowsCalls: base.calls,
+        updateRows,
+        updateCalls,
+        deferred,
+      };
+    };
+
+    it('canUpdateRows は updateRows の有無を反映する', async () => {
+      const readonlyRec = createRecording({ totalRowCount: 100 });
+      const readonlyHook = renderHook(() =>
+        useServerSideRowModel<Row>({
+          dataSource: readonlyRec.dataSource,
+          rowKeyGetter,
+          query: EMPTY_QUERY,
+          queryKey: 'a',
+        }),
+      );
+      await flush();
+      expect(readonlyHook.result.current.canUpdateRows).toBe(false);
+
+      const writable = createWritable({ totalRowCount: 100 });
+      const writableHook = renderHook(() =>
+        useServerSideRowModel<Row>({
+          dataSource: writable.dataSource,
+          rowKeyGetter,
+          query: EMPTY_QUERY,
+          queryKey: 'a',
+        }),
+      );
+      await flush();
+      expect(writableHook.result.current.canUpdateRows).toBe(true);
+    });
+
+    it('楽観値が即時表示され、updateRows へ行単位の更新が届き、成功で確定する', async () => {
+      const writable = createWritable({ totalRowCount: 100 });
+      const { result } = renderHook(() =>
+        useServerSideRowModel<Row>({
+          dataSource: writable.dataSource,
+          rowKeyGetter,
+          query: EMPTY_QUERY,
+          queryKey: 'a',
+        }),
+      );
+      await flush();
+      expect(result.current.rowModel.getRow(5)).toEqual({ v: 5 });
+
+      let issued = 0;
+      act(() => {
+        issued = result.current.applyCellEdits([
+          { viewIndex: 5, column, value: 500 },
+        ]);
+      });
+      // 楽観値が resolve 前から見える(overlay)。
+      expect(issued).toBe(1);
+      expect(result.current.rowModel.getRow(5)).toEqual({ v: 500 });
+      expect(writable.updateCalls).toHaveLength(1);
+      expect(writable.updateCalls[0].updates).toEqual([
+        {
+          rowKey: 5,
+          rowIndex: 5,
+          row: { v: 500 },
+          previousRow: { v: 5 },
+          changes: [{ columnKey: 'v', previousValue: 5, newValue: 500 }],
+        },
+      ]);
+
+      // 成功(rows 省略)で楽観値がそのまま確定し、表示は変わらない。
+      await act(async () => {
+        writable.deferred[0].resolve();
+      });
+      await flush();
+      expect(result.current.rowModel.getRow(5)).toEqual({ v: 500 });
+      expect(result.current.writeError).toBeNull();
+    });
+
+    it('成功結果の rows(サーバー確定行)がキャッシュへマージされる', async () => {
+      const writable = createWritable({ totalRowCount: 100 });
+      const { result } = renderHook(() =>
+        useServerSideRowModel<Row>({
+          dataSource: writable.dataSource,
+          rowKeyGetter,
+          query: EMPTY_QUERY,
+          queryKey: 'a',
+        }),
+      );
+      await flush();
+      act(() => {
+        result.current.applyCellEdits([{ viewIndex: 5, column, value: 500 }]);
+      });
+      await act(async () => {
+        writable.deferred[0].resolve({ rows: [{ v: 999 }] });
+      });
+      await flush();
+      // サーバーが正規化した行(999)が楽観値(500)を上書きする。
+      expect(result.current.rowModel.getRow(5)).toEqual({ v: 999 });
+    });
+
+    it('失敗でロールバックし、writeError と onWriteError が発火する', async () => {
+      const writable = createWritable({ totalRowCount: 100 });
+      const onWriteError = vi.fn();
+      const { result } = renderHook(() =>
+        useServerSideRowModel<Row>({
+          dataSource: writable.dataSource,
+          rowKeyGetter,
+          query: EMPTY_QUERY,
+          queryKey: 'a',
+          onWriteError,
+        }),
+      );
+      await flush();
+      act(() => {
+        result.current.applyCellEdits([{ viewIndex: 5, column, value: 500 }]);
+      });
+      expect(result.current.rowModel.getRow(5)).toEqual({ v: 500 });
+
+      const failure = new Error('write failed');
+      await act(async () => {
+        writable.deferred[0].reject(failure);
+      });
+      await flush();
+      // 編集前の値へ戻る(キャッシュ = 最後の確定値)。
+      expect(result.current.rowModel.getRow(5)).toEqual({ v: 5 });
+      expect(result.current.writeError).toEqual({ failedRowCount: 1 });
+      expect(onWriteError).toHaveBeenCalledTimes(1);
+      expect(onWriteError.mock.calls[0][0]).toBe(failure);
+      expect(onWriteError.mock.calls[0][1].updates).toHaveLength(1);
+    });
+
+    it('未ロード行はスキップし、全行未ロードなら updateRows を呼ばない', async () => {
+      const writable = createWritable({ totalRowCount: 1000 });
+      const { result } = renderHook(() =>
+        useServerSideRowModel<Row>({
+          dataSource: writable.dataSource,
+          rowKeyGetter,
+          query: EMPTY_QUERY,
+          queryKey: 'a',
+        }),
+      );
+      await flush();
+      // block 0 のみロード済み。viewIndex 500 は未ロード。
+      let issued = -1;
+      act(() => {
+        issued = result.current.applyCellEdits([
+          { viewIndex: 500, column, value: 1 },
+        ]);
+      });
+      expect(issued).toBe(0);
+      expect(writable.updateCalls).toHaveLength(0);
+
+      // ロード済み行が混じれば、その行だけ発行する。
+      act(() => {
+        issued = result.current.applyCellEdits([
+          { viewIndex: 500, column, value: 1 },
+          { viewIndex: 3, column, value: 30 },
+        ]);
+      });
+      expect(issued).toBe(1);
+      expect(writable.updateCalls).toHaveLength(1);
+      expect(writable.updateCalls[0].updates[0].rowIndex).toBe(3);
+    });
+
+    it('同一行への連続編集: 古い決着は新しい楽観値を巻き戻さない(writeId 世代ガード)', async () => {
+      const writable = createWritable({ totalRowCount: 100 });
+      const { result } = renderHook(() =>
+        useServerSideRowModel<Row>({
+          dataSource: writable.dataSource,
+          rowKeyGetter,
+          query: EMPTY_QUERY,
+          queryKey: 'a',
+        }),
+      );
+      await flush();
+      // 2 連続編集(どちらも in-flight)。
+      act(() => {
+        result.current.applyCellEdits([{ viewIndex: 5, column, value: 100 }]);
+      });
+      act(() => {
+        result.current.applyCellEdits([{ viewIndex: 5, column, value: 200 }]);
+      });
+      expect(result.current.rowModel.getRow(5)).toEqual({ v: 200 });
+      // 2 回目の previousRow は 1 回目の楽観値(表示基準の連鎖)。
+      expect(writable.updateCalls[1].updates[0].previousRow).toEqual({ v: 100 });
+
+      // 古い write1 の成功到着: キャッシュへは確定するが、表示は新しい楽観値 200 のまま。
+      await act(async () => {
+        writable.deferred[0].resolve();
+      });
+      await flush();
+      expect(result.current.rowModel.getRow(5)).toEqual({ v: 200 });
+
+      // 新しい write2 の失敗: ロールバック先は「最後の確定値」= write1 の 100。
+      await act(async () => {
+        writable.deferred[1].reject(new Error('conflict'));
+      });
+      await flush();
+      expect(result.current.rowModel.getRow(5)).toEqual({ v: 100 });
+      expect(result.current.writeError).toEqual({ failedRowCount: 1 });
+    });
+
+    it('refresh をまたいだ決着は無視される(epoch ガード)', async () => {
+      const writable = createWritable({ totalRowCount: 100 });
+      const onWriteError = vi.fn();
+      const { result } = renderHook(() =>
+        useServerSideRowModel<Row>({
+          dataSource: writable.dataSource,
+          rowKeyGetter,
+          query: EMPTY_QUERY,
+          queryKey: 'a',
+          onWriteError,
+        }),
+      );
+      await flush();
+      act(() => {
+        result.current.applyCellEdits([{ viewIndex: 5, column, value: 500 }]);
+      });
+      // refresh で overlay 破棄 + epoch 前進(サーバー正本の取り直し)。
+      act(() => {
+        result.current.refresh();
+      });
+      await flush();
+      expect(result.current.rowModel.getRow(5)).toEqual({ v: 5 });
+
+      // 旧世代の成功到着(rows つき)はキャッシュへ書かれない。
+      await act(async () => {
+        writable.deferred[0].resolve({ rows: [{ v: 999 }] });
+      });
+      await flush();
+      expect(result.current.rowModel.getRow(5)).toEqual({ v: 5 });
+      expect(result.current.writeError).toBeNull();
+      expect(onWriteError).not.toHaveBeenCalled();
+    });
+
+    it('updateRows 未指定なら applyCellEdits は no-op(0 を返す)', async () => {
+      const rec = createRecording({ totalRowCount: 100 });
+      const { result } = renderHook(() =>
+        useServerSideRowModel<Row>({
+          dataSource: rec.dataSource,
+          rowKeyGetter,
+          query: EMPTY_QUERY,
+          queryKey: 'a',
+        }),
+      );
+      await flush();
+      let issued = -1;
+      act(() => {
+        issued = result.current.applyCellEdits([
+          { viewIndex: 5, column, value: 500 },
+        ]);
+      });
+      expect(issued).toBe(0);
+      expect(result.current.rowModel.getRow(5)).toEqual({ v: 5 });
+    });
   });
 });

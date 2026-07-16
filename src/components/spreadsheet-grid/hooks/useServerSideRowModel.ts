@@ -24,9 +24,15 @@ import type {
   ServerSideDataSource,
   ServerSideLoadErrorParams,
   ServerSideQuery,
+  ServerSideWriteErrorParams,
 } from '../model/gridTypes';
 import { createServerSideRowCache } from '../logic/serverSideCache';
 import { computeBlockIndexes } from '../logic/serverSideBlocks';
+import {
+  buildServerSideRowUpdates,
+  createServerSidePendingEdits,
+  type ServerSideCellEditInput,
+} from '../logic/serverSideEdits';
 
 // dataSource 側で未指定のときの既定値です。
 const DEFAULT_BLOCK_SIZE = 100;
@@ -47,6 +53,8 @@ export type UseServerSideRowModelParams<T> = {
   // 追加(batch 9): getRows 失敗(abort 以外の reject)の通知です。latest-ref 経由で読むため
   //   毎レンダーで新しい関数が渡されても fetch 系 callback は再生成されません。
   onLoadError?: (error: unknown, params: ServerSideLoadErrorParams) => void;
+  // 追加(書き戻し): updateRows 失敗(グリッド側はロールバック済み)の通知です。latest-ref 経由。
+  onWriteError?: (error: unknown, params: ServerSideWriteErrorParams<T>) => void;
   debounceMs?: number;
 };
 
@@ -55,6 +63,13 @@ export type UseServerSideRowModelParams<T> = {
 //   オブジェクト参照になります(UI 側は参照比較で「閉じる」後の再表示を判定します)。
 export type ServerSideLoadErrorState = {
   failedBlockCount: number;
+};
+
+// 追加(書き戻し): updateRows 失敗の状態です(グリッド内蔵の失敗バー表示用)。
+//   failedRowCount は直近の失敗イベントで失敗した行数(ロールバック済み)です。失敗のたびに
+//   新しい参照を発行します(UI 側は参照比較で「閉じる」後の再表示を判定 = loadError と同じ契約)。
+export type ServerSideWriteErrorState = {
+  failedRowCount: number;
 };
 
 export type UseServerSideRowModelResult<T> = {
@@ -71,13 +86,27 @@ export type UseServerSideRowModelResult<T> = {
   // 追加(batch 9): 失敗中ブロックだけを再取得します(キャッシュ済みブロックは触りません =
   //   refresh() のような全破棄はしない)。失敗が無ければ no-op。
   retryFailedBlocks: () => void;
+  // 追加(書き戻し): dataSource.updateRows が指定されているか(SSRM でのセル編集の有効判定)。
+  canUpdateRows: boolean;
+  // 追加(書き戻し): セル編集の書き戻し(楽観更新つき)です。edits はパース済みドメイン値で渡し、
+  //   未ロード行(スケルトン)はスキップします。発行した行更新の件数を返します。
+  applyCellEdits: (edits: ServerSideCellEditInput<T>[]) => number;
+  // 追加(書き戻し): 直近の updateRows 失敗です(なければ null / clientSide では常に null)。
+  writeError: ServerSideWriteErrorState | null;
 };
 
 export function useServerSideRowModel<T>(
   params: UseServerSideRowModelParams<T>,
 ): UseServerSideRowModelResult<T> {
-  const { dataSource, rowKeyGetter, query, queryKey, refreshToken, onLoadError } =
-    params;
+  const {
+    dataSource,
+    rowKeyGetter,
+    query,
+    queryKey,
+    refreshToken,
+    onLoadError,
+    onWriteError,
+  } = params;
   // 変更(①-3): dataSource 不在(clientSide)でも安全に評価できるよう optional-chain します。
   //   inert 時は既定値で空キャッシュを作るだけで、書き込みも fetch も発生しません。
   const blockSize = dataSource?.blockSize ?? DEFAULT_BLOCK_SIZE;
@@ -120,6 +149,38 @@ export function useServerSideRowModel<T>(
   useEffect(() => {
     onLoadErrorRef.current = onLoadError;
   }, [onLoadError]);
+
+  // 追加(書き戻し): 確定前(updateRows の in-flight 中)の楽観行オーバーレイです。getRow は
+  //   キャッシュより先にここを引くため、書き込み中のブロック再取得・退避でも楽観値が消えません
+  //   (キャッシュは常に「最後に確定した値」だけを持つ、が不変条件。logic/serverSideEdits 参照)。
+  const [pendingEdits] = useState(() => createServerSidePendingEdits<T>());
+  // 追加(書き戻し): 書き込み世代です。クエリ変化 / refresh / unmount で進め、旧世代の in-flight
+  //   updateRows の決着(成功・失敗とも)を丸ごと無視します(view 空間の行対応がずれるため)。
+  const writeEpochRef = useRef(0);
+  const [writeError, setWriteError] = useState<ServerSideWriteErrorState | null>(
+    null,
+  );
+  // onWriteError も latest-ref 経由です(onLoadError と同じ理由)。
+  const onWriteErrorRef = useRef(onWriteError);
+  useEffect(() => {
+    onWriteErrorRef.current = onWriteError;
+  }, [onWriteError]);
+
+  // 追加(書き戻し): 「いま表示されている行」を返します(楽観 overlay ?? キャッシュ確定値)。
+  //   rowModel.getRow / isRowLoaded / 書き戻しの base 行解決が共有します。
+  const getDisplayRow = useCallback(
+    (viewIndex: number): T | undefined =>
+      pendingEdits.getRow(viewIndex) ?? cache.getRow(viewIndex),
+    [cache, pendingEdits],
+  );
+
+  // 追加(書き戻し): 書き込み状態のリセットです(クエリ変化 / refresh から呼びます)。
+  //   epoch を進めて in-flight の決着を無効化し、楽観 overlay と失敗表示を破棄します。
+  const resetWriteState = useCallback((): void => {
+    writeEpochRef.current += 1;
+    pendingEdits.clear();
+    setWriteError(null);
+  }, [pendingEdits]);
 
   // 失敗集合 → loadError state の同期です。集合が実際に変わった時だけ呼びます
   //   (成功のたびに無条件で新参照を発行すると、「閉じる」判定が毎回無効化されるため)。
@@ -276,6 +337,11 @@ export function useServerSideRowModel<T>(
     // 追加(batch 9): クエリが変われば旧クエリの失敗は無効です(エラーバーも下ろします)。
     failedBlocksRef.current.clear();
     syncLoadError();
+    // 追加(書き戻し): 旧クエリの楽観 overlay / in-flight 書き込みも無効です(view 対応がずれる
+    //   ため)。内包する setWriteError は意図的なリセットです(rule は effect 内の先頭 setState
+    //   のみ報告するため、局所抑止はこの呼び出しに付けます — 下の setVersion 側は報告されません)。
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    resetWriteState();
 
     // 変更(stage ②): 件数をここでリセットしません。
     //   - 初回 mount: rowCount は useState 初期値(initialRowCount ?? 0)のまま。initialRowCount 既知なら
@@ -287,9 +353,8 @@ export function useServerSideRowModel<T>(
     hasInitializedRef.current = true;
 
     // クリア済みキャッシュをスケルトンとして再描画させるための意図的な再描画トリガーです
-    //   (version の bump。functional 更新で render 中 state は読みませんが、effect 内 setState の
-    //   ため元コードと同様に局所抑止します)。
-    // eslint-disable-next-line react-hooks/set-state-in-effect
+    //   (version の bump。rule は effect 内の先頭 setState = 上の resetWriteState のみ報告する
+    //   ため、ここへの disable は Unused directive になります — 付けません)。
     setVersion((value) => value + 1);
 
     // block 0 先行 fetch:
@@ -332,6 +397,9 @@ export function useServerSideRowModel<T>(
     // 追加(batch 9): 明示的な取り直しなので失敗状態もリセットします(エラーバーを下ろす)。
     failedBlocksRef.current.clear();
     syncLoadError();
+    // 追加(書き戻し): 楽観 overlay / in-flight 書き込みも破棄します(サーバー正本を取り直すため、
+    //   確定前の編集は失われます — refresh はそういう操作、という契約です)。
+    resetWriteState();
 
     // 破棄済みキャッシュをスケルトンとして即時再描画させます(件数は保持)。
     setVersion((value) => value + 1);
@@ -350,7 +418,7 @@ export function useServerSideRowModel<T>(
       return;
     }
     runFetch();
-  }, [cache, dataSource, blockSize, fetchBlock, runFetch, syncLoadError]);
+  }, [cache, dataSource, blockSize, fetchBlock, runFetch, syncLoadError, resetWriteState]);
 
   // 追加(batch 9): 失敗中ブロックだけを再取得します(エラーバーの「再試行」)。
   //   先に失敗集合をクリアして loadError を下ろし(バーは即時消え、スケルトンがローディングを
@@ -367,6 +435,66 @@ export function useServerSideRowModel<T>(
       fetchBlock(blockIndex);
     }
   }, [dataSource, fetchBlock, syncLoadError]);
+
+  // 追加(書き戻し): セル編集の書き戻し(楽観更新つき)の本体です。
+  //   edits は「いま表示されている行」基準のパース済みドメイン値で渡します(文字列パースと
+  //   バリデーションは呼び出し側 = 各編集経路の責務。clientSide の onRowsChange 経路と対称)。
+  //   流れ: 行単位へ集約(未ロード行はスキップ)→ overlay へ楽観行を登録し即時再描画 →
+  //   dataSource.updateRows → 成功: キャッシュへ確定書き込み(結果 rows があればサーバー確定行、
+  //   なければ楽観行)して overlay を外す / 失敗: overlay を外すだけ(= 最後の確定値へロールバック)。
+  //   同一行への連続編集は writeId 世代ガード(古い決着が新しい楽観値を巻き戻さない)、クエリ変化・
+  //   refresh をまたいだ遅延決着は epoch ガードで丸ごと無視します。
+  const applyCellEdits = useCallback(
+    (edits: ServerSideCellEditInput<T>[]): number => {
+      const updateRows = dataSource?.updateRows;
+      if (updateRows === undefined || edits.length === 0) {
+        return 0;
+      }
+      const updates = buildServerSideRowUpdates(edits, getDisplayRow, rowKeyGetter);
+      if (updates.length === 0) {
+        return 0;
+      }
+      const epoch = writeEpochRef.current;
+      const writes = updates.map((update) => ({
+        viewIndex: update.rowIndex,
+        row: update.row,
+        writeId: pendingEdits.beginWrite(update.rowIndex, update.row),
+      }));
+      // 楽観値を即時反映します(rowModel 再生成のトリガー)。
+      setVersion((value) => value + 1);
+
+      updateRows({ updates })
+        .then((result) => {
+          if (writeEpochRef.current !== epoch) {
+            return;
+          }
+          const confirmedRows = result === undefined ? undefined : result.rows;
+          writes.forEach((write, index) => {
+            // 「最後に確定した値」としてキャッシュへ書きます(ブロックが退避済みなら no-op =
+            //   次の fetch がサーバー正本を取り直します)。settleWrite は最新 writeId のときだけ
+            //   overlay を外します(古い決着はキャッシュ更新のみ行い、新しい楽観値を保ちます)。
+            cache.updateRow(write.viewIndex, confirmedRows?.[index] ?? write.row);
+            pendingEdits.settleWrite(write.viewIndex, write.writeId);
+          });
+          setVersion((value) => value + 1);
+        })
+        .catch((error: unknown) => {
+          if (writeEpochRef.current !== epoch) {
+            return;
+          }
+          // overlay を外すだけでロールバックになります(キャッシュは最後の確定値のまま)。
+          for (const write of writes) {
+            pendingEdits.settleWrite(write.viewIndex, write.writeId);
+          }
+          // 失敗のたびに新参照を発行します(「閉じる」後の再表示判定は loadError と同じ契約)。
+          setWriteError({ failedRowCount: updates.length });
+          onWriteErrorRef.current?.(error, { updates });
+          setVersion((value) => value + 1);
+        });
+      return updates.length;
+    },
+    [cache, dataSource, getDisplayRow, pendingEdits, rowKeyGetter],
+  );
 
   // 追加(stage ③): refreshToken 変化でのソフトリフレッシュ effect です(本体は上の refresh)。
   //   マウント時の no-op は前回値比較で実現し、dev StrictMode の二重実行でも余計な再取得を
@@ -402,6 +530,7 @@ export function useServerSideRowModel<T>(
     //   (inFlightRef.current は再代入されず .clear/.set/.delete のみのため退避で十分)。
     const inFlight = inFlightRef.current;
     const timer = timerRef;
+    const epoch = writeEpochRef;
     return () => {
       for (const [, controller] of inFlight) {
         controller.abort();
@@ -411,31 +540,36 @@ export function useServerSideRowModel<T>(
         clearTimeout(timer.current);
         timer.current = null;
       }
+      // 追加(書き戻し): in-flight な updateRows の決着を無効化し、楽観 overlay を破棄します
+      //   (unmount 後の setState / キャッシュ書き込みを epoch ガードで止めます)。
+      epoch.current += 1;
+      pendingEdits.clear();
     };
-  }, []);
+  }, [pendingEdits]);
 
   const isRowLoaded = useCallback(
-    (viewIndex: number): boolean => cache.getRow(viewIndex) !== undefined,
-    [cache],
+    (viewIndex: number): boolean => getDisplayRow(viewIndex) !== undefined,
+    [getDisplayRow],
   );
 
-  // RowModel シームの serverSide 実装です。order/rows ではなく cache を読みます。
-  //   version を deps に含め、ブロック到着で参照を更新して consumer の再評価を促します。
+  // RowModel シームの serverSide 実装です。order/rows ではなく overlay ?? cache を読みます
+  //   (getDisplayRow。確定前の楽観値が常に優先)。
+  //   version を deps に含め、ブロック到着 / 楽観更新で参照を更新して consumer の再評価を促します。
   const rowModel = useMemo<RowModel<T>>(
     () => ({
       getRowCount: () => rowCountRef.current,
       // 未ロードは undefined(シーム契約どおり=clientSide の OOB と同じ)。型は T 固定のため
-      //   キャストします(strictNullChecks 下で cache.getRow の | undefined を吸収)。
-      getRow: (viewIndex) => cache.getRow(viewIndex) as T,
+      //   キャストします(strictNullChecks 下で getDisplayRow の | undefined を吸収)。
+      getRow: (viewIndex) => getDisplayRow(viewIndex) as T,
       getSourceIndex: (viewIndex) => viewIndex,
       getRowKey: (viewIndex) => {
-        const row = cache.getRow(viewIndex);
+        const row = getDisplayRow(viewIndex);
         return row === undefined ? viewIndex : rowKeyGetter(row, viewIndex);
       },
     }),
     // version はブロック到着での再計算トリガーです(memo 本体は読まないため lint は不要と判定)。
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [cache, rowKeyGetter, version],
+    [getDisplayRow, rowKeyGetter, version],
   );
 
   return {
@@ -446,5 +580,8 @@ export function useServerSideRowModel<T>(
     refresh,
     loadError,
     retryFailedBlocks,
+    canUpdateRows: dataSource?.updateRows !== undefined,
+    applyCellEdits,
+    writeError,
   };
 }
