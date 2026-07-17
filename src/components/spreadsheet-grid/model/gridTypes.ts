@@ -470,6 +470,46 @@ export type EditorCommitResult =
   | { status: 'rejected'; message: string }
   | { status: 'noop' };
 
+// 追加(grouping ①): 行グルーピングの組み込み集計関数名です(GridColumn.aggFunc の文字列指定)。
+export type GridAggFuncName = 'sum' | 'min' | 'max' | 'avg' | 'count';
+
+// 追加(grouping ①): カスタム集計関数の引数です。values はグループ配下 leaf の当該列セル値
+//   (getValue 経由)、rows は同じ leaf 行の並びです(いずれもソート適用後の表示順)。
+export type GridAggFuncParams<T> = {
+  values: unknown[];
+  rows: T[];
+  column: GridColumn<T>;
+};
+
+// 追加(grouping ①): カスタム集計関数です。返り値がグループ行の当該列セルに表示されます。
+//   グループツリー再構築(rows / order / 対象列の変化)のたびに全グループぶん呼ばれるため、
+//   純粋・軽量であること(cellClassName 関数と同じコスト階級)。
+export type GridAggFunc<T> = (params: GridAggFuncParams<T>) => unknown;
+
+// 追加(grouping ①): グループ行の公開記述子です。行グルーピング有効時、ビュー行は
+//   「leaf 行(従来どおり)or グループ行」になり、グループ行はこの形で表現されます
+//   (rowModel.getGroupRow が返す型。leaf 行アクセサ getRow / getSourceIndex はグループ行の
+//   viewIndex に対して undefined を返します)。
+export type GridGroupRow = {
+  kind: 'group';
+  // 階層パスを一意に表す開閉状態キーです(列 key + 値の型タグ付き文字列表現を階層連結)。
+  //   値ベースのため、データ再取得(行オブジェクト再生成)をまたいで安定します。
+  groupKey: string;
+  // グループ元の列 key です。
+  columnKey: string;
+  // グループ値です(空白グループは null)。
+  value: unknown;
+  // 表示ラベルです(String(value)。空白グループは '(空白)')。
+  label: string;
+  // グループ階層です(最上位 0)。
+  level: number;
+  // 配下の leaf 行数です(子グループを再帰的に含む)。
+  leafCount: number;
+  // 列 key → 集計値です(aggFunc 指定列のみ。数値対象が 0 件の sum / avg / min / max は
+  //   undefined = 空セル表示)。
+  aggregates: Record<string, unknown>;
+};
+
 // 追加: 列定義です。将来のカスタムセル/カスタムヘッダー拡張を見据えています。
 export type GridColumn<T> = {
   key: string;
@@ -512,6 +552,16 @@ export type GridColumn<T> = {
   // 追加(10-A): AG Grid 互換の列固定指定です。
   //             未指定 or undefined → 中央スクロール領域に配置されます。
   pinned?: GridColumnPinned;
+  // 追加(grouping ①): true でこの列を行グルーピングの対象にします。複数列指定時は columns
+  //   配列内の出現順が階層順です。グルーピング有効時、この列は表示から自動的に外れ、先頭の
+  //   自動グループ列(ツリー表示)へ集約されます。clientSide 行モデル限定で、SSRM
+  //   (dataSource 指定時)では無効です(開発時警告)。
+  rowGroup?: boolean;
+  // 追加(grouping ①): グルーピング時のこの列の集計です。組み込み(GridAggFuncName)または
+  //   カスタム関数(GridAggFunc)。組み込みは値駆動の数値集計で、Number() 変換で有限に
+  //   ならない値と空値(null / undefined / '')は対象外です(count のみ leaf 行数)。
+  //   rowGroup 列がないときは無視されます。
+  aggFunc?: GridAggFuncName | GridAggFunc<T>;
   getValue?: (row: T) => unknown;
   setValue?: (row: T, value: unknown) => T;
   renderCell?: (ctx: CellRenderContext<T>) => ReactNode;

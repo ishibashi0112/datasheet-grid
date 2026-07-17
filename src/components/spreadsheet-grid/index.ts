@@ -30,6 +30,11 @@ export type {
   EditorCommitResult,
   // 行キー。
   GridRowKey,
+  // 追加(grouping ①): 行グルーピング(GridColumn.rowGroup / aggFunc)の公開型族です。
+  GridAggFuncName,
+  GridAggFuncParams,
+  GridAggFunc,
+  GridGroupRow,
   // select / set フィルターの候補。
   GridSelectFilterOption,
   // セル / ヘッダーのカスタム描画コンテキスト(renderCell / renderHeader 引数)。
