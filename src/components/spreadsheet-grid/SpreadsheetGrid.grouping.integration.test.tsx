@@ -5,11 +5,16 @@
 //   統合テストで担保します。
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeAll, afterEach } from 'vitest';
-import { render, cleanup } from '@testing-library/react';
+import { render, cleanup, act, fireEvent } from '@testing-library/react';
+import { createRef } from 'react';
 
 import { SpreadsheetGrid } from './SpreadsheetGrid';
 import { GROUP_AUTO_COLUMN_KEY } from './logic/grouping';
-import type { GridColumn, ServerSideDataSource } from './model/gridTypes';
+import type {
+  GridColumn,
+  ServerSideDataSource,
+  SpreadsheetGridHandle,
+} from './model/gridTypes';
 
 beforeAll(() => {
   if (!('ResizeObserver' in globalThis)) {
@@ -59,6 +64,13 @@ const groupedColumns: GridColumn<Row>[] = [
 const headerCell = (container: HTMLElement, key: string) =>
   container.querySelector(`.ssg-header-row [data-ssg-col-key="${key}"]`);
 
+// center ペインのグループ行 / 全ボディ行です(left ペインの行ヘッダー複製を数えないため
+//   ペインを固定します)。
+const centerGroupRows = (container: HTMLElement) =>
+  container.querySelectorAll('[data-pane="center"][data-ssg-group-row]');
+const centerBodyRows = (container: HTMLElement) =>
+  container.querySelectorAll('[data-pane="center"].ssg-body-row');
+
 describe('行グルーピングの列面(結合)', () => {
   it('rowGroup 指定時: 自動グループ列が先頭に注入され、グループ元列はヘッダーから消える', () => {
     const { container } = render(
@@ -98,6 +110,117 @@ describe('行グルーピングの列面(結合)', () => {
     expect(headerCell(container, GROUP_AUTO_COLUMN_KEY)).toBeNull();
     expect(headerCell(container, 'region')).not.toBeNull();
     expect(headerCell(container, 'rep')).not.toBeNull();
+  });
+
+  it('グループ行が描画され、開閉(シェブロン click / ref API / Enter)と集計表示が機能する', () => {
+    const ref = createRef<SpreadsheetGridHandle<Row>>();
+    const { container } = render(
+      <SpreadsheetGrid ref={ref} columns={groupedColumns} rows={rows} />,
+    );
+
+    // 全展開: グループ行 4(関東 / 佐藤 / 関西 / 田中)+ leaf 2 = 6 行。
+    expect(centerGroupRows(container)).toHaveLength(4);
+    expect(centerBodyRows(container)).toHaveLength(6);
+
+    // グループセル: ラベル + 件数 + 集計値(qty sum)が同じ行に出ます。
+    const firstGroup = centerGroupRows(container)[0] as HTMLElement;
+    expect(firstGroup.textContent).toContain('関東');
+    expect(firstGroup.textContent).toContain('(1件)');
+    expect(
+      firstGroup.querySelector('[data-ssg-col-key="qty"]')?.textContent,
+    ).toBe('10');
+
+    // シェブロン click で折りたたみ: 関東配下(佐藤グループ行 + leaf)が消えます。
+    const toggle = firstGroup.querySelector(
+      '.ssg-group-toggle',
+    ) as HTMLButtonElement;
+    expect(toggle.getAttribute('aria-expanded')).toBe('true');
+    fireEvent.click(toggle);
+    expect(centerGroupRows(container)).toHaveLength(3);
+    expect(centerBodyRows(container)).toHaveLength(4);
+    expect(
+      (
+        centerGroupRows(container)[0].querySelector(
+          '.ssg-group-toggle',
+        ) as HTMLButtonElement
+      ).getAttribute('aria-expanded'),
+    ).toBe('false');
+
+    // ref API: expandAllGroups で全展開へ戻ります。
+    act(() => {
+      ref.current?.expandAllGroups();
+    });
+    expect(centerBodyRows(container)).toHaveLength(6);
+
+    // collapseAllGroups: 最上位 2 グループ行のみになります。
+    act(() => {
+      ref.current?.collapseAllGroups();
+    });
+    expect(centerGroupRows(container)).toHaveLength(2);
+    expect(centerBodyRows(container)).toHaveLength(2);
+
+    // getGroupRows は開閉に関わらず全グループ(DFS 順)を返します。
+    const groupRows = ref.current?.getGroupRows() ?? [];
+    expect(groupRows.map((g) => g.label)).toEqual([
+      '関東',
+      '佐藤',
+      '関西',
+      '田中',
+    ]);
+
+    // setGroupCollapsed(false) で個別展開できます(関東のみ展開 → 佐藤グループが出る)。
+    act(() => {
+      ref.current?.setGroupCollapsed(groupRows[0].groupKey, false);
+      ref.current?.setGroupCollapsed(groupRows[1].groupKey, false);
+    });
+    expect(centerGroupRows(container)).toHaveLength(3);
+
+    // Enter キー開閉: アクティブセルをグループ行(view 0 = 関東)へ置いて Enter。
+    act(() => {
+      ref.current?.expandAllGroups();
+      ref.current?.setActiveCell({ row: 0, col: 0 });
+    });
+    const shell = container.querySelector('.ssg-shell') as HTMLElement;
+    fireEvent.keyDown(shell, { key: 'Enter' });
+    expect(centerBodyRows(container)).toHaveLength(4);
+    fireEvent.keyDown(shell, { key: 'Enter' });
+    expect(centerBodyRows(container)).toHaveLength(6);
+  });
+
+  it('エクスポートは自動グループ列を除外し leaf 行のみを出力する', () => {
+    const ref = createRef<SpreadsheetGridHandle<Row>>();
+    render(<SpreadsheetGrid ref={ref} columns={groupedColumns} rows={rows} />);
+
+    const csv = ref.current?.exportCsv({ includeHeaders: true }) ?? '';
+    const lines = csv.split('\r\n');
+    // ヘッダーに自動グループ列(地域 › 担当)は現れず、leaf 2 行のみが出力されます。
+    expect(lines[0]).toBe('数量');
+    expect(lines).toHaveLength(3);
+    expect(lines[1]).toBe('10');
+    expect(lines[2]).toBe('20');
+
+    const data = ref.current?.getExportData();
+    expect(data?.columns.map((c) => c.key)).toEqual(['qty']);
+    expect(data?.rows).toHaveLength(2);
+  });
+
+  it('行選択の件数はグループ行を除いた leaf 行数で数える', () => {
+    const ref = createRef<SpreadsheetGridHandle<Row>>();
+    render(
+      <SpreadsheetGrid
+        ref={ref}
+        columns={groupedColumns}
+        rows={rows}
+        enableRowSelection
+      />,
+    );
+
+    act(() => {
+      ref.current?.selectAllRows();
+    });
+    // 全選択(exclude モード)の件数は leaf 2 件です(グループ行 4 を含まない)。
+    expect(ref.current?.getSelectedRowCount()).toBe(2);
+    expect(ref.current?.getSelectedRowKeys()).toHaveLength(2);
   });
 
   it('serverSide(dataSource)では rowGroup を無視し、開発時警告を出す', () => {

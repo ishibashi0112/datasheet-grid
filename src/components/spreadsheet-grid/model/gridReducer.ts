@@ -399,6 +399,24 @@ export const gridUiReducer = (
       };
     }
 
+    // 追加(grouping ④): 1 キーの明示開閉です。現在集合に対して合成するため、同一イベント内の
+    //   連続 dispatch(命令的 API の複数呼び出し)でも正しく積み重なります。同値は no-op。
+    case 'group/setCollapsed': {
+      if (state.collapsedGroupKeys.has(action.groupKey) === action.collapsed) {
+        return state;
+      }
+      const nextKeys = new Set(state.collapsedGroupKeys);
+      if (action.collapsed) {
+        nextKeys.add(action.groupKey);
+      } else {
+        nextKeys.delete(action.groupKey);
+      }
+      return {
+        ...state,
+        collapsedGroupKeys: nextKeys,
+      };
+    }
+
     // 追加(grouping ②): グループ開閉の丸ごと置換です(すべて展開 / すべて折りたたみ用)。
     //   「空 → 空」は no-op として参照を維持します(連打でも flatten を再実行させない)。
     case 'group/setCollapsedKeys':

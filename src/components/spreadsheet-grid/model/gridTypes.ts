@@ -1040,6 +1040,18 @@ export type SpreadsheetGridHandle<T> = {
   //   明示的に呼べますが、外部差し替えはグリッド側でも自動検知して履歴を破棄します。
   clearUndoHistory: () => void;
 
+  // ── 行グルーピング ──
+  // 追加(grouping ④): 指定グループの開閉を設定します(collapsed: true = 折りたたみ)。
+  //   groupKey は getGroupRows() の記述子(GridGroupRow.groupKey)から取得します。
+  //   グルーピング無効時・未知キーの折りたたみ解除は no-op です。
+  setGroupCollapsed: (groupKey: string, collapsed: boolean) => void;
+  // 追加(grouping ④): すべてのグループを展開 / 折りたたみます(グルーピング無効時は no-op)。
+  expandAllGroups: () => void;
+  collapseAllGroups: () => void;
+  // 追加(grouping ④): 全グループ行の記述子を DFS 順(表示順)で返します(開閉状態に
+  //   関わらず全件。グルーピング無効時は空配列)。
+  getGroupRows: () => GridGroupRow[];
+
   // ── バリデーション ──
   // 追加(validation): validate 指定列 × 全ソース行のオンデマンド全走査です(保存前チェック用)。
   //   invalid 表示は表示時導出のため状態を持たず、本メソッドは呼ばれた時だけ計算します

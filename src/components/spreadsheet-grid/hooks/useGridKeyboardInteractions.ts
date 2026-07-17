@@ -38,6 +38,9 @@ type UseGridKeyboardInteractionsArgs<T> = {
   // 追加(editor: checkbox): checkbox 列のアクティブセルを Space で直接トグルします
   //   (編集可否ガード・履歴積みは呼び出し側で吸収)。
   onToggleCheckboxCell: (cell: CellCoord) => void;
+  // 追加(grouping ④): アクティブセルがグループ行のとき、Enter / Space で開閉をトグルします
+  //   (グループ行に編集対象は無いため編集系キーを開閉に転用)。
+  onToggleGroup: (groupKey: string) => void;
 };
 
 // 追加: keyboard interaction（arrow/tab/enter/copy/select-all/edit start）をまとめます。
@@ -57,6 +60,7 @@ export const useGridKeyboardInteractions = <T,>({
   onRedo,
   onClearSelection,
   onToggleCheckboxCell,
+  onToggleGroup,
 }: UseGridKeyboardInteractionsArgs<T>) => {
   // 追加(DS-3-1): 行数はシーム経由で取得します(= order.length / 旧 filteredRows.length と等価)。
   //   各 useCallback の deps はこのプリミティブ rowCount を使い、rowModel オブジェクト参照を
@@ -202,6 +206,19 @@ export const useGridKeyboardInteractions = <T,>({
         onClearSelection();
         return;
       }
+      // 追加(grouping ④): アクティブセルがグループ行なら Enter / Space は開閉トグルです
+      //   (グルーピング無効時は getGroupRow 未定義のため常に素通り)。
+      if (
+        (event.key === 'Enter' || event.key === ' ') &&
+        uiState.activeCell
+      ) {
+        const groupRow = rowModel.getGroupRow?.(uiState.activeCell.row);
+        if (groupRow) {
+          event.preventDefault();
+          onToggleGroup(groupRow.groupKey);
+          return;
+        }
+      }
       if (event.key === 'Enter' || event.key === 'F2') {
         event.preventDefault();
         if (uiState.activeCell) {
@@ -251,6 +268,7 @@ export const useGridKeyboardInteractions = <T,>({
       onClearSelection,
       onRedo,
       onToggleCheckboxCell,
+      onToggleGroup,
       onUndo,
       readOnly,
       selectEntireGrid,

@@ -199,12 +199,15 @@ import {
 import {
   GROUP_AUTO_COLUMN_KEY,
   buildGroupTree,
+  collectAllGroupKeys,
+  collectAllGroupRows,
   collectGroupingColumns,
   flattenGroupTree,
   groupIndexOfOrderValue,
   groupRowKey,
   isGroupOrderValue,
 } from './logic/grouping';
+import type { GroupTree } from './logic/grouping';
 import type {
   CellCoord,
   CellRenderState,
@@ -1436,6 +1439,11 @@ export function SpreadsheetGrid<T extends object>({
   //   (行数は order.length のみに依存するため)。DS-3-1 keyboard / DS-3-3 clipboard と同型です。
   const viewRowCount = rowModel.getRowCount();
 
+  // 追加(grouping ④): leaf 行数(グループ行を除くデータ行数)です。行選択の件数・bar summary の
+  //   「Rows: X / Y」はこちらを使います(viewRowCount はグループ行込みの表示行数で、仮想化・
+  //   ヒットテスト・キーボード境界はそちらが正)。グルーピング無効時は常に同値です。
+  const leafRowCount = groupedDisplay ? order.length : viewRowCount;
+
   // 派生ビュー: order[i] が「ビュー位置 i の元 rows index(= source index)」です。
   // 変更(DS-3-7): eager な filteredRows 配列 materialize を撤去し、遅延キャッシュ factory に
   //   置き換えます。唯一残る consumer は公開 slotContext.filteredRows(外部スロット契約)のみで、
@@ -1954,7 +1962,8 @@ export function SpreadsheetGrid<T extends object>({
   // 現在の行選択状態(reducer が単一の作業状態。controlled では下の effect で prop を反映)。
   const rowSelectionState = uiState.rowSelection;
   // ヘッダ全選択チェックの 3 状態(none/some/all)。件数は O(1) で求まります。
-  const selectAllRowsState = getSelectAllState(rowSelectionState, viewRowCount);
+  // 変更(grouping ④): 総数は leafRowCount(グループ行を除くデータ行数)です。
+  const selectAllRowsState = getSelectAllState(rowSelectionState, leafRowCount);
 
   // 安定コールバック用の latest-ref 群(参照を変えず GridBodyRow memo を保つため)。
   const rowSelectionStateRef = useRef(rowSelectionState);
@@ -2059,14 +2068,12 @@ export function SpreadsheetGrid<T extends object>({
   );
 
   // 全選択トグル(ヘッダコーナー)。全選択済みなら解除、そうでなければ全選択。
+  // 変更(grouping ④): 総数はグループ行を除く leafRowCount です(latest-ref は増やさず deps に
+  //   直接入れます。件数変化での参照更新はコールドパスのため問題ありません)。
   const handleToggleSelectAllRows = useCallback(() => {
-    const rm = rowModelRef.current;
-    const cur = getSelectAllState(
-      rowSelectionStateRef.current,
-      rm.getRowCount(),
-    );
+    const cur = getSelectAllState(rowSelectionStateRef.current, leafRowCount);
     commitRowSelection(cur === 'all' ? clearRowSelection() : selectAllRows());
-  }, [commitRowSelection]);
+  }, [commitRowSelection, leafRowCount]);
 
   // controlled: prop の記述子を reducer へ同期します(差分時のみ。reducer 側も同値 no-op)。
   useEffect(() => {
@@ -2411,6 +2418,8 @@ export function SpreadsheetGrid<T extends object>({
     onClearSelection: clearSelectedCells,
     // 追加(editor: checkbox): checkbox 列の Space 直接トグル配線です。
     onToggleCheckboxCell: toggleCheckboxCell,
+    // 追加(grouping ④): グループ行の Enter / Space 開閉トグル配線です。
+    onToggleGroup: handleGroupToggle,
   });
 
   // ── edit controller ───────────────────────────────────
@@ -3931,7 +3940,9 @@ export function SpreadsheetGrid<T extends object>({
     rows,
     // 変更(DS-3-7): filteredRows(配列)→ viewRowCount(件数)+ getFilteredRows(遅延 factory)。
     //   bar summary は件数のみ、公開 slotContext.filteredRows は外部スロットが読んだ時だけ生成。
-    viewRowCount,
+    // 変更(grouping ④): summary の件数はグループ行を除く leafRowCount です(slotContext.filteredRows
+    //   = leaf 行配列と整合)。
+    viewRowCount: leafRowCount,
     getFilteredRows,
     columns,
     visibleColumns,
@@ -4306,6 +4317,10 @@ export function SpreadsheetGrid<T extends object>({
     dispatch: typeof dispatch;
     rowModel: RowModel<T>;
     viewRowCount: number;
+    // 追加(grouping ④): グループ行を除くデータ行数(行選択件数用)と、グループツリー
+    //   (一括開閉 / getGroupRows 用。グルーピング無効時 null)です。
+    leafRowCount: number;
+    groupTree: GroupTree<T> | null;
     rowMetrics: RowMetrics;
     paneLayout: GridPaneLayout<T>;
     orderedColumns: GridColumn<T>[];
@@ -4349,6 +4364,8 @@ export function SpreadsheetGrid<T extends object>({
     dispatch,
     rowModel,
     viewRowCount,
+    leafRowCount,
+    groupTree,
     rowMetrics,
     paneLayout,
     orderedColumns,
@@ -4576,6 +4593,13 @@ export function SpreadsheetGrid<T extends object>({
         };
       };
 
+      // 追加(grouping ④): 自動グループ列は合成列(leaf 行に値なし)のためエクスポート列から
+      //   除外します(グループ行自体も getRow undefined スキップで出力対象外 = leaf のみ)。
+      const stripAutoGroupColumn = (
+        exportColumns: GridColumn<T>[],
+      ): GridColumn<T>[] =>
+        exportColumns.filter((column) => column.key !== GROUP_AUTO_COLUMN_KEY);
+
       // CSV 文字列を組み立てます(exportCsv / downloadCsv で共有)。既定 scope は 'view'(旧 'all' と
       //   同実装のため挙動不変)。行アクセサは resolveExportScope が scope に応じて返します。
       const buildCsv = (options?: CsvExportOptions): string => {
@@ -4588,7 +4612,7 @@ export function SpreadsheetGrid<T extends object>({
           getRow: resolved.getRow,
           startRow: resolved.startRow,
           endRow: resolved.endRow,
-          columns: resolved.columns,
+          columns: stripAutoGroupColumn(resolved.columns),
           delimiter: options?.delimiter,
           includeHeaders: options?.includeHeaders,
           bom: options?.bom,
@@ -4608,7 +4632,7 @@ export function SpreadsheetGrid<T extends object>({
           getRow: resolved.getRow,
           startRow: resolved.startRow,
           endRow: resolved.endRow,
-          columns: resolved.columns,
+          columns: stripAutoGroupColumn(resolved.columns),
         });
       };
 
@@ -4870,8 +4894,10 @@ export function SpreadsheetGrid<T extends object>({
         },
         getSelectedRowCount: () => {
           const s = apiStateRef.current;
+          // 変更(grouping ④): 総数はグループ行を除く leafRowCount です(グルーピング無効時は
+          //   getRowCount() と同値)。
           return s
-            ? countSelectedRows(s.uiState.rowSelection, s.rowModel.getRowCount())
+            ? countSelectedRows(s.uiState.rowSelection, s.leafRowCount)
             : 0;
         },
         isRowSelected: (rowKey) => {
@@ -4898,6 +4924,37 @@ export function SpreadsheetGrid<T extends object>({
         canRedo: () => apiStateRef.current?.canRedoRows() ?? false,
         clearUndoHistory: () => {
           apiStateRef.current?.clearUndoHistory();
+        },
+
+        // ── 行グルーピング ──
+        // 追加(grouping ④): グループ開閉の命令的 API です。グルーピング無効時(groupTree=null /
+        //   該当キーなし)は no-op です。groupKey は getGroupRows() の記述子から取得できます。
+        //   合成は reducer(group/setCollapsed)側で行うため、同一イベント内の連続呼び出しでも
+        //   stale 読みなしで積み重なります。
+        setGroupCollapsed: (groupKey, collapsed) => {
+          apiStateRef.current?.dispatch(
+            gridActions.setGroupCollapsed(groupKey, collapsed),
+          );
+        },
+        expandAllGroups: () => {
+          apiStateRef.current?.dispatch(
+            gridActions.setCollapsedGroupKeys(new Set()),
+          );
+        },
+        collapseAllGroups: () => {
+          const s = apiStateRef.current;
+          if (!s || !s.groupTree) {
+            return;
+          }
+          s.dispatch(
+            gridActions.setCollapsedGroupKeys(
+              new Set(collectAllGroupKeys(s.groupTree)),
+            ),
+          );
+        },
+        getGroupRows: () => {
+          const s = apiStateRef.current;
+          return s?.groupTree ? collectAllGroupRows(s.groupTree) : [];
         },
 
         // ── バリデーション ──

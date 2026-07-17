@@ -48,7 +48,10 @@ export type GridUiAction =
   | { type: 'rowSelect/set'; state: RowSelectionState }
   // 追加(grouping ②): 行グルーピングのグループ開閉です。toggle は 1 キーの反転、set は
   //   丸ごと置換(すべて展開 = 空集合 / すべて折りたたみ = collectAllGroupKeys の全キー)。
+  // 追加(grouping ④): setCollapsed は 1 キーの明示指定です(reducer 内で現在集合へ合成する
+  //   ため、同一イベント内の連続 dispatch でも stale 読みなしで積み重なります)。
   | { type: 'group/toggleCollapsed'; groupKey: string }
+  | { type: 'group/setCollapsed'; groupKey: string; collapsed: boolean }
   | { type: 'group/setCollapsedKeys'; keys: ReadonlySet<string> };
 
 // 追加: action creator 群です。UI から文字列リテラルを散らさないために定義します。
@@ -170,6 +173,12 @@ export const gridActions = {
   toggleGroupCollapsed: (groupKey: string): GridUiAction => ({
     type: 'group/toggleCollapsed',
     groupKey,
+  }),
+  // 追加(grouping ④): 1 キーの明示開閉です(命令的 API setGroupCollapsed 用)。
+  setGroupCollapsed: (groupKey: string, collapsed: boolean): GridUiAction => ({
+    type: 'group/setCollapsed',
+    groupKey,
+    collapsed,
   }),
   setCollapsedGroupKeys: (keys: ReadonlySet<string>): GridUiAction => ({
     type: 'group/setCollapsedKeys',

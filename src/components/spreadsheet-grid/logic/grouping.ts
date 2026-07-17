@@ -279,11 +279,12 @@ export const flattenGroupTree = <T,>(
   return { displayOrder: Int32Array.from(out), groups };
 };
 
-// ツリー内の全 groupKey を DFS 順で返します(「すべて折りたたむ」等の一括開閉操作用)。
-export const collectAllGroupKeys = <T,>(tree: GroupTree<T>): string[] => {
-  const keys: string[] = [];
+// ツリー内の全グループ行を DFS 順で返します(命令的 API getGroupRows / 一括開閉用。
+//   開閉状態に関わらず全件です)。
+export const collectAllGroupRows = <T,>(tree: GroupTree<T>): GridGroupRow[] => {
+  const groupRows: GridGroupRow[] = [];
   const walk = (node: GroupTreeNode<T>): void => {
-    keys.push(node.groupRow.groupKey);
+    groupRows.push(node.groupRow);
     for (const child of node.children) {
       walk(child);
     }
@@ -291,5 +292,9 @@ export const collectAllGroupKeys = <T,>(tree: GroupTree<T>): string[] => {
   for (const root of tree.roots) {
     walk(root);
   }
-  return keys;
+  return groupRows;
 };
+
+// ツリー内の全 groupKey を DFS 順で返します(「すべて折りたたむ」等の一括開閉操作用)。
+export const collectAllGroupKeys = <T,>(tree: GroupTree<T>): string[] =>
+  collectAllGroupRows(tree).map((groupRow) => groupRow.groupKey);
