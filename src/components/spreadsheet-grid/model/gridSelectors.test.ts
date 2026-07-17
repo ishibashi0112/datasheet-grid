@@ -30,6 +30,8 @@ const makeState = (overrides: Partial<GridUiState> = {}): GridUiState => ({
   columnWidths: {},
   filters: { globalText: '', columnFilters: {} },
   sort: [],
+  // 追加(grouping ②): グループ開閉状態の既定値(全展開)。
+  collapsedGroupKeys: new Set<string>(),
   ...overrides,
 });
 

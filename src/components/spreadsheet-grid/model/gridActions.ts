@@ -45,7 +45,11 @@ export type GridUiAction =
   | { type: 'sort/clear' }
   // 追加(行選択): チェックボックス行選択の状態を丸ごと設定します(次状態は純ロジックで算出済み)。
   //   既存の rowSelection/start|update(セル範囲の行選択)とは別物です。
-  | { type: 'rowSelect/set'; state: RowSelectionState };
+  | { type: 'rowSelect/set'; state: RowSelectionState }
+  // 追加(grouping ②): 行グルーピングのグループ開閉です。toggle は 1 キーの反転、set は
+  //   丸ごと置換(すべて展開 = 空集合 / すべて折りたたみ = collectAllGroupKeys の全キー)。
+  | { type: 'group/toggleCollapsed'; groupKey: string }
+  | { type: 'group/setCollapsedKeys'; keys: ReadonlySet<string> };
 
 // 追加: action creator 群です。UI から文字列リテラルを散らさないために定義します。
 export const gridActions = {
@@ -161,5 +165,14 @@ export const gridActions = {
   setRowSelectionState: (state: RowSelectionState): GridUiAction => ({
     type: 'rowSelect/set',
     state,
+  }),
+  // 追加(grouping ②): グループ開閉の反転 / 丸ごと置換です。
+  toggleGroupCollapsed: (groupKey: string): GridUiAction => ({
+    type: 'group/toggleCollapsed',
+    groupKey,
+  }),
+  setCollapsedGroupKeys: (keys: ReadonlySet<string>): GridUiAction => ({
+    type: 'group/setCollapsedKeys',
+    keys,
   }),
 };

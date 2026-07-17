@@ -22,6 +22,13 @@ export type RowModel<T> = {
   getRow: (viewIndex: number) => T;
   getSourceIndex: (viewIndex: number) => number;
   getRowKey: (viewIndex: number) => GridRowKey;
+  // 追加(grouping ②): 行グルーピング有効時のみ定義される任意アクセサです。ビュー行が
+  //   グループ行のとき記述子(GridGroupRow)を返し、leaf 行 / OOB では undefined を返します。
+  //   グループ行の viewIndex では getRow / getSourceIndex が実行時 undefined になります
+  //   (DS-3-9 の OOB と同じ「型は T / number のまま・実行時 undefined」の契約に合流。
+  //   既存 consumer の !row ガード / === undefined 判定がそのままグループ行を no-op として
+  //   吸収します)。グルーピング無効(clientSide 非グループ / serverSide)では未定義です。
+  getGroupRow?: (viewIndex: number) => GridGroupRow | undefined;
 };
 
 // 追加(DS-4 ②): serverSide(SSRM)用のデータ供給契約群です。dataSource 指定時に serverSide
@@ -650,6 +657,11 @@ export type GridUiState = {
   columnWidths: Record<string, number>;
   filters: GridFilterState;
   sort: GridSortState;
+  // 追加(grouping ②): 折りたたみ中のグループキー集合です(GridGroupRow.groupKey。既定 =
+  //   空集合 = 全展開)。値ベースのキーのため rows 再取得をまたいで維持され、存在しない
+  //   キーは flatten 時に単に無視されます(グルーピング列変更後の残骸キーは無害)。
+  //   undo/redo の履歴対象外です(表示状態であってデータ変更ではないため)。
+  collapsedGroupKeys: ReadonlySet<string>;
 };
 
 // 追加: 選択統計の派生 summary です。

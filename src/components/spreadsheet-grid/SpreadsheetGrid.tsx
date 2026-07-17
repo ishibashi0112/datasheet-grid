@@ -195,6 +195,15 @@ import {
   buildServerSideQuery,
   serializeServerSideQuery,
 } from './logic/serverSideQuery';
+// 追加(grouping ②): 行グルーピングの純ロジック(ツリー構築 / 開閉適用 flatten / エンコード)です。
+import {
+  buildGroupTree,
+  collectGroupingColumns,
+  flattenGroupTree,
+  groupIndexOfOrderValue,
+  groupRowKey,
+  isGroupOrderValue,
+} from './logic/grouping';
 import type {
   CellCoord,
   CellRenderState,
@@ -1033,6 +1042,49 @@ export function SpreadsheetGrid<T extends object>({
     [rows, columnFilteredOrder, visibleColumns, uiState.sort],
   );
 
+  // ── 行グルーピング stage(grouping ②) ───────────────────
+  // sorted order の後段に挿す表示変換です。rowGroup 列(columns 出現順 = 階層順)と
+  //   aggFunc 列は「全列定義」から導出します(visibleColumns 基準にしないのは、グループ元列の
+  //   自動非表示(grouping ③)で visible から外れてもグルーピング自体は維持するためです)。
+  //   rowGroup 列が無ければ groupedDisplay は null になり、下の clientSideRowModel は
+  //   従来の order 直参照へフォールバックします(非グルーピング経路はバイト等価)。
+  const { groupColumns, aggColumns } = useMemo(
+    () => collectGroupingColumns(columns),
+    [columns],
+  );
+  // clientSide 限定です(SSRM は v1 対象外。下の開発時警告参照)。
+  const rowGroupingActive = !isServerSide && groupColumns.length > 0;
+
+  // SSRM で rowGroup 列が指定されたときの開発時警告です(例外は投げず、グルーピングを
+  //   無視して通常表示を継続します)。
+  useEffect(() => {
+    if (!import.meta.env.DEV) {
+      return;
+    }
+    if (isServerSide && groupColumns.length > 0) {
+      console.warn(
+        '[SpreadsheetGrid] serverSide(dataSource)では行グルーピング(rowGroup)は未対応です。rowGroup 指定を無視して通常表示します。',
+      );
+    }
+  }, [isServerSide, groupColumns.length]);
+
+  // グループツリー(集計込み)です。開閉状態に依存しないため、開閉操作では再計算されません
+  //   (集計・ツリーは維持され、下の flatten だけが再実行されます)。
+  const groupTree = useMemo(
+    () =>
+      rowGroupingActive
+        ? buildGroupTree(rows, order, groupColumns, aggColumns)
+        : null,
+    [rowGroupingActive, rows, order, groupColumns, aggColumns],
+  );
+
+  // 開閉適用済みの表示リストです(displayOrder: >= 0 = leaf source index / < 0 = groups 参照)。
+  const groupedDisplay = useMemo(
+    () =>
+      groupTree ? flattenGroupTree(groupTree, uiState.collapsedGroupKeys) : null,
+    [groupTree, uiState.collapsedGroupKeys],
+  );
+
   // ── row model seam (DS-3-0) ───────────────────────────
   // 変更(DS-3-0): order(Int32Array)を直接触る consumer を、この rowModel 越しの参照へ
   //   段階移行します(DS-3 で 1 consumer = 1 コミット)。本バッチでは GridBodyLayer が
@@ -1043,16 +1095,48 @@ export function SpreadsheetGrid<T extends object>({
   //   props 安定(11-A 系)を壊しません。
   //   viewIndex は表示上の行 index、getSourceIndex の返り値(= order[viewIndex])は元 rows の
   //   index です。getRow / getRowKey は内部でこの対応付け rows[order[viewIndex]] を使います。
-  const clientSideRowModel = useMemo<RowModel<T>>(
-    () => ({
+  //   追加(grouping ②): 行グルーピング有効時は order の代わりに groupedDisplay
+  //   (開閉適用済み displayOrder + groups)を参照し、グループ行では getRow / getSourceIndex が
+  //   実行時 undefined・getGroupRow が記述子を返します(RowModel 型コメント参照)。
+  //   グルーピング無効時は従来実装そのまま(getGroupRow も未定義)で、既存経路は不変です。
+  const clientSideRowModel = useMemo<RowModel<T>>(() => {
+    if (groupedDisplay) {
+      const { displayOrder, groups } = groupedDisplay;
+      return {
+        getRowCount: () => displayOrder.length,
+        // グループ行では displayOrder 値が負のため rows[負値] = undefined になります
+        //   (DS-3-9 の OOB と同じ「型は T のまま・実行時 undefined」)。
+        getRow: (viewIndex) => rows[displayOrder[viewIndex]],
+        getSourceIndex: (viewIndex) => {
+          const value = displayOrder[viewIndex];
+          // グループ行 / OOB は undefined です(型は number のまま。DS-3-9 の契約に合流)。
+          return value >= 0 ? value : (undefined as unknown as number);
+        },
+        getRowKey: (viewIndex) => {
+          const value = displayOrder[viewIndex];
+          if (isGroupOrderValue(value)) {
+            return groupRowKey(groups[groupIndexOfOrderValue(value)]);
+          }
+          // OOB(value = undefined)は leaf 側へ落ち、従来どおり rowKeyGetter が
+          //   (undefined, undefined) を受けます(非グルーピング時と同じ挙動)。
+          return resolvedRowKeyGetter(rows[value], value);
+        },
+        getGroupRow: (viewIndex) => {
+          const value = displayOrder[viewIndex];
+          return isGroupOrderValue(value)
+            ? groups[groupIndexOfOrderValue(value)]
+            : undefined;
+        },
+      };
+    }
+    return {
       getRowCount: () => order.length,
       getRow: (viewIndex) => rows[order[viewIndex]],
       getSourceIndex: (viewIndex) => order[viewIndex],
       getRowKey: (viewIndex) =>
         resolvedRowKeyGetter(rows[order[viewIndex]], order[viewIndex]),
-    }),
-    [order, rows, resolvedRowKeyGetter],
-  );
+    };
+  }, [groupedDisplay, order, rows, resolvedRowKeyGetter]);
 
   // ── serverSide query 配線(stage ②) ───────────────────
   // clientSide の UI 状態(sort / 列フィルター / グローバルフィルター)から ServerSideQuery を組み立て、

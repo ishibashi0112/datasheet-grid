@@ -46,6 +46,8 @@ export const createInitialGridUiState = <T,>(
   },
   // 変更(MS-1): 単一オブジェクト → エントリ配列。[] = ソートなし。
   sort: [],
+  // 追加(grouping ②): グループ開閉状態です(空集合 = 全展開で開始)。
+  collapsedGroupKeys: new Set<string>(),
 });
 
 // 追加: Grid の UI state reducer 本体です。
@@ -380,6 +382,35 @@ export const gridUiReducer = (
       return {
         ...state,
         rowSelection: action.state,
+      };
+
+    // 追加(grouping ②): グループ開閉の 1 キー反転です。Set は immutable 扱い(コピーして
+    //   反転)で、参照変化が flatten(flattenGroupTree)の再実行トリガーになります。
+    case 'group/toggleCollapsed': {
+      const nextKeys = new Set(state.collapsedGroupKeys);
+      if (nextKeys.has(action.groupKey)) {
+        nextKeys.delete(action.groupKey);
+      } else {
+        nextKeys.add(action.groupKey);
+      }
+      return {
+        ...state,
+        collapsedGroupKeys: nextKeys,
+      };
+    }
+
+    // 追加(grouping ②): グループ開閉の丸ごと置換です(すべて展開 / すべて折りたたみ用)。
+    //   「空 → 空」は no-op として参照を維持します(連打でも flatten を再実行させない)。
+    case 'group/setCollapsedKeys':
+      if (
+        action.keys === state.collapsedGroupKeys ||
+        (action.keys.size === 0 && state.collapsedGroupKeys.size === 0)
+      ) {
+        return state;
+      }
+      return {
+        ...state,
+        collapsedGroupKeys: action.keys,
       };
 
     default:
