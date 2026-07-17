@@ -13,6 +13,8 @@ import type {
   CellCoord,
   CellRenderState,
   GridColumn,
+  // 追加(grouping ③): グループ行の記述子型です(rowModel.getGroupRow が返す)。
+  GridGroupRow as GridGroupRowDescriptor,
   GridRowKey,
   // 追加(DS-3-0): 行モデルのシーム契約型です(filteredRows/Keys props を置換)。
   RowModel,
@@ -20,6 +22,8 @@ import type {
   RowSelectionState,
   SpreadsheetGridProps,
 } from '../model/gridTypes';
+// 追加(grouping ③): 自動グループ列の判定キーと、グループ行の React key です。
+import { GROUP_AUTO_COLUMN_KEY, groupRowKey } from '../logic/grouping';
 // 追加(行選択): O(1) 選択判定と、共用チェックボックス glyph です。
 import { resolveIsRowSelected } from '../logic/rowSelection';
 // 追加: 省略時ツールチップのマーカー付与判定(純関数)です。
@@ -540,6 +544,175 @@ const GridBodySkeletonRow = memo(
   GridBodySkeletonRowInner,
 ) as typeof GridBodySkeletonRowInner;
 
+// ──────────────────────────────────────────────────────────
+// 追加(grouping ③): グループ行です(A2 = セル分割型)。列セルの絶対配置・境界を leaf 行と
+//   一致させたまま、内容だけを差し替えます:
+//   - 自動グループ列(GROUP_AUTO_COLUMN_KEY): インデント + 開閉シェブロン + ラベル + 件数。
+//   - aggFunc 列: 集計値の文字列表示(C1 = グループ行内表示。undefined は空セル)。
+//   - その他の列: 空セル。
+//   セル選択には参加しません(pointer down / enter は配線しない)。開閉はシェブロン click と
+//   行ダブルクリックの 2 経路です。props はプリミティブ + ツリー世代で安定な参照
+//   (groupRow / renderEntries)のみで、memo が縦スクロール・選択操作で機能します。
+// ──────────────────────────────────────────────────────────
+type GridBodyGroupRowProps<T> = {
+  pane: GridPaneKind;
+  ownsRowHeader: boolean;
+  leadingWidth: number;
+  rowIndex: number;
+  top: number;
+  rowHeight: number;
+  renderEntries: PaneColumnEntry<T>[];
+  rowHeaderCellStyle: CSSProperties;
+  isRowHovered: boolean;
+  // 追加: 行ヘッダの列幅を揃えるためのフラグです(グループ行は行選択対象外のため、
+  //   チェックボックスは描画せず行番号を出します)。
+  showRowCheckbox: boolean;
+  groupRow: GridGroupRowDescriptor;
+  isCollapsed: boolean;
+  onGroupToggle: (groupKey: string) => void;
+  onRowHeaderPointerEnter: (
+    rowIndex: number,
+    event: PointerEvent<HTMLDivElement>,
+  ) => void;
+  onRowHeaderPointerLeave: (rowIndex: number) => void;
+  bodyCellClassName?: string;
+  bodyRowClassName?: string;
+  rowHeaderCellClassName?: string;
+};
+
+// 集計値の表示文字列です。undefined / null は空セル、それ以外は String()(カスタム aggFunc は
+//   整形済み文字列を返せます)。
+const formatAggregateValue = (value: unknown): string =>
+  value == null ? '' : String(value);
+
+// 1 階層ぶんのインデント幅(px)です。
+const GROUP_INDENT_PX = 16;
+
+function GridBodyGroupRowInner<T>({
+  pane,
+  ownsRowHeader,
+  leadingWidth,
+  rowIndex,
+  top,
+  rowHeight,
+  renderEntries,
+  rowHeaderCellStyle,
+  isRowHovered,
+  showRowCheckbox,
+  groupRow,
+  isCollapsed,
+  onGroupToggle,
+  onRowHeaderPointerEnter,
+  onRowHeaderPointerLeave,
+  bodyCellClassName,
+  bodyRowClassName,
+  rowHeaderCellClassName,
+}: GridBodyGroupRowProps<T>) {
+  return (
+    <div
+      data-pane={pane}
+      data-row-index={rowIndex}
+      data-ssg-group-row=""
+      className={cx('ssg-body-row', bodyRowClassName)}
+      style={{
+        height: rowHeight,
+        transform: `translateY(${top}px)`,
+      }}
+      onDoubleClick={() => onGroupToggle(groupRow.groupKey)}
+    >
+      {ownsRowHeader && (
+        <div
+          onPointerEnter={(event) => onRowHeaderPointerEnter(rowIndex, event)}
+          onPointerLeave={() => onRowHeaderPointerLeave(rowIndex)}
+          className={cx(
+            'ssg-header-cell',
+            'ssg-row-header-cell',
+            showRowCheckbox && 'ssg-row-header-cell--checkbox',
+            isRowHovered && 'ssg-header-cell--hovered',
+            rowHeaderCellClassName,
+          )}
+          style={{
+            ...rowHeaderCellStyle,
+            height: rowHeight,
+          }}
+        >
+          {showRowCheckbox ? null : rowIndex + 1}
+        </div>
+      )}
+
+      {renderEntries.map((entry) => {
+        if (!entry) {
+          return null;
+        }
+        const column = entry.column;
+        const left = leadingWidth + entry.paneLocalStart;
+        const size = entry.paneLocalSize;
+        const isAutoGroupColumn = column.key === GROUP_AUTO_COLUMN_KEY;
+        const aggregateText =
+          !isAutoGroupColumn &&
+          Object.prototype.hasOwnProperty.call(
+            groupRow.aggregates,
+            column.key,
+          )
+            ? formatAggregateValue(groupRow.aggregates[column.key])
+            : null;
+
+        return (
+          <div
+            key={`group-${pane}-${column.key}`}
+            data-ssg-col-key={column.key}
+            className={cx(
+              'ssg-body-cell',
+              'ssg-group-cell',
+              column.align === 'center' && 'ssg-body-cell--align-center',
+              column.align === 'right' && 'ssg-body-cell--align-right',
+              isRowHovered && 'ssg-body-cell--row-hovered',
+              bodyCellClassName,
+            )}
+            style={{
+              left,
+              width: size,
+              minWidth: size,
+              height: rowHeight,
+              zIndex: 1,
+            }}
+          >
+            {isAutoGroupColumn ? (
+              <>
+                <span
+                  aria-hidden="true"
+                  className="ssg-group-indent"
+                  style={{ width: groupRow.level * GROUP_INDENT_PX }}
+                />
+                <button
+                  type="button"
+                  className="ssg-group-toggle"
+                  aria-expanded={!isCollapsed}
+                  aria-label={`${groupRow.label} を${isCollapsed ? '展開' : '折りたたみ'}`}
+                  onClick={() => onGroupToggle(groupRow.groupKey)}
+                  onDoubleClick={(event) => event.stopPropagation()}
+                >
+                  {isCollapsed ? '▸' : '▾'}
+                </button>
+                <span className="ssg-group-label">{groupRow.label}</span>
+                <span className="ssg-group-count">
+                  ({groupRow.leafCount}件)
+                </span>
+              </>
+            ) : (
+              aggregateText
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+const GridBodyGroupRow = memo(
+  GridBodyGroupRowInner,
+) as typeof GridBodyGroupRowInner;
+
 type GridBodyLayerProps<T> = {
   // 追加(10-C): 描画対象のペイン種別です。
   pane: GridPaneKind;
@@ -566,6 +739,11 @@ type GridBodyLayerProps<T> = {
   // 追加(①-4): serverSide(SSRM)モードか。true のとき未ロード行をスケルトン描画します。
   //   未指定時 false(clientSide は従来どおり未ロード=OOB を null 返し)。
   isServerSide?: boolean;
+  // 追加(grouping ③): 折りたたみ中のグループキー集合(シェブロン方向の導出用)と開閉トグルです。
+  //   グルーピング無効時は未指定で、コスト・挙動とも従来どおりです(rowModel.getGroupRow が
+  //   無ければグループ行分岐は評価されません)。
+  collapsedGroupKeys?: ReadonlySet<string>;
+  onGroupToggle?: (groupKey: string) => void;
   rowHeaderCellStyle: CSSProperties;
   hoveredRowIndex: number | null;
   isWholeGridSelected: boolean;
@@ -632,6 +810,8 @@ export function GridBodyLayer<T>({
   showCellOverflowTooltip = false,
   showValidationMarks = true,
   isServerSide = false,
+  collapsedGroupKeys,
+  onGroupToggle,
   rowHeaderCellStyle,
   hoveredRowIndex,
   isWholeGridSelected,
@@ -668,6 +848,37 @@ export function GridBodyLayer<T>({
         // 行ごとの解決済み高さ。auto-height では virtualRow.size、uniform では rowHeight。
         //   skeleton 行も同じ解決高を用い、ロード済み行とレイアウトを一致させます。
         const rowSize = virtualRow.size ?? rowHeight;
+
+        // 追加(grouping ③): グループ行の分岐です(getRow の undefined ガードより前)。
+        //   グルーピング有効時のみ getGroupRow が定義され、グループ行 viewIndex で記述子を
+        //   返します。React key は groupRowKey(開閉キー由来)で、開閉・フィルターを
+        //   またいで安定します。
+        const groupRow = rowModel.getGroupRow?.(rowIndex);
+        if (groupRow && onGroupToggle) {
+          return (
+            <GridBodyGroupRow
+              key={String(groupRowKey(groupRow))}
+              pane={pane}
+              ownsRowHeader={ownsRowHeader}
+              leadingWidth={leadingWidth}
+              rowIndex={rowIndex}
+              top={virtualRow.start}
+              rowHeight={rowSize}
+              renderEntries={renderEntries}
+              rowHeaderCellStyle={rowHeaderCellStyle}
+              isRowHovered={hoveredRowIndex === rowIndex}
+              showRowCheckbox={enableRowSelection}
+              groupRow={groupRow}
+              isCollapsed={collapsedGroupKeys?.has(groupRow.groupKey) === true}
+              onGroupToggle={onGroupToggle}
+              onRowHeaderPointerEnter={onRowHeaderPointerEnter}
+              onRowHeaderPointerLeave={onRowHeaderPointerLeave}
+              bodyCellClassName={bodyCellClassName}
+              bodyRowClassName={bodyRowClassName}
+              rowHeaderCellClassName={rowHeaderCellClassName}
+            />
+          );
+        }
 
         // 変更(DS-3-0): filteredRows[rowIndex] / filteredRowKeys[rowIndex] を rowModel 越しへ。
         //   getRow(i) は内部で rows[order[i]] を返すため、旧 filteredRows[i] と参照同一

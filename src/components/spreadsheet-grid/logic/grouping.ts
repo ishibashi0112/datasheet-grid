@@ -47,6 +47,11 @@ export const GROUP_EMPTY_LABEL = '(空白)';
 // グループ行キーの接頭辞です(leaf の GridRowKey と衝突しない React key / 行キー空間を作ります)。
 export const GROUP_ROW_KEY_PREFIX = '__ssg-group__:';
 
+// 自動グループ列(ツリー表示列)の列 key です(grouping ③)。グルーピング有効時に
+//   SpreadsheetGrid が内部で先頭列として注入します(consumer の columns には現れません)。
+//   view / hooks はこの key でソート・列メニュー・DnD 等の対象外判定を行います。
+export const GROUP_AUTO_COLUMN_KEY = '__ssg_group__';
+
 // グループ行の行キーです(rowModel.getRowKey / React key 用)。
 export const groupRowKey = (groupRow: GridGroupRow): GridRowKey =>
   GROUP_ROW_KEY_PREFIX + groupRow.groupKey;

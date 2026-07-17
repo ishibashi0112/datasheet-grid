@@ -52,6 +52,9 @@
     --ssg-select-bg-hover: #ccd7ee;
     /* 行選択(チェックボックス) */
     --ssg-row-selected-bg: #eff4ff;
+    /* 追加(grouping ③): グループ行の帯背景(通常 / 行ホバー)。 */
+    --ssg-group-row-bg: #f2f5fa;
+    --ssg-group-row-hover-bg: #e9eef7;
     --ssg-checkbox-border: #94a3b8;
     --ssg-checkbox-bg: #ffffff;
     --ssg-checkbox-checked-bg: var(--ssg-accent);
@@ -197,6 +200,9 @@
     --ssg-select-bg-hover: #2b3f5e;
     /* 行選択(チェックボックス) */
     --ssg-row-selected-bg: #1e2c44;
+    /* 追加(grouping ③): グループ行の帯背景(通常 / 行ホバー)。 */
+    --ssg-group-row-bg: #222429;
+    --ssg-group-row-hover-bg: #292b31;
     --ssg-checkbox-border: #5c5f66;
     --ssg-checkbox-bg: #1a1b1e;
     --ssg-checkbox-checked-mark: #141517;
@@ -355,6 +361,66 @@
   /* 行ホバー(hoveredRowIndex 由来。3 ペイン横断のため :hover では実装不可)。 */
   .ssg-body-cell--row-hovered {
     background-color: var(--ssg-row-hover-bg);
+  }
+
+  /* ── 追加(grouping ③): グループ行(A2 = セル分割型) ── */
+  /* グループ行のセル。leaf セルと同じ絶対配置・境界のまま、帯背景 + 強調文字にします。 */
+  .ssg-group-cell {
+    background-color: var(--ssg-group-row-bg);
+    font-weight: 600;
+  }
+
+  .ssg-group-cell.ssg-body-cell--row-hovered {
+    background-color: var(--ssg-group-row-hover-bg);
+  }
+
+  /* 開閉シェブロン(button リセット + グリフ色)。クリックで開閉、focus リングつき。 */
+  .ssg-group-toggle {
+    flex: none;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 18px;
+    margin-right: 2px;
+    padding: 0;
+    border: none;
+    border-radius: 4px;
+    background: none;
+    color: var(--ssg-glyph-hover);
+    font-size: 12px;
+    line-height: 1;
+    cursor: pointer;
+  }
+
+  .ssg-group-toggle:hover {
+    background-color: var(--ssg-icon-hover-bg);
+    color: var(--ssg-accent);
+  }
+
+  .ssg-group-toggle:focus-visible {
+    outline: 2px solid var(--ssg-accent);
+    outline-offset: 1px;
+  }
+
+  /* 階層インデント(幅は level × 16px のインライン指定)。 */
+  .ssg-group-indent {
+    flex: none;
+    display: inline-block;
+  }
+
+  /* グループラベル(長時は省略)と件数(控えめ表示)。 */
+  .ssg-group-label {
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .ssg-group-count {
+    flex: none;
+    margin-left: 4px;
+    font-weight: 400;
+    font-size: 0.85em;
+    color: var(--ssg-glyph);
   }
 
   /* 読み取り専用セル(選択時は通常背景へ戻し、選択塗りを素直に見せる)。

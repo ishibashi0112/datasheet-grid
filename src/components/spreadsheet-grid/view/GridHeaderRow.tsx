@@ -27,6 +27,8 @@ import { RowSelectionCheckbox } from './RowSelectionCheckbox';
 import type { PaneColumnEntry } from '../logic/geometry';
 // 追加(12-A): set フィルター対応のフィルター有効判定を共有します。
 import { isActiveColumnFilterValue } from '../logic/filtering';
+// 追加(grouping ③): 自動グループ列の判定キーです(列メニュー / DnD の対象外化)。
+import { GROUP_AUTO_COLUMN_KEY } from '../logic/grouping';
 
 // 追加(10-C): このヘッダーがどのペインを描画しているかの種別です。
 export type GridPaneKind = 'left' | 'center' | 'right';
@@ -297,7 +299,10 @@ function GridHeaderRowInner<T>({
         //           suppressMenuHide 相当)を採用します。anchor ボタンが常に DOM に
         //           存在するため、開いている列の表示継続ガードも不要になります。
         const isMenuOpenForColumn = openedMenuColumnKey === column.key;
-        const showColumnMenuButton = enableColumnMenu;
+        // 追加(grouping ③): 自動グループ列は合成列のため、列メニュー(フィルター / 表示切替) /
+        //   並べ替え DnD の対象外にします(リサイズ・列範囲選択は通常どおり)。
+        const isAutoGroupColumn = column.key === GROUP_AUTO_COLUMN_KEY;
+        const showColumnMenuButton = enableColumnMenu && !isAutoGroupColumn;
 
         return (
           <div
@@ -308,7 +313,15 @@ function GridHeaderRowInner<T>({
               onColumnHeaderPointerEnter(colIndex, event)
             }
             onPointerLeave={() => onColumnHeaderPointerLeave(colIndex)}
-            onContextMenu={(event) => onColumnHeaderContextMenu(column, event)}
+            onContextMenu={(event) => {
+              // 追加(grouping ③): 自動グループ列では列メニューを開きません(ブラウザ標準
+              //   メニューも抑止して他列と挙動を揃えます)。
+              if (isAutoGroupColumn) {
+                event.preventDefault();
+                return;
+              }
+              onColumnHeaderContextMenu(column, event);
+            }}
             className={cx(
               'ssg-header-cell',
               (isWholeGridSelected || isColumnSelected) &&
@@ -396,7 +409,7 @@ function GridHeaderRowInner<T>({
                 タッチ端末(hover 不可)は CSS の @media で常時表示の通常フローへ戻ります。
                 grip は onColumnDragHandlePointerDown 未指定(reorder 不可)時は出しません。 */}
             <div className="ssg-header-actions">
-              {onColumnDragHandlePointerDown && (
+              {onColumnDragHandlePointerDown && !isAutoGroupColumn && (
                 <span
                   onPointerDown={(event) =>
                     onColumnDragHandlePointerDown(column, event)

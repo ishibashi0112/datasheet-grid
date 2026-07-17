@@ -197,6 +197,7 @@ import {
 } from './logic/serverSideQuery';
 // 追加(grouping ②): 行グルーピングの純ロジック(ツリー構築 / 開閉適用 flatten / エンコード)です。
 import {
+  GROUP_AUTO_COLUMN_KEY,
   buildGroupTree,
   collectGroupingColumns,
   flattenGroupTree,
@@ -509,9 +510,43 @@ export function SpreadsheetGrid<T extends object>({
   );
 
   // ── columns ───────────────────────────────────────────
-  const visibleColumns = useMemo(
-    () => columns.filter((column) => column.visible !== false),
+  // 追加(grouping ③): 行グルーピングの列解決です。rowGroup 列(columns 出現順 = 階層順)と
+  //   aggFunc 列は「全列定義」から導出します(visible の影響を受けません)。
+  //   グルーピングは clientSide 限定です(SSRM は v1 対象外。stage 側の開発時警告参照)。
+  const { groupColumns, aggColumns } = useMemo(
+    () => collectGroupingColumns(columns),
     [columns],
+  );
+  const rowGroupingActive = dataSource == null && groupColumns.length > 0;
+
+  // 追加(grouping ③): グルーピング有効時の内部列リストです。先頭に自動グループ列
+  //   (ツリー表示。consumer の columns には現れない合成列)を注入し、グループ元列
+  //   (rowGroup)は表示から外します(B1 案)。readOnly でセル編集対象外、
+  //   suppressAutoSize で autoSize 対象外です。無効時は columns をそのまま返し、
+  //   既存経路はバイト等価です。
+  const effectiveColumns = useMemo(() => {
+    if (!rowGroupingActive) {
+      return columns;
+    }
+    const autoGroupColumn: GridColumn<T> = {
+      key: GROUP_AUTO_COLUMN_KEY,
+      title: groupColumns
+        .map((column) => column.title || column.key)
+        .join(' › '),
+      width: 240,
+      minWidth: 120,
+      readOnly: true,
+      suppressAutoSize: true,
+    };
+    return [
+      autoGroupColumn,
+      ...columns.filter((column) => column.rowGroup !== true),
+    ];
+  }, [rowGroupingActive, columns, groupColumns]);
+
+  const visibleColumns = useMemo(
+    () => effectiveColumns.filter((column) => column.visible !== false),
+    [effectiveColumns],
   );
 
   // 追加(10-B): pinned 属性に応じて列を視覚順序（left → center → right）に並べ替えます。
@@ -1043,18 +1078,10 @@ export function SpreadsheetGrid<T extends object>({
   );
 
   // ── 行グルーピング stage(grouping ②) ───────────────────
-  // sorted order の後段に挿す表示変換です。rowGroup 列(columns 出現順 = 階層順)と
-  //   aggFunc 列は「全列定義」から導出します(visibleColumns 基準にしないのは、グループ元列の
-  //   自動非表示(grouping ③)で visible から外れてもグルーピング自体は維持するためです)。
-  //   rowGroup 列が無ければ groupedDisplay は null になり、下の clientSideRowModel は
-  //   従来の order 直参照へフォールバックします(非グルーピング経路はバイト等価)。
-  const { groupColumns, aggColumns } = useMemo(
-    () => collectGroupingColumns(columns),
-    [columns],
-  );
-  // clientSide 限定です(SSRM は v1 対象外。下の開発時警告参照)。
-  const rowGroupingActive = !isServerSide && groupColumns.length > 0;
-
+  // sorted order の後段に挿す表示変換です。groupColumns / aggColumns / rowGroupingActive は
+  //   columns 節(grouping ③)で導出済みです。rowGroup 列が無ければ groupedDisplay は null に
+  //   なり、下の clientSideRowModel は従来の order 直参照へフォールバックします
+  //   (非グルーピング経路はバイト等価)。
   // SSRM で rowGroup 列が指定されたときの開発時警告です(例外は投げず、グルーピングを
   //   無視して通常表示を継続します)。
   useEffect(() => {
@@ -1083,6 +1110,15 @@ export function SpreadsheetGrid<T extends object>({
     () =>
       groupTree ? flattenGroupTree(groupTree, uiState.collapsedGroupKeys) : null,
     [groupTree, uiState.collapsedGroupKeys],
+  );
+
+  // 追加(grouping ③): グループ開閉のトグルです(GridBodyLayer のシェブロン / グループ行
+  //   ダブルクリックから呼ばれます)。dispatch は安定参照のため本ハンドラも恒久安定です。
+  const handleGroupToggle = useCallback(
+    (groupKey: string) => {
+      dispatch(gridActions.toggleGroupCollapsed(groupKey));
+    },
+    [dispatch],
   );
 
   // ── row model seam (DS-3-0) ───────────────────────────
@@ -5146,6 +5182,8 @@ export function SpreadsheetGrid<T extends object>({
                   showCellOverflowTooltip={showCellOverflowTooltip}
                   showValidationMarks={showValidationMarks}
                   isServerSide={isServerSide}
+                  collapsedGroupKeys={uiState.collapsedGroupKeys}
+                  onGroupToggle={handleGroupToggle}
                   rowHeaderCellStyle={rowHeaderCellStyle}
                   hoveredRowIndex={hoveredRowIndex}
                   isWholeGridSelected={isWholeGridSelected}
@@ -5294,6 +5332,8 @@ export function SpreadsheetGrid<T extends object>({
                   showCellOverflowTooltip={showCellOverflowTooltip}
                   showValidationMarks={showValidationMarks}
                   isServerSide={isServerSide}
+                  collapsedGroupKeys={uiState.collapsedGroupKeys}
+                  onGroupToggle={handleGroupToggle}
                   rowHeaderCellStyle={rowHeaderCellStyle}
                   hoveredRowIndex={hoveredRowIndex}
                   isWholeGridSelected={isWholeGridSelected}
@@ -5434,6 +5474,8 @@ export function SpreadsheetGrid<T extends object>({
                   showCellOverflowTooltip={showCellOverflowTooltip}
                   showValidationMarks={showValidationMarks}
                   isServerSide={isServerSide}
+                  collapsedGroupKeys={uiState.collapsedGroupKeys}
+                  onGroupToggle={handleGroupToggle}
                   rowHeaderCellStyle={rowHeaderCellStyle}
                   hoveredRowIndex={hoveredRowIndex}
                   isWholeGridSelected={isWholeGridSelected}
