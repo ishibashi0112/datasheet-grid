@@ -35,6 +35,9 @@ type UseGridKeyboardInteractionsArgs<T> = {
   // 追加(clear): Delete / Backspace で選択セル(なければアクティブセル)の値をクリアします。
   //   編集不可セルの除外・変更なしの no-op(履歴に積まない)は呼び出し側で吸収します。
   onClearSelection: () => void;
+  // 追加(clear opt-out): Delete / Backspace クリアの有効化です。false のときキーは何も
+  //   しません(preventDefault もせず素通し = 未ハンドルのキーと同じ扱い)。
+  enableClearOnDelete: boolean;
   // 追加(editor: checkbox): checkbox 列のアクティブセルを Space で直接トグルします
   //   (編集可否ガード・履歴積みは呼び出し側で吸収)。
   onToggleCheckboxCell: (cell: CellCoord) => void;
@@ -59,6 +62,7 @@ export const useGridKeyboardInteractions = <T,>({
   onUndo,
   onRedo,
   onClearSelection,
+  enableClearOnDelete,
   onToggleCheckboxCell,
   onToggleGroup,
 }: UseGridKeyboardInteractionsArgs<T>) => {
@@ -201,7 +205,11 @@ export const useGridKeyboardInteractions = <T,>({
         return;
       }
       // 追加(clear): Delete / Backspace で選択セルの値クリアです(Excel / AG Grid の標準操作)。
-      if (event.key === 'Delete' || event.key === 'Backspace') {
+      // 変更(clear opt-out): enableClearOnDelete=false では分岐ごとスキップします(素通し)。
+      if (
+        (event.key === 'Delete' || event.key === 'Backspace') &&
+        enableClearOnDelete
+      ) {
         event.preventDefault();
         onClearSelection();
         return;
@@ -266,6 +274,7 @@ export const useGridKeyboardInteractions = <T,>({
       isWholeGridSelected,
       moveActiveCell,
       onClearSelection,
+      enableClearOnDelete,
       onRedo,
       onToggleCheckboxCell,
       onToggleGroup,

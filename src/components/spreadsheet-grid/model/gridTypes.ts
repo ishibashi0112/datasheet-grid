@@ -1201,6 +1201,11 @@ export type SpreadsheetGridProps<T> = {
   //   前提です(map 等で作り直して渡すと毎回「外部変更」と見なされ履歴が消えます)。
   //   エディタで編集中の文字入力の取り消しは対象外です(input のネイティブ undo に委譲)。
   enableUndoRedo?: boolean;
+  // 追加(clear opt-out): Delete / Backspace キーによる選択セルの値クリアの有効化です
+  //   (既定 true = 現行どおり)。false でキーは何もしません(素通し。誤爆防止や
+  //   旧バージョン互換の挙動に戻したい消費側向けの opt-out)。ペースト・エディタでの
+  //   上書き・undo/redo には影響しません。
+  enableClearOnDelete?: boolean;
   // 追加(undo/redo): 保持する undo ステップ数の上限です(既定 100)。超過分は古い順に破棄します。
   undoHistoryLimit?: number;
   // 追加(undo/redo 通知): undo / redo 可能状態が変化したときに呼ばれます(ツールバーの

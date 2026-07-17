@@ -80,12 +80,15 @@ function UndoRedoHarness({
   gridRef,
   readOnly = false,
   enableUndoRedo = true,
+  // 追加(clear opt-out): Delete / Backspace クリアの opt-out 検証用です(既定 true = 現行)。
+  enableClearOnDelete = true,
   undoHistoryLimit,
   onUndoRedoStateChange,
 }: {
   gridRef: Ref<SpreadsheetGridHandle<Row>>;
   readOnly?: boolean;
   enableUndoRedo?: boolean;
+  enableClearOnDelete?: boolean;
   undoHistoryLimit?: number;
   onUndoRedoStateChange?: (state: UndoRedoState) => void;
 }) {
@@ -104,6 +107,7 @@ function UndoRedoHarness({
       onRowsChange={setRows}
       readOnly={readOnly}
       enableUndoRedo={enableUndoRedo}
+      enableClearOnDelete={enableClearOnDelete}
       undoHistoryLimit={undoHistoryLimit}
       onUndoRedoStateChange={onUndoRedoStateChange}
     />
@@ -296,6 +300,34 @@ describe('SpreadsheetGrid undo/redo(結合)', () => {
     fireEvent.keyDown(shell, { key: 'Backspace' });
     expect(currentRows[2]).toEqual({ id: 3, name: '', qty: 30 });
     expect(currentRows[0]).toBe(initialRows[0]);
+  });
+
+  it('enableClearOnDelete=false では Delete / Backspace が素通し(rows 不変・履歴も積まれない)', () => {
+    const ref = createRef<SpreadsheetGridHandle<Row>>();
+    const { container } = render(
+      <UndoRedoHarness gridRef={ref} enableClearOnDelete={false} />,
+    );
+    const shell = getShell(container);
+
+    act(() => {
+      ref.current?.selectRange({
+        start: { row: 0, col: 1 },
+        end: { row: 1, col: 2 },
+      });
+    });
+    fireEvent.keyDown(shell, { key: 'Delete' });
+    expect(currentRows).toBe(initialRows);
+    expect(ref.current?.canUndo()).toBe(false);
+
+    act(() => {
+      ref.current?.setActiveCell({ row: 2, col: 1 });
+    });
+    fireEvent.keyDown(shell, { key: 'Backspace' });
+    expect(currentRows).toBe(initialRows);
+
+    // opt-out はクリアのみが対象で、ペースト等の他の書き込み経路はそのままです。
+    pasteIntoCell(container, ref, { row: 0, col: 1 }, 'PASTED');
+    expect(currentRows[0].name).toBe('PASTED');
   });
 
   it('readOnly では Delete によるクリアも no-op', () => {

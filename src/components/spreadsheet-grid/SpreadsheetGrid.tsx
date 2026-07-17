@@ -403,6 +403,8 @@ export function SpreadsheetGrid<T extends object>({
   canEditCell: canEditCellProp,
   // 追加(undo/redo): 編集の取り消し/やり直しです(既定 on)。clientSide + onRowsChange 時のみ実効。
   enableUndoRedo = true,
+  // 追加(clear opt-out): Delete / Backspace の選択セル値クリアです(既定 on = 現行どおり)。
+  enableClearOnDelete = true,
   undoHistoryLimit = 100,
   onUndoRedoStateChange,
   enableRangeSelection = true,
@@ -2416,6 +2418,8 @@ export function SpreadsheetGrid<T extends object>({
     onRedo: redoRows,
     // 追加(clear): Delete / Backspace の選択セルクリア配線です。
     onClearSelection: clearSelectedCells,
+    // 追加(clear opt-out): false で Delete / Backspace を素通しにします(既定 true)。
+    enableClearOnDelete,
     // 追加(editor: checkbox): checkbox 列の Space 直接トグル配線です。
     onToggleCheckboxCell: toggleCheckboxCell,
     // 追加(grouping ④): グループ行の Enter / Space 開閉トグル配線です。
