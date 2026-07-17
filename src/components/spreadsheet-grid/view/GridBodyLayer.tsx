@@ -580,10 +580,27 @@ type GridBodyGroupRowProps<T> = {
   rowHeaderCellClassName?: string;
 };
 
-// 集計値の表示文字列です。undefined / null は空セル、それ以外は String()(カスタム aggFunc は
+// 集計値の表示文字列です。undefined / null は空セル。列に valueFormatter があれば集計値にも
+//   適用し、leaf セルと表示を揃えます(グループ行に leaf 行は無いため row は undefined。
+//   型上は T のままの実行時 undefined = DS-3-9 と同じ明文化で、row を読む formatter を使う列では
+//   aggFunc 側で整形済み文字列を返してください)。formatter 無しは String()(カスタム aggFunc は
 //   整形済み文字列を返せます)。
-const formatAggregateValue = (value: unknown): string =>
-  value == null ? '' : String(value);
+const formatAggregateValue = <T,>(
+  column: GridColumn<T>,
+  value: unknown,
+): string => {
+  if (value == null) {
+    return '';
+  }
+  if (column.valueFormatter) {
+    return column.valueFormatter({
+      value,
+      row: undefined as unknown as T,
+      column,
+    });
+  }
+  return String(value);
+};
 
 // 1 階層ぶんのインデント幅(px)です。
 const GROUP_INDENT_PX = 16;
@@ -654,7 +671,7 @@ function GridBodyGroupRowInner<T>({
             groupRow.aggregates,
             column.key,
           )
-            ? formatAggregateValue(groupRow.aggregates[column.key])
+            ? formatAggregateValue(column, groupRow.aggregates[column.key])
             : null;
 
         return (

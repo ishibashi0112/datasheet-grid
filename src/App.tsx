@@ -613,7 +613,7 @@ function App() {
 
   // 追加(行選択デモ): チェックボックス行選択のトグルと、選択件数表示用の state です。
   const [rowSelectionEnabled, setRowSelectionEnabled] = useState(false);
-  // 追加(grouping デモ): 行グルーピングのトグルです(状態 → 単位 の 2 段 + 数量/金額 sum)。
+  // 追加(grouping デモ): 行グルーピングのトグルです(単位 → 状態 の 2 段 + 数量/金額 sum)。
   //   clientSide 限定(server モードでは無効)。既定 OFF。
   const [rowGroupingEnabled, setRowGroupingEnabled] = useState(false);
   // 追加(バッチ②デモ): コンテキストメニュー(完全カスタム)の ON/OFF トグルです。既定 OFF。
@@ -766,7 +766,7 @@ function App() {
   const displayRowCount = mode === 'server' ? SERVER_ROW_COUNT : rows.length;
 
   // 追加(grouping デモ): グリッドへ渡す列です。トグル ON(clientSide)のときだけ
-  //   状態 → 単位 の rowGroup と 数量/金額 の sum 集計を列定義へ付与します(列 state 自体は
+  //   単位 → 状態 の rowGroup と 数量/金額 の sum 集計を列定義へ付与します(列 state 自体は
   //   変えず表示用に導出)。OFF 時は DnD 等で state に流入したフラグを外して素の列へ戻します。
   const gridColumns = useMemo(() => {
     if (!rowGroupingEnabled || mode === 'server') {
@@ -1148,7 +1148,7 @@ function App() {
           >
             エクスポートデータを確認
           </button>
-          {/* 追加(grouping デモ): 行グルーピング(状態 → 単位、数量/金額 sum)。clientSide 限定。 */}
+          {/* 追加(grouping デモ): 行グルーピング(単位 → 状態、数量/金額 sum)。clientSide 限定。 */}
           <button
             type="button"
             onClick={() => setRowGroupingEnabled((v) => !v)}

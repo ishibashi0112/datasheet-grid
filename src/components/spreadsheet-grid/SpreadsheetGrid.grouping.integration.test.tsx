@@ -187,6 +187,31 @@ describe('行グルーピングの列面(結合)', () => {
     expect(centerBodyRows(container)).toHaveLength(6);
   });
 
+  it('aggFunc 列の valueFormatter は集計値にも適用される(row は undefined)', () => {
+    const formatterColumns: GridColumn<Row>[] = [
+      { key: 'region', title: '地域', width: 100, rowGroup: true },
+      {
+        key: 'qty',
+        title: '数量',
+        width: 100,
+        aggFunc: 'sum',
+        valueFormatter: ({ value }) =>
+          `¥${Number(value).toLocaleString('ja-JP')}`,
+      },
+    ];
+    const bigRows: Row[] = [
+      { region: '関東', rep: 'a', qty: 1234567 },
+      { region: '関東', rep: 'b', qty: 1 },
+    ];
+    const { container } = render(
+      <SpreadsheetGrid columns={formatterColumns} rows={bigRows} />,
+    );
+    const firstGroup = centerGroupRows(container)[0] as HTMLElement;
+    expect(
+      firstGroup.querySelector('[data-ssg-col-key="qty"]')?.textContent,
+    ).toBe('¥1,234,568');
+  });
+
   it('エクスポートは自動グループ列を除外し leaf 行のみを出力する', () => {
     const ref = createRef<SpreadsheetGridHandle<Row>>();
     render(<SpreadsheetGrid ref={ref} columns={groupedColumns} rows={rows} />);
