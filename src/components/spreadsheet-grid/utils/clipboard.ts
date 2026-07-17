@@ -256,3 +256,64 @@ export const buildClipboardCellEdits = <T extends object,>(
   }
   return edits;
 };
+
+// 追加(copy fallback): 一時 textarea + document.execCommand('copy') によるコピーです。
+//   非セキュアコンテキスト(http イントラ配信等)では navigator.clipboard が存在しないため、
+//   その環境で動く唯一の手段としてフォールバックに使います(execCommand は deprecated ですが
+//   全ブラウザで現役。採用は意図的)。keydown ハンドラ内の同期実行が前提です(ユーザー
+//   ジェスチャー要件)。textarea は readonly + position: fixed + 不可視の定石構成にします
+//   (モバイルのキーボード表示・スクロールジャンプ防止)。
+export const copyTextViaExecCommand = (text: string): boolean => {
+  const { body, activeElement } = document;
+  if (!body) {
+    return false;
+  }
+
+  const textarea = document.createElement('textarea');
+  textarea.value = text;
+  textarea.setAttribute('readonly', '');
+  textarea.style.position = 'fixed';
+  textarea.style.top = '0';
+  textarea.style.left = '-9999px';
+  textarea.style.opacity = '0';
+  body.appendChild(textarea);
+
+  let succeeded: boolean;
+  try {
+    textarea.select();
+    succeeded = document.execCommand('copy');
+  } catch {
+    succeeded = false;
+  } finally {
+    body.removeChild(textarea);
+    // select() が textarea へ奪ったフォーカスを元の要素に戻します(グリッドのキーボード操作を
+    // 継続させるため)。
+    if (activeElement instanceof HTMLElement) {
+      activeElement.focus();
+    }
+  }
+  return succeeded;
+};
+
+// 追加(copy fallback): クリップボード書き込みの二段構えです。
+//   ① navigator.clipboard.writeText(セキュアコンテキスト)を try/catch で試行
+//   ② 不在(非セキュアコンテキスト)or reject(NotAllowedError: Document is not focused 等)
+//      なら copyTextViaExecCommand へフォールバック
+//   両方失敗したときのみ console.warn します(従来のサイレント no-op / unhandled rejection の廃止)。
+export const writeTextToClipboard = async (text: string): Promise<boolean> => {
+  if (navigator.clipboard?.writeText) {
+    try {
+      await navigator.clipboard.writeText(text);
+      return true;
+    } catch {
+      // フォールバックへ続行します(セキュアコンテキストでもフォーカス喪失等で reject し得ます)。
+    }
+  }
+  if (copyTextViaExecCommand(text)) {
+    return true;
+  }
+  console.warn(
+    '[SpreadsheetGrid] クリップボードへのコピーに失敗しました(navigator.clipboard が利用できず、execCommand フォールバックも失敗)。',
+  );
+  return false;
+};

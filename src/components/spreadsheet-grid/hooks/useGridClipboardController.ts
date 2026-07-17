@@ -13,6 +13,7 @@ import {
   buildClipboardCellEdits,
   parseClipboardText,
   serializeSelectionToTsv,
+  writeTextToClipboard,
 } from '../utils/clipboard';
 import type { ServerSideCellEditInput } from '../logic/serverSideEdits';
 
@@ -130,9 +131,11 @@ export const useGridClipboardController = <T extends object>({
       return;
     }
 
-    if (navigator.clipboard?.writeText) {
-      await navigator.clipboard.writeText(text);
-    }
+    // 変更(copy fallback): navigator.clipboard 直書きを二段構えの writeTextToClipboard へ置換
+    //   します。旧実装は非セキュアコンテキスト(navigator.clipboard 不在)で無言 no-op、
+    //   セキュアでも reject 時に unhandled rejection でした。新実装は writeText 失敗時に
+    //   execCommand フォールバックへ落ち、両方失敗時のみ console.warn します。
+    await writeTextToClipboard(text);
   }, [
     isWholeGridSelected,
     rowModel,

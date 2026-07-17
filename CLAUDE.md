@@ -47,7 +47,7 @@ React 19 + TypeScript + Vite 製のカスタム AG Grid 風・仮想化データ
 | tsc(build) | `vp exec tsc -b` | 0 |
 | tsc(test) | `vp exec tsc -p tsconfig.vitest.json --noEmit` | 0 |
 | eslint | `vp exec eslint .` | baseline 維持(現状 0 errors / 3 warnings) |
-| test | `vp test` | 全緑(現状 ~679 tests / 64 files) |
+| test | `vp test` | 全緑(現状 ~687 tests / 65 files) |
 | build | `vp build`(publish 経路は `build:lib` = `vp build --config vite.lib.config.ts` + `tsc -p tsconfig.lib.json` + emit-layer-css) | 0 |
 
 - 依存インストールは `vp install`(pnpm へ委譲)。この Mac では npm が devEngines(pnpm 指定)で弾かれるため、ローカルのゲートは上記 vp 経由で実行する。CI(GitHub Actions)は pnpm で package.json スクリプトを実行する(`pnpm test` / `pnpm run build:lib` 等)。
