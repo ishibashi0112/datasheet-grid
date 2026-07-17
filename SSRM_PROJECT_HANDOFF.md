@@ -52,6 +52,9 @@
   consumer(copy / paste / edit / keyboard / export)はモードを意識しない。
 - `getSourceIndex` は範囲外で `undefined` を返し、書き込み系は早期 return / skip で吸収する
   (view index を source index に誤代入しない契約。DS-3-9)。
+- 追加(grouping ②): 行グルーピング有効時のみ任意アクセサ `getGroupRow(viewIndex)` が定義され、
+  グループ行の viewIndex では `getRow` / `getSourceIndex` が実行時 undefined を返す(DS-3-9 の
+  契約に合流。§7 の実装済みメモ参照)。
 
 ### 2.5 命令的 API(ref ハンドル)
 
@@ -138,10 +141,20 @@
 
 ## §7 残タスク(大きい順)
 
-1. **行グルーピング + 集計**(AG Grid 競合上の最大の欠落)。
-2. 多段カラムヘッダー(ヘッダーグループ)。
-3. ピン留め行(上下固定行)。
-4. フィルハンドル(セル右下ドラッグでの連続コピー/連番)。
+1. 多段カラムヘッダー(ヘッダーグループ)。
+2. ピン留め行(上下固定行)。
+3. フィルハンドル(セル右下ドラッグでの連続コピー/連番)。
+
+~~行グルーピング + 集計~~ → **2026-07-17 実装済み**(grouping batch 1〜5)。
+`GridColumn.rowGroup / aggFunc`(組み込み sum/min/max/avg/count + カスタム関数)、
+自動グループ列(ツリー表示・合成列)、開閉(click / dblclick / Enter・Space / 命令的 API
+`setGroupCollapsed` / `expandAllGroups` / `collapseAllGroups` / `getGroupRows`)。
+実装は sorted order 後段の 2 段 stage(`logic/grouping.ts` の buildGroupTree =
+開閉非依存・集計込み / flattenGroupTree = 開閉適用)+ rowModel シームの任意アクセサ
+`getGroupRow`(グループ行では getRow / getSourceIndex が実行時 undefined = DS-3-9 契約に
+合流し、既存 consumer のガードが leaf 限定を自然に実現)。clientSide 限定で、SSRM では
+無視 + 開発時警告(サーバーサイドグルーピングは将来拡張)。開閉状態(collapsedGroupKeys)は
+UI 状態で undo/redo・getState 対象外。
 
 ~~SSRM 完成(サーバーサイド変更 = セル編集書き戻し)~~ → **2026-07-16 実装済み**(§4 参照。
 `refreshServerSide()` とエラー・リトライ UI は 2026-07-15、セル編集書き戻し + 楽観更新は

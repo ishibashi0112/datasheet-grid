@@ -235,6 +235,8 @@ const gridRef = useRef<SpreadsheetGridHandle<Row>>(null);
 | `editable` | `boolean` | — | この列の編集を許可。 |
 | `readOnly` | `boolean` | — | この列を読み取り専用にする。 |
 | `pinned` | `'left' \| 'right'` | undefined = 中央スクロール | 列固定の方向。 |
+| `rowGroup` | `boolean` | — | `true` でこの列を行グルーピングの対象にする(複数指定時は `columns` 配列の出現順が階層順)。有効時はグループ元列が表示から外れ、先頭に自動グループ列(ツリー表示)が注入される。**clientSide 限定**(serverSide では無視 + 開発時警告)。詳細は「行グルーピング + 集計」節。 |
+| `aggFunc` | `'sum' \| 'min' \| 'max' \| 'avg' \| 'count' \| GridAggFunc<T>` | — | グルーピング時のこの列の集計。組み込みは値駆動の数値集計(`Number()` で有限になる値のみ対象・空値除外、`count` は配下 leaf 行数)。関数でカスタム集計可(返り値がグループ行に表示)。`rowGroup` 列がないときは無視。 |
 | `getValue` | `(row: T) => unknown` | `row[key]` | 値アクセサ。 |
 | `setValue` | `(row: T, value: unknown) => T` | — | 値ライター(新しい行を返す)。 |
 | `renderCell` | `(ctx: CellRenderContext<T>) => ReactNode` | プレーン `<span>` | カスタムセル描画。 |
@@ -472,6 +474,29 @@ const parser = loadDefaultJapaneseParser();
 
 仮想化により描画されるのは可視セルのみ(数十件)なので、値ごとに memo すれば実コストは軽微です。
 
+### 行グルーピング + 集計(rowGroup / aggFunc)
+
+`column.rowGroup: true` の列でビュー行をグルーピングします(複数列指定時は `columns` 配列の出現順が階層順)。
+
+```ts
+const columns: GridColumn<Order>[] = [
+  { key: 'region', title: '地域', width: 100, rowGroup: true },
+  { key: 'rep', title: '担当', width: 100, rowGroup: true },
+  { key: 'product', title: '商品', width: 160 },
+  { key: 'qty', title: '数量', width: 90, align: 'right', aggFunc: 'sum' },
+  { key: 'amount', title: '金額', width: 120, align: 'right', aggFunc: 'sum' },
+];
+```
+
+- **自動グループ列**: グルーピング有効時、先頭にツリー表示列(インデント + 開閉シェブロン + ラベル + 件数)が注入され、グループ元列は表示から自動的に外れます。自動グループ列は合成列で、列メニュー / ソート / 並べ替え DnD / autoSize / エクスポートの対象外です(手動リサイズ・列範囲選択は可能)。
+- **集計**: `aggFunc` 指定列は、グループ行の同じ列位置に集計値を表示します。組み込み(`'sum' | 'min' | 'max' | 'avg' | 'count'`)は値駆動の数値集計で、`Number()` 変換で有限にならない値と空値(`null` / `undefined` / `''`)は対象外(`count` のみ配下 leaf 行数)。数値対象 0 件の sum / avg / min / max は空セルになります。カスタム関数(`GridAggFunc<T>` = `({ values, rows, column }) => unknown`)は返り値がそのまま表示されるため、整形済み文字列を返すこともできます。
+- **開閉**: シェブロン click / グループ行 double-click / グループ行上の `Enter`・`Space`。命令的 API(下記)からも操作できます。開閉状態は UI 状態で、undo/redo・`getState()` の対象外です。
+- **並び / フィルター**: グループの並びは「ソート適用後の初出順」です(グループ元列をソートすればグループごと並び替わる)。フィルターは leaf 行に適用され、0 件になったグループは表示から消えます。空値は 1 つの「(空白)」グループへ集約されます。
+- **leaf 限定の各機能**: グループ行は編集 / ペースト / クリア / コピー / 行選択 / エクスポートの対象外です(すべて leaf 行のみが対象)。件数表示(bar の Rows / 行選択件数)も leaf 基準です。
+- **clientSide 限定**: serverSide(`dataSource`)では `rowGroup` は無視されます(開発時警告)。
+
+グループ行の記述子は `GridGroupRow`(`groupKey` / `columnKey` / `value` / `label` / `level` / `leafCount` / `aggregates`)としてバレルから公開されます(`getGroupRows()` の返り値)。
+
 ## 命令的 API(ref ハンドル / `SpreadsheetGridHandle<T>`)
 
 状態(列幅・可視・sort・filter 等)は controlled のまま、**prop では表現しづらい一発操作**だけを ref ハンドルで提供する。React 19 の **ref-as-prop**(`forwardRef` 不使用)で受け取る。
@@ -532,6 +557,16 @@ const gridRef = useRef<SpreadsheetGridHandle<Row>>(null);
 **操作(有効時)**: 行ヘッダ(行NO)ガター全体が選択のヒット領域。multiple はクリックでトグル・shift+クリック/ガタードラッグで範囲、single は常に 1 行。ヘッダ左上コーナーは tri-state の全選択チェック(`enableSelectAllRows`)。参照性能維持のため判定は Set の O(1)、全選択は除外集合でキーを materialize しません。
 
 **controlled**: `rowSelection`(記述子)または `selectedRowKeys`(include 糖衣)を渡すと controlled。`onRowSelectionChange` で変化を受け、親が prop を更新して反映します。
+
+### 行グルーピング
+
+行グルーピング(`column.rowGroup`)有効時のグループ開閉を操作します。無効時はすべて no-op / 空配列です。
+
+| メソッド | 説明 |
+| --- | --- |
+| `setGroupCollapsed(groupKey, collapsed)` | 指定グループを開閉する(`collapsed: true` = 折りたたみ)。`groupKey` は `getGroupRows()` の記述子から取得。同一イベント内の連続呼び出しも正しく積み重なる。 |
+| `expandAllGroups()` / `collapseAllGroups()` | すべてのグループを展開 / 折りたたむ。 |
+| `getGroupRows()` | 全グループ行の記述子(`GridGroupRow[]`)を DFS 順(表示順)で返す。開閉状態に関わらず全件。 |
 
 ### undo / redo(編集履歴)
 

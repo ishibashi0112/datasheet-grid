@@ -1,4 +1,10 @@
-import { useEffect, useRef, useState, type CSSProperties } from 'react';
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+} from 'react';
 import {
   SpreadsheetGrid,
   numberFormatter,
@@ -607,6 +613,9 @@ function App() {
 
   // 追加(行選択デモ): チェックボックス行選択のトグルと、選択件数表示用の state です。
   const [rowSelectionEnabled, setRowSelectionEnabled] = useState(false);
+  // 追加(grouping デモ): 行グルーピングのトグルです(状態 → 単位 の 2 段 + 数量/金額 sum)。
+  //   clientSide 限定(server モードでは無効)。既定 OFF。
+  const [rowGroupingEnabled, setRowGroupingEnabled] = useState(false);
   // 追加(バッチ②デモ): コンテキストメニュー(完全カスタム)の ON/OFF トグルです。既定 OFF。
   const [contextMenuEnabled, setContextMenuEnabled] = useState(false);
   // 追加(THEME-3 デモ): readonly セル(「単位」列)の淡色表示 opt-in(既定 OFF=色変化なし)。
@@ -755,6 +764,28 @@ function App() {
 
   // 追加(①-5): ヘッダー表示用の行数です(server はサーバ総件数を提示)。
   const displayRowCount = mode === 'server' ? SERVER_ROW_COUNT : rows.length;
+
+  // 追加(grouping デモ): グリッドへ渡す列です。トグル ON(clientSide)のときだけ
+  //   状態 → 単位 の rowGroup と 数量/金額 の sum 集計を列定義へ付与します(列 state 自体は
+  //   変えず表示用に導出)。OFF 時は DnD 等で state に流入したフラグを外して素の列へ戻します。
+  const gridColumns = useMemo(() => {
+    if (!rowGroupingEnabled || mode === 'server') {
+      return columns.some((column) => column.rowGroup || column.aggFunc)
+        ? columns.map((column) => ({
+            ...column,
+            rowGroup: undefined,
+            aggFunc: undefined,
+          }))
+        : columns;
+    }
+    return columns.map((column) =>
+      column.key === 'status' || column.key === 'unit'
+        ? { ...column, rowGroup: true }
+        : column.key === 'qty' || column.key === 'amount'
+          ? { ...column, aggFunc: 'sum' as const }
+          : column,
+    );
+  }, [columns, rowGroupingEnabled, mode]);
 
   return (
     <main
@@ -1117,6 +1148,31 @@ function App() {
           >
             エクスポートデータを確認
           </button>
+          {/* 追加(grouping デモ): 行グルーピング(状態 → 単位、数量/金額 sum)。clientSide 限定。 */}
+          <button
+            type="button"
+            onClick={() => setRowGroupingEnabled((v) => !v)}
+            disabled={mode === 'server'}
+            style={modeButtonStyle(rowGroupingEnabled)}
+          >
+            行グルーピング: {rowGroupingEnabled ? 'ON' : 'OFF'}
+          </button>
+          <button
+            type="button"
+            onClick={() => gridRef.current?.expandAllGroups()}
+            disabled={!rowGroupingEnabled || mode === 'server'}
+            style={modeButtonStyle(false)}
+          >
+            全展開
+          </button>
+          <button
+            type="button"
+            onClick={() => gridRef.current?.collapseAllGroups()}
+            disabled={!rowGroupingEnabled || mode === 'server'}
+            style={modeButtonStyle(false)}
+          >
+            全折りたたみ
+          </button>
           {/* 追加(行選択デモ): チェックボックス行選択の ON/OFF・モード切替・全選択/解除・選択キー確認。 */}
           <button
             type="button"
@@ -1270,7 +1326,8 @@ function App() {
               }
             : undefined
         }
-        columns={columns}
+        // 変更(grouping デモ): グルーピングトグルを反映した導出列を渡します(OFF 時は素の columns)。
+        columns={gridColumns}
         onRowsChange={mode === 'server' ? undefined : setRows}
         onColumnsChange={setColumns}
         rowKeyGetter={(row, index) => `${row.partNo || 'row'}-${index}`}

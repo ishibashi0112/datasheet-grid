@@ -63,7 +63,8 @@ React 19 + TypeScript + Vite 製のカスタム AG Grid 風・仮想化データ
 
 ## 現状と残タスク(詳細は HANDOFF §4 / §7 / §8)
 
-- 最新 v0.17.0。
+- 最新 v0.19.0。
 - SSRM は**完成**(2026-07-16)── 読み取り系(`refreshServerSide()` / エラー・リトライ UI は 2026-07-15 の batch 8 / 9)に加え、セル編集の書き戻し(`dataSource.updateRows` + 楽観更新 + 失敗時ロールバック / 保存失敗バー)を 2026-07-16 に実装済み(書き戻し batch 1〜5)。行追加削除は「サーバ反映後に refresh」運用・SSRM の undo/redo は無効(いずれもスコープ外として合意)。
-- 大きな未実装: 行グルーピング + 集計(AG Grid 競合上の最大の欠落)、多段カラムヘッダー、ピン留め行、フィルハンドル。※エディタ種別(text / number / select / date / checkbox / custom)とセル編集バリデーション(mark / reject)は 2026-07-14 に実装済み。
+- 行グルーピング + 集計は 2026-07-17 に実装済み(grouping batch 1〜5: `rowGroup` / `aggFunc`、自動グループ列、開閉 UI + 命令的 API。clientSide 限定・SSRM は対象外)。
+- 大きな未実装: 多段カラムヘッダー、ピン留め行、フィルハンドル。※エディタ種別(text / number / select / date / checkbox / custom)とセル編集バリデーション(mark / reject)は 2026-07-14 に実装済み。
 - react-doctor 由来の保留: `no-giant-component`(App.tsx + SpreadsheetGrid.tsx)、`require-pnpm-hardening`(`pnpm-workspace.yaml` 判断待ち)、`prefer-module-scope-pure-function`(ハンドラ巻き上げ Batch A 未実行)。
