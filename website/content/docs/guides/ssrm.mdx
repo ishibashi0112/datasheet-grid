@@ -1,0 +1,86 @@
+---
+title: サーバーサイド行モデル(SSRM)
+description: dataSource によるブロック取得・クエリ転送・書き戻し(楽観更新 + ロールバック)
+---
+
+`rows` の代わりに `dataSource` を渡すとサーバーサイド行モデル(SSRM)になります。総行数ぶんの縦スクロール空間を保ったまま、**可視域に近いブロックだけ**を `getRows` で取得します(未ロード行はスケルトン表示)。フィルター / ソート / グローバルフィルターの実行はサーバへ委ねられます。
+
+## デモ(50,000 行をサーバ取得)
+
+このデモは Next.js の Route Handler(`/api/ssrm`)を実際に叩いています。開発者ツールの Network タブでブロック取得の様子を確認できます。
+
+<SSRMDemo />
+
+試してみる:
+
+- **スクロール** — 可視域のブロックだけが順次取得されます(`blockSize: 100`)。
+- **フィルター / ソート** — クエリがサーバへ転送され、結果セットが総入れ替えされます(約 300ms のデバウンス付き)。
+- **「取得を失敗させる」+ スクロールか再読み込み** — 組み込みの**エラーバー**(再試行付き)が出ます。チェックを外して「再試行」すると回復します。
+- **セル編集(状態 / 数量 / 単価)** — `updateRows` による書き戻しです。楽観更新なので即座に画面へ反映されます。
+- **「保存を失敗させる」+ セル編集** — 値が**自動でロールバック**され、保存失敗バーが出ます。
+- ※ デモサーバはステートレスのため、編集値は保存されません(再取得で元に戻ります)。
+
+## 最小実装
+
+```tsx
+import {
+  SpreadsheetGrid,
+  type ServerSideDataSource,
+} from '@ishibashi0112/spreadsheet-grid'
+
+const dataSource: ServerSideDataSource<Row> = {
+  getRows: async ({ startIndex, endIndex, query, signal }) => {
+    const res = await fetch('/api/rows', {
+      method: 'POST',
+      body: JSON.stringify({ startIndex, endIndex, query }),
+      signal,
+    })
+    // { rows: Row[], totalRowCount: number } を返す
+    return res.json()
+  },
+  // 任意: 指定するとセル編集が有効になる(楽観更新 + 失敗時ロールバック)
+  updateRows: async ({ updates }) => {
+    await api.patchRows(updates)
+  },
+  initialRowCount: 50_000, // 任意: 初回 fetch 前から総高さを確保
+  blockSize: 100,          // 既定 100
+}
+
+<SpreadsheetGrid
+  dataSource={dataSource}
+  columns={columns}
+  rowKeyGetter={(row) => row.id} // 書き戻しを使うなら安定キー必須
+/>
+```
+
+## getRows の契約
+
+- `params` は `{ startIndex, endIndex, query, signal }`。渡された `[startIndex, endIndex)` の範囲**だけ**を返します(全件を返すとクライアント全件保持と同義になり SSRM の意義が消えます)。
+- `query` 適用後の**フィルター後総件数**を `totalRowCount` で返します(縦スクロール空間が追従)。
+- `signal` が abort されたら速やかに reject します(スクロール通過・クエリ変更・unmount で発生。失敗扱いにはなりません)。
+
+## クエリ転送(ServerSideQuery)
+
+`query` は `{ globalText?, columnFilters?, sort? }` です。`columnFilters` は `kind` 付きの記述子(`text` / `number` / `date` / `select` / `set` / `custom`)がそのまま届くので、サーバ側で WHERE 句に変換します。実装例は[このデモのソース](https://github.com/ishibashi0112/datasheet-grid/blob/main/website/lib/ssrm-data.ts)を参照してください。
+
+- set / select フィルターの**候補はクライアントが供給**します(全行を持たないため自動収集できません)。低カーディナリティ列は `filterOptions` を静的指定、高カーディナリティ列は `text` / `number` フィルターを使います。
+- ソート / フィルターを塞ぎたい場合は `enableSorting` / `enableColumnFilter` / `enableGlobalFilter` を `false` にします。
+
+## 書き戻し(updateRows)と楽観更新
+
+- 編集は即座に画面へ反映され(楽観値)、`updateRows` の resolve で確定します。reject すると**編集前の値へ自動ロールバック**され、保存失敗バーが表示されます。
+- `updates` は行単位の記述子(`{ rowKey, rowIndex, row, previousRow, changes }`)で、ペーストの複数行編集も 1 回の呼び出しに集約されます。
+- サーバ側で値を正規化した場合は `{ rows }` を返すとキャッシュへマージされます。
+- **`rowKeyGetter` は安定キー**(DB の主キーなど)を返してください(既定は view index のため書き戻しには不向きです)。
+
+## リフレッシュとエラー処理
+
+- **`refreshServerSide()`**(命令的ハンドル)— クエリを変えずにスクロール位置を保ったままサーバ最新を取り直します。外部での追加・削除・編集の反映に使います(宣言的に扱うなら `serverSideRefreshToken` prop)。
+- **取得失敗** — 失敗ブロックはスケルトンのまま残り、組み込みエラーバー(再試行 / 閉じる)が出ます。`onServerSideLoadError` で外部通知(トースト等)も受けられます。
+- **保存失敗** — 自動ロールバック + 保存失敗バー。`onServerSideWriteError` の `params.updates` から自前のリトライ導線も作れます。
+
+## 制約
+
+- 行グルーピング(`rowGroup`)・undo/redo・ペーストの行/列自動拡張は serverSide では無効です。
+- 行の追加・削除は書き戻し API を持たないため、「サーバへ反映 → `refreshServerSide()`」の運用に寄せます。
+- clientSide ↔ serverSide を実行時に切り替える場合は `key` を変えて再マウントします。

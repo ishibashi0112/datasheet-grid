@@ -7,6 +7,7 @@ import { LargeDataDemo } from '@/components/demo/large-data-demo';
 import { GroupingDemo } from '@/components/demo/grouping-demo';
 import { ThemingDemo } from '@/components/demo/theming-demo';
 import { ExportDemo } from '@/components/demo/export-demo';
+import { SSRMDemo } from '@/components/demo/ssrm-demo';
 
 export function getMDXComponents(components?: MDXComponents) {
   return {
@@ -19,6 +20,7 @@ export function getMDXComponents(components?: MDXComponents) {
     GroupingDemo,
     ThemingDemo,
     ExportDemo,
+    SSRMDemo,
     ...components,
   } satisfies MDXComponents;
 }
