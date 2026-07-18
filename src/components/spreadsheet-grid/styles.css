@@ -2373,3 +2373,65 @@
     opacity: 1;
     transform: translateY(0);
   }
+
+  /* ── スクロール位置インジケーター(scrollHint) ──
+     大量行でのスクロール中に「今どの行にいるか」を答えるオーバーレイです(opt-in)。
+     autosize overlay と同じくシェルへの絶対配置・pointer-events: none(操作素通し)。
+     バブルはインク系チップ(--ssg-pill-*)を再利用し、light / dark 両テーマへ自動追従します。
+     位置(top / right)は動的値のためインライン style(GridScrollHint.tsx)です。 */
+  .ssg-scroll-hint {
+    position: absolute;
+    inset: 0;
+    z-index: 5;
+    pointer-events: none;
+    overflow: hidden;
+  }
+
+  .ssg-scroll-hint-bubble {
+    position: absolute;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    row-gap: 1px;
+    transform: translateY(-50%);
+    padding: 4px 10px;
+    border-radius: 6px;
+    background-color: var(--ssg-pill-bg);
+    color: var(--ssg-pill-text);
+    box-shadow: var(--ssg-pill-shadow);
+    font-size: 12px;
+    line-height: 1.4;
+    white-space: nowrap;
+    opacity: 0;
+    transition: opacity 180ms ease;
+  }
+
+  .ssg-scroll-hint-bubble--visible {
+    opacity: 1;
+  }
+
+  .ssg-scroll-hint-bubble-main {
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .ssg-scroll-hint-bubble-total {
+    font-weight: 400;
+    font-size: 10px;
+    opacity: 0.72;
+  }
+
+  .ssg-scroll-hint-bubble-detail {
+    font-size: 11px;
+    font-variant-numeric: tabular-nums;
+    opacity: 0.9;
+    max-width: 240px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .ssg-scroll-hint-bubble {
+      transition: none;
+    }
+  }

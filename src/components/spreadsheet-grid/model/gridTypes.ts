@@ -1100,6 +1100,42 @@ export type GridTheme = 'light' | 'dark' | 'auto';
 //   除外されます。serverSide(dataSource)では未ロード行を測れないため無効です(clientSide 限定)。
 export type AutoSizeColumnsMode = 'onMount' | 'onDataChange' | false;
 
+// 追加(scrollHint): スクロール位置インジケーターの表示トリガーです。
+//   'scroll'(既定) = スクロール中のみ表示し、停止後およそ 1 秒でフェードアウトします。
+//   'hover'         = グリッド(スクロールコンテナ)へのポインタホバー中 + スクロール中。
+//   'always'        = 常時表示。
+export type ScrollHintTrigger = 'scroll' | 'hover' | 'always';
+
+// 追加(scrollHint): renderHint コールバックの引数です。
+//   rowIndex は対象の表示行 index(0 始まり。フィルター/ソート/グルーピング適用後のビュー空間)、
+//   rowData はその行データです。SSRM の未ロード行と、グルーピングのグループ行では rowData が
+//   undefined になります(その場合ライブラリは行番号のみの既定表示へフォールバックします)。
+export type ScrollHintRenderArgs<T> = {
+  rowIndex: number;
+  rowData: T | undefined;
+};
+
+// 追加(scrollHint): スクロール位置インジケーターの設定です。
+//   大量行(特に 100 万行級)ではスクロールバー 1px の移動が数百〜数千行に相当し、移動中に
+//   「今どの行にいるか」を見失います。scrollHint はスクロールバー脇の行番号バブルと
+//   行目盛りルーラーで現在位置を示します。scrollHint={true} は全既定
+//   ({ bubble: true, ruler: true, trigger: 'scroll' })と同義です。
+//   表示は「総行数 + スクロール位置」だけで駆動されるため clientSide / SSRM の全構成で動作します。
+export type ScrollHintOptions<T = unknown> = {
+  // 行番号バブル(スクロールバー脇に「行 N / 総行数」+ 任意の列値)。既定 true。
+  bubble?: boolean;
+  // 行目盛りルーラー + トラックホバー時のジャンプ先プレビュー。既定 true。
+  ruler?: boolean;
+  // 表示トリガー。既定 'scroll'。
+  trigger?: ScrollHintTrigger;
+  // 簡易カスタム: 行番号に添えて表示する列 key(GridColumn.key = 行オブジェクトのフィールド名)。
+  //   SSRM の未ロード行では値が手元にないため、行番号のみへ自動フォールバックします。
+  hintColumn?: string;
+  // 完全カスタム(hintColumn より優先): 行番号に添える表示内容を組み立てます。
+  //   null / undefined を返すと行番号のみの既定表示へフォールバックします。
+  renderHint?: (args: ScrollHintRenderArgs<T>) => ReactNode;
+};
+
 export type SpreadsheetGridProps<T> = {
   // 追加(imperative API #1): React 19 の ref-as-prop。命令的ハンドル(SpreadsheetGridHandle)を受け取ります。
   //   forwardRef は使いません(React 19 で deprecated 予定のため)。状態は controlled のまま、prop で
@@ -1340,4 +1376,11 @@ export type SpreadsheetGridProps<T> = {
   ) => GridContextMenuItem[];
   // 追加(バッチ②): コンテキストメニューが実際に開いた直後の通知です(項目が 1 件以上あり表示された場合のみ)。
   onContextMenuOpen?: (params: GridContextMenuParams<T>) => void;
+  // ── 追加(scrollHint): スクロール位置インジケーター ──
+  //   スクロール中に「今どの行にいるか」を示すオーバーレイです(既定 undefined = 完全無効)。
+  //   true で全部入り(行番号バブル + 行目盛りルーラー)、オブジェクトで個別設定します
+  //   (詳細は ScrollHintOptions)。表示は総行数とスクロール位置のみで駆動されるため
+  //   clientSide / SSRM の全構成で動作します。装飾オーバーレイ(pointer-events: none)のため
+  //   既存のスクロール/クリック操作には一切干渉しません。
+  scrollHint?: boolean | ScrollHintOptions<T>;
 };

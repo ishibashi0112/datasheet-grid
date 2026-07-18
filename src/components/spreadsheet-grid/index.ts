@@ -113,5 +113,9 @@ export type {
   GridContextMenuLabelItem,
   GridContextMenuSeparatorItem,
   GridContextMenuCustomItem,
+  // 追加(scrollHint): スクロール位置インジケーター(props.scrollHint)の公開型群。
+  ScrollHintOptions,
+  ScrollHintTrigger,
+  ScrollHintRenderArgs,
 } from './model/gridTypes';
 export type { NumberFormatterOptions } from './logic/valueFormatters';

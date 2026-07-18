@@ -285,6 +285,9 @@ import FilterManagementPanel, {
 } from './view/FilterManagementPanel';
 // 追加(FM-2): フィルターチップバー(適用中の列フィルターの常時表示 / opt-in)です。
 import GridFilterChipBar from './view/GridFilterChipBar';
+// 追加(scrollHint): スクロール位置インジケーター(行番号バブル)のオーバーレイです。
+import { GridScrollHint } from './view/GridScrollHint';
+import { resolveScrollHintOptions } from './logic/scrollHint';
 // 追加(バッチ②/コンテキストメニュー): 対象解決(純ロジック)/ controller / portal popover。
 import {
   resolveContextMenuColIndex,
@@ -467,6 +470,8 @@ export function SpreadsheetGrid<T extends object>({
   enableContextMenu = false,
   getContextMenuItems,
   onContextMenuOpen,
+  // 追加(scrollHint): スクロール位置インジケーターです(既定 undefined = 完全無効)。
+  scrollHint,
   // 追加(imperative API #1): React 19 の ref-as-prop。命令的ハンドルを受け取ります。
   ref,
   // 追加(state #2): 永続スライス変化の通知口(保存タイミング signal)。発火規約は型定義のコメント参照。
@@ -475,6 +480,13 @@ export function SpreadsheetGrid<T extends object>({
   // 追加(THEME-2): density プリセットの既定寸法を解決します(明示 prop が常に優先)。
   const rowHeight = rowHeightProp ?? DENSITY_DIMENSIONS[density].rowHeight;
   const headerHeight = headerHeightProp ?? DENSITY_DIMENSIONS[density].headerHeight;
+
+  // 追加(scrollHint): スクロール位置インジケーターのオプション解決です。
+  //   null = 完全無効(オーバーレイ自体を描画しない)。boolean / オブジェクトの両形を吸収します。
+  const resolvedScrollHint = useMemo(
+    () => resolveScrollHintOptions<T>(scrollHint),
+    [scrollHint],
+  );
 
   // ── refs ──────────────────────────────────────────────
   const gridRootRef = useRef<HTMLDivElement | null>(null);
@@ -5583,6 +5595,24 @@ export function SpreadsheetGrid<T extends object>({
           )}
         </div>
         {/* ── /共有スクロールコンテナ ── */}
+
+        {/* 追加(scrollHint): スクロール位置インジケーター(行番号バブル)です。autosize /
+            filter overlay と同じくシェルへの絶対配置・pointer-events: none の装飾オーバーレイ。
+            「スクロール中か」の活動状態はコンポーネント内部(自前 passive リスナー)が持ち、
+            位置・行番号は親の scrollTop / 縦ジオメトリから毎レンダー導出します。 */}
+        {resolvedScrollHint !== null && (
+          <GridScrollHint
+            options={resolvedScrollHint}
+            scrollContainerRef={scrollContainerRef}
+            scrollTop={scrollTop}
+            viewportHeight={viewportHeight}
+            headerHeight={headerHeight}
+            physicalBodyHeight={physicalBodyHeight}
+            verticalScaleFactor={verticalScaleFactor}
+            rowMetrics={rowMetrics}
+            rowModel={rowModel}
+          />
+        )}
 
         {/* 追加(DS-4 ①-(2)): autosize 計測中の Pending overlay です。
             遅延表示(OVERLAY_DELAY_MS 経過後)・pointer-events: none で操作素通し。 */}
