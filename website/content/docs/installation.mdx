@@ -1,0 +1,58 @@
+---
+title: インストール
+description: パッケージの導入と CSS の読み込み
+---
+
+## パッケージのインストール
+
+```sh tab="npm"
+npm install @ishibashi0112/spreadsheet-grid
+```
+
+```sh tab="pnpm"
+pnpm add @ishibashi0112/spreadsheet-grid
+```
+
+```sh tab="yarn"
+yarn add @ishibashi0112/spreadsheet-grid
+```
+
+**react** と **react-dom** の `>= 19` が peer dependencies です(アプリ側にインストールされている必要があります)。ランタイム依存の `@tanstack/react-virtual` は自動で入ります。
+
+## スタイルの読み込み
+
+グリッドの CSS は別ファイルとして同梱されています。アプリのエントリなどで一度だけ import してください。
+
+```ts
+import '@ishibashi0112/spreadsheet-grid/style.css'
+```
+
+ベーススタイルは `.ssg-*` クラスにスコープされた通常(未レイヤー)の CSS で、デザイントークンは特異度ゼロ(`:where(.ssg-root)`)で定義されています。そのため **import 順序に関係なく、利用側の上書きが常に勝ちます**。
+
+## Tailwind CSS / HeroUI / Mantine との共存
+
+- **Tailwind CSS v3(+ HeroUI)** — そのまま動きます。Preflight のリセットはクラスセレクタに特異度で負けるため、グリッドを壊せません。
+- **Tailwind CSS v4(+ HeroUI)** — そのまま動きます。`!` 修飾子なしで Tailwind ユーティリティにグリッドの既定値を上書きさせたい場合は、グリッド CSS を `utilities` より下のレイヤーに入れます:
+
+  ```css
+  @import 'tailwindcss';
+  @import '@ishibashi0112/spreadsheet-grid/style.css' layer(components);
+  ```
+
+  あるいはレイヤー済みバリアント `style.layer.css`(全体が `@layer ssg-base`)を使い、レイヤー順を自分で宣言する方法もあります:
+
+  ```css
+  @layer theme, base, ssg-base, components, utilities;
+  @import 'tailwindcss';
+  @import '@ishibashi0112/spreadsheet-grid/style.layer.css';
+  ```
+
+- **Mantine** — そのまま動きます(クラス名・リセットの衝突なし。グリッドのポップオーバーは `z-index: 1000` で Mantine の既定モーダルより上)。
+
+プレーン CSS でグリッドの既定値を確実に上書きしたい場合は、グリッドのベースクラスに自分のクラスをチェーンして特異度で勝たせます:
+
+```css
+.ssg-body-cell.my-warn-cell {
+  background-color: #fff7ed;
+}
+```

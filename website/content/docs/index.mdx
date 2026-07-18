@@ -1,13 +1,36 @@
 ---
-title: Hello World
-description: Your first document
+title: はじめに
+description: SpreadsheetGrid — React 19 製の高性能・仮想化スプレッドシート / データグリッド
 ---
 
-Welcome to the docs! You can start writing documents in `/content/docs`.
+**SpreadsheetGrid**(`@ishibashi0112/spreadsheet-grid`)は、React 19 + TypeScript 製の仮想化データグリッドです。スクロール空間の仮想化により **約 100 万行** までのデータを軽快に扱え、Excel ライクなセル編集・範囲選択・コピー & ペーストを備えています。
 
-## What is Next?
+<BasicGridDemo />
+
+※ このデモは実際のライブラリが動いています。セルをダブルクリックすると編集できます。
+
+## 主な特徴
+
+- **仮想化** — 行・列ともに仮想化し、〜100 万行のデータをスムーズにスクロール
+- **3 ペイン固定列** — 左右の列ピン留め(sticky ベース)
+- **ソート / フィルター** — 列ごとのフィルター(`text` / `number` / `date` / `select` / `set` / `custom`)+ グローバルフィルター、フィルター管理パネル付き
+- **セル編集** — エディタ種別(`text` / `number` / `select` / `date` / `checkbox` / `custom`)、IME 対応(変換確定の Enter で誤コミットしない)、バリデーション(`mark` / `reject`)
+- **クリップボード** — 範囲選択、コピー & ペースト、Delete / Backspace クリア
+- **undo / redo** — `Ctrl/Cmd+Z` 系ショートカット + 命令的 API
+- **行グルーピング + 集計** — `rowGroup` / `aggFunc`、自動グループ列、開閉 UI
+- **サーバーサイド行モデル(SSRM)** — クエリ転送(フィルター / ソート)、ソフトリフレッシュ、ロードエラーのリトライ UI、`updateRows` による書き戻し(楽観更新 + 失敗時ロールバック)
+- **CSV / Excel エクスポート** — 組み込み CSV + ライブラリ非依存の `getExportData()`
+- **テーマ** — CSS カスタムプロパティ(`--ssg-*`)、ダークテーマ(`light` / `dark` / `auto`)
+- **共存前提の CSS 設計** — Tailwind(v3 / v4)・Mantine・HeroUI と衝突しない
+- **TypeScript ファースト** — 完全な型定義、コントロールドな API
+
+## 対応環境
+
+- **react / react-dom `>= 19`**(peer dependencies)
+- ランタイム依存は `@tanstack/react-virtual` のみ(自動でインストールされます)
+- SSR(Next.js 等)でのサーバーレンダリングに対応
 
 <Cards>
-  <Card title="Learn more about Next.js" href="https://nextjs.org/docs" />
-  <Card title="Learn more about Fumadocs" href="https://fumadocs.dev" />
+  <Card title="インストール" href="/docs/installation" description="パッケージの導入と CSS の読み込み" />
+  <Card title="クイックスタート" href="/docs/quick-start" description="最小構成のグリッドを動かす" />
 </Cards>

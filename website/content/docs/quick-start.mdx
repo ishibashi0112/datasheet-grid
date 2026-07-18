@@ -1,0 +1,59 @@
+---
+title: クイックスタート
+description: 最小構成のグリッドを動かす
+---
+
+## 最小の例
+
+`rows` と `onRowsChange` を渡すと、グリッドはコントロールドコンポーネントとして動作します。列には最低限 `key` と `width` が必要です。
+
+```tsx
+import { useState } from 'react'
+import { SpreadsheetGrid, type GridColumn } from '@ishibashi0112/spreadsheet-grid'
+import '@ishibashi0112/spreadsheet-grid/style.css'
+
+type Row = { id: number; name: string; qty: number }
+
+const columns: GridColumn<Row>[] = [
+  { key: 'name', title: 'Name', width: 200, editable: true, filterType: 'text' },
+  { key: 'qty',  title: 'Qty',  width: 120, editable: true, filterType: 'number' },
+]
+
+export function Example() {
+  const [rows, setRows] = useState<Row[]>([
+    { id: 1, name: 'Apple',  qty: 3 },
+    { id: 2, name: 'Banana', qty: 5 },
+  ])
+
+  return (
+    <SpreadsheetGrid
+      rows={rows}
+      columns={columns}
+      onRowsChange={setRows}
+      rowKeyGetter={(row) => row.id}
+    />
+  )
+}
+```
+
+## 動作イメージ
+
+<BasicGridDemo />
+
+- セルを**ダブルクリック**(または F2 / 直接タイピング)で編集開始
+- ドラッグまたは Shift + 矢印キーで**範囲選択**、`Ctrl/Cmd+C` / `Ctrl/Cmd+V` でコピー & ペースト
+- ヘッダーのメニューから**ソート / フィルター**
+- `Ctrl/Cmd+Z` で **undo**、`Ctrl/Cmd+Shift+Z` で **redo**
+
+## Next.js で使う場合
+
+グリッドはフックを使うクライアントコンポーネントです。App Router では `'use client'` を付けたコンポーネントから利用してください。
+
+```tsx
+'use client'
+
+import { SpreadsheetGrid } from '@ishibashi0112/spreadsheet-grid'
+import '@ishibashi0112/spreadsheet-grid/style.css'
+```
+
+サーバーレンダリング(SSR / SSG)にも対応しています。`theme="auto"` の場合、サーバーでは light として描画され、ハイドレーション後にクライアントの配色設定へ追従します。
