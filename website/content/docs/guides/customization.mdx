@@ -1,0 +1,142 @@
+---
+title: カスタムレンダリング
+description: セル / ヘッダー / トップ・ボトムバー / エディタ / コンテキストメニューを React で自由に描画する
+---
+
+グリッドの見た目と挙動は、通常の React コンポーネントで差し替えられます。すべて「関数を渡すとコンテキストが届く」スタイルで、状態管理はグリッド側が持ちます。
+
+## カスタムセル(renderCell)
+
+`column.renderCell` にレンダラを渡すと、セル内容を自由に描画できます。コンテキストには `value` / `row` のほか、そのセルへ直接書き込める **`setValue`** が入っているため、ボタンやトグルなどのインタラクティブなセルも作れます。
+
+<CustomCellsDemo />
+
+```tsx
+{
+  key: 'status', title: 'ステータス', width: 120,
+  renderCell: ({ value }) => (
+    <span className={badgeClass(value)}>{String(value)}</span>
+  ),
+},
+{
+  key: 'stock', title: '在庫', width: 160,
+  renderCell: ({ value, setValue }) => (
+    <>
+      <button onClick={() => setValue(Number(value) - 1)}>−</button>
+      <span>{Number(value)}</span>
+      <button onClick={() => setValue(Number(value) + 1)}>+</button>
+    </>
+  ),
+}
+```
+
+- コンテキストの全フィールドは `CellRenderContext<T>`(`row` / `rowIndex` / `sourceRowIndex` / `rowKey` / `colIndex` / `value` / `column` / `isActive` / `isSelected` / `isEditing` / `readOnly` / `setValue`)です。
+- `renderCell` は**表示**の差し替えです。編集(ダブルクリック時のエディタ)は従来どおり `editor` が担当し、共存できます(デモのステータス列 = バッジ表示 + select エディタ)。
+- 表示文字列を変えるだけなら、より軽い [`valueFormatter`](/docs/api/column#値フォーマッタui-表示) を使ってください。条件付きの色付けだけなら [`cellClassName`](/docs/guides/theming#条件付きセルスタイル) が最軽量です。
+
+## カスタムヘッダー(renderHeader)
+
+`column.renderHeader` で列ヘッダーのラベル部分を差し替えます(上のデモの「📋 タスク」列)。ソート・メニュー・リサイズなどのヘッダー機能はそのまま維持されます。
+
+```tsx
+{
+  key: 'name', title: 'タスク', width: 180,
+  renderHeader: ({ column }) => (
+    <span>📋 {column.title}</span>
+  ),
+}
+```
+
+## トップバー / ボトムバー(renderTopBar / renderBottomBar)
+
+`renderTopBar` / `renderBottomBar` でバーを丸ごと React で差し替えられます。渡ってくる `SpreadsheetGridSlotContext` に、グローバルフィルターの読み書き(`globalFilterText` / `setGlobalFilterText`)、`rows` / `filteredRows`、選択状態、そして整形済みの派生 summary である **`derivedSummary`** が入っているため、ヘルパーを import せずに実用的なバーが書けます。
+
+<CustomBarsDemo />
+
+```tsx
+<SpreadsheetGrid
+  renderTopBar={(ctx) => (
+    <div className="my-toolbar">
+      <input
+        value={ctx.globalFilterText}
+        onChange={(e) => ctx.setGlobalFilterText(e.target.value)}
+        placeholder="検索"
+      />
+      <span>{ctx.filteredRows.length} / {ctx.rows.length} 件</span>
+    </div>
+  )}
+  renderBottomBar={(ctx) => (
+    <div className="my-statusbar">
+      <span>{ctx.derivedSummary.rowSummaryText}</span>
+      <span>{ctx.derivedSummary.selectionStatsText}</span>
+    </div>
+  )}
+  ...
+/>
+```
+
+- `derivedSummary` には行/列/フィルター/ソートの summary 文字列、選択セルの統計(件数・合計・平均)などが入っています(`SpreadsheetGridDerivedSummary`)。
+- **丸ごと差し替えずに調整したい**場合は表示制御 props を使います: `showTopBar` / `showBottomBar`(マスタースイッチ)、既定バーの部品単位では `showTopBarSummary` / `showTopBarFilter` / `showFilterChipBar` など。一覧は [API リファレンス](/docs/api/props#バーの表示制御top--bottom) を参照してください。
+
+## カスタムエディタ(`type: 'custom'`)
+
+組み込みエディタ(text / number / select / date / checkbox)で足りないときは、編集 UI 自体を描画できます。`ctx.commit(value)` で確定、`ctx.cancel()` でキャンセルです。**非 string を commit するとパーサをバイパスしてドメイン値がそのまま書き込まれます**。
+
+<CustomEditorDemo />
+
+```tsx
+{
+  key: 'rating', title: '評価', width: 180, editable: true,
+  renderCell: ({ value }) => <Stars n={Number(value)} />,
+  editor: {
+    type: 'custom',
+    render: (ctx) => (
+      <StarPicker
+        value={Number(ctx.value)}
+        onPick={(n) => ctx.commit(n)}   // 数値のまま書き込み
+        onCancel={() => ctx.cancel()}
+      />
+    ),
+  },
+}
+```
+
+- フォーカス管理とキーバインドは利用側の責務です(`ctx` には `row` / `initialText`(印字キー開始時の 1 文字)なども入ります)。
+
+## コンテキストメニュー(右クリック)
+
+`enableContextMenu` + `getContextMenuItems` で、セル / 行番号ガターの右クリックメニューを定義できます。**ライブラリは既定項目を一切持たない**完全カスタム設計で、空配列を返すとブラウザ標準メニューにフォールスルーします。
+
+<ContextMenuDemo />
+
+```tsx
+<SpreadsheetGrid
+  enableContextMenu
+  getContextMenuItems={({ target, isTargetSelected }) => {
+    if (target.type !== 'cell' && target.type !== 'rowHeader') return [];
+    return [
+      { kind: 'label', label: '行操作' },
+      { label: '行を複製', onSelect: () => duplicate(target.row) },
+      { kind: 'separator' },
+      { label: '行を削除', danger: true, onSelect: () => remove(target.row) },
+    ];
+  }}
+  ...
+/>
+```
+
+項目は判別共用体(`action` / `label` / `separator` / `custom`)で、`custom` は自由描画のエスケープハッチです。詳細は [API リファレンス](/docs/api/props#コンテキストメニューenablecontextmenu--getcontextmenuitems) を参照してください。
+
+## どの手段を選ぶか
+
+| やりたいこと | 手段 |
+| --- | --- |
+| 表示文字列の整形(3 桁区切りなど) | `valueFormatter` |
+| 条件付きの色・背景 | `cellClassName` + CSS |
+| セルに独自 UI(バッジ / バー / ボタン) | `renderCell` |
+| 編集 UI そのものを差し替え | `editor: { type: 'custom' }` |
+| ヘッダーラベルの装飾 | `renderHeader` |
+| バーの部品の表示切替 | `showTopBar*` / `showBottomBar*` 系 props |
+| バーを丸ごと自作 | `renderTopBar` / `renderBottomBar` |
+| 右クリックメニュー | `getContextMenuItems` |
+| 色・寸法トークンの一括調整 | [テーマとスタイリング](/docs/guides/theming) |

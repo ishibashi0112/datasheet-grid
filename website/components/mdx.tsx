@@ -8,6 +8,10 @@ import { GroupingDemo } from '@/components/demo/grouping-demo';
 import { ThemingDemo } from '@/components/demo/theming-demo';
 import { ExportDemo } from '@/components/demo/export-demo';
 import { SSRMDemo } from '@/components/demo/ssrm-demo';
+import { CustomCellsDemo } from '@/components/demo/custom-cells-demo';
+import { CustomBarsDemo } from '@/components/demo/custom-bars-demo';
+import { CustomEditorDemo } from '@/components/demo/custom-editor-demo';
+import { ContextMenuDemo } from '@/components/demo/context-menu-demo';
 
 export function getMDXComponents(components?: MDXComponents) {
   return {
@@ -21,6 +25,10 @@ export function getMDXComponents(components?: MDXComponents) {
     ThemingDemo,
     ExportDemo,
     SSRMDemo,
+    CustomCellsDemo,
+    CustomBarsDemo,
+    CustomEditorDemo,
+    ContextMenuDemo,
     ...components,
   } satisfies MDXComponents;
 }
