@@ -618,6 +618,10 @@ function App() {
   const [rowGroupingEnabled, setRowGroupingEnabled] = useState(false);
   // 追加(バッチ②デモ): コンテキストメニュー(完全カスタム)の ON/OFF トグルです。既定 OFF。
   const [contextMenuEnabled, setContextMenuEnabled] = useState(false);
+  // 追加(scrollHint デモ): スクロール位置インジケーター(バブル + ルーラー)の ON/OFF です。
+  //   1M 行での現在位置把握が主目的のため、デモでは既定 ON にしています(ライブラリ既定は OFF)。
+  //   hintColumn='partNo' で「行番号 + 品番」を表示します。
+  const [scrollHintEnabled, setScrollHintEnabled] = useState(true);
   // 追加(THEME-3 デモ): readonly セル(「単位」列)の淡色表示 opt-in(既定 OFF=色変化なし)。
   const [dimReadOnlyCells, setDimReadOnlyCells] = useState(false);
   // 追加(FM-2 デモ): フィルターチップバー(適用中の列フィルターをトップバー直下に常時表示)。
@@ -1252,6 +1256,16 @@ function App() {
           >
             フィルターチップバー: {showFilterChipBar ? 'ON' : 'OFF'}
           </button>
+          {/* 追加(scrollHint デモ): スクロール位置インジケーター ON/OFF(デモ既定 ON)。
+              スクロール中に行番号バブル + 行目盛りルーラー、スクロールバー帯ホバーで
+              ジャンプ先プレビュー(行番号 + 品番)を表示します。 */}
+          <button
+            type="button"
+            onClick={() => setScrollHintEnabled((v) => !v)}
+            style={modeButtonStyle(scrollHintEnabled)}
+          >
+            スクロール位置ヒント: {scrollHintEnabled ? 'ON' : 'OFF'}
+          </button>
           {/* 追加(THEME-2 デモ): 密度プリセット(クリックで standard → compact → comfortable を巡回)。 */}
           <button
             type="button"
@@ -1377,6 +1391,9 @@ function App() {
         // 追加(バッチ②デモ): マスタースイッチ(上の「右クリックメニュー」トグルと連動。既定 OFF)。
         //   OFF のあいだは getContextMenuItems を渡していてもブラウザ標準メニューになります。
         enableContextMenu={contextMenuEnabled}
+        // 追加(scrollHint デモ): スクロール位置インジケーター(上のトグルと連動。デモ既定 ON)。
+        //   hintColumn='partNo' で「行番号 + 品番」。renderHint に差し替えると完全カスタムも可能です。
+        scrollHint={scrollHintEnabled ? { hintColumn: 'partNo' } : undefined}
         // 追加(THEME-3 デモ): readonly セルの淡色表示(上の「readonly淡色」トグルと連動。既定 OFF)。
         dimReadOnlyCells={dimReadOnlyCells}
         // 追加(THEME-2 デモ): 密度プリセット(上の「密度」トグルと連動。既定 standard)。
