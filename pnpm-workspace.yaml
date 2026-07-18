@@ -6,3 +6,13 @@
 overrides:
   vite: npm:@voidzero-dev/vite-plus-core@latest
   vitest: 4.1.10
+
+# 追加(website): ドキュメントサイト(Next.js + Fumadocs)を workspace メンバー化。
+#   ルート(ライブラリ本体)は workspace root のまま。website からは link:.. で参照する。
+packages:
+  - website
+
+# website の依存(esbuild / sharp)のビルドスクリプト許可(pnpm 11 の allowBuilds)。
+allowBuilds:
+  esbuild: true
+  sharp: true
