@@ -66,6 +66,7 @@ React 19 + TypeScript + Vite 製のカスタム AG Grid 風・仮想化データ
 - 2026-07-18 追加。Next.js 16 + Fumadocs 16 + Tailwind v4 の日本語ドキュメントサイト(pnpm workspace メンバー、lib は `link:..` 参照)。詳細は `website/README.md`。
 - ルートのゲート(eslint / tsc -b / vitest)の**対象外**(eslint は `globalIgnores(['website'])`)。website の検証は `cd website && vp exec next build`。
 - API リファレンス(`website/content/docs/api/`)は `API_REFERENCE.md` の複製。**型変更時は両方同期**。
+- **運用ルール: ライブラリの機能追加・変更・削除をしたら、同じ作業の中で website も更新する**(該当ガイドの追記 or 新規ページ、API リファレンス両方、必要ならデモ / プレイグラウンドのトグル追加)。ドキュメント未更新のまま機能だけ納品しない。
 - ホスティングは Vercel 予定(Root Directory: `website`)。デプロイ操作はユーザーが行う。
 
 ## 現状と残タスク(詳細は HANDOFF §4 / §7 / §8)
