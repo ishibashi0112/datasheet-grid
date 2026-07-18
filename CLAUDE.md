@@ -61,6 +61,13 @@ React 19 + TypeScript + Vite 製のカスタム AG Grid 風・仮想化データ
 - CSS: 未レイヤー単一クラス基底(Tailwind/Mantine/HeroUI 共存のため `@layer` は使わない ── 未レイヤーはレイヤー付きに特異度無関係で勝つため)。Portal 系(popover/tooltip)は `.ssg-root` 外に描画されるためリテラル色を使う。
 - 仮想化 DOM 上のドラッグは window レベルのリスナ + `pointerId` フィルタ(要素直付けは capture 対象の unmount で壊れる)。
 
+## ドキュメントサイト(website/)
+
+- 2026-07-18 追加。Next.js 16 + Fumadocs 16 + Tailwind v4 の日本語ドキュメントサイト(pnpm workspace メンバー、lib は `link:..` 参照)。詳細は `website/README.md`。
+- ルートのゲート(eslint / tsc -b / vitest)の**対象外**(eslint は `globalIgnores(['website'])`)。website の検証は `cd website && vp exec next build`。
+- API リファレンス(`website/content/docs/api/`)は `API_REFERENCE.md` の複製。**型変更時は両方同期**。
+- ホスティングは Vercel 予定(Root Directory: `website`)。デプロイ操作はユーザーが行う。
+
 ## 現状と残タスク(詳細は HANDOFF §4 / §7 / §8)
 
 - 最新 v0.19.0。
