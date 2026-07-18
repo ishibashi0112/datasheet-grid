@@ -1,0 +1,37 @@
+---
+title: 行グルーピングと集計
+description: rowGroup / aggFunc による階層グルーピングと集計行
+---
+
+`column.rowGroup: true` の列でビュー行をグルーピングします(複数指定時は `columns` 配列の出現順が階層順)。`aggFunc` を指定した列は、グループ行に集計値を表示します。
+
+## デモ(地域 > 担当 の 2 階層)
+
+<GroupingDemo />
+
+- グループ行のシェブロン(またはダブルクリック / Enter / Space)で開閉できます。
+- **数量 / 金額**列は `aggFunc: 'sum'` の集計値です。`valueFormatter` は集計値にも適用され、leaf セルと表示が揃います。
+- 「すべて展開 / 折りたたむ」は命令的ハンドルの `expandAllGroups()` / `collapseAllGroups()` です。
+
+## 列定義
+
+```tsx
+const columns: GridColumn<Row>[] = [
+  { key: 'region', title: '地域', width: 100, rowGroup: true },
+  { key: 'rep', title: '担当', width: 100, rowGroup: true },
+  { key: 'product', title: '商品', width: 170 },
+  { key: 'qty', title: '数量', width: 100, aggFunc: 'sum' },
+  { key: 'amount', title: '金額', width: 140, aggFunc: 'sum',
+    valueFormatter: numberFormatter() },
+]
+```
+
+## 仕様の要点
+
+- **自動グループ列** — グルーピング有効時、先頭にツリー表示列(インデント + 開閉 + ラベル + 件数)が自動注入され、グループ元列は表示から外れます。
+- **組み込み集計** — `'sum' | 'min' | 'max' | 'avg' | 'count'`。数値化できる値のみ対象で、空値は除外されます(`count` は配下 leaf 行数)。カスタム集計は関数(`GridAggFunc<T>`)を渡すと返り値がそのまま表示されます。
+- **フィルター / ソートとの関係** — フィルターは leaf 行に適用され、0 件になったグループは消えます。グループの並びは「ソート適用後の初出順」です。
+- **leaf 限定の各機能** — グループ行は編集 / コピー / 行選択 / エクスポートの対象外です(すべて leaf 行が対象)。
+- **clientSide 限定** — serverSide(`dataSource`)では `rowGroup` は無視されます。
+
+開閉の命令的 API(`setGroupCollapsed` / `getGroupRows` など)は [API リファレンス](/docs/api/handle#行グルーピング) を参照してください。

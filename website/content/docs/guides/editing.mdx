@@ -1,0 +1,54 @@
+---
+title: セル編集とバリデーション
+description: エディタ種別(text / number / select / date / checkbox / custom)と validate(mark / reject)
+---
+
+`column.editable: true` で列の編集を許可し、`column.editor` でエディタ種別を指定します(未指定 = `text`)。値の検証は `column.validate` で行い、`validationMode` で NG 時の動作(`'mark'` = 入るが表示で警告 / `'reject'` = 書き込み拒否)を選べます。
+
+## デモ
+
+<EditingDemo />
+
+- **品名** — 必須チェック + `reject`:空で確定しようとするとエディタが拒否します(エラーバブル表示)。Delete での空クリアもスキップされます。
+- **数量** — `number` エディタ + `mark`:不正値(負数など)も入りますが、セルに警告マークが付きます(ホバーでメッセージ)。
+- **区分** — `select` エディタ:↑↓ で選択、Enter で確定。印字キーで前方一致のタイプアヘッドも動きます。
+- **納期** — `date` エディタ:ネイティブの日付ピッカーです。
+- **有効** — `checkbox` エディタ:クリック / Space で即トグル(編集セッションなし)。
+
+## エディタ種別
+
+```tsx
+const columns: GridColumn<Row>[] = [
+  { key: 'name', title: '品名', width: 190, editable: true },                       // text(既定)
+  { key: 'qty', title: '数量', width: 120, editable: true,
+    editor: { type: 'number', min: 0, step: 1 } },
+  { key: 'category', title: '区分', width: 140, editable: true,
+    editor: { type: 'select', options: [
+      { label: '通常', value: '通常' },
+      { label: '特注', value: '特注' },
+    ] } },
+  { key: 'dueDate', title: '納期', width: 150, editable: true,
+    editor: { type: 'date' } },
+  { key: 'active', title: '有効', width: 110, editable: true,
+    editor: { type: 'checkbox' } },
+]
+```
+
+`number` / `date` / `checkbox` には既定の「文字列 → 値」パーサが付き、**貼り付け / Delete クリア / エディタ確定で共通**に効きます(例: number 列を Delete でクリアすると `null` になる)。明示の `parseClipboardValue` は常に優先されます。
+
+独自 UI で編集したい場合は `{ type: 'custom', render: (ctx) => <MyEditor ... /> }` を使います。`ctx.commit(value)` / `ctx.cancel()` で確定・キャンセルします。
+
+## バリデーション
+
+```tsx
+{
+  key: 'name', title: '品名', width: 190, editable: true,
+  validate: ({ value }) => String(value ?? '').trim() !== '' || '品名は必須です',
+  validationMode: 'reject', // 既定は 'mark'
+}
+```
+
+- **`'mark'`(既定)** — 値は書き込み、セルに警告表示(背景 + 右上マーカー + ホバーでメッセージ)。判定は表示時に導出されるため、貼り付け・undo・外部からの `rows` 差し替え後も常に実データと整合します。
+- **`'reject'`** — 書き込み自体を拒否。エディタ確定は「拒否 + 編集継続 + エラーバブル」、貼り付け / クリアは NG セルだけスキップされます。
+
+保存前の一括チェックは命令的ハンドルの `getInvalidCells()` を使います。マークを「送信時にだけ」表示する `showValidationMarks` prop と組み合わせた業務フォームのレシピは [API リファレンス](/docs/api/column#バリデーションvalidate--validationmode) を参照してください。

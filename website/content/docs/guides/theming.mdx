@@ -1,0 +1,64 @@
+---
+title: テーマとスタイリング
+description: ダークテーマ(light / dark / auto)、密度(density)、CSS トークンによるカスタマイズ
+---
+
+見た目のカスタマイズは 3 段階あります: ① `theme` / `density` prop によるプリセット切替、② CSS カスタムプロパティ(`--ssg-*`)によるトークン上書き、③ `className` / `cellClassName` などのクラスフックです。
+
+## デモ
+
+<ThemingDemo />
+
+## テーマ(ダークモード)
+
+```tsx
+<SpreadsheetGrid theme="auto" ... />  // 'light'(既定) | 'dark' | 'auto'
+```
+
+- `'auto'` は OS / ブラウザの `prefers-color-scheme` に追従します。SSR ではいったん light で描画され、ハイドレーション後に追従します。
+- Tailwind / Mantine / HeroUI などの**クラスベース dark 運用**では、ページの実テーマと `prefers-color-scheme` が一致しないことがあります。その場合は利用側カラースキームフックの解決値を `'light' | 'dark'` で渡してください。
+- テーマはグリッド本体だけでなく、ポップオーバー / メニュー / パネル / ツールチップ / ドラッグゴーストにも一括適用されます。
+
+## 密度(density)
+
+```tsx
+<SpreadsheetGrid density="compact" ... />  // 'standard'(既定) | 'compact' | 'comfortable'
+```
+
+行高(40 / 32 / 48px)・セル padding・アイコン寸法・文字の相対サイズが一括で切り替わります。`rowHeight` / `headerHeight` の明示指定はプリセットより優先されます。
+
+## CSS トークンによるカスタマイズ
+
+デザイントークンは特異度ゼロ(`:where(.ssg-root)`)で定義されているため、**通常のクラス 1 つで確実に上書き**できます。
+
+```css
+.my-grid {
+  --ssg-accent: #7c3aed;          /* アクセント(選択枠など) */
+  --ssg-header-bg: #f8fafc;       /* ヘッダー背景 */
+  --ssg-invalid: #dc2626;         /* バリデーション NG の色 */
+  --ssg-tooltip-bg: #1e293b;      /* ツールチップ背景 */
+}
+```
+
+```tsx
+<SpreadsheetGrid className="my-grid" ... />
+```
+
+## 条件付きセルスタイル
+
+```tsx
+{
+  key: 'qty', title: '数量', width: 110,
+  cellClassName: ({ value }) =>
+    typeof value === 'number' && value < 10 ? 'my-warn-cell' : undefined,
+}
+```
+
+```css
+/* 基底クラスにチェーンして特異度で勝たせる(import 順に依存しない) */
+.ssg-body-cell.my-warn-cell {
+  background-color: #fff7ed;
+}
+```
+
+Tailwind との共存(レイヤー運用、`style.layer.css`)は[インストール](/docs/installation#tailwind-css--heroui--mantine-との共存)を参照してください。

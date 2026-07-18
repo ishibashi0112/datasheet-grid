@@ -1,0 +1,38 @@
+---
+title: ソートとフィルター
+description: 列フィルター(text / number / date / select / set / custom)とグローバルフィルター
+---
+
+ヘッダーの列メニューからソートとフィルターを操作できます。フィルター UI の種別は `column.filterType` で列ごとに指定します。
+
+## デモ
+
+<FilterSortDemo />
+
+- **商品名** — `text`:部分一致
+- **カテゴリ** — `select`:単一選択(候補は rows から自動収集)
+- **ステータス** — `set`:チェックボックスの複数選択(Excel 風)
+- **数量 / 単価** — `number`:`>=100`、`10..50`(範囲)、`=0` などの式が使えます
+- **登録日** — `date`:日付一致
+
+上部のグローバルフィルター入力は全列を横断して部分一致します。フィルター適用中はチップバー(`showFilterChipBar`)に条件が並び、ここから個別解除もできます。列メニューまたはチップバーの「フィルター管理」から、全フィルターを一覧で編集できるパネルも開けます。
+
+## 列定義
+
+```tsx
+const columns: GridColumn<Row>[] = [
+  { key: 'name', title: '商品名', width: 180, filterType: 'text' },
+  { key: 'category', title: 'カテゴリ', width: 130, filterType: 'select' },
+  { key: 'status', title: 'ステータス', width: 130, filterType: 'set' },
+  { key: 'qty', title: '数量', width: 110, filterType: 'number' },
+  { key: 'registered', title: '登録日', width: 140, filterType: 'date' },
+]
+```
+
+- `select` / `set` の候補は rows から自動収集されます。明示したい場合は `filterOptions: [{ label, value }]` を指定します。
+- 独自の絞り込みロジックは `filterType: 'custom'` + `filterFn: (row, filterValue) => boolean` で書けます。
+- ソート / フィルター / グローバルフィルターは `enableSorting` / `enableColumnFilter` / `enableGlobalFilter`(いずれも既定 `true`)で無効化できます。
+
+## 状態を外から扱う
+
+ソート / フィルター状態はグリッド内部の reducer が持ちますが、`getState()` / `applyState()`(命令的ハンドル)で保存・復元、`onStateChange` で変更検知ができます。詳細は [API リファレンス](/docs/api/handle) を参照してください。

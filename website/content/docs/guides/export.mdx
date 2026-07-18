@@ -1,0 +1,42 @@
+---
+title: CSV / Excel エクスポート
+description: downloadCsv / exportCsv と、ライブラリ非依存の getExportData
+---
+
+エクスポートは命令的ハンドル(`ref`)から呼びます。CSV は組み込みで、Excel(xlsx)などは `getExportData()` の返す整形済みデータを任意のライブラリに渡して生成します(スプレッドシートライブラリは同梱しません)。
+
+## デモ
+
+<ExportDemo />
+
+## CSV
+
+```tsx
+const gridRef = useRef<SpreadsheetGridHandle<Row>>(null);
+
+// ファイルとしてダウンロード(BOM 付き・Excel でそのまま開ける)
+gridRef.current?.downloadCsv('products.csv');
+
+// 文字列が欲しい場合
+const csv = gridRef.current?.exportCsv({ delimiter: '\t' }); // TSV も可
+```
+
+### 出力範囲(scope)
+
+| scope | 対象 |
+| --- | --- |
+| `'view'`(既定) | フィルター / ソート適用後のビュー行**全体**(スクロール位置に依存しない) |
+| `'raw'` | 元の全行(フィルター / ソートを無視) |
+| `'selection'` | セル範囲選択中の行 |
+| `'rendered'` | 仮想化で現在描画中の行のみ(スクロール依存) |
+
+列は**表示中の列を表示順**で出力し、`valueFormatter` 適用前の生値ではなく表示値ベースの整形が使われます(`formatClipboardValue` があればそれが優先)。
+
+## Excel(xlsx)など
+
+```tsx
+const data = gridRef.current?.getExportData(); // { columns, rows(2 次元セル) }
+// ExcelJS / SheetJS / hucre など任意のライブラリでブックを組み立てる
+```
+
+`getExportData()` は純粋関数的にデータだけを返すため、複数シートは scope 別・グリッド別に呼び出して組み立てられます。詳細なセル型は [API リファレンス](/docs/api/handle#excel--スプレッドシート-エクスポートgetexportdata) を参照してください。
