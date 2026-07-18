@@ -1,0 +1,70 @@
+---
+title: スクロール位置インジケーター
+description: 大量行のスクロール中に「今どの行にいるか」を示すバブル / ルーラー / ジャンプ先プレビュー
+---
+
+大量行(特に 100 万行級)ではスクロールバー 1px の移動が数百〜数千行に相当し、移動中に現在位置を見失いがちです。`scrollHint` を有効にすると、次の 3 つのオーバーレイがこれに答えます(**既定は完全無効**の opt-in 機能です)。
+
+- **行番号バブル**: スクロール中、スクロールバー脇に「行 N / 総行数」を表示します。任意の列値(品番など)を添えることもできます。
+- **行目盛りルーラー**: ボディ右端に行数スケール(1 万以上は「10万」等へ圧縮した切りのよい刻み)をフェード表示します。
+- **ジャンプ先プレビュー**: スクロールバー帯にポインタを置くと「ここに飛ぶと行 N」の点線 + ラベルを表示します(ネイティブスクロールバーのクリック / ドラッグと同じ写像)。
+
+## デモ(100,000 行)
+
+<ScrollHintDemo />
+
+- スクロールバーのサムをドラッグすると、バブルが現在の先頭行を追従表示します。
+- 右端(スクロールバー帯)にポインタを置くと、ルーラーとジャンプ先プレビューが現れます。
+- 「表示内容」を切り替えると、行番号のみ / `hintColumn` / `renderHint` の 3 形態を比較できます。
+
+## 有効化
+
+```tsx
+// 全部入り(バブル + ルーラー、trigger='scroll')
+<SpreadsheetGrid scrollHint />
+
+// 個別設定
+<SpreadsheetGrid
+  scrollHint={{
+    bubble: true,       // 行番号バブル(既定 true)
+    ruler: true,        // ルーラー + ジャンプ先プレビュー(既定 true)
+    trigger: 'scroll',  // 'scroll'(既定)| 'hover' | 'always'
+  }}
+/>
+```
+
+`trigger: 'scroll'` はスクロール中のみ表示し、停止から約 1 秒でフェードアウトします。止まっている間の見た目は一切変わりません。
+
+## 表示内容のカスタマイズ
+
+行番号に任意の列値を添えるには `hintColumn`(簡易)か `renderHint`(完全カスタム。`hintColumn` より優先)を使います。
+
+```tsx
+// 簡易: 行番号 + 品目コード
+<SpreadsheetGrid scrollHint={{ hintColumn: 'code' }} />
+
+// 完全カスタム: コード — 品目名
+<SpreadsheetGrid
+  scrollHint={{
+    renderHint: ({ rowIndex, rowData }) =>
+      rowData ? `${rowData.code} — ${rowData.name}` : null,
+  }}
+/>
+```
+
+`renderHint` が `null` / `undefined` を返すと行番号のみの既定表示になります。
+
+## SSRM / グルーピングでの挙動
+
+バブル / プレビューの対象行が [SSRM](/docs/guides/ssrm) の未ロード行(またはグルーピングのグループ行)の場合、`rowData` は `undefined` になり、`hintColumn` 指定時は自動的に**行番号のみ**へフォールバックします(`renderHint` には `undefined` がそのまま渡るので利用側で分岐します)。
+
+インジケーター自体は「総行数 + スクロール位置」だけで駆動されるため、clientSide / SSRM / auto-height を含む全構成でそのまま動作します。
+
+## 仕組みと注意点
+
+- 行番号は仮想化の縦ジオメトリ(100 万行の pixel scaling / auto-height の prefix-sum)と同一の写像で解決するため、常に画面表示と一致します。
+- オーバーレイは `pointer-events: none` で、スクロールバー操作・セル操作へ一切干渉しません(ジャンプ先プレビューの帯検知もイベントリスナーのみで実装)。
+- 全行が viewport に収まりスクロール不能のときは何も表示しません。
+- バブル / ラベルの配色はテーマトークン(`--ssg-pill-*` ほか)に追従し、light / dark 両テーマで機能します。
+
+すべてのオプションは [SpreadsheetGrid props](/docs/api/props#スクロール位置インジケーターscrollhint) を参照してください。

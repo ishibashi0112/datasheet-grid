@@ -122,6 +122,7 @@ type Settings = {
   enableRowSelection: boolean;
   rowSelectionMode: RowSelectionMode;
   enableSelectAllRows: boolean;
+  scrollHint: boolean;
 };
 
 const DEFAULTS: Settings = {
@@ -145,6 +146,7 @@ const DEFAULTS: Settings = {
   enableRowSelection: false,
   rowSelectionMode: 'multiple',
   enableSelectAllRows: true,
+  scrollHint: false,
 };
 
 function buildSnippet(s: Settings): string {
@@ -175,6 +177,10 @@ function buildSnippet(s: Settings): string {
   if (s.enableRowSelection) {
     lines.push(`  rowSelectionMode="${s.rowSelectionMode}"`);
     lines.push(`  enableSelectAllRows={${s.enableSelectAllRows}}`);
+  }
+  // scrollHint は既定 OFF(undefined)のため、ON のときだけスニペットへ載せる。
+  if (s.scrollHint) {
+    lines.push("  scrollHint={{ hintColumn: 'name' }}");
   }
   lines.push('/>');
   return lines.join('\n');
@@ -213,6 +219,7 @@ function PlaygroundGrid({ settings }: { settings: Settings }) {
       enableRowSelection={settings.enableRowSelection}
       rowSelectionMode={settings.rowSelectionMode}
       enableSelectAllRows={settings.enableRowSelection && settings.enableSelectAllRows}
+      scrollHint={settings.scrollHint ? { hintColumn: 'name' } : undefined}
     />
   );
 }
@@ -329,6 +336,7 @@ export function Playground() {
           <Toggle label="enableRangeSelection" checked={settings.enableRangeSelection} onChange={(v) => set('enableRangeSelection', v)} />
           <Toggle label="enableUndoRedo" checked={settings.enableUndoRedo} onChange={(v) => set('enableUndoRedo', v)} />
           <Toggle label="enableClearOnDelete" checked={settings.enableClearOnDelete} onChange={(v) => set('enableClearOnDelete', v)} />
+          <Toggle label="scrollHint" checked={settings.scrollHint} onChange={(v) => set('scrollHint', v)} />
         </Group>
 
         <Group title="編集 / 検証">

@@ -71,6 +71,7 @@ description: SpreadsheetGridProps<T> の全 prop と既定値
 | `enableContextMenu` | `boolean` | `false` | コンテキストメニュー機能の有効化(マスタースイッチ)。他機能の `enable*` と同じく**既定 OFF**。`false` のあいだは `getContextMenuItems` を渡しても発火せず、右クリックはブラウザ標準メニューのまま。現状はまだ機能 / UI に改善余地があるため既定 OFF で提供する(利用側で明示 opt-in)。 |
 | `getContextMenuItems` | `(params: GridContextMenuParams<T>) => GridContextMenuItem[]` | — | セル/行の**完全カスタム**コンテキストメニュー。右クリック時のみ呼ばれ、返した項目でメニューを描画する(ライブラリは固定の既定項目を持たない)。opt-in は `enableContextMenu={true}` かつ本コールバックの指定の両方。**未指定、または `[]` を返したときはブラウザ標準の右クリックメニューへフォールスルー**(空パネルは出さない)。SSRM 未ロード行では開かない。ヘッダー右クリックは列メニュー(`enableColumnMenu`)が担当し、本メニューはボディ(セル / 行NO ガター)専用。詳細は「コンテキストメニュー」節を参照。 |
 | `onContextMenuOpen` | `(params: GridContextMenuParams<T>) => void` | — | コンテキストメニューが実際に開いた直後の通知(項目が 1 件以上あり表示された場合のみ)。
+| `scrollHint` | `boolean \| ScrollHintOptions<T>` | —(無効) | **スクロール位置インジケーター**。スクロール中にスクロールバー脇へ行番号バブル(「行 N / 総行数」+ 任意の列値)と行目盛りルーラーを表示し、スクロールバー帯のホバーで「行 N へ」のジャンプ先プレビューを出す。`true` は全既定(`{ bubble: true, ruler: true, trigger: 'scroll' }`)と同義。表示は総行数とスクロール位置のみで駆動されるため **clientSide / SSRM の全構成で動作**。オーバーレイは `pointer-events: none` で既存操作へ一切干渉しない。詳細は「スクロール位置インジケーター」節と[ガイド](/docs/guides/scroll-hint)を参照。 |
 
 ### バーの表示制御(top / bottom)
 
@@ -195,6 +196,42 @@ const gridRef = useRef<SpreadsheetGridHandle<Row>>(null);
   ]}
 />;
 ```
+
+### スクロール位置インジケーター(`scrollHint`)
+
+大量行(特に 100 万行級)ではスクロールバー 1px の移動が数百〜数千行に相当し、移動中に「今どの行にいるか」を見失う。`scrollHint` は次の 3 つのオーバーレイでこれに答える(**既定は完全無効**。opt-in)。
+
+- **行番号バブル(`bubble`)**: スクロール中、スクロールバー脇(疑似サム位置)に「行 N / 総行数」を表示。`hintColumn` / `renderHint` で任意の列値を添えられる。
+- **行目盛りルーラー(`ruler`)**: ボディ右端に行数スケール(切りのよい刻み。1 万以上は「10万」等へ圧縮表示)。スクロール中とスクロールバー帯ホバー中のみフェード表示。
+- **ジャンプ先プレビュー(`ruler` に含む)**: スクロールバー帯(右端)にポインタを置くと、ネイティブスクロールバーのクリック / ドラッグと同じサム中心写像で「行 N へ」の点線 + ラベルを表示。
+
+`ScrollHintOptions<T>`:
+
+| 項目 | 型 | 既定 | 説明 |
+| --- | --- | --- | --- |
+| `bubble` | `boolean` | `true` | 行番号バブルの表示。 |
+| `ruler` | `boolean` | `true` | ルーラー + ジャンプ先プレビューの表示。 |
+| `trigger` | `'scroll' \| 'hover' \| 'always'` | `'scroll'` | 表示トリガー。`'scroll'` = スクロール中のみ(停止約 1 秒でフェードアウト)/ `'hover'` = グリッドホバー中 + スクロール中 / `'always'` = 常時。 |
+| `hintColumn` | `string` | — | 行番号に添えて表示する列 key(= 行オブジェクトのフィールド名)。 |
+| `renderHint` | `({ rowIndex, rowData }) => ReactNode` | — | 表示内容の完全カスタム(`hintColumn` より優先)。`null` / `undefined` を返すと行番号のみの既定表示。 |
+
+```tsx
+// 簡易: 行番号 + 品番
+<SpreadsheetGrid scrollHint={{ hintColumn: 'partNo' }} />
+
+// 完全カスタム: 品番 — 品名
+<SpreadsheetGrid
+  scrollHint={{
+    trigger: 'scroll',
+    renderHint: ({ rowData }) =>
+      rowData ? `${rowData.partNo} — ${rowData.partName}` : null,
+  }}
+/>
+```
+
+**SSRM / グルーピングでの挙動**: バブル / プレビューの対象行が SSRM の未ロード行(またはグルーピングのグループ行)の場合、`rowData` は `undefined` になり、`hintColumn` 指定時は自動的に**行番号のみ**へフォールバックする(`renderHint` には `undefined` がそのまま渡るので利用側で分岐する)。総行数とスクロール位置だけで駆動されるため、インジケーター自体は SSRM を含む全構成で動作する。
+
+**実装ノート**: 行番号は仮想化の縦ジオメトリ(1M 行の pixel scaling / auto-height の prefix-sum)と同一の写像で解決するため常に正確。オーバーレイは `pointer-events: none` で、スクロールバー操作・セル操作へ一切干渉しない(ジャンプ先プレビューの帯検知もリスナーのみで実装)。全行が viewport に収まりスクロール不能のときは何も表示しない。
 
 ### キーボード操作
 

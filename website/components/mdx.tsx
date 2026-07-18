@@ -12,6 +12,7 @@ import { CustomCellsDemo } from '@/components/demo/custom-cells-demo';
 import { CustomBarsDemo } from '@/components/demo/custom-bars-demo';
 import { CustomEditorDemo } from '@/components/demo/custom-editor-demo';
 import { ContextMenuDemo } from '@/components/demo/context-menu-demo';
+import { ScrollHintDemo } from '@/components/demo/scroll-hint-demo';
 
 export function getMDXComponents(components?: MDXComponents) {
   return {
@@ -29,6 +30,7 @@ export function getMDXComponents(components?: MDXComponents) {
     CustomBarsDemo,
     CustomEditorDemo,
     ContextMenuDemo,
+    ScrollHintDemo,
     ...components,
   } satisfies MDXComponents;
 }
