@@ -1,0 +1,272 @@
+---
+title: 命令的 API(ref ハンドル)
+description: SpreadsheetGridHandle<T> のメソッド一覧
+---
+
+## 命令的 API(ref ハンドル / `SpreadsheetGridHandle<T>`)
+
+状態(列幅・可視・sort・filter 等)は controlled のまま、**prop では表現しづらい一発操作**だけを ref ハンドルで提供する。React 19 の **ref-as-prop**(`forwardRef` 不使用)で受け取る。
+
+```tsx
+import { useRef } from 'react';
+import {
+  SpreadsheetGrid,
+  type SpreadsheetGridHandle,
+} from '@ishibashi0112/spreadsheet-grid';
+
+const gridRef = useRef<SpreadsheetGridHandle<Row>>(null);
+<SpreadsheetGrid<Row> ref={gridRef} columns={cols} rows={rows} />;
+// gridRef.current?.scrollToRow(5000, { align: 'center' });
+// const csv = gridRef.current?.exportCsv({ scope: 'selection' });
+```
+
+`viewRowIndex` / `colIndex` は**ビュー座標**(フィルター/ソート適用後の表示 index。`colIndex` は固定列を含む視覚順 = 左→中央→右)。範囲外 index は内部でクランプ/無視する。
+
+### スクロール
+
+| メソッド | 説明 |
+| --- | --- |
+| `scrollToRow(viewRowIndex, { align? })` | 指定行を可視域へ。`align`(既定 `'auto'`): `'auto'`(最小スクロール) / `'start'` / `'center'` / `'end'`。 |
+| `scrollToCell(viewRowIndex, colIndex, { align? })` | 指定セルを縦横とも可視域へ。固定列(左右ピン)は常に可視のため横スクロールしない。 |
+| `scrollToTop()` / `scrollToBottom()` | 先頭 / 末尾へ。 |
+| `getVisibleRowRange()` | 現在描画中の行ウィンドウ `{ startIndex, endIndex }`(end 排他)。空は `null`。 |
+
+### 選択 / アクティブセル
+
+| メソッド | 説明 |
+| --- | --- |
+| `getActiveCell()` | 現在のアクティブセル `{ row, col }`(なければ `null`)。 |
+| `setActiveCell(cell \| null, { scrollIntoView? })` | アクティブセル設定(`null` で解除)。`scrollIntoView` で可視化も行う。 |
+| `getSelection()` | 現在の選択状態(`GridSelection`)。 |
+| `selectCell(viewRowIndex, colIndex, { scrollIntoView? })` | 単一セル選択(クリック相当)。 |
+| `selectRange(range, { scrollIntoView? })` | セル範囲選択(ドラッグ相当)。アンカーは `range.start`。 |
+| `clearSelection()` | 選択解除。 |
+| `getSelectedRows()` | 選択に交差する行(distinct)を返す。serverSide はロード済み行のみ。 |
+
+> 注: `getSelectedRows()` は**セル範囲選択**に交差する行です。下の**チェックボックス行選択**(`enableRowSelection`)とは別レイヤーで、そちらは `getSelectedRowKeys()` / `getSelectedRowData()` を使います。
+
+### 行選択(チェックボックス選択)
+
+`enableRowSelection` を有効にしたチェックボックス行選択の状態を操作します(`getSelectedRows()`=セル範囲由来とは別物)。記述子は `RowSelectionModel = { type: 'include'; rowKeys } | { type: 'exclude'; rowKeys }`(exclude=全選択のうち除外。全選択をキー列挙せず表現)。
+
+| メソッド | 説明 |
+| --- | --- |
+| `getRowSelection()` | 現在の行選択記述子(`RowSelectionModel`)。 |
+| `setRowSelection(model)` | 行選択記述子を設定。controlled 時は `onRowSelectionChange` 経由で親へ委譲(内部 state は書かない)。 |
+| `getSelectedRowKeys()` | 選択中の行キー配列。`include` はそのまま O(選択数)、`exclude` は現在の全行から除外を差し引いて列挙(O(行数))。serverSide はロード済みキーのみ。 |
+| `getSelectedRowData()` | 選択中の行データ。行の探索が要るため O(行数)。キーで足りるなら `getSelectedRowKeys()` を推奨。serverSide はロード済み行のみ。 |
+| `getSelectedRowCount()` | 選択件数。`exclude` は 総行数 − 除外数 で一定コスト。 |
+| `isRowSelected(rowKey)` | 指定キーが選択中かを O(1) 判定。 |
+| `selectAllRows()` | 全行を選択(exclude モード=キーを列挙しない)。 |
+| `clearRowSelection()` | 行選択をすべて解除。 |
+
+**操作(有効時)**: 行ヘッダ(行NO)ガター全体が選択のヒット領域。multiple はクリックでトグル・shift+クリック/ガタードラッグで範囲、single は常に 1 行。ヘッダ左上コーナーは tri-state の全選択チェック(`enableSelectAllRows`)。参照性能維持のため判定は Set の O(1)、全選択は除外集合でキーを materialize しません。
+
+**controlled**: `rowSelection`(記述子)または `selectedRowKeys`(include 糖衣)を渡すと controlled。`onRowSelectionChange` で変化を受け、親が prop を更新して反映します。
+
+### 行グルーピング
+
+行グルーピング(`column.rowGroup`)有効時のグループ開閉を操作します。無効時はすべて no-op / 空配列です。
+
+| メソッド | 説明 |
+| --- | --- |
+| `setGroupCollapsed(groupKey, collapsed)` | 指定グループを開閉する(`collapsed: true` = 折りたたみ)。`groupKey` は `getGroupRows()` の記述子から取得。同一イベント内の連続呼び出しも正しく積み重なる。 |
+| `expandAllGroups()` / `collapseAllGroups()` | すべてのグループを展開 / 折りたたむ。 |
+| `getGroupRows()` | 全グループ行の記述子(`GridGroupRow[]`)を DFS 順(表示順)で返す。開閉状態に関わらず全件。 |
+
+### undo / redo(編集履歴)
+
+グリッド編集(セル編集 / ペースト / `renderCell` の `setValue`)の取り消し/やり直しです。キーボード(`Ctrl/Cmd+Z` / `Ctrl/Cmd+Shift+Z` / `Ctrl/Cmd+Y`)と同じ操作をハンドルからも行えます。有効条件・制約は props の `enableUndoRedo` を参照(clientSide + `onRowsChange` + `readOnly=false` が前提)。
+
+| メソッド | 説明 |
+| --- | --- |
+| `undo()` | 直近のグリッド編集を取り消す(`Ctrl/Cmd+Z` 相当)。無効条件下・履歴が空のときは no-op。 |
+| `redo()` | undo で取り消した編集をやり直す(`Ctrl/Cmd+Shift+Z` / `Ctrl/Cmd+Y` 相当)。undo 後に新しい編集が入った時点で redo 系譜は破棄される。 |
+| `canUndo()` / `canRedo()` | undo / redo 可能かを返す(無効条件下では常に `false`)。 |
+| `clearUndoHistory()` | 編集履歴を破棄する(rows は変更しない)。rows の外部差し替えはグリッド側でも自動検知して破棄するため、通常は呼ばなくてよい。 |
+
+**挙動メモ**:
+
+- 1 回の `onRowsChange`(= 1 回のセル確定 / 1 回のペースト / 1 回の Delete クリア)が 1 undo ステップ。複数セルへのペースト・範囲クリアも 1 ステップでまとめて戻る。
+- undo は「変更前 rows 配列」をそのまま `onRowsChange` へ返す(セル値の逆適用ではなくスナップショット復元)。
+- undo / redo は**編集時のアクティブセルとセレクションも復元**する(undo = 編集前の位置へ、redo = undo した時点の位置へ)。復元先のアクティブセルが画面外の場合は **`scrollToCell` の `'auto'` 相当(最小スクロール)で可視化まで追従**する(既に可視なら動かない)。
+- ペーストの行自動拡張(`createRow`)も rows の一部なので undo で戻る。一方、列自動拡張(`createOverflowColumn` → `onColumnsChange`)は列が対象のため undo では戻らない。
+- 編集エディタ内(`editingCell` 中)の `Ctrl+Z` はグリッドでは扱わず、input のネイティブ undo が効く。IME 変換中(`isComposing`)もグリッド側では発火しない。
+- 可否の変化をリアクティブに受けたい場合は props の `onUndoRedoStateChange` を使う(`canUndo()` / `canRedo()` はポーリング用の命令的 API)。
+
+### バリデーション
+
+| メソッド | 説明 |
+| --- | --- |
+| `getInvalidCells()` | `validate` 指定列 × 全ソース行をオンデマンドで全走査し、invalid セルの一覧(`GridInvalidCell[]` = `{ rowKey, sourceRowIndex, columnKey, message }`)を返す。保存前チェック用。invalid 表示は表示時導出のため状態を持たず、**呼ばれた時だけ計算**する(明示的な呼び出し = 明示的なコスト)。**`showValidationMarks` の表示状態と無関係に常に動作する**(マーク非表示中の送信前チェックに使える)。非表示列も対象(見えない列の不正値も検出)。clientSide 専用で、serverSide は全行を保持しないため空配列 + `console.warn`。 |
+
+### serverSide(SSRM)
+
+| メソッド | 説明 |
+| --- | --- |
+| `refreshServerSide()` | serverSide(`dataSource`)のソフトリフレッシュ。クエリ(フィルター/ソート/グローバル)を変えずにキャッシュを破棄し、**スクロール位置を保ったまま現在の可視レンジを即時**(debounce なし)取り直す。件数は到着ブロックの `totalRowCount` で追従。宣言的に扱いたい場合は同挙動の `serverSideRefreshToken` prop もある(「serverSide モード」の節を参照)。clientSide(`rows`)では警告付き no-op。 |
+
+### CSV エクスポート
+
+| メソッド | 説明 |
+| --- | --- |
+| `exportCsv(options?)` | CSV 文字列を返す(純粋・副作用なし)。 |
+| `downloadCsv(filename?, options?)` | `exportCsv` の結果を `.csv` としてダウンロード(`filename` 既定 `'export.csv'`、`bom` 既定 `true`)。 |
+
+`CsvExportOptions`: `scope`(下表)、`includeHeaders`(既定 `true`)、`delimiter`(既定 `','`。`'\t'` で TSV)、`bom`(`exportCsv` は既定 `false` / `downloadCsv` は既定 `true` = Excel 互換)。値整形はコピー(クリップボード)と同じ規則(`formatClipboardValue` があればそれ、無ければ `String(value ?? '')`)。RFC 4180 のクォート、行区切りは CRLF。
+
+**scope 対応表**(`exportCsv` / `downloadCsv` / `getExportData` 共通):
+
+| scope | 意味 | スクロール位置 |
+| --- | --- | --- |
+| `'view'`(**既定**) | ビュー行全体(フィルター/ソート/列可視・固定順を反映) | 非依存 |
+| `'raw'` | 全ソース行(`rows` 配列順)。**フィルターもソートも無視**(列は可視列・固定順に従う) | 非依存 |
+| `'rendered'` | 仮想化ウィンドウ(いま**描画中**の行のみ・オーバースキャン込み) | **依存** |
+| `'selection'` | 現在の選択範囲(セル/行/列)。選択なしは空 | — |
+| `'all'` | **@deprecated** `'view'` のエイリアス(挙動同一) | 非依存 |
+| `'visible'` | **@deprecated** `'rendered'` のエイリアス(挙動同一)。「フィルターで見えている行」では**ない**点に注意 | **依存** |
+
+serverSide(SSRM)の注意: `'view'` は未ロード行をスキップ(= ロード済みビュー行のみ)。`'raw'` はソース行配列を持たないため `'view'` 相当へフォールバックし `console.warn` を出す。**全件エクスポートはサーバ側での実施を推奨**。
+
+### Excel / スプレッドシート エクスポート(getExportData)
+
+| メソッド | 説明 |
+| --- | --- |
+| `getExportData(options?)` | 列メタ + 2 次元セルの、シリアライズ非依存な整形済みデータを返す(純粋・副作用なし)。 |
+
+`GridExportOptions`: `scope`(既定 `'view'`。上記 **scope 対応表**と同一規則を共有)。
+
+戻り値 `GridExportData`:
+
+```ts
+type GridExportData = {
+  columns: { key: string; title: string }[];   // 視覚順(selection では選択列のみ)
+  rows: { value: unknown; text: string }[][];   // scope の行レンジ(SSRM 未ロード行はスキップ)
+};
+```
+
+各セルは生値 `value`(`getCellValue`)と文字列 `text`(CSV と同じ規則 = `formatClipboardValue ?? String(value ?? '')`)の双方を持つ。`value` があることで型付きセル(数値/日付のまま)+ Excel 側の数値書式へ流せる。`columns.key` はオブジェクト系ライブラリ向け、`title` はヘッダー表示向け。
+
+**方針**: 本ライブラリは xlsx ライブラリを**同梱しない**(バンドル肥大・ライブラリ選定の押し付けを避ける)。グリッドは「現在の表」を整形済みデータで渡す**導線**に徹し、`.xlsx` / `.ods` 等の生成は consumer が任意のライブラリで行う。**マルチシートは consumer 側で本メソッドを scope 別 / グリッド別に呼び出して組み立てる**(グリッドは「1 表」を返すプリミティブ)。
+
+#### レシピ: hucre(zero-dep・~14KB gzip・ESM/edge)
+
+```ts
+import { writeXlsx } from 'hucre/xlsx';
+
+const { columns, rows } = gridRef.current!.getExportData({ scope: 'view' });
+const buffer = await writeXlsx({
+  sheets: [
+    {
+      name: 'Sheet1',
+      columns: columns.map((c) => ({ header: c.title, key: c.key })),
+      // 生値 value を型付きセルとして書く(数値/日付はそのまま)。
+      data: rows.map((r) =>
+        Object.fromEntries(r.map((cell, i) => [columns[i].key, cell.value])),
+      ),
+    },
+  ],
+});
+// buffer(Uint8Array)を Blob 化してダウンロード。
+```
+
+#### レシピ: ExcelJS
+
+```ts
+import ExcelJS from 'exceljs';
+
+const { columns, rows } = gridRef.current!.getExportData({ scope: 'view' });
+const wb = new ExcelJS.Workbook();
+const ws = wb.addWorksheet('Sheet1');
+ws.addRow(columns.map((c) => c.title)); // ヘッダー
+for (const r of rows) ws.addRow(r.map((cell) => cell.value)); // 型付きセル
+const buffer = await wb.xlsx.writeBuffer();
+```
+
+#### レシピ: マルチシート
+
+scope 違い(または複数グリッド)を複数シートに:
+
+```ts
+import { writeXlsx } from 'hucre/xlsx';
+import type { GridExportData } from '@ishibashi0112/spreadsheet-grid';
+
+const toSheet = (name: string, d: GridExportData) => ({
+  name,
+  columns: d.columns.map((c) => ({ header: c.title, key: c.key })),
+  data: d.rows.map((r) =>
+    Object.fromEntries(r.map((cell, i) => [d.columns[i].key, cell.value])),
+  ),
+});
+
+const buffer = await writeXlsx({
+  sheets: [
+    toSheet('View', gridRef.current!.getExportData({ scope: 'view' })),
+    toSheet('Selection', gridRef.current!.getExportData({ scope: 'selection' })),
+  ],
+});
+```
+
+1 グリッドをカテゴリ列で分割して N シートにする場合は、`getExportData({ scope: 'view' })` の戻りを「分割キー列の `value`」で group して各 group を `toSheet` 化する(列 index は `columns.findIndex((c) => c.key === '...')` で解決)。
+
+### UI パネル
+
+| メソッド | 説明 |
+| --- | --- |
+| `openFilterManager()` | フィルター管理パネル(適用中の列フィルターの一覧 / 該当列へジャンプして編集 / 個別・全クリア / 追加)を開く。`enableColumnFilter=false` のときは何もしない。列メニューの「フィルターを管理…」/ 既定トップバーの **Filters chip クリック**(`enableColumnFilter=true` 時にクリック可能)と同じパネル。 |
+| `closeFilterManager()` | フィルター管理パネルを閉じる(開いていなければ何もしない)。 |
+
+### ツールチップ(TT-1)
+
+グリッド内・ポータル内の操作ヒント / 切り詰めテキスト全文表示は、`title` 属性ではなく**カスタムツールチップ**(`.ssg-tooltip`・body 直下シングルトン)で表示される。表示対象は `data-ssg-tooltip="文言"` 属性で、window の pointerover / focusin 委譲で拾うため、**利用側が自前の要素(カスタムセル / renderHeader 等)へ同属性を付けても同じ見た目のツールチップが出る**。配色は `--ssg-tooltip-bg / --ssg-tooltip-text / --ssg-tooltip-shadow` トークンで調整可能。
+
+**ボディセルの省略時ツールチップ**: グリッド prop `showCellOverflowTooltip`(既定 `false`)を `true` にすると、**既定テキストセルが省略(…)されているときだけ**ホバーで全文ツールチップが出る。実装は上記機構の派生で、セルへ `data-ssg-tooltip-overflow` マーカーを付け、表示可否は**ホバー時**に `scrollWidth > clientWidth` を判定(実際にクリップされているセルのみ表示)、文言はセルの表示テキスト(`textContent`)をそのまま使用する。`renderCell` 列(テキストとは限らない)と `autoHeight` 折り返し列(クリップされない)は対象外。特定列だけ全文表示したい / させたくない場合は、`renderCell` で自前要素へ `data-ssg-tooltip="…"`(常時)や `data-ssg-tooltip-overflow`(省略時)を付ける運用も可能。
+
+### 状態の保存 / 復元
+
+| メソッド | 説明 |
+| --- | --- |
+| `getState()` | 永続化対象(手動リサイズ幅 / フィルター / ソート)のスナップショット `GridState` を返す(純粋・副作用なし)。新規オブジェクトなのでそのまま `JSON.stringify` して保存できる。 |
+| `applyState(state)` | `getState()` の値(または互換な部分形)を適用する。外部入力は内部で防御的に正規化され、幅 reset / フィルター一括 / ソート set の 3 dispatch(1 イベント = 1 再レンダー)で反映。clientSide / serverSide 双方に効く(SSRM は `filters`/`sort` 変化がクエリへ載り再取得)。 |
+
+`GridState`: `{ version, columnWidths, filters, sort }`。`version` はマイグレーション用(現行 `1`)。対象は reducer 内の永続スライスのみで、列の可視/順序/ピン/flex は `columns` prop 側(consumer 所有)のため**含めない**。`activeCell` / `selection` などの一時 UI も含めない。`columnWidths` は手動リサイズした列のみを含む(flex 列はエントリを持たない規約)。`custom` フィルターの `value`(`unknown`)は深いコピーをしないため、シリアライズ可能性は consumer 責務。`applyState` は壊れた/部分的な入力にも耐える(非数値の幅・`kind` 無しの列フィルター・不正な `direction` は捨てる)が、列フィルター値の `kind` 中身までは検証しないため `getState` 出力の往復を前提とする。
+
+```ts
+// 保存(任意の永続先へ)。
+const state = gridRef.current?.getState();
+localStorage.setItem('grid-state', JSON.stringify(state));
+
+// 復元。
+const saved = localStorage.getItem('grid-state');
+if (saved) gridRef.current?.applyState(JSON.parse(saved));
+```
+
+#### 変更通知 `onStateChange`
+
+`onStateChange?: (state: GridState) => void`(prop)は、永続スライスが**実際に変化したとき**だけ最新 `GridState` を渡して呼ばれる。保存タイミングの signal として使える(`getState()` を別途叩く必要がない)。発火規約:
+
+- **ドラッグ中は保留**: 列リサイズ / 範囲選択のドラッグ中は確定前のため発火しない。確定(ドラッグ終了)後に 1 回だけ評価する。これにより列リサイズの毎フレーム更新では発火せず、**確定幅で 1 回だけ**通知される。
+- **初回マウントでは発火しない**: 初期状態は通知対象外(復元は `applyState` 側の責務)。
+- **同値では発火しない**: 前回通知と構造等価(永続スライスが不変)なら発火しない。`activeCell` / `selection` などの一時 UI 変化では発火しない。
+- **`applyState` も「状態変化」として発火する**: 復元直後に同値を 1 回保存し直す可能性がある(冪等なので実害はない。避けたい場合は consumer 側で直前値と比較してスキップ)。
+- インライン関数を毎レンダー渡してよい(内部で latest-ref 経由で読むため、関数の参照変化では再評価しない)。
+
+```ts
+// 自動保存(変化時)+ マウント時復元。
+const gridRef = useRef<SpreadsheetGridHandle<Row>>(null);
+
+useEffect(() => {
+  const saved = localStorage.getItem('grid-state');
+  if (saved) gridRef.current?.applyState(JSON.parse(saved));
+}, []);
+
+<SpreadsheetGrid
+  ref={gridRef}
+  columns={columns}
+  rows={rows}
+  onStateChange={(state) =>
+    localStorage.setItem('grid-state', JSON.stringify(state))
+  }
+/>
+```
+

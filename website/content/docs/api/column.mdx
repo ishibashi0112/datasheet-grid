@@ -1,0 +1,288 @@
+---
+title: GridColumn props
+description: 列定義(GridColumn<T>)・エディタ・バリデーション・列幅・グルーピング
+---
+
+## GridColumn props (`GridColumn<T>`)
+
+| Name | Type | Default | Description |
+| --- | --- | --- | --- |
+| `key` | `string` | (required) | 列の一意キー。 |
+| `title` | `string` | — | ヘッダーの表示ラベル。 |
+| `width` | `number` | (required) | 列幅(px)。 |
+| `minWidth` | `number` | — | リサイズ時の下限幅。flex 配分時の下限クランプにも使用(flex 列で未指定なら内部既定 50px)。 |
+| `maxWidth` | `number` | — | 上限幅。**未指定なら上限なし**(autoSize は内容にぴったり合わせ、手動リサイズも自由に広げられます。既定の上限は設けません)。指定すると autoSize / 手動リサイズ / flex 配分の上限クランプに使われます。 |
+| `flex` | `number` | — | center 列(非 pinned)の伸縮比。余り幅(コンテナ幅 − 行ヘッダー − pinned 合計 − `width` 固定列の合計)を flex 比で配分し `minWidth`/`maxWidth` でクランプ。コンテナ追従でリアクティブに伸縮。手動リサイズで固定 px へ変化(`columns` 変化まで固定 → 以後 flex 復帰)。pinned 列では無視。詳細は下記「flex と autoSize」節。 |
+| `resizable` | `boolean` | グリッドの `enableColumnResize` を継承 | この列の手動リサイズ可否。`false` でヘッダーのリサイズハンドルを非表示。リサイズハンドルの**ダブルクリック**でその列を内容幅へ autoSize(`false` 時はハンドルが無いため不可。列メニューからの autoSize は引き続き可能)。 |
+| `suppressAutoSize` | `boolean` | `false` | `true` で autoSize の対象外(列メニュー / 境界ダブルクリック / すべての列の自動調整すべてでスキップ)。consumer 指定の `width` を維持(固定幅優先)。テキストで測れないカスタムUI列や固定で見せたい列向けの per-column opt-in。 |
+| `estimateCellWidth` | `(row, column) => number` | — | autoSize の幅見積もり。指定列は「セル内容の content 幅(px・セルの padding/border を除く)」をこの関数から得て、**全行の最大 + セル枠**で確定します(テキスト/候補/実 DOM 計測を使わず、React mount もしません)。テキスト長が実描画幅と相関しない renderCell カスタムUI列(横並びバッジ等)向けの opt-in。返す値は `renderCell` の実描画幅と一致させること。 |
+| `autoHeight` | `boolean` | — | この列が auto-height 行の高さを駆動(グリッドの `autoHeight` 有効時のみ)。**autoSize の対象外**(折り返し前提のため。下記「flex と autoSize」の制約を参照)。 |
+| `wordBreak` | `'normal' \| 'break-all' \| 'keep-all' \| 'break-word' \| 'auto-phrase'` | — | 折り返し時(= `autoHeight` 列)の CSS `word-break`。`'auto-phrase'` は Chromium(Chrome / Edge)で BudouX による文節折り返し(Firefox / 一部 Safari 未対応)。**nowrap(非 `autoHeight`)列では折り返し自体が起きないため効果なし**。既定(未指定)はブラウザ標準=禁則つき文字折り返し。詳細は「日本語テキストの折り返し」節。 |
+| `lineBreak` | `'auto' \| 'loose' \| 'normal' \| 'strict' \| 'anywhere'` | — | 折り返し時の CSS `line-break`(禁則処理の強さ)。`'strict'` で禁則を厳格化。`wordBreak` 同様、折り返す列でのみ効果あり。 |
+| `visible` | `boolean` | — | 列の表示/非表示。 |
+| `editable` | `boolean` | — | この列の編集を許可。 |
+| `readOnly` | `boolean` | — | この列を読み取り専用にする。 |
+| `pinned` | `'left' \| 'right'` | undefined = 中央スクロール | 列固定の方向。 |
+| `rowGroup` | `boolean` | — | `true` でこの列を行グルーピングの対象にする(複数指定時は `columns` 配列の出現順が階層順)。有効時はグループ元列が表示から外れ、先頭に自動グループ列(ツリー表示)が注入される。**clientSide 限定**(serverSide では無視 + 開発時警告)。詳細は「行グルーピング + 集計」節。 |
+| `aggFunc` | `'sum' \| 'min' \| 'max' \| 'avg' \| 'count' \| GridAggFunc<T>` | — | グルーピング時のこの列の集計。組み込みは値駆動の数値集計(`Number()` で有限になる値のみ対象・空値除外、`count` は配下 leaf 行数)。関数でカスタム集計可(返り値がグループ行に表示)。`rowGroup` 列がないときは無視。 |
+| `getValue` | `(row: T) => unknown` | `row[key]` | 値アクセサ。 |
+| `setValue` | `(row: T, value: unknown) => T` | — | 値ライター(新しい行を返す)。 |
+| `renderCell` | `(ctx: CellRenderContext<T>) => ReactNode` | プレーン `<span>` | カスタムセル描画。 |
+| `align` | `'left' \| 'center' \| 'right'` | `'left'` | セル内容の水平寄せ(UI 表示のみ・元の値は不変)。セル表示と編集 input に反映。 |
+| `valueFormatter` | `(params: CellValueFormatterParams<T>) => string` | — | セル表示値の整形(UI 表示のみ)。`renderCell` 未指定の既定セルが返り値を表示。組み込み `numberFormatter` 等を渡せる。元の値/編集/コピー/ソート/フィルターには影響しない。 |
+| `cellClassName` | `string \| ((ctx: CellStyleContext<T>) => string \| undefined)` | — | セルへ付与する追加 class(条件付きスタイル)。関数版は値 / 状態に応じて class を返せる。`ctx` には view の `rowIndex` に加え source 基準の `sourceRowIndex` / `rowKey` が入る(ソート / フィルター ON でも source 行基準のデータと突き合わせ可能。「補助型」節参照)。基底 `.ssg-body-cell` は未レイヤー・特異度 (0,1,0)。確実な上書きは `.ssg-body-cell.my-class` の連結を推奨。 |
+| `renderHeader` | `(ctx: HeaderRenderContext<T>) => ReactNode` | — | カスタムヘッダー描画。 |
+| `filterType` | `'text' \| 'number' \| 'date' \| 'select' \| 'set' \| 'custom'` | — | フィルター UI の種別。 |
+| `filterOptions` | `GridSelectFilterOption[]` | rows から自動収集 | select / set の候補。 |
+| `filterFn` | `(row: T, filterValue: unknown) => boolean` | — | カスタムフィルター述語。 |
+| `editor` | `GridColumnEditor<T>` | text 相当 | セルエディタ種別(判別共用体)。`{ type: 'text' \| 'number' \| 'select' \| 'date' \| 'checkbox' \| 'custom', ... }`。詳細は「セルエディタ」節。 |
+| `validate` | `(ctx: CellValidationContext<T>) => CellValidationResult` | — | セル値の検証。`true`=有効 / `false`=無効(既定メッセージ)/ `string`・`{ message }`=無効+メッセージ。**純粋・軽量であること**(描画中の可視セルごとに毎レンダー評価。`cellClassName` 関数と同コスト階級)。詳細は「バリデーション」節。 |
+| `validationMode` | `'mark' \| 'reject'` | `'mark'` | 検証 NG 時の動作。`'mark'`=値は入るがセルに invalid 表示 / `'reject'`=書き込み自体を拒否。 |
+| `parseClipboardValue` | `(raw: string, row: T) => unknown` | editor 既定パーサ | 「文字列 → セル値」のパーサ(貼り付け / クリア / エディタ commit で共通)。**明示指定が常に優先**。未指定で `editor` が number / date / checkbox のときは種別の既定パーサが自動供給されます(「セルエディタ」節の表参照)。 |
+| `formatClipboardValue` | `(value: unknown, row: T) => string` | — | コピー時のフォーマッタ。 |
+
+### 値フォーマッタ(UI 表示)
+
+`valueFormatter` はセルの**表示文字列だけ**を変えます(元の値・編集・コピー・ソート・フィルターは生値のまま)。組み込みファクタは `logic/valueFormatters.ts` に集約し、バレルから公開します。利用側も同じ契約(`CellValueFormatter<T>`)で自作でき、将来パターン(日付/％/通貨等)はファクタ追加 + バレル公開で拡張できます。
+
+- `numberFormatter(options?)` — 数値を 3 桁区切りで整形。既定は**元の精度を保持**(小数桁を勝手に丸めない)。`minimumFractionDigits` / `maximumFractionDigits` で固定桁、`useGrouping: false` で区切り無効、`locale` 指定可。`null` / `undefined` / `''` は `emptyText`(既定 `''`)、数値化できない値は原値の文字列をそのまま表示。
+
+使用例:
+
+```ts
+import { numberFormatter } from '@ishibashi0112/spreadsheet-grid';
+
+const columns = [
+  { key: 'amount', title: '金額', width: 140, align: 'right', valueFormatter: numberFormatter() },
+];
+```
+
+### セルエディタ(editor)
+
+`column.editor` で列のエディタ種別を指定します(未指定 = `text`)。判別共用体 `GridColumnEditor<T>` で、種別ごとの付随オプションは型で強制されます。編集可否は従来どおり `editable` / `readOnly` / `canEditCell` で判定されます(`editor` は種別のみ)。
+
+| type | UI / 操作 | オプション | 既定パーサ(`parseClipboardValue` 未指定時) |
+| --- | --- | --- | --- |
+| `'text'` | 従来のテキスト input(既定) | — | パススルー(生文字列のまま) |
+| `'number'` | `<input type="number">`(スピナー / ↑↓ステップ / 不正文字抑止) | `min` / `max` / `step` | `''`→`null` / 有限数値文字列→`number` / 非数値→生文字列のまま(mark が拾う) |
+| `'select'` | 候補ドロップダウン(body 直下ポータル)。↑↓=ハイライト移動 / Enter=確定(下へ)/ Tab=確定(左右へ)/ クリック=確定 / 印字キー=label 前方一致のタイプアヘッド(約 700ms でリセット) | `options: GridSelectEditorOption[] \| (row) => GridSelectEditorOption[]`(静的 or 行依存。関数はレンダー中に呼ばれるため純粋であること) | パススルー(`option.value` は string。型変換したい場合は `parseClipboardValue` を併用) |
+| `'date'` | ネイティブ `<input type="date">`。ドラフトは `'YYYY-MM-DD' \| ''` | — | `''`→`null` / 解釈可能→`'YYYY-MM-DD'` へ正規化 / 解釈不可→生文字列のまま |
+| `'checkbox'` | **直接トグル**(編集セッションなし)。クリック / Space で即トグル。Enter / F2 / ダブルクリックではエディタが開かない | `checkedValue`(既定 `true`)/ `uncheckedValue`(既定 `false`)。checked 判定は `Object.is(value, checkedValue)` のみ | `''`→unchecked / checked・unchecked の文字列表現→対応値 / `'true'`・`'1'`→checked / その他→unchecked |
+| `'custom'` | `render(ctx)` の返り値を編集オーバーレイ内に描画。**フォーカス管理・キーバインドは利用側の責務** | `render: (ctx: CellEditorContext<T>) => ReactNode` | パススルー |
+
+注意点:
+
+- **既定パーサはエディタ commit / 貼り付け / Delete クリアで共通**に効きます(例: number 列は Delete クリアで `null` になる)。明示の `parseClipboardValue` が常に優先です。
+- **select の blur は cancel**(値不変)です。text / number / date の blur = 確定と非対称ですが、select は「選択 = 即確定」でドラフト概念がないためです。
+- **date の Tab はグリッド流(確定 + 移動)**です。ピッカー内のセグメント移動は ← → 矢印で行えます。
+- **checkbox のダブルクリックは click 2 回**(トグル往復)として扱われます(Excel / AG Grid と同様)。`renderCell` 指定時はそちらが優先され、組み込みチェックボックスセルは描画されません。
+- **custom の `ctx.commit(value)`** は、`value` が string なら列パーサ(`parseClipboardValue` ?? editor 既定)を通し、**非 string ならパースをバイパスしてドメイン値をそのまま書き込みます**。`ctx` には `row` / `rowIndex`(ビュー行)/ `sourceRowIndex`・`rowKey`(source 基準)/ `colIndex` / `column` / `value`(編集開始時の生値)/ `initialText`(印字キー開始時はそのキー)/ `align` / `commit` / `cancel` が入ります。`commit` の返り値(`EditorCommitResult`)で reject 列の検証結果を受け取れます(無視しても安全)。
+
+### バリデーション(validate / validationMode)
+
+`column.validate` でセル値を検証します。返り値は `true`(有効)/ `false`(無効・既定メッセージ)/ `string` または `{ message }`(無効 + メッセージ)。
+
+動作モード(`validationMode`、既定 `'mark'`):
+
+- **`'mark'`(既定)** — 値は書き込み、セルに invalid 表示(背景 + 右上マーカー)+ ホバーでメッセージのツールチップを出します。invalid 判定は**表示時導出**(state 非保持)のため、貼り付け・クリア・初期データ・undo/redo・外部からの `rows` 差し替え後も常に `rows` と整合します。
+- **`'reject'`** — 検証 NG の書き込み自体を拒否します。経路ごとの挙動:
+  - エディタ確定(Enter / Tab): **確定拒否・編集継続**。エディタ枠が赤くなり、即時のエラーバブルでメッセージを表示します。blur(フォーカスが外れた)の場合は cancel(値不変でエディタを閉じる)へフォールバックします。
+  - 貼り付け: 検証 NG の**セルだけスキップ**します(他のセルは書き込まれる。readonly セルのスキップと同じ意味論)。
+  - Delete / Backspace クリア: クリア値が検証 NG ならスキップします(「必須列は Delete で空にできない」を表現できます)。
+  - `renderCell` の `setValue` / checkbox トグル: no-op になります。
+
+契約と注意:
+
+- `validate` は**純粋・軽量**であること。mark 表示のため、描画中の可視セル(validate 指定列のみ)ごとに毎レンダー評価されます(`cellClassName` 関数と同じコスト階級)。
+- 検証コンテキストは `{ value, row, column }` です(`row` は書き込み前の行。ビュー index はソート / フィルターで不安定なため渡しません)。
+- 保存前の一括チェックはハンドルの `getInvalidCells()` を使います(「命令的 API」節参照)。
+- invalid 表示の配色はトークン `--ssg-invalid` / `--ssg-invalid-bg` で調整できます(light / dark 両対応)。
+
+#### 表示タイミングの制御(showValidationMarks)
+
+`column.validate` は「ルール定義」、グリッド prop `showValidationMarks`(既定 `true`)は「マークをいつ見せるか」で、両者は独立です。既定はこれまでどおり常時リアルタイム表示。`false` にするとマークを出さず、可視セルごとの `validate` 評価もスキップします(評価結果はマーク表示にしか使わないため)。
+
+- **宣言的・stateless**: 表示のオンオフは React state で prop を切り替えます(`showMarks()` のような命令的 API は持ちません)。invalid 判定自体が表示時導出(state 非保持)なので、マークを再表示した瞬間も常に現在の `rows` と整合します(undo / 外部差し替え後も同様)。
+- **`getInvalidCells()` は表示状態と無関係**に常に全走査で動作します(マーク非表示中の送信前チェックに使えます)。
+- **`validationMode: 'reject'` は影響を受けません**。reject は write 時のゲート(表示機能ではない)で、エディタ確定拒否時のエラーバブルも**マーク非表示中でも出します**。設計判断: エディタのエラーバブルは「いま行った操作への即時フィードバック」であり、「データ全体の不正状態の可視化」であるマークとは役割が違うため、表示制御の対象にしていません。
+
+#### レシピ: 送信時にまとめて検証(マークは送信時だけ表示)
+
+入力中は何も出さず、送信時に一括検証して NG ならマーク + 通知、修正後の再送信成功でマークを消す——業務フォームの定番 UX です。利用側が持つ state は boolean 1 つだけです。
+
+```tsx
+function OrderForm() {
+  const gridRef = useRef<SpreadsheetGridHandle<Row>>(null);
+  const [rows, setRows] = useState<Row[]>(initialRows);
+  const [showErrors, setShowErrors] = useState(false);
+
+  // ルールは列に定義したまま(完全な空行は検証対象外、の行相互参照ルールも ctx.row で書ける)
+  const columns: GridColumn<Row>[] = [
+    { key: 'itemCode', title: '品目コード', width: 200, editable: true,
+      validate: ({ value, row }) =>
+        isEmptyRow(row) || String(value ?? '').trim() !== '' || '品目コードが未入力の行があります' },
+    { key: 'qty', title: '数量', width: 120, editable: true,
+      validate: ({ value, row }) =>
+        isEmptyRow(row) || /^[1-9]\d*$/.test(String(value ?? '').trim()) || '数量は1以上の整数で入力してください' },
+  ];
+
+  const handleSubmit = () => {
+    const invalid = gridRef.current?.getInvalidCells() ?? [];
+    if (invalid.length > 0) {
+      setShowErrors(true); // ここで初めてマークを出す
+      // メッセージはセル粒度で返るため、重複排除して 1 通知にまとめる
+      notifyError([...new Set(invalid.map((c) => c.message))].join(' / '));
+      // 先頭のエラーセルへジャンプ。scrollToCell はビュー座標のため、手入力フォームの
+      //   ようにソート / フィルター未適用なら sourceRowIndex をそのまま使える(ビュー順 =
+      //   source 順)。ソートあり得る画面では rowKey からビュー index を自前解決すること。
+      const first = invalid[0];
+      gridRef.current?.scrollToCell(
+        first.sourceRowIndex,
+        columns.findIndex((c) => c.key === first.columnKey),
+      );
+      return;
+    }
+    setShowErrors(false); // 成功したらマークを消す
+    submit(rows);
+  };
+
+  return (
+    <>
+      <SpreadsheetGrid
+        ref={gridRef}
+        columns={columns}
+        rows={rows}
+        onRowsChange={setRows}
+        showValidationMarks={showErrors}
+      />
+      <button onClick={handleSubmit}>送信</button>
+    </>
+  );
+}
+```
+
+注意: `getInvalidCells()` は clientSide 専用のため、本レシピも clientSide(rows 供給)前提です(serverSide は全行を保持しないため空配列 + `console.warn`)。
+
+### flex と autoSize(列幅の決め方)
+
+列幅を「グリッドに決めさせる」方法は 2 つあり、**決め方が異なる別概念**です。列ごとに使い分けでき、混在も可能です。どちらを使うべきか迷ったら下表で選びます。
+
+| | flex(`column.flex`) | autoSize(列メニュー / 境界ダブルクリック) |
+| --- | --- | --- |
+| 何に合わせる | **コンテナの余り幅**(中身は見ない) | **セルの中身の長さ**(コンテナは見ない) |
+| 反応性 | コンテナのリサイズに**追従してリアクティブに伸縮** | 実行時の内容で**固定 px を一度だけ算出**(以後自動追従しない) |
+| 起動 | 列定義の `flex` を指定(= 宣言的) | 列メニュー「この列の幅を自動調整 / すべての列の幅を自動調整」、またはヘッダー境界(リサイズハンドル)の**ダブルクリック**でその列だけ(= 操作) |
+| 適用範囲 | center 列(非 pinned)のみ | 任意の列 |
+| 典型用途 | テーブルを横いっぱいに使う / 余白を特定列に吸わせる | 中身が切れないようにする |
+
+- **flex** — `flex` を持つ center 列が「利用可能幅(コンテナ幅 − 行ヘッダー − pinned 合計 − `width` 固定列の合計)」を `flex` 比で分け合い、`minWidth`/`maxWidth` でクランプされます。固定列合計が利用可能幅を超えると flex 列は最小幅(`minWidth`、未指定時は内部既定 50px)まで潰れ、超過分は横スクロールになります。pinned 列では無視されます。
+- **autoSize** — セルの中身に合わせて固定 px を一度だけ算出します(コンテナ幅は見ません)。算出時点の内容で幅が確定し、その後コンテナや内容が変わっても自動では追従しません。起動は列メニューのほか、ヘッダー境界(リサイズハンドル)の**ダブルクリック**でもその列を内容幅へ合わせられます(リサイズ可能な列のみ。AG Grid の境界ダブルクリック相当)。\
+  計測は 2 段方式です。**Phase 1** で全表示行を canvas で概算して列ごとの最長候補を絞り、**Phase 2** で候補だけを grid root 配下の隠しセルで**実 DOM 実測**します。これにより**全行を見つつ**(画面外の最長値も反映)、**`valueFormatter` の整形結果・letter-spacing・padding まで実描画どおりに反映**され、はみ出しません。`suppressAutoSize: true` の列は計測対象から外れ `width` を維持します。\
+  renderCell で独自 DOM(バッジ等)を描く列は、テキストでは幅が出ないため `estimateCellWidth` を指定します。指定列は Phase 1/2 のテキスト計測を使わず、**`estimateCellWidth(row)` が返す content 幅の全行 running-max + セル枠**で確定します(consumer 申告を信頼。mount なし)。\
+  **制約 — `autoHeight: true` の列は autoSize の対象外です**(列メニュー / 境界ダブルクリック / すべての列の自動調整すべてでスキップし、`width` を維持)。autoHeight 列は「幅を固定して長文を**折り返す**」のが本来の挙動ですが、autoSize の計測は**単一行**で行うため、autoHeight 列を測ると折り返したい長文を1行幅にし、**極端に横長になる**ためです(列幅に既定の上限は無いため、長文ぶんだけ際限なく広がります)。長文列は autoHeight(折り返し)か、`maxWidth` 付きの固定幅(切り詰め)で運用してください。
+
+flex 列を**手動リサイズ**すると、その列はドラッグした幅で**固定 px**に変わります(以後その列は flex 対象外)。固定は `columns` prop が変化する(pin 切替 / 表示切替 / 並べ替え / 親による差し替え)まで維持され、変化後は再び flex に復帰します(手動幅を恒久固定する仕様ではありません)。
+
+### autoSizeColumns(データ投入時の自動フィット)
+
+グリッド prop `autoSizeColumns?: 'onMount' | 'onDataChange' | false`(既定 `false`)で、**データ投入時に全列幅を内容へ自動フィット**できます。フィットの計測は上記 autoSize(列メニュー「すべての列の幅を自動調整」)と**同一エンジン**で、`'onMount'` は初回にデータが載った一度きり、`'onDataChange'` は `rows`(参照)が変わるたび(= データ差し替えのたび)に走ります。フォーム送信結果などを丸ごと差し替えて毎回合わせ直す用途は `'onDataChange'` が該当します。
+
+- **`GridColumn.suppressAutoSize` との関係**: 同一エンジンのため、`suppressAutoSize: true` の列(および `autoHeight: true` の列)は**この自動フィットの対象からも外れ**、`width` を維持します。「大半の列は内容へ合わせつつ、特定の列だけ固定幅で見せたい」場合は、その列に `suppressAutoSize: true` + `width` を付けてください(per-column の opt-out)。`estimateCellWidth` を指定した列も、通常の autoSize と同じ規則(申告 content 幅の全行 running-max)で見積もられます。
+- **発火 signal は `rows`(データ)の変化のみ**です。フィルター / ソート、列の並べ替え / 表示切替 / 固定(= `columns` 変化)では再フィットしません(手動操作の直後に幅が飛ぶのを避けるため)。したがって手動リサイズした幅は、次のデータ投入(`'onDataChange'`)で上書きされます(合わせ直したくない列は上記 `suppressAutoSize` で外します)。
+- フィット幅は**内部の列幅 state に反映され、`onColumnsChange` は呼びません**。`columns` を controlled で保持していても競合しません。
+- **serverSide(`dataSource`)では無効**です(未ロード行を測れないため。clientSide 限定)。
+- 計測が重い場合は本番でも既存の計測オーバーレイが出ます(小規模データでは体感差はありません)。
+
+```tsx
+// 例: フォーム送信結果を丸ごと差し替え、そのたびに列幅を内容へ合わせ直す。
+//   consumer 側は autoSizeColumns を渡すだけ(トークンや effect は不要)。
+<SpreadsheetGrid
+  rows={rows}                     // 送信のたびに新しい配列参照へ差し替える
+  columns={columns}
+  autoSizeColumns="onDataChange"
+/>
+```
+
+### auto-height 行(可変行高)
+
+行高を内容量に合わせて可変にする(長文を折り返して行を縦に伸ばす)機能です。**有効化には2つのスイッチが両方必要**です:
+
+1. **グリッド props `autoHeight={true}`**(大本のスイッチ・既定 `false`)。
+2. **少なくとも1列に `column.autoHeight: true`**。その列が折り返し(`white-space: normal`)、行高を駆動します。
+
+内部判定は「**グリッド `autoHeight` && `column.autoHeight === true`**」で、**両方 true** のセルだけが可変になります(片方だけでは効きません)。複数列に `autoHeight: true` を付けた行では、**最も背の高いセル**が行高になります。
+
+- **行数 gate**: auto-height はビュー行数が **50,000 行以内**のときだけ有効です。超えると uniform 行高(`rowHeight`)へ自動フォールバックします(prefix-sum のコストとブラウザの要素高さ上限のため。開発時は console 警告あり)。
+- **`estimateRowHeight`**: 仮想化で画面外の未測定行に使う推定行高です(既定 `rowHeight`)。行が画面に入ると実測値へ置き換わります(**上限ではありません**)。
+- 行高は**実測**(描画セルの実際の高さ)で、上限/下限のクランプはありません。列幅を広げる等で内容が減れば行も縮みます。
+- **`autoHeight` 列は autoSize の対象外**です(折り返し前提のため。上記「flex と autoSize」の制約を参照)。
+- 折り返し位置の品質(日本語の文節折り返し等)は次節「日本語テキストの折り返し」を参照。
+
+```tsx
+<SpreadsheetGrid
+  rows={rows}
+  columns={[
+    { key: 'id', title: 'ID', width: 80 },
+    // ↓ この列が折り返して行高を駆動する
+    { key: 'note', title: '備考', width: 320, autoHeight: true },
+  ]}
+  autoHeight            // ← 大本のスイッチ(これが無いと列側 autoHeight は無視される)
+/>
+```
+
+### 日本語テキストの折り返し(word-break / BudouX)
+
+`autoHeight: true` の列はセルが折り返され(行高可変)、この時点で**ブラウザ標準の禁則処理つき文字折り返し**が効きます(句読点・閉じ括弧を行頭に置かない等)。ここから先の「品質」は 2 段階です。
+
+**① CSS のみ(ライブラリ改修ゼロ)** — 列の `wordBreak` / `lineBreak` で調整できます。特に **`wordBreak: 'auto-phrase'`** は Chromium(Chrome / Edge)で **BudouX による文節折り返し**(語の途中で割らない)を行います。社内向けなど Chromium 前提なら、これだけで文節折り返しが得られます(依存追加なし)。
+
+```tsx
+// Chromium(Chrome / Edge): CSS だけで文節折り返し。
+{ key: 'desc', title: '説明', autoHeight: true, wordBreak: 'auto-phrase' }
+```
+
+> `auto-phrase` は Firefox 未対応、Safari は一部フラグ付き(BudouX ではなく独自エンジン)です。禁則の厳格化は `lineBreak: 'strict'` を併用します。
+
+**② クロスブラウザ(BudouX を利用側で使用)** — 全ブラウザで文節折り返ししたい場合は、[BudouX](https://github.com/google/budoux)(Google 製・辞書レス・約 15KB・クライアント完結。Chromium の `auto-phrase` の裏側エンジンでもあります)を**利用側の `renderCell`** で使います。**本ライブラリは BudouX を同梱しません**(seam 方針。`getExportData()` と同じく依存は利用側が持ちます)。BudouX が挿入した改行機会(ゼロ幅スペース)でのみ折り返すよう、`wordBreak: 'keep-all'` を併用するのがポイントです。
+
+```tsx
+import { loadDefaultJapaneseParser } from 'budoux';
+const parser = loadDefaultJapaneseParser();
+
+// 列定義(利用側)
+{
+  key: 'desc',
+  title: '説明',
+  autoHeight: true,          // 折り返し = 行高可変
+  wordBreak: 'keep-all',     // 文字間では切らない(ゼロ幅スペースでのみ折り返す)
+  renderCell: ({ value }) =>
+    parser.parse(String(value ?? '')).join('\u200b'), // 文節境界に ZWSP(値ごとに memo 推奨)
+}
+```
+
+仮想化により描画されるのは可視セルのみ(数十件)なので、値ごとに memo すれば実コストは軽微です。
+
+### 行グルーピング + 集計(rowGroup / aggFunc)
+
+`column.rowGroup: true` の列でビュー行をグルーピングします(複数列指定時は `columns` 配列の出現順が階層順)。
+
+```ts
+const columns: GridColumn<Order>[] = [
+  { key: 'region', title: '地域', width: 100, rowGroup: true },
+  { key: 'rep', title: '担当', width: 100, rowGroup: true },
+  { key: 'product', title: '商品', width: 160 },
+  { key: 'qty', title: '数量', width: 90, align: 'right', aggFunc: 'sum' },
+  { key: 'amount', title: '金額', width: 120, align: 'right', aggFunc: 'sum' },
+];
+```
+
+- **自動グループ列**: グルーピング有効時、先頭にツリー表示列(インデント + 開閉シェブロン + ラベル + 件数)が注入され、グループ元列は表示から自動的に外れます。自動グループ列は合成列で、列メニュー / ソート / 並べ替え DnD / autoSize / エクスポートの対象外です(手動リサイズ・列範囲選択は可能)。
+- **集計**: `aggFunc` 指定列は、グループ行の同じ列位置に集計値を表示します。組み込み(`'sum' | 'min' | 'max' | 'avg' | 'count'`)は値駆動の数値集計で、`Number()` 変換で有限にならない値と空値(`null` / `undefined` / `''`)は対象外(`count` のみ配下 leaf 行数)。数値対象 0 件の sum / avg / min / max は空セルになります。カスタム関数(`GridAggFunc<T>` = `({ values, rows, column }) => unknown`)は返り値がそのまま表示されるため、整形済み文字列を返すこともできます。
+- **集計値の整形**: 列に `valueFormatter` があれば集計値にも適用され、leaf セルと表示が揃います(`numberFormatter()` の 3 桁区切り等)。ただしグループ行に leaf 行は無いため **formatter の `row` は `undefined`** です。`row` を読む formatter を使う列では、`aggFunc` をカスタム関数にして整形済み文字列を返してください。
+- **開閉**: シェブロン click / グループ行 double-click / グループ行上の `Enter`・`Space`。命令的 API(下記)からも操作できます。開閉状態は UI 状態で、undo/redo・`getState()` の対象外です。
+- **並び / フィルター**: グループの並びは「ソート適用後の初出順」です(グループ元列をソートすればグループごと並び替わる)。フィルターは leaf 行に適用され、0 件になったグループは表示から消えます。空値は 1 つの「(空白)」グループへ集約されます。
+- **leaf 限定の各機能**: グループ行は編集 / ペースト / クリア / コピー / 行選択 / エクスポートの対象外です(すべて leaf 行のみが対象)。件数表示(bar の Rows / 行選択件数)も leaf 基準です。
+- **clientSide 限定**: serverSide(`dataSource`)では `rowGroup` は無視されます(開発時警告)。
+
+グループ行の記述子は `GridGroupRow`(`groupKey` / `columnKey` / `value` / `label` / `level` / `leafCount` / `aggregates`)としてバレルから公開されます(`getGroupRows()` の返り値)。
+

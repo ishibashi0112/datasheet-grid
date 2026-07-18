@@ -1,0 +1,91 @@
+---
+title: serverSide モード(SSRM)
+description: dataSource / クエリ配線 / リフレッシュ / エラー処理 / 書き戻し
+---
+
+## serverSide モード(SSRM / DS-4 ②)
+
+`dataSource` を渡すと serverSide モードになり、総行数ぶんの縦スクロール空間を保ったまま、可視窓に近いブロックだけを `getRows` で取得する(取得範囲を定数で縛りメモリを有界化)。未ロード行はスケルトン行として描画され、到着後に実データへ差し替わる。`rows`(clientSide)と `dataSource`(serverSide)は排他。セル編集は `dataSource.updateRows` を指定した場合のみ有効(楽観更新つきの書き戻し。「セル編集の書き戻し」節)。
+
+### query 配線(stage ②)
+
+clientSide の操作状態(グローバルフィルター・列フィルター・ソート)を `ServerSideQuery` に組み立て、`getRows` の `params.query` として送出する(フィルター/ソートの実行はサーバへ委ねる)。
+
+- **`ServerSideQuery`**: `{ globalText?: string; columnFilters?: Record<string, ColumnFilterValue>; sort?: GridSortState }`。全フィールドが空のときは `{}` を渡す。
+- **列フィルターの wire format**: `ColumnFilterValue` は `kind` を持つ discriminated union で、**そのまま**送出される(サーバはこの記述子を解釈して WHERE を組む)。`kind` 別の shape:
+  - `{ kind: 'set'; mode?: 'include' | 'exclude'; values: string[] }` — `values` は常に小さい側のみ保持する(全候補が多いとき `mode: 'exclude'` で非選択側を送る)。サーバは `mode` に応じて IN / NOT IN を組む。
+  - `{ kind: 'number'; raw: string; parsed }` — `parsed` が `range` / `comparison` / `null`(=`raw` で部分一致)。
+  - `{ kind: 'text'; value }` / `{ kind: 'date'; value }` / `{ kind: 'select'; value }`
+  - `{ kind: 'custom'; value }` — `column.filterFn` 利用列の自由形値(サーバ解釈は利用側責務)。
+  - アクティブなフィルターのみ送出される。キーは安定 queryKey のため昇順整列される。
+- **debounce**: query(filter/sort)の変更は約 300ms 静止後に一度だけ送出する(キーストロークごとの再フェッチを合体)。入力欄の表示自体は即時反映される。
+- **scroll-reset**: query が変わると結果セットが総入れ替えされるため、スクロールは先頭に戻る。
+- **enable\* フラグ**: serverSide でも `enableSorting` / `enableColumnFilter` / `enableGlobalFilter`(いずれも既定 true)が有効。サーバ非対応の操作を塞ぎたい場合に false にする。
+
+### set / select フィルターの候補(SSRM)
+
+set / select の候補集合はクライアントが供給する必要がある。**clientSide** は `rows` 全件から自動収集できるが、**serverSide** はクライアントが全件を持たないため自動収集できず候補が空になる。
+
+- **低カーディナリティ列**(状態・区分など): 列定義に `filterOptions` を静的指定する(serverSide でも set として機能する)。
+- **高カーディナリティ列**(品番・ID など): そもそも set 不適。`filterType: 'text'`(部分一致)や `number` 範囲を使う。
+- `filterOptions` 未指定の set/select 列を serverSide で開くと、候補リストに「候補が未指定」である旨が表示される(バグではなく設定不足)。サーバから候補を非同期供給する仕組みは将来の拡張(別 stage)。
+
+### dataSource とパラメータ
+
+- **`initialRowCount`**: 初回 fetch 前から正しい総高さ/スクロールバーを出したい場合に渡す(未指定時は最初の `getRows` 結果が返るまで件数 0)。**mount 時に一度だけ読まれる**(下記 remount 契約を参照)。
+- **`blockSize`(既定 100)/ `maxCachedBlocks`(既定 64)**: 1 ブロックの行数とクライアント側 LRU 上限。超過分は画面外の古いブロックから退避する。
+- **`getRows(params)` 契約**: `params` は `{ startIndex, endIndex, query, signal }`。渡された `[startIndex, endIndex)`(view 空間・end 排他)を尊重し全件を返さないこと。`query` 適用後の**フィルター後総件数**を `result.totalRowCount` で返すこと(縦スクロール空間がこれに追従する)。`signal` が abort されたら速やかに reject すること。
+- **`result`**: `{ rows: T[]; totalRowCount: number }`。`rows` は要求レンジ内の存在ぶん(末端では要求幅より短くてよい)。
+- **`updateRows(params)`(任意)**: セル編集の書き戻し口。指定すると serverSide でもセル編集が有効になる(未指定なら編集 UI ごと無効)。詳細は「セル編集の書き戻し」節。
+
+### サーバ最新の取り直し(`refreshServerSide()` / `serverSideRefreshToken`)
+
+サーバ側のデータが外部で更新された場合など、**クエリは変えずにサーバの最新を取り直したい**ときは、命令的ハンドルの **`refreshServerSide()`** を呼ぶ(batch 8 で追加)。宣言的に扱いたい場合(状態管理側で「更新すべき」を signal として持ち回る設計)は **`serverSideRefreshToken`**(`number`)を増やしても同じ挙動になる(どちらも内部の同一ソフトリフレッシュに委譲)。
+
+- **`queryKey` 変化との違い**: フィルター/ソート/グローバルフィルターの変更は結果セットの総入れ替えなので**先頭へスクロールリセット**してキャッシュを全破棄し block 0 から取り直す。一方ソフトリフレッシュは**スクロール位置を保持**したままキャッシュを破棄し、**現在の可視レンジ**を即時(debounce なし)取り直す。
+- **件数**: リフレッシュ時に件数はリセットせず、到着ブロックの `totalRowCount` で更新する。外部更新で件数が増減していれば縦スクロール空間が追従する。可視レンジ未確立や件数 0(空結果)からのリフレッシュでは block 0 をブートストラップとして取り直す(空になったテーブルがサーバ側でデータを得た後も復帰できる)。
+- **挙動メモ**: 取り直し中は対象行が一瞬スケルトン表示になる(purge → 再取得)。`refreshToken` は単調増加で運用する(値が変わったときだけ取り直す)。初回 mount では発火しない。
+- **用途**: 外部での編集/追加削除(mutation)後の反映トリガーとして使う想定。グリッド上の**セル編集**は `dataSource.updateRows`(下の「セル編集の書き戻し」節)で直接書き戻せるため本機能は不要。**行の追加削除**は書き戻し API を持たないため、「サーバへ反映 → `refreshServerSide()`」の運用に寄せる(AG Grid も実質この形)。
+
+### getRows 失敗時のエラー表示とリトライ(batch 9)
+
+`getRows` が reject する(abort 以外)と、失敗ブロックの行はスケルトンのまま残り、グリッド下部中央に**エラーバー**(「行の取得に失敗しました(N ブロック)」+ 再試行 / 閉じる)が表示される。
+
+- **再試行**: 失敗中のブロック**だけ**を即時(debounce なし)取り直す。キャッシュ済みブロックには触れない(`refreshServerSide()` のような全破棄はしない)。再び失敗すればバーが再表示される。
+- **自然回復**: スクロールで失敗ブロックを再訪すると通常の可視レンジ要求として再 fetch され、成功すれば失敗は自動解除される(バーも消える)。
+- **閉じる(×)**: 同一の失敗状態の間だけ非表示になる。新しい失敗(失敗集合の変化)が起きると再表示される。クエリ変化 / `refreshServerSide()` / 全回復で失敗状態はリセットされる。
+- **abort の扱い**: スクロール通過・クエリ変化・unmount によるキャンセル(`signal` abort)は失敗として扱わない(バーも通知も出ない)。
+- **外部通知**: バーとは独立に、失敗ごとに `onServerSideLoadError(error, { startIndex, endIndex })` が呼ばれる(トースト / ログ用)。
+
+### セル編集の書き戻し(`updateRows`・楽観更新)
+
+`dataSource.updateRows` を指定すると、serverSide でも**セル編集**(エディタ確定 / ペースト / Delete クリア / `renderCell` の `setValue` / checkbox トグル)が有効になり、編集はこの口を通してサーバへ書き戻される。**未指定なら serverSide の編集 UI は丸ごと無効**(セルは readOnly 表示になり、エディタも開かない — 書き戻し先が無い編集を受け付けないため)。
+
+```tsx
+const dataSource: ServerSideDataSource<Row> = {
+  getRows: async ({ startIndex, endIndex, query, signal }) => { /* 取得 */ },
+  updateRows: async ({ updates }) => {
+    // updates: 行単位の更新記述子(1 ユーザー操作 = 1 呼び出し。ペーストの複数行も 1 回に集約)
+    //   { rowKey, rowIndex, row, previousRow, changes: [{ columnKey, previousValue, newValue }] }
+    await api.patchRows(updates);
+    // 返り値なし(または {})= グリッドの楽観値をそのまま確定。
+    // サーバー側で値を正規化・計算した場合は updates と同順・同長で確定行を返すとキャッシュへマージされる:
+    // return { rows: updates.map((u) => normalize(u.row)) };
+  },
+};
+```
+
+- **楽観更新**: 編集はまず画面へ即時反映され(楽観値)、`updateRows` の resolve で確定する。確定までの間にブロックの再取得や LRU 退避が起きても楽観値の表示は消えない(確定前の編集はキャッシュとは別レイヤーで保持)。
+- **失敗時のロールバック**: `updateRows` が reject すると、該当セルは**編集前の値へ自動で戻り**、グリッド下部に保存失敗バー(「変更の保存に失敗しました(N 行)。値を元に戻しました」+ 閉じる)が表示される。値は復元済みのため再試行ボタンは無い(リトライ導線が必要なら `onServerSideWriteError` の `params.updates` から自前で再送する)。
+- **`onServerSideWriteError(error, { updates })`**: バーとは独立の外部通知(トースト / ログ / リトライ導線用)。`updates` は失敗した行更新(ロールバック済み)。
+- **同一行への連続編集**: 前の書き込みが確定する前に同じ行を再編集してよい(新しい編集が表示を支配し、古い書き込みの遅延決着が新しい値を巻き戻すことはない)。失敗時のロールバック先は常に「最後にサーバー確定した値」。
+- **バリデーションとの関係**: `validate` / `validationMode` は clientSide と同一規則で機能する(`reject` 列は確定拒否・ペースト/クリアのセル単位スキップ、`mark` 列は不正値も書き戻した上でマーク表示)。
+- **ペースト / Delete クリアの範囲**: 未ロード行(スケルトン)はスキップされる。ペーストの**行/列自動拡張は行わない**(`createRow` / `createOverflowColumn` は serverSide では不発。行追加は「サーバへ反映 → `refreshServerSide()`」運用)。
+- **undo/redo**: serverSide では無効のまま(適用先の全件 rows が無いため。取り消しはサーバ側の履歴で扱う)。
+- **`refreshServerSide()` / クエリ変更との関係**: 確定前(in-flight)の編集はリフレッシュ・フィルター/ソート変更で破棄され、以後の遅延決着も無視される(サーバ正本を取り直す操作が常に優先)。
+- **識別子**: `rowKey` は `rowKeyGetter` 由来(既定は view index のため、**書き戻しを使う場合は安定キーを返す `rowKeyGetter` の指定を推奨**)。`rowIndex` は view 空間(現在のフィルター/ソート適用後)の行位置で、`previousRow` にはサーバーが行を特定するための編集前スナップショットが入る。
+
+### clientSide ↔ serverSide の切替(remount 契約)
+
+`initialRowCount` と内部の行数 state は mount 時に確定する。そのため **実行時にモードを切り替える場合は `key` を変えてグリッドを再マウントすること**(clientSide で mount 後に `dataSource` を後付けしても件数が初期化されない)。serverSide で直接 mount する通常利用ではこの限りではない。
+
