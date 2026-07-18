@@ -31,4 +31,6 @@ cd website && vp exec next start
 - ルートの eslint / tsc -b / vitest の対象外(website 内は `next build` が型チェックを兼ねる)。
 - コンテンツページ追加後に該当ページだけ 404 になる場合はビルドキャッシュ起因。`rm -rf .next` してから `next build` する(2026-07-18 に grouping ページで発生)。
 - API リファレンス(`content/docs/api/`)は `src/components/spreadsheet-grid/API_REFERENCE.md` からの複製。**型を変えたら両方を同期すること**(将来は自動生成へ移行したい)。
-- Vercel デプロイ: Root Directory を `website` に設定。install はリポジトリルートの pnpm(overrides 込み)で走り、build 前に `pnpm run build:lib` が必要(Build Command: `cd .. && pnpm run build:lib && cd website && next build`)。
+- Vercel デプロイ: Root Directory を `website` に設定。install / build コマンドは `website/vercel.json` で固定済み(ダッシュボードの Build Command 上書きは不要。vercel.json が優先される)。
+  - `pnpm-lock.yaml` は pnpm 11 の複数ドキュメント形式(先頭に devEngines 用の `packageManagerDependencies` ドキュメント)のため、**Vercel 既定の pnpm では解釈できない**。vercel.json で `npx pnpm@11.12.0` を明示している(package.json の `packageManager` と揃えること)。
+  - Vercel は CI モードで frozen-lockfile 既定。ロックファイル同期は `vp install --frozen-lockfile` でローカル検証できる。
