@@ -27,6 +27,13 @@ beforeAll(() => {
     (globalThis as unknown as { ResizeObserver: unknown }).ResizeObserver =
       ResizeObserverStub;
   }
+  // jsdom には Pointer Capture が無い(カスタムスクロールバーのドラッグで呼ぶ)ため no-op を入れます。
+  if (!Element.prototype.setPointerCapture) {
+    Element.prototype.setPointerCapture = () => {};
+  }
+  if (!Element.prototype.releasePointerCapture) {
+    Element.prototype.releasePointerCapture = () => {};
+  }
 });
 
 afterEach(() => {
@@ -307,9 +314,9 @@ describe('GridScrollHint(ルーラー + ジャンププレビュー)', () => {
     );
   });
 
-  it('トラック帯ホバーでジャンププレビュー(サム中心写像の行番号 + 列値)が出る', () => {
+  it('トラック帯ホバーでジャンププレビュー(サム中心写像の行番号 + 列値)が出る(ネイティブバー運用)', () => {
     const { container, getByTestId } = render(
-      <Harness options={resolve({ hintColumn: 'code' })} />,
+      <Harness options={resolve({ hintColumn: 'code', scrollbar: false })} />,
     );
     const scroller = getByTestId('scroller');
     stubScrollerGeometry(scroller);
@@ -327,9 +334,9 @@ describe('GridScrollHint(ルーラー + ジャンププレビュー)', () => {
     ).toBe(true);
   });
 
-  it('帯の外へ出る / pointerleave でジャンププレビューが消える', () => {
+  it('帯の外へ出る / pointerleave でジャンププレビューが消える(ネイティブバー運用)', () => {
     const { container, getByTestId } = render(
-      <Harness options={resolve(true)} />,
+      <Harness options={resolve({ scrollbar: false })} />,
     );
     const scroller = getByTestId('scroller');
     stubScrollerGeometry(scroller);
@@ -348,7 +355,7 @@ describe('GridScrollHint(ルーラー + ジャンププレビュー)', () => {
 
   it('上端付近ではラベルが線の下側へ反転する(ヘッダー重なり回避)', () => {
     const { container, getByTestId } = render(
-      <Harness options={resolve(true)} />,
+      <Harness options={resolve({ scrollbar: false })} />,
     );
     const scroller = getByTestId('scroller');
     stubScrollerGeometry(scroller);
@@ -363,7 +370,7 @@ describe('GridScrollHint(ルーラー + ジャンププレビュー)', () => {
   it('SSRM 未ロード行のジャンプ先は行番号のみ(detail なし)', () => {
     const { container, getByTestId } = render(
       <Harness
-        options={resolve({ hintColumn: 'code' })}
+        options={resolve({ hintColumn: 'code', scrollbar: false })}
         rowModel={makeRowModel(() => false)}
       />,
     );
@@ -385,6 +392,115 @@ describe('GridScrollHint(ルーラー + ジャンププレビュー)', () => {
     const scroller = getByTestId('scroller');
     stubScrollerGeometry(scroller);
     firePointerMove(scroller, 790, 240);
+    expect(container.querySelector('.ssg-scroll-hint-jumpline')).toBeNull();
+  });
+});
+
+// ガター(top=36px)基準の座標を持つ getBoundingClientRect を jsdom へスタブします。
+const stubGutterGeometry = (gutter: HTMLElement) => {
+  gutter.getBoundingClientRect = () =>
+    ({
+      top: HEADER_HEIGHT,
+      left: 786,
+      right: 800,
+      bottom: VIEWPORT_HEIGHT,
+      width: 14,
+      height: VIEWPORT_HEIGHT - HEADER_HEIGHT,
+      x: 786,
+      y: HEADER_HEIGHT,
+      toJSON: () => ({}),
+    }) as DOMRect;
+};
+
+const firePointerEvent = (
+  el: HTMLElement,
+  type: 'pointerdown' | 'pointermove' | 'pointerup',
+  clientY: number,
+) => {
+  act(() => {
+    el.dispatchEvent(
+      new MouseEvent(type, { clientY, clientX: 793, bubbles: true }),
+    );
+  });
+};
+
+describe('GridScrollHint(カスタムスクロールバー)', () => {
+  // トラック高 = 480 - 36 = 444 / サム高 = 最小 30 / 可動域 range = 414 /
+  // maxScroll = (36 + 36,000) - 480 = 35,556。
+
+  it('既定(scrollbar=true)でガターとサムが常時描画される', () => {
+    const { container } = render(<Harness options={resolve(true)} />);
+    const gutter = container.querySelector('.ssg-scroll-hint-scrollbar');
+    expect(gutter).not.toBeNull();
+    const thumb = container.querySelector<HTMLElement>(
+      '.ssg-scroll-hint-scrollbar-thumb',
+    );
+    expect(thumb?.style.height).toBe('30px');
+    expect(thumb?.style.top).toBe('0px');
+  });
+
+  it('scrollbar=false ではガターを描画しない', () => {
+    const { container } = render(
+      <Harness options={resolve({ scrollbar: false })} />,
+    );
+    expect(container.querySelector('.ssg-scroll-hint-scrollbar')).toBeNull();
+  });
+
+  it('scrollTop に応じてサム位置が追従する(末尾でトラック下端)', () => {
+    const { container } = render(
+      <Harness options={resolve(true)} scrollTop={35_556} />,
+    );
+    const thumb = container.querySelector<HTMLElement>(
+      '.ssg-scroll-hint-scrollbar-thumb',
+    );
+    // thumbTop = range = 444 - 30 = 414。
+    expect(thumb?.style.top).toBe('414px');
+  });
+
+  it('トラッククリックでサム中心写像のジャンプ(scrollTop 書き込み)', () => {
+    const { container, getByTestId } = render(
+      <Harness options={resolve(true)} />,
+    );
+    const gutter = container.querySelector<HTMLElement>(
+      '.ssg-scroll-hint-scrollbar',
+    );
+    expect(gutter).not.toBeNull();
+    stubGutterGeometry(gutter as HTMLElement);
+    // ガター基準 y=222(トラック中央)→ frac = (222-15)/414 = 0.5 → scrollTop = 17,778。
+    firePointerEvent(gutter as HTMLElement, 'pointerdown', HEADER_HEIGHT + 222);
+    expect(getByTestId('scroller').scrollTop).toBeCloseTo(17_778);
+  });
+
+  it('サムのドラッグで scrollTop が連続追従する', () => {
+    const { container, getByTestId } = render(
+      <Harness options={resolve(true)} />,
+    );
+    const gutter = container.querySelector<HTMLElement>(
+      '.ssg-scroll-hint-scrollbar',
+    );
+    stubGutterGeometry(gutter as HTMLElement);
+    // サム上(y=10)を掴む → grab=10。y=110 まで動かす → frac = 100/414。
+    firePointerEvent(gutter as HTMLElement, 'pointerdown', HEADER_HEIGHT + 10);
+    firePointerEvent(gutter as HTMLElement, 'pointermove', HEADER_HEIGHT + 110);
+    expect(getByTestId('scroller').scrollTop).toBeCloseTo((100 / 414) * 35_556);
+    firePointerEvent(gutter as HTMLElement, 'pointerup', HEADER_HEIGHT + 110);
+  });
+
+  it('ガターホバーでジャンププレビューが出る(ドラッグ中は抑止)', () => {
+    const { container } = render(
+      <Harness options={resolve({ hintColumn: 'code' })} />,
+    );
+    const gutter = container.querySelector<HTMLElement>(
+      '.ssg-scroll-hint-scrollbar',
+    );
+    stubGutterGeometry(gutter as HTMLElement);
+    firePointerEvent(gutter as HTMLElement, 'pointermove', HEADER_HEIGHT + 222);
+    const label = container.querySelector('.ssg-scroll-hint-jumpline-label');
+    expect(label?.textContent).toContain('行 494 へ');
+    expect(label?.textContent).toContain('PN-493');
+    // ドラッグ開始でプレビューは消える(バブルが答えるため)。
+    firePointerEvent(gutter as HTMLElement, 'pointerdown', HEADER_HEIGHT + 222);
+    firePointerEvent(gutter as HTMLElement, 'pointermove', HEADER_HEIGHT + 240);
     expect(container.querySelector('.ssg-scroll-hint-jumpline')).toBeNull();
   });
 });

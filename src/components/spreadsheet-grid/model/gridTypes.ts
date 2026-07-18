@@ -1126,6 +1126,13 @@ export type ScrollHintOptions<T = unknown> = {
   bubble?: boolean;
   // 行目盛りルーラー + トラックホバー時のジャンプ先プレビュー。既定 true。
   ruler?: boolean;
+  // カスタム縦スクロールバー(専用ガターに常時表示のトラック + 最小 30px サム)。既定 true。
+  //   macOS のオーバーレイスクロールバーは自動で消え、大量行ではサムが極小になり「掴む場所」を
+  //   見失うため、ヘッダー下から始まる専用ガターへ自前スクロールバーを描画します(ドラッグ /
+  //   クリックジャンプ / ホイール対応)。有効時はネイティブ縦スクロールバーを非表示化します
+  //   (Chromium / WebKit。Firefox はネイティブ縦バーが残りますがガター操作は有効)。
+  //   false でネイティブバーのまま(バブル等は疑似サム位置に表示)。
+  scrollbar?: boolean;
   // 表示トリガー。既定 'scroll'。
   trigger?: ScrollHintTrigger;
   // 簡易カスタム: 行番号に添えて表示する列 key(GridColumn.key = 行オブジェクトのフィールド名)。

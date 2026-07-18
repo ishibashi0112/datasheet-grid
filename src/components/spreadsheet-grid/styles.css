@@ -126,6 +126,10 @@
     --ssg-drop-indicator: #0f172a;
     --ssg-glyph-faint: #cbd5e1;
     --ssg-skeleton-bar: #e2e8f0;
+    /* スクロール位置インジケーター(scrollHint)のカスタムスクロールバー */
+    --ssg-scrollhint-track-bg: #f3f5f8;
+    --ssg-scrollhint-thumb: #c3cad4;
+    --ssg-scrollhint-thumb-active: #a9b1bf;
   }
 
   /* 密度プリセット(THEME-2)。density prop が root へ付与する修飾子で寸法トークンを一括切替します。
@@ -260,6 +264,10 @@
     /* その他 */
     --ssg-drop-indicator: #c1c2c5;
     --ssg-skeleton-bar: #2c2e33;
+    /* スクロール位置インジケーター(scrollHint)のカスタムスクロールバー */
+    --ssg-scrollhint-track-bg: #1f2126;
+    --ssg-scrollhint-thumb: #41454d;
+    --ssg-scrollhint-thumb-active: #545a64;
   }
 
   /* box-sizing の自前正規化(THEME-1)。従来は一部要素が利用側グローバルリセットの有無で
@@ -2439,7 +2447,7 @@
     width: 76px;
     background: linear-gradient(
       to left,
-      var(--ssg-cell-bg) 45%,
+      var(--ssg-cell-bg) 62%,
       transparent
     );
     opacity: 0;
@@ -2447,7 +2455,7 @@
   }
 
   .ssg-scroll-hint-ruler--visible {
-    opacity: 0.92;
+    opacity: 0.96;
   }
 
   .ssg-scroll-hint-ruler-tick {
@@ -2514,6 +2522,63 @@
   .ssg-scroll-hint-jumpline-detail {
     font-weight: 400;
     opacity: 0.9;
+  }
+
+  /* カスタムスクロールバー(scrollHint.scrollbar)。ヘッダー下から始まる専用ガターに
+     常時表示のトラック + 最小 30px サムを自前描画します(top / height / サム位置は
+     動的値のためインライン style)。オーバーレイ層(.ssg-scroll-hint)は pointer-events:
+     none のため、ガターのみ auto へ戻して操作(ドラッグ / クリック / ホイール)を受けます。 */
+  .ssg-scroll-hint-scrollbar {
+    position: absolute;
+    right: 0;
+    pointer-events: auto;
+    touch-action: none;
+    background-color: var(--ssg-scrollhint-track-bg);
+    border-left: 1px solid var(--ssg-line-strong);
+  }
+
+  .ssg-scroll-hint-scrollbar-thumb {
+    position: absolute;
+    left: 3px;
+    right: 3px;
+    border-radius: 4px;
+    background-color: var(--ssg-scrollhint-thumb);
+    transition: background-color 120ms ease;
+  }
+
+  .ssg-scroll-hint-scrollbar:hover .ssg-scroll-hint-scrollbar-thumb,
+  .ssg-scroll-hint-scrollbar--dragging .ssg-scroll-hint-scrollbar-thumb {
+    background-color: var(--ssg-scrollhint-thumb-active);
+  }
+
+  /* カスタムスクロールバー有効時のスクロールコンテナ:
+     - margin-right でガターぶんの帯を空け、右端の内容(右ピン留め列)が隠れないようにします。
+     - ネイティブ縦スクロールバーを width:0 で隠します(::-webkit-scrollbar を触ると縦横とも
+       カスタム描画へ切り替わるため、横バーもトークンで揃えて明示的にスタイリングします)。
+     - Firefox は ::-webkit-scrollbar 非対応のためネイティブ縦バーが残りますが(scrollbar-color
+       で配色のみ追従)、ガター操作は有効で機能は損なわれません。 */
+  .ssg-scroll-container--custom-scrollbar {
+    margin-right: 14px;
+    scrollbar-color: var(--ssg-scrollhint-thumb) var(--ssg-scrollhint-track-bg);
+  }
+
+  .ssg-scroll-container--custom-scrollbar::-webkit-scrollbar {
+    width: 0;
+    height: 10px;
+  }
+
+  .ssg-scroll-container--custom-scrollbar::-webkit-scrollbar-track {
+    background-color: var(--ssg-scrollhint-track-bg);
+  }
+
+  .ssg-scroll-container--custom-scrollbar::-webkit-scrollbar-thumb {
+    background-color: var(--ssg-scrollhint-thumb);
+    border-radius: 5px;
+    border: 2px solid var(--ssg-scrollhint-track-bg);
+  }
+
+  .ssg-scroll-container--custom-scrollbar::-webkit-scrollbar-thumb:hover {
+    background-color: var(--ssg-scrollhint-thumb-active);
   }
 
   @media (prefers-reduced-motion: reduce) {

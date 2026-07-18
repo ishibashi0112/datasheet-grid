@@ -19,6 +19,7 @@ import type { ReactNode } from 'react';
 export type ResolvedScrollHintOptions<T> = {
   bubble: boolean;
   ruler: boolean;
+  scrollbar: boolean;
   trigger: ScrollHintTrigger;
   hintColumn: string | undefined;
   renderHint: ((args: ScrollHintRenderArgs<T>) => ReactNode) | undefined;
@@ -26,8 +27,9 @@ export type ResolvedScrollHintOptions<T> = {
 
 // scrollHint prop を解決します。undefined / false は「完全無効」で null を返し、
 //   view の描画自体をスキップさせます(既存挙動への影響ゼロ)。true は全既定
-//   (バブル + ルーラー / trigger='scroll')。オブジェクトは省略項目を既定で補完します。
-//   bubble と ruler の両方を明示 false にした場合も表示物が無いため null です。
+//   (バブル + ルーラー + カスタムスクロールバー / trigger='scroll')。オブジェクトは
+//   省略項目を既定で補完します。表示物が 1 つも無い(bubble / ruler / scrollbar すべて
+//   明示 false)場合も null です。
 export const resolveScrollHintOptions = <T>(
   input: boolean | ScrollHintOptions<T> | undefined,
 ): ResolvedScrollHintOptions<T> | null => {
@@ -37,12 +39,14 @@ export const resolveScrollHintOptions = <T>(
   const options: ScrollHintOptions<T> = input === true ? {} : input;
   const bubble = options.bubble ?? true;
   const ruler = options.ruler ?? true;
-  if (!bubble && !ruler) {
+  const scrollbar = options.scrollbar ?? true;
+  if (!bubble && !ruler && !scrollbar) {
     return null;
   }
   return {
     bubble,
     ruler,
+    scrollbar,
     trigger: options.trigger ?? 'scroll',
     hintColumn: options.hintColumn,
     renderHint: options.renderHint,
@@ -61,39 +65,45 @@ export type ScrollHintTrackParams = {
   contentHeight: number;
   // スクロールコンテナの可視高さ(clientHeight)。
   viewportHeight: number;
+  // サムが動くトラックの高さ(px)。省略時は viewportHeight(ネイティブバー相当の全高
+  //   トラック)。カスタムスクロールバー(ヘッダー下から始まる専用ガター)では
+  //   viewportHeight - headerHeight を渡します。
+  trackHeight?: number;
 };
 
 export type ScrollHintTrack = {
   // 物理スクロール可動域(= contentHeight - viewportHeight)。
   maxScroll: number;
-  // 疑似サムの上端 / 高さ(トラック = viewport 全高基準)。
+  // サムの上端 / 高さ(トラック上端基準)。
   thumbTop: number;
   thumbHeight: number;
-  // 疑似サム中心の y(バブルのアンカー位置)。
+  // サム中心の y(トラック上端基準。バブルのアンカー位置)。
   centerY: number;
 };
 
-// 疑似サムの軌道を計算します。スクロール不能(コンテンツが viewport に収まる)なら null を
-//   返し、view はインジケーター全体を描画しません(ヒントの出しようがないため)。
+// サムの軌道を計算します。スクロール不能(コンテンツが viewport に収まる)/ トラック高
+//   なしなら null を返し、view はインジケーター全体を描画しません(ヒントの出しようが
+//   ないため)。サム高はビューポート比をトラック高へ投影した値で、最小 30px を保証します。
 export const computeScrollHintTrack = ({
   scrollTop,
   contentHeight,
   viewportHeight,
+  trackHeight = viewportHeight,
 }: ScrollHintTrackParams): ScrollHintTrack | null => {
   const maxScroll = contentHeight - viewportHeight;
-  if (viewportHeight <= 0 || maxScroll <= 0) {
+  if (viewportHeight <= 0 || trackHeight <= 0 || maxScroll <= 0) {
     return null;
   }
   const thumbHeight = Math.min(
     Math.max(
-      (viewportHeight * viewportHeight) / contentHeight,
+      (trackHeight * viewportHeight) / contentHeight,
       SCROLL_HINT_MIN_THUMB_PX,
     ),
-    viewportHeight,
+    trackHeight,
   );
   const clampedScrollTop = Math.min(Math.max(scrollTop, 0), maxScroll);
   const thumbTop =
-    (clampedScrollTop / maxScroll) * (viewportHeight - thumbHeight);
+    (clampedScrollTop / maxScroll) * (trackHeight - thumbHeight);
   return {
     maxScroll,
     thumbTop,
@@ -122,8 +132,14 @@ export const niceStepAtLeast = (raw: number): number => {
 
 // ルーラー目盛りラベルの表示値です。日本語 UI 向けに 1 万以上の切りのよい値は「N万」へ
 //   圧縮します(例: 100000 → '10万')。それ以外は桁区切りの数値文字列です。
-export const formatScrollHintRulerValue = (value: number): string =>
-  value >= 10_000 && value % 10_000 === 0
+//   useManUnit を明示すると圧縮可否を呼び出し側で統一できます(computeScrollHintRulerTicks は
+//   「刻みが 1 万の倍数のときだけ全目盛りを万表記」にして、5,000 / 1万 / 15,000 … のような
+//   表記混在を防ぎます)。0 は常に '0' です。
+export const formatScrollHintRulerValue = (
+  value: number,
+  useManUnit: boolean = value >= 10_000 && value % 10_000 === 0,
+): string =>
+  value !== 0 && useManUnit
     ? `${(value / 10_000).toLocaleString()}万`
     : value.toLocaleString();
 
@@ -155,26 +171,29 @@ export const computeScrollHintRulerTicks = ({
   }
   const maxTicks = Math.max(Math.floor(rulerHeight / minTickSpacingPx), 2);
   const step = niceStepAtLeast(rowCount / maxTicks);
+  // 表記の統一: 刻みが 1 万の倍数のときだけ全目盛りを「N万」にします(混在防止)。
+  const useManUnit = step % 10_000 === 0;
   const ticks: ScrollHintRulerTick[] = [];
   for (let value = 0; value <= rowCount; value += step) {
     ticks.push({
       row: value,
       y: (value / rowCount) * rulerHeight,
-      label: formatScrollHintRulerValue(value),
+      label: formatScrollHintRulerValue(value, useManUnit),
     });
   }
   return ticks;
 };
 
-// トラック(スクロールバー領域)上のポインタ y から、ネイティブスクロールバーの
+// トラック(スクロールバー領域)上のポインタ y(トラック上端基準)から、スクロールバーの
 //   クリック/ドラッグと同じ写像(サム中心基準)でジャンプ先の物理 scrollTop を求めます。
-//   ルーラーのホバープレビュー(「ここに飛ぶと行 N」)の行解決に使います。
+//   ルーラーのホバープレビュー(「ここに飛ぶと行 N」)の行解決と、カスタムスクロールバーの
+//   トラッククリックジャンプが共有します。
 export const computeScrollHintTrackPointerScrollTop = (
   pointerY: number,
   track: ScrollHintTrack,
-  viewportHeight: number,
+  trackHeight: number,
 ): number => {
-  const range = viewportHeight - track.thumbHeight;
+  const range = trackHeight - track.thumbHeight;
   if (range <= 0) {
     return 0;
   }

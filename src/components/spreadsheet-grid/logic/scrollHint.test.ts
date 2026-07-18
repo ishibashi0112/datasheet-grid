@@ -17,10 +17,11 @@ describe('resolveScrollHintOptions', () => {
     expect(resolveScrollHintOptions(false)).toBeNull();
   });
 
-  it('true は全既定(bubble + ruler / trigger=scroll)', () => {
+  it('true は全既定(bubble + ruler + scrollbar / trigger=scroll)', () => {
     expect(resolveScrollHintOptions(true)).toEqual({
       bubble: true,
       ruler: true,
+      scrollbar: true,
       trigger: 'scroll',
       hintColumn: undefined,
       renderHint: undefined,
@@ -32,6 +33,7 @@ describe('resolveScrollHintOptions', () => {
     expect(resolved).not.toBeNull();
     expect(resolved?.bubble).toBe(true);
     expect(resolved?.ruler).toBe(true);
+    expect(resolved?.scrollbar).toBe(true);
     expect(resolved?.trigger).toBe('scroll');
     expect(resolved?.hintColumn).toBe('code');
   });
@@ -39,15 +41,25 @@ describe('resolveScrollHintOptions', () => {
   it('個別 off の明示指定が既定に勝つ', () => {
     const resolved = resolveScrollHintOptions({
       ruler: false,
+      scrollbar: false,
       trigger: 'always',
     });
     expect(resolved?.bubble).toBe(true);
     expect(resolved?.ruler).toBe(false);
+    expect(resolved?.scrollbar).toBe(false);
     expect(resolved?.trigger).toBe('always');
   });
 
-  it('bubble も ruler も false なら null(表示物なし)', () => {
-    expect(resolveScrollHintOptions({ bubble: false, ruler: false })).toBeNull();
+  it('bubble / ruler だけ false でも scrollbar が残るので有効', () => {
+    const resolved = resolveScrollHintOptions({ bubble: false, ruler: false });
+    expect(resolved).not.toBeNull();
+    expect(resolved?.scrollbar).toBe(true);
+  });
+
+  it('bubble / ruler / scrollbar すべて false なら null(表示物なし)', () => {
+    expect(
+      resolveScrollHintOptions({ bubble: false, ruler: false, scrollbar: false }),
+    ).toBeNull();
   });
 });
 
@@ -110,6 +122,36 @@ describe('computeScrollHintTrack', () => {
     });
     expect(track?.centerY).toBeCloseTo((track?.thumbHeight ?? 0) / 2);
   });
+
+  it('trackHeight 指定(カスタムスクロールバーのガター)でもトラック内へ正しく写像される', () => {
+    const params = {
+      contentHeight: 36_036,
+      viewportHeight: 480,
+      trackHeight: 444,
+    };
+    const top = computeScrollHintTrack({ ...params, scrollTop: 0 });
+    // サム高 = max(444 * 480 / 36036 ≈ 5.9, 30) = 30(最小値)。
+    expect(top?.thumbHeight).toBe(SCROLL_HINT_MIN_THUMB_PX);
+    expect(top?.thumbTop).toBe(0);
+    const bottom = computeScrollHintTrack({
+      ...params,
+      scrollTop: params.contentHeight - params.viewportHeight,
+    });
+    expect((bottom?.thumbTop ?? 0) + (bottom?.thumbHeight ?? 0)).toBeCloseTo(
+      444,
+    );
+  });
+
+  it('trackHeight 0 では null', () => {
+    expect(
+      computeScrollHintTrack({
+        scrollTop: 0,
+        contentHeight: 4800,
+        viewportHeight: 480,
+        trackHeight: 0,
+      }),
+    ).toBeNull();
+  });
 });
 
 describe('niceStepAtLeast', () => {
@@ -142,6 +184,12 @@ describe('formatScrollHintRulerValue', () => {
     expect(formatScrollHintRulerValue(0)).toBe('0');
     expect(formatScrollHintRulerValue(500)).toBe('500');
     expect(formatScrollHintRulerValue(12_500)).toBe((12_500).toLocaleString());
+  });
+
+  it('useManUnit=false を明示すると 1 万の倍数でも桁区切りのまま(表記統一用)', () => {
+    expect(formatScrollHintRulerValue(10_000, false)).toBe(
+      (10_000).toLocaleString(),
+    );
   });
 });
 
@@ -195,6 +243,17 @@ describe('computeScrollHintRulerTicks', () => {
     for (let index = 1; index < ticks.length; index += 1) {
       expect(ticks[index].y - ticks[index - 1].y).toBeGreaterThanOrEqual(44);
     }
+  });
+
+  it('刻みが 1 万の倍数でないときは全目盛りが桁区切り表記(万との混在を防ぐ)', () => {
+    // 50,000 行 × 444px → 刻み 5,000。旧実装では 5,000 / 1万 / 15,000 / 2万 … と混在していた。
+    const ticks = computeScrollHintRulerTicks({
+      rowCount: 50_000,
+      rulerHeight: 444,
+    });
+    expect(ticks[1].label).toBe((5_000).toLocaleString());
+    expect(ticks[2].label).toBe((10_000).toLocaleString());
+    expect(ticks.some((tick) => tick.label.includes('万'))).toBe(false);
   });
 });
 

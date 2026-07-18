@@ -5124,7 +5124,13 @@ export function SpreadsheetGrid<T extends object>({
         {/*   pinned 列がない場合は左右ペインが width:0 で非表示、中央ペインのみ表示。     */}
         <div
           ref={scrollContainerRef}
-          className="ssg-scroll-container"
+          className={cx(
+            'ssg-scroll-container',
+            // 追加(scrollHint): カスタムスクロールバー有効時はネイティブ縦バーを隠し、
+            //   右端にガターぶんの余白(margin-right)を空けます(GridScrollHint が描画)。
+            resolvedScrollHint?.scrollbar === true &&
+              'ssg-scroll-container--custom-scrollbar',
+          )}
           style={scrollContainerStyle}
         >
           <div
