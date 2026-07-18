@@ -2430,8 +2430,95 @@
     text-overflow: ellipsis;
   }
 
+  /* 行目盛りルーラー(scrollHint.ruler)。ボディ可視域の右端に行数スケールを重ねます。
+     スクロール中 / トラック帯ホバー中のみ表示(--visible)。ラベルの可読性のため、
+     背後をセル背景色へ淡くフェードさせます(テーマトークン追従)。 */
+  .ssg-scroll-hint-ruler {
+    position: absolute;
+    bottom: 0;
+    width: 76px;
+    background: linear-gradient(
+      to left,
+      var(--ssg-cell-bg) 45%,
+      transparent
+    );
+    opacity: 0;
+    transition: opacity 180ms ease;
+  }
+
+  .ssg-scroll-hint-ruler--visible {
+    opacity: 0.92;
+  }
+
+  .ssg-scroll-hint-ruler-tick {
+    position: absolute;
+    right: 0;
+    width: 100%;
+    height: 0;
+  }
+
+  .ssg-scroll-hint-ruler-tick::before {
+    content: "";
+    position: absolute;
+    right: 0;
+    top: 0;
+    width: 10px;
+    height: 1px;
+    background-color: var(--ssg-glyph);
+  }
+
+  .ssg-scroll-hint-ruler-label {
+    position: absolute;
+    right: 14px;
+    top: 0;
+    transform: translateY(-50%);
+    font-size: 10px;
+    line-height: 1;
+    color: var(--ssg-glyph-hover);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+
+  /* ジャンププレビュー(トラック帯ホバー中の「ここに飛ぶと行 N」)。グリッド幅いっぱいの
+     点線 + サム写像で解決した行番号ラベル(バブルと同じインク系チップ)です。 */
+  .ssg-scroll-hint-jumpline {
+    position: absolute;
+    left: 0;
+    height: 0;
+    border-top: 1px dashed var(--ssg-accent);
+    opacity: 0.9;
+  }
+
+  .ssg-scroll-hint-jumpline-label {
+    position: absolute;
+    right: 6px;
+    bottom: 5px;
+    padding: 2px 8px;
+    border-radius: 6px;
+    background-color: var(--ssg-pill-bg);
+    color: var(--ssg-pill-text);
+    box-shadow: var(--ssg-pill-shadow);
+    font-size: 11px;
+    font-weight: 600;
+    line-height: 1.4;
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* 上端付近では線の下側へ反転させてヘッダーとの重なりを避けます。 */
+  .ssg-scroll-hint-jumpline-label--below {
+    bottom: auto;
+    top: 5px;
+  }
+
+  .ssg-scroll-hint-jumpline-detail {
+    font-weight: 400;
+    opacity: 0.9;
+  }
+
   @media (prefers-reduced-motion: reduce) {
-    .ssg-scroll-hint-bubble {
+    .ssg-scroll-hint-bubble,
+    .ssg-scroll-hint-ruler {
       transition: none;
     }
   }

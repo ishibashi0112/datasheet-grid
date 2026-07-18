@@ -243,3 +243,148 @@ describe('GridScrollHint', () => {
     expect(bubbleOf(container)).toBeNull();
   });
 });
+
+// トラック帯検知(pointermove の座標判定)に必要な幾何を jsdom へスタブします。
+//   幅 800px・スクロールバー幅 0(macOS オーバーレイ相当)→ 右端 18px が帯。
+const stubScrollerGeometry = (el: HTMLElement) => {
+  Object.defineProperty(el, 'clientWidth', { value: 800, configurable: true });
+  Object.defineProperty(el, 'offsetWidth', { value: 800, configurable: true });
+  el.getBoundingClientRect = () =>
+    ({
+      top: 0,
+      left: 0,
+      right: 800,
+      bottom: VIEWPORT_HEIGHT,
+      width: 800,
+      height: VIEWPORT_HEIGHT,
+      x: 0,
+      y: 0,
+      toJSON: () => ({}),
+    }) as DOMRect;
+};
+
+// jsdom に PointerEvent が無い環境でも座標付きで届くよう、MouseEvent で pointermove を送ります。
+const firePointerMove = (el: HTMLElement, clientX: number, clientY: number) => {
+  act(() => {
+    el.dispatchEvent(
+      new MouseEvent('pointermove', { clientX, clientY, bubbles: true }),
+    );
+  });
+};
+
+describe('GridScrollHint(ルーラー + ジャンププレビュー)', () => {
+  it("trigger='always' で目盛りが表示される(1,000 行 → 100 行刻み 11 目盛り)", () => {
+    const { container } = render(
+      <Harness options={resolve({ trigger: 'always' })} />,
+    );
+    const ruler = container.querySelector('.ssg-scroll-hint-ruler');
+    expect(ruler).not.toBeNull();
+    expect(ruler?.classList.contains('ssg-scroll-hint-ruler--visible')).toBe(
+      true,
+    );
+    const labels = Array.from(
+      container.querySelectorAll('.ssg-scroll-hint-ruler-label'),
+      (node) => node.textContent,
+    );
+    expect(labels).toHaveLength(11);
+    expect(labels[0]).toBe('0');
+    expect(labels[10]).toBe((1000).toLocaleString());
+  });
+
+  it("trigger='scroll' ではスクロールするまで目盛りは非表示クラスのまま", () => {
+    const { container, getByTestId } = render(
+      <Harness options={resolve(true)} />,
+    );
+    const ruler = container.querySelector('.ssg-scroll-hint-ruler');
+    expect(ruler?.classList.contains('ssg-scroll-hint-ruler--visible')).toBe(
+      false,
+    );
+    act(() => {
+      fireEvent.scroll(getByTestId('scroller'));
+    });
+    expect(ruler?.classList.contains('ssg-scroll-hint-ruler--visible')).toBe(
+      true,
+    );
+  });
+
+  it('トラック帯ホバーでジャンププレビュー(サム中心写像の行番号 + 列値)が出る', () => {
+    const { container, getByTestId } = render(
+      <Harness options={resolve({ hintColumn: 'code' })} />,
+    );
+    const scroller = getByTestId('scroller');
+    stubScrollerGeometry(scroller);
+    // トラック中央(y=240)。thumb 30px → range 450 → frac 0.5 → 物理 17,778px → 行 index 493。
+    firePointerMove(scroller, 790, 240);
+    const label = container.querySelector('.ssg-scroll-hint-jumpline-label');
+    expect(label).not.toBeNull();
+    expect(label?.textContent).toContain('行 494 へ');
+    expect(label?.textContent).toContain('PN-493');
+    // ルーラーもホバー中は表示される(trigger='scroll' でスクロールしていなくても)。
+    expect(
+      container
+        .querySelector('.ssg-scroll-hint-ruler')
+        ?.classList.contains('ssg-scroll-hint-ruler--visible'),
+    ).toBe(true);
+  });
+
+  it('帯の外へ出る / pointerleave でジャンププレビューが消える', () => {
+    const { container, getByTestId } = render(
+      <Harness options={resolve(true)} />,
+    );
+    const scroller = getByTestId('scroller');
+    stubScrollerGeometry(scroller);
+    firePointerMove(scroller, 790, 240);
+    expect(
+      container.querySelector('.ssg-scroll-hint-jumpline'),
+    ).not.toBeNull();
+    firePointerMove(scroller, 100, 240);
+    expect(container.querySelector('.ssg-scroll-hint-jumpline')).toBeNull();
+    firePointerMove(scroller, 790, 240);
+    act(() => {
+      fireEvent.pointerLeave(scroller);
+    });
+    expect(container.querySelector('.ssg-scroll-hint-jumpline')).toBeNull();
+  });
+
+  it('上端付近ではラベルが線の下側へ反転する(ヘッダー重なり回避)', () => {
+    const { container, getByTestId } = render(
+      <Harness options={resolve(true)} />,
+    );
+    const scroller = getByTestId('scroller');
+    stubScrollerGeometry(scroller);
+    firePointerMove(scroller, 790, 0);
+    const label = container.querySelector('.ssg-scroll-hint-jumpline-label');
+    expect(label?.textContent).toContain('行 1 へ');
+    expect(
+      label?.classList.contains('ssg-scroll-hint-jumpline-label--below'),
+    ).toBe(true);
+  });
+
+  it('SSRM 未ロード行のジャンプ先は行番号のみ(detail なし)', () => {
+    const { container, getByTestId } = render(
+      <Harness
+        options={resolve({ hintColumn: 'code' })}
+        rowModel={makeRowModel(() => false)}
+      />,
+    );
+    const scroller = getByTestId('scroller');
+    stubScrollerGeometry(scroller);
+    firePointerMove(scroller, 790, 240);
+    const label = container.querySelector('.ssg-scroll-hint-jumpline-label');
+    expect(label?.textContent).toContain('行 494 へ');
+    expect(
+      container.querySelector('.ssg-scroll-hint-jumpline-detail'),
+    ).toBeNull();
+  });
+
+  it('ruler=false ではルーラーもジャンププレビューも描画しない', () => {
+    const { container, getByTestId } = render(
+      <Harness options={resolve({ ruler: false, trigger: 'always' })} />,
+    );
+    expect(container.querySelector('.ssg-scroll-hint-ruler')).toBeNull();
+    const scroller = getByTestId('scroller');
+    stubScrollerGeometry(scroller);
+    firePointerMove(scroller, 790, 240);
+    expect(container.querySelector('.ssg-scroll-hint-jumpline')).toBeNull();
+  });
+});

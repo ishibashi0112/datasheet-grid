@@ -102,6 +102,89 @@ export const computeScrollHintTrack = ({
   };
 };
 
+// ルーラー目盛りの最小ラベル間隔(px)です。これを下回らない「切りのよい」行数刻みを選びます。
+export const SCROLL_HINT_RULER_MIN_TICK_SPACING_PX = 44;
+
+// raw 以上で最小の「切りのよい」刻み(1 / 2 / 2.5 / 5 × 10^k)を返します。
+//   2.5 系は 10^k >= 10 のときのみ採用します(整数刻みを保つため。25 / 250 / 2,500 …)。
+export const niceStepAtLeast = (raw: number): number => {
+  const clamped = Math.max(raw, 1);
+  const pow = 10 ** Math.floor(Math.log10(clamped));
+  const multipliers = pow < 10 ? [1, 2, 5, 10] : [1, 2, 2.5, 5, 10];
+  for (const multiplier of multipliers) {
+    const step = pow * multiplier;
+    if (step >= clamped) {
+      return step;
+    }
+  }
+  return pow * 10;
+};
+
+// ルーラー目盛りラベルの表示値です。日本語 UI 向けに 1 万以上の切りのよい値は「N万」へ
+//   圧縮します(例: 100000 → '10万')。それ以外は桁区切りの数値文字列です。
+export const formatScrollHintRulerValue = (value: number): string =>
+  value >= 10_000 && value % 10_000 === 0
+    ? `${(value / 10_000).toLocaleString()}万`
+    : value.toLocaleString();
+
+export type ScrollHintRulerTick = {
+  // 目盛りが指す行数値(0 始まりのスケール値。行 id ではなく「ものさし」の目盛りです)。
+  row: number;
+  // ルーラー領域(ボディ可視域)上端からのオフセット(px)。
+  y: number;
+  label: string;
+};
+
+export type ScrollHintRulerParams = {
+  rowCount: number;
+  // ルーラーの描画高さ(= viewportHeight - headerHeight)。
+  rulerHeight: number;
+  minTickSpacingPx?: number;
+};
+
+// ルーラーの目盛り列を計算します。0 から rowCount まで、最小ラベル間隔を守る
+//   切りのよい刻みで打ちます(rowCount が刻みの倍数でない場合、最終目盛りは
+//   rowCount 以下の最大倍数です)。y は行数比例(row / rowCount)のスケール配置です。
+export const computeScrollHintRulerTicks = ({
+  rowCount,
+  rulerHeight,
+  minTickSpacingPx = SCROLL_HINT_RULER_MIN_TICK_SPACING_PX,
+}: ScrollHintRulerParams): ScrollHintRulerTick[] => {
+  if (rowCount <= 0 || rulerHeight <= 0) {
+    return [];
+  }
+  const maxTicks = Math.max(Math.floor(rulerHeight / minTickSpacingPx), 2);
+  const step = niceStepAtLeast(rowCount / maxTicks);
+  const ticks: ScrollHintRulerTick[] = [];
+  for (let value = 0; value <= rowCount; value += step) {
+    ticks.push({
+      row: value,
+      y: (value / rowCount) * rulerHeight,
+      label: formatScrollHintRulerValue(value),
+    });
+  }
+  return ticks;
+};
+
+// トラック(スクロールバー領域)上のポインタ y から、ネイティブスクロールバーの
+//   クリック/ドラッグと同じ写像(サム中心基準)でジャンプ先の物理 scrollTop を求めます。
+//   ルーラーのホバープレビュー(「ここに飛ぶと行 N」)の行解決に使います。
+export const computeScrollHintTrackPointerScrollTop = (
+  pointerY: number,
+  track: ScrollHintTrack,
+  viewportHeight: number,
+): number => {
+  const range = viewportHeight - track.thumbHeight;
+  if (range <= 0) {
+    return 0;
+  }
+  const fraction = Math.min(
+    Math.max((pointerY - track.thumbHeight / 2) / range, 0),
+    1,
+  );
+  return fraction * track.maxScroll;
+};
+
 // バブル / ジャンププレビューの「行番号に添える表示内容(detail)」を解決します。
 //   優先順位: renderHint > hintColumn > なし(null = 行番号のみの既定表示)。
 //   - renderHint の null / undefined / false 返却は「既定表示へフォールバック」の合図です。

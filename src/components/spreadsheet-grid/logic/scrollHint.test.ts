@@ -2,7 +2,11 @@
 import { describe, expect, it } from 'vitest';
 import {
   SCROLL_HINT_MIN_THUMB_PX,
+  computeScrollHintRulerTicks,
   computeScrollHintTrack,
+  computeScrollHintTrackPointerScrollTop,
+  formatScrollHintRulerValue,
+  niceStepAtLeast,
   resolveScrollHintDetail,
   resolveScrollHintOptions,
 } from './scrollHint';
@@ -105,6 +109,123 @@ describe('computeScrollHintTrack', () => {
       viewportHeight: 480,
     });
     expect(track?.centerY).toBeCloseTo((track?.thumbHeight ?? 0) / 2);
+  });
+});
+
+describe('niceStepAtLeast', () => {
+  it('1 / 2 / 5 系の切り上げ(10^k < 10 では 2.5 系を使わない)', () => {
+    expect(niceStepAtLeast(1)).toBe(1);
+    expect(niceStepAtLeast(1.2)).toBe(2);
+    expect(niceStepAtLeast(3)).toBe(5);
+    expect(niceStepAtLeast(7)).toBe(10);
+  });
+
+  it('10^k >= 10 では 2.5 系(25 / 250 …)も採用する', () => {
+    expect(niceStepAtLeast(21)).toBe(25);
+    expect(niceStepAtLeast(26)).toBe(50);
+    expect(niceStepAtLeast(120_000)).toBe(200_000);
+  });
+
+  it('1 未満は 1 へ clamp される', () => {
+    expect(niceStepAtLeast(0.3)).toBe(1);
+  });
+});
+
+describe('formatScrollHintRulerValue', () => {
+  it('1 万以上の切りのよい値は「N万」へ圧縮する', () => {
+    expect(formatScrollHintRulerValue(10_000)).toBe('1万');
+    expect(formatScrollHintRulerValue(100_000)).toBe('10万');
+    expect(formatScrollHintRulerValue(1_000_000)).toBe('100万');
+  });
+
+  it('それ以外は桁区切りの数値文字列', () => {
+    expect(formatScrollHintRulerValue(0)).toBe('0');
+    expect(formatScrollHintRulerValue(500)).toBe('500');
+    expect(formatScrollHintRulerValue(12_500)).toBe((12_500).toLocaleString());
+  });
+});
+
+describe('computeScrollHintRulerTicks', () => {
+  it('行なし / 高さなしでは空配列', () => {
+    expect(
+      computeScrollHintRulerTicks({ rowCount: 0, rulerHeight: 400 }),
+    ).toEqual([]);
+    expect(
+      computeScrollHintRulerTicks({ rowCount: 100, rulerHeight: 0 }),
+    ).toEqual([]);
+  });
+
+  it('1,000 行 × 444px では 100 行刻みで 0〜1,000 の 11 目盛り', () => {
+    const ticks = computeScrollHintRulerTicks({
+      rowCount: 1000,
+      rulerHeight: 444,
+    });
+    expect(ticks).toHaveLength(11);
+    expect(ticks[0]).toEqual({ row: 0, y: 0, label: '0' });
+    expect(ticks[10].row).toBe(1000);
+    expect(ticks[10].y).toBeCloseTo(444);
+    expect(ticks[5].y).toBeCloseTo(222);
+  });
+
+  it('100 万行では「10万」刻みの圧縮ラベルになる', () => {
+    const ticks = computeScrollHintRulerTicks({
+      rowCount: 1_000_000,
+      rulerHeight: 444,
+    });
+    expect(ticks.map((tick) => tick.label)).toEqual([
+      '0',
+      '10万',
+      '20万',
+      '30万',
+      '40万',
+      '50万',
+      '60万',
+      '70万',
+      '80万',
+      '90万',
+      '100万',
+    ]);
+  });
+
+  it('目盛り間隔は最小ラベル間隔を下回らない', () => {
+    const ticks = computeScrollHintRulerTicks({
+      rowCount: 50_000,
+      rulerHeight: 200,
+    });
+    for (let index = 1; index < ticks.length; index += 1) {
+      expect(ticks[index].y - ticks[index - 1].y).toBeGreaterThanOrEqual(44);
+    }
+  });
+});
+
+describe('computeScrollHintTrackPointerScrollTop', () => {
+  const track = {
+    maxScroll: 10_000,
+    thumbTop: 0,
+    thumbHeight: 30,
+    centerY: 15,
+  };
+
+  it('サム中心基準の線形写像(中央 → 可動域の中央)', () => {
+    // viewport 480 / thumb 30 → range 450。pointerY 240 → frac (240-15)/450 = 0.5。
+    expect(computeScrollHintTrackPointerScrollTop(240, track, 480)).toBe(5000);
+  });
+
+  it('上端 / 下端で 0 / maxScroll へ clamp される', () => {
+    expect(computeScrollHintTrackPointerScrollTop(-50, track, 480)).toBe(0);
+    expect(computeScrollHintTrackPointerScrollTop(9999, track, 480)).toBe(
+      10_000,
+    );
+  });
+
+  it('range 0(サムがトラック全高)では 0', () => {
+    expect(
+      computeScrollHintTrackPointerScrollTop(
+        100,
+        { ...track, thumbHeight: 480 },
+        480,
+      ),
+    ).toBe(0);
   });
 });
 
