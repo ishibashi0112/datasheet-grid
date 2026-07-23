@@ -75,7 +75,7 @@
 | `enableContextMenu` | `boolean` | `false` | コンテキストメニュー機能の有効化(マスタースイッチ)。他機能の `enable*` と同じく**既定 OFF**。`false` のあいだは `getContextMenuItems` を渡しても発火せず、右クリックはブラウザ標準メニューのまま。現状はまだ機能 / UI に改善余地があるため既定 OFF で提供する(利用側で明示 opt-in)。 |
 | `getContextMenuItems` | `(params: GridContextMenuParams<T>) => GridContextMenuItem[]` | — | セル/行の**完全カスタム**コンテキストメニュー。右クリック時のみ呼ばれ、返した項目でメニューを描画する(ライブラリは固定の既定項目を持たない)。opt-in は `enableContextMenu={true}` かつ本コールバックの指定の両方。**未指定、または `[]` を返したときはブラウザ標準の右クリックメニューへフォールスルー**(空パネルは出さない)。SSRM 未ロード行では開かない。ヘッダー右クリックは列メニュー(`enableColumnMenu`)が担当し、本メニューはボディ(セル / 行NO ガター)専用。詳細は「コンテキストメニュー」節を参照。 |
 | `onContextMenuOpen` | `(params: GridContextMenuParams<T>) => void` | — | コンテキストメニューが実際に開いた直後の通知(項目が 1 件以上あり表示された場合のみ)。
-| `scrollHint` | `boolean \| ScrollHintOptions<T>` | —(無効) | **スクロール位置インジケーター**。スクロール中にスクロールバー脇へ行番号バブル(「行 N / 総行数」+ 任意の列値)と行目盛りルーラーを表示し、スクロールバー帯のホバーで「行 N へ」のジャンプ先プレビューを出す。`true` は全既定(`{ bubble: true, ruler: true, trigger: 'scroll' }`)と同義。表示は総行数とスクロール位置のみで駆動されるため **clientSide / SSRM の全構成で動作**。オーバーレイは `pointer-events: none` で既存操作へ一切干渉しない。詳細は「スクロール位置インジケーター」節を参照。 |
+| `scrollHint` | `boolean \| ScrollHintOptions<T>` | —(無効) | **スクロール位置インジケーター**。スクロール中にスクロールバー脇へ行番号バブル(「行 N / 総行数」+ 任意の列値)と行目盛りルーラーを表示し、スクロールバー帯のホバーで「行 N へ」のジャンプ先プレビューを出す。`true` は全既定(`{ bubble: true, ruler: true, scrollbar: true, trigger: 'scroll', minRows: 0 }`)と同義。`minRows` で「表示行数がしきい値以上のときだけ有効」のデータ量ゲートも掛けられる。表示は総行数とスクロール位置のみで駆動されるため **clientSide / SSRM の全構成で動作**。オーバーレイは `pointer-events: none` で既存操作へ一切干渉しない。詳細は「スクロール位置インジケーター」節を参照。 |
 
 ### バーの表示制御(top / bottom)
 
@@ -218,6 +218,7 @@ const gridRef = useRef<SpreadsheetGridHandle<Row>>(null);
 | `ruler` | `boolean` | `true` | ルーラー + ジャンプ先プレビューの表示。 |
 | `scrollbar` | `boolean` | `true` | カスタム縦スクロールバー(専用ガター・常時表示)。`false` でネイティブバーのまま(バブル等は疑似サム位置に表示)。 |
 | `trigger` | `'scroll' \| 'hover' \| 'always'` | `'scroll'` | バブル / ルーラーの表示トリガー(スクロールバー自体は常時表示)。`'scroll'` = スクロール中のみ(停止約 1 秒でフェードアウト)/ `'hover'` = グリッドホバー中 + スクロール中 / `'always'` = 常時。 |
+| `minRows` | `number` | `0` | **データ量ゲート**。表示行数(フィルター / グルーピング適用後のビュー行数。SSRM はサーバー総行数)がこの値未満のあいだ、scrollHint 全体(カスタムスクロールバー含む)を自動 OFF にしてネイティブスクロールバー表示のままにする。`0` = 常時有効(従来挙動)。 |
 | `hintColumn` | `string` | — | 行番号に添えて表示する列 key(= 行オブジェクトのフィールド名)。 |
 | `renderHint` | `({ rowIndex, rowData }) => ReactNode` | — | 表示内容の完全カスタム(`hintColumn` より優先)。`null` / `undefined` を返すと行番号のみの既定表示。 |
 
@@ -234,6 +235,8 @@ const gridRef = useRef<SpreadsheetGridHandle<Row>>(null);
   }}
 />
 ```
+
+**データ量ゲート(`minRows`)**: 小規模データではバブル / ルーラー / カスタムスクロールバーがノイズになるため、`minRows` を指定すると「表示行数がしきい値以上のときだけ出る」挙動にできる(例: `scrollHint={{ minRows: 100 }}`)。判定はバブルの「/ 総行数」と同じ行数(フィルター / グルーピング適用後のビュー行数。SSRM はサーバー総行数)で、フィルターで絞り込んでしきい値を割ればその間は自動 OFF になる。既定は `0`(常時有効)。注意: `scrollbar` 有効時はしきい値またぎでガター余白が付け外しされるため、行数が変動する画面では僅かなレイアウトシフトが起きる(気になる場合は `scrollbar: false` と併用する)。
 
 **SSRM / グルーピングでの挙動**: バブル / プレビューの対象行が SSRM の未ロード行(またはグルーピングのグループ行)の場合、`rowData` は `undefined` になり、`hintColumn` 指定時は自動的に**行番号のみ**へフォールバックする(`renderHint` には `undefined` がそのまま渡るので利用側で分岐する)。総行数とスクロール位置だけで駆動されるため、インジケーター自体は SSRM を含む全構成で動作する。
 

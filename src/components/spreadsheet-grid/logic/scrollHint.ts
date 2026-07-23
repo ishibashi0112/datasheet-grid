@@ -21,6 +21,7 @@ export type ResolvedScrollHintOptions<T> = {
   ruler: boolean;
   scrollbar: boolean;
   trigger: ScrollHintTrigger;
+  minRows: number;
   hintColumn: string | undefined;
   renderHint: ((args: ScrollHintRenderArgs<T>) => ReactNode) | undefined;
 };
@@ -48,6 +49,9 @@ export const resolveScrollHintOptions = <T>(
     ruler,
     scrollbar,
     trigger: options.trigger ?? 'scroll',
+    // データ量ゲートのしきい値です。既定 0 = 常時有効(従来挙動)。負値は 0 と同義になります
+    //   (行数 >= 負値は常に真)。適用判定そのものは view 側(表示行数との比較)が行います。
+    minRows: options.minRows ?? 0,
     hintColumn: options.hintColumn,
     renderHint: options.renderHint,
   };

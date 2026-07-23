@@ -1119,7 +1119,7 @@ export type ScrollHintRenderArgs<T> = {
 //   大量行(特に 100 万行級)ではスクロールバー 1px の移動が数百〜数千行に相当し、移動中に
 //   「今どの行にいるか」を見失います。scrollHint はスクロールバー脇の行番号バブルと
 //   行目盛りルーラーで現在位置を示します。scrollHint={true} は全既定
-//   ({ bubble: true, ruler: true, trigger: 'scroll' })と同義です。
+//   ({ bubble: true, ruler: true, scrollbar: true, trigger: 'scroll', minRows: 0 })と同義です。
 //   表示は「総行数 + スクロール位置」だけで駆動されるため clientSide / SSRM の全構成で動作します。
 export type ScrollHintOptions<T = unknown> = {
   // 行番号バブル(スクロールバー脇に「行 N / 総行数」+ 任意の列値)。既定 true。
@@ -1135,6 +1135,13 @@ export type ScrollHintOptions<T = unknown> = {
   scrollbar?: boolean;
   // 表示トリガー。既定 'scroll'。
   trigger?: ScrollHintTrigger;
+  // データ量ゲート: 表示行数(フィルター/グルーピング適用後のビュー行数。SSRM はサーバー総行数)が
+  //   この値未満の間、scrollHint 全体(バブル / ルーラー / カスタムスクロールバー)を自動 OFF にして
+  //   ネイティブスクロールバー表示のまま保ちます。既定 0(常時有効 = 従来挙動)。
+  //   小規模データではヒントがノイズになるため、例えば 100 を指定すると「データが増えたときだけ
+  //   出る」挙動になります。注意: scrollbar 有効時はしきい値またぎでガター余白が付け外しされる
+  //   ため、フィルター等で行数が変動する画面では僅かなレイアウトシフトが起きます。
+  minRows?: number;
   // 簡易カスタム: 行番号に添えて表示する列 key(GridColumn.key = 行オブジェクトのフィールド名)。
   //   SSRM の未ロード行では値が手元にないため、行番号のみへ自動フォールバックします。
   hintColumn?: string;

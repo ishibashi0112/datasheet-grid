@@ -618,10 +618,14 @@ function App() {
   const [rowGroupingEnabled, setRowGroupingEnabled] = useState(false);
   // 追加(バッチ②デモ): コンテキストメニュー(完全カスタム)の ON/OFF トグルです。既定 OFF。
   const [contextMenuEnabled, setContextMenuEnabled] = useState(false);
-  // 追加(scrollHint デモ): スクロール位置インジケーター(バブル + ルーラー)の ON/OFF です。
+  // 追加(scrollHint デモ): スクロール位置インジケーター(バブル + ルーラー)のモードです。
   //   1M 行での現在位置把握が主目的のため、デモでは既定 ON にしています(ライブラリ既定は OFF)。
   //   hintColumn='partNo' で「行番号 + 品番」を表示します。
-  const [scrollHintEnabled, setScrollHintEnabled] = useState(true);
+  //   'auto' は minRows デモ: 表示行数 1 万未満では自動 OFF(行数プリセット 5,000 やフィルターで
+  //   絞ると消え、50,000 以上へ戻すと出ます)。
+  const [scrollHintMode, setScrollHintMode] = useState<'on' | 'auto' | 'off'>(
+    'on',
+  );
   // 追加(THEME-3 デモ): readonly セル(「単位」列)の淡色表示 opt-in(既定 OFF=色変化なし)。
   const [dimReadOnlyCells, setDimReadOnlyCells] = useState(false);
   // 追加(FM-2 デモ): フィルターチップバー(適用中の列フィルターをトップバー直下に常時表示)。
@@ -1256,15 +1260,25 @@ function App() {
           >
             フィルターチップバー: {showFilterChipBar ? 'ON' : 'OFF'}
           </button>
-          {/* 追加(scrollHint デモ): スクロール位置インジケーター ON/OFF(デモ既定 ON)。
+          {/* 追加(scrollHint デモ): スクロール位置インジケーターのモード巡回(ON → AUTO → OFF)。
               スクロール中に行番号バブル + 行目盛りルーラー、スクロールバー帯ホバーで
-              ジャンプ先プレビュー(行番号 + 品番)を表示します。 */}
+              ジャンプ先プレビュー(行番号 + 品番)を表示します。AUTO は minRows=10,000 で、
+              表示行数 1 万未満(行数プリセット 5,000 やフィルターで絞った状態)では自動 OFF。 */}
           <button
             type="button"
-            onClick={() => setScrollHintEnabled((v) => !v)}
-            style={modeButtonStyle(scrollHintEnabled)}
+            onClick={() =>
+              setScrollHintMode((v) =>
+                v === 'on' ? 'auto' : v === 'auto' ? 'off' : 'on',
+              )
+            }
+            style={modeButtonStyle(scrollHintMode !== 'off')}
           >
-            スクロール位置ヒント: {scrollHintEnabled ? 'ON' : 'OFF'}
+            スクロール位置ヒント:{' '}
+            {scrollHintMode === 'on'
+              ? 'ON'
+              : scrollHintMode === 'auto'
+                ? 'AUTO(1万行〜)'
+                : 'OFF'}
           </button>
           {/* 追加(THEME-2 デモ): 密度プリセット(クリックで standard → compact → comfortable を巡回)。 */}
           <button
@@ -1393,7 +1407,15 @@ function App() {
         enableContextMenu={contextMenuEnabled}
         // 追加(scrollHint デモ): スクロール位置インジケーター(上のトグルと連動。デモ既定 ON)。
         //   hintColumn='partNo' で「行番号 + 品番」。renderHint に差し替えると完全カスタムも可能です。
-        scrollHint={scrollHintEnabled ? { hintColumn: 'partNo' } : undefined}
+        //   AUTO は minRows=10,000(表示行数がしきい値未満のあいだは自動 OFF)。
+        scrollHint={
+          scrollHintMode === 'off'
+            ? undefined
+            : {
+                hintColumn: 'partNo',
+                minRows: scrollHintMode === 'auto' ? 10_000 : 0,
+              }
+        }
         // 追加(THEME-3 デモ): readonly セルの淡色表示(上の「readonly淡色」トグルと連動。既定 OFF)。
         dimReadOnlyCells={dimReadOnlyCells}
         // 追加(THEME-2 デモ): 密度プリセット(上の「密度」トグルと連動。既定 standard)。

@@ -639,3 +639,78 @@ describe('SpreadsheetGrid SSRM エラーバー(結合)', () => {
     expect(screen.queryByRole('alert')).toBeNull();
   });
 });
+
+// 追加(scrollHint minRows): データ量ゲートの結合テストです。既定値の解決は logic/scrollHint.test.ts が
+//   担い、ここでは「表示行数 >= minRows のときだけ scrollHint が有効になる」配線を実 render で確認します。
+//   jsdom は寸法 0 でオーバーレイ本体(バブル / ルーラー)が描画されないため、判定はレイアウト非依存の
+//   カスタムスクロールバー用コンテナクラス(ネイティブ縦バー置換の付け外し)で行います。
+describe('scrollHint minRows(結合)', () => {
+  const CUSTOM_SCROLLBAR_CLASS = 'ssg-scroll-container--custom-scrollbar';
+  const hasCustomScrollbar = (container: HTMLElement): boolean =>
+    container
+      .querySelector('.ssg-scroll-container')
+      ?.classList.contains(CUSTOM_SCROLLBAR_CLASS) === true;
+
+  it('既定(minRows 0)は行数によらず有効(従来挙動)', () => {
+    const { container } = render(
+      <SpreadsheetGrid columns={columns} rows={rows} scrollHint={true} />,
+    );
+    expect(hasCustomScrollbar(container)).toBe(true);
+  });
+
+  it('表示行数が minRows 未満なら scrollHint 全体が待機(ネイティブバーのまま)', () => {
+    const { container } = render(
+      <SpreadsheetGrid
+        columns={columns}
+        rows={rows}
+        scrollHint={{ minRows: 100 }}
+      />,
+    );
+    expect(hasCustomScrollbar(container)).toBe(false);
+  });
+
+  it('境界: 表示行数 = minRows で有効になる', () => {
+    const { container } = render(
+      <SpreadsheetGrid
+        columns={columns}
+        rows={rows}
+        scrollHint={{ minRows: rows.length }}
+      />,
+    );
+    expect(hasCustomScrollbar(container)).toBe(true);
+  });
+
+  it('フィルターで表示行数がしきい値を割ると OFF、解除で ON(判定はビュー行数)', () => {
+    const ref = createRef<SpreadsheetGridHandle<Row>>();
+    const { container } = render(
+      <SpreadsheetGrid
+        ref={ref}
+        columns={columns}
+        rows={rows}
+        scrollHint={{ minRows: 2 }}
+      />,
+    );
+    expect(hasCustomScrollbar(container)).toBe(true);
+
+    // globalText 'be' にマッチするのは beta の 1 行のみ(< minRows 2)。
+    act(() => {
+      ref.current?.applyState({
+        version: GRID_STATE_VERSION,
+        columnWidths: {},
+        filters: { globalText: 'be', columnFilters: {} },
+        sort: [],
+      });
+    });
+    expect(hasCustomScrollbar(container)).toBe(false);
+
+    act(() => {
+      ref.current?.applyState({
+        version: GRID_STATE_VERSION,
+        columnWidths: {},
+        filters: { globalText: '', columnFilters: {} },
+        sort: [],
+      });
+    });
+    expect(hasCustomScrollbar(container)).toBe(true);
+  });
+});

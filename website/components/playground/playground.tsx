@@ -123,6 +123,9 @@ type Settings = {
   rowSelectionMode: RowSelectionMode;
   enableSelectAllRows: boolean;
   scrollHint: boolean;
+  // scrollHint のデータ量ゲート(minRows)。行数プリセット(100 / 1,000 / 100,000)と
+  // 組み合わせると「しきい値未満では自動 OFF」を体験できる。
+  scrollHintMinRows: number;
 };
 
 const DEFAULTS: Settings = {
@@ -147,6 +150,7 @@ const DEFAULTS: Settings = {
   rowSelectionMode: 'multiple',
   enableSelectAllRows: true,
   scrollHint: false,
+  scrollHintMinRows: 0,
 };
 
 function buildSnippet(s: Settings): string {
@@ -179,8 +183,13 @@ function buildSnippet(s: Settings): string {
     lines.push(`  enableSelectAllRows={${s.enableSelectAllRows}}`);
   }
   // scrollHint は既定 OFF(undefined)のため、ON のときだけスニペットへ載せる。
+  // minRows は既定 0(常時有効)のため、指定時のみ載せる。
   if (s.scrollHint) {
-    lines.push("  scrollHint={{ hintColumn: 'name' }}");
+    lines.push(
+      s.scrollHintMinRows > 0
+        ? `  scrollHint={{ hintColumn: 'name', minRows: ${s.scrollHintMinRows} }}`
+        : "  scrollHint={{ hintColumn: 'name' }}",
+    );
   }
   lines.push('/>');
   return lines.join('\n');
@@ -219,7 +228,11 @@ function PlaygroundGrid({ settings }: { settings: Settings }) {
       enableRowSelection={settings.enableRowSelection}
       rowSelectionMode={settings.rowSelectionMode}
       enableSelectAllRows={settings.enableRowSelection && settings.enableSelectAllRows}
-      scrollHint={settings.scrollHint ? { hintColumn: 'name' } : undefined}
+      scrollHint={
+        settings.scrollHint
+          ? { hintColumn: 'name', minRows: settings.scrollHintMinRows }
+          : undefined
+      }
     />
   );
 }
@@ -337,6 +350,19 @@ export function Playground() {
           <Toggle label="enableUndoRedo" checked={settings.enableUndoRedo} onChange={(v) => set('enableUndoRedo', v)} />
           <Toggle label="enableClearOnDelete" checked={settings.enableClearOnDelete} onChange={(v) => set('enableClearOnDelete', v)} />
           <Toggle label="scrollHint" checked={settings.scrollHint} onChange={(v) => set('scrollHint', v)} />
+          <label className="flex items-center justify-between gap-2 text-sm">
+            <code className="text-xs">scrollHint.minRows</code>
+            <select
+              className={selectClass}
+              value={settings.scrollHintMinRows}
+              onChange={(e) => set('scrollHintMinRows', Number(e.target.value))}
+              disabled={!settings.scrollHint}
+            >
+              <option value={0}>0(常時)</option>
+              <option value={1000}>1,000</option>
+              <option value={10000}>10,000</option>
+            </select>
+          </label>
         </Group>
 
         <Group title="編集 / 検証">

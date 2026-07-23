@@ -1458,6 +1458,15 @@ export function SpreadsheetGrid<T extends object>({
   //   ヒットテスト・キーボード境界はそちらが正)。グルーピング無効時は常に同値です。
   const leafRowCount = groupedDisplay ? order.length : viewRowCount;
 
+  // 追加(scrollHint minRows): データ量ゲートの適用です。表示行数(viewRowCount)が minRows 未満の
+  //   間は scrollHint 全体を待機(null 扱い)にし、ネイティブスクロールバー表示のまま保ちます。
+  //   バブルの「行 N / 総行数」やルーラーと同じ行数(グループ行込み・SSRM はサーバー総数)で
+  //   判定します。既定 minRows=0 では常に resolvedScrollHint と同値(従来挙動)。
+  const activeScrollHint =
+    resolvedScrollHint !== null && viewRowCount >= resolvedScrollHint.minRows
+      ? resolvedScrollHint
+      : null;
+
   // 派生ビュー: order[i] が「ビュー位置 i の元 rows index(= source index)」です。
   // 変更(DS-3-7): eager な filteredRows 配列 materialize を撤去し、遅延キャッシュ factory に
   //   置き換えます。唯一残る consumer は公開 slotContext.filteredRows(外部スロット契約)のみで、
@@ -5128,7 +5137,8 @@ export function SpreadsheetGrid<T extends object>({
             'ssg-scroll-container',
             // 追加(scrollHint): カスタムスクロールバー有効時はネイティブ縦バーを隠し、
             //   右端にガターぶんの余白(margin-right)を空けます(GridScrollHint が描画)。
-            resolvedScrollHint?.scrollbar === true &&
+            //   minRows 未達時(activeScrollHint=null)はネイティブバーのままにします。
+            activeScrollHint?.scrollbar === true &&
               'ssg-scroll-container--custom-scrollbar',
           )}
           style={scrollContainerStyle}
@@ -5606,9 +5616,9 @@ export function SpreadsheetGrid<T extends object>({
             filter overlay と同じくシェルへの絶対配置・pointer-events: none の装飾オーバーレイ。
             「スクロール中か」の活動状態はコンポーネント内部(自前 passive リスナー)が持ち、
             位置・行番号は親の scrollTop / 縦ジオメトリから毎レンダー導出します。 */}
-        {resolvedScrollHint !== null && (
+        {activeScrollHint !== null && (
           <GridScrollHint
-            options={resolvedScrollHint}
+            options={activeScrollHint}
             scrollContainerRef={scrollContainerRef}
             scrollTop={scrollTop}
             viewportHeight={viewportHeight}

@@ -17,12 +17,13 @@ describe('resolveScrollHintOptions', () => {
     expect(resolveScrollHintOptions(false)).toBeNull();
   });
 
-  it('true は全既定(bubble + ruler + scrollbar / trigger=scroll)', () => {
+  it('true は全既定(bubble + ruler + scrollbar / trigger=scroll / minRows=0)', () => {
     expect(resolveScrollHintOptions(true)).toEqual({
       bubble: true,
       ruler: true,
       scrollbar: true,
       trigger: 'scroll',
+      minRows: 0,
       hintColumn: undefined,
       renderHint: undefined,
     });
@@ -60,6 +61,11 @@ describe('resolveScrollHintOptions', () => {
     expect(
       resolveScrollHintOptions({ bubble: false, ruler: false, scrollbar: false }),
     ).toBeNull();
+  });
+
+  it('minRows は既定 0(常時有効)で、明示値はそのまま保持される', () => {
+    expect(resolveScrollHintOptions({})?.minRows).toBe(0);
+    expect(resolveScrollHintOptions({ minRows: 100 })?.minRows).toBe(100);
   });
 });
 
