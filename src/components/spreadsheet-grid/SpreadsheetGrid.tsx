@@ -1952,6 +1952,9 @@ export function SpreadsheetGrid<T extends object>({
     rightPaneWidth: rightPaneTotalWidth,
     centerLeadingWidth,
     activeCellRect: centerViewportActiveRect,
+    // 追加(scroll-jump 対策): 可視化スクロールを「座標が変わったとき」に限定するための座標です
+    //   (フィルター確定等のレイアウト再計算による rect 参照変化だけでは発火させない)。
+    activeCell: uiState.activeCell,
     // 追加(scroll-space 仮想化): active cell 自動スクロールの論理↔物理換算に使います。
     verticalScaleFactor,
   });
@@ -2167,11 +2170,11 @@ export function SpreadsheetGrid<T extends object>({
   //   onRowsChange と同一イベント内ではレイアウト(rowMetrics / ペイン幅)が復元後の値へ確定して
   //   いないため、rAF で 1 フレーム遅らせてから align 'auto'(最小スクロール・可視中は no-op)で
   //   可視化します。
-  //   既存の activeCell 可視化 effect(useGridViewportSync)との関係: あちらは activeCellRect の
-  //   「変化」にしか反応しないため、(a) 復元前後で activeCell が同一のままスクロール位置だけ
-  //   遠くにあるケース(編集 → スクロール → Ctrl+Z の典型動線)、(b) 固定列セル(rect=null)の
-  //   縦追従、をカバーしません。本追従はその補完で、既に可視の場合は 'auto' 計算が no-op に
-  //   なるため二重スクロールの実害はありません。
+  //   既存の activeCell 可視化 effect(useGridViewportSync)との関係: あちらは activeCell 座標の
+  //   「変化」にしか反応しない(scroll-jump 対策で座標不変時はスキップ)ため、(a) 復元前後で
+  //   activeCell が同一のままスクロール位置だけ遠くにあるケース(編集 → スクロール → Ctrl+Z の
+  //   典型動線)、(b) 固定列セル(rect=null)の縦追従、をカバーしません。本追従はその補完で、
+  //   既に可視の場合は 'auto' 計算が no-op になるため二重スクロールの実害はありません。
   const scrollToCellInternalRef = useRef<
     (viewRowIndex: number, colIndex: number, align: ScrollAlign) => void
   >(() => {});

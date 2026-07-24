@@ -1,6 +1,7 @@
-import { useEffect, type RefObject } from 'react';
+import { useEffect, useRef, type RefObject } from 'react';
 import type { ActiveCellOverlayRect } from '../ActiveCellOverlay';
 import type { ColumnMeasurement } from '../logic/geometry';
+import type { CellCoord } from '../model/gridTypes';
 // 追加(scroll-space 仮想化): active cell 自動スクロール / clamp の物理↔論理換算。
 import {
   logicalToPhysicalScrollTop,
@@ -36,6 +37,10 @@ type UseGridViewportSyncArgs<T> = {
   // active cell が中央ペインにあるときの「中央ペインローカル矩形」です。
   // 固定ペインにある場合は横スクロール不要なので null が渡されます。
   activeCellRect: ActiveCellOverlayRect | null;
+  // 追加(scroll-jump 対策): activeCell の座標(view 空間)です。可視化スクロールは
+  //   「座標が前回から変わったとき」だけ行い、レイアウト再計算(フィルター確定・ソート・
+  //   行増減など)による activeCellRect の参照変化だけでは発火させません。
+  activeCell: CellCoord | null;
   // 追加(scroll-space 仮想化): active cell 自動スクロールの論理↔物理換算倍率
   //   (scaleFactor=1 のとき両変換は恒等＝現状と完全一致)。
   verticalScaleFactor: number;
@@ -56,6 +61,7 @@ export const useGridViewportSync = <T,>({
   rightPaneWidth,
   centerLeadingWidth,
   activeCellRect,
+  activeCell,
   verticalScaleFactor,
 }: UseGridViewportSyncArgs<T>) => {
   // 追加: column geometry が変わった際に horizontal virtualizer を再計測します。
@@ -95,7 +101,25 @@ export const useGridViewportSync = <T,>({
   //   - 縦: ヘッダー(sticky)に隠れない領域 [scrollTop + headerHeight, scrollTop + clientHeight] に収めます。
   //   - 横: 左右固定ペイン(sticky)に隠れない領域
   //         [scrollLeft + leftPaneWidth, scrollLeft + clientWidth - rightPaneWidth] に収めます。
+  // 追加(scroll-jump 対策): 前回この effect が評価した activeCell 座標です。フィルター確定・
+  //   ソート・行増減・列リサイズ等では rowMetrics / paneLayout の再計算により activeCellRect の
+  //   「参照」だけが変わって座標は同一のまま effect が再発火し、画面外に残っていたアクティブ
+  //   セルへスクロールが引き戻されてしまう(報告: フィルター確定で左端へジャンプ)。そのため
+  //   自動スクロールは「座標が実際に動いたとき」(クリック / キーボード移動 / 命令的 setActiveCell)
+  //   に限定します。座標不変のまま遠くへスクロールした位置から可視化したいケースは、undo/redo の
+  //   専用追従(scrollRestoredCellIntoView)と命令的 scrollToCell が別経路で担います。
+  const lastEvaluatedCellRef = useRef<CellCoord | null>(null);
   useEffect(() => {
+    const prevCell = lastEvaluatedCellRef.current;
+    const coordUnchanged =
+      prevCell !== null &&
+      activeCell !== null &&
+      prevCell.row === activeCell.row &&
+      prevCell.col === activeCell.col;
+    lastEvaluatedCellRef.current = activeCell;
+    if (coordUnchanged) {
+      return;
+    }
     if (!scrollRef.current || !activeCellRect) {
       return;
     }
@@ -156,6 +180,7 @@ export const useGridViewportSync = <T,>({
   }, [
     scrollRef,
     activeCellRect,
+    activeCell,
     headerHeight,
     leftPaneWidth,
     rightPaneWidth,
