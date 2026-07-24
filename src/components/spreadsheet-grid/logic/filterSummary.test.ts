@@ -85,6 +85,49 @@ describe('describeColumnFilterValue', () => {
     ).toBe('3 件を除外');
   });
 
+  // 追加(filter-ext B): numberSet(条件 AND 選択)の複合要約です。
+  it('numberSet は条件と選択を「かつ」で結合する', () => {
+    expect(
+      describeColumnFilterValue({
+        kind: 'numberSet',
+        condition: { mode: 'comparison', operator: '>=', value: 10 },
+        set: { mode: 'include', values: ['12', '20', '48'] },
+      }),
+    ).toBe('10 以上 かつ 3 件を選択');
+    expect(
+      describeColumnFilterValue({
+        kind: 'numberSet',
+        condition: { mode: 'range', min: 10, max: 20 },
+        set: { mode: 'exclude', values: ['12'] },
+      }),
+    ).toBe('10 〜 20 かつ 1 件を除外');
+  });
+
+  it('numberSet は片方だけでも要約でき、set 部分は kind:set と同じ規則(1〜2 件は列挙)', () => {
+    expect(
+      describeColumnFilterValue({
+        kind: 'numberSet',
+        condition: { mode: 'blank' },
+        set: null,
+      }),
+    ).toBe('(空白)');
+    expect(
+      describeColumnFilterValue({
+        kind: 'numberSet',
+        condition: null,
+        set: { mode: 'include', values: ['', '12'] },
+      }),
+    ).toBe('(空白), "12"');
+    // 両方 null は commit 側で clear 済みの防御表示。
+    expect(
+      describeColumnFilterValue({
+        kind: 'numberSet',
+        condition: null,
+        set: null,
+      }),
+    ).toBe('フィルターなし');
+  });
+
   it('custom は非空 string なら「"x"」(trim)、それ以外は「カスタム条件」', () => {
     expect(
       describeColumnFilterValue({ kind: 'custom', value: ' my-cond ' }),

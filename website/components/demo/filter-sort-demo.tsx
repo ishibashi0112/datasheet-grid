@@ -39,7 +39,9 @@ const columns: GridColumn<Row>[] = [
     title: '数量',
     width: 110,
     align: 'right',
-    filterType: 'number',
+    // 変更(filter-ext B): 条件 AND 選択の複合フィルター(numberSet)のデモです
+    //   (単価は従来の number のままにし、両 UI を確認できます)。
+    filterType: 'numberSet',
   },
   {
     key: 'price',

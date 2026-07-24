@@ -271,6 +271,21 @@ export type DateColumnFilterValue = {
   value: string;
 };
 
+// 追加(filter-ext B): 「条件 AND 選択」複合フィルター(AG Grid の Multi Filter 相当)の
+//   記述子です。1 つの popover に条件(述語)と値(Set 一覧)を縦に並べ、AND で結合します。
+//   - condition: 数値条件(ParsedNumberFilter)。null = 条件なし。
+//   - set      : Set 選択(形は SetColumnFilterValue と同じ mode + values)。null = 全選択。
+//   condition と set が両方 null の状態は保存せず clearColumn へ正規化します(commit 側の責務)。
+//   条件を変えても set の選択は破棄されません(候補外の値の選択も保持し、条件を戻せば復活)。
+export type NumberSetColumnFilterValue = {
+  kind: 'numberSet';
+  condition: ParsedNumberFilter | null;
+  set: {
+    mode?: 'include' | 'exclude';
+    values: string[];
+  } | null;
+};
+
 // 追加(記述子化): select の完全一致フィルターのタグ付き記述子です。
 //   value は選択値そのもの(trim しない)で、判定側で文字列完全一致します。
 export type SelectColumnFilterValue = {
@@ -293,6 +308,7 @@ export type CustomColumnFilterValue = {
 export type ColumnFilterValue =
   | SetColumnFilterValue
   | NumberColumnFilterValue
+  | NumberSetColumnFilterValue
   | TextColumnFilterValue
   | DateColumnFilterValue
   | SelectColumnFilterValue
@@ -596,7 +612,17 @@ export type GridColumn<T> = {
   renderHeader?: (ctx: HeaderRenderContext<T>) => ReactNode;
   // 変更(12-A): 'set' を追加します。AG Grid の Set Filter 相当
   //             (チェックボックス一覧 + 検索 + Select All)の UI になります。
-  filterType?: 'text' | 'number' | 'date' | 'select' | 'set' | 'custom';
+  // 変更(filter-ext B): 'numberSet' を追加します。数値条件(演算子 + 値)と Set 一覧を
+  //             1 つの popover に縦に並べて AND 結合する複合フィルターです。条件を適用すると
+  //             Set 候補が条件を満たす値だけに連動して絞られます。
+  filterType?:
+    | 'text'
+    | 'number'
+    | 'numberSet'
+    | 'date'
+    | 'select'
+    | 'set'
+    | 'custom';
   // 追加: select / set フィルター時の候補です。未指定時は rows から自動収集します。
   filterOptions?: GridSelectFilterOption[];
   filterFn?: (row: T, filterValue: unknown) => boolean;

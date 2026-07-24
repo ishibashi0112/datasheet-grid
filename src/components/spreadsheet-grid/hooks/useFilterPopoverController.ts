@@ -11,11 +11,14 @@ import type { ColumnFilterValue, GridColumn } from '../model/gridTypes';
 import {
   columnFilterValueToDraftText,
   isNumberColumnFilterValue,
+  isNumberSetColumnFilterValue,
 } from '../logic/filtering';
 // 追加(filter-ext A): number 列の構造化条件 draft(演算子 + 値 1/2)と、既存フィルター値
 //   からの復元です(parsed から構造を逆引き。旧・式構文の保存値も復元できます)。
+// 変更(filter-ext B): numberSet は condition から復元します(共有の逆引き実装)。
 import {
   numberFilterValueToConditionDraft,
+  parsedNumberFilterToConditionDraft,
   type NumberFilterConditionDraft,
 } from '../logic/numberFilterCondition';
 
@@ -48,6 +51,8 @@ const ESTIMATED_POPUP_HEIGHT = 260;
 // 追加(12-A): set フィルターは検索 + Select All + 候補リスト(208px)を含むため、
 //             上下フリップ判定用の見積もり高さを別に持ちます。
 const ESTIMATED_SET_POPUP_HEIGHT = 400;
+// 追加(filter-ext B): numberSet は set の内容 + 条件セクション(演算子 + 値入力)ぶん縦に長い。
+const ESTIMATED_NUMBER_SET_POPUP_HEIGHT = 470;
 
 // 追加: 列フィルター popover の state / ref / focus / outside click / layout をまとめて管理します。
 export const useFilterPopoverController = <T,>({
@@ -89,10 +94,13 @@ export const useFilterPopoverController = <T,>({
     const anchorRect = filterPopoverAnchorRef.current.getBoundingClientRect();
 
     // 追加(12-A): set フィルターは popover が縦に長いため、見積もり高さを切り替えます。
+    // 変更(filter-ext B): numberSet はさらに条件セクションぶん長くなります。
     const estimatedPopupHeight =
-      openedFilterColumn?.filterType === 'set'
-        ? ESTIMATED_SET_POPUP_HEIGHT
-        : ESTIMATED_POPUP_HEIGHT;
+      openedFilterColumn?.filterType === 'numberSet'
+        ? ESTIMATED_NUMBER_SET_POPUP_HEIGHT
+        : openedFilterColumn?.filterType === 'set'
+          ? ESTIMATED_SET_POPUP_HEIGHT
+          : ESTIMATED_POPUP_HEIGHT;
 
     let left = anchorRect.right - POPUP_WIDTH;
     left = Math.max(VIEWPORT_MARGIN, left);
@@ -156,13 +164,20 @@ export const useFilterPopoverController = <T,>({
 
       // 追加(filter-ext A): number 列は構造化条件 draft(演算子 + 値)で編集します。
       //   既存フィルター値の parsed から復元し、未設定 / 旧 contains 値は既定 draft です。
+      // 変更(filter-ext B): numberSet 列は condition から復元します(逆引きは共有実装)。
       const currentValue = columnFilterValues[column.key];
       const numberDraft =
         column.filterType === 'number'
           ? numberFilterValueToConditionDraft(
               isNumberColumnFilterValue(currentValue) ? currentValue : undefined,
             )
-          : null;
+          : column.filterType === 'numberSet'
+            ? parsedNumberFilterToConditionDraft(
+                isNumberSetColumnFilterValue(currentValue)
+                  ? currentValue.condition
+                  : undefined,
+              )
+            : null;
 
       setFilterPopoverState({
         columnKey: column.key,

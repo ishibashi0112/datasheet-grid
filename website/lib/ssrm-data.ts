@@ -109,6 +109,23 @@ function matchFilter(value: unknown, filter: ColumnFilterValue): boolean {
       }
       return num >= parsed.min && num <= parsed.max;
     }
+    // 追加(filter-ext B): 条件 AND 選択の複合(デモには numberSet 列は無いが、
+    //   ColumnFilterValue の網羅 switch として number / set と同じ規則で解釈する)。
+    case 'numberSet': {
+      if (filter.condition) {
+        const conditionPass = matchFilter(value, {
+          kind: 'number',
+          raw: '',
+          parsed: filter.condition,
+        });
+        if (!conditionPass) return false;
+      }
+      if (filter.set) {
+        const hit = filter.set.values.includes(String(value ?? ''));
+        return filter.set.mode === 'exclude' ? !hit : hit;
+      }
+      return true;
+    }
     case 'custom':
       // デモに custom フィルター列は無い(記述子の解釈は利用側責務のため素通し)
       return true;

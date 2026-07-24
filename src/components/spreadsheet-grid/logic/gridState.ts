@@ -40,6 +40,13 @@ export const cloneColumnFilterValue = (
       return { ...value, values: [...value.values] };
     case 'number':
       return { ...value, parsed: value.parsed ? { ...value.parsed } : null };
+    // 追加(filter-ext B): numberSet は condition(入れ子)と set(values 配列)を複製します。
+    case 'numberSet':
+      return {
+        ...value,
+        condition: value.condition ? { ...value.condition } : null,
+        set: value.set ? { ...value.set, values: [...value.set.values] } : null,
+      };
     case 'text':
     case 'date':
     case 'select':
@@ -331,6 +338,18 @@ const isSameColumnFilterValue = (
         b.kind === 'number' &&
         a.raw === b.raw &&
         isSameParsedNumberFilter(a.parsed, b.parsed)
+      );
+    // 追加(filter-ext B): numberSet は condition(ParsedNumberFilter)と set(mode + values)
+    //   をそれぞれ構造比較します(set 部分の規則は kind:'set' と同一)。
+    case 'numberSet':
+      return (
+        b.kind === 'numberSet' &&
+        isSameParsedNumberFilter(a.condition, b.condition) &&
+        (a.set === null || b.set === null
+          ? a.set === b.set
+          : (a.set.mode ?? 'include') === (b.set.mode ?? 'include') &&
+            a.set.values.length === b.set.values.length &&
+            a.set.values.every((v, i) => v === b.set?.values[i]))
       );
     case 'text':
       return b.kind === 'text' && a.value === b.value;

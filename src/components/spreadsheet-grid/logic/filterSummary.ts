@@ -1,4 +1,6 @@
 import type { ColumnFilterValue } from '../model/gridTypes';
+// 追加(filter-ext B): numberSet の条件部の表示文字列です(「10 以上」等。演算子ラベルと対応)。
+import { formatParsedNumberFilter } from './numberFilterCondition';
 
 // 追加(FM-1 / フィルター管理パネル): 列フィルター値(判別共用体)を人間可読な要約文字列へ
 //   変換する純関数です。FilterManagementPanel の一覧行で使い、FM-2(フィルターチップバー)
@@ -21,6 +23,22 @@ import type { ColumnFilterValue } from '../model/gridTypes';
 const formatSetValue = (value: string): string =>
   value === '' ? '(空白)' : `"${value}"`;
 
+// 追加(filter-ext B): set 選択(mode + values)の要約です。kind:'set' と kind:'numberSet' の
+//   set 部分が共有します(include 1〜2 件は列挙 / 3 件以上は件数 / exclude は除外件数)。
+const describeSetSelection = (
+  mode: 'include' | 'exclude' | undefined,
+  values: string[],
+): string => {
+  // mode 省略は include 扱いです(反転set 導入前の値との後方互換)。
+  if ((mode ?? 'include') === 'exclude') {
+    return `${values.length} 件を除外`;
+  }
+  if (values.length > 0 && values.length <= 2) {
+    return values.map(formatSetValue).join(', ');
+  }
+  return `${values.length} 件を選択`;
+};
+
 // 列フィルター値の要約文字列を返します。有効判定(isActiveColumnFilterValue)は呼び出し側の
 //   責務です(無効値でも安全に文字列を返しますが、一覧に載せる/載せないの判断は行いません)。
 export const describeColumnFilterValue = (value: ColumnFilterValue): string => {
@@ -32,16 +50,22 @@ export const describeColumnFilterValue = (value: ColumnFilterValue): string => {
       return `"${value.value}" に一致`;
     case 'number':
       return value.raw;
-    case 'set': {
-      // mode 省略は include 扱いです(反転set 導入前の値との後方互換)。
-      const mode = value.mode ?? 'include';
-      if (mode === 'exclude') {
-        return `${value.values.length} 件を除外`;
+    case 'set':
+      // 変更(filter-ext B): 実装は describeSetSelection へ抽出しました(numberSet と共有)。
+      return describeSetSelection(value.mode, value.values);
+    // 追加(filter-ext B): 条件 AND 選択の複合です。両方あれば「かつ」で結合します
+    //   (例: 「10 以上 かつ 3 件を選択」)。両方 null は commit 側で clear 済みの防御表示です。
+    case 'numberSet': {
+      const conditionText = value.condition
+        ? formatParsedNumberFilter(value.condition)
+        : null;
+      const setText = value.set
+        ? describeSetSelection(value.set.mode, value.set.values)
+        : null;
+      if (conditionText && setText) {
+        return `${conditionText} かつ ${setText}`;
       }
-      if (value.values.length > 0 && value.values.length <= 2) {
-        return value.values.map(formatSetValue).join(', ');
-      }
-      return `${value.values.length} 件を選択`;
+      return conditionText ?? setText ?? 'フィルターなし';
     }
     case 'custom': {
       if (typeof value.value === 'string' && value.value.trim().length > 0) {

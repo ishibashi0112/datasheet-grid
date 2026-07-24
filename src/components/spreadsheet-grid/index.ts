@@ -61,6 +61,8 @@ export type {
   GridFilterState,
   SetColumnFilterValue,
   NumberColumnFilterValue,
+  // 追加(filter-ext B): 「条件 AND 選択」複合フィルター(filterType: 'numberSet')の記述子です。
+  NumberSetColumnFilterValue,
   ParsedNumberFilter,
   TextColumnFilterValue,
   DateColumnFilterValue,

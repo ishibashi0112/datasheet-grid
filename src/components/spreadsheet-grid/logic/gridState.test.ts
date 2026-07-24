@@ -63,6 +63,29 @@ describe('cloneColumnFilterValue', () => {
     }
   });
 
+  // 追加(filter-ext B): numberSet は condition(入れ子)と set.values(配列)を複製します。
+  it('numberSet: condition / set.values とも複製する', () => {
+    const original: ColumnFilterValue = {
+      kind: 'numberSet',
+      condition: { mode: 'comparison', operator: '>=', value: 10 },
+      set: { mode: 'exclude', values: ['12'] },
+    };
+    const cloned = cloneColumnFilterValue(original);
+    expect(cloned).toEqual(original);
+    if (cloned.kind === 'numberSet' && original.kind === 'numberSet') {
+      expect(cloned.condition).not.toBe(original.condition);
+      expect(cloned.set).not.toBe(original.set);
+      expect(cloned.set?.values).not.toBe(original.set?.values);
+    }
+    // 片方 null もそのまま維持されます。
+    const partial: ColumnFilterValue = {
+      kind: 'numberSet',
+      condition: null,
+      set: { values: ['a'] },
+    };
+    expect(cloneColumnFilterValue(partial)).toEqual(partial);
+  });
+
   it('text / date / select: 値は等価で別オブジェクト', () => {
     const text: ColumnFilterValue = { kind: 'text', value: 'abc' };
     const date: ColumnFilterValue = { kind: 'date', value: '2024' };
@@ -406,6 +429,47 @@ describe('isSameGridState', () => {
         st({}, { n: mk('x', { mode: 'notBlank' }) }),
       ),
     ).toBe(false);
+  });
+
+  // 追加(filter-ext B): numberSet は condition + set(mode / values)の構造比較。
+  it('numberSet フィルター: condition / set を比較', () => {
+    const mkNs = (
+      condition: ParsedNumberFilter | null,
+      set: { mode?: 'include' | 'exclude'; values: string[] } | null,
+    ): ColumnFilterValue => ({ kind: 'numberSet', condition, set });
+    const gte10 = { mode: 'comparison', operator: '>=', value: 10 } as const;
+    expect(
+      isSameGridState(
+        st({}, { n: mkNs(gte10, { mode: 'exclude', values: ['12'] }) }),
+        st({}, { n: mkNs({ ...gte10 }, { mode: 'exclude', values: ['12'] }) }),
+      ),
+    ).toBe(true);
+    // condition 違い / set values 違い / null と非 null。
+    expect(
+      isSameGridState(
+        st({}, { n: mkNs(gte10, null) }),
+        st({}, { n: mkNs({ ...gte10, value: 20 }, null) }),
+      ),
+    ).toBe(false);
+    expect(
+      isSameGridState(
+        st({}, { n: mkNs(gte10, { values: ['12'] }) }),
+        st({}, { n: mkNs(gte10, { values: ['12', '20'] }) }),
+      ),
+    ).toBe(false);
+    expect(
+      isSameGridState(
+        st({}, { n: mkNs(gte10, null) }),
+        st({}, { n: mkNs(gte10, { values: [] }) }),
+      ),
+    ).toBe(false);
+    // set の mode 既定(include)と明示 include は等価。
+    expect(
+      isSameGridState(
+        st({}, { n: mkNs(null, { values: ['a'] }) }),
+        st({}, { n: mkNs(null, { mode: 'include', values: ['a'] }) }),
+      ),
+    ).toBe(true);
   });
 
   it('text/date/select: value を比較、同キー kind 違いは false', () => {

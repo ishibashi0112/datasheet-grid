@@ -2,6 +2,9 @@ import type {
   NumberColumnFilterValue,
   ParsedNumberFilter,
 } from '../model/gridTypes';
+// 追加(filter-ext B): 候補連動(条件で Set 候補一覧を絞る)の単一値判定です。
+//   行 predicate(compileParsedNumberPredicate)と同一の意味論を共有します。
+import { matchesParsedNumberFilter } from './filtering';
 
 // 追加(filter-ext A): number フィルターの「演算子セレクト + 値入力」UI の純ロジックです。
 //   旧 UI は「>=10 / 10..20」の式テキストを commit 時に parse していましたが、
@@ -161,6 +164,25 @@ export const buildNumberColumnFilterValueFromDraft = (
   return { kind: 'number', raw: formatParsedNumberFilter(parsed), parsed };
 };
 
+// 追加(filter-ext B): 候補連動 ── Set 候補一覧を数値条件で絞ります(条件 null は素通し)。
+//   合意仕様 §2.3: 条件を適用すると Set 候補が条件を満たす値だけに連動して絞られます
+//   (例: 「10 以上」で (空白) や 10 未満の値が一覧から消える)。候補は文字列 value で、
+//   '' = 空白項目です(blank 条件でのみ一致)。収集(collector)は全候補 1 回きりで、
+//   本関数は表示時の軽量フィルタです(条件打鍵ごとの再収集は起きません)。
+export const filterOptionsByNumberCondition = <
+  O extends { value: string },
+>(
+  options: O[],
+  condition: ParsedNumberFilter | null,
+): O[] => {
+  if (!condition) {
+    return options;
+  }
+  return options.filter((option) =>
+    matchesParsedNumberFilter(condition, option.value),
+  );
+};
+
 const OPERATOR_BY_COMPARISON: Record<
   '>' | '>=' | '<' | '<=' | '=' | '!=',
   NumberFilterOperator
@@ -173,13 +195,12 @@ const OPERATOR_BY_COMPARISON: Record<
   '!=': 'ne',
 };
 
-// 既存フィルター値から popover 再オープン時の draft を復元します。
-//   - parsed あり → 構造から逆引き(raw は見ません。旧・式構文の保存値もここで復元できます)。
-//   - parsed null(旧 contains フォールバック値)/ 未設定 → 既定 draft。
-export const numberFilterValueToConditionDraft = (
-  value: NumberColumnFilterValue | undefined,
+// ParsedNumberFilter から条件 draft を復元します(構造の逆引き)。
+//   number(parsed)と numberSet(condition)の両方の再オープン復元が共有します。
+//   null / undefined(条件なし / 旧 contains 値)は既定 draft です。
+export const parsedNumberFilterToConditionDraft = (
+  parsed: ParsedNumberFilter | null | undefined,
 ): NumberFilterConditionDraft => {
-  const parsed = value?.parsed;
   if (!parsed) {
     return DEFAULT_NUMBER_FILTER_DRAFT;
   }
@@ -201,3 +222,11 @@ export const numberFilterValueToConditionDraft = (
       return { operator: parsed.mode, value1: '', value2: '' };
   }
 };
+
+// 既存フィルター値から popover 再オープン時の draft を復元します。
+//   - parsed あり → 構造から逆引き(raw は見ません。旧・式構文の保存値もここで復元できます)。
+//   - parsed null(旧 contains フォールバック値)/ 未設定 → 既定 draft。
+export const numberFilterValueToConditionDraft = (
+  value: NumberColumnFilterValue | undefined,
+): NumberFilterConditionDraft =>
+  parsedNumberFilterToConditionDraft(value?.parsed);

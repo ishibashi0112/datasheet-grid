@@ -29,6 +29,10 @@ const makeProps = () => ({
   // 追加(filter-ext A): number 条件 draft(set フィルターでは未使用のため null)。
   numberConditionDraft: null,
   onNumberConditionDraftChange: vi.fn(),
+  // 追加(filter-ext B): numberSet の個別クリアとサマリー(set フィルターでは未使用)。
+  onNumberSetConditionClear: vi.fn(),
+  onNumberSetSelectionClear: vi.fn(),
+  numberSetSummaryText: 'フィルターなし',
   currentValueText: '',
   layout: { top: 0, left: 0, width: 260 },
   selectOptions: [
@@ -183,5 +187,91 @@ describe('ColumnFilterPopover の number 条件 UI(filter-ext A)', () => {
     expect(props.onApply).toHaveBeenCalledTimes(1);
     fireEvent.keyDown(input, { key: 'Escape' });
     expect(props.onRequestClose).toHaveBeenCalledTimes(1);
+  });
+});
+
+// 追加(filter-ext B): numberSet(条件 AND 選択)複合 UI の回帰テストです。
+//   候補連動・個別クリア・(すべて選択) の明示スコープ・サマリー表示を検証します
+//   (候補リスト行そのものは仮想化のため、件数メタで確認します)。
+const makeNumberSetProps = (draft: NumberFilterConditionDraft) => ({
+  ...makeProps(),
+  filterType: 'numberSet' as const,
+  numberConditionDraft: draft,
+  selectOptions: [
+    { label: '(空白)', value: '' },
+    { label: '5', value: '5' },
+    { label: '10', value: '10' },
+    { label: '12', value: '12' },
+    { label: '48', value: '48' },
+  ],
+  numberSetSummaryText: '10 以上 かつ 1 件を除外',
+});
+
+describe('ColumnFilterPopover の numberSet 複合 UI(filter-ext B)', () => {
+  it('条件で候補が連動して絞られる(候補連動 §2.3)', () => {
+    const props = makeNumberSetProps(numberDraft({ value1: '10' }));
+    render(<ColumnFilterPopover {...props} />);
+    // gte 10 → 候補は 10 / 12 / 48 の 3 件((空白) と 5 は条件不一致で一覧から消える)。
+    expect(screen.getByText('一致 3 件')).toBeTruthy();
+    expect(screen.getByText('選択中: 3 / 3 件')).toBeTruthy();
+  });
+
+  it('条件なしでは全候補が対象', () => {
+    const props = makeNumberSetProps(numberDraft({}));
+    render(<ColumnFilterPopover {...props} />);
+    expect(screen.getByText('全 5 件')).toBeTruthy();
+    expect(screen.getByText('選択中: 5 / 5 件')).toBeTruthy();
+  });
+
+  it('保持中のチェック外し(候補外の選択)は件数へ二重計上されない', () => {
+    // 条件 gte 10 で「5」の解除(exclude)が保持されているケース: 表示中候補は全選択扱い。
+    const props = {
+      ...makeNumberSetProps(numberDraft({ value1: '10' })),
+      setSelection: { mode: 'exclude' as const, values: new Set(['5']) },
+    };
+    render(<ColumnFilterPopover {...props} />);
+    expect(screen.getByText('選択中: 3 / 3 件')).toBeTruthy();
+  });
+
+  it('個別クリア: 条件 / 値がそれぞれのハンドラへ通知される(クリアの 3 粒度 §4-2)', () => {
+    const props = {
+      ...makeNumberSetProps(numberDraft({ value1: '10' })),
+      setSelection: { mode: 'exclude' as const, values: new Set(['12']) },
+    };
+    render(<ColumnFilterPopover {...props} />);
+    // 「クリア」ボタンは DOM 順に [条件, 値, フッター全消し] の 3 つです。
+    const clearButtons = screen.getAllByRole('button', { name: 'クリア' });
+    expect(clearButtons).toHaveLength(3);
+    fireEvent.pointerDown(clearButtons[0]);
+    expect(props.onNumberSetConditionClear).toHaveBeenCalledTimes(1);
+    fireEvent.pointerDown(clearButtons[1]);
+    expect(props.onNumberSetSelectionClear).toHaveBeenCalledTimes(1);
+    fireEvent.pointerDown(clearButtons[2]);
+    expect(props.onSetClear).toHaveBeenCalledTimes(1);
+  });
+
+  it('条件なし・全選択では個別クリアが disabled', () => {
+    const props = makeNumberSetProps(numberDraft({}));
+    render(<ColumnFilterPopover {...props} />);
+    const clearButtons = screen.getAllByRole('button', { name: 'クリア' });
+    expect((clearButtons[0] as HTMLButtonElement).disabled).toBe(true);
+    expect((clearButtons[1] as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it('(すべて選択) は明示スコープ(表示中候補の values)で通知される(§4-1 の保持前提)', () => {
+    const props = makeNumberSetProps(numberDraft({ value1: '10' }));
+    render(<ColumnFilterPopover {...props} />);
+    // 全選択状態からの解除 → 条件絞り後の表示中候補のみが対象になります('all' は使わない)。
+    fireEvent.click(screen.getByRole('checkbox', { name: /すべて選択/ }));
+    expect(props.onSetSelectAllChange).toHaveBeenCalledWith(
+      ['10', '12', '48'],
+      false,
+    );
+  });
+
+  it('複合サマリーが表示される', () => {
+    const props = makeNumberSetProps(numberDraft({ value1: '10' }));
+    render(<ColumnFilterPopover {...props} />);
+    expect(screen.getByText(/10 以上 かつ 1 件を除外/)).toBeTruthy();
   });
 });

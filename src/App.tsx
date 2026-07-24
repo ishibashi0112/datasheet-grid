@@ -379,7 +379,9 @@ const createInitialColumns = (
       validationMode: 'reject',
     },
     {
-      key: 'qty', title: '数量', width: 90, filterType: 'number', resizable: false, align: 'right',
+      // 変更(filter-ext B): 数量は numberSet(条件 AND 選択の複合フィルター)のデモにします
+      //   (金額は従来の number のままにし、両 UI を確認できるようにします)。
+      key: 'qty', title: '数量', width: 90, filterType: 'numberSet', resizable: false, align: 'right',
       // 追加(editor: number + validation mark デモ): 数値エディタ(スピナー / ArrowUp・Down)+
       //   mark 検証(既定)。不正値も一旦入り、セルに invalid 表示 + hover でメッセージが出ます。
       editor: { type: 'number', min: 0, step: 1 },

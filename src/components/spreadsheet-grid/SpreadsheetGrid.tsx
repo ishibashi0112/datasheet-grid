@@ -60,6 +60,11 @@ import {
   //   ※構築は filter-ext A で構造化 draft 経由(buildNumberColumnFilterValueFromDraft)へ
   //     移行したため、式テキストの buildNumberColumnFilterValue はここでは不要になりました。
   isNumberColumnFilterValue,
+  // 追加(filter-ext B): numberSet(条件 AND 選択)記述子の判定に使います。
+  isNumberSetColumnFilterValue,
+  // 追加(filter-ext B): B-2 Float64 key の構築対象判定です(comparison / range を持つ
+  //   number 系のみ。number / numberSet の両 kind を単一実装で判定します)。
+  columnFilterUsesNumericKey,
   // 追加(記述子化): 現在値表示の text 整形に使います(記述子 → 表示文字列)。
   columnFilterValueToDraftText,
   // 追加(FM-1): フィルター管理パネルの一覧行(有効フィルターの抽出)に使います。
@@ -76,7 +81,14 @@ import {
 import { describeColumnFilterValue } from './logic/filterSummary';
 // 追加(filter-ext A): number 列の構造化条件 draft から記述子を構築します
 //   (popover の演算子セレクト UI の commit 経路)。
-import { buildNumberColumnFilterValueFromDraft } from './logic/numberFilterCondition';
+// 変更(filter-ext B): numberSet の条件即時適用(draft → ParsedNumberFilter)と
+//   個別クリア時の draft リセットに使うヘルパを追加 import します。
+import {
+  DEFAULT_NUMBER_FILTER_DRAFT,
+  buildNumberColumnFilterValueFromDraft,
+  buildParsedNumberFilterFromDraft,
+  type NumberFilterConditionDraft,
+} from './logic/numberFilterCondition';
 // 変更(10-C): 3ペインレイアウト構築用の helper / 型を追加インポートします。
 // 変更理由: reorderColumnsByPane / buildGridPaneLayout を SpreadsheetGrid で使い、
 //           PaneColumnEntry 型を各ペインの描画エントリ受け渡しに使うためです。
@@ -231,6 +243,8 @@ import type {
   ColumnFilterValue,
   // 追加(12-A): set フィルター値の構築に使います。
   SetColumnFilterValue,
+  // 追加(filter-ext B): numberSet の condition 型です(commit 経路の型注釈に使います)。
+  ParsedNumberFilter,
   // 追加(①-3 / stage ②): serverSide query 用の型です。
   ServerSideQuery,
   // 追加(stage ②): serverSide query の sort 既定値の型です。
@@ -1043,7 +1057,10 @@ export function SpreadsheetGrid<T extends object>({
   const numberFilteredColumnSignature = useMemo(() => {
     const keys: string[] = [];
     for (const column of visibleColumns) {
-      if (isNumberColumnFilterValue(deferredColumnFilters[column.key])) {
+      // 変更(filter-ext B): 判定を columnFilterUsesNumericKey へ差し替えます。
+      //   number に加えて numberSet(condition が comparison / range)も対象になり、
+      //   逆に key を読まない blank / contains では構築自体を省きます。
+      if (columnFilterUsesNumericKey(deferredColumnFilters[column.key])) {
         keys.push(column.key);
       }
     }
@@ -3506,13 +3523,19 @@ export function SpreadsheetGrid<T extends object>({
 
   // 追加(反転set): popover を開いている列の set 選択状態 { mode, values }(null = 全選択)。
   //   values は常に小さい側のみ(include=選択値 / exclude=非選択値)。巨大側は作りません。
+  // 変更(filter-ext B): numberSet 記述子の set 部分からも導出します(形は kind:'set' と同一)。
   const openedSetSelection = useMemo<ColumnFilterSetSelection | null>(() => {
-    if (!isSetColumnFilterValue(openedSetFilterValue)) {
+    const setPart = isSetColumnFilterValue(openedSetFilterValue)
+      ? openedSetFilterValue
+      : isNumberSetColumnFilterValue(openedSetFilterValue)
+        ? openedSetFilterValue.set
+        : null;
+    if (!setPart) {
       return null;
     }
     return {
-      mode: openedSetFilterValue.mode === 'exclude' ? 'exclude' : 'include',
-      values: new Set(openedSetFilterValue.values),
+      mode: setPart.mode === 'exclude' ? 'exclude' : 'include',
+      values: new Set(setPart.values),
     };
   }, [openedSetFilterValue]);
 
@@ -3524,37 +3547,73 @@ export function SpreadsheetGrid<T extends object>({
     openedFilterColumn.filterOptions.length > 0
   );
 
+  // 追加(filter-ext B): numberSet 列の commit で保持すべき「現在の条件(condition)」です。
+  //   条件は編集で即時 dispatch されるため、記述子が常に正です(draft から再合成しません)。
+  //   防御: filterType を 'set' → 'numberSet' へ変えた等で旧 kind:'set' 値が残っている場合、
+  //   その選択は set 部分として numberSet 記述子へ取り込まれます(openedSetSelection と同じ規則)。
+  const getNumberSetColumnCondition = useCallback(
+    (columnKey: string): ParsedNumberFilter | null => {
+      const currentValue = uiState.filters.columnFilters[columnKey];
+      return isNumberSetColumnFilterValue(currentValue)
+        ? currentValue.condition
+        : null;
+    },
+    [uiState.filters.columnFilters],
+  );
+
   // 追加(反転set): set 選択結果を reducer へ反映します。全選択→clearColumn / 0 件→include{} /
   //   中間→ハンドラが選んだ mode の小さい側。ハンドラが mode を確定済みのため complement
   //   (O(total))はここで計算しません。total は候補総数(=universe サイズ)です。
+  // 変更(filter-ext B): numberSet 列では kind:'numberSet' 記述子(condition 保持 + set 部分)で
+  //   commit します。「全選択」は set 制約なし(set: null)であり、condition が残っていれば
+  //   記述子ごと消さず condition のみで保存します(条件と選択の独立クリア)。
   const commitSetFilterSelection = useCallback(
     (columnKey: string, next: ColumnFilterSetSelection, total: number) => {
+      const isNumberSetColumn =
+        openedFilterColumn?.key === columnKey &&
+        openedFilterColumn.filterType === 'numberSet';
       const selectedCount =
         next.mode === 'include' ? next.values.size : total - next.values.size;
       if (selectedCount >= total) {
-        // 全選択(exclude{} 等)は保存せずフィルターなしへ正規化します。
+        // 全選択(exclude{} 等)は set 制約なしへ正規化します。
+        if (isNumberSetColumn) {
+          const condition = getNumberSetColumnCondition(columnKey);
+          if (condition) {
+            dispatch(
+              gridActions.setColumnFilter(columnKey, {
+                kind: 'numberSet',
+                condition,
+                set: null,
+              }),
+            );
+            return;
+          }
+        }
         dispatch(gridActions.clearColumnFilter(columnKey));
         return;
       }
-      if (selectedCount <= 0) {
-        // 何も選択されていない状態は include{}(小さい)で表現します(exclude{universe} を作らない)。
+      // 何も選択されていない状態は include{}(小さい)で表現します(exclude{universe} を作らない)。
+      const setPart =
+        selectedCount <= 0
+          ? { mode: 'include' as const, values: [] as string[] }
+          : { mode: next.mode, values: Array.from(next.values) };
+      if (isNumberSetColumn) {
         dispatch(
           gridActions.setColumnFilter(columnKey, {
-            kind: 'set',
-            mode: 'include',
-            values: [],
+            kind: 'numberSet',
+            condition: getNumberSetColumnCondition(columnKey),
+            set: setPart,
           }),
         );
         return;
       }
       const nextValue: SetColumnFilterValue = {
         kind: 'set',
-        mode: next.mode,
-        values: Array.from(next.values),
+        ...setPart,
       };
       dispatch(gridActions.setColumnFilter(columnKey, nextValue));
     },
-    [dispatch],
+    [dispatch, openedFilterColumn, getNumberSetColumnCondition],
   );
 
   // 追加(反転set): チェックボックス 1 件のトグルです(即時適用)。現在の選択 mode を保ったまま
@@ -3611,16 +3670,15 @@ export function SpreadsheetGrid<T extends object>({
       const columnKey = filterPopoverState.columnKey;
       const total = openedFilterSelectOptions.length;
       if (scope === 'all') {
-        // 非検索: 全候補対象。全選択→clear / 全解除→include{}。
-        if (nextChecked) {
-          dispatch(gridActions.clearColumnFilter(columnKey));
-        } else {
-          commitSetFilterSelection(
-            columnKey,
-            { mode: 'include', values: new Set() },
-            total,
-          );
-        }
+        // 非検索: 全候補対象。全選択 / 全解除とも commit の正規化へ渡します
+        //   (全選択 = exclude{} → set 列は clear / numberSet 列は condition 保持で set: null)。
+        commitSetFilterSelection(
+          columnKey,
+          nextChecked
+            ? { mode: 'exclude', values: new Set() }
+            : { mode: 'include', values: new Set() },
+          total,
+        );
         return;
       }
       // 検索中: scope = 表示中候補(小さい側)。現在 selection に ±scope を mode 空間で適用。
@@ -3628,8 +3686,12 @@ export function SpreadsheetGrid<T extends object>({
       let next: ColumnFilterSetSelection;
       if (nextChecked) {
         if (selection === null) {
-          // 全選択のまま(表示中を選択しても変化なし)→ フィルターなし。
-          dispatch(gridActions.clearColumnFilter(columnKey));
+          // 全選択のまま(表示中を選択しても変化なし)。commit の正規化(全選択)へ渡します。
+          commitSetFilterSelection(
+            columnKey,
+            { mode: 'exclude', values: new Set() },
+            total,
+          );
           return;
         }
         next =
@@ -3659,7 +3721,6 @@ export function SpreadsheetGrid<T extends object>({
       openedFilterAllValues,
       openedFilterSelectOptions,
       commitSetFilterSelection,
-      dispatch,
     ],
   );
 
@@ -3684,12 +3745,97 @@ export function SpreadsheetGrid<T extends object>({
 
   // 追加(12-A): set フィルターの「クリア」です。即時適用 UI のため popover は閉じず、
   //             全選択(フィルターなし)へ戻して結果を見ながら操作を続けられるようにします。
+  // 変更(filter-ext B): numberSet ではフッターの「クリア」= 全消しです(条件 + 選択)。
+  //   記述子の削除に加えて条件 draft も既定へ戻します(UI 表示の同期)。
   const clearSetFilterPopoverValue = useCallback(() => {
     if (!filterPopoverState) {
       return;
     }
     dispatch(gridActions.clearColumnFilter(filterPopoverState.columnKey));
-  }, [dispatch, filterPopoverState]);
+    if (openedFilterColumn?.filterType === 'numberSet') {
+      updateFilterPopoverNumberDraft(DEFAULT_NUMBER_FILTER_DRAFT);
+    }
+  }, [
+    dispatch,
+    filterPopoverState,
+    openedFilterColumn,
+    updateFilterPopoverNumberDraft,
+  ]);
+
+  // 追加(filter-ext B): numberSet の条件編集です。draft を UI へ即時反映しつつ、合成した
+  //   condition で記述子を即時 dispatch します(チェック操作と同じ即時適用モデル)。
+  //   打鍵ごとの再計算は clientSide では deferredColumnFilters(低優先度レンダー)が、
+  //   SSRM では既存の query debounce(約 300ms)が吸収するため、追加のデバウンスは持ちません。
+  //   number 列(適用ボタン方式)では draft 更新のみで、commit は applyFilterPopoverValue の
+  //   責務のままです。
+  const handleNumberConditionDraftChange = useCallback(
+    (draft: NumberFilterConditionDraft) => {
+      updateFilterPopoverNumberDraft(draft);
+      if (
+        !filterPopoverState ||
+        openedFilterColumn?.filterType !== 'numberSet'
+      ) {
+        return;
+      }
+      const columnKey = filterPopoverState.columnKey;
+      const condition = buildParsedNumberFilterFromDraft(draft);
+      const currentValue = uiState.filters.columnFilters[columnKey];
+      // 防御: filterType 変更等で旧 kind:'set' 値が残っていれば set 部分として取り込みます。
+      const setPart = isNumberSetColumnFilterValue(currentValue)
+        ? currentValue.set
+        : isSetColumnFilterValue(currentValue)
+          ? { mode: currentValue.mode, values: currentValue.values }
+          : null;
+      if (!condition && !setPart) {
+        // 条件も選択もない = フィルターなし(記述子が残っていれば削除)。
+        if (currentValue) {
+          dispatch(gridActions.clearColumnFilter(columnKey));
+        }
+        return;
+      }
+      dispatch(
+        gridActions.setColumnFilter(columnKey, {
+          kind: 'numberSet',
+          condition,
+          set: setPart,
+        }),
+      );
+    },
+    [
+      updateFilterPopoverNumberDraft,
+      filterPopoverState,
+      openedFilterColumn,
+      uiState.filters.columnFilters,
+      dispatch,
+    ],
+  );
+
+  // 追加(filter-ext B): numberSet の「条件」個別クリアです(選択は保持)。draft を既定へ
+  //   戻し、condition: null で再 dispatch します(set も無ければ clear へ倒れます)。
+  const handleNumberSetConditionClear = useCallback(() => {
+    handleNumberConditionDraftChange(DEFAULT_NUMBER_FILTER_DRAFT);
+  }, [handleNumberConditionDraftChange]);
+
+  // 追加(filter-ext B): numberSet の「値」個別クリアです(条件は保持)。set 制約だけを
+  //   外します(条件も無ければ記述子ごと削除)。
+  const handleNumberSetSelectionClear = useCallback(() => {
+    if (!filterPopoverState) {
+      return;
+    }
+    const columnKey = filterPopoverState.columnKey;
+    const condition = getNumberSetColumnCondition(columnKey);
+    if (condition) {
+      dispatch(
+        gridActions.setColumnFilter(columnKey, {
+          kind: 'numberSet',
+          condition,
+          set: null,
+        }),
+      );
+      return;
+    }
+    dispatch(gridActions.clearColumnFilter(columnKey));
+  }, [filterPopoverState, getNumberSetColumnCondition, dispatch]);
 
   const applyFilterPopoverValue = useCallback(() => {
     if (!filterPopoverState) {
@@ -3701,7 +3847,8 @@ export function SpreadsheetGrid<T extends object>({
     const filterType = targetColumn?.filterType ?? 'text';
     // 追加(12-A): set フィルターは即時適用のため、ここでは閉じるだけにします
     //             (Enter 等で誤って draftValue が書き込まれるのを防ぎます)。
-    if (filterType === 'set') {
+    // 変更(filter-ext B): numberSet も即時適用(条件編集・チェックとも適用済み)のため同様です。
+    if (filterType === 'set' || filterType === 'numberSet') {
       closeColumnFilterPopover();
       return;
     }
@@ -4102,6 +4249,13 @@ export function SpreadsheetGrid<T extends object>({
     return text.trim() ? text : '（なし）';
   })();
 
+  // 追加(filter-ext B): numberSet popover のフッター上サマリーです(「10 以上 かつ 3 件を選択」)。
+  //   即時適用モデルのため、適用済み記述子からそのまま生成すれば表示と結果が常に一致します。
+  const openedNumberSetSummaryText =
+    openedSetFilterValue && isActiveColumnFilterValue(openedSetFilterValue)
+      ? describeColumnFilterValue(openedSetFilterValue)
+      : 'フィルターなし';
+
   const renderedFilterPopover = openedFilterColumn ? (
     <ColumnFilterPopover
       themeClassName={themeClassName}
@@ -4113,7 +4267,10 @@ export function SpreadsheetGrid<T extends object>({
       isServerSide={isServerSide}
       draftValue={filterPopoverState?.draftValue ?? ''}
       numberConditionDraft={filterPopoverState?.numberDraft ?? null}
-      onNumberConditionDraftChange={updateFilterPopoverNumberDraft}
+      onNumberConditionDraftChange={handleNumberConditionDraftChange}
+      onNumberSetConditionClear={handleNumberSetConditionClear}
+      onNumberSetSelectionClear={handleNumberSetSelectionClear}
+      numberSetSummaryText={openedNumberSetSummaryText}
       currentValueText={openedFilterCurrentValueText}
       layout={filterPopoverLayout}
       selectOptions={openedFilterSelectOptions}

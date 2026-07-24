@@ -12,6 +12,7 @@ import {
   applyNumberFilter,
   buildNumberColumnFilterValue,
   coerceNumberFilterCellValue,
+  columnFilterUsesNumericKey,
   columnFilterValueToDraftText,
   createSourceOrder,
   filterOrderByColumns,
@@ -19,6 +20,7 @@ import {
   isActiveColumnFilterValue,
   isNumberColumnFilterValue,
   isSetColumnFilterValue,
+  matchesParsedNumberFilter,
   parseNumberFilterExpression,
   rowMatchesGlobalText,
   type RowOrder,
@@ -28,6 +30,8 @@ import type {
   ColumnFilterValue,
   GridColumn,
   NumberColumnFilterValue,
+  NumberSetColumnFilterValue,
+  ParsedNumberFilter,
   SetColumnFilterValue,
 } from '../model/gridTypes';
 
@@ -521,6 +525,156 @@ describe('filterOrderByColumns (filter-ext A: != / blank / notBlank / 空白の�
     expect(Number.isNaN(coerceNumberFilterCellValue('abc'))).toBe(true);
     expect(coerceNumberFilterCellValue('7.5')).toBe(7.5);
     expect(coerceNumberFilterCellValue(0)).toBe(0);
+  });
+});
+
+// 追加(filter-ext B): numberSet(条件 AND 選択)複合フィルターの predicate 仕様です。
+describe('filterOrderByColumns (filter-ext B: numberSet 複合)', () => {
+  const numberSetCol = (key: string): GridColumn<Row> => ({
+    key,
+    width: 100,
+    filterType: 'numberSet',
+  });
+  const nsRows: Row[] = [
+    { n: 5 },    // 0
+    { n: 10 },   // 1
+    { n: 12 },   // 2
+    { n: 20 },   // 3
+    { n: null }, // 4: 空白
+    { n: 'x' },  // 5: 非数値
+  ];
+  const order = createSourceOrder(nsRows.length);
+  const columns = [numberSetCol('n')];
+  const run = (
+    value: NumberSetColumnFilterValue,
+    numericKeys?: ReadonlyMap<string, Float64Array>,
+  ): number[] =>
+    asArray(filterOrderByColumns(nsRows, order, columns, { n: value }, numericKeys));
+
+  it('condition AND set(>= 10 かつ 12 を除外)', () => {
+    expect(
+      run({
+        kind: 'numberSet',
+        condition: { mode: 'comparison', operator: '>=', value: 10 },
+        set: { mode: 'exclude', values: ['12'] },
+      }),
+    ).toEqual([1, 3]);
+  });
+
+  it('condition のみ / set のみ でも成立する', () => {
+    expect(
+      run({
+        kind: 'numberSet',
+        condition: { mode: 'comparison', operator: '>=', value: 10 },
+        set: null,
+      }),
+    ).toEqual([1, 2, 3]);
+    expect(
+      run({
+        kind: 'numberSet',
+        condition: null,
+        set: { mode: 'include', values: ['5', '12'] },
+      }),
+    ).toEqual([0, 2]);
+  });
+
+  it('set に候補外(条件不一致)の値の選択が保持されていても AND で安全に落ちる', () => {
+    // 「>= 10」なのに include に 5 が残っているケース(条件変更で候補外になった選択の保持)。
+    //   5 は condition で落ち、include の他値だけが通る(選択状態は破棄せず結果は AND)。
+    expect(
+      run({
+        kind: 'numberSet',
+        condition: { mode: 'comparison', operator: '>=', value: 10 },
+        set: { mode: 'include', values: ['5', '12'] },
+      }),
+    ).toEqual([2]);
+  });
+
+  it('blank 条件 + set(空白のみ通過)', () => {
+    expect(
+      run({
+        kind: 'numberSet',
+        condition: { mode: 'blank' },
+        set: null,
+      }),
+    ).toEqual([4]);
+  });
+
+  it('condition / set とも null は無効(同一参照 = 全通過)', () => {
+    const value: NumberSetColumnFilterValue = {
+      kind: 'numberSet',
+      condition: null,
+      set: null,
+    };
+    expect(isActiveColumnFilterValue(value)).toBe(false);
+    const result = filterOrderByColumns(nsRows, order, columns, { n: value });
+    expect(result).toBe(order);
+  });
+
+  it('numericKeys 経路(B-2)と非 key 経路の合否が一致する', () => {
+    const keys = buildNumericKeys(nsRows, 'n');
+    const value: NumberSetColumnFilterValue = {
+      kind: 'numberSet',
+      condition: { mode: 'range', min: 10, max: 20 },
+      set: { mode: 'exclude', values: ['12'] },
+    };
+    expect(run(value, keys)).toEqual(run(value));
+  });
+
+  it('matchesParsedNumberFilter は行 predicate と同じ合否(候補連動の土台)', () => {
+    const conditions: ParsedNumberFilter[] = [
+      { mode: 'comparison', operator: '>=', value: 10 },
+      { mode: 'comparison', operator: '!=', value: 12 },
+      { mode: 'range', min: 10, max: 20 },
+      { mode: 'blank' },
+      { mode: 'notBlank' },
+    ];
+    for (const condition of conditions) {
+      const viaOrder = run({ kind: 'numberSet', condition, set: null });
+      const viaSingle = nsRows
+        .map((_row, index) => index)
+        .filter((index) =>
+          matchesParsedNumberFilter(condition, nsRows[index].n),
+        );
+      expect(viaOrder).toEqual(viaSingle);
+    }
+  });
+
+  it('columnFilterUsesNumericKey: comparison / range を持つ number 系のみ true', () => {
+    expect(
+      columnFilterUsesNumericKey({
+        kind: 'number',
+        raw: '10 以上',
+        parsed: { mode: 'comparison', operator: '>=', value: 10 },
+      }),
+    ).toBe(true);
+    expect(
+      columnFilterUsesNumericKey({
+        kind: 'numberSet',
+        condition: { mode: 'range', min: 1, max: 2 },
+        set: null,
+      }),
+    ).toBe(true);
+    // key を読まない blank / contains / set のみ / 他 kind は false。
+    expect(
+      columnFilterUsesNumericKey({
+        kind: 'number',
+        raw: '(空白)',
+        parsed: { mode: 'blank' },
+      }),
+    ).toBe(false);
+    expect(
+      columnFilterUsesNumericKey({ kind: 'number', raw: 'x', parsed: null }),
+    ).toBe(false);
+    expect(
+      columnFilterUsesNumericKey({
+        kind: 'numberSet',
+        condition: null,
+        set: { values: ['1'] },
+      }),
+    ).toBe(false);
+    expect(columnFilterUsesNumericKey({ kind: 'text', value: 'a' })).toBe(false);
+    expect(columnFilterUsesNumericKey(undefined)).toBe(false);
   });
 });
 

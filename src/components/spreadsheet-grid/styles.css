@@ -1780,6 +1780,53 @@
     margin-bottom: 8px;
   }
 
+  /* numberSet 複合フィルター(filter-ext B): 条件 / 値のセクションヘッダ + 個別クリア +
+     区切り + 複合サマリー。クリアは 3 粒度(条件のみ / 値のみ / フッター全消し)。 */
+  .ssg-filter-sec-head {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    margin: 2px 0 6px;
+  }
+  .ssg-filter-sec-label {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    color: var(--ssg-panel-text-muted);
+  }
+  .ssg-filter-sec-meta {
+    font-size: 11px;
+    color: var(--ssg-panel-text-faint);
+  }
+  .ssg-filter-sec-clear {
+    margin-left: auto;
+    border: none;
+    background: none;
+    padding: 0;
+    font-size: 11px;
+    color: var(--ssg-panel-accent);
+    cursor: pointer;
+  }
+  .ssg-filter-sec-clear:disabled {
+    color: var(--ssg-panel-text-disabled);
+    cursor: default;
+  }
+  .ssg-filter-sep {
+    border-top: 1px solid var(--ssg-panel-separator);
+    margin: 2px 0 10px;
+  }
+  .ssg-filter-summary {
+    font-size: 11px;
+    color: var(--ssg-panel-text);
+    background-color: var(--ssg-panel-accent-bg);
+    border-radius: 6px;
+    padding: 5px 8px;
+    margin-bottom: 10px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
   /* set フィルター: 全選択行 / 候補リスト / 行 / 件数。 */
   .ssg-filter-selectall {
     display: flex;

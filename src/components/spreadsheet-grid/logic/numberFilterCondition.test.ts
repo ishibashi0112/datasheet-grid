@@ -8,9 +8,11 @@ import {
   NUMBER_FILTER_OPERATOR_OPTIONS,
   buildNumberColumnFilterValueFromDraft,
   buildParsedNumberFilterFromDraft,
+  filterOptionsByNumberCondition,
   formatParsedNumberFilter,
   numberFilterOperandCount,
   numberFilterValueToConditionDraft,
+  parsedNumberFilterToConditionDraft,
   type NumberFilterConditionDraft,
 } from './numberFilterCondition';
 import { buildNumberColumnFilterValue } from './filtering';
@@ -154,6 +156,55 @@ describe('formatParsedNumberFilter / buildNumberColumnFilterValueFromDraft', () 
   });
 });
 
+// 追加(filter-ext B): 候補連動 ── Set 候補一覧を条件で絞る(合意仕様 §2.3)。
+describe('filterOptionsByNumberCondition(候補連動)', () => {
+  // (空白) 項目は value: ''(空文字)で表現されます(set フィルターの既存仕様)。
+  const options = [
+    { label: '(空白)', value: '' },
+    { label: '5', value: '5' },
+    { label: '10', value: '10' },
+    { label: '12', value: '12' },
+    { label: '48', value: '48' },
+  ];
+
+  it('比較条件で候補が絞られ、(空白) は候補から消える', () => {
+    expect(
+      filterOptionsByNumberCondition(options, {
+        mode: 'comparison',
+        operator: '>=',
+        value: 10,
+      }).map((option) => option.value),
+    ).toEqual(['10', '12', '48']);
+  });
+
+  it('blank 条件では (空白) だけが残り、notBlank では (空白) だけが消える', () => {
+    expect(
+      filterOptionsByNumberCondition(options, { mode: 'blank' }).map(
+        (option) => option.value,
+      ),
+    ).toEqual(['']);
+    expect(
+      filterOptionsByNumberCondition(options, { mode: 'notBlank' }).map(
+        (option) => option.value,
+      ),
+    ).toEqual(['5', '10', '12', '48']);
+  });
+
+  it('範囲条件でも絞られる', () => {
+    expect(
+      filterOptionsByNumberCondition(options, {
+        mode: 'range',
+        min: 5,
+        max: 12,
+      }).map((option) => option.value),
+    ).toEqual(['5', '10', '12']);
+  });
+
+  it('条件 null は同一参照で素通し(no-op スキップ最大化)', () => {
+    expect(filterOptionsByNumberCondition(options, null)).toBe(options);
+  });
+});
+
 describe('numberFilterValueToConditionDraft(popover 再オープン時の復元)', () => {
   it('comparison / range / blank 系を構造から復元する', () => {
     expect(
@@ -187,6 +238,15 @@ describe('numberFilterValueToConditionDraft(popover 再オープン時の復元)
       value1: '10',
       value2: '',
     });
+  });
+
+  it('parsedNumberFilterToConditionDraft: numberSet の condition からも復元できる(共有実装)', () => {
+    expect(
+      parsedNumberFilterToConditionDraft({ mode: 'range', min: 5, max: 9 }),
+    ).toEqual({ operator: 'between', value1: '5', value2: '9' });
+    expect(parsedNumberFilterToConditionDraft(null)).toEqual(
+      DEFAULT_NUMBER_FILTER_DRAFT,
+    );
   });
 
   it('未設定 / 旧 contains 値(parsed=null)は既定 draft(以上・空)', () => {
