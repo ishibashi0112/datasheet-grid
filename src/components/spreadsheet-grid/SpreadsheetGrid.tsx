@@ -56,9 +56,10 @@ import { useColumnHeaderDragController } from './hooks/useColumnHeaderDragContro
 import {
   // 追加(12-A): set フィルター値の判定 / 構築に使います。
   isSetColumnFilterValue,
-  // 追加(記述子化 / number): number 記述子の判定 / 構築に使います。
+  // 追加(記述子化 / number): number 記述子の判定に使います。
+  //   ※構築は filter-ext A で構造化 draft 経由(buildNumberColumnFilterValueFromDraft)へ
+  //     移行したため、式テキストの buildNumberColumnFilterValue はここでは不要になりました。
   isNumberColumnFilterValue,
-  buildNumberColumnFilterValue,
   // 追加(記述子化): 現在値表示の text 整形に使います(記述子 → 表示文字列)。
   columnFilterValueToDraftText,
   // 追加(FM-1): フィルター管理パネルの一覧行(有効フィルターの抽出)に使います。
@@ -67,9 +68,15 @@ import {
   //   (DS-2 で差し替え、旧オブジェクト配列版は DS-3-8 で削除)。
   createSourceOrder,
   filterOrderByColumns,
+  // 追加(filter-ext A): number フィルターの数値化規則(空白 = NaN)です。B-2 の
+  //   Float64 key 構築で predicate 側と同一規則を共有します。
+  coerceNumberFilterCellValue,
 } from './logic/filtering';
 // 追加(FM-1): 列フィルター値 → 人間可読要約(フィルター管理パネルの一覧行)です。
 import { describeColumnFilterValue } from './logic/filterSummary';
+// 追加(filter-ext A): number 列の構造化条件 draft から記述子を構築します
+//   (popover の演算子セレクト UI の commit 経路)。
+import { buildNumberColumnFilterValueFromDraft } from './logic/numberFilterCondition';
 // 変更(10-C): 3ペインレイアウト構築用の helper / 型を追加インポートします。
 // 変更理由: reorderColumnsByPane / buildGridPaneLayout を SpreadsheetGrid で使い、
 //           PaneColumnEntry 型を各ペインの描画エントリ受け渡しに使うためです。
@@ -861,6 +868,7 @@ export function SpreadsheetGrid<T extends object>({
     openColumnFilterPopover,
     closeColumnFilterPopover,
     updateFilterPopoverDraft,
+    updateFilterPopoverNumberDraft,
   } = useFilterPopoverController({
     visibleColumns,
     columnFilterValues: uiState.filters.columnFilters,
@@ -1064,7 +1072,9 @@ export function SpreadsheetGrid<T extends object>({
       }
       const keys = new Float64Array(rowCount);
       for (let i = 0; i < rowCount; i += 1) {
-        keys[i] = Number(getCellValue(rows[i], column));
+        // 変更(filter-ext A): 数値化は coerceNumberFilterCellValue(空白 = NaN)へ統一します
+        //   (compileSingleColumnFilter の非 key 経路と同一規則。食い違うと B-2 等価が壊れます)。
+        keys[i] = coerceNumberFilterCellValue(getCellValue(rows[i], column));
       }
       keyMap.set(column.key, keys);
     }
@@ -3695,14 +3705,14 @@ export function SpreadsheetGrid<T extends object>({
       closeColumnFilterPopover();
       return;
     }
-    // 追加(記述子化 / number): number は生文字列ではなく { kind:'number', raw, parsed }
-    //   記述子で commit します(parse は build 内で 1 回)。空入力は従来どおり clearColumn。
-    //   挙動は旧「trim → 空なら clear / 非空なら setColumnFilter(生文字列)」と等価で、
-    //   違いは保存値の形(生文字列 → 記述子)だけです。
+    // 変更(filter-ext A): number は構造化 draft(演算子 + 値)から記述子を構築して commit
+    //   します(旧・式テキストの parse 経路は popover から撤去)。有効な条件にならない入力
+    //   (値が空 / 非数値)は従来の空入力と同じく clearColumn へ倒します。raw には人間可読の
+    //   表示文字列(「10 以上」等)が入り、チップ / 管理パネル / 現在値表示にそのまま出ます。
     if (filterType === 'number') {
-      const descriptor = buildNumberColumnFilterValue(
-        filterPopoverState.draftValue,
-      );
+      const descriptor = filterPopoverState.numberDraft
+        ? buildNumberColumnFilterValueFromDraft(filterPopoverState.numberDraft)
+        : null;
       if (!descriptor) {
         dispatch(gridActions.clearColumnFilter(filterPopoverState.columnKey));
         closeColumnFilterPopover();
@@ -4102,6 +4112,8 @@ export function SpreadsheetGrid<T extends object>({
       //   候補空時の空表示文言を出し分けます(filterOptions 指定列は従来どおり候補が出ます)。
       isServerSide={isServerSide}
       draftValue={filterPopoverState?.draftValue ?? ''}
+      numberConditionDraft={filterPopoverState?.numberDraft ?? null}
+      onNumberConditionDraftChange={updateFilterPopoverNumberDraft}
       currentValueText={openedFilterCurrentValueText}
       layout={filterPopoverLayout}
       selectOptions={openedFilterSelectOptions}

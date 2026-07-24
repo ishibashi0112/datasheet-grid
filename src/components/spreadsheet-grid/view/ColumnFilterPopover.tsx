@@ -28,6 +28,16 @@ import {
   isSetValueSelected,
   type ColumnFilterSetSelection,
 } from '../logic/setFilterSelection';
+// 追加(filter-ext A): number フィルターの演算子セレクト UI 用の純ロジックです
+//   (演算子一覧 / 値入力の個数 / 既定 draft)。draft の合成・復元は親(SpreadsheetGrid /
+//   useFilterPopoverController)側の責務で、本 view は draft の表示と編集通知だけを行います。
+import {
+  DEFAULT_NUMBER_FILTER_DRAFT,
+  NUMBER_FILTER_OPERATOR_OPTIONS,
+  numberFilterOperandCount,
+  type NumberFilterConditionDraft,
+  type NumberFilterOperator,
+} from '../logic/numberFilterCondition';
 
 // 追加: popover のレイアウト情報です。
 export type ColumnFilterPopoverLayout = {
@@ -51,6 +61,10 @@ type ColumnFilterPopoverProps = {
   // 変更(12-A): 'set' を追加します。
   filterType: 'text' | 'number' | 'date' | 'select' | 'set' | 'custom';
   draftValue: string;
+  // 追加(filter-ext A): number 列の構造化条件 draft です(number 以外は null)。
+  //   旧「>=10」式テキストに代わり、演算子セレクト + 値入力(0〜2 個)で編集します。
+  numberConditionDraft: NumberFilterConditionDraft | null;
+  onNumberConditionDraftChange: (draft: NumberFilterConditionDraft) => void;
   currentValueText: string;
   layout: ColumnFilterPopoverLayout | null;
   selectOptions: ColumnFilterPopoverOption[];
@@ -301,6 +315,8 @@ export function ColumnFilterPopover({
   title,
   filterType,
   draftValue,
+  numberConditionDraft,
+  onNumberConditionDraftChange,
   currentValueText,
   layout,
   selectOptions,
@@ -351,6 +367,28 @@ export function ColumnFilterPopover({
 
   const isSetFilter = filterType === 'set';
 
+  // 追加(filter-ext A): number 条件 UI の draft と値入力個数です。draft は親(controller)管理
+  //   ですが、万一 number 列で null が来ても表示が壊れないよう既定 draft でフォールバックします。
+  const numberDraft = numberConditionDraft ?? DEFAULT_NUMBER_FILTER_DRAFT;
+  const numberOperandCount = numberFilterOperandCount(numberDraft.operator);
+
+  // 追加(filter-ext A): number 条件 UI(演算子 select / 値 input)共通の keyboard 操作です
+  //   (Enter = 適用 / Escape = 閉じる。text フィルター入力と同じ規則)。
+  const handleConditionKeyDown = (
+    event: KeyboardEvent<HTMLSelectElement | HTMLInputElement>,
+  ) => {
+    event.stopPropagation();
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      onApply();
+      return;
+    }
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      onRequestClose();
+    }
+  };
+
   return createPortal(
     <div
       ref={popoverRef}
@@ -384,6 +422,76 @@ export function ColumnFilterPopover({
           onRequestClose={onRequestClose}
           isServerSide={isServerSide}
         />
+      ) : filterType === 'number' ? (
+        // 変更(filter-ext A): 旧「>=10 / 10..20」式テキスト入力を演算子セレクト + 値入力へ
+        //   刷新します(保存形式 kind:'number' は不変)。演算子で値入力の個数が決まります
+        //   (範囲 = 2 / 空白・空白でない = 0 / 他 = 1)。適用は従来どおりフッター / Enter です。
+        <>
+          <div className="ssg-filter-hint">フィルター種別: number</div>
+          <select
+            value={numberDraft.operator}
+            onChange={(event) =>
+              onNumberConditionDraftChange({
+                ...numberDraft,
+                operator: event.target.value as NumberFilterOperator,
+              })
+            }
+            onKeyDown={handleConditionKeyDown}
+            className="ssg-filter-select"
+            aria-label="条件の演算子"
+          >
+            {NUMBER_FILTER_OPERATOR_OPTIONS.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+          {numberOperandCount > 0 ? (
+            <div className="ssg-filter-cond-values">
+              {/* 注記: type="number" ではなく text + inputMode を使います(controller の
+                  autofocus が setSelectionRange を呼ぶため。number input は例外を投げます)。
+                  数値化は commit 時の parse(buildParsedNumberFilterFromDraft)の責務です。 */}
+              <input
+                ref={textInputRef}
+                type="text"
+                inputMode="decimal"
+                value={numberDraft.value1}
+                onChange={(event) =>
+                  onNumberConditionDraftChange({
+                    ...numberDraft,
+                    value1: event.target.value,
+                  })
+                }
+                onKeyDown={handleConditionKeyDown}
+                placeholder={numberOperandCount === 2 ? '下限' : '値'}
+                className="ssg-filter-input"
+                aria-label={numberOperandCount === 2 ? '下限' : '条件の値'}
+              />
+              {numberOperandCount === 2 && (
+                <>
+                  <span className="ssg-filter-cond-tilde">〜</span>
+                  <input
+                    type="text"
+                    inputMode="decimal"
+                    value={numberDraft.value2}
+                    onChange={(event) =>
+                      onNumberConditionDraftChange({
+                        ...numberDraft,
+                        value2: event.target.value,
+                      })
+                    }
+                    onKeyDown={handleConditionKeyDown}
+                    placeholder="上限"
+                    className="ssg-filter-input"
+                    aria-label="上限"
+                  />
+                </>
+              )}
+            </div>
+          ) : (
+            <div className="ssg-filter-meta">この演算子は値入力を使いません</div>
+          )}
+        </>
       ) : filterType === 'select' ? (
         <>
           <div className="ssg-filter-hint">フィルター種別: select</div>
@@ -416,10 +524,10 @@ export function ColumnFilterPopover({
           <div className="ssg-filter-meta">候補数: {selectOptions.length}</div>
         </>
       ) : (
+        // 変更(filter-ext A): number が専用分岐(演算子セレクト)へ独立したため、
+        //   ここは text / date / custom の部分一致テキスト入力だけになりました。
         <>
-          <div className="ssg-filter-hint">
-            フィルター種別: {filterType === 'number' ? 'number' : 'text'}
-          </div>
+          <div className="ssg-filter-hint">フィルター種別: {filterType}</div>
           <input
             ref={textInputRef}
             type="text"
@@ -438,17 +546,11 @@ export function ColumnFilterPopover({
                 onRequestClose();
               }
             }}
-            placeholder={
-              filterType === 'number'
-                ? '例: >=10 / <20 / 10..20 / =5'
-                : '部分一致で絞り込み'
-            }
+            placeholder="部分一致で絞り込み"
             className="ssg-filter-input"
           />
           <div className="ssg-filter-meta ssg-filter-meta--ellipsis">
-            {filterType === 'number'
-              ? '数量系は =, >, >=, <, <=, .. が使えます'
-              : 'text は部分一致検索です'}
+            部分一致検索です
           </div>
         </>
       )}

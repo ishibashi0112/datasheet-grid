@@ -81,6 +81,13 @@ function matchFilter(value: unknown, filter: ColumnFilterValue): boolean {
     case 'number': {
       const parsed = filter.parsed;
       if (!parsed) return String(value ?? '').includes(filter.raw);
+      // 追加(filter-ext A): blank / notBlank(空白 / 空白でない)。ライブラリ本体と同じく
+      //   null / undefined / trim 後空文字を「空白」とみなします。
+      if (parsed.mode === 'blank' || parsed.mode === 'notBlank') {
+        const isBlank =
+          value === null || value === undefined || String(value).trim() === '';
+        return isBlank === (parsed.mode === 'blank');
+      }
       const num = typeof value === 'number' ? value : Number(value);
       if (!Number.isFinite(num)) return false;
       if (parsed.mode === 'comparison') {
@@ -95,6 +102,9 @@ function matchFilter(value: unknown, filter: ColumnFilterValue): boolean {
             return num <= parsed.value;
           case '=':
             return num === parsed.value;
+          // 追加(filter-ext A): 等しくない(非数値セルは上の isFinite ガードで不一致)。
+          case '!=':
+            return num !== parsed.value;
         }
       }
       return num >= parsed.min && num <= parsed.max;

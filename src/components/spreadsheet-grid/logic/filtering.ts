@@ -61,6 +61,23 @@ export const isActiveColumnFilterValue = (
   }
 };
 
+// 追加(filter-ext A): number フィルター(comparison / range)の数値化規則です。
+//   空白セル(null / undefined / trim 後空文字)は NaN = 比較・範囲に不参加とします。
+//   従来は Number(null) / Number('') = 0 で空白セルが「0」として比較に参加していました
+//   (undefined だけ NaN という非一貫)。空白の出し入れは blank / notBlank 演算子と
+//   set フィルターの「(空白)」項目の責務へ一元化します(条件 AND 選択の合意仕様)。
+//   B-2 の Float64 key 構築(SpreadsheetGrid)も本関数を使い、key 有無で合否が
+//   食い違わないようにします。
+export const coerceNumberFilterCellValue = (cellValue: unknown): number => {
+  if (cellValue === null || cellValue === undefined) {
+    return Number.NaN;
+  }
+  if (typeof cellValue === 'string' && cellValue.trim() === '') {
+    return Number.NaN;
+  }
+  return Number(cellValue);
+};
+
 // 注記(記述子化): ParsedNumberFilter 型は gridTypes へ移設しました(ColumnFilterValue が
 //   number 記述子を内包する都合)。parse の「ロジック」は引き続きこちらにあります。
 // 追加: number フィルター式を解釈します。
@@ -169,7 +186,18 @@ export const applyNumberFilter = (
       .includes(normalizedFilter.toLowerCase());
   }
 
-  const numericCellValue = Number(cellValue);
+  // 追加(filter-ext A): blank / notBlank は数値化前のセル生値で判定します
+  //   (parse 構文からは生成されませんが、ParsedNumberFilter の網羅として処理します)。
+  if (parsedFilter.mode === 'blank' || parsedFilter.mode === 'notBlank') {
+    const isBlank =
+      cellValue === null ||
+      cellValue === undefined ||
+      String(cellValue).trim() === '';
+    return isBlank === (parsedFilter.mode === 'blank');
+  }
+
+  // 変更(filter-ext A): 空白セルは NaN(比較不参加)へ統一します(coerce の注記参照)。
+  const numericCellValue = coerceNumberFilterCellValue(cellValue);
   if (!Number.isFinite(numericCellValue)) {
     return false;
   }
@@ -190,6 +218,9 @@ export const applyNumberFilter = (
       return numericCellValue < parsedFilter.value;
     case '<=':
       return numericCellValue <= parsedFilter.value;
+    // 追加(filter-ext A): 等しくない(compileSingleColumnFilter 側と同一規則)。
+    case '!=':
+      return numericCellValue !== parsedFilter.value;
     case '=':
     default:
       return numericCellValue === parsedFilter.value;
@@ -263,14 +294,29 @@ const compileSingleColumnFilter = <T,>(
             .toLowerCase()
             .includes(needle);
       }
+      // 追加(filter-ext A): 空白 / 空白でない。数値化ではなくセル生値で判定します
+      //   (null / undefined / trim 後空文字 = 空白。"abc" のような非数値文字列は「空白でない」)。
+      //   numericKey(Float64)は空白と非数値文字列を区別できないため使いません。
+      if (parsed.mode === 'blank' || parsed.mode === 'notBlank') {
+        const wantBlank = parsed.mode === 'blank';
+        return (row) => {
+          const cellValue = getCellValue(row, column);
+          const isBlank =
+            cellValue === null ||
+            cellValue === undefined ||
+            String(cellValue).trim() === '';
+          return isBlank === wantBlank;
+        };
+      }
       if (parsed.mode === 'range') {
         const { min, max } = parsed;
         // 変更(B-2): numericKey があれば key[sourceIndex] を、無ければ従来どおり
-        //   Number(getCellValue(...)) を読みます。値の取得元だけが変わり、判定本体は不変です。
+        //   セル値の数値化を読みます。値の取得元だけが変わり、判定本体は不変です。
+        // 変更(filter-ext A): 数値化は coerceNumberFilterCellValue(空白 = NaN)です。
         return (row, sourceIndex) => {
           const numericCellValue = numericKey
             ? numericKey[sourceIndex]
-            : Number(getCellValue(row, column));
+            : coerceNumberFilterCellValue(getCellValue(row, column));
           return (
             Number.isFinite(numericCellValue) &&
             numericCellValue >= min &&
@@ -283,7 +329,7 @@ const compileSingleColumnFilter = <T,>(
       return (row, sourceIndex) => {
         const numericCellValue = numericKey
           ? numericKey[sourceIndex]
-          : Number(getCellValue(row, column));
+          : coerceNumberFilterCellValue(getCellValue(row, column));
         if (!Number.isFinite(numericCellValue)) {
           return false;
         }
@@ -296,6 +342,10 @@ const compileSingleColumnFilter = <T,>(
             return numericCellValue < threshold;
           case '<=':
             return numericCellValue <= threshold;
+          // 追加(filter-ext A): 等しくない。他の比較と同じく非数値セルは不一致です
+          //   (空白も含めたい場合は blank と組み合わせる将来 UI の責務。既存規則と一貫)。
+          case '!=':
+            return numericCellValue !== threshold;
           case '=':
           default:
             return numericCellValue === threshold;

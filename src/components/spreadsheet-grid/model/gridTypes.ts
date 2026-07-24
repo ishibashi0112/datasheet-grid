@@ -225,16 +225,25 @@ export type SetColumnFilterValue = {
 //   旧 logic/filtering.ts 内に定義していましたが、ColumnFilterValue union(下記)が
 //   number 記述子を内包する都合上、型はこちら(下層の型モジュール)へ移設しました。
 //   parse/build の「ロジック」は引き続き logic/filtering.ts 側にあります(本型を import します)。
+// 変更(filter-ext A): 演算子セレクト UI 化に伴い '!='(等しくない)と blank / notBlank
+//   (空白 / 空白でない)を追加しました。いずれも判別共用体への追加拡張のため、
+//   保存済みの旧値(comparison / range のみ)はそのまま読めます(後方互換)。
 export type ParsedNumberFilter =
   | {
       mode: 'comparison';
-      operator: '>' | '>=' | '<' | '<=' | '=';
+      operator: '>' | '>=' | '<' | '<=' | '=' | '!=';
       value: number;
     }
   | {
       mode: 'range';
       min: number;
       max: number;
+    }
+  | {
+      mode: 'blank';
+    }
+  | {
+      mode: 'notBlank';
     };
 
 // 追加(記述子化 / number): number フィルターのタグ付き記述子です(旧 filtering.ts から移設)。

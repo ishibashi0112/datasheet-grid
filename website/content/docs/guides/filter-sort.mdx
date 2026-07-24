@@ -12,7 +12,7 @@ description: 列フィルター(text / number / date / select / set / custom)と
 - **商品名** — `text`:部分一致
 - **カテゴリ** — `select`:単一選択(候補は rows から自動収集)
 - **ステータス** — `set`:チェックボックスの複数選択(Excel 風)
-- **数量 / 単価** — `number`:`>=100`、`10..50`(範囲)、`=0` などの式が使えます
+- **数量 / 単価** — `number`:演算子(以上 / より大きい / 以下 / 未満 / に等しい / に等しくない / 範囲 / 空白 / 空白でない)を選び、値を入力して絞り込みます
 - **登録日** — `date`:日付一致
 
 上部のグローバルフィルター入力は全列を横断して部分一致します。フィルター適用中はチップバー(`showFilterChipBar`)に条件が並び、ここから個別解除もできます。列メニューまたはチップバーの「フィルター管理」から、全フィルターを一覧で編集できるパネルも開けます。
@@ -30,6 +30,7 @@ const columns: GridColumn<Row>[] = [
 ```
 
 - `select` / `set` の候補は rows から自動収集されます。明示したい場合は `filterOptions: [{ label, value }]` を指定します。
+- `number` の比較 / 範囲では**空白セル(null / 空文字)は常に不一致**です(0 とは区別されます)。空白行の抽出・除外は演算子「空白 / 空白でない」を使います。
 - 独自の絞り込みロジックは `filterType: 'custom'` + `filterFn: (row, filterValue) => boolean` で書けます。
 - ソート / フィルター / グローバルフィルターは `enableSorting` / `enableColumnFilter` / `enableGlobalFilter`(いずれも既定 `true`)で無効化できます。
 

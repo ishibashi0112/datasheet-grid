@@ -11,6 +11,7 @@ import { describe, it, expect } from 'vitest';
 import {
   applyNumberFilter,
   buildNumberColumnFilterValue,
+  coerceNumberFilterCellValue,
   columnFilterValueToDraftText,
   createSourceOrder,
   filterOrderByColumns,
@@ -56,11 +57,16 @@ const num = (raw: string): NumberColumnFilterValue =>
 
 const asArray = (order: RowOrder): number[] => Array.from(order);
 
+// 変更(filter-ext A): 本体(SpreadsheetGrid の B-2 key 構築)と同じ数値化規則
+//   (coerceNumberFilterCellValue: 空白 = NaN)を共有します。規則が食い違うと
+//   key 有無の等価性テストが本体の実態を検証しなくなるためです。
 const buildNumericKeys = (
   rows: Row[],
   key: string,
 ): ReadonlyMap<string, Float64Array> =>
-  new Map([[key, Float64Array.from(rows, (row) => Number(row[key]))]]);
+  new Map([
+    [key, Float64Array.from(rows, (row) => coerceNumberFilterCellValue(row[key]))],
+  ]);
 
 // 数値・非有限・空・文字列を混ぜた母集合(comparison/range/contains すべてを踏む)。
 const rows: Row[] = [
@@ -428,6 +434,93 @@ describe('rowMatchesGlobalText (純述語: 同期/非同期で共有)', () => {
         included.has(i),
       );
     });
+  });
+});
+
+// 追加(filter-ext A): 演算子セレクト化で増えた述語(!= / blank / notBlank)と、
+//   空白セルの比較不参加(coerceNumberFilterCellValue: 空白 = NaN)の仕様です。
+describe('filterOrderByColumns (filter-ext A: != / blank / notBlank / 空白の比較不参加)', () => {
+  // 空白 3 形態(null / undefined / 空白のみ文字列)+ 数値 + 非数値文字列の母集合。
+  const blankRows: Row[] = [
+    { n: 5 },           // 0
+    { n: 10 },          // 1
+    { n: null },        // 2: 空白
+    { n: undefined },   // 3: 空白
+    { n: '' },          // 4: 空白
+    { n: '  ' },        // 5: 空白(空白のみ文字列)
+    { n: 'abc' },       // 6: 非数値(空白ではない)
+    { n: 0 },           // 7
+  ];
+  const order = createSourceOrder(blankRows.length);
+  const columns = [numberCol('n')];
+  const run = (
+    parsed: NumberColumnFilterValue['parsed'],
+    numericKeys?: ReadonlyMap<string, Float64Array>,
+  ): number[] =>
+    asArray(
+      filterOrderByColumns(
+        blankRows,
+        order,
+        columns,
+        { n: { kind: 'number', raw: 'x', parsed } },
+        numericKeys,
+      ),
+    );
+
+  it('blank は null / undefined / trim 後空文字だけを通す', () => {
+    expect(run({ mode: 'blank' })).toEqual([2, 3, 4, 5]);
+  });
+
+  it('notBlank は blank の補集合(非数値文字列は「空白でない」)', () => {
+    expect(run({ mode: 'notBlank' })).toEqual([0, 1, 6, 7]);
+  });
+
+  it('!= は数値セルのみ対象(空白・非数値は不一致)', () => {
+    expect(run({ mode: 'comparison', operator: '!=', value: 10 })).toEqual([
+      0, 7,
+    ]);
+  });
+
+  it('比較(>=)で空白セルは不一致(Number("")=0 として 0 扱いしない)', () => {
+    // 0 以上: 空白(null/''/…)が「0」として紛れ込まないこと(filter-ext A の規則変更点)。
+    expect(run({ mode: 'comparison', operator: '>=', value: 0 })).toEqual([
+      0, 1, 7,
+    ]);
+  });
+
+  it('範囲でも空白セルは不参加', () => {
+    expect(run({ mode: 'range', min: -1, max: 100 })).toEqual([0, 1, 7]);
+  });
+
+  it('numericKeys 経路(B-2)と非 key 経路の合否が一致する(!= / 比較 / 範囲)', () => {
+    const keys = buildNumericKeys(blankRows, 'n');
+    const cases: NumberColumnFilterValue['parsed'][] = [
+      { mode: 'comparison', operator: '!=', value: 10 },
+      { mode: 'comparison', operator: '>=', value: 0 },
+      { mode: 'range', min: -1, max: 100 },
+    ];
+    for (const parsed of cases) {
+      expect(run(parsed, keys)).toEqual(run(parsed));
+    }
+  });
+
+  it('applyNumberFilter(旧参照実装)も同じ空白規則を共有する', () => {
+    // '>= 0' の式評価: 空白セルは不一致 / 数値セルは通過。
+    expect(applyNumberFilter(null, '>= 0')).toBe(false);
+    expect(applyNumberFilter('', '>= 0')).toBe(false);
+    expect(applyNumberFilter('  ', '>= 0')).toBe(false);
+    expect(applyNumberFilter(0, '>= 0')).toBe(true);
+    expect(applyNumberFilter(5, '>= 0')).toBe(true);
+  });
+
+  it('coerceNumberFilterCellValue: 空白 = NaN / それ以外は Number()', () => {
+    expect(Number.isNaN(coerceNumberFilterCellValue(null))).toBe(true);
+    expect(Number.isNaN(coerceNumberFilterCellValue(undefined))).toBe(true);
+    expect(Number.isNaN(coerceNumberFilterCellValue(''))).toBe(true);
+    expect(Number.isNaN(coerceNumberFilterCellValue('  '))).toBe(true);
+    expect(Number.isNaN(coerceNumberFilterCellValue('abc'))).toBe(true);
+    expect(coerceNumberFilterCellValue('7.5')).toBe(7.5);
+    expect(coerceNumberFilterCellValue(0)).toBe(0);
   });
 });
 

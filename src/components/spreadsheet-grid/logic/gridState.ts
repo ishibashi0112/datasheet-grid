@@ -303,6 +303,10 @@ const isSameParsedNumberFilter = (
   if (a.mode === 'range' && b.mode === 'range') {
     return a.min === b.min && a.max === b.max;
   }
+  // 追加(filter-ext A): blank / notBlank は mode 自体が中身のすべてです(値を持たない)。
+  if (a.mode === 'blank' || a.mode === 'notBlank') {
+    return a.mode === b.mode;
+  }
   return false;
 };
 

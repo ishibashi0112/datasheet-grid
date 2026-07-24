@@ -1762,6 +1762,24 @@
     background-color: var(--ssg-panel-bg);
   }
 
+  /* number 条件(filter-ext A): 値入力行。範囲(2 入力)は 〜 を挟んで横並びにする。
+     .ssg-filter-input 自身の margin-bottom(8px)を横並びでも共有するため、〜 も同じ余白を持つ。 */
+  .ssg-filter-cond-values {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .ssg-filter-cond-values .ssg-filter-input {
+    flex: 1 1 0;
+    min-width: 0;
+  }
+  .ssg-filter-cond-tilde {
+    flex: none;
+    font-size: 12px;
+    color: var(--ssg-panel-text-muted);
+    margin-bottom: 8px;
+  }
+
   /* set フィルター: 全選択行 / 候補リスト / 行 / 件数。 */
   .ssg-filter-selectall {
     display: flex;

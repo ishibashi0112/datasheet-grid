@@ -8,12 +8,23 @@ import {
 } from 'react';
 import type { ColumnFilterValue, GridColumn } from '../model/gridTypes';
 // 追加(記述子化): number 記述子を含む列フィルター値を draft 用テキストへ整形します。
-import { columnFilterValueToDraftText } from '../logic/filtering';
+import {
+  columnFilterValueToDraftText,
+  isNumberColumnFilterValue,
+} from '../logic/filtering';
+// 追加(filter-ext A): number 列の構造化条件 draft(演算子 + 値 1/2)と、既存フィルター値
+//   からの復元です(parsed から構造を逆引き。旧・式構文の保存値も復元できます)。
+import {
+  numberFilterValueToConditionDraft,
+  type NumberFilterConditionDraft,
+} from '../logic/numberFilterCondition';
 
 // 追加: 列フィルターポップオーバーの内部状態です。
 type HeaderFilterPopoverState = {
   columnKey: string;
   draftValue: string;
+  // 追加(filter-ext A): number 列の構造化条件 draft です(number 以外の列は null)。
+  numberDraft: NumberFilterConditionDraft | null;
 };
 
 // 追加: body 直下 portal popover の配置情報です。
@@ -143,11 +154,22 @@ export const useFilterPopoverController = <T,>({
         : null;
       filterPopoverAnchorRef.current = anchorEl;
 
+      // 追加(filter-ext A): number 列は構造化条件 draft(演算子 + 値)で編集します。
+      //   既存フィルター値の parsed から復元し、未設定 / 旧 contains 値は既定 draft です。
+      const currentValue = columnFilterValues[column.key];
+      const numberDraft =
+        column.filterType === 'number'
+          ? numberFilterValueToConditionDraft(
+              isNumberColumnFilterValue(currentValue) ? currentValue : undefined,
+            )
+          : null;
+
       setFilterPopoverState({
         columnKey: column.key,
         // 変更(記述子化): number 記述子は String() で "[object Object]" になるため、
         //   raw を取り出す columnFilterValueToDraftText 経由にします(他種別は従来と同値)。
-        draftValue: columnFilterValueToDraftText(columnFilterValues[column.key]),
+        draftValue: columnFilterValueToDraftText(currentValue),
+        numberDraft,
       });
     },
     [columnFilterValues, enableColumnFilter, gridRootRef],
@@ -179,6 +201,22 @@ export const useFilterPopoverController = <T,>({
       };
     });
   }, []);
+
+  // 追加(filter-ext A): number 列の構造化条件 draft を更新します(popover の編集通知)。
+  const updateFilterPopoverNumberDraft = useCallback(
+    (draft: NumberFilterConditionDraft) => {
+      setFilterPopoverState((current) => {
+        if (!current) {
+          return current;
+        }
+        return {
+          ...current,
+          numberDraft: draft,
+        };
+      });
+    },
+    [],
+  );
 
   // 追加: portal popover の位置を open / resize / scroll に応じて再計算します。
   useEffect(() => {
@@ -282,6 +320,7 @@ export const useFilterPopoverController = <T,>({
     openColumnFilterPopover,
     closeColumnFilterPopover,
     updateFilterPopoverDraft,
+    updateFilterPopoverNumberDraft,
   };
 };
 

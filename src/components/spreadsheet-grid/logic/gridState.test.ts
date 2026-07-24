@@ -393,6 +393,19 @@ describe('isSameGridState', () => {
         st({}, { n: mk('1-5', { mode: 'range', min: 1, max: 9 }) }),
       ),
     ).toBe(false);
+    // 追加(filter-ext A): blank / notBlank は mode 一致のみで等価判定。
+    expect(
+      isSameGridState(
+        st({}, { n: mk('(空白)', { mode: 'blank' }) }),
+        st({}, { n: mk('(空白)', { mode: 'blank' }) }),
+      ),
+    ).toBe(true);
+    expect(
+      isSameGridState(
+        st({}, { n: mk('x', { mode: 'blank' }) }),
+        st({}, { n: mk('x', { mode: 'notBlank' }) }),
+      ),
+    ).toBe(false);
   });
 
   it('text/date/select: value を比較、同キー kind 違いは false', () => {
