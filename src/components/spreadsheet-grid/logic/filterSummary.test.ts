@@ -85,6 +85,92 @@ describe('describeColumnFilterValue', () => {
     ).toBe('3 件を除外');
   });
 
+  // 追加(filter-ext B): numberSet(条件 AND 選択)の複合要約です。
+  it('numberSet は条件と選択を「かつ」で結合する', () => {
+    expect(
+      describeColumnFilterValue({
+        kind: 'numberSet',
+        condition: { mode: 'comparison', operator: '>=', value: 10 },
+        set: { mode: 'include', values: ['12', '20', '48'] },
+      }),
+    ).toBe('10 以上 かつ 3 件を選択');
+    expect(
+      describeColumnFilterValue({
+        kind: 'numberSet',
+        condition: { mode: 'range', min: 10, max: 20 },
+        set: { mode: 'exclude', values: ['12'] },
+      }),
+    ).toBe('10 〜 20 かつ 1 件を除外');
+  });
+
+  it('numberSet は片方だけでも要約でき、set 部分は kind:set と同じ規則(1〜2 件は列挙)', () => {
+    expect(
+      describeColumnFilterValue({
+        kind: 'numberSet',
+        condition: { mode: 'blank' },
+        set: null,
+      }),
+    ).toBe('(空白)');
+    expect(
+      describeColumnFilterValue({
+        kind: 'numberSet',
+        condition: null,
+        set: { mode: 'include', values: ['', '12'] },
+      }),
+    ).toBe('(空白), "12"');
+    // 両方 null は commit 側で clear 済みの防御表示。
+    expect(
+      describeColumnFilterValue({
+        kind: 'numberSet',
+        condition: null,
+        set: null,
+      }),
+    ).toBe('フィルターなし');
+  });
+
+  // 追加(filter-ext C): textSet(テキスト条件 AND 選択)の複合要約です。
+  it('textSet も条件と選択を「かつ」で結合する(条件表示はテキスト演算子)', () => {
+    expect(
+      describeColumnFilterValue({
+        kind: 'textSet',
+        condition: { mode: 'contains', value: 'ボルト' },
+        set: { mode: 'exclude', values: ['六角ボルト M8'] },
+      }),
+    ).toBe('"ボルト" を含む かつ 1 件を除外');
+    expect(
+      describeColumnFilterValue({
+        kind: 'textSet',
+        condition: { mode: 'startsWith', value: '六角' },
+        set: null,
+      }),
+    ).toBe('"六角" で始まる');
+    expect(
+      describeColumnFilterValue({
+        kind: 'textSet',
+        condition: null,
+        set: { values: ['A', 'B', 'C'] },
+      }),
+    ).toBe('3 件を選択');
+  });
+
+  // 追加(filter-ext D): dateSet(日付条件 AND 選択)の複合要約です。
+  it('dateSet も「かつ」で結合し、相対プリセットはラベル表示', () => {
+    expect(
+      describeColumnFilterValue({
+        kind: 'dateSet',
+        condition: { mode: 'range', from: '2026-01-01', to: '2026-03-31' },
+        set: { mode: 'exclude', values: ['2026-02-04'] },
+      }),
+    ).toBe('2026-01-01 〜 2026-03-31 かつ 1 件を除外');
+    expect(
+      describeColumnFilterValue({
+        kind: 'dateSet',
+        condition: { mode: 'preset', preset: 'last30days' },
+        set: null,
+      }),
+    ).toBe('過去 30 日');
+  });
+
   it('custom は非空 string なら「"x"」(trim)、それ以外は「カスタム条件」', () => {
     expect(
       describeColumnFilterValue({ kind: 'custom', value: ' my-cond ' }),

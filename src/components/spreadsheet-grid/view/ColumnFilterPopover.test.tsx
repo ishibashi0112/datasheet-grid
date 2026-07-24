@@ -14,6 +14,12 @@ import { render, screen, fireEvent, cleanup } from '@testing-library/react';
 import { createRef } from 'react';
 
 import { ColumnFilterPopover } from './ColumnFilterPopover';
+import type { NumberFilterConditionDraft } from '../logic/numberFilterCondition';
+import type { TextFilterConditionDraft } from '../logic/textFilterCondition';
+import {
+  DEFAULT_DATE_FILTER_DRAFT,
+  type DateFilterConditionDraft,
+} from '../logic/dateFilterCondition';
 
 afterEach(() => {
   cleanup();
@@ -25,6 +31,19 @@ const makeProps = () => ({
   title: '品番',
   filterType: 'set' as const,
   draftValue: '',
+  // 追加(filter-ext A): number 条件 draft(set フィルターでは未使用のため null)。
+  numberConditionDraft: null,
+  onNumberConditionDraftChange: vi.fn(),
+  // 追加(filter-ext C): textSet の条件 draft(set フィルターでは未使用のため null)。
+  textConditionDraft: null,
+  onTextConditionDraftChange: vi.fn(),
+  // 追加(filter-ext D): dateSet の条件 draft(set フィルターでは未使用のため null)。
+  dateConditionDraft: null,
+  onDateConditionDraftChange: vi.fn(),
+  // 追加(filter-ext B/C): 複合の個別クリアとサマリー(set フィルターでは未使用)。
+  onComboConditionClear: vi.fn(),
+  onComboSelectionClear: vi.fn(),
+  comboSummaryText: 'フィルターなし',
   currentValueText: '',
   layout: { top: 0, left: 0, width: 260 },
   selectOptions: [
@@ -114,5 +133,283 @@ describe('ColumnFilterPopover のキー操作(SF-ENTER fix)', () => {
     // 検索ボックス上のキーも同様です(input 側の stopPropagation + ルート遮断の二重防御)。
     fireEvent.keyDown(getSearchInput(), { key: 'b' });
     expect(outerKeyDown).not.toHaveBeenCalled();
+  });
+});
+
+// 追加(filter-ext A): number 列の演算子セレクト UI の回帰テストです。
+//   draft の合成・復元(logic/numberFilterCondition)は単体テスト側でカバー済みのため、
+//   ここでは view の責務 ── 演算子で値入力の個数が変わる / 編集が draft へ通知される /
+//   Enter・Escape の配線 ── だけを検証します。
+const numberDraft = (
+  partial: Partial<NumberFilterConditionDraft>,
+): NumberFilterConditionDraft => ({
+  operator: 'gte',
+  value1: '',
+  value2: '',
+  ...partial,
+});
+
+const makeNumberProps = (draft: NumberFilterConditionDraft) => ({
+  ...makeProps(),
+  filterType: 'number' as const,
+  numberConditionDraft: draft,
+});
+
+describe('ColumnFilterPopover の number 条件 UI(filter-ext A)', () => {
+  it('演算子セレクト / 値入力の編集が draft へ通知される', () => {
+    const props = makeNumberProps(numberDraft({ value1: '10' }));
+    render(<ColumnFilterPopover {...props} />);
+    fireEvent.change(screen.getByLabelText('条件の演算子'), {
+      target: { value: 'between' },
+    });
+    expect(props.onNumberConditionDraftChange).toHaveBeenCalledWith({
+      operator: 'between',
+      value1: '10',
+      value2: '',
+    });
+    fireEvent.change(screen.getByLabelText('条件の値'), {
+      target: { value: '15' },
+    });
+    expect(props.onNumberConditionDraftChange).toHaveBeenCalledWith({
+      operator: 'gte',
+      value1: '15',
+      value2: '',
+    });
+  });
+
+  it('範囲は値入力 2 個(下限 / 上限)、空白系は 0 個', () => {
+    const between = makeNumberProps(numberDraft({ operator: 'between' }));
+    const { unmount } = render(<ColumnFilterPopover {...between} />);
+    expect(screen.getByLabelText('下限')).toBeTruthy();
+    expect(screen.getByLabelText('上限')).toBeTruthy();
+    unmount();
+
+    const blank = makeNumberProps(numberDraft({ operator: 'blank' }));
+    render(<ColumnFilterPopover {...blank} />);
+    expect(screen.queryByLabelText('条件の値')).toBeNull();
+    expect(screen.getByText('この演算子は値入力を使いません')).toBeTruthy();
+  });
+
+  it('値入力の Enter で適用、Escape で close(text フィルターと同じ規則)', () => {
+    const props = makeNumberProps(numberDraft({ value1: '10' }));
+    render(<ColumnFilterPopover {...props} />);
+    const input = screen.getByLabelText('条件の値');
+    fireEvent.keyDown(input, { key: 'Enter' });
+    expect(props.onApply).toHaveBeenCalledTimes(1);
+    fireEvent.keyDown(input, { key: 'Escape' });
+    expect(props.onRequestClose).toHaveBeenCalledTimes(1);
+  });
+});
+
+// 追加(filter-ext B): numberSet(条件 AND 選択)複合 UI の回帰テストです。
+//   候補連動・個別クリア・(すべて選択) の明示スコープ・サマリー表示を検証します
+//   (候補リスト行そのものは仮想化のため、件数メタで確認します)。
+const makeNumberSetProps = (draft: NumberFilterConditionDraft) => ({
+  ...makeProps(),
+  filterType: 'numberSet' as const,
+  numberConditionDraft: draft,
+  selectOptions: [
+    { label: '(空白)', value: '' },
+    { label: '5', value: '5' },
+    { label: '10', value: '10' },
+    { label: '12', value: '12' },
+    { label: '48', value: '48' },
+  ],
+  comboSummaryText: '10 以上 かつ 1 件を除外',
+});
+
+describe('ColumnFilterPopover の numberSet 複合 UI(filter-ext B)', () => {
+  it('条件で候補が連動して絞られる(候補連動 §2.3)', () => {
+    const props = makeNumberSetProps(numberDraft({ value1: '10' }));
+    render(<ColumnFilterPopover {...props} />);
+    // gte 10 → 候補は 10 / 12 / 48 の 3 件((空白) と 5 は条件不一致で一覧から消える)。
+    expect(screen.getByText('一致 3 件')).toBeTruthy();
+    expect(screen.getByText('選択中: 3 / 3 件')).toBeTruthy();
+  });
+
+  it('条件なしでは全候補が対象', () => {
+    const props = makeNumberSetProps(numberDraft({}));
+    render(<ColumnFilterPopover {...props} />);
+    expect(screen.getByText('全 5 件')).toBeTruthy();
+    expect(screen.getByText('選択中: 5 / 5 件')).toBeTruthy();
+  });
+
+  it('保持中のチェック外し(候補外の選択)は件数へ二重計上されない', () => {
+    // 条件 gte 10 で「5」の解除(exclude)が保持されているケース: 表示中候補は全選択扱い。
+    const props = {
+      ...makeNumberSetProps(numberDraft({ value1: '10' })),
+      setSelection: { mode: 'exclude' as const, values: new Set(['5']) },
+    };
+    render(<ColumnFilterPopover {...props} />);
+    expect(screen.getByText('選択中: 3 / 3 件')).toBeTruthy();
+  });
+
+  it('個別クリア: 条件 / 値がそれぞれのハンドラへ通知される(クリアの 3 粒度 §4-2)', () => {
+    const props = {
+      ...makeNumberSetProps(numberDraft({ value1: '10' })),
+      setSelection: { mode: 'exclude' as const, values: new Set(['12']) },
+    };
+    render(<ColumnFilterPopover {...props} />);
+    // 「クリア」ボタンは DOM 順に [条件, 値, フッター全消し] の 3 つです。
+    const clearButtons = screen.getAllByRole('button', { name: 'クリア' });
+    expect(clearButtons).toHaveLength(3);
+    fireEvent.pointerDown(clearButtons[0]);
+    expect(props.onComboConditionClear).toHaveBeenCalledTimes(1);
+    fireEvent.pointerDown(clearButtons[1]);
+    expect(props.onComboSelectionClear).toHaveBeenCalledTimes(1);
+    fireEvent.pointerDown(clearButtons[2]);
+    expect(props.onSetClear).toHaveBeenCalledTimes(1);
+  });
+
+  it('条件なし・全選択では個別クリアが disabled', () => {
+    const props = makeNumberSetProps(numberDraft({}));
+    render(<ColumnFilterPopover {...props} />);
+    const clearButtons = screen.getAllByRole('button', { name: 'クリア' });
+    expect((clearButtons[0] as HTMLButtonElement).disabled).toBe(true);
+    expect((clearButtons[1] as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it('(すべて選択) は明示スコープ(表示中候補の values)で通知される(§4-1 の保持前提)', () => {
+    const props = makeNumberSetProps(numberDraft({ value1: '10' }));
+    render(<ColumnFilterPopover {...props} />);
+    // 全選択状態からの解除 → 条件絞り後の表示中候補のみが対象になります('all' は使わない)。
+    fireEvent.click(screen.getByRole('checkbox', { name: /すべて選択/ }));
+    expect(props.onSetSelectAllChange).toHaveBeenCalledWith(
+      ['10', '12', '48'],
+      false,
+    );
+  });
+
+  it('複合サマリーが表示される', () => {
+    const props = makeNumberSetProps(numberDraft({ value1: '10' }));
+    render(<ColumnFilterPopover {...props} />);
+    expect(screen.getByText(/10 以上 かつ 1 件を除外/)).toBeTruthy();
+  });
+});
+
+// 追加(filter-ext C): textSet(テキスト条件 AND 選択)UI の回帰テストです。
+//   レイアウトは numberSet と共有(ComboFilterLayout)のため、テキスト固有の
+//   候補連動と draft 通知だけを検証します。
+const makeTextSetProps = (draft: TextFilterConditionDraft) => ({
+  ...makeProps(),
+  filterType: 'textSet' as const,
+  textConditionDraft: draft,
+  selectOptions: [
+    { label: '(空白)', value: '' },
+    { label: '六角ボルト M6', value: '六角ボルト M6' },
+    { label: '六角ボルト M8', value: '六角ボルト M8' },
+    { label: 'アイボルト M10', value: 'アイボルト M10' },
+    { label: 'ナット M6', value: 'ナット M6' },
+  ],
+  comboSummaryText: '"ボルト" を含む',
+});
+
+describe('ColumnFilterPopover の textSet 複合 UI(filter-ext C)', () => {
+  it('テキスト条件で候補が連動して絞られる', () => {
+    const props = makeTextSetProps({ operator: 'contains', value: 'ボルト' });
+    render(<ColumnFilterPopover {...props} />);
+    // 「ボルト」を含む → 3 件((空白) と「ナット M6」は消える)。
+    expect(screen.getByText('一致 3 件')).toBeTruthy();
+    expect(screen.getByText('選択中: 3 / 3 件')).toBeTruthy();
+  });
+
+  it('演算子 / 値の編集が draft へ通知される', () => {
+    const props = makeTextSetProps({ operator: 'contains', value: '' });
+    render(<ColumnFilterPopover {...props} />);
+    fireEvent.change(screen.getByLabelText('条件の演算子'), {
+      target: { value: 'startsWith' },
+    });
+    expect(props.onTextConditionDraftChange).toHaveBeenCalledWith({
+      operator: 'startsWith',
+      value: '',
+    });
+    fireEvent.change(screen.getByLabelText('条件の値'), {
+      target: { value: '六角' },
+    });
+    expect(props.onTextConditionDraftChange).toHaveBeenCalledWith({
+      operator: 'contains',
+      value: '六角',
+    });
+  });
+
+  it('空白系演算子では値入力が消える', () => {
+    const props = makeTextSetProps({ operator: 'blank', value: '' });
+    render(<ColumnFilterPopover {...props} />);
+    expect(screen.queryByLabelText('条件の値')).toBeNull();
+    expect(screen.getByText('この演算子は値入力を使いません')).toBeTruthy();
+    // blank 条件 → 候補は (空白) のみ。
+    expect(screen.getByText('一致 1 件')).toBeTruthy();
+  });
+});
+
+// 追加(filter-ext D): dateSet(日付条件 AND 選択)UI の回帰テストです。
+//   ツリー行の構造は logic(buildDateTreeRows)側で担保済みのため、ここでは
+//   プリセットチップ / 演算子と値入力 / 候補連動の件数メタを検証します。
+const makeDateSetProps = (draft: DateFilterConditionDraft) => ({
+  ...makeProps(),
+  filterType: 'dateSet' as const,
+  dateConditionDraft: draft,
+  // 正規化済み日付キー候補(SpreadsheetGrid が normalizeDateSetOptions 済みで渡す契約)。
+  selectOptions: [
+    { label: '2026-01-15', value: '2026-01-15' },
+    { label: '2026-02-03', value: '2026-02-03' },
+    { label: '2026-02-10', value: '2026-02-10' },
+    { label: '(空白)', value: '' },
+  ],
+  comboSummaryText: '2026-02-01 〜 2026-02-28 かつ 1 件を除外',
+});
+
+describe('ColumnFilterPopover の dateSet 複合 UI(filter-ext D)', () => {
+  it('日付範囲条件で候補が連動して絞られる((空白) は消える)', () => {
+    const props = makeDateSetProps({
+      ...DEFAULT_DATE_FILTER_DRAFT,
+      operator: 'range',
+      value1: '2026-02-01',
+      value2: '2026-02-28',
+    });
+    render(<ColumnFilterPopover {...props} />);
+    expect(screen.getByText('一致 2 件')).toBeTruthy();
+    expect(screen.getByText('選択中: 2 / 2 件')).toBeTruthy();
+  });
+
+  it('プリセットチップの選択 / 再クリック解除が draft へ通知される', () => {
+    const props = makeDateSetProps(DEFAULT_DATE_FILTER_DRAFT);
+    render(<ColumnFilterPopover {...props} />);
+    fireEvent.pointerDown(screen.getByRole('button', { name: '過去 30 日' }));
+    expect(props.onDateConditionDraftChange).toHaveBeenCalledWith({
+      ...DEFAULT_DATE_FILTER_DRAFT,
+      preset: 'last30days',
+    });
+  });
+
+  it('プリセット選択中は値入力が消え、演算子変更でプリセット解除が通知される', () => {
+    const props = makeDateSetProps({
+      ...DEFAULT_DATE_FILTER_DRAFT,
+      preset: 'today',
+    });
+    render(<ColumnFilterPopover {...props} />);
+    expect(screen.queryByLabelText('開始日')).toBeNull();
+    fireEvent.change(screen.getByLabelText('条件の演算子'), {
+      target: { value: 'onOrAfter' },
+    });
+    expect(props.onDateConditionDraftChange).toHaveBeenCalledWith({
+      ...DEFAULT_DATE_FILTER_DRAFT,
+      operator: 'onOrAfter',
+      preset: null,
+    });
+  });
+
+  it('範囲演算子では date 入力が 2 個(開始日 / 終了日)出る', () => {
+    const props = makeDateSetProps(DEFAULT_DATE_FILTER_DRAFT);
+    render(<ColumnFilterPopover {...props} />);
+    expect(screen.getByLabelText('開始日')).toBeTruthy();
+    expect(screen.getByLabelText('終了日')).toBeTruthy();
+    fireEvent.change(screen.getByLabelText('開始日'), {
+      target: { value: '2026-02-01' },
+    });
+    expect(props.onDateConditionDraftChange).toHaveBeenCalledWith({
+      ...DEFAULT_DATE_FILTER_DRAFT,
+      value1: '2026-02-01',
+    });
   });
 });

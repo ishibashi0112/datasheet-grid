@@ -225,16 +225,25 @@ export type SetColumnFilterValue = {
 //   旧 logic/filtering.ts 内に定義していましたが、ColumnFilterValue union(下記)が
 //   number 記述子を内包する都合上、型はこちら(下層の型モジュール)へ移設しました。
 //   parse/build の「ロジック」は引き続き logic/filtering.ts 側にあります(本型を import します)。
+// 変更(filter-ext A): 演算子セレクト UI 化に伴い '!='(等しくない)と blank / notBlank
+//   (空白 / 空白でない)を追加しました。いずれも判別共用体への追加拡張のため、
+//   保存済みの旧値(comparison / range のみ)はそのまま読めます(後方互換)。
 export type ParsedNumberFilter =
   | {
       mode: 'comparison';
-      operator: '>' | '>=' | '<' | '<=' | '=';
+      operator: '>' | '>=' | '<' | '<=' | '=' | '!=';
       value: number;
     }
   | {
       mode: 'range';
       min: number;
       max: number;
+    }
+  | {
+      mode: 'blank';
+    }
+  | {
+      mode: 'notBlank';
     };
 
 // 追加(記述子化 / number): number フィルターのタグ付き記述子です(旧 filtering.ts から移設)。
@@ -262,6 +271,89 @@ export type DateColumnFilterValue = {
   value: string;
 };
 
+// 追加(filter-ext B): 「条件 AND 選択」複合フィルター(AG Grid の Multi Filter 相当)の
+//   記述子です。1 つの popover に条件(述語)と値(Set 一覧)を縦に並べ、AND で結合します。
+//   - condition: 数値条件(ParsedNumberFilter)。null = 条件なし。
+//   - set      : Set 選択(形は SetColumnFilterValue と同じ mode + values)。null = 全選択。
+//   condition と set が両方 null の状態は保存せず clearColumn へ正規化します(commit 側の責務)。
+//   条件を変えても set の選択は破棄されません(候補外の値の選択も保持し、条件を戻せば復活)。
+export type NumberSetColumnFilterValue = {
+  kind: 'numberSet';
+  condition: ParsedNumberFilter | null;
+  set: {
+    mode?: 'include' | 'exclude';
+    values: string[];
+  } | null;
+};
+
+// 追加(filter-ext C): テキスト条件の解釈結果です(ParsedNumberFilter のテキスト版)。
+//   value は trim 済み・判定は大文字小文字無視(既存 text フィルターの contains と同じ規則)。
+//   Set の検索欄は「候補を選ぶための絞り込み」で述語として残らないため、「含む」等を
+//   述語として保持したい場合はこちら(条件欄)を使います(引き継ぎ §3.3)。
+export type ParsedTextFilter =
+  | {
+      mode: 'contains' | 'equals' | 'startsWith' | 'endsWith';
+      value: string;
+    }
+  | {
+      mode: 'blank';
+    }
+  | {
+      mode: 'notBlank';
+    };
+
+// 追加(filter-ext C): テキスト列の「条件 AND 選択」複合フィルターです(numberSet の
+//   テキスト版。構造・正規化・選択保持の規約は NumberSetColumnFilterValue と同一)。
+export type TextSetColumnFilterValue = {
+  kind: 'textSet';
+  condition: ParsedTextFilter | null;
+  set: {
+    mode?: 'include' | 'exclude';
+    values: string[];
+  } | null;
+};
+
+// 追加(filter-ext D): 相対日付プリセットです。合意済み仕様: 相対のまま保存し、フィルター
+//   評価時に「今日」を基準へ解決します(翌日開くと範囲が追従する)。絶対日付へ固定したい
+//   場合は range 等の絶対条件を使います。
+export type DateFilterPreset = 'today' | 'thisMonth' | 'last30days';
+
+// 追加(filter-ext D): 日付条件の解釈結果です。日付は 'YYYY-MM-DD'(ゼロ埋め ISO)へ正規化して
+//   保持し、比較は文字列比較で行います(同形式なら辞書順 = 時系列順)。セル値の正規化は
+//   logic/dateFilterCondition の toDateKey(解釈不可 = 比較不一致)が担います。
+export type ParsedDateFilter =
+  | {
+      mode: 'range';
+      from: string;
+      to: string;
+    }
+  | {
+      mode: 'onOrAfter' | 'onOrBefore' | 'equals' | 'notEquals';
+      value: string;
+    }
+  | {
+      mode: 'blank';
+    }
+  | {
+      mode: 'notBlank';
+    }
+  | {
+      mode: 'preset';
+      preset: DateFilterPreset;
+    };
+
+// 追加(filter-ext D): 日付列の「条件 AND 選択」複合フィルターです。set.values は
+//   セル生値ではなく **正規化済み日付キー('YYYY-MM-DD'。空白 = '' / 非日付 = 生値)** です
+//   (popover の年月日ツリーが日付キー単位で選択するため。判定側もキー変換して照合します)。
+export type DateSetColumnFilterValue = {
+  kind: 'dateSet';
+  condition: ParsedDateFilter | null;
+  set: {
+    mode?: 'include' | 'exclude';
+    values: string[];
+  } | null;
+};
+
 // 追加(記述子化): select の完全一致フィルターのタグ付き記述子です。
 //   value は選択値そのもの(trim しない)で、判定側で文字列完全一致します。
 export type SelectColumnFilterValue = {
@@ -284,8 +376,11 @@ export type CustomColumnFilterValue = {
 export type ColumnFilterValue =
   | SetColumnFilterValue
   | NumberColumnFilterValue
+  | NumberSetColumnFilterValue
   | TextColumnFilterValue
+  | TextSetColumnFilterValue
   | DateColumnFilterValue
+  | DateSetColumnFilterValue
   | SelectColumnFilterValue
   | CustomColumnFilterValue;
 
@@ -587,7 +682,24 @@ export type GridColumn<T> = {
   renderHeader?: (ctx: HeaderRenderContext<T>) => ReactNode;
   // 変更(12-A): 'set' を追加します。AG Grid の Set Filter 相当
   //             (チェックボックス一覧 + 検索 + Select All)の UI になります。
-  filterType?: 'text' | 'number' | 'date' | 'select' | 'set' | 'custom';
+  // 変更(filter-ext B): 'numberSet' を追加します。数値条件(演算子 + 値)と Set 一覧を
+  //             1 つの popover に縦に並べて AND 結合する複合フィルターです。条件を適用すると
+  //             Set 候補が条件を満たす値だけに連動して絞られます。
+  // 変更(filter-ext C): 'textSet' を追加します(numberSet のテキスト版。演算子は
+  //             含む / 等しい / 始まる / 終わる / 空白 / 空白でない)。
+  // 変更(filter-ext D): 'dateSet' を追加します(日付版。条件は 範囲 / 以降 / 以前 / 等しい /
+  //             等しくない / 空白 / 空白でない + 相対プリセット(今日 / 今月 / 過去 30 日)。
+  //             Set 部分は年 / 月 / 日の 3 階層ツリーになります)。
+  filterType?:
+    | 'text'
+    | 'textSet'
+    | 'number'
+    | 'numberSet'
+    | 'date'
+    | 'dateSet'
+    | 'select'
+    | 'set'
+    | 'custom';
   // 追加: select / set フィルター時の候補です。未指定時は rows から自動収集します。
   filterOptions?: GridSelectFilterOption[];
   filterFn?: (row: T, filterValue: unknown) => boolean;

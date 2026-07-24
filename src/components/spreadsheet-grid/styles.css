@@ -1762,6 +1762,108 @@
     background-color: var(--ssg-panel-bg);
   }
 
+  /* number 条件(filter-ext A): 値入力行。範囲(2 入力)は 〜 を挟んで横並びにする。
+     .ssg-filter-input 自身の margin-bottom(8px)を横並びでも共有するため、〜 も同じ余白を持つ。 */
+  .ssg-filter-cond-values {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .ssg-filter-cond-values .ssg-filter-input {
+    flex: 1 1 0;
+    min-width: 0;
+  }
+  .ssg-filter-cond-tilde {
+    flex: none;
+    font-size: 12px;
+    color: var(--ssg-panel-text-muted);
+    margin-bottom: 8px;
+  }
+
+  /* numberSet 複合フィルター(filter-ext B): 条件 / 値のセクションヘッダ + 個別クリア +
+     区切り + 複合サマリー。クリアは 3 粒度(条件のみ / 値のみ / フッター全消し)。 */
+  .ssg-filter-sec-head {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    margin: 2px 0 6px;
+  }
+  .ssg-filter-sec-label {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    color: var(--ssg-panel-text-muted);
+  }
+  .ssg-filter-sec-meta {
+    font-size: 11px;
+    color: var(--ssg-panel-text-faint);
+  }
+  .ssg-filter-sec-clear {
+    margin-left: auto;
+    border: none;
+    background: none;
+    padding: 0;
+    font-size: 11px;
+    color: var(--ssg-panel-accent);
+    cursor: pointer;
+  }
+  .ssg-filter-sec-clear:disabled {
+    color: var(--ssg-panel-text-disabled);
+    cursor: default;
+  }
+  .ssg-filter-sep {
+    border-top: 1px solid var(--ssg-panel-separator);
+    margin: 2px 0 10px;
+  }
+  .ssg-filter-summary {
+    font-size: 11px;
+    color: var(--ssg-panel-text);
+    background-color: var(--ssg-panel-accent-bg);
+    border-radius: 6px;
+    padding: 5px 8px;
+    margin-bottom: 10px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  /* dateSet(filter-ext D): 相対プリセットチップ(今日 / 今月 / 過去 30 日)。 */
+  .ssg-filter-presets {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-bottom: 8px;
+  }
+  .ssg-filter-preset-chip {
+    border: 1px solid var(--ssg-panel-border);
+    background-color: var(--ssg-panel-bg);
+    color: var(--ssg-panel-text-muted);
+    border-radius: 999px;
+    padding: 2px 10px;
+    font-size: 11px;
+    cursor: pointer;
+  }
+  .ssg-filter-preset-chip--active {
+    border-color: var(--ssg-panel-accent);
+    background-color: var(--ssg-panel-accent-bg);
+    color: var(--ssg-panel-accent);
+  }
+
+  /* dateSet(filter-ext D): 年月日ツリーの展開トグル(▸/▾)。リーフは位置合わせの空白。 */
+  .ssg-filter-tree-toggle {
+    flex: none;
+    width: 14px;
+    border: none;
+    background: none;
+    padding: 0;
+    font-size: 10px;
+    color: var(--ssg-panel-text-muted);
+    cursor: pointer;
+  }
+  .ssg-filter-tree-toggle--placeholder {
+    visibility: hidden;
+  }
+
   /* set フィルター: 全選択行 / 候補リスト / 行 / 件数。 */
   .ssg-filter-selectall {
     display: flex;

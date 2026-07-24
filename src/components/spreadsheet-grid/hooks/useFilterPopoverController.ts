@@ -8,12 +8,42 @@ import {
 } from 'react';
 import type { ColumnFilterValue, GridColumn } from '../model/gridTypes';
 // 追加(記述子化): number 記述子を含む列フィルター値を draft 用テキストへ整形します。
-import { columnFilterValueToDraftText } from '../logic/filtering';
+import {
+  columnFilterValueToDraftText,
+  isDateSetColumnFilterValue,
+  isNumberColumnFilterValue,
+  isNumberSetColumnFilterValue,
+  isTextSetColumnFilterValue,
+} from '../logic/filtering';
+// 追加(filter-ext A): number 列の構造化条件 draft(演算子 + 値 1/2)と、既存フィルター値
+//   からの復元です(parsed から構造を逆引き。旧・式構文の保存値も復元できます)。
+// 変更(filter-ext B): numberSet は condition から復元します(共有の逆引き実装)。
+import {
+  numberFilterValueToConditionDraft,
+  parsedNumberFilterToConditionDraft,
+  type NumberFilterConditionDraft,
+} from '../logic/numberFilterCondition';
+// 追加(filter-ext C): textSet のテキスト条件 draft と復元です(数値版と同型)。
+import {
+  parsedTextFilterToConditionDraft,
+  type TextFilterConditionDraft,
+} from '../logic/textFilterCondition';
+// 追加(filter-ext D): dateSet の日付条件 draft と復元です(プリセット含む)。
+import {
+  parsedDateFilterToConditionDraft,
+  type DateFilterConditionDraft,
+} from '../logic/dateFilterCondition';
 
 // 追加: 列フィルターポップオーバーの内部状態です。
 type HeaderFilterPopoverState = {
   columnKey: string;
   draftValue: string;
+  // 追加(filter-ext A): number 系列の構造化条件 draft です(number / numberSet 以外は null)。
+  numberDraft: NumberFilterConditionDraft | null;
+  // 追加(filter-ext C): textSet のテキスト条件 draft です(textSet 以外は null)。
+  textDraft: TextFilterConditionDraft | null;
+  // 追加(filter-ext D): dateSet の日付条件 draft です(dateSet 以外は null)。
+  dateDraft: DateFilterConditionDraft | null;
 };
 
 // 追加: body 直下 portal popover の配置情報です。
@@ -37,6 +67,9 @@ const ESTIMATED_POPUP_HEIGHT = 260;
 // 追加(12-A): set フィルターは検索 + Select All + 候補リスト(208px)を含むため、
 //             上下フリップ判定用の見積もり高さを別に持ちます。
 const ESTIMATED_SET_POPUP_HEIGHT = 400;
+// 追加(filter-ext B/C): 複合(numberSet / textSet)は set の内容 + 条件セクション
+//   (演算子 + 値入力)ぶん縦に長い。
+const ESTIMATED_COMBO_POPUP_HEIGHT = 470;
 
 // 追加: 列フィルター popover の state / ref / focus / outside click / layout をまとめて管理します。
 export const useFilterPopoverController = <T,>({
@@ -78,10 +111,16 @@ export const useFilterPopoverController = <T,>({
     const anchorRect = filterPopoverAnchorRef.current.getBoundingClientRect();
 
     // 追加(12-A): set フィルターは popover が縦に長いため、見積もり高さを切り替えます。
+    // 変更(filter-ext B/C/D): 複合(numberSet / textSet / dateSet)はさらに条件セクション
+    //   ぶん長くなります(dateSet はプリセットチップ行も含む)。
     const estimatedPopupHeight =
-      openedFilterColumn?.filterType === 'set'
-        ? ESTIMATED_SET_POPUP_HEIGHT
-        : ESTIMATED_POPUP_HEIGHT;
+      openedFilterColumn?.filterType === 'numberSet' ||
+      openedFilterColumn?.filterType === 'textSet' ||
+      openedFilterColumn?.filterType === 'dateSet'
+        ? ESTIMATED_COMBO_POPUP_HEIGHT
+        : openedFilterColumn?.filterType === 'set'
+          ? ESTIMATED_SET_POPUP_HEIGHT
+          : ESTIMATED_POPUP_HEIGHT;
 
     let left = anchorRect.right - POPUP_WIDTH;
     left = Math.max(VIEWPORT_MARGIN, left);
@@ -143,11 +182,48 @@ export const useFilterPopoverController = <T,>({
         : null;
       filterPopoverAnchorRef.current = anchorEl;
 
+      // 追加(filter-ext A): number 列は構造化条件 draft(演算子 + 値)で編集します。
+      //   既存フィルター値の parsed から復元し、未設定 / 旧 contains 値は既定 draft です。
+      // 変更(filter-ext B/C): numberSet / textSet 列は condition から復元します
+      //   (逆引きはそれぞれの共有実装)。
+      const currentValue = columnFilterValues[column.key];
+      const numberDraft =
+        column.filterType === 'number'
+          ? numberFilterValueToConditionDraft(
+              isNumberColumnFilterValue(currentValue) ? currentValue : undefined,
+            )
+          : column.filterType === 'numberSet'
+            ? parsedNumberFilterToConditionDraft(
+                isNumberSetColumnFilterValue(currentValue)
+                  ? currentValue.condition
+                  : undefined,
+              )
+            : null;
+      const textDraft =
+        column.filterType === 'textSet'
+          ? parsedTextFilterToConditionDraft(
+              isTextSetColumnFilterValue(currentValue)
+                ? currentValue.condition
+                : undefined,
+            )
+          : null;
+      const dateDraft =
+        column.filterType === 'dateSet'
+          ? parsedDateFilterToConditionDraft(
+              isDateSetColumnFilterValue(currentValue)
+                ? currentValue.condition
+                : undefined,
+            )
+          : null;
+
       setFilterPopoverState({
         columnKey: column.key,
         // 変更(記述子化): number 記述子は String() で "[object Object]" になるため、
         //   raw を取り出す columnFilterValueToDraftText 経由にします(他種別は従来と同値)。
-        draftValue: columnFilterValueToDraftText(columnFilterValues[column.key]),
+        draftValue: columnFilterValueToDraftText(currentValue),
+        numberDraft,
+        textDraft,
+        dateDraft,
       });
     },
     [columnFilterValues, enableColumnFilter, gridRootRef],
@@ -179,6 +255,54 @@ export const useFilterPopoverController = <T,>({
       };
     });
   }, []);
+
+  // 追加(filter-ext A): number 列の構造化条件 draft を更新します(popover の編集通知)。
+  const updateFilterPopoverNumberDraft = useCallback(
+    (draft: NumberFilterConditionDraft) => {
+      setFilterPopoverState((current) => {
+        if (!current) {
+          return current;
+        }
+        return {
+          ...current,
+          numberDraft: draft,
+        };
+      });
+    },
+    [],
+  );
+
+  // 追加(filter-ext C): textSet のテキスト条件 draft を更新します(popover の編集通知)。
+  const updateFilterPopoverTextDraft = useCallback(
+    (draft: TextFilterConditionDraft) => {
+      setFilterPopoverState((current) => {
+        if (!current) {
+          return current;
+        }
+        return {
+          ...current,
+          textDraft: draft,
+        };
+      });
+    },
+    [],
+  );
+
+  // 追加(filter-ext D): dateSet の日付条件 draft を更新します(popover の編集通知)。
+  const updateFilterPopoverDateDraft = useCallback(
+    (draft: DateFilterConditionDraft) => {
+      setFilterPopoverState((current) => {
+        if (!current) {
+          return current;
+        }
+        return {
+          ...current,
+          dateDraft: draft,
+        };
+      });
+    },
+    [],
+  );
 
   // 追加: portal popover の位置を open / resize / scroll に応じて再計算します。
   useEffect(() => {
@@ -227,8 +351,12 @@ export const useFilterPopoverController = <T,>({
 
         inputElement.focus();
         // 追加: 全文選択ではなく末尾へ caret を置き、半角入力時の全文置換を避けます。
-        const end = inputElement.value.length;
-        inputElement.setSelectionRange(end, end);
+        // 変更(filter-ext D): <input type="date">(dateSet の条件値)は setSelectionRange 非対応で
+        //   InvalidStateError を投げるため、text 系のときだけ caret を操作します(focus は共通)。
+        if (inputElement.type === 'text') {
+          const end = inputElement.value.length;
+          inputElement.setSelectionRange(end, end);
+        }
       });
     });
 
@@ -282,6 +410,9 @@ export const useFilterPopoverController = <T,>({
     openColumnFilterPopover,
     closeColumnFilterPopover,
     updateFilterPopoverDraft,
+    updateFilterPopoverNumberDraft,
+    updateFilterPopoverTextDraft,
+    updateFilterPopoverDateDraft,
   };
 };
 

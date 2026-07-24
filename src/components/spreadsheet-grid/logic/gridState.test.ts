@@ -63,6 +63,29 @@ describe('cloneColumnFilterValue', () => {
     }
   });
 
+  // 追加(filter-ext B): numberSet は condition(入れ子)と set.values(配列)を複製します。
+  it('numberSet: condition / set.values とも複製する', () => {
+    const original: ColumnFilterValue = {
+      kind: 'numberSet',
+      condition: { mode: 'comparison', operator: '>=', value: 10 },
+      set: { mode: 'exclude', values: ['12'] },
+    };
+    const cloned = cloneColumnFilterValue(original);
+    expect(cloned).toEqual(original);
+    if (cloned.kind === 'numberSet' && original.kind === 'numberSet') {
+      expect(cloned.condition).not.toBe(original.condition);
+      expect(cloned.set).not.toBe(original.set);
+      expect(cloned.set?.values).not.toBe(original.set?.values);
+    }
+    // 片方 null もそのまま維持されます。
+    const partial: ColumnFilterValue = {
+      kind: 'numberSet',
+      condition: null,
+      set: { values: ['a'] },
+    };
+    expect(cloneColumnFilterValue(partial)).toEqual(partial);
+  });
+
   it('text / date / select: 値は等価で別オブジェクト', () => {
     const text: ColumnFilterValue = { kind: 'text', value: 'abc' };
     const date: ColumnFilterValue = { kind: 'date', value: '2024' };
@@ -391,6 +414,115 @@ describe('isSameGridState', () => {
       isSameGridState(
         st({}, { n: mk('1-5', { mode: 'range', min: 1, max: 5 }) }),
         st({}, { n: mk('1-5', { mode: 'range', min: 1, max: 9 }) }),
+      ),
+    ).toBe(false);
+    // 追加(filter-ext A): blank / notBlank は mode 一致のみで等価判定。
+    expect(
+      isSameGridState(
+        st({}, { n: mk('(空白)', { mode: 'blank' }) }),
+        st({}, { n: mk('(空白)', { mode: 'blank' }) }),
+      ),
+    ).toBe(true);
+    expect(
+      isSameGridState(
+        st({}, { n: mk('x', { mode: 'blank' }) }),
+        st({}, { n: mk('x', { mode: 'notBlank' }) }),
+      ),
+    ).toBe(false);
+  });
+
+  // 追加(filter-ext B): numberSet は condition + set(mode / values)の構造比較。
+  it('numberSet フィルター: condition / set を比較', () => {
+    const mkNs = (
+      condition: ParsedNumberFilter | null,
+      set: { mode?: 'include' | 'exclude'; values: string[] } | null,
+    ): ColumnFilterValue => ({ kind: 'numberSet', condition, set });
+    const gte10 = { mode: 'comparison', operator: '>=', value: 10 } as const;
+    expect(
+      isSameGridState(
+        st({}, { n: mkNs(gte10, { mode: 'exclude', values: ['12'] }) }),
+        st({}, { n: mkNs({ ...gte10 }, { mode: 'exclude', values: ['12'] }) }),
+      ),
+    ).toBe(true);
+    // condition 違い / set values 違い / null と非 null。
+    expect(
+      isSameGridState(
+        st({}, { n: mkNs(gte10, null) }),
+        st({}, { n: mkNs({ ...gte10, value: 20 }, null) }),
+      ),
+    ).toBe(false);
+    expect(
+      isSameGridState(
+        st({}, { n: mkNs(gte10, { values: ['12'] }) }),
+        st({}, { n: mkNs(gte10, { values: ['12', '20'] }) }),
+      ),
+    ).toBe(false);
+    expect(
+      isSameGridState(
+        st({}, { n: mkNs(gte10, null) }),
+        st({}, { n: mkNs(gte10, { values: [] }) }),
+      ),
+    ).toBe(false);
+    // set の mode 既定(include)と明示 include は等価。
+    expect(
+      isSameGridState(
+        st({}, { n: mkNs(null, { values: ['a'] }) }),
+        st({}, { n: mkNs(null, { mode: 'include', values: ['a'] }) }),
+      ),
+    ).toBe(true);
+  });
+
+  // 追加(filter-ext D): dateSet は condition(preset 含む)+ set の構造比較。
+  it('dateSet フィルター: condition(preset / range)を比較', () => {
+    const mkDs = (
+      condition:
+        | { mode: 'preset'; preset: 'today' | 'thisMonth' | 'last30days' }
+        | { mode: 'range'; from: string; to: string }
+        | null,
+    ): ColumnFilterValue => ({ kind: 'dateSet', condition, set: null });
+    expect(
+      isSameGridState(
+        st({}, { d: mkDs({ mode: 'preset', preset: 'today' }) }),
+        st({}, { d: mkDs({ mode: 'preset', preset: 'today' }) }),
+      ),
+    ).toBe(true);
+    expect(
+      isSameGridState(
+        st({}, { d: mkDs({ mode: 'preset', preset: 'today' }) }),
+        st({}, { d: mkDs({ mode: 'preset', preset: 'thisMonth' }) }),
+      ),
+    ).toBe(false);
+    expect(
+      isSameGridState(
+        st({}, { d: mkDs({ mode: 'range', from: '2026-01-01', to: '2026-02-01' }) }),
+        st({}, { d: mkDs({ mode: 'range', from: '2026-01-01', to: '2026-03-01' }) }),
+      ),
+    ).toBe(false);
+  });
+
+  // 追加(filter-ext C): textSet も condition + set の構造比較(clone は numberSet と同型)。
+  it('textSet フィルター: condition / set を比較', () => {
+    const mkTs = (
+      condition: { mode: 'contains'; value: string } | null,
+      set: { values: string[] } | null,
+    ): ColumnFilterValue => ({ kind: 'textSet', condition, set });
+    expect(
+      isSameGridState(
+        st({}, { t: mkTs({ mode: 'contains', value: 'x' }, { values: ['a'] }) }),
+        st({}, { t: mkTs({ mode: 'contains', value: 'x' }, { values: ['a'] }) }),
+      ),
+    ).toBe(true);
+    expect(
+      isSameGridState(
+        st({}, { t: mkTs({ mode: 'contains', value: 'x' }, null) }),
+        st({}, { t: mkTs({ mode: 'contains', value: 'y' }, null) }),
+      ),
+    ).toBe(false);
+    // 同キーで kind 違い(numberSet vs textSet)は不等。
+    expect(
+      isSameGridState(
+        st({}, { t: mkTs(null, { values: ['a'] }) }),
+        st({}, { t: { kind: 'numberSet', condition: null, set: { values: ['a'] } } }),
       ),
     ).toBe(false);
   });

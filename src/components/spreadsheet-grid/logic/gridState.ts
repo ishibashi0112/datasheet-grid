@@ -5,7 +5,9 @@ import type {
   GridFilterState,
   GridSortState,
   GridState,
+  ParsedDateFilter,
   ParsedNumberFilter,
+  ParsedTextFilter,
 } from '../model/gridTypes';
 // 追加(state v2): 列メタ適用時、pinned/order を AG Grid 互換の視覚順(left→center→right)へ
 //   正規化するために再利用します。grid 本体の reorder 経路と同じ関数で、適用結果の pane 連結を
@@ -40,6 +42,27 @@ export const cloneColumnFilterValue = (
       return { ...value, values: [...value.values] };
     case 'number':
       return { ...value, parsed: value.parsed ? { ...value.parsed } : null };
+    // 追加(filter-ext B/C): 複合(条件 AND 選択)は condition(入れ子)と set(values 配列)を
+    //   複製します。numberSet / textSet で同形ですが、condition の型判別(数値 / テキスト)を
+    //   保つため case は分けています(まとめると union spread で型が緩みます)。
+    case 'numberSet':
+      return {
+        ...value,
+        condition: value.condition ? { ...value.condition } : null,
+        set: value.set ? { ...value.set, values: [...value.set.values] } : null,
+      };
+    case 'textSet':
+      return {
+        ...value,
+        condition: value.condition ? { ...value.condition } : null,
+        set: value.set ? { ...value.set, values: [...value.set.values] } : null,
+      };
+    case 'dateSet':
+      return {
+        ...value,
+        condition: value.condition ? { ...value.condition } : null,
+        set: value.set ? { ...value.set, values: [...value.set.values] } : null,
+      };
     case 'text':
     case 'date':
     case 'select':
@@ -288,6 +311,66 @@ export const applyColumnState = <T,>(
   // 3) pane 連結正規化(grid の reorder と同じ視覚順)。
   return reorderColumnsByPane(ordered);
 };
+// 追加(filter-ext C): ParsedTextFilter(テキスト条件)の構造等価です。
+const isSameParsedTextFilter = (
+  a: ParsedTextFilter | null,
+  b: ParsedTextFilter | null,
+): boolean => {
+  if (a === null || b === null) {
+    return a === b;
+  }
+  if (
+    a.mode === 'blank' ||
+    a.mode === 'notBlank' ||
+    b.mode === 'blank' ||
+    b.mode === 'notBlank'
+  ) {
+    return a.mode === b.mode;
+  }
+  return a.mode === b.mode && a.value === b.value;
+};
+
+// 追加(filter-ext D): ParsedDateFilter(日付条件)の構造等価です。
+const isSameParsedDateFilter = (
+  a: ParsedDateFilter | null,
+  b: ParsedDateFilter | null,
+): boolean => {
+  if (a === null || b === null) {
+    return a === b;
+  }
+  if (a.mode !== b.mode) {
+    return false;
+  }
+  if (a.mode === 'range' && b.mode === 'range') {
+    return a.from === b.from && a.to === b.to;
+  }
+  if (a.mode === 'preset' && b.mode === 'preset') {
+    return a.preset === b.preset;
+  }
+  if (a.mode === 'blank' || a.mode === 'notBlank') {
+    return true;
+  }
+  return (
+    'value' in a && 'value' in b && a.value === b.value
+  );
+};
+
+// 追加(filter-ext C): 複合フィルター(numberSet / textSet / dateSet)の set 部分の構造等価です
+//   (mode 既定 include + values 順序込み比較。null = 全選択)。
+const isSameComboSetPart = (
+  a: { mode?: 'include' | 'exclude'; values: string[] } | null,
+  b: { mode?: 'include' | 'exclude'; values: string[] } | null,
+): boolean => {
+  if (a === null || b === null) {
+    return a === b;
+  }
+  return (
+    (a.mode ?? 'include') === (b.mode ?? 'include') &&
+    a.values.length === b.values.length &&
+    a.values.every((v, i) => v === b.values[i])
+  );
+};
+
 // 追加(state #2 / onStateChange): number フィルターの parsed(解釈結果)の構造等価です。
 //   どちらか null なら参照(= null 同士)で判定。mode 不一致は不等、同一 mode は中身を比較します。
 const isSameParsedNumberFilter = (
@@ -302,6 +385,10 @@ const isSameParsedNumberFilter = (
   }
   if (a.mode === 'range' && b.mode === 'range') {
     return a.min === b.min && a.max === b.max;
+  }
+  // 追加(filter-ext A): blank / notBlank は mode 自体が中身のすべてです(値を持たない)。
+  if (a.mode === 'blank' || a.mode === 'notBlank') {
+    return a.mode === b.mode;
   }
   return false;
 };
@@ -327,6 +414,26 @@ const isSameColumnFilterValue = (
         b.kind === 'number' &&
         a.raw === b.raw &&
         isSameParsedNumberFilter(a.parsed, b.parsed)
+      );
+    // 追加(filter-ext B/C): 複合(条件 AND 選択)は condition と set(mode + values)を
+    //   それぞれ構造比較します(set 部分の規則は kind:'set' と同一)。
+    case 'numberSet':
+      return (
+        b.kind === 'numberSet' &&
+        isSameParsedNumberFilter(a.condition, b.condition) &&
+        isSameComboSetPart(a.set, b.set)
+      );
+    case 'textSet':
+      return (
+        b.kind === 'textSet' &&
+        isSameParsedTextFilter(a.condition, b.condition) &&
+        isSameComboSetPart(a.set, b.set)
+      );
+    case 'dateSet':
+      return (
+        b.kind === 'dateSet' &&
+        isSameParsedDateFilter(a.condition, b.condition) &&
+        isSameComboSetPart(a.set, b.set)
       );
     case 'text':
       return b.kind === 'text' && a.value === b.value;

@@ -1,9 +1,15 @@
 import type {
   ColumnFilterValue,
+  DateFilterPreset,
+  DateSetColumnFilterValue,
   GridColumn,
   NumberColumnFilterValue,
+  NumberSetColumnFilterValue,
+  ParsedDateFilter,
   ParsedNumberFilter,
+  ParsedTextFilter,
   SetColumnFilterValue,
+  TextSetColumnFilterValue,
 } from '../model/gridTypes';
 import { getCellValue } from '../utils/permissions';
 
@@ -33,6 +39,28 @@ export const isSetColumnFilterValue = (
   value: ColumnFilterValue | undefined,
 ): value is SetColumnFilterValue => value?.kind === 'set';
 
+// 追加(filter-ext B): numberSet(条件 AND 選択)記述子の type guard です。
+export const isNumberSetColumnFilterValue = (
+  value: ColumnFilterValue | undefined,
+): value is NumberSetColumnFilterValue => value?.kind === 'numberSet';
+
+// 追加(filter-ext C): textSet(テキスト条件 AND 選択)記述子の type guard です。
+export const isTextSetColumnFilterValue = (
+  value: ColumnFilterValue | undefined,
+): value is TextSetColumnFilterValue => value?.kind === 'textSet';
+
+// 追加(filter-ext D): dateSet(日付条件 AND 選択)記述子の type guard です。
+export const isDateSetColumnFilterValue = (
+  value: ColumnFilterValue | undefined,
+): value is DateSetColumnFilterValue => value?.kind === 'dateSet';
+
+// 追加(filter-ext C): セル値の「空白」判定です(null / undefined / trim 後空文字)。
+//   number / text の blank・notBlank 演算子と、比較の空白不参加(coerce)が同じ定義を共有します。
+export const isBlankCellValue = (cellValue: unknown): boolean =>
+  cellValue === null ||
+  cellValue === undefined ||
+  String(cellValue).trim() === '';
+
 // 追加(12-A): 列フィルター値が「有効」かを判定する共通 helper です。
 // 変更理由: 従来は GridHeaderRow(フィルター済みバッジ) / gridBarHelpers(有効件数) /
 //   列フィルタの適用処理がそれぞれ String(value).trim() で判定していました。
@@ -53,12 +81,229 @@ export const isActiveColumnFilterValue = (
     case 'number':
     case 'custom':
       return true;
+    // 追加(filter-ext B/C/D): 複合(条件 AND 選択)は条件か set 制約のどちらかがあれば有効です
+    //   (両方 null は commit 側で clear へ正規化済み。ここは防御判定)。
+    case 'numberSet':
+    case 'textSet':
+    case 'dateSet':
+      return value.condition !== null || value.set !== null;
     case 'select':
       return value.value.length > 0;
     case 'text':
     case 'date':
       return value.value.trim().length > 0;
   }
+};
+
+// 追加(filter-ext A): number フィルター(comparison / range)の数値化規則です。
+//   空白セル(null / undefined / trim 後空文字)は NaN = 比較・範囲に不参加とします。
+//   従来は Number(null) / Number('') = 0 で空白セルが「0」として比較に参加していました
+//   (undefined だけ NaN という非一貫)。空白の出し入れは blank / notBlank 演算子と
+//   set フィルターの「(空白)」項目の責務へ一元化します(条件 AND 選択の合意仕様)。
+//   B-2 の Float64 key 構築(SpreadsheetGrid)も本関数を使い、key 有無で合否が
+//   食い違わないようにします。
+export const coerceNumberFilterCellValue = (cellValue: unknown): number => {
+  if (cellValue === null || cellValue === undefined) {
+    return Number.NaN;
+  }
+  if (typeof cellValue === 'string' && cellValue.trim() === '') {
+    return Number.NaN;
+  }
+  return Number(cellValue);
+};
+
+// 追加(filter-ext B): 単一値 vs ParsedNumberFilter の合否です(行 predicate の非 key 経路と
+//   同一の意味論。等価性はテストで担保)。numberSet の候補連動 ── Set 候補一覧を条件で
+//   絞る ── が候補 1 件ずつの判定に使います(候補は文字列 value。'' = 空白項目)。
+export const matchesParsedNumberFilter = (
+  parsed: ParsedNumberFilter,
+  cellValue: unknown,
+): boolean => {
+  if (parsed.mode === 'blank' || parsed.mode === 'notBlank') {
+    return isBlankCellValue(cellValue) === (parsed.mode === 'blank');
+  }
+  const numericCellValue = coerceNumberFilterCellValue(cellValue);
+  if (!Number.isFinite(numericCellValue)) {
+    return false;
+  }
+  if (parsed.mode === 'range') {
+    return numericCellValue >= parsed.min && numericCellValue <= parsed.max;
+  }
+  switch (parsed.operator) {
+    case '>':
+      return numericCellValue > parsed.value;
+    case '>=':
+      return numericCellValue >= parsed.value;
+    case '<':
+      return numericCellValue < parsed.value;
+    case '<=':
+      return numericCellValue <= parsed.value;
+    case '!=':
+      return numericCellValue !== parsed.value;
+    case '=':
+    default:
+      return numericCellValue === parsed.value;
+  }
+};
+
+// 追加(filter-ext C): 単一値 vs ParsedTextFilter の合否です(matchesParsedNumberFilter の
+//   テキスト版)。判定は大文字小文字無視(既存 text フィルターの contains と同じ規則)で、
+//   textSet の候補連動と行 predicate(compileParsedTextPredicate)が同じ意味論を共有します。
+export const matchesParsedTextFilter = (
+  parsed: ParsedTextFilter,
+  cellValue: unknown,
+): boolean => {
+  if (parsed.mode === 'blank' || parsed.mode === 'notBlank') {
+    return isBlankCellValue(cellValue) === (parsed.mode === 'blank');
+  }
+  const normalizedCell = String(cellValue ?? '').toLowerCase();
+  const needle = parsed.value.toLowerCase();
+  switch (parsed.mode) {
+    case 'equals':
+      return normalizedCell === needle;
+    case 'startsWith':
+      return normalizedCell.startsWith(needle);
+    case 'endsWith':
+      return normalizedCell.endsWith(needle);
+    case 'contains':
+    default:
+      return normalizedCell.includes(needle);
+  }
+};
+
+// ── 日付フィルターの基礎ロジック(filter-ext D) ──────────
+//   parse 系を filtering に置くのは number(parseNumberFilterExpression)と同じ配置です。
+//   UI draft の合成・復元は logic/dateFilterCondition.ts(こちらを import する側)にあります。
+
+const padDatePart = (value: number): string => String(value).padStart(2, '0');
+
+// Date → 'YYYY-MM-DD'(ローカルタイム基準。toISOString の UTC ずれを避けます)。
+export const formatDateKey = (date: Date): string =>
+  `${date.getFullYear()}-${padDatePart(date.getMonth() + 1)}-${padDatePart(date.getDate())}`;
+
+// 追加(filter-ext D): セル値 → 正規化日付キー('YYYY-MM-DD')です。解釈不可は null。
+//   受理形式: Date インスタンス / 'YYYY-MM-DD'・'YYYY/M/D' 前方一致(時刻部は無視)。
+//   Date.parse への丸投げはしません('2026-13-45' や自由文が環境依存で通るのを防ぐ)。
+export const toDateKey = (cellValue: unknown): string | null => {
+  if (cellValue === null || cellValue === undefined) {
+    return null;
+  }
+  if (cellValue instanceof Date) {
+    return Number.isNaN(cellValue.getTime()) ? null : formatDateKey(cellValue);
+  }
+  const normalized = String(cellValue).trim();
+  if (!normalized) {
+    return null;
+  }
+  const match = normalized.match(
+    /^(\d{4})[-/](\d{1,2})[-/](\d{1,2})(?:[T ].*)?$/,
+  );
+  if (!match) {
+    return null;
+  }
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  if (month < 1 || month > 12 || day < 1 || day > 31) {
+    return null;
+  }
+  return `${match[1]}-${padDatePart(month)}-${padDatePart(day)}`;
+};
+
+// 追加(filter-ext D): dateSet の set 照合キーです。日付セルは正規化キー
+//   ('2026/7/1' と '2026-07-01' が同一リーフにまとまる)、空白は ''(「(空白)」項目)、
+//   非日付文字列は生値のまま(ルート直下のリーフとして列挙)。
+export const toDateSetKey = (cellValue: unknown): string => {
+  const dateKey = toDateKey(cellValue);
+  if (dateKey !== null) {
+    return dateKey;
+  }
+  if (isBlankCellValue(cellValue)) {
+    return '';
+  }
+  return String(cellValue);
+};
+
+// 追加(filter-ext D): 相対プリセットを絶対範囲へ解決します(now 基準・両端含む)。
+//   合意済み仕様: プリセットは相対のまま保存し、フィルター評価のたびにここで解決します
+//   (翌日開くと範囲が追従する)。past30days は「今日を含む過去 30 日間」です。
+export const resolveDateFilterPreset = (
+  preset: DateFilterPreset,
+  now: Date,
+): { from: string; to: string } => {
+  const todayKey = formatDateKey(now);
+  switch (preset) {
+    case 'today':
+      return { from: todayKey, to: todayKey };
+    case 'thisMonth': {
+      const from = new Date(now.getFullYear(), now.getMonth(), 1);
+      const to = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+      return { from: formatDateKey(from), to: formatDateKey(to) };
+    }
+    case 'last30days':
+    default: {
+      const from = new Date(
+        now.getFullYear(),
+        now.getMonth(),
+        now.getDate() - 29,
+      );
+      return { from: formatDateKey(from), to: todayKey };
+    }
+  }
+};
+
+// 追加(filter-ext D): preset を range へ解決した「絶対形」を返します(他はそのまま)。
+export const resolveParsedDateFilter = (
+  parsed: ParsedDateFilter,
+  now: Date,
+): Exclude<ParsedDateFilter, { mode: 'preset' }> =>
+  parsed.mode === 'preset'
+    ? { mode: 'range', ...resolveDateFilterPreset(parsed.preset, now) }
+    : parsed;
+
+// 追加(filter-ext D): 単一値 vs ParsedDateFilter の合否です。キーは同形式('YYYY-MM-DD')の
+//   文字列比較 = 時系列順で判定します。日付として解釈できないセルは比較系で常に不一致
+//   (number の非数値と同じ規則)。dateSet の候補連動(ツリーの絞り)と行 predicate が共有します。
+export const matchesParsedDateFilter = (
+  parsed: ParsedDateFilter,
+  cellValue: unknown,
+  now: Date,
+): boolean => {
+  const resolved = resolveParsedDateFilter(parsed, now);
+  if (resolved.mode === 'blank' || resolved.mode === 'notBlank') {
+    return isBlankCellValue(cellValue) === (resolved.mode === 'blank');
+  }
+  const key = toDateKey(cellValue);
+  if (key === null) {
+    return false;
+  }
+  switch (resolved.mode) {
+    case 'range':
+      return key >= resolved.from && key <= resolved.to;
+    case 'onOrAfter':
+      return key >= resolved.value;
+    case 'onOrBefore':
+      return key <= resolved.value;
+    case 'notEquals':
+      return key !== resolved.value;
+    case 'equals':
+    default:
+      return key === resolved.value;
+  }
+};
+
+// 追加(filter-ext B): B-2 の Float64 key を構築すべき列フィルター値か(comparison / range を
+//   持つ number 系のみ)。SpreadsheetGrid の signature 計算が使います。従来は kind:'number' の
+//   存在だけで構築していましたが、key を読まない blank / contains では構築自体を省きます。
+export const columnFilterUsesNumericKey = (
+  value: ColumnFilterValue | undefined,
+): boolean => {
+  const parsed =
+    value?.kind === 'number'
+      ? value.parsed
+      : value?.kind === 'numberSet'
+        ? value.condition
+        : null;
+  return parsed?.mode === 'comparison' || parsed?.mode === 'range';
 };
 
 // 注記(記述子化): ParsedNumberFilter 型は gridTypes へ移設しました(ColumnFilterValue が
@@ -145,7 +390,12 @@ export const columnFilterValueToDraftText = (
     case 'date':
     case 'select':
       return value.value;
+    // 変更(filter-ext B/C/D): 複合(条件 AND 選択)は構造化 UI(演算子 + チェックボックス)の
+    //   ため text 入力 draft を持ちません(set / custom と同じ)。
     case 'set':
+    case 'numberSet':
+    case 'textSet':
+    case 'dateSet':
     case 'custom':
       return '';
   }
@@ -169,7 +419,14 @@ export const applyNumberFilter = (
       .includes(normalizedFilter.toLowerCase());
   }
 
-  const numericCellValue = Number(cellValue);
+  // 追加(filter-ext A): blank / notBlank は数値化前のセル生値で判定します
+  //   (parse 構文からは生成されませんが、ParsedNumberFilter の網羅として処理します)。
+  if (parsedFilter.mode === 'blank' || parsedFilter.mode === 'notBlank') {
+    return isBlankCellValue(cellValue) === (parsedFilter.mode === 'blank');
+  }
+
+  // 変更(filter-ext A): 空白セルは NaN(比較不参加)へ統一します(coerce の注記参照)。
+  const numericCellValue = coerceNumberFilterCellValue(cellValue);
   if (!Number.isFinite(numericCellValue)) {
     return false;
   }
@@ -190,6 +447,9 @@ export const applyNumberFilter = (
       return numericCellValue < parsedFilter.value;
     case '<=':
       return numericCellValue <= parsedFilter.value;
+    // 追加(filter-ext A): 等しくない(compileSingleColumnFilter 側と同一規則)。
+    case '!=':
+      return numericCellValue !== parsedFilter.value;
     case '=':
     default:
       return numericCellValue === parsedFilter.value;
@@ -210,6 +470,162 @@ export const applyNumberFilter = (
 //   key を使わない既存クロージャ(filterFn / set / contains / select / text)は無改修のまま通ります。
 type CompiledColumnFilterPredicate<T> = (row: T, sourceIndex: number) => boolean;
 
+// 追加(filter-ext B): ParsedNumberFilter 1 件を行 predicate へコンパイルします。
+//   kind:'number'(parsed 非 null)と kind:'numberSet'(condition)が同一実装を共有します。
+//   合否は matchesParsedNumberFilter と等価で、こちらは mode / operator / 閾値を行ループ外で
+//   確定するコンパイル版です(comparison / range は B-2 の numericKey 経路を併設)。
+const compileParsedNumberPredicate = <T,>(
+  parsed: ParsedNumberFilter,
+  column: GridColumn<T>,
+  numericKey?: Float64Array,
+): CompiledColumnFilterPredicate<T> => {
+  // 空白 / 空白でない。数値化ではなくセル生値で判定します(null / undefined / trim 後空文字 =
+  //   空白。"abc" のような非数値文字列は「空白でない」)。numericKey(Float64)は空白と
+  //   非数値文字列を区別できないため使いません。
+  if (parsed.mode === 'blank' || parsed.mode === 'notBlank') {
+    const wantBlank = parsed.mode === 'blank';
+    return (row) => isBlankCellValue(getCellValue(row, column)) === wantBlank;
+  }
+  if (parsed.mode === 'range') {
+    const { min, max } = parsed;
+    // 変更(B-2): numericKey があれば key[sourceIndex] を、無ければセル値の数値化
+    //   (coerceNumberFilterCellValue: 空白 = NaN)を読みます。判定本体は不変です。
+    return (row, sourceIndex) => {
+      const numericCellValue = numericKey
+        ? numericKey[sourceIndex]
+        : coerceNumberFilterCellValue(getCellValue(row, column));
+      return (
+        Number.isFinite(numericCellValue) &&
+        numericCellValue >= min &&
+        numericCellValue <= max
+      );
+    };
+  }
+  const { operator, value: threshold } = parsed;
+  return (row, sourceIndex) => {
+    const numericCellValue = numericKey
+      ? numericKey[sourceIndex]
+      : coerceNumberFilterCellValue(getCellValue(row, column));
+    if (!Number.isFinite(numericCellValue)) {
+      return false;
+    }
+    switch (operator) {
+      case '>':
+        return numericCellValue > threshold;
+      case '>=':
+        return numericCellValue >= threshold;
+      case '<':
+        return numericCellValue < threshold;
+      case '<=':
+        return numericCellValue <= threshold;
+      // 等しくない。他の比較と同じく非数値・空白セルは不一致です。
+      case '!=':
+        return numericCellValue !== threshold;
+      case '=':
+      default:
+        return numericCellValue === threshold;
+    }
+  };
+};
+
+// 追加(filter-ext C): ParsedTextFilter 1 件を行 predicate へコンパイルします(textSet の
+//   condition 用)。合否は matchesParsedTextFilter と等価で、needle の toLowerCase を
+//   行ループ外で 1 回だけ行うコンパイル版です。
+const compileParsedTextPredicate = <T,>(
+  parsed: ParsedTextFilter,
+  column: GridColumn<T>,
+): CompiledColumnFilterPredicate<T> => {
+  if (parsed.mode === 'blank' || parsed.mode === 'notBlank') {
+    const wantBlank = parsed.mode === 'blank';
+    return (row) => isBlankCellValue(getCellValue(row, column)) === wantBlank;
+  }
+  const needle = parsed.value.toLowerCase();
+  const mode = parsed.mode;
+  return (row) => {
+    const normalizedCell = String(getCellValue(row, column) ?? '').toLowerCase();
+    switch (mode) {
+      case 'equals':
+        return normalizedCell === needle;
+      case 'startsWith':
+        return normalizedCell.startsWith(needle);
+      case 'endsWith':
+        return normalizedCell.endsWith(needle);
+      case 'contains':
+      default:
+        return normalizedCell.includes(needle);
+    }
+  };
+};
+
+// 追加(filter-ext B): set 照合(mode + values)を行 predicate へコンパイルします。
+//   kind:'set' と kind:'numberSet' / 'textSet' の set 部分が同一実装を共有します。
+//   values は mode により「選択値(include)」か「非選択値(exclude)」のいずれか(常に小さい側)。
+const compileSetMembershipPredicate = <T,>(
+  mode: 'include' | 'exclude' | undefined,
+  values: string[],
+  column: GridColumn<T>,
+): CompiledColumnFilterPredicate<T> => {
+  const targetValues = new Set(values);
+  if (mode === 'exclude') {
+    return (row) => !targetValues.has(String(getCellValue(row, column) ?? ''));
+  }
+  return (row) => targetValues.has(String(getCellValue(row, column) ?? ''));
+};
+
+// 追加(filter-ext D): dateSet の set 照合です。生値ではなく正規化日付キー(toDateSetKey)で
+//   照合します('2026/7/1' と '2026-07-01' が同一リーフ。空白 = '' / 非日付 = 生値)。
+const compileDateSetMembershipPredicate = <T,>(
+  mode: 'include' | 'exclude' | undefined,
+  values: string[],
+  column: GridColumn<T>,
+): CompiledColumnFilterPredicate<T> => {
+  const targetValues = new Set(values);
+  if (mode === 'exclude') {
+    return (row) => !targetValues.has(toDateSetKey(getCellValue(row, column)));
+  }
+  return (row) => targetValues.has(toDateSetKey(getCellValue(row, column)));
+};
+
+// 追加(filter-ext D): ParsedDateFilter 1 件を行 predicate へコンパイルします。
+//   preset はコンパイル時(= フィルター再計算のたび)に now 基準で解決し、範囲は
+//   同形式キーの文字列比較です。合否は matchesParsedDateFilter と等価です。
+const compileParsedDatePredicate = <T,>(
+  parsed: ParsedDateFilter,
+  column: GridColumn<T>,
+  now: Date,
+): CompiledColumnFilterPredicate<T> => {
+  const resolved = resolveParsedDateFilter(parsed, now);
+  if (resolved.mode === 'blank' || resolved.mode === 'notBlank') {
+    const wantBlank = resolved.mode === 'blank';
+    return (row) => isBlankCellValue(getCellValue(row, column)) === wantBlank;
+  }
+  if (resolved.mode === 'range') {
+    const { from, to } = resolved;
+    return (row) => {
+      const key = toDateKey(getCellValue(row, column));
+      return key !== null && key >= from && key <= to;
+    };
+  }
+  const { mode, value } = resolved;
+  return (row) => {
+    const key = toDateKey(getCellValue(row, column));
+    if (key === null) {
+      return false;
+    }
+    switch (mode) {
+      case 'onOrAfter':
+        return key >= value;
+      case 'onOrBefore':
+        return key <= value;
+      case 'notEquals':
+        return key !== value;
+      case 'equals':
+      default:
+        return key === value;
+    }
+  };
+};
+
 // 追加(12-A): 1 列ぶんのフィルター値を predicate へコンパイルします。
 //             無効(未設定)なら null を返し、行ループから除外します。
 // 変更(記述子化): filterValue を ColumnFilterValue へ閉じ、判別を switch(value.kind) 一本に
@@ -222,6 +638,8 @@ const compileSingleColumnFilter = <T,>(
   //   渡されたときだけ comparison/range が key[sourceIndex] を引きます。
   //   未指定(set 列 / key 未構築)なら従来の Number(getCellValue(...)) 経路に倒れ、挙動は等価です。
   numericKey?: Float64Array,
+  // 追加(filter-ext D): 相対日付プリセットの解決基準時刻です(既定 = 現在)。テストで固定します。
+  now?: Date,
 ): CompiledColumnFilterPredicate<T> | null => {
   if (!isActiveColumnFilterValue(filterValue)) {
     return null;
@@ -238,22 +656,15 @@ const compileSingleColumnFilter = <T,>(
 
   switch (value.kind) {
     // 追加(12-A / 反転set): set フィルターは「対象値の Set」を一度だけ構築し、O(1) 照合します。
-    //   values は mode により「選択値(include)」か「非選択値(exclude)」のいずれか(常に小さい側)。
-    //   include: 行値が対象に含まれれば通過 / exclude: 行値が対象に含まれなければ通過。
+    // 変更(filter-ext B): 実装は compileSetMembershipPredicate へ抽出しました(numberSet と共有)。
     case 'set': {
-      const targetValues = new Set(value.values);
-      if (value.mode === 'exclude') {
-        return (row) =>
-          !targetValues.has(String(getCellValue(row, column) ?? ''));
-      }
-      return (row) => targetValues.has(String(getCellValue(row, column) ?? ''));
+      return compileSetMembershipPredicate(value.mode, value.values, column);
     }
 
     // 追加(記述子化 / number): number 記述子は parse 済みのため、行ループ外で評価器を確定します。
     //   合否は旧 applyNumberFilter と厳密に等価:
     //     - parsed=null  → raw で contains(大文字小文字無視)。
-    //     - range        → Number(cell) が有限かつ [min,max]。
-    //     - comparison   → Number(cell) が有限かつ op 比較(= は ===)。
+    //     - それ以外     → compileParsedNumberPredicate(filter-ext B で抽出。numberSet と共有)。
     case 'number': {
       const parsed = value.parsed;
       if (parsed === null) {
@@ -263,44 +674,51 @@ const compileSingleColumnFilter = <T,>(
             .toLowerCase()
             .includes(needle);
       }
-      if (parsed.mode === 'range') {
-        const { min, max } = parsed;
-        // 変更(B-2): numericKey があれば key[sourceIndex] を、無ければ従来どおり
-        //   Number(getCellValue(...)) を読みます。値の取得元だけが変わり、判定本体は不変です。
-        return (row, sourceIndex) => {
-          const numericCellValue = numericKey
-            ? numericKey[sourceIndex]
-            : Number(getCellValue(row, column));
-          return (
-            Number.isFinite(numericCellValue) &&
-            numericCellValue >= min &&
-            numericCellValue <= max
-          );
-        };
+      return compileParsedNumberPredicate(parsed, column, numericKey);
+    }
+
+    // 追加(filter-ext B/C/D): 条件 AND 選択の複合です。condition(述語)と set(列挙)を
+    //   それぞれコンパイルし、両方あれば AND で合成します。片方 null はもう片方のみ、
+    //   両方 null は無効(null 返却 = 行ループから除外。commit 側で clear 済みの防御)。
+    case 'numberSet':
+    case 'textSet':
+    case 'dateSet': {
+      const conditionPredicate =
+        value.kind === 'numberSet'
+          ? value.condition
+            ? compileParsedNumberPredicate(value.condition, column, numericKey)
+            : null
+          : value.kind === 'textSet'
+            ? value.condition
+              ? compileParsedTextPredicate(value.condition, column)
+              : null
+            : value.condition
+              ? compileParsedDatePredicate(
+                  value.condition,
+                  column,
+                  now ?? new Date(),
+                )
+              : null;
+      // dateSet の set 照合は正規化日付キー(toDateSetKey)、他は生値照合です。
+      const setPredicate = value.set
+        ? value.kind === 'dateSet'
+          ? compileDateSetMembershipPredicate(
+              value.set.mode,
+              value.set.values,
+              column,
+            )
+          : compileSetMembershipPredicate(
+              value.set.mode,
+              value.set.values,
+              column,
+            )
+        : null;
+      if (conditionPredicate && setPredicate) {
+        return (row, sourceIndex) =>
+          conditionPredicate(row, sourceIndex) &&
+          setPredicate(row, sourceIndex);
       }
-      const { operator, value: threshold } = parsed;
-      // 変更(B-2): comparison も numericKey 経路を併設します(無ければ従来 getCellValue 経路)。
-      return (row, sourceIndex) => {
-        const numericCellValue = numericKey
-          ? numericKey[sourceIndex]
-          : Number(getCellValue(row, column));
-        if (!Number.isFinite(numericCellValue)) {
-          return false;
-        }
-        switch (operator) {
-          case '>':
-            return numericCellValue > threshold;
-          case '>=':
-            return numericCellValue >= threshold;
-          case '<':
-            return numericCellValue < threshold;
-          case '<=':
-            return numericCellValue <= threshold;
-          case '=':
-          default:
-            return numericCellValue === threshold;
-        }
-      };
+      return conditionPredicate ?? setPredicate;
     }
 
     // 追加(記述子化 / select): 完全一致です(旧 String(filterValue ?? '') と等価)。
@@ -411,13 +829,18 @@ export const filterOrderByColumns = <T,>(
   // 追加(B-2): 列キー → Float64 key の table(任意)。number(comparison/range)列のみ収録。
   //   未指定なら全列が従来経路へ倒れ、現状とバイト等価です(set/text/select/filterFn は元から key 不使用)。
   numericKeys?: ReadonlyMap<string, Float64Array>,
+  // 追加(filter-ext D): 相対日付プリセットの解決基準時刻です(既定 = 現在。テストで固定します)。
+  //   フィルター再計算のたびに解決されるため、日付が変わった後の再計算で範囲が追従します。
+  now?: Date,
 ): RowOrder => {
   const predicates: CompiledColumnFilterPredicate<T>[] = [];
+  const resolveNow = now ?? new Date();
   for (const column of columns) {
     const predicate = compileSingleColumnFilter(
       column,
       columnFilters[column.key],
       numericKeys?.get(column.key),
+      resolveNow,
     );
     if (predicate) {
       predicates.push(predicate);

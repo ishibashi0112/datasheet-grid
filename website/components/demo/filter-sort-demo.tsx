@@ -21,7 +21,8 @@ type Row = {
 };
 
 const columns: GridColumn<Row>[] = [
-  { key: 'name', title: '商品名', width: 180, filterType: 'text' },
+  // 変更(filter-ext C): 商品名は textSet(テキスト条件 AND 選択の複合)のデモです。
+  { key: 'name', title: '商品名', width: 180, filterType: 'textSet' },
   {
     key: 'category',
     title: 'カテゴリ',
@@ -39,7 +40,9 @@ const columns: GridColumn<Row>[] = [
     title: '数量',
     width: 110,
     align: 'right',
-    filterType: 'number',
+    // 変更(filter-ext B): 条件 AND 選択の複合フィルター(numberSet)のデモです
+    //   (単価は従来の number のままにし、両 UI を確認できます)。
+    filterType: 'numberSet',
   },
   {
     key: 'price',
@@ -49,7 +52,8 @@ const columns: GridColumn<Row>[] = [
     filterType: 'number',
     valueFormatter: numberFormatter(),
   },
-  { key: 'registered', title: '登録日', width: 140, filterType: 'date' },
+  // 変更(filter-ext D): 登録日は dateSet(日付条件 + 年月日ツリー + 相対プリセット)のデモです。
+  { key: 'registered', title: '登録日', width: 140, filterType: 'dateSet' },
 ];
 
 const CATEGORIES = ['食品', '飲料', '日用品', '文具'];

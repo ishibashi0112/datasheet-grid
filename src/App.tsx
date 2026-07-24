@@ -367,8 +367,9 @@ const createInitialColumns = (
       key: 'partName',
       title: '品名',
       width: 220,
-      // 注記(12-A): text フィルター(部分一致 + 適用ボタン)の動作確認用に残します。
-      filterType: 'text',
+      // 変更(filter-ext C): 品名は textSet(テキスト条件 AND 選択の複合)のデモにします
+      //   (text 単独 UI の動作確認は備考列に残っています)。
+      filterType: 'textSet',
       pinned: "left" ,
       // 追加(②-S1 デモ): suppressAutoSize の効き確認用。ON で autoSize 対象外(width 維持)。
       suppressAutoSize: suppressNameAutoSize ? true : undefined,
@@ -379,7 +380,9 @@ const createInitialColumns = (
       validationMode: 'reject',
     },
     {
-      key: 'qty', title: '数量', width: 90, filterType: 'number', resizable: false, align: 'right',
+      // 変更(filter-ext B): 数量は numberSet(条件 AND 選択の複合フィルター)のデモにします
+      //   (金額は従来の number のままにし、両 UI を確認できるようにします)。
+      key: 'qty', title: '数量', width: 90, filterType: 'numberSet', resizable: false, align: 'right',
       // 追加(editor: number + validation mark デモ): 数値エディタ(スピナー / ArrowUp・Down)+
       //   mark 検証(既定)。不正値も一旦入り、セルに invalid 表示 + hover でメッセージが出ます。
       editor: { type: 'number', min: 0, step: 1 },
@@ -482,7 +485,8 @@ const createInitialColumns = (
     //   フィルターは部分一致です('2024' で年 / '2024-03' で月 / '-15' で15日 を絞り込めます)。
     // 追加(editor: date デモ): ネイティブ日付ピッカーで編集します(Tab=確定 + 移動、
     //   ピッカー内のセグメント移動は ←→ 矢印)。
-    { key: 'orderedAt', title: '発注日', width: 130, filterType: 'date', editor: { type: 'date' } },
+    // 変更(filter-ext D): 発注日は dateSet(日付条件 + 年月日ツリー + 相対プリセット)のデモです。
+    { key: 'orderedAt', title: '発注日', width: 130, filterType: 'dateSet', editor: { type: 'date' } },
     // 追加(C1 auto-height デモ): 長文の備考列。autoHeight:true で、グリッド props の autoHeight 有効 +
     //   行数 gate 内のとき行高を内容に合わせて可変化します(折り返し表示)。
     // 追加(B3 デモ): flexEnabled で備考列を flex 化(備考=比率 2。余り幅を最も多く吸う)。

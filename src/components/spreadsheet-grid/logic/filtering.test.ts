@@ -11,6 +11,8 @@ import { describe, it, expect } from 'vitest';
 import {
   applyNumberFilter,
   buildNumberColumnFilterValue,
+  coerceNumberFilterCellValue,
+  columnFilterUsesNumericKey,
   columnFilterValueToDraftText,
   createSourceOrder,
   filterOrderByColumns,
@@ -18,16 +20,26 @@ import {
   isActiveColumnFilterValue,
   isNumberColumnFilterValue,
   isSetColumnFilterValue,
+  matchesParsedDateFilter,
+  matchesParsedNumberFilter,
+  matchesParsedTextFilter,
   parseNumberFilterExpression,
+  resolveDateFilterPreset,
   rowMatchesGlobalText,
+  toDateKey,
+  toDateSetKey,
   type RowOrder,
 } from './filtering';
 import { getCellValue } from '../utils/permissions';
 import type {
   ColumnFilterValue,
+  DateSetColumnFilterValue,
   GridColumn,
   NumberColumnFilterValue,
+  NumberSetColumnFilterValue,
+  ParsedNumberFilter,
   SetColumnFilterValue,
+  TextSetColumnFilterValue,
 } from '../model/gridTypes';
 
 type Row = Record<string, unknown>;
@@ -56,11 +68,16 @@ const num = (raw: string): NumberColumnFilterValue =>
 
 const asArray = (order: RowOrder): number[] => Array.from(order);
 
+// 変更(filter-ext A): 本体(SpreadsheetGrid の B-2 key 構築)と同じ数値化規則
+//   (coerceNumberFilterCellValue: 空白 = NaN)を共有します。規則が食い違うと
+//   key 有無の等価性テストが本体の実態を検証しなくなるためです。
 const buildNumericKeys = (
   rows: Row[],
   key: string,
 ): ReadonlyMap<string, Float64Array> =>
-  new Map([[key, Float64Array.from(rows, (row) => Number(row[key]))]]);
+  new Map([
+    [key, Float64Array.from(rows, (row) => coerceNumberFilterCellValue(row[key]))],
+  ]);
 
 // 数値・非有限・空・文字列を混ぜた母集合(comparison/range/contains すべてを踏む)。
 const rows: Row[] = [
@@ -428,6 +445,462 @@ describe('rowMatchesGlobalText (純述語: 同期/非同期で共有)', () => {
         included.has(i),
       );
     });
+  });
+});
+
+// 追加(filter-ext A): 演算子セレクト化で増えた述語(!= / blank / notBlank)と、
+//   空白セルの比較不参加(coerceNumberFilterCellValue: 空白 = NaN)の仕様です。
+describe('filterOrderByColumns (filter-ext A: != / blank / notBlank / 空白の比較不参加)', () => {
+  // 空白 3 形態(null / undefined / 空白のみ文字列)+ 数値 + 非数値文字列の母集合。
+  const blankRows: Row[] = [
+    { n: 5 },           // 0
+    { n: 10 },          // 1
+    { n: null },        // 2: 空白
+    { n: undefined },   // 3: 空白
+    { n: '' },          // 4: 空白
+    { n: '  ' },        // 5: 空白(空白のみ文字列)
+    { n: 'abc' },       // 6: 非数値(空白ではない)
+    { n: 0 },           // 7
+  ];
+  const order = createSourceOrder(blankRows.length);
+  const columns = [numberCol('n')];
+  const run = (
+    parsed: NumberColumnFilterValue['parsed'],
+    numericKeys?: ReadonlyMap<string, Float64Array>,
+  ): number[] =>
+    asArray(
+      filterOrderByColumns(
+        blankRows,
+        order,
+        columns,
+        { n: { kind: 'number', raw: 'x', parsed } },
+        numericKeys,
+      ),
+    );
+
+  it('blank は null / undefined / trim 後空文字だけを通す', () => {
+    expect(run({ mode: 'blank' })).toEqual([2, 3, 4, 5]);
+  });
+
+  it('notBlank は blank の補集合(非数値文字列は「空白でない」)', () => {
+    expect(run({ mode: 'notBlank' })).toEqual([0, 1, 6, 7]);
+  });
+
+  it('!= は数値セルのみ対象(空白・非数値は不一致)', () => {
+    expect(run({ mode: 'comparison', operator: '!=', value: 10 })).toEqual([
+      0, 7,
+    ]);
+  });
+
+  it('比較(>=)で空白セルは不一致(Number("")=0 として 0 扱いしない)', () => {
+    // 0 以上: 空白(null/''/…)が「0」として紛れ込まないこと(filter-ext A の規則変更点)。
+    expect(run({ mode: 'comparison', operator: '>=', value: 0 })).toEqual([
+      0, 1, 7,
+    ]);
+  });
+
+  it('範囲でも空白セルは不参加', () => {
+    expect(run({ mode: 'range', min: -1, max: 100 })).toEqual([0, 1, 7]);
+  });
+
+  it('numericKeys 経路(B-2)と非 key 経路の合否が一致する(!= / 比較 / 範囲)', () => {
+    const keys = buildNumericKeys(blankRows, 'n');
+    const cases: NumberColumnFilterValue['parsed'][] = [
+      { mode: 'comparison', operator: '!=', value: 10 },
+      { mode: 'comparison', operator: '>=', value: 0 },
+      { mode: 'range', min: -1, max: 100 },
+    ];
+    for (const parsed of cases) {
+      expect(run(parsed, keys)).toEqual(run(parsed));
+    }
+  });
+
+  it('applyNumberFilter(旧参照実装)も同じ空白規則を共有する', () => {
+    // '>= 0' の式評価: 空白セルは不一致 / 数値セルは通過。
+    expect(applyNumberFilter(null, '>= 0')).toBe(false);
+    expect(applyNumberFilter('', '>= 0')).toBe(false);
+    expect(applyNumberFilter('  ', '>= 0')).toBe(false);
+    expect(applyNumberFilter(0, '>= 0')).toBe(true);
+    expect(applyNumberFilter(5, '>= 0')).toBe(true);
+  });
+
+  it('coerceNumberFilterCellValue: 空白 = NaN / それ以外は Number()', () => {
+    expect(Number.isNaN(coerceNumberFilterCellValue(null))).toBe(true);
+    expect(Number.isNaN(coerceNumberFilterCellValue(undefined))).toBe(true);
+    expect(Number.isNaN(coerceNumberFilterCellValue(''))).toBe(true);
+    expect(Number.isNaN(coerceNumberFilterCellValue('  '))).toBe(true);
+    expect(Number.isNaN(coerceNumberFilterCellValue('abc'))).toBe(true);
+    expect(coerceNumberFilterCellValue('7.5')).toBe(7.5);
+    expect(coerceNumberFilterCellValue(0)).toBe(0);
+  });
+});
+
+// 追加(filter-ext B): numberSet(条件 AND 選択)複合フィルターの predicate 仕様です。
+describe('filterOrderByColumns (filter-ext B: numberSet 複合)', () => {
+  const numberSetCol = (key: string): GridColumn<Row> => ({
+    key,
+    width: 100,
+    filterType: 'numberSet',
+  });
+  const nsRows: Row[] = [
+    { n: 5 },    // 0
+    { n: 10 },   // 1
+    { n: 12 },   // 2
+    { n: 20 },   // 3
+    { n: null }, // 4: 空白
+    { n: 'x' },  // 5: 非数値
+  ];
+  const order = createSourceOrder(nsRows.length);
+  const columns = [numberSetCol('n')];
+  const run = (
+    value: NumberSetColumnFilterValue,
+    numericKeys?: ReadonlyMap<string, Float64Array>,
+  ): number[] =>
+    asArray(filterOrderByColumns(nsRows, order, columns, { n: value }, numericKeys));
+
+  it('condition AND set(>= 10 かつ 12 を除外)', () => {
+    expect(
+      run({
+        kind: 'numberSet',
+        condition: { mode: 'comparison', operator: '>=', value: 10 },
+        set: { mode: 'exclude', values: ['12'] },
+      }),
+    ).toEqual([1, 3]);
+  });
+
+  it('condition のみ / set のみ でも成立する', () => {
+    expect(
+      run({
+        kind: 'numberSet',
+        condition: { mode: 'comparison', operator: '>=', value: 10 },
+        set: null,
+      }),
+    ).toEqual([1, 2, 3]);
+    expect(
+      run({
+        kind: 'numberSet',
+        condition: null,
+        set: { mode: 'include', values: ['5', '12'] },
+      }),
+    ).toEqual([0, 2]);
+  });
+
+  it('set に候補外(条件不一致)の値の選択が保持されていても AND で安全に落ちる', () => {
+    // 「>= 10」なのに include に 5 が残っているケース(条件変更で候補外になった選択の保持)。
+    //   5 は condition で落ち、include の他値だけが通る(選択状態は破棄せず結果は AND)。
+    expect(
+      run({
+        kind: 'numberSet',
+        condition: { mode: 'comparison', operator: '>=', value: 10 },
+        set: { mode: 'include', values: ['5', '12'] },
+      }),
+    ).toEqual([2]);
+  });
+
+  it('blank 条件 + set(空白のみ通過)', () => {
+    expect(
+      run({
+        kind: 'numberSet',
+        condition: { mode: 'blank' },
+        set: null,
+      }),
+    ).toEqual([4]);
+  });
+
+  it('condition / set とも null は無効(同一参照 = 全通過)', () => {
+    const value: NumberSetColumnFilterValue = {
+      kind: 'numberSet',
+      condition: null,
+      set: null,
+    };
+    expect(isActiveColumnFilterValue(value)).toBe(false);
+    const result = filterOrderByColumns(nsRows, order, columns, { n: value });
+    expect(result).toBe(order);
+  });
+
+  it('numericKeys 経路(B-2)と非 key 経路の合否が一致する', () => {
+    const keys = buildNumericKeys(nsRows, 'n');
+    const value: NumberSetColumnFilterValue = {
+      kind: 'numberSet',
+      condition: { mode: 'range', min: 10, max: 20 },
+      set: { mode: 'exclude', values: ['12'] },
+    };
+    expect(run(value, keys)).toEqual(run(value));
+  });
+
+  it('matchesParsedNumberFilter は行 predicate と同じ合否(候補連動の土台)', () => {
+    const conditions: ParsedNumberFilter[] = [
+      { mode: 'comparison', operator: '>=', value: 10 },
+      { mode: 'comparison', operator: '!=', value: 12 },
+      { mode: 'range', min: 10, max: 20 },
+      { mode: 'blank' },
+      { mode: 'notBlank' },
+    ];
+    for (const condition of conditions) {
+      const viaOrder = run({ kind: 'numberSet', condition, set: null });
+      const viaSingle = nsRows
+        .map((_row, index) => index)
+        .filter((index) =>
+          matchesParsedNumberFilter(condition, nsRows[index].n),
+        );
+      expect(viaOrder).toEqual(viaSingle);
+    }
+  });
+
+  it('columnFilterUsesNumericKey: comparison / range を持つ number 系のみ true', () => {
+    expect(
+      columnFilterUsesNumericKey({
+        kind: 'number',
+        raw: '10 以上',
+        parsed: { mode: 'comparison', operator: '>=', value: 10 },
+      }),
+    ).toBe(true);
+    expect(
+      columnFilterUsesNumericKey({
+        kind: 'numberSet',
+        condition: { mode: 'range', min: 1, max: 2 },
+        set: null,
+      }),
+    ).toBe(true);
+    // key を読まない blank / contains / set のみ / 他 kind は false。
+    expect(
+      columnFilterUsesNumericKey({
+        kind: 'number',
+        raw: '(空白)',
+        parsed: { mode: 'blank' },
+      }),
+    ).toBe(false);
+    expect(
+      columnFilterUsesNumericKey({ kind: 'number', raw: 'x', parsed: null }),
+    ).toBe(false);
+    expect(
+      columnFilterUsesNumericKey({
+        kind: 'numberSet',
+        condition: null,
+        set: { values: ['1'] },
+      }),
+    ).toBe(false);
+    expect(columnFilterUsesNumericKey({ kind: 'text', value: 'a' })).toBe(false);
+    expect(columnFilterUsesNumericKey(undefined)).toBe(false);
+  });
+});
+
+// 追加(filter-ext C): textSet(テキスト条件 AND 選択)複合フィルターの predicate 仕様です。
+//   合成規則(AND / 片方 null / 両方 null)は numberSet と共通実装のため、ここでは
+//   テキスト条件固有の意味論(演算子 / 大小無視 / 空白)を中心に検証します。
+describe('filterOrderByColumns (filter-ext C: textSet 複合)', () => {
+  const textSetCol = (key: string): GridColumn<Row> => ({
+    key,
+    width: 100,
+    filterType: 'textSet',
+  });
+  const tsRows: Row[] = [
+    { t: '六角ボルト M6' },  // 0
+    { t: '六角ボルト M8' },  // 1
+    { t: 'アイボルト M10' }, // 2
+    { t: 'ナット M6' },      // 3
+    { t: null },             // 4: 空白
+    { t: '' },               // 5: 空白
+  ];
+  const order = createSourceOrder(tsRows.length);
+  const columns = [textSetCol('t')];
+  const run = (value: TextSetColumnFilterValue): number[] =>
+    asArray(filterOrderByColumns(tsRows, order, columns, { t: value }));
+
+  it('condition AND set(「ボルト」を含む かつ M8 を除外)', () => {
+    expect(
+      run({
+        kind: 'textSet',
+        condition: { mode: 'contains', value: 'ボルト' },
+        set: { mode: 'exclude', values: ['六角ボルト M8'] },
+      }),
+    ).toEqual([0, 2]);
+  });
+
+  it('演算子ごとの合否(equals / startsWith / endsWith は大文字小文字無視)', () => {
+    expect(
+      run({ kind: 'textSet', condition: { mode: 'startsWith', value: '六角' }, set: null }),
+    ).toEqual([0, 1]);
+    expect(
+      run({ kind: 'textSet', condition: { mode: 'endsWith', value: 'm6' }, set: null }),
+    ).toEqual([0, 3]);
+    expect(
+      run({
+        kind: 'textSet',
+        condition: { mode: 'equals', value: 'ナット m6' },
+        set: null,
+      }),
+    ).toEqual([3]);
+  });
+
+  it('blank / notBlank(null と空文字が空白)', () => {
+    expect(
+      run({ kind: 'textSet', condition: { mode: 'blank' }, set: null }),
+    ).toEqual([4, 5]);
+    expect(
+      run({ kind: 'textSet', condition: { mode: 'notBlank' }, set: null }),
+    ).toEqual([0, 1, 2, 3]);
+  });
+
+  it('両方 null は無効(同一参照)、matchesParsedTextFilter は行 predicate と一致', () => {
+    const inactive: TextSetColumnFilterValue = {
+      kind: 'textSet',
+      condition: null,
+      set: null,
+    };
+    expect(isActiveColumnFilterValue(inactive)).toBe(false);
+    expect(filterOrderByColumns(tsRows, order, columns, { t: inactive })).toBe(
+      order,
+    );
+
+    const condition = { mode: 'contains', value: 'ボルト' } as const;
+    const viaOrder = run({ kind: 'textSet', condition, set: null });
+    const viaSingle = tsRows
+      .map((_row, index) => index)
+      .filter((index) => matchesParsedTextFilter(condition, tsRows[index].t));
+    expect(viaOrder).toEqual(viaSingle);
+  });
+});
+
+// 追加(filter-ext D): dateSet(日付条件 AND 選択)の基礎ロジックと predicate 仕様です。
+describe('filterOrderByColumns (filter-ext D: dateSet 複合)', () => {
+  // 2026-07-24 を「今日」として固定します(相対プリセットの評価時解決の検証)。
+  const NOW = new Date(2026, 6, 24, 12, 0, 0);
+  const dateSetCol = (key: string): GridColumn<Row> => ({
+    key,
+    width: 100,
+    filterType: 'dateSet',
+  });
+  const dsRows: Row[] = [
+    { d: '2026-01-15' },  // 0
+    { d: '2026/7/1' },    // 1: 表記ゆれ(キーは 2026-07-01)
+    { d: '2026-07-24' },  // 2
+    { d: '2026-07-20' },  // 3
+    { d: null },          // 4: 空白
+    { d: 'メモ' },        // 5: 非日付
+  ];
+  const order = createSourceOrder(dsRows.length);
+  const columns = [dateSetCol('d')];
+  const run = (value: DateSetColumnFilterValue): number[] =>
+    asArray(
+      filterOrderByColumns(dsRows, order, columns, { d: value }, undefined, NOW),
+    );
+
+  it('toDateKey / toDateSetKey: 表記ゆれの正規化と空白・非日付の扱い', () => {
+    expect(toDateKey('2026/7/1')).toBe('2026-07-01');
+    expect(toDateKey('2026-07-24T10:30')).toBe('2026-07-24');
+    expect(toDateKey(new Date(2026, 6, 24))).toBe('2026-07-24');
+    expect(toDateKey('2026-13-01')).toBeNull();
+    expect(toDateKey('メモ')).toBeNull();
+    expect(toDateKey('')).toBeNull();
+    expect(toDateSetKey('2026/7/1')).toBe('2026-07-01');
+    expect(toDateSetKey(null)).toBe('');
+    expect(toDateSetKey('  ')).toBe('');
+    expect(toDateSetKey('メモ')).toBe('メモ');
+  });
+
+  it('resolveDateFilterPreset: 今日 / 今月 / 過去 30 日(now 基準・両端含む)', () => {
+    expect(resolveDateFilterPreset('today', NOW)).toEqual({
+      from: '2026-07-24',
+      to: '2026-07-24',
+    });
+    expect(resolveDateFilterPreset('thisMonth', NOW)).toEqual({
+      from: '2026-07-01',
+      to: '2026-07-31',
+    });
+    expect(resolveDateFilterPreset('last30days', NOW)).toEqual({
+      from: '2026-06-25',
+      to: '2026-07-24',
+    });
+  });
+
+  it('condition AND set(範囲 かつ 7/20 を除外。set は正規化キーで照合)', () => {
+    expect(
+      run({
+        kind: 'dateSet',
+        condition: { mode: 'range', from: '2026-07-01', to: '2026-07-31' },
+        set: { mode: 'exclude', values: ['2026-07-20'] },
+      }),
+    ).toEqual([1, 2]);
+  });
+
+  it('相対プリセットは評価時に解決される(今月 = now 基準)', () => {
+    expect(
+      run({
+        kind: 'dateSet',
+        condition: { mode: 'preset', preset: 'thisMonth' },
+        set: null,
+      }),
+    ).toEqual([1, 2, 3]);
+    // 表記ゆれセル('2026/7/1')も正規化キーで判定されます。
+    expect(
+      run({
+        kind: 'dateSet',
+        condition: { mode: 'preset', preset: 'today' },
+        set: null,
+      }),
+    ).toEqual([2]);
+  });
+
+  it('以降 / 以前 / 等しくない / 空白(非日付は比較で不一致)', () => {
+    expect(
+      run({
+        kind: 'dateSet',
+        condition: { mode: 'onOrAfter', value: '2026-07-01' },
+        set: null,
+      }),
+    ).toEqual([1, 2, 3]);
+    expect(
+      run({
+        kind: 'dateSet',
+        condition: { mode: 'onOrBefore', value: '2026-01-31' },
+        set: null,
+      }),
+    ).toEqual([0]);
+    expect(
+      run({
+        kind: 'dateSet',
+        condition: { mode: 'notEquals', value: '2026-07-24' },
+        set: null,
+      }),
+    ).toEqual([0, 1, 3]);
+    expect(
+      run({ kind: 'dateSet', condition: { mode: 'blank' }, set: null }),
+    ).toEqual([4]);
+  });
+
+  it('set のみ(空白キーと非日付の生値も選択単位)、両方 null は無効', () => {
+    expect(
+      run({
+        kind: 'dateSet',
+        condition: null,
+        set: { mode: 'include', values: ['', 'メモ'] },
+      }),
+    ).toEqual([4, 5]);
+    const inactive: DateSetColumnFilterValue = {
+      kind: 'dateSet',
+      condition: null,
+      set: null,
+    };
+    expect(isActiveColumnFilterValue(inactive)).toBe(false);
+    expect(filterOrderByColumns(dsRows, order, columns, { d: inactive })).toBe(
+      order,
+    );
+  });
+
+  it('matchesParsedDateFilter は行 predicate と同じ合否(候補連動の土台)', () => {
+    const condition = {
+      mode: 'range',
+      from: '2026-07-01',
+      to: '2026-07-31',
+    } as const;
+    const viaOrder = run({ kind: 'dateSet', condition, set: null });
+    const viaSingle = dsRows
+      .map((_row, index) => index)
+      .filter((index) =>
+        matchesParsedDateFilter(condition, dsRows[index].d, NOW),
+      );
+    expect(viaOrder).toEqual(viaSingle);
   });
 });
 
