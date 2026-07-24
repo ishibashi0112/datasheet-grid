@@ -485,7 +485,8 @@ const createInitialColumns = (
     //   フィルターは部分一致です('2024' で年 / '2024-03' で月 / '-15' で15日 を絞り込めます)。
     // 追加(editor: date デモ): ネイティブ日付ピッカーで編集します(Tab=確定 + 移動、
     //   ピッカー内のセグメント移動は ←→ 矢印)。
-    { key: 'orderedAt', title: '発注日', width: 130, filterType: 'date', editor: { type: 'date' } },
+    // 変更(filter-ext D): 発注日は dateSet(日付条件 + 年月日ツリー + 相対プリセット)のデモです。
+    { key: 'orderedAt', title: '発注日', width: 130, filterType: 'dateSet', editor: { type: 'date' } },
     // 追加(C1 auto-height デモ): 長文の備考列。autoHeight:true で、グリッド props の autoHeight 有効 +
     //   行数 gate 内のとき行高を内容に合わせて可変化します(折り返し表示)。
     // 追加(B3 デモ): flexEnabled で備考列を flex 化(備考=比率 2。余り幅を最も多く吸う)。

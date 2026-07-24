@@ -60,9 +60,10 @@ import {
   //   ※構築は filter-ext A で構造化 draft 経由(buildNumberColumnFilterValueFromDraft)へ
   //     移行したため、式テキストの buildNumberColumnFilterValue はここでは不要になりました。
   isNumberColumnFilterValue,
-  // 追加(filter-ext B/C): 複合(条件 AND 選択)記述子の判定に使います。
+  // 追加(filter-ext B/C/D): 複合(条件 AND 選択)記述子の判定に使います。
   isNumberSetColumnFilterValue,
   isTextSetColumnFilterValue,
+  isDateSetColumnFilterValue,
   // 追加(filter-ext B): B-2 Float64 key の構築対象判定です(comparison / range を持つ
   //   number 系のみ。number / numberSet の両 kind を単一実装で判定します)。
   columnFilterUsesNumericKey,
@@ -96,6 +97,14 @@ import {
   buildParsedTextFilterFromDraft,
   type TextFilterConditionDraft,
 } from './logic/textFilterCondition';
+// 追加(filter-ext D): dateSet の日付条件(即時適用と個別クリア)に使います。
+import {
+  DEFAULT_DATE_FILTER_DRAFT,
+  buildParsedDateFilterFromDraft,
+  type DateFilterConditionDraft,
+} from './logic/dateFilterCondition';
+// 追加(filter-ext D): dateSet 候補の日付キー正規化(ツリー選択・set 照合の単位)です。
+import { normalizeDateSetOptions } from './logic/dateFilterTree';
 // 変更(10-C): 3ペインレイアウト構築用の helper / 型を追加インポートします。
 // 変更理由: reorderColumnsByPane / buildGridPaneLayout を SpreadsheetGrid で使い、
 //           PaneColumnEntry 型を各ペインの描画エントリ受け渡しに使うためです。
@@ -889,6 +898,7 @@ export function SpreadsheetGrid<T extends object>({
     updateFilterPopoverDraft,
     updateFilterPopoverNumberDraft,
     updateFilterPopoverTextDraft,
+    updateFilterPopoverDateDraft,
   } = useFilterPopoverController({
     visibleColumns,
     columnFilterValues: uiState.filters.columnFilters,
@@ -3521,6 +3531,26 @@ export function SpreadsheetGrid<T extends object>({
     getRawValueAt: getOpenedColumnRawValueAt,
   });
 
+  // 追加(filter-ext D): dateSet では候補をセル生値 → 正規化日付キーへ再集約します
+  //   ('2026/7/1' と '2026-07-01' が同一リーフへまとまるため、選択・set 照合・全選択判定の
+  //   分母(総数)もキー単位で数える必要があります)。他 filterType は同一参照で素通しです。
+  //   以降の popover 配線(候補 / 全値集合 / total)はこちらを参照します。
+  const isDateSetFilterColumn = openedFilterColumn?.filterType === 'dateSet';
+  const openedPopoverSelectOptions = useMemo(
+    () =>
+      isDateSetFilterColumn
+        ? normalizeDateSetOptions(openedFilterSelectOptions)
+        : openedFilterSelectOptions,
+    [isDateSetFilterColumn, openedFilterSelectOptions],
+  );
+  const openedPopoverAllValues = useMemo<ReadonlySet<string>>(
+    () =>
+      isDateSetFilterColumn
+        ? new Set(openedPopoverSelectOptions.map((option) => option.value))
+        : openedFilterAllValues,
+    [isDateSetFilterColumn, openedPopoverSelectOptions, openedFilterAllValues],
+  );
+
   // 追加(12-A): popover を開いている列の set フィルター選択状態です。
   //             null = 全選択(フィルター未設定)を意味します。
   const openedSetFilterValue = openedFilterColumn
@@ -3532,10 +3562,13 @@ export function SpreadsheetGrid<T extends object>({
   // 変更(filter-ext B/C): 複合(numberSet / textSet)記述子の set 部分からも導出します
   //   (形は kind:'set' と同一)。
   const openedSetSelection = useMemo<ColumnFilterSetSelection | null>(() => {
+    // 修正(filter-ext D): dateSet の読み漏れを追加。漏れていると dispatch(件数)は効くのに
+    //   チェック表示だけが常に全選択のままになる(選択状態の導出元がここのため)。
     const setPart = isSetColumnFilterValue(openedSetFilterValue)
       ? openedSetFilterValue
       : isNumberSetColumnFilterValue(openedSetFilterValue) ||
-          isTextSetColumnFilterValue(openedSetFilterValue)
+          isTextSetColumnFilterValue(openedSetFilterValue) ||
+          isDateSetColumnFilterValue(openedSetFilterValue)
         ? openedSetFilterValue.set
         : null;
     if (!setPart) {
@@ -3587,6 +3620,15 @@ export function SpreadsheetGrid<T extends object>({
         }
         return { kind: 'textSet', condition, set: setPart };
       }
+      if (filterType === 'dateSet') {
+        const condition = isDateSetColumnFilterValue(currentValue)
+          ? currentValue.condition
+          : null;
+        if (!condition && !setPart) {
+          return null;
+        }
+        return { kind: 'dateSet', condition, set: setPart };
+      }
       return null;
     },
     [openedFilterColumn, uiState.filters.columnFilters],
@@ -3594,7 +3636,8 @@ export function SpreadsheetGrid<T extends object>({
 
   const isComboFilterColumn =
     openedFilterColumn?.filterType === 'numberSet' ||
-    openedFilterColumn?.filterType === 'textSet';
+    openedFilterColumn?.filterType === 'textSet' ||
+    openedFilterColumn?.filterType === 'dateSet';
 
   // 追加(反転set): set 選択結果を reducer へ反映します。全選択→clearColumn / 0 件→include{} /
   //   中間→ハンドラが選んだ mode の小さい側。ハンドラが mode を確定済みのため complement
@@ -3649,7 +3692,7 @@ export function SpreadsheetGrid<T extends object>({
       if (!filterPopoverState) {
         return;
       }
-      const total = openedFilterSelectOptions.length;
+      const total = openedPopoverSelectOptions.length;
       const selection = openedSetSelection;
       let next: ColumnFilterSetSelection;
       if (isSetValueSelected(selection, value)) {
@@ -3659,7 +3702,7 @@ export function SpreadsheetGrid<T extends object>({
             ? { mode: 'exclude', values: new Set([value]) }
             : {
                 mode: 'include',
-                values: setWithout(openedFilterAllValues, value),
+                values: setWithout(openedPopoverAllValues, value),
               };
         } else if (selection.mode === 'include') {
           next = { mode: 'include', values: setWithout(selection.values, value) };
@@ -3679,8 +3722,8 @@ export function SpreadsheetGrid<T extends object>({
       filterPopoverState,
       openedSetSelection,
       openedColumnCanInvert,
-      openedFilterAllValues,
-      openedFilterSelectOptions,
+      openedPopoverAllValues,
+      openedPopoverSelectOptions,
       commitSetFilterSelection,
     ],
   );
@@ -3693,7 +3736,7 @@ export function SpreadsheetGrid<T extends object>({
         return;
       }
       const columnKey = filterPopoverState.columnKey;
-      const total = openedFilterSelectOptions.length;
+      const total = openedPopoverSelectOptions.length;
       if (scope === 'all') {
         // 非検索: 全候補対象。全選択 / 全解除とも commit の正規化へ渡します
         //   (全選択 = exclude{} → set 列は clear / numberSet 列は condition 保持で set: null)。
@@ -3729,7 +3772,7 @@ export function SpreadsheetGrid<T extends object>({
             ? { mode: 'exclude', values: new Set(scope) }
             : {
                 mode: 'include',
-                values: setDifference(openedFilterAllValues, scope),
+                values: setDifference(openedPopoverAllValues, scope),
               };
         } else if (selection.mode === 'include') {
           next = { mode: 'include', values: setDifference(selection.values, scope) };
@@ -3743,8 +3786,8 @@ export function SpreadsheetGrid<T extends object>({
       filterPopoverState,
       openedSetSelection,
       openedColumnCanInvert,
-      openedFilterAllValues,
-      openedFilterSelectOptions,
+      openedPopoverAllValues,
+      openedPopoverSelectOptions,
       commitSetFilterSelection,
     ],
   );
@@ -3762,10 +3805,10 @@ export function SpreadsheetGrid<T extends object>({
       commitSetFilterSelection(
         filterPopoverState.columnKey,
         { mode: 'include', values: new Set(values) },
-        openedFilterSelectOptions.length,
+        openedPopoverSelectOptions.length,
       );
     },
-    [filterPopoverState, commitSetFilterSelection, openedFilterSelectOptions],
+    [filterPopoverState, commitSetFilterSelection, openedPopoverSelectOptions],
   );
 
   // 追加(12-A): set フィルターの「クリア」です。即時適用 UI のため popover は閉じず、
@@ -3783,12 +3826,16 @@ export function SpreadsheetGrid<T extends object>({
     if (openedFilterColumn?.filterType === 'textSet') {
       updateFilterPopoverTextDraft(DEFAULT_TEXT_FILTER_DRAFT);
     }
+    if (openedFilterColumn?.filterType === 'dateSet') {
+      updateFilterPopoverDateDraft(DEFAULT_DATE_FILTER_DRAFT);
+    }
   }, [
     dispatch,
     filterPopoverState,
     openedFilterColumn,
     updateFilterPopoverNumberDraft,
     updateFilterPopoverTextDraft,
+    updateFilterPopoverDateDraft,
   ]);
 
   // 追加(filter-ext B/C): 複合列の set 部分を「現在の記述子」から取り出します(条件編集の
@@ -3801,7 +3848,8 @@ export function SpreadsheetGrid<T extends object>({
       const currentValue = uiState.filters.columnFilters[columnKey];
       if (
         isNumberSetColumnFilterValue(currentValue) ||
-        isTextSetColumnFilterValue(currentValue)
+        isTextSetColumnFilterValue(currentValue) ||
+        isDateSetColumnFilterValue(currentValue)
       ) {
         return currentValue.set;
       }
@@ -3890,17 +3938,57 @@ export function SpreadsheetGrid<T extends object>({
     ],
   );
 
-  // 追加(filter-ext B/C): 複合の「条件」個別クリアです(選択は保持)。draft を既定へ戻し、
+  // 追加(filter-ext D): dateSet の日付条件編集です(数値・テキスト版と同じ即時適用モデル。
+  //   相対プリセットは相対のまま記述子に入り、評価のたびに解決されます)。
+  const handleDateConditionDraftChange = useCallback(
+    (draft: DateFilterConditionDraft) => {
+      updateFilterPopoverDateDraft(draft);
+      if (!filterPopoverState || openedFilterColumn?.filterType !== 'dateSet') {
+        return;
+      }
+      const columnKey = filterPopoverState.columnKey;
+      const condition = buildParsedDateFilterFromDraft(draft);
+      const setPart = getComboColumnSetPart(columnKey);
+      if (!condition && !setPart) {
+        if (uiState.filters.columnFilters[columnKey]) {
+          dispatch(gridActions.clearColumnFilter(columnKey));
+        }
+        return;
+      }
+      dispatch(
+        gridActions.setColumnFilter(columnKey, {
+          kind: 'dateSet',
+          condition,
+          set: setPart,
+        }),
+      );
+    },
+    [
+      updateFilterPopoverDateDraft,
+      filterPopoverState,
+      openedFilterColumn,
+      getComboColumnSetPart,
+      uiState.filters.columnFilters,
+      dispatch,
+    ],
+  );
+
+  // 追加(filter-ext B/C/D): 複合の「条件」個別クリアです(選択は保持)。draft を既定へ戻し、
   //   condition: null で再 dispatch します(set も無ければ clear へ倒れます)。
   const handleComboConditionClear = useCallback(() => {
     if (openedFilterColumn?.filterType === 'textSet') {
       handleTextConditionDraftChange(DEFAULT_TEXT_FILTER_DRAFT);
       return;
     }
+    if (openedFilterColumn?.filterType === 'dateSet') {
+      handleDateConditionDraftChange(DEFAULT_DATE_FILTER_DRAFT);
+      return;
+    }
     handleNumberConditionDraftChange(DEFAULT_NUMBER_FILTER_DRAFT);
   }, [
     openedFilterColumn,
     handleTextConditionDraftChange,
+    handleDateConditionDraftChange,
     handleNumberConditionDraftChange,
   ]);
 
@@ -3929,11 +4017,12 @@ export function SpreadsheetGrid<T extends object>({
     const filterType = targetColumn?.filterType ?? 'text';
     // 追加(12-A): set フィルターは即時適用のため、ここでは閉じるだけにします
     //             (Enter 等で誤って draftValue が書き込まれるのを防ぎます)。
-    // 変更(filter-ext B/C): 複合(numberSet / textSet)も即時適用のため同様です。
+    // 変更(filter-ext B/C/D): 複合(numberSet / textSet / dateSet)も即時適用のため同様です。
     if (
       filterType === 'set' ||
       filterType === 'numberSet' ||
-      filterType === 'textSet'
+      filterType === 'textSet' ||
+      filterType === 'dateSet'
     ) {
       closeColumnFilterPopover();
       return;
@@ -4357,12 +4446,14 @@ export function SpreadsheetGrid<T extends object>({
       onNumberConditionDraftChange={handleNumberConditionDraftChange}
       textConditionDraft={filterPopoverState?.textDraft ?? null}
       onTextConditionDraftChange={handleTextConditionDraftChange}
+      dateConditionDraft={filterPopoverState?.dateDraft ?? null}
+      onDateConditionDraftChange={handleDateConditionDraftChange}
       onComboConditionClear={handleComboConditionClear}
       onComboSelectionClear={handleComboSelectionClear}
       comboSummaryText={openedComboSummaryText}
       currentValueText={openedFilterCurrentValueText}
       layout={filterPopoverLayout}
-      selectOptions={openedFilterSelectOptions}
+      selectOptions={openedPopoverSelectOptions}
       setSelection={openedSetSelection}
       optionsStatus={openedFilterOptionsStatus}
       optionsProgress={openedFilterOptionsProgress}

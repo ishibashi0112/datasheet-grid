@@ -52,7 +52,8 @@ const columns: GridColumn<Row>[] = [
     filterType: 'number',
     valueFormatter: numberFormatter(),
   },
-  { key: 'registered', title: '登録日', width: 140, filterType: 'date' },
+  // 変更(filter-ext D): 登録日は dateSet(日付条件 + 年月日ツリー + 相対プリセット)のデモです。
+  { key: 'registered', title: '登録日', width: 140, filterType: 'dateSet' },
 ];
 
 const CATEGORIES = ['食品', '飲料', '日用品', '文具'];

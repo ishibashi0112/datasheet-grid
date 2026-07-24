@@ -83,14 +83,16 @@ export const useColumnSelectOptionsCollector = <T,>({
   getRawValueAt,
 }: UseColumnSelectOptionsCollectorArgs<T>): ColumnSelectOptionsResult => {
   const filterType = column?.filterType ?? null;
-  // 変更(filter-ext B/C): numberSet / textSet(条件 AND 選択)も Set 候補一覧を持つため
+  // 変更(filter-ext B/C/D): 複合(numberSet / textSet / dateSet)も Set 候補一覧を持つため
   //   収集対象です。条件での候補絞り(候補連動)は収集後の表示時フィルタで行い、ここは
-  //   全候補を 1 回だけ収集します(条件打鍵ごとの再収集はしない)。
+  //   全候補を 1 回だけ収集します(条件打鍵ごとの再収集はしない)。dateSet の日付キー正規化・
+  //   ツリー化も収集後の変換です(SpreadsheetGrid / popover 側の責務)。
   const isSelectLike =
     filterType === 'select' ||
     filterType === 'set' ||
     filterType === 'numberSet' ||
-    filterType === 'textSet';
+    filterType === 'textSet' ||
+    filterType === 'dateSet';
   const explicitOptions =
     column?.filterOptions && column.filterOptions.length > 0
       ? column.filterOptions

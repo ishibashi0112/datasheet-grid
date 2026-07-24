@@ -126,6 +126,60 @@ function matchFilter(value: unknown, filter: ColumnFilterValue): boolean {
       }
       return true;
     }
+    // 追加(filter-ext D): 日付版の複合。デモデータは常に 'YYYY-MM-DD' なので文字列比較で判定し、
+    //   相対プリセットは受信時点の「今日」を基準に解決する(ライブラリ本体と同規則)。
+    case 'dateSet': {
+      const key = /^\d{4}-\d{2}-\d{2}/.test(String(value ?? '').trim())
+        ? String(value ?? '').trim().slice(0, 10)
+        : null;
+      if (filter.condition) {
+        const condition = filter.condition;
+        if (condition.mode === 'blank' || condition.mode === 'notBlank') {
+          const isBlank =
+            value === null || value === undefined || String(value).trim() === '';
+          if (isBlank !== (condition.mode === 'blank')) return false;
+        } else {
+          if (key === null) return false;
+          let from = '';
+          let to = '9999-12-31';
+          if (condition.mode === 'preset') {
+            const now = new Date();
+            const pad = (n: number) => String(n).padStart(2, '0');
+            const fmt = (d: Date) =>
+              `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+            if (condition.preset === 'today') {
+              from = to = fmt(now);
+            } else if (condition.preset === 'thisMonth') {
+              from = fmt(new Date(now.getFullYear(), now.getMonth(), 1));
+              to = fmt(new Date(now.getFullYear(), now.getMonth() + 1, 0));
+            } else {
+              from = fmt(
+                new Date(now.getFullYear(), now.getMonth(), now.getDate() - 29),
+              );
+              to = fmt(now);
+            }
+            if (key < from || key > to) return false;
+          } else if (condition.mode === 'range') {
+            if (key < condition.from || key > condition.to) return false;
+          } else if (condition.mode === 'onOrAfter') {
+            if (key < condition.value) return false;
+          } else if (condition.mode === 'onOrBefore') {
+            if (key > condition.value) return false;
+          } else if (condition.mode === 'equals') {
+            if (key !== condition.value) return false;
+          } else if (key === condition.value) {
+            return false; // notEquals
+          }
+        }
+      }
+      if (filter.set) {
+        // set.values は正規化済み日付キー(空白 = '' / 非日付 = 生値)。
+        const setKey = key ?? (String(value ?? '').trim() === '' ? '' : String(value));
+        const hit = filter.set.values.includes(setKey);
+        return filter.set.mode === 'exclude' ? !hit : hit;
+      }
+      return true;
+    }
     // 追加(filter-ext C): テキスト版の複合(判定は大文字小文字無視。ライブラリ本体と同規則)。
     case 'textSet': {
       if (filter.condition) {

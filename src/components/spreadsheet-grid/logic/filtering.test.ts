@@ -20,15 +20,20 @@ import {
   isActiveColumnFilterValue,
   isNumberColumnFilterValue,
   isSetColumnFilterValue,
+  matchesParsedDateFilter,
   matchesParsedNumberFilter,
   matchesParsedTextFilter,
   parseNumberFilterExpression,
+  resolveDateFilterPreset,
   rowMatchesGlobalText,
+  toDateKey,
+  toDateSetKey,
   type RowOrder,
 } from './filtering';
 import { getCellValue } from '../utils/permissions';
 import type {
   ColumnFilterValue,
+  DateSetColumnFilterValue,
   GridColumn,
   NumberColumnFilterValue,
   NumberSetColumnFilterValue,
@@ -753,6 +758,148 @@ describe('filterOrderByColumns (filter-ext C: textSet 複合)', () => {
     const viaSingle = tsRows
       .map((_row, index) => index)
       .filter((index) => matchesParsedTextFilter(condition, tsRows[index].t));
+    expect(viaOrder).toEqual(viaSingle);
+  });
+});
+
+// 追加(filter-ext D): dateSet(日付条件 AND 選択)の基礎ロジックと predicate 仕様です。
+describe('filterOrderByColumns (filter-ext D: dateSet 複合)', () => {
+  // 2026-07-24 を「今日」として固定します(相対プリセットの評価時解決の検証)。
+  const NOW = new Date(2026, 6, 24, 12, 0, 0);
+  const dateSetCol = (key: string): GridColumn<Row> => ({
+    key,
+    width: 100,
+    filterType: 'dateSet',
+  });
+  const dsRows: Row[] = [
+    { d: '2026-01-15' },  // 0
+    { d: '2026/7/1' },    // 1: 表記ゆれ(キーは 2026-07-01)
+    { d: '2026-07-24' },  // 2
+    { d: '2026-07-20' },  // 3
+    { d: null },          // 4: 空白
+    { d: 'メモ' },        // 5: 非日付
+  ];
+  const order = createSourceOrder(dsRows.length);
+  const columns = [dateSetCol('d')];
+  const run = (value: DateSetColumnFilterValue): number[] =>
+    asArray(
+      filterOrderByColumns(dsRows, order, columns, { d: value }, undefined, NOW),
+    );
+
+  it('toDateKey / toDateSetKey: 表記ゆれの正規化と空白・非日付の扱い', () => {
+    expect(toDateKey('2026/7/1')).toBe('2026-07-01');
+    expect(toDateKey('2026-07-24T10:30')).toBe('2026-07-24');
+    expect(toDateKey(new Date(2026, 6, 24))).toBe('2026-07-24');
+    expect(toDateKey('2026-13-01')).toBeNull();
+    expect(toDateKey('メモ')).toBeNull();
+    expect(toDateKey('')).toBeNull();
+    expect(toDateSetKey('2026/7/1')).toBe('2026-07-01');
+    expect(toDateSetKey(null)).toBe('');
+    expect(toDateSetKey('  ')).toBe('');
+    expect(toDateSetKey('メモ')).toBe('メモ');
+  });
+
+  it('resolveDateFilterPreset: 今日 / 今月 / 過去 30 日(now 基準・両端含む)', () => {
+    expect(resolveDateFilterPreset('today', NOW)).toEqual({
+      from: '2026-07-24',
+      to: '2026-07-24',
+    });
+    expect(resolveDateFilterPreset('thisMonth', NOW)).toEqual({
+      from: '2026-07-01',
+      to: '2026-07-31',
+    });
+    expect(resolveDateFilterPreset('last30days', NOW)).toEqual({
+      from: '2026-06-25',
+      to: '2026-07-24',
+    });
+  });
+
+  it('condition AND set(範囲 かつ 7/20 を除外。set は正規化キーで照合)', () => {
+    expect(
+      run({
+        kind: 'dateSet',
+        condition: { mode: 'range', from: '2026-07-01', to: '2026-07-31' },
+        set: { mode: 'exclude', values: ['2026-07-20'] },
+      }),
+    ).toEqual([1, 2]);
+  });
+
+  it('相対プリセットは評価時に解決される(今月 = now 基準)', () => {
+    expect(
+      run({
+        kind: 'dateSet',
+        condition: { mode: 'preset', preset: 'thisMonth' },
+        set: null,
+      }),
+    ).toEqual([1, 2, 3]);
+    // 表記ゆれセル('2026/7/1')も正規化キーで判定されます。
+    expect(
+      run({
+        kind: 'dateSet',
+        condition: { mode: 'preset', preset: 'today' },
+        set: null,
+      }),
+    ).toEqual([2]);
+  });
+
+  it('以降 / 以前 / 等しくない / 空白(非日付は比較で不一致)', () => {
+    expect(
+      run({
+        kind: 'dateSet',
+        condition: { mode: 'onOrAfter', value: '2026-07-01' },
+        set: null,
+      }),
+    ).toEqual([1, 2, 3]);
+    expect(
+      run({
+        kind: 'dateSet',
+        condition: { mode: 'onOrBefore', value: '2026-01-31' },
+        set: null,
+      }),
+    ).toEqual([0]);
+    expect(
+      run({
+        kind: 'dateSet',
+        condition: { mode: 'notEquals', value: '2026-07-24' },
+        set: null,
+      }),
+    ).toEqual([0, 1, 3]);
+    expect(
+      run({ kind: 'dateSet', condition: { mode: 'blank' }, set: null }),
+    ).toEqual([4]);
+  });
+
+  it('set のみ(空白キーと非日付の生値も選択単位)、両方 null は無効', () => {
+    expect(
+      run({
+        kind: 'dateSet',
+        condition: null,
+        set: { mode: 'include', values: ['', 'メモ'] },
+      }),
+    ).toEqual([4, 5]);
+    const inactive: DateSetColumnFilterValue = {
+      kind: 'dateSet',
+      condition: null,
+      set: null,
+    };
+    expect(isActiveColumnFilterValue(inactive)).toBe(false);
+    expect(filterOrderByColumns(dsRows, order, columns, { d: inactive })).toBe(
+      order,
+    );
+  });
+
+  it('matchesParsedDateFilter は行 predicate と同じ合否(候補連動の土台)', () => {
+    const condition = {
+      mode: 'range',
+      from: '2026-07-01',
+      to: '2026-07-31',
+    } as const;
+    const viaOrder = run({ kind: 'dateSet', condition, set: null });
+    const viaSingle = dsRows
+      .map((_row, index) => index)
+      .filter((index) =>
+        matchesParsedDateFilter(condition, dsRows[index].d, NOW),
+      );
     expect(viaOrder).toEqual(viaSingle);
   });
 });

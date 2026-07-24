@@ -16,6 +16,10 @@ import { createRef } from 'react';
 import { ColumnFilterPopover } from './ColumnFilterPopover';
 import type { NumberFilterConditionDraft } from '../logic/numberFilterCondition';
 import type { TextFilterConditionDraft } from '../logic/textFilterCondition';
+import {
+  DEFAULT_DATE_FILTER_DRAFT,
+  type DateFilterConditionDraft,
+} from '../logic/dateFilterCondition';
 
 afterEach(() => {
   cleanup();
@@ -33,6 +37,9 @@ const makeProps = () => ({
   // 追加(filter-ext C): textSet の条件 draft(set フィルターでは未使用のため null)。
   textConditionDraft: null,
   onTextConditionDraftChange: vi.fn(),
+  // 追加(filter-ext D): dateSet の条件 draft(set フィルターでは未使用のため null)。
+  dateConditionDraft: null,
+  onDateConditionDraftChange: vi.fn(),
   // 追加(filter-ext B/C): 複合の個別クリアとサマリー(set フィルターでは未使用)。
   onComboConditionClear: vi.fn(),
   onComboSelectionClear: vi.fn(),
@@ -332,5 +339,77 @@ describe('ColumnFilterPopover の textSet 複合 UI(filter-ext C)', () => {
     expect(screen.getByText('この演算子は値入力を使いません')).toBeTruthy();
     // blank 条件 → 候補は (空白) のみ。
     expect(screen.getByText('一致 1 件')).toBeTruthy();
+  });
+});
+
+// 追加(filter-ext D): dateSet(日付条件 AND 選択)UI の回帰テストです。
+//   ツリー行の構造は logic(buildDateTreeRows)側で担保済みのため、ここでは
+//   プリセットチップ / 演算子と値入力 / 候補連動の件数メタを検証します。
+const makeDateSetProps = (draft: DateFilterConditionDraft) => ({
+  ...makeProps(),
+  filterType: 'dateSet' as const,
+  dateConditionDraft: draft,
+  // 正規化済み日付キー候補(SpreadsheetGrid が normalizeDateSetOptions 済みで渡す契約)。
+  selectOptions: [
+    { label: '2026-01-15', value: '2026-01-15' },
+    { label: '2026-02-03', value: '2026-02-03' },
+    { label: '2026-02-10', value: '2026-02-10' },
+    { label: '(空白)', value: '' },
+  ],
+  comboSummaryText: '2026-02-01 〜 2026-02-28 かつ 1 件を除外',
+});
+
+describe('ColumnFilterPopover の dateSet 複合 UI(filter-ext D)', () => {
+  it('日付範囲条件で候補が連動して絞られる((空白) は消える)', () => {
+    const props = makeDateSetProps({
+      ...DEFAULT_DATE_FILTER_DRAFT,
+      operator: 'range',
+      value1: '2026-02-01',
+      value2: '2026-02-28',
+    });
+    render(<ColumnFilterPopover {...props} />);
+    expect(screen.getByText('一致 2 件')).toBeTruthy();
+    expect(screen.getByText('選択中: 2 / 2 件')).toBeTruthy();
+  });
+
+  it('プリセットチップの選択 / 再クリック解除が draft へ通知される', () => {
+    const props = makeDateSetProps(DEFAULT_DATE_FILTER_DRAFT);
+    render(<ColumnFilterPopover {...props} />);
+    fireEvent.pointerDown(screen.getByRole('button', { name: '過去 30 日' }));
+    expect(props.onDateConditionDraftChange).toHaveBeenCalledWith({
+      ...DEFAULT_DATE_FILTER_DRAFT,
+      preset: 'last30days',
+    });
+  });
+
+  it('プリセット選択中は値入力が消え、演算子変更でプリセット解除が通知される', () => {
+    const props = makeDateSetProps({
+      ...DEFAULT_DATE_FILTER_DRAFT,
+      preset: 'today',
+    });
+    render(<ColumnFilterPopover {...props} />);
+    expect(screen.queryByLabelText('開始日')).toBeNull();
+    fireEvent.change(screen.getByLabelText('条件の演算子'), {
+      target: { value: 'onOrAfter' },
+    });
+    expect(props.onDateConditionDraftChange).toHaveBeenCalledWith({
+      ...DEFAULT_DATE_FILTER_DRAFT,
+      operator: 'onOrAfter',
+      preset: null,
+    });
+  });
+
+  it('範囲演算子では date 入力が 2 個(開始日 / 終了日)出る', () => {
+    const props = makeDateSetProps(DEFAULT_DATE_FILTER_DRAFT);
+    render(<ColumnFilterPopover {...props} />);
+    expect(screen.getByLabelText('開始日')).toBeTruthy();
+    expect(screen.getByLabelText('終了日')).toBeTruthy();
+    fireEvent.change(screen.getByLabelText('開始日'), {
+      target: { value: '2026-02-01' },
+    });
+    expect(props.onDateConditionDraftChange).toHaveBeenCalledWith({
+      ...DEFAULT_DATE_FILTER_DRAFT,
+      value1: '2026-02-01',
+    });
   });
 });

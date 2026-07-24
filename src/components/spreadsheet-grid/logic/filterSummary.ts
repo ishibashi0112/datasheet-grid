@@ -3,6 +3,8 @@ import type { ColumnFilterValue } from '../model/gridTypes';
 import { formatParsedNumberFilter } from './numberFilterCondition';
 // 追加(filter-ext C): textSet の条件部の表示文字列です(「"x" を含む」等)。
 import { formatParsedTextFilter } from './textFilterCondition';
+// 追加(filter-ext D): dateSet の条件部の表示文字列です(「2026-01-01 〜 …」「過去 30 日」等)。
+import { formatParsedDateFilter } from './dateFilterCondition';
 
 // 追加(FM-1 / フィルター管理パネル): 列フィルター値(判別共用体)を人間可読な要約文字列へ
 //   変換する純関数です。FilterManagementPanel の一覧行で使い、FM-2(フィルターチップバー)
@@ -55,14 +57,17 @@ export const describeColumnFilterValue = (value: ColumnFilterValue): string => {
     case 'set':
       // 変更(filter-ext B): 実装は describeSetSelection へ抽出しました(numberSet と共有)。
       return describeSetSelection(value.mode, value.values);
-    // 追加(filter-ext B/C): 条件 AND 選択の複合です。両方あれば「かつ」で結合します
+    // 追加(filter-ext B/C/D): 条件 AND 選択の複合です。両方あれば「かつ」で結合します
     //   (例: 「10 以上 かつ 3 件を選択」)。両方 null は commit 側で clear 済みの防御表示です。
     case 'numberSet':
-    case 'textSet': {
+    case 'textSet':
+    case 'dateSet': {
       const conditionText = value.condition
         ? value.kind === 'numberSet'
           ? formatParsedNumberFilter(value.condition)
-          : formatParsedTextFilter(value.condition)
+          : value.kind === 'textSet'
+            ? formatParsedTextFilter(value.condition)
+            : formatParsedDateFilter(value.condition)
         : null;
       const setText = value.set
         ? describeSetSelection(value.set.mode, value.set.values)

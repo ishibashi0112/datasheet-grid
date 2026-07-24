@@ -472,6 +472,34 @@ describe('isSameGridState', () => {
     ).toBe(true);
   });
 
+  // 追加(filter-ext D): dateSet は condition(preset 含む)+ set の構造比較。
+  it('dateSet フィルター: condition(preset / range)を比較', () => {
+    const mkDs = (
+      condition:
+        | { mode: 'preset'; preset: 'today' | 'thisMonth' | 'last30days' }
+        | { mode: 'range'; from: string; to: string }
+        | null,
+    ): ColumnFilterValue => ({ kind: 'dateSet', condition, set: null });
+    expect(
+      isSameGridState(
+        st({}, { d: mkDs({ mode: 'preset', preset: 'today' }) }),
+        st({}, { d: mkDs({ mode: 'preset', preset: 'today' }) }),
+      ),
+    ).toBe(true);
+    expect(
+      isSameGridState(
+        st({}, { d: mkDs({ mode: 'preset', preset: 'today' }) }),
+        st({}, { d: mkDs({ mode: 'preset', preset: 'thisMonth' }) }),
+      ),
+    ).toBe(false);
+    expect(
+      isSameGridState(
+        st({}, { d: mkDs({ mode: 'range', from: '2026-01-01', to: '2026-02-01' }) }),
+        st({}, { d: mkDs({ mode: 'range', from: '2026-01-01', to: '2026-03-01' }) }),
+      ),
+    ).toBe(false);
+  });
+
   // 追加(filter-ext C): textSet も condition + set の構造比較(clone は numberSet と同型)。
   it('textSet フィルター: condition / set を比較', () => {
     const mkTs = (

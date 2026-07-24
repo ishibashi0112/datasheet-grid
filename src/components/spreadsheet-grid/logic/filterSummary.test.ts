@@ -153,6 +153,24 @@ describe('describeColumnFilterValue', () => {
     ).toBe('3 件を選択');
   });
 
+  // 追加(filter-ext D): dateSet(日付条件 AND 選択)の複合要約です。
+  it('dateSet も「かつ」で結合し、相対プリセットはラベル表示', () => {
+    expect(
+      describeColumnFilterValue({
+        kind: 'dateSet',
+        condition: { mode: 'range', from: '2026-01-01', to: '2026-03-31' },
+        set: { mode: 'exclude', values: ['2026-02-04'] },
+      }),
+    ).toBe('2026-01-01 〜 2026-03-31 かつ 1 件を除外');
+    expect(
+      describeColumnFilterValue({
+        kind: 'dateSet',
+        condition: { mode: 'preset', preset: 'last30days' },
+        set: null,
+      }),
+    ).toBe('過去 30 日');
+  });
+
   it('custom は非空 string なら「"x"」(trim)、それ以外は「カスタム条件」', () => {
     expect(
       describeColumnFilterValue({ kind: 'custom', value: ' my-cond ' }),

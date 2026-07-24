@@ -53,6 +53,22 @@ import {
   type TextFilterConditionDraft,
   type TextFilterOperator,
 } from '../logic/textFilterCondition';
+// 追加(filter-ext D): dateSet の日付条件エディタ(プリセットチップ含む)用の純ロジックです。
+import {
+  DATE_FILTER_OPERATOR_OPTIONS,
+  DATE_FILTER_PRESET_OPTIONS,
+  DEFAULT_DATE_FILTER_DRAFT,
+  buildParsedDateFilterFromDraft,
+  dateFilterOperandCount,
+  filterOptionsByDateCondition,
+  type DateFilterConditionDraft,
+  type DateFilterOperator,
+} from '../logic/dateFilterCondition';
+// 追加(filter-ext D): dateSet の年月日ツリー(平坦化された可視行)です。
+import {
+  buildDateTreeRows,
+  type DateTreeRow,
+} from '../logic/dateFilterTree';
 
 // 追加: popover のレイアウト情報です。
 export type ColumnFilterPopoverLayout = {
@@ -80,6 +96,7 @@ type ColumnFilterPopoverProps = {
     | 'number'
     | 'numberSet'
     | 'date'
+    | 'dateSet'
     | 'select'
     | 'set'
     | 'custom';
@@ -91,6 +108,9 @@ type ColumnFilterPopoverProps = {
   // 追加(filter-ext C): textSet のテキスト条件 draft です(textSet 以外は null)。
   textConditionDraft: TextFilterConditionDraft | null;
   onTextConditionDraftChange: (draft: TextFilterConditionDraft) => void;
+  // 追加(filter-ext D): dateSet の日付条件 draft です(dateSet 以外は null)。
+  dateConditionDraft: DateFilterConditionDraft | null;
+  onDateConditionDraftChange: (draft: DateFilterConditionDraft) => void;
   // 追加(filter-ext B/C): 複合(numberSet / textSet)の個別クリアです(条件のみ / 値のみ。
   //   フッターの「クリア」は全消し ── クリアの 3 粒度は合意仕様 §4-2)。
   onComboConditionClear: () => void;
@@ -511,15 +531,122 @@ function TextConditionEditor({
   );
 }
 
-// ── 複合フィルター(条件 AND 選択)の共通レイアウト(filter-ext B/C) ──
-// 追加(filter-ext C): numberSet / textSet が共有するセクション構造です
-//   (条件ヘッダ + エディタ + 区切り + 値ヘッダ + Set 一覧 + サマリー)。
-//   条件エディタだけが型ごとに異なるため ReactNode で受けます。
-type ComboFilterLayoutProps = {
-  conditionEditor: ReactNode;
-  conditionActive: boolean;
-  onConditionClear: () => void;
-  // 条件絞り後の候補です(候補連動 §2.3。conditionActive で「一致 / 全」表示を切替)。
+// ── 日付条件エディタ(filter-ext D) ─────────────────────
+// 追加(filter-ext D): 演算子セレクト + <input type="date">(0〜2 個)+ 相対プリセットチップ
+//   (今日 / 今月 / 過去 30 日)です。プリセット選択中は演算子・値より優先され(値入力は
+//   非表示)、演算子や値を編集するとプリセットは解除されます。プリセットは相対のまま
+//   保存され、フィルター評価のたびに解決されます(合意済み仕様)。
+type DateConditionEditorProps = {
+  draft: DateFilterConditionDraft;
+  valueInputRef: RefObject<HTMLInputElement | null>;
+  onDraftChange: (draft: DateFilterConditionDraft) => void;
+  onKeyDown: (
+    event: KeyboardEvent<HTMLSelectElement | HTMLInputElement>,
+  ) => void;
+};
+
+function DateConditionEditor({
+  draft,
+  valueInputRef,
+  onDraftChange,
+  onKeyDown,
+}: DateConditionEditorProps) {
+  const operandCount =
+    draft.preset !== null ? 0 : dateFilterOperandCount(draft.operator);
+  return (
+    <>
+      <select
+        value={draft.operator}
+        onChange={(event) =>
+          onDraftChange({
+            ...draft,
+            operator: event.target.value as DateFilterOperator,
+            preset: null,
+          })
+        }
+        onKeyDown={onKeyDown}
+        className="ssg-filter-select"
+        aria-label="条件の演算子"
+      >
+        {DATE_FILTER_OPERATOR_OPTIONS.map((option) => (
+          <option key={option.value} value={option.value}>
+            {option.label}
+          </option>
+        ))}
+      </select>
+      {operandCount > 0 ? (
+        <div className="ssg-filter-cond-values">
+          <input
+            ref={valueInputRef}
+            type="date"
+            value={draft.value1}
+            onChange={(event) =>
+              onDraftChange({ ...draft, value1: event.target.value, preset: null })
+            }
+            onKeyDown={onKeyDown}
+            className="ssg-filter-input"
+            aria-label={operandCount === 2 ? '開始日' : '条件の日付'}
+          />
+          {operandCount === 2 && (
+            <>
+              <span className="ssg-filter-cond-tilde">〜</span>
+              <input
+                type="date"
+                value={draft.value2}
+                onChange={(event) =>
+                  onDraftChange({
+                    ...draft,
+                    value2: event.target.value,
+                    preset: null,
+                  })
+                }
+                onKeyDown={onKeyDown}
+                className="ssg-filter-input"
+                aria-label="終了日"
+              />
+            </>
+          )}
+        </div>
+      ) : draft.preset === null ? (
+        <div className="ssg-filter-meta">この演算子は値入力を使いません</div>
+      ) : null}
+      <div className="ssg-filter-presets">
+        {DATE_FILTER_PRESET_OPTIONS.map((option) => (
+          <button
+            key={option.value}
+            type="button"
+            onPointerDown={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              // 同じチップの再クリックは解除(トグル)です。
+              onDraftChange({
+                ...draft,
+                preset: draft.preset === option.value ? null : option.value,
+              });
+            }}
+            onKeyDown={(event) => {
+              event.stopPropagation();
+            }}
+            className={cx(
+              'ssg-filter-preset-chip',
+              draft.preset === option.value && 'ssg-filter-preset-chip--active',
+            )}
+          >
+            {option.label}
+          </button>
+        ))}
+      </div>
+    </>
+  );
+}
+
+// ── dateSet の年月日ツリー本体(filter-ext D) ───────────
+// 追加(filter-ext D): SetFilterBody のフラット一覧に代わる 3 階層ツリーです(日付は
+//   ユニーク値が行数に比例するため。Excel と同じ構造)。検索中はフラット表示に切り替え、
+//   一致関数・Enter 確定は SetFilterBody と共有します。親(年 / 月)は 3 状態チェックで、
+//   トグルは配下リーフの一括選択 / 解除(onSelectAllChange の明示スコープ)として通知します。
+type DateSetFilterBodyProps = {
+  // 正規化済み日付キー候補です(normalizeDateSetOptions 済み・条件絞り後)。
   options: ColumnFilterPopoverOption[];
   setSelection: ColumnFilterSetSelection | null;
   searchInputRef: RefObject<HTMLInputElement | null>;
@@ -528,14 +655,9 @@ type ComboFilterLayoutProps = {
   onReplaceSelection: (values: string[]) => void;
   onRequestClose: () => void;
   isServerSide: boolean;
-  onSelectionClear: () => void;
-  summaryText: string;
 };
 
-function ComboFilterLayout({
-  conditionEditor,
-  conditionActive,
-  onConditionClear,
+function DateSetFilterBody({
   options,
   setSelection,
   searchInputRef,
@@ -544,8 +666,296 @@ function ComboFilterLayout({
   onReplaceSelection,
   onRequestClose,
   isServerSide,
+}: DateSetFilterBodyProps) {
+  const [searchText, setSearchText] = useState('');
+  const deferredSearchText = useDeferredValue(searchText);
+  // 展開状態(年 / 月ノードのキー集合)。既定は全て畳み(年のみ表示)です。
+  const [expandedKeys, setExpandedKeys] = useState<ReadonlySet<string>>(
+    () => new Set<string>(),
+  );
+
+  const isSearching = deferredSearchText.trim().length > 0;
+  const flatMatches = useMemo(
+    () => filterSetOptionsBySearch(options, deferredSearchText),
+    [options, deferredSearchText],
+  );
+  const treeRows = useMemo(
+    () => buildDateTreeRows(options, expandedKeys),
+    [options, expandedKeys],
+  );
+
+  const listScrollRef = useRef<HTMLDivElement | null>(null);
+  const rowCount = isSearching ? flatMatches.length : treeRows.length;
+  // 注記(filter-ext D): TanStack Virtual は React Compiler 非互換(メモ化スキップの情報警告)。
+  //   SetFilterBody / 本体グリッドの useVirtualizer と同種の既知事象のため、eslint baseline を
+  //   増やさないようここでは明示的に抑止します(挙動への影響はありません)。
+  // eslint-disable-next-line react-hooks/incompatible-library
+  const rowVirtualizer = useVirtualizer({
+    count: rowCount,
+    getScrollElement: () => listScrollRef.current,
+    estimateSize: () => SET_FILTER_OPTION_ROW_HEIGHT,
+    overscan: 10,
+  });
+
+  // (すべて選択) の 3 状態(対象 = 検索中は一致リーフ / 非検索は全リーフ)。
+  const selectAllScopeValues = useMemo(
+    () =>
+      (isSearching ? flatMatches : options).map((option) => option.value),
+    [isSearching, flatMatches, options],
+  );
+  const selectAllSelectedCount = useMemo(() => {
+    let count = 0;
+    for (const value of selectAllScopeValues) {
+      if (isSetValueSelected(setSelection, value)) {
+        count += 1;
+      }
+    }
+    return count;
+  }, [selectAllScopeValues, setSelection]);
+  const isAllVisibleSelected =
+    selectAllScopeValues.length > 0 &&
+    selectAllSelectedCount === selectAllScopeValues.length;
+  const isSomeVisibleSelected =
+    selectAllSelectedCount > 0 && !isAllVisibleSelected;
+
+  // 選択中メタ(SetFilterBody と同じ規則: 候補内の選択数を数えます)。
+  const optionValueSet = useMemo(
+    () => new Set(options.map((option) => option.value)),
+    [options],
+  );
+  const totalSelectedCount = useMemo(() => {
+    if (setSelection === null) {
+      return options.length;
+    }
+    let inListCount = 0;
+    for (const value of setSelection.values) {
+      if (optionValueSet.has(value)) {
+        inListCount += 1;
+      }
+    }
+    return setSelection.mode === 'include'
+      ? inListCount
+      : options.length - inListCount;
+  }, [setSelection, optionValueSet, options.length]);
+
+  const toggleExpanded = (key: string) => {
+    setExpandedKeys((current) => {
+      const next = new Set(current);
+      if (next.has(key)) {
+        next.delete(key);
+      } else {
+        next.add(key);
+      }
+      return next;
+    });
+  };
+
+  // group(年 / 月)行の 3 状態と一括トグルです(配下リーフ基準)。
+  const countSelectedLeaves = (leafKeys: string[]): number => {
+    let count = 0;
+    for (const key of leafKeys) {
+      if (isSetValueSelected(setSelection, key)) {
+        count += 1;
+      }
+    }
+    return count;
+  };
+
+  const renderTreeRow = (row: DateTreeRow) => {
+    const selectedLeafCount = countSelectedLeaves(row.leafKeys);
+    const isChecked =
+      row.leafKeys.length > 0 && selectedLeafCount === row.leafKeys.length;
+    const isIndeterminate = selectedLeafCount > 0 && !isChecked;
+    return (
+      <>
+        {row.type === 'group' ? (
+          <button
+            type="button"
+            onPointerDown={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              toggleExpanded(row.key);
+            }}
+            onKeyDown={(event) => {
+              event.stopPropagation();
+            }}
+            className="ssg-filter-tree-toggle"
+            aria-label={row.expanded ? '折りたたむ' : '展開する'}
+          >
+            {row.expanded ? '▾' : '▸'}
+          </button>
+        ) : (
+          <span className="ssg-filter-tree-toggle ssg-filter-tree-toggle--placeholder" />
+        )}
+        <input
+          type="checkbox"
+          checked={isChecked}
+          ref={(element) => {
+            if (element) {
+              element.indeterminate = isIndeterminate;
+            }
+          }}
+          onChange={() => {
+            if (row.type === 'leaf') {
+              onValueToggle(row.key);
+              return;
+            }
+            // 親は配下リーフの一括トグルです(全選択なら解除 / それ以外は全選択)。
+            onSelectAllChange(row.leafKeys, !isChecked);
+          }}
+        />
+        <span className="ssg-filter-option-label">{row.label}</span>
+      </>
+    );
+  };
+
+  return (
+    <>
+      <input
+        ref={searchInputRef}
+        type="text"
+        value={searchText}
+        onChange={(event) => setSearchText(event.target.value)}
+        onKeyDown={(event) => {
+          event.stopPropagation();
+          if (event.key === 'Escape') {
+            event.preventDefault();
+            onRequestClose();
+          }
+          // 検索 Enter 確定(SetFilterBody と同じ規則。IME 変換確定ガード付き)。
+          if (event.key === 'Enter') {
+            if (event.nativeEvent.isComposing) {
+              return;
+            }
+            event.preventDefault();
+            const action = resolveSetFilterEnterAction(options, searchText);
+            if (action.kind === 'none') {
+              return;
+            }
+            if (action.kind === 'replace') {
+              onReplaceSelection(action.values);
+            }
+            onRequestClose();
+          }
+        }}
+        placeholder="検索（Enter で確定）"
+        className="ssg-filter-input"
+      />
+
+      <label className="ssg-filter-selectall">
+        <input
+          type="checkbox"
+          checked={isAllVisibleSelected}
+          ref={(element) => {
+            if (element) {
+              element.indeterminate = isSomeVisibleSelected;
+            }
+          }}
+          onChange={() =>
+            onSelectAllChange(selectAllScopeValues, !isAllVisibleSelected)
+          }
+        />
+        <span className="ssg-filter-selectall-label">
+          {isSearching ? '（検索結果をすべて選択）' : '（すべて選択）'}
+        </span>
+      </label>
+
+      <div ref={listScrollRef} className="ssg-filter-list">
+        {rowCount === 0 ? (
+          <div className="ssg-filter-empty">
+            {options.length === 0
+              ? isServerSide
+                ? '候補が未指定です（serverSide では列に filterOptions などの候補供給が必要）'
+                : '候補がありません'
+              : '一致する候補がありません'}
+          </div>
+        ) : (
+          <div
+            className="ssg-filter-virt"
+            style={{ height: rowVirtualizer.getTotalSize() }}
+          >
+            {rowVirtualizer.getVirtualItems().map((virtualItem) => {
+              if (isSearching) {
+                const option = flatMatches[virtualItem.index];
+                if (!option) {
+                  return null;
+                }
+                return (
+                  <label
+                    key={option.value}
+                    className="ssg-filter-option"
+                    style={{
+                      transform: `translateY(${virtualItem.start}px)`,
+                      height: virtualItem.size,
+                    }}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={isSetValueSelected(setSelection, option.value)}
+                      onChange={() => onValueToggle(option.value)}
+                    />
+                    <span className="ssg-filter-option-label">
+                      {option.label}
+                    </span>
+                  </label>
+                );
+              }
+              const row = treeRows[virtualItem.index];
+              if (!row) {
+                return null;
+              }
+              return (
+                <div
+                  key={row.key}
+                  className="ssg-filter-option"
+                  style={{
+                    transform: `translateY(${virtualItem.start}px)`,
+                    height: virtualItem.size,
+                    paddingLeft: 8 + row.depth * 16,
+                  }}
+                >
+                  {renderTreeRow(row)}
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      <div className="ssg-filter-meta">
+        選択中: {totalSelectedCount} / {options.length} 件
+        {isSearching ? `（表示中 ${flatMatches.length} 件）` : ''}
+      </div>
+    </>
+  );
+}
+
+// ── 複合フィルター(条件 AND 選択)の共通レイアウト(filter-ext B/C/D) ──
+// 追加(filter-ext C): numberSet / textSet / dateSet が共有するセクション構造です
+//   (条件ヘッダ + エディタ + 区切り + 値ヘッダ + Set 本体 + サマリー)。
+//   条件エディタと Set 本体(フラット一覧 / 日付ツリー)が型ごとに異なるため、
+//   エディタは ReactNode、Set 本体は children で受けます。
+type ComboFilterLayoutProps = {
+  conditionEditor: ReactNode;
+  conditionActive: boolean;
+  onConditionClear: () => void;
+  // 条件絞り後の候補です(候補連動 §2.3。conditionActive で「一致 / 全」表示を切替)。
+  options: ColumnFilterPopoverOption[];
+  setSelection: ColumnFilterSetSelection | null;
+  onSelectionClear: () => void;
+  summaryText: string;
+  children: ReactNode;
+};
+
+function ComboFilterLayout({
+  conditionEditor,
+  conditionActive,
+  onConditionClear,
+  options,
+  setSelection,
   onSelectionClear,
   summaryText,
+  children,
 }: ComboFilterLayoutProps) {
   return (
     <>
@@ -590,17 +1000,7 @@ function ComboFilterLayout({
           クリア
         </button>
       </div>
-      <SetFilterBody
-        options={options}
-        setSelection={setSelection}
-        searchInputRef={searchInputRef}
-        onValueToggle={onValueToggle}
-        onSelectAllChange={onSelectAllChange}
-        onReplaceSelection={onReplaceSelection}
-        onRequestClose={onRequestClose}
-        isServerSide={isServerSide}
-        selectAllUsesExplicitScope
-      />
+      {children}
       <div className="ssg-filter-summary">🔽 {summaryText}</div>
     </>
   );
@@ -617,6 +1017,8 @@ export function ColumnFilterPopover({
   onNumberConditionDraftChange,
   textConditionDraft,
   onTextConditionDraftChange,
+  dateConditionDraft,
+  onDateConditionDraftChange,
   onComboConditionClear,
   onComboSelectionClear,
   comboSummaryText,
@@ -639,10 +1041,14 @@ export function ColumnFilterPopover({
   onSetReplaceSelection,
   isServerSide = false,
 }: ColumnFilterPopoverProps) {
-  // 追加(filter-ext B/C): 複合(numberSet / textSet)の検索ボックス用ローカル ref です。
+  // 追加(filter-ext B/C): 複合(numberSet / textSet / dateSet)の検索ボックス用ローカル ref です。
   //   複合では controller の textInputRef(autofocus 対象)を条件の値入力へ割り当てるため、
-  //   SetFilterBody の検索ボックスにはこちらを渡します(early return より前に置くこと)。
+  //   Set 本体の検索ボックスにはこちらを渡します(early return より前に置くこと)。
   const comboSearchInputRef = useRef<HTMLInputElement | null>(null);
+  // 追加(filter-ext D): 相対プリセットの候補絞り(表示)用の解決基準時刻です。マウント時に
+  //   1 回だけ確保します(表示用途のみ。行の判定本体は filtering 側が再計算のたびに解決します。
+  //   日付を跨いで開きっぱなしのケースは表示のみ僅かに stale になりますが許容します)。
+  const [comboNow] = useState(() => new Date());
 
   if (typeof document === 'undefined' || !isOpen || !layout) {
     return null;
@@ -676,20 +1082,22 @@ export function ColumnFilterPopover({
   const isSetFilter = filterType === 'set';
   const isNumberSetFilter = filterType === 'numberSet';
   const isTextSetFilter = filterType === 'textSet';
-  const isComboFilter = isNumberSetFilter || isTextSetFilter;
+  const isDateSetFilter = filterType === 'dateSet';
+  const isComboFilter = isNumberSetFilter || isTextSetFilter || isDateSetFilter;
   // 追加(filter-ext B/C): set / 複合は即時適用 UI(適用ボタンなし・フッターは
   //   クリア + 閉じる・現在値テキスト行なし)を共有します。
   const isImmediateFilter = isSetFilter || isComboFilter;
 
-  // 追加(filter-ext A/C): 条件 UI の draft です。draft は親(controller)管理ですが、
+  // 追加(filter-ext A/C/D): 条件 UI の draft です。draft は親(controller)管理ですが、
   //   万一 null が来ても表示が壊れないよう既定 draft でフォールバックします。
   const numberDraft = numberConditionDraft ?? DEFAULT_NUMBER_FILTER_DRAFT;
   const textDraft = textConditionDraft ?? DEFAULT_TEXT_FILTER_DRAFT;
+  const dateDraft = dateConditionDraft ?? DEFAULT_DATE_FILTER_DRAFT;
 
-  // 追加(filter-ext B/C): 候補連動(合意仕様 §2.3)── 条件 draft から parsed を合成し、
+  // 追加(filter-ext B/C/D): 候補連動(合意仕様 §2.3)── 条件 draft から parsed を合成し、
   //   Set 候補一覧を条件を満たす値だけに絞ります(条件なしは同一参照で素通し)。
   //   収集は全候補 1 回きり(collector)で、ここは表示時の軽量フィルタです。
-  //   条件の型(数値 / テキスト)が違うため合成と絞りは kind 別に持ち、UI 判定
+  //   条件の型(数値 / テキスト / 日付)が違うため合成と絞りは kind 別に持ち、UI 判定
   //   (conditionActive)だけを共通化します。
   const numberComboCondition = isNumberSetFilter
     ? buildParsedNumberFilterFromDraft(numberDraft)
@@ -697,13 +1105,20 @@ export function ColumnFilterPopover({
   const textComboCondition = isTextSetFilter
     ? buildParsedTextFilterFromDraft(textDraft)
     : null;
+  const dateComboCondition = isDateSetFilter
+    ? buildParsedDateFilterFromDraft(dateDraft)
+    : null;
   const comboConditionActive =
-    numberComboCondition !== null || textComboCondition !== null;
+    numberComboCondition !== null ||
+    textComboCondition !== null ||
+    dateComboCondition !== null;
   const comboOptions = isNumberSetFilter
     ? filterOptionsByNumberCondition(selectOptions, numberComboCondition)
     : isTextSetFilter
       ? filterOptionsByTextCondition(selectOptions, textComboCondition)
-      : selectOptions;
+      : isDateSetFilter
+        ? filterOptionsByDateCondition(selectOptions, dateComboCondition, comboNow)
+        : selectOptions;
 
   // 追加(filter-ext A): number 条件 UI(演算子 select / 値 input)共通の keyboard 操作です
   //   (Enter = 適用 / Escape = 閉じる。text フィルター入力と同じ規則)。
@@ -744,10 +1159,11 @@ export function ColumnFilterPopover({
           候補を収集中… {Math.round(optionsProgress * 100)}%
         </div>
       ) : isComboFilter ? (
-        // 追加(filter-ext B/C): 条件 AND 選択の複合フィルターです。条件(述語)と値(Set 一覧)を
+        // 追加(filter-ext B/C/D): 条件 AND 選択の複合フィルターです。条件(述語)と値(Set)を
         //   縦に並べ、AND で結合します。チェック操作は即時適用・条件も編集で即時適用です。
         //   条件を適用すると値の候補が連動して絞られます(候補外の選択状態は破棄せず保持)。
-        //   レイアウトは ComboFilterLayout(共有)、条件エディタだけが型ごとに異なります。
+        //   レイアウトは ComboFilterLayout(共有)。条件エディタと Set 本体
+        //   (フラット一覧 / 日付ツリー)だけが型ごとに異なります。
         <ComboFilterLayout
           conditionEditor={
             isNumberSetFilter ? (
@@ -757,11 +1173,18 @@ export function ColumnFilterPopover({
                 onDraftChange={onNumberConditionDraftChange}
                 onKeyDown={handleConditionKeyDown}
               />
-            ) : (
+            ) : isTextSetFilter ? (
               <TextConditionEditor
                 draft={textDraft}
                 valueInputRef={textInputRef}
                 onDraftChange={onTextConditionDraftChange}
+                onKeyDown={handleConditionKeyDown}
+              />
+            ) : (
+              <DateConditionEditor
+                draft={dateDraft}
+                valueInputRef={textInputRef}
+                onDraftChange={onDateConditionDraftChange}
                 onKeyDown={handleConditionKeyDown}
               />
             )
@@ -770,15 +1193,34 @@ export function ColumnFilterPopover({
           onConditionClear={onComboConditionClear}
           options={comboOptions}
           setSelection={setSelection}
-          searchInputRef={comboSearchInputRef}
-          onValueToggle={onSetValueToggle}
-          onSelectAllChange={onSetSelectAllChange}
-          onReplaceSelection={onSetReplaceSelection}
-          onRequestClose={onRequestClose}
-          isServerSide={isServerSide}
           onSelectionClear={onComboSelectionClear}
           summaryText={comboSummaryText}
-        />
+        >
+          {isDateSetFilter ? (
+            <DateSetFilterBody
+              options={comboOptions}
+              setSelection={setSelection}
+              searchInputRef={comboSearchInputRef}
+              onValueToggle={onSetValueToggle}
+              onSelectAllChange={onSetSelectAllChange}
+              onReplaceSelection={onSetReplaceSelection}
+              onRequestClose={onRequestClose}
+              isServerSide={isServerSide}
+            />
+          ) : (
+            <SetFilterBody
+              options={comboOptions}
+              setSelection={setSelection}
+              searchInputRef={comboSearchInputRef}
+              onValueToggle={onSetValueToggle}
+              onSelectAllChange={onSetSelectAllChange}
+              onReplaceSelection={onSetReplaceSelection}
+              onRequestClose={onRequestClose}
+              isServerSide={isServerSide}
+              selectAllUsesExplicitScope
+            />
+          )}
+        </ComboFilterLayout>
       ) : isSetFilter ? (
         // 追加(12-A): AG Grid の Set Filter 相当 UI です(チェック操作は即時適用)。
         <SetFilterBody

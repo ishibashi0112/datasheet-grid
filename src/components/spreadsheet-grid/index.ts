@@ -67,6 +67,10 @@ export type {
   // 追加(filter-ext C): テキスト版の複合フィルター(filterType: 'textSet')の記述子です。
   TextSetColumnFilterValue,
   ParsedTextFilter,
+  // 追加(filter-ext D): 日付版の複合フィルター(filterType: 'dateSet')の記述子です。
+  DateSetColumnFilterValue,
+  ParsedDateFilter,
+  DateFilterPreset,
   TextColumnFilterValue,
   DateColumnFilterValue,
   SelectColumnFilterValue,

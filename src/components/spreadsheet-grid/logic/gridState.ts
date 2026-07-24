@@ -5,6 +5,7 @@ import type {
   GridFilterState,
   GridSortState,
   GridState,
+  ParsedDateFilter,
   ParsedNumberFilter,
   ParsedTextFilter,
 } from '../model/gridTypes';
@@ -51,6 +52,12 @@ export const cloneColumnFilterValue = (
         set: value.set ? { ...value.set, values: [...value.set.values] } : null,
       };
     case 'textSet':
+      return {
+        ...value,
+        condition: value.condition ? { ...value.condition } : null,
+        set: value.set ? { ...value.set, values: [...value.set.values] } : null,
+      };
+    case 'dateSet':
       return {
         ...value,
         condition: value.condition ? { ...value.condition } : null,
@@ -323,7 +330,32 @@ const isSameParsedTextFilter = (
   return a.mode === b.mode && a.value === b.value;
 };
 
-// 追加(filter-ext C): 複合フィルター(numberSet / textSet)の set 部分の構造等価です
+// 追加(filter-ext D): ParsedDateFilter(日付条件)の構造等価です。
+const isSameParsedDateFilter = (
+  a: ParsedDateFilter | null,
+  b: ParsedDateFilter | null,
+): boolean => {
+  if (a === null || b === null) {
+    return a === b;
+  }
+  if (a.mode !== b.mode) {
+    return false;
+  }
+  if (a.mode === 'range' && b.mode === 'range') {
+    return a.from === b.from && a.to === b.to;
+  }
+  if (a.mode === 'preset' && b.mode === 'preset') {
+    return a.preset === b.preset;
+  }
+  if (a.mode === 'blank' || a.mode === 'notBlank') {
+    return true;
+  }
+  return (
+    'value' in a && 'value' in b && a.value === b.value
+  );
+};
+
+// 追加(filter-ext C): 複合フィルター(numberSet / textSet / dateSet)の set 部分の構造等価です
 //   (mode 既定 include + values 順序込み比較。null = 全選択)。
 const isSameComboSetPart = (
   a: { mode?: 'include' | 'exclude'; values: string[] } | null,
@@ -395,6 +427,12 @@ const isSameColumnFilterValue = (
       return (
         b.kind === 'textSet' &&
         isSameParsedTextFilter(a.condition, b.condition) &&
+        isSameComboSetPart(a.set, b.set)
+      );
+    case 'dateSet':
+      return (
+        b.kind === 'dateSet' &&
+        isSameParsedDateFilter(a.condition, b.condition) &&
         isSameComboSetPart(a.set, b.set)
       );
     case 'text':

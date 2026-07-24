@@ -313,6 +313,47 @@ export type TextSetColumnFilterValue = {
   } | null;
 };
 
+// 追加(filter-ext D): 相対日付プリセットです。合意済み仕様: 相対のまま保存し、フィルター
+//   評価時に「今日」を基準へ解決します(翌日開くと範囲が追従する)。絶対日付へ固定したい
+//   場合は range 等の絶対条件を使います。
+export type DateFilterPreset = 'today' | 'thisMonth' | 'last30days';
+
+// 追加(filter-ext D): 日付条件の解釈結果です。日付は 'YYYY-MM-DD'(ゼロ埋め ISO)へ正規化して
+//   保持し、比較は文字列比較で行います(同形式なら辞書順 = 時系列順)。セル値の正規化は
+//   logic/dateFilterCondition の toDateKey(解釈不可 = 比較不一致)が担います。
+export type ParsedDateFilter =
+  | {
+      mode: 'range';
+      from: string;
+      to: string;
+    }
+  | {
+      mode: 'onOrAfter' | 'onOrBefore' | 'equals' | 'notEquals';
+      value: string;
+    }
+  | {
+      mode: 'blank';
+    }
+  | {
+      mode: 'notBlank';
+    }
+  | {
+      mode: 'preset';
+      preset: DateFilterPreset;
+    };
+
+// 追加(filter-ext D): 日付列の「条件 AND 選択」複合フィルターです。set.values は
+//   セル生値ではなく **正規化済み日付キー('YYYY-MM-DD'。空白 = '' / 非日付 = 生値)** です
+//   (popover の年月日ツリーが日付キー単位で選択するため。判定側もキー変換して照合します)。
+export type DateSetColumnFilterValue = {
+  kind: 'dateSet';
+  condition: ParsedDateFilter | null;
+  set: {
+    mode?: 'include' | 'exclude';
+    values: string[];
+  } | null;
+};
+
 // 追加(記述子化): select の完全一致フィルターのタグ付き記述子です。
 //   value は選択値そのもの(trim しない)で、判定側で文字列完全一致します。
 export type SelectColumnFilterValue = {
@@ -339,6 +380,7 @@ export type ColumnFilterValue =
   | TextColumnFilterValue
   | TextSetColumnFilterValue
   | DateColumnFilterValue
+  | DateSetColumnFilterValue
   | SelectColumnFilterValue
   | CustomColumnFilterValue;
 
@@ -645,12 +687,16 @@ export type GridColumn<T> = {
   //             Set 候補が条件を満たす値だけに連動して絞られます。
   // 変更(filter-ext C): 'textSet' を追加します(numberSet のテキスト版。演算子は
   //             含む / 等しい / 始まる / 終わる / 空白 / 空白でない)。
+  // 変更(filter-ext D): 'dateSet' を追加します(日付版。条件は 範囲 / 以降 / 以前 / 等しい /
+  //             等しくない / 空白 / 空白でない + 相対プリセット(今日 / 今月 / 過去 30 日)。
+  //             Set 部分は年 / 月 / 日の 3 階層ツリーになります)。
   filterType?:
     | 'text'
     | 'textSet'
     | 'number'
     | 'numberSet'
     | 'date'
+    | 'dateSet'
     | 'select'
     | 'set'
     | 'custom';
