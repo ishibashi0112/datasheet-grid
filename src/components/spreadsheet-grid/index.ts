@@ -64,6 +64,9 @@ export type {
   // 追加(filter-ext B): 「条件 AND 選択」複合フィルター(filterType: 'numberSet')の記述子です。
   NumberSetColumnFilterValue,
   ParsedNumberFilter,
+  // 追加(filter-ext C): テキスト版の複合フィルター(filterType: 'textSet')の記述子です。
+  TextSetColumnFilterValue,
+  ParsedTextFilter,
   TextColumnFilterValue,
   DateColumnFilterValue,
   SelectColumnFilterValue,

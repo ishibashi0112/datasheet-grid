@@ -126,6 +126,34 @@ function matchFilter(value: unknown, filter: ColumnFilterValue): boolean {
       }
       return true;
     }
+    // 追加(filter-ext C): テキスト版の複合(判定は大文字小文字無視。ライブラリ本体と同規則)。
+    case 'textSet': {
+      if (filter.condition) {
+        const condition = filter.condition;
+        if (condition.mode === 'blank' || condition.mode === 'notBlank') {
+          const isBlank =
+            value === null || value === undefined || String(value).trim() === '';
+          if (isBlank !== (condition.mode === 'blank')) return false;
+        } else {
+          const cell = String(value ?? '').toLowerCase();
+          const needle = condition.value.toLowerCase();
+          const pass =
+            condition.mode === 'equals'
+              ? cell === needle
+              : condition.mode === 'startsWith'
+                ? cell.startsWith(needle)
+                : condition.mode === 'endsWith'
+                  ? cell.endsWith(needle)
+                  : cell.includes(needle);
+          if (!pass) return false;
+        }
+      }
+      if (filter.set) {
+        const hit = filter.set.values.includes(String(value ?? ''));
+        return filter.set.mode === 'exclude' ? !hit : hit;
+      }
+      return true;
+    }
     case 'custom':
       // デモに custom フィルター列は無い(記述子の解釈は利用側責務のため素通し)
       return true;

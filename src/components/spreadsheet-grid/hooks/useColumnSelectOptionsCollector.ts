@@ -83,13 +83,14 @@ export const useColumnSelectOptionsCollector = <T,>({
   getRawValueAt,
 }: UseColumnSelectOptionsCollectorArgs<T>): ColumnSelectOptionsResult => {
   const filterType = column?.filterType ?? null;
-  // 変更(filter-ext B): numberSet(条件 AND 選択)も Set 候補一覧を持つため収集対象です。
-  //   条件での候補絞り(候補連動)は収集後の表示時フィルタで行い、ここは全候補を 1 回だけ
-  //   収集します(条件打鍵ごとの再収集はしない)。
+  // 変更(filter-ext B/C): numberSet / textSet(条件 AND 選択)も Set 候補一覧を持つため
+  //   収集対象です。条件での候補絞り(候補連動)は収集後の表示時フィルタで行い、ここは
+  //   全候補を 1 回だけ収集します(条件打鍵ごとの再収集はしない)。
   const isSelectLike =
     filterType === 'select' ||
     filterType === 'set' ||
-    filterType === 'numberSet';
+    filterType === 'numberSet' ||
+    filterType === 'textSet';
   const explicitOptions =
     column?.filterOptions && column.filterOptions.length > 0
       ? column.filterOptions

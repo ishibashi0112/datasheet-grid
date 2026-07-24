@@ -286,6 +286,33 @@ export type NumberSetColumnFilterValue = {
   } | null;
 };
 
+// 追加(filter-ext C): テキスト条件の解釈結果です(ParsedNumberFilter のテキスト版)。
+//   value は trim 済み・判定は大文字小文字無視(既存 text フィルターの contains と同じ規則)。
+//   Set の検索欄は「候補を選ぶための絞り込み」で述語として残らないため、「含む」等を
+//   述語として保持したい場合はこちら(条件欄)を使います(引き継ぎ §3.3)。
+export type ParsedTextFilter =
+  | {
+      mode: 'contains' | 'equals' | 'startsWith' | 'endsWith';
+      value: string;
+    }
+  | {
+      mode: 'blank';
+    }
+  | {
+      mode: 'notBlank';
+    };
+
+// 追加(filter-ext C): テキスト列の「条件 AND 選択」複合フィルターです(numberSet の
+//   テキスト版。構造・正規化・選択保持の規約は NumberSetColumnFilterValue と同一)。
+export type TextSetColumnFilterValue = {
+  kind: 'textSet';
+  condition: ParsedTextFilter | null;
+  set: {
+    mode?: 'include' | 'exclude';
+    values: string[];
+  } | null;
+};
+
 // 追加(記述子化): select の完全一致フィルターのタグ付き記述子です。
 //   value は選択値そのもの(trim しない)で、判定側で文字列完全一致します。
 export type SelectColumnFilterValue = {
@@ -310,6 +337,7 @@ export type ColumnFilterValue =
   | NumberColumnFilterValue
   | NumberSetColumnFilterValue
   | TextColumnFilterValue
+  | TextSetColumnFilterValue
   | DateColumnFilterValue
   | SelectColumnFilterValue
   | CustomColumnFilterValue;
@@ -615,8 +643,11 @@ export type GridColumn<T> = {
   // 変更(filter-ext B): 'numberSet' を追加します。数値条件(演算子 + 値)と Set 一覧を
   //             1 つの popover に縦に並べて AND 結合する複合フィルターです。条件を適用すると
   //             Set 候補が条件を満たす値だけに連動して絞られます。
+  // 変更(filter-ext C): 'textSet' を追加します(numberSet のテキスト版。演算子は
+  //             含む / 等しい / 始まる / 終わる / 空白 / 空白でない)。
   filterType?:
     | 'text'
+    | 'textSet'
     | 'number'
     | 'numberSet'
     | 'date'

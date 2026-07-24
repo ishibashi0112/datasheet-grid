@@ -21,7 +21,8 @@ type Row = {
 };
 
 const columns: GridColumn<Row>[] = [
-  { key: 'name', title: '商品名', width: 180, filterType: 'text' },
+  // 変更(filter-ext C): 商品名は textSet(テキスト条件 AND 選択の複合)のデモです。
+  { key: 'name', title: '商品名', width: 180, filterType: 'textSet' },
   {
     key: 'category',
     title: 'カテゴリ',

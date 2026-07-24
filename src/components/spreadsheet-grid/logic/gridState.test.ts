@@ -472,6 +472,33 @@ describe('isSameGridState', () => {
     ).toBe(true);
   });
 
+  // 追加(filter-ext C): textSet も condition + set の構造比較(clone は numberSet と同型)。
+  it('textSet フィルター: condition / set を比較', () => {
+    const mkTs = (
+      condition: { mode: 'contains'; value: string } | null,
+      set: { values: string[] } | null,
+    ): ColumnFilterValue => ({ kind: 'textSet', condition, set });
+    expect(
+      isSameGridState(
+        st({}, { t: mkTs({ mode: 'contains', value: 'x' }, { values: ['a'] }) }),
+        st({}, { t: mkTs({ mode: 'contains', value: 'x' }, { values: ['a'] }) }),
+      ),
+    ).toBe(true);
+    expect(
+      isSameGridState(
+        st({}, { t: mkTs({ mode: 'contains', value: 'x' }, null) }),
+        st({}, { t: mkTs({ mode: 'contains', value: 'y' }, null) }),
+      ),
+    ).toBe(false);
+    // 同キーで kind 違い(numberSet vs textSet)は不等。
+    expect(
+      isSameGridState(
+        st({}, { t: mkTs(null, { values: ['a'] }) }),
+        st({}, { t: { kind: 'numberSet', condition: null, set: { values: ['a'] } } }),
+      ),
+    ).toBe(false);
+  });
+
   it('text/date/select: value を比較、同キー kind 違いは false', () => {
     expect(
       isSameGridState(

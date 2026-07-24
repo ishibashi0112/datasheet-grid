@@ -16,6 +16,7 @@ clientSide の操作状態(グローバルフィルター・列フィルター�
   - `{ kind: 'set'; mode?: 'include' | 'exclude'; values: string[] }` — `values` は常に小さい側のみ保持する(全候補が多いとき `mode: 'exclude'` で非選択側を送る)。サーバは `mode` に応じて IN / NOT IN を組む。
   - `{ kind: 'number'; raw: string; parsed }` — `parsed` が `comparison`(演算子 `>` `>=` `<` `<=` `=` `!=`)/ `range` / `blank` / `notBlank` / `null`(=`raw` で部分一致。旧 UI の互換値)。判定は常に `parsed` が正で、`raw` は人間可読の表示文字列(現行 UI は「10 以上」のような日本語。旧値は「>=10」等の式文字列)。比較 / 範囲では**空白セル(null / undefined / 空文字)は不一致**(空白の抽出は `blank` / `notBlank`)。
   - `{ kind: 'numberSet'; condition; set }` — 条件 AND 選択の複合(`filterType: 'numberSet'`)。`condition` は上記 `parsed` と同形(`null` = 条件なし)、`set` は `{ mode?: 'include' | 'exclude'; values: string[] }`(`null` = 全選択)。サーバは **condition AND set** で WHERE を組む(例: `qty >= 10 AND qty NOT IN (12)`)。両方 `null` の値は送出されない(クライアント側で clear へ正規化)。
+  - `{ kind: 'textSet'; condition; set }` — テキスト版の複合(`filterType: 'textSet'`)。`condition` は `{ mode: 'contains' | 'equals' | 'startsWith' | 'endsWith'; value }` / `{ mode: 'blank' | 'notBlank' }` / `null`(判定は大文字小文字無視・`value` は trim 済み)。`set` と AND 結合の規約は numberSet と同一。
   - `{ kind: 'text'; value }` / `{ kind: 'date'; value }` / `{ kind: 'select'; value }`
   - `{ kind: 'custom'; value }` — `column.filterFn` 利用列の自由形値(サーバ解釈は利用側責務)。
   - アクティブなフィルターのみ送出される。キーは安定 queryKey のため昇順整列される。

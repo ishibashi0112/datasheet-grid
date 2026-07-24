@@ -12,6 +12,7 @@ import {
   type CSSProperties,
   type KeyboardEvent,
   type PointerEvent,
+  type ReactNode,
   type RefObject,
 } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
@@ -42,6 +43,16 @@ import {
   type NumberFilterConditionDraft,
   type NumberFilterOperator,
 } from '../logic/numberFilterCondition';
+// 追加(filter-ext C): textSet のテキスト条件エディタ用の純ロジックです(数値版と同型)。
+import {
+  DEFAULT_TEXT_FILTER_DRAFT,
+  TEXT_FILTER_OPERATOR_OPTIONS,
+  buildParsedTextFilterFromDraft,
+  filterOptionsByTextCondition,
+  textFilterOperandCount,
+  type TextFilterConditionDraft,
+  type TextFilterOperator,
+} from '../logic/textFilterCondition';
 
 // 追加: popover のレイアウト情報です。
 export type ColumnFilterPopoverLayout = {
@@ -65,6 +76,7 @@ type ColumnFilterPopoverProps = {
   // 変更(12-A): 'set' を追加します。
   filterType:
     | 'text'
+    | 'textSet'
     | 'number'
     | 'numberSet'
     | 'date'
@@ -76,13 +88,16 @@ type ColumnFilterPopoverProps = {
   //   旧「>=10」式テキストに代わり、演算子セレクト + 値入力(0〜2 個)で編集します。
   numberConditionDraft: NumberFilterConditionDraft | null;
   onNumberConditionDraftChange: (draft: NumberFilterConditionDraft) => void;
-  // 追加(filter-ext B): numberSet の個別クリアです(条件のみ / 値のみ。フッターの
-  //   「クリア」は全消し ── クリアの 3 粒度は合意仕様 §4-2)。
-  onNumberSetConditionClear: () => void;
-  onNumberSetSelectionClear: () => void;
-  // 追加(filter-ext B): numberSet のフッター上に出す複合条件サマリーです
+  // 追加(filter-ext C): textSet のテキスト条件 draft です(textSet 以外は null)。
+  textConditionDraft: TextFilterConditionDraft | null;
+  onTextConditionDraftChange: (draft: TextFilterConditionDraft) => void;
+  // 追加(filter-ext B/C): 複合(numberSet / textSet)の個別クリアです(条件のみ / 値のみ。
+  //   フッターの「クリア」は全消し ── クリアの 3 粒度は合意仕様 §4-2)。
+  onComboConditionClear: () => void;
+  onComboSelectionClear: () => void;
+  // 追加(filter-ext B/C): 複合のフッター上に出すサマリーです
   //   (「10 以上 かつ 3 件を選択」。即時適用のため適用済み記述子から親が生成します)。
-  numberSetSummaryText: string;
+  comboSummaryText: string;
   currentValueText: string;
   layout: ColumnFilterPopoverLayout | null;
   selectOptions: ColumnFilterPopoverOption[];
@@ -435,6 +450,162 @@ function NumberConditionEditor({
   );
 }
 
+// ── text 条件エディタ(filter-ext C) ────────────────────
+// 追加(filter-ext C): 演算子セレクト + テキスト入力(0〜1 個)です。textSet の条件セクションが
+//   使います(数値版 NumberConditionEditor と同型。値入力は最大 1 個なので範囲行はありません)。
+type TextConditionEditorProps = {
+  draft: TextFilterConditionDraft;
+  valueInputRef: RefObject<HTMLInputElement | null>;
+  onDraftChange: (draft: TextFilterConditionDraft) => void;
+  onKeyDown: (
+    event: KeyboardEvent<HTMLSelectElement | HTMLInputElement>,
+  ) => void;
+};
+
+function TextConditionEditor({
+  draft,
+  valueInputRef,
+  onDraftChange,
+  onKeyDown,
+}: TextConditionEditorProps) {
+  const operandCount = textFilterOperandCount(draft.operator);
+  return (
+    <>
+      <select
+        value={draft.operator}
+        onChange={(event) =>
+          onDraftChange({
+            ...draft,
+            operator: event.target.value as TextFilterOperator,
+          })
+        }
+        onKeyDown={onKeyDown}
+        className="ssg-filter-select"
+        aria-label="条件の演算子"
+      >
+        {TEXT_FILTER_OPERATOR_OPTIONS.map((option) => (
+          <option key={option.value} value={option.value}>
+            {option.label}
+          </option>
+        ))}
+      </select>
+      {operandCount > 0 ? (
+        <div className="ssg-filter-cond-values">
+          <input
+            ref={valueInputRef}
+            type="text"
+            value={draft.value}
+            onChange={(event) =>
+              onDraftChange({ ...draft, value: event.target.value })
+            }
+            onKeyDown={onKeyDown}
+            placeholder="値"
+            className="ssg-filter-input"
+            aria-label="条件の値"
+          />
+        </div>
+      ) : (
+        <div className="ssg-filter-meta">この演算子は値入力を使いません</div>
+      )}
+    </>
+  );
+}
+
+// ── 複合フィルター(条件 AND 選択)の共通レイアウト(filter-ext B/C) ──
+// 追加(filter-ext C): numberSet / textSet が共有するセクション構造です
+//   (条件ヘッダ + エディタ + 区切り + 値ヘッダ + Set 一覧 + サマリー)。
+//   条件エディタだけが型ごとに異なるため ReactNode で受けます。
+type ComboFilterLayoutProps = {
+  conditionEditor: ReactNode;
+  conditionActive: boolean;
+  onConditionClear: () => void;
+  // 条件絞り後の候補です(候補連動 §2.3。conditionActive で「一致 / 全」表示を切替)。
+  options: ColumnFilterPopoverOption[];
+  setSelection: ColumnFilterSetSelection | null;
+  searchInputRef: RefObject<HTMLInputElement | null>;
+  onValueToggle: (value: string) => void;
+  onSelectAllChange: (scope: 'all' | string[], nextSelected: boolean) => void;
+  onReplaceSelection: (values: string[]) => void;
+  onRequestClose: () => void;
+  isServerSide: boolean;
+  onSelectionClear: () => void;
+  summaryText: string;
+};
+
+function ComboFilterLayout({
+  conditionEditor,
+  conditionActive,
+  onConditionClear,
+  options,
+  setSelection,
+  searchInputRef,
+  onValueToggle,
+  onSelectAllChange,
+  onReplaceSelection,
+  onRequestClose,
+  isServerSide,
+  onSelectionClear,
+  summaryText,
+}: ComboFilterLayoutProps) {
+  return (
+    <>
+      <div className="ssg-filter-sec-head">
+        <span className="ssg-filter-sec-label">条件</span>
+        <button
+          type="button"
+          onPointerDown={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            onConditionClear();
+          }}
+          onKeyDown={(event) => {
+            event.stopPropagation();
+          }}
+          className="ssg-filter-sec-clear"
+          disabled={!conditionActive}
+        >
+          クリア
+        </button>
+      </div>
+      {conditionEditor}
+      <div className="ssg-filter-sep" />
+      <div className="ssg-filter-sec-head">
+        <span className="ssg-filter-sec-label">値</span>
+        <span className="ssg-filter-sec-meta">
+          {conditionActive ? `一致 ${options.length} 件` : `全 ${options.length} 件`}
+        </span>
+        <button
+          type="button"
+          onPointerDown={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            onSelectionClear();
+          }}
+          onKeyDown={(event) => {
+            event.stopPropagation();
+          }}
+          className="ssg-filter-sec-clear"
+          disabled={setSelection === null}
+        >
+          クリア
+        </button>
+      </div>
+      <SetFilterBody
+        options={options}
+        setSelection={setSelection}
+        searchInputRef={searchInputRef}
+        onValueToggle={onValueToggle}
+        onSelectAllChange={onSelectAllChange}
+        onReplaceSelection={onReplaceSelection}
+        onRequestClose={onRequestClose}
+        isServerSide={isServerSide}
+        selectAllUsesExplicitScope
+      />
+      <div className="ssg-filter-summary">🔽 {summaryText}</div>
+    </>
+  );
+}
+
 // 追加: 列フィルター popover の view component です。
 export function ColumnFilterPopover({
   isOpen,
@@ -444,9 +615,11 @@ export function ColumnFilterPopover({
   draftValue,
   numberConditionDraft,
   onNumberConditionDraftChange,
-  onNumberSetConditionClear,
-  onNumberSetSelectionClear,
-  numberSetSummaryText,
+  textConditionDraft,
+  onTextConditionDraftChange,
+  onComboConditionClear,
+  onComboSelectionClear,
+  comboSummaryText,
   currentValueText,
   layout,
   selectOptions,
@@ -466,10 +639,10 @@ export function ColumnFilterPopover({
   onSetReplaceSelection,
   isServerSide = false,
 }: ColumnFilterPopoverProps) {
-  // 追加(filter-ext B): numberSet の検索ボックス用ローカル ref です。numberSet では
-  //   controller の textInputRef(autofocus 対象)を条件の値入力へ割り当てるため、
+  // 追加(filter-ext B/C): 複合(numberSet / textSet)の検索ボックス用ローカル ref です。
+  //   複合では controller の textInputRef(autofocus 対象)を条件の値入力へ割り当てるため、
   //   SetFilterBody の検索ボックスにはこちらを渡します(early return より前に置くこと)。
-  const numberSetSearchInputRef = useRef<HTMLInputElement | null>(null);
+  const comboSearchInputRef = useRef<HTMLInputElement | null>(null);
 
   if (typeof document === 'undefined' || !isOpen || !layout) {
     return null;
@@ -502,23 +675,35 @@ export function ColumnFilterPopover({
 
   const isSetFilter = filterType === 'set';
   const isNumberSetFilter = filterType === 'numberSet';
-  // 追加(filter-ext B): set / numberSet は即時適用 UI(適用ボタンなし・フッターは
+  const isTextSetFilter = filterType === 'textSet';
+  const isComboFilter = isNumberSetFilter || isTextSetFilter;
+  // 追加(filter-ext B/C): set / 複合は即時適用 UI(適用ボタンなし・フッターは
   //   クリア + 閉じる・現在値テキスト行なし)を共有します。
-  const isImmediateFilter = isSetFilter || isNumberSetFilter;
+  const isImmediateFilter = isSetFilter || isComboFilter;
 
-  // 追加(filter-ext A): number 条件 UI の draft です。draft は親(controller)管理ですが、
-  //   万一 number 系列で null が来ても表示が壊れないよう既定 draft でフォールバックします。
+  // 追加(filter-ext A/C): 条件 UI の draft です。draft は親(controller)管理ですが、
+  //   万一 null が来ても表示が壊れないよう既定 draft でフォールバックします。
   const numberDraft = numberConditionDraft ?? DEFAULT_NUMBER_FILTER_DRAFT;
+  const textDraft = textConditionDraft ?? DEFAULT_TEXT_FILTER_DRAFT;
 
-  // 追加(filter-ext B): 候補連動(合意仕様 §2.3)── 条件 draft から parsed を合成し、
+  // 追加(filter-ext B/C): 候補連動(合意仕様 §2.3)── 条件 draft から parsed を合成し、
   //   Set 候補一覧を条件を満たす値だけに絞ります(条件なしは同一参照で素通し)。
   //   収集は全候補 1 回きり(collector)で、ここは表示時の軽量フィルタです。
-  const numberSetCondition = isNumberSetFilter
+  //   条件の型(数値 / テキスト)が違うため合成と絞りは kind 別に持ち、UI 判定
+  //   (conditionActive)だけを共通化します。
+  const numberComboCondition = isNumberSetFilter
     ? buildParsedNumberFilterFromDraft(numberDraft)
     : null;
-  const numberSetOptions = isNumberSetFilter
-    ? filterOptionsByNumberCondition(selectOptions, numberSetCondition)
-    : selectOptions;
+  const textComboCondition = isTextSetFilter
+    ? buildParsedTextFilterFromDraft(textDraft)
+    : null;
+  const comboConditionActive =
+    numberComboCondition !== null || textComboCondition !== null;
+  const comboOptions = isNumberSetFilter
+    ? filterOptionsByNumberCondition(selectOptions, numberComboCondition)
+    : isTextSetFilter
+      ? filterOptionsByTextCondition(selectOptions, textComboCondition)
+      : selectOptions;
 
   // 追加(filter-ext A): number 条件 UI(演算子 select / 値 input)共通の keyboard 操作です
   //   (Enter = 適用 / Escape = 閉じる。text フィルター入力と同じ規則)。
@@ -558,72 +743,42 @@ export function ColumnFilterPopover({
         <div className="ssg-filter-collecting">
           候補を収集中… {Math.round(optionsProgress * 100)}%
         </div>
-      ) : isNumberSetFilter ? (
-        // 追加(filter-ext B): 条件 AND 選択の複合フィルターです。条件(述語)と値(Set 一覧)を
+      ) : isComboFilter ? (
+        // 追加(filter-ext B/C): 条件 AND 選択の複合フィルターです。条件(述語)と値(Set 一覧)を
         //   縦に並べ、AND で結合します。チェック操作は即時適用・条件も編集で即時適用です。
         //   条件を適用すると値の候補が連動して絞られます(候補外の選択状態は破棄せず保持)。
-        <>
-          <div className="ssg-filter-sec-head">
-            <span className="ssg-filter-sec-label">条件</span>
-            <button
-              type="button"
-              onPointerDown={(event) => {
-                event.preventDefault();
-                event.stopPropagation();
-                onNumberSetConditionClear();
-              }}
-              onKeyDown={(event) => {
-                event.stopPropagation();
-              }}
-              className="ssg-filter-sec-clear"
-              disabled={numberSetCondition === null}
-            >
-              クリア
-            </button>
-          </div>
-          <NumberConditionEditor
-            draft={numberDraft}
-            valueInputRef={textInputRef}
-            onDraftChange={onNumberConditionDraftChange}
-            onKeyDown={handleConditionKeyDown}
-          />
-          <div className="ssg-filter-sep" />
-          <div className="ssg-filter-sec-head">
-            <span className="ssg-filter-sec-label">値</span>
-            <span className="ssg-filter-sec-meta">
-              {numberSetCondition
-                ? `一致 ${numberSetOptions.length} 件`
-                : `全 ${numberSetOptions.length} 件`}
-            </span>
-            <button
-              type="button"
-              onPointerDown={(event) => {
-                event.preventDefault();
-                event.stopPropagation();
-                onNumberSetSelectionClear();
-              }}
-              onKeyDown={(event) => {
-                event.stopPropagation();
-              }}
-              className="ssg-filter-sec-clear"
-              disabled={setSelection === null}
-            >
-              クリア
-            </button>
-          </div>
-          <SetFilterBody
-            options={numberSetOptions}
-            setSelection={setSelection}
-            searchInputRef={numberSetSearchInputRef}
-            onValueToggle={onSetValueToggle}
-            onSelectAllChange={onSetSelectAllChange}
-            onReplaceSelection={onSetReplaceSelection}
-            onRequestClose={onRequestClose}
-            isServerSide={isServerSide}
-            selectAllUsesExplicitScope
-          />
-          <div className="ssg-filter-summary">🔽 {numberSetSummaryText}</div>
-        </>
+        //   レイアウトは ComboFilterLayout(共有)、条件エディタだけが型ごとに異なります。
+        <ComboFilterLayout
+          conditionEditor={
+            isNumberSetFilter ? (
+              <NumberConditionEditor
+                draft={numberDraft}
+                valueInputRef={textInputRef}
+                onDraftChange={onNumberConditionDraftChange}
+                onKeyDown={handleConditionKeyDown}
+              />
+            ) : (
+              <TextConditionEditor
+                draft={textDraft}
+                valueInputRef={textInputRef}
+                onDraftChange={onTextConditionDraftChange}
+                onKeyDown={handleConditionKeyDown}
+              />
+            )
+          }
+          conditionActive={comboConditionActive}
+          onConditionClear={onComboConditionClear}
+          options={comboOptions}
+          setSelection={setSelection}
+          searchInputRef={comboSearchInputRef}
+          onValueToggle={onSetValueToggle}
+          onSelectAllChange={onSetSelectAllChange}
+          onReplaceSelection={onSetReplaceSelection}
+          onRequestClose={onRequestClose}
+          isServerSide={isServerSide}
+          onSelectionClear={onComboSelectionClear}
+          summaryText={comboSummaryText}
+        />
       ) : isSetFilter ? (
         // 追加(12-A): AG Grid の Set Filter 相当 UI です(チェック操作は即時適用)。
         <SetFilterBody

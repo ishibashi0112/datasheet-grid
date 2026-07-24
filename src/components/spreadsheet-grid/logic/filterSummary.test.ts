@@ -128,6 +128,31 @@ describe('describeColumnFilterValue', () => {
     ).toBe('フィルターなし');
   });
 
+  // 追加(filter-ext C): textSet(テキスト条件 AND 選択)の複合要約です。
+  it('textSet も条件と選択を「かつ」で結合する(条件表示はテキスト演算子)', () => {
+    expect(
+      describeColumnFilterValue({
+        kind: 'textSet',
+        condition: { mode: 'contains', value: 'ボルト' },
+        set: { mode: 'exclude', values: ['六角ボルト M8'] },
+      }),
+    ).toBe('"ボルト" を含む かつ 1 件を除外');
+    expect(
+      describeColumnFilterValue({
+        kind: 'textSet',
+        condition: { mode: 'startsWith', value: '六角' },
+        set: null,
+      }),
+    ).toBe('"六角" で始まる');
+    expect(
+      describeColumnFilterValue({
+        kind: 'textSet',
+        condition: null,
+        set: { values: ['A', 'B', 'C'] },
+      }),
+    ).toBe('3 件を選択');
+  });
+
   it('custom は非空 string なら「"x"」(trim)、それ以外は「カスタム条件」', () => {
     expect(
       describeColumnFilterValue({ kind: 'custom', value: ' my-cond ' }),

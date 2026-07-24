@@ -4,7 +4,9 @@ import type {
   NumberColumnFilterValue,
   NumberSetColumnFilterValue,
   ParsedNumberFilter,
+  ParsedTextFilter,
   SetColumnFilterValue,
+  TextSetColumnFilterValue,
 } from '../model/gridTypes';
 import { getCellValue } from '../utils/permissions';
 
@@ -39,6 +41,18 @@ export const isNumberSetColumnFilterValue = (
   value: ColumnFilterValue | undefined,
 ): value is NumberSetColumnFilterValue => value?.kind === 'numberSet';
 
+// 追加(filter-ext C): textSet(テキスト条件 AND 選択)記述子の type guard です。
+export const isTextSetColumnFilterValue = (
+  value: ColumnFilterValue | undefined,
+): value is TextSetColumnFilterValue => value?.kind === 'textSet';
+
+// 追加(filter-ext C): セル値の「空白」判定です(null / undefined / trim 後空文字)。
+//   number / text の blank・notBlank 演算子と、比較の空白不参加(coerce)が同じ定義を共有します。
+export const isBlankCellValue = (cellValue: unknown): boolean =>
+  cellValue === null ||
+  cellValue === undefined ||
+  String(cellValue).trim() === '';
+
 // 追加(12-A): 列フィルター値が「有効」かを判定する共通 helper です。
 // 変更理由: 従来は GridHeaderRow(フィルター済みバッジ) / gridBarHelpers(有効件数) /
 //   列フィルタの適用処理がそれぞれ String(value).trim() で判定していました。
@@ -59,9 +73,10 @@ export const isActiveColumnFilterValue = (
     case 'number':
     case 'custom':
       return true;
-    // 追加(filter-ext B): numberSet は条件か set 制約のどちらかがあれば有効です
+    // 追加(filter-ext B/C): 複合(条件 AND 選択)は条件か set 制約のどちらかがあれば有効です
     //   (両方 null は commit 側で clear へ正規化済み。ここは防御判定)。
     case 'numberSet':
+    case 'textSet':
       return value.condition !== null || value.set !== null;
     case 'select':
       return value.value.length > 0;
@@ -96,11 +111,7 @@ export const matchesParsedNumberFilter = (
   cellValue: unknown,
 ): boolean => {
   if (parsed.mode === 'blank' || parsed.mode === 'notBlank') {
-    const isBlank =
-      cellValue === null ||
-      cellValue === undefined ||
-      String(cellValue).trim() === '';
-    return isBlank === (parsed.mode === 'blank');
+    return isBlankCellValue(cellValue) === (parsed.mode === 'blank');
   }
   const numericCellValue = coerceNumberFilterCellValue(cellValue);
   if (!Number.isFinite(numericCellValue)) {
@@ -123,6 +134,31 @@ export const matchesParsedNumberFilter = (
     case '=':
     default:
       return numericCellValue === parsed.value;
+  }
+};
+
+// 追加(filter-ext C): 単一値 vs ParsedTextFilter の合否です(matchesParsedNumberFilter の
+//   テキスト版)。判定は大文字小文字無視(既存 text フィルターの contains と同じ規則)で、
+//   textSet の候補連動と行 predicate(compileParsedTextPredicate)が同じ意味論を共有します。
+export const matchesParsedTextFilter = (
+  parsed: ParsedTextFilter,
+  cellValue: unknown,
+): boolean => {
+  if (parsed.mode === 'blank' || parsed.mode === 'notBlank') {
+    return isBlankCellValue(cellValue) === (parsed.mode === 'blank');
+  }
+  const normalizedCell = String(cellValue ?? '').toLowerCase();
+  const needle = parsed.value.toLowerCase();
+  switch (parsed.mode) {
+    case 'equals':
+      return normalizedCell === needle;
+    case 'startsWith':
+      return normalizedCell.startsWith(needle);
+    case 'endsWith':
+      return normalizedCell.endsWith(needle);
+    case 'contains':
+    default:
+      return normalizedCell.includes(needle);
   }
 };
 
@@ -225,10 +261,11 @@ export const columnFilterValueToDraftText = (
     case 'date':
     case 'select':
       return value.value;
-    // 変更(filter-ext B): numberSet は構造化 UI(演算子 + チェックボックス)のため
-    //   text 入力 draft を持ちません(set / custom と同じ)。
+    // 変更(filter-ext B/C): numberSet / textSet は構造化 UI(演算子 + チェックボックス)の
+    //   ため text 入力 draft を持ちません(set / custom と同じ)。
     case 'set':
     case 'numberSet':
+    case 'textSet':
     case 'custom':
       return '';
   }
@@ -255,11 +292,7 @@ export const applyNumberFilter = (
   // 追加(filter-ext A): blank / notBlank は数値化前のセル生値で判定します
   //   (parse 構文からは生成されませんが、ParsedNumberFilter の網羅として処理します)。
   if (parsedFilter.mode === 'blank' || parsedFilter.mode === 'notBlank') {
-    const isBlank =
-      cellValue === null ||
-      cellValue === undefined ||
-      String(cellValue).trim() === '';
-    return isBlank === (parsedFilter.mode === 'blank');
+    return isBlankCellValue(cellValue) === (parsedFilter.mode === 'blank');
   }
 
   // 変更(filter-ext A): 空白セルは NaN(比較不参加)へ統一します(coerce の注記参照)。
@@ -321,14 +354,7 @@ const compileParsedNumberPredicate = <T,>(
   //   非数値文字列を区別できないため使いません。
   if (parsed.mode === 'blank' || parsed.mode === 'notBlank') {
     const wantBlank = parsed.mode === 'blank';
-    return (row) => {
-      const cellValue = getCellValue(row, column);
-      const isBlank =
-        cellValue === null ||
-        cellValue === undefined ||
-        String(cellValue).trim() === '';
-      return isBlank === wantBlank;
-    };
+    return (row) => isBlankCellValue(getCellValue(row, column)) === wantBlank;
   }
   if (parsed.mode === 'range') {
     const { min, max } = parsed;
@@ -368,6 +394,35 @@ const compileParsedNumberPredicate = <T,>(
       case '=':
       default:
         return numericCellValue === threshold;
+    }
+  };
+};
+
+// 追加(filter-ext C): ParsedTextFilter 1 件を行 predicate へコンパイルします(textSet の
+//   condition 用)。合否は matchesParsedTextFilter と等価で、needle の toLowerCase を
+//   行ループ外で 1 回だけ行うコンパイル版です。
+const compileParsedTextPredicate = <T,>(
+  parsed: ParsedTextFilter,
+  column: GridColumn<T>,
+): CompiledColumnFilterPredicate<T> => {
+  if (parsed.mode === 'blank' || parsed.mode === 'notBlank') {
+    const wantBlank = parsed.mode === 'blank';
+    return (row) => isBlankCellValue(getCellValue(row, column)) === wantBlank;
+  }
+  const needle = parsed.value.toLowerCase();
+  const mode = parsed.mode;
+  return (row) => {
+    const normalizedCell = String(getCellValue(row, column) ?? '').toLowerCase();
+    switch (mode) {
+      case 'equals':
+        return normalizedCell === needle;
+      case 'startsWith':
+        return normalizedCell.startsWith(needle);
+      case 'endsWith':
+        return normalizedCell.endsWith(needle);
+      case 'contains':
+      default:
+        return normalizedCell.includes(needle);
     }
   };
 };
@@ -436,13 +491,19 @@ const compileSingleColumnFilter = <T,>(
       return compileParsedNumberPredicate(parsed, column, numericKey);
     }
 
-    // 追加(filter-ext B): 条件 AND 選択の複合です。condition(述語)と set(列挙)を
+    // 追加(filter-ext B/C): 条件 AND 選択の複合です。condition(述語)と set(列挙)を
     //   それぞれコンパイルし、両方あれば AND で合成します。片方 null はもう片方のみ、
     //   両方 null は無効(null 返却 = 行ループから除外。commit 側で clear 済みの防御)。
-    case 'numberSet': {
-      const conditionPredicate = value.condition
-        ? compileParsedNumberPredicate(value.condition, column, numericKey)
-        : null;
+    case 'numberSet':
+    case 'textSet': {
+      const conditionPredicate =
+        value.kind === 'numberSet'
+          ? value.condition
+            ? compileParsedNumberPredicate(value.condition, column, numericKey)
+            : null
+          : value.condition
+            ? compileParsedTextPredicate(value.condition, column)
+            : null;
       const setPredicate = value.set
         ? compileSetMembershipPredicate(value.set.mode, value.set.values, column)
         : null;

@@ -367,8 +367,9 @@ const createInitialColumns = (
       key: 'partName',
       title: '品名',
       width: 220,
-      // 注記(12-A): text フィルター(部分一致 + 適用ボタン)の動作確認用に残します。
-      filterType: 'text',
+      // 変更(filter-ext C): 品名は textSet(テキスト条件 AND 選択の複合)のデモにします
+      //   (text 単独 UI の動作確認は備考列に残っています)。
+      filterType: 'textSet',
       pinned: "left" ,
       // 追加(②-S1 デモ): suppressAutoSize の効き確認用。ON で autoSize 対象外(width 維持)。
       suppressAutoSize: suppressNameAutoSize ? true : undefined,

@@ -15,6 +15,7 @@ import { createRef } from 'react';
 
 import { ColumnFilterPopover } from './ColumnFilterPopover';
 import type { NumberFilterConditionDraft } from '../logic/numberFilterCondition';
+import type { TextFilterConditionDraft } from '../logic/textFilterCondition';
 
 afterEach(() => {
   cleanup();
@@ -29,10 +30,13 @@ const makeProps = () => ({
   // 追加(filter-ext A): number 条件 draft(set フィルターでは未使用のため null)。
   numberConditionDraft: null,
   onNumberConditionDraftChange: vi.fn(),
-  // 追加(filter-ext B): numberSet の個別クリアとサマリー(set フィルターでは未使用)。
-  onNumberSetConditionClear: vi.fn(),
-  onNumberSetSelectionClear: vi.fn(),
-  numberSetSummaryText: 'フィルターなし',
+  // 追加(filter-ext C): textSet の条件 draft(set フィルターでは未使用のため null)。
+  textConditionDraft: null,
+  onTextConditionDraftChange: vi.fn(),
+  // 追加(filter-ext B/C): 複合の個別クリアとサマリー(set フィルターでは未使用)。
+  onComboConditionClear: vi.fn(),
+  onComboSelectionClear: vi.fn(),
+  comboSummaryText: 'フィルターなし',
   currentValueText: '',
   layout: { top: 0, left: 0, width: 260 },
   selectOptions: [
@@ -204,7 +208,7 @@ const makeNumberSetProps = (draft: NumberFilterConditionDraft) => ({
     { label: '12', value: '12' },
     { label: '48', value: '48' },
   ],
-  numberSetSummaryText: '10 以上 かつ 1 件を除外',
+  comboSummaryText: '10 以上 かつ 1 件を除外',
 });
 
 describe('ColumnFilterPopover の numberSet 複合 UI(filter-ext B)', () => {
@@ -243,9 +247,9 @@ describe('ColumnFilterPopover の numberSet 複合 UI(filter-ext B)', () => {
     const clearButtons = screen.getAllByRole('button', { name: 'クリア' });
     expect(clearButtons).toHaveLength(3);
     fireEvent.pointerDown(clearButtons[0]);
-    expect(props.onNumberSetConditionClear).toHaveBeenCalledTimes(1);
+    expect(props.onComboConditionClear).toHaveBeenCalledTimes(1);
     fireEvent.pointerDown(clearButtons[1]);
-    expect(props.onNumberSetSelectionClear).toHaveBeenCalledTimes(1);
+    expect(props.onComboSelectionClear).toHaveBeenCalledTimes(1);
     fireEvent.pointerDown(clearButtons[2]);
     expect(props.onSetClear).toHaveBeenCalledTimes(1);
   });
@@ -273,5 +277,60 @@ describe('ColumnFilterPopover の numberSet 複合 UI(filter-ext B)', () => {
     const props = makeNumberSetProps(numberDraft({ value1: '10' }));
     render(<ColumnFilterPopover {...props} />);
     expect(screen.getByText(/10 以上 かつ 1 件を除外/)).toBeTruthy();
+  });
+});
+
+// 追加(filter-ext C): textSet(テキスト条件 AND 選択)UI の回帰テストです。
+//   レイアウトは numberSet と共有(ComboFilterLayout)のため、テキスト固有の
+//   候補連動と draft 通知だけを検証します。
+const makeTextSetProps = (draft: TextFilterConditionDraft) => ({
+  ...makeProps(),
+  filterType: 'textSet' as const,
+  textConditionDraft: draft,
+  selectOptions: [
+    { label: '(空白)', value: '' },
+    { label: '六角ボルト M6', value: '六角ボルト M6' },
+    { label: '六角ボルト M8', value: '六角ボルト M8' },
+    { label: 'アイボルト M10', value: 'アイボルト M10' },
+    { label: 'ナット M6', value: 'ナット M6' },
+  ],
+  comboSummaryText: '"ボルト" を含む',
+});
+
+describe('ColumnFilterPopover の textSet 複合 UI(filter-ext C)', () => {
+  it('テキスト条件で候補が連動して絞られる', () => {
+    const props = makeTextSetProps({ operator: 'contains', value: 'ボルト' });
+    render(<ColumnFilterPopover {...props} />);
+    // 「ボルト」を含む → 3 件((空白) と「ナット M6」は消える)。
+    expect(screen.getByText('一致 3 件')).toBeTruthy();
+    expect(screen.getByText('選択中: 3 / 3 件')).toBeTruthy();
+  });
+
+  it('演算子 / 値の編集が draft へ通知される', () => {
+    const props = makeTextSetProps({ operator: 'contains', value: '' });
+    render(<ColumnFilterPopover {...props} />);
+    fireEvent.change(screen.getByLabelText('条件の演算子'), {
+      target: { value: 'startsWith' },
+    });
+    expect(props.onTextConditionDraftChange).toHaveBeenCalledWith({
+      operator: 'startsWith',
+      value: '',
+    });
+    fireEvent.change(screen.getByLabelText('条件の値'), {
+      target: { value: '六角' },
+    });
+    expect(props.onTextConditionDraftChange).toHaveBeenCalledWith({
+      operator: 'contains',
+      value: '六角',
+    });
+  });
+
+  it('空白系演算子では値入力が消える', () => {
+    const props = makeTextSetProps({ operator: 'blank', value: '' });
+    render(<ColumnFilterPopover {...props} />);
+    expect(screen.queryByLabelText('条件の値')).toBeNull();
+    expect(screen.getByText('この演算子は値入力を使いません')).toBeTruthy();
+    // blank 条件 → 候補は (空白) のみ。
+    expect(screen.getByText('一致 1 件')).toBeTruthy();
   });
 });

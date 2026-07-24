@@ -21,6 +21,7 @@ import {
   isNumberColumnFilterValue,
   isSetColumnFilterValue,
   matchesParsedNumberFilter,
+  matchesParsedTextFilter,
   parseNumberFilterExpression,
   rowMatchesGlobalText,
   type RowOrder,
@@ -33,6 +34,7 @@ import type {
   NumberSetColumnFilterValue,
   ParsedNumberFilter,
   SetColumnFilterValue,
+  TextSetColumnFilterValue,
 } from '../model/gridTypes';
 
 type Row = Record<string, unknown>;
@@ -675,6 +677,83 @@ describe('filterOrderByColumns (filter-ext B: numberSet 複合)', () => {
     ).toBe(false);
     expect(columnFilterUsesNumericKey({ kind: 'text', value: 'a' })).toBe(false);
     expect(columnFilterUsesNumericKey(undefined)).toBe(false);
+  });
+});
+
+// 追加(filter-ext C): textSet(テキスト条件 AND 選択)複合フィルターの predicate 仕様です。
+//   合成規則(AND / 片方 null / 両方 null)は numberSet と共通実装のため、ここでは
+//   テキスト条件固有の意味論(演算子 / 大小無視 / 空白)を中心に検証します。
+describe('filterOrderByColumns (filter-ext C: textSet 複合)', () => {
+  const textSetCol = (key: string): GridColumn<Row> => ({
+    key,
+    width: 100,
+    filterType: 'textSet',
+  });
+  const tsRows: Row[] = [
+    { t: '六角ボルト M6' },  // 0
+    { t: '六角ボルト M8' },  // 1
+    { t: 'アイボルト M10' }, // 2
+    { t: 'ナット M6' },      // 3
+    { t: null },             // 4: 空白
+    { t: '' },               // 5: 空白
+  ];
+  const order = createSourceOrder(tsRows.length);
+  const columns = [textSetCol('t')];
+  const run = (value: TextSetColumnFilterValue): number[] =>
+    asArray(filterOrderByColumns(tsRows, order, columns, { t: value }));
+
+  it('condition AND set(「ボルト」を含む かつ M8 を除外)', () => {
+    expect(
+      run({
+        kind: 'textSet',
+        condition: { mode: 'contains', value: 'ボルト' },
+        set: { mode: 'exclude', values: ['六角ボルト M8'] },
+      }),
+    ).toEqual([0, 2]);
+  });
+
+  it('演算子ごとの合否(equals / startsWith / endsWith は大文字小文字無視)', () => {
+    expect(
+      run({ kind: 'textSet', condition: { mode: 'startsWith', value: '六角' }, set: null }),
+    ).toEqual([0, 1]);
+    expect(
+      run({ kind: 'textSet', condition: { mode: 'endsWith', value: 'm6' }, set: null }),
+    ).toEqual([0, 3]);
+    expect(
+      run({
+        kind: 'textSet',
+        condition: { mode: 'equals', value: 'ナット m6' },
+        set: null,
+      }),
+    ).toEqual([3]);
+  });
+
+  it('blank / notBlank(null と空文字が空白)', () => {
+    expect(
+      run({ kind: 'textSet', condition: { mode: 'blank' }, set: null }),
+    ).toEqual([4, 5]);
+    expect(
+      run({ kind: 'textSet', condition: { mode: 'notBlank' }, set: null }),
+    ).toEqual([0, 1, 2, 3]);
+  });
+
+  it('両方 null は無効(同一参照)、matchesParsedTextFilter は行 predicate と一致', () => {
+    const inactive: TextSetColumnFilterValue = {
+      kind: 'textSet',
+      condition: null,
+      set: null,
+    };
+    expect(isActiveColumnFilterValue(inactive)).toBe(false);
+    expect(filterOrderByColumns(tsRows, order, columns, { t: inactive })).toBe(
+      order,
+    );
+
+    const condition = { mode: 'contains', value: 'ボルト' } as const;
+    const viaOrder = run({ kind: 'textSet', condition, set: null });
+    const viaSingle = tsRows
+      .map((_row, index) => index)
+      .filter((index) => matchesParsedTextFilter(condition, tsRows[index].t));
+    expect(viaOrder).toEqual(viaSingle);
   });
 });
 

@@ -9,10 +9,10 @@ description: 列フィルター(text / number / date / select / set / custom)と
 
 <FilterSortDemo />
 
-- **商品名** — `text`:部分一致
+- **商品名** — `textSet`:**条件 AND 選択**の複合フィルター(テキスト版)。「を含む / に等しい / で始まる / で終わる / 空白 / 空白でない」の条件と Set 一覧を組み合わせます
 - **カテゴリ** — `select`:単一選択(候補は rows から自動収集)
 - **ステータス** — `set`:チェックボックスの複数選択(Excel 風)
-- **数量** — `numberSet`:**条件 AND 選択**の複合フィルター。数値条件(以上 / 範囲 など)と Set 一覧を 1 つの popover で組み合わせます(例:「10 以上のうち、12 だけ除外」)
+- **数量** — `numberSet`:**条件 AND 選択**の複合フィルター(数値版)。数値条件(以上 / 範囲 など)と Set 一覧を 1 つの popover で組み合わせます(例:「10 以上のうち、12 だけ除外」)
 - **単価** — `number`:演算子(以上 / より大きい / 以下 / 未満 / に等しい / に等しくない / 範囲 / 空白 / 空白でない)を選び、値を入力して絞り込みます
 - **登録日** — `date`:日付一致
 
@@ -22,7 +22,7 @@ description: 列フィルター(text / number / date / select / set / custom)と
 
 ```tsx
 const columns: GridColumn<Row>[] = [
-  { key: 'name', title: '商品名', width: 180, filterType: 'text' },
+  { key: 'name', title: '商品名', width: 180, filterType: 'textSet' },
   { key: 'category', title: 'カテゴリ', width: 130, filterType: 'select' },
   { key: 'status', title: 'ステータス', width: 130, filterType: 'set' },
   { key: 'qty', title: '数量', width: 110, filterType: 'numberSet' },
@@ -31,9 +31,10 @@ const columns: GridColumn<Row>[] = [
 ]
 ```
 
-- `select` / `set` / `numberSet` の候補は rows から自動収集されます。明示したい場合は `filterOptions: [{ label, value }]` を指定します。
+- `select` / `set` / `numberSet` / `textSet` の候補は rows から自動収集されます。明示したい場合は `filterOptions: [{ label, value }]` を指定します。
 - `number` / `numberSet` の比較 / 範囲では**空白セル(null / 空文字)は常に不一致**です(0 とは区別されます)。空白行の抽出・除外は演算子「空白 / 空白でない」か、Set 一覧の「(空白)」項目を使います。
-- `numberSet` では条件を適用すると **Set 候補が条件を満たす値だけに連動して絞られます**。候補から外れた値のチェック状態は破棄されず、条件を戻せば復活します(条件の試行錯誤が可逆)。クリアは「条件のみ」「値のみ」「全部」の 3 粒度です。
+- `numberSet` / `textSet` では条件を適用すると **Set 候補が条件を満たす値だけに連動して絞られます**。候補から外れた値のチェック状態は破棄されず、条件を戻せば復活します(条件の試行錯誤が可逆)。クリアは「条件のみ」「値のみ」「全部」の 3 粒度です。
+- `textSet` の条件(Set の検索欄との違い): 検索欄は「候補を選ぶための絞り込み」で、述語としては残りません。「◯◯ を含む」を**述語として保持**したい(後から増えた該当データも自動で拾いたい)場合は条件欄を使います。
 - 独自の絞り込みロジックは `filterType: 'custom'` + `filterFn: (row, filterValue) => boolean` で書けます。
 - ソート / フィルター / グローバルフィルターは `enableSorting` / `enableColumnFilter` / `enableGlobalFilter`(いずれも既定 `true`)で無効化できます。
 
