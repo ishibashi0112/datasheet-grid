@@ -1,5 +1,7 @@
 import { createPortal } from 'react-dom';
 import { cx } from '../logic/cx';
+// 追加(filter-ext E): 'auto' を解決した後の実効フィルター種別です。
+import type { ColumnFilterUiType } from '../model/gridTypes';
 // 変更(12-A): set フィルター(検索 + Select All + チェックボックス一覧)用に
 //             hooks と useVirtualizer を追加 import します。
 //             候補リストは品番のように 5,000 件規模になり得るため、
@@ -90,16 +92,8 @@ type ColumnFilterPopoverProps = {
   themeClassName?: string;
   title: string;
   // 変更(12-A): 'set' を追加します。
-  filterType:
-    | 'text'
-    | 'textSet'
-    | 'number'
-    | 'numberSet'
-    | 'date'
-    | 'dateSet'
-    | 'select'
-    | 'set'
-    | 'custom';
+  // 変更(filter-ext E): 'auto' を含まない「解決済み」種別を受けます(解決は controller の責務)。
+  filterType: ColumnFilterUiType;
   draftValue: string;
   // 追加(filter-ext A): number 列の構造化条件 draft です(number / numberSet 以外は null)。
   //   旧「>=10」式テキストに代わり、演算子セレクト + 値入力(0〜2 個)で編集します。

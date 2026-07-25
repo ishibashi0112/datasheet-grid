@@ -6,7 +6,11 @@ import {
     useState,
   type RefObject,
 } from 'react';
-import type { ColumnFilterValue, GridColumn } from '../model/gridTypes';
+import type {
+  ColumnFilterUiType,
+  ColumnFilterValue,
+  GridColumn,
+} from '../model/gridTypes';
 // 追加(記述子化): number 記述子を含む列フィルター値を draft 用テキストへ整形します。
 import {
   columnFilterValueToDraftText,
@@ -37,6 +41,10 @@ import {
 // 追加: 列フィルターポップオーバーの内部状態です。
 type HeaderFilterPopoverState = {
   columnKey: string;
+  // 追加(filter-ext E): この popover で使う「解決済み」フィルター種別です。
+  //   column.filterType が 'auto' の列は open 時に 1 回だけ解決し、開いている間はこの値で固定します
+  //   (以後の再オープンでも同じ結果になるよう、解決結果のキャッシュは呼び出し側が持ちます)。
+  filterType: ColumnFilterUiType;
   draftValue: string;
   // 追加(filter-ext A): number 系列の構造化条件 draft です(number / numberSet 以外は null)。
   numberDraft: NumberFilterConditionDraft | null;
@@ -58,6 +66,9 @@ type UseFilterPopoverControllerArgs<T> = {
   columnFilterValues: Record<string, ColumnFilterValue>;
   enableColumnFilter: boolean;
   gridRootRef: RefObject<HTMLDivElement | null>;
+  // 追加(filter-ext E): filterType: 'auto' を実効種別へ解決するコールバックです
+  //   (未指定なら column.filterType をそのまま使う = 従来挙動)。open 時に 1 回だけ呼ばれます。
+  resolveColumnFilterType?: (column: GridColumn<T>) => ColumnFilterUiType;
 };
 
 const POPUP_WIDTH = 240;
@@ -77,6 +88,7 @@ export const useFilterPopoverController = <T,>({
   columnFilterValues,
   enableColumnFilter,
   gridRootRef,
+  resolveColumnFilterType,
 }: UseFilterPopoverControllerArgs<T>) => {
   const [filterPopoverState, setFilterPopoverState] =
     useState<HeaderFilterPopoverState | null>(null);
@@ -92,14 +104,25 @@ export const useFilterPopoverController = <T,>({
   const isFilterPopoverOpen = filterPopoverState !== null;
   const openedFilterColumnKey = filterPopoverState?.columnKey ?? null;
 
-  const openedFilterColumn = useMemo(
-    () =>
-      openedFilterColumnKey
-        ? visibleColumns.find((column) => column.key === openedFilterColumnKey) ??
-          null
-        : null,
-    [openedFilterColumnKey, visibleColumns],
-  );
+  // 追加(filter-ext E): open 時に解決した実効フィルター種別です(未オープンは null)。
+  //   'auto' が下流(popover / 候補収集 / commit 経路)へ漏れないための単一の窓口です。
+  const openedFilterType = filterPopoverState?.filterType ?? null;
+
+  // 変更(filter-ext E): 開いている列は「filterType を解決済みへ差し替えたコピー」を返します。
+  //   下流(候補収集 collector / SpreadsheetGrid のハンドラ群)は column.filterType を見て
+  //   分岐するため、ここで一度だけ解決しておけば 'auto' の考慮が不要になります。
+  const openedFilterColumn = useMemo(() => {
+    if (!openedFilterColumnKey) {
+      return null;
+    }
+    const column =
+      visibleColumns.find((candidate) => candidate.key === openedFilterColumnKey) ??
+      null;
+    if (!column || !openedFilterType || column.filterType === openedFilterType) {
+      return column;
+    }
+    return { ...column, filterType: openedFilterType };
+  }, [openedFilterColumnKey, visibleColumns, openedFilterType]);
 
   // 追加: anchor button の位置から portal popover の fixed 座標を計算します。
   const updateFilterPopoverLayout = useCallback(() => {
@@ -182,17 +205,26 @@ export const useFilterPopoverController = <T,>({
         : null;
       filterPopoverAnchorRef.current = anchorEl;
 
+      // 追加(filter-ext E): 'auto' 列の実効種別をここで 1 回だけ解決します(以後この popover の
+      //   ライフサイクル中は固定。再オープン時の同一性は解決器側のキャッシュが担保します)。
+      //   解決器未指定 / 'auto' 以外はそのまま(従来挙動)。
+      const filterType: ColumnFilterUiType =
+        column.filterType === 'auto' && resolveColumnFilterType
+          ? resolveColumnFilterType(column)
+          : ((column.filterType ?? 'text') as ColumnFilterUiType);
+
       // 追加(filter-ext A): number 列は構造化条件 draft(演算子 + 値)で編集します。
       //   既存フィルター値の parsed から復元し、未設定 / 旧 contains 値は既定 draft です。
       // 変更(filter-ext B/C): numberSet / textSet 列は condition から復元します
       //   (逆引きはそれぞれの共有実装)。
+      // 変更(filter-ext E): 分岐は解決済み filterType を見ます(auto 列でも正しい draft を張る)。
       const currentValue = columnFilterValues[column.key];
       const numberDraft =
-        column.filterType === 'number'
+        filterType === 'number'
           ? numberFilterValueToConditionDraft(
               isNumberColumnFilterValue(currentValue) ? currentValue : undefined,
             )
-          : column.filterType === 'numberSet'
+          : filterType === 'numberSet'
             ? parsedNumberFilterToConditionDraft(
                 isNumberSetColumnFilterValue(currentValue)
                   ? currentValue.condition
@@ -200,7 +232,7 @@ export const useFilterPopoverController = <T,>({
               )
             : null;
       const textDraft =
-        column.filterType === 'textSet'
+        filterType === 'textSet'
           ? parsedTextFilterToConditionDraft(
               isTextSetColumnFilterValue(currentValue)
                 ? currentValue.condition
@@ -208,7 +240,7 @@ export const useFilterPopoverController = <T,>({
             )
           : null;
       const dateDraft =
-        column.filterType === 'dateSet'
+        filterType === 'dateSet'
           ? parsedDateFilterToConditionDraft(
               isDateSetColumnFilterValue(currentValue)
                 ? currentValue.condition
@@ -218,6 +250,7 @@ export const useFilterPopoverController = <T,>({
 
       setFilterPopoverState({
         columnKey: column.key,
+        filterType,
         // 変更(記述子化): number 記述子は String() で "[object Object]" になるため、
         //   raw を取り出す columnFilterValueToDraftText 経由にします(他種別は従来と同値)。
         draftValue: columnFilterValueToDraftText(currentValue),
@@ -226,7 +259,12 @@ export const useFilterPopoverController = <T,>({
         dateDraft,
       });
     },
-    [columnFilterValues, enableColumnFilter, gridRootRef],
+    [
+      columnFilterValues,
+      enableColumnFilter,
+      gridRootRef,
+      resolveColumnFilterType,
+    ],
   );
 
   // 追加: 列フィルターポップオーバーを閉じます。
@@ -407,6 +445,9 @@ export const useFilterPopoverController = <T,>({
     filterSelectRef,
     isFilterPopoverOpen,
     openedFilterColumn,
+    // 追加(filter-ext E): 解決済みフィルター種別('auto' を含まない)。popover / 各 commit 経路は
+    //   column.filterType ではなくこちらで分岐します(未オープンは null)。
+    openedFilterType,
     openColumnFilterPopover,
     closeColumnFilterPopover,
     updateFilterPopoverDraft,

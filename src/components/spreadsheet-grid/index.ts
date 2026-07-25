@@ -37,6 +37,10 @@ export type {
   GridGroupRow,
   // select / set フィルターの候補。
   GridSelectFilterOption,
+  // 追加(filter-ext E): 列定義の filterType に渡せる値('auto' 込み)と、
+  //   解決後の実効 UI 種別('auto' なし)です。
+  ColumnFilterTypeOption,
+  ColumnFilterUiType,
   // セル / ヘッダーのカスタム描画コンテキスト(renderCell / renderHeader 引数)。
   CellRenderContext,
   HeaderRenderContext,

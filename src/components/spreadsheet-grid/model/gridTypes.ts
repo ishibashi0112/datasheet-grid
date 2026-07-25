@@ -206,6 +206,27 @@ export type GridSelectFilterOption = {
   value: string;
 };
 
+// 追加(filter-ext E): フィルター popover が実際に描画する UI 種別です('auto' を含まない
+//   「解決済み」の型)。column.filterType が 'auto' のときは開いた時点で本型のいずれかへ
+//   解決され(logic/inferFilterType.ts)、以降の popover / 候補収集 / commit 経路は
+//   すべて解決済みの値で分岐します。
+export type ColumnFilterUiType =
+  | 'text'
+  | 'textSet'
+  | 'number'
+  | 'numberSet'
+  | 'date'
+  | 'dateSet'
+  | 'select'
+  | 'set'
+  | 'custom';
+
+// 追加(filter-ext E): 列定義で指定できるフィルター種別です。'auto' は列の値(と editor 種別)
+//   から numberSet / textSet / dateSet を自動判定する opt-in オプションで、判定は
+//   「popover を初回に開いた時点」で 1 回だけ行われ、以後その列では固定されます
+//   (適用済みフィルター値がある列は、その記述子の kind が優先されます)。
+export type ColumnFilterTypeOption = ColumnFilterUiType | 'auto';
+
 // 追加(12-A): set フィルター(AG Grid の Set Filter 相当)の列フィルター値です。
 //             columnFilters[columnKey] にこのオブジェクトが入っているときだけ
 //             set フィルターが「有効」です。全候補が選択された状態は
@@ -690,16 +711,9 @@ export type GridColumn<T> = {
   // 変更(filter-ext D): 'dateSet' を追加します(日付版。条件は 範囲 / 以降 / 以前 / 等しい /
   //             等しくない / 空白 / 空白でない + 相対プリセット(今日 / 今月 / 過去 30 日)。
   //             Set 部分は年 / 月 / 日の 3 階層ツリーになります)。
-  filterType?:
-    | 'text'
-    | 'textSet'
-    | 'number'
-    | 'numberSet'
-    | 'date'
-    | 'dateSet'
-    | 'select'
-    | 'set'
-    | 'custom';
+  // 変更(filter-ext E): 'auto' を追加します(列の値から numberSet / textSet / dateSet を
+  //             自動判定。詳細は ColumnFilterTypeOption / logic/inferFilterType.ts)。
+  filterType?: ColumnFilterTypeOption;
   // 追加: select / set フィルター時の候補です。未指定時は rows から自動収集します。
   filterOptions?: GridSelectFilterOption[];
   filterFn?: (row: T, filterValue: unknown) => boolean;

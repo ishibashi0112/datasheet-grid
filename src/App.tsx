@@ -395,7 +395,9 @@ const createInitialColumns = (
     // 追加(editor: custom デモ): カスタムエディタ(AmountCustomEditor)。ctx.commit(数値) で
     //   列パーサをバイパスしてドメイン値を直接確定します。
     {
-      key: 'amount', title: '金額', width: 140, filterType: 'number', align: 'right', valueFormatter: numberFormatter(),
+      // 変更(filter-ext E): 金額は filterType: 'auto' のデモです(値が全て数値のため
+      //   popover を開くと numberSet として解決されます)。
+      key: 'amount', title: '金額', width: 140, filterType: 'auto', align: 'right', valueFormatter: numberFormatter(),
       editor: { type: 'custom', render: (ctx) => <AmountCustomEditor ctx={ctx} /> },
     },
     {

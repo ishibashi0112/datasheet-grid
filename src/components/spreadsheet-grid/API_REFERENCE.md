@@ -287,7 +287,7 @@ const gridRef = useRef<SpreadsheetGridHandle<Row>>(null);
 | `valueFormatter` | `(params: CellValueFormatterParams<T>) => string` | — | セル表示値の整形(UI 表示のみ)。`renderCell` 未指定の既定セルが返り値を表示。組み込み `numberFormatter` 等を渡せる。元の値/編集/コピー/ソート/フィルターには影響しない。 |
 | `cellClassName` | `string \| ((ctx: CellStyleContext<T>) => string \| undefined)` | — | セルへ付与する追加 class(条件付きスタイル)。関数版は値 / 状態に応じて class を返せる。`ctx` には view の `rowIndex` に加え source 基準の `sourceRowIndex` / `rowKey` が入る(ソート / フィルター ON でも source 行基準のデータと突き合わせ可能。「補助型」節参照)。基底 `.ssg-body-cell` は未レイヤー・特異度 (0,1,0)。確実な上書きは `.ssg-body-cell.my-class` の連結を推奨。 |
 | `renderHeader` | `(ctx: HeaderRenderContext<T>) => ReactNode` | — | カスタムヘッダー描画。 |
-| `filterType` | `'text' \| 'textSet' \| 'number' \| 'numberSet' \| 'date' \| 'dateSet' \| 'select' \| 'set' \| 'custom'` | — | フィルター UI の種別。`'numberSet'` / `'textSet'` / `'dateSet'` は条件(演算子 + 値)と Set 一覧を 1 つの popover に縦に並べて **AND 結合**する複合フィルター(条件を適用すると Set 候補が連動して絞られる。候補外になった値の選択は破棄せず保持)。numberSet の演算子は 以上 / より大きい / 以下 / 未満 / に等しい / に等しくない / 範囲 / 空白 / 空白でない、textSet は を含む / に等しい / で始まる / で終わる / 空白 / 空白でない(判定は大文字小文字無視)。dateSet は 範囲 / 以降 / 以前 / に等しい / に等しくない / 空白 / 空白でない + 相対プリセット(今日 / 今月 / 過去 30 日。**相対のまま保存され評価のたびに解決**)で、Set 部分は年 / 月 / 日の 3 階層ツリー(親は 3 状態チェック)になる。 |
+| `filterType` | `'text' \| 'textSet' \| 'number' \| 'numberSet' \| 'date' \| 'dateSet' \| 'select' \| 'set' \| 'custom' \| 'auto'` | — | フィルター UI の種別。`'auto'` は列の値から `numberSet` / `textSet` / `dateSet` を自動判定する opt-in(下記「filterType: 'auto'(自動判定)」節)。`'numberSet'` / `'textSet'` / `'dateSet'` は条件(演算子 + 値)と Set 一覧を 1 つの popover に縦に並べて **AND 結合**する複合フィルター(条件を適用すると Set 候補が連動して絞られる。候補外になった値の選択は破棄せず保持)。numberSet の演算子は 以上 / より大きい / 以下 / 未満 / に等しい / に等しくない / 範囲 / 空白 / 空白でない、textSet は を含む / に等しい / で始まる / で終わる / 空白 / 空白でない(判定は大文字小文字無視)。dateSet は 範囲 / 以降 / 以前 / に等しい / に等しくない / 空白 / 空白でない + 相対プリセット(今日 / 今月 / 過去 30 日。**相対のまま保存され評価のたびに解決**)で、Set 部分は年 / 月 / 日の 3 階層ツリー(親は 3 状態チェック)になる。 |
 | `filterOptions` | `GridSelectFilterOption[]` | rows から自動収集 | select / set / numberSet / textSet / dateSet の候補。 |
 | `filterFn` | `(row: T, filterValue: unknown) => boolean` | — | カスタムフィルター述語。 |
 | `editor` | `GridColumnEditor<T>` | text 相当 | セルエディタ種別(判別共用体)。`{ type: 'text' \| 'number' \| 'select' \| 'date' \| 'checkbox' \| 'custom', ... }`。詳細は「セルエディタ」節。 |
@@ -295,6 +295,16 @@ const gridRef = useRef<SpreadsheetGridHandle<Row>>(null);
 | `validationMode` | `'mark' \| 'reject'` | `'mark'` | 検証 NG 時の動作。`'mark'`=値は入るがセルに invalid 表示 / `'reject'`=書き込み自体を拒否。 |
 | `parseClipboardValue` | `(raw: string, row: T) => unknown` | editor 既定パーサ | 「文字列 → セル値」のパーサ(貼り付け / クリア / エディタ commit で共通)。**明示指定が常に優先**。未指定で `editor` が number / date / checkbox のときは種別の既定パーサが自動供給されます(「セルエディタ」節の表参照)。 |
 | `formatClipboardValue` | `(value: unknown, row: T) => string` | — | コピー時のフォーマッタ。 |
+
+### filterType: 'auto'(自動判定)
+
+`filterType: 'auto'` を指定すると、列の値から実効種別(`numberSet` / `textSet` / `dateSet`)を自動判定します。**明示的な opt-in のみ**で、`filterType` 未指定の列は従来どおり「フィルターなし」です(既定は変わりません)。
+
+- **判定タイミング**: その列の popover を**初回に開いた時点で 1 回だけ**判定し、以後その列では固定します(行の追加 / 編集で種別が揺れると、適用済みフィルター記述子と UI が食い違うため)。判定材料が無かった場合(まだ行が空 等)は確定させず、次回オープン時に再判定します。
+- **優先順位**: ①適用済みフィルター記述子の `kind`(`applyState` 復元で先に値が載っているケース)→ ②前回の判定結果 → ③`editor` 種別のヒント(`{ type: 'number' }` → numberSet / `{ type: 'date' }` → dateSet。値を見ないため確実・高速)→ ④値のサンプリング。
+- **サンプリング**: 先頭から**空白セルを除いた最大 1,000 件**(走査は最大 20,000 行で打ち切り)。**厳格判定**で、全サンプルが日付として解釈できれば `dateSet`、全て数値として解釈できれば `numberSet`、1 件でも外れれば `textSet`(安全側)。
+- **判定基準は値の型ではなく「解釈できるか」**: DB 型が文字列でも `'1234'` は数値とみなし `numberSet` になります(フィルター判定側の数値化規則と一貫)。ただし**先頭ゼロの値(`'0001'` のような品番コード・郵便番号)は数値とみなしません**(Excel と同じ扱い)。`boolean` / オブジェクトも数値扱いしません。
+- **serverSide**: クライアントが全行を持たないため値からの推定はしません。`editor` ヒントがあればそれで確定し、無ければ `'text'`(条件のみの部分一致フィルター)へフォールバックします。auto を使う場合は `editor` 種別の指定を推奨します。
 
 ### 値フォーマッタ(UI 表示)
 

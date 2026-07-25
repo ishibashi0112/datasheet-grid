@@ -13,7 +13,7 @@ description: 列フィルター(text / number / date / select / set / custom)と
 - **カテゴリ** — `select`:単一選択(候補は rows から自動収集)
 - **ステータス** — `set`:チェックボックスの複数選択(Excel 風)
 - **数量** — `numberSet`:**条件 AND 選択**の複合フィルター(数値版)。数値条件(以上 / 範囲 など)と Set 一覧を 1 つの popover で組み合わせます(例:「10 以上のうち、12 だけ除外」)
-- **単価** — `number`:演算子(以上 / より大きい / 以下 / 未満 / に等しい / に等しくない / 範囲 / 空白 / 空白でない)を選び、値を入力して絞り込みます
+- **単価** — `auto`:種別を指定せず、列の値から自動判定します(値が全て数値なので `numberSet` として開きます)
 - **登録日** — `dateSet`:**条件 AND 選択**の複合フィルター(日付版)。日付条件(範囲 / 以降 / 以前 など)と相対プリセット(今日 / 今月 / 過去 30 日)、そして**年 / 月 / 日の 3 階層ツリー**の Set 一覧を組み合わせます
 
 上部のグローバルフィルター入力は全列を横断して部分一致します。フィルター適用中はチップバー(`showFilterChipBar`)に条件が並び、ここから個別解除もできます。列メニューまたはチップバーの「フィルター管理」から、全フィルターを一覧で編集できるパネルも開けます。
@@ -26,7 +26,7 @@ const columns: GridColumn<Row>[] = [
   { key: 'category', title: 'カテゴリ', width: 130, filterType: 'select' },
   { key: 'status', title: 'ステータス', width: 130, filterType: 'set' },
   { key: 'qty', title: '数量', width: 110, filterType: 'numberSet' },
-  { key: 'price', title: '単価', width: 130, filterType: 'number' },
+  { key: 'price', title: '単価', width: 130, filterType: 'auto' },
   { key: 'registered', title: '登録日', width: 140, filterType: 'dateSet' },
 ]
 ```
@@ -38,6 +38,20 @@ const columns: GridColumn<Row>[] = [
 - `dateSet` の相対プリセット(今日 / 今月 / 過去 30 日)は**相対のまま保存**され、フィルター評価のたびに「今日」を基準へ解決されます(`getState()` で保存した状態を翌日復元すると範囲が追従します)。日付を固定したい場合は「範囲」等の絶対条件を使います。
 - 独自の絞り込みロジックは `filterType: 'custom'` + `filterFn: (row, filterValue) => boolean` で書けます。
 - ソート / フィルター / グローバルフィルターは `enableSorting` / `enableColumnFilter` / `enableGlobalFilter`(いずれも既定 `true`)で無効化できます。
+
+## 種別の自動判定(`filterType: 'auto'`)
+
+列ごとに種別を書き分けるのが面倒なときは `filterType: 'auto'` を指定すると、列の値から `numberSet` / `textSet` / `dateSet` を自動判定します。**明示的な opt-in のみ**で、`filterType` 未指定の列は従来どおりフィルターなしのままです。
+
+```tsx
+{ key: 'price', title: '単価', width: 130, filterType: 'auto' }
+```
+
+- **判定は popover を初回に開いた時点で 1 回だけ**行い、以後その列では固定されます(行を編集・追加するたびに種別が変わると、適用中のフィルターと UI が食い違うためです)。
+- **優先順位**: 適用済みフィルター → 前回の判定結果 → `editor` 種別のヒント(`{ type: 'number' }` / `{ type: 'date' }`)→ 値のサンプリング(空白を除く最大 1,000 件)。
+- **厳格判定**です。サンプルが全て日付なら `dateSet`、全て数値なら `numberSet`、1 件でも混ざれば `textSet`(安全側)になります。
+- 判定は**値の型ではなく「数値 / 日付として解釈できるか」**です。DB の型が文字列でも `'1234'` は数値とみなします。ただし **`'0001'` のような先頭ゼロの値は数値とみなしません**(品番コード・郵便番号を数値と誤認しないため。Excel と同じ扱いです)。
+- **serverSide(`dataSource`)では値からの推定を行いません**(クライアントが全行を持たないため)。`editor` 種別があればそれで確定し、無ければ `text`(部分一致)になります。auto を使う列には `editor` の指定を推奨します。
 
 ## 状態を外から扱う
 

@@ -49,7 +49,9 @@ const columns: GridColumn<Row>[] = [
     title: '単価',
     width: 130,
     align: 'right',
-    filterType: 'number',
+    // 変更(filter-ext E): 単価は filterType: 'auto' のデモです(値が全て数値のため
+    //   popover を開くと numberSet として解決されます)。
+    filterType: 'auto',
     valueFormatter: numberFormatter(),
   },
   // 変更(filter-ext D): 登録日は dateSet(日付条件 + 年月日ツリー + 相対プリセット)のデモです。
