@@ -71,22 +71,9 @@ export const useGridKeyboardInteractions = <T,>({
   //   deps に入れないことで、件数不変のソートで handler identity が変わらない 11系のメモ化を保ちます。
   const rowCount = rowModel.getRowCount();
 
-  // 追加: 基準セルから移動先セルを計算します。
-  const getMovedCell = useCallback(
-    (baseCell: CellCoord, deltaRow: number, deltaCol: number): CellCoord => ({
-      row: clamp(
-        baseCell.row + deltaRow,
-        0,
-        Math.max(rowCount - 1, 0),
-      ),
-      col: clamp(
-        baseCell.col + deltaCol,
-        0,
-        Math.max(visibleColumns.length - 1, 0),
-      ),
-    }),
-    [rowCount, visibleColumns.length],
-  );
+  // 変更(enter-move ①): getMovedCell は撤去しました。唯一の消費者だった edit controller の
+  //   commit 後移動が「rAF 時点の最新境界で clamp」方式へ移行したためです(詳細は
+  //   useGridEditController.ts の boundsRef コメント参照)。
 
   // 追加: active cell を移動します。shiftKey=true の場合は cell selection を拡張します。
   const moveActiveCell = useCallback(
@@ -289,7 +276,6 @@ export const useGridKeyboardInteractions = <T,>({
   );
 
   return {
-    getMovedCell,
     handleKeyDown,
   };
 };

@@ -1,4 +1,10 @@
-import { useCallback, type Dispatch, type RefObject } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  type Dispatch,
+  type RefObject,
+} from 'react';
 import { gridActions, type GridUiAction } from '../model/gridActions';
 import type {
   CellCoord,
@@ -10,6 +16,7 @@ import type {
 } from '../model/gridTypes';
 import { parseCommittedValue, writeRowsCell } from '../logic/editorValues';
 import { decideCellWrite } from '../logic/validation';
+import { clamp } from '../logic/geometry';
 import type { ServerSideCellEditInput } from '../logic/serverSideEdits';
 
 type UseGridEditControllerArgs<T extends object> = {
@@ -33,7 +40,6 @@ type UseGridEditControllerArgs<T extends object> = {
   //   行の解決も rows ではなく seam の getRow 経由になります(serverSide は全件 rows を持たないため)。
   applyServerSideCellEdits?: (edits: ServerSideCellEditInput<T>[]) => number;
   dispatch: Dispatch<GridUiAction>;
-  getMovedCell: (baseCell: CellCoord, deltaRow: number, deltaCol: number) => CellCoord;
   gridRootRef: RefObject<HTMLDivElement | null>;
   editorActionGuardRef: RefObject<boolean>;
 };
@@ -48,10 +54,23 @@ export const useGridEditController = <T extends object>({
   onRowsChange,
   applyServerSideCellEdits,
   dispatch,
-  getMovedCell,
   gridRootRef,
   editorActionGuardRef,
 }: UseGridEditControllerArgs<T>) => {
+  // 追加(enter-move ①): commit 後の移動先 clamp を「commit の瞬間」ではなく「フォーカス復帰の
+  //   rAF 時点(= onRowsChange の再レンダー後)」の行数・列数で行うための latest-ref です
+  //   (RS-AS 方式: rAF tick から読む値は useEffect で同期する)。消費側が onRowsChange で
+  //   末尾空行を追加するパターン(Excel 的入力グリッドの定石)では、commit 時点の行数で
+  //   clamp すると最終行の Enter 確定が「増えた行」へ移動できないため、意図セル(未 clamp)を
+  //   rAF まで持ち越して最新境界で clamp します。行が増えない場合は従来と同一挙動です。
+  const boundsRef = useRef({ rowCount: 0, colCount: 0 });
+  useEffect(() => {
+    boundsRef.current = {
+      rowCount: rowModel.getRowCount(),
+      colCount: visibleColumns.length,
+    };
+  });
+
   // 追加: 単一セルを active + selection へ反映するユーティリティです。
   const activateSingleCell = useCallback(
     (cell: CellCoord) => {
@@ -94,13 +113,15 @@ export const useGridEditController = <T extends object>({
       }
 
       const editingCell = uiState.editingCell;
-      const nextCell =
+      // 変更(enter-move ①): 移動先はここでは clamp せず「意図セル」のまま持ち、rAF 側で
+      //   最新境界に clamp します(commit 起点の onRowsChange で行が増えるパターンへの追従)。
+      const intendedCell: CellCoord =
         direction === 'down'
-          ? getMovedCell(editingCell, 1, 0)
+          ? { row: editingCell.row + 1, col: editingCell.col }
           : direction === 'right'
-            ? getMovedCell(editingCell, 0, 1)
+            ? { row: editingCell.row, col: editingCell.col + 1 }
             : direction === 'left'
-              ? getMovedCell(editingCell, 0, -1)
+              ? { row: editingCell.row, col: editingCell.col - 1 }
               : editingCell;
 
       const column = visibleColumns[editingCell.col];
@@ -150,7 +171,11 @@ export const useGridEditController = <T extends object>({
       editorActionGuardRef.current = true;
       requestAnimationFrame(() => {
         gridRootRef.current?.focus();
-        activateSingleCell(nextCell);
+        const { rowCount, colCount } = boundsRef.current;
+        activateSingleCell({
+          row: clamp(intendedCell.row, 0, Math.max(rowCount - 1, 0)),
+          col: clamp(intendedCell.col, 0, Math.max(colCount - 1, 0)),
+        });
         editorActionGuardRef.current = false;
       });
 
@@ -163,7 +188,6 @@ export const useGridEditController = <T extends object>({
       dispatch,
       editorActionGuardRef,
       rowModel,
-      getMovedCell,
       gridRootRef,
       onRowsChange,
       rows,

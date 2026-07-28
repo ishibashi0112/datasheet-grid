@@ -254,6 +254,8 @@ const gridRef = useRef<SpreadsheetGridHandle<Row>>(null);
 
 編集エディタ内: `Enter` = 確定して下へ、`Tab` / `Shift+Tab` = 確定して右 / 左へ、`Escape` = キャンセル、フォーカスアウト = 確定。IME 変換中(`isComposing`)の `Enter` / `Escape` / `Tab` は IME の操作としてのみ扱われ、セル編集の確定 / キャンセルには使われない。
 
+確定後の移動先は「確定を反映した再レンダー後」の行数・列数でクランプされる。このため、`onRowsChange` で末尾に空行を追加する消費側(Excel 的な入力グリッドの定石パターン)では、最終行の `Enter` 確定で「増えた行」へそのまま移動できる。行が増えない場合は従来どおり最終行に留まる。
+
 
 ## 補助型(props で参照される shape)
 

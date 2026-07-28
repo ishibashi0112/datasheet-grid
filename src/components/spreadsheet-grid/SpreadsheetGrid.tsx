@@ -2509,7 +2509,7 @@ export function SpreadsheetGrid<T extends object>({
   );
 
   // ── keyboard ──────────────────────────────────────────
-  const { getMovedCell, handleKeyDown } = useGridKeyboardInteractions({
+  const { handleKeyDown } = useGridKeyboardInteractions({
     uiState,
     // 変更(DS-3-1): filteredRows 配列 → rowModel シームを渡します(keyboard consumer 移行)。
     rowModel,
@@ -2555,7 +2555,6 @@ export function SpreadsheetGrid<T extends object>({
     // 追加(SSRM 書き戻し): serverSide の commit 書き込み口です(updateRows 指定時のみ定義)。
     applyServerSideCellEdits,
     dispatch,
-    getMovedCell,
     gridRootRef,
     editorActionGuardRef,
   });
