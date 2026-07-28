@@ -10,8 +10,10 @@ import { createPortal } from 'react-dom';
 import type {
   EditorCommitDirection,
   EditorCommitResult,
+  EditorEnterMove,
   GridSelectEditorOption,
 } from '../model/gridTypes';
+import { resolveEnterDirection } from './editorKeyBindings';
 import { CellEditorErrorBubble } from './CellEditorErrorBubble';
 import {
   computeSelectPopoverPlacement,
@@ -35,6 +37,8 @@ type SelectCellEditorProps = {
   align?: 'left' | 'center' | 'right';
   // ポータル root へ直接付与するテーマ修飾子('ssg-theme-dark' | undefined)です。
   themeClassName?: string;
+  // 追加(enter-move ②): Enter 確定後の移動先です(未指定 = 'down')。
+  enterMove?: EditorEnterMove;
 };
 
 export function SelectCellEditor({
@@ -44,6 +48,7 @@ export function SelectCellEditor({
   onCancel,
   align,
   themeClassName,
+  enterMove,
 }: SelectCellEditorProps) {
   const inputRef = useRef<HTMLInputElement | null>(null);
   const listRef = useRef<HTMLDivElement | null>(null);
@@ -144,7 +149,8 @@ export function SelectCellEditor({
 
     if (event.key === 'Enter') {
       event.preventDefault();
-      commitHighlighted('down');
+      // 変更(enter-move ②): 方向は editorEnterMove に従います(既定 'down')。
+      commitHighlighted(resolveEnterDirection(enterMove));
       return;
     }
 

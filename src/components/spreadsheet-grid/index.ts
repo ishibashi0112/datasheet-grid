@@ -17,6 +17,8 @@ export type {
   // 追加(editor 基盤): セルエディタ種別(GridColumn.editor)と確定方向。
   GridColumnEditor,
   EditorCommitDirection,
+  // 追加(enter-move ②): Enter 確定後の移動先(props.editorEnterMove)。
+  EditorEnterMove,
   // 追加(editor: custom): custom エディタの render コンテキスト。
   CellEditorContext,
   // 追加(editor: select): select エディタの候補型(GridSelectFilterOption と同一形)。

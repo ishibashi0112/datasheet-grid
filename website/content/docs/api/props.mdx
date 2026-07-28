@@ -33,6 +33,7 @@ description: SpreadsheetGridProps<T> の全 prop と既定値
 | `enableUndoRedo` | `boolean` | `true` | グリッド編集(セル編集 / ペースト / `renderCell` の `setValue`)の取り消し/やり直し。`Ctrl/Cmd+Z` = undo、`Ctrl/Cmd+Shift+Z` / `Ctrl/Cmd+Y` = redo(ハンドルの `undo()` / `redo()` でも可)。clientSide(`rows` + `onRowsChange`)専用で、serverSide(`dataSource`)/ `readOnly` / `onRowsChange` 未指定時は無効。履歴は「変更前 rows 配列」の参照スナップショット(未変更行は構造共有されるため低コスト)。**`onRowsChange` で受け取った配列は参照そのまま `rows` へ戻すのが前提**(map 等で作り直すと毎回「外部変更」と見なされ履歴が消える)。rows が grid 起点以外(親の直接 setState 等)で差し替わると履歴は自動破棄。エディタ内の文字入力の取り消しは input のネイティブ undo に委譲(グリッドの undo は**確定済みの編集**が対象)。 |
 | `undoHistoryLimit` | `number` | `100` | 保持する undo ステップ数の上限。超過分は古い順に破棄。 |
 | `enableClearOnDelete` | `boolean` | `true` | `Delete` / `Backspace` キーによる選択セル(なければアクティブセル)の値クリア。`false` でキーは何もしない(素通し)。ペースト・エディタでの上書き・undo/redo には影響しない(クリアのキーボード操作だけの opt-out)。 |
+| `editorEnterMove` | `EditorEnterMove` | `'down'` | 組み込みエディタ(text / number / select / date)の `Enter` 確定後にアクティブセルをどこへ移すか(`'down'` \| `'up'` \| `'right'` \| `'left'` \| `'none'`。Excel の「Enter キーを押したら、セルを移動する(方向)」相当)。`'none'` は移動せずその場に留まる。`Tab` / `Shift+Tab`(右 / 左)と `Escape` には影響しない。custom エディタはキーバインドが consumer 責務のため対象外(`ctx.commit(value, direction)` の direction で指定)。 |
 | `onUndoRedoStateChange` | `(state: { canUndo, canRedo }) => void` | — | undo / redo 可能状態が**変化したとき**に呼ばれる(ツールバーの undo/redo ボタンの disabled 表示などリアクティブな UI 用)。初回マウントでは発火せず、同値では再発火しない。毎レンダーのインライン関数でも問題ない。 |
 | `enableRangeSelection` | `boolean` | `true` | 複数セル範囲選択。 |
 | `enableRowSelection` | `boolean` | `false` | チェックボックス行選択の有効化(マスタースイッチ)。`true` で行ヘッダ(行NO)ガターが行選択のヒット領域になり、Excel 風のガター起点セル範囲選択は off(ボディ側セルのドラッグ範囲選択は不変)。判定は O(1)・全選択は除外集合でキーを列挙しない(1M 行でも一定コスト)。 |
@@ -252,7 +253,7 @@ const gridRef = useRef<SpreadsheetGridHandle<Row>>(null);
 | `Delete` / `Backspace` | 選択セル(なければアクティブセル)の値クリア。編集不可セルは対象外。クリア値は「空文字のペースト」と同じ規則(`parseClipboardValue('')` 経由、未定義なら `''`)。変更が無ければ no-op(undo 履歴にも積まれない)。 |
 | `Ctrl/Cmd+Z` / `Ctrl/Cmd+Shift+Z` / `Ctrl/Cmd+Y` | undo / redo(詳細は命令的 API の「undo / redo」節)。 |
 
-編集エディタ内: `Enter` = 確定して下へ、`Tab` / `Shift+Tab` = 確定して右 / 左へ、`Escape` = キャンセル、フォーカスアウト = 確定。IME 変換中(`isComposing`)の `Enter` / `Escape` / `Tab` は IME の操作としてのみ扱われ、セル編集の確定 / キャンセルには使われない。
+編集エディタ内: `Enter` = 確定して下へ(移動先は `editorEnterMove` で変更可。既定 `'down'`)、`Tab` / `Shift+Tab` = 確定して右 / 左へ、`Escape` = キャンセル、フォーカスアウト = 確定。IME 変換中(`isComposing`)の `Enter` / `Escape` / `Tab` は IME の操作としてのみ扱われ、セル編集の確定 / キャンセルには使われない。
 
 確定後の移動先は「確定を反映した再レンダー後」の行数・列数でクランプされる。このため、`onRowsChange` で末尾に空行を追加する消費側(Excel 的な入力グリッドの定石パターン)では、最終行の `Enter` 確定で「増えた行」へそのまま移動できる。行が増えない場合は従来どおり最終行に留まる。
 

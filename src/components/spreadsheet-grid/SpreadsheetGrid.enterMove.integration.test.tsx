@@ -1,5 +1,5 @@
 // SpreadsheetGrid を実際に render し、エディタ commit 後のアクティブセル移動を実行検証する
-//   結合テストです(enter-move ①: rAF 時点の最新境界で clamp)。
+//   結合テストです(enter-move ①: rAF 時点の最新境界で clamp / ②: editorEnterMove opt-in)。
 //   消費側が onRowsChange で末尾空行を追加するパターン(Excel 的入力グリッドの定石)で、
 //   最終行の Enter 確定が「増えた行」へ移動できることを担保します(SS2603 現場報告の回帰)。
 // @vitest-environment jsdom
@@ -8,7 +8,11 @@ import { render, cleanup, act, fireEvent } from '@testing-library/react';
 import { createRef, useEffect, useState } from 'react';
 import type { Ref, RefObject } from 'react';
 import { SpreadsheetGrid } from './SpreadsheetGrid';
-import type { GridColumn, SpreadsheetGridHandle } from './model/gridTypes';
+import type {
+  EditorEnterMove,
+  GridColumn,
+  SpreadsheetGridHandle,
+} from './model/gridTypes';
 
 beforeAll(() => {
   if (!('ResizeObserver' in globalThis)) {
@@ -29,13 +33,19 @@ afterEach(() => {
   cleanup();
 });
 
-type Row = { id: string; code: string };
+type Row = { id: string; code: string; memo?: string };
 
 let rowSeq = 0;
 const createRow = (): Row => ({ id: `r${rowSeq++}`, code: '' });
 
 const columns: GridColumn<Row>[] = [
   { key: 'code', title: '品番', width: 140, editable: true },
+];
+
+// enter-move ② の 'right' 検証用(2 列)。
+const twoColumns: GridColumn<Row>[] = [
+  { key: 'code', title: '品番', width: 140, editable: true },
+  { key: 'memo', title: 'メモ', width: 140, editable: true },
 ];
 
 // 消費側の「末尾に空行を必ず 1 つ保つ」ロジック(SS2603 の ensureTrailingEmptyRow 相当)。
@@ -50,11 +60,16 @@ function Harness({
   gridRef,
   keepTrailingEmptyRow,
   initialRowCount = 1,
+  editorEnterMove,
+  gridColumns = columns,
 }: {
   gridRef: Ref<SpreadsheetGridHandle<Row>>;
   // true: onRowsChange で末尾空行を追加する(動的に行が増えるパターン)。
   keepTrailingEmptyRow: boolean;
   initialRowCount?: number;
+  // 追加(enter-move ②): Enter 確定後の移動先(未指定 = 'down')。
+  editorEnterMove?: EditorEnterMove;
+  gridColumns?: GridColumn<Row>[];
 }) {
   const [rows, setRows] = useState<Row[]>(() =>
     Array.from({ length: initialRowCount }, createRow),
@@ -70,7 +85,8 @@ function Harness({
         setRows(keepTrailingEmptyRow ? ensureTrailingEmptyRow(next) : next)
       }
       rowKeyGetter={(row) => row.id}
-      columns={columns}
+      columns={gridColumns}
+      editorEnterMove={editorEnterMove}
     />
   );
 }
@@ -156,5 +172,108 @@ describe('SpreadsheetGrid エディタ commit 後の移動(結合)', () => {
     typeAndEnter(ref, container, 0, 'MID');
     await flushCommitRaf();
     expect(ref.current?.getActiveCell()).toEqual({ row: 1, col: 0 });
+  });
+});
+
+describe('SpreadsheetGrid editorEnterMove(opt-in・結合)', () => {
+  it("'none': Enter 確定で値は書き込まれ、アクティブセルはその場に留まる", async () => {
+    const ref = createRef<SpreadsheetGridHandle<Row>>();
+    const { container } = render(
+      <Harness
+        gridRef={ref}
+        keepTrailingEmptyRow={false}
+        initialRowCount={3}
+        editorEnterMove="none"
+      />,
+    );
+
+    typeAndEnter(ref, container, 0, 'STAY');
+    expect(currentRows[0].code).toBe('STAY');
+    await flushCommitRaf();
+    expect(ref.current?.getActiveCell()).toEqual({ row: 0, col: 0 });
+    // エディタは閉じている(編集継続ではない)。
+    expect(container.querySelector('.ssg-cell-editor-input')).toBeNull();
+  });
+
+  it("'right': Enter 確定で右のセルへ移動する", async () => {
+    const ref = createRef<SpreadsheetGridHandle<Row>>();
+    const { container } = render(
+      <Harness
+        gridRef={ref}
+        keepTrailingEmptyRow={false}
+        initialRowCount={2}
+        editorEnterMove="right"
+        gridColumns={twoColumns}
+      />,
+    );
+
+    typeAndEnter(ref, container, 0, 'R');
+    await flushCommitRaf();
+    expect(ref.current?.getActiveCell()).toEqual({ row: 0, col: 1 });
+  });
+
+  it("'up': Enter 確定で上のセルへ移動する(先頭行では留まる)", async () => {
+    const ref = createRef<SpreadsheetGridHandle<Row>>();
+    const { container } = render(
+      <Harness
+        gridRef={ref}
+        keepTrailingEmptyRow={false}
+        initialRowCount={3}
+        editorEnterMove="up"
+      />,
+    );
+
+    typeAndEnter(ref, container, 1, 'U');
+    await flushCommitRaf();
+    expect(ref.current?.getActiveCell()).toEqual({ row: 0, col: 0 });
+
+    // 先頭行では clamp によりその場に留まる。
+    typeAndEnter(ref, container, 0, 'TOP');
+    await flushCommitRaf();
+    expect(ref.current?.getActiveCell()).toEqual({ row: 0, col: 0 });
+  });
+
+  it("既定(未指定)と 'down' は同一挙動: 下のセルへ移動する", async () => {
+    const ref = createRef<SpreadsheetGridHandle<Row>>();
+    const { container } = render(
+      <Harness
+        gridRef={ref}
+        keepTrailingEmptyRow={false}
+        initialRowCount={2}
+        editorEnterMove="down"
+      />,
+    );
+
+    typeAndEnter(ref, container, 0, 'D');
+    await flushCommitRaf();
+    expect(ref.current?.getActiveCell()).toEqual({ row: 1, col: 0 });
+  });
+
+  it("'none' でも Tab は従来どおり右へ移動する(Tab / Shift+Tab は対象外)", async () => {
+    const ref = createRef<SpreadsheetGridHandle<Row>>();
+    const { container } = render(
+      <Harness
+        gridRef={ref}
+        keepTrailingEmptyRow={false}
+        initialRowCount={2}
+        editorEnterMove="none"
+        gridColumns={twoColumns}
+      />,
+    );
+
+    act(() => {
+      ref.current?.setActiveCell({ row: 0, col: 0 });
+    });
+    fireEvent.keyDown(getShell(container), { key: 'T' });
+    const input = container.querySelector<HTMLInputElement>(
+      '.ssg-cell-editor-input',
+    );
+    expect(input).not.toBeNull();
+    fireEvent.change(input!, { target: { value: 'TAB' } });
+    act(() => {
+      fireEvent.keyDown(input!, { key: 'Tab' });
+    });
+    await flushCommitRaf();
+    expect(ref.current?.getActiveCell()).toEqual({ row: 0, col: 1 });
   });
 });

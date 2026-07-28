@@ -38,6 +38,18 @@ const columns: GridColumn<Row>[] = [
 
 独自 UI で編集したい場合は `{ type: 'custom', render: (ctx) => <MyEditor ... /> }` を使います。`ctx.commit(value)` / `ctx.cancel()` で確定・キャンセルします。
 
+## Enter 確定後の移動先(`editorEnterMove`)
+
+組み込みエディタの `Enter` 確定後、アクティブセルは既定で **1 行下**へ移動します(Excel 同様)。`editorEnterMove` prop で変更できます:
+
+```tsx
+<SpreadsheetGrid editorEnterMove="none" ... />  // 'down'(既定) | 'up' | 'right' | 'left' | 'none'
+```
+
+`'none'` は移動せずその場に留まります。`Tab` / `Shift+Tab`(右 / 左)には影響しません。custom エディタは `ctx.commit(value, direction)` の第 2 引数で方向を渡してください(本 prop の対象外)。
+
+移動先は「確定を反映した再レンダー後」の行数でクランプされるため、`onRowsChange` で末尾に空行を追加する入力グリッド(貼り付け + 直接入力の定石パターン)では、最終行の `Enter` 確定でそのまま増えた行へ進めます。
+
 ## バリデーション
 
 ```tsx

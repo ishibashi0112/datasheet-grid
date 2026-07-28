@@ -118,11 +118,13 @@ export const useGridEditController = <T extends object>({
       const intendedCell: CellCoord =
         direction === 'down'
           ? { row: editingCell.row + 1, col: editingCell.col }
-          : direction === 'right'
-            ? { row: editingCell.row, col: editingCell.col + 1 }
-            : direction === 'left'
-              ? { row: editingCell.row, col: editingCell.col - 1 }
-              : editingCell;
+          : direction === 'up'
+            ? { row: editingCell.row - 1, col: editingCell.col }
+            : direction === 'right'
+              ? { row: editingCell.row, col: editingCell.col + 1 }
+              : direction === 'left'
+                ? { row: editingCell.row, col: editingCell.col - 1 }
+                : editingCell;
 
       const column = visibleColumns[editingCell.col];
       // 変更(DS-3-9): レガシーの ?? editingCell.row フォールバックを撤去します。

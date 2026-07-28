@@ -76,7 +76,7 @@ const columns = [
 - **select の blur は cancel**(値不変)です。text / number / date の blur = 確定と非対称ですが、select は「選択 = 即確定」でドラフト概念がないためです。
 - **date の Tab はグリッド流(確定 + 移動)**です。ピッカー内のセグメント移動は ← → 矢印で行えます。
 - **checkbox のダブルクリックは click 2 回**(トグル往復)として扱われます(Excel / AG Grid と同様)。`renderCell` 指定時はそちらが優先され、組み込みチェックボックスセルは描画されません。
-- **custom の `ctx.commit(value)`** は、`value` が string なら列パーサ(`parseClipboardValue` ?? editor 既定)を通し、**非 string ならパースをバイパスしてドメイン値をそのまま書き込みます**。`ctx` には `row` / `rowIndex`(ビュー行)/ `sourceRowIndex`・`rowKey`(source 基準)/ `colIndex` / `column` / `value`(編集開始時の生値)/ `initialText`(印字キー開始時はそのキー)/ `align` / `commit` / `cancel` が入ります。`commit` の返り値(`EditorCommitResult`)で reject 列の検証結果を受け取れます(無視しても安全)。
+- **custom の `ctx.commit(value)`** は、`value` が string なら列パーサ(`parseClipboardValue` ?? editor 既定)を通し、**非 string ならパースをバイパスしてドメイン値をそのまま書き込みます**。`ctx` には `row` / `rowIndex`(ビュー行)/ `sourceRowIndex`・`rowKey`(source 基準)/ `colIndex` / `column` / `value`(編集開始時の生値)/ `initialText`(印字キー開始時はそのキー)/ `align` / `commit` / `cancel` が入ります。`commit` の返り値(`EditorCommitResult`)で reject 列の検証結果を受け取れます(無視しても安全)。`commit(value, direction)` の第 2 引数(`'down' | 'up' | 'right' | 'left'`)で確定後のアクティブセル移動を指定できます(省略時は移動しない。`editorEnterMove` prop は custom エディタには効かないため、Enter で下へ進めたい場合は `'down'` を明示)。
 
 ### バリデーション(validate / validationMode)
 

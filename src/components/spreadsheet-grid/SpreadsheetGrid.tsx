@@ -447,6 +447,8 @@ export function SpreadsheetGrid<T extends object>({
   enableUndoRedo = true,
   // 追加(clear opt-out): Delete / Backspace の選択セル値クリアです(既定 on = 現行どおり)。
   enableClearOnDelete = true,
+  // 追加(enter-move ②): 組み込みエディタの Enter 確定後の移動先です(既定 'down' = 従来どおり)。
+  editorEnterMove = 'down',
   undoHistoryLimit = 100,
   onUndoRedoStateChange,
   enableRangeSelection = true,
@@ -5646,6 +5648,7 @@ export function SpreadsheetGrid<T extends object>({
                   onCommit={commitEdit}
                   onCancel={cancelEdit}
                   align={editingColumn?.align}
+                  enterMove={editorEnterMove}
                 />
 
                 <GridBodyLayer
@@ -5796,6 +5799,7 @@ export function SpreadsheetGrid<T extends object>({
                   onCommit={commitEdit}
                   onCancel={cancelEdit}
                   align={editingColumn?.align}
+                  enterMove={editorEnterMove}
                 />
 
                 <GridBodyLayer
@@ -5938,6 +5942,7 @@ export function SpreadsheetGrid<T extends object>({
                   onCommit={commitEdit}
                   onCancel={cancelEdit}
                   align={editingColumn?.align}
+                  enterMove={editorEnterMove}
                 />
 
                 <GridBodyLayer

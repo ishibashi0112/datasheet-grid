@@ -2,6 +2,7 @@ import { useState, type CSSProperties, type ReactNode } from 'react';
 import type {
   EditorCommitDirection,
   EditorCommitResult,
+  EditorEnterMove,
   GridColumn,
   GridColumnEditor,
   GridRowKey,
@@ -72,6 +73,9 @@ type CellEditorLayerProps<T> = {
   onCancel: () => void;
   // 追加(③): 編集 input の text-align。列 align に追従(右寄せ数値列を編集中も右寄せ維持)。
   align?: 'left' | 'center' | 'right';
+  // 追加(enter-move ②): 組み込みエディタの Enter 確定後の移動先です(未指定 = 'down')。
+  //   custom エディタはキーバインドが consumer 責務のため対象外(ctx.commit の direction で指定)。
+  enterMove?: EditorEnterMove;
 };
 
 // 追加: 編集中セルの上にエディタを重ねる editor layer です。
@@ -91,6 +95,7 @@ export function CellEditorLayer<T>({
   onCommit,
   onCancel,
   align,
+  enterMove,
 }: CellEditorLayerProps<T>) {
   // 変更(editor 基盤): 「新しい編集セッションの開始」検知を、ドラフト直接リセットから
   //   sessionId カウンタ + key 再マウントへ置き換えました。rect の null → 非 null 遷移を
@@ -130,6 +135,7 @@ export function CellEditorLayer<T>({
     editorNode = (
       <NumberCellEditor
         key={sessionId}
+        enterMove={enterMove}
         initialValue={initialValue}
         min={editor.min}
         max={editor.max}
@@ -145,6 +151,7 @@ export function CellEditorLayer<T>({
     editorNode = (
       <DateCellEditor
         key={sessionId}
+        enterMove={enterMove}
         initialValue={toDateInputValue(
           editorSession ? editorSession.value : initialValue,
         )}
@@ -187,6 +194,7 @@ export function CellEditorLayer<T>({
     editorNode = (
       <SelectCellEditor
         key={sessionId}
+        enterMove={enterMove}
         options={options}
         value={editorSession?.value}
         onCommit={onCommit}
@@ -199,6 +207,7 @@ export function CellEditorLayer<T>({
     editorNode = (
       <TextCellEditor
         key={sessionId}
+        enterMove={enterMove}
         initialValue={initialValue}
         onCommit={onCommit}
         onCancel={onCancel}

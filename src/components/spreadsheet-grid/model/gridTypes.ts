@@ -480,7 +480,14 @@ export type CellValueFormatter<T> = (params: CellValueFormatterParams<T>) => str
 
 // 追加(editor 基盤): editor 確定後の移動方向です(Enter=down / Tab=right / Shift+Tab=left)。
 //   CellEditorLayer.tsx から移設しました(エディタ種別 API の公開型化に伴い model へ集約)。
-export type EditorCommitDirection = 'down' | 'right' | 'left';
+// 変更(enter-move ②): 'up' を追加しました(editorEnterMove='up' の確定移動用。
+//   custom エディタの ctx.commit からも指定できます)。
+export type EditorCommitDirection = 'down' | 'up' | 'right' | 'left';
+
+// 追加(enter-move ②): 組み込みエディタの Enter 確定後にアクティブセルをどこへ移すかです
+//   (Excel の「Enter キーを押したら、セルを移動する(方向)」相当)。'none' は移動せず
+//   その場に留まります。Tab / Shift+Tab(右 / 左)には影響しません。
+export type EditorEnterMove = 'down' | 'up' | 'right' | 'left' | 'none';
 
 // 追加(editor: select): select エディタの候補型です。select / set フィルターの候補
 //   (GridSelectFilterOption)と共有し、同じ配列を filterOptions と使い回せます。
@@ -1382,6 +1389,11 @@ export type SpreadsheetGridProps<T> = {
   //   旧バージョン互換の挙動に戻したい消費側向けの opt-out)。ペースト・エディタでの
   //   上書き・undo/redo には影響しません。
   enableClearOnDelete?: boolean;
+  // 追加(enter-move ②): 組み込みエディタ(text / number / select / date)の Enter 確定後に
+  //   アクティブセルをどこへ移すかです(既定 'down' = 下へ)。'none' で移動せずその場に
+  //   留まります。Tab / Shift+Tab(右 / 左)と Escape には影響しません。custom エディタは
+  //   consumer が ctx.commit(value, direction) で方向を渡すため本 prop の対象外です。
+  editorEnterMove?: EditorEnterMove;
   // 追加(undo/redo): 保持する undo ステップ数の上限です(既定 100)。超過分は古い順に破棄します。
   undoHistoryLimit?: number;
   // 追加(undo/redo 通知): undo / redo 可能状態が変化したときに呼ばれます(ツールバーの

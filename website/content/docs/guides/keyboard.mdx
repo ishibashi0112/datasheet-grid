@@ -22,10 +22,12 @@ description: グリッド本体・編集エディタのキーバインド一覧
 
 | キー | 操作 |
 | --- | --- |
-| `Enter` | 確定して下のセルへ |
+| `Enter` | 確定して下のセルへ(移動先は `editorEnterMove` で変更可) |
 | `Tab` / `Shift+Tab` | 確定して右 / 左のセルへ |
 | `Escape` | キャンセル |
 | フォーカスアウト | 確定(select エディタのみキャンセル) |
+
+`Enter` 確定後の移動先は `editorEnterMove` prop で変更できます(`'down'`(既定)/ `'up'` / `'right'` / `'left'` / `'none'`。Excel の「Enter キーを押したら、セルを移動する(方向)」相当。`Tab` / `Shift+Tab` には影響しません)。
 
 確定後の移動先は「確定を反映した再レンダー後」の行数でクランプされます。`onRowsChange` で末尾に空行を追加する実装(Excel 的な入力グリッドの定石)では、最終行の `Enter` 確定でそのまま増えた行へ進めます。
 

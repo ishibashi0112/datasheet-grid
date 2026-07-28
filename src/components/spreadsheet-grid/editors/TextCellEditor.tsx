@@ -9,6 +9,7 @@ import { useEffect, useRef, useState } from 'react';
 import type {
   EditorCommitDirection,
   EditorCommitResult,
+  EditorEnterMove,
 } from '../model/gridTypes';
 import { createEditorKeyDownHandler } from './editorKeyBindings';
 import { CellEditorErrorBubble } from './CellEditorErrorBubble';
@@ -22,6 +23,8 @@ type TextCellEditorProps = {
   ) => EditorCommitResult | void;
   onCancel: () => void;
   align?: 'left' | 'center' | 'right';
+  // 追加(enter-move ②): Enter 確定後の移動先です(未指定 = 'down')。
+  enterMove?: EditorEnterMove;
 };
 
 export function TextCellEditor({
@@ -29,6 +32,7 @@ export function TextCellEditor({
   onCommit,
   onCancel,
   align,
+  enterMove,
 }: TextCellEditorProps) {
   const inputRef = useRef<HTMLInputElement | null>(null);
   const [draftValue, setDraftValue] = useState(initialValue);
@@ -61,6 +65,7 @@ export function TextCellEditor({
           onCommit,
           onCancel,
           onRejected: setErrorMessage,
+          enterMove,
         })}
         onBlur={() => {
           const result = onCommit(draftValue);
