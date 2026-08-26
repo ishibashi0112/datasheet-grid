@@ -292,6 +292,7 @@ const gridRef = useRef<SpreadsheetGridHandle<Row>>(null);
 | `renderHeader` | `(ctx: HeaderRenderContext<T>) => ReactNode` | — | カスタムヘッダー描画。 |
 | `filterType` | `'text' \| 'textSet' \| 'number' \| 'numberSet' \| 'date' \| 'dateSet' \| 'select' \| 'set' \| 'custom' \| 'auto'` | — | フィルター UI の種別。`'auto'` は列の値から `numberSet` / `textSet` / `dateSet` を自動判定する opt-in(下記「filterType: 'auto'(自動判定)」節)。`'numberSet'` / `'textSet'` / `'dateSet'` は条件(演算子 + 値)と Set 一覧を 1 つの popover に縦に並べて **AND 結合**する複合フィルター(条件を適用すると Set 候補が連動して絞られる。候補外になった値の選択は破棄せず保持)。numberSet の演算子は 以上 / より大きい / 以下 / 未満 / に等しい / に等しくない / 範囲 / 空白 / 空白でない、textSet は を含む / に等しい / で始まる / で終わる / 空白 / 空白でない(判定は大文字小文字無視)。dateSet は 範囲 / 以降 / 以前 / に等しい / に等しくない / 空白 / 空白でない + 相対プリセット(今日 / 今月 / 過去 30 日。**相対のまま保存され評価のたびに解決**)で、Set 部分は年 / 月 / 日の 3 階層ツリー(親は 3 状態チェック)になる。 |
 | `filterOptions` | `GridSelectFilterOption[]` | rows から自動収集 | select / set / numberSet / textSet / dateSet の候補。 |
+| `dateFilterPresets` | `false \| DateFilterPresetOption[]` | ビルトイン 3 種 | dateSet の相対プリセットチップの構成。`false` / `[]` でチップ行を非表示(オプトアウト)。配列はビルトイン ID(`'today'` / `'thisMonth'` / `'last30days'`)の再利用とカスタム定義 `{ id, label, resolve }` を表示順のまま混在可。詳細は下記「dateSet の相対プリセット(dateFilterPresets)」節。 |
 | `filterFn` | `(row: T, filterValue: unknown) => boolean` | — | カスタムフィルター述語。 |
 | `editor` | `GridColumnEditor<T>` | text 相当 | セルエディタ種別(判別共用体)。`{ type: 'text' \| 'number' \| 'select' \| 'date' \| 'checkbox' \| 'custom', ... }`。詳細は「セルエディタ」節。 |
 | `validate` | `(ctx: CellValidationContext<T>) => CellValidationResult` | — | セル値の検証。`true`=有効 / `false`=無効(既定メッセージ)/ `string`・`{ message }`=無効+メッセージ。**純粋・軽量であること**(描画中の可視セルごとに毎レンダー評価。`cellClassName` 関数と同コスト階級)。詳細は「バリデーション」節。 |
@@ -308,6 +309,38 @@ const gridRef = useRef<SpreadsheetGridHandle<Row>>(null);
 - **サンプリング**: 先頭から**空白セルを除いた最大 1,000 件**(走査は最大 20,000 行で打ち切り)。**厳格判定**で、全サンプルが日付として解釈できれば `dateSet`、全て数値として解釈できれば `numberSet`、1 件でも外れれば `textSet`(安全側)。
 - **判定基準は値の型ではなく「解釈できるか」**: DB 型が文字列でも `'1234'` は数値とみなし `numberSet` になります(フィルター判定側の数値化規則と一貫)。ただし**先頭ゼロの値(`'0001'` のような品番コード・郵便番号)は数値とみなしません**(Excel と同じ扱い)。`boolean` / オブジェクトも数値扱いしません。
 - **serverSide**: クライアントが全行を持たないため値からの推定はしません。`editor` ヒントがあればそれで確定し、無ければ `'text'`(条件のみの部分一致フィルター)へフォールバックします。auto を使う場合は `editor` 種別の指定を推奨します。
+
+### dateSet の相対プリセット(dateFilterPresets)
+
+`filterType: 'dateSet'` の popover に出る相対プリセットチップ(既定: 今日 / 今月 / 過去 30 日)は、列オプション `dateFilterPresets` で列ごとに構成できます。
+
+```tsx
+// ① 非表示(オプトアウト): チップ行そのものを出さない
+{ key: 'updatedAt', filterType: 'dateSet', dateFilterPresets: false }
+
+// ② カスタム構成: ビルトイン ID の再利用とカスタム定義を表示順のまま混在できる
+{
+  key: 'updatedAt',
+  filterType: 'dateSet',
+  dateFilterPresets: [
+    'today',                       // ビルトイン ID(ラベルは既定の「今日」)
+    {
+      id: 'thisWeek',              // 保存されるのはこの id(相対のまま)
+      label: '今週',
+      resolve: (now) => {          // 評価のたびに呼ばれ、絶対範囲へ解決される
+        const day = now.getDay();
+        const monday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - ((day + 6) % 7));
+        return { from: monday, to: now };  // 'YYYY-MM-DD' 文字列 or Date(両端含む)
+      },
+    },
+  ],
+}
+```
+
+- **意味論はビルトインと同じ「相対保存」**: フィルター値には `{ mode: 'preset', preset: id }` だけが保存され、評価(フィルター再計算)のたびに `resolve(now)` で絶対範囲へ解決されます。`getState()` の状態を翌日復元すると範囲が追従します。
+- `resolve` の返り値は `{ from?, to? }`(両端含む)。**片側のみなら 以降 / 以前**として、`from > to` は自動で入れ替えて評価されます。両方省略は「条件なし」です。
+- **列定義から消えた ID の保存値は「条件なし」として評価**されます(全行非表示になる事故を避ける安全側)。要約表示は 構成ラベル → ビルトイン既定ラベル → 生 ID の順でフォールバックします。
+- **serverSide**: カスタム ID も `{ mode: 'preset', preset: id }` のまま dataSource へ渡ります。解釈(id → WHERE 句)はサーバ側の責務です(「サーバーサイド行モデル」節参照)。
 
 ### 値フォーマッタ(UI 表示)
 
@@ -835,7 +868,7 @@ clientSide の操作状態(グローバルフィルター・列フィルター�
   - `{ kind: 'number'; raw: string; parsed }` — `parsed` が `comparison`(演算子 `>` `>=` `<` `<=` `=` `!=`)/ `range` / `blank` / `notBlank` / `null`(=`raw` で部分一致。旧 UI の互換値)。判定は常に `parsed` が正で、`raw` は人間可読の表示文字列(現行 UI は「10 以上」のような日本語。旧値は「>=10」等の式文字列)。比較 / 範囲では**空白セル(null / undefined / 空文字)は不一致**(空白の抽出は `blank` / `notBlank`)。
   - `{ kind: 'numberSet'; condition; set }` — 条件 AND 選択の複合(`filterType: 'numberSet'`)。`condition` は上記 `parsed` と同形(`null` = 条件なし)、`set` は `{ mode?: 'include' | 'exclude'; values: string[] }`(`null` = 全選択)。サーバは **condition AND set** で WHERE を組む(例: `qty >= 10 AND qty NOT IN (12)`)。両方 `null` の値は送出されない(クライアント側で clear へ正規化)。
   - `{ kind: 'textSet'; condition; set }` — テキスト版の複合(`filterType: 'textSet'`)。`condition` は `{ mode: 'contains' | 'equals' | 'startsWith' | 'endsWith'; value }` / `{ mode: 'blank' | 'notBlank' }` / `null`(判定は大文字小文字無視・`value` は trim 済み)。`set` と AND 結合の規約は numberSet と同一。
-  - `{ kind: 'dateSet'; condition; set }` — 日付版の複合(`filterType: 'dateSet'`)。`condition` は `{ mode: 'range'; from; to }` / `{ mode: 'onOrAfter' | 'onOrBefore' | 'equals' | 'notEquals'; value }` / `{ mode: 'blank' | 'notBlank' }` / **`{ mode: 'preset'; preset: 'today' | 'thisMonth' | 'last30days' }`** / `null`。日付は `'YYYY-MM-DD'`(ゼロ埋め ISO)。相対プリセットは**相対のまま送出される**ため、サーバ側も受信時点の「今日」を基準に解決すること(クライアントの clientSide 評価も同じ規約)。`set.values` はセル生値ではなく**正規化済み日付キー**(`'YYYY-MM-DD'`。空白 = `''` / 日付として解釈できない値 = 生値)。
+  - `{ kind: 'dateSet'; condition; set }` — 日付版の複合(`filterType: 'dateSet'`)。`condition` は `{ mode: 'range'; from; to }` / `{ mode: 'onOrAfter' | 'onOrBefore' | 'equals' | 'notEquals'; value }` / `{ mode: 'blank' | 'notBlank' }` / **`{ mode: 'preset'; preset: string }`**(ビルトインは `'today'` / `'thisMonth'` / `'last30days'`。列の `dateFilterPresets` で定義したカスタム ID もそのまま載る)/ `null`。日付は `'YYYY-MM-DD'`(ゼロ埋め ISO)。相対プリセットは**相対のまま送出される**ため、サーバ側も受信時点の「今日」を基準に解決すること(クライアントの clientSide 評価も同じ規約)。カスタム ID の解釈(id → WHERE 句)もサーバ側の責務(`resolve` はクライアント評価専用で送出されない)。`set.values` はセル生値ではなく**正規化済み日付キー**(`'YYYY-MM-DD'`。空白 = `''` / 日付として解釈できない値 = 生値)。
   - `{ kind: 'text'; value }` / `{ kind: 'date'; value }` / `{ kind: 'select'; value }`
   - `{ kind: 'custom'; value }` — `column.filterFn` 利用列の自由形値(サーバ解釈は利用側責務)。
   - アクティブなフィルターのみ送出される。キーは安定 queryKey のため昇順整列される。

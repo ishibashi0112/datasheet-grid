@@ -35,9 +35,42 @@ const columns: GridColumn<Row>[] = [
 - `number` / `numberSet` の比較 / 範囲では**空白セル(null / 空文字)は常に不一致**です(0 とは区別されます)。空白行の抽出・除外は演算子「空白 / 空白でない」か、Set 一覧の「(空白)」項目を使います(`dateSet` の日付条件でも同じ規則です)。
 - `numberSet` / `textSet` / `dateSet` では条件を適用すると **Set 候補が条件を満たす値だけに連動して絞られます**。候補から外れた値のチェック状態は破棄されず、条件を戻せば復活します(条件の試行錯誤が可逆)。クリアは「条件のみ」「値のみ」「全部」の 3 粒度です。
 - `textSet` の条件(Set の検索欄との違い): 検索欄は「候補を選ぶための絞り込み」で、述語としては残りません。「◯◯ を含む」を**述語として保持**したい(後から増えた該当データも自動で拾いたい)場合は条件欄を使います。
-- `dateSet` の相対プリセット(今日 / 今月 / 過去 30 日)は**相対のまま保存**され、フィルター評価のたびに「今日」を基準へ解決されます(`getState()` で保存した状態を翌日復元すると範囲が追従します)。日付を固定したい場合は「範囲」等の絶対条件を使います。
+- `dateSet` の相対プリセット(今日 / 今月 / 過去 30 日)は**相対のまま保存**され、フィルター評価のたびに「今日」を基準へ解決されます(`getState()` で保存した状態を翌日復元すると範囲が追従します)。日付を固定したい場合は「範囲」等の絶対条件を使います。チップの非表示・カスタマイズは下記「相対プリセットの構成(`dateFilterPresets`)」を参照してください。
 - 独自の絞り込みロジックは `filterType: 'custom'` + `filterFn: (row, filterValue) => boolean` で書けます。
 - ソート / フィルター / グローバルフィルターは `enableSorting` / `enableColumnFilter` / `enableGlobalFilter`(いずれも既定 `true`)で無効化できます。
+
+## 相対プリセットの構成(`dateFilterPresets`)
+
+`dateSet` popover の相対プリセットチップは、列オプション `dateFilterPresets` で列ごとに構成できます。未指定はビルトイン 3 種(今日 / 今月 / 過去 30 日)です。
+
+```tsx
+// ① 非表示(オプトアウト): チップ行そのものを出さない
+{ key: 'updatedAt', title: '更新日時', filterType: 'dateSet', dateFilterPresets: false }
+
+// ② カスタム構成: ビルトイン ID の再利用とカスタム定義を混在できる(表示順のまま描画)
+{
+  key: 'updatedAt',
+  title: '更新日時',
+  filterType: 'dateSet',
+  dateFilterPresets: [
+    'today',                       // ビルトイン ID(ラベルは既定の「今日」)
+    {
+      id: 'thisWeek',              // フィルター値に保存されるのはこの id(相対のまま)
+      label: '今週',
+      resolve: (now) => {          // フィルター評価のたびに呼ばれ、絶対範囲へ解決される
+        const day = now.getDay();
+        const monday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - ((day + 6) % 7));
+        return { from: monday, to: now };  // 'YYYY-MM-DD' 文字列 or Date(両端含む)
+      },
+    },
+  ],
+}
+```
+
+- カスタムプリセットも**ビルトインと同じ「相対保存」**です。保存されるのは `id` だけで、評価のたびに `resolve(now)` が絶対範囲へ解決します。
+- `resolve` の返り値は `{ from?, to? }`(両端含む)。片側だけ返すと 以降 / 以前 として評価され、`from > to` は自動で入れ替わります。
+- 列定義からカスタム ID を外すと、保存済みのそのプリセット条件は「条件なし」として評価されます(全行が消える事故を避ける安全側の挙動)。
+- serverSide(`dataSource`)ではカスタム ID も `{ mode: 'preset', preset: id }` のまま送出されます。id の解釈はサーバ側の責務です([サーバーサイド行モデル](/docs/api/server-side))。
 
 ## 種別の自動判定(`filterType: 'auto'`)
 
