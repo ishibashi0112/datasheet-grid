@@ -1702,12 +1702,15 @@
      追加(FIT-1): maxHeight(inline)で viewport に収めるため flex 列化。既定では子は
      縮ませず(flex: none)、候補リスト(.ssg-filter-list)だけが縮んで内部スクロールに
      なります(後段の定義が同特異度・後勝ちで上書き)。 */
+  /* 変更(DENS-B): 密度 compact 化(2026-08 合意)。余白・文字・行高を一段引き締め、
+     複合フィルターの全高を約 16% 圧縮(602px → 505px 目安)。数値の出典は
+     密度プレビュー(standard / compact / dense 比較)のオプション B。 */
   .ssg-filter-popover {
     position: fixed;
     box-sizing: border-box;
     display: flex;
     flex-direction: column;
-    padding: 12px;
+    padding: 10px;
     border: 1px solid var(--ssg-panel-border);
     border-radius: 10px;
     background-color: var(--ssg-panel-bg);
@@ -1719,22 +1722,22 @@
   }
 
   .ssg-filter-title {
-    font-size: 12px;
+    font-size: 11.5px;
     font-weight: 700;
     color: var(--ssg-panel-text);
-    margin-bottom: 8px;
+    margin-bottom: 6px;
   }
 
   /* 種別ヒント / メタ情報行。--ellipsis は省略表示を足す。 */
   .ssg-filter-hint {
-    font-size: 11px;
+    font-size: 10.5px;
     color: var(--ssg-panel-text-muted);
-    margin-bottom: 8px;
+    margin-bottom: 6px;
   }
   .ssg-filter-meta {
-    font-size: 11px;
+    font-size: 10.5px;
     color: var(--ssg-panel-text-muted);
-    margin-bottom: 10px;
+    margin-bottom: 6px;
   }
   .ssg-filter-meta--ellipsis {
     white-space: nowrap;
@@ -1743,30 +1746,34 @@
   }
 
   .ssg-filter-collecting {
-    padding: 24px;
+    padding: 20px;
     text-align: center;
-    font-size: 12px;
+    font-size: 11.5px;
     color: var(--ssg-panel-text-muted);
   }
 
-  /* テキスト/数値入力 + select。 */
+  /* テキスト/数値入力 + select。
+     変更(DENS-B): padding 8×10 → 5×8 / radius 8 → 7 / 余白 8 → 6。フォームコントロールは
+     ブラウザ既定フォントに落ちるため、サイズはここで明示します(12.5px)。 */
   .ssg-filter-input {
     width: 100%;
     box-sizing: border-box;
-    padding: 8px 10px;
+    padding: 5px 8px;
     border: 1px solid var(--ssg-panel-border);
-    border-radius: 8px;
+    border-radius: 7px;
     outline: none;
-    margin-bottom: 8px;
+    margin-bottom: 6px;
+    font-size: 12.5px;
   }
   .ssg-filter-select {
     width: 100%;
     box-sizing: border-box;
-    padding: 8px 10px;
+    padding: 5px 8px;
     border: 1px solid var(--ssg-panel-border);
-    border-radius: 8px;
+    border-radius: 7px;
     outline: none;
-    margin-bottom: 8px;
+    margin-bottom: 6px;
+    font-size: 12.5px;
     background-color: var(--ssg-panel-bg);
   }
 
@@ -1785,7 +1792,7 @@
     flex: none;
     font-size: 12px;
     color: var(--ssg-panel-text-muted);
-    margin-bottom: 8px;
+    margin-bottom: 6px;
   }
 
   /* numberSet 複合フィルター(filter-ext B): 条件 / 値のセクションヘッダ + 個別クリア +
@@ -1794,16 +1801,16 @@
     display: flex;
     align-items: baseline;
     gap: 8px;
-    margin: 2px 0 6px;
+    margin: 2px 0 5px;
   }
   .ssg-filter-sec-label {
-    font-size: 11px;
+    font-size: 10.5px;
     font-weight: 700;
     letter-spacing: 0.05em;
     color: var(--ssg-panel-text-muted);
   }
   .ssg-filter-sec-meta {
-    font-size: 11px;
+    font-size: 10.5px;
     color: var(--ssg-panel-text-faint);
   }
   .ssg-filter-sec-clear {
@@ -1811,7 +1818,7 @@
     border: none;
     background: none;
     padding: 0;
-    font-size: 11px;
+    font-size: 10.5px;
     color: var(--ssg-panel-accent);
     cursor: pointer;
   }
@@ -1821,34 +1828,35 @@
   }
   .ssg-filter-sep {
     border-top: 1px solid var(--ssg-panel-separator);
-    margin: 2px 0 10px;
+    margin: 2px 0 8px;
   }
   .ssg-filter-summary {
-    font-size: 11px;
+    font-size: 10.5px;
     color: var(--ssg-panel-text);
     background-color: var(--ssg-panel-accent-bg);
     border-radius: 6px;
-    padding: 5px 8px;
-    margin-bottom: 10px;
+    padding: 4px 7px;
+    margin-bottom: 8px;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
 
-  /* dateSet(filter-ext D): 相対プリセットチップ(今日 / 今月 / 過去 30 日)。 */
+  /* dateSet(filter-ext D): 相対プリセットチップ(既定: 今日 / 今月 / 過去 30 日。
+     構成は列の dateFilterPresets)。 */
   .ssg-filter-presets {
     display: flex;
     flex-wrap: wrap;
-    gap: 6px;
-    margin-bottom: 8px;
+    gap: 5px;
+    margin-bottom: 6px;
   }
   .ssg-filter-preset-chip {
     border: 1px solid var(--ssg-panel-border);
     background-color: var(--ssg-panel-bg);
     color: var(--ssg-panel-text-muted);
     border-radius: 999px;
-    padding: 2px 10px;
-    font-size: 11px;
+    padding: 1px 8px;
+    font-size: 10.5px;
     cursor: pointer;
   }
   .ssg-filter-preset-chip--active {
@@ -1872,15 +1880,17 @@
     visibility: hidden;
   }
 
-  /* set フィルター: 全選択行 / 候補リスト / 行 / 件数。 */
+  /* set フィルター: 全選択行 / 候補リスト / 行 / 件数。
+     変更(DENS-B): 行高 28 → 24(TSX の SET_FILTER_OPTION_ROW_HEIGHT と一致必須)/
+     リスト 208 → 176。 */
   .ssg-filter-selectall {
     display: flex;
     align-items: center;
     gap: 8px;
-    height: 28px;
+    height: 24px;
     padding: 0 8px;
     cursor: pointer;
-    font-size: 12px;
+    font-size: 11.5px;
     color: var(--ssg-panel-text);
     border-bottom: 1px solid var(--ssg-panel-separator);
     user-select: none;
@@ -1889,20 +1899,20 @@
     font-weight: 600;
   }
   .ssg-filter-list {
-    height: 208px;
+    height: 176px;
     overflow-y: auto;
     border: 1px solid var(--ssg-panel-separator);
     border-top: none;
     border-radius: 0 0 8px 8px;
-    margin-bottom: 8px;
+    margin-bottom: 6px;
     /* 追加(FIT-1): popover が maxHeight に達したときはこのリストだけが縮んで
        内部スクロールになります(height は flex-basis として機能)。 */
     flex: 0 1 auto;
     min-height: 84px;
   }
   .ssg-filter-empty {
-    padding: 12px;
-    font-size: 12px;
+    padding: 10px;
+    font-size: 11.5px;
     color: var(--ssg-panel-text-faint);
     text-align: center;
   }
@@ -1923,7 +1933,7 @@
     padding: 0 8px;
     box-sizing: border-box;
     cursor: pointer;
-    font-size: 12px;
+    font-size: 11.5px;
     color: var(--ssg-panel-text);
     user-select: none;
   }
@@ -1943,19 +1953,19 @@
     border: 1px solid var(--ssg-panel-border);
     background-color: var(--ssg-panel-bg);
     color: var(--ssg-panel-text-sub);
-    border-radius: 8px;
-    padding: 6px 10px;
+    border-radius: 7px;
+    padding: 4px 9px;
     cursor: pointer;
-    font-size: 12px;
+    font-size: 11.5px;
   }
   .ssg-filter-btn-primary {
     border: 1px solid var(--ssg-panel-accent);
     background-color: var(--ssg-panel-accent);
     color: var(--ssg-panel-accent-contrast);
-    border-radius: 8px;
-    padding: 6px 10px;
+    border-radius: 7px;
+    padding: 4px 9px;
     cursor: pointer;
-    font-size: 12px;
+    font-size: 11.5px;
   }
 
   /* ── 列メニュー popover(ColumnMenuPopover) ── */

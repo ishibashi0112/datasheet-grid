@@ -164,7 +164,8 @@ type ColumnFilterPopoverProps = {
 };
 
 // 追加(12-A): set フィルター候補リストの行高です(仮想化の estimateSize と一致させます)。
-const SET_FILTER_OPTION_ROW_HEIGHT = 28;
+// 変更(DENS-B): 28 → 24(compact 化。CSS 側の .ssg-filter-selectall 高さとも揃えます)。
+const SET_FILTER_OPTION_ROW_HEIGHT = 24;
 
 // ── set フィルター本体 ──────────────────────────────────
 // 追加(12-A): set フィルターの検索 state / 仮想化は popover 全体とライフサイクルが

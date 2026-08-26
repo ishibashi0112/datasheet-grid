@@ -79,13 +79,16 @@ type UseFilterPopoverControllerArgs<T> = {
 const POPUP_WIDTH = 240;
 const VIEWPORT_MARGIN = 8;
 const OFFSET_Y = 8;
-const ESTIMATED_POPUP_HEIGHT = 260;
-// 追加(12-A): set フィルターは検索 + Select All + 候補リスト(208px)を含むため、
+// 変更(DENS-B): compact 化(padding / 行高 / リスト高の圧縮)に合わせて見積もりを更新。
+//   見積もりは初回配置のフリップ判定にだけ使われ、描画後は実測(FIT-1 の
+//   ResizeObserver)が優先されるため、多少のずれは自動補正されます。
+const ESTIMATED_POPUP_HEIGHT = 230;
+// 追加(12-A): set フィルターは検索 + Select All + 候補リスト(176px)を含むため、
 //             上下フリップ判定用の見積もり高さを別に持ちます。
-const ESTIMATED_SET_POPUP_HEIGHT = 400;
+const ESTIMATED_SET_POPUP_HEIGHT = 340;
 // 追加(filter-ext B/C): 複合(numberSet / textSet)は set の内容 + 条件セクション
-//   (演算子 + 値入力)ぶん縦に長い。
-const ESTIMATED_COMBO_POPUP_HEIGHT = 470;
+//   (演算子 + 値入力)ぶん縦に長い(dateSet はプリセットチップ行も含み ~505px)。
+const ESTIMATED_COMBO_POPUP_HEIGHT = 480;
 
 // 追加: 列フィルター popover の state / ref / focus / outside click / layout をまとめて管理します。
 export const useFilterPopoverController = <T,>({
