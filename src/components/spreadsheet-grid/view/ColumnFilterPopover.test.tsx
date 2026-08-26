@@ -414,6 +414,46 @@ describe('ColumnFilterPopover の dateSet 複合 UI(filter-ext D)', () => {
   });
 });
 
+// 追加(preset-opt): プリセットチップ構成(datePresets)の view 配線テストです。
+//   正規化・評価は logic 側(dateFilterPresets / filtering)でカバー済みのため、
+//   ここでは チップ非表示 / カスタムラベル描画 / カスタム ID の draft 通知 を検証します。
+describe('ColumnFilterPopover の dateSet プリセット構成(preset-opt)', () => {
+  it('datePresets が空配列ならチップ行そのものを描画しない', () => {
+    const props = {
+      ...makeDateSetProps(DEFAULT_DATE_FILTER_DRAFT),
+      datePresets: [],
+    };
+    render(<ColumnFilterPopover {...props} />);
+    expect(screen.queryByRole('button', { name: '今日' })).toBeNull();
+    expect(screen.queryByRole('button', { name: '過去 30 日' })).toBeNull();
+  });
+
+  it('未指定(undefined)はビルトイン 3 種(従来挙動)', () => {
+    const props = makeDateSetProps(DEFAULT_DATE_FILTER_DRAFT);
+    render(<ColumnFilterPopover {...props} />);
+    expect(screen.getByRole('button', { name: '今日' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: '今月' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: '過去 30 日' })).toBeTruthy();
+  });
+
+  it('カスタム構成はラベルで描画され、クリックで id が draft へ通知される', () => {
+    const props = {
+      ...makeDateSetProps(DEFAULT_DATE_FILTER_DRAFT),
+      datePresets: [
+        { id: 'thisWeek', label: '今週', resolve: () => ({}) },
+        { id: 'today', label: '今日' },
+      ],
+    };
+    render(<ColumnFilterPopover {...props} />);
+    expect(screen.queryByRole('button', { name: '過去 30 日' })).toBeNull();
+    fireEvent.pointerDown(screen.getByRole('button', { name: '今週' }));
+    expect(props.onDateConditionDraftChange).toHaveBeenCalledWith({
+      ...DEFAULT_DATE_FILTER_DRAFT,
+      preset: 'thisWeek',
+    });
+  });
+});
+
 // 追加(FIT-1): viewport クランプの view 側配線です(layout.maxHeight → inline style)。
 //   配置計算そのものは logic/filterPopoverLayout.test.ts でカバーします。
 describe('ColumnFilterPopover の viewport クランプ(FIT-1)', () => {

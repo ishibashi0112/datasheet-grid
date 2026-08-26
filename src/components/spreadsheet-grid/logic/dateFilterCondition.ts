@@ -5,6 +5,12 @@ import type {
 // 追加(filter-ext D): 候補連動(条件でツリー候補を絞る)の単一値判定です。
 //   行 predicate(compileParsedDatePredicate)と同一の意味論を共有します。
 import { matchesParsedDateFilter } from './filtering';
+// 追加(preset-opt): プリセット構成の正規形とラベル逆引きです(カスタム対応)。
+import {
+  BUILTIN_DATE_FILTER_PRESET_OPTIONS,
+  dateFilterPresetLabel,
+  type NormalizedDateFilterPreset,
+} from './dateFilterPresets';
 
 // 追加(filter-ext D): dateSet(日付条件 AND 選択)の条件欄 UI 純ロジックです。
 //   構造は numberFilterCondition / textFilterCondition と同型ですが、次の 2 点が固有です。
@@ -24,11 +30,12 @@ export type DateFilterOperator =
 
 // popover の条件欄 draft です。preset 非 null のあいだは operator / 値より優先されます
 //   (演算子や値を編集するとチップ解除 = preset: null に戻すのは view 側の責務)。
+// 変更(preset-opt): カスタムプリセット ID も保持するため string です。
 export type DateFilterConditionDraft = {
   operator: DateFilterOperator;
   value1: string;
   value2: string;
-  preset: DateFilterPreset | null;
+  preset: string | null;
 };
 
 // 新規オープン時(フィルター未設定)の既定 draft です。既定演算子は「範囲」です。
@@ -54,14 +61,12 @@ export const DATE_FILTER_OPERATOR_OPTIONS: ReadonlyArray<{
 ];
 
 // 相対プリセットチップの表示順とラベルです。
+// 変更(preset-opt): 定義本体は logic/dateFilterPresets.ts へ移設しました(評価側 filtering と
+//   共有するため)。既存参照の互換用に同名 export を残します。
 export const DATE_FILTER_PRESET_OPTIONS: ReadonlyArray<{
   value: DateFilterPreset;
   label: string;
-}> = [
-  { value: 'today', label: '今日' },
-  { value: 'thisMonth', label: '今月' },
-  { value: 'last30days', label: '過去 30 日' },
-];
+}> = BUILTIN_DATE_FILTER_PRESET_OPTIONS;
 
 // 演算子で値入力の個数が決まります(範囲 = 2 / 空白系 = 0 / 他 = 1)。
 export const dateFilterOperandCount = (
@@ -115,7 +120,12 @@ export const buildParsedDateFilterFromDraft = (
 };
 
 // parsed を人間可読の表示文字列へ整形します(チップ / 管理パネル / popover サマリー)。
-export const formatParsedDateFilter = (parsed: ParsedDateFilter): string => {
+// 変更(preset-opt): カスタムプリセットのラベルを引くため、正規化済み構成を任意で受けます
+//   (未指定 = ビルトインのみ。未知 ID は生 ID 表示のフォールバック)。
+export const formatParsedDateFilter = (
+  parsed: ParsedDateFilter,
+  presets?: readonly NormalizedDateFilterPreset[],
+): string => {
   switch (parsed.mode) {
     case 'range':
       return `${parsed.from} 〜 ${parsed.to}`;
@@ -131,12 +141,8 @@ export const formatParsedDateFilter = (parsed: ParsedDateFilter): string => {
       return '(空白)';
     case 'notBlank':
       return '(空白でない)';
-    case 'preset': {
-      const option = DATE_FILTER_PRESET_OPTIONS.find(
-        (candidate) => candidate.value === parsed.preset,
-      );
-      return option?.label ?? parsed.preset;
-    }
+    case 'preset':
+      return dateFilterPresetLabel(parsed.preset, presets);
   }
 };
 
@@ -177,11 +183,13 @@ export const filterOptionsByDateCondition = <O extends { value: string }>(
   options: O[],
   condition: ParsedDateFilter | null,
   now: Date,
+  // 追加(preset-opt): カスタムプリセット解決用の正規化済み構成です(行 predicate と同じ解決)。
+  presets?: readonly NormalizedDateFilterPreset[],
 ): O[] => {
   if (!condition) {
     return options;
   }
   return options.filter((option) =>
-    matchesParsedDateFilter(condition, option.value, now),
+    matchesParsedDateFilter(condition, option.value, now, presets),
   );
 };

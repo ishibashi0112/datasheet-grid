@@ -81,6 +81,9 @@ import {
 } from './logic/filtering';
 // 追加(FM-1): 列フィルター値 → 人間可読要約(フィルター管理パネルの一覧行)です。
 import { describeColumnFilterValue } from './logic/filterSummary';
+// 追加(preset-opt): dateSet プリセット構成(列定義 dateFilterPresets)の正規化です
+//   (popover のチップ描画 / 候補連動 / 要約ラベルへ同じ正規形を渡します)。
+import { normalizeDateFilterPresets } from './logic/dateFilterPresets';
 // 追加(filter-ext A): number 列の構造化条件 draft から記述子を構築します
 //   (popover の演算子セレクト UI の commit 経路)。
 // 変更(filter-ext B): numberSet の条件即時適用(draft → ParsedNumberFilter)と
@@ -3020,7 +3023,14 @@ export function SpreadsheetGrid<T extends object>({
       entries.push({
         columnKey: column.key,
         title: column.title || column.key,
-        summaryText: describeColumnFilterValue(value),
+        // 変更(preset-opt): dateSet はカスタムプリセットのラベル逆引き用に列のプリセット
+        //   構成を渡します(他 kind は未使用のため従来どおり)。
+        summaryText: describeColumnFilterValue(
+          value,
+          value.kind === 'dateSet'
+            ? normalizeDateFilterPresets(column.dateFilterPresets)
+            : undefined,
+        ),
         isHidden,
       });
     };
@@ -4464,12 +4474,18 @@ export function SpreadsheetGrid<T extends object>({
     return text.trim() ? text : '（なし）';
   })();
 
+  // 追加(preset-opt): 開いている列のプリセット構成(正規形)です。popover のチップ描画・
+  //   候補連動・サマリーのラベル逆引きが共有します(dateSet 以外の列では実質未使用)。
+  const openedDatePresets = openedFilterColumn
+    ? normalizeDateFilterPresets(openedFilterColumn.dateFilterPresets)
+    : undefined;
+
   // 追加(filter-ext B/C): 複合(numberSet / textSet)popover のフッター上サマリーです
   //   (「10 以上 かつ 3 件を選択」)。即時適用モデルのため、適用済み記述子からそのまま
   //   生成すれば表示と結果が常に一致します。
   const openedComboSummaryText =
     openedSetFilterValue && isActiveColumnFilterValue(openedSetFilterValue)
-      ? describeColumnFilterValue(openedSetFilterValue)
+      ? describeColumnFilterValue(openedSetFilterValue, openedDatePresets)
       : 'フィルターなし';
 
   const renderedFilterPopover = openedFilterColumn ? (
@@ -4488,6 +4504,7 @@ export function SpreadsheetGrid<T extends object>({
       onTextConditionDraftChange={handleTextConditionDraftChange}
       dateConditionDraft={filterPopoverState?.dateDraft ?? null}
       onDateConditionDraftChange={handleDateConditionDraftChange}
+      datePresets={openedDatePresets}
       onComboConditionClear={handleComboConditionClear}
       onComboSelectionClear={handleComboSelectionClear}
       comboSummaryText={openedComboSummaryText}

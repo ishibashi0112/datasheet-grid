@@ -25,11 +25,14 @@ import {
   matchesParsedTextFilter,
   parseNumberFilterExpression,
   resolveDateFilterPreset,
+  resolveParsedDateFilter,
   rowMatchesGlobalText,
   toDateKey,
   toDateSetKey,
   type RowOrder,
 } from './filtering';
+// 追加(preset-opt): カスタムプリセット構成の正規化です(resolve の逆引きテストで使用)。
+import { normalizeDateFilterPresets } from './dateFilterPresets';
 import { getCellValue } from '../utils/permissions';
 import type {
   ColumnFilterValue,
@@ -901,6 +904,104 @@ describe('filterOrderByColumns (filter-ext D: dateSet 複合)', () => {
         matchesParsedDateFilter(condition, dsRows[index].d, NOW),
       );
     expect(viaOrder).toEqual(viaSingle);
+  });
+
+  // ── カスタムプリセット(preset-opt) ──────────────────
+  //   列定義(dateFilterPresets)の resolve が評価のたびに解決されること・解決不能 ID は
+  //   「条件なし」へ倒れることを、行 predicate 経路(compileParsedDatePredicate)で検証します。
+  describe('カスタムプリセット(preset-opt)', () => {
+    // 「過去 7 日」(now 含む)のカスタム定義です。Date 端値の正規化も同時に検証します。
+    const last7days = {
+      id: 'last7days',
+      label: '過去 7 日',
+      resolve: (now: Date) => ({
+        from: new Date(now.getFullYear(), now.getMonth(), now.getDate() - 6),
+        to: now,
+      }),
+    };
+    const customCol = (key: string): GridColumn<Row> => ({
+      ...dateSetCol(key),
+      dateFilterPresets: ['today', last7days],
+    });
+    const runCustom = (value: DateSetColumnFilterValue): number[] =>
+      asArray(
+        filterOrderByColumns(
+          dsRows,
+          order,
+          [customCol('d')],
+          { d: value },
+          undefined,
+          NOW,
+        ),
+      );
+
+    it('カスタム ID は列定義の resolve(now) で評価される', () => {
+      // 過去 7 日(2026-07-18 〜 07-24)→ 2026-07-24(index 2)と 2026-07-20(index 3)が一致します。
+      expect(
+        runCustom({
+          kind: 'dateSet',
+          condition: { mode: 'preset', preset: 'last7days' },
+          set: null,
+        }),
+      ).toEqual([2, 3]);
+    });
+
+    it('resolveParsedDateFilter: 片側のみの範囲は 以降 / 以前 へ、空範囲と未知 ID は null', () => {
+      const presets = normalizeDateFilterPresets([
+        { id: 'fromOnly', label: 'F', resolve: () => ({ from: '2026-07-01' }) },
+        { id: 'toOnly', label: 'T', resolve: () => ({ to: '2026-07-01' }) },
+        { id: 'empty', label: 'E', resolve: () => ({}) },
+      ]);
+      expect(
+        resolveParsedDateFilter({ mode: 'preset', preset: 'fromOnly' }, NOW, presets),
+      ).toEqual({ mode: 'onOrAfter', value: '2026-07-01' });
+      expect(
+        resolveParsedDateFilter({ mode: 'preset', preset: 'toOnly' }, NOW, presets),
+      ).toEqual({ mode: 'onOrBefore', value: '2026-07-01' });
+      expect(
+        resolveParsedDateFilter({ mode: 'preset', preset: 'empty' }, NOW, presets),
+      ).toBeNull();
+      expect(
+        resolveParsedDateFilter({ mode: 'preset', preset: 'ghost' }, NOW, presets),
+      ).toBeNull();
+      // ビルトイン ID は presets に含まれていなくても常に解決できます(後方互換)。
+      expect(
+        resolveParsedDateFilter({ mode: 'preset', preset: 'today' }, NOW, presets),
+      ).toEqual({ mode: 'range', from: '2026-07-24', to: '2026-07-24' });
+      // 逆転範囲は from/to を入れ替えて正規化します。
+      expect(
+        resolveParsedDateFilter(
+          { mode: 'preset', preset: 'rev' },
+          NOW,
+          normalizeDateFilterPresets([
+            {
+              id: 'rev',
+              label: 'R',
+              resolve: () => ({ from: '2026-07-31', to: '2026-07-01' }),
+            },
+          ]),
+        ),
+      ).toEqual({ mode: 'range', from: '2026-07-01', to: '2026-07-31' });
+    });
+
+    it('列定義から消えたカスタム ID は「条件なし」(全行合格)として評価される', () => {
+      // dateFilterPresets 未指定の列に保存済みカスタム ID → 条件は無視され、全行が残ります。
+      expect(
+        run({
+          kind: 'dateSet',
+          condition: { mode: 'preset', preset: 'last7days' },
+          set: null,
+        }),
+      ).toEqual([0, 1, 2, 3, 4, 5]);
+      // matchesParsedDateFilter(候補連動)も同じ規則です。
+      expect(
+        matchesParsedDateFilter(
+          { mode: 'preset', preset: 'ghost' },
+          '2020-01-01',
+          NOW,
+        ),
+      ).toBe(true);
+    });
   });
 });
 

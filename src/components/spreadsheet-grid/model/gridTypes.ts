@@ -339,6 +339,26 @@ export type TextSetColumnFilterValue = {
 //   場合は range 等の絶対条件を使います。
 export type DateFilterPreset = 'today' | 'thisMonth' | 'last30days';
 
+// 追加(preset-opt): カスタムプリセットの resolve が返す絶対範囲です。両端は含みます。
+//   'YYYY-MM-DD' 文字列か Date を受け付け、片側のみなら 以降 / 以前 として評価されます
+//   (両方 undefined は「条件なし」)。
+export type DateFilterPresetRange = {
+  from?: string | Date;
+  to?: string | Date;
+};
+
+// 追加(preset-opt): 列定義で渡すカスタムプリセットです。id が保存値(相対のまま)になり、
+//   評価のたびに resolve(now) で絶対範囲へ解決されます(ビルトインと同じ意味論)。
+export type CustomDateFilterPreset = {
+  id: string;
+  label: string;
+  resolve: (now: Date) => DateFilterPresetRange;
+};
+
+// 追加(preset-opt): GridColumn.dateFilterPresets の要素です
+//   (ビルトイン ID の再利用 or カスタム定義)。
+export type DateFilterPresetOption = DateFilterPreset | CustomDateFilterPreset;
+
 // 追加(filter-ext D): 日付条件の解釈結果です。日付は 'YYYY-MM-DD'(ゼロ埋め ISO)へ正規化して
 //   保持し、比較は文字列比較で行います(同形式なら辞書順 = 時系列順)。セル値の正規化は
 //   logic/dateFilterCondition の toDateKey(解釈不可 = 比較不一致)が担います。
@@ -360,7 +380,10 @@ export type ParsedDateFilter =
     }
   | {
       mode: 'preset';
-      preset: DateFilterPreset;
+      // 変更(preset-opt): ビルトイン ID に加えカスタムプリセットの id も保存されるため
+      //   string です(ビルトインは resolveDateFilterPreset、カスタムは列定義の resolve が
+      //   評価時に解決します。列定義に無い ID は「条件なし」評価)。
+      preset: string;
     };
 
 // 追加(filter-ext D): 日付列の「条件 AND 選択」複合フィルターです。set.values は
@@ -723,6 +746,16 @@ export type GridColumn<T> = {
   filterType?: ColumnFilterTypeOption;
   // 追加: select / set フィルター時の候補です。未指定時は rows から自動収集します。
   filterOptions?: GridSelectFilterOption[];
+  // 追加(preset-opt): dateSet フィルターの相対プリセットチップの構成です。
+  //   - 未指定: ビルトイン 3 種(今日 / 今月 / 過去 30 日)を表示(従来挙動)。
+  //   - false または []: チップ行そのものを非表示にします(オプトアウト)。
+  //   - 配列: 表示順どおりに描画します。ビルトイン ID('today' 等)の再利用と、
+  //     カスタム定義({ id, label, resolve })を混在できます。カスタムの評価は
+  //     フィルター再計算のたびに resolve(now) で解決されます(ビルトイン同様の相対保存)。
+  //     注記: 保存値には id だけが載るため、列定義からカスタム ID を外すと既存の保存
+  //     フィルターは「条件なし」として評価されます(serverSide では id がそのまま
+  //     dataSource へ渡るため、解釈はサーバ側の責務です)。
+  dateFilterPresets?: false | readonly DateFilterPresetOption[];
   filterFn?: (row: T, filterValue: unknown) => boolean;
   // 追加(editor 基盤): セルエディタ種別です。未指定は text(プレーンテキスト編集)。
   //   編集可否は従来どおり editable / readOnly / canEditCell で判定されます(editor は種別のみ)。

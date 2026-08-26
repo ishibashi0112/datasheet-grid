@@ -5,6 +5,8 @@ import { formatParsedNumberFilter } from './numberFilterCondition';
 import { formatParsedTextFilter } from './textFilterCondition';
 // 追加(filter-ext D): dateSet の条件部の表示文字列です(「2026-01-01 〜 …」「過去 30 日」等)。
 import { formatParsedDateFilter } from './dateFilterCondition';
+// 追加(preset-opt): dateSet カスタムプリセットのラベル逆引き用の正規形です。
+import type { NormalizedDateFilterPreset } from './dateFilterPresets';
 
 // 追加(FM-1 / フィルター管理パネル): 列フィルター値(判別共用体)を人間可読な要約文字列へ
 //   変換する純関数です。FilterManagementPanel の一覧行で使い、FM-2(フィルターチップバー)
@@ -45,7 +47,12 @@ const describeSetSelection = (
 
 // 列フィルター値の要約文字列を返します。有効判定(isActiveColumnFilterValue)は呼び出し側の
 //   責務です(無効値でも安全に文字列を返しますが、一覧に載せる/載せないの判断は行いません)。
-export const describeColumnFilterValue = (value: ColumnFilterValue): string => {
+// 変更(preset-opt): dateSet のカスタムプリセットをラベル表示するため、対象列の正規化済み
+//   プリセット構成を任意で受けます(未指定 = ビルトインのみ。他 kind では未使用)。
+export const describeColumnFilterValue = (
+  value: ColumnFilterValue,
+  datePresets?: readonly NormalizedDateFilterPreset[],
+): string => {
   switch (value.kind) {
     case 'text':
     case 'date':
@@ -67,7 +74,7 @@ export const describeColumnFilterValue = (value: ColumnFilterValue): string => {
           ? formatParsedNumberFilter(value.condition)
           : value.kind === 'textSet'
             ? formatParsedTextFilter(value.condition)
-            : formatParsedDateFilter(value.condition)
+            : formatParsedDateFilter(value.condition, datePresets)
         : null;
       const setText = value.set
         ? describeSetSelection(value.set.mode, value.set.values)

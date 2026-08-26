@@ -58,7 +58,6 @@ import {
 // 追加(filter-ext D): dateSet の日付条件エディタ(プリセットチップ含む)用の純ロジックです。
 import {
   DATE_FILTER_OPERATOR_OPTIONS,
-  DATE_FILTER_PRESET_OPTIONS,
   DEFAULT_DATE_FILTER_DRAFT,
   buildParsedDateFilterFromDraft,
   dateFilterOperandCount,
@@ -66,6 +65,12 @@ import {
   type DateFilterConditionDraft,
   type DateFilterOperator,
 } from '../logic/dateFilterCondition';
+// 追加(preset-opt): プリセットチップの構成(正規形)です。列定義 dateFilterPresets の正規化は
+//   親(SpreadsheetGrid)の責務で、本 view は受け取った構成の描画と評価連動だけを行います。
+import {
+  normalizeDateFilterPresets,
+  type NormalizedDateFilterPreset,
+} from '../logic/dateFilterPresets';
 // 追加(filter-ext D): dateSet の年月日ツリー(平坦化された可視行)です。
 import {
   buildDateTreeRows,
@@ -108,6 +113,9 @@ type ColumnFilterPopoverProps = {
   // 追加(filter-ext D): dateSet の日付条件 draft です(dateSet 以外は null)。
   dateConditionDraft: DateFilterConditionDraft | null;
   onDateConditionDraftChange: (draft: DateFilterConditionDraft) => void;
+  // 追加(preset-opt): dateSet のプリセットチップ構成です(正規化済み。空配列 = チップ行
+  //   非表示)。未指定はビルトイン 3 種(従来挙動)へフォールバックします。
+  datePresets?: readonly NormalizedDateFilterPreset[];
   // 追加(filter-ext B/C): 複合(numberSet / textSet)の個別クリアです(条件のみ / 値のみ。
   //   フッターの「クリア」は全消し ── クリアの 3 粒度は合意仕様 §4-2)。
   onComboConditionClear: () => void;
@@ -540,6 +548,8 @@ type DateConditionEditorProps = {
   onKeyDown: (
     event: KeyboardEvent<HTMLSelectElement | HTMLInputElement>,
   ) => void;
+  // 追加(preset-opt): チップ構成です(正規化済み。空配列ならチップ行を描画しません)。
+  presets: readonly NormalizedDateFilterPreset[];
 };
 
 function DateConditionEditor({
@@ -547,6 +557,7 @@ function DateConditionEditor({
   valueInputRef,
   onDraftChange,
   onKeyDown,
+  presets,
 }: DateConditionEditorProps) {
   const operandCount =
     draft.preset !== null ? 0 : dateFilterOperandCount(draft.operator);
@@ -607,32 +618,36 @@ function DateConditionEditor({
       ) : draft.preset === null ? (
         <div className="ssg-filter-meta">この演算子は値入力を使いません</div>
       ) : null}
-      <div className="ssg-filter-presets">
-        {DATE_FILTER_PRESET_OPTIONS.map((option) => (
-          <button
-            key={option.value}
-            type="button"
-            onPointerDown={(event) => {
-              event.preventDefault();
-              event.stopPropagation();
-              // 同じチップの再クリックは解除(トグル)です。
-              onDraftChange({
-                ...draft,
-                preset: draft.preset === option.value ? null : option.value,
-              });
-            }}
-            onKeyDown={(event) => {
-              event.stopPropagation();
-            }}
-            className={cx(
-              'ssg-filter-preset-chip',
-              draft.preset === option.value && 'ssg-filter-preset-chip--active',
-            )}
-          >
-            {option.label}
-          </button>
-        ))}
-      </div>
+      {/* 変更(preset-opt): チップは列ごとの構成(dateFilterPresets)から描画します。
+          空構成(false / [])ではチップ行そのものを出しません(オプトアウト)。 */}
+      {presets.length > 0 && (
+        <div className="ssg-filter-presets">
+          {presets.map((option) => (
+            <button
+              key={option.id}
+              type="button"
+              onPointerDown={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                // 同じチップの再クリックは解除(トグル)です。
+                onDraftChange({
+                  ...draft,
+                  preset: draft.preset === option.id ? null : option.id,
+                });
+              }}
+              onKeyDown={(event) => {
+                event.stopPropagation();
+              }}
+              className={cx(
+                'ssg-filter-preset-chip',
+                draft.preset === option.id && 'ssg-filter-preset-chip--active',
+              )}
+            >
+              {option.label}
+            </button>
+          ))}
+        </div>
+      )}
     </>
   );
 }
@@ -1016,6 +1031,7 @@ export function ColumnFilterPopover({
   onTextConditionDraftChange,
   dateConditionDraft,
   onDateConditionDraftChange,
+  datePresets,
   onComboConditionClear,
   onComboSelectionClear,
   comboSummaryText,
@@ -1092,6 +1108,8 @@ export function ColumnFilterPopover({
   const numberDraft = numberConditionDraft ?? DEFAULT_NUMBER_FILTER_DRAFT;
   const textDraft = textConditionDraft ?? DEFAULT_TEXT_FILTER_DRAFT;
   const dateDraft = dateConditionDraft ?? DEFAULT_DATE_FILTER_DRAFT;
+  // 追加(preset-opt): プリセット構成です。未指定はビルトイン 3 種(従来挙動)。
+  const resolvedDatePresets = datePresets ?? normalizeDateFilterPresets(undefined);
 
   // 追加(filter-ext B/C/D): 候補連動(合意仕様 §2.3)── 条件 draft から parsed を合成し、
   //   Set 候補一覧を条件を満たす値だけに絞ります(条件なしは同一参照で素通し)。
@@ -1116,7 +1134,12 @@ export function ColumnFilterPopover({
     : isTextSetFilter
       ? filterOptionsByTextCondition(selectOptions, textComboCondition)
       : isDateSetFilter
-        ? filterOptionsByDateCondition(selectOptions, dateComboCondition, comboNow)
+        ? filterOptionsByDateCondition(
+            selectOptions,
+            dateComboCondition,
+            comboNow,
+            resolvedDatePresets,
+          )
         : selectOptions;
 
   // 追加(filter-ext A): number 条件 UI(演算子 select / 値 input)共通の keyboard 操作です
@@ -1185,6 +1208,7 @@ export function ColumnFilterPopover({
                 valueInputRef={textInputRef}
                 onDraftChange={onDateConditionDraftChange}
                 onKeyDown={handleConditionKeyDown}
+                presets={resolvedDatePresets}
               />
             )
           }

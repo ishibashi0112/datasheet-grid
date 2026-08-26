@@ -77,6 +77,11 @@ export type {
   DateSetColumnFilterValue,
   ParsedDateFilter,
   DateFilterPreset,
+  // 追加(preset-opt): dateSet プリセットの列オプション(GridColumn.dateFilterPresets)の型族です
+  //   (ビルトイン ID の再利用 / カスタム { id, label, resolve } / false でチップ非表示)。
+  DateFilterPresetOption,
+  CustomDateFilterPreset,
+  DateFilterPresetRange,
   TextColumnFilterValue,
   DateColumnFilterValue,
   SelectColumnFilterValue,

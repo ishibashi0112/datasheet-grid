@@ -12,6 +12,13 @@ import type {
   TextSetColumnFilterValue,
 } from '../model/gridTypes';
 import { getCellValue } from '../utils/permissions';
+// 追加(preset-opt): dateSet プリセット構成の正規化とビルトイン判定です(依存は gridTypes のみの
+//   独立モジュール。dateFilterCondition ⇄ filtering の循環を避けるための配置です)。
+import {
+  isBuiltinDateFilterPreset,
+  normalizeDateFilterPresets,
+  type NormalizedDateFilterPreset,
+} from './dateFilterPresets';
 
 // 追加(DS-1 / index ベースパイプライン): 「ビュー順に並んだ元 rows の index 列」です。
 //   オブジェクト配列({row, sourceIndex, ...})を各段で割り当て直す従来方式に代えて、
@@ -251,14 +258,48 @@ export const resolveDateFilterPreset = (
   }
 };
 
+// 追加(preset-opt): カスタム resolve が返した端値('YYYY-MM-DD' or Date)を正規化します。
+//   解釈不可(不正文字列 / Invalid Date / undefined)は null = その端なし。
+const toPresetBoundKey = (bound: string | Date | undefined): string | null =>
+  bound === undefined ? null : toDateKey(bound);
+
 // 追加(filter-ext D): preset を range へ解決した「絶対形」を返します(他はそのまま)。
+// 変更(preset-opt): カスタムプリセット(列定義の dateFilterPresets)を第 3 引数で受けます。
+//   - カスタム ID: resolve(now) の範囲へ解決(片側のみは 以降 / 以前 へ)。
+//   - ビルトイン ID: 従来どおり resolveDateFilterPreset。
+//   - 解決不能(列定義から消えた ID / 範囲が空): null = 「条件なし」として扱います
+//     (保存済みフィルターが列定義変更で全行非表示になる事故を避ける安全側の選択です)。
 export const resolveParsedDateFilter = (
   parsed: ParsedDateFilter,
   now: Date,
-): Exclude<ParsedDateFilter, { mode: 'preset' }> =>
-  parsed.mode === 'preset'
-    ? { mode: 'range', ...resolveDateFilterPreset(parsed.preset, now) }
-    : parsed;
+  presets?: readonly NormalizedDateFilterPreset[],
+): Exclude<ParsedDateFilter, { mode: 'preset' }> | null => {
+  if (parsed.mode !== 'preset') {
+    return parsed;
+  }
+  const custom = presets?.find((preset) => preset.id === parsed.preset);
+  if (custom?.resolve) {
+    const range = custom.resolve(now);
+    const from = toPresetBoundKey(range.from);
+    const to = toPresetBoundKey(range.to);
+    if (from !== null && to !== null) {
+      return from <= to
+        ? { mode: 'range', from, to }
+        : { mode: 'range', from: to, to: from };
+    }
+    if (from !== null) {
+      return { mode: 'onOrAfter', value: from };
+    }
+    if (to !== null) {
+      return { mode: 'onOrBefore', value: to };
+    }
+    return null;
+  }
+  if (isBuiltinDateFilterPreset(parsed.preset)) {
+    return { mode: 'range', ...resolveDateFilterPreset(parsed.preset, now) };
+  }
+  return null;
+};
 
 // 追加(filter-ext D): 単一値 vs ParsedDateFilter の合否です。キーは同形式('YYYY-MM-DD')の
 //   文字列比較 = 時系列順で判定します。日付として解釈できないセルは比較系で常に不一致
@@ -267,8 +308,14 @@ export const matchesParsedDateFilter = (
   parsed: ParsedDateFilter,
   cellValue: unknown,
   now: Date,
+  // 追加(preset-opt): カスタムプリセット解決用の正規化済み構成です(未指定 = ビルトインのみ)。
+  presets?: readonly NormalizedDateFilterPreset[],
 ): boolean => {
-  const resolved = resolveParsedDateFilter(parsed, now);
+  const resolved = resolveParsedDateFilter(parsed, now, presets);
+  // 追加(preset-opt): 解決不能なプリセットは「条件なし」= 常に合格です。
+  if (resolved === null) {
+    return true;
+  }
   if (resolved.mode === 'blank' || resolved.mode === 'notBlank') {
     return isBlankCellValue(cellValue) === (resolved.mode === 'blank');
   }
@@ -589,12 +636,21 @@ const compileDateSetMembershipPredicate = <T,>(
 // 追加(filter-ext D): ParsedDateFilter 1 件を行 predicate へコンパイルします。
 //   preset はコンパイル時(= フィルター再計算のたび)に now 基準で解決し、範囲は
 //   同形式キーの文字列比較です。合否は matchesParsedDateFilter と等価です。
+// 変更(preset-opt): カスタムプリセットは列定義(dateFilterPresets)から解決します。
+//   解決不能(列定義から消えた ID)は「条件なし」= 常に合格の predicate です。
 const compileParsedDatePredicate = <T,>(
   parsed: ParsedDateFilter,
   column: GridColumn<T>,
   now: Date,
 ): CompiledColumnFilterPredicate<T> => {
-  const resolved = resolveParsedDateFilter(parsed, now);
+  const resolved = resolveParsedDateFilter(
+    parsed,
+    now,
+    normalizeDateFilterPresets(column.dateFilterPresets),
+  );
+  if (resolved === null) {
+    return () => true;
+  }
   if (resolved.mode === 'blank' || resolved.mode === 'notBlank') {
     const wantBlank = resolved.mode === 'blank';
     return (row) => isBlankCellValue(getCellValue(row, column)) === wantBlank;
