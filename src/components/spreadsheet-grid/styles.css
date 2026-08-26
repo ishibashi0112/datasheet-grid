@@ -1698,16 +1698,24 @@
   }
 
   /* ── 列フィルター popover(ColumnFilterPopover) ── */
-  /* パネル(.ssg-popover)とは別の軽量フレーム(radius 10 / 影も控えめ)。 */
+  /* パネル(.ssg-popover)とは別の軽量フレーム(radius 10 / 影も控えめ)。
+     追加(FIT-1): maxHeight(inline)で viewport に収めるため flex 列化。既定では子は
+     縮ませず(flex: none)、候補リスト(.ssg-filter-list)だけが縮んで内部スクロールに
+     なります(後段の定義が同特異度・後勝ちで上書き)。 */
   .ssg-filter-popover {
     position: fixed;
     box-sizing: border-box;
+    display: flex;
+    flex-direction: column;
     padding: 12px;
     border: 1px solid var(--ssg-panel-border);
     border-radius: 10px;
     background-color: var(--ssg-panel-bg);
     box-shadow: var(--ssg-popover-shadow);
     z-index: 1000;
+  }
+  .ssg-filter-popover > * {
+    flex: none;
   }
 
   .ssg-filter-title {
@@ -1887,6 +1895,10 @@
     border-top: none;
     border-radius: 0 0 8px 8px;
     margin-bottom: 8px;
+    /* 追加(FIT-1): popover が maxHeight に達したときはこのリストだけが縮んで
+       内部スクロールになります(height は flex-basis として機能)。 */
+    flex: 0 1 auto;
+    min-height: 84px;
   }
   .ssg-filter-empty {
     padding: 12px;

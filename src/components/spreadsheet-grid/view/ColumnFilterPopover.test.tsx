@@ -413,3 +413,25 @@ describe('ColumnFilterPopover の dateSet 複合 UI(filter-ext D)', () => {
     });
   });
 });
+
+// 追加(FIT-1): viewport クランプの view 側配線です(layout.maxHeight → inline style)。
+//   配置計算そのものは logic/filterPopoverLayout.test.ts でカバーします。
+describe('ColumnFilterPopover の viewport クランプ(FIT-1)', () => {
+  it('layout.maxHeight が popover の inline style へ反映される', () => {
+    const props = {
+      ...makeProps(),
+      layout: { top: 8, left: 100, width: 240, maxHeight: 480 },
+    };
+    render(<ColumnFilterPopover {...props} />);
+    const popover = props.popoverRef.current as HTMLDivElement;
+    expect(popover.style.maxHeight).toBe('480px');
+    expect(popover.style.top).toBe('8px');
+  });
+
+  it('maxHeight 未指定(旧 layout 形)でも壊れない', () => {
+    const props = makeProps();
+    render(<ColumnFilterPopover {...props} />);
+    const popover = props.popoverRef.current as HTMLDivElement;
+    expect(popover.style.maxHeight).toBe('');
+  });
+});

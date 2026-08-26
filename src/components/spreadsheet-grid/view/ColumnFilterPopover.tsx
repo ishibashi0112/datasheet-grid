@@ -73,10 +73,13 @@ import {
 } from '../logic/dateFilterTree';
 
 // 追加: popover のレイアウト情報です。
+// 追加(FIT-1): maxHeight(viewport 内へ収める上限)。指定時は popover の flex 化と併せて
+//   候補リストが縮んで内部スクロールになります(画面外はみ出しの防止)。
 export type ColumnFilterPopoverLayout = {
   top: number;
   left: number;
   width: number;
+  maxHeight?: number;
 };
 
 // 追加: select / set フィルター候補の最小型です。
@@ -1052,6 +1055,8 @@ export function ColumnFilterPopover({
     top: layout.top,
     left: layout.left,
     width: layout.width,
+    // 追加(FIT-1): viewport 内へ収める上限です(未指定は従来どおり内容なり)。
+    maxHeight: layout.maxHeight,
   };
 
   const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {

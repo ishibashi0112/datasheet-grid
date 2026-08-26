@@ -37,6 +37,8 @@ import {
   parsedDateFilterToConditionDraft,
   type DateFilterConditionDraft,
 } from '../logic/dateFilterCondition';
+// 追加(FIT-1): popover の配置計算(純関数)です。実測高さベースの viewport クランプを含みます。
+import { computeFilterPopoverPlacement } from '../logic/filterPopoverLayout';
 
 // 追加: 列フィルターポップオーバーの内部状態です。
 type HeaderFilterPopoverState = {
@@ -55,10 +57,13 @@ type HeaderFilterPopoverState = {
 };
 
 // 追加: body 直下 portal popover の配置情報です。
+// 追加(FIT-1): maxHeight は viewport 内へ収めるための上限です(popover 側は flex 化されて
+//   おり、上限に達すると候補リストが縮んで内部スクロールになります)。
 export type FilterPopoverLayout = {
   top: number;
   left: number;
   width: number;
+  maxHeight: number;
 };
 
 type UseFilterPopoverControllerArgs<T> = {
@@ -100,6 +105,10 @@ export const useFilterPopoverController = <T,>({
   const filterPopoverAnchorRef = useRef<HTMLElement | null>(null);
   const filterTextInputRef = useRef<HTMLInputElement | null>(null);
   const filterSelectRef = useRef<HTMLSelectElement | null>(null);
+  // 追加(FIT-1): 描画済み popover の実測高さです(ResizeObserver が更新)。見積もり定数は
+  //   条件セクションの伸縮や将来の内容変化で実高とずれ、viewport 外へはみ出す事故の原因に
+  //   なっていたため、実測が取れて以降のフリップ / クランプ判定は実測を使います。
+  const filterPopoverMeasuredHeightRef = useRef<number | null>(null);
 
   const isFilterPopoverOpen = filterPopoverState !== null;
   const openedFilterColumnKey = filterPopoverState?.columnKey ?? null;
@@ -145,22 +154,29 @@ export const useFilterPopoverController = <T,>({
           ? ESTIMATED_SET_POPUP_HEIGHT
           : ESTIMATED_POPUP_HEIGHT;
 
-    let left = anchorRect.right - POPUP_WIDTH;
-    left = Math.max(VIEWPORT_MARGIN, left);
-    left = Math.min(left, window.innerWidth - POPUP_WIDTH - VIEWPORT_MARGIN);
-
-    let top = anchorRect.bottom + OFFSET_Y;
-    if (top + estimatedPopupHeight > window.innerHeight - VIEWPORT_MARGIN) {
-      top = anchorRect.top - estimatedPopupHeight - OFFSET_Y;
-    }
-    top = Math.max(VIEWPORT_MARGIN, top);
+    // 変更(FIT-1): 配置計算は純関数 computeFilterPopoverPlacement へ抽出しました。
+    //   高さは実測(ResizeObserver)が取れて以降は実測を使い、常に viewport 内へ
+    //   クランプされます(見積もり超過の内容ではみ出す事故の根治)。
+    const { top, left, maxHeight } = computeFilterPopoverPlacement({
+      anchorTop: anchorRect.top,
+      anchorBottom: anchorRect.bottom,
+      anchorRight: anchorRect.right,
+      viewportWidth: window.innerWidth,
+      viewportHeight: window.innerHeight,
+      popupWidth: POPUP_WIDTH,
+      popupHeight:
+        filterPopoverMeasuredHeightRef.current ?? estimatedPopupHeight,
+      offsetY: OFFSET_Y,
+      viewportMargin: VIEWPORT_MARGIN,
+    });
 
     setFilterPopoverLayout((current) => {
       if (
         current &&
         current.top === top &&
         current.left === left &&
-        current.width === POPUP_WIDTH
+        current.width === POPUP_WIDTH &&
+        current.maxHeight === maxHeight
       ) {
         return current;
       }
@@ -169,6 +185,7 @@ export const useFilterPopoverController = <T,>({
         top,
         left,
         width: POPUP_WIDTH,
+        maxHeight,
       };
     });
     // 変更(12-A): 見積もり高さ切替のため openedFilterColumn(filterType)へ依存を追加します。
@@ -274,6 +291,9 @@ export const useFilterPopoverController = <T,>({
     filterPopoverAnchorRef.current = null;
     filterTextInputRef.current = null;
     filterSelectRef.current = null;
+    // 追加(FIT-1): 実測高さは popover のライフサイクルに紐づくためここで破棄します
+    //   (次オープンの初回配置は従来どおり見積もり定数で行います)。
+    filterPopoverMeasuredHeightRef.current = null;
 
     // 追加: close 後は grid root にフォーカスを戻し、従来の keyboard 操作へ復帰させます。
     requestAnimationFrame(() => {
@@ -362,6 +382,41 @@ export const useFilterPopoverController = <T,>({
       window.removeEventListener('scroll', handleReposition, true);
     };
   }, [openedFilterColumnKey, updateFilterPopoverLayout]);
+
+  // 追加(FIT-1): 描画済み popover の実高さを観測し、変化したら位置を再計算します。
+  //   初回配置(見積もり定数)後に実測で補正するため、見積もりとずれる内容 ── 条件
+  //   セクションの伸縮・候補リストの空表示など ── でも viewport 外へはみ出しません。
+  //   layout 確定後でないと popover 要素は存在しないため、layout の有無へ依存します。
+  const isFilterPopoverRendered = filterPopoverLayout !== null;
+  useEffect(() => {
+    const popoverElement = filterPopoverRef.current;
+    if (!isFilterPopoverRendered || !popoverElement) {
+      return;
+    }
+    if (typeof ResizeObserver === 'undefined') {
+      return;
+    }
+
+    const observer = new ResizeObserver(() => {
+      const nextHeight =
+        filterPopoverRef.current?.getBoundingClientRect().height ?? null;
+      if (
+        nextHeight === null ||
+        nextHeight === filterPopoverMeasuredHeightRef.current
+      ) {
+        return;
+      }
+      filterPopoverMeasuredHeightRef.current = nextHeight;
+      updateFilterPopoverLayout();
+    });
+    observer.observe(popoverElement);
+
+    return () => {
+      observer.disconnect();
+    };
+    // 注記: layout オブジェクト自体ではなく「描画有無」にだけ反応させます(top/left の
+    //   微調整のたびに observer を張り替えないため。要素は open 中は同一です)。
+  }, [isFilterPopoverRendered, updateFilterPopoverLayout]);
 
   // 追加: popover が実際に描画され、かつ「開いた直後 / 別列へ切替時」にだけ
   //       input / select へ自動 focus します。
