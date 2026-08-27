@@ -72,9 +72,17 @@ const columns: GridColumn<Row>[] = [
 - 列定義からカスタム ID を外すと、保存済みのそのプリセット条件は「条件なし」として評価されます(全行が消える事故を避ける安全側の挙動)。
 - serverSide(`dataSource`)ではカスタム ID も `{ mode: 'preset', preset: id }` のまま送出されます。id の解釈はサーバ側の責務です([サーバーサイド行モデル](/docs/api/server-side))。
 
+## dateSet の日付入力(既定 UI)
+
+`dateSet` 条件の日付入力は、v0.28 からネイティブ `<input type="date">` に代わり**内製の日付フィールド**になりました(ブラウザ依存の見た目・操作性の問題を解消)。
+
+- **自由入力** — `2026/7/1` / `2026-07-01` など表記ゆれを受け付け、Enter / blur で正規化して確定します。解釈できない入力は赤枠のまま確定しません(適用済みの条件は保持)。
+- **カレンダー** — フィールド右のボタンで開閉。タイトルクリックで 日 → 月一覧 → 年一覧 とドリルアップでき、遠い年代へも素早く移動できます。フッターに「今日」「クリア」。
+- ダークテーマ / 密度トークンへ追従します。追加の依存はありません。
+
 ## 日付入力の差し替え(`renderFilterDateInput`)
 
-`dateSet` 条件の日付入力(既定はネイティブ `<input type="date">`)は、グリッドの prop `renderFilterDateInput` で利用側 UI ライブラリのピッカーへ差し替えられます(対象はフィルター popover の条件欄のみ)。
+内製フィールドではなくアプリの UI ライブラリで統一したい場合は、グリッドの prop `renderFilterDateInput` でピッカーごと差し替えられます(対象はフィルター popover の条件欄のみ)。
 
 ```tsx
 import { DatePickerInput } from '@mantine/dates';

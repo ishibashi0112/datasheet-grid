@@ -48,7 +48,7 @@
 | `onRowSelectionChange` | `(model: RowSelectionModel) => void` | — | 行選択変化の通知(controlled/uncontrolled いずれでも発火)。 |
 | `enableGlobalFilter` | `boolean` | `true` | グローバルフィルター**機能**の有効化。`false` で機能が無効になり、既定トップバーのフィルター入力欄も出ない(summary は `showTopBarSummary` に従う。トップバー自体を消すには `showTopBar=false`)。 |
 | `enableColumnFilter` | `boolean` | `true` | 列ごとのフィルター。 |
-| `renderFilterDateInput` | `(ctx: FilterDateInputContext) => ReactNode` | ネイティブ `<input type="date">` | dateSet フィルター条件の日付入力を利用側コンポーネント(Mantine `DatePickerInput` 等)へ差し替えるスロット。詳細は「日付入力の差し替え(renderFilterDateInput)」節。 |
+| `renderFilterDateInput` | `(ctx: FilterDateInputContext) => ReactNode` | 内製の日付フィールド | dateSet フィルター条件の日付入力を利用側コンポーネント(Mantine `DatePickerInput` 等)へ差し替えるスロット。既定は内製フィールド(自由入力 + ドリルアップカレンダー。下記「dateSet の日付入力(既定 UI)」節)。詳細は「日付入力の差し替え(renderFilterDateInput)」節。 |
 | `enableSorting` | `boolean` | `true` | ヘッダークリックでのソート。 |
 | `enableColumnResize` | `boolean` | `true` | 列幅の手動リサイズ可否のグリッド既定。各列 `resizable` 未指定時に継承(`column.resizable ?? enableColumnResize`)。 |
 | `autoSizeColumns` | `'onMount' \| 'onDataChange' \| false` | `false` | データ投入時に全列幅を内容へ自動フィット。`'onMount'`=初回にデータが載った一度きり / `'onDataChange'`=`rows`(参照)が変わるたび(= データ差し替えのたび。手動リサイズは上書き) / `false`=無効。計測は列メニュー「すべての列の幅を自動調整」と同一エンジン(`suppressAutoSize` / `autoHeight` 列は除外)。フィルター / ソート / 列並べ替えでは再フィットしません。serverSide(`dataSource`)では無効。詳細は「flex と autoSize」節。 |
@@ -343,9 +343,19 @@ const gridRef = useRef<SpreadsheetGridHandle<Row>>(null);
 - **列定義から消えた ID の保存値は「条件なし」として評価**されます(全行非表示になる事故を避ける安全側)。要約表示は 構成ラベル → ビルトイン既定ラベル → 生 ID の順でフォールバックします。
 - **serverSide**: カスタム ID も `{ mode: 'preset', preset: id }` のまま dataSource へ渡ります。解釈(id → WHERE 句)はサーバ側の責務です(「サーバーサイド行モデル」節参照)。
 
+### dateSet の日付入力(既定 UI)
+
+dateSet フィルター条件の日付入力は、v0.28 からネイティブ `<input type="date">` に代わり**内製の日付フィールド**になりました(ブラウザ依存の見た目・操作性の問題の解消。プレビュー合意のドリルアップ案)。
+
+- **自由入力**: `2026/7/1` / `2026-07-01` など表記ゆれを受け付け、Enter / blur で `'YYYY-MM-DD'` へ正規化して確定します。解釈できない入力は赤枠(`aria-invalid`)のまま確定しません(適用済みの条件は保持)。
+- **カレンダー**: フィールド右のボタンで開閉。タイトルクリックで 日 → 月一覧 → 年一覧 とドリルアップし、年 / 月を選ぶと下の段へ戻ります(12 年 / ページ)。今日は枠線・選択日は塗り表示。フッターに「今日」「クリア」。日を選ぶと即確定して閉じます。
+- **Escape**: カレンダー表示中はカレンダーだけを閉じ、非表示なら popover を閉じます(従来挙動の踏襲)。
+- ダークテーマ / compact 密度のトークンへ追従します。カレンダーは popover 内に描画されるため、外側クリック判定やはみ出しクランプ(FIT-1)に影響しません。
+- セルエディタ `editor: { type: 'date' }` は従来どおりネイティブ input です(スコープ外)。
+
 ### 日付入力の差し替え(renderFilterDateInput)
 
-dateSet フィルター条件の日付入力(既定はネイティブ `<input type="date">`)を、利用側の UI ライブラリのピッカーへ差し替えるグリッドレベルのスロットです。対象は**フィルター popover の条件欄のみ**(セルエディタ `editor: { type: 'date' }` は対象外)。
+dateSet フィルター条件の日付入力(既定は上記の内製フィールド)を、利用側の UI ライブラリのピッカーへ差し替えるグリッドレベルのスロットです。対象は**フィルター popover の条件欄のみ**(セルエディタ `editor: { type: 'date' }` は対象外)。
 
 ```ts
 type FilterDateInputContext = {

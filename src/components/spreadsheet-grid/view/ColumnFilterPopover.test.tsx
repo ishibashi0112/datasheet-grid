@@ -399,14 +399,16 @@ describe('ColumnFilterPopover の dateSet 複合 UI(filter-ext D)', () => {
     });
   });
 
-  it('範囲演算子では date 入力が 2 個(開始日 / 終了日)出る', () => {
+  it('範囲演算子では日付入力が 2 個(開始日 / 終了日)出る', () => {
     const props = makeDateSetProps(DEFAULT_DATE_FILTER_DRAFT);
     render(<ColumnFilterPopover {...props} />);
     expect(screen.getByLabelText('開始日')).toBeTruthy();
     expect(screen.getByLabelText('終了日')).toBeTruthy();
+    // 変更(date-picker B): 内製フィールドは自由入力のため、確定は blur / Enter です。
     fireEvent.change(screen.getByLabelText('開始日'), {
       target: { value: '2026-02-01' },
     });
+    fireEvent.blur(screen.getByLabelText('開始日'));
     expect(props.onDateConditionDraftChange).toHaveBeenCalledWith({
       ...DEFAULT_DATE_FILTER_DRAFT,
       value1: '2026-02-01',

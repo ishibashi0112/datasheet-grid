@@ -82,6 +82,10 @@ import {
   normalizeDateFilterPresets,
   type NormalizedDateFilterPreset,
 } from '../logic/dateFilterPresets';
+// 追加(date-picker B): 内製日付フィールド(自由入力 + ドリルアップカレンダー)です。
+//   ネイティブ <input type="date"> を置き換える既定 UI で、renderFilterDateInput
+//   (利用側スロット)指定時はそちらが優先されます。
+import { FilterDateField } from './FilterDateField';
 // 追加(filter-ext D): dateSet の年月日ツリー(平坦化された可視行)です。
 import {
   buildDateTreeRows,
@@ -564,8 +568,11 @@ type DateConditionEditorProps = {
   ) => void;
   // 追加(preset-opt): チップ構成です(正規化済み。空配列ならチップ行を描画しません)。
   presets: readonly NormalizedDateFilterPreset[];
-  // 追加(date-input): 日付入力の差し替えスロットです(未指定はネイティブ <input type="date">)。
+  // 追加(date-input): 日付入力の差し替えスロットです(未指定は内製 FilterDateField)。
   renderDateInput?: ColumnFilterDateInputRenderer;
+  // 追加(date-picker B): 内製フィールドの Escape(カレンダー非表示時)を popover close へ
+  //   配線します(ネイティブ input 時代の Escape 挙動の踏襲)。
+  onRequestClose: () => void;
 };
 
 function DateConditionEditor({
@@ -575,6 +582,7 @@ function DateConditionEditor({
   onKeyDown,
   presets,
   renderDateInput,
+  onRequestClose,
 }: DateConditionEditorProps) {
   const operandCount =
     draft.preset !== null ? 0 : dateFilterOperandCount(draft.operator);
@@ -615,8 +623,11 @@ function DateConditionEditor({
       </select>
       {operandCount > 0 ? (
         <div className="ssg-filter-cond-values">
-          {/* 変更(date-input): スロット指定時はネイティブ input の代わりに利用側コンポーネント
-              (Mantine DatePickerInput 等)を描画します。値の正規化は handleSlotChange。 */}
+          {/* 変更(date-input): スロット指定時は利用側コンポーネント(Mantine DatePickerInput 等)を
+              描画します。値の正規化は handleSlotChange。
+              変更(date-picker B): 既定はネイティブ <input type="date"> に代わり内製
+              FilterDateField(自由入力 + ドリルアップカレンダー)です。確定値は同じ
+              'YYYY-MM-DD' / '' のため、draft / 評価系への影響はありません。 */}
           {renderDateInput ? (
             renderDateInput({
               value: draft.value1,
@@ -625,16 +636,14 @@ function DateConditionEditor({
               slot: operandCount === 2 ? 'from' : 'single',
             })
           ) : (
-            <input
-              ref={valueInputRef}
-              type="date"
+            <FilterDateField
               value={draft.value1}
-              onChange={(event) =>
-                onDraftChange({ ...draft, value1: event.target.value, preset: null })
+              onCommit={(value) =>
+                onDraftChange({ ...draft, value1: value, preset: null })
               }
-              onKeyDown={onKeyDown}
-              className="ssg-filter-input"
-              aria-label={operandCount === 2 ? '開始日' : '条件の日付'}
+              ariaLabel={operandCount === 2 ? '開始日' : '条件の日付'}
+              inputRef={valueInputRef}
+              onRequestClose={onRequestClose}
             />
           )}
           {operandCount === 2 && (
@@ -648,19 +657,14 @@ function DateConditionEditor({
                   slot: 'to',
                 })
               ) : (
-                <input
-                  type="date"
+                <FilterDateField
                   value={draft.value2}
-                  onChange={(event) =>
-                    onDraftChange({
-                      ...draft,
-                      value2: event.target.value,
-                      preset: null,
-                    })
+                  onCommit={(value) =>
+                    onDraftChange({ ...draft, value2: value, preset: null })
                   }
-                  onKeyDown={onKeyDown}
-                  className="ssg-filter-input"
-                  aria-label="終了日"
+                  ariaLabel="終了日"
+                  onRequestClose={onRequestClose}
+                  align="right"
                 />
               )}
             </>
@@ -1262,6 +1266,7 @@ export function ColumnFilterPopover({
                 onKeyDown={handleConditionKeyDown}
                 presets={resolvedDatePresets}
                 renderDateInput={renderDateInput}
+                onRequestClose={onRequestClose}
               />
             )
           }

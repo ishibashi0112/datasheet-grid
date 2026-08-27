@@ -1968,6 +1968,221 @@
     font-size: 11.5px;
   }
 
+  /* ── 内製日付フィールド(FilterDateField / date-picker B) ── */
+  /* dateSet 条件の日付入力です(自由入力テキスト + カレンダーボタン + ドリルアップカレンダー)。
+     filter popover 内に絶対配置で開くため、外側クリック判定・FIT-1 の高さ計算に影響しません。
+     パネルは popover と同じ --ssg-panel-* トークン(ダークテーマ追従)。 */
+  .ssg-dp-root {
+    position: relative;
+    flex: 1 1 0;
+    min-width: 0;
+  }
+  .ssg-dp-field {
+    display: flex;
+    align-items: stretch;
+    border: 1px solid var(--ssg-panel-border);
+    border-radius: 7px;
+    background-color: var(--ssg-panel-bg);
+    margin-bottom: 6px;
+    overflow: hidden;
+  }
+  .ssg-dp-field--open {
+    border-color: var(--ssg-panel-accent);
+  }
+  .ssg-dp-field--invalid {
+    border-color: #d64545;
+  }
+  /* 注記(date-picker B): 範囲時は 1 フィールド約 97px。'2024/06/10'(10 字)が収まるよう
+     フォント 11px + 横 padding 5px + ボタン 20px に抑えます(compact 密度の他要素とも整合)。 */
+  .ssg-dp-input {
+    flex: 1 1 0;
+    min-width: 0;
+    border: none;
+    outline: none;
+    padding: 5px 5px 5px 6px;
+    font-size: 11px;
+    font-variant-numeric: tabular-nums;
+    font-family: inherit;
+    color: var(--ssg-panel-text);
+    background: transparent;
+  }
+  .ssg-dp-input::placeholder {
+    color: var(--ssg-panel-text-faint);
+  }
+  .ssg-dp-cal-btn {
+    flex: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    border: none;
+    border-left: 1px solid var(--ssg-panel-separator);
+    background: transparent;
+    color: var(--ssg-panel-text-muted);
+    cursor: pointer;
+  }
+  .ssg-dp-cal-btn:hover {
+    background-color: var(--ssg-panel-hover-bg-subtle);
+  }
+  .ssg-dp-panel {
+    position: absolute;
+    top: calc(100% - 2px);
+    left: 0;
+    z-index: 10;
+    width: 218px;
+    padding: 8px;
+    border: 1px solid var(--ssg-panel-border);
+    border-radius: 9px;
+    background-color: var(--ssg-panel-bg);
+    box-shadow: var(--ssg-popover-shadow);
+  }
+  .ssg-dp-panel--right {
+    left: auto;
+    right: 0;
+  }
+  .ssg-dp-nav {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    margin-bottom: 6px;
+  }
+  .ssg-dp-nav-btn {
+    flex: none;
+    width: 22px;
+    height: 22px;
+    border: none;
+    border-radius: 5px;
+    background: transparent;
+    color: var(--ssg-panel-text-muted);
+    cursor: pointer;
+    font-size: 12px;
+    line-height: 1;
+  }
+  .ssg-dp-nav-btn:hover {
+    background-color: var(--ssg-panel-hover-bg-subtle);
+  }
+  .ssg-dp-nav-title {
+    flex: 1;
+    min-width: 0;
+    border: none;
+    background: transparent;
+    padding: 3px 0;
+    border-radius: 5px;
+    text-align: center;
+    font-size: 11.5px;
+    font-weight: 700;
+    font-family: inherit;
+    color: var(--ssg-panel-text);
+    cursor: pointer;
+  }
+  .ssg-dp-nav-title:not(:disabled):hover {
+    background-color: var(--ssg-panel-hover-bg-subtle);
+  }
+  .ssg-dp-nav-title:disabled {
+    cursor: default;
+  }
+  .ssg-dp-dow {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    margin-bottom: 2px;
+  }
+  .ssg-dp-dow span {
+    text-align: center;
+    font-size: 9.5px;
+    color: var(--ssg-panel-text-faint);
+    padding: 2px 0;
+  }
+  .ssg-dp-dow .ssg-dp-dow--sun {
+    color: #d67979;
+  }
+  .ssg-dp-dow .ssg-dp-dow--sat {
+    color: #7996d6;
+  }
+  .ssg-dp-days {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    gap: 1px;
+  }
+  .ssg-dp-day {
+    height: 24px;
+    border: none;
+    border-radius: 6px;
+    background: transparent;
+    font-size: 11px;
+    font-family: inherit;
+    font-variant-numeric: tabular-nums;
+    color: var(--ssg-panel-text);
+    cursor: pointer;
+  }
+  .ssg-dp-day:hover {
+    background-color: var(--ssg-panel-hover-bg-subtle);
+  }
+  .ssg-dp-day--out {
+    color: var(--ssg-panel-text-faint);
+  }
+  .ssg-dp-day--today {
+    box-shadow: inset 0 0 0 1px var(--ssg-panel-accent);
+    color: var(--ssg-panel-accent);
+    font-weight: 700;
+  }
+  .ssg-dp-day--selected {
+    background-color: var(--ssg-panel-accent);
+    color: var(--ssg-panel-accent-contrast);
+    font-weight: 700;
+  }
+  .ssg-dp-day--selected:hover {
+    background-color: var(--ssg-panel-accent);
+  }
+  /* 月 / 年ビュー(3 × 4 グリッド)。 */
+  .ssg-dp-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 4px;
+  }
+  .ssg-dp-cell {
+    height: 30px;
+    border: none;
+    border-radius: 6px;
+    background: transparent;
+    font-size: 11px;
+    font-family: inherit;
+    font-variant-numeric: tabular-nums;
+    color: var(--ssg-panel-text);
+    cursor: pointer;
+  }
+  .ssg-dp-cell:hover {
+    background-color: var(--ssg-panel-hover-bg-subtle);
+  }
+  .ssg-dp-cell--selected {
+    background-color: var(--ssg-panel-accent);
+    color: var(--ssg-panel-accent-contrast);
+    font-weight: 700;
+  }
+  .ssg-dp-foot {
+    display: flex;
+    justify-content: space-between;
+    gap: 8px;
+    margin-top: 6px;
+    padding-top: 6px;
+    border-top: 1px solid var(--ssg-panel-separator);
+  }
+  .ssg-dp-foot-btn {
+    border: none;
+    background: none;
+    padding: 2px 4px;
+    border-radius: 4px;
+    font-size: 10.5px;
+    font-family: inherit;
+    color: var(--ssg-panel-accent);
+    cursor: pointer;
+  }
+  .ssg-dp-foot-btn--muted {
+    color: var(--ssg-panel-text-muted);
+  }
+  .ssg-dp-foot-btn:hover {
+    background-color: var(--ssg-panel-hover-bg-subtle);
+  }
+
   /* ── 列メニュー popover(ColumnMenuPopover) ── */
   /* ルート/サブメニュー共通のパネル枠(radius 10)。座標/zIndex は inline。 */
   .ssg-menu-panel {
