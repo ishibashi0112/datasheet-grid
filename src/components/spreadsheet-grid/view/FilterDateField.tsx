@@ -184,6 +184,13 @@ export function FilterDateField({
     setView((current) => (current === 'days' ? 'months' : 'years'));
   };
 
+  // 追加(0.28.1): 月・年ビューから 1 段下へ戻ります(年 → 月 → 日)。年を押した後に
+  //   「月を選ばないと日ビューへ戻れない」ことに気付きにくいため、明示の戻る動線を
+  //   フッターへ出します(選択せずに戻れる)。
+  const drillDown = () => {
+    setView((current) => (current === 'years' ? 'months' : 'days'));
+  };
+
   const navTitle =
     view === 'days'
       ? formatCalendarTitle(visibleYear, visibleMonth)
@@ -365,6 +372,16 @@ export function FilterDateField({
           )}
 
           <div className="ssg-dp-foot">
+            {/* 追加(0.28.1): 月・年ビューの明示的な戻る動線です(選択せずに 1 段戻る)。 */}
+            {view !== 'days' && (
+              <button
+                type="button"
+                className="ssg-dp-foot-btn"
+                onPointerDown={pressHandler(drillDown)}
+              >
+                ← 戻る
+              </button>
+            )}
             <button
               type="button"
               className="ssg-dp-foot-btn"

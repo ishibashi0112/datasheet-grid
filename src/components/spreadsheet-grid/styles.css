@@ -2158,6 +2158,11 @@
     color: var(--ssg-panel-accent-contrast);
     font-weight: 700;
   }
+  /* 修正(0.28.1): :hover(特異度 0,2,0)が --selected(0,1,0)に勝ち、白文字 × 淡背景で
+     選択中の月・年が hover 中ほぼ見えなくなっていた(日ビューには対策済みだった)。 */
+  .ssg-dp-cell--selected:hover {
+    background-color: var(--ssg-panel-accent);
+  }
   .ssg-dp-foot {
     display: flex;
     justify-content: space-between;

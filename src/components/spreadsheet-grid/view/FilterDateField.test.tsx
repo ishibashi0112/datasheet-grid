@@ -92,6 +92,24 @@ describe('FilterDateField のカレンダー', () => {
     expect(screen.getByText('2020年 5月')).toBeTruthy();
   });
 
+  it('「← 戻る」で選択せずに 1 段下のビューへ戻れる(年 → 月 → 日。日ビューでは非表示)', () => {
+    const props = makeProps();
+    render(<FilterDateField {...props} />);
+    openCalendar();
+    // 日ビューには戻るボタンはありません。
+    expect(screen.queryByRole('button', { name: '← 戻る' })).toBeNull();
+    const title = () =>
+      screen.getByRole('button', { name: '表示単位を切り替える' });
+    fireEvent.pointerDown(title());
+    fireEvent.pointerDown(title());
+    // 年ビュー → 戻る → 月ビュー → 戻る → 日ビュー(値は変わらない)。
+    fireEvent.pointerDown(screen.getByRole('button', { name: '← 戻る' }));
+    expect(screen.getByRole('button', { name: '3月' })).toBeTruthy();
+    fireEvent.pointerDown(screen.getByRole('button', { name: '← 戻る' }));
+    expect(screen.getByText('2026年 8月')).toBeTruthy();
+    expect(props.onCommit).not.toHaveBeenCalled();
+  });
+
   it('月送り矢印と Escape(カレンダー表示中はパネルだけ閉じる)', () => {
     const props = makeProps();
     render(<FilterDateField {...props} />);
