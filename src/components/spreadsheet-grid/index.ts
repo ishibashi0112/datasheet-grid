@@ -82,6 +82,8 @@ export type {
   DateFilterPresetOption,
   CustomDateFilterPreset,
   DateFilterPresetRange,
+  // 追加(date-input): 日付入力スロット(props.renderFilterDateInput)の描画コンテキストです。
+  FilterDateInputContext,
   TextColumnFilterValue,
   DateColumnFilterValue,
   SelectColumnFilterValue,

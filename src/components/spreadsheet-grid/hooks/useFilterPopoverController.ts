@@ -39,6 +39,8 @@ import {
 } from '../logic/dateFilterCondition';
 // 追加(FIT-1): popover の配置計算(純関数)です。実測高さベースの viewport クランプを含みます。
 import { computeFilterPopoverPlacement } from '../logic/filterPopoverLayout';
+// 追加(date-input): 外側クリック判定(keep-open 属性のオプトアウト込み)の純ロジックです。
+import { isFilterPopoverOutsideTarget } from '../logic/filterPopoverOutsideClick';
 
 // 追加: 列フィルターポップオーバーの内部状態です。
 type HeaderFilterPopoverState = {
@@ -475,11 +477,13 @@ export const useFilterPopoverController = <T,>({
 
     const handleWindowPointerDown = (event: globalThis.PointerEvent) => {
       const targetNode = event.target as Node | null;
-      if (!targetNode) {
-        return;
-      }
 
-      if (filterPopoverRef.current?.contains(targetNode)) {
+      // 変更(date-input): 判定は isFilterPopoverOutsideTarget へ抽出しました。popover の内側に
+      //   加え、data-ssg-filter-keep-open 属性を持つ要素の内側(renderFilterDateInput で注入
+      //   された外部ピッカーの body 直下ポータル等)も「閉じない」扱いです。
+      if (
+        !isFilterPopoverOutsideTarget(targetNode, filterPopoverRef.current)
+      ) {
         return;
       }
 

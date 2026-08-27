@@ -454,6 +454,74 @@ describe('ColumnFilterPopover の dateSet プリセット構成(preset-opt)', ()
   });
 });
 
+// 追加(date-input): 日付入力スロット(renderDateInput)の view 配線テストです。
+//   値の正規化仕様そのもの(Date / 表記ゆれ / null)は logic 側でカバー済みのため、
+//   ここでは ネイティブ input の置換 / slot 情報 / onChange 正規化と preset 解除 を検証します。
+describe('ColumnFilterPopover の日付入力スロット(date-input)', () => {
+  const makeSlotProps = () => ({
+    ...makeDateSetProps(DEFAULT_DATE_FILTER_DRAFT),
+    renderDateInput: (ctx: {
+      value: string;
+      onChange: (value: string | Date | null) => void;
+      ariaLabel: string;
+      slot: 'single' | 'from' | 'to';
+    }) => (
+      <input
+        type="text"
+        data-testid={`slot-${ctx.slot}`}
+        aria-label={ctx.ariaLabel}
+        value={ctx.value}
+        onChange={(event) => ctx.onChange(event.target.value)}
+      />
+    ),
+  });
+
+  it('ネイティブ date input の代わりにスロットが range の 2 枠(from / to)で描画される', () => {
+    const props = makeSlotProps();
+    const { container } = render(<ColumnFilterPopover {...props} />);
+    expect(screen.getByTestId('slot-from')).toBeTruthy();
+    expect(screen.getByTestId('slot-to')).toBeTruthy();
+    expect(container.querySelector('input[type="date"]')).toBeNull();
+    // aria-label はネイティブ UI と同じ文言が渡ります。
+    expect(screen.getByLabelText('開始日')).toBeTruthy();
+    expect(screen.getByLabelText('終了日')).toBeTruthy();
+  });
+
+  it('スロットの onChange は表記ゆれを正規化し、プリセット解除つきで draft へ通知される', () => {
+    const props = makeSlotProps();
+    render(<ColumnFilterPopover {...props} />);
+    fireEvent.change(screen.getByTestId('slot-from'), {
+      target: { value: '2026/7/1' },
+    });
+    expect(props.onDateConditionDraftChange).toHaveBeenCalledWith({
+      ...DEFAULT_DATE_FILTER_DRAFT,
+      value1: '2026-07-01',
+      preset: null,
+    });
+    fireEvent.change(screen.getByTestId('slot-to'), {
+      target: { value: '2026-07-31' },
+    });
+    expect(props.onDateConditionDraftChange).toHaveBeenCalledWith({
+      ...DEFAULT_DATE_FILTER_DRAFT,
+      value2: '2026-07-31',
+      preset: null,
+    });
+  });
+
+  it('単一値演算子では slot: single で 1 枠だけ描画される', () => {
+    const props = {
+      ...makeSlotProps(),
+      dateConditionDraft: {
+        ...DEFAULT_DATE_FILTER_DRAFT,
+        operator: 'onOrAfter' as const,
+      },
+    };
+    render(<ColumnFilterPopover {...props} />);
+    expect(screen.getByTestId('slot-single')).toBeTruthy();
+    expect(screen.queryByTestId('slot-to')).toBeNull();
+  });
+});
+
 // 追加(FIT-1): viewport クランプの view 側配線です(layout.maxHeight → inline style)。
 //   配置計算そのものは logic/filterPopoverLayout.test.ts でカバーします。
 describe('ColumnFilterPopover の viewport クランプ(FIT-1)', () => {

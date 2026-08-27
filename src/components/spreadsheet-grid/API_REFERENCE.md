@@ -48,6 +48,7 @@
 | `onRowSelectionChange` | `(model: RowSelectionModel) => void` | — | 行選択変化の通知(controlled/uncontrolled いずれでも発火)。 |
 | `enableGlobalFilter` | `boolean` | `true` | グローバルフィルター**機能**の有効化。`false` で機能が無効になり、既定トップバーのフィルター入力欄も出ない(summary は `showTopBarSummary` に従う。トップバー自体を消すには `showTopBar=false`)。 |
 | `enableColumnFilter` | `boolean` | `true` | 列ごとのフィルター。 |
+| `renderFilterDateInput` | `(ctx: FilterDateInputContext) => ReactNode` | ネイティブ `<input type="date">` | dateSet フィルター条件の日付入力を利用側コンポーネント(Mantine `DatePickerInput` 等)へ差し替えるスロット。詳細は「日付入力の差し替え(renderFilterDateInput)」節。 |
 | `enableSorting` | `boolean` | `true` | ヘッダークリックでのソート。 |
 | `enableColumnResize` | `boolean` | `true` | 列幅の手動リサイズ可否のグリッド既定。各列 `resizable` 未指定時に継承(`column.resizable ?? enableColumnResize`)。 |
 | `autoSizeColumns` | `'onMount' \| 'onDataChange' \| false` | `false` | データ投入時に全列幅を内容へ自動フィット。`'onMount'`=初回にデータが載った一度きり / `'onDataChange'`=`rows`(参照)が変わるたび(= データ差し替えのたび。手動リサイズは上書き) / `false`=無効。計測は列メニュー「すべての列の幅を自動調整」と同一エンジン(`suppressAutoSize` / `autoHeight` 列は除外)。フィルター / ソート / 列並べ替えでは再フィットしません。serverSide(`dataSource`)では無効。詳細は「flex と autoSize」節。 |
@@ -341,6 +342,82 @@ const gridRef = useRef<SpreadsheetGridHandle<Row>>(null);
 - `resolve` の返り値は `{ from?, to? }`(両端含む)。**片側のみなら 以降 / 以前**として、`from > to` は自動で入れ替えて評価されます。両方省略は「条件なし」です。
 - **列定義から消えた ID の保存値は「条件なし」として評価**されます(全行非表示になる事故を避ける安全側)。要約表示は 構成ラベル → ビルトイン既定ラベル → 生 ID の順でフォールバックします。
 - **serverSide**: カスタム ID も `{ mode: 'preset', preset: id }` のまま dataSource へ渡ります。解釈(id → WHERE 句)はサーバ側の責務です(「サーバーサイド行モデル」節参照)。
+
+### 日付入力の差し替え(renderFilterDateInput)
+
+dateSet フィルター条件の日付入力(既定はネイティブ `<input type="date">`)を、利用側の UI ライブラリのピッカーへ差し替えるグリッドレベルのスロットです。対象は**フィルター popover の条件欄のみ**(セルエディタ `editor: { type: 'date' }` は対象外)。
+
+```ts
+type FilterDateInputContext = {
+  value: string;                                   // 'YYYY-MM-DD' か ''(未入力)
+  onChange: (value: string | Date | null) => void; // Date / null(クリア)/ 表記ゆれ文字列も可(内部で正規化)
+  ariaLabel: string;                               // '開始日' / '終了日' / '条件の日付'
+  slot: 'single' | 'from' | 'to';                  // 範囲の from/to か単一値か
+  columnKey: string;                               // 列ごとの出し分けに
+};
+```
+
+**Mantine(@mantine/dates)の例**:
+
+```tsx
+import { DatePickerInput } from '@mantine/dates';
+
+<SpreadsheetGrid
+  renderFilterDateInput={({ value, onChange, ariaLabel }) => (
+    <DatePickerInput
+      aria-label={ariaLabel}
+      value={value || null}                    // v7 は Date 型のため new Date(`${value}T00:00:00`)
+      onChange={onChange}                      // string | Date | null をそのまま渡せる
+      valueFormat="YYYY/MM/DD"
+      size="xs"
+      clearable
+      popoverProps={{ withinPortal: false }}   // ★ popover 内に描画(下記の外側クリック対策)
+      style={{ flex: 1, minWidth: 0 }}
+    />
+  )}
+/>
+```
+
+**HeroUI の例**(バージョンにより prop 名は調整):
+
+```tsx
+import { DatePicker } from '@heroui/react';
+import { parseDate } from '@internationalized/date';
+
+renderFilterDateInput={({ value, onChange, ariaLabel }) => (
+  <DatePicker
+    aria-label={ariaLabel}
+    value={value ? parseDate(value) : null}
+    onChange={(date) => onChange(date ? date.toString() : null)}  // CalendarDate → 'YYYY-MM-DD'
+    size="sm"
+  />
+)}
+```
+
+**汎用(Tailwind 等で自作)の例**:
+
+```tsx
+renderFilterDateInput={({ value, onChange, ariaLabel }) => (
+  <input
+    type="date"
+    aria-label={ariaLabel}
+    value={value}
+    onChange={(event) => onChange(event.target.value)}
+    className="my-date-input"
+  />
+)}
+```
+
+**外側クリック対策(重要)**: フィルター popover は「外側 pointerdown で閉じる」ため、ピッカーのカレンダーが body 直下ポータルに出ると、カレンダー操作で popover が閉じてしまいます。対策はどちらか:
+
+1. **ポータルを無効化して popover 内に描画**(推奨): Mantine は `popoverProps={{ withinPortal: false }}` 等。高さの変化は popover の実測リサイズ対応が自動処理します。
+2. **keep-open 属性でオプトアウト**: ポップアップ要素(またはその祖先)に `data-ssg-filter-keep-open` 属性を付与すると、その内側の pointerdown では popover を閉じません(多くのライブラリはポップアップへ `data-*` を渡せます)。
+
+その他の注意:
+
+- 値は常に `'YYYY-MM-DD'` / `''` に正規化されて draft に入ります(`Date` / `'2026/7/1'` 等も可。解釈できない値はクリア扱い)。
+- 値を変更するとプリセットチップの選択は解除されます(ネイティブ UI と同じ規則)。
+- Enter 適用 / Escape クローズのキーボード配線はネイティブ input 専用です。スロット側のキー操作はコンポーネントの責務になります(dateSet は即時適用のため、通常は配線不要)。
 
 ### 値フォーマッタ(UI 表示)
 

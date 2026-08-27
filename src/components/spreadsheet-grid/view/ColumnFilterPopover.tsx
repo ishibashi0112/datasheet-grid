@@ -1,7 +1,17 @@
 import { createPortal } from 'react-dom';
 import { cx } from '../logic/cx';
 // 追加(filter-ext E): 'auto' を解決した後の実効フィルター種別です。
-import type { ColumnFilterUiType } from '../model/gridTypes';
+// 追加(date-input): FilterDateInputContext は日付入力スロットの公開契約です(columnKey の
+//   付与は親 SpreadsheetGrid の責務のため、本 view は columnKey 抜きの部分型で受けます)。
+import type {
+  ColumnFilterUiType,
+  FilterDateInputContext,
+} from '../model/gridTypes';
+
+// 追加(date-input): popover 内部で扱う日付入力スロットです(columnKey は親が enrich 済み)。
+export type ColumnFilterDateInputRenderer = (
+  ctx: Omit<FilterDateInputContext, 'columnKey'>,
+) => ReactNode;
 // 変更(12-A): set フィルター(検索 + Select All + チェックボックス一覧)用に
 //             hooks と useVirtualizer を追加 import します。
 //             候補リストは品番のように 5,000 件規模になり得るため、
@@ -62,6 +72,7 @@ import {
   buildParsedDateFilterFromDraft,
   dateFilterOperandCount,
   filterOptionsByDateCondition,
+  normalizeFilterDateInputValue,
   type DateFilterConditionDraft,
   type DateFilterOperator,
 } from '../logic/dateFilterCondition';
@@ -116,6 +127,8 @@ type ColumnFilterPopoverProps = {
   // 追加(preset-opt): dateSet のプリセットチップ構成です(正規化済み。空配列 = チップ行
   //   非表示)。未指定はビルトイン 3 種(従来挙動)へフォールバックします。
   datePresets?: readonly NormalizedDateFilterPreset[];
+  // 追加(date-input): 日付入力の差し替えスロットです(columnKey は親が enrich 済み)。
+  renderDateInput?: ColumnFilterDateInputRenderer;
   // 追加(filter-ext B/C): 複合(numberSet / textSet)の個別クリアです(条件のみ / 値のみ。
   //   フッターの「クリア」は全消し ── クリアの 3 粒度は合意仕様 §4-2)。
   onComboConditionClear: () => void;
@@ -551,6 +564,8 @@ type DateConditionEditorProps = {
   ) => void;
   // 追加(preset-opt): チップ構成です(正規化済み。空配列ならチップ行を描画しません)。
   presets: readonly NormalizedDateFilterPreset[];
+  // 追加(date-input): 日付入力の差し替えスロットです(未指定はネイティブ <input type="date">)。
+  renderDateInput?: ColumnFilterDateInputRenderer;
 };
 
 function DateConditionEditor({
@@ -559,9 +574,24 @@ function DateConditionEditor({
   onDraftChange,
   onKeyDown,
   presets,
+  renderDateInput,
 }: DateConditionEditorProps) {
   const operandCount =
     draft.preset !== null ? 0 : dateFilterOperandCount(draft.operator);
+
+  // 追加(date-input): スロット経由の値変更です。string | Date | null を 'YYYY-MM-DD' / '' へ
+  //   正規化して draft へ反映します(ネイティブ input と同じくプリセットは解除)。
+  const handleSlotChange = (
+    key: 'value1' | 'value2',
+    value: string | Date | null,
+  ) => {
+    onDraftChange({
+      ...draft,
+      [key]: normalizeFilterDateInputValue(value),
+      preset: null,
+    });
+  };
+
   return (
     <>
       <select
@@ -585,34 +615,54 @@ function DateConditionEditor({
       </select>
       {operandCount > 0 ? (
         <div className="ssg-filter-cond-values">
-          <input
-            ref={valueInputRef}
-            type="date"
-            value={draft.value1}
-            onChange={(event) =>
-              onDraftChange({ ...draft, value1: event.target.value, preset: null })
-            }
-            onKeyDown={onKeyDown}
-            className="ssg-filter-input"
-            aria-label={operandCount === 2 ? '開始日' : '条件の日付'}
-          />
+          {/* 変更(date-input): スロット指定時はネイティブ input の代わりに利用側コンポーネント
+              (Mantine DatePickerInput 等)を描画します。値の正規化は handleSlotChange。 */}
+          {renderDateInput ? (
+            renderDateInput({
+              value: draft.value1,
+              onChange: (value) => handleSlotChange('value1', value),
+              ariaLabel: operandCount === 2 ? '開始日' : '条件の日付',
+              slot: operandCount === 2 ? 'from' : 'single',
+            })
+          ) : (
+            <input
+              ref={valueInputRef}
+              type="date"
+              value={draft.value1}
+              onChange={(event) =>
+                onDraftChange({ ...draft, value1: event.target.value, preset: null })
+              }
+              onKeyDown={onKeyDown}
+              className="ssg-filter-input"
+              aria-label={operandCount === 2 ? '開始日' : '条件の日付'}
+            />
+          )}
           {operandCount === 2 && (
             <>
               <span className="ssg-filter-cond-tilde">〜</span>
-              <input
-                type="date"
-                value={draft.value2}
-                onChange={(event) =>
-                  onDraftChange({
-                    ...draft,
-                    value2: event.target.value,
-                    preset: null,
-                  })
-                }
-                onKeyDown={onKeyDown}
-                className="ssg-filter-input"
-                aria-label="終了日"
-              />
+              {renderDateInput ? (
+                renderDateInput({
+                  value: draft.value2,
+                  onChange: (value) => handleSlotChange('value2', value),
+                  ariaLabel: '終了日',
+                  slot: 'to',
+                })
+              ) : (
+                <input
+                  type="date"
+                  value={draft.value2}
+                  onChange={(event) =>
+                    onDraftChange({
+                      ...draft,
+                      value2: event.target.value,
+                      preset: null,
+                    })
+                  }
+                  onKeyDown={onKeyDown}
+                  className="ssg-filter-input"
+                  aria-label="終了日"
+                />
+              )}
             </>
           )}
         </div>
@@ -1033,6 +1083,7 @@ export function ColumnFilterPopover({
   dateConditionDraft,
   onDateConditionDraftChange,
   datePresets,
+  renderDateInput,
   onComboConditionClear,
   onComboSelectionClear,
   comboSummaryText,
@@ -1210,6 +1261,7 @@ export function ColumnFilterPopover({
                 onDraftChange={onDateConditionDraftChange}
                 onKeyDown={handleConditionKeyDown}
                 presets={resolvedDatePresets}
+                renderDateInput={renderDateInput}
               />
             )
           }

@@ -359,6 +359,21 @@ export type CustomDateFilterPreset = {
 //   (ビルトイン ID の再利用 or カスタム定義)。
 export type DateFilterPresetOption = DateFilterPreset | CustomDateFilterPreset;
 
+// 追加(date-input): 日付入力スロット(SpreadsheetGridProps.renderFilterDateInput)の
+//   描画コンテキストです。value は 'YYYY-MM-DD' か ''(未入力)。onChange には
+//   'YYYY-MM-DD' 文字列のほか Date / null(クリア)/ 表記ゆれ文字列('2026/7/1' 等)を
+//   渡せます(内部で正規化。日付として解釈できない値はクリア扱い)。
+export type FilterDateInputContext = {
+  value: string;
+  onChange: (value: string | Date | null) => void;
+  // '開始日' / '終了日' / '条件の日付'(既定 UI の aria-label と同じ文言)。
+  ariaLabel: string;
+  // 範囲の from / to か、単一値かの区別です(プレースホルダ等の出し分けに)。
+  slot: 'single' | 'from' | 'to';
+  // 対象列のキーです(列ごとに出し分けたい場合に)。
+  columnKey: string;
+};
+
 // 追加(filter-ext D): 日付条件の解釈結果です。日付は 'YYYY-MM-DD'(ゼロ埋め ISO)へ正規化して
 //   保持し、比較は文字列比較で行います(同形式なら辞書順 = 時系列順)。セル値の正規化は
 //   logic/dateFilterCondition の toDateKey(解釈不可 = 比較不一致)が担います。
@@ -1458,6 +1473,13 @@ export type SpreadsheetGridProps<T> = {
   onRowSelectionChange?: (model: RowSelectionModel) => void;
   enableGlobalFilter?: boolean;
   enableColumnFilter?: boolean;
+  // 追加(date-input): dateSet フィルター条件の日付入力(ネイティブ <input type="date">)を
+  //   利用側コンポーネント(Mantine DatePickerInput 等)へ差し替えるスロットです。
+  //   未指定はネイティブ input(従来挙動)。値の契約は FilterDateInputContext を参照。
+  //   ポップアップを body 直下ポータルへ出すピッカーは、外側クリック判定から除外するため
+  //   ポップアップ要素へ data-ssg-filter-keep-open 属性を付与するか、ピッカーの
+  //   withinPortal 相当を無効化して popover 内に描画すること(どちらでも可)。
+  renderFilterDateInput?: (ctx: FilterDateInputContext) => ReactNode;
   enableSorting?: boolean;
   // 追加(①): 列幅の手動リサイズ可否のグリッド既定です(既定 true=現行挙動)。
   //   各列の column.resizable が未指定のとき本値を継承します(column.resizable ?? enableColumnResize)。

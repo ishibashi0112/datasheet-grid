@@ -465,6 +465,8 @@ export function SpreadsheetGrid<T extends object>({
   onRowSelectionChange,
   enableGlobalFilter = true,
   enableColumnFilter = true,
+  // 追加(date-input): dateSet 条件の日付入力を利用側コンポーネントへ差し替えるスロットです。
+  renderFilterDateInput,
   enableSorting = true,
   // 追加(①): 列リサイズのグリッド既定(既定 true=現行挙動)。列の resizable で個別上書き可。
   enableColumnResize = true,
@@ -4505,6 +4507,17 @@ export function SpreadsheetGrid<T extends object>({
       dateConditionDraft={filterPopoverState?.dateDraft ?? null}
       onDateConditionDraftChange={handleDateConditionDraftChange}
       datePresets={openedDatePresets}
+      // 追加(date-input): 公開契約(FilterDateInputContext)の columnKey はここで付与します
+      //   (popover は列を知らないため)。未指定はネイティブ input(従来挙動)。
+      renderDateInput={
+        renderFilterDateInput
+          ? (ctx) =>
+              renderFilterDateInput({
+                ...ctx,
+                columnKey: openedFilterColumn.key,
+              })
+          : undefined
+      }
       onComboConditionClear={handleComboConditionClear}
       onComboSelectionClear={handleComboSelectionClear}
       comboSummaryText={openedComboSummaryText}

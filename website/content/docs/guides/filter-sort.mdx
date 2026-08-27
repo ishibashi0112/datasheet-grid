@@ -72,6 +72,33 @@ const columns: GridColumn<Row>[] = [
 - 列定義からカスタム ID を外すと、保存済みのそのプリセット条件は「条件なし」として評価されます(全行が消える事故を避ける安全側の挙動)。
 - serverSide(`dataSource`)ではカスタム ID も `{ mode: 'preset', preset: id }` のまま送出されます。id の解釈はサーバ側の責務です([サーバーサイド行モデル](/docs/api/server-side))。
 
+## 日付入力の差し替え(`renderFilterDateInput`)
+
+`dateSet` 条件の日付入力(既定はネイティブ `<input type="date">`)は、グリッドの prop `renderFilterDateInput` で利用側 UI ライブラリのピッカーへ差し替えられます(対象はフィルター popover の条件欄のみ)。
+
+```tsx
+import { DatePickerInput } from '@mantine/dates';
+
+<SpreadsheetGrid
+  renderFilterDateInput={({ value, onChange, ariaLabel }) => (
+    <DatePickerInput
+      aria-label={ariaLabel}
+      value={value || null}                    // value は 'YYYY-MM-DD' か ''
+      onChange={onChange}                      // string | Date | null をそのまま渡せる(内部で正規化)
+      valueFormat="YYYY/MM/DD"
+      size="xs"
+      clearable
+      popoverProps={{ withinPortal: false }}   // ★ 外側クリック対策(下記)
+      style={{ flex: 1, minWidth: 0 }}
+    />
+  )}
+/>
+```
+
+- コンテキストは `{ value, onChange, ariaLabel, slot: 'single' | 'from' | 'to', columnKey }`。`onChange` は `Date` / `null`(クリア)/ `'2026/7/1'` のような表記ゆれ文字列も受け付け、内部で `'YYYY-MM-DD'` へ正規化されます(解釈できない値はクリア扱い)。値を変更するとプリセットチップの選択は解除されます。
+- **外側クリック対策**: フィルター popover は外側 pointerdown で閉じるため、ピッカーのカレンダーが body 直下ポータルに出ると操作で閉じてしまいます。①ポータル無効化で popover 内に描画(Mantine の `popoverProps={{ withinPortal: false }}` 等。推奨)、または ②ポップアップ要素へ `data-ssg-filter-keep-open` 属性を付与、のどちらかで回避してください。
+- HeroUI の例や詳細な契約は API リファレンス(パッケージ同梱の `API_REFERENCE.md`「日付入力の差し替え」節)を参照してください。
+
 ## 種別の自動判定(`filterType: 'auto'`)
 
 列ごとに種別を書き分けるのが面倒なときは `filterType: 'auto'` を指定すると、列の値から `numberSet` / `textSet` / `dateSet` を自動判定します。**明示的な opt-in のみ**で、`filterType` 未指定の列は従来どおりフィルターなしのままです。

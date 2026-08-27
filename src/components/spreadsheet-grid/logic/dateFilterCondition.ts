@@ -4,7 +4,8 @@ import type {
 } from '../model/gridTypes';
 // 追加(filter-ext D): 候補連動(条件でツリー候補を絞る)の単一値判定です。
 //   行 predicate(compileParsedDatePredicate)と同一の意味論を共有します。
-import { matchesParsedDateFilter } from './filtering';
+// 変更(date-input): toDateKey は日付入力スロットの onChange 正規化にも使います。
+import { matchesParsedDateFilter, toDateKey } from './filtering';
 // 追加(preset-opt): プリセット構成の正規形とラベル逆引きです(カスタム対応)。
 import {
   BUILTIN_DATE_FILTER_PRESET_OPTIONS,
@@ -82,6 +83,21 @@ export const dateFilterOperandCount = (
 const parseDateInputValue = (text: string): string | null => {
   const normalized = text.trim();
   return /^\d{4}-\d{2}-\d{2}$/.test(normalized) ? normalized : null;
+};
+
+// 追加(date-input): 日付入力スロット(renderFilterDateInput)の onChange 値を draft 用の
+//   'YYYY-MM-DD' / ''(未入力)へ正規化します。Date・表記ゆれ文字列('2026/7/1' 等)を
+//   受け付け、日付として解釈できない値はクリア扱いにします(不正値を draft に残さない)。
+export const normalizeFilterDateInputValue = (
+  value: string | Date | null,
+): string => {
+  if (value === null || value instanceof Date) {
+    return value === null ? '' : toDateKey(value) ?? '';
+  }
+  if (value.trim() === '') {
+    return '';
+  }
+  return toDateKey(value) ?? '';
 };
 
 // draft から ParsedDateFilter を合成します。null = 有効な条件なし(呼び出し側で clear へ)。

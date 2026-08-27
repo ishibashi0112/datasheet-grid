@@ -10,6 +10,7 @@ import {
   dateFilterOperandCount,
   filterOptionsByDateCondition,
   formatParsedDateFilter,
+  normalizeFilterDateInputValue,
   parsedDateFilterToConditionDraft,
   type DateFilterConditionDraft,
 } from './dateFilterCondition';
@@ -158,5 +159,22 @@ describe('filterOptionsByDateCondition(候補連動)', () => {
       ),
     ).toEqual(['']);
     expect(filterOptionsByDateCondition(options, null, NOW)).toBe(options);
+  });
+});
+
+// 追加(date-input): 日付入力スロット(renderFilterDateInput)の onChange 正規化です。
+describe('normalizeFilterDateInputValue', () => {
+  it('Date は YYYY-MM-DD へ、null / 空文字はクリアへ正規化する', () => {
+    expect(normalizeFilterDateInputValue(new Date(2026, 6, 1))).toBe('2026-07-01');
+    expect(normalizeFilterDateInputValue(null)).toBe('');
+    expect(normalizeFilterDateInputValue('')).toBe('');
+    expect(normalizeFilterDateInputValue('   ')).toBe('');
+  });
+
+  it('表記ゆれ文字列は正規化し、解釈不能な値はクリア扱いにする', () => {
+    expect(normalizeFilterDateInputValue('2026-07-01')).toBe('2026-07-01');
+    expect(normalizeFilterDateInputValue('2026/7/1')).toBe('2026-07-01');
+    expect(normalizeFilterDateInputValue('メモ')).toBe('');
+    expect(normalizeFilterDateInputValue(new Date('invalid'))).toBe('');
   });
 });
