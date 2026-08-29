@@ -20,6 +20,8 @@ import type {
   RowModel,
   // 追加(行選択): チェックボックス行選択の状態型です。
   RowSelectionState,
+  // 追加(proposals ⑤): getRowClassName の第 3 引数コンテキスト型です。
+  RowStyleContext,
   SpreadsheetGridProps,
 } from '../model/gridTypes';
 // 追加(grouping ③): 自動グループ列の判定キーと、グループ行の React key です。
@@ -802,7 +804,12 @@ type GridBodyLayerProps<T> = {
   ) => ReactNode;
   // 追加(UI CSS移行): 条件付き行スタイル + 本体スロット。getRowClassName は本層(毎レンダー)で
   //   行ごとに解決し、結果文字列を GridBodyRow へ渡します(memo 安全)。
-  getRowClassName?: (row: T, rowIndex: number) => string | undefined;
+  // 変更(proposals ⑤): 第 3 引数に RowStyleContext を渡します(2 引数関数もそのまま動く)。
+  getRowClassName?: (
+    row: T,
+    rowIndex: number,
+    ctx: RowStyleContext<T>,
+  ) => string | undefined;
   bodyCellClassName?: string;
   bodyRowClassName?: string;
   rowHeaderCellClassName?: string;
@@ -981,7 +988,15 @@ export function GridBodyLayer<T>({
         // 追加(UI CSS移行): 行ごとの条件付き className を本層(毎レンダー)で解決し、結果文字列を
         //   memo 済み GridBodyRow へ渡します(関数を直接渡すと参照不安定で memo が壊れるため、
         //   文字列へ解決してから渡すのが肝です)。
-        const rowClassName = getRowClassName?.(row, rowIndex);
+        // 変更(proposals ⑤): 第 3 引数に RowStyleContext(source 基準の突き合わせ +
+        //   チェックボックス行選択状態)を渡します。
+        const rowClassName = getRowClassName?.(row, rowIndex, {
+          row,
+          rowIndex,
+          sourceRowIndex,
+          rowKey,
+          isSelected: isRowChecked,
+        });
 
         return (
           <GridBodyRow

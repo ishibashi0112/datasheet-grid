@@ -481,6 +481,20 @@ export type CellStyleContext<T> = {
   readOnly: boolean;
 };
 
+// 追加(proposals ⑤): 条件付き行 className(getRowClassName)の第 3 引数コンテキストです。
+//   rowIndex(view)と sourceRowIndex(source)の違いは CellRenderContext の注記を参照
+//   (getInvalidCells() の返す sourceRowIndex / rowKey と同一基準)。
+//   isSelected はチェックボックス行選択(enableRowSelection)の選択状態です(範囲選択とは別)。
+//   注記: グループ行(grouping 有効時)は専用描画のため getRowClassName の対象外です
+//   (本コンテキストにグループ行フラグは持ちません)。
+export type RowStyleContext<T> = {
+  row: T;
+  rowIndex: number;
+  sourceRowIndex: number;
+  rowKey: GridRowKey;
+  isSelected: boolean;
+};
+
 // 追加(11-A): GridBodyRow がセルごとに算出し、renderCellContent へ引き渡す
 //             セル状態のスナップショットです。
 // 変更理由: 旧実装では renderCellContent(SpreadsheetGrid 側) が uiState から
@@ -1573,7 +1587,14 @@ export type SpreadsheetGridProps<T> = {
   // 追加(UI CSS移行): 行ごとの追加 className を返すコールバック(条件付き行スタイル)。
   //   返り値は行コンテナと各データセルへ付与され、Tailwind 等での行ハイライトに使えます。
   //   (注記: 行ヘッダー「#」セルはヘッダー系スタイルと共有のため現状この対象外です。)
-  getRowClassName?: (row: T, rowIndex: number) => string | undefined;
+  // 変更(proposals ⑤): 第 3 引数 ctx(RowStyleContext)を追加しました。既存の 2 引数関数は
+  //   そのまま動きます(完全後方互換)。ソート / フィルター ON でも source 行基準の突き合わせが
+  //   できるよう sourceRowIndex / rowKey を渡します(cellClassName の CellStyleContext と同基準)。
+  getRowClassName?: (
+    row: T,
+    rowIndex: number,
+    ctx: RowStyleContext<T>,
+  ) => string | undefined;
   // ── 追加(バッチ②/コンテキストメニュー): セル/行の汎用コンテキストメニュー(完全カスタム) ──
   //   有効化のマスタースイッチです(既定 false=OFF)。他機能の enable* と同じく、機能自体は既定で無効。
   //   false のあいだは getContextMenuItems を渡しても発火せず、右クリックはブラウザ標準メニューのままです。

@@ -49,6 +49,8 @@ export type {
   // 追加(proposals ①): 条件付きセル className(cellClassName 関数版)の引数型です。
   //   CellRenderContext から setValue を除いた読み取り専用版。
   CellStyleContext,
+  // 追加(proposals ⑤): 条件付き行 className(getRowClassName)の第 3 引数コンテキストです。
+  RowStyleContext,
   // セル表示値の整形(UI 表示のみ)の契約。
   CellValueFormatter,
   CellValueFormatterParams,
