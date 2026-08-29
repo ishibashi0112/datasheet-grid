@@ -259,6 +259,25 @@ const gridRef = useRef<SpreadsheetGridHandle<Row>>(null);
 確定後の移動先は「確定を反映した再レンダー後」の行数・列数でクランプされる。このため、`onRowsChange` で末尾に空行を追加する消費側(Excel 的な入力グリッドの定石パターン)では、最終行の `Enter` 確定で「増えた行」へそのまま移動できる。行が増えない場合は従来どおり最終行に留まる。
 
 
+## スタイリング用の状態クラス(公開契約)
+
+`cellClassName` / `getRowClassName` の返すクラスは、下記の内部付与クラスと連結セレクタで組み合わせて使える(例: `.ssg-body-cell.my-diff` で基底に勝たせ、`.ssg-body-cell.my-diff.ssg-body-cell--row-hovered` でホバー時色を切替)。以下は**公開契約**とし、変更時は breaking 扱いにする。
+
+| クラス | 付与先 / 条件 |
+| --- | --- |
+| `.ssg-root` | グリッドのルート要素(`className` prop の付与先)。 |
+| `.ssg-body-row` | 行コンテナ(`getRowClassName` の付与先のひとつ)。 |
+| `.ssg-body-cell` | データセルの基底(未レイヤー・特異度 (0,1,0))。 |
+| `.ssg-row-header-cell` | 行ヘッダー「#」セル。 |
+| `.ssg-body-cell--readonly` | 読み取り専用セル(範囲選択に入っていないとき。`dimReadOnlyCells` と独立して常時付与)。 |
+| `.ssg-body-cell--invalid` | validation mark 表示中のセル。 |
+| `.ssg-body-cell--row-hovered` | 行ホバー中のセル(`enableRowHover` 有効時)。 |
+| `.ssg-body-cell--autoheight` | auto-height 列のセル。 |
+| `.ssg-body-cell--align-center` / `.ssg-body-cell--align-right` | `column.align` の水平寄せ。 |
+| `.ssg-theme-dark` | `theme="dark"`(または `'auto'` のダーク解決)時に root と各ポータル(popover / menu / panel / ツールチップ)へ。 |
+
+※上記以外の `ssg-*` クラス(内部構造クラス)は非公開の実装詳細で、予告なく変わり得る。セレクタで依存しないこと。
+
 ## 補助型(props で参照される shape)
 
 - `GridRowKey = string | number`

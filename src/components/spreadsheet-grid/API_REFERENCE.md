@@ -267,7 +267,7 @@ const gridRef = useRef<SpreadsheetGridHandle<Row>>(null);
 | Name | Type | Default | Description |
 | --- | --- | --- | --- |
 | `key` | `string` | (required) | 列の一意キー。 |
-| `title` | `string` | — | ヘッダーの表示ラベル。 |
+| `title` | `string` | — | ヘッダーの表示ラベル。**未指定 / 空文字(`''`)のときは `key` を表示**(列メニュー / フィルターパネル / CSV ヘッダー等の列名表示も同じフォールバック)。ボタン専用列などで見出しを空にしたい場合は空白 1 文字(`' '`)等を指定する(proposals ⑦は (b) 現状維持 + 明記を採用)。 |
 | `width` | `number` | (required) | 列幅(px)。 |
 | `minWidth` | `number` | — | リサイズ時の下限幅。flex 配分時の下限クランプにも使用(flex 列で未指定なら内部既定 50px)。 |
 | `maxWidth` | `number` | — | 上限幅。**未指定なら上限なし**(autoSize は内容にぴったり合わせ、手動リサイズも自由に広げられます。既定の上限は設けません)。指定すると autoSize / 手動リサイズ / flex 配分の上限クランプに使われます。 |
@@ -1029,6 +1029,25 @@ const dataSource: ServerSideDataSource<Row> = {
 ### clientSide ↔ serverSide の切替(remount 契約)
 
 `initialRowCount` と内部の行数 state は mount 時に確定する。そのため **実行時にモードを切り替える場合は `key` を変えてグリッドを再マウントすること**(clientSide で mount 後に `dataSource` を後付けしても件数が初期化されない)。serverSide で直接 mount する通常利用ではこの限りではない。
+
+## スタイリング用の状態クラス(公開契約)
+
+`cellClassName` / `getRowClassName` の返すクラスは、下記の内部付与クラスと連結セレクタで組み合わせて使える(例: `.ssg-body-cell.my-diff` で基底に勝たせ、`.ssg-body-cell.my-diff.ssg-body-cell--row-hovered` でホバー時色を切替)。以下は**公開契約**とし、変更時は breaking 扱いにする(proposals ⑥)。
+
+| クラス | 付与先 / 条件 |
+| --- | --- |
+| `.ssg-root` | グリッドのルート要素(`className` prop の付与先)。 |
+| `.ssg-body-row` | 行コンテナ(`getRowClassName` の付与先のひとつ)。 |
+| `.ssg-body-cell` | データセルの基底(未レイヤー・特異度 (0,1,0))。 |
+| `.ssg-row-header-cell` | 行ヘッダー「#」セル。 |
+| `.ssg-body-cell--readonly` | 読み取り専用セル(範囲選択に入っていないとき。`dimReadOnlyCells` と独立して常時付与)。 |
+| `.ssg-body-cell--invalid` | validation mark 表示中のセル。 |
+| `.ssg-body-cell--row-hovered` | 行ホバー中のセル(`enableRowHover` 有効時)。 |
+| `.ssg-body-cell--autoheight` | auto-height 列のセル。 |
+| `.ssg-body-cell--align-center` / `.ssg-body-cell--align-right` | `column.align` の水平寄せ。 |
+| `.ssg-theme-dark` | `theme="dark"`(または `'auto'` のダーク解決)時に root と各ポータル(popover / menu / panel / ツールチップ)へ。 |
+
+※上記以外の `ssg-*` クラス(内部構造クラス)は非公開の実装詳細で、予告なく変わり得る。セレクタで依存しないこと。
 
 ## 補助型(props で参照される shape)
 

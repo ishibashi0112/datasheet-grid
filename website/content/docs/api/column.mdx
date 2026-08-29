@@ -8,7 +8,7 @@ description: 列定義(GridColumn<T>)・エディタ・バリデーション・�
 | Name | Type | Default | Description |
 | --- | --- | --- | --- |
 | `key` | `string` | (required) | 列の一意キー。 |
-| `title` | `string` | — | ヘッダーの表示ラベル。 |
+| `title` | `string` | — | ヘッダーの表示ラベル。**未指定 / 空文字(`''`)のときは `key` を表示**(列メニュー / フィルターパネル / CSV ヘッダー等の列名表示も同じフォールバック)。ボタン専用列などで見出しを空にしたい場合は空白 1 文字(`' '`)等を指定する。 |
 | `width` | `number` | (required) | 列幅(px)。 |
 | `minWidth` | `number` | — | リサイズ時の下限幅。flex 配分時の下限クランプにも使用(flex 列で未指定なら内部既定 50px)。 |
 | `maxWidth` | `number` | — | 上限幅。**未指定なら上限なし**(autoSize は内容にぴったり合わせ、手動リサイズも自由に広げられます。既定の上限は設けません)。指定すると autoSize / 手動リサイズ / flex 配分の上限クランプに使われます。 |

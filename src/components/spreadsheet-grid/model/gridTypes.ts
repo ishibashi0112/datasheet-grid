@@ -695,6 +695,9 @@ export type GridGroupRow = {
 // 追加: 列定義です。将来のカスタムセル/カスタムヘッダー拡張を見据えています。
 export type GridColumn<T> = {
   key: string;
+  // 明確化(proposals ⑦-b): 未指定 / 空文字('')のときはヘッダー・列メニュー・フィルター
+  //   パネル・CSV ヘッダー等の列名表示が key へフォールバックします(現状維持を仕様として明記)。
+  //   見出しを空にしたい列は空白 1 文字(' ')等を指定してください。
   title?: string;
   width: number;
   minWidth?: number;
