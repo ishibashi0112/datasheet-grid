@@ -40,6 +40,11 @@
       "import": "./dist/index.js",
       "require": "./dist/index.cjs"
     },
+    "./testing": {
+      "types": "./dist/testing/index.d.ts",
+      "import": "./dist/testing.js",
+      "require": "./dist/testing.cjs"
+    },
     "./style.css": "./dist/style.css",
     "./style.layer.css": "./dist/style.layer.css"
   },

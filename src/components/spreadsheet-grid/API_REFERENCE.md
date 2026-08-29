@@ -1030,6 +1030,24 @@ const dataSource: ServerSideDataSource<Row> = {
 
 `initialRowCount` と内部の行数 state は mount 時に確定する。そのため **実行時にモードを切り替える場合は `key` を変えてグリッドを再マウントすること**(clientSide で mount 後に `dataSource` を後付けしても件数が初期化されない)。serverSide で直接 mount する通常利用ではこの限りではない。
 
+## テスト支援(`/testing` サブパス)
+
+jsdom はレイアウトを計算しないため、素の jsdom では実グリッドの行・列が 1 本も描画されない(縦: スクロール要素の `clientHeight` / `clientWidth` が 0。横: `@tanstack/react-virtual` が **ResizeObserver の通知**から矩形を得るため、no-op スタブでは幅 0 のまま)。`@ishibashi0112/spreadsheet-grid/testing` の `installJsdomLayoutStubs()` がこれをまとめて解決する(proposals ③)。
+
+```ts
+// @vitest-environment jsdom
+import { installJsdomLayoutStubs } from '@ishibashi0112/spreadsheet-grid/testing';
+
+beforeAll(() => {
+  installJsdomLayoutStubs(); // 既定 1200×600。{ width, height } で変更可
+});
+```
+
+- インストール内容: `HTMLElement.prototype.clientHeight` / `clientWidth`(固定 getter)、`Element.prototype.getBoundingClientRect`(固定矩形)、`globalThis.ResizeObserver`(**observe 時に即時コールバック**するスタブ)、`Element.prototype.scrollTo`(無ければ no-op)。
+- 返り値はインストール前へ戻す restore 関数(`afterAll(restore)` 用・任意)。
+- React 非依存の小さなモジュールで、本体バンドルとは独立(`dist/testing.js`)。
+- これで `.ssg-body-row` / `.ssg-body-cell` の描画・付与クラス・セル文字列を DOM で検証できる(本体の `SpreadsheetGrid.jsdomLayoutStubs.integration.test.tsx` が動作保証)。
+
 ## スタイリング用の状態クラス(公開契約)
 
 `cellClassName` / `getRowClassName` の返すクラスは、下記の内部付与クラスと連結セレクタで組み合わせて使える(例: `.ssg-body-cell.my-diff` で基底に勝たせ、`.ssg-body-cell.my-diff.ssg-body-cell--row-hovered` でホバー時色を切替)。以下は**公開契約**とし、変更時は breaking 扱いにする(proposals ⑥)。

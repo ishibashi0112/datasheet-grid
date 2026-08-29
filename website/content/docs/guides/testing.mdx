@@ -1,0 +1,57 @@
+---
+title: テスト(jsdom)
+description: installJsdomLayoutStubs による実グリッドの jsdom 描画テスト
+---
+
+## 背景: 素の jsdom ではグリッドが描画されない
+
+jsdom はレイアウトを計算しないため、素の jsdom では実グリッドの行・列が 1 本も描画されません。
+
+- **縦方向**: グリッドはスクロール要素の `clientHeight` / `clientWidth` を読んで可視行数を決めますが、jsdom では 0 のため行が出ません。
+- **横方向**: `@tanstack/react-virtual` はスクロール要素の矩形を **ResizeObserver の通知**から得るため、`observe()` が no-op のスタブだと幅 0 のまま列が描画されません(`getBoundingClientRect` のスタブだけでは不足)。
+
+## installJsdomLayoutStubs
+
+`@ishibashi0112/spreadsheet-grid/testing` サブパスの `installJsdomLayoutStubs()` が上記をまとめて解決します(React 非依存の小さなモジュール)。
+
+```ts
+// @vitest-environment jsdom
+import { beforeAll } from 'vitest';
+import { installJsdomLayoutStubs } from '@ishibashi0112/spreadsheet-grid/testing';
+
+beforeAll(() => {
+  installJsdomLayoutStubs(); // 既定 1200×600
+});
+```
+
+寸法を変えたい場合はオプションで指定します。teardown が必要なスイートでは返り値の restore 関数を使います。
+
+```ts
+const restore = installJsdomLayoutStubs({ width: 800, height: 400 });
+afterAll(restore);
+```
+
+インストールされるスタブ:
+
+| 対象 | 内容 |
+| --- | --- |
+| `HTMLElement.prototype.clientHeight` / `clientWidth` | 固定値を返す getter |
+| `Element.prototype.getBoundingClientRect` | 固定矩形(`width` × `height`) |
+| `globalThis.ResizeObserver` | `observe()` 時に**即時コールバック**するスタブ |
+| `Element.prototype.scrollTo` | 未定義のときのみ no-op を補う |
+
+## 検証できること
+
+スタブ適用後は実グリッドが本体行 / 全列を描画するため、DOM で次を検証できます。
+
+```tsx
+const { container } = render(<SpreadsheetGrid rows={rows} columns={columns} />);
+
+// 行・セルの描画
+expect(container.querySelectorAll('.ssg-body-row')).toHaveLength(rows.length);
+
+// getRowClassName / cellClassName で付与したクラス
+expect(container.querySelectorAll('.ssg-body-cell.my-warn-cell')).toHaveLength(2);
+```
+
+状態クラスの一覧(公開契約)は [SpreadsheetGrid props の「スタイリング用の状態クラス」](/docs/api/props#スタイリング用の状態クラス公開契約)を参照してください。

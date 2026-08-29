@@ -15,9 +15,14 @@ export default defineConfig({
   publicDir: false,
   build: {
     lib: {
-      entry: resolve(import.meta.dirname, 'src/components/spreadsheet-grid/index.ts'),
+      // 追加(proposals ③): testing サブパス(jsdom レイアウトスタブ)を第 2 エントリで配布します。
+      //   React 非依存の小さなモジュールで、index とはチャンクを共有しません。
+      entry: {
+        index: resolve(import.meta.dirname, 'src/components/spreadsheet-grid/index.ts'),
+        testing: resolve(import.meta.dirname, 'src/components/spreadsheet-grid/testing/index.ts'),
+      },
       formats: ['es', 'cjs'],
-      fileName: (format) => (format === 'es' ? 'index.js' : 'index.cjs'),
+      fileName: (format, entryName) => `${entryName}.${format === 'es' ? 'js' : 'cjs'}`,
     },
     rollupOptions: {
       // react 系と react-virtual を外部化(サブパス import も含めて除外)。
