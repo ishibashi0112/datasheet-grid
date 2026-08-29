@@ -282,6 +282,8 @@ import type {
   GridExportOptions,
   GridExportData,
   ScrollAlign,
+  // 追加(proposals ⑧): onScroll 通知パラメータの型です。
+  GridScrollEventParams,
   SpreadsheetGridProps,
   // 追加(state #2): onStateChange の lastEmitted 保持 / snapshot 型に使います。
   GridState,
@@ -522,6 +524,8 @@ export function SpreadsheetGrid<T extends object>({
   ref,
   // 追加(state #2): 永続スライス変化の通知口(保存タイミング signal)。発火規約は型定義のコメント参照。
   onStateChange,
+  // 追加(proposals ⑧): スクロール位置の変化通知です(rAF 間引き・source 付き)。
+  onScroll,
 }: SpreadsheetGridProps<T>) {
   // 変更(proposals ②): rows / columns は readonly 配列も受け付けます。グリッドは入力配列を
   //   破壊的に変更しない設計(編集は onRowsChange / onColumnsChange が新配列を返す)のため、
@@ -1615,6 +1619,23 @@ export function SpreadsheetGrid<T extends object>({
   const [scrollTop, setScrollTop] = useState(0);
   const [viewportHeight, setViewportHeight] = useState(0);
 
+  // 追加(proposals ⑧): onScroll 通知の配線です。
+  //   - onScrollRef: 不安定な onScroll prop を rAF tick / passive リスナーから読むための
+  //     latest-ref(RS-AS 方式)。
+  //   - apiScrollPendingRef: 命令的 API 由来のスクロールで「これから発火する scroll イベント」の
+  //     残数。イベント処理時に 1 消費して source:'api' を割り当てます(位置が変わらない
+  //     scrollTo は scroll イベントを発火しないため、実際に位置が変わるときだけ増やします)。
+  //   - scrollNotifyRef: rAF 間引き用の保留通知。同一フレームに user / api が混在したら
+  //     'user' を優先します(実ユーザー操作の通知を落とすと同期先が追従しなくなるため)。
+  const onScrollRef = useRef<((params: GridScrollEventParams) => void) | null>(
+    null,
+  );
+  useEffect(() => {
+    onScrollRef.current = onScroll ?? null;
+  }, [onScroll]);
+  const apiScrollPendingRef = useRef(0);
+  const scrollNotifyRef = useRef<GridScrollEventParams | null>(null);
+
   useEffect(() => {
     const el = scrollContainerRef.current;
     if (!el) {
@@ -1624,7 +1645,34 @@ export function SpreadsheetGrid<T extends object>({
     setViewportHeight(el.clientHeight);
     // 追加(B3): center 列 flex の利用可能幅算出に使う可視幅も同じ effect で計測します。
     setViewportWidth(el.clientWidth);
-    const handleScroll = () => setScrollTop(el.scrollTop);
+    // 追加(proposals ⑧): onScroll の rAF 間引きです。フレーム内の最後の位置を 1 回で通知します。
+    let notifyFrameId: number | null = null;
+    const flushScrollNotify = () => {
+      notifyFrameId = null;
+      const params = scrollNotifyRef.current;
+      scrollNotifyRef.current = null;
+      if (params) {
+        onScrollRef.current?.(params);
+      }
+    };
+    const handleScroll = () => {
+      setScrollTop(el.scrollTop);
+      // source の判定はイベント単位で行います(rAF 単位だと api 消費がずれるため)。
+      const source: GridScrollEventParams['source'] =
+        apiScrollPendingRef.current > 0 ? 'api' : 'user';
+      if (source === 'api') {
+        apiScrollPendingRef.current -= 1;
+      }
+      const pending = scrollNotifyRef.current;
+      scrollNotifyRef.current = {
+        top: el.scrollTop,
+        left: el.scrollLeft,
+        source: pending?.source === 'user' ? 'user' : source,
+      };
+      if (onScrollRef.current && notifyFrameId === null) {
+        notifyFrameId = requestAnimationFrame(flushScrollNotify);
+      }
+    };
     el.addEventListener('scroll', handleScroll, { passive: true });
     // viewport サイズ変化(リサイズ/レイアウト変動)で窓・倍率・flex 配分を再計算するためです。
     const resizeObserver = new ResizeObserver(() => {
@@ -1635,6 +1683,9 @@ export function SpreadsheetGrid<T extends object>({
     resizeObserver.observe(el);
     return () => {
       el.removeEventListener('scroll', handleScroll);
+      if (notifyFrameId !== null) {
+        cancelAnimationFrame(notifyFrameId);
+      }
       resizeObserver.disconnect();
     };
   }, []);
@@ -4862,6 +4913,31 @@ export function SpreadsheetGrid<T extends object>({
   //   なったため component スコープの安定コールバックへ切り出しました。参照するのは refs
   //   (scrollContainerRef / apiStateRef)と module 純関数のみのため deps は空 = 参照不変で、
   //   factory の deps に入れてもハンドル生成は従来どおり 1 回です。
+  // 追加(proposals ⑧): 命令的 API 由来のスクロール適用です。スクロール可能範囲へクランプし、
+  //   クランプ後の位置が現在と実際に変わるときだけ apiScrollPendingRef を増やします
+  //   (位置不変の scrollTo は scroll イベントを発火しないため、無条件に増やすと次の
+  //   ユーザースクロールを source:'api' と誤判定します)。
+  const applyApiScroll = useCallback(
+    (
+      el: HTMLElement,
+      target: { top: number; left: number },
+      behavior: 'auto' | 'smooth' = 'auto',
+    ) => {
+      const maxTop = Math.max(el.scrollHeight - el.clientHeight, 0);
+      const maxLeft = Math.max(el.scrollWidth - el.clientWidth, 0);
+      const top = Math.min(Math.max(target.top, 0), maxTop);
+      const left = Math.min(Math.max(target.left, 0), maxLeft);
+      if (
+        Math.round(top) !== Math.round(el.scrollTop) ||
+        Math.round(left) !== Math.round(el.scrollLeft)
+      ) {
+        apiScrollPendingRef.current += 1;
+      }
+      el.scrollTo({ top, left, behavior });
+    },
+    [],
+  );
+
   // 論理 scrollTop を物理へ戻してスクロールコンテナへ適用します(横は圧縮対象外で物理=論理)。
   const applyScroll = useCallback(
     (logicalTop: number | null, left: number | null) => {
@@ -4870,16 +4946,15 @@ export function SpreadsheetGrid<T extends object>({
       if (!el || !s) {
         return;
       }
-      el.scrollTo({
+      applyApiScroll(el, {
         top:
           logicalTop === null
             ? el.scrollTop
             : logicalToPhysicalScrollTop(logicalTop, s.verticalScaleFactor),
         left: left === null ? el.scrollLeft : left,
-        behavior: 'auto',
       });
     },
-    [],
+    [applyApiScroll],
   );
 
   // 縦の scroll target(論理)を求めます。範囲外 index はクランプします。
@@ -5105,7 +5180,10 @@ export function SpreadsheetGrid<T extends object>({
           ),
 
         scrollToTop: () => {
-          scrollContainerRef.current?.scrollTo({ top: 0, behavior: 'auto' });
+          const el = scrollContainerRef.current;
+          if (el) {
+            applyApiScroll(el, { top: 0, left: el.scrollLeft });
+          }
         },
 
         scrollToBottom: () => {
@@ -5114,13 +5192,35 @@ export function SpreadsheetGrid<T extends object>({
           if (!el || !s) {
             return;
           }
-          el.scrollTo({
+          applyApiScroll(el, {
             top: Math.max(
               s.headerHeight + s.physicalBodyHeight - el.clientHeight,
               0,
             ),
-            behavior: 'auto',
+            left: el.scrollLeft,
           });
+        },
+
+        // 追加(proposals ⑧): スクロール位置(px)の取得 / 設定です。値は生の
+        //   scrollTop / scrollLeft(onScroll と同一基準・往復で一貫)。
+        getScrollPosition: () => {
+          const el = scrollContainerRef.current;
+          return el ? { top: el.scrollTop, left: el.scrollLeft } : null;
+        },
+
+        setScrollPosition: (position, scrollOptions) => {
+          const el = scrollContainerRef.current;
+          if (!el) {
+            return;
+          }
+          applyApiScroll(
+            el,
+            {
+              top: position.top ?? el.scrollTop,
+              left: position.left ?? el.scrollLeft,
+            },
+            scrollOptions?.behavior ?? 'auto',
+          );
         },
 
         getVisibleRowRange: () => {
@@ -5461,7 +5561,9 @@ export function SpreadsheetGrid<T extends object>({
     // 変更(undo/redo scroll): スクロール計算群を component スコープへ切り出したため deps に
     //   加えます。いずれも deps [] の useCallback で参照不変のため、ハンドル生成は従来どおり
     //   1 回です(exhaustive-deps もクリーン)。
-    [applyScroll, scrollToCellInternal, verticalTargetFor],
+    // 変更(proposals ⑧): applyApiScroll(deps [] で参照不変)を scrollToTop / scrollToBottom /
+    //   setScrollPosition が直接使うため deps へ加えます(ハンドル生成は従来どおり 1 回)。
+    [applyApiScroll, applyScroll, scrollToCellInternal, verticalTargetFor],
   );
 
   // ── onStateChange(永続スライス + 列メタ変化の通知)──────

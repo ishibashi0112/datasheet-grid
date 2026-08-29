@@ -114,6 +114,10 @@ export type {
   RowSelectionModel,
   RowSelectionMode,
   ScrollAlign,
+  // 追加(proposals ⑧): スクロール位置 API(getScrollPosition / setScrollPosition / onScroll)の
+  //   公開型です。
+  GridScrollPosition,
+  GridScrollEventParams,
   CsvExportScope,
   // 追加(export-scope 再編): 後方互換エイリアス('all' / 'visible')の deprecated 型です。
   DeprecatedCsvExportScope,

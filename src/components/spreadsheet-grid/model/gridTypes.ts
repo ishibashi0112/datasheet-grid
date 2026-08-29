@@ -1033,6 +1033,23 @@ export type GridClassNames = {
 //   'end'   : 対象を可視帯の末尾(下端 / 右端)へ。
 export type ScrollAlign = 'auto' | 'start' | 'center' | 'end';
 
+// 追加(proposals ⑧): スクロール位置(px)です。値はスクロールコンテナの生の
+//   scrollTop / scrollLeft(getScrollPosition / setScrollPosition / onScroll で同一基準)。
+export type GridScrollPosition = {
+  top: number;
+  left: number;
+};
+
+// 追加(proposals ⑧): onScroll 通知のパラメータです。source は変化の由来で、
+//   'api' = setScrollPosition / scrollTo* 系(命令的 API)由来、'user' = それ以外
+//   (ホイール / ドラッグ / キーボード等)。利用側は 2 グリッドの双方向スクロール同期で
+//   'api' を無視することでループを止められます。
+export type GridScrollEventParams = {
+  top: number;
+  left: number;
+  source: 'user' | 'api';
+};
+
 // 変更(export-scope 再編): エクスポートの対象範囲を「意味論ベース」の 4 値へ再編します。実利用で
 //   「'visible' = フィルターで見えている行」という誤読が発生した(実体は仮想化ウィンドウ = 描画中の
 //   行のため、出力行数がスクロール位置に依存して変わる)ことを受け、仮想化の内部事情が名前に漏れない
@@ -1154,6 +1171,18 @@ export type SpreadsheetGridHandle<T> = {
   scrollToBottom: () => void;
   // 現在描画中の行ウィンドウ [startIndex, endIndex)(end 排他)。空のときは null。
   getVisibleRowRange: () => { startIndex: number; endIndex: number } | null;
+  // 追加(proposals ⑧): スクロール位置(px)の取得です。値はスクロールコンテナの生の
+  //   scrollTop / scrollLeft で、setScrollPosition / onScroll と同一基準(往復で一貫)。
+  //   コンテナ未マウント時は null を返します。
+  getScrollPosition: () => GridScrollPosition | null;
+  // 追加(proposals ⑧): スクロール位置(px)の設定です。top / left は省略側を現状維持し、
+  //   スクロール可能範囲へクランプします。既定 behavior は 'auto'(即時)。
+  //   2 グリッドの双方向同期では 'auto' を推奨します('smooth' は途中フレームの onScroll が
+  //   source:'user' になり得るため)。
+  setScrollPosition: (
+    position: { top?: number; left?: number },
+    options?: { behavior?: 'auto' | 'smooth' },
+  ) => void;
 
   // ── 選択 / アクティブセル ──
   // 現在のアクティブセル座標(なければ null)。
@@ -1364,6 +1393,11 @@ export type SpreadsheetGridProps<T> = {
   //   - applyState による反映も「状態変化」として発火します(復元直後に同値を 1 回保存する可能性あり)。
   //   毎レンダーで新しいインライン関数を渡しても問題ありません(latest-ref 経由で読むため再評価しません)。
   onStateChange?: (state: GridState) => void;
+  // 追加(proposals ⑧): スクロールコンテナの scroll 通知です(passive リスナーに相乗り・
+  //   rAF で 1 フレーム 1 回に間引き)。縦横どちらの変化でも発火します。source は
+  //   GridScrollEventParams の注記を参照(双方向同期のループ防止用)。毎レンダーで新しい
+  //   インライン関数を渡しても問題ありません(latest-ref 経由で読むため)。
+  onScroll?: (params: GridScrollEventParams) => void;
   // 変更(DS-4 ②/①-3): rows を optional 化しました。dataSource(serverSide)指定時は rows 不要のため。
   //   clientSide でも SpreadsheetGrid 側で既定値(EMPTY_ROWS)を当てるため、未指定でも従来どおり動作します。
   // 変更(proposals ②): readonly 配列も受け付けます(グリッドは入力配列を破壊的に変更しないため。
