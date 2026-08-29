@@ -7,8 +7,8 @@ description: SpreadsheetGridProps<T> の全 prop と既定値
 
 | Name | Type | Default | Description |
 | --- | --- | --- | --- |
-| `rows` | `T[]` | — | clientSide モードの行データ。`dataSource` を指定した場合は無視され serverSide モードになる(両者は排他)。 |
-| `columns` | `GridColumn<T>[]` | (required) | 列定義の配列。 |
+| `rows` | `readonly T[]` | — | clientSide モードの行データ。readonly 配列も受け付ける(グリッドは入力配列を破壊的に変更しない。編集結果は `onRowsChange` が新配列で返す)。`dataSource` を指定した場合は無視され serverSide モードになる(両者は排他)。 |
+| `columns` | `readonly GridColumn<T>[]` | (required) | 列定義の配列。readonly 配列も受け付ける。 |
 | `onRowsChange` | `(nextRows: T[]) => void` | — | 行が変化したとき呼ばれる(rows を controlled にする)。 |
 | `dataSource` | `ServerSideDataSource<T>` | — | serverSide(SSRM)モードのデータ供給口。指定すると可視窓近傍のブロックだけを `getRows` で都度取得し、`rows` 系の clientSide パイプラインをバイパスする。`updateRows`(任意)を持たせるとセル編集の書き戻し(楽観更新つき)が有効になる(「セル編集の書き戻し」節)。 |
 | `serverSideRefreshToken` | `number` | — | serverSide のソフトリフレッシュ用トークン。値を増やすと、クエリ(フィルター/ソート/グローバル)を変えずにキャッシュを破棄して現在の可視レンジをサーバから取り直す。スクロール位置は保持し、件数は到着ブロックの `totalRowCount` で追従する(clientSide では無視)。命令的に呼びたい場合は同挙動のハンドル `refreshServerSide()` を使う。 |

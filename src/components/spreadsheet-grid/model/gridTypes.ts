@@ -760,7 +760,8 @@ export type GridColumn<T> = {
   //             自動判定。詳細は ColumnFilterTypeOption / logic/inferFilterType.ts)。
   filterType?: ColumnFilterTypeOption;
   // 追加: select / set フィルター時の候補です。未指定時は rows から自動収集します。
-  filterOptions?: GridSelectFilterOption[];
+  // 変更(proposals ②): readonly 配列も受け付けます(as const 定義の候補をそのまま渡せます)。
+  filterOptions?: readonly GridSelectFilterOption[];
   // 追加(preset-opt): dateSet フィルターの相対プリセットチップの構成です。
   //   - 未指定: ビルトイン 3 種(今日 / 今月 / 過去 30 日)を表示(従来挙動)。
   //   - false または []: チップ行そのものを非表示にします(オプトアウト)。
@@ -1348,7 +1349,10 @@ export type SpreadsheetGridProps<T> = {
   onStateChange?: (state: GridState) => void;
   // 変更(DS-4 ②/①-3): rows を optional 化しました。dataSource(serverSide)指定時は rows 不要のため。
   //   clientSide でも SpreadsheetGrid 側で既定値(EMPTY_ROWS)を当てるため、未指定でも従来どおり動作します。
-  rows?: T[];
+  // 変更(proposals ②): readonly 配列も受け付けます(グリッドは入力配列を破壊的に変更しないため。
+  //   編集結果は onRowsChange が新配列で返します)。useMemo / filter 由来の readonly T[] を
+  //   キャストなしで渡せます。
+  rows?: readonly T[];
   // 追加(DS-4 ②): serverSide データ供給口です。指定時に serverSide モードへ切り替えます
   //   (rows と排他・dataSource 優先)。①-3 で本 prop を消費してモード分岐します。
   dataSource?: ServerSideDataSource<T>;
@@ -1374,7 +1378,9 @@ export type SpreadsheetGridProps<T> = {
     error: unknown,
     params: ServerSideWriteErrorParams<T>,
   ) => void;
-  columns: GridColumn<T>[];
+  // 変更(proposals ②): readonly 配列も受け付けます(rows と同じ理由。出力側の
+  //   onRowsChange / onColumnsChange は従来どおり mutable の新配列を返します)。
+  columns: readonly GridColumn<T>[];
   onRowsChange?: (nextRows: T[]) => void;
   onColumnsChange?: (nextColumns: GridColumn<T>[]) => void;
   rowKeyGetter?: (row: T, index: number) => GridRowKey;

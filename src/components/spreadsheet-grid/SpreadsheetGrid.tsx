@@ -413,7 +413,7 @@ const SERVER_SIDE_QUERY_DEBOUNCE_MS = 300;
 export function SpreadsheetGrid<T extends object>({
   // 変更(①-3): rows に安定既定値(EMPTY_ROWS)を当てます。rows が optional でも全 consumer は
   //   従来どおり T[] を見ます(serverSide 時は dataSource を使い rows は空のまま)。
-  rows = EMPTY_ROWS,
+  rows: rowsProp = EMPTY_ROWS,
   // 追加(①-3): serverSide データ供給口。指定時に serverSide モードへ分岐します(rows と排他)。
   dataSource,
   // 追加(stage ③): serverSide ソフトリフレッシュ用トークン。値を増やすと query 不変のまま
@@ -422,7 +422,7 @@ export function SpreadsheetGrid<T extends object>({
   // 追加(batch 9): getRows 失敗の外部通知です(内蔵エラーバーとは独立)。フックへ渡します。
   onServerSideLoadError,
   onServerSideWriteError,
-  columns,
+  columns: columnsProp,
   onRowsChange,
   onColumnsChange,
   rowKeyGetter,
@@ -523,6 +523,13 @@ export function SpreadsheetGrid<T extends object>({
   // 追加(state #2): 永続スライス変化の通知口(保存タイミング signal)。発火規約は型定義のコメント参照。
   onStateChange,
 }: SpreadsheetGridProps<T>) {
+  // 変更(proposals ②): rows / columns は readonly 配列も受け付けます。グリッドは入力配列を
+  //   破壊的に変更しない設計(編集は onRowsChange / onColumnsChange が新配列を返す)のため、
+  //   内部の既存シグネチャ(mutable T[])へはこの境界で 1 回だけ型を絞って渡します
+  //   (実行時コピーはせず、参照同一性・memo 化はすべて従来どおり)。
+  const rows = rowsProp as T[];
+  const columns = columnsProp as GridColumn<T>[];
+
   // 追加(THEME-2): density プリセットの既定寸法を解決します(明示 prop が常に優先)。
   const rowHeight = rowHeightProp ?? DENSITY_DIMENSIONS[density].rowHeight;
   const headerHeight = headerHeightProp ?? DENSITY_DIMENSIONS[density].headerHeight;
