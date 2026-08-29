@@ -265,7 +265,7 @@ const gridRef = useRef<SpreadsheetGridHandle<Row>>(null);
 - `GridColumnPinned = 'left' | 'right'`
 - `GridSelectFilterOption = { label: string; value: string }`
 - `CellRenderContext<T> = { row, rowIndex, sourceRowIndex, rowKey, colIndex, value, column, isActive, isSelected, isEditing, readOnly, setValue }`
-- `CellStyleContext<T>` = 上記から `setValue` を除いた読み取り専用版(`cellClassName` 関数へ渡る)
+- `CellStyleContext<T>` = 上記から `setValue` を除いた読み取り専用版(`cellClassName` 関数へ渡る)。バレル(`index.ts`)から公開(`import type { CellStyleContext } from '@ishibashi0112/spreadsheet-grid'`)
   - `rowIndex` は**ビュー行 index**(ソート / フィルター適用後の表示位置)、`sourceRowIndex` は**元 `rows` の index**、`rowKey` は行キー(`rowKeyGetter` 由来、既定は source index)。ソート / フィルター ON の画面で「エラー行 index の集合」など source 基準のデータと突き合わせるときは `sourceRowIndex` / `rowKey` を使う(`getInvalidCells()` の返す `sourceRowIndex` / `rowKey` と同一基準)。serverSide では view 順が正準のため `sourceRowIndex` は view index と同値。
 - `HeaderRenderContext<T> = { colIndex, width, column, filterValue?, isFiltered? }`
 - `SpreadsheetGridSlotContext<T> = { rows, filteredRows, columns, visibleColumns, globalFilterText, columnFilterValues, sortState, setGlobalFilterText, activeCell, selection, derivedSummary, globalFilterStatus, globalFilterProgress }`
