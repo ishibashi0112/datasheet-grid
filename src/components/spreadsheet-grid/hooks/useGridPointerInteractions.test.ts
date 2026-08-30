@@ -371,3 +371,81 @@ describe('ガター行選択ドラッグの端 auto-scroll(RS-AS)', () => {
     expect(rafQueue.length).toBe(0);
   });
 });
+
+// 追加(proposals ⑨)の回帰テスト: pointerdown 系ハンドラは root を preventScroll 付きで
+//   フォーカスします。root が viewport に収まっていない時、既定の focus() がページを
+//   スクロールさせてポインタ直下のセルが入れ替わり、pointerenter → updateSelection で
+//   「静止 1 クリック」が数行の範囲選択になる(Playwright + Chrome で再現)ためです。
+//   jsdom の focus() はスクロールを起こさないため、引数の有無を spy で直接検証します。
+describe('pointerdown 時のフォーカス(proposals ⑨)', () => {
+  it('セル / 行ヘッダー / 列ヘッダーの pointerdown は root を preventScroll 付きでフォーカスする', () => {
+    const focusSpy = vi.spyOn(HTMLElement.prototype, 'focus');
+    try {
+      const { args } = makeArgs({});
+      const { result } = renderHook(() =>
+        useGridPointerInteractions<Row>(args),
+      );
+
+      act(() => {
+        result.current.handleCellPointerDown(
+          { row: 0, col: 0 },
+          makeGutterPointerDown(5, 5),
+        );
+      });
+      act(() => {
+        dispatchWindowPointerUp();
+      });
+      act(() => {
+        result.current.handleRowHeaderPointerDown(
+          0,
+          makeGutterPointerDown(5, 5),
+        );
+      });
+      act(() => {
+        dispatchWindowPointerUp();
+      });
+      act(() => {
+        result.current.handleColumnHeaderPointerDown(
+          0,
+          makeGutterPointerDown(5, 5),
+        );
+      });
+      act(() => {
+        dispatchWindowPointerUp();
+      });
+
+      expect(focusSpy).toHaveBeenCalledTimes(3);
+      for (const call of focusSpy.mock.calls) {
+        expect(call).toEqual([{ preventScroll: true }]);
+      }
+      // フォーカス先はグリッド root(gridRootRef)であること。
+      for (const context of focusSpy.mock.contexts) {
+        expect(context).toBe(args.gridRootRef.current);
+      }
+    } finally {
+      focusSpy.mockRestore();
+    }
+  });
+
+  it('button !== 0(右クリック等)ではフォーカスしない', () => {
+    const focusSpy = vi.spyOn(HTMLElement.prototype, 'focus');
+    try {
+      const { args } = makeArgs({});
+      const { result } = renderHook(() =>
+        useGridPointerInteractions<Row>(args),
+      );
+      const rightButton = {
+        ...makeGutterPointerDown(5, 5),
+        button: 2,
+      } as ReactPointerEvent<HTMLDivElement>;
+      act(() => {
+        result.current.handleCellPointerDown({ row: 0, col: 0 }, rightButton);
+        result.current.handleRowHeaderPointerDown(0, rightButton);
+        result.current.handleColumnHeaderPointerDown(0, rightButton);
+      });
+      expect(focusSpy).not.toHaveBeenCalled();
+    } finally {
+      focusSpy.mockRestore();
+    }
+  });
+});

@@ -2809,7 +2809,7 @@ export function SpreadsheetGrid<T extends object>({
       if (viewRowCount === 0 || visibleColumns.length === 0) {
         return;
       }
-      gridRootRef.current?.focus();
+      gridRootRef.current?.focus({ preventScroll: true }); // proposals ⑨(セル押下と同方針)
       // 追加(行選択): 全選択チェック有効時はコーナーで行選択の全選択/解除をトグルします
       //   (従来のグリッド全体セル選択より優先)。
       if (enableSelectAllRows) {

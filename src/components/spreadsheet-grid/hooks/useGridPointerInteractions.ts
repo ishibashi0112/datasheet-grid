@@ -502,7 +502,12 @@ export const useGridPointerInteractions = <T,>({
       if (event.button !== 0) {
         return;
       }
-      gridRootRef.current?.focus();
+      // 変更(proposals ⑨): preventScroll 付きでフォーカスします。root(.ssg-shell)が viewport に
+      //   収まっていない時に focus() の既定動作でページ(祖先スクロールコンテナ)がスクロールすると、
+      //   ポインタは静止しているのにグリッドがポインタの下を流れ、直下に来たセルへの pointerenter が
+      //   selection ドラッグ中の updateSelection を呼んで「静止 1 クリック」が数行の範囲選択になる
+      //   ためです。キーボード / scrollToCell 由来のフォーカスは対象外(スクロールしてよい)。
+      gridRootRef.current?.focus({ preventScroll: true });
       // 追加(scroll-fix): 押下座標で pointer/armed 状態を初期化します。pointerClientRef は
       //   従来 move/enter 系でしか更新されず、押下直後の auto-scroll tick が古い座標を読む
       //   余地がありました。origin は armed ガードの起点です(pointerClientRef は安定参照の
@@ -669,7 +674,7 @@ export const useGridPointerInteractions = <T,>({
       if (event.button !== 0) {
         return;
       }
-      gridRootRef.current?.focus();
+      gridRootRef.current?.focus({ preventScroll: true }); // proposals ⑨(セル押下と同方針)
       // 追加(scroll-fix): 押下座標で pointer/armed 状態を初期化します(セル押下と同方針)。
       // 変更(RS-AS): ガター行選択(enableRowSelection)経路も専用ループ(下の分岐内で起動)の
       //   auto-scroll 対象になったため、この初期化(起点 / armed)は両経路の共有になりました。
@@ -747,7 +752,7 @@ export const useGridPointerInteractions = <T,>({
       if (event.button !== 0) {
         return;
       }
-      gridRootRef.current?.focus();
+      gridRootRef.current?.focus({ preventScroll: true }); // proposals ⑨(セル押下と同方針)
       // 追加(scroll-fix): 押下座標で pointer/armed 状態を初期化します(セル押下と同方針)。
       pointerClientRef.current = { x: event.clientX, y: event.clientY };
       autoScrollOriginRef.current = { x: event.clientX, y: event.clientY };

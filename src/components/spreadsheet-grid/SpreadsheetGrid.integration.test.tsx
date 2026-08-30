@@ -714,3 +714,31 @@ describe('scrollHint minRows(結合)', () => {
     expect(hasCustomScrollbar(container)).toBe(true);
   });
 });
+
+// 追加(proposals ⑨): コーナーヘッダー(全選択)pointerdown も root を preventScroll 付きで
+//   フォーカスします(セル / 行ヘッダー / 列ヘッダーは hooks/useGridPointerInteractions.test.ts)。
+//   コーナーセルはヘッダー行に常時描画されるため、レイアウトスタブなしの素の jsdom で検証できます。
+describe('コーナーヘッダー pointerdown のフォーカス(結合・proposals ⑨)', () => {
+  it('root(.ssg-shell)を preventScroll 付きでフォーカスする', () => {
+    const focusSpy = vi.spyOn(HTMLElement.prototype, 'focus');
+    try {
+      const { container } = render(
+        <SpreadsheetGrid<Row> columns={columns} rows={rows} />,
+      );
+      const corner = container.querySelector<HTMLElement>('.ssg-corner-cell');
+      expect(corner).not.toBeNull();
+      const shell = container.querySelector<HTMLElement>('.ssg-shell');
+      expect(shell).not.toBeNull();
+
+      act(() => {
+        fireEvent.pointerDown(corner!, { button: 0 });
+      });
+
+      expect(focusSpy).toHaveBeenCalledTimes(1);
+      expect(focusSpy.mock.calls[0]).toEqual([{ preventScroll: true }]);
+      expect(focusSpy.mock.contexts[0]).toBe(shell);
+    } finally {
+      focusSpy.mockRestore();
+    }
+  });
+});
