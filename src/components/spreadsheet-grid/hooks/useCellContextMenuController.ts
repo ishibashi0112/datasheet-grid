@@ -9,6 +9,8 @@ import type {
   GridContextMenuItem,
   GridContextMenuParams,
 } from '../model/gridTypes';
+// 追加(detail ④): 展開行カード内にフォーカスがあるときの focus 復帰ガードです。
+import { isFocusInsideDetailCard } from '../logic/detailRow';
 
 // 追加(バッチ②/コンテキストメニュー): body 直下 portal popover の配置情報(position: fixed)です。
 export type CellContextMenuLayout = {
@@ -100,7 +102,10 @@ export const useCellContextMenuController = <T,>({
     anchorPointRef.current = null;
     itemCountRef.current = 0;
     requestAnimationFrame(() => {
-      gridRootRef.current?.focus();
+      // 追加(detail ④): 展開行カード内のクリックで閉じたときはカードのフォーカスを奪いません。
+      if (!isFocusInsideDetailCard()) {
+        gridRootRef.current?.focus();
+      }
     });
   }, [gridRootRef]);
 

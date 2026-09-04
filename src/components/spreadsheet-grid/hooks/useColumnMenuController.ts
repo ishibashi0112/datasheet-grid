@@ -9,6 +9,8 @@ import {
   type RefObject,
 } from 'react';
 import type { GridColumn } from '../model/gridTypes';
+// 追加(detail ④): 展開行カード内にフォーカスがあるときの focus 復帰ガードです。
+import { isFocusInsideDetailCard } from '../logic/detailRow';
 
 // 追加(13-A): 列メニュー popover の内部状態です。
 //             どの列のメニューを開いているかだけを持ちます。
@@ -192,7 +194,10 @@ export const useColumnMenuController = <T,>({
 
     // 追加: close 後は grid root にフォーカスを戻し、keyboard 操作へ復帰させます。
     requestAnimationFrame(() => {
-      gridRootRef.current?.focus();
+      // 追加(detail ④): 展開行カード内のクリックで閉じたときはカードのフォーカスを奪いません。
+      if (!isFocusInsideDetailCard()) {
+        gridRootRef.current?.focus();
+      }
     });
   }, [gridRootRef]);
 

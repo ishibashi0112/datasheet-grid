@@ -41,6 +41,8 @@ import {
 import { computeFilterPopoverPlacement } from '../logic/filterPopoverLayout';
 // 追加(date-input): 外側クリック判定(keep-open 属性のオプトアウト込み)の純ロジックです。
 import { isFilterPopoverOutsideTarget } from '../logic/filterPopoverOutsideClick';
+// 追加(detail ④): 展開行カード内にフォーカスがあるときの focus 復帰ガードです。
+import { isFocusInsideDetailCard, isInsideDetailCardOf } from '../logic/detailRow';
 
 // 追加: 列フィルターポップオーバーの内部状態です。
 type HeaderFilterPopoverState = {
@@ -218,13 +220,17 @@ export const useFilterPopoverController = <T,>({
       // 変更: NodeList を for...of で回すと lib に DOM.Iterable が無い設定/旧 TS では
       //   TS2488 になるため、lib 非依存の Array.from + find で解決します(列数ぶんの小さな
       //   配列化で早期終了。挙動は同じ。横スクロールで対象列が画面外なら見つからず null)。
-      const headerCells =
-        gridRootRef.current?.querySelectorAll<HTMLElement>('[data-ssg-col-key]');
-      const anchorEl = headerCells
-        ? Array.from(headerCells).find(
-            (cell) => cell.dataset.ssgColKey === column.key,
-          ) ?? null
-        : null;
+      const rootEl = gridRootRef.current;
+      const headerCells = rootEl?.querySelectorAll<HTMLElement>('[data-ssg-col-key]');
+      const anchorEl =
+        rootEl && headerCells
+          ? Array.from(headerCells).find(
+              (cell) =>
+                cell.dataset.ssgColKey === column.key &&
+                // 追加(detail ④): 展開行カード内にネストしたグリッドの同名列は対象外です。
+                !isInsideDetailCardOf(rootEl, cell),
+            ) ?? null
+          : null;
       filterPopoverAnchorRef.current = anchorEl;
 
       // 追加(filter-ext E): 'auto' 列の実効種別をここで 1 回だけ解決します(以後この popover の
@@ -302,7 +308,10 @@ export const useFilterPopoverController = <T,>({
 
     // 追加: close 後は grid root にフォーカスを戻し、従来の keyboard 操作へ復帰させます。
     requestAnimationFrame(() => {
-      gridRootRef.current?.focus();
+      // 追加(detail ④): 展開行カード内のクリックで閉じたときはカードのフォーカスを奪いません。
+      if (!isFocusInsideDetailCard()) {
+        gridRootRef.current?.focus();
+      }
     });
   }, [gridRootRef]);
 

@@ -172,6 +172,7 @@ import {
   DETAIL_TOGGLE_COLUMN_KEY,
   DETAIL_TOGGLE_COLUMN_WIDTH,
   createDetailIndexCache,
+  isInsideDetailCardOf,
   isSyntheticColumnKey,
   resolveDetailRowExtras,
   seedDetailIndexCache,
@@ -2061,6 +2062,17 @@ export function SpreadsheetGrid<T extends object>({
     // 物理 scrollTop の即時 0 化に React state も追従させます(scroll イベント待ちの 1 フレーム遅延回避)。
     setScrollTop(0);
   }, [isServerSide, serverSideQueryKey]);
+  // 追加(detail ④): serverSide で query が変わったら展開行を全て閉じます。
+  //   結果セットが総入れ替えされるうえ、serverSide では rowKey の全行走査ができず(未ロード行)、
+  //   古い view index のまま別行の下に帯が残る恐れがあるためです。空→空は reducer が no-op に
+  //   するので mount 時や clientSide(queryKey 安定空)では何も起きません。
+  useEffect(() => {
+    if (!isServerSide || !detailRowEnabled) {
+      return;
+    }
+    detailIndexCacheRef.current = createDetailIndexCache();
+    dispatch(gridActions.setExpandedDetailRowKeys(new Set<GridRowKey>()));
+  }, [isServerSide, detailRowEnabled, serverSideQueryKey, dispatch]);
 
   // 追加(①-3 / stage ②): serverSide のとき、描画窓(overscan 込み)の可視レンジを hook へ通知します。
   //   requestRange は即時 touchBlocks + debounce fetch。空窓(末尾 < 先頭)では何もしません。
@@ -2124,6 +2136,11 @@ export function SpreadsheetGrid<T extends object>({
     if (cells.length > 0) {
       const perRow = new Map<number, number>();
       cells.forEach((cell) => {
+        // 追加(detail ④): 展開行カード内にネストしたグリッドのセルは、このグリッドの行高に
+        //   混ぜません(展開行が無効なら [data-ssg-detail] は存在せず、closest は即 null)。
+        if (isInsideDetailCardOf(el, cell)) {
+          return;
+        }
         const rowEl = cell.closest<HTMLElement>('[data-row-index]');
         if (!rowEl) {
           return;
@@ -3468,16 +3485,17 @@ export function SpreadsheetGrid<T extends object>({
         }
       }
       const findHeaderCell = (): HTMLElement | null => {
-        const cells =
-          gridRootRef.current?.querySelectorAll<HTMLElement>(
-            '[data-ssg-col-key]',
-          );
-        if (!cells) {
+        const root = gridRootRef.current;
+        const cells = root?.querySelectorAll<HTMLElement>('[data-ssg-col-key]');
+        if (!root || !cells) {
           return null;
         }
         return (
           Array.from(cells).find(
-            (cell) => cell.dataset.ssgColKey === columnKey,
+            (cell) =>
+              cell.dataset.ssgColKey === columnKey &&
+              // 追加(detail ④): 展開行カード内にネストしたグリッドの同名列は対象外です。
+              !isInsideDetailCardOf(root, cell),
           ) ?? null
         );
       };

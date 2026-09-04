@@ -23,6 +23,34 @@ export const DEFAULT_DETAIL_ROW_HEIGHT = 200;
 export const isSyntheticColumnKey = (key: string): boolean =>
   key === GROUP_AUTO_COLUMN_KEY || key === DETAIL_TOGGLE_COLUMN_KEY;
 
+// 要素が展開行カード(data-ssg-detail)の内側にあるか。カードの中身は消費側 UI(入れ子のグリッドも
+//   あり得る)のため、グリッド本体の DOM クエリ(auto-height 実測 / 列ヘッダー探索)から除外し、
+//   フォーカスがカード内にあるあいだは grid root へフォーカスを戻しません(detail batch 4)。
+export const isInsideDetailCard = (
+  element: Element | null | undefined,
+): boolean =>
+  element != null &&
+  typeof element.closest === 'function' &&
+  element.closest('[data-ssg-detail]') !== null;
+
+export const isFocusInsideDetailCard = (): boolean =>
+  typeof document !== 'undefined' && isInsideDetailCard(document.activeElement);
+
+// root(このグリッドの .ssg-root / スクロールコンテナ)配下の展開行カードの中にある要素か。
+//   DOM 走査(自動高さ実測 / 列キー検索)から「カード内に消費側がネストしたグリッド」の要素を
+//   除外するために使います。root 自身が別グリッドのカード内にある場合(外側から見て root 全体が
+//   カード内)は除外しないよう、最寄りのカードが root に含まれるかで判定します。
+export const isInsideDetailCardOf = (
+  root: Element,
+  element: Element,
+): boolean => {
+  if (typeof element.closest !== 'function') {
+    return false;
+  }
+  const card = element.closest('[data-ssg-detail]');
+  return card !== null && card !== root && root.contains(card);
+};
+
 // rowKey → view index の解決キャッシュです(コンポーネントの ref に保持)。
 //   unresolved は「この rowModel では見つからなかったキー」の記録で、同じ rowModel のあいだは
 //   走査を繰り返しません(フィルター除外中のキーで毎レンダー O(n) 走査するのを防ぐ)。

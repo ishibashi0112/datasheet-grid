@@ -17,6 +17,8 @@ import type {
 import { parseCommittedValue, writeRowsCell } from '../logic/editorValues';
 import { decideCellWrite } from '../logic/validation';
 import { clamp } from '../logic/geometry';
+// 追加(detail ④): 展開行カード内にフォーカスがあるときの focus 復帰ガードです。
+import { isFocusInsideDetailCard } from '../logic/detailRow';
 import type { ServerSideCellEditInput } from '../logic/serverSideEdits';
 
 type UseGridEditControllerArgs<T extends object> = {
@@ -172,7 +174,11 @@ export const useGridEditController = <T extends object>({
 
       editorActionGuardRef.current = true;
       requestAnimationFrame(() => {
-        gridRootRef.current?.focus();
+        // 追加(detail ④): 展開行カード内の要素へフォーカスが移った(= blur 起因の commit)ときは
+        //   カードのフォーカスを奪いません。
+        if (!isFocusInsideDetailCard()) {
+          gridRootRef.current?.focus();
+        }
         const { rowCount, colCount } = boundsRef.current;
         activateSingleCell({
           row: clamp(intendedCell.row, 0, Math.max(rowCount - 1, 0)),
@@ -208,7 +214,9 @@ export const useGridEditController = <T extends object>({
     dispatch(gridActions.stopEdit());
 
     requestAnimationFrame(() => {
-      gridRootRef.current?.focus();
+      if (!isFocusInsideDetailCard()) {
+        gridRootRef.current?.focus();
+      }
       editorActionGuardRef.current = false;
     });
   }, [dispatch, editorActionGuardRef, gridRootRef]);

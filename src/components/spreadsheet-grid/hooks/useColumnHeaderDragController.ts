@@ -24,6 +24,8 @@ import {
   resolveAutoScrollAxisDirection,
   resolveScrollContentBox,
 } from '../logic/autoScrollGeometry';
+// 追加(detail ④): 展開行カード内(ネストしたグリッド)のセル除外です。
+import { isInsideDetailCardOf } from '../logic/detailRow';
 
 // 追加(13-B3-2): ヘッダーのバッジ(Excel 列名)を grip にした列の D&D 並べ替え controller です。
 // 設計メモ:
@@ -231,6 +233,8 @@ const captureColumnLefts = (
   container
     .querySelectorAll<HTMLElement>('[data-ssg-col-key]')
     .forEach((cell) => {
+      // 追加(detail ④): 展開行カード内にネストしたグリッドのセルは測りません。
+      if (isInsideDetailCardOf(container, cell)) return;
       const key = cell.dataset.ssgColKey;
       if (key && !map.has(key)) {
         map.set(key, cell.getBoundingClientRect().left);
@@ -675,6 +679,8 @@ export const useColumnHeaderDragController = <T,>(
     container
       .querySelectorAll<HTMLElement>('[data-ssg-col-key]')
       .forEach((cell) => {
+        // 追加(detail ④): 展開行カード内にネストしたグリッドのセルはアニメーション対象外です。
+        if (isInsideDetailCardOf(container, cell)) return;
         const key = cell.dataset.ssgColKey;
         if (!key || !before.has(key)) return;
         const arr = cellsByKey.get(key);

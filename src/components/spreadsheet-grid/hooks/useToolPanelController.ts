@@ -3,6 +3,8 @@ import type { RefObject } from 'react';
 
 // 追加(FM-4): ドラッグ位置のビューポート clamp(パネル共有の純ロジック)です。
 import { clampPanelDragPosition } from '../logic/panelDragGeometry';
+// 追加(detail ④): 展開行カード内にフォーカスがあるときの focus 復帰ガードです。
+import { isFocusInsideDetailCard } from '../logic/detailRow';
 
 // 追加(UP-1 / 統合ツールパネル): フィルター管理 / 列の表示 / 並び替えの独立 3 パネル
 //   (useFilterManagementController / useColumnChooserController / useSortManagementController)
@@ -202,7 +204,10 @@ export const useToolPanelController = ({
     setToolPanelLayout(null);
     // close 後は grid root にフォーカスを戻し、keyboard 操作へ復帰させます。
     requestAnimationFrame(() => {
-      gridRootRef.current?.focus();
+      // 追加(detail ④): 展開行カード内のクリックで閉じたときはカードのフォーカスを奪いません。
+      if (!isFocusInsideDetailCard()) {
+        gridRootRef.current?.focus();
+      }
     });
   }, [gridRootRef]);
 
