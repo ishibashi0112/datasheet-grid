@@ -2266,9 +2266,14 @@ export function SpreadsheetGrid<T extends object>({
   }, [isRowSelectionControlled, controlledRowSelectionModel, dispatch]);
 
   // ── pointer interactions ──────────────────────────────
+  // 追加(touch): セルダブルクリック処理の latest-ref(定義は下方。useEffect で同期)。
+  const cellDoubleClickRef = useRef<(cell: CellCoord) => void>(() => {});
+
   const {
     updateSelectionFromPointer,
     handleCellPointerDown,
+    // 追加(touch): タッチ由来の native dblclick を無視するラッパ(参照恒久安定)。
+    handleCellDoubleClick: handleCellDoubleClickGuarded,
     handleCellPointerEnter,
     handleNativeDragStart,
     handleRowHeaderPointerDown,
@@ -2278,6 +2283,9 @@ export function SpreadsheetGrid<T extends object>({
   } = useGridPointerInteractions({
     gridRootRef,
     bodyScrollRef,
+    // 追加(touch): セルのダブルクリック処理(handleCellDoubleClickWithController)は本フックより
+    //   後ろで定義されるため、useEffect 同期の latest-ref(RS-AS 方式)で渡します。
+    onCellDoubleClickRef: cellDoubleClickRef,
     // 追加(10-G): 自動スクロールは共有スクロールコンテナを動かします。
     scrollContainerRef,
     // 追加(10-E): 固定ペインの ref を渡し、clientX のペイン判定に使います。
@@ -2685,6 +2693,11 @@ export function SpreadsheetGrid<T extends object>({
     },
     [canEditCell, rowModel, readOnly, startEditWithValue, orderedColumns],
   );
+  // 追加(touch): pointer フック(タッチのダブルタップ / native dblclick ラッパ)から読む latest-ref を
+  //   同期します(render 中の ref 代入を増やさないため useEffect 同期 = RS-AS 方式)。
+  useEffect(() => {
+    cellDoubleClickRef.current = handleCellDoubleClickWithController;
+  }, [handleCellDoubleClickWithController]);
 
   // ── selection overlay placement（10-D: ペイン別座標系 / 可視帯クリップ） ─
   // 変更(10-D): 選択範囲を「論理列 index 範囲 + 行範囲」に正規化し、
@@ -5820,7 +5833,7 @@ export function SpreadsheetGrid<T extends object>({
                   onRowHeaderPointerLeave={handleRowHeaderPointerLeaveStable}
                   onCellPointerDown={handleCellPointerDown}
                   onCellPointerEnter={handleCellPointerEnter}
-                  onCellDoubleClick={handleCellDoubleClickWithController}
+                  onCellDoubleClick={handleCellDoubleClickGuarded}
                   renderCellContent={renderCellContent}
                   getRowClassName={getRowClassName}
                   bodyCellClassName={classNames?.bodyCell}
@@ -5971,7 +5984,7 @@ export function SpreadsheetGrid<T extends object>({
                   onRowHeaderPointerLeave={handleRowHeaderPointerLeaveStable}
                   onCellPointerDown={handleCellPointerDown}
                   onCellPointerEnter={handleCellPointerEnter}
-                  onCellDoubleClick={handleCellDoubleClickWithController}
+                  onCellDoubleClick={handleCellDoubleClickGuarded}
                   renderCellContent={renderCellContent}
                   getRowClassName={getRowClassName}
                   bodyCellClassName={classNames?.bodyCell}
@@ -6114,7 +6127,7 @@ export function SpreadsheetGrid<T extends object>({
                   onRowHeaderPointerLeave={handleRowHeaderPointerLeaveStable}
                   onCellPointerDown={handleCellPointerDown}
                   onCellPointerEnter={handleCellPointerEnter}
-                  onCellDoubleClick={handleCellDoubleClickWithController}
+                  onCellDoubleClick={handleCellDoubleClickGuarded}
                   renderCellContent={renderCellContent}
                   getRowClassName={getRowClassName}
                   bodyCellClassName={classNames?.bodyCell}

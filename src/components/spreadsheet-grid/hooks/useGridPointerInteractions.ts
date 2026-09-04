@@ -46,6 +46,27 @@ import {
   resolveScrollContentBox,
 } from '../logic/autoScrollGeometry';
 
+// 追加(touch): タッチ操作の判定しきい値です。
+//   TOUCH_TAP_SLOP_PX: pointerdown → pointerup の移動量がこれ未満なら「タップ」と見なします
+//     (ブラウザがパンと判定した場合は pointerup ではなく pointercancel が来るため、通常は
+//      cancel 側で破棄されますが、パン判定前のわずかな移動に備えた保険です)。
+//   TOUCH_DOUBLE_TAP_MS: 同一セルへの 2 連続タップをダブルタップ(= dblclick 相当)と見なす間隔です。
+//     native dblclick はタッチではブラウザ差が大きい(iOS Safari は発火しない等)ため自前判定します。
+export const TOUCH_TAP_SLOP_PX = 10;
+export const TOUCH_DOUBLE_TAP_MS = 300;
+
+// 追加(touch): タッチ pointerdown で保留するタップ対象です。pointerup(同 pointerId・slop 内)で
+//   確定し、pointercancel(ブラウザのパン / ピンチ移行)で破棄します。
+type PendingTouchTap = {
+  pointerId: number;
+  x: number;
+  y: number;
+  target:
+    | { kind: 'cell'; cell: CellCoord }
+    | { kind: 'row'; rowIndex: number }
+    | { kind: 'col'; colIndex: number };
+};
+
 type UseGridPointerInteractionsArgs<T> = {
   gridRootRef: RefObject<HTMLDivElement | null>;
   // 中央ペイン要素です。ヒットテストの基準矩形に使います。
@@ -104,6 +125,10 @@ type UseGridPointerInteractionsArgs<T> = {
     opts: { shiftKey: boolean },
   ) => void;
   onGutterRowSelectDrag: (viewIndex: number) => void;
+  // 追加(touch): セルのダブルクリック(編集開始)処理を読む latest-ref です。タッチのダブルタップ
+  //   (自前判定)と native dblclick(マウス)の両経路から同じ処理を呼びます。component 側で
+  //   定義位置がフック呼び出しより後ろのため、useEffect 同期の ref(RS-AS 方式)で受け取ります。
+  onCellDoubleClickRef: RefObject<(cell: CellCoord) => void>;
 };
 
 // 追加: pointer 系 interaction（cell/row/col selection + drag auto-scroll + window pointer sync）をまとめます。
@@ -137,6 +162,7 @@ export const useGridPointerInteractions = <T,>({
   enableRowSelection,
   onGutterRowSelect,
   onGutterRowSelectDrag,
+  onCellDoubleClickRef,
 }: UseGridPointerInteractionsArgs<T>) => {
   // 追加(11-A2): dragState の最新値を ref で保持します(latest-ref パターン)。
   // 変更理由: enter 系ハンドラ(handleCellPointerEnter 等)が uiState.dragState を
@@ -155,6 +181,22 @@ export const useGridPointerInteractions = <T,>({
   //   (useCallback)なため、latest-ref を挟まず該当ハンドラの deps へ直接入れます
   //   (安定値なのでハンドラ参照は変わらず memo を保てます。render 時の ref 代入も増やしません)。
   const rowSelectionDraggingRef = useRef(false);
+
+  // 追加(touch): タッチ操作の状態です(書き込みはイベントハンドラ内のみ)。
+  //   - pendingTouchTapRef: pointerdown で保留したタップ(pointerup で確定 / pointercancel で破棄)。
+  //   - lastTouchTapRef: 直前に確定したセルタップ(ダブルタップ判定用)。
+  //   - lastPointerTypeRef: 直近の pointerdown の pointerType。native dblclick をタッチ由来なら
+  //     無視するために使います(ダブルタップは自前判定で発火済みのため二重起動を防ぐ)。
+  // 設計: タッチではデスクトップの「pointerdown で選択開始 → ドラッグで範囲拡張」を行いません。
+  //   タッチのドラッグはブラウザのスクロール(パン)に譲り、グリッド側は「タップ = セル選択 /
+  //   ダブルタップ = 編集開始」だけを担います。従来はスワイプ開始点のセルが選択され、パン判定前の
+  //   pointerenter で数行の範囲選択が残り、pointercancel を扱わないため dragState が
+  //   'selection' のまま取り残されていました(端 auto-scroll の rAF も回り続ける)。
+  const pendingTouchTapRef = useRef<PendingTouchTap | null>(null);
+  const lastTouchTapRef = useRef<{ cell: CellCoord; time: number } | null>(
+    null,
+  );
+  const lastPointerTypeRef = useRef<string>('mouse');
 
   // 追加(RS-AS): ガター行選択ドラッグ用の端 auto-scroll rAF ハンドルです。ガター経路は
   //   dragState を使わない ref フラグ運用(再レンダーなし)のため、既存の
@@ -336,6 +378,58 @@ export const useGridPointerInteractions = <T,>({
   // 追加: selection drag / column resize drag 中の window pointer イベントを処理します。
   // 変更(11-B2): 依存を uiState.dragState オブジェクトから dragType プリミティブへ縮小。
   //              listener の解除/再登録は type 遷移時(ドラッグ開始/終了)のみになります。
+  // 追加(touch): 保留中のタッチタップを確定します(pointerup 時。slop 判定は呼び出し側)。
+  //   セル: 1 回目 = activateCell + 単一セル選択(startSelection → endSelection でデスクトップの
+  //         click と同じ状態遷移)。同一セルへ TOUCH_DOUBLE_TAP_MS 以内の 2 回目 = ダブルクリック処理。
+  //   行ヘッダー: enableRowSelection 時はガター行選択(shift なし)、それ以外は行全体の選択。
+  //   列ヘッダー: 列全体の選択(Shift+タップのソートは対象外 = タッチに修飾キーはない)。
+  const commitTouchTap = useCallback(
+    (pending: PendingTouchTap, time: number) => {
+      gridRootRef.current?.focus({ preventScroll: true });
+      const { target } = pending;
+      if (target.kind === 'cell') {
+        const last = lastTouchTapRef.current;
+        if (
+          last &&
+          last.cell.row === target.cell.row &&
+          last.cell.col === target.cell.col &&
+          time - last.time < TOUCH_DOUBLE_TAP_MS
+        ) {
+          lastTouchTapRef.current = null;
+          onCellDoubleClickRef.current(target.cell);
+          return;
+        }
+        lastTouchTapRef.current = { cell: target.cell, time };
+        dispatch(gridActions.activateCell(target.cell));
+        if (enableRangeSelection) {
+          dispatch(gridActions.startSelection(target.cell));
+          dispatch(gridActions.endSelection());
+        }
+        return;
+      }
+      lastTouchTapRef.current = null;
+      if (target.kind === 'row') {
+        if (enableRowSelection) {
+          onGutterRowSelect(target.rowIndex, { shiftKey: false });
+          return;
+        }
+        dispatch(gridActions.startRowSelection(target.rowIndex));
+        dispatch(gridActions.endSelection());
+        return;
+      }
+      dispatch(gridActions.startColumnSelection(target.colIndex));
+      dispatch(gridActions.endSelection());
+    },
+    [
+      dispatch,
+      enableRangeSelection,
+      enableRowSelection,
+      gridRootRef,
+      onCellDoubleClickRef,
+      onGutterRowSelect,
+    ],
+  );
+
   useEffect(() => {
     const handleWindowPointerMove = (event: globalThis.PointerEvent) => {
       pointerClientRef.current = { x: event.clientX, y: event.clientY };
@@ -344,20 +438,44 @@ export const useGridPointerInteractions = <T,>({
       }
     };
 
-    const handleWindowPointerUp = () => {
+    // 追加(touch): ドラッグ系状態をすべて終了します(pointerup / pointercancel 共通)。
+    //   従来は pointerup のみで、タッチのパン移行(pointercancel)では dragState が残っていました。
+    const endAllDrags = () => {
       // 追加(行選択): ガター行選択ドラッグの終了です(ref のみ・再レンダー不要)。
       rowSelectionDraggingRef.current = false;
       dispatch(gridActions.endSelection());
       dispatch(gridActions.endColumnResize());
     };
 
+    const handleWindowPointerUp = (event: globalThis.PointerEvent) => {
+      const pending = pendingTouchTapRef.current;
+      if (pending) {
+        pendingTouchTapRef.current = null;
+        if (
+          event.pointerId === pending.pointerId &&
+          Math.abs(event.clientX - pending.x) < TOUCH_TAP_SLOP_PX &&
+          Math.abs(event.clientY - pending.y) < TOUCH_TAP_SLOP_PX
+        ) {
+          commitTouchTap(pending, event.timeStamp);
+        }
+      }
+      endAllDrags();
+    };
+
+    const handleWindowPointerCancel = () => {
+      pendingTouchTapRef.current = null;
+      endAllDrags();
+    };
+
     window.addEventListener('pointermove', handleWindowPointerMove);
     window.addEventListener('pointerup', handleWindowPointerUp);
+    window.addEventListener('pointercancel', handleWindowPointerCancel);
     return () => {
       window.removeEventListener('pointermove', handleWindowPointerMove);
       window.removeEventListener('pointerup', handleWindowPointerUp);
+      window.removeEventListener('pointercancel', handleWindowPointerCancel);
     };
-  }, [dispatch, pointerClientRef, dragType]);
+  }, [dispatch, pointerClientRef, dragType, commitTouchTap]);
 
   // 追加: 範囲選択中、端に近づいたら自動スクロールします。
   // 変更(10-G): スクロール対象を中央ペインから「共有スクロールコンテナ」へ。
@@ -500,6 +618,18 @@ export const useGridPointerInteractions = <T,>({
     (cell: CellCoord, event: PointerEvent<HTMLDivElement>) => {
       event.preventDefault();
       if (event.button !== 0) {
+        return;
+      }
+      lastPointerTypeRef.current = event.pointerType;
+      // 追加(touch): タッチはここで選択を始めず、pointerup(タップ確定)まで保留します。
+      //   スワイプ(パン)はブラウザのスクロールに譲ります(理由は pendingTouchTapRef の注記)。
+      if (event.pointerType === 'touch') {
+        pendingTouchTapRef.current = {
+          pointerId: event.pointerId,
+          x: event.clientX,
+          y: event.clientY,
+          target: { kind: 'cell', cell },
+        };
         return;
       }
       // 変更(proposals ⑨): preventScroll 付きでフォーカスします。root(.ssg-shell)が viewport に
@@ -674,6 +804,17 @@ export const useGridPointerInteractions = <T,>({
       if (event.button !== 0) {
         return;
       }
+      lastPointerTypeRef.current = event.pointerType;
+      // 追加(touch): タッチは pointerup まで保留します(セル押下と同方針)。
+      if (event.pointerType === 'touch') {
+        pendingTouchTapRef.current = {
+          pointerId: event.pointerId,
+          x: event.clientX,
+          y: event.clientY,
+          target: { kind: 'row', rowIndex },
+        };
+        return;
+      }
       gridRootRef.current?.focus({ preventScroll: true }); // proposals ⑨(セル押下と同方針)
       // 追加(scroll-fix): 押下座標で pointer/armed 状態を初期化します(セル押下と同方針)。
       // 変更(RS-AS): ガター行選択(enableRowSelection)経路も専用ループ(下の分岐内で起動)の
@@ -752,6 +893,17 @@ export const useGridPointerInteractions = <T,>({
       if (event.button !== 0) {
         return;
       }
+      lastPointerTypeRef.current = event.pointerType;
+      // 追加(touch): タッチは pointerup まで保留します(セル押下と同方針)。
+      if (event.pointerType === 'touch') {
+        pendingTouchTapRef.current = {
+          pointerId: event.pointerId,
+          x: event.clientX,
+          y: event.clientY,
+          target: { kind: 'col', colIndex },
+        };
+        return;
+      }
       gridRootRef.current?.focus({ preventScroll: true }); // proposals ⑨(セル押下と同方針)
       // 追加(scroll-fix): 押下座標で pointer/armed 状態を初期化します(セル押下と同方針)。
       pointerClientRef.current = { x: event.clientX, y: event.clientY };
@@ -813,9 +965,24 @@ export const useGridPointerInteractions = <T,>({
     ],
   );
 
+  // 追加(touch): セルの native dblclick ハンドラです。直近の pointerdown がタッチなら無視します
+  //   (タッチのダブルタップは commitTouchTap 側で自前判定して発火済み。dblclick を発火する
+  //   ブラウザで二重に編集開始しないため)。マウス / ペンは従来どおり ref 経由の処理を呼びます。
+  //   参照は恒久安定(deps は ref のみ)= GridBodyLayer(memo)の props として最適です。
+  const handleCellDoubleClick = useCallback(
+    (cell: CellCoord) => {
+      if (lastPointerTypeRef.current === 'touch') {
+        return;
+      }
+      onCellDoubleClickRef.current(cell);
+    },
+    [onCellDoubleClickRef],
+  );
+
   return {
     updateSelectionFromPointer,
     handleCellPointerDown,
+    handleCellDoubleClick,
     handleCellPointerEnter,
     handleNativeDragStart,
     handleRowHeaderPointerDown,

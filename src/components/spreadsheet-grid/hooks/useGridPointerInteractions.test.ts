@@ -17,7 +17,8 @@ import type {
 import { useGridPointerInteractions } from './useGridPointerInteractions';
 import { createInitialGridUiState } from '../model/gridReducer';
 import type { GridUiAction } from '../model/gridActions';
-import type { GridColumn } from '../model/gridTypes';
+import type { CellCoord, GridColumn } from '../model/gridTypes';
+import { gridActions } from '../model/gridActions';
 import { createUniformRowMetrics } from '../logic/verticalGeometry';
 import type { GridPaneLayout, PaneGeometry } from '../logic/geometry';
 
@@ -198,6 +199,7 @@ const makeArgs = (params: {
     enableRowSelection: true,
     onGutterRowSelect: () => {},
     onGutterRowSelectDrag: params.onGutterRowSelectDrag ?? (() => {}),
+    onCellDoubleClickRef: { current: (() => {}) as (cell: CellCoord) => void },
   };
   return { args, scrollContainer, scrollToCalls };
 };
@@ -447,5 +449,233 @@ describe('pointerdown 時のフォーカス(proposals ⑨)', () => {
     } finally {
       focusSpy.mockRestore();
     }
+  });
+});
+
+// ── 追加(touch): タッチ操作 ──
+// タッチ pointerdown は選択を始めず pointerup(タップ)で確定し、pointercancel(パン移行)で破棄します。
+// 同一セルへの 2 連続タップはダブルクリック処理を呼び、native dblclick(タッチ由来)は無視します。
+const makeTouchPointerDown = (
+  clientX: number,
+  clientY: number,
+  pointerId = 7,
+): ReactPointerEvent<HTMLDivElement> =>
+  ({
+    button: 0,
+    clientX,
+    clientY,
+    shiftKey: false,
+    pointerType: 'touch',
+    pointerId,
+    preventDefault: () => {},
+  }) as unknown as ReactPointerEvent<HTMLDivElement>;
+
+const dispatchWindowPointerEvent = (
+  type: 'pointerup' | 'pointercancel',
+  init: { x: number; y: number; pointerId: number; timeStamp?: number },
+) => {
+  const event = new window.PointerEvent(type, {
+    bubbles: true,
+    clientX: init.x,
+    clientY: init.y,
+    pointerId: init.pointerId,
+  });
+  for (const [key, value] of [
+    ['clientX', init.x],
+    ['clientY', init.y],
+    ['pointerId', init.pointerId],
+  ] as const) {
+    if (event[key] !== value) {
+      Object.defineProperty(event, key, { value });
+    }
+  }
+  if (init.timeStamp !== undefined) {
+    Object.defineProperty(event, 'timeStamp', { value: init.timeStamp });
+  }
+  window.dispatchEvent(event);
+};
+
+describe('タッチ操作(タップ確定 / パン破棄 / ダブルタップ)', () => {
+  const cell = { row: 2, col: 0 };
+
+  it('タッチ pointerdown では選択を始めず、slop 内の pointerup で activateCell + 単一セル選択する', () => {
+    const { args } = makeArgs({});
+    const dispatch = vi.fn();
+    args.dispatch = dispatch;
+    const { result } = renderHook(() => useGridPointerInteractions<Row>(args));
+
+    act(() => {
+      result.current.handleCellPointerDown(cell, makeTouchPointerDown(50, 25));
+    });
+    expect(dispatch).not.toHaveBeenCalled();
+
+    act(() => {
+      dispatchWindowPointerEvent('pointerup', { x: 53, y: 27, pointerId: 7 });
+    });
+    const types = dispatch.mock.calls.map(([action]) => action);
+    expect(types).toContainEqual(gridActions.activateCell(cell));
+    expect(types).toContainEqual(gridActions.startSelection(cell));
+    expect(types).toContainEqual(gridActions.endSelection());
+    expect(types).not.toContainEqual(gridActions.updateSelection(cell));
+  });
+
+  it('pointercancel(パン移行)で保留タップを破棄し、その後の pointerup でも選択しない', () => {
+    const { args } = makeArgs({});
+    const dispatch = vi.fn();
+    args.dispatch = dispatch;
+    const { result } = renderHook(() => useGridPointerInteractions<Row>(args));
+
+    act(() => {
+      result.current.handleCellPointerDown(cell, makeTouchPointerDown(50, 25));
+    });
+    act(() => {
+      dispatchWindowPointerEvent('pointercancel', { x: 50, y: 80, pointerId: 7 });
+    });
+    act(() => {
+      dispatchWindowPointerEvent('pointerup', { x: 50, y: 80, pointerId: 7 });
+    });
+    const types = dispatch.mock.calls.map(([action]) => action);
+    expect(types).not.toContainEqual(gridActions.activateCell(cell));
+    expect(types).not.toContainEqual(gridActions.startSelection(cell));
+    // ドラッグ系状態の終了は cancel でも dispatch される(取り残し防止)。
+    expect(types).toContainEqual(gridActions.endSelection());
+    expect(types).toContainEqual(gridActions.endColumnResize());
+  });
+
+  it('slop 以上動いた pointerup / 別 pointerId の pointerup では確定しない', () => {
+    const { args } = makeArgs({});
+    const dispatch = vi.fn();
+    args.dispatch = dispatch;
+    const { result } = renderHook(() => useGridPointerInteractions<Row>(args));
+
+    act(() => {
+      result.current.handleCellPointerDown(cell, makeTouchPointerDown(50, 25));
+    });
+    act(() => {
+      dispatchWindowPointerEvent('pointerup', { x: 50, y: 60, pointerId: 7 });
+    });
+    act(() => {
+      result.current.handleCellPointerDown(cell, makeTouchPointerDown(50, 25, 8));
+    });
+    act(() => {
+      dispatchWindowPointerEvent('pointerup', { x: 50, y: 25, pointerId: 9 });
+    });
+    const types = dispatch.mock.calls.map(([action]) => action);
+    expect(types).not.toContainEqual(gridActions.activateCell(cell));
+  });
+
+  it('同一セルへの 2 連続タップ(300ms 未満)はダブルクリック処理を 1 回呼び、native dblclick(タッチ由来)は無視する', () => {
+    const { args } = makeArgs({});
+    const onDoubleClick = vi.fn();
+    args.onCellDoubleClickRef = { current: onDoubleClick };
+    const { result } = renderHook(() => useGridPointerInteractions<Row>(args));
+
+    const tap = (timeStamp: number) => {
+      act(() => {
+        result.current.handleCellPointerDown(cell, makeTouchPointerDown(50, 25));
+      });
+      act(() => {
+        dispatchWindowPointerEvent('pointerup', {
+          x: 50,
+          y: 25,
+          pointerId: 7,
+          timeStamp,
+        });
+      });
+    };
+    tap(1000);
+    expect(onDoubleClick).not.toHaveBeenCalled();
+    tap(1200);
+    expect(onDoubleClick).toHaveBeenCalledTimes(1);
+    expect(onDoubleClick).toHaveBeenCalledWith(cell);
+
+    // 一部ブラウザが続けて発火する native dblclick は二重起動しない。
+    act(() => {
+      result.current.handleCellDoubleClick(cell);
+    });
+    expect(onDoubleClick).toHaveBeenCalledTimes(1);
+
+    // 間隔が空いた 2 回目(300ms 以上)はダブルタップにならない。
+    tap(2000);
+    tap(2400);
+    expect(onDoubleClick).toHaveBeenCalledTimes(1);
+  });
+
+  it('マウスの native dblclick はそのまま処理し、マウス pointerdown は従来どおり即時に選択を始める', () => {
+    const { args } = makeArgs({});
+    const dispatch = vi.fn();
+    const onDoubleClick = vi.fn();
+    args.dispatch = dispatch;
+    args.onCellDoubleClickRef = { current: onDoubleClick };
+    const { result } = renderHook(() => useGridPointerInteractions<Row>(args));
+
+    act(() => {
+      result.current.handleCellPointerDown(cell, makeGutterPointerDown(50, 25));
+    });
+    const types = dispatch.mock.calls.map(([action]) => action);
+    expect(types).toContainEqual(gridActions.activateCell(cell));
+    expect(types).toContainEqual(gridActions.startSelection(cell));
+
+    act(() => {
+      result.current.handleCellDoubleClick(cell);
+    });
+    expect(onDoubleClick).toHaveBeenCalledWith(cell);
+  });
+
+  it('行ヘッダー / 列ヘッダーのタップは行全体 / 列全体を選択して即終了する(ドラッグ状態を残さない)', () => {
+    const { args } = makeArgs({});
+    const dispatch = vi.fn();
+    const onGutterRowSelect = vi.fn();
+    args.dispatch = dispatch;
+    args.onGutterRowSelect = onGutterRowSelect;
+    args.enableRowSelection = false;
+    const { result } = renderHook(() => useGridPointerInteractions<Row>(args));
+
+    act(() => {
+      result.current.handleRowHeaderPointerDown(3, makeTouchPointerDown(5, 35));
+    });
+    act(() => {
+      dispatchWindowPointerEvent('pointerup', { x: 5, y: 35, pointerId: 7 });
+    });
+    act(() => {
+      result.current.handleColumnHeaderPointerDown(0, makeTouchPointerDown(50, 0));
+    });
+    act(() => {
+      dispatchWindowPointerEvent('pointerup', { x: 50, y: 0, pointerId: 7 });
+    });
+    const types = dispatch.mock.calls.map(([action]) => action);
+    expect(types).toContainEqual(gridActions.startRowSelection(3));
+    expect(types).toContainEqual(gridActions.startColumnSelection(0));
+    expect(onGutterRowSelect).not.toHaveBeenCalled();
+  });
+
+  it('enableRowSelection 時の行ヘッダータップはガター行選択(shift なし)へ委譲する', () => {
+    const { args } = makeArgs({});
+    const onGutterRowSelect = vi.fn();
+    args.onGutterRowSelect = onGutterRowSelect;
+    const { result } = renderHook(() => useGridPointerInteractions<Row>(args));
+
+    act(() => {
+      result.current.handleRowHeaderPointerDown(3, makeTouchPointerDown(5, 35));
+    });
+    act(() => {
+      dispatchWindowPointerEvent('pointerup', { x: 5, y: 35, pointerId: 7 });
+    });
+    expect(onGutterRowSelect).toHaveBeenCalledWith(3, { shiftKey: false });
+  });
+
+  it('マウスの選択ドラッグ中に pointercancel が来ても dragState を終了する', () => {
+    const { args } = makeArgs({});
+    const dispatch = vi.fn();
+    args.dispatch = dispatch;
+    const { result } = renderHook(() => useGridPointerInteractions<Row>(args));
+    act(() => {
+      result.current.handleCellPointerDown(cell, makeGutterPointerDown(50, 25));
+    });
+    act(() => {
+      dispatchWindowPointerEvent('pointercancel', { x: 50, y: 25, pointerId: 1 });
+    });
+    const types = dispatch.mock.calls.map(([action]) => action);
+    expect(types).toContainEqual(gridActions.endSelection());
   });
 });

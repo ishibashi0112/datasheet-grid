@@ -287,6 +287,12 @@
     border: 1px solid var(--ssg-divider);
     border-radius: var(--ssg-radius);
     overflow: hidden;
+    /* 追加(touch): flex / grid アイテムとして置かれたとき、列合計幅(スクロール内容)を min-content と
+       して親を押し広げないようにします(スマホでページ全体が横はみ出しする主因)。 */
+    min-width: 0;
+    /* 追加(touch): ダブルタップズームを無効化し、タッチのダブルタップを編集開始(dblclick 相当)へ
+       確実に届けます。パン / ピンチズームは許可(スクロールはブラウザに譲る設計)。 */
+    touch-action: manipulation;
     background-color: var(--ssg-cell-bg);
     box-shadow: var(--ssg-root-shadow);
   }
@@ -2477,6 +2483,8 @@
     height: 100%;
     cursor: col-resize;
     z-index: 3;
+    /* 追加(touch): 把手上のタッチドラッグをブラウザのパンに奪われず、pointermove で幅変更に使います。 */
+    touch-action: none;
   }
 
   /* ── スケルトン(GridBodyLayer 読み込み中) ── */
