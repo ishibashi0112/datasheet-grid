@@ -499,6 +499,43 @@
     justify-content: center;
   }
 
+  /* 追加(row-drag ②): 行ドラッグハンドル列(enableRowDrag)。ヘッダーの列 grip と同じ 6 点グリフ。
+     列全体を掴み手にせず、この要素の pointerdown だけでドラッグを開始します(セル選択と非干渉)。 */
+  .ssg-body-cell--row-drag-handle {
+    padding: 0;
+    justify-content: center;
+  }
+  .ssg-row-drag-handle {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 20px;
+    border-radius: 4px;
+    color: var(--ssg-glyph-faint);
+    cursor: grab;
+    touch-action: none;
+    user-select: none;
+  }
+  .ssg-row-drag-handle:hover {
+    background-color: var(--ssg-icon-hover-bg);
+    color: var(--ssg-glyph-hover);
+  }
+  /* ソート / フィルター中は操作不可(淡色 + not-allowed。ツールチップで理由を出します)。 */
+  .ssg-row-drag-handle--disabled {
+    opacity: 0.35;
+    cursor: not-allowed;
+  }
+  .ssg-row-drag-handle--disabled:hover {
+    background-color: transparent;
+    color: var(--ssg-glyph-faint);
+  }
+  /* ドラッグ中の行(3 ペイン分)は淡色にして「持ち上げている」ことを示します。 */
+  .ssg-body-row[data-ssg-row-dragging] .ssg-body-cell,
+  .ssg-body-row[data-ssg-row-dragging] .ssg-row-header-cell {
+    opacity: 0.45;
+  }
+
   /* 読み取り専用セル(選択時は通常背景へ戻し、選択塗りを素直に見せる)。
      変更(THEME-3): 組み込みの淡色表示(背景 + 文字色)は dimReadOnlyCells prop
      (root の ssg-root--dim-readonly)による opt-in にしました(既定 false = 色変化なし)。
@@ -2762,6 +2799,31 @@
   }
   .ssg-col-drop-indicator::after {
     bottom: -3px;
+  }
+
+  /* 追加(row-drag ②): 行ドロップ位置のガイド線(水平)。列のガイド線と同じトークン色 2px +
+     左端の丸キャップで「挿入位置」を示します。top/表示は useRowDragController が ref 経由の
+     インライン style(display/top)で制御し、各ペインの transform 層内に 1 本ずつ置きます。 */
+  .ssg-row-drop-indicator {
+    position: absolute;
+    left: 0;
+    right: 0;
+    height: 2px;
+    background-color: var(--ssg-drop-indicator);
+    pointer-events: none;
+    z-index: 8;
+    display: none;
+  }
+  .ssg-row-drop-indicator::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 50%;
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background-color: var(--ssg-drop-indicator);
+    transform: translateY(-50%);
   }
 
   /* ── カスタムツールチップ(TT-1) ── */
