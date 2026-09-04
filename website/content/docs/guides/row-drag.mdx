@@ -1,0 +1,56 @@
+---
+title: 行ドラッグ並び替え
+description: enableRowDrag でハンドルを掴んで行を上下へ移動する(onRowsChange で新配列・undo 対象)
+---
+
+`enableRowDrag` を付けると、先頭に入るハンドル列(⋮⋮)を掴んで行を上下へ動かせます(AG Grid の managed row dragging 相当)。並び替えの結果は通常の編集と同じく **`onRowsChange` に新配列として返る**ため、消費側は `rows` を差し替えるだけです。履歴ラッパ経由なので `Ctrl/Cmd+Z` で元に戻せます。
+
+## デモ(タスクの優先順)
+
+<RowDragDemo />
+
+- 各行の先頭にあるハンドル(⋮⋮)を押して上下へドラッグすると、挿入位置に水平のガイド線が出ます。離すと確定し、影響行が新しい位置へスライドします。
+- 状態が「確定」の行は `isRowDraggable` でハンドルを出していません(順番を固定)。
+- 列ヘッダーでソートしたり、状態列でフィルターすると、ハンドルは淡色になり操作できません(理由はツールチップに出ます)。解除すると復帰します。
+- 「T-108 を先頭へ」は命令的ハンドルの `moveRow()`、「元に戻す」は `undo()` です。どちらも `onRowMove` が呼ばれます。
+
+## 使い方
+
+```tsx
+const [rows, setRows] = useState(initialRows);
+
+<SpreadsheetGrid
+  rows={rows}
+  onRowsChange={setRows}
+  columns={columns}
+  rowKeyGetter={(row) => row.id}
+  enableRowDrag
+  isRowDraggable={(row) => !row.locked}            // 行ごとの可否(省略時は全行)
+  onRowMove={({ rowKey, fromIndex, toIndex, rows }) => {
+    saveOrder(rows);                                // 確定後の通知(onRowsChange の直後)
+  }}
+/>
+```
+
+`onRowMove` に渡る `params` は `{ rowKey, fromIndex, toIndex, rows }` です。`fromIndex` / `toIndex` は元 `rows` 配列の index、`rows` は `onRowsChange` に渡したものと同じ新配列参照です。
+
+### 命令的に動かす(`moveRow`)
+
+```tsx
+gridRef.current?.moveRow('T-108', 0); // 行キー 'T-108' を先頭へ
+```
+
+`moveRow(rowKey, toIndex)` は表示状態(ソート / フィルター)に関わらず元配列上で移動し、`onRowsChange` → `onRowMove` の順に呼ばれます。未知のキー / 同一位置 / 範囲外は何もしません。
+
+## 仕様の要点
+
+- **clientSide 専用** — `rows` + `onRowsChange` の構成で動きます。`dataSource`(serverSide)/ 行グルーピング中 / `onRowsChange` 未指定ではハンドル列を挿入しません。`readOnly` は関係しません(並び替えはセル編集ではないため)。
+- **ソート / フィルター中は無効** — 表示順と `rows` の順が一致しないため、ハンドルは淡色 + 理由のツールチップになります。列はそのまま残るのでレイアウトは跳ねません。
+- **ハンドル列は合成列** — 幅 28px・タイトル無しで、左固定列があるときは左固定側に、展開行トグル列よりさらに先頭に入ります。列メニュー / ソート / 列 DnD / autoSize / エクスポートの対象外です。
+- **キャンセル** — グリッドの枠外で離す、または `Escape` でキャンセルします(何も変更しません)。掴んだ行の直上 / 直下(動かない位置)で離しても何も呼ばれません。
+- **自動スクロール** — 上下端に近づくとスクロールし、仮想化された画面外の行へも運べます。
+- **展開行との併用** — 展開中のマスター行は詳細パネルごと一緒に移動します。パネルの上は「マスター行の下」として扱います。
+- **見せ方** — ガイド線(挿入位置)+ ドロップ後のスライド(`prefers-reduced-motion` では即時)。列の並び替えと同じ体験です。ドラッグ中に周囲の行がリアルタイムに退避する見せ方は、必要になれば opt-in で追加できる設計にしてあります(未実装)。
+- **スタイル** — `.ssg-row-drag-handle`(無効時 `--disabled`)/ `.ssg-row-drop-indicator` / ドラッグ中の行 `.ssg-body-row[data-ssg-row-dragging]`。色は `--ssg-drop-indicator` / `--ssg-glyph-*` / `--ssg-ghost-*` トークンで変えられます。
+
+`moveRow` は [API リファレンス](/docs/api/handle#行ドラッグ並び替え) を、props の全項目は [props](/docs/api/props#行ドラッグ並び替えenablerowdrag) を参照してください。

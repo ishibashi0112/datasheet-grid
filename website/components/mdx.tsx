@@ -14,6 +14,7 @@ import { CustomEditorDemo } from '@/components/demo/custom-editor-demo';
 import { ContextMenuDemo } from '@/components/demo/context-menu-demo';
 import { ScrollHintDemo } from '@/components/demo/scroll-hint-demo';
 import { DetailRowDemo } from '@/components/demo/detail-row-demo';
+import { RowDragDemo } from '@/components/demo/row-drag-demo';
 
 export function getMDXComponents(components?: MDXComponents) {
   return {
@@ -33,6 +34,7 @@ export function getMDXComponents(components?: MDXComponents) {
     ContextMenuDemo,
     ScrollHintDemo,
     DetailRowDemo,
+    RowDragDemo,
     ...components,
   } satisfies MDXComponents;
 }

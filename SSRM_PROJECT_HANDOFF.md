@@ -145,6 +145,20 @@
 2. ピン留め行(上下固定行)。
 3. フィルハンドル(セル右下ドラッグでの連続コピー/連番)。
 
+~~行ドラッグ並び替え~~ → **2026-09-04 実装済み**(row-drag batch 1〜5)。
+`enableRowDrag` / `isRowDraggable` / `onRowMove`、ハンドル `moveRow(rowKey, toIndex)`、公開型
+`RowDragContext` / `RowMoveParams`。設計: 合成ハンドル列(`ROW_DRAG_HANDLE_COLUMN_KEY`、
+`isSyntheticColumnKey` 対象)を展開行トグル列よりさらに先頭へ注入し、セル本体は
+`renderCellContent` が描く(操作可否とハンドラを持つため。列定義側の renderCell は空)。controller
+(`hooks/useRowDragController.ts`)は列 D&D と同型(window リスナ + pointerId / rAF 縦 autoscroll /
+body 直下ゴースト / 各ペイン transform 層内の水平ガイド線 / ドロップ後の FLIP settle。Escape で
+キャンセル)。スロット解決は `logic/rowReorder.ts`(RowMetrics 越し = uniform / auto-height /
+展開行帯で同一式。帯の上は「マスター行の下」)。ゲート: clientSide + onRowsChange + 非グルーピングで
+列を出し、order が恒等(`isIdentityOrder`)のときだけ操作可(ソート / フィルター中は淡色 +
+ツールチップで列は残す)。commit は `moveArrayItem` → 履歴ラッパ `handleRowsChange`(undo 対象)→
+`onRowMove`。ドラッグ中に周囲の行が退避する live 方式は未実装(スロット解決を共有して表示側だけ
+差し替える想定。`rowDragMotion: 'live'`)。
+
 ~~展開行(Master/Detail)~~ → **2026-09-04 実装済み**(detail batch 1〜6)。
 `detailRow` prop(`render` / `height`(固定・既定 200)/ `isExpandable` / `showToggleColumn` /
 `className`)+ `onExpandedDetailRowKeysChange`、ハンドル `setDetailRowExpanded` /

@@ -129,6 +129,8 @@ type Settings = {
   scrollHintMinRows: number;
   // 展開行(Master/Detail)。ON でトグル列が先頭に入り、行の直下にカードを開ける。
   detailRow: boolean;
+  // 行ドラッグ並び替え。ON でハンドル列(⋮⋮)が先頭に入り、行を上下へ動かせる(ソート / フィルター中は無効)。
+  enableRowDrag: boolean;
 };
 
 const DEFAULTS: Settings = {
@@ -155,6 +157,7 @@ const DEFAULTS: Settings = {
   scrollHint: false,
   scrollHintMinRows: 0,
   detailRow: false,
+  enableRowDrag: false,
 };
 
 function buildSnippet(s: Settings): string {
@@ -203,6 +206,10 @@ function buildSnippet(s: Settings): string {
       '    render: ({ row, collapse }) => <DetailCard row={row} onClose={collapse} />,',
       '  }}',
     );
+  }
+  // enableRowDrag は既定 OFF のため、ON のときだけスニペットへ載せる。
+  if (s.enableRowDrag) {
+    lines.push('  enableRowDrag');
   }
   lines.push('/>');
   return lines.join('\n');
@@ -278,6 +285,7 @@ function PlaygroundGrid({ settings }: { settings: Settings }) {
           : undefined
       }
       detailRow={settings.detailRow ? playgroundDetailRow : undefined}
+      enableRowDrag={settings.enableRowDrag}
     />
   );
 }
@@ -395,6 +403,7 @@ export function Playground() {
           <Toggle label="enableUndoRedo" checked={settings.enableUndoRedo} onChange={(v) => set('enableUndoRedo', v)} />
           <Toggle label="enableClearOnDelete" checked={settings.enableClearOnDelete} onChange={(v) => set('enableClearOnDelete', v)} />
           <Toggle label="detailRow" checked={settings.detailRow} onChange={(v) => set('detailRow', v)} />
+          <Toggle label="enableRowDrag" checked={settings.enableRowDrag} onChange={(v) => set('enableRowDrag', v)} />
           <Toggle label="scrollHint" checked={settings.scrollHint} onChange={(v) => set('scrollHint', v)} />
           <label className="flex items-center justify-between gap-2 text-sm">
             <code className="text-xs">scrollHint.minRows</code>

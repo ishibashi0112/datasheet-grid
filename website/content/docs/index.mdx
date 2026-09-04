@@ -19,6 +19,7 @@ description: SpreadsheetGrid — React 19 製の高性能・仮想化スプレ�
 - **undo / redo** — `Ctrl/Cmd+Z` 系ショートカット + 命令的 API
 - **行グルーピング + 集計** — `rowGroup` / `aggFunc`、自動グループ列、開閉 UI
 - **展開行(Master/Detail)** — `detailRow` で行の直下に任意の React UI(サブグリッド / フォーム)を開く。行順を変えない全幅カード
+- **行ドラッグ並び替え** — `enableRowDrag` でハンドル列(⋮⋮)を掴んで行を上下へ移動。`onRowsChange` に新配列が返り undo 対象
 - **サーバーサイド行モデル(SSRM)** — クエリ転送(フィルター / ソート)、ソフトリフレッシュ、ロードエラーのリトライ UI、`updateRows` による書き戻し(楽観更新 + 失敗時ロールバック)
 - **CSV / Excel エクスポート** — 組み込み CSV + ライブラリ非依存の `getExportData()`
 - **テーマ** — CSS カスタムプロパティ(`--ssg-*`)、ダークテーマ(`light` / `dark` / `auto`)
