@@ -71,7 +71,7 @@ React 19 + TypeScript + Vite 製のカスタム AG Grid 風・仮想化データ
 
 ## 現状と残タスク(詳細は HANDOFF §4 / §7 / §8)
 
-- 最新 v0.19.0。
+- 最新 v0.32.0。
 - SSRM は**完成**(2026-07-16)── 読み取り系(`refreshServerSide()` / エラー・リトライ UI は 2026-07-15 の batch 8 / 9)に加え、セル編集の書き戻し(`dataSource.updateRows` + 楽観更新 + 失敗時ロールバック / 保存失敗バー)を 2026-07-16 に実装済み(書き戻し batch 1〜5)。行追加削除は「サーバ反映後に refresh」運用・SSRM の undo/redo は無効(いずれもスコープ外として合意)。
 - 行グルーピング + 集計は 2026-07-17 に実装済み(grouping batch 1〜5: `rowGroup` / `aggFunc`、自動グループ列、開閉 UI + 命令的 API。clientSide 限定・SSRM は対象外)。
 - 展開行(Master/Detail)は 2026-09-04 に実装済み(detail batch 1〜6: `detailRow` prop、rowKey ベース状態、`data-ssg-detail` イベント境界。clientSide / SSRM 両対応)。
