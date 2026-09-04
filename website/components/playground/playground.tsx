@@ -6,6 +6,7 @@ import { useMemo, useState } from 'react';
 import {
   SpreadsheetGrid,
   numberFormatter,
+  type DetailRowOptions,
   type GridColumn,
   type GridDensity,
   type GridTheme,
@@ -126,6 +127,8 @@ type Settings = {
   // scrollHint のデータ量ゲート(minRows)。行数プリセット(100 / 1,000 / 100,000)と
   // 組み合わせると「しきい値未満では自動 OFF」を体験できる。
   scrollHintMinRows: number;
+  // 展開行(Master/Detail)。ON でトグル列が先頭に入り、行の直下にカードを開ける。
+  detailRow: boolean;
 };
 
 const DEFAULTS: Settings = {
@@ -151,6 +154,7 @@ const DEFAULTS: Settings = {
   enableSelectAllRows: true,
   scrollHint: false,
   scrollHintMinRows: 0,
+  detailRow: false,
 };
 
 function buildSnippet(s: Settings): string {
@@ -191,9 +195,49 @@ function buildSnippet(s: Settings): string {
         : "  scrollHint={{ hintColumn: 'name' }}",
     );
   }
+  // detailRow は既定 OFF(undefined)のため、ON のときだけスニペットへ載せる。
+  if (s.detailRow) {
+    lines.push(
+      '  detailRow={{',
+      '    height: 160,',
+      '    render: ({ row, collapse }) => <DetailCard row={row} onClose={collapse} />,',
+      '  }}',
+    );
+  }
   lines.push('/>');
   return lines.join('\n');
 }
+
+// 展開行のカード(detailRow.render)。行の内訳を簡単な定義リストで見せる。
+const playgroundDetailRow: DetailRowOptions<Row> = {
+  height: 160,
+  render: ({ row, collapse }) => (
+    <div className="flex h-full flex-col gap-2 text-sm">
+      <div className="flex items-center justify-between">
+        <strong>
+          #{row.id} {row.name}
+        </strong>
+        <button
+          type="button"
+          className="rounded-md border px-2 py-0.5 text-xs hover:bg-fd-accent"
+          onClick={collapse}
+        >
+          閉じる
+        </button>
+      </div>
+      <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1">
+        <dt className="text-fd-muted-foreground">カテゴリ</dt>
+        <dd>{row.category}</dd>
+        <dt className="text-fd-muted-foreground">状態</dt>
+        <dd>{row.status}</dd>
+        <dt className="text-fd-muted-foreground">小計</dt>
+        <dd>{(row.qty * row.price).toLocaleString('ja-JP')} 円</dd>
+        <dt className="text-fd-muted-foreground">登録日</dt>
+        <dd>{row.registered}</dd>
+      </dl>
+    </div>
+  ),
+};
 
 // rowCount 変更時は key で再マウントし、rows state・undo 履歴・内部状態をリセットする
 function PlaygroundGrid({ settings }: { settings: Settings }) {
@@ -233,6 +277,7 @@ function PlaygroundGrid({ settings }: { settings: Settings }) {
           ? { hintColumn: 'name', minRows: settings.scrollHintMinRows }
           : undefined
       }
+      detailRow={settings.detailRow ? playgroundDetailRow : undefined}
     />
   );
 }
@@ -349,6 +394,7 @@ export function Playground() {
           <Toggle label="enableRangeSelection" checked={settings.enableRangeSelection} onChange={(v) => set('enableRangeSelection', v)} />
           <Toggle label="enableUndoRedo" checked={settings.enableUndoRedo} onChange={(v) => set('enableUndoRedo', v)} />
           <Toggle label="enableClearOnDelete" checked={settings.enableClearOnDelete} onChange={(v) => set('enableClearOnDelete', v)} />
+          <Toggle label="detailRow" checked={settings.detailRow} onChange={(v) => set('detailRow', v)} />
           <Toggle label="scrollHint" checked={settings.scrollHint} onChange={(v) => set('scrollHint', v)} />
           <label className="flex items-center justify-between gap-2 text-sm">
             <code className="text-xs">scrollHint.minRows</code>

@@ -27,7 +27,7 @@ description: 列定義(GridColumn<T>)・エディタ・バリデーション・�
 | `aggFunc` | `'sum' \| 'min' \| 'max' \| 'avg' \| 'count' \| GridAggFunc<T>` | — | グルーピング時のこの列の集計。組み込みは値駆動の数値集計(`Number()` で有限になる値のみ対象・空値除外、`count` は配下 leaf 行数)。関数でカスタム集計可(返り値がグループ行に表示)。`rowGroup` 列がないときは無視。 |
 | `getValue` | `(row: T) => unknown` | `row[key]` | 値アクセサ。 |
 | `setValue` | `(row: T, value: unknown) => T` | — | 値ライター(新しい行を返す)。 |
-| `renderCell` | `(ctx: CellRenderContext<T>) => ReactNode` | プレーン `<span>` | カスタムセル描画。 |
+| `renderCell` | `(ctx: CellRenderContext<T>) => ReactNode` | プレーン `<span>` | カスタムセル描画。`detailRow` prop 有効時は `ctx.detail`(`{ expanded, expandable, toggle, setExpanded }`)で[展開行](/docs/guides/detail-row)のトグルを自前配置できる。 |
 | `align` | `'left' \| 'center' \| 'right'` | `'left'` | セル内容の水平寄せ(UI 表示のみ・元の値は不変)。セル表示と編集 input に反映。 |
 | `valueFormatter` | `(params: CellValueFormatterParams<T>) => string` | — | セル表示値の整形(UI 表示のみ)。`renderCell` 未指定の既定セルが返り値を表示。組み込み `numberFormatter` 等を渡せる。元の値/編集/コピー/ソート/フィルターには影響しない。 |
 | `cellClassName` | `string \| ((ctx: CellStyleContext<T>) => string \| undefined)` | — | セルへ付与する追加 class(条件付きスタイル)。関数版は値 / 状態に応じて class を返せる。`ctx` には view の `rowIndex` に加え source 基準の `sourceRowIndex` / `rowKey` が入る(ソート / フィルター ON でも source 行基準のデータと突き合わせ可能。「補助型」節参照)。基底 `.ssg-body-cell` は未レイヤー・特異度 (0,1,0)。確実な上書きは `.ssg-body-cell.my-class` の連結を推奨。 |

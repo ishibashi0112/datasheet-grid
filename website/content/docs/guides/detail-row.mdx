@@ -1,0 +1,76 @@
+---
+title: 展開行(Master/Detail)
+description: detailRow で行の直下に任意の React UI(サブグリッド / フォーム)を開く
+---
+
+`detailRow` prop を渡すと、各行を「展開」してマスター行の直下に消費側 UI(カード)を差し込めます(AG Grid の Master/Detail 相当)。行グルーピングが「ライブラリがグループ行を作る」機能なのに対し、展開行は**行の下に何を出すかを利用側が全面的に決める**動線です。両者は独立で、併用もできます。
+
+## デモ(受注 > 明細)
+
+<DetailRowDemo />
+
+- 先頭のトグル列(▸)で開閉します。明細のない「キャンセル」行は `isExpandable` で展開不可にしています。
+- カードの中身はネストした `SpreadsheetGrid` とメモ入力です。カード内の矢印キー / クリック / 右クリックは外側のグリッドに伝わりません。
+- 「SO-2404 を開く」「すべて閉じる」は命令的ハンドルの `setDetailRowExpanded()` / `collapseAllDetailRows()`、「展開中」の表示は `onExpandedDetailRowKeysChange` です。
+- 列ヘッダーでソートしたり、状態列でフィルターしても、展開状態は**行キー**に追従します。
+
+## 使い方
+
+```tsx
+<SpreadsheetGrid
+  rows={orders}
+  columns={columns}
+  rowKeyGetter={(row) => row.id}
+  detailRow={{
+    height: 230,                                  // 帯の高さ(px・固定)
+    isExpandable: (row) => row.lines.length > 0,  // 行ごとの展開可否(省略時は全行)
+    render: ({ row, collapse }) => (
+      <OrderDetailCard order={row} onClose={collapse} />
+    ),
+  }}
+  onExpandedDetailRowKeysChange={(keys) => save(keys)}
+/>
+```
+
+`render` に渡る `ctx` は `{ row, rowKey, rowIndex, sourceRowIndex, collapse }` です。`collapse()` を呼ぶとその展開行が閉じます。
+
+### トグルを自前配置する(`showToggleColumn: false`)
+
+専用トグル列を使わず、任意の列の `renderCell` からトグルを描画することもできます。`detailRow` 有効時は `CellRenderContext` に `ctx.detail`(`{ expanded, expandable, toggle, setExpanded }`)が入ります。
+
+```tsx
+const columns: GridColumn<Order>[] = [
+  {
+    key: 'customer',
+    title: '得意先',
+    renderCell: ({ value, detail }) => (
+      <span style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+        {detail?.expandable && (
+          <button type="button" onClick={detail.toggle}>
+            {detail.expanded ? '▾' : '▸'}
+          </button>
+        )}
+        {String(value)}
+      </span>
+    ),
+  },
+]
+
+<SpreadsheetGrid detailRow={{ render, showToggleColumn: false }} ... />
+```
+
+## 仕様の要点
+
+- **行順は変わらない** — 展開しても表示行リスト(view index)に第 3 の行種は入りません。マスター行の直下に帯(全幅)が差し込まれ、後続行が帯の高さぶん下がるだけです。展開時にスクロール位置は動きません。
+- **カードは中央ペインに sticky** — 横スクロールしてもカードはビューポート左端(左固定ペインの右隣)に留まります。幅は中央ペインの可視幅です。
+- **固定高** — `height`(既定 `200`)は固定で、中身が超えるとカード内でスクロールします(auto 高は非対応)。
+- **状態は行キーで保持** — ソート / フィルター / 行の追加削除を跨いで同じ行に追従します。フィルターで除外中の行は帯が出ず、復帰すると再表示されます。`getState()` / undo・redo の対象外なので、永続化は `onExpandedDetailRowKeysChange` + `setDetailRowExpanded()` で行います。
+- **カードは描画窓の間だけマウント** — スクロールアウトでアンマウント、戻ると再マウントされます。カード内で保持したい状態(入力途中の値など)は、消費側で `rowKey` をキーに持ってください。
+- **イベント境界** — カード内のキーボード / クリップボード / 右クリック / ダブルクリック / ドラッグ開始はグリッド本体へ伝播しません。カード内にフォーカスがある間は、編集確定や popover close 後のフォーカス復帰がフォーカスを奪いません。カード内に別の `SpreadsheetGrid` をネストしても、外側の自動高さ実測 / 列ヘッダー検索は内側のセルを対象にしません。
+- **選択との関係** — 帯はセルではないため、選択 / アクティブセルの対象外です。帯を跨ぐ範囲選択のハイライトは帯を避けて分割描画されます。
+- **serverSide(`dataSource`)** — 使えますが、クエリ(フィルター / ソート / グローバルフィルター)が変わると展開状態は**すべて閉じ**ます(結果セットが総入れ替えされ、未ロード行のキーを走査できないため)。未ロード行の帯は表示されません。
+- **上限** — `rows × rowHeight + 展開中の帯の合計` が 15,000,000px(36px 行で約 41 万行)を超える構成では帯を描画しません(開発時警告。展開状態は保持され、行数を絞ると表示されます)。
+- **行グルーピング併用** — 展開できるのは leaf 行のみで、グループ行は対象外です。
+- **`detailRow` 未指定なら何も変わらない** — トグル列は挿入されず、`ctx.detail` は `undefined`、ハンドルの展開行 API は no-op です。
+
+開閉の命令的 API(`setDetailRowExpanded` / `getExpandedDetailRowKeys` / `collapseAllDetailRows`)は [API リファレンス](/docs/api/handle#展開行masterdetail) を、`DetailRowOptions` の全項目は [props](/docs/api/props#展開行masterdetaildetailrow) を参照してください。

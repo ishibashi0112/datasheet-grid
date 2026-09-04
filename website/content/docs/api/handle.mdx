@@ -78,6 +78,16 @@ const gridRef = useRef<SpreadsheetGridHandle<Row>>(null);
 | `expandAllGroups()` / `collapseAllGroups()` | すべてのグループを展開 / 折りたたむ。 |
 | `getGroupRows()` | 全グループ行の記述子(`GridGroupRow[]`)を DFS 順(表示順)で返す。開閉状態に関わらず全件。 |
 
+### 展開行(Master/Detail)
+
+展開行(`detailRow` prop)有効時の開閉を操作します。無効時はすべて no-op / 空配列です。
+
+| メソッド | 説明 |
+| --- | --- |
+| `setDetailRowExpanded(rowKey, expanded)` | 指定行キー(`rowKeyGetter` の値)の展開行を開閉する。`isExpandable` が `false` の行は no-op。行がまだロードされていない / フィルターで除外中でもキーは保持され、表示可能になった時点で帯が出る。同一イベント内の連続呼び出しも正しく積み重なる。 |
+| `getExpandedDetailRowKeys()` | 展開中の行キーを返す(`GridRowKey[]`)。 |
+| `collapseAllDetailRows()` | すべての展開行を閉じる。「すべて開く」は提供しない(表示中の全行をまとめて開くと帯の合計高が大きくなりやすいため。必要なら `setDetailRowExpanded` を行ごとに呼ぶ)。 |
+
 ### undo / redo(編集履歴)
 
 グリッド編集(セル編集 / ペースト / `renderCell` の `setValue`)の取り消し/やり直しです。キーボード(`Ctrl/Cmd+Z` / `Ctrl/Cmd+Shift+Z` / `Ctrl/Cmd+Y`)と同じ操作をハンドルからも行えます。有効条件・制約は props の `enableUndoRedo` を参照(clientSide + `onRowsChange` + `readOnly=false` が前提)。

@@ -145,6 +145,20 @@
 2. ピン留め行(上下固定行)。
 3. フィルハンドル(セル右下ドラッグでの連続コピー/連番)。
 
+~~展開行(Master/Detail)~~ → **2026-09-04 実装済み**(detail batch 1〜6)。
+`detailRow` prop(`render` / `height`(固定・既定 200)/ `isExpandable` / `showToggleColumn` /
+`className`)+ `onExpandedDetailRowKeysChange`、ハンドル `setDetailRowExpanded` /
+`getExpandedDetailRowKeys` / `collapseAllDetailRows`、`CellRenderContext.detail`。
+設計: 行順(view index)に第 3 の行種を入れず、展開分は RowMetrics デコレータ
+(`verticalGeometry.createDetailRowMetrics`)で帯の追加高として疎に足す。帯は 3 ペインとも
+`GridDetailLayer` が描き、カード本体は中央ペインに sticky(JS スクロール同期なし)。展開状態は
+rowKey ベース(`logic/detailRow.ts` の index キャッシュ + clientSide のみ走査)、UI 状態で
+undo/redo・getState 対象外。カードは `data-ssg-detail` をイベント境界とし(キー / クリップボード /
+右クリック / ドラッグを本体へ伝播させない・フォーカス復帰もカード内なら奪わない)、DOM 走査
+(auto-height 実測 / 列ヘッダー探索 / 列 DnD FLIP)はカード内を除外。SSRM ではクエリ変更で全折りたたみ。
+合成トグル列(`DETAIL_TOGGLE_COLUMN_KEY`)は自動グループ列と同じく `isSyntheticColumnKey` で
+列メニュー / DnD / ソート / エクスポートから除外。
+
 ~~行グルーピング + 集計~~ → **2026-07-17 実装済み**(grouping batch 1〜5)。
 `GridColumn.rowGroup / aggFunc`(組み込み sum/min/max/avg/count + カスタム関数)、
 自動グループ列(ツリー表示・合成列)、開閉(click / dblclick / Enter・Space / 命令的 API
