@@ -2,6 +2,7 @@ import type {
   CellCoord,
   ColumnFilterValue,
   GridFilterState,
+  GridRowKey,
   GridSortEntry,
   RowSelectionState,
 } from './gridTypes';
@@ -52,7 +53,13 @@ export type GridUiAction =
   //   ため、同一イベント内の連続 dispatch でも stale 読みなしで積み重なります)。
   | { type: 'group/toggleCollapsed'; groupKey: string }
   | { type: 'group/setCollapsed'; groupKey: string; collapsed: boolean }
-  | { type: 'group/setCollapsedKeys'; keys: ReadonlySet<string> };
+  | { type: 'group/setCollapsedKeys'; keys: ReadonlySet<string> }
+  // 追加(detail ②): 展開行(detail)の開閉です。キーは rowKeyGetter の値(GridRowKey)。
+  //   toggle は 1 キーの反転、setExpanded は 1 キーの明示指定(reducer 内で現在集合へ合成)、
+  //   setKeys は丸ごと置換(すべて閉じる = 空集合)。
+  | { type: 'detail/toggle'; rowKey: GridRowKey }
+  | { type: 'detail/setExpanded'; rowKey: GridRowKey; expanded: boolean }
+  | { type: 'detail/setKeys'; keys: ReadonlySet<GridRowKey> };
 
 // 追加: action creator 群です。UI から文字列リテラルを散らさないために定義します。
 export const gridActions = {
@@ -182,6 +189,20 @@ export const gridActions = {
   }),
   setCollapsedGroupKeys: (keys: ReadonlySet<string>): GridUiAction => ({
     type: 'group/setCollapsedKeys',
+    keys,
+  }),
+  // 追加(detail ②): 展開行の反転 / 明示開閉 / 丸ごと置換です。
+  toggleDetailRow: (rowKey: GridRowKey): GridUiAction => ({
+    type: 'detail/toggle',
+    rowKey,
+  }),
+  setDetailRowExpanded: (rowKey: GridRowKey, expanded: boolean): GridUiAction => ({
+    type: 'detail/setExpanded',
+    rowKey,
+    expanded,
+  }),
+  setExpandedDetailRowKeys: (keys: ReadonlySet<GridRowKey>): GridUiAction => ({
+    type: 'detail/setKeys',
     keys,
   }),
 };

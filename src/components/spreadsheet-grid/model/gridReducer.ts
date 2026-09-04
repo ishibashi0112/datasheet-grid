@@ -1,5 +1,5 @@
 import type { GridUiAction } from './gridActions';
-import type { GridColumn, GridUiState } from './gridTypes';
+import type { GridColumn, GridRowKey, GridUiState } from './gridTypes';
 // 追加(B3): flex 列(center かつ flex>0)は columnWidths に固定エントリを持たせません。
 //   flex 算出が効くよう、初期生成・columns 同期の両方でこの判定でスキップします。
 import { isFlexingColumn } from '../logic/columnFlex';
@@ -48,6 +48,8 @@ export const createInitialGridUiState = <T,>(
   sort: [],
   // 追加(grouping ②): グループ開閉状態です(空集合 = 全展開で開始)。
   collapsedGroupKeys: new Set<string>(),
+  // 追加(detail ②): 展開行の開閉状態です(空集合 = すべて閉で開始)。
+  expandedDetailRowKeys: new Set<GridRowKey>(),
 });
 
 // 追加: Grid の UI state reducer 本体です。
@@ -429,6 +431,50 @@ export const gridUiReducer = (
       return {
         ...state,
         collapsedGroupKeys: action.keys,
+      };
+
+    // 追加(detail ②): 展開行の 1 キー反転です(group/toggleCollapsed と同じ immutable Set 運用)。
+    case 'detail/toggle': {
+      const nextKeys = new Set(state.expandedDetailRowKeys);
+      if (nextKeys.has(action.rowKey)) {
+        nextKeys.delete(action.rowKey);
+      } else {
+        nextKeys.add(action.rowKey);
+      }
+      return {
+        ...state,
+        expandedDetailRowKeys: nextKeys,
+      };
+    }
+
+    // 追加(detail ②): 1 キーの明示開閉です。同値は no-op(参照維持)。
+    case 'detail/setExpanded': {
+      if (state.expandedDetailRowKeys.has(action.rowKey) === action.expanded) {
+        return state;
+      }
+      const nextKeys = new Set(state.expandedDetailRowKeys);
+      if (action.expanded) {
+        nextKeys.add(action.rowKey);
+      } else {
+        nextKeys.delete(action.rowKey);
+      }
+      return {
+        ...state,
+        expandedDetailRowKeys: nextKeys,
+      };
+    }
+
+    // 追加(detail ②): 展開行の丸ごと置換です(すべて閉じる用)。「空 → 空」は no-op。
+    case 'detail/setKeys':
+      if (
+        action.keys === state.expandedDetailRowKeys ||
+        (action.keys.size === 0 && state.expandedDetailRowKeys.size === 0)
+      ) {
+        return state;
+      }
+      return {
+        ...state,
+        expandedDetailRowKeys: action.keys,
       };
 
     default:

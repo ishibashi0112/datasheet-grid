@@ -51,6 +51,10 @@ export type {
   CellStyleContext,
   // 追加(proposals ⑤): 条件付き行 className(getRowClassName)の第 3 引数コンテキストです。
   RowStyleContext,
+  // 追加(detail ②): 展開行(Master/Detail)の設定型と、renderCell / render へ渡すコンテキストです。
+  DetailRowOptions,
+  DetailRowRenderContext,
+  CellDetailContext,
   // セル表示値の整形(UI 表示のみ)の契約。
   CellValueFormatter,
   CellValueFormatterParams,

@@ -461,6 +461,52 @@ export type CellRenderContext<T> = {
   isEditing: boolean;
   readOnly: boolean;
   setValue: (value: unknown) => void;
+  // 追加(detail ②): 展開行(detailRow prop)有効時のみ定義されます。任意の列の renderCell から
+  //   自前のトグル UI を置くための口です(専用トグル列を使わない配置 = T2)。
+  //   expandable が false の行では toggle / setExpanded は no-op です。
+  detail?: CellDetailContext;
+};
+
+// 追加(detail ②): renderCell 側から展開行を操作するためのコンテキストです。
+export type CellDetailContext = {
+  // この行の展開行が開いているか。
+  expanded: boolean;
+  // この行が展開可能か(detailRow.isExpandable の判定結果。未指定なら常に true)。
+  expandable: boolean;
+  toggle: () => void;
+  setExpanded: (expanded: boolean) => void;
+};
+
+// 追加(detail ②): 展開行(detail)のレンダラーへ渡すコンテキストです。
+//   rowIndex はビュー行 index(CellRenderContext と同基準)、sourceRowIndex は元 rows の index。
+export type DetailRowRenderContext<T> = {
+  row: T;
+  rowKey: GridRowKey;
+  rowIndex: number;
+  sourceRowIndex: number;
+  // この展開行を閉じます(パネル内の「閉じる」ボタン等から)。
+  collapse: () => void;
+};
+
+// 追加(detail ②): 展開行(Master/Detail)の設定です。SpreadsheetGrid の detailRow prop に渡した
+//   ときだけ機能が有効になり、未指定なら既存の描画・状態・イベント経路は一切変わりません。
+//   展開行は「マスター行の直下に続く全幅の帯」として、行の順序(view index)を変えずに
+//   描画されます(行グルーピングとは別機能で、併用もできます。clientSide / serverSide 両対応)。
+export type DetailRowOptions<T> = {
+  // 展開行の中身を描画します。自前のサブグリッド / フォーム / 任意の React 要素を返せます。
+  //   帯の内側(カード)に描画され、画面外へスクロールするとアンマウントされます
+  //   (再表示時に再マウント。保持したい状態は消費側で rowKey をキーに持ってください)。
+  render: (ctx: DetailRowRenderContext<T>) => ReactNode;
+  // 展開行の帯の高さ(px、既定 200)。固定高で、中身が超える場合はカード内でスクロールします。
+  height?: number;
+  // 行ごとに展開可否を決めます(未指定 = 全行展開可)。false の行はトグルが描画されず、
+  //   命令的 API / ctx.detail からの展開も no-op です。
+  isExpandable?: (row: T, ctx: { rowKey: GridRowKey; sourceRowIndex: number }) => boolean;
+  // 専用トグル列(幅 28px、行ヘッダーの右隣 = 先頭列)を自動挿入するか(既定 true)。
+  //   false にした場合は renderCell の ctx.detail.toggle() で任意の列にトグルを置いてください。
+  showToggleColumn?: boolean;
+  // 帯の内側のカード要素(data-ssg-detail を持つ境界要素)へ追加する className。
+  className?: string;
 };
 
 // 追加(UI CSS移行): 条件付きセル className(GridColumn.cellClassName)の関数版へ渡す
@@ -861,6 +907,11 @@ export type GridUiState = {
   //   キーは flatten 時に単に無視されます(グルーピング列変更後の残骸キーは無害)。
   //   undo/redo の履歴対象外です(表示状態であってデータ変更ではないため)。
   collapsedGroupKeys: ReadonlySet<string>;
+  // 追加(detail ②): 展開中の展開行(detail)のマスター行キー集合です(rowKeyGetter の値。
+  //   既定 = 空集合 = 全て閉)。値ベースのキーのためソート / フィルター / rows 差し替えを
+  //   またいで維持され、表示中に存在しないキーは単に描画されません(無害)。
+  //   undo/redo の履歴対象外です(表示状態であってデータ変更ではないため)。
+  expandedDetailRowKeys: ReadonlySet<GridRowKey>;
 };
 
 // 追加: 選択統計の派生 summary です。
@@ -1280,6 +1331,17 @@ export type SpreadsheetGridHandle<T> = {
   //   関わらず全件。グルーピング無効時は空配列)。
   getGroupRows: () => GridGroupRow[];
 
+  // ── 展開行(detail) ──
+  // 追加(detail ②): 指定行キー(rowKeyGetter の値)の展開行を開閉します。detailRow 未指定・
+  //   isExpandable が false の行への展開は no-op です。表示中でない行(フィルター除外 / 未ロード)の
+  //   キーも状態としては保持され、表示されたときに開きます。
+  setDetailRowExpanded: (rowKey: GridRowKey, expanded: boolean) => void;
+  // 追加(detail ②): 展開中の行キーを返します(detailRow 未指定時は空配列)。
+  getExpandedDetailRowKeys: () => GridRowKey[];
+  // 追加(detail ②): すべての展開行を閉じます(展開はビューポート内の全行を開くと重いため
+  //   「すべて開く」は提供しません。必要なら setDetailRowExpanded を行ごとに呼んでください)。
+  collapseAllDetailRows: () => void;
+
   // ── バリデーション ──
   // 追加(validation): validate 指定列 × 全ソース行のオンデマンド全走査です(保存前チェック用)。
   //   invalid 表示は表示時導出のため状態を持たず、本メソッドは呼ばれた時だけ計算します
@@ -1632,6 +1694,11 @@ export type SpreadsheetGridProps<T> = {
     rowIndex: number,
     ctx: RowStyleContext<T>,
   ) => string | undefined;
+  // ── 追加(detail ②): 展開行(Master/Detail) ──
+  //   指定時のみ有効な opt-in 機能です。詳細は DetailRowOptions を参照。
+  detailRow?: DetailRowOptions<T>;
+  // 追加(detail ②): 展開中の行キー集合が変わるたびに通知します(開閉の永続化・外部同期用)。
+  onExpandedDetailRowKeysChange?: (keys: GridRowKey[]) => void;
   // ── 追加(バッチ②/コンテキストメニュー): セル/行の汎用コンテキストメニュー(完全カスタム) ──
   //   有効化のマスタースイッチです(既定 false=OFF)。他機能の enable* と同じく、機能自体は既定で無効。
   //   false のあいだは getContextMenuItems を渡しても発火せず、右クリックはブラウザ標準メニューのままです。

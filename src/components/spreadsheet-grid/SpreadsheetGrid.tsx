@@ -513,6 +513,9 @@ export function SpreadsheetGrid<T extends object>({
   classNames,
   // 追加(UI CSS移行): 行ごとの条件付き className。
   getRowClassName,
+  // 追加(detail ②): 展開行(Master/Detail)。未指定なら機能は完全に休眠します。
+  detailRow,
+  onExpandedDetailRowKeysChange,
   // 追加(バッチ②/コンテキストメニュー): 有効化フラグ(既定 false=OFF)+ 項目供給 / 開通知。
   //   他機能の enable* と同じく既定無効。true かつ getContextMenuItems 指定時のみ発火します。
   enableContextMenu = false,
@@ -654,6 +657,24 @@ export function SpreadsheetGrid<T extends object>({
     visibleColumns,
     createInitialGridUiState,
   );
+
+  // 追加(detail ②): 展開行キー集合の変更通知です。初回マウント(空集合)は通知しません。
+  //   コールバックは useEffect で同期する latest-ref(RS-AS 方式)越しに読み、通知 effect の deps は
+  //   集合の参照だけにします(コールバック識別子の変化で再通知しない)。
+  const onExpandedDetailRowKeysChangeRef = useRef(onExpandedDetailRowKeysChange);
+  useEffect(() => {
+    onExpandedDetailRowKeysChangeRef.current = onExpandedDetailRowKeysChange;
+  });
+  const expandedDetailKeysNotifiedRef = useRef(false);
+  useEffect(() => {
+    if (!expandedDetailKeysNotifiedRef.current) {
+      expandedDetailKeysNotifiedRef.current = true;
+      return;
+    }
+    onExpandedDetailRowKeysChangeRef.current?.(
+      Array.from(uiState.expandedDetailRowKeys),
+    );
+  }, [uiState.expandedDetailRowKeys]);
 
   // 追加(11-B5): columnWidths の latest-ref です（dragStateRef と同じパターン）。
   // 変更理由: handleColumnResizePointerDown が uiState.columnWidths を依存に持つと、
@@ -4878,6 +4899,8 @@ export function SpreadsheetGrid<T extends object>({
     canUndoRows: () => boolean;
     canRedoRows: () => boolean;
     clearUndoHistory: () => void;
+    // 追加(detail ②): 展開行 API の有効判定(detailRow 未指定なら no-op / 空配列)。
+    detailRowEnabled: boolean;
   } | null>(null);
   apiStateRef.current = {
     dispatch,
@@ -4920,6 +4943,7 @@ export function SpreadsheetGrid<T extends object>({
     canUndoRows,
     canRedoRows,
     clearUndoHistory,
+    detailRowEnabled: detailRow != null,
   };
 
   // 追加(undo/redo scroll): 以下のスクロール計算群は従来 useImperativeHandle の factory 内
@@ -5523,6 +5547,32 @@ export function SpreadsheetGrid<T extends object>({
         getGroupRows: () => {
           const s = apiStateRef.current;
           return s?.groupTree ? collectAllGroupRows(s.groupTree) : [];
+        },
+
+        // ── 展開行(detail) ──
+        // 追加(detail ②): 展開行の命令的 API です。detailRow 未指定時は no-op / 空配列。
+        //   合成は reducer(detail/setExpanded)側で行うため、同一イベント内の連続呼び出しでも
+        //   stale 読みなしで積み重なります。isExpandable が false の行は状態にキーがあっても
+        //   描画側で展開されません(帯は作られない)。
+        setDetailRowExpanded: (rowKey, expanded) => {
+          const s = apiStateRef.current;
+          if (!s || !s.detailRowEnabled) {
+            return;
+          }
+          s.dispatch(gridActions.setDetailRowExpanded(rowKey, expanded));
+        },
+        getExpandedDetailRowKeys: () => {
+          const s = apiStateRef.current;
+          return s && s.detailRowEnabled
+            ? Array.from(s.uiState.expandedDetailRowKeys)
+            : [];
+        },
+        collapseAllDetailRows: () => {
+          const s = apiStateRef.current;
+          if (!s || !s.detailRowEnabled) {
+            return;
+          }
+          s.dispatch(gridActions.setExpandedDetailRowKeys(new Set()));
         },
 
         // ── バリデーション ──
