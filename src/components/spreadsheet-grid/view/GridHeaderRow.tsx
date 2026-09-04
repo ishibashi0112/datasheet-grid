@@ -101,6 +101,12 @@ type GridHeaderRowProps<T> = {
     column: GridColumn<T>,
     event: PointerEvent<HTMLButtonElement>,
   ) => void;
+  // 追加(touch): タッチでは pointerdown ではなく click で開くため、click も配線します
+  //   (マウスは pointerdown で開済みのため controller 側で no-op)。
+  onColumnMenuButtonClick: (
+    column: GridColumn<T>,
+    event: MouseEvent<HTMLButtonElement>,
+  ) => void;
   onColumnHeaderContextMenu: (
     column: GridColumn<T>,
     event: MouseEvent<HTMLDivElement>,
@@ -124,12 +130,14 @@ function HeaderActionButton({
   title,
   className,
   onPointerDown,
+  onClick,
   children,
 }: {
   isActive: boolean;
   title: string;
   className?: string;
   onPointerDown: (event: PointerEvent<HTMLButtonElement>) => void;
+  onClick?: (event: MouseEvent<HTMLButtonElement>) => void;
   children: ReactNode;
 }) {
   // 変更(UI CSS移行): JS ホバー state を撤去し、:hover を CSS(.ssg-icon-btn)へ委譲します。
@@ -141,6 +149,7 @@ function HeaderActionButton({
       data-ssg-tooltip={title}
       aria-label={title}
       onPointerDown={onPointerDown}
+      onClick={onClick}
       className={cx(
         'ssg-icon-btn',
         isActive && 'ssg-icon-btn--active',
@@ -192,6 +201,7 @@ function GridHeaderRowInner<T>({
   enableColumnMenu,
   openedMenuColumnKey,
   onColumnMenuButtonPointerDown,
+  onColumnMenuButtonClick,
   onColumnHeaderContextMenu,
   // 追加(13-B3-2): バッジ grip の pointerdown(列 D&D)。
   onColumnDragHandlePointerDown,
@@ -444,6 +454,7 @@ function GridHeaderRowInner<T>({
                   onPointerDown={(event) =>
                     onColumnMenuButtonPointerDown(column, event)
                   }
+                  onClick={(event) => onColumnMenuButtonClick(column, event)}
                 >
                   ⋮
                 </HeaderActionButton>

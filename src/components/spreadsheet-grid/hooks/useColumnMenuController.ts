@@ -21,6 +21,10 @@ export type ColumnMenuLayout = {
   top: number;
   left: number;
   width: number;
+  // 追加(touch): メニュー実測高さが viewport に収まらないとき(横向きスマホ等)だけ付与します。
+  //   popover 側で max-height + overflow-y: auto に変換します(通常時は未指定 = 従来どおり
+  //   クリップなしでサブメニューがはみ出して開けます)。
+  maxHeight?: number;
 };
 
 type UseColumnMenuControllerArgs<T> = {
@@ -72,6 +76,12 @@ export const useColumnMenuController = <T,>({
   const columnMenuRef = useRef<HTMLDivElement | null>(null);
   const menuAnchorButtonRef = useRef<HTMLButtonElement | null>(null);
   const menuAnchorPointRef = useRef<{ x: number; y: number } | null>(null);
+  // 追加(touch): タッチの pointerdown で「click で開く」ために保留した anchor ボタンです。
+  //   タッチで pointerdown 起点に開くと、同じジェスチャの click(指を離した時点でヒットテスト)が
+  //   指の真下に描画されたメニュー項目へ当たり、項目が即実行 → メニューが閉じて見えていました。
+  //   click 時点ではまだメニューが無いため、click 起点なら項目に当たりません(マウスは従来どおり
+  //   pointerdown 起点 = 押した瞬間に開く)。
+  const touchPendingAnchorRef = useRef<HTMLButtonElement | null>(null);
 
   // 追加(13-A): 開閉トグル判定用の latest-ref です。
   // 注記: setState の updater 内で anchor ref を書き換えると StrictMode の
@@ -105,6 +115,19 @@ export const useColumnMenuController = <T,>({
     let left: number;
     let flipTop: number;
 
+    // 変更(touch): 高さは描画済みなら実測(offsetHeight)を使います。項目数(フィルター / 並び替え /
+    //   固定 / 表示 / リセット…)で実高さは推定値(289)を大きく超えることがあり、推定値のままだと
+    //   下方向へ出して viewport 下端で切れる / 上フリップしても anchor に重なる、が起きていました。
+    //   初回(未描画)は推定値で配置し、open effect の次フレームで実測値により再配置します。
+    //   注記: maxHeight でパネル内スクロールにしている最中は offsetHeight がクリップ後の高さに
+    //   なるため、scrollHeight(内容の全高)+ 上下ボーダー(offsetHeight - clientHeight)で「クリップ
+    //   していない場合の全高」を復元します(offsetHeight を使うと「収まった」と誤判定して maxHeight を
+    //   外し、次の実測で再び付与…と振動します)。
+    const panel = columnMenuRef.current;
+    const menuHeight = panel
+      ? panel.scrollHeight + (panel.offsetHeight - panel.clientHeight)
+      : ESTIMATED_MENU_HEIGHT;
+
     const anchorButton = menuAnchorButtonRef.current;
     const anchorPoint = menuAnchorPointRef.current;
 
@@ -120,12 +143,12 @@ export const useColumnMenuController = <T,>({
       const anchorRect = anchorButton.getBoundingClientRect();
       left = anchorRect.right - MENU_WIDTH;
       top = anchorRect.bottom + OFFSET_Y;
-      flipTop = anchorRect.top - ESTIMATED_MENU_HEIGHT - OFFSET_Y;
+      flipTop = anchorRect.top - menuHeight - OFFSET_Y;
     } else if (anchorPoint) {
       // 追加(13-A): 右クリック位置の右下へ出します(ブラウザ標準メニューと同じ向き)。
       left = anchorPoint.x;
       top = anchorPoint.y;
-      flipTop = anchorPoint.y - ESTIMATED_MENU_HEIGHT;
+      flipTop = anchorPoint.y - menuHeight;
     } else {
       setColumnMenuLayout(null);
       return;
@@ -134,21 +157,29 @@ export const useColumnMenuController = <T,>({
     left = Math.max(VIEWPORT_MARGIN, left);
     left = Math.min(left, window.innerWidth - MENU_WIDTH - VIEWPORT_MARGIN);
 
-    if (top + ESTIMATED_MENU_HEIGHT > window.innerHeight - VIEWPORT_MARGIN) {
+    // 変更(touch): 下に収まらなければ上へフリップ、上にも収まらなければ viewport 上端に寄せます。
+    //   それでも収まらない(メニューが viewport より高い)ときは maxHeight を付けてパネル内スクロール
+    //   にします(横向きスマホ等。通常は未指定)。
+    const viewportBottom = window.innerHeight - VIEWPORT_MARGIN;
+    if (top + menuHeight > viewportBottom && flipTop >= VIEWPORT_MARGIN) {
       top = flipTop;
     }
     top = Math.max(VIEWPORT_MARGIN, top);
+    const availableHeight = viewportBottom - top;
+    const maxHeight =
+      menuHeight > availableHeight ? Math.max(availableHeight, 0) : undefined;
 
     setColumnMenuLayout((current) => {
       if (
         current &&
         current.top === top &&
         current.left === left &&
-        current.width === MENU_WIDTH
+        current.width === MENU_WIDTH &&
+        current.maxHeight === maxHeight
       ) {
         return current;
       }
-      return { top, left, width: MENU_WIDTH };
+      return { top, left, width: MENU_WIDTH, maxHeight };
     });
   }, [openedMenuColumnKey]);
 
@@ -164,6 +195,22 @@ export const useColumnMenuController = <T,>({
       gridRootRef.current?.focus();
     });
   }, [gridRootRef]);
+
+  // 追加(touch): 「⋮」ボタンを anchor にメニューを開く共通処理です(pointerdown / click の両起点)。
+  const openColumnMenuAtButton = useCallback(
+    (column: GridColumn<T>, anchorElement: HTMLButtonElement) => {
+      // 追加: grid root に残っているフォーカスを明示的に外します。
+      if (document.activeElement instanceof HTMLElement) {
+        document.activeElement.blur();
+      }
+      gridRootRef.current?.blur();
+
+      menuAnchorButtonRef.current = anchorElement;
+      menuAnchorPointRef.current = null;
+      setColumnMenuState({ columnKey: column.key });
+    },
+    [gridRootRef],
+  );
 
   // 追加(13-A): 「⋮」ボタンからメニューを開きます(同じボタン再押下でトグル close)。
   // 注記: anchor ref の更新は setState より「前」に行います。outside click 用の
@@ -191,17 +238,32 @@ export const useColumnMenuController = <T,>({
         return;
       }
 
-      // 追加: grid root に残っているフォーカスを明示的に外します。
-      if (document.activeElement instanceof HTMLElement) {
-        document.activeElement.blur();
+      // 追加(touch): タッチは click(openColumnMenuFromButtonClick)で開きます。
+      //   理由は touchPendingAnchorRef の注記(同一ジェスチャの click が項目へ当たる問題)。
+      if (event.pointerType === 'touch') {
+        touchPendingAnchorRef.current = anchorElement;
+        return;
       }
-      gridRootRef.current?.blur();
 
-      menuAnchorButtonRef.current = anchorElement;
-      menuAnchorPointRef.current = null;
-      setColumnMenuState({ columnKey: column.key });
+      openColumnMenuAtButton(column, anchorElement);
     },
-    [closeColumnMenu, enableColumnMenu, gridRootRef],
+    [closeColumnMenu, enableColumnMenu, openColumnMenuAtButton],
+  );
+
+  // 追加(touch): 「⋮」ボタンの click です。タッチの pointerdown で保留した anchor と一致するときだけ
+  //   開きます(マウスは pointerdown 側で開済み = 保留なし = no-op)。
+  const openColumnMenuFromButtonClick = useCallback(
+    (column: GridColumn<T>, event: MouseEvent<HTMLButtonElement>) => {
+      const pendingAnchor = touchPendingAnchorRef.current;
+      touchPendingAnchorRef.current = null;
+      if (!enableColumnMenu || pendingAnchor !== event.currentTarget) {
+        return;
+      }
+      event.preventDefault();
+      event.stopPropagation();
+      openColumnMenuAtButton(column, event.currentTarget);
+    },
+    [enableColumnMenu, openColumnMenuAtButton],
   );
 
   // 追加(13-A): 列ヘッダー右クリック(contextmenu)からメニューを開きます。
@@ -242,6 +304,11 @@ export const useColumnMenuController = <T,>({
 
     // eslint-disable-next-line react-hooks/set-state-in-effect -- open 直後の初期配置です。anchor の DOM 矩形を commit 後に測ってから layout state を確定する必要があるため、effect 内 setState が本質的に必要なパターン(React docs の DOM 計測パターン)です。
     updateColumnMenuLayout();
+    // 追加(touch): 初回配置は推定高さです。パネル描画後の次フレームで実測高さにより再配置します
+    //   (下に収まらない場合の上フリップ / viewport 内クリップを実高さで判定するため)。
+    const measureFrame = requestAnimationFrame(() => {
+      updateColumnMenuLayout();
+    });
 
     const handleResize = () => {
       updateColumnMenuLayout();
@@ -260,6 +327,7 @@ export const useColumnMenuController = <T,>({
     window.addEventListener('scroll', handleScroll, true);
 
     return () => {
+      cancelAnimationFrame(measureFrame);
       window.removeEventListener('resize', handleResize);
       window.removeEventListener('scroll', handleScroll, true);
     };
@@ -329,6 +397,7 @@ export const useColumnMenuController = <T,>({
     openedMenuColumnKey,
     openedMenuColumn,
     openColumnMenuFromButton,
+    openColumnMenuFromButtonClick,
     openColumnMenuFromContextMenu,
     closeColumnMenu,
   };

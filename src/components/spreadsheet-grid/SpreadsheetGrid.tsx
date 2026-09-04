@@ -982,6 +982,7 @@ export function SpreadsheetGrid<T extends object>({
     openedMenuColumnKey,
     openedMenuColumn,
     openColumnMenuFromButton,
+    openColumnMenuFromButtonClick,
     openColumnMenuFromContextMenu,
     closeColumnMenu,
   } = useColumnMenuController({
@@ -5753,6 +5754,7 @@ export function SpreadsheetGrid<T extends object>({
                   enableColumnResize={enableColumnResize}
                   openedMenuColumnKey={openedMenuColumnKey}
                   onColumnMenuButtonPointerDown={openColumnMenuFromButton}
+                  onColumnMenuButtonClick={openColumnMenuFromButtonClick}
                   onColumnHeaderContextMenu={openColumnMenuFromContextMenu}
                   onColumnDragHandlePointerDown={headerDragHandler}
                 />
@@ -5905,6 +5907,7 @@ export function SpreadsheetGrid<T extends object>({
                 enableColumnResize={enableColumnResize}
                 openedMenuColumnKey={openedMenuColumnKey}
                 onColumnMenuButtonPointerDown={openColumnMenuFromButton}
+                  onColumnMenuButtonClick={openColumnMenuFromButtonClick}
                 onColumnHeaderContextMenu={openColumnMenuFromContextMenu}
                 onColumnDragHandlePointerDown={headerDragHandler}
               />
@@ -6050,6 +6053,7 @@ export function SpreadsheetGrid<T extends object>({
                   enableColumnResize={enableColumnResize}
                   openedMenuColumnKey={openedMenuColumnKey}
                   onColumnMenuButtonPointerDown={openColumnMenuFromButton}
+                  onColumnMenuButtonClick={openColumnMenuFromButtonClick}
                   onColumnHeaderContextMenu={openColumnMenuFromContextMenu}
                   onColumnDragHandlePointerDown={headerDragHandler}
                 />

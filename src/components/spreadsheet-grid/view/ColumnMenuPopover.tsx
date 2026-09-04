@@ -170,6 +170,10 @@ export function ColumnMenuPopover({
     left: layout.left,
     width: layout.width,
     zIndex: 1000,
+    // 追加(touch): viewport に収まらないときだけパネル内スクロールにします(通常は未指定)。
+    ...(layout.maxHeight !== undefined
+      ? { maxHeight: layout.maxHeight, overflowY: 'auto' as const }
+      : {}),
   };
 
   // 追加(13-A2): サブメニューはルート項目(position: relative の行)を基準に
