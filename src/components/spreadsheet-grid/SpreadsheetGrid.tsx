@@ -172,6 +172,7 @@ import {
   DETAIL_TOGGLE_COLUMN_KEY,
   DETAIL_TOGGLE_COLUMN_WIDTH,
   createDetailIndexCache,
+  findDetailRowIndex,
   isInsideDetailCardOf,
   isSyntheticColumnKey,
   resolveDetailRowExtras,
@@ -274,6 +275,7 @@ import type {
   GridRowKey,
   // 追加(detail ③): 展開行の描画コンテキスト / セルへ渡す detail コンテキスト型です。
   CellDetailContext,
+  DetailRowOptions,
   DetailRowRenderContext,
   // 追加(DS-3-0): 行モデルのシーム契約型です(rowModel の構築に使います)。
   RowModel,
@@ -5191,6 +5193,8 @@ export function SpreadsheetGrid<T extends object>({
     clearUndoHistory: () => void;
     // 追加(detail ②): 展開行 API の有効判定(detailRow 未指定なら no-op / 空配列)。
     detailRowEnabled: boolean;
+    // 追加(detail ⑤): setDetailRowExpanded の展開可否ガード用。
+    detailIsExpandable: DetailRowOptions<T>['isExpandable'];
   } | null>(null);
   apiStateRef.current = {
     dispatch,
@@ -5234,6 +5238,7 @@ export function SpreadsheetGrid<T extends object>({
     canRedoRows,
     clearUndoHistory,
     detailRowEnabled: detailRow != null,
+    detailIsExpandable,
   };
 
   // 追加(undo/redo scroll): 以下のスクロール計算群は従来 useImperativeHandle の factory 内
@@ -5844,12 +5849,33 @@ export function SpreadsheetGrid<T extends object>({
         // ── 展開行(detail) ──
         // 追加(detail ②): 展開行の命令的 API です。detailRow 未指定時は no-op / 空配列。
         //   合成は reducer(detail/setExpanded)側で行うため、同一イベント内の連続呼び出しでも
-        //   stale 読みなしで積み重なります。isExpandable が false の行は状態にキーがあっても
-        //   描画側で展開されません(帯は作られない)。
+        //   stale 読みなしで積み重なります。展開時は行を引いて isExpandable を確認し、false なら
+        //   no-op(状態にキーを残さない)。行が引けないとき(serverSide の未ロード行 / フィルター
+        //   除外中)はキーだけ保持し、描画側(resolveDetailRowExtras)が可否を判定します。
         setDetailRowExpanded: (rowKey, expanded) => {
           const s = apiStateRef.current;
           if (!s || !s.detailRowEnabled) {
             return;
+          }
+          if (expanded && s.detailIsExpandable) {
+            const index = findDetailRowIndex(
+              s.rowModel,
+              rowKey,
+              detailIndexCacheRef.current,
+              !s.isServerSide,
+            );
+            if (index >= 0) {
+              const row = s.rowModel.getRow(index);
+              if (
+                row != null &&
+                !s.detailIsExpandable(row, {
+                  rowKey,
+                  sourceRowIndex: s.rowModel.getSourceIndex(index),
+                })
+              ) {
+                return;
+              }
+            }
           }
           s.dispatch(gridActions.setDetailRowExpanded(rowKey, expanded));
         },

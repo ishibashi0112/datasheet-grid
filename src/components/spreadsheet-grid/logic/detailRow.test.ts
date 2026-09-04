@@ -3,6 +3,7 @@ import { describe, it, expect } from 'vitest';
 import type { RowModel } from '../model/gridTypes';
 import {
   createDetailIndexCache,
+  findDetailRowIndex,
   resolveDetailRowExtras,
   seedDetailIndexCache,
   splitRowBandByDetail,
@@ -156,6 +157,22 @@ describe('resolveDetailRowExtras', () => {
         allowScan: false,
       }),
     ).toEqual([{ index: 2, height: 100 }]);
+  });
+});
+
+describe('findDetailRowIndex', () => {
+  const rows: Row[] = [{ id: 'a' }, { id: 'b' }, { id: 'c' }];
+
+  it('scans when allowed and seeds the cache; honours a valid cache without scanning', () => {
+    const cache = createDetailIndexCache();
+    const model = makeModel(rows, [2, 0, 1]);
+    expect(findDetailRowIndex(model, 'b', cache, true)).toBe(2);
+    expect(cache.indexByKey.get('b')).toBe(2);
+    // allowScan=false でもキャッシュが有効なら引けます。
+    expect(findDetailRowIndex(model, 'b', cache, false)).toBe(2);
+    // キャッシュが外れた(別 order)ときは allowScan=false なら -1。
+    expect(findDetailRowIndex(makeModel(rows, [1, 2, 0]), 'b', cache, false)).toBe(-1);
+    expect(findDetailRowIndex(model, 'zzz', cache, true)).toBe(-1);
   });
 });
 

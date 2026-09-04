@@ -77,6 +77,36 @@ export type ResolveDetailRowExtrasArgs<T> = {
   allowScan: boolean;
 };
 
+// rowKey 1 件の view index を引きます(命令的 API 用)。キャッシュ → 走査(allowScan 時のみ)の順で、
+//   見つからなければ -1。走査で見つかったらキャッシュへ seed します。
+export const findDetailRowIndex = <T>(
+  rowModel: RowModel<T>,
+  rowKey: GridRowKey,
+  cache: DetailIndexCache,
+  allowScan: boolean,
+): number => {
+  const rowCount = rowModel.getRowCount();
+  const cached = cache.indexByKey.get(rowKey);
+  if (
+    cached !== undefined &&
+    cached >= 0 &&
+    cached < rowCount &&
+    rowModel.getRowKey(cached) === rowKey
+  ) {
+    return cached;
+  }
+  if (!allowScan) {
+    return -1;
+  }
+  for (let index = 0; index < rowCount; index += 1) {
+    if (rowModel.getRowKey(index) === rowKey) {
+      cache.indexByKey.set(rowKey, index);
+      return index;
+    }
+  }
+  return -1;
+};
+
 // 展開中キー集合を「view index 昇順の追加高リスト」へ解決します(createDetailRowMetrics の入力)。
 //   行が取れない(グループ行 / 未ロード / OOB)・isExpandable が false のキーは除外します。
 export const resolveDetailRowExtras = <T>({
