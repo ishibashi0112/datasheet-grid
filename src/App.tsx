@@ -624,6 +624,8 @@ function App() {
   const [rowGroupingEnabled, setRowGroupingEnabled] = useState(false);
   // 追加(バッチ②デモ): コンテキストメニュー(完全カスタム)の ON/OFF トグルです。既定 OFF。
   const [contextMenuEnabled, setContextMenuEnabled] = useState(false);
+  // 追加(detail デモ): 展開行(Master/Detail)の ON/OFF トグルです。既定 OFF。
+  const [detailRowEnabled, setDetailRowEnabled] = useState(false);
   // 追加(scrollHint デモ): スクロール位置インジケーター(バブル + ルーラー)のモードです。
   //   1M 行での現在位置把握が主目的のため、デモでは既定 ON にしています(ライブラリ既定は OFF)。
   //   hintColumn='partNo' で「行番号 + 品番」を表示します。
@@ -1187,6 +1189,22 @@ function App() {
           >
             全折りたたみ
           </button>
+          {/* 追加(detail デモ): 展開行(Master/Detail)の ON/OFF と全折りたたみ。 */}
+          <button
+            type="button"
+            onClick={() => setDetailRowEnabled((v) => !v)}
+            style={modeButtonStyle(detailRowEnabled)}
+          >
+            展開行: {detailRowEnabled ? 'ON' : 'OFF'}
+          </button>
+          <button
+            type="button"
+            onClick={() => gridRef.current?.collapseAllDetailRows()}
+            disabled={!detailRowEnabled}
+            style={modeButtonStyle(false)}
+          >
+            展開行を全て閉じる
+          </button>
           {/* 追加(行選択デモ): チェックボックス行選択の ON/OFF・モード切替・全選択/解除・選択キー確認。 */}
           <button
             type="button"
@@ -1362,6 +1380,40 @@ function App() {
         }
         // 変更(grouping デモ): グルーピングトグルを反映した導出列を渡します(OFF 時は素の columns)。
         columns={gridColumns}
+        // 追加(detail デモ): 展開行。カード内に行の要約テーブルと入力欄(イベント境界の確認用)を描きます。
+        detailRow={
+          detailRowEnabled
+            ? {
+                height: 180,
+                isExpandable: (row) => row.qty !== 0,
+                render: ({ row, rowKey, collapse }) => (
+                  <div style={{ padding: 12, display: 'grid', gap: 8 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                      <strong>{row.partNo}</strong>
+                      <span>{row.partName}</span>
+                      <span style={{ color: '#888' }}>key: {String(rowKey)}</span>
+                      <button type="button" onClick={collapse} style={{ marginLeft: 'auto' }}>
+                        閉じる
+                      </button>
+                    </div>
+                    <table style={{ borderCollapse: 'collapse', fontSize: 12 }}>
+                      <tbody>
+                        <tr>
+                          <td style={{ padding: '2px 8px', color: '#888' }}>数量</td>
+                          <td style={{ padding: '2px 8px' }}>{row.qty}</td>
+                          <td style={{ padding: '2px 8px', color: '#888' }}>金額</td>
+                          <td style={{ padding: '2px 8px' }}>{row.amount.toLocaleString()}</td>
+                          <td style={{ padding: '2px 8px', color: '#888' }}>状態</td>
+                          <td style={{ padding: '2px 8px' }}>{row.status}</td>
+                        </tr>
+                      </tbody>
+                    </table>
+                    <input placeholder="メモ(カード内の入力欄。矢印 / Enter / Ctrl+V がグリッドへ漏れないこと)" style={{ width: 360 }} />
+                  </div>
+                ),
+              }
+            : undefined
+        }
         onRowsChange={mode === 'server' ? undefined : setRows}
         onColumnsChange={setColumns}
         rowKeyGetter={(row, index) => `${row.partNo || 'row'}-${index}`}

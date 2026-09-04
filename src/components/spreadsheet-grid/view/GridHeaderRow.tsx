@@ -28,7 +28,8 @@ import type { PaneColumnEntry } from '../logic/geometry';
 // 追加(12-A): set フィルター対応のフィルター有効判定を共有します。
 import { isActiveColumnFilterValue } from '../logic/filtering';
 // 追加(grouping ③): 自動グループ列の判定キーです(列メニュー / DnD の対象外化)。
-import { GROUP_AUTO_COLUMN_KEY } from '../logic/grouping';
+// 変更(detail ③): 自動グループ列 / 展開行トグル列の合成列判定を共通化しました。
+import { DETAIL_TOGGLE_COLUMN_KEY, isSyntheticColumnKey } from '../logic/detailRow';
 
 // 追加(10-C): このヘッダーがどのペインを描画しているかの種別です。
 export type GridPaneKind = 'left' | 'center' | 'right';
@@ -311,7 +312,9 @@ function GridHeaderRowInner<T>({
         const isMenuOpenForColumn = openedMenuColumnKey === column.key;
         // 追加(grouping ③): 自動グループ列は合成列のため、列メニュー(フィルター / 表示切替) /
         //   並べ替え DnD の対象外にします(リサイズ・列範囲選択は通常どおり)。
-        const isAutoGroupColumn = column.key === GROUP_AUTO_COLUMN_KEY;
+        // 変更(detail ③): 展開行トグル列も同じ扱い(さらにラベルは空 / ツールチップなし)。
+        const isAutoGroupColumn = isSyntheticColumnKey(column.key);
+        const isDetailToggleColumn = column.key === DETAIL_TOGGLE_COLUMN_KEY;
         const showColumnMenuButton = enableColumnMenu && !isAutoGroupColumn;
 
         return (
@@ -356,7 +359,9 @@ function GridHeaderRowInner<T>({
                 isColumnFiltered && 'ssg-header-label--filtered',
               )}
               data-ssg-tooltip={
-                column.renderHeader ? undefined : column.title || column.key
+                column.renderHeader || isDetailToggleColumn
+                  ? undefined
+                  : column.title || column.key
               }
             >
               {column.renderHeader
@@ -367,7 +372,9 @@ function GridHeaderRowInner<T>({
                     filterValue: columnFilterValues[column.key],
                     isFiltered: isColumnFiltered,
                   })
-                : column.title || column.key}
+                : isDetailToggleColumn
+                  ? ''
+                  : column.title || column.key}
             </div>
 
             {/* 追加(②): 「状態」スロット(常時表示・非インタラクティブ)。ソート方向の受動表示と、

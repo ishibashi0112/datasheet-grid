@@ -437,6 +437,68 @@
     color: var(--ssg-glyph);
   }
 
+  /* ── 展開行(detail / Master-Detail) ── */
+  /* 帯: マスター行の直下に続く全幅の薄い背景(各ペイン幅で描く。座標 / 幅 / 高さはインライン)。 */
+  .ssg-detail-band {
+    box-sizing: border-box;
+    background-color: var(--ssg-group-row-bg);
+    border-bottom: 1px solid var(--ssg-divider);
+  }
+  /* カードの置き場: 帯の中で横スクロールに追従して留まる sticky 要素(left / width はインライン)。 */
+  .ssg-detail-card-holder {
+    position: sticky;
+    box-sizing: border-box;
+    height: 100%;
+    padding: 8px 12px;
+  }
+  /* カード: 消費側 UI の器(イベント境界 data-ssg-detail)。中身が高さを超えたらカード内でスクロール。 */
+  .ssg-detail-card {
+    box-sizing: border-box;
+    height: 100%;
+    overflow: auto;
+    border: 1px solid var(--ssg-line-strong);
+    border-radius: 6px;
+    background-color: var(--ssg-cell-bg);
+    color: var(--ssg-cell-text);
+    font-size: 13px;
+    font-weight: 400;
+    text-align: left;
+    white-space: normal;
+    cursor: auto;
+    user-select: text;
+  }
+  /* 専用トグル列(T1)のシェブロン(.ssg-group-toggle と同じ寸法 / 色)。 */
+  .ssg-detail-toggle {
+    flex: none;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 18px;
+    margin: 0 auto;
+    padding: 0;
+    border: none;
+    border-radius: 4px;
+    background: none;
+    color: var(--ssg-glyph-hover);
+    font-size: 12px;
+    line-height: 1;
+    cursor: pointer;
+  }
+  .ssg-detail-toggle:hover {
+    background-color: var(--ssg-icon-hover-bg);
+    color: var(--ssg-accent);
+  }
+  .ssg-detail-toggle:focus-visible {
+    outline: 2px solid var(--ssg-accent);
+    outline-offset: 1px;
+  }
+  /* トグル列のセルは余白を詰めて中央寄せ。 */
+  .ssg-body-cell--detail-toggle {
+    padding: 0;
+    justify-content: center;
+  }
+
   /* 読み取り専用セル(選択時は通常背景へ戻し、選択塗りを素直に見せる)。
      変更(THEME-3): 組み込みの淡色表示(背景 + 文字色)は dimReadOnlyCells prop
      (root の ssg-root--dim-readonly)による opt-in にしました(既定 false = 色変化なし)。

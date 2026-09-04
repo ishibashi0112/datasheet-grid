@@ -17,7 +17,8 @@ import type {
 // 追加(MS-2): ソートエントリ配列の次状態を求める純関数です(列メニューと共有)。
 import { nextSortEntries } from '../logic/sorting';
 // 追加(grouping ③): 自動グループ列の判定キーです(Shift+click ソートの対象外化)。
-import { GROUP_AUTO_COLUMN_KEY } from '../logic/grouping';
+// 変更(detail ③): 自動グループ列 / 展開行トグル列の合成列判定を共通化しました。
+import { isSyntheticColumnKey } from '../logic/detailRow';
 // 変更(10-E): グローバル座標(columnMeasurements)前提の当たり判定から、
 //             ペイン別座標系の当たり判定へ切り替えます。
 // 変更理由: 10-B〜10-D で DOM を 3 ペインに物理分離し、UI state の col は
@@ -913,7 +914,8 @@ export const useGridPointerInteractions = <T,>({
       if (event.shiftKey && enableSortingRef.current) {
         const column = orderedColumnsRef.current[colIndex];
         // 追加(grouping ③): 自動グループ列は合成列(データ値なし)のためソート対象外です。
-        if (column && column.key !== GROUP_AUTO_COLUMN_KEY) {
+        // 変更(detail ③): 展開行トグル列も同様に除外します。
+        if (column && !isSyntheticColumnKey(column.key)) {
           const current = sortRef.current;
           const existingDir = current.find(
             (entry) => entry.columnKey === column.key,

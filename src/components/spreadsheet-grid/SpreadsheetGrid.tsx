@@ -158,12 +158,25 @@ import {
   computeAutoHeightVerticalGeometry,
   computeVerticalGeometry,
   createUniformRowMetrics,
+  // 追加(detail ③): 展開行の帯高を RowMetrics へ疎に足すデコレータです。
+  createDetailRowMetrics,
   shouldUseAutoHeight,
   // 追加(imperative API #1): 命令的スクロールの論理↔物理換算に使います。
   logicalToPhysicalScrollTop,
   physicalToLogicalScrollTop,
 } from './logic/verticalGeometry';
-import type { RowMetrics } from './logic/verticalGeometry';
+import type { DetailRowExtra, RowMetrics } from './logic/verticalGeometry';
+// 追加(detail ③): 展開行(Master/Detail)の純ロジック(トグル列キー / rowKey→view index 解決 / 選択帯分割)です。
+import {
+  DEFAULT_DETAIL_ROW_HEIGHT,
+  DETAIL_TOGGLE_COLUMN_KEY,
+  DETAIL_TOGGLE_COLUMN_WIDTH,
+  createDetailIndexCache,
+  isSyntheticColumnKey,
+  resolveDetailRowExtras,
+  seedDetailIndexCache,
+  splitRowBandByDetail,
+} from './logic/detailRow';
 // 追加(imperative API #1): CSV エクスポート / スクロール先算出の純ロジックです。
 import { serializeRowsToCsv } from './logic/exportCsv';
 import { buildGridExportData } from './logic/exportData';
@@ -258,6 +271,9 @@ import type {
   GridColumnPinned,
   // 追加(C1): auto-height 実測キャッシュのキー型です。
   GridRowKey,
+  // 追加(detail ③): 展開行の描画コンテキスト / セルへ渡す detail コンテキスト型です。
+  CellDetailContext,
+  DetailRowRenderContext,
   // 追加(DS-3-0): 行モデルのシーム契約型です(rowModel の構築に使います)。
   RowModel,
   // 追加(記述子化): commit 経路で text/date/select/custom を記述子化する際の型です。
@@ -309,6 +325,9 @@ import DefaultGridBottomBar from './view/DefaultGridBottomBar';
 import DefaultGridTopBar from './view/DefaultGridTopBar';
 import { resolveGridSlot } from './view/gridBarHelpers';
 import GridBodyLayer from './view/GridBodyLayer';
+// 追加(detail ③): 展開行の帯 + カードを各ペインへ描くレイヤーです。
+import GridDetailLayer from './view/GridDetailLayer';
+import type { GridDetailLayerEntry } from './view/GridDetailLayer';
 import GridHeaderRow from './view/GridHeaderRow';
 import useColumnMenuController from './hooks/useColumnMenuController';
 import ColumnMenuPopover from './view/ColumnMenuPopover';
@@ -400,6 +419,9 @@ const DENSITY_DIMENSIONS: Record<
 const EMPTY_FLEX_WIDTHS: Record<string, number> = {};
 // 追加(バッチ②): コンテキストメニュー closed 時に popover へ渡す空 items(参照不変)。
 const EMPTY_CONTEXT_MENU_ITEMS: GridContextMenuItem[] = [];
+// 追加(detail ③): 展開行なし時の安定な空配列(参照同一で再計算を誘発しない)。
+const EMPTY_DETAIL_EXTRAS: readonly DetailRowExtra[] = [];
+const EMPTY_DETAIL_ENTRIES: readonly GridDetailLayerEntry[] = [];
 // 追加(#2): リサイズハンドルのダブルクリック判定しきい値です。native dblclick は pointerdown の
 //   preventDefault でブラウザ差により抑止されることがあるため、時刻 + 位置で自前判定します
 //   (native と同じ「短時間 + 近接位置」の 2 条件)。位置チェックは「リサイズ直後の再ドラッグ」を
@@ -601,9 +623,48 @@ export function SpreadsheetGrid<T extends object>({
   //   (rowGroup)は表示から外します(B1 案)。readOnly でセル編集対象外、
   //   suppressAutoSize で autoSize 対象外です。無効時は columns をそのまま返し、
   //   既存経路はバイト等価です。
+  // 追加(detail ③): 展開行の専用トグル列(T1)。detailRow 指定かつ showToggleColumn !== false のとき、
+  //   自動グループ列よりさらに先頭へ注入します(左固定列があれば左ペインへ pin)。セル本体は
+  //   renderCellContent が渡す ctx.detail(T2 と同じ口)で描くため、T1 は T2 の上に成り立ちます。
+  //   detailRow 未指定なら従来どおり(既存経路はバイト等価)。
+  const detailToggleColumnActive =
+    detailRow != null && detailRow.showToggleColumn !== false;
   const effectiveColumns = useMemo(() => {
+    const detailToggleColumn: GridColumn<T> | null = detailToggleColumnActive
+      ? {
+          key: DETAIL_TOGGLE_COLUMN_KEY,
+          title: '',
+          width: DETAIL_TOGGLE_COLUMN_WIDTH,
+          minWidth: DETAIL_TOGGLE_COLUMN_WIDTH,
+          readOnly: true,
+          suppressAutoSize: true,
+          resizable: false,
+          pinned: columns.some((column) => column.pinned === 'left')
+            ? 'left'
+            : undefined,
+          cellClassName: 'ssg-body-cell--detail-toggle',
+          renderCell: (ctx) => {
+            const detail = ctx.detail;
+            if (!detail || !detail.expandable) {
+              return null;
+            }
+            return (
+              <button
+                type="button"
+                className="ssg-detail-toggle"
+                aria-expanded={detail.expanded}
+                aria-label={detail.expanded ? '詳細を閉じる' : '詳細を開く'}
+                onClick={detail.toggle}
+                onDoubleClick={(event) => event.stopPropagation()}
+              >
+                {detail.expanded ? '▾' : '▸'}
+              </button>
+            );
+          },
+        }
+      : null;
     if (!rowGroupingActive) {
-      return columns;
+      return detailToggleColumn ? [detailToggleColumn, ...columns] : columns;
     }
     const autoGroupColumn: GridColumn<T> = {
       key: GROUP_AUTO_COLUMN_KEY,
@@ -615,11 +676,12 @@ export function SpreadsheetGrid<T extends object>({
       readOnly: true,
       suppressAutoSize: true,
     };
-    return [
+    const grouped = [
       autoGroupColumn,
       ...columns.filter((column) => column.rowGroup !== true),
     ];
-  }, [rowGroupingActive, columns, groupColumns]);
+    return detailToggleColumn ? [detailToggleColumn, ...grouped] : grouped;
+  }, [detailToggleColumnActive, rowGroupingActive, columns, groupColumns]);
 
   const visibleColumns = useMemo(
     () => effectiveColumns.filter((column) => column.visible !== false),
@@ -675,6 +737,26 @@ export function SpreadsheetGrid<T extends object>({
       Array.from(uiState.expandedDetailRowKeys),
     );
   }, [uiState.expandedDetailRowKeys]);
+
+  // 追加(detail ③): 展開行の有効判定と rowKey → view index 解決キャッシュです。
+  //   セル側のトグルは「そのセルの view index」でキャッシュを seed してから dispatch します
+  //   (serverSide でも全行走査なしで帯の位置が決まる)。
+  const detailRowEnabled = detailRow != null;
+  const detailIndexCacheRef = useRef(createDetailIndexCache());
+  const toggleDetailRowAt = useCallback(
+    (rowKey: GridRowKey, viewIndex: number) => {
+      seedDetailIndexCache(detailIndexCacheRef.current, rowKey, viewIndex);
+      dispatch(gridActions.toggleDetailRow(rowKey));
+    },
+    [dispatch],
+  );
+  const setDetailRowExpandedAt = useCallback(
+    (rowKey: GridRowKey, viewIndex: number, expanded: boolean) => {
+      seedDetailIndexCache(detailIndexCacheRef.current, rowKey, viewIndex);
+      dispatch(gridActions.setDetailRowExpanded(rowKey, expanded));
+    },
+    [dispatch],
+  );
 
   // 追加(11-B5): columnWidths の latest-ref です（dragStateRef と同じパターン）。
   // 変更理由: handleColumnResizePointerDown が uiState.columnWidths を依存に持つと、
@@ -1810,7 +1892,8 @@ export function SpreadsheetGrid<T extends object>({
   // 行メトリクス(スクロール非依存)。auto-height では prefix-sum 版、uniform では従来版。
   //   overlay(active cell / selection)の top/height とヒットテストの行解決が共有します。
   //   autoHeightVersion: 測定 flush で store.prefix が変わったら作り直します(store は in-place 更新)。
-  const rowMetrics: RowMetrics = useMemo(
+  // 変更(detail ③): 展開行なしの基底メトリクス。展開行があるときは下で createDetailRowMetrics で包みます。
+  const baseRowMetrics: RowMetrics = useMemo(
     () =>
       autoHeightActive && rowHeightStore
         ? createAutoHeightRowMetrics(rowHeightStore)
@@ -1821,11 +1904,67 @@ export function SpreadsheetGrid<T extends object>({
     [autoHeightActive, rowHeightStore, autoHeightVersion, viewRowCount, rowHeight],
   );
 
+  // 追加(detail ③): 展開中キー集合 → view index 昇順の帯リストへ解決します(表示行リストは不変)。
+  //   フィルター除外 / 未ロード / isExpandable=false のキーは帯を作らず状態としてだけ残ります。
+  //   走査は clientSide のみ(serverSide はトグル時に seed したキャッシュだけで解決)。
+  const detailHeightValue = detailRow?.height ?? DEFAULT_DETAIL_ROW_HEIGHT;
+  const detailIsExpandable = detailRow?.isExpandable;
+  const detailExtras = useMemo<readonly DetailRowExtra[]>(
+    () =>
+      detailRowEnabled
+        ? resolveDetailRowExtras({
+            expandedKeys: uiState.expandedDetailRowKeys,
+            rowModel,
+            height: detailHeightValue,
+            isExpandable: detailIsExpandable,
+            cache: detailIndexCacheRef.current,
+            allowScan: !isServerSide,
+          })
+        : EMPTY_DETAIL_EXTRAS,
+    [
+      detailRowEnabled,
+      uiState.expandedDetailRowKeys,
+      rowModel,
+      detailHeightValue,
+      detailIsExpandable,
+      isServerSide,
+    ],
+  );
+  // 展開行モードの gate: 帯が 1 つ以上あり、帯込みの論理全高が MAX_BODY_PX 以内(metrics 経路は
+  //   sf=1 固定のため)。gate 外では帯を描かず uniform 経路のままです(状態は保持)。
+  const detailActive =
+    detailExtras.length > 0 &&
+    baseRowMetrics.totalBodyHeight +
+      detailExtras.reduce((sum, extra) => sum + extra.height, 0) <=
+      MAX_BODY_PX;
+  // gate 外フォールバックの開発時警告(auto-height と同方針。例外は投げない)。
+  useEffect(() => {
+    if (!import.meta.env.DEV || !detailRowEnabled) {
+      return;
+    }
+    if (detailExtras.length > 0 && !detailActive) {
+      console.warn(
+        `[SpreadsheetGrid] 展開行は論理全高(行高合計 + 帯高)が ${MAX_BODY_PX}px 以内のときだけ描画します(行数上限超過)。展開状態は保持されますが帯は描かれません。`,
+      );
+    }
+  }, [detailRowEnabled, detailExtras, detailActive]);
+  // 展開行なしでは baseRowMetrics そのもの(参照同一)を使い、既存経路の再計算を誘発しません。
+  const rowMetrics: RowMetrics = useMemo(
+    () =>
+      detailActive
+        ? createDetailRowMetrics(baseRowMetrics, detailExtras)
+        : baseRowMetrics,
+    [detailActive, baseRowMetrics, detailExtras],
+  );
+  // metrics 駆動の縦ジオメトリを使うか(auto-height または展開行あり)。
+  const metricsGeometryActive = autoHeightActive || detailActive;
+
   // 縦ジオメトリ。auto-height は prefix-sum 版(sf=1 / offset=0 / translateY=0)、uniform は従来版。
   //   uniform 経路は rowMetrics 非依存で従来と数値一致します。
+  // 変更(detail ③): 展開行があるときも metrics 版(帯が可変高のため純算術の窓出しは使えない)。
   const verticalGeometry = useMemo(
     () =>
-      autoHeightActive
+      metricsGeometryActive
         ? computeAutoHeightVerticalGeometry(
             { headerHeight, viewportHeight, scrollTop, overscan: 20 },
             rowMetrics,
@@ -1841,7 +1980,7 @@ export function SpreadsheetGrid<T extends object>({
             maxBodyPx: MAX_BODY_PX,
           }),
     [
-      autoHeightActive,
+      metricsGeometryActive,
       rowMetrics,
       viewRowCount,
       rowHeight,
@@ -1852,6 +1991,55 @@ export function SpreadsheetGrid<T extends object>({
   );
   const virtualRows = verticalGeometry.rows;
   const virtualRowIndexes = verticalGeometry.rowIndexSet;
+  // 追加(detail ③): 描画窓内の展開中マスター行(detailSize 付き)を、帯レイヤーの入力へ写像します。
+  //   React key は rowKey(値ベース)で、スクロールアウトした行の帯は窓から外れて自然にアンマウント。
+  const detailEntries = useMemo<readonly GridDetailLayerEntry[]>(() => {
+    if (!detailActive) {
+      return EMPTY_DETAIL_ENTRIES;
+    }
+    const entries: GridDetailLayerEntry[] = [];
+    for (const virtualRow of virtualRows) {
+      if (virtualRow.detailSize !== undefined && virtualRow.detailSize > 0) {
+        entries.push({
+          rowKey: rowModel.getRowKey(virtualRow.index) ?? virtualRow.index,
+          virtualRow,
+        });
+      }
+    }
+    return entries;
+  }, [detailActive, virtualRows, rowModel]);
+  // 追加(detail ③): カードの描画(consumer の render へ DetailRowRenderContext を渡す)と、
+  //   カードの sticky 左オフセット / 幅(ビューポートの中央可視幅。列合計がそれより狭ければ列合計)。
+  const detailRender = detailRow?.render;
+  const renderDetailCard = useCallback(
+    (entry: GridDetailLayerEntry) => {
+      if (!detailRender) {
+        return null;
+      }
+      const rowIndex = entry.virtualRow.index;
+      const row = rowModel.getRow(rowIndex) as T | undefined;
+      if (row === undefined) {
+        return null;
+      }
+      const ctx: DetailRowRenderContext<T> = {
+        row,
+        rowKey: entry.rowKey,
+        rowIndex,
+        sourceRowIndex: rowModel.getSourceIndex(rowIndex) ?? rowIndex,
+        collapse: () => setDetailRowExpandedAt(entry.rowKey, rowIndex, false),
+      };
+      return detailRender(ctx);
+    },
+    [detailRender, rowModel, setDetailRowExpandedAt],
+  );
+  const detailCardStickyLeft = leftPaneTotalWidth + centerLeadingWidth;
+  const detailCardWidth = Math.max(
+    Math.min(
+      viewportWidth - detailCardStickyLeft - rightPaneTotalWidth,
+      paneLayout.center.totalWidth,
+    ),
+    0,
+  );
   // 描画窓の先頭/末尾行 index(可視帯クリップ用)。virtualRows は computeVerticalGeometry が返す
   //   [start, end) の窓で、overscan を含み viewport より広い。選択オーバーレイの縦範囲をこの窓へ
   //   クリップして巨大 div を避けます(列全選択ハイライトの途中切れ修正)。空窓(0 行)では
@@ -2065,7 +2253,8 @@ export function SpreadsheetGrid<T extends object>({
         left: single.extent.start,
         top: rowMetrics.rowTop(row),
         width: single.extent.width,
-        height: rowMetrics.rowsHeight(row, row),
+        // 変更(detail ③): 展開行の帯を含まないセル行の高さ(展開行なしでは rowsHeight(row, row) と一致)。
+        height: rowMetrics.cellHeight(row),
       },
     };
   }, [uiState.activeCell, viewRowCount, paneLayout, rowMetrics]);
@@ -2813,6 +3002,37 @@ export function SpreadsheetGrid<T extends object>({
       height: rowMetrics.rowsHeight(clipped.start, clipped.end),
     };
   }, [selectionExtents, rowMetrics, windowFirstRow, windowLastRow]);
+  // 追加(detail ③): 展開行があるとき、選択の縦帯を detail 帯を避けた複数セグメントへ分割します。
+  //   展開行なし(detailActive=false)では null で、従来の selectionBand 1 本のままです。
+  const selectionBandSegments = useMemo<
+    ReadonlyArray<{ top: number; height: number }> | null
+  >(() => {
+    if (!detailActive || !selectionExtents) {
+      return null;
+    }
+    const clipped = clipRowRangeToWindow(
+      selectionExtents.startRow,
+      selectionExtents.endRow,
+      windowFirstRow,
+      windowLastRow,
+    );
+    if (!clipped) {
+      return null;
+    }
+    return splitRowBandByDetail(
+      clipped.start,
+      clipped.end,
+      rowMetrics,
+      detailExtras,
+    );
+  }, [
+    detailActive,
+    selectionExtents,
+    rowMetrics,
+    detailExtras,
+    windowFirstRow,
+    windowLastRow,
+  ]);
 
   // 追加(10-D): 指定ペインの選択矩形（ペインローカル）を返します。該当列が無い / 窓外なら null です。
   const selectionRectForPane = useCallback(
@@ -2832,6 +3052,26 @@ export function SpreadsheetGrid<T extends object>({
       };
     },
     [selectionExtents, selectionBand],
+  );
+  // 追加(detail ③): 展開行あり時のペイン別選択矩形リスト(detail 帯を避けたセグメント群)。
+  //   展開行なしでは null を返し、呼び出し側は従来の selectionRectForPane を使います。
+  const selectionRectsForPane = useCallback(
+    (pane: ColumnPane): SelectionOverlayRect[] | null => {
+      if (!selectionBandSegments || !selectionExtents) {
+        return null;
+      }
+      const extent = selectionExtents.extents[pane];
+      if (!extent) {
+        return null;
+      }
+      return selectionBandSegments.map((segment) => ({
+        left: extent.start,
+        top: segment.top,
+        width: extent.width,
+        height: segment.height,
+      }));
+    },
+    [selectionBandSegments, selectionExtents],
   );
 
   // ── corner header ─────────────────────────────────────
@@ -3074,12 +3314,15 @@ export function SpreadsheetGrid<T extends object>({
   // 追加(MS-3-1): 並び替え管理パネルへ渡す「並び替え可能な列」一覧です。
   //             visibleColumns を母集合にします(見えている列だけを並び替え対象に出す＝
   //             挙動が驚かない)。title 未指定は key を表示名にします(chooser と同じ)。
+  // 変更(detail ③): 展開行トグル列(合成列・値なし)は一覧から外します。
   const sortManagerColumns = useMemo<SortManagementColumn[]>(
     () =>
-      visibleColumns.map((column) => ({
-        key: column.key,
-        title: column.title ?? column.key,
-      })),
+      visibleColumns
+        .filter((column) => column.key !== DETAIL_TOGGLE_COLUMN_KEY)
+        .map((column) => ({
+          key: column.key,
+          title: column.title ?? column.key,
+        })),
     [visibleColumns],
   );
 
@@ -4335,6 +4578,9 @@ export function SpreadsheetGrid<T extends object>({
   // 変更(UI CSS移行): getHeaderActionButtonStyle(インライン)を撤去しました。
   //   ヘッダーアイコンボタンのスタイルは styles.css(.ssg-icon-btn / --active / :hover)へ移行。
 
+  // 追加(detail ③): renderCellContent の deps 用ローカル束縛(detailRow 未指定では初期 Set で安定)。
+  const expandedDetailRowKeys = uiState.expandedDetailRowKeys;
+
   // ── cell content renderer ─────────────────────────────
   // 変更(11-A): isActive / isSelected / isEditing / readOnly の判定を GridBodyRow 側へ
   //             移し、ここでは算出済みの cellState を受け取るだけにします。
@@ -4363,12 +4609,27 @@ export function SpreadsheetGrid<T extends object>({
         //   ソート / フィルターで source と別空間のため。setValue の解決と同じ seam を使い、
         //   ここは描画対象=ロード済み行のため in-bounds で undefined は実際には発生しません)。
         const sourceRowIndex = rowModel.getSourceIndex(rowIndex) ?? rowIndex;
+        const rowKey = rowModel.getRowKey(rowIndex) ?? rowIndex;
+        // 追加(detail ③): detailRow 指定時だけ ctx.detail(T2: 任意セルからのトグル口)を渡します。
+        //   未指定ではキー自体を付けず、既存の renderCell 引数を不変に保ちます。
+        const detail: CellDetailContext | undefined = detailRowEnabled
+          ? {
+              expanded: expandedDetailRowKeys.has(rowKey),
+              expandable: detailIsExpandable
+                ? detailIsExpandable(row, { rowKey, sourceRowIndex })
+                : true,
+              toggle: () => toggleDetailRowAt(rowKey, rowIndex),
+              setExpanded: (expanded) =>
+                setDetailRowExpandedAt(rowKey, rowIndex, expanded),
+            }
+          : undefined;
         return column.renderCell({
           row,
           rowIndex,
           sourceRowIndex,
-          rowKey: rowModel.getRowKey(rowIndex) ?? rowIndex,
+          rowKey,
           colIndex,
+          ...(detail ? { detail } : null),
           value,
           column,
           isActive: cellState.isActive,
@@ -4427,7 +4688,18 @@ export function SpreadsheetGrid<T extends object>({
         : String(value ?? '');
       return <span>{formattedText}</span>;
     },
-    [rowModel, handleRowsChange, rows, toggleCheckboxCell, applyServerSideCellEdits],
+    [
+      rowModel,
+      handleRowsChange,
+      rows,
+      toggleCheckboxCell,
+      applyServerSideCellEdits,
+      detailRowEnabled,
+      expandedDetailRowKeys,
+      detailIsExpandable,
+      toggleDetailRowAt,
+      setDetailRowExpandedAt,
+    ],
   );
 
   // ── global filter setter ──────────────────────────────
@@ -5006,7 +5278,8 @@ export function SpreadsheetGrid<T extends object>({
       const clamped = Math.min(Math.max(viewRowIndex, 0), s.viewRowCount - 1);
       return computeVerticalScrollTarget({
         rowTop: s.rowMetrics.rowTop(clamped),
-        rowHeight: s.rowMetrics.rowsHeight(clamped, clamped),
+        // 変更(detail ③): 帯を含まないセル行の高さ(展開行なしでは rowsHeight と一致)。
+        rowHeight: s.rowMetrics.cellHeight(clamped),
         headerHeight: s.headerHeight,
         viewportHeight: el.clientHeight,
         currentScrollTop: physicalToLogicalScrollTop(
@@ -5162,10 +5435,11 @@ export function SpreadsheetGrid<T extends object>({
 
       // 追加(grouping ④): 自動グループ列は合成列(leaf 行に値なし)のためエクスポート列から
       //   除外します(グループ行自体も getRow undefined スキップで出力対象外 = leaf のみ)。
+      // 変更(detail ③): 展開行トグル列(合成列)も同様に除外します。
       const stripAutoGroupColumn = (
         exportColumns: GridColumn<T>[],
       ): GridColumn<T>[] =>
-        exportColumns.filter((column) => column.key !== GROUP_AUTO_COLUMN_KEY);
+        exportColumns.filter((column) => !isSyntheticColumnKey(column.key));
 
       // CSV 文字列を組み立てます(exportCsv / downloadCsv で共有)。既定 scope は 'view'(旧 'all' と
       //   同実装のため挙動不変)。行アクセサは resolveExportScope が scope に応じて返します。
@@ -5826,12 +6100,17 @@ export function SpreadsheetGrid<T extends object>({
                     transform: bodyLayerTransform,
                   }}
                 >
-                <SelectionOverlay
-                  rect={selectionRectForPane('left')}
-                  headerHeight={headerHeight}
-                  baseOffset={overlayBaseOffset}
-                  leadingWidth={leftLeadingWidth}
-                />
+                {(
+                  selectionRectsForPane('left') ?? [selectionRectForPane('left')]
+                ).map((rect, segmentIndex) => (
+                  <SelectionOverlay
+                    key={segmentIndex}
+                    rect={rect}
+                    headerHeight={headerHeight}
+                    baseOffset={overlayBaseOffset}
+                    leadingWidth={leftLeadingWidth}
+                  />
+                ))}
 
                 <ActiveCellOverlay
                   rect={activeCellRectForPane('left')}
@@ -5891,6 +6170,17 @@ export function SpreadsheetGrid<T extends object>({
                   bodyCellClassName={classNames?.bodyCell}
                   bodyRowClassName={classNames?.bodyRow}
                   rowHeaderCellClassName={classNames?.rowHeaderCell}
+                />
+
+                {/* 追加(detail ③): 展開行の帯(左固定ペイン幅ぶんの背景だけ。カードは中央ペイン)。 */}
+                <GridDetailLayer
+                  entries={detailEntries}
+                  mode="band"
+                  paneWidth={leftPaneTotalWidth}
+                  baseOffset={overlayBaseOffset}
+                  cardStickyLeft={0}
+                  cardWidth={0}
+                  renderCard={renderDetailCard}
                 />
                 </div>
               </div>
@@ -5978,12 +6268,17 @@ export function SpreadsheetGrid<T extends object>({
                   transform: bodyLayerTransform,
                 }}
               >
-                <SelectionOverlay
-                  rect={selectionRectForPane('center')}
-                  headerHeight={headerHeight}
-                  baseOffset={overlayBaseOffset}
-                  leadingWidth={centerLeadingWidth}
-                />
+                {(
+                  selectionRectsForPane('center') ?? [selectionRectForPane('center')]
+                ).map((rect, segmentIndex) => (
+                  <SelectionOverlay
+                    key={segmentIndex}
+                    rect={rect}
+                    headerHeight={headerHeight}
+                    baseOffset={overlayBaseOffset}
+                    leadingWidth={centerLeadingWidth}
+                  />
+                ))}
 
                 <ActiveCellOverlay
                   rect={activeCellRectForPane('center')}
@@ -6043,6 +6338,18 @@ export function SpreadsheetGrid<T extends object>({
                   bodyCellClassName={classNames?.bodyCell}
                   bodyRowClassName={classNames?.bodyRow}
                   rowHeaderCellClassName={classNames?.rowHeaderCell}
+                />
+
+                {/* 追加(detail ③): 展開行の帯 + カード。カードは sticky でビューポート中央可視幅に留まります。 */}
+                <GridDetailLayer
+                  entries={detailEntries}
+                  mode="center"
+                  paneWidth={centerContentWidth}
+                  baseOffset={overlayBaseOffset}
+                  cardStickyLeft={detailCardStickyLeft}
+                  cardWidth={detailCardWidth}
+                  cardClassName={detailRow?.className}
+                  renderCard={renderDetailCard}
                 />
               </div>
 
@@ -6122,12 +6429,17 @@ export function SpreadsheetGrid<T extends object>({
                     transform: bodyLayerTransform,
                   }}
                 >
-                <SelectionOverlay
-                  rect={selectionRectForPane('right')}
-                  headerHeight={headerHeight}
-                  baseOffset={overlayBaseOffset}
-                  leadingWidth={rightLeadingWidth}
-                />
+                {(
+                  selectionRectsForPane('right') ?? [selectionRectForPane('right')]
+                ).map((rect, segmentIndex) => (
+                  <SelectionOverlay
+                    key={segmentIndex}
+                    rect={rect}
+                    headerHeight={headerHeight}
+                    baseOffset={overlayBaseOffset}
+                    leadingWidth={rightLeadingWidth}
+                  />
+                ))}
 
                 <ActiveCellOverlay
                   rect={activeCellRectForPane('right')}
@@ -6187,6 +6499,17 @@ export function SpreadsheetGrid<T extends object>({
                   bodyCellClassName={classNames?.bodyCell}
                   bodyRowClassName={classNames?.bodyRow}
                   rowHeaderCellClassName={classNames?.rowHeaderCell}
+                />
+
+                {/* 追加(detail ③): 展開行の帯(右固定ペイン幅ぶんの背景だけ)。 */}
+                <GridDetailLayer
+                  entries={detailEntries}
+                  mode="band"
+                  paneWidth={rightPaneTotalWidth}
+                  baseOffset={overlayBaseOffset}
+                  cardStickyLeft={0}
+                  cardWidth={0}
+                  renderCard={renderDetailCard}
                 />
                 </div>
               </div>
