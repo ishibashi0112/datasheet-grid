@@ -141,5 +141,10 @@ export const createAutoHeightRowMetrics = (
       prefix[Math.min(Math.max(startInclusive, 0), rowCount)],
     totalBodyHeight: prefix[rowCount],
     rowAtContentY: (y) => rowAtContentYFromPrefix(prefix, rowCount, y),
+    // 追加(detail): セル行ぶんの高さ = 1 行の区間高(展開行なしなので detail は 0)。
+    cellHeight: (index) =>
+      prefix[Math.min(Math.max(index + 1, 0), rowCount)] -
+      prefix[Math.min(Math.max(index, 0), rowCount)],
+    detailHeight: () => 0,
   };
 };

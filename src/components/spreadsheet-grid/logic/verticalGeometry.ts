@@ -74,7 +74,12 @@ export type VerticalRow = {
   start: number;
   // 行ごとの高さ(px)。auto-height 専用。uniform 経路では未設定で、消費側(GridBodyLayer)は
   //   rowHeight prop へフォールバックします(uniform 出力をバイト等価に保つため)。
+  //   追加(detail): 展開行モードでは「セル行ぶん」の高さです(detail 帯は含みません)。
   size?: number;
+  // 追加(detail): この行の直下に続く展開行(detail)帯の高さ(px)。展開中のマスター行にのみ設定され、
+  //   それ以外は未設定です(uniform / auto-height の既存出力をバイト等価に保つため)。
+  //   帯の top は start + size、GridDetailLayer がこの値でパネルを絶対配置します。
+  detailSize?: number;
 };
 
 // 縦ジオメトリのシーム契約です。uniform / 将来の auto-height で実装を差し替えても、
@@ -132,6 +137,13 @@ export type RowMetrics = {
   totalBodyHeight: number;
   // content-top 基準 y(論理)→ 行 index([0, rowCount-1] へ clamp)。
   rowAtContentY(y: number): number;
+  // 追加(detail): 行の「セル行ぶん」の高さ(detail 帯を含まない)。uniform では rowHeight、
+  //   auto-height では実測/推定高。展開行を持たない実装では rowsHeight(i, i) と一致します。
+  //   active cell overlay / scrollToRow / GridBodyLayer の行高はこちらを使い、rowsHeight は
+  //   「帯(セル行 + detail)を含む区間高」として selection 帯・全高計算に残します。
+  cellHeight(index: number): number;
+  // 追加(detail): 行直下の展開行(detail)帯の高さ。未展開 / 展開行モード無効では 0。
+  detailHeight(index: number): number;
 };
 
 // uniform 行高の RowMetrics を生成します(純算術)。
@@ -147,7 +159,95 @@ export const createUniformRowMetrics = (
   totalBodyHeight: rowCount * rowHeight,
   rowAtContentY: (y) =>
     Math.min(Math.max(Math.floor(y / rowHeight), 0), Math.max(rowCount - 1, 0)),
+  cellHeight: () => rowHeight,
+  detailHeight: () => 0,
 });
+
+// 展開行(detail)の追加高です。index は view 行 index、height は detail 帯の高さ(px, > 0)。
+export type DetailRowExtra = {
+  index: number;
+  height: number;
+};
+
+// 追加(detail): 既存の RowMetrics に「疎な追加高(展開中マスター行の直下の detail 帯)」を重ねる
+//   デコレータです。行の帯 = セル行(base の高さ)+ detail 帯 とみなし、
+//     rowTop(i)        = base.rowTop(i) + (i より前の行の detail 高の合計)
+//     rowsHeight(s, e) = rowTop(e + 1) - rowTop(s)      (帯を含む区間高)
+//     rowAtContentY(y) = y が属する帯のマスター行           (detail 帯の上も同じ行へ解決)
+//   となり、view index の並びは一切変えません(order 配列に 3 値目を足さない設計)。
+//   extras が空なら base と数値一致します(呼び出し側は空のとき base をそのまま使う想定)。
+//   ★ uniform base と組み合わせる場合、呼び出し側は「論理全高 <= MAX_BODY_PX」を gate して
+//     sf=1 の metrics 経路(computeAutoHeightVerticalGeometry)へ流します。
+export const createDetailRowMetrics = (
+  base: RowMetrics,
+  extras: readonly DetailRowExtra[],
+): RowMetrics => {
+  // 追加高の累積和(index 昇順)。prefix[k] = extras[0..k-1].height の和。
+  const sorted = extras
+    .filter((extra) => extra.height > 0 && extra.index >= 0 && extra.index < base.rowCount)
+    .sort((a, b) => a.index - b.index);
+  const count = sorted.length;
+  const indexes = new Float64Array(count);
+  const prefix = new Float64Array(count + 1);
+  for (let k = 0; k < count; k += 1) {
+    indexes[k] = sorted[k].index;
+    prefix[k + 1] = prefix[k] + sorted[k].height;
+  }
+  const totalExtra = prefix[count];
+  const { rowCount } = base;
+
+  // index 未満の extras の個数(= 二分探索 lower_bound)。
+  const countBefore = (index: number): number => {
+    let lo = 0;
+    let hi = count;
+    while (lo < hi) {
+      const mid = (lo + hi) >>> 1;
+      if (indexes[mid] < index) {
+        lo = mid + 1;
+      } else {
+        hi = mid;
+      }
+    }
+    return lo;
+  };
+  // rowTop(rowCount) = 全高 として扱えるよう、上限を含めて解決します。
+  const rowTop = (index: number): number => {
+    const clamped = Math.min(Math.max(index, 0), rowCount);
+    const baseTop = clamped === rowCount ? base.totalBodyHeight : base.rowTop(clamped);
+    return baseTop + prefix[countBefore(clamped)];
+  };
+  const detailHeight = (index: number): number => {
+    const k = countBefore(index);
+    return k < count && indexes[k] === index ? prefix[k + 1] - prefix[k] : 0;
+  };
+
+  return {
+    rowCount,
+    rowTop,
+    rowsHeight: (startInclusive, endInclusive) =>
+      rowTop(endInclusive + 1) - rowTop(startInclusive),
+    totalBodyHeight: base.totalBodyHeight + totalExtra,
+    // 帯上の二分探索: rowTop(i) <= y を満たす最大の i(detail 帯の上も同じマスター行)。
+    rowAtContentY: (y) => {
+      if (rowCount <= 0 || y <= 0) {
+        return 0;
+      }
+      let lo = 0;
+      let hi = rowCount - 1;
+      while (lo < hi) {
+        const mid = (lo + hi + 1) >>> 1;
+        if (rowTop(mid) <= y) {
+          lo = mid;
+        } else {
+          hi = mid - 1;
+        }
+      }
+      return lo;
+    },
+    cellHeight: (index) => base.cellHeight(index),
+    detailHeight,
+  };
+};
 
 // 選択オーバーレイの縦範囲を、現在の描画窓(virtualRows の先頭/末尾行 index)へクリップします。
 //   col / グリッド全選択 / 巨大 cell・row 選択は論理全高(uniform で rowCount*rowHeight、auto-height でも
@@ -304,7 +404,10 @@ export type ComputeAutoHeightVerticalGeometryArgs = {
 //     足します。estimate 一様・measured 空の RowMetrics を渡すと、共通 index の start は
 //     computeVerticalGeometry(sf=1)と一致し、窓は同じ可視域を被覆します(末尾 overscan の行数は
 //     行高可変の窓計算原理が異なるため厳密一致は保証しません)。
-//   各 row には start に加え size(= rowsHeight(i,i))を載せ、GridBodyLayer が行ごとの高さに使います。
+//   各 row には start に加え size(= cellHeight(i))を載せ、GridBodyLayer が行ごとの高さに使います。
+//   追加(detail): 展開行モード(createDetailRowMetrics で包んだ RowMetrics)でも本関数を使います。
+//     uniform 行高 + 展開行 の組み合わせも、論理全高 <= MAX_BODY_PX を呼び出し側が gate したうえで
+//     ここへ流します(帯が可変高になるため純算術の窓出しは使えない)。
 export const computeAutoHeightVerticalGeometry = (
   {
     headerHeight,
@@ -337,12 +440,19 @@ export const computeAutoHeightVerticalGeometry = (
   const rows: VerticalRow[] = [];
   const rowIndexSet = new Set<number>();
   for (let index = start; index < end; index += 1) {
-    rows.push({
+    const row: VerticalRow = {
       index,
       // sf=1 / windowBaseOffsetPx=0 なので絶対論理 top をそのまま置きます。
       start: headerHeight + rowMetrics.rowTop(index),
-      size: rowMetrics.rowsHeight(index, index),
-    });
+      // セル行ぶんの高さ(detail 帯を含まない。展開行なしでは rowsHeight(i, i) と一致)。
+      size: rowMetrics.cellHeight(index),
+    };
+    // 展開中マスター行のみ detail 帯の高さを載せます(それ以外はキー自体を付けず既存出力を維持)。
+    const detailSize = rowMetrics.detailHeight(index);
+    if (detailSize > 0) {
+      row.detailSize = detailSize;
+    }
+    rows.push(row);
     rowIndexSet.add(index);
   }
 

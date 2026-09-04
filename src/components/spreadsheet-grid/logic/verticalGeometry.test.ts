@@ -15,6 +15,7 @@ import {
   clipRowRangeToWindow,
   computeAutoHeightVerticalGeometry,
   computeVerticalGeometry,
+  createDetailRowMetrics,
   createUniformRowMetrics,
   logicalToPhysicalScrollTop,
   physicalToLogicalScrollTop,
@@ -629,6 +630,145 @@ describe('computeAutoHeightVerticalGeometry (invariants: window covers viewport,
       const last = geo.rows[geo.rows.length - 1].index;
       expect(first).toBeLessThanOrEqual(firstVisible);
       expect(last).toBeGreaterThanOrEqual(lastVisible);
+    }
+  });
+});
+
+// 追加(detail batch 1): 展開行(detail)帯を疎に重ねる RowMetrics デコレータの契約テスト。
+describe('createDetailRowMetrics (sparse detail bands over a base RowMetrics)', () => {
+  const rowCount = 100;
+  const rowHeight = 30;
+  const base = createUniformRowMetrics(rowCount, rowHeight);
+
+  it('is numerically identical to the base when no extras are given', () => {
+    const metrics = createDetailRowMetrics(base, []);
+    expect(metrics.rowCount).toBe(rowCount);
+    expect(metrics.totalBodyHeight).toBe(base.totalBodyHeight);
+    for (const i of [0, 1, 37, 99, 100]) {
+      expect(metrics.rowTop(i)).toBe(base.rowTop(i));
+      expect(metrics.cellHeight(Math.min(i, 99))).toBe(rowHeight);
+      expect(metrics.detailHeight(i)).toBe(0);
+    }
+    for (const y of [-5, 0, 15, 29, 30, 1500, 2999, 3000, 99_999]) {
+      expect(metrics.rowAtContentY(y)).toBe(base.rowAtContentY(y));
+    }
+    expect(metrics.rowsHeight(10, 20)).toBe(base.rowsHeight(10, 20));
+  });
+
+  it('shifts rows after each expanded master row by the detail height (order preserved)', () => {
+    // 行 5 に 200px、行 50 に 100px の detail 帯(順不同で渡しても index 昇順で扱う)。
+    const metrics = createDetailRowMetrics(base, [
+      { index: 50, height: 100 },
+      { index: 5, height: 200 },
+    ]);
+    expect(metrics.totalBodyHeight).toBe(rowCount * rowHeight + 300);
+    // 行 5 まではズレなし。
+    expect(metrics.rowTop(5)).toBe(5 * rowHeight);
+    // 行 6 以降は 200 ずれる。
+    expect(metrics.rowTop(6)).toBe(6 * rowHeight + 200);
+    expect(metrics.rowTop(50)).toBe(50 * rowHeight + 200);
+    // 行 51 以降は 300 ずれる。
+    expect(metrics.rowTop(51)).toBe(51 * rowHeight + 300);
+    expect(metrics.rowTop(rowCount)).toBe(metrics.totalBodyHeight);
+    // セル行高は不変・detail 高は展開行にのみ載る。
+    expect(metrics.cellHeight(5)).toBe(rowHeight);
+    expect(metrics.detailHeight(5)).toBe(200);
+    expect(metrics.detailHeight(6)).toBe(0);
+    expect(metrics.detailHeight(50)).toBe(100);
+    // 区間高は帯(セル + detail)を含む。
+    expect(metrics.rowsHeight(5, 5)).toBe(rowHeight + 200);
+    expect(metrics.rowsHeight(4, 6)).toBe(3 * rowHeight + 200);
+    expect(metrics.rowsHeight(0, rowCount - 1)).toBe(metrics.totalBodyHeight);
+  });
+
+  it('resolves y inside a detail band to its master row (band-based hit test)', () => {
+    const metrics = createDetailRowMetrics(base, [{ index: 5, height: 200 }]);
+    const top5 = 5 * rowHeight;
+    expect(metrics.rowAtContentY(top5)).toBe(5);
+    expect(metrics.rowAtContentY(top5 + rowHeight - 1)).toBe(5);
+    // detail 帯の上(セル行の直下 〜 +200)も行 5。
+    expect(metrics.rowAtContentY(top5 + rowHeight)).toBe(5);
+    expect(metrics.rowAtContentY(top5 + rowHeight + 199)).toBe(5);
+    // 帯を抜けると行 6。
+    expect(metrics.rowAtContentY(top5 + rowHeight + 200)).toBe(6);
+    // 端の clamp。
+    expect(metrics.rowAtContentY(-10)).toBe(0);
+    expect(metrics.rowAtContentY(1e9)).toBe(rowCount - 1);
+    // 全行で rowTop(rowAtContentY(y)) <= y < rowTop(rowAtContentY(y) + 1) が成り立つ。
+    for (let y = 0; y < metrics.totalBodyHeight; y += 7) {
+      const i = metrics.rowAtContentY(y);
+      expect(metrics.rowTop(i)).toBeLessThanOrEqual(y);
+      expect(metrics.rowTop(i + 1)).toBeGreaterThan(y);
+    }
+  });
+
+  it('ignores out-of-range and non-positive extras', () => {
+    const metrics = createDetailRowMetrics(base, [
+      { index: -1, height: 100 },
+      { index: rowCount, height: 100 },
+      { index: 3, height: 0 },
+    ]);
+    expect(metrics.totalBodyHeight).toBe(base.totalBodyHeight);
+    expect(metrics.detailHeight(3)).toBe(0);
+  });
+
+  it('composes with the auto-height (prefix-sum) base metrics', () => {
+    const measured = new Map<number, number>([[2, 60]]);
+    const store = buildRowHeightStore(10, 30, (i) => i, measured);
+    const autoBase = createAutoHeightRowMetrics(store);
+    const metrics = createDetailRowMetrics(autoBase, [{ index: 2, height: 150 }]);
+    expect(metrics.cellHeight(2)).toBe(60);
+    expect(metrics.detailHeight(2)).toBe(150);
+    expect(metrics.rowTop(2)).toBe(60);
+    expect(metrics.rowTop(3)).toBe(60 + 60 + 150);
+    expect(metrics.totalBodyHeight).toBe(autoBase.totalBodyHeight + 150);
+    expect(metrics.rowAtContentY(60 + 60 + 149)).toBe(2);
+    expect(metrics.rowAtContentY(60 + 60 + 150)).toBe(3);
+  });
+});
+
+describe('computeAutoHeightVerticalGeometry with detail bands', () => {
+  it('emits size = cell height and detailSize only on expanded rows', () => {
+    const rowHeight = 30;
+    const base = createUniformRowMetrics(200, rowHeight);
+    const metrics = createDetailRowMetrics(base, [{ index: 3, height: 200 }]);
+    const headerHeight = 40;
+    const geo = computeAutoHeightVerticalGeometry(
+      { headerHeight, viewportHeight: 300, scrollTop: 0, overscan: 2 },
+      metrics,
+    );
+    expect(geo.scaleFactor).toBe(1);
+    expect(geo.translateY).toBe(0);
+    expect(geo.physicalBodyHeight).toBe(200 * rowHeight + 200);
+    const row3 = geo.rows.find((r) => r.index === 3);
+    const row4 = geo.rows.find((r) => r.index === 4);
+    expect(row3).toEqual({
+      index: 3,
+      start: headerHeight + 3 * rowHeight,
+      size: rowHeight,
+      detailSize: 200,
+    });
+    // 行 4 は detail 帯のぶん下へ。detailSize キーは付かない。
+    expect(row4).toEqual({
+      index: 4,
+      start: headerHeight + 4 * rowHeight + 200,
+      size: rowHeight,
+    });
+    expect(row4 && 'detailSize' in row4).toBe(false);
+  });
+
+  it('keeps the auto-height output byte-identical when no detail is expanded', () => {
+    const store = buildRowHeightStore(50, 30, (i) => i, new Map([[1, 70]]));
+    const autoMetrics = createAutoHeightRowMetrics(store);
+    const args = { headerHeight: 40, viewportHeight: 300, scrollTop: 0, overscan: 3 };
+    const before = computeAutoHeightVerticalGeometry(args, autoMetrics);
+    const after = computeAutoHeightVerticalGeometry(
+      args,
+      createDetailRowMetrics(autoMetrics, []),
+    );
+    expect(after.rows).toEqual(before.rows);
+    for (const r of before.rows) {
+      expect('detailSize' in r).toBe(false);
     }
   });
 });
