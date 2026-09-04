@@ -87,7 +87,10 @@ export function HeroGridDemo() {
   const [rows, setRows] = useState<Row[]>(initialRows);
 
   return (
-    <div className="flex flex-col gap-1.5">
+    // min-w-0: CSS grid のアイテムとして置かれるため、グリッドの列合計幅(スクロール内容)が
+    //   min-content として親トラックを押し広げないようにします(スマホでページ全体が横はみ出し
+    //   していた原因。ライブラリ側の .ssg-root { min-width: 0 } はこのラッパには効かない)。
+    <div className="flex min-w-0 flex-col gap-1.5">
       <SpreadsheetGrid
         rows={rows}
         columns={columns}
@@ -97,7 +100,7 @@ export function HeroGridDemo() {
         theme="auto"
       />
       <p className="text-xs text-fd-muted-foreground text-right">
-        100,000 行 · ダブルクリックで編集 · ヘッダーメニューからフィルター / ソート
+        100,000 行 · ダブルクリック / ダブルタップで編集 · ヘッダーメニューからフィルター / ソート
       </p>
     </div>
   );

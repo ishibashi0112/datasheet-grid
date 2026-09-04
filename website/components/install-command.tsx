@@ -11,7 +11,7 @@ export function InstallCommand() {
   return (
     <button
       type="button"
-      className="inline-flex items-center gap-2 whitespace-nowrap rounded-lg border border-fd-border bg-fd-muted px-4 py-2 font-mono text-xs text-fd-muted-foreground hover:text-fd-foreground transition-colors"
+      className="inline-flex max-w-full flex-wrap items-center gap-2 rounded-lg border border-fd-border bg-fd-muted px-4 py-2 font-mono text-xs text-fd-muted-foreground hover:text-fd-foreground transition-colors"
       onClick={() => {
         navigator.clipboard.writeText(COMMAND).then(() => {
           setCopied(true);
@@ -20,8 +20,12 @@ export function InstallCommand() {
       }}
       title="クリックでコピー"
     >
-      <span aria-hidden>$</span>
-      {COMMAND}
+      {/* break-all: 幅 390px 前後のスマホで 1 行に収まらないため折り返しを許可します
+          (nowrap のままだと min-content 幅でページ全体が横はみ出しする)。 */}
+      <span className="break-all text-left">
+        <span aria-hidden>$ </span>
+        {COMMAND}
+      </span>
       <span className="text-emerald-600 dark:text-emerald-400">
         {copied ? '✓ コピーしました' : '⧉'}
       </span>

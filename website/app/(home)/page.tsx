@@ -52,8 +52,11 @@ export default function HomePage() {
             <span className="inline-block">触れば分かる。</span>
           </h1>
           <p className="mt-4 text-fd-muted-foreground">
-            React 19 製の仮想化スプレッドシート。右のグリッドは実物です —
-            セルをダブルクリックして編集してみてください。
+            React 19 製の仮想化スプレッドシート。
+            <span className="lg:hidden">下</span>
+            <span className="hidden lg:inline">右</span>
+            のグリッドは実物です —
+            セルをダブルクリック(タッチはダブルタップ)して編集してみてください。
           </p>
           <ul className="mt-5 space-y-1.5 text-sm">
             {BULLETS.map((text) => (

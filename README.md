@@ -33,6 +33,7 @@ A high-performance, virtualized spreadsheet / data grid for **React 19**, writte
 - Filter management panel — review every active column filter in one place (jump to the column & edit, clear one / all, add new), opened from the column menu, the default top bar's clickable Filters chip, or `openFilterManager()` on the imperative handle. An optional filter chip bar (`showFilterChipBar`) keeps active filters visible right below the top bar.
 - Built-in CSV export (`downloadCsv` / `exportCsv`), plus a library-agnostic `getExportData()` for Excel / XLSX / ODS — feed the shaped data (filter/sort/visible-order aware) to your own writer such as [hucre](https://github.com/productdevbook/hucre), ExcelJS, or SheetJS. No spreadsheet library is bundled; multi-sheet is composed on your side. See [`API_REFERENCE.md`](./src/components/spreadsheet-grid/API_REFERENCE.md).
 - Export scopes: `'view'` (default — every filtered/sorted view row, scroll-independent), `'raw'` (every source row, ignoring filter & sort), `'rendered'` (only the rows currently rendered by virtualization — scroll-dependent), `'selection'`. Legacy `'all'` / `'visible'` keep working as deprecated aliases of `'view'` / `'rendered'`.
+- Touch-friendly basics — on touch devices a tap selects a cell, a double tap starts editing (works even where the browser never fires `dblclick`), and swipes scroll instead of starting a range selection. The column menu (`⋮`) is always visible on hover-less devices.
 - TypeScript-first, fully controlled API.
 
 ## Installation
@@ -320,6 +321,7 @@ The full prop and type reference lives in [`src/components/spreadsheet-grid/API_
 - フィルター管理パネル — 適用中の列フィルターを 1 箇所で確認・操作（該当列へジャンプして編集 / 個別・全クリア / 追加）。列メニュー、既定トップバーの Filters chip クリック、ハンドルの `openFilterManager()` から開けます。トップバー直下に常時表示するフィルターチップバー（`showFilterChipBar`）もオプションで利用可。
 - CSV エクスポート（`downloadCsv` / `exportCsv`）を内蔵。Excel / XLSX / ODS はライブラリ非依存の `getExportData()` で、整形済みデータ（フィルター/ソート/可視列順を反映）を [hucre](https://github.com/productdevbook/hucre) / ExcelJS / SheetJS など任意の writer へ流す方式。xlsx ライブラリは同梱せず、マルチシートは利用側で合成。詳細は [`API_REFERENCE.md`](./src/components/spreadsheet-grid/API_REFERENCE.md)。
 - エクスポート scope: `'view'`（既定＝フィルター/ソート後の全ビュー行。スクロール位置に非依存）/ `'raw'`（フィルター/ソート無視の全ソース行）/ `'rendered'`（描画中の行のみ＝スクロール位置に依存）/ `'selection'`（選択範囲）。旧 `'all'` / `'visible'` は `'view'` / `'rendered'` の deprecated エイリアスとして従来どおり動作。
+- タッチ操作の基本対応 — タッチ端末ではタップでセル選択、ダブルタップで編集開始（`dblclick` を発火しないブラウザでも動作）、スワイプは範囲選択にならずスクロール。列メニュー（`⋮`）はホバー不可の端末で常時表示。
 - TypeScript ファースト、完全 controlled な API。
 
 ### インストール
