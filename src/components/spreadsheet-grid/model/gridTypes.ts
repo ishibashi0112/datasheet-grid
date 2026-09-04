@@ -509,6 +509,23 @@ export type DetailRowOptions<T> = {
   className?: string;
 };
 
+// 追加(row-drag ③): 行ドラッグ並び替え(enableRowDrag)の行ごとの可否判定(isRowDraggable)へ
+//   渡すコンテキストです。sourceRowIndex は元 rows の index。
+export type RowDragContext = {
+  rowKey: GridRowKey;
+  sourceRowIndex: number;
+};
+
+// 追加(row-drag ③): 行移動の確定通知(onRowMove)のパラメータです。fromIndex / toIndex は
+//   元 rows 配列の index(ドラッグは表示順が恒等のときだけ許可されるため view index とも一致)。
+//   rows は移動後の新配列で、直前に onRowsChange へ渡したものと同じ参照です。
+export type RowMoveParams<T> = {
+  rowKey: GridRowKey;
+  fromIndex: number;
+  toIndex: number;
+  rows: T[];
+};
+
 // 追加(UI CSS移行): 条件付きセル className(GridColumn.cellClassName)の関数版へ渡す
 //   コンテキストです。CellRenderContext から setValue を除いた読み取り専用版で、
 //   className 算出に副作用(setValue)は不要なため値解決(getCellValue)のみを伴います。
@@ -1342,6 +1359,12 @@ export type SpreadsheetGridHandle<T> = {
   //   「すべて開く」は提供しません。必要なら setDetailRowExpanded を行ごとに呼んでください)。
   collapseAllDetailRows: () => void;
 
+  // ── 行ドラッグ並び替え ──
+  // 追加(row-drag ③): rowKey の行を元配列の toIndex へ移動します(clientSide + onRowsChange 時のみ。
+  //   enableRowDrag / ソート / フィルターの状態には依存しません)。onRowsChange(履歴ラッパ経由)
+  //   → onRowMove の順に呼ばれます。未知のキー / 同一位置 / 範囲外は no-op です。
+  moveRow: (rowKey: GridRowKey, toIndex: number) => void;
+
   // ── バリデーション ──
   // 追加(validation): validate 指定列 × 全ソース行のオンデマンド全走査です(保存前チェック用)。
   //   invalid 表示は表示時導出のため状態を持たず、本メソッドは呼ばれた時だけ計算します
@@ -1699,6 +1722,23 @@ export type SpreadsheetGridProps<T> = {
   detailRow?: DetailRowOptions<T>;
   // 追加(detail ②): 展開中の行キー集合が変わるたびに通知します(開閉の永続化・外部同期用)。
   onExpandedDetailRowKeysChange?: (keys: GridRowKey[]) => void;
+  // ── 追加(row-drag ③): 行ドラッグ並び替え ──
+  //   true で先頭にドラッグハンドル列(幅 28px の合成列。左固定列があれば左ペイン)を挿入し、
+  //   ハンドルを掴んで行を上下へ動かせます(既定 false)。確定時は onRowsChange へ「移動後の
+  //   新配列」を渡し(履歴ラッパ経由のため undo/redo 対象)、続けて onRowMove を呼びます。
+  //   - clientSide(rows + onRowsChange)専用です。serverSide(dataSource)/ 行グルーピング中 /
+  //     onRowsChange 未指定ではハンドル列を出しません。
+  //   - ソート / フィルター適用中は表示順と配列順が一致しないため、ハンドルは出したまま操作を
+  //     無効化します(淡色 + 理由のツールチップ)。
+  //   - 展開行(detailRow)が開いている行は、詳細パネルごと一緒に移動します。
+  //   - ドラッグ中はガイド線(挿入位置)とゴーストを表示し、ドロップ後に影響行が新しい位置へ
+  //     スライドします(prefers-reduced-motion では即時)。枠外で離す / Escape でキャンセル。
+  enableRowDrag?: boolean;
+  // 行ごとにドラッグ可否を決めます(未指定 = 全行可)。false の行にはハンドルを描画しません。
+  isRowDraggable?: (row: T, ctx: RowDragContext) => boolean;
+  // 行移動の確定後(onRowsChange の直後)に呼ばれます(サーバ保存 / 監査ログ等)。
+  //   命令的 API moveRow() による移動でも呼ばれます。
+  onRowMove?: (params: RowMoveParams<T>) => void;
   // ── 追加(バッチ②/コンテキストメニュー): セル/行の汎用コンテキストメニュー(完全カスタム) ──
   //   有効化のマスタースイッチです(既定 false=OFF)。他機能の enable* と同じく、機能自体は既定で無効。
   //   false のあいだは getContextMenuItems を渡しても発火せず、右クリックはブラウザ標準メニューのままです。

@@ -53,6 +53,8 @@ import { useGridTooltip } from './hooks/useGridTooltip';
 import { useResolvedGridTheme } from './hooks/useResolvedGridTheme';
 // 追加(13-B3-2): ヘッダー D&D 列並べ替え controller です。
 import { useColumnHeaderDragController } from './hooks/useColumnHeaderDragController';
+// 追加(row-drag ③): 行ドラッグ並び替え controller です。
+import { useRowDragController } from './hooks/useRowDragController';
 import {
   // 追加(12-A): set フィルター値の判定 / 構築に使います。
   isSetColumnFilterValue,
@@ -179,6 +181,17 @@ import {
   seedDetailIndexCache,
   splitRowBandByDetail,
 } from './logic/detailRow';
+// 追加(row-drag ③): 行ドラッグ並び替えの純ロジック(ハンドル列キー / 配列移動 / ゲート判定)です。
+import {
+  ROW_DRAG_DISABLED_TOOLTIP,
+  ROW_DRAG_HANDLE_COLUMN_KEY,
+  ROW_DRAG_HANDLE_COLUMN_WIDTH,
+  ROW_DRAG_HANDLE_TOOLTIP,
+  isIdentityOrder,
+  isRowDragAvailable,
+  isRowDragOperable,
+  moveArrayItem,
+} from './logic/rowReorder';
 // 追加(imperative API #1): CSV エクスポート / スクロール先算出の純ロジックです。
 import { serializeRowsToCsv } from './logic/exportCsv';
 import { buildGridExportData } from './logic/exportData';
@@ -541,6 +554,10 @@ export function SpreadsheetGrid<T extends object>({
   // 追加(detail ②): 展開行(Master/Detail)。未指定なら機能は完全に休眠します。
   detailRow,
   onExpandedDetailRowKeysChange,
+  // 追加(row-drag ③): 行ドラッグ並び替え(既定 OFF)。
+  enableRowDrag = false,
+  isRowDraggable,
+  onRowMove,
   // 追加(バッチ②/コンテキストメニュー): 有効化フラグ(既定 false=OFF)+ 項目供給 / 開通知。
   //   他機能の enable* と同じく既定無効。true かつ getContextMenuItems 指定時のみ発火します。
   enableContextMenu = false,
@@ -632,7 +649,33 @@ export function SpreadsheetGrid<T extends object>({
   //   detailRow 未指定なら従来どおり(既存経路はバイト等価)。
   const detailToggleColumnActive =
     detailRow != null && detailRow.showToggleColumn !== false;
+  // 追加(row-drag ③): 行ドラッグ並び替えの利用可否(ハンドル列を出すか)。serverSide / 行グルーピング /
+  //   onRowsChange 未指定では並び替え結果を反映できないため出しません(ソート / フィルター中は
+  //   列は出したまま操作だけ無効にします → 下の rowDragOperable)。
+  const rowDragAvailable = isRowDragAvailable({
+    enableRowDrag,
+    isServerSide: dataSource != null,
+    rowGroupingActive,
+    hasRowsChange: onRowsChange != null,
+  });
   const effectiveColumns = useMemo(() => {
+    const hasLeftPinnedColumn = columns.some((column) => column.pinned === 'left');
+    // 追加(row-drag ③): 行ドラッグハンドル列(合成列)。展開行トグル列よりさらに先頭へ注入します。
+    //   セル本体(掴み手)は renderCellContent 側で描画します(操作可否とハンドラを持つため)。
+    const rowDragHandleColumn: GridColumn<T> | null = rowDragAvailable
+      ? {
+          key: ROW_DRAG_HANDLE_COLUMN_KEY,
+          title: '',
+          width: ROW_DRAG_HANDLE_COLUMN_WIDTH,
+          minWidth: ROW_DRAG_HANDLE_COLUMN_WIDTH,
+          readOnly: true,
+          suppressAutoSize: true,
+          resizable: false,
+          pinned: hasLeftPinnedColumn ? 'left' : undefined,
+          cellClassName: 'ssg-body-cell--row-drag-handle',
+          renderCell: () => null,
+        }
+      : null;
     const detailToggleColumn: GridColumn<T> | null = detailToggleColumnActive
       ? {
           key: DETAIL_TOGGLE_COLUMN_KEY,
@@ -642,9 +685,7 @@ export function SpreadsheetGrid<T extends object>({
           readOnly: true,
           suppressAutoSize: true,
           resizable: false,
-          pinned: columns.some((column) => column.pinned === 'left')
-            ? 'left'
-            : undefined,
+          pinned: hasLeftPinnedColumn ? 'left' : undefined,
           cellClassName: 'ssg-body-cell--detail-toggle',
           renderCell: (ctx) => {
             const detail = ctx.detail;
@@ -666,8 +707,11 @@ export function SpreadsheetGrid<T extends object>({
           },
         }
       : null;
+    const leadingColumns: GridColumn<T>[] = [];
+    if (rowDragHandleColumn) leadingColumns.push(rowDragHandleColumn);
+    if (detailToggleColumn) leadingColumns.push(detailToggleColumn);
     if (!rowGroupingActive) {
-      return detailToggleColumn ? [detailToggleColumn, ...columns] : columns;
+      return leadingColumns.length > 0 ? [...leadingColumns, ...columns] : columns;
     }
     const autoGroupColumn: GridColumn<T> = {
       key: GROUP_AUTO_COLUMN_KEY,
@@ -683,8 +727,14 @@ export function SpreadsheetGrid<T extends object>({
       autoGroupColumn,
       ...columns.filter((column) => column.rowGroup !== true),
     ];
-    return detailToggleColumn ? [detailToggleColumn, ...grouped] : grouped;
-  }, [detailToggleColumnActive, rowGroupingActive, columns, groupColumns]);
+    return leadingColumns.length > 0 ? [...leadingColumns, ...grouped] : grouped;
+  }, [
+    rowDragAvailable,
+    detailToggleColumnActive,
+    rowGroupingActive,
+    columns,
+    groupColumns,
+  ]);
 
   const visibleColumns = useMemo(
     () => effectiveColumns.filter((column) => column.visible !== false),
@@ -1306,6 +1356,13 @@ export function SpreadsheetGrid<T extends object>({
     () => sortOrder(rows, columnFilteredOrder, visibleColumns, uiState.sort),
     [rows, columnFilteredOrder, visibleColumns, uiState.sort],
   );
+  // 追加(row-drag ③): 表示順が恒等(ソート / フィルターなし)のときだけハンドルを操作可能にします。
+  //   O(n) 走査ですが order 参照が変わったときだけ再評価します(no-op dispatch では不変)。
+  const orderIsIdentity = useMemo(
+    () => rowDragAvailable && isIdentityOrder(order, rows.length),
+    [rowDragAvailable, order, rows.length],
+  );
+  const rowDragOperable = isRowDragOperable(rowDragAvailable, orderIsIdentity);
 
   // ── 行グルーピング stage(grouping ②) ───────────────────
   // sorted order の後段に挿す表示変換です。groupColumns / aggColumns / rowGroupingActive は
@@ -3337,7 +3394,11 @@ export function SpreadsheetGrid<T extends object>({
   const sortManagerColumns = useMemo<SortManagementColumn[]>(
     () =>
       visibleColumns
-        .filter((column) => column.key !== DETAIL_TOGGLE_COLUMN_KEY)
+        .filter(
+          (column) =>
+            column.key !== DETAIL_TOGGLE_COLUMN_KEY &&
+            column.key !== ROW_DRAG_HANDLE_COLUMN_KEY,
+        )
         .map((column) => ({
           key: column.key,
           title: column.title ?? column.key,
@@ -3824,6 +3885,95 @@ export function SpreadsheetGrid<T extends object>({
   useLayoutEffect(() => {
     applyReorderSettle();
   }, [paneLayout, applyReorderSettle]);
+
+  // ── 追加(row-drag ③): 行ドラッグ並び替え ──────────────────
+  // 行移動の共通 commit です(ドロップ確定 / 命令的 moveRow)。moveArrayItem が no-op(同一位置 /
+  //   範囲外)なら onRowsChange も onRowMove も呼びません。履歴ラッパ(handleRowsChange)経由のため
+  //   undo/redo 対象になります(controller は latest-ref 越しに読むため参照変化は無害)。
+  const commitRowMove = useCallback(
+    (fromIndex: number, toIndex: number) => {
+      if (!handleRowsChange) {
+        return;
+      }
+      const next = moveArrayItem(rows, fromIndex, toIndex);
+      if (next === rows) {
+        return;
+      }
+      const movedRow = rows[fromIndex];
+      const nextRows = next as T[];
+      handleRowsChange(nextRows);
+      onRowMove?.({
+        rowKey: resolvedRowKeyGetter(movedRow, fromIndex),
+        fromIndex,
+        toIndex,
+        rows: nextRows,
+      });
+    },
+    [rows, handleRowsChange, onRowMove, resolvedRowKeyGetter],
+  );
+  // 命令的 API moveRow(rowKey, toIndex) の実体です(apiStateRef 経由で最新参照を読みます)。
+  const moveRowByKey = useCallback(
+    (rowKey: GridRowKey, toIndex: number) => {
+      if (isServerSide) {
+        console.warn(
+          '[SpreadsheetGrid] moveRow() は clientSide(rows + onRowsChange)専用です。serverSide では無効です。',
+        );
+        return;
+      }
+      const fromIndex = rows.findIndex(
+        (row, index) => resolvedRowKeyGetter(row, index) === rowKey,
+      );
+      if (fromIndex < 0) {
+        return;
+      }
+      commitRowMove(fromIndex, toIndex);
+    },
+    [isServerSide, rows, resolvedRowKeyGetter, commitRowMove],
+  );
+  // ゴーストのラベル: 先頭の(合成列でない)表示列の表示値。空なら「行 N」。
+  const getRowDragLabel = useCallback(
+    (viewIndex: number): string => {
+      const fallback = `行 ${viewIndex + 1}`;
+      const row = rowModel.getRow(viewIndex);
+      if (!row) {
+        return fallback;
+      }
+      const column = visibleColumns.find(
+        (candidate) => !isSyntheticColumnKey(candidate.key),
+      );
+      if (!column) {
+        return fallback;
+      }
+      const value = getCellValue(row, column);
+      const text = column.valueFormatter
+        ? column.valueFormatter({ value, row, column })
+        : String(value ?? '');
+      return text.trim().length > 0 ? text : fallback;
+    },
+    [rowModel, visibleColumns],
+  );
+  const {
+    onRowDragHandlePointerDown,
+    leftIndicatorRef: leftRowDropIndicatorRef,
+    centerIndicatorRef: centerRowDropIndicatorRef,
+    rightIndicatorRef: rightRowDropIndicatorRef,
+    applyReorderSettle: applyRowReorderSettle,
+  } = useRowDragController({
+    enabled: rowDragOperable,
+    rowMetrics,
+    headerHeight,
+    verticalScaleFactor,
+    windowBaseOffsetPx: overlayBaseOffset,
+    scrollContainerRef,
+    bodyScrollRef,
+    getRowDragLabel,
+    commitRowMove,
+  });
+  // 行の並び替え確定(rowModel 差し替え)後に settle アニメを発火します。直前のドロップで armed の
+  //   ときだけ動き、それ以外(編集 / フィルター等の rowModel 変化)は即 return するため無害です。
+  useLayoutEffect(() => {
+    applyRowReorderSettle();
+  }, [rowModel, applyRowReorderSettle]);
 
   // 追加(13-B3-2): reorder 可能(controlled columns)なときだけバッジを grip 化します。
   //   未指定時はバッジが通常表示になり、列範囲選択など既存挙動は完全に従来どおりです。
@@ -4624,6 +4774,52 @@ export function SpreadsheetGrid<T extends object>({
     ) => {
       const value = getCellValue(row, column);
 
+      // 追加(row-drag ③): 行ドラッグハンドル列(合成列)の本体です。掴み手の pointerdown だけで
+      //   ドラッグを開始し(セル選択へは伝播させない)、ソート / フィルター中は淡色 + 理由の
+      //   ツールチップにします。isRowDraggable が false の行にはハンドルを出しません。
+      if (column.key === ROW_DRAG_HANDLE_COLUMN_KEY) {
+        if (isRowDraggable) {
+          const sourceRowIndex = rowModel.getSourceIndex(rowIndex) ?? rowIndex;
+          const rowKey = rowModel.getRowKey(rowIndex) ?? rowIndex;
+          if (!isRowDraggable(row, { rowKey, sourceRowIndex })) {
+            return null;
+          }
+        }
+        return (
+          <span
+            className={cx(
+              'ssg-row-drag-handle',
+              !rowDragOperable && 'ssg-row-drag-handle--disabled',
+            )}
+            data-ssg-tooltip={
+              rowDragOperable ? ROW_DRAG_HANDLE_TOOLTIP : ROW_DRAG_DISABLED_TOOLTIP
+            }
+            aria-hidden="true"
+            onPointerDown={
+              rowDragOperable
+                ? (event) => onRowDragHandlePointerDown(rowIndex, event)
+                : undefined
+            }
+          >
+            <svg
+              width="8"
+              height="14"
+              viewBox="0 0 8 14"
+              fill="currentColor"
+              aria-hidden="true"
+              focusable="false"
+            >
+              <circle cx="2" cy="3" r="1" />
+              <circle cx="6" cy="3" r="1" />
+              <circle cx="2" cy="7" r="1" />
+              <circle cx="6" cy="7" r="1" />
+              <circle cx="2" cy="11" r="1" />
+              <circle cx="6" cy="11" r="1" />
+            </svg>
+          </span>
+        );
+      }
+
       if (column.renderCell) {
         // 追加(context 拡張): source 行 index / rowKey を公開します(view の rowIndex は
         //   ソート / フィルターで source と別空間のため。setValue の解決と同じ seam を使い、
@@ -4719,6 +4915,9 @@ export function SpreadsheetGrid<T extends object>({
       detailIsExpandable,
       toggleDetailRowAt,
       setDetailRowExpandedAt,
+      isRowDraggable,
+      rowDragOperable,
+      onRowDragHandlePointerDown,
     ],
   );
 
@@ -5195,6 +5394,8 @@ export function SpreadsheetGrid<T extends object>({
     detailRowEnabled: boolean;
     // 追加(detail ⑤): setDetailRowExpanded の展開可否ガード用。
     detailIsExpandable: DetailRowOptions<T>['isExpandable'];
+    // 追加(row-drag ③): ハンドル moveRow の委譲先です(最新参照)。
+    moveRowByKey: (rowKey: GridRowKey, toIndex: number) => void;
   } | null>(null);
   apiStateRef.current = {
     dispatch,
@@ -5239,6 +5440,7 @@ export function SpreadsheetGrid<T extends object>({
     clearUndoHistory,
     detailRowEnabled: detailRow != null,
     detailIsExpandable,
+    moveRowByKey,
   };
 
   // 追加(undo/redo scroll): 以下のスクロール計算群は従来 useImperativeHandle の factory 内
@@ -5893,6 +6095,12 @@ export function SpreadsheetGrid<T extends object>({
           s.dispatch(gridActions.setExpandedDetailRowKeys(new Set()));
         },
 
+        // ── 行ドラッグ並び替え ──
+        // 追加(row-drag ③): rowKey の行を元配列の toIndex へ移動します(clientSide 専用)。
+        moveRow: (rowKey, toIndex) => {
+          apiStateRef.current?.moveRowByKey(rowKey, toIndex);
+        },
+
         // ── バリデーション ──
         // 追加(validation): validate 指定列 × 全ソース行のオンデマンド全走査です(保存前チェック用)。
         //   invalid 表示は表示時導出のため状態を持たず、本メソッドは呼ばれた時だけ計算します。
@@ -6226,6 +6434,10 @@ export function SpreadsheetGrid<T extends object>({
                   cardWidth={0}
                   renderCard={renderDetailCard}
                 />
+                {/* 追加(row-drag ③): 行ドロップ位置のガイド線(左固定ペイン分)。 */}
+                {rowDragAvailable && (
+                  <div ref={leftRowDropIndicatorRef} className="ssg-row-drop-indicator" />
+                )}
                 </div>
               </div>
             )}
@@ -6395,6 +6607,10 @@ export function SpreadsheetGrid<T extends object>({
                   cardClassName={detailRow?.className}
                   renderCard={renderDetailCard}
                 />
+                {/* 追加(row-drag ③): 行ドロップ位置のガイド線(中央ペイン分)。 */}
+                {rowDragAvailable && (
+                  <div ref={centerRowDropIndicatorRef} className="ssg-row-drop-indicator" />
+                )}
               </div>
 
               {/* 追加(13-B3-2): 中央ペインのドロップインジケータ(縦線)。
@@ -6555,6 +6771,10 @@ export function SpreadsheetGrid<T extends object>({
                   cardWidth={0}
                   renderCard={renderDetailCard}
                 />
+                {/* 追加(row-drag ③): 行ドロップ位置のガイド線(右固定ペイン分)。 */}
+                {rowDragAvailable && (
+                  <div ref={rightRowDropIndicatorRef} className="ssg-row-drop-indicator" />
+                )}
                 </div>
               </div>
             )}

@@ -55,6 +55,9 @@ export type {
   DetailRowOptions,
   DetailRowRenderContext,
   CellDetailContext,
+  // 追加(row-drag ③): 行ドラッグ並び替え(enableRowDrag / isRowDraggable / onRowMove)の公開型です。
+  RowDragContext,
+  RowMoveParams,
   // セル表示値の整形(UI 表示のみ)の契約。
   CellValueFormatter,
   CellValueFormatterParams,

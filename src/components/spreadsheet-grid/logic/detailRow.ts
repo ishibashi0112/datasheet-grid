@@ -10,6 +10,7 @@
 //   - 解決不能なキー(フィルター除外 / 未ロード / 削除済み)は帯を作らず、状態としてだけ残ります。
 import type { GridRowKey, RowModel } from '../model/gridTypes';
 import { GROUP_AUTO_COLUMN_KEY } from './grouping';
+import { ROW_DRAG_HANDLE_COLUMN_KEY } from './rowReorder';
 import type { DetailRowExtra, RowMetrics } from './verticalGeometry';
 
 // 専用トグル列(T1)の合成列キーと幅です。consumer の columns には現れません。
@@ -18,10 +19,12 @@ export const DETAIL_TOGGLE_COLUMN_WIDTH = 28;
 // 展開行の帯の既定高(px)。
 export const DEFAULT_DETAIL_ROW_HEIGHT = 200;
 
-// ライブラリが合成する列(自動グループ列 / 展開行トグル列)か。列メニュー / 並べ替え DnD / ソート /
-//   エクスポートの対象外判定に使います。
+// ライブラリが合成する列(自動グループ列 / 展開行トグル列 / 行ドラッグハンドル列)か。列メニュー /
+//   並べ替え DnD / ソート / エクスポートの対象外判定に使います。
 export const isSyntheticColumnKey = (key: string): boolean =>
-  key === GROUP_AUTO_COLUMN_KEY || key === DETAIL_TOGGLE_COLUMN_KEY;
+  key === GROUP_AUTO_COLUMN_KEY ||
+  key === DETAIL_TOGGLE_COLUMN_KEY ||
+  key === ROW_DRAG_HANDLE_COLUMN_KEY;
 
 // 要素が展開行カード(data-ssg-detail)の内側にあるか。カードの中身は消費側 UI(入れ子のグリッドも
 //   あり得る)のため、グリッド本体の DOM クエリ(auto-height 実測 / 列ヘッダー探索)から除外し、

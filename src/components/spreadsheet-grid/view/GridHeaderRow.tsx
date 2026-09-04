@@ -30,6 +30,7 @@ import { isActiveColumnFilterValue } from '../logic/filtering';
 // 追加(grouping ③): 自動グループ列の判定キーです(列メニュー / DnD の対象外化)。
 // 変更(detail ③): 自動グループ列 / 展開行トグル列の合成列判定を共通化しました。
 import { DETAIL_TOGGLE_COLUMN_KEY, isSyntheticColumnKey } from '../logic/detailRow';
+import { ROW_DRAG_HANDLE_COLUMN_KEY } from '../logic/rowReorder';
 
 // 追加(10-C): このヘッダーがどのペインを描画しているかの種別です。
 export type GridPaneKind = 'left' | 'center' | 'right';
@@ -314,7 +315,10 @@ function GridHeaderRowInner<T>({
         //   並べ替え DnD の対象外にします(リサイズ・列範囲選択は通常どおり)。
         // 変更(detail ③): 展開行トグル列も同じ扱い(さらにラベルは空 / ツールチップなし)。
         const isAutoGroupColumn = isSyntheticColumnKey(column.key);
-        const isDetailToggleColumn = column.key === DETAIL_TOGGLE_COLUMN_KEY;
+        // 変更(row-drag ③): 行ドラッグハンドル列も同じ「ラベル空 / ツールチップなし」扱いです。
+        const isDetailToggleColumn =
+          column.key === DETAIL_TOGGLE_COLUMN_KEY ||
+          column.key === ROW_DRAG_HANDLE_COLUMN_KEY;
         const showColumnMenuButton = enableColumnMenu && !isAutoGroupColumn;
 
         return (
