@@ -6436,7 +6436,10 @@ export function SpreadsheetGrid<T extends object>({
                 />
                 {/* 追加(row-drag ③): 行ドロップ位置のガイド線(左固定ペイン分)。 */}
                 {rowDragAvailable && (
-                  <div ref={leftRowDropIndicatorRef} className="ssg-row-drop-indicator" />
+                  <div
+                    ref={leftRowDropIndicatorRef}
+                    className="ssg-row-drop-indicator ssg-row-drop-indicator--cap"
+                  />
                 )}
                 </div>
               </div>
@@ -6609,7 +6612,14 @@ export function SpreadsheetGrid<T extends object>({
                 />
                 {/* 追加(row-drag ③): 行ドロップ位置のガイド線(中央ペイン分)。 */}
                 {rowDragAvailable && (
-                  <div ref={centerRowDropIndicatorRef} className="ssg-row-drop-indicator" />
+                  <div
+                    ref={centerRowDropIndicatorRef}
+                    className={cx(
+                      'ssg-row-drop-indicator',
+                      // 左固定ペインが無いときは中央が最左 = キャップ付き。
+                      centerOwnsRowHeader && 'ssg-row-drop-indicator--cap',
+                    )}
+                  />
                 )}
               </div>
 

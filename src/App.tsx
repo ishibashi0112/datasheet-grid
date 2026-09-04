@@ -626,6 +626,8 @@ function App() {
   const [contextMenuEnabled, setContextMenuEnabled] = useState(false);
   // 追加(detail デモ): 展開行(Master/Detail)の ON/OFF トグルです。既定 OFF。
   const [detailRowEnabled, setDetailRowEnabled] = useState(false);
+  // 追加(row-drag デモ): 行ドラッグ並び替えの ON/OFF(clientSide 限定。ソート / フィルター中は無効)。
+  const [rowDragEnabled, setRowDragEnabled] = useState(false);
   // 追加(scrollHint デモ): スクロール位置インジケーター(バブル + ルーラー)のモードです。
   //   1M 行での現在位置把握が主目的のため、デモでは既定 ON にしています(ライブラリ既定は OFF)。
   //   hintColumn='partNo' で「行番号 + 品番」を表示します。
@@ -1205,6 +1207,15 @@ function App() {
           >
             展開行を全て閉じる
           </button>
+          {/* 追加(row-drag デモ): 行ドラッグ並び替え(先頭のハンドル ⋮⋮ を掴んで上下へ)。serverSide では無効。 */}
+          <button
+            type="button"
+            onClick={() => setRowDragEnabled((v) => !v)}
+            disabled={mode === 'server'}
+            style={modeButtonStyle(rowDragEnabled, mode === 'server')}
+          >
+            行ドラッグ: {rowDragEnabled ? 'ON' : 'OFF'}
+          </button>
           {/* 追加(行選択デモ): チェックボックス行選択の ON/OFF・モード切替・全選択/解除・選択キー確認。 */}
           <button
             type="button"
@@ -1380,6 +1391,13 @@ function App() {
         }
         // 変更(grouping デモ): グルーピングトグルを反映した導出列を渡します(OFF 時は素の columns)。
         columns={gridColumns}
+        // 追加(row-drag デモ): 行ドラッグ並び替え。確定通知は console へ。
+        enableRowDrag={rowDragEnabled}
+        onRowMove={(params) => {
+          console.info(
+            `[demo] onRowMove: ${String(params.rowKey)} を ${params.fromIndex} → ${params.toIndex} へ移動`,
+          );
+        }}
         // 追加(detail デモ): 展開行。カード内に行の要約テーブルと入力欄(イベント境界の確認用)を描きます。
         detailRow={
           detailRowEnabled

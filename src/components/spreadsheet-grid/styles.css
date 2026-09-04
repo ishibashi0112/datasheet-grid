@@ -2814,7 +2814,9 @@
     z-index: 8;
     display: none;
   }
-  .ssg-row-drop-indicator::before {
+  /* 左端の丸キャップは「行ヘッダーを持つ最左ペイン」の線にだけ付けます(ペイン境界に
+     二重に出さないため。SpreadsheetGrid 側で --cap 修飾子を付与)。 */
+  .ssg-row-drop-indicator--cap::before {
     content: '';
     position: absolute;
     left: 0;
