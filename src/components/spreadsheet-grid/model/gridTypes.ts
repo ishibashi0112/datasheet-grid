@@ -1644,6 +1644,19 @@ export type SpreadsheetGridProps<T> = {
   showValidationMarks?: boolean;
   // 追加(UI hover): 行ホバー時に行全体を薄くハイライトします。既定 true。
   enableRowHover?: boolean;
+  // 追加(proposals ⑩): 行ホバーの controlled 値です(ビュー行 index / null = ホバーなし)。
+  //   指定時は内部 state を使わず、この値でハイライトします(optionally controlled。pointer 由来の
+  //   変化は onHoveredRowChange で通知のみ)。enableRowHover: false のときは無視されます
+  //   (ハイライトしない / 通知しない)。一時的な UI 状態のため GridState(getState / applyState)
+  //   とハンドルには載せません。
+  hoveredRowIndex?: number | null;
+  // 追加(proposals ⑩): 行ホバーが変わったときの通知です(uncontrolled でも呼ばれます)。
+  //   viewRowIndex はフィルター / ソート適用後のビュー行 index です。同値では発火しません
+  //   (pointerenter は同一行内のセル跨ぎでも来るため)。source は将来の拡張用です(現状 'pointer' のみ)。
+  onHoveredRowChange?: (
+    viewRowIndex: number | null,
+    ctx: { source: 'pointer' },
+  ) => void;
   // 追加(UI hover): 列ヘッダーのホバー時にヘッダーセルを薄くハイライトします。既定 true。
   enableColumnHeaderHover?: boolean;
   // 追加(13-A): 列メニュー(「⋮」ボタン + ヘッダー右クリック)の有効化フラグです。

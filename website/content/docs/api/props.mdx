@@ -52,6 +52,8 @@ description: SpreadsheetGridProps<T> の全 prop と既定値
 | `showValidationMarks` | `boolean` | `true` | invalid マーク(背景 + 右上マーカー + ホバーツールチップ)の表示可否。`false` で非表示 + 可視セルの `validate` 評価スキップ。`getInvalidCells()` と `validationMode: 'reject'` の書き込み拒否には影響しない(独立経路)。「送信時にだけマークを出す」UX は利用側 state で本 prop を切り替えて実現(「バリデーション」節のレシピ参照)。 |
 | `enableColumnMenu` | `boolean` | `true` | 列メニュー(⋮ + ヘッダー右クリック)。 |
 | `enableRowHover` | `boolean` | `true` | 行ホバー時に行全体を薄くハイライト。 |
+| `hoveredRowIndex` | `number \| null` | — | 行ホバーの controlled 値(ビュー行 index / `null` = ホバーなし)。指定時は内部 state を使わずこの値でハイライトし、pointer 由来の変化は `onHoveredRowChange` で通知のみ(optionally controlled)。`enableRowHover: false` のときは無視(ハイライトも通知もしない)。一時的な UI 状態のため `GridState` / ハンドルには載らない。 |
+| `onHoveredRowChange` | `(viewRowIndex: number \| null, ctx: { source: 'pointer' }) => void` | — | 行ホバーが変わったときの通知(uncontrolled でも呼ばれる)。`viewRowIndex` はフィルター / ソート適用後のビュー行 index。同値では発火しない(pointerenter は同一行内のセル跨ぎでも来るため)。用途: 複数グリッド間のホバー同期など。 |
 | `enableColumnHeaderHover` | `boolean` | `true` | 列ヘッダーのホバー時にヘッダーセルを薄くハイライト。 |
 | `noMatchingRowsText` | `string` | `'一致する行がありません'` | フィルター結果 0 行時のオーバーレイ文言。 |
 | `noRowsText` | `string` | `'表示する行がありません'` | rows が 0 件のときの文言。 |

@@ -15,6 +15,8 @@ import {
   type MouseEvent as ReactMouseEvent,
   // 追加(UP-1): 統合ツールパネルのタブ別コンテンツテーブルの型に使います。
   type ReactNode,
+  // 追加(proposals ⑩): 行ホバー setter の useState 互換シグネチャに使います。
+  type SetStateAction,
 } from 'react';
 
 // 追加(UI CSS移行): 基底スタイル(トークン + .ssg-* クラス)を読み込みます(THEME-1 で未レイヤー化)。
@@ -521,6 +523,9 @@ export function SpreadsheetGrid<T extends object>({
   // 追加(UI hover): 行ホバー(既定 true) / 列ヘッダーホバー(既定 true)。
   enableRowHover = true,
   enableColumnHeaderHover = true,
+  // 追加(proposals ⑩): 行ホバーの controlled 値と変更通知です(optionally controlled)。
+  hoveredRowIndex: hoveredRowIndexProp,
+  onHoveredRowChange,
   // 追加(13-A): 列メニュー(「⋮」+ 右クリック)の有効化フラグです(既定 true)。
   enableColumnMenu = true,
   // 追加(12-B): 0 行時の空状態テキストです(AG Grid のオーバーレイ相当)。
@@ -627,6 +632,50 @@ export function SpreadsheetGrid<T extends object>({
   const [hoveredColumnIndex, setHoveredColumnIndex] = useState<number | null>(
     null,
   );
+
+  // 追加(proposals ⑩): 行ホバーの optionally controlled 化です。pointer 由来の現在値は
+  //   pointerHoveredRowRef を正本にして同値抑止し(pointerenter は同一行内のセル跨ぎでも来る)、
+  //   変化時のみ内部 state(uncontrolled 表示用)の更新と onHoveredRowChange の通知を行います。
+  //   setter は恒久安定([] deps)にします — 本 setter は handleCellPointerEnter(GridBodyRow の
+  //   memo prop)の依存に入るため、利用側がインライン arrow の onHoveredRowChange を渡すと
+  //   参照が毎レンダー変わって全行 memo が破れるためです。不安定値は useEffect で同期する
+  //   latest-ref(RS-AS 方式)越しに読みます。
+  const isHoverControlled = hoveredRowIndexProp !== undefined;
+  const pointerHoveredRowRef = useRef<number | null>(null);
+  const onHoveredRowChangeRef = useRef(onHoveredRowChange);
+  const enableRowHoverRef = useRef(enableRowHover);
+  const isHoverControlledRef = useRef(isHoverControlled);
+  useEffect(() => {
+    onHoveredRowChangeRef.current = onHoveredRowChange;
+    enableRowHoverRef.current = enableRowHover;
+    isHoverControlledRef.current = isHoverControlled;
+  });
+  const applyHoveredRowChange = useCallback(
+    (action: SetStateAction<number | null>) => {
+      // enableRowHover: false では通知もしません(表示は下の resolvedHoveredRowIndex が null 化)。
+      if (!enableRowHoverRef.current) {
+        return;
+      }
+      const current = pointerHoveredRowRef.current;
+      const next = typeof action === 'function' ? action(current) : action;
+      if (next === current) {
+        return;
+      }
+      pointerHoveredRowRef.current = next;
+      // controlled 時は表示に使われない内部 state を更新しません(無駄な親再レンダー回避)。
+      if (!isHoverControlledRef.current) {
+        setHoveredRowIndex(next);
+      }
+      onHoveredRowChangeRef.current?.(next, { source: 'pointer' });
+    },
+    [],
+  );
+  // 表示に使うホバー行です(controlled 優先 / enableRowHover: false は常に null)。
+  const resolvedHoveredRowIndex = !enableRowHover
+    ? null
+    : hoveredRowIndexProp !== undefined
+      ? hoveredRowIndexProp
+      : hoveredRowIndex;
 
   // ── columns ───────────────────────────────────────────
   // 追加(grouping ③): 行グルーピングの列解決です。rowGroup 列(columns 出現順 = 階層順)と
@@ -2601,7 +2650,8 @@ export function SpreadsheetGrid<T extends object>({
     // 追加(scroll-space 仮想化): ヒットテスト clientY→row の物理→論理換算に使います。
     verticalScaleFactor,
     // 追加(UI hover): 行/列ヘッダーホバーの設定 setter と有効化フラグ(行=既定 true / 列=既定 true)。
-    setHoveredRowIndex,
+    // 変更(proposals ⑩): 行の setter は optionally controlled の applyHoveredRowChange(恒久安定)。
+    setHoveredRowIndex: applyHoveredRowChange,
     setHoveredColumnIndex,
     enableRowHover,
     enableColumnHeaderHover,
@@ -3192,9 +3242,14 @@ export function SpreadsheetGrid<T extends object>({
   //           onRowHeaderPointerLeave は GridBodyRow(memo) の props のため、
   //           親が再レンダーするたびに全行の shallow 比較が不一致になり、
   //           A-1 / 11-A の memo 化を事実上無効化していました(全行 ×N 再レンダーの主因)。
-  const handleRowHeaderPointerLeaveStable = useCallback((rowIndex: number) => {
-    setHoveredRowIndex((current) => (current === rowIndex ? null : current));
-  }, []);
+  const handleRowHeaderPointerLeaveStable = useCallback(
+    (rowIndex: number) => {
+      applyHoveredRowChange((current) =>
+        current === rowIndex ? null : current,
+      );
+    },
+    [applyHoveredRowChange],
+  );
 
   const handleColumnHeaderPointerLeaveStable = useCallback(
     (colIndex: number) => {
@@ -6235,7 +6290,7 @@ export function SpreadsheetGrid<T extends object>({
         style={{ cursor: isAutosizing ? 'progress' : undefined }}
         onDragStart={handleNativeDragStart}
         // 追加(UI hover): grid 本体(ヘッダー+ボディ)から出たら行ホバーをクリアします。
-        onPointerLeave={() => setHoveredRowIndex(null)}
+        onPointerLeave={() => applyHoveredRowChange(null)}
         onPointerMoveCapture={(event) => {
           pointerClientRef.current = { x: event.clientX, y: event.clientY };
           updateSelectionFromPointer(event.clientX, event.clientY);
@@ -6402,7 +6457,7 @@ export function SpreadsheetGrid<T extends object>({
                   collapsedGroupKeys={uiState.collapsedGroupKeys}
                   onGroupToggle={handleGroupToggle}
                   rowHeaderCellStyle={rowHeaderCellStyle}
-                  hoveredRowIndex={hoveredRowIndex}
+                  hoveredRowIndex={resolvedHoveredRowIndex}
                   isWholeGridSelected={isWholeGridSelected}
                   enableRowSelection={enableRowSelection}
                   rowSelectionState={rowSelectionState}
@@ -6577,7 +6632,7 @@ export function SpreadsheetGrid<T extends object>({
                   collapsedGroupKeys={uiState.collapsedGroupKeys}
                   onGroupToggle={handleGroupToggle}
                   rowHeaderCellStyle={rowHeaderCellStyle}
-                  hoveredRowIndex={hoveredRowIndex}
+                  hoveredRowIndex={resolvedHoveredRowIndex}
                   isWholeGridSelected={isWholeGridSelected}
                   enableRowSelection={enableRowSelection}
                   rowSelectionState={rowSelectionState}
@@ -6749,7 +6804,7 @@ export function SpreadsheetGrid<T extends object>({
                   collapsedGroupKeys={uiState.collapsedGroupKeys}
                   onGroupToggle={handleGroupToggle}
                   rowHeaderCellStyle={rowHeaderCellStyle}
-                  hoveredRowIndex={hoveredRowIndex}
+                  hoveredRowIndex={resolvedHoveredRowIndex}
                   isWholeGridSelected={isWholeGridSelected}
                   enableRowSelection={enableRowSelection}
                   rowSelectionState={rowSelectionState}
