@@ -1520,6 +1520,15 @@ export type SpreadsheetGridProps<T> = {
   onRowsChange?: (nextRows: T[]) => void;
   onColumnsChange?: (nextColumns: GridColumn<T>[]) => void;
   rowKeyGetter?: (row: T, index: number) => GridRowKey;
+  // 追加(proposals ⑪): コピー(Ctrl/⌘+C の TSV)/ exportCsv / getExportData の対象行フィルタです。
+  //   false を返した行は出力から除きます(行単位のみ。isWholeGridSelected の判定と貼り付けには
+  //   影響しません)。ctx.viewRowIndex はフィルター / ソート適用後のビュー行 index
+  //   (エクスポート scope 'raw' のみ rows 配列のソース index)、ctx.rowKey は rowKeyGetter の値です。
+  //   既定は全行 true。用途: 表示上の詰め物行(プレースホルダ等)を出力から除くなど。
+  isRowExportable?: (
+    row: T,
+    ctx: { viewRowIndex: number; rowKey: GridRowKey },
+  ) => boolean;
   createRow?: () => T;
   createOverflowColumn?: (columnIndex: number) => GridColumn<T>;
   // 変更(THEME-2): 未指定時の既定は density プリセットから解決します(standard: 36 /

@@ -150,3 +150,65 @@ describe('SpreadsheetGrid エクスポート scope(結合)', () => {
     }
   });
 });
+
+// 追加(proposals ⑪): isRowExportable(コピー / CSV / getExportData の対象行フィルタ)の結合検証です
+//   (コピー経路 4 種は hooks/useGridClipboardController.isRowExportable.test.ts、純ロジックは
+//   logic/exportCsv.test.ts / exportData.test.ts)。ここでは exportCsv / getExportData への配線と、
+//   scope ごとの ctx(viewRowIndex / rowKey)の index 空間を確認します。
+describe('SpreadsheetGrid isRowExportable(結合・proposals ⑪)', () => {
+  type SeenCtx = { id: number; viewRowIndex: number; rowKey: unknown };
+
+  const setupWithPredicate = () => {
+    const ref = createRef<SpreadsheetGridHandle<Row>>();
+    const seenCtx: SeenCtx[] = [];
+    render(
+      <SpreadsheetGrid
+        ref={ref}
+        columns={columns}
+        rows={rows}
+        rowKeyGetter={(row) => row.id}
+        isRowExportable={(row, ctx) => {
+          seenCtx.push({ id: row.id, ...ctx });
+          return row.id !== 2;
+        }}
+      />,
+    );
+    const handle = ref.current;
+    expect(handle).not.toBeNull();
+    return { handle: handle as SpreadsheetGridHandle<Row>, seenCtx };
+  };
+
+  it("exportCsv / getExportData('view')で false 行が行ごと落ち、ctx にビュー行 index と rowKey が渡る", () => {
+    const { handle, seenCtx } = setupWithPredicate();
+    act(() => {
+      handle.applyState(filteredSortedState);
+    });
+
+    // ビュー順 [5, 2, 3] から id 2 を除外。ctx はビュー行 index + rowKeyGetter の値。
+    seenCtx.length = 0;
+    const data = handle.getExportData();
+    expect(idsOf(data)).toEqual([5, 3]);
+    expect(seenCtx).toEqual([
+      { id: 5, viewRowIndex: 0, rowKey: 5 },
+      { id: 2, viewRowIndex: 1, rowKey: 2 },
+      { id: 3, viewRowIndex: 2, rowKey: 3 },
+    ]);
+
+    const csv = handle.exportCsv({ includeHeaders: false });
+    expect(csv).toBe('5,berry,5\r\n3,abbey,20');
+  });
+
+  it("'raw' では rows 配列のソース index と rowKeyGetter で ctx を解決して除外する", () => {
+    const { handle, seenCtx } = setupWithPredicate();
+    seenCtx.length = 0;
+    const data = handle.getExportData({ scope: 'raw' });
+    expect(idsOf(data)).toEqual([1, 3, 4, 5]);
+    expect(seenCtx.map((c) => [c.viewRowIndex, c.rowKey])).toEqual([
+      [0, 1],
+      [1, 2],
+      [2, 3],
+      [3, 4],
+      [4, 5],
+    ]);
+  });
+});

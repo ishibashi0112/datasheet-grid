@@ -43,6 +43,10 @@ export type SerializeRowsToCsvParams<T> = {
   includeHeaders?: boolean;
   // 先頭に UTF-8 BOM を付けるか(既定 false)です。Excel での文字化けを防ぎたいとき true にします。
   bom?: boolean;
+  // 追加(proposals ⑪): 出力対象行フィルタ(bound 済み述語)です。false の行は行ごと除きます。
+  //   rowIndex は行レンジと同じ index 空間(通常はビュー行 / scope 'raw' はソース行)です。
+  //   ctx(rowKey)の解決は呼び出し側(SpreadsheetGrid の resolveExportScope)が行います。
+  isRowIncluded?: (row: T, rowIndex: number) => boolean;
 };
 
 // 行レンジ × 列集合から CSV 文字列を生成します。行区切りは RFC 4180 に従い CRLF です。
@@ -54,6 +58,7 @@ export const serializeRowsToCsv = <T,>({
   delimiter = ',',
   includeHeaders = true,
   bom = false,
+  isRowIncluded,
 }: SerializeRowsToCsvParams<T>): string => {
   const lines: string[] = [];
 
@@ -69,6 +74,10 @@ export const serializeRowsToCsv = <T,>({
     const row = getRow(rowIndex);
     // SSRM 未ロード行(undefined)はスキップします。clientSide では常に行が存在します。
     if (!row) {
+      continue;
+    }
+    // 追加(proposals ⑪): 出力対象外の行は行ごと除きます。
+    if (isRowIncluded && !isRowIncluded(row, rowIndex)) {
       continue;
     }
     const cells = columns.map((column) =>

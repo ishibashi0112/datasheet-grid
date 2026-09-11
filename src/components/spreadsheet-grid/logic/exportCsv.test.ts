@@ -107,4 +107,21 @@ describe('serializeRowsToCsv', () => {
     });
     expect(csv).toBe('x,1\r\nz,3');
   });
+
+  // 追加(proposals ⑪): 出力対象行フィルタです。
+  it('isRowIncluded=false の行を行ごと除き、レンジと同じ index が渡る', () => {
+    const seenIndexes: number[] = [];
+    const csv = serializeRowsToCsv({
+      getRow,
+      startRow: 0,
+      endRow: rows.length,
+      columns,
+      isRowIncluded: (row, rowIndex) => {
+        seenIndexes.push(rowIndex);
+        return row.a !== 'y';
+      },
+    });
+    expect(csv).toBe('A,B\r\nx,1\r\nz,3');
+    expect(seenIndexes).toEqual([0, 1, 2]);
+  });
 });

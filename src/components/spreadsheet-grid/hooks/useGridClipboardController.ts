@@ -1,4 +1,4 @@
-import { useCallback, type Dispatch } from 'react';
+import { useCallback, useMemo, type Dispatch } from 'react';
 import { gridActions, type GridUiAction } from '../model/gridActions';
 import type {
   GridColumn,
@@ -35,6 +35,10 @@ type UseGridClipboardControllerArgs<T extends object> = {
   //   定義時、paste は rows 再構築(onRowsChange)の代わりにビュー走査のセル編集集合を作って
   //   ここへ流します(楽観更新・ロールバックはフック側)。
   applyServerSideCellEdits?: (edits: ServerSideCellEditInput<T>[]) => number;
+  // 追加(proposals ⑪): コピー(TSV)の出力対象行フィルタです(props の isRowExportable)。
+  //   false の行は全選択 / セル範囲 / 行選択 / 列選択のいずれの Ctrl+C でも出力から除きます
+  //   (isWholeGridSelected の判定と paste には影響しません)。
+  isRowExportable?: SpreadsheetGridProps<T>['isRowExportable'];
   dispatch: Dispatch<GridUiAction>;
 };
 
@@ -51,6 +55,7 @@ export const useGridClipboardController = <T extends object>({
   onRowsChange,
   onColumnsChange,
   applyServerSideCellEdits,
+  isRowExportable,
   dispatch,
 }: UseGridClipboardControllerArgs<T>) => {
   // 追加: 現在の selection が「表全体選択」かどうかを判定します。
@@ -75,6 +80,21 @@ export const useGridClipboardController = <T extends object>({
       );
     })();
 
+  // 追加(proposals ⑪): 純ロジック層(serializeSelectionToTsv / 下の全体選択ループ)へ渡す
+  //   bound 済み述語です。ctx(viewRowIndex / rowKey)の組み立てをここで行います。rowKey は
+  //   rowModel.getRowKey(グループ行等の実行時 undefined は viewIndex へフォールバック —
+  //   既存の rowKey 解決箇所と同じ規則)。未指定時は undefined 素通しで従来と完全同一です。
+  const isRowIncluded = useMemo(() => {
+    if (!isRowExportable) {
+      return undefined;
+    }
+    return (row: T, viewRowIndex: number) =>
+      isRowExportable(row, {
+        viewRowIndex,
+        rowKey: rowModel.getRowKey(viewRowIndex) ?? viewRowIndex,
+      });
+  }, [isRowExportable, rowModel]);
+
   // 追加: 全体選択時の copy を専用経路で行います。
   // 変更(DS-3-3): filteredRows.map → getRowCount()/getRow(i) のビュー順走査へ置換。
   const serializeWholeGridToTsv = useCallback(() => {
@@ -92,6 +112,10 @@ export const useGridClipboardController = <T extends object>({
       if (!row) {
         continue;
       }
+      // 追加(proposals ⑪): 出力対象外の行は行ごと除きます。
+      if (isRowIncluded && !isRowIncluded(row, viewIndex)) {
+        continue;
+      }
       const cells = visibleColumns.map((column) => {
         const rawValue = getCellValue(row, column);
         return column.formatClipboardValue
@@ -101,7 +125,7 @@ export const useGridClipboardController = <T extends object>({
       lines.push(cells.join('\t'));
     }
     return lines.join('\n');
-  }, [rowModel, visibleColumns]);
+  }, [isRowIncluded, rowModel, visibleColumns]);
 
   // 追加: copy 処理です。selection を TSV にしてクリップボードへ書き込みます。
   const handleCopy = useCallback(async () => {
@@ -125,6 +149,7 @@ export const useGridClipboardController = <T extends object>({
             | { type: 'row'; startRow: number; endRow: number }
             | { type: 'col'; startCol: number; endCol: number }
             | null,
+          isRowIncluded,
         );
 
     if (!text) {
@@ -137,6 +162,7 @@ export const useGridClipboardController = <T extends object>({
     //   execCommand フォールバックへ落ち、両方失敗時のみ console.warn します。
     await writeTextToClipboard(text);
   }, [
+    isRowIncluded,
     isWholeGridSelected,
     rowModel,
     serializeWholeGridToTsv,

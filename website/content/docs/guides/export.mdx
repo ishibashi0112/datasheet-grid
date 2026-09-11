@@ -32,6 +32,22 @@ const csv = gridRef.current?.exportCsv({ delimiter: '\t' }); // TSV も可
 
 列は**表示中の列を表示順**で出力し、`valueFormatter` 適用前の生値ではなく表示値ベースの整形が使われます(`formatClipboardValue` があればそれが優先)。
 
+### 行の除外(isRowExportable)
+
+props の `isRowExportable` で「コピー(`Ctrl/Cmd+C` の TSV)/ `exportCsv` / `getExportData`」の対象行を絞れます。`false` を返した行は出力から**行ごと**除かれます(表示・選択・貼り付けには影響しません)。表示上の詰め物行(プレースホルダなど)を出力から外す用途を想定しています。
+
+```tsx
+<SpreadsheetGrid
+  rows={rows}
+  columns={columns}
+  rowKeyGetter={(row) => row.id}
+  // プレースホルダ行はコピー / CSV / getExportData の出力から除く
+  isRowExportable={(row) => !row.isPlaceholder}
+/>
+```
+
+`ctx.viewRowIndex` はフィルター / ソート適用後のビュー行 index(scope `'raw'` のみ元 `rows` 配列の index)、`ctx.rowKey` は `rowKeyGetter` の値です。
+
 ## Excel(xlsx)など
 
 ```tsx

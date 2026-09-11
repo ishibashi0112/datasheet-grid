@@ -43,6 +43,10 @@ export const serializeSelectionToTsv = <T,>(
     | { type: 'row'; startRow: number; endRow: number }
     | { type: 'col'; startCol: number; endCol: number }
     | null,
+  // 追加(proposals ⑪): 出力対象行フィルタ(bound 済み述語)です。false の行は行ごと除きます。
+  //   rowKey の解決(ctx 組み立て)は呼び出し側(useGridClipboardController)が行い、純ロジック層は
+  //   (row, viewRowIndex) の形だけを受けます。未指定は全行対象(従来どおり)。
+  isRowIncluded?: (row: T, viewRowIndex: number) => boolean,
 ): string => {
   if (!selection) {
     return '';
@@ -60,6 +64,9 @@ export const serializeSelectionToTsv = <T,>(
     ) {
       const row = getRow(rowIndex);
       if (!row) {
+        continue;
+      }
+      if (isRowIncluded && !isRowIncluded(row, rowIndex)) {
         continue;
       }
       const cells: string[] = [];
@@ -95,6 +102,9 @@ export const serializeSelectionToTsv = <T,>(
       if (!row) {
         continue;
       }
+      if (isRowIncluded && !isRowIncluded(row, rowIndex)) {
+        continue;
+      }
       const cells = columns.map((column) => {
         const rawValue = getCellValue(row, column);
         return column.formatClipboardValue
@@ -111,6 +121,9 @@ export const serializeSelectionToTsv = <T,>(
   for (let rowIndex = 0; rowIndex < viewRowCount; rowIndex += 1) {
     const row = getRow(rowIndex);
     if (!row) {
+      continue;
+    }
+    if (isRowIncluded && !isRowIncluded(row, rowIndex)) {
       continue;
     }
     const cells: string[] = [];

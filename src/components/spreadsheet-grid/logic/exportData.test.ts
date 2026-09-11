@@ -148,4 +148,20 @@ describe('buildGridExportData', () => {
       ],
     ]);
   });
+
+  // 追加(proposals ⑪): 出力対象行フィルタです。
+  it('isRowIncluded=false の行を行ごと除く(columns メタは不変)', () => {
+    const data = buildGridExportData({
+      getRow,
+      startRow: 0,
+      endRow: rows.length,
+      columns,
+      isRowIncluded: (row) => row.a !== 'y',
+    });
+    expect(data.columns).toEqual([
+      { key: 'a', title: 'A' },
+      { key: 'b', title: 'B' },
+    ]);
+    expect(data.rows.map((cells) => cells[0].value)).toEqual(['x', 'z']);
+  });
 });

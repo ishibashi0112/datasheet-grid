@@ -18,6 +18,9 @@ export type BuildGridExportDataParams<T> = {
   endRow: number;
   // 出力対象の列(視覚順 = orderedColumns の部分集合)です。columns / 各行セルの順序もこの配列順です。
   columns: GridColumn<T>[];
+  // 追加(proposals ⑪): 出力対象行フィルタ(bound 済み述語)です。false の行は行ごと除きます
+  //   (serializeRowsToCsv と同じ契約。ctx の解決は呼び出し側)。
+  isRowIncluded?: (row: T, rowIndex: number) => boolean;
 };
 
 // 行レンジ × 列集合から、列メタ(key / title)と 2 次元セル(value / text)を生成します。
@@ -26,6 +29,7 @@ export const buildGridExportData = <T,>({
   startRow,
   endRow,
   columns,
+  isRowIncluded,
 }: BuildGridExportDataParams<T>): GridExportData => {
   // 列メタは key(オブジェクト系ライブラリ用)と title(ヘッダー表示用)の双方を持たせます。
   const exportColumns = columns.map((column) => ({
@@ -38,6 +42,10 @@ export const buildGridExportData = <T,>({
     const row = getRow(rowIndex);
     // SSRM 未ロード行(undefined)はスキップします。clientSide では常に行が存在します。
     if (!row) {
+      continue;
+    }
+    // 追加(proposals ⑪): 出力対象外の行は行ごと除きます。
+    if (isRowIncluded && !isRowIncluded(row, rowIndex)) {
       continue;
     }
     rows.push(

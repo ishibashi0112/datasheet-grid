@@ -468,6 +468,8 @@ export function SpreadsheetGrid<T extends object>({
   onRowsChange,
   onColumnsChange,
   rowKeyGetter,
+  // 追加(proposals ⑪): コピー / CSV / getExportData の対象行フィルタです。
+  isRowExportable,
   createRow,
   createOverflowColumn,
   // 変更(THEME-2): rowHeight / headerHeight の既定は density プリセットから解決します(本体冒頭)。
@@ -2804,6 +2806,8 @@ export function SpreadsheetGrid<T extends object>({
       onColumnsChange,
       // 追加(SSRM 書き戻し): serverSide の paste 書き込み口です(updateRows 指定時のみ定義)。
       applyServerSideCellEdits,
+      // 追加(proposals ⑪): コピー(TSV)の出力対象行フィルタです。
+      isRowExportable,
       dispatch,
     });
 
@@ -5433,6 +5437,9 @@ export function SpreadsheetGrid<T extends object>({
     serverSideRefresh: () => void;
     // 追加(validation): getInvalidCells の rowKey 解決に使います(source index 基準)。
     resolvedRowKeyGetter: (row: T, sourceRowIndex: number) => GridRowKey;
+    // 追加(proposals ⑪): exportCsv / getExportData の対象行フィルタです(コピーは clipboard
+    //   controller 側で適用)。安定ハンドルから最新値を読むための搭載です。
+    isRowExportable: SpreadsheetGridProps<T>['isRowExportable'];
     // 追加(FM-3): 安定ハンドル(useImperativeHandle deps [])から最新の controller コールバック
     //   を読むための搭載です(stale closure 回避)。既存の単一 render 代入に載せるだけなので、
     //   ESLint の render ref-write は増えません(commitRowSelectionRef と同趣旨の最新参照)。
@@ -5476,6 +5483,7 @@ export function SpreadsheetGrid<T extends object>({
     isServerSide,
     serverSideRefresh: serverSide.refresh,
     resolvedRowKeyGetter,
+    isRowExportable,
     // 変更(UP-1): 公開 API openFilterManager / closeFilterManager は統合ツールパネルの
     //   フィルタータブへ委譲します(名前・意味は従来どおり)。close は「フィルタータブ
     //   表示中」のときだけ閉じます(別タブ表示中の統合パネルを巻き込まないため。従来の
@@ -5632,6 +5640,8 @@ export function SpreadsheetGrid<T extends object>({
         startRow: number;
         endRow: number;
         columns: GridColumn<T>[];
+        // 追加(proposals ⑪): 出力対象行フィルタ(bound 済み述語)。getRow と同じ index 空間です。
+        isRowIncluded?: (row: T, rowIndex: number) => boolean;
       } | null => {
         const s = apiStateRef.current;
         if (!s) {
@@ -5639,6 +5649,25 @@ export function SpreadsheetGrid<T extends object>({
         }
         // ビュー行アクセサ(フィルター/ソート適用後の viewIndex → 行)。'raw' 以外はこれを使います。
         const getViewRow = (index: number) => s.rowModel.getRow(index);
+        // 追加(proposals ⑪): isRowExportable の ctx(viewRowIndex / rowKey)を index 空間ごとに
+        //   束ねます。ビュー空間は rowModel.getRowKey(実行時 undefined は viewIndex へ
+        //   フォールバック)、'raw'(ソース空間)は resolvedRowKeyGetter(row, sourceIndex) です
+        //   (ctx.viewRowIndex には rows 配列のソース index が入ります — gridTypes の注記どおり)。
+        const isRowExportableProp = s.isRowExportable;
+        const isRowIncludedView = isRowExportableProp
+          ? (row: T, viewIndex: number) =>
+              isRowExportableProp(row, {
+                viewRowIndex: viewIndex,
+                rowKey: s.rowModel.getRowKey(viewIndex) ?? viewIndex,
+              })
+          : undefined;
+        const isRowIncludedRaw = isRowExportableProp
+          ? (row: T, sourceIndex: number) =>
+              isRowExportableProp(row, {
+                viewRowIndex: sourceIndex,
+                rowKey: s.resolvedRowKeyGetter(row, sourceIndex),
+              })
+          : undefined;
         const normalized = normalizeExportScope(scope);
         if (normalized === 'raw') {
           // 'raw': フィルターもソートも無視した全ソース行(rows 配列順)です。列は可視列・固定順に
@@ -5653,6 +5682,7 @@ export function SpreadsheetGrid<T extends object>({
               startRow: 0,
               endRow: s.viewRowCount,
               columns: s.orderedColumns,
+              isRowIncluded: isRowIncludedView,
             };
           }
           return {
@@ -5660,6 +5690,7 @@ export function SpreadsheetGrid<T extends object>({
             startRow: 0,
             endRow: s.rows.length,
             columns: s.orderedColumns,
+            isRowIncluded: isRowIncludedRaw,
           };
         }
         if (normalized === 'rendered') {
@@ -5671,6 +5702,7 @@ export function SpreadsheetGrid<T extends object>({
                 ? s.windowLastRow + 1
                 : s.windowFirstRow,
             columns: s.orderedColumns,
+            isRowIncluded: isRowIncludedView,
           };
         }
         if (normalized === 'selection') {
@@ -5685,6 +5717,7 @@ export function SpreadsheetGrid<T extends object>({
               startRow: r.start.row,
               endRow: r.end.row + 1,
               columns: s.orderedColumns.slice(r.start.col, r.end.col + 1),
+              isRowIncluded: isRowIncludedView,
             };
           }
           if (sel.type === 'row') {
@@ -5694,6 +5727,7 @@ export function SpreadsheetGrid<T extends object>({
               startRow: r.startRow,
               endRow: r.endRow + 1,
               columns: s.orderedColumns,
+              isRowIncluded: isRowIncludedView,
             };
           }
           const r = normalizeColumnRange(sel.startCol, sel.endCol);
@@ -5702,6 +5736,7 @@ export function SpreadsheetGrid<T extends object>({
             startRow: 0,
             endRow: s.viewRowCount,
             columns: s.orderedColumns.slice(r.startCol, r.endCol + 1),
+            isRowIncluded: isRowIncludedView,
           };
         }
         // normalized === 'view': ビュー行全体(フィルター/ソート/列可視・固定順を反映)です。
@@ -5710,6 +5745,7 @@ export function SpreadsheetGrid<T extends object>({
           startRow: 0,
           endRow: s.viewRowCount,
           columns: s.orderedColumns,
+          isRowIncluded: isRowIncludedView,
         };
       };
 
@@ -5737,6 +5773,8 @@ export function SpreadsheetGrid<T extends object>({
           delimiter: options?.delimiter,
           includeHeaders: options?.includeHeaders,
           bom: options?.bom,
+          // 追加(proposals ⑪): 出力対象行フィルタ(scope に応じた index 空間で bound 済み)。
+          isRowIncluded: resolved.isRowIncluded,
         });
       };
 
@@ -5754,6 +5792,8 @@ export function SpreadsheetGrid<T extends object>({
           startRow: resolved.startRow,
           endRow: resolved.endRow,
           columns: stripAutoGroupColumn(resolved.columns),
+          // 追加(proposals ⑪): 出力対象行フィルタ(scope に応じた index 空間で bound 済み)。
+          isRowIncluded: resolved.isRowIncluded,
         });
       };
 
