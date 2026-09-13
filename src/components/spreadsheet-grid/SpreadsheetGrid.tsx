@@ -48,6 +48,7 @@ import {
 import { createRowPipelineResolver } from './engine/rowPipeline';
 import { createVerticalLayoutResolver } from './engine/verticalLayout';
 import { createColumnCommands } from './engine/columnCommands';
+import { createRowSelectionCommands } from './engine/rowSelectionCommands';
 import {
   createFilterPopoverCommands,
   createFilterPopoverDerivedResolver,
@@ -190,12 +191,8 @@ import {
   getSelectAllState,
   resolveIsRowSelected,
   rowSelectionFromModel,
-  rowSelectionStateEquals,
   rowSelectionToModel,
   selectAllRows,
-  selectRowRange,
-  selectSingleRow,
-  toggleRowKey,
 } from './logic/rowSelection';
 // 追加(state #1): 列状態 get/apply の純ロジックです(snapshot 組み立て / 外部入力の正規化)。
 // 追加(state #2): onStateChange の発火可否判定(decideStateChangeEmit)も同モジュールから読みます。
@@ -254,7 +251,6 @@ import type {
   SpreadsheetGridHandle,
   // 追加(行選択): 公開記述子と内部状態型です。
   RowSelectionModel,
-  RowSelectionState,
   CsvExportOptions,
   // 追加(imperative API: getExportData): scope 解決と整形済みデータ型に使います。
   CsvExportScope,
@@ -1872,7 +1868,6 @@ export function SpreadsheetGrid<T extends object>({
     },
     [rowSelectionProp, selectedRowKeysProp],
   );
-  const isRowSelectionControlled = controlledRowSelectionModel !== undefined;
 
   // enableSelectAllRows の既定解決(未指定なら enableRowSelection && multiple)。
   const enableSelectAllRows =
@@ -1885,126 +1880,22 @@ export function SpreadsheetGrid<T extends object>({
   // 変更(grouping ④): 総数は leafRowCount(グループ行を除くデータ行数)です。
   const selectAllRowsState = getSelectAllState(rowSelectionState, leafRowCount);
 
-  // 安定コールバック用の latest-ref 群(参照を変えず GridBodyRow memo を保つため)。
-  const rowSelectionStateRef = useRef(rowSelectionState);
-  rowSelectionStateRef.current = rowSelectionState;
-  const rowSelectionModeRef = useRef(rowSelectionMode);
-  rowSelectionModeRef.current = rowSelectionMode;
-  const onRowSelectionChangeRef = useRef(onRowSelectionChange);
-  onRowSelectionChangeRef.current = onRowSelectionChange;
-  const isRowSelectionControlledRef = useRef(isRowSelectionControlled);
-  isRowSelectionControlledRef.current = isRowSelectionControlled;
-  // shift / ドラッグ範囲のアンカー(view index。揮発 UI 状態のため ref)。
-  const rowSelectionAnchorRef = useRef<number | null>(null);
-
-  // 選択コミット: uncontrolled は reducer 反映 + onChange 通知、controlled は onChange のみ
-  //   (親が prop を更新→下の sync effect で reducer 反映)。両モードで変化時に onChange 発火。
-  const commitRowSelection = useCallback(
-    (next: RowSelectionState) => {
-      const changed = !rowSelectionStateEquals(rowSelectionStateRef.current, next);
-      if (changed) {
-        onRowSelectionChangeRef.current?.(rowSelectionToModel(next));
-      }
-      if (!isRowSelectionControlledRef.current) {
-        dispatch(gridActions.setRowSelectionState(next));
-      }
+  // 変更(本体分解 E-4c): 選択コミット / ガター選択 / ドラッグ範囲 / 全選択トグル / controlled 同期は
+  //   engine/rowSelectionCommands.ts(React 非依存)へ移設しました(旧 latest-ref 4 本 + アンカー ref を解消)。
+  const rowSelectionCommands = useController(
+    () => createRowSelectionCommands<T>(),
+    {
+      rowModel,
+      rowSelectionState,
+      rowSelectionMode,
+      onRowSelectionChange,
+      controlledRowSelectionModel,
+      leafRowCount,
+      dispatch,
     },
-    [dispatch],
   );
-  // handle(deps=[])から呼ぶための latest-ref です。
-  const commitRowSelectionRef = useRef(commitRowSelection);
-  commitRowSelectionRef.current = commitRowSelection;
-
-  // view index 範囲 → 行キー配列(SSRM 未ロードはスキップ)。
-  const resolveRowKeysBetween = useCallback(
-    (aIndex: number, bIndex: number): GridRowKey[] => {
-      const rm = rowModelRef.current;
-      const start = Math.min(aIndex, bIndex);
-      const end = Math.max(aIndex, bIndex);
-      const keys: GridRowKey[] = [];
-      for (let i = start; i <= end; i += 1) {
-        const row = rm.getRow(i);
-        if (!row) {
-          continue;
-        }
-        keys.push(rm.getRowKey(i) ?? i);
-      }
-      return keys;
-    },
-    [],
-  );
-
-  // ガター pointerdown: single=単一選択 / multiple=トグル、shift=アンカーから範囲。
-  const handleGutterRowSelect = useCallback(
-    (viewIndex: number, opts: { shiftKey: boolean }) => {
-      const rm = rowModelRef.current;
-      const row = rm.getRow(viewIndex);
-      if (!row) {
-        return; // SSRM 未ロード行は選択しません。
-      }
-      const rowKey = rm.getRowKey(viewIndex) ?? viewIndex;
-
-      if (rowSelectionModeRef.current === 'single') {
-        rowSelectionAnchorRef.current = viewIndex;
-        commitRowSelection(selectSingleRow(rowKey));
-        return;
-      }
-      if (opts.shiftKey && rowSelectionAnchorRef.current !== null) {
-        commitRowSelection(
-          selectRowRange(
-            resolveRowKeysBetween(rowSelectionAnchorRef.current, viewIndex),
-          ),
-        );
-        return;
-      }
-      rowSelectionAnchorRef.current = viewIndex;
-      commitRowSelection(toggleRowKey(rowSelectionStateRef.current, rowKey));
-    },
-    [commitRowSelection, resolveRowKeysBetween],
-  );
-
-  // ガタードラッグ中の範囲更新(multiple)。single はポインタ下の行を単一選択します。
-  const handleGutterRowSelectDrag = useCallback(
-    (viewIndex: number) => {
-      const rm = rowModelRef.current;
-      const row = rm.getRow(viewIndex);
-      if (!row) {
-        return;
-      }
-      if (rowSelectionModeRef.current === 'single') {
-        commitRowSelection(selectSingleRow(rm.getRowKey(viewIndex) ?? viewIndex));
-        return;
-      }
-      if (rowSelectionAnchorRef.current === null) {
-        return;
-      }
-      commitRowSelection(
-        selectRowRange(
-          resolveRowKeysBetween(rowSelectionAnchorRef.current, viewIndex),
-        ),
-      );
-    },
-    [commitRowSelection, resolveRowKeysBetween],
-  );
-
-  // 全選択トグル(ヘッダコーナー)。全選択済みなら解除、そうでなければ全選択。
-  // 変更(grouping ④): 総数はグループ行を除く leafRowCount です(latest-ref は増やさず deps に
-  //   直接入れます。件数変化での参照更新はコールドパスのため問題ありません)。
-  const handleToggleSelectAllRows = useCallback(() => {
-    const cur = getSelectAllState(rowSelectionStateRef.current, leafRowCount);
-    commitRowSelection(cur === 'all' ? clearRowSelection() : selectAllRows());
-  }, [commitRowSelection, leafRowCount]);
-
-  // controlled: prop の記述子を reducer へ同期します(差分時のみ。reducer 側も同値 no-op)。
-  useEffect(() => {
-    if (!isRowSelectionControlled || !controlledRowSelectionModel) {
-      return;
-    }
-    const next = rowSelectionFromModel(controlledRowSelectionModel);
-    if (!rowSelectionStateEquals(rowSelectionStateRef.current, next)) {
-      dispatch(gridActions.setRowSelectionState(next));
-    }
-  }, [isRowSelectionControlled, controlledRowSelectionModel, dispatch]);
+  const { handleGutterRowSelect, handleGutterRowSelectDrag, handleToggleSelectAllRows } =
+    rowSelectionCommands;
 
   // ── pointer interactions ──────────────────────────────
   // 追加(touch): セルダブルクリック処理の latest-ref(定義は下方。useEffect で同期)。
@@ -4446,7 +4337,7 @@ export function SpreadsheetGrid<T extends object>({
             : { type: 'include', rowKeys: [] };
         },
         setRowSelection: (model) => {
-          commitRowSelectionRef.current(rowSelectionFromModel(model));
+          rowSelectionCommands.commitRowSelection(rowSelectionFromModel(model));
         },
         getSelectedRowKeys: () => {
           const s = apiStateRef.current;
@@ -4507,10 +4398,10 @@ export function SpreadsheetGrid<T extends object>({
           return s ? resolveIsRowSelected(s.uiState.rowSelection, rowKey) : false;
         },
         selectAllRows: () => {
-          commitRowSelectionRef.current(selectAllRows());
+          rowSelectionCommands.commitRowSelection(selectAllRows());
         },
         clearRowSelection: () => {
-          commitRowSelectionRef.current(clearRowSelection());
+          rowSelectionCommands.commitRowSelection(clearRowSelection());
         },
 
         // ── undo / redo(編集履歴)──
@@ -4664,7 +4555,13 @@ export function SpreadsheetGrid<T extends object>({
     //   1 回です(exhaustive-deps もクリーン)。
     // 変更(proposals ⑧): applyApiScroll(deps [] で参照不変)を scrollToTop / scrollToBottom /
     //   setScrollPosition が直接使うため deps へ加えます(ハンドル生成は従来どおり 1 回)。
-    [applyApiScroll, applyScroll, scrollToCellInternal, verticalTargetFor],
+    [
+      applyApiScroll,
+      applyScroll,
+      scrollToCellInternal,
+      verticalTargetFor,
+      rowSelectionCommands,
+    ],
   );
 
   // ── onStateChange(永続スライス + 列メタ変化の通知)──────
