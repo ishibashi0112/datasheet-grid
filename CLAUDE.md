@@ -72,7 +72,7 @@ React 19 + TypeScript + Vite 製のカスタム AG Grid 風・仮想化データ
 
 ## 現状と残タスク(詳細は HANDOFF §4 / §7 / §8)
 
-- 最新 v0.36.0(非依存化 ④ + ③-1〜③-8: React 非依存の外部 store `model/gridStore.ts`(UI 状態 + view スライス)と、`controllers/` へのコントローラ抽出 8 本(tooltip / theme / viewportSync / panelHeaderDrag / history / edit / keyboard / clipboard)。hooks は `useController` を使う薄いアダプタ。挙動不変)。0.36.0 の後に ③-9〜③-19(columnAutosizeRunner / selectOptionsCollector / globalFilteredOrder / serverSideRowModel / contextMenu / columnMenu / toolPanel / filterPopover / pointerInteractions / columnHeaderDrag / rowDrag)をコミット済み・未 publish。③ の残りは本体分解(`SpreadsheetGrid.tsx` → エンジン + React シェル)。
+- 最新 v0.37.0(非依存化 ③-9〜③-19: `controllers/` へのコントローラ抽出を hooks 19 本すべてで完了(columnAutosizeRunner / selectOptionsCollector / globalFilteredOrder / serverSideRowModel / contextMenu / columnMenu / toolPanel / filterPopover / pointerInteractions / columnHeaderDrag / rowDrag を追加)。hooks は `useController` を使う薄いアダプタ。挙動不変)。v0.36.0 = 非依存化 ④(React 非依存の外部 store `model/gridStore.ts`)+ ③-1〜③-8。③ の残りは本体分解(`SpreadsheetGrid.tsx` → エンジン + React シェル)。
 - SSRM は**完成**(2026-07-16)── 読み取り系(`refreshServerSide()` / エラー・リトライ UI は 2026-07-15 の batch 8 / 9)に加え、セル編集の書き戻し(`dataSource.updateRows` + 楽観更新 + 失敗時ロールバック / 保存失敗バー)を 2026-07-16 に実装済み(書き戻し batch 1〜5)。行追加削除は「サーバ反映後に refresh」運用・SSRM の undo/redo は無効(いずれもスコープ外として合意)。
 - 行グルーピング + 集計は 2026-07-17 に実装済み(grouping batch 1〜5: `rowGroup` / `aggFunc`、自動グループ列、開閉 UI + 命令的 API。clientSide 限定・SSRM は対象外)。
 - 展開行(Master/Detail)は 2026-09-04 に実装済み(detail batch 1〜6: `detailRow` prop、rowKey ベース状態、`data-ssg-detail` イベント境界。clientSide / SSRM 両対応)。
