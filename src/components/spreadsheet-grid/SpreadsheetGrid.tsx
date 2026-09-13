@@ -19,6 +19,7 @@ import {
   useImperativeHandle,
   useRef,
   useState,
+  useSyncExternalStore,
   type CSSProperties,
   type PointerEvent,
   type MouseEvent as ReactMouseEvent,
@@ -43,6 +44,9 @@ import {
   createColumnResolver,
   createPaneLayoutResolver,
 } from './engine/columnLayout';
+import { createRowPipelineResolver } from './engine/rowPipeline';
+import { createDebouncedValueStore } from './controllers/debouncedValueStore';
+import { useController } from './hooks/useController';
 
 import { gridActions } from './model/gridActions';
 import { createInitialGridUiState } from './model/gridReducer';
@@ -91,18 +95,14 @@ import {
   isDateSetColumnFilterValue,
   // 追加(filter-ext B): B-2 Float64 key の構築対象判定です(comparison / range を持つ
   //   number 系のみ。number / numberSet の両 kind を単一実装で判定します)。
-  columnFilterUsesNumericKey,
   // 追加(記述子化): 現在値表示の text 整形に使います(記述子 → 表示文字列)。
   columnFilterValueToDraftText,
   // 追加(FM-1): フィルター管理パネルの一覧行(有効フィルターの抽出)に使います。
   isActiveColumnFilterValue,
   // 行モデルチェーンは order(Int32Array)ベースに一本化しています
   //   (DS-2 で差し替え、旧オブジェクト配列版は DS-3-8 で削除)。
-  createSourceOrder,
-  filterOrderByColumns,
   // 追加(filter-ext A): number フィルターの数値化規則(空白 = NaN)です。B-2 の
   //   Float64 key 構築で predicate 側と同一規則を共有します。
-  coerceNumberFilterCellValue,
 } from './logic/filtering';
 // 追加(FM-1): 列フィルター値 → 人間可読要約(フィルター管理パネルの一覧行)です。
 import { describeColumnFilterValue } from './logic/filterSummary';
@@ -205,8 +205,6 @@ import {
   ROW_DRAG_DISABLED_TOOLTIP,
   ROW_DRAG_HANDLE_COLUMN_KEY,
   ROW_DRAG_HANDLE_TOOLTIP,
-  isIdentityOrder,
-  isRowDragOperable,
   moveArrayItem,
 } from './logic/rowReorder';
 // 追加(imperative API #1): CSV エクスポート / スクロール先算出の純ロジックです。
@@ -252,7 +250,6 @@ import type { RowHeightStore } from './logic/rowHeightStore';
 import {
   // ソートは order(Int32Array)版に一本化しています
   //   (DS-2 で差し替え、旧オブジェクト配列版は DS-3-8 で削除)。
-  sortOrder,
   nextSortEntries,
   // 追加(MS-3-1): 並び替え管理パネルの明示編集用の純関数群です。
   addSortEntry,
@@ -275,20 +272,10 @@ import type {
   ServerSideLoadErrorState,
   ServerSideWriteErrorState,
 } from './hooks/useServerSideRowModel';
-// 追加(stage ②): serverSide query の構築 / queryKey 直列化(純ロジック)です。
-import {
-  buildServerSideQuery,
-  serializeServerSideQuery,
-} from './logic/serverSideQuery';
 // 追加(grouping ②): 行グルーピングの純ロジック(ツリー構築 / 開閉適用 flatten / エンコード)です。
 import {
-  buildGroupTree,
   collectAllGroupKeys,
   collectAllGroupRows,
-  flattenGroupTree,
-  groupIndexOfOrderValue,
-  groupRowKey,
-  isGroupOrderValue,
 } from './logic/grouping';
 import type { GroupTree } from './logic/grouping';
 import type {
@@ -314,10 +301,6 @@ import type {
   SetColumnFilterValue,
   // 追加(filter-ext E): 'auto' を解決した後の実効フィルター種別です。
   ColumnFilterUiType,
-  // 追加(①-3 / stage ②): serverSide query 用の型です。
-  ServerSideQuery,
-  // 追加(stage ②): serverSide query の sort 既定値の型です。
-  GridSortState,
   // 追加(imperative API #1): ref ハンドルと関連型です。
   GridUiState,
   SpreadsheetGridHandle,
@@ -432,9 +415,6 @@ const EMPTY_ROWS: never[] = [];
 
 // 追加(stage ②): serverSide query 構築/debounce 用の安定既定値・定数です。
 //   clientSide では query を空に保ち(フックは inert)、参照同一で memo/effect を不要に揺らしません。
-const EMPTY_SERVER_QUERY: ServerSideQuery = {};
-const EMPTY_COLUMN_FILTERS: Record<string, ColumnFilterValue> = {};
-const EMPTY_SORT: GridSortState = [];
 
 // 追加(THEME-2): density プリセット別の既定寸法です(明示 rowHeight / headerHeight prop が優先)。
 //   'standard' は従来既定(36 / 40)と同値。CSS 側の寸法トークン切替は styles.css の
@@ -1149,7 +1129,14 @@ export function SpreadsheetGrid<T extends object>({
   //
   //   baseOrder は恒等 order [0..n-1]。長さのみ依存のため、rows の identity が変わっても
   //   同一長なら参照が安定します(下流の filterOrder* は rows 依存で再計算)。
-  const baseOrder = useMemo(() => createSourceOrder(rows.length), [rows.length]);
+  // 変更(本体分解 E-2): order パイプライン / グルーピング / RowModel シーム / serverSide query の派生値計算は
+  //   engine/rowPipeline.ts(React 非依存)へ移設しました。useMemo は React Compiler lint 向けの外皮で、
+  //   細粒度の参照安定はリゾルバ内の createMemo が担います。
+  const [rowPipeline] = useState(() => createRowPipelineResolver<T>());
+  const baseOrder = useMemo(
+    () => rowPipeline.resolveBaseOrder(rows.length),
+    [rowPipeline, rows.length],
+  );
 
   // 変更(F-async): globalFilteredOrder の同期 useMemo を時間分割フックへ差し替えます。
   //   返り値の order は「現在表示すべきビュー順」で、計算中は前回確定 order を維持します
@@ -1168,83 +1155,26 @@ export function SpreadsheetGrid<T extends object>({
     enabled: globalFilterEnabled,
   });
 
-  // 追加(B-2): number 記述子が当たっている可視列の「集合シグネチャ」です。
-  //   値編集(>50 → >500 等)では同一列のままなので signature 不変 → 下の numericFilterKeys を保持し、
-  //   Float64 key をフィルタ値編集をまたいで再利用します(B-2 の本旨)。number の ON/OFF(列の出入り)
-  //   でだけ signature が変わり key を作り直します。NUL 区切りは列キーへの混入が実質ありえないため。
-  const numberFilteredColumnSignature = useMemo(() => {
-    const keys: string[] = [];
-    for (const column of visibleColumns) {
-      // 変更(filter-ext B): 判定を columnFilterUsesNumericKey へ差し替えます。
-      //   number に加えて numberSet(condition が comparison / range)も対象になり、
-      //   逆に key を読まない blank / contains では構築自体を省きます。
-      if (columnFilterUsesNumericKey(deferredColumnFilters[column.key])) {
-        keys.push(column.key);
-      }
-    }
-    return keys.join('\u0000');
-  }, [visibleColumns, deferredColumnFilters]);
-
-  // 追加(B-2): number(comparison/range)用に、列ごとの Number(セル値) を rows 全長・
-  //   sourceIndex 添字の Float64Array へ前計算したキャッシュです。
-  //   - 構築は signature に載った列ぶんだけ(number 未使用なら空 Map ＝実質ゼロコスト)。
-  //   - deps は [rows, visibleColumns, signature]。値編集では signature 不変のため参照を保ち、
-  //     毎キーストロークの再 coercion を回避します(rows identity 変化＝編集時のみ全長再構築)。
-  //   - 対象列は signature を split して特定するため、deferredColumnFilters を deps から外せます
-  //     (signature は同一 render で deferredColumnFilters から導出済み＝stale 読みなし)。
-  //   compileSingleColumnFilter は key があれば key[sourceIndex] を、無ければ
-  //   Number(getCellValue(...)) を使うため、空 Map のときは現状とバイト等価です。
-  const numericFilterKeys = useMemo(() => {
-    const keyMap = new Map<string, Float64Array>();
-    if (numberFilteredColumnSignature.length === 0) {
-      return keyMap;
-    }
-    const targetKeys = new Set(numberFilteredColumnSignature.split('\u0000'));
-    const rowCount = rows.length;
-    for (const column of visibleColumns) {
-      if (!targetKeys.has(column.key)) {
-        continue;
-      }
-      const keys = new Float64Array(rowCount);
-      for (let i = 0; i < rowCount; i += 1) {
-        // 変更(filter-ext A): 数値化は coerceNumberFilterCellValue(空白 = NaN)へ統一します
-        //   (compileSingleColumnFilter の非 key 経路と同一規則。食い違うと B-2 等価が壊れます)。
-        keys[i] = coerceNumberFilterCellValue(getCellValue(rows[i], column));
-      }
-      keyMap.set(column.key, keys);
-    }
-    return keyMap;
-  }, [rows, visibleColumns, numberFilteredColumnSignature]);
-
-  const columnFilteredOrder = useMemo(
+  const { order, rowDragOperable } = useMemo(
     () =>
-      filterOrderByColumns(
+      rowPipeline.resolveOrder({
         rows,
-        globalFilteredOrder,
         visibleColumns,
-        deferredColumnFilters,
-        numericFilterKeys,
-      ),
+        columnFilters: deferredColumnFilters,
+        globalFilteredOrder,
+        sort: uiState.sort,
+        rowDragAvailable,
+      }),
     [
+      rowPipeline,
       rows,
-      globalFilteredOrder,
       visibleColumns,
       deferredColumnFilters,
-      numericFilterKeys,
+      globalFilteredOrder,
+      uiState.sort,
+      rowDragAvailable,
     ],
   );
-
-  const order = useMemo(
-    () => sortOrder(rows, columnFilteredOrder, visibleColumns, uiState.sort),
-    [rows, columnFilteredOrder, visibleColumns, uiState.sort],
-  );
-  // 追加(row-drag ③): 表示順が恒等(ソート / フィルターなし)のときだけハンドルを操作可能にします。
-  //   O(n) 走査ですが order 参照が変わったときだけ再評価します(no-op dispatch では不変)。
-  const orderIsIdentity = useMemo(
-    () => rowDragAvailable && isIdentityOrder(order, rows.length),
-    [rowDragAvailable, order, rows.length],
-  );
-  const rowDragOperable = isRowDragOperable(rowDragAvailable, orderIsIdentity);
 
   // ── 行グルーピング stage(grouping ②) ───────────────────
   // sorted order の後段に挿す表示変換です。groupColumns / aggColumns / rowGroupingActive は
@@ -1264,21 +1194,31 @@ export function SpreadsheetGrid<T extends object>({
     }
   }, [isServerSide, groupColumns.length]);
 
-  // グループツリー(集計込み)です。開閉状態に依存しないため、開閉操作では再計算されません
-  //   (集計・ツリーは維持され、下の flatten だけが再実行されます)。
-  const groupTree = useMemo(
+  const {
+    groupTree,
+    groupedDisplay,
+    rowModel: clientSideRowModel,
+  } = useMemo(
     () =>
-      rowGroupingActive
-        ? buildGroupTree(rows, order, groupColumns, aggColumns)
-        : null,
-    [rowGroupingActive, rows, order, groupColumns, aggColumns],
-  );
-
-  // 開閉適用済みの表示リストです(displayOrder: >= 0 = leaf source index / < 0 = groups 参照)。
-  const groupedDisplay = useMemo(
-    () =>
-      groupTree ? flattenGroupTree(groupTree, uiState.collapsedGroupKeys) : null,
-    [groupTree, uiState.collapsedGroupKeys],
+      rowPipeline.resolveClientSideRowModel({
+        rows,
+        order,
+        rowGroupingActive,
+        groupColumns,
+        aggColumns,
+        collapsedGroupKeys: uiState.collapsedGroupKeys,
+        rowKeyGetter: resolvedRowKeyGetter,
+      }),
+    [
+      rowPipeline,
+      rows,
+      order,
+      rowGroupingActive,
+      groupColumns,
+      aggColumns,
+      uiState.collapsedGroupKeys,
+      resolvedRowKeyGetter,
+    ],
   );
 
   // 追加(grouping ③): グループ開閉のトグルです(GridBodyLayer のシェブロン / グループ行
@@ -1290,58 +1230,8 @@ export function SpreadsheetGrid<T extends object>({
     [dispatch],
   );
 
-  // ── row model seam (DS-3-0) ───────────────────────────
-  // 変更(DS-3-0): order(Int32Array)を直接触る consumer を、この rowModel 越しの参照へ
-  //   段階移行します(DS-3 で 1 consumer = 1 コミット)。本バッチでは GridBodyLayer が
-  //   getRow / getRowKey を読みます(getRowCount = virtualizer 移行 / getSourceIndex =
-  //   edit 移行で後続 consumer が読むため、シーム契約として 4 メソッドを今まとめて確定します)。
-  //   deps は order / rows / resolvedRowKeyGetter のみ。no-op dispatch(selection 等)では
-  //   order 参照が不変(DS-2)のため rowModel 参照も不変に保たれ、将来 memo 化される consumer の
-  //   props 安定(11-A 系)を壊しません。
-  //   viewIndex は表示上の行 index、getSourceIndex の返り値(= order[viewIndex])は元 rows の
-  //   index です。getRow / getRowKey は内部でこの対応付け rows[order[viewIndex]] を使います。
-  //   追加(grouping ②): 行グルーピング有効時は order の代わりに groupedDisplay
-  //   (開閉適用済み displayOrder + groups)を参照し、グループ行では getRow / getSourceIndex が
-  //   実行時 undefined・getGroupRow が記述子を返します(RowModel 型コメント参照)。
-  //   グルーピング無効時は従来実装そのまま(getGroupRow も未定義)で、既存経路は不変です。
-  const clientSideRowModel = useMemo<RowModel<T>>(() => {
-    if (groupedDisplay) {
-      const { displayOrder, groups } = groupedDisplay;
-      return {
-        getRowCount: () => displayOrder.length,
-        // グループ行では displayOrder 値が負のため rows[負値] = undefined になります
-        //   (DS-3-9 の OOB と同じ「型は T のまま・実行時 undefined」)。
-        getRow: (viewIndex) => rows[displayOrder[viewIndex]],
-        getSourceIndex: (viewIndex) => {
-          const value = displayOrder[viewIndex];
-          // グループ行 / OOB は undefined です(型は number のまま。DS-3-9 の契約に合流)。
-          return value >= 0 ? value : (undefined as unknown as number);
-        },
-        getRowKey: (viewIndex) => {
-          const value = displayOrder[viewIndex];
-          if (isGroupOrderValue(value)) {
-            return groupRowKey(groups[groupIndexOfOrderValue(value)]);
-          }
-          // OOB(value = undefined)は leaf 側へ落ち、従来どおり rowKeyGetter が
-          //   (undefined, undefined) を受けます(非グルーピング時と同じ挙動)。
-          return resolvedRowKeyGetter(rows[value], value);
-        },
-        getGroupRow: (viewIndex) => {
-          const value = displayOrder[viewIndex];
-          return isGroupOrderValue(value)
-            ? groups[groupIndexOfOrderValue(value)]
-            : undefined;
-        },
-      };
-    }
-    return {
-      getRowCount: () => order.length,
-      getRow: (viewIndex) => rows[order[viewIndex]],
-      getSourceIndex: (viewIndex) => order[viewIndex],
-      getRowKey: (viewIndex) =>
-        resolvedRowKeyGetter(rows[order[viewIndex]], order[viewIndex]),
-    };
-  }, [groupedDisplay, order, rows, resolvedRowKeyGetter]);
+  // 注記(DS-3-0): order を直接触る consumer は rowModel シーム(getRowCount / getRow / getSourceIndex /
+  //   getRowKey / getGroupRow)越しに参照します。実装は engine/rowPipeline.ts。
 
   // ── serverSide query 配線(stage ②) ───────────────────
   // clientSide の UI 状態(sort / 列フィルター / グローバルフィルター)から ServerSideQuery を組み立て、
@@ -1349,18 +1239,19 @@ export function SpreadsheetGrid<T extends object>({
   //   ため値は無視されますが、debounce effect を不発にして無駄な再描画を避けます)。
   //   入力欄の value は従来どおり即時 uiState を参照するため、タイピングは即時反映されます。ここで作る
   //   live 値はそのまま渡さず、下で debounce してからフックへ供給します(サーバ送出の合体)。
-  const liveServerSideQuery = useMemo<ServerSideQuery>(
+  const liveServerSideQuery = useMemo(
     () =>
-      isServerSide
-        ? buildServerSideQuery({
-            globalText: globalFilterEnabled ? globalFilterText : '',
-            columnFilters: columnFilterEnabled
-              ? columnFilters
-              : EMPTY_COLUMN_FILTERS,
-            sort: sortingEnabled ? uiState.sort : EMPTY_SORT,
-          })
-        : EMPTY_SERVER_QUERY,
+      rowPipeline.resolveServerSideQuery({
+        isServerSide,
+        globalFilterEnabled,
+        globalText: globalFilterText,
+        columnFilterEnabled,
+        columnFilters,
+        sortingEnabled,
+        sort: uiState.sort,
+      }),
     [
+      rowPipeline,
       isServerSide,
       globalFilterEnabled,
       globalFilterText,
@@ -1370,33 +1261,26 @@ export function SpreadsheetGrid<T extends object>({
       uiState.sort,
     ],
   );
-  const liveServerSideQueryKey = useMemo(
-    () => (isServerSide ? serializeServerSideQuery(liveServerSideQuery) : ''),
-    [isServerSide, liveServerSideQuery],
-  );
 
   // debounce 済みの query / queryKey です(これをフックへ渡します)。live が変化しても
   //   SERVER_SIDE_QUERY_DEBOUNCE_MS の静止後に一度だけ反映し、キーストロークごとのキャッシュ破棄+
   //   block 0 取り直しを抑止します。初期値は live の初回値で seed し、mount 時のフック queryKey と
   //   一致させて初回 debounce 後の余計な再設定を避けます。
-  const [serverSideQuery, setServerSideQuery] =
-    useState<ServerSideQuery>(liveServerSideQuery);
-  const [serverSideQueryKey, setServerSideQueryKey] = useState<string>(
-    liveServerSideQueryKey,
+  // 変更(本体分解 E-2): useState × 2 + setTimeout effect を controllers/debouncedValueStore(React 非依存)へ。
+  const serverSideQueryStore = useController(
+    () =>
+      createDebouncedValueStore(
+        liveServerSideQuery,
+        SERVER_SIDE_QUERY_DEBOUNCE_MS,
+      ),
+    { value: liveServerSideQuery, enabled: isServerSide },
   );
-
-  useEffect(() => {
-    // clientSide では反映しません(live は空のまま)。serverSide 時のみ debounce 反映します。
-    if (!isServerSide) {
-      return;
-    }
-    const timer = setTimeout(() => {
-      // setState は timer コールバック内(非同期)のため set-state-in-effect には該当しません。
-      setServerSideQuery(liveServerSideQuery);
-      setServerSideQueryKey(liveServerSideQueryKey);
-    }, SERVER_SIDE_QUERY_DEBOUNCE_MS);
-    return () => clearTimeout(timer);
-  }, [isServerSide, liveServerSideQueryKey, liveServerSideQuery]);
+  const { query: serverSideQuery, queryKey: serverSideQueryKey } =
+    useSyncExternalStore(
+      serverSideQueryStore.subscribe,
+      serverSideQueryStore.getSnapshot,
+      serverSideQueryStore.getSnapshot,
+    );
 
   // 追加(①-3): serverSide(SSRM)の RowModel を供給します。React Hooks 規則によりフックは
   //   無条件に呼びます。dataSource 不在(clientSide)では hook が inert(件数 0 / 取得 no-op)に
