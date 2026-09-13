@@ -1,6 +1,6 @@
-/* eslint-disable react-hooks/refs, react-hooks/immutability */
-// 注記(非依存化 ②): 上の 2 ルール(React Compiler 系 lint)は本ファイルでは理由付きで無効化しています
-//   (set-state-in-effect は本体分解 E-3 で該当箇所が消えたため外しました)。
+/* eslint-disable react-hooks/refs */
+// 注記(非依存化 ②): 上のルール(React Compiler 系 lint)は本ファイルでは理由付きで無効化しています
+//   (set-state-in-effect は本体分解 E-3、immutability は E-5 で該当箇所が消えたため外しました)。
 //   旧 @tanstack/react-virtual の useVirtualizer は「Compiler 非互換ライブラリ」として扱われ、その
 //   呼び出しを含む本コンポーネント全体が Compiler 系 lint の解析対象外でした。自前アダプタ
 //   (hooks/useVirtualizerCore)へ切り替えた結果、意図的な latest-ref イディオム(レンダー中の
@@ -48,6 +48,7 @@ import {
 import { createRowPipelineResolver } from './engine/rowPipeline';
 import { createVerticalLayoutResolver } from './engine/verticalLayout';
 import { createColumnCommands } from './engine/columnCommands';
+import { createGridApi } from './engine/gridApi';
 import { createRowSelectionCommands } from './engine/rowSelectionCommands';
 import {
   createFilterPopoverCommands,
@@ -139,7 +140,6 @@ import {
   computeSinglePaneColumnExtent,
   // 追加(13-B3-1.5): 列の所属ペイン(pinned 由来)を columnChooserItems へ付与するために使います。
   getColumnPane,
-  type GridPaneLayout,
   type PaneColumnEntry,
   type ColumnPane,
   type PaneColumnExtentMap,
@@ -157,16 +157,12 @@ import {
   AUTO_HEIGHT_MAX_ROWS,
   clipRowRangeToWindow,
   // 追加(imperative API #1): 命令的スクロールの論理↔物理換算に使います。
-  logicalToPhysicalScrollTop,
-  physicalToLogicalScrollTop,
 } from './logic/verticalGeometry';
-import type { RowMetrics } from './logic/verticalGeometry';
 // 追加(detail ③): 展開行(Master/Detail)の純ロジック(トグル列キー / rowKey→view index 解決 / 選択帯分割)です。
 import {
   DEFAULT_DETAIL_ROW_HEIGHT,
   DETAIL_TOGGLE_COLUMN_KEY,
   createDetailIndexCache,
-  findDetailRowIndex,
   isInsideDetailCardOf,
   isSyntheticColumnKey,
   seedDetailIndexCache,
@@ -180,32 +176,20 @@ import {
   moveArrayItem,
 } from './logic/rowReorder';
 // 追加(imperative API #1): CSV エクスポート / スクロール先算出の純ロジックです。
-import { serializeRowsToCsv } from './logic/exportCsv';
-import { buildGridExportData } from './logic/exportData';
 // 追加(export-scope 再編): 旧 'all' / 'visible' エイリアスの正規化に使います。
-import { normalizeExportScope } from './logic/exportScope';
 // 追加(行選択): チェックボックス行選択の純ロジックです。
 import {
-  clearRowSelection,
-  countSelectedRows,
   getSelectAllState,
-  resolveIsRowSelected,
-  rowSelectionFromModel,
-  rowSelectionToModel,
-  selectAllRows,
 } from './logic/rowSelection';
 // 追加(state #1): 列状態 get/apply の純ロジックです(snapshot 組み立て / 外部入力の正規化)。
 // 追加(state #2): onStateChange の発火可否判定(decideStateChangeEmit)も同モジュールから読みます。
 // 追加(state v2): 列メタ(可視 / 順序 / ピン)の抽出 / 適用(extractColumnState / applyColumnState)。
 import {
   buildGridState,
-  migrateGridState,
   decideStateChangeEmit,
   extractColumnState,
-  applyColumnState,
 } from './logic/gridState';
 import {
-  computeVerticalScrollTarget,
   computeHorizontalScrollTarget,
 } from './logic/scrollTargets';
 // 追加(DS-4 ①-(2)): 列幅自動調整を時間分割(async・単一経路)で実行するランナーです。
@@ -222,11 +206,6 @@ import type {
   ServerSideWriteErrorState,
 } from './hooks/useServerSideRowModel';
 // 追加(grouping ②): 行グルーピングの純ロジック(ツリー構築 / 開閉適用 flatten / エンコード)です。
-import {
-  collectAllGroupKeys,
-  collectAllGroupRows,
-} from './logic/grouping';
-import type { GroupTree } from './logic/grouping';
 import type {
   CellCoord,
   CellRenderState,
@@ -238,25 +217,16 @@ import type {
   GridRowKey,
   // 追加(detail ③): 展開行の描画コンテキスト / セルへ渡す detail コンテキスト型です。
   CellDetailContext,
-  DetailRowOptions,
   DetailRowRenderContext,
   // 追加(DS-3-0): 行モデルのシーム契約型です(rowModel の構築に使います)。
-  RowModel,
   // 追加(記述子化): commit 経路で text/date/select/custom を記述子化する際の型です。
   // 追加(12-A): set フィルター値の構築に使います。
   // 追加(filter-ext E): 'auto' を解決した後の実効フィルター種別です。
   ColumnFilterUiType,
   // 追加(imperative API #1): ref ハンドルと関連型です。
-  GridUiState,
-  SpreadsheetGridHandle,
   // 追加(行選択): 公開記述子と内部状態型です。
   RowSelectionModel,
-  CsvExportOptions,
   // 追加(imperative API: getExportData): scope 解決と整形済みデータ型に使います。
-  CsvExportScope,
-  GridExportOptions,
-  GridExportData,
-  ScrollAlign,
   // 追加(proposals ⑧): onScroll 通知パラメータの型です。
   GridScrollEventParams,
   SpreadsheetGridProps,
@@ -271,7 +241,7 @@ import { getCellValue, isCellEditable } from './utils/permissions';
 import { writeRowsCell } from './logic/editorValues';
 import { isCheckboxChecked, toggleCheckboxValue } from './logic/checkboxEditor';
 import { CheckboxCell } from './editors/CheckboxCell';
-import { decideCellWrite, scanInvalidCells } from './logic/validation';
+import { decideCellWrite } from './logic/validation';
 import ColumnFilterPopover from './view/ColumnFilterPopover';
 // 追加(13-A): 列メニュー popover(列固定の切替 UI)です。
 import DefaultGridBottomBar from './view/DefaultGridBottomBar';
@@ -1969,19 +1939,19 @@ export function SpreadsheetGrid<T extends object>({
   //   activeCell が同一のままスクロール位置だけ遠くにあるケース(編集 → スクロール → Ctrl+Z の
   //   典型動線)、(b) 固定列セル(rect=null)の縦追従、をカバーしません。本追従はその補完で、
   //   既に可視の場合は 'auto' 計算が no-op になるため二重スクロールの実害はありません。
-  const scrollToCellInternalRef = useRef<
-    (viewRowIndex: number, colIndex: number, align: ScrollAlign) => void
-  >(() => {});
+  // 変更(本体分解 E-5): 命令的 API の実体(engine/gridApi)はここで生成し、接続(update)は全 args が揃う下流で
+  //   行います。scrollToCellInternal は参照安定で、呼び出し時点の最新 args を読みます(旧 latest-ref 同期 effect は不要)。
+  const [gridApi] = useState(() => createGridApi<T>());
   const scrollRestoredCellIntoView = useCallback(
     (activeCell: CellCoord | null) => {
       if (!activeCell) {
         return;
       }
       requestAnimationFrame(() => {
-        scrollToCellInternalRef.current(activeCell.row, activeCell.col, 'auto');
+        gridApi.scrollToCellInternal(activeCell.row, activeCell.col, 'auto');
       });
     },
-    [],
+    [gridApi],
   );
 
   // ── undo/redo(編集履歴)───────────────────────────────
@@ -2784,27 +2754,23 @@ export function SpreadsheetGrid<T extends object>({
   //   無表示 popover 状態を作らないため)。
   const jumpToColumnFilter = useCallback(
     (columnKey: string) => {
-      const s = apiStateRef.current;
       const el = scrollContainerRef.current;
-      if (!s) {
-        return;
-      }
-      const colIndex = s.orderedColumns.findIndex(
+      const colIndex = orderedColumns.findIndex(
         (column) => column.key === columnKey,
       );
       if (colIndex < 0) {
         return;
       }
-      const column = s.orderedColumns[colIndex];
+      const column = orderedColumns[colIndex];
       if (el) {
-        const single = computeSinglePaneColumnExtent(s.paneLayout, colIndex);
+        const single = computeSinglePaneColumnExtent(paneLayout, colIndex);
         if (single && single.pane === 'center') {
           const target = computeHorizontalScrollTarget({
             cellLeft:
-              s.leftPaneTotalWidth + s.centerLeadingWidth + single.extent.start,
+              leftPaneTotalWidth + centerLeadingWidth + single.extent.start,
             cellWidth: single.extent.width,
-            leftPaneWidth: s.leftPaneTotalWidth,
-            rightPaneWidth: s.rightPaneTotalWidth,
+            leftPaneWidth: leftPaneTotalWidth,
+            rightPaneWidth: rightPaneTotalWidth,
             viewportWidth: el.clientWidth,
             currentScrollLeft: el.scrollLeft,
             align: 'auto',
@@ -2862,7 +2828,17 @@ export function SpreadsheetGrid<T extends object>({
         tryOpen(0);
       });
     },
-    [gridRootRef, openColumnFilterPopover],
+    // 変更(本体分解 E-5): 旧 apiStateRef 経由の読みを直接参照へ(列レイアウト変化で参照が変わるが、
+    //   渡し先はパネル / バーのコールバックのみでコールドパス)。
+    [
+      gridRootRef,
+      openColumnFilterPopover,
+      orderedColumns,
+      paneLayout,
+      leftPaneTotalWidth,
+      centerLeadingWidth,
+      rightPaneTotalWidth,
+    ],
   );
 
   // 追加(13-B3-2): ヘッダー D&D 並べ替え controller(ドロップインジケータ ref + 安定ハンドラ)。
@@ -3705,68 +3681,14 @@ export function SpreadsheetGrid<T extends object>({
         };
 
   // ── imperative API(ref ハンドル)──────────────────────
-  // 設計: 状態は controlled のまま、prop で表せない一発操作だけをハンドルで提供します。
-  //   メソッドは最新値を latest-ref(apiStateRef)越しに読み、ハンドル自体は1回だけ生成して参照を
-  //   安定させます(スクロール等の度に作り直しません)。useImperativeHandle の factory は ref /
-  //   module import / 参照不変の安定コールバック(下のスクロール計算群)しか参照しないため、
-  //   deps は全て安定でハンドル生成は 1 回のままです(exhaustive-deps もクリーン)。
-  const apiStateRef = useRef<{
-    dispatch: typeof dispatch;
-    rowModel: RowModel<T>;
-    viewRowCount: number;
-    // 追加(grouping ④): グループ行を除くデータ行数(行選択件数用)と、グループツリー
-    //   (一括開閉 / getGroupRows 用。グルーピング無効時 null)です。
-    leafRowCount: number;
-    groupTree: GroupTree<T> | null;
-    rowMetrics: RowMetrics;
-    paneLayout: GridPaneLayout<T>;
-    orderedColumns: GridColumn<T>[];
-    // 追加(state v2): getState の列メタ抽出 / applyState の列メタ適用に使う生 columns(consumer 宣言順)
-    //   と onColumnsChange(controlled 反映口)です。未指定時 applyState は列メタをスキップします。
-    columns: GridColumn<T>[];
-    onColumnsChange: ((nextColumns: GridColumn<T>[]) => void) | undefined;
-    uiState: GridUiState;
-    headerHeight: number;
-    verticalScaleFactor: number;
-    leftPaneTotalWidth: number;
-    rightPaneTotalWidth: number;
-    centerLeadingWidth: number;
-    windowFirstRow: number;
-    windowLastRow: number;
-    physicalBodyHeight: number;
-    // 追加(export-scope 再編): scope='raw'(フィルター/ソート無視の全ソース行)の直接参照と、
-    //   serverSide での 'raw' → 'view' フォールバック判定に使います。
-    rows: T[];
-    isServerSide: boolean;
-    // 追加(batch 8): ハンドル refreshServerSide() の委譲先です(useServerSideRowModel の
-    //   ソフトリフレッシュ。clientSide では hook 側が inert のため呼ばれても no-op ですが、
-    //   ハンドル側で警告を出して弾きます)。
-    serverSideRefresh: () => void;
-    // 追加(validation): getInvalidCells の rowKey 解決に使います(source index 基準)。
-    resolvedRowKeyGetter: (row: T, sourceRowIndex: number) => GridRowKey;
-    // 追加(proposals ⑪): exportCsv / getExportData の対象行フィルタです(コピーは clipboard
-    //   controller 側で適用)。安定ハンドルから最新値を読むための搭載です。
-    isRowExportable: SpreadsheetGridProps<T>['isRowExportable'];
-    // 追加(FM-3): 安定ハンドル(useImperativeHandle deps [])から最新の controller コールバック
-    //   を読むための搭載です(stale closure 回避)。既存の単一 render 代入に載せるだけなので、
-    //   ESLint の render ref-write は増えません(commitRowSelectionRef と同趣旨の最新参照)。
-    openFilterManager: () => void;
-    closeFilterManager: () => void;
-    // 追加(undo/redo): 安定ハンドル(deps [])から最新の履歴操作を読むための搭載です
-    //   (openFilterManager と同趣旨の最新参照)。
-    undoRows: () => void;
-    redoRows: () => void;
-    canUndoRows: () => boolean;
-    canRedoRows: () => boolean;
-    clearUndoHistory: () => void;
-    // 追加(detail ②): 展開行 API の有効判定(detailRow 未指定なら no-op / 空配列)。
-    detailRowEnabled: boolean;
-    // 追加(detail ⑤): setDetailRowExpanded の展開可否ガード用。
-    detailIsExpandable: DetailRowOptions<T>['isExpandable'];
-    // 追加(row-drag ③): ハンドル moveRow の委譲先です(最新参照)。
-    moveRowByKey: (rowKey: GridRowKey, toIndex: number) => void;
-  } | null>(null);
-  apiStateRef.current = {
+  // 変更(本体分解 E-5): 実体は engine/gridApi.ts(React 非依存)。update(レイアウト effect)で最新の状態 / 派生値 /
+  //   連携先を渡し、ハンドルは 1 回だけ生成した参照安定なオブジェクトをそのまま返します(旧 apiStateRef =
+  //   30 フィールドのレンダー中 ref 代入を解消)。
+  const markApiScrollPending = useCallback(() => {
+    apiScrollPendingRef.current += 1;
+  }, []);
+  useControllerLifecycle(gridApi, {
+    scrollContainerRef,
     dispatch,
     rowModel,
     viewRowCount,
@@ -3791,778 +3713,22 @@ export function SpreadsheetGrid<T extends object>({
     serverSideRefresh: serverSide.refresh,
     resolvedRowKeyGetter,
     isRowExportable,
-    // 変更(UP-1): 公開 API openFilterManager / closeFilterManager は統合ツールパネルの
-    //   フィルタータブへ委譲します(名前・意味は従来どおり)。close は「フィルタータブ
-    //   表示中」のときだけ閉じます(別タブ表示中の統合パネルを巻き込まないため。従来の
-    //   「フィルター管理パネルが開いていなければ何もしない」と意味が揃います)。
-    openFilterManager: () => {
-      openToolPanel('filter');
-    },
-    closeFilterManager: () => {
-      if (activeToolPanelTab === 'filter') {
-        closeToolPanel();
-      }
-    },
+    activeToolPanelTab,
+    openToolPanel,
+    closeToolPanel,
     undoRows,
     redoRows,
     canUndoRows,
     canRedoRows,
     clearUndoHistory,
-    detailRowEnabled: detailRow != null,
+    detailRowEnabled,
     detailIsExpandable,
+    detailIndexCacheRef,
     moveRowByKey,
-  };
-
-  // 追加(undo/redo scroll): 以下のスクロール計算群は従来 useImperativeHandle の factory 内
-  //   ローカル関数でしたが、undo/redo の復元先セル可視化(history controller 経由)でも必要に
-  //   なったため component スコープの安定コールバックへ切り出しました。参照するのは refs
-  //   (scrollContainerRef / apiStateRef)と module 純関数のみのため deps は空 = 参照不変で、
-  //   factory の deps に入れてもハンドル生成は従来どおり 1 回です。
-  // 追加(proposals ⑧): 命令的 API 由来のスクロール適用です。スクロール可能範囲へクランプし、
-  //   クランプ後の位置が現在と実際に変わるときだけ apiScrollPendingRef を増やします
-  //   (位置不変の scrollTo は scroll イベントを発火しないため、無条件に増やすと次の
-  //   ユーザースクロールを source:'api' と誤判定します)。
-  const applyApiScroll = useCallback(
-    (
-      el: HTMLElement,
-      target: { top: number; left: number },
-      behavior: 'auto' | 'smooth' = 'auto',
-    ) => {
-      const maxTop = Math.max(el.scrollHeight - el.clientHeight, 0);
-      const maxLeft = Math.max(el.scrollWidth - el.clientWidth, 0);
-      const top = Math.min(Math.max(target.top, 0), maxTop);
-      const left = Math.min(Math.max(target.left, 0), maxLeft);
-      if (
-        Math.round(top) !== Math.round(el.scrollTop) ||
-        Math.round(left) !== Math.round(el.scrollLeft)
-      ) {
-        apiScrollPendingRef.current += 1;
-      }
-      el.scrollTo({ top, left, behavior });
-    },
-    [],
-  );
-
-  // 論理 scrollTop を物理へ戻してスクロールコンテナへ適用します(横は圧縮対象外で物理=論理)。
-  const applyScroll = useCallback(
-    (logicalTop: number | null, left: number | null) => {
-      const el = scrollContainerRef.current;
-      const s = apiStateRef.current;
-      if (!el || !s) {
-        return;
-      }
-      applyApiScroll(el, {
-        top:
-          logicalTop === null
-            ? el.scrollTop
-            : logicalToPhysicalScrollTop(logicalTop, s.verticalScaleFactor),
-        left: left === null ? el.scrollLeft : left,
-      });
-    },
-    [applyApiScroll],
-  );
-
-  // 縦の scroll target(論理)を求めます。範囲外 index はクランプします。
-  const verticalTargetFor = useCallback(
-    (viewRowIndex: number, align: ScrollAlign): number | null => {
-      const el = scrollContainerRef.current;
-      const s = apiStateRef.current;
-      if (!el || !s || s.viewRowCount === 0) {
-        return null;
-      }
-      const clamped = Math.min(Math.max(viewRowIndex, 0), s.viewRowCount - 1);
-      return computeVerticalScrollTarget({
-        rowTop: s.rowMetrics.rowTop(clamped),
-        // 変更(detail ③): 帯を含まないセル行の高さ(展開行なしでは rowsHeight と一致)。
-        rowHeight: s.rowMetrics.cellHeight(clamped),
-        headerHeight: s.headerHeight,
-        viewportHeight: el.clientHeight,
-        currentScrollTop: physicalToLogicalScrollTop(
-          el.scrollTop,
-          s.verticalScaleFactor,
-        ),
-        align,
-      });
-    },
-    [],
-  );
-
-  // 横の scroll target(物理=論理)を求めます。中央ペインの列のみ対象(固定列は常に可視)。
-  const horizontalTargetFor = useCallback(
-    (colIndex: number, align: ScrollAlign): number | null => {
-      const el = scrollContainerRef.current;
-      const s = apiStateRef.current;
-      if (!el || !s) {
-        return null;
-      }
-      const single = computeSinglePaneColumnExtent(s.paneLayout, colIndex);
-      if (!single || single.pane !== 'center') {
-        return null;
-      }
-      return computeHorizontalScrollTarget({
-        cellLeft:
-          s.leftPaneTotalWidth + s.centerLeadingWidth + single.extent.start,
-        cellWidth: single.extent.width,
-        leftPaneWidth: s.leftPaneTotalWidth,
-        rightPaneWidth: s.rightPaneTotalWidth,
-        viewportWidth: el.clientWidth,
-        currentScrollLeft: el.scrollLeft,
-        align,
-      });
-    },
-    [],
-  );
-
-  const scrollToCellInternal = useCallback(
-    (viewRowIndex: number, colIndex: number, align: ScrollAlign) => {
-      applyScroll(
-        verticalTargetFor(viewRowIndex, align),
-        horizontalTargetFor(colIndex, align),
-      );
-    },
-    [applyScroll, horizontalTargetFor, verticalTargetFor],
-  );
-
-  // 追加(undo/redo scroll): 上流(history controller 配線部)の latest-ref へ同期します
-  //   (RS-AS 方式)。scrollToCellInternal は参照不変のため実質 1 回だけ走ります。
-  useEffect(() => {
-    scrollToCellInternalRef.current = scrollToCellInternal;
-  }, [scrollToCellInternal]);
-
-  useImperativeHandle(
-    ref,
-    (): SpreadsheetGridHandle<T> => {
-
-      // 変更(export-scope 再編): scope('view' / 'raw' / 'rendered' / 'selection' + 後方互換 'all' /
-      //   'visible')から、出力対象の行アクセサ getRow / 行レンジ [startRow, endRow) / 列集合を解決します。
-      //   exportCsv(buildCsv)と getExportData で共有します。旧エイリアスは normalizeExportScope で
-      //   'view' / 'rendered' へ正規化されます(実行時挙動は従来と完全同一 = 後方互換)。
-      //   'view' / 'raw' は windowFirstRow / windowLastRow(描画ウィンドウ)を一切読まないため、
-      //   結果は構造上スクロール位置に依存しません。scope='selection' で選択が無いときは null を返し、
-      //   呼び出し側が「空」を表現します(CSV は空文字 / 整形済みデータは空)。
-      const resolveExportScope = (
-        scope: CsvExportScope,
-      ): {
-        getRow: (index: number) => T;
-        startRow: number;
-        endRow: number;
-        columns: GridColumn<T>[];
-        // 追加(proposals ⑪): 出力対象行フィルタ(bound 済み述語)。getRow と同じ index 空間です。
-        isRowIncluded?: (row: T, rowIndex: number) => boolean;
-      } | null => {
-        const s = apiStateRef.current;
-        if (!s) {
-          return null;
-        }
-        // ビュー行アクセサ(フィルター/ソート適用後の viewIndex → 行)。'raw' 以外はこれを使います。
-        const getViewRow = (index: number) => s.rowModel.getRow(index);
-        // 追加(proposals ⑪): isRowExportable の ctx(viewRowIndex / rowKey)を index 空間ごとに
-        //   束ねます。ビュー空間は rowModel.getRowKey(実行時 undefined は viewIndex へ
-        //   フォールバック)、'raw'(ソース空間)は resolvedRowKeyGetter(row, sourceIndex) です
-        //   (ctx.viewRowIndex には rows 配列のソース index が入ります — gridTypes の注記どおり)。
-        const isRowExportableProp = s.isRowExportable;
-        const isRowIncludedView = isRowExportableProp
-          ? (row: T, viewIndex: number) =>
-              isRowExportableProp(row, {
-                viewRowIndex: viewIndex,
-                rowKey: s.rowModel.getRowKey(viewIndex) ?? viewIndex,
-              })
-          : undefined;
-        const isRowIncludedRaw = isRowExportableProp
-          ? (row: T, sourceIndex: number) =>
-              isRowExportableProp(row, {
-                viewRowIndex: sourceIndex,
-                rowKey: s.resolvedRowKeyGetter(row, sourceIndex),
-              })
-          : undefined;
-        const normalized = normalizeExportScope(scope);
-        if (normalized === 'raw') {
-          // 'raw': フィルターもソートも無視した全ソース行(rows 配列順)です。列は可視列・固定順に
-          //   従います。serverSide はソース行配列を持たない(未ロード行が存在する)ため 'view' 相当へ
-          //   フォールバックし警告します(auto-height 非対応時と同じ「警告 + フォールバック」の流儀)。
-          if (s.isServerSide) {
-            console.warn(
-              "SpreadsheetGrid: scope 'raw' は serverSide では未ロード行を取得できないため、'view'(ロード済みビュー行)として扱います。全件エクスポートはサーバ側での実施を推奨します。",
-            );
-            return {
-              getRow: getViewRow,
-              startRow: 0,
-              endRow: s.viewRowCount,
-              columns: s.orderedColumns,
-              isRowIncluded: isRowIncludedView,
-            };
-          }
-          return {
-            getRow: (index: number) => s.rows[index],
-            startRow: 0,
-            endRow: s.rows.length,
-            columns: s.orderedColumns,
-            isRowIncluded: isRowIncludedRaw,
-          };
-        }
-        if (normalized === 'rendered') {
-          return {
-            getRow: getViewRow,
-            startRow: s.windowFirstRow,
-            endRow:
-              s.windowLastRow >= s.windowFirstRow
-                ? s.windowLastRow + 1
-                : s.windowFirstRow,
-            columns: s.orderedColumns,
-            isRowIncluded: isRowIncludedView,
-          };
-        }
-        if (normalized === 'selection') {
-          const sel = s.uiState.selection;
-          if (!sel) {
-            return null;
-          }
-          if (sel.type === 'cell') {
-            const r = normalizeCellRange(sel.range);
-            return {
-              getRow: getViewRow,
-              startRow: r.start.row,
-              endRow: r.end.row + 1,
-              columns: s.orderedColumns.slice(r.start.col, r.end.col + 1),
-              isRowIncluded: isRowIncludedView,
-            };
-          }
-          if (sel.type === 'row') {
-            const r = normalizeRowRange(sel.startRow, sel.endRow);
-            return {
-              getRow: getViewRow,
-              startRow: r.startRow,
-              endRow: r.endRow + 1,
-              columns: s.orderedColumns,
-              isRowIncluded: isRowIncludedView,
-            };
-          }
-          const r = normalizeColumnRange(sel.startCol, sel.endCol);
-          return {
-            getRow: getViewRow,
-            startRow: 0,
-            endRow: s.viewRowCount,
-            columns: s.orderedColumns.slice(r.startCol, r.endCol + 1),
-            isRowIncluded: isRowIncludedView,
-          };
-        }
-        // normalized === 'view': ビュー行全体(フィルター/ソート/列可視・固定順を反映)です。
-        return {
-          getRow: getViewRow,
-          startRow: 0,
-          endRow: s.viewRowCount,
-          columns: s.orderedColumns,
-          isRowIncluded: isRowIncludedView,
-        };
-      };
-
-      // 追加(grouping ④): 自動グループ列は合成列(leaf 行に値なし)のためエクスポート列から
-      //   除外します(グループ行自体も getRow undefined スキップで出力対象外 = leaf のみ)。
-      // 変更(detail ③): 展開行トグル列(合成列)も同様に除外します。
-      const stripAutoGroupColumn = (
-        exportColumns: GridColumn<T>[],
-      ): GridColumn<T>[] =>
-        exportColumns.filter((column) => !isSyntheticColumnKey(column.key));
-
-      // CSV 文字列を組み立てます(exportCsv / downloadCsv で共有)。既定 scope は 'view'(旧 'all' と
-      //   同実装のため挙動不変)。行アクセサは resolveExportScope が scope に応じて返します。
-      const buildCsv = (options?: CsvExportOptions): string => {
-        const resolved = resolveExportScope(options?.scope ?? 'view');
-        // scope='selection' で選択無し(または state 未初期化)。BOM 指定があれば BOM のみ、無ければ空文字。
-        if (!resolved) {
-          return options?.bom ? '\uFEFF' : '';
-        }
-        return serializeRowsToCsv({
-          getRow: resolved.getRow,
-          startRow: resolved.startRow,
-          endRow: resolved.endRow,
-          columns: stripAutoGroupColumn(resolved.columns),
-          delimiter: options?.delimiter,
-          includeHeaders: options?.includeHeaders,
-          bom: options?.bom,
-          // 追加(proposals ⑪): 出力対象行フィルタ(scope に応じた index 空間で bound 済み)。
-          isRowIncluded: resolved.isRowIncluded,
-        });
-      };
-
-      // エクスポート用の整形済みデータ(列メタ + 2 次元セル)を組み立てます(getExportData で使用)。
-      //   scope / 列順 / フィルター・ソート適用は buildCsv と同一(resolveExportScope を共有)。xlsx 等の
-      //   生成は consumer 側で行います(本ライブラリは Excel ライブラリを同梱しません)。
-      const buildExportData = (options?: GridExportOptions): GridExportData => {
-        const resolved = resolveExportScope(options?.scope ?? 'view');
-        // scope='selection' で選択無し(または state 未初期化) → 空データ。
-        if (!resolved) {
-          return { columns: [], rows: [] };
-        }
-        return buildGridExportData({
-          getRow: resolved.getRow,
-          startRow: resolved.startRow,
-          endRow: resolved.endRow,
-          columns: stripAutoGroupColumn(resolved.columns),
-          // 追加(proposals ⑪): 出力対象行フィルタ(scope に応じた index 空間で bound 済み)。
-          isRowIncluded: resolved.isRowIncluded,
-        });
-      };
-
-      return {
-        scrollToRow: (viewRowIndex, scrollOptions) =>
-          applyScroll(
-            verticalTargetFor(viewRowIndex, scrollOptions?.align ?? 'auto'),
-            null,
-          ),
-
-        scrollToCell: (viewRowIndex, colIndex, scrollOptions) =>
-          scrollToCellInternal(
-            viewRowIndex,
-            colIndex,
-            scrollOptions?.align ?? 'auto',
-          ),
-
-        scrollToTop: () => {
-          const el = scrollContainerRef.current;
-          if (el) {
-            applyApiScroll(el, { top: 0, left: el.scrollLeft });
-          }
-        },
-
-        scrollToBottom: () => {
-          const el = scrollContainerRef.current;
-          const s = apiStateRef.current;
-          if (!el || !s) {
-            return;
-          }
-          applyApiScroll(el, {
-            top: Math.max(
-              s.headerHeight + s.physicalBodyHeight - el.clientHeight,
-              0,
-            ),
-            left: el.scrollLeft,
-          });
-        },
-
-        // 追加(proposals ⑧): スクロール位置(px)の取得 / 設定です。値は生の
-        //   scrollTop / scrollLeft(onScroll と同一基準・往復で一貫)。
-        getScrollPosition: () => {
-          const el = scrollContainerRef.current;
-          return el ? { top: el.scrollTop, left: el.scrollLeft } : null;
-        },
-
-        setScrollPosition: (position, scrollOptions) => {
-          const el = scrollContainerRef.current;
-          if (!el) {
-            return;
-          }
-          applyApiScroll(
-            el,
-            {
-              top: position.top ?? el.scrollTop,
-              left: position.left ?? el.scrollLeft,
-            },
-            scrollOptions?.behavior ?? 'auto',
-          );
-        },
-
-        getVisibleRowRange: () => {
-          const s = apiStateRef.current;
-          if (!s || s.windowLastRow < s.windowFirstRow) {
-            return null;
-          }
-          return { startIndex: s.windowFirstRow, endIndex: s.windowLastRow + 1 };
-        },
-
-        getActiveCell: () => {
-          const cell = apiStateRef.current?.uiState.activeCell;
-          return cell ? { row: cell.row, col: cell.col } : null;
-        },
-
-        setActiveCell: (cell, cellOptions) => {
-          const s = apiStateRef.current;
-          if (!s) {
-            return;
-          }
-          s.dispatch(gridActions.activateCell(cell));
-          if (cell && cellOptions?.scrollIntoView) {
-            scrollToCellInternal(cell.row, cell.col, 'auto');
-          }
-        },
-
-        getSelection: () => apiStateRef.current?.uiState.selection ?? null,
-
-        selectCell: (viewRowIndex, colIndex, cellOptions) => {
-          const s = apiStateRef.current;
-          if (!s) {
-            return;
-          }
-          const cell = { row: viewRowIndex, col: colIndex };
-          // クリック相当: pointerdown(start)→ pointerup(end)。activeCell=cell / 単一セル選択 / dragState クリア。
-          s.dispatch(gridActions.startSelection(cell));
-          s.dispatch(gridActions.endSelection());
-          if (cellOptions?.scrollIntoView) {
-            scrollToCellInternal(viewRowIndex, colIndex, 'auto');
-          }
-        },
-
-        selectRange: (range, rangeOptions) => {
-          const s = apiStateRef.current;
-          if (!s) {
-            return;
-          }
-          // ドラッグ選択相当: start(anchor)→ update(focus)→ end。1 イベント内のため再レンダーは 1 回。
-          s.dispatch(gridActions.startSelection(range.start));
-          s.dispatch(gridActions.updateSelection(range.end));
-          s.dispatch(gridActions.endSelection());
-          if (rangeOptions?.scrollIntoView) {
-            scrollToCellInternal(range.end.row, range.end.col, 'auto');
-          }
-        },
-
-        clearSelection: () => {
-          apiStateRef.current?.dispatch(gridActions.clearSelection());
-        },
-
-        getSelectedRows: () => {
-          const s = apiStateRef.current;
-          if (!s) {
-            return [];
-          }
-          const sel = s.uiState.selection;
-          if (!sel) {
-            return [];
-          }
-          const result: T[] = [];
-          const pushRow = (index: number) => {
-            const row = s.rowModel.getRow(index);
-            // SSRM 未ロード行(undefined)はスキップします。
-            if (row) {
-              result.push(row);
-            }
-          };
-          if (sel.type === 'cell') {
-            const r = normalizeCellRange(sel.range);
-            for (let i = r.start.row; i <= r.end.row; i += 1) {
-              pushRow(i);
-            }
-          } else if (sel.type === 'row') {
-            const r = normalizeRowRange(sel.startRow, sel.endRow);
-            for (let i = r.startRow; i <= r.endRow; i += 1) {
-              pushRow(i);
-            }
-          } else {
-            // 列選択は全ビュー行が対象(コピーと同義)。
-            for (let i = 0; i < s.viewRowCount; i += 1) {
-              pushRow(i);
-            }
-          }
-          return result;
-        },
-
-        exportCsv: (options) => buildCsv(options),
-
-        downloadCsv: (filename, options) => {
-          if (typeof document === 'undefined') {
-            return;
-          }
-          // ファイル化では Excel 互換のため bom 既定を true にします(明示指定があればそれを尊重)。
-          const csv = buildCsv({ ...options, bom: options?.bom ?? true });
-          const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-          const url = URL.createObjectURL(blob);
-          const anchor = document.createElement('a');
-          anchor.href = url;
-          anchor.download = filename ?? 'export.csv';
-          document.body.appendChild(anchor);
-          anchor.click();
-          document.body.removeChild(anchor);
-          URL.revokeObjectURL(url);
-        },
-
-        getExportData: (options) => buildExportData(options),
-
-        // ── 状態の保存 / 復元 ──────────────────────────────
-        getState: () => {
-          const s = apiStateRef.current;
-          if (!s) {
-            // ref 未確定時(通常起こりません)は現行スキーマの空状態を返します(列メタは空配列)。
-            return buildGridState(
-              {},
-              { globalText: '', columnFilters: {} },
-              [],
-              [],
-            );
-          }
-          // 永続スライス(手動リサイズ幅 / フィルター / ソート)+ 列メタ(可視 / 順序 / ピン)を純粋に
-          //   スナップショットします。列メタは columns prop から配列順で抽出します(read-only)。
-          return buildGridState(
-            s.uiState.columnWidths,
-            s.uiState.filters,
-            s.uiState.sort,
-            extractColumnState(s.columns),
-          );
-        },
-
-        applyState: (state) => {
-          const s = apiStateRef.current;
-          if (!s) {
-            return;
-          }
-          // 外部入力(deserialize 結果)を現行スキーマへ防御的に正規化してから反映します。
-          const normalized = migrateGridState(state);
-          // 列メタ(v2): onColumnsChange があり、かつ正規化後に columns があるときだけ反映します
-          //   (onColumnsChange 未指定 or v1 保存値=列メタ無しならスキップ。この場合は下の 3 dispatch
-          //   のみで v1 と完全同一の経路です)。現 columns へ key ベースでマージし(順序復元 +
-          //   visible/pinned 適用 + 手動リサイズ幅の column.width 焼き込み)、onColumnsChange で
-          //   controlled に返します。焼き込みは、columns 変化で走る列同期 effect が column.width 起点で
-          //   columnWidths を再構築する際に手動リサイズ幅を保全するためです(pin/visible/reorder と同型)。
-          if (s.onColumnsChange && normalized.columns) {
-            s.onColumnsChange(
-              applyColumnState(
-                s.columns,
-                normalized.columns,
-                normalized.columnWidths,
-              ),
-            );
-          }
-          // 幅 reset / フィルター一括 / ソート set の 3 dispatch。同一イベント内で自動バッチされ
-          //   再レンダーは 1 回。SSRM では filters/sort 変化が liveServerSideQuery へ載り再取得されます。
-          //   幅は resetColumnWidths(フル置換)で、保存外(= flex 列など)のキーを残しません。
-          s.dispatch(gridActions.resetColumnWidths(normalized.columnWidths));
-          s.dispatch(gridActions.setAllFilters(normalized.filters));
-          s.dispatch(gridActions.setSort(normalized.sort));
-        },
-
-        // ── 行選択(チェックボックス選択)────────────────────
-        getRowSelection: () => {
-          const s = apiStateRef.current;
-          return s
-            ? rowSelectionToModel(s.uiState.rowSelection)
-            : { type: 'include', rowKeys: [] };
-        },
-        setRowSelection: (model) => {
-          rowSelectionCommands.commitRowSelection(rowSelectionFromModel(model));
-        },
-        getSelectedRowKeys: () => {
-          const s = apiStateRef.current;
-          if (!s) {
-            return [];
-          }
-          const sel = s.uiState.rowSelection;
-          // include はキーをそのまま返します(exclude のみ全行を走査)。
-          if (sel.mode === 'include') {
-            return Array.from(sel.keys);
-          }
-          const keys: GridRowKey[] = [];
-          const count = s.rowModel.getRowCount();
-          for (let i = 0; i < count; i += 1) {
-            const row = s.rowModel.getRow(i);
-            // SSRM 未ロード行はスキップ(ロード済みキーのみ列挙)。
-            if (!row) {
-              continue;
-            }
-            const key = s.rowModel.getRowKey(i) ?? i;
-            if (!sel.keys.has(key)) {
-              keys.push(key);
-            }
-          }
-          return keys;
-        },
-        getSelectedRowData: () => {
-          const s = apiStateRef.current;
-          if (!s) {
-            return [];
-          }
-          const sel = s.uiState.rowSelection;
-          const result: T[] = [];
-          const count = s.rowModel.getRowCount();
-          // 行の探索が必要なため O(rowCount)。キーで足りるなら getSelectedRowKeys を推奨。
-          for (let i = 0; i < count; i += 1) {
-            const row = s.rowModel.getRow(i);
-            if (!row) {
-              continue;
-            }
-            const key = s.rowModel.getRowKey(i) ?? i;
-            if (resolveIsRowSelected(sel, key)) {
-              result.push(row);
-            }
-          }
-          return result;
-        },
-        getSelectedRowCount: () => {
-          const s = apiStateRef.current;
-          // 変更(grouping ④): 総数はグループ行を除く leafRowCount です(グルーピング無効時は
-          //   getRowCount() と同値)。
-          return s
-            ? countSelectedRows(s.uiState.rowSelection, s.leafRowCount)
-            : 0;
-        },
-        isRowSelected: (rowKey) => {
-          const s = apiStateRef.current;
-          return s ? resolveIsRowSelected(s.uiState.rowSelection, rowKey) : false;
-        },
-        selectAllRows: () => {
-          rowSelectionCommands.commitRowSelection(selectAllRows());
-        },
-        clearRowSelection: () => {
-          rowSelectionCommands.commitRowSelection(clearRowSelection());
-        },
-
-        // ── undo / redo(編集履歴)──
-        // 追加(undo/redo): 直近のグリッド編集の取り消し/やり直しです。無効条件(readOnly /
-        //   serverSide / onRowsChange 未指定 / 履歴なし)は history controller 側で吸収します。
-        undo: () => {
-          apiStateRef.current?.undoRows();
-        },
-        redo: () => {
-          apiStateRef.current?.redoRows();
-        },
-        canUndo: () => apiStateRef.current?.canUndoRows() ?? false,
-        canRedo: () => apiStateRef.current?.canRedoRows() ?? false,
-        clearUndoHistory: () => {
-          apiStateRef.current?.clearUndoHistory();
-        },
-
-        // ── 行グルーピング ──
-        // 追加(grouping ④): グループ開閉の命令的 API です。グルーピング無効時(groupTree=null /
-        //   該当キーなし)は no-op です。groupKey は getGroupRows() の記述子から取得できます。
-        //   合成は reducer(group/setCollapsed)側で行うため、同一イベント内の連続呼び出しでも
-        //   stale 読みなしで積み重なります。
-        setGroupCollapsed: (groupKey, collapsed) => {
-          apiStateRef.current?.dispatch(
-            gridActions.setGroupCollapsed(groupKey, collapsed),
-          );
-        },
-        expandAllGroups: () => {
-          apiStateRef.current?.dispatch(
-            gridActions.setCollapsedGroupKeys(new Set()),
-          );
-        },
-        collapseAllGroups: () => {
-          const s = apiStateRef.current;
-          if (!s || !s.groupTree) {
-            return;
-          }
-          s.dispatch(
-            gridActions.setCollapsedGroupKeys(
-              new Set(collectAllGroupKeys(s.groupTree)),
-            ),
-          );
-        },
-        getGroupRows: () => {
-          const s = apiStateRef.current;
-          return s?.groupTree ? collectAllGroupRows(s.groupTree) : [];
-        },
-
-        // ── 展開行(detail) ──
-        // 追加(detail ②): 展開行の命令的 API です。detailRow 未指定時は no-op / 空配列。
-        //   合成は reducer(detail/setExpanded)側で行うため、同一イベント内の連続呼び出しでも
-        //   stale 読みなしで積み重なります。展開時は行を引いて isExpandable を確認し、false なら
-        //   no-op(状態にキーを残さない)。行が引けないとき(serverSide の未ロード行 / フィルター
-        //   除外中)はキーだけ保持し、描画側(resolveDetailRowExtras)が可否を判定します。
-        setDetailRowExpanded: (rowKey, expanded) => {
-          const s = apiStateRef.current;
-          if (!s || !s.detailRowEnabled) {
-            return;
-          }
-          if (expanded && s.detailIsExpandable) {
-            const index = findDetailRowIndex(
-              s.rowModel,
-              rowKey,
-              detailIndexCacheRef.current,
-              !s.isServerSide,
-            );
-            if (index >= 0) {
-              const row = s.rowModel.getRow(index);
-              if (
-                row != null &&
-                !s.detailIsExpandable(row, {
-                  rowKey,
-                  sourceRowIndex: s.rowModel.getSourceIndex(index),
-                })
-              ) {
-                return;
-              }
-            }
-          }
-          s.dispatch(gridActions.setDetailRowExpanded(rowKey, expanded));
-        },
-        getExpandedDetailRowKeys: () => {
-          const s = apiStateRef.current;
-          return s && s.detailRowEnabled
-            ? Array.from(s.uiState.expandedDetailRowKeys)
-            : [];
-        },
-        collapseAllDetailRows: () => {
-          const s = apiStateRef.current;
-          if (!s || !s.detailRowEnabled) {
-            return;
-          }
-          s.dispatch(gridActions.setExpandedDetailRowKeys(new Set()));
-        },
-
-        // ── 行ドラッグ並び替え ──
-        // 追加(row-drag ③): rowKey の行を元配列の toIndex へ移動します(clientSide 専用)。
-        moveRow: (rowKey, toIndex) => {
-          apiStateRef.current?.moveRowByKey(rowKey, toIndex);
-        },
-
-        // ── バリデーション ──
-        // 追加(validation): validate 指定列 × 全ソース行のオンデマンド全走査です(保存前チェック用)。
-        //   invalid 表示は表示時導出のため状態を持たず、本メソッドは呼ばれた時だけ計算します。
-        //   clientSide 専用(serverSide は全行を保持しないため空配列 + warn)。
-        getInvalidCells: () => {
-          const s = apiStateRef.current;
-          if (!s) {
-            return [];
-          }
-          if (s.isServerSide) {
-            console.warn(
-              '[SpreadsheetGrid] getInvalidCells は serverSide モードでは利用できません(空配列を返します)。',
-            );
-            return [];
-          }
-          return scanInvalidCells(s.rows, s.columns, s.resolvedRowKeyGetter);
-        },
-
-        // ── serverSide(SSRM)──
-        // 追加(batch 8): serverSide のソフトリフレッシュです(serverSideRefreshToken の命令的版)。
-        //   クエリ不変のままキャッシュを破棄し、スクロール位置を保って現在の可視レンジを即時
-        //   取り直します。clientSide では警告付き no-op(getInvalidCells と同じ流儀)。
-        refreshServerSide: () => {
-          const s = apiStateRef.current;
-          if (!s) {
-            return;
-          }
-          if (!s.isServerSide) {
-            console.warn(
-              '[SpreadsheetGrid] refreshServerSide は clientSide(rows)モードでは何もしません(dataSource 指定時のみ有効です)。',
-            );
-            return;
-          }
-          s.serverSideRefresh();
-        },
-
-        // ── UI パネル(FM-3)──
-        // 追加(FM-3): フィルター管理パネルの開閉です。factory は deps [] で安定のため、
-        //   controller のコールバックは apiStateRef(毎レンダー更新)経由で最新を読みます。
-        openFilterManager: () => {
-          apiStateRef.current?.openFilterManager();
-        },
-        closeFilterManager: () => {
-          apiStateRef.current?.closeFilterManager();
-        },
-      };
-    },
-    // 変更(undo/redo scroll): スクロール計算群を component スコープへ切り出したため deps に
-    //   加えます。いずれも deps [] の useCallback で参照不変のため、ハンドル生成は従来どおり
-    //   1 回です(exhaustive-deps もクリーン)。
-    // 変更(proposals ⑧): applyApiScroll(deps [] で参照不変)を scrollToTop / scrollToBottom /
-    //   setScrollPosition が直接使うため deps へ加えます(ハンドル生成は従来どおり 1 回)。
-    [
-      applyApiScroll,
-      applyScroll,
-      scrollToCellInternal,
-      verticalTargetFor,
-      rowSelectionCommands,
-    ],
-  );
+    commitRowSelection: rowSelectionCommands.commitRowSelection,
+    markApiScroll: markApiScrollPending,
+  });
+  useImperativeHandle(ref, () => gridApi.handle, [gridApi]);
 
   // ── onStateChange(永続スライス + 列メタ変化の通知)──────
   // 設計: 純ロジック decideStateChangeEmit に判定を委ね、ここは「現在 snapshot を作って判定 → 必要なら
