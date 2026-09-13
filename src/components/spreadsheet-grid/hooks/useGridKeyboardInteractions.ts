@@ -1,283 +1,32 @@
-import { useCallback, type Dispatch, type KeyboardEvent } from 'react';
-import { gridActions, type GridUiAction } from '../model/gridActions';
-import type {
-  CellCoord,
-  GridColumn,
-  GridUiState,
-  RowModel,
-  SpreadsheetGridProps,
-} from '../model/gridTypes';
-import { clamp } from '../logic/geometry';
-import { isPrintableKey, shouldIgnoreGridKeydown } from '../logic/domGuards';
-import { isCellEditable } from '../utils/permissions';
+// 変更(非依存化 ③-7): 本体は controllers/keyboardController.ts(React 非依存)へ移設し、本 hook は
+//   useController でレンダー後に最新 args を渡し、React の合成 KeyboardEvent を構造的型へ詰め替える
+//   だけの薄いアダプタです。handleKeyDown の参照は安定します(旧実装は 20 個の deps で毎回変わり得た)。
+import { useCallback, type KeyboardEvent } from 'react';
+import {
+  createKeyboardController,
+  type KeyboardControllerArgs,
+} from '../controllers/keyboardController';
+import { useController } from './useController';
 
-type UseGridKeyboardInteractionsArgs<T> = {
-  uiState: GridUiState;
-  // 変更(DS-3-1): filteredRows: T[] を RowModel シームへ置換しました(DS-3-0 の seam を消費)。
-  //   length は getRowCount()、行取得は getRow(viewIndex) 経由に切り替えます。
-  rowModel: RowModel<T>;
-  visibleColumns: GridColumn<T>[];
-  readOnly: boolean;
-  canEditCell: SpreadsheetGridProps<T>['canEditCell'];
-  // 変更(11-B6): ドラフト state の setter → 「編集開始時の初期値」setter になりました。
-  //   文字キー直打ちの編集開始では、押下キー 1 文字を初期値として渡します
-  //   （以後のタイピングは CellEditorLayer ローカル state が受け持ちます）。
-  setEditorInitialValue: (value: string) => void;
-  dispatch: Dispatch<GridUiAction>;
-  handleCopy: () => Promise<void>;
-  handleCellDoubleClick: (cell: CellCoord) => void;
-  isWholeGridSelected: boolean;
-  selectEntireGrid: () => void;
-  // 追加(undo/redo): Ctrl/Cmd+Z / Shift+Z / Y で呼ぶ履歴操作です。無効条件(readOnly / serverSide /
-  //   履歴なし)は history controller 側で吸収するため、ここでは常に呼び出します。
-  onUndo: () => void;
-  onRedo: () => void;
-  // 追加(clear): Delete / Backspace で選択セル(なければアクティブセル)の値をクリアします。
-  //   編集不可セルの除外・変更なしの no-op(履歴に積まない)は呼び出し側で吸収します。
-  onClearSelection: () => void;
-  // 追加(clear opt-out): Delete / Backspace クリアの有効化です。false のときキーは何も
-  //   しません(preventDefault もせず素通し = 未ハンドルのキーと同じ扱い)。
-  enableClearOnDelete: boolean;
-  // 追加(editor: checkbox): checkbox 列のアクティブセルを Space で直接トグルします
-  //   (編集可否ガード・履歴積みは呼び出し側で吸収)。
-  onToggleCheckboxCell: (cell: CellCoord) => void;
-  // 追加(grouping ④): アクティブセルがグループ行のとき、Enter / Space で開閉をトグルします
-  //   (グループ行に編集対象は無いため編集系キーを開閉に転用)。
-  onToggleGroup: (groupKey: string) => void;
-};
-
-// 追加: keyboard interaction（arrow/tab/enter/copy/select-all/edit start）をまとめます。
-export const useGridKeyboardInteractions = <T,>({
-  uiState,
-  rowModel,
-  visibleColumns,
-  readOnly,
-  canEditCell,
-  setEditorInitialValue,
-  dispatch,
-  handleCopy,
-  handleCellDoubleClick,
-  isWholeGridSelected,
-  selectEntireGrid,
-  onUndo,
-  onRedo,
-  onClearSelection,
-  enableClearOnDelete,
-  onToggleCheckboxCell,
-  onToggleGroup,
-}: UseGridKeyboardInteractionsArgs<T>) => {
-  // 追加(DS-3-1): 行数はシーム経由で取得します(= order.length / 旧 filteredRows.length と等価)。
-  //   各 useCallback の deps はこのプリミティブ rowCount を使い、rowModel オブジェクト参照を
-  //   deps に入れないことで、件数不変のソートで handler identity が変わらない 11系のメモ化を保ちます。
-  const rowCount = rowModel.getRowCount();
-
-  // 変更(enter-move ①): getMovedCell は撤去しました。唯一の消費者だった edit controller の
-  //   commit 後移動が「rAF 時点の最新境界で clamp」方式へ移行したためです(詳細は
-  //   useGridEditController.ts の boundsRef コメント参照)。
-
-  // 追加: active cell を移動します。shiftKey=true の場合は cell selection を拡張します。
-  const moveActiveCell = useCallback(
-    (deltaRow: number, deltaCol: number, extendSelection: boolean) => {
-      if (rowCount === 0 || visibleColumns.length === 0) {
-        return;
-      }
-      const currentCell = uiState.activeCell ?? { row: 0, col: 0 };
-      const nextCell = {
-        row: clamp(currentCell.row + deltaRow, 0, rowCount - 1),
-        col: clamp(currentCell.col + deltaCol, 0, visibleColumns.length - 1),
-      };
-      if (extendSelection) {
-        const anchor =
-          uiState.selection?.type === 'cell'
-            ? uiState.selection.range.start
-            : currentCell;
-        dispatch(gridActions.startSelection(anchor));
-        dispatch(gridActions.updateSelection(nextCell));
-        dispatch(gridActions.endSelection());
-        dispatch(gridActions.activateCell(nextCell));
-        return;
-      }
-      dispatch(gridActions.startSelection(nextCell));
-      dispatch(gridActions.endSelection());
-      dispatch(gridActions.activateCell(nextCell));
-    },
-    [
-      dispatch,
-      rowCount,
-      uiState.activeCell,
-      uiState.selection,
-      visibleColumns.length,
-    ],
-  );
-
-  // 追加: Ctrl/Cmd + C や Arrow/Enter を捕捉します。
+export const useGridKeyboardInteractions = <T,>(
+  args: KeyboardControllerArgs<T>,
+) => {
+  const controller = useController(() => createKeyboardController<T>(), args);
   const handleKeyDown = useCallback(
-    async (event: KeyboardEvent<HTMLDivElement>) => {
-      // 追加: filter input / select / button 等にフォーカス中は、
-      //       grid 側の keyboard 操作を無効化します。
-      if (shouldIgnoreGridKeydown(event.target)) {
-        return;
-      }
-
-      if (uiState.editingCell) {
-        return;
-      }
-
-      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'c') {
-        event.preventDefault();
-        await handleCopy();
-        return;
-      }
-
-      // 追加: Ctrl + A / Cmd + A で全体選択、2回目で解除します。
-      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'a') {
-        event.preventDefault();
-        if (isWholeGridSelected) {
-          dispatch(gridActions.clearSelection());
-          dispatch(gridActions.activateCell(null));
-          return;
-        }
-        selectEntireGrid();
-        return;
-      }
-
-      // 追加(undo/redo): Ctrl/Cmd + Z = undo、Ctrl/Cmd + Shift + Z / Ctrl/Cmd + Y = redo です。
-      //   編集中(editingCell)は上の早期 return で到達せず、エディタ input のネイティブ undo に
-      //   委譲されます。IME 変換中(isComposing)は変換取り消し操作と衝突するため発火しません。
-      if ((event.ctrlKey || event.metaKey) && !event.nativeEvent.isComposing) {
-        if (event.key.toLowerCase() === 'z') {
-          event.preventDefault();
-          if (event.shiftKey) {
-            onRedo();
-          } else {
-            onUndo();
-          }
-          return;
-        }
-        if (event.key.toLowerCase() === 'y' && !event.shiftKey) {
-          event.preventDefault();
-          onRedo();
-          return;
-        }
-      }
-
-      if (event.key === 'ArrowUp') {
-        event.preventDefault();
-        moveActiveCell(-1, 0, event.shiftKey);
-        return;
-      }
-      if (event.key === 'ArrowDown') {
-        event.preventDefault();
-        moveActiveCell(1, 0, event.shiftKey);
-        return;
-      }
-      if (event.key === 'ArrowLeft') {
-        event.preventDefault();
-        moveActiveCell(0, -1, event.shiftKey);
-        return;
-      }
-      if (event.key === 'ArrowRight') {
-        event.preventDefault();
-        moveActiveCell(0, 1, event.shiftKey);
-        return;
-      }
-      if (event.key === 'Tab') {
-        event.preventDefault();
-        moveActiveCell(0, event.shiftKey ? -1 : 1, false);
-        return;
-      }
-      if (event.key === 'Escape') {
-        event.preventDefault();
-        dispatch(gridActions.clearSelection());
-        return;
-      }
-      // 追加(clear): Delete / Backspace で選択セルの値クリアです(Excel / AG Grid の標準操作)。
-      // 変更(clear opt-out): enableClearOnDelete=false では分岐ごとスキップします(素通し)。
-      if (
-        (event.key === 'Delete' || event.key === 'Backspace') &&
-        enableClearOnDelete
-      ) {
-        event.preventDefault();
-        onClearSelection();
-        return;
-      }
-      // 追加(grouping ④): アクティブセルがグループ行なら Enter / Space は開閉トグルです
-      //   (グルーピング無効時は getGroupRow 未定義のため常に素通り)。
-      if (
-        (event.key === 'Enter' || event.key === ' ') &&
-        uiState.activeCell
-      ) {
-        const groupRow = rowModel.getGroupRow?.(uiState.activeCell.row);
-        if (groupRow) {
-          event.preventDefault();
-          onToggleGroup(groupRow.groupKey);
-          return;
-        }
-      }
-      if (event.key === 'Enter' || event.key === 'F2') {
-        event.preventDefault();
-        if (uiState.activeCell) {
-          handleCellDoubleClick(uiState.activeCell);
-        }
-        return;
-      }
-      if (isPrintableKey(event) && uiState.activeCell) {
-        const row = rowModel.getRow(uiState.activeCell.row);
-        const column = visibleColumns[uiState.activeCell.col];
-        if (!row || !column) {
-          return;
-        }
-        if (
-          !isCellEditable(
-            { readOnly, canEditCell },
-            uiState.activeCell.row,
-            uiState.activeCell.col,
-            row,
-            column,
-          )
-        ) {
-          return;
-        }
-        // 追加(editor: checkbox): checkbox 列は編集セッションを開かず、Space のみ直接トグル
-        //   します(その他の印字キーは no-op。Space のページスクロール等も抑止)。
-        if (column.editor?.type === 'checkbox') {
-          event.preventDefault();
-          if (event.key === ' ') {
-            onToggleCheckboxCell(uiState.activeCell);
-          }
-          return;
-        }
-        event.preventDefault();
-        setEditorInitialValue(event.key);
-        dispatch(gridActions.startEdit(uiState.activeCell));
-      }
-    },
-    [
-      canEditCell,
-      dispatch,
-      rowModel,
-      handleCellDoubleClick,
-      handleCopy,
-      isWholeGridSelected,
-      moveActiveCell,
-      onClearSelection,
-      enableClearOnDelete,
-      onRedo,
-      onToggleCheckboxCell,
-      onToggleGroup,
-      onUndo,
-      readOnly,
-      selectEntireGrid,
-      setEditorInitialValue,
-      uiState.activeCell,
-      uiState.editingCell,
-      visibleColumns,
-    ],
+    (event: KeyboardEvent<HTMLDivElement>) =>
+      controller.handleKeyDown({
+        key: event.key,
+        ctrlKey: event.ctrlKey,
+        metaKey: event.metaKey,
+        shiftKey: event.shiftKey,
+        altKey: event.altKey,
+        isComposing: event.nativeEvent.isComposing,
+        target: event.target,
+        preventDefault: () => event.preventDefault(),
+      }),
+    [controller],
   );
-
-  return {
-    handleKeyDown,
-  };
+  return { handleKeyDown };
 };
 
 export default useGridKeyboardInteractions;
