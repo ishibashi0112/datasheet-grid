@@ -3,8 +3,11 @@
 #   同梱側から解決できず DOM 系テストが起動しません(CLAUDE.md「vite+ のツールチェーン」の項)。
 #   vite を vite-plus-core へエイリアスし、vitest を vp 同梱バージョンへ pin することで、
 #   プロジェクト側と vp 側のツールが一本化され、jsdom はプロジェクトの node_modules から解決されます。
+#   vite-plus-core も devDependency の vite-plus(= vp 本体)が依存する版へ固定します(2026-09-13)。
+#   旧指定 @latest は lockfile 更新のたびに再解決され、vp 本体と core の版がずれる原因になりました
+#   (React 19.3 更新時に 0.2.4 → 0.3.1 へ意図せず昇格)。vite-plus を上げるときは本行も揃えること。
 overrides:
-  vite: npm:@voidzero-dev/vite-plus-core@latest
+  vite: npm:@voidzero-dev/vite-plus-core@0.2.4
   vitest: 4.1.10
 
 # 追加(website): ドキュメントサイト(Next.js + Fumadocs)を workspace メンバー化。
