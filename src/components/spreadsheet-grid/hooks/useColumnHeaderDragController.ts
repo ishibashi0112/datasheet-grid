@@ -26,6 +26,8 @@ import {
 } from '../logic/autoScrollGeometry';
 // 追加(detail ④): 展開行カード内(ネストしたグリッド)のセル除外です。
 import { isInsideDetailCardOf } from '../logic/detailRow';
+import { applySlotToElement } from '../logic/slotDom';
+import type { GridResolvedSlot } from '../model/gridTypes';
 
 // 追加(13-B3-2): ヘッダーのバッジ(Excel 列名)を grip にした列の D&D 並べ替え controller です。
 // 設計メモ:
@@ -139,6 +141,8 @@ type UseColumnHeaderDragControllerArgs<T> = {
   rightLeadingWidth: number;
   // 並べ替え + 任意 pin 変更の共通 commit。
   applyColumnOrderAndPin: ApplyColumnOrderAndPin;
+  // 追加(slot-props): classNames.dragGhost の解決済みスロット(ゴースト要素へ className / style)。
+  ghostSlot?: GridResolvedSlot;
 };
 
 // 変更(scroll-fix): 端 autoscroll の定数(端帯 24px / 1 フレーム 18px)は範囲選択側と共通化し、
@@ -336,6 +340,9 @@ export const useColumnHeaderDragController = <T,>(
       // (生成直後の 1 フレーム、原点(0,0)にちらつかせないため)。
       'transform:translate(-9999px,-9999px)',
     ].join(';');
+    // 追加(slot-props): classNames.dragGhost を反映します(style は上記の既定インラインより後勝ち。
+    //   座標は transform で毎フレーム上書きされます)。
+    applySlotToElement(el, latestRef.current.ghostSlot);
 
     const icon = document.createElement('span');
     icon.style.cssText =

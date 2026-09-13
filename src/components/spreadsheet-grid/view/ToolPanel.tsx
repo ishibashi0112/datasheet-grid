@@ -20,6 +20,7 @@ import type {
 } from '../hooks/useToolPanelController';
 // ヘッダーを掴んでパネルを移動する共有フックです(FM-4)。
 import { usePanelHeaderDrag } from '../hooks/usePanelHeaderDrag';
+import type { GridResolvedSlot } from '../model/gridTypes';
 
 // 追加(UP-1): SegmentedControl の 1 セグメント分の表示情報です。
 //   badge は件数バッジ(適用中フィルター数 / ソート基準数)。undefined / 0 は非表示です。
@@ -33,6 +34,8 @@ type ToolPanelProps = {
   // 追加(TH-DK-2): ダークテーマ修飾子クラス('ssg-theme-dark' | undefined)。ポータルは
   //   .ssg-root 外のため、root と同じ修飾子を自身の root 要素へ直接付与します。
   themeClassName?: string;
+  // 追加(slot-props): classNames.popover の解決済みスロット(パネル root へ)。
+  popoverSlot?: GridResolvedSlot;
   // アクティブタブです(null = closed。描画しません)。
   activeTab: ToolPanelTab | null;
   // 追加(UP-2): 既開時フラッシュのトリガーです(controller の toolPanelFlashTick)。
@@ -53,6 +56,7 @@ type ToolPanelProps = {
 
 export function ToolPanel({
   themeClassName,
+  popoverSlot,
   activeTab,
   flashTick,
   tabs,
@@ -133,8 +137,13 @@ export function ToolPanel({
       onContextMenu={(event) => {
         event.preventDefault();
       }}
-      className={cx('ssg-popover', 'ssg-toolpanel', themeClassName)}
-      style={wrapperStyle}
+      className={cx(
+        'ssg-popover',
+        'ssg-toolpanel',
+        themeClassName,
+        popoverSlot?.className,
+      )}
+      style={{ ...popoverSlot?.style, ...wrapperStyle }}
     >
       {/* ── ヘッダー: SegmentedControl + × クローズ(掴んで移動可) ── */}
       <div

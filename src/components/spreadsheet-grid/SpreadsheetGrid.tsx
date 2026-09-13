@@ -22,6 +22,11 @@ import {
 // 追加(UI CSS移行): 基底スタイル(トークン + .ssg-* クラス)を読み込みます(THEME-1 で未レイヤー化)。
 import './styles.css';
 import { cx } from './logic/cx';
+import { mergeStyles } from './logic/slotProps';
+import {
+  useResolvedGridSlot,
+  useResolvedGridSlots,
+} from './hooks/useResolvedGridSlots';
 
 import { useVirtualizer } from '@tanstack/react-virtual';
 
@@ -554,6 +559,8 @@ export function SpreadsheetGrid<T extends object>({
   renderTopBar,
   renderBottomBar,
   className,
+  // 追加(slot-props): ルート要素のインライン style(classNames.root の style と合成、こちらが後勝ち)。
+  style,
   // 追加(UI CSS移行): パーツ別の追加 className スロット。
   classNames,
   // 追加(UI CSS移行): 行ごとの条件付き className。
@@ -2427,9 +2434,14 @@ export function SpreadsheetGrid<T extends object>({
   const themeClassName =
     resolvedTheme === 'dark' ? 'ssg-theme-dark' : undefined;
 
+  // 追加(slot-props): classNames / detailRow.className を解決済みスロットへ変換します(署名 memo で
+  //   参照安定。利用側がレンダー毎に新しいオブジェクトを渡しても memo 済み子の props は揺れません)。
+  const slots = useResolvedGridSlots(classNames);
+  const detailCardSlot = useResolvedGridSlot(detailRow?.className);
+
   // 追加(TT-1): カスタムツールチップの表示制御です(body 直下シングルトン + window 委譲。
   //   複数グリッド同居時はフック内の refCount で共有されます)。
-  useGridTooltip();
+  useGridTooltip(slots.tooltip);
 
   useGridViewportSync({
     scrollRef: scrollContainerRef,
@@ -3935,6 +3947,7 @@ export function SpreadsheetGrid<T extends object>({
     centerLeadingWidth,
     rightLeadingWidth,
     applyColumnOrderAndPin,
+    ghostSlot: slots.dragGhost,
   });
 
   // 追加(案A): 列レイアウト確定(並べ替え commit を含む)後に settle アニメを発火します。
@@ -4027,6 +4040,7 @@ export function SpreadsheetGrid<T extends object>({
     bodyScrollRef,
     getRowDragLabel,
     commitRowMove,
+    ghostSlot: slots.dragGhost,
   });
   // 行の並び替え確定(rowModel 差し替え)後に settle アニメを発火します。直前のドロップで armed の
   //   ときだけ動き、それ以外(編集 / フィルター等の rowModel 変化)は即 return するため無害です。
@@ -4949,6 +4963,7 @@ export function SpreadsheetGrid<T extends object>({
       if (column.editor?.type === 'checkbox') {
         return (
           <CheckboxCell
+            slot={slots.checkbox}
             checked={isCheckboxChecked(value, column.editor)}
             readOnly={cellState.readOnly}
             onToggle={() =>
@@ -4968,6 +4983,7 @@ export function SpreadsheetGrid<T extends object>({
       handleRowsChange,
       rows,
       toggleCheckboxCell,
+      slots.checkbox,
       applyServerSideCellEdits,
       detailRowEnabled,
       expandedDetailRowKeys,
@@ -5135,6 +5151,7 @@ export function SpreadsheetGrid<T extends object>({
 
   const renderedFilterPopover = openedFilterColumn ? (
     <ColumnFilterPopover
+      popoverSlot={slots.popover}
       themeClassName={themeClassName}
       isOpen={Boolean(filterPopoverState)}
       title={openedFilterColumn.title || openedFilterColumn.key}
@@ -5188,6 +5205,7 @@ export function SpreadsheetGrid<T extends object>({
   // 追加(13-A): 列メニュー popover の描画です(portal で body 直下へ出します)。
   const renderedColumnMenuPopover = openedMenuColumn ? (
     <ColumnMenuPopover
+      slots={slots}
       themeClassName={themeClassName}
       isOpen={isColumnMenuOpen}
       title={openedMenuColumn.title || openedMenuColumn.key}
@@ -5288,6 +5306,7 @@ export function SpreadsheetGrid<T extends object>({
 
   const renderedToolPanel = (
     <ToolPanel
+      popoverSlot={slots.popover}
       themeClassName={themeClassName}
       activeTab={activeToolPanelTab}
       flashTick={toolPanelFlashTick}
@@ -5309,6 +5328,7 @@ export function SpreadsheetGrid<T extends object>({
   //             closed 時はコンポーネント側が null を返すため、常時この 1 要素を tail に置きます。
   const renderedCellContextMenuPopover = (
     <CellContextMenuPopover
+      slots={slots}
       themeClassName={themeClassName}
       isOpen={isContextMenuOpen}
       items={contextMenuState?.items ?? EMPTY_CONTEXT_MENU_ITEMS}
@@ -5351,6 +5371,7 @@ export function SpreadsheetGrid<T extends object>({
   const defaultTopBar =
     showDefaultTopSummary || showDefaultTopFilter ? (
       <DefaultGridTopBar
+        slot={slots.toolbar}
         context={slotContext}
         showSummary={showDefaultTopSummary}
         showFilter={showDefaultTopFilter}
@@ -5376,6 +5397,7 @@ export function SpreadsheetGrid<T extends object>({
         renderBottomBar,
         slotContext,
         <DefaultGridBottomBar
+          slot={slots.statusBar}
           context={slotContext}
           showCounts={showBottomBarCounts}
         />,
@@ -6306,8 +6328,9 @@ export function SpreadsheetGrid<T extends object>({
         // 追加(THEME-3): readonly 淡色表示の opt-in 修飾子(styles.css 側で :where ゲート)。
         dimReadOnlyCells && 'ssg-root--dim-readonly',
         className,
-        classNames?.root,
+        slots.root?.className,
       )}
+      style={mergeStyles(slots.root?.style, style)}
     >
       {resolvedTopBar}
 
@@ -6316,6 +6339,7 @@ export function SpreadsheetGrid<T extends object>({
           自動で一致)。0 件時はコンポーネント側が null を返すため、条件は prop のみで判定します。 */}
       {showFilterChipBar && (
         <GridFilterChipBar
+          slot={slots.filterChipBar}
           entries={filterManagerEntries}
           canFilter={columnFilterEnabled}
           onEditFilter={jumpToColumnFilter}
@@ -6399,9 +6423,7 @@ export function SpreadsheetGrid<T extends object>({
                   leadingWidth={leftLeadingWidth}
                   headerHeight={headerHeight}
                   rowHeaderCellStyle={rowHeaderCellStyle}
-                  headerRowClassName={classNames?.headerRow}
-                  headerCellClassName={classNames?.headerCell}
-                  rowHeaderCellClassName={classNames?.rowHeaderCell}
+                  slots={slots}
                   isCornerHovered={isCornerHovered}
                   isWholeGridSelected={isWholeGridSelected}
                   showSelectAllCheckbox={enableSelectAllRows}
@@ -6413,7 +6435,6 @@ export function SpreadsheetGrid<T extends object>({
                   selectionSnapshot={selectionSnapshot}
                   columnFilterValues={uiState.filters.columnFilters}
                   sortState={uiState.sort}
-                  iconButtonClassName={classNames?.iconButton}
                   onCornerPointerDown={handleCornerHeaderPointerDown}
                   onCornerPointerEnter={handleCornerPointerEnterStable}
                   onCornerPointerLeave={handleCornerPointerLeaveStable}
@@ -6451,6 +6472,7 @@ export function SpreadsheetGrid<T extends object>({
                   selectionRectsForPane('left') ?? [selectionRectForPane('left')]
                 ).map((rect, segmentIndex) => (
                   <SelectionOverlay
+                    slot={slots.selectionOverlay}
                     key={segmentIndex}
                     rect={rect}
                     headerHeight={headerHeight}
@@ -6460,6 +6482,7 @@ export function SpreadsheetGrid<T extends object>({
                 ))}
 
                 <ActiveCellOverlay
+                  slot={slots.activeCellOverlay}
                   rect={activeCellRectForPane('left')}
                   headerHeight={headerHeight}
                   baseOffset={overlayBaseOffset}
@@ -6467,6 +6490,7 @@ export function SpreadsheetGrid<T extends object>({
                 />
 
                 <CellEditorLayer
+                  slots={slots}
                   rect={editorRectForPane('left')}
                   headerHeight={headerHeight}
                   baseOffset={overlayBaseOffset}
@@ -6514,13 +6538,12 @@ export function SpreadsheetGrid<T extends object>({
                   onCellDoubleClick={handleCellDoubleClickGuarded}
                   renderCellContent={renderCellContent}
                   getRowClassName={getRowClassName}
-                  bodyCellClassName={classNames?.bodyCell}
-                  bodyRowClassName={classNames?.bodyRow}
-                  rowHeaderCellClassName={classNames?.rowHeaderCell}
+                  slots={slots}
                 />
 
                 {/* 追加(detail ③): 展開行の帯(左固定ペイン幅ぶんの背景だけ。カードは中央ペイン)。 */}
                 <GridDetailLayer
+                  slots={slots}
                   entries={detailEntries}
                   mode="band"
                   paneWidth={leftPaneTotalWidth}
@@ -6575,9 +6598,7 @@ export function SpreadsheetGrid<T extends object>({
                 leadingWidth={centerLeadingWidth}
                 headerHeight={headerHeight}
                 rowHeaderCellStyle={rowHeaderCellStyle}
-                headerRowClassName={classNames?.headerRow}
-                headerCellClassName={classNames?.headerCell}
-                rowHeaderCellClassName={classNames?.rowHeaderCell}
+                slots={slots}
                 isCornerHovered={isCornerHovered}
                 isWholeGridSelected={isWholeGridSelected}
                 showSelectAllCheckbox={enableSelectAllRows}
@@ -6589,7 +6610,6 @@ export function SpreadsheetGrid<T extends object>({
                 selectionSnapshot={selectionSnapshot}
                 columnFilterValues={uiState.filters.columnFilters}
                 sortState={uiState.sort}
-                iconButtonClassName={classNames?.iconButton}
                 onCornerPointerDown={handleCornerHeaderPointerDown}
                 onCornerPointerEnter={handleCornerPointerEnterStable}
                 onCornerPointerLeave={handleCornerPointerLeaveStable}
@@ -6626,6 +6646,7 @@ export function SpreadsheetGrid<T extends object>({
                   selectionRectsForPane('center') ?? [selectionRectForPane('center')]
                 ).map((rect, segmentIndex) => (
                   <SelectionOverlay
+                    slot={slots.selectionOverlay}
                     key={segmentIndex}
                     rect={rect}
                     headerHeight={headerHeight}
@@ -6635,6 +6656,7 @@ export function SpreadsheetGrid<T extends object>({
                 ))}
 
                 <ActiveCellOverlay
+                  slot={slots.activeCellOverlay}
                   rect={activeCellRectForPane('center')}
                   headerHeight={headerHeight}
                   baseOffset={overlayBaseOffset}
@@ -6642,6 +6664,7 @@ export function SpreadsheetGrid<T extends object>({
                 />
 
                 <CellEditorLayer
+                  slots={slots}
                   rect={editorRectForPane('center')}
                   headerHeight={headerHeight}
                   baseOffset={overlayBaseOffset}
@@ -6689,20 +6712,19 @@ export function SpreadsheetGrid<T extends object>({
                   onCellDoubleClick={handleCellDoubleClickGuarded}
                   renderCellContent={renderCellContent}
                   getRowClassName={getRowClassName}
-                  bodyCellClassName={classNames?.bodyCell}
-                  bodyRowClassName={classNames?.bodyRow}
-                  rowHeaderCellClassName={classNames?.rowHeaderCell}
+                  slots={slots}
                 />
 
                 {/* 追加(detail ③): 展開行の帯 + カード。カードは sticky でビューポート中央可視幅に留まります。 */}
                 <GridDetailLayer
+                  slots={slots}
                   entries={detailEntries}
                   mode="center"
                   paneWidth={centerContentWidth}
                   baseOffset={overlayBaseOffset}
                   cardStickyLeft={detailCardStickyLeft}
                   cardWidth={detailCardWidth}
-                  cardClassName={detailRow?.className}
+                  cardSlot={detailCardSlot}
                   renderCard={renderDetailCard}
                 />
                 {/* 追加(row-drag ③): 行ドロップ位置のガイド線(中央ペイン分)。 */}
@@ -6749,9 +6771,7 @@ export function SpreadsheetGrid<T extends object>({
                   leadingWidth={rightLeadingWidth}
                   headerHeight={headerHeight}
                   rowHeaderCellStyle={rowHeaderCellStyle}
-                  headerRowClassName={classNames?.headerRow}
-                  headerCellClassName={classNames?.headerCell}
-                  rowHeaderCellClassName={classNames?.rowHeaderCell}
+                  slots={slots}
                   isCornerHovered={isCornerHovered}
                   isWholeGridSelected={isWholeGridSelected}
                   showSelectAllCheckbox={enableSelectAllRows}
@@ -6763,7 +6783,6 @@ export function SpreadsheetGrid<T extends object>({
                   selectionSnapshot={selectionSnapshot}
                   columnFilterValues={uiState.filters.columnFilters}
                   sortState={uiState.sort}
-                  iconButtonClassName={classNames?.iconButton}
                   onCornerPointerDown={handleCornerHeaderPointerDown}
                   onCornerPointerEnter={handleCornerPointerEnterStable}
                   onCornerPointerLeave={handleCornerPointerLeaveStable}
@@ -6798,6 +6817,7 @@ export function SpreadsheetGrid<T extends object>({
                   selectionRectsForPane('right') ?? [selectionRectForPane('right')]
                 ).map((rect, segmentIndex) => (
                   <SelectionOverlay
+                    slot={slots.selectionOverlay}
                     key={segmentIndex}
                     rect={rect}
                     headerHeight={headerHeight}
@@ -6807,6 +6827,7 @@ export function SpreadsheetGrid<T extends object>({
                 ))}
 
                 <ActiveCellOverlay
+                  slot={slots.activeCellOverlay}
                   rect={activeCellRectForPane('right')}
                   headerHeight={headerHeight}
                   baseOffset={overlayBaseOffset}
@@ -6814,6 +6835,7 @@ export function SpreadsheetGrid<T extends object>({
                 />
 
                 <CellEditorLayer
+                  slots={slots}
                   rect={editorRectForPane('right')}
                   headerHeight={headerHeight}
                   baseOffset={overlayBaseOffset}
@@ -6861,13 +6883,12 @@ export function SpreadsheetGrid<T extends object>({
                   onCellDoubleClick={handleCellDoubleClickGuarded}
                   renderCellContent={renderCellContent}
                   getRowClassName={getRowClassName}
-                  bodyCellClassName={classNames?.bodyCell}
-                  bodyRowClassName={classNames?.bodyRow}
-                  rowHeaderCellClassName={classNames?.rowHeaderCell}
+                  slots={slots}
                 />
 
                 {/* 追加(detail ③): 展開行の帯(右固定ペイン幅ぶんの背景だけ)。 */}
                 <GridDetailLayer
+                  slots={slots}
                   entries={detailEntries}
                   mode="band"
                   paneWidth={rightPaneTotalWidth}
@@ -6898,7 +6919,10 @@ export function SpreadsheetGrid<T extends object>({
           {/* 追加(12-B): 0 行時の空状態表示です。rows 自体が 0 件か、
               フィルターで 0 件になったかでメッセージを切り替えます。 */}
           {isBodyEmpty && (
-            <div className="ssg-empty-state">
+            <div
+              className={cx('ssg-empty-state', slots.emptyState?.className)}
+              style={slots.emptyState?.style}
+            >
               {rows.length === 0 ? noRowsText : noMatchingRowsText}
             </div>
           )}
@@ -6911,6 +6935,7 @@ export function SpreadsheetGrid<T extends object>({
             位置・行番号は親の scrollTop / 縦ジオメトリから毎レンダー導出します。 */}
         {activeScrollHint !== null && (
           <GridScrollHint
+            slot={slots.scrollHint}
             options={activeScrollHint}
             scrollContainerRef={scrollContainerRef}
             scrollTop={scrollTop}
@@ -6964,7 +6989,11 @@ export function SpreadsheetGrid<T extends object>({
             <div className="ssg-ssrm-error-bars">
               {serverSide.loadError !== null &&
                 serverSide.loadError !== dismissedLoadError && (
-                  <div className="ssg-ssrm-error-bar" role="alert">
+                  <div
+                    className={cx('ssg-ssrm-error-bar', slots.errorBar?.className)}
+                    style={slots.errorBar?.style}
+                    role="alert"
+                  >
                     <span className="ssg-ssrm-error-bar-dot" aria-hidden="true" />
                     <span className="ssg-ssrm-error-bar-msg">
                       行の取得に失敗しました(
@@ -6992,7 +7021,11 @@ export function SpreadsheetGrid<T extends object>({
                   有効で、新しい書き戻し失敗(参照変化)で再表示されます。 */}
               {serverSide.writeError !== null &&
                 serverSide.writeError !== dismissedWriteError && (
-                  <div className="ssg-ssrm-error-bar" role="alert">
+                  <div
+                    className={cx('ssg-ssrm-error-bar', slots.errorBar?.className)}
+                    style={slots.errorBar?.style}
+                    role="alert"
+                  >
                     <span className="ssg-ssrm-error-bar-dot" aria-hidden="true" />
                     <span className="ssg-ssrm-error-bar-msg">
                       変更の保存に失敗しました(

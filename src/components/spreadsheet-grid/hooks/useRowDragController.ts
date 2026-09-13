@@ -21,6 +21,8 @@ import {
   resolveScrollContentBox,
 } from '../logic/autoScrollGeometry';
 import { isInsideDetailCardOf } from '../logic/detailRow';
+import { applySlotToElement } from '../logic/slotDom';
+import type { GridResolvedSlot } from '../model/gridTypes';
 
 // 追加(row-drag ②): 行ドラッグ並び替えの controller です。列ヘッダー D&D
 //   (useColumnHeaderDragController)と同じ設計方針を縦方向へ適用しています。
@@ -59,6 +61,8 @@ type UseRowDragControllerArgs = {
   getRowDragLabel: (viewIndex: number) => string;
   // ドロップ確定(from / to は元配列 index。表示順が恒等のため view index と同値)。
   commitRowMove: (fromIndex: number, toIndex: number) => void;
+  // 追加(slot-props): classNames.dragGhost の解決済みスロット(ゴースト要素へ className / style)。
+  ghostSlot?: GridResolvedSlot;
 };
 
 const GHOST_OFFSET_X = 14;
@@ -186,6 +190,9 @@ export const useRowDragController = (args: UseRowDragControllerArgs) => {
       'will-change:transform',
       'transform:translate(-9999px,-9999px)',
     ].join(';');
+    // 追加(slot-props): classNames.dragGhost を反映します(style は上記の既定インラインより後勝ち。
+    //   座標は transform で毎フレーム上書きされます)。
+    applySlotToElement(el, latestRef.current.ghostSlot);
 
     const icon = document.createElement('span');
     icon.style.cssText =

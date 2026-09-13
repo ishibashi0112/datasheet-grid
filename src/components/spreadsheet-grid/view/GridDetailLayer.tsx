@@ -1,6 +1,8 @@
 import { memo, type CSSProperties, type ReactNode, type SyntheticEvent } from 'react';
 import type { VerticalRow } from '../logic/verticalGeometry';
 import { cx } from '../logic/cx';
+import { mergeStyles } from '../logic/slotProps';
+import type { GridResolvedSlot, GridResolvedSlots } from '../model/gridTypes';
 
 // 展開行(detail)レイヤーです(detail batch 3)。
 //
@@ -36,7 +38,10 @@ type GridDetailLayerProps = {
   // カードの sticky 左オフセット(= 左固定ペイン幅 + 中央ペイン先頭幅)とカード幅(中央可視幅)。
   cardStickyLeft: number;
   cardWidth: number;
-  cardClassName?: string;
+  // 変更(slot-props): detailRow.className の解決済みスロット(カード要素へ)と、classNames 由来の
+  //   detailBand / detailCard スロット表。いずれも親で署名 memo 済み(参照安定)。
+  cardSlot?: GridResolvedSlot;
+  slots?: GridResolvedSlots;
   renderCard: (entry: GridDetailLayerEntry) => ReactNode;
 };
 
@@ -53,7 +58,8 @@ function GridDetailLayerInner({
   baseOffset,
   cardStickyLeft,
   cardWidth,
-  cardClassName,
+  cardSlot,
+  slots,
   renderCard,
 }: GridDetailLayerProps) {
   if (entries.length === 0) {
@@ -77,9 +83,9 @@ function GridDetailLayerInner({
         return (
           <div
             key={entry.rowKey}
-            className="ssg-detail-band"
+            className={cx('ssg-detail-band', slots?.detailBand?.className)}
             data-detail-row-index={virtualRow.index}
-            style={bandStyle}
+            style={{ ...slots?.detailBand?.style, ...bandStyle }}
           >
             {mode === 'center' && (
               <div
@@ -87,7 +93,12 @@ function GridDetailLayerInner({
                 style={{ left: cardStickyLeft, width: cardWidth }}
               >
                 <div
-                  className={cx('ssg-detail-card', cardClassName)}
+                  className={cx(
+                    'ssg-detail-card',
+                    slots?.detailCard?.className,
+                    cardSlot?.className,
+                  )}
+                  style={mergeStyles(slots?.detailCard?.style, cardSlot?.style)}
                   data-ssg-detail=""
                   onKeyDown={stopPropagation}
                   onKeyUp={stopPropagation}

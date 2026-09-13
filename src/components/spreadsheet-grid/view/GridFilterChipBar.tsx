@@ -13,6 +13,8 @@
 //   - .ssg-root 内で描画されるため、ポータル系(popover/panel)と違いデザイントークン
 //     (--ssg-*)が届きます(padding は --ssg-bar-pad-* で density 連動)。
 import type { FilterManagementEntry } from './FilterManagementPanel';
+import { cx } from '../logic/cx';
+import type { GridResolvedSlot } from '../model/gridTypes';
 
 type GridFilterChipBarProps = {
   // 適用中フィルターの一覧です(FilterManagementPanel と同じ構築物を受け取ります)。
@@ -22,6 +24,8 @@ type GridFilterChipBarProps = {
   onEditFilter: (columnKey: string) => void;
   onClearFilter: (columnKey: string) => void;
   onClearAllFilters: () => void;
+  // 追加(slot-props): classNames.filterChipBar の解決済みスロット(バー root へ)。
+  slot?: GridResolvedSlot;
 };
 
 export function GridFilterChipBar({
@@ -30,6 +34,7 @@ export function GridFilterChipBar({
   onEditFilter,
   onClearFilter,
   onClearAllFilters,
+  slot,
 }: GridFilterChipBarProps) {
   // 有効フィルター 0 件は非表示です(合意 b: 空バーは出さない)。
   if (entries.length === 0) {
@@ -37,7 +42,10 @@ export function GridFilterChipBar({
   }
 
   return (
-    <div className="ssg-filter-chip-bar">
+    <div
+      className={cx('ssg-filter-chip-bar', slot?.className)}
+      style={slot?.style}
+    >
       {entries.map((entry) => (
         <div
           key={entry.columnKey}

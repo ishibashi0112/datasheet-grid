@@ -91,6 +91,7 @@ import {
   buildDateTreeRows,
   type DateTreeRow,
 } from '../logic/dateFilterTree';
+import type { GridResolvedSlot } from '../model/gridTypes';
 
 // 追加: popover のレイアウト情報です。
 // 追加(FIT-1): maxHeight(viewport 内へ収める上限)。指定時は popover の flex 化と併せて
@@ -113,6 +114,8 @@ type ColumnFilterPopoverProps = {
   // 追加(TH-DK-2): ダークテーマ修飾子クラス('ssg-theme-dark' | undefined)。ポータルは
   //   .ssg-root 外のため、root と同じ修飾子を自身の root 要素へ直接付与します。
   themeClassName?: string;
+  // 追加(slot-props): classNames.popover の解決済みスロット(パネル root へ)。
+  popoverSlot?: GridResolvedSlot;
   title: string;
   // 変更(12-A): 'set' を追加します。
   // 変更(filter-ext E): 'auto' を含まない「解決済み」種別を受けます(解決は controller の責務)。
@@ -1077,6 +1080,7 @@ function ComboFilterLayout({
 export function ColumnFilterPopover({
   isOpen,
   themeClassName,
+  popoverSlot,
   title,
   filterType,
   draftValue,
@@ -1224,8 +1228,8 @@ export function ColumnFilterPopover({
         // 追加: portal 内 paste も grid 側へ流しません。
         event.stopPropagation();
       }}
-      className={cx('ssg-filter-popover', themeClassName)}
-      style={wrapperStyle}
+      className={cx('ssg-filter-popover', themeClassName, popoverSlot?.className)}
+      style={{ ...popoverSlot?.style, ...wrapperStyle }}
     >
       <div className="ssg-filter-title">列フィルター: {title}</div>
 

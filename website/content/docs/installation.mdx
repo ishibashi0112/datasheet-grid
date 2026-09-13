@@ -29,7 +29,7 @@ import '@ishibashi0112/spreadsheet-grid/style.css'
 
 ベーススタイルは `.ssg-*` クラスにスコープされた通常(未レイヤー)の CSS で、デザイントークンは特異度ゼロ(`:where(.ssg-root)`)で定義されています。そのため **import 順序に関係なく、利用側の上書きが常に勝ちます**。
 
-## Tailwind CSS / HeroUI / Mantine との共存
+## Tailwind CSS / HeroUI / Mantine / StyleX との共存
 
 - **Tailwind CSS v3(+ HeroUI)** — そのまま動きます。Preflight のリセットはクラスセレクタに特異度で負けるため、グリッドを壊せません。
 - **Tailwind CSS v4(+ HeroUI)** — そのまま動きます。`!` 修飾子なしで Tailwind ユーティリティにグリッドの既定値を上書きさせたい場合は、グリッド CSS を `utilities` より下のレイヤーに入れます:
@@ -48,6 +48,7 @@ import '@ishibashi0112/spreadsheet-grid/style.css'
   ```
 
 - **Mantine** — そのまま動きます(クラス名・リセットの衝突なし。グリッドのポップオーバーは `z-index: 1000` で Mantine の既定モーダルより上)。
+- **StyleX** — そのまま動きます(reset を持たず、生成クラスは接頭辞 `x` で衝突しません)。`classNames` / `cellClassName` / `getRowClassName` などのスロットへ `stylex.props(...)` の戻り値(`{ className, style }`)をそのまま渡せます。StyleX の atomic クラスとグリッドの基底クラスは同特異度のため、グリッド CSS を先に・StyleX の出力を後に読み込むか、`style.layer.css` を使ってください(StyleX 側で `useLayers` を使う場合は `style.layer.css` が必須)。詳細は[テーマとスタイリング](/docs/guides/theming#stylex-との併用)。
 
 プレーン CSS でグリッドの既定値を確実に上書きしたい場合は、グリッドのベースクラスに自分のクラスをチェーンして特異度で勝たせます:
 

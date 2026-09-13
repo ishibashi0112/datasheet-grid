@@ -1,4 +1,6 @@
 import type { CSSProperties } from 'react';
+import { cx } from './logic/cx';
+import type { GridResolvedSlot } from './model/gridTypes';
 
 // 追加: 選択範囲の矩形情報です。
 // 変更(10-D): left は「ペイン列領域内ローカル座標」になりました（leadingWidth 非含有）。
@@ -21,6 +23,8 @@ type SelectionOverlayProps = {
   // 追加(scroll-space 仮想化 修正): 絶対論理 top から差し引く描画ウィンドウ基準オフセット(px)。
   //   no-op では 0(従来と同一配置)。scaling 時のみ正値です(詳細は ActiveCellOverlay と同様)。
   baseOffset?: number;
+  // 追加(slot-props): classNames.selectionOverlay の解決済みスロット。
+  slot?: GridResolvedSlot;
 };
 
 // 追加: 選択範囲をセル本体とは独立したレイヤーで描画するコンポーネントです。
@@ -30,6 +34,7 @@ export function SelectionOverlay({
   headerHeight,
   leadingWidth,
   baseOffset = 0,
+  slot,
 }: SelectionOverlayProps) {
   if (!rect) {
     return null;
@@ -45,7 +50,12 @@ export function SelectionOverlay({
     height: rect.height,
   };
 
-  return <div className="ssg-selection-overlay" style={overlayStyle} />;
+  return (
+    <div
+      className={cx('ssg-selection-overlay', slot?.className)}
+      style={{ ...slot?.style, ...overlayStyle }}
+    />
+  );
 }
 
 export default SelectionOverlay;

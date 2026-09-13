@@ -74,8 +74,9 @@
 | `renderTopBar` | `(ctx: SpreadsheetGridSlotContext<T>) => ReactNode` | 内蔵トップバー | 上部バーの差し替え。未指定時は内蔵トップバー(summary chips + フィルター入力。内訳は `showTopBarSummary` / `showTopBarFilter` で制御。フィルター入力は `enableGlobalFilter=true` が前提)。`showTopBar=false` 時は本指定に関わらず描画されない。 |
 | `renderBottomBar` | `(ctx: SpreadsheetGridSlotContext<T>) => ReactNode` | 内蔵ボトムバー | 下部バーの差し替え。未指定時は内蔵ステータスバー。`showBottomBar=false` 時は本指定に関わらず描画されない。 |
 | `className` | `string` | — | ルート要素の class。 |
-| `classNames` | `GridClassNames` | — | パーツ別の追加 class スロット。現状 `root` / `iconButton` / `bodyCell` / `bodyRow` が配線済み(他は順次)。基底 class は未レイヤー・特異度 (0,1,0)(THEME-1)。確実な上書きは連結セレクタ(例: `.ssg-root.my-theme`)を推奨。Tailwind v4 は `style.layer.css` も利用可。 |
-| `getRowClassName` | `(row: T, rowIndex: number, ctx: RowStyleContext<T>) => string \| undefined` | — | 行ごとの追加 class。行コンテナ + 各データセルに付与され、Tailwind 等での行ハイライトに使える。行ヘッダー「#」セルは現状対象外。第 3 引数 `ctx` は `{ row, rowIndex, sourceRowIndex, rowKey, isSelected }`(「補助型」節参照)。既存の 2 引数関数もそのまま動く(後方互換)。 |
+| `style` | `CSSProperties` | — | ルート要素(`.ssg-root`)のインライン style。`classNames.root` の style とマージされ、こちらが後勝ち。 |
+| `classNames` | `GridClassNames` | — | パーツ別の追加スロット。各値は `GridSlotProps`(`string \| { className?, style? }`)で、StyleX の `stylex.props(...)` の戻り値をそのまま渡せる。全 25 スロット配線済み(一覧と規則は「パーツ別スロット」節)。レンダー毎に新しいオブジェクトを渡してもよい(内容の署名で memo)。基底 class は未レイヤー・特異度 (0,1,0)のため同特異度のクラスは読み込み順で決まる(確実な上書きは連結セレクタか `style.layer.css`)。 |
+| `getRowClassName` | `(row: T, rowIndex: number, ctx: RowStyleContext<T>) => GridSlotProps \| undefined` | — | 行ごとの追加 class(または `{ className, style }`)。行コンテナ + 行ヘッダー「#」セル + 各データセルに付与され、Tailwind / StyleX での行ハイライトに使える。`style` はインラインで付与され、座標 / 寸法はグリッドが後勝ち(返した style は内容比較で memo される)。第 3 引数 `ctx` は `{ row, rowIndex, sourceRowIndex, rowKey, isSelected }`(「補助型」節参照)。既存の 2 引数関数もそのまま動く(後方互換)。グループ行は対象外。 |
 | `onStateChange` | `(state: GridState) => void` | — | 永続スライス(手動リサイズ幅 / フィルター / ソート)が**実際に変化したとき**に最新 `GridState` を渡して呼ばれる。保存タイミングの signal(例: localStorage 自動保存)。発火規約は「状態の保存 / 復元」節を参照。 |
 | `onScroll` | `(params: GridScrollEventParams) => void` | — | スクロール位置の変化通知(rAF で 1 フレーム 1 回に間引き・縦横どちらの変化でも発火)。`params` は `{ top, left, source }`(px)。`source: 'api'` は `setScrollPosition` / `scrollTo*` 系由来、`'user'` はそれ以外。2 グリッドの双方向スクロール同期は `source === 'user'` のときだけ相手へ反映することでループを止められる。インライン関数可(latest-ref 経由)。 |
 | `enableContextMenu` | `boolean` | `false` | コンテキストメニュー機能の有効化(マスタースイッチ)。他機能の `enable*` と同じく**既定 OFF**。`false` のあいだは `getContextMenuItems` を渡しても発火せず、右クリックはブラウザ標準メニューのまま。現状はまだ機能 / UI に改善余地があるため既定 OFF で提供する(利用側で明示 opt-in)。 |
@@ -298,7 +299,7 @@ const gridRef = useRef<SpreadsheetGridHandle<Row>>(null);
 | `renderCell` | `(ctx: CellRenderContext<T>) => ReactNode` | プレーン `<span>` | カスタムセル描画。 |
 | `align` | `'left' \| 'center' \| 'right'` | `'left'` | セル内容の水平寄せ(UI 表示のみ・元の値は不変)。セル表示と編集 input に反映。 |
 | `valueFormatter` | `(params: CellValueFormatterParams<T>) => string` | — | セル表示値の整形(UI 表示のみ)。`renderCell` 未指定の既定セルが返り値を表示。組み込み `numberFormatter` 等を渡せる。元の値/編集/コピー/ソート/フィルターには影響しない。 |
-| `cellClassName` | `string \| ((ctx: CellStyleContext<T>) => string \| undefined)` | — | セルへ付与する追加 class(条件付きスタイル)。関数版は値 / 状態に応じて class を返せる。`ctx` には view の `rowIndex` に加え source 基準の `sourceRowIndex` / `rowKey` が入る(ソート / フィルター ON でも source 行基準のデータと突き合わせ可能。「補助型」節参照)。基底 `.ssg-body-cell` は未レイヤー・特異度 (0,1,0)。確実な上書きは `.ssg-body-cell.my-class` の連結を推奨。 |
+| `cellClassName` | `GridSlotProps \| ((ctx: CellStyleContext<T>) => GridSlotProps \| undefined)` | — | セルへ付与する追加 class(条件付きスタイル)。`GridSlotProps` = `string \| { className?, style? }` で、StyleX の `stylex.props(...)` をそのまま返せる(`style` はセルへインライン付与。座標 / 寸法はグリッドが後勝ち)。関数版は値 / 状態に応じて返せる。`ctx` には view の `rowIndex` に加え source 基準の `sourceRowIndex` / `rowKey` が入る(ソート / フィルター ON でも source 行基準のデータと突き合わせ可能。「補助型」節参照)。基底 `.ssg-body-cell` は未レイヤー・特異度 (0,1,0)。確実な上書きは `.ssg-body-cell.my-class` の連結を推奨。 |
 | `renderHeader` | `(ctx: HeaderRenderContext<T>) => ReactNode` | — | カスタムヘッダー描画。 |
 | `filterType` | `'text' \| 'textSet' \| 'number' \| 'numberSet' \| 'date' \| 'dateSet' \| 'select' \| 'set' \| 'custom' \| 'auto'` | — | フィルター UI の種別。`'auto'` は列の値から `numberSet` / `textSet` / `dateSet` を自動判定する opt-in(下記「filterType: 'auto'(自動判定)」節)。`'numberSet'` / `'textSet'` / `'dateSet'` は条件(演算子 + 値)と Set 一覧を 1 つの popover に縦に並べて **AND 結合**する複合フィルター(条件を適用すると Set 候補が連動して絞られる。候補外になった値の選択は破棄せず保持)。numberSet の演算子は 以上 / より大きい / 以下 / 未満 / に等しい / に等しくない / 範囲 / 空白 / 空白でない、textSet は を含む / に等しい / で始まる / で終わる / 空白 / 空白でない(判定は大文字小文字無視)。dateSet は 範囲 / 以降 / 以前 / に等しい / に等しくない / 空白 / 空白でない + 相対プリセット(今日 / 今月 / 過去 30 日。**相対のまま保存され評価のたびに解決**)で、Set 部分は年 / 月 / 日の 3 階層ツリー(親は 3 状態チェック)になる。 |
 | `filterOptions` | `readonly GridSelectFilterOption[]` | rows から自動収集 | select / set / numberSet / textSet / dateSet の候補(readonly / `as const` 配列も可)。 |
@@ -711,7 +712,7 @@ const columns: GridColumn<Order>[] = [
 | `height` | `number` | `200` | 帯の高さ(px)。**固定高**で、中身が超えるとカード内でスクロールする(auto 高は非対応)。 |
 | `isExpandable` | `(row: T, ctx: { rowKey; sourceRowIndex }) => boolean` | 全行展開可 | 行ごとの展開可否。`false` の行はトグルが描画されず、命令的 API / `ctx.detail.toggle()` からの展開も no-op。 |
 | `showToggleColumn` | `boolean` | `true` | 専用トグル列(幅 28px・タイトル無し、行ヘッダーの右隣 = 先頭列。左固定列があるときは左固定側)を自動挿入する。`false` にすると列は挿入されず、任意の列の `renderCell` から `ctx.detail.toggle()` でトグルを自前配置する(下記)。 |
-| `className` | `string` | — | カード要素へ追加する class。 |
+| `className` | `GridSlotProps` | — | カード要素へ追加する class(または `{ className, style }`。`classNames.detailCard` に加えて付与)。 |
 
 - **表示**: 帯はマスター行の直下・グリッド全幅(3 ペインとも背景を描画)で、カードは中央ペインに `position: sticky` で置かれ、横スクロールしてもビューポート左端(左固定ペインの右隣)に留まります。幅は中央ペインの可視幅です。展開しても**行の順序・view index は変わらず**(第 3 の行種は作らない)、後続行が帯の高さぶん下がります。展開時にスクロール位置は動かしません。
 - **状態**: 展開状態は `rowKeyGetter` の行キーで保持されるため、ソート / フィルター / 行の追加削除を跨いで同じ行に追従します(フィルターで除外中の行は帯が出ず、復帰すると再表示)。UI 状態で undo/redo・`getState()` の対象外。永続化は `onExpandedDetailRowKeysChange` + `setDetailRowExpanded()` で行います。
@@ -1146,6 +1147,64 @@ beforeAll(() => {
 - React 非依存の小さなモジュールで、本体バンドルとは独立(`dist/testing.js`)。
 - これで `.ssg-body-row` / `.ssg-body-cell` の描画・付与クラス・セル文字列を DOM で検証できる(本体の `SpreadsheetGrid.jsdomLayoutStubs.integration.test.tsx` が動作保証)。
 
+## パーツ別スロット(`classNames` / `GridSlotProps`)
+
+`className` 系の受け口(`classNames.*` / `cellClassName` / `getRowClassName` / `detailRow.className`)はすべて **`GridSlotProps`** を受ける(バレルから `GridSlotProps` / `GridClassNames` を公開)。
+
+```ts
+type GridSlotProps = string | { className?: string; style?: CSSProperties };
+```
+
+- 文字列は従来どおり class として付与される。オブジェクト形は StyleX の `stylex.props(...)` の戻り値と同形で、そのまま渡せる(StyleX の動的スタイルは `style` 側の CSS 変数で届くため、この形が必要)。
+- `style` は当該パーツのルート要素へインラインで付与される。グリッドが位置決めに使う座標 / 寸法(`left` / `top` / `width` / `height` / `transform` 等)はグリッド側が後勝ちで上書きするため、レイアウトは壊せない。
+- インライン style は状態クラス(選択 / ホバー等の背景)にも勝つ。状態で切り替えたい装飾は className 側で行う。
+- `classNames` はレンダー毎に新しいオブジェクトを渡してもよい(内容の署名で memo され、行 / ヘッダーの再レンダーは増えない)。`getRowClassName` が返す style も内容比較で memo される。
+- `tooltip` / `dragGhost` は命令的 DOM(`document.body` 直下)のため、style の数値は単位なしのまま設定される(px が必要な値は `'12px'` のように文字列で)。
+
+| スロット | 付与先 |
+| --- | --- |
+| `root` | ルート要素 `.ssg-root`(`className` / `style` prop と同じ要素) |
+| `toolbar` / `statusBar` | 既定トップバー `.ssg-bar--top` / 既定ボトムバー `.ssg-bar--bottom`(`renderTopBar` / `renderBottomBar` 指定時は対象外) |
+| `headerRow` / `headerCell` | ヘッダー行 / 列ヘッダーセル(コーナー・行ヘッダーセルは含まない) |
+| `rowHeaderCell` / `cornerCell` | 行ヘッダー「#」セルとコーナーセル(`rowHeaderCell` は両方、`cornerCell` はコーナーのみ) |
+| `bodyRow` / `bodyCell` | 本体行(データ / スケルトン / グループ行)/ データセル |
+| `groupRow` / `groupCell` | グループ行 / グループ行のセル(`bodyRow` / `bodyCell` に加えて付与) |
+| `detailBand` / `detailCard` | 展開行の帯 / カード(`detailRow.className` に加えて付与) |
+| `iconButton` | ヘッダーのアイコンボタン `.ssg-icon-btn` |
+| `popover` | ポータル系パネルの root(列メニュー / フィルター / コンテキストメニュー / select エディタ候補 / ツールパネル。`document.body` 直下) |
+| `menuItem` | メニュー項目 `.ssg-menu-item`(列メニュー / コンテキストメニュー) |
+| `tooltip` | カスタムツールチップ `.ssg-tooltip`(body 直下のシングルトン。複数グリッド同居時は最後に更新したグリッドの値) |
+| `dragGhost` | 列 / 行ドラッグのゴースト `[data-grid-drag-ghost]` |
+| `checkbox` | 行選択 / checkbox 列のチェックボックス glyph `.ssg-row-checkbox` |
+| `cellEditor` | セルエディタの枠 `.ssg-cell-editor` |
+| `emptyState` | 0 行時の空状態 `.ssg-empty-state` |
+| `filterChipBar` | フィルターチップバー `.ssg-filter-chip-bar` |
+| `errorBar` | SSRM のエラーバー `.ssg-ssrm-error-bar` |
+| `scrollHint` | スクロール位置インジケーター `.ssg-scroll-hint` |
+| `activeCellOverlay` / `selectionOverlay` | アクティブセル枠 / 範囲選択の塗り |
+
+### StyleX との併用
+
+```tsx
+import * as stylex from '@stylexjs/stylex';
+import { vars } from './tokens.stylex';   // stylex.defineVars({ accent: '#7c3aed', danger: '#dc2626' })
+
+const s = stylex.create({
+  grid: { '--ssg-accent': vars.accent, borderRadius: 8 },   // グリッドのトークンへ橋渡し
+  cell: { fontVariantNumeric: 'tabular-nums' },
+  negative: { color: vars.danger },
+  width: (w: number) => ({ maxWidth: w }),                  // 動的スタイル(style 側で届く)
+});
+
+<SpreadsheetGrid
+  classNames={{ root: stylex.props(s.grid), bodyCell: stylex.props(s.cell) }}
+  columns={[{ key: 'amount', title: '金額', cellClassName: (ctx) => stylex.props(typeof ctx.value === 'number' && ctx.value < 0 && s.negative, s.width(120)) }]}
+/>
+```
+
+- StyleX は子孫セレクタを書けない(要素自身のクラスでしか装飾できない)ため、上記スロットに無い内部要素(ポップオーバー内のボタン / 入力欄等)はデザイントークン(`--ssg-*`)で調整する。
+- StyleX の atomic クラスとグリッドの基底クラスは同じ特異度 (0,1,0)。同じプロパティは後に読み込まれた方が勝つため、グリッド CSS を先に・StyleX の出力 CSS を後に読み込むか、`style.layer.css`(`@layer ssg-base`)を使う。StyleX 側で `useLayers` を有効にしている場合は、未レイヤーのグリッド CSS がレイヤー内に常に勝つため `style.layer.css` が必須。
+
 ## スタイリング用の状態クラス(公開契約)
 
 `cellClassName` / `getRowClassName` の返すクラスは、下記の内部付与クラスと連結セレクタで組み合わせて使える(例: `.ssg-body-cell.my-diff` で基底に勝たせ、`.ssg-body-cell.my-diff.ssg-body-cell--row-hovered` でホバー時色を切替)。以下は**公開契約**とし、変更時は breaking 扱いにする(proposals ⑥)。
@@ -1177,6 +1236,7 @@ beforeAll(() => {
 - `CellStyleContext<T>` = 上記から `setValue` を除いた読み取り専用版(`cellClassName` 関数へ渡る)。バレル(`index.ts`)から公開(`import type { CellStyleContext } from '@ishibashi0112/spreadsheet-grid'`)
   - `rowIndex` は**ビュー行 index**(ソート / フィルター適用後の表示位置)、`sourceRowIndex` は**元 `rows` の index**、`rowKey` は行キー(`rowKeyGetter` 由来、既定は source index)。ソート / フィルター ON の画面で「エラー行 index の集合」など source 基準のデータと突き合わせるときは `sourceRowIndex` / `rowKey` を使う(`getInvalidCells()` の返す `sourceRowIndex` / `rowKey` と同一基準)。serverSide では view 順が正準のため `sourceRowIndex` は view index と同値。
 - `RowStyleContext<T> = { row, rowIndex, sourceRowIndex, rowKey, isSelected }`(`getRowClassName` の第 3 引数。バレルから公開)
+- `GridSlotProps = string | { className?: string; style?: CSSProperties }`(`classNames.*` / `cellClassName` / `getRowClassName` / `detailRow.className` の値。`GridClassNames` と共にバレルから公開)
   - `rowIndex` / `sourceRowIndex` / `rowKey` の基準は `CellStyleContext` と同一。`isSelected` はチェックボックス行選択(`enableRowSelection`)の選択状態(範囲選択とは別)。グループ行(grouping 有効時)は専用描画のため `getRowClassName` の対象外。
 - `GridScrollPosition = { top: number; left: number }`(`getScrollPosition` の返り値 / `setScrollPosition` の基準)
 - `GridScrollEventParams = { top: number; left: number; source: 'user' | 'api' }`(`onScroll` の引数。`source` の意味は props 表の `onScroll` 行を参照)
@@ -1190,4 +1250,4 @@ beforeAll(() => {
 - 〔解消〕**no-op props**: `enableClipboard` / `enableColumnResize` を型から削除(常時 ON 固定の挙動は不変)。将来「無効化」が必要になれば配線つきで非破壊追加する。
 - 〔追加済み〕**imperative API(ref ハンドル)**: `SpreadsheetGridProps.ref` で `SpreadsheetGridHandle<T>` を受け取り、スクロール / 選択操作 / CSV / エクスポートデータ(`getExportData`)/ 状態の保存・復元を命令的に呼べる(React 19 ref-as-prop、`forwardRef` 不使用)。詳細は「命令的 API」節。列状態のシリアライズ(`getState` / `applyState`)・変更通知 `onStateChange` prop は追加済み(対象は reducer 内の永続スライス = 手動リサイズ幅 / フィルター / ソート)。列の可視/順序/ピン/flex の状態化は `columns` prop 側で consumer 所有のため未対応(将来 columns 抽出/適用を入れるなら別途合意)。
 - 〔解消〕**公開バレル(`index.ts`)**: 入口を `index.ts` に集約し、`SpreadsheetGrid`(named)と公開型群(serverSide 型・`RowModel` 含む)を再エクスポート。`default export` は廃止。
-- **テーマ/スタイリング API**: 公開されるのは `className`(ルート1個)のみ。パーツ単位のクラスや CSS トークンは未提供。
+- 〔解消〕**テーマ/スタイリング API**: `className` / `style` / `classNames`(25 スロット。値は `GridSlotProps = string | { className, style }`)/ `cellClassName` / `getRowClassName` / CSS トークン(`--ssg-*`)を公開(「パーツ別スロット」節)。

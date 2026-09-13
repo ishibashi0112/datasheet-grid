@@ -13,6 +13,8 @@ import { SelectCellEditor } from './editors/SelectCellEditor';
 import { DateCellEditor } from './editors/DateCellEditor';
 import { CustomCellEditor } from './editors/CustomCellEditor';
 import { toDateInputValue } from './logic/editorValues';
+import { cx } from './logic/cx';
+import type { GridResolvedSlots } from './model/gridTypes';
 
 // 変更(editor 基盤): EditorCommitDirection は model/gridTypes.ts へ移設しました(公開型化)。
 //   既存 import 互換のため re-export を残します。
@@ -60,6 +62,8 @@ type CellEditorLayerProps<T> = {
   editorSession?: CellEditorSession<T> | null;
   // 追加(editor: select): ポータル系エディタへ渡すテーマ修飾子('ssg-theme-dark' | undefined)。
   themeClassName?: string;
+  // 追加(slot-props): classNames 由来の解決済みスロット表(cellEditor = 枠 / popover = select 候補)。
+  slots?: GridResolvedSlots;
   // 変更(11-B6): (direction?) → (value, direction?) に変更。確定値を引数で受け取ります。
   // 変更(editor 基盤): value を unknown 化しました。組み込みエディタはドラフト文字列を、
   //   将来のカスタムエディタは型付きのドメイン値を直接渡せます(string は commit 側で
@@ -92,6 +96,7 @@ export function CellEditorLayer<T>({
   editor,
   editorSession,
   themeClassName,
+  slots,
   onCommit,
   onCancel,
   align,
@@ -194,6 +199,7 @@ export function CellEditorLayer<T>({
     editorNode = (
       <SelectCellEditor
         key={sessionId}
+        popoverSlot={slots?.popover}
         enterMove={enterMove}
         options={options}
         value={editorSession?.value}
@@ -217,7 +223,10 @@ export function CellEditorLayer<T>({
   }
 
   return (
-    <div className="ssg-cell-editor" style={wrapperStyle}>
+    <div
+      className={cx('ssg-cell-editor', slots?.cellEditor?.className)}
+      style={{ ...slots?.cellEditor?.style, ...wrapperStyle }}
+    >
       {editorNode}
     </div>
   );

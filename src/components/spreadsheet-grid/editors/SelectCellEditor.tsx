@@ -24,6 +24,7 @@ import {
   type SelectPopoverPlacement,
 } from '../logic/selectEditorState';
 import { cx } from '../logic/cx';
+import type { GridResolvedSlot } from '../model/gridTypes';
 
 type SelectCellEditorProps = {
   options: GridSelectEditorOption[];
@@ -37,6 +38,8 @@ type SelectCellEditorProps = {
   align?: 'left' | 'center' | 'right';
   // ポータル root へ直接付与するテーマ修飾子('ssg-theme-dark' | undefined)です。
   themeClassName?: string;
+  // 追加(slot-props): classNames.popover の解決済みスロット(候補リストのポータル root へ)。
+  popoverSlot?: GridResolvedSlot;
   // 追加(enter-move ②): Enter 確定後の移動先です(未指定 = 'down')。
   enterMove?: EditorEnterMove;
 };
@@ -48,6 +51,7 @@ export function SelectCellEditor({
   onCancel,
   align,
   themeClassName,
+  popoverSlot,
   enterMove,
 }: SelectCellEditorProps) {
   const inputRef = useRef<HTMLInputElement | null>(null);
@@ -213,8 +217,13 @@ export function SelectCellEditor({
             <div
               ref={listRef}
               role="listbox"
-              className={cx('ssg-select-editor-popover', themeClassName)}
+              className={cx(
+                'ssg-select-editor-popover',
+                themeClassName,
+                popoverSlot?.className,
+              )}
               style={{
+                ...popoverSlot?.style,
                 left: placement.left,
                 top: placement.top,
                 width: placement.width,

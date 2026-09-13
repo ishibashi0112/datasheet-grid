@@ -26,7 +26,7 @@ A high-performance, virtualized spreadsheet / data grid for **React 19**, writte
 - Japanese-aware line wrapping — per-column `wordBreak` / `lineBreak`, including `wordBreak: 'auto-phrase'` for phrase-based breaks on Chromium (BudouX). Cross-browser BudouX recipe in the API reference.
 - External height control via `height` / `maxHeight` (e.g. `height="100%"` to follow the parent's height).
 - Both **client-side** (`rows`) and **server-side** (`dataSource`, SSRM) row models — server-side includes query forwarding (filter / sort / global filter), soft refresh (`refreshServerSide()`), load-error retry UI, and cell-edit write-back via `dataSource.updateRows` with optimistic updates and automatic rollback on failure.
-- Themeable with CSS custom properties (`--ssg-*`, defined at zero specificity so your overrides always win). Base styles are plain unlayered CSS with single-class specificity, so they survive CSS resets such as Tailwind Preflight; a cascade-layers variant (`style.layer.css`) is also shipped. `className` / `classNames` slots are provided.
+- Themeable with CSS custom properties (`--ssg-*`, defined at zero specificity so your overrides always win). Base styles are plain unlayered CSS with single-class specificity, so they survive CSS resets such as Tailwind Preflight; a cascade-layers variant (`style.layer.css`) is also shipped. `className` / `style` / `classNames` slots cover every visible part (25 slots), and every slot accepts either a class string or `{ className, style }` — the shape returned by StyleX's `stylex.props()`.
 - Styled tooltips out of the box — action hints and truncated-text previews use a custom dark-chip tooltip (no browser-default `title` look). Add `data-ssg-tooltip="text"` to your own elements (custom cells, headers) to get the same tooltip; colors are themeable via `--ssg-tooltip-*` tokens.
 - Built-in dark theme — `theme="light" | "dark" | "auto"` switches the grid, every popover / panel / menu, the drag ghost and tooltips through a single token preset. `"auto"` follows `prefers-color-scheme`; with class-based dark frameworks (Mantine / HeroUI / Tailwind) pass your resolved color scheme instead.
 - Toggle the top / bottom bars and their parts via props — whole bars (`showTopBar` / `showBottomBar`), the default top bar's summary chips and global-filter input, and the Rows/Columns counts in each bar.
@@ -75,6 +75,7 @@ The base styles are plain (unlayered) CSS scoped to `.ssg-*` classes, and all de
   ```
 
 - **Mantine** — works out of the box (no class-name or reset conflicts; grid popovers use `z-index: 1000`, above Mantine's default modal z-index).
+- **StyleX** — works out of the box (no resets, `x`-prefixed atomic classes). Pass `stylex.props(...)` straight into `classNames.*`, `cellClassName`, `getRowClassName` or `detailRow.className` — every slot accepts `string | { className, style }`, so StyleX dynamic styles (delivered through the `style` object) reach the element. StyleX atomic classes and the grid's base classes share the same specificity, so load the grid CSS before StyleX's output, or use `style.layer.css` (required when StyleX's `useLayers` option is on). Bridge tokens with `stylex.create({ grid: { '--ssg-accent': vars.accent } })` on the `root` slot.
 
 To override a grid default reliably in plain CSS, chain your class with the grid's base class so it wins by specificity, independent of import order:
 
@@ -244,7 +245,7 @@ Sorting, column filters, and the global filter stay enabled and are forwarded to
   }
   ```
 
-- Use the `classNames` prop for per-part class slots, `cellClassName` per column, and `getRowClassName` per row. Token overrides always apply (tokens are defined at zero specificity). For property overrides, chain with the base class (e.g. `.ssg-body-cell.my-class`) to win regardless of import order — see the Styles section above.
+- Use the `classNames` prop for per-part slots (root / toolbar / statusBar / header & body rows and cells / group & detail rows / popover / menuItem / tooltip / dragGhost / checkbox / cellEditor / emptyState / filterChipBar / errorBar / scrollHint / overlays), `cellClassName` per column, and `getRowClassName` per row. Each accepts a class string or `{ className, style }`; the root also takes a `style` prop. Inline `style` is applied to the part's element while the grid keeps the last word on positioning (`left` / `top` / `width` / `height` / `transform`). Token overrides always apply (tokens are defined at zero specificity). For property overrides, chain with the base class (e.g. `.ssg-body-cell.my-class`) to win regardless of import order — see the Styles section above.
 
 ### Dark theme
 
@@ -314,7 +315,7 @@ The full prop and type reference lives in [`src/components/spreadsheet-grid/API_
 - 日本語対応の折り返し — 列ごとの `wordBreak` / `lineBreak`。`wordBreak: 'auto-phrase'` で Chromium（Chrome / Edge）の文節折り返し（BudouX）。クロスブラウザの BudouX レシピは API リファレンス参照。
 - `height` / `maxHeight` によるスクロールコンテナ高さの外部制御（`height="100%"` で親要素の高さに追従）。
 - **クライアントサイド**（`rows`）と**サーバーサイド**（`dataSource`、SSRM）の両行モデル — サーバーサイドはクエリ送出（フィルター / ソート / グローバルフィルター）、ソフトリフレッシュ（`refreshServerSide()`）、取得失敗の再試行 UI に加え、`dataSource.updateRows` によるセル編集の書き戻し（楽観更新 + 失敗時の自動ロールバック）まで対応。
-- CSS カスタムプロパティ（`--ssg-*`。特異度 0 で定義され、利用側の上書きが常に勝ちます）によるテーマ設定。基底スタイルは未レイヤーの単一クラス特異度で、Tailwind Preflight などの CSS リセットに壊されません。カスケードレイヤー版（`style.layer.css`）も同梱。`className` / `classNames` スロットも用意。
+- CSS カスタムプロパティ（`--ssg-*`。特異度 0 で定義され、利用側の上書きが常に勝ちます）によるテーマ設定。基底スタイルは未レイヤーの単一クラス特異度で、Tailwind Preflight などの CSS リセットに壊されません。カスケードレイヤー版（`style.layer.css`）も同梱。`className` / `style` / `classNames` スロットは可視パーツを網羅（25 スロット）し、各スロットは class 文字列でも `{ className, style }`（StyleX の `stylex.props()` の戻り値と同形）でも受け付けます。
 - スタイル付きツールチップを標準装備 — 操作ヒントや切り詰めテキストの全文表示は、ブラウザ標準の `title` ではなくダークチップのカスタムツールチップで表示。利用側の要素(カスタムセルやヘッダー)にも `data-ssg-tooltip="文言"` を付けるだけで同じ見た目になります。配色は `--ssg-tooltip-*` トークンで調整可。
 - ダークテーマを標準装備 — `theme="light" | "dark" | "auto"` で、グリッド本体・全ポップオーバー / パネル / メニュー・ドラッグゴースト・ツールチップをトークンプリセット 1 つで一括切替。`"auto"` は `prefers-color-scheme` に追従(Mantine / HeroUI / Tailwind のクラスベース dark 運用では、解決済みのカラースキームを渡す使い方を推奨)。
 - トップ / ボトムバーとその構成要素（バー全体〔`showTopBar` / `showBottomBar`〕、既定トップバーの summary chips・グローバルフィルター入力、各バーの Rows/Columns 件数）を props で表示制御。
@@ -363,6 +364,7 @@ import '@ishibashi0112/spreadsheet-grid/style.css'
   ```
 
 - **Mantine** — そのままで動作します（クラス名・リセットの衝突なし。グリッドの popover は `z-index: 1000` で Mantine の既定モーダルより前面）。
+- **StyleX** — そのままで動作します（reset を持たず、生成クラスは接頭辞 `x` で衝突しません）。`classNames.*` / `cellClassName` / `getRowClassName` / `detailRow.className` へ `stylex.props(...)` の戻り値をそのまま渡せます（全スロットが `string | { className, style }` を受けるため、`style` 側で届く StyleX の動的スタイルも欠落しません）。StyleX の atomic クラスと基底クラスは同特異度のため、グリッド CSS を先に・StyleX の出力を後に読み込むか、`style.layer.css` を使ってください（StyleX 側で `useLayers` を使う場合は必須）。トークンは `root` スロットに `stylex.create({ grid: { '--ssg-accent': vars.accent } })` を渡して橋渡しできます。
 
 素の CSS でグリッド既定を確実に上書きするには、基底クラスと連結して特異度で勝たせてください（読み込み順に依存しません）:
 

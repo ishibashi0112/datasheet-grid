@@ -1,9 +1,13 @@
 import type { SpreadsheetGridSlotContext } from '../model/gridTypes';
+import { cx } from '../logic/cx';
+import type { GridResolvedSlot } from '../model/gridTypes';
 
 type DefaultGridBottomBarProps<T> = {
   context: SpreadsheetGridSlotContext<T>;
   // 追加: Rows / Columns の件数 chips(左グループ)を表示するかどうかです(既定 true)。
   showCounts?: boolean;
+  // 追加(slot-props): classNames.statusBar の解決済みスロット(既定バーの root .ssg-bar--bottom へ)。
+  slot?: GridResolvedSlot;
 };
 
 // 追加: Grid 下部の既定ステータスバーです。
@@ -13,12 +17,13 @@ type DefaultGridBottomBarProps<T> = {
 export function DefaultGridBottomBar<T>({
   context,
   showCounts = true,
+  slot,
 }: DefaultGridBottomBarProps<T>) {
   // 追加: slot context が持つ派生 summary を使います。
   const { derivedSummary } = context;
 
   return (
-    <div className="ssg-bar--bottom">
+    <div className={cx('ssg-bar--bottom', slot?.className)} style={slot?.style}>
       <div className="ssg-bar-container">
         {showCounts ? (
           <div className="ssg-bar-group">

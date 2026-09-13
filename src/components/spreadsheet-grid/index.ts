@@ -53,6 +53,9 @@ export type {
   RowStyleContext,
   // 追加(detail ②): 展開行(Master/Detail)の設定型と、renderCell / render へ渡すコンテキストです。
   DetailRowOptions,
+  // 追加(slot-props): パーツ別スロット表と、各スロットが受ける値の形(string | { className, style })。
+  GridClassNames,
+  GridSlotProps,
   DetailRowRenderContext,
   CellDetailContext,
   // 追加(row-drag ③): 行ドラッグ並び替え(enableRowDrag / isRowDraggable / onRowMove)の公開型です。

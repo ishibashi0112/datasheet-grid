@@ -26,6 +26,7 @@ import {
   resolveScrollHintDetail,
 } from '../logic/scrollHint';
 import type { ResolvedScrollHintOptions } from '../logic/scrollHint';
+import type { GridResolvedSlot } from '../model/gridTypes';
 
 // スクロール停止からフェードアウトまでの猶予(ms)です(trigger='scroll' / 'hover')。
 const SCROLL_HINT_LINGER_MS = 1000;
@@ -58,6 +59,8 @@ export type GridScrollHintProps<T> = {
   rowMetrics: RowMetrics;
   // 行データの取得口(clientSide / SSRM 共通シーム。未ロード行 / グループ行は実行時 undefined)。
   rowModel: RowModel<T>;
+  // 追加(slot-props): classNames.scrollHint の解決済みスロット(root .ssg-scroll-hint へ)。
+  slot?: GridResolvedSlot;
 };
 
 export function GridScrollHint<T>({
@@ -70,6 +73,7 @@ export function GridScrollHint<T>({
   verticalScaleFactor,
   rowMetrics,
   rowModel,
+  slot,
 }: GridScrollHintProps<T>) {
   // スクロール活動フラグ(最後のスクロールから LINGER ms 経過で消灯)。
   const [scrollActive, setScrollActive] = useState(false);
@@ -320,7 +324,11 @@ export function GridScrollHint<T>({
   };
 
   return (
-    <div className="ssg-scroll-hint" aria-hidden="true">
+    <div
+      className={cx('ssg-scroll-hint', slot?.className)}
+      style={slot?.style}
+      aria-hidden="true"
+    >
       {options.ruler && rulerTicks.length > 0 && (
         <div
           className={cx(

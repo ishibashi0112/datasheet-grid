@@ -1,5 +1,7 @@
 import type { ReactNode } from 'react';
 import type { SpreadsheetGridSlotContext } from '../model/gridTypes';
+import { cx } from '../logic/cx';
+import type { GridResolvedSlot } from '../model/gridTypes';
 
 // 追加(F-filter UI): 既定の左アイコン(検索)です。zero-dep のためインライン SVG で持ち、currentColor で
 //   .ssg-bar-input-icon の color を継承します。グローバルフィルタ(全列横断のテキスト検索)を示す虫眼鏡。
@@ -55,6 +57,8 @@ type DefaultGridTopBarProps<T> = {
   //   パネルのトグルを渡します)。指定時のみ chip を button 化し(.ssg-bar-chip--action)、
   //   未指定時は従来どおり非クリックの span です(フィルター機能無効時の互換)。
   onFilterSummaryClick?: () => void;
+  // 追加(slot-props): classNames.toolbar の解決済みスロット(既定バーの root .ssg-bar--top へ)。
+  slot?: GridResolvedSlot;
 };
 
 // 追加: Grid 上部の既定ツールバーです。summary chips(左) と グローバルフィルター入力(右) の
@@ -77,6 +81,7 @@ export function DefaultGridTopBar<T>({
   globalFilterPlaceholder = 'グローバルフィルター',
   globalFilterIcon,
   onFilterSummaryClick,
+  slot,
 }: DefaultGridTopBarProps<T>) {
   // 追加: slot context が持つ派生 summary を使います。
   const { derivedSummary } = context;
@@ -87,7 +92,7 @@ export function DefaultGridTopBar<T>({
   const hasFilterText = context.globalFilterText.trim().length > 0;
 
   return (
-    <div className="ssg-bar--top">
+    <div className={cx('ssg-bar--top', slot?.className)} style={slot?.style}>
       <div className="ssg-bar-container">
         {showSummary ? (
           <div className="ssg-bar-group ssg-bar-leading">

@@ -39,6 +39,8 @@ import type { GridPaneKind } from './GridHeaderRow';
 import { getCellValue, isCellEditable } from '../utils/permissions';
 // 追加(UI CSS移行): className 合成ヘルパー。
 import { cx } from '../logic/cx';
+import type { GridResolvedSlots, GridSlotProps } from '../model/gridTypes';
+import { arePropsEqualWithStyleKeys, resolveSlotProps } from '../logic/slotProps';
 
 type VirtualRowLike = {
   index: number;
@@ -140,13 +142,15 @@ type GridBodyRowProps<T> = {
     cellState: CellRenderState,
   ) => ReactNode;
   // 追加(UI CSS移行): 条件付き / スロット className(すべて文字列=プリミティブで memo 安全)。
-  //   rowClassName=getRowClassName の解決結果(親で算出)。bodyCellClassName / bodyRowClassName
+  //   rowClassName=getRowClassName の解決結果(親で算出)。slots.bodyCell / slots.bodyRow
   //   =classNames.bodyCell / .bodyRow スロット。
   rowClassName?: string;
-  bodyCellClassName?: string;
-  bodyRowClassName?: string;
-  // 追加(UI CSS移行・ヘッダー): 行ヘッダー「#」セルへのスロット。
-  rowHeaderCellClassName?: string;
+  // 追加(slot-props): getRowClassName が返した style(行コンテナ / 行ヘッダー / 各セルへ付与)。
+  //   参照は毎レンダー変わり得るため、memo の比較関数で内容比較します(areGridBodyRowPropsEqual)。
+  rowStyle?: CSSProperties;
+  // 変更(slot-props): classNames 由来の解決済みスロット表(bodyRow / bodyCell / rowHeaderCell /
+  //   checkbox)。親で署名 memo 済みのため参照は安定しています。
+  slots?: GridResolvedSlots;
 };
 
 function GridBodyRowInner<T>({
@@ -184,9 +188,8 @@ function GridBodyRowInner<T>({
   onCellDoubleClick,
   renderCellContent,
   rowClassName,
-  bodyCellClassName,
-  bodyRowClassName,
-  rowHeaderCellClassName,
+  rowStyle,
+  slots,
 }: GridBodyRowProps<T>) {
   return (
     <div
@@ -197,9 +200,11 @@ function GridBodyRowInner<T>({
         // 追加(行選択): チェック選択された行のハイライト。
         isRowChecked && 'ssg-body-row--checked',
         rowClassName,
-        bodyRowClassName,
+        slots?.bodyRow?.className,
       )}
       style={{
+        ...slots?.bodyRow?.style,
+        ...rowStyle,
         height: rowHeight,
         transform: `translateY(${top}px)`,
       }}
@@ -221,15 +226,18 @@ function GridBodyRowInner<T>({
               'ssg-header-cell--selected',
             isRowHovered && 'ssg-header-cell--hovered',
             rowClassName,
-            rowHeaderCellClassName,
+            slots?.rowHeaderCell?.className,
           )}
           style={{
+            ...slots?.rowHeaderCell?.style,
+            ...rowStyle,
             ...rowHeaderCellStyle,
             height: rowHeight,
           }}
         >
           {showRowCheckbox ? (
             <RowSelectionCheckbox
+              slot={slots?.checkbox}
               state={isRowChecked ? 'checked' : 'unchecked'}
             />
           ) : (
@@ -276,13 +284,14 @@ function GridBodyRowInner<T>({
 
         // 追加(UI CSS移行): セルの className を合成します。基底(.ssg-body-cell)+ 状態修飾子
         //   (autoheight / readonly / row-hovered)+ 条件付き(行=rowClassName / 列=cellClassName)
-        //   + スロット(bodyCellClassName)。基底/状態系は未レイヤー・特異度 (0,1,0)(THEME-1)。
+        //   + スロット(slots.bodyCell)。基底/状態系は未レイヤー・特異度 (0,1,0)(THEME-1)。
         //   条件付き / スロットで確実に上書きするには連結セレクタを推奨。列 cellClassName が関数のときだけ
         //   値解決(getCellValue)します(未指定列は無コスト)。
-        let conditionalCellClass: string | undefined;
+        // 変更(slot-props): 返り値は string | { className, style }。style はセルへインライン付与。
+        let conditionalCellSlot: GridSlotProps | undefined;
         const columnCellClassName = column.cellClassName;
         if (columnCellClassName) {
-          conditionalCellClass =
+          conditionalCellSlot =
             typeof columnCellClassName === 'function'
               ? columnCellClassName({
                   row,
@@ -300,6 +309,7 @@ function GridBodyRowInner<T>({
                 })
               : columnCellClassName;
         }
+        const conditionalCell = resolveSlotProps<CSSProperties>(conditionalCellSlot);
         // 追加(validation): mark 表示の導出です。validate 指定列だけ値解決して評価します
         //   (未指定列は無コスト)。state を持たないため、undo/redo・外部 rows 差し替え後も
         //   常に rows と整合します。メッセージはカスタムツールチップ(data-ssg-tooltip)で
@@ -321,8 +331,8 @@ function GridBodyRowInner<T>({
           invalidMessage !== null && 'ssg-body-cell--invalid',
           isRowHovered && 'ssg-body-cell--row-hovered',
           rowClassName,
-          conditionalCellClass,
-          bodyCellClassName,
+          conditionalCell.className,
+          slots?.bodyCell?.className,
         );
 
         // 追加: 折り返し列(autoHeight)の word-break / line-break を CSS へ反映します。
@@ -359,6 +369,10 @@ function GridBodyRowInner<T>({
               onCellDoubleClick({ row: rowIndex, col: colIndex })
             }
             style={{
+              // 追加(slot-props): スロット / 行 / セルの style を先に展開し、座標 / 寸法はグリッドが後勝ち。
+              ...slots?.bodyCell?.style,
+              ...rowStyle,
+              ...conditionalCell.style,
               left,
               width: size,
               minWidth: size,
@@ -392,7 +406,18 @@ function GridBodyRowInner<T>({
 }
 
 // memo + ジェネリック関数コンポーネントの定石です(型を保ったまま memo 化)。
-const GridBodyRow = memo(GridBodyRowInner) as typeof GridBodyRowInner;
+// 変更(slot-props): rowStyle(getRowClassName 由来の style)は毎レンダー新しい参照になり得るため、
+//   既定の Object.is ではなく内容(浅い等価)で比較します。それ以外の props は従来どおり参照比較。
+const GRID_BODY_ROW_STYLE_KEYS: ReadonlySet<keyof GridBodyRowProps<unknown>> =
+  new Set<keyof GridBodyRowProps<unknown>>(['rowStyle']);
+const areGridBodyRowPropsEqual = (
+  prev: Readonly<GridBodyRowProps<unknown>>,
+  next: Readonly<GridBodyRowProps<unknown>>,
+): boolean => arePropsEqualWithStyleKeys(prev, next, GRID_BODY_ROW_STYLE_KEYS);
+const GridBodyRow = memo(
+  GridBodyRowInner,
+  areGridBodyRowPropsEqual,
+) as typeof GridBodyRowInner;
 
 // ──────────────────────────────────────────────────────────
 // 追加(①-4): serverSide(SSRM)で未ロードの行に描画するスケルトン行です。
@@ -432,9 +457,8 @@ type GridBodySkeletonRowProps<T> = {
     event: PointerEvent<HTMLDivElement>,
   ) => void;
   // 追加(UI CSS移行): 本体スロット(skeleton も同じ .ssg-body-cell / .ssg-body-row を使うため)。
-  bodyCellClassName?: string;
-  bodyRowClassName?: string;
-  rowHeaderCellClassName?: string;
+  // 変更(slot-props): classNames 由来の解決済みスロット表(参照は親で署名 memo 済み)。
+  slots?: GridResolvedSlots;
 };
 
 // プレースホルダーバーの幅を列ごとに少し変えて機械的な均一さを避けます(列 index 駆動で
@@ -457,17 +481,16 @@ function GridBodySkeletonRowInner<T>({
   onRowHeaderPointerLeave,
   onCellPointerDown,
   onCellPointerEnter,
-  bodyCellClassName,
-  bodyRowClassName,
-  rowHeaderCellClassName,
+  slots,
 }: GridBodySkeletonRowProps<T>) {
   return (
     <div
       data-pane={pane}
       data-row-index={rowIndex}
       data-skeleton-row=""
-      className={cx('ssg-body-row', bodyRowClassName)}
+      className={cx('ssg-body-row', slots?.bodyRow?.className)}
       style={{
+        ...slots?.bodyRow?.style,
         height: rowHeight,
         transform: `translateY(${top}px)`,
       }}
@@ -483,15 +506,20 @@ function GridBodySkeletonRowInner<T>({
             'ssg-skeleton-rowheader',
             showRowCheckbox && 'ssg-row-header-cell--checkbox',
             isRowHovered && 'ssg-header-cell--hovered',
-            rowHeaderCellClassName,
+            slots?.rowHeaderCell?.className,
           )}
           style={{
+            ...slots?.rowHeaderCell?.style,
             ...rowHeaderCellStyle,
             height: rowHeight,
           }}
         >
           {showRowCheckbox ? (
-            <RowSelectionCheckbox state="unchecked" disabled />
+            <RowSelectionCheckbox
+              slot={slots?.checkbox}
+              state="unchecked"
+              disabled
+            />
           ) : (
             rowIndex + 1
           )}
@@ -514,7 +542,7 @@ function GridBodySkeletonRowInner<T>({
             className={cx(
               'ssg-body-cell',
               isRowHovered && 'ssg-body-cell--row-hovered',
-              bodyCellClassName,
+              slots?.bodyCell?.className,
             )}
             onPointerDown={(event) =>
               onCellPointerDown({ row: rowIndex, col: colIndex }, event)
@@ -523,6 +551,7 @@ function GridBodySkeletonRowInner<T>({
               onCellPointerEnter({ row: rowIndex, col: colIndex }, event)
             }
             style={{
+              ...slots?.bodyCell?.style,
               left,
               width: size,
               minWidth: size,
@@ -577,9 +606,8 @@ type GridBodyGroupRowProps<T> = {
     event: PointerEvent<HTMLDivElement>,
   ) => void;
   onRowHeaderPointerLeave: (rowIndex: number) => void;
-  bodyCellClassName?: string;
-  bodyRowClassName?: string;
-  rowHeaderCellClassName?: string;
+  // 変更(slot-props): classNames 由来の解決済みスロット表(参照は親で署名 memo 済み)。
+  slots?: GridResolvedSlots;
 };
 
 // 集計値の表示文字列です。undefined / null は空セル。列に valueFormatter があれば集計値にも
@@ -623,17 +651,21 @@ function GridBodyGroupRowInner<T>({
   onGroupToggle,
   onRowHeaderPointerEnter,
   onRowHeaderPointerLeave,
-  bodyCellClassName,
-  bodyRowClassName,
-  rowHeaderCellClassName,
+  slots,
 }: GridBodyGroupRowProps<T>) {
   return (
     <div
       data-pane={pane}
       data-row-index={rowIndex}
       data-ssg-group-row=""
-      className={cx('ssg-body-row', bodyRowClassName)}
+      className={cx(
+        'ssg-body-row',
+        slots?.bodyRow?.className,
+        slots?.groupRow?.className,
+      )}
       style={{
+        ...slots?.bodyRow?.style,
+        ...slots?.groupRow?.style,
         height: rowHeight,
         transform: `translateY(${top}px)`,
       }}
@@ -648,9 +680,10 @@ function GridBodyGroupRowInner<T>({
             'ssg-row-header-cell',
             showRowCheckbox && 'ssg-row-header-cell--checkbox',
             isRowHovered && 'ssg-header-cell--hovered',
-            rowHeaderCellClassName,
+            slots?.rowHeaderCell?.className,
           )}
           style={{
+            ...slots?.rowHeaderCell?.style,
             ...rowHeaderCellStyle,
             height: rowHeight,
           }}
@@ -686,9 +719,12 @@ function GridBodyGroupRowInner<T>({
               column.align === 'center' && 'ssg-body-cell--align-center',
               column.align === 'right' && 'ssg-body-cell--align-right',
               isRowHovered && 'ssg-body-cell--row-hovered',
-              bodyCellClassName,
+              slots?.bodyCell?.className,
+              slots?.groupCell?.className,
             )}
             style={{
+              ...slots?.bodyCell?.style,
+              ...slots?.groupCell?.style,
               left,
               width: size,
               minWidth: size,
@@ -809,10 +845,9 @@ type GridBodyLayerProps<T> = {
     row: T,
     rowIndex: number,
     ctx: RowStyleContext<T>,
-  ) => string | undefined;
-  bodyCellClassName?: string;
-  bodyRowClassName?: string;
-  rowHeaderCellClassName?: string;
+  ) => GridSlotProps | undefined;
+  // 変更(slot-props): classNames 由来の解決済みスロット表(参照は親で署名 memo 済み)。
+  slots?: GridResolvedSlots;
 };
 
 // 変更(A-1): 本体は「仮想行を並べて GridBodyRow(memo) に委譲するだけ」の薄い層になりました。
@@ -854,9 +889,7 @@ export function GridBodyLayer<T>({
   onCellDoubleClick,
   renderCellContent,
   getRowClassName,
-  bodyCellClassName,
-  bodyRowClassName,
-  rowHeaderCellClassName,
+  slots,
 }: GridBodyLayerProps<T>) {
   return (
     <>
@@ -897,9 +930,7 @@ export function GridBodyLayer<T>({
               onGroupToggle={onGroupToggle}
               onRowHeaderPointerEnter={onRowHeaderPointerEnter}
               onRowHeaderPointerLeave={onRowHeaderPointerLeave}
-              bodyCellClassName={bodyCellClassName}
-              bodyRowClassName={bodyRowClassName}
-              rowHeaderCellClassName={rowHeaderCellClassName}
+              slots={slots}
             />
           );
         }
@@ -939,9 +970,7 @@ export function GridBodyLayer<T>({
               onRowHeaderPointerLeave={onRowHeaderPointerLeave}
               onCellPointerDown={onCellPointerDown}
               onCellPointerEnter={onCellPointerEnter}
-              bodyCellClassName={bodyCellClassName}
-              bodyRowClassName={bodyRowClassName}
-              rowHeaderCellClassName={rowHeaderCellClassName}
+              slots={slots}
             />
           );
         }
@@ -990,13 +1019,17 @@ export function GridBodyLayer<T>({
         //   文字列へ解決してから渡すのが肝です)。
         // 変更(proposals ⑤): 第 3 引数に RowStyleContext(source 基準の突き合わせ +
         //   チェックボックス行選択状態)を渡します。
-        const rowClassName = getRowClassName?.(row, rowIndex, {
-          row,
-          rowIndex,
-          sourceRowIndex,
-          rowKey,
-          isSelected: isRowChecked,
-        });
+        // 変更(slot-props): 返り値(string | { className, style })を解決し、className は文字列、
+        //   style はオブジェクトとして渡します(後者は memo 側で内容比較)。
+        const rowSlot = resolveSlotProps<CSSProperties>(
+          getRowClassName?.(row, rowIndex, {
+            row,
+            rowIndex,
+            sourceRowIndex,
+            rowKey,
+            isSelected: isRowChecked,
+          }),
+        );
 
         return (
           <GridBodyRow
@@ -1034,10 +1067,9 @@ export function GridBodyLayer<T>({
             onCellPointerEnter={onCellPointerEnter}
             onCellDoubleClick={onCellDoubleClick}
             renderCellContent={renderCellContent}
-            rowClassName={rowClassName}
-            bodyCellClassName={bodyCellClassName}
-            bodyRowClassName={bodyRowClassName}
-            rowHeaderCellClassName={rowHeaderCellClassName}
+            rowClassName={rowSlot.className}
+            rowStyle={rowSlot.style}
+            slots={slots}
           />
         );
       })}

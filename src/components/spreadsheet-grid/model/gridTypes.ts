@@ -1,4 +1,4 @@
-import type { ReactNode, Ref } from 'react';
+import type { CSSProperties, ReactNode, Ref } from 'react';
 
 // 追加: row identity 用の key 型です。
 export type GridRowKey = string | number;
@@ -506,7 +506,8 @@ export type DetailRowOptions<T> = {
   //   false にした場合は renderCell の ctx.detail.toggle() で任意の列にトグルを置いてください。
   showToggleColumn?: boolean;
   // 帯の内側のカード要素(data-ssg-detail を持つ境界要素)へ追加する className。
-  className?: string;
+  // 変更(slot-props): `{ className, style }` 形(StyleX の stylex.props() 戻り値)も受けます。
+  className?: GridSlotProps;
 };
 
 // 追加(row-drag ③): 行ドラッグ並び替え(enableRowDrag)の行ごとの可否判定(isRowDraggable)へ
@@ -817,7 +818,12 @@ export type GridColumn<T> = {
   //   関数版は CellStyleContext を受け取り、値や状態に応じてクラスを返せます(例: Tailwind)。
   //   基底クラス(.ssg-body-cell)は @layer ssg-base のため、ここで返したクラスが特異度を
   //   気にせず背景等を上書きできます(選択 / アクティブは別オーバーレイなので共存します)。
-  cellClassName?: string | ((ctx: CellStyleContext<T>) => string | undefined);
+  // 変更(slot-props): 文字列に加えて `{ className, style }` 形(StyleX の stylex.props() 戻り値)も
+  //   受けます(関数版も同じ形を返せます)。style はセル要素へインラインで付与され、座標 / 寸法
+  //   (left / width / height 等)はグリッドが後勝ちで上書きします。
+  cellClassName?:
+    | GridSlotProps
+    | ((ctx: CellStyleContext<T>) => GridSlotProps | undefined);
   // 追加(③): セル内容の水平寄せ(UI 表示のみ・元の値は不変)。未指定は左。
   //   セル表示と編集 input の双方へ反映します(renderCell 指定時もセルコンテナへ適用)。
   align?: 'left' | 'center' | 'right';
@@ -1078,20 +1084,86 @@ export type GridContextMenuItem =
   | GridContextMenuCustomItem;
 
 // 追加: 公開 props です。
+// 追加(slot-props / StyleX 併用): className 系スロットが受ける値の形です。
+//   - string: 従来どおりの class 文字列。
+//   - { className?, style? }: StyleX の stylex.props(...) の戻り値と同形。StyleX の動的スタイル
+//     (関数スタイル)は「class + style 側の CSS 変数」の組で出力されるため、この形で受けないと
+//     欠落します。style は当該パーツのルート要素へインラインで付与され、グリッドが位置決めに使う
+//     座標 / 寸法(left / top / width / height / transform 等)はグリッド側が後勝ちで上書きします
+//     (レイアウトは壊せません)。インライン style は状態クラス(選択 / ホバー等の背景)にも勝つため、
+//     状態で切り替えたい装飾は className 側で行ってください。
+//   - tooltip / dragGhost は命令的 DOM(document.body 直下)のため、style の数値は単位なしのまま
+//     設定されます(px が必要な値は '12px' のように文字列で渡してください)。
+export type GridSlotProps = string | { className?: string; style?: CSSProperties };
+
+// 解決済みスロット(内部用。view へ渡す形。参照は親で署名 memo 済み)。
+export type GridResolvedSlot = { className?: string; style?: CSSProperties };
+export type GridResolvedSlots = Partial<
+  Record<keyof GridClassNames, GridResolvedSlot>
+>;
+
 // 追加(UI CSS移行): 各パーツへ追加 className を差し込むスロットです。利用側はここに任意のクラス
-//   (例: 別プロジェクトの Tailwind ユーティリティ)を渡して局所調整できます。基底クラスは
-//   @layer ssg-base に入っているため、ここで渡したクラスが特異度を気にせず上書きできます。
-//   注記: 段階移行中。現在“配線済み”は root / iconButton。他スロットは順次配線します。
+//   (例: 別プロジェクトの Tailwind ユーティリティ / StyleX の stylex.props())を渡して局所調整
+//   できます。基底クラスは未レイヤー・特異度 (0,1,0)(THEME-1)のため、同特異度のクラスは
+//   読み込み順で勝敗が決まります(確実に勝たせるには連結セレクタ、または style.layer.css)。
+// 変更(slot-props): 各値は GridSlotProps(string | { className, style })。全スロット配線済み。
+//   StyleX は子孫セレクタを書けない(要素自身のクラスでしか装飾できない)ため、ここに無い内部要素
+//   (ポップオーバー内のボタン / 入力欄等)はデザイントークン(--ssg-*)で調整してください。
 export type GridClassNames = {
-  root?: string;
-  toolbar?: string;
-  statusBar?: string;
-  headerRow?: string;
-  headerCell?: string;
-  bodyRow?: string;
-  bodyCell?: string;
-  rowHeaderCell?: string;
-  iconButton?: string;
+  // グリッドのルート要素(.ssg-root。className / style prop と同じ要素)。
+  root?: GridSlotProps;
+  // 既定トップバー(.ssg-bar--top)。renderTopBar 指定時はカスタム側が markup を持つため対象外。
+  toolbar?: GridSlotProps;
+  // 既定ボトムバー(.ssg-bar--bottom)。renderBottomBar 指定時は対象外。
+  statusBar?: GridSlotProps;
+  // ヘッダー行(.ssg-header-row。3 ペイン分)。
+  headerRow?: GridSlotProps;
+  // 列ヘッダーセル(.ssg-header-cell。コーナー / 行ヘッダーセルは含まない)。
+  headerCell?: GridSlotProps;
+  // 本体行(.ssg-body-row。データ行 / スケルトン行 / グループ行)。
+  bodyRow?: GridSlotProps;
+  // データセル(.ssg-body-cell。グループ行のセルにも付与)。
+  bodyCell?: GridSlotProps;
+  // 行ヘッダー「#」セル(.ssg-row-header-cell)とコーナーセル(両方)。
+  rowHeaderCell?: GridSlotProps;
+  // ヘッダーのアイコンボタン(.ssg-icon-btn。列メニュー ⋮ 等)。
+  iconButton?: GridSlotProps;
+  // 左上コーナーセル(.ssg-corner-cell。rowHeaderCell に加えて付与)。
+  cornerCell?: GridSlotProps;
+  // グループ行(.ssg-body-row[data-ssg-group-row]。bodyRow に加えて付与)。
+  groupRow?: GridSlotProps;
+  // グループ行のセル(.ssg-group-cell。bodyCell に加えて付与)。
+  groupCell?: GridSlotProps;
+  // 展開行の帯(.ssg-detail-band。3 ペイン分)。
+  detailBand?: GridSlotProps;
+  // 展開行のカード(.ssg-detail-card。detailRow.className に加えて付与)。
+  detailCard?: GridSlotProps;
+  // ポータル系パネルのルート(列メニュー / フィルター / コンテキストメニュー / select エディタ候補 /
+  //   ツールパネル。document.body 直下に描画されるため .ssg-root の子孫ではありません)。
+  popover?: GridSlotProps;
+  // メニュー項目(.ssg-menu-item。列メニュー / コンテキストメニュー)。
+  menuItem?: GridSlotProps;
+  // カスタムツールチップ(.ssg-tooltip。body 直下のシングルトン。複数グリッド同居時は最後に
+  //   マウント / 更新したグリッドの値が使われます)。
+  tooltip?: GridSlotProps;
+  // 列 / 行ドラッグのゴースト([data-grid-drag-ghost]。body 直下、ドラッグ開始時に生成)。
+  dragGhost?: GridSlotProps;
+  // 行選択 / checkbox 列のチェックボックス glyph(.ssg-row-checkbox)。
+  checkbox?: GridSlotProps;
+  // セルエディタの枠(.ssg-cell-editor)。
+  cellEditor?: GridSlotProps;
+  // 0 行時の空状態(.ssg-empty-state)。
+  emptyState?: GridSlotProps;
+  // フィルターチップバー(.ssg-filter-chip-bar)。
+  filterChipBar?: GridSlotProps;
+  // SSRM のエラーバー(.ssg-ssrm-error-bar。取得失敗 / 保存失敗)。
+  errorBar?: GridSlotProps;
+  // スクロール位置インジケーター(.ssg-scroll-hint)。
+  scrollHint?: GridSlotProps;
+  // アクティブセル枠(.ssg-active-cell-overlay)。
+  activeCellOverlay?: GridSlotProps;
+  // 範囲選択の塗り(.ssg-selection-overlay)。
+  selectionOverlay?: GridSlotProps;
 };
 
 // 追加(imperative API #1): ref ハンドルのスクロール整列指定です。
@@ -1726,7 +1798,11 @@ export type SpreadsheetGridProps<T> = {
   //   showBottomBar=false のときは本指定に関わらず描画しません。
   renderBottomBar?: (context: SpreadsheetGridSlotContext<T>) => ReactNode;
   className?: string;
+  // 追加(slot-props): ルート要素(.ssg-root)へのインライン style です(classNames.root の style と
+  //   マージし、こちらが後勝ち)。
+  style?: CSSProperties;
   // 追加(UI CSS移行): パーツ別の追加 className スロット(詳細は GridClassNames)。
+  // 変更(slot-props): 各値は `string | { className, style }`(GridSlotProps)を受けます。
   classNames?: GridClassNames;
   // 追加(UI CSS移行): 行ごとの追加 className を返すコールバック(条件付き行スタイル)。
   //   返り値は行コンテナと各データセルへ付与され、Tailwind 等での行ハイライトに使えます。
@@ -1734,11 +1810,13 @@ export type SpreadsheetGridProps<T> = {
   // 変更(proposals ⑤): 第 3 引数 ctx(RowStyleContext)を追加しました。既存の 2 引数関数は
   //   そのまま動きます(完全後方互換)。ソート / フィルター ON でも source 行基準の突き合わせが
   //   できるよう sourceRowIndex / rowKey を渡します(cellClassName の CellStyleContext と同基準)。
+  // 変更(slot-props): 返り値は `{ className, style }` 形(GridSlotProps)も可。style は行コンテナ /
+  //   行ヘッダー「#」セル / 各データセルへインラインで付与されます(座標 / 寸法はグリッドが後勝ち)。
   getRowClassName?: (
     row: T,
     rowIndex: number,
     ctx: RowStyleContext<T>,
-  ) => string | undefined;
+  ) => GridSlotProps | undefined;
   // ── 追加(detail ②): 展開行(Master/Detail) ──
   //   指定時のみ有効な opt-in 機能です。詳細は DetailRowOptions を参照。
   detailRow?: DetailRowOptions<T>;

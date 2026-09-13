@@ -31,6 +31,7 @@ import { isActiveColumnFilterValue } from '../logic/filtering';
 // 変更(detail ③): 自動グループ列 / 展開行トグル列の合成列判定を共通化しました。
 import { DETAIL_TOGGLE_COLUMN_KEY, isSyntheticColumnKey } from '../logic/detailRow';
 import { ROW_DRAG_HANDLE_COLUMN_KEY } from '../logic/rowReorder';
+import type { GridResolvedSlots } from '../model/gridTypes';
 
 // 追加(10-C): このヘッダーがどのペインを描画しているかの種別です。
 export type GridPaneKind = 'left' | 'center' | 'right';
@@ -48,9 +49,9 @@ type GridHeaderRowProps<T> = {
   headerHeight: number;
   rowHeaderCellStyle: CSSProperties;
   // 追加(UI CSS移行): ヘッダー系スロット(すべて文字列=memo 安全)。基底は未レイヤー .ssg-*(THEME-1)。
-  headerRowClassName?: string;
-  headerCellClassName?: string;
-  rowHeaderCellClassName?: string;
+  // 変更(slot-props): classNames 由来の解決済みスロット表(headerRow / headerCell / rowHeaderCell /
+  //   cornerCell / iconButton / checkbox)。親で署名 memo 済みのため参照は安定しています。
+  slots?: GridResolvedSlots;
   isCornerHovered: boolean;
   isWholeGridSelected: boolean;
   // 追加(行選択): コーナーに全選択チェック(tri-state)を描画するか(=enableSelectAllRows)。
@@ -69,8 +70,7 @@ type GridHeaderRowProps<T> = {
   selectionSnapshot: SelectionSnapshot;
   columnFilterValues: Record<string, ColumnFilterValue>;
   sortState: GridSortState;
-  // 追加(UI CSS移行): ヘッダーのアイコンボタンへ差し込む追加 className(classNames.iconButton)。
-  iconButtonClassName?: string;
+
   onCornerPointerDown: (event: PointerEvent<HTMLDivElement>) => void;
   onCornerPointerEnter: () => void;
   onCornerPointerLeave: () => void;
@@ -131,6 +131,7 @@ function HeaderActionButton({
   isActive,
   title,
   className,
+  style,
   onPointerDown,
   onClick,
   children,
@@ -138,6 +139,8 @@ function HeaderActionButton({
   isActive: boolean;
   title: string;
   className?: string;
+  // 追加(slot-props): classNames.iconButton の style。
+  style?: CSSProperties;
   onPointerDown: (event: PointerEvent<HTMLButtonElement>) => void;
   onClick?: (event: MouseEvent<HTMLButtonElement>) => void;
   children: ReactNode;
@@ -157,6 +160,7 @@ function HeaderActionButton({
         isActive && 'ssg-icon-btn--active',
         className,
       )}
+      style={style}
     >
       {children}
     </button>
@@ -176,9 +180,7 @@ function GridHeaderRowInner<T>({
   leadingWidth,
   headerHeight,
   rowHeaderCellStyle,
-  headerRowClassName,
-  headerCellClassName,
-  rowHeaderCellClassName,
+  slots,
   isCornerHovered,
   isWholeGridSelected,
   showSelectAllCheckbox,
@@ -190,7 +192,6 @@ function GridHeaderRowInner<T>({
   selectionSnapshot,
   columnFilterValues,
   sortState,
-  iconButtonClassName,
   onCornerPointerDown,
   onCornerPointerEnter,
   onCornerPointerLeave,
@@ -211,8 +212,9 @@ function GridHeaderRowInner<T>({
   return (
     <div
       data-pane={pane}
-      className={cx('ssg-header-row', headerRowClassName)}
+      className={cx('ssg-header-row', slots?.headerRow?.className)}
       style={{
+        ...slots?.headerRow?.style,
         height: headerHeight,
       }}
     >
@@ -238,9 +240,12 @@ function GridHeaderRowInner<T>({
             showSelectAllCheckbox && 'ssg-corner-cell--checkbox',
             isWholeGridSelected && 'ssg-header-cell--selected',
             isCornerHovered && 'ssg-header-cell--hovered',
-            rowHeaderCellClassName,
+            slots?.rowHeaderCell?.className,
+            slots?.cornerCell?.className,
           )}
           style={{
+            ...slots?.rowHeaderCell?.style,
+            ...slots?.cornerCell?.style,
             ...rowHeaderCellStyle,
             height: headerHeight,
             cursor:
@@ -251,6 +256,7 @@ function GridHeaderRowInner<T>({
         >
           {showSelectAllCheckbox ? (
             <RowSelectionCheckbox
+              slot={slots?.checkbox}
               state={
                 selectAllState === 'all'
                   ? 'checked'
@@ -344,9 +350,10 @@ function GridHeaderRowInner<T>({
               (isWholeGridSelected || isColumnSelected) &&
                 'ssg-header-cell--selected',
               hoveredColumnIndex === colIndex && 'ssg-header-cell--hovered',
-              headerCellClassName,
+              slots?.headerCell?.className,
             )}
             style={{
+              ...slots?.headerCell?.style,
               left,
               width: size,
               minWidth: size,
@@ -461,7 +468,8 @@ function GridHeaderRowInner<T>({
                 <HeaderActionButton
                   title="列メニュー"
                   isActive={isMenuOpenForColumn}
-                  className={iconButtonClassName}
+                  className={slots?.iconButton?.className}
+                  style={slots?.iconButton?.style}
                   onPointerDown={(event) =>
                     onColumnMenuButtonPointerDown(column, event)
                   }

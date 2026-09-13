@@ -23,6 +23,7 @@ import type {
 } from 'react';
 import type { GridColumnPinned, GridSortDirection } from '../model/gridTypes';
 import type { ColumnMenuLayout } from '../hooks/useColumnMenuController';
+import type { GridResolvedSlots } from '../model/gridTypes';
 
 type ColumnMenuPinnedItem = {
   // 注記: undefined = 固定なし(中央スクロール領域)です。
@@ -54,6 +55,8 @@ type ColumnMenuPopoverProps = {
   // 追加(TH-DK-2): ダークテーマ修飾子クラス('ssg-theme-dark' | undefined)。ポータルは
   //   .ssg-root 外のため、root と同じ修飾子を自身の root 要素へ直接付与します。
   themeClassName?: string;
+  // 追加(slot-props): classNames 由来の解決済みスロット表(popover = パネル root / menuItem = 項目)。
+  slots?: GridResolvedSlots;
   title: string;
   columnKey: string;
   // 追加(③): フィルターをメニューへ集約します。canFilter=false(enableColumnFilter=false や
@@ -111,6 +114,7 @@ type ColumnMenuPopoverProps = {
 export function ColumnMenuPopover({
   isOpen,
   themeClassName,
+  slots,
   title,
   columnKey,
   canFilter,
@@ -216,8 +220,8 @@ export function ColumnMenuPopover({
         // 追加: メニュー上での右クリックはブラウザ標準メニューを出しません。
         event.preventDefault();
       }}
-      className={cx('ssg-menu-panel', themeClassName)}
-      style={wrapperStyle}
+      className={cx('ssg-menu-panel', themeClassName, slots?.popover?.className)}
+      style={{ ...slots?.popover?.style, ...wrapperStyle }}
     >
       <div className="ssg-menu-title">{title}</div>
 
@@ -238,7 +242,8 @@ export function ColumnMenuPopover({
             onClick={() => {
               onOpenFilter();
             }}
-            className="ssg-menu-item"
+            className={cx('ssg-menu-item', slots?.menuItem?.className)}
+            style={slots?.menuItem?.style}
           >
             <span className="ssg-menu-icon" />
             <span className="ssg-menu-label">フィルター…</span>
@@ -266,7 +271,8 @@ export function ColumnMenuPopover({
             onClick={() => {
               onSortChange('asc');
             }}
-            className="ssg-menu-item"
+            className={cx('ssg-menu-item', slots?.menuItem?.className)}
+            style={slots?.menuItem?.style}
           >
             {/* 注記: 14px 列は他項目の ✓ 列と左端を揃えます。
                 未適用時は方向アイコン(↑/↓)を、適用中は ✓ を出します。
@@ -298,7 +304,8 @@ export function ColumnMenuPopover({
             onClick={() => {
               onSortChange('desc');
             }}
-            className="ssg-menu-item"
+            className={cx('ssg-menu-item', slots?.menuItem?.className)}
+            style={slots?.menuItem?.style}
           >
             <span
               className={cx(
@@ -334,7 +341,8 @@ export function ColumnMenuPopover({
             onClick={() => {
               onOpenSortManager();
             }}
-            className="ssg-menu-item"
+            className={cx('ssg-menu-item', slots?.menuItem?.className)}
+            style={slots?.menuItem?.style}
           >
             <span className="ssg-menu-icon" />
             <span className="ssg-menu-label">並び替えを管理…</span>
@@ -360,7 +368,8 @@ export function ColumnMenuPopover({
           onClick={() => {
             onOpenFilterManager();
           }}
-          className="ssg-menu-item"
+          className={cx('ssg-menu-item', slots?.menuItem?.className)}
+            style={slots?.menuItem?.style}
         >
           <span className="ssg-menu-icon" />
           <span className="ssg-menu-label">フィルターを管理…</span>
@@ -393,7 +402,9 @@ export function ColumnMenuPopover({
           className={cx(
             'ssg-menu-item',
             isPinSubmenuOpen && 'ssg-menu-item--active',
+            slots?.menuItem?.className,
           )}
+          style={slots?.menuItem?.style}
         >
           {/* 注記: ✓ 列との左端揃えのため、サブメニュー項目と同じ幅のスペーサを置きます。*/}
           <span className="ssg-menu-icon" />
@@ -404,8 +415,12 @@ export function ColumnMenuPopover({
         {/* ── サブメニュー: 固定しない / 左に固定 / 右に固定 ── */}
         {isPinSubmenuOpen && (
           <div
-            className={cx('ssg-menu-panel', themeClassName)}
-            style={submenuStyle}
+            className={cx(
+              'ssg-menu-panel',
+              themeClassName,
+              slots?.popover?.className,
+            )}
+            style={{ ...slots?.popover?.style, ...submenuStyle }}
           >
             {PINNED_ITEMS.map((item) => {
               const isSelected = pinned === item.value;
@@ -422,7 +437,8 @@ export function ColumnMenuPopover({
                     //       (no-op 判定は SpreadsheetGrid 側で行います)。
                     onPinnedChange(columnKey, item.value);
                   }}
-                  className="ssg-menu-item"
+                  className={cx('ssg-menu-item', slots?.menuItem?.className)}
+            style={slots?.menuItem?.style}
                 >
                   {/* 追加: 現在の固定状態に ✓ を出します(未選択は幅だけ確保して揃えます)。*/}
                   <span
@@ -462,7 +478,8 @@ export function ColumnMenuPopover({
         onClick={() => {
           onAutosizeColumn(columnKey);
         }}
-        className="ssg-menu-item"
+        className={cx('ssg-menu-item', slots?.menuItem?.className)}
+            style={slots?.menuItem?.style}
       >
         {/* 注記: ✓ 列との左端揃え用スペーサです(ピン行と同じ幅)。*/}
         <span className="ssg-menu-icon" />
@@ -477,7 +494,8 @@ export function ColumnMenuPopover({
         onClick={() => {
           onAutosizeAllColumns();
         }}
-        className="ssg-menu-item"
+        className={cx('ssg-menu-item', slots?.menuItem?.className)}
+            style={slots?.menuItem?.style}
       >
         <span className="ssg-menu-icon" />
         <span className="ssg-menu-label">すべての列の幅を自動調整</span>
@@ -496,7 +514,8 @@ export function ColumnMenuPopover({
         onClick={() => {
           onOpenColumnChooser();
         }}
-        className="ssg-menu-item"
+        className={cx('ssg-menu-item', slots?.menuItem?.className)}
+            style={slots?.menuItem?.style}
       >
         <span className="ssg-menu-icon" />
         <span className="ssg-menu-label">列の表示</span>

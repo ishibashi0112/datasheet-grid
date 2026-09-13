@@ -3,7 +3,7 @@ title: テーマとスタイリング
 description: ダークテーマ(light / dark / auto)、密度(density)、CSS トークンによるカスタマイズ
 ---
 
-見た目のカスタマイズは 3 段階あります: ① `theme` / `density` prop によるプリセット切替、② CSS カスタムプロパティ(`--ssg-*`)によるトークン上書き、③ `className` / `cellClassName` などのクラスフックです。
+見た目のカスタマイズは 3 段階あります: ① `theme` / `density` prop によるプリセット切替、② CSS カスタムプロパティ(`--ssg-*`)によるトークン上書き、③ `className` / `classNames` / `cellClassName` などのクラスフックです。③ はすべて `string | { className, style }` を受けるため、StyleX の `stylex.props()` の戻り値をそのまま渡せます(後述)。
 
 ## デモ
 
@@ -63,4 +63,58 @@ description: ダークテーマ(light / dark / auto)、密度(density)、CSS ト
 
 行ホバーや readonly などの状態と組み合わせるときは、公開契約の状態クラス(`.ssg-body-cell--row-hovered` / `.ssg-body-cell--readonly` 等)と連結できます。一覧は [SpreadsheetGrid props の「スタイリング用の状態クラス」](/docs/api/props#スタイリング用の状態クラス公開契約)を参照してください。
 
-Tailwind との共存(レイヤー運用、`style.layer.css`)は[インストール](/docs/installation#tailwind-css--heroui--mantine-との共存)を参照してください。
+## パーツ別スロット(`classNames`)と `{ className, style }` 形
+
+`classNames` はパーツごとに class を差し込むスロット表です(root / toolbar / statusBar / headerRow / headerCell / rowHeaderCell / cornerCell / bodyRow / bodyCell / groupRow / groupCell / detailBand / detailCard / iconButton / popover / menuItem / tooltip / dragGhost / checkbox / cellEditor / emptyState / filterChipBar / errorBar / scrollHint / activeCellOverlay / selectionOverlay。付与先の一覧は [props リファレンス](/docs/api/props#パーツ別スロットclassnames--gridslotprops))。
+
+`classNames.*` / `cellClassName` / `getRowClassName` / `detailRow.className` の値は **`GridSlotProps = string | { className?: string; style?: CSSProperties }`** です。文字列は従来どおり class、オブジェクト形は class に加えて `style` をその要素へインラインで付与します。ルート要素には `style` prop も使えます。
+
+```tsx
+<SpreadsheetGrid
+  style={{ height: 480 }}
+  classNames={{
+    root: 'my-grid',                                       // 文字列
+    bodyCell: { className: 'tabular', style: { fontVariantNumeric: 'tabular-nums' } },
+    popover: { style: { '--ssg-accent': '#7c3aed' } },     // ポータル(body 直下)にもトークンを渡せる
+  }}
+  getRowClassName={(row) => (row.archived ? { style: { opacity: 0.5 } } : undefined)}
+/>
+```
+
+- グリッドが位置決めに使う座標 / 寸法(`left` / `top` / `width` / `height` / `transform` 等)はグリッド側が後勝ちで上書きするため、スロットの `style` でレイアウトは壊せません。
+- インライン style は状態クラス(選択 / ホバー等の背景)にも勝ちます。状態で切り替えたい装飾は className 側で行ってください。
+- `classNames` はレンダー毎に新しいオブジェクトを渡して構いません(内容の署名で memo され、行 / ヘッダーの再レンダーは増えません)。
+- `tooltip` / `dragGhost` は命令的 DOM のため、style の数値に単位は付きません(`'12px'` のように文字列で)。
+
+## StyleX との併用
+
+StyleX(`@stylexjs/stylex`)はそのまま併用できます。reset を持たず、生成クラスは接頭辞 `x` なので基底 CSS と衝突しません。`stylex.props(...)` は `{ className, style }` を返すため、上記のスロットへそのまま渡せます(StyleX の動的スタイルは `style` 側の CSS 変数で届くので、この形が必要です)。
+
+```tsx
+import * as stylex from '@stylexjs/stylex';
+import { vars } from './tokens.stylex';   // stylex.defineVars({ accent: '#7c3aed', danger: '#dc2626' })
+
+const s = stylex.create({
+  grid: { '--ssg-accent': vars.accent, borderRadius: 8 },   // グリッドのトークンへ橋渡し
+  cell: { fontVariantNumeric: 'tabular-nums' },
+  negative: { color: vars.danger },
+  width: (w: number) => ({ maxWidth: w }),                  // 動的スタイル
+});
+
+<SpreadsheetGrid
+  classNames={{ root: stylex.props(s.grid), bodyCell: stylex.props(s.cell) }}
+  columns={[
+    {
+      key: 'amount',
+      title: '金額',
+      cellClassName: (ctx) => stylex.props(typeof ctx.value === 'number' && ctx.value < 0 && s.negative, s.width(120)),
+    },
+  ]}
+/>
+```
+
+- StyleX は子孫セレクタを書けない(要素自身のクラスでしか装飾できない)ため、スロットに無い内部要素(ポップオーバー内のボタン / 入力欄等)は CSS トークン(`--ssg-*`)で調整してください。
+- StyleX の atomic クラスとグリッドの基底クラスは同じ特異度 (0,1,0) です。同じプロパティを指定した場合は後に読み込まれた方が勝つため、**グリッド CSS を先に・StyleX の出力 CSS を後に**読み込むか、`style.layer.css`(グリッド全体を `@layer ssg-base` に入れる)を使ってください。StyleX 側で `useLayers` を有効にしている場合は、未レイヤーのグリッド CSS が常に勝ってしまうため `style.layer.css` が必須です。
+- Solid など `class` 属性のフレームワーク向けには StyleX に `stylex.attrs()` があります(将来のアダプタで同じスロット規則を使う予定です)。
+
+Tailwind との共存(レイヤー運用、`style.layer.css`)は[インストール](/docs/installation#tailwind-css--heroui--mantine--stylex-との共存)を参照してください。

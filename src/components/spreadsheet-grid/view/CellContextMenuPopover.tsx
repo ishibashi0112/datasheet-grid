@@ -10,7 +10,10 @@ import type {
   PointerEvent,
   RefObject,
 } from 'react';
-import type { GridContextMenuItem } from '../model/gridTypes';
+import type {
+  GridContextMenuItem,
+  GridResolvedSlots,
+} from '../model/gridTypes';
 import type { CellContextMenuLayout } from '../hooks/useCellContextMenuController';
 
 type CellContextMenuPopoverProps = {
@@ -18,6 +21,8 @@ type CellContextMenuPopoverProps = {
   // 追加(TH-DK-2): ダークテーマ修飾子クラス('ssg-theme-dark' | undefined)。ポータルは
   //   .ssg-root 外のため、root と同じ修飾子を自身の root 要素へ直接付与します。
   themeClassName?: string;
+  // 追加(slot-props): classNames 由来の解決済みスロット表(popover = パネル root / menuItem = 項目)。
+  slots?: GridResolvedSlots;
   items: GridContextMenuItem[];
   layout: CellContextMenuLayout | null;
   popoverRef: RefObject<HTMLDivElement | null>;
@@ -27,6 +32,7 @@ type CellContextMenuPopoverProps = {
 export function CellContextMenuPopover({
   isOpen,
   themeClassName,
+  slots,
   items,
   layout,
   popoverRef,
@@ -72,8 +78,8 @@ export function CellContextMenuPopover({
         // 追加: メニュー上での右クリックはブラウザ標準メニューを出しません。
         event.preventDefault();
       }}
-      className={cx('ssg-menu-panel', themeClassName)}
-      style={wrapperStyle}
+      className={cx('ssg-menu-panel', themeClassName, slots?.popover?.className)}
+      style={{ ...slots?.popover?.style, ...wrapperStyle }}
     >
       {items.map((item, index) => {
         // 区切り線。
@@ -124,7 +130,9 @@ export function CellContextMenuPopover({
               'ssg-menu-item',
               item.danger && 'ssg-menu-item--danger',
               item.disabled && 'ssg-menu-item--disabled',
+              slots?.menuItem?.className,
             )}
+            style={slots?.menuItem?.style}
           >
             {/* 左 14px アイコン枠。未指定でも空スペーサとして他項目とラベル左端を揃えます。 */}
             <span className="ssg-menu-icon">{item.icon}</span>

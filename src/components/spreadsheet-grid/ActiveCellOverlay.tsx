@@ -1,4 +1,6 @@
 import type { CSSProperties } from 'react';
+import { cx } from './logic/cx';
+import type { GridResolvedSlot } from './model/gridTypes';
 
 // 追加: active cell の矩形情報です。
 // 変更(10-D): left は「ペイン列領域内ローカル座標」になりました（leadingWidth 非含有）。
@@ -20,6 +22,8 @@ type ActiveCellOverlayProps = {
   //   rect.top(絶対論理)をウィンドウ相対へ寄せます。基準ぶんは wrapper の translateY に
   //   同額含まれるため、画面上の表示位置は不変です。
   baseOffset?: number;
+  // 追加(slot-props): classNames.activeCellOverlay の解決済みスロット。
+  slot?: GridResolvedSlot;
 };
 
 // 追加: active cell を独立レイヤーで描画するコンポーネントです。
@@ -29,6 +33,7 @@ export function ActiveCellOverlay({
   headerHeight,
   leadingWidth,
   baseOffset = 0,
+  slot,
 }: ActiveCellOverlayProps) {
   if (!rect) {
     return null;
@@ -44,7 +49,12 @@ export function ActiveCellOverlay({
     height: rect.height,
   };
 
-  return <div className="ssg-active-cell-overlay" style={overlayStyle} />;
+  return (
+    <div
+      className={cx('ssg-active-cell-overlay', slot?.className)}
+      style={{ ...slot?.style, ...overlayStyle }}
+    />
+  );
 }
 
 export default ActiveCellOverlay;

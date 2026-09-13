@@ -21,6 +21,8 @@
 //     wrapper 方式へ切り替える後続対応とします。
 import { useEffect } from 'react';
 import { computeTooltipPlacement } from '../logic/tooltipGeometry';
+import { applySlotToElement, type AppliedSlot } from '../logic/slotDom';
+import type { GridResolvedSlot } from '../model/gridTypes';
 
 const TOOLTIP_ATTRIBUTE = 'data-ssg-tooltip';
 // 追加(overflow tooltip): 省略(…)されているときだけ全文を表示するセル用のマーカー属性です。
@@ -37,6 +39,14 @@ let tooltipEl: HTMLDivElement | null = null;
 let showTimerId: number | null = null;
 let warmupUntil = 0;
 let currentTarget: Element | null = null;
+// 追加(slot-props): classNames.tooltip(className / style)です。要素はグリッド横断のシングルトンの
+//   ため、複数グリッド同居時は最後にマウント / 更新したグリッドの値が使われます。
+let tooltipSlot: GridResolvedSlot | undefined;
+let appliedTooltipSlot: AppliedSlot | undefined;
+
+function syncTooltipSlot(el: HTMLDivElement) {
+  appliedTooltipSlot = applySlotToElement(el, tooltipSlot, appliedTooltipSlot);
+}
 
 function ensureTooltipElement(): HTMLDivElement {
   if (tooltipEl !== null) {
@@ -47,6 +57,8 @@ function ensureTooltipElement(): HTMLDivElement {
   // スクリーンリーダーには読ませません(文言は対象側の aria-label / テキストが担うため、
   // 二重読み上げを避けます)。
   el.setAttribute('aria-hidden', 'true');
+  appliedTooltipSlot = undefined;
+  syncTooltipSlot(el);
   document.body.appendChild(el);
   tooltipEl = el;
   return el;
@@ -184,7 +196,15 @@ function uninstallListeners() {
   window.removeEventListener('keydown', handleKeyDown, true);
 }
 
-export function useGridTooltip() {
+export function useGridTooltip(slot?: GridResolvedSlot) {
+  // 追加(slot-props): スロット変更を共有要素へ反映します(生成前なら生成時に適用)。
+  useEffect(() => {
+    tooltipSlot = slot;
+    if (tooltipEl !== null) {
+      syncTooltipSlot(tooltipEl);
+    }
+  }, [slot]);
+
   useEffect(() => {
     refCount += 1;
     if (refCount === 1) {

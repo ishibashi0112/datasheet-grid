@@ -4,14 +4,22 @@
 //   同一要素で down/up した時のみ発火するため、ドラッグ範囲選択では誤トグルしません)。
 //   ダブルクリックは click 2 回(トグル往復)として扱われます(Excel / AG Grid と同様)。
 import { RowSelectionCheckbox } from '../view/RowSelectionCheckbox';
+import type { GridResolvedSlot } from '../model/gridTypes';
 
 type CheckboxCellProps = {
   checked: boolean;
   readOnly: boolean;
   onToggle: () => void;
+  // 追加(slot-props): classNames.checkbox の解決済みスロット(glyph へ転送)。
+  slot?: GridResolvedSlot;
 };
 
-export function CheckboxCell({ checked, readOnly, onToggle }: CheckboxCellProps) {
+export function CheckboxCell({
+  checked,
+  readOnly,
+  onToggle,
+  slot,
+}: CheckboxCellProps) {
   return (
     <span
       role="checkbox"
@@ -25,6 +33,7 @@ export function CheckboxCell({ checked, readOnly, onToggle }: CheckboxCellProps)
       }}
     >
       <RowSelectionCheckbox
+        slot={slot}
         state={checked ? 'checked' : 'unchecked'}
         disabled={readOnly}
       />

@@ -76,6 +76,11 @@
 - Portal 系(popover / tooltip / panel)は `.ssg-root` 外に描画されるためリテラル色を使う。
 - テーマ: `theme`(light / dark / auto)+ `density`(compact / standard / comfortable)。トークン
   (`--ssg-*`)上書きで個別調整可。Tailwind v4 向けに `style.layer.css` も出力する。
+- className 系スロット(2026-09-13 slot-props / StyleX 併用): `classNames`(25 スロット)/ `cellClassName` /
+  `getRowClassName` / `detailRow.className` の値は `GridSlotProps = string | { className, style }`。
+  解決は `logic/slotProps.ts`(React 非依存)、`classNames` の参照安定化は `hooks/useResolvedGridSlots.ts`
+  (署名文字列で useMemo)、命令的 DOM(tooltip / drag ghost)への反映は `logic/slotDom.ts`。行の
+  `rowStyle` は `GridBodyRow` の memo 比較関数で内容比較。座標 / 寸法はグリッドが後勝ち。
 
 ## §4 SSRM(サーバーサイド行モデル)の現状
 
