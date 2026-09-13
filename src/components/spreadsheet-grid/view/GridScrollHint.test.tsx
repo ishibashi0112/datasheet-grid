@@ -13,6 +13,7 @@ import { resolveScrollHintOptions } from '../logic/scrollHint';
 import type { ResolvedScrollHintOptions } from '../logic/scrollHint';
 import { createUniformRowMetrics } from '../logic/verticalGeometry';
 import type { RowModel, ScrollHintOptions } from '../model/gridTypes';
+import type { ReactGridTypes } from '../model/gridTypes';
 
 // jsdom には ResizeObserver が無い(GridScrollHint がマウント時に new する)ため最小スタブを
 //   入れます。observe は no-op(コールバックを呼ばない)なのでスクロールバー幅は初期値 0 の
@@ -61,7 +62,7 @@ const makeRowModel = (
 });
 
 const resolve = (input: boolean | ScrollHintOptions<Row>) => {
-  const resolved = resolveScrollHintOptions<Row>(input);
+  const resolved = resolveScrollHintOptions<Row, ReactGridTypes>(input);
   if (resolved === null) {
     throw new Error('resolved が null になる入力はテスト対象外です');
   }
@@ -77,7 +78,7 @@ function Harness({
   rowModel = makeRowModel(),
   viewportHeight = VIEWPORT_HEIGHT,
 }: {
-  options: ResolvedScrollHintOptions<Row>;
+  options: ResolvedScrollHintOptions<Row, ReactGridTypes>;
 } & Partial<
   Pick<
     GridScrollHintProps<Row>,

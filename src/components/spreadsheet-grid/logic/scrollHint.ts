@@ -9,21 +9,24 @@
 //   常に数値一致します(本ファイルで座標系を二重実装しません)。
 
 import type {
+  GridFrameworkTypes,
   ScrollHintOptions,
   ScrollHintRenderArgs,
   ScrollHintTrigger,
-} from '../model/gridTypes';
-import type { ReactNode } from 'react';
+} from '../model/gridTypes.core';
 
 // 解決済みオプションです(view 消費用の内部型)。省略項目を既定値で埋めます。
-export type ResolvedScrollHintOptions<T> = {
+export type ResolvedScrollHintOptions<
+  T,
+  F extends GridFrameworkTypes = GridFrameworkTypes,
+> = {
   bubble: boolean;
   ruler: boolean;
   scrollbar: boolean;
   trigger: ScrollHintTrigger;
   minRows: number;
   hintColumn: string | undefined;
-  renderHint: ((args: ScrollHintRenderArgs<T>) => ReactNode) | undefined;
+  renderHint: ((args: ScrollHintRenderArgs<T>) => F['node']) | undefined;
 };
 
 // scrollHint prop を解決します。undefined / false は「完全無効」で null を返し、
@@ -31,13 +34,16 @@ export type ResolvedScrollHintOptions<T> = {
 //   (バブル + ルーラー + カスタムスクロールバー / trigger='scroll')。オブジェクトは
 //   省略項目を既定で補完します。表示物が 1 つも無い(bubble / ruler / scrollbar すべて
 //   明示 false)場合も null です。
-export const resolveScrollHintOptions = <T>(
-  input: boolean | ScrollHintOptions<T> | undefined,
-): ResolvedScrollHintOptions<T> | null => {
+export const resolveScrollHintOptions = <
+  T,
+  F extends GridFrameworkTypes = GridFrameworkTypes,
+>(
+  input: boolean | ScrollHintOptions<T, F> | undefined,
+): ResolvedScrollHintOptions<T, F> | null => {
   if (input === undefined || input === false) {
     return null;
   }
-  const options: ScrollHintOptions<T> = input === true ? {} : input;
+  const options: ScrollHintOptions<T, F> = input === true ? {} : input;
   const bubble = options.bubble ?? true;
   const ruler = options.ruler ?? true;
   const scrollbar = options.scrollbar ?? true;
@@ -215,10 +221,13 @@ export const computeScrollHintTrackPointerScrollTop = (
 //     rowData が undefined になるため自動的に行番号のみへフォールバックします
 //     (プレースホルダ的な誤値を出さないための仕様)。列値の null / undefined / 空文字も
 //     同様にフォールバックします。
-export const resolveScrollHintDetail = <T>(
-  options: Pick<ResolvedScrollHintOptions<T>, 'hintColumn' | 'renderHint'>,
+export const resolveScrollHintDetail = <
+  T,
+  F extends GridFrameworkTypes = GridFrameworkTypes,
+>(
+  options: Pick<ResolvedScrollHintOptions<T, F>, 'hintColumn' | 'renderHint'>,
   args: ScrollHintRenderArgs<T>,
-): ReactNode => {
+): F['node'] | string | null => {
   if (options.renderHint !== undefined) {
     const rendered = options.renderHint(args);
     return rendered === undefined || rendered === null || rendered === false

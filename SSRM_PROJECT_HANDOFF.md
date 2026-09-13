@@ -29,7 +29,7 @@
 
 | ディレクトリ | 役割 |
 | --- | --- |
-| `model/` | 型(`gridTypes.ts`)・アクション・reducer・セレクタ。 |
+| `model/` | 型・アクション・reducer・セレクタ。型は `gridTypes.core.ts`(React 非依存の本体。描画ノード / style の型はフレームワーク束ね型 `F extends GridFrameworkTypes` 経由で `F['node']` / `F['style']`。F 依存 25 型だけが末尾に F を持つ)と `gridTypes.ts`(React 束縛: `ReactGridTypes = { node: ReactNode; style: CSSProperties }` で固定したエイリアス + `ref` prop。既存の import パス・公開型名・型引数の数はここで不変)の 2 層(2026-09-13 非依存化 ①)。 |
 | `logic/` | 純粋ロジック(~30 モジュール、colocated `*.test.ts` 付き)。geometry / filtering / sorting / exportCsv / serverSideCache / history / clearCells など。 |
 | `hooks/` | 薄いオーケストレーション層(clipboard / edit / keyboard / history / pointer / SSRM row model / autosize など)。 |
 | `view/` | ヘッダー行・ボディ・ポータル系(popover / panel / bar)コンポーネント。 |

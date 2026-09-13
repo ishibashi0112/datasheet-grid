@@ -428,6 +428,7 @@ const s = stylex.create({
   - `rowIndex` は**ビュー行 index**(ソート / フィルター適用後の表示位置)、`sourceRowIndex` は**元 `rows` の index**、`rowKey` は行キー(`rowKeyGetter` 由来、既定は source index)。ソート / フィルター ON の画面で「エラー行 index の集合」など source 基準のデータと突き合わせるときは `sourceRowIndex` / `rowKey` を使う(`getInvalidCells()` の返す `sourceRowIndex` / `rowKey` と同一基準)。serverSide では view 順が正準のため `sourceRowIndex` は view index と同値。
 - `RowStyleContext<T> = { row, rowIndex, sourceRowIndex, rowKey, isSelected }`(`getRowClassName` の第 3 引数。バレルから公開)
 - `GridSlotProps = string | { className?: string; style?: CSSProperties }`(`classNames.*` / `cellClassName` / `getRowClassName` / `detailRow.className` の値。`GridClassNames` と共にバレルから公開)
+- `GridFrameworkTypes = { node: unknown; style: object }` / `ReactGridTypes = { node: ReactNode; style: CSSProperties }`(バレルから公開)。公開型の本体は React 非依存の core(描画ノード / style の型を束ね型 `F` で受ける)で、利用者が普段使う `GridColumn<T>` 等は core を `ReactGridTypes` で固定したエイリアス。型引数の数・名前は従来どおりで、通常は意識不要。
   - `rowIndex` / `sourceRowIndex` / `rowKey` の基準は `CellStyleContext` と同一。`isSelected` はチェックボックス行選択(`enableRowSelection`)の選択状態(範囲選択とは別)。グループ行(grouping 有効時)は専用描画のため `getRowClassName` の対象外。
 - `GridScrollPosition = { top: number; left: number }`(`getScrollPosition` の返り値 / `setScrollPosition` の基準)
 - `GridScrollEventParams = { top: number; left: number; source: 'user' | 'api' }`(`onScroll` の引数。`source` の意味は props 表の `onScroll` 行を参照)

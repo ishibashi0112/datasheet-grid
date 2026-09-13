@@ -58,6 +58,7 @@ React 19 + TypeScript + Vite 製のカスタム AG Grid 風・仮想化データ
 - reducer ベースの状態管理、命令的 ref API、3 ペイン固定列レイアウト、SSRM(サーバーサイド行モデル)。
 - `SpreadsheetGrid.tsx` は既知の God component(~5,000 行)。リファクタは保留。
 - 純粋ロジックは `logic/` に抽出(テスタビリティ)。hooks は薄いオーケストレーション層。
+- `model/` と `logic/` は **React 非依存**を保つ(2026-09-13 非依存化 ①)。公開型の本体は `model/gridTypes.core.ts`(描画ノード / style はフレームワーク束ね型 `F` 経由で `F['node']` / `F['style']`)、React 束縛は `model/gridTypes.ts`(`ReactGridTypes` で固定したエイリアス + `ref` prop)。`ReactNode` / `CSSProperties` を `model/` / `logic/` に import しない。F は `F['node']` の位置から推論されないため、F ジェネリックな関数の呼び出しでは型引数を明示する(`resolveScrollHintOptions<T, ReactGridTypes>(...)`)。
 - CSS: 未レイヤー単一クラス基底(Tailwind/Mantine/HeroUI 共存のため `@layer` は使わない ── 未レイヤーはレイヤー付きに特異度無関係で勝つため)。Portal 系(popover/tooltip)は `.ssg-root` 外に描画されるためリテラル色を使う。
 - 仮想化 DOM 上のドラッグは window レベルのリスナ + `pointerId` フィルタ(要素直付けは capture 対象の unmount で壊れる)。
 

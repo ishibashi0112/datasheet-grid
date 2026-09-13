@@ -56,6 +56,10 @@ export type {
   // 追加(slot-props): パーツ別スロット表と、各スロットが受ける値の形(string | { className, style })。
   GridClassNames,
   GridSlotProps,
+  // 追加(非依存化 ①): フレームワーク束ね型(core の F)と、その React 版。利用側でジェネリックな
+  //   ヘルパーを書くとき、core の型(gridTypes.core)に渡す束ね型として使えます。
+  GridFrameworkTypes,
+  ReactGridTypes,
   DetailRowRenderContext,
   CellDetailContext,
   // 追加(row-drag ③): 行ドラッグ並び替え(enableRowDrag / isRowDraggable / onRowMove)の公開型です。

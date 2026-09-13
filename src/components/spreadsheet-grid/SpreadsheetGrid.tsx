@@ -382,6 +382,7 @@ import {
 } from './logic/contextMenuTarget';
 import useCellContextMenuController from './hooks/useCellContextMenuController';
 import CellContextMenuPopover from './view/CellContextMenuPopover';
+import type { ReactGridTypes } from './model/gridTypes';
 // import ColumnChooserPanel, {
 //   type ColumnChooserItem,
 // } from './view/ColumnChooserPanel';
@@ -600,7 +601,7 @@ export function SpreadsheetGrid<T extends object>({
   // 追加(scrollHint): スクロール位置インジケーターのオプション解決です。
   //   null = 完全無効(オーバーレイ自体を描画しない)。boolean / オブジェクトの両形を吸収します。
   const resolvedScrollHint = useMemo(
-    () => resolveScrollHintOptions<T>(scrollHint),
+    () => resolveScrollHintOptions<T, ReactGridTypes>(scrollHint),
     [scrollHint],
   );
 

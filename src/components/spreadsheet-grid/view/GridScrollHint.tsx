@@ -27,6 +27,7 @@ import {
 } from '../logic/scrollHint';
 import type { ResolvedScrollHintOptions } from '../logic/scrollHint';
 import type { GridResolvedSlot } from '../model/gridTypes';
+import type { ReactGridTypes } from '../model/gridTypes';
 
 // スクロール停止からフェードアウトまでの猶予(ms)です(trigger='scroll' / 'hover')。
 const SCROLL_HINT_LINGER_MS = 1000;
@@ -42,7 +43,7 @@ const SCROLL_HINT_TRACK_ZONE_PX = 18;
 const SCROLL_HINT_JUMP_LABEL_FLIP_PX = 28;
 
 export type GridScrollHintProps<T> = {
-  options: ResolvedScrollHintOptions<T>;
+  options: ResolvedScrollHintOptions<T, ReactGridTypes>;
   // 共有スクロールコンテナ(.ssg-scroll-container)の ref です(活動リスナー / スクロール
   //   バー幅計測 / ガター操作の scrollTop 書き込みに使用。位置計算そのものは props の
   //   計測値で行い、render 中に DOM は読みません)。
@@ -229,7 +230,7 @@ export function GridScrollHint<T>({
   const topRowIndex = rowMetrics.rowAtContentY(logicalScrollTop);
   // SSRM 未ロード行 / グループ行は実行時 undefined(シーム契約)→ detail はフォールバック。
   const rowData = rowModel.getRow(topRowIndex) as T | undefined;
-  const detail: ReactNode = resolveScrollHintDetail(options, {
+  const detail: ReactNode = resolveScrollHintDetail<T, ReactGridTypes>(options, {
     rowIndex: topRowIndex,
     rowData,
   });
@@ -256,7 +257,7 @@ export function GridScrollHint<T>({
         viewportHeight,
       ),
       rowIndex: jumpRowIndex,
-      detail: resolveScrollHintDetail(options, {
+      detail: resolveScrollHintDetail<T, ReactGridTypes>(options, {
         rowIndex: jumpRowIndex,
         rowData: rowModel.getRow(jumpRowIndex) as T | undefined,
       }),
