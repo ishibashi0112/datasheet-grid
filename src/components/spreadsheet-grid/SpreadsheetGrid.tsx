@@ -38,6 +38,11 @@ import {
 } from './hooks/useResolvedGridSlots';
 
 import { useVirtualizerCore } from './hooks/useVirtualizerCore';
+// 追加(本体分解 E-1): 列解決 / 3 ペインレイアウトのエンジン(React 非依存)。
+import {
+  createColumnResolver,
+  createPaneLayoutResolver,
+} from './engine/columnLayout';
 
 import { gridActions } from './model/gridActions';
 import { createInitialGridUiState } from './model/gridReducer';
@@ -148,9 +153,6 @@ import { inferColumnFilterType } from './logic/inferFilterType';
 import {
   buildColumnMeasurements,
   reorderColumnsByPane,
-  splitOrderedColumnsByPane,
-  buildPaneWidthsKey,
-  buildPaneGeometryFromWidthsKey,
   computePaneColumnExtents,
   computeFullWidthPaneExtents,
   computeSinglePaneColumnExtent,
@@ -162,7 +164,7 @@ import {
   type PaneColumnExtentMap,
 } from './logic/geometry';
 // 追加(B3): center 列の JS 算出 flex(利用可能幅を比率配分)。
-import { isFlexingColumn, computeCenterFlexWidths } from './logic/columnFlex';
+import { isFlexingColumn } from './logic/columnFlex';
 import { buildClearCellEdits, clearCellsInSelection } from './logic/clearCells';
 // 追加: データ投入時の列幅自動フィットの発火判定(純関数)です。
 import { resolveAutoSizeOnData } from './logic/autoSizeOnData';
@@ -190,7 +192,6 @@ import type { DetailRowExtra, RowMetrics } from './logic/verticalGeometry';
 import {
   DEFAULT_DETAIL_ROW_HEIGHT,
   DETAIL_TOGGLE_COLUMN_KEY,
-  DETAIL_TOGGLE_COLUMN_WIDTH,
   createDetailIndexCache,
   findDetailRowIndex,
   isInsideDetailCardOf,
@@ -203,10 +204,8 @@ import {
 import {
   ROW_DRAG_DISABLED_TOOLTIP,
   ROW_DRAG_HANDLE_COLUMN_KEY,
-  ROW_DRAG_HANDLE_COLUMN_WIDTH,
   ROW_DRAG_HANDLE_TOOLTIP,
   isIdentityOrder,
-  isRowDragAvailable,
   isRowDragOperable,
   moveArrayItem,
 } from './logic/rowReorder';
@@ -283,11 +282,9 @@ import {
 } from './logic/serverSideQuery';
 // 追加(grouping ②): 行グルーピングの純ロジック(ツリー構築 / 開閉適用 flatten / エンコード)です。
 import {
-  GROUP_AUTO_COLUMN_KEY,
   buildGroupTree,
   collectAllGroupKeys,
   collectAllGroupRows,
-  collectGroupingColumns,
   flattenGroupTree,
   groupIndexOfOrderValue,
   groupRowKey,
@@ -298,6 +295,7 @@ import type {
   CellCoord,
   CellRenderState,
   GridColumn,
+  CellRenderContext,
   // 追加(THEME-2): 密度プリセットの型です。
   GridDensity,
   // 追加(13-A): 列メニューからの固定切替に使います。
@@ -451,7 +449,6 @@ const DENSITY_DIMENSIONS: Record<
 };
 // 追加(B3): flex 非適用時(未計測 / flex 列なし)に返す共有の空 map です。参照同一性で
 //   「flex 素通し(= effectiveColumnWidths は uiState.columnWidths そのまま)」を判定します。
-const EMPTY_FLEX_WIDTHS: Record<string, number> = {};
 // 追加(バッチ②): コンテキストメニュー closed 時に popover へ渡す空 items(参照不変)。
 const EMPTY_CONTEXT_MENU_ITEMS: GridContextMenuItem[] = [];
 // 追加(detail ③): 展開行なし時の安定な空配列(参照同一で再計算を誘発しない)。
@@ -469,6 +466,27 @@ const RESIZE_HANDLE_DOUBLE_CLICK_DIST = 4;
 const SERVER_SIDE_QUERY_DEBOUNCE_MS = 300;
 
 // 追加: Grid 本体です。
+// 追加(本体分解 E-1): 展開行トグル列(T1)のセル本体です。列定義自体は engine/columnLayout.ts が合成し、
+//   フレームワーク依存のセル描画だけをここから渡します(モジュールレベルで参照安定)。
+const renderDetailToggleCell = (ctx: CellRenderContext<unknown>) => {
+  const detail = ctx.detail;
+  if (!detail || !detail.expandable) {
+    return null;
+  }
+  return (
+    <button
+      type="button"
+      className="ssg-detail-toggle"
+      aria-expanded={detail.expanded}
+      aria-label={detail.expanded ? '詳細を閉じる' : '詳細を開く'}
+      onClick={detail.toggle}
+      onDoubleClick={(event) => event.stopPropagation()}
+    >
+      {detail.expanded ? '▾' : '▸'}
+    </button>
+  );
+};
+
 export function SpreadsheetGrid<T extends object>({
   // 変更(①-3): rows に安定既定値(EMPTY_ROWS)を当てます。rows が optional でも全 consumer は
   //   従来どおり T[] を見ます(serverSide 時は dataSource を使い rows は空のまま)。
@@ -654,120 +672,40 @@ export function SpreadsheetGrid<T extends object>({
   // 追加(grouping ③): 行グルーピングの列解決です。rowGroup 列(columns 出現順 = 階層順)と
   //   aggFunc 列は「全列定義」から導出します(visible の影響を受けません)。
   //   グルーピングは clientSide 限定です(SSRM は v1 対象外。stage 側の開発時警告参照)。
-  const { groupColumns, aggColumns } = useMemo(
-    () => collectGroupingColumns(columns),
-    [columns],
-  );
-  const rowGroupingActive = dataSource == null && groupColumns.length > 0;
-
-  // 追加(grouping ③): グルーピング有効時の内部列リストです。先頭に自動グループ列
-  //   (ツリー表示。consumer の columns には現れない合成列)を注入し、グループ元列
-  //   (rowGroup)は表示から外します(B1 案)。readOnly でセル編集対象外、
-  //   suppressAutoSize で autoSize 対象外です。無効時は columns をそのまま返し、
-  //   既存経路はバイト等価です。
-  // 追加(detail ③): 展開行の専用トグル列(T1)。detailRow 指定かつ showToggleColumn !== false のとき、
-  //   自動グループ列よりさらに先頭へ注入します(左固定列があれば左ペインへ pin)。セル本体は
-  //   renderCellContent が渡す ctx.detail(T2 と同じ口)で描くため、T1 は T2 の上に成り立ちます。
-  //   detailRow 未指定なら従来どおり(既存経路はバイト等価)。
+  // 変更(本体分解 E-1): 合成列の注入 / 可視列 / ペイン順の解決は engine/columnLayout.ts(React 非依存)へ
+  //   移設しました。展開行トグル列のセル本体(JSX)だけを描画側から渡します。
   const detailToggleColumnActive =
     detailRow != null && detailRow.showToggleColumn !== false;
-  // 追加(row-drag ③): 行ドラッグ並び替えの利用可否(ハンドル列を出すか)。serverSide / 行グルーピング /
-  //   onRowsChange 未指定では並び替え結果を反映できないため出しません(ソート / フィルター中は
-  //   列は出したまま操作だけ無効にします → 下の rowDragOperable)。
-  const rowDragAvailable = isRowDragAvailable({
-    enableRowDrag,
-    isServerSide: dataSource != null,
-    rowGroupingActive,
-    hasRowsChange: onRowsChange != null,
-  });
-  const effectiveColumns = useMemo(() => {
-    const hasLeftPinnedColumn = columns.some((column) => column.pinned === 'left');
-    // 追加(row-drag ③): 行ドラッグハンドル列(合成列)。展開行トグル列よりさらに先頭へ注入します。
-    //   セル本体(掴み手)は renderCellContent 側で描画します(操作可否とハンドラを持つため)。
-    const rowDragHandleColumn: GridColumn<T> | null = rowDragAvailable
-      ? {
-          key: ROW_DRAG_HANDLE_COLUMN_KEY,
-          title: '',
-          width: ROW_DRAG_HANDLE_COLUMN_WIDTH,
-          minWidth: ROW_DRAG_HANDLE_COLUMN_WIDTH,
-          readOnly: true,
-          suppressAutoSize: true,
-          resizable: false,
-          pinned: hasLeftPinnedColumn ? 'left' : undefined,
-          cellClassName: 'ssg-body-cell--row-drag-handle',
-          renderCell: () => null,
-        }
-      : null;
-    const detailToggleColumn: GridColumn<T> | null = detailToggleColumnActive
-      ? {
-          key: DETAIL_TOGGLE_COLUMN_KEY,
-          title: '',
-          width: DETAIL_TOGGLE_COLUMN_WIDTH,
-          minWidth: DETAIL_TOGGLE_COLUMN_WIDTH,
-          readOnly: true,
-          suppressAutoSize: true,
-          resizable: false,
-          pinned: hasLeftPinnedColumn ? 'left' : undefined,
-          cellClassName: 'ssg-body-cell--detail-toggle',
-          renderCell: (ctx) => {
-            const detail = ctx.detail;
-            if (!detail || !detail.expandable) {
-              return null;
-            }
-            return (
-              <button
-                type="button"
-                className="ssg-detail-toggle"
-                aria-expanded={detail.expanded}
-                aria-label={detail.expanded ? '詳細を閉じる' : '詳細を開く'}
-                onClick={detail.toggle}
-                onDoubleClick={(event) => event.stopPropagation()}
-              >
-                {detail.expanded ? '▾' : '▸'}
-              </button>
-            );
-          },
-        }
-      : null;
-    const leadingColumns: GridColumn<T>[] = [];
-    if (rowDragHandleColumn) leadingColumns.push(rowDragHandleColumn);
-    if (detailToggleColumn) leadingColumns.push(detailToggleColumn);
-    if (!rowGroupingActive) {
-      return leadingColumns.length > 0 ? [...leadingColumns, ...columns] : columns;
-    }
-    const autoGroupColumn: GridColumn<T> = {
-      key: GROUP_AUTO_COLUMN_KEY,
-      title: groupColumns
-        .map((column) => column.title || column.key)
-        .join(' › '),
-      width: 240,
-      minWidth: 120,
-      readOnly: true,
-      suppressAutoSize: true,
-    };
-    const grouped = [
-      autoGroupColumn,
-      ...columns.filter((column) => column.rowGroup !== true),
-    ];
-    return leadingColumns.length > 0 ? [...leadingColumns, ...grouped] : grouped;
-  }, [
-    rowDragAvailable,
-    detailToggleColumnActive,
-    rowGroupingActive,
-    columns,
+  const [resolveColumns] = useState(() => createColumnResolver<T>());
+  const {
     groupColumns,
-  ]);
-
-  const visibleColumns = useMemo(
-    () => effectiveColumns.filter((column) => column.visible !== false),
-    [effectiveColumns],
-  );
-
-  // 追加(10-B): pinned 属性に応じて列を視覚順序（left → center → right）に並べ替えます。
-  //             pinned 列がない現時点では visibleColumns と同じ順序になります。
-  const orderedColumns = useMemo(
-    () => reorderColumnsByPane(visibleColumns),
-    [visibleColumns],
+    aggColumns,
+    rowGroupingActive,
+    rowDragAvailable,
+    visibleColumns,
+    orderedColumns,
+  } = useMemo(
+    () =>
+      resolveColumns({
+        columns,
+        isServerSide: dataSource != null,
+        enableRowDrag,
+        hasRowsChange: onRowsChange != null,
+        detailToggleColumnActive,
+        renderDetailToggleCell: renderDetailToggleCell as NonNullable<
+          GridColumn<T>['renderCell']
+        >,
+      }),
+    // 注記: useMemo は React Compiler の lint(preserve-manual-memoization)向けの外皮で、細粒度の参照安定は
+    //   リゾルバ内の createMemo が担います。
+    [
+      resolveColumns,
+      columns,
+      dataSource,
+      enableRowDrag,
+      onRowsChange,
+      detailToggleColumnActive,
+    ],
   );
 
   const resolvedRowKeyGetter = useMemo(
@@ -968,186 +906,41 @@ export function SpreadsheetGrid<T extends object>({
 
   // 追加(11-B4): orderedColumns を 3 ペインの列ソース（列 + 論理 index）へ分割します。
   //             columnWidths に依存しないため、列構成が変わらない限り参照は不変です。
-  const paneSourceColumns = useMemo(
-    () => splitOrderedColumnsByPane(orderedColumns),
-    [orderedColumns],
-  );
-
-  // ── center 列の JS 算出 flex(B3) ───────────────────────
-  // 追加(B3): flex 列(center かつ flex>0)へ「利用可能幅 − 固定列合計」を比率配分します。
-  //   利用可能幅 = スクロールコンテナ可視幅 − 左固定ペイン幅 − 右固定ペイン幅 − center 先頭幅。
-  //   左右ペインは pinned(= flex 非対象)なので center 列幅に依存せず先に確定でき、循環しません。
-  //   ここでの固定ペイン幅は下流(§3ペイン派生値)の leftPaneTotalWidth 等と同値です
-  //   (左右ペインは columnWidths のみで解決され flex を含まないため)。
-  //
-  // viewportWidth: スクロールコンテナの clientWidth です。0 は未計測(初回レンダー前)を表し、その間は
-  //   flex を適用せず column.width にフォールバックします(計測は縦窓出しと同じ ResizeObserver に
-  //   相乗り。下の「縦スクロール計測」参照)。
-
-  // 左右固定ペインの「解決済み幅合計」です(flex 非対象なので uiState.columnWidths で解決)。
-  const leftPaneFixedWidth = paneSourceColumns.left.reduce(
-    (acc, { column }) => acc + (uiState.columnWidths[column.key] ?? column.width),
-    0,
-  );
-  const rightPaneFixedWidth = paneSourceColumns.right.reduce(
-    (acc, { column }) => acc + (uiState.columnWidths[column.key] ?? column.width),
-    0,
-  );
-  // 左固定列があれば行ヘッダーは左ペインが内包し、center 先頭幅は 0 になります(§3ペイン派生値と同判定)。
-  const hasLeftPinnedForFlex = paneSourceColumns.left.length > 0;
-  const flexLeftPaneTotalWidth = hasLeftPinnedForFlex
-    ? rowHeaderWidth + leftPaneFixedWidth
-    : 0;
-  const flexCenterLeadingWidth = hasLeftPinnedForFlex ? 0 : rowHeaderWidth;
-
-  // center 列(列のみ)と flex 列の有無です。flex 列が 1 本も無ければ flex 算出を完全にスキップします
-  //   (= 既存挙動・ゼロオーバーヘッド)。
-  const centerColumnsForFlex = useMemo(
-    () => paneSourceColumns.center.map(({ column }) => column),
-    [paneSourceColumns.center],
-  );
-  const hasFlexColumn = useMemo(
-    () => centerColumnsForFlex.some(isFlexingColumn),
-    [centerColumnsForFlex],
-  );
-
-  // 利用可能幅(center 列が使える幅)です。
-  const availableCenterFlexWidth =
-    viewportWidth -
-    flexLeftPaneTotalWidth -
-    rightPaneFixedWidth -
-    flexCenterLeadingWidth;
-
-  // flex 解決幅 map(flex 列のキーのみ)。未計測 / flex 列なしのときは共有の空 map(参照不変)です。
-  const centerFlexWidths = useMemo(() => {
-    if (!hasFlexColumn || viewportWidth <= 0) {
-      return EMPTY_FLEX_WIDTHS;
-    }
-    return computeCenterFlexWidths(
-      centerColumnsForFlex,
-      uiState.columnWidths,
-      availableCenterFlexWidth,
-    );
-  }, [
-    hasFlexColumn,
-    viewportWidth,
-    centerColumnsForFlex,
-    uiState.columnWidths,
-    availableCenterFlexWidth,
-  ]);
-
-  // 既存の columnWidths 解決の前段に flex を挟みます:
-  //   columnWidths[key] ?? flex算出[key] ?? column.width。
-  //   columnWidths が常に優先されるため、手動リサイズした列は固定になります。
-  //   flex 列が無いときは uiState.columnWidths をそのまま使い、参照を不変に保ちます。
-  const effectiveColumnWidths = useMemo(
+  // 変更(本体分解 E-1): flex 解決と 3 ペイン geometry は engine/columnLayout.ts(React 非依存)へ移設しました
+  //   (メモ単位は旧 useMemo と同じ = ライブリサイズ中に幅が変わらないペインの参照は不変)。
+  const [resolvePaneLayout] = useState(() => createPaneLayoutResolver<T>());
+  const {
+    effectiveColumnWidths,
+    paneLayout,
+    hasLeftPane,
+    hasRightPane,
+    centerOwnsRowHeader,
+    leftLeadingWidth,
+    centerLeadingWidth,
+    rightLeadingWidth,
+    leftPaneTotalWidth,
+    rightPaneTotalWidth,
+    centerContentWidth,
+    totalScrollWidth,
+  } = useMemo(
     () =>
-      centerFlexWidths === EMPTY_FLEX_WIDTHS
-        ? uiState.columnWidths
-        : { ...centerFlexWidths, ...uiState.columnWidths },
-    [centerFlexWidths, uiState.columnWidths],
+      resolvePaneLayout({
+        orderedColumns,
+        columnWidths: uiState.columnWidths,
+        viewportWidth,
+        rowHeaderWidth,
+      }),
+    [
+      resolvePaneLayout,
+      orderedColumns,
+      uiState.columnWidths,
+      viewportWidth,
+      rowHeaderWidth,
+    ],
   );
 
   // 変更(B3): latest-ref を effectiveColumnWidths(flex 解決済み)へ更新します(宣言は上、代入はここ)。
   columnWidthsRef.current = effectiveColumnWidths;
-
-  // 追加(11-B4): ペインごとの「解決済み幅 join キー」です。
-  //             毎 render 計算しますが、列数ぶんの lookup + join のみで軽量です。
-  //             columnWidths の参照が変わっても、そのペインの幅が実際に変わらない限り
-  //             同一文字列になるため、下の useMemo の依存値として機能します。
-  const leftPaneWidthsKey = buildPaneWidthsKey(
-    paneSourceColumns.left,
-    uiState.columnWidths,
-  );
-  // 変更(B3): center は flex 解決済み(effectiveColumnWidths)で幅キーを作ります
-  //   (left/right は flex 非対象なので uiState.columnWidths のまま)。
-  const centerPaneWidthsKey = buildPaneWidthsKey(
-    paneSourceColumns.center,
-    effectiveColumnWidths,
-  );
-  const rightPaneWidthsKey = buildPaneWidthsKey(
-    paneSourceColumns.right,
-    uiState.columnWidths,
-  );
-
-  // 追加(11-B4): ペイン別 geometry です。依存は「列ソース + 幅キー」のみ。
-  //             幅キー文字列から解決済み幅を復元するため、columnWidths 本体には依存しません。
-  const leftPaneGeometry = useMemo(
-    () =>
-      buildPaneGeometryFromWidthsKey(
-        'left',
-        paneSourceColumns.left,
-        leftPaneWidthsKey,
-      ),
-    [paneSourceColumns.left, leftPaneWidthsKey],
-  );
-
-  const centerPaneGeometry = useMemo(
-    () =>
-      buildPaneGeometryFromWidthsKey(
-        'center',
-        paneSourceColumns.center,
-        centerPaneWidthsKey,
-      ),
-    [paneSourceColumns.center, centerPaneWidthsKey],
-  );
-
-  const rightPaneGeometry = useMemo(
-    () =>
-      buildPaneGeometryFromWidthsKey(
-        'right',
-        paneSourceColumns.right,
-        rightPaneWidthsKey,
-      ),
-    [paneSourceColumns.right, rightPaneWidthsKey],
-  );
-
-  // 変更(11-B4): 下流互換のため paneLayout 合成オブジェクトは維持します。
-  //             合成オブジェクト自体の参照はいずれかのペイン変更で変わりますが、
-  //             paneLayout.left.entries 等の「ペイン単位の参照」は当該ペインの
-  //             幅・列構成が変わらない限り不変です（これが 11-B4 の狙いです）。
-  const paneLayout = useMemo<GridPaneLayout<T>>(
-    () => ({
-      left: leftPaneGeometry,
-      center: centerPaneGeometry,
-      right: rightPaneGeometry,
-    }),
-    [leftPaneGeometry, centerPaneGeometry, rightPaneGeometry],
-  );
-
-  // 追加(10-C): 左／右固定ペインが存在するか（= 固定列があるか）です。
-  const hasLeftPane = paneLayout.left.entries.length > 0;
-  const hasRightPane = paneLayout.right.entries.length > 0;
-
-  // 追加(10-C): 行ヘッダー（#・行番号）を持つペインです。
-  //             左固定列があれば左ペイン、無ければ従来どおり中央ペインが持ちます。
-  //             これにより固定列なしのときは見た目・挙動が従来と完全に一致します。
-  const centerOwnsRowHeader = !hasLeftPane;
-
-  // 追加(10-C): 各ペインで列の前に確保する先頭幅です。
-  //             行ヘッダーを持つペインは rowHeaderWidth、それ以外は 0 になります。
-  const leftLeadingWidth = rowHeaderWidth; // 左ペインは行ヘッダーを内包します
-  const centerLeadingWidth = centerOwnsRowHeader ? rowHeaderWidth : 0;
-  const rightLeadingWidth = 0;
-
-  // 追加(10-B→10-C): 左固定ペインの合計幅です（row header + left-pinned 列）。
-  //             pinned 列がなければ 0 でペインは非表示になります。
-  const leftPaneTotalWidth = hasLeftPane
-    ? leftLeadingWidth + paneLayout.left.totalWidth
-    : 0;
-
-  // 追加(10-B): 右固定ペインの合計幅です。
-  const rightPaneTotalWidth = paneLayout.right.totalWidth;
-
-  // 追加(10-C): 中央ペインの内側コンテンツ幅です。
-  //             固定列なしのときは rowHeaderWidth + totalColumnWidth となり従来と同一です。
-  const centerContentWidth = centerLeadingWidth + paneLayout.center.totalWidth;
-
-  // 追加(10-G): 共有スクロールコンテナの内側コンテンツ全幅です。
-  //             = 左固定ペイン幅 + 中央ペイン幅 + 右固定ペイン幅。
-  //             横スクロール範囲・scroll clamp・active cell 可視化に使います。
-  const totalScrollWidth =
-    leftPaneTotalWidth + centerContentWidth + rightPaneTotalWidth;
 
   // ── filter popover ────────────────────────────────────
   // 追加(filter-ext E): filterType: 'auto' の解決結果キャッシュです(列キー → 実効種別)。
