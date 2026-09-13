@@ -55,7 +55,7 @@ React 19 + TypeScript + Vite 製のカスタム AG Grid 風・仮想化データ
 
 ## アーキテクチャ要点(詳細は HANDOFF §2 / §3 / §5)
 
-- reducer ベースの状態管理、命令的 ref API、3 ペイン固定列レイアウト、SSRM(サーバーサイド行モデル)。
+- reducer ベースの状態管理(2026-09-13 非依存化 ④-1 で React 非依存の外部 store `model/gridStore.ts` = `createGridStore(getState / dispatch / subscribe)` に載せ替え。React は `hooks/useGridStore.ts` の `useSyncExternalStore` で購読)、命令的 ref API、3 ペイン固定列レイアウト、SSRM(サーバーサイド行モデル)。
 - `SpreadsheetGrid.tsx` は既知の God component(~5,000 行)。リファクタは保留。
 - 純粋ロジックは `logic/` に抽出(テスタビリティ)。hooks は薄いオーケストレーション層。
 - `model/` と `logic/` は **React 非依存**を保つ(2026-09-13 非依存化 ①)。公開型の本体は `model/gridTypes.core.ts`(描画ノード / style はフレームワーク束ね型 `F` 経由で `F['node']` / `F['style']`)、React 束縛は `model/gridTypes.ts`(`ReactGridTypes` で固定したエイリアス + `ref` prop)。`ReactNode` / `CSSProperties` を `model/` / `logic/` に import しない。F は `F['node']` の位置から推論されないため、F ジェネリックな関数の呼び出しでは型引数を明示する(`resolveScrollHintOptions<T, ReactGridTypes>(...)`)。

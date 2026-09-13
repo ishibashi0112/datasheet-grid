@@ -18,6 +18,10 @@
 
 - **reducer(`model/gridReducer.ts`)は UI 状態のみ**を持つ: `activeCell / selection / rowSelection /
   editingCell / dragState / columnWidths / filters / sort`。
+- 変更(2026-09-13 非依存化 ④-1): reducer は React 非依存の外部 store(`model/gridStore.ts` =
+  `createGridStore` → `getState / dispatch / subscribe`)に載せ、本体は `hooks/useGridStore.ts`
+  (`useSyncExternalStore`)で購読する。`useReducer` と同じ `[uiState, dispatch]` を返し挙動不変
+  (reducer の no-op = 同一参照は通知しない)。コントローラ(③)は `getState` を直接読む。
 - **rows は外部 controlled**(`rows` prop + `onRowsChange`)で、グリッド内部には持たない。
   データ変更経路は「セル編集 commit(`useGridEditController`)/ ペースト(`useGridClipboardController`)/
   Delete クリア(`logic/clearCells`)/ `renderCell` の `setValue`」の 4 つで、すべて

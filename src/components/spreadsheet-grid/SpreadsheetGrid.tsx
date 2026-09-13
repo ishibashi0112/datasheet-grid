@@ -17,7 +17,6 @@ import {
   // 追加(11-B7): グローバルフィルタ評価の遅延化(Transition 化)に使います。
   useDeferredValue,
   useImperativeHandle,
-  useReducer,
   useRef,
   useState,
   type CSSProperties,
@@ -41,7 +40,9 @@ import {
 import { useVirtualizerCore } from './hooks/useVirtualizerCore';
 
 import { gridActions } from './model/gridActions';
-import { createInitialGridUiState, gridUiReducer } from './model/gridReducer';
+import { createInitialGridUiState } from './model/gridReducer';
+import { createGridStore } from './model/gridStore';
+import { useGridStore } from './hooks/useGridStore';
 import {
   buildSelectionSnapshot,
   normalizeCellRange,
@@ -835,12 +836,14 @@ export function SpreadsheetGrid<T extends object>({
   const columnFilterEnabled = enableColumnFilter;
   const globalFilterEnabled = enableGlobalFilter;
 
-  // ── reducer ───────────────────────────────────────────
-  const [uiState, dispatch] = useReducer(
-    gridUiReducer,
-    visibleColumns,
-    createInitialGridUiState,
+  // ── store(非依存化 ④-1)──────────────────────────────
+  // 変更: useReducer → React 非依存の外部 store(model/gridStore)+ useSyncExternalStore 購読。
+  //   reducer / 初期 state / dispatch の呼び出し形は従来どおりで挙動不変。store はマウント時に
+  //   1 回だけ生成します(useState 初期化子。初期 state は従来と同じく初回の visibleColumns)。
+  const [gridStore] = useState(() =>
+    createGridStore(createInitialGridUiState(visibleColumns)),
   );
+  const [uiState, dispatch] = useGridStore(gridStore);
 
   // 追加(detail ②): 展開行キー集合の変更通知です。初回マウント(空集合)は通知しません。
   //   コールバックは useEffect で同期する latest-ref(RS-AS 方式)越しに読み、通知 effect の deps は
@@ -1276,7 +1279,9 @@ export function SpreadsheetGrid<T extends object>({
       {},
     );
     dispatch(gridActions.resetColumnWidths(nextWidths));
-  }, [visibleColumns]);
+    // 注記(非依存化 ④-1): dispatch は store のメソッドで参照安定ですが、useReducer 由来ではなくなった
+    //   ため exhaustive-deps が安定と判定できません。deps に明示します(再実行は起きません)。
+  }, [visibleColumns, dispatch]);
 
   // ── row models (source → filtered → sorted) ──────────
   // 変更(DS-4 #1): 候補収集は logic/selectOptions の共有コレクタへ移管しました。
