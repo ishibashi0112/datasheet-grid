@@ -1,33 +1,15 @@
-import {
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  type MouseEvent,
-  type PointerEvent,
-  type RefObject,
-} from 'react';
+// 変更(非依存化 ③-14): 本体は controllers/columnMenuController.ts(React 非依存)へ移設し、本 hook は
+//   useController で最新 args を渡し、useSyncExternalStore で開閉状態と配置を購読する薄いアダプタです。
+//   開いている列(openedMenuColumn)は純粋な検索なので useMemo で求めます。返り値の形は従来どおり。
+import { useMemo, useSyncExternalStore, type RefObject } from 'react';
 import type { GridColumn } from '../model/gridTypes';
-// 追加(detail ④): 展開行カード内にフォーカスがあるときの focus 復帰ガードです。
-import { isFocusInsideDetailCard } from '../logic/detailRow';
+import {
+  createColumnMenuController,
+  type ColumnMenuLayout,
+} from '../controllers/columnMenuController';
+import { useController } from './useController';
 
-// 追加(13-A): 列メニュー popover の内部状態です。
-//             どの列のメニューを開いているかだけを持ちます。
-type ColumnMenuState = {
-  columnKey: string;
-};
-
-// 追加(13-A): body 直下 portal popover の配置情報です(position: fixed 座標)。
-export type ColumnMenuLayout = {
-  top: number;
-  left: number;
-  width: number;
-  // 追加(touch): メニュー実測高さが viewport に収まらないとき(横向きスマホ等)だけ付与します。
-  //   popover 側で max-height + overflow-y: auto に変換します(通常時は未指定 = 従来どおり
-  //   クリップなしでサブメニューがはみ出して開けます)。
-  maxHeight?: number;
-};
+export type { ColumnMenuLayout } from '../controllers/columnMenuController';
 
 type UseColumnMenuControllerArgs<T> = {
   visibleColumns: GridColumn<T>[];
@@ -35,376 +17,33 @@ type UseColumnMenuControllerArgs<T> = {
   gridRootRef: RefObject<HTMLDivElement | null>;
 };
 
-const MENU_WIDTH = 200;
-const VIEWPORT_MARGIN = 8;
-const OFFSET_Y = 6;
-// 変更(13-A2): カスケード化でルートメニューが「タイトル + 1 項目 + 閉じる」へ
-//             短くなったため、上下フリップ判定用の見積もり高さを更新します。
-// 変更(13-B1): 幅自動調整 2 項目の追加でルートが 3 項目になったため再更新します
-//             (padding 16 + タイトル ~30 + 項目 ~32×3 + 区切り/閉じる ~46 ≒ 188)。
-// 変更(13-B2-1): ルート項目「列の表示」追加でルートが 4 項目になったため再更新します
-//             (上記 + 項目 ~32 ≒ 220)。
-// 変更(13-B4): ソート(昇順/降順)2 項目 + 区切り線をルート先頭に追加したため再更新します
-//             (220 + 項目 ~32×2 - 微調整 ≒ 257)。縦フリップの見積りが小さいと、
-//             下側スペースが足りない場合に上向きフリップせず見切れるため、実高さに合わせます。
-// 変更(MS-3-1): ソート群へリーフ項目「並び替えを管理…」を 1 つ追加したため再更新します
-//             (257 + 項目 ~32 ≒ 289)。「並び替えを管理…」は別 popover
-//             (SortManagementPanel)を開くリーフですが、項目自体はルートメニュー内に
-//             並ぶため、縦フリップ用の高さには含めます(「列の表示」とは別扱い)。
-// 注記: サブメニューは横方向へ開くため、この縦フリップ判定には含めません。
-//       「列の表示」は別 popover(ColumnChooserPanel)を開くため、ここの高さには含めません。
-const ESTIMATED_MENU_HEIGHT = 289;
-
-// 追加(13-A): 列メニュー(「⋮」ボタン / ヘッダー右クリック)の
-//             state / anchor / layout / outside click / Escape をまとめて管理します。
-// 設計メモ: useFilterPopoverController と同型ですが、anchor が
-//   - 'button' モード: 「⋮」ボタン要素(getBoundingClientRect で追従配置)
-//   - 'point'  モード: 右クリック時のポインタ座標(固定配置)
-//   の 2 種類ある点が異なります。button モードは scroll/resize で再配置し、
-//   point モードは scroll 中に座標とヘッダーがズレるため scroll で閉じます
-//   (AG Grid のコンテキストメニューと同じ振る舞いです)。
-export const useColumnMenuController = <T,>({
-  visibleColumns,
-  enableColumnMenu,
-  gridRootRef,
-}: UseColumnMenuControllerArgs<T>) => {
-  const [columnMenuState, setColumnMenuState] =
-    useState<ColumnMenuState | null>(null);
-  const [columnMenuLayout, setColumnMenuLayout] =
-    useState<ColumnMenuLayout | null>(null);
-
-  // 追加(13-A): popover 本体 / anchor(ボタン or 座標)の ref 群です。
-  //             anchor は「どちらか一方だけ」が non-null になります。
-  const columnMenuRef = useRef<HTMLDivElement | null>(null);
-  const menuAnchorButtonRef = useRef<HTMLButtonElement | null>(null);
-  const menuAnchorPointRef = useRef<{ x: number; y: number } | null>(null);
-  // 追加(touch): タッチの pointerdown で「click で開く」ために保留した anchor ボタンです。
-  //   タッチで pointerdown 起点に開くと、同じジェスチャの click(指を離した時点でヒットテスト)が
-  //   指の真下に描画されたメニュー項目へ当たり、項目が即実行 → メニューが閉じて見えていました。
-  //   click 時点ではまだメニューが無いため、click 起点なら項目に当たりません(マウスは従来どおり
-  //   pointerdown 起点 = 押した瞬間に開く)。
-  const touchPendingAnchorRef = useRef<HTMLButtonElement | null>(null);
-
-  // 追加(13-A): 開閉トグル判定用の latest-ref です。
-  // 注記: setState の updater 内で anchor ref を書き換えると StrictMode の
-  //       updater 二重実行で開閉が反転するため、判定・ref 更新はハンドラ本体
-  //       (1 回だけ実行される側)で行います。
-  const columnMenuStateRef = useRef(columnMenuState);
-  // eslint-disable-next-line react-hooks/refs -- 意図的な latest-ref 同期です。読み手は openColumnMenuFromButton(イベントハンドラ)のみ。React Compiler 導入時に useLayoutEffect 同期へ書き換え予定。
-  columnMenuStateRef.current = columnMenuState;
-
-  const isColumnMenuOpen = columnMenuState !== null;
-  const openedMenuColumnKey = columnMenuState?.columnKey ?? null;
-
+export const useColumnMenuController = <T,>(args: UseColumnMenuControllerArgs<T>) => {
+  const controller = useController(() => createColumnMenuController<T>(), args);
+  const snapshot = useSyncExternalStore(
+    controller.subscribe,
+    controller.getSnapshot,
+    controller.getSnapshot,
+  );
+  const openedMenuColumnKey = snapshot.columnKey;
+  const { visibleColumns } = args;
   const openedMenuColumn = useMemo(
     () =>
       openedMenuColumnKey
-        ? visibleColumns.find(
-            (column) => column.key === openedMenuColumnKey,
-          ) ?? null
+        ? (visibleColumns.find((column) => column.key === openedMenuColumnKey) ?? null)
         : null,
     [openedMenuColumnKey, visibleColumns],
   );
-
-  // 追加(13-A): anchor(ボタン矩形 or 右クリック座標)から fixed 座標を計算します。
-  const updateColumnMenuLayout = useCallback(() => {
-    if (!openedMenuColumnKey) {
-      setColumnMenuLayout(null);
-      return;
-    }
-
-    let top: number;
-    let left: number;
-    let flipTop: number;
-
-    // 変更(touch): 高さは描画済みなら実測(offsetHeight)を使います。項目数(フィルター / 並び替え /
-    //   固定 / 表示 / リセット…)で実高さは推定値(289)を大きく超えることがあり、推定値のままだと
-    //   下方向へ出して viewport 下端で切れる / 上フリップしても anchor に重なる、が起きていました。
-    //   初回(未描画)は推定値で配置し、open effect の次フレームで実測値により再配置します。
-    //   注記: maxHeight でパネル内スクロールにしている最中は offsetHeight がクリップ後の高さに
-    //   なるため、scrollHeight(内容の全高)+ 上下ボーダー(offsetHeight - clientHeight)で「クリップ
-    //   していない場合の全高」を復元します(offsetHeight を使うと「収まった」と誤判定して maxHeight を
-    //   外し、次の実測で再び付与…と振動します)。
-    const panel = columnMenuRef.current;
-    const menuHeight = panel
-      ? panel.scrollHeight + (panel.offsetHeight - panel.clientHeight)
-      : ESTIMATED_MENU_HEIGHT;
-
-    const anchorButton = menuAnchorButtonRef.current;
-    const anchorPoint = menuAnchorPointRef.current;
-
-    if (anchorButton) {
-      // 追加(13-A): 横スクロールで列が仮想化範囲外になると anchor ボタンが unmount され、
-      //             getBoundingClientRect が 0 を返して左上へ飛ぶため、その場合は閉じます。
-      if (!anchorButton.isConnected) {
-        setColumnMenuLayout(null);
-        setColumnMenuState(null);
-        menuAnchorButtonRef.current = null;
-        return;
-      }
-      const anchorRect = anchorButton.getBoundingClientRect();
-      left = anchorRect.right - MENU_WIDTH;
-      top = anchorRect.bottom + OFFSET_Y;
-      flipTop = anchorRect.top - menuHeight - OFFSET_Y;
-    } else if (anchorPoint) {
-      // 追加(13-A): 右クリック位置の右下へ出します(ブラウザ標準メニューと同じ向き)。
-      left = anchorPoint.x;
-      top = anchorPoint.y;
-      flipTop = anchorPoint.y - menuHeight;
-    } else {
-      setColumnMenuLayout(null);
-      return;
-    }
-
-    left = Math.max(VIEWPORT_MARGIN, left);
-    left = Math.min(left, window.innerWidth - MENU_WIDTH - VIEWPORT_MARGIN);
-
-    // 変更(touch): 下に収まらなければ上へフリップ、上にも収まらなければ viewport 上端に寄せます。
-    //   それでも収まらない(メニューが viewport より高い)ときは maxHeight を付けてパネル内スクロール
-    //   にします(横向きスマホ等。通常は未指定)。
-    const viewportBottom = window.innerHeight - VIEWPORT_MARGIN;
-    if (top + menuHeight > viewportBottom && flipTop >= VIEWPORT_MARGIN) {
-      top = flipTop;
-    }
-    top = Math.max(VIEWPORT_MARGIN, top);
-    const availableHeight = viewportBottom - top;
-    const maxHeight =
-      menuHeight > availableHeight ? Math.max(availableHeight, 0) : undefined;
-
-    setColumnMenuLayout((current) => {
-      if (
-        current &&
-        current.top === top &&
-        current.left === left &&
-        current.width === MENU_WIDTH &&
-        current.maxHeight === maxHeight
-      ) {
-        return current;
-      }
-      return { top, left, width: MENU_WIDTH, maxHeight };
-    });
-  }, [openedMenuColumnKey]);
-
-  // 追加(13-A): メニューを閉じます(filter popover の close と同じ作法です)。
-  const closeColumnMenu = useCallback(() => {
-    setColumnMenuState(null);
-    setColumnMenuLayout(null);
-    menuAnchorButtonRef.current = null;
-    menuAnchorPointRef.current = null;
-
-    // 追加: close 後は grid root にフォーカスを戻し、keyboard 操作へ復帰させます。
-    requestAnimationFrame(() => {
-      // 追加(detail ④): 展開行カード内のクリックで閉じたときはカードのフォーカスを奪いません。
-      if (!isFocusInsideDetailCard()) {
-        gridRootRef.current?.focus();
-      }
-    });
-  }, [gridRootRef]);
-
-  // 追加(touch): 「⋮」ボタンを anchor にメニューを開く共通処理です(pointerdown / click の両起点)。
-  const openColumnMenuAtButton = useCallback(
-    (column: GridColumn<T>, anchorElement: HTMLButtonElement) => {
-      // 追加: grid root に残っているフォーカスを明示的に外します。
-      if (document.activeElement instanceof HTMLElement) {
-        document.activeElement.blur();
-      }
-      gridRootRef.current?.blur();
-
-      menuAnchorButtonRef.current = anchorElement;
-      menuAnchorPointRef.current = null;
-      setColumnMenuState({ columnKey: column.key });
-    },
-    [gridRootRef],
-  );
-
-  // 追加(13-A): 「⋮」ボタンからメニューを開きます(同じボタン再押下でトグル close)。
-  // 注記: anchor ref の更新は setState より「前」に行います。outside click 用の
-  //       window pointerdown リスナーは React ハンドラの後(window バブル到達時)に
-  //       走るため、別列のボタンを押した場合でも「新 anchor contains target」で
-  //       閉じ漏れ/誤閉じが起きません(useFilterPopoverController と同じ仕組みです)。
-  const openColumnMenuFromButton = useCallback(
-    (column: GridColumn<T>, event: PointerEvent<HTMLButtonElement>) => {
-      event.preventDefault();
-      event.stopPropagation();
-
-      if (!enableColumnMenu || event.button !== 0) {
-        return;
-      }
-
-      const anchorElement = event.currentTarget;
-
-      // 追加: 同じボタンの再押下はトグルで閉じます。
-      const current = columnMenuStateRef.current;
-      if (
-        current?.columnKey === column.key &&
-        menuAnchorButtonRef.current === anchorElement
-      ) {
-        closeColumnMenu();
-        return;
-      }
-
-      // 追加(touch): タッチは click(openColumnMenuFromButtonClick)で開きます。
-      //   理由は touchPendingAnchorRef の注記(同一ジェスチャの click が項目へ当たる問題)。
-      if (event.pointerType === 'touch') {
-        touchPendingAnchorRef.current = anchorElement;
-        return;
-      }
-
-      openColumnMenuAtButton(column, anchorElement);
-    },
-    [closeColumnMenu, enableColumnMenu, openColumnMenuAtButton],
-  );
-
-  // 追加(touch): 「⋮」ボタンの click です。タッチの pointerdown で保留した anchor と一致するときだけ
-  //   開きます(マウスは pointerdown 側で開済み = 保留なし = no-op)。
-  const openColumnMenuFromButtonClick = useCallback(
-    (column: GridColumn<T>, event: MouseEvent<HTMLButtonElement>) => {
-      const pendingAnchor = touchPendingAnchorRef.current;
-      touchPendingAnchorRef.current = null;
-      if (!enableColumnMenu || pendingAnchor !== event.currentTarget) {
-        return;
-      }
-      event.preventDefault();
-      event.stopPropagation();
-      openColumnMenuAtButton(column, event.currentTarget);
-    },
-    [enableColumnMenu, openColumnMenuAtButton],
-  );
-
-  // 追加(13-A): 列ヘッダー右クリック(contextmenu)からメニューを開きます。
-  // 注記: enableColumnMenu=false のときは preventDefault しないため、
-  //       ブラウザ標準のコンテキストメニューがそのまま出ます。
-  const openColumnMenuFromContextMenu = useCallback(
-    (column: GridColumn<T>, event: MouseEvent<HTMLDivElement>) => {
-      if (!enableColumnMenu) {
-        return;
-      }
-
-      event.preventDefault();
-      event.stopPropagation();
-
-      if (document.activeElement instanceof HTMLElement) {
-        document.activeElement.blur();
-      }
-      gridRootRef.current?.blur();
-
-      menuAnchorButtonRef.current = null;
-      menuAnchorPointRef.current = { x: event.clientX, y: event.clientY };
-      setColumnMenuState({ columnKey: column.key });
-
-      // 追加: 同一列で「開いたまま別位置を右クリック」した場合も座標を追従させます。
-      //       state が同値(同一 columnKey)だと effect が走らないため、ここで直接
-      //       再計算します(初回 open 時は下の effect 側でも計算され、冪等です)。
-      updateColumnMenuLayout();
-    },
-    [enableColumnMenu, gridRootRef, updateColumnMenuLayout],
-  );
-
-  // 追加(13-A): open 時の初期配置 + resize / scroll への追従です。
-  //             button anchor は再配置、point anchor は scroll で閉じます。
-  useEffect(() => {
-    if (!openedMenuColumnKey) {
-      return;
-    }
-
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- open 直後の初期配置です。anchor の DOM 矩形を commit 後に測ってから layout state を確定する必要があるため、effect 内 setState が本質的に必要なパターン(React docs の DOM 計測パターン)です。
-    updateColumnMenuLayout();
-    // 追加(touch): 初回配置は推定高さです。パネル描画後の次フレームで実測高さにより再配置します
-    //   (下に収まらない場合の上フリップ / viewport 内クリップを実高さで判定するため)。
-    const measureFrame = requestAnimationFrame(() => {
-      updateColumnMenuLayout();
-    });
-
-    const handleResize = () => {
-      updateColumnMenuLayout();
-    };
-
-    const handleScroll = () => {
-      if (menuAnchorPointRef.current) {
-        // 追加: 座標 anchor はスクロールでヘッダーとズレるため閉じます。
-        closeColumnMenu();
-        return;
-      }
-      updateColumnMenuLayout();
-    };
-
-    window.addEventListener('resize', handleResize);
-    window.addEventListener('scroll', handleScroll, true);
-
-    return () => {
-      cancelAnimationFrame(measureFrame);
-      window.removeEventListener('resize', handleResize);
-      window.removeEventListener('scroll', handleScroll, true);
-    };
-  }, [openedMenuColumnKey, updateColumnMenuLayout, closeColumnMenu]);
-
-  // 追加(13-A): 表示中は outside click で閉じます(filter popover と同じ作法です)。
-  useEffect(() => {
-    if (!isColumnMenuOpen) {
-      return;
-    }
-
-    const handleWindowPointerDown = (event: globalThis.PointerEvent) => {
-      const targetNode = event.target as Node | null;
-      if (!targetNode) {
-        return;
-      }
-
-      if (columnMenuRef.current?.contains(targetNode)) {
-        return;
-      }
-
-      // 追加: anchor ボタン押下はボタン側のトグル処理に委ねます。
-      if (menuAnchorButtonRef.current?.contains(targetNode)) {
-        return;
-      }
-
-      closeColumnMenu();
-    };
-
-    window.addEventListener('pointerdown', handleWindowPointerDown);
-    return () => {
-      window.removeEventListener('pointerdown', handleWindowPointerDown);
-    };
-  }, [closeColumnMenu, isColumnMenuOpen]);
-
-  // 追加(13-A): 表示中は Escape で閉じます。
-  //             メニューには入力要素が無く popover 内にフォーカスが入らないため、
-  //             popover 側の onKeyDown ではなく window で拾います。
-  useEffect(() => {
-    if (!isColumnMenuOpen) {
-      return;
-    }
-
-    const handleWindowKeyDown = (event: globalThis.KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        event.preventDefault();
-        closeColumnMenu();
-      }
-    };
-
-    // 変更(POP-KEY): capture 登録(第 3 引数 true)へ変更します。
-    // 変更理由: パネル root の keydown 遮断(bubble 相 stopPropagation)や内部要素の
-    //   stopPropagation はネイティブ伝播を止めるため、bubble 登録の window リスナーには
-    //   フォーカスがパネル内にあるとき Escape が届きませんでした。capture は window で
-    //   最初に走るため、フォーカス位置に依存せず確実に close を受けられます
-    //   (add / remove の capture 指定は一致必須です)。
-    window.addEventListener('keydown', handleWindowKeyDown, true);
-    return () => {
-      window.removeEventListener('keydown', handleWindowKeyDown, true);
-    };
-  }, [closeColumnMenu, isColumnMenuOpen]);
-
+  const columnMenuLayout: ColumnMenuLayout | null = snapshot.layout;
   return {
     columnMenuLayout,
-    columnMenuRef,
-    isColumnMenuOpen,
+    columnMenuRef: controller.panelRef,
+    isColumnMenuOpen: openedMenuColumnKey !== null,
     openedMenuColumnKey,
     openedMenuColumn,
-    openColumnMenuFromButton,
-    openColumnMenuFromButtonClick,
-    openColumnMenuFromContextMenu,
-    closeColumnMenu,
+    openColumnMenuFromButton: controller.openFromButton,
+    openColumnMenuFromButtonClick: controller.openFromButtonClick,
+    openColumnMenuFromContextMenu: controller.openFromContextMenu,
+    closeColumnMenu: controller.close,
   };
 };
 
