@@ -20,11 +20,18 @@ export type ControllerLike<Args> = {
 
 // 追加(本体分解 E-3): 生成済みコントローラの接続だけを行う下位 hook です。生成をレンダー中に(スナップショットの
 //   購読より前に)済ませたい場合に、useState(create) と組み合わせて使います。
+// 追加(本体分解 E-6a): update の実行タイミング。既定はレイアウト effect(コミット後・ペイント前)。外部通知
+//   (onXxx コールバック)のように旧実装が passive effect(ペイント後)だったものは 'passive' を指定して
+//   タイミングを保ちます。呼び出し側で固定値を渡すこと(レンダー間で切り替えない = hook 順序を保つ)。
+export type ControllerUpdateTiming = 'layout' | 'passive';
+
 export function useControllerLifecycle<Args, C extends ControllerLike<Args>>(
   controller: C,
   args: Args,
+  timing: ControllerUpdateTiming = 'layout',
 ): void {
-  useIsomorphicLayoutEffect(() => {
+  const useUpdateEffect = timing === 'passive' ? useEffect : useIsomorphicLayoutEffect;
+  useUpdateEffect(() => {
     controller.update(args);
   });
   useEffect(() => {
@@ -37,8 +44,9 @@ export function useControllerLifecycle<Args, C extends ControllerLike<Args>>(
 export function useController<Args, C extends ControllerLike<Args>>(
   create: () => C,
   args: Args,
+  timing: ControllerUpdateTiming = 'layout',
 ): C {
   const [controller] = useState(create);
-  useControllerLifecycle(controller, args);
+  useControllerLifecycle(controller, args, timing);
   return controller;
 }

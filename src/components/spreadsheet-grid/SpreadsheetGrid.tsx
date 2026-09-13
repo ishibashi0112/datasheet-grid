@@ -26,8 +26,6 @@ import {
   type MouseEvent as ReactMouseEvent,
   // 追加(UP-1): 統合ツールパネルのタブ別コンテンツテーブルの型に使います。
   type ReactNode,
-  // 追加(proposals ⑩): 行ホバー setter の useState 互換シグネチャに使います。
-  type SetStateAction,
 } from 'react';
 
 // 追加(UI CSS移行): 基底スタイル(トークン + .ssg-* クラス)を読み込みます(THEME-1 で未レイヤー化)。
@@ -49,6 +47,11 @@ import { createRowPipelineResolver } from './engine/rowPipeline';
 import { createVerticalLayoutResolver } from './engine/verticalLayout';
 import { createColumnCommands } from './engine/columnCommands';
 import { createGridApi } from './engine/gridApi';
+import {
+  createDetailKeysNotifier,
+  createHoverRowNotifier,
+  createStateChangeNotifier,
+} from './engine/notifiers';
 import { createRowSelectionCommands } from './engine/rowSelectionCommands';
 import {
   createFilterPopoverCommands,
@@ -185,11 +188,6 @@ import {
 // 追加(state #2): onStateChange の発火可否判定(decideStateChangeEmit)も同モジュールから読みます。
 // 追加(state v2): 列メタ(可視 / 順序 / ピン)の抽出 / 適用(extractColumnState / applyColumnState)。
 import {
-  buildGridState,
-  decideStateChangeEmit,
-  extractColumnState,
-} from './logic/gridState';
-import {
   computeHorizontalScrollTarget,
 } from './logic/scrollTargets';
 // 追加(DS-4 ①-(2)): 列幅自動調整を時間分割(async・単一経路)で実行するランナーです。
@@ -231,7 +229,6 @@ import type {
   GridScrollEventParams,
   SpreadsheetGridProps,
   // 追加(state #2): onStateChange の lastEmitted 保持 / snapshot 型に使います。
-  GridState,
   // 追加(バッチ②/コンテキストメニュー): 対象/params/項目の公開型。
   GridContextMenuTarget,
   GridContextMenuParams,
@@ -620,35 +617,15 @@ export function SpreadsheetGrid<T extends object>({
   //   参照が毎レンダー変わって全行 memo が破れるためです。不安定値は useEffect で同期する
   //   latest-ref(RS-AS 方式)越しに読みます。
   const isHoverControlled = hoveredRowIndexProp !== undefined;
-  const pointerHoveredRowRef = useRef<number | null>(null);
-  const onHoveredRowChangeRef = useRef(onHoveredRowChange);
-  const enableRowHoverRef = useRef(enableRowHover);
-  const isHoverControlledRef = useRef(isHoverControlled);
-  useEffect(() => {
-    onHoveredRowChangeRef.current = onHoveredRowChange;
-    enableRowHoverRef.current = enableRowHover;
-    isHoverControlledRef.current = isHoverControlled;
+  // 変更(本体分解 E-6a): ホバー行の正本(同値抑止)/ 内部 state 更新 / onHoveredRowChange 通知は
+  //   engine/notifiers.ts の createHoverRowNotifier へ(旧 latest-ref 3 本 + 同期 effect を解消)。
+  const hoverRowNotifier = useController(createHoverRowNotifier, {
+    enableRowHover,
+    isHoverControlled,
+    onHoveredRowChange,
+    setHoveredRowIndex,
   });
-  const applyHoveredRowChange = useCallback(
-    (action: SetStateAction<number | null>) => {
-      // enableRowHover: false では通知もしません(表示は下の resolvedHoveredRowIndex が null 化)。
-      if (!enableRowHoverRef.current) {
-        return;
-      }
-      const current = pointerHoveredRowRef.current;
-      const next = typeof action === 'function' ? action(current) : action;
-      if (next === current) {
-        return;
-      }
-      pointerHoveredRowRef.current = next;
-      // controlled 時は表示に使われない内部 state を更新しません(無駄な親再レンダー回避)。
-      if (!isHoverControlledRef.current) {
-        setHoveredRowIndex(next);
-      }
-      onHoveredRowChangeRef.current?.(next, { source: 'pointer' });
-    },
-    [setHoveredRowIndex],
-  );
+  const applyHoveredRowChange = hoverRowNotifier.applyHoveredRowChange;
   // 表示に使うホバー行です(controlled 優先 / enableRowHover: false は常に null)。
   const resolvedHoveredRowIndex = !enableRowHover
     ? null
@@ -659,20 +636,15 @@ export function SpreadsheetGrid<T extends object>({
   // 追加(detail ②): 展開行キー集合の変更通知です。初回マウント(空集合)は通知しません。
   //   コールバックは useEffect で同期する latest-ref(RS-AS 方式)越しに読み、通知 effect の deps は
   //   集合の参照だけにします(コールバック識別子の変化で再通知しない)。
-  const onExpandedDetailRowKeysChangeRef = useRef(onExpandedDetailRowKeysChange);
-  useEffect(() => {
-    onExpandedDetailRowKeysChangeRef.current = onExpandedDetailRowKeysChange;
-  });
-  const expandedDetailKeysNotifiedRef = useRef(false);
-  useEffect(() => {
-    if (!expandedDetailKeysNotifiedRef.current) {
-      expandedDetailKeysNotifiedRef.current = true;
-      return;
-    }
-    onExpandedDetailRowKeysChangeRef.current?.(
-      Array.from(uiState.expandedDetailRowKeys),
-    );
-  }, [uiState.expandedDetailRowKeys]);
+  // 変更(本体分解 E-6a): 通知は engine/notifiers.ts の createDetailKeysNotifier へ(passive = ペイント後、旧 effect と同じ)。
+  useController(
+    createDetailKeysNotifier,
+    {
+      expandedKeys: uiState.expandedDetailRowKeys,
+      onChange: onExpandedDetailRowKeysChange,
+    },
+    'passive',
+  );
 
   // 追加(detail ③): 展開行の有効判定と rowKey → view index 解決キャッシュです。
   //   セル側のトグルは「そのセルの view index」でキャッシュを seed してから dispatch します
@@ -3741,38 +3713,19 @@ export function SpreadsheetGrid<T extends object>({
   //   再実行しません(deps から外します)。先頭ガードで onStateChange 未使用時は snapshot+比較すら
   //   行いません(計算ゼロ)。未使用時は lastEmitted が null のままですが、後から付いた初回は prev=null で
   //   非発火→baseline 記録となり整合的です。
-  const onStateChangeRef = useRef(onStateChange);
-  onStateChangeRef.current = onStateChange;
-  const lastEmittedStateRef = useRef<GridState | null>(null);
-  useEffect(() => {
-    // onStateChange 未指定なら何もしません(snapshot 組み立て / 比較すら省略)。
-    if (!onStateChangeRef.current) {
-      return;
-    }
-    const current = buildGridState(
-      uiState.columnWidths,
-      uiState.filters,
-      uiState.sort,
-      // 列メタ(可視 / 順序 / ピン)を columns prop から抽出して snapshot へ含めます。
-      extractColumnState(columns),
-    );
-    const decision = decideStateChangeEmit(
-      lastEmittedStateRef.current,
-      current,
-      // 列リサイズ / 選択のドラッグ中は確定前。確定(drag 終了で dragState→null)後にまとめて評価します。
-      uiState.dragState !== null,
-    );
-    lastEmittedStateRef.current = decision.nextLast;
-    if (decision.emit) {
-      onStateChangeRef.current(current);
-    }
-  }, [
-    uiState.columnWidths,
-    uiState.filters,
-    uiState.sort,
-    uiState.dragState,
-    columns,
-  ]);
+  // 変更(本体分解 E-6a): 判定 / 通知は engine/notifiers.ts の createStateChangeNotifier へ(passive = 旧 effect と同じ)。
+  useController(
+    () => createStateChangeNotifier<T>(),
+    {
+      columnWidths: uiState.columnWidths,
+      filters: uiState.filters,
+      sort: uiState.sort,
+      dragState: uiState.dragState,
+      columns,
+      onStateChange,
+    },
+    'passive',
+  );
 
   return (
     <div
