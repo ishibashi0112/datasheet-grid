@@ -45,6 +45,7 @@
 | `hooks/` | 薄いオーケストレーション層(clipboard / edit / keyboard / history / pointer / SSRM row model / autosize など)。 |
 | `view/` | ヘッダー行・ボディ・ポータル系(popover / panel / bar)コンポーネント。 |
 | `utils/` | permissions(編集可否・セル値 get/set)・clipboard(TSV)・scheduler。 |
+| `controllers/` | 追加(2026-09-13 非依存化 ③): **フレームワーク非依存の DOM コントローラ**。window リスナ / rAF / 矩形計測 / 命令的要素など DOM を扱うが React を import しない層。共通形は `{ update(args), attach(els), dispose(), subscribe?() }`(必要なものだけ持つ)。React の hooks/ は「生成 / update / dispose を effect に接続するだけ」の薄いアダプタになる(③-1 tooltipController = `acquireTooltipController(slot) → { setSlot, dispose }`)。Solid 版は onMount / onCleanup / createEffect で同じコントローラを使う。 |
 
 ### 2.3 レイアウトと仮想化
 
