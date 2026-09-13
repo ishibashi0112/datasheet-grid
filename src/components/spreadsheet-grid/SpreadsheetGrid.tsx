@@ -42,7 +42,7 @@ import { useVirtualizerCore } from './hooks/useVirtualizerCore';
 import { gridActions } from './model/gridActions';
 import { createInitialGridUiState } from './model/gridReducer';
 import { createGridStore } from './model/gridStore';
-import { useGridStore } from './hooks/useGridStore';
+import { useGridStore, useGridViewState } from './hooks/useGridStore';
 import {
   buildSelectionSnapshot,
   normalizeCellRange,
@@ -648,55 +648,7 @@ export function SpreadsheetGrid<T extends object>({
   //   dispatch(startEdit) と React が自動バッチするため、編集開始時の
   //   親レンダー回数は従来どおり 1 回です。
   const [editorInitialValue, setEditorInitialValue] = useState('');
-  const [isCornerHovered, setIsCornerHovered] = useState(false);
-  const [hoveredRowIndex, setHoveredRowIndex] = useState<number | null>(null);
-  const [hoveredColumnIndex, setHoveredColumnIndex] = useState<number | null>(
-    null,
-  );
 
-  // 追加(proposals ⑩): 行ホバーの optionally controlled 化です。pointer 由来の現在値は
-  //   pointerHoveredRowRef を正本にして同値抑止し(pointerenter は同一行内のセル跨ぎでも来る)、
-  //   変化時のみ内部 state(uncontrolled 表示用)の更新と onHoveredRowChange の通知を行います。
-  //   setter は恒久安定([] deps)にします — 本 setter は handleCellPointerEnter(GridBodyRow の
-  //   memo prop)の依存に入るため、利用側がインライン arrow の onHoveredRowChange を渡すと
-  //   参照が毎レンダー変わって全行 memo が破れるためです。不安定値は useEffect で同期する
-  //   latest-ref(RS-AS 方式)越しに読みます。
-  const isHoverControlled = hoveredRowIndexProp !== undefined;
-  const pointerHoveredRowRef = useRef<number | null>(null);
-  const onHoveredRowChangeRef = useRef(onHoveredRowChange);
-  const enableRowHoverRef = useRef(enableRowHover);
-  const isHoverControlledRef = useRef(isHoverControlled);
-  useEffect(() => {
-    onHoveredRowChangeRef.current = onHoveredRowChange;
-    enableRowHoverRef.current = enableRowHover;
-    isHoverControlledRef.current = isHoverControlled;
-  });
-  const applyHoveredRowChange = useCallback(
-    (action: SetStateAction<number | null>) => {
-      // enableRowHover: false では通知もしません(表示は下の resolvedHoveredRowIndex が null 化)。
-      if (!enableRowHoverRef.current) {
-        return;
-      }
-      const current = pointerHoveredRowRef.current;
-      const next = typeof action === 'function' ? action(current) : action;
-      if (next === current) {
-        return;
-      }
-      pointerHoveredRowRef.current = next;
-      // controlled 時は表示に使われない内部 state を更新しません(無駄な親再レンダー回避)。
-      if (!isHoverControlledRef.current) {
-        setHoveredRowIndex(next);
-      }
-      onHoveredRowChangeRef.current?.(next, { source: 'pointer' });
-    },
-    [],
-  );
-  // 表示に使うホバー行です(controlled 優先 / enableRowHover: false は常に null)。
-  const resolvedHoveredRowIndex = !enableRowHover
-    ? null
-    : hoveredRowIndexProp !== undefined
-      ? hoveredRowIndexProp
-      : hoveredRowIndex;
 
   // ── columns ───────────────────────────────────────────
   // 追加(grouping ③): 行グルーピングの列解決です。rowGroup 列(columns 出現順 = 階層順)と
@@ -844,6 +796,70 @@ export function SpreadsheetGrid<T extends object>({
     createGridStore(createInitialGridUiState(visibleColumns)),
   );
   const [uiState, dispatch] = useGridStore(gridStore);
+  // 追加(非依存化 ④-2): view スライス(ビューポート計測 / ホバー)。旧 useState 6 個の置き換えで、
+  //   setter の呼び出し形(値 or 関数)と参照安定性は従来どおりです。
+  const [
+    {
+      scrollTop,
+      viewportWidth,
+      viewportHeight,
+      hoveredRowIndex,
+      hoveredColumnIndex,
+      isCornerHovered,
+    },
+    {
+      // 注記: viewportWidth / viewportHeight は scroll / resize effect が gridStore.setViewState で
+      //   まとめて更新するため、個別 setter はここでは使いません。
+      setScrollTop,
+      setHoveredRowIndex,
+      setHoveredColumnIndex,
+      setIsCornerHovered,
+    },
+  ] = useGridViewState(gridStore);
+
+  // 追加(proposals ⑩): 行ホバーの optionally controlled 化です。pointer 由来の現在値は
+  //   pointerHoveredRowRef を正本にして同値抑止し(pointerenter は同一行内のセル跨ぎでも来る)、
+  //   変化時のみ内部 state(uncontrolled 表示用)の更新と onHoveredRowChange の通知を行います。
+  //   setter は恒久安定([] deps)にします — 本 setter は handleCellPointerEnter(GridBodyRow の
+  //   memo prop)の依存に入るため、利用側がインライン arrow の onHoveredRowChange を渡すと
+  //   参照が毎レンダー変わって全行 memo が破れるためです。不安定値は useEffect で同期する
+  //   latest-ref(RS-AS 方式)越しに読みます。
+  const isHoverControlled = hoveredRowIndexProp !== undefined;
+  const pointerHoveredRowRef = useRef<number | null>(null);
+  const onHoveredRowChangeRef = useRef(onHoveredRowChange);
+  const enableRowHoverRef = useRef(enableRowHover);
+  const isHoverControlledRef = useRef(isHoverControlled);
+  useEffect(() => {
+    onHoveredRowChangeRef.current = onHoveredRowChange;
+    enableRowHoverRef.current = enableRowHover;
+    isHoverControlledRef.current = isHoverControlled;
+  });
+  const applyHoveredRowChange = useCallback(
+    (action: SetStateAction<number | null>) => {
+      // enableRowHover: false では通知もしません(表示は下の resolvedHoveredRowIndex が null 化)。
+      if (!enableRowHoverRef.current) {
+        return;
+      }
+      const current = pointerHoveredRowRef.current;
+      const next = typeof action === 'function' ? action(current) : action;
+      if (next === current) {
+        return;
+      }
+      pointerHoveredRowRef.current = next;
+      // controlled 時は表示に使われない内部 state を更新しません(無駄な親再レンダー回避)。
+      if (!isHoverControlledRef.current) {
+        setHoveredRowIndex(next);
+      }
+      onHoveredRowChangeRef.current?.(next, { source: 'pointer' });
+    },
+    [setHoveredRowIndex],
+  );
+  // 表示に使うホバー行です(controlled 優先 / enableRowHover: false は常に null)。
+  const resolvedHoveredRowIndex = !enableRowHover
+    ? null
+    : hoveredRowIndexProp !== undefined
+      ? hoveredRowIndexProp
+      : hoveredRowIndex;
 
   // 追加(detail ②): 展開行キー集合の変更通知です。初回マウント(空集合)は通知しません。
   //   コールバックは useEffect で同期する latest-ref(RS-AS 方式)越しに読み、通知 effect の deps は
@@ -967,7 +983,6 @@ export function SpreadsheetGrid<T extends object>({
   // viewportWidth: スクロールコンテナの clientWidth です。0 は未計測(初回レンダー前)を表し、その間は
   //   flex を適用せず column.width にフォールバックします(計測は縦窓出しと同じ ResizeObserver に
   //   相乗り。下の「縦スクロール計測」参照)。
-  const [viewportWidth, setViewportWidth] = useState(0);
 
   // 左右固定ペインの「解決済み幅合計」です(flex 非対象なので uiState.columnWidths で解決)。
   const leftPaneFixedWidth = paneSourceColumns.left.reduce(
@@ -1854,8 +1869,6 @@ export function SpreadsheetGrid<T extends object>({
   //   なり、行の配置・各種写像は現状と数値的に一致します。
   //   旧 rowVirtualizer はスクロールごとの再レンダー駆動も担っていたため、その役割を
   //   下記の scroll/resize リスナーへ移管します(発火頻度は同等)。
-  const [scrollTop, setScrollTop] = useState(0);
-  const [viewportHeight, setViewportHeight] = useState(0);
 
   // 追加(proposals ⑧): onScroll 通知の配線です。
   //   - onScrollRef: 不安定な onScroll prop を rAF tick / passive リスナーから読むための
@@ -1879,10 +1892,13 @@ export function SpreadsheetGrid<T extends object>({
     if (!el) {
       return;
     }
-    setScrollTop(el.scrollTop);
-    setViewportHeight(el.clientHeight);
     // 追加(B3): center 列 flex の利用可能幅算出に使う可視幅も同じ effect で計測します。
-    setViewportWidth(el.clientWidth);
+    // 変更(④-2): 3 値をまとめて 1 回の更新にします(通知 1 回)。
+    gridStore.setViewState({
+      scrollTop: el.scrollTop,
+      viewportHeight: el.clientHeight,
+      viewportWidth: el.clientWidth,
+    });
     // 追加(proposals ⑧): onScroll の rAF 間引きです。フレーム内の最後の位置を 1 回で通知します。
     let notifyFrameId: number | null = null;
     const flushScrollNotify = () => {
@@ -1914,9 +1930,11 @@ export function SpreadsheetGrid<T extends object>({
     el.addEventListener('scroll', handleScroll, { passive: true });
     // viewport サイズ変化(リサイズ/レイアウト変動)で窓・倍率・flex 配分を再計算するためです。
     const resizeObserver = new ResizeObserver(() => {
-      setViewportHeight(el.clientHeight);
-      // 追加(B3): 幅変化で flex を再配分します。
-      setViewportWidth(el.clientWidth);
+      // 追加(B3): 幅変化で flex を再配分します。変更(④-2): 2 値をまとめて 1 回の更新に。
+      gridStore.setViewState({
+        viewportHeight: el.clientHeight,
+        viewportWidth: el.clientWidth,
+      });
     });
     resizeObserver.observe(el);
     return () => {
@@ -1926,7 +1944,8 @@ export function SpreadsheetGrid<T extends object>({
       }
       resizeObserver.disconnect();
     };
-  }, []);
+    // 注記(④-2): gridStore / setScrollTop は参照安定(再実行は起きない)。exhaustive-deps 対応で明示。
+  }, [gridStore, setScrollTop]);
 
   // 変更(10-C): 列の仮想化は「中央ペインの列エントリ」に対して行います。
   // 変更理由: 固定列は中央スクロール対象外。中央ペインの水平スクロール範囲＝
@@ -2194,7 +2213,7 @@ export function SpreadsheetGrid<T extends object>({
     }
     // 物理 scrollTop の即時 0 化に React state も追従させます(scroll イベント待ちの 1 フレーム遅延回避)。
     setScrollTop(0);
-  }, [isServerSide, serverSideQueryKey]);
+  }, [isServerSide, serverSideQueryKey, setScrollTop]);
   // 追加(detail ④): serverSide で query が変わったら展開行を全て閉じます。
   //   結果セットが総入れ替えされるうえ、serverSide では rowKey の全行走査ができず(未ロード行)、
   //   古い view index のまま別行の下に帯が残る恐れがあるためです。空→空は reducer が no-op に
@@ -3289,16 +3308,16 @@ export function SpreadsheetGrid<T extends object>({
         current === colIndex ? null : current,
       );
     },
-    [],
+    [setHoveredColumnIndex],
   );
 
   const handleCornerPointerEnterStable = useCallback(() => {
     setIsCornerHovered(true);
-  }, []);
+  }, [setIsCornerHovered]);
 
   const handleCornerPointerLeaveStable = useCallback(() => {
     setIsCornerHovered(false);
-  }, []);
+  }, [setIsCornerHovered]);
 
   // ── column resize ─────────────────────────────────────
   // 変更(11-B5): 依存を uiState.columnWidths → latest-ref(columnWidthsRef) 読みへ

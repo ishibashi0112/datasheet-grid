@@ -10,7 +10,7 @@ import { act, cleanup, render } from '@testing-library/react';
 import { createGridStore, type GridStore } from '../model/gridStore';
 import { createInitialGridUiState } from '../model/gridReducer';
 import { gridActions } from '../model/gridActions';
-import { useGridStore } from './useGridStore';
+import { useGridStore, useGridViewState } from './useGridStore';
 
 afterEach(() => {
   cleanup();
@@ -64,5 +64,67 @@ describe('useGridStore', () => {
       store.dispatch(gridActions.activateCell({ row: 1, col: 1 }));
     });
     expect(commits.count).toBe(initialCommits);
+  });
+});
+
+function ViewProbe({ store }: { store: GridStore }) {
+  const [view, setters] = useGridViewState(store);
+  return (
+    <div>
+      <div data-testid="view">
+        {`${view.scrollTop}/${view.hoveredRowIndex ?? 'none'}/${view.isCornerHovered}`}
+      </div>
+      <button type="button" data-testid="inc" onClick={() => setters.setScrollTop((v) => v + 10)}>
+        +10
+      </button>
+    </div>
+  );
+}
+
+describe('useGridViewState(非依存化 ④-2)', () => {
+  it('フィールド別 setter(値 / 関数)で再描画され、同一 act 内の複数更新は 1 回にまとまる', () => {
+    const store = createGridStore(createInitialGridUiState([]));
+    const commits = { count: 0 };
+    const { getByTestId } = render(
+      <Profiler
+        id="view"
+        onRender={() => {
+          commits.count += 1;
+        }}
+      >
+        <ViewProbe store={store} />
+      </Profiler>,
+    );
+    expect(getByTestId('view').textContent).toBe('0/none/false');
+    const initialCommits = commits.count;
+
+    act(() => {
+      store.setViewState({ hoveredRowIndex: 2 });
+      store.setViewState({ isCornerHovered: true });
+    });
+    expect(getByTestId('view').textContent).toBe('0/2/true');
+    expect(commits.count - initialCommits).toBe(1);
+
+    act(() => {
+      getByTestId('inc').click();
+    });
+    expect(getByTestId('view').textContent).toBe('10/2/true');
+    expect(store.getViewState().scrollTop).toBe(10);
+  });
+
+  it('setter の参照は store に対して安定している', () => {
+    const store = createGridStore(createInitialGridUiState([]));
+    const seen: unknown[] = [];
+    function SetterProbe() {
+      const [, setters] = useGridViewState(store);
+      seen.push(setters.setScrollTop);
+      return null;
+    }
+    render(<SetterProbe />);
+    act(() => {
+      store.setViewState({ scrollTop: 5 });
+    });
+    expect(seen.length).toBeGreaterThanOrEqual(2);
+    expect(new Set(seen).size).toBe(1);
   });
 });

@@ -22,6 +22,13 @@
   `createGridStore` → `getState / dispatch / subscribe`)に載せ、本体は `hooks/useGridStore.ts`
   (`useSyncExternalStore`)で購読する。`useReducer` と同じ `[uiState, dispatch]` を返し挙動不変
   (reducer の no-op = 同一参照は通知しない)。コントローラ(③)は `getState` を直接読む。
+- 追加(2026-09-13 非依存化 ④-2): 同じ store に **view スライス**(`GridViewState` = scrollTop /
+  viewportWidth / viewportHeight / hoveredRowIndex / hoveredColumnIndex / isCornerHovered。
+  `getViewState / setViewState(部分更新、値 or 関数)`)を持ち、旧 SpreadsheetGrid の `useState` 6 個を
+  置き換えた。React は `useGridViewState`(`useSyncExternalStore` + フィールド別 setter)で購読。
+  公開 API の `GridState`(getState / applyState)には含まれない。残る `useState` 4 個
+  (editorInitialValue / serverSideQueryKey / autoHeightVersion / autoHeightMeasureNonce)は ③ で
+  各コントローラと一緒に移す。
 - **rows は外部 controlled**(`rows` prop + `onRowsChange`)で、グリッド内部には持たない。
   データ変更経路は「セル編集 commit(`useGridEditController`)/ ペースト(`useGridClipboardController`)/
   Delete クリア(`logic/clearCells`)/ `renderCell` の `setValue`」の 4 つで、すべて

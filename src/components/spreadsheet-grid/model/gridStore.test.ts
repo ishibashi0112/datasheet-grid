@@ -49,3 +49,47 @@ describe('createGridStore', () => {
     expect(seen).toEqual([5, 5, 6]);
   });
 });
+
+describe('view スライス(非依存化 ④-2)', () => {
+  it('部分更新(値 / 関数)で新しいオブジェクトを作り、変化があったときだけ通知する', () => {
+    const store = createGridStore(createInitialGridUiState([]));
+    const listener = vi.fn();
+    store.subscribe(listener);
+    const initial = store.getViewState();
+    expect(initial).toEqual({
+      scrollTop: 0,
+      viewportWidth: 0,
+      viewportHeight: 0,
+      hoveredRowIndex: null,
+      hoveredColumnIndex: null,
+      isCornerHovered: false,
+    });
+
+    store.setViewState({ scrollTop: 120, viewportHeight: 400 });
+    expect(store.getViewState()).toMatchObject({ scrollTop: 120, viewportHeight: 400 });
+    expect(store.getViewState()).not.toBe(initial);
+    expect(listener).toHaveBeenCalledTimes(1);
+
+    // 関数形は現在の view 全体を受け取る。
+    store.setViewState((prev) => ({ hoveredRowIndex: prev.scrollTop > 100 ? 3 : null }));
+    expect(store.getViewState().hoveredRowIndex).toBe(3);
+    expect(listener).toHaveBeenCalledTimes(2);
+
+    // 全フィールド同値なら参照も通知も変えない。
+    const before = store.getViewState();
+    store.setViewState({ scrollTop: 120 });
+    store.setViewState(() => ({ hoveredRowIndex: 3 }));
+    expect(store.getViewState()).toBe(before);
+    expect(listener).toHaveBeenCalledTimes(2);
+  });
+
+  it('view スライスの更新は uiState の参照を変えない(逆も同様)', () => {
+    const store = createGridStore(createInitialGridUiState([]));
+    const ui = store.getState();
+    store.setViewState({ isCornerHovered: true });
+    expect(store.getState()).toBe(ui);
+    const view = store.getViewState();
+    store.dispatch(gridActions.activateCell({ row: 0, col: 0 }));
+    expect(store.getViewState()).toBe(view);
+  });
+});
