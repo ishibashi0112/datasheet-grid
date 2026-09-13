@@ -48,6 +48,10 @@ import {
 import { createRowPipelineResolver } from './engine/rowPipeline';
 import { createVerticalLayoutResolver } from './engine/verticalLayout';
 import { createColumnCommands } from './engine/columnCommands';
+import {
+  createFilterPopoverCommands,
+  createFilterPopoverDerivedResolver,
+} from './engine/filterPopoverCommands';
 import { createAutoHeightMeasurer } from './controllers/autoHeightMeasurer';
 import { createDebouncedValueStore } from './controllers/debouncedValueStore';
 import { useController, useControllerLifecycle } from './hooks/useController';
@@ -94,9 +98,6 @@ import {
   //     移行したため、式テキストの buildNumberColumnFilterValue はここでは不要になりました。
   isNumberColumnFilterValue,
   // 追加(filter-ext B/C/D): 複合(条件 AND 選択)記述子の判定に使います。
-  isNumberSetColumnFilterValue,
-  isTextSetColumnFilterValue,
-  isDateSetColumnFilterValue,
   // 追加(filter-ext B): B-2 Float64 key の構築対象判定です(comparison / range を持つ
   //   number 系のみ。number / numberSet の両 kind を単一実装で判定します)。
   // 追加(記述子化): 現在値表示の text 整形に使います(記述子 → 表示文字列)。
@@ -113,30 +114,6 @@ import { describeColumnFilterValue } from './logic/filterSummary';
 // 追加(preset-opt): dateSet プリセット構成(列定義 dateFilterPresets)の正規化です
 //   (popover のチップ描画 / 候補連動 / 要約ラベルへ同じ正規形を渡します)。
 import { normalizeDateFilterPresets } from './logic/dateFilterPresets';
-// 追加(filter-ext A): number 列の構造化条件 draft から記述子を構築します
-//   (popover の演算子セレクト UI の commit 経路)。
-// 変更(filter-ext B): numberSet の条件即時適用(draft → ParsedNumberFilter)と
-//   個別クリア時の draft リセットに使うヘルパを追加 import します。
-import {
-  DEFAULT_NUMBER_FILTER_DRAFT,
-  buildNumberColumnFilterValueFromDraft,
-  buildParsedNumberFilterFromDraft,
-  type NumberFilterConditionDraft,
-} from './logic/numberFilterCondition';
-// 追加(filter-ext C): textSet のテキスト条件(即時適用と個別クリア)に使います。
-import {
-  DEFAULT_TEXT_FILTER_DRAFT,
-  buildParsedTextFilterFromDraft,
-  type TextFilterConditionDraft,
-} from './logic/textFilterCondition';
-// 追加(filter-ext D): dateSet の日付条件(即時適用と個別クリア)に使います。
-import {
-  DEFAULT_DATE_FILTER_DRAFT,
-  buildParsedDateFilterFromDraft,
-  type DateFilterConditionDraft,
-} from './logic/dateFilterCondition';
-// 追加(filter-ext D): dateSet 候補の日付キー正規化(ツリー選択・set 照合の単位)です。
-import { normalizeDateSetOptions } from './logic/dateFilterTree';
 // 追加(filter-ext E): filterType: 'auto' の実効種別推定(editor ヒント + 値サンプリング)です。
 import { inferColumnFilterType } from './logic/inferFilterType';
 // 変更(10-C): 3ペインレイアウト構築用の helper / 型を追加インポートします。
@@ -269,9 +246,7 @@ import type {
   // 追加(DS-3-0): 行モデルのシーム契約型です(rowModel の構築に使います)。
   RowModel,
   // 追加(記述子化): commit 経路で text/date/select/custom を記述子化する際の型です。
-  ColumnFilterValue,
   // 追加(12-A): set フィルター値の構築に使います。
-  SetColumnFilterValue,
   // 追加(filter-ext E): 'auto' を解決した後の実効フィルター種別です。
   ColumnFilterUiType,
   // 追加(imperative API #1): ref ハンドルと関連型です。
@@ -302,12 +277,6 @@ import { isCheckboxChecked, toggleCheckboxValue } from './logic/checkboxEditor';
 import { CheckboxCell } from './editors/CheckboxCell';
 import { decideCellWrite, scanInvalidCells } from './logic/validation';
 import ColumnFilterPopover from './view/ColumnFilterPopover';
-// 追加(反転set): set 選択状態 { mode, values } 型と mode 判定ヘルパです。
-//   変更(LINT-1): react-refresh 制約解消のため logic/setFilterSelection.ts へ移設しました。
-import {
-  isSetValueSelected,
-  type ColumnFilterSetSelection,
-} from './logic/setFilterSelection';
 // 追加(13-A): 列メニュー popover(列固定の切替 UI)です。
 import DefaultGridBottomBar from './view/DefaultGridBottomBar';
 import DefaultGridTopBar from './view/DefaultGridTopBar';
@@ -351,35 +320,6 @@ import type { ReactGridTypes } from './model/gridTypes';
 // import ColumnChooserPanel, {
 //   type ColumnChooserItem,
 // } from './view/ColumnChooserPanel';
-
-// 追加(反転set): 小さい側の集合に 1 件 / 複数件を加減する純ヘルパです(巨大側は作りません)。
-const setWith = (base: ReadonlySet<string>, value: string): Set<string> => {
-  const next = new Set(base);
-  next.add(value);
-  return next;
-};
-const setWithout = (base: ReadonlySet<string>, value: string): Set<string> => {
-  const next = new Set(base);
-  next.delete(value);
-  return next;
-};
-const setUnion = (base: ReadonlySet<string>, add: string[]): Set<string> => {
-  const next = new Set(base);
-  for (const value of add) {
-    next.add(value);
-  }
-  return next;
-};
-const setDifference = (
-  base: ReadonlySet<string>,
-  remove: string[],
-): Set<string> => {
-  const next = new Set(base);
-  for (const value of remove) {
-    next.delete(value);
-  }
-  return next;
-};
 
 // 追加(①-3): rows 未指定(serverSide 等)時の安定既定値です。参照同一を保ち、order パイプ
 //   ライン / rowModel など既存 memo を不要に揺らさないよう module スコープで 1 つだけ持ちます。
@@ -3214,548 +3154,63 @@ export function SpreadsheetGrid<T extends object>({
     getRawValueAt: getOpenedColumnRawValueAt,
   });
 
-  // 追加(filter-ext D): dateSet では候補をセル生値 → 正規化日付キーへ再集約します
-  //   ('2026/7/1' と '2026-07-01' が同一リーフへまとまるため、選択・set 照合・全選択判定の
-  //   分母(総数)もキー単位で数える必要があります)。他 filterType は同一参照で素通しです。
-  //   以降の popover 配線(候補 / 全値集合 / total)はこちらを参照します。
-  const isDateSetFilterColumn = openedFilterType === 'dateSet';
-  const openedPopoverSelectOptions = useMemo(
+  // 変更(本体分解 E-4b): popover の派生値(dateSet 正規化候補 / 全値集合 / set 選択状態 / 反転可否 / 複合列か)と
+  //   コマンド群(set のチェック・すべて選択・検索確定・クリア、複合列の条件編集と個別クリア、適用 / クリア)は
+  //   engine/filterPopoverCommands.ts(React 非依存)へ移設しました。
+  const [resolveFilterPopoverDerived] = useState(() =>
+    createFilterPopoverDerivedResolver<T>(),
+  );
+  const filterPopoverDerived = useMemo(
     () =>
-      isDateSetFilterColumn
-        ? normalizeDateSetOptions(openedFilterSelectOptions)
-        : openedFilterSelectOptions,
-    [isDateSetFilterColumn, openedFilterSelectOptions],
-  );
-  const openedPopoverAllValues = useMemo<ReadonlySet<string>>(
-    () =>
-      isDateSetFilterColumn
-        ? new Set(openedPopoverSelectOptions.map((option) => option.value))
-        : openedFilterAllValues,
-    [isDateSetFilterColumn, openedPopoverSelectOptions, openedFilterAllValues],
-  );
-
-  // 追加(12-A): popover を開いている列の set フィルター選択状態です。
-  //             null = 全選択(フィルター未設定)を意味します。
-  const openedSetFilterValue = openedFilterColumn
-    ? uiState.filters.columnFilters[openedFilterColumn.key]
-    : undefined;
-
-  // 追加(反転set): popover を開いている列の set 選択状態 { mode, values }(null = 全選択)。
-  //   values は常に小さい側のみ(include=選択値 / exclude=非選択値)。巨大側は作りません。
-  // 変更(filter-ext B/C): 複合(numberSet / textSet)記述子の set 部分からも導出します
-  //   (形は kind:'set' と同一)。
-  const openedSetSelection = useMemo<ColumnFilterSetSelection | null>(() => {
-    // 修正(filter-ext D): dateSet の読み漏れを追加。漏れていると dispatch(件数)は効くのに
-    //   チェック表示だけが常に全選択のままになる(選択状態の導出元がここのため)。
-    const setPart = isSetColumnFilterValue(openedSetFilterValue)
-      ? openedSetFilterValue
-      : isNumberSetColumnFilterValue(openedSetFilterValue) ||
-          isTextSetColumnFilterValue(openedSetFilterValue) ||
-          isDateSetColumnFilterValue(openedSetFilterValue)
-        ? openedSetFilterValue.set
-        : null;
-    if (!setPart) {
-      return null;
-    }
-    return {
-      mode: setPart.mode === 'exclude' ? 'exclude' : 'include',
-      values: new Set(setPart.values),
-    };
-  }, [openedSetFilterValue]);
-
-  // 追加(反転set): filterOptions を明示指定した列は universe が全行値を覆わない可能性があるため
-  //   exclude(反転)を選ばず include 固定にします(集合が小さく反転不要・挙動差も防止)。
-  //   スキャン収集列は universe=全行値で include≡exclude が保証されるため反転可。
-  const openedColumnCanInvert = !(
-    openedFilterColumn?.filterOptions &&
-    openedFilterColumn.filterOptions.length > 0
-  );
-
-  // 追加(filter-ext B/C): 複合(numberSet / textSet)列の記述子を「現在の条件を保持したまま
-  //   set 部分だけ差し替え」で構築します。条件は編集で即時 dispatch されるため、現在の記述子が
-  //   常に正です(draft から再合成しません)。condition も setPart も無ければ null
-  //   (= フィルターなし。呼び出し側で clearColumn へ倒す)。複合列でなければ null です。
-  const buildComboDescriptorWithSet = useCallback(
-    (
-      columnKey: string,
-      setPart: { mode?: 'include' | 'exclude'; values: string[] } | null,
-    ): ColumnFilterValue | null => {
-      const filterType =
-        openedFilterColumn?.key === columnKey ? openedFilterType : undefined;
-      const currentValue = uiState.filters.columnFilters[columnKey];
-      if (filterType === 'numberSet') {
-        const condition = isNumberSetColumnFilterValue(currentValue)
-          ? currentValue.condition
-          : null;
-        if (!condition && !setPart) {
-          return null;
-        }
-        return { kind: 'numberSet', condition, set: setPart };
-      }
-      if (filterType === 'textSet') {
-        const condition = isTextSetColumnFilterValue(currentValue)
-          ? currentValue.condition
-          : null;
-        if (!condition && !setPart) {
-          return null;
-        }
-        return { kind: 'textSet', condition, set: setPart };
-      }
-      if (filterType === 'dateSet') {
-        const condition = isDateSetColumnFilterValue(currentValue)
-          ? currentValue.condition
-          : null;
-        if (!condition && !setPart) {
-          return null;
-        }
-        return { kind: 'dateSet', condition, set: setPart };
-      }
-      return null;
-    },
-    [openedFilterColumn, uiState.filters.columnFilters, openedFilterType],
-  );
-
-  const isComboFilterColumn =
-    openedFilterType === 'numberSet' ||
-    openedFilterType === 'textSet' ||
-    openedFilterType === 'dateSet';
-
-  // 追加(反転set): set 選択結果を reducer へ反映します。全選択→clearColumn / 0 件→include{} /
-  //   中間→ハンドラが選んだ mode の小さい側。ハンドラが mode を確定済みのため complement
-  //   (O(total))はここで計算しません。total は候補総数(=universe サイズ)です。
-  // 変更(filter-ext B/C): 複合列では kind:'numberSet' / 'textSet' 記述子(condition 保持 +
-  //   set 部分)で commit します。「全選択」は set 制約なし(set: null)であり、condition が
-  //   残っていれば記述子ごと消さず condition のみで保存します(条件と選択の独立クリア)。
-  const commitSetFilterSelection = useCallback(
-    (columnKey: string, next: ColumnFilterSetSelection, total: number) => {
-      const isComboColumn =
-        openedFilterColumn?.key === columnKey && isComboFilterColumn;
-      const selectedCount =
-        next.mode === 'include' ? next.values.size : total - next.values.size;
-      if (selectedCount >= total) {
-        // 全選択(exclude{} 等)は set 制約なしへ正規化します。
-        if (isComboColumn) {
-          const descriptor = buildComboDescriptorWithSet(columnKey, null);
-          if (descriptor) {
-            dispatch(gridActions.setColumnFilter(columnKey, descriptor));
-            return;
-          }
-        }
-        dispatch(gridActions.clearColumnFilter(columnKey));
-        return;
-      }
-      // 何も選択されていない状態は include{}(小さい)で表現します(exclude{universe} を作らない)。
-      const setPart =
-        selectedCount <= 0
-          ? { mode: 'include' as const, values: [] as string[] }
-          : { mode: next.mode, values: Array.from(next.values) };
-      if (isComboColumn) {
-        const descriptor = buildComboDescriptorWithSet(columnKey, setPart);
-        if (descriptor) {
-          dispatch(gridActions.setColumnFilter(columnKey, descriptor));
-          return;
-        }
-      }
-      const nextValue: SetColumnFilterValue = {
-        kind: 'set',
-        ...setPart,
-      };
-      dispatch(gridActions.setColumnFilter(columnKey, nextValue));
-    },
-    [dispatch, openedFilterColumn, isComboFilterColumn, buildComboDescriptorWithSet],
-  );
-
-  // 追加(反転set): チェックボックス 1 件のトグルです(即時適用)。現在の選択 mode を保ったまま
-  //   小さい側へ ±1 します(巨大側を作りません)。null(全選択)からの解除は canInvert 列なら
-  //   exclude{value}、非invert 列(universe が小)なら include{universe∖value} になります。
-  const handleSetFilterValueToggle = useCallback(
-    (value: string) => {
-      if (!filterPopoverState) {
-        return;
-      }
-      const total = openedPopoverSelectOptions.length;
-      const selection = openedSetSelection;
-      let next: ColumnFilterSetSelection;
-      if (isSetValueSelected(selection, value)) {
-        // value を解除します。
-        if (selection === null) {
-          next = openedColumnCanInvert
-            ? { mode: 'exclude', values: new Set([value]) }
-            : {
-                mode: 'include',
-                values: setWithout(openedPopoverAllValues, value),
-              };
-        } else if (selection.mode === 'include') {
-          next = { mode: 'include', values: setWithout(selection.values, value) };
-        } else {
-          next = { mode: 'exclude', values: setWith(selection.values, value) };
-        }
-      } else {
-        // value を選択します(selection は null ではない: null は全選択)。
-        next =
-          selection!.mode === 'include'
-            ? { mode: 'include', values: setWith(selection!.values, value) }
-            : { mode: 'exclude', values: setWithout(selection!.values, value) };
-      }
-      commitSetFilterSelection(filterPopoverState.columnKey, next, total);
-    },
+      resolveFilterPopoverDerived({
+        openedFilterColumn,
+        openedFilterType,
+        openedFilterSelectOptions,
+        openedFilterAllValues,
+        columnFilters: uiState.filters.columnFilters,
+      }),
     [
-      filterPopoverState,
-      openedSetSelection,
-      openedColumnCanInvert,
-      openedPopoverAllValues,
-      openedPopoverSelectOptions,
-      commitSetFilterSelection,
-    ],
-  );
-
-  // 追加(反転set): (すべて選択) の一括トグルです。非検索は scope='all'(全候補)、検索中は
-  //   表示中候補(=小さい側)の values が渡ります。いずれも巨大側を作らず mode 空間で更新します。
-  const handleSetFilterSelectAllChange = useCallback(
-    (scope: 'all' | string[], nextChecked: boolean) => {
-      if (!filterPopoverState) {
-        return;
-      }
-      const columnKey = filterPopoverState.columnKey;
-      const total = openedPopoverSelectOptions.length;
-      if (scope === 'all') {
-        // 非検索: 全候補対象。全選択 / 全解除とも commit の正規化へ渡します
-        //   (全選択 = exclude{} → set 列は clear / numberSet 列は condition 保持で set: null)。
-        commitSetFilterSelection(
-          columnKey,
-          nextChecked
-            ? { mode: 'exclude', values: new Set() }
-            : { mode: 'include', values: new Set() },
-          total,
-        );
-        return;
-      }
-      // 検索中: scope = 表示中候補(小さい側)。現在 selection に ±scope を mode 空間で適用。
-      const selection = openedSetSelection;
-      let next: ColumnFilterSetSelection;
-      if (nextChecked) {
-        if (selection === null) {
-          // 全選択のまま(表示中を選択しても変化なし)。commit の正規化(全選択)へ渡します。
-          commitSetFilterSelection(
-            columnKey,
-            { mode: 'exclude', values: new Set() },
-            total,
-          );
-          return;
-        }
-        next =
-          selection.mode === 'include'
-            ? { mode: 'include', values: setUnion(selection.values, scope) }
-            : { mode: 'exclude', values: setDifference(selection.values, scope) };
-      } else {
-        if (selection === null) {
-          next = openedColumnCanInvert
-            ? { mode: 'exclude', values: new Set(scope) }
-            : {
-                mode: 'include',
-                values: setDifference(openedPopoverAllValues, scope),
-              };
-        } else if (selection.mode === 'include') {
-          next = { mode: 'include', values: setDifference(selection.values, scope) };
-        } else {
-          next = { mode: 'exclude', values: setUnion(selection.values, scope) };
-        }
-      }
-      commitSetFilterSelection(columnKey, next, total);
-    },
-    [
-      filterPopoverState,
-      openedSetSelection,
-      openedColumnCanInvert,
-      openedPopoverAllValues,
-      openedPopoverSelectOptions,
-      commitSetFilterSelection,
-    ],
-  );
-
-  // 追加(SF-ENTER): 検索 Enter 確定です。選択を「検索一致候補のみ」の include 集合へ
-  //   置換します(Excel の検索 → OK と同挙動)。全候補一致は commitSetFilterSelection の
-  //   既存正規化で clear(フィルターなし)へ、0 件一致は popover 側で no-op 済みです。
-  //   注記: 一致が候補の過半でも include のまま持ちます(検索確定は絞り込み用途が主で、
-  //   反転(exclude)最適化は complement の全候補走査を要するため見送り。必要なら追補)。
-  const handleSetFilterReplaceSelection = useCallback(
-    (values: string[]) => {
-      if (!filterPopoverState) {
-        return;
-      }
-      commitSetFilterSelection(
-        filterPopoverState.columnKey,
-        { mode: 'include', values: new Set(values) },
-        openedPopoverSelectOptions.length,
-      );
-    },
-    [filterPopoverState, commitSetFilterSelection, openedPopoverSelectOptions],
-  );
-
-  // 追加(12-A): set フィルターの「クリア」です。即時適用 UI のため popover は閉じず、
-  //             全選択(フィルターなし)へ戻して結果を見ながら操作を続けられるようにします。
-  // 変更(filter-ext B/C): 複合(numberSet / textSet)ではフッターの「クリア」= 全消しです
-  //   (条件 + 選択)。記述子の削除に加えて条件 draft も既定へ戻します(UI 表示の同期)。
-  const clearSetFilterPopoverValue = useCallback(() => {
-    if (!filterPopoverState) {
-      return;
-    }
-    dispatch(gridActions.clearColumnFilter(filterPopoverState.columnKey));
-    if (openedFilterType === 'numberSet') {
-      updateFilterPopoverNumberDraft(DEFAULT_NUMBER_FILTER_DRAFT);
-    }
-    if (openedFilterType === 'textSet') {
-      updateFilterPopoverTextDraft(DEFAULT_TEXT_FILTER_DRAFT);
-    }
-    if (openedFilterType === 'dateSet') {
-      updateFilterPopoverDateDraft(DEFAULT_DATE_FILTER_DRAFT);
-    }
-  }, [
-    dispatch,
-    filterPopoverState,
-    updateFilterPopoverNumberDraft,
-    updateFilterPopoverTextDraft,
-    updateFilterPopoverDateDraft,
-    openedFilterType,
-  ]);
-
-  // 追加(filter-ext B/C): 複合列の set 部分を「現在の記述子」から取り出します(条件編集の
-  //   即時 dispatch で選択を保持するため)。防御: filterType 変更等で旧 kind:'set' 値が
-  //   残っていれば set 部分として取り込みます(openedSetSelection と同じ規則)。
-  const getComboColumnSetPart = useCallback(
-    (
-      columnKey: string,
-    ): { mode?: 'include' | 'exclude'; values: string[] } | null => {
-      const currentValue = uiState.filters.columnFilters[columnKey];
-      if (
-        isNumberSetColumnFilterValue(currentValue) ||
-        isTextSetColumnFilterValue(currentValue) ||
-        isDateSetColumnFilterValue(currentValue)
-      ) {
-        return currentValue.set;
-      }
-      if (isSetColumnFilterValue(currentValue)) {
-        return { mode: currentValue.mode, values: currentValue.values };
-      }
-      return null;
-    },
-    [uiState.filters.columnFilters],
-  );
-
-  // 追加(filter-ext B): numberSet の条件編集です。draft を UI へ即時反映しつつ、合成した
-  //   condition で記述子を即時 dispatch します(チェック操作と同じ即時適用モデル)。
-  //   打鍵ごとの再計算は clientSide では deferredColumnFilters(低優先度レンダー)が、
-  //   SSRM では既存の query debounce(約 300ms)が吸収するため、追加のデバウンスは持ちません。
-  //   number 列(適用ボタン方式)では draft 更新のみで、commit は applyFilterPopoverValue の
-  //   責務のままです。
-  const handleNumberConditionDraftChange = useCallback(
-    (draft: NumberFilterConditionDraft) => {
-      updateFilterPopoverNumberDraft(draft);
-      if (!filterPopoverState || openedFilterType !== 'numberSet') {
-        return;
-      }
-      const columnKey = filterPopoverState.columnKey;
-      const condition = buildParsedNumberFilterFromDraft(draft);
-      const setPart = getComboColumnSetPart(columnKey);
-      if (!condition && !setPart) {
-        // 条件も選択もない = フィルターなし(記述子が残っていれば削除)。
-        if (uiState.filters.columnFilters[columnKey]) {
-          dispatch(gridActions.clearColumnFilter(columnKey));
-        }
-        return;
-      }
-      dispatch(
-        gridActions.setColumnFilter(columnKey, {
-          kind: 'numberSet',
-          condition,
-          set: setPart,
-        }),
-      );
-    },
-    [
-      updateFilterPopoverNumberDraft,
-      filterPopoverState,
-      getComboColumnSetPart,
-      uiState.filters.columnFilters,
-      dispatch,
+      resolveFilterPopoverDerived,
+      openedFilterColumn,
       openedFilterType,
-    ],
-  );
-
-  // 追加(filter-ext C): textSet のテキスト条件編集です(数値版と同じ即時適用モデル)。
-  const handleTextConditionDraftChange = useCallback(
-    (draft: TextFilterConditionDraft) => {
-      updateFilterPopoverTextDraft(draft);
-      if (!filterPopoverState || openedFilterType !== 'textSet') {
-        return;
-      }
-      const columnKey = filterPopoverState.columnKey;
-      const condition = buildParsedTextFilterFromDraft(draft);
-      const setPart = getComboColumnSetPart(columnKey);
-      if (!condition && !setPart) {
-        if (uiState.filters.columnFilters[columnKey]) {
-          dispatch(gridActions.clearColumnFilter(columnKey));
-        }
-        return;
-      }
-      dispatch(
-        gridActions.setColumnFilter(columnKey, {
-          kind: 'textSet',
-          condition,
-          set: setPart,
-        }),
-      );
-    },
-    [
-      updateFilterPopoverTextDraft,
-      filterPopoverState,
-      getComboColumnSetPart,
+      openedFilterSelectOptions,
+      openedFilterAllValues,
       uiState.filters.columnFilters,
-      dispatch,
-      openedFilterType,
     ],
   );
-
-  // 追加(filter-ext D): dateSet の日付条件編集です(数値・テキスト版と同じ即時適用モデル。
-  //   相対プリセットは相対のまま記述子に入り、評価のたびに解決されます)。
-  const handleDateConditionDraftChange = useCallback(
-    (draft: DateFilterConditionDraft) => {
-      updateFilterPopoverDateDraft(draft);
-      if (!filterPopoverState || openedFilterType !== 'dateSet') {
-        return;
-      }
-      const columnKey = filterPopoverState.columnKey;
-      const condition = buildParsedDateFilterFromDraft(draft);
-      const setPart = getComboColumnSetPart(columnKey);
-      if (!condition && !setPart) {
-        if (uiState.filters.columnFilters[columnKey]) {
-          dispatch(gridActions.clearColumnFilter(columnKey));
-        }
-        return;
-      }
-      dispatch(
-        gridActions.setColumnFilter(columnKey, {
-          kind: 'dateSet',
-          condition,
-          set: setPart,
-        }),
-      );
-    },
-    [
-      updateFilterPopoverDateDraft,
+  const {
+    openedPopoverSelectOptions,
+    openedSetFilterValue,
+    openedSetSelection,
+  } = filterPopoverDerived;
+  const filterPopoverCommands = useController(
+    () => createFilterPopoverCommands<T>(),
+    {
       filterPopoverState,
-      getComboColumnSetPart,
-      uiState.filters.columnFilters,
-      dispatch,
+      openedFilterColumn,
       openedFilterType,
-    ],
+      columnFilters: uiState.filters.columnFilters,
+      derived: filterPopoverDerived,
+      dispatch,
+      closeColumnFilterPopover,
+      updateNumberDraft: updateFilterPopoverNumberDraft,
+      updateTextDraft: updateFilterPopoverTextDraft,
+      updateDateDraft: updateFilterPopoverDateDraft,
+    },
   );
-
-  // 追加(filter-ext B/C/D): 複合の「条件」個別クリアです(選択は保持)。draft を既定へ戻し、
-  //   condition: null で再 dispatch します(set も無ければ clear へ倒れます)。
-  const handleComboConditionClear = useCallback(() => {
-    if (openedFilterType === 'textSet') {
-      handleTextConditionDraftChange(DEFAULT_TEXT_FILTER_DRAFT);
-      return;
-    }
-    if (openedFilterType === 'dateSet') {
-      handleDateConditionDraftChange(DEFAULT_DATE_FILTER_DRAFT);
-      return;
-    }
-    handleNumberConditionDraftChange(DEFAULT_NUMBER_FILTER_DRAFT);
-  }, [
+  const {
+    handleSetFilterValueToggle,
+    handleSetFilterSelectAllChange,
+    handleSetFilterReplaceSelection,
+    clearSetFilterPopoverValue,
+    handleNumberConditionDraftChange,
     handleTextConditionDraftChange,
     handleDateConditionDraftChange,
-    handleNumberConditionDraftChange,
-    openedFilterType,
-  ]);
-
-  // 追加(filter-ext B/C): 複合の「値」個別クリアです(条件は保持)。set 制約だけを
-  //   外します(条件も無ければ記述子ごと削除)。
-  const handleComboSelectionClear = useCallback(() => {
-    if (!filterPopoverState) {
-      return;
-    }
-    const columnKey = filterPopoverState.columnKey;
-    const descriptor = buildComboDescriptorWithSet(columnKey, null);
-    if (descriptor) {
-      dispatch(gridActions.setColumnFilter(columnKey, descriptor));
-      return;
-    }
-    dispatch(gridActions.clearColumnFilter(columnKey));
-  }, [filterPopoverState, buildComboDescriptorWithSet, dispatch]);
-
-  const applyFilterPopoverValue = useCallback(() => {
-    if (!filterPopoverState) {
-      return;
-    }
-    // 変更(filter-ext E): 列定義の filterType('auto' を含む)ではなく、open 時に解決済みの
-    //   実効種別で分岐します(auto 列でも正しい commit 経路へ入ります)。
-    const filterType = openedFilterType ?? 'text';
-    // 追加(12-A): set フィルターは即時適用のため、ここでは閉じるだけにします
-    //             (Enter 等で誤って draftValue が書き込まれるのを防ぎます)。
-    // 変更(filter-ext B/C/D): 複合(numberSet / textSet / dateSet)も即時適用のため同様です。
-    if (
-      filterType === 'set' ||
-      filterType === 'numberSet' ||
-      filterType === 'textSet' ||
-      filterType === 'dateSet'
-    ) {
-      closeColumnFilterPopover();
-      return;
-    }
-    // 変更(filter-ext A): number は構造化 draft(演算子 + 値)から記述子を構築して commit
-    //   します(旧・式テキストの parse 経路は popover から撤去)。有効な条件にならない入力
-    //   (値が空 / 非数値)は従来の空入力と同じく clearColumn へ倒します。raw には人間可読の
-    //   表示文字列(「10 以上」等)が入り、チップ / 管理パネル / 現在値表示にそのまま出ます。
-    if (filterType === 'number') {
-      const descriptor = filterPopoverState.numberDraft
-        ? buildNumberColumnFilterValueFromDraft(filterPopoverState.numberDraft)
-        : null;
-      if (!descriptor) {
-        dispatch(gridActions.clearColumnFilter(filterPopoverState.columnKey));
-        closeColumnFilterPopover();
-        return;
-      }
-      dispatch(
-        gridActions.setColumnFilter(filterPopoverState.columnKey, descriptor),
-      );
-      closeColumnFilterPopover();
-      return;
-    }
-    const normalized =
-      filterType === 'select'
-        ? filterPopoverState.draftValue
-        : filterPopoverState.draftValue.trim();
-    if (!normalized) {
-      dispatch(gridActions.clearColumnFilter(filterPopoverState.columnKey));
-      closeColumnFilterPopover();
-      return;
-    }
-    // 変更(記述子化): text / date / select / custom も生文字列ではなくタグ付き記述子で commit します。
-    //   ここは列定義(filterType)を持つ唯一の境界なので、filterType → kind の対応付けはここで行います
-    //   (合否は旧・生文字列時代と等価: text/date=部分一致 / select=完全一致 / custom=filterFn or 部分一致)。
-    const descriptor: ColumnFilterValue =
-      filterType === 'select'
-        ? { kind: 'select', value: normalized }
-        : filterType === 'date'
-          ? { kind: 'date', value: normalized }
-          : filterType === 'custom'
-            ? { kind: 'custom', value: normalized }
-            : { kind: 'text', value: normalized };
-    dispatch(
-      gridActions.setColumnFilter(filterPopoverState.columnKey, descriptor),
-    );
-    closeColumnFilterPopover();
-  }, [closeColumnFilterPopover, dispatch, filterPopoverState, openedFilterType]);
-
-  const clearFilterPopoverValue = useCallback(() => {
-    if (!filterPopoverState) {
-      return;
-    }
-    dispatch(gridActions.clearColumnFilter(filterPopoverState.columnKey));
-    closeColumnFilterPopover();
-  }, [closeColumnFilterPopover, dispatch, filterPopoverState]);
+    handleComboConditionClear,
+    handleComboSelectionClear,
+    applyFilterPopoverValue,
+    clearFilterPopoverValue,
+  } = filterPopoverCommands;
 
   // 変更(UI CSS移行): getHeaderActionButtonStyle(インライン)を撤去しました。
   //   ヘッダーアイコンボタンのスタイルは styles.css(.ssg-icon-btn / --active / :hover)へ移行。
