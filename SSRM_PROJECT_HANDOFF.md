@@ -8,7 +8,7 @@
 
 - React 19 + TypeScript + Vite 製のカスタム AG Grid 風・仮想化データグリッドのライブラリ化プロジェクト。
 - 公開パッケージ: `@ishibashi0112/spreadsheet-grid`(npm)。現行 **v0.15.0**。
-- ツールチェーンは vite+(VoidZero 統合、`vp` コマンド)。仮想化は `@tanstack/react-virtual` v3、テストは Vitest。
+- ツールチェーンは vite+(VoidZero 統合、`vp` コマンド)。仮想化は `@tanstack/virtual-core` v3(React アダプタは自前 `hooks/useVirtualizerCore.ts`。2026-09-13 非依存化 ②で react-virtual から切替)、テストは Vitest。
 - 消費側 UI 例: Mantine / HeroUI / Tailwind(v3・v4)。共存が設計要件。
 - 公開 API の詳細は `src/components/spreadsheet-grid/API_REFERENCE.md` を参照。
 
@@ -39,7 +39,7 @@
 
 - 3 ペイン固定列レイアウト(左右ピン + 中央)。縦横スクロールは 1 本の共有スクロールコンテナで、
   固定列は `position: sticky`(10-G)。
-- 行仮想化は `@tanstack/react-virtual`。auto-height 行(可変行高)対応(行数 ≤ 50,000 のゲート付き、
+- 列仮想化(と候補リスト)は `@tanstack/virtual-core` + 自前アダプタ(縦は `logic/verticalGeometry`)。auto-height 行(可変行高)対応(行数 ≤ 50,000 のゲート付き、
   超過時は uniform へフォールバック)。大規模行数では論理→物理スクロールの圧縮(scroll-space 仮想化)。
 - 仮想化 DOM 上のドラッグは window レベルのリスナ + `pointerId` フィルタ(要素直付けは capture 対象の
   unmount で壊れるため)。

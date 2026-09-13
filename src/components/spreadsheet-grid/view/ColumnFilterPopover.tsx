@@ -15,7 +15,7 @@ export type ColumnFilterDateInputRenderer = (
 // 変更(12-A): set フィルター(検索 + Select All + チェックボックス一覧)用に
 //             hooks と useVirtualizer を追加 import します。
 //             候補リストは品番のように 5,000 件規模になり得るため、
-//             本体グリッドと同じ @tanstack/react-virtual で行仮想化します。
+//             本体グリッドと同じ @tanstack/virtual-core(useVirtualizerCore)で行仮想化します。
 import {
   useDeferredValue,
   useMemo,
@@ -27,7 +27,7 @@ import {
   type ReactNode,
   type RefObject,
 } from 'react';
-import { useVirtualizer } from '@tanstack/react-virtual';
+import { useVirtualizerCore } from '../hooks/useVirtualizerCore';
 // 追加(SF-ENTER): set フィルター検索の一致関数と Enter 確定の振る舞い判定です(純関数)。
 //   view ファイルからの非コンポーネント export は react-refresh 制約(eslint baseline)に
 //   触れるため、logic/setFilterSearch.ts に置いて共有しています。
@@ -240,7 +240,7 @@ function SetFilterBody({
 
   // 追加(12-A): 候補リストの行仮想化です。表示領域ぶん + overscan のみ DOM 化します。
   const listScrollRef = useRef<HTMLDivElement | null>(null);
-  const optionVirtualizer = useVirtualizer({
+  const optionVirtualizer = useVirtualizerCore({
     count: visibleOptions.length,
     getScrollElement: () => listScrollRef.current,
     estimateSize: () => SET_FILTER_OPTION_ROW_HEIGHT,
@@ -756,11 +756,7 @@ function DateSetFilterBody({
 
   const listScrollRef = useRef<HTMLDivElement | null>(null);
   const rowCount = isSearching ? flatMatches.length : treeRows.length;
-  // 注記(filter-ext D): TanStack Virtual は React Compiler 非互換(メモ化スキップの情報警告)。
-  //   SetFilterBody / 本体グリッドの useVirtualizer と同種の既知事象のため、eslint baseline を
-  //   増やさないようここでは明示的に抑止します(挙動への影響はありません)。
-  // eslint-disable-next-line react-hooks/incompatible-library
-  const rowVirtualizer = useVirtualizer({
+  const rowVirtualizer = useVirtualizerCore({
     count: rowCount,
     getScrollElement: () => listScrollRef.current,
     estimateSize: () => SET_FILTER_OPTION_ROW_HEIGHT,

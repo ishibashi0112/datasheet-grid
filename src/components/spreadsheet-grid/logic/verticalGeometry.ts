@@ -67,7 +67,7 @@ export const shouldUseAutoHeight = (
 //   1 回で、per-row 値が更新されるのはその瞬間だけです。
 export const WINDOW_BASE_CHUNK_PX = 1 << 20;
 
-// 描画する 1 行の窓エントリです(旧 @tanstack/react-virtual の VirtualItem 互換)。
+// 描画する 1 行の窓エントリです(@tanstack/virtual-core の VirtualItem 互換)。
 export type VerticalRow = {
   index: number;
   // 行の論理 top(headerHeight 込み)。GridBodyLayer の translateY 基準(virtualRow.start 互換)。

@@ -1,3 +1,13 @@
+/* eslint-disable react-hooks/refs, react-hooks/immutability, react-hooks/set-state-in-effect */
+// 注記(非依存化 ②): 上の 3 ルール(React Compiler 系 lint)は本ファイルでは理由付きで無効化しています。
+//   旧 @tanstack/react-virtual の useVirtualizer は「Compiler 非互換ライブラリ」として扱われ、その
+//   呼び出しを含む本コンポーネント全体が Compiler 系 lint の解析対象外でした。自前アダプタ
+//   (hooks/useVirtualizerCore)へ切り替えた結果、意図的な latest-ref イディオム(レンダー中の
+//   ref.current 参照 / 代入。CLAUDE.md 参照)が 16 件のエラーとして初めて表面化したため、以前と
+//   同じ扱い(解析対象外)を明示します。'use no memo' は lint モードではエラー報告が先に走るため
+//   使えません。イディオムの解消は非依存化 ③(hooks をコントローラへ抽出し本体を分解する段階)で
+//   行い、その時点で本ディレクティブを外します。ビルドでは React Compiler を使っていないため
+//   実行時の挙動は変わりません。
 // 追加: 列フィルター UI 整備 + ソート/フィルター見た目強化を反映します。
 import {
   useEffect,
@@ -28,7 +38,7 @@ import {
   useResolvedGridSlots,
 } from './hooks/useResolvedGridSlots';
 
-import { useVirtualizer } from '@tanstack/react-virtual';
+import { useVirtualizerCore } from './hooks/useVirtualizerCore';
 
 import { gridActions } from './model/gridActions';
 import { createInitialGridUiState, gridUiReducer } from './model/gridReducer';
@@ -1921,7 +1931,7 @@ export function SpreadsheetGrid<T extends object>({
   //           従来の列仮想化と完全に一致します。
   const centerEntries = paneLayout.center.entries;
 
-  const columnVirtualizer = useVirtualizer({
+  const columnVirtualizer = useVirtualizerCore({
     horizontal: true,
     count: centerEntries.length,
     getScrollElement: () => scrollContainerRef.current,

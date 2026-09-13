@@ -4,7 +4,7 @@
 // 背景: jsdom はレイアウトを計算しないため、素の jsdom では実グリッドが 1 行も描画されません。
 //   - 縦方向: SpreadsheetGrid の effect がスクロール要素の clientHeight / clientWidth を読み、
 //     以後 ResizeObserver で追従します(jsdom では 0 のため行が出ない)。
-//   - 横方向: @tanstack/react-virtual の useVirtualizer がスクロール要素の矩形を
+//   - 横方向: 列仮想化(@tanstack/virtual-core + hooks/useVirtualizerCore)がスクロール要素の矩形を
 //     「ResizeObserver の通知」から得るため、observe() が no-op のスタブだと幅 0 のまま
 //     列が 1 本も描画されません(getBoundingClientRect のスタブだけでは不足)。
 //   本モジュールは両方をまとめて解決し、実グリッドの行 / セル(付与クラス・セル文字列)を
@@ -32,7 +32,7 @@ type ResizeObserverCallbackLike = (entries: unknown[], observer: unknown) => voi
 //   - HTMLElement.prototype.clientHeight / clientWidth を固定値の getter に差し替え
 //   - Element.prototype.getBoundingClientRect を固定矩形に差し替え
 //   - globalThis.ResizeObserver を「observe() 時に即時コールバックする」スタブへ差し替え
-//     (react-virtual はこの通知から矩形を得るため、即時発火が必須)
+//     (virtual-core はこの通知から矩形を得るため、即時発火が必須)
 //   - Element.prototype.scrollTo が無ければ no-op を補う
 export function installJsdomLayoutStubs(
   options: JsdomLayoutStubOptions = {},
@@ -86,7 +86,7 @@ export function installJsdomLayoutStubs(
     }
     observe(target: Element): void {
       const size = { inlineSize: width, blockSize: height };
-      // observe 時に即時コールバックします。react-virtual はここから矩形を得ます。
+      // observe 時に即時コールバックします。virtual-core はここから矩形を得ます。
       this.callback(
         [
           {

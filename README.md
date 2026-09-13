@@ -44,7 +44,7 @@ npm install @ishibashi0112/spreadsheet-grid
 # yarn add @ishibashi0112/spreadsheet-grid
 ```
 
-Requires **react** and **react-dom** `>= 19` as peer dependencies (install them in your app if you have not already). `@tanstack/react-virtual` is a regular dependency and is installed automatically.
+Requires **react** and **react-dom** `>= 19` as peer dependencies (install them in your app if you have not already). `@tanstack/virtual-core` (the framework-agnostic core of TanStack Virtual) is a regular dependency and is installed automatically; the React adapter is bundled with the grid.
 
 ## Styles
 
@@ -333,7 +333,7 @@ npm install @ishibashi0112/spreadsheet-grid
 # yarn add @ishibashi0112/spreadsheet-grid
 ```
 
-peer 依存として **react** / **react-dom** `>= 19` が必要です（未導入なら利用側で入れてください）。`@tanstack/react-virtual` は通常依存として自動的に入ります。
+peer 依存として **react** / **react-dom** `>= 19` が必要です（未導入なら利用側で入れてください）。`@tanstack/virtual-core`（TanStack Virtual のフレームワーク非依存コア）は通常依存として自動的に入ります。React 向けアダプタはグリッド側に同梱しています。
 
 ### スタイル
 

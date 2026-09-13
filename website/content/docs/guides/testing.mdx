@@ -8,7 +8,7 @@ description: installJsdomLayoutStubs による実グリッドの jsdom 描画テ
 jsdom はレイアウトを計算しないため、素の jsdom では実グリッドの行・列が 1 本も描画されません。
 
 - **縦方向**: グリッドはスクロール要素の `clientHeight` / `clientWidth` を読んで可視行数を決めますが、jsdom では 0 のため行が出ません。
-- **横方向**: `@tanstack/react-virtual` はスクロール要素の矩形を **ResizeObserver の通知**から得るため、`observe()` が no-op のスタブだと幅 0 のまま列が描画されません(`getBoundingClientRect` のスタブだけでは不足)。
+- **横方向**: 列仮想化(`@tanstack/virtual-core`)はスクロール要素の矩形を **ResizeObserver の通知**から得るため、`observe()` が no-op のスタブだと幅 0 のまま列が描画されません(`getBoundingClientRect` のスタブだけでは不足)。
 
 ## installJsdomLayoutStubs
 

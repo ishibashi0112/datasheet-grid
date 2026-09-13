@@ -4,7 +4,7 @@ import react from '@vitejs/plugin-react'
 
 // SpreadsheetGrid のライブラリビルド設定です(npm 配布物 dist を生成)。
 //   - デモ app 用の vite.config.ts とは分離します。デモは `npm run dev` / `npm run build:demo`。
-//   - entry は公開バレル index.ts。react / react-dom / @tanstack/react-virtual はバンドルせず
+//   - entry は公開バレル index.ts。react / react-dom / @tanstack/virtual-core はバンドルせず
 //     外部化し、利用側(peer / 依存)が解決します。サブパス import も正規表現で除外します。
 //   - styles.css は JS から分離して単一の dist/style.css へ抽出します(自動注入はしません)。
 //     利用側は `import '<pkg>/style.css'` で読み込みます。@layer ssg-base 版の style.layer.css は
@@ -25,11 +25,12 @@ export default defineConfig({
       fileName: (format, entryName) => `${entryName}.${format === 'es' ? 'js' : 'cjs'}`,
     },
     rollupOptions: {
-      // react 系と react-virtual を外部化(サブパス import も含めて除外)。
+      // react 系と virtual-core を外部化(サブパス import も含めて除外)。
+      //   変更(非依存化 ②): @tanstack/react-virtual → @tanstack/virtual-core(React アダプタは自前)。
       external: (id) =>
         /^react($|\/)/.test(id) ||
         /^react-dom($|\/)/.test(id) ||
-        /^@tanstack\/react-virtual($|\/)/.test(id),
+        /^@tanstack\/virtual-core($|\/)/.test(id),
       output: {
         // 公開バレルは named export のみ。
         exports: 'named',

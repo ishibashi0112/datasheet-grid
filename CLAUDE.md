@@ -5,7 +5,7 @@ React 19 + TypeScript + Vite 製のカスタム AG Grid 風・仮想化データ
 ## 技術スタック
 
 - React 19 / TypeScript / Vite。ツールチェーンは vite+(VoidZero 統合、`vp` コマンド)。
-- `@tanstack/react-virtual` v3、Vitest、pnpm 11.12.0。
+- `@tanstack/virtual-core` v3(React アダプタは自前 `hooks/useVirtualizerCore.ts`)、Vitest、pnpm 11.12.0。
 - 公開パッケージ: `@ishibashi0112/spreadsheet-grid`(npm、`publishConfig.access: public`、`prepublishOnly` で `build:lib`)。
 - 消費側 UI 例: Mantine / HeroUI / Tailwind(v3・v4)。共存が設計要件。
 
@@ -19,9 +19,9 @@ React 19 + TypeScript + Vite 製のカスタム AG Grid 風・仮想化データ
 
 ### eslint
 
-- baseline を **1 件も増やさない**。現状 **3 problems(0 errors / 3 warnings)** ── ただしセッション冒頭に実測で確定する。対象は `**/*.{ts,tsx}` のみ(`.mjs` スクリプトは対象外)。errors は 2026-07 に全件解消済み(修正 or 理由付き disable)。CI で lint はブロッキング。
+- baseline を **1 件も増やさない**。現状 **1 problem(0 errors / 1 warning)**(2026-09-13 非依存化 ②で react-virtual 起因の `incompatible-library` 2 件が消滅)── ただしセッション冒頭に実測で確定する。対象は `**/*.{ts,tsx}` のみ(`.mjs` スクリプトは対象外)。errors は 2026-07 に全件解消済み(修正 or 理由付き disable)。CI で lint はブロッキング。
 - `react-hooks/set-state-in-effect` は「effect 内の**先頭** setState のみ報告」する。先頭でない setState に disable を付けると Unused directive warning になる。
-- render 中の `ref.current = x` 代入は baseline にカウントされる。新しい安定コールバックは latest-ref を増やさず `useCallback` の deps に直接入れる。rAF tick から不安定な関数を読む必要がある場合は useEffect 内で同期する latest-ref(RS-AS 方式)。
+- `SpreadsheetGrid.tsx` はファイル先頭で `react-hooks/refs` / `immutability` / `set-state-in-effect` を理由付きで無効化している(旧 react-virtual の「Compiler 非互換」扱いで解析対象外だった状態を、非依存化 ②で明示化。16 件の latest-ref イディオムは ③ の分解時に解消し、その時点で外す)。他ファイルでは render 中の `ref.current = x` 代入は baseline にカウントされる。新しい安定コールバックは latest-ref を増やさず `useCallback` の deps に直接入れる。rAF tick から不安定な関数を読む必要がある場合は useEffect 内で同期する latest-ref(RS-AS 方式)。
 
 ### TypeScript
 
@@ -46,7 +46,7 @@ React 19 + TypeScript + Vite 製のカスタム AG Grid 風・仮想化データ
 | --- | --- | --- |
 | tsc(build) | `vp exec tsc -b` | 0 |
 | tsc(test) | `vp exec tsc -p tsconfig.vitest.json --noEmit` | 0 |
-| eslint | `vp exec eslint .` | baseline 維持(現状 0 errors / 3 warnings) |
+| eslint | `vp exec eslint .` | baseline 維持(現状 0 errors / 1 warning) |
 | test | `vp test` | 全緑(現状 ~1,032 tests / 93 files) |
 | build | `vp build`(publish 経路は `build:lib` = `vp build --config vite.lib.config.ts` + `tsc -p tsconfig.lib.json` + emit-layer-css) | 0 |
 

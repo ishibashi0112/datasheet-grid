@@ -1131,7 +1131,7 @@ const dataSource: ServerSideDataSource<Row> = {
 
 ## テスト支援(`/testing` サブパス)
 
-jsdom はレイアウトを計算しないため、素の jsdom では実グリッドの行・列が 1 本も描画されない(縦: スクロール要素の `clientHeight` / `clientWidth` が 0。横: `@tanstack/react-virtual` が **ResizeObserver の通知**から矩形を得るため、no-op スタブでは幅 0 のまま)。`@ishibashi0112/spreadsheet-grid/testing` の `installJsdomLayoutStubs()` がこれをまとめて解決する(proposals ③)。
+jsdom はレイアウトを計算しないため、素の jsdom では実グリッドの行・列が 1 本も描画されない(縦: スクロール要素の `clientHeight` / `clientWidth` が 0。横: 列仮想化(`@tanstack/virtual-core`)が **ResizeObserver の通知**から矩形を得るため、no-op スタブでは幅 0 のまま)。`@ishibashi0112/spreadsheet-grid/testing` の `installJsdomLayoutStubs()` がこれをまとめて解決する(proposals ③)。
 
 ```ts
 // @vitest-environment jsdom
