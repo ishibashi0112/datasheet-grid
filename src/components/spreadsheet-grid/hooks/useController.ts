@@ -18,11 +18,12 @@ export type ControllerLike<Args> = {
   dispose?: () => void;
 };
 
-export function useController<Args, C extends ControllerLike<Args>>(
-  create: () => C,
+// 追加(本体分解 E-3): 生成済みコントローラの接続だけを行う下位 hook です。生成をレンダー中に(スナップショットの
+//   購読より前に)済ませたい場合に、useState(create) と組み合わせて使います。
+export function useControllerLifecycle<Args, C extends ControllerLike<Args>>(
+  controller: C,
   args: Args,
-): C {
-  const [controller] = useState(create);
+): void {
   useIsomorphicLayoutEffect(() => {
     controller.update(args);
   });
@@ -31,5 +32,13 @@ export function useController<Args, C extends ControllerLike<Args>>(
       controller.dispose?.();
     };
   }, [controller]);
+}
+
+export function useController<Args, C extends ControllerLike<Args>>(
+  create: () => C,
+  args: Args,
+): C {
+  const [controller] = useState(create);
+  useControllerLifecycle(controller, args);
   return controller;
 }
