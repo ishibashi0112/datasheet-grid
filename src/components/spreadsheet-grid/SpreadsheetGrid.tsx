@@ -1,14 +1,7 @@
-/* eslint-disable react-hooks/refs */
-// 注記(非依存化 ②): 上のルール(React Compiler 系 lint)は本ファイルでは理由付きで無効化しています
-//   (set-state-in-effect は本体分解 E-3、immutability は E-5 で該当箇所が消えたため外しました)。
-//   旧 @tanstack/react-virtual の useVirtualizer は「Compiler 非互換ライブラリ」として扱われ、その
-//   呼び出しを含む本コンポーネント全体が Compiler 系 lint の解析対象外でした。自前アダプタ
-//   (hooks/useVirtualizerCore)へ切り替えた結果、意図的な latest-ref イディオム(レンダー中の
-//   ref.current 参照 / 代入。CLAUDE.md 参照)が 16 件のエラーとして初めて表面化したため、以前と
-//   同じ扱い(解析対象外)を明示します。'use no memo' は lint モードではエラー報告が先に走るため
-//   使えません。イディオムの解消は非依存化 ③(hooks をコントローラへ抽出し本体を分解する段階)で
-//   行い、その時点で本ディレクティブを外します。ビルドでは React Compiler を使っていないため
-//   実行時の挙動は変わりません。
+// 注記(非依存化 ②〜本体分解 E-6): 旧 @tanstack/react-virtual 時代に Compiler 系 lint の解析対象外だった本ファイルは、
+//   非依存化 ②で latest-ref イディオム(レンダー中の ref.current 参照 / 代入)16 件が表面化し file 単位で
+//   react-hooks/refs・immutability・set-state-in-effect を無効化していました。本体分解 E-1〜E-6 でエンジン /
+//   コントローラへ移設して全件解消したため、ディレクティブはすべて外しています(新規の latest-ref は増やさないこと)。
 // 追加: 列フィルター UI 整備 + ソート/フィルター見た目強化を反映します。
 import {
   useEffect,
@@ -59,6 +52,8 @@ import {
 } from './engine/filterPopoverCommands';
 import { createAutoHeightMeasurer } from './controllers/autoHeightMeasurer';
 import { createDebouncedValueStore } from './controllers/debouncedValueStore';
+import { createScrollSyncController } from './controllers/scrollSyncController';
+import { createAutoSizeOnDataTrigger } from './controllers/columnAutosizeRunner';
 import { useController, useControllerLifecycle } from './hooks/useController';
 
 import { gridActions } from './model/gridActions';
@@ -151,7 +146,6 @@ import {
 import { isFlexingColumn } from './logic/columnFlex';
 import { buildClearCellEdits, clearCellsInSelection } from './logic/clearCells';
 // 追加: データ投入時の列幅自動フィットの発火判定(純関数)です。
-import { resolveAutoSizeOnData } from './logic/autoSizeOnData';
 // 追加(13-B2-5): 列リセットの再構成純ロジック(幅 / 固定 / 表示 / 並び順の完全復元)です。
 // 追加(scroll-space 仮想化): 縦ジオメトリのシーム(uniform window + pixel scaling)です。
 //   1M 行で innerRowStyle.height がブラウザ要素高さ上限を超える機能ブロッカーを解消します。
@@ -165,7 +159,7 @@ import {
 import {
   DEFAULT_DETAIL_ROW_HEIGHT,
   DETAIL_TOGGLE_COLUMN_KEY,
-  createDetailIndexCache,
+  createDetailIndexCacheHolder,
   isInsideDetailCardOf,
   isSyntheticColumnKey,
   seedDetailIndexCache,
@@ -226,7 +220,6 @@ import type {
   RowSelectionModel,
   // 追加(imperative API: getExportData): scope 解決と整形済みデータ型に使います。
   // 追加(proposals ⑧): onScroll 通知パラメータの型です。
-  GridScrollEventParams,
   SpreadsheetGridProps,
   // 追加(state #2): onStateChange の lastEmitted 保持 / snapshot 型に使います。
   // 追加(バッチ②/コンテキストメニュー): 対象/params/項目の公開型。
@@ -312,8 +305,6 @@ const EMPTY_CONTEXT_MENU_ITEMS: GridContextMenuItem[] = [];
 //   preventDefault でブラウザ差により抑止されることがあるため、時刻 + 位置で自前判定します
 //   (native と同じ「短時間 + 近接位置」の 2 条件)。位置チェックは「リサイズ直後の再ドラッグ」を
 //   ダブルクリックと誤検知しないために必要です(リサイズで境界が動けば位置差で弾けます)。
-const RESIZE_HANDLE_DOUBLE_CLICK_MS = 300;
-const RESIZE_HANDLE_DOUBLE_CLICK_DIST = 4;
 // query(filter/sort)変更をサーバへ送る前の debounce(ms)です。入力欄の即時反映とは別系統で、
 //   キーストロークごとの再フェッチ(block 0 取り直し)を合体します。フック内の 120ms(レンジ要求
 //   debounce)とは役割が異なり併存します。
@@ -650,41 +641,24 @@ export function SpreadsheetGrid<T extends object>({
   //   セル側のトグルは「そのセルの view index」でキャッシュを seed してから dispatch します
   //   (serverSide でも全行走査なしで帯の位置が決まる)。
   const detailRowEnabled = detailRow != null;
-  const detailIndexCacheRef = useRef(createDetailIndexCache());
+  // 変更(本体分解 E-6c): useRef → 差し替え可能なホルダー(logic/detailRow.createDetailIndexCacheHolder)。
+  const [detailIndexCacheHolder] = useState(createDetailIndexCacheHolder);
   const toggleDetailRowAt = useCallback(
     (rowKey: GridRowKey, viewIndex: number) => {
-      seedDetailIndexCache(detailIndexCacheRef.current, rowKey, viewIndex);
+      seedDetailIndexCache(detailIndexCacheHolder.current, rowKey, viewIndex);
       dispatch(gridActions.toggleDetailRow(rowKey));
     },
-    [dispatch],
+    [dispatch, detailIndexCacheHolder],
   );
   const setDetailRowExpandedAt = useCallback(
     (rowKey: GridRowKey, viewIndex: number, expanded: boolean) => {
-      seedDetailIndexCache(detailIndexCacheRef.current, rowKey, viewIndex);
+      seedDetailIndexCache(detailIndexCacheHolder.current, rowKey, viewIndex);
       dispatch(gridActions.setDetailRowExpanded(rowKey, expanded));
     },
-    [dispatch],
+    [dispatch, detailIndexCacheHolder],
   );
 
-  // 追加(11-B5): columnWidths の latest-ref です（dragStateRef と同じパターン）。
-  // 変更理由: handleColumnResizePointerDown が uiState.columnWidths を依存に持つと、
-  //           ライブリサイズ中（columnWidths が毎 pointermove で参照更新）に
-  //           ハンドラ参照も毎フレーム変わり、GridHeaderRow(memo) の props 比較が
-  //           3 ペインすべてで不一致になります。pointerdown 時点の「現在幅」さえ
-  //           読めれば十分なので、ref 経由の読み出しに置き換えて依存から外します。
-  // 変更(B3): 指す対象を uiState.columnWidths → effectiveColumnWidths(flex 解決済み)へ変更します。
-  //           flex 列のリサイズ開始幅(handleColumnResizePointerDown)や pin/表示/並べ替え時の
-  //           幅書き戻しが「現在レンダリングされている幅(= flex 算出幅)」を拾えるようにするためです。
-  //           実際の代入は effectiveColumnWidths を算出した後(下の flex 算出ブロック末尾)で行います。
-  const columnWidthsRef = useRef(uiState.columnWidths);
 
-  // 追加(#2): リサイズハンドルの直近 pointerdown(ダブルクリック autoSize 判定用)。
-  //   key / 時刻 / clientX を保持し、次の pointerdown が短時間・近接位置なら「内容幅へ autoSize」。
-  const lastResizeHandleDownRef = useRef<{
-    key: string;
-    time: number;
-    x: number;
-  } | null>(null);
 
   // 注記(13-B2-2 → 本体分解 E-4a): 列リセット用の「初期 column defs スナップショット」は engine/columnCommands が
   //   最初の update で退避します(以後 columns が変わっても更新しない = ユーザー操作後の状態を「初期」と誤認しない)。
@@ -744,8 +718,6 @@ export function SpreadsheetGrid<T extends object>({
     ],
   );
 
-  // 変更(B3): latest-ref を effectiveColumnWidths(flex 解決済み)へ更新します(宣言は上、代入はここ)。
-  columnWidthsRef.current = effectiveColumnWidths;
 
   // ── filter popover ────────────────────────────────────
   // 追加(filter-ext E): filterType: 'auto' の解決結果キャッシュです(列キー → 実効種別)。
@@ -1159,10 +1131,6 @@ export function SpreadsheetGrid<T extends object>({
       ? serverSide.applyCellEdits
       : undefined;
 
-  // 追加(DS-4 ①-(2)): 最新 rowModel を指す latest-ref です。autosize ランナーが run 開始時に
-  //   キャプチャし、実行中に参照が変わった(= order/rows 変化)ら計測を中断するために使います。
-  const rowModelRef = useRef(rowModel);
-  rowModelRef.current = rowModel;
 
   // ── body context menu(バッチ②) ──────────────────────
   // 追加(バッチ②): ボディ右クリックの委譲ハンドラです。ssg-shell 上の 1 ハンドラで対象セル/行を
@@ -1268,43 +1236,26 @@ export function SpreadsheetGrid<T extends object>({
   //   overlay は遅延表示で、重い時だけ Pending を出し、メインスレッドを塞ぎません
   //   (小規模は overlay 発火前に完了し、体感は従来の同期計測と同一です)。
   const { isAutosizing, runAutosize } = useColumnAutosizeRunner<T>({
-    rowModelRef,
+    rowModel,
     gridRootRef,
-    columnWidthsRef,
+    columnWidths: effectiveColumnWidths,
     dispatch,
   });
 
   // ── autoSize on data(データ投入時の列幅自動フィット)────────────
-  // 追加: prop autoSizeColumns による宣言的トリガーです。列メニュー「すべての列の幅を自動調整」と
-  //   同一エンジン(runAutosize)を、rows(データ)の変化を signal に発火させるだけの薄い配線です。
-  //   - 'onMount'      : 初回にデータが載った一度きり(hasAutoSizedOnDataRef で二度目以降を抑止)。
-  //   - 'onDataChange' : rows(参照)が変わるたび(= データ差し替えのたび)。手動リサイズは上書きされます。
-  //   - false(既定)   : 何もしません(後方互換)。
-  //   発火 signal は rows のみです(effect deps)。フィルター/ソートは rows 参照を変えないため
-  //   再フィットしません。列の並べ替え/表示切替/固定(= visibleColumns 変化)でも再フィットしません
-  //   (手動操作の直後に幅が飛ぶのを避けるため、visibleColumns は deps に入れず latest-ref で読みます)。
-  //   suppressAutoSize / autoHeight 列は runAutosize 内部で除外されます。serverSide(dataSource)は
-  //   resolveAutoSizeOnData が isServerSide で弾きます(未ロード行を測れないため)。
-  //   runAutosize は effect(commit 後)で呼ぶため、rows 変化ぶんのパイプライン(order/rowModel)が
-  //   再計算済み・gridRoot mount 済みの状態で計測されます(列メニュー経路と同じ計測作法)。
-  //   フィット幅は内部 columnWidths に反映され onColumnsChange は呼ばないため、controlled columns とも
-  //   競合しません。runAutosize は安定参照(useCallback + ref deps)なので、幅反映の再レンダーで本 effect
-  //   が再発火することはありません(無限ループなし)。
-  const visibleColumnsRef = useRef(visibleColumns);
-  visibleColumnsRef.current = visibleColumns;
-  const hasAutoSizedOnDataRef = useRef(false);
-  useEffect(() => {
-    const { shouldRun, nextHasAutoSizedOnMount } = resolveAutoSizeOnData({
+  // 変更(本体分解 E-6c): 宣言的トリガー(autoSizeColumns × rows 変化)は controllers/columnAutosizeRunner の
+  //   createAutoSizeOnDataTrigger へ(passive = 旧 effect と同じくコミット後・パイプライン再計算済みで計測)。
+  useController(
+    () => createAutoSizeOnDataTrigger<T>(),
+    {
       mode: autoSizeColumns,
       isServerSide,
-      rowCount: rows.length,
-      hasAutoSizedOnMount: hasAutoSizedOnDataRef.current,
-    });
-    hasAutoSizedOnDataRef.current = nextHasAutoSizedOnMount;
-    if (shouldRun) {
-      void runAutosize(visibleColumnsRef.current);
-    }
-  }, [autoSizeColumns, rows, isServerSide, runAutosize]);
+      rows,
+      visibleColumns,
+      runAutosize,
+    },
+    'passive',
+  );
 
   // 追加(DS-3-6): ビュー行数の単一ソースを seam(getRowCount)経由へ移します。
   //   値は order.length(= 旧 filteredRows.length)で常に等価。プリミティブ number のため
@@ -1372,82 +1323,14 @@ export function SpreadsheetGrid<T extends object>({
   //   旧 rowVirtualizer はスクロールごとの再レンダー駆動も担っていたため、その役割を
   //   下記の scroll/resize リスナーへ移管します(発火頻度は同等)。
 
-  // 追加(proposals ⑧): onScroll 通知の配線です。
-  //   - onScrollRef: 不安定な onScroll prop を rAF tick / passive リスナーから読むための
-  //     latest-ref(RS-AS 方式)。
-  //   - apiScrollPendingRef: 命令的 API 由来のスクロールで「これから発火する scroll イベント」の
-  //     残数。イベント処理時に 1 消費して source:'api' を割り当てます(位置が変わらない
-  //     scrollTo は scroll イベントを発火しないため、実際に位置が変わるときだけ増やします)。
-  //   - scrollNotifyRef: rAF 間引き用の保留通知。同一フレームに user / api が混在したら
-  //     'user' を優先します(実ユーザー操作の通知を落とすと同期先が追従しなくなるため)。
-  const onScrollRef = useRef<((params: GridScrollEventParams) => void) | null>(
-    null,
-  );
-  useEffect(() => {
-    onScrollRef.current = onScroll ?? null;
-  }, [onScroll]);
-  const apiScrollPendingRef = useRef(0);
-  const scrollNotifyRef = useRef<GridScrollEventParams | null>(null);
-
-  useEffect(() => {
-    const el = scrollContainerRef.current;
-    if (!el) {
-      return;
-    }
-    // 追加(B3): center 列 flex の利用可能幅算出に使う可視幅も同じ effect で計測します。
-    // 変更(④-2): 3 値をまとめて 1 回の更新にします(通知 1 回)。
-    gridStore.setViewState({
-      scrollTop: el.scrollTop,
-      viewportHeight: el.clientHeight,
-      viewportWidth: el.clientWidth,
-    });
-    // 追加(proposals ⑧): onScroll の rAF 間引きです。フレーム内の最後の位置を 1 回で通知します。
-    let notifyFrameId: number | null = null;
-    const flushScrollNotify = () => {
-      notifyFrameId = null;
-      const params = scrollNotifyRef.current;
-      scrollNotifyRef.current = null;
-      if (params) {
-        onScrollRef.current?.(params);
-      }
-    };
-    const handleScroll = () => {
-      setScrollTop(el.scrollTop);
-      // source の判定はイベント単位で行います(rAF 単位だと api 消費がずれるため)。
-      const source: GridScrollEventParams['source'] =
-        apiScrollPendingRef.current > 0 ? 'api' : 'user';
-      if (source === 'api') {
-        apiScrollPendingRef.current -= 1;
-      }
-      const pending = scrollNotifyRef.current;
-      scrollNotifyRef.current = {
-        top: el.scrollTop,
-        left: el.scrollLeft,
-        source: pending?.source === 'user' ? 'user' : source,
-      };
-      if (onScrollRef.current && notifyFrameId === null) {
-        notifyFrameId = requestAnimationFrame(flushScrollNotify);
-      }
-    };
-    el.addEventListener('scroll', handleScroll, { passive: true });
-    // viewport サイズ変化(リサイズ/レイアウト変動)で窓・倍率・flex 配分を再計算するためです。
-    const resizeObserver = new ResizeObserver(() => {
-      // 追加(B3): 幅変化で flex を再配分します。変更(④-2): 2 値をまとめて 1 回の更新に。
-      gridStore.setViewState({
-        viewportHeight: el.clientHeight,
-        viewportWidth: el.clientWidth,
-      });
-    });
-    resizeObserver.observe(el);
-    return () => {
-      el.removeEventListener('scroll', handleScroll);
-      if (notifyFrameId !== null) {
-        cancelAnimationFrame(notifyFrameId);
-      }
-      resizeObserver.disconnect();
-    };
-    // 注記(④-2): gridStore / setScrollTop は参照安定(再実行は起きない)。exhaustive-deps 対応で明示。
-  }, [gridStore, setScrollTop]);
+  // 変更(本体分解 E-6b): 初期計測 / scroll リスナー / ResizeObserver / onScroll の rAF 間引き通知は
+  //   controllers/scrollSyncController.ts へ(旧 latest-ref 3 本 + effect 2 個を解消)。命令的 API 由来の
+  //   スクロール判定(markApiScroll)もコントローラが持ちます。
+  const scrollSync = useController(createScrollSyncController, {
+    scrollContainerRef,
+    setViewState: gridStore.setViewState,
+    onScroll,
+  });
 
   // 変更(10-C): 列の仮想化は「中央ペインの列エントリ」に対して行います。
   // 変更理由: 固定列は中央スクロール対象外。中央ペインの水平スクロール範囲＝
@@ -1531,7 +1414,7 @@ export function SpreadsheetGrid<T extends object>({
         expandedDetailRowKeys: uiState.expandedDetailRowKeys,
         detailHeight: detailHeightValue,
         detailIsExpandable,
-        detailIndexCache: detailIndexCacheRef.current,
+        detailIndexCacheRef: detailIndexCacheHolder,
       }),
     [
       resolveVerticalLayout,
@@ -1551,6 +1434,7 @@ export function SpreadsheetGrid<T extends object>({
       uiState.expandedDetailRowKeys,
       detailHeightValue,
       detailIsExpandable,
+      detailIndexCacheHolder,
     ],
   );
   // gate 外フォールバック時の開発時警告(例外は投げず uniform にフォールバック)。
@@ -1637,9 +1521,9 @@ export function SpreadsheetGrid<T extends object>({
     if (!isServerSide || !detailRowEnabled) {
       return;
     }
-    detailIndexCacheRef.current = createDetailIndexCache();
+    detailIndexCacheHolder.reset();
     dispatch(gridActions.setExpandedDetailRowKeys(new Set<GridRowKey>()));
-  }, [isServerSide, detailRowEnabled, serverSideQueryKey, dispatch]);
+  }, [isServerSide, detailRowEnabled, serverSideQueryKey, dispatch, detailIndexCacheHolder]);
 
   // 追加(①-3 / stage ②): serverSide のとき、描画窓(overscan 込み)の可視レンジを hook へ通知します。
   //   requestRange は即時 touchBlocks + debounce fetch。空窓(末尾 < 先頭)では何もしません。
@@ -2508,57 +2392,6 @@ export function SpreadsheetGrid<T extends object>({
     setIsCornerHovered(false);
   }, [setIsCornerHovered]);
 
-  // ── column resize ─────────────────────────────────────
-  // 変更(11-B5): 依存を uiState.columnWidths → latest-ref(columnWidthsRef) 読みへ
-  //             置き換え、ハンドラ参照を恒久安定化します(11-A3 の続き)。
-  // 変更理由: GridHeaderRow を memo 化するにあたり、columnWidths 依存が残っていると
-  //           ライブリサイズの毎 pointermove で本ハンドラの参照が変わり、
-  //           幅が変わっていない固定ペインのヘッダーまで memo を突破していました。
-  //           開始幅は pointerdown 時点の最新値を ref から読むため挙動は等価です。
-  const handleColumnResizePointerDown = useCallback(
-    (column: GridColumn<T>, event: PointerEvent<HTMLDivElement>) => {
-      event.preventDefault();
-      event.stopPropagation();
-
-      // 追加(#2): リサイズハンドルのダブルクリックで、その列を内容幅へ autoSize します
-      //   (AG Grid の境界ダブルクリック相当)。native dblclick は上の preventDefault で
-      //   ブラウザにより抑止され得るため、直近 pointerdown との時刻差(<300ms)+ 位置差(<4px)で
-      //   自前判定します。確定時はリサイズを開始せず autoSize に振り替えます。位置差の条件により
-      //   「リサイズで境界を動かした直後の再ドラッグ」は誤検知しません(境界が動けば位置差で弾く)。
-      const now = event.timeStamp;
-      const last = lastResizeHandleDownRef.current;
-      if (
-        last &&
-        last.key === column.key &&
-        now - last.time < RESIZE_HANDLE_DOUBLE_CLICK_MS &&
-        Math.abs(event.clientX - last.x) < RESIZE_HANDLE_DOUBLE_CLICK_DIST
-      ) {
-        lastResizeHandleDownRef.current = null;
-        void runAutosize([column]);
-        return;
-      }
-      lastResizeHandleDownRef.current = {
-        key: column.key,
-        time: now,
-        x: event.clientX,
-      };
-
-      dispatch(
-        gridActions.startColumnResize(
-          column.key,
-          event.clientX,
-          columnWidthsRef.current[column.key] ?? column.width,
-          column.minWidth ?? 60,
-          // 変更(②-S4 仕上げ): 旧 `?? 1000` を撤廃。maxWidth 未指定列は上限なし
-          //   (reducer で Number.POSITIVE_INFINITY)になり、autoSize で 1000px を
-          //   超えた幅から手動リサイズを始めても 1000 へスナップしなくなります
-          //   (autoSize は元から上限なしのため、両者の上限規則が一致します)。
-          column.maxWidth,
-        ),
-      );
-    },
-    [dispatch, runAutosize],
-  );
 
   // ── column commands(本体分解 E-4a) ────────────────────
   // 変更(本体分解 E-4a): 列メニュー / 列チューザー / 並び替え管理 / フィルター管理(クリア系)/ 列リセットの
@@ -2604,6 +2437,7 @@ export function SpreadsheetGrid<T extends object>({
     handleSortManagerRemoveLevel,
     handleSortManagerClearAll,
     handleSortManagerMove,
+    handleColumnResizePointerDown,
   } = columnCommands;
 
   // ── column chooser actions(13-B2-1) ──────────────────
@@ -3656,9 +3490,6 @@ export function SpreadsheetGrid<T extends object>({
   // 変更(本体分解 E-5): 実体は engine/gridApi.ts(React 非依存)。update(レイアウト effect)で最新の状態 / 派生値 /
   //   連携先を渡し、ハンドルは 1 回だけ生成した参照安定なオブジェクトをそのまま返します(旧 apiStateRef =
   //   30 フィールドのレンダー中 ref 代入を解消)。
-  const markApiScrollPending = useCallback(() => {
-    apiScrollPendingRef.current += 1;
-  }, []);
   useControllerLifecycle(gridApi, {
     scrollContainerRef,
     dispatch,
@@ -3695,10 +3526,10 @@ export function SpreadsheetGrid<T extends object>({
     clearUndoHistory,
     detailRowEnabled,
     detailIsExpandable,
-    detailIndexCacheRef,
+    detailIndexCacheRef: detailIndexCacheHolder,
     moveRowByKey,
     commitRowSelection: rowSelectionCommands.commitRowSelection,
-    markApiScroll: markApiScrollPending,
+    markApiScroll: scrollSync.markApiScroll,
   });
   useImperativeHandle(ref, () => gridApi.handle, [gridApi]);
 

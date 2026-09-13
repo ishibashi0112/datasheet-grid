@@ -69,6 +69,24 @@ export const createDetailIndexCache = (): DetailIndexCache => ({
   unresolved: new Set(),
 });
 
+// 追加(本体分解 E-6c): キャッシュの差し替え可能なホルダーです。描画側は生成を 1 回だけ行い(useState)、SSRM の
+//   query 変化では reset() で作り直します。エンジン / コントローラへは { current } の構造的 ref として渡します
+//   (React の useRef ではないため、レンダー中に関数へ渡しても Compiler 系 lint の「ref アクセス」に当たりません)。
+export type DetailIndexCacheHolder = {
+  current: DetailIndexCache;
+  reset: () => void;
+};
+
+export const createDetailIndexCacheHolder = (): DetailIndexCacheHolder => {
+  const holder: DetailIndexCacheHolder = {
+    current: createDetailIndexCache(),
+    reset: () => {
+      holder.current = createDetailIndexCache();
+    },
+  };
+  return holder;
+};
+
 export type ResolveDetailRowExtrasArgs<T> = {
   expandedKeys: ReadonlySet<GridRowKey>;
   rowModel: RowModel<T>;

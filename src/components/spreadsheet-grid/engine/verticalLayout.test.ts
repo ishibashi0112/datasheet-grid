@@ -36,7 +36,7 @@ const baseInputs = (): VerticalLayoutInputs<Row> => ({
   expandedDetailRowKeys: new Set(),
   detailHeight: 200,
   detailIsExpandable: undefined,
-  detailIndexCache: createDetailIndexCache(),
+  detailIndexCacheRef: { current: createDetailIndexCache() },
 });
 
 describe('createVerticalLayoutResolver', () => {

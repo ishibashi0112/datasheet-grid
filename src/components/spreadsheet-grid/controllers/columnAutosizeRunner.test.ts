@@ -30,7 +30,7 @@ vi.mock('../logic/columnAutosize', () => ({
   }),
 }));
 
-import { createColumnAutosizeRunner } from './columnAutosizeRunner';
+import { createAutoSizeOnDataTrigger, createColumnAutosizeRunner } from './columnAutosizeRunner';
 
 type Row = { id: number };
 const columns: GridColumn<Row>[] = [{ key: 'id', title: 'ID', width: 80 }];
@@ -62,9 +62,9 @@ describe('columnAutosizeRunner', () => {
 
     const dispatch = vi.fn();
     runner.update({
-      rowModelRef: { current: makeRowModel([{ id: 1 }, { id: 2 }]) },
+      rowModel: makeRowModel([{ id: 1 }, { id: 2 }]),
       gridRootRef: { current: null },
-      columnWidthsRef: { current: {} },
+      columnWidths: {},
       dispatch,
     });
     const listener = vi.fn();
@@ -86,9 +86,9 @@ describe('columnAutosizeRunner', () => {
     const runner = createColumnAutosizeRunner<Row>();
     const dispatch = vi.fn();
     runner.update({
-      rowModelRef: { current: makeRowModel([{ id: 1 }, { id: 2 }, { id: 3 }]) },
+      rowModel: makeRowModel([{ id: 1 }, { id: 2 }, { id: 3 }]),
       gridRootRef: { current: null },
-      columnWidthsRef: { current: {} },
+      columnWidths: {},
       dispatch,
     });
     const promise = runner.runAutosize(columns);
@@ -100,5 +100,31 @@ describe('columnAutosizeRunner', () => {
     await flushYields();
     await promise;
     expect(dispatch).not.toHaveBeenCalled();
+  });
+});
+
+// 追加(本体分解 E-6c): autoSize on data トリガー(旧 effect の deps 相当が変わったときだけ判定)。
+describe('createAutoSizeOnDataTrigger', () => {
+  it("'onMount' は初回にデータが載った一度きり、'onDataChange' は rows 参照が変わるたび、visibleColumns 変化では発火しない", () => {
+    const runAutosize = vi.fn(async () => {});
+    const trigger = createAutoSizeOnDataTrigger<Row>();
+    const rows1 = [{ id: 1 }];
+    trigger.update({ mode: 'onMount', isServerSide: false, rows: [], visibleColumns: columns, runAutosize });
+    expect(runAutosize).not.toHaveBeenCalled();
+    trigger.update({ mode: 'onMount', isServerSide: false, rows: rows1, visibleColumns: columns, runAutosize });
+    expect(runAutosize).toHaveBeenCalledTimes(1);
+    expect(runAutosize).toHaveBeenCalledWith(columns);
+    // 列構成だけ変わっても発火しない / rows が変わっても onMount は二度目以降を抑止。
+    trigger.update({ mode: 'onMount', isServerSide: false, rows: rows1, visibleColumns: [...columns], runAutosize });
+    trigger.update({ mode: 'onMount', isServerSide: false, rows: [{ id: 2 }], visibleColumns: columns, runAutosize });
+    expect(runAutosize).toHaveBeenCalledTimes(1);
+
+    const onChange = createAutoSizeOnDataTrigger<Row>();
+    onChange.update({ mode: 'onDataChange', isServerSide: false, rows: rows1, visibleColumns: columns, runAutosize });
+    onChange.update({ mode: 'onDataChange', isServerSide: false, rows: [{ id: 3 }], visibleColumns: columns, runAutosize });
+    expect(runAutosize).toHaveBeenCalledTimes(3);
+    // serverSide では発火しない。
+    onChange.update({ mode: 'onDataChange', isServerSide: true, rows: [{ id: 4 }], visibleColumns: columns, runAutosize });
+    expect(runAutosize).toHaveBeenCalledTimes(3);
   });
 });

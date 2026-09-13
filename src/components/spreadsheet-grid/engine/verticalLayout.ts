@@ -24,6 +24,8 @@ import { buildRowHeightStore, createAutoHeightRowMetrics, type RowHeightStore } 
 import { resolveDetailRowExtras, type DetailIndexCache } from '../logic/detailRow';
 import { createMemo } from './memo';
 
+type ReadonlyRef<V> = { readonly current: V };
+
 const EMPTY_DETAIL_EXTRAS: readonly DetailRowExtra[] = [];
 const EMPTY_DETAIL_ENTRIES: readonly DetailLayerEntry[] = [];
 // 旧 rowVirtualizer の overscan=20 を踏襲します。
@@ -58,7 +60,9 @@ export type VerticalLayoutInputs<T> = {
   expandedDetailRowKeys: ReadonlySet<GridRowKey>;
   detailHeight: number;
   detailIsExpandable: DetailIsExpandable<T>;
-  detailIndexCache: DetailIndexCache;
+  // rowKey → view index のキャッシュ(SSRM の query 変化で差し替わるため ref で受け、計算時に読む。メモ依存には
+  //   含めない = 旧 useMemo と同じ)。
+  detailIndexCacheRef: ReadonlyRef<DetailIndexCache>;
 };
 
 export type VerticalLayoutResolution = {
@@ -122,7 +126,7 @@ export const createVerticalLayoutResolver = <T,>() => {
       rowModel: RowModel<T>,
       height: number,
       isExpandable: DetailIsExpandable<T>,
-      cache: DetailIndexCache,
+      cacheRef: ReadonlyRef<DetailIndexCache>,
       isServerSide: boolean,
     ): readonly DetailRowExtra[] =>
       detailRowEnabled
@@ -131,7 +135,7 @@ export const createVerticalLayoutResolver = <T,>() => {
             rowModel,
             height,
             isExpandable,
-            cache,
+            cache: cacheRef.current,
             allowScan: !isServerSide,
           })
         : EMPTY_DETAIL_EXTRAS,
@@ -201,7 +205,7 @@ export const createVerticalLayoutResolver = <T,>() => {
       expandedDetailRowKeys,
       detailHeight,
       detailIsExpandable,
-      detailIndexCache,
+      detailIndexCacheRef,
     } = inputs;
     const hasAutoHeightColumn = memoHasAutoHeightColumn(visibleColumns);
     // gate: props 有効 + 駆動列あり + 行数が上限内。serverSide では未ロード行の高さが不明なため常に無効。
@@ -215,7 +219,7 @@ export const createVerticalLayoutResolver = <T,>() => {
       rowModel,
       detailHeight,
       detailIsExpandable,
-      detailIndexCache,
+      detailIndexCacheRef,
       isServerSide,
     );
     // 展開行モードの gate: 帯が 1 つ以上あり、帯込みの論理全高が MAX_BODY_PX 以内(metrics 経路は sf=1 固定)。

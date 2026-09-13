@@ -77,13 +77,29 @@ export type ColumnCommands<T> = {
   handleSortManagerRemoveLevel: (index: number) => void;
   handleSortManagerClearAll: () => void;
   handleSortManagerMove: (from: number, to: number) => void;
+  // 列リサイズ(ヘッダー境界の pointerdown)。ダブルクリック相当なら autosize に振り替え。
+  handleColumnResizePointerDown: (column: GridColumn<T>, event: ColumnResizePointerEvent) => void;
   // 列リセット用の初期スナップショット(テスト / 命令的 API 向けの読み取り口)。
   getInitialColumnState: () => Map<string, InitialColumnState> | null;
 };
 
+// リサイズハンドルの pointerdown イベント(構造的型。React の合成 PointerEvent をそのまま渡せます)。
+export type ColumnResizePointerEvent = {
+  timeStamp: number;
+  clientX: number;
+  preventDefault: () => void;
+  stopPropagation: () => void;
+};
+
+// リサイズハンドルのダブルクリック判定(時刻差 / 位置差)。native dblclick は preventDefault で抑止され得るため自前判定。
+const RESIZE_HANDLE_DOUBLE_CLICK_MS = 300;
+const RESIZE_HANDLE_DOUBLE_CLICK_DIST = 4;
+
 export const createColumnCommands = <T,>(): ColumnCommands<T> => {
   let args: ColumnCommandsArgs<T> | null = null;
   let initialColumnState: Map<string, InitialColumnState> | null = null;
+  // リサイズハンドルの直近 pointerdown(ダブルクリック autoSize 判定用)。
+  let lastResizeHandleDown: { key: string; time: number; x: number } | null = null;
 
   const requireArgs = (): ColumnCommandsArgs<T> => {
     if (args === null) {
@@ -384,6 +400,38 @@ export const createColumnCommands = <T,>(): ColumnCommands<T> => {
     dispatch(gridActions.setSort(moveSortEntry(sort, from, to)));
   };
 
+  // 列リサイズ開始(11-B5: 参照安定。開始幅は pointerdown 時点の最新解決済み幅)。
+  //   ダブルクリック(直近 pointerdown との時刻差 < 300ms + 位置差 < 4px)はリサイズを開始せず、その列を内容幅へ
+  //   autoSize します(AG Grid の境界ダブルクリック相当。境界が動けば位置差で弾くため再ドラッグを誤検知しない)。
+  const handleColumnResizePointerDown: ColumnCommands<T>['handleColumnResizePointerDown'] = (column, event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    const { columnWidths, dispatch, runAutosize } = requireArgs();
+    const now = event.timeStamp;
+    const last = lastResizeHandleDown;
+    if (
+      last &&
+      last.key === column.key &&
+      now - last.time < RESIZE_HANDLE_DOUBLE_CLICK_MS &&
+      Math.abs(event.clientX - last.x) < RESIZE_HANDLE_DOUBLE_CLICK_DIST
+    ) {
+      lastResizeHandleDown = null;
+      void runAutosize([column]);
+      return;
+    }
+    lastResizeHandleDown = { key: column.key, time: now, x: event.clientX };
+    dispatch(
+      gridActions.startColumnResize(
+        column.key,
+        event.clientX,
+        columnWidths[column.key] ?? column.width,
+        column.minWidth ?? 60,
+        // maxWidth 未指定列は上限なし(reducer で Number.POSITIVE_INFINITY)。
+        column.maxWidth,
+      ),
+    );
+  };
+
   return {
     update: (next) => {
       args = next;
@@ -420,6 +468,7 @@ export const createColumnCommands = <T,>(): ColumnCommands<T> => {
     handleSortManagerRemoveLevel,
     handleSortManagerClearAll,
     handleSortManagerMove,
+    handleColumnResizePointerDown,
     getInitialColumnState: () => initialColumnState,
   };
 };

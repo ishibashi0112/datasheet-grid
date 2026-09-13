@@ -61,15 +61,21 @@ const makeRowModel = (rows: Row[]): RowModel<Row> => ({
   getRowKey: (i) => rows[i]?.id ?? i,
 });
 
+// 変更(本体分解 E-6c): args は値渡し(rowModel / columnWidths)。差し替えは rerender で行います。
 const setup = (rows: Row[]) => {
-  const rowModelRef = { current: makeRowModel(rows) };
   const gridRootRef = { current: null as HTMLElement | null };
-  const columnWidthsRef = { current: {} as Record<string, number> };
   const dispatch = vi.fn();
-  const view = renderHook(() =>
-    useColumnAutosizeRunner<Row>({ rowModelRef, gridRootRef, columnWidthsRef, dispatch }),
+  const view = renderHook(
+    (props: { rowModel: RowModel<Row> }) =>
+      useColumnAutosizeRunner<Row>({
+        rowModel: props.rowModel,
+        gridRootRef,
+        columnWidths: {},
+        dispatch,
+      }),
+    { initialProps: { rowModel: makeRowModel(rows) } },
   );
-  return { ...view, rowModelRef, dispatch };
+  return { ...view, dispatch };
 };
 
 describe('useColumnAutosizeRunner(特性テスト)', () => {
@@ -123,7 +129,9 @@ describe('useColumnAutosizeRunner(特性テスト)', () => {
     act(() => {
       promise = t.result.current.runAutosize(columns);
     });
-    t.rowModelRef.current = makeRowModel([{ id: 9 }]);
+    act(() => {
+      t.rerender({ rowModel: makeRowModel([{ id: 9 }]) });
+    });
     await act(async () => {
       for (let i = 0; i < 6; i += 1) {
         await flushYields();
