@@ -21,7 +21,7 @@ React 19 + TypeScript + Vite 製のカスタム AG Grid 風・仮想化データ
 
 - baseline を **1 件も増やさない**。現状 **0 problems(0 errors / 0 warnings)**(2026-09-13 非依存化 ②で react-virtual 起因の `incompatible-library` 2 件が消滅、③ のコントローラ抽出で latest-ref 由来の warning も消滅)── ただしセッション冒頭に実測で確定する。対象は `**/*.{ts,tsx}` のみ(`.mjs` スクリプトは対象外)。errors は 2026-07 に全件解消済み(修正 or 理由付き disable)。CI で lint はブロッキング。
 - `react-hooks/set-state-in-effect` は「effect 内の**先頭** setState のみ報告」する。先頭でない setState に disable を付けると Unused directive warning になる。
-- `SpreadsheetGrid.tsx` はファイル先頭で `react-hooks/refs` / `immutability` / `set-state-in-effect` を理由付きで無効化している(旧 react-virtual の「Compiler 非互換」扱いで解析対象外だった状態を、非依存化 ②で明示化。16 件の latest-ref イディオムは ③ の分解時に解消し、その時点で外す)。他ファイルでは render 中の `ref.current = x` 代入は baseline にカウントされる。新しい安定コールバックは latest-ref を増やさず `useCallback` の deps に直接入れる。rAF tick から不安定な関数を読む必要がある場合は useEffect 内で同期する latest-ref(RS-AS 方式)。
+- `SpreadsheetGrid.tsx` の file 単位 eslint-disable(`react-hooks/refs` / `immutability` / `set-state-in-effect`。非依存化 ②で置いたもの)は本体分解 E-1〜E-6(2026-09-14)で latest-ref イディオムを全件エンジン / コントローラへ移して撤去済み。render 中の `ref.current` 参照 / 代入は baseline にカウントされるので増やさない。最新値をイベント / rAF から読みたいときは latest-ref ではなく、コントローラの `update(args)`(useController がレイアウト effect で毎レンダー渡す)経由で読む。React Compiler の lint は `xxxRef` という名前の変数を ref 扱いするため、ref でない構造的 `{ current }` ホルダーには Ref 接尾辞を付けない(例: `detailIndexCacheHolder`)。
 
 ### TypeScript
 
@@ -47,7 +47,7 @@ React 19 + TypeScript + Vite 製のカスタム AG Grid 風・仮想化データ
 | tsc(build) | `vp exec tsc -b` | 0 |
 | tsc(test) | `vp exec tsc -p tsconfig.vitest.json --noEmit` | 0 |
 | eslint | `vp exec eslint .` | baseline 維持(現状 0 errors / 0 warnings) |
-| test | `vp test` | 全緑(現状 ~1,169 tests / 133 files) |
+| test | `vp test` | 全緑(現状 ~1,216 tests / 145 files) |
 | build | `vp build`(publish 経路は `build:lib` = `vp build --config vite.lib.config.ts` + `tsc -p tsconfig.lib.json` + emit-layer-css) | 0 |
 
 - 依存インストールは `vp install`(pnpm へ委譲)。ローカルのゲートは上記 vp 経由で実行する。※ `devEngines` は 2026-07-18 に削除(pnpm 11 が lockfile へ書く packageManagerDependencies ドキュメントを Vercel CLI が解釈できずデプロイが失敗するため)。pnpm のピンは `packageManager` フィールドで維持(復活させないこと。詳細は `website/README.md`)。CI(GitHub Actions)は pnpm で package.json スクリプトを実行する(`pnpm test` / `pnpm run build:lib` 等)。
@@ -56,7 +56,7 @@ React 19 + TypeScript + Vite 製のカスタム AG Grid 風・仮想化データ
 ## アーキテクチャ要点(詳細は HANDOFF §2 / §3 / §5)
 
 - reducer ベースの状態管理(2026-09-13 非依存化 ④-1 で React 非依存の外部 store `model/gridStore.ts` = `createGridStore(getState / dispatch / subscribe)` に載せ替え。React は `hooks/useGridStore.ts` の `useSyncExternalStore` で購読。④-2 で一時状態(ビューポート計測 / ホバー)も同 store の view スライス `getViewState / setViewState` へ)、命令的 ref API、3 ペイン固定列レイアウト、SSRM(サーバーサイド行モデル)。
-- `SpreadsheetGrid.tsx` は既知の God component(~5,000 行)。リファクタは保留。
+- `SpreadsheetGrid.tsx` は本体分解 E-0〜E-6(2026-09-14)で 7,092 行 → ~4,300 行。派生値計算とコマンド群は `engine/`(React 非依存: columnLayout / rowPipeline / verticalLayout / columnCommands / filterPopoverCommands / rowSelectionCommands / gridApi(命令的 API の実体)/ notifiers、メモ化は `engine/memo.ts` の `createMemo` = useMemo と同じ Object.is 比較)へ、DOM を触る処理は `controllers/`(autoHeightMeasurer / scrollSyncController / debouncedValueStore 等)へ移設済み。シェル側はリゾルバ呼び出しを React Compiler lint(preserve-manual-memoization)向けに `useMemo` で包み、コマンド / コントローラは `useController`(生成 + update + dispose。外部通知は `'passive'` タイミング)で接続する。残り(E-7)は `createGridEngine()` への束ねと JSX 以外の整理。
 - 純粋ロジックは `logic/` に抽出(テスタビリティ)。hooks は薄いオーケストレーション層。
 - `model/` と `logic/` は **React 非依存**を保つ(2026-09-13 非依存化 ①)。公開型の本体は `model/gridTypes.core.ts`(描画ノード / style はフレームワーク束ね型 `F` 経由で `F['node']` / `F['style']`)、React 束縛は `model/gridTypes.ts`(`ReactGridTypes` で固定したエイリアス + `ref` prop)。`ReactNode` / `CSSProperties` を `model/` / `logic/` に import しない。DOM を扱うがフレームワーク非依存のコードは `controllers/`(③ で hooks から抽出。`{ update, attach, dispose, subscribe? }` の共通形。React を import しない)に置き、`hooks/` は effect に接続するだけの薄いアダプタにする。F は `F['node']` の位置から推論されないため、F ジェネリックな関数の呼び出しでは型引数を明示する(`resolveScrollHintOptions<T, ReactGridTypes>(...)`)。
 - CSS: 未レイヤー単一クラス基底(Tailwind/Mantine/HeroUI 共存のため `@layer` は使わない ── 未レイヤーはレイヤー付きに特異度無関係で勝つため)。Portal 系(popover/tooltip)は `.ssg-root` 外に描画されるためリテラル色を使う。
@@ -72,7 +72,7 @@ React 19 + TypeScript + Vite 製のカスタム AG Grid 風・仮想化データ
 
 ## 現状と残タスク(詳細は HANDOFF §4 / §7 / §8)
 
-- 最新 v0.37.0(非依存化 ③-9〜③-19: `controllers/` へのコントローラ抽出を hooks 19 本すべてで完了(columnAutosizeRunner / selectOptionsCollector / globalFilteredOrder / serverSideRowModel / contextMenu / columnMenu / toolPanel / filterPopover / pointerInteractions / columnHeaderDrag / rowDrag を追加)。hooks は `useController` を使う薄いアダプタ。挙動不変)。v0.36.0 = 非依存化 ④(React 非依存の外部 store `model/gridStore.ts`)+ ③-1〜③-8。③ の残りは本体分解(`SpreadsheetGrid.tsx` → エンジン + React シェル)。
+- 最新 v0.37.0(非依存化 ③-9〜③-19: `controllers/` へのコントローラ抽出を hooks 19 本すべてで完了(columnAutosizeRunner / selectOptionsCollector / globalFilteredOrder / serverSideRowModel / contextMenu / columnMenu / toolPanel / filterPopover / pointerInteractions / columnHeaderDrag / rowDrag を追加)。hooks は `useController` を使う薄いアダプタ。挙動不変)。v0.36.0 = 非依存化 ④(React 非依存の外部 store `model/gridStore.ts`)+ ③-1〜③-8。本体分解 E-0〜E-6(engine/ 9 モジュール + controllers 追加、eslint-disable 撤去)は 0.37.0 の後にコミット済み・未 publish。残りは E-7(`createGridEngine()` への束ね + シェル整理)。
 - SSRM は**完成**(2026-07-16)── 読み取り系(`refreshServerSide()` / エラー・リトライ UI は 2026-07-15 の batch 8 / 9)に加え、セル編集の書き戻し(`dataSource.updateRows` + 楽観更新 + 失敗時ロールバック / 保存失敗バー)を 2026-07-16 に実装済み(書き戻し batch 1〜5)。行追加削除は「サーバ反映後に refresh」運用・SSRM の undo/redo は無効(いずれもスコープ外として合意)。
 - 行グルーピング + 集計は 2026-07-17 に実装済み(grouping batch 1〜5: `rowGroup` / `aggFunc`、自動グループ列、開閉 UI + 命令的 API。clientSide 限定・SSRM は対象外)。
 - 展開行(Master/Detail)は 2026-09-04 に実装済み(detail batch 1〜6: `detailRow` prop、rowKey ベース状態、`data-ssg-detail` イベント境界。clientSide / SSRM 両対応)。
