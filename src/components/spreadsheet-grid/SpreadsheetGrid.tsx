@@ -47,6 +47,7 @@ import {
 } from './engine/columnLayout';
 import { createRowPipelineResolver } from './engine/rowPipeline';
 import { createVerticalLayoutResolver } from './engine/verticalLayout';
+import { createColumnCommands } from './engine/columnCommands';
 import { createAutoHeightMeasurer } from './controllers/autoHeightMeasurer';
 import { createDebouncedValueStore } from './controllers/debouncedValueStore';
 import { useController, useControllerLifecycle } from './hooks/useController';
@@ -155,7 +156,6 @@ import { inferColumnFilterType } from './logic/inferFilterType';
 //           中央列リサイズ中も固定ペインの renderEntries 参照を不変に保ちます。
 import {
   buildColumnMeasurements,
-  reorderColumnsByPane,
   computePaneColumnExtents,
   computeFullWidthPaneExtents,
   computeSinglePaneColumnExtent,
@@ -172,8 +172,6 @@ import { buildClearCellEdits, clearCellsInSelection } from './logic/clearCells';
 // 追加: データ投入時の列幅自動フィットの発火判定(純関数)です。
 import { resolveAutoSizeOnData } from './logic/autoSizeOnData';
 // 追加(13-B2-5): 列リセットの再構成純ロジック(幅 / 固定 / 表示 / 並び順の完全復元)です。
-import { buildResetColumns } from './logic/columnReset';
-import type { InitialColumnState } from './logic/columnReset';
 // 追加(scroll-space 仮想化): 縦ジオメトリのシーム(uniform window + pixel scaling)です。
 //   1M 行で innerRowStyle.height がブラウザ要素高さ上限を超える機能ブロッカーを解消します。
 import {
@@ -236,18 +234,6 @@ import {
   computeVerticalScrollTarget,
   computeHorizontalScrollTarget,
 } from './logic/scrollTargets';
-import {
-  // ソートは order(Int32Array)版に一本化しています
-  //   (DS-2 で差し替え、旧オブジェクト配列版は DS-3-8 で削除)。
-  nextSortEntries,
-  // 追加(MS-3-1): 並び替え管理パネルの明示編集用の純関数群です。
-  addSortEntry,
-  setSortEntryDirection,
-  setSortEntryColumn,
-  removeSortEntryAt,
-  // 追加(MS-3-2): 優先順位 DnD の配列 move 純関数です。
-  moveSortEntry,
-} from './logic/sorting';
 // 追加(DS-4 ①-(2)): 列幅自動調整を時間分割(async・単一経路)で実行するランナーです。
 //   計測ロジック本体(logic/columnAutosize)はランナー内部で使うため、ここでの直 import は不要です。
 import useColumnAutosizeRunner from './hooks/useColumnAutosizeRunner';
@@ -274,8 +260,6 @@ import type {
   CellRenderContext,
   // 追加(THEME-2): 密度プリセットの型です。
   GridDensity,
-  // 追加(13-A): 列メニューからの固定切替に使います。
-  GridColumnPinned,
   // 追加(C1): auto-height 実測キャッシュのキー型です。
   GridRowKey,
   // 追加(detail ③): 展開行の描画コンテキスト / セルへ渡す detail コンテキスト型です。
@@ -824,32 +808,8 @@ export function SpreadsheetGrid<T extends object>({
     x: number;
   } | null>(null);
 
-  // 追加(13-B2-2): 列リセット用の「初期 column defs スナップショット」です。
-  // 設計メモ(スナップショット保持の方針 = (A) 内部 ref / 自己完結):
-  //   - 初回マウント時の columns から key ごとの {width, pinned, visible} を退避します。
-  //     遅延初期化(current が null のときだけ構築)なので構築は一度きりで、以後は
-  //     columns prop が変わっても更新しません(= ユーザー操作後の状態を「初期」と
-  //     誤認しないため)。リセットはここに退避した値へ戻します。
-  //   - 変更(13-B2-5): Map の挿入順 = 初回マウント時の columns 順が「初期の並び順」を
-  //     兼ねます(リセット時の並び順復元は buildResetColumns がこの挿入順から行います)。
-  //   - 明示 API(initialColumns prop / onResetColumns)による consumer 制御リセット
-  //     (方針 (B))は、将来必要になればこの ref を prop 優先へ差し替えるだけで載せ替え
-  //     可能です。現時点では追加 props を増やさず自己完結を優先します。
-  //   - StrictMode の二重 invoke / 二重 mount では columns がいずれも初期値のため、
-  //     退避内容は同一になります(再 mount 時は再構築されますが結果は不変)。
-  //   - マウント後に追加された列(createOverflowColumn)は本スナップショットに存在せず、
-  //     リセット対象外になります(handleColumnChooserReset 側で対象外扱い)。
-  const initialColumnStateRef = useRef<Map<string, InitialColumnState> | null>(
-    null,
-  );
-  if (initialColumnStateRef.current === null) {
-    initialColumnStateRef.current = new Map(
-      columns.map((column) => [
-        column.key,
-        { width: column.width, pinned: column.pinned, visible: column.visible },
-      ]),
-    );
-  }
+  // 注記(13-B2-2 → 本体分解 E-4a): 列リセット用の「初期 column defs スナップショット」は engine/columnCommands が
+  //   最初の update で退避します(以後 columns が変わっても更新しない = ユーザー操作後の状態を「初期」と誤認しない)。
 
   // 追加(11-A): GridBodyLayer / GridHeaderRow へ uiState を渡さないための
   //             正規化済み選択スナップショットです。
@@ -2827,100 +2787,51 @@ export function SpreadsheetGrid<T extends object>({
     [dispatch, runAutosize],
   );
 
-  // ── column pinning(13-A) ─────────────────────────────
-  // 追加(13-A): 列メニューからの固定切替(AG Grid の Pin Left / Pin Right / No Pin 相当)です。
-  // 設計メモ:
-  //   - columns は controlled props のため、反映は onColumnsChange 経由で行います
-  //     (columnWidths のような内部 state は持ちません。Grid 外から pinned を変えた場合と
-  //      同じ経路に一本化し、状態の二重管理を避けます)。
-  //   - その際、columnWidthsRef の「現在の解決済み幅」を column defs の width へ書き戻します。
-  //     columns prop が変わると columnWidths/sync が column.width で state を上書きするため、
-  //     書き戻さないと手動リサイズ済みの幅が固定切替のたびにリセットされてしまいます。
-  //   - 固定切替で orderedColumns の視覚順(= selection / activeCell の論理 index 空間)が
-  //     変わるため、選択・アクティブセル・編集は破棄します(AG Grid も pin 変更で
-  //     range selection をクリアします)。index を持ち越すと無関係な列が選択された
-  //     ように見えるためです。3 dispatch は同一イベント内で自動バッチされます。
-  const handleColumnMenuPinnedChange = useCallback(
-    (columnKey: string, nextPinned: GridColumnPinned | undefined) => {
-      closeColumnMenu();
-
-      if (!onColumnsChange) {
-        return;
-      }
-
-      const targetColumn = columns.find((column) => column.key === columnKey);
-      if (!targetColumn) {
-        return;
-      }
-
-      const currentPinned = targetColumn.pinned ?? undefined;
-      if (currentPinned === nextPinned) {
-        // 追加: 現在値と同じ項目の選択は閉じるだけの no-op にします。
-        return;
-      }
-
-      const nextColumns = columns.map((column) => {
-        const resolvedWidth =
-          columnWidthsRef.current[column.key] ?? column.width;
-        if (column.key === columnKey) {
-          return { ...column, width: resolvedWidth, pinned: nextPinned };
-        }
-        // 追加: 対象外の列も、リサイズ済みなら幅を defs へ書き戻して保全します。
-        return resolvedWidth === column.width
-          ? column
-          : { ...column, width: resolvedWidth };
-      });
-
-      onColumnsChange(nextColumns);
-
-      dispatch(gridActions.stopEdit());
-      dispatch(gridActions.clearSelection());
-      dispatch(gridActions.activateCell(null));
-    },
-    [closeColumnMenu, columns, dispatch, onColumnsChange],
-  );
-
-  // ── column autosize(13-B1) ───────────────────────────
-  // 追加(13-B1): 列メニューからの幅自動調整(AG Grid の Autosize This Column /
-  //             Autosize All Columns 相当)です。
-  // 設計メモ:
-  //   - 幅は手動リサイズと同じく内部 state(columnWidths)で管理されるため、
-  //     pinned と違い onColumnsChange は不要です。columnWidths/sync(merge)で反映します。
-  //     columnWidthsRef にも即時反映されるため、その後の固定切替時の幅書き戻し
-  //     (handleColumnMenuPinnedChange)でも自動調整後の幅が保全されます。
-  //   - 計測対象行は rowModel 越しのビュー順全行(getRow(i)・グローバル / 列フィルター適用後)です。
-  //     AG Grid 本家は「描画済みセルのみ」計測しますが、本実装は全表示行を対象にし、
-  //     ユニーク文字列 dedupe で計測コストを抑えます(詳細は logic/columnAutosize.ts)。
-  //   - 計測結果が現在幅と同じ場合は dispatch しません(no-op。再レンダー抑止)。
-  //   - 選択・アクティブセル・編集は破棄しません(幅変更は論理 index 空間を
-  //     変えないため。手動リサイズと同じ扱いです)。
-  //   - 変更(DS-4 ①-(2)): 計測は時間分割ランナー(useColumnAutosizeRunner)へ委譲しました。
-  //     ハンドラ deps から rowModel / dispatch が外れ(ランナーが latest-ref で読むため)、
-  //     closeColumnMenu / runAutosize / visibleColumns のみになりました(runAutosize は安定参照)。
-  const handleColumnMenuAutosizeColumn = useCallback(
-    (columnKey: string) => {
-      closeColumnMenu();
-
-      const targetColumn = visibleColumns.find(
-        (column) => column.key === columnKey,
-      );
-      if (!targetColumn) {
-        return;
-      }
-
-      // 変更(DS-4 ①-(2)): 同期計測を撤去し、時間分割ランナーへ委譲します(単一経路)。
-      //   getRow / viewRowCount / gridRoot / currentWidths は run 開始時にランナーが
-      //   latest-ref 群からキャプチャするため、ここでは対象列だけを渡します。
-      void runAutosize([targetColumn]);
-    },
-    [closeColumnMenu, runAutosize, visibleColumns],
-  );
-
-  const handleColumnMenuAutosizeAllColumns = useCallback(() => {
-    closeColumnMenu();
-    // 変更(DS-4 ①-(2)): 全列経路もランナーへ委譲します(単一経路・時間分割)。
-    void runAutosize(visibleColumns);
-  }, [closeColumnMenu, runAutosize, visibleColumns]);
+  // ── column commands(本体分解 E-4a) ────────────────────
+  // 変更(本体分解 E-4a): 列メニュー / 列チューザー / 並び替え管理 / フィルター管理(クリア系)/ 列リセットの
+  //   コマンド群は engine/columnCommands.ts(React 非依存)へ移設しました。update(レイアウト effect)で最新の
+  //   props / state を渡し、各コマンドは呼び出し時点の値を読みます。参照は恒久安定です。
+  const columnCommands = useController(() => createColumnCommands<T>(), {
+    columns,
+    visibleColumns,
+    orderedColumns,
+    columnWidths: effectiveColumnWidths,
+    onColumnsChange,
+    dispatch,
+    enableSorting,
+    sort: uiState.sort,
+    globalFilterText,
+    closeColumnMenu,
+    openToolPanel,
+    openColumnFilterPopover,
+    runAutosize,
+  });
+  const {
+    handleColumnMenuPinnedChange,
+    handleColumnMenuAutosizeColumn,
+    handleColumnMenuAutosizeAllColumns,
+    handleColumnMenuOpenChooser,
+    handleColumnMenuOpenSortManager,
+    handleColumnMenuOpenFilter,
+    handleColumnMenuOpenFilterManager,
+    handleColumnMenuResetColumns,
+    handleColumnMenuSortChange,
+    handleFilterManagerClearFilter,
+    handleFilterManagerClearAll,
+    handleFilterManagerClearGlobal,
+    handleColumnChooserToggleVisibility,
+    handleColumnChooserShowAll,
+    handleColumnChooserHideAll,
+    handleColumnChooserReorder,
+    handleColumnChooserReset,
+    applyColumnOrderAndPin,
+    handleSortManagerAddLevel,
+    handleSortManagerChangeDirection,
+    handleSortManagerChangeColumn,
+    handleSortManagerRemoveLevel,
+    handleSortManagerClearAll,
+    handleSortManagerMove,
+  } = columnCommands;
 
   // ── column chooser actions(13-B2-1) ──────────────────
   // 追加(13-B2-1): パネルへ渡す列一覧です。visibleColumns ではなく columns(全列)から
@@ -2941,14 +2852,6 @@ export function SpreadsheetGrid<T extends object>({
     [columns],
   );
 
-  // 追加(13-B2-1): 列メニューの「列の表示」項目からパネルを開きます
-  //             (メニューを閉じてからパネルを開きます)。
-  // 変更(UP-1): 統合ツールパネルの「列」タブを開きます(既に開いていればタブ切替のみ)。
-  const handleColumnMenuOpenChooser = useCallback(() => {
-    closeColumnMenu();
-    openToolPanel('columns');
-  }, [closeColumnMenu, openToolPanel]);
-
   // 追加(MS-3-1): 並び替え管理パネルへ渡す「並び替え可能な列」一覧です。
   //             visibleColumns を母集合にします(見えている列だけを並び替え対象に出す＝
   //             挙動が驚かない)。title 未指定は key を表示名にします(chooser と同じ)。
@@ -2966,26 +2869,6 @@ export function SpreadsheetGrid<T extends object>({
           title: column.title ?? column.key,
         })),
     [visibleColumns],
-  );
-
-  // 追加(MS-3-1): 列メニューの「並び替えを管理…」項目からパネルを開きます
-  //             (メニューを閉じてからパネルを開きます。chooser と同型)。
-  // 変更(UP-1): 統合ツールパネルの「並び替え」タブを開きます。
-  const handleColumnMenuOpenSortManager = useCallback(() => {
-    closeColumnMenu();
-    openToolPanel('sort');
-  }, [closeColumnMenu, openToolPanel]);
-
-  // 追加(③): 列メニューの「フィルター…」項目からフィルター popover を開きます
-  //          (メニューを閉じてから開きます。sort manager / chooser と同型)。
-  //          openColumnFilterPopover は anchor を列ヘッダーセル(data-ssg-col-key)から解決するため、
-  //          起点ボタンが無くても column だけで開けます。
-  const handleColumnMenuOpenFilter = useCallback(
-    (column: GridColumn<T>) => {
-      closeColumnMenu();
-      openColumnFilterPopover(column);
-    },
-    [closeColumnMenu, openColumnFilterPopover],
   );
 
   // ── filter management panel actions(FM-1) ────────────
@@ -3044,14 +2927,6 @@ export function SpreadsheetGrid<T extends object>({
         })),
     [columnFilters, visibleColumns],
   );
-
-  // 追加(FM-1): 列メニューの「フィルターを管理…」項目からパネルを開きます
-  //             (メニューを閉じてからパネルを開きます。sort manager / chooser と同型)。
-  // 変更(UP-1): 統合ツールパネルの「フィルター」タブを開きます。
-  const handleColumnMenuOpenFilterManager = useCallback(() => {
-    closeColumnMenu();
-    openToolPanel('filter');
-  }, [closeColumnMenu, openToolPanel]);
 
   // 追加(FM-3): 既定トップバーの Filters chip クリックでパネルをトグルします。
   //   chip 側は onPointerDown を stopPropagation して window の outside-close へ届かせない
@@ -3157,264 +3032,6 @@ export function SpreadsheetGrid<T extends object>({
       });
     },
     [gridRootRef, openColumnFilterPopover],
-  );
-
-  // 追加(FM-1): パネルの ×(単一クリア)/ すべてクリア / グローバル解除です。
-  //   すべてクリアはグローバルフィルターを保全したまま columnFilters だけを空にします
-  //   (setAllFilters のフル置換を 1 dispatch で。globalText は現値を引き継ぎます。
-  //    グローバルの解除はパネル先頭行の × のみ = ユーザー合意の切り分け)。
-  const handleFilterManagerClearFilter = useCallback(
-    (columnKey: string) => {
-      dispatch(gridActions.clearColumnFilter(columnKey));
-    },
-    [dispatch],
-  );
-
-  const handleFilterManagerClearAll = useCallback(() => {
-    dispatch(
-      gridActions.setAllFilters({
-        globalText: uiState.filters.globalText,
-        columnFilters: {},
-      }),
-    );
-  }, [dispatch, uiState.filters.globalText]);
-
-  const handleFilterManagerClearGlobal = useCallback(() => {
-    dispatch(gridActions.setGlobalFilter(''));
-  }, [dispatch]);
-
-  // 追加(13-B2-1): パネルでの 1 列の表示/非表示トグルです。
-  // 設計メモ(handleColumnMenuPinnedChange と同型):
-  //   - columns は controlled props のため onColumnsChange 経由で反映します。
-  //   - 対象外の列も columnWidthsRef の解決済み幅を defs へ書き戻して保全します
-  //     (visible 変更 → visibleColumns 変化 → columnWidths/sync が走るため。
-  //      書き戻さないと手動リサイズ幅がトグルのたびにリセットされます)。
-  //   - 表示/非表示で orderedColumns の視覚順(= selection / activeCell の論理 index 空間)
-  //     が変わるため、選択・アクティブセル・編集は破棄します(pin と同じ理由)。
-  //   - 最後の 1 列は非表示にできません(パネル側でも disabled ですが二重ガード)。
-  const handleColumnChooserToggleVisibility = useCallback(
-    (columnKey: string, nextVisible: boolean) => {
-      if (!onColumnsChange) {
-        return;
-      }
-
-      const targetColumn = columns.find((column) => column.key === columnKey);
-      if (!targetColumn) {
-        return;
-      }
-
-      const currentVisible = targetColumn.visible !== false;
-      if (currentVisible === nextVisible) {
-        // 現在値と同じトグルは no-op。
-        return;
-      }
-
-      if (!nextVisible) {
-        const visibleCount = columns.filter(
-          (column) => column.visible !== false,
-        ).length;
-        if (visibleCount <= 1) {
-          // 最後の 1 列は非表示にしません(空グリッド回避)。
-          return;
-        }
-      }
-
-      const nextColumns = columns.map((column) => {
-        const resolvedWidth =
-          columnWidthsRef.current[column.key] ?? column.width;
-        if (column.key === columnKey) {
-          return { ...column, width: resolvedWidth, visible: nextVisible };
-        }
-        return resolvedWidth === column.width
-          ? column
-          : { ...column, width: resolvedWidth };
-      });
-
-      onColumnsChange(nextColumns);
-
-      dispatch(gridActions.stopEdit());
-      dispatch(gridActions.clearSelection());
-      dispatch(gridActions.activateCell(null));
-    },
-    [columns, dispatch, onColumnsChange],
-  );
-
-  // 追加(13-B2-1): パネルの全選択(= すべて表示)です。非表示列がなければ no-op。
-  //             幅書き戻し・選択破棄の作法はトグルと同じです。
-  const handleColumnChooserShowAll = useCallback(() => {
-    if (!onColumnsChange) {
-      return;
-    }
-
-    const hasHidden = columns.some((column) => column.visible === false);
-    if (!hasHidden) {
-      return;
-    }
-
-    const nextColumns = columns.map((column) => {
-      const resolvedWidth =
-        columnWidthsRef.current[column.key] ?? column.width;
-      const needsWidth = resolvedWidth !== column.width;
-      const needsShow = column.visible === false;
-      if (!needsWidth && !needsShow) {
-        return column;
-      }
-      return needsShow
-        ? { ...column, width: resolvedWidth, visible: true }
-        : { ...column, width: resolvedWidth };
-    });
-
-    onColumnsChange(nextColumns);
-
-    dispatch(gridActions.stopEdit());
-    dispatch(gridActions.clearSelection());
-    dispatch(gridActions.activateCell(null));
-  }, [columns, dispatch, onColumnsChange]);
-
-  // 追加(13-B2-4): パネルの全解除(視覚順先頭の 1 列だけ残して非表示)です。
-  //   全選択トグルの checked 側クリックで呼ばれます(ShowAll と対称の作法)。
-  //   - keep 列 = orderedColumns[0](left → center → right の視覚順先頭 = 画面最左の
-  //     表示列)。個別の最後の 1 列ガードと同じく 0 列表示を作らないための 1 列残しです。
-  //   - 既に keep のみ表示なら no-op。幅書き戻し・選択破棄の作法はトグルと同じです。
-  const handleColumnChooserHideAll = useCallback(() => {
-    if (!onColumnsChange) {
-      return;
-    }
-
-    const keepKey = orderedColumns[0]?.key;
-    if (keepKey === undefined) {
-      // 表示列なし(全列 visible:false の columns が渡された場合)。全解除の対象が
-      // 存在しないため何もしません。
-      return;
-    }
-
-    const hasHideTarget = columns.some(
-      (column) => column.visible !== false && column.key !== keepKey,
-    );
-    if (!hasHideTarget) {
-      // keep 列だけが表示されている状態。no-op。
-      return;
-    }
-
-    const nextColumns = columns.map((column) => {
-      const resolvedWidth =
-        columnWidthsRef.current[column.key] ?? column.width;
-      const needsWidth = resolvedWidth !== column.width;
-      const needsHide = column.visible !== false && column.key !== keepKey;
-      if (!needsWidth && !needsHide) {
-        return column;
-      }
-      return needsHide
-        ? { ...column, width: resolvedWidth, visible: false }
-        : { ...column, width: resolvedWidth };
-    });
-
-    onColumnsChange(nextColumns);
-
-    dispatch(gridActions.stopEdit());
-    dispatch(gridActions.clearSelection());
-    dispatch(gridActions.activateCell(null));
-  }, [columns, dispatch, onColumnsChange, orderedColumns]);
-
-  // 追加(13-B3-1): パネルのドラッグ並べ替えの commit です。
-  // 設計メモ(pin / 表示トグルと同型の作法):
-  //   - columns は controlled props のため onColumnsChange 経由で反映します。
-  //   - パネルから渡される orderedKeys は「全列キーの permutation」です(検索中は
-  //     ドラッグ不可なので、絞り込み部分集合のキーが来ることはありません)。orderedKeys の
-  //     順序で columns を再構築します。集合不一致(長さ違い / 未知キー)のときは安全側に
-  //     倒して no-op にします。
-  //   - 【幅の保全】並べ替えで columns 配列が変わると visibleColumns も変わり、
-  //     既存の「columns → columnWidths/sync」effect が走ります。書き戻さないと手動リサイズ幅が
-  //     並べ替えのたびに defs 幅へ戻ってしまうため、全列について解決済み幅(columnWidthsRef)を
-  //     defs へ書き戻します(pin / 表示ハンドラと同じ"保全"方向)。
-  //   - 【no-op】順序が実際に変わらず、かつ幅の書き戻しも不要なら dispatch も
-  //     onColumnsChange も行いません(mutated フラグ)。
-  //   - 並べ替えは orderedColumns の視覚順(= selection / activeCell の論理 index 空間)を
-  //     変えるため、選択・アクティブセル・編集は破棄します(pin / 表示と同理由)。
-  //   - 注記: 本バッチでは pinned は変更しません。pinned 混在時は配列順を動かすだけで、
-  //     画面側は従来どおり reorderColumnsByPane が pane(left/center/right)へ再グループ化します
-  //     (ペイン跨ぎ・pinned 変更はヘッダー D&D の 13-B3-2 で扱います)。
-  // 変更(13-B3-2): 旧 handleColumnChooserReorder を「並べ替え + 任意の pin 変更」を 1 経路に
-  //   集約した共通 commit ヘルパ applyColumnOrderAndPin へ一般化しました。
-  // 設計メモ:
-  //   - orderedKeys は「全列キーの permutation」。長さ・集合が columns と一致しなければ no-op。
-  //   - pinOverride: 列キー → 'left'|'right'|undefined。指定列だけ pinned を上書きします
-  //     (ヘッダー D&D 用。チューザー並べ替えは未指定で従来どおり pinned 不変)。
-  //   - 【幅の保全】全列について解決済み幅(columnWidthsRef)を defs へ書き戻します。書き戻さないと
-  //     columns 変化 → columnWidths/sync effect で手動リサイズ幅が defs 幅へ戻ってしまうためです。
-  //   - 【正規化】reorderColumnsByPane で pane 連結正規化します(合意①・冪等)。pinOverride で
-  //     pinned が変わってもこの正規化が視覚順(= 論理 index 空間)を確定させます。チューザーの
-  //     orderedKeys は computeSectionReorderedKeys で既に pane 連結済みのため、ここでの正規化は
-  //     冪等で従来挙動と不変です。
-  //   - 【no-op】正規化結果が現在の columns と「順序・幅・pinned」すべて一致なら dispatch も
-  //     onColumnsChange も行いません(無駄な再レンダー抑止)。
-  //   - 並べ替え / pin 変更は orderedColumns の視覚順(= selection / activeCell の論理 index 空間)
-  //     を変え得るため、選択・アクティブセル・編集は破棄します(pin / 表示と同理由)。
-  const applyColumnOrderAndPin = useCallback(
-    (
-      orderedKeys: string[],
-      pinOverride?: Map<string, GridColumnPinned | undefined>,
-    ) => {
-      if (!onColumnsChange) {
-        return;
-      }
-      if (orderedKeys.length !== columns.length) {
-        return;
-      }
-      const byKey = new Map(columns.map((column) => [column.key, column]));
-      // 集合不一致(未知キー)は安全側に倒して no-op。
-      if (!orderedKeys.every((key) => byKey.has(key))) {
-        return;
-      }
-
-      const reordered = orderedKeys.map((key) => {
-        const column = byKey.get(key)!;
-        const resolvedWidth =
-          columnWidthsRef.current[column.key] ?? column.width;
-        const nextPinned = pinOverride?.has(key)
-          ? pinOverride.get(key)
-          : column.pinned;
-        const widthChanged = resolvedWidth !== column.width;
-        const pinnedChanged =
-          (column.pinned ?? undefined) !== (nextPinned ?? undefined);
-        return widthChanged || pinnedChanged
-          ? { ...column, width: resolvedWidth, pinned: nextPinned }
-          : column;
-      });
-
-      const normalized = reorderColumnsByPane(reordered);
-
-      const isNoOp =
-        normalized.length === columns.length &&
-        normalized.every((column, index) => {
-          const prev = columns[index];
-          return (
-            !!prev &&
-            prev.key === column.key &&
-            prev.width === column.width &&
-            (prev.pinned ?? undefined) === (column.pinned ?? undefined)
-          );
-        });
-      if (isNoOp) {
-        return;
-      }
-
-      onColumnsChange(normalized);
-
-      dispatch(gridActions.stopEdit());
-      dispatch(gridActions.clearSelection());
-      dispatch(gridActions.activateCell(null));
-    },
-    [columns, dispatch, onColumnsChange],
-  );
-
-  // 変更(13-B3-2): チューザー並べ替えは applyColumnOrderAndPin(pinOverride なし)へ委譲します。
-  //   ColumnChooserPanel へ渡す参照を安定させるため薄い useCallback で包みます。
-  const handleColumnChooserReorder = useCallback(
-    (orderedKeys: string[]) => {
-      applyColumnOrderAndPin(orderedKeys);
-    },
-    [applyColumnOrderAndPin],
   );
 
   // 追加(13-B3-2): ヘッダー D&D 並べ替え controller(ドロップインジケータ ref + 安定ハンドラ)。
@@ -3566,68 +3183,6 @@ export function SpreadsheetGrid<T extends object>({
     zIndex: 8,
     display: 'none',
   };
-
-  // 追加(13-B2-2): 全列を初期 column defs の値(幅 / 固定 / 表示 / 並び順)へ戻します。
-  // 変更(13-B2-5): 並び順の復元を追加し、再構成を logic/columnReset.ts の buildResetColumns
-  //   へ抽出しました(幅の戻し方 / overflow 列 / no-op の方針は同モジュールの doc を参照)。
-  // 設計メモ:
-  //   - columns は controlled props のため onColumnsChange 経由で反映します
-  //     (pin / 表示トグルと同じ経路。内部 state は持ちません)。
-  //   - 【幅の戻し方】対象列は column.width を初期幅へセットするだけでよく、
-  //     syncColumnWidths は呼びません。columns prop の変化で visibleColumns が
-  //     変わり、既存の「columns → columnWidths/sync」effect が
-  //     columnWidths[key] = column.width(= 初期幅) で上書きするため、手動リサイズ済みの
-  //     live 幅は自動的に破棄され初期幅へ戻ります。
-  //     ※ pin / 表示ハンドラが「対象外の列の live 幅を defs へ書き戻して"保全"」するのと
-  //       ちょうど逆向きの操作です(リセットは live 幅を意図的に"破棄"します)。
-  //   - 【並び順の戻し方(13-B2-5)】初期順はスナップショット Map の挿入順から復元します。
-  //     ヘッダー D&D / チューザー並べ替え(applyColumnOrderAndPin)が columns 配列の順序を
-  //     恒久的に書き換えるため、属性だけ戻す従来実装では「左固定 → 中央へ移動 → リセット」
-  //     でペイン内の相対順が初期と逆転していました。復元順は consumer 宣言の初期配列と
-  //     1:1 で一致させ、pane 連結正規化は初期マウントと同じく描画側の reorderColumnsByPane
-  //     に委ねます(初期状態の完全再現を優先)。
-  //   - 【no-op】初期列の幅 / 固定 / 表示 / 並び順がすべて初期状態と差分なしなら dispatch も
-  //     onColumnsChange も行いません(buildResetColumns が null を返します)。
-  //   - 固定 / 表示 / 並び順の復元で orderedColumns の視覚順(= selection / activeCell の論理
-  //     index 空間)が変わり得るため、選択・アクティブセル・編集は破棄します(pin / 表示と同理由)。
-  //   - 追加(13-B2-3 / gpt5.5対応): 列メニュー root の「列のリセット」からも
-  //     本ハンドラを再利用します。列メニュー側では薄い wrapper で menu close だけを
-  //     追加し、ColumnChooserPanel 側の挙動(押下後もパネルを残す)とは分離します。
-  const handleColumnChooserReset = useCallback(() => {
-    if (!onColumnsChange) {
-      return;
-    }
-    const snapshot = initialColumnStateRef.current;
-    if (!snapshot) {
-      return;
-    }
-
-    const nextColumns = buildResetColumns(
-      columns,
-      snapshot,
-      columnWidthsRef.current,
-    );
-    if (nextColumns === null) {
-      // 幅 / 固定 / 表示 / 並び順すべて初期状態のまま → 何もしません(再レンダー抑止)。
-      return;
-    }
-
-    onColumnsChange(nextColumns);
-
-    dispatch(gridActions.stopEdit());
-    dispatch(gridActions.clearSelection());
-    dispatch(gridActions.activateCell(null));
-  }, [columns, dispatch, onColumnsChange]);
-
-  // 追加(13-B2-3 / gpt5.5対応): 列メニュー root の「列のリセット」用 wrapper です。
-  //   - reset 本体は ColumnChooserPanel フッターと同じ handleColumnChooserReset を再利用します。
-  //   - 列メニューから実行した場合だけ、先に列メニューを閉じます。
-  //   - handleColumnChooserReset 側に close 処理を混ぜないことで、パネル内フッターから
-  //     押した場合の「パネルを開いたまま状態を確認できる」挙動を維持します。
-  const handleColumnMenuResetColumns = useCallback(() => {
-    closeColumnMenu();
-    handleColumnChooserReset();
-  }, [closeColumnMenu, handleColumnChooserReset]);
 
   // ── filter popover actions ────────────────────────────
   // 追加(DS-4 #1): rows[index] の対象列セル値アクセサです。identity は rows/openedFilterColumn に
@@ -4201,113 +3756,6 @@ export function SpreadsheetGrid<T extends object>({
     dispatch(gridActions.clearColumnFilter(filterPopoverState.columnKey));
     closeColumnFilterPopover();
   }, [closeColumnFilterPopover, dispatch, filterPopoverState]);
-
-  // ── sort ──────────────────────────────────────────────
-  // 変更(13-B4): ヘッダーのソートボタンを廃止し、ソート操作を列メニュー(と
-  //             コンテキストメニュー)へ集約しました。メニューの「昇順/降順で並び替え」
-  //             から呼ばれるハンドラです。AG Grid と同様、現在と同じ方向を再選択したら
-  //             解除(clearSort)します。reducer / actions は不変(setSort/clearSort 再利用)。
-  // 注記: 他の列メニュー操作(pin/autosize/…)と同じく、まず closeColumnMenu() してから
-  //       dispatch します。enableSorting=false の列ではメニュー項目自体を出さないため
-  //       (ColumnMenuPopover の canSort)、ここでのガードは保険です。
-  const handleColumnMenuSortChange = useCallback(
-    (columnKey: string, direction: 'asc' | 'desc') => {
-      closeColumnMenu();
-
-      if (!enableSorting) {
-        return;
-      }
-
-      // 変更(MS-2): 単一置換ロジックを純関数 nextSortEntries(additive=false) へ一本化
-      //   します。挙動は MS-1 と完全同値(現在がちょうど『この列・同方向の単一ソート』
-      //   なら解除、それ以外はこの列だけの単一ソートへ置換)。マルチソート中に押した
-      //   場合は、その時点のマルチを破棄してこの列の単一ソートへ切り替わります
-      //   (メニューは単一置換のまま = 合意済み方針。複数追加はヘッダー Shift+click 経路)。
-      const next = nextSortEntries(uiState.sort, columnKey, direction, false);
-      dispatch(
-        next.length === 0 ? gridActions.clearSort() : gridActions.setSort(next),
-      );
-    },
-    [closeColumnMenu, dispatch, enableSorting, uiState.sort],
-  );
-
-  // ── sort management panel actions(MS-3-1) ────────────
-  // 追加(MS-3-1): 並び替え管理パネルからのライブ編集ハンドラ群です。
-  //   いずれも logic/sorting.ts の純関数で次状態を算出し、setSort / clearSort へ流します
-  //   (reducer / actions は不変)。パネルは編集後も開いたままにします
-  //   (closeSortManager は混ぜません。× / outside / Escape でのみ閉じます)。
-  //   メニュー経路(handleColumnMenuSortChange)と違い closeColumnMenu はしません
-  //   (この時点でメニューは既に閉じ、パネルだけが開いています)。
-  const handleSortManagerAddLevel = useCallback(
-    (columnKey: string, direction: 'asc' | 'desc') => {
-      if (!enableSorting) {
-        return;
-      }
-      const next = addSortEntry(uiState.sort, columnKey, direction);
-      // 追加は常に 1 件以上になるため setSort 固定です。
-      dispatch(gridActions.setSort(next));
-    },
-    [dispatch, enableSorting, uiState.sort],
-  );
-
-  const handleSortManagerChangeDirection = useCallback(
-    (index: number, direction: 'asc' | 'desc') => {
-      if (!enableSorting) {
-        return;
-      }
-      const next = setSortEntryDirection(uiState.sort, index, direction);
-      // 冪等セット(変化なし)のときは next === 現配列のため、setSort でも参照同一で実害なし。
-      dispatch(gridActions.setSort(next));
-    },
-    [dispatch, enableSorting, uiState.sort],
-  );
-
-  const handleSortManagerChangeColumn = useCallback(
-    (index: number, columnKey: string) => {
-      if (!enableSorting) {
-        return;
-      }
-      const next = setSortEntryColumn(uiState.sort, index, columnKey);
-      dispatch(gridActions.setSort(next));
-    },
-    [dispatch, enableSorting, uiState.sort],
-  );
-
-  const handleSortManagerRemoveLevel = useCallback(
-    (index: number) => {
-      if (!enableSorting) {
-        return;
-      }
-      const next = removeSortEntryAt(uiState.sort, index);
-      dispatch(
-        next.length === 0 ? gridActions.clearSort() : gridActions.setSort(next),
-      );
-    },
-    [dispatch, enableSorting, uiState.sort],
-  );
-
-  const handleSortManagerClearAll = useCallback(() => {
-    if (!enableSorting) {
-      return;
-    }
-    dispatch(gridActions.clearSort());
-  }, [dispatch, enableSorting]);
-
-  // 追加(MS-3-2): 優先順位 DnD の確定ハンドラです。パネル側で補正済みの from / to を
-  //   受け取り、moveSortEntry で次状態を算出して setSort へ流します。move は長さ不変
-  //   (ドラッグは 2 件以上のときのみ可能)なので空配列にはならず、setSort 固定です。
-  //   no-op ドラッグ(from === to / 範囲外)は moveSortEntry が同一参照を返すため、
-  //   setSort へ流しても参照同一で再レンダーを誘発しません。
-  const handleSortManagerMove = useCallback(
-    (from: number, to: number) => {
-      if (!enableSorting) {
-        return;
-      }
-      const next = moveSortEntry(uiState.sort, from, to);
-      dispatch(gridActions.setSort(next));
-    },
-    [dispatch, enableSorting, uiState.sort],
-  );
 
   // 変更(UI CSS移行): getHeaderActionButtonStyle(インライン)を撤去しました。
   //   ヘッダーアイコンボタンのスタイルは styles.css(.ssg-icon-btn / --active / :hover)へ移行。
