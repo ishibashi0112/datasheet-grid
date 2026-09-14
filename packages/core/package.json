@@ -1,6 +1,6 @@
 {
   "name": "@ishibashi0112/spreadsheet-grid-core",
-  "version": "0.38.0",
+  "version": "0.39.0",
   "description": "SpreadsheetGrid のフレームワーク非依存コア(状態 / 派生値計算 / コマンド / DOM コントローラ)。React 版 @ishibashi0112/spreadsheet-grid と将来の Solid 版が共有します。",
   "keywords": [
     "grid",
