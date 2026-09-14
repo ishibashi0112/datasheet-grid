@@ -17,7 +17,7 @@ pnpm add @ishibashi0112/spreadsheet-grid
 yarn add @ishibashi0112/spreadsheet-grid
 ```
 
-**react** と **react-dom** の `>= 19` が peer dependencies です(アプリ側にインストールされている必要があります)。ランタイム依存の `@tanstack/virtual-core`(TanStack Virtual のフレームワーク非依存コア)は自動で入ります。
+**react** と **react-dom** の `>= 19` が peer dependencies です(アプリ側にインストールされている必要があります)。ランタイム依存の `@tanstack/virtual-core`(TanStack Virtual のフレームワーク非依存コア)と、グリッド本体のフレームワーク非依存コア `@ishibashi0112/spreadsheet-grid-core`(v0.39.0 から分離)は自動で入ります。アプリ側で直接 import する必要はありません。
 
 ## スタイルの読み込み
 

@@ -12,6 +12,7 @@
     "build:types": "pnpm -r --filter \"./packages/*\" run build:types",
     "version:minor": "node scripts/bump-version.mjs minor",
     "version:patch": "node scripts/bump-version.mjs patch",
+    "publish:all": "pnpm -r publish --access public",
     "lint": "eslint .",
     "preview": "vp preview",
     "test": "vitest run",

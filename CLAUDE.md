@@ -51,7 +51,7 @@ React 19 + TypeScript + Vite 製のカスタム AG Grid 風・仮想化データ
 | test | `vp test` | 全緑(現状 ~1,216 tests / 145 files) |
 | build | `vp run build:lib`(ルートで `pnpm -r --filter ./packages/* run build:lib` = core → react の順。各パッケージは `vp build --config vite.lib.config.ts` + `tsc -p tsconfig.lib.json`、react はさらに emit-layer-css)。デモ app は `vp build` | 0 |
 
-- リリース: `pnpm run version:minor`(= `node scripts/bump-version.mjs minor`。両パッケージの版を揃えて上げ「X.Y.Z」コミット + `vX.Y.Z` タグ)→ ユーザーが `pnpm -r publish --access public`(core → react の順。2FA は各パッケージ)→ `git push origin main --follow-tags`。旧 `vp exec pnpm version minor` は単一パッケージ時代のもので使わない。
+- リリース: `pnpm run version:minor`(= `node scripts/bump-version.mjs minor`。両パッケージの版を揃えて上げ「X.Y.Z」コミット + `vX.Y.Z` タグ)→ ユーザーが `pnpm run publish:all`(= `pnpm -r publish --access public`。core → react の順。2FA は各パッケージ)→ `git push origin main --follow-tags`。旧 `vp exec pnpm version minor` は単一パッケージ時代のもので使わない。
 - 依存インストールは `vp install`(pnpm へ委譲)。ローカルのゲートは上記 vp 経由で実行する。※ `devEngines` は 2026-07-18 に削除(pnpm 11 が lockfile へ書く packageManagerDependencies ドキュメントを Vercel CLI が解釈できずデプロイが失敗するため)。pnpm のピンは `packageManager` フィールドで維持(復活させないこと。詳細は `website/README.md`)。CI(GitHub Actions)は pnpm で package.json スクリプトを実行する(`pnpm test` / `pnpm run build:lib` 等)。
 - vite+ 統合は **2026-07-13 に設定済み**: `pnpm-workspace.yaml` の overrides(`vite` → `@voidzero-dev/vite-plus-core` エイリアス / `vitest` を vp 同梱版へ pin)+ devDependency `vite-plus`(native binding 供給)。これにより `vite` の bin は `vp` に置き換わり、package.json scripts も vp 化済み。この構成を崩すと `vp test` が同梱 vitest へフォールバックし、jsdom を解決できず DOM 系テストが起動しなくなる(2026-07 の障害の原因)。vitest の pin は `vp --version` の同梱バージョンと揃えること。`vite` override(`-dev/vite-plus-core`)も `` ではなく vite-plus devDependency と同じ版へ固定する(2026-09-13。`` は lockfile 更新のたびに再解決され vp 本体と core がずれた)。
 
