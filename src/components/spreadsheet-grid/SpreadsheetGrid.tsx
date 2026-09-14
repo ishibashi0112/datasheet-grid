@@ -31,34 +31,11 @@ import {
 } from './hooks/useResolvedGridSlots';
 
 import { useVirtualizerCore } from './hooks/useVirtualizerCore';
-// 追加(本体分解 E-1): 列解決 / 3 ペインレイアウトのエンジン(React 非依存)。
-import {
-  createColumnResolver,
-  createPaneLayoutResolver,
-} from './engine/columnLayout';
-import { createRowPipelineResolver } from './engine/rowPipeline';
-import { createVerticalLayoutResolver } from './engine/verticalLayout';
-import { createColumnCommands } from './engine/columnCommands';
-import { createGridApi } from './engine/gridApi';
-import {
-  createDetailKeysNotifier,
-  createHoverRowNotifier,
-  createStateChangeNotifier,
-} from './engine/notifiers';
-import { createRowSelectionCommands } from './engine/rowSelectionCommands';
-import {
-  createFilterPopoverCommands,
-  createFilterPopoverDerivedResolver,
-} from './engine/filterPopoverCommands';
-import { createAutoHeightMeasurer } from './controllers/autoHeightMeasurer';
-import { createDebouncedValueStore } from './controllers/debouncedValueStore';
-import { createScrollSyncController } from './controllers/scrollSyncController';
-import { createAutoSizeOnDataTrigger } from './controllers/columnAutosizeRunner';
-import { useController, useControllerLifecycle } from './hooks/useController';
+// 追加(本体分解 E-7): グリッドエンジン(リゾルバ / コマンド / 通知 / DOM コントローラ / store の束ね。React 非依存)。
+import { createGridEngine } from './engine/createGridEngine';
+import { useControllerLifecycle } from './hooks/useController';
 
 import { gridActions } from './model/gridActions';
-import { createInitialGridUiState } from './model/gridReducer';
-import { createGridStore } from './model/gridStore';
 import { useGridStore, useGridViewState } from './hooks/useGridStore';
 import {
   buildSelectionSnapshot,
@@ -159,7 +136,6 @@ import {
 import {
   DEFAULT_DETAIL_ROW_HEIGHT,
   DETAIL_TOGGLE_COLUMN_KEY,
-  createDetailIndexCacheHolder,
   isInsideDetailCardOf,
   isSyntheticColumnKey,
   seedDetailIndexCache,
@@ -308,7 +284,6 @@ const EMPTY_CONTEXT_MENU_ITEMS: GridContextMenuItem[] = [];
 // query(filter/sort)変更をサーバへ送る前の debounce(ms)です。入力欄の即時反映とは別系統で、
 //   キーストロークごとの再フェッチ(block 0 取り直し)を合体します。フック内の 120ms(レンジ要求
 //   debounce)とは役割が異なり併存します。
-const SERVER_SIDE_QUERY_DEBOUNCE_MS = 300;
 
 // 追加: Grid 本体です。
 // 追加(本体分解 E-1): 展開行トグル列(T1)のセル本体です。列定義自体は engine/columnLayout.ts が合成し、
@@ -521,7 +496,30 @@ export function SpreadsheetGrid<T extends object>({
   //   移設しました。展開行トグル列のセル本体(JSX)だけを描画側から渡します。
   const detailToggleColumnActive =
     detailRow != null && detailRow.showToggleColumn !== false;
-  const [resolveColumns] = useState(() => createColumnResolver<T>());
+  // 変更(本体分解 E-7): リゾルバ / コマンド群 / 通知 / DOM コントローラ / 外部 store は engine/createGridEngine.ts が
+  //   1 インスタンスとして生成します(React 非依存)。本シェルはレンダーごとにリゾルバへ入力を渡し、各コントローラへは
+  //   useControllerLifecycle(update / dispose)で接続します。初期 store 状態(初回 visibleColumns)もエンジン側で作ります。
+  const [engine] = useState(() =>
+    createGridEngine<T>({
+      columnInputs: {
+        columns,
+        isServerSide: dataSource != null,
+        enableRowDrag,
+        hasRowsChange: onRowsChange != null,
+        detailToggleColumnActive,
+        renderDetailToggleCell: renderDetailToggleCell as NonNullable<
+          GridColumn<T>['renderCell']
+        >,
+      },
+      serverSide: {
+        isServerSide: dataSource != null,
+        enableGlobalFilter,
+        enableColumnFilter,
+        enableSorting,
+      },
+    }),
+  );
+  const { resolveColumns } = engine;
   const {
     groupColumns,
     aggColumns,
@@ -575,9 +573,7 @@ export function SpreadsheetGrid<T extends object>({
   // 変更: useReducer → React 非依存の外部 store(model/gridStore)+ useSyncExternalStore 購読。
   //   reducer / 初期 state / dispatch の呼び出し形は従来どおりで挙動不変。store はマウント時に
   //   1 回だけ生成します(useState 初期化子。初期 state は従来と同じく初回の visibleColumns)。
-  const [gridStore] = useState(() =>
-    createGridStore(createInitialGridUiState(visibleColumns)),
-  );
+  const gridStore = engine.store;
   const [uiState, dispatch] = useGridStore(gridStore);
   // 追加(非依存化 ④-2): view スライス(ビューポート計測 / ホバー)。旧 useState 6 個の置き換えで、
   //   setter の呼び出し形(値 or 関数)と参照安定性は従来どおりです。
@@ -610,13 +606,13 @@ export function SpreadsheetGrid<T extends object>({
   const isHoverControlled = hoveredRowIndexProp !== undefined;
   // 変更(本体分解 E-6a): ホバー行の正本(同値抑止)/ 内部 state 更新 / onHoveredRowChange 通知は
   //   engine/notifiers.ts の createHoverRowNotifier へ(旧 latest-ref 3 本 + 同期 effect を解消)。
-  const hoverRowNotifier = useController(createHoverRowNotifier, {
+  useControllerLifecycle(engine.hoverRowNotifier, {
     enableRowHover,
     isHoverControlled,
     onHoveredRowChange,
     setHoveredRowIndex,
   });
-  const applyHoveredRowChange = hoverRowNotifier.applyHoveredRowChange;
+  const applyHoveredRowChange = engine.hoverRowNotifier.applyHoveredRowChange;
   // 表示に使うホバー行です(controlled 優先 / enableRowHover: false は常に null)。
   const resolvedHoveredRowIndex = !enableRowHover
     ? null
@@ -628,8 +624,8 @@ export function SpreadsheetGrid<T extends object>({
   //   コールバックは useEffect で同期する latest-ref(RS-AS 方式)越しに読み、通知 effect の deps は
   //   集合の参照だけにします(コールバック識別子の変化で再通知しない)。
   // 変更(本体分解 E-6a): 通知は engine/notifiers.ts の createDetailKeysNotifier へ(passive = ペイント後、旧 effect と同じ)。
-  useController(
-    createDetailKeysNotifier,
+  useControllerLifecycle(
+    engine.detailKeysNotifier,
     {
       expandedKeys: uiState.expandedDetailRowKeys,
       onChange: onExpandedDetailRowKeysChange,
@@ -642,7 +638,7 @@ export function SpreadsheetGrid<T extends object>({
   //   (serverSide でも全行走査なしで帯の位置が決まる)。
   const detailRowEnabled = detailRow != null;
   // 変更(本体分解 E-6c): useRef → 差し替え可能なホルダー(logic/detailRow.createDetailIndexCacheHolder)。
-  const [detailIndexCacheHolder] = useState(createDetailIndexCacheHolder);
+  const detailIndexCacheHolder = engine.detailIndexCache;
   const toggleDetailRowAt = useCallback(
     (rowKey: GridRowKey, viewIndex: number) => {
       seedDetailIndexCache(detailIndexCacheHolder.current, rowKey, viewIndex);
@@ -687,7 +683,7 @@ export function SpreadsheetGrid<T extends object>({
   //             columnWidths に依存しないため、列構成が変わらない限り参照は不変です。
   // 変更(本体分解 E-1): flex 解決と 3 ペイン geometry は engine/columnLayout.ts(React 非依存)へ移設しました
   //   (メモ単位は旧 useMemo と同じ = ライブリサイズ中に幅が変わらないペインの参照は不変)。
-  const [resolvePaneLayout] = useState(() => createPaneLayoutResolver<T>());
+  const { resolvePaneLayout } = engine;
   const {
     effectiveColumnWidths,
     paneLayout,
@@ -929,7 +925,7 @@ export function SpreadsheetGrid<T extends object>({
   // 変更(本体分解 E-2): order パイプライン / グルーピング / RowModel シーム / serverSide query の派生値計算は
   //   engine/rowPipeline.ts(React 非依存)へ移設しました。useMemo は React Compiler lint 向けの外皮で、
   //   細粒度の参照安定はリゾルバ内の createMemo が担います。
-  const [rowPipeline] = useState(() => createRowPipelineResolver<T>());
+  const { rowPipeline } = engine;
   const baseOrder = useMemo(
     () => rowPipeline.resolveBaseOrder(rows.length),
     [rowPipeline, rows.length],
@@ -1064,14 +1060,11 @@ export function SpreadsheetGrid<T extends object>({
   //   block 0 取り直しを抑止します。初期値は live の初回値で seed し、mount 時のフック queryKey と
   //   一致させて初回 debounce 後の余計な再設定を避けます。
   // 変更(本体分解 E-2): useState × 2 + setTimeout effect を controllers/debouncedValueStore(React 非依存)へ。
-  const serverSideQueryStore = useController(
-    () =>
-      createDebouncedValueStore(
-        liveServerSideQuery,
-        SERVER_SIDE_QUERY_DEBOUNCE_MS,
-      ),
-    { value: liveServerSideQuery, enabled: isServerSide },
-  );
+  const serverSideQueryStore = engine.serverSideQueryStore;
+  useControllerLifecycle(serverSideQueryStore, {
+    value: liveServerSideQuery,
+    enabled: isServerSide,
+  });
   const { query: serverSideQuery, queryKey: serverSideQueryKey } =
     useSyncExternalStore(
       serverSideQueryStore.subscribe,
@@ -1245,8 +1238,8 @@ export function SpreadsheetGrid<T extends object>({
   // ── autoSize on data(データ投入時の列幅自動フィット)────────────
   // 変更(本体分解 E-6c): 宣言的トリガー(autoSizeColumns × rows 変化)は controllers/columnAutosizeRunner の
   //   createAutoSizeOnDataTrigger へ(passive = 旧 effect と同じくコミット後・パイプライン再計算済みで計測)。
-  useController(
-    () => createAutoSizeOnDataTrigger<T>(),
+  useControllerLifecycle(
+    engine.autoSizeOnData,
     {
       mode: autoSizeColumns,
       isServerSide,
@@ -1326,7 +1319,8 @@ export function SpreadsheetGrid<T extends object>({
   // 変更(本体分解 E-6b): 初期計測 / scroll リスナー / ResizeObserver / onScroll の rAF 間引き通知は
   //   controllers/scrollSyncController.ts へ(旧 latest-ref 3 本 + effect 2 個を解消)。命令的 API 由来の
   //   スクロール判定(markApiScroll)もコントローラが持ちます。
-  const scrollSync = useController(createScrollSyncController, {
+  const scrollSync = engine.scrollSync;
+  useControllerLifecycle(scrollSync, {
     scrollContainerRef,
     setViewState: gridStore.setViewState,
     onScroll,
@@ -1365,7 +1359,7 @@ export function SpreadsheetGrid<T extends object>({
   //   engine/verticalLayout.ts(React 非依存)へ、測定フロー(DOM 実測 + ResizeObserver + アンカー補正)は
   //   controllers/autoHeightMeasurer.ts へ移設しました。測定側の version(prefix 更新)/ nonce(内容変化)を
   //   購読し、再計算 / 再測定のトリガーにします。実測キャッシュ(rowKey 単位)も測定側が持ちます。
-  const [autoHeightMeasurer] = useState(() => createAutoHeightMeasurer<T>());
+  const autoHeightMeasurer = engine.autoHeightMeasurer;
   const { version: autoHeightVersion, nonce: autoHeightMeasureNonce } =
     useSyncExternalStore(
       autoHeightMeasurer.subscribe,
@@ -1376,9 +1370,7 @@ export function SpreadsheetGrid<T extends object>({
   const estimateRowHeightValue = estimateRowHeight ?? rowHeight;
   const detailHeightValue = detailRow?.height ?? DEFAULT_DETAIL_ROW_HEIGHT;
   const detailIsExpandable = detailRow?.isExpandable;
-  const [resolveVerticalLayout] = useState(() =>
-    createVerticalLayoutResolver<T>(),
-  );
+  const { resolveVerticalLayout } = engine;
   const {
     hasAutoHeightColumn,
     autoHeightActive,
@@ -1708,8 +1700,9 @@ export function SpreadsheetGrid<T extends object>({
 
   // 変更(本体分解 E-4c): 選択コミット / ガター選択 / ドラッグ範囲 / 全選択トグル / controlled 同期は
   //   engine/rowSelectionCommands.ts(React 非依存)へ移設しました(旧 latest-ref 4 本 + アンカー ref を解消)。
-  const rowSelectionCommands = useController(
-    () => createRowSelectionCommands<T>(),
+  const rowSelectionCommands = engine.rowSelectionCommands;
+  useControllerLifecycle(
+    rowSelectionCommands,
     {
       rowModel,
       rowSelectionState,
@@ -1797,7 +1790,7 @@ export function SpreadsheetGrid<T extends object>({
   //   既に可視の場合は 'auto' 計算が no-op になるため二重スクロールの実害はありません。
   // 変更(本体分解 E-5): 命令的 API の実体(engine/gridApi)はここで生成し、接続(update)は全 args が揃う下流で
   //   行います。scrollToCellInternal は参照安定で、呼び出し時点の最新 args を読みます(旧 latest-ref 同期 effect は不要)。
-  const [gridApi] = useState(() => createGridApi<T>());
+  const gridApi = engine.gridApi;
   const scrollRestoredCellIntoView = useCallback(
     (activeCell: CellCoord | null) => {
       if (!activeCell) {
@@ -2397,7 +2390,8 @@ export function SpreadsheetGrid<T extends object>({
   // 変更(本体分解 E-4a): 列メニュー / 列チューザー / 並び替え管理 / フィルター管理(クリア系)/ 列リセットの
   //   コマンド群は engine/columnCommands.ts(React 非依存)へ移設しました。update(レイアウト effect)で最新の
   //   props / state を渡し、各コマンドは呼び出し時点の値を読みます。参照は恒久安定です。
-  const columnCommands = useController(() => createColumnCommands<T>(), {
+  const columnCommands = engine.columnCommands;
+  useControllerLifecycle(columnCommands, {
     columns,
     visibleColumns,
     orderedColumns,
@@ -2830,9 +2824,7 @@ export function SpreadsheetGrid<T extends object>({
   // 変更(本体分解 E-4b): popover の派生値(dateSet 正規化候補 / 全値集合 / set 選択状態 / 反転可否 / 複合列か)と
   //   コマンド群(set のチェック・すべて選択・検索確定・クリア、複合列の条件編集と個別クリア、適用 / クリア)は
   //   engine/filterPopoverCommands.ts(React 非依存)へ移設しました。
-  const [resolveFilterPopoverDerived] = useState(() =>
-    createFilterPopoverDerivedResolver<T>(),
-  );
+  const { resolveFilterPopoverDerived } = engine;
   const filterPopoverDerived = useMemo(
     () =>
       resolveFilterPopoverDerived({
@@ -2856,8 +2848,9 @@ export function SpreadsheetGrid<T extends object>({
     openedSetFilterValue,
     openedSetSelection,
   } = filterPopoverDerived;
-  const filterPopoverCommands = useController(
-    () => createFilterPopoverCommands<T>(),
+  const filterPopoverCommands = engine.filterPopoverCommands;
+  useControllerLifecycle(
+    filterPopoverCommands,
     {
       filterPopoverState,
       openedFilterColumn,
@@ -3545,8 +3538,8 @@ export function SpreadsheetGrid<T extends object>({
   //   行いません(計算ゼロ)。未使用時は lastEmitted が null のままですが、後から付いた初回は prev=null で
   //   非発火→baseline 記録となり整合的です。
   // 変更(本体分解 E-6a): 判定 / 通知は engine/notifiers.ts の createStateChangeNotifier へ(passive = 旧 effect と同じ)。
-  useController(
-    () => createStateChangeNotifier<T>(),
+  useControllerLifecycle(
+    engine.stateChangeNotifier,
     {
       columnWidths: uiState.columnWidths,
       filters: uiState.filters,
