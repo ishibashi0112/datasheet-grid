@@ -6,7 +6,7 @@ import tseslint from 'typescript-eslint'
 import { defineConfig, globalIgnores } from 'eslint/config'
 
 export default defineConfig([
-  globalIgnores(['dist', 'website']),
+  globalIgnores(['dist', 'packages/*/dist', 'website']),
   {
     files: ['**/*.{ts,tsx}'],
     extends: [
@@ -19,16 +19,11 @@ export default defineConfig([
       globals: globals.browser,
     },
   },
-  // 追加(非依存化 ⑤-1): React 非依存の層(model / logic / controllers / engine / utils)は React と React 束縛の
-  //   型(model/gridTypes.ts)を import しない。型は gridTypes.unbound(内部層用の未束縛束縛)か gridTypes.core
-  //   (F ジェネリックのまま扱う場合)から取る。monorepo 分割(⑤-2)で core パッケージになる境界を先に lint で固定する。
+  // 追加(非依存化 ⑤-1 / 変更 ⑤-2): core パッケージ(packages/core)は React / react-dom / React 版パッケージを
+  //   import しない。型は gridTypes.unbound(内部層用の未束縛束縛)か gridTypes.core(F ジェネリック)から取る
+  //   (React 束縛の gridTypes.ts は packages/react 側にあり物理的にも参照できない)。
   {
-    files: ['src/components/spreadsheet-grid/{model,logic,controllers,engine,utils}/**/*.ts'],
-    // gridTypes.ts は React 束縛そのもの、gridTypes.core.test.ts は React 束縛の型テスト(ReactNode の代入可否)。
-    ignores: [
-      'src/components/spreadsheet-grid/model/gridTypes.ts',
-      'src/components/spreadsheet-grid/model/gridTypes.core.test.ts',
-    ],
+    files: ['packages/core/src/**/*.ts'],
     rules: {
       'no-restricted-imports': [
         'error',
@@ -39,9 +34,8 @@ export default defineConfig([
           ],
           patterns: [
             {
-              group: ['**/model/gridTypes', '../model/gridTypes', './gridTypes'],
-              message:
-                'React 束縛の型(gridTypes.ts)ではなく gridTypes.unbound(内部層用)/ gridTypes.core(F ジェネリック)から import してください。',
+              group: ['@ishibashi0112/spreadsheet-grid', '@ishibashi0112/spreadsheet-grid/*'],
+              message: 'core は React 版パッケージに依存しません。',
             },
           ],
         },

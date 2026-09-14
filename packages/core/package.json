@@ -1,0 +1,64 @@
+{
+  "name": "@ishibashi0112/spreadsheet-grid-core",
+  "version": "0.38.0",
+  "description": "SpreadsheetGrid のフレームワーク非依存コア(状態 / 派生値計算 / コマンド / DOM コントローラ)。React 版 @ishibashi0112/spreadsheet-grid と将来の Solid 版が共有します。",
+  "keywords": [
+    "grid",
+    "datagrid",
+    "spreadsheet",
+    "virtualized",
+    "typescript",
+    "framework-agnostic"
+  ],
+  "license": "MIT",
+  "author": "Yuki Sakakibara",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ishibashi0112/datasheet-grid.git",
+    "directory": "packages/core"
+  },
+  "homepage": "https://github.com/ishibashi0112/datasheet-grid#readme",
+  "bugs": {
+    "url": "https://github.com/ishibashi0112/datasheet-grid/issues"
+  },
+  "type": "module",
+  "sideEffects": false,
+  "files": [
+    "dist"
+  ],
+  "exports": {
+    ".": "./src/index.ts",
+    "./testing": "./src/testing/index.ts",
+    "./*": "./src/*.ts"
+  },
+  "publishConfig": {
+    "access": "public",
+    "main": "./dist/index.cjs",
+    "module": "./dist/index.js",
+    "types": "./dist/index.d.ts",
+    "exports": {
+      ".": {
+        "types": "./dist/index.d.ts",
+        "import": "./dist/index.js",
+        "require": "./dist/index.cjs"
+      },
+      "./testing": {
+        "types": "./dist/testing/index.d.ts",
+        "import": "./dist/testing/index.js",
+        "require": "./dist/testing/index.cjs"
+      },
+      "./*": {
+        "types": "./dist/*.d.ts",
+        "import": "./dist/*.js",
+        "require": "./dist/*.cjs"
+      }
+    }
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "build:lib": "vp build --config vite.lib.config.ts && tsc -p tsconfig.lib.json",
+    "prepublishOnly": "pnpm run build:lib"
+  }
+}

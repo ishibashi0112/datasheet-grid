@@ -10,7 +10,7 @@
 - 公開パッケージ: `@ishibashi0112/spreadsheet-grid`(npm)。現行 **v0.15.0**。
 - ツールチェーンは vite+(VoidZero 統合、`vp` コマンド)。仮想化は `@tanstack/virtual-core` v3(React アダプタは自前 `hooks/useVirtualizerCore.ts`。2026-09-13 非依存化 ②で react-virtual から切替)、テストは Vitest。
 - 消費側 UI 例: Mantine / HeroUI / Tailwind(v3・v4)。共存が設計要件。
-- 公開 API の詳細は `src/components/spreadsheet-grid/API_REFERENCE.md` を参照。
+- 公開 API の詳細は `packages/react/API_REFERENCE.md` を参照。
 
 ## §2 アーキテクチャ
 
@@ -36,7 +36,7 @@
   (undo/redo の履歴化ポイント。§5 参照)。
 - 列も controlled(`columns` + `onColumnsChange`)。列メタ(可視 / 順序 / ピン)は consumer 所有。
 
-### 2.2 レイヤ構成(`src/components/spreadsheet-grid/`)
+### 2.2 レイヤ構成(非依存化 ⑤-2 以降: `packages/core/src/`(model / logic / controllers / engine / utils / testing)と `packages/react/src/`(SpreadsheetGrid.tsx / hooks / view / editors / model/gridTypes.ts))
 
 | ディレクトリ | 役割 |
 | --- | --- |

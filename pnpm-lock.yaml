@@ -11,14 +11,13 @@ overrides:
 importers:
 
   .:
-    dependencies:
-      '@tanstack/virtual-core':
-        specifier: ^3.17.0
-        version: 3.17.0
     devDependencies:
       '@eslint/js':
         specifier: ^10.0.1
         version: 10.0.1(eslint@10.4.1(jiti@2.7.0))
+      '@tanstack/virtual-core':
+        specifier: ^3.17.0
+        version: 3.17.0
       '@testing-library/dom':
         specifier: ^10.4.1
         version: 10.4.1
@@ -74,11 +73,35 @@ importers:
         specifier: 4.1.10
         version: 4.1.10(@types/node@24.13.0)(@vitest/browser-preview@4.1.10)(@voidzero-dev/vite-plus-core@0.2.4(@types/node@24.13.0)(esbuild@0.28.1)(jiti@2.7.0)(typescript@6.0.3)(yaml@2.9.0))(jsdom@29.1.1)
 
+  packages/core: {}
+
+  packages/react:
+    dependencies:
+      '@ishibashi0112/spreadsheet-grid-core':
+        specifier: workspace:^
+        version: link:../core
+      '@tanstack/virtual-core':
+        specifier: ^3.17.0
+        version: 3.17.0
+    devDependencies:
+      '@types/react':
+        specifier: ^19.3.0
+        version: 19.3.0
+      '@types/react-dom':
+        specifier: ^19.3.0
+        version: 19.3.0(@types/react@19.3.0)
+      react:
+        specifier: ^19.3.0
+        version: 19.3.0
+      react-dom:
+        specifier: ^19.3.0
+        version: 19.3.0(react@19.3.0)
+
   website:
     dependencies:
       '@ishibashi0112/spreadsheet-grid':
-        specifier: link:..
-        version: link:..
+        specifier: workspace:*
+        version: link:../packages/react
       cnfast:
         specifier: ^0.0.8
         version: 0.0.8

@@ -286,7 +286,7 @@ Note: a plain `.ssg-root { --ssg-* }` override wins over **both** themes (theme 
 
 ## API reference
 
-The full prop and type reference lives in [`src/components/spreadsheet-grid/API_REFERENCE.md`](./src/components/spreadsheet-grid/API_REFERENCE.md).
+The full prop and type reference lives in [`packages/react/API_REFERENCE.md`](./packages/react/API_REFERENCE.md).
 
 ## License
 
@@ -575,7 +575,7 @@ const { resolvedTheme } = useTheme();
 
 ### API リファレンス
 
-prop と型の完全なリファレンスは [`src/components/spreadsheet-grid/API_REFERENCE.md`](./src/components/spreadsheet-grid/API_REFERENCE.md) にあります。
+prop と型の完全なリファレンスは [`packages/react/API_REFERENCE.md`](./packages/react/API_REFERENCE.md) にあります。
 
 ### ライセンス
 

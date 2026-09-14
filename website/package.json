@@ -10,7 +10,7 @@
     "postinstall": "fumadocs-mdx"
   },
   "dependencies": {
-    "@ishibashi0112/spreadsheet-grid": "link:..",
+    "@ishibashi0112/spreadsheet-grid": "workspace:*",
     "cnfast": "^0.0.8",
     "fumadocs-core": "16.11.5",
     "fumadocs-mdx": "15.2.0",

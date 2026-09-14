@@ -11,6 +11,7 @@ import { defineConfig } from 'vitest/config';
 export default defineConfig({
   test: {
     environment: 'node',
-    include: ['src/**/*.test.{ts,tsx}'],
+    // 変更(非依存化 ⑤-2): テストは packages/*/src 配下(core / react)。
+    include: ['packages/*/src/**/*.test.{ts,tsx}'],
   },
 });

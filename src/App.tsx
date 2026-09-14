@@ -21,7 +21,7 @@ import {
   type SpreadsheetGridHandle,
   // 追加(editor: custom デモ): カスタムエディタの render コンテキスト型。
   type CellEditorContext,
-} from './components/spreadsheet-grid';
+} from '../packages/react/src';
 // 注記(stage ②・デモ限定): モックサーバが query(フィルター/ソート)を実適用するため、グリッド内部の
 //   純関数を deep-import して再利用します。実サーバは SQL 等の自前クエリエンジンを使う想定で、これは
 //   「サーバの代役」をデモ内で最小コードかつグリッドと同一意味で再現するための便宜です。
@@ -29,9 +29,9 @@ import {
   createSourceOrder,
   filterOrderByGlobalText,
   filterOrderByColumns,
-} from './components/spreadsheet-grid/logic/filtering';
-import { sortOrder } from './components/spreadsheet-grid/logic/sorting';
-import { serializeServerSideQuery } from './components/spreadsheet-grid/logic/serverSideQuery';
+} from '../packages/core/src/logic/filtering';
+import { sortOrder } from '../packages/core/src/logic/sorting';
+import { serializeServerSideQuery } from '../packages/core/src/logic/serverSideQuery';
 
 // 追加: デモ用の行型です。
 type DemoRow = {

@@ -6,7 +6,8 @@ React 19 + TypeScript + Vite 製のカスタム AG Grid 風・仮想化データ
 
 - React 19 / TypeScript / Vite。ツールチェーンは vite+(VoidZero 統合、`vp` コマンド)。
 - `@tanstack/virtual-core` v3(React アダプタは自前 `hooks/useVirtualizerCore.ts`)、Vitest、pnpm 11.12.0。
-- 公開パッケージ: `@ishibashi0112/spreadsheet-grid`(npm、`publishConfig.access: public`、`prepublishOnly` で `build:lib`)。
+- 公開パッケージ(非依存化 ⑤-2 で monorepo 化、2026-09-14): `packages/core` = `@ishibashi0112/spreadsheet-grid-core`(フレームワーク非依存コア。model / logic / controllers / engine / utils / testing。サブパス `…-core/<dir>/<module>` を exports の `./*` で公開)と `packages/react` = `@ishibashi0112/spreadsheet-grid`(React 版。core に `workspace:^` で依存し、publish 時は `^X.Y.Z` に変換される。両パッケージの版は常に揃える)。ルートは private な workspace(デモ app + 共通ツールチェーン)。website は React 版を `workspace:*` で参照。
+- 開発時の解決: core の package.json `exports` は `./src/*.ts` を指し(ビルド不要でテスト / 型チェックが通る)、`publishConfig.exports` が publish 時に dist へ差し替える(pnpm が publishConfig を適用)。React 版の dist は core を外部化する(バンドルしない)。
 - 消費側 UI 例: Mantine / HeroUI / Tailwind(v3・v4)。共存が設計要件。
 
 ## 厳守事項
@@ -48,17 +49,18 @@ React 19 + TypeScript + Vite 製のカスタム AG Grid 風・仮想化データ
 | tsc(test) | `vp exec tsc -p tsconfig.vitest.json --noEmit` | 0 |
 | eslint | `vp exec eslint .` | baseline 維持(現状 0 errors / 0 warnings) |
 | test | `vp test` | 全緑(現状 ~1,216 tests / 145 files) |
-| build | `vp build`(publish 経路は `build:lib` = `vp build --config vite.lib.config.ts` + `tsc -p tsconfig.lib.json` + emit-layer-css) | 0 |
+| build | `vp run build:lib`(ルートで `pnpm -r --filter ./packages/* run build:lib` = core → react の順。各パッケージは `vp build --config vite.lib.config.ts` + `tsc -p tsconfig.lib.json`、react はさらに emit-layer-css)。デモ app は `vp build` | 0 |
 
+- リリース: `pnpm run version:minor`(= `node scripts/bump-version.mjs minor`。両パッケージの版を揃えて上げ「X.Y.Z」コミット + `vX.Y.Z` タグ)→ ユーザーが `pnpm -r publish --access public`(core → react の順。2FA は各パッケージ)→ `git push origin main --follow-tags`。旧 `vp exec pnpm version minor` は単一パッケージ時代のもので使わない。
 - 依存インストールは `vp install`(pnpm へ委譲)。ローカルのゲートは上記 vp 経由で実行する。※ `devEngines` は 2026-07-18 に削除(pnpm 11 が lockfile へ書く packageManagerDependencies ドキュメントを Vercel CLI が解釈できずデプロイが失敗するため)。pnpm のピンは `packageManager` フィールドで維持(復活させないこと。詳細は `website/README.md`)。CI(GitHub Actions)は pnpm で package.json スクリプトを実行する(`pnpm test` / `pnpm run build:lib` 等)。
 - vite+ 統合は **2026-07-13 に設定済み**: `pnpm-workspace.yaml` の overrides(`vite` → `@voidzero-dev/vite-plus-core` エイリアス / `vitest` を vp 同梱版へ pin)+ devDependency `vite-plus`(native binding 供給)。これにより `vite` の bin は `vp` に置き換わり、package.json scripts も vp 化済み。この構成を崩すと `vp test` が同梱 vitest へフォールバックし、jsdom を解決できず DOM 系テストが起動しなくなる(2026-07 の障害の原因)。vitest の pin は `vp --version` の同梱バージョンと揃えること。`vite` override(`-dev/vite-plus-core`)も `` ではなく vite-plus devDependency と同じ版へ固定する(2026-09-13。`` は lockfile 更新のたびに再解決され vp 本体と core がずれた)。
 
 ## アーキテクチャ要点(詳細は HANDOFF §2 / §3 / §5)
 
 - reducer ベースの状態管理(2026-09-13 非依存化 ④-1 で React 非依存の外部 store `model/gridStore.ts` = `createGridStore(getState / dispatch / subscribe)` に載せ替え。React は `hooks/useGridStore.ts` の `useSyncExternalStore` で購読。④-2 で一時状態(ビューポート計測 / ホバー)も同 store の view スライス `getViewState / setViewState` へ)、命令的 ref API、3 ペイン固定列レイアウト、SSRM(サーバーサイド行モデル)。
-- `SpreadsheetGrid.tsx` は本体分解 E-0〜E-6(2026-09-14)で 7,092 行 → ~4,300 行。派生値計算とコマンド群は `engine/`(React 非依存: columnLayout / rowPipeline / verticalLayout / columnCommands / filterPopoverCommands / rowSelectionCommands / gridApi(命令的 API の実体)/ notifiers、メモ化は `engine/memo.ts` の `createMemo` = useMemo と同じ Object.is 比較)へ、DOM を触る処理は `controllers/`(autoHeightMeasurer / scrollSyncController / debouncedValueStore 等)へ移設済み。シェル側はリゾルバ呼び出しを React Compiler lint(preserve-manual-memoization)向けに `useMemo` で包み、コマンド / コントローラは `useController`(生成 + update + dispose。外部通知は `'passive'` タイミング)で接続する。E-7(2026-09-14)で `engine/createGridEngine.ts` に束ね、シェルは `useState(createGridEngine)` 1 箇所 + `useControllerLifecycle` 接続。Solid アダプタは同じ engine を createEffect で接続する想定。シェルに残る useCallback / useMemo は JSX 組み立て・React 合成イベントの接着・popover 系 hook との配線(React 寄り)。
+- `packages/react/src/SpreadsheetGrid.tsx` は本体分解 E-0〜E-6(2026-09-14)で 7,092 行 → ~4,300 行。派生値計算とコマンド群は `engine/`(React 非依存: columnLayout / rowPipeline / verticalLayout / columnCommands / filterPopoverCommands / rowSelectionCommands / gridApi(命令的 API の実体)/ notifiers、メモ化は `engine/memo.ts` の `createMemo` = useMemo と同じ Object.is 比較)へ、DOM を触る処理は `controllers/`(autoHeightMeasurer / scrollSyncController / debouncedValueStore 等)へ移設済み。シェル側はリゾルバ呼び出しを React Compiler lint(preserve-manual-memoization)向けに `useMemo` で包み、コマンド / コントローラは `useController`(生成 + update + dispose。外部通知は `'passive'` タイミング)で接続する。E-7(2026-09-14)で `engine/createGridEngine.ts` に束ね、シェルは `useState(createGridEngine)` 1 箇所 + `useControllerLifecycle` 接続。Solid アダプタは同じ engine を createEffect で接続する想定。シェルに残る useCallback / useMemo は JSX 組み立て・React 合成イベントの接着・popover 系 hook との配線(React 寄り)。
 - 純粋ロジックは `logic/` に抽出(テスタビリティ)。hooks は薄いオーケストレーション層。
-- `model/` と `logic/` は **React 非依存**を保つ(2026-09-13 非依存化 ①)。公開型の本体は `model/gridTypes.core.ts`(描画ノード / style はフレームワーク束ね型 `F` 経由で `F['node']` / `F['style']`)、React 束縛は `model/gridTypes.ts`(`ReactGridTypes` で固定したエイリアス + `ref` prop)。`ReactNode` / `CSSProperties` を `model/` / `logic/` に import しない。非依存化 ⑤-1(2026-09-14)以降、内部層(model / logic / controllers / engine / utils)は React 束縛の `model/gridTypes.ts` も import せず、`model/gridTypes.unbound.ts`(描画ノード / style を any で素通しする内部層専用の束縛)か `gridTypes.core.ts`(F ジェネリックのまま扱う場合)から型を取る。この境界は eslint(`no-restricted-imports`)で固定済み。DOM を扱うがフレームワーク非依存のコードは `controllers/`(③ で hooks から抽出。`{ update, attach, dispose, subscribe? }` の共通形。React を import しない)に置き、`hooks/` は effect に接続するだけの薄いアダプタにする。F は `F['node']` の位置から推論されないため、F ジェネリックな関数の呼び出しでは型引数を明示する(`resolveScrollHintOptions<T, ReactGridTypes>(...)`)。
+- `packages/core`(model / logic / controllers / engine / utils)は **React 非依存**を保つ(2026-09-13 非依存化 ①、⑤-2 で物理分離。eslint の `no-restricted-imports` で react / react-dom / React 版パッケージの import を禁止)。公開型の本体は `model/gridTypes.core.ts`(描画ノード / style はフレームワーク束ね型 `F` 経由で `F['node']` / `F['style']`)、React 束縛は `model/gridTypes.ts`(`ReactGridTypes` で固定したエイリアス + `ref` prop)。`ReactNode` / `CSSProperties` を core に import しない。非依存化 ⑤-1(2026-09-14)以降、core は React 束縛の `packages/react/src/model/gridTypes.ts` を import せず(物理的にも不可)、`model/gridTypes.unbound.ts`(描画ノード / style を any で素通しする内部層専用の束縛)か `gridTypes.core.ts`(F ジェネリックのまま扱う場合)から型を取る。この境界は eslint(`no-restricted-imports`)で固定済み。DOM を扱うがフレームワーク非依存のコードは `controllers/`(③ で hooks から抽出。`{ update, attach, dispose, subscribe? }` の共通形。React を import しない)に置き、`hooks/` は effect に接続するだけの薄いアダプタにする。F は `F['node']` の位置から推論されないため、F ジェネリックな関数の呼び出しでは型引数を明示する(`resolveScrollHintOptions<T, ReactGridTypes>(...)`)。
 - CSS: 未レイヤー単一クラス基底(Tailwind/Mantine/HeroUI 共存のため `@layer` は使わない ── 未レイヤーはレイヤー付きに特異度無関係で勝つため)。Portal 系(popover/tooltip)は `.ssg-root` 外に描画されるためリテラル色を使う。
 - 仮想化 DOM 上のドラッグは window レベルのリスナ + `pointerId` フィルタ(要素直付けは capture 対象の unmount で壊れる)。
 
@@ -66,7 +68,7 @@ React 19 + TypeScript + Vite 製のカスタム AG Grid 風・仮想化データ
 
 - 2026-07-18 追加。Next.js 16 + Fumadocs 16 + Tailwind v4 の日本語ドキュメントサイト(pnpm workspace メンバー、lib は `link:..` 参照)。詳細は `website/README.md`。
 - ルートのゲート(eslint / tsc -b / vitest)の**対象外**(eslint は `globalIgnores(['website'])`)。website の検証は `cd website && vp exec next build`。
-- API リファレンス(`website/content/docs/api/`)は `API_REFERENCE.md` の複製。**型変更時は両方同期**。
+- API リファレンス(`website/content/docs/api/`)は `packages/react/API_REFERENCE.md` の複製。**型変更時は両方同期**。
 - **運用ルール: ライブラリの機能追加・変更・削除をしたら、同じ作業の中で website も更新する**(該当ガイドの追記 or 新規ページ、API リファレンス両方、必要ならデモ / プレイグラウンドのトグル追加)。ドキュメント未更新のまま機能だけ納品しない。
 - ホスティングは Vercel 予定(Root Directory: `website`)。デプロイ操作はユーザーが行う。
 

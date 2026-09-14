@@ -10,9 +10,10 @@ overrides:
   vite: npm:@voidzero-dev/vite-plus-core@0.2.4
   vitest: 4.1.10
 
-# 追加(website): ドキュメントサイト(Next.js + Fumadocs)を workspace メンバー化。
-#   ルート(ライブラリ本体)は workspace root のまま。website からは link:.. で参照する。
+# 変更(非依存化 ⑤-2): packages/core(フレームワーク非依存コア)/ packages/react(React 版)の monorepo 化。
+#   ルートはデモ app + 共通ツールチェーン(private)。website は React 版を workspace:* で参照する。
 packages:
+  - packages/*
   - website
 
 # website の依存(esbuild / sharp)のビルドスクリプト許可(pnpm 11 の allowBuilds)。
