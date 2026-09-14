@@ -29,5 +29,6 @@ for (const file of packages) {
 }
 execSync(`git add ${packages.join(' ')}`);
 execSync(`git commit -q -m "${next}"`);
-execSync(`git tag v${next}`);
+// 注釈付きタグにします(`git push --follow-tags` は注釈付きタグしか push しない。pnpm version と同じ挙動)。
+execSync(`git tag -a v${next} -m ${next}`);
 console.log(`bumped ${current} -> ${next} (commit + tag v${next})`);
