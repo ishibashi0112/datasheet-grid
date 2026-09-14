@@ -7,7 +7,7 @@
 //   - タッチは pointerdown では開かず、同じボタンの click で開きます(タッチの pointerdown → click の
 //     順序で二重に開かないため)。
 //   - イベントは構造的型で受けます(React 合成イベント / ネイティブどちらも可)。
-import type { GridColumn } from '../model/gridTypes';
+import type { GridColumn } from '../model/gridTypes.unbound';
 import { createValueStore } from '../logic/valueStore';
 import {
   blurForPopover,

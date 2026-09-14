@@ -3,7 +3,7 @@
 //   参照安定(order / rowModel が不変)を検証します。
 import { describe, it, expect } from 'vitest';
 import { createRowPipelineResolver } from './rowPipeline';
-import type { GridColumn } from '../model/gridTypes';
+import type { GridColumn } from '../model/gridTypes.unbound';
 
 type Row = { id: number; name: string; amount: number; group: string };
 

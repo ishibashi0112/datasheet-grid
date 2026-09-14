@@ -7,7 +7,7 @@
 import { describe, it, expect } from 'vitest';
 import { buildResetColumns } from './columnReset';
 import type { InitialColumnState } from './columnReset';
-import type { GridColumn } from '../model/gridTypes';
+import type { GridColumn } from '../model/gridTypes.unbound';
 
 type Row = { id: number };
 

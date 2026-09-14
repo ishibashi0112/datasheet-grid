@@ -1,4 +1,4 @@
-import type { ScrollAlign } from '../model/gridTypes';
+import type { ScrollAlign } from '../model/gridTypes.unbound';
 
 // 追加(imperative API #1): スクロール先(論理座標)を算出する純ロジックです。
 //   既存の useGridViewportSync(active cell 可視化)と同一の座標モデルを用います:

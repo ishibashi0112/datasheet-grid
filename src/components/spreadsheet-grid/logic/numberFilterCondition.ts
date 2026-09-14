@@ -1,7 +1,7 @@
 import type {
   NumberColumnFilterValue,
   ParsedNumberFilter,
-} from '../model/gridTypes';
+} from '../model/gridTypes.unbound';
 // 追加(filter-ext B): 候補連動(条件で Set 候補一覧を絞る)の単一値判定です。
 //   行 predicate(compileParsedNumberPredicate)と同一の意味論を共有します。
 import { matchesParsedNumberFilter } from './filtering';

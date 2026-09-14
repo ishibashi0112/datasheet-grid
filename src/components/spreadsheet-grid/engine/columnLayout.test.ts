@@ -2,7 +2,7 @@
 //   useMemo 群と同じ結果・同じ参照安定性(11-B4: 幅が変わらないペインの geometry 参照は不変)を検証します。
 import { describe, it, expect } from 'vitest';
 import { createColumnResolver, createPaneLayoutResolver } from './columnLayout';
-import type { GridColumn } from '../model/gridTypes';
+import type { GridColumn } from '../model/gridTypes.unbound';
 import { DETAIL_TOGGLE_COLUMN_KEY } from '../logic/detailRow';
 import { ROW_DRAG_HANDLE_COLUMN_KEY } from '../logic/rowReorder';
 import { GROUP_AUTO_COLUMN_KEY } from '../logic/grouping';

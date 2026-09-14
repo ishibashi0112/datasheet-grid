@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 
 import { numberFormatter, type NumberFormatterOptions } from './valueFormatters';
-import type { GridColumn } from '../model/gridTypes';
+import type { GridColumn } from '../model/gridTypes.unbound';
 
 // テスト専用のダミー row / column(numberFormatter は value のみ参照します)。
 type Row = Record<string, unknown>;

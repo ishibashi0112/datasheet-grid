@@ -2,7 +2,7 @@
 //   controlled の onChange のみ + update での同期 / SSRM 未ロード行の無視)。
 import { describe, it, expect, vi } from 'vitest';
 import { createRowSelectionCommands, type RowSelectionCommandsArgs } from './rowSelectionCommands';
-import type { RowModel, RowSelectionModel, RowSelectionState } from '../model/gridTypes';
+import type { RowModel, RowSelectionModel, RowSelectionState } from '../model/gridTypes.unbound';
 import type { GridUiAction } from '../model/gridActions';
 import { createEmptyRowSelection, rowSelectionFromModel } from '../logic/rowSelection';
 

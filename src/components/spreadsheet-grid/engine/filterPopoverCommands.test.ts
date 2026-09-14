@@ -7,7 +7,7 @@ import {
   type FilterPopoverCommandsArgs,
   type FilterPopoverDerivedInputs,
 } from './filterPopoverCommands';
-import type { ColumnFilterValue, GridColumn } from '../model/gridTypes';
+import type { ColumnFilterValue, GridColumn } from '../model/gridTypes.unbound';
 import type { GridUiAction } from '../model/gridActions';
 
 type Row = { name: string; amount: number };

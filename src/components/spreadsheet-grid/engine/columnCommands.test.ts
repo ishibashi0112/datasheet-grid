@@ -2,7 +2,7 @@
 //   ガード / 並べ替え commit の no-op / 列リセットの初期スナップショット / ソートのトグル)。
 import { describe, it, expect, vi } from 'vitest';
 import { createColumnCommands, type ColumnCommandsArgs } from './columnCommands';
-import type { GridColumn } from '../model/gridTypes';
+import type { GridColumn } from '../model/gridTypes.unbound';
 import type { GridUiAction } from '../model/gridActions';
 
 type Row = { a: number; b: number; c: number };

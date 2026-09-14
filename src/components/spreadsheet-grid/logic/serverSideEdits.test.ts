@@ -7,7 +7,7 @@ import {
   createServerSidePendingEdits,
   type ServerSideCellEditInput,
 } from './serverSideEdits';
-import type { GridColumn } from '../model/gridTypes';
+import type { GridColumn } from '../model/gridTypes.unbound';
 
 type Row = { id: number; name: string; price: number };
 

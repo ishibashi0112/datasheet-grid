@@ -8,7 +8,7 @@ import {
   setMeasuredRowHeight,
 } from './rowHeightStore';
 import { createUniformRowMetrics } from './verticalGeometry';
-import type { GridRowKey } from '../model/gridTypes';
+import type { GridRowKey } from '../model/gridTypes.unbound';
 
 // view index をそのまま rowKey にする getter(rowKey=index)。
 const identityKey = (index: number): GridRowKey => index;

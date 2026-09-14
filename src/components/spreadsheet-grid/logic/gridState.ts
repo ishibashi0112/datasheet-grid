@@ -8,7 +8,7 @@ import type {
   ParsedDateFilter,
   ParsedNumberFilter,
   ParsedTextFilter,
-} from '../model/gridTypes';
+} from '../model/gridTypes.unbound';
 // 追加(state v2): 列メタ適用時、pinned/order を AG Grid 互換の視覚順(left→center→right)へ
 //   正規化するために再利用します。grid 本体の reorder 経路と同じ関数で、適用結果の pane 連結を
 //   一致させます(視覚順 = 論理 index 空間の不変条件を applyState でも守るため)。

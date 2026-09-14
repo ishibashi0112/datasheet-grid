@@ -9,7 +9,7 @@
 //      吸収)。slot は findPaneDropSlot(pane-local midpoint)で算出。
 //   - up で computeHeaderReorderedKeys(全列の permutation。非表示列も保全)→ applyColumnOrderAndPin(keys, pinOverride)。
 //   - dispose はドラッグ中でも window リスナー / rAF / body cursor / ゴーストを確実に後始末します。
-import type { GridColumn, GridColumnPinned, GridResolvedSlot } from '../model/gridTypes';
+import type { GridColumn, GridColumnPinned, GridResolvedSlot } from '../model/gridTypes.unbound';
 import {
   findPaneDropSlot,
   paneDropSlotBoundaryX,

@@ -1,6 +1,6 @@
 // 追加(editor: select): select エディタの純粋ロジック(初期ハイライト / ハイライト移動 /
 //   タイプアヘッド / ドロップダウン配置)です。DOM 非依存のため単体テストで網羅します。
-import type { GridSelectEditorOption } from '../model/gridTypes';
+import type { GridSelectEditorOption } from '../model/gridTypes.unbound';
 
 // ドロップダウンの配置定数です(行高は styles.css の .ssg-select-editor-option と揃えます)。
 export const SELECT_POPOVER_MIN_WIDTH = 180;

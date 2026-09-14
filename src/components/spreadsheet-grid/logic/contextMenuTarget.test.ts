@@ -4,7 +4,7 @@ import {
   isContextMenuCellSelected,
   isContextMenuRowSelected,
 } from './contextMenuTarget';
-import type { GridColumn, GridSelection } from '../model/gridTypes';
+import type { GridColumn, GridSelection } from '../model/gridTypes.unbound';
 
 type Row = { id: number };
 

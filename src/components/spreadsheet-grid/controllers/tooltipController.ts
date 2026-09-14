@@ -27,7 +27,7 @@
 //     Chrome / Edge は pointerover が発火・旧挙動のブラウザは抑止)。
 import { computeTooltipPlacement } from '../logic/tooltipGeometry';
 import { applySlotToElement, type AppliedSlot } from '../logic/slotDom';
-import type { GridResolvedSlot } from '../model/gridTypes.core';
+import type { GridResolvedSlot } from '../model/gridTypes.unbound';
 
 const TOOLTIP_ATTRIBUTE = 'data-ssg-tooltip';
 const TOOLTIP_OVERFLOW_ATTRIBUTE = 'data-ssg-tooltip-overflow';

@@ -2,7 +2,7 @@
 //   「文字列 → セル値」パース解決と、単一セル書き込みの rows 再構築の純粋ロジックです。
 //   従来は各経路(useGridEditController / clipboard / clearCells / renderCell setValue)が
 //   個別に parseClipboardValue 分岐と rows.map を持っていたため、ここへ集約します。
-import type { GridColumn } from '../model/gridTypes';
+import type { GridColumn } from '../model/gridTypes.unbound';
 import { setCellValue } from '../utils/permissions';
 import { parseCheckboxEditorValue } from './checkboxEditor';
 

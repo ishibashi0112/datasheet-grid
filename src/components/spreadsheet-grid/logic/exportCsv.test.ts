@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 
 import { serializeRowsToCsv } from './exportCsv';
-import type { GridColumn } from '../model/gridTypes';
+import type { GridColumn } from '../model/gridTypes.unbound';
 
 type Row = { a: string; b: number; c?: string };
 

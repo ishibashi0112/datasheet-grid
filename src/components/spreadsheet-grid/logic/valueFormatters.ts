@@ -2,7 +2,7 @@
 //   - 返り値は表示文字列。元の値・編集・コピー・ソート・フィルターには一切影響しません。
 //   - 各フォーマッタは CellValueFormatter<T> を返すファクタです。将来パターン(日付/％/通貨等)は
 //     本ファイルへファクタを足し、index.ts でバレル公開すれば拡張できます。
-import type { CellValueFormatter } from '../model/gridTypes';
+import type { CellValueFormatter } from '../model/gridTypes.unbound';
 
 // 追加(③): numberFormatter のオプションです。
 export type NumberFormatterOptions = {

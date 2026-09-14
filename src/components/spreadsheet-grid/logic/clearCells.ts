@@ -4,7 +4,7 @@
 //   クリア値は「空文字のペースト」と同じ規則(parseClipboardValue('') 経由、未定義なら '')です。
 //   変更が 1 セルも無ければ rows の参照をそのまま返します(呼び出し側は changed=false で
 //   emit をスキップでき、undo 履歴に no-op を積みません)。
-import type { CellCoord, GridColumn, GridSelection } from '../model/gridTypes';
+import type { CellCoord, GridColumn, GridSelection } from '../model/gridTypes.unbound';
 import type { ServerSideCellEditInput } from './serverSideEdits';
 import {
   normalizeCellRange,

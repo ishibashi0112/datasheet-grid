@@ -14,7 +14,7 @@ import {
 import { runChunked } from '../logic/chunkedLoop';
 import { createValueStore } from '../logic/valueStore';
 import { gridActions } from '../model/gridActions';
-import type { AutoSizeColumnsMode, GridColumn, RowModel } from '../model/gridTypes';
+import type { AutoSizeColumnsMode, GridColumn, RowModel } from '../model/gridTypes.unbound';
 import { resolveAutoSizeOnData } from '../logic/autoSizeOnData';
 
 // 計測が長引く場合にのみ overlay を出す遅延(ms)。短時間で終わる計測でちらつかせないため。

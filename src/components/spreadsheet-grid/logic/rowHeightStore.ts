@@ -17,7 +17,7 @@
 //   - createAutoHeightRowMetrics は store の prefix を読む RowMetrics(uniform と同契約)。
 //     rowAtContentY は prefix 上の二分探索。estimate 一様・measured 空のとき uniform と一致します。
 
-import type { GridRowKey } from '../model/gridTypes';
+import type { GridRowKey } from '../model/gridTypes.unbound';
 import type { RowMetrics } from './verticalGeometry';
 
 export type RowHeightStore = {

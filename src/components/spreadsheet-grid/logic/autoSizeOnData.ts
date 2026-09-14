@@ -3,7 +3,7 @@
 //   (useColumnAutosizeRunner の runAutosize)を再利用し、本モジュールは「いつ叩くか」だけを
 //   純関数として切り出します。jsdom では canvas 計測が no-op になり幅を直接検証できないため、
 //   発火判定をここへ分離して単体テスト可能にしています(logic/ への純関数抽出方針)。
-import type { AutoSizeColumnsMode } from '../model/gridTypes';
+import type { AutoSizeColumnsMode } from '../model/gridTypes.unbound';
 
 // autoSizeColumns の発火判定です。effect はこの結果に従って runAutosize を呼びます。
 //   戻り値:

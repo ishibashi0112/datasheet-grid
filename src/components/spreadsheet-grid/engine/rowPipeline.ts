@@ -16,7 +16,7 @@ import type {
   GridSortState,
   RowModel,
   ServerSideQuery,
-} from '../model/gridTypes';
+} from '../model/gridTypes.unbound';
 import {
   coerceNumberFilterCellValue,
   columnFilterUsesNumericKey,

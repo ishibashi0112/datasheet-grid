@@ -20,7 +20,7 @@ import {
   selectGlobalFilteredOrderResult,
 } from './globalFilteredOrder';
 import { createSourceOrder } from '../logic/filtering';
-import type { GridColumn } from '../model/gridTypes';
+import type { GridColumn } from '../model/gridTypes.unbound';
 
 const flushYields = async () => {
   const resolvers = pendingYields.splice(0);

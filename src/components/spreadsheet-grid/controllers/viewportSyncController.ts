@@ -7,7 +7,7 @@
 //   3) active cell の「座標」が変わったときだけ可視域へスクロールする(rect 参照だけの変化 = フィルター
 //      確定等ではスクロールしない = scroll-jump 対策)。
 import type { ColumnMeasurement } from '../logic/geometry';
-import type { CellCoord } from '../model/gridTypes.core';
+import type { CellCoord } from '../model/gridTypes.unbound';
 import {
   logicalToPhysicalScrollTop,
   physicalToLogicalScrollTop,

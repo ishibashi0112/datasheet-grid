@@ -11,7 +11,7 @@
 //     選択・アクティブセル・編集を破棄します(AG Grid も pin 変更で range selection をクリア)。
 //   - 列リセット用の「初期 column defs スナップショット」は最初の update で退避します(以後 columns が変わっても
 //     更新しない = ユーザー操作後の状態を「初期」と誤認しない。Map の挿入順が初期の並び順)。
-import type { GridColumn, GridColumnPinned, GridSortState } from '../model/gridTypes';
+import type { GridColumn, GridColumnPinned, GridSortState } from '../model/gridTypes.unbound';
 import { gridActions, type GridUiAction } from '../model/gridActions';
 import { reorderColumnsByPane } from '../logic/geometry';
 import { buildResetColumns, type InitialColumnState } from '../logic/columnReset';

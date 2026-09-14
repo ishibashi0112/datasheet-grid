@@ -10,7 +10,7 @@ import type {
   ParsedTextFilter,
   SetColumnFilterValue,
   TextSetColumnFilterValue,
-} from '../model/gridTypes';
+} from '../model/gridTypes.unbound';
 import { getCellValue } from '../utils/permissions';
 // 追加(preset-opt): dateSet プリセット構成の正規化とビルトイン判定です(依存は gridTypes のみの
 //   独立モジュール。dateFilterCondition ⇄ filtering の循環を避けるための配置です)。

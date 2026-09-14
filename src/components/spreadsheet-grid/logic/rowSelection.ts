@@ -3,7 +3,7 @@ import type {
   RowSelectionModel,
   RowSelectionState,
   SelectAllState,
-} from '../model/gridTypes';
+} from '../model/gridTypes.unbound';
 
 // 型は gridTypes.ts に集約し(GridUiState から参照するため循環を避ける)、
 //   ここでは利便のため再エクスポートします。

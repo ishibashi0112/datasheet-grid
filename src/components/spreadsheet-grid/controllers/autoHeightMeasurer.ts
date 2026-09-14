@@ -10,7 +10,7 @@
 //     setMeasuredRowHeight が false を返し version が動かず、ループは止まります。
 //   公開する snapshot { version, nonce } は描画側が購読し、version は縦レイアウトの再計算トリガー、両方を
 //   update の args へ戻して再測定トリガーにします。measuredHeights(rowKey 単位の永続キャッシュ)も本体が持ちます。
-import type { GridRowKey, RowModel } from '../model/gridTypes';
+import type { GridRowKey, RowModel } from '../model/gridTypes.unbound';
 import { rebuildPrefixFrom, setMeasuredRowHeight, type RowHeightStore } from '../logic/rowHeightStore';
 import type { RowMetrics, VerticalGeometry } from '../logic/verticalGeometry';
 import { isInsideDetailCardOf } from '../logic/detailRow';

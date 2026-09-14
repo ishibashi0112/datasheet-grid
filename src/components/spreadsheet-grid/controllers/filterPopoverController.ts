@@ -15,7 +15,7 @@ import type {
   ColumnFilterUiType,
   ColumnFilterValue,
   GridColumn,
-} from '../model/gridTypes';
+} from '../model/gridTypes.unbound';
 import {
   columnFilterValueToDraftText,
   isDateSetColumnFilterValue,

@@ -5,7 +5,7 @@
 import { describe, it, expect } from 'vitest';
 import type {
   ColumnFilterValue,
-} from '../model/gridTypes';
+} from '../model/gridTypes.unbound';
 import {
   buildServerSideQuery,
   serializeServerSideQuery,

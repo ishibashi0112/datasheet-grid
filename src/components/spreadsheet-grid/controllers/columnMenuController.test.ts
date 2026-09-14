@@ -4,7 +4,7 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createColumnMenuController } from './columnMenuController';
-import type { GridColumn } from '../model/gridTypes';
+import type { GridColumn } from '../model/gridTypes.unbound';
 
 beforeEach(() => {
   vi.stubGlobal('requestAnimationFrame', () => 1);

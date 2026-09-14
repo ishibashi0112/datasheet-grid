@@ -7,7 +7,7 @@ import {
   createFilterPopoverController,
   resolveOpenedFilterColumn,
 } from './filterPopoverController';
-import type { GridColumn } from '../model/gridTypes';
+import type { GridColumn } from '../model/gridTypes.unbound';
 
 let rafCallbacks: FrameRequestCallback[] = [];
 beforeEach(() => {

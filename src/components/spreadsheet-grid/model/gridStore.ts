@@ -8,7 +8,7 @@
 //     直接読みます(latest-ref イディオムの置き換え先)。Solid 版は subscribe から signal を作るだけで
 //     同じ store を共用できます。
 import type { GridUiAction } from './gridActions';
-import type { GridUiState } from './gridTypes.core';
+import type { GridUiState } from './gridTypes.unbound';
 import { gridUiReducer } from './gridReducer';
 
 export type GridStoreListener = () => void;

@@ -10,7 +10,7 @@ import {
 } from './clipboardController';
 import { createInitialGridUiState } from '../model/gridReducer';
 import type { GridUiAction } from '../model/gridActions';
-import type { GridColumn, RowModel } from '../model/gridTypes';
+import type { GridColumn, RowModel } from '../model/gridTypes.unbound';
 
 type Row = { id: number; name: string };
 const columns: GridColumn<Row>[] = [

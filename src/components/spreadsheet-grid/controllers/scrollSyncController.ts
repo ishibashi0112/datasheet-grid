@@ -7,7 +7,7 @@
 //   - markApiScroll: 命令的 API 由来のスクロールで「これから発火する scroll イベント」の残数を増やします。
 //     イベント処理時に 1 消費して source:'api' を割り当てます(位置が変わらない scrollTo は scroll イベントを
 //     発火しないため、実際に位置が変わるときだけ呼ぶこと = engine/gridApi が担保)。
-import type { GridScrollEventParams } from '../model/gridTypes';
+import type { GridScrollEventParams } from '../model/gridTypes.unbound';
 import type { GridViewStatePatch } from '../model/gridStore';
 
 type ReadonlyRef<V> = { readonly current: V };

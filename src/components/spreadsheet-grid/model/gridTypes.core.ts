@@ -767,6 +767,10 @@ export type GridGroupRow = {
 
 // 追加: 列定義です。将来のカスタムセル/カスタムヘッダー拡張を見据えています。
 export type GridColumn<T, F extends GridFrameworkTypes = GridFrameworkTypes> = {
+  // 追加(非依存化 ⑤-1): 束ね型 F を推論可能にする型専用マーカーです(実行時には存在しません)。F は
+  //   F['node'] / F['style'] の位置からは推論されないため、列(GridColumn<T, F>)を受け取る React 非依存の
+  //   関数が呼び出し側の F(ReactGridTypes 等)をそのまま返せるよう、列型に F を直接載せます。
+  readonly __framework?: F;
   key: string;
   // 明確化(proposals ⑦-b): 未指定 / 空文字('')のときはヘッダー・列メニュー・フィルター
   //   パネル・CSV ヘッダー等の列名表示が key へフォールバックします(現状維持を仕様として明記)。

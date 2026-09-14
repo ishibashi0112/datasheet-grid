@@ -1,4 +1,4 @@
-import type { GridColumn } from '../model/gridTypes';
+import type { GridColumn } from '../model/gridTypes.unbound';
 
 // ────────────────────────────────────────────────
 // 既存: 列の座標計算を共通化するための measurement 型です。

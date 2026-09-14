@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createEditController, type EditControllerArgs } from './editController';
 import { createInitialGridUiState } from '../model/gridReducer';
 import type { GridUiAction } from '../model/gridActions';
-import type { GridColumn, RowModel } from '../model/gridTypes';
+import type { GridColumn, RowModel } from '../model/gridTypes.unbound';
 
 type Row = { id: number; qty: number };
 const columns: GridColumn<Row>[] = [

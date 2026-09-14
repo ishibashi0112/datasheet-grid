@@ -2,7 +2,7 @@
 //   ペースト(applyClipboardMatrixToRows)/ クリア(clearCellsInSelection)の reject skip も
 //   ここで純関数レベルで検証します(経路 B / C の配線確認)。
 import { describe, expect, it } from 'vitest';
-import type { GridColumn } from '../model/gridTypes';
+import type { GridColumn } from '../model/gridTypes.unbound';
 import {
   DEFAULT_INVALID_MESSAGE,
   decideCellWrite,

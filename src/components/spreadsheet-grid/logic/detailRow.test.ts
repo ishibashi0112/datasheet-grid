@@ -1,6 +1,6 @@
 // detail batch 3: rowKey → view index 解決と選択帯の分割の契約テスト。
 import { describe, it, expect } from 'vitest';
-import type { RowModel } from '../model/gridTypes';
+import type { RowModel } from '../model/gridTypes.unbound';
 import {
   createDetailIndexCache,
   findDetailRowIndex,

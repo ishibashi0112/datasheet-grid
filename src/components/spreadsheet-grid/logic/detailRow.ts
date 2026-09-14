@@ -8,7 +8,7 @@
 //     (走査は clientSide のみ。serverSide は未ロード行のキーが取れないため、キャッシュ(トグル時に
 //     セル側から seed される)が外れたキーは解決不能として扱います)。
 //   - 解決不能なキー(フィルター除外 / 未ロード / 削除済み)は帯を作らず、状態としてだけ残ります。
-import type { GridRowKey, RowModel } from '../model/gridTypes';
+import type { GridRowKey, RowModel } from '../model/gridTypes.unbound';
 import { GROUP_AUTO_COLUMN_KEY } from './grouping';
 import { ROW_DRAG_HANDLE_COLUMN_KEY } from './rowReorder';
 import type { DetailRowExtra, RowMetrics } from './verticalGeometry';

@@ -1,4 +1,4 @@
-import type { ColumnFilterValue } from '../model/gridTypes';
+import type { ColumnFilterValue } from '../model/gridTypes.unbound';
 // 追加(filter-ext B): numberSet の条件部の表示文字列です(「10 以上」等。演算子ラベルと対応)。
 import { formatParsedNumberFilter } from './numberFilterCondition';
 // 追加(filter-ext C): textSet の条件部の表示文字列です(「"x" を含む」等)。

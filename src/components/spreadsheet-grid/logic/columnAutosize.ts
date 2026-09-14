@@ -62,7 +62,7 @@
 //   - autoHeight: true の列も計測対象外です(②-S3)。autoHeight 列は「幅固定 + 折り返し」が本来の姿で、
 //     autoSize は単一行幅で測るため、autoHeight 列を測ると長文を1行幅にし maxWidth で途切れる /
 //     極端に横長になります。consumer が選んだ width を維持し、折り返し(autoHeight 有効時)に委ねます。
-import type { GridColumn } from '../model/gridTypes';
+import type { GridColumn } from '../model/gridTypes.unbound';
 import { getCellValue } from '../utils/permissions';
 
 // ── レイアウト定数(GridBodyLayer / GridHeaderRow の style と同期) ──

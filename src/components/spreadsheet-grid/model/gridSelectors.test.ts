@@ -3,7 +3,7 @@
 //   selectIsCellSelected / selectIsRowSelected / selectIsColumnSelected と「完全に等価」
 //   であること(11-A の memo 最適化はこの等価性に依存します)。
 import { describe, it, expect } from 'vitest';
-import type { GridRowKey, GridSelection, GridUiState } from './gridTypes';
+import type { GridRowKey, GridSelection, GridUiState } from './gridTypes.unbound';
 // 追加(行選択): テスト用の空行選択を組みます。
 import { createEmptyRowSelection } from '../logic/rowSelection';
 import {

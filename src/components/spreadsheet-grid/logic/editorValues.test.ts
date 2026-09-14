@@ -1,6 +1,6 @@
 // logic/editorValues(パーサ解決 / commit 値規則 / 行書き込み)の単体テストです。
 import { describe, expect, it } from 'vitest';
-import type { GridColumn } from '../model/gridTypes';
+import type { GridColumn } from '../model/gridTypes.unbound';
 import {
   parseCommittedValue,
   resolveCellParser,

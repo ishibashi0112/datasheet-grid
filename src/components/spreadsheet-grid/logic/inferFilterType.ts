@@ -1,4 +1,4 @@
-import type { ColumnFilterUiType } from '../model/gridTypes';
+import type { ColumnFilterUiType } from '../model/gridTypes.unbound';
 import { isBlankCellValue, toDateKey } from './filtering';
 
 // 追加(filter-ext E): filterType: 'auto' の実効種別を推定する純ロジックです。

@@ -9,7 +9,7 @@
 //     latest-ref のため { current } の構造的型で受けます。イベントも構造的型(React 合成イベントを
 //     そのまま渡せます)。
 import { gridActions, type GridUiAction } from '../model/gridActions';
-import type { CellCoord, GridColumn, GridUiState } from '../model/gridTypes';
+import type { CellCoord, GridColumn, GridUiState } from '../model/gridTypes.unbound';
 import { nextSortEntries } from '../logic/sorting';
 import { isSyntheticColumnKey } from '../logic/detailRow';
 import {

@@ -8,7 +8,7 @@
 //     in-flight を中断し、必要なら再開します(旧 effect の deps と cleanup に相当)。
 //   - 結果の合成(同期 → 完了 → 計算中フォールバック)は純関数 selectGlobalFilteredOrderResult で、
 //     計算中は「直前の完了結果(行数が同じ場合)または baseOrder」を返して order 参照を安定させます。
-import type { GlobalFilterStatus, GridColumn } from '../model/gridTypes';
+import type { GlobalFilterStatus, GridColumn } from '../model/gridTypes.unbound';
 import { runChunked } from '../logic/chunkedLoop';
 import { createValueStore } from '../logic/valueStore';
 import {

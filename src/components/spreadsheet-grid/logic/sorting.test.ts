@@ -10,7 +10,7 @@ import { describe, it, expect } from 'vitest';
 import { compareUnknownValues, sortOrder } from './sorting';
 import { createSourceOrder, type RowOrder } from './filtering';
 import { getCellValue } from '../utils/permissions';
-import type { GridColumn, GridSortState } from '../model/gridTypes';
+import type { GridColumn, GridSortState } from '../model/gridTypes.unbound';
 
 type Row = Record<string, unknown>;
 

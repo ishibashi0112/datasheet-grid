@@ -1,4 +1,4 @@
-import type { CsvExportScope } from '../model/gridTypes';
+import type { CsvExportScope } from '../model/gridTypes.unbound';
 
 // 追加(export-scope 再編): エクスポート scope の正規化純関数です。
 //   実利用(SS2603)で「'visible' = フィルターで見えている行」という誤読が発生した(実体は仮想化

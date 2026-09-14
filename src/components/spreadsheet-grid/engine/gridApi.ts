@@ -23,7 +23,7 @@ import type {
   ScrollAlign,
   SpreadsheetGridHandle,
   SpreadsheetGridProps,
-} from '../model/gridTypes';
+} from '../model/gridTypes.unbound';
 import { gridActions, type GridUiAction } from '../model/gridActions';
 import { normalizeCellRange, normalizeColumnRange, normalizeRowRange } from '../model/gridSelectors';
 import { computeSinglePaneColumnExtent, type GridPaneLayout } from '../logic/geometry';

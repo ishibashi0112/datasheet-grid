@@ -2,7 +2,7 @@ import type {
   DateFilterPreset,
   DateFilterPresetOption,
   DateFilterPresetRange,
-} from '../model/gridTypes';
+} from '../model/gridTypes.unbound';
 
 // 追加(preset-opt): dateSet フィルターの相対プリセット構成(GridColumn.dateFilterPresets)を
 //   UI / 評価 / 要約が共有できる正規形へ均す純ロジックです。

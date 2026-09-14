@@ -11,7 +11,7 @@ import type {
   ColumnFilterValue,
   GridColumn,
   SetColumnFilterValue,
-} from '../model/gridTypes';
+} from '../model/gridTypes.unbound';
 import { gridActions, type GridUiAction } from '../model/gridActions';
 import {
   isDateSetColumnFilterValue,

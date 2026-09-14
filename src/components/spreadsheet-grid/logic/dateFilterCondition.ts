@@ -1,7 +1,7 @@
 import type {
   DateFilterPreset,
   ParsedDateFilter,
-} from '../model/gridTypes';
+} from '../model/gridTypes.unbound';
 // 追加(filter-ext D): 候補連動(条件でツリー候補を絞る)の単一値判定です。
 //   行 predicate(compileParsedDatePredicate)と同一の意味論を共有します。
 // 変更(date-input): toDateKey は日付入力スロットの onChange 正規化にも使います。

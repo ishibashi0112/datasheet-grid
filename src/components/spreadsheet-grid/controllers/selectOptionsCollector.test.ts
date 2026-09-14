@@ -19,7 +19,7 @@ import {
   resolveSyncSelectOptions,
   selectCollectorResult,
 } from './selectOptionsCollector';
-import type { GridColumn } from '../model/gridTypes';
+import type { GridColumn } from '../model/gridTypes.unbound';
 
 const flushYields = async () => {
   const resolvers = pendingYields.splice(0);

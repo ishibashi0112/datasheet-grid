@@ -27,7 +27,7 @@ import {
 } from '../logic/autoScrollGeometry';
 import { isInsideDetailCardOf } from '../logic/detailRow';
 import { applySlotToElement } from '../logic/slotDom';
-import type { GridResolvedSlot } from '../model/gridTypes';
+import type { GridResolvedSlot } from '../model/gridTypes.unbound';
 
 type ReadonlyRef<V> = { readonly current: V };
 

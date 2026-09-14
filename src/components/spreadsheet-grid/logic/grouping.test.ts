@@ -17,7 +17,7 @@ import {
   isGroupOrderValue,
 } from './grouping';
 import { createSourceOrder } from './filtering';
-import type { GridColumn, GridGroupRow } from '../model/gridTypes';
+import type { GridColumn, GridGroupRow } from '../model/gridTypes.unbound';
 
 type Row = Record<string, unknown>;
 

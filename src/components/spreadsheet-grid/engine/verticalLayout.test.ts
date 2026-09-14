@@ -2,7 +2,7 @@
 //   no-op 入力での参照安定)。
 import { describe, it, expect } from 'vitest';
 import { createVerticalLayoutResolver, type VerticalLayoutInputs } from './verticalLayout';
-import type { GridColumn, RowModel } from '../model/gridTypes';
+import type { GridColumn, RowModel } from '../model/gridTypes.unbound';
 import { createDetailIndexCache } from '../logic/detailRow';
 
 type Row = { id: number; text: string };

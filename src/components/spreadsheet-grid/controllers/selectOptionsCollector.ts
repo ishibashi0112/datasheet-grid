@@ -7,7 +7,7 @@
 //     run を中断し、必要なら再開します(旧 effect の deps と cleanup に相当)。
 //   - スナップショットは「どのキーで得た結果か」を持ち、アダプタは現在のキーと一致するときだけ表面化
 //     します(列切替直後に前列の候補を見せない = stale 排除)。
-import type { GridColumn } from '../model/gridTypes';
+import type { GridColumn } from '../model/gridTypes.unbound';
 import { runChunked } from '../logic/chunkedLoop';
 import { createValueStore } from '../logic/valueStore';
 import {

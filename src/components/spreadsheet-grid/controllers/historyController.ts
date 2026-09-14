@@ -12,7 +12,7 @@ import type {
   CellCoord,
   GridSelection,
   UndoRedoState,
-} from '../model/gridTypes.core';
+} from '../model/gridTypes.unbound';
 import {
   canRedoHistory,
   canUndoHistory,

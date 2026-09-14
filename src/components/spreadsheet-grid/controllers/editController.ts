@@ -17,7 +17,7 @@ import type {
   GridColumn,
   GridUiState,
   RowModel,
-} from '../model/gridTypes';
+} from '../model/gridTypes.unbound';
 import { parseCommittedValue, writeRowsCell } from '../logic/editorValues';
 import { decideCellWrite } from '../logic/validation';
 import { clamp } from '../logic/geometry';

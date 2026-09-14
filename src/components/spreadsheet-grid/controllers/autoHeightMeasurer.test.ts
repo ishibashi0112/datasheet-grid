@@ -4,7 +4,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { createAutoHeightMeasurer, type AutoHeightMeasureArgs } from './autoHeightMeasurer';
 import { buildRowHeightStore, createAutoHeightRowMetrics } from '../logic/rowHeightStore';
-import type { RowModel } from '../model/gridTypes';
+import type { RowModel } from '../model/gridTypes.unbound';
 
 type Row = { id: number };
 const rows: Row[] = [{ id: 1 }, { id: 2 }, { id: 3 }];

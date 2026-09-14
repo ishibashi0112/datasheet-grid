@@ -7,7 +7,7 @@
 //   - handleToggleSelectAllRows: 全選択済みなら解除、そうでなければ全選択(総数は leaf 行数)。
 //   - update: controlled の記述子が変わったとき reducer へ同期します(差分時のみ。旧 useEffect と同じ deps)。
 //   shift / ドラッグ範囲のアンカー(view index)は揮発 UI 状態としてコントローラ内に持ちます。
-import type { GridRowKey, RowModel, RowSelectionModel, RowSelectionState } from '../model/gridTypes';
+import type { GridRowKey, RowModel, RowSelectionModel, RowSelectionState } from '../model/gridTypes.unbound';
 import { gridActions, type GridUiAction } from '../model/gridActions';
 import {
   clearRowSelection,

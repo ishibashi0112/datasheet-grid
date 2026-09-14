@@ -10,7 +10,7 @@ import {
   type ColumnDragHandlePointerEvent,
   type ColumnHeaderDragArgs,
 } from './columnHeaderDragController';
-import type { GridColumn, GridColumnPinned } from '../model/gridTypes';
+import type { GridColumn, GridColumnPinned } from '../model/gridTypes.unbound';
 import type { GridPaneLayout, PaneGeometry } from '../logic/geometry';
 
 type Row = { a: number; b: number; c: number; d: number };

@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 
 import { normalizeExportScope } from './exportScope';
 import type { NormalizedCsvExportScope } from './exportScope';
-import type { CsvExportScope } from '../model/gridTypes';
+import type { CsvExportScope } from '../model/gridTypes.unbound';
 
 describe('normalizeExportScope', () => {
   it('新 4 値はそのまま返す', () => {

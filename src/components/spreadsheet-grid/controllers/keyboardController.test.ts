@@ -6,7 +6,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { createKeyboardController, type KeyboardControllerArgs } from './keyboardController';
 import { createInitialGridUiState } from '../model/gridReducer';
 import type { GridUiAction } from '../model/gridActions';
-import type { GridColumn, GridGroupRow, RowModel } from '../model/gridTypes';
+import type { GridColumn, GridGroupRow, RowModel } from '../model/gridTypes.unbound';
 
 type Row = { id: number; name: string };
 const columns: GridColumn<Row>[] = [{ key: 'name', title: '名前', width: 100 }];

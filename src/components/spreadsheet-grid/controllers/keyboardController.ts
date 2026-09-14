@@ -12,7 +12,7 @@ import type {
   GridUiState,
   RowModel,
   SpreadsheetGridProps,
-} from '../model/gridTypes';
+} from '../model/gridTypes.unbound';
 import { clamp } from '../logic/geometry';
 import { isPrintableKey, shouldIgnoreGridKeydown } from '../logic/domGuards';
 import { isCellEditable } from '../utils/permissions';

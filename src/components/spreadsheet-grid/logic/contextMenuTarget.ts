@@ -2,7 +2,7 @@
 //   DOM 逆引き(SpreadsheetGrid 側の委譲ハンドラ)から得た「列キー」「行 index」を、公開 params の
 //   colIndex / isTargetSelected へ変換する部分だけを副作用なしで切り出しています(テスト対象)。
 //   メニューの開閉・配線は useCellContextMenuController / SpreadsheetGrid 側が担います。
-import type { GridColumn, GridSelection } from '../model/gridTypes';
+import type { GridColumn, GridSelection } from '../model/gridTypes.unbound';
 
 // 右クリックされたセルの列キーから論理列 index(視覚順 左→中央→右 = orderedColumns 上の index)を
 //   引きます。見つからなければ -1。handle.selectCell などが使う colIndex と同一空間の値を返します。

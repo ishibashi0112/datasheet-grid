@@ -25,7 +25,7 @@ import type {
   ColumnFilterValue,
   GridSortState,
   ServerSideQuery,
-} from '../model/gridTypes';
+} from '../model/gridTypes.unbound';
 import { isActiveColumnFilterValue } from './filtering';
 
 // clientSide の UI 状態 3 種から ServerSideQuery を組み立てます。

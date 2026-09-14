@@ -4,7 +4,7 @@
 //   - close(): 状態を消し、リスナーを外し、rAF でグリッド root へフォーカスを戻す。
 //   - 開いている間: resize で再配置、scroll(capture)/ 外側 pointerdown / Escape で閉じる。
 //   - パネル要素は panelRef({ current })で受け取り、外側判定に使います(view が ref に渡します)。
-import type { GridContextMenuItem, GridContextMenuParams } from '../model/gridTypes';
+import type { GridContextMenuItem, GridContextMenuParams } from '../model/gridTypes.unbound';
 import { createValueStore } from '../logic/valueStore';
 import {
   blurForPopover,

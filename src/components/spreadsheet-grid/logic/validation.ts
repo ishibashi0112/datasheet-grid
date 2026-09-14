@@ -7,7 +7,7 @@ import type {
   GridColumn,
   GridInvalidCell,
   GridRowKey,
-} from '../model/gridTypes';
+} from '../model/gridTypes.unbound';
 import { getCellValue } from '../utils/permissions';
 
 // validate が false / 空メッセージを返した場合の既定メッセージです。

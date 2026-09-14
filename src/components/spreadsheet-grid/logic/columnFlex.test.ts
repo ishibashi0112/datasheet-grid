@@ -5,7 +5,7 @@ import {
   isFlexingColumn,
   computeCenterFlexWidths,
 } from './columnFlex';
-import type { GridColumn } from '../model/gridTypes';
+import type { GridColumn } from '../model/gridTypes.unbound';
 
 type Row = Record<string, unknown>;
 

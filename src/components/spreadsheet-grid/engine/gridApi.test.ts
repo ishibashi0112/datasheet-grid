@@ -3,7 +3,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi } from 'vitest';
 import { createGridApi, type GridApiArgs } from './gridApi';
-import type { GridColumn, RowModel } from '../model/gridTypes';
+import type { GridColumn, RowModel } from '../model/gridTypes.unbound';
 import type { GridUiAction } from '../model/gridActions';
 import { createInitialGridUiState } from '../model/gridReducer';
 import { createUniformRowMetrics } from '../logic/verticalGeometry';

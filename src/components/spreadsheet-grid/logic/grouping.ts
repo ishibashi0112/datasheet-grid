@@ -4,7 +4,7 @@ import type {
   GridColumn,
   GridGroupRow,
   GridRowKey,
-} from '../model/gridTypes';
+} from '../model/gridTypes.unbound';
 import type { RowOrder } from './filtering';
 import { getCellValue } from '../utils/permissions';
 import {

@@ -20,7 +20,7 @@ import type {
   ServerSideLoadErrorParams,
   ServerSideQuery,
   ServerSideWriteErrorParams,
-} from '../model/gridTypes';
+} from '../model/gridTypes.unbound';
 import { createServerSideRowCache } from '../logic/serverSideCache';
 import { computeBlockIndexes } from '../logic/serverSideBlocks';
 import {

@@ -1,7 +1,7 @@
 // 追加(clear): logic/clearCells.ts(選択セルの値クリア)の単体テストです。
 import { describe, it, expect } from 'vitest';
 import { clearCellsInSelection, resolveClearTarget } from './clearCells';
-import type { GridColumn } from '../model/gridTypes';
+import type { GridColumn } from '../model/gridTypes.unbound';
 
 type Row = { id: number; name: string; qty: number | string | null };
 

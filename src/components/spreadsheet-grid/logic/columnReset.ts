@@ -15,7 +15,7 @@
 //     幅は解決済み幅を defs へ書き戻して保全します(commit 時の sync effect による消失防止)。
 //   - 返り値 null = no-op(初期列の幅 / 固定 / 表示 / 並び順すべて差分なし)。overflow 列の
 //     幅書き戻しだけが必要なケースは従来どおり no-op です(リセット対象外のため)。
-import type { GridColumn, GridColumnPinned } from '../model/gridTypes';
+import type { GridColumn, GridColumnPinned } from '../model/gridTypes.unbound';
 
 // 追加(13-B2-5): 初回マウント時に退避する per-column の初期状態です。Map の挿入順が
 //   初期の列順を兼ねます(SpreadsheetGrid の initialColumnStateRef が保持)。

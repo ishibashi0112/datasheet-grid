@@ -2,7 +2,7 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createContextMenuController } from './contextMenuController';
-import type { GridContextMenuParams } from '../model/gridTypes';
+import type { GridContextMenuParams } from '../model/gridTypes.unbound';
 
 beforeEach(() => {
   vi.stubGlobal('requestAnimationFrame', () => 1);

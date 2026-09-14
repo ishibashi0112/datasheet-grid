@@ -13,7 +13,7 @@ import {
 } from './pointerInteractionsController';
 import { createInitialGridUiState } from '../model/gridReducer';
 import type { GridUiAction } from '../model/gridActions';
-import type { GridColumn } from '../model/gridTypes';
+import type { GridColumn } from '../model/gridTypes.unbound';
 import { createUniformRowMetrics } from '../logic/verticalGeometry';
 import type { GridPaneLayout } from '../logic/geometry';
 

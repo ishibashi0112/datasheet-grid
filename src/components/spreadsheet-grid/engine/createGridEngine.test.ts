@@ -3,7 +3,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { createGridEngine } from './createGridEngine';
-import type { GridColumn } from '../model/gridTypes';
+import type { GridColumn } from '../model/gridTypes.unbound';
 
 type Row = { id: number; name: string };
 const columns: GridColumn<Row>[] = [

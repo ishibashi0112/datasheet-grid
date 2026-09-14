@@ -15,7 +15,7 @@
 // viewIndex キーの前提: オーバーレイの寿命は「同一クエリ(ソート/フィルター不変)の間」だけです。
 //   クエリ変化・refresh ではフック側が clear() を呼び、in-flight の結果も世代(epoch)で捨てるため、
 //   view 空間の行対応がずれたまま書き込まれることはありません。
-import type { GridColumn, GridRowKey, ServerSideRowUpdate } from '../model/gridTypes';
+import type { GridColumn, GridRowKey, ServerSideRowUpdate } from '../model/gridTypes.unbound';
 import { getCellValue, setCellValue } from '../utils/permissions';
 
 // 書き戻し 1 件ぶんのセル編集入力です(value はパース済みのドメイン値)。

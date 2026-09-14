@@ -3,7 +3,7 @@
 //   dispose での中断・isAutosizing の購読を固定します。
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { GridColumn, RowModel } from '../model/gridTypes';
+import type { GridColumn, RowModel } from '../model/gridTypes.unbound';
 
 const pendingYields: Array<() => void> = [];
 vi.mock('../utils/scheduler', () => ({

@@ -7,7 +7,7 @@
 //   - createDetailKeysNotifier: 展開行キー集合の変更通知(初回 = マウント時は通知しない)。
 //   - createStateChangeNotifier: 永続スライス(幅 / フィルター / ソート)+ 列メタの変化通知。判定は純ロジック
 //     decideStateChangeEmit(ドラッグ中保留 / 初回非発火 / 同値非発火)。onStateChange 未指定なら snapshot も作らない。
-import type { GridColumn, GridRowKey, GridSortState, GridState, GridUiState } from '../model/gridTypes';
+import type { GridColumn, GridRowKey, GridSortState, GridState, GridUiState } from '../model/gridTypes.unbound';
 import { buildGridState, decideStateChangeEmit, extractColumnState } from '../logic/gridState';
 
 // ── 行ホバー ───────────────────────────────────────────

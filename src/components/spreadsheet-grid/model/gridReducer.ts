@@ -1,5 +1,5 @@
 import type { GridUiAction } from './gridActions';
-import type { GridColumn, GridRowKey, GridUiState } from './gridTypes';
+import type { GridColumn, GridRowKey, GridUiState } from './gridTypes.unbound';
 // 追加(B3): flex 列(center かつ flex>0)は columnWidths に固定エントリを持たせません。
 //   flex 算出が効くよう、初期生成・columns 同期の両方でこの判定でスキップします。
 import { isFlexingColumn } from '../logic/columnFlex';

@@ -1,4 +1,4 @@
-import type { GridAggFuncName } from '../model/gridTypes';
+import type { GridAggFuncName } from '../model/gridTypes.unbound';
 
 // 追加(grouping ①): 行グルーピングの組み込み集計です。グループツリー構築(logic/grouping.ts)が
 //   leaf を 1 行ずつ流し込みながら加算できるよう、「アキュムレータ生成 → 逐次加算 → 確定」の

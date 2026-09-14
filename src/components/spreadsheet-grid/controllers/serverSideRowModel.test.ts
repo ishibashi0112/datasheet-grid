@@ -3,7 +3,7 @@
 //   生成時の初期値・update による queryKey / refreshToken 検出・スナップショット通知・dispose を確認します。
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createServerSideRowModel } from './serverSideRowModel';
-import type { ServerSideDataSource } from '../model/gridTypes';
+import type { ServerSideDataSource } from '../model/gridTypes.unbound';
 
 type Row = { v: number };
 

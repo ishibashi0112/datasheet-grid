@@ -13,7 +13,7 @@ import type {
   GridUiState,
   RowModel,
   SpreadsheetGridProps,
-} from '../model/gridTypes';
+} from '../model/gridTypes.unbound';
 import { clamp } from '../logic/geometry';
 import { getCellValue, isCellEditable } from '../utils/permissions';
 import {

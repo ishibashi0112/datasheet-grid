@@ -1,4 +1,4 @@
-import type { GridColumn, GridExportData } from '../model/gridTypes';
+import type { GridColumn, GridExportData } from '../model/gridTypes.unbound';
 import { getCellValue } from '../utils/permissions';
 
 // 追加(imperative API: getExportData): エクスポート用「整形済みデータ」の純ロジックです。ハンドル

@@ -17,7 +17,7 @@ import type {
   GridFilterState,
   GridSortState,
   ParsedNumberFilter,
-} from '../model/gridTypes';
+} from '../model/gridTypes.unbound';
 
 const emptyFilters = (): GridFilterState => ({
   globalText: '',

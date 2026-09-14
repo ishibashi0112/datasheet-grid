@@ -1,4 +1,4 @@
-import type { GridColumn, GridSortState } from '../model/gridTypes';
+import type { GridColumn, GridSortState } from '../model/gridTypes.unbound';
 import { getCellValue } from '../utils/permissions';
 import type { RowOrder } from './filtering';
 

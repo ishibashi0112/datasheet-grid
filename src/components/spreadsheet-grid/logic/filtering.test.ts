@@ -43,7 +43,7 @@ import type {
   ParsedNumberFilter,
   SetColumnFilterValue,
   TextSetColumnFilterValue,
-} from '../model/gridTypes';
+} from '../model/gridTypes.unbound';
 
 type Row = Record<string, unknown>;
 

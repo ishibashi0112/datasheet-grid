@@ -1,7 +1,7 @@
 // 追加(本体分解 E-6a): 外部通知の配線(ホバー行 / 展開行キー集合 / onStateChange)の単体テストです。
 import { describe, it, expect, vi } from 'vitest';
 import { createDetailKeysNotifier, createHoverRowNotifier, createStateChangeNotifier } from './notifiers';
-import type { GridColumn } from '../model/gridTypes';
+import type { GridColumn } from '../model/gridTypes.unbound';
 
 describe('createHoverRowNotifier', () => {
   it('同値は抑止し、変化時だけ内部 state 更新 + 通知。controlled では state を更新しない。無効時は何もしない', () => {

@@ -1,4 +1,4 @@
-import type { GridColumn, SpreadsheetGridProps } from '../model/gridTypes';
+import type { GridColumn, SpreadsheetGridProps } from '../model/gridTypes.unbound';
 
 // 追加: Grid 全体 / 列 / セル単位の条件をまとめて編集可否を判定します。
 export const isCellEditable = <T,>(

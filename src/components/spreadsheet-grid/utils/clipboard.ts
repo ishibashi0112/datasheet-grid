@@ -1,4 +1,4 @@
-import type { GridColumn } from '../model/gridTypes';
+import type { GridColumn } from '../model/gridTypes.unbound';
 import type { ServerSideCellEditInput } from '../logic/serverSideEdits';
 import {
   normalizeCellRange,

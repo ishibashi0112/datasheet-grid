@@ -8,7 +8,7 @@
 //     (paneLayout)と各種の幅派生値を返します。
 //   メモ化は createMemo(useMemo と同じ Object.is 比較)で、旧 useMemo の依存単位をそのまま保っています
 //   (ライブリサイズ中に幅が変わらないペインの geometry / entries 参照が不変になる 11-B4 の性質を含む)。
-import type { GridColumn } from '../model/gridTypes';
+import type { GridColumn } from '../model/gridTypes.unbound';
 import {
   buildPaneGeometryFromWidthsKey,
   buildPaneWidthsKey,

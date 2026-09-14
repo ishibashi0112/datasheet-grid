@@ -1,6 +1,6 @@
 // logic/selectEditorState(select エディタ純ロジック)の単体テストです。
 import { describe, expect, it } from 'vitest';
-import type { GridSelectEditorOption } from '../model/gridTypes';
+import type { GridSelectEditorOption } from '../model/gridTypes.unbound';
 import {
   SELECT_TYPEAHEAD_RESET_MS,
   computeSelectPopoverPlacement,

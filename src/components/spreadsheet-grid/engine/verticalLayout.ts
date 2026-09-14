@@ -6,7 +6,7 @@
 //     窓端 index / 物理ボディ高さ / 倍率 / overlay 基準オフセット、描画窓内の展開中マスター行(detailEntries)
 //   メモ単位は旧 useMemo と同一です。autoHeightVersion は測定 flush(行高ストアの in-place prefix 更新)後に
 //   メトリクスを作り直させる意図的なトリガー入力です。
-import type { GridColumn, GridRowKey, RowModel } from '../model/gridTypes';
+import type { GridColumn, GridRowKey, RowModel } from '../model/gridTypes.unbound';
 import {
   AUTO_HEIGHT_MAX_ROWS,
   MAX_BODY_PX,

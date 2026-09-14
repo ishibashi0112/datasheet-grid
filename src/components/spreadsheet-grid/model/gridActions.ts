@@ -5,7 +5,7 @@ import type {
   GridRowKey,
   GridSortEntry,
   RowSelectionState,
-} from './gridTypes';
+} from './gridTypes.unbound';
 
 // 追加: Grid UI action の union 型です。
 export type GridUiAction =

@@ -1,4 +1,4 @@
-import type { ParsedTextFilter } from '../model/gridTypes';
+import type { ParsedTextFilter } from '../model/gridTypes.unbound';
 // 追加(filter-ext C): 候補連動(条件で Set 候補一覧を絞る)の単一値判定です。
 //   行 predicate(compileParsedTextPredicate)と同一の意味論を共有します。
 import { matchesParsedTextFilter } from './filtering';

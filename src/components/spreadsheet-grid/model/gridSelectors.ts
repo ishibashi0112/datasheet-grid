@@ -1,4 +1,4 @@
-import type { CellCoord, CellRange, GridUiState } from './gridTypes';
+import type { CellCoord, CellRange, GridUiState } from './gridTypes.unbound';
 
 // 追加: セル範囲を正規化して左上/右下を求めるユーティリティです。
 export const normalizeCellRange = (range: CellRange): CellRange => ({
