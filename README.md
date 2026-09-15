@@ -31,7 +31,7 @@ A high-performance, virtualized spreadsheet / data grid for **React 19**, writte
 - Built-in dark theme — `theme="light" | "dark" | "auto"` switches the grid, every popover / panel / menu, the drag ghost and tooltips through a single token preset. `"auto"` follows `prefers-color-scheme`; with class-based dark frameworks (Mantine / HeroUI / Tailwind) pass your resolved color scheme instead.
 - Toggle the top / bottom bars and their parts via props — whole bars (`showTopBar` / `showBottomBar`), the default top bar's summary chips and global-filter input, and the Rows/Columns counts in each bar.
 - Filter management panel — review every active column filter in one place (jump to the column & edit, clear one / all, add new), opened from the column menu, the default top bar's clickable Filters chip, or `openFilterManager()` on the imperative handle. An optional filter chip bar (`showFilterChipBar`) keeps active filters visible right below the top bar.
-- Built-in CSV export (`downloadCsv` / `exportCsv`), plus a library-agnostic `getExportData()` for Excel / XLSX / ODS — feed the shaped data (filter/sort/visible-order aware) to your own writer such as [hucre](https://github.com/productdevbook/hucre), ExcelJS, or SheetJS. No spreadsheet library is bundled; multi-sheet is composed on your side. See [`API_REFERENCE.md`](./src/components/spreadsheet-grid/API_REFERENCE.md).
+- Built-in CSV export (`downloadCsv` / `exportCsv`), plus a library-agnostic `getExportData()` for Excel / XLSX / ODS — feed the shaped data (filter/sort/visible-order aware) to your own writer such as [hucre](https://github.com/productdevbook/hucre), ExcelJS, or SheetJS. No spreadsheet library is bundled; multi-sheet is composed on your side. See [`API_REFERENCE.md`](./packages/react/API_REFERENCE.md).
 - Export scopes: `'view'` (default — every filtered/sorted view row, scroll-independent), `'raw'` (every source row, ignoring filter & sort), `'rendered'` (only the rows currently rendered by virtualization — scroll-dependent), `'selection'`. Legacy `'all'` / `'visible'` keep working as deprecated aliases of `'view'` / `'rendered'`.
 - Touch-friendly basics — on touch devices a tap selects a cell, a double tap starts editing (works even where the browser never fires `dblclick`), and swipes scroll instead of starting a range selection. The column menu (`⋮`) is always visible on hover-less devices.
 - TypeScript-first, fully controlled API.
@@ -164,7 +164,7 @@ const invalid = gridRef.current?.getInvalidCells()
 // -> [{ rowKey, sourceRowIndex, columnKey, message }, ...]
 ```
 
-Marks are shown in real time by default. For the classic "validate on submit" flow, keep the rules on the columns and toggle mark visibility from state — `showValidationMarks={showErrors}` (default `true`). `getInvalidCells()` and `'reject'` are unaffected by the toggle. See the recipe in [`API_REFERENCE.md`](./src/components/spreadsheet-grid/API_REFERENCE.md).
+Marks are shown in real time by default. For the classic "validate on submit" flow, keep the rules on the columns and toggle mark visibility from state — `showValidationMarks={showErrors}` (default `true`). `getInvalidCells()` and `'reject'` are unaffected by the toggle. See the recipe in [`API_REFERENCE.md`](./packages/react/API_REFERENCE.md).
 
 ## Sizing
 
@@ -180,7 +180,7 @@ For `height="100%"` to work, the parent must have a resolved height (its ancesto
 
 ### Auto-height rows
 
-Variable row height needs **two switches, both required**: the grid prop `autoHeight` (the master switch, default `false`) **and** at least one column with `autoHeight: true` (that column wraps and drives the row height). A cell grows only when `grid autoHeight && column.autoHeight` are both true. Auto-height is active only up to **50,000 rows**; beyond that it falls back to uniform `rowHeight`. `estimateRowHeight` is the placeholder for off-screen (not-yet-measured) rows — not a cap. See [`API_REFERENCE.md`](./src/components/spreadsheet-grid/API_REFERENCE.md) for details.
+Variable row height needs **two switches, both required**: the grid prop `autoHeight` (the master switch, default `false`) **and** at least one column with `autoHeight: true` (that column wraps and drives the row height). A cell grows only when `grid autoHeight && column.autoHeight` are both true. Auto-height is active only up to **50,000 rows**; beyond that it falls back to uniform `rowHeight`. `estimateRowHeight` is the placeholder for off-screen (not-yet-measured) rows — not a cap. See [`API_REFERENCE.md`](./packages/react/API_REFERENCE.md) for details.
 
 ```tsx
 <SpreadsheetGrid
@@ -199,7 +199,7 @@ Set `autoSizeColumns` to fit column widths to their content when data arrives �
 <SpreadsheetGrid rows={rows} columns={columns} autoSizeColumns="onDataChange" />
 ```
 
-`'onMount'` fits once on first data; `'onDataChange'` refits whenever the `rows` reference changes; `false` (default) does nothing. It reuses the same measurement as the column menu's "Autosize All Columns", so per-column opt-outs apply: columns with `suppressAutoSize: true` (and `autoHeight: true` columns) keep their `width`. The trigger only reacts to `rows` — filtering, sorting and column reordering do **not** refit — and it writes to internal widths without calling `onColumnsChange`, so it coexists with controlled `columns`. Server-side (`dataSource`) is not supported. See [`API_REFERENCE.md`](./src/components/spreadsheet-grid/API_REFERENCE.md) for details.
+`'onMount'` fits once on first data; `'onDataChange'` refits whenever the `rows` reference changes; `false` (default) does nothing. It reuses the same measurement as the column menu's "Autosize All Columns", so per-column opt-outs apply: columns with `suppressAutoSize: true` (and `autoHeight: true` columns) keep their `width`. The trigger only reacts to `rows` — filtering, sorting and column reordering do **not** refit — and it writes to internal widths without calling `onColumnsChange`, so it coexists with controlled `columns`. Server-side (`dataSource`) is not supported. See [`API_REFERENCE.md`](./packages/react/API_REFERENCE.md) for details.
 
 ### Density
 
@@ -232,7 +232,7 @@ Pass a `dataSource` instead of `rows` to switch to server-side mode. The grid ke
 />
 ```
 
-Sorting, column filters, and the global filter stay enabled and are forwarded to the server through `query`. Cell edits (editor commit / paste / Delete-clear / checkbox) are written back through `updateRows` with optimistic updates — the grid rolls the cells back and shows a dismissible error bar if the write fails (`onServerSideWriteError` fires for toasts/logging). Without `updateRows`, server-side cells are read-only. Row add/remove has no write-back API; apply it on the server and call `refreshServerSide()`. See the [API reference](./src/components/spreadsheet-grid/API_REFERENCE.md) for the full `getRows` / `updateRows` contracts, the filter wire format, and `serverSideRefreshToken`.
+Sorting, column filters, and the global filter stay enabled and are forwarded to the server through `query`. Cell edits (editor commit / paste / Delete-clear / checkbox) are written back through `updateRows` with optimistic updates — the grid rolls the cells back and shows a dismissible error bar if the write fails (`onServerSideWriteError` fires for toasts/logging). Without `updateRows`, server-side cells are read-only. Row add/remove has no write-back API; apply it on the server and call `refreshServerSide()`. See the [API reference](./packages/react/API_REFERENCE.md) for the full `getRows` / `updateRows` contracts, the filter wire format, and `serverSideRefreshToken`.
 
 ## Styling & theming
 
@@ -320,7 +320,7 @@ The full prop and type reference lives in [`packages/react/API_REFERENCE.md`](./
 - ダークテーマを標準装備 — `theme="light" | "dark" | "auto"` で、グリッド本体・全ポップオーバー / パネル / メニュー・ドラッグゴースト・ツールチップをトークンプリセット 1 つで一括切替。`"auto"` は `prefers-color-scheme` に追従(Mantine / HeroUI / Tailwind のクラスベース dark 運用では、解決済みのカラースキームを渡す使い方を推奨)。
 - トップ / ボトムバーとその構成要素（バー全体〔`showTopBar` / `showBottomBar`〕、既定トップバーの summary chips・グローバルフィルター入力、各バーの Rows/Columns 件数）を props で表示制御。
 - フィルター管理パネル — 適用中の列フィルターを 1 箇所で確認・操作（該当列へジャンプして編集 / 個別・全クリア / 追加）。列メニュー、既定トップバーの Filters chip クリック、ハンドルの `openFilterManager()` から開けます。トップバー直下に常時表示するフィルターチップバー（`showFilterChipBar`）もオプションで利用可。
-- CSV エクスポート（`downloadCsv` / `exportCsv`）を内蔵。Excel / XLSX / ODS はライブラリ非依存の `getExportData()` で、整形済みデータ（フィルター/ソート/可視列順を反映）を [hucre](https://github.com/productdevbook/hucre) / ExcelJS / SheetJS など任意の writer へ流す方式。xlsx ライブラリは同梱せず、マルチシートは利用側で合成。詳細は [`API_REFERENCE.md`](./src/components/spreadsheet-grid/API_REFERENCE.md)。
+- CSV エクスポート（`downloadCsv` / `exportCsv`）を内蔵。Excel / XLSX / ODS はライブラリ非依存の `getExportData()` で、整形済みデータ（フィルター/ソート/可視列順を反映）を [hucre](https://github.com/productdevbook/hucre) / ExcelJS / SheetJS など任意の writer へ流す方式。xlsx ライブラリは同梱せず、マルチシートは利用側で合成。詳細は [`API_REFERENCE.md`](./packages/react/API_REFERENCE.md)。
 - エクスポート scope: `'view'`（既定＝フィルター/ソート後の全ビュー行。スクロール位置に非依存）/ `'raw'`（フィルター/ソート無視の全ソース行）/ `'rendered'`（描画中の行のみ＝スクロール位置に依存）/ `'selection'`（選択範囲）。旧 `'all'` / `'visible'` は `'view'` / `'rendered'` の deprecated エイリアスとして従来どおり動作。
 - タッチ操作の基本対応 — タッチ端末ではタップでセル選択、ダブルタップで編集開始（`dblclick` を発火しないブラウザでも動作）、スワイプは範囲選択にならずスクロール。列メニュー（`⋮`）はホバー不可の端末で常時表示。
 - TypeScript ファースト、完全 controlled な API。
@@ -453,7 +453,7 @@ const invalid = gridRef.current?.getInvalidCells()
 // -> [{ rowKey, sourceRowIndex, columnKey, message }, ...]
 ```
 
-マークは既定でリアルタイム表示です。「送信時にまとめて検証」の定番フローは、ルールを列に定義したまま `showValidationMarks={showErrors}`(既定 `true`)を state で切り替えて実現します。`getInvalidCells()` と `'reject'` は表示状態の影響を受けません。完結したコード例は [`API_REFERENCE.md`](./src/components/spreadsheet-grid/API_REFERENCE.md) のレシピを参照してください。
+マークは既定でリアルタイム表示です。「送信時にまとめて検証」の定番フローは、ルールを列に定義したまま `showValidationMarks={showErrors}`(既定 `true`)を state で切り替えて実現します。`getInvalidCells()` と `'reject'` は表示状態の影響を受けません。完結したコード例は [`API_REFERENCE.md`](./packages/react/API_REFERENCE.md) のレシピを参照してください。
 
 ### サイズ（高さ）
 
@@ -469,7 +469,7 @@ const invalid = gridRef.current?.getInvalidCells()
 
 #### 可変行高（auto-height）
 
-行高を可変にするには**2つのスイッチが両方必要**です。グリッド props の `autoHeight`（大本のスイッチ・既定 `false`）と、**少なくとも1列に `column.autoHeight: true`**（その列が折り返して行高を駆動）。セルが可変になるのは「グリッド `autoHeight` && 列 `autoHeight`」が両方 true のときだけです。有効なのは **50,000 行以内**で、超えると uniform 行高（`rowHeight`）へフォールバックします。`estimateRowHeight` は画面外（未測定）行の推定値で、上限ではありません。詳細は [`API_REFERENCE.md`](./src/components/spreadsheet-grid/API_REFERENCE.md)。
+行高を可変にするには**2つのスイッチが両方必要**です。グリッド props の `autoHeight`（大本のスイッチ・既定 `false`）と、**少なくとも1列に `column.autoHeight: true`**（その列が折り返して行高を駆動）。セルが可変になるのは「グリッド `autoHeight` && 列 `autoHeight`」が両方 true のときだけです。有効なのは **50,000 行以内**で、超えると uniform 行高（`rowHeight`）へフォールバックします。`estimateRowHeight` は画面外（未測定）行の推定値で、上限ではありません。詳細は [`API_REFERENCE.md`](./packages/react/API_REFERENCE.md)。
 
 ```tsx
 <SpreadsheetGrid
@@ -488,7 +488,7 @@ const invalid = gridRef.current?.getInvalidCells()
 <SpreadsheetGrid rows={rows} columns={columns} autoSizeColumns="onDataChange" />
 ```
 
-`'onMount'` は初回にデータが載った一度きり、`'onDataChange'` は `rows`（参照）が変わるたび、`false`（既定）は無効です。計測は列メニュー「すべての列の幅を自動調整」と同一エンジンのため、列個別の除外がそのまま効きます — `suppressAutoSize: true` の列（および `autoHeight: true` の列）は `width` を維持します。発火 signal は `rows` のみで、フィルター / ソート / 列並べ替えでは**再フィットしません**。フィット幅は内部の列幅 state に反映され `onColumnsChange` を呼ばないため、controlled な `columns` とも競合しません。serverSide（`dataSource`）では無効です。詳細は [`API_REFERENCE.md`](./src/components/spreadsheet-grid/API_REFERENCE.md)。
+`'onMount'` は初回にデータが載った一度きり、`'onDataChange'` は `rows`（参照）が変わるたび、`false`（既定）は無効です。計測は列メニュー「すべての列の幅を自動調整」と同一エンジンのため、列個別の除外がそのまま効きます — `suppressAutoSize: true` の列（および `autoHeight: true` の列）は `width` を維持します。発火 signal は `rows` のみで、フィルター / ソート / 列並べ替えでは**再フィットしません**。フィット幅は内部の列幅 state に反映され `onColumnsChange` を呼ばないため、controlled な `columns` とも競合しません。serverSide（`dataSource`）では無効です。詳細は [`API_REFERENCE.md`](./packages/react/API_REFERENCE.md)。
 
 #### 密度（density）
 
@@ -521,7 +521,7 @@ const invalid = gridRef.current?.getInvalidCells()
 />
 ```
 
-ソート・列フィルター・グローバルフィルターは有効なまま `query` 経由でサーバへ送られます。セル編集(エディタ確定 / ペースト / Delete クリア / checkbox)は `updateRows` で楽観更新つきの書き戻しになり、保存失敗時はセルが自動で元に戻って保存失敗バーが表示されます(`onServerSideWriteError` でトースト / ログ通知も可)。`updateRows` 未指定の serverSide セルは読み取り専用です。行の追加削除は書き戻し API を持たないため、サーバへ反映後に `refreshServerSide()` を呼ぶ運用にしてください。`getRows` / `updateRows` の契約、フィルターの wire format、`serverSideRefreshToken` の詳細は [API リファレンス](./src/components/spreadsheet-grid/API_REFERENCE.md) を参照してください。
+ソート・列フィルター・グローバルフィルターは有効なまま `query` 経由でサーバへ送られます。セル編集(エディタ確定 / ペースト / Delete クリア / checkbox)は `updateRows` で楽観更新つきの書き戻しになり、保存失敗時はセルが自動で元に戻って保存失敗バーが表示されます(`onServerSideWriteError` でトースト / ログ通知も可)。`updateRows` 未指定の serverSide セルは読み取り専用です。行の追加削除は書き戻し API を持たないため、サーバへ反映後に `refreshServerSide()` を呼ぶ運用にしてください。`getRows` / `updateRows` の契約、フィルターの wire format、`serverSideRefreshToken` の詳細は [API リファレンス](./packages/react/API_REFERENCE.md) を参照してください。
 
 ### スタイリング / テーマ
 

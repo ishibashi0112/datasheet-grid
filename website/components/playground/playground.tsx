@@ -28,7 +28,9 @@ type Row = {
 const CATEGORIES = ['家電', '食品', '衣料', '書籍', '雑貨'];
 const STATUSES = ['受注', '出荷準備', '出荷済', 'キャンセル'];
 
-const columns: GridColumn<Row>[] = [
+// 初期の列定義。PlaygroundGrid では state に持ち onColumnsChange で controlled にする(列 D&D / 固定切替 / 表示切替 /
+//   列チューザーの並べ替えは controlled columns のときだけ有効 = ヘッダー右端の grip が出る)。
+const initialColumns: GridColumn<Row>[] = [
   { key: 'id', title: 'ID', width: 80, align: 'right', pinned: 'left' },
   { key: 'name', title: '商品名', width: 180, filterType: 'text', editable: true },
   { key: 'category', title: 'カテゴリ', width: 110, filterType: 'set' },
@@ -165,6 +167,7 @@ function buildSnippet(s: Settings): string {
     '<SpreadsheetGrid',
     '  rows={rows}',
     '  columns={columns}',
+    '  onColumnsChange={setColumns}',
     '  onRowsChange={setRows}',
     '  rowKeyGetter={(row) => row.id}',
     `  height={${s.height}}`,
@@ -253,11 +256,13 @@ function PlaygroundGrid({ settings }: { settings: Settings }) {
     [settings.rowCount],
   );
   const [rows, setRows] = useState<Row[]>(initialRows);
+  const [columns, setColumns] = useState<GridColumn<Row>[]>(initialColumns);
 
   return (
     <SpreadsheetGrid
       rows={rows}
       columns={columns}
+      onColumnsChange={setColumns}
       onRowsChange={setRows}
       rowKeyGetter={(row) => row.id}
       height={settings.height}
