@@ -3190,6 +3190,8 @@ export function SpreadsheetGrid<T extends object>({
     // 変更(grouping ④): summary の件数はグループ行を除く leafRowCount です(slotContext.filteredRows
     //   = leaf 行配列と整合)。
     viewRowCount: leafRowCount,
+    // 追加(label-row ③): 分母(総データ行数)はラベル行を除きます(未指定 = rows.length)。
+    totalRowCount: labelLayout ? labelLayout.dataRowCount : undefined,
     getFilteredRows,
     columns,
     visibleColumns,
@@ -3889,6 +3891,7 @@ export function SpreadsheetGrid<T extends object>({
                   renderCellContent={renderCellContent}
                   getRowClassName={getRowClassName}
                   labelRowLayer={labelRowLayerBand}
+                  labelViewIndexes={labelDisplay?.labelViewIndexes}
                   slots={slots}
                 />
 
@@ -4064,6 +4067,7 @@ export function SpreadsheetGrid<T extends object>({
                   renderCellContent={renderCellContent}
                   getRowClassName={getRowClassName}
                   labelRowLayer={labelRowLayerCenter}
+                  labelViewIndexes={labelDisplay?.labelViewIndexes}
                   slots={slots}
                 />
 
@@ -4236,6 +4240,7 @@ export function SpreadsheetGrid<T extends object>({
                   renderCellContent={renderCellContent}
                   getRowClassName={getRowClassName}
                   labelRowLayer={labelRowLayerBand}
+                  labelViewIndexes={labelDisplay?.labelViewIndexes}
                   slots={slots}
                 />
 

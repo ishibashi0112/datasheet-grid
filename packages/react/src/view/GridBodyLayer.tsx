@@ -36,6 +36,7 @@ import { getInvalidMessage } from '@ishibashi0112/spreadsheet-grid-core/logic/va
 import { RowSelectionCheckbox } from './RowSelectionCheckbox';
 // 追加(label-row ②): ラベル行(帯 + sticky な中身)です。
 import { GridBodyLabelRow, type GridBodyLabelRowRenderContent } from './GridBodyLabelRow';
+import { resolveDataRowNumber } from '@ishibashi0112/spreadsheet-grid-core/logic/labelRows';
 // 変更(10-C): 列座標を ColumnMeasurement(グローバル) から
 //             PaneColumnEntry(ペインローカル) へ切り替えます。
 import type { PaneColumnEntry } from '@ishibashi0112/spreadsheet-grid-core/logic/geometry';
@@ -89,6 +90,9 @@ type GridBodyRowProps<T> = {
   // 追加(context 拡張): source 行 index(= rowModel.getSourceIndex(rowIndex)。プリミティブ=
   //   memo 安全)。cellClassName / renderCell の各コンテキストへ view index と併せて公開します。
   sourceRowIndex: number;
+  // 追加(label-row ③): 行ヘッダー「#」に出す番号(1 始まり)。ラベル行有効時はラベル行を飛ばした
+  //   データ行の通し番号、それ以外は view index + 1(従来どおり)。プリミティブ = memo 安全。
+  rowNumber: number;
   row: T;
   // virtualRow.start(scrollMargin=headerHeight 込み)。行全体の translateY に使います。
   top: number;
@@ -174,6 +178,7 @@ function GridBodyRowInner<T>({
   rowIndex,
   rowKey,
   sourceRowIndex,
+  rowNumber,
   row,
   top,
   renderEntries,
@@ -255,7 +260,7 @@ function GridBodyRowInner<T>({
               state={isRowChecked ? 'checked' : 'unchecked'}
             />
           ) : (
-            rowIndex + 1
+            rowNumber
           )}
         </div>
       )}
@@ -816,6 +821,9 @@ type GridBodyLayerProps<T> = {
   // 追加(label-row ②): ラベル行の描画設定です。未指定時は従来どおり(rowModel.getLabelRow が無ければ
   //   ラベル行分岐は評価されません)。
   labelRowLayer?: GridBodyLabelRowLayer<T>;
+  // 追加(label-row ③): 表示中のラベル行の view index(昇順)。指定時、データ行の行番号はラベル行を飛ばした
+  //   通し番号になります(未指定 = view index + 1)。
+  labelViewIndexes?: Int32Array;
   rowHeaderCellStyle: CSSProperties;
   hoveredRowIndex: number | null;
   isWholeGridSelected: boolean;
@@ -889,6 +897,7 @@ export function GridBodyLayer<T>({
   collapsedGroupKeys,
   onGroupToggle,
   labelRowLayer,
+  labelViewIndexes,
   rowHeaderCellStyle,
   hoveredRowIndex,
   isWholeGridSelected,
@@ -1085,6 +1094,7 @@ export function GridBodyLayer<T>({
             rowIndex={rowIndex}
             rowKey={rowKey}
             sourceRowIndex={sourceRowIndex}
+            rowNumber={labelViewIndexes ? resolveDataRowNumber(labelViewIndexes, rowIndex) : rowIndex + 1}
             row={row}
             top={virtualRow.start}
             renderEntries={renderEntries}

@@ -165,6 +165,17 @@ describe('SpreadsheetGrid × ラベル行(描画)', () => {
     expect(topOf(dataRows[2]) - topOf(centerLabels[1])).toBe(40);
   });
 
+  it('行番号はラベル行を飛ばした通し番号、Rows サマリの分子 / 分母はデータ行数', () => {
+    const { container } = render(
+      <SpreadsheetGrid rows={rows} columns={columns} rowKeyGetter={rowKeyGetter} labelRow={labelRow} />,
+    );
+    const numbers = dataRowsIn(container, 'left').map(
+      (row) => row.querySelector('.ssg-row-header-cell')?.textContent,
+    );
+    expect(numbers).toEqual(['1', '2', '3', '4', '5']);
+    expect(container.textContent).toContain('Rows: 5 / 5');
+  });
+
   it('ソート(applyState)はセクション内に閉じ、ラベル行の位置は動かない', () => {
     const ref = createRef<SpreadsheetGridHandle<Row>>();
     const { container } = render(

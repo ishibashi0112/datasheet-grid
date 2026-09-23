@@ -24,6 +24,7 @@ import {
   writeTextToClipboard,
 } from '../utils/clipboard';
 import type { ServerSideCellEditInput } from '../logic/serverSideEdits';
+import { resolvePasteTargetViewIndexes } from '../logic/labelRows';
 
 export type ClipboardEventLike = {
   clipboardData: { getData: (type: string) => string } | null;
@@ -197,22 +198,33 @@ export const createClipboardController = <T extends object>(): ClipboardControll
 
     const startFilteredRowIndex = uiState.activeCell.row;
     const startColIndexForEdits = uiState.activeCell.col;
+    // 追加(label-row ③): ラベル行(getLabelRow)を読み飛ばした貼り付け先の view index 列です。ラベル行が
+    //   無ければ startRow からの連番(= 従来どおり)。行オフセット k の行は pasteTargets[k]。
+    const hasLabelRows = rowModel.getLabelRow !== undefined;
+    const pasteTargets = hasLabelRows
+      ? resolvePasteTargetViewIndexes(rowModel, startFilteredRowIndex, matrix.length)
+      : null;
+    const targetViewIndex = (viewIndex: number): number =>
+      pasteTargets ? pasteTargets[viewIndex - startFilteredRowIndex] : viewIndex;
+    const lastTargetViewIndex = pasteTargets
+      ? pasteTargets[pasteTargets.length - 1]
+      : uiState.activeCell.row + Math.max(matrix.length - 1, 0);
 
     if (applyServerSideCellEdits) {
       const edits = buildClipboardCellEdits(
-        (viewIndex) => rowModel.getRow(viewIndex),
+        (viewIndex) => rowModel.getRow(targetViewIndex(viewIndex)),
         visibleColumns,
         matrix,
         startFilteredRowIndex,
         startColIndexForEdits,
         (viewIndex, colIndex, row, column) =>
-          isCellEditable({ readOnly, canEditCell }, viewIndex, colIndex, row, column),
-      );
+          isCellEditable({ readOnly, canEditCell }, targetViewIndex(viewIndex), colIndex, row, column),
+      ).map((edit) => ({ ...edit, viewIndex: targetViewIndex(edit.viewIndex) }));
       if (edits.length > 0) {
         applyServerSideCellEdits(edits);
       }
       const serverSideEndRow = clamp(
-        uiState.activeCell.row + Math.max(matrix.length - 1, 0),
+        lastTargetViewIndex,
         0,
         Math.max(rowModel.getRowCount() - 1, 0),
       );
@@ -244,12 +256,19 @@ export const createClipboardController = <T extends object>(): ClipboardControll
     const viewRowCountForPaste = rowModel.getRowCount();
     const appendBaseSource = workingRows.length;
     // view index → source index(ペーストで行が増える分は末尾へ追記した source index を割り当て)。
-    const resolveSourceIndex = (viewIndex: number): number | undefined =>
-      viewIndex < viewRowCountForPaste
-        ? rowModel.getSourceIndex(viewIndex)
-        : appendBaseSource + (viewIndex - viewRowCountForPaste);
+    // 変更(label-row ③): ラベル行を読み飛ばした貼り付け先(targetViewIndex)で解決します。
+    const resolveSourceIndex = (viewIndex: number): number | undefined => {
+      const target = targetViewIndex(viewIndex);
+      return target < viewRowCountForPaste
+        ? rowModel.getSourceIndex(target)
+        : appendBaseSource + (target - viewRowCountForPaste);
+    };
 
-    const requiredOriginalRowCount = startOriginalRowIndex + matrix.length;
+    // 末尾追記が要る行数: 貼り付け先のうち view 行数を超えるぶん(ラベル行なしでは従来の式と同値)。
+    const appendCount = Math.max(lastTargetViewIndex + 1 - viewRowCountForPaste, 0);
+    const requiredOriginalRowCount = pasteTargets
+      ? workingRows.length + appendCount
+      : startOriginalRowIndex + matrix.length;
     if (requiredOriginalRowCount > workingRows.length && createRow) {
       while (workingRows.length < requiredOriginalRowCount) {
         workingRows.push(createRow());
@@ -278,12 +297,9 @@ export const createClipboardController = <T extends object>(): ClipboardControll
     );
 
     const endRow = clamp(
-      uiState.activeCell.row + Math.max(matrix.length - 1, 0),
+      lastTargetViewIndex,
       0,
-      Math.max(
-        Math.max(rowModel.getRowCount() - 1, 0),
-        startFilteredRowIndex + matrix.length - 1,
-      ),
+      Math.max(Math.max(rowModel.getRowCount() - 1, 0), lastTargetViewIndex),
     );
     const endCol = clamp(
       uiState.activeCell.col + Math.max((matrix[0]?.length ?? 1) - 1, 0),

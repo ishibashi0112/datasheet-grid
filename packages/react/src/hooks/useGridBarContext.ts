@@ -28,6 +28,9 @@ type UseGridBarContextArgs<T> = {
   //   サマリは viewRowCount を使い、公開 slotContext.filteredRows は getFilteredRows() を
   //   遅延 getter で返します(外部スロットが読んだ時だけ materialize)。
   viewRowCount: number;
+  // 追加(label-row ③): サマリ「Rows: X / Y」の分母(総データ行数)。未指定は rows.length(従来どおり)。
+  //   ラベル行有効時はラベル行を除いた行数を渡します(公開 slotContext.rows は rows prop のまま)。
+  totalRowCount?: number;
   getFilteredRows: () => T[];
   columns: GridColumn<T>[];
   visibleColumns: GridColumn<T>[];
@@ -42,6 +45,7 @@ type UseGridBarContextArgs<T> = {
 export const useGridBarContext = <T,>({
   rows,
   viewRowCount,
+  totalRowCount,
   getFilteredRows,
   columns,
   visibleColumns,
@@ -90,8 +94,9 @@ export const useGridBarContext = <T,>({
 
   const derivedSummary = useMemo(
     // 変更(DS-3-7): 件数 viewRowCount を明示引数で渡します(filteredRows 配列は使いません)。
-    () => buildGridDerivedSummary(slotContextBase, viewRowCount),
-    [slotContextBase, viewRowCount],
+    // 変更(label-row ③): 分母 totalRowCount(未指定は rows.length)。
+    () => buildGridDerivedSummary(slotContextBase, viewRowCount, totalRowCount),
+    [slotContextBase, viewRowCount, totalRowCount],
   );
 
   const slotContext = useMemo<SpreadsheetGridSlotContext<T>>(

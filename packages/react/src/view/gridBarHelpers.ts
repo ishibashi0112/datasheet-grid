@@ -85,10 +85,12 @@ export const formatGridSelectionLabel = (selection: GridSelection) => {
 // 追加: rows / filteredRows の概要テキストです。
 // 変更(DS-3-7): filteredRows(配列)依存をやめ、件数 filteredRowCount(数値)を引数で受けます。
 //   公開 slotContext.filteredRows は遅延 getter で別途供給され、サマリは件数しか使いません。
+// 変更(label-row ③): 分母は totalRowCount(未指定は rows.length。ラベル行有効時はラベル行を除いた行数)。
 export const formatGridRowSummary = <T,>(
   context: Pick<SpreadsheetGridSlotContext<T>, 'rows'>,
   filteredRowCount: number,
-) => `Rows: ${filteredRowCount} / ${context.rows.length}`;
+  totalRowCount: number = context.rows.length,
+) => `Rows: ${filteredRowCount} / ${totalRowCount}`;
 
 // 追加: columns / visibleColumns の概要テキストです。
 export const formatGridColumnSummary = <T,>(
@@ -250,6 +252,8 @@ export const buildGridDerivedSummary = <T,>(
   >,
   // 変更(DS-3-7): filteredRows(配列)依存を除去し、件数を引数で各 format 関数へ流します。
   filteredRowCount: number,
+  // 追加(label-row ③): 総データ行数(未指定は rows.length)。
+  totalRowCount?: number,
 ): SpreadsheetGridDerivedSummary => {
   const selectionStats = getGridSelectionStats(context, filteredRowCount);
   const hasGlobalFilter = context.globalFilterText.trim().length > 0;
@@ -269,7 +273,7 @@ export const buildGridDerivedSummary = <T,>(
     : null;
 
   return {
-    rowSummaryText: formatGridRowSummary(context, filteredRowCount),
+    rowSummaryText: formatGridRowSummary(context, filteredRowCount, totalRowCount),
     columnSummaryText: formatGridColumnSummary(context),
     filterSummaryText: formatGridFilterSummary(context),
     sortSummaryText: formatGridSortSummary(context),

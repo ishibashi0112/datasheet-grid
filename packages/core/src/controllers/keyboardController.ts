@@ -76,8 +76,19 @@ export const createKeyboardController = <T,>(): KeyboardController<T> => {
       return;
     }
     const currentCell = uiState.activeCell ?? { row: 0, col: 0 };
+    let nextRow = clamp(currentCell.row + deltaRow, 0, rowCount - 1);
+    // 追加(label-row ③): 縦移動ではラベル行(セルを持たない)に止まらず、同じ向きに読み飛ばします。
+    //   端までラベル行しか無ければ現在行に留まります(getLabelRow 未定義 = ラベル行なしでは従来どおり)。
+    if (deltaRow !== 0 && rowModel.getLabelRow) {
+      const step = deltaRow > 0 ? 1 : -1;
+      let candidate = nextRow;
+      while (candidate >= 0 && candidate < rowCount && rowModel.getLabelRow(candidate)) {
+        candidate += step;
+      }
+      nextRow = candidate >= 0 && candidate < rowCount ? candidate : currentCell.row;
+    }
     const nextCell = {
-      row: clamp(currentCell.row + deltaRow, 0, rowCount - 1),
+      row: nextRow,
       col: clamp(currentCell.col + deltaCol, 0, visibleColumns.length - 1),
     };
     if (extendSelection) {

@@ -145,3 +145,88 @@ describe('useGridClipboardController ペースト(特性テスト)', () => {
     expect(empty.onRowsChange).not.toHaveBeenCalled();
   });
 });
+// 追加(label-row ③): ラベル行(getLabelRow)を読み飛ばして貼り付けます(行を落とさず次のデータ行へ続ける)。
+describe('useGridClipboardController ペースト × ラベル行', () => {
+  // [L] a [L] b (+ 末尾追記)
+  type LRow = { id: number; kind?: 'label'; name: string };
+  const makeLabelRows = (): LRow[] => [
+    { id: 10, kind: 'label', name: 'S1' },
+    { id: 1, name: 'a' },
+    { id: 11, kind: 'label', name: 'S2' },
+    { id: 2, name: 'b' },
+  ];
+  const makeLabelRowModel = (rows: LRow[]): RowModel<LRow> => ({
+    getRowCount: () => rows.length,
+    getRow: (i) => (rows[i]?.kind === 'label' ? (undefined as unknown as LRow) : rows[i]),
+    getSourceIndex: (i) => (rows[i]?.kind === 'label' ? (undefined as unknown as number) : i),
+    getRowKey: (i) => rows[i]?.id ?? i,
+    getLabelRow: (i) =>
+      rows[i]?.kind === 'label'
+        ? { kind: 'label', row: rows[i], sourceIndex: i, label: rows[i].name, sectionRowCount: 0 }
+        : undefined,
+  });
+  const labelColumns: GridColumn<LRow>[] = [
+    { key: 'id', title: 'ID', width: 80 },
+    { key: 'name', title: 'Name', width: 120 },
+  ];
+  const setupLabel = (opts: { serverSide?: boolean; withGrowth?: boolean } = {}) => {
+    const rows = makeLabelRows();
+    const uiState: GridUiState = { ...createInitialGridUiState(labelColumns), activeCell: { row: 1, col: 1 } };
+    const dispatch = vi.fn<(a: GridUiAction) => void>();
+    const onRowsChange = vi.fn();
+    const applyServerSideCellEdits = vi.fn<(edits: ServerSideCellEditInput<LRow>[]) => number>(() => 1);
+    const view = renderHook(() =>
+      useGridClipboardController<LRow>({
+        rows,
+        rowModel: makeLabelRowModel(rows),
+        visibleColumns: labelColumns,
+        uiState,
+        readOnly: false,
+        canEditCell: undefined,
+        createRow: opts.withGrowth ? () => ({ id: 99, name: '' }) : undefined,
+        createOverflowColumn: undefined,
+        onRowsChange: opts.serverSide ? undefined : onRowsChange,
+        onColumnsChange: undefined,
+        applyServerSideCellEdits: opts.serverSide ? applyServerSideCellEdits : undefined,
+        dispatch,
+      }),
+    );
+    return { ...view, dispatch, onRowsChange, applyServerSideCellEdits };
+  };
+
+  it('clientSide: ラベル行を飛ばして a → b の順に書き込み、範囲の終端は最後の貼り付け先行', () => {
+    const t = setupLabel();
+    act(() => {
+      t.result.current.handlePaste(pasteEvent('A\nB'));
+    });
+    const next = t.onRowsChange.mock.calls[0][0] as LRow[];
+    expect(next).toHaveLength(4);
+    expect(next[1]).toMatchObject({ id: 1, name: 'A' });
+    expect(next[2]).toMatchObject({ id: 11, kind: 'label', name: 'S2' });
+    expect(next[3]).toMatchObject({ id: 2, name: 'B' });
+    expect(t.dispatch.mock.calls[1][0]).toMatchObject({ cell: { row: 3, col: 1 } });
+  });
+
+  it('clientSide: 末尾を超えるぶんは createRow で追記する(ラベル行を飛ばした先の連番)', () => {
+    const t = setupLabel({ withGrowth: true });
+    act(() => {
+      t.result.current.handlePaste(pasteEvent('A\nB\nC'));
+    });
+    const next = t.onRowsChange.mock.calls[0][0] as LRow[];
+    expect(next).toHaveLength(5);
+    expect(next[3]).toMatchObject({ id: 2, name: 'B' });
+    expect(next[4]).toMatchObject({ id: 99, name: 'C' });
+    expect(t.dispatch.mock.calls[1][0]).toMatchObject({ cell: { row: 4, col: 1 } });
+  });
+
+  it('serverSide: 編集の viewIndex はラベル行を飛ばしたデータ行になる', () => {
+    const t = setupLabel({ serverSide: true });
+    act(() => {
+      t.result.current.handlePaste(pasteEvent('A\nB\nC'));
+    });
+    const edits = t.applyServerSideCellEdits.mock.calls[0][0];
+    expect(edits.map((e) => [e.viewIndex, e.value])).toEqual([[1, 'A'], [3, 'B']]);
+    // 範囲は行数で clamp。
+    expect(t.dispatch.mock.calls[1][0]).toMatchObject({ cell: { row: 3, col: 1 } });
+  });
+});

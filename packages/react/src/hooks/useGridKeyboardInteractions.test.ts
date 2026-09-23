@@ -167,3 +167,77 @@ describe('useGridKeyboardInteractions(特性テスト)', () => {
     expect(none.dispatch).not.toHaveBeenCalled();
   });
 });
+// 追加(label-row ③): ラベル行(getLabelRow)は縦移動で読み飛ばします。
+describe('useGridKeyboardInteractions × ラベル行', () => {
+  // [L] a [L] [L] b [L]
+  type LRow = { id: number; kind?: 'label'; name: string; done: boolean };
+  const labelRows: LRow[] = [
+    { id: 10, kind: 'label', name: 'S1', done: false },
+    { id: 1, name: 'a', done: false },
+    { id: 11, kind: 'label', name: 'S2', done: false },
+    { id: 12, kind: 'label', name: 'S3', done: false },
+    { id: 2, name: 'b', done: false },
+    { id: 13, kind: 'label', name: 'S4', done: false },
+  ];
+  const labelRowModel: RowModel<LRow> = {
+    getRowCount: () => labelRows.length,
+    getRow: (i) => (labelRows[i]?.kind === 'label' ? (undefined as unknown as LRow) : labelRows[i]),
+    getSourceIndex: (i) => (labelRows[i]?.kind === 'label' ? (undefined as unknown as number) : i),
+    getRowKey: (i) => labelRows[i]?.id ?? i,
+    getLabelRow: (i) =>
+      labelRows[i]?.kind === 'label'
+        ? { kind: 'label', row: labelRows[i], sourceIndex: i, label: labelRows[i].name, sectionRowCount: 0 }
+        : undefined,
+  };
+  const setupLabel = (activeCell: CellCoord) => {
+    const uiState: GridUiState = { ...createInitialGridUiState(columns as unknown as GridColumn<LRow>[]), activeCell };
+    const dispatch = vi.fn<(a: GridUiAction) => void>();
+    const view = renderHook(() =>
+      useGridKeyboardInteractions<LRow>({
+        uiState,
+        rowModel: labelRowModel,
+        visibleColumns: columns as unknown as GridColumn<LRow>[],
+        readOnly: false,
+        canEditCell: undefined,
+        dispatch,
+        isWholeGridSelected: false,
+        enableClearOnDelete: true,
+        setEditorInitialValue: vi.fn(),
+        handleCopy: vi.fn(async () => {}),
+        handleCellDoubleClick: vi.fn(),
+        selectEntireGrid: vi.fn(),
+        onUndo: vi.fn(),
+        onRedo: vi.fn(),
+        onClearSelection: vi.fn(),
+        onToggleCheckboxCell: vi.fn(),
+        onToggleGroup: vi.fn(),
+      }),
+    );
+    return { ...view, dispatch };
+  };
+
+  it('ArrowDown / ArrowUp は連続するラベル行を飛ばして次のデータ行へ移り、端までラベル行なら留まる', async () => {
+    const down = setupLabel({ row: 1, col: 0 });
+    await act(async () => {
+      await down.result.current.handleKeyDown(keyEvent('ArrowDown'));
+    });
+    expect(down.dispatch.mock.calls[2][0]).toMatchObject({ cell: { row: 4, col: 0 } });
+    const up = setupLabel({ row: 4, col: 0 });
+    await act(async () => {
+      await up.result.current.handleKeyDown(keyEvent('ArrowUp'));
+    });
+    expect(up.dispatch.mock.calls[2][0]).toMatchObject({ cell: { row: 1, col: 0 } });
+    // 末尾側はラベル行のみ → 留まる。
+    const stay = setupLabel({ row: 4, col: 0 });
+    await act(async () => {
+      await stay.result.current.handleKeyDown(keyEvent('ArrowDown'));
+    });
+    expect(stay.dispatch.mock.calls[2][0]).toMatchObject({ cell: { row: 4, col: 0 } });
+    // 横移動はラベル行に無関係。
+    const right = setupLabel({ row: 1, col: 0 });
+    await act(async () => {
+      await right.result.current.handleKeyDown(keyEvent('ArrowRight'));
+    });
+    expect(right.dispatch.mock.calls[2][0]).toMatchObject({ cell: { row: 1, col: 1 } });
+  });
+});
