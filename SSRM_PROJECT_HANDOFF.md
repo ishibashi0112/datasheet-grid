@@ -162,6 +162,22 @@
 2. ピン留め行(上下固定行)。
 3. フィルハンドル(セル右下ドラッグでの連続コピー/連番)。
 
+~~ラベル行(見出し / 区切り行)~~ → **2026-09-23 実装済み**(label-row batch 1〜5)。
+`labelRow` prop(`isLabelRow` / `getLabel` / `render` / `height` / `className` / `sticky` / `sortMode` /
+`keepEmptySections` / `exportText`)。設計: rows に混在するラベル行を述語で識別し(行の型 T 不変)、
+パイプラインは「ラベル行を除いた恒等 order」でフィルター / ソートした後、`logic/labelRows.ts` の
+`buildLabelDisplay` でラベル行を差し戻す(表示順のエンコードはグルーピングと同じ負値 = ラベル)。
+RowModel の任意アクセサ `getLabelRow`(ラベル行では getRow / getSourceIndex が undefined = DS-3-9 契約に
+合流し、既存 consumer は無改修で除外)。描画は `view/GridBodyLabelRow`(3 ペインに帯、中身は中央ペインの
+sticky-left 要素 = 展開行カードと同型)、縦固定は `view/GridStickyLabelLayer`(ヘッダー直後の高さ 0 の
+sticky 器 + 複製、`resolveStickyLabel` が scrollTop から現在セクションと押し上げ量を解決)。行高は
+`createRowHeightOverrideMetrics`(疎な上書き。展開行デコレータの下段)。操作系: ↑↓ 読み飛ばし /
+貼り付けの読み飛ばし / 行番号はデータ行の通し番号 / 件数はデータ行のみ。エクスポートは
+`includeLabelRows`(既定 false)+ `GridExportData.rowKinds`。serverSide は述語ラッパ
+(`wrapRowModelWithLabelRows`)で判定のみ(セクション / sticky / height は非対応)。rowGroup とは併用不可
+(有効時はラベル行を非表示 + 開発時警告)。後続候補: セクションの折りたたみ / ラベル行を掴んでセクション
+ごと移動 / グルーピングとの併用 / 選択オーバーレイのラベル行回避。
+
 ~~行ドラッグ並び替え~~ → **2026-09-04 実装済み**(row-drag batch 1〜5)。
 `enableRowDrag` / `isRowDraggable` / `onRowMove`、ハンドル `moveRow(rowKey, toIndex)`、公開型
 `RowDragContext` / `RowMoveParams`。設計: 合成ハンドル列(`ROW_DRAG_HANDLE_COLUMN_KEY`、

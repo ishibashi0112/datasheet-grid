@@ -48,7 +48,7 @@ React 19 + TypeScript + Vite 製のカスタム AG Grid 風・仮想化データ
 | tsc(build) | `vp exec tsc -b` | 0 |
 | tsc(test) | `vp exec tsc -p tsconfig.vitest.json --noEmit` | 0 |
 | eslint | `vp exec eslint .` | baseline 維持(現状 0 errors / 0 warnings) |
-| test | `vp test` | 全緑(現状 ~1,216 tests / 145 files) |
+| test | `vp test` | 全緑(現状 ~1,270 tests / 149 files) |
 | build | `vp run build:lib`(ルートで `pnpm -r --filter ./packages/* run build:lib` = core → react の順。各パッケージは `vp build --config vite.lib.config.ts` + `tsc -p tsconfig.lib.json`、react はさらに emit-layer-css)。デモ app は `vp build` | 0 |
 
 - リリース: `pnpm run version:minor`(= `node scripts/bump-version.mjs minor`。両パッケージの版を揃えて上げ「X.Y.Z」コミット + `vX.Y.Z` タグ)→ ユーザーが `pnpm run publish:all`(= `pnpm -r publish --access public`。core → react の順。2FA は各パッケージ)→ `git push origin main --follow-tags`。旧 `vp exec pnpm version minor` は単一パッケージ時代のもので使わない。
@@ -79,5 +79,6 @@ React 19 + TypeScript + Vite 製のカスタム AG Grid 風・仮想化データ
 - 行グルーピング + 集計は 2026-07-17 に実装済み(grouping batch 1〜5: `rowGroup` / `aggFunc`、自動グループ列、開閉 UI + 命令的 API。clientSide 限定・SSRM は対象外)。
 - 展開行(Master/Detail)は 2026-09-04 に実装済み(detail batch 1〜6: `detailRow` prop、rowKey ベース状態、`data-ssg-detail` イベント境界。clientSide / SSRM 両対応)。
 - 行ドラッグ並び替えは 2026-09-04 に実装済み(row-drag batch 1〜5: `enableRowDrag` / `isRowDraggable` / `onRowMove` / `moveRow()`。合成ハンドル列 + ガイド線 + ドロップ後 FLIP。clientSide 限定・ソート / フィルター中は無効。ドラッグ中に行が退避する live 方式は未実装 = 後付け可)。
+- ラベル行(見出し / 区切り行)は 2026-09-23 に実装済み(label-row batch 1〜5: `labelRow` prop = `isLabelRow` / `getLabel` / `render` / `height` / `className` / `sticky` / `sortMode` / `keepEmptySections` / `exportText`。rows 混在 + 述語識別、セクション内ソート、全幅帯 + sticky-left の中身、縦固定レイヤー、エクスポートの `includeLabelRows` / `rowKinds`。clientSide 中心・SSRM は述語判定のみ・rowGroup とは併用不可)。
 - 大きな未実装: 多段カラムヘッダー、ピン留め行、フィルハンドル。※エディタ種別(text / number / select / date / checkbox / custom)とセル編集バリデーション(mark / reject)は 2026-07-14 に実装済み。
 - react-doctor 由来の保留: `no-giant-component`(App.tsx + SpreadsheetGrid.tsx)、`require-pnpm-hardening`(`pnpm-workspace.yaml` 判断待ち)、`prefer-module-scope-pure-function`(ハンドラ巻き上げ Batch A 未実行)。

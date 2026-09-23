@@ -133,7 +133,7 @@ const gridRef = useRef<SpreadsheetGridHandle<Row>>(null);
 | `exportCsv(options?)` | CSV 文字列を返す(純粋・副作用なし)。 |
 | `downloadCsv(filename?, options?)` | `exportCsv` の結果を `.csv` としてダウンロード(`filename` 既定 `'export.csv'`、`bom` 既定 `true`)。 |
 
-`CsvExportOptions`: `scope`(下表)、`includeHeaders`(既定 `true`)、`delimiter`(既定 `','`。`'\t'` で TSV)、`bom`(`exportCsv` は既定 `false` / `downloadCsv` は既定 `true` = Excel 互換)。値整形はコピー(クリップボード)と同じ規則(`formatClipboardValue` があればそれ、無ければ `String(value ?? '')`)。RFC 4180 のクォート、行区切りは CRLF。props の `isRowExportable` 指定時は `false` の行が出力から行ごと除かれる(コピー / `getExportData` も同じ規則)。
+`CsvExportOptions`: `scope`(下表)、`includeHeaders`(既定 `true`)、`delimiter`(既定 `','`。`'\t'` で TSV)、`bom`(`exportCsv` は既定 `false` / `downloadCsv` は既定 `true` = Excel 互換)、`includeLabelRows`(既定 `false`。ラベル行(`labelRow`)を `exportText`(未指定なら `getLabel` を先頭列・他列は空)の 1 行として出力する)。値整形はコピー(クリップボード)と同じ規則(`formatClipboardValue` があればそれ、無ければ `String(value ?? '')`)。RFC 4180 のクォート、行区切りは CRLF。props の `isRowExportable` 指定時は `false` の行が出力から行ごと除かれる(コピー / `getExportData` も同じ規則)。
 
 **scope 対応表**(`exportCsv` / `downloadCsv` / `getExportData` 共通):
 
@@ -154,7 +154,7 @@ serverSide(SSRM)の注意: `'view'` は未ロード行をスキップ(= ロー�
 | --- | --- |
 | `getExportData(options?)` | 列メタ + 2 次元セルの、シリアライズ非依存な整形済みデータを返す(純粋・副作用なし)。 |
 
-`GridExportOptions`: `scope`(既定 `'view'`。上記 **scope 対応表**と同一規則を共有)。
+`GridExportOptions`: `scope`(既定 `'view'`。上記 **scope 対応表**と同一規則を共有)、`includeLabelRows`(既定 `false`。ラベル行を含める。含めたときは `rowKinds` で行種を判別できる)。
 
 戻り値 `GridExportData`:
 
@@ -162,6 +162,7 @@ serverSide(SSRM)の注意: `'view'` は未ロード行をスキップ(= ロー�
 type GridExportData = {
   columns: { key: string; title: string }[];   // 視覚順(selection では選択列のみ)
   rows: { value: unknown; text: string }[][];   // scope の行レンジ(SSRM 未ロード行はスキップ)
+  rowKinds?: ('data' | 'label')[];              // includeLabelRows: true のときだけ(rows と同じ長さ)
 };
 ```
 
@@ -201,6 +202,24 @@ const ws = wb.addWorksheet('Sheet1');
 ws.addRow(columns.map((c) => c.title)); // ヘッダー
 for (const r of rows) ws.addRow(r.map((cell) => cell.value)); // 型付きセル
 const buffer = await wb.xlsx.writeBuffer();
+```
+
+#### レシピ: ラベル行(見出し行)を結合セル + 太字で書く(ExcelJS)
+
+`labelRow` を使うグリッドでは `includeLabelRows: true` で見出し行も出力し、`rowKinds` で行種を見て書式を当てます。
+
+```ts
+const { columns, rows, rowKinds } = gridRef.current!.getExportData({ includeLabelRows: true });
+const ws = wb.addWorksheet('Sheet1');
+ws.addRow(columns.map((c) => c.title));
+rows.forEach((r, i) => {
+  const excelRow = ws.addRow(r.map((cell) => cell.value));
+  if (rowKinds?.[i] === 'label') {
+    ws.mergeCells(excelRow.number, 1, excelRow.number, columns.length); // 見出しは 1 行に結合
+    excelRow.font = { bold: true };
+    excelRow.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFEEF2F7' } };
+  }
+});
 ```
 
 #### レシピ: マルチシート

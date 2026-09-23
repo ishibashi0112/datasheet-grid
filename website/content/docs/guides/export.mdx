@@ -48,6 +48,16 @@ props の `isRowExportable` で「コピー(`Ctrl/Cmd+C` の TSV)/ `exportCsv` /
 
 `ctx.viewRowIndex` はフィルター / ソート適用後のビュー行 index(scope `'raw'` のみ元 `rows` 配列の index)、`ctx.rowKey` は `rowKeyGetter` の値です。
 
+### ラベル行(見出し行)を含める(includeLabelRows)
+
+[ラベル行](/docs/guides/label-rows)(`labelRow`)は既定では出力に含みません(scope `'raw'` でもデータ行として出ません)。`includeLabelRows: true` を渡すと、見出しを 1 行として出力します(`exportText` 未指定なら `getLabel` の文字列を先頭列に、他列は空)。
+
+```tsx
+gridRef.current?.downloadCsv('products.csv', { includeLabelRows: true });
+const data = gridRef.current?.getExportData({ includeLabelRows: true });
+// data.rowKinds[i] === 'label' で見出し行を判別 → Excel 側で結合セル / 太字を当てる
+```
+
 ## Excel(xlsx)など
 
 ```tsx

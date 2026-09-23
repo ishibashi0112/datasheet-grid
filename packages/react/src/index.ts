@@ -62,6 +62,11 @@ export type {
   ReactGridTypes,
   DetailRowRenderContext,
   CellDetailContext,
+  // 追加(label-row ①): ラベル行(見出し / 区切り行)の公開型族です(labelRow prop / render ctx / 記述子 / sortMode)。
+  LabelRowOptions,
+  LabelRowRenderContext,
+  GridLabelRow,
+  LabelRowSortMode,
   // 追加(row-drag ③): 行ドラッグ並び替え(enableRowDrag / isRowDraggable / onRowMove)の公開型です。
   RowDragContext,
   RowMoveParams,

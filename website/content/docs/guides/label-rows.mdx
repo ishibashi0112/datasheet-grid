@@ -1,0 +1,106 @@
+---
+title: ラベル行(見出し / 区切り行)
+description: labelRow で rows に混在させた見出し行を全幅の帯で描画する(行数に数えない・セクション内ソート・縦固定)
+---
+
+`labelRow` prop を渡すと、`rows` の中の特定の行を「見出し(区切り)行」として扱えます。Excel のシートに置く節見出しの行と同じもので、データ行の間に置いた**その位置**に全幅の帯として描画され、**行数には数えません**(行番号を消費せず、編集 / 選択 / コピー / エクスポートの既定対象外)。行の型 `T` も `rows` / `onRowsChange` の型も変わらないため、Excel / CSV 取り込みデータの形そのままで使えます。
+
+## 行グルーピングとの違い
+
+見た目は似ていますが、[行グルーピング](/docs/guides/grouping)とは別の機能です。
+
+| | ラベル行(`labelRow`) | 行グルーピング(`rowGroup`) |
+| --- | --- | --- |
+| 何をするか | `rows` の中に**置いた位置**の見出し行を帯で描く | **列の値**で行をまとめ直し、グループ行を作る |
+| 並び順 | `rows` の並びそのまま(ソートはセクション内に閉じる) | グループ単位に並び替わる |
+| 集計 / ツリー / 開閉 | 無し | あり(`aggFunc` / 自動グループ列 / 開閉) |
+| データ源 | 行データそのもの(`isLabelRow` で識別) | 列定義(`rowGroup: true`) |
+| 併用 | **不可**(`rowGroup` 有効中はラベル行を表示しない) | |
+
+「データに区切りがある(見積書の工程ごと・帳票の節ごと)」ならラベル行、「列の値でまとめ直して集計したい」ならグルーピングです。
+
+## デモ(見積明細 > 工程ごとの見出し)
+
+<LabelRowDemo />
+
+- `kind: 'label'` の行が見出しです。3 ペインを跨ぐ帯で描かれ、横にスクロールしても見出しは左端に留まります。
+- 縦にスクロールすると、現在の工程の見出しが列ヘッダー直下に固定され、次の見出しが来ると押し上げられて交代します(`sticky: true`)。
+- 列ヘッダーで並べ替えても、見出しの位置は動きません(並べ替えは各工程の中だけ)。「状態」列でフィルターすると、中身が 0 件になった工程は見出しごと消えます。
+- 行番号・件数(`Rows: X / Y`)は見出しを数えません。`↑` / `↓` は見出しに止まらず、貼り付けも見出しを飛ばして続きます。
+
+## 使い方
+
+```tsx
+type Row = { id: string; kind?: 'label'; code: string; name: string; qty: number };
+
+<SpreadsheetGrid
+  rows={rows}                       // ラベル行はデータ行と同じ配列に混在させる
+  columns={columns}
+  rowKeyGetter={(row) => row.id}
+  labelRow={{
+    isLabelRow: (row) => row.kind === 'label',   // 必須: ラベル行の識別
+    getLabel: (row) => row.name,                 // 必須: 表示文字列(エクスポート / aria にも使う)
+    sticky: true,                                // 縦スクロール中も見出しをヘッダー直下に固定
+    height: 34,                                  // 省略時は rowHeight
+  }}
+/>
+```
+
+### React で装飾する(`render`)
+
+`render` を渡すと中身を任意の React 要素にできます。`ctx` は `{ row, rowKey, rowIndex, sourceRowIndex, label, sectionRowCount }` で、`sectionRowCount` は(フィルター後の)そのセクションのデータ行数です。
+
+```tsx
+labelRow={{
+  isLabelRow: (row) => row.kind === 'label',
+  getLabel: (row) => row.name,
+  render: ({ label, sectionRowCount }) => (
+    <>
+      <span className="rounded bg-blue-600 px-1.5 text-xs text-white">節</span>
+      <strong>{label}</strong>
+      <span className="text-gray-500">{sectionRowCount} 件</span>
+    </>
+  ),
+  className: (row) => (row.important ? 'label-row--important' : undefined),
+}}
+```
+
+既定表示(`render` 未指定)は左のアクセント線 + 太字で、色はトークン `--ssg-label-row-bg` / `--ssg-label-row-text` / `--ssg-label-row-accent` で調整できます。パーツ別スロットは `classNames.labelRow`(行要素)と `classNames.labelRowContent`(中身の器)です。
+
+## セクションとソート / フィルター
+
+ラベル行から次のラベル行の直前までを 1 つの**セクション**とみなします(最初のラベル行より前の行は「ラベル無しの区間」)。ソートやフィルターをかけたときの扱いは `sortMode` で選べます。
+
+| `sortMode` | 動き |
+| --- | --- |
+| `'section'`(既定) | 並べ替えは各セクションの中だけで行い、ラベル行の位置は動かない。フィルターで中身が 0 件になったセクションはラベルごと消える(`keepEmptySections: true` で残す) |
+| `'follow'` | 全体を並べ替え、ラベル行は「元のセクションの先頭に来るデータ行」の直前に付いて移動する |
+| `'hide'` | ソート / フィルター適用中はラベル行を表示しない |
+
+ソートもフィルターも無いときは、どのモードでも `rows` の並びそのものが表示されます。
+
+## 縦スクロール固定(`sticky`)
+
+`sticky: true` にすると、縦スクロール中に「現在のセクション」のラベル行が列ヘッダー直下に固定表示されます。次のラベル行の上端が固定帯の下端に到達すると、固定中の見出しが押し上げられて交代します(スマホの連絡先一覧のセクションヘッダーと同じ動き)。固定中の見出しも横スクロールで左端に留まります。
+
+## エクスポート
+
+既定では出力に含みません(scope `'raw'` でもデータ行としては出ません)。`includeLabelRows: true` で見出しを 1 行として出力できます。
+
+```tsx
+gridRef.current?.downloadCsv('estimate.csv', { includeLabelRows: true });
+
+const { columns, rows, rowKinds } = gridRef.current!.getExportData({ includeLabelRows: true });
+// rowKinds[i] === 'label' の行は見出し。Excel 側で結合セル / 太字などを当てる
+```
+
+出力値は `exportText` で差し替えられます(文字列なら先頭列、配列なら列順にそのまま)。ExcelJS で結合セルにするレシピは [API リファレンス](/docs/api/handle#excel--スプレッドシート-エクスポートgetexportdata) を参照してください。
+
+## 他機能との関係
+
+- **行ドラッグ並び替え**: データ行はセクションを跨いで移動できます(移動先のセクションに所属が変わる)。ラベル行自体は掴めません。
+- **展開行**: 併用できます。ラベル行は展開できません。
+- **行グルーピング**: 併用できません。`rowGroup` 有効中はラベル行を表示しません(開発時警告)。
+- **serverSide(SSRM)**: サーバーが `getRows` の結果にラベル行を含めて返し(`totalRowCount` にも数える)、`isLabelRow` で識別します。セクションの並べ替え / `sectionRowCount` / `sticky` / `height` はサーバー行モデルでは適用されません。
+
+オプションの一覧は [props リファレンス](/docs/api/props#ラベル行見出し--区切り行labelrow) を参照してください。
