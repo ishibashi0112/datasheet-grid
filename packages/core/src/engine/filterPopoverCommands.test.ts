@@ -151,3 +151,34 @@ describe('createFilterPopoverCommands', () => {
     expect(set.args.closeColumnFilterPopover).toHaveBeenCalledTimes(1);
   });
 });
+
+// 追加(ime-fix): IME 変換中の 1 打鍵ごとの通知(commit: false)では draft だけ反映し、記述子は dispatch しません。
+describe('createFilterPopoverCommands の IME 変換中ガード(ime-fix)', () => {
+  it('commit: false は draft 反映のみで dispatch せず、確定(既定 = commit)で 1 回 dispatch する', () => {
+    const textColumn: GridColumn<Row> = { key: 'name', title: '名前', width: 120, filterType: 'textSet' };
+    const { commands, args, actions } = setup({ openedFilterColumn: textColumn, openedFilterType: 'textSet' });
+    commands.handleTextConditionDraftChange({ operator: 'contains', value: 'ろ' }, { commit: false });
+    commands.handleTextConditionDraftChange({ operator: 'contains', value: 'ろっか' }, { commit: false });
+    expect(args.updateTextDraft).toHaveBeenCalledTimes(2);
+    expect(actions).toEqual([]);
+    commands.handleTextConditionDraftChange({ operator: 'contains', value: '六角' });
+    expect(args.updateTextDraft).toHaveBeenCalledTimes(3);
+    expect(actions).toEqual([
+      {
+        type: 'filter/setColumn',
+        columnKey: 'name',
+        value: { kind: 'textSet', condition: { mode: 'contains', value: '六角' }, set: null },
+      },
+    ]);
+  });
+
+  it('number 条件も同じ規則(commit: false は dispatch しない)', () => {
+    const { commands, args, actions } = setup({ openedFilterColumn: amountColumn, openedFilterType: 'numberSet' });
+    commands.handleNumberConditionDraftChange({ operator: 'gte', value1: '１', value2: '' }, { commit: false });
+    expect(args.updateNumberDraft).toHaveBeenCalledTimes(1);
+    expect(actions).toEqual([]);
+    commands.handleNumberConditionDraftChange({ operator: 'gte', value1: '10', value2: '' });
+    expect(actions).toHaveLength(1);
+    expect(actions[0].type).toBe('filter/setColumn');
+  });
+});
