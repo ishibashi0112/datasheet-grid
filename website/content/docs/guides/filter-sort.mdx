@@ -132,9 +132,12 @@ import { DatePickerInput } from '@mantine/dates';
   manualFiltering
   // 取得が上限に達したときだけサーバ側 ORDER BY へ切り替える(再マウント不要)
   manualSorting={reachedLimit}
-  onStateChange={(state) => {
-    // state.filters.columnFilters(ColumnFilterValue の記述子)から WHERE を、
-    // state.sort から ORDER BY を組み立てて再クエリする
+  // フィルター / ソートが実際に変わったときだけ呼ばれる(列幅などでは呼ばれない)
+  onFiltersChange={(filters) => {
+    // filters.columnFilters(ColumnFilterValue の記述子)から WHERE を組み立てる
+  }}
+  onSortChange={(sort) => {
+    // sort から ORDER BY を組み立てる
   }}
 />
 ```
@@ -147,4 +150,4 @@ import { DatePickerInput } from '@mantine/dates';
 
 ## 状態を外から扱う
 
-ソート / フィルター状態はグリッド内部の reducer が持ちますが、`getState()` / `applyState()`(命令的ハンドル)で保存・復元、`onStateChange` で変更検知ができます。詳細は [API リファレンス](/docs/api/handle) を参照してください。
+ソート / フィルター状態はグリッド内部の reducer が持ちますが、`getState()` / `applyState()`(命令的ハンドル)で保存・復元、`onStateChange` で変更検知ができます。フィルター / ソートだけを追いたい場合は `onFiltersChange` / `onSortChange`(該当スライスが実際に変化したときだけ発火)が使えます。詳細は [API リファレンス](/docs/api/handle) を参照してください。

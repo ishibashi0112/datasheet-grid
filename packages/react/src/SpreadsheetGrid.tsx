@@ -446,6 +446,9 @@ export function SpreadsheetGrid<T extends object>({
   ref,
   // 追加(state #2): 永続スライス変化の通知口(保存タイミング signal)。発火規約は型定義のコメント参照。
   onStateChange,
+  // 追加(change-callbacks): フィルター / ソートのスライス単位の変更通知。
+  onFiltersChange,
+  onSortChange,
   // 追加(proposals ⑧): スクロール位置の変化通知です(rAF 間引き・source 付き)。
   onScroll,
 }: SpreadsheetGridProps<T>) {
@@ -3724,6 +3727,8 @@ export function SpreadsheetGrid<T extends object>({
       dragState: uiState.dragState,
       columns,
       onStateChange,
+      onFiltersChange,
+      onSortChange,
     },
     'passive',
   );

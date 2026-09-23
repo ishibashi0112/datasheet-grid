@@ -134,3 +134,38 @@ describe('SpreadsheetGrid manualFiltering / manualSorting(結合)', () => {
     expect(view.container.querySelector('.ssg-empty-state')?.textContent).toBe('一致なし');
   });
 });
+
+// 追加(change-callbacks): onFiltersChange / onSortChange の配線(applyState → reducer → passive 通知)。
+describe('SpreadsheetGrid onFiltersChange / onSortChange(結合)', () => {
+  it('初回マウントでは発火せず、applyState でフィルター / ソートがそれぞれ 1 回ずつ通知される(manual でも同じ)', () => {
+    const ref = createRef<SpreadsheetGridHandle<Row>>();
+    const onFiltersChange = vi.fn();
+    const onSortChange = vi.fn();
+    render(
+      <SpreadsheetGrid
+        ref={ref}
+        columns={columns}
+        rows={rows}
+        manualFiltering
+        manualSorting
+        onFiltersChange={onFiltersChange}
+        onSortChange={onSortChange}
+      />,
+    );
+    expect(onFiltersChange).not.toHaveBeenCalled();
+    expect(onSortChange).not.toHaveBeenCalled();
+    act(() => {
+      ref.current?.applyState(filteredSortedState);
+    });
+    expect(onFiltersChange).toHaveBeenCalledTimes(1);
+    expect(onFiltersChange).toHaveBeenLastCalledWith(filteredSortedState.filters);
+    expect(onSortChange).toHaveBeenCalledTimes(1);
+    expect(onSortChange).toHaveBeenLastCalledWith(filteredSortedState.sort);
+    // 列幅だけの変更(フィルター / ソートは同値)では発火しない。
+    act(() => {
+      ref.current?.applyState({ ...filteredSortedState, columnWidths: { id: 200 } });
+    });
+    expect(onFiltersChange).toHaveBeenCalledTimes(1);
+    expect(onSortChange).toHaveBeenCalledTimes(1);
+  });
+});

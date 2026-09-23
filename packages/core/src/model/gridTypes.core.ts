@@ -1655,6 +1655,13 @@ export type SpreadsheetGridProps<T, F extends GridFrameworkTypes = GridFramework
   //   - applyState による反映も「状態変化」として発火します(復元直後に同値を 1 回保存する可能性あり)。
   //   毎レンダーで新しいインライン関数を渡しても問題ありません(latest-ref 経由で読むため再評価しません)。
   onStateChange?: (state: GridState) => void;
+  // 追加(change-callbacks): フィルター / ソートの状態が**実際に変化したとき**だけ、そのスライスの複製を渡して
+  //   呼ばれます(onStateChange は列幅 / 列メタの変更でも呼ばれるため、フィルター / ソートだけを追いたい用途
+  //   ── 例: 記述子から WHERE / ORDER BY を組み立てる ── 向け)。規約は onStateChange と同じ
+  //   (初回マウント非発火 / 構造等価なら非発火 / applyState でも発火)。ドラッグ中保留は無い(フィルター /
+  //   ソートはドラッグで変わらない)。manualFiltering / manualSorting でも従来どおり発火します。
+  onFiltersChange?: (filters: GridFilterState) => void;
+  onSortChange?: (sort: GridSortState) => void;
   // 追加(proposals ⑧): スクロールコンテナの scroll 通知です(passive リスナーに相乗り・
   //   rAF で 1 フレーム 1 回に間引き)。縦横どちらの変化でも発火します。source は
   //   GridScrollEventParams の注記を参照(双方向同期のループ防止用)。毎レンダーで新しい
