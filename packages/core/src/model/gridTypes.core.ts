@@ -1655,6 +1655,13 @@ export type SpreadsheetGridProps<T, F extends GridFrameworkTypes = GridFramework
   //   - applyState による反映も「状態変化」として発火します(復元直後に同値を 1 回保存する可能性あり)。
   //   毎レンダーで新しいインライン関数を渡しても問題ありません(latest-ref 経由で読むため再評価しません)。
   onStateChange?: (state: GridState) => void;
+  // 追加(change-callbacks): フィルター / ソートの状態が**実際に変化したとき**だけ、そのスライスの複製を渡して
+  //   呼ばれます(onStateChange は列幅 / 列メタの変更でも呼ばれるため、フィルター / ソートだけを追いたい用途
+  //   ── 例: 記述子から WHERE / ORDER BY を組み立てる ── 向け)。規約は onStateChange と同じ
+  //   (初回マウント非発火 / 構造等価なら非発火 / applyState でも発火)。ドラッグ中保留は無い(フィルター /
+  //   ソートはドラッグで変わらない)。manualFiltering / manualSorting でも従来どおり発火します。
+  onFiltersChange?: (filters: GridFilterState) => void;
+  onSortChange?: (sort: GridSortState) => void;
   // 追加(proposals ⑧): スクロールコンテナの scroll 通知です(passive リスナーに相乗り・
   //   rAF で 1 フレーム 1 回に間引き)。縦横どちらの変化でも発火します。source は
   //   GridScrollEventParams の注記を参照(双方向同期のループ防止用)。毎レンダーで新しい
@@ -1809,6 +1816,18 @@ export type SpreadsheetGridProps<T, F extends GridFrameworkTypes = GridFramework
   //   withinPortal 相当を無効化して popover 内に描画すること(どちらでも可)。
   renderFilterDateInput?: (ctx: FilterDateInputContext) => F['node'];
   enableSorting?: boolean;
+  // 追加(manual-mode): 列 / グローバルフィルターの「絞り込み」をグリッドで行わない(既定 false)。
+  //   フィルター UI(popover / チップバー / フィルター管理 / フィルター中の印)と状態
+  //   (GridState.filters / onStateChange / onFiltersChange)は従来どおり動き、行の絞り込みだけを外部
+  //   (サーバ側 WHERE 等)へ委ねる用途。rows は渡した件数・順のまま表示される。rows が 0 件でフィルターが
+  //   載っているときは noMatchingRowsText を出す。serverSide(dataSource)では元々グリッドが絞らないため無視。
+  manualFiltering?: boolean;
+  // 追加(manual-mode): ソートの並べ替えをグリッドで行わない(既定 false)。ソート UI(ヘッダーの矢印 /
+  //   列メニュー)と状態(GridState.sort / onStateChange / onSortChange)は従来どおり動き、rows は渡した順の
+  //   まま表示される。再マウントなしで切り替えられる(false へ戻すと即座にクライアントソートが適用される)。
+  //   ラベル行の sortMode と行ドラッグの可否は「実際に並べ替えているか」で判定するため、手動ソート中は
+  //   非ソート扱い(行ドラッグは rows 順のまま操作可能)。serverSide では無視。
+  manualSorting?: boolean;
   // 追加(①): 列幅の手動リサイズ可否のグリッド既定です(既定 true=現行挙動)。
   //   各列の column.resizable が未指定のとき本値を継承します(column.resizable ?? enableColumnResize)。
   enableColumnResize?: boolean;

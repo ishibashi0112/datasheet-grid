@@ -7,8 +7,23 @@
 //   - createDetailKeysNotifier: 展開行キー集合の変更通知(初回 = マウント時は通知しない)。
 //   - createStateChangeNotifier: 永続スライス(幅 / フィルター / ソート)+ 列メタの変化通知。判定は純ロジック
 //     decideStateChangeEmit(ドラッグ中保留 / 初回非発火 / 同値非発火)。onStateChange 未指定なら snapshot も作らない。
-import type { GridColumn, GridRowKey, GridSortState, GridState, GridUiState } from '../model/gridTypes.unbound';
-import { buildGridState, decideStateChangeEmit, extractColumnState } from '../logic/gridState';
+import type {
+  GridColumn,
+  GridFilterState,
+  GridRowKey,
+  GridSortState,
+  GridState,
+  GridUiState,
+} from '../model/gridTypes.unbound';
+import {
+  buildGridState,
+  cloneFilterState,
+  cloneSortState,
+  decideStateChangeEmit,
+  extractColumnState,
+  isSameFilterState,
+  isSameSortState,
+} from '../logic/gridState';
 
 // ── 行ホバー ───────────────────────────────────────────
 
@@ -94,6 +109,11 @@ export type StateChangeNotifierArgs<T> = {
   // 列メタ(可視 / 順序 / ピン)の変化検出用(snapshot にも含める)。
   columns: GridColumn<T>[];
   onStateChange: ((state: GridState) => void) | undefined;
+  // 追加(change-callbacks): フィルター / ソートのスライスだけを追う通知です(onStateChange は列幅 / 列メタでも
+  //   呼ばれるため)。直前の update 引数と構造比較し、実際に変化したときだけ複製を渡します。初回は非発火。
+  //   ドラッグ中保留は無し(フィルター / ソートはドラッグで変わらない)。
+  onFiltersChange?: ((filters: GridFilterState) => void) | undefined;
+  onSortChange?: ((sort: GridSortState) => void) | undefined;
 };
 
 export type StateChangeNotifier<T> = {
@@ -111,10 +131,20 @@ export const createStateChangeNotifier = <T,>(): StateChangeNotifier<T> => {
     Object.is(a.columns, b.columns);
   return {
     update: (next) => {
-      const changed = last === null || !sameDeps(last, next);
+      const prev = last;
+      const changed = prev === null || !sameDeps(prev, next);
       last = next;
       if (!changed) {
         return;
+      }
+      // 追加(change-callbacks): スライス単位の通知。参照が変わったときだけ構造比較し、同値なら非発火。
+      if (prev !== null) {
+        if (next.onFiltersChange && !Object.is(prev.filters, next.filters) && !isSameFilterState(prev.filters, next.filters)) {
+          next.onFiltersChange(cloneFilterState(next.filters));
+        }
+        if (next.onSortChange && !Object.is(prev.sort, next.sort) && !isSameSortState(prev.sort, next.sort)) {
+          next.onSortChange(cloneSortState(next.sort));
+        }
       }
       // onStateChange 未指定なら何もしません(snapshot 組み立て / 比較すら省略)。
       if (!next.onStateChange) {

@@ -545,3 +545,51 @@ describe('ColumnFilterPopover の viewport クランプ(FIT-1)', () => {
     expect(popover.style.maxHeight).toBe('');
   });
 });
+
+// 追加(ime-fix): 日本語入力(IME)との整合です。変換確定の Enter で適用 / クローズしないこと、
+//   変換中の打鍵は commit: false(draft 反映のみ)で通知され、compositionend で確定文字列が commit されること。
+describe('ColumnFilterPopover の IME ガード(ime-fix)', () => {
+  it('text フィルター入力: 変換確定の Enter(isComposing)では onApply しない', () => {
+    const props = { ...makeProps(), filterType: 'text' as const };
+    render(<ColumnFilterPopover {...props} />);
+    const input = screen.getByPlaceholderText('部分一致で絞り込み');
+    fireEvent.keyDown(input, { key: 'Enter', isComposing: true });
+    expect(props.onApply).not.toHaveBeenCalled();
+    fireEvent.keyDown(input, { key: 'Escape', isComposing: true });
+    expect(props.onRequestClose).not.toHaveBeenCalled();
+    fireEvent.keyDown(input, { key: 'Enter' });
+    expect(props.onApply).toHaveBeenCalledTimes(1);
+  });
+
+  it('条件入力(handleConditionKeyDown): 変換確定の Enter(isComposing)では onApply しない', () => {
+    const props = makeNumberProps(numberDraft({ value1: '10' }));
+    render(<ColumnFilterPopover {...props} />);
+    const input = screen.getByLabelText('条件の値');
+    fireEvent.keyDown(input, { key: 'Enter', isComposing: true });
+    expect(props.onApply).not.toHaveBeenCalled();
+    fireEvent.keyDown(input, { key: 'Enter' });
+    expect(props.onApply).toHaveBeenCalledTimes(1);
+  });
+
+  it('textSet 条件の値入力: 変換中の打鍵は commit: false、compositionend で確定文字列を commit する', () => {
+    const props = makeTextSetProps({ operator: 'contains', value: '' });
+    render(<ColumnFilterPopover {...props} />);
+    const input = screen.getByLabelText('条件の値');
+    fireEvent.input(input, { target: { value: 'ろ' }, isComposing: true });
+    expect(props.onTextConditionDraftChange).toHaveBeenLastCalledWith(
+      { operator: 'contains', value: 'ろ' },
+      { commit: false },
+    );
+    fireEvent.compositionEnd(input, { target: { value: '六角' } });
+    expect(props.onTextConditionDraftChange).toHaveBeenLastCalledWith({
+      operator: 'contains',
+      value: '六角',
+    });
+    // 非 IME の通常入力は従来どおり commit(options なし)。
+    fireEvent.change(input, { target: { value: '六角ボルト' } });
+    expect(props.onTextConditionDraftChange).toHaveBeenLastCalledWith({
+      operator: 'contains',
+      value: '六角ボルト',
+    });
+  });
+});

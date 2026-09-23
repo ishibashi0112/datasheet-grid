@@ -73,7 +73,7 @@ export const cloneColumnFilterValue = (
 };
 
 // columnFilters マップを値ごと clone して新規マップを返します(キー集合は同一)。
-const cloneColumnFilters = (
+export const cloneColumnFilters = (
   columnFilters: Record<string, ColumnFilterValue>,
 ): Record<string, ColumnFilterValue> => {
   const next: Record<string, ColumnFilterValue> = {};
@@ -509,6 +509,32 @@ const isSameColumnStateArray = (
 //   filters(globalText + columnFilters)/ sort / columns(v2 列メタ)をすべて深く比較します。
 //   onStateChange の「永続スライスが実際に変化したか」判定に使います(参照比較では毎回不等になり得る
 //   ため)。columns は順序 + visible + pinned の変化を検出します(列の可視 / 順序 / ピン変更で発火)。
+// 追加(change-callbacks): フィルタースライス(globalText + columnFilters)の構造等価です。
+//   onFiltersChange の「実際に変化したか」判定と isSameGridState が共有します。
+export const isSameFilterState = (a: GridFilterState, b: GridFilterState): boolean =>
+  a.globalText === b.globalText && isSameColumnFilters(a.columnFilters, b.columnFilters);
+
+// 追加(change-callbacks): ソートスライスの構造等価です(順序 + columnKey + direction)。
+export const isSameSortState = (a: GridSortState, b: GridSortState): boolean => {
+  if (a.length !== b.length) {
+    return false;
+  }
+  for (let i = 0; i < a.length; i += 1) {
+    if (a[i].columnKey !== b[i].columnKey || a[i].direction !== b[i].direction) {
+      return false;
+    }
+  }
+  return true;
+};
+
+// 追加(change-callbacks): onFiltersChange / onSortChange へ渡す複製です(buildGridState と同じ複製規則。
+//   consumer がそのまま保存 / 保持しても内部 state と共有されない)。
+export const cloneFilterState = (filters: GridFilterState): GridFilterState => ({
+  globalText: filters.globalText,
+  columnFilters: cloneColumnFilters(filters.columnFilters),
+});
+export const cloneSortState = (sort: GridSortState): GridSortState => sort.map((entry) => ({ ...entry }));
+
 export const isSameGridState = (a: GridState, b: GridState): boolean => {
   if (a.version !== b.version) {
     return false;
@@ -516,22 +542,11 @@ export const isSameGridState = (a: GridState, b: GridState): boolean => {
   if (!isSameNumberRecord(a.columnWidths, b.columnWidths)) {
     return false;
   }
-  if (a.filters.globalText !== b.filters.globalText) {
+  if (!isSameFilterState(a.filters, b.filters)) {
     return false;
   }
-  if (!isSameColumnFilters(a.filters.columnFilters, b.filters.columnFilters)) {
+  if (!isSameSortState(a.sort, b.sort)) {
     return false;
-  }
-  if (a.sort.length !== b.sort.length) {
-    return false;
-  }
-  for (let i = 0; i < a.sort.length; i += 1) {
-    if (
-      a.sort[i].columnKey !== b.sort[i].columnKey ||
-      a.sort[i].direction !== b.sort[i].direction
-    ) {
-      return false;
-    }
   }
   if (!isSameColumnStateArray(a.columns, b.columns)) {
     return false;

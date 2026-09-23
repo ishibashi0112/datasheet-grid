@@ -290,6 +290,8 @@ if (saved) gridRef.current?.applyState(JSON.parse(saved));
 - **`applyState` も「状態変化」として発火する**: 復元直後に同値を 1 回保存し直す可能性がある(冪等なので実害はない。避けたい場合は consumer 側で直前値と比較してスキップ)。
 - インライン関数を毎レンダー渡してよい(内部で latest-ref 経由で読むため、関数の参照変化では再評価しない)。
 
+**スライス単位の通知 `onFiltersChange` / `onSortChange`**: `onStateChange` は列幅 / 列メタの変更でも呼ばれるため、フィルター / ソートだけを追いたい場合(記述子から WHERE / ORDER BY を組み立てる等)は `onFiltersChange?: (filters: GridFilterState) => void` / `onSortChange?: (sort: GridSortState) => void` を使う。それぞれ該当スライスが**構造的に変化したときだけ**複製を渡して呼ばれ、規約(初回非発火 / 同値非発火 / `applyState` でも発火)は `onStateChange` と同じ。ドラッグ中の保留は無い(フィルター / ソートはドラッグで変わらない)。`onStateChange` と併用でき、同じ変化では両方が呼ばれる。
+
 ```ts
 // 自動保存(変化時)+ マウント時復元。
 const gridRef = useRef<SpreadsheetGridHandle<Row>>(null);

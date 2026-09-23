@@ -144,6 +144,13 @@ export type FilterPopoverStateLike = {
   numberDraft: NumberFilterConditionDraft | null;
 };
 
+// 追加(ime-fix): 複合列の条件 draft 編集オプションです。commit: false は「draft(表示)だけ更新し、
+//   記述子の dispatch(= 行の絞り込み / onStateChange)は行わない」。IME 変換中の 1 打鍵ごとの通知に使い、
+//   変換確定(compositionend)で commit 付き(既定)の呼び出しへ切り替えます。
+export type ConditionDraftChangeOptions = {
+  commit?: boolean;
+};
+
 export type FilterPopoverCommandsArgs<T> = {
   filterPopoverState: FilterPopoverStateLike | null;
   openedFilterColumn: GridColumn<T> | null;
@@ -163,8 +170,10 @@ export type FilterPopoverCommands<T> = {
   handleSetFilterSelectAllChange: (scope: 'all' | string[], nextChecked: boolean) => void;
   handleSetFilterReplaceSelection: (values: string[]) => void;
   clearSetFilterPopoverValue: () => void;
-  handleNumberConditionDraftChange: (draft: NumberFilterConditionDraft) => void;
-  handleTextConditionDraftChange: (draft: TextFilterConditionDraft) => void;
+  // 変更(ime-fix): options.commit === false で draft の反映だけ行い、記述子の dispatch を保留します
+  //   (IME 変換中のキーストローク用。確定 = compositionend で commit 付きの呼び出しが来ます)。
+  handleNumberConditionDraftChange: (draft: NumberFilterConditionDraft, options?: ConditionDraftChangeOptions) => void;
+  handleTextConditionDraftChange: (draft: TextFilterConditionDraft, options?: ConditionDraftChangeOptions) => void;
   handleDateConditionDraftChange: (draft: DateFilterConditionDraft) => void;
   handleComboConditionClear: () => void;
   handleComboSelectionClear: () => void;
@@ -381,19 +390,24 @@ export const createFilterPopoverCommands = <T,>(): FilterPopoverCommands<T> => {
     }
     dispatch(gridActions.setColumnFilter(columnKey, build(setPart)));
   };
-  const handleNumberConditionDraftChange = (draft: NumberFilterConditionDraft) => {
+  const handleNumberConditionDraftChange = (
+    draft: NumberFilterConditionDraft,
+    options?: ConditionDraftChangeOptions,
+  ) => {
     const { updateNumberDraft, openedFilterType } = requireArgs();
     updateNumberDraft(draft);
-    if (openedFilterType !== 'numberSet') {
+    // 変更(ime-fix): IME 変換中(commit: false)は draft 反映のみで dispatch を保留します。
+    if (openedFilterType !== 'numberSet' || options?.commit === false) {
       return;
     }
     const condition = buildParsedNumberFilterFromDraft(draft);
     commitComboCondition(condition !== null, (set) => ({ kind: 'numberSet', condition, set }));
   };
-  const handleTextConditionDraftChange = (draft: TextFilterConditionDraft) => {
+  const handleTextConditionDraftChange = (draft: TextFilterConditionDraft, options?: ConditionDraftChangeOptions) => {
     const { updateTextDraft, openedFilterType } = requireArgs();
     updateTextDraft(draft);
-    if (openedFilterType !== 'textSet') {
+    // 変更(ime-fix): IME 変換中(commit: false)は draft 反映のみで dispatch を保留します。
+    if (openedFilterType !== 'textSet' || options?.commit === false) {
       return;
     }
     const condition = buildParsedTextFilterFromDraft(draft);

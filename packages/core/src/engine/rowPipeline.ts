@@ -67,6 +67,12 @@ export type RowOrderInputs<T> = {
   globalFilteredOrder: RowOrder;
   sort: GridSortState;
   rowDragAvailable: boolean;
+  // 追加(manual-mode): true のとき列フィルターを評価しない(空の columnFilters として扱う。number 用の
+  //   Float64 key も作らない)。フィルター UI / 状態はそのまま、絞り込みだけを外部(サーバ側 WHERE 等)へ委ねる用途。
+  manualFiltering?: boolean;
+  // 追加(manual-mode): true のときソートを適用しない(空 sort として扱う)。rows の並びがそのまま表示順になり、
+  //   恒等判定(行ドラッグ可否)も「並べ替えていない」側になる。
+  manualSorting?: boolean;
 };
 
 export type RowOrderResolution = {
@@ -291,7 +297,11 @@ export const createRowPipelineResolver = <T,>() => {
     resolveBaseOrder: (rowCount: number, labelLayout?: LabelRowLayout | null): RowOrder =>
       labelLayout ? memoLabelFreeOrder(labelLayout, rowCount) : memoBaseOrder(rowCount),
     resolveOrder: (inputs: RowOrderInputs<T>): RowOrderResolution => {
-      const { rows, visibleColumns, columnFilters, globalFilteredOrder, sort, rowDragAvailable, labelLayout } = inputs;
+      const { rows, visibleColumns, globalFilteredOrder, rowDragAvailable, labelLayout } = inputs;
+      // 追加(manual-mode): 手動モードでは空定数へ差し替える(下流 memo の引数が安定し、絞り込み / 並べ替え /
+      //   Float64 key 前計算のいずれも走らない)。
+      const columnFilters = inputs.manualFiltering ? EMPTY_COLUMN_FILTERS : inputs.columnFilters;
+      const sort = inputs.manualSorting ? EMPTY_SORT : inputs.sort;
       const signature = memoNumberSignature(visibleColumns, columnFilters);
       const numericKeys = memoNumericKeys(rows, visibleColumns, signature);
       const columnFilteredOrder = memoColumnFiltered(rows, globalFilteredOrder, visibleColumns, columnFilters, numericKeys);

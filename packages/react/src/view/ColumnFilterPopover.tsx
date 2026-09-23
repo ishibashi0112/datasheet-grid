@@ -21,12 +21,15 @@ import {
   useMemo,
   useRef,
   useState,
+  type ChangeEvent,
   type CSSProperties,
   type KeyboardEvent,
   type PointerEvent,
   type ReactNode,
   type RefObject,
 } from 'react';
+// 追加(ime-fix): 複合列の条件 draft 編集オプション(IME 変換中は commit: false で dispatch 保留)です。
+import type { ConditionDraftChangeOptions } from '@ishibashi0112/spreadsheet-grid-core/engine/filterPopoverCommands';
 import { useVirtualizerCore } from '../hooks/useVirtualizerCore';
 // 追加(SF-ENTER): set フィルター検索の一致関数と Enter 確定の振る舞い判定です(純関数)。
 //   view ファイルからの非コンポーネント export は react-refresh 制約(eslint baseline)に
@@ -124,10 +127,17 @@ type ColumnFilterPopoverProps = {
   // 追加(filter-ext A): number 列の構造化条件 draft です(number / numberSet 以外は null)。
   //   旧「>=10」式テキストに代わり、演算子セレクト + 値入力(0〜2 個)で編集します。
   numberConditionDraft: NumberFilterConditionDraft | null;
-  onNumberConditionDraftChange: (draft: NumberFilterConditionDraft) => void;
+  // 変更(ime-fix): options.commit === false は IME 変換中の打鍵(draft 反映のみ・記述子 dispatch 保留)。
+  onNumberConditionDraftChange: (
+    draft: NumberFilterConditionDraft,
+    options?: ConditionDraftChangeOptions,
+  ) => void;
   // 追加(filter-ext C): textSet のテキスト条件 draft です(textSet 以外は null)。
   textConditionDraft: TextFilterConditionDraft | null;
-  onTextConditionDraftChange: (draft: TextFilterConditionDraft) => void;
+  onTextConditionDraftChange: (
+    draft: TextFilterConditionDraft,
+    options?: ConditionDraftChangeOptions,
+  ) => void;
   // 追加(filter-ext D): dateSet の日付条件 draft です(dateSet 以外は null)。
   dateConditionDraft: DateFilterConditionDraft | null;
   onDateConditionDraftChange: (draft: DateFilterConditionDraft) => void;
@@ -416,11 +426,34 @@ function SetFilterBody({
 // 追加(filter-ext B): 演算子セレクト + 値入力(0〜2 個)です。kind:'number' の popover と
 //   numberSet の条件セクションが共有します。Enter / Escape の意味づけ(適用 or 閉じる)は
 //   親が onKeyDown で渡します。
+// 追加(ime-fix): input イベントが IME 変換中(isComposing)かを判定します。React の onChange の
+//   nativeEvent は input イベント(InputEvent)で、変換中の 1 打鍵ごとに isComposing=true で届きます。
+//   変換中は draft(表示)だけ更新し、記述子の dispatch は compositionend まで保留します
+//   (変換中の文字で絞り込み / onStateChange が走らないようにするため)。
+const isComposingChangeEvent = (event: ChangeEvent<HTMLInputElement>): boolean =>
+  (event.nativeEvent as Partial<InputEvent>).isComposing === true;
+
+// 変換中は commit: false 付き、それ以外は従来どおり draft だけ(第 2 引数なし)で通知します。
+const notifyDraftChange = <D,>(
+  onDraftChange: (draft: D, options?: ConditionDraftChangeOptions) => void,
+  draft: D,
+  event: ChangeEvent<HTMLInputElement>,
+): void => {
+  if (isComposingChangeEvent(event)) {
+    onDraftChange(draft, { commit: false });
+    return;
+  }
+  onDraftChange(draft);
+};
+
 type NumberConditionEditorProps = {
   draft: NumberFilterConditionDraft;
   // autofocus 対象(controller の textInputRef)。値入力なしの演算子では未割り当てになります。
   valueInputRef: RefObject<HTMLInputElement | null>;
-  onDraftChange: (draft: NumberFilterConditionDraft) => void;
+  onDraftChange: (
+    draft: NumberFilterConditionDraft,
+    options?: ConditionDraftChangeOptions,
+  ) => void;
   onKeyDown: (
     event: KeyboardEvent<HTMLSelectElement | HTMLInputElement>,
   ) => void;
@@ -464,7 +497,15 @@ function NumberConditionEditor({
             inputMode="decimal"
             value={draft.value1}
             onChange={(event) =>
-              onDraftChange({ ...draft, value1: event.target.value })
+              notifyDraftChange(
+                onDraftChange,
+                { ...draft, value1: event.target.value },
+                event,
+              )
+            }
+            // 追加(ime-fix): 変換確定時に確定文字列で commit します(変換中は上の onChange が保留)。
+            onCompositionEnd={(event) =>
+              onDraftChange({ ...draft, value1: event.currentTarget.value })
             }
             onKeyDown={onKeyDown}
             placeholder={operandCount === 2 ? '下限' : '値'}
@@ -479,7 +520,14 @@ function NumberConditionEditor({
                 inputMode="decimal"
                 value={draft.value2}
                 onChange={(event) =>
-                  onDraftChange({ ...draft, value2: event.target.value })
+                  notifyDraftChange(
+                    onDraftChange,
+                    { ...draft, value2: event.target.value },
+                    event,
+                  )
+                }
+                onCompositionEnd={(event) =>
+                  onDraftChange({ ...draft, value2: event.currentTarget.value })
                 }
                 onKeyDown={onKeyDown}
                 placeholder="上限"
@@ -502,7 +550,10 @@ function NumberConditionEditor({
 type TextConditionEditorProps = {
   draft: TextFilterConditionDraft;
   valueInputRef: RefObject<HTMLInputElement | null>;
-  onDraftChange: (draft: TextFilterConditionDraft) => void;
+  onDraftChange: (
+    draft: TextFilterConditionDraft,
+    options?: ConditionDraftChangeOptions,
+  ) => void;
   onKeyDown: (
     event: KeyboardEvent<HTMLSelectElement | HTMLInputElement>,
   ) => void;
@@ -542,7 +593,15 @@ function TextConditionEditor({
             type="text"
             value={draft.value}
             onChange={(event) =>
-              onDraftChange({ ...draft, value: event.target.value })
+              notifyDraftChange(
+                onDraftChange,
+                { ...draft, value: event.target.value },
+                event,
+              )
+            }
+            // 追加(ime-fix): 変換確定時に確定文字列で commit します(変換中は上の onChange が保留)。
+            onCompositionEnd={(event) =>
+              onDraftChange({ ...draft, value: event.currentTarget.value })
             }
             onKeyDown={onKeyDown}
             placeholder="値"
@@ -1204,6 +1263,11 @@ export function ColumnFilterPopover({
     event: KeyboardEvent<HTMLSelectElement | HTMLInputElement>,
   ) => {
     event.stopPropagation();
+    // 追加(ime-fix): IME 変換中(isComposing)の Enter / Escape は変換の確定 / 取り消しなので、
+    //   適用 / クローズには使いません(検索ボックス / セルエディタと同じガード)。
+    if (event.nativeEvent.isComposing) {
+      return;
+    }
     if (event.key === 'Enter') {
       event.preventDefault();
       onApply();
@@ -1372,6 +1436,10 @@ export function ColumnFilterPopover({
             onKeyDown={(event) => {
               // 追加: filter input 内入力を grid 側へ伝播させません。
               event.stopPropagation();
+              // 追加(ime-fix): IME 変換中の Enter / Escape は変換操作なので適用 / クローズしません。
+              if (event.nativeEvent.isComposing) {
+                return;
+              }
               if (event.key === 'Enter') {
                 event.preventDefault();
                 onApply();

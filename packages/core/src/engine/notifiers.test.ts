@@ -84,4 +84,43 @@ describe('createStateChangeNotifier', () => {
     notifier.update({ ...base, columnWidths: { a: 130 }, onStateChange });
     expect(onStateChange).toHaveBeenCalledTimes(1);
   });
+
+  // 追加(change-callbacks): スライス単位の通知は「そのスライスが実際に変化したとき」だけ、複製を渡して発火します。
+  it('onFiltersChange / onSortChange は初回非発火、該当スライスの構造変化でだけ発火し、複製を渡す', () => {
+    const notifier = createStateChangeNotifier<Row>();
+    const onFiltersChange = vi.fn();
+    const onSortChange = vi.fn();
+    const callbacks = { onStateChange: undefined, onFiltersChange, onSortChange };
+    notifier.update({ ...base, ...callbacks });
+    expect(onFiltersChange).not.toHaveBeenCalled();
+    expect(onSortChange).not.toHaveBeenCalled();
+    // 列幅だけの変化では発火しない。
+    notifier.update({ ...base, ...callbacks, columnWidths: { a: 150 } });
+    expect(onFiltersChange).not.toHaveBeenCalled();
+    expect(onSortChange).not.toHaveBeenCalled();
+    // フィルター変化 → onFiltersChange のみ。
+    const filters = { globalText: '', columnFilters: { a: { kind: 'text' as const, value: 'x' } } };
+    notifier.update({ ...base, ...callbacks, columnWidths: { a: 150 }, filters });
+    expect(onFiltersChange).toHaveBeenCalledTimes(1);
+    expect(onFiltersChange.mock.calls[0][0]).toEqual(filters);
+    expect(onFiltersChange.mock.calls[0][0]).not.toBe(filters);
+    expect(onSortChange).not.toHaveBeenCalled();
+    // 同値の新参照では発火しない。
+    notifier.update({ ...base, ...callbacks, columnWidths: { a: 150 }, filters: { ...filters } });
+    expect(onFiltersChange).toHaveBeenCalledTimes(1);
+    // ソート変化 → onSortChange のみ(ドラッグ中でも保留しない)。
+    const sort = [{ columnKey: 'a', direction: 'desc' as const }];
+    notifier.update({
+      ...base,
+      ...callbacks,
+      columnWidths: { a: 150 },
+      filters,
+      sort,
+      dragState: { type: 'columnResize' } as never,
+    });
+    expect(onSortChange).toHaveBeenCalledTimes(1);
+    expect(onSortChange.mock.calls[0][0]).toEqual(sort);
+    expect(onSortChange.mock.calls[0][0]).not.toBe(sort);
+    expect(onFiltersChange).toHaveBeenCalledTimes(1);
+  });
 });

@@ -164,6 +164,10 @@ type Settings = {
   labelRow: boolean;
   // ラベル行の縦スクロール固定(現在セクションの見出しをヘッダー直下に固定)。
   labelRowSticky: boolean;
+  // 手動フィルター / 手動ソート。ON でフィルター / ソートの UI と状態は動くが、行の絞り込み / 並べ替えは行わない
+  // (絞り込み済みの rows をサーバから受け取る構成向け)。
+  manualFiltering: boolean;
+  manualSorting: boolean;
 };
 
 const DEFAULTS: Settings = {
@@ -193,6 +197,8 @@ const DEFAULTS: Settings = {
   enableRowDrag: false,
   labelRow: false,
   labelRowSticky: true,
+  manualFiltering: false,
+  manualSorting: false,
 };
 
 function buildSnippet(s: Settings): string {
@@ -246,6 +252,13 @@ function buildSnippet(s: Settings): string {
   // enableRowDrag は既定 OFF のため、ON のときだけスニペットへ載せる。
   if (s.enableRowDrag) {
     lines.push('  enableRowDrag');
+  }
+  // manualFiltering / manualSorting は既定 OFF のため、ON のときだけスニペットへ載せる。
+  if (s.manualFiltering) {
+    lines.push('  manualFiltering');
+  }
+  if (s.manualSorting) {
+    lines.push('  manualSorting');
   }
   // labelRow は既定 OFF(undefined)のため、ON のときだけスニペットへ載せる。
   if (s.labelRow) {
@@ -334,6 +347,8 @@ function PlaygroundGrid({ settings }: { settings: Settings }) {
       }
       detailRow={settings.detailRow ? playgroundDetailRow : undefined}
       enableRowDrag={settings.enableRowDrag}
+      manualFiltering={settings.manualFiltering}
+      manualSorting={settings.manualSorting}
       labelRow={
         settings.labelRow
           ? {
@@ -455,6 +470,8 @@ export function Playground() {
           <Toggle label="enableSorting" checked={settings.enableSorting} onChange={(v) => set('enableSorting', v)} />
           <Toggle label="enableColumnFilter" checked={settings.enableColumnFilter} onChange={(v) => set('enableColumnFilter', v)} />
           <Toggle label="enableGlobalFilter" checked={settings.enableGlobalFilter} onChange={(v) => set('enableGlobalFilter', v)} />
+          <Toggle label="manualFiltering" checked={settings.manualFiltering} onChange={(v) => set('manualFiltering', v)} />
+          <Toggle label="manualSorting" checked={settings.manualSorting} onChange={(v) => set('manualSorting', v)} />
           <Toggle label="enableColumnMenu" checked={settings.enableColumnMenu} onChange={(v) => set('enableColumnMenu', v)} />
           <Toggle label="enableRangeSelection" checked={settings.enableRangeSelection} onChange={(v) => set('enableRangeSelection', v)} />
           <Toggle label="enableUndoRedo" checked={settings.enableUndoRedo} onChange={(v) => set('enableUndoRedo', v)} />
