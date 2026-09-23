@@ -284,3 +284,56 @@ describe('SpreadsheetGrid × ラベル行(縦スクロール固定)', () => {
     expect(container.querySelector('[data-ssg-sticky-label]')).toBeNull();
   });
 });
+
+// 追加(label-row ④): エクスポート(exportCsv / getExportData)とラベル行。
+describe('SpreadsheetGrid × ラベル行(エクスポート)', () => {
+  const mount = (options?: Partial<LabelRowOptions<Row>>) => {
+    const ref = createRef<SpreadsheetGridHandle<Row>>();
+    render(
+      <SpreadsheetGrid
+        ref={ref}
+        rows={rows}
+        columns={columns}
+        rowKeyGetter={rowKeyGetter}
+        labelRow={{ ...labelRow, ...options }}
+      />,
+    );
+    return ref.current as SpreadsheetGridHandle<Row>;
+  };
+
+  it("既定(includeLabelRows 未指定)ではラベル行を出さない('view' / 'raw' とも)。rowKinds も付かない", () => {
+    const handle = mount();
+    expect(handle.exportCsv({ includeHeaders: false })).toBe('a,alpha,30\r\nb,beta,10\r\nc,gamma,50\r\nd,delta,20\r\ne,epsilon,40');
+    expect(handle.exportCsv({ scope: 'raw', includeHeaders: false })).toBe(
+      'a,alpha,30\r\nb,beta,10\r\nc,gamma,50\r\nd,delta,20\r\ne,epsilon,40',
+    );
+    const data = handle.getExportData();
+    expect(data.rows.map((cells) => cells[0].value)).toEqual(['a', 'b', 'c', 'd', 'e']);
+    expect(data.rowKinds).toBeUndefined();
+  });
+
+  it('includeLabelRows: true でラベル行を先頭列の文字列として出し、rowKinds で行種を返す', () => {
+    const handle = mount();
+    expect(handle.exportCsv({ includeHeaders: false, includeLabelRows: true })).toBe(
+      'セクション 1,,\r\na,alpha,30\r\nb,beta,10\r\nセクション 2,,\r\nc,gamma,50\r\nd,delta,20\r\ne,epsilon,40',
+    );
+    const data = handle.getExportData({ includeLabelRows: true });
+    expect(data.rowKinds).toEqual(['label', 'data', 'data', 'label', 'data', 'data', 'data']);
+    expect(data.rows[0]).toEqual([
+      { value: 'セクション 1', text: 'セクション 1' },
+      { value: null, text: '' },
+      { value: null, text: '' },
+    ]);
+    // 'raw' でも同じ(rows 配列順)。
+    const raw = handle.getExportData({ scope: 'raw', includeLabelRows: true });
+    expect(raw.rowKinds).toEqual(['label', 'data', 'data', 'label', 'data', 'data', 'data']);
+    expect(raw.rows[3][0].value).toBe('セクション 2');
+  });
+
+  it('exportText で列ごとの値に差し替えられる', () => {
+    const handle = mount({ exportText: (row) => [`[${row.name}]`, 'memo', 0] });
+    expect(handle.exportCsv({ includeHeaders: false, includeLabelRows: true })).toContain('[セクション 1],memo,0');
+    const data = handle.getExportData({ includeLabelRows: true });
+    expect(data.rows[0].map((cell) => cell.value)).toEqual(['[セクション 1]', 'memo', 0]);
+  });
+});

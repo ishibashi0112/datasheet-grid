@@ -165,3 +165,44 @@ describe('buildGridExportData', () => {
     expect(data.rows.map((cells) => cells[0].value)).toEqual(['x', 'z']);
   });
 });
+// 追加(label-row ④): ラベル行(getLabelLine)と rowKinds。
+describe('buildGridExportData × ラベル行(getLabelLine)', () => {
+  type LRow = { a: string; b: number };
+  const lColumns: GridColumn<LRow>[] = [
+    { key: 'a', title: 'A', width: 100 },
+    { key: 'b', title: 'B', width: 100 },
+  ];
+  const view: (LRow | undefined)[] = [undefined, { a: 'x', b: 1 }, undefined, { a: 'y', b: 2 }];
+
+  it('ラベル行を value / text のセルにし、rowKinds で行種を返す', () => {
+    const data = buildGridExportData({
+      getRow: (i) => view[i] as LRow,
+      startRow: 0,
+      endRow: view.length,
+      columns: lColumns,
+      getLabelLine: (i) => (i === 0 ? ['第 1 節'] : i === 2 ? ['第 2 節', 7] : undefined),
+    });
+    expect(data.rowKinds).toEqual(['label', 'data', 'label', 'data']);
+    expect(data.rows[0]).toEqual([
+      { value: '第 1 節', text: '第 1 節' },
+      { value: null, text: '' },
+    ]);
+    expect(data.rows[2]).toEqual([
+      { value: '第 2 節', text: '第 2 節' },
+      { value: 7, text: '7' },
+    ]);
+    expect(data.rows[1][0]).toEqual({ value: 'x', text: 'x' });
+  });
+
+  it('getLabelLine 未指定では rowKinds を付けず、ラベル行(undefined)はスキップ', () => {
+    const data = buildGridExportData({
+      getRow: (i) => view[i] as LRow,
+      startRow: 0,
+      endRow: view.length,
+      columns: lColumns,
+    });
+    expect(data.rowKinds).toBeUndefined();
+    expect(data.rows).toHaveLength(2);
+    expect('rowKinds' in data).toBe(false);
+  });
+});

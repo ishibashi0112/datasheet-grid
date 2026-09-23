@@ -672,6 +672,7 @@ export function SpreadsheetGrid<T extends object>({
   const labelRowHeightOption = labelRow?.height;
   const labelSortMode = labelRow?.sortMode ?? 'section';
   const labelSticky = labelRow?.sticky === true;
+  const labelExportText = labelRow?.exportText;
   const labelKeepEmptySections = labelRow?.keepEmptySections ?? false;
   const labelRowEnabled = labelIsLabelRow != null && labelGetLabel != null;
 
@@ -1636,6 +1637,14 @@ export function SpreadsheetGrid<T extends object>({
       pushOffset: resolution.pushOffset,
     };
   }, [labelSticky, labelDisplay, rowMetrics, scrollTop, verticalScaleFactor, rowModel]);
+  // 追加(label-row ④): 命令的 API(exportCsv / getExportData)へ渡すラベル行のエクスポート設定です。
+  const labelRowExport = useMemo(
+    () =>
+      labelIsLabelRow && labelGetLabel
+        ? { isLabelRow: labelIsLabelRow, getLabel: labelGetLabel, exportText: labelExportText }
+        : undefined,
+    [labelIsLabelRow, labelGetLabel, labelExportText],
+  );
   const stickyLabelSlot = useMemo(
     () => resolveSlotProps<CSSProperties>(stickyLabelEntry ? resolveLabelRowSlot(stickyLabelEntry.labelRow) : undefined),
     [stickyLabelEntry, resolveLabelRowSlot],
@@ -3660,6 +3669,8 @@ export function SpreadsheetGrid<T extends object>({
     serverSideRefresh: serverSide.refresh,
     resolvedRowKeyGetter,
     isRowExportable,
+    // 追加(label-row ④): ラベル行のエクスポート設定(scope 'raw' の除外 / includeLabelRows の出力値)。
+    labelRowExport,
     activeToolPanelTab,
     openToolPanel,
     closeToolPanel,

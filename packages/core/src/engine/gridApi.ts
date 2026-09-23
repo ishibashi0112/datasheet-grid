@@ -40,7 +40,7 @@ import {
 import { applyColumnState, buildGridState, extractColumnState, migrateGridState } from '../logic/gridState';
 import { computeHorizontalScrollTarget, computeVerticalScrollTarget } from '../logic/scrollTargets';
 import { collectAllGroupKeys, collectAllGroupRows, type GroupTree } from '../logic/grouping';
-import { serializeRowsToCsv } from '../logic/exportCsv';
+import { serializeRowsToCsv, type LabelExportLine } from '../logic/exportCsv';
 import { buildGridExportData } from '../logic/exportData';
 import { normalizeExportScope } from '../logic/exportScope';
 import { scanInvalidCells } from '../logic/validation';
@@ -80,6 +80,15 @@ export type GridApiArgs<T> = {
   resolvedRowKeyGetter: (row: T, sourceRowIndex: number) => GridRowKey;
   // exportCsv / getExportData の対象行フィルタ。
   isRowExportable: SpreadsheetGridProps<T>['isRowExportable'];
+  // 追加(label-row ④): ラベル行のエクスポート設定(labelRow prop 由来。未指定 = ラベル行なし)。
+  //   scope 'raw' でラベル行をデータ行として出さないための述語と、includeLabelRows 時の出力値。
+  labelRowExport?:
+    | {
+        isLabelRow: (row: T, sourceIndex: number) => boolean;
+        getLabel: (row: T) => string;
+        exportText: ((row: T) => string | LabelExportLine) | undefined;
+      }
+    | undefined;
   // 統合ツールパネル(openFilterManager / closeFilterManager の委譲先)。
   activeToolPanelTab: ToolPanelTab | null;
   openToolPanel: (tab: ToolPanelTab) => void;
@@ -120,6 +129,8 @@ type ExportResolution<T> = {
   columns: GridColumn<T>[];
   // 出力対象行フィルタ(bound 済み述語)。getRow と同じ index 空間。
   isRowIncluded?: (row: T, rowIndex: number) => boolean;
+  // 追加(label-row ④): ラベル行の出力行(includeLabelRows: true のときだけ定義)。getRow と同じ index 空間。
+  getLabelLine?: (rowIndex: number) => LabelExportLine | undefined;
 };
 
 export const createGridApi = <T,>(): GridApi<T> => {
@@ -202,12 +213,28 @@ export const createGridApi = <T,>(): GridApi<T> => {
   // scope('view' / 'raw' / 'rendered' / 'selection' + 後方互換 'all' / 'visible')から、出力対象の行アクセサ /
   //   行レンジ [startRow, endRow) / 列集合を解決します(exportCsv と getExportData で共有)。
   //   scope='selection' で選択が無いときは null。
-  const resolveExportScope = (scope: CsvExportScope): ExportResolution<T> | null => {
+  const resolveExportScope = (scope: CsvExportScope, includeLabelRows = false): ExportResolution<T> | null => {
     const s = args;
     if (!s) {
       return null;
     }
     const getViewRow = (index: number) => s.rowModel.getRow(index);
+    // 追加(label-row ④): ラベル行の出力値(includeLabelRows 時)。文字列は先頭列へ、配列は列順にそのまま。
+    const labelExport = s.labelRowExport;
+    const toLabelLine = (row: T): LabelExportLine => {
+      if (!labelExport) {
+        return [];
+      }
+      const text = labelExport.exportText ? labelExport.exportText(row) : labelExport.getLabel(row);
+      return typeof text === 'string' ? [text] : text;
+    };
+    const getViewLabelLine =
+      includeLabelRows && labelExport && s.rowModel.getLabelRow
+        ? (index: number): LabelExportLine | undefined => {
+            const label = s.rowModel.getLabelRow?.(index);
+            return label ? toLabelLine(label.row) : undefined;
+          }
+        : undefined;
     const isRowExportableProp = s.isRowExportable;
     const isRowIncludedView = isRowExportableProp
       ? (row: T, viewIndex: number) =>
@@ -238,12 +265,20 @@ export const createGridApi = <T,>(): GridApi<T> => {
           isRowIncluded: isRowIncludedView,
         };
       }
+      // 追加(label-row ④): rows 配列にはラベル行が混在するため、データ行としては出さず(undefined)、
+      //   includeLabelRows 時だけ getLabelLine で 1 行として出します。
+      const isRawLabel = (index: number): boolean =>
+        labelExport !== undefined && s.rows[index] !== undefined && labelExport.isLabelRow(s.rows[index], index);
       return {
-        getRow: (index: number) => s.rows[index],
+        getRow: (index: number) => (isRawLabel(index) ? (undefined as unknown as T) : s.rows[index]),
         startRow: 0,
         endRow: s.rows.length,
         columns: s.orderedColumns,
         isRowIncluded: isRowIncludedRaw,
+        getLabelLine:
+          includeLabelRows && labelExport
+            ? (index: number) => (isRawLabel(index) ? toLabelLine(s.rows[index]) : undefined)
+            : undefined,
       };
     }
     if (normalized === 'rendered') {
@@ -253,6 +288,7 @@ export const createGridApi = <T,>(): GridApi<T> => {
         endRow: s.windowLastRow >= s.windowFirstRow ? s.windowLastRow + 1 : s.windowFirstRow,
         columns: s.orderedColumns,
         isRowIncluded: isRowIncludedView,
+        getLabelLine: getViewLabelLine,
       };
     }
     if (normalized === 'selection') {
@@ -268,6 +304,7 @@ export const createGridApi = <T,>(): GridApi<T> => {
           endRow: r.end.row + 1,
           columns: s.orderedColumns.slice(r.start.col, r.end.col + 1),
           isRowIncluded: isRowIncludedView,
+          getLabelLine: getViewLabelLine,
         };
       }
       if (sel.type === 'row') {
@@ -278,6 +315,7 @@ export const createGridApi = <T,>(): GridApi<T> => {
           endRow: r.endRow + 1,
           columns: s.orderedColumns,
           isRowIncluded: isRowIncludedView,
+          getLabelLine: getViewLabelLine,
         };
       }
       const r = normalizeColumnRange(sel.startCol, sel.endCol);
@@ -287,6 +325,7 @@ export const createGridApi = <T,>(): GridApi<T> => {
         endRow: s.viewRowCount,
         columns: s.orderedColumns.slice(r.startCol, r.endCol + 1),
         isRowIncluded: isRowIncludedView,
+        getLabelLine: getViewLabelLine,
       };
     }
     return {
@@ -295,6 +334,7 @@ export const createGridApi = <T,>(): GridApi<T> => {
       endRow: s.viewRowCount,
       columns: s.orderedColumns,
       isRowIncluded: isRowIncludedView,
+      getLabelLine: getViewLabelLine,
     };
   };
 
@@ -303,7 +343,7 @@ export const createGridApi = <T,>(): GridApi<T> => {
     exportColumns.filter((column) => !isSyntheticColumnKey(column.key));
 
   const buildCsv = (options?: CsvExportOptions): string => {
-    const resolved = resolveExportScope(options?.scope ?? 'view');
+    const resolved = resolveExportScope(options?.scope ?? 'view', options?.includeLabelRows === true);
     if (!resolved) {
       return options?.bom ? '\uFEFF' : '';
     }
@@ -316,11 +356,12 @@ export const createGridApi = <T,>(): GridApi<T> => {
       includeHeaders: options?.includeHeaders,
       bom: options?.bom,
       isRowIncluded: resolved.isRowIncluded,
+      getLabelLine: resolved.getLabelLine,
     });
   };
 
   const buildExportData = (options?: GridExportOptions): GridExportData => {
-    const resolved = resolveExportScope(options?.scope ?? 'view');
+    const resolved = resolveExportScope(options?.scope ?? 'view', options?.includeLabelRows === true);
     if (!resolved) {
       return { columns: [], rows: [] };
     }
@@ -330,6 +371,7 @@ export const createGridApi = <T,>(): GridApi<T> => {
       endRow: resolved.endRow,
       columns: stripSyntheticColumns(resolved.columns),
       isRowIncluded: resolved.isRowIncluded,
+      getLabelLine: resolved.getLabelLine,
     });
   };
 

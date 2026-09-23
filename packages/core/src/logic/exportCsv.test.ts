@@ -125,3 +125,52 @@ describe('serializeRowsToCsv', () => {
     expect(seenIndexes).toEqual([0, 1, 2]);
   });
 });
+// 追加(label-row ④): ラベル行(getRow が undefined の index)を getLabelLine で 1 行として出力します。
+describe('serializeRowsToCsv × ラベル行(getLabelLine)', () => {
+  // [L] x [L] y(view index 0 / 2 がラベル行)。
+  const view: (Row | undefined)[] = [undefined, rows[0], undefined, rows[1]];
+  const lines: Record<number, ReadonlyArray<string | number | null | undefined>> = {
+    0: ['第 1 節'],
+    2: ['第 2 節', 2, null],
+  };
+  it('文字列は先頭列へ・配列は列順にそのまま(不足は空 / 余りは切り捨て)。エスケープも通常どおり', () => {
+    const csv = serializeRowsToCsv({
+      getRow: (i) => view[i] as Row,
+      startRow: 0,
+      endRow: view.length,
+      columns,
+      includeHeaders: false,
+      getLabelLine: (i) => lines[i],
+    });
+    expect(csv).toBe('第 1 節,\r\nx,1\r\n第 2 節,2\r\ny,2');
+    const quoted = serializeRowsToCsv({
+      getRow: (i) => view[i] as Row,
+      startRow: 0,
+      endRow: 2,
+      columns,
+      includeHeaders: false,
+      getLabelLine: () => ['a,b'],
+    });
+    expect(quoted).toBe('"a,b",\r\nx,1');
+  });
+
+  it('getLabelLine 未指定 / undefined を返す index は従来どおりスキップ', () => {
+    const csv = serializeRowsToCsv({
+      getRow: (i) => view[i] as Row,
+      startRow: 0,
+      endRow: view.length,
+      columns,
+      includeHeaders: false,
+    });
+    expect(csv).toBe('x,1\r\ny,2');
+    const partial = serializeRowsToCsv({
+      getRow: (i) => view[i] as Row,
+      startRow: 0,
+      endRow: view.length,
+      columns,
+      includeHeaders: false,
+      getLabelLine: (i) => (i === 2 ? lines[2] : undefined),
+    });
+    expect(partial).toBe('x,1\r\n第 2 節,2\r\ny,2');
+  });
+});

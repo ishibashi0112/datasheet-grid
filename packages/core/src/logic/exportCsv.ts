@@ -47,7 +47,18 @@ export type SerializeRowsToCsvParams<T> = {
   //   rowIndex は行レンジと同じ index 空間(通常はビュー行 / scope 'raw' はソース行)です。
   //   ctx(rowKey)の解決は呼び出し側(SpreadsheetGrid の resolveExportScope)が行います。
   isRowIncluded?: (row: T, rowIndex: number) => boolean;
+  // 追加(label-row ④): ラベル行の出力行です(includeLabelRows: true のとき呼び出し側が渡す)。getRow が
+  //   undefined を返した index に対して呼ばれ、値の列(エクスポート列順。不足分は空 / 余りは切り捨て)を
+  //   返せばその行を 1 行として出力します。undefined ならスキップ(未ロード行と同じ)。
+  getLabelLine?: (rowIndex: number) => LabelExportLine | undefined;
 };
+
+// 追加(label-row ④): ラベル行 1 行ぶんの出力値です(列順)。
+export type LabelExportLine = ReadonlyArray<string | number | null | undefined>;
+
+// ラベル行のセル値 → 文字列(null / undefined は空)。
+export const labelExportCellText = (value: string | number | null | undefined): string =>
+  value == null ? '' : String(value);
 
 // 行レンジ × 列集合から CSV 文字列を生成します。行区切りは RFC 4180 に従い CRLF です。
 export const serializeRowsToCsv = <T,>({
@@ -59,6 +70,7 @@ export const serializeRowsToCsv = <T,>({
   includeHeaders = true,
   bom = false,
   isRowIncluded,
+  getLabelLine,
 }: SerializeRowsToCsvParams<T>): string => {
   const lines: string[] = [];
 
@@ -73,7 +85,14 @@ export const serializeRowsToCsv = <T,>({
   for (let rowIndex = startRow; rowIndex < endRow; rowIndex += 1) {
     const row = getRow(rowIndex);
     // SSRM 未ロード行(undefined)はスキップします。clientSide では常に行が存在します。
+    // 追加(label-row ④): ラベル行(getRow が undefined)は getLabelLine が値を返せば 1 行として出力します。
     if (!row) {
+      const line = getLabelLine?.(rowIndex);
+      if (line) {
+        lines.push(
+          columns.map((_, index) => escapeCsvField(labelExportCellText(line[index]), delimiter)).join(delimiter),
+        );
+      }
       continue;
     }
     // 追加(proposals ⑪): 出力対象外の行は行ごと除きます。

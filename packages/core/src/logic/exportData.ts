@@ -1,5 +1,6 @@
 import type { GridColumn, GridExportData } from '../model/gridTypes.unbound';
 import { getCellValue } from '../utils/permissions';
+import { labelExportCellText, type LabelExportLine } from './exportCsv';
 
 // 追加(imperative API: getExportData): エクスポート用「整形済みデータ」の純ロジックです。ハンドル
 //   (SpreadsheetGridHandle の getExportData)から呼ばれ、DOM や副作用には一切触れません(列メタ +
@@ -21,6 +22,8 @@ export type BuildGridExportDataParams<T> = {
   // 追加(proposals ⑪): 出力対象行フィルタ(bound 済み述語)です。false の行は行ごと除きます
   //   (serializeRowsToCsv と同じ契約。ctx の解決は呼び出し側)。
   isRowIncluded?: (row: T, rowIndex: number) => boolean;
+  // 追加(label-row ④): ラベル行の出力行(serializeRowsToCsv と同じ契約)。指定時は rowKinds も返します。
+  getLabelLine?: (rowIndex: number) => LabelExportLine | undefined;
 };
 
 // 行レンジ × 列集合から、列メタ(key / title)と 2 次元セル(value / text)を生成します。
@@ -30,6 +33,7 @@ export const buildGridExportData = <T,>({
   endRow,
   columns,
   isRowIncluded,
+  getLabelLine,
 }: BuildGridExportDataParams<T>): GridExportData => {
   // 列メタは key(オブジェクト系ライブラリ用)と title(ヘッダー表示用)の双方を持たせます。
   const exportColumns = columns.map((column) => ({
@@ -38,16 +42,30 @@ export const buildGridExportData = <T,>({
   }));
 
   const rows: GridExportData['rows'] = [];
+  // 追加(label-row ④): ラベル行を含める指定(getLabelLine)があるときだけ行種配列を付けます。
+  const rowKinds: Array<'data' | 'label'> | undefined = getLabelLine ? [] : undefined;
   for (let rowIndex = startRow; rowIndex < endRow; rowIndex += 1) {
     const row = getRow(rowIndex);
     // SSRM 未ロード行(undefined)はスキップします。clientSide では常に行が存在します。
+    // 追加(label-row ④): ラベル行(getRow が undefined)は getLabelLine が値を返せば 1 行として出力します。
     if (!row) {
+      const line = getLabelLine?.(rowIndex);
+      if (line) {
+        rows.push(
+          columns.map((_, index) => {
+            const value = line[index];
+            return { value: value ?? null, text: labelExportCellText(value) };
+          }),
+        );
+        rowKinds?.push('label');
+      }
       continue;
     }
     // 追加(proposals ⑪): 出力対象外の行は行ごと除きます。
     if (isRowIncluded && !isRowIncluded(row, rowIndex)) {
       continue;
     }
+    rowKinds?.push('data');
     rows.push(
       columns.map((column) => {
         const value = getCellValue(row, column);
@@ -59,5 +77,5 @@ export const buildGridExportData = <T,>({
     );
   }
 
-  return { columns: exportColumns, rows };
+  return rowKinds ? { columns: exportColumns, rows, rowKinds } : { columns: exportColumns, rows };
 };
