@@ -167,3 +167,135 @@ describe('createRowPipelineResolver.resolveServerSideQuery', () => {
     ).not.toBe(server);
   });
 });
+// 追加(label-row ①): ラベル行の stage(配置 / ラベル行を除いた恒等 order / 恒等判定 / RowModel / グルーピング併用時のバイパス)。
+describe('createRowPipelineResolver × ラベル行', () => {
+  type LRow = { id: number; kind?: 'label'; name: string; amount: number };
+  const labelRows: LRow[] = [
+    { id: 100, kind: 'label', name: 'S1', amount: 0 },
+    { id: 1, name: 'c', amount: 30 },
+    { id: 2, name: 'a', amount: 10 },
+    { id: 101, kind: 'label', name: 'S2', amount: 0 },
+    { id: 3, name: 'b', amount: 20 },
+  ];
+  const labelColumns: GridColumn<LRow>[] = [
+    { key: 'id', title: 'ID', width: 80 },
+    { key: 'name', title: '名前', width: 120 },
+    { key: 'amount', title: '金額', width: 100, filterType: 'number' },
+  ];
+  const isLabelRow = (row: LRow) => row.kind === 'label';
+  const getLabel = (row: LRow) => row.name;
+  const keyGetter = (row: LRow) => row.id;
+
+  it('resolveLabelRowLayout / resolveBaseOrder: ラベル行を除いた恒等 order(参照安定)', () => {
+    const pipeline = createRowPipelineResolver<LRow>();
+    const layout = pipeline.resolveLabelRowLayout(labelRows, isLabelRow);
+    expect(layout).not.toBeNull();
+    expect(Array.from(layout!.labelIndexes)).toEqual([0, 3]);
+    const baseOrder = pipeline.resolveBaseOrder(labelRows.length, layout);
+    expect(Array.from(baseOrder)).toEqual([1, 2, 4]);
+    expect(pipeline.resolveBaseOrder(labelRows.length, layout)).toBe(baseOrder);
+    expect(pipeline.resolveLabelRowLayout(labelRows, isLabelRow)).toBe(layout);
+    // 述語なし / 該当なしは null で、従来の恒等 order。
+    expect(pipeline.resolveLabelRowLayout(labelRows, undefined)).toBeNull();
+    expect(Array.from(pipeline.resolveBaseOrder(labelRows.length, null))).toEqual([0, 1, 2, 3, 4]);
+  });
+
+  it('恒等判定: ソート / フィルターなしはラベル行込みでも rowDragOperable=true、ソートで false', () => {
+    const pipeline = createRowPipelineResolver<LRow>();
+    const layout = pipeline.resolveLabelRowLayout(labelRows, isLabelRow);
+    const baseOrder = pipeline.resolveBaseOrder(labelRows.length, layout);
+    const inputs = {
+      rows: labelRows,
+      labelLayout: layout,
+      visibleColumns: labelColumns,
+      columnFilters: {},
+      globalFilteredOrder: baseOrder,
+      sort: [],
+      rowDragAvailable: true,
+    };
+    const identity = pipeline.resolveOrder(inputs);
+    expect(identity.orderIsIdentity).toBe(true);
+    expect(identity.rowDragOperable).toBe(true);
+    const sorted = pipeline.resolveOrder({ ...inputs, sort: [{ columnKey: 'name', direction: 'asc' }] });
+    expect(Array.from(sorted.order)).toEqual([2, 4, 1]);
+    expect(sorted.rowDragOperable).toBe(false);
+  });
+
+  it('resolveClientSideRowModel: ラベル行込みの RowModel(セクション内ソート)と no-op 参照安定', () => {
+    const pipeline = createRowPipelineResolver<LRow>();
+    const layout = pipeline.resolveLabelRowLayout(labelRows, isLabelRow);
+    const baseOrder = pipeline.resolveBaseOrder(labelRows.length, layout);
+    const { order } = pipeline.resolveOrder({
+      rows: labelRows,
+      labelLayout: layout,
+      visibleColumns: labelColumns,
+      columnFilters: {},
+      globalFilteredOrder: baseOrder,
+      sort: [{ columnKey: 'name', direction: 'asc' }],
+      rowDragAvailable: false,
+    });
+    const inputs = {
+      rows: labelRows,
+      order,
+      rowGroupingActive: false,
+      labelLayout: layout,
+      labelSortMode: 'section' as const,
+      keepEmptySections: false,
+      sortActive: true,
+      getLabel,
+      groupColumns: [],
+      aggColumns: [],
+      collapsedGroupKeys: new Set<string>(),
+      rowKeyGetter: keyGetter,
+    };
+    const first = pipeline.resolveClientSideRowModel(inputs);
+    expect(first.labelDisplay).not.toBeNull();
+    const { rowModel } = first;
+    expect(rowModel.getRowCount()).toBe(5);
+    // [S1] a c [S2] b(セクション内で名前昇順)。
+    expect(rowModel.getLabelRow?.(0)).toMatchObject({ kind: 'label', label: 'S1', sectionRowCount: 2 });
+    expect(rowModel.getRow(0)).toBeUndefined();
+    expect(rowModel.getSourceIndex(0)).toBeUndefined();
+    expect(rowModel.getRowKey(0)).toBe(100);
+    expect(rowModel.getRow(1)).toBe(labelRows[2]);
+    expect(rowModel.getRow(2)).toBe(labelRows[1]);
+    expect(rowModel.getLabelRow?.(3)).toMatchObject({ label: 'S2', sectionRowCount: 1 });
+    expect(rowModel.getRow(4)).toBe(labelRows[4]);
+    const second = pipeline.resolveClientSideRowModel({ ...inputs });
+    expect(second.rowModel).toBe(first.rowModel);
+    expect(second.labelDisplay).toBe(first.labelDisplay);
+  });
+
+  it('rowGroupingActive のときはラベル行 stage をバイパスし、labelLayout なしでは従来経路', () => {
+    const pipeline = createRowPipelineResolver<LRow>();
+    const layout = pipeline.resolveLabelRowLayout(labelRows, isLabelRow);
+    const groupColumns: GridColumn<LRow>[] = [{ key: 'name', title: '名前', width: 120, rowGroup: true }];
+    const order = pipeline.resolveBaseOrder(labelRows.length, layout);
+    const grouped = pipeline.resolveClientSideRowModel({
+      rows: labelRows,
+      order,
+      rowGroupingActive: true,
+      labelLayout: layout,
+      getLabel,
+      groupColumns,
+      aggColumns: [],
+      collapsedGroupKeys: new Set<string>(),
+      rowKeyGetter: keyGetter,
+    });
+    expect(grouped.labelDisplay).toBeNull();
+    expect(grouped.groupedDisplay).not.toBeNull();
+    expect(grouped.rowModel.getLabelRow).toBeUndefined();
+    const plain = pipeline.resolveClientSideRowModel({
+      rows: labelRows,
+      order: pipeline.resolveBaseOrder(labelRows.length),
+      rowGroupingActive: false,
+      groupColumns: [],
+      aggColumns: [],
+      collapsedGroupKeys: new Set<string>(),
+      rowKeyGetter: keyGetter,
+    });
+    expect(plain.labelDisplay).toBeNull();
+    expect(plain.rowModel.getLabelRow).toBeUndefined();
+    expect(plain.rowModel.getRowCount()).toBe(5);
+  });
+});

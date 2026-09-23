@@ -15,6 +15,7 @@ export type ReactGridTypes = { node: ReactNode; style: CSSProperties };
 
 export type CellRenderContext<T> = Core.CellRenderContext<T, ReactGridTypes>;
 export type DetailRowOptions<T> = Core.DetailRowOptions<T, ReactGridTypes>;
+export type LabelRowOptions<T> = Core.LabelRowOptions<T, ReactGridTypes>;
 export type CellStyleContext<T> = Core.CellStyleContext<T, ReactGridTypes>;
 export type HeaderRenderContext<T> = Core.HeaderRenderContext<T, ReactGridTypes>;
 export type CellValueFormatterParams<T> = Core.CellValueFormatterParams<T, ReactGridTypes>;

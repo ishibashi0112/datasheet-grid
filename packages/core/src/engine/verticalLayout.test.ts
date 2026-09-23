@@ -4,6 +4,7 @@ import { describe, it, expect } from 'vitest';
 import { createVerticalLayoutResolver, type VerticalLayoutInputs } from './verticalLayout';
 import type { GridColumn, RowModel } from '../model/gridTypes.unbound';
 import { createDetailIndexCache } from '../logic/detailRow';
+import type { LabelDisplay } from '../logic/labelRows';
 
 type Row = { id: number; text: string };
 
@@ -91,5 +92,69 @@ describe('createVerticalLayoutResolver', () => {
     // 行 3(index 3)の top は帯 200px ぶん下がる。
     expect(result.rowMetrics.rowTop(3)).toBe(32 * 3 + 200);
     expect(result.detailEntries.map((entry) => entry.rowKey)).toEqual([3]);
+  });
+});
+
+// 追加(label-row ②): ラベル行の行高上書き。
+describe('createVerticalLayoutResolver × ラベル行の行高', () => {
+  const labelDisplay: LabelDisplay<Row> = {
+    displayOrder: Int32Array.from(rows.map((_, i) => i)),
+    labels: [
+      { kind: 'label', row: rows[0], sourceIndex: 0, label: 'A', sectionRowCount: 9 },
+      { kind: 'label', row: rows[10], sourceIndex: 10, label: 'B', sectionRowCount: 89 },
+    ],
+    labelViewIndexes: Int32Array.from([0, 10]),
+  };
+
+  it('labelRowHeight 指定でラベル行だけ高さが変わり、metrics 経路(size 付き)へ切り替わる', () => {
+    const resolve = createVerticalLayoutResolver<Row>();
+    const result = resolve({ ...baseInputs(), labelDisplay, labelRowHeight: 48 });
+    expect(result.labelHeightActive).toBe(true);
+    expect(result.rowMetrics.cellHeight(0)).toBe(48);
+    expect(result.rowMetrics.cellHeight(1)).toBe(32);
+    expect(result.rowMetrics.rowTop(1)).toBe(48);
+    expect(result.rowMetrics.rowTop(11)).toBe(48 + 32 * 9 + 48);
+    expect(result.virtualRows[0]).toMatchObject({ index: 0, start: 36, size: 48 });
+    expect(result.virtualRows[1]).toMatchObject({ index: 1, start: 36 + 48, size: 32 });
+    expect(result.physicalBodyHeight).toBe(32 * 100 + 16 * 2);
+    // 関数指定。
+    const fn = resolve({
+      ...baseInputs(),
+      labelDisplay,
+      labelRowHeight: (row) => (row.id === 1 ? 40 : 60),
+    });
+    expect(fn.rowMetrics.cellHeight(0)).toBe(40);
+    expect(fn.rowMetrics.cellHeight(10)).toBe(60);
+  });
+
+  it('labelRowHeight 未指定 / ラベル行なし / serverSide では従来経路(参照同一)', () => {
+    const resolve = createVerticalLayoutResolver<Row>();
+    const plain = resolve(baseInputs());
+    const noHeight = resolve({ ...baseInputs(), labelDisplay });
+    expect(noHeight.labelHeightActive).toBe(false);
+    expect(noHeight.rowMetrics).toBe(plain.rowMetrics);
+    expect(noHeight.virtualRows).toBe(plain.virtualRows);
+    const server = resolve({ ...baseInputs(), isServerSide: true, labelDisplay, labelRowHeight: 48 });
+    expect(server.labelHeightActive).toBe(false);
+    expect(server.rowMetrics.cellHeight(0)).toBe(32);
+    const noLabels = resolve({ ...baseInputs(), labelDisplay: null, labelRowHeight: 48 });
+    expect(noLabels.labelHeightActive).toBe(false);
+  });
+
+  it('展開行と合成できる(ラベル行高 → 展開行の帯)', () => {
+    const resolve = createVerticalLayoutResolver<Row>();
+    const result = resolve({
+      ...baseInputs(),
+      labelDisplay,
+      labelRowHeight: 48,
+      detailRowEnabled: true,
+      expandedDetailRowKeys: new Set([2]),
+    });
+    expect(result.labelHeightActive).toBe(true);
+    expect(result.detailActive).toBe(true);
+    // 行 1(rowKey 2)の直下に帯 200。
+    expect(result.rowMetrics.detailHeight(1)).toBe(200);
+    expect(result.rowMetrics.rowTop(2)).toBe(48 + 32 + 200);
+    expect(result.detailEntries.map((entry) => entry.rowKey)).toEqual([2]);
   });
 });

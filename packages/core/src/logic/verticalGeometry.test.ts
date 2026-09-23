@@ -16,6 +16,7 @@ import {
   computeAutoHeightVerticalGeometry,
   computeVerticalGeometry,
   createDetailRowMetrics,
+  createRowHeightOverrideMetrics,
   createUniformRowMetrics,
   logicalToPhysicalScrollTop,
   physicalToLogicalScrollTop,
@@ -770,5 +771,70 @@ describe('computeAutoHeightVerticalGeometry with detail bands', () => {
     for (const r of before.rows) {
       expect('detailSize' in r).toBe(false);
     }
+  });
+});
+
+// 追加(label-row ②): 行高の疎な上書き(ラベル行の height)。
+describe('createRowHeightOverrideMetrics (sparse cell-height overrides over a base RowMetrics)', () => {
+  const base = createUniformRowMetrics(10, 30);
+
+  it('上書き行の cellHeight が差し替わり、後続行の top が差分ぶんずれる', () => {
+    const metrics = createRowHeightOverrideMetrics(base, [
+      { index: 2, height: 50 },
+      { index: 5, height: 10 },
+    ]);
+    expect(metrics.rowCount).toBe(10);
+    expect(metrics.cellHeight(1)).toBe(30);
+    expect(metrics.cellHeight(2)).toBe(50);
+    expect(metrics.cellHeight(5)).toBe(10);
+    expect(metrics.rowTop(2)).toBe(60);
+    expect(metrics.rowTop(3)).toBe(110);
+    expect(metrics.rowTop(5)).toBe(170);
+    expect(metrics.rowTop(6)).toBe(180);
+    expect(metrics.rowsHeight(2, 5)).toBe(50 + 30 + 30 + 10);
+    expect(metrics.totalBodyHeight).toBe(300 + 20 - 20);
+    expect(metrics.rowTop(10)).toBe(metrics.totalBodyHeight);
+    expect(metrics.detailHeight(2)).toBe(0);
+  });
+
+  it('rowAtContentY は上書き後の帯で解決する(単調 / 端 clamp)', () => {
+    const metrics = createRowHeightOverrideMetrics(base, [{ index: 2, height: 50 }]);
+    expect(metrics.rowAtContentY(-5)).toBe(0);
+    expect(metrics.rowAtContentY(59)).toBe(1);
+    expect(metrics.rowAtContentY(60)).toBe(2);
+    expect(metrics.rowAtContentY(109)).toBe(2);
+    expect(metrics.rowAtContentY(110)).toBe(3);
+    expect(metrics.rowAtContentY(10_000)).toBe(9);
+    for (let i = 0; i < 10; i += 1) {
+      expect(metrics.rowAtContentY(metrics.rowTop(i))).toBe(i);
+    }
+  });
+
+  it('範囲外 / 負の上書きは無視し、空なら base と数値一致', () => {
+    const metrics = createRowHeightOverrideMetrics(base, [
+      { index: -1, height: 99 },
+      { index: 10, height: 99 },
+      { index: 3, height: -1 },
+    ]);
+    for (let i = 0; i <= 10; i += 1) {
+      expect(metrics.rowTop(i)).toBe(base.rowTop(i));
+    }
+    expect(metrics.totalBodyHeight).toBe(base.totalBodyHeight);
+  });
+
+  it('展開行デコレータと合成できる(base → 上書き → detail)', () => {
+    const overridden = createRowHeightOverrideMetrics(base, [{ index: 1, height: 60 }]);
+    const withDetail = createDetailRowMetrics(overridden, [{ index: 1, height: 100 }]);
+    expect(withDetail.cellHeight(1)).toBe(60);
+    expect(withDetail.detailHeight(1)).toBe(100);
+    expect(withDetail.rowTop(1)).toBe(30);
+    expect(withDetail.rowTop(2)).toBe(30 + 60 + 100);
+    expect(withDetail.totalBodyHeight).toBe(300 + 30 + 100);
+    const geometry = computeAutoHeightVerticalGeometry(
+      { headerHeight: 0, viewportHeight: 200, scrollTop: 0, overscan: 0 },
+      withDetail,
+    );
+    expect(geometry.rows[1]).toEqual({ index: 1, start: 30, size: 60, detailSize: 100 });
+    expect(geometry.rows[2].start).toBe(190);
   });
 });

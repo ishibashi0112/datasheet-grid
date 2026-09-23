@@ -38,6 +38,12 @@ export type RowModel<T> = {
   //   既存 consumer の !row ガード / === undefined 判定がそのままグループ行を no-op として
   //   吸収します)。グルーピング無効(clientSide 非グループ / serverSide)では未定義です。
   getGroupRow?: (viewIndex: number) => GridGroupRow | undefined;
+  // 追加(label-row ①): ラベル行(見出し / 区切り行)有効時のみ定義される任意アクセサです。ビュー行が
+  //   ラベル行のとき記述子(GridLabelRow)を返し、データ行 / OOB では undefined を返します。
+  //   ラベル行の viewIndex では getRow / getSourceIndex が実行時 undefined になります(グループ行と
+  //   同じ契約 = 既存 consumer の !row ガードがラベル行を no-op として吸収します)。getRowKey は
+  //   ラベル行でも定義され、rowKeyGetter(row, sourceIndex) の値を返します。
+  getLabelRow?: (viewIndex: number) => GridLabelRow<T> | undefined;
 };
 
 // 追加(DS-4 ②): serverSide(SSRM)用のデータ供給契約群です。dataSource 指定時に serverSide
@@ -517,6 +523,79 @@ export type DetailRowOptions<T, F extends GridFrameworkTypes = GridFrameworkType
   // 帯の内側のカード要素(data-ssg-detail を持つ境界要素)へ追加する className。
   // 変更(slot-props): `{ className, style }` 形(StyleX の stylex.props() 戻り値)も受けます。
   className?: GridSlotProps<F>;
+};
+
+// ── 追加(label-row ①): ラベル行(見出し / 区切り行)──
+//   rows 配列の中で labelRow.isLabelRow(row) が true を返す行を「ラベル行」として扱います。ラベル行は
+//   データ行ではなく(行数に数えず、編集 / 選択 / コピー / エクスポートの既定対象外)、置いた位置の
+//   見出しとして 3 ペインを跨ぐ 1 本の帯で描画されます。行グルーピング(rowGroup)とは別機能で、
+//   集計 / ツリー / 開閉は持ちません(併用不可: rowGroup 有効時はラベル行を非表示にします)。
+//   ソート / フィルター時の扱いは LabelRowSortMode を参照(既定 'section' = ラベル行から次のラベル行
+//   までを 1 区間とみなし、並べ替えは区間内で行う)。
+export type LabelRowSortMode =
+  // ラベル行をセクション境界として扱い、並べ替えは各セクションの中だけで行います(境界は動かない)。
+  //   フィルターで中身が 0 件になったセクションはラベルごと消えます(keepEmptySections で残せる)。
+  | 'section'
+  // 全体を並べ替え、ラベル行は「元のセクションの先頭に来るデータ行」の直前に付いて移動します。
+  //   中身が 0 件になったセクションのラベルは消えます(keepEmptySections で末尾側にまとめて残せる)。
+  | 'follow'
+  // ソート / フィルター適用中はラベル行を表示しません(行ドラッグと同じ割り切り)。
+  | 'hide';
+
+// ラベル行の公開記述子です(rowModel.getLabelRow が返す型)。
+export type GridLabelRow<T> = {
+  kind: 'label';
+  // ラベル行そのもの(rows 配列の要素)。
+  row: T;
+  // 元 rows の index です。
+  sourceIndex: number;
+  // 表示文字列(labelRow.getLabel(row))。
+  label: string;
+  // このセクション(次のラベル行まで)のデータ行数(フィルター後・表示中の件数)。
+  //   serverSide(SSRM)では区間を数えられないため undefined です。
+  sectionRowCount: number | undefined;
+};
+
+// ラベル行のレンダラー(labelRow.render)へ渡すコンテキストです。rowIndex はビュー行 index
+//   (CellRenderContext と同基準)、sourceRowIndex は元 rows の index。
+export type LabelRowRenderContext<T> = {
+  row: T;
+  rowKey: GridRowKey;
+  rowIndex: number;
+  sourceRowIndex: number;
+  // labelRow.getLabel(row) の値です。
+  label: string;
+  // このセクションのデータ行数(GridLabelRow.sectionRowCount と同じ。SSRM では undefined)。
+  sectionRowCount: number | undefined;
+};
+
+// ラベル行の設定です。SpreadsheetGrid の labelRow prop に渡したときだけ機能が有効になり、未指定なら
+//   既存の描画・状態・イベント経路は一切変わりません。clientSide / serverSide 両対応(serverSide では
+//   サーバーがブロック内にラベル行を含めて返し、totalRowCount にも数えます。並べ替えはサーバー責務)。
+export type LabelRowOptions<T, F extends GridFrameworkTypes = GridFrameworkTypes> = {
+  // ラベル行の識別です(必須)。true を返した行をラベル行として扱います。sourceIndex は元 rows の index。
+  //   rows / 本関数の参照が変わったときに全行を 1 パス評価するため、純粋・軽量であること。
+  isLabelRow: (row: T, sourceIndex: number) => boolean;
+  // 表示文字列です(必須)。既定描画(render 未指定時)/ エクスポート / aria-label に使います。
+  getLabel: (row: T) => string;
+  // ラベル行の中身を任意の描画ノードで差し替えます(装飾)。未指定なら getLabel の文字列を既定スタイルで
+  //   表示します。中身は中央ペインに描画され、横スクロールしてもビューポート左端(左固定ペインの右隣)に
+  //   留まります(展開行カードと同じ機構)。
+  render?: (ctx: LabelRowRenderContext<T>) => F['node'];
+  // ラベル行の高さ(px)。未指定は rowHeight(データ行と同じ)。行ごとに変えるときは関数を渡します。
+  height?: number | ((row: T) => number);
+  // ラベル行の行要素へ追加する className(または { className, style })。classNames.labelRow に加えて付与。
+  className?: GridSlotProps<F> | ((row: T) => GridSlotProps<F> | undefined);
+  // 縦スクロール中、現在のセクションのラベル行を列ヘッダー直下に固定表示します(既定 false)。
+  //   次のラベル行が到達すると押し上げられて交代します。
+  sticky?: boolean;
+  // ソート / フィルター適用時のラベル行の扱いです(既定 'section')。
+  sortMode?: LabelRowSortMode;
+  // フィルターで中身が 0 件になったセクションのラベル行を残すか(既定 false)。
+  keepEmptySections?: boolean;
+  // エクスポート(includeLabelRows: true)時のラベル行の出力値です。文字列なら先頭列に置き他列は空、
+  //   配列なら列順(エクスポート列の並び)にそのまま並べます。未指定は getLabel(row) を先頭列へ。
+  exportText?: (row: T) => string | ReadonlyArray<string | number | null | undefined>;
 };
 
 // 追加(row-drag ③): 行ドラッグ並び替え(enableRowDrag)の行ごとの可否判定(isRowDraggable)へ
@@ -1151,6 +1230,10 @@ export type GridClassNames<F extends GridFrameworkTypes = GridFrameworkTypes> = 
   detailBand?: GridSlotProps<F>;
   // 展開行のカード(.ssg-detail-card。detailRow.className に加えて付与)。
   detailCard?: GridSlotProps<F>;
+  // 追加(label-row ②): ラベル行(.ssg-body-row[data-ssg-label-row]。bodyRow に加えて付与)。
+  labelRow?: GridSlotProps<F>;
+  // 追加(label-row ②): ラベル行の中身の器(.ssg-label-row-content。中央ペインの sticky 要素)。
+  labelRowContent?: GridSlotProps<F>;
   // ポータル系パネルのルート(列メニュー / フィルター / コンテキストメニュー / select エディタ候補 /
   //   ツールパネル。document.body 直下に描画されるため .ssg-root の子孫ではありません)。
   popover?: GridSlotProps<F>;
@@ -1240,6 +1323,9 @@ export type CsvExportOptions = {
   delimiter?: string;
   // 先頭に UTF-8 BOM を付けるか(exportCsv は既定 false / downloadCsv は既定 true)。
   bom?: boolean;
+  // 追加(label-row ④): ラベル行(labelRow)を出力に含めるか(既定 false)。true のとき、ラベル行は
+  //   labelRow.exportText(未指定なら getLabel を先頭列・他列は空)の 1 行として出力されます。
+  includeLabelRows?: boolean;
 };
 
 // 追加(imperative API: getExportData): エクスポート用「整形済みデータ」のオプションです。CSV と同じ
@@ -1248,6 +1334,9 @@ export type CsvExportOptions = {
 export type GridExportOptions = {
   // 出力範囲(既定 'view')。CsvExportScope を共有します(各値の意味は型定義の JSDoc 参照)。
   scope?: CsvExportScope;
+  // 追加(label-row ④): ラベル行を含めるか(既定 false)。true のとき rows にラベル行が混ざり、
+  //   GridExportData.rowKinds で行種を判別できます。
+  includeLabelRows?: boolean;
 };
 
 // 追加(imperative API: getExportData): エクスポート 1 セルの内容です。
@@ -1268,6 +1357,9 @@ export type GridExportCell = {
 export type GridExportData = {
   columns: { key: string; title: string }[];
   rows: GridExportCell[][];
+  // 追加(label-row ④): rows と同じ長さの行種配列です(includeLabelRows: true のときのみ存在)。
+  //   'label' の行は labelRow.exportText 由来のセル列で、Excel 側で結合セル / 書式を当てる判定に使えます。
+  rowKinds?: Array<'data' | 'label'>;
 };
 
 // 追加(state v2): 列メタのシリアライズ単位です(getState / applyState の GridState.columns 要素)。
@@ -1835,6 +1927,9 @@ export type SpreadsheetGridProps<T, F extends GridFrameworkTypes = GridFramework
   detailRow?: DetailRowOptions<T, F>;
   // 追加(detail ②): 展開中の行キー集合が変わるたびに通知します(開閉の永続化・外部同期用)。
   onExpandedDetailRowKeysChange?: (keys: GridRowKey[]) => void;
+  // ── 追加(label-row ①): ラベル行(見出し / 区切り行) ──
+  //   指定時のみ有効な opt-in 機能です。詳細は LabelRowOptions を参照。
+  labelRow?: LabelRowOptions<T, F>;
   // ── 追加(row-drag ③): 行ドラッグ並び替え ──
   //   true で先頭にドラッグハンドル列(幅 28px の合成列。左固定列があれば左ペイン)を挿入し、
   //   ハンドルを掴んで行を上下へ動かせます(既定 false)。確定時は onRowsChange へ「移動後の

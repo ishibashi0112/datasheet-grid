@@ -24,6 +24,7 @@ export type UnboundGridTypes = {
 
 export type CellRenderContext<T> = Core.CellRenderContext<T, UnboundGridTypes>;
 export type DetailRowOptions<T> = Core.DetailRowOptions<T, UnboundGridTypes>;
+export type LabelRowOptions<T> = Core.LabelRowOptions<T, UnboundGridTypes>;
 export type CellStyleContext<T> = Core.CellStyleContext<T, UnboundGridTypes>;
 export type HeaderRenderContext<T> = Core.HeaderRenderContext<T, UnboundGridTypes>;
 export type CellValueFormatterParams<T> = Core.CellValueFormatterParams<T, UnboundGridTypes>;

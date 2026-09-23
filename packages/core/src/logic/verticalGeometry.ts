@@ -249,6 +249,87 @@ export const createDetailRowMetrics = (
   };
 };
 
+// 追加(label-row ②): 行高の疎な上書きです(ラベル行の height 用)。base の行 index の一部を別の
+//   セル行高へ差し替えた RowMetrics を返します。展開行デコレータ(createDetailRowMetrics)と同じく
+//   prefix-sum + 二分探索で、view index の並びは変えません。合成順は base → 本デコレータ → 展開行
+//   (展開行デコレータは cellHeight を base = 本デコレータへ委譲するため、ラベル行高が両方に反映されます)。
+//   overrides が空なら base と数値一致します(呼び出し側は空のとき base をそのまま使う想定)。
+export type RowHeightOverride = {
+  index: number;
+  height: number;
+};
+
+export const createRowHeightOverrideMetrics = (
+  base: RowMetrics,
+  overrides: readonly RowHeightOverride[],
+): RowMetrics => {
+  const { rowCount } = base;
+  // 差分(上書き高 - 元のセル行高)の累積和(index 昇順)。
+  const sorted = overrides
+    .filter((override) => override.index >= 0 && override.index < rowCount && override.height >= 0)
+    .sort((a, b) => a.index - b.index);
+  const count = sorted.length;
+  const indexes = new Float64Array(count);
+  const heights = new Float64Array(count);
+  const prefixDelta = new Float64Array(count + 1);
+  for (let k = 0; k < count; k += 1) {
+    indexes[k] = sorted[k].index;
+    heights[k] = sorted[k].height;
+    prefixDelta[k + 1] = prefixDelta[k] + (sorted[k].height - base.cellHeight(sorted[k].index));
+  }
+  const totalDelta = prefixDelta[count];
+
+  const countBefore = (index: number): number => {
+    let lo = 0;
+    let hi = count;
+    while (lo < hi) {
+      const mid = (lo + hi) >>> 1;
+      if (indexes[mid] < index) {
+        lo = mid + 1;
+      } else {
+        hi = mid;
+      }
+    }
+    return lo;
+  };
+  const rowTop = (index: number): number => {
+    const clamped = Math.min(Math.max(index, 0), rowCount);
+    const baseTop = clamped === rowCount ? base.totalBodyHeight : base.rowTop(clamped);
+    return baseTop + prefixDelta[countBefore(clamped)];
+  };
+  const cellHeight = (index: number): number => {
+    const k = countBefore(index);
+    return k < count && indexes[k] === index ? heights[k] : base.cellHeight(index);
+  };
+  const totalBodyHeight = base.totalBodyHeight + totalDelta;
+
+  return {
+    rowCount,
+    rowTop,
+    rowsHeight: (startInclusive, endInclusive) =>
+      rowTop(endInclusive + 1) - rowTop(startInclusive),
+    totalBodyHeight,
+    rowAtContentY: (y) => {
+      if (rowCount <= 0 || y <= 0) {
+        return 0;
+      }
+      let lo = 0;
+      let hi = rowCount - 1;
+      while (lo < hi) {
+        const mid = (lo + hi + 1) >>> 1;
+        if (rowTop(mid) <= y) {
+          lo = mid;
+        } else {
+          hi = mid - 1;
+        }
+      }
+      return lo;
+    },
+    cellHeight,
+    detailHeight: (index) => base.detailHeight(index),
+  };
+};
+
 // 選択オーバーレイの縦範囲を、現在の描画窓(virtualRows の先頭/末尾行 index)へクリップします。
 //   col / グリッド全選択 / 巨大 cell・row 選択は論理全高(uniform で rowCount*rowHeight、auto-height でも
 //   最大 MAX_BODY_PX)に達し、ブラウザの要素高さ上限(≈33.5M) / float32 正確整数域(2^24)を超えて一部しか

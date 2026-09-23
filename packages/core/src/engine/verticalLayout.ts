@@ -13,20 +13,24 @@ import {
   computeAutoHeightVerticalGeometry,
   computeVerticalGeometry,
   createDetailRowMetrics,
+  createRowHeightOverrideMetrics,
   createUniformRowMetrics,
   shouldUseAutoHeight,
   type DetailRowExtra,
+  type RowHeightOverride,
   type RowMetrics,
   type VerticalGeometry,
   type VerticalRow,
 } from '../logic/verticalGeometry';
 import { buildRowHeightStore, createAutoHeightRowMetrics, type RowHeightStore } from '../logic/rowHeightStore';
 import { resolveDetailRowExtras, type DetailIndexCache } from '../logic/detailRow';
+import type { LabelDisplay } from '../logic/labelRows';
 import { createMemo } from './memo';
 
 type ReadonlyRef<V> = { readonly current: V };
 
 const EMPTY_DETAIL_EXTRAS: readonly DetailRowExtra[] = [];
+const EMPTY_HEIGHT_OVERRIDES: readonly RowHeightOverride[] = [];
 const EMPTY_DETAIL_ENTRIES: readonly DetailLayerEntry[] = [];
 // 旧 rowVirtualizer の overscan=20 を踏襲します。
 const ROW_OVERSCAN = 20;
@@ -63,6 +67,10 @@ export type VerticalLayoutInputs<T> = {
   // rowKey → view index のキャッシュ(SSRM の query 変化で差し替わるため ref で受け、計算時に読む。メモ依存には
   //   含めない = 旧 useMemo と同じ)。
   detailIndexCacheRef: ReadonlyRef<DetailIndexCache>;
+  // 追加(label-row ②): ラベル行の表示順(clientSide のみ。null = ラベル行なし)と行高指定。
+  //   labelRowHeight 未指定ならラベル行はデータ行と同じ rowHeight(上書きなし = 既存経路と同一)。
+  labelDisplay?: LabelDisplay<T> | null;
+  labelRowHeight?: number | ((row: T) => number);
 };
 
 export type VerticalLayoutResolution = {
@@ -71,6 +79,8 @@ export type VerticalLayoutResolution = {
   // autoHeight 無効時は null(uniform 経路)。
   rowHeightStore: RowHeightStore | null;
   baseRowMetrics: RowMetrics;
+  // 追加(label-row ②): ラベル行高の上書きが有効か(上書きあり + 論理全高が MAX_BODY_PX 以内)。
+  labelHeightActive: boolean;
   detailExtras: readonly DetailRowExtra[];
   detailActive: boolean;
   rowMetrics: RowMetrics;
@@ -140,6 +150,29 @@ export const createVerticalLayoutResolver = <T,>() => {
           })
         : EMPTY_DETAIL_EXTRAS,
   );
+  // 追加(label-row ②): ラベル行の行高上書き(view index → 高さ)。labelRowHeight 未指定 / ラベル行なしでは空。
+  const memoLabelHeightOverrides = createMemo(
+    (
+      labelDisplay: LabelDisplay<T> | null | undefined,
+      labelRowHeight: number | ((row: T) => number) | undefined,
+    ): readonly RowHeightOverride[] => {
+      if (!labelDisplay || labelRowHeight === undefined || labelDisplay.labels.length === 0) {
+        return EMPTY_HEIGHT_OVERRIDES;
+      }
+      const overrides: RowHeightOverride[] = [];
+      for (let k = 0; k < labelDisplay.labels.length; k += 1) {
+        const label = labelDisplay.labels[k];
+        overrides.push({
+          index: labelDisplay.labelViewIndexes[k],
+          height: typeof labelRowHeight === 'function' ? labelRowHeight(label.row) : labelRowHeight,
+        });
+      }
+      return overrides;
+    },
+  );
+  const memoLabelMetrics = createMemo((baseRowMetrics: RowMetrics, overrides: readonly RowHeightOverride[]) =>
+    overrides.length > 0 ? createRowHeightOverrideMetrics(baseRowMetrics, overrides) : baseRowMetrics,
+  );
   // 展開行なしでは baseRowMetrics そのもの(参照同一)を使い、既存経路の再計算を誘発しません。
   const memoRowMetrics = createMemo(
     (detailActive: boolean, baseRowMetrics: RowMetrics, detailExtras: readonly DetailRowExtra[]): RowMetrics =>
@@ -206,6 +239,8 @@ export const createVerticalLayoutResolver = <T,>() => {
       detailHeight,
       detailIsExpandable,
       detailIndexCacheRef,
+      labelDisplay,
+      labelRowHeight,
     } = inputs;
     const hasAutoHeightColumn = memoHasAutoHeightColumn(visibleColumns);
     // gate: props 有効 + 駆動列あり + 行数が上限内。serverSide では未ロード行の高さが不明なため常に無効。
@@ -222,12 +257,18 @@ export const createVerticalLayoutResolver = <T,>() => {
       detailIndexCacheRef,
       isServerSide,
     );
+    // 追加(label-row ②): ラベル行高の上書き(clientSide のみ)。上書き後の論理全高が MAX_BODY_PX を超える構成では
+    //   上書きを諦めて base に戻します(metrics 経路は sf=1 固定のため)。
+    const labelHeightOverrides = memoLabelHeightOverrides(isServerSide ? null : labelDisplay, labelRowHeight);
+    const labelMetrics = memoLabelMetrics(baseRowMetrics, labelHeightOverrides);
+    const labelHeightActive = labelMetrics !== baseRowMetrics && labelMetrics.totalBodyHeight <= MAX_BODY_PX;
+    const heightBaseMetrics = labelHeightActive ? labelMetrics : baseRowMetrics;
     // 展開行モードの gate: 帯が 1 つ以上あり、帯込みの論理全高が MAX_BODY_PX 以内(metrics 経路は sf=1 固定)。
     const detailActive =
       detailExtras.length > 0 &&
-      baseRowMetrics.totalBodyHeight + detailExtras.reduce((sum, extra) => sum + extra.height, 0) <= MAX_BODY_PX;
-    const rowMetrics = memoRowMetrics(detailActive, baseRowMetrics, detailExtras);
-    const metricsGeometryActive = autoHeightActive || detailActive;
+      heightBaseMetrics.totalBodyHeight + detailExtras.reduce((sum, extra) => sum + extra.height, 0) <= MAX_BODY_PX;
+    const rowMetrics = memoRowMetrics(detailActive, heightBaseMetrics, detailExtras);
+    const metricsGeometryActive = autoHeightActive || detailActive || labelHeightActive;
     const verticalGeometry = memoGeometry(
       metricsGeometryActive,
       rowMetrics,
@@ -244,6 +285,7 @@ export const createVerticalLayoutResolver = <T,>() => {
       autoHeightActive,
       rowHeightStore,
       baseRowMetrics,
+      labelHeightActive,
       detailExtras,
       detailActive,
       rowMetrics,

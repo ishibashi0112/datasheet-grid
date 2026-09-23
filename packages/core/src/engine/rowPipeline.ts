@@ -14,6 +14,7 @@ import type {
   GridGroupRow,
   GridRowKey,
   GridSortState,
+  LabelRowSortMode,
   RowModel,
   ServerSideQuery,
 } from '../model/gridTypes.unbound';
@@ -36,6 +37,15 @@ import {
   type GroupedDisplay,
 } from '../logic/grouping';
 import { buildServerSideQuery, serializeServerSideQuery } from '../logic/serverSideQuery';
+import {
+  buildLabelDisplay,
+  createLabelFreeOrder,
+  createLabelRowModel,
+  isSameOrder,
+  resolveLabelRowLayout,
+  type LabelDisplay,
+  type LabelRowLayout,
+} from '../logic/labelRows';
 import { getCellValue } from '../utils/permissions';
 import { createMemo } from './memo';
 
@@ -47,6 +57,9 @@ const SIGNATURE_SEPARATOR = '\u0000';
 
 export type RowOrderInputs<T> = {
   rows: T[];
+  // 追加(label-row ①): ラベル行の配置(resolveLabelRowLayout の結果)。null / 未指定はラベル行なし。
+  //   恒等判定(行ドラッグ可否)を「データ行 order = ラベル行を除いた恒等 order」で行うために使います。
+  labelLayout?: LabelRowLayout | null;
   visibleColumns: GridColumn<T>[];
   // 列フィルター評価値(描画側で遅延化した値を渡してよい)。
   columnFilters: Record<string, ColumnFilterValue>;
@@ -68,6 +81,13 @@ export type ClientSideRowModelInputs<T> = {
   rows: T[];
   order: RowOrder;
   rowGroupingActive: boolean;
+  // 追加(label-row ①): ラベル行の配置と表示設定。labelLayout が null / 未指定、または rowGroupingActive の
+  //   ときはラベル行の stage をバイパスします(従来経路とバイト等価)。
+  labelLayout?: LabelRowLayout | null;
+  labelSortMode?: LabelRowSortMode;
+  keepEmptySections?: boolean;
+  sortActive?: boolean;
+  getLabel?: (row: T) => string;
   groupColumns: GridColumn<T>[];
   aggColumns: GridColumn<T>[];
   collapsedGroupKeys: ReadonlySet<string>;
@@ -77,6 +97,8 @@ export type ClientSideRowModelInputs<T> = {
 export type ClientSideRowModelResolution<T> = {
   groupTree: GroupTree<T> | null;
   groupedDisplay: GroupedDisplay | null;
+  // 追加(label-row ①): ラベル行の表示順(有効時のみ。無効時は null)。
+  labelDisplay: LabelDisplay<T> | null;
   rowModel: RowModel<T>;
 };
 
@@ -98,6 +120,14 @@ export type ServerSideQueryResolution = {
 
 export const createRowPipelineResolver = <T,>() => {
   const memoBaseOrder = createMemo((rowCount: number) => createSourceOrder(rowCount));
+  // 追加(label-row ①): ラベル行の配置(rows / 述語が変わったときだけ 1 パス)と、ラベル行を除いた恒等 order。
+  const memoLabelLayout = createMemo(
+    (rows: T[], isLabelRow: ((row: T, sourceIndex: number) => boolean) | undefined): LabelRowLayout | null =>
+      isLabelRow ? resolveLabelRowLayout(rows, isLabelRow) : null,
+  );
+  const memoLabelFreeOrder = createMemo((layout: LabelRowLayout, rowCount: number) =>
+    createLabelFreeOrder(layout, rowCount),
+  );
 
   // number 記述子が当たっている可視列の「集合シグネチャ」(B-2)。値編集(>50 → >500 等)では同一列のままなので
   //   不変 → 下の numericFilterKeys を保持し、Float64 key をフィルタ値編集をまたいで再利用します。
@@ -150,6 +180,12 @@ export const createRowPipelineResolver = <T,>() => {
   const memoIdentity = createMemo((rowDragAvailable: boolean, order: RowOrder, rowCount: number) =>
     rowDragAvailable && isIdentityOrder(order, rowCount),
   );
+  // ラベル行あり: データ行 order がラベル行を除いた恒等 order と一致するか(= 表示はラベル行込みで rows の
+  //   並びそのもの。view index = source index が成り立つので行ドラッグは従来どおり動く)。
+  const memoIdentityWithLabels = createMemo(
+    (rowDragAvailable: boolean, order: RowOrder, labelFreeOrder: RowOrder) =>
+      rowDragAvailable && isSameOrder(order, labelFreeOrder),
+  );
 
   // グループツリー(集計込み)。開閉状態に依存しないため、開閉操作では再計算されません。
   const memoGroupTree = createMemo(
@@ -159,16 +195,35 @@ export const createRowPipelineResolver = <T,>() => {
   const memoGroupedDisplay = createMemo((groupTree: GroupTree<T> | null, collapsedGroupKeys: ReadonlySet<string>) =>
     groupTree ? flattenGroupTree(groupTree, collapsedGroupKeys) : null,
   );
+  // 追加(label-row ①): ラベル行の表示順。グルーピング有効時はバイパス(null)。
+  const memoLabelDisplay = createMemo(
+    (
+      layout: LabelRowLayout | null,
+      rows: T[],
+      order: RowOrder,
+      sortMode: LabelRowSortMode,
+      keepEmptySections: boolean,
+      sortActive: boolean,
+      getLabel: ((row: T) => string) | undefined,
+    ): LabelDisplay<T> | null =>
+      layout && getLabel
+        ? buildLabelDisplay({ rows, order, layout, sortMode, keepEmptySections, sortActive, getLabel })
+        : null,
+  );
   // RowModel シーム。viewIndex は表示上の行 index、getSourceIndex(= order[viewIndex])は元 rows の index。
   //   グルーピング有効時は groupedDisplay(開閉適用済み displayOrder + groups)を参照し、グループ行では
   //   getRow / getSourceIndex が実行時 undefined・getGroupRow が記述子を返します。
   const memoRowModel = createMemo(
     (
       groupedDisplay: GroupedDisplay | null,
+      labelDisplay: LabelDisplay<T> | null,
       order: RowOrder,
       rows: T[],
       rowKeyGetter: (row: T, index: number) => GridRowKey,
     ): RowModel<T> => {
+      if (labelDisplay) {
+        return createLabelRowModel(labelDisplay, rows, rowKeyGetter);
+      }
       if (groupedDisplay) {
         const { displayOrder, groups } = groupedDisplay;
         return {
@@ -227,14 +282,23 @@ export const createRowPipelineResolver = <T,>() => {
   );
 
   return {
-    resolveBaseOrder: (rowCount: number): RowOrder => memoBaseOrder(rowCount),
+    // 追加(label-row ①): ラベル行の配置(述語なしなら null)。
+    resolveLabelRowLayout: (
+      rows: T[],
+      isLabelRow: ((row: T, sourceIndex: number) => boolean) | undefined,
+    ): LabelRowLayout | null => memoLabelLayout(rows, isLabelRow),
+    // 変更(label-row ①): labelLayout を渡すとラベル行を除いた恒等 order(データ行のみ)を返します。
+    resolveBaseOrder: (rowCount: number, labelLayout?: LabelRowLayout | null): RowOrder =>
+      labelLayout ? memoLabelFreeOrder(labelLayout, rowCount) : memoBaseOrder(rowCount),
     resolveOrder: (inputs: RowOrderInputs<T>): RowOrderResolution => {
-      const { rows, visibleColumns, columnFilters, globalFilteredOrder, sort, rowDragAvailable } = inputs;
+      const { rows, visibleColumns, columnFilters, globalFilteredOrder, sort, rowDragAvailable, labelLayout } = inputs;
       const signature = memoNumberSignature(visibleColumns, columnFilters);
       const numericKeys = memoNumericKeys(rows, visibleColumns, signature);
       const columnFilteredOrder = memoColumnFiltered(rows, globalFilteredOrder, visibleColumns, columnFilters, numericKeys);
       const order = memoSorted(rows, columnFilteredOrder, visibleColumns, sort);
-      const orderIsIdentity = memoIdentity(rowDragAvailable, order, rows.length);
+      const orderIsIdentity = labelLayout
+        ? memoIdentityWithLabels(rowDragAvailable, order, memoLabelFreeOrder(labelLayout, rows.length))
+        : memoIdentity(rowDragAvailable, order, rows.length);
       return {
         order,
         orderIsIdentity,
@@ -242,11 +306,34 @@ export const createRowPipelineResolver = <T,>() => {
       };
     },
     resolveClientSideRowModel: (inputs: ClientSideRowModelInputs<T>): ClientSideRowModelResolution<T> => {
-      const { rows, order, rowGroupingActive, groupColumns, aggColumns, collapsedGroupKeys, rowKeyGetter } = inputs;
+      const {
+        rows,
+        order,
+        rowGroupingActive,
+        groupColumns,
+        aggColumns,
+        collapsedGroupKeys,
+        rowKeyGetter,
+        labelLayout,
+        labelSortMode = 'section',
+        keepEmptySections = false,
+        sortActive = false,
+        getLabel,
+      } = inputs;
       const groupTree = memoGroupTree(rowGroupingActive, rows, order, groupColumns, aggColumns);
       const groupedDisplay = memoGroupedDisplay(groupTree, collapsedGroupKeys);
-      const rowModel = memoRowModel(groupedDisplay, order, rows, rowKeyGetter);
-      return { groupTree, groupedDisplay, rowModel };
+      // ラベル行はグルーピングと併用しません(rowGroup 有効時はラベル行の stage をバイパス)。
+      const labelDisplay = memoLabelDisplay(
+        rowGroupingActive ? null : (labelLayout ?? null),
+        rows,
+        order,
+        labelSortMode,
+        keepEmptySections,
+        sortActive,
+        getLabel,
+      );
+      const rowModel = memoRowModel(groupedDisplay, labelDisplay, order, rows, rowKeyGetter);
+      return { groupTree, groupedDisplay, labelDisplay, rowModel };
     },
     resolveServerSideQuery: (inputs: ServerSideQueryInputs): ServerSideQueryResolution => {
       const { isServerSide, globalFilterEnabled, globalText, columnFilterEnabled, columnFilters, sortingEnabled, sort } =
