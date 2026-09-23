@@ -365,3 +365,52 @@ export const resolvePasteTargetViewIndexes = <T,>(
   }
   return targets;
 };
+
+// 追加(label-row ③.5): 縦スクロール固定(labelRow.sticky)の解決です。
+//   「現在のセクション」= 可視域の先頭行が属するセクション。そのラベル行が可視域より上へ隠れている
+//   ときだけ固定表示し、次のラベル行の上端が固定帯の下端へ到達したら押し上げます(pushOffset)。
+//   rowMetrics / scrollTop は論理座標(content-top 基準)です。
+export type StickyLabelResolution = {
+  // 固定表示するラベル行の view index。
+  labelViewIndex: number;
+  // 固定帯の高さ(= そのラベル行のセル行高)。
+  height: number;
+  // 次のラベル行に押し上げられている量(px, >= 0)。translateY(-pushOffset) で描きます。
+  pushOffset: number;
+};
+
+export type StickyLabelMetrics = {
+  rowCount: number;
+  rowTop: (index: number) => number;
+  cellHeight: (index: number) => number;
+  rowAtContentY: (y: number) => number;
+};
+
+export const resolveStickyLabel = (
+  labelViewIndexes: ArrayLike<number>,
+  rowMetrics: StickyLabelMetrics,
+  logicalScrollTop: number,
+): StickyLabelResolution | null => {
+  if (labelViewIndexes.length === 0 || rowMetrics.rowCount <= 0 || logicalScrollTop <= 0) {
+    return null;
+  }
+  const topRow = rowMetrics.rowAtContentY(logicalScrollTop);
+  const k = countLabelsBefore(labelViewIndexes, topRow + 1);
+  if (k === 0) {
+    return null;
+  }
+  const labelViewIndex = labelViewIndexes[k - 1];
+  // ラベル行自身が可視域の先頭に(自然な位置で)見えているなら固定不要。
+  if (rowMetrics.rowTop(labelViewIndex) >= logicalScrollTop) {
+    return null;
+  }
+  const height = rowMetrics.cellHeight(labelViewIndex);
+  let pushOffset = 0;
+  if (k < labelViewIndexes.length) {
+    const nextTop = rowMetrics.rowTop(labelViewIndexes[k]) - logicalScrollTop;
+    if (nextTop < height) {
+      pushOffset = Math.min(height, Math.max(height - nextTop, 0));
+    }
+  }
+  return { labelViewIndex, height, pushOffset };
+};

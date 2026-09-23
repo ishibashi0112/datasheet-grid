@@ -496,6 +496,21 @@
     overflow: hidden;
     text-overflow: ellipsis;
   }
+  /* 縦スクロール固定(labelRow.sticky)。高さ 0 の sticky 器(top はインライン = headerHeight)を
+     ヘッダー行の直後の通常フローに置き、その中に現在セクションのラベル行の複製を絶対配置します。
+     z-index はヘッダー(6)より下・行より上。押し上げ(translateY 負値)はヘッダーの背面へ潜ります。 */
+  .ssg-sticky-label-layer {
+    position: sticky;
+    left: 0;
+    z-index: 5;
+    height: 0;
+    overflow: visible;
+    pointer-events: none;
+  }
+  .ssg-label-row--sticky {
+    pointer-events: auto;
+    box-shadow: 0 1px 0 var(--ssg-divider);
+  }
 
   /* ── 展開行(detail / Master-Detail) ── */
   /* 帯: マスター行の直下に続く全幅の薄い背景(各ペイン幅で描く。座標 / 幅 / 高さはインライン)。 */

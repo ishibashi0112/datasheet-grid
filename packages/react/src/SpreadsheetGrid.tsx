@@ -24,7 +24,7 @@ import {
 // 追加(UI CSS移行): 基底スタイル(トークン + .ssg-* クラス)を読み込みます(THEME-1 で未レイヤー化)。
 import './styles.css';
 import { cx } from '@ishibashi0112/spreadsheet-grid-core/logic/cx';
-import { mergeStyles } from '@ishibashi0112/spreadsheet-grid-core/logic/slotProps';
+import { mergeStyles, resolveSlotProps } from '@ishibashi0112/spreadsheet-grid-core/logic/slotProps';
 import {
   useResolvedGridSlot,
   useResolvedGridSlots,
@@ -130,7 +130,8 @@ import {
   MAX_BODY_PX,
   AUTO_HEIGHT_MAX_ROWS,
   clipRowRangeToWindow,
-  // 追加(imperative API #1): 命令的スクロールの論理↔物理換算に使います。
+  // 追加(label-row ③.5): 縦固定の現在セクション判定で物理 scrollTop を論理へ換算します。
+  physicalToLogicalScrollTop,
 } from '@ishibashi0112/spreadsheet-grid-core/logic/verticalGeometry';
 // 追加(detail ③): 展開行(Master/Detail)の純ロジック(トグル列キー / rowKey→view index 解決 / 選択帯分割)です。
 import {
@@ -142,8 +143,9 @@ import {
   splitRowBandByDetail,
 } from '@ishibashi0112/spreadsheet-grid-core/logic/detailRow';
 // 追加(label-row ②): ラベル行(見出し / 区切り行)の SSRM ラッパです。
-import { wrapRowModelWithLabelRows } from '@ishibashi0112/spreadsheet-grid-core/logic/labelRows';
+import { resolveStickyLabel, wrapRowModelWithLabelRows } from '@ishibashi0112/spreadsheet-grid-core/logic/labelRows';
 import type { GridBodyLabelRowLayer } from './view/GridBodyLayer';
+import { GridStickyLabelLayer, type GridStickyLabelEntry } from './view/GridStickyLabelLayer';
 // 追加(row-drag ③): 行ドラッグ並び替えの純ロジック(ハンドル列キー / 配列移動 / ゲート判定)です。
 import {
   ROW_DRAG_DISABLED_TOOLTIP,
@@ -669,6 +671,7 @@ export function SpreadsheetGrid<T extends object>({
   const labelRowClassName = labelRow?.className;
   const labelRowHeightOption = labelRow?.height;
   const labelSortMode = labelRow?.sortMode ?? 'section';
+  const labelSticky = labelRow?.sticky === true;
   const labelKeepEmptySections = labelRow?.keepEmptySections ?? false;
   const labelRowEnabled = labelIsLabelRow != null && labelGetLabel != null;
 
@@ -1606,6 +1609,36 @@ export function SpreadsheetGrid<T extends object>({
         ? { renderContent: null, contentStickyLeft: 0, contentWidth: 0, resolveRowSlot: resolveLabelRowSlot }
         : undefined,
     [labelRowEnabled, resolveLabelRowSlot],
+  );
+  // 追加(label-row ③.5): 縦スクロール固定(labelRow.sticky)。scrollTop(論理)から「現在セクションのラベル行 /
+  //   押し上げ量」を純ロジックで求め、各ペインの固定レイヤーへ渡します。clientSide(labelDisplay あり)のみ。
+  const stickyLabelEntry = useMemo<GridStickyLabelEntry<T> | null>(() => {
+    if (!labelSticky || !labelDisplay || labelDisplay.labelViewIndexes.length === 0) {
+      return null;
+    }
+    const resolution = resolveStickyLabel(
+      labelDisplay.labelViewIndexes,
+      rowMetrics,
+      physicalToLogicalScrollTop(scrollTop, verticalScaleFactor),
+    );
+    if (!resolution) {
+      return null;
+    }
+    const descriptor = rowModel.getLabelRow?.(resolution.labelViewIndex);
+    if (!descriptor) {
+      return null;
+    }
+    return {
+      labelRow: descriptor,
+      rowIndex: resolution.labelViewIndex,
+      rowKey: rowModel.getRowKey(resolution.labelViewIndex) ?? resolution.labelViewIndex,
+      height: resolution.height,
+      pushOffset: resolution.pushOffset,
+    };
+  }, [labelSticky, labelDisplay, rowMetrics, scrollTop, verticalScaleFactor, rowModel]);
+  const stickyLabelSlot = useMemo(
+    () => resolveSlotProps<CSSProperties>(stickyLabelEntry ? resolveLabelRowSlot(stickyLabelEntry.labelRow) : undefined),
+    [stickyLabelEntry, resolveLabelRowSlot],
   );
   // 追加(stage ②): serverSide で query(debounced queryKey)が変わったら先頭へスクロールを戻します。
   //   フィルター/ソートで結果セットが総入れ替えされるため、同一 index に別行が来る違和感を避けます。
@@ -3809,6 +3842,20 @@ export function SpreadsheetGrid<T extends object>({
                 {/*   transform 同期は廃止し、縦スクロールは共有コンテナが担います。  */}
                 {/*   この div が絶対配置子の containing block となり、中のセルは        */}
                 {/*   headerHeight + start で配置され、sticky ヘッダーの背面を流れます。*/}
+                {/* 追加(label-row ③.5): ラベル行の縦スクロール固定レイヤー(ヘッダー直後の通常フロー / sticky)。 */}
+                <GridStickyLabelLayer
+                  pane="left"
+                  ownsRowHeader
+                  entry={stickyLabelEntry}
+                  headerHeight={headerHeight}
+                  rowHeaderCellStyle={rowHeaderCellStyle}
+                  renderContent={null}
+                  contentStickyLeft={0}
+                  contentWidth={0}
+                  rowClassName={stickyLabelSlot.className}
+                  rowStyle={stickyLabelSlot.style}
+                  slots={slots}
+                />
                 <div
                   style={{
                     position: 'absolute',
@@ -3986,6 +4033,20 @@ export function SpreadsheetGrid<T extends object>({
                   (左右ペインと同型)。header と drop indicator は transform 外に置き、
                   ヘッダーは sticky のまま動かしません。原点(0,0)・同サイズの wrapper のため
                   overlay 内部のペインローカル座標は不変で、transform のみ加わります。*/}
+              {/* 追加(label-row ③.5): ラベル行の縦スクロール固定レイヤー(ヘッダー直後の通常フロー / sticky)。 */}
+              <GridStickyLabelLayer
+                pane="center"
+                ownsRowHeader={centerOwnsRowHeader}
+                entry={stickyLabelEntry}
+                headerHeight={headerHeight}
+                rowHeaderCellStyle={rowHeaderCellStyle}
+                renderContent={renderLabelRowContent}
+                contentStickyLeft={detailCardStickyLeft}
+                contentWidth={detailCardWidth}
+                rowClassName={stickyLabelSlot.className}
+                rowStyle={stickyLabelSlot.style}
+                slots={slots}
+              />
               <div
                 style={{
                   position: 'absolute',
@@ -4158,6 +4219,20 @@ export function SpreadsheetGrid<T extends object>({
                 {/* 追加(10-D): 右固定ペイン内の overlay（ペインローカル座標）。*/}
                 {/* 変更(10-G): 左ペインと同様、overlay + body をまとめる絶対配置レイヤーです。*/}
                 {/*   transform 同期は廃止し、縦スクロールは共有コンテナが担います。         */}
+                {/* 追加(label-row ③.5): ラベル行の縦スクロール固定レイヤー(ヘッダー直後の通常フロー / sticky)。 */}
+                <GridStickyLabelLayer
+                  pane="right"
+                  ownsRowHeader={false}
+                  entry={stickyLabelEntry}
+                  headerHeight={headerHeight}
+                  rowHeaderCellStyle={rowHeaderCellStyle}
+                  renderContent={null}
+                  contentStickyLeft={0}
+                  contentWidth={0}
+                  rowClassName={stickyLabelSlot.className}
+                  rowStyle={stickyLabelSlot.style}
+                  slots={slots}
+                />
                 <div
                   style={{
                     position: 'absolute',

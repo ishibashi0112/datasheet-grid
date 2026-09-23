@@ -11,6 +11,7 @@ import {
   resolveLabelRowLayout,
   resolvePasteTargetViewIndexes,
   resolveSectionLabelViewIndex,
+  resolveStickyLabel,
   wrapRowModelWithLabelRows,
   type LabelDisplay,
 } from './labelRows';
@@ -250,5 +251,44 @@ describe('補助関数', () => {
       getRowKey: (i) => i,
     };
     expect(resolvePasteTargetViewIndexes(plain, 1, 3)).toEqual([1, 2, 3]);
+  });
+});
+
+// 追加(label-row ③.5): 縦スクロール固定の解決。
+describe('resolveStickyLabel', () => {
+  // 10 行 × 30px、ラベル行は view 0 / 4 / 8。
+  const metrics = {
+    rowCount: 10,
+    rowTop: (i: number) => i * 30,
+    cellHeight: () => 30,
+    rowAtContentY: (y: number) => Math.min(Math.max(Math.floor(y / 30), 0), 9),
+  };
+  const labels = Int32Array.from([0, 4, 8]);
+
+  it('先頭(scrollTop 0)/ ラベル行が自然な位置で見えているときは固定しない', () => {
+    expect(resolveStickyLabel(labels, metrics, 0)).toBeNull();
+    // 行 4(ラベル)が可視域の先頭にぴったり。
+    expect(resolveStickyLabel(labels, metrics, 120)).toBeNull();
+    expect(resolveStickyLabel(new Int32Array(0), metrics, 50)).toBeNull();
+  });
+
+  it('セクションの途中では現在セクションのラベルを固定し、次のラベルが近づくと押し上げる', () => {
+    expect(resolveStickyLabel(labels, metrics, 45)).toEqual({ labelViewIndex: 0, height: 30, pushOffset: 0 });
+    // 次のラベル(行 4 = 120px)の上端が固定帯の下端(45 + 30 = 75)より下 → 押し上げなし。
+    expect(resolveStickyLabel(labels, metrics, 89)).toEqual({ labelViewIndex: 0, height: 30, pushOffset: 0 });
+    // 100px: 次のラベル上端は 20px の位置 → 10px 押し上げ。
+    expect(resolveStickyLabel(labels, metrics, 100)).toEqual({ labelViewIndex: 0, height: 30, pushOffset: 10 });
+    // 119px: ほぼ全部押し上げ。
+    expect(resolveStickyLabel(labels, metrics, 119)).toEqual({ labelViewIndex: 0, height: 30, pushOffset: 29 });
+    // 121px: 行 4 のセクションへ交代。
+    expect(resolveStickyLabel(labels, metrics, 121)).toEqual({ labelViewIndex: 4, height: 30, pushOffset: 0 });
+    // 最後のセクションでは押し上げ相手がいない。
+    expect(resolveStickyLabel(labels, metrics, 280)).toEqual({ labelViewIndex: 8, height: 30, pushOffset: 0 });
+  });
+
+  it('最初のラベル行より前の行(セクション 0)では固定しない', () => {
+    const late = Int32Array.from([5]);
+    expect(resolveStickyLabel(late, metrics, 60)).toBeNull();
+    expect(resolveStickyLabel(late, metrics, 200)).toEqual({ labelViewIndex: 5, height: 30, pushOffset: 0 });
   });
 });

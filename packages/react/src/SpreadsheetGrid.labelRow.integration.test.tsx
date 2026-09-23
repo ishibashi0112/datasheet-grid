@@ -31,6 +31,15 @@ beforeAll(() => {
     configurable: true,
     get: () => 900,
   });
+  // 縦固定テスト用: スクロール可能量(jsdom の既定 0 だと scrollTop が 0 へクランプされる)。
+  Object.defineProperty(HTMLElement.prototype, 'scrollHeight', {
+    configurable: true,
+    get: () => 10000,
+  });
+  Object.defineProperty(HTMLElement.prototype, 'clientHeight', {
+    configurable: true,
+    get: () => 400,
+  });
 });
 
 afterEach(() => {
@@ -194,5 +203,84 @@ describe('SpreadsheetGrid × ラベル行(描画)', () => {
     expect(dataRows.map((row) => cellText(row, 'name'))).toEqual([
       'beta', 'alpha', 'delta', 'epsilon', 'gamma',
     ]);
+  });
+});
+
+// 追加(label-row ③.5): 縦スクロール固定(labelRow.sticky)。scroll イベント → 固定レイヤーの描画を検証します。
+describe('SpreadsheetGrid × ラベル行(縦スクロール固定)', () => {
+  const flushAnimationFrame = async () => {
+    await act(
+      () =>
+        new Promise<void>((resolve) => {
+          requestAnimationFrame(() => resolve());
+        }),
+    );
+  };
+  // 6 セクション × 5 行(rowHeight 30)。
+  const manyRows: Row[] = [];
+  for (let s = 1; s <= 6; s += 1) {
+    manyRows.push({ id: `s${s}`, kind: 'label', name: `セクション ${s}`, qty: 0 });
+    for (let i = 1; i <= 5; i += 1) {
+      manyRows.push({ id: `${s}-${i}`, name: `row ${s}-${i}`, qty: i });
+    }
+  }
+  const scrollTo = async (scrollEl: HTMLElement, top: number) => {
+    await act(async () => {
+      scrollEl.scrollTop = top;
+      scrollEl.dispatchEvent(new Event('scroll'));
+    });
+    await flushAnimationFrame();
+  };
+  const stickyIn = (container: HTMLElement, pane: string) =>
+    container.querySelector<HTMLElement>(`[data-pane="${pane}"][data-ssg-sticky-label]`);
+
+  it('sticky: true で現在セクションのラベルがヘッダー直下に固定され、次のラベルで押し上げ → 交代する', async () => {
+    const { container } = render(
+      <SpreadsheetGrid
+        rows={manyRows}
+        columns={columns}
+        rowKeyGetter={rowKeyGetter}
+        rowHeight={30}
+        headerHeight={40}
+        labelRow={{ ...labelRow, sticky: true }}
+      />,
+    );
+    const scrollEl = container.querySelector<HTMLElement>('.ssg-scroll-container')!;
+    // 先頭では固定なし(ラベル行が自然な位置で見えている)。
+    expect(stickyIn(container, 'center')).toBeNull();
+    // セクション 1 の途中(45px)。
+    await scrollTo(scrollEl, 45);
+    const sticky = stickyIn(container, 'center');
+    expect(sticky).not.toBeNull();
+    expect(sticky?.dataset.ssgStickyLabelRowIndex).toBe('0');
+    expect(sticky?.querySelector('.ssg-label-row-content')?.textContent).toBe('セクション 1');
+    expect(sticky?.style.height).toBe('30px');
+    expect(sticky?.style.transform).toBe('');
+    // 左ペイン(行ヘッダー持ち)にも帯だけ出る。中身は無い。
+    const leftSticky = stickyIn(container, 'left');
+    expect(leftSticky).not.toBeNull();
+    expect(leftSticky?.querySelector('.ssg-label-row-content')).toBeNull();
+    expect(leftSticky?.querySelector('.ssg-row-header-cell--label')).not.toBeNull();
+    // 固定器はヘッダー直下(top = headerHeight)。
+    expect((sticky?.parentElement as HTMLElement).style.top).toBe('40px');
+    // 次のラベル(view 6 = 180px)が近づく: 160px → 上端は 20px の位置 → 10px 押し上げ。
+    await scrollTo(scrollEl, 160);
+    expect(stickyIn(container, 'center')?.style.transform).toBe('translateY(-10px)');
+    // 190px: セクション 2 に交代。
+    await scrollTo(scrollEl, 190);
+    expect(stickyIn(container, 'center')?.dataset.ssgStickyLabelRowIndex).toBe('6');
+    expect(stickyIn(container, 'center')?.querySelector('.ssg-label-row-content')?.textContent).toBe('セクション 2');
+    // 先頭へ戻すと消える。
+    await scrollTo(scrollEl, 0);
+    expect(stickyIn(container, 'center')).toBeNull();
+  });
+
+  it('sticky 未指定 / false では固定レイヤーを出さない', async () => {
+    const { container } = render(
+      <SpreadsheetGrid rows={manyRows} columns={columns} rowKeyGetter={rowKeyGetter} rowHeight={30} labelRow={labelRow} />,
+    );
+    const scrollEl = container.querySelector<HTMLElement>('.ssg-scroll-container')!;
+    await scrollTo(scrollEl, 100);
+    expect(container.querySelector('[data-ssg-sticky-label]')).toBeNull();
   });
 });
