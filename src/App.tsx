@@ -49,8 +49,36 @@ type DemoRow = {
   // 追加(C1 auto-height デモ): 備考。行ごとに長さが変わる長文で、auto-height 列の折り返し/可変行高を
   //   確認します(autoHeight デモモード時のみ駆動)。
   note: string;
-  [key: string]: string | number | boolean;
+  // 追加(label-row デモ): ラベル行(見出し / 区切り行)の目印です。true の行はデータ行ではなく、
+  //   partName を見出し文字列として全幅の帯で描画されます(labelRow prop の isLabelRow / getLabel)。
+  isLabel?: boolean;
+  [key: string]: string | number | boolean | undefined;
 };
+
+// 追加(label-row デモ): 25 行ごとにラベル行を差し込みます(既存のラベル行は一旦除いてから)。
+const LABEL_ROW_INTERVAL = 25;
+const insertDemoLabelRows = (source: DemoRow[]): DemoRow[] => {
+  const dataRows = source.filter((row) => !row.isLabel);
+  const out: DemoRow[] = [];
+  for (let i = 0; i < dataRows.length; i += 1) {
+    if (i % LABEL_ROW_INTERVAL === 0) {
+      const section = i / LABEL_ROW_INTERVAL + 1;
+      out.push({
+        ...createDemoRowAt(0),
+        partNo: `label-${section}`,
+        partName: `第 ${section} 節(${dataRows[i].partNo} 〜)`,
+        qty: 0,
+        amount: 0,
+        note: '',
+        isLabel: true,
+      });
+    }
+    out.push(dataRows[i]);
+  }
+  return out;
+};
+const removeDemoLabelRows = (source: DemoRow[]): DemoRow[] =>
+  source.some((row) => row.isLabel) ? source.filter((row) => !row.isLabel) : source;
 
 // 追加: 初期ダミー行数です。UX確認用に少し多めにしています。
 // 変更(DS-3-1): 5,000 → 50,000(5万)。DS-3 の rowModel 移行を Profiler で検証するための負荷増です。
@@ -628,6 +656,11 @@ function App() {
   const [detailRowEnabled, setDetailRowEnabled] = useState(false);
   // 追加(row-drag デモ): 行ドラッグ並び替えの ON/OFF(clientSide 限定。ソート / フィルター中は無効)。
   const [rowDragEnabled, setRowDragEnabled] = useState(false);
+  // 追加(label-row デモ): ラベル行(見出し / 区切り行)の ON/OFF です。ON で rows へ 25 行ごとにラベル行を
+  //   差し込み(state に混在させる = Excel 由来データと同じ形)、OFF で取り除きます。
+  //   縦スクロール固定(sticky)は別トグルで確認できます。
+  const [labelRowEnabled, setLabelRowEnabled] = useState(false);
+  const [labelRowSticky, setLabelRowSticky] = useState(true);
   // 追加(scrollHint デモ): スクロール位置インジケーター(バブル + ルーラー)のモードです。
   //   1M 行での現在位置把握が主目的のため、デモでは既定 ON にしています(ライブラリ既定は OFF)。
   //   hintColumn='partNo' で「行番号 + 品番」を表示します。
@@ -1216,6 +1249,31 @@ function App() {
           >
             行ドラッグ: {rowDragEnabled ? 'ON' : 'OFF'}
           </button>
+          {/* 追加(label-row デモ): ラベル行(見出し / 区切り行)の ON/OFF と縦スクロール固定。 */}
+          <button
+            type="button"
+            onClick={() => {
+              setLabelRowEnabled((v) => {
+                const next = !v;
+                setRows((current) =>
+                  next ? insertDemoLabelRows(current) : removeDemoLabelRows(current),
+                );
+                return next;
+              });
+            }}
+            disabled={mode === 'server'}
+            style={modeButtonStyle(labelRowEnabled, mode === 'server')}
+          >
+            ラベル行: {labelRowEnabled ? 'ON' : 'OFF'}
+          </button>
+          <button
+            type="button"
+            onClick={() => setLabelRowSticky((v) => !v)}
+            disabled={!labelRowEnabled}
+            style={modeButtonStyle(labelRowSticky, !labelRowEnabled)}
+          >
+            ラベル行の縦固定: {labelRowSticky ? 'ON' : 'OFF'}
+          </button>
           {/* 追加(行選択デモ): チェックボックス行選択の ON/OFF・モード切替・全選択/解除・選択キー確認。 */}
           <button
             type="button"
@@ -1398,6 +1456,41 @@ function App() {
             `[demo] onRowMove: ${String(params.rowKey)} を ${params.fromIndex} → ${params.toIndex} へ移動`,
           );
         }}
+        // 追加(label-row デモ): ラベル行。isLabel の行を見出しとして全幅の帯で描き、React で装飾します
+        //   (節番号バッジ + 見出し + セクション内のデータ行数)。
+        labelRow={
+          labelRowEnabled
+            ? {
+                isLabelRow: (row) => (row as DemoRow).isLabel === true,
+                getLabel: (row) => row.partName,
+                height: 34,
+                sticky: labelRowSticky,
+                render: ({ label, sectionRowCount }) => (
+                  <>
+                    <span
+                      style={{
+                        flex: 'none',
+                        padding: '0 6px',
+                        borderRadius: 3,
+                        background: 'var(--ssg-accent)',
+                        color: '#fff',
+                        fontSize: 11,
+                        lineHeight: '18px',
+                      }}
+                    >
+                      節
+                    </span>
+                    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{label}</span>
+                    {sectionRowCount !== undefined && (
+                      <span style={{ flex: 'none', fontWeight: 400, color: '#888' }}>
+                        {sectionRowCount} 件
+                      </span>
+                    )}
+                  </>
+                ),
+              }
+            : undefined
+        }
         // 追加(detail デモ): 展開行。カード内に行の要約テーブルと入力欄(イベント境界の確認用)を描きます。
         detailRow={
           detailRowEnabled

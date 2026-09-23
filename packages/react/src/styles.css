@@ -55,6 +55,10 @@
     /* 追加(grouping ③): グループ行の帯背景(通常 / 行ホバー)。 */
     --ssg-group-row-bg: #f2f5fa;
     --ssg-group-row-hover-bg: #e9eef7;
+    /* 追加(label-row ②): ラベル行(見出し / 区切り行)の帯背景・文字色・左のアクセント。 */
+    --ssg-label-row-bg: #eef2f7;
+    --ssg-label-row-text: #1e293b;
+    --ssg-label-row-accent: var(--ssg-accent);
     --ssg-checkbox-border: #94a3b8;
     --ssg-checkbox-bg: #ffffff;
     --ssg-checkbox-checked-bg: var(--ssg-accent);
@@ -207,6 +211,10 @@
     /* 追加(grouping ③): グループ行の帯背景(通常 / 行ホバー)。 */
     --ssg-group-row-bg: #222429;
     --ssg-group-row-hover-bg: #292b31;
+    /* 追加(label-row ②): ラベル行の帯背景・文字色・左のアクセント。 */
+    --ssg-label-row-bg: #24272e;
+    --ssg-label-row-text: #e6e7ea;
+    --ssg-label-row-accent: var(--ssg-accent);
     --ssg-checkbox-border: #5c5f66;
     --ssg-checkbox-bg: #1a1b1e;
     --ssg-checkbox-checked-mark: #141517;
@@ -435,6 +443,58 @@
     font-weight: 400;
     font-size: 0.85em;
     color: var(--ssg-glyph);
+  }
+
+  /* ── 追加(label-row ②): ラベル行(見出し / 区切り行) ── */
+  /* 行コンテナ = 帯(ペイン幅いっぱいの背景 + 下罫線)。contain: paint は外し、中身の sticky を
+     スクロールコンテナ基準で効かせます。 */
+  .ssg-label-row {
+    contain: layout style;
+    background-color: var(--ssg-label-row-bg);
+    border-bottom: 1px solid var(--ssg-divider);
+  }
+  /* 行ヘッダー「#」セルは空欄(番号を消費しない)。帯と同じ背景にします。 */
+  .ssg-row-header-cell--label {
+    background-color: var(--ssg-label-row-bg);
+  }
+  /* 中身の置き場: 帯の中で横スクロールに追従して留まる sticky 要素(left / width / height はインライン)。 */
+  .ssg-label-row-content-holder {
+    position: sticky;
+    top: 0;
+    box-sizing: border-box;
+    display: flex;
+    align-items: center;
+    overflow: hidden;
+  }
+  /* 中身(既定表示は getLabel の文字列。render 指定時は消費側ノード)。 */
+  .ssg-label-row-content {
+    box-sizing: border-box;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+    max-width: 100%;
+    height: 100%;
+    padding: 0 var(--ssg-cell-pad-x);
+    color: var(--ssg-label-row-text);
+    font-size: 13px;
+    font-weight: 600;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  /* 既定表示の左アクセント(render 指定時は付かない)。 */
+  .ssg-label-row-content--default::before {
+    content: '';
+    flex: none;
+    width: 3px;
+    height: 1.1em;
+    border-radius: 2px;
+    background-color: var(--ssg-label-row-accent);
+  }
+  .ssg-label-row-text {
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 
   /* ── 展開行(detail / Master-Detail) ── */

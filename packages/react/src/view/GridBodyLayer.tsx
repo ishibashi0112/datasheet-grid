@@ -15,6 +15,8 @@ import type {
   GridColumn,
   // 追加(grouping ③): グループ行の記述子型です(rowModel.getGroupRow が返す)。
   GridGroupRow as GridGroupRowDescriptor,
+  // 追加(label-row ②): ラベル行の記述子型です(rowModel.getLabelRow が返す)。
+  GridLabelRow,
   GridRowKey,
   // 追加(DS-3-0): 行モデルのシーム契約型です(filteredRows/Keys props を置換)。
   RowModel,
@@ -32,6 +34,8 @@ import { resolveIsRowSelected } from '@ishibashi0112/spreadsheet-grid-core/logic
 import { shouldMarkCellOverflowTooltip } from '@ishibashi0112/spreadsheet-grid-core/logic/cellOverflowTooltip';
 import { getInvalidMessage } from '@ishibashi0112/spreadsheet-grid-core/logic/validation';
 import { RowSelectionCheckbox } from './RowSelectionCheckbox';
+// 追加(label-row ②): ラベル行(帯 + sticky な中身)です。
+import { GridBodyLabelRow, type GridBodyLabelRowRenderContent } from './GridBodyLabelRow';
 // 変更(10-C): 列座標を ColumnMeasurement(グローバル) から
 //             PaneColumnEntry(ペインローカル) へ切り替えます。
 import type { PaneColumnEntry } from '@ishibashi0112/spreadsheet-grid-core/logic/geometry';
@@ -47,6 +51,16 @@ type VirtualRowLike = {
   start: number;
   // 追加(C1): auto-height の行ごと高さ。uniform では undefined(rowHeight へフォールバック)。
   size?: number;
+};
+
+// 追加(label-row ②): ラベル行の描画設定(親で memo 済み。labelRow prop 有効時のみ渡る)。
+export type GridBodyLabelRowLayer<T> = {
+  // 中身の描画(中央ペインのみ。帯だけのペインは null)。
+  renderContent: GridBodyLabelRowRenderContent<T> | null;
+  contentStickyLeft: number;
+  contentWidth: number;
+  // labelRow.className の解決(関数なら行ごとに評価)。
+  resolveRowSlot: (labelRow: GridLabelRow<T>) => GridSlotProps | undefined;
 };
 
 // ──────────────────────────────────────────────────────────
@@ -799,6 +813,9 @@ type GridBodyLayerProps<T> = {
   //   無ければグループ行分岐は評価されません)。
   collapsedGroupKeys?: ReadonlySet<string>;
   onGroupToggle?: (groupKey: string) => void;
+  // 追加(label-row ②): ラベル行の描画設定です。未指定時は従来どおり(rowModel.getLabelRow が無ければ
+  //   ラベル行分岐は評価されません)。
+  labelRowLayer?: GridBodyLabelRowLayer<T>;
   rowHeaderCellStyle: CSSProperties;
   hoveredRowIndex: number | null;
   isWholeGridSelected: boolean;
@@ -871,6 +888,7 @@ export function GridBodyLayer<T>({
   isServerSide = false,
   collapsedGroupKeys,
   onGroupToggle,
+  labelRowLayer,
   rowHeaderCellStyle,
   hoveredRowIndex,
   isWholeGridSelected,
@@ -930,6 +948,33 @@ export function GridBodyLayer<T>({
               onGroupToggle={onGroupToggle}
               onRowHeaderPointerEnter={onRowHeaderPointerEnter}
               onRowHeaderPointerLeave={onRowHeaderPointerLeave}
+              slots={slots}
+            />
+          );
+        }
+
+        // 追加(label-row ②): ラベル行の分岐です(getRow の undefined ガードより前。グループ行と同型)。
+        //   React key は行キー(rowKeyGetter の値)で、ソート / フィルターをまたいで安定します。
+        const labelRow = rowModel.getLabelRow?.(rowIndex);
+        if (labelRow && labelRowLayer) {
+          const labelRowKey = rowModel.getRowKey(rowIndex) ?? rowIndex;
+          const labelSlot = resolveSlotProps<CSSProperties>(labelRowLayer.resolveRowSlot(labelRow));
+          return (
+            <GridBodyLabelRow
+              key={String(labelRowKey)}
+              pane={pane}
+              ownsRowHeader={ownsRowHeader}
+              rowIndex={rowIndex}
+              rowKey={labelRowKey}
+              top={virtualRow.start}
+              rowHeight={rowSize}
+              rowHeaderCellStyle={rowHeaderCellStyle}
+              labelRow={labelRow}
+              renderContent={labelRowLayer.renderContent}
+              contentStickyLeft={labelRowLayer.contentStickyLeft}
+              contentWidth={labelRowLayer.contentWidth}
+              rowClassName={labelSlot.className}
+              rowStyle={labelSlot.style}
               slots={slots}
             />
           );

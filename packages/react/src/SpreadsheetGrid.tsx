@@ -141,6 +141,9 @@ import {
   seedDetailIndexCache,
   splitRowBandByDetail,
 } from '@ishibashi0112/spreadsheet-grid-core/logic/detailRow';
+// 追加(label-row ②): ラベル行(見出し / 区切り行)の SSRM ラッパです。
+import { wrapRowModelWithLabelRows } from '@ishibashi0112/spreadsheet-grid-core/logic/labelRows';
+import type { GridBodyLabelRowLayer } from './view/GridBodyLayer';
 // 追加(row-drag ③): 行ドラッグ並び替えの純ロジック(ハンドル列キー / 配列移動 / ゲート判定)です。
 import {
   ROW_DRAG_DISABLED_TOOLTIP,
@@ -186,6 +189,9 @@ import type {
   // 追加(detail ③): 展開行の描画コンテキスト / セルへ渡す detail コンテキスト型です。
   CellDetailContext,
   DetailRowRenderContext,
+  // 追加(label-row ②): ラベル行の記述子 / スロット値の型です。
+  GridLabelRow,
+  GridSlotProps,
   // 追加(DS-3-0): 行モデルのシーム契約型です(rowModel の構築に使います)。
   // 追加(記述子化): commit 経路で text/date/select/custom を記述子化する際の型です。
   // 追加(12-A): set フィルター値の構築に使います。
@@ -418,6 +424,8 @@ export function SpreadsheetGrid<T extends object>({
   // 追加(detail ②): 展開行(Master/Detail)。未指定なら機能は完全に休眠します。
   detailRow,
   onExpandedDetailRowKeysChange,
+  // 追加(label-row ②): ラベル行(見出し / 区切り行)。未指定なら機能は完全に休眠します。
+  labelRow,
   // 追加(row-drag ③): 行ドラッグ並び替え(既定 OFF)。
   enableRowDrag = false,
   isRowDraggable,
@@ -653,6 +661,16 @@ export function SpreadsheetGrid<T extends object>({
     },
     [dispatch, detailIndexCacheHolder],
   );
+  // 追加(label-row ②): ラベル行(見出し / 区切り行)のオプションを分解します(下流の memo 依存を
+  //   プリミティブ / 関数参照にするため。labelRow オブジェクトをインラインで渡しても各段は揺れません)。
+  const labelIsLabelRow = labelRow?.isLabelRow;
+  const labelGetLabel = labelRow?.getLabel;
+  const labelRender = labelRow?.render;
+  const labelRowClassName = labelRow?.className;
+  const labelRowHeightOption = labelRow?.height;
+  const labelSortMode = labelRow?.sortMode ?? 'section';
+  const labelKeepEmptySections = labelRow?.keepEmptySections ?? false;
+  const labelRowEnabled = labelIsLabelRow != null && labelGetLabel != null;
 
 
 
@@ -926,9 +944,17 @@ export function SpreadsheetGrid<T extends object>({
   //   engine/rowPipeline.ts(React 非依存)へ移設しました。useMemo は React Compiler lint 向けの外皮で、
   //   細粒度の参照安定はリゾルバ内の createMemo が担います。
   const { rowPipeline } = engine;
+  // 追加(label-row ②): ラベル行の配置(rows / 述語が変わったときだけ 1 パス)。clientSide のみ
+  //   (serverSide はブロック内の行を述語で判定するラッパへ = 下の rowModel)。
+  const labelLayout = useMemo(
+    () => rowPipeline.resolveLabelRowLayout(rows, isServerSide ? undefined : labelIsLabelRow),
+    [rowPipeline, rows, isServerSide, labelIsLabelRow],
+  );
+  // 変更(label-row ②): ラベル行があるときはラベル行を除いた恒等 order(データ行のみ)。無ければ従来どおり
+  //   長さのみ依存の恒等 order。
   const baseOrder = useMemo(
-    () => rowPipeline.resolveBaseOrder(rows.length),
-    [rowPipeline, rows.length],
+    () => rowPipeline.resolveBaseOrder(rows.length, labelLayout),
+    [rowPipeline, rows.length, labelLayout],
   );
 
   // 変更(F-async): globalFilteredOrder の同期 useMemo を時間分割フックへ差し替えます。
@@ -952,6 +978,7 @@ export function SpreadsheetGrid<T extends object>({
     () =>
       rowPipeline.resolveOrder({
         rows,
+        labelLayout,
         visibleColumns,
         columnFilters: deferredColumnFilters,
         globalFilteredOrder,
@@ -961,6 +988,7 @@ export function SpreadsheetGrid<T extends object>({
     [
       rowPipeline,
       rows,
+      labelLayout,
       visibleColumns,
       deferredColumnFilters,
       globalFilteredOrder,
@@ -987,9 +1015,23 @@ export function SpreadsheetGrid<T extends object>({
     }
   }, [isServerSide, groupColumns.length]);
 
+  // 追加(label-row ②): 行グルーピングとラベル行の併用は未対応(rowGroup 有効時はラベル行を非表示)の開発時警告。
+  useEffect(() => {
+    if (!import.meta.env.DEV) {
+      return;
+    }
+    if (rowGroupingActive && labelRowEnabled) {
+      console.warn(
+        '[SpreadsheetGrid] 行グルーピング(rowGroup)とラベル行(labelRow)は併用できません。rowGroup 有効中はラベル行を表示しません。',
+      );
+    }
+  }, [rowGroupingActive, labelRowEnabled]);
+
+  const sortActive = uiState.sort.length > 0;
   const {
     groupTree,
     groupedDisplay,
+    labelDisplay,
     rowModel: clientSideRowModel,
   } = useMemo(
     () =>
@@ -997,6 +1039,11 @@ export function SpreadsheetGrid<T extends object>({
         rows,
         order,
         rowGroupingActive,
+        labelLayout,
+        labelSortMode,
+        keepEmptySections: labelKeepEmptySections,
+        sortActive,
+        getLabel: labelGetLabel,
         groupColumns,
         aggColumns,
         collapsedGroupKeys: uiState.collapsedGroupKeys,
@@ -1007,6 +1054,11 @@ export function SpreadsheetGrid<T extends object>({
       rows,
       order,
       rowGroupingActive,
+      labelLayout,
+      labelSortMode,
+      labelKeepEmptySections,
+      sortActive,
+      labelGetLabel,
       groupColumns,
       aggColumns,
       uiState.collapsedGroupKeys,
@@ -1102,7 +1154,18 @@ export function SpreadsheetGrid<T extends object>({
   const requestServerSideRange = serverSide.requestRange;
   // 以降の全 consumer(rowModelRef / viewRowCount / keyboard / edit / clipboard / body /
   //   rowHeightStore)はこの rowModel シーム越しで透過に動きます。
-  const rowModel = isServerSide ? serverSide.rowModel : clientSideRowModel;
+  // 変更(label-row ②): serverSide では述語ラッパ(ラベル行の viewIndex で getRow を undefined に倒し
+  //   getLabelRow が記述子を返す)を被せます。labelRow 未指定なら従来どおり素の rowModel です。
+  const serverSideRowModel = serverSide.rowModel;
+  const rowModel = useMemo(() => {
+    if (!isServerSide) {
+      return clientSideRowModel;
+    }
+    if (labelIsLabelRow && labelGetLabel) {
+      return wrapRowModelWithLabelRows(serverSideRowModel, labelIsLabelRow, labelGetLabel);
+    }
+    return serverSideRowModel;
+  }, [isServerSide, clientSideRowModel, serverSideRowModel, labelIsLabelRow, labelGetLabel]);
 
   // 追加(SSRM 書き戻し): 編集可否の合成です。serverSide で dataSource.updateRows が無い間は
   //   全セルを編集不可へ倒します(書き戻し先が無い編集セッションは commit 時に静かに破棄される
@@ -1261,7 +1324,9 @@ export function SpreadsheetGrid<T extends object>({
   // 追加(grouping ④): leaf 行数(グループ行を除くデータ行数)です。行選択の件数・bar summary の
   //   「Rows: X / Y」はこちらを使います(viewRowCount はグループ行込みの表示行数で、仮想化・
   //   ヒットテスト・キーボード境界はそちらが正)。グルーピング無効時は常に同値です。
-  const leafRowCount = groupedDisplay ? order.length : viewRowCount;
+  // 変更(label-row ②): ラベル行有効時もデータ行数(order.length)です(serverSide のラベル行はサーバー総数に
+  //   含まれるため viewRowCount のまま)。
+  const leafRowCount = groupedDisplay || labelDisplay ? order.length : viewRowCount;
 
   // 追加(scrollHint minRows): データ量ゲートの適用です。表示行数(viewRowCount)が minRows 未満の
   //   間は scrollHint 全体を待機(null 扱い)にし、ネイティブスクロールバー表示のまま保ちます。
@@ -1407,6 +1472,8 @@ export function SpreadsheetGrid<T extends object>({
         detailHeight: detailHeightValue,
         detailIsExpandable,
         detailIndexCacheRef: detailIndexCacheHolder,
+        labelDisplay,
+        labelRowHeight: labelRowHeightOption,
       }),
     [
       resolveVerticalLayout,
@@ -1427,6 +1494,8 @@ export function SpreadsheetGrid<T extends object>({
       detailHeightValue,
       detailIsExpandable,
       detailIndexCacheHolder,
+      labelDisplay,
+      labelRowHeightOption,
     ],
   );
   // gate 外フォールバック時の開発時警告(例外は投げず uniform にフォールバック)。
@@ -1490,6 +1559,53 @@ export function SpreadsheetGrid<T extends object>({
       paneLayout.center.totalWidth,
     ),
     0,
+  );
+  // 追加(label-row ②): ラベル行の中身の描画(labelRow.render に LabelRowRenderContext を渡す。未指定は
+  //   getLabel の文字列を既定スタイルで)と、ペインごとの描画設定(中央ペインだけ中身を描く)。
+  //   sticky 左オフセット / 幅は展開行カードと同じ値です。
+  const renderLabelRowContent = useCallback(
+    (descriptor: GridLabelRow<T>, rowIndex: number, rowKey: GridRowKey): ReactNode => {
+      if (labelRender) {
+        return labelRender({
+          row: descriptor.row,
+          rowKey,
+          rowIndex,
+          sourceRowIndex: descriptor.sourceIndex,
+          label: descriptor.label,
+          sectionRowCount: descriptor.sectionRowCount,
+        });
+      }
+      return (
+        <span className="ssg-label-row-content--default ssg-label-row-default">
+          <span className="ssg-label-row-text">{descriptor.label}</span>
+        </span>
+      );
+    },
+    [labelRender],
+  );
+  const resolveLabelRowSlot = useCallback(
+    (descriptor: GridLabelRow<T>): GridSlotProps | undefined =>
+      typeof labelRowClassName === 'function' ? labelRowClassName(descriptor.row) : labelRowClassName,
+    [labelRowClassName],
+  );
+  const labelRowLayerCenter = useMemo<GridBodyLabelRowLayer<T> | undefined>(
+    () =>
+      labelRowEnabled
+        ? {
+            renderContent: renderLabelRowContent,
+            contentStickyLeft: detailCardStickyLeft,
+            contentWidth: detailCardWidth,
+            resolveRowSlot: resolveLabelRowSlot,
+          }
+        : undefined,
+    [labelRowEnabled, renderLabelRowContent, detailCardStickyLeft, detailCardWidth, resolveLabelRowSlot],
+  );
+  const labelRowLayerBand = useMemo<GridBodyLabelRowLayer<T> | undefined>(
+    () =>
+      labelRowEnabled
+        ? { renderContent: null, contentStickyLeft: 0, contentWidth: 0, resolveRowSlot: resolveLabelRowSlot }
+        : undefined,
+    [labelRowEnabled, resolveLabelRowSlot],
   );
   // 追加(stage ②): serverSide で query(debounced queryKey)が変わったら先頭へスクロールを戻します。
   //   フィルター/ソートで結果セットが総入れ替えされるため、同一 index に別行が来る違和感を避けます。
@@ -3772,6 +3888,7 @@ export function SpreadsheetGrid<T extends object>({
                   onCellDoubleClick={handleCellDoubleClickGuarded}
                   renderCellContent={renderCellContent}
                   getRowClassName={getRowClassName}
+                  labelRowLayer={labelRowLayerBand}
                   slots={slots}
                 />
 
@@ -3946,6 +4063,7 @@ export function SpreadsheetGrid<T extends object>({
                   onCellDoubleClick={handleCellDoubleClickGuarded}
                   renderCellContent={renderCellContent}
                   getRowClassName={getRowClassName}
+                  labelRowLayer={labelRowLayerCenter}
                   slots={slots}
                 />
 
@@ -4117,6 +4235,7 @@ export function SpreadsheetGrid<T extends object>({
                   onCellDoubleClick={handleCellDoubleClickGuarded}
                   renderCellContent={renderCellContent}
                   getRowClassName={getRowClassName}
+                  labelRowLayer={labelRowLayerBand}
                   slots={slots}
                 />
 
