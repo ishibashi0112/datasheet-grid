@@ -375,6 +375,9 @@ export function SpreadsheetGrid<T extends object>({
   // 追加(date-input): dateSet 条件の日付入力を利用側コンポーネントへ差し替えるスロットです。
   renderFilterDateInput,
   enableSorting = true,
+  // 追加(manual-mode): 絞り込み / 並べ替えをグリッドで行わない(UI と状態通知はそのまま)。既定 false。
+  manualFiltering = false,
+  manualSorting = false,
   // 追加(①): 列リサイズのグリッド既定(既定 true=現行挙動)。列の resizable で個別上書き可。
   enableColumnResize = true,
   // 追加: データ投入時に全列幅を内容へ自動フィットさせるモード(既定 false)。
@@ -975,7 +978,8 @@ export function SpreadsheetGrid<T extends object>({
     baseOrder,
     columns: visibleColumns,
     globalText: globalFilterText,
-    enabled: globalFilterEnabled,
+    // 変更(manual-mode): 手動フィルターでは走らせない(order は baseOrder のまま)。
+    enabled: globalFilterEnabled && !manualFiltering,
   });
 
   const { order, rowDragOperable } = useMemo(
@@ -988,6 +992,8 @@ export function SpreadsheetGrid<T extends object>({
         globalFilteredOrder,
         sort: uiState.sort,
         rowDragAvailable,
+        manualFiltering,
+        manualSorting,
       }),
     [
       rowPipeline,
@@ -998,6 +1004,8 @@ export function SpreadsheetGrid<T extends object>({
       globalFilteredOrder,
       uiState.sort,
       rowDragAvailable,
+      manualFiltering,
+      manualSorting,
     ],
   );
 
@@ -1031,7 +1039,14 @@ export function SpreadsheetGrid<T extends object>({
     }
   }, [rowGroupingActive, labelRowEnabled]);
 
-  const sortActive = uiState.sort.length > 0;
+  // 変更(manual-mode): ラベル行の sortMode は「実際に並べ替えているか」で判定(手動ソート中は非ソート扱い)。
+  const sortActive = !manualSorting && uiState.sort.length > 0;
+  // 追加(manual-mode): 手動フィルターで rows が 0 件のとき、フィルターが載っていれば「一致する行がありません」
+  //   を出す(絞り込みは外部で済んでいるため、rows.length === 0 だけでは区別できない)。
+  const manualFilterActive =
+    manualFiltering &&
+    (globalFilterText.trim().length > 0 ||
+      Object.keys(uiState.filters.columnFilters).length > 0);
   const {
     groupTree,
     groupedDisplay,
@@ -4367,7 +4382,9 @@ export function SpreadsheetGrid<T extends object>({
               className={cx('ssg-empty-state', slots.emptyState?.className)}
               style={slots.emptyState?.style}
             >
-              {rows.length === 0 ? noRowsText : noMatchingRowsText}
+              {rows.length === 0 && !manualFilterActive
+                ? noRowsText
+                : noMatchingRowsText}
             </div>
           )}
         </div>

@@ -121,6 +121,30 @@ import { DatePickerInput } from '@mantine/dates';
 - 判定は**値の型ではなく「数値 / 日付として解釈できるか」**です。DB の型が文字列でも `'1234'` は数値とみなします。ただし **`'0001'` のような先頭ゼロの値は数値とみなしません**(品番コード・郵便番号を数値と誤認しないため。Excel と同じ扱いです)。
 - **serverSide(`dataSource`)では値からの推定を行いません**(クライアントが全行を持たないため)。`editor` 種別があればそれで確定し、無ければ `text`(部分一致)になります。auto を使う列には `editor` の指定を推奨します。
 
+## 絞り込み / 並べ替えを外部に委ねる(`manualFiltering` / `manualSorting`)
+
+「条件はサーバー(SQL の WHERE / ORDER BY)、行はクライアント(絞り込み済みの結果を `rows` で渡す)」という構成では、フィルター / ソートの UI はそのまま使いたい一方で、グリッド自身に行を絞り込み・並べ替えさせたくありません(二重に処理される / 上限で打ち切った結果を並べ替えると意味が変わる)。`manualFiltering` / `manualSorting`(いずれも既定 `false`)を `true` にすると、UI と状態(`GridState` / `onStateChange`)は従来どおり動き、**行の処理だけ**を行わなくなります。
+
+```tsx
+<SpreadsheetGrid
+  rows={rowsFromServer}
+  columns={columns}
+  manualFiltering
+  // 取得が上限に達したときだけサーバ側 ORDER BY へ切り替える(再マウント不要)
+  manualSorting={reachedLimit}
+  onStateChange={(state) => {
+    // state.filters.columnFilters(ColumnFilterValue の記述子)から WHERE を、
+    // state.sort から ORDER BY を組み立てて再クエリする
+  }}
+/>
+```
+
+- `manualFiltering`: 列フィルターもグローバルフィルターも評価しません(number 列の Float64 キー前計算も走りません)。`rows` が 0 件でフィルターが載っているときの空表示は `noMatchingRowsText` になります。
+- `manualSorting`: ソートを適用しません。`false` へ戻すと即座にクライアントソートが適用されます。手動ソート中は「並べ替えていない」扱いなので、`labelRow.sortMode` の連動や行ドラッグの無効化は起きません。
+- serverSide(`dataSource`)ではグリッドはもともと絞り込み / 並べ替えを行わないため、どちらも無視されます。
+- 記述子の形(`ColumnFilterValue` の `kind` 別 shape)は [serverSide](/docs/api/server-side) の「列フィルターの wire format」を参照してください。clientSide でも同じ記述子が `GridState.filters.columnFilters` に載ります。
+- 以前の回避策(全列に `filterFn: () => true` を付けて `enableGlobalFilter={false}`)は不要です。
+
 ## 状態を外から扱う
 
 ソート / フィルター状態はグリッド内部の reducer が持ちますが、`getState()` / `applyState()`(命令的ハンドル)で保存・復元、`onStateChange` で変更検知ができます。詳細は [API リファレンス](/docs/api/handle) を参照してください。

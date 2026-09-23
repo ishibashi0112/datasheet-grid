@@ -299,3 +299,52 @@ describe('createRowPipelineResolver × ラベル行', () => {
     expect(plain.rowModel.getRowCount()).toBe(5);
   });
 });
+
+
+// 追加(manual-mode): 手動フィルター / 手動ソートでは記述子 / sort を受け取っても絞り込み / 並べ替えを行いません
+//   (UI と状態通知は上流で従来どおり。行の処理だけを外部へ委ねる)。
+describe('createRowPipelineResolver.resolveOrder × manual-mode', () => {
+  const numberFilter = {
+    amount: {
+      kind: 'number' as const,
+      raw: '>=20',
+      parsed: { mode: 'comparison' as const, operator: '>=' as const, value: 20 },
+    },
+  };
+  const sort = [{ columnKey: 'name' as const, direction: 'asc' as const }];
+
+  it('manualFiltering: 列フィルターを評価せず(ソートは適用)、manualSorting: ソートを適用しない(フィルターは適用)', () => {
+    const pipeline = createRowPipelineResolver<Row>();
+    const baseOrder = pipeline.resolveBaseOrder(rows.length);
+    const base = { rows, visibleColumns: columns, columnFilters: numberFilter, globalFilteredOrder: baseOrder, sort, rowDragAvailable: true };
+    // 手動フィルター: 3 行とも残り、name 昇順(a, b, c = id 2, 3, 1)。
+    const filteringManual = pipeline.resolveOrder({ ...base, manualFiltering: true });
+    expect(Array.from(filteringManual.order)).toEqual([1, 2, 0]);
+    // 手動ソート: amount >= 20 の 2 行(id 1, 3)が rows 順のまま。
+    const sortingManual = pipeline.resolveOrder({ ...base, manualSorting: true });
+    expect(Array.from(sortingManual.order)).toEqual([0, 2]);
+    // 両方手動: 恒等 order。行ドラッグも操作可能(並べ替えていないため)。
+    const bothManual = pipeline.resolveOrder({ ...base, manualFiltering: true, manualSorting: true });
+    expect(Array.from(bothManual.order)).toEqual([0, 1, 2]);
+    expect(bothManual.orderIsIdentity).toBe(true);
+    expect(bothManual.rowDragOperable).toBe(true);
+  });
+
+  it('手動モードでは記述子 / sort の参照が変わっても order は不変(参照安定)、解除すると即座に適用される', () => {
+    const pipeline = createRowPipelineResolver<Row>();
+    const baseOrder = pipeline.resolveBaseOrder(rows.length);
+    const base = { rows, visibleColumns: columns, globalFilteredOrder: baseOrder, rowDragAvailable: true };
+    const first = pipeline.resolveOrder({ ...base, columnFilters: numberFilter, sort, manualFiltering: true, manualSorting: true });
+    const second = pipeline.resolveOrder({
+      ...base,
+      columnFilters: { ...numberFilter },
+      sort: [{ columnKey: 'amount', direction: 'desc' }],
+      manualFiltering: true,
+      manualSorting: true,
+    });
+    expect(second.order).toBe(first.order);
+    // 再マウントなしで解除: 同じ入力で manual を外すとフィルター + ソートが適用される。
+    const client = pipeline.resolveOrder({ ...base, columnFilters: numberFilter, sort });
+    expect(Array.from(client.order)).toEqual([2, 0]);
+  });
+});
