@@ -16,6 +16,8 @@ import '@ishibashi0112/spreadsheet-grid/style.css';
 
 type Row = {
   id: number;
+  // ラベル行(見出し / 区切り行)の目印。labelRow トグル ON のとき 20 行ごとに差し込む(id は負値で一意にする)。
+  kind?: 'label';
   name: string;
   category: string;
   status: string;
@@ -104,6 +106,31 @@ function buildRows(count: number): Row[] {
   return rows;
 }
 
+// ラベル行(見出し行)を 20 行ごとに差し込む。見出し行は rows に混在させ、labelRow.isLabelRow で識別する。
+const LABEL_ROW_INTERVAL = 20;
+function insertLabelRows(rows: Row[]): Row[] {
+  const out: Row[] = [];
+  for (let i = 0; i < rows.length; i++) {
+    if (i % LABEL_ROW_INTERVAL === 0) {
+      const section = i / LABEL_ROW_INTERVAL + 1;
+      const last = Math.min(i + LABEL_ROW_INTERVAL, rows.length);
+      out.push({
+        id: -section,
+        kind: 'label',
+        name: `第 ${section} 節(ID ${rows[i].id} 〜 ${rows[last - 1].id})`,
+        category: '',
+        status: '',
+        qty: 0,
+        price: 0,
+        registered: '',
+        active: false,
+      });
+    }
+    out.push(rows[i]);
+  }
+  return out;
+}
+
 type Settings = {
   theme: GridTheme;
   density: GridDensity;
@@ -133,6 +160,10 @@ type Settings = {
   detailRow: boolean;
   // 行ドラッグ並び替え。ON でハンドル列(⋮⋮)が先頭に入り、行を上下へ動かせる(ソート / フィルター中は無効)。
   enableRowDrag: boolean;
+  // ラベル行(見出し / 区切り行)。ON で rows に 20 行ごとの見出し行を混在させ、全幅の帯で描く。
+  labelRow: boolean;
+  // ラベル行の縦スクロール固定(現在セクションの見出しをヘッダー直下に固定)。
+  labelRowSticky: boolean;
 };
 
 const DEFAULTS: Settings = {
@@ -160,6 +191,8 @@ const DEFAULTS: Settings = {
   scrollHintMinRows: 0,
   detailRow: false,
   enableRowDrag: false,
+  labelRow: false,
+  labelRowSticky: true,
 };
 
 function buildSnippet(s: Settings): string {
@@ -214,6 +247,16 @@ function buildSnippet(s: Settings): string {
   if (s.enableRowDrag) {
     lines.push('  enableRowDrag');
   }
+  // labelRow は既定 OFF(undefined)のため、ON のときだけスニペットへ載せる。
+  if (s.labelRow) {
+    lines.push(
+      '  labelRow={{',
+      "    isLabelRow: (row) => row.kind === 'label',",
+      '    getLabel: (row) => row.name,',
+      ...(s.labelRowSticky ? ['    sticky: true,'] : []),
+      '  }}',
+    );
+  }
   lines.push('/>');
   return lines.join('\n');
 }
@@ -249,11 +292,11 @@ const playgroundDetailRow: DetailRowOptions<Row> = {
   ),
 };
 
-// rowCount 変更時は key で再マウントし、rows state・undo 履歴・内部状態をリセットする
+// rowCount / labelRow 変更時は key で再マウントし、rows state・undo 履歴・内部状態をリセットする
 function PlaygroundGrid({ settings }: { settings: Settings }) {
   const initialRows = useMemo(
-    () => buildRows(settings.rowCount),
-    [settings.rowCount],
+    () => (settings.labelRow ? insertLabelRows(buildRows(settings.rowCount)) : buildRows(settings.rowCount)),
+    [settings.rowCount, settings.labelRow],
   );
   const [rows, setRows] = useState<Row[]>(initialRows);
   const [columns, setColumns] = useState<GridColumn<Row>[]>(initialColumns);
@@ -291,6 +334,15 @@ function PlaygroundGrid({ settings }: { settings: Settings }) {
       }
       detailRow={settings.detailRow ? playgroundDetailRow : undefined}
       enableRowDrag={settings.enableRowDrag}
+      labelRow={
+        settings.labelRow
+          ? {
+              isLabelRow: (row) => row.kind === 'label',
+              getLabel: (row) => row.name,
+              sticky: settings.labelRowSticky,
+            }
+          : undefined
+      }
     />
   );
 }
@@ -409,6 +461,10 @@ export function Playground() {
           <Toggle label="enableClearOnDelete" checked={settings.enableClearOnDelete} onChange={(v) => set('enableClearOnDelete', v)} />
           <Toggle label="detailRow" checked={settings.detailRow} onChange={(v) => set('detailRow', v)} />
           <Toggle label="enableRowDrag" checked={settings.enableRowDrag} onChange={(v) => set('enableRowDrag', v)} />
+          <Toggle label="labelRow" checked={settings.labelRow} onChange={(v) => set('labelRow', v)} />
+          <label className={settings.labelRow ? '' : 'opacity-50'}>
+            <Toggle label="labelRow.sticky" checked={settings.labelRowSticky} onChange={(v) => set('labelRowSticky', v)} />
+          </label>
           <Toggle label="scrollHint" checked={settings.scrollHint} onChange={(v) => set('scrollHint', v)} />
           <label className="flex items-center justify-between gap-2 text-sm">
             <code className="text-xs">scrollHint.minRows</code>
@@ -462,7 +518,7 @@ export function Playground() {
       {/* グリッド + スニペット */}
       <div className="flex min-w-0 flex-1 flex-col gap-4">
         <PlaygroundGrid
-          key={settings.rowCount}
+          key={`${settings.rowCount}-${settings.labelRow}`}
           settings={settings}
         />
         <div className="rounded-lg border border-fd-border">
