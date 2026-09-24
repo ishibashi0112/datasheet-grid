@@ -22,13 +22,19 @@ export const ASYNC_SELECT_COLLECT_ROW_THRESHOLD = 50_000;
 const EMPTY_OPTIONS: SelectOptionEntry[] = [];
 const EMPTY_VALUES: ReadonlySet<string> = new Set<string>();
 
-export type ColumnSelectOptionsStatus = 'idle' | 'collecting' | 'ready';
+// 変更(async-options): 'loading'(利用側コールバックからの取得中。進捗なし)/ 'error'(取得失敗)を追加。
+//   'collecting' は従来どおり rows からの時間分割収集(進捗あり)。
+export type ColumnSelectOptionsStatus = 'idle' | 'collecting' | 'loading' | 'ready' | 'error';
 
 export type ColumnSelectOptionsResult = {
   status: ColumnSelectOptionsStatus;
   options: SelectOptionEntry[];
   allValues: ReadonlySet<string>;
   progress: number;
+  // 追加(async-options): 候補が件数上限で打ち切られた(getFilterOptions の truncated)。
+  truncated?: boolean;
+  // 追加(async-options): status === 'error' のときの表示用メッセージ(Error.message か String(reason))。
+  errorMessage?: string;
 };
 
 export const IDLE_SELECT_OPTIONS_RESULT: ColumnSelectOptionsResult = {
@@ -48,6 +54,14 @@ export type RawValueAccessor = (index: number) => unknown;
 
 const buildValueSet = (options: SelectOptionEntry[]): ReadonlySet<string> =>
   new Set(options.map((option) => option.value));
+
+// 追加(async-options): 解決済み UI 種別が候補(Set / select)を使うかです(シェルが非同期供給の要否判定に使う)。
+export const isSelectLikeFilterType = (filterType: string | null | undefined): boolean =>
+  filterType === 'select' ||
+  filterType === 'set' ||
+  filterType === 'numberSet' ||
+  filterType === 'textSet' ||
+  filterType === 'dateSet';
 
 const isSelectLikeColumn = <T,>(column: GridColumn<T> | null): boolean => {
   const filterType = column?.filterType ?? null;

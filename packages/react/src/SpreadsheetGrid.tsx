@@ -170,6 +170,9 @@ import {
 import useColumnAutosizeRunner from './hooks/useColumnAutosizeRunner';
 // 追加(DS-4 #1): select / set 候補を「通常規模=同期 / 大規模=時間分割の非同期」で収集します。
 import useColumnSelectOptionsCollector from './hooks/useColumnSelectOptionsCollector';
+// 追加(async-options): getFilterOptions 経由の候補取得アダプタと、UI 種別が候補を使うかの判定。
+import { useAsyncSelectOptionsSource } from './hooks/useAsyncSelectOptionsSource';
+import { isSelectLikeFilterType } from '@ishibashi0112/spreadsheet-grid-core/controllers/selectOptionsCollector';
 // 追加(F-async): グローバルフィルタの時間分割(非ブロック)適用フックです。
 import { useGlobalFilteredOrder } from './hooks/useGlobalFilteredOrder';
 // 追加(①-3): serverSide(SSRM)の RowModel を供給するフックです(dataSource 指定時に使用)。
@@ -374,6 +377,8 @@ export function SpreadsheetGrid<T extends object>({
   enableColumnFilter = true,
   // 追加(date-input): dateSet 条件の日付入力を利用側コンポーネントへ差し替えるスロットです。
   renderFilterDateInput,
+  // 追加(async-options): set / select / 複合列の候補を非同期に供給するコールバック(任意)。
+  getFilterOptions,
   enableSorting = true,
   // 追加(manual-mode): 絞り込み / 並べ替えをグリッドで行わない(UI と状態通知はそのまま)。既定 false。
   manualFiltering = false,
@@ -2986,16 +2991,34 @@ export function SpreadsheetGrid<T extends object>({
   //   thrash のため不可)。通常規模はフック内の同期 useMemo で従来どおり即時確定し(チラつき無・
   //   バイト等価)、大規模のみ yieldToMain で時間分割し、収集中は popover を収集中表示にします。
   //   options 配列は同期/非同期いずれも logic/selectOptions の共有コレクタ経由でバイト等価です。
+  // 追加(async-options): 開いている列が getFilterOptions の対象か(静的 filterOptions 指定列は従来どおり静的、
+  //   候補を使わない種別は対象外)。対象なら rows 収集フックには column=null を渡して収集を止め、非同期ソースの
+  //   結果を使います。優先順位: column.filterOptions > getFilterOptions > rows 自動収集。
+  const openedColumnUsesAsyncOptions =
+    getFilterOptions != null &&
+    openedFilterColumn != null &&
+    isSelectLikeFilterType(openedFilterType) &&
+    !(openedFilterColumn.filterOptions && openedFilterColumn.filterOptions.length > 0);
+  const asyncSelectOptions = useAsyncSelectOptionsSource<T>({
+    columnKey: openedColumnUsesAsyncOptions ? openedFilterColumn.key : null,
+    column: openedColumnUsesAsyncOptions ? openedFilterColumn : null,
+    columnFilters: uiState.filters.columnFilters,
+    globalText: globalFilterText,
+    fetch: getFilterOptions ?? null,
+  });
+  const collectedSelectOptions = useColumnSelectOptionsCollector({
+    column: openedColumnUsesAsyncOptions ? null : openedFilterColumn,
+    rowCount: rows.length,
+    getRawValueAt: getOpenedColumnRawValueAt,
+  });
   const {
     options: openedFilterSelectOptions,
     allValues: openedFilterAllValues,
     status: openedFilterOptionsStatus,
     progress: openedFilterOptionsProgress,
-  } = useColumnSelectOptionsCollector({
-    column: openedFilterColumn,
-    rowCount: rows.length,
-    getRawValueAt: getOpenedColumnRawValueAt,
-  });
+    truncated: openedFilterOptionsTruncated,
+    errorMessage: openedFilterOptionsErrorMessage,
+  } = openedColumnUsesAsyncOptions ? asyncSelectOptions.result : collectedSelectOptions;
 
   // 変更(本体分解 E-4b): popover の派生値(dateSet 正規化候補 / 全値集合 / set 選択状態 / 反転可否 / 複合列か)と
   //   コマンド群(set のチェック・すべて選択・検索確定・クリア、複合列の条件編集と個別クリア、適用 / クリア)は
@@ -3396,7 +3419,8 @@ export function SpreadsheetGrid<T extends object>({
       filterType={openedFilterType ?? 'text'}
       // 追加(stage ②): serverSide では set/select 候補をクライアントが自動収集できないため、
       //   候補空時の空表示文言を出し分けます(filterOptions 指定列は従来どおり候補が出ます)。
-      isServerSide={isServerSide}
+      // 変更(async-options): 非同期供給の列では「候補が未指定」文言を出さない(空は本当に空)。
+      isServerSide={isServerSide && !openedColumnUsesAsyncOptions}
       draftValue={filterPopoverState?.draftValue ?? ''}
       numberConditionDraft={filterPopoverState?.numberDraft ?? null}
       onNumberConditionDraftChange={handleNumberConditionDraftChange}
@@ -3425,6 +3449,9 @@ export function SpreadsheetGrid<T extends object>({
       setSelection={openedSetSelection}
       optionsStatus={openedFilterOptionsStatus}
       optionsProgress={openedFilterOptionsProgress}
+      optionsTruncated={openedFilterOptionsTruncated}
+      optionsErrorMessage={openedFilterOptionsErrorMessage}
+      onOptionsRetry={openedColumnUsesAsyncOptions ? asyncSelectOptions.retry : undefined}
       popoverRef={filterPopoverRef}
       textInputRef={filterTextInputRef}
       selectRef={filterSelectRef}

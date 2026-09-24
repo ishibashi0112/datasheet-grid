@@ -31,7 +31,8 @@ set / select の候補集合はクライアントが供給する必要がある�
 
 - **低カーディナリティ列**(状態・区分など): 列定義に `filterOptions` を静的指定する(serverSide でも set として機能する)。
 - **高カーディナリティ列**(品番・ID など): そもそも set 不適。`filterType: 'text'`(部分一致)や `number` 範囲を使う。
-- `filterOptions` 未指定の set/select 列を serverSide で開くと、候補リストに「候補が未指定」である旨が表示される(バグではなく設定不足)。サーバから候補を非同期供給する仕組みは将来の拡張(別 stage)。
+- **サーバから非同期に供給**: グリッド prop `getFilterOptions`(async-options)を指定すると、popover を開くたびに `{ columnKey, column, columnFilters(他列), globalText, signal }` で呼ばれ、返した `{ options, truncated? }` が候補になる(読み込み中 / 失敗 + 再試行 / 打ち切り注記の表示付き。反転可)。高カーディナリティ列でも上限付き DISTINCT + `truncated: true` で set フィルターにできる。
+- `filterOptions` も `getFilterOptions` も無い set/select 列を serverSide で開くと、候補リストに「候補が未指定」である旨が表示される(バグではなく設定不足)。
 
 ### dataSource とパラメータ
 

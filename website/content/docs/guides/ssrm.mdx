@@ -63,7 +63,7 @@ const dataSource: ServerSideDataSource<Row> = {
 
 `query` は `{ globalText?, columnFilters?, sort? }` です。`columnFilters` は `kind` 付きの記述子(`text` / `number` / `date` / `select` / `set` / `custom`)がそのまま届くので、サーバ側で WHERE 句に変換します。実装例は[このデモのソース](https://github.com/ishibashi0112/datasheet-grid/blob/main/website/lib/ssrm-data.ts)を参照してください。
 
-- set / select フィルターの**候補はクライアントが供給**します(全行を持たないため自動収集できません)。低カーディナリティ列は `filterOptions` を静的指定、高カーディナリティ列は `text` / `number` フィルターを使います。
+- set / select フィルターの**候補はクライアントが供給**します(全行を持たないため自動収集できません)。低カーディナリティ列は `filterOptions` を静的指定、サーバから取りたい列はグリッド prop `getFilterOptions`(popover を開くたびに非同期で候補を返す。[ソートとフィルター](/docs/guides/filter-sort) を参照)、高カーディナリティ列は `text` / `number` フィルターを使います。
 - ソート / フィルターを塞ぎたい場合は `enableSorting` / `enableColumnFilter` / `enableGlobalFilter` を `false` にします。
 
 ## 書き戻し(updateRows)と楽観更新
