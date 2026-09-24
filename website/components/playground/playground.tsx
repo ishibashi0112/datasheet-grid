@@ -7,6 +7,7 @@ import {
   SpreadsheetGrid,
   numberFormatter,
   type DetailRowOptions,
+  type GetFilterOptionsParams,
   type GridColumn,
   type GridDensity,
   type GridTheme,
@@ -168,6 +169,8 @@ type Settings = {
   // (絞り込み済みの rows をサーバから受け取る構成向け)。
   manualFiltering: boolean;
   manualSorting: boolean;
+  // 候補の非同期取得(getFilterOptions)。ON で set 列の候補を 700ms 遅延 + 先頭 3 件で打ち切って返す疑似 DB から取る。
+  asyncFilterOptions: boolean;
 };
 
 const DEFAULTS: Settings = {
@@ -199,6 +202,7 @@ const DEFAULTS: Settings = {
   labelRowSticky: true,
   manualFiltering: false,
   manualSorting: false,
+  asyncFilterOptions: false,
 };
 
 function buildSnippet(s: Settings): string {
@@ -260,6 +264,10 @@ function buildSnippet(s: Settings): string {
   if (s.manualSorting) {
     lines.push('  manualSorting');
   }
+  // getFilterOptions は既定 OFF のため、ON のときだけスニペットへ載せる。
+  if (s.asyncFilterOptions) {
+    lines.push('  getFilterOptions={fetchDistinctValues} // ({ columnKey, columnFilters, signal }) => Promise<{ options, truncated? }>');
+  }
   // labelRow は既定 OFF(undefined)のため、ON のときだけスニペットへ載せる。
   if (s.labelRow) {
     lines.push(
@@ -313,6 +321,32 @@ function PlaygroundGrid({ settings }: { settings: Settings }) {
   );
   const [rows, setRows] = useState<Row[]>(initialRows);
   const [columns, setColumns] = useState<GridColumn<Row>[]>(initialColumns);
+  // 疑似 DB: 開いている列の DISTINCT を 700ms 遅延で返し、先頭 3 件で打ち切る(truncated の表示を体験できる)。
+  //   閉じると signal が abort されるので、遅延中の応答は捨てられる。
+  const getFilterOptions = useMemo(
+    () =>
+      async ({ columnKey, signal }: GetFilterOptionsParams<Row>) => {
+        await new Promise<void>((resolve, reject) => {
+          const timer = setTimeout(resolve, 700);
+          signal.addEventListener('abort', () => {
+            clearTimeout(timer);
+            reject(new DOMException('aborted', 'AbortError'));
+          });
+        });
+        const LIMIT = 3;
+        const seen = new Set<string>();
+        for (const row of rows) {
+          if (row.kind === 'label') continue;
+          seen.add(String((row as unknown as Record<string, unknown>)[columnKey] ?? ''));
+        }
+        const values = Array.from(seen).sort();
+        return {
+          options: values.slice(0, LIMIT).map((v) => ({ label: v || '(空白)', value: v })),
+          truncated: values.length > LIMIT,
+        };
+      },
+    [rows],
+  );
 
   return (
     <SpreadsheetGrid
@@ -349,6 +383,7 @@ function PlaygroundGrid({ settings }: { settings: Settings }) {
       enableRowDrag={settings.enableRowDrag}
       manualFiltering={settings.manualFiltering}
       manualSorting={settings.manualSorting}
+      getFilterOptions={settings.asyncFilterOptions ? getFilterOptions : undefined}
       labelRow={
         settings.labelRow
           ? {
@@ -472,6 +507,7 @@ export function Playground() {
           <Toggle label="enableGlobalFilter" checked={settings.enableGlobalFilter} onChange={(v) => set('enableGlobalFilter', v)} />
           <Toggle label="manualFiltering" checked={settings.manualFiltering} onChange={(v) => set('manualFiltering', v)} />
           <Toggle label="manualSorting" checked={settings.manualSorting} onChange={(v) => set('manualSorting', v)} />
+          <Toggle label="getFilterOptions" checked={settings.asyncFilterOptions} onChange={(v) => set('asyncFilterOptions', v)} />
           <Toggle label="enableColumnMenu" checked={settings.enableColumnMenu} onChange={(v) => set('enableColumnMenu', v)} />
           <Toggle label="enableRangeSelection" checked={settings.enableRangeSelection} onChange={(v) => set('enableRangeSelection', v)} />
           <Toggle label="enableUndoRedo" checked={settings.enableUndoRedo} onChange={(v) => set('enableUndoRedo', v)} />

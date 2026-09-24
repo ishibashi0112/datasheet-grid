@@ -30,6 +30,8 @@ import {
 } from 'react';
 // 追加(ime-fix): 複合列の条件 draft 編集オプション(IME 変換中は commit: false で dispatch 保留)です。
 import type { ConditionDraftChangeOptions } from '@ishibashi0112/spreadsheet-grid-core/engine/filterPopoverCommands';
+// 追加(async-options): 候補の状態('loading' / 'error' を含む)。
+import type { ColumnSelectOptionsStatus } from '@ishibashi0112/spreadsheet-grid-core/controllers/selectOptionsCollector';
 import { useVirtualizerCore } from '../hooks/useVirtualizerCore';
 // 追加(SF-ENTER): set フィルター検索の一致関数と Enter 確定の振る舞い判定です(純関数)。
 //   view ファイルからの非コンポーネント export は react-refresh 制約(eslint baseline)に
@@ -158,8 +160,15 @@ type ColumnFilterPopoverProps = {
   selectOptions: ColumnFilterPopoverOption[];
   // 追加(DS-4 #1): 候補収集の状態です。'collecting' の間は universe(総数 / 全値集合)が未確定の
   //   ため、set / select の操作 UI を出さず「収集中」を表示します(部分集合での誤確定を防ぐ)。
-  optionsStatus: 'idle' | 'collecting' | 'ready';
+  // 変更(async-options): 'loading'(getFilterOptions で取得中)/ 'error'(取得失敗)を追加。
+  optionsStatus: ColumnSelectOptionsStatus;
   optionsProgress: number;
+  // 追加(async-options): 候補が件数上限で打ち切られた(一覧下のメタ行に注記)。
+  optionsTruncated?: boolean;
+  // 追加(async-options): status === 'error' の表示用メッセージ。
+  optionsErrorMessage?: string;
+  // 追加(async-options): 失敗時の「再試行」(同じ列を取り直す)。
+  onOptionsRetry?: () => void;
   // 変更(反転set): set 選択状態を { mode, values }(小さい側のみ)で受けます。null = 全選択。
   setSelection: ColumnFilterSetSelection | null;
   popoverRef: RefObject<HTMLDivElement | null>;
@@ -221,6 +230,8 @@ type SetFilterBodyProps = {
   //   選択保持(合意仕様 §4-1)が壊れます。set 列は従来どおり非検索時 'all'
   //   (30 万件規模で巨大配列を作らない反転set 最適化)を使います。
   selectAllUsesExplicitScope?: boolean;
+  // 追加(async-options): 候補が打ち切られている(メタ行に「先頭のみ」の注記)。
+  truncated?: boolean;
 };
 
 function SetFilterBody({
@@ -233,6 +244,7 @@ function SetFilterBody({
   onRequestClose,
   isServerSide,
   selectAllUsesExplicitScope = false,
+  truncated = false,
 }: SetFilterBodyProps) {
   const [searchText, setSearchText] = useState('');
   // 追加(12-A): 候補 5,000 件規模での連続タイピングに備え、絞り込み計算は
@@ -417,6 +429,7 @@ function SetFilterBody({
       <div className="ssg-filter-meta">
         選択中: {totalSelectedCount} / {options.length} 件
         {isSearching ? `（表示中 ${visibleOptions.length} 件）` : ''}
+        {truncated && <TruncatedNote />}
       </div>
     </>
   );
@@ -784,6 +797,8 @@ type DateSetFilterBodyProps = {
   onReplaceSelection: (values: string[]) => void;
   onRequestClose: () => void;
   isServerSide: boolean;
+  // 追加(async-options): 候補が打ち切られている(メタ行に「先頭のみ」の注記)。
+  truncated?: boolean;
 };
 
 function DateSetFilterBody({
@@ -795,6 +810,7 @@ function DateSetFilterBody({
   onReplaceSelection,
   onRequestClose,
   isServerSide,
+  truncated = false,
 }: DateSetFilterBodyProps) {
   const [searchText, setSearchText] = useState('');
   const deferredSearchText = useDeferredValue(searchText);
@@ -1050,6 +1066,7 @@ function DateSetFilterBody({
       <div className="ssg-filter-meta">
         選択中: {totalSelectedCount} / {options.length} 件
         {isSearching ? `（表示中 ${flatMatches.length} 件）` : ''}
+        {truncated && <TruncatedNote />}
       </div>
     </>
   );
@@ -1070,7 +1087,60 @@ type ComboFilterLayoutProps = {
   onSelectionClear: () => void;
   summaryText: string;
   children: ReactNode;
+  // 追加(async-options): 候補の取得中 / 失敗時に「一致 N 件 / 全 N 件」の代わりに出す文言。
+  optionsMeta?: string;
 };
+
+// 追加(async-options): 候補の取得中 / 失敗の本体です(Set 一覧の位置に表示)。複合列では条件エディタは
+//   そのまま使えます(条件は候補に依存しないため)。失敗時は「再試行」で同じ列を取り直します。
+function OptionsPendingBody({
+  status,
+  errorMessage,
+  onRetry,
+}: {
+  status: 'loading' | 'error';
+  errorMessage?: string;
+  onRetry?: () => void;
+}) {
+  if (status === 'loading') {
+    return <div className="ssg-filter-collecting">候補を取得中…</div>;
+  }
+  return (
+    <div className="ssg-filter-error" role="alert">
+      <div>候補の取得に失敗しました</div>
+      {errorMessage ? (
+        <div className="ssg-filter-error-detail" title={errorMessage}>
+          {errorMessage}
+        </div>
+      ) : null}
+      {onRetry ? (
+        <button
+          type="button"
+          onPointerDown={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            onRetry();
+          }}
+          onKeyDown={(event) => {
+            event.stopPropagation();
+            if (event.key === 'Enter' || event.key === ' ') {
+              event.preventDefault();
+              onRetry();
+            }
+          }}
+          className="ssg-filter-btn-secondary"
+        >
+          再試行
+        </button>
+      ) : null}
+    </div>
+  );
+}
+
+// 追加(async-options): 候補打ち切りの注記(メタ行の末尾)。
+function TruncatedNote() {
+  return <span className="ssg-filter-truncated">（先頭のみ・打ち切り）</span>;
+}
 
 function ComboFilterLayout({
   conditionEditor,
@@ -1081,6 +1151,7 @@ function ComboFilterLayout({
   onSelectionClear,
   summaryText,
   children,
+  optionsMeta,
 }: ComboFilterLayoutProps) {
   return (
     <>
@@ -1107,7 +1178,7 @@ function ComboFilterLayout({
       <div className="ssg-filter-sec-head">
         <span className="ssg-filter-sec-label">値</span>
         <span className="ssg-filter-sec-meta">
-          {conditionActive ? `一致 ${options.length} 件` : `全 ${options.length} 件`}
+          {optionsMeta ?? (conditionActive ? `一致 ${options.length} 件` : `全 ${options.length} 件`)}
         </span>
         <button
           type="button"
@@ -1155,6 +1226,9 @@ export function ColumnFilterPopover({
   selectOptions,
   optionsStatus,
   optionsProgress,
+  optionsTruncated = false,
+  optionsErrorMessage,
+  onOptionsRetry,
   setSelection,
   popoverRef,
   textInputRef,
@@ -1217,6 +1291,8 @@ export function ColumnFilterPopover({
   // 追加(filter-ext B/C): set / 複合は即時適用 UI(適用ボタンなし・フッターは
   //   クリア + 閉じる・現在値テキスト行なし)を共有します。
   const isImmediateFilter = isSetFilter || isComboFilter;
+  // 追加(async-options): getFilterOptions からの取得中 / 失敗(rows 収集の 'collecting' とは別扱い)。
+  const optionsPending = optionsStatus === 'loading' || optionsStatus === 'error';
 
   // 追加(filter-ext A/C/D): 条件 UI の draft です。draft は親(controller)管理ですが、
   //   万一 null が来ても表示が壊れないよう既定 draft でフォールバックします。
@@ -1279,6 +1355,33 @@ export function ColumnFilterPopover({
     }
   };
 
+  // 変更(async-options): 複合列の条件エディタは通常表示と取得中 / 失敗表示で共有するため、ここで組み立てます。
+  const comboConditionEditor = isNumberSetFilter ? (
+    <NumberConditionEditor
+      draft={numberDraft}
+      valueInputRef={textInputRef}
+      onDraftChange={onNumberConditionDraftChange}
+      onKeyDown={handleConditionKeyDown}
+    />
+  ) : isTextSetFilter ? (
+    <TextConditionEditor
+      draft={textDraft}
+      valueInputRef={textInputRef}
+      onDraftChange={onTextConditionDraftChange}
+      onKeyDown={handleConditionKeyDown}
+    />
+  ) : (
+    <DateConditionEditor
+      draft={dateDraft}
+      valueInputRef={textInputRef}
+      onDraftChange={onDateConditionDraftChange}
+      onKeyDown={handleConditionKeyDown}
+      presets={resolvedDatePresets}
+      renderDateInput={renderDateInput}
+      onRequestClose={onRequestClose}
+    />
+  );
+
   return createPortal(
     <div
       ref={popoverRef}
@@ -1300,6 +1403,33 @@ export function ColumnFilterPopover({
         <div className="ssg-filter-collecting">
           候補を収集中… {Math.round(optionsProgress * 100)}%
         </div>
+      ) : (isImmediateFilter || filterType === 'select') && optionsPending ? (
+        // 追加(async-options): getFilterOptions からの取得中 / 失敗です。複合列は条件エディタを出したまま
+        //   Set 一覧の位置に状態を表示し(条件は候補に依存しない)、set / select は本体全体を状態表示にします。
+        isComboFilter ? (
+          <ComboFilterLayout
+            conditionEditor={comboConditionEditor}
+            conditionActive={comboConditionActive}
+            onConditionClear={onComboConditionClear}
+            options={comboOptions}
+            setSelection={setSelection}
+            onSelectionClear={onComboSelectionClear}
+            summaryText={comboSummaryText}
+            optionsMeta={optionsStatus === 'loading' ? '取得中…' : '取得失敗'}
+          >
+            <OptionsPendingBody
+              status={optionsStatus === 'loading' ? 'loading' : 'error'}
+              errorMessage={optionsErrorMessage}
+              onRetry={onOptionsRetry}
+            />
+          </ComboFilterLayout>
+        ) : (
+          <OptionsPendingBody
+            status={optionsStatus === 'loading' ? 'loading' : 'error'}
+            errorMessage={optionsErrorMessage}
+            onRetry={onOptionsRetry}
+          />
+        )
       ) : isComboFilter ? (
         // 追加(filter-ext B/C/D): 条件 AND 選択の複合フィルターです。条件(述語)と値(Set)を
         //   縦に並べ、AND で結合します。チェック操作は即時適用・条件も編集で即時適用です。
@@ -1307,33 +1437,7 @@ export function ColumnFilterPopover({
         //   レイアウトは ComboFilterLayout(共有)。条件エディタと Set 本体
         //   (フラット一覧 / 日付ツリー)だけが型ごとに異なります。
         <ComboFilterLayout
-          conditionEditor={
-            isNumberSetFilter ? (
-              <NumberConditionEditor
-                draft={numberDraft}
-                valueInputRef={textInputRef}
-                onDraftChange={onNumberConditionDraftChange}
-                onKeyDown={handleConditionKeyDown}
-              />
-            ) : isTextSetFilter ? (
-              <TextConditionEditor
-                draft={textDraft}
-                valueInputRef={textInputRef}
-                onDraftChange={onTextConditionDraftChange}
-                onKeyDown={handleConditionKeyDown}
-              />
-            ) : (
-              <DateConditionEditor
-                draft={dateDraft}
-                valueInputRef={textInputRef}
-                onDraftChange={onDateConditionDraftChange}
-                onKeyDown={handleConditionKeyDown}
-                presets={resolvedDatePresets}
-                renderDateInput={renderDateInput}
-                onRequestClose={onRequestClose}
-              />
-            )
-          }
+          conditionEditor={comboConditionEditor}
           conditionActive={comboConditionActive}
           onConditionClear={onComboConditionClear}
           options={comboOptions}
@@ -1351,6 +1455,7 @@ export function ColumnFilterPopover({
               onReplaceSelection={onSetReplaceSelection}
               onRequestClose={onRequestClose}
               isServerSide={isServerSide}
+              truncated={optionsTruncated}
             />
           ) : (
             <SetFilterBody
@@ -1363,6 +1468,7 @@ export function ColumnFilterPopover({
               onRequestClose={onRequestClose}
               isServerSide={isServerSide}
               selectAllUsesExplicitScope
+              truncated={optionsTruncated}
             />
           )}
         </ComboFilterLayout>
@@ -1377,6 +1483,7 @@ export function ColumnFilterPopover({
           onReplaceSelection={onSetReplaceSelection}
           onRequestClose={onRequestClose}
           isServerSide={isServerSide}
+          truncated={optionsTruncated}
         />
       ) : filterType === 'number' ? (
         // 変更(filter-ext A): 旧「>=10 / 10..20」式テキスト入力を演算子セレクト + 値入力へ
@@ -1421,7 +1528,10 @@ export function ColumnFilterPopover({
               </option>
             ))}
           </select>
-          <div className="ssg-filter-meta">候補数: {selectOptions.length}</div>
+          <div className="ssg-filter-meta">
+            候補数: {selectOptions.length}
+            {optionsTruncated && <TruncatedNote />}
+          </div>
         </>
       ) : (
         // 変更(filter-ext A): number が専用分岐(演算子セレクト)へ独立したため、

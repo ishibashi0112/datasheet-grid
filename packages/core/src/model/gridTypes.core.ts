@@ -221,6 +221,26 @@ export type GridSelectFilterOption = {
   value: string;
 };
 
+// 追加(async-options): set / select / 複合(numberSet / textSet / dateSet)の候補を利用側から非同期に
+//   供給するコールバック(グリッド prop getFilterOptions)の引数 / 戻り値です。popover を開くたびに呼ばれ、
+//   閉じる / 列切替で signal が abort されます(ライブラリはキャッシュを持たない。必要なら利用側で
+//   columnKey + columnFilters をキーに Promise を保持する)。
+export type GetFilterOptionsParams<T, F extends GridFrameworkTypes = GridFrameworkTypes> = {
+  columnKey: string;
+  column: GridColumn<T, F>;
+  // 開いている列を除いた、他列の有効な列フィルター(Excel と同じく候補を他列の条件で絞るための材料)。
+  columnFilters: Record<string, ColumnFilterValue>;
+  globalText: string;
+  signal: AbortSignal;
+};
+
+export type GetFilterOptionsResult = {
+  // value は記述子の values にそのまま載る文字列。dateSet 列は 'YYYY-MM-DD'、空白(NULL)は '' を渡す。
+  options: GridSelectFilterOption[];
+  // 件数上限で打ち切ったら true(popover に「先頭のみ」の注記が出る。反転 = NOT IN で候補外の値も扱える)。
+  truncated?: boolean;
+};
+
 // 追加(filter-ext E): フィルター popover が実際に描画する UI 種別です('auto' を含まない
 //   「解決済み」の型)。column.filterType が 'auto' のときは開いた時点で本型のいずれかへ
 //   解決され(logic/inferFilterType.ts)、以降の popover / 候補収集 / commit 経路は
@@ -1815,6 +1835,12 @@ export type SpreadsheetGridProps<T, F extends GridFrameworkTypes = GridFramework
   //   ポップアップ要素へ data-ssg-filter-keep-open 属性を付与するか、ピッカーの
   //   withinPortal 相当を無効化して popover 内に描画すること(どちらでも可)。
   renderFilterDateInput?: (ctx: FilterDateInputContext) => F['node'];
+  // 追加(async-options): set / select / 複合列の候補を非同期に供給するコールバックです(DB の DISTINCT 等)。
+  //   優先順位は column.filterOptions(静的)> getFilterOptions > rows からの自動収集。popover を開くたびに
+  //   呼び、閉じる / 列切替で signal を abort。読み込み中 / 失敗(再試行)/ 打ち切りの表示は popover が持つ。
+  //   非同期候補の列は反転(exclude)可。clientSide / serverSide どちらでも使える(serverSide の
+  //   「候補が未指定」表示の代わりになる)。
+  getFilterOptions?: (params: GetFilterOptionsParams<T, F>) => Promise<GetFilterOptionsResult>;
   enableSorting?: boolean;
   // 追加(manual-mode): 列 / グローバルフィルターの「絞り込み」をグリッドで行わない(既定 false)。
   //   フィルター UI(popover / チップバー / フィルター管理 / フィルター中の印)と状態

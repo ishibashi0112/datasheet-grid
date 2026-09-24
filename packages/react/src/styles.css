@@ -1931,6 +1931,29 @@
     font-size: 11.5px;
     color: var(--ssg-panel-text-muted);
   }
+  /* 追加(async-options): getFilterOptions の取得失敗(文言 + 詳細 + 再試行)と候補打ち切りの注記。 */
+  .ssg-filter-error {
+    padding: 14px 10px;
+    text-align: center;
+    font-size: 11.5px;
+    color: var(--ssg-danger);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+  }
+  .ssg-filter-error-detail {
+    max-width: 100%;
+    font-size: 10.5px;
+    color: var(--ssg-panel-text-muted);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .ssg-filter-truncated {
+    margin-left: 2px;
+    color: var(--ssg-panel-text-sub);
+  }
 
   /* テキスト/数値入力 + select。
      変更(DENS-B): padding 8×10 → 5×8 / radius 8 → 7 / 余白 8 → 6。フォームコントロールは

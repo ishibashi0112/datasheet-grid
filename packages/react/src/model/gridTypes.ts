@@ -26,6 +26,7 @@ export type CellValidationContext<T> = Core.CellValidationContext<T, ReactGridTy
 export type GridAggFuncParams<T> = Core.GridAggFuncParams<T, ReactGridTypes>;
 export type GridAggFunc<T> = Core.GridAggFunc<T, ReactGridTypes>;
 export type GridColumn<T> = Core.GridColumn<T, ReactGridTypes>;
+export type GetFilterOptionsParams<T> = Core.GetFilterOptionsParams<T, ReactGridTypes>;
 export type SpreadsheetGridSlotContext<T> = Core.SpreadsheetGridSlotContext<T, ReactGridTypes>;
 export type GridContextMenuTarget<T> = Core.GridContextMenuTarget<T, ReactGridTypes>;
 export type GridContextMenuParams<T> = Core.GridContextMenuParams<T, ReactGridTypes>;

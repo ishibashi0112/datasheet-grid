@@ -593,3 +593,56 @@ describe('ColumnFilterPopover の IME ガード(ime-fix)', () => {
     });
   });
 });
+
+// 追加(async-options): getFilterOptions 経由の候補の状態表示(取得中 / 失敗 + 再試行 / 打ち切り注記)。
+describe('ColumnFilterPopover の非同期候補(async-options)', () => {
+  it('複合列の取得中: 条件エディタは使え、Set 一覧の位置に「候補を取得中…」', () => {
+    const props = {
+      ...makeTextSetProps({ operator: 'contains', value: '' }),
+      selectOptions: [],
+      optionsStatus: 'loading' as const,
+      optionsProgress: 0,
+    };
+    render(<ColumnFilterPopover {...props} />);
+    expect(screen.getByLabelText('条件の値')).toBeTruthy();
+    expect(screen.getByText('候補を取得中…')).toBeTruthy();
+    expect(screen.getByText('取得中…')).toBeTruthy();
+    expect(screen.queryByPlaceholderText('検索（Enter で確定）')).toBeNull();
+  });
+
+  it('set 列の失敗: 文言 + 詳細 + 再試行(pointerdown で onOptionsRetry)', () => {
+    const onOptionsRetry = vi.fn();
+    const props = {
+      ...makeProps(),
+      selectOptions: [],
+      optionsStatus: 'error' as const,
+      optionsProgress: 0,
+      optionsErrorMessage: 'ORA-12170: TNS: 接続タイムアウト',
+      onOptionsRetry,
+    };
+    render(<ColumnFilterPopover {...props} />);
+    expect(screen.getByText('候補の取得に失敗しました')).toBeTruthy();
+    expect(screen.getByText('ORA-12170: TNS: 接続タイムアウト')).toBeTruthy();
+    fireEvent.pointerDown(screen.getByText('再試行'));
+    expect(onOptionsRetry).toHaveBeenCalledTimes(1);
+    expect(screen.queryByPlaceholderText('検索（Enter で確定）')).toBeNull();
+  });
+
+  it('select 列の取得中は select を出さず状態表示のみ', () => {
+    const props = { ...makeProps(), filterType: 'select' as const, selectOptions: [], optionsStatus: 'loading' as const };
+    render(<ColumnFilterPopover {...props} />);
+    expect(screen.getByText('候補を取得中…')).toBeTruthy();
+    expect(screen.queryByText('フィルター種別: select')).toBeNull();
+  });
+
+  it('打ち切り(optionsTruncated)はメタ行に「先頭のみ・打ち切り」を注記する(set / select)', () => {
+    const set = { ...makeProps(), optionsTruncated: true };
+    const { unmount } = render(<ColumnFilterPopover {...set} />);
+    expect(screen.getByText('（先頭のみ・打ち切り）')).toBeTruthy();
+    unmount();
+    const select = { ...makeProps(), filterType: 'select' as const, optionsTruncated: true };
+    render(<ColumnFilterPopover {...select} />);
+    expect(screen.getByText('（先頭のみ・打ち切り）')).toBeTruthy();
+    expect(screen.getByText(/候補数: 3/)).toBeTruthy();
+  });
+});

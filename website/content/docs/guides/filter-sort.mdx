@@ -148,6 +148,35 @@ import { DatePickerInput } from '@mantine/dates';
 - 記述子の形(`ColumnFilterValue` の `kind` 別 shape)は [serverSide](/docs/api/server-side) の「列フィルターの wire format」を参照してください。clientSide でも同じ記述子が `GridState.filters.columnFilters` に載ります。
 - 以前の回避策(全列に `filterFn: () => true` を付けて `enableGlobalFilter={false}`)は不要です。
 
+## 候補を非同期に供給する(`getFilterOptions`)
+
+set / select / 複合(numberSet / textSet / dateSet)の候補は既定では `rows` から集めますが、DB 側で絞り込んだ後の `rows` からは選んだ値しか集まりません。`getFilterOptions`(グリッド prop)を指定すると、popover を開くたびにコールバックで候補を取得します(DB の `SELECT DISTINCT` など)。
+
+```tsx
+<SpreadsheetGrid
+  rows={rowsFromServer}
+  columns={columns}
+  getFilterOptions={async ({ columnKey, columnFilters, signal }) => {
+    // columnFilters は開いている列を除いた他列の有効フィルター(Excel と同じく候補を他列の条件で絞れる)
+    const values = await db.distinct(columnKey, buildWhere(columnFilters), { limit: LIMIT + 1, signal })
+    return {
+      options: values.slice(0, LIMIT).map((v) => ({ label: v ?? '(空白)', value: v ?? '' })),
+      truncated: values.length > LIMIT,
+    }
+  }}
+/>
+```
+
+- 引数は `{ columnKey, column, columnFilters, globalText, signal }`。閉じる / 列切替で `signal` が abort されます(abort による reject はエラー表示しません)。
+- 戻り値は `{ options: { label, value }[], truncated?: boolean }`。`value` は記述子の `values` にそのまま載る文字列です。空白(NULL)は `''`、dateSet 列は `'YYYY-MM-DD'` を渡します。
+- popover は読み込み中 / 失敗(「再試行」ボタン付き)/ 打ち切り(`truncated: true` で「先頭のみ・打ち切り」の注記)を表示します。複合列では取得中も条件欄は使えます。
+- 優先順位は `column.filterOptions`(静的)> `getFilterOptions` > rows 自動収集。静的候補を持つ列ではコールバックは呼ばれません。
+- 非同期候補の列は反転(exclude)できます。「これ以外」は SQL では `NOT IN` になるため、打ち切られた候補の外にある値も正しく扱えます。
+- ライブラリはキャッシュを持ちません。同じ引数で再取得したくない場合は、アプリ側で `columnKey` + 他列フィルターをキーに Promise を保持してください。
+- 検索欄は取得済みの候補の中だけを探します(サーバへ検索文字列を渡す再取得は行いません)。
+- serverSide(`dataSource`)でも同じ prop が使えます(「候補が未指定」表示の代わりになります)。
+
+
 ## 状態を外から扱う
 
 ソート / フィルター状態はグリッド内部の reducer が持ちますが、`getState()` / `applyState()`(命令的ハンドル)で保存・復元、`onStateChange` で変更検知ができます。フィルター / ソートだけを追いたい場合は `onFiltersChange` / `onSortChange`(該当スライスが実際に変化したときだけ発火)が使えます。詳細は [API リファレンス](/docs/api/handle) を参照してください。

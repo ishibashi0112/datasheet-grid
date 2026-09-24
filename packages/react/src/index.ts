@@ -39,6 +39,9 @@ export type {
   GridGroupRow,
   // select / set フィルターの候補。
   GridSelectFilterOption,
+  // 追加(async-options): getFilterOptions の引数 / 戻り値。
+  GetFilterOptionsParams,
+  GetFilterOptionsResult,
   // 追加(filter-ext E): 列定義の filterType に渡せる値('auto' 込み)と、
   //   解決後の実効 UI 種別('auto' なし)です。
   ColumnFilterTypeOption,
