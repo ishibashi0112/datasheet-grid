@@ -14,7 +14,9 @@ export type * from '@ishibashi0112/spreadsheet-grid-core/model/gridTypes.core';
 export type ReactGridTypes = { node: ReactNode; style: CSSProperties };
 
 export type CellRenderContext<T> = Core.CellRenderContext<T, ReactGridTypes>;
+/** 展開行(Master/Detail)の設定(`detailRow` prop)。各フィールドの説明は JSDoc と同梱の `API_REFERENCE.md`。 */
 export type DetailRowOptions<T> = Core.DetailRowOptions<T, ReactGridTypes>;
+/** ラベル行(見出し / 区切り行)の設定(`labelRow` prop)。各フィールドの説明は JSDoc と同梱の `API_REFERENCE.md`。 */
 export type LabelRowOptions<T> = Core.LabelRowOptions<T, ReactGridTypes>;
 export type CellStyleContext<T> = Core.CellStyleContext<T, ReactGridTypes>;
 export type HeaderRenderContext<T> = Core.HeaderRenderContext<T, ReactGridTypes>;
@@ -25,11 +27,14 @@ export type CellEditorContext<T> = Core.CellEditorContext<T, ReactGridTypes>;
 export type CellValidationContext<T> = Core.CellValidationContext<T, ReactGridTypes>;
 export type GridAggFuncParams<T> = Core.GridAggFuncParams<T, ReactGridTypes>;
 export type GridAggFunc<T> = Core.GridAggFunc<T, ReactGridTypes>;
+/** 列定義(`columns` prop の要素)。各フィールドの説明は JSDoc と同梱の `API_REFERENCE.md`の「GridColumn props」表。 */
 export type GridColumn<T> = Core.GridColumn<T, ReactGridTypes>;
 export type GetFilterOptionsParams<T> = Core.GetFilterOptionsParams<T, ReactGridTypes>;
 export type SpreadsheetGridSlotContext<T> = Core.SpreadsheetGridSlotContext<T, ReactGridTypes>;
 export type GridContextMenuTarget<T> = Core.GridContextMenuTarget<T, ReactGridTypes>;
+/** `getContextMenuItems` / `onContextMenuOpen` へ渡る右クリックの文脈。 */
 export type GridContextMenuParams<T> = Core.GridContextMenuParams<T, ReactGridTypes>;
+/** スクロール位置インジケーターの設定(`scrollHint` prop)。各フィールドの説明は JSDoc と同梱の `API_REFERENCE.md`。 */
 export type ScrollHintOptions<T = unknown> = Core.ScrollHintOptions<T, ReactGridTypes>;
 export type GridContextMenuActionItem = Core.GridContextMenuActionItem<ReactGridTypes>;
 export type GridContextMenuLabelItem = Core.GridContextMenuLabelItem<ReactGridTypes>;
@@ -38,9 +43,17 @@ export type GridContextMenuItem = Core.GridContextMenuItem<ReactGridTypes>;
 export type GridSlotProps = Core.GridSlotProps<ReactGridTypes>;
 export type GridResolvedSlot = Core.GridResolvedSlot<ReactGridTypes>;
 export type GridResolvedSlots = Core.GridResolvedSlots<ReactGridTypes>;
+/** パーツ別スロット(`classNames` prop)。各値は class 文字列か `{ className, style }`。 */
 export type GridClassNames = Core.GridClassNames<ReactGridTypes>;
 // props だけは React 固有の ref prop(ref-as-prop。命令的ハンドル SpreadsheetGridHandle)を足します。
+/**
+ * `SpreadsheetGrid` の props。各フィールドの説明は JSDoc と同梱の `API_REFERENCE.md`の「SpreadsheetGrid props」表。
+ */
 export type SpreadsheetGridProps<T> = Core.SpreadsheetGridProps<T, ReactGridTypes> & {
   // 追加(imperative API #1): React 19 の ref-as-prop。forwardRef は使いません。
+  /**
+   * 命令的 API(`SpreadsheetGridHandle`)を受け取る ref(React 19 の ref-as-prop。`forwardRef` は不要)。
+   * 例: `const gridRef = useRef<SpreadsheetGridHandle<Row>>(null)` → `<SpreadsheetGrid ref={gridRef} … />`。
+   */
   ref?: Ref<Core.SpreadsheetGridHandle<T>>;
 };

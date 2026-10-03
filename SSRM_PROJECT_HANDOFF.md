@@ -55,6 +55,10 @@
   超過時は uniform へフォールバック)。大規模行数では論理→物理スクロールの圧縮(scroll-space 仮想化)。
 - 仮想化 DOM 上のドラッグは window レベルのリスナ + `pointerId` フィルタ(要素直付けは capture 対象の
   unmount で壊れるため)。
+- 高さ(2026-10-03 fill-height): `height` / `maxHeight` → inline style は `logic/gridHeight.ts`。`%` を含む
+  `height` はルートへ当てて `.ssg-root--fill-height`(flex column)でバー込みのグリッド全体を親に収める。
+  number / `%` を含まない文字列は従来どおりスクロールコンテナの高さ。`maxHeight` は常にスクロール領域の上限。
+  旧実装は `%` が `.ssg-shell`(高さ auto)基準で解決され、親が確定高さでも全行分まで伸びていた。
 
 ### 2.4 rowModel シーム
 
@@ -155,6 +159,9 @@
   `*.undoRedo.integration.test.tsx`(編集履歴・クリア)。
 - jsdom では仮想化行の DOM が出ないため、結合テストはハンドル操作 + ルート要素へのイベント発火
   (paste / keydown)で編集経路を駆動する。
+- ドキュメント同期(2026-10-03 api-docs): 公開型(props / 列 / ハンドル等 8 型)のフィールドの JSDoc は
+  `scripts/sync-api-jsdoc.mjs` が `API_REFERENCE.md` の表から生成し、`gridTypes.apiDocs.test.ts` が表と型の
+  過不足・JSDoc のずれを検査する(再生成は `pnpm run docs:jsdoc`)。
 
 ## §7 残タスク(大きい順)
 

@@ -17,7 +17,9 @@
     "preview": "vp preview",
     "test": "vitest run",
     "test:watch": "vitest",
-    "typecheck:test": "tsc --noEmit -p tsconfig.vitest.json"
+    "typecheck:test": "tsc --noEmit -p tsconfig.vitest.json",
+    "docs:jsdoc": "node scripts/sync-api-jsdoc.mjs",
+    "docs:jsdoc:check": "node scripts/sync-api-jsdoc.mjs --check"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
