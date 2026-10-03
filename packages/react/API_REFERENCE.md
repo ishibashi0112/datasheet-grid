@@ -30,8 +30,8 @@
 | `density` | `'compact' \| 'standard' \| 'comfortable'` | `'standard'` | 密度プリセット(THEME-2)。rowHeight / headerHeight の既定値と寸法トークン(セル横 padding / バー padding / アイコンボタン寸法 / セル文字の相対拡縮)を一括切替。`'standard'` は従来と同値。個別調整はトークン(`--ssg-cell-pad-x` 等)の上書きで可能。popover / menu 等のポータルは対象外。 |
 | `theme` | `'light' \| 'dark' \| 'auto'` | `'light'` | カラーテーマ(TH-DK-2)。`'dark'` でダークプリセット(`.ssg-theme-dark` のトークン一括上書き。Mantine dark 系パレット)をグリッド本体・全ポータル(popover / menu / panel)・ドラッグゴースト・ツールチップへ適用。`'auto'` は `prefers-color-scheme` へ追従(Mantine / HeroUI 等クラスベース dark 運用では、利用側カラースキームの解決値を `'light' \| 'dark'` で渡す使い方を推奨)。個別の色調整はトークン(`--ssg-*`)の上書きで可能。 |
 | `rowHeaderWidth` | `number` | `56` | 行番号列の幅(px)。 |
-| `height` | `number \| string` | `—` | スクロールコンテナの明示高さ。`'100%'` で親要素に追従（親要素が確定高さを持つ前提。祖先まで高さが確定している／flex 子なら `min-height: 0` が必要）。`number` は px。未指定時は `maxHeight` のクリップ挙動になる。 |
-| `maxHeight` | `number \| string` | `—`（既定 480px） | スクロールコンテナの高さ上限。`height`・`maxHeight` が**共に未指定のときのみ**既定の 480px が効く（従来挙動）。`height` と併用すると「明示高さ＋上限」。 |
+| `height` | `number \| string` | `—` | グリッドの明示高さ。**値の種類で何の高さかが変わる**。① `%` を含む文字列(`'100%'` / `'50%'` / `'calc(100% - 40px)'`): トップバー・フィルターチップバー・ボトムバーを含む**グリッド全体**の高さ。`'100%'` でグリッドが親要素に収まり、バーを除いた残りがスクロール領域になる(ルートに `ssg-root--fill-height` が付く)。親要素が確定高さを持つ前提で、親が高さ `auto` だと全行分まで伸びて仮想化が効かない。② `number`(px)/ `%` を含まない文字列(`'400px'` / `'50vh'` / `'calc(100vh - 120px)'`): **スクロール領域だけ**の高さ(グリッド全体はバーの分だけ高くなる)。③ 未指定: スクロール領域は内容の高さで `maxHeight` によりクリップ。ルートへの `style={{ height }}` だけではスクロール領域は決まらないため、高さはこの prop で指定する。 |
+| `maxHeight` | `number \| string` | `—`（既定 480px） | **スクロール領域**の高さ上限(バーは含まない。`height` の種類に関わらず同じ)。`height`・`maxHeight` が**共に未指定のときのみ**既定の 480px が効く（従来挙動）。数値の `height` と併用するとスクロール領域 = `min(height, maxHeight)`、`%` の `height` と併用すると `min(maxHeight, 親の高さ − バー)`(親が大きければグリッド全体はバー + `maxHeight` に縮む)。 |
 | `readOnly` | `boolean` | `false` | グリッド全体の編集を無効化。 |
 | `dimReadOnlyCells` | `boolean` | `false` | readonly セルの組み込み淡色表示(背景 + 文字色)を有効化(THEME-3)。`false` でもセマンティッククラス `.ssg-body-cell--readonly` は常時付与され、利用側 CSS のフックに使える。 |
 | `canEditCell` | `(rowIndex, colIndex, row, column) => boolean` | — | セル単位の編集可否ゲート。 |

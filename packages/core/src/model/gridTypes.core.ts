@@ -1759,12 +1759,20 @@ export type SpreadsheetGridProps<T, F extends GridFrameworkTypes = GridFramework
   //   追従します。個別の色調整はトークン(--ssg-* )の上書きで可能です。
   theme?: GridTheme;
   rowHeaderWidth?: number;
-  // 追加: スクロールコンテナの明示高さ。'100%' で親要素に追従(親が確定高さを持つ前提)。
-  //   number は px。未指定時は maxHeight によるクリップ挙動(従来)になります。
-  //   height と maxHeight は併用可です(height + 上限 maxHeight)。
+  // 追加: グリッドの明示高さです。値の種類で「何の高さか」が変わります(変更: fill-height)。
+  //   - '%' を含む文字列('100%' / '50%' / 'calc(100% - 40px)' 等): トップバー / フィルターチップバー /
+  //     ボトムバーを含むグリッド全体(.ssg-root)の高さ。'100%' で親要素いっぱいに収まり、バーを除いた
+  //     残りがスクロール領域になります。親要素が確定高さを持つ前提です(高さ auto の親だと全行分まで
+  //     伸び、仮想化が効きません)。ルートに .ssg-root--fill-height が付きます。
+  //   - number(px)/ '%' を含まない文字列('400px' / '50vh' / 'calc(100vh - 120px)' 等): スクロール
+  //     領域(.ssg-scroll-container)の高さ。グリッド全体はバーの分だけ高くなります(従来どおり)。
+  //   - 未指定: スクロール領域は内容の高さで、上限 maxHeight(未指定なら 480px)でクリップされます。
   height?: number | string;
-  // 追加: スクロールコンテナの高さ上限。height・maxHeight が共に未指定のときのみ
-  //   既定 480px が適用されます(従来挙動・後方互換)。明示時はその値を上限にします。
+  // 追加: スクロール領域(.ssg-scroll-container)の高さ上限です。height の種類に関わらず常にスクロール
+  //   領域に効きます(バーは含みません)。height・maxHeight が共に未指定のときのみ既定 480px です。
+  //   - number height と併用: スクロール領域 = min(height, maxHeight)。
+  //   - '%' height と併用: スクロール領域 = min(maxHeight, 親の高さ − バー)。親が大きければグリッド全体は
+  //     バー + maxHeight に縮みます。
   maxHeight?: number | string;
   readOnly?: boolean;
   // 追加(THEME-3): readonly セルの組み込み淡色表示(背景 + 文字色)の opt-in です。

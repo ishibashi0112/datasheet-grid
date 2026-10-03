@@ -3,6 +3,7 @@
   "pages": [
     "editing",
     "filter-sort",
+    "sizing",
     "large-data",
     "scroll-hint",
     "ssrm",

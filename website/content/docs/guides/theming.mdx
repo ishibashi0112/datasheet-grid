@@ -71,7 +71,7 @@ description: ダークテーマ(light / dark / auto)、密度(density)、CSS ト
 
 ```tsx
 <SpreadsheetGrid
-  style={{ height: 480 }}
+  style={{ maxWidth: 960 }}
   classNames={{
     root: 'my-grid',                                       // 文字列
     bodyCell: { className: 'tabular', style: { fontVariantNumeric: 'tabular-nums' } },
@@ -82,6 +82,7 @@ description: ダークテーマ(light / dark / auto)、密度(density)、CSS ト
 ```
 
 - グリッドが位置決めに使う座標 / 寸法(`left` / `top` / `width` / `height` / `transform` 等)はグリッド側が後勝ちで上書きするため、スロットの `style` でレイアウトは壊せません。
+- グリッドの高さは `style` ではなく `height` prop で指定します(ルートの `style={{ height }}` だけではスクロール領域の高さが決まらず、バーが切れることがあります)。詳しくは [サイズ(高さ)](/docs/guides/sizing) を参照してください。
 - インライン style は状態クラス(選択 / ホバー等の背景)にも勝ちます。状態で切り替えたい装飾は className 側で行ってください。
 - `classNames` はレンダー毎に新しいオブジェクトを渡して構いません(内容の署名で memo され、行 / ヘッダーの再レンダーは増えません)。
 - `tooltip` / `dragGhost` は命令的 DOM のため、style の数値に単位は付きません(`'12px'` のように文字列で)。

@@ -55,6 +55,10 @@
   超過時は uniform へフォールバック)。大規模行数では論理→物理スクロールの圧縮(scroll-space 仮想化)。
 - 仮想化 DOM 上のドラッグは window レベルのリスナ + `pointerId` フィルタ(要素直付けは capture 対象の
   unmount で壊れるため)。
+- 高さ(2026-10-03 fill-height): `height` / `maxHeight` → inline style は `logic/gridHeight.ts`。`%` を含む
+  `height` はルートへ当てて `.ssg-root--fill-height`(flex column)でバー込みのグリッド全体を親に収める。
+  number / `%` を含まない文字列は従来どおりスクロールコンテナの高さ。`maxHeight` は常にスクロール領域の上限。
+  旧実装は `%` が `.ssg-shell`(高さ auto)基準で解決され、親が確定高さでも全行分まで伸びていた。
 
 ### 2.4 rowModel シーム
 

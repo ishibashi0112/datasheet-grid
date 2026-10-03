@@ -25,6 +25,7 @@ import {
 import './styles.css';
 import { cx } from '@ishibashi0112/spreadsheet-grid-core/logic/cx';
 import { mergeStyles, resolveSlotProps } from '@ishibashi0112/spreadsheet-grid-core/logic/slotProps';
+import { resolveGridHeightLayout } from '@ishibashi0112/spreadsheet-grid-core/logic/gridHeight';
 import {
   useResolvedGridSlot,
   useResolvedGridSlots,
@@ -346,7 +347,8 @@ export function SpreadsheetGrid<T extends object>({
   density = 'standard',
   theme = 'light',
   rowHeaderWidth = 56,
-  // 追加: スクロールコンテナ高さの外部制御。height で明示高さ('100%'=親追従)、maxHeight で上限。
+  // 追加: グリッド高さの外部制御。height で明示高さ、maxHeight でスクロール領域の上限。
+  //   '%' を含む height はバー込みのグリッド全体を親へ追従させます(fill-height。logic/gridHeight)。
   //   両者未指定時は CSS 既定(.ssg-scroll-container max-height:480px)に委ねます。
   height,
   maxHeight,
@@ -3669,20 +3671,16 @@ export function SpreadsheetGrid<T extends object>({
       );
 
   // ── render ────────────────────────────────────────────
-  // 追加: スクロールコンテナの高さ。height/maxHeight props を inline style で当て、
-  //   CSS 既定(.ssg-scroll-container max-height:480px)を必要時のみ上書きします。
+  // 変更(fill-height): height/maxHeight → inline style の解決は logic/gridHeight へ移しました。
   //   - 両者未指定: inline を付けず CSS 既定 480px に委ねる(従来挙動・後方互換)。
-  //   - height 指定: 明示高さを採用('100%' で親要素に追従。親が確定高さを持つ前提)。
-  //     maxHeight 未指定時は CSS 既定 480 を打ち消すため max-height:'none' にします
-  //     (height をクリップさせない)。
-  //   - maxHeight 指定: その値を高さ上限に(height と併用可)。
+  //   - number / '%' を含まない文字列: スクロールコンテナの明示高さ(従来どおり)。
+  //   - '%' を含む文字列('100%' 等): ルートへ高さを当てて .ssg-root--fill-height で flex column 化し、
+  //     バーを除いた残りをスクロールコンテナへ配分します(旧実装は '%' が .ssg-shell(高さ auto)基準で
+  //     解決され、親が確定高さでも全行分まで伸びていました)。
+  //   - maxHeight: スクロールコンテナの高さ上限(height と併用可)。
+  const heightLayout = resolveGridHeightLayout(height, maxHeight);
   const scrollContainerStyle: CSSProperties | undefined =
-    height === undefined && maxHeight === undefined
-      ? undefined
-      : {
-          ...(height !== undefined ? { height } : {}),
-          maxHeight: maxHeight ?? (height !== undefined ? 'none' : undefined),
-        };
+    heightLayout.scrollContainerStyle;
 
   // ── imperative API(ref ハンドル)──────────────────────
   // 変更(本体分解 E-5): 実体は engine/gridApi.ts(React 非依存)。update(レイアウト effect)で最新の状態 / 派生値 /
@@ -3770,10 +3768,13 @@ export function SpreadsheetGrid<T extends object>({
         themeClassName,
         // 追加(THEME-3): readonly 淡色表示の opt-in 修飾子(styles.css 側で :where ゲート)。
         dimReadOnlyCells && 'ssg-root--dim-readonly',
+        // 追加(fill-height): '%' を含む height のときだけ flex column 化します(styles.css)。
+        heightLayout.fillParent && 'ssg-root--fill-height',
         className,
         slots.root?.className,
       )}
-      style={mergeStyles(slots.root?.style, style)}
+      // 変更(fill-height): 親基準モードの高さ(rootStyle)を先頭に置き、利用側の style が後勝ちです。
+      style={mergeStyles<CSSProperties>(heightLayout.rootStyle, slots.root?.style, style)}
     >
       {resolvedTopBar}
 

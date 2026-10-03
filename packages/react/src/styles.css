@@ -2707,6 +2707,29 @@
     overflow: auto;
     position: relative;
   }
+  /* 追加(fill-height): height に '%' を含む値('100%' 等)を渡したときだけルートに付く修飾子です。
+     ルートの高さ(inline。親基準で解決)からトップバー / フィルターチップバー / ボトムバーを除いた
+     残りをシェル → スクロールコンテナへ flex で配分し、バー込みのグリッド全体を親へ収めます。
+     バーは縮めません(flex-shrink: 0)。シェル内のスクロールコンテナ以外の子(overlay / スクロール
+     ヒント / エラーバー)は absolute のため flex 化の影響を受けません。修飾子が付かない既定 / 数値指定の
+     レイアウトは従来どおりです。 */
+  .ssg-root--fill-height {
+    display: flex;
+    flex-direction: column;
+  }
+  .ssg-root--fill-height > * {
+    flex-shrink: 0;
+  }
+  .ssg-root--fill-height > .ssg-shell {
+    flex: 1 1 auto;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+  }
+  .ssg-root--fill-height > .ssg-shell > .ssg-scroll-container {
+    flex: 1 1 auto;
+    min-height: 0;
+  }
   /* width/min-width/height(スクロール範囲)は inline。 */
   .ssg-inner-row {
     display: flex;

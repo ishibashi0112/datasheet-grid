@@ -24,7 +24,7 @@ A high-performance, virtualized spreadsheet / data grid for **React 19**, writte
 - Auto-fit column widths to content on data load — `autoSizeColumns="onMount"` (once, on first data) or `"onDataChange"` (every time `rows` changes, e.g. after a form submit). Same engine as the column menu's "Autosize All Columns"; opt individual columns out with `suppressAutoSize`.
 - Full-text tooltip on truncated cells — `showCellOverflowTooltip` shows the full value on hover, but only when the cell is actually clipped (…).
 - Japanese-aware line wrapping — per-column `wordBreak` / `lineBreak`, including `wordBreak: 'auto-phrase'` for phrase-based breaks on Chromium (BudouX). Cross-browser BudouX recipe in the API reference.
-- External height control via `height` / `maxHeight` (e.g. `height="100%"` to follow the parent's height).
+- External height control via `height` / `maxHeight` — `height="100%"` makes the whole grid (bars included) fill its parent; a number sizes the scroll area.
 - Both **client-side** (`rows`) and **server-side** (`dataSource`, SSRM) row models — server-side includes query forwarding (filter / sort / global filter), soft refresh (`refreshServerSide()`), load-error retry UI, and cell-edit write-back via `dataSource.updateRows` with optimistic updates and automatic rollback on failure.
 - Themeable with CSS custom properties (`--ssg-*`, defined at zero specificity so your overrides always win). Base styles are plain unlayered CSS with single-class specificity, so they survive CSS resets such as Tailwind Preflight; a cascade-layers variant (`style.layer.css`) is also shipped. `className` / `style` / `classNames` slots cover every visible part (25 slots), and every slot accepts either a class string or `{ className, style }` — the shape returned by StyleX's `stylex.props()`.
 - Styled tooltips out of the box — action hints and truncated-text previews use a custom dark-chip tooltip (no browser-default `title` look). Add `data-ssg-tooltip="text"` to your own elements (custom cells, headers) to get the same tooltip; colors are themeable via `--ssg-tooltip-*` tokens.
@@ -168,15 +168,40 @@ Marks are shown in real time by default. For the classic "validate on submit" fl
 
 ## Sizing
 
-By default the grid caps its height at `480px` (`max-height`) and scrolls when the content is taller. Pass `height` to take explicit control — use `height="100%"` to follow the parent's height, or a pixel value:
+By default the scroll area is capped at `480px` (`max-height`) and scrolls when the content is taller. `height` / `maxHeight` take explicit control. **What `height` sizes depends on the value:**
+
+| `height` value | What it sizes | Result |
+| --- | --- | --- |
+| string containing `%` (`'100%'`, `'50%'`, `'calc(100% - 40px)'`) | The **whole grid** — top bar, filter chip bar, scroll area and bottom bar | The grid fits the parent; the bars keep their height and the scroll area takes the rest |
+| `number` (px), or a string without `%` (`'400px'`, `'50vh'`, `'calc(100vh - 120px)'`) | The **scroll area only** | The grid is taller than the value by the bars (`height={400}` → ~473px with the default bars) |
+| omitted | — | Scroll area sized to its content, capped at `maxHeight` (default `480px`) |
+
+`maxHeight` always caps the **scroll area** (never the bars), whatever `height` is: with a numeric `height` the scroll area is `min(height, maxHeight)`; with a `%` `height` it is `min(maxHeight, parent height − bars)`.
+
+Fill a parent with a fixed height:
 
 ```tsx
-<div style={{ height: 600, minHeight: 0 }}>
+<div style={{ height: 600 }}>
   <SpreadsheetGrid rows={rows} columns={columns} height="100%" />
 </div>
 ```
 
-For `height="100%"` to work, the parent must have a resolved height (its ancestors are sized, and a flex child needs `min-height: 0`). This is standard CSS the library can't resolve for you. `maxHeight` sets an upper bound and can be combined with `height` (explicit height, capped at `maxHeight`).
+Fill the rest of a flex column (e.g. below a page header):
+
+```tsx
+<div style={{ display: 'flex', flexDirection: 'column', height: '100vh' }}>
+  <header>…</header>
+  <div style={{ flex: 1, minHeight: 0 }}>
+    <SpreadsheetGrid rows={rows} columns={columns} height="100%" />
+  </div>
+</div>
+```
+
+Rules for `%` values:
+
+- The parent must have a definite height (a fixed `height`, `100vh`, or a sized flex item with `min-height: 0`). If the parent's height is `auto`, the `%` resolves to `auto`: the grid grows to the height of all rows and row virtualization stops (every row is rendered). This is standard CSS the library can't resolve for you. Quick check: with more rows than fit, `.ssg-scroll-container` must have `scrollHeight > clientHeight`.
+- Size the grid with the `height` prop, not with `style={{ height }}` / a class on the root: a root height alone does not size the scroll area (the default `480px` cap still applies, and the bars can be clipped).
+- With a `%` value the root gets the `ssg-root--fill-height` class (a flex column). The layout with a number or no `height` is unchanged.
 
 ### Auto-height rows
 
@@ -313,7 +338,7 @@ The full prop and type reference lives in [`packages/react/API_REFERENCE.md`](./
 - データ投入時に列幅を内容へ自動フィット — `autoSizeColumns="onMount"`（初回にデータが載った一度きり）/ `"onDataChange"`（`rows` が変わるたび。フォーム送信結果の差し替え等）。列メニュー「すべての列の幅を自動調整」と同一エンジンで、列個別の除外は `suppressAutoSize`。
 - 省略（…）セルの全文ツールチップ — `showCellOverflowTooltip` でホバー時に全文表示（実際にクリップされているセルのみ）。
 - 日本語対応の折り返し — 列ごとの `wordBreak` / `lineBreak`。`wordBreak: 'auto-phrase'` で Chromium（Chrome / Edge）の文節折り返し（BudouX）。クロスブラウザの BudouX レシピは API リファレンス参照。
-- `height` / `maxHeight` によるスクロールコンテナ高さの外部制御（`height="100%"` で親要素の高さに追従）。
+- `height` / `maxHeight` による高さの外部制御（`height="100%"` でバー込みのグリッド全体が親要素に収まる。数値はスクロール領域の高さ）。
 - **クライアントサイド**（`rows`）と**サーバーサイド**（`dataSource`、SSRM）の両行モデル — サーバーサイドはクエリ送出（フィルター / ソート / グローバルフィルター）、ソフトリフレッシュ（`refreshServerSide()`）、取得失敗の再試行 UI に加え、`dataSource.updateRows` によるセル編集の書き戻し（楽観更新 + 失敗時の自動ロールバック）まで対応。
 - CSS カスタムプロパティ（`--ssg-*`。特異度 0 で定義され、利用側の上書きが常に勝ちます）によるテーマ設定。基底スタイルは未レイヤーの単一クラス特異度で、Tailwind Preflight などの CSS リセットに壊されません。カスケードレイヤー版（`style.layer.css`）も同梱。`className` / `style` / `classNames` スロットは可視パーツを網羅（25 スロット）し、各スロットは class 文字列でも `{ className, style }`（StyleX の `stylex.props()` の戻り値と同形）でも受け付けます。
 - スタイル付きツールチップを標準装備 — 操作ヒントや切り詰めテキストの全文表示は、ブラウザ標準の `title` ではなくダークチップのカスタムツールチップで表示。利用側の要素(カスタムセルやヘッダー)にも `data-ssg-tooltip="文言"` を付けるだけで同じ見た目になります。配色は `--ssg-tooltip-*` トークンで調整可。
@@ -457,15 +482,40 @@ const invalid = gridRef.current?.getInvalidCells()
 
 ### サイズ（高さ）
 
-既定ではグリッドの高さは `480px`（`max-height`）で頭打ちになり、中身がそれより高いとスクロールします。`height` を渡すと高さを明示制御できます。`height="100%"` で親要素の高さに追従、`number` で px 指定です:
+既定ではスクロール領域の高さは `480px`（`max-height`）で頭打ちになり、中身がそれより高いとスクロールします。`height` / `maxHeight` で高さを明示制御できます。**`height` が何の高さになるかは値の種類で決まります:**
+
+| `height` の値 | 何の高さか | 結果 |
+| --- | --- | --- |
+| `%` を含む文字列（`'100%'` / `'50%'` / `'calc(100% - 40px)'`） | トップバー・フィルターチップバー・スクロール領域・ボトムバーを含む**グリッド全体** | グリッドが親に収まる。バーは自身の高さを保ち、残りがスクロール領域になる |
+| `number`（px）、`%` を含まない文字列（`'400px'` / `'50vh'` / `'calc(100vh - 120px)'`） | **スクロール領域だけ** | グリッド全体はバーの分だけ高くなる（`height={400}` → 既定のバーで約 473px） |
+| 未指定 | — | スクロール領域は内容の高さで、上限 `maxHeight`（既定 `480px`）でクリップ |
+
+`maxHeight` は `height` の種類に関わらず常に**スクロール領域**の上限です（バーは含まない）。数値の `height` と併用するとスクロール領域 = `min(height, maxHeight)`、`%` の `height` と併用すると `min(maxHeight, 親の高さ − バー)` です。
+
+確定高さの親いっぱいに収める:
 
 ```tsx
-<div style={{ height: 600, minHeight: 0 }}>
+<div style={{ height: 600 }}>
   <SpreadsheetGrid rows={rows} columns={columns} height="100%" />
 </div>
 ```
 
-`height="100%"` を効かせるには、**親要素が確定高さを持つ**必要があります（祖先まで高さが確定している／flex 子なら `min-height: 0` が必要）。これは CSS の一般則のため本ライブラリ側では解決できません。`maxHeight` は高さの上限で、`height` と併用できます（明示高さ＋上限）。
+flex column の残り（ページヘッダーの下など）を埋める:
+
+```tsx
+<div style={{ display: 'flex', flexDirection: 'column', height: '100vh' }}>
+  <header>…</header>
+  <div style={{ flex: 1, minHeight: 0 }}>
+    <SpreadsheetGrid rows={rows} columns={columns} height="100%" />
+  </div>
+</div>
+```
+
+`%` 指定のルール:
+
+- **親要素が確定高さを持つ**必要があります（固定の `height`、`100vh`、`min-height: 0` 付きで大きさの決まった flex 子など）。親の高さが `auto` だと `%` は `auto` に解決され、グリッドが全行分の高さまで伸びて行の仮想化が効きません（全行が描画される）。これは CSS の一般則のため本ライブラリ側では解決できません。確認方法: 収まりきらない行数のとき `.ssg-scroll-container` が `scrollHeight > clientHeight` になっていること。
+- グリッドの高さは `height` prop で指定してください。ルートへの `style={{ height }}` やクラスだけではスクロール領域の高さは決まりません（既定の `480px` 上限が残り、バーが切れることがあります）。
+- `%` 指定のときルートに `ssg-root--fill-height` クラス（flex column）が付きます。数値指定・未指定のレイアウトは従来どおりです。
 
 #### 可変行高（auto-height）
 
