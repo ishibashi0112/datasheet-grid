@@ -69,6 +69,8 @@ React 19 + TypeScript + Vite 製のカスタム AG Grid 風・仮想化データ
 - 2026-07-18 追加。Next.js 16 + Fumadocs 16 + Tailwind v4 の日本語ドキュメントサイト(pnpm workspace メンバー、lib は `link:..` 参照)。詳細は `website/README.md`。
 - ルートのゲート(eslint / tsc -b / vitest)の**対象外**(eslint は `globalIgnores(['website'])`)。website の検証は `cd website && vp exec next build`。
 - API リファレンス(`website/content/docs/api/`)は `packages/react/API_REFERENCE.md` の複製。**型変更時は両方同期**。
+- **公開型の JSDoc は API_REFERENCE.md の表から生成する**(2026-10-03 api-docs)。tsc の d.ts は `//` コメントを落とすため、npm 利用者 / AI に届く説明は JSDoc だけ。対象は `SpreadsheetGridProps` / `GridColumn` / `SpreadsheetGridHandle` / `DetailRowOptions` / `LabelRowOptions` / `ScrollHintOptions` / `GridContextMenuParams` / `GridClassNames` のフィールドで、正本は API_REFERENCE.md の表。フィールドを足したら表に行を足し `pnpm run docs:jsdoc`(= `node scripts/sync-api-jsdoc.mjs`)で `gridTypes.core.ts` の JSDoc を再生成する。生成済み JSDoc は手で編集しない(表を直して再生成)。表と型の過不足・JSDoc のずれは `gridTypes.apiDocs.test.ts`(`vp test`)が検出する。`//` の開発メモはそのまま残してよい(d.ts には出ない)。
+- npm 同梱物: React 版は `dist` + `API_REFERENCE.md` + `README.md` + `LICENSE`、core は `dist` + `README.md` + `LICENSE`(各パッケージ直下。LICENSE はルートの複製)。
 - **運用ルール: ライブラリの機能追加・変更・削除をしたら、同じ作業の中で website も更新する**(該当ガイドの追記 or 新規ページ、API リファレンス両方、必要ならデモ / プレイグラウンドのトグル追加)。ドキュメント未更新のまま機能だけ納品しない。
 - ホスティングは Vercel 予定(Root Directory: `website`)。デプロイ操作はユーザーが行う。
 

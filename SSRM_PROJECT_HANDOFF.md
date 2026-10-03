@@ -159,6 +159,9 @@
   `*.undoRedo.integration.test.tsx`(編集履歴・クリア)。
 - jsdom では仮想化行の DOM が出ないため、結合テストはハンドル操作 + ルート要素へのイベント発火
   (paste / keydown)で編集経路を駆動する。
+- ドキュメント同期(2026-10-03 api-docs): 公開型(props / 列 / ハンドル等 8 型)のフィールドの JSDoc は
+  `scripts/sync-api-jsdoc.mjs` が `API_REFERENCE.md` の表から生成し、`gridTypes.apiDocs.test.ts` が表と型の
+  過不足・JSDoc のずれを検査する(再生成は `pnpm run docs:jsdoc`)。
 
 ## §7 残タスク(大きい順)
 

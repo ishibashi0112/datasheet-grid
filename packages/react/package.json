@@ -30,7 +30,8 @@
     "**/*.css"
   ],
   "files": [
-    "dist"
+    "dist",
+    "API_REFERENCE.md"
   ],
   "main": "./dist/index.cjs",
   "module": "./dist/index.js",
