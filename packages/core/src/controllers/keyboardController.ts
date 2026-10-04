@@ -195,6 +195,15 @@ export const createKeyboardController = <T,>(): KeyboardController<T> => {
       return;
     }
     if (event.key === 'Tab') {
+      // 列の端(最終列で Tab / 先頭列で Shift+Tab)は既定動作に任せ、フォーカスをグリッド外へ出します
+      //   (キーボードトラップ回避。WCAG 2.1.2 / 監査 C-5)。端以外は従来どおりアクティブセル移動。
+      const currentCol = uiState.activeCell?.col ?? 0;
+      const atEdge = event.shiftKey
+        ? currentCol <= 0
+        : currentCol >= args.visibleColumns.length - 1;
+      if (atEdge) {
+        return;
+      }
       event.preventDefault();
       moveActiveCell(0, event.shiftKey ? -1 : 1, false);
       return;

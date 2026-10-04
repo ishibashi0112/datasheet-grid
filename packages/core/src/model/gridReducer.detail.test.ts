@@ -4,7 +4,7 @@ import { gridActions } from './gridActions';
 import { createInitialGridUiState, gridUiReducer } from './gridReducer';
 
 describe('gridUiReducer (detail row expand / collapse)', () => {
-  const initial = createInitialGridUiState([]);
+  const initial = createInitialGridUiState();
 
   it('starts with an empty expanded set', () => {
     expect(initial.expandedDetailRowKeys.size).toBe(0);

@@ -17,21 +17,53 @@ export const STRING_COLLATOR = new Intl.Collator('ja', {
   sensitivity: 'base',
 });
 
-// 追加: 値比較を行います。数値化できるものは数値比較し、
-//       それ以外は文字列比較へフォールバックします。
-// 変更(DS-1 / perf): 文字列フォールバックを共有 Intl.Collator 経由にしました
-//   (順序は従来と等価)。数値判定・数値パスは不変です。
+// 追加(監査 L-07 / L-08): sortOrder の fallback が値を分類する種別(数値 < 文字列。空値は方向によらず末尾)。
+const SORT_KIND_NUMBER = 0;
+const SORT_KIND_STRING = 1;
+const SORT_KIND_BLANK = 2;
+
+// 追加(監査 L-07): ソート上の「空値」判定です(null / undefined / 空白のみの文字列)。
+//   フィルターの isBlankCellValue と同じ規則ですが、filtering ⇄ sorting の依存を増やさないためここに置きます。
+const isBlankSortValue = (value: unknown): boolean =>
+  value === null || value === undefined || String(value).trim() === '';
+
+// 追加: 値比較を行います(昇順の比較子)。
+// 変更(DS-1 / perf): 文字列フォールバックを共有 Intl.Collator 経由にしました。
+// 変更(監査 L-07 / L-08): 値を「数値 / 文字列 / 空値」に分類してから比較する全順序にしました。
+//   - 空値(null / undefined / 空白のみ)は最大(昇順で末尾)。従来は null / '' が Number() で 0 になり
+//     数値の途中に、undefined だけが先頭に並んでいました。
+//   - 数値(Number(値) が有限)< 文字列。同種内だけを比較します(数値は差、文字列は STRING_COLLATOR)。
+//     従来はペアごとに数値 / 文字列比較を切り替えていたため、非数値が 1 件混ざると比較が循環し
+//     (1.25 < 1.5 < '1.5x' < 1.25)、Array.prototype.sort の前提が崩れて他の数値の順序まで乱れました。
+//   ソートで「空値は降順でも末尾」にするのは compareSortValues 側の責務です。
 export const compareUnknownValues = (left: unknown, right: unknown) => {
+  const leftBlank = isBlankSortValue(left);
+  const rightBlank = isBlankSortValue(right);
+  if (leftBlank || rightBlank) {
+    return leftBlank === rightBlank ? 0 : leftBlank ? 1 : -1;
+  }
   const leftNumber = Number(left);
   const rightNumber = Number(right);
-  const bothNumeric =
-    Number.isFinite(leftNumber) && Number.isFinite(rightNumber);
-
-  if (bothNumeric) {
+  const leftNumeric = Number.isFinite(leftNumber);
+  const rightNumeric = Number.isFinite(rightNumber);
+  if (leftNumeric && rightNumeric) {
     return leftNumber - rightNumber;
   }
+  if (leftNumeric !== rightNumeric) {
+    return leftNumeric ? -1 : 1;
+  }
+  return STRING_COLLATOR.compare(String(left), String(right));
+};
 
-  return STRING_COLLATOR.compare(String(left ?? ''), String(right ?? ''));
+// 追加(監査 L-07): ソート方向込みの比較です。空値は昇順でも降順でも末尾に固定し(Excel と同じ)、
+//   それ以外は compareUnknownValues に方向(multiplier = 1 / -1)を掛けます。sortOrder の正解定義です。
+export const compareSortValues = (left: unknown, right: unknown, multiplier: number) => {
+  const leftBlank = isBlankSortValue(left);
+  const rightBlank = isBlankSortValue(right);
+  if (leftBlank || rightBlank) {
+    return leftBlank === rightBlank ? 0 : leftBlank ? 1 : -1;
+  }
+  return compareUnknownValues(left, right) * multiplier;
 };
 
 // 追加(MS-2 / マルチソート本体): ソートエントリ配列の「次状態」を返す純関数です。
@@ -256,7 +288,13 @@ export const sortOrder = <T,>(
     const keys = new Float64Array(length);
     let columnIsNumeric = true;
     for (let pos = 0; pos < length; pos += 1) {
-      const numeric = Number(getCellValue(rows[order[pos]], column));
+      const value = getCellValue(rows[order[pos]], column);
+      // 変更(監査 L-07): 空値は NaN キー(比較子で常に末尾へ)。空値以外の非有限値は fallback へ。
+      if (isBlankSortValue(value)) {
+        keys[pos] = Number.NaN;
+        continue;
+      }
+      const numeric = Number(value);
       if (!Number.isFinite(numeric)) {
         columnIsNumeric = false;
         break;
@@ -281,12 +319,25 @@ export const sortOrder = <T,>(
     // fast path: 全列が数値。Float64 typed key の差分のみで比較します(分岐レス)。
     //   単一列ソートは最頻ケースのため、列ループ・列添字を畳んだ専用形へ特化します
     //   (この特化で単一数値列でも従来 boxed 経路に対し非回帰になります)。
+    //   変更(監査 L-07): 空値は NaN キー。NaN を含む比較だけ分岐し、空値を方向によらず末尾へ置きます
+    //   (NaN の自己不一致 key !== key で判定)。
     if (columnCount === 1) {
       const keys = numericKeyColumns[0];
       const multiplier = multipliers[0];
       positions.sort((a, b) => {
-        const diff = keys[a] - keys[b];
+        const left = keys[a];
+        const right = keys[b];
+        const diff = left - right;
         if (diff !== 0) {
+          if (diff !== diff) {
+            if (left === left) {
+              return -1;
+            }
+            if (right === right) {
+              return 1;
+            }
+            return order[a] - order[b];
+          }
           return diff * multiplier;
         }
         return order[a] - order[b];
@@ -294,8 +345,19 @@ export const sortOrder = <T,>(
     } else {
       positions.sort((a, b) => {
         for (let c = 0; c < columnCount; c += 1) {
-          const diff = numericKeyColumns[c][a] - numericKeyColumns[c][b];
+          const left = numericKeyColumns[c][a];
+          const right = numericKeyColumns[c][b];
+          const diff = left - right;
           if (diff !== 0) {
+            if (diff !== diff) {
+              if (left === left) {
+                return -1;
+              }
+              if (right === right) {
+                return 1;
+              }
+              continue;
+            }
             return diff * multipliers[c];
           }
         }
@@ -303,21 +365,55 @@ export const sortOrder = <T,>(
       });
     }
   } else {
-    // fallback: 1 列でも非数値を含む。従来どおり全列を unknown[] へ decorate し、
-    //   compareUnknownValues(ペア単位の数値/文字列判定)で比較します(現状とバイト等価)。
-    const keyColumns: unknown[][] = resolved.map(({ column }) => {
-      const keys = new Array<unknown>(length);
+    // fallback: 1 列でも空値以外の非数値を含む。全列を「種別(数値 / 文字列 / 空値)+ 値」へ decorate し、
+    //   compareSortValues と同じ規則で比較します(監査 L-07 / L-08。分類は列ごと 1 回で、比較子では
+    //   String() / trim() を呼びません)。
+    const kindColumns: Uint8Array[] = new Array<Uint8Array>(columnCount);
+    const numberColumns: Float64Array[] = new Array<Float64Array>(columnCount);
+    const stringColumns: string[][] = new Array<string[]>(columnCount);
+    for (let c = 0; c < columnCount; c += 1) {
+      const column = resolved[c].column;
+      const kinds = new Uint8Array(length);
+      const numbers = new Float64Array(length);
+      const strings = new Array<string>(length);
       for (let pos = 0; pos < length; pos += 1) {
-        keys[pos] = getCellValue(rows[order[pos]], column);
+        const value = getCellValue(rows[order[pos]], column);
+        if (isBlankSortValue(value)) {
+          kinds[pos] = SORT_KIND_BLANK;
+          continue;
+        }
+        const numeric = Number(value);
+        if (Number.isFinite(numeric)) {
+          kinds[pos] = SORT_KIND_NUMBER;
+          numbers[pos] = numeric;
+        } else {
+          kinds[pos] = SORT_KIND_STRING;
+          strings[pos] = String(value);
+        }
       }
-      return keys;
-    });
+      kindColumns[c] = kinds;
+      numberColumns[c] = numbers;
+      stringColumns[c] = strings;
+    }
     positions.sort((a, b) => {
       for (let c = 0; c < columnCount; c += 1) {
-        const compared = compareUnknownValues(
-          keyColumns[c][a],
-          keyColumns[c][b],
-        );
+        const leftKind = kindColumns[c][a];
+        const rightKind = kindColumns[c][b];
+        if (leftKind === SORT_KIND_BLANK || rightKind === SORT_KIND_BLANK) {
+          if (leftKind !== rightKind) {
+            // 空値は方向によらず末尾。
+            return leftKind === SORT_KIND_BLANK ? 1 : -1;
+          }
+          continue;
+        }
+        let compared: number;
+        if (leftKind !== rightKind) {
+          compared = leftKind - rightKind;
+        } else if (leftKind === SORT_KIND_NUMBER) {
+          compared = numberColumns[c][a] - numberColumns[c][b];
+        } else {
+          compared = STRING_COLLATOR.compare(stringColumns[c][a], stringColumns[c][b]);
+        }
         if (compared !== 0) {
           return compared * multipliers[c];
         }

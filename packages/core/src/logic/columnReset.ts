@@ -56,8 +56,8 @@ export const buildResetColumns = <T,>(
       changed = true;
     }
 
-    // 注記: 初期幅を column.width にセットするのが重要です。これにより commit 後の
-    //       sync effect が columnWidths を初期幅で上書きし、live 幅が破棄されます。
+    // 注記: 初期幅を column.width にセットするのが重要です。live 幅(列幅 state のエントリ)は
+    //       リセットコマンドが resetColumnWidths({}) で捨て(監査 RD-5 / M-03)、以後は初期幅で描画されます。
     //       差分なしの列も同じ正規化を行い、column.width と初期幅の不整合
     //       (過去の書き戻しで def 幅がずれているケース)による幅ジャンプを防ぎます。
     return {

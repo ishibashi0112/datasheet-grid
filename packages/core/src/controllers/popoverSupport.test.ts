@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   blurForPopover,
   createPopoverWindowBindings,
+  isInsideGridRoot,
   restoreGridFocus,
 } from './popoverSupport';
 
@@ -38,6 +39,7 @@ describe('createPopoverWindowBindings', () => {
     expect(handlers.onResize).toHaveBeenCalledTimes(1);
     expect(handlers.onScroll).toHaveBeenCalledTimes(1);
     expect(handlers.onOutsidePointerDown).toHaveBeenCalledTimes(1);
+    expect(handlers.onOutsidePointerDown).toHaveBeenCalledWith(document.body);
     expect(handlers.onKeyDown).toHaveBeenCalledTimes(1);
 
     bindings.detach();
@@ -71,5 +73,19 @@ describe('blurForPopover / restoreGridFocus', () => {
     for (const cb of callbacks) cb(0);
     expect(document.activeElement).toBe(root);
     vi.unstubAllGlobals();
+  });
+});
+
+describe('isInsideGridRoot(監査 C-3)', () => {
+  it('押下先が root の内側のときだけ true(外側クリックで閉じたときのフォーカス復帰判定)', () => {
+    const root = document.createElement('div');
+    const cell = document.createElement('div');
+    root.appendChild(cell);
+    const outside = document.createElement('input');
+    document.body.append(root, outside);
+    expect(isInsideGridRoot({ current: root }, cell)).toBe(true);
+    expect(isInsideGridRoot({ current: root }, root)).toBe(true);
+    expect(isInsideGridRoot({ current: root }, outside)).toBe(false);
+    expect(isInsideGridRoot({ current: null }, cell)).toBe(false);
   });
 });

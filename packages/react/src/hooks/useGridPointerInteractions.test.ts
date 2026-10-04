@@ -178,7 +178,7 @@ const makeArgs = (params: {
     rightPaneScrollRef,
     pointerClientRef,
     autoScrollFrameRef,
-    uiState: createInitialGridUiState(columns),
+    uiState: createInitialGridUiState(),
     dispatch: (() => {}) as Dispatch<GridUiAction>,
     enableRangeSelection: true,
     enableSorting: false,

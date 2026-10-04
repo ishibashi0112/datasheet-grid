@@ -52,7 +52,7 @@ const makeArgs = (
     rightPaneScrollRef: { current: null },
     pointerClientRef: { current: null },
     autoScrollFrameRef: { current: null },
-    uiState: createInitialGridUiState(columns),
+    uiState: createInitialGridUiState(),
     dispatch: (action) => {
       actions.push(action);
     },

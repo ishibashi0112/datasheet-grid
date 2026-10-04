@@ -1,6 +1,7 @@
 import type {
   CellCoord,
   ColumnFilterValue,
+  GridColumn,
   GridFilterState,
   GridRowKey,
   GridSortEntry,
@@ -36,6 +37,11 @@ export type GridUiAction =
   | { type: 'column/resizeEnd' }
   | { type: 'columnWidths/sync'; widths: Record<string, number> }
   | { type: 'columnWidths/reset'; widths: Record<string, number> }
+  | {
+      type: 'columnWidths/reconcile';
+      prevColumns: readonly GridColumn<unknown>[] | null;
+      nextColumns: readonly GridColumn<unknown>[];
+    }
   | { type: 'filter/setGlobal'; value: string }
   | { type: 'filter/setColumn'; columnKey: string; value: ColumnFilterValue }
   | { type: 'filter/clearColumn'; columnKey: string }
@@ -136,6 +142,16 @@ export const gridActions = {
   resetColumnWidths: (widths: Record<string, number>): GridUiAction => ({
     type: 'columnWidths/reset',
     widths,
+  }),
+  // 追加(監査 RD-5 / M-03): columns prop 変化時の整合です。参照変化だけではエントリを消さず、
+  //   列の削除 / flex 変化 / width の指定し直しがあった列のエントリだけを捨てます(logic/columnWidthState)。
+  reconcileColumnWidths: <T,>(
+    prevColumns: readonly GridColumn<T>[] | null,
+    nextColumns: readonly GridColumn<T>[],
+  ): GridUiAction => ({
+    type: 'columnWidths/reconcile',
+    prevColumns: prevColumns as unknown as readonly GridColumn<unknown>[] | null,
+    nextColumns: nextColumns as unknown as readonly GridColumn<unknown>[],
   }),
   setGlobalFilter: (value: string): GridUiAction => ({
     type: 'filter/setGlobal',

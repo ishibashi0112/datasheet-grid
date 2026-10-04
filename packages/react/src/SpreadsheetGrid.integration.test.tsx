@@ -102,8 +102,8 @@ describe('SpreadsheetGrid 状態 API(結合)', () => {
     const state = ref.current?.getState();
     expect(state).toBeDefined();
     expect(state?.version).toBe(GRID_STATE_VERSION);
-    // 初期 columnWidths は非 flex 列の width から作られます(flex 列なし)。
-    expect(state?.columnWidths).toEqual({ id: 80, name: 160, qty: 100 });
+    // 初期 columnWidths は空です(手動リサイズ / autosize / applyState した列だけを持つ。監査 RD-5 / M-03)。
+    expect(state?.columnWidths).toEqual({});
     expect(state?.filters).toEqual({ globalText: '', columnFilters: {} });
     expect(state?.sort).toEqual([]);
     // 追加(v2): 列メタは columns prop から配列順で抽出されます(visible/pinned 未指定は省略)。
@@ -285,6 +285,81 @@ describe('SpreadsheetGrid 状態 API(結合)', () => {
       { key: 'name' },
       { key: 'id' },
     ]);
+  });
+});
+
+// 追加(監査 RD-5 / M-03): 列幅 state が columns の参照変化で消えず、列の削除 / width の指定し直しでだけ捨てられることを固定します。
+describe('監査 RD-5 / M-03: 列幅 state は columns の参照変化で消えない', () => {
+  it('同内容・別参照の columns で再レンダーしても applyState の幅が残り、width の指定し直しで捨てられる', () => {
+    const ref = createRef<SpreadsheetGridHandle<Row>>();
+    const { rerender } = render(<SpreadsheetGrid ref={ref} columns={columns} rows={rows} />);
+    act(() => {
+      ref.current?.applyState({ ...appliedState, columnWidths: { name: 300 } });
+    });
+    expect(ref.current?.getState().columnWidths).toEqual({ name: 300 });
+
+    // インライン columns={[...]} 相当(内容同じ・参照だけ新しい)
+    rerender(<SpreadsheetGrid ref={ref} columns={columns.map((c) => ({ ...c }))} rows={rows} />);
+    expect(ref.current?.getState().columnWidths).toEqual({ name: 300 });
+
+    // 他列の width 変更は name のエントリに影響しない
+    const widened = columns.map((c) => (c.key === 'id' ? { ...c, width: 90 } : { ...c }));
+    rerender(<SpreadsheetGrid ref={ref} columns={widened} rows={rows} />);
+    expect(ref.current?.getState().columnWidths).toEqual({ name: 300 });
+
+    // 利用側が name の width を指定し直したらエントリを捨てる(コードの幅が効く)
+    const renamed = widened.map((c) => (c.key === 'name' ? { ...c, width: 220 } : c));
+    rerender(<SpreadsheetGrid ref={ref} columns={renamed} rows={rows} />);
+    expect(ref.current?.getState().columnWidths).toEqual({});
+
+    // 列が無くなったエントリも捨てる
+    act(() => {
+      ref.current?.applyState({ ...appliedState, columnWidths: { qty: 150 } });
+    });
+    rerender(<SpreadsheetGrid ref={ref} columns={renamed.filter((c) => c.key !== 'qty')} rows={rows} />);
+    expect(ref.current?.getState().columnWidths).toEqual({});
+  });
+
+  it('applyState(getState()) は冪等', () => {
+    const ref = createRef<SpreadsheetGridHandle<Row>>();
+    render(<SpreadsheetGrid ref={ref} columns={columns} rows={rows} />);
+    const before = ref.current?.getState();
+    act(() => {
+      ref.current?.applyState(before!);
+    });
+    expect(ref.current?.getState()).toEqual(before);
+  });
+});
+
+// 追加(監査 L-02): 非表示列(visible: false)に載った列フィルター / ソートも行に効くことを固定します。
+describe('監査 L-02: 非表示列のフィルター / ソートが効く', () => {
+  it('非表示列の列フィルターで絞り込まれ、ソートで並ぶ', () => {
+    const ref = createRef<SpreadsheetGridHandle<Row>>();
+    const hiddenName = columns.map((c) => (c.key === 'name' ? { ...c, visible: false } : c));
+    render(<SpreadsheetGrid ref={ref} columns={hiddenName} rows={rows} />);
+    const viewIds = () => ref.current!.getExportData({ scope: 'view' }).rows.map((r) => r[0]?.value);
+    expect(viewIds()).toEqual([1, 2, 3]);
+
+    act(() => {
+      ref.current?.applyState({
+        version: GRID_STATE_VERSION,
+        columnWidths: {},
+        filters: { globalText: '', columnFilters: { name: { kind: 'text', value: 'a' } } },
+        sort: [{ columnKey: 'name', direction: 'desc' }],
+      });
+    });
+    // 'a' を含む alpha / beta / gamma のうち、name 降順 = gamma(3) → beta(2) → alpha(1)
+    expect(viewIds()).toEqual([3, 2, 1]);
+
+    act(() => {
+      ref.current?.applyState({
+        version: GRID_STATE_VERSION,
+        columnWidths: {},
+        filters: { globalText: '', columnFilters: { name: { kind: 'text', value: 'be' } } },
+        sort: [],
+      });
+    });
+    expect(viewIds()).toEqual([2]);
   });
 });
 

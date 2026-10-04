@@ -290,9 +290,9 @@ export const migrateGridState = (input: unknown): GridState => {
 //   - render fn / title / filterType / flex など非シリアライズ項目は現 columns から引き継ぎます
 //     ({ ...column } で spread。flex は触らないため素通しです)。
 //   - 【幅の保全】savedWidths(v1 columnWidths)にエントリがある列は column.width へ焼き込みます。
-//     列メタ適用で columns prop が変わると grid の「columns → columnWidths/sync」effect が
-//     column.width 起点で columnWidths を全置換するため、焼かないと手動リサイズ幅が消えます
-//     (grid 本体の pin / visible / reorder ハンドラと同じ"保全"方向)。
+//     列定義の width も保存幅に揃えておくことで、columns 変化時の列幅 state 整合(reconcileColumnWidths。
+//     width が「エントリと異なる値」へ変わった列だけエントリを捨てる)でエントリが保全されます
+//     (grid 本体の pin / visible / reorder ハンドラと同じ"保全"方向。監査 RD-5 / M-03 で全置換から整合へ)。
 //   - 最後に reorderColumnsByPane で pane 連結正規化します(視覚順 = 論理 index 空間。grid の reorder
 //     経路と一致させ、pinned 復元後のグルーピングを確定します)。
 export const applyColumnState = <T,>(

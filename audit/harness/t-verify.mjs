@@ -112,6 +112,119 @@ import { open, check, pending, summary, errorsOf, renderedRowIndexes, cellText, 
   await close();
 }
 
+// ---- RD-5 / M-03: 列幅 state が columns の参照変化で消える / 全列ぶん焼き込まれる ----
+{
+  const { page, close } = await open('basic', { query: 'n=20' });
+  const initialWidths = await page.evaluate(() => window.__grid.getState().columnWidths);
+  check('RD-5: initial getState().columnWidths is empty (no default widths baked in)', Object.keys(initialWidths).length === 0, { initialWidths });
+  await page.evaluate(() => window.__grid.applyState({ ...window.__grid.getState(), columnWidths: { name: 300 } }));
+  await waitIdle(page);
+  // インライン columns={[...]} 相当: 同内容・別参照の columns を渡し直す
+  await page.evaluate(() => window.__setColumns(window.__columns().map((c) => ({ ...c }))));
+  await waitIdle(page);
+  const afterRerender = await page.evaluate(() => ({
+    widths: window.__grid.getState().columnWidths,
+    domWidth: Math.round(document.querySelector('[data-ssg-col-key="name"]')?.getBoundingClientRect().width ?? 0),
+  }));
+  check('RD-5: applyState width survives a new columns reference', afterRerender.widths.name === 300 && afterRerender.domWidth === 300, afterRerender);
+  const roundTrip = await page.evaluate(() => {
+    const before = JSON.stringify(window.__grid.getState());
+    window.__grid.applyState(JSON.parse(before));
+    return { before, after: JSON.stringify(window.__grid.getState()) };
+  });
+  await waitIdle(page);
+  const afterApply = await page.evaluate(() => JSON.stringify(window.__grid.getState()));
+  check('RD-5: applyState(getState()) is idempotent', afterApply === roundTrip.before, { before: roundTrip.before, afterApply });
+  await close();
+}
+
+// ---- L-02: 非表示列のフィルター / ソートが効かない ----
+{
+  const { page, close } = await open('basic', { query: 'n=20' });
+  await page.evaluate(() => window.__grid.applyState({
+    ...window.__grid.getState(),
+    filters: { globalText: '', columnFilters: { secret: { kind: 'text', value: 's1' } } },
+    sort: [{ columnKey: 'secret', direction: 'desc' }],
+  }));
+  await waitIdle(page, 300);
+  // 先頭列(id = i + 1)で確認する。secret = `s${i}`
+  const view = await page.evaluate(() => window.__grid.getExportData({ scope: 'view' }).rows.map((r) => r[0]?.text));
+  // s1, s10..s19 の 11 件(n=20 → s0..s19)が secret 降順で並ぶ
+  const expected = ['s1', ...Array.from({ length: 10 }, (_, i) => `s1${i}`)].sort().reverse().map((sec) => String(Number(sec.slice(1)) + 1));
+  check('L-02: filter / sort on a hidden column apply to rows', JSON.stringify(view) === JSON.stringify(expected), { view });
+  await close();
+}
+
+// ---- L-07 / L-08: 数値ソートの空値位置 ----
+{
+  const { page, close } = await open('basic', { query: 'n=20' });
+  await page.evaluate(() => {
+    const next = window.__rows().map((r, i) => (i === 3 ? { ...r, qty: null } : i === 7 ? { ...r, qty: '' } : r));
+    window.__setRows(next);
+  });
+  await waitIdle(page);
+  const qtyAt = (dir) => page.evaluate(async (d) => {
+    window.__grid.applyState({ ...window.__grid.getState(), sort: [{ columnKey: 'qty', direction: d }] });
+    await new Promise((r) => setTimeout(r, 200));
+    const data = window.__grid.getExportData({ scope: 'view' });
+    const idx = data.columns.findIndex((c) => c.key === 'qty');
+    return data.rows.map((r) => r[idx]?.value);
+  }, dir);
+  const asc = await qtyAt('asc');
+  const desc = await qtyAt('desc');
+  // 空値(元データの空値 + 追加した null / '')が末尾に連続し、それより前は数値だけであること
+  const isBlank = (v) => v === null || v === undefined || v === '';
+  const blanksLast = (vals) => {
+    const first = vals.findIndex(isBlank);
+    return first > 0 && vals.slice(first).every(isBlank) && vals.slice(0, first).every((v) => typeof v === 'number') && vals.length - first >= 2;
+  };
+  check('L-07: blanks sort last in asc and desc', blanksLast(asc) && blanksLast(desc), { asc: asc.slice(-3), desc: desc.slice(-3) });
+  await close();
+}
+
+// ---- C-5: Tab / Shift+Tab のキーボードトラップ ----
+{
+  const { page, close } = await open('basic', { query: 'n=20' });
+  await page.evaluate(() => {
+    const before = document.createElement('input');
+    before.id = 'before-input';
+    document.body.prepend(before);
+    const after = document.createElement('input');
+    after.id = 'after-input';
+    document.body.appendChild(after);
+  });
+  // 最終列(範囲外 index は B-05 でクランプ)で Tab → グリッド外の次の要素へ
+  await focusGrid(page);
+  await page.evaluate(() => window.__grid.setActiveCell({ row: 0, col: 999 }));
+  await waitIdle(page);
+  // ヘッダーの列メニューボタン(shell 内でタブ移動可能)を経由して、有限回でグリッド外の input に届くこと
+  let presses = 0;
+  let afterTab = '';
+  for (; presses < 40 && afterTab !== 'after-input'; presses++) {
+    await page.keyboard.press('Tab');
+    afterTab = await page.evaluate(() => document.activeElement?.id || document.activeElement?.className);
+  }
+  check('C-5: Tab on the last column moves focus out of the grid', afterTab === 'after-input', { afterTab, presses });
+  // 先頭列で Shift+Tab → グリッド外の前の要素へ
+  await focusGrid(page);
+  await page.evaluate(() => window.__grid.setActiveCell({ row: 0, col: 0 }));
+  await waitIdle(page);
+  await page.keyboard.press('Shift+Tab');
+  await waitIdle(page);
+  const afterShiftTab = await page.evaluate(() => document.activeElement?.id || document.activeElement?.className);
+  const shiftTabOutside = await page.evaluate(() => !document.activeElement?.closest('.ssg-shell'));
+  check('C-5: Shift+Tab on the first column moves focus out of the grid', shiftTabOutside, { afterShiftTab });
+  // 端以外の Tab は従来どおりアクティブセル移動
+  await focusGrid(page);
+  await page.evaluate(() => window.__grid.setActiveCell({ row: 0, col: 0 }));
+  await waitIdle(page);
+  await page.keyboard.press('Tab');
+  await waitIdle(page);
+  const mid = await page.evaluate(() => ({ active: window.__grid.getActiveCell(), focused: document.activeElement?.className }));
+  check('C-5: Tab in the middle still moves the active cell', mid.active?.col === 1 && String(mid.focused).includes('ssg-shell'), mid);
+  await close();
+}
+
 // ---- C-3: ポップオーバー外側クリックでフォーカスを奪い返す ----
 {
   const { page, close } = await open('basic', { query: 'n=20' });
@@ -127,7 +240,7 @@ import { open, check, pending, summary, errorsOf, renderedRowIndexes, cellText, 
   await page.locator('#outside-input').click();
   await waitIdle(page, 200);
   const focused = await page.evaluate(() => document.activeElement?.id || document.activeElement?.className);
-  pending('C-3: clicking an outside input while column menu is open keeps focus on that input', focused === 'outside-input', { focused });
+  check('C-3: clicking an outside input while column menu is open keeps focus on that input', focused === 'outside-input', { focused });
   // フィルター popover でも
   await header(page, 'name').hover();
   await header(page, 'name').locator('.ssg-icon-btn').click();
@@ -137,14 +250,14 @@ import { open, check, pending, summary, errorsOf, renderedRowIndexes, cellText, 
   await page.locator('#outside-input').click();
   await waitIdle(page, 200);
   const focused2 = await page.evaluate(() => document.activeElement?.id || document.activeElement?.className);
-  pending('C-3: same for filter popover', focused2 === 'outside-input', { focused2 });
+  check('C-3: same for filter popover', focused2 === 'outside-input', { focused2 });
   // コンテキストメニューでも
   await cell(page, 1, 'name').click({ button: 'right' });
   await page.waitForSelector('.ssg-menu-panel');
   await page.locator('#outside-input').click();
   await waitIdle(page, 200);
   const focused3 = await page.evaluate(() => document.activeElement?.id || document.activeElement?.className);
-  pending('C-3: same for context menu', focused3 === 'outside-input', { focused3 });
+  check('C-3: same for context menu', focused3 === 'outside-input', { focused3 });
   await close();
 }
 

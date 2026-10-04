@@ -1,8 +1,7 @@
 import type { GridUiAction } from './gridActions';
-import type { GridColumn, GridRowKey, GridUiState } from './gridTypes.unbound';
-// 追加(B3): flex 列(center かつ flex>0)は columnWidths に固定エントリを持たせません。
-//   flex 算出が効くよう、初期生成・columns 同期の両方でこの判定でスキップします。
-import { isFlexingColumn } from '../logic/columnFlex';
+import type { GridRowKey, GridUiState } from './gridTypes.unbound';
+// 追加(監査 RD-5 / M-03): columns 変化時の列幅 state 整合(参照変化だけではエントリを消さない)。
+import { reconcileColumnWidths } from '../logic/columnWidthState';
 // 追加(行選択): 初期状態と同値判定(同値 set は no-op 化して無駄な再レンダーを避ける)。
 import {
   createEmptyRowSelection,
@@ -16,30 +15,19 @@ const DEFAULT_MIN_WIDTH = 60;
 const clamp = (value: number, min: number, max: number) =>
   Math.min(Math.max(value, min), max);
 
-// 追加: 初期 column width map を生成します。
-// 変更(B3): flex 列(center かつ flex>0)はエントリを作りません。columnWidths にエントリがあると
-//   flex 算出より優先され固定化されてしまうためです(手動リサイズ時のみ column/resizeUpdate が
-//   その列のエントリを書き、その列だけ固定になります)。
-const createColumnWidthMap = <T,>(columns: GridColumn<T>[]) =>
-  columns.reduce<Record<string, number>>((acc, column) => {
-    if (isFlexingColumn(column)) {
-      return acc;
-    }
-    acc[column.key] = column.width;
-    return acc;
-  }, {});
-
 // 追加: reducer 初期 state を生成します。
-export const createInitialGridUiState = <T,>(
-  columns: GridColumn<T>[],
-): GridUiState => ({
+// 変更(監査 RD-5 / M-03): 列幅 state を空で始めるため columns 引数は不要になりました。
+export const createInitialGridUiState = (): GridUiState => ({
   activeCell: null,
   selection: null,
   // 追加(行選択): 空(未選択)で開始します。
   rowSelection: createEmptyRowSelection(),
   editingCell: null,
   dragState: null,
-  columnWidths: createColumnWidthMap(columns),
+  // 変更(監査 RD-5 / M-03): 列幅 state は手動リサイズ / autosize / applyState で決まった列だけを持ちます
+  //   (従来は全非 flex 列の column.width で初期化していたため、getState() が既定幅を焼き込んでいました)。
+  //   エントリの無い列は column.width(flex 列は flex 算出)で描画されます。
+  columnWidths: {},
   filters: {
     globalText: '',
     columnFilters: {},
@@ -308,6 +296,15 @@ export const gridUiReducer = (
         ...state,
         columnWidths: action.widths,
       };
+
+    case 'columnWidths/reconcile': {
+      const columnWidths = reconcileColumnWidths(
+        state.columnWidths,
+        action.prevColumns,
+        action.nextColumns,
+      );
+      return columnWidths === state.columnWidths ? state : { ...state, columnWidths };
+    }
 
     case 'filter/setGlobal':
       return {

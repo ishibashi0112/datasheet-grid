@@ -34,7 +34,7 @@ afterEach(() => {
 const makeArgs = (rows: Row[], editingCell: { row: number; col: number } | null) => {
   const dispatch = vi.fn<(a: GridUiAction) => void>();
   const args: EditControllerArgs<Row> = {
-    uiState: { ...createInitialGridUiState(columns), editingCell },
+    uiState: { ...createInitialGridUiState(), editingCell },
     rows,
     visibleColumns: columns,
     rowModel: makeRowModel(rows),

@@ -60,7 +60,10 @@ export type RowOrderInputs<T> = {
   // 追加(label-row ①): ラベル行の配置(resolveLabelRowLayout の結果)。null / 未指定はラベル行なし。
   //   恒等判定(行ドラッグ可否)を「データ行 order = ラベル行を除いた恒等 order」で行うために使います。
   labelLayout?: LabelRowLayout | null;
-  visibleColumns: GridColumn<T>[];
+  // 変更(監査 L-02): 列フィルター / ソートの評価対象列(旧 visibleColumns)。非表示列(visible: false)を
+  //   含む全列(effectiveColumns)を渡します。非表示列のフィルター / ソートも行の絞り込み / 並べ替えに効かせ、
+  //   バー表示・管理パネルの「適用中」と結果を一致させるためです(AG Grid と同じ)。
+  filterSortColumns: GridColumn<T>[];
   // 列フィルター評価値(描画側で遅延化した値を渡してよい)。
   columnFilters: Record<string, ColumnFilterValue>;
   // グローバルフィルター済み order(globalFilteredOrder コントローラの出力)。
@@ -297,15 +300,15 @@ export const createRowPipelineResolver = <T,>() => {
     resolveBaseOrder: (rowCount: number, labelLayout?: LabelRowLayout | null): RowOrder =>
       labelLayout ? memoLabelFreeOrder(labelLayout, rowCount) : memoBaseOrder(rowCount),
     resolveOrder: (inputs: RowOrderInputs<T>): RowOrderResolution => {
-      const { rows, visibleColumns, globalFilteredOrder, rowDragAvailable, labelLayout } = inputs;
+      const { rows, filterSortColumns, globalFilteredOrder, rowDragAvailable, labelLayout } = inputs;
       // 追加(manual-mode): 手動モードでは空定数へ差し替える(下流 memo の引数が安定し、絞り込み / 並べ替え /
       //   Float64 key 前計算のいずれも走らない)。
       const columnFilters = inputs.manualFiltering ? EMPTY_COLUMN_FILTERS : inputs.columnFilters;
       const sort = inputs.manualSorting ? EMPTY_SORT : inputs.sort;
-      const signature = memoNumberSignature(visibleColumns, columnFilters);
-      const numericKeys = memoNumericKeys(rows, visibleColumns, signature);
-      const columnFilteredOrder = memoColumnFiltered(rows, globalFilteredOrder, visibleColumns, columnFilters, numericKeys);
-      const order = memoSorted(rows, columnFilteredOrder, visibleColumns, sort);
+      const signature = memoNumberSignature(filterSortColumns, columnFilters);
+      const numericKeys = memoNumericKeys(rows, filterSortColumns, signature);
+      const columnFilteredOrder = memoColumnFiltered(rows, globalFilteredOrder, filterSortColumns, columnFilters, numericKeys);
+      const order = memoSorted(rows, columnFilteredOrder, filterSortColumns, sort);
       const orderIsIdentity = labelLayout
         ? memoIdentityWithLabels(rowDragAvailable, order, memoLabelFreeOrder(labelLayout, rows.length))
         : memoIdentity(rowDragAvailable, order, rows.length);

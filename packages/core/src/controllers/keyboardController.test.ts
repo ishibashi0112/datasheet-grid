@@ -15,7 +15,7 @@ const rows: Row[] = [{ id: 1, name: 'a' }, { id: 2, name: 'b' }];
 const makeArgs = (rowModel: RowModel<Row>) => {
   const dispatch = vi.fn<(a: GridUiAction) => void>();
   const args: KeyboardControllerArgs<Row> = {
-    uiState: { ...createInitialGridUiState(columns), activeCell: { row: 0, col: 0 } },
+    uiState: { ...createInitialGridUiState(), activeCell: { row: 0, col: 0 } },
     rowModel,
     visibleColumns: columns,
     readOnly: false,
@@ -76,5 +76,53 @@ describe('keyboardController', () => {
     await c.handleKeyDown(ev('ArrowDown', input));
     expect(t.dispatch).not.toHaveBeenCalled();
     input.remove();
+  });
+
+  it('Tab / Shift+Tab: 列の端では preventDefault せずフォーカスを外へ出す(監査 C-5)', async () => {
+    const twoColumns: GridColumn<Row>[] = [
+      { key: 'id', title: 'ID', width: 60 },
+      { key: 'name', title: '名前', width: 100 },
+    ];
+    const rowModel: RowModel<Row> = {
+      getRow: (i) => rows[i],
+      getRowCount: () => rows.length,
+      getSourceIndex: (i) => i,
+      getRowKey: (i) => rows[i]?.id ?? i,
+    };
+    const c = createKeyboardController<Row>();
+    const t = makeArgs(rowModel);
+    const at = (col: number) =>
+      c.update({
+        ...t.args,
+        visibleColumns: twoColumns,
+        uiState: { ...t.args.uiState, activeCell: { row: 1, col } },
+      });
+
+    // 先頭列で Tab → 右へ移動(既定動作は抑止)
+    at(0);
+    const tab = ev('Tab');
+    await c.handleKeyDown(tab);
+    expect(tab.preventDefault).toHaveBeenCalled();
+    expect(t.dispatch).toHaveBeenCalled();
+
+    // 最終列で Tab → 何もしない(既定の Tab 移動でグリッド外へ)
+    t.dispatch.mockClear();
+    at(1);
+    const tabAtEnd = ev('Tab');
+    await c.handleKeyDown(tabAtEnd);
+    expect(tabAtEnd.preventDefault).not.toHaveBeenCalled();
+    expect(t.dispatch).not.toHaveBeenCalled();
+
+    // 先頭列で Shift+Tab → 何もしない / 最終列で Shift+Tab → 左へ移動
+    at(0);
+    const shiftTabAtStart = { ...ev('Tab'), shiftKey: true };
+    await c.handleKeyDown(shiftTabAtStart);
+    expect(shiftTabAtStart.preventDefault).not.toHaveBeenCalled();
+    expect(t.dispatch).not.toHaveBeenCalled();
+    at(1);
+    const shiftTab = { ...ev('Tab'), shiftKey: true };
+    await c.handleKeyDown(shiftTab);
+    expect(shiftTab.preventDefault).toHaveBeenCalled();
+    expect(t.dispatch).toHaveBeenCalled();
   });
 });

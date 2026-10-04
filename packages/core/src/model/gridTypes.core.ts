@@ -998,8 +998,9 @@ export type GridColumn<T, F extends GridFrameworkTypes = GridFrameworkTypes> = {
   /**
    * center 列(非 pinned)の伸縮比。余り幅(コンテナ幅 − 行ヘッダー − pinned 合計 − `width`
    * 固定列の合計)を flex 比で配分し `minWidth`/`maxWidth` でクランプ。
-   * コンテナ追従でリアクティブに伸縮。手動リサイズで固定 px へ変化(`columns` 変化まで固定 → 以後
-   * flex 復帰)。pinned 列では無視。詳細は下記「flex と autoSize」節。
+   * コンテナ追従でリアクティブに伸縮。手動リサイズで固定 px へ変化(その列の `flex` / `pinned` /
+   * `width` 指定が変わるか列のリセットまで固定 → 以後 flex 復帰)。pinned 列では無視。
+   * 詳細は下記「flex と autoSize」節。
    */
   flex?: number;
   // 追加(①): この列のリサイズ可否です。未指定時はグリッドの enableColumnResize を継承します
@@ -1044,7 +1045,10 @@ export type GridColumn<T, F extends GridFrameworkTypes = GridFrameworkTypes> = {
    * の対象外**(折り返し前提のため。下記「flex と autoSize」の制約を参照)。
    */
   autoHeight?: boolean;
-  /** 列の表示/非表示。 */
+  /**
+   * 列の表示/非表示。非表示にしても、その列に載った列フィルター / ソートは行の絞り込み /
+   * 並べ替えに効き続ける(クイックフィルター = グローバル検索は可視列のみが対象)。
+   */
   visible?: boolean;
   /**
    * この列の編集可否。**未指定の列は編集可**で、`false` または `readOnly: true`
@@ -2611,7 +2615,9 @@ export type SpreadsheetGridProps<T, F extends GridFrameworkTypes = GridFramework
   /**
    * ソート機能の有効化。ソートは列メニュー(⋮)の「昇順 / 降順で並び替え」と「並び替えを管理…」
    * パネルから行う(ヘッダー本体のクリックは列範囲選択)。`false` でメニューのソート項目が消え、
-   * `applyState` 等で載った `sort` も適用されない。
+   * `applyState` 等で載った `sort` も適用されない。ソート順は値で決まり、数値として解釈できる値 →
+   * 文字列(日本語照合・数字は数値順)→ 空白セル(null / undefined / 空文字)
+   * の順。**空白セルは昇順でも降順でも末尾**(Excel と同じ)。
    *
    * @defaultValue `true`
    */

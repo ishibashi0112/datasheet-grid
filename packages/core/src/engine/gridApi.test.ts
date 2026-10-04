@@ -77,7 +77,7 @@ const makeArgs = (overrides: Partial<GridApiArgs<Row>> = {}) => {
     orderedColumns: columns,
     columns,
     onColumnsChange: undefined,
-    uiState: createInitialGridUiState(columns),
+    uiState: createInitialGridUiState(),
     headerHeight: 36,
     verticalScaleFactor: 1,
     leftPaneTotalWidth: 0,

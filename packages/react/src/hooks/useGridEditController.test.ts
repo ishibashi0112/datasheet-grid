@@ -53,7 +53,7 @@ const flushRaf = () => {
 };
 
 const setup = (editingCell: { row: number; col: number } | null, serverSide = false) => {
-  const uiState: GridUiState = { ...createInitialGridUiState(columns), editingCell };
+  const uiState: GridUiState = { ...createInitialGridUiState(), editingCell };
   const dispatch = vi.fn<(a: GridUiAction) => void>();
   const onRowsChange = vi.fn();
   const applyServerSideCellEdits = vi.fn(() => 1);
