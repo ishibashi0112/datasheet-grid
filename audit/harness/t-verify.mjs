@@ -179,7 +179,7 @@ import { open, check, summary, errorsOf, renderedRowIndexes, cellText, cell, hea
   await close();
 }
 
-// ---- B-02: 列チューザー「全解除」で合成列(detail toggle)が先頭 → consumer 列 0 本 ----
+// ---- B-02: 列チューザーの全解除(マスタートグル)で合成列(detail toggle)が先頭 → consumer 列 0 本 ----
 {
   const { page, close } = await open('detail', { query: 'n=20' });
   await header(page, 'name').hover();
@@ -187,17 +187,12 @@ import { open, check, summary, errorsOf, renderedRowIndexes, cellText, cell, hea
   await page.waitForSelector('.ssg-menu-panel');
   await page.getByText('列の表示').click();
   await waitIdle(page, 200);
-  const btnTexts = await page.evaluate(() => [...document.querySelectorAll('button')].map((b) => b.textContent.trim()).filter((t) => t.includes('解除') || t.includes('すべて')));
-  console.log('B-02 panel buttons:', btnTexts);
-  const clearAll = page.getByRole('button', { name: /全解除|すべて解除/ }).first();
-  if (await clearAll.count()) {
-    await clearAll.click();
-    await waitIdle(page, 200);
-    const visibleCount = await page.evaluate(() => window.__columns().filter((c) => c.visible !== false).length);
-    check('B-02: 全解除 keeps at least 1 consumer column visible (with synthetic toggle column present)', visibleCount >= 1, { visibleCount, cols: await page.evaluate(() => window.__columns().map((c) => `${c.key}:${c.visible === false ? 'h' : 'v'}`)) });
-  } else {
-    check('B-02: (skipped — no 全解除 button found)', true, btnTexts);
-  }
+  await page.locator('.ssg-chooser-master-btn').click(); // 全表示(secret が非表示なので)
+  await waitIdle(page, 200);
+  await page.locator('.ssg-chooser-master-btn').click(); // 全解除(最後の 1 列は残す契約)
+  await waitIdle(page, 300);
+  const visibleCount = await page.evaluate(() => window.__columns().filter((c) => c.visible !== false).length);
+  check('B-02: 全解除 keeps exactly 1 consumer column visible (synthetic toggle column present)', visibleCount === 1, { visibleCount, headers: await page.evaluate(() => [...document.querySelectorAll('.ssg-header-cell[data-ssg-col-key]')].map((e) => e.getAttribute('data-ssg-col-key'))) });
   await close();
 }
 
@@ -233,14 +228,14 @@ import { open, check, summary, errorsOf, renderedRowIndexes, cellText, cell, hea
   await page.waitForSelector('.ssg-menu-panel');
   await page.getByText('フィルター…').first().click();
   await page.waitForSelector('.ssg-filter-popover');
-  await page.locator('.ssg-filter-popover .ssg-filter-input').fill('item-0000');
+  await page.locator('.ssg-filter-popover .ssg-filter-input').fill('item-00004'); // item-000040..49 の 10 行
   // Tab で「適用」へ移動して Enter
   await page.locator('.ssg-filter-popover .ssg-filter-btn-primary').focus();
   await page.keyboard.press('Enter');
   await waitIdle(page, 300);
   const bottom = await page.locator('.ssg-bar--bottom').textContent();
   const popStill = await page.locator('.ssg-filter-popover').count();
-  check('V-02: Enter on focused 適用 button applies filter', /Rows: 9 \//.test(bottom) && popStill === 0, { bottom, popStill });
+  check('V-02: Enter on focused 適用 button applies filter', /Rows: 10 \//.test(bottom) && popStill === 0, { bottom, popStill });
   await close();
 }
 
@@ -250,7 +245,9 @@ import { open, check, summary, errorsOf, renderedRowIndexes, cellText, cell, hea
   await waitIdle(page, 500);
   const top = await page.locator('.ssg-bar--top').textContent();
   const bottom = await page.locator('.ssg-bar--bottom').textContent();
-  check('SSRM bars: denominator should not be 0', !/Rows: \d+ \/ 0\b/.test(bottom) && !/Rows: \d+ \/ 0\b/.test(top), { top, bottom });
+  const dupKeyWarnings = (await errorsOf(page)).filter((e) => e.includes('same key'));
+  check('B-04: no duplicate React key warnings in SSRM', dupKeyWarnings.length === 0, dupKeyWarnings.slice(0, 2));
+  check('SSRM bars: denominator should not be 0', !/Rows: \d+ \/ 0(?!\d)/.test(bottom) && !/Rows: \d+ \/ 0(?!\d)/.test(top), { top, bottom });
   await close();
 }
 

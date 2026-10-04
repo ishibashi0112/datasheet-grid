@@ -55,7 +55,7 @@
 | `enableColumnFilter` | `boolean` | `true` | 列ごとのフィルター。 |
 | `renderFilterDateInput` | `(ctx: FilterDateInputContext) => ReactNode` | 内製の日付フィールド | dateSet フィルター条件の日付入力を利用側コンポーネント(Mantine `DatePickerInput` 等)へ差し替えるスロット。既定は内製フィールド(自由入力 + ドリルアップカレンダー。下記「dateSet の日付入力(既定 UI)」節)。詳細は「日付入力の差し替え(renderFilterDateInput)」節。 |
 | `getFilterOptions` | `(params: GetFilterOptionsParams<T>) => Promise<{ options: GridSelectFilterOption[]; truncated?: boolean }>` | — | set / select / 複合(numberSet / textSet / dateSet)列の候補を**非同期に供給**する(DB の DISTINCT など)。popover を開くたびに `{ columnKey, column, columnFilters(自列を除く他列の有効フィルター), globalText, signal }` で呼ばれ、閉じる / 列切替で `signal` が abort される(ライブラリはキャッシュしない)。読み込み中 / 失敗(再試行)/ 打ち切り(`truncated`)の表示は popover が持つ。優先順位は `column.filterOptions`(静的)> `getFilterOptions` > rows 自動収集。非同期候補の列は反転(exclude)可。clientSide / serverSide 両対応。詳細は「ソートとフィルター」ガイド。 |
-| `enableSorting` | `boolean` | `true` | ヘッダークリックでのソート。 |
+| `enableSorting` | `boolean` | `true` | ソート機能の有効化。ソートは列メニュー(⋮)の「昇順 / 降順で並び替え」と「並び替えを管理…」パネルから行う(ヘッダー本体のクリックは列範囲選択)。`false` でメニューのソート項目が消え、`applyState` 等で載った `sort` も適用されない。 |
 | `manualFiltering` | `boolean` | `false` | 列 / グローバルフィルターの**絞り込みをグリッドで行わない**(手動フィルターモード)。フィルター UI(popover / チップバー / フィルター管理 / フィルター中の印)と状態(`GridState.filters` / `onStateChange`)は従来どおり動き、`rows` は渡した件数・順のまま表示される(絞り込みはサーバ側 WHERE 等の外部責務)。`rows` が 0 件でフィルターが載っているときは `noMatchingRowsText` を表示。serverSide(`dataSource`)では無視。詳細は「ソートとフィルター」ガイド。 |
 | `manualSorting` | `boolean` | `false` | ソートの**並べ替えをグリッドで行わない**(手動ソートモード)。ソート UI と状態(`GridState.sort` / `onStateChange`)は従来どおり動き、`rows` は渡した順のまま。再マウントなしで切り替え可(`false` へ戻すと即座にクライアントソートが適用)。手動ソート中はラベル行の `sortMode` 連動 / 行ドラッグの無効化は起きない(並べ替えていない扱い)。serverSide では無視。 |
 | `enableColumnResize` | `boolean` | `true` | 列幅の手動リサイズ可否のグリッド既定。各列 `resizable` 未指定時に継承(`column.resizable ?? enableColumnResize`)。 |
@@ -299,7 +299,7 @@ const gridRef = useRef<SpreadsheetGridHandle<Row>>(null);
 | `wordBreak` | `'normal' \| 'break-all' \| 'keep-all' \| 'break-word' \| 'auto-phrase'` | — | 折り返し時(= `autoHeight` 列)の CSS `word-break`。`'auto-phrase'` は Chromium(Chrome / Edge)で BudouX による文節折り返し(Firefox / 一部 Safari 未対応)。**nowrap(非 `autoHeight`)列では折り返し自体が起きないため効果なし**。既定(未指定)はブラウザ標準=禁則つき文字折り返し。詳細は「日本語テキストの折り返し」節。 |
 | `lineBreak` | `'auto' \| 'loose' \| 'normal' \| 'strict' \| 'anywhere'` | — | 折り返し時の CSS `line-break`(禁則処理の強さ)。`'strict'` で禁則を厳格化。`wordBreak` 同様、折り返す列でのみ効果あり。 |
 | `visible` | `boolean` | — | 列の表示/非表示。 |
-| `editable` | `boolean` | — | この列の編集を許可。 |
+| `editable` | `boolean` | `true`(未指定 = 編集可) | この列の編集可否。**未指定の列は編集可**で、`false` または `readOnly: true` で編集不可になる(グリッド全体は `readOnly`、セル単位は `canEditCell`)。 |
 | `readOnly` | `boolean` | — | この列を読み取り専用にする。 |
 | `pinned` | `'left' \| 'right'` | undefined = 中央スクロール | 列固定の方向。 |
 | `rowGroup` | `boolean` | — | `true` でこの列を行グルーピングの対象にする(複数指定時は `columns` 配列の出現順が階層順)。有効時はグループ元列が表示から外れ、先頭に自動グループ列(ツリー表示)が注入される。**clientSide 限定**(serverSide では無視 + 開発時警告)。詳細は「行グルーピング + 集計」節。 |
@@ -1089,7 +1089,7 @@ const buffer = await writeXlsx({
 | `getState()` | 永続化対象(手動リサイズ幅 / フィルター / ソート)のスナップショット `GridState` を返す(純粋・副作用なし)。新規オブジェクトなのでそのまま `JSON.stringify` して保存できる。 |
 | `applyState(state)` | `getState()` の値(または互換な部分形)を適用する。外部入力は内部で防御的に正規化され、幅 reset / フィルター一括 / ソート set の 3 dispatch(1 イベント = 1 再レンダー)で反映。clientSide / serverSide 双方に効く(SSRM は `filters`/`sort` 変化がクエリへ載り再取得)。 |
 
-`GridState`: `{ version, columnWidths, filters, sort }`。`version` はマイグレーション用(現行 `1`)。対象は reducer 内の永続スライスのみで、列の可視/順序/ピン/flex は `columns` prop 側(consumer 所有)のため**含めない**。`activeCell` / `selection` などの一時 UI も含めない。`columnWidths` は手動リサイズした列のみを含む(flex 列はエントリを持たない規約)。`custom` フィルターの `value`(`unknown`)は深いコピーをしないため、シリアライズ可能性は consumer 責務。`applyState` は壊れた/部分的な入力にも耐える(非数値の幅・`kind` 無しの列フィルター・不正な `direction` は捨てる)が、列フィルター値の `kind` 中身までは検証しないため `getState` 出力の往復を前提とする。
+`GridState`: `{ version, columnWidths, filters, sort, columns? }`。`version` はマイグレーション用(現行 `2`)。`columns` は **列メタ(可視 / 順序 / ピン)のスナップショット**(`GridColumnState[]` = `{ key, visible?, pinned? }`。配列順 = 列順)で、`getState()` は常に出力し、`applyState()` は **`onColumnsChange` が指定されているときだけ** `columns` prop へ反映する(列順 / ピン / 可視も復元される点に注意。v1 形式 = `columns` 無しの保存値は列メタを触らない後方互換)。`flex` / 列定義そのものは含めない。`activeCell` / `selection` などの一時 UI も含めない。`columnWidths` は列幅 state のスナップショット(flex 列はエントリを持たない)。手動リサイズ幅のほか、列構成(ピン / 表示 / 並べ替え)の変更時に各列の解決済み幅が焼き込まれるため全列ぶん含まれ得る(2026-10-04 監査の所見 RD-5 / M-03 で扱いを見直し中)。`custom` フィルターの `value`(`unknown`)は深いコピーをしないため、シリアライズ可能性は consumer 責務。`applyState` は壊れた / 部分的な入力にも耐える(非数値の幅・`kind` 無し / 未知 `kind` / 配列であるべき `values` が欠けた列フィルター・不正な `direction` は捨てる)。
 
 ```ts
 // 保存(任意の永続先へ)。

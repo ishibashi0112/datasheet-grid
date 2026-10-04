@@ -135,3 +135,42 @@
 
 - ハーネス: `audit/harness/`(使い方は同ディレクトリの README)(`main.tsx` = シナリオ定義、`pw.mjs` = Playwright 共通部、`t-*.mjs` = シナリオ別テスト、`perf-*.mjs` = 性能計測、`explore*.mjs` = 個別追試)。起動は `node_modules/.bin/vp dev --config vite.config.ts`(port 5177)、本番計測は `vp build … --outDir dist-prod` + `vp preview`(port 5178)。
 - 実測ログ / スクリーンショットは監査セッション内にのみ残した(リポジトリには取り込んでいない)。
+
+## 8. 対応状況(2026-10-04 修正バッチ)
+
+同日中に「純粋なバグ修正(既存プロジェクトの正常系に影響しない)」と判断したものを修正した。各コミットは本文に所見 ID を含む(`git log --grep="audit RD-1"` 等で追える)。「挙動が変わる」ものは実装せず、§9 に判断材料を残す。
+
+| ID | 対応 | 互換性 | 備考 |
+| --- | --- | --- | --- |
+| RD-1 / RD-3 | 修正(editController が rowKey / columnKey で同一性を追跡) | 非破壊 | 編集中に対象行が消えた場合、従来は操作不能で残っていたドラフトが編集終了(破棄)になる |
+| RD-2 / C-2 | 修正(編集中 / 入力要素が発火元の paste はグリッドが扱わない) | 非破壊 | `renderCell` / `renderHeader` 内の input への貼り付けも対象 |
+| L-01 | 修正(overflow 列は consumer の `columns` + 追加列で `onColumnsChange`) | ほぼ非破壊 | `onColumnsChange` に渡る配列が「視覚順の可視列 + 合成列」から「論理順の全列 + 追加列」へ(標準的な `setColumns` 運用では改善のみ) |
+| L-05 | 修正(view 末尾を超える貼り付けは常に行追記) | 挙動変化(改善) | ソート / フィルター中に従来捨てられていた行が `createRow` で追記される |
+| C-1 | 修正(dispose 後の再 update で初回取得 / 可視レンジを取り直す) | 非破壊 | StrictMode 限定の復帰 |
+| P-1 / P-3 / P-7 | 修正(d.ts 拡張子の付与スクリプト / style.css の types / exports に package.json) | 非破壊 | bundler 解決の利用側は変化なし。node16 / nodenext の ESM 利用側で型が解決されるようになる |
+| M-01 | 修正(右寄せ / 中央寄せの既定テキスト span を末尾省略に) | 視覚変更 | あふれたときだけ見た目が変わる(「56,789」→「123…」)。`.ssg-body-cell--align-right > span` を利用側 CSS で上書きしていると干渉し得る |
+| M-02 | 修正(SSRM のバー分母 = サーバー件数) | 非破壊 | 表示文言のみ |
+| B-04 / V-01 | 修正(スケルトン行の key を専用名前空間に) | 非破壊 | React の重複 key 警告が消える |
+| B-02 | 修正(全解除の keep 列 = consumer の最初の表示列) | 非破壊 | |
+| L-09 | 修正(未知 kind / 壊れた shape の列フィルター値を捨てる) | 非破壊 | 従来は throw / TypeError |
+| L-13 | 修正(`numberFormatter` の Intl.NumberFormat をキャッシュ) | 非破壊 | 性能のみ |
+| B-05 | 修正(`selectCell` / `setActiveCell` / `selectRange` の範囲外 index をクランプ) | 軽微な挙動変化 | 従来は範囲外のまま state に入っていた。API_REFERENCE の記述どおりになる |
+| V-02 / V-03 | 修正(フィルター popover / 日付フィールドのボタンを Enter / Space で押せるように) | 非破壊 | pointerdown 経路は不変 |
+| P-4 / L-14 / M-06 / M-07 | 文書修正(`GridState` v2 と `columns` / `enableSorting` の説明 / `editable` の既定) | 非破壊 | API_REFERENCE + website 複製 + 生成 JSDoc |
+
+## 9. 判断待ち(挙動が変わるため未実装)
+
+| ID | 変える場合の挙動 | 影響を受け得る利用側 |
+| --- | --- | --- |
+| C-3 | popover を外側クリックで閉じたときグリッドへフォーカスを戻さない | 「外側クリック後もグリッドにキー入力が届く」ことに依存していた操作フロー |
+| C-5 | 最終セルの `Tab` / 先頭セルの `Shift+Tab` でフォーカスをグリッド外へ出す | 「Tab がグリッドから出ない」前提のフォーム |
+| RD-5 / M-03 | 列幅 state を「手動リサイズした列のみ」にし、`columns` 参照変化で消さない | `getState()` の `columnWidths` を全列ぶん前提で読んでいる保存処理、`applyState` の往復 |
+| L-02 | 非表示列の filter / sort を効かせる(または非表示化時にクリアする) | 非表示列にフィルターが載った保存 state を持つ画面(行の絞り込み結果が変わる) |
+| L-07 / L-08 | 数値ソートで空値を端へ固定し、非数値混入時も全順序にする | 空値を含む列のソート結果の並びが変わる |
+| RD-6 | 編集中に `readOnly` へ切り替わったら確定を拒否 / `renderCell` の `setValue` も readOnly を見る | readOnly グリッドで `setValue` によるトグルを使っている利用側 |
+| L-03 / L-04 | TSV の空行保持と引用符(Excel 互換)の解釈 / コピー時のクォート | 空行入りの貼り付けで行ずれが直る代わりに空行が書き込まれる。コピー結果の形式が変わる(改行入りセル) |
+| P-2 | `require` 条件向けの `index.d.cts` を配布 | CJS + node16 の型解決(現状 TS1479) |
+| C-7 | 失敗ブロックの自動再要求を抑止 / バックオフ | 失敗時のトースト連打は止まるが、スクロールでの自然回復タイミングが変わる |
+| M-05 | auto-height の `scrollToBottom()` を計測後に再補正 | — |
+| M-08 | `readOnly` で行ドラッグも無効化するか(仕様確認) | readOnly + 並べ替え可を意図していた利用側 |
+| B-05 補足 | rows 減少時に `activeCell` / `selection` を reducer 側でもクランプ | `getActiveCell()` が範囲外を返すことに依存する処理は無いはず |
