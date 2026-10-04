@@ -20,7 +20,7 @@ const gridRef = useRef<SpreadsheetGridHandle<Row>>(null);
 // const csv = gridRef.current?.exportCsv({ scope: 'selection' });
 ```
 
-`viewRowIndex` / `colIndex` は**ビュー座標**(フィルター/ソート適用後の表示 index。`colIndex` は固定列を含む視覚順 = 左→中央→右)。範囲外 index は内部でクランプ/無視する。
+`viewRowIndex` / `colIndex` は**ビュー座標**(フィルター/ソート適用後の表示 index。`colIndex` は固定列を含む視覚順 = 左→中央→右)。範囲外 index は内部でクランプ/無視する。表示行数が減った(rows 差し替え / フィルター / グループの折りたたみ等)ときも、はみ出したアクティブセル / 選択範囲は範囲内へ詰められる(アクティブセルは最終行へ寄せ、範囲ははみ出した部分を切り詰める。0 行になったらセル / 行の選択とアクティブセルは解除)。このため `getActiveCell()` / `getSelection()` が存在しない行を返すことはない。
 
 ### スクロール
 

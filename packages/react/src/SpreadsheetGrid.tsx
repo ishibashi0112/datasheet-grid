@@ -1383,6 +1383,13 @@ export function SpreadsheetGrid<T extends object>({
   //   (行数は order.length のみに依存するため)。DS-3-1 keyboard / DS-3-3 clipboard と同型です。
   const viewRowCount = rowModel.getRowCount();
 
+  // 追加(監査 B-05 補足): 表示行数が減った(rows 差し替え / フィルター / グループ折りたたみ等)とき、
+  //   はみ出した activeCell / selection を範囲内へ詰めます(getActiveCell / getSelection が存在しない
+  //   行番号を返さないように)。はみ出しが無ければ reducer が同一参照を返し、通知も起きません。
+  useEffect(() => {
+    dispatch(gridActions.clampSelectionToRowCount(viewRowCount));
+  }, [viewRowCount, dispatch]);
+
   // 追加(grouping ④): leaf 行数(グループ行を除くデータ行数)です。行選択の件数・bar summary の
   //   「Rows: X / Y」はこちらを使います(viewRowCount はグループ行込みの表示行数で、仮想化・
   //   ヒットテスト・キーボード境界はそちらが正)。グルーピング無効時は常に同値です。

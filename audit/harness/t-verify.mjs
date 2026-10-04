@@ -428,7 +428,8 @@ import { open, check, pending, summary, errorsOf, renderedRowIndexes, cellText, 
   await page.evaluate(() => window.__setRows(window.__rows().slice(0, 3)));
   await waitIdle(page, 200);
   const sel = await page.evaluate(() => ({ active: window.__grid.getActiveCell(), selection: window.__grid.getSelection(), selectedRows: window.__grid.getSelectedRows().length, csv: window.__grid.exportCsv({ scope: 'selection', includeHeaders: false }) }));
-  pending('rows shrink: getSelection/getActiveCell stay in range', (!sel.active || sel.active.row < 3) && (sel.selection.type === 'none' || sel.selection.range.end.row < 3), sel);
+  // 監査 B-05 補足: 表示行数の減少で activeCell / selection を範囲内へ詰める(pending → check)。
+  check('rows shrink: getSelection/getActiveCell stay in range', (!sel.active || sel.active.row < 3) && (sel.selection.type === 'none' || sel.selection.range.end.row < 3), sel);
   // 範囲外選択のまま Delete / コピー / Enter 編集
   await focusGrid(page);
   await errorsOf(page);

@@ -19,6 +19,8 @@ export type GridUiAction =
   | { type: 'columnSelection/update'; col: number }
   | { type: 'selection/end' }
   | { type: 'selection/clear' }
+  // 追加(監査 B-05 補足): 表示行数の変化に合わせて activeCell / selection を範囲内へ詰めます。
+  | { type: 'selection/clampToRowCount'; rowCount: number }
   | { type: 'edit/start'; cell: CellCoord }
   | { type: 'edit/stop' }
   | {
@@ -145,6 +147,12 @@ export const gridActions = {
   }),
   // 追加(監査 RD-5 / M-03): columns prop 変化時の整合です。参照変化だけではエントリを消さず、
   //   列の削除 / flex 変化 / width の指定し直しがあった列のエントリだけを捨てます(logic/columnWidthState)。
+  // 追加(監査 B-05 補足): 表示行数(viewRowCount)が減ったとき、はみ出した activeCell / selection を
+  //   範囲内へ詰めます(はみ出しが無ければ no-op)。
+  clampSelectionToRowCount: (rowCount: number): GridUiAction => ({
+    type: 'selection/clampToRowCount',
+    rowCount,
+  }),
   reconcileColumnWidths: <T,>(
     prevColumns: readonly GridColumn<T>[] | null,
     nextColumns: readonly GridColumn<T>[],

@@ -15,6 +15,70 @@ const DEFAULT_MIN_WIDTH = 60;
 const clamp = (value: number, min: number, max: number) =>
   Math.min(Math.max(value, min), max);
 
+// 追加(監査 B-05 補足): 表示行数が減ったとき、はみ出した activeCell / selection(と選択ドラッグの起点)を
+//   範囲内へ詰めます。行は最終行へ寄せ、範囲は切り詰めます(はみ出していない部分の選択は保持)。
+//   0 行になったら activeCell とセル / 行選択を解除します(列選択は行に依存しないため保持)。
+//   はみ出しが無ければ同一参照を返します(store は通知しない)。
+const clampUiStateToRowCount = (state: GridUiState, rowCount: number): GridUiState => {
+  const { activeCell, selection, dragState } = state;
+  if (rowCount <= 0) {
+    const clearSelection = selection !== null && selection.type !== 'col';
+    const clearDrag =
+      dragState?.type === 'selection' && dragState.selectionKind !== 'col';
+    if (activeCell === null && !clearSelection && !clearDrag) {
+      return state;
+    }
+    return {
+      ...state,
+      activeCell: null,
+      selection: clearSelection ? null : selection,
+      dragState: clearDrag ? null : dragState,
+    };
+  }
+  const maxRow = rowCount - 1;
+  let next = state;
+  if (activeCell !== null && activeCell.row > maxRow) {
+    next = { ...next, activeCell: { row: maxRow, col: activeCell.col } };
+  }
+  if (selection?.type === 'cell') {
+    const { start, end } = selection.range;
+    if (start.row > maxRow || end.row > maxRow) {
+      next = {
+        ...next,
+        selection: {
+          type: 'cell',
+          range: {
+            start: { row: Math.min(start.row, maxRow), col: start.col },
+            end: { row: Math.min(end.row, maxRow), col: end.col },
+          },
+        },
+      };
+    }
+  } else if (selection?.type === 'row') {
+    if (selection.startRow > maxRow || selection.endRow > maxRow) {
+      next = {
+        ...next,
+        selection: {
+          type: 'row',
+          startRow: Math.min(selection.startRow, maxRow),
+          endRow: Math.min(selection.endRow, maxRow),
+        },
+      };
+    }
+  }
+  if (dragState?.type === 'selection') {
+    if (dragState.selectionKind === 'cell' && dragState.anchor.row > maxRow) {
+      next = {
+        ...next,
+        dragState: { ...dragState, anchor: { row: maxRow, col: dragState.anchor.col } },
+      };
+    } else if (dragState.selectionKind === 'row' && dragState.anchorRow > maxRow) {
+      next = { ...next, dragState: { ...dragState, anchorRow: maxRow } };
+    }
+  }
+  return next;
+};
+
 // 追加: reducer 初期 state を生成します。
 // 変更(監査 RD-5 / M-03): 列幅 state を空で始めるため columns 引数は不要になりました。
 export const createInitialGridUiState = (): GridUiState => ({
@@ -212,6 +276,9 @@ export const gridUiReducer = (
         selection: null,
         dragState: null,
       };
+
+    case 'selection/clampToRowCount':
+      return clampUiStateToRowCount(state, action.rowCount);
 
     case 'edit/start':
       return {

@@ -216,7 +216,8 @@ const diffListeners = (a, b) => Object.fromEntries(Object.entries(b).filter(([k,
   await page.evaluate(() => window.__setRows([{ id: 1, a: 'x' }]));
   await waitIdle(page, 150);
   const sel = await page.evaluate(() => ({ active: window.__grid.getActiveCell(), selection: window.__grid.getSelection(), rows: window.__grid.getSelectedRows().length }));
-  pending('rows shrink: active/selection clamped or cleared (no OOB)', (sel.active === null || sel.active.row <= 0) && sel.rows <= 1, sel);
+  // 監査 B-05 補足: 範囲内へ詰める(pending → check。選択範囲の終端も範囲内であることを確認)。
+  check('rows shrink: active/selection clamped or cleared (no OOB)', (sel.active === null || sel.active.row <= 0) && sel.rows <= 1 && (sel.selection.type === 'none' || sel.selection.range.end.row <= 0), sel);
   await page.locator('.ssg-shell').focus();
   await page.keyboard.press('Delete');
   await page.keyboard.press('Enter');
