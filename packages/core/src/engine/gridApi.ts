@@ -40,7 +40,13 @@ import {
 } from '../logic/rowSelection';
 import { applyColumnState, buildGridState, extractColumnState, migrateGridState } from '../logic/gridState';
 import { computeHorizontalScrollTarget, computeVerticalScrollTarget } from '../logic/scrollTargets';
-import { collectAllGroupKeys, collectAllGroupRows, type GroupTree } from '../logic/grouping';
+import {
+  collectAllGroupKeys,
+  collectAllGroupRows,
+  flattenGroupTree,
+  isGroupOrderValue,
+  type GroupTree,
+} from '../logic/grouping';
 import { serializeRowsToCsv, type LabelExportLine } from '../logic/exportCsv';
 import { buildGridExportData } from '../logic/exportData';
 import { normalizeExportScope } from '../logic/exportScope';
@@ -141,6 +147,9 @@ type ExportResolution<T> = {
 
 // 追加(監査 M-05): scrollToBottom() 後に末尾へ再補正し続ける最大時間(ms)。
 const BOTTOM_PIN_MS = 1000;
+
+// エクスポート用の「全展開」開閉状態(行グルーピングの 'view' 出力で使用)。
+const NO_COLLAPSED_GROUPS: ReadonlySet<string> = new Set();
 
 export const createGridApi = <T,>(): GridApi<T> => {
   let args: GridApiArgs<T> | null = null;
@@ -353,6 +362,30 @@ export const createGridApi = <T,>(): GridApi<T> => {
         columns: s.orderedColumns.slice(r.startCol, r.endCol + 1),
         isRowIncluded: isRowIncludedView,
         getLabelLine: getViewLabelLine,
+      };
+    }
+    // 'view' + 行グルーピング: 開閉状態に関わらず、フィルター / ソート後の leaf 行をすべて出力します
+    //   (折りたたみは見た目の操作で、出力を減らしません。件数表示(leaf 基準)とも揃えます)。
+    //   全展開した表示順で走査し、グループ行(負値)は undefined としてスキップします。
+    //   isRowExportable の viewRowIndex は「全展開時のビュー行 index」です。
+    if (s.groupTree) {
+      const expandedOrder = flattenGroupTree(s.groupTree, NO_COLLAPSED_GROUPS).displayOrder;
+      const getExpandedRow = (index: number): T => {
+        const sourceIndex = expandedOrder[index];
+        return (sourceIndex === undefined || isGroupOrderValue(sourceIndex) ? undefined : s.rows[sourceIndex]) as T;
+      };
+      return {
+        getRow: getExpandedRow,
+        startRow: 0,
+        endRow: expandedOrder.length,
+        columns: s.orderedColumns,
+        isRowIncluded: isRowExportableProp
+          ? (row: T, index: number) =>
+              isRowExportableProp(row, {
+                viewRowIndex: index,
+                rowKey: s.resolvedRowKeyGetter(row, expandedOrder[index] ?? index),
+              })
+          : undefined,
       };
     }
     return {

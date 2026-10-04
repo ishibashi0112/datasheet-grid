@@ -1,5 +1,5 @@
 // 機能別: グルーピング / 展開行 / ラベル行 / 行ドラッグ / auto-height。
-import { OUT, open, check, summary, errorsOf, renderedRowIndexes, cellText, cell, header, scrollTo, focusGrid, waitIdle, events, clearEvents, pasteText, rows, state } from './pw.mjs';
+import { OUT, open, check, unexpectedPageErrors, summary, errorsOf, renderedRowIndexes, cellText, cell, header, scrollTo, focusGrid, waitIdle, events, clearEvents, pasteText, rows, state } from './pw.mjs';
 
 // ---------- グルーピング ----------
 {
@@ -54,6 +54,11 @@ import { OUT, open, check, summary, errorsOf, renderedRowIndexes, cellText, cell
   // エクスポート
   const csv = await page.evaluate(() => window.__grid.exportCsv());
   check('grouping: exportCsv excludes group rows & group col (200 data rows)', csv.split('\r\n').length === 201, csv.split('\r\n').length);
+  // 折りたたみ中も全 leaf 行を出力する(audit H-1)
+  await page.evaluate(() => window.__grid.collapseAllGroups());
+  await waitIdle(page, 150);
+  const csvCollapsed = await page.evaluate(() => window.__grid.exportCsv());
+  check('grouping: exportCsv while all collapsed still has 200 data rows', csvCollapsed.split('\r\n').length === 201, csvCollapsed.split('\r\n').length);
   console.log('grouping csv header:', csv.split('\r\n')[0]);
   // ソート + グルーピング
   await page.evaluate(() => window.__grid.applyState({ version: 1, columnWidths: {}, filters: { globalText: '', columnFilters: {} }, sort: [{ columnKey: 'qty', direction: 'desc' }] }));
@@ -81,7 +86,9 @@ import { OUT, open, check, summary, errorsOf, renderedRowIndexes, cellText, cell
   await waitIdle(page, 200);
   check('grouping + enableRowDrag → no drag handle column', (await page.locator('.ssg-row-drag-handle').count()) === 0);
   const errs = await errorsOf(page);
-  check('grouping: no console errors', errs.filter((e) => e.startsWith('[error]')).length === 0 && pageErrors.length === 0, [...errs, ...pageErrors].slice(0, 5));
+  // rowGroup + labelRow の警告は上で意図して出させたもの。
+  const unexpectedGrouping = unexpectedPageErrors(pageErrors, ['行グルーピング(rowGroup)とラベル行(labelRow)は併用できません']);
+  check('grouping: no console errors', errs.filter((e) => e.startsWith('[error]')).length === 0 && unexpectedGrouping.length === 0, [...errs, ...unexpectedGrouping].slice(0, 5));
   await page.screenshot({ path: OUT + 'shot-grouping.png' });
   await close();
 }
@@ -101,13 +108,21 @@ import { OUT, open, check, summary, errorsOf, renderedRowIndexes, cellText, cell
   const y1 = await page.locator('.ssg-center-pane .ssg-body-row[data-row-index="1"]').first().boundingBox();
   const y2 = await page.locator('.ssg-center-pane .ssg-body-row[data-row-index="2"]').first().boundingBox();
   check('detail: row 2 pushed down by ~120px', Math.abs(y2.y - (y1.y + y1.height + 120)) < 2, { y1, y2 });
-  // カード内のキー / クリックは本体へ伝播しない
+  // カード内のキー / クリックは本体へ伝播しない(activeCell はトグルのクリックで付くため、キー前後で不変かを見る)
+  const activeBeforeKeys = await page.evaluate(() => window.__grid.getActiveCell());
+  const row1NameBefore = (await rows(page))[1].name;
   await page.locator('[data-testid="detail-input"]').fill('typing');
   await page.keyboard.press('ArrowDown');
   await page.keyboard.press('Enter');
   await page.keyboard.press('Delete');
   const inputVal = await page.locator('[data-testid="detail-input"]').inputValue();
-  check('detail: keyboard inside card does not leak to grid', inputVal === 'typing' && (await page.evaluate(() => window.__grid.getActiveCell())) === null, { inputVal, active: await page.evaluate(() => window.__grid.getActiveCell()) });
+  const activeAfterKeys = await page.evaluate(() => window.__grid.getActiveCell());
+  const row1NameAfter = (await rows(page))[1].name;
+  check(
+    'detail: keyboard inside card does not leak to grid',
+    inputVal === 'typing' && JSON.stringify(activeAfterKeys) === JSON.stringify(activeBeforeKeys) && row1NameAfter === row1NameBefore && (await page.locator('.ssg-cell-editor').count()) === 0,
+    { inputVal, activeBeforeKeys, activeAfterKeys, row1NameBefore, row1NameAfter },
+  );
   await page.locator('[data-testid="detail-card"] button').click();
   check('detail: button click inside card works', (await events(page, 'detail-button')).length === 1);
   // 右クリックはカード内では標準メニュー(onContextMenuOpen なし)
@@ -130,11 +145,11 @@ import { OUT, open, check, summary, errorsOf, renderedRowIndexes, cellText, cell
   await page.evaluate(() => window.__grid.setDetailRowExpanded(50, true));
   await waitIdle(page, 100);
   check('detail: API on non-expandable row is no-op', !(await page.evaluate(() => window.__grid.getExpandedDetailRowKeys())).includes(50));
-  // API: 複数開く → 高さ合計 / scrollToRow の精度
-  await page.evaluate(() => { for (const k of [10, 11, 12, 100]) window.__grid.setDetailRowExpanded(k, true); });
+  // API: 複数開く → 高さ合計 / scrollToRow の精度(id 100 は isExpandable = id % 50 !== 0 で展開不可なので 101 を使う)
+  await page.evaluate(() => { for (const k of [10, 11, 12, 101]) window.__grid.setDetailRowExpanded(k, true); });
   await waitIdle(page, 200);
   const keys = await page.evaluate(() => window.__grid.getExpandedDetailRowKeys());
-  check('detail: expanded keys', keys.sort((a, b) => a - b).join() === '2,10,11,12,100', keys);
+  check('detail: expanded keys', keys.sort((a, b) => a - b).join() === '2,10,11,12,101', keys);
   await page.evaluate(() => window.__grid.scrollToRow(150, { align: 'start' }));
   await waitIdle(page, 200);
   const r150 = await page.locator('.ssg-center-pane .ssg-body-row[data-row-index="150"]').first().boundingBox();
@@ -216,13 +231,13 @@ import { OUT, open, check, summary, errorsOf, renderedRowIndexes, cellText, cell
   // ソートはセクション内に閉じる
   await page.evaluate(() => window.__grid.applyState({ version: 1, columnWidths: {}, filters: { globalText: '', columnFilters: {} }, sort: [{ columnKey: 'qty', direction: 'desc' }] }));
   await waitIdle(page, 200);
-  const sec1 = await page.evaluate(() => [...document.querySelectorAll('.ssg-center-pane .ssg-body-row')].slice(0, 4).map((r) => ({ i: r.getAttribute('data-row-index'), cls: r.className, qty: r.querySelector('[data-ssg-col-key="qty"]')?.textContent.trim(), txt: r.textContent.trim().slice(0, 30) })));
+  const sec1 = await page.evaluate(() => [...document.querySelectorAll('.ssg-center-pane .ssg-body-row:not([data-ssg-sticky-label])')].slice(0, 4).map((r) => ({ i: r.getAttribute('data-row-index'), cls: r.className, qty: r.querySelector('[data-ssg-col-key="qty"]')?.textContent.trim(), txt: r.textContent.trim().slice(0, 30) })));
   console.log('label: first rows after sort:', sec1);
   check('label: label row stays first after sort', sec1[0].i === '0' && (sec1[0].cls.includes('label') || sec1[0].txt.includes('セクション')), sec1[0]);
   // sticky ラベル: スクロールしたらヘッダー直下に現在セクション
   await page.evaluate(() => window.__grid.scrollToRow(50, { align: 'start' }));
   await waitIdle(page, 200);
-  const sticky = await page.evaluate(() => { const el = document.querySelector('[class*="sticky-label"], [class*="sticky"]'); return el ? { cls: el.className, txt: el.textContent.trim().slice(0, 40), rect: el.getBoundingClientRect().top } : null; });
+  const sticky = await page.evaluate(() => { const el = document.querySelector('.ssg-center-pane .ssg-sticky-label-layer'); return el ? { cls: el.className, txt: el.textContent.trim().slice(0, 40), rect: el.getBoundingClientRect().top } : null; });
   console.log('sticky:', sticky);
   check('label: sticky label shows section 3 (rows 42..)', sticky && sticky.txt.includes('セクション 3'), sticky);
   // エクスポート includeLabelRows
@@ -275,7 +290,7 @@ import { OUT, open, check, summary, errorsOf, renderedRowIndexes, cellText, cell
   await page.mouse.move(hb.x + hb.width / 2, hb.y + 20, { steps: 3 });
   await page.mouse.move(hb.x + hb.width / 2, r3.y + r3.height - 4, { steps: 8 });
   await waitIdle(page, 100);
-  const indicator = await page.locator('.ssg-row-drop-indicator').count();
+  const indicator = await page.evaluate(() => [...document.querySelectorAll('.ssg-row-drop-indicator')].filter((e) => getComputedStyle(e).display !== 'none').length);
   check('rowdrag: drop indicator shown while dragging', indicator > 0, indicator);
   await page.mouse.up();
   await waitIdle(page, 400);
@@ -298,7 +313,9 @@ import { OUT, open, check, summary, errorsOf, renderedRowIndexes, cellText, cell
   await page.keyboard.press('Escape');
   await page.mouse.up();
   await waitIdle(page, 200);
-  check('rowdrag: Escape cancels (no onRowsChange)', (await events(page, 'onRowsChange')).length === 0 && (await page.locator('.ssg-row-drop-indicator').count()) === 0);
+  // ガイド線の要素は常に DOM にあり、display で表示を切り替える
+  const indicatorShown = await page.evaluate(() => [...document.querySelectorAll('.ssg-row-drop-indicator')].some((e) => getComputedStyle(e).display !== 'none'));
+  check('rowdrag: Escape cancels (no onRowsChange)', (await events(page, 'onRowsChange')).length === 0 && !indicatorShown, { indicatorShown });
   // moveRow API
   await page.evaluate(() => window.__grid.moveRow(5, 0));
   await waitIdle(page, 100);
@@ -408,7 +425,9 @@ import { OUT, open, check, summary, errorsOf, renderedRowIndexes, cellText, cell
   const w2 = await errorsOf(page);
   check('autoheight: >50k rows falls back to uniform', new Set(hs2).size === 1, { hs2, w2: w2.slice(0, 2) });
   const errs = await errorsOf(page);
-  check('autoheight: no console errors', errs.filter((e) => e.startsWith('[error]')).length === 0 && pageErrors.length === 0, [...errs, ...pageErrors].slice(0, 5));
+  // 50k 行超えのフォールバック警告は上で意図して出させたもの。
+  const unexpectedAutoHeight = unexpectedPageErrors(pageErrors, ['auto-height は 50000 行まで']);
+  check('autoheight: no console errors', errs.filter((e) => e.startsWith('[error]')).length === 0 && unexpectedAutoHeight.length === 0, [...errs, ...unexpectedAutoHeight].slice(0, 5));
   await page.screenshot({ path: OUT + 'shot-autoheight.png' });
   await close();
 }

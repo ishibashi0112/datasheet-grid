@@ -99,11 +99,12 @@ console.log('sort 1M rows took ms', sortMs);
 const t1 = Date.now();
 await page.fill('.ssg-bar-input', 'item-0999');
 await page.waitForFunction(() => /Rows: \d/.test(document.querySelector('.ssg-bar--bottom')?.textContent ?? ''), null, { timeout: 60000 });
-await page.waitForFunction(() => (document.querySelector('.ssg-bar--bottom')?.textContent ?? '').includes('Rows: 1,') || /Rows: 1\d{3} \//.test(document.querySelector('.ssg-bar--bottom')?.textContent ?? '') || /Rows: 1,?\d{3} \//.test(document.querySelector('.ssg-bar--bottom')?.textContent ?? ''), null, { timeout: 60000 }).catch(() => {});
+// 行名は 6 桁ゼロ埋め(item-000001)なので、'item-0999' に一致するのは item-099900..099999 の 100 行。
+await page.waitForFunction(() => /Rows: 100 \//.test(document.querySelector('.ssg-bar--bottom')?.textContent ?? ''), null, { timeout: 60000 }).catch(() => {});
 await waitIdle(page, 500);
 const bottom = await page.locator('.ssg-bar--bottom').textContent();
 console.log('global filter took ms', Date.now() - t1, bottom);
-check('global filter narrows rows', /Rows: 1[,.]?\d{3} \//.test(bottom) || /Rows: 1000 \//.test(bottom), bottom);
+check('global filter narrows rows (100 rows: item-099900..099999)', /Rows: 100 \//.test(bottom), bottom);
 await page.fill('.ssg-bar-input', '');
 await waitIdle(page, 800);
 

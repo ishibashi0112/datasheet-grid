@@ -176,3 +176,18 @@
 | ID | 変える場合の挙動 | 影響を受け得る利用側 |
 | --- | --- | --- |
 | — | (なし。§9 の判断待ちはすべて対応済み = 2026-10-04) | — |
+
+## 10. ハーネス残 FAIL の切り分け(2026-10-04・v0.42.0 後)
+
+監査ハーネスを全ファイル通しで回すと残っていた 13 件の FAIL(t-ssrm / t-features / t-big)を個別に追試した。監査前のコードでも同件数出ていたもの(M-05 の修正で 14 → 13 件)。
+
+| ID | 内容 | 判定 | 対応 |
+| --- | --- | --- | --- |
+| H-1 | 行グルーピング中の `exportCsv` / `getExportData`(scope `'view'`)が、折りたたんだグループ配下の leaf 行を出力しない(全折りたたみで 0 行)。件数表示(leaf 基準)とも食い違う | ライブラリの仕様未定義 | 修正(ユーザー判断で A 案)。開閉状態に関わらずフィルター / ソート後の全 leaf 行を出力する。`isRowExportable` の `viewRowIndex` は全展開時のビュー行 index。挙動変化 |
+| H-2 | ssrm `filtered total (11 rows)` / big `global filter narrows rows` | テストの期待値誤り(`item-00001` の一致は 10 行、`item-0999` は 100 行) | ハーネス修正 |
+| H-3 | detail `expanded keys` / `keys kept while filtered out` | テストの期待値誤り(id 100 はシナリオの `isExpandable` = `id % 50 !== 0` で展開不可) | ハーネス修正 |
+| H-4 | ssrm `failed write rolls back` | テストのタイミング(モックの失敗応答 10ms < 読み取り待ち 50ms) | ハーネス修正(失敗応答を遅らせる) |
+| H-5 | detail `keyboard inside card does not leak` | テストの前提誤り(activeCell は展開トグルのクリックで付いたもの。カード内のキーでは動かない) | ハーネス修正(キー前後で不変を確認) |
+| H-6 | label `label row stays first after sort` / `sticky label shows section 3` | テストのセレクタ(sticky 複製 / 左ペインの空レイヤーを拾っていた) | ハーネス修正 |
+| H-7 | rowdrag `Escape cancels` | テストの前提誤り(ガイド線は常に DOM にあり display で切り替え) | ハーネス修正(display を確認) |
+| H-8 | ssrm / grouping / autoheight の `no console errors` | ハーネスがテスト自身の意図した警告(console.warning)を数えていた | ハーネス修正(console.error / pageerror のみ数える) |

@@ -47,6 +47,11 @@ export function summary() {
   for (const f of fails) console.log('  FAIL', f.name, f.detail !== undefined ? JSON.stringify(f.detail) : '');
 }
 
+// テスト自身が意図して出させた警告(expected の部分文字列に一致する console.warning)を除いた pageErrors。
+export function unexpectedPageErrors(pageErrors, expected = []) {
+  return pageErrors.filter((e) => !(e.startsWith('[console.warning]') && expected.some((x) => e.includes(x))));
+}
+
 // グリッド操作ヘルパ。
 export async function errorsOf(page) {
   return page.evaluate(() => window.__errors.splice(0));

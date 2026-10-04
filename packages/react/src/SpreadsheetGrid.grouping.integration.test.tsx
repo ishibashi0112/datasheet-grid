@@ -229,6 +229,33 @@ describe('行グルーピングの列面(結合)', () => {
     expect(data?.rows).toHaveLength(2);
   });
 
+  it('エクスポート(view)は折りたたみに関係なく全 leaf 行を出力する', () => {
+    const ref = createRef<SpreadsheetGridHandle<Row>>();
+    const isRowExportable = vi.fn(() => true);
+    render(
+      <SpreadsheetGrid
+        ref={ref}
+        columns={groupedColumns}
+        rows={rows}
+        isRowExportable={isRowExportable}
+      />,
+    );
+
+    act(() => {
+      ref.current?.collapseAllGroups();
+    });
+    // 折りたたみ後もグループ順(関東 → 関西)で leaf 2 行が出ます。
+    expect(ref.current?.exportCsv()).toBe('数量\r\n10\r\n20');
+    expect(ref.current?.getExportData().rows).toHaveLength(2);
+    // isRowExportable の viewRowIndex は全展開時のビュー行 index(グループ行 2 段の直下 = 2 / 5)。
+    expect(isRowExportable.mock.calls.map((call) => (call as unknown[])[1])).toEqual([
+      { viewRowIndex: 2, rowKey: 0 },
+      { viewRowIndex: 5, rowKey: 1 },
+      { viewRowIndex: 2, rowKey: 0 },
+      { viewRowIndex: 5, rowKey: 1 },
+    ]);
+  });
+
   it('行選択の件数はグループ行を除いた leaf 行数で数える', () => {
     const ref = createRef<SpreadsheetGridHandle<Row>>();
     render(

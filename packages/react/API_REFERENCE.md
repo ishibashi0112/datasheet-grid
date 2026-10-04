@@ -689,7 +689,7 @@ const columns: GridColumn<Order>[] = [
 - **集計値の整形**: 列に `valueFormatter` があれば集計値にも適用され、leaf セルと表示が揃います(`numberFormatter()` の 3 桁区切り等)。ただしグループ行に leaf 行は無いため **formatter の `row` は `undefined`** です。`row` を読む formatter を使う列では、`aggFunc` をカスタム関数にして整形済み文字列を返してください。
 - **開閉**: シェブロン click / グループ行 double-click / グループ行上の `Enter`・`Space`。命令的 API(下記)からも操作できます。開閉状態は UI 状態で、undo/redo・`getState()` の対象外です。
 - **並び / フィルター**: グループの並びは「ソート適用後の初出順」です(グループ元列をソートすればグループごと並び替わる)。フィルターは leaf 行に適用され、0 件になったグループは表示から消えます。空値は 1 つの「(空白)」グループへ集約されます。
-- **leaf 限定の各機能**: グループ行は編集 / ペースト / クリア / コピー / 行選択 / エクスポートの対象外です(すべて leaf 行のみが対象)。件数表示(bar の Rows / 行選択件数)も leaf 基準です。
+- **leaf 限定の各機能**: グループ行は編集 / ペースト / クリア / コピー / 行選択 / エクスポートの対象外です(すべて leaf 行のみが対象)。エクスポート(scope `'view'`)は開閉状態に関わらず、フィルター / ソート後の leaf 行をすべて出力します(折りたたんだグループの配下も含む。`isRowExportable` の `ctx.viewRowIndex` は全展開時のビュー行 index)。件数表示(bar の Rows / 行選択件数)も leaf 基準です。
 - **clientSide 限定**: serverSide(`dataSource`)では `rowGroup` は無視されます(開発時警告)。
 
 グループ行の記述子は `GridGroupRow`(`groupKey` / `columnKey` / `value` / `label` / `level` / `leafCount` / `aggregates`)としてバレルから公開されます(`getGroupRows()` の返り値)。
@@ -961,7 +961,7 @@ const gridRef = useRef<SpreadsheetGridHandle<Row>>(null);
 
 | scope | 意味 | スクロール位置 |
 | --- | --- | --- |
-| `'view'`(**既定**) | ビュー行全体(フィルター/ソート/列可視・固定順を反映) | 非依存 |
+| `'view'`(**既定**) | ビュー行全体(フィルター/ソート/列可視・固定順を反映。行グルーピング中は折りたたみに関係なく全 leaf 行) | 非依存 |
 | `'raw'` | 全ソース行(`rows` 配列順)。**フィルターもソートも無視**(列は可視列・固定順に従う) | 非依存 |
 | `'rendered'` | 仮想化ウィンドウ(いま**描画中**の行のみ・オーバースキャン込み) | **依存** |
 | `'selection'` | 現在の選択範囲(セル/行/列)。選択なしは空 | — |
