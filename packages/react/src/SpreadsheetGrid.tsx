@@ -2128,6 +2128,9 @@ export function SpreadsheetGrid<T extends object>({
       //   (clipboard consumer 移行)。copy=getRow(i) / paste source 解決=getSourceIndex(i) /
       //   範囲判定=getRowCount() を controller 内で使い分けます。rowModel は DS-3-0 構築済み memo を再利用。
       rowModel,
+      // 追加(audit L-01): 列あふれ貼り付けの onColumnsChange は consumer の columns(論理順・非表示列込み)
+      //   に overflow 列を足して返すため、props の columns も渡します。
+      columns,
       // 変更(10-E): copy/paste/TSV は視覚順（論理 index 空間）で扱うため orderedColumns を渡します。
       //             selection の col は論理 index なので、indexing も orderedColumns に揃える必要があります。
       visibleColumns: orderedColumns,

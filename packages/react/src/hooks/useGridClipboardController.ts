@@ -24,6 +24,8 @@ export const useGridClipboardController = <T extends object>(
       controller.handlePaste({
         clipboardData: event.clipboardData,
         preventDefault: () => event.preventDefault(),
+        // 追加(audit RD-2): 発火元(エディタ input 等)の判定に使います。
+        target: event.target,
       }),
     [controller],
   );
