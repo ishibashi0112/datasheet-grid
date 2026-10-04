@@ -362,6 +362,25 @@ export const createServerSideRowModel = <T,>(
     refresh();
   };
 
+  // 追加(audit C-1): dispose 後に同じインスタンスへ update が来たとき(React StrictMode の
+  //   effect 二重実行 = 生成 → dispose → 再接続)の取り直しです。dispose は in-flight を abort するため、
+  //   initialRowCount 未指定だと初回 block 0 の取得が失われ、syncQueryKey は prevQueryKey 一致で
+  //   no-op、件数 0 のため requestRange も空になり、グリッドが永久に空のままになっていました。
+  let disposed = false;
+  const resumeAfterDispose = () => {
+    if (args.dataSource == null) {
+      return;
+    }
+    // 件数未知で block 0 も無い = ブートストラップ取得が abort された → 取り直す。
+    if (rowCount === 0 && !cache.hasBlock(0)) {
+      fetchBlock(0);
+    }
+    // 可視レンジが確立済みなら取り直す(キャッシュ済み / in-flight のブロックは fetchBlock 側で重複排除)。
+    if (latestRange.end > latestRange.start) {
+      runFetch();
+    }
+  };
+
   const update = (next: ServerSideRowModelArgs<T>) => {
     args = next;
     if (next.rowKeyGetter !== rowKeyGetterForModel) {
@@ -370,6 +389,10 @@ export const createServerSideRowModel = <T,>(
     }
     syncQueryKey();
     syncRefreshToken();
+    if (disposed) {
+      disposed = false;
+      resumeAfterDispose();
+    }
   };
 
   return {
@@ -386,6 +409,7 @@ export const createServerSideRowModel = <T,>(
       clearTimer();
       writeEpoch += 1;
       pendingEdits.clear();
+      disposed = true;
     },
   };
 };
