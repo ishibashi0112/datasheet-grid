@@ -1,5 +1,5 @@
 // SSRM(serverSide)モックでの取得 / 競合 / エラー / 書き戻し / refresh の検証。
-import { OUT, open, check, summary, errorsOf, renderedRowIndexes, cellText, cell, scrollTo, focusGrid, waitIdle, events, clearEvents } from './pw.mjs';
+import { OUT, open, check, unexpectedPageErrors, summary, errorsOf, renderedRowIndexes, cellText, cell, scrollTo, focusGrid, waitIdle, events, clearEvents } from './pw.mjs';
 
 const { page, pageErrors, close } = await open('ssrm');
 const ctl = () => page.evaluate(() => ({ ...window.__ssrm, server: undefined, calls: window.__ssrm.calls.map((c) => ({ ...c })) }));
@@ -55,7 +55,7 @@ await page.fill('.ssg-bar-input', 'item-00001');
 await page.waitForFunction(() => window.__ssrm.calls.some((x) => x.query?.globalText === 'item-00001' && x.outcome === 'ok'), null, { timeout: 5000 });
 await waitIdle(page, 300);
 const bt = await page.locator('.ssg-bar--bottom').textContent();
-check('filtered total reflected (11 rows: item-000010..19 + 000001)', /Rows: 11\b/.test(bt), bt);
+check('filtered total reflected (10 rows: item-000010..19)', /Rows: 10\b/.test(bt), bt);
 c = await ctl();
 check('debounced: only few getRows for typed text', c.calls.filter((x) => x.query.globalText && x.query.globalText !== 'item-00001').length <= 2, c.calls.map((x) => x.query.globalText));
 await page.fill('.ssg-bar-input', '');
@@ -100,7 +100,8 @@ check('update rowKey is rowKeyGetter value (id=1)', c.updates[0]?.[0]?.rowKey ==
 check('server stored the value', await page.evaluate(() => window.__ssrm.server[0].name === 'renamed-0'));
 
 // 書き戻し: 失敗 → ロールバック + バー + 通知
-await page.evaluate(() => { window.__ssrm.updateFail = true; });
+// 失敗応答を遅らせ、楽観表示 → ロールバックの両方を観測できるようにする(10ms だと読む前に戻る)。
+await page.evaluate(() => { window.__ssrm.updateFail = true; window.__ssrm.updateLatency = 300; });
 await clearEvents(page);
 await cell(page, 1, 'name').dblclick();
 await page.keyboard.press('Control+A');
@@ -108,13 +109,13 @@ await page.keyboard.type('will-fail');
 await page.keyboard.press('Enter');
 await waitIdle(page, 50);
 const optimistic = await cellText(page, 1, 'name');
-await waitIdle(page, 300);
+await waitIdle(page, 600);
 const rolledBack = await cellText(page, 1, 'name');
 check('failed write rolls back', optimistic === 'will-fail' && rolledBack === 'item-000002', { optimistic, rolledBack });
 const werr = await events(page, 'onServerSideWriteError');
 check('onServerSideWriteError fired', werr.length === 1, werr.map((e) => e.payload));
 check('write error bar shown', (await page.locator('.ssg-ssrm-error-bar').count()) > 0, await page.locator('.ssg-ssrm-error-bars').textContent().catch(() => ''));
-await page.evaluate(() => { window.__ssrm.updateFail = false; });
+await page.evaluate(() => { window.__ssrm.updateFail = false; window.__ssrm.updateLatency = 10; });
 
 // 同一行の連続編集(前の確定前に再編集)
 await page.evaluate(() => { window.__ssrm.updateLatency = 400; });
@@ -182,7 +183,9 @@ const warns2 = await errorsOf(page);
 check('exportCsv raw in SSRM warns and returns loaded rows', typeof csv === 'string' && csv.length > 0 && warns2.length >= 1, { lines: csv.split('\r\n').length, warns2 });
 
 const errs = await errorsOf(page);
-check('no unexpected console errors', errs.filter((e) => e.startsWith('[error]') || e.startsWith('[window') || e.startsWith('[unhandled')).length === 0 && pageErrors.filter((e) => !e.includes('mock')).length === 0, [...errs, ...pageErrors].slice(0, 10));
+// getInvalidCells / exportCsv raw の警告は上で意図して出させたもの。
+const unexpected = unexpectedPageErrors(pageErrors, ['getInvalidCells は serverSide', "scope 'raw' は serverSide"]).filter((e) => !e.includes('mock'));
+check('no unexpected console errors', errs.filter((e) => e.startsWith('[error]') || e.startsWith('[window') || e.startsWith('[unhandled')).length === 0 && unexpected.length === 0, [...errs, ...unexpected].slice(0, 10));
 await page.screenshot({ path: OUT + 'shot-ssrm.png' });
 summary();
 await close();
