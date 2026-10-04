@@ -33,6 +33,25 @@ export function numberFormatter<T>(
     emptyText = '',
   } = options;
 
+  // 追加(audit L-13): Intl.NumberFormat の生成はコストが高い(実測: 5,000 回で 110ms、キャッシュ済み
+  //   format は 1.9ms)。フォーマッタは可視セルごとに毎レンダー呼ばれるため、小数桁(min / max)の組み合わせ
+  //   ごとにインスタンスをキャッシュします(locale / useGrouping はファクタごとに固定。桁は 0..20 なので
+  //   高々 21 × 21 エントリ)。
+  const formatters = new Map<string, Intl.NumberFormat>();
+  const getFormatter = (resolvedMin: number, resolvedMax: number) => {
+    const key = `${resolvedMin}:${resolvedMax}`;
+    let formatter = formatters.get(key);
+    if (!formatter) {
+      formatter = new Intl.NumberFormat(locale, {
+        useGrouping,
+        minimumFractionDigits: resolvedMin,
+        maximumFractionDigits: resolvedMax,
+      });
+      formatters.set(key, formatter);
+    }
+    return formatter;
+  };
+
   return ({ value }) => {
     if (value === null || value === undefined || value === '') {
       return emptyText;
@@ -51,10 +70,6 @@ export function numberFormatter<T>(
     const baseMax = maximumFractionDigits ?? Math.min(naturalFractionLength, 20);
     const resolvedMax = Math.max(resolvedMin, baseMax);
 
-    return new Intl.NumberFormat(locale, {
-      useGrouping,
-      minimumFractionDigits: resolvedMin,
-      maximumFractionDigits: resolvedMax,
-    }).format(n);
+    return getFormatter(resolvedMin, resolvedMax).format(n);
   };
 }

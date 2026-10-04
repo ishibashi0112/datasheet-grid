@@ -20,7 +20,7 @@ description: 列定義(GridColumn<T>)・エディタ・バリデーション・�
 | `wordBreak` | `'normal' \| 'break-all' \| 'keep-all' \| 'break-word' \| 'auto-phrase'` | — | 折り返し時(= `autoHeight` 列)の CSS `word-break`。`'auto-phrase'` は Chromium(Chrome / Edge)で BudouX による文節折り返し(Firefox / 一部 Safari 未対応)。**nowrap(非 `autoHeight`)列では折り返し自体が起きないため効果なし**。既定(未指定)はブラウザ標準=禁則つき文字折り返し。詳細は「日本語テキストの折り返し」節。 |
 | `lineBreak` | `'auto' \| 'loose' \| 'normal' \| 'strict' \| 'anywhere'` | — | 折り返し時の CSS `line-break`(禁則処理の強さ)。`'strict'` で禁則を厳格化。`wordBreak` 同様、折り返す列でのみ効果あり。 |
 | `visible` | `boolean` | — | 列の表示/非表示。 |
-| `editable` | `boolean` | — | この列の編集を許可。 |
+| `editable` | `boolean` | `true`(未指定 = 編集可) | この列の編集可否。**未指定の列は編集可**で、`false` または `readOnly: true` で編集不可になる(グリッド全体は `readOnly`、セル単位は `canEditCell`)。 |
 | `readOnly` | `boolean` | — | この列を読み取り専用にする。 |
 | `pinned` | `'left' \| 'right'` | undefined = 中央スクロール | 列固定の方向。 |
 | `rowGroup` | `boolean` | — | `true` でこの列を行グルーピングの対象にする(複数指定時は `columns` 配列の出現順が階層順)。有効時はグループ元列が表示から外れ、先頭に自動グループ列(ツリー表示)が注入される。**clientSide 限定**(serverSide では無視 + 開発時警告)。詳細は「行グルーピング + 集計」節。 |

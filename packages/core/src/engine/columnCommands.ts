@@ -254,13 +254,18 @@ export const createColumnCommands = <T,>(): ColumnCommands<T> => {
     discardSelectionState(dispatch);
   };
 
-  // 全解除(視覚順先頭の 1 列だけ残して非表示)。keep 列 = orderedColumns[0](画面最左の表示列)。
+  // 全解除(視覚順先頭の 1 列だけ残して非表示)。keep 列 = 画面最左の「consumer の」表示列。
+  // 変更(audit B-02): orderedColumns[0] が合成列(行ドラッグハンドル / 展開トグル / 自動グループ列)の
+  //   ときは consumer の columns にそのキーが無く、全列が非表示になっていた(「最後の 1 列は残す」契約の
+  //   破れ)。consumer の columns に存在する最初の視覚順列を keep にする。
   const handleColumnChooserHideAll = () => {
     const { onColumnsChange, columns, orderedColumns, columnWidths, dispatch } = requireArgs();
     if (!onColumnsChange) {
       return;
     }
-    const keepKey = orderedColumns[0]?.key;
+    const keepKey = orderedColumns.find((ordered) =>
+      columns.some((column) => column.key === ordered.key),
+    )?.key;
     if (keepKey === undefined) {
       return;
     }

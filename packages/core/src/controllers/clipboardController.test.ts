@@ -133,4 +133,112 @@ describe('clipboardController', () => {
     c.handlePaste(nullEvent);
     expect(nullEvent.preventDefault).not.toHaveBeenCalled();
   });
+
+  // 追加(audit L-01): 列あふれ貼り付けの onColumnsChange は consumer の columns(論理順・非表示列込み)
+  //   + overflow 列。視覚順の可視列 + 合成列を返して非表示列を消したり合成列を混入させない。
+  it('列あふれ貼り付けは consumer の columns に overflow 列を足して onColumnsChange する(L-01)', () => {
+    const c = createClipboardController<Row>();
+    const consumerColumns: GridColumn<Row>[] = [
+      { key: 'id', title: 'ID', width: 80 },
+      { key: 'hidden', title: 'H', width: 80, visible: false },
+      { key: 'name', title: 'Name', width: 120, pinned: 'left' },
+    ];
+    // 視覚順(左固定 → 中央)+ 先頭の合成列(行ドラッグハンドル相当)。
+    const ordered: GridColumn<Row>[] = [
+      { key: '__ssg_row_drag_handle__', title: '', width: 28, pinned: 'left' },
+      consumerColumns[2],
+      consumerColumns[0],
+    ];
+    const onColumnsChange = vi.fn();
+    const t = makeArgs({
+      columns: consumerColumns,
+      visibleColumns: ordered,
+      uiState: { ...createInitialGridUiState(ordered), activeCell: { row: 0, col: 2 } },
+      createOverflowColumn: (index) => ({ key: `extra${index}`, title: `追加 ${index}`, width: 100 }),
+      onColumnsChange,
+    });
+    c.update(t.args);
+    c.handlePaste({ clipboardData: { getData: () => 'x\ty' }, preventDefault: vi.fn() });
+    expect(onColumnsChange).toHaveBeenCalledTimes(1);
+    const next = onColumnsChange.mock.calls[0][0] as GridColumn<Row>[];
+    expect(next.map((col) => col.key)).toEqual(['id', 'hidden', 'name', 'extra3']);
+    // 書き込み自体は視覚順で行われる(id 列 → overflow 列)。
+    const written = (t.args.onRowsChange as ReturnType<typeof vi.fn>).mock.calls[0][0] as Row[];
+    expect(written[0]).toMatchObject({ id: 'x', extra3: 'y' });
+  });
+
+  // 追加(audit L-05): ソート中(view ≠ source)に view 末尾を超えて貼り付けても行が捨てられない。
+  it('ソート中に view 末尾を超える貼り付けは createRow で行を追記する(L-05)', () => {
+    const c = createClipboardController<Row>();
+    const sortedRows: Row[] = [
+      { id: 1, name: 'r0' },
+      { id: 2, name: 'r1' },
+      { id: 3, name: 'r2' },
+    ];
+    const order = [2, 1, 0]; // 降順: view 0 = source 2
+    const sortedModel: RowModel<Row> = {
+      getRowCount: () => order.length,
+      getRow: (i) => sortedRows[order[i]],
+      getSourceIndex: (i) => order[i],
+      getRowKey: (i) => sortedRows[order[i]]?.id ?? i,
+    };
+    let nextId = 100;
+    const t = makeArgs({
+      rows: sortedRows,
+      rowModel: sortedModel,
+      uiState: { ...createInitialGridUiState(columns), activeCell: { row: 2, col: 1 } },
+      createRow: () => ({ id: nextId++, name: '' }),
+    });
+    c.update(t.args);
+    c.handlePaste({ clipboardData: { getData: () => 'p1\np2\np3' }, preventDefault: vi.fn() });
+    const written = (t.args.onRowsChange as ReturnType<typeof vi.fn>).mock.calls[0][0] as Row[];
+    expect(written.map((r) => r.name)).toEqual(['p1', 'r1', 'r2', 'p2', 'p3']);
+  });
+
+  // 追加(audit RD-2): 編集中 / 入力要素が発火元の paste はグリッドが横取りしない。
+  it('セル編集中の paste は無視する(エディタ input のネイティブ貼り付けに委ねる)', () => {
+    const c = createClipboardController<Row>();
+    const t = makeArgs({
+      uiState: {
+        ...createInitialGridUiState(columns),
+        activeCell: { row: 0, col: 1 },
+        editingCell: { row: 0, col: 1 },
+      },
+    });
+    c.update(t.args);
+    const preventDefault = vi.fn();
+    c.handlePaste({ clipboardData: { getData: () => 'Z' }, preventDefault });
+    expect(preventDefault).not.toHaveBeenCalled();
+    expect(t.args.onRowsChange).not.toHaveBeenCalled();
+  });
+
+  it('input / textarea / contenteditable から発火した paste は無視する', () => {
+    const c = createClipboardController<Row>();
+    const t = makeArgs({
+      uiState: { ...createInitialGridUiState(columns), activeCell: { row: 0, col: 1 } },
+    });
+    c.update(t.args);
+    for (const el of [
+      document.createElement('input'),
+      document.createElement('textarea'),
+      (() => {
+        const div = document.createElement('div');
+        div.setAttribute('contenteditable', '');
+        return div;
+      })(),
+    ]) {
+      document.body.appendChild(el);
+      const preventDefault = vi.fn();
+      c.handlePaste({ clipboardData: { getData: () => 'Z' }, preventDefault, target: el });
+      expect(preventDefault).not.toHaveBeenCalled();
+      el.remove();
+    }
+    expect(t.args.onRowsChange).not.toHaveBeenCalled();
+    // 通常のセル(div)が発火元なら従来どおり貼り付ける。
+    const cell = document.createElement('div');
+    const preventDefault = vi.fn();
+    c.handlePaste({ clipboardData: { getData: () => 'Z' }, preventDefault, target: cell });
+    expect(preventDefault).toHaveBeenCalledTimes(1);
+    expect(t.args.onRowsChange).toHaveBeenCalledTimes(1);
+  });
 });

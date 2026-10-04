@@ -19,7 +19,9 @@
     "test:watch": "vitest",
     "typecheck:test": "tsc --noEmit -p tsconfig.vitest.json",
     "docs:jsdoc": "node scripts/sync-api-jsdoc.mjs",
-    "docs:jsdoc:check": "node scripts/sync-api-jsdoc.mjs --check"
+    "docs:jsdoc:check": "node scripts/sync-api-jsdoc.mjs --check",
+    "audit:dev": "vp dev --config audit/harness/vite.config.ts audit/harness",
+    "audit:test": "node audit/harness/t-basic.mjs && node audit/harness/t-ssrm.mjs && node audit/harness/t-lifecycle.mjs && node audit/harness/t-features.mjs && node audit/harness/t-verify.mjs && node audit/harness/t-big.mjs"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
@@ -35,6 +37,7 @@
     "eslint-plugin-react-refresh": "^0.5.2",
     "globals": "^17.6.0",
     "jsdom": "^29.1.1",
+    "playwright-core": "1.56.0",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
     "typescript": "~6.0.2",

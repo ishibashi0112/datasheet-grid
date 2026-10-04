@@ -15,6 +15,7 @@ import type {
   EditorCommitDirection,
   EditorCommitResult,
   GridColumn,
+  GridRowKey,
   GridUiState,
   RowModel,
 } from '../model/gridTypes.unbound';
@@ -50,11 +51,97 @@ export type EditController<T extends object> = {
   cancelEdit: () => void;
 };
 
+// 追加(audit RD-1 / RD-3): 編集セッションの「同一性」です。editingCell は view / 論理 index だけを
+//   持つため、編集中に rows が差し替わって行順が変わる(ポーリング更新 / SSRM refresh / 外部からの
+//   applyState 等)と、確定値が「同じ index に来た別の行」へ書き込まれていました。開始時の rowKey /
+//   columnKey を控えておき、update のたびに index との対応を確かめます(詳細は update 内のコメント)。
+type EditIdentity = {
+  rowKey: GridRowKey;
+  columnKey: string;
+  // この同一性が指していた editingCell(前回 update 時点)。
+  cell: CellCoord;
+};
+
 export const createEditController = <T extends object>(): EditController<T> => {
   let args: EditControllerArgs<T> | null = null;
+  let identity: EditIdentity | null = null;
+
+  // 指定セルの rowKey / columnKey を読みます(行が無い = SSRM 未ロード / 範囲外なら null)。
+  const readKeysAt = (
+    current: EditControllerArgs<T>,
+    cell: CellCoord,
+  ): { rowKey: GridRowKey; columnKey: string } | null => {
+    const column = current.visibleColumns[cell.col];
+    if (!column || cell.row < 0 || cell.row >= current.rowModel.getRowCount()) {
+      return null;
+    }
+    if (current.rowModel.getRow(cell.row) === undefined) {
+      return null;
+    }
+    return { rowKey: current.rowModel.getRowKey(cell.row), columnKey: column.key };
+  };
+
+  // 同一性から現在の view 座標を探します(行は O(行数) の走査。rows の差し替え時だけ呼ばれます)。
+  const locateIdentity = (
+    current: EditControllerArgs<T>,
+    target: EditIdentity,
+  ): CellCoord | null => {
+    const col = current.visibleColumns.findIndex(
+      (column) => column.key === target.columnKey,
+    );
+    if (col < 0) {
+      return null;
+    }
+    const rowCount = current.rowModel.getRowCount();
+    for (let row = 0; row < rowCount; row += 1) {
+      if (
+        current.rowModel.getRow(row) !== undefined &&
+        Object.is(current.rowModel.getRowKey(row), target.rowKey)
+      ) {
+        return { row, col };
+      }
+    }
+    return null;
+  };
 
   const update = (next: EditControllerArgs<T>) => {
     args = next;
+    const editingCell = next.uiState.editingCell;
+    if (!editingCell) {
+      identity = null;
+      return;
+    }
+    const keysHere = readKeysAt(next, editingCell);
+    const matchesIdentity =
+      identity !== null &&
+      keysHere !== null &&
+      Object.is(keysHere.rowKey, identity.rowKey) &&
+      keysHere.columnKey === identity.columnKey;
+    if (matchesIdentity) {
+      // 同じ行 / 列を指している(通常の再レンダー、または下の再ターゲット後)。座標だけ更新します。
+      identity = { ...identity!, cell: editingCell };
+      return;
+    }
+    const sameCellAsBefore =
+      identity !== null &&
+      identity.cell.row === editingCell.row &&
+      identity.cell.col === editingCell.col;
+    if (identity === null || !sameCellAsBefore) {
+      // 新しい編集セッションの開始(startEdit 直後)。この時点の行 / 列を同一性として控えます。
+      identity = keysHere ? { ...keysHere, cell: editingCell } : null;
+      return;
+    }
+    // 座標は変わっていないのに行 / 列のキーが変わった = 編集中に rows / columns が差し替わった。
+    //   同一性を手がかりに現在位置を探し、見つかれば editingCell をそこへ再ターゲット(RD-1)、
+    //   見つからなければ編集を終了します(RD-3: editingCell が残ってキー操作が全滅するのを防ぐ)。
+    const located = locateIdentity(next, identity);
+    if (located) {
+      identity = { ...identity, cell: located };
+      next.dispatch(gridActions.startEdit(located));
+    } else {
+      identity = null;
+      next.dispatch(gridActions.stopEdit());
+    }
   };
 
   const activateSingleCell = (cell: CellCoord) => {

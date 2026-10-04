@@ -163,6 +163,9 @@
   `scripts/sync-api-jsdoc.mjs` が `API_REFERENCE.md` の表から生成し、`gridTypes.apiDocs.test.ts` が表と型の
   過不足・JSDoc のずれを検査する(再生成は `pnpm run docs:jsdoc`)。
 
+- 全体監査(2026-10-04): 静的レビュー 6 系統 + Chromium 実機検証(`audit/harness/`)の記録を `docs/audits/2026-10-04/` に置いた
+  (所見 85 件: 高 7 / 中 約 30 / 低 約 40。問題なしを確認した範囲も同ファイル §5)。以後の定期確認は同じ形式で日付ディレクトリを増やす。
+
 ## §7 残タスク(大きい順)
 
 1. 多段カラムヘッダー(ヘッダーグループ)。

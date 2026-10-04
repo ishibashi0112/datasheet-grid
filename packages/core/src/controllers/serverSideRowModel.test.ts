@@ -71,6 +71,41 @@ describe('serverSideRowModel', () => {
     expect(known.getSnapshot().rowCount).toBe(250);
   });
 
+  // 追加(audit C-1): StrictMode(生成 → update → dispose → 同じインスタンスへ再 update)で、
+  //   initialRowCount 未指定でも abort された初回取得を取り直してグリッドが空のままにならない。
+  it('dispose 後の再 update(StrictMode 相当)で abort された block 0 を取り直す', async () => {
+    const { dataSource, getRows } = makeDataSource();
+    const common = { dataSource, rowKeyGetter: (row: Row) => row.v, query: {} as never, queryKey: 'q1' };
+    const controller = createServerSideRowModel<Row>(common);
+    controller.update(common);
+    expect(getRows).toHaveBeenCalledTimes(1);
+    controller.dispose(); // 1 回目の取得は abort される
+    controller.update(common); // 再接続(同じ queryKey)
+    expect(getRows).toHaveBeenCalledTimes(2);
+    await flush();
+    expect(controller.getSnapshot().rowCount).toBe(250);
+    expect(controller.getSnapshot().rowModel.getRow(0)).toEqual({ v: 0 });
+    // 取得済み(件数既知・block 0 あり)なら再 update で取り直さない。
+    controller.dispose();
+    controller.update(common);
+    expect(getRows).toHaveBeenCalledTimes(2);
+  });
+
+  it('dispose 後の再 update は確立済みの可視レンジも取り直す', async () => {
+    const { dataSource, getRows } = makeDataSource({ initialRowCount: 250 });
+    const common = { dataSource, rowKeyGetter: (row: Row) => row.v, query: {} as never, queryKey: 'q1' };
+    const controller = createServerSideRowModel<Row>(common);
+    controller.update(common);
+    controller.requestRange(120, 160); // block 1
+    vi.runAllTimers();
+    expect(getRows).toHaveBeenCalledTimes(1);
+    controller.dispose(); // in-flight が abort される
+    controller.update(common);
+    expect(getRows).toHaveBeenCalledTimes(2);
+    await flush();
+    expect(controller.isRowLoaded(150)).toBe(true);
+  });
+
   it('同じ queryKey の update では再取得せず、queryKey 変化と refreshToken 変化で取り直す。dispose で abort', async () => {
     const { dataSource, getRows } = makeDataSource({ initialRowCount: 250 });
     const base = { dataSource, rowKeyGetter: (row: Row) => row.v, query: {} as never, queryKey: 'q1', refreshToken: 1 };

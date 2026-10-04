@@ -29,7 +29,8 @@
   "exports": {
     ".": "./src/index.ts",
     "./testing": "./src/testing/index.ts",
-    "./*": "./src/*.ts"
+    "./*": "./src/*.ts",
+    "./package.json": "./package.json"
   },
   "publishConfig": {
     "access": "public",
@@ -51,14 +52,15 @@
         "types": "./dist/*.d.ts",
         "import": "./dist/*.js",
         "require": "./dist/*.cjs"
-      }
+      },
+      "./package.json": "./package.json"
     }
   },
   "engines": {
     "node": ">=18"
   },
   "scripts": {
-    "build:lib": "vp build --config vite.lib.config.ts && tsc -p tsconfig.lib.json",
+    "build:lib": "vp build --config vite.lib.config.ts && tsc -p tsconfig.lib.json && node ../../scripts/fix-dts-extensions.mjs dist",
     "prepublishOnly": "pnpm run build:lib"
   }
 }

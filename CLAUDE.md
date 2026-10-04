@@ -74,6 +74,12 @@ React 19 + TypeScript + Vite 製のカスタム AG Grid 風・仮想化データ
 - **運用ルール: ライブラリの機能追加・変更・削除をしたら、同じ作業の中で website も更新する**(該当ガイドの追記 or 新規ページ、API リファレンス両方、必要ならデモ / プレイグラウンドのトグル追加)。ドキュメント未更新のまま機能だけ納品しない。
 - ホスティングは Vercel 予定(Root Directory: `website`)。デプロイ操作はユーザーが行う。
 
+## 監査記録とハーネス(2026-10-04 追加)
+
+- 全体監査の記録は `docs/audits/<日付>/README.md`(所見・重要度・実機再現の有無・**問題なしを確認した範囲**・対応状況)と `findings-*.md`(系統別の再現手順 / 行番号)。初回は `docs/audits/2026-10-04/`。
+- 実ブラウザ(Chromium)で叩く監査ハーネスは `audit/harness/`(`pnpm run audit:dev` + `pnpm run audit:test`。使い方は同ディレクトリの README)。ルートのゲート対象外(eslint は `globalIgnores(['audit'])`、tsc / vitest の include 外)で、定期確認やリリース前に手動で回す。`t-verify.mjs` は所見の再現 = 修正後の回帰確認に使う。
+- 所見を修正したらその記録の「対応状況」を更新する(所見 ID = `RD-1` / `C-1` / `L-01` / `M-01` 等でコミットメッセージから辿れるようにする)。
+
 ## 現状と残タスク(詳細は HANDOFF §4 / §7 / §8)
 
 - 最新 v0.41.0(sql-editor-tool からの要望 1〜5、2026-09-24: フィルター入力の IME 変換中ガード(ime-fix)/ `manualFiltering` / `manualSorting`(手動フィルター / 手動ソート = UI と状態通知はそのままで行の絞り込み / 並べ替えを行わない)/ `onFiltersChange` / `onSortChange`(スライス単位の変更通知)/ `getFilterOptions`(set / select / 複合列の候補を非同期に供給。`controllers/asyncSelectOptionsSource` + popover の取得中 / 失敗 + 再試行 / 打ち切り表示)。公開 API は追加のみで既存 API 不変)。v0.40.0(ラベル行 = `labelRow` prop。label-row batch 1〜5 + プレイグラウンドのトグル。公開 API は追加のみで既存 API 不変)。v0.39.0(非依存化 ⑤-1 型境界 + ⑤-2 monorepo 分割: `@ishibashi0112/spreadsheet-grid-core` 0.39.0(初回公開)と `@ishibashi0112/spreadsheet-grid` 0.39.0(core 依存化。公開 API 不変))。v0.38.0(非依存化 ③ 本体分解 E-0〜E-7: `engine/` 10 モジュール(createMemo / columnLayout / rowPipeline / verticalLayout / columnCommands / filterPopoverCommands / rowSelectionCommands / gridApi / notifiers / createGridEngine)+ controllers 追加(autoHeightMeasurer / scrollSyncController / debouncedValueStore / autoSizeOnData)。SpreadsheetGrid.tsx 7,092 → 4,291 行、file 単位 eslint-disable 撤去。挙動不変)。v0.37.0 = ③-9〜③-19(hooks 19 本のコントローラ抽出完了)。v0.36.0 = ④(外部 store)+ ③-1〜③-8。③ ⑤ は完了し、次は ⑥ Solid アダプタ(packages/solid。Solid 2.0 final 後)。

@@ -158,12 +158,22 @@ export function FilterDateField({
   };
 
   // ── パネル内ボタン共通(pointerdown で発火・フォーカスを奪わない) ──
-  const pressHandler =
-    (action: () => void) => (event: PointerEvent<HTMLElement>) => {
+  // 変更(audit V-03): pointerdown 専用だったためキーボード(Enter / Space)で押せず、カレンダーを開くことも
+  //   できなかった。onPointerDown と onKeyDown の両方を返し、スプレッドで button に渡す。
+  const pressHandler = (action: () => void) => ({
+    onPointerDown: (event: PointerEvent<HTMLElement>) => {
       event.preventDefault();
       event.stopPropagation();
       action();
-    };
+    },
+    onKeyDown: (event: KeyboardEvent<HTMLElement>) => {
+      event.stopPropagation();
+      if (event.key === 'Enter' || event.key === ' ') {
+        event.preventDefault();
+        action();
+      }
+    },
+  });
 
   // ── ナビゲーション ──────────────────────────────────
   const stepVisible = (direction: 1 | -1) => {
@@ -227,16 +237,13 @@ export function FilterDateField({
           type="button"
           className="ssg-dp-cal-btn"
           aria-label={panelOpen ? 'カレンダーを閉じる' : 'カレンダーを開く'}
-          onPointerDown={pressHandler(() => {
+          {...pressHandler(() => {
             if (panelOpen) {
               closePanel();
             } else {
               openPanel();
             }
           })}
-          onKeyDown={(event) => {
-            event.stopPropagation();
-          }}
         >
           <svg width="12" height="12" viewBox="0 0 16 16" aria-hidden="true">
             <rect
@@ -267,7 +274,7 @@ export function FilterDateField({
               type="button"
               className="ssg-dp-nav-btn"
               aria-label="前へ"
-              onPointerDown={pressHandler(() => stepVisible(-1))}
+              {...pressHandler(() => stepVisible(-1))}
             >
               ‹
             </button>
@@ -277,7 +284,7 @@ export function FilterDateField({
               // 年ビューが最上段のため、これ以上のドリルアップはありません。
               disabled={view === 'years'}
               aria-label="表示単位を切り替える"
-              onPointerDown={pressHandler(drillUp)}
+              {...pressHandler(drillUp)}
             >
               {navTitle}
             </button>
@@ -285,7 +292,7 @@ export function FilterDateField({
               type="button"
               className="ssg-dp-nav-btn"
               aria-label="次へ"
-              onPointerDown={pressHandler(() => stepVisible(1))}
+              {...pressHandler(() => stepVisible(1))}
             >
               ›
             </button>
@@ -319,7 +326,7 @@ export function FilterDateField({
                         cell.key === value && 'ssg-dp-day--selected',
                       )}
                       aria-label={cell.key}
-                      onPointerDown={pressHandler(() => commitAndClose(cell.key))}
+                      {...pressHandler(() => commitAndClose(cell.key))}
                     >
                       {cell.day}
                     </button>
@@ -339,7 +346,7 @@ export function FilterDateField({
                     'ssg-dp-cell',
                     monthIndex === visibleMonth && 'ssg-dp-cell--selected',
                   )}
-                  onPointerDown={pressHandler(() => {
+                  {...pressHandler(() => {
                     setVisibleMonth(monthIndex);
                     setView('days');
                   })}
@@ -360,7 +367,7 @@ export function FilterDateField({
                     'ssg-dp-cell',
                     year === visibleYear && 'ssg-dp-cell--selected',
                   )}
-                  onPointerDown={pressHandler(() => {
+                  {...pressHandler(() => {
                     setVisibleYear(year);
                     setView('months');
                   })}
@@ -377,7 +384,7 @@ export function FilterDateField({
               <button
                 type="button"
                 className="ssg-dp-foot-btn"
-                onPointerDown={pressHandler(drillDown)}
+                {...pressHandler(drillDown)}
               >
                 ← 戻る
               </button>
@@ -385,14 +392,14 @@ export function FilterDateField({
             <button
               type="button"
               className="ssg-dp-foot-btn"
-              onPointerDown={pressHandler(() => commitAndClose(todayKey))}
+              {...pressHandler(() => commitAndClose(todayKey))}
             >
               今日
             </button>
             <button
               type="button"
               className="ssg-dp-foot-btn ssg-dp-foot-btn--muted"
-              onPointerDown={pressHandler(() => commitAndClose(''))}
+              {...pressHandler(() => commitAndClose(''))}
             >
               クリア
             </button>

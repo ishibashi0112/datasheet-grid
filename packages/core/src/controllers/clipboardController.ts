@@ -15,6 +15,7 @@ import type {
   SpreadsheetGridProps,
 } from '../model/gridTypes.unbound';
 import { clamp } from '../logic/geometry';
+import { shouldIgnoreGridKeydown } from '../logic/domGuards';
 import { getCellValue, isCellEditable } from '../utils/permissions';
 import {
   applyClipboardMatrixToRows,
@@ -29,11 +30,17 @@ import { resolvePasteTargetViewIndexes } from '../logic/labelRows';
 export type ClipboardEventLike = {
   clipboardData: { getData: (type: string) => string } | null;
   preventDefault: () => void;
+  // 追加(audit RD-2): 発火元。エディタ input / renderCell 内の入力要素からの paste はグリッドが扱わない。
+  target?: EventTarget | null;
 };
 
 export type ClipboardControllerArgs<T extends object> = {
   rows: T[];
   rowModel: RowModel<T>;
+  // 追加(audit L-01): consumer が渡した列定義そのもの(論理順・非表示列込み・合成列なし)。列あふれ
+  //   貼り付けの onColumnsChange はこれに overflow 列を足して返す(visibleColumns は視覚順 + 合成列の
+  //   書き込み用で、そのまま返すと非表示列が消え合成列が混入する)。未指定なら従来どおり visibleColumns 基準。
+  columns?: readonly GridColumn<T>[];
   visibleColumns: GridColumn<T>[];
   uiState: GridUiState;
   readOnly: boolean;
@@ -157,6 +164,7 @@ export const createClipboardController = <T extends object>(): ClipboardControll
     const {
       rows,
       rowModel,
+      columns,
       visibleColumns,
       uiState,
       readOnly,
@@ -168,6 +176,13 @@ export const createClipboardController = <T extends object>(): ClipboardControll
       applyServerSideCellEdits,
       dispatch,
     } = args;
+    // 追加(audit RD-2): セル編集中、またはエディタ / renderCell / renderHeader 内の入力要素が発火元の
+    //   paste はその要素のネイティブ貼り付けに委ねます(keydown 側の editingCell ガードと同じ扱い。
+    //   従来はここで preventDefault + セル範囲貼り付けが走り、input には貼り付かず rows が直接
+    //   書き換わっていました)。
+    if (uiState.editingCell || shouldIgnoreGridKeydown(event.target ?? null)) {
+      return;
+    }
     if (
       readOnly ||
       (!onRowsChange && !applyServerSideCellEdits) ||
@@ -264,11 +279,12 @@ export const createClipboardController = <T extends object>(): ClipboardControll
         : appendBaseSource + (target - viewRowCountForPaste);
     };
 
-    // 末尾追記が要る行数: 貼り付け先のうち view 行数を超えるぶん(ラベル行なしでは従来の式と同値)。
+    // 末尾追記が要る行数: 貼り付け先のうち view 行数を超えるぶん。
+    // 変更(audit L-05): 旧式 `startOriginalRowIndex + matrix.length` は view = source(恒等 order)を
+    //   前提にしており、ソート / フィルター中は view 末尾を超えた行が追記されず静かに捨てられていた。
+    //   ラベル行経路と同じ「view 行数を超えたぶんを末尾へ追記」に統一する(恒等 order では同値)。
     const appendCount = Math.max(lastTargetViewIndex + 1 - viewRowCountForPaste, 0);
-    const requiredOriginalRowCount = pasteTargets
-      ? workingRows.length + appendCount
-      : startOriginalRowIndex + matrix.length;
+    const requiredOriginalRowCount = workingRows.length + appendCount;
     if (requiredOriginalRowCount > workingRows.length && createRow) {
       while (workingRows.length < requiredOriginalRowCount) {
         workingRows.push(createRow());
@@ -278,10 +294,18 @@ export const createClipboardController = <T extends object>(): ClipboardControll
     const requiredColumnCount = startColIndex + maxPasteWidth;
     if (requiredColumnCount > workingColumns.length) {
       if (onColumnsChange && createOverflowColumn) {
+        // 変更(audit L-01): overflow 列は書き込み用の workingColumns(視覚順 + 合成列)と、consumer へ
+        //   返す列定義の両方へ足す。返すのは consumer の columns(論理順・非表示列込み)+ overflow 列で、
+        //   旧実装のように視覚順の可視列 + 合成列を返して非表示列を消したり合成列を混入させない。
+        const overflowColumns: GridColumn<T>[] = [];
         while (workingColumns.length < requiredColumnCount) {
-          workingColumns.push(createOverflowColumn(workingColumns.length));
+          const overflowColumn = createOverflowColumn(workingColumns.length);
+          workingColumns.push(overflowColumn);
+          overflowColumns.push(overflowColumn);
         }
-        onColumnsChange(workingColumns);
+        onColumnsChange(
+          columns ? [...columns, ...overflowColumns] : workingColumns,
+        );
       }
     }
 

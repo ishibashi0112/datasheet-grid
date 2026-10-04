@@ -17,8 +17,10 @@ export const shouldIgnoreGridKeydown = (eventTarget: EventTarget | null) => {
     return false;
   }
 
+  // 変更(audit RD-2): contenteditable は "true" 以外(空文字 / plaintext-only)も編集可能なので
+  //   "false" 以外を対象にします。
   const interactiveElement = eventTarget.closest(
-    'input, textarea, select, button, [contenteditable="true"]',
+    'input, textarea, select, button, [contenteditable]:not([contenteditable="false"])',
   );
 
   return interactiveElement !== null;

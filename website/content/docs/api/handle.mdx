@@ -268,7 +268,7 @@ const buffer = await writeXlsx({
 | `getState()` | 永続化対象(手動リサイズ幅 / フィルター / ソート)のスナップショット `GridState` を返す(純粋・副作用なし)。新規オブジェクトなのでそのまま `JSON.stringify` して保存できる。 |
 | `applyState(state)` | `getState()` の値(または互換な部分形)を適用する。外部入力は内部で防御的に正規化され、幅 reset / フィルター一括 / ソート set の 3 dispatch(1 イベント = 1 再レンダー)で反映。clientSide / serverSide 双方に効く(SSRM は `filters`/`sort` 変化がクエリへ載り再取得)。 |
 
-`GridState`: `{ version, columnWidths, filters, sort }`。`version` はマイグレーション用(現行 `1`)。対象は reducer 内の永続スライスのみで、列の可視/順序/ピン/flex は `columns` prop 側(consumer 所有)のため**含めない**。`activeCell` / `selection` などの一時 UI も含めない。`columnWidths` は手動リサイズした列のみを含む(flex 列はエントリを持たない規約)。`custom` フィルターの `value`(`unknown`)は深いコピーをしないため、シリアライズ可能性は consumer 責務。`applyState` は壊れた/部分的な入力にも耐える(非数値の幅・`kind` 無しの列フィルター・不正な `direction` は捨てる)が、列フィルター値の `kind` 中身までは検証しないため `getState` 出力の往復を前提とする。
+`GridState`: `{ version, columnWidths, filters, sort, columns? }`。`version` はマイグレーション用(現行 `2`)。`columns` は **列メタ(可視 / 順序 / ピン)のスナップショット**(`GridColumnState[]` = `{ key, visible?, pinned? }`。配列順 = 列順)で、`getState()` は常に出力し、`applyState()` は **`onColumnsChange` が指定されているときだけ** `columns` prop へ反映する(列順 / ピン / 可視も復元される点に注意。v1 形式 = `columns` 無しの保存値は列メタを触らない後方互換)。`flex` / 列定義そのものは含めない。`activeCell` / `selection` などの一時 UI も含めない。`columnWidths` は列幅 state のスナップショット(flex 列はエントリを持たない)。手動リサイズ幅のほか、列構成(ピン / 表示 / 並べ替え)の変更時に各列の解決済み幅が焼き込まれるため全列ぶん含まれ得る(2026-10-04 監査の所見 RD-5 / M-03 で扱いを見直し中)。`custom` フィルターの `value`(`unknown`)は深いコピーをしないため、シリアライズ可能性は consumer 責務。`applyState` は壊れた / 部分的な入力にも耐える(非数値の幅・`kind` 無し / 未知 `kind` / 配列であるべき `values` が欠けた列フィルター・不正な `direction` は捨てる)。
 
 ```ts
 // 保存(任意の永続先へ)。

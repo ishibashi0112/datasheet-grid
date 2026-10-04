@@ -1046,7 +1046,12 @@ export type GridColumn<T, F extends GridFrameworkTypes = GridFrameworkTypes> = {
   autoHeight?: boolean;
   /** 列の表示/非表示。 */
   visible?: boolean;
-  /** この列の編集を許可。 */
+  /**
+   * この列の編集可否。**未指定の列は編集可**で、`false` または `readOnly: true`
+   * で編集不可になる(グリッド全体は `readOnly`、セル単位は `canEditCell`)。
+   *
+   * @defaultValue `true`(未指定 = 編集可)
+   */
   editable?: boolean;
   /** この列を読み取り専用にする。 */
   readOnly?: boolean;
@@ -2604,7 +2609,9 @@ export type SpreadsheetGridProps<T, F extends GridFrameworkTypes = GridFramework
    */
   getFilterOptions?: (params: GetFilterOptionsParams<T, F>) => Promise<GetFilterOptionsResult>;
   /**
-   * ヘッダークリックでのソート。
+   * ソート機能の有効化。ソートは列メニュー(⋮)の「昇順 / 降順で並び替え」と「並び替えを管理…」
+   * パネルから行う(ヘッダー本体のクリックは列範囲選択)。`false` でメニューのソート項目が消え、
+   * `applyState` 等で載った `sort` も適用されない。
    *
    * @defaultValue `true`
    */

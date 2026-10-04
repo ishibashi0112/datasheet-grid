@@ -82,4 +82,62 @@ describe('editController', () => {
     expect(t.dispatch.mock.calls.map(([a]) => a.type)).toEqual(['edit/stop']);
     expect(t.args.onRowsChange).not.toHaveBeenCalled();
   });
+
+  // 追加(audit RD-1): 編集中に rows が差し替わって行順が変わっても、確定は「編集を始めた行」へ書く。
+  it('編集中に行順が変わると editingCell を同じ行へ再ターゲットし、確定はその行へ書く(RD-1)', () => {
+    const c = createEditController<Row>();
+    const rowsA = [{ id: 1, qty: 1 }, { id: 2, qty: 2 }, { id: 3, qty: 3 }];
+    const t = makeArgs(rowsA, { row: 1, col: 0 }); // id=2 を編集中
+    c.update(t.args);
+    // 外部から rows が差し替わり、id=2 が view 2 へ移動(view 1 には id=3 が来る)。
+    const rowsB = [{ id: 1, qty: 1 }, { id: 3, qty: 3 }, { id: 2, qty: 2 }];
+    c.update({ ...t.args, rows: rowsB, rowModel: makeRowModel(rowsB) });
+    const startEdits = t.dispatch.mock.calls.filter(([a]) => a.type === 'edit/start');
+    expect(startEdits).toHaveLength(1);
+    expect(startEdits[0][0]).toMatchObject({ cell: { row: 2, col: 0 } });
+    // reducer が editingCell を更新した体で再度 update(再ターゲット後は dispatch しない)。
+    const argsB = { ...t.args, rows: rowsB, rowModel: makeRowModel(rowsB), uiState: { ...t.args.uiState, editingCell: { row: 2, col: 0 } } };
+    c.update(argsB);
+    expect(t.dispatch.mock.calls.filter(([a]) => a.type === 'edit/start')).toHaveLength(1);
+    expect(c.commitEdit('99')).toEqual({ status: 'committed' });
+    const written = (argsB.onRowsChange as ReturnType<typeof vi.fn>).mock.calls[0][0] as Row[];
+    expect(written.find((r) => r.id === 2)?.qty).toBe(99);
+    expect(written.find((r) => r.id === 3)?.qty).toBe(3);
+  });
+
+  // 追加(audit RD-3): 編集中の行が消えたら編集を終了する(editingCell が残ってキー操作が全滅しない)。
+  it('編集中の行が消えると stopEdit で編集を終了する(RD-3)', () => {
+    const c = createEditController<Row>();
+    const rowsA = [{ id: 1, qty: 1 }, { id: 2, qty: 2 }, { id: 3, qty: 3 }];
+    const t = makeArgs(rowsA, { row: 2, col: 0 }); // id=3 を編集中
+    c.update(t.args);
+    const rowsB = [{ id: 1, qty: 1 }];
+    c.update({ ...t.args, rows: rowsB, rowModel: makeRowModel(rowsB) });
+    expect(t.dispatch.mock.calls.map(([a]) => a.type)).toEqual(['edit/stop']);
+  });
+
+  it('同じ座標のまま行キーも変わらない通常の再レンダーでは dispatch しない', () => {
+    const c = createEditController<Row>();
+    const rowsA = [{ id: 1, qty: 1 }, { id: 2, qty: 2 }];
+    const t = makeArgs(rowsA, { row: 1, col: 0 });
+    c.update(t.args);
+    // 値だけ変わった rows(同じ順・同じキー)。
+    const rowsB = [{ id: 1, qty: 10 }, { id: 2, qty: 20 }];
+    c.update({ ...t.args, rows: rowsB, rowModel: makeRowModel(rowsB) });
+    expect(t.dispatch).not.toHaveBeenCalled();
+  });
+
+  it('編集を終えて別セルで新しい編集を始めると、新しいセルの同一性を控える', () => {
+    const c = createEditController<Row>();
+    const rowsA = [{ id: 1, qty: 1 }, { id: 2, qty: 2 }];
+    const t = makeArgs(rowsA, { row: 0, col: 0 });
+    c.update(t.args);
+    c.update({ ...t.args, uiState: { ...t.args.uiState, editingCell: null } });
+    c.update({ ...t.args, uiState: { ...t.args.uiState, editingCell: { row: 1, col: 0 } } });
+    // id=2 の編集中に id=2 が先頭へ移動 → 再ターゲットは view 0。
+    const rowsB = [{ id: 2, qty: 2 }, { id: 1, qty: 1 }];
+    c.update({ ...t.args, rows: rowsB, rowModel: makeRowModel(rowsB), uiState: { ...t.args.uiState, editingCell: { row: 1, col: 0 } } });
+    const startEdits = t.dispatch.mock.calls.filter(([a]) => a.type === 'edit/start');
+    expect(startEdits.at(-1)?.[0]).toMatchObject({ cell: { row: 0, col: 0 } });
+  });
 });

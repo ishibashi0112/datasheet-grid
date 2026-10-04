@@ -380,6 +380,17 @@
     text-align: right;
   }
 
+  /* 変更(audit M-01): 右寄せ / 中央寄せの既定テキストセルがあふれたとき、flex-end / center では
+     先頭側(上位桁)がクリップされていた(「123,456,789」が「56,789」に見える)。内容 span をセル幅に
+     収めて末尾側を省略記号で切る(短い値の寄せは不変。autoHeight 折り返しセルは対象外)。 */
+  .ssg-body-cell--align-right:not(.ssg-body-cell--autoheight) > span,
+  .ssg-body-cell--align-center:not(.ssg-body-cell--autoheight) > span {
+    min-width: 0;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
   /* 行ホバー(hoveredRowIndex 由来。3 ペイン横断のため :hover では実装不可)。 */
   .ssg-body-cell--row-hovered {
     background-color: var(--ssg-row-hover-bg);
