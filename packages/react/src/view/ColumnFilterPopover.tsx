@@ -767,6 +767,14 @@ function DateConditionEditor({
               }}
               onKeyDown={(event) => {
                 event.stopPropagation();
+                // 追加(audit V-02): pointerdown 専用だったためキーボード(Enter / Space)で押せなかった。
+                if (event.key === 'Enter' || event.key === ' ') {
+                  event.preventDefault();
+                  onDraftChange({
+                    ...draft,
+                    preset: draft.preset === option.id ? null : option.id,
+                  });
+                }
               }}
               className={cx(
                 'ssg-filter-preset-chip',
@@ -919,6 +927,11 @@ function DateSetFilterBody({
             }}
             onKeyDown={(event) => {
               event.stopPropagation();
+              // 追加(audit V-02): キーボード(Enter / Space)でも開閉できるようにする。
+              if (event.key === 'Enter' || event.key === ' ') {
+                event.preventDefault();
+                toggleExpanded(row.key);
+              }
             }}
             className="ssg-filter-tree-toggle"
             aria-label={row.expanded ? '折りたたむ' : '展開する'}
@@ -1166,6 +1179,11 @@ function ComboFilterLayout({
           }}
           onKeyDown={(event) => {
             event.stopPropagation();
+            // 追加(audit V-02): キーボード(Enter / Space)でも押せるようにする。
+            if (event.key === 'Enter' || event.key === ' ') {
+              event.preventDefault();
+              onConditionClear();
+            }
           }}
           className="ssg-filter-sec-clear"
           disabled={!conditionActive}
@@ -1189,6 +1207,11 @@ function ComboFilterLayout({
           }}
           onKeyDown={(event) => {
             event.stopPropagation();
+            // 追加(audit V-02): キーボード(Enter / Space)でも押せるようにする。
+            if (event.key === 'Enter' || event.key === ' ') {
+              event.preventDefault();
+              onSelectionClear();
+            }
           }}
           className="ssg-filter-sec-clear"
           disabled={setSelection === null}
@@ -1593,6 +1616,11 @@ export function ColumnFilterPopover({
               onKeyDown={(event) => {
                 // 追加: popover 内 button の key 操作を grid 側へ流しません。
                 event.stopPropagation();
+                // 追加(audit V-02): キーボード(Enter / Space)でも押せるようにする。
+                if (event.key === 'Enter' || event.key === ' ') {
+                  event.preventDefault();
+                  onSetClear();
+                }
               }}
               className="ssg-filter-btn-secondary"
             >
@@ -1607,6 +1635,11 @@ export function ColumnFilterPopover({
               }}
               onKeyDown={(event) => {
                 event.stopPropagation();
+                // 追加(audit V-02): キーボード(Enter / Space)でも押せるようにする。
+                if (event.key === 'Enter' || event.key === ' ') {
+                  event.preventDefault();
+                  onRequestClose();
+                }
               }}
               className="ssg-filter-btn-primary"
             >
@@ -1625,6 +1658,11 @@ export function ColumnFilterPopover({
               onKeyDown={(event) => {
                 // 追加: popover 内 button の key 操作を grid 側へ流しません。
                 event.stopPropagation();
+                // 追加(audit V-02): キーボード(Enter / Space)でも押せるようにする。
+                if (event.key === 'Enter' || event.key === ' ') {
+                  event.preventDefault();
+                  onClear();
+                }
               }}
               className="ssg-filter-btn-secondary"
             >
@@ -1640,6 +1678,11 @@ export function ColumnFilterPopover({
               onKeyDown={(event) => {
                 // 追加: popover 内 button の key 操作を grid 側へ流しません。
                 event.stopPropagation();
+                // 追加(audit V-02): キーボード(Enter / Space)でも押せるようにする。
+                if (event.key === 'Enter' || event.key === ' ') {
+                  event.preventDefault();
+                  onApply();
+                }
               }}
               className="ssg-filter-btn-primary"
             >
