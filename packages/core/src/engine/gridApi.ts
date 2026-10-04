@@ -77,6 +77,8 @@ export type GridApiArgs<T> = {
   isServerSide: boolean;
   // refreshServerSide() の委譲先(SSRM のソフトリフレッシュ)。
   serverSideRefresh: () => void;
+  // 追加(監査 C-7): retryServerSideLoads() の委譲先(失敗ブロックだけの再取得)。
+  serverSideRetryFailed: () => void;
   // getInvalidCells / エクスポートの rowKey 解決(source index 基準)。
   resolvedRowKeyGetter: (row: T, sourceRowIndex: number) => GridRowKey;
   // exportCsv / getExportData の対象行フィルタ。
@@ -746,6 +748,19 @@ export const createGridApi = <T,>(): GridApi<T> => {
         return;
       }
       s.serverSideRefresh();
+    },
+    retryServerSideLoads: () => {
+      const s = args;
+      if (!s) {
+        return;
+      }
+      if (!s.isServerSide) {
+        console.warn(
+          '[SpreadsheetGrid] retryServerSideLoads は clientSide(rows)モードでは何もしません(dataSource 指定時のみ有効です)。',
+        );
+        return;
+      }
+      s.serverSideRetryFailed();
     },
 
     // ── UI パネル ──

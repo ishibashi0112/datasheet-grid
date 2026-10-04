@@ -647,6 +647,69 @@ describe('SpreadsheetGrid refreshServerSide(結合)', () => {
   });
 });
 
+// 追加(監査 C-7): ハンドル retryServerSideLoads() の配線検証です(失敗ブロックだけを取り直す)。
+describe('SpreadsheetGrid retryServerSideLoads(結合)', () => {
+  it('失敗した block 0 を取り直し、clientSide では警告付き no-op', async () => {
+    let fail = true;
+    const calls: ServerSideGetRowsParams[] = [];
+    const dataSource: ServerSideDataSource<Row> = {
+      getRows: (params) => {
+        calls.push(params);
+        if (fail) {
+          return Promise.reject(new Error('boom'));
+        }
+        return Promise.resolve({
+          rows: rows.slice(params.startIndex, params.endIndex),
+          totalRowCount: rows.length,
+        });
+      },
+      initialRowCount: rows.length,
+    };
+    const ref = createRef<SpreadsheetGridHandle<Row>>();
+    const onServerSideLoadError = vi.fn();
+    render(
+      <SpreadsheetGrid
+        ref={ref}
+        columns={columns}
+        dataSource={dataSource}
+        onServerSideLoadError={onServerSideLoadError}
+      />,
+    );
+    // initialRowCount 指定時は可視レンジ要求で取得するため、refresh で block 0 を取りに行かせて失敗させる。
+    act(() => {
+      ref.current?.refreshServerSide();
+    });
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(onServerSideLoadError).toHaveBeenCalledTimes(1);
+    const before = calls.length;
+
+    fail = false;
+    act(() => {
+      ref.current?.retryServerSideLoads();
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(calls.length).toBe(before + 1);
+    expect(calls.at(-1)).toMatchObject({ startIndex: 0 });
+
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      const clientRef = createRef<SpreadsheetGridHandle<Row>>();
+      render(<SpreadsheetGrid ref={clientRef} columns={columns} rows={rows} />);
+      act(() => {
+        clientRef.current?.retryServerSideLoads();
+      });
+      expect(String(warnSpy.mock.calls[0]?.[0])).toContain('retryServerSideLoads');
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
+});
+
 // 追加(batch 9): SSRM エラーバー(getRows 失敗の再試行 UI)の配線検証です。失敗追跡・retry の
 //   挙動そのものは useServerSideRowModel.test.ts が正本で、ここでは「失敗 → バー表示 →
 //   再試行 → 回復 → バー消滅」の UI 往復と、onServerSideLoadError prop・閉じるボタンを

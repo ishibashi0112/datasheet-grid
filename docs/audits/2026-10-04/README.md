@@ -164,13 +164,13 @@
 | L-07 / L-08 | 修正(§9 から判断のうえ実施。空値は昇順 / 降順とも末尾、値を数値 / 文字列 / 空値に分類した全順序で比較) | 挙動変化 | 空値 = null / undefined / 空白のみの文字列(従来 null / '' は 0 扱いで数値の途中、undefined は先頭)。数値 < 文字列。Float64 高速経路は空値を NaN キーで扱い維持。`compareUnknownValues` は全順序の昇順比較子に、方向込みは新設の `compareSortValues`(core)。API_REFERENCE + website(props / filter-sort ガイド)+ 生成 JSDoc 更新 |
 | RD-6 | 修正(§9 から判断のうえ実施。確定時に `readOnly` / `canEditCell` を再評価し、不可なら書き込まず編集終了) | 挙動変化(改善) | `renderCell` の `setValue` は従来どおり `readOnly` を見ない(利用側が `ctx.readOnly` で判断する設計として文書化)。`EditControllerArgs` に任意の `readOnly` / `canEditCell` を追加(core)。API_REFERENCE + website(props)+ 生成 JSDoc 更新 |
 | L-03 / L-04 | 修正(§9 から判断のうえ実施。クリップボードの TSV を Excel / Google スプレッドシート互換に) | 挙動変化(改善) | 貼り付け: 途中の空行を保持(末尾改行が作る最後の空行だけ落とす)、先頭 `"` のセルを引用符付きとして解釈(セル内改行 / タブ / `""`)。閉じ `"` が無い場合は文字どおり。コピー: 改行 / タブ / `"` を含むセルだけ `"…"` で囲む(それ以外は不変)。空セル 1 つ(`\r\n`)の貼り付けはそのセルを空にする。API_REFERENCE + website(props / keyboard ガイド)更新 |
+| P-2 | 対応しない(§9 から判断。2026-10-04) | — | 利用者はほぼバンドラ(Vite / Next.js 等)経由で ESM の型が解決されるため需要が薄く、エコシステムも ESM へ進んでいる(Node 22+ は `require(esm)` 可)。CJS + `node16` / `nodenext` で型を使いたい要望が出たら再検討する |
+| C-7 | 修正(§9 から判断のうえ実施。失敗ブロックはスクロールでは再要求せず、明示再試行まで抑止) | 挙動変化 | 取り直すのはエラーバーの再試行 / 新設ハンドル `retryServerSideLoads()` / `refreshServerSide()` / クエリ変化のときだけ(AG Grid の `retryServerSideLoads()` と同じ方針)。従来の「スクロール再訪で自然回復」は廃止。API_REFERENCE + website(handle / server-side)+ 生成 JSDoc 更新 |
 
 ## 9. 判断待ち(挙動が変わるため未実装)
 
 | ID | 変える場合の挙動 | 影響を受け得る利用側 |
 | --- | --- | --- |
-| P-2 | `require` 条件向けの `index.d.cts` を配布 | CJS + node16 の型解決(現状 TS1479) |
-| C-7 | 失敗ブロックの自動再要求を抑止 / バックオフ | 失敗時のトースト連打は止まるが、スクロールでの自然回復タイミングが変わる |
 | M-05 | auto-height の `scrollToBottom()` を計測後に再補正 | — |
 | M-08 | `readOnly` で行ドラッグも無効化するか(仕様確認) | readOnly + 並べ替え可を意図していた利用側 |
 | B-05 補足 | rows 減少時に `activeCell` / `selection` を reducer 側でもクランプ | `getActiveCell()` が範囲外を返すことに依存する処理は無いはず |

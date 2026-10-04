@@ -125,6 +125,7 @@ const gridRef = useRef<SpreadsheetGridHandle<Row>>(null);
 | メソッド | 説明 |
 | --- | --- |
 | `refreshServerSide()` | serverSide(`dataSource`)のソフトリフレッシュ。クエリ(フィルター/ソート/グローバル)を変えずにキャッシュを破棄し、**スクロール位置を保ったまま現在の可視レンジを即時**(debounce なし)取り直す。件数は到着ブロックの `totalRowCount` で追従。宣言的に扱いたい場合は同挙動の `serverSideRefreshToken` prop もある(「serverSide モード」の節を参照)。clientSide(`rows`)では警告付き no-op。 |
+| `retryServerSideLoads()` | serverSide(`dataSource`)で取得に失敗中のブロック**だけ**を即時取り直す(エラーバーの「再試行」と同じ。キャッシュ済みブロックには触れない)。失敗ブロックはスクロールでは自動再要求しないため、独自のエラー UI から再試行させたい場合に使う。失敗が無ければ何もしない。clientSide(`rows`)では警告付き no-op。 |
 
 ### CSV エクスポート
 

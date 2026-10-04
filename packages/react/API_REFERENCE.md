@@ -946,6 +946,7 @@ const gridRef = useRef<SpreadsheetGridHandle<Row>>(null);
 | メソッド | 説明 |
 | --- | --- |
 | `refreshServerSide()` | serverSide(`dataSource`)のソフトリフレッシュ。クエリ(フィルター/ソート/グローバル)を変えずにキャッシュを破棄し、**スクロール位置を保ったまま現在の可視レンジを即時**(debounce なし)取り直す。件数は到着ブロックの `totalRowCount` で追従。宣言的に扱いたい場合は同挙動の `serverSideRefreshToken` prop もある(「serverSide モード」の節を参照)。clientSide(`rows`)では警告付き no-op。 |
+| `retryServerSideLoads()` | serverSide(`dataSource`)で取得に失敗中のブロック**だけ**を即時取り直す(エラーバーの「再試行」と同じ。キャッシュ済みブロックには触れない)。失敗ブロックはスクロールでは自動再要求しないため、独自のエラー UI から再試行させたい場合に使う。失敗が無ければ何もしない。clientSide(`rows`)では警告付き no-op。 |
 
 ### CSV エクスポート
 
@@ -1185,7 +1186,7 @@ set / select / 複合(numberSet / textSet / dateSet)の候補集合はクライ�
 `getRows` が reject する(abort 以外)と、失敗ブロックの行はスケルトンのまま残り、グリッド下部中央に**エラーバー**(「行の取得に失敗しました(N ブロック)」+ 再試行 / 閉じる)が表示される。
 
 - **再試行**: 失敗中のブロック**だけ**を即時(debounce なし)取り直す。キャッシュ済みブロックには触れない(`refreshServerSide()` のような全破棄はしない)。再び失敗すればバーが再表示される。
-- **自然回復**: スクロールで失敗ブロックを再訪すると通常の可視レンジ要求として再 fetch され、成功すれば失敗は自動解除される(バーも消える)。
+- **スクロールでは再要求しない**: 失敗中のブロックは、スクロールで再訪しても自動では取り直さない(サーバー障害中にスクロールのたびに再要求して `onServerSideLoadError` が連発するのを防ぐため。AG Grid の `retryServerSideLoads()` と同じ方針)。取り直すのは再試行ボタン / ハンドルの `retryServerSideLoads()` / `refreshServerSide()` / クエリ変化のときだけ。
 - **閉じる(×)**: 同一の失敗状態の間だけ非表示になる。新しい失敗(失敗集合の変化)が起きると再表示される。クエリ変化 / `refreshServerSide()` / 全回復で失敗状態はリセットされる。
 - **abort の扱い**: スクロール通過・クエリ変化・unmount によるキャンセル(`signal` abort)は失敗として扱わない(バーも通知も出ない)。
 - **外部通知**: バーとは独立に、失敗ごとに `onServerSideLoadError(error, { startIndex, endIndex })` が呼ばれる(トースト / ログ用)。

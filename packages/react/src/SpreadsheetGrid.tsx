@@ -3755,6 +3755,7 @@ export function SpreadsheetGrid<T extends object>({
     rows,
     isServerSide,
     serverSideRefresh: serverSide.refresh,
+    serverSideRetryFailed: serverSide.retryFailedBlocks,
     resolvedRowKeyGetter,
     isRowExportable,
     // 追加(label-row ④): ラベル行のエクスポート設定(scope 'raw' の除外 / includeLabelRows の出力値)。

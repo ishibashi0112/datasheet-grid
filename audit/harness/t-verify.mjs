@@ -215,6 +215,30 @@ import { open, check, pending, summary, errorsOf, renderedRowIndexes, cellText, 
   await close();
 }
 
+// ---- C-7: 失敗ブロックがスクロールのたびに再要求される ----
+{
+  const { page, close } = await open('ssrm');
+  await waitIdle(page, 800);
+  await page.evaluate(() => { window.__ssrm.failRanges = [[3000, 3300]]; window.__ssrm.calls.length = 0; });
+  await clearEvents(page);
+  await page.evaluate(() => window.__grid.scrollToRow(3050, { align: 'start' }));
+  await waitIdle(page, 800);
+  const errorsAfterFirst = (await events(page, 'onServerSideLoadError')).length;
+  // 1 行ずつスクロール(失敗ブロック内)
+  for (let r = 3051; r <= 3055; r += 1) {
+    await page.evaluate((row) => window.__grid.scrollToRow(row, { align: 'start' }), r);
+    await waitIdle(page, 250);
+  }
+  const errorsAfterScroll = (await events(page, 'onServerSideLoadError')).length;
+  check('C-7: scrolling within a failed block does not re-request it', errorsAfterFirst >= 1 && errorsAfterScroll === errorsAfterFirst, { errorsAfterFirst, errorsAfterScroll });
+  // ハンドルで明示再試行 → 回復
+  await page.evaluate(() => { window.__ssrm.failRanges = []; window.__grid.retryServerSideLoads(); });
+  await waitIdle(page, 800);
+  const recovered = await page.evaluate(() => ({ bar: document.querySelectorAll('.ssg-ssrm-error-bar').length }));
+  check('C-7: retryServerSideLoads() recovers failed blocks', recovered.bar === 0, recovered);
+  await close();
+}
+
 // ---- C-5: Tab / Shift+Tab のキーボードトラップ ----
 {
   const { page, close } = await open('basic', { query: 'n=20' });

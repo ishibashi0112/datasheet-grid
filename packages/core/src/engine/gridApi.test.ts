@@ -89,6 +89,7 @@ const makeArgs = (overrides: Partial<GridApiArgs<Row>> = {}) => {
     rows,
     isServerSide: false,
     serverSideRefresh: vi.fn(),
+    serverSideRetryFailed: vi.fn(),
     resolvedRowKeyGetter: (row) => row.id,
     isRowExportable: undefined,
     activeToolPanelTab: null,
