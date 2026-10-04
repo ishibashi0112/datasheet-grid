@@ -72,6 +72,37 @@ export const cloneColumnFilterValue = (
   }
 };
 
+// 追加(audit L-09): 外部入力の列フィルター値が「既知の kind + 最小限の shape」かを判定します。
+//   clone(cloneColumnFilterValue)が配列展開 / 入れ子アクセスを行うフィールドだけを検査し、深い意味検証は
+//   しません(getState 出力の往復が前提。壊れた入力は捨てる = applyState の「耐える」契約)。
+const isAcceptableColumnFilterValue = (value: unknown): value is ColumnFilterValue => {
+  if (!value || typeof value !== 'object' || !('kind' in value)) {
+    return false;
+  }
+  const v = value as Record<string, unknown>;
+  const isSetShape = (set: unknown) =>
+    set === null ||
+    (!!set && typeof set === 'object' && Array.isArray((set as Record<string, unknown>).values));
+  const isObjectOrNull = (x: unknown) => x === null || (!!x && typeof x === 'object');
+  switch (v.kind) {
+    case 'set':
+      return Array.isArray(v.values);
+    case 'number':
+      return isObjectOrNull(v.parsed ?? null);
+    case 'numberSet':
+    case 'textSet':
+    case 'dateSet':
+      return isObjectOrNull(v.condition ?? null) && isSetShape(v.set ?? null);
+    case 'text':
+    case 'date':
+    case 'select':
+    case 'custom':
+      return true;
+    default:
+      return false;
+  }
+};
+
 // columnFilters マップを値ごと clone して新規マップを返します(キー集合は同一)。
 export const cloneColumnFilters = (
   columnFilters: Record<string, ColumnFilterValue>,
@@ -181,9 +212,12 @@ export const migrateGridState = (input: unknown): GridState => {
     const filterMap = rawColumnFilters as Record<string, unknown>;
     for (const key of Object.keys(filterMap)) {
       const v = filterMap[key];
-      // kind を持つオブジェクトのみ採用(深い検証はしない)。値は clone して参照を切ります。
-      if (v && typeof v === 'object' && 'kind' in v) {
-        columnFilters[key] = cloneColumnFilterValue(v as ColumnFilterValue);
+      // 変更(audit L-09): 既知の kind かつ最小限の shape(配列であるべき values 等)を満たすものだけ採用し、
+      //   それ以外は捨てます。旧実装は「kind を持つオブジェクト」を無条件に clone していたため、未知 kind
+      //   (将来版の保存 state を旧版が読む)では undefined を格納して次の getState / onStateChange で
+      //   TypeError、values 欠損では clone 自体が throw していました。値は clone して参照を切ります。
+      if (isAcceptableColumnFilterValue(v)) {
+        columnFilters[key] = cloneColumnFilterValue(v);
       }
     }
   }

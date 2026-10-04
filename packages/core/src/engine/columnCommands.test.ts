@@ -75,6 +75,20 @@ describe('createColumnCommands', () => {
     expect(second.actions).toEqual([]);
   });
 
+  // 追加(audit B-02): 視覚順の先頭が合成列(展開トグル / 行ドラッグ / 自動グループ列)でも、
+  //   全解除は consumer の列を 1 本残す。
+  it('全解除: 視覚順先頭が合成列でも consumer の最初の表示列を残す', () => {
+    const commands = createColumnCommands<Row>();
+    const synthetic: GridColumn<Row> = { key: '__ssg_detail_toggle__', title: '', width: 28 };
+    const { args, onColumnsChange } = makeArgs({ orderedColumns: [synthetic, ...columns], visibleColumns: [synthetic, ...columns] });
+    commands.update(args);
+    commands.handleColumnChooserHideAll();
+    expect(onColumnsChange).toHaveBeenCalledTimes(1);
+    const next = onColumnsChange.mock.calls[0][0];
+    expect(next.map((c) => c.key)).toEqual(['a', 'b', 'c']); // 合成列は混入しない
+    expect(next.map((c) => c.visible !== false)).toEqual([true, false, false]); // a だけ残る
+  });
+
   it('並べ替え commit: 集合不一致 / 順序・幅・pinned が同一なら no-op、pinOverride は pane 連結正規化される', () => {
     const commands = createColumnCommands<Row>();
     const { args, onColumnsChange } = makeArgs();

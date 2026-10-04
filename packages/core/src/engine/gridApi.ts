@@ -10,6 +10,7 @@
 //     (scroll イベントの source:'api' 判定用。位置不変の scrollTo は scroll イベントを発火しないため)。
 //   - update 前(マウント前)にメソッドが呼ばれた場合は、旧 apiStateRef=null と同じく安全な既定値を返します。
 import type {
+  CellCoord,
   CsvExportOptions,
   CsvExportScope,
   DetailRowOptions,
@@ -208,6 +209,19 @@ export const createGridApi = <T,>(): GridApi<T> => {
 
   const scrollToCellInternal: GridApi<T>['scrollToCellInternal'] = (viewRowIndex, colIndex, align) => {
     applyScroll(verticalTargetFor(viewRowIndex, align), horizontalTargetFor(colIndex, align));
+  };
+
+  // 追加(audit B-05): 選択 / アクティブセル API の入力をビュー座標内へクランプします(行は viewRowCount、
+  //   列は orderedColumns.length 基準。0 行 / 0 列なら 0)。
+  const clampCellCoord = (cell: CellCoord): CellCoord => {
+    const s = args;
+    if (!s) {
+      return cell;
+    }
+    return {
+      row: Math.min(Math.max(cell.row, 0), Math.max(s.viewRowCount - 1, 0)),
+      col: Math.min(Math.max(cell.col, 0), Math.max(s.orderedColumns.length - 1, 0)),
+    };
   };
 
   // scope('view' / 'raw' / 'rendered' / 'selection' + 後方互換 'all' / 'visible')から、出力対象の行アクセサ /
@@ -437,9 +451,12 @@ export const createGridApi = <T,>(): GridApi<T> => {
       if (!s) {
         return;
       }
-      s.dispatch(gridActions.activateCell(cell));
-      if (cell && cellOptions?.scrollIntoView) {
-        scrollToCellInternal(cell.row, cell.col, 'auto');
+      // 変更(audit B-05): 範囲外 index はビュー座標内へクランプする(API_REFERENCE「範囲外 index は内部で
+      //   クランプ / 無視する」との整合。旧実装は reducer へそのまま入り getActiveCell が範囲外を返していた)。
+      const clamped = cell ? clampCellCoord(cell) : null;
+      s.dispatch(gridActions.activateCell(clamped));
+      if (clamped && cellOptions?.scrollIntoView) {
+        scrollToCellInternal(clamped.row, clamped.col, 'auto');
       }
     },
 
@@ -450,12 +467,12 @@ export const createGridApi = <T,>(): GridApi<T> => {
       if (!s) {
         return;
       }
-      const cell = { row: viewRowIndex, col: colIndex };
+      const cell = clampCellCoord({ row: viewRowIndex, col: colIndex });
       // クリック相当: pointerdown(start)→ pointerup(end)。activeCell=cell / 単一セル選択 / dragState クリア。
       s.dispatch(gridActions.startSelection(cell));
       s.dispatch(gridActions.endSelection());
       if (cellOptions?.scrollIntoView) {
-        scrollToCellInternal(viewRowIndex, colIndex, 'auto');
+        scrollToCellInternal(cell.row, cell.col, 'auto');
       }
     },
 
@@ -464,12 +481,14 @@ export const createGridApi = <T,>(): GridApi<T> => {
       if (!s) {
         return;
       }
+      const start = clampCellCoord(range.start);
+      const end = clampCellCoord(range.end);
       // ドラッグ選択相当: start(anchor)→ update(focus)→ end。
-      s.dispatch(gridActions.startSelection(range.start));
-      s.dispatch(gridActions.updateSelection(range.end));
+      s.dispatch(gridActions.startSelection(start));
+      s.dispatch(gridActions.updateSelection(end));
       s.dispatch(gridActions.endSelection());
       if (rangeOptions?.scrollIntoView) {
-        scrollToCellInternal(range.end.row, range.end.col, 'auto');
+        scrollToCellInternal(end.row, end.col, 'auto');
       }
     },
 

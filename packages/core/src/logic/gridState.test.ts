@@ -810,3 +810,32 @@ describe('applyColumnState (追加 v2)', () => {
     expect(result[0]).toBe(a);
   });
 });
+
+// 追加(audit L-09): 壊れた / 未知の列フィルター値に耐える(捨てる。throw も undefined 格納もしない)。
+describe('migrateGridState: 列フィルター値の防御', () => {
+  const migrate = (columnFilters: Record<string, unknown>) =>
+    migrateGridState({ version: 2, columnWidths: {}, filters: { globalText: '', columnFilters }, sort: [] });
+
+  it('未知の kind は捨て、以後の buildGridState が throw しない', () => {
+    const migrated = migrate({ a: { kind: 'futureKind', value: 1 }, b: { kind: 'text', value: 'x' } });
+    expect(Object.keys(migrated.filters.columnFilters)).toEqual(['b']);
+    expect(() => buildGridState({}, migrated.filters, [], [])).not.toThrow();
+  });
+
+  it('values / set.values が配列でない set 系は捨てる', () => {
+    const migrated = migrate({
+      a: { kind: 'set' },
+      b: { kind: 'set', values: 'A' },
+      c: { kind: 'numberSet', condition: null, set: {} },
+      d: { kind: 'numberSet', condition: null, set: { values: ['1'] } },
+      e: { kind: 'set', values: ['A'], mode: 'exclude' },
+    });
+    expect(Object.keys(migrated.filters.columnFilters).sort()).toEqual(['d', 'e']);
+    expect(migrated.filters.columnFilters.e).toEqual({ kind: 'set', values: ['A'], mode: 'exclude' });
+  });
+
+  it('kind が無い / オブジェクトでない値は捨てる', () => {
+    const migrated = migrate({ a: { foo: 1 }, b: null, c: 'text', d: 5 });
+    expect(migrated.filters.columnFilters).toEqual({});
+  });
+});

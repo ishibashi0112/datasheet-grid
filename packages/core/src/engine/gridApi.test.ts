@@ -141,6 +141,25 @@ describe('createGridApi', () => {
     expect(args.commitRowSelection).toHaveBeenCalledWith({ mode: 'include', keys: new Set([2]) });
   });
 
+  // 追加(audit B-05): 範囲外 index はビュー座標内へクランプする(API_REFERENCE の記述どおり)。
+  it('selectCell / setActiveCell / selectRange は範囲外 index をクランプする', () => {
+    const api = createGridApi<Row>();
+    const { args, actions } = makeArgs();
+    api.update(args);
+    api.handle.selectCell(999, 999);
+    expect(actions[0]).toMatchObject({ type: 'selection/start', cell: { row: 2, col: 1 } });
+    actions.length = 0;
+    api.handle.setActiveCell({ row: -5, col: -1 });
+    expect(actions[0]).toMatchObject({ type: 'cell/activate', cell: { row: 0, col: 0 } });
+    actions.length = 0;
+    api.handle.selectRange({ start: { row: -1, col: 0 }, end: { row: 50, col: 50 } });
+    expect(actions[0]).toMatchObject({ type: 'selection/start', cell: { row: 0, col: 0 } });
+    expect(actions[1]).toMatchObject({ type: 'selection/update', cell: { row: 2, col: 1 } });
+    actions.length = 0;
+    api.handle.setActiveCell(null);
+    expect(actions[0]).toMatchObject({ type: 'cell/activate', cell: null });
+  });
+
   it('exportCsv は scope に応じて行 / 列を解決し、selection 無しの scope=selection は空文字', () => {
     const api = createGridApi<Row>();
     const { args } = makeArgs();
