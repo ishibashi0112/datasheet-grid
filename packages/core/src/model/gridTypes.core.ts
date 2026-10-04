@@ -2425,7 +2425,9 @@ export type SpreadsheetGridProps<T, F extends GridFrameworkTypes = GridFramework
    */
   maxHeight?: number | string;
   /**
-   * グリッド全体の編集を無効化。
+   * グリッド全体の編集を無効化。編集中に `true` へ切り替わった場合、
+   * その編集は確定時に書き込まれず終了する(`canEditCell` も確定時に再評価)。`renderCell` の
+   * `ctx.setValue` は対象外で、`readOnly` 中も書き込める(`ctx.readOnly` を見て利用側で無効化する)。
    *
    * @defaultValue `false`
    */

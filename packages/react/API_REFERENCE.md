@@ -36,7 +36,7 @@
 | `rowHeaderWidth` | `number` | `56` | 行番号列の幅(px)。 |
 | `height` | `number \| string` | `—` | グリッドの明示高さ。**値の種類で何の高さかが変わる**。① `%` を含む文字列(`'100%'` / `'50%'` / `'calc(100% - 40px)'`): トップバー・フィルターチップバー・ボトムバーを含む**グリッド全体**の高さ。`'100%'` でグリッドが親要素に収まり、バーを除いた残りがスクロール領域になる(ルートに `ssg-root--fill-height` が付く)。親要素が確定高さを持つ前提で、親が高さ `auto` だと全行分まで伸びて仮想化が効かない。② `number`(px)/ `%` を含まない文字列(`'400px'` / `'50vh'` / `'calc(100vh - 120px)'`): **スクロール領域だけ**の高さ(グリッド全体はバーの分だけ高くなる)。③ 未指定: スクロール領域は内容の高さで `maxHeight` によりクリップ。ルートへの `style={{ height }}` だけではスクロール領域は決まらないため、高さはこの prop で指定する。 |
 | `maxHeight` | `number \| string` | `—`（既定 480px） | **スクロール領域**の高さ上限(バーは含まない。`height` の種類に関わらず同じ)。`height`・`maxHeight` が**共に未指定のときのみ**既定の 480px が効く（従来挙動）。数値の `height` と併用するとスクロール領域 = `min(height, maxHeight)`、`%` の `height` と併用すると `min(maxHeight, 親の高さ − バー)`(親が大きければグリッド全体はバー + `maxHeight` に縮む)。 |
-| `readOnly` | `boolean` | `false` | グリッド全体の編集を無効化。 |
+| `readOnly` | `boolean` | `false` | グリッド全体の編集を無効化。編集中に `true` へ切り替わった場合、その編集は確定時に書き込まれず終了する(`canEditCell` も確定時に再評価)。`renderCell` の `ctx.setValue` は対象外で、`readOnly` 中も書き込める(`ctx.readOnly` を見て利用側で無効化する)。 |
 | `dimReadOnlyCells` | `boolean` | `false` | readonly セルの組み込み淡色表示(背景 + 文字色)を有効化。`false` でもセマンティッククラス `.ssg-body-cell--readonly` は常時付与され、利用側 CSS のフックに使える。 |
 | `canEditCell` | `(rowIndex, colIndex, row, column) => boolean` | — | セル単位の編集可否ゲート。 |
 | `enableUndoRedo` | `boolean` | `true` | グリッド編集(セル編集 / ペースト / `renderCell` の `setValue`)の取り消し/やり直し。`Ctrl/Cmd+Z` = undo、`Ctrl/Cmd+Shift+Z` / `Ctrl/Cmd+Y` = redo(ハンドルの `undo()` / `redo()` でも可)。clientSide(`rows` + `onRowsChange`)専用で、serverSide(`dataSource`)/ `readOnly` / `onRowsChange` 未指定時は無効。履歴は「変更前 rows 配列」の参照スナップショット(未変更行は構造共有されるため低コスト)。**`onRowsChange` で受け取った配列は参照そのまま `rows` へ戻すのが前提**(map 等で作り直すと毎回「外部変更」と見なされ履歴が消える)。rows が grid 起点以外(親の直接 setState 等)で差し替わると履歴は自動破棄。エディタ内の文字入力の取り消しは input のネイティブ undo に委譲(グリッドの undo は**確定済みの編集**が対象)。 |
@@ -1324,6 +1324,7 @@ const s = stylex.create({
 - `GridColumnPinned = 'left' | 'right'`
 - `GridSelectFilterOption = { label: string; value: string }`
 - `CellRenderContext<T> = { row, rowIndex, sourceRowIndex, rowKey, colIndex, value, column, isActive, isSelected, isEditing, readOnly, setValue, detail? }`
+  - `setValue` は `readOnly` / `canEditCell` を見ずに書き込む(検証 `validate` は通る)。読み取り専用時に無効化したい場合は `readOnly` を見て呼び分ける。`readOnly` 中は undo が無効なため、この書き込みは取り消せない。
   - `detail?: CellDetailContext = { expanded, expandable, toggle, setExpanded }` は `detailRow` prop 有効時のみ定義(「展開行(Master/Detail)」節)。
 - `DetailRowOptions<T>` / `DetailRowRenderContext<T> = { row, rowKey, rowIndex, sourceRowIndex, collapse }` / `CellDetailContext`(展開行。バレルから公開)
 - `LabelRowOptions<T>` / `LabelRowRenderContext<T> = { row, rowKey, rowIndex, sourceRowIndex, label, sectionRowCount }` / `GridLabelRow<T> = { kind: 'label', row, sourceIndex, label, sectionRowCount }` / `LabelRowSortMode = 'section' | 'follow' | 'hide'`(ラベル行。バレルから公開。「ラベル行(見出し / 区切り行)」節)

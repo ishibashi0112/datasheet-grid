@@ -182,6 +182,27 @@ import { open, check, pending, summary, errorsOf, renderedRowIndexes, cellText, 
   await close();
 }
 
+// ---- RD-6: 編集中に readOnly へ切り替わっても確定で書き込まれる ----
+{
+  const { page, close } = await open('basic', { query: 'n=20' });
+  await cell(page, 0, 'name').dblclick();
+  await page.waitForSelector('.ssg-cell-editor-input');
+  await page.keyboard.press('Control+A');
+  await page.keyboard.type('READONLY-WRITE');
+  await clearEvents(page);
+  await page.evaluate(() => window.__setProps({ readOnly: true }));
+  await waitIdle(page);
+  await page.keyboard.press('Enter');
+  await waitIdle(page, 200);
+  const result = await page.evaluate(() => ({
+    writes: window.__events.filter((e) => e.type === 'onRowsChange').length,
+    name: window.__rows()[0].name,
+    editorOpen: !!document.querySelector('.ssg-cell-editor-input'),
+  }));
+  check('RD-6: commit after switching to readOnly does not write', result.writes === 0 && result.name !== 'READONLY-WRITE' && !result.editorOpen, result);
+  await close();
+}
+
 // ---- C-5: Tab / Shift+Tab のキーボードトラップ ----
 {
   const { page, close } = await open('basic', { query: 'n=20' });

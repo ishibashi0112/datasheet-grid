@@ -18,11 +18,13 @@ import type {
   GridRowKey,
   GridUiState,
   RowModel,
+  SpreadsheetGridProps,
 } from '../model/gridTypes.unbound';
 import { parseCommittedValue, writeRowsCell } from '../logic/editorValues';
 import { decideCellWrite } from '../logic/validation';
 import { clamp } from '../logic/geometry';
 import { isFocusInsideDetailCard } from '../logic/detailRow';
+import { isCellEditable } from '../utils/permissions';
 import type { ServerSideCellEditInput } from '../logic/serverSideEdits';
 
 export type EditControllerArgs<T extends object> = {
@@ -38,6 +40,10 @@ export type EditControllerArgs<T extends object> = {
   gridRootRef: { readonly current: HTMLElement | null };
   // 再入抑止フラグ(共有・可変)。
   editorActionGuardRef: { current: boolean };
+  // 追加(監査 RD-6): 確定時に編集可否を再評価するための props です(開始時のゲートだけでは、編集中に
+  //   readOnly へ切り替わった / canEditCell の結果が変わった場合に書き込めてしまうため)。未指定は従来どおり。
+  readOnly?: boolean;
+  canEditCell?: SpreadsheetGridProps<T>['canEditCell'];
 };
 
 export type EditController<T extends object> = {
@@ -226,6 +232,22 @@ export const createEditController = <T extends object>(): EditController<T> => {
       : rows[originalRowIndex];
     if (!column || !row) {
       dispatch(gridActions.stopEdit());
+      return { status: 'noop' };
+    }
+    // 追加(監査 RD-6): 確定時点で編集不可(編集中に readOnly へ切替 / canEditCell が false へ変化)なら
+    //   書き込まずに編集を終了します(cancel と同じ後処理)。
+    if (
+      !isCellEditable(
+        { readOnly: args.readOnly, canEditCell: args.canEditCell },
+        editingCell.row,
+        editingCell.col,
+        row,
+        column,
+      )
+    ) {
+      editorActionGuardRef.current = true;
+      dispatch(gridActions.stopEdit());
+      scheduleAfterEdit(null);
       return { status: 'noop' };
     }
 

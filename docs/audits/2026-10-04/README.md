@@ -162,12 +162,12 @@
 | RD-5 / M-03 | 修正(§9 から判断のうえ実施。列幅 state は手動リサイズ / autoSize / `applyState` で決まった列だけを持ち、`columns` の参照変化では消さない) | 挙動変化(契約どおりへ) | `getState().columnWidths` は初期 `{}`。エントリを捨てるのは列の削除 / その列の `flex`・`pinned` 変化 / `width` がエントリと異なる値へ指定し直されたとき / 列のリセット時のみ。`applyState(getState())` は冪等。flex 列の手動幅は表示切替・並べ替えでは解除されなくなった。`createInitialGridUiState()`(core)は引数なしに。API_REFERENCE + website(column / handle)+ 生成 JSDoc 更新 |
 | L-02 | 修正(§9 から判断のうえ実施。非表示列の列フィルター / ソートも行パイプラインで評価する) | 挙動変化(UI 表示どおりへ) | 行パイプラインの評価対象を `visibleColumns` → `effectiveColumns`(非表示列を含む全列)へ。`RowOrderInputs.visibleColumns` は `filterSortColumns` に改名(core)。グローバル検索は従来どおり可視列のみ。SSRM は元からサーバーへ全列の条件を送っており不変。API_REFERENCE + website(column / filter-sort ガイド)+ 生成 JSDoc 更新 |
 | L-07 / L-08 | 修正(§9 から判断のうえ実施。空値は昇順 / 降順とも末尾、値を数値 / 文字列 / 空値に分類した全順序で比較) | 挙動変化 | 空値 = null / undefined / 空白のみの文字列(従来 null / '' は 0 扱いで数値の途中、undefined は先頭)。数値 < 文字列。Float64 高速経路は空値を NaN キーで扱い維持。`compareUnknownValues` は全順序の昇順比較子に、方向込みは新設の `compareSortValues`(core)。API_REFERENCE + website(props / filter-sort ガイド)+ 生成 JSDoc 更新 |
+| RD-6 | 修正(§9 から判断のうえ実施。確定時に `readOnly` / `canEditCell` を再評価し、不可なら書き込まず編集終了) | 挙動変化(改善) | `renderCell` の `setValue` は従来どおり `readOnly` を見ない(利用側が `ctx.readOnly` で判断する設計として文書化)。`EditControllerArgs` に任意の `readOnly` / `canEditCell` を追加(core)。API_REFERENCE + website(props)+ 生成 JSDoc 更新 |
 
 ## 9. 判断待ち(挙動が変わるため未実装)
 
 | ID | 変える場合の挙動 | 影響を受け得る利用側 |
 | --- | --- | --- |
-| RD-6 | 編集中に `readOnly` へ切り替わったら確定を拒否 / `renderCell` の `setValue` も readOnly を見る | readOnly グリッドで `setValue` によるトグルを使っている利用側 |
 | L-03 / L-04 | TSV の空行保持と引用符(Excel 互換)の解釈 / コピー時のクォート | 空行入りの貼り付けで行ずれが直る代わりに空行が書き込まれる。コピー結果の形式が変わる(改行入りセル) |
 | P-2 | `require` 条件向けの `index.d.cts` を配布 | CJS + node16 の型解決(現状 TS1479) |
 | C-7 | 失敗ブロックの自動再要求を抑止 / バックオフ | 失敗時のトースト連打は止まるが、スクロールでの自然回復タイミングが変わる |

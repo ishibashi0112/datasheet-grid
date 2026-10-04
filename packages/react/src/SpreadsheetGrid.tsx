@@ -2303,6 +2303,9 @@ export function SpreadsheetGrid<T extends object>({
     dispatch,
     gridRootRef,
     editorActionGuardRef,
+    // 追加(監査 RD-6): 確定時の編集可否の再評価に使います。
+    readOnly,
+    canEditCell,
   });
 
   // 追加(③): 編集中セルの列(編集 input の text-align=align を反映)。editingCell.col は orderedColumns 空間。
