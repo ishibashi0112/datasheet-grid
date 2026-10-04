@@ -2308,7 +2308,13 @@ export type SpreadsheetGridProps<T, F extends GridFrameworkTypes = GridFramework
   columns: readonly GridColumn<T, F>[];
   /** 行が変化したとき呼ばれる(rows を controlled にする)。 */
   onRowsChange?: (nextRows: T[]) => void;
-  /** 列が変化したとき呼ばれる。列メニューの固定切替はこれが指定されている場合のみ反映。 */
+  /**
+   * 列が変化したとき呼ばれる。列メニューの固定切替はこれが指定されている場合のみ反映。
+   * 列の並べ替え(ヘッダーのドラッグ / 列パネル)と `applyState` で渡る `nextColumns` は、
+   * 配列順が固定列ごと(左固定 → 中央 → 右固定)に並べ直される(画面上の列順は変わらない。例:
+   * 右固定列の後ろに宣言した列があると、右固定列が配列の末尾へ移る)。
+   * 列メニューの固定切替は配列順を変えず `pinned` だけを更新する。
+   */
   onColumnsChange?: (nextColumns: GridColumn<T, F>[]) => void;
   /**
    * 安定した行キーを返す。

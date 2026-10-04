@@ -14,7 +14,7 @@ description: SpreadsheetGridProps<T> の全 prop と既定値
 | `serverSideRefreshToken` | `number` | — | serverSide のソフトリフレッシュ用トークン。値を増やすと、クエリ(フィルター/ソート/グローバル)を変えずにキャッシュを破棄して現在の可視レンジをサーバから取り直す。スクロール位置は保持し、件数は到着ブロックの `totalRowCount` で追従する(clientSide では無視)。命令的に呼びたい場合は同挙動のハンドル `refreshServerSide()` を使う。 |
 | `onServerSideLoadError` | `(error, params) => void` | — | serverSide の `getRows` が reject したときの通知(abort は正常キャンセルのため通知しない)。`params` は失敗した要求の view 空間レンジ `{ startIndex, endIndex }`。グリッド内蔵のエラーバー(再試行 UI)とは独立に呼ばれる(利用側トースト / ログ用)。インライン関数可(latest-ref 経由で読む)。 |
 | `onServerSideWriteError` | `(error, params) => void` | — | serverSide の `dataSource.updateRows` が reject したときの通知。グリッド側は楽観更新をロールバック済みで、`params.updates` に失敗した行更新(`rowKey` / `changes` / `previousRow`)が入る(利用側トースト / リトライ導線用)。グリッド内蔵の保存失敗バーとは独立に呼ばれる。インライン関数可(latest-ref 経由で読む)。詳細は「セル編集の書き戻し」節。 |
-| `onColumnsChange` | `(nextColumns: GridColumn<T>[]) => void` | — | 列が変化したとき呼ばれる。列メニューの固定切替はこれが指定されている場合のみ反映。 |
+| `onColumnsChange` | `(nextColumns: GridColumn<T>[]) => void` | — | 列が変化したとき呼ばれる。列メニューの固定切替はこれが指定されている場合のみ反映。列の並べ替え(ヘッダーのドラッグ / 列パネル)と `applyState` で渡る `nextColumns` は、配列順が固定列ごと(左固定 → 中央 → 右固定)に並べ直される(画面上の列順は変わらない。例: 右固定列の後ろに宣言した列があると、右固定列が配列の末尾へ移る)。列メニューの固定切替は配列順を変えず `pinned` だけを更新する。 |
 | `rowKeyGetter` | `(row: T, index: number) => GridRowKey` | index ベース | 安定した行キーを返す。 |
 | `isRowExportable` | `(row: T, ctx: { viewRowIndex: number; rowKey: GridRowKey }) => boolean` | 全行 true | コピー(`Ctrl/Cmd+C` の TSV)/ `exportCsv` / `getExportData` の対象行フィルタ。`false` の行は出力から**行ごと**除く(行単位のみ。全体選択かの判定と貼り付けには影響しない)。`ctx.viewRowIndex` はフィルター / ソート適用後のビュー行 index(scope `'raw'` のみ rows 配列のソース index)、`ctx.rowKey` は `rowKeyGetter` の値。用途: プレースホルダ行など表示上の詰め物を出力から除く。 |
 | `createRow` | `() => T` | — | 行追加時に使う新規行ファクトリ。 |

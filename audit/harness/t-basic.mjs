@@ -549,7 +549,13 @@ const st2 = await state(page);
 // columns は applyState 側で pane 連結順(左固定 → 中央 → 右固定)へ正規化されるため、順序は除いて比較する。
 const normalizeState = (st) => ({ ...st, columnWidths: undefined, columns: [...(st.columns ?? [])].sort((a, b) => a.key.localeCompare(b.key)) });
 check('getState/applyState round trip is stable (filters / sort / column meta)', JSON.stringify(normalizeState(st2)) === JSON.stringify(normalizeState(st1)), { st1, st2 });
-pending('applyState: pinned 列の論理順が pane 連結順へ正規化されず元の columns 順を保つ', JSON.stringify((st2.columns ?? []).map((c) => c.key)) === JSON.stringify((st1.columns ?? []).map((c) => c.key)), { before: (st1.columns ?? []).map((c) => c.key), after: (st2.columns ?? []).map((c) => c.key) });
+// 監査 M-09: 現状維持 + 明記(2026-10-04 判断)。applyState は columns 配列を pane 連結順(左固定 → 中央 → 右固定)へ
+//   正規化する仕様(列のドラッグ並べ替えと同じ規則)。正規化結果になっていることを確認する(pending → check)。
+{
+  const keysOf = (st) => (st.columns ?? []).map((c) => c.key);
+  const paneOrder = (st) => { const cs = st.columns ?? []; return [...cs.filter((c) => c.pinned === 'left'), ...cs.filter((c) => c.pinned !== 'left' && c.pinned !== 'right'), ...cs.filter((c) => c.pinned === 'right')].map((c) => c.key); };
+  check('applyState: columns 配列は pane 連結順(左固定 → 中央 → 右固定)へ正規化される(M-09 仕様)', JSON.stringify(keysOf(st2)) === JSON.stringify(paneOrder(st1)), { before: keysOf(st1), after: keysOf(st2) });
+}
 check('RD-5/M-03: round trip keeps columnWidths unchanged', JSON.stringify(st2.columnWidths) === JSON.stringify(st1.columnWidths), { before: st1.columnWidths, after: st2.columnWidths });
 check('applied width reflected in header', Math.abs((await header(page, 'name').boundingBox()).width - 222) < 2);
 check('applied global filter reflected in input', (await page.locator('.ssg-bar-input').inputValue()) === 'item');
