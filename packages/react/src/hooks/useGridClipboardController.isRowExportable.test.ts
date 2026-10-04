@@ -66,7 +66,7 @@ const copyWith = async (
   isRowExportable?: SpreadsheetGridProps<Row>['isRowExportable'],
 ): Promise<string> => {
   const uiState: GridUiState = {
-    ...createInitialGridUiState(columns),
+    ...createInitialGridUiState(),
     selection,
   };
   const { result } = renderHook(() =>
@@ -132,7 +132,7 @@ describe('コピーの isRowExportable(proposals ⑪)', () => {
 
   it('isWholeGridSelected の判定には影響しない(除外は出力時のみ)', () => {
     const uiState: GridUiState = {
-      ...createInitialGridUiState(columns),
+      ...createInitialGridUiState(),
       selection: wholeGridSelection,
     };
     const { result } = renderHook(() =>

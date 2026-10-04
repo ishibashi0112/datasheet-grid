@@ -20,6 +20,7 @@ import { getCellValue, isCellEditable } from '../utils/permissions';
 import {
   applyClipboardMatrixToRows,
   buildClipboardCellEdits,
+  joinTsvRow,
   parseClipboardText,
   serializeSelectionToTsv,
   writeTextToClipboard,
@@ -126,7 +127,7 @@ export const createClipboardController = <T extends object>(): ClipboardControll
           ? column.formatClipboardValue(rawValue, row)
           : String(rawValue ?? '');
       });
-      lines.push(cells.join('\t'));
+      lines.push(joinTsvRow(cells));
     }
     return lines.join('\n');
   };

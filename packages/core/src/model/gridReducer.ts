@@ -1,8 +1,7 @@
 import type { GridUiAction } from './gridActions';
-import type { GridColumn, GridRowKey, GridUiState } from './gridTypes.unbound';
-// 追加(B3): flex 列(center かつ flex>0)は columnWidths に固定エントリを持たせません。
-//   flex 算出が効くよう、初期生成・columns 同期の両方でこの判定でスキップします。
-import { isFlexingColumn } from '../logic/columnFlex';
+import type { GridRowKey, GridUiState } from './gridTypes.unbound';
+// 追加(監査 RD-5 / M-03): columns 変化時の列幅 state 整合(参照変化だけではエントリを消さない)。
+import { reconcileColumnWidths } from '../logic/columnWidthState';
 // 追加(行選択): 初期状態と同値判定(同値 set は no-op 化して無駄な再レンダーを避ける)。
 import {
   createEmptyRowSelection,
@@ -16,30 +15,83 @@ const DEFAULT_MIN_WIDTH = 60;
 const clamp = (value: number, min: number, max: number) =>
   Math.min(Math.max(value, min), max);
 
-// 追加: 初期 column width map を生成します。
-// 変更(B3): flex 列(center かつ flex>0)はエントリを作りません。columnWidths にエントリがあると
-//   flex 算出より優先され固定化されてしまうためです(手動リサイズ時のみ column/resizeUpdate が
-//   その列のエントリを書き、その列だけ固定になります)。
-const createColumnWidthMap = <T,>(columns: GridColumn<T>[]) =>
-  columns.reduce<Record<string, number>>((acc, column) => {
-    if (isFlexingColumn(column)) {
-      return acc;
+// 追加(監査 B-05 補足): 表示行数が減ったとき、はみ出した activeCell / selection(と選択ドラッグの起点)を
+//   範囲内へ詰めます。行は最終行へ寄せ、範囲は切り詰めます(はみ出していない部分の選択は保持)。
+//   0 行になったら activeCell とセル / 行選択を解除します(列選択は行に依存しないため保持)。
+//   はみ出しが無ければ同一参照を返します(store は通知しない)。
+const clampUiStateToRowCount = (state: GridUiState, rowCount: number): GridUiState => {
+  const { activeCell, selection, dragState } = state;
+  if (rowCount <= 0) {
+    const clearSelection = selection !== null && selection.type !== 'col';
+    const clearDrag =
+      dragState?.type === 'selection' && dragState.selectionKind !== 'col';
+    if (activeCell === null && !clearSelection && !clearDrag) {
+      return state;
     }
-    acc[column.key] = column.width;
-    return acc;
-  }, {});
+    return {
+      ...state,
+      activeCell: null,
+      selection: clearSelection ? null : selection,
+      dragState: clearDrag ? null : dragState,
+    };
+  }
+  const maxRow = rowCount - 1;
+  let next = state;
+  if (activeCell !== null && activeCell.row > maxRow) {
+    next = { ...next, activeCell: { row: maxRow, col: activeCell.col } };
+  }
+  if (selection?.type === 'cell') {
+    const { start, end } = selection.range;
+    if (start.row > maxRow || end.row > maxRow) {
+      next = {
+        ...next,
+        selection: {
+          type: 'cell',
+          range: {
+            start: { row: Math.min(start.row, maxRow), col: start.col },
+            end: { row: Math.min(end.row, maxRow), col: end.col },
+          },
+        },
+      };
+    }
+  } else if (selection?.type === 'row') {
+    if (selection.startRow > maxRow || selection.endRow > maxRow) {
+      next = {
+        ...next,
+        selection: {
+          type: 'row',
+          startRow: Math.min(selection.startRow, maxRow),
+          endRow: Math.min(selection.endRow, maxRow),
+        },
+      };
+    }
+  }
+  if (dragState?.type === 'selection') {
+    if (dragState.selectionKind === 'cell' && dragState.anchor.row > maxRow) {
+      next = {
+        ...next,
+        dragState: { ...dragState, anchor: { row: maxRow, col: dragState.anchor.col } },
+      };
+    } else if (dragState.selectionKind === 'row' && dragState.anchorRow > maxRow) {
+      next = { ...next, dragState: { ...dragState, anchorRow: maxRow } };
+    }
+  }
+  return next;
+};
 
 // 追加: reducer 初期 state を生成します。
-export const createInitialGridUiState = <T,>(
-  columns: GridColumn<T>[],
-): GridUiState => ({
+// 変更(監査 RD-5 / M-03): 列幅 state を空で始めるため columns 引数は不要になりました。
+export const createInitialGridUiState = (): GridUiState => ({
   activeCell: null,
   selection: null,
   // 追加(行選択): 空(未選択)で開始します。
   rowSelection: createEmptyRowSelection(),
   editingCell: null,
   dragState: null,
-  columnWidths: createColumnWidthMap(columns),
+  // 変更(監査 RD-5 / M-03): 列幅 state は手動リサイズ / autosize / applyState で決まった列だけを持ちます
+  //   (従来は全非 flex 列の column.width で初期化していたため、getState() が既定幅を焼き込んでいました)。
+  //   エントリの無い列は column.width(flex 列は flex 算出)で描画されます。
+  columnWidths: {},
   filters: {
     globalText: '',
     columnFilters: {},
@@ -225,6 +277,9 @@ export const gridUiReducer = (
         dragState: null,
       };
 
+    case 'selection/clampToRowCount':
+      return clampUiStateToRowCount(state, action.rowCount);
+
     case 'edit/start':
       return {
         ...state,
@@ -308,6 +363,15 @@ export const gridUiReducer = (
         ...state,
         columnWidths: action.widths,
       };
+
+    case 'columnWidths/reconcile': {
+      const columnWidths = reconcileColumnWidths(
+        state.columnWidths,
+        action.prevColumns,
+        action.nextColumns,
+      );
+      return columnWidths === state.columnWidths ? state : { ...state, columnWidths };
+    }
 
     case 'filter/setGlobal':
       return {

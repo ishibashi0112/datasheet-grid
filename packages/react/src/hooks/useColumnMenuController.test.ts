@@ -106,7 +106,7 @@ describe('useColumnMenuController(特性テスト)', () => {
     expect(t.result.current.columnMenuLayout).toMatchObject({ left: 300, top: 200 });
   });
 
-  it('外側 pointerdown / Escape で閉じ(rAF で root へフォーカス復帰)、アンカーボタンが消えると閉じる', () => {
+  it('外側 pointerdown / Escape で閉じ(グリッド内の押下 / Escape は rAF で root へフォーカス復帰)、アンカーボタンが消えると閉じる', () => {
     const t = setup();
     const button = makeButton();
     const panel = document.createElement('div');
@@ -121,13 +121,29 @@ describe('useColumnMenuController(特性テスト)', () => {
     });
     expect(t.result.current.isColumnMenuOpen).toBe(true);
     act(() => {
-      document.body.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }));
+      t.root.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }));
     });
     expect(t.result.current.isColumnMenuOpen).toBe(false);
     act(() => {
       rafCallbacks.splice(0).forEach((cb) => cb(0));
     });
     expect(document.activeElement).toBe(t.root);
+
+    // グリッド外の要素を押して閉じたときは、その要素のフォーカスを奪わない(監査 C-3)。
+    const outsideInput = document.createElement('input');
+    document.body.appendChild(outsideInput);
+    act(() => {
+      t.result.current.openColumnMenuFromButton(columns[0], pointerEvent(button));
+    });
+    act(() => {
+      outsideInput.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }));
+      outsideInput.focus();
+    });
+    expect(t.result.current.isColumnMenuOpen).toBe(false);
+    act(() => {
+      rafCallbacks.splice(0).forEach((cb) => cb(0));
+    });
+    expect(document.activeElement).toBe(outsideInput);
 
     act(() => {
       t.result.current.openColumnMenuFromButton(columns[0], pointerEvent(button));

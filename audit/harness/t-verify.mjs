@@ -112,6 +112,176 @@ import { open, check, pending, summary, errorsOf, renderedRowIndexes, cellText, 
   await close();
 }
 
+// ---- RD-5 / M-03: 列幅 state が columns の参照変化で消える / 全列ぶん焼き込まれる ----
+{
+  const { page, close } = await open('basic', { query: 'n=20' });
+  const initialWidths = await page.evaluate(() => window.__grid.getState().columnWidths);
+  check('RD-5: initial getState().columnWidths is empty (no default widths baked in)', Object.keys(initialWidths).length === 0, { initialWidths });
+  await page.evaluate(() => window.__grid.applyState({ ...window.__grid.getState(), columnWidths: { name: 300 } }));
+  await waitIdle(page);
+  // インライン columns={[...]} 相当: 同内容・別参照の columns を渡し直す
+  await page.evaluate(() => window.__setColumns(window.__columns().map((c) => ({ ...c }))));
+  await waitIdle(page);
+  const afterRerender = await page.evaluate(() => ({
+    widths: window.__grid.getState().columnWidths,
+    domWidth: Math.round(document.querySelector('[data-ssg-col-key="name"]')?.getBoundingClientRect().width ?? 0),
+  }));
+  check('RD-5: applyState width survives a new columns reference', afterRerender.widths.name === 300 && afterRerender.domWidth === 300, afterRerender);
+  const roundTrip = await page.evaluate(() => {
+    const before = JSON.stringify(window.__grid.getState());
+    window.__grid.applyState(JSON.parse(before));
+    return { before, after: JSON.stringify(window.__grid.getState()) };
+  });
+  await waitIdle(page);
+  const afterApply = await page.evaluate(() => JSON.stringify(window.__grid.getState()));
+  check('RD-5: applyState(getState()) is idempotent', afterApply === roundTrip.before, { before: roundTrip.before, afterApply });
+  await close();
+}
+
+// ---- L-02: 非表示列のフィルター / ソートが効かない ----
+{
+  const { page, close } = await open('basic', { query: 'n=20' });
+  await page.evaluate(() => window.__grid.applyState({
+    ...window.__grid.getState(),
+    filters: { globalText: '', columnFilters: { secret: { kind: 'text', value: 's1' } } },
+    sort: [{ columnKey: 'secret', direction: 'desc' }],
+  }));
+  await waitIdle(page, 300);
+  // 先頭列(id = i + 1)で確認する。secret = `s${i}`
+  const view = await page.evaluate(() => window.__grid.getExportData({ scope: 'view' }).rows.map((r) => r[0]?.text));
+  // s1, s10..s19 の 11 件(n=20 → s0..s19)が secret 降順で並ぶ
+  const expected = ['s1', ...Array.from({ length: 10 }, (_, i) => `s1${i}`)].sort().reverse().map((sec) => String(Number(sec.slice(1)) + 1));
+  check('L-02: filter / sort on a hidden column apply to rows', JSON.stringify(view) === JSON.stringify(expected), { view });
+  await close();
+}
+
+// ---- L-07 / L-08: 数値ソートの空値位置 ----
+{
+  const { page, close } = await open('basic', { query: 'n=20' });
+  await page.evaluate(() => {
+    const next = window.__rows().map((r, i) => (i === 3 ? { ...r, qty: null } : i === 7 ? { ...r, qty: '' } : r));
+    window.__setRows(next);
+  });
+  await waitIdle(page);
+  const qtyAt = (dir) => page.evaluate(async (d) => {
+    window.__grid.applyState({ ...window.__grid.getState(), sort: [{ columnKey: 'qty', direction: d }] });
+    await new Promise((r) => setTimeout(r, 200));
+    const data = window.__grid.getExportData({ scope: 'view' });
+    const idx = data.columns.findIndex((c) => c.key === 'qty');
+    return data.rows.map((r) => r[idx]?.value);
+  }, dir);
+  const asc = await qtyAt('asc');
+  const desc = await qtyAt('desc');
+  // 空値(元データの空値 + 追加した null / '')が末尾に連続し、それより前は数値だけであること
+  const isBlank = (v) => v === null || v === undefined || v === '';
+  const blanksLast = (vals) => {
+    const first = vals.findIndex(isBlank);
+    return first > 0 && vals.slice(first).every(isBlank) && vals.slice(0, first).every((v) => typeof v === 'number') && vals.length - first >= 2;
+  };
+  check('L-07: blanks sort last in asc and desc', blanksLast(asc) && blanksLast(desc), { asc: asc.slice(-3), desc: desc.slice(-3) });
+  await close();
+}
+
+// ---- RD-6: 編集中に readOnly へ切り替わっても確定で書き込まれる ----
+{
+  const { page, close } = await open('basic', { query: 'n=20' });
+  await cell(page, 0, 'name').dblclick();
+  await page.waitForSelector('.ssg-cell-editor-input');
+  await page.keyboard.press('Control+A');
+  await page.keyboard.type('READONLY-WRITE');
+  await clearEvents(page);
+  await page.evaluate(() => window.__setProps({ readOnly: true }));
+  await waitIdle(page);
+  await page.keyboard.press('Enter');
+  await waitIdle(page, 200);
+  const result = await page.evaluate(() => ({
+    writes: window.__events.filter((e) => e.type === 'onRowsChange').length,
+    name: window.__rows()[0].name,
+    editorOpen: !!document.querySelector('.ssg-cell-editor-input'),
+  }));
+  check('RD-6: commit after switching to readOnly does not write', result.writes === 0 && result.name !== 'READONLY-WRITE' && !result.editorOpen, result);
+  await close();
+}
+
+// ---- L-03 / L-04: TSV の空行 / 引用符(Excel 互換) ----
+{
+  const { page, close } = await open('basic', { query: 'n=20' });
+  await cell(page, 0, 'name').click();
+  // Excel 形式: 1 列 3 セル(中央空)+ セル内改行
+  await pasteText(page, '"multi\nline"\r\n\r\nthird\r\n');
+  await waitIdle(page, 200);
+  const names = await page.evaluate(() => window.__rows().slice(0, 3).map((r) => r.name));
+  check('L-03/L-04: paste keeps empty line and quoted multi-line cell', JSON.stringify(names) === JSON.stringify(['multi\nline', '', 'third']), { names });
+  await close();
+}
+
+// ---- C-7: 失敗ブロックがスクロールのたびに再要求される ----
+{
+  const { page, close } = await open('ssrm');
+  await waitIdle(page, 800);
+  await page.evaluate(() => { window.__ssrm.failRanges = [[3000, 3300]]; window.__ssrm.calls.length = 0; });
+  await clearEvents(page);
+  await page.evaluate(() => window.__grid.scrollToRow(3050, { align: 'start' }));
+  await waitIdle(page, 800);
+  const errorsAfterFirst = (await events(page, 'onServerSideLoadError')).length;
+  // 1 行ずつスクロール(失敗ブロック内)
+  for (let r = 3051; r <= 3055; r += 1) {
+    await page.evaluate((row) => window.__grid.scrollToRow(row, { align: 'start' }), r);
+    await waitIdle(page, 250);
+  }
+  const errorsAfterScroll = (await events(page, 'onServerSideLoadError')).length;
+  check('C-7: scrolling within a failed block does not re-request it', errorsAfterFirst >= 1 && errorsAfterScroll === errorsAfterFirst, { errorsAfterFirst, errorsAfterScroll });
+  // ハンドルで明示再試行 → 回復
+  await page.evaluate(() => { window.__ssrm.failRanges = []; window.__grid.retryServerSideLoads(); });
+  await waitIdle(page, 800);
+  const recovered = await page.evaluate(() => ({ bar: document.querySelectorAll('.ssg-ssrm-error-bar').length }));
+  check('C-7: retryServerSideLoads() recovers failed blocks', recovered.bar === 0, recovered);
+  await close();
+}
+
+// ---- C-5: Tab / Shift+Tab のキーボードトラップ ----
+{
+  const { page, close } = await open('basic', { query: 'n=20' });
+  await page.evaluate(() => {
+    const before = document.createElement('input');
+    before.id = 'before-input';
+    document.body.prepend(before);
+    const after = document.createElement('input');
+    after.id = 'after-input';
+    document.body.appendChild(after);
+  });
+  // 最終列(範囲外 index は B-05 でクランプ)で Tab → グリッド外の次の要素へ
+  await focusGrid(page);
+  await page.evaluate(() => window.__grid.setActiveCell({ row: 0, col: 999 }));
+  await waitIdle(page);
+  // ヘッダーの列メニューボタン(shell 内でタブ移動可能)を経由して、有限回でグリッド外の input に届くこと
+  let presses = 0;
+  let afterTab = '';
+  for (; presses < 40 && afterTab !== 'after-input'; presses++) {
+    await page.keyboard.press('Tab');
+    afterTab = await page.evaluate(() => document.activeElement?.id || document.activeElement?.className);
+  }
+  check('C-5: Tab on the last column moves focus out of the grid', afterTab === 'after-input', { afterTab, presses });
+  // 先頭列で Shift+Tab → グリッド外の前の要素へ
+  await focusGrid(page);
+  await page.evaluate(() => window.__grid.setActiveCell({ row: 0, col: 0 }));
+  await waitIdle(page);
+  await page.keyboard.press('Shift+Tab');
+  await waitIdle(page);
+  const afterShiftTab = await page.evaluate(() => document.activeElement?.id || document.activeElement?.className);
+  const shiftTabOutside = await page.evaluate(() => !document.activeElement?.closest('.ssg-shell'));
+  check('C-5: Shift+Tab on the first column moves focus out of the grid', shiftTabOutside, { afterShiftTab });
+  // 端以外の Tab は従来どおりアクティブセル移動
+  await focusGrid(page);
+  await page.evaluate(() => window.__grid.setActiveCell({ row: 0, col: 0 }));
+  await waitIdle(page);
+  await page.keyboard.press('Tab');
+  await waitIdle(page);
+  const mid = await page.evaluate(() => ({ active: window.__grid.getActiveCell(), focused: document.activeElement?.className }));
+  check('C-5: Tab in the middle still moves the active cell', mid.active?.col === 1 && String(mid.focused).includes('ssg-shell'), mid);
+  await close();
+}
+
 // ---- C-3: ポップオーバー外側クリックでフォーカスを奪い返す ----
 {
   const { page, close } = await open('basic', { query: 'n=20' });
@@ -127,7 +297,7 @@ import { open, check, pending, summary, errorsOf, renderedRowIndexes, cellText, 
   await page.locator('#outside-input').click();
   await waitIdle(page, 200);
   const focused = await page.evaluate(() => document.activeElement?.id || document.activeElement?.className);
-  pending('C-3: clicking an outside input while column menu is open keeps focus on that input', focused === 'outside-input', { focused });
+  check('C-3: clicking an outside input while column menu is open keeps focus on that input', focused === 'outside-input', { focused });
   // フィルター popover でも
   await header(page, 'name').hover();
   await header(page, 'name').locator('.ssg-icon-btn').click();
@@ -137,14 +307,14 @@ import { open, check, pending, summary, errorsOf, renderedRowIndexes, cellText, 
   await page.locator('#outside-input').click();
   await waitIdle(page, 200);
   const focused2 = await page.evaluate(() => document.activeElement?.id || document.activeElement?.className);
-  pending('C-3: same for filter popover', focused2 === 'outside-input', { focused2 });
+  check('C-3: same for filter popover', focused2 === 'outside-input', { focused2 });
   // コンテキストメニューでも
   await cell(page, 1, 'name').click({ button: 'right' });
   await page.waitForSelector('.ssg-menu-panel');
   await page.locator('#outside-input').click();
   await waitIdle(page, 200);
   const focused3 = await page.evaluate(() => document.activeElement?.id || document.activeElement?.className);
-  pending('C-3: same for context menu', focused3 === 'outside-input', { focused3 });
+  check('C-3: same for context menu', focused3 === 'outside-input', { focused3 });
   await close();
 }
 
@@ -258,7 +428,8 @@ import { open, check, pending, summary, errorsOf, renderedRowIndexes, cellText, 
   await page.evaluate(() => window.__setRows(window.__rows().slice(0, 3)));
   await waitIdle(page, 200);
   const sel = await page.evaluate(() => ({ active: window.__grid.getActiveCell(), selection: window.__grid.getSelection(), selectedRows: window.__grid.getSelectedRows().length, csv: window.__grid.exportCsv({ scope: 'selection', includeHeaders: false }) }));
-  pending('rows shrink: getSelection/getActiveCell stay in range', (!sel.active || sel.active.row < 3) && (sel.selection.type === 'none' || sel.selection.range.end.row < 3), sel);
+  // 監査 B-05 補足: 表示行数の減少で activeCell / selection を範囲内へ詰める(pending → check)。
+  check('rows shrink: getSelection/getActiveCell stay in range', (!sel.active || sel.active.row < 3) && (sel.selection.type === 'none' || sel.selection.range.end.row < 3), sel);
   // 範囲外選択のまま Delete / コピー / Enter 編集
   await focusGrid(page);
   await errorsOf(page);

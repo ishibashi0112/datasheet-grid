@@ -44,7 +44,10 @@ check('Escape clears selection', !s || s.type === 'none', s);
 await page.evaluate(() => window.__grid.selectCell(0, 10));
 await page.keyboard.press('Tab');
 a = await active();
-check('Tab at last visible col: clamps or wraps to next row (no hidden col)', a && (a.col === 10 || (a.row === 1 && a.col === 0)), a);
+// 監査 C-5 以降: 最終列の Tab はアクティブセルを動かさず、フォーカスをグリッド外(既定の Tab 移動)へ出す。
+const focusLeftShell = await page.evaluate(() => !document.activeElement?.classList.contains('ssg-shell'));
+check('Tab at last visible col: keeps active cell (no hidden col) and lets focus leave the grid', a && a.col === 10 && focusLeftShell, { a, focusLeftShell });
+await focusGrid(page);
 // 先頭行で ArrowUp / 末尾列で ArrowRight はクランプ
 await page.evaluate(() => window.__grid.selectCell(0, 0));
 await page.keyboard.press('ArrowUp');
@@ -317,7 +320,8 @@ await page.getByText('昇順で並び替え').click();
 await waitIdle(page, 150);
 const firstAsc = await cellText(page, 0, 'qty');
 console.log('asc sort: first row qty =', JSON.stringify(firstAsc));
-check('asc sort first row is null/empty or smallest', firstAsc === '' || Number(firstAsc) <= 1, firstAsc);
+// 監査 L-07 以降: 空値は昇順でも末尾(desc の末尾が空 = 上の lastQty でも確認)。
+check('asc sort first row is not blank (blanks sort last)', firstAsc !== '' && lastQty === '', { firstAsc, lastQty });
 // ソート解除(同じ方向をもう一度?)
 await openMenu('qty');
 const menuTexts = await page.locator('.ssg-menu-panel .ssg-menu-item').allTextContents();
@@ -464,7 +468,7 @@ await page.getByText('列のリセット').click();
 await waitIdle(page, 200);
 const afterReset = await page.evaluate(() => ({ cols: window.__columns().map((c) => `${c.key}:${c.pinned ?? ''}:${c.visible === false ? 'h' : 'v'}`), widths: window.__grid.getState().columnWidths }));
 check('列のリセット restores pinned/visible (qty unpinned, secret hidden, id left, status right)', afterReset.cols.includes('qty::v') && afterReset.cols.includes('secret::h') && afterReset.cols.includes('id:left:v') && afterReset.cols.includes('status:right:v'), afterReset.cols);
-pending('RD-5/M-03: getState().columnWidths after 列のリセット contains only manual widths', Object.keys(afterReset.widths).length === 0, afterReset.widths);
+check('RD-5/M-03: getState().columnWidths after 列のリセット contains only manual widths', Object.keys(afterReset.widths).length === 0, afterReset.widths);
 
 // ---- 10. 行選択 ----
 await clearEvents(page);
@@ -545,8 +549,14 @@ const st2 = await state(page);
 // columns は applyState 側で pane 連結順(左固定 → 中央 → 右固定)へ正規化されるため、順序は除いて比較する。
 const normalizeState = (st) => ({ ...st, columnWidths: undefined, columns: [...(st.columns ?? [])].sort((a, b) => a.key.localeCompare(b.key)) });
 check('getState/applyState round trip is stable (filters / sort / column meta)', JSON.stringify(normalizeState(st2)) === JSON.stringify(normalizeState(st1)), { st1, st2 });
-pending('applyState: pinned 列の論理順が pane 連結順へ正規化されず元の columns 順を保つ', JSON.stringify((st2.columns ?? []).map((c) => c.key)) === JSON.stringify((st1.columns ?? []).map((c) => c.key)), { before: (st1.columns ?? []).map((c) => c.key), after: (st2.columns ?? []).map((c) => c.key) });
-pending('RD-5/M-03: round trip keeps columnWidths unchanged', JSON.stringify(st2.columnWidths) === JSON.stringify(st1.columnWidths), { before: st1.columnWidths, after: st2.columnWidths });
+// 監査 M-09: 現状維持 + 明記(2026-10-04 判断)。applyState は columns 配列を pane 連結順(左固定 → 中央 → 右固定)へ
+//   正規化する仕様(列のドラッグ並べ替えと同じ規則)。正規化結果になっていることを確認する(pending → check)。
+{
+  const keysOf = (st) => (st.columns ?? []).map((c) => c.key);
+  const paneOrder = (st) => { const cs = st.columns ?? []; return [...cs.filter((c) => c.pinned === 'left'), ...cs.filter((c) => c.pinned !== 'left' && c.pinned !== 'right'), ...cs.filter((c) => c.pinned === 'right')].map((c) => c.key); };
+  check('applyState: columns 配列は pane 連結順(左固定 → 中央 → 右固定)へ正規化される(M-09 仕様)', JSON.stringify(keysOf(st2)) === JSON.stringify(paneOrder(st1)), { before: keysOf(st1), after: keysOf(st2) });
+}
+check('RD-5/M-03: round trip keeps columnWidths unchanged', JSON.stringify(st2.columnWidths) === JSON.stringify(st1.columnWidths), { before: st1.columnWidths, after: st2.columnWidths });
 check('applied width reflected in header', Math.abs((await header(page, 'name').boundingBox()).width - 222) < 2);
 check('applied global filter reflected in input', (await page.locator('.ssg-bar-input').inputValue()) === 'item');
 // 壊れた入力

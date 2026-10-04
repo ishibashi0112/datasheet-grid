@@ -26,7 +26,7 @@ describe('createRowPipelineResolver.resolveOrder', () => {
     const baseOrder = pipeline.resolveBaseOrder(rows.length);
     const inputs = {
       rows,
-      visibleColumns: columns,
+      filterSortColumns: columns,
       columnFilters: {},
       globalFilteredOrder: baseOrder,
       sort: [],
@@ -46,7 +46,7 @@ describe('createRowPipelineResolver.resolveOrder', () => {
     const baseOrder = pipeline.resolveBaseOrder(rows.length);
     const result = pipeline.resolveOrder({
       rows,
-      visibleColumns: columns,
+      filterSortColumns: columns,
       columnFilters: {
         amount: {
           kind: 'number',
@@ -207,7 +207,7 @@ describe('createRowPipelineResolver × ラベル行', () => {
     const inputs = {
       rows: labelRows,
       labelLayout: layout,
-      visibleColumns: labelColumns,
+      filterSortColumns: labelColumns,
       columnFilters: {},
       globalFilteredOrder: baseOrder,
       sort: [],
@@ -228,7 +228,7 @@ describe('createRowPipelineResolver × ラベル行', () => {
     const { order } = pipeline.resolveOrder({
       rows: labelRows,
       labelLayout: layout,
-      visibleColumns: labelColumns,
+      filterSortColumns: labelColumns,
       columnFilters: {},
       globalFilteredOrder: baseOrder,
       sort: [{ columnKey: 'name', direction: 'asc' }],
@@ -316,7 +316,7 @@ describe('createRowPipelineResolver.resolveOrder × manual-mode', () => {
   it('manualFiltering: 列フィルターを評価せず(ソートは適用)、manualSorting: ソートを適用しない(フィルターは適用)', () => {
     const pipeline = createRowPipelineResolver<Row>();
     const baseOrder = pipeline.resolveBaseOrder(rows.length);
-    const base = { rows, visibleColumns: columns, columnFilters: numberFilter, globalFilteredOrder: baseOrder, sort, rowDragAvailable: true };
+    const base = { rows, filterSortColumns: columns, columnFilters: numberFilter, globalFilteredOrder: baseOrder, sort, rowDragAvailable: true };
     // 手動フィルター: 3 行とも残り、name 昇順(a, b, c = id 2, 3, 1)。
     const filteringManual = pipeline.resolveOrder({ ...base, manualFiltering: true });
     expect(Array.from(filteringManual.order)).toEqual([1, 2, 0]);
@@ -333,7 +333,7 @@ describe('createRowPipelineResolver.resolveOrder × manual-mode', () => {
   it('手動モードでは記述子 / sort の参照が変わっても order は不変(参照安定)、解除すると即座に適用される', () => {
     const pipeline = createRowPipelineResolver<Row>();
     const baseOrder = pipeline.resolveBaseOrder(rows.length);
-    const base = { rows, visibleColumns: columns, globalFilteredOrder: baseOrder, rowDragAvailable: true };
+    const base = { rows, filterSortColumns: columns, globalFilteredOrder: baseOrder, rowDragAvailable: true };
     const first = pipeline.resolveOrder({ ...base, columnFilters: numberFilter, sort, manualFiltering: true, manualSorting: true });
     const second = pipeline.resolveOrder({
       ...base,

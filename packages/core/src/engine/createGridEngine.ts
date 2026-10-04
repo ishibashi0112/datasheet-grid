@@ -96,10 +96,8 @@ export const createGridEngine = <T,>(init: GridEngineInit<T>): GridEngine<T> => 
   const resolveVerticalLayout = createVerticalLayoutResolver<T>();
   const resolveFilterPopoverDerived = createFilterPopoverDerivedResolver<T>();
 
-  // 初期 state は初回の visibleColumns から(従来どおり)。描画側の初回レンダーは同じ入力で再度 resolveColumns を
-  //   呼ぶため、メモが効いて同じ参照が返ります。
-  const initialColumns = resolveColumns(init.columnInputs);
-  const store = createGridStore(createInitialGridUiState(initialColumns.visibleColumns));
+  // 変更(監査 RD-5 / M-03): 初期 state は列に依存しなくなりました(列幅 state は空で始まる)。
+  const store = createGridStore(createInitialGridUiState());
 
   const initialUiState = store.getState();
   const initialServerSideQuery = rowPipeline.resolveServerSideQuery({

@@ -690,7 +690,8 @@ describe('useServerSideRowModel', () => {
     expect(result.current.rowModel.getRow(150)).toEqual({ v: 150 });
   });
 
-  it('失敗ブロックへの再訪 fetch が成功すると失敗が自然回復する', async () => {
+  // 変更(監査 C-7): 失敗ブロックはスクロール再訪では取り直さず、retryFailedBlocks で回復する。
+  it('失敗ブロックはスクロール再訪では再 fetch せず、retryFailedBlocks の成功で失敗が解除される', async () => {
     let failMode = true;
     const dataSource: ServerSideDataSource<Row> = {
       initialRowCount: 1000,
@@ -721,13 +722,18 @@ describe('useServerSideRowModel', () => {
     await flush();
     expect(result.current.loadError).toEqual({ failedBlockCount: 1 });
 
-    // サーバ回復後、同レンジの再要求(スクロール再訪相当)→ 失敗ブロックは cache に無いため
-    //   再 fetch され、成功到着で失敗が解除される。
+    // サーバ回復後でも、同レンジの再要求(スクロール再訪相当)では失敗ブロックを取り直さない。
     failMode = false;
     act(() => {
       result.current.requestRange(0, 100);
     });
     await advance(DEBOUNCE);
+    await flush();
+    expect(result.current.loadError).toEqual({ failedBlockCount: 1 });
+    // 明示再試行で取り直し、成功到着で失敗が解除される。
+    act(() => {
+      result.current.retryFailedBlocks();
+    });
     await flush();
     expect(result.current.loadError).toBeNull();
     expect(result.current.rowModel.getRow(0)).toEqual({ v: 0 });

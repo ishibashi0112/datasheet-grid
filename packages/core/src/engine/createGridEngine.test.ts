@@ -28,7 +28,7 @@ afterEach(() => {
 });
 
 describe('createGridEngine', () => {
-  it('初期 store 状態は初回 visibleColumns から作られ、同じ入力の resolveColumns は同じ参照を返す', () => {
+  it('初期 store 状態の列幅は空で、同じ入力の resolveColumns は同じ参照を返す', () => {
     const engine = createGridEngine<Row>({
       columnInputs,
       serverSide: { isServerSide: false, enableGlobalFilter: true, enableColumnFilter: true, enableSorting: true },
@@ -36,8 +36,8 @@ describe('createGridEngine', () => {
     const first = engine.resolveColumns(columnInputs);
     expect(first.visibleColumns.map((column) => column.key)).toEqual(['id']);
     expect(engine.resolveColumns({ ...columnInputs }).visibleColumns).toBe(first.visibleColumns);
-    // 初期 columnWidths は可視列の幅から(従来の createInitialGridUiState と同じ)。
-    expect(engine.store.getState().columnWidths).toEqual({ id: 80 });
+    // 初期 columnWidths は空(手動リサイズ / autosize / applyState した列だけを持つ。監査 RD-5 / M-03)。
+    expect(engine.store.getState().columnWidths).toEqual({});
     expect(engine.gridApi.handle).toBe(engine.gridApi.handle);
     engine.dispose();
   });

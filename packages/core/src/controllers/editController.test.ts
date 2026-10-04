@@ -34,7 +34,7 @@ afterEach(() => {
 const makeArgs = (rows: Row[], editingCell: { row: number; col: number } | null) => {
   const dispatch = vi.fn<(a: GridUiAction) => void>();
   const args: EditControllerArgs<Row> = {
-    uiState: { ...createInitialGridUiState(columns), editingCell },
+    uiState: { ...createInitialGridUiState(), editingCell },
     rows,
     visibleColumns: columns,
     rowModel: makeRowModel(rows),
@@ -139,5 +139,34 @@ describe('editController', () => {
     c.update({ ...t.args, rows: rowsB, rowModel: makeRowModel(rowsB), uiState: { ...t.args.uiState, editingCell: { row: 1, col: 0 } } });
     const startEdits = t.dispatch.mock.calls.filter(([a]) => a.type === 'edit/start');
     expect(startEdits.at(-1)?.[0]).toMatchObject({ cell: { row: 0, col: 0 } });
+  });
+
+  it('確定時に編集不可(readOnly へ切替 / canEditCell=false)なら書き込まず編集を終了する(監査 RD-6)', () => {
+    const c = createEditController<Row>();
+    const rows = [{ id: 1, qty: 1 }];
+    const t = makeArgs(rows, { row: 0, col: 0 });
+    c.update(t.args);
+    // 編集中に readOnly へ切り替わった
+    c.update({ ...t.args, readOnly: true });
+    expect(c.commitEdit('9')).toEqual({ status: 'noop' });
+    expect(t.args.onRowsChange).not.toHaveBeenCalled();
+    expect(t.dispatch.mock.calls.some(([a]) => a.type === 'edit/stop')).toBe(true);
+    for (const cb of rafCallbacks.splice(0)) cb(0);
+    expect(t.args.editorActionGuardRef.current).toBe(false);
+
+    // canEditCell が false を返すセルも同じ
+    const t2 = makeArgs(rows, { row: 0, col: 0 });
+    const canEditCell = vi.fn(() => false);
+    c.update({ ...t2.args, canEditCell });
+    expect(c.commitEdit('9')).toEqual({ status: 'noop' });
+    expect(t2.args.onRowsChange).not.toHaveBeenCalled();
+    expect(canEditCell).toHaveBeenCalledWith(0, 0, rows[0], columns[0]);
+
+    // 編集可なら従来どおり書き込む
+    const t3 = makeArgs(rows, { row: 0, col: 0 });
+    c.update({ ...t3.args, readOnly: false, canEditCell: () => true });
+    for (const cb of rafCallbacks.splice(0)) cb(0);
+    expect(c.commitEdit('9')).toEqual({ status: 'committed' });
+    expect(t3.args.onRowsChange).toHaveBeenCalledTimes(1);
   });
 });

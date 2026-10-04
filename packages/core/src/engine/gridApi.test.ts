@@ -77,7 +77,7 @@ const makeArgs = (overrides: Partial<GridApiArgs<Row>> = {}) => {
     orderedColumns: columns,
     columns,
     onColumnsChange: undefined,
-    uiState: createInitialGridUiState(columns),
+    uiState: createInitialGridUiState(),
     headerHeight: 36,
     verticalScaleFactor: 1,
     leftPaneTotalWidth: 0,
@@ -89,6 +89,7 @@ const makeArgs = (overrides: Partial<GridApiArgs<Row>> = {}) => {
     rows,
     isServerSide: false,
     serverSideRefresh: vi.fn(),
+    serverSideRetryFailed: vi.fn(),
     resolvedRowKeyGetter: (row) => row.id,
     isRowExportable: undefined,
     activeToolPanelTab: null,
@@ -142,6 +143,46 @@ describe('createGridApi', () => {
   });
 
   // 追加(audit B-05): 範囲外 index はビュー座標内へクランプする(API_REFERENCE の記述どおり)。
+  // 追加(監査 M-05): 行高実測モードでは scrollToBottom() 直後の計測で総高が伸びたら末尾へ合わせ直す。
+  it('scrollToBottom: 行高実測モードでは総高が伸びたら末尾へ再補正し、上スクロール後や固定行高ではしない', () => {
+    let scrollHeight = 1000;
+    let scrollTop = 0;
+    const el = document.createElement('div');
+    Object.defineProperty(el, 'scrollTop', { get: () => scrollTop, set: (v: number) => (scrollTop = v) });
+    Object.defineProperty(el, 'scrollLeft', { get: () => 0, set: () => {} });
+    Object.defineProperty(el, 'clientHeight', { value: 100 });
+    Object.defineProperty(el, 'clientWidth', { value: 300 });
+    Object.defineProperty(el, 'scrollHeight', { get: () => scrollHeight });
+    Object.defineProperty(el, 'scrollWidth', { value: 300 });
+    el.scrollTo = ((options: ScrollToOptions) => {
+      if (typeof options.top === 'number') scrollTop = options.top;
+    }) as typeof el.scrollTo;
+    const base = makeArgs({ scrollContainerRef: { current: el }, headerHeight: 0, physicalBodyHeight: 1000, measuredRowHeights: true });
+    const api = createGridApi<Row>();
+    api.update(base.args);
+    api.handle.scrollToBottom();
+    expect(scrollTop).toBe(900);
+    // 計測で総高が伸びた → 末尾へ再補正
+    scrollHeight = 1200;
+    api.update({ ...base.args, physicalBodyHeight: 1200 });
+    expect(scrollTop).toBe(1100);
+    // ユーザーが上へスクロールした後の伸長では補正しない
+    scrollTop = 500;
+    scrollHeight = 1300;
+    api.update({ ...base.args, physicalBodyHeight: 1300 });
+    expect(scrollTop).toBe(500);
+
+    // 固定行高(measuredRowHeights なし)では再補正しない
+    scrollHeight = 1000;
+    const fixed = { ...base.args, physicalBodyHeight: 1000, measuredRowHeights: false };
+    api.update(fixed);
+    api.handle.scrollToBottom();
+    expect(scrollTop).toBe(900);
+    scrollHeight = 1200;
+    api.update({ ...fixed, physicalBodyHeight: 1200 });
+    expect(scrollTop).toBe(900);
+  });
+
   it('selectCell / setActiveCell / selectRange は範囲外 index をクランプする', () => {
     const api = createGridApi<Row>();
     const { args, actions } = makeArgs();

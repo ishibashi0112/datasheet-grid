@@ -120,8 +120,6 @@ import {
   type ColumnPane,
   type PaneColumnExtentMap,
 } from '@ishibashi0112/spreadsheet-grid-core/logic/geometry';
-// 追加(B3): center 列の JS 算出 flex(利用可能幅を比率配分)。
-import { isFlexingColumn } from '@ishibashi0112/spreadsheet-grid-core/logic/columnFlex';
 import { buildClearCellEdits, clearCellsInSelection } from '@ishibashi0112/spreadsheet-grid-core/logic/clearCells';
 // 追加: データ投入時の列幅自動フィットの発火判定(純関数)です。
 // 追加(13-B2-5): 列リセットの再構成純ロジック(幅 / 固定 / 表示 / 並び順の完全復元)です。
@@ -588,6 +586,7 @@ export function SpreadsheetGrid<T extends object>({
     aggColumns,
     rowGroupingActive,
     rowDragAvailable,
+    effectiveColumns,
     visibleColumns,
     orderedColumns,
   } = useMemo(
@@ -918,26 +917,19 @@ export function SpreadsheetGrid<T extends object>({
   } = useCellContextMenuController<T>({ gridRootRef });
 
   // ── column widths sync ────────────────────────────────
-  // 変更(B3): merge(syncColumnWidths)→ フル置換(resetColumnWidths)へ変更し、flex 列(center かつ
-  //   flex>0)はエントリを作りません。これにより (1) flex 列が固定エントリを持って flex が無効化される
-  //   のを防ぎ、(2) 実行時に fixed→flex へ切替えた列の古い固定エントリを一掃します。非 flex 列の手動
-  //   リサイズ幅は、pin/表示/並べ替えの書き戻しで column.width に焼かれてからここへ来るため保全されます
-  //   (merge 版と同じ挙動)。autosize は別経路(merge=syncColumnWidths)なので影響しません。
+  // 変更(監査 RD-5 / M-03): フル置換(resetColumnWidths。columns の参照が変わるたびに全列を column.width
+  //   で作り直していた)→ 整合(reconcileColumnWidths)へ変更しました。列幅 state は手動リサイズ /
+  //   autosize / applyState で決まった列だけを持ち、columns の参照変化(インライン columns={[...]} の
+  //   再レンダー等)では消えません。列の削除 / flex 変化 / width の指定し直しがあった列のエントリだけを
+  //   捨てます(fixed→flex 切替で古い固定エントリが残らない点は B3 と同じ)。比較のため直前の columns を
+  //   effect 内で保持します。
+  const prevColumnsForWidths = useRef<GridColumn<T>[] | null>(null);
   useEffect(() => {
-    const nextWidths = visibleColumns.reduce<Record<string, number>>(
-      (acc, column) => {
-        if (isFlexingColumn(column)) {
-          return acc;
-        }
-        acc[column.key] = column.width;
-        return acc;
-      },
-      {},
-    );
-    dispatch(gridActions.resetColumnWidths(nextWidths));
+    dispatch(gridActions.reconcileColumnWidths(prevColumnsForWidths.current, columns));
+    prevColumnsForWidths.current = columns;
     // 注記(非依存化 ④-1): dispatch は store のメソッドで参照安定ですが、useReducer 由来ではなくなった
     //   ため exhaustive-deps が安定と判定できません。deps に明示します(再実行は起きません)。
-  }, [visibleColumns, dispatch]);
+  }, [columns, dispatch]);
 
   // ── row models (source → filtered → sorted) ──────────
   // 変更(DS-4 #1): 候補収集は logic/selectOptions の共有コレクタへ移管しました。
@@ -1037,7 +1029,8 @@ export function SpreadsheetGrid<T extends object>({
       rowPipeline.resolveOrder({
         rows,
         labelLayout,
-        visibleColumns,
+        // 変更(監査 L-02): 非表示列も含めてフィルター / ソートを評価します(バー表示・管理パネルと結果を一致)。
+        filterSortColumns: effectiveColumns,
         columnFilters: deferredColumnFilters,
         globalFilteredOrder,
         sort: uiState.sort,
@@ -1049,7 +1042,7 @@ export function SpreadsheetGrid<T extends object>({
       rowPipeline,
       rows,
       labelLayout,
-      visibleColumns,
+      effectiveColumns,
       deferredColumnFilters,
       globalFilteredOrder,
       uiState.sort,
@@ -1389,6 +1382,13 @@ export function SpreadsheetGrid<T extends object>({
   //   入れる方式と違い、resolvedRowKeyGetter 変化(order/rows 不変)では再評価されません
   //   (行数は order.length のみに依存するため)。DS-3-1 keyboard / DS-3-3 clipboard と同型です。
   const viewRowCount = rowModel.getRowCount();
+
+  // 追加(監査 B-05 補足): 表示行数が減った(rows 差し替え / フィルター / グループ折りたたみ等)とき、
+  //   はみ出した activeCell / selection を範囲内へ詰めます(getActiveCell / getSelection が存在しない
+  //   行番号を返さないように)。はみ出しが無ければ reducer が同一参照を返し、通知も起きません。
+  useEffect(() => {
+    dispatch(gridActions.clampSelectionToRowCount(viewRowCount));
+  }, [viewRowCount, dispatch]);
 
   // 追加(grouping ④): leaf 行数(グループ行を除くデータ行数)です。行選択の件数・bar summary の
   //   「Rows: X / Y」はこちらを使います(viewRowCount はグループ行込みの表示行数で、仮想化・
@@ -2310,6 +2310,9 @@ export function SpreadsheetGrid<T extends object>({
     dispatch,
     gridRootRef,
     editorActionGuardRef,
+    // 追加(監査 RD-6): 確定時の編集可否の再評価に使います。
+    readOnly,
+    canEditCell,
   });
 
   // 追加(③): 編集中セルの列(編集 input の text-align=align を反映)。editingCell.col は orderedColumns 空間。
@@ -3756,9 +3759,12 @@ export function SpreadsheetGrid<T extends object>({
     windowFirstRow,
     windowLastRow,
     physicalBodyHeight,
+    // 追加(監査 M-05): scrollToBottom() 直後の末尾再補正を行高実測モードに限るための判定です。
+    measuredRowHeights: autoHeightActive || detailActive,
     rows,
     isServerSide,
     serverSideRefresh: serverSide.refresh,
+    serverSideRetryFailed: serverSide.retryFailedBlocks,
     resolvedRowKeyGetter,
     isRowExportable,
     // 追加(label-row ④): ラベル行のエクスポート設定(scope 'raw' の除外 / includeLabelRows の出力値)。

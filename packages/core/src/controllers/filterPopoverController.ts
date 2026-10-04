@@ -43,6 +43,7 @@ import { createValueStore } from '../logic/valueStore';
 import {
   blurForPopover,
   createPopoverWindowBindings,
+  isInsideGridRoot,
   restoreGridFocus,
   type ReadonlyElementRef,
 } from './popoverSupport';
@@ -197,7 +198,7 @@ export const createFilterPopoverController = <T,>(): FilterPopoverController<T> 
     observedPanel = null;
   };
 
-  const close = () => {
+  const closeWith = (restoreFocus: boolean) => {
     store.setSnapshot({ state: null, layout: null });
     anchorElement = null;
     textInputRef.current = null;
@@ -207,16 +208,19 @@ export const createFilterPopoverController = <T,>(): FilterPopoverController<T> 
     disconnectObserver();
     cancelFocusFrames();
     lastFocusKey = null;
-    if (args !== null) {
+    if (args !== null && restoreFocus) {
       restoreGridFocus(args.gridRootRef);
     }
   };
+  const close = () => closeWith(true);
 
   const bindings = createPopoverWindowBindings({
     onResize: updateLayout,
     onScroll: updateLayout,
     isInside: (target) => !isFilterPopoverOutsideTarget(target, panelRef.current),
-    onOutsidePointerDown: close,
+    // グリッド外を押して閉じたときは押下先にフォーカスを残します(監査 C-3)。
+    onOutsidePointerDown: (target) =>
+      closeWith(args !== null && isInsideGridRoot(args.gridRootRef, target)),
   });
 
   const open = (column: GridColumn<T>) => {

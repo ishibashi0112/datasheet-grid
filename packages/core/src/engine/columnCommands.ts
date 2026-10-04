@@ -6,7 +6,8 @@
 //     effect で毎レンダー呼ばれる)。コマンドの参照は恒久安定です(パネル / メニューの memo 維持)。
 //   - columns は controlled props のため、列定義の変更は onColumnsChange 経由で反映します(内部 state は持たず、
 //     Grid 外から変えた場合と同じ経路に一本化)。その際「現在の解決済み幅」を column defs の width へ書き戻します
-//     (columns prop が変わると columnWidths/sync が column.width で state を上書きするため)。
+//     (列定義と列幅 state を揃えておく。columns 変化時の整合 reconcileColumnWidths は width がエントリと同値なら
+//     エントリを保全する。監査 RD-5 / M-03)。
 //   - 固定 / 表示 / 並び順の変更は orderedColumns の視覚順(= selection / activeCell の論理 index 空間)を変えるため、
 //     選択・アクティブセル・編集を破棄します(AG Grid も pin 変更で range selection をクリア)。
 //   - 列リセット用の「初期 column defs スナップショット」は最初の update で退避します(以後 columns が変わっても
@@ -343,6 +344,9 @@ export const createColumnCommands = <T,>(): ColumnCommands<T> => {
       return;
     }
     onColumnsChange(nextColumns);
+    // 変更(監査 RD-5 / M-03): 列幅 state は columns の参照変化では消えなくなったため、リセットでは
+    //   手動幅のエントリを明示的に捨てます(初期幅は nextColumns の column.width が担う)。
+    dispatch(gridActions.resetColumnWidths({}));
     discardSelectionState(dispatch);
   };
   // 列メニュー root の「列のリセット」: 先にメニューを閉じてから同じ本体を呼びます(パネル側は閉じない)。

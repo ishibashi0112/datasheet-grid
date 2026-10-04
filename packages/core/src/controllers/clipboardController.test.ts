@@ -46,7 +46,7 @@ const makeArgs = (overrides: Partial<ClipboardControllerArgs<Row>> = {}) => {
     rows,
     rowModel,
     visibleColumns: columns,
-    uiState: createInitialGridUiState(columns),
+    uiState: createInitialGridUiState(),
     readOnly: false,
     canEditCell: undefined,
     onRowsChange: vi.fn(),
@@ -98,7 +98,7 @@ describe('clipboardController', () => {
     const c = createClipboardController<Row>();
     const whole = makeArgs({
       uiState: {
-        ...createInitialGridUiState(columns),
+        ...createInitialGridUiState(),
         selection: { type: 'cell', range: { start: { row: 0, col: 0 }, end: { row: 1, col: 1 } } },
       },
     });
@@ -108,7 +108,7 @@ describe('clipboardController', () => {
 
     const partial = makeArgs({
       uiState: {
-        ...createInitialGridUiState(columns),
+        ...createInitialGridUiState(),
         selection: { type: 'cell', range: { start: { row: 1, col: 1 }, end: { row: 1, col: 1 } } },
       },
     });
@@ -120,7 +120,7 @@ describe('clipboardController', () => {
   it('構造的イベント型でペーストでき、clipboardData が null なら何もしない', () => {
     const c = createClipboardController<Row>();
     const t = makeArgs({
-      uiState: { ...createInitialGridUiState(columns), activeCell: { row: 0, col: 1 } },
+      uiState: { ...createInitialGridUiState(), activeCell: { row: 0, col: 1 } },
     });
     c.update(t.args);
     const preventDefault = vi.fn();
@@ -153,7 +153,7 @@ describe('clipboardController', () => {
     const t = makeArgs({
       columns: consumerColumns,
       visibleColumns: ordered,
-      uiState: { ...createInitialGridUiState(ordered), activeCell: { row: 0, col: 2 } },
+      uiState: { ...createInitialGridUiState(), activeCell: { row: 0, col: 2 } },
       createOverflowColumn: (index) => ({ key: `extra${index}`, title: `追加 ${index}`, width: 100 }),
       onColumnsChange,
     });
@@ -186,7 +186,7 @@ describe('clipboardController', () => {
     const t = makeArgs({
       rows: sortedRows,
       rowModel: sortedModel,
-      uiState: { ...createInitialGridUiState(columns), activeCell: { row: 2, col: 1 } },
+      uiState: { ...createInitialGridUiState(), activeCell: { row: 2, col: 1 } },
       createRow: () => ({ id: nextId++, name: '' }),
     });
     c.update(t.args);
@@ -200,7 +200,7 @@ describe('clipboardController', () => {
     const c = createClipboardController<Row>();
     const t = makeArgs({
       uiState: {
-        ...createInitialGridUiState(columns),
+        ...createInitialGridUiState(),
         activeCell: { row: 0, col: 1 },
         editingCell: { row: 0, col: 1 },
       },
@@ -215,7 +215,7 @@ describe('clipboardController', () => {
   it('input / textarea / contenteditable から発火した paste は無視する', () => {
     const c = createClipboardController<Row>();
     const t = makeArgs({
-      uiState: { ...createInitialGridUiState(columns), activeCell: { row: 0, col: 1 } },
+      uiState: { ...createInitialGridUiState(), activeCell: { row: 0, col: 1 } },
     });
     c.update(t.args);
     for (const el of [

@@ -221,6 +221,12 @@ export const createServerSideRowModel = <T,>(
       }
     }
     for (const blockIndex of needed) {
+      // 変更(監査 C-7): 失敗中のブロックはスクロール(可視窓の変化)では取り直しません。再取得は
+      //   明示操作(エラーバーの再試行 / retryServerSideLoads() / refreshServerSide() / 条件変更)に限ります
+      //   (従来は 1 行スクロールするたびに同じブロックを再要求し、onLoadError が連発していた。AG Grid と同じ方針)。
+      if (failedBlocks.has(blockIndex)) {
+        continue;
+      }
       fetchBlock(blockIndex);
     }
   };

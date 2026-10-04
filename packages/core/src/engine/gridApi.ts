@@ -72,11 +72,16 @@ export type GridApiArgs<T> = {
   windowFirstRow: number;
   windowLastRow: number;
   physicalBodyHeight: number;
+  // 追加(監査 M-05): 行高を実測するモード(auto-height 列 / 展開行)か。scrollToBottom() 直後の計測で総高が
+  //   伸びたとき、末尾へ再補正するかの判定に使います(固定行高では総高が計測で変わらないため補正しない)。
+  measuredRowHeights?: boolean;
   // scope='raw'(フィルター / ソート無視の全ソース行)の直接参照と、serverSide での 'raw' → 'view' フォールバック判定。
   rows: T[];
   isServerSide: boolean;
   // refreshServerSide() の委譲先(SSRM のソフトリフレッシュ)。
   serverSideRefresh: () => void;
+  // 追加(監査 C-7): retryServerSideLoads() の委譲先(失敗ブロックだけの再取得)。
+  serverSideRetryFailed: () => void;
   // getInvalidCells / エクスポートの rowKey 解決(source index 基準)。
   resolvedRowKeyGetter: (row: T, sourceRowIndex: number) => GridRowKey;
   // exportCsv / getExportData の対象行フィルタ。
@@ -134,8 +139,16 @@ type ExportResolution<T> = {
   getLabelLine?: (rowIndex: number) => LabelExportLine | undefined;
 };
 
+// 追加(監査 M-05): scrollToBottom() 後に末尾へ再補正し続ける最大時間(ms)。
+const BOTTOM_PIN_MS = 1000;
+
 export const createGridApi = <T,>(): GridApi<T> => {
   let args: GridApiArgs<T> | null = null;
+  // 追加(監査 M-05): 行高を実測するモードでは、scrollToBottom() で末尾へ飛んだ直後に新しく描画された行が
+  //   計測されて総高が伸び、1 回では末尾に届きませんでした。呼び出し直後の BOTTOM_PIN_MS の間だけ「末尾固定」を
+  //   覚えておき、update で総高が変わったら末尾へ合わせ直します。ユーザーが上へスクロールしたら(scrollTop が
+  //   固定時より小さくなったら)即座にやめます。
+  let bottomPin: { pinnedTop: number; until: number } | null = null;
 
   // 命令的 API 由来のスクロール適用。スクロール可能範囲へクランプし、クランプ後の位置が現在と実際に変わるときだけ
   //   markApiScroll を呼びます。
@@ -413,6 +426,7 @@ export const createGridApi = <T,>(): GridApi<T> => {
         top: Math.max(s.headerHeight + s.physicalBodyHeight - el.clientHeight, 0),
         left: el.scrollLeft,
       });
+      bottomPin = s.measuredRowHeights ? { pinnedTop: el.scrollTop, until: Date.now() + BOTTOM_PIN_MS } : null;
     },
 
     // スクロール位置(px)の取得 / 設定。値は生の scrollTop / scrollLeft(onScroll と同一基準)。
@@ -747,6 +761,19 @@ export const createGridApi = <T,>(): GridApi<T> => {
       }
       s.serverSideRefresh();
     },
+    retryServerSideLoads: () => {
+      const s = args;
+      if (!s) {
+        return;
+      }
+      if (!s.isServerSide) {
+        console.warn(
+          '[SpreadsheetGrid] retryServerSideLoads は clientSide(rows)モードでは何もしません(dataSource 指定時のみ有効です)。',
+        );
+        return;
+      }
+      s.serverSideRetryFailed();
+    },
 
     // ── UI パネル ──
     //   openFilterManager / closeFilterManager は統合ツールパネルのフィルタータブへ委譲。close は「フィルタータブ表示中」
@@ -764,7 +791,22 @@ export const createGridApi = <T,>(): GridApi<T> => {
 
   return {
     update: (next) => {
+      const previousHeight = args?.physicalBodyHeight;
       args = next;
+      // 追加(監査 M-05): 末尾固定中に総高が変わったら末尾へ合わせ直します。
+      if (bottomPin === null || previousHeight === next.physicalBodyHeight) {
+        return;
+      }
+      const el = next.scrollContainerRef.current;
+      if (!el || !next.measuredRowHeights || Date.now() > bottomPin.until || el.scrollTop < bottomPin.pinnedTop - 1) {
+        bottomPin = null;
+        return;
+      }
+      applyApiScroll(el, {
+        top: Math.max(next.headerHeight + next.physicalBodyHeight - el.clientHeight, 0),
+        left: el.scrollLeft,
+      });
+      bottomPin = { ...bottomPin, pinnedTop: el.scrollTop };
     },
     handle,
     applyScroll,

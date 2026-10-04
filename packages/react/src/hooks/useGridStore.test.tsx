@@ -42,7 +42,7 @@ const renderProbe = (store: GridStore) => {
 
 describe('useGridStore', () => {
   it('dispatch で再描画され、同一 act 内の複数 dispatch は 1 回にまとまる', () => {
-    const store = createGridStore(createInitialGridUiState([]));
+    const store = createGridStore(createInitialGridUiState());
     const { getByTestId, commits } = renderProbe(store);
     expect(getByTestId('active').textContent).toBe('none');
     const initialCommits = commits.count;
@@ -56,7 +56,7 @@ describe('useGridStore', () => {
   });
 
   it('no-op dispatch(reducer が同一参照)では再描画しない', () => {
-    const initial = createInitialGridUiState([]);
+    const initial = createInitialGridUiState();
     const store = createGridStore(initial, (state) => state);
     const { commits } = renderProbe(store);
     const initialCommits = commits.count;
@@ -83,7 +83,7 @@ function ViewProbe({ store }: { store: GridStore }) {
 
 describe('useGridViewState(非依存化 ④-2)', () => {
   it('フィールド別 setter(値 / 関数)で再描画され、同一 act 内の複数更新は 1 回にまとまる', () => {
-    const store = createGridStore(createInitialGridUiState([]));
+    const store = createGridStore(createInitialGridUiState());
     const commits = { count: 0 };
     const { getByTestId } = render(
       <Profiler
@@ -113,7 +113,7 @@ describe('useGridViewState(非依存化 ④-2)', () => {
   });
 
   it('setter の参照は store に対して安定している', () => {
-    const store = createGridStore(createInitialGridUiState([]));
+    const store = createGridStore(createInitialGridUiState());
     const seen: unknown[] = [];
     function SetterProbe() {
       const [, setters] = useGridViewState(store);

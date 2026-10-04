@@ -91,6 +91,48 @@ describe('serverSideRowModel', () => {
     expect(getRows).toHaveBeenCalledTimes(2);
   });
 
+  // 追加(監査 C-7): 失敗ブロックはスクロール(可視窓の変化)では再要求せず、retryFailedBlocks で取り直す。
+  it('失敗ブロックはスクロールでは再要求せず onLoadError も 1 回だけ。retryFailedBlocks で取り直す', async () => {
+    let fail = true;
+    const getRows = vi.fn(async ({ startIndex, endIndex }: { startIndex: number; endIndex: number }) => {
+      await Promise.resolve();
+      if (fail) {
+        throw new Error('boom');
+      }
+      const rows: Row[] = [];
+      for (let i = startIndex; i < Math.min(endIndex, 250); i += 1) rows.push({ v: i });
+      return { rows, totalRowCount: 250 };
+    });
+    const onLoadError = vi.fn();
+    const dataSource: ServerSideDataSource<Row> = { getRows, initialRowCount: 250, blockSize: 100 };
+    const common = { dataSource, rowKeyGetter: (row: Row) => row.v, query: {} as never, queryKey: 'q1', onLoadError };
+    const controller = createServerSideRowModel<Row>(common);
+    controller.update(common);
+    controller.requestRange(0, 50);
+    vi.runAllTimers();
+    await flush();
+    expect(getRows).toHaveBeenCalledTimes(1);
+    expect(onLoadError).toHaveBeenCalledTimes(1);
+    expect(controller.getSnapshot().loadError).toEqual({ failedBlockCount: 1 });
+
+    // 1 行ずつスクロールしても失敗ブロックは取り直さない
+    controller.requestRange(1, 51);
+    vi.runAllTimers();
+    controller.requestRange(2, 52);
+    vi.runAllTimers();
+    await flush();
+    expect(getRows).toHaveBeenCalledTimes(1);
+    expect(onLoadError).toHaveBeenCalledTimes(1);
+
+    // 明示再試行で取り直す
+    fail = false;
+    controller.retryFailedBlocks();
+    await flush();
+    expect(getRows).toHaveBeenCalledTimes(2);
+    expect(controller.getSnapshot().loadError).toBeNull();
+    expect(controller.isRowLoaded(10)).toBe(true);
+  });
+
   it('dispose 後の再 update は確立済みの可視レンジも取り直す', async () => {
     const { dataSource, getRows } = makeDataSource({ initialRowCount: 250 });
     const common = { dataSource, rowKeyGetter: (row: Row) => row.v, query: {} as never, queryKey: 'q1' };

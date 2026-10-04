@@ -46,7 +46,7 @@ const setup = (overrides: {
 } = {}) => {
   const rows = makeRows();
   const uiState: GridUiState = {
-    ...createInitialGridUiState(columns),
+    ...createInitialGridUiState(),
     activeCell: overrides.activeCell === undefined ? { row: 1, col: 1 } : overrides.activeCell,
   };
   const dispatch = vi.fn<(a: GridUiAction) => void>();
@@ -171,7 +171,7 @@ describe('useGridClipboardController ペースト × ラベル行', () => {
   ];
   const setupLabel = (opts: { serverSide?: boolean; withGrowth?: boolean } = {}) => {
     const rows = makeLabelRows();
-    const uiState: GridUiState = { ...createInitialGridUiState(labelColumns), activeCell: { row: 1, col: 1 } };
+    const uiState: GridUiState = { ...createInitialGridUiState(), activeCell: { row: 1, col: 1 } };
     const dispatch = vi.fn<(a: GridUiAction) => void>();
     const onRowsChange = vi.fn();
     const applyServerSideCellEdits = vi.fn<(edits: ServerSideCellEditInput<LRow>[]) => number>(() => 1);

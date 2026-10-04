@@ -1,13 +1,13 @@
 // V-1: sortOrder の B-1 等価性テスト(旧 adhoc ハーネスの恒久化)。
 //   sortOrder は内部で「全列数値 → Float64 fast path / それ以外 → unknown[] fallback」を
-//   自動選択します。両経路の正解は同一の compareUnknownValues 意味論(数値なら数値差、
-//   それ以外は STRING_COLLATOR、source index タイブレーク)なので、compareUnknownValues を
+//   自動選択します。両経路の正解は同一の compareSortValues 意味論(空値は方向によらず末尾・数値 < 文字列・
+//   数値は差・文字列は STRING_COLLATOR、source index タイブレーク。監査 L-07 / L-08)なので、compareSortValues を
 //   常用する参照実装と sortOrder の出力がバイト等価であることを検査します。
 //   - all-numeric / numeric-string → fast path を踏む。
 //   - 非有限混在 / 文字列二次キー → fallback を踏む。
 //   どちらのデータでも参照と一致すれば、fast path ≡ fallback ≡ 旧実装が担保されます。
 import { describe, it, expect } from 'vitest';
-import { compareUnknownValues, sortOrder } from './sorting';
+import { compareSortValues, compareUnknownValues, sortOrder } from './sorting';
 import { createSourceOrder, type RowOrder } from './filtering';
 import { getCellValue } from '../utils/permissions';
 import type { GridColumn, GridSortState } from '../model/gridTypes.unbound';
@@ -16,7 +16,7 @@ type Row = Record<string, unknown>;
 
 const col = (key: string): GridColumn<Row> => ({ key, width: 100 });
 
-// 参照実装: 比較は常に compareUnknownValues。sortOrder の規約(列解決・優先順位・
+// 参照実装: 比較は常に compareSortValues。sortOrder の規約(列解決・優先順位・
 //   未解決スキップ・有効キー 0 件は同一参照・source index タイブレーク)を素朴に再現します。
 const referenceSortOrder = (
   rows: Row[],
@@ -52,9 +52,9 @@ const referenceSortOrder = (
   const positions = Array.from({ length }, (_, i) => i);
   positions.sort((a, b) => {
     for (let c = 0; c < resolved.length; c += 1) {
-      const compared = compareUnknownValues(keyColumns[c][a], keyColumns[c][b]);
+      const compared = compareSortValues(keyColumns[c][a], keyColumns[c][b], resolved[c].multiplier);
       if (compared !== 0) {
-        return compared * resolved[c].multiplier;
+        return compared;
       }
     }
     return order[a] - order[b];
@@ -169,7 +169,7 @@ const datasets: Dataset[] = [
   },
 ];
 
-describe('sortOrder (B-1 equivalence with compareUnknownValues reference)', () => {
+describe('sortOrder (B-1 equivalence with compareSortValues reference)', () => {
   it.each(datasets)('$name', ({ rows, columns, sort }) => {
     const order = createSourceOrder(rows.length);
     const actual = sortOrder(rows, order, columns, sort);
@@ -200,5 +200,44 @@ describe('sortOrder (B-1 equivalence with compareUnknownValues reference)', () =
     expect(asArray(actual)).toEqual(asArray(expected));
     // 念のため: 出力は入力 order の置換であり、source index 集合を保存する。
     expect([...actual].sort((x, y) => x - y)).toEqual([0, 2, 4]);
+  });
+});
+
+// 追加(監査 L-07 / L-08): 空値の位置(方向によらず末尾)と、数値 / 非数値混在時の全順序を固定します。
+describe('監査 L-07 / L-08: 空値は末尾・比較は全順序', () => {
+  const sortValues = (values: unknown[], direction: 'asc' | 'desc') => {
+    const rows: Row[] = values.map((n) => ({ n }));
+    const order = sortOrder(rows, createSourceOrder(rows.length), [col('n')], [{ columnKey: 'n', direction }]);
+    return Array.from(order, (i) => values[i]);
+  };
+
+  it('数値列の null / undefined / 空文字は昇順でも降順でも末尾(fast path)', () => {
+    expect(sortValues([5, null, -3, '', 2, undefined], 'asc')).toEqual([-3, 2, 5, null, '', undefined]);
+    expect(sortValues([5, null, -3, '', 2, undefined], 'desc')).toEqual([5, 2, -3, null, '', undefined]);
+  });
+
+  it('文字列混在でも空値は末尾、数値 < 文字列(fallback)', () => {
+    expect(sortValues(['b', null, 3, '', 'a', 1], 'asc')).toEqual([1, 3, 'a', 'b', null, '']);
+    expect(sortValues(['b', null, 3, '', 'a', 1], 'desc')).toEqual(['b', 'a', 3, 1, null, '']);
+  });
+
+  it('非数値が混ざっても数値どうしの順序は乱れない(推移律)', () => {
+    expect(compareUnknownValues(1.25, 1.5)).toBeLessThan(0);
+    expect(compareUnknownValues(1.5, '1.5x')).toBeLessThan(0);
+    expect(compareUnknownValues(1.25, '1.5x')).toBeLessThan(0);
+    expect(sortValues([1.5, '1.5x', 1.25, 10, '2a', 2], 'asc')).toEqual([1.25, 1.5, 2, 10, '1.5x', '2a']);
+  });
+
+  it('多列ソートで第 1 キーが両方空値なら第 2 キーで比較する', () => {
+    const rows: Row[] = [
+      { a: null, b: 2 },
+      { a: 1, b: 9 },
+      { a: '', b: 1 },
+    ];
+    const order = sortOrder(rows, createSourceOrder(rows.length), [col('a'), col('b')], [
+      { columnKey: 'a', direction: 'desc' },
+      { columnKey: 'b', direction: 'asc' },
+    ]);
+    expect(Array.from(order)).toEqual([1, 2, 0]);
   });
 });

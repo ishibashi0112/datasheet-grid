@@ -157,21 +157,22 @@
 | B-05 | 修正(`selectCell` / `setActiveCell` / `selectRange` の範囲外 index をクランプ) | 軽微な挙動変化 | 従来は範囲外のまま state に入っていた。API_REFERENCE の記述どおりになる |
 | V-02 / V-03 | 修正(フィルター popover / 日付フィールドのボタンを Enter / Space で押せるように) | 非破壊 | pointerdown 経路は不変 |
 | P-4 / L-14 / M-06 / M-07 | 文書修正(`GridState` v2 と `columns` / `enableSorting` の説明 / `editable` の既定) | 非破壊 | API_REFERENCE + website 複製 + 生成 JSDoc |
+| C-3 | 修正(§9 から判断のうえ実施。外側 pointerdown で閉じたときは押下先がグリッド内のときだけフォーカスを戻す) | 挙動変化(改善) | 列メニュー / フィルター / コンテキストメニュー / ツールパネル共通。Escape・項目選択・グリッド内クリックで閉じた場合の復帰は従来どおり。グリッド外の非フォーカス要素(余白等)を押した場合はグリッドからフォーカスが外れる |
+| C-5 | 修正(§9 から判断のうえ実施。最終列の `Tab` / 先頭列の `Shift+Tab` は preventDefault せず既定のフォーカス移動に任せる) | 挙動変化(改善) | 端以外の Tab 移動は不変。Tab は行を折り返さないため「端」は各行の最終列 / 先頭列。グリッド外へ出る途中でヘッダーの列メニューボタン(タブ移動可能)を経由する。API_REFERENCE + website(props / keyboard ガイド)更新 |
+| RD-5 / M-03 | 修正(§9 から判断のうえ実施。列幅 state は手動リサイズ / autoSize / `applyState` で決まった列だけを持ち、`columns` の参照変化では消さない) | 挙動変化(契約どおりへ) | `getState().columnWidths` は初期 `{}`。エントリを捨てるのは列の削除 / その列の `flex`・`pinned` 変化 / `width` がエントリと異なる値へ指定し直されたとき / 列のリセット時のみ。`applyState(getState())` は冪等。flex 列の手動幅は表示切替・並べ替えでは解除されなくなった。`createInitialGridUiState()`(core)は引数なしに。API_REFERENCE + website(column / handle)+ 生成 JSDoc 更新 |
+| L-02 | 修正(§9 から判断のうえ実施。非表示列の列フィルター / ソートも行パイプラインで評価する) | 挙動変化(UI 表示どおりへ) | 行パイプラインの評価対象を `visibleColumns` → `effectiveColumns`(非表示列を含む全列)へ。`RowOrderInputs.visibleColumns` は `filterSortColumns` に改名(core)。グローバル検索は従来どおり可視列のみ。SSRM は元からサーバーへ全列の条件を送っており不変。API_REFERENCE + website(column / filter-sort ガイド)+ 生成 JSDoc 更新 |
+| L-07 / L-08 | 修正(§9 から判断のうえ実施。空値は昇順 / 降順とも末尾、値を数値 / 文字列 / 空値に分類した全順序で比較) | 挙動変化 | 空値 = null / undefined / 空白のみの文字列(従来 null / '' は 0 扱いで数値の途中、undefined は先頭)。数値 < 文字列。Float64 高速経路は空値を NaN キーで扱い維持。`compareUnknownValues` は全順序の昇順比較子に、方向込みは新設の `compareSortValues`(core)。API_REFERENCE + website(props / filter-sort ガイド)+ 生成 JSDoc 更新 |
+| RD-6 | 修正(§9 から判断のうえ実施。確定時に `readOnly` / `canEditCell` を再評価し、不可なら書き込まず編集終了) | 挙動変化(改善) | `renderCell` の `setValue` は従来どおり `readOnly` を見ない(利用側が `ctx.readOnly` で判断する設計として文書化)。`EditControllerArgs` に任意の `readOnly` / `canEditCell` を追加(core)。API_REFERENCE + website(props)+ 生成 JSDoc 更新 |
+| L-03 / L-04 | 修正(§9 から判断のうえ実施。クリップボードの TSV を Excel / Google スプレッドシート互換に) | 挙動変化(改善) | 貼り付け: 途中の空行を保持(末尾改行が作る最後の空行だけ落とす)、先頭 `"` のセルを引用符付きとして解釈(セル内改行 / タブ / `""`)。閉じ `"` が無い場合は文字どおり。コピー: 改行 / タブ / `"` を含むセルだけ `"…"` で囲む(それ以外は不変)。空セル 1 つ(`\r\n`)の貼り付けはそのセルを空にする。API_REFERENCE + website(props / keyboard ガイド)更新 |
+| P-2 | 対応しない(§9 から判断。2026-10-04) | — | 利用者はほぼバンドラ(Vite / Next.js 等)経由で ESM の型が解決されるため需要が薄く、エコシステムも ESM へ進んでいる(Node 22+ は `require(esm)` 可)。CJS + `node16` / `nodenext` で型を使いたい要望が出たら再検討する |
+| C-7 | 修正(§9 から判断のうえ実施。失敗ブロックはスクロールでは再要求せず、明示再試行まで抑止) | 挙動変化 | 取り直すのはエラーバーの再試行 / 新設ハンドル `retryServerSideLoads()` / `refreshServerSide()` / クエリ変化のときだけ(AG Grid の `retryServerSideLoads()` と同じ方針)。従来の「スクロール再訪で自然回復」は廃止。API_REFERENCE + website(handle / server-side)+ 生成 JSDoc 更新 |
+| M-05 | 修正(§9 から判断のうえ実施。行高実測モードで `scrollToBottom()` 直後に総高が伸びたら末尾へ再補正) | 非破壊 | 補正は auto-height 列 / 展開行があるときだけ、呼び出し後約 1 秒の間・ユーザーが上へスクロールしたら中断。固定行高では不変。t-features の「autoheight: last row bottom aligns with viewport bottom」が PASS に。API_REFERENCE + website(handle)更新 |
+| M-08 | 現状維持 + 文書化(§9 から判断。2026-10-04) | 非破壊 | `readOnly` はセル値の編集だけを止め、行ドラッグの並べ替えは `enableRowDrag` で制御する(AG Grid も編集 `editable` と行ドラッグ `rowDrag` / `suppressRowDrag` は別設定)。止めたい利用側は `enableRowDrag={!readOnly}`。API_REFERENCE + website(props / row-drag ガイド)+ 生成 JSDoc 更新 |
+| B-05 補足 | 修正(§9 から判断のうえ実施。表示行数が減ったら `activeCell` / `selection` を範囲内へ詰める) | 軽微な挙動変化 | rows 差し替え / フィルター / グループ折りたたみ等で表示行数が減ったとき、アクティブセルは最終行へ寄せ、セル / 行の選択範囲ははみ出した部分を切り詰める(はみ出していない部分は保持)。0 行ならセル / 行選択とアクティブセルを解除(列選択は保持)。はみ出していた時だけ値が変わり通知が出る。reducer に `selection/clampToRowCount` を追加(core)。t-verify / t-lifecycle の該当 pending を check へ昇格。API_REFERENCE + website(handle)更新 |
+| M-09 | 現状維持 + 文書化(§9 から判断。2026-10-04) | 非破壊 | `applyState` が復元する `columns` 配列は固定列ごと(左固定 → 中央 → 右固定)の順に並べ直す仕様として明記(画面上の列順は同じ。ヘッダーのドラッグ / 列パネルの並べ替えと同じ規則で、2 回目以降は不変)。列メニューの固定切替は配列順を変えない。t-basic の該当 pending を仕様の check へ置換。API_REFERENCE + website(props / handle)+ 生成 JSDoc 更新 |
 
 ## 9. 判断待ち(挙動が変わるため未実装)
 
 | ID | 変える場合の挙動 | 影響を受け得る利用側 |
 | --- | --- | --- |
-| C-3 | popover を外側クリックで閉じたときグリッドへフォーカスを戻さない | 「外側クリック後もグリッドにキー入力が届く」ことに依存していた操作フロー |
-| C-5 | 最終セルの `Tab` / 先頭セルの `Shift+Tab` でフォーカスをグリッド外へ出す | 「Tab がグリッドから出ない」前提のフォーム |
-| RD-5 / M-03 | 列幅 state を「手動リサイズした列のみ」にし、`columns` 参照変化で消さない | `getState()` の `columnWidths` を全列ぶん前提で読んでいる保存処理、`applyState` の往復 |
-| L-02 | 非表示列の filter / sort を効かせる(または非表示化時にクリアする) | 非表示列にフィルターが載った保存 state を持つ画面(行の絞り込み結果が変わる) |
-| L-07 / L-08 | 数値ソートで空値を端へ固定し、非数値混入時も全順序にする | 空値を含む列のソート結果の並びが変わる |
-| RD-6 | 編集中に `readOnly` へ切り替わったら確定を拒否 / `renderCell` の `setValue` も readOnly を見る | readOnly グリッドで `setValue` によるトグルを使っている利用側 |
-| L-03 / L-04 | TSV の空行保持と引用符(Excel 互換)の解釈 / コピー時のクォート | 空行入りの貼り付けで行ずれが直る代わりに空行が書き込まれる。コピー結果の形式が変わる(改行入りセル) |
-| P-2 | `require` 条件向けの `index.d.cts` を配布 | CJS + node16 の型解決(現状 TS1479) |
-| C-7 | 失敗ブロックの自動再要求を抑止 / バックオフ | 失敗時のトースト連打は止まるが、スクロールでの自然回復タイミングが変わる |
-| M-05 | auto-height の `scrollToBottom()` を計測後に再補正 | — |
-| M-08 | `readOnly` で行ドラッグも無効化するか(仕様確認) | readOnly + 並べ替え可を意図していた利用側 |
-| B-05 補足 | rows 減少時に `activeCell` / `selection` を reducer 側でもクランプ | `getActiveCell()` が範囲外を返すことに依存する処理は無いはず |
-| M-09(追加観測) | `applyState` が `columns` を反映するとき、pinned 列の論理順が pane 連結順(左固定 → 中央 → 右固定)へ正規化され consumer の `columns` 配列順が変わる(冪等。例: 右固定列の後ろに列を追加していた場合、右固定列が末尾へ移る) | `columns` の配列順に意味を持たせている利用側(保存 / 比較 / エクスポート順など) |
+| — | (なし。§9 の判断待ちはすべて対応済み = 2026-10-04) | — |

@@ -102,8 +102,8 @@ describe('SpreadsheetGrid 状態 API(結合)', () => {
     const state = ref.current?.getState();
     expect(state).toBeDefined();
     expect(state?.version).toBe(GRID_STATE_VERSION);
-    // 初期 columnWidths は非 flex 列の width から作られます(flex 列なし)。
-    expect(state?.columnWidths).toEqual({ id: 80, name: 160, qty: 100 });
+    // 初期 columnWidths は空です(手動リサイズ / autosize / applyState した列だけを持つ。監査 RD-5 / M-03)。
+    expect(state?.columnWidths).toEqual({});
     expect(state?.filters).toEqual({ globalText: '', columnFilters: {} });
     expect(state?.sort).toEqual([]);
     // 追加(v2): 列メタは columns prop から配列順で抽出されます(visible/pinned 未指定は省略)。
@@ -285,6 +285,81 @@ describe('SpreadsheetGrid 状態 API(結合)', () => {
       { key: 'name' },
       { key: 'id' },
     ]);
+  });
+});
+
+// 追加(監査 RD-5 / M-03): 列幅 state が columns の参照変化で消えず、列の削除 / width の指定し直しでだけ捨てられることを固定します。
+describe('監査 RD-5 / M-03: 列幅 state は columns の参照変化で消えない', () => {
+  it('同内容・別参照の columns で再レンダーしても applyState の幅が残り、width の指定し直しで捨てられる', () => {
+    const ref = createRef<SpreadsheetGridHandle<Row>>();
+    const { rerender } = render(<SpreadsheetGrid ref={ref} columns={columns} rows={rows} />);
+    act(() => {
+      ref.current?.applyState({ ...appliedState, columnWidths: { name: 300 } });
+    });
+    expect(ref.current?.getState().columnWidths).toEqual({ name: 300 });
+
+    // インライン columns={[...]} 相当(内容同じ・参照だけ新しい)
+    rerender(<SpreadsheetGrid ref={ref} columns={columns.map((c) => ({ ...c }))} rows={rows} />);
+    expect(ref.current?.getState().columnWidths).toEqual({ name: 300 });
+
+    // 他列の width 変更は name のエントリに影響しない
+    const widened = columns.map((c) => (c.key === 'id' ? { ...c, width: 90 } : { ...c }));
+    rerender(<SpreadsheetGrid ref={ref} columns={widened} rows={rows} />);
+    expect(ref.current?.getState().columnWidths).toEqual({ name: 300 });
+
+    // 利用側が name の width を指定し直したらエントリを捨てる(コードの幅が効く)
+    const renamed = widened.map((c) => (c.key === 'name' ? { ...c, width: 220 } : c));
+    rerender(<SpreadsheetGrid ref={ref} columns={renamed} rows={rows} />);
+    expect(ref.current?.getState().columnWidths).toEqual({});
+
+    // 列が無くなったエントリも捨てる
+    act(() => {
+      ref.current?.applyState({ ...appliedState, columnWidths: { qty: 150 } });
+    });
+    rerender(<SpreadsheetGrid ref={ref} columns={renamed.filter((c) => c.key !== 'qty')} rows={rows} />);
+    expect(ref.current?.getState().columnWidths).toEqual({});
+  });
+
+  it('applyState(getState()) は冪等', () => {
+    const ref = createRef<SpreadsheetGridHandle<Row>>();
+    render(<SpreadsheetGrid ref={ref} columns={columns} rows={rows} />);
+    const before = ref.current?.getState();
+    act(() => {
+      ref.current?.applyState(before!);
+    });
+    expect(ref.current?.getState()).toEqual(before);
+  });
+});
+
+// 追加(監査 L-02): 非表示列(visible: false)に載った列フィルター / ソートも行に効くことを固定します。
+describe('監査 L-02: 非表示列のフィルター / ソートが効く', () => {
+  it('非表示列の列フィルターで絞り込まれ、ソートで並ぶ', () => {
+    const ref = createRef<SpreadsheetGridHandle<Row>>();
+    const hiddenName = columns.map((c) => (c.key === 'name' ? { ...c, visible: false } : c));
+    render(<SpreadsheetGrid ref={ref} columns={hiddenName} rows={rows} />);
+    const viewIds = () => ref.current!.getExportData({ scope: 'view' }).rows.map((r) => r[0]?.value);
+    expect(viewIds()).toEqual([1, 2, 3]);
+
+    act(() => {
+      ref.current?.applyState({
+        version: GRID_STATE_VERSION,
+        columnWidths: {},
+        filters: { globalText: '', columnFilters: { name: { kind: 'text', value: 'a' } } },
+        sort: [{ columnKey: 'name', direction: 'desc' }],
+      });
+    });
+    // 'a' を含む alpha / beta / gamma のうち、name 降順 = gamma(3) → beta(2) → alpha(1)
+    expect(viewIds()).toEqual([3, 2, 1]);
+
+    act(() => {
+      ref.current?.applyState({
+        version: GRID_STATE_VERSION,
+        columnWidths: {},
+        filters: { globalText: '', columnFilters: { name: { kind: 'text', value: 'be' } } },
+        sort: [],
+      });
+    });
+    expect(viewIds()).toEqual([2]);
   });
 });
 
@@ -566,6 +641,69 @@ describe('SpreadsheetGrid refreshServerSide(結合)', () => {
       });
       expect(warnSpy).toHaveBeenCalledTimes(1);
       expect(String(warnSpy.mock.calls[0][0])).toContain('refreshServerSide');
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
+});
+
+// 追加(監査 C-7): ハンドル retryServerSideLoads() の配線検証です(失敗ブロックだけを取り直す)。
+describe('SpreadsheetGrid retryServerSideLoads(結合)', () => {
+  it('失敗した block 0 を取り直し、clientSide では警告付き no-op', async () => {
+    let fail = true;
+    const calls: ServerSideGetRowsParams[] = [];
+    const dataSource: ServerSideDataSource<Row> = {
+      getRows: (params) => {
+        calls.push(params);
+        if (fail) {
+          return Promise.reject(new Error('boom'));
+        }
+        return Promise.resolve({
+          rows: rows.slice(params.startIndex, params.endIndex),
+          totalRowCount: rows.length,
+        });
+      },
+      initialRowCount: rows.length,
+    };
+    const ref = createRef<SpreadsheetGridHandle<Row>>();
+    const onServerSideLoadError = vi.fn();
+    render(
+      <SpreadsheetGrid
+        ref={ref}
+        columns={columns}
+        dataSource={dataSource}
+        onServerSideLoadError={onServerSideLoadError}
+      />,
+    );
+    // initialRowCount 指定時は可視レンジ要求で取得するため、refresh で block 0 を取りに行かせて失敗させる。
+    act(() => {
+      ref.current?.refreshServerSide();
+    });
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(onServerSideLoadError).toHaveBeenCalledTimes(1);
+    const before = calls.length;
+
+    fail = false;
+    act(() => {
+      ref.current?.retryServerSideLoads();
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(calls.length).toBe(before + 1);
+    expect(calls.at(-1)).toMatchObject({ startIndex: 0 });
+
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      const clientRef = createRef<SpreadsheetGridHandle<Row>>();
+      render(<SpreadsheetGrid ref={clientRef} columns={columns} rows={rows} />);
+      act(() => {
+        clientRef.current?.retryServerSideLoads();
+      });
+      expect(String(warnSpy.mock.calls[0]?.[0])).toContain('retryServerSideLoads');
     } finally {
       warnSpy.mockRestore();
     }

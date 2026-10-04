@@ -12,6 +12,7 @@ import { createValueStore } from '../logic/valueStore';
 import {
   blurForPopover,
   createPopoverWindowBindings,
+  isInsideGridRoot,
   restoreGridFocus,
   type ReadonlyElementRef,
 } from './popoverSupport';
@@ -153,14 +154,15 @@ export const createColumnMenuController = <T,>(): ColumnMenuController<T> => {
     setLayout({ top, left, width: MENU_WIDTH, maxHeight });
   };
 
-  const close = () => {
+  const closeWith = (restoreFocus: boolean) => {
     clearOpenState();
     anchorButton = null;
     anchorPoint = null;
-    if (args !== null) {
+    if (args !== null && restoreFocus) {
       restoreGridFocus(args.gridRootRef);
     }
   };
+  const close = () => closeWith(true);
 
   const bindings = createPopoverWindowBindings({
     onResize: updateLayout,
@@ -174,7 +176,9 @@ export const createColumnMenuController = <T,>(): ColumnMenuController<T> => {
     isInside: (target) =>
       panelRef.current?.contains(target) === true ||
       anchorButton?.contains(target) === true,
-    onOutsidePointerDown: close,
+    // グリッド外を押して閉じたときは押下先にフォーカスを残します(監査 C-3)。
+    onOutsidePointerDown: (target) =>
+      closeWith(args !== null && isInsideGridRoot(args.gridRootRef, target)),
     onKeyDown: (event) => {
       if (event.key === 'Escape') {
         event.preventDefault();

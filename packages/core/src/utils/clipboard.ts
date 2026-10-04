@@ -13,16 +13,91 @@ import { decideCellWrite } from '../logic/validation';
 export type ClipboardMatrix = string[][];
 
 // 追加: text/plain の TSV を 2次元配列へ変換します。
+// 変更(監査 L-03 / L-04): Excel / Google スプレッドシート互換の解釈にしました。
+//   - 空行を保持します(従来は全空行を捨てていたため、途中に空セルだけの行がある範囲を貼ると行がずれた)。
+//     落とすのは末尾の改行が作る最後の空行 1 つだけです(Excel のコピーは末尾に改行が付く)。
+//   - 先頭が " のセルは引用符付きセルとして読みます(中の改行 / タブはセル内の文字、"" は " 1 文字)。
+//     閉じ " の後ろに文字が続く崩れた形は、その文字をそのまま後ろへ連結します。閉じ " が無いまま末尾に
+//     達した場合は引用符として扱わず、そのセルを先頭の " から文字どおりに読み直します。
+//   改行コードは \r\n / \r を \n へ正規化します(引用符内のセル内改行も \n になる)。
 export const parseClipboardText = (text: string): ClipboardMatrix => {
   const normalized = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
   if (!normalized) {
     return [];
   }
-  return normalized
-    .split('\n')
-    .filter((line) => line.length > 0)
-    .map((line) => line.split('\t'));
+  const matrix: ClipboardMatrix = [];
+  let row: string[] = [];
+  let field = '';
+  let i = 0;
+  const length = normalized.length;
+  // 閉じ " の無い引用符付きセルを文字どおりに読み直すときの、そのセルの開始位置です。
+  let literalFieldStart = -1;
+  let fieldStart = 0;
+  while (i < length) {
+    const ch = normalized[i];
+    if (field === '' && ch === '"' && i === fieldStart && i !== literalFieldStart) {
+      // 引用符付きセル。
+      let j = i + 1;
+      let quoted = '';
+      let closed = false;
+      while (j < length) {
+        const inner = normalized[j];
+        if (inner === '"') {
+          if (normalized[j + 1] === '"') {
+            quoted += '"';
+            j += 2;
+            continue;
+          }
+          closed = true;
+          j += 1;
+          break;
+        }
+        quoted += inner;
+        j += 1;
+      }
+      if (!closed) {
+        // 閉じていない: このセルは先頭の " から文字どおりに読む。
+        literalFieldStart = i;
+        continue;
+      }
+      field = quoted;
+      i = j;
+      continue;
+    }
+    if (ch === '\t') {
+      row.push(field);
+      field = '';
+      i += 1;
+      fieldStart = i;
+      continue;
+    }
+    if (ch === '\n') {
+      row.push(field);
+      matrix.push(row);
+      row = [];
+      field = '';
+      i += 1;
+      fieldStart = i;
+      continue;
+    }
+    field += ch;
+    i += 1;
+  }
+  // 末尾が改行で終わる場合(Excel のコピー)は、それが作る最後の空行を落とします。
+  if (!(field === '' && row.length === 0 && normalized.endsWith('\n'))) {
+    row.push(field);
+    matrix.push(row);
+  }
+  return matrix;
 };
+
+// 追加(監査 L-04): TSV の 1 セルを Excel / Google スプレッドシート互換でエスケープします。
+//   改行 / タブ / " を含むセルだけを " で囲み、中の " は "" にします(それ以外は従来どおり無加工)。
+export const escapeTsvField = (value: string): string =>
+  /[\t\n\r"]/.test(value) ? `"${value.replace(/"/g, '""')}"` : value;
+
+// 追加(監査 L-04): セル列を TSV の 1 行へ連結します(各セルを escapeTsvField)。
+export const joinTsvRow = (cells: string[]): string => cells.map(escapeTsvField).join('\t');
 
 // 追加: 選択範囲の rows/columns から TSV を生成します。
 export const serializeSelectionToTsv = <T,>(
@@ -85,7 +160,7 @@ export const serializeSelectionToTsv = <T,>(
           : String(rawValue ?? '');
         cells.push(formattedValue);
       }
-      lines.push(cells.join('\t'));
+      lines.push(joinTsvRow(cells));
     }
     return lines.join('\n');
   }
@@ -111,7 +186,7 @@ export const serializeSelectionToTsv = <T,>(
           ? column.formatClipboardValue(rawValue, row)
           : String(rawValue ?? '');
       });
-      lines.push(cells.join('\t'));
+      lines.push(joinTsvRow(cells));
     }
     return lines.join('\n');
   }
@@ -142,7 +217,7 @@ export const serializeSelectionToTsv = <T,>(
         : String(rawValue ?? '');
       cells.push(formattedValue);
     }
-    lines.push(cells.join('\t'));
+    lines.push(joinTsvRow(cells));
   }
 
   return lines.join('\n');

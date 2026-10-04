@@ -998,8 +998,9 @@ export type GridColumn<T, F extends GridFrameworkTypes = GridFrameworkTypes> = {
   /**
    * center 列(非 pinned)の伸縮比。余り幅(コンテナ幅 − 行ヘッダー − pinned 合計 − `width`
    * 固定列の合計)を flex 比で配分し `minWidth`/`maxWidth` でクランプ。
-   * コンテナ追従でリアクティブに伸縮。手動リサイズで固定 px へ変化(`columns` 変化まで固定 → 以後
-   * flex 復帰)。pinned 列では無視。詳細は下記「flex と autoSize」節。
+   * コンテナ追従でリアクティブに伸縮。手動リサイズで固定 px へ変化(その列の `flex` / `pinned` /
+   * `width` 指定が変わるか列のリセットまで固定 → 以後 flex 復帰)。pinned 列では無視。
+   * 詳細は下記「flex と autoSize」節。
    */
   flex?: number;
   // 追加(①): この列のリサイズ可否です。未指定時はグリッドの enableColumnResize を継承します
@@ -1044,7 +1045,10 @@ export type GridColumn<T, F extends GridFrameworkTypes = GridFrameworkTypes> = {
    * の対象外**(折り返し前提のため。下記「flex と autoSize」の制約を参照)。
    */
   autoHeight?: boolean;
-  /** 列の表示/非表示。 */
+  /**
+   * 列の表示/非表示。非表示にしても、その列に載った列フィルター / ソートは行の絞り込み /
+   * 並べ替えに効き続ける(クイックフィルター = グローバル検索は可視列のみが対象)。
+   */
   visible?: boolean;
   /**
    * この列の編集可否。**未指定の列は編集可**で、`false` または `readOnly: true`
@@ -1787,9 +1791,17 @@ export type SpreadsheetGridHandle<T> = {
     options?: { align?: ScrollAlign },
   ) => void;
   // 先頭 / 末尾へスクロールします。
-  /** `scrollToTop()` / `scrollToBottom()`: 先頭 / 末尾へ。 */
+  /**
+   * `scrollToTop()` / `scrollToBottom()`: 先頭 / 末尾へ。行高を実測するモード(auto-height 列 /
+   * 展開行)でも、`scrollToBottom()` は直後の計測で総高が伸びた分を短時間(約 1
+   * 秒・上スクロールで中断)自動で再補正し、1 回の呼び出しで末尾に届く。
+   */
   scrollToTop: () => void;
-  /** `scrollToTop()` / `scrollToBottom()`: 先頭 / 末尾へ。 */
+  /**
+   * `scrollToTop()` / `scrollToBottom()`: 先頭 / 末尾へ。行高を実測するモード(auto-height 列 /
+   * 展開行)でも、`scrollToBottom()` は直後の計測で総高が伸びた分を短時間(約 1
+   * 秒・上スクロールで中断)自動で再補正し、1 回の呼び出しで末尾に届く。
+   */
   scrollToBottom: () => void;
   // 現在描画中の行ウィンドウ [startIndex, endIndex)(end 排他)。空のときは null。
   /** 現在描画中の行ウィンドウ `{ startIndex, endIndex }`(end 排他)。空は `null`。 */
@@ -2033,6 +2045,15 @@ export type SpreadsheetGridHandle<T> = {
    * では警告付き no-op。
    */
   refreshServerSide: () => void;
+  // 追加(監査 C-7): 失敗中のブロックだけを取り直します(エラーバーの「再試行」の命令的版)。
+  //   失敗ブロックはスクロールでは自動再要求しなくなったため、独自 UI からの再試行口として公開します。
+  /**
+   * serverSide(`dataSource`)で取得に失敗中のブロック**だけ**を即時取り直す(エラーバーの「再試行」
+   * と同じ。キャッシュ済みブロックには触れない)。失敗ブロックはスクロールでは自動再要求しないため、
+   * 独自のエラー UI から再試行させたい場合に使う。失敗が無ければ何もしない。clientSide(`rows`)
+   * では警告付き no-op。
+   */
+  retryServerSideLoads: () => void;
 
   // ── UI パネル(FM-3)──
   // フィルター管理パネル(FM-1: 適用中の列フィルターの一覧 / ジャンプ編集 / 個別・全クリア /
@@ -2287,7 +2308,13 @@ export type SpreadsheetGridProps<T, F extends GridFrameworkTypes = GridFramework
   columns: readonly GridColumn<T, F>[];
   /** 行が変化したとき呼ばれる(rows を controlled にする)。 */
   onRowsChange?: (nextRows: T[]) => void;
-  /** 列が変化したとき呼ばれる。列メニューの固定切替はこれが指定されている場合のみ反映。 */
+  /**
+   * 列が変化したとき呼ばれる。列メニューの固定切替はこれが指定されている場合のみ反映。
+   * 列の並べ替え(ヘッダーのドラッグ / 列パネル)と `applyState` で渡る `nextColumns` は、
+   * 配列順が固定列ごと(左固定 → 中央 → 右固定)に並べ直される(画面上の列順は変わらない。例:
+   * 右固定列の後ろに宣言した列があると、右固定列が配列の末尾へ移る)。
+   * 列メニューの固定切替は配列順を変えず `pinned` だけを更新する。
+   */
   onColumnsChange?: (nextColumns: GridColumn<T, F>[]) => void;
   /**
    * 安定した行キーを返す。
@@ -2421,7 +2448,11 @@ export type SpreadsheetGridProps<T, F extends GridFrameworkTypes = GridFramework
    */
   maxHeight?: number | string;
   /**
-   * グリッド全体の編集を無効化。
+   * グリッド全体の編集を無効化。編集中に `true` へ切り替わった場合、
+   * その編集は確定時に書き込まれず終了する(`canEditCell` も確定時に再評価)。`renderCell` の
+   * `ctx.setValue` は対象外で、`readOnly` 中も書き込める(`ctx.readOnly` を見て利用側で無効化する)。
+   * 行ドラッグによる並べ替え(`enableRowDrag`)も対象外(セル値の編集ではないため)で、止める場合は
+   * `enableRowDrag={!readOnly}` を渡す。
    *
    * @defaultValue `false`
    */
@@ -2611,7 +2642,9 @@ export type SpreadsheetGridProps<T, F extends GridFrameworkTypes = GridFramework
   /**
    * ソート機能の有効化。ソートは列メニュー(⋮)の「昇順 / 降順で並び替え」と「並び替えを管理…」
    * パネルから行う(ヘッダー本体のクリックは列範囲選択)。`false` でメニューのソート項目が消え、
-   * `applyState` 等で載った `sort` も適用されない。
+   * `applyState` 等で載った `sort` も適用されない。ソート順は値で決まり、数値として解釈できる値 →
+   * 文字列(日本語照合・数字は数値順)→ 空白セル(null / undefined / 空文字)
+   * の順。**空白セルは昇順でも降順でも末尾**(Excel と同じ)。
    *
    * @defaultValue `true`
    */

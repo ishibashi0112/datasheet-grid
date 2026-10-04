@@ -44,7 +44,7 @@ const keyEvent = (key: string, init: Partial<{ ctrlKey: boolean; metaKey: boolea
 
 const setup = (overrides: Partial<{ activeCell: CellCoord | null; editingCell: CellCoord | null; readOnly: boolean; isWholeGridSelected: boolean; enableClearOnDelete: boolean }> = {}) => {
   const uiState: GridUiState = {
-    ...createInitialGridUiState(columns),
+    ...createInitialGridUiState(),
     activeCell: overrides.activeCell === undefined ? { row: 1, col: 0 } : overrides.activeCell,
     editingCell: overrides.editingCell ?? null,
   };
@@ -94,10 +94,13 @@ describe('useGridKeyboardInteractions(特性テスト)', () => {
     t.dispatch.mockClear();
     await act(async () => {
       await t.result.current.handleKeyDown(keyEvent('Tab', { shiftKey: true }));
+      await t.result.current.handleKeyDown(keyEvent('Tab'));
       await t.result.current.handleKeyDown(keyEvent('Escape'));
     });
-    // Tab(Shift)は col 0 で clamp → row 1 / col 0 のまま activate。Escape は clearSelection。
+    // Shift+Tab は col 0(先頭列)なので何もしない = 既定動作でグリッド外へ(監査 C-5)。
+    // Tab は col 1 へ移動して activate。Escape は clearSelection。
     expect(types(t.dispatch)).toEqual(['selection/start', 'selection/end', 'cell/activate', 'selection/clear']);
+    expect(t.dispatch.mock.calls[2][0]).toMatchObject({ cell: { row: 1, col: 1 } });
   });
 
   it('Ctrl+C / Ctrl+A / Ctrl+Z / Ctrl+Shift+Z / Ctrl+Y / Delete のショートカット', async () => {
@@ -190,7 +193,7 @@ describe('useGridKeyboardInteractions × ラベル行', () => {
         : undefined,
   };
   const setupLabel = (activeCell: CellCoord) => {
-    const uiState: GridUiState = { ...createInitialGridUiState(columns as unknown as GridColumn<LRow>[]), activeCell };
+    const uiState: GridUiState = { ...createInitialGridUiState(), activeCell };
     const dispatch = vi.fn<(a: GridUiAction) => void>();
     const view = renderHook(() =>
       useGridKeyboardInteractions<LRow>({
