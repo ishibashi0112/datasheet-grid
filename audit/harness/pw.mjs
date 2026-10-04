@@ -35,9 +35,15 @@ export function check(name, ok, detail) {
   const mark = ok ? 'PASS' : 'FAIL';
   console.log(`${mark} ${name}${detail !== undefined ? ' :: ' + (typeof detail === 'string' ? detail : JSON.stringify(detail)) : ''}`);
 }
+// 判断待ち(監査所見のうち挙動変更を伴うため未修正のもの)の追試。FAIL には数えず PENDING として記録する。
+export const pendings = [];
+export function pending(name, ok, detail) {
+  pendings.push({ name, ok: !!ok, detail });
+  console.log(`PENDING(判断待ち・${ok ? '解消済み' : '未解消'}) ${name}${detail !== undefined ? ' :: ' + (typeof detail === 'string' ? detail : JSON.stringify(detail)) : ''}`);
+}
 export function summary() {
   const fails = results.filter((r) => !r.ok);
-  console.log(`\n== ${results.length - fails.length}/${results.length} passed; ${fails.length} failed ==`);
+  console.log(`\n== ${results.length - fails.length}/${results.length} passed; ${fails.length} failed; ${pendings.length} pending(判断待ち: 未解消 ${pendings.filter((p) => !p.ok).length}) ==`);
   for (const f of fails) console.log('  FAIL', f.name, f.detail !== undefined ? JSON.stringify(f.detail) : '');
 }
 

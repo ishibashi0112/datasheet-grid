@@ -174,3 +174,4 @@
 | M-05 | auto-height の `scrollToBottom()` を計測後に再補正 | — |
 | M-08 | `readOnly` で行ドラッグも無効化するか(仕様確認) | readOnly + 並べ替え可を意図していた利用側 |
 | B-05 補足 | rows 減少時に `activeCell` / `selection` を reducer 側でもクランプ | `getActiveCell()` が範囲外を返すことに依存する処理は無いはず |
+| M-09(追加観測) | `applyState` が `columns` を反映するとき、pinned 列の論理順が pane 連結順(左固定 → 中央 → 右固定)へ正規化され consumer の `columns` 配列順が変わる(冪等。例: 右固定列の後ろに列を追加していた場合、右固定列が末尾へ移る) | `columns` の配列順に意味を持たせている利用側(保存 / 比較 / エクスポート順など) |
