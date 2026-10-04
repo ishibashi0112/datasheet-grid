@@ -273,7 +273,7 @@ const gridRef = useRef<SpreadsheetGridHandle<Row>>(null);
 | 矢印(+ `Shift` で範囲拡張)/ `Tab` / `Shift+Tab` | アクティブセル移動(`labelRow` 有効時、↑ / ↓ はラベル行に止まらず読み飛ばす)。最終列での `Tab` / 先頭列での `Shift+Tab` はグリッドで止めず、ブラウザ既定のフォーカス移動でグリッド外の次 / 前の要素へ移る(キーボードトラップ回避)。 |
 | `Enter` / `F2` / 印字キー直打ち | 編集開始(印字キーはその 1 文字を初期値に)。編集可否は `readOnly` / 列 / `canEditCell` に従う。 |
 | `Escape` | 選択解除。 |
-| `Ctrl/Cmd+C` / ペースト(`Ctrl/Cmd+V`) | 選択範囲の TSV コピー(`isRowExportable` 指定時は `false` の行を除く)/ アクティブセル起点の貼り付け(readOnly では no-op)。 |
+| `Ctrl/Cmd+C` / ペースト(`Ctrl/Cmd+V`) | 選択範囲の TSV コピー(`isRowExportable` 指定時は `false` の行を除く)/ アクティブセル起点の貼り付け(readOnly では no-op)。TSV は Excel / Google スプレッドシート互換(改行・タブ・`"` を含むセルは `"…"` で囲み `"` は `""`。貼り付けはこの引用符を解釈し、途中の空行も行として保持する)。 |
 | `Ctrl/Cmd+A` | 全体選択(2 回目で解除)。 |
 | `Delete` / `Backspace` | 選択セル(なければアクティブセル)の値クリア。編集不可セルは対象外。クリア値は「空文字のペースト」と同じ規則(`parseClipboardValue('')` 経由、未定義なら `''`)。変更が無ければ no-op(undo 履歴にも積まれない)。 |
 | `Ctrl/Cmd+Z` / `Ctrl/Cmd+Shift+Z` / `Ctrl/Cmd+Y` | undo / redo(詳細は命令的 API の「undo / redo」節)。 |

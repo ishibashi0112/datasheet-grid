@@ -203,6 +203,18 @@ import { open, check, pending, summary, errorsOf, renderedRowIndexes, cellText, 
   await close();
 }
 
+// ---- L-03 / L-04: TSV の空行 / 引用符(Excel 互換) ----
+{
+  const { page, close } = await open('basic', { query: 'n=20' });
+  await cell(page, 0, 'name').click();
+  // Excel 形式: 1 列 3 セル(中央空)+ セル内改行
+  await pasteText(page, '"multi\nline"\r\n\r\nthird\r\n');
+  await waitIdle(page, 200);
+  const names = await page.evaluate(() => window.__rows().slice(0, 3).map((r) => r.name));
+  check('L-03/L-04: paste keeps empty line and quoted multi-line cell', JSON.stringify(names) === JSON.stringify(['multi\nline', '', 'third']), { names });
+  await close();
+}
+
 // ---- C-5: Tab / Shift+Tab のキーボードトラップ ----
 {
   const { page, close } = await open('basic', { query: 'n=20' });

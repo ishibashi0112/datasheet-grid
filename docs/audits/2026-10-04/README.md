@@ -163,12 +163,12 @@
 | L-02 | 修正(§9 から判断のうえ実施。非表示列の列フィルター / ソートも行パイプラインで評価する) | 挙動変化(UI 表示どおりへ) | 行パイプラインの評価対象を `visibleColumns` → `effectiveColumns`(非表示列を含む全列)へ。`RowOrderInputs.visibleColumns` は `filterSortColumns` に改名(core)。グローバル検索は従来どおり可視列のみ。SSRM は元からサーバーへ全列の条件を送っており不変。API_REFERENCE + website(column / filter-sort ガイド)+ 生成 JSDoc 更新 |
 | L-07 / L-08 | 修正(§9 から判断のうえ実施。空値は昇順 / 降順とも末尾、値を数値 / 文字列 / 空値に分類した全順序で比較) | 挙動変化 | 空値 = null / undefined / 空白のみの文字列(従来 null / '' は 0 扱いで数値の途中、undefined は先頭)。数値 < 文字列。Float64 高速経路は空値を NaN キーで扱い維持。`compareUnknownValues` は全順序の昇順比較子に、方向込みは新設の `compareSortValues`(core)。API_REFERENCE + website(props / filter-sort ガイド)+ 生成 JSDoc 更新 |
 | RD-6 | 修正(§9 から判断のうえ実施。確定時に `readOnly` / `canEditCell` を再評価し、不可なら書き込まず編集終了) | 挙動変化(改善) | `renderCell` の `setValue` は従来どおり `readOnly` を見ない(利用側が `ctx.readOnly` で判断する設計として文書化)。`EditControllerArgs` に任意の `readOnly` / `canEditCell` を追加(core)。API_REFERENCE + website(props)+ 生成 JSDoc 更新 |
+| L-03 / L-04 | 修正(§9 から判断のうえ実施。クリップボードの TSV を Excel / Google スプレッドシート互換に) | 挙動変化(改善) | 貼り付け: 途中の空行を保持(末尾改行が作る最後の空行だけ落とす)、先頭 `"` のセルを引用符付きとして解釈(セル内改行 / タブ / `""`)。閉じ `"` が無い場合は文字どおり。コピー: 改行 / タブ / `"` を含むセルだけ `"…"` で囲む(それ以外は不変)。空セル 1 つ(`\r\n`)の貼り付けはそのセルを空にする。API_REFERENCE + website(props / keyboard ガイド)更新 |
 
 ## 9. 判断待ち(挙動が変わるため未実装)
 
 | ID | 変える場合の挙動 | 影響を受け得る利用側 |
 | --- | --- | --- |
-| L-03 / L-04 | TSV の空行保持と引用符(Excel 互換)の解釈 / コピー時のクォート | 空行入りの貼り付けで行ずれが直る代わりに空行が書き込まれる。コピー結果の形式が変わる(改行入りセル) |
 | P-2 | `require` 条件向けの `index.d.cts` を配布 | CJS + node16 の型解決(現状 TS1479) |
 | C-7 | 失敗ブロックの自動再要求を抑止 / バックオフ | 失敗時のトースト連打は止まるが、スクロールでの自然回復タイミングが変わる |
 | M-05 | auto-height の `scrollToBottom()` を計測後に再補正 | — |
