@@ -3319,7 +3319,13 @@ export function SpreadsheetGrid<T extends object>({
     //   = leaf 行配列と整合)。
     viewRowCount: leafRowCount,
     // 追加(label-row ③): 分母(総データ行数)はラベル行を除きます(未指定 = rows.length)。
-    totalRowCount: labelLayout ? labelLayout.dataRowCount : undefined,
+    // 変更(audit M-02): serverSide は rows が空配列のため分母が常に 0(「Rows: 10000 / 0」)になっていた。
+    //   サーバーが返した件数(現在のクエリでの総件数 = viewRowCount)を分母にする。
+    totalRowCount: isServerSide
+      ? viewRowCount
+      : labelLayout
+        ? labelLayout.dataRowCount
+        : undefined,
     getFilteredRows,
     columns,
     visibleColumns,

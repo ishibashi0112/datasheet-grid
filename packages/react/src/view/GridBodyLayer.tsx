@@ -1005,10 +1005,12 @@ export function GridBodyLayer<T>({
           if (!isServerSide) {
             return null;
           }
-          const skeletonKey = rowModel.getRowKey(rowIndex) ?? rowIndex;
+          // 変更(audit B-04): スケルトンの key は専用の名前空間にします。viewIndex そのままだと、同じ描画窓に
+          //   ある「ロード済み行の数値 rowKey」(1 始まり id 等)と衝突し、React の重複 key 警告 + 毎レンダーの
+          //   再マウントが起きていました。ロード完了時に実 row キーへ切り替わる(= 差し替え)挙動は不変です。
           return (
             <GridBodySkeletonRow
-              key={String(skeletonKey)}
+              key={`__ssg_skeleton__:${rowIndex}`}
               pane={pane}
               ownsRowHeader={ownsRowHeader}
               leadingWidth={leadingWidth}
