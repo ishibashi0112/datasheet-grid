@@ -1,5 +1,5 @@
 // 機能別: グルーピング / 展開行 / ラベル行 / 行ドラッグ / auto-height。
-import { open, check, summary, errorsOf, renderedRowIndexes, cellText, cell, header, scrollTo, focusGrid, waitIdle, events, clearEvents, pasteText, rows, state } from './pw.mjs';
+import { OUT, open, check, summary, errorsOf, renderedRowIndexes, cellText, cell, header, scrollTo, focusGrid, waitIdle, events, clearEvents, pasteText, rows, state } from './pw.mjs';
 
 // ---------- グルーピング ----------
 {
@@ -82,7 +82,7 @@ import { open, check, summary, errorsOf, renderedRowIndexes, cellText, cell, hea
   check('grouping + enableRowDrag → no drag handle column', (await page.locator('.ssg-row-drag-handle').count()) === 0);
   const errs = await errorsOf(page);
   check('grouping: no console errors', errs.filter((e) => e.startsWith('[error]')).length === 0 && pageErrors.length === 0, [...errs, ...pageErrors].slice(0, 5));
-  await page.screenshot({ path: 'shot-grouping.png' });
+  await page.screenshot({ path: OUT + 'shot-grouping.png' });
   await close();
 }
 
@@ -173,7 +173,7 @@ import { open, check, summary, errorsOf, renderedRowIndexes, cellText, cell, hea
   check('detail: paste across expanded band writes consecutive rows', pr[0].name === 'p0' && pr[1].name === 'p1' && pr[2].name === 'p2', [pr[0].name, pr[1].name, pr[2].name]);
   const errs = await errorsOf(page);
   check('detail: no console errors', errs.filter((e) => e.startsWith('[error]')).length === 0 && pageErrors.length === 0, [...errs, ...pageErrors].slice(0, 5));
-  await page.screenshot({ path: 'shot-detail.png' });
+  await page.screenshot({ path: OUT + 'shot-detail.png' });
   await close();
 }
 
@@ -255,7 +255,7 @@ import { open, check, summary, errorsOf, renderedRowIndexes, cellText, cell, hea
   console.log('label + rowDrag: handle on label / data =', handleOnLabel, handleOnData);
   const errs = await errorsOf(page);
   check('label: no console errors', errs.filter((e) => e.startsWith('[error]')).length === 0 && pageErrors.length === 0, [...errs, ...pageErrors].slice(0, 5));
-  await page.screenshot({ path: 'shot-label.png' });
+  await page.screenshot({ path: OUT + 'shot-label.png' });
   await close();
 }
 
@@ -409,7 +409,7 @@ import { open, check, summary, errorsOf, renderedRowIndexes, cellText, cell, hea
   check('autoheight: >50k rows falls back to uniform', new Set(hs2).size === 1, { hs2, w2: w2.slice(0, 2) });
   const errs = await errorsOf(page);
   check('autoheight: no console errors', errs.filter((e) => e.startsWith('[error]')).length === 0 && pageErrors.length === 0, [...errs, ...pageErrors].slice(0, 5));
-  await page.screenshot({ path: 'shot-autoheight.png' });
+  await page.screenshot({ path: OUT + 'shot-autoheight.png' });
   await close();
 }
 

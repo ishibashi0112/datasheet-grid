@@ -1,5 +1,5 @@
 // SSRM(serverSide)モックでの取得 / 競合 / エラー / 書き戻し / refresh の検証。
-import { open, check, summary, errorsOf, renderedRowIndexes, cellText, cell, scrollTo, focusGrid, waitIdle, events, clearEvents } from './pw.mjs';
+import { OUT, open, check, summary, errorsOf, renderedRowIndexes, cellText, cell, scrollTo, focusGrid, waitIdle, events, clearEvents } from './pw.mjs';
 
 const { page, pageErrors, close } = await open('ssrm');
 const ctl = () => page.evaluate(() => ({ ...window.__ssrm, server: undefined, calls: window.__ssrm.calls.map((c) => ({ ...c })) }));
@@ -183,6 +183,6 @@ check('exportCsv raw in SSRM warns and returns loaded rows', typeof csv === 'str
 
 const errs = await errorsOf(page);
 check('no unexpected console errors', errs.filter((e) => e.startsWith('[error]') || e.startsWith('[window') || e.startsWith('[unhandled')).length === 0 && pageErrors.filter((e) => !e.includes('mock')).length === 0, [...errs, ...pageErrors].slice(0, 10));
-await page.screenshot({ path: 'shot-ssrm.png' });
+await page.screenshot({ path: OUT + 'shot-ssrm.png' });
 summary();
 await close();

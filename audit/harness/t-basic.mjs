@@ -1,5 +1,5 @@
 // basic: 編集 / キーボード / 選択 / クリップボード / undo-redo / ソート / フィルター UI / 列操作 / 行選択 / コンテキストメニュー / 状態往復 / エクスポート。
-import { open, check, summary, errorsOf, renderedRowIndexes, cellText, cell, header, scrollTo, focusGrid, waitIdle, events, clearEvents, pasteText, copyText, state, rows } from './pw.mjs';
+import { OUT, open, check, summary, errorsOf, renderedRowIndexes, cellText, cell, header, scrollTo, focusGrid, waitIdle, events, clearEvents, pasteText, copyText, state, rows } from './pw.mjs';
 
 const { page, pageErrors, close } = await open('basic', { query: 'n=300' });
 const active = () => page.evaluate(() => window.__grid.getActiveCell());
@@ -599,6 +599,6 @@ check('onScroll via API tagged source=api', scrollEv.includes('api'), scrollEv);
 
 const errs = await errorsOf(page);
 check('basic: no console errors', errs.length === 0 && pageErrors.length === 0, [...errs, ...pageErrors].slice(0, 8));
-await page.screenshot({ path: 'shot-basic-end.png' });
+await page.screenshot({ path: OUT + 'shot-basic-end.png' });
 summary();
 await close();

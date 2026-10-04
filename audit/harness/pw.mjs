@@ -1,7 +1,12 @@
 // Playwright ランナー共通部。
 import { chromium } from 'playwright-core';
 
-import { existsSync } from 'node:fs';
+import { existsSync, mkdirSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+
+// スクリーンショット等の出力先(audit/harness/.out/。.gitignore 済み)。
+export const OUT = fileURLToPath(new URL('./.out/', import.meta.url));
+mkdirSync(OUT, { recursive: true });
 
 export const BASE = process.env.HARNESS_BASE ?? 'http://127.0.0.1:5177/';
 // Chromium の実行ファイル: SSG_AUDIT_CHROME → Claude Code クラウド環境の既知パス → playwright-core の既定解決。

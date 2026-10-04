@@ -63,14 +63,21 @@ import { open, check, summary, errorsOf, renderedRowIndexes, cellText, cell, hea
     const src = window.__rows().map((r) => ({ ...r, qty: r.qty === null ? null : 1000 - (r.qty ?? 0) }));
     window.__setRows(src);
   });
-  await waitIdle(page, 200);
-  const idDuring = await cellText(page, 3, 'id');
+  await waitIdle(page, 300);
+  // 修正後はエディタが元の行(id=2)の新しい位置へ追従し、viewport もそこへ同期する(行 3 は描画窓外になり得る)。
   const editorStill = await page.evaluate(() => !!document.querySelector('.ssg-cell-editor'));
+  const editingCellIdx = await page.evaluate(() => {
+    const ed = document.querySelector('.ssg-cell-editor');
+    if (!ed) return null;
+    const r = ed.getBoundingClientRect();
+    const row = [...document.querySelectorAll('.ssg-center-pane .ssg-body-row[data-row-index]')].find((el) => { const b = el.getBoundingClientRect(); return Math.abs(b.top - r.top) < 2; });
+    return row ? Number(row.getAttribute('data-row-index')) : null;
+  });
   await page.keyboard.press('Enter');
   await waitIdle(page, 150);
   const all = await rows(page);
   const editedRow = all.find((r) => r.name === 'EDITED');
-  check('RD-1: commit after external reorder writes to the originally edited row', editedRow && String(editedRow.id) === idBefore, { idBefore, idDuring, editorStill, writtenTo: editedRow?.id });
+  check('RD-1: commit after external reorder writes to the originally edited row', editedRow && String(editedRow.id) === idBefore, { idBefore, editorStill, editingCellIdx, writtenTo: editedRow?.id });
   await close();
 }
 

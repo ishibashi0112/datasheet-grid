@@ -1,5 +1,5 @@
 // ライフサイクル: StrictMode / mount-unmount のリスナー・rAF リーク / 2 グリッド共存 / height % / テーマ切替。
-import { open, check, summary, errorsOf, renderedRowIndexes, cellText, cell, header, waitIdle, events, clearEvents } from './pw.mjs';
+import { OUT, open, check, summary, errorsOf, renderedRowIndexes, cellText, cell, header, waitIdle, events, clearEvents } from './pw.mjs';
 
 const snapshotListeners = (page) => page.evaluate(() => ({ ...window.__listeners }));
 const diffListeners = (a, b) => Object.fromEntries(Object.entries(b).filter(([k, v]) => v !== (a[k] ?? 0)).map(([k, v]) => [k, v - (a[k] ?? 0)]));
@@ -114,7 +114,7 @@ const diffListeners = (a, b) => Object.fromEntries(Object.entries(b).filter(([k,
   // 片方 unmount しても他方のツールチップは生きる(参照カウント)— ここでは両方同じ App なので省略
   const errs = await errorsOf(page);
   check('two: no console errors', errs.length === 0 && pageErrors.length === 0, [...errs, ...pageErrors].slice(0, 5));
-  await page.screenshot({ path: 'shot-two.png' });
+  await page.screenshot({ path: OUT + 'shot-two.png' });
   await close();
 }
 
@@ -153,7 +153,7 @@ const diffListeners = (a, b) => Object.fromEntries(Object.entries(b).filter(([k,
   check('theme auto follows prefers-color-scheme', autoDark === true && autoLight === false, { autoDark, autoLight });
   const errs = await errorsOf(page);
   check('height: no console errors', errs.length === 0 && pageErrors.length === 0, [...errs, ...pageErrors].slice(0, 5));
-  await page.screenshot({ path: 'shot-height.png' });
+  await page.screenshot({ path: OUT + 'shot-height.png' });
   await close();
 }
 

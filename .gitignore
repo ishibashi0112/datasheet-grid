@@ -26,3 +26,5 @@ dist-ssr
 backup
 repomix-output.xml
 *.tgz
+# 監査ハーネスの出力(スクリーンショット等)
+audit/harness/.out

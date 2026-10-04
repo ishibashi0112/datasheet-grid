@@ -1,5 +1,5 @@
 // 100 万行(uniform)での縦スクロール / API / ソート / フィルターの検証。
-import { open, check, summary, errorsOf, renderedRowIndexes, cellText, scrollTo, focusGrid, waitIdle, events, clearEvents } from './pw.mjs';
+import { OUT, open, check, summary, errorsOf, renderedRowIndexes, cellText, scrollTo, focusGrid, waitIdle, events, clearEvents } from './pw.mjs';
 
 const { page, pageErrors, close } = await open('big');
 const N = 1_000_000;
@@ -113,6 +113,6 @@ check('row count restored', bottom2.includes('1,000,000') || bottom2.includes('1
 
 const errs = await errorsOf(page);
 check('no console errors', errs.length === 0 && pageErrors.length === 0, [...errs, ...pageErrors].slice(0, 10));
-await page.screenshot({ path: 'shot-big.png' });
+await page.screenshot({ path: OUT + 'shot-big.png' });
 summary();
 await close();
