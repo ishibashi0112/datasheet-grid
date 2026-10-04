@@ -167,11 +167,11 @@
 | P-2 | 対応しない(§9 から判断。2026-10-04) | — | 利用者はほぼバンドラ(Vite / Next.js 等)経由で ESM の型が解決されるため需要が薄く、エコシステムも ESM へ進んでいる(Node 22+ は `require(esm)` 可)。CJS + `node16` / `nodenext` で型を使いたい要望が出たら再検討する |
 | C-7 | 修正(§9 から判断のうえ実施。失敗ブロックはスクロールでは再要求せず、明示再試行まで抑止) | 挙動変化 | 取り直すのはエラーバーの再試行 / 新設ハンドル `retryServerSideLoads()` / `refreshServerSide()` / クエリ変化のときだけ(AG Grid の `retryServerSideLoads()` と同じ方針)。従来の「スクロール再訪で自然回復」は廃止。API_REFERENCE + website(handle / server-side)+ 生成 JSDoc 更新 |
 | M-05 | 修正(§9 から判断のうえ実施。行高実測モードで `scrollToBottom()` 直後に総高が伸びたら末尾へ再補正) | 非破壊 | 補正は auto-height 列 / 展開行があるときだけ、呼び出し後約 1 秒の間・ユーザーが上へスクロールしたら中断。固定行高では不変。t-features の「autoheight: last row bottom aligns with viewport bottom」が PASS に。API_REFERENCE + website(handle)更新 |
+| M-08 | 現状維持 + 文書化(§9 から判断。2026-10-04) | 非破壊 | `readOnly` はセル値の編集だけを止め、行ドラッグの並べ替えは `enableRowDrag` で制御する(AG Grid も編集 `editable` と行ドラッグ `rowDrag` / `suppressRowDrag` は別設定)。止めたい利用側は `enableRowDrag={!readOnly}`。API_REFERENCE + website(props / row-drag ガイド)+ 生成 JSDoc 更新 |
 
 ## 9. 判断待ち(挙動が変わるため未実装)
 
 | ID | 変える場合の挙動 | 影響を受け得る利用側 |
 | --- | --- | --- |
-| M-08 | `readOnly` で行ドラッグも無効化するか(仕様確認) | readOnly + 並べ替え可を意図していた利用側 |
 | B-05 補足 | rows 減少時に `activeCell` / `selection` を reducer 側でもクランプ | `getActiveCell()` が範囲外を返すことに依存する処理は無いはず |
 | M-09(追加観測) | `applyState` が `columns` を反映するとき、pinned 列の論理順が pane 連結順(左固定 → 中央 → 右固定)へ正規化され consumer の `columns` 配列順が変わる(冪等。例: 右固定列の後ろに列を追加していた場合、右固定列が末尾へ移る) | `columns` の配列順に意味を持たせている利用側(保存 / 比較 / エクスポート順など) |
