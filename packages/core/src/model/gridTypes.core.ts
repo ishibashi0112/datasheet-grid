@@ -1791,9 +1791,17 @@ export type SpreadsheetGridHandle<T> = {
     options?: { align?: ScrollAlign },
   ) => void;
   // 先頭 / 末尾へスクロールします。
-  /** `scrollToTop()` / `scrollToBottom()`: 先頭 / 末尾へ。 */
+  /**
+   * `scrollToTop()` / `scrollToBottom()`: 先頭 / 末尾へ。行高を実測するモード(auto-height 列 /
+   * 展開行)でも、`scrollToBottom()` は直後の計測で総高が伸びた分を短時間(約 1
+   * 秒・上スクロールで中断)自動で再補正し、1 回の呼び出しで末尾に届く。
+   */
   scrollToTop: () => void;
-  /** `scrollToTop()` / `scrollToBottom()`: 先頭 / 末尾へ。 */
+  /**
+   * `scrollToTop()` / `scrollToBottom()`: 先頭 / 末尾へ。行高を実測するモード(auto-height 列 /
+   * 展開行)でも、`scrollToBottom()` は直後の計測で総高が伸びた分を短時間(約 1
+   * 秒・上スクロールで中断)自動で再補正し、1 回の呼び出しで末尾に届く。
+   */
   scrollToBottom: () => void;
   // 現在描画中の行ウィンドウ [startIndex, endIndex)(end 排他)。空のときは null。
   /** 現在描画中の行ウィンドウ `{ startIndex, endIndex }`(end 排他)。空は `null`。 */

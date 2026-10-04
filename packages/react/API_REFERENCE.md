@@ -849,7 +849,7 @@ const gridRef = useRef<SpreadsheetGridHandle<Row>>(null);
 | --- | --- |
 | `scrollToRow(viewRowIndex, { align? })` | 指定行を可視域へ。`align`(既定 `'auto'`): `'auto'`(最小スクロール) / `'start'` / `'center'` / `'end'`。 |
 | `scrollToCell(viewRowIndex, colIndex, { align? })` | 指定セルを縦横とも可視域へ。固定列(左右ピン)は常に可視のため横スクロールしない。 |
-| `scrollToTop()` / `scrollToBottom()` | 先頭 / 末尾へ。 |
+| `scrollToTop()` / `scrollToBottom()` | 先頭 / 末尾へ。行高を実測するモード(auto-height 列 / 展開行)でも、`scrollToBottom()` は直後の計測で総高が伸びた分を短時間(約 1 秒・上スクロールで中断)自動で再補正し、1 回の呼び出しで末尾に届く。 |
 | `getVisibleRowRange()` | 現在描画中の行ウィンドウ `{ startIndex, endIndex }`(end 排他)。空は `null`。 |
 | `getScrollPosition()` | 現在のスクロール位置 `{ top, left }`(px)。値はスクロールコンテナの生の `scrollTop` / `scrollLeft` で、`setScrollPosition` / `onScroll` と同一基準(往復で一貫)。未マウント時は `null`。 |
 | `setScrollPosition({ top?, left? }, { behavior? })` | スクロール位置の設定(px)。省略側は現状維持・スクロール可能範囲へクランプ。`behavior` は `'auto'`(既定・即時)/ `'smooth'`。2 グリッドの双方向同期では `'auto'` を推奨(`'smooth'` は途中フレームの `onScroll` が `source:'user'` になり得る)。 |

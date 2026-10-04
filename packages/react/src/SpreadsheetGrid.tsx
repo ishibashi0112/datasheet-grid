@@ -3752,6 +3752,8 @@ export function SpreadsheetGrid<T extends object>({
     windowFirstRow,
     windowLastRow,
     physicalBodyHeight,
+    // 追加(監査 M-05): scrollToBottom() 直後の末尾再補正を行高実測モードに限るための判定です。
+    measuredRowHeights: autoHeightActive || detailActive,
     rows,
     isServerSide,
     serverSideRefresh: serverSide.refresh,
