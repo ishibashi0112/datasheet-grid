@@ -170,3 +170,99 @@ describe('editController', () => {
     expect(t3.args.onRowsChange).toHaveBeenCalledTimes(1);
   });
 });
+
+// 追加(編集確定後のフォーカス奪取): commit / cancel 後の rAF でグリッドへフォーカスを戻すのは、フォーカスが
+//   どこにもない(body)かグリッドのルート内のときだけ。グリッド外の要素へ移っていれば(エディタの blur で確定した
+//   = クリック先の入力欄)戻さない。
+describe('editController: 確定 / 取消後のフォーカス復帰', () => {
+  afterEach(() => {
+    document.body.innerHTML = '';
+  });
+
+  const mountDom = () => {
+    const root = document.createElement('div');
+    root.tabIndex = 0;
+    const editor = document.createElement('input');
+    root.appendChild(editor);
+    const card = document.createElement('div');
+    card.setAttribute('data-ssg-detail', '');
+    const cardInput = document.createElement('input');
+    card.appendChild(cardInput);
+    root.appendChild(card);
+    const outside = document.createElement('input');
+    document.body.append(root, outside);
+    return { root, editor, cardInput, outside };
+  };
+
+  const setup = () => {
+    const dom = mountDom();
+    const c = createEditController<Row>();
+    const t = makeArgs([{ id: 1, qty: 1 }, { id: 2, qty: 2 }], { row: 0, col: 0 });
+    c.update({ ...t.args, gridRootRef: { current: dom.root } });
+    return { ...dom, c, t };
+  };
+
+  const flushRaf = () => {
+    for (const cb of rafCallbacks.splice(0)) cb(0);
+  };
+
+  it('フォーカスがどこにもない(body)ならグリッドへ戻す(Enter / Tab / Escape でエディタが外れた直後)', () => {
+    const { root, c, t } = setup();
+    expect(c.commitEdit('3', 'down')).toEqual({ status: 'committed' });
+    expect(document.activeElement).toBe(document.body);
+    flushRaf();
+    expect(document.activeElement).toBe(root);
+    expect(t.args.editorActionGuardRef.current).toBe(false);
+  });
+
+  it('フォーカスがグリッドのルート内(まだ残っているエディタ)ならグリッドへ戻す', () => {
+    const { root, editor, c } = setup();
+    editor.focus();
+    c.commitEdit('3', 'right');
+    flushRaf();
+    expect(document.activeElement).toBe(root);
+  });
+
+  it('グリッド外の要素へフォーカスが移っていれば戻さない(blur で確定 = クリック先の入力欄から奪わない)', () => {
+    const { outside, c, t } = setup();
+    outside.focus();
+    expect(c.commitEdit('3')).toEqual({ status: 'committed' });
+    flushRaf();
+    expect(document.activeElement).toBe(outside);
+    // 書き込み / アクティブセル / 再入抑止の解除は従来どおり。
+    expect(t.args.onRowsChange).toHaveBeenCalledTimes(1);
+    expect(t.dispatch.mock.calls.some(([a]) => a.type === 'cell/activate')).toBe(true);
+    expect(t.args.editorActionGuardRef.current).toBe(false);
+  });
+
+  it('cancelEdit も同じ(グリッド外なら戻さない / body なら戻す)', () => {
+    const { root, outside, c, t } = setup();
+    outside.focus();
+    c.cancelEdit();
+    flushRaf();
+    expect(document.activeElement).toBe(outside);
+    expect(t.args.editorActionGuardRef.current).toBe(false);
+
+    outside.blur();
+    c.cancelEdit();
+    flushRaf();
+    expect(document.activeElement).toBe(root);
+  });
+
+  it('確定時に編集不可だった(RD-6 の取消経路)ときも、グリッド外のフォーカスは奪わない', () => {
+    const { root, outside, c, t } = setup();
+    c.update({ ...t.args, gridRootRef: { current: root }, readOnly: true });
+    outside.focus();
+    expect(c.commitEdit('3')).toEqual({ status: 'noop' });
+    flushRaf();
+    expect(document.activeElement).toBe(outside);
+  });
+
+  it('展開行カード内のフォーカスは従来どおり奪わない', () => {
+    const { cardInput, c } = setup();
+    cardInput.focus();
+    c.commitEdit('3');
+    flushRaf();
+    expect(document.activeElement).toBe(cardInput);
+  });
+});

@@ -42,9 +42,15 @@ beforeEach(() => {
     return rafCallbacks.length;
   });
 });
+// setup が body へ足したグリッド root です。テスト間で前のテストの root にフォーカスが残らないよう
+//   afterEach で外します(確定後の復帰は「フォーカスがグリッド外 = 別の root にあれば奪わない」ため)。
+const mountedRoots: HTMLElement[] = [];
 afterEach(() => {
   vi.unstubAllGlobals();
   cleanup();
+  for (const root of mountedRoots.splice(0)) {
+    root.remove();
+  }
 });
 const flushRaf = () => {
   const pending = rafCallbacks;
@@ -61,6 +67,7 @@ const setup = (editingCell: { row: number; col: number } | null, serverSide = fa
   const root = document.createElement('div');
   root.tabIndex = 0;
   document.body.appendChild(root);
+  mountedRoots.push(root);
   const gridRootRef = { current: root };
   const editorActionGuardRef = { current: false };
   const view = renderHook(() =>

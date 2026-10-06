@@ -68,6 +68,27 @@ type EditIdentity = {
   cell: CellCoord;
 };
 
+// 追加(編集確定後のフォーカス奪取): commit / cancel 後の rAF でグリッドへフォーカスを戻してよいかです。
+//   - どこにもない(null / body)→ 戻す。Enter / Tab / Escape で確定・取消してエディタが外れた直後はここ。
+//   - グリッドのルート内(まだ残っているエディタ / セルのクリックでフォーカスを受けたルート / imeDirectInput
+//     の入力受け)→ 戻す(ルートへの focus は imeDirectInput 有効時は入力受けへ回る)。
+//   - グリッド外の要素(上部バーの入力欄 / ページ内の別フォーム / 別のグリッド)→ 戻さない。エディタの blur で
+//     確定したとき、クリック先の入力欄からフォーカスを奪い返さない(ポップオーバーの監査 C-3 と同じ方針)。
+//   - 展開行カード内(ルート内だが消費側の UI)→ 従来どおり奪わない。
+const shouldRestoreFocusAfterEdit = (root: HTMLElement): boolean => {
+  if (isFocusInsideDetailCard()) {
+    return false;
+  }
+  const doc = root.ownerDocument;
+  const active = doc.activeElement;
+  return (
+    active === null ||
+    active === doc.body ||
+    active === doc.documentElement ||
+    root.contains(active)
+  );
+};
+
 export const createEditController = <T extends object>(): EditController<T> => {
   let args: EditControllerArgs<T> | null = null;
   let identity: EditIdentity | null = null;
@@ -167,17 +188,18 @@ export const createEditController = <T extends object>(): EditController<T> => {
     args.dispatch(gridActions.startEdit(cell));
   };
 
-  // commit / cancel 直後の後処理(rAF): フォーカスをグリッドへ戻し(展開行カード内にフォーカスがある
-  //   場合は奪わない)、必要なら隣接セルへ移動してから再入抑止を解除します。ガードを立てるのは
-  //   呼び出し側(旧実装と同じ順序を保つため)。
+  // commit / cancel 直後の後処理(rAF): フォーカスをグリッドへ戻し(グリッド外 / 展開行カード内に
+  //   フォーカスがある場合は奪わない = shouldRestoreFocusAfterEdit)、必要なら隣接セルへ移動してから
+  //   再入抑止を解除します。ガードを立てるのは呼び出し側(旧実装と同じ順序を保つため)。
   const scheduleAfterEdit = (nextCell: CellCoord | null) => {
     const current = args;
     if (current === null) {
       return;
     }
     requestAnimationFrame(() => {
-      if (!isFocusInsideDetailCard()) {
-        current.gridRootRef.current?.focus();
+      const root = current.gridRootRef.current;
+      if (root !== null && shouldRestoreFocusAfterEdit(root)) {
+        root.focus();
       }
       if (nextCell !== null && args !== null) {
         // 行数 / 列数は rAF 時点の最新 args で clamp します(旧 boundsRef 相当)。
