@@ -87,6 +87,7 @@ const layerElement = (
     onRowHeaderPointerLeave={() => {}}
     onCellPointerDown={() => {}}
     onCellPointerEnter={() => {}}
+    onCellClick={() => {}}
     onCellDoubleClick={() => {}}
     renderCellContent={(row, _rowIndex, column) => (
       <span>{String((row as Record<string, unknown>)[column.key] ?? '')}</span>

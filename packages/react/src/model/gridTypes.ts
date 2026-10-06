@@ -34,6 +34,13 @@ export type SpreadsheetGridSlotContext<T> = Core.SpreadsheetGridSlotContext<T, R
 export type GridContextMenuTarget<T> = Core.GridContextMenuTarget<T, ReactGridTypes>;
 /** `getContextMenuItems` / `onContextMenuOpen` へ渡る右クリックの文脈。 */
 export type GridContextMenuParams<T> = Core.GridContextMenuParams<T, ReactGridTypes>;
+// 追加(G-1): セル操作の通知(onCellClick / onCellDoubleClick / onActiveCellChange)の引数型です。
+/** セル操作の通知(`onCellClick` / `onCellDoubleClick` / `onActiveCellChange`)が指すデータセル。 */
+export type GridCellRef<T> = Core.GridCellRef<T, ReactGridTypes>;
+/** `onCellClick` の引数(`GridCellRef` + DOM 標準の `MouseEvent`)。 */
+export type GridCellEventParams<T> = Core.GridCellEventParams<T, ReactGridTypes>;
+/** `onCellDoubleClick` の引数(`GridCellEventParams` + 既定の動作を止める `preventDefault()`)。 */
+export type GridCellDoubleClickParams<T> = Core.GridCellDoubleClickParams<T, ReactGridTypes>;
 /** スクロール位置インジケーターの設定(`scrollHint` prop)。各フィールドの説明は JSDoc と同梱の `API_REFERENCE.md`。 */
 export type ScrollHintOptions<T = unknown> = Core.ScrollHintOptions<T, ReactGridTypes>;
 export type GridContextMenuActionItem = Core.GridContextMenuActionItem<ReactGridTypes>;

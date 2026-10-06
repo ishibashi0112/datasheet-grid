@@ -85,14 +85,16 @@ export type PointerInteractionsArgs<T> = {
   enableRowSelection: boolean;
   onGutterRowSelect: (viewIndex: number, opts: { shiftKey: boolean }) => void;
   onGutterRowSelectDrag: (viewIndex: number) => void;
-  onCellDoubleClickRef: ReadonlyRef<(cell: CellCoord) => void>;
+  // 変更(G-1): ダブルクリック元のイベント(mouse = dblclick / touch = ダブルタップを離した pointerup)も渡します
+  //   (onCellDoubleClick の params.event)。
+  onCellDoubleClickRef: ReadonlyRef<(cell: CellCoord, event: MouseEvent) => void>;
 };
 
 export type PointerInteractionsController<T> = {
   update: (args: PointerInteractionsArgs<T>) => void;
   updateSelectionFromPointer: (clientX: number, clientY: number) => void;
   handleCellPointerDown: (cell: CellCoord, event: GridPointerEventLike) => void;
-  handleCellDoubleClick: (cell: CellCoord) => void;
+  handleCellDoubleClick: (cell: CellCoord, event: MouseEvent) => void;
   handleCellPointerEnter: (cell: CellCoord, event: GridPointerEventLike) => void;
   handleNativeDragStart: (event: { preventDefault: () => void }) => void;
   handleRowHeaderPointerDown: (rowIndex: number, event: GridPointerEventLike) => void;
@@ -199,7 +201,8 @@ export const createPointerInteractionsController = <T,>(): PointerInteractionsCo
   };
 
   // タッチのタップ確定(pointerup 時)。同一セルの連続タップはダブルクリック相当。
-  const commitTouchTap = (pending: PendingTouchTap, time: number) => {
+  const commitTouchTap = (pending: PendingTouchTap, event: PointerEvent) => {
+    const time = event.timeStamp;
     if (args === null) {
       return;
     }
@@ -215,7 +218,7 @@ export const createPointerInteractionsController = <T,>(): PointerInteractionsCo
         time - last.time < TOUCH_DOUBLE_TAP_MS
       ) {
         lastTouchTap = null;
-        onCellDoubleClickRef.current(target.cell);
+        onCellDoubleClickRef.current(target.cell, event);
         return;
       }
       lastTouchTap = { cell: target.cell, time };
@@ -267,7 +270,7 @@ export const createPointerInteractionsController = <T,>(): PointerInteractionsCo
         Math.abs(event.clientX - pending.x) < TOUCH_TAP_SLOP_PX &&
         Math.abs(event.clientY - pending.y) < TOUCH_TAP_SLOP_PX
       ) {
-        commitTouchTap(pending, event.timeStamp);
+        commitTouchTap(pending, event);
       }
     }
     endAllDrags();
@@ -544,12 +547,12 @@ export const createPointerInteractionsController = <T,>(): PointerInteractionsCo
     args.dispatch(gridActions.updateColumnSelection(colIndex));
   };
 
-  const handleCellDoubleClick = (cell: CellCoord) => {
+  const handleCellDoubleClick = (cell: CellCoord, event: MouseEvent) => {
     // タッチ由来の native dblclick は無視(タップ確定側でダブルタップを処理済み)。
     if (lastPointerType === 'touch' || args === null) {
       return;
     }
-    args.onCellDoubleClickRef.current(cell);
+    args.onCellDoubleClickRef.current(cell, event);
   };
 
   return {

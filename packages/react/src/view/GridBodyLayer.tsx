@@ -12,6 +12,8 @@ import type { SelectionSnapshot } from '@ishibashi0112/spreadsheet-grid-core/mod
 import type {
   CellCoord,
   CellRenderState,
+  // 追加(G-3): cellClassName の関数版と cellNote で共有するセルのコンテキスト型です。
+  CellStyleContext,
   GridColumn,
   // 追加(grouping ③): グループ行の記述子型です(rowModel.getGroupRow が返す)。
   GridGroupRow as GridGroupRowDescriptor,
@@ -33,6 +35,8 @@ import { resolveIsRowSelected } from '@ishibashi0112/spreadsheet-grid-core/logic
 // 追加: 省略時ツールチップのマーカー付与判定(純関数)です。
 import { shouldMarkCellOverflowTooltip } from '@ishibashi0112/spreadsheet-grid-core/logic/cellOverflowTooltip';
 import { getInvalidMessage } from '@ishibashi0112/spreadsheet-grid-core/logic/validation';
+// 追加(G-3): セルのメモ(cellNote)の正規化と、ツールチップ文言(エラー → 改行 → メモ)の合成です。
+import { normalizeCellNote, resolveCellTooltipText } from '@ishibashi0112/spreadsheet-grid-core/logic/cellNote';
 import { RowSelectionCheckbox } from './RowSelectionCheckbox';
 // 追加(label-row ②): ラベル行(帯 + sticky な中身)です。
 import { GridBodyLabelRow, type GridBodyLabelRowRenderContent } from './GridBodyLabelRow';
@@ -148,7 +152,10 @@ type GridBodyRowProps<T> = {
     cell: CellCoord,
     event: PointerEvent<HTMLDivElement>,
   ) => void;
-  onCellDoubleClick: (cell: CellCoord) => void;
+  // 追加(G-1): セルの click(onCellClick の通知口。参照恒久安定)。event は DOM 標準の MouseEvent(nativeEvent)。
+  onCellClick: (cell: CellCoord, event: MouseEvent) => void;
+  // 変更(G-1): ダブルクリック元の DOM 標準 MouseEvent も渡します(onCellDoubleClick の params.event)。
+  onCellDoubleClick: (cell: CellCoord, event: MouseEvent) => void;
   // 変更(11-A): セル状態(cellState)は行側で算出し、第5引数で引き渡します。
   //             これにより親の renderCellContent は uiState 非依存になり、
   //             選択操作で参照が変わらなくなります。
@@ -204,6 +211,7 @@ function GridBodyRowInner<T>({
   onRowHeaderPointerLeave,
   onCellPointerDown,
   onCellPointerEnter,
+  onCellClick,
   onCellDoubleClick,
   renderCellContent,
   rowClassName,
@@ -307,26 +315,32 @@ function GridBodyRowInner<T>({
         //   条件付き / スロットで確実に上書きするには連結セレクタを推奨。列 cellClassName が関数のときだけ
         //   値解決(getCellValue)します(未指定列は無コスト)。
         // 変更(slot-props): 返り値は string | { className, style }。style はセルへインライン付与。
-        let conditionalCellSlot: GridSlotProps | undefined;
+        // 変更(G-3): コンテキストは cellClassName の関数版と cellNote で共有し、どちらかが指定された列だけ
+        //   1 回組み立てます(未指定列は従来どおり無コスト)。
         const columnCellClassName = column.cellClassName;
-        if (columnCellClassName) {
-          conditionalCellSlot =
-            typeof columnCellClassName === 'function'
-              ? columnCellClassName({
-                  row,
-                  rowIndex,
-                  // 追加(context 拡張): source 行基準の突き合わせ用(view index と別空間)。
-                  sourceRowIndex,
-                  rowKey,
-                  colIndex,
-                  value: getCellValue(row, column),
-                  column,
-                  isActive,
-                  isSelected,
-                  isEditing,
-                  readOnly: readOnlyCell,
-                })
-              : columnCellClassName;
+        const columnCellNote = column.cellNote;
+        const styleContext: CellStyleContext<T> | null =
+          typeof columnCellClassName === 'function' || columnCellNote
+            ? {
+                row,
+                rowIndex,
+                // 追加(context 拡張): source 行基準の突き合わせ用(view index と別空間)。
+                sourceRowIndex,
+                rowKey,
+                colIndex,
+                value: getCellValue(row, column),
+                column,
+                isActive,
+                isSelected,
+                isEditing,
+                readOnly: readOnlyCell,
+              }
+            : null;
+        let conditionalCellSlot: GridSlotProps | undefined;
+        if (typeof columnCellClassName === 'function') {
+          conditionalCellSlot = styleContext ? columnCellClassName(styleContext) : undefined;
+        } else {
+          conditionalCellSlot = columnCellClassName;
         }
         const conditionalCell = resolveSlotProps<CSSProperties>(conditionalCellSlot);
         // 追加(validation): mark 表示の導出です。validate 指定列だけ値解決して評価します
@@ -339,6 +353,12 @@ function GridBodyRowInner<T>({
           showValidationMarks && column.validate
             ? getInvalidMessage(column, row, getCellValue(row, column))
             : null;
+        // 追加(G-3): セルのメモ(右上の印 + ツールチップ)。ツールチップは入力エラーと同じ data-ssg-tooltip を
+        //   使い、両方あれば「エラー → 改行 → メモ」の順につなぎます(静的な文言のため、メモのあるセルでは
+        //   省略時の全文ツールチップよりメモが優先されます)。
+        const cellNote =
+          columnCellNote && styleContext ? normalizeCellNote(columnCellNote(styleContext)) : null;
+        const tooltipText = resolveCellTooltipText(invalidMessage, cellNote);
 
         const cellClassName = cx(
           'ssg-body-cell',
@@ -348,6 +368,7 @@ function GridBodyRowInner<T>({
           isAutoHeightCell && 'ssg-body-cell--autoheight',
           readOnlyCell && !isSelected && 'ssg-body-cell--readonly',
           invalidMessage !== null && 'ssg-body-cell--invalid',
+          cellNote !== null && 'ssg-body-cell--has-note',
           isRowHovered && 'ssg-body-cell--row-hovered',
           rowClassName,
           conditionalCell.className,
@@ -375,7 +396,7 @@ function GridBodyRowInner<T>({
             key={`${String(rowKey)}-${column.key}`}
             data-ssg-col-key={column.key}
             data-autoheight-cell={isAutoHeightCell ? '' : undefined}
-            data-ssg-tooltip={invalidMessage ?? undefined}
+            data-ssg-tooltip={tooltipText ?? undefined}
             data-ssg-tooltip-overflow={markOverflowTooltip ? '' : undefined}
             className={cellClassName}
             onPointerDown={(event) =>
@@ -384,8 +405,13 @@ function GridBodyRowInner<T>({
             onPointerEnter={(event) =>
               onCellPointerEnter({ row: rowIndex, col: colIndex }, event)
             }
-            onDoubleClick={() =>
-              onCellDoubleClick({ row: rowIndex, col: colIndex })
+            // 追加(G-1): click は押した位置と離した位置が同じセルのときだけここへ届きます(別のセルで離すと共通の
+            //   親で発火する)ため、範囲選択のドラッグはクリック扱いになりません。左ボタンのみ(仕様)。
+            onClick={(event) =>
+              onCellClick({ row: rowIndex, col: colIndex }, event.nativeEvent)
+            }
+            onDoubleClick={(event) =>
+              onCellDoubleClick({ row: rowIndex, col: colIndex }, event.nativeEvent)
             }
             style={{
               // 追加(slot-props): スロット / 行 / セルの style を先に展開し、座標 / 寸法はグリッドが後勝ち。
@@ -855,7 +881,9 @@ type GridBodyLayerProps<T> = {
     cell: CellCoord,
     event: PointerEvent<HTMLDivElement>,
   ) => void;
-  onCellDoubleClick: (cell: CellCoord) => void;
+  // 追加(G-1): セルの click(データ行のセルのみ配線。スケルトン / グループ / ラベル行には付けない)。
+  onCellClick: (cell: CellCoord, event: MouseEvent) => void;
+  onCellDoubleClick: (cell: CellCoord, event: MouseEvent) => void;
   renderCellContent: (
     row: T,
     rowIndex: number,
@@ -913,6 +941,7 @@ export function GridBodyLayer<T>({
   onRowHeaderPointerLeave,
   onCellPointerDown,
   onCellPointerEnter,
+  onCellClick,
   onCellDoubleClick,
   renderCellContent,
   getRowClassName,
@@ -1122,6 +1151,7 @@ export function GridBodyLayer<T>({
             onRowHeaderPointerLeave={onRowHeaderPointerLeave}
             onCellPointerDown={onCellPointerDown}
             onCellPointerEnter={onCellPointerEnter}
+            onCellClick={onCellClick}
             onCellDoubleClick={onCellDoubleClick}
             renderCellContent={renderCellContent}
             rowClassName={rowSlot.className}

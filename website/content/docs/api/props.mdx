@@ -35,6 +35,7 @@ description: SpreadsheetGridProps<T> の全 prop と既定値
 | `undoHistoryLimit` | `number` | `100` | 保持する undo ステップ数の上限。超過分は古い順に破棄。 |
 | `enableClearOnDelete` | `boolean` | `true` | `Delete` / `Backspace` キーによる選択セル(なければアクティブセル)の値クリア。`false` でキーは何もしない(素通し)。ペースト・エディタでの上書き・undo/redo には影響しない(クリアのキーボード操作だけの opt-out)。 |
 | `editorEnterMove` | `EditorEnterMove` | `'down'` | 組み込みエディタ(text / number / select / date)の `Enter` 確定後にアクティブセルをどこへ移すか(`'down'` \| `'up'` \| `'right'` \| `'left'` \| `'none'`。Excel の「Enter キーを押したら、セルを移動する(方向)」相当)。`'none'` は移動せずその場に留まる。`Tab` / `Shift+Tab`(右 / 左)と `Escape` には影響しない。custom エディタはキーバインドが consumer 責務のため対象外(`ctx.commit(value, direction)` の direction で指定)。 |
+| `imeDirectInput` | `boolean` | `false` | **IME オンのままの直接入力**(Excel / SPREAD と同じ)。`true` で、編集していないあいだグリッドのフォーカスをアクティブセル上の透明な入力欄(入力受け)に置き、IME の変換をそこで始める。text エディタ(`editor` 未指定 / `type: 'text'`)の編集可能セルでは変換中の文字をセルの上に表示し、変換を確定すると確定した文字列を初期値に編集を始める(もう一度 `Enter` でセルを確定して移動)。それ以外の列(number / select / date / checkbox / custom)と読み取り専用セルでは変換を捨てる(従来どおり何も入らない)。キー操作 / コピー・貼り付け / `Tab` は従来どおり。既定 OFF の理由: 有効中はグリッドにフォーカスがあるあいだ `document.activeElement` が入力欄になり、入力欄では反応しないアプリのショートカット(例: Mantine の `useHotkeys` の既定)が効かなくなるため。詳細は「IME オンのままの直接入力」節。 |
 | `onUndoRedoStateChange` | `(state: { canUndo, canRedo }) => void` | — | undo / redo 可能状態が**変化したとき**に呼ばれる(ツールバーの undo/redo ボタンの disabled 表示などリアクティブな UI 用)。初回マウントでは発火せず、同値では再発火しない。毎レンダーのインライン関数でも問題ない。 |
 | `enableRangeSelection` | `boolean` | `true` | 複数セル範囲選択。 |
 | `enableRowSelection` | `boolean` | `false` | チェックボックス行選択の有効化(マスタースイッチ)。`true` で行ヘッダ(行NO)ガターが行選択のヒット領域になり、Excel 風のガター起点セル範囲選択は off(ボディ側セルのドラッグ範囲選択は不変)。判定は O(1)・全選択は除外集合でキーを列挙しない(1M 行でも一定コスト)。 |
@@ -58,6 +59,9 @@ description: SpreadsheetGridProps<T> の全 prop と既定値
 | `enableRowHover` | `boolean` | `true` | 行ホバー時に行全体を薄くハイライト。 |
 | `hoveredRowIndex` | `number \| null` | — | 行ホバーの controlled 値(ビュー行 index / `null` = ホバーなし)。指定時は内部 state を使わずこの値でハイライトし、pointer 由来の変化は `onHoveredRowChange` で通知のみ(optionally controlled)。`enableRowHover: false` のときは無視(ハイライトも通知もしない)。一時的な UI 状態のため `GridState` / ハンドルには載らない。 |
 | `onHoveredRowChange` | `(viewRowIndex: number \| null, ctx: { source: 'pointer' }) => void` | — | 行ホバーが変わったときの通知(uncontrolled でも呼ばれる)。`viewRowIndex` はフィルター / ソート適用後のビュー行 index。同値では発火しない(pointerenter は同一行内のセル跨ぎでも来るため)。用途: 複数グリッド間のホバー同期など。 |
+| `onCellClick` | `(params: GridCellEventParams<T>) => void` | — | データセル(データ行 × 利用側の列)のクリックで呼ばれる。左ボタンのみで、押した位置と離した位置が同じセルのときだけ呼ばれる(範囲選択のドラッグはクリック扱いにしない)。読み取り専用セルでも呼ばれ、セル内の要素(checkbox 等)のクリックもそのセルのクリックとして通知する。`params` は `GridCellRef<T>`(`{ row, rowKey, rowIndex, sourceRowIndex, column, columnKey, colIndex, value }`)+ `event`(DOM 標準の `MouseEvent`)。列ヘッダー / 行番号 / グループ行 / ラベル行 / 展開行 / SSRM の未ロード行 / 合成列(展開トグル・行ドラッグハンドル)では呼ばれない。インライン関数可。詳細は「セル操作の通知」節。 |
+| `onCellDoubleClick` | `(params: GridCellDoubleClickParams<T>) => void` | — | データセルのダブルクリック(タッチのダブルタップ含む)で、既定の動作(編集可能セルなら編集開始)の前に呼ばれる。読み取り専用セルでも呼ばれる。`params.preventDefault()` で既定の動作を止められる(`params.event.preventDefault()` では止まらない)。対象のセルは `onCellClick` と同じ。インライン関数可。 |
+| `onActiveCellChange` | `(cell: GridCellRef<T> \| null) => void` | — | アクティブセルが変わったときに呼ばれる(クリック / キー操作 / `setActiveCell` など由来を問わない)。アクティブセルが無くなった / データセル以外(グループ行 / ラベル行 / 未ロード行 / 合成列)へ移ったときは `null`。行キー・列キー・位置(`rowIndex` / `colIndex`)がすべて同じなら呼ばれない(同じセルへの再設定)。座標が同じでも、ソートなどでその位置の行が変われば呼ばれる。初回マウントでは呼ばれない。通知はペイント後(クリックでは `onCellClick` より先)。インライン関数可。 |
 | `enableColumnHeaderHover` | `boolean` | `true` | 列ヘッダーのホバー時にヘッダーセルを薄くハイライト。 |
 | `noMatchingRowsText` | `string` | `'一致する行がありません'` | フィルター結果 0 行時のオーバーレイ文言。 |
 | `noRowsText` | `string` | `'表示する行がありません'` | rows が 0 件のときの文言。 |
@@ -115,6 +119,46 @@ description: SpreadsheetGridProps<T> の全 prop と既定値
 `showTopBarSummary` と `showTopBarFilter`(実効は `showTopBarFilter && enableGlobalFilter`)がともに `false` の場合、既定トップバーは描画されない(空バーを出さない)。
 
 ボトムバーは Rows / Columns 件数のみ `showBottomBarCounts` で出し分けできる(右側の Active / Selection / 選択統計 / Cols は対象外)。それ以外の内訳を変えたい場合は `renderBottomBar` を使う。
+
+### セル操作の通知(`onCellClick` / `onCellDoubleClick` / `onActiveCellChange`)
+
+データセルのクリック / ダブルクリック / アクティブセルの変化を受け取る通知口。3 つとも省略可で、指定しなければ従来どおり(グリッドの既定の動作は変わらない)。
+
+- **渡るもの**: `GridCellRef<T> = { row, rowKey, rowIndex, sourceRowIndex, column, columnKey, colIndex, value }`。行は index ではなく**行データ `row` と `rowKey` を主に使う**(`rowIndex` はフィルター / ソート後の表示位置 = `handle.selectCell` と同じ空間、`sourceRowIndex` は元 `rows` の index、`colIndex` は論理列 index)。`value` はセルの生値(`getValue` 指定列はその戻り値。`valueFormatter` 適用前)。クリック / ダブルクリックには `event`(DOM 標準の `MouseEvent`。React の合成イベントではない)が付く。修飾キー(`ctrlKey` / `shiftKey` / `metaKey` / `altKey`)はここから読む。
+- **対象**: データ行 × 利用側の列のセルだけ。列ヘッダー / 行番号「#」/ グループ行 / ラベル行 / 展開行の帯 / SSRM の未ロード行(スケルトン)/ 合成列(展開トグル列・行ドラッグハンドル列・自動グループ列)ではクリック / ダブルクリックを通知せず、アクティブセルがこれらへ移ったときの `onActiveCellChange` は `null`。
+- **クリックの判定**: ブラウザの `click` イベントに従う。左ボタンのみで、押したセルと離したセルが違う(範囲選択のドラッグ)ときは呼ばれない。セル内に置いた自前の要素のクリックもそのセルのクリックとして届くため、セルの通知に含めたくない要素は自分で `event.stopPropagation()` する。
+- **順番**: マウスで別のセルをクリックすると `onActiveCellChange`(pointerdown でアクティブセルが移った分)→ `onCellClick` の順。ダブルクリックはブラウザの仕様どおり `onCellClick` × 2 → `onCellDoubleClick` の順。
+- **ダブルクリックの既定の動作**: 編集可能セルなら編集開始、checkbox 列・読み取り専用セルは何もしない。`params.preventDefault()` でこれを止められる(`F2` / `Enter` / 印字キーでの編集開始には影響しない)。
+
+```tsx
+// 読み取り専用の一覧: 行をクリックしたら上の入力フォームへ写す。
+<SpreadsheetGrid<Row>
+  rows={rows}
+  columns={columns}
+  readOnly
+  rowKeyGetter={(row) => row.id}
+  onCellClick={({ row }) => form.setValues(row)}
+/>
+
+// 選択モーダル: ダブルクリックした行で確定して閉じる。
+<SpreadsheetGrid<Row> rows={rows} columns={columns} readOnly onCellDoubleClick={({ row }) => onConfirm(row)} />
+
+// 「件名」セルだけダブルクリックでモーダルを開き、他のセルは従来どおり編集を始める。
+<SpreadsheetGrid<Row>
+  rows={rows}
+  columns={columns}
+  onRowsChange={setRows}
+  onCellDoubleClick={(params) => {
+    if (params.columnKey === 'subject') {
+      params.preventDefault();
+      openSubjectPicker(params.rowKey);
+    }
+  }}
+/>
+
+// キー操作での移動も含めて、アクティブセルの行を詳細パネルへ出す。
+<SpreadsheetGrid<Row> rows={rows} columns={columns} onActiveCellChange={(cell) => setDetail(cell?.row ?? null)} />
+```
 
 ### コンテキストメニュー(`enableContextMenu` / `getContextMenuItems`)
 
@@ -386,6 +430,22 @@ const [rows, setRows] = useState(initialRows);
 - **将来拡張**: ドラッグ中に周囲の行がリアルタイムに退避する見せ方(`rowDragMotion: 'live'` 相当)は、スロット解決を共有したまま表示側だけ差し替えられる設計にしてあります(未実装)。
 - **スタイル**: `.ssg-row-drag-handle`(+ `--disabled`)/ `.ssg-body-cell--row-drag-handle` / `.ssg-row-drop-indicator` / ドラッグ中の行 `.ssg-body-row[data-ssg-row-dragging]`。色はトークン(`--ssg-drop-indicator` / `--ssg-glyph-*` / `--ssg-ghost-*`)です。
 
+### IME オンのままの直接入力(`imeDirectInput`)
+
+既定では、セルを選んだ状態で IME をオンにしたまま文字を打つと、変換が始まらず打った文字が失われます(編集していないあいだのフォーカスが入力欄ではない要素にあるため。`F2` / `Enter` / ダブルクリックで編集を始めた後の IME は問題ありません)。`imeDirectInput` を `true` にすると、Excel / SPREAD と同じく IME オンのまま打ち始められます。
+
+```tsx
+<SpreadsheetGrid rows={rows} columns={columns} onRowsChange={setRows} imeDirectInput />
+```
+
+- **動き**: 編集していないあいだ、グリッドのフォーカスはアクティブセルの上の透明な入力欄(入力受け)にあります。日本語を打ち始めると変換中の文字がセルの上にエディタと同じ見た目で表示され、変換を確定(`Enter` / 候補の確定)すると確定した文字列を初期値に編集が始まります。そのまま続けて入力でき、もう一度 `Enter` でセルを確定して移動します(移動先は `editorEnterMove`)。変換を取り消した(`Escape` で空にした)ときは編集を始めません。
+- **対象**: text エディタ(`editor` 未指定 / `type: 'text'`)の編集可能なデータセル。number / select / date / checkbox / custom の列、読み取り専用セル、グループ行 / ラベル行、SSRM の未ロード行では変換を捨てます(従来どおり何も入りません)。
+- **変わらないもの**: 矢印 / `Tab` / `Enter` / `F2` / `Delete` / `Ctrl+C` / 貼り付け / undo などのキー操作、IME を使わない文字キーでの編集開始(その 1 文字が初期値)、端の列の `Tab` でグリッド外へ出る動き。変換中のキー(候補の選択など)はグリッドでは扱いません。
+- **変換中にクリックしたとき**: 変換中に別のセルやグリッド外をクリックすると、変換中の文字は入力されません(確定してから移動してください)。クリックした先のフォーカスは奪いません。
+- **フォーカス**: 有効中は `document.activeElement` が入力受け(`input[data-ssg-ime-input]`)になります。グリッドにフォーカスがあるかを `gridElement.contains(document.activeElement)` で判定している場合は従来どおり動きますが、「入力欄にフォーカスがあるときは無効」になるショートカット(Mantine の `useHotkeys` の既定など)はグリッド上で効かなくなります。これが既定 OFF の理由です。
+- **タッチが主のデバイス**(スマホ / タブレット): 入力受けに `inputmode="none"` を付け、セルのタップで仮想キーボードが開かないようにしています(従来どおり)。
+- **確認状況**: Chromium(Chrome / Edge / WebView2 と同じエンジン)で、DevTools Protocol の変換イベント(`Input.imeSetComposition` / `Input.insertText`)を使って確認しています。OS の IME そのもの(Windows の MS-IME など)での最終確認は実機で行ってください。
+
 ### キーボード操作
 
 グリッド本体フォーカス中(編集中でない)の操作一覧。フィルター入力等のフォーム要素にフォーカス中は無効。
@@ -401,6 +461,8 @@ const [rows, setRows] = useState(initialRows);
 | `Ctrl/Cmd+Z` / `Ctrl/Cmd+Shift+Z` / `Ctrl/Cmd+Y` | undo / redo(詳細は命令的 API の「undo / redo」節)。 |
 
 編集エディタ内: `Enter` = 確定して下へ(移動先は `editorEnterMove` で変更可。既定 `'down'`)、`Tab` / `Shift+Tab` = 確定して右 / 左へ、`Escape` = キャンセル、フォーカスアウト = 確定。IME 変換中(`isComposing`)の `Enter` / `Escape` / `Tab` は IME の操作としてのみ扱われ、セル編集の確定 / キャンセルには使われない。
+
+IME オンのまま(編集していないセルで)日本語を打ち始めるには `imeDirectInput` を有効にする(既定 OFF。無効時は変換が始まらず最初の入力が失われる。「IME オンのままの直接入力」節)。
 
 確定後の移動先は「確定を反映した再レンダー後」の行数・列数でクランプされる。このため、`onRowsChange` で末尾に空行を追加する消費側(Excel 的な入力グリッドの定石パターン)では、最終行の `Enter` 確定で「増えた行」へそのまま移動できる。行が増えない場合は従来どおり最終行に留まる。
 
@@ -476,6 +538,7 @@ const s = stylex.create({
 | `.ssg-row-header-cell` | 行ヘッダー「#」セル。 |
 | `.ssg-body-cell--readonly` | 読み取り専用セル(範囲選択に入っていないとき。`dimReadOnlyCells` と独立して常時付与)。 |
 | `.ssg-body-cell--invalid` | validation mark 表示中のセル。 |
+| `.ssg-body-cell--has-note` | セルのメモ(`cellNote`)があるセル(右上の印は `::before`。色は `--ssg-note-indicator`)。 |
 | `.ssg-body-cell--row-hovered` | 行ホバー中のセル(`enableRowHover` 有効時)。 |
 | `.ssg-body-cell--autoheight` | auto-height 列のセル。 |
 | `.ssg-body-cell--align-center` / `.ssg-body-cell--align-right` | `column.align` の水平寄せ。 |
@@ -494,6 +557,7 @@ const s = stylex.create({
 - `DetailRowOptions<T>` / `DetailRowRenderContext<T> = { row, rowKey, rowIndex, sourceRowIndex, collapse }` / `CellDetailContext`(展開行。バレルから公開)
 - `LabelRowOptions<T>` / `LabelRowRenderContext<T> = { row, rowKey, rowIndex, sourceRowIndex, label, sectionRowCount }` / `GridLabelRow<T> = { kind: 'label', row, sourceIndex, label, sectionRowCount }` / `LabelRowSortMode = 'section' | 'follow' | 'hide'`(ラベル行。バレルから公開。「ラベル行(見出し / 区切り行)」節)
 - `RowDragContext = { rowKey, sourceRowIndex }`(`isRowDraggable` の第 2 引数)/ `RowMoveParams<T> = { rowKey, fromIndex, toIndex, rows }`(`onRowMove` の引数。いずれもバレルから公開)
+- `GridCellRef<T> = { row, rowKey, rowIndex, sourceRowIndex, column, columnKey, colIndex, value }`(`onActiveCellChange` の引数)/ `GridCellEventParams<T> = GridCellRef<T> & { event: MouseEvent }`(`onCellClick` の引数。`event` は DOM 標準の `MouseEvent`)/ `GridCellDoubleClickParams<T> = GridCellEventParams<T> & { preventDefault(): void }`(`onCellDoubleClick` の引数。タッチのダブルタップでは `event` は離したときの `PointerEvent`)。いずれもバレルから公開。index の基準は `CellStyleContext` と同じ(「セル操作の通知」節)。
 - `CellStyleContext<T>` = 上記から `setValue` を除いた読み取り専用版(`cellClassName` 関数へ渡る)。バレル(`index.ts`)から公開(`import type { CellStyleContext } from '@ishibashi0112/spreadsheet-grid'`)
   - `rowIndex` は**ビュー行 index**(ソート / フィルター適用後の表示位置)、`sourceRowIndex` は**元 `rows` の index**、`rowKey` は行キー(`rowKeyGetter` 由来、既定は source index)。ソート / フィルター ON の画面で「エラー行 index の集合」など source 基準のデータと突き合わせるときは `sourceRowIndex` / `rowKey` を使う(`getInvalidCells()` の返す `sourceRowIndex` / `rowKey` と同一基準)。serverSide では view 順が正準のため `sourceRowIndex` は view index と同値。
 - `RowStyleContext<T> = { row, rowIndex, sourceRowIndex, rowKey, isSelected }`(`getRowClassName` の第 3 引数。バレルから公開)

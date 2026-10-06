@@ -1,7 +1,14 @@
 // 追加(本体分解 E-6a): 外部通知の配線(ホバー行 / 展開行キー集合 / onStateChange)の単体テストです。
+// 追加(G-1): セル操作の通知(クリック / ダブルクリック / アクティブセル)も検証します。
 import { describe, it, expect, vi } from 'vitest';
-import { createDetailKeysNotifier, createHoverRowNotifier, createStateChangeNotifier } from './notifiers';
-import type { GridColumn } from '../model/gridTypes.unbound';
+import {
+  createActiveCellNotifier,
+  createCellEventNotifier,
+  createDetailKeysNotifier,
+  createHoverRowNotifier,
+  createStateChangeNotifier,
+} from './notifiers';
+import type { GridColumn, RowModel } from '../model/gridTypes.unbound';
 
 describe('createHoverRowNotifier', () => {
   it('同値は抑止し、変化時だけ内部 state 更新 + 通知。controlled では state を更新しない。無効時は何もしない', () => {
@@ -122,5 +129,115 @@ describe('createStateChangeNotifier', () => {
     expect(onSortChange.mock.calls[0][0]).toEqual(sort);
     expect(onSortChange.mock.calls[0][0]).not.toBe(sort);
     expect(onFiltersChange).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('セル操作の通知(G-1)', () => {
+  type Row = { id: string; name: string };
+  const rows: Row[] = [
+    { id: 'a', name: 'alpha' },
+    { id: 'b', name: 'beta' },
+  ];
+  const columns: GridColumn<Row>[] = [{ key: 'name', title: '名前', width: 100 }];
+  const makeModel = (order: number[]): RowModel<Row> => ({
+    getRowCount: () => order.length,
+    getRow: (i) => rows[order[i]],
+    getSourceIndex: (i) => order[i],
+    getRowKey: (i) => rows[order[i]]?.id,
+  });
+
+  describe('createCellEventNotifier', () => {
+    it('クリックをセル参照 + event で通知する。対象外のセル / コールバック未指定では何もしない', () => {
+      const notifier = createCellEventNotifier<Row>();
+      // node 環境のため DOM の MouseEvent は構造だけのダミーで代用します(通知は素通しするだけ)。
+      const event = { type: 'click', ctrlKey: true } as unknown as MouseEvent;
+      // update 前 / 未指定でも落ちない。
+      notifier.handleCellClick({ row: 0, col: 0 }, event);
+      const rowModel = makeModel([1, 0]);
+      notifier.update({ rowModel, orderedColumns: columns, onCellClick: undefined, onCellDoubleClick: undefined });
+      notifier.handleCellClick({ row: 0, col: 0 }, event);
+
+      const onCellClick = vi.fn();
+      notifier.update({ rowModel, orderedColumns: columns, onCellClick, onCellDoubleClick: undefined });
+      notifier.handleCellClick({ row: 0, col: 0 }, event);
+      expect(onCellClick).toHaveBeenCalledTimes(1);
+      expect(onCellClick).toHaveBeenCalledWith(
+        expect.objectContaining({ row: rows[1], rowKey: 'b', rowIndex: 0, sourceRowIndex: 1, columnKey: 'name', event }),
+      );
+      notifier.handleCellClick({ row: 5, col: 0 }, event);
+      expect(onCellClick).toHaveBeenCalledTimes(1);
+    });
+
+    it('ダブルクリックは preventDefault() されたときだけ true を返す', () => {
+      const notifier = createCellEventNotifier<Row>();
+      const event = { type: 'dblclick' } as unknown as MouseEvent;
+      const rowModel = makeModel([0, 1]);
+      notifier.update({ rowModel, orderedColumns: columns, onCellClick: undefined, onCellDoubleClick: undefined });
+      expect(notifier.notifyCellDoubleClick({ row: 0, col: 0 }, event)).toBe(false);
+
+      const observe = vi.fn();
+      notifier.update({ rowModel, orderedColumns: columns, onCellClick: undefined, onCellDoubleClick: observe });
+      expect(notifier.notifyCellDoubleClick({ row: 1, col: 0 }, event)).toBe(false);
+      expect(observe).toHaveBeenCalledWith(expect.objectContaining({ rowKey: 'b', event }));
+
+      notifier.update({
+        rowModel,
+        orderedColumns: columns,
+        onCellClick: undefined,
+        onCellDoubleClick: (params) => params.preventDefault(),
+      });
+      expect(notifier.notifyCellDoubleClick({ row: 1, col: 0 }, event)).toBe(true);
+      // 対象外のセルでは呼ばず、既定の動作も止めない。
+      expect(notifier.notifyCellDoubleClick({ row: 9, col: 0 }, event)).toBe(false);
+    });
+  });
+
+  describe('createActiveCellNotifier', () => {
+    it('初回は通知せず、別のセルになったときだけ通知する(同じセルへの再設定 / 入力の参照不変では呼ばない)', () => {
+      const notifier = createActiveCellNotifier<Row>();
+      const onActiveCellChange = vi.fn();
+      const rowModel = makeModel([0, 1]);
+      notifier.update({ activeCell: { row: 0, col: 0 }, rowModel, orderedColumns: columns, onActiveCellChange });
+      expect(onActiveCellChange).not.toHaveBeenCalled();
+
+      notifier.update({ activeCell: { row: 1, col: 0 }, rowModel, orderedColumns: columns, onActiveCellChange });
+      expect(onActiveCellChange).toHaveBeenLastCalledWith(
+        expect.objectContaining({ row: rows[1], rowKey: 'b', rowIndex: 1, columnKey: 'name' }),
+      );
+      // 同じ座標の新しいオブジェクト(同じセルへの再設定)では呼ばない。
+      notifier.update({ activeCell: { row: 1, col: 0 }, rowModel, orderedColumns: columns, onActiveCellChange });
+      expect(onActiveCellChange).toHaveBeenCalledTimes(1);
+
+      notifier.update({ activeCell: null, rowModel, orderedColumns: columns, onActiveCellChange });
+      expect(onActiveCellChange).toHaveBeenLastCalledWith(null);
+      expect(onActiveCellChange).toHaveBeenCalledTimes(2);
+    });
+
+    it('座標が同じでも行が入れ替わったら通知し、データセル以外へ移ったら null を通知する', () => {
+      const notifier = createActiveCellNotifier<Row>();
+      const onActiveCellChange = vi.fn();
+      const activeCell = { row: 0, col: 0 };
+      notifier.update({ activeCell, rowModel: makeModel([0, 1]), orderedColumns: columns, onActiveCellChange });
+      notifier.update({ activeCell, rowModel: makeModel([1, 0]), orderedColumns: columns, onActiveCellChange });
+      expect(onActiveCellChange).toHaveBeenLastCalledWith(expect.objectContaining({ rowKey: 'b' }));
+      // 行の並びは変わらない新しい rowModel(rows の中身だけ変わった等)では呼ばない。
+      notifier.update({ activeCell, rowModel: makeModel([1, 0]), orderedColumns: columns, onActiveCellChange });
+      expect(onActiveCellChange).toHaveBeenCalledTimes(1);
+      // 範囲外(行数の減少前の一瞬など)= データセル以外。
+      notifier.update({ activeCell: { row: 5, col: 0 }, rowModel: makeModel([1, 0]), orderedColumns: columns, onActiveCellChange });
+      expect(onActiveCellChange).toHaveBeenLastCalledWith(null);
+    });
+
+    it('コールバック未指定のあいだも追跡し、後から付いても過去の変化は通知しない', () => {
+      const notifier = createActiveCellNotifier<Row>();
+      const rowModel = makeModel([0, 1]);
+      notifier.update({ activeCell: null, rowModel, orderedColumns: columns, onActiveCellChange: undefined });
+      notifier.update({ activeCell: { row: 1, col: 0 }, rowModel, orderedColumns: columns, onActiveCellChange: undefined });
+      const onActiveCellChange = vi.fn();
+      notifier.update({ activeCell: { row: 1, col: 0 }, rowModel, orderedColumns: columns, onActiveCellChange });
+      expect(onActiveCellChange).not.toHaveBeenCalled();
+      notifier.update({ activeCell: { row: 0, col: 0 }, rowModel, orderedColumns: columns, onActiveCellChange });
+      expect(onActiveCellChange).toHaveBeenCalledWith(expect.objectContaining({ rowKey: 'a' }));
+    });
   });
 });

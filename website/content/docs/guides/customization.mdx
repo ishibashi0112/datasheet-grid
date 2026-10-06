@@ -34,6 +34,24 @@ description: セル / ヘッダー / トップ・ボトムバー / エディタ 
 - `renderCell` は**表示**の差し替えです。編集(ダブルクリック時のエディタ)は従来どおり `editor` が担当し、共存できます(デモのステータス列 = バッジ表示 + select エディタ)。
 - 表示文字列を変えるだけなら、より軽い [`valueFormatter`](/docs/api/column#値フォーマッタui-表示) を使ってください。条件付きの色付けだけなら [`cellClassName`](/docs/guides/theming#条件付きセルスタイル) が最軽量です。
 
+## セルのメモ(cellNote)
+
+`column.cellNote` が文字列を返したセルの右上に印(三角)を出し、マウスを乗せるとその文字列をツールチップで表示します。FarPoint SPREAD のセルメモ / Excel のメモに当たる機能で、`renderCell` を使わずに「このセルには補足がある」ことを示せます。[プレイグラウンド](/playground)の `cellNote` トグルで試せます。
+
+```tsx
+{
+  key: 'partNo', title: '品番', width: 140,
+  cellNote: ({ row }) =>
+    [row.isNew && '今回の取込で追加された構成です。', row.otherUses > 0 && `他 ${row.otherUses} 箇所でも使用`]
+      .filter(Boolean)
+      .join('\n'),  // \n で改行。空文字なら印は出ない
+}
+```
+
+- 印の色はトークン `--ssg-note-indicator` で変えられます。入力エラー(`validate`)と同じセルでは、エラーの小さい赤い三角がメモの三角の上に重なって両方見え、ツールチップは「エラー → 改行 → メモ」の順になります。
+- 背景色などは従来どおり `cellClassName` で付けます(メモは印とツールチップだけ)。
+- CSV / コピー / エクスポートには含まれません。詳細は [API リファレンス](/docs/api/column#セルのメモcellnote) を参照してください。
+
 ## カスタムヘッダー(renderHeader)
 
 `column.renderHeader` で列ヘッダーのラベル部分を差し替えます(上のデモの「📋 タスク」列)。ソート・メニュー・リサイズなどのヘッダー機能はそのまま維持されます。
@@ -133,6 +151,7 @@ description: セル / ヘッダー / トップ・ボトムバー / エディタ 
 | --- | --- |
 | 表示文字列の整形(3 桁区切りなど) | `valueFormatter` |
 | 条件付きの色・背景 | `cellClassName` + CSS |
+| セルに補足のメモ(右上の印 + ツールチップ) | `cellNote` |
 | セルに独自 UI(バッジ / バー / ボタン) | `renderCell` |
 | 編集 UI そのものを差し替え | `editor: { type: 'custom' }` |
 | ヘッダーラベルの装飾 | `renderHeader` |

@@ -14,6 +14,7 @@ import { createAutoHeightMeasurer, type AutoHeightMeasurer } from '../controller
 import { createScrollSyncController, type ScrollSyncController } from '../controllers/scrollSyncController';
 import { createDebouncedValueStore, type DebouncedValueStore } from '../controllers/debouncedValueStore';
 import { createAutoSizeOnDataTrigger, type AutoSizeOnDataTrigger } from '../controllers/columnAutosizeRunner';
+import { createImeInputController, type ImeInputController } from '../controllers/imeInputController';
 import {
   createColumnResolver,
   createPaneLayoutResolver,
@@ -39,9 +40,13 @@ import {
 import { createRowSelectionCommands, type RowSelectionCommands } from './rowSelectionCommands';
 import { createGridApi, type GridApi } from './gridApi';
 import {
+  createActiveCellNotifier,
+  createCellEventNotifier,
   createDetailKeysNotifier,
   createHoverRowNotifier,
   createStateChangeNotifier,
+  type ActiveCellNotifier,
+  type CellEventNotifier,
   type DetailKeysNotifier,
   type HoverRowNotifier,
   type StateChangeNotifier,
@@ -79,11 +84,16 @@ export type GridEngine<T> = {
   hoverRowNotifier: HoverRowNotifier;
   detailKeysNotifier: DetailKeysNotifier;
   stateChangeNotifier: StateChangeNotifier<T>;
+  // 追加(G-1): セル操作の通知(クリック / ダブルクリック = レイアウト effect で接続、アクティブセル = passive)。
+  cellEventNotifier: CellEventNotifier<T>;
+  activeCellNotifier: ActiveCellNotifier<T>;
   // DOM / タイマーを持つコントローラ。
   autoHeightMeasurer: AutoHeightMeasurer<T>;
   scrollSync: ScrollSyncController;
   serverSideQueryStore: DebouncedValueStore<ServerSideQueryResolution>;
   autoSizeOnData: AutoSizeOnDataTrigger<T>;
+  // 追加(G-2): IME オンのままの直接入力(imeDirectInput)の入力受け。
+  imeInput: ImeInputController;
   // 展開行の rowKey → view index キャッシュ(SSRM の query 変化で reset)。
   detailIndexCache: DetailIndexCacheHolder;
   dispose: () => void;
@@ -114,6 +124,7 @@ export const createGridEngine = <T,>(init: GridEngineInit<T>): GridEngine<T> => 
   const autoHeightMeasurer = createAutoHeightMeasurer<T>();
   const scrollSync = createScrollSyncController();
   const autoSizeOnData = createAutoSizeOnDataTrigger<T>();
+  const imeInput = createImeInputController();
 
   return {
     store,
@@ -129,15 +140,19 @@ export const createGridEngine = <T,>(init: GridEngineInit<T>): GridEngine<T> => 
     hoverRowNotifier: createHoverRowNotifier(),
     detailKeysNotifier: createDetailKeysNotifier(),
     stateChangeNotifier: createStateChangeNotifier<T>(),
+    cellEventNotifier: createCellEventNotifier<T>(),
+    activeCellNotifier: createActiveCellNotifier<T>(),
     autoHeightMeasurer,
     scrollSync,
     serverSideQueryStore,
     autoSizeOnData,
+    imeInput,
     detailIndexCache: createDetailIndexCacheHolder(),
     dispose: () => {
       autoHeightMeasurer.dispose();
       scrollSync.dispose();
       serverSideQueryStore.dispose();
+      imeInput.dispose();
     },
   };
 };

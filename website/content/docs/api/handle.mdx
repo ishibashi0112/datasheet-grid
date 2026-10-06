@@ -262,6 +262,8 @@ const buffer = await writeXlsx({
 
 **ボディセルの省略時ツールチップ**: グリッド prop `showCellOverflowTooltip`(既定 `false`)を `true` にすると、**既定テキストセルが省略(…)されているときだけ**ホバーで全文ツールチップが出る。実装は上記機構の派生で、セルへ `data-ssg-tooltip-overflow` マーカーを付け、表示可否は**ホバー時**に `scrollWidth > clientWidth` を判定(実際にクリップされているセルのみ表示)、文言はセルの表示テキスト(`textContent`)をそのまま使用する。`renderCell` 列(テキストとは限らない)と `autoHeight` 折り返し列(クリップされない)は対象外。特定列だけ全文表示したい / させたくない場合は、`renderCell` で自前要素へ `data-ssg-tooltip="…"`(常時)や `data-ssg-tooltip-overflow`(省略時)を付ける運用も可能。
 
+**セルのメモ(`cellNote`)**: 列の `cellNote` が返した文字列も同じツールチップで表示する(`\n` で改行)。入力エラー(`validate` の mark)と同じセルでは「エラー → 改行 → メモ」の順につなぐ。メモのあるセルでは、省略時の全文ツールチップよりメモが優先される(固定の文言が `data-ssg-tooltip-overflow` より優先される既存の規則による)。詳細は GridColumn の「セルのメモ(`cellNote`)」節。
+
 ### 状態の保存 / 復元
 
 | メソッド | 説明 |

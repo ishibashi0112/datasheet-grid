@@ -35,6 +35,9 @@ import { useVirtualizerCore } from './hooks/useVirtualizerCore';
 // 追加(本体分解 E-7): グリッドエンジン(リゾルバ / コマンド / 通知 / DOM コントローラ / store の束ね。React 非依存)。
 import { createGridEngine } from '@ishibashi0112/spreadsheet-grid-core/engine/createGridEngine';
 import { useControllerLifecycle } from './hooks/useController';
+// 追加(G-2): IME オンのままの直接入力(imeDirectInput)の入力してよいセルの判定と、入力受けの属性名です。
+import { canStartImeEdit } from '@ishibashi0112/spreadsheet-grid-core/logic/imeInput';
+import { IME_INPUT_ATTRIBUTE } from '@ishibashi0112/spreadsheet-grid-core/logic/domGuards';
 
 import { gridActions } from '@ishibashi0112/spreadsheet-grid-core/model/gridActions';
 import { useGridStore, useGridViewState } from './hooks/useGridStore';
@@ -402,6 +405,8 @@ export function SpreadsheetGrid<T extends object>({
   enableClearOnDelete = true,
   // 追加(enter-move ②): 組み込みエディタの Enter 確定後の移動先です(既定 'down' = 従来どおり)。
   editorEnterMove = 'down',
+  // 追加(G-2): IME オンのままの直接入力です(既定 false = opt-in)。
+  imeDirectInput = false,
   undoHistoryLimit = 100,
   onUndoRedoStateChange,
   enableRangeSelection = true,
@@ -439,6 +444,10 @@ export function SpreadsheetGrid<T extends object>({
   // 追加(proposals ⑩): 行ホバーの controlled 値と変更通知です(optionally controlled)。
   hoveredRowIndex: hoveredRowIndexProp,
   onHoveredRowChange,
+  // 追加(G-1): セル操作の通知(データセルのクリック / ダブルクリック / アクティブセルの変化)。
+  onCellClick,
+  onCellDoubleClick,
+  onActiveCellChange,
   // 追加(13-A): 列メニュー(「⋮」+ 右クリック)の有効化フラグです(既定 true)。
   enableColumnMenu = true,
   // 追加(12-B): 0 行時の空状態テキストです(AG Grid のオーバーレイ相当)。
@@ -1939,9 +1948,32 @@ export function SpreadsheetGrid<T extends object>({
   const { handleGutterRowSelect, handleGutterRowSelectDrag, handleToggleSelectAllRows } =
     rowSelectionCommands;
 
+  // ── セル操作の通知(G-1)─────────────────────────────
+  // 追加(G-1): onCellClick / onCellDoubleClick は engine/notifiers.ts の createCellEventNotifier が担います
+  //   (イベント時点の最新 args を読むため既定のレイアウト effect で接続)。セルの click ハンドラは恒久安定で、
+  //   行 memo を破りません。onActiveCellChange は createActiveCellNotifier(passive = 既存の外部通知と同じ)。
+  useControllerLifecycle(engine.cellEventNotifier, {
+    rowModel,
+    orderedColumns,
+    onCellClick,
+    onCellDoubleClick,
+  });
+  const handleCellClick = engine.cellEventNotifier.handleCellClick;
+  useControllerLifecycle(
+    engine.activeCellNotifier,
+    {
+      activeCell: uiState.activeCell,
+      rowModel,
+      orderedColumns,
+      onActiveCellChange,
+    },
+    'passive',
+  );
+
   // ── pointer interactions ──────────────────────────────
   // 追加(touch): セルダブルクリック処理の latest-ref(定義は下方。useEffect で同期)。
-  const cellDoubleClickRef = useRef<(cell: CellCoord) => void>(() => {});
+  // 変更(G-1): ダブルクリック元の DOM 標準 MouseEvent も受けます(onCellDoubleClick の params.event)。
+  const cellDoubleClickRef = useRef<(cell: CellCoord, event: MouseEvent) => void>(() => {});
 
   const {
     updateSelectionFromPointer,
@@ -2315,6 +2347,31 @@ export function SpreadsheetGrid<T extends object>({
     canEditCell,
   });
 
+  // ── IME オンのままの直接入力(G-2)─────────────────────
+  // 追加(G-2): imeDirectInput 有効時だけ、シェル末尾の透明な入力受け(input)へグリッドのフォーカスを置き、IME の変換を
+  //   そこで始めます。変換が確定したら確定した文字列を初期値に通常の編集を開始します(startEditWithValue)。
+  //   本体は controllers/imeInputController.ts(React 非依存。engine.imeInput)。無効時はコントローラが何もしません
+  //   (入力受けも描画しない)。
+  useControllerLifecycle(engine.imeInput, {
+    enabled: imeDirectInput,
+    gridRootRef,
+    editing: uiState.editingCell !== null,
+    activeCell: uiState.activeCell,
+    resolveCell: (cell: CellCoord) => {
+      const column = orderedColumns[cell.col];
+      return column ? { colKey: column.key, align: column.align } : null;
+    },
+    canStartEdit: (cell: CellCoord) =>
+      canStartImeEdit({ rowModel, columns: orderedColumns, readOnly, canEditCell }, cell),
+    startEdit: startEditWithValue,
+  });
+  // 入力受けの ref コールバック(React Compiler の lint が ref に渡した値を ref 扱いするため、コントローラを直接渡さず
+  //   ローカル関数で包みます)。
+  const attachImeInput = useCallback(
+    (element: HTMLInputElement | null) => engine.imeInput.attach(element),
+    [engine],
+  );
+
   // 追加(③): 編集中セルの列(編集 input の text-align=align を反映)。editingCell.col は orderedColumns 空間。
   const editingColumn = uiState.editingCell
     ? orderedColumns[uiState.editingCell.col]
@@ -2345,7 +2402,12 @@ export function SpreadsheetGrid<T extends object>({
       : null;
 
   const handleCellDoubleClickWithController = useCallback(
-    (cell: CellCoord) => {
+    (cell: CellCoord, event: MouseEvent) => {
+      // 追加(G-1): 既定の動作(編集開始)の前に onCellDoubleClick を呼びます(読み取り専用セルでも呼ぶため
+      //   isCellEditable の判定より前)。params.preventDefault() されたら既定の動作を行いません。
+      if (engine.cellEventNotifier.notifyCellDoubleClick(cell, event)) {
+        return;
+      }
       // 変更(DS-3-5): filteredRows[cell.row] → rowModel.getRow 経由(double-click consumer 移行)。
       //   getRow(i)=rows[order[i]] で旧 filteredRows[i] と参照同一。OOB は getRow が undefined を
       //   返し、下の `if (!row …) return` ガードで吸収するため挙動等価です。
@@ -2374,7 +2436,7 @@ export function SpreadsheetGrid<T extends object>({
       const currentValue = getCellValue(row, column);
       startEditWithValue(cell, String(currentValue ?? ''));
     },
-    [canEditCell, rowModel, readOnly, startEditWithValue, orderedColumns],
+    [canEditCell, engine, rowModel, readOnly, startEditWithValue, orderedColumns],
   );
   // 追加(touch): pointer フック(タッチのダブルタップ / native dblclick ラッパ)から読む latest-ref を
   //   同期します(render 中の ref 代入を増やさないため useEffect 同期 = RS-AS 方式)。
@@ -4048,6 +4110,7 @@ export function SpreadsheetGrid<T extends object>({
                   onRowHeaderPointerLeave={handleRowHeaderPointerLeaveStable}
                   onCellPointerDown={handleCellPointerDown}
                   onCellPointerEnter={handleCellPointerEnter}
+                  onCellClick={handleCellClick}
                   onCellDoubleClick={handleCellDoubleClickGuarded}
                   renderCellContent={renderCellContent}
                   getRowClassName={getRowClassName}
@@ -4238,6 +4301,7 @@ export function SpreadsheetGrid<T extends object>({
                   onRowHeaderPointerLeave={handleRowHeaderPointerLeaveStable}
                   onCellPointerDown={handleCellPointerDown}
                   onCellPointerEnter={handleCellPointerEnter}
+                  onCellClick={handleCellClick}
                   onCellDoubleClick={handleCellDoubleClickGuarded}
                   renderCellContent={renderCellContent}
                   getRowClassName={getRowClassName}
@@ -4425,6 +4489,7 @@ export function SpreadsheetGrid<T extends object>({
                   onRowHeaderPointerLeave={handleRowHeaderPointerLeaveStable}
                   onCellPointerDown={handleCellPointerDown}
                   onCellPointerEnter={handleCellPointerEnter}
+                  onCellClick={handleCellClick}
                   onCellDoubleClick={handleCellDoubleClickGuarded}
                   renderCellContent={renderCellContent}
                   getRowClassName={getRowClassName}
@@ -4592,6 +4657,22 @@ export function SpreadsheetGrid<T extends object>({
                 )}
             </div>
           )}
+        {/* 追加(G-2): IME オンのままの直接入力の入力受け(imeDirectInput 有効時のみ)。非制御で、値 / 位置 / 変換中の
+            表示はコントローラが直接扱います。Tab の順番には入れません(タブストップはシェルのまま)。 */}
+        {imeDirectInput ? (
+          <input
+            ref={attachImeInput}
+            {...{ [IME_INPUT_ATTRIBUTE]: '' }}
+            className="ssg-ime-input"
+            type="text"
+            tabIndex={-1}
+            autoComplete="off"
+            autoCorrect="off"
+            autoCapitalize="off"
+            spellCheck={false}
+            aria-label="セルへの入力"
+          />
+        ) : null}
       </div>
 
       {resolvedBottomBar}
