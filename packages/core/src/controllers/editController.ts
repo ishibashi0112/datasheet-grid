@@ -68,6 +68,18 @@ type EditIdentity = {
   cell: CellCoord;
 };
 
+// 追加(確定後のアクティブセル上書き): 方向なしの確定(エディタの blur / custom の commit(value) / select の
+//   候補クリック / editorEnterMove 'none')の時点のアクティブセルと選択です。後処理(rAF)で「編集していたセルを
+//   単一選択にする」前に、ここから変わっていないかを参照で比べます(edit/stop はどちらの参照も保ち、セルの
+//   クリック / ドラッグ / 行・列ヘッダーの選択 / 命令的 API は新しい参照を作る)。
+type SelectionSnapshot = Pick<GridUiState, 'activeCell' | 'selection'>;
+
+const isSelectionChangedSince = (
+  snapshot: SelectionSnapshot,
+  uiState: GridUiState,
+): boolean =>
+  uiState.activeCell !== snapshot.activeCell || uiState.selection !== snapshot.selection;
+
 // 追加(編集確定後のフォーカス奪取): commit / cancel 後の rAF でグリッドへフォーカスを戻してよいかです。
 //   - どこにもない(null / body)→ 戻す。Enter / Tab / Escape で確定・取消してエディタが外れた直後はここ。
 //   - グリッドのルート内(まだ残っているエディタ / セルのクリックでフォーカスを受けたルート / imeDirectInput
@@ -191,7 +203,14 @@ export const createEditController = <T extends object>(): EditController<T> => {
   // commit / cancel 直後の後処理(rAF): フォーカスをグリッドへ戻し(グリッド外 / 展開行カード内に
   //   フォーカスがある場合は奪わない = shouldRestoreFocusAfterEdit)、必要なら隣接セルへ移動してから
   //   再入抑止を解除します。ガードを立てるのは呼び出し側(旧実装と同じ順序を保つため)。
-  const scheduleAfterEdit = (nextCell: CellCoord | null) => {
+  //   変更(確定後のアクティブセル上書き): stayedFrom(方向なしの確定時点のスナップショット)があり、rAF までに
+  //   アクティブセル / 選択が変わっていれば、編集していたセルへ戻しません。グリッド内の別のセルや行・列ヘッダーを
+  //   押したことで blur 確定した場合、押した操作(アクティブセル / ドラッグ選択の開始)を上書きしていたため。
+  //   方向付きの移動(Enter / Tab / commit(value, direction))は従来どおり常に行います。
+  const scheduleAfterEdit = (
+    nextCell: CellCoord | null,
+    stayedFrom: SelectionSnapshot | null = null,
+  ) => {
     const current = args;
     if (current === null) {
       return;
@@ -201,7 +220,11 @@ export const createEditController = <T extends object>(): EditController<T> => {
       if (root !== null && shouldRestoreFocusAfterEdit(root)) {
         root.focus();
       }
-      if (nextCell !== null && args !== null) {
+      if (
+        nextCell !== null &&
+        args !== null &&
+        !(stayedFrom !== null && isSelectionChangedSince(stayedFrom, args.uiState))
+      ) {
         // 行数 / 列数は rAF 時点の最新 args で clamp します(旧 boundsRef 相当)。
         const rowCount = args.rowModel.getRowCount();
         const colCount = args.visibleColumns.length;
@@ -294,7 +317,12 @@ export const createEditController = <T extends object>(): EditController<T> => {
 
     // 旧実装と同じ順序: ガード → rAF 予約 → stopEdit。
     editorActionGuardRef.current = true;
-    scheduleAfterEdit(intendedCell);
+    scheduleAfterEdit(
+      intendedCell,
+      direction === undefined
+        ? { activeCell: uiState.activeCell, selection: uiState.selection }
+        : null,
+    );
     dispatch(gridActions.stopEdit());
     return { status: 'committed' };
   };

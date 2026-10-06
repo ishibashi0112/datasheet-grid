@@ -266,3 +266,87 @@ describe('editController: 確定 / 取消後のフォーカス復帰', () => {
     expect(document.activeElement).toBe(cardInput);
   });
 });
+
+// 追加(確定後のアクティブセル上書き): 方向なしの確定(blur など)の後処理は、rAF までにアクティブセル / 選択が
+//   変わっていれば(グリッド内の別のセルや行・列ヘッダーを押して blur 確定した)編集していたセルへ戻さない。
+//   何も変わっていなければ / 方向付きの確定なら従来どおり。
+describe('editController: 確定後のアクティブセル', () => {
+  const editing = { row: 0, col: 0 };
+  const rows3 = [{ id: 1, qty: 1 }, { id: 2, qty: 2 }, { id: 3, qty: 3 }];
+
+  // 編集中(edit/start 後 = activeCell は編集セル、selection は単一セル)の args。
+  const setup = () => {
+    const c = createEditController<Row>();
+    const t = makeArgs(rows3, editing);
+    const uiState = {
+      ...t.args.uiState,
+      activeCell: editing,
+      selection: { type: 'cell' as const, range: { start: editing, end: editing } },
+    };
+    const args = { ...t.args, uiState };
+    c.update(args);
+    return { c, t, args };
+  };
+
+  // reducer が edit/stop を反映した後の state(activeCell / selection の参照は保たれる)。
+  const afterStop = (args: EditControllerArgs<Row>) => ({
+    ...args,
+    uiState: { ...args.uiState, editingCell: null },
+  });
+
+  const flushRaf = () => {
+    for (const cb of rafCallbacks.splice(0)) cb(0);
+  };
+
+  const activations = (t: ReturnType<typeof makeArgs>) =>
+    t.dispatch.mock.calls.filter(([a]) => a.type === 'cell/activate').map(([a]) => a);
+
+  it('方向なしの確定で何も変わっていなければ、従来どおり編集していたセルを単一選択にする', () => {
+    const { c, t, args } = setup();
+    expect(c.commitEdit('9')).toEqual({ status: 'committed' });
+    c.update(afterStop(args));
+    flushRaf();
+    expect(activations(t)).toEqual([{ type: 'cell/activate', cell: editing }]);
+    expect(t.args.editorActionGuardRef.current).toBe(false);
+  });
+
+  it('方向なしの確定の後、rAF までに別のセルがアクティブになっていれば編集していたセルへ戻さない', () => {
+    const { c, t, args } = setup();
+    c.commitEdit('9'); // 別のセルの pointerdown → ルートへ focus → エディタの blur で確定
+    const clicked = { row: 2, col: 0 };
+    const stopped = afterStop(args);
+    c.update({
+      ...stopped,
+      uiState: {
+        ...stopped.uiState,
+        activeCell: clicked,
+        selection: { type: 'cell', range: { start: clicked, end: clicked } },
+      },
+    });
+    flushRaf();
+    expect(activations(t)).toEqual([]);
+    expect(t.dispatch.mock.calls.map(([a]) => a.type)).toEqual(['edit/stop']);
+    expect(t.args.editorActionGuardRef.current).toBe(false);
+  });
+
+  it('選択だけが変わった(行ヘッダー / 命令的 API 等)ときも戻さない', () => {
+    const { c, t, args } = setup();
+    c.commitEdit('9');
+    const stopped = afterStop(args);
+    c.update({
+      ...stopped,
+      uiState: { ...stopped.uiState, selection: { type: 'row', startRow: 1, endRow: 1 } },
+    });
+    flushRaf();
+    expect(activations(t)).toEqual([]);
+  });
+
+  it('方向付きの確定(Enter / Tab)は、アクティブセルが変わっていても従来どおり移動する', () => {
+    const { c, t, args } = setup();
+    c.commitEdit('9', 'down');
+    const stopped = afterStop(args);
+    c.update({ ...stopped, uiState: { ...stopped.uiState, activeCell: { row: 2, col: 0 } } });
+    flushRaf();
+    expect(activations(t)).toEqual([{ type: 'cell/activate', cell: { row: 1, col: 0 } }]);
+  });
+});

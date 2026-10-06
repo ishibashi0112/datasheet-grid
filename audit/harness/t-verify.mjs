@@ -405,13 +405,31 @@ for (const ime of [false, true]) {
     check(`edit-focus: Escape cancel returns focus to the grid${tag}`, backInGrid(f) && (await rows(page))[5].name === before, f);
   });
 
-  // グリッド内の別のセルをクリックして確定 → グリッドに残る。
+  // グリッド内の別のセルをクリックして確定 → グリッドに残り、クリックしたセルがアクティブになる
+  //   (確定後のアクティブセル上書き: 以前は rAF で編集していたセルへ戻していた)。
   await runCase(async (page) => {
     await startEdit(page, 6, 'mno');
-    await cell(page, 8, 'name').click();
+    await cell(page, 8, 'qty').click();
     await waitIdle(page, 200);
     const f = await focusInfo(page);
+    const st = await page.evaluate(() => ({ active: window.__grid.getActiveCell(), sel: window.__grid.getSelection() }));
     check(`edit-focus: clicking another cell commits and keeps focus in the grid${tag}`, backInGrid(f) && (await rows(page))[6].name === 'mno', f);
+    check(`edit-focus: clicking another cell makes it the active cell (not reverted to the edited cell)${tag}`, JSON.stringify(st) === JSON.stringify({ active: { row: 8, col: 2 }, sel: { type: 'cell', range: { start: { row: 8, col: 2 }, end: { row: 8, col: 2 } } } }), st);
+  });
+
+  // 編集中に別のセルからドラッグして範囲選択 → 確定し、ドラッグした範囲が選択される。
+  await runCase(async (page) => {
+    await startEdit(page, 0, 'pqr');
+    const a = await cell(page, 3, 'name').boundingBox();
+    const b = await cell(page, 5, 'qty').boundingBox();
+    await page.mouse.move(a.x + 5, a.y + 5);
+    await page.mouse.down();
+    await waitIdle(page, 80); // 確定後の後処理(rAF)をドラッグ中に挟む
+    await page.mouse.move(b.x + 5, b.y + 5, { steps: 5 });
+    await page.mouse.up();
+    await waitIdle(page, 200);
+    const st = await page.evaluate(() => ({ active: window.__grid.getActiveCell(), sel: window.__grid.getSelection() }));
+    check(`edit-focus: dragging from another cell while editing selects that range${tag}`, (await rows(page))[0].name === 'pqr' && JSON.stringify(st) === JSON.stringify({ active: { row: 3, col: 1 }, sel: { type: 'cell', range: { start: { row: 3, col: 1 }, end: { row: 5, col: 2 } } } }), st);
   });
 
   check(`edit-focus: no console errors${tag}`, errors.length === 0, errors.slice(0, 3));

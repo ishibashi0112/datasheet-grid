@@ -2,7 +2,8 @@
 //   ①グリッド外の入力欄(グリッドの上の登録フォーム / 上部バーのグローバルフィルター)をクリックすると、
 //     エディタの blur で値は確定し、フォーカスはクリックした入力欄に残る(グリッドへ奪い返さない)
 //   ②Enter / Tab / Escape(キー操作)での確定・取消は従来どおりグリッドへ戻る
-//   ③グリッド内の別のセルをクリックして確定したときはグリッドに残る
+//   ③グリッド内の別のセルをクリックして確定したときはグリッドに残り、クリックしたセルがアクティブになる
+//     (追加: 確定後のアクティブセル上書き。行ヘッダーの行選択も編集していたセルへ戻さない)
 //   を imeDirectInput の有無それぞれで検証します(有効時は「グリッドへ戻る」= 入力受けへ回る)。
 //   実ブラウザでの追試は audit/harness の t-verify。
 // @vitest-environment jsdom
@@ -191,8 +192,8 @@ describe.each([
     expect(document.activeElement).toBe(gridFocusTarget(container));
   });
 
-  it('グリッド内の別のセルをクリックして確定したときはグリッドに残る', async () => {
-    const { container } = renderGrid(imeDirectInput);
+  it('グリッド内の別のセルをクリックして確定したときはグリッドに残り、クリックしたセルがアクティブになる', async () => {
+    const { container, ref } = renderGrid(imeDirectInput);
     startEditing(container, 0, 0, 'moved');
 
     await act(async () => {
@@ -201,6 +202,32 @@ describe.each([
     });
 
     expect(currentRows[0]?.name).toBe('moved');
+    expect(document.activeElement).toBe(gridFocusTarget(container));
+    // 確定後の後処理で編集していたセル (0, 0) へ戻さない。
+    expect(ref.current?.getActiveCell()).toEqual({ row: 2, col: 1 });
+    expect(ref.current?.getSelection()).toEqual({
+      type: 'cell',
+      range: { start: { row: 2, col: 1 }, end: { row: 2, col: 1 } },
+    });
+  });
+
+  it('行ヘッダーを押して確定したときは、その行の選択を編集していたセルへ戻さない', async () => {
+    const { container, ref } = renderGrid(imeDirectInput);
+    startEditing(container, 0, 0, 'row');
+    const rowHeader = container.querySelector<HTMLElement>(
+      '.ssg-body-row[data-row-index="1"] .ssg-row-header-cell',
+    );
+    expect(rowHeader).not.toBeNull();
+
+    await act(async () => {
+      fireEvent.pointerDown(rowHeader!, { button: 0, pointerType: 'mouse', pointerId: 1 });
+      fireEvent.pointerUp(window, { button: 0, pointerType: 'mouse', pointerId: 1 });
+      await nextFrame();
+    });
+
+    expect(currentRows[0]?.name).toBe('row');
+    expect(ref.current?.getSelection()).toEqual({ type: 'row', startRow: 1, endRow: 1 });
+    expect(ref.current?.getActiveCell()).toEqual({ row: 1, col: 0 });
     expect(document.activeElement).toBe(gridFocusTarget(container));
   });
 });
