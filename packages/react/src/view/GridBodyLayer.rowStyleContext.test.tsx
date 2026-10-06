@@ -83,6 +83,7 @@ function renderLayer(props: {
       onRowHeaderPointerLeave={() => {}}
       onCellPointerDown={() => {}}
       onCellPointerEnter={() => {}}
+      onCellClick={() => {}}
       onCellDoubleClick={() => {}}
       renderCellContent={(row) => <span>{row.name}</span>}
       getRowClassName={props.getRowClassName}

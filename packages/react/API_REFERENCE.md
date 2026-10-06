@@ -66,6 +66,9 @@
 | `enableRowHover` | `boolean` | `true` | 行ホバー時に行全体を薄くハイライト。 |
 | `hoveredRowIndex` | `number \| null` | — | 行ホバーの controlled 値(ビュー行 index / `null` = ホバーなし)。指定時は内部 state を使わずこの値でハイライトし、pointer 由来の変化は `onHoveredRowChange` で通知のみ(optionally controlled)。`enableRowHover: false` のときは無視(ハイライトも通知もしない)。一時的な UI 状態のため `GridState` / ハンドルには載らない。 |
 | `onHoveredRowChange` | `(viewRowIndex: number \| null, ctx: { source: 'pointer' }) => void` | — | 行ホバーが変わったときの通知(uncontrolled でも呼ばれる)。`viewRowIndex` はフィルター / ソート適用後のビュー行 index。同値では発火しない(pointerenter は同一行内のセル跨ぎでも来るため)。用途: 複数グリッド間のホバー同期など。 |
+| `onCellClick` | `(params: GridCellEventParams<T>) => void` | — | データセル(データ行 × 利用側の列)のクリックで呼ばれる。左ボタンのみで、押した位置と離した位置が同じセルのときだけ呼ばれる(範囲選択のドラッグはクリック扱いにしない)。読み取り専用セルでも呼ばれ、セル内の要素(checkbox 等)のクリックもそのセルのクリックとして通知する。`params` は `GridCellRef<T>`(`{ row, rowKey, rowIndex, sourceRowIndex, column, columnKey, colIndex, value }`)+ `event`(DOM 標準の `MouseEvent`)。列ヘッダー / 行番号 / グループ行 / ラベル行 / 展開行 / SSRM の未ロード行 / 合成列(展開トグル・行ドラッグハンドル)では呼ばれない。インライン関数可。詳細は「セル操作の通知」節。 |
+| `onCellDoubleClick` | `(params: GridCellDoubleClickParams<T>) => void` | — | データセルのダブルクリック(タッチのダブルタップ含む)で、既定の動作(編集可能セルなら編集開始)の前に呼ばれる。読み取り専用セルでも呼ばれる。`params.preventDefault()` で既定の動作を止められる(`params.event.preventDefault()` では止まらない)。対象のセルは `onCellClick` と同じ。インライン関数可。 |
+| `onActiveCellChange` | `(cell: GridCellRef<T> \| null) => void` | — | アクティブセルが変わったときに呼ばれる(クリック / キー操作 / `setActiveCell` など由来を問わない)。アクティブセルが無くなった / データセル以外(グループ行 / ラベル行 / 未ロード行 / 合成列)へ移ったときは `null`。行キー・列キー・位置(`rowIndex` / `colIndex`)がすべて同じなら呼ばれない(同じセルへの再設定)。座標が同じでも、ソートなどでその位置の行が変われば呼ばれる。初回マウントでは呼ばれない。通知はペイント後(クリックでは `onCellClick` より先)。インライン関数可。 |
 | `enableColumnHeaderHover` | `boolean` | `true` | 列ヘッダーのホバー時にヘッダーセルを薄くハイライト。 |
 | `noMatchingRowsText` | `string` | `'一致する行がありません'` | フィルター結果 0 行時のオーバーレイ文言。 |
 | `noRowsText` | `string` | `'表示する行がありません'` | rows が 0 件のときの文言。 |
@@ -123,6 +126,46 @@
 `showTopBarSummary` と `showTopBarFilter`(実効は `showTopBarFilter && enableGlobalFilter`)がともに `false` の場合、既定トップバーは描画されない(空バーを出さない)。
 
 ボトムバーは Rows / Columns 件数のみ `showBottomBarCounts` で出し分けできる(右側の Active / Selection / 選択統計 / Cols は対象外)。それ以外の内訳を変えたい場合は `renderBottomBar` を使う。
+
+### セル操作の通知(`onCellClick` / `onCellDoubleClick` / `onActiveCellChange`)
+
+データセルのクリック / ダブルクリック / アクティブセルの変化を受け取る通知口。3 つとも省略可で、指定しなければ従来どおり(グリッドの既定の動作は変わらない)。
+
+- **渡るもの**: `GridCellRef<T> = { row, rowKey, rowIndex, sourceRowIndex, column, columnKey, colIndex, value }`。行は index ではなく**行データ `row` と `rowKey` を主に使う**(`rowIndex` はフィルター / ソート後の表示位置 = `handle.selectCell` と同じ空間、`sourceRowIndex` は元 `rows` の index、`colIndex` は論理列 index)。`value` はセルの生値(`getValue` 指定列はその戻り値。`valueFormatter` 適用前)。クリック / ダブルクリックには `event`(DOM 標準の `MouseEvent`。React の合成イベントではない)が付く。修飾キー(`ctrlKey` / `shiftKey` / `metaKey` / `altKey`)はここから読む。
+- **対象**: データ行 × 利用側の列のセルだけ。列ヘッダー / 行番号「#」/ グループ行 / ラベル行 / 展開行の帯 / SSRM の未ロード行(スケルトン)/ 合成列(展開トグル列・行ドラッグハンドル列・自動グループ列)ではクリック / ダブルクリックを通知せず、アクティブセルがこれらへ移ったときの `onActiveCellChange` は `null`。
+- **クリックの判定**: ブラウザの `click` イベントに従う。左ボタンのみで、押したセルと離したセルが違う(範囲選択のドラッグ)ときは呼ばれない。セル内に置いた自前の要素のクリックもそのセルのクリックとして届くため、セルの通知に含めたくない要素は自分で `event.stopPropagation()` する。
+- **順番**: マウスで別のセルをクリックすると `onActiveCellChange`(pointerdown でアクティブセルが移った分)→ `onCellClick` の順。ダブルクリックはブラウザの仕様どおり `onCellClick` × 2 → `onCellDoubleClick` の順。
+- **ダブルクリックの既定の動作**: 編集可能セルなら編集開始、checkbox 列・読み取り専用セルは何もしない。`params.preventDefault()` でこれを止められる(`F2` / `Enter` / 印字キーでの編集開始には影響しない)。
+
+```tsx
+// 読み取り専用の一覧: 行をクリックしたら上の入力フォームへ写す。
+<SpreadsheetGrid<Row>
+  rows={rows}
+  columns={columns}
+  readOnly
+  rowKeyGetter={(row) => row.id}
+  onCellClick={({ row }) => form.setValues(row)}
+/>
+
+// 選択モーダル: ダブルクリックした行で確定して閉じる。
+<SpreadsheetGrid<Row> rows={rows} columns={columns} readOnly onCellDoubleClick={({ row }) => onConfirm(row)} />
+
+// 「件名」セルだけダブルクリックでモーダルを開き、他のセルは従来どおり編集を始める。
+<SpreadsheetGrid<Row>
+  rows={rows}
+  columns={columns}
+  onRowsChange={setRows}
+  onCellDoubleClick={(params) => {
+    if (params.columnKey === 'subject') {
+      params.preventDefault();
+      openSubjectPicker(params.rowKey);
+    }
+  }}
+/>
+
+// キー操作での移動も含めて、アクティブセルの行を詳細パネルへ出す。
+<SpreadsheetGrid<Row> rows={rows} columns={columns} onActiveCellChange={(cell) => setDetail(cell?.row ?? null)} />
+```
 
 ### コンテキストメニュー(`enableContextMenu` / `getContextMenuItems`)
 
@@ -1330,6 +1373,7 @@ const s = stylex.create({
 - `DetailRowOptions<T>` / `DetailRowRenderContext<T> = { row, rowKey, rowIndex, sourceRowIndex, collapse }` / `CellDetailContext`(展開行。バレルから公開)
 - `LabelRowOptions<T>` / `LabelRowRenderContext<T> = { row, rowKey, rowIndex, sourceRowIndex, label, sectionRowCount }` / `GridLabelRow<T> = { kind: 'label', row, sourceIndex, label, sectionRowCount }` / `LabelRowSortMode = 'section' | 'follow' | 'hide'`(ラベル行。バレルから公開。「ラベル行(見出し / 区切り行)」節)
 - `RowDragContext = { rowKey, sourceRowIndex }`(`isRowDraggable` の第 2 引数)/ `RowMoveParams<T> = { rowKey, fromIndex, toIndex, rows }`(`onRowMove` の引数。いずれもバレルから公開)
+- `GridCellRef<T> = { row, rowKey, rowIndex, sourceRowIndex, column, columnKey, colIndex, value }`(`onActiveCellChange` の引数)/ `GridCellEventParams<T> = GridCellRef<T> & { event: MouseEvent }`(`onCellClick` の引数。`event` は DOM 標準の `MouseEvent`)/ `GridCellDoubleClickParams<T> = GridCellEventParams<T> & { preventDefault(): void }`(`onCellDoubleClick` の引数。タッチのダブルタップでは `event` は離したときの `PointerEvent`)。いずれもバレルから公開。index の基準は `CellStyleContext` と同じ(「セル操作の通知」節)。
 - `CellStyleContext<T>` = 上記から `setValue` を除いた読み取り専用版(`cellClassName` 関数へ渡る)。バレル(`index.ts`)から公開(`import type { CellStyleContext } from '@ishibashi0112/spreadsheet-grid'`)
   - `rowIndex` は**ビュー行 index**(ソート / フィルター適用後の表示位置)、`sourceRowIndex` は**元 `rows` の index**、`rowKey` は行キー(`rowKeyGetter` 由来、既定は source index)。ソート / フィルター ON の画面で「エラー行 index の集合」など source 基準のデータと突き合わせるときは `sourceRowIndex` / `rowKey` を使う(`getInvalidCells()` の返す `sourceRowIndex` / `rowKey` と同一基準)。serverSide では view 順が正準のため `sourceRowIndex` は view index と同値。
 - `RowStyleContext<T> = { row, rowIndex, sourceRowIndex, rowKey, isSelected }`(`getRowClassName` の第 3 引数。バレルから公開)

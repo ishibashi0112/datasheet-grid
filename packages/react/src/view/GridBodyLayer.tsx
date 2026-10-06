@@ -148,7 +148,10 @@ type GridBodyRowProps<T> = {
     cell: CellCoord,
     event: PointerEvent<HTMLDivElement>,
   ) => void;
-  onCellDoubleClick: (cell: CellCoord) => void;
+  // 追加(G-1): セルの click(onCellClick の通知口。参照恒久安定)。event は DOM 標準の MouseEvent(nativeEvent)。
+  onCellClick: (cell: CellCoord, event: MouseEvent) => void;
+  // 変更(G-1): ダブルクリック元の DOM 標準 MouseEvent も渡します(onCellDoubleClick の params.event)。
+  onCellDoubleClick: (cell: CellCoord, event: MouseEvent) => void;
   // 変更(11-A): セル状態(cellState)は行側で算出し、第5引数で引き渡します。
   //             これにより親の renderCellContent は uiState 非依存になり、
   //             選択操作で参照が変わらなくなります。
@@ -204,6 +207,7 @@ function GridBodyRowInner<T>({
   onRowHeaderPointerLeave,
   onCellPointerDown,
   onCellPointerEnter,
+  onCellClick,
   onCellDoubleClick,
   renderCellContent,
   rowClassName,
@@ -384,8 +388,13 @@ function GridBodyRowInner<T>({
             onPointerEnter={(event) =>
               onCellPointerEnter({ row: rowIndex, col: colIndex }, event)
             }
-            onDoubleClick={() =>
-              onCellDoubleClick({ row: rowIndex, col: colIndex })
+            // 追加(G-1): click は押した位置と離した位置が同じセルのときだけここへ届きます(別のセルで離すと共通の
+            //   親で発火する)ため、範囲選択のドラッグはクリック扱いになりません。左ボタンのみ(仕様)。
+            onClick={(event) =>
+              onCellClick({ row: rowIndex, col: colIndex }, event.nativeEvent)
+            }
+            onDoubleClick={(event) =>
+              onCellDoubleClick({ row: rowIndex, col: colIndex }, event.nativeEvent)
             }
             style={{
               // 追加(slot-props): スロット / 行 / セルの style を先に展開し、座標 / 寸法はグリッドが後勝ち。
@@ -855,7 +864,9 @@ type GridBodyLayerProps<T> = {
     cell: CellCoord,
     event: PointerEvent<HTMLDivElement>,
   ) => void;
-  onCellDoubleClick: (cell: CellCoord) => void;
+  // 追加(G-1): セルの click(データ行のセルのみ配線。スケルトン / グループ / ラベル行には付けない)。
+  onCellClick: (cell: CellCoord, event: MouseEvent) => void;
+  onCellDoubleClick: (cell: CellCoord, event: MouseEvent) => void;
   renderCellContent: (
     row: T,
     rowIndex: number,
@@ -913,6 +924,7 @@ export function GridBodyLayer<T>({
   onRowHeaderPointerLeave,
   onCellPointerDown,
   onCellPointerEnter,
+  onCellClick,
   onCellDoubleClick,
   renderCellContent,
   getRowClassName,
@@ -1122,6 +1134,7 @@ export function GridBodyLayer<T>({
             onRowHeaderPointerLeave={onRowHeaderPointerLeave}
             onCellPointerDown={onCellPointerDown}
             onCellPointerEnter={onCellPointerEnter}
+            onCellClick={onCellClick}
             onCellDoubleClick={onCellDoubleClick}
             renderCellContent={renderCellContent}
             rowClassName={rowSlot.className}

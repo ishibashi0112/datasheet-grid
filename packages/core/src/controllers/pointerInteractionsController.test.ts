@@ -183,9 +183,13 @@ describe('pointerInteractionsController', () => {
       clientY: 10,
       timeStamp: 200 + TOUCH_DOUBLE_TAP_MS - 1,
     });
-    expect(onDouble).toHaveBeenCalledWith({ row: 1, col: 0 });
+    // 変更(G-1): ダブルタップを離した pointerup のイベントも渡す(onCellDoubleClick の params.event)。
+    expect(onDouble).toHaveBeenCalledWith(
+      { row: 1, col: 0 },
+      expect.objectContaining({ type: 'pointerup', pointerId: 7 }),
+    );
     // タッチ由来の native dblclick は無視する。
-    controller.handleCellDoubleClick({ row: 1, col: 0 });
+    controller.handleCellDoubleClick({ row: 1, col: 0 }, new MouseEvent('dblclick'));
     expect(onDouble).toHaveBeenCalledTimes(1);
     controller.dispose();
   });

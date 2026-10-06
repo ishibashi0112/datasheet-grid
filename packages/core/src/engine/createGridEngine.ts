@@ -39,9 +39,13 @@ import {
 import { createRowSelectionCommands, type RowSelectionCommands } from './rowSelectionCommands';
 import { createGridApi, type GridApi } from './gridApi';
 import {
+  createActiveCellNotifier,
+  createCellEventNotifier,
   createDetailKeysNotifier,
   createHoverRowNotifier,
   createStateChangeNotifier,
+  type ActiveCellNotifier,
+  type CellEventNotifier,
   type DetailKeysNotifier,
   type HoverRowNotifier,
   type StateChangeNotifier,
@@ -79,6 +83,9 @@ export type GridEngine<T> = {
   hoverRowNotifier: HoverRowNotifier;
   detailKeysNotifier: DetailKeysNotifier;
   stateChangeNotifier: StateChangeNotifier<T>;
+  // 追加(G-1): セル操作の通知(クリック / ダブルクリック = レイアウト effect で接続、アクティブセル = passive)。
+  cellEventNotifier: CellEventNotifier<T>;
+  activeCellNotifier: ActiveCellNotifier<T>;
   // DOM / タイマーを持つコントローラ。
   autoHeightMeasurer: AutoHeightMeasurer<T>;
   scrollSync: ScrollSyncController;
@@ -129,6 +136,8 @@ export const createGridEngine = <T,>(init: GridEngineInit<T>): GridEngine<T> => 
     hoverRowNotifier: createHoverRowNotifier(),
     detailKeysNotifier: createDetailKeysNotifier(),
     stateChangeNotifier: createStateChangeNotifier<T>(),
+    cellEventNotifier: createCellEventNotifier<T>(),
+    activeCellNotifier: createActiveCellNotifier<T>(),
     autoHeightMeasurer,
     scrollSync,
     serverSideQueryStore,

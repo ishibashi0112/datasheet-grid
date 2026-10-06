@@ -1,0 +1,63 @@
+---
+title: セル操作の通知
+description: onCellClick / onCellDoubleClick / onActiveCellChange でクリック・ダブルクリック・アクティブセルの変化を受け取る
+---
+
+セルのクリック・ダブルクリック・アクティブセルの変化を、行データ付きで受け取れます。読み取り専用の一覧で「クリックした行を上のフォームへ写す」「ダブルクリックで確定する」といった、業務画面でよくある動きをグリッドの外側だけで組めます。3 つとも省略可で、指定しなければグリッドの動きは変わりません。
+
+## デモ(装置一覧)
+
+<CellEventsDemo />
+
+- 行をクリックすると、その行の値が上のフォームに写ります(`onCellClick`)。`Ctrl` / `Shift` を押しながらクリックすると、ログに修飾キーが出ます。
+- 矢印キーや `Tab` で移動しても `onActiveCellChange` が呼ばれます。同じセルをもう一度クリックしても呼ばれません。
+- 「装置コード」は読み取り専用ですが、ダブルクリックは通知されます。チェックを入れると `params.preventDefault()` で編集開始を止めます(`F2` / `Enter` での編集はそのまま)。
+
+## 使い方
+
+```tsx
+<SpreadsheetGrid<Device>
+  rows={devices}
+  columns={columns}
+  rowKeyGetter={(row) => row.code}
+  readOnly
+  // 行をクリックしたら入力フォームへ写す
+  onCellClick={({ row }) => form.setValues(row)}
+  // ダブルクリックした行で確定する(選択モーダルなど)
+  onCellDoubleClick={({ row }) => onConfirm(row)}
+  // キー操作での移動も含めて追従したいとき
+  onActiveCellChange={(cell) => setCurrent(cell?.row ?? null)}
+/>
+```
+
+渡るのは `GridCellRef<T> = { row, rowKey, rowIndex, sourceRowIndex, column, columnKey, colIndex, value }` です。クリック / ダブルクリックには `event`(ブラウザ標準の `MouseEvent`)も付きます。
+
+- **行は `row` と `rowKey` で扱う** — `rowIndex` はフィルター / ソート後の表示位置(`handle.selectCell` と同じ)で、並び替えると変わります。元の `rows` の位置は `sourceRowIndex` です。
+- **列は `columnKey`(または `column`)で見分ける** — クリックされた列ごとに動きを変えたいときに使います。`colIndex` は画面上の列の並び(左固定 → 中央 → 右固定)です。
+- **`value`** — セルの生値です(`getValue` 指定列はその戻り値。`valueFormatter` で整形する前)。
+
+### ダブルクリックで既定の動作を止める
+
+ダブルクリックの既定の動作は「編集可能なセルなら編集を始める」です。`onCellDoubleClick` はその前に呼ばれ、`params.preventDefault()` を呼ぶと編集を始めません。
+
+```tsx
+onCellDoubleClick={(params) => {
+  if (params.columnKey === 'subject') {
+    params.preventDefault();          // 件名セルは編集せず、選択モーダルを開く
+    openSubjectPicker(params.rowKey);
+  }
+}}
+```
+
+`params.event.preventDefault()`(ブラウザのイベント側)では止まりません。`F2` / `Enter` / 文字キーでの編集開始には影響しません。
+
+## 仕様の要点
+
+- **対象はデータセルだけ** — 列ヘッダー / 行番号「#」/ グループ行 / ラベル行 / 展開行の帯 / SSRM の未ロード行 / 合成列(展開トグル・行ドラッグハンドル・自動グループ列)ではクリック / ダブルクリックを通知しません。アクティブセルがこれらへ移ったときの `onActiveCellChange` は `null` です。
+- **クリックはブラウザの `click` に従う** — 左ボタンのみです。押したセルと離したセルが違う(範囲選択のドラッグ)ときは呼ばれません。セルの中に置いた自前のボタンのクリックもそのセルのクリックとして届くので、含めたくない場合はそのボタンで `event.stopPropagation()` してください。
+- **読み取り専用でも呼ばれる** — `readOnly` / 列の `readOnly` / `canEditCell` に関係なく通知します。
+- **順番** — 別のセルをクリックすると `onActiveCellChange` → `onCellClick` の順です。ダブルクリックは `onCellClick` × 2 → `onCellDoubleClick` の順です(ブラウザの仕様)。
+- **アクティブセルの「同じセル」** — 行キー・列キー・位置がすべて同じなら通知しません。座標が同じでも、ソートなどでその位置の行が変わったときは通知します。行データの中身が変わっただけ(編集の反映など)では通知しません。初回マウントでも呼ばれません。
+- **タッチ** — ダブルタップも `onCellDoubleClick` として通知します(`event` は指を離したときの `PointerEvent`)。
+
+props の全項目は [props](/docs/api/props#セル操作の通知oncellclick--oncelldoubleclick--onactivecellchange) を参照してください。

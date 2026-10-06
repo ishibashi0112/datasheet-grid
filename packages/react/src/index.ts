@@ -73,6 +73,10 @@ export type {
   // 追加(row-drag ③): 行ドラッグ並び替え(enableRowDrag / isRowDraggable / onRowMove)の公開型です。
   RowDragContext,
   RowMoveParams,
+  // 追加(G-1): セル操作の通知(onCellClick / onCellDoubleClick / onActiveCellChange)の引数型です。
+  GridCellRef,
+  GridCellEventParams,
+  GridCellDoubleClickParams,
   // セル表示値の整形(UI 表示のみ)の契約。
   CellValueFormatter,
   CellValueFormatterParams,

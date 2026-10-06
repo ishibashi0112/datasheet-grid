@@ -7,14 +7,23 @@
 //   - createDetailKeysNotifier: 展開行キー集合の変更通知(初回 = マウント時は通知しない)。
 //   - createStateChangeNotifier: 永続スライス(幅 / フィルター / ソート)+ 列メタの変化通知。判定は純ロジック
 //     decideStateChangeEmit(ドラッグ中保留 / 初回非発火 / 同値非発火)。onStateChange 未指定なら snapshot も作らない。
+//   - createCellEventNotifier(追加 G-1): データセルのクリック / ダブルクリックの通知(onCellClick / onCellDoubleClick)。
+//     イベント時点の最新 args を読むため、接続はレイアウト effect(既定)で行います。
+//   - createActiveCellNotifier(追加 G-1): アクティブセルの変化通知(onActiveCellChange。passive)。
 import type {
+  CellCoord,
+  GridCellDoubleClickParams,
+  GridCellEventParams,
+  GridCellRef,
   GridColumn,
   GridFilterState,
   GridRowKey,
   GridSortState,
   GridState,
   GridUiState,
+  RowModel,
 } from '../model/gridTypes.unbound';
+import { isSameGridCellRef, resolveGridCellRef } from '../logic/cellRef';
 import {
   buildGridState,
   cloneFilterState,
@@ -155,6 +164,116 @@ export const createStateChangeNotifier = <T,>(): StateChangeNotifier<T> => {
       lastEmitted = decision.nextLast;
       if (decision.emit) {
         next.onStateChange(current);
+      }
+    },
+  };
+};
+
+// ── セル操作(クリック / ダブルクリック)── 追加(G-1)
+
+export type CellEventNotifierArgs<T> = {
+  rowModel: RowModel<T>;
+  // 論理列 index 空間(視覚順 左→中央→右)の列。
+  orderedColumns: readonly GridColumn<T>[];
+  onCellClick: ((params: GridCellEventParams<T>) => void) | undefined;
+  onCellDoubleClick: ((params: GridCellDoubleClickParams<T>) => void) | undefined;
+};
+
+export type CellEventNotifier<T> = {
+  update: (args: CellEventNotifierArgs<T>) => void;
+  // セルの click から呼びます(恒久安定 = 行 memo の prop に入れられる)。対象外のセル / 未指定なら何もしません。
+  handleCellClick: (cell: CellCoord, event: MouseEvent) => void;
+  // セルのダブルクリック(タッチのダブルタップ含む)から、既定の動作(編集開始)の前に呼びます。
+  //   戻り値 true = 利用側が preventDefault() した(既定の動作を行わない)。
+  notifyCellDoubleClick: (cell: CellCoord, event: MouseEvent) => boolean;
+};
+
+export const createCellEventNotifier = <T,>(): CellEventNotifier<T> => {
+  let args: CellEventNotifierArgs<T> | null = null;
+  return {
+    update: (next) => {
+      args = next;
+    },
+    handleCellClick: (cell, event) => {
+      const onCellClick = args?.onCellClick;
+      if (args === null || !onCellClick) {
+        return;
+      }
+      const ref = resolveGridCellRef(args.rowModel, args.orderedColumns, cell);
+      if (ref === null) {
+        return;
+      }
+      onCellClick({ ...ref, event });
+    },
+    notifyCellDoubleClick: (cell, event) => {
+      const onCellDoubleClick = args?.onCellDoubleClick;
+      if (args === null || !onCellDoubleClick) {
+        return false;
+      }
+      const ref = resolveGridCellRef(args.rowModel, args.orderedColumns, cell);
+      if (ref === null) {
+        return false;
+      }
+      let prevented = false;
+      onCellDoubleClick({
+        ...ref,
+        event,
+        preventDefault: () => {
+          prevented = true;
+        },
+      });
+      return prevented;
+    },
+  };
+};
+
+// ── アクティブセル ── 追加(G-1)
+
+export type ActiveCellNotifierArgs<T> = {
+  activeCell: CellCoord | null;
+  rowModel: RowModel<T>;
+  orderedColumns: readonly GridColumn<T>[];
+  onActiveCellChange: ((cell: GridCellRef<T> | null) => void) | undefined;
+};
+
+export type ActiveCellNotifier<T> = {
+  update: (args: ActiveCellNotifierArgs<T>) => void;
+};
+
+// 由来(クリック / キー操作 / handle / 表示行数の減少による詰め)を問わず、update の時点のアクティブセルを
+//   セル参照へ解決し、前回と「別のセル」(isSameGridCellRef)になったときだけ通知します。
+//   - 初回(マウント)は基準を記録するだけで通知しません。
+//   - activeCell / rowModel / 列の参照が前回と同じなら解決もしません(毎レンダーの update を安く保つ)。
+//     rowModel は行データの変化(clientSide の rows / SSRM のブロック到着)で参照が変わるため、未ロード行が
+//     ロードされた / ソートで同じ座標の行が入れ替わった、といった変化もここで拾えます。
+//   - 追跡はコールバックの有無に関わらず行います(後からコールバックが付いても過去の変化を通知しない)。
+export const createActiveCellNotifier = <T,>(): ActiveCellNotifier<T> => {
+  let lastInputs: Omit<ActiveCellNotifierArgs<T>, 'onActiveCellChange'> | null = null;
+  let lastRef: GridCellRef<T> | null = null;
+  return {
+    update: (next) => {
+      const prevInputs = lastInputs;
+      if (
+        prevInputs !== null &&
+        Object.is(prevInputs.activeCell, next.activeCell) &&
+        Object.is(prevInputs.rowModel, next.rowModel) &&
+        Object.is(prevInputs.orderedColumns, next.orderedColumns)
+      ) {
+        return;
+      }
+      lastInputs = {
+        activeCell: next.activeCell,
+        rowModel: next.rowModel,
+        orderedColumns: next.orderedColumns,
+      };
+      const current =
+        next.activeCell === null
+          ? null
+          : resolveGridCellRef(next.rowModel, next.orderedColumns, next.activeCell);
+      const changed = prevInputs !== null && !isSameGridCellRef(lastRef, current);
+      lastRef = current;
+      if (changed) {
+        next.onActiveCellChange?.(current);
       }
     },
   };

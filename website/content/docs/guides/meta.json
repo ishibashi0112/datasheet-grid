@@ -2,6 +2,7 @@
   "title": "ガイド",
   "pages": [
     "editing",
+    "cell-events",
     "filter-sort",
     "sizing",
     "large-data",

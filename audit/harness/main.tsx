@@ -36,6 +36,8 @@ declare global {
     __renderCount: number;
     __makeRows: (n: number, seed?: number) => Row[];
     __setRenderBars?: (on: boolean) => void;
+    // 追加(G-1): true のあいだ onCellDoubleClick で params.preventDefault() を呼ぶ(編集開始を止める)。
+    __preventDblclick?: boolean;
   }
 }
 window.__errors = [];
@@ -472,6 +474,15 @@ function GridHost({ which, extra }: { which: 1 | 2; extra?: Partial<SpreadsheetG
       onUndoRedoStateChange={(s) => log('onUndoRedoStateChange', s)}
       onScroll={(p) => log('onScroll', p)}
       onHoveredRowChange={(i) => log('onHoveredRowChange', i)}
+      // 追加(G-1): セル操作の通知。
+      onCellClick={(p) => log('onCellClick', { rowKey: p.rowKey, columnKey: p.columnKey, rowIndex: p.rowIndex, ctrl: p.event.ctrlKey })}
+      onCellDoubleClick={(p) => {
+        log('onCellDoubleClick', { rowKey: p.rowKey, columnKey: p.columnKey, type: p.event.type });
+        if (window.__preventDblclick) {
+          p.preventDefault();
+        }
+      }}
+      onActiveCellChange={(c) => log('onActiveCellChange', c && { rowKey: c.rowKey, columnKey: c.columnKey, rowIndex: c.rowIndex })}
       onServerSideLoadError={(e, p) => log('onServerSideLoadError', { msg: String((e as Error)?.message ?? e), ...p })}
       onServerSideWriteError={(e, p) => log('onServerSideWriteError', { msg: String((e as Error)?.message ?? e), n: p.updates.length })}
       showCellOverflowTooltip

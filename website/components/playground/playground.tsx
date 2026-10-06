@@ -8,6 +8,7 @@ import {
   numberFormatter,
   type DetailRowOptions,
   type GetFilterOptionsParams,
+  type GridCellRef,
   type GridColumn,
   type GridDensity,
   type GridTheme,
@@ -171,6 +172,8 @@ type Settings = {
   manualSorting: boolean;
   // 候補の非同期取得(getFilterOptions)。ON で set 列の候補を 700ms 遅延 + 先頭 3 件で打ち切って返す疑似 DB から取る。
   asyncFilterOptions: boolean;
+  // セル操作の通知(onCellClick / onCellDoubleClick / onActiveCellChange)。ON でグリッド下にイベントログを出す。
+  cellEventLog: boolean;
 };
 
 const DEFAULTS: Settings = {
@@ -203,6 +206,7 @@ const DEFAULTS: Settings = {
   manualFiltering: false,
   manualSorting: false,
   asyncFilterOptions: false,
+  cellEventLog: false,
 };
 
 function buildSnippet(s: Settings): string {
@@ -268,6 +272,14 @@ function buildSnippet(s: Settings): string {
   if (s.asyncFilterOptions) {
     lines.push('  getFilterOptions={fetchDistinctValues} // ({ columnKey, columnFilters, signal }) => Promise<{ options, truncated? }>');
   }
+  // セル操作の通知は既定 OFF(未指定)のため、ON のときだけスニペットへ載せる。
+  if (s.cellEventLog) {
+    lines.push(
+      '  onCellClick={({ row, columnKey, event }) => log(\'click\', row.id, columnKey, event.ctrlKey)}',
+      '  onCellDoubleClick={({ row, columnKey }) => log(\'dblclick\', row.id, columnKey)} // params.preventDefault() で編集開始を止める',
+      '  onActiveCellChange={(cell) => log(\'active\', cell?.rowKey, cell?.columnKey)}',
+    );
+  }
   // labelRow は既定 OFF(undefined)のため、ON のときだけスニペットへ載せる。
   if (s.labelRow) {
     lines.push(
@@ -321,6 +333,10 @@ function PlaygroundGrid({ settings }: { settings: Settings }) {
   );
   const [rows, setRows] = useState<Row[]>(initialRows);
   const [columns, setColumns] = useState<GridColumn<Row>[]>(initialColumns);
+  // セル操作の通知のログ(新しい順に 5 件)。
+  const [eventLog, setEventLog] = useState<string[]>([]);
+  const pushEventLog = (line: string) => setEventLog((current) => [line, ...current].slice(0, 5));
+  const describeCell = (cell: GridCellRef<Row>) => `#${String(cell.rowKey)} / ${cell.column.title}`;
   // 疑似 DB: 開いている列の DISTINCT を 700ms 遅延で返し、先頭 3 件で打ち切る(truncated の表示を体験できる)。
   //   閉じると signal が abort されるので、遅延中の応答は捨てられる。
   const getFilterOptions = useMemo(
@@ -349,51 +365,76 @@ function PlaygroundGrid({ settings }: { settings: Settings }) {
   );
 
   return (
-    <SpreadsheetGrid
-      rows={rows}
-      columns={columns}
-      onColumnsChange={setColumns}
-      onRowsChange={setRows}
-      rowKeyGetter={(row) => row.id}
-      height={settings.height}
-      theme={settings.theme}
-      density={settings.density}
-      showTopBar={settings.showTopBar}
-      showBottomBar={settings.showBottomBar}
-      showFilterChipBar={settings.showFilterChipBar}
-      enableSorting={settings.enableSorting}
-      enableColumnFilter={settings.enableColumnFilter}
-      enableGlobalFilter={settings.enableGlobalFilter}
-      enableColumnMenu={settings.enableColumnMenu}
-      enableRangeSelection={settings.enableRangeSelection}
-      enableUndoRedo={settings.enableUndoRedo}
-      enableClearOnDelete={settings.enableClearOnDelete}
-      readOnly={settings.readOnly}
-      dimReadOnlyCells={settings.dimReadOnlyCells}
-      showValidationMarks={settings.showValidationMarks}
-      enableRowSelection={settings.enableRowSelection}
-      rowSelectionMode={settings.rowSelectionMode}
-      enableSelectAllRows={settings.enableRowSelection && settings.enableSelectAllRows}
-      scrollHint={
-        settings.scrollHint
-          ? { hintColumn: 'name', minRows: settings.scrollHintMinRows }
-          : undefined
-      }
-      detailRow={settings.detailRow ? playgroundDetailRow : undefined}
-      enableRowDrag={settings.enableRowDrag}
-      manualFiltering={settings.manualFiltering}
-      manualSorting={settings.manualSorting}
-      getFilterOptions={settings.asyncFilterOptions ? getFilterOptions : undefined}
-      labelRow={
-        settings.labelRow
-          ? {
-              isLabelRow: (row) => row.kind === 'label',
-              getLabel: (row) => row.name,
-              sticky: settings.labelRowSticky,
-            }
-          : undefined
-      }
-    />
+    <div className="flex flex-col gap-2">
+      <SpreadsheetGrid
+        rows={rows}
+        columns={columns}
+        onColumnsChange={setColumns}
+        onRowsChange={setRows}
+        rowKeyGetter={(row) => row.id}
+        height={settings.height}
+        theme={settings.theme}
+        density={settings.density}
+        showTopBar={settings.showTopBar}
+        showBottomBar={settings.showBottomBar}
+        showFilterChipBar={settings.showFilterChipBar}
+        enableSorting={settings.enableSorting}
+        enableColumnFilter={settings.enableColumnFilter}
+        enableGlobalFilter={settings.enableGlobalFilter}
+        enableColumnMenu={settings.enableColumnMenu}
+        enableRangeSelection={settings.enableRangeSelection}
+        enableUndoRedo={settings.enableUndoRedo}
+        enableClearOnDelete={settings.enableClearOnDelete}
+        readOnly={settings.readOnly}
+        dimReadOnlyCells={settings.dimReadOnlyCells}
+        showValidationMarks={settings.showValidationMarks}
+        enableRowSelection={settings.enableRowSelection}
+        rowSelectionMode={settings.rowSelectionMode}
+        enableSelectAllRows={settings.enableRowSelection && settings.enableSelectAllRows}
+        scrollHint={
+          settings.scrollHint
+            ? { hintColumn: 'name', minRows: settings.scrollHintMinRows }
+            : undefined
+        }
+        detailRow={settings.detailRow ? playgroundDetailRow : undefined}
+        enableRowDrag={settings.enableRowDrag}
+        manualFiltering={settings.manualFiltering}
+        manualSorting={settings.manualSorting}
+        getFilterOptions={settings.asyncFilterOptions ? getFilterOptions : undefined}
+        labelRow={
+          settings.labelRow
+            ? {
+                isLabelRow: (row) => row.kind === 'label',
+                getLabel: (row) => row.name,
+                sticky: settings.labelRowSticky,
+              }
+            : undefined
+        }
+        onCellClick={
+          settings.cellEventLog
+            ? (params) => pushEventLog(`onCellClick: ${describeCell(params)}${params.event.ctrlKey ? '(Ctrl)' : ''}`)
+            : undefined
+        }
+        onCellDoubleClick={
+          settings.cellEventLog ? (params) => pushEventLog(`onCellDoubleClick: ${describeCell(params)}`) : undefined
+        }
+        onActiveCellChange={
+          settings.cellEventLog
+            ? (cell) => pushEventLog(`onActiveCellChange: ${cell ? describeCell(cell) : 'null'}`)
+            : undefined
+        }
+      />
+      {settings.cellEventLog ? (
+        <div className="min-h-[7.5rem] rounded-lg border border-fd-border p-3 font-mono text-xs text-fd-muted-foreground">
+          {eventLog.length === 0 ? <p className="m-0">(セルをクリック / ダブルクリック / 矢印キーで移動するとここに出ます)</p> : null}
+          {eventLog.map((line, index) => (
+            <p key={`${index}-${line}`} className="m-0">
+              {line}
+            </p>
+          ))}
+        </div>
+      ) : null}
+    </div>
   );
 }
 
@@ -514,6 +555,7 @@ export function Playground() {
           <Toggle label="enableClearOnDelete" checked={settings.enableClearOnDelete} onChange={(v) => set('enableClearOnDelete', v)} />
           <Toggle label="detailRow" checked={settings.detailRow} onChange={(v) => set('detailRow', v)} />
           <Toggle label="enableRowDrag" checked={settings.enableRowDrag} onChange={(v) => set('enableRowDrag', v)} />
+          <Toggle label="onCellClick ほか(ログ)" checked={settings.cellEventLog} onChange={(v) => set('cellEventLog', v)} />
           <Toggle label="labelRow" checked={settings.labelRow} onChange={(v) => set('labelRow', v)} />
           <label className={settings.labelRow ? '' : 'opacity-50'}>
             <Toggle label="labelRow.sticky" checked={settings.labelRowSticky} onChange={(v) => set('labelRowSticky', v)} />

@@ -85,6 +85,7 @@ describe('GridBodyLayer CellStyleContext(sourceRowIndex / rowKey)', () => {
         onRowHeaderPointerLeave={() => {}}
         onCellPointerDown={() => {}}
         onCellPointerEnter={() => {}}
+        onCellClick={() => {}}
         onCellDoubleClick={() => {}}
         renderCellContent={(row) => <span>{row.name}</span>}
       />,

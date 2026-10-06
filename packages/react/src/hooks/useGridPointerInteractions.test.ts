@@ -199,7 +199,7 @@ const makeArgs = (params: {
     enableRowSelection: true,
     onGutterRowSelect: () => {},
     onGutterRowSelectDrag: params.onGutterRowSelectDrag ?? (() => {}),
-    onCellDoubleClickRef: { current: (() => {}) as (cell: CellCoord) => void },
+    onCellDoubleClickRef: { current: (() => {}) as (cell: CellCoord, event: MouseEvent) => void },
   };
   return { args, scrollContainer, scrollToCalls };
 };
@@ -587,11 +587,15 @@ describe('タッチ操作(タップ確定 / パン破棄 / ダブルタップ)',
     expect(onDoubleClick).not.toHaveBeenCalled();
     tap(1200);
     expect(onDoubleClick).toHaveBeenCalledTimes(1);
-    expect(onDoubleClick).toHaveBeenCalledWith(cell);
+    // 変更(G-1): ダブルタップを離した pointerup のイベントも渡す。
+    expect(onDoubleClick).toHaveBeenCalledWith(
+      cell,
+      expect.objectContaining({ type: 'pointerup' }),
+    );
 
     // 一部ブラウザが続けて発火する native dblclick は二重起動しない。
     act(() => {
-      result.current.handleCellDoubleClick(cell);
+      result.current.handleCellDoubleClick(cell, new MouseEvent('dblclick'));
     });
     expect(onDoubleClick).toHaveBeenCalledTimes(1);
 
@@ -616,10 +620,11 @@ describe('タッチ操作(タップ確定 / パン破棄 / ダブルタップ)',
     expect(types).toContainEqual(gridActions.activateCell(cell));
     expect(types).toContainEqual(gridActions.startSelection(cell));
 
+    const dblclick = new MouseEvent('dblclick');
     act(() => {
-      result.current.handleCellDoubleClick(cell);
+      result.current.handleCellDoubleClick(cell, dblclick);
     });
-    expect(onDoubleClick).toHaveBeenCalledWith(cell);
+    expect(onDoubleClick).toHaveBeenCalledWith(cell, dblclick);
   });
 
   it('行ヘッダー / 列ヘッダーのタップは行全体 / 列全体を選択して即終了する(ドラッグ状態を残さない)', () => {

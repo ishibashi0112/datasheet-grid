@@ -17,6 +17,7 @@ import { DetailRowDemo } from '@/components/demo/detail-row-demo';
 import { RowDragDemo } from '@/components/demo/row-drag-demo';
 import { LabelRowDemo } from '@/components/demo/label-row-demo';
 import { SizingDemo } from '@/components/demo/sizing-demo';
+import { CellEventsDemo } from '@/components/demo/cell-events-demo';
 
 export function getMDXComponents(components?: MDXComponents) {
   return {
@@ -39,6 +40,7 @@ export function getMDXComponents(components?: MDXComponents) {
     RowDragDemo,
     LabelRowDemo,
     SizingDemo,
+    CellEventsDemo,
     ...components,
   } satisfies MDXComponents;
 }

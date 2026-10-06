@@ -1464,6 +1464,48 @@ export type GridContextMenuItem<F extends GridFrameworkTypes = GridFrameworkType
   | GridContextMenuSeparatorItem
   | GridContextMenuCustomItem<F>;
 
+// ── 追加(G-1): セル操作の通知(onCellClick / onCellDoubleClick / onActiveCellChange)の公開型群 ──
+//   対象はデータ行 × 利用側の列のセルだけです(列ヘッダー / 行番号 / グループ行 / ラベル行 / 展開行 /
+//   SSRM の未ロード行 / 合成列 = 展開トグル・行ドラッグハンドル・自動グループ列は対象外)。
+//   監査 RD-4(canEditCell の rowIndex の基準が経路で違う)と同じ混乱を避けるため、行は index ではなく
+//   行データ + rowKey を主に渡し、index は view / source の両方を明示した名前で添えます(CellStyleContext と同基準)。
+//   event はブラウザ標準(DOM)の MouseEvent です(React の合成イベントではない = core はフレームワーク非依存)。
+//   束ね型 F へ項目を足すと既存の束縛型を壊すため、DOM 標準型で受けます。
+/**
+ * セル操作の通知(`onCellClick` / `onCellDoubleClick` / `onActiveCellChange`)が指すデータセル。
+ * `rowIndex` はビュー行 index(フィルター / ソート後の表示位置 = `handle.selectCell` と同じ空間)、
+ * `sourceRowIndex` は元 `rows` の index(serverSide では view index と同値)、`colIndex` は論理列 index
+ * (視覚順 左→中央→右)。`value` はセルの生値(`getValue` 指定列はその戻り値。`valueFormatter` 適用前)。
+ */
+export type GridCellRef<T, F extends GridFrameworkTypes = GridFrameworkTypes> = {
+  row: T;
+  rowKey: GridRowKey;
+  rowIndex: number;
+  sourceRowIndex: number;
+  column: GridColumn<T, F>;
+  columnKey: string;
+  colIndex: number;
+  value: unknown;
+};
+
+/**
+ * `onCellClick` の引数。`GridCellRef` に、発火元のブラウザ標準(DOM)の `MouseEvent` を足したもの
+ * (修飾キー `ctrlKey` / `shiftKey` / `metaKey` / `altKey` などを見たいとき用)。
+ */
+export type GridCellEventParams<T, F extends GridFrameworkTypes = GridFrameworkTypes> = GridCellRef<T, F> & {
+  event: MouseEvent;
+};
+
+/**
+ * `onCellDoubleClick` の引数。`preventDefault()` を呼ぶと既定の動作(編集可能セルなら編集開始)を
+ * 行わない(`event.preventDefault()` ではなく本関数)。タッチのダブルタップでは `event` は離したときの
+ * `PointerEvent`(`MouseEvent` の派生)。
+ */
+export type GridCellDoubleClickParams<T, F extends GridFrameworkTypes = GridFrameworkTypes> =
+  GridCellEventParams<T, F> & {
+    preventDefault: () => void;
+  };
+
 // 追加: 公開 props です。
 // 追加(slot-props / StyleX 併用): className 系スロットが受ける値の形です。
 //   - string: 従来どおりの class 文字列。
@@ -2759,6 +2801,42 @@ export type SpreadsheetGridProps<T, F extends GridFrameworkTypes = GridFramework
     viewRowIndex: number | null,
     ctx: { source: 'pointer' },
   ) => void;
+  // ── 追加(G-1): セル操作の通知 ──
+  //   データセル(データ行 × 利用側の列)の click で呼びます。左ボタンのみ・押した位置と離した位置が同じセルのとき
+  //   だけ(範囲選択のドラッグはクリック扱いにしない)。読み取り専用セルでも呼びます。セル内の要素(checkbox 等)の
+  //   クリックもそのセルのクリックとして通知します。インライン関数可(エンジンの update 経由で最新を読む)。
+  /**
+   * データセル(データ行 × 利用側の列)のクリックで呼ばれる。左ボタンのみで、
+   * 押した位置と離した位置が同じセルのときだけ呼ばれる(範囲選択のドラッグはクリック扱いにしない)。
+   * 読み取り専用セルでも呼ばれ、セル内の要素(checkbox 等)
+   * のクリックもそのセルのクリックとして通知する。`params` は
+   * `GridCellRef<T>`(`{ row, rowKey, rowIndex, sourceRowIndex, column, columnKey, colIndex, value }`)+
+   * `event`(DOM 標準の `MouseEvent`)。列ヘッダー / 行番号 / グループ行 / ラベル行 / 展開行 / SSRM
+   * の未ロード行 / 合成列(展開トグル・行ドラッグハンドル)では呼ばれない。インライン関数可。
+   * 詳細は「セル操作の通知」節。
+   */
+  onCellClick?: (params: GridCellEventParams<T, F>) => void;
+  //   データセルのダブルクリック(タッチのダブルタップ含む)で、既定の動作(編集開始)の前に呼びます。
+  //   読み取り専用セルでも呼びます。params.preventDefault() で既定の動作を止められます。
+  /**
+   * データセルのダブルクリック(タッチのダブルタップ含む)で、既定の動作(編集可能セルなら編集開始)
+   * の前に呼ばれる。読み取り専用セルでも呼ばれる。`params.preventDefault()`
+   * で既定の動作を止められる(`params.event.preventDefault()` では止まらない)。対象のセルは
+   * `onCellClick` と同じ。インライン関数可。
+   */
+  onCellDoubleClick?: (params: GridCellDoubleClickParams<T, F>) => void;
+  //   由来(クリック / キー操作 / handle.selectCell 等)を問わず、アクティブセルが変わったときに呼びます
+  //   (passive タイミング = ペイント後)。アクティブセルが無くなった / データセル以外へ移ったときは null。
+  //   (rowKey, columnKey, rowIndex, colIndex)が同じなら呼びません(同じセルへの再設定)。初回マウントでは呼びません。
+  /**
+   * アクティブセルが変わったときに呼ばれる(クリック / キー操作 / `setActiveCell`
+   * など由来を問わない)。アクティブセルが無くなった / データセル以外(グループ行 / ラベル行 /
+   * 未ロード行 / 合成列)へ移ったときは `null`。行キー・列キー・位置(`rowIndex` / `colIndex`)
+   * がすべて同じなら呼ばれない(同じセルへの再設定)。座標が同じでも、
+   * ソートなどでその位置の行が変われば呼ばれる。初回マウントでは呼ばれない。
+   * 通知はペイント後(クリックでは `onCellClick` より先)。インライン関数可。
+   */
+  onActiveCellChange?: (cell: GridCellRef<T, F> | null) => void;
   // 追加(UI hover): 列ヘッダーのホバー時にヘッダーセルを薄くハイライトします。既定 true。
   /**
    * 列ヘッダーのホバー時にヘッダーセルを薄くハイライト。

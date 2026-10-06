@@ -33,7 +33,8 @@ type UseGridPointerInteractionsArgs<T> = Omit<
   rightPaneScrollRef: RefObject<HTMLDivElement | null>;
   pointerClientRef: RefObject<{ x: number; y: number } | null>;
   autoScrollFrameRef: RefObject<number | null>;
-  onCellDoubleClickRef: RefObject<(cell: CellCoord) => void>;
+  // 変更(G-1): ダブルクリック元のイベント(DOM 標準の MouseEvent)も受けます(onCellDoubleClick の params.event)。
+  onCellDoubleClickRef: RefObject<(cell: CellCoord, event: MouseEvent) => void>;
 };
 
 export const useGridPointerInteractions = <T,>(args: UseGridPointerInteractionsArgs<T>) => {

@@ -432,4 +432,67 @@ import { OUT, open, check, unexpectedPageErrors, summary, errorsOf, renderedRowI
   await close();
 }
 
+// ---------- セル操作の通知(G-1)----------
+//   実ブラウザでの click / dblclick の判定(pointerdown の preventDefault 下でも click が届くか・範囲選択ドラッグは
+//   クリックにならないか・右クリックは対象外か)と、onActiveCellChange → onCellClick の順を確かめる。
+{
+  const { page, pageErrors, close } = await open('basic', { query: 'n=50' });
+  await clearEvents(page);
+  await cell(page, 2, 'name').click();
+  await waitIdle(page);
+  const ev1 = (await events(page)).filter((e) => e.type === 'onCellClick' || e.type === 'onActiveCellChange');
+  check('cell-events: click → onActiveCellChange then onCellClick', ev1.length === 2 && ev1[0].type === 'onActiveCellChange' && ev1[1].type === 'onCellClick' && ev1[1].payload.columnKey === 'name' && ev1[1].payload.rowIndex === 2, ev1.map((e) => [e.type, e.payload]));
+  await clearEvents(page);
+  await cell(page, 2, 'name').click();
+  await waitIdle(page);
+  check('cell-events: same cell click → onCellClick only (no active change)', (await events(page, 'onActiveCellChange')).length === 0 && (await events(page, 'onCellClick')).length === 1);
+  await clearEvents(page);
+  await cell(page, 3, 'qty').click({ modifiers: ['Control'] });
+  await waitIdle(page);
+  const ctrlEv = await events(page, 'onCellClick');
+  check('cell-events: ctrl+click carries event.ctrlKey', ctrlEv.length === 1 && ctrlEv[0].payload.ctrl === true, ctrlEv.map((e) => e.payload));
+  // 範囲選択ドラッグ(押したセルと離したセルが違う)はクリックにならない。
+  await clearEvents(page);
+  const a = await cell(page, 1, 'name').boundingBox();
+  const b = await cell(page, 4, 'qty').boundingBox();
+  await page.mouse.move(a.x + a.width / 2, a.y + a.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(b.x + b.width / 2, b.y + b.height / 2, { steps: 5 });
+  await page.mouse.up();
+  await waitIdle(page);
+  check('cell-events: range drag is not a click', (await events(page, 'onCellClick')).length === 0);
+  // 右クリック / 列ヘッダーは対象外。
+  await clearEvents(page);
+  await cell(page, 5, 'name').click({ button: 'right' });
+  await page.keyboard.press('Escape');
+  await header(page, 'qty').click();
+  await waitIdle(page);
+  check('cell-events: right click / header click → no onCellClick', (await events(page, 'onCellClick')).length === 0);
+  // ダブルクリック: 既定は編集開始、preventDefault() で止まる。
+  await clearEvents(page);
+  await cell(page, 6, 'name').dblclick();
+  await waitIdle(page);
+  const dbl = await events(page, 'onCellDoubleClick');
+  check('cell-events: dblclick notifies (event = dblclick) and starts editing', dbl.length === 1 && dbl[0].payload.type === 'dblclick' && (await page.locator('.ssg-cell-editor').count()) === 1, dbl.map((e) => e.payload));
+  await page.keyboard.press('Escape');
+  await page.evaluate(() => void (window.__preventDblclick = true));
+  await cell(page, 7, 'name').dblclick();
+  await waitIdle(page);
+  check('cell-events: preventDefault() stops editing on dblclick', (await page.locator('.ssg-cell-editor').count()) === 0);
+  await page.keyboard.press('F2');
+  await waitIdle(page);
+  check('cell-events: F2 still starts editing after preventDefault on dblclick', (await page.locator('.ssg-cell-editor').count()) === 1);
+  await page.keyboard.press('Escape');
+  await page.evaluate(() => void (window.__preventDblclick = false));
+  // キー操作でもアクティブセルの変化を通知する。
+  await clearEvents(page);
+  await page.keyboard.press('ArrowDown');
+  await waitIdle(page);
+  const act = await events(page, 'onActiveCellChange');
+  check('cell-events: ArrowDown → onActiveCellChange (row 8)', act.length === 1 && act[0].payload.rowIndex === 8, act.map((e) => e.payload));
+  const errs = await errorsOf(page);
+  check('cell-events: no console errors', errs.length === 0 && unexpectedPageErrors(pageErrors).length === 0, [...errs, ...pageErrors].slice(0, 5));
+  await close();
+}
+
 summary();
