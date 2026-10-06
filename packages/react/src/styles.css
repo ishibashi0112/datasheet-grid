@@ -126,6 +126,8 @@
     /* バリデーション(validation): invalid セル / reject エラーバブル */
     --ssg-invalid: #ef4444;
     --ssg-invalid-bg: rgba(239, 68, 68, 0.08);
+    /* 追加(G-3): セルのメモ(cellNote)の右上の印 */
+    --ssg-note-indicator: #f59e0b;
     /* その他 */
     --ssg-drop-indicator: #0f172a;
     --ssg-glyph-faint: #cbd5e1;
@@ -269,6 +271,8 @@
     /* バリデーション */
     --ssg-invalid: #f87171;
     --ssg-invalid-bg: rgba(248, 113, 113, 0.14);
+    /* セルのメモ(cellNote) */
+    --ssg-note-indicator: #fbbf24;
     /* その他 */
     --ssg-drop-indicator: #c1c2c5;
     --ssg-skeleton-bar: #2c2e33;
@@ -856,6 +860,18 @@
     right: 0;
     border-top: 6px solid var(--ssg-invalid);
     border-left: 6px solid transparent;
+    pointer-events: none;
+  }
+  /* 追加(G-3): セルのメモ(cellNote)。右上の 10px の三角(--ssg-note-indicator)。入力エラーの 6px の赤い三角
+     (::after)はこの上に描かれるため、同じセルにエラーとメモがあっても二重の三角で両方見える。
+     文言はエラーと同じカスタムツールチップ(data-ssg-tooltip)で表示する。 */
+  .ssg-body-cell--has-note::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    right: 0;
+    border-top: 10px solid var(--ssg-note-indicator);
+    border-left: 10px solid transparent;
     pointer-events: none;
   }
   /* reject 表示: エディタ input の枠色 + 即時エラーバブル(hover 遅延のある tooltip は使わない)。

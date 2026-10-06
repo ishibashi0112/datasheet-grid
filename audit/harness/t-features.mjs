@@ -495,4 +495,51 @@ import { OUT, open, check, unexpectedPageErrors, summary, errorsOf, renderedRowI
   await close();
 }
 
+// ---------- セルのメモ(G-3)----------
+//   印(::before の 10px の三角。入力エラーの 6px の三角 ::after が上に重なる)と、ツールチップ(エラー → 改行 → メモ)を
+//   実ブラウザの計算済みスタイル / 表示で確かめる。
+{
+  const { page, pageErrors, close } = await open('basic', { query: 'n=50' });
+  await page.evaluate(() =>
+    window.__setColumns(
+      window.__columns().map((c) =>
+        c.key === 'name' ? { ...c, cellNote: ({ row }) => (row.id % 2 === 0 ? 'メモ 1 行目\nメモ 2 行目' : undefined) } : c,
+      ),
+    ),
+  );
+  await waitIdle(page, 200);
+  const noted = await page.evaluate(() =>
+    [...document.querySelectorAll('.ssg-center-pane .ssg-body-cell--has-note')].map((el) => el.closest('.ssg-body-row').getAttribute('data-row-index')),
+  );
+  check('cell-note: only rows with even id get the note class', noted.length > 0 && noted.every((i) => (Number(i) + 1) % 2 === 0), noted.slice(0, 6));
+  const marker = await page.evaluate(() => {
+    const el = document.querySelector('.ssg-center-pane .ssg-body-row[data-row-index="1"] .ssg-body-cell[data-ssg-col-key="name"]');
+    const before = getComputedStyle(el, '::before');
+    return { content: before.content, width: before.borderTopWidth, color: before.borderTopColor, top: before.top, right: before.right, tip: el.getAttribute('data-ssg-tooltip') };
+  });
+  check('cell-note: ::before is a 10px amber triangle at the top-right', marker.content === '""' && marker.width === '10px' && marker.color === 'rgb(245, 158, 11)' && marker.top === '0px' && marker.right === '0px', marker);
+  await cell(page, 1, 'name').hover();
+  await waitIdle(page, 600);
+  const tip = await page.evaluate(() => {
+    const el = document.querySelector('.ssg-tooltip.ssg-tooltip--visible');
+    return el ? { text: el.innerText, lines: el.innerText.split('\n').length } : null;
+  });
+  check('cell-note: hover shows the note with a line break', tip && tip.lines === 2 && tip.text.includes('メモ 2 行目'), tip);
+  // 入力エラー(名前は必須)と重ねる: 二重の三角 + 「エラー → 改行 → メモ」。
+  await page.mouse.move(5, 5);
+  await page.evaluate(() => window.__setRows(window.__rows().map((r, i) => (i === 1 ? { ...r, name: '' } : r))));
+  await waitIdle(page, 200);
+  const both = await page.evaluate(() => {
+    const el = document.querySelector('.ssg-center-pane .ssg-body-row[data-row-index="1"] .ssg-body-cell[data-ssg-col-key="name"]');
+    const after = getComputedStyle(el, '::after');
+    return { cls: el.className, afterWidth: after.borderTopWidth, afterColor: after.borderTopColor, tip: el.getAttribute('data-ssg-tooltip') };
+  });
+  check('cell-note: with invalid → both classes, 6px red ::after over the note', both.cls.includes('ssg-body-cell--invalid') && both.cls.includes('ssg-body-cell--has-note') && both.afterWidth === '6px' && both.afterColor === 'rgb(239, 68, 68)', both);
+  check('cell-note: tooltip = error → newline → note', both.tip === '名前は必須です\nメモ 1 行目\nメモ 2 行目', both.tip);
+  await page.screenshot({ path: OUT + 'shot-cell-note.png', clip: { x: 0, y: 0, width: 700, height: 300 } });
+  const errs = await errorsOf(page);
+  check('cell-note: no console errors', errs.length === 0 && unexpectedPageErrors(pageErrors).length === 0, [...errs, ...pageErrors].slice(0, 5));
+  await close();
+}
+
 summary();

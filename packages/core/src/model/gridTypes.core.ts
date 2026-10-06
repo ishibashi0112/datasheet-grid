@@ -1119,6 +1119,22 @@ export type GridColumn<T, F extends GridFrameworkTypes = GridFrameworkTypes> = {
   cellClassName?:
     | GridSlotProps<F>
     | ((ctx: CellStyleContext<T, F>) => GridSlotProps<F> | undefined);
+  // 追加(G-3): セルのメモ(FarPoint SPREAD のセルメモ / Excel のメモ相当)。文字列を返したセルに右上の印
+  //   (.ssg-body-cell--has-note。色は --ssg-note-indicator)を出し、マウスを乗せるとその文字列を既存のカスタム
+  //   ツールチップ(data-ssg-tooltip)で表示します(\n で改行)。入力エラー(validate の mark)と同じセルでは
+  //   「エラー → 改行 → メモ」の順につなぎます。描画中のセルだけ評価します(cellClassName の関数版と同コスト階級)。
+  //   CSV / TSV / クリップボード / getExportData には含めません。
+  /**
+   * セルのメモ(FarPoint SPREAD のセルメモ / Excel のメモ相当)。文字列を返したセルの右上に印(10px
+   * の三角。色はトークン `--ssg-note-indicator`)を出し、
+   * マウスを乗せるとその文字列をツールチップで表示する(`\n` で改行)。`undefined` / `null` /
+   * 空文字(空白だけを含む)なら何も出さない。`ctx` は `cellClassName` の関数版と同じ。
+   * 入力エラー(`validate` の mark)と同じセルでは、エラーの 6px
+   * の赤い三角がメモの三角の上に重なって両方見え、ツールチップは「エラー → 改行 → メモ」の順。
+   * 描画中のセルだけ評価する(`cellClassName` 関数と同じコスト階級)。CSV / TSV / クリップボード /
+   * `getExportData` には含めない。詳細は「セルのメモ(`cellNote`)」節。
+   */
+  cellNote?: (ctx: CellStyleContext<T, F>) => string | null | undefined;
   // 追加(③): セル内容の水平寄せ(UI 表示のみ・元の値は不変)。未指定は左。
   //   セル表示と編集 input の双方へ反映します(renderCell 指定時もセルコンテナへ適用)。
   /**

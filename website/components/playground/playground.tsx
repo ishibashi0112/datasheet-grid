@@ -174,6 +174,8 @@ type Settings = {
   asyncFilterOptions: boolean;
   // セル操作の通知(onCellClick / onCellDoubleClick / onActiveCellChange)。ON でグリッド下にイベントログを出す。
   cellEventLog: boolean;
+  // セルのメモ(GridColumn.cellNote)。ON で単価 / 数量の列にメモ(右上の印 + ツールチップ)を出す。
+  cellNote: boolean;
 };
 
 const DEFAULTS: Settings = {
@@ -207,6 +209,7 @@ const DEFAULTS: Settings = {
   manualSorting: false,
   asyncFilterOptions: false,
   cellEventLog: false,
+  cellNote: false,
 };
 
 function buildSnippet(s: Settings): string {
@@ -272,6 +275,10 @@ function buildSnippet(s: Settings): string {
   if (s.asyncFilterOptions) {
     lines.push('  getFilterOptions={fetchDistinctValues} // ({ columnKey, columnFilters, signal }) => Promise<{ options, truncated? }>');
   }
+  // セルのメモは列定義側の指定のため、ON のときはコメントで示す。
+  if (s.cellNote) {
+    lines.push("  // columns の単価列: cellNote: ({ value }) => (value < 300 ? '販売単価が 300 円未満です。\\n仕入単価を確認してください。' : undefined)");
+  }
   // セル操作の通知は既定 OFF(未指定)のため、ON のときだけスニペットへ載せる。
   if (s.cellEventLog) {
     lines.push(
@@ -333,6 +340,34 @@ function PlaygroundGrid({ settings }: { settings: Settings }) {
   );
   const [rows, setRows] = useState<Row[]>(initialRows);
   const [columns, setColumns] = useState<GridColumn<Row>[]>(initialColumns);
+  // セルのメモ(cellNote)。トグルに合わせて単価 / 数量の列へ付け外しする(OFF では undefined に戻す)。
+  //   数量に負の値を入れると入力エラーとメモが重なり、二重の三角とツールチップ(エラー → メモ)を確認できる。
+  const gridColumns = useMemo(
+    () =>
+      columns.map((column): GridColumn<Row> => {
+        if (column.key === 'price') {
+          return {
+            ...column,
+            cellNote: settings.cellNote
+              ? ({ value }) =>
+                  typeof value === 'number' && value < 300
+                    ? '販売単価が 300 円未満です。\n仕入単価を確認してください。'
+                    : undefined
+              : undefined,
+          };
+        }
+        if (column.key === 'qty') {
+          return {
+            ...column,
+            cellNote: settings.cellNote
+              ? ({ value }) => (typeof value === 'number' && value < 10 ? '在庫が少なくなっています。' : undefined)
+              : undefined,
+          };
+        }
+        return column;
+      }),
+    [columns, settings.cellNote],
+  );
   // セル操作の通知のログ(新しい順に 5 件)。
   const [eventLog, setEventLog] = useState<string[]>([]);
   const pushEventLog = (line: string) => setEventLog((current) => [line, ...current].slice(0, 5));
@@ -368,7 +403,7 @@ function PlaygroundGrid({ settings }: { settings: Settings }) {
     <div className="flex flex-col gap-2">
       <SpreadsheetGrid
         rows={rows}
-        columns={columns}
+        columns={gridColumns}
         onColumnsChange={setColumns}
         onRowsChange={setRows}
         rowKeyGetter={(row) => row.id}
@@ -556,6 +591,7 @@ export function Playground() {
           <Toggle label="detailRow" checked={settings.detailRow} onChange={(v) => set('detailRow', v)} />
           <Toggle label="enableRowDrag" checked={settings.enableRowDrag} onChange={(v) => set('enableRowDrag', v)} />
           <Toggle label="onCellClick ほか(ログ)" checked={settings.cellEventLog} onChange={(v) => set('cellEventLog', v)} />
+          <Toggle label="cellNote(メモ)" checked={settings.cellNote} onChange={(v) => set('cellNote', v)} />
           <Toggle label="labelRow" checked={settings.labelRow} onChange={(v) => set('labelRow', v)} />
           <label className={settings.labelRow ? '' : 'opacity-50'}>
             <Toggle label="labelRow.sticky" checked={settings.labelRowSticky} onChange={(v) => set('labelRowSticky', v)} />

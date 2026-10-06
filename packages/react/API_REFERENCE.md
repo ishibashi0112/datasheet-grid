@@ -353,6 +353,7 @@ const gridRef = useRef<SpreadsheetGridHandle<Row>>(null);
 | `align` | `'left' \| 'center' \| 'right'` | `'left'` | セル内容の水平寄せ(UI 表示のみ・元の値は不変)。セル表示と編集 input に反映。 |
 | `valueFormatter` | `(params: CellValueFormatterParams<T>) => string` | — | セル表示値の整形(UI 表示のみ)。`renderCell` 未指定の既定セルが返り値を表示。組み込み `numberFormatter` 等を渡せる。元の値/編集/コピー/ソート/フィルターには影響しない。 |
 | `cellClassName` | `GridSlotProps \| ((ctx: CellStyleContext<T>) => GridSlotProps \| undefined)` | — | セルへ付与する追加 class(条件付きスタイル)。`GridSlotProps` = `string \| { className?, style? }` で、StyleX の `stylex.props(...)` をそのまま返せる(`style` はセルへインライン付与。座標 / 寸法はグリッドが後勝ち)。関数版は値 / 状態に応じて返せる。`ctx` には view の `rowIndex` に加え source 基準の `sourceRowIndex` / `rowKey` が入る(ソート / フィルター ON でも source 行基準のデータと突き合わせ可能。「補助型」節参照)。基底 `.ssg-body-cell` は未レイヤー・特異度 (0,1,0)。確実な上書きは `.ssg-body-cell.my-class` の連結を推奨。 |
+| `cellNote` | `(ctx: CellStyleContext<T>) => string \| null \| undefined` | — | セルのメモ(FarPoint SPREAD のセルメモ / Excel のメモ相当)。文字列を返したセルの右上に印(10px の三角。色はトークン `--ssg-note-indicator`)を出し、マウスを乗せるとその文字列をツールチップで表示する(`\n` で改行)。`undefined` / `null` / 空文字(空白だけを含む)なら何も出さない。`ctx` は `cellClassName` の関数版と同じ。入力エラー(`validate` の mark)と同じセルでは、エラーの 6px の赤い三角がメモの三角の上に重なって両方見え、ツールチップは「エラー → 改行 → メモ」の順。描画中のセルだけ評価する(`cellClassName` 関数と同じコスト階級)。CSV / TSV / クリップボード / `getExportData` には含めない。詳細は「セルのメモ(`cellNote`)」節。 |
 | `renderHeader` | `(ctx: HeaderRenderContext<T>) => ReactNode` | — | カスタムヘッダー描画。 |
 | `filterType` | `'text' \| 'textSet' \| 'number' \| 'numberSet' \| 'date' \| 'dateSet' \| 'select' \| 'set' \| 'custom' \| 'auto'` | — | フィルター UI の種別。`'auto'` は列の値から `numberSet` / `textSet` / `dateSet` を自動判定する opt-in(下記「filterType: 'auto'(自動判定)」節)。`'numberSet'` / `'textSet'` / `'dateSet'` は条件(演算子 + 値)と Set 一覧を 1 つの popover に縦に並べて **AND 結合**する複合フィルター(条件を適用すると Set 候補が連動して絞られる。候補外になった値の選択は破棄せず保持)。numberSet の演算子は 以上 / より大きい / 以下 / 未満 / に等しい / に等しくない / 範囲 / 空白 / 空白でない、textSet は を含む / に等しい / で始まる / で終わる / 空白 / 空白でない(判定は大文字小文字無視)。dateSet は 範囲 / 以降 / 以前 / に等しい / に等しくない / 空白 / 空白でない + 相対プリセット(今日 / 今月 / 過去 30 日。**相対のまま保存され評価のたびに解決**)で、Set 部分は年 / 月 / 日の 3 階層ツリー(親は 3 状態チェック)になる。 |
 | `filterOptions` | `readonly GridSelectFilterOption[]` | rows から自動収集 | select / set / numberSet / textSet / dateSet の候補(readonly / `as const` 配列も可)。 |
@@ -548,6 +549,7 @@ const columns = [
 - 検証コンテキストは `{ value, row, column }` です(`row` は書き込み前の行。ビュー index はソート / フィルターで不安定なため渡しません)。
 - 保存前の一括チェックはハンドルの `getInvalidCells()` を使います(「命令的 API」節参照)。
 - invalid 表示の配色はトークン `--ssg-invalid` / `--ssg-invalid-bg` で調整できます(light / dark 両対応)。
+- 同じセルにメモ(`cellNote`)がある場合は、メモの 10px の三角の上にエラーの 6px の三角が重なります(「セルのメモ(`cellNote`)」節)。
 
 #### 表示タイミングの制御(showValidationMarks)
 
@@ -613,6 +615,39 @@ function OrderForm() {
 ```
 
 注意: `getInvalidCells()` は clientSide 専用のため、本レシピも clientSide(rows 供給)前提です(serverSide は全行を保持しないため空配列 + `console.warn`)。
+
+### セルのメモ(`cellNote`)
+
+FarPoint SPREAD のセルメモ / Excel のメモに当たる機能です。`column.cellNote` が文字列を返したセルの右上に印を出し、マウスを乗せるとその文字列をツールチップで表示します。
+
+```tsx
+const columns: GridColumn<Part>[] = [
+  {
+    key: 'partNo',
+    title: '品番',
+    width: 140,
+    // 複数のメモは \n でつなぐと改行して表示される。
+    cellNote: ({ row }) =>
+      [row.isNew && '今回の取込で追加された構成です。', row.otherUses > 0 && `他 ${row.otherUses} 箇所でも使用`]
+        .filter(Boolean)
+        .join('\n'),
+  },
+  {
+    key: 'price',
+    title: '販売単価',
+    width: 110,
+    cellNote: ({ value }) => (value === 0 ? '販売単価が 0 円で登録されています。' : undefined),
+    cellClassName: ({ value }) => (value === 0 ? 'bg-amber-50' : undefined), // 背景色は従来どおり cellClassName で
+  },
+];
+```
+
+- **戻り値**: 文字列ならメモあり(`\n` で改行)。`undefined` / `null` / 空文字(空白だけを含む)ならメモなし。`ctx` は `cellClassName` の関数版と同じ `CellStyleContext<T>`(`row` / `rowIndex` / `sourceRowIndex` / `rowKey` / `colIndex` / `value` / `column` / `isActive` / `isSelected` / `isEditing` / `readOnly`)。
+- **印**: セルの右上に 10px の三角(既定色はライト `#f59e0b` / ダーク `#fbbf24`)。色はトークン `--ssg-note-indicator` で変えられる。メモのあるセルには公開契約のクラス `.ssg-body-cell--has-note` が付く(印は `::before`。形を変えたいときは `.ssg-body-cell.ssg-body-cell--has-note::before` を上書きする)。
+- **入力エラーと同じセル**: エラーの 6px の赤い三角(`::after`)がメモの三角の上に重なり、二重の三角で両方見える。ツールチップは「エラーのメッセージ → 改行 → メモ」の順。`showValidationMarks={false}` のあいだはメモだけを表示する。
+- **ツールチップ**: グリッドの既存のカスタムツールチップ(`data-ssg-tooltip`。「ツールチップ」節)で表示する。表示はマウスを乗せたとき(既存と同じ遅延)。メモのあるセルでは、省略時の全文ツールチップ(`showCellOverflowTooltip`)よりメモを優先する。
+- **出力には含めない**: CSV / TSV(コピー)/ `getExportData` には出力されない(表示だけの情報)。
+- **評価のタイミング**: 描画中のセルだけ、行の再描画のたびに評価する(`cellClassName` 関数と同じコスト階級。純粋・軽量に保つこと)。行は行データ・列定義などが変わったときに再描画されるため、メモの内容を `rows` 以外の state(取込結果の Map など)から引く場合は、その state を `useMemo` の依存に入れて `columns` を作り直す。
 
 ### flex と autoSize(列幅の決め方)
 
@@ -1126,6 +1161,8 @@ const buffer = await writeXlsx({
 
 **ボディセルの省略時ツールチップ**: グリッド prop `showCellOverflowTooltip`(既定 `false`)を `true` にすると、**既定テキストセルが省略(…)されているときだけ**ホバーで全文ツールチップが出る。実装は上記機構の派生で、セルへ `data-ssg-tooltip-overflow` マーカーを付け、表示可否は**ホバー時**に `scrollWidth > clientWidth` を判定(実際にクリップされているセルのみ表示)、文言はセルの表示テキスト(`textContent`)をそのまま使用する。`renderCell` 列(テキストとは限らない)と `autoHeight` 折り返し列(クリップされない)は対象外。特定列だけ全文表示したい / させたくない場合は、`renderCell` で自前要素へ `data-ssg-tooltip="…"`(常時)や `data-ssg-tooltip-overflow`(省略時)を付ける運用も可能。
 
+**セルのメモ(`cellNote`)**: 列の `cellNote` が返した文字列も同じツールチップで表示する(`\n` で改行)。入力エラー(`validate` の mark)と同じセルでは「エラー → 改行 → メモ」の順につなぐ。メモのあるセルでは、省略時の全文ツールチップよりメモが優先される(固定の文言が `data-ssg-tooltip-overflow` より優先される既存の規則による)。詳細は GridColumn の「セルのメモ(`cellNote`)」節。
+
 ### 状態の保存 / 復元
 
 | メソッド | 説明 |
@@ -1355,6 +1392,7 @@ const s = stylex.create({
 | `.ssg-row-header-cell` | 行ヘッダー「#」セル。 |
 | `.ssg-body-cell--readonly` | 読み取り専用セル(範囲選択に入っていないとき。`dimReadOnlyCells` と独立して常時付与)。 |
 | `.ssg-body-cell--invalid` | validation mark 表示中のセル。 |
+| `.ssg-body-cell--has-note` | セルのメモ(`cellNote`)があるセル(右上の印は `::before`。色は `--ssg-note-indicator`)。 |
 | `.ssg-body-cell--row-hovered` | 行ホバー中のセル(`enableRowHover` 有効時)。 |
 | `.ssg-body-cell--autoheight` | auto-height 列のセル。 |
 | `.ssg-body-cell--align-center` / `.ssg-body-cell--align-right` | `column.align` の水平寄せ。 |
