@@ -35,6 +35,9 @@ import { useVirtualizerCore } from './hooks/useVirtualizerCore';
 // 追加(本体分解 E-7): グリッドエンジン(リゾルバ / コマンド / 通知 / DOM コントローラ / store の束ね。React 非依存)。
 import { createGridEngine } from '@ishibashi0112/spreadsheet-grid-core/engine/createGridEngine';
 import { useControllerLifecycle } from './hooks/useController';
+// 追加(G-2): IME オンのままの直接入力(imeDirectInput)の入力してよいセルの判定と、入力受けの属性名です。
+import { canStartImeEdit } from '@ishibashi0112/spreadsheet-grid-core/logic/imeInput';
+import { IME_INPUT_ATTRIBUTE } from '@ishibashi0112/spreadsheet-grid-core/logic/domGuards';
 
 import { gridActions } from '@ishibashi0112/spreadsheet-grid-core/model/gridActions';
 import { useGridStore, useGridViewState } from './hooks/useGridStore';
@@ -402,6 +405,8 @@ export function SpreadsheetGrid<T extends object>({
   enableClearOnDelete = true,
   // 追加(enter-move ②): 組み込みエディタの Enter 確定後の移動先です(既定 'down' = 従来どおり)。
   editorEnterMove = 'down',
+  // 追加(G-2): IME オンのままの直接入力です(既定 false = opt-in)。
+  imeDirectInput = false,
   undoHistoryLimit = 100,
   onUndoRedoStateChange,
   enableRangeSelection = true,
@@ -2341,6 +2346,31 @@ export function SpreadsheetGrid<T extends object>({
     readOnly,
     canEditCell,
   });
+
+  // ── IME オンのままの直接入力(G-2)─────────────────────
+  // 追加(G-2): imeDirectInput 有効時だけ、シェル末尾の透明な入力受け(input)へグリッドのフォーカスを置き、IME の変換を
+  //   そこで始めます。変換が確定したら確定した文字列を初期値に通常の編集を開始します(startEditWithValue)。
+  //   本体は controllers/imeInputController.ts(React 非依存。engine.imeInput)。無効時はコントローラが何もしません
+  //   (入力受けも描画しない)。
+  useControllerLifecycle(engine.imeInput, {
+    enabled: imeDirectInput,
+    gridRootRef,
+    editing: uiState.editingCell !== null,
+    activeCell: uiState.activeCell,
+    resolveCell: (cell: CellCoord) => {
+      const column = orderedColumns[cell.col];
+      return column ? { colKey: column.key, align: column.align } : null;
+    },
+    canStartEdit: (cell: CellCoord) =>
+      canStartImeEdit({ rowModel, columns: orderedColumns, readOnly, canEditCell }, cell),
+    startEdit: startEditWithValue,
+  });
+  // 入力受けの ref コールバック(React Compiler の lint が ref に渡した値を ref 扱いするため、コントローラを直接渡さず
+  //   ローカル関数で包みます)。
+  const attachImeInput = useCallback(
+    (element: HTMLInputElement | null) => engine.imeInput.attach(element),
+    [engine],
+  );
 
   // 追加(③): 編集中セルの列(編集 input の text-align=align を反映)。editingCell.col は orderedColumns 空間。
   const editingColumn = uiState.editingCell
@@ -4627,6 +4657,22 @@ export function SpreadsheetGrid<T extends object>({
                 )}
             </div>
           )}
+        {/* 追加(G-2): IME オンのままの直接入力の入力受け(imeDirectInput 有効時のみ)。非制御で、値 / 位置 / 変換中の
+            表示はコントローラが直接扱います。Tab の順番には入れません(タブストップはシェルのまま)。 */}
+        {imeDirectInput ? (
+          <input
+            ref={attachImeInput}
+            {...{ [IME_INPUT_ATTRIBUTE]: '' }}
+            className="ssg-ime-input"
+            type="text"
+            tabIndex={-1}
+            autoComplete="off"
+            autoCorrect="off"
+            autoCapitalize="off"
+            spellCheck={false}
+            aria-label="セルへの入力"
+          />
+        ) : null}
       </div>
 
       {resolvedBottomBar}

@@ -14,6 +14,7 @@ import { createAutoHeightMeasurer, type AutoHeightMeasurer } from '../controller
 import { createScrollSyncController, type ScrollSyncController } from '../controllers/scrollSyncController';
 import { createDebouncedValueStore, type DebouncedValueStore } from '../controllers/debouncedValueStore';
 import { createAutoSizeOnDataTrigger, type AutoSizeOnDataTrigger } from '../controllers/columnAutosizeRunner';
+import { createImeInputController, type ImeInputController } from '../controllers/imeInputController';
 import {
   createColumnResolver,
   createPaneLayoutResolver,
@@ -91,6 +92,8 @@ export type GridEngine<T> = {
   scrollSync: ScrollSyncController;
   serverSideQueryStore: DebouncedValueStore<ServerSideQueryResolution>;
   autoSizeOnData: AutoSizeOnDataTrigger<T>;
+  // 追加(G-2): IME オンのままの直接入力(imeDirectInput)の入力受け。
+  imeInput: ImeInputController;
   // 展開行の rowKey → view index キャッシュ(SSRM の query 変化で reset)。
   detailIndexCache: DetailIndexCacheHolder;
   dispose: () => void;
@@ -121,6 +124,7 @@ export const createGridEngine = <T,>(init: GridEngineInit<T>): GridEngine<T> => 
   const autoHeightMeasurer = createAutoHeightMeasurer<T>();
   const scrollSync = createScrollSyncController();
   const autoSizeOnData = createAutoSizeOnDataTrigger<T>();
+  const imeInput = createImeInputController();
 
   return {
     store,
@@ -142,11 +146,13 @@ export const createGridEngine = <T,>(init: GridEngineInit<T>): GridEngine<T> => 
     scrollSync,
     serverSideQueryStore,
     autoSizeOnData,
+    imeInput,
     detailIndexCache: createDetailIndexCacheHolder(),
     dispose: () => {
       autoHeightMeasurer.dispose();
       scrollSync.dispose();
       serverSideQueryStore.dispose();
+      imeInput.dispose();
     },
   };
 };

@@ -14,7 +14,7 @@ import type {
   SpreadsheetGridProps,
 } from '../model/gridTypes.unbound';
 import { clamp } from '../logic/geometry';
-import { isPrintableKey, shouldIgnoreGridKeydown } from '../logic/domGuards';
+import { isImeInputTarget, isPrintableKey, shouldIgnoreGridKeydown } from '../logic/domGuards';
 import { isCellEditable } from '../utils/permissions';
 
 export type GridKeyboardEventLike = {
@@ -137,6 +137,11 @@ export const createKeyboardController = <T,>(): KeyboardController<T> => {
     }
     // 編集中はエディタがキーを扱います。
     if (uiState.editingCell) {
+      return;
+    }
+    // 追加(G-2): 入力受け(imeDirectInput)で IME の変換中のキー(候補の選択 / 変換確定の Enter 等)は IME の操作なので
+    //   グリッドでは扱いません(セル移動や編集開始に使わない)。
+    if (event.isComposing && isImeInputTarget(event.target)) {
       return;
     }
 

@@ -35,6 +35,20 @@ description: グリッド本体・編集エディタのキーバインド一覧�
 
 IME 変換中(`isComposing`)の `Enter` / `Escape` / `Tab` は **IME の操作としてのみ**扱われ、セル編集の確定・キャンセルには使われません。変換確定の Enter でセルが誤確定することはありません。
 
+### IME オンのまま打ち始める(`imeDirectInput`)
+
+既定では、編集していないセルで IME オンのまま日本語を打ち始めると、変換が始まらず最初の入力が失われます(`F2` / `Enter` / ダブルクリックで編集を始めてからなら問題ありません)。`imeDirectInput` を付けると Excel / SPREAD と同じく、セルを選んだまま日本語を打ち始められます。
+
+```tsx
+<SpreadsheetGrid rows={rows} columns={columns} onRowsChange={setRows} imeDirectInput />
+```
+
+1. セルを選んだ状態で日本語を打つと、変換中の文字がセルの上に表示されます。
+2. 変換を確定(`Enter`)すると、確定した文字列で編集が始まります。続けて入力できます。
+3. もう一度 `Enter` でセルを確定して下へ移動します。
+
+対象は text エディタの編集可能セルです(number / select / date などの列では従来どおり何も入りません)。既定 OFF なのは、有効中はグリッドにフォーカスがあるあいだ `document.activeElement` が入力欄になり、入力欄では反応しないアプリのショートカットが効かなくなるためです。[プレイグラウンド](/playground)の `imeDirectInput` トグルで試せます。詳細は [props](/docs/api/props#ime-オンのままの直接入力imedirectinput) を参照してください。
+
 ## ラベル行(`labelRow` 有効時)
 
 | キー | 操作 |

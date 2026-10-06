@@ -43,6 +43,7 @@
 | `undoHistoryLimit` | `number` | `100` | 保持する undo ステップ数の上限。超過分は古い順に破棄。 |
 | `enableClearOnDelete` | `boolean` | `true` | `Delete` / `Backspace` キーによる選択セル(なければアクティブセル)の値クリア。`false` でキーは何もしない(素通し)。ペースト・エディタでの上書き・undo/redo には影響しない(クリアのキーボード操作だけの opt-out)。 |
 | `editorEnterMove` | `EditorEnterMove` | `'down'` | 組み込みエディタ(text / number / select / date)の `Enter` 確定後にアクティブセルをどこへ移すか(`'down'` \| `'up'` \| `'right'` \| `'left'` \| `'none'`。Excel の「Enter キーを押したら、セルを移動する(方向)」相当)。`'none'` は移動せずその場に留まる。`Tab` / `Shift+Tab`(右 / 左)と `Escape` には影響しない。custom エディタはキーバインドが consumer 責務のため対象外(`ctx.commit(value, direction)` の direction で指定)。 |
+| `imeDirectInput` | `boolean` | `false` | **IME オンのままの直接入力**(Excel / SPREAD と同じ)。`true` で、編集していないあいだグリッドのフォーカスをアクティブセル上の透明な入力欄(入力受け)に置き、IME の変換をそこで始める。text エディタ(`editor` 未指定 / `type: 'text'`)の編集可能セルでは変換中の文字をセルの上に表示し、変換を確定すると確定した文字列を初期値に編集を始める(もう一度 `Enter` でセルを確定して移動)。それ以外の列(number / select / date / checkbox / custom)と読み取り専用セルでは変換を捨てる(従来どおり何も入らない)。キー操作 / コピー・貼り付け / `Tab` は従来どおり。既定 OFF の理由: 有効中はグリッドにフォーカスがあるあいだ `document.activeElement` が入力欄になり、入力欄では反応しないアプリのショートカット(例: Mantine の `useHotkeys` の既定)が効かなくなるため。詳細は「IME オンのままの直接入力」節。 |
 | `onUndoRedoStateChange` | `(state: { canUndo, canRedo }) => void` | — | undo / redo 可能状態が**変化したとき**に呼ばれる(ツールバーの undo/redo ボタンの disabled 表示などリアクティブな UI 用)。初回マウントでは発火せず、同値では再発火しない。毎レンダーのインライン関数でも問題ない。 |
 | `enableRangeSelection` | `boolean` | `true` | 複数セル範囲選択。 |
 | `enableRowSelection` | `boolean` | `false` | チェックボックス行選択の有効化(マスタースイッチ)。`true` で行ヘッダ(行NO)ガターが行選択のヒット領域になり、Excel 風のガター起点セル範囲選択は off(ボディ側セルのドラッグ範囲選択は不変)。判定は O(1)・全選択は除外集合でキーを列挙しない(1M 行でも一定コスト)。 |
@@ -307,6 +308,22 @@ const gridRef = useRef<SpreadsheetGridHandle<Row>>(null);
 
 **実装ノート**: 行番号は仮想化の縦ジオメトリ(1M 行の pixel scaling / auto-height の prefix-sum)と同一の写像で解決するため常に正確。バブル / ルーラー / プレビューのオーバーレイは `pointer-events: none` で、スクロール・セル操作へ一切干渉しない。カスタムスクロールバーのガターのみポインタ操作を受けるが、コンテンツのスクロール自体はネイティブのまま(ガターは `scrollTop` を書くだけの鏡映し)。全行が viewport に収まりスクロール不能のときは何も表示しない。配色はテーマトークン(`--ssg-pill-*` / `--ssg-scrollhint-*`)で light / dark 両対応。
 
+### IME オンのままの直接入力(`imeDirectInput`)
+
+既定では、セルを選んだ状態で IME をオンにしたまま文字を打つと、変換が始まらず打った文字が失われます(編集していないあいだのフォーカスが入力欄ではない要素にあるため。`F2` / `Enter` / ダブルクリックで編集を始めた後の IME は問題ありません)。`imeDirectInput` を `true` にすると、Excel / SPREAD と同じく IME オンのまま打ち始められます。
+
+```tsx
+<SpreadsheetGrid rows={rows} columns={columns} onRowsChange={setRows} imeDirectInput />
+```
+
+- **動き**: 編集していないあいだ、グリッドのフォーカスはアクティブセルの上の透明な入力欄(入力受け)にあります。日本語を打ち始めると変換中の文字がセルの上にエディタと同じ見た目で表示され、変換を確定(`Enter` / 候補の確定)すると確定した文字列を初期値に編集が始まります。そのまま続けて入力でき、もう一度 `Enter` でセルを確定して移動します(移動先は `editorEnterMove`)。変換を取り消した(`Escape` で空にした)ときは編集を始めません。
+- **対象**: text エディタ(`editor` 未指定 / `type: 'text'`)の編集可能なデータセル。number / select / date / checkbox / custom の列、読み取り専用セル、グループ行 / ラベル行、SSRM の未ロード行では変換を捨てます(従来どおり何も入りません)。
+- **変わらないもの**: 矢印 / `Tab` / `Enter` / `F2` / `Delete` / `Ctrl+C` / 貼り付け / undo などのキー操作、IME を使わない文字キーでの編集開始(その 1 文字が初期値)、端の列の `Tab` でグリッド外へ出る動き。変換中のキー(候補の選択など)はグリッドでは扱いません。
+- **変換中にクリックしたとき**: 変換中に別のセルやグリッド外をクリックすると、変換中の文字は入力されません(確定してから移動してください)。クリックした先のフォーカスは奪いません。
+- **フォーカス**: 有効中は `document.activeElement` が入力受け(`input[data-ssg-ime-input]`)になります。グリッドにフォーカスがあるかを `gridElement.contains(document.activeElement)` で判定している場合は従来どおり動きますが、「入力欄にフォーカスがあるときは無効」になるショートカット(Mantine の `useHotkeys` の既定など)はグリッド上で効かなくなります。これが既定 OFF の理由です。
+- **タッチが主のデバイス**(スマホ / タブレット): 入力受けに `inputmode="none"` を付け、セルのタップで仮想キーボードが開かないようにしています(従来どおり)。
+- **確認状況**: Chromium(Chrome / Edge / WebView2 と同じエンジン)で、DevTools Protocol の変換イベント(`Input.imeSetComposition` / `Input.insertText`)を使って確認しています。OS の IME そのもの(Windows の MS-IME など)での最終確認は実機で行ってください。
+
 ### キーボード操作
 
 グリッド本体フォーカス中(編集中でない)の操作一覧。フィルター入力等のフォーム要素にフォーカス中は無効。
@@ -322,6 +339,8 @@ const gridRef = useRef<SpreadsheetGridHandle<Row>>(null);
 | `Ctrl/Cmd+Z` / `Ctrl/Cmd+Shift+Z` / `Ctrl/Cmd+Y` | undo / redo(詳細は命令的 API の「undo / redo」節)。 |
 
 編集エディタ内: `Enter` = 確定して下へ(移動先は `editorEnterMove` で変更可。既定 `'down'`)、`Tab` / `Shift+Tab` = 確定して右 / 左へ、`Escape` = キャンセル、フォーカスアウト = 確定。IME 変換中(`isComposing`)の `Enter` / `Escape` / `Tab` は IME の操作としてのみ扱われ、セル編集の確定 / キャンセルには使われない。
+
+IME オンのまま(編集していないセルで)日本語を打ち始めるには `imeDirectInput` を有効にする(既定 OFF。無効時は変換が始まらず最初の入力が失われる。「IME オンのままの直接入力」節)。
 
 確定後の移動先は「確定を反映した再レンダー後」の行数・列数でクランプされる。このため、`onRowsChange` で末尾に空行を追加する消費側(Excel 的な入力グリッドの定石パターン)では、最終行の `Enter` 確定で「増えた行」へそのまま移動できる。行が増えない場合は従来どおり最終行に留まる。
 

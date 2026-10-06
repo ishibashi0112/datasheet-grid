@@ -790,6 +790,38 @@
     pointer-events: auto;
   }
 
+  /* 追加(G-2): IME オンのままの直接入力(imeDirectInput)の入力受け。待機中は透明で操作を受けず(フォーカスだけ持つ)、
+     IME の変換中はアクティブセルの上にエディタ(.ssg-cell-editor-input)と同じ見た目で変換中の文字を表示する。
+     位置 / 寸法 / 寄せはコントローラがインラインで指定(シェル = position: relative 基準)。 */
+  .ssg-ime-input {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 1px;
+    height: 1px;
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    outline: none;
+    opacity: 0;
+    pointer-events: none;
+    caret-color: transparent;
+    background: transparent;
+    color: transparent;
+    z-index: 0;
+  }
+  .ssg-ime-input--composing {
+    opacity: 1;
+    z-index: 6;
+    border: 2px solid var(--ssg-accent);
+    padding: 0 var(--ssg-cell-pad-x);
+    font-size: 16px;
+    color: var(--ssg-cell-text);
+    caret-color: auto;
+    background-color: var(--ssg-cell-bg);
+  }
+
   /* ── select エディタ(editor: select) ── */
   /* インセルの readOnly アンカー input(候補選択は下のポップオーバーで行う)。 */
   .ssg-cell-editor-input--select {

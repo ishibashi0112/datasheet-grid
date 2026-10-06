@@ -176,6 +176,8 @@ type Settings = {
   cellEventLog: boolean;
   // セルのメモ(GridColumn.cellNote)。ON で単価 / 数量の列にメモ(右上の印 + ツールチップ)を出す。
   cellNote: boolean;
+  // IME オンのままの直接入力。ON でセルを選んだまま日本語を打ち始められる(Windows + MS-IME の実機確認用)。
+  imeDirectInput: boolean;
 };
 
 const DEFAULTS: Settings = {
@@ -210,6 +212,7 @@ const DEFAULTS: Settings = {
   asyncFilterOptions: false,
   cellEventLog: false,
   cellNote: false,
+  imeDirectInput: false,
 };
 
 function buildSnippet(s: Settings): string {
@@ -236,6 +239,7 @@ function buildSnippet(s: Settings): string {
     `  readOnly={${s.readOnly}}`,
     `  dimReadOnlyCells={${s.dimReadOnlyCells}}`,
     `  showValidationMarks={${s.showValidationMarks}}`,
+    ...(s.imeDirectInput ? ['  imeDirectInput'] : []),
     `  enableRowSelection={${s.enableRowSelection}}`,
   ];
   if (s.enableRowSelection) {
@@ -423,6 +427,7 @@ function PlaygroundGrid({ settings }: { settings: Settings }) {
         readOnly={settings.readOnly}
         dimReadOnlyCells={settings.dimReadOnlyCells}
         showValidationMarks={settings.showValidationMarks}
+        imeDirectInput={settings.imeDirectInput}
         enableRowSelection={settings.enableRowSelection}
         rowSelectionMode={settings.rowSelectionMode}
         enableSelectAllRows={settings.enableRowSelection && settings.enableSelectAllRows}
@@ -616,6 +621,7 @@ export function Playground() {
           <Toggle label="readOnly" checked={settings.readOnly} onChange={(v) => set('readOnly', v)} />
           <Toggle label="dimReadOnlyCells" checked={settings.dimReadOnlyCells} onChange={(v) => set('dimReadOnlyCells', v)} />
           <Toggle label="showValidationMarks" checked={settings.showValidationMarks} onChange={(v) => set('showValidationMarks', v)} />
+          <Toggle label="imeDirectInput" checked={settings.imeDirectInput} onChange={(v) => set('imeDirectInput', v)} />
         </Group>
 
         <Group title="行選択(チェックボックス)">

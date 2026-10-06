@@ -2581,6 +2581,26 @@ export type SpreadsheetGridProps<T, F extends GridFrameworkTypes = GridFramework
    * @defaultValue `'down'`
    */
   editorEnterMove?: EditorEnterMove;
+  // 追加(G-2): IME オンのままの直接入力(Excel / SPREAD と同じ)。true で、編集していないあいだグリッドのフォーカスを
+  //   アクティブセル上の透明な入力受け(input)に置き、IME の変換をそこで始めます。text エディタの編集可能セルでは
+  //   変換中の文字をセルの上に表示し、変換を確定すると確定した文字列を初期値に編集を始めます(もう一度 Enter で
+  //   セルを確定して移動)。既定 false(opt-in)の理由: 有効中はグリッドにフォーカスがあるあいだ
+  //   document.activeElement が input になり、入力欄では反応しないアプリのショートカットが効かなくなるため。
+  /**
+   * **IME オンのままの直接入力**(Excel / SPREAD と同じ)。`true` で、
+   * 編集していないあいだグリッドのフォーカスをアクティブセル上の透明な入力欄(入力受け)に置き、IME
+   * の変換をそこで始める。text エディタ(`editor` 未指定 / `type: 'text'`)
+   * の編集可能セルでは変換中の文字をセルの上に表示し、
+   * 変換を確定すると確定した文字列を初期値に編集を始める(もう一度 `Enter` でセルを確定して移動)。
+   * それ以外の列(number / select / date / checkbox / custom)
+   * と読み取り専用セルでは変換を捨てる(従来どおり何も入らない)。キー操作 / コピー・貼り付け / `Tab`
+   * は従来どおり。既定 OFF の理由: 有効中はグリッドにフォーカスがあるあいだ
+   * `document.activeElement` が入力欄になり、入力欄では反応しないアプリのショートカット(例: Mantine
+   * の `useHotkeys` の既定)が効かなくなるため。詳細は「IME オンのままの直接入力」節。
+   *
+   * @defaultValue `false`
+   */
+  imeDirectInput?: boolean;
   // 追加(undo/redo): 保持する undo ステップ数の上限です(既定 100)。超過分は古い順に破棄します。
   /**
    * 保持する undo ステップ数の上限。超過分は古い順に破棄。
