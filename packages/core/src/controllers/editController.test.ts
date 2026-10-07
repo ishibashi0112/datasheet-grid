@@ -170,3 +170,183 @@ describe('editController', () => {
     expect(t3.args.onRowsChange).toHaveBeenCalledTimes(1);
   });
 });
+
+// 追加(編集確定後のフォーカス奪取): commit / cancel 後の rAF でグリッドへフォーカスを戻すのは、フォーカスが
+//   どこにもない(body)かグリッドのルート内のときだけ。グリッド外の要素へ移っていれば(エディタの blur で確定した
+//   = クリック先の入力欄)戻さない。
+describe('editController: 確定 / 取消後のフォーカス復帰', () => {
+  afterEach(() => {
+    document.body.innerHTML = '';
+  });
+
+  const mountDom = () => {
+    const root = document.createElement('div');
+    root.tabIndex = 0;
+    const editor = document.createElement('input');
+    root.appendChild(editor);
+    const card = document.createElement('div');
+    card.setAttribute('data-ssg-detail', '');
+    const cardInput = document.createElement('input');
+    card.appendChild(cardInput);
+    root.appendChild(card);
+    const outside = document.createElement('input');
+    document.body.append(root, outside);
+    return { root, editor, cardInput, outside };
+  };
+
+  const setup = () => {
+    const dom = mountDom();
+    const c = createEditController<Row>();
+    const t = makeArgs([{ id: 1, qty: 1 }, { id: 2, qty: 2 }], { row: 0, col: 0 });
+    c.update({ ...t.args, gridRootRef: { current: dom.root } });
+    return { ...dom, c, t };
+  };
+
+  const flushRaf = () => {
+    for (const cb of rafCallbacks.splice(0)) cb(0);
+  };
+
+  it('フォーカスがどこにもない(body)ならグリッドへ戻す(Enter / Tab / Escape でエディタが外れた直後)', () => {
+    const { root, c, t } = setup();
+    expect(c.commitEdit('3', 'down')).toEqual({ status: 'committed' });
+    expect(document.activeElement).toBe(document.body);
+    flushRaf();
+    expect(document.activeElement).toBe(root);
+    expect(t.args.editorActionGuardRef.current).toBe(false);
+  });
+
+  it('フォーカスがグリッドのルート内(まだ残っているエディタ)ならグリッドへ戻す', () => {
+    const { root, editor, c } = setup();
+    editor.focus();
+    c.commitEdit('3', 'right');
+    flushRaf();
+    expect(document.activeElement).toBe(root);
+  });
+
+  it('グリッド外の要素へフォーカスが移っていれば戻さない(blur で確定 = クリック先の入力欄から奪わない)', () => {
+    const { outside, c, t } = setup();
+    outside.focus();
+    expect(c.commitEdit('3')).toEqual({ status: 'committed' });
+    flushRaf();
+    expect(document.activeElement).toBe(outside);
+    // 書き込み / アクティブセル / 再入抑止の解除は従来どおり。
+    expect(t.args.onRowsChange).toHaveBeenCalledTimes(1);
+    expect(t.dispatch.mock.calls.some(([a]) => a.type === 'cell/activate')).toBe(true);
+    expect(t.args.editorActionGuardRef.current).toBe(false);
+  });
+
+  it('cancelEdit も同じ(グリッド外なら戻さない / body なら戻す)', () => {
+    const { root, outside, c, t } = setup();
+    outside.focus();
+    c.cancelEdit();
+    flushRaf();
+    expect(document.activeElement).toBe(outside);
+    expect(t.args.editorActionGuardRef.current).toBe(false);
+
+    outside.blur();
+    c.cancelEdit();
+    flushRaf();
+    expect(document.activeElement).toBe(root);
+  });
+
+  it('確定時に編集不可だった(RD-6 の取消経路)ときも、グリッド外のフォーカスは奪わない', () => {
+    const { root, outside, c, t } = setup();
+    c.update({ ...t.args, gridRootRef: { current: root }, readOnly: true });
+    outside.focus();
+    expect(c.commitEdit('3')).toEqual({ status: 'noop' });
+    flushRaf();
+    expect(document.activeElement).toBe(outside);
+  });
+
+  it('展開行カード内のフォーカスは従来どおり奪わない', () => {
+    const { cardInput, c } = setup();
+    cardInput.focus();
+    c.commitEdit('3');
+    flushRaf();
+    expect(document.activeElement).toBe(cardInput);
+  });
+});
+
+// 追加(確定後のアクティブセル上書き): 方向なしの確定(blur など)の後処理は、rAF までにアクティブセル / 選択が
+//   変わっていれば(グリッド内の別のセルや行・列ヘッダーを押して blur 確定した)編集していたセルへ戻さない。
+//   何も変わっていなければ / 方向付きの確定なら従来どおり。
+describe('editController: 確定後のアクティブセル', () => {
+  const editing = { row: 0, col: 0 };
+  const rows3 = [{ id: 1, qty: 1 }, { id: 2, qty: 2 }, { id: 3, qty: 3 }];
+
+  // 編集中(edit/start 後 = activeCell は編集セル、selection は単一セル)の args。
+  const setup = () => {
+    const c = createEditController<Row>();
+    const t = makeArgs(rows3, editing);
+    const uiState = {
+      ...t.args.uiState,
+      activeCell: editing,
+      selection: { type: 'cell' as const, range: { start: editing, end: editing } },
+    };
+    const args = { ...t.args, uiState };
+    c.update(args);
+    return { c, t, args };
+  };
+
+  // reducer が edit/stop を反映した後の state(activeCell / selection の参照は保たれる)。
+  const afterStop = (args: EditControllerArgs<Row>) => ({
+    ...args,
+    uiState: { ...args.uiState, editingCell: null },
+  });
+
+  const flushRaf = () => {
+    for (const cb of rafCallbacks.splice(0)) cb(0);
+  };
+
+  const activations = (t: ReturnType<typeof makeArgs>) =>
+    t.dispatch.mock.calls.filter(([a]) => a.type === 'cell/activate').map(([a]) => a);
+
+  it('方向なしの確定で何も変わっていなければ、従来どおり編集していたセルを単一選択にする', () => {
+    const { c, t, args } = setup();
+    expect(c.commitEdit('9')).toEqual({ status: 'committed' });
+    c.update(afterStop(args));
+    flushRaf();
+    expect(activations(t)).toEqual([{ type: 'cell/activate', cell: editing }]);
+    expect(t.args.editorActionGuardRef.current).toBe(false);
+  });
+
+  it('方向なしの確定の後、rAF までに別のセルがアクティブになっていれば編集していたセルへ戻さない', () => {
+    const { c, t, args } = setup();
+    c.commitEdit('9'); // 別のセルの pointerdown → ルートへ focus → エディタの blur で確定
+    const clicked = { row: 2, col: 0 };
+    const stopped = afterStop(args);
+    c.update({
+      ...stopped,
+      uiState: {
+        ...stopped.uiState,
+        activeCell: clicked,
+        selection: { type: 'cell', range: { start: clicked, end: clicked } },
+      },
+    });
+    flushRaf();
+    expect(activations(t)).toEqual([]);
+    expect(t.dispatch.mock.calls.map(([a]) => a.type)).toEqual(['edit/stop']);
+    expect(t.args.editorActionGuardRef.current).toBe(false);
+  });
+
+  it('選択だけが変わった(行ヘッダー / 命令的 API 等)ときも戻さない', () => {
+    const { c, t, args } = setup();
+    c.commitEdit('9');
+    const stopped = afterStop(args);
+    c.update({
+      ...stopped,
+      uiState: { ...stopped.uiState, selection: { type: 'row', startRow: 1, endRow: 1 } },
+    });
+    flushRaf();
+    expect(activations(t)).toEqual([]);
+  });
+
+  it('方向付きの確定(Enter / Tab)は、アクティブセルが変わっていても従来どおり移動する', () => {
+    const { c, t, args } = setup();
+    c.commitEdit('9', 'down');
+    const stopped = afterStop(args);
+    c.update({ ...stopped, uiState: { ...stopped.uiState, activeCell: { row: 2, col: 0 } } });
+    flushRaf();
+    expect(activations(t)).toEqual([{ type: 'cell/activate', cell: { row: 1, col: 0 } }]);
+  });
+});
