@@ -9,6 +9,10 @@
 //      吸収)。slot は findPaneDropSlot(pane-local midpoint)で算出。
 //   - up で computeHeaderReorderedKeys(全列の permutation。非表示列も保全)→ applyColumnOrderAndPin(keys, pinOverride)。
 //   - dispose はドラッグ中でも window リスナー / rAF / body cursor / ゴーストを確実に後始末します。
+//   - 追加(motion-9 / M-12): 表示方式 motion='live'(columnDragMotion)。同じペイン内では縦線 / ゴーストを出さず、掴んだ列
+//     (ヘッダー + 描画中の本体セル)がポインタ(+ 横 autoscroll ぶん)に追従し、通る先の列が掴んだ列の幅ぶん左右へ退避
+//     します(rowDragController の live 方式の横版。スロット解決は共通)。別ペインへ移す(ピン留めの変更)ときは
+//     ペインをまたいだ追従ができないため、従来どおり縦線 + ゴーストに切り替わります。
 import type { GridColumn, GridColumnPinned, GridResolvedSlot } from '../model/gridTypes.unbound';
 import {
   findPaneDropSlot,
@@ -115,6 +119,9 @@ export type ColumnHeaderDragArgs<T> = {
   applyColumnOrderAndPin: ApplyColumnOrderAndPin;
   // classNames.dragGhost の解決済みスロット(ゴースト要素へ className / style)。
   ghostSlot?: GridResolvedSlot;
+  // 追加(motion-9 / M-12): 表示方式。'ghost'(既定 = 従来: ゴースト + 縦線、ドロップ後にスライド)/ 'live'(同じペイン内では
+  //   掴んだ列がポインタに追従し、通る先の列がその場で左右へ退避する。別ペインへ移すときは 'ghost' と同じ表示)。
+  motion?: 'ghost' | 'live';
 };
 
 // grip の pointerdown イベント(構造的型。React の合成 PointerEvent をそのまま渡せます)。
@@ -201,6 +208,26 @@ const SETTLE_EASING = 'cubic-bezier(0.2, 0.7, 0.3, 1)';
 // 変更(motion-3): 抑制の判定を OS 設定の直接参照から motion prop の実効値(root の .ssg-motion-off)へ。
 const isMotionOff = (el: HTMLElement | null): boolean => el?.closest('.ssg-motion-off') != null;
 
+// 追加(motion-9 / M-12): live 方式で周りの列が退避するときの transition(行の live 方式と同じ 160ms)。
+const LIVE_SHIFT_MS = 160;
+const LIVE_SHIFT_TRANSITION = `transform ${LIVE_SHIFT_MS}ms ${SETTLE_EASING}`;
+// live 方式で掴んだ列のセル(ヘッダー + 本体)へ付ける属性です(CSS 側で浮いた見た目)。フレームワークが管理しない属性
+//   なので、hover 等の再レンダーで className が上書きされても消えません。
+const DRAGGING_COLUMN_ATTRIBUTE = 'data-ssg-col-dragging';
+// 掴んだ列を同じ行の他のセルより前面に出す z-index(行番号「#」セル(z 5)よりは下 = 先頭側では行番号の下へ潜る)。
+//   グループ行のセルは inline の zIndex:1 を持つため、CSS ではなく inline で上書きし、終了時に元の値へ戻します。
+const LIVE_DRAGGING_Z_INDEX = '4';
+
+// 列セル(ヘッダー / 本体 / グループ行。展開行カード内のネストしたグリッドは除外)を列挙します。
+const collectColumnCells = (container: HTMLElement): HTMLElement[] => {
+  const result: HTMLElement[] = [];
+  container.querySelectorAll<HTMLElement>('[data-ssg-col-key]').forEach((cell) => {
+    if (isInsideDetailCardOf(container, cell)) return;
+    result.push(cell);
+  });
+  return result;
+};
+
 // 現在の各列の screen-x(getBoundingClientRect().left)を列キーで記録します(FLIP の before)。
 //   同じ列のヘッダー / 本体セルは同じ x のため、列キーごとに最初の 1 セルだけ測れば十分です。
 const captureColumnLefts = (container: HTMLElement | null): Map<string, number> | null => {
@@ -240,6 +267,19 @@ export const createColumnHeaderDragController = <T,>(): ColumnHeaderDragControll
   let ghostEl: HTMLDivElement | null = null;
   let ghostIconEl: HTMLSpanElement | null = null;
   let ghostState: ColumnPane | 'out' | null = null;
+
+  // 追加(motion-9 / M-12): live 方式のドラッグ状態。掴んだ列のペイン / 開始時の横 scrollLeft / 触ったセル(終了時に
+  //   inline style を戻すため、元の inline z-index を値に持つ)。
+  let liveSourcePane: ColumnPane | null = null;
+  let liveStartScrollLeft = 0;
+  let liveCells: Map<HTMLElement, string> | null = null;
+  // キャンセルで基準位置へ戻している最中のセル(transition 後に inline style を戻す)。戻り切る前に次のドラッグが同じセルを
+  //   触ったときは、こちらに控えた元の z-index を引き継ぎ、後始末の対象から外します。
+  let restoringCells: Map<HTMLElement, string> | null = null;
+  // ゴーストのラベル(live 方式は別ペインへ移すときだけゴーストを出すため、開始時に控えます)。
+  let ghostLabel = '';
+
+  const isLive = () => args?.motion === 'live';
 
   const indicatorElements = (): Record<ColumnPane, HTMLElement | null> => ({
     left: args?.leftIndicatorRef.current ?? null,
@@ -421,16 +461,7 @@ export const createColumnHeaderDragController = <T,>(): ColumnHeaderDragControll
     return null;
   };
 
-  const updateIndicator = () => {
-    const hit = computeHit(pointer.x, pointer.y);
-    // ゴーストは hit の有無に関わらずポインタへ追従(枠外=null は 'out' 表現)。縦線の表示判定は hit 基準。
-    updateGhost(hit ? hit.pane : null);
-    if (!hit) {
-      dropTarget = null;
-      hideAllIndicators();
-      return;
-    }
-    dropTarget = { pane: hit.pane, slot: hit.slot };
+  const showIndicator = (hit: DropHit) => {
     const elements = indicatorElements();
     for (const pane of ['left', 'center', 'right'] as ColumnPane[]) {
       const el = elements[pane];
@@ -442,6 +473,110 @@ export const createColumnHeaderDragController = <T,>(): ColumnHeaderDragControll
         el.style.display = 'none';
       }
     }
+  };
+
+  // live 方式で初めて触るセルの元の inline z-index を控えます(戻している最中のセルはそちらの値を引き継ぐ)。
+  const touch = (touched: Map<HTMLElement, string>, cell: HTMLElement) => {
+    const restoring = restoringCells?.get(cell);
+    if (restoring !== undefined) restoringCells?.delete(cell);
+    touched.set(cell, restoring ?? cell.style.zIndex);
+  };
+
+  // 追加(motion-9 / M-12): live 方式の位置更新。following=true(同じペイン内)では掴んだ列がポインタ(+ 中央ペインは横
+  //   autoscroll ぶん)に追従し、from → target の間の列が掴んだ列の幅ぶん左右へ退避します(transition 付き)。
+  //   following=false(別ペインへ移す表示 / slot なし)では掴んだ列も退避も基準位置へ戻します。
+  //   描画中のセルを毎回走査するため、仮想化で後から描画されたセル(縦スクロール / 横 autoscroll)も取り込みます。
+  const applyLivePositions = (slot: number | null, following: boolean) => {
+    const touched = liveCells;
+    const key = draggingKey;
+    const pane = liveSourcePane;
+    if (!touched || key === null || pane === null || args === null) return;
+    const container = args.scrollContainerRef.current;
+    if (!container) return;
+
+    const entries = args.paneLayout[pane].entries;
+    const from = entries.findIndex((entry) => entry.column.key === key);
+    if (from < 0) return;
+    const width = entries[from].paneLocalSize;
+    const target = !following || slot === null ? from : slot > from ? slot - 1 : slot;
+    const shiftByKey = new Map<string, number>();
+    for (let i = Math.min(from, target); i <= Math.max(from, target); i += 1) {
+      if (i === from) continue;
+      shiftByKey.set(entries[i].column.key, i > from ? -width : width);
+    }
+    const scrollDelta = pane === 'center' ? container.scrollLeft - liveStartScrollLeft : 0;
+    const dragDelta = (dragOrigin ? pointer.x - dragOrigin.x : 0) + scrollDelta;
+
+    for (const cell of collectColumnCells(container)) {
+      const cellKey = cell.dataset.ssgColKey;
+      if (cellKey === undefined) continue;
+      if (cellKey === key) {
+        if (!touched.has(cell)) {
+          touch(touched, cell);
+          cell.style.zIndex = LIVE_DRAGGING_Z_INDEX;
+          cell.style.willChange = 'transform';
+        }
+        if (following) {
+          cell.setAttribute(DRAGGING_COLUMN_ATTRIBUTE, 'live');
+          cell.style.transition = 'none';
+          cell.style.transform = `translateX(${dragDelta}px)`;
+        } else {
+          cell.removeAttribute(DRAGGING_COLUMN_ATTRIBUTE);
+          cell.style.transition = LIVE_SHIFT_TRANSITION;
+          cell.style.transform = 'translateX(0px)';
+        }
+        continue;
+      }
+      const shift = shiftByKey.get(cellKey) ?? 0;
+      // 一度も退避していないセルは触りません(全セルへ transform を付けない)。
+      if (shift === 0 && !touched.has(cell)) continue;
+      if (!touched.has(cell)) touch(touched, cell);
+      const next = `translateX(${shift}px)`;
+      if (cell.style.transform === next) continue;
+      cell.style.transition = LIVE_SHIFT_TRANSITION;
+      cell.style.transform = next;
+    }
+  };
+
+  // live 方式で触ったセルの inline style / 属性を元へ戻します。
+  const resetLiveCells = (cells: Map<HTMLElement, string>) => {
+    cells.forEach((zIndex, cell) => {
+      cell.style.transition = '';
+      cell.style.transform = '';
+      cell.style.willChange = '';
+      cell.style.zIndex = zIndex;
+      cell.removeAttribute(DRAGGING_COLUMN_ATTRIBUTE);
+    });
+  };
+
+  const updateIndicator = () => {
+    const hit = computeHit(pointer.x, pointer.y);
+    // 追加(motion-9 / M-12): live 方式。枠外(hit なし)では直前のドロップ先を保ちます(離しても確定。行の live 方式と
+    //   同じ)。同じペイン内は列そのものを動かし、別ペインへ移すときだけ縦線 + ゴーストを出します。
+    if (isLive()) {
+      if (hit) dropTarget = { pane: hit.pane, slot: hit.slot };
+      const target = dropTarget;
+      if (target !== null && target.pane !== liveSourcePane) {
+        createGhost(ghostLabel);
+        updateGhost(target.pane);
+        if (hit) showIndicator(hit);
+        applyLivePositions(null, false);
+        return;
+      }
+      destroyGhost();
+      hideAllIndicators();
+      applyLivePositions(target === null ? null : target.slot, true);
+      return;
+    }
+    // ゴーストは hit の有無に関わらずポインタへ追従(枠外=null は 'out' 表現)。縦線の表示判定は hit 基準。
+    updateGhost(hit ? hit.pane : null);
+    if (!hit) {
+      dropTarget = null;
+      hideAllIndicators();
+      return;
+    }
+    dropTarget = { pane: hit.pane, slot: hit.slot };
+    showIndicator(hit);
   };
 
   // rAF 端 autoscroll(共有スクロールコンテナ。水平方向のみ。13-B3-6)。
@@ -503,20 +638,43 @@ export const createColumnHeaderDragController = <T,>(): ColumnHeaderDragControll
     const target = dropTarget;
     draggingKey = null;
     dropTarget = null;
+    dragOrigin = null;
+    const touched = liveCells;
+    liveCells = null;
+    liveSourcePane = null;
 
-    if (!commit || !draggedKey || !target || args === null) return;
+    const keys =
+      commit && draggedKey && target && args !== null
+        ? computeHeaderReorderedKeys(args.columns, draggedKey, target.pane, target.slot)
+        : null;
+
+    // 追加(motion-9 / M-12): live 方式の後始末。確定しないとき(キャンセル / no-op)は基準位置へ戻します(transition 付き)。
+    if (touched && !keys) {
+      touched.forEach((_, cell) => {
+        if (!cell.isConnected) return;
+        cell.style.transition = LIVE_SHIFT_TRANSITION;
+        cell.style.transform = 'translateX(0px)';
+      });
+      restoringCells = touched;
+      window.setTimeout(() => {
+        resetLiveCells(touched);
+        if (restoringCells === touched) restoringCells = null;
+      }, LIVE_SHIFT_MS + 40);
+    }
+
+    if (!keys || !draggedKey || !target || args === null) return; // no-op ドラッグ(同一 pane・同一 slot)/ キャンセル
 
     const { columns, applyColumnOrderAndPin, scrollContainerRef } = args;
-    const keys = computeHeaderReorderedKeys(columns, draggedKey, target.pane, target.slot);
-    if (!keys) return; // no-op ドラッグ(同一 pane・同一 slot)
 
     // same-pane(ピン変更なし)の並べ替えのみ settle アニメを準備します(cross-pane はペイン幅 / 位置が変わり
     //   クリップが生じ得るためスナップ。reduced-motion もスナップ)。capture は commit 前に行います。
+    //   live 方式は追従 / 退避した現在の画面位置を capture してから inline style を外すため、新しい位置へそこから滑ります。
     const draggedColumn = columns.find((column) => column.key === draggedKey);
     const sourcePane = draggedColumn ? getColumnPane(draggedColumn) : null;
     const samePaneReorder = sourcePane !== null && sourcePane === target.pane;
     settlePending =
       samePaneReorder && !isMotionOff(scrollContainerRef.current) ? captureColumnLefts(scrollContainerRef.current) : null;
+    if (touched) resetLiveCells(touched);
 
     const pinOverride = new Map<string, GridColumnPinned | undefined>([
       [draggedKey, target.pane === 'center' ? undefined : target.pane],
@@ -588,11 +746,19 @@ export const createColumnHeaderDragController = <T,>(): ColumnHeaderDragControll
     event.preventDefault();
 
     draggingKey = column.key;
+    dropTarget = null;
     pointer = { x: event.clientX, y: event.clientY };
     dragOrigin = { x: event.clientX, y: event.clientY };
     autoScrollArmed = false;
     document.body.style.cursor = 'grabbing';
-    createGhost(column.title || column.key);
+    ghostLabel = column.title || column.key;
+    if (isLive()) {
+      liveSourcePane = getColumnPane(column);
+      liveStartScrollLeft = args.scrollContainerRef.current?.scrollLeft ?? 0;
+      liveCells = new Map();
+    } else {
+      createGhost(ghostLabel);
+    }
 
     const target = event.currentTarget;
     const pointerId = event.pointerId;
@@ -613,6 +779,7 @@ export const createColumnHeaderDragController = <T,>(): ColumnHeaderDragControll
       window.removeEventListener('pointermove', handleMove);
       window.removeEventListener('pointerup', handleUp);
       window.removeEventListener('pointercancel', handleCancel);
+      window.removeEventListener('keydown', handleKeyDown);
       activeDragDispose = null;
       try {
         target.releasePointerCapture(pointerId);
@@ -630,10 +797,17 @@ export const createColumnHeaderDragController = <T,>(): ColumnHeaderDragControll
       cleanup();
       endDrag(false);
     }
+    // 追加(motion-9 / M-12): Escape でキャンセル(行ドラッグと同じ。縦線 / ゴーストを消し、live 方式は元の位置へ戻す)。
+    function handleKeyDown(nativeEvent: KeyboardEvent) {
+      if (nativeEvent.key !== 'Escape') return;
+      cleanup();
+      endDrag(false);
+    }
 
     window.addEventListener('pointermove', handleMove);
     window.addEventListener('pointerup', handleUp);
     window.addEventListener('pointercancel', handleCancel);
+    window.addEventListener('keydown', handleKeyDown);
     activeDragDispose = cleanup;
 
     updateIndicator();
@@ -659,6 +833,9 @@ export const createColumnHeaderDragController = <T,>(): ColumnHeaderDragControll
       dropTarget = null;
       document.body.style.cursor = '';
       destroyGhost();
+      if (liveCells) resetLiveCells(liveCells);
+      liveCells = null;
+      liveSourcePane = null;
     },
   };
 };

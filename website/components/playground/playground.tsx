@@ -175,6 +175,8 @@ type Settings = {
   enableRowDrag: boolean;
   // 行ドラッグの表示方式。'ghost'(既定 = ゴースト + ガイド線)/ 'live'(掴んだ行が追従し周りの行が退避)。
   rowDragMotion: 'ghost' | 'live';
+  // 列ドラッグ(列ヘッダーの grip)の表示方式。'ghost'(既定 = ゴースト + 縦線)/ 'live'(掴んだ列が追従し周りの列が退避)。
+  columnDragMotion: 'ghost' | 'live';
   // ラベル行(見出し / 区切り行)。ON で rows に 20 行ごとの見出し行を混在させ、全幅の帯で描く。
   labelRow: boolean;
   // ラベル行の縦スクロール固定(現在セクションの見出しをヘッダー直下に固定)。
@@ -228,6 +230,7 @@ const DEFAULTS: Settings = {
   detailRow: false,
   enableRowDrag: false,
   rowDragMotion: 'ghost',
+  columnDragMotion: 'ghost',
   labelRow: false,
   labelRowSticky: true,
   manualFiltering: false,
@@ -302,6 +305,8 @@ function buildSnippet(s: Settings): string {
     // rowDragMotion は既定 'ghost' のため、'live' のときだけ載せる。
     if (s.rowDragMotion === 'live') lines.push('  rowDragMotion="live"');
   }
+  // columnDragMotion は既定 'ghost' のため、'live' のときだけ載せる(列の並べ替えは onColumnsChange で常に有効)。
+  if (s.columnDragMotion === 'live') lines.push('  columnDragMotion="live"');
   // manualFiltering / manualSorting は既定 OFF のため、ON のときだけスニペットへ載せる。
   if (s.manualFiltering) {
     lines.push('  manualFiltering');
@@ -523,6 +528,7 @@ function PlaygroundGrid({ settings }: { settings: Settings }) {
         detailRow={settings.detailRow ? playgroundDetailRow : undefined}
         enableRowDrag={settings.enableRowDrag}
         rowDragMotion={settings.rowDragMotion}
+        columnDragMotion={settings.columnDragMotion}
         manualFiltering={settings.manualFiltering}
         manualSorting={settings.manualSorting}
         getFilterOptions={settings.asyncFilterOptions ? getFilterOptions : undefined}
@@ -689,7 +695,7 @@ export function Playground() {
             </select>
           </label>
           <p className="m-0 text-xs text-fd-muted-foreground">
-            行ドラッグの live 方式は「機能」の rowDragMotion。auto は OS の「視差効果を減らす」が有効だと動きません(on で強制)。
+            行 / 列ドラッグの live 方式は「機能」の rowDragMotion / columnDragMotion。auto は OS の「視差効果を減らす」が有効だと動きません(on で強制)。
           </p>
         </Group>
 
@@ -719,6 +725,17 @@ export function Playground() {
               value={settings.rowDragMotion}
               disabled={!settings.enableRowDrag}
               onChange={(e) => set('rowDragMotion', e.target.value as 'ghost' | 'live')}
+            >
+              <option value="ghost">ghost</option>
+              <option value="live">live</option>
+            </select>
+          </label>
+          <label className="flex items-center justify-between gap-2 text-sm">
+            <code className="text-xs">columnDragMotion</code>
+            <select
+              className={selectClass}
+              value={settings.columnDragMotion}
+              onChange={(e) => set('columnDragMotion', e.target.value as 'ghost' | 'live')}
             >
               <option value="ghost">ghost</option>
               <option value="live">live</option>

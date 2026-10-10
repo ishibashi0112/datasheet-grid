@@ -2669,6 +2669,19 @@ export type SpreadsheetGridProps<T, F extends GridFrameworkTypes = GridFramework
    * @defaultValue `'ghost'`
    */
   rowDragMotion?: 'ghost' | 'live';
+  // 追加(motion-9 / M-12): 列ヘッダーのドラッグ並べ替えの表示方式。'ghost'(既定 = 従来: ゴースト + 縦線、ドロップ後に
+  //   スライド)/ 'live'(同じペイン内では掴んだ列がポインタに追従し、通る先の列がその場で左右へ退避。別ペインへ移すときは従来表示)。
+  /**
+   * 列ヘッダーのドラッグ並べ替え(`onColumnsChange` 指定時)の表示方式。`'ghost'` は従来(ゴースト +
+   * 縦線、ドロップ後に新しい位置へスライド)。`'live'` は同じペイン内では掴んだ列(ヘッダー +
+   * 描画中のセル)がポインタに追従し、通る先の列がその場で左右へ退避する(ドロップ先が「隙間」
+   * として見える。枠外で離しても直前の位置へ確定、`Esc` で元へ戻る)。
+   * 固定列のペインをまたいで移す(固定の変更)ときは `'ghost'` と同じ縦線 + ゴーストに切り替わる。
+   * `motion` が `'off'` のときは `'ghost'` と同じ。
+   *
+   * @defaultValue `'ghost'`
+   */
+  columnDragMotion?: 'ghost' | 'live';
   // 追加(F-2): セル内検索(既定 無効)。true でグリッド右上の検索バー + Ctrl/Cmd+F。表示文字列(valueFormatter 後)への
   //   部分一致で、ヒットをすべて強調しつつ Enter で順送り(アクティブセルとスクロールが追従)。行は消さない(フィルターとは別)。
   /**

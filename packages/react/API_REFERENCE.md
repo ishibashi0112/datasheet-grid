@@ -40,6 +40,7 @@
 | `highlightChanges` | `boolean` | `false` | `rows` が変わったとき、値が変わったセルを一瞬アクセント色で光らせ(`.ssg-body-cell--changed`、`--ssg-motion-slow`)、数値の既定セルは旧値から新値へカウントアップする(`--ssg-motion-base`。表示は `valueFormatter` で整形)。セル編集 / 貼り付け / クリア / undo・redo / 外部からの `rows` 差し替えのすべてが対象。clientSide 専用(SSRM では無効)。描画中のセルだけが対象で、変わったセルが 200 を超えるとフラッシュのみ、2,000 を超える・行の挿入 / 削除 / 並べ替えを伴う・参照の変わった行が 5,000 を超える(データの読み直し)ときは何もしない。 |
 | `showSaveStatus` | `boolean` | `true` | serverSide の書き戻し(`dataSource.updateRows`)で、確定したセルに保存状態の印を出す。保存中は斜線 + 小さなスピナー(`[data-ssg-save="pending"]`)、成功は ✓ バッジを 1.3 秒(`"ok"`)、失敗は揺れ + 赤いフラッシュ + ✕ バッジ(`"failed"`)とセル下の「保存に失敗しました」チップ(4 秒 / スクロールで消える)。既存の保存失敗バー(`onServerSideWriteError`)とは独立に出る。描画中のセルだけが対象。clientSide では何も出ない。 |
 | `rowDragMotion` | `'ghost' \| 'live'` | `'ghost'` | 行ドラッグ並べ替え(`enableRowDrag`)の表示方式。`'ghost'` は従来(ゴースト + ガイド線、ドロップ後に新しい位置へスライド)。`'live'` は掴んだ行がポインタに追従し、通る先の行がその場で上下へ退避する(ドロップ先が「隙間」として見える。枠外で離しても直前の位置へ確定、`Esc` で元へ戻る)。`motion` が `'off'` のときは `'ghost'` と同じ。 |
+| `columnDragMotion` | `'ghost' \| 'live'` | `'ghost'` | 列ヘッダーのドラッグ並べ替え(`onColumnsChange` 指定時)の表示方式。`'ghost'` は従来(ゴースト + 縦線、ドロップ後に新しい位置へスライド)。`'live'` は同じペイン内では掴んだ列(ヘッダー + 描画中のセル)がポインタに追従し、通る先の列がその場で左右へ退避する(ドロップ先が「隙間」として見える。枠外で離しても直前の位置へ確定、`Esc` で元へ戻る)。固定列のペインをまたいで移す(固定の変更)ときは `'ghost'` と同じ縦線 + ゴーストに切り替わる。`motion` が `'off'` のときは `'ghost'` と同じ。 |
 | `find` | `boolean \| FindOptions` | `false` | **セル内検索**。`true` でグリッド右上の検索バー(`.ssg-find-bar`)と `Ctrl/Cmd+F`(グリッドにフォーカスがあるときだけ横取り)が有効になる。表示文字列(`valueFormatter` 適用後)への部分一致で、ヒットをすべて `<mark class="ssg-find-mark">` で強調し、`Enter` / `↓` で次、`Shift+Enter` / `↑` で前へ(アクティブセルとスクロールが追従)、`Esc` で閉じる。行は消さない(絞り込みのフィルターとは別)。`FindOptions` = `{ shortcut?: boolean(既定 true。false でブラウザ標準の検索に譲る), caseSensitive?: boolean(既定 false) }`。走査は時間分割(1 チャンク 10ms)で入力を止めない。SSRM はロード済み範囲だけが対象。ヒットは 10,000 件で打ち切り(件数に `+`)。詳細は「セル内検索」節。 |
 | `onFindChange` | `(params: FindChangeParams) => void` | — | セル内検索の状態(`{ query, matchCount, currentIndex, open }`)が変わったときの通知。`currentIndex` は 0 始まり(ヒットなしは `null`)。ツールバーに「3 / 12」を出す等に使う。 |
 | `rowHeaderWidth` | `number` | `56` | 行番号列の幅(px)。 |
@@ -361,6 +362,7 @@ const gridRef = useRef<SpreadsheetGridHandle<Row>>(null);
 | 変更セルのフラッシュ + 数値トゥイーン(M-2) | opt-in(`highlightChanges`) | `--ssg-motion-slow` / `--ssg-motion-base` | 値が変わったセルがアクセント色から 600ms でフェードし、数値は 260ms でカウントアップ。 |
 | セル単位の保存状態(M-9) | 有効(`showSaveStatus`、SSRM の書き戻し時) | `--ssg-motion-base` / `--ssg-motion-slow` | 保存中の斜線 + スピナー → ✓ バッジ、失敗は揺れ + 赤いフラッシュ + ✕ とチップ。`motion` が `'off'` では静的な印だけ。 |
 | 行ドラッグの live 退避(M-11) | opt-in(`rowDragMotion: 'live'`) | 160ms 固定 | 掴んだ行がポインタに追従し、通る先の行がその場で退避。ドロップ後は従来どおりスライドで収まる。 |
+| 列ドラッグの live 退避(M-12) | opt-in(`columnDragMotion: 'live'`) | 160ms 固定 | 掴んだ列がポインタに追従し、通る先の列がその場で左右へ退避。固定ペインをまたぐときは縦線 + ゴースト。ドロップ後は従来どおりスライドで収まる。 |
 | 読み込み中のシマーと到着行のフェードイン(M-8) | 有効 | `--ssg-motion-base` | SSRM の取得中はスケルトンに光の帯が流れ、ブロックが到着して差し替わった行のセルが上から順に(約 23ms 刻み)3px 下からフェードイン。スクロールで出入りする行は対象外。clientSide では発生しない。 |
 | 細かな遷移 | 有効 | `--ssg-motion-fast` | ヘッダー操作アイコンのフェード、チェックボックス、タブのインジケータ、ツールチップ、スクロール位置インジケーター。 |
 
@@ -1001,7 +1003,7 @@ const [rows, setRows] = useState(initialRows);
 - **展開行との併用**: 展開中のマスター行は詳細パネルごと一緒に移動します。ドロップ位置の判定は詳細パネルの高さ込みで、パネルの上は「マスター行の下」として扱います。
 - **ハンドル列**: 合成列のため、列メニュー / ソート / 列 DnD / autoSize / エクスポート / 並び替え管理パネルの対象外です。左固定列があるときは左固定側に、展開行トグル列よりさらに先頭に入ります。
 - **命令的 API**: `moveRow(rowKey, toIndex)` は表示状態(ソート / フィルター)に関わらず元配列上で移動します(`onRowsChange` → `onRowMove` の順)。
-- **将来拡張**: ドラッグ中に周囲の行がリアルタイムに退避する見せ方(`rowDragMotion: 'live'` 相当)は、スロット解決を共有したまま表示側だけ差し替えられる設計にしてあります(未実装)。
+- **表示方式**: `rowDragMotion: 'live'` で、ドラッグ中に掴んだ行がポインタに追従し、周囲の行がリアルタイムに退避する見せ方になります(スロット解決は `'ghost'` と共通)。
 - **スタイル**: `.ssg-row-drag-handle`(+ `--disabled`)/ `.ssg-body-cell--row-drag-handle` / `.ssg-row-drop-indicator` / ドラッグ中の行 `.ssg-body-row[data-ssg-row-dragging]`。色はトークン(`--ssg-drop-indicator` / `--ssg-glyph-*` / `--ssg-ghost-*`)です。
 
 ## 命令的 API(ref ハンドル / `SpreadsheetGridHandle<T>`)

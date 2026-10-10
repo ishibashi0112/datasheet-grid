@@ -407,6 +407,8 @@ export function SpreadsheetGrid<T extends object>({
   showSaveStatus = true,
   // 追加(motion-8 / M-11): 行ドラッグの表示方式('ghost' = 従来 / 'live' = 周りの行が退避)。
   rowDragMotion = 'ghost',
+  // 追加(motion-9 / M-12): 列ドラッグの表示方式('ghost' = 従来 / 'live' = 周りの列が退避)。
+  columnDragMotion = 'ghost',
   // 追加(F-2): セル内検索(既定 無効)。
   find = false,
   onFindChange,
@@ -3069,6 +3071,8 @@ export function SpreadsheetGrid<T extends object>({
     rightLeadingWidth,
     applyColumnOrderAndPin,
     ghostSlot: slots.dragGhost,
+    // 追加(motion-9 / M-12): 'live' では同じペイン内で掴んだ列が追従し周りの列が退避する(motion='off' では ghost へ)。
+    motion: resolvedMotion === 'off' ? 'ghost' : columnDragMotion,
   });
 
   // 追加(案A): 列レイアウト確定(並べ替え commit を含む)後に settle アニメを発火します。
