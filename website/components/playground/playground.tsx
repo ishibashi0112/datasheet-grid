@@ -139,6 +139,14 @@ type Settings = {
   density: GridDensity;
   // モーション(アニメーション)。'auto' は OS の「視差効果を減らす」を尊重、'off' で全停止。
   motion: GridMotion;
+  // 行の並び替えアニメ(ソート / フィルター / rows 差し替えで行が滑る + 現れた行のフェードイン)。既定 true。
+  animateRows: boolean;
+  // Ctrl/Cmd+C 後のコピー範囲の動く点線。既定 true。
+  showCopyRange: boolean;
+  // ホバーの強調範囲。'row'(既定)/ 'cross'(列ヘッダー・行番号・同じ列も染めるクロスヘア)。
+  hoverHighlight: 'row' | 'cross';
+  // 変更セルのフラッシュ + 数値のカウントアップ。ON でグリッド上に「外部更新」ボタンを出す。
+  highlightChanges: boolean;
   height: number;
   rowCount: number;
   showTopBar: boolean;
@@ -193,6 +201,10 @@ const DEFAULTS: Settings = {
   theme: 'auto',
   density: 'standard',
   motion: 'auto',
+  animateRows: true,
+  showCopyRange: true,
+  hoverHighlight: 'row',
+  highlightChanges: false,
   height: 440,
   rowCount: 1_000,
   showTopBar: true,
@@ -240,6 +252,11 @@ function buildSnippet(s: Settings): string {
     `  theme="${s.theme}"`,
     `  density="${s.density}"`,
     `  motion="${s.motion}"`,
+    // animateRows / showCopyRange は既定 true、hoverHighlight は既定 'row'、highlightChanges は既定 false のため、既定と違うときだけ載せる。
+    ...(s.animateRows ? [] : ['  animateRows={false}']),
+    ...(s.showCopyRange ? [] : ['  showCopyRange={false}']),
+    ...(s.hoverHighlight === 'cross' ? ['  hoverHighlight="cross"'] : []),
+    ...(s.highlightChanges ? ['  highlightChanges'] : []),
     `  showTopBar={${s.showTopBar}}`,
     `  showBottomBar={${s.showBottomBar}}`,
     `  showFilterChipBar={${s.showFilterChipBar}}`,
@@ -433,8 +450,39 @@ function PlaygroundGrid({ settings }: { settings: Settings }) {
     [rows],
   );
 
+  // highlightChanges の確認用: 先頭付近のデータ行から 3 セル(数量 / 単価)を書き換えた新配列で rows を差し替える。
+  const applyExternalUpdate = () =>
+    setRows((current) => {
+      const candidates: number[] = [];
+      for (let i = 0; i < current.length && candidates.length < 12; i++) {
+        if (current[i].kind !== 'label') candidates.push(i);
+      }
+      const next = current.slice();
+      for (let n = 0; n < 3 && candidates.length > 0; n++) {
+        const index = candidates[Math.floor(Math.random() * candidates.length)];
+        const row = next[index];
+        next[index] =
+          Math.random() < 0.5
+            ? { ...row, qty: Math.floor(Math.random() * 500) }
+            : { ...row, price: (1 + Math.floor(Math.random() * 300)) * 10 };
+      }
+      return next;
+    });
+
   return (
     <div className="flex flex-col gap-2">
+      {settings.highlightChanges ? (
+        <div className="flex flex-wrap items-center gap-2 text-sm">
+          <button
+            type="button"
+            className="rounded-md border border-fd-border px-2 py-1 hover:bg-fd-accent"
+            onClick={applyExternalUpdate}
+          >
+            外部更新(先頭付近の 3 セルを書き換え)
+          </button>
+          <span className="text-fd-muted-foreground">編集・貼り付け・undo でも変わったセルが光ります。</span>
+        </div>
+      ) : null}
       <SpreadsheetGrid
         rows={rows}
         columns={gridColumns}
@@ -445,6 +493,10 @@ function PlaygroundGrid({ settings }: { settings: Settings }) {
         theme={settings.theme}
         density={settings.density}
         motion={settings.motion}
+        animateRows={settings.animateRows}
+        showCopyRange={settings.showCopyRange}
+        hoverHighlight={settings.hoverHighlight}
+        highlightChanges={settings.highlightChanges}
         showTopBar={settings.showTopBar}
         showBottomBar={settings.showBottomBar}
         showFilterChipBar={settings.showFilterChipBar}
@@ -584,18 +636,6 @@ export function Playground() {
             </select>
           </label>
           <label className="flex items-center justify-between gap-2 text-sm">
-            motion
-            <select
-              className={selectClass}
-              value={settings.motion}
-              onChange={(e) => set('motion', e.target.value as GridMotion)}
-            >
-              <option value="auto">auto</option>
-              <option value="on">on</option>
-              <option value="off">off</option>
-            </select>
-          </label>
-          <label className="flex items-center justify-between gap-2 text-sm">
             height
             <select
               className={selectClass}
@@ -619,6 +659,38 @@ export function Playground() {
               <option value={100000}>100,000</option>
             </select>
           </label>
+        </Group>
+
+        <Group title="モーション">
+          <label className="flex items-center justify-between gap-2 text-sm">
+            motion
+            <select
+              className={selectClass}
+              value={settings.motion}
+              onChange={(e) => set('motion', e.target.value as GridMotion)}
+            >
+              <option value="auto">auto</option>
+              <option value="on">on</option>
+              <option value="off">off</option>
+            </select>
+          </label>
+          <Toggle label="animateRows" checked={settings.animateRows} onChange={(v) => set('animateRows', v)} />
+          <Toggle label="showCopyRange" checked={settings.showCopyRange} onChange={(v) => set('showCopyRange', v)} />
+          <Toggle label="highlightChanges" checked={settings.highlightChanges} onChange={(v) => set('highlightChanges', v)} />
+          <label className="flex items-center justify-between gap-2 text-sm">
+            <code className="text-xs">hoverHighlight</code>
+            <select
+              className={selectClass}
+              value={settings.hoverHighlight}
+              onChange={(e) => set('hoverHighlight', e.target.value as 'row' | 'cross')}
+            >
+              <option value="row">row</option>
+              <option value="cross">cross</option>
+            </select>
+          </label>
+          <p className="m-0 text-xs text-fd-muted-foreground">
+            行ドラッグの live 方式は「機能」の rowDragMotion。auto は OS の「視差効果を減らす」が有効だと動きません(on で強制)。
+          </p>
         </Group>
 
         <Group title="バー表示">

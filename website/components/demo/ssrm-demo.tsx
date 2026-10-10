@@ -75,6 +75,8 @@ export function SSRMDemo() {
   const [latencyMs, setLatencyMs] = useState(300);
   const [failRead, setFailRead] = useState(false);
   const [failWrite, setFailWrite] = useState(false);
+  // セル単位の保存状態(保存中の斜線 + スピナー → ✓ / 失敗の揺れ + ✕)。既定 true。
+  const [showSaveStatus, setShowSaveStatus] = useState(true);
   const [lastEvent, setLastEvent] = useState('');
   const gridRef = useRef<SpreadsheetGridHandle<OrderRow>>(null);
 
@@ -149,6 +151,14 @@ export function SSRMDemo() {
           />
           保存を失敗させる
         </label>
+        <label className="flex items-center gap-1">
+          <input
+            type="checkbox"
+            checked={showSaveStatus}
+            onChange={(e) => setShowSaveStatus(e.target.checked)}
+          />
+          保存状態の印(showSaveStatus)
+        </label>
         <button
           type="button"
           className="rounded-md border px-2 py-1 hover:bg-fd-accent"
@@ -164,6 +174,7 @@ export function SSRMDemo() {
         height={380}
         theme="auto"
         ref={gridRef}
+        showSaveStatus={showSaveStatus}
         onServerSideLoadError={(_error, params) =>
           setLastEvent(
             `onServerSideLoadError: 行 ${params.startIndex}〜${params.endIndex - 1} の取得に失敗`,
