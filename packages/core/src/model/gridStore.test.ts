@@ -57,6 +57,7 @@ describe('view スライス(非依存化 ④-2)', () => {
     store.subscribe(listener);
     const initial = store.getViewState();
     expect(initial).toEqual({
+      copiedRange: null,
       scrollTop: 0,
       viewportWidth: 0,
       viewportHeight: 0,
@@ -91,5 +92,28 @@ describe('view スライス(非依存化 ④-2)', () => {
     const view = store.getViewState();
     store.dispatch(gridActions.activateCell({ row: 0, col: 0 }));
     expect(store.getViewState()).toBe(view);
+  });
+
+  // 追加(motion-4 / M-3): コピー範囲は編集開始 / Esc(selection/clear)で消える(reducer の no-op でも)。
+  it('copiedRange は edit/start と selection/clear で null になり、他のアクションでは残る', () => {
+    const store = createGridStore(createInitialGridUiState());
+    const listener = vi.fn();
+    store.subscribe(listener);
+    const copied = {
+      selection: { type: 'cell' as const, range: { start: { row: 0, col: 0 }, end: { row: 1, col: 1 } } },
+      view: { sort: null, filters: null, collapsedGroupKeys: null, viewRowCount: 2, columns: null },
+    };
+    store.setViewState({ copiedRange: copied });
+    expect(store.getViewState().copiedRange).toBe(copied);
+    // 選択なしの Esc = reducer は no-op だが copiedRange は消え、購読者へ通知される。
+    listener.mockClear();
+    store.dispatch(gridActions.clearSelection());
+    expect(store.getViewState().copiedRange).toBeNull();
+    expect(listener).toHaveBeenCalledTimes(1);
+    store.setViewState({ copiedRange: copied });
+    store.dispatch(gridActions.activateCell({ row: 1, col: 0 }));
+    expect(store.getViewState().copiedRange).toBe(copied);
+    store.dispatch(gridActions.startEdit({ row: 1, col: 0 }));
+    expect(store.getViewState().copiedRange).toBeNull();
   });
 });

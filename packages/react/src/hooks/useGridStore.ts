@@ -54,6 +54,8 @@ export function useGridViewState(
       setHoveredRowIndex: field('hoveredRowIndex'),
       setHoveredColumnIndex: field('hoveredColumnIndex'),
       setIsCornerHovered: field('isCornerHovered'),
+      // 追加(motion-4 / M-3): コピー範囲(動く点線)。
+      setCopiedRange: field('copiedRange'),
     };
   }, [store]);
   return [view, setters];

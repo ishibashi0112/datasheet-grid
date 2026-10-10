@@ -1683,6 +1683,9 @@ export type GridClassNames<F extends GridFrameworkTypes = GridFrameworkTypes> = 
   // 範囲選択の塗り(.ssg-selection-overlay)。
   /** `activeCellOverlay` / `selectionOverlay`: 付与先: アクティブセル枠 / 範囲選択の塗り */
   selectionOverlay?: GridSlotProps<F>;
+  // 追加(motion-4 / M-3): コピー範囲の動く点線(.ssg-copy-range-overlay)。
+  /** 付与先: コピー範囲の動く点線 `.ssg-copy-range-overlay` */
+  copyRangeOverlay?: GridSlotProps<F>;
 };
 
 // 追加(imperative API #1): ref ハンドルのスクロール整列指定です。
@@ -2496,6 +2499,17 @@ export type SpreadsheetGridProps<T, F extends GridFrameworkTypes = GridFramework
    * @defaultValue `true`
    */
   animateRows?: boolean;
+  // 追加(motion-4 / M-3): Ctrl/Cmd+C したあと、コピー元の範囲に Excel と同じ「動く点線」を残します(既定 true)。
+  //   Esc / 編集開始で消え、ソート / フィルター / グループ開閉 / 行数 / 列の変化で描画しなくなります。
+  /**
+   * `Ctrl/Cmd+C` のあと、コピー元の範囲に Excel と同じ「動く点線」
+   * を残す(`.ssg-copy-range-overlay`。`motion` が `'off'` なら静的な点線)。`Esc` と編集開始で消え、
+   * ソート / フィルター / グループ開閉 / 行数 / 列の変化で描画しなくなる(貼り付けでは残る)。`false`
+   * で点線を出さない(コピー自体は従来どおり)。
+   *
+   * @defaultValue `true`
+   */
+  showCopyRange?: boolean;
   /**
    * 行番号列の幅(px)。
    *

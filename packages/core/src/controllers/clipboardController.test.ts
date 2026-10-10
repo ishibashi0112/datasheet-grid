@@ -241,4 +241,25 @@ describe('clipboardController', () => {
     expect(preventDefault).toHaveBeenCalledTimes(1);
     expect(t.args.onRowsChange).toHaveBeenCalledTimes(1);
   });
+
+  // 追加(motion-4 / M-3): コピー成功でコピー元の選択を onCopied へ通知する(動く点線の描画元)。
+  it('コピーが成功したとき onCopied にコピー元の選択を渡し、選択なし(no-op)では呼ばない', async () => {
+    const onCopied = vi.fn();
+    const selection = { type: 'cell' as const, range: { start: { row: 0, col: 0 }, end: { row: 1, col: 1 } } };
+    const { args } = makeArgs({ uiState: { ...createInitialGridUiState(), selection }, onCopied });
+    const c = createClipboardController<Row>();
+    c.update(args);
+    await c.handleCopy();
+    expect(writeText).toHaveBeenCalledTimes(1);
+    expect(onCopied).toHaveBeenCalledWith(selection);
+    // 選択なし: 何も書かず通知もしない。
+    const none = makeArgs({ onCopied });
+    const c2 = createClipboardController<Row>();
+    c2.update(none.args);
+    onCopied.mockClear();
+    writeText.mockClear();
+    await c2.handleCopy();
+    expect(writeText).not.toHaveBeenCalled();
+    expect(onCopied).not.toHaveBeenCalled();
+  });
 });

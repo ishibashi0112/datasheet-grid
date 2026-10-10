@@ -43,13 +43,11 @@ import { gridActions } from '@ishibashi0112/spreadsheet-grid-core/model/gridActi
 import { useGridStore, useGridViewState } from './hooks/useGridStore';
 import {
   buildSelectionSnapshot,
-  normalizeCellRange,
-  normalizeColumnRange,
-  normalizeRowRange,
 } from '@ishibashi0112/spreadsheet-grid-core/model/gridSelectors';
 import SelectionOverlay, {
   type SelectionOverlayRect,
 } from './SelectionOverlay';
+import CopyRangeOverlay from './CopyRangeOverlay';
 import ActiveCellOverlay, {
   type ActiveCellOverlayRect,
 } from './ActiveCellOverlay';
@@ -69,6 +67,11 @@ import { useGridTooltip } from './hooks/useGridTooltip';
 import { useResolvedGridTheme } from './hooks/useResolvedGridTheme';
 import { useResolvedGridMotion } from './hooks/useResolvedGridMotion';
 import { MOTION_OFF_CLASS_NAME } from '@ishibashi0112/spreadsheet-grid-core/logic/motion';
+import {
+  resolveSelectionBand,
+  resolveSelectionBandSegments,
+  resolveSelectionExtents,
+} from '@ishibashi0112/spreadsheet-grid-core/logic/selectionOverlayGeometry';
 // 追加(13-B3-2): ヘッダー D&D 列並べ替え controller です。
 import { useColumnHeaderDragController } from './hooks/useColumnHeaderDragController';
 // 追加(row-drag ③): 行ドラッグ並び替え controller です。
@@ -116,14 +119,11 @@ import { inferColumnFilterType } from '@ishibashi0112/spreadsheet-grid-core/logi
 //           中央列リサイズ中も固定ペインの renderEntries 参照を不変に保ちます。
 import {
   buildColumnMeasurements,
-  computePaneColumnExtents,
-  computeFullWidthPaneExtents,
   computeSinglePaneColumnExtent,
   // 追加(13-B3-1.5): 列の所属ペイン(pinned 由来)を columnChooserItems へ付与するために使います。
   getColumnPane,
   type PaneColumnEntry,
   type ColumnPane,
-  type PaneColumnExtentMap,
 } from '@ishibashi0112/spreadsheet-grid-core/logic/geometry';
 import { buildClearCellEdits, clearCellsInSelection } from '@ishibashi0112/spreadsheet-grid-core/logic/clearCells';
 // 追加: データ投入時の列幅自動フィットの発火判定(純関数)です。
@@ -133,7 +133,6 @@ import { buildClearCellEdits, clearCellsInSelection } from '@ishibashi0112/sprea
 import {
   MAX_BODY_PX,
   AUTO_HEIGHT_MAX_ROWS,
-  clipRowRangeToWindow,
   // 追加(label-row ③.5): 縦固定の現在セクション判定で物理 scrollTop を論理へ換算します。
   physicalToLogicalScrollTop,
 } from '@ishibashi0112/spreadsheet-grid-core/logic/verticalGeometry';
@@ -144,7 +143,6 @@ import {
   isInsideDetailCardOf,
   isSyntheticColumnKey,
   seedDetailIndexCache,
-  splitRowBandByDetail,
 } from '@ishibashi0112/spreadsheet-grid-core/logic/detailRow';
 // 追加(label-row ②): ラベル行(見出し / 区切り行)の SSRM ラッパです。
 import { resolveStickyLabel, wrapRowModelWithLabelRows } from '@ishibashi0112/spreadsheet-grid-core/logic/labelRows';
@@ -393,6 +391,8 @@ export function SpreadsheetGrid<T extends object>({
   motion = 'auto',
   // 追加(motion-3 / M-4・M-5): 行の並び替えアニメ(既定 true。auto-height / serverSide では自動 OFF)。
   animateRows = true,
+  // 追加(motion-4 / M-3): コピー範囲の動く点線(既定 true)。
+  showCopyRange = true,
   rowHeaderWidth = 56,
   // 追加: グリッド高さの外部制御。height で明示高さ、maxHeight でスクロール領域の上限。
   //   '%' を含む height はバー込みのグリッド全体を親へ追従させます(fill-height。logic/gridHeight)。
@@ -669,6 +669,8 @@ export function SpreadsheetGrid<T extends object>({
       hoveredRowIndex,
       hoveredColumnIndex,
       isCornerHovered,
+      // 追加(motion-4 / M-3): コピー範囲(動く点線)。
+      copiedRange,
     },
     {
       // 注記: viewportWidth / viewportHeight は scroll / resize effect が gridStore.setViewState で
@@ -2198,6 +2200,21 @@ export function SpreadsheetGrid<T extends object>({
       uiState,
       readOnly,
       canEditCell,
+      // 追加(motion-4 / M-3): コピー成功時にコピー元の選択とビュー形状を控えます(動く点線の描画元。
+      //   ビュー形状が変わったら描画側が参照比較で無視するため、解除の effect は不要)。
+      onCopied: (selection) =>
+        gridStore.setViewState({
+          copiedRange: {
+            selection,
+            view: {
+              sort: uiState.sort,
+              filters: uiState.filters,
+              collapsedGroupKeys: uiState.collapsedGroupKeys,
+              viewRowCount,
+              columns: orderedColumns,
+            },
+          },
+        }),
       createRow,
       createOverflowColumn,
       // 変更(undo/redo): paste の変更前 rows を履歴へ積むため、生の onRowsChange ではなく
@@ -2491,111 +2508,86 @@ export function SpreadsheetGrid<T extends object>({
   //             no-op(scaleFactor=1)でも可視域等価です。
 
   // 横 extent + 生の選択行範囲(スクロール非依存)。
-  const selectionExtents = useMemo<{
-    extents: PaneColumnExtentMap;
-    startRow: number;
-    endRow: number;
-  } | null>(() => {
-    if (!uiState.selection) {
-      return null;
-    }
-
-    if (uiState.selection.type === 'cell') {
-      const normalizedRange = normalizeCellRange(uiState.selection.range);
-      const extents = computePaneColumnExtents(
-        paneLayout,
-        normalizedRange.start.col,
-        normalizedRange.end.col,
-      );
-      return {
-        extents,
-        startRow: normalizedRange.start.row,
-        endRow: normalizedRange.end.row,
-      };
-    }
-
-    if (uiState.selection.type === 'row') {
-      const normalizedRange = normalizeRowRange(
-        uiState.selection.startRow,
-        uiState.selection.endRow,
-      );
-      // 行選択は全ペインの全列を覆います。
-      const extents = computeFullWidthPaneExtents(paneLayout);
-      return {
-        extents,
-        startRow: normalizedRange.startRow,
-        endRow: normalizedRange.endRow,
-      };
-    }
-
-    // col selection: 縦は全行が対象(窓クリップ側で帯に畳む)。
-    const normalizedRange = normalizeColumnRange(
-      uiState.selection.startCol,
-      uiState.selection.endCol,
-    );
-    const extents = computePaneColumnExtents(
-      paneLayout,
-      normalizedRange.startCol,
-      normalizedRange.endCol,
-    );
-    return {
-      extents,
-      startRow: 0,
-      endRow: Math.max(viewRowCount - 1, 0),
-    };
-  }, [uiState.selection, paneLayout, viewRowCount]);
+  // 変更(motion-4): 本体は logic/selectionOverlayGeometry の純関数へ(コピー範囲の点線と共用)。
+  const selectionExtents = useMemo(
+    () => resolveSelectionExtents(uiState.selection, paneLayout, viewRowCount),
+    [uiState.selection, paneLayout, viewRowCount],
+  );
 
   // 縦帯(スクロール依存): 選択行範囲を描画窓へクリップし、rowMetrics で top/height を求めます。
   //   窓と交差しない(画面外へ完全にスクロールアウトした)選択は null で描画しません。
-  const selectionBand = useMemo<{ top: number; height: number } | null>(() => {
-    if (!selectionExtents) {
-      return null;
-    }
-    const clipped = clipRowRangeToWindow(
-      selectionExtents.startRow,
-      selectionExtents.endRow,
-      windowFirstRow,
-      windowLastRow,
-    );
-    if (!clipped) {
-      return null;
-    }
-    return {
-      top: rowMetrics.rowTop(clipped.start),
-      height: rowMetrics.rowsHeight(clipped.start, clipped.end),
-    };
-  }, [selectionExtents, rowMetrics, windowFirstRow, windowLastRow]);
+  const selectionBand = useMemo(
+    () => resolveSelectionBand(selectionExtents, windowFirstRow, windowLastRow, rowMetrics),
+    [selectionExtents, rowMetrics, windowFirstRow, windowLastRow],
+  );
   // 追加(detail ③): 展開行があるとき、選択の縦帯を detail 帯を避けた複数セグメントへ分割します。
   //   展開行なし(detailActive=false)では null で、従来の selectionBand 1 本のままです。
-  const selectionBandSegments = useMemo<
-    ReadonlyArray<{ top: number; height: number }> | null
-  >(() => {
-    if (!detailActive || !selectionExtents) {
-      return null;
-    }
-    const clipped = clipRowRangeToWindow(
-      selectionExtents.startRow,
-      selectionExtents.endRow,
-      windowFirstRow,
-      windowLastRow,
-    );
-    if (!clipped) {
-      return null;
-    }
-    return splitRowBandByDetail(
-      clipped.start,
-      clipped.end,
-      rowMetrics,
-      detailExtras,
-    );
-  }, [
-    detailActive,
-    selectionExtents,
-    rowMetrics,
-    detailExtras,
-    windowFirstRow,
-    windowLastRow,
-  ]);
+  const selectionBandSegments = useMemo(
+    () =>
+      resolveSelectionBandSegments(
+        detailActive,
+        selectionExtents,
+        windowFirstRow,
+        windowLastRow,
+        rowMetrics,
+        detailExtras,
+      ),
+    [detailActive, selectionExtents, rowMetrics, detailExtras, windowFirstRow, windowLastRow],
+  );
+
+  // 追加(motion-4 / M-3): コピー範囲(動く点線)。コピー時点のビュー形状(ソート / フィルター / グループ開閉 / 行数 / 列)
+  //   と現在値を参照比較し、変わっていれば描画しません(= ソート等で範囲が崩れたら解除)。幾何はライブ選択と同じ計算。
+  const copiedSelection =
+    showCopyRange &&
+    copiedRange &&
+    copiedRange.view.sort === uiState.sort &&
+    copiedRange.view.filters === uiState.filters &&
+    copiedRange.view.collapsedGroupKeys === uiState.collapsedGroupKeys &&
+    copiedRange.view.viewRowCount === viewRowCount &&
+    copiedRange.view.columns === orderedColumns
+      ? copiedRange.selection
+      : null;
+  const copiedExtents = useMemo(
+    () => resolveSelectionExtents(copiedSelection, paneLayout, viewRowCount),
+    [copiedSelection, paneLayout, viewRowCount],
+  );
+  const copiedBand = useMemo(
+    () => resolveSelectionBand(copiedExtents, windowFirstRow, windowLastRow, rowMetrics),
+    [copiedExtents, rowMetrics, windowFirstRow, windowLastRow],
+  );
+  const copiedBandSegments = useMemo(
+    () =>
+      resolveSelectionBandSegments(
+        detailActive,
+        copiedExtents,
+        windowFirstRow,
+        windowLastRow,
+        rowMetrics,
+        detailExtras,
+      ),
+    [detailActive, copiedExtents, rowMetrics, detailExtras, windowFirstRow, windowLastRow],
+  );
+  const copyRectsForPane = useCallback(
+    (pane: ColumnPane): SelectionOverlayRect[] => {
+      const extent = copiedExtents?.extents[pane];
+      if (!extent) {
+        return [];
+      }
+      if (copiedBandSegments) {
+        return copiedBandSegments.map((segment) => ({
+          left: extent.start,
+          top: segment.top,
+          width: extent.width,
+          height: segment.height,
+        }));
+      }
+      if (!copiedBand) {
+        return [];
+      }
+      return [{ left: extent.start, top: copiedBand.top, width: extent.width, height: copiedBand.height }];
+    },
+    [copiedExtents, copiedBand, copiedBandSegments],
+  );
 
   // 追加(10-D): 指定ペインの選択矩形（ペインローカル）を返します。該当列が無い / 窓外なら null です。
   const selectionRectForPane = useCallback(
@@ -4091,6 +4083,17 @@ export function SpreadsheetGrid<T extends object>({
                     leadingWidth={leftLeadingWidth}
                   />
                 ))}
+                {/* 追加(motion-4 / M-3): コピー範囲の動く点線(選択の塗りと同じ座標系)。 */}
+                {copyRectsForPane('left').map((rect, segmentIndex) => (
+                  <CopyRangeOverlay
+                    slot={slots.copyRangeOverlay}
+                    key={segmentIndex}
+                    rect={rect}
+                    headerHeight={headerHeight}
+                    baseOffset={overlayBaseOffset}
+                    leadingWidth={leftLeadingWidth}
+                  />
+                ))}
 
                 <ActiveCellOverlay
                   slot={slots.activeCellOverlay}
@@ -4282,6 +4285,17 @@ export function SpreadsheetGrid<T extends object>({
                     leadingWidth={centerLeadingWidth}
                   />
                 ))}
+                {/* 追加(motion-4 / M-3): コピー範囲の動く点線(選択の塗りと同じ座標系)。 */}
+                {copyRectsForPane('center').map((rect, segmentIndex) => (
+                  <CopyRangeOverlay
+                    slot={slots.copyRangeOverlay}
+                    key={segmentIndex}
+                    rect={rect}
+                    headerHeight={headerHeight}
+                    baseOffset={overlayBaseOffset}
+                    leadingWidth={centerLeadingWidth}
+                  />
+                ))}
 
                 <ActiveCellOverlay
                   slot={slots.activeCellOverlay}
@@ -4463,6 +4477,17 @@ export function SpreadsheetGrid<T extends object>({
                 ).map((rect, segmentIndex) => (
                   <SelectionOverlay
                     slot={slots.selectionOverlay}
+                    key={segmentIndex}
+                    rect={rect}
+                    headerHeight={headerHeight}
+                    baseOffset={overlayBaseOffset}
+                    leadingWidth={rightLeadingWidth}
+                  />
+                ))}
+                {/* 追加(motion-4 / M-3): コピー範囲の動く点線(選択の塗りと同じ座標系)。 */}
+                {copyRectsForPane('right').map((rect, segmentIndex) => (
+                  <CopyRangeOverlay
+                    slot={slots.copyRangeOverlay}
                     key={segmentIndex}
                     rect={rect}
                     headerHeight={headerHeight}
