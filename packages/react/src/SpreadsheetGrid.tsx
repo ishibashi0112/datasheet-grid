@@ -398,6 +398,8 @@ export function SpreadsheetGrid<T extends object>({
   hoverHighlight = 'row',
   // 追加(motion-6 / M-2): 変更セルのフラッシュ + 数値トゥイーン(既定 false。clientSide 専用)。
   highlightChanges = false,
+  // 追加(motion-7 / M-9): SSRM 書き戻しのセル単位の保存状態(既定 true)。
+  showSaveStatus = true,
   rowHeaderWidth = 56,
   // 追加: グリッド高さの外部制御。height で明示高さ、maxHeight でスクロール領域の上限。
   //   '%' を含む height はバー込みのグリッド全体を親へ追従させます(fill-height。logic/gridHeight)。
@@ -1230,6 +1232,8 @@ export function SpreadsheetGrid<T extends object>({
     onLoadError: onServerSideLoadError,
     // 追加(SSRM 書き戻し): updateRows 失敗(ロールバック済み)の外部通知です(同じく latest-ref)。
     onWriteError: onServerSideWriteError,
+    // 追加(motion-7 / M-9): セル単位の保存状態(pending → ok | failed)を saveStatusController へ。
+    onWriteStateChange: engine.saveStatus.handle,
   });
   // 追加(batch 9): 内蔵エラーバーの「閉じる」状態です。閉じた時点の loadError 参照を記録し、
   //   同一参照の間だけ非表示にします(失敗集合が変わる = 新しい失敗イベントで新参照になり
@@ -1618,6 +1622,12 @@ export function SpreadsheetGrid<T extends object>({
     rowKeyGetter: resolvedRowKeyGetter,
     columns: visibleColumns,
     scrollContainerRef,
+  });
+  // 追加(motion-7 / M-9): SSRM 書き戻しのセル単位の保存状態(data-ssg-save + インジケーター + 失敗チップ)。
+  useControllerLifecycle(engine.saveStatus, {
+    scrollContainerRef,
+    shellRef: gridRootRef,
+    enabled: showSaveStatus && isServerSide,
   });
   // gate 外フォールバック時の開発時警告(例外は投げず uniform にフォールバック)。
   // 変更(①-3): serverSide では行数に関わらず未対応の旨を警告します(行数上限とは別理由のため

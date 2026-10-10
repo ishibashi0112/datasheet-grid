@@ -14,6 +14,7 @@ import { createAutoHeightMeasurer, type AutoHeightMeasurer } from '../controller
 import { createScrollSyncController, type ScrollSyncController } from '../controllers/scrollSyncController';
 import { createRowEnterController, type RowEnterController } from '../controllers/rowEnterController';
 import { createChangeHighlightController, type ChangeHighlightController } from '../controllers/changeHighlightController';
+import { createSaveStatusController, type SaveStatusController } from '../controllers/saveStatusController';
 import { createDebouncedValueStore, type DebouncedValueStore } from '../controllers/debouncedValueStore';
 import { createAutoSizeOnDataTrigger, type AutoSizeOnDataTrigger } from '../controllers/columnAutosizeRunner';
 import { createImeInputController, type ImeInputController } from '../controllers/imeInputController';
@@ -96,6 +97,8 @@ export type GridEngine<T> = {
   rowEnter: RowEnterController;
   // 追加(motion-6 / M-2): rows の差分で値が変わったセルへフラッシュ / 数値トゥイーンを直付けする DOM コントローラ。
   changeHighlight: ChangeHighlightController<T>;
+  // 追加(motion-7 / M-9): SSRM 書き戻しのセル単位の保存状態を data 属性で直付けする DOM コントローラ。
+  saveStatus: SaveStatusController;
   serverSideQueryStore: DebouncedValueStore<ServerSideQueryResolution>;
   autoSizeOnData: AutoSizeOnDataTrigger<T>;
   // 追加(G-2): IME オンのままの直接入力(imeDirectInput)の入力受け。
@@ -131,6 +134,7 @@ export const createGridEngine = <T,>(init: GridEngineInit<T>): GridEngine<T> => 
   const scrollSync = createScrollSyncController();
   const rowEnter = createRowEnterController();
   const changeHighlight = createChangeHighlightController<T>();
+  const saveStatus = createSaveStatusController();
   const autoSizeOnData = createAutoSizeOnDataTrigger<T>();
   const imeInput = createImeInputController();
 
@@ -154,6 +158,7 @@ export const createGridEngine = <T,>(init: GridEngineInit<T>): GridEngine<T> => 
     scrollSync,
     rowEnter,
     changeHighlight,
+    saveStatus,
     serverSideQueryStore,
     autoSizeOnData,
     imeInput,
@@ -163,6 +168,7 @@ export const createGridEngine = <T,>(init: GridEngineInit<T>): GridEngine<T> => 
       scrollSync.dispose();
     rowEnter.dispose();
     changeHighlight.dispose();
+    saveStatus.dispose();
       serverSideQueryStore.dispose();
       imeInput.dispose();
     },

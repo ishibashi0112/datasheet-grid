@@ -2536,6 +2536,19 @@ export type SpreadsheetGridProps<T, F extends GridFrameworkTypes = GridFramework
    * @defaultValue `false`
    */
   highlightChanges?: boolean;
+  // 追加(motion-7 / M-9): serverSide の書き戻し(dataSource.updateRows)で、確定したセルに保存状態の印を出す(既定 true)。
+  //   保存中: 斜線 + 小さなスピナー / 成功: ✓ バッジ(1.3 秒)/ 失敗: 揺れ + 赤いフラッシュ + ✕ バッジ + セル下のチップ。
+  //   既存の保存失敗バーとは独立(両方出る)。
+  /**
+   * serverSide の書き戻し(`dataSource.updateRows`)で、確定したセルに保存状態の印を出す。
+   * 保存中は斜線 + 小さなスピナー(`[data-ssg-save="pending"]`)、成功は ✓ バッジを 1.3 秒(`"ok"`)、
+   * 失敗は揺れ + 赤いフラッシュ + ✕ バッジ(`"failed"`)とセル下の「保存に失敗しました」チップ(4 秒 /
+   * スクロールで消える)。既存の保存失敗バー(`onServerSideWriteError`)とは独立に出る。
+   * 描画中のセルだけが対象。clientSide では何も出ない。
+   *
+   * @defaultValue `true`
+   */
+  showSaveStatus?: boolean;
   /**
    * 行番号列の幅(px)。
    *
