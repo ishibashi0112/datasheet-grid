@@ -131,6 +131,8 @@
     /* その他 */
     --ssg-drop-indicator: #0f172a;
     --ssg-glyph-faint: #cbd5e1;
+    /* 追加(motion-5 / M-6): クロスヘア(hoverHighlight='cross')の列の帯。行ホバー色の上に重ねても破綻しない薄い墨。 */
+    --ssg-col-hover-bg: rgba(15, 23, 42, 0.04);
     --ssg-skeleton-bar: #e2e8f0;
     /* 追加(motion-2 / M-8): スケルトンを流れる光の帯の色(バーより一段明るい面)。 */
     --ssg-skeleton-bar-hi: #f8fafc;
@@ -294,6 +296,7 @@
     --ssg-note-indicator: #fbbf24;
     /* その他 */
     --ssg-drop-indicator: #c1c2c5;
+    --ssg-col-hover-bg: rgba(255, 255, 255, 0.045);
     --ssg-skeleton-bar: #2c2e33;
     --ssg-skeleton-bar-hi: #3b3e45;
     /* スクロール位置インジケーター(scrollHint)のカスタムスクロールバー */
@@ -800,6 +803,23 @@
       top var(--ssg-motion-fast) var(--ssg-motion-ease),
       width var(--ssg-motion-fast) var(--ssg-motion-ease),
       height var(--ssg-motion-fast) var(--ssg-motion-ease);
+  }
+
+  /* 追加(motion-5 / M-6): クロスヘア(hoverHighlight='cross')。ポインタの列に薄い帯を 1 枚のオーバーレイで重ね
+     (セルのクラスを触らないので行の再レンダーが増えない)、列ヘッダーと行番号は選択色で染めます。交点のセルは
+     行ホバー色 + 帯で自然に一段濃くなります。 */
+  .ssg-col-hover-overlay {
+    position: absolute;
+    pointer-events: none;
+    z-index: 1;
+    background-color: var(--ssg-col-hover-bg);
+  }
+  .ssg-root--hover-cross .ssg-header-cell--hovered {
+    background-color: var(--ssg-select-bg);
+    color: var(--ssg-accent-strong);
+  }
+  .ssg-root--hover-cross .ssg-header-cell--hovered .ssg-header-label {
+    color: var(--ssg-accent-strong);
   }
 
   /* 追加(motion-4 / M-3): コピー範囲(Ctrl/Cmd+C 後の「動く点線」)。枠は背景グラデーション 4 本(上下 = 横縞、左右 =

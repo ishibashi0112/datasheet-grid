@@ -2510,6 +2510,18 @@ export type SpreadsheetGridProps<T, F extends GridFrameworkTypes = GridFramework
    * @defaultValue `true`
    */
   showCopyRange?: boolean;
+  // 追加(motion-5 / M-6): ホバーの強調範囲。'row'(既定 = 従来)はポインタの行だけ。'cross' はその行に加えて
+  //   ポインタの列(列ヘッダー・同じ列の他セルの薄い帯)と行番号も染め、交点が分かるクロスヘア表示。
+  /**
+   * ホバーの強調範囲。`'row'` はポインタの行だけ(従来)。`'cross'` はその行に加えて、
+   * ポインタの列(列ヘッダー + 同じ列の他セルに薄い帯 `.ssg-col-hover-overlay`)
+   * と行番号も染めるクロスヘア表示。色はトークン `--ssg-col-hover-bg`(帯)/
+   * `--ssg-select-bg`(ヘッダー・行番号)。横に長い表で「この値はどの列か」
+   * を視線移動なしで答えるため。
+   *
+   * @defaultValue `'row'`
+   */
+  hoverHighlight?: 'row' | 'cross';
   /**
    * 行番号列の幅(px)。
    *

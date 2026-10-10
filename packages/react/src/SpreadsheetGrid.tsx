@@ -48,6 +48,7 @@ import SelectionOverlay, {
   type SelectionOverlayRect,
 } from './SelectionOverlay';
 import CopyRangeOverlay from './CopyRangeOverlay';
+import ColumnHoverOverlay from './ColumnHoverOverlay';
 import ActiveCellOverlay, {
   type ActiveCellOverlayRect,
 } from './ActiveCellOverlay';
@@ -393,6 +394,8 @@ export function SpreadsheetGrid<T extends object>({
   animateRows = true,
   // 追加(motion-4 / M-3): コピー範囲の動く点線(既定 true)。
   showCopyRange = true,
+  // 追加(motion-5 / M-6): ホバーの強調範囲('row' = 従来 / 'cross' = クロスヘア)。
+  hoverHighlight = 'row',
   rowHeaderWidth = 56,
   // 追加: グリッド高さの外部制御。height で明示高さ、maxHeight でスクロール領域の上限。
   //   '%' を含む height はバー込みのグリッド全体を親へ追従させます(fill-height。logic/gridHeight)。
@@ -2056,6 +2059,8 @@ export function SpreadsheetGrid<T extends object>({
     setHoveredColumnIndex,
     enableRowHover,
     enableColumnHeaderHover,
+    // 追加(motion-5 / M-6): クロスヘアでは本体セルのホバーで列もホバー列にします。
+    enableColumnHover: hoverHighlight === 'cross',
     // 追加(行選択): ガター行選択の有効化とコールバックです。
     enableRowSelection,
     onGutterRowSelect: handleGutterRowSelect,
@@ -2627,6 +2632,27 @@ export function SpreadsheetGrid<T extends object>({
       }));
     },
     [selectionBandSegments, selectionExtents],
+  );
+
+  // 追加(motion-5 / M-6): クロスヘアのポインタ列の帯(ペインローカル)。描画窓の縦範囲だけを覆います。
+  const columnHoverRectForPane = useCallback(
+    (pane: ColumnPane): SelectionOverlayRect | null => {
+      if (hoverHighlight !== 'cross' || hoveredColumnIndex === null || windowLastRow < windowFirstRow) {
+        return null;
+      }
+      const single = computeSinglePaneColumnExtent(paneLayout, hoveredColumnIndex);
+      if (!single || single.pane !== pane) {
+        return null;
+      }
+      const top = rowMetrics.rowTop(windowFirstRow);
+      return {
+        left: single.extent.start,
+        top,
+        width: single.extent.width,
+        height: rowMetrics.rowTop(windowLastRow + 1) - top,
+      };
+    },
+    [hoverHighlight, hoveredColumnIndex, paneLayout, rowMetrics, windowFirstRow, windowLastRow],
   );
 
   // ── corner header ─────────────────────────────────────
@@ -3911,6 +3937,8 @@ export function SpreadsheetGrid<T extends object>({
         uiState.dragState?.type === 'selection' && 'ssg-root--selecting',
         // 追加(motion-3 / M-4・M-5): 行の並び替えアニメ(行要素の transform に transition)。
         animateRowsActive && 'ssg-root--animate-rows',
+        // 追加(motion-5 / M-6): クロスヘア(列ヘッダー / 行番号を選択色で染める。列の帯は ColumnHoverOverlay)。
+        hoverHighlight === 'cross' && 'ssg-root--hover-cross',
         // 追加(THEME-3): readonly 淡色表示の opt-in 修飾子(styles.css 側で :where ゲート)。
         dimReadOnlyCells && 'ssg-root--dim-readonly',
         // 追加(fill-height): '%' を含む height のときだけ flex column 化します(styles.css)。
@@ -3943,7 +3971,13 @@ export function SpreadsheetGrid<T extends object>({
         style={{ cursor: isAutosizing ? 'progress' : undefined }}
         onDragStart={handleNativeDragStart}
         // 追加(UI hover): grid 本体(ヘッダー+ボディ)から出たら行ホバーをクリアします。
-        onPointerLeave={() => applyHoveredRowChange(null)}
+        onPointerLeave={() => {
+          applyHoveredRowChange(null);
+          // 追加(motion-5 / M-6): クロスヘアの列ホバーも本体から出たら消します。
+          if (hoverHighlight === 'cross') {
+            setHoveredColumnIndex(null);
+          }
+        }}
         onPointerMoveCapture={(event) => {
           pointerClientRef.current = { x: event.clientX, y: event.clientY };
           updateSelectionFromPointer(event.clientX, event.clientY);
@@ -4094,6 +4128,13 @@ export function SpreadsheetGrid<T extends object>({
                     leadingWidth={leftLeadingWidth}
                   />
                 ))}
+                {/* 追加(motion-5 / M-6): クロスヘアのポインタ列の帯。 */}
+                <ColumnHoverOverlay
+                  rect={columnHoverRectForPane('left')}
+                  headerHeight={headerHeight}
+                  baseOffset={overlayBaseOffset}
+                  leadingWidth={leftLeadingWidth}
+                />
 
                 <ActiveCellOverlay
                   slot={slots.activeCellOverlay}
@@ -4296,6 +4337,13 @@ export function SpreadsheetGrid<T extends object>({
                     leadingWidth={centerLeadingWidth}
                   />
                 ))}
+                {/* 追加(motion-5 / M-6): クロスヘアのポインタ列の帯。 */}
+                <ColumnHoverOverlay
+                  rect={columnHoverRectForPane('center')}
+                  headerHeight={headerHeight}
+                  baseOffset={overlayBaseOffset}
+                  leadingWidth={centerLeadingWidth}
+                />
 
                 <ActiveCellOverlay
                   slot={slots.activeCellOverlay}
@@ -4495,6 +4543,13 @@ export function SpreadsheetGrid<T extends object>({
                     leadingWidth={rightLeadingWidth}
                   />
                 ))}
+                {/* 追加(motion-5 / M-6): クロスヘアのポインタ列の帯。 */}
+                <ColumnHoverOverlay
+                  rect={columnHoverRectForPane('right')}
+                  headerHeight={headerHeight}
+                  baseOffset={overlayBaseOffset}
+                  leadingWidth={rightLeadingWidth}
+                />
 
                 <ActiveCellOverlay
                   slot={slots.activeCellOverlay}

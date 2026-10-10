@@ -223,4 +223,16 @@ describe('pointerInteractionsController', () => {
     ]);
     controller.dispose();
   });
+
+  // 追加(motion-5 / M-6): enableColumnHover(クロスヘア)では本体セルのホバーで列もホバー扱いになる。
+  it('enableColumnHover のときだけ本体セルのホバーで setHoveredColumnIndex が呼ばれる', () => {
+    const setHoveredColumnIndex = vi.fn();
+    const controller = createPointerInteractionsController<Row>();
+    controller.update(makeArgs({ setHoveredColumnIndex, enableRowHover: true }));
+    controller.handleCellPointerEnter({ row: 1, col: 2 }, pointerEvent());
+    expect(setHoveredColumnIndex).not.toHaveBeenCalled();
+    controller.update(makeArgs({ setHoveredColumnIndex, enableRowHover: true, enableColumnHover: true }));
+    controller.handleCellPointerEnter({ row: 1, col: 2 }, pointerEvent());
+    expect(setHoveredColumnIndex).toHaveBeenCalledWith(2);
+  });
 });
