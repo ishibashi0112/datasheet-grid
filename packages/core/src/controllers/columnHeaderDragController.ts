@@ -198,10 +198,8 @@ const SETTLE_MS = 200;
 const SETTLE_EASING = 'cubic-bezier(0.2, 0.7, 0.3, 1)';
 
 // prefers-reduced-motion ではアニメせずスナップします(アクセシビリティ)。
-const prefersReducedMotion = (): boolean =>
-  typeof window !== 'undefined' &&
-  typeof window.matchMedia === 'function' &&
-  window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+// 変更(motion-3): 抑制の判定を OS 設定の直接参照から motion prop の実効値(root の .ssg-motion-off)へ。
+const isMotionOff = (el: HTMLElement | null): boolean => el?.closest('.ssg-motion-off') != null;
 
 // 現在の各列の screen-x(getBoundingClientRect().left)を列キーで記録します(FLIP の before)。
 //   同じ列のヘッダー / 本体セルは同じ x のため、列キーごとに最初の 1 セルだけ測れば十分です。
@@ -518,7 +516,7 @@ export const createColumnHeaderDragController = <T,>(): ColumnHeaderDragControll
     const sourcePane = draggedColumn ? getColumnPane(draggedColumn) : null;
     const samePaneReorder = sourcePane !== null && sourcePane === target.pane;
     settlePending =
-      samePaneReorder && !prefersReducedMotion() ? captureColumnLefts(scrollContainerRef.current) : null;
+      samePaneReorder && !isMotionOff(scrollContainerRef.current) ? captureColumnLefts(scrollContainerRef.current) : null;
 
     const pinOverride = new Map<string, GridColumnPinned | undefined>([
       [draggedKey, target.pane === 'center' ? undefined : target.pane],

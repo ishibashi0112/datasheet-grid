@@ -391,6 +391,8 @@ export function SpreadsheetGrid<T extends object>({
   theme = 'light',
   // 追加(motion-0): モーションの有効化('auto' = prefers-reduced-motion を尊重)。
   motion = 'auto',
+  // 追加(motion-3 / M-4・M-5): 行の並び替えアニメ(既定 true。auto-height / serverSide では自動 OFF)。
+  animateRows = true,
   rowHeaderWidth = 56,
   // 追加: グリッド高さの外部制御。height で明示高さ、maxHeight でスクロール領域の上限。
   //   '%' を含む height はバー込みのグリッド全体を親へ追従させます(fill-height。logic/gridHeight)。
@@ -1479,12 +1481,6 @@ export function SpreadsheetGrid<T extends object>({
     setViewState: gridStore.setViewState,
     onScroll,
   });
-  // 追加(motion-2 / M-8): SSRM のブロック到着でスケルトン行が実行へ差し替わったとき、その行へ一過性の enter クラスを
-  //   直付けします(セルが上から順にフェードイン)。clientSide と motion='off' では observer 自体を付けません。
-  useControllerLifecycle(engine.rowEnter, {
-    scrollContainerRef,
-    enabled: isServerSide && resolvedMotion === 'on',
-  });
 
   // 変更(10-C): 列の仮想化は「中央ペインの列エントリ」に対して行います。
   // 変更理由: 固定列は中央スクロール対象外。中央ペインの水平スクロール範囲＝
@@ -1593,6 +1589,19 @@ export function SpreadsheetGrid<T extends object>({
       labelRowHeightOption,
     ],
   );
+
+  // 追加(motion-3 / M-4・M-5): 行の並び替えアニメの実効値。auto-height(行高の実測で transform が動く)と serverSide
+  //   (ブロック到着で行が差し替わる)では自動 OFF。root 修飾子(ssg-root--animate-rows)で行要素の transform に
+  //   transition を付けます(styles.css。スクロール中は scrollSyncController の修飾子で抑止)。
+  const animateRowsActive =
+    animateRows && resolvedMotion === 'on' && !autoHeightActive && !isServerSide;
+  // 追加(motion-2 / M-8、motion-3): スケルトン行が実行へ差し替わった行(SSRM)と、スクロール以外で現れた行(animateRows)
+  //   へ一過性の enter クラスを直付けします(セルが上から順にフェードイン)。両方 OFF なら observer 自体を付けません。
+  useControllerLifecycle(engine.rowEnter, {
+    scrollContainerRef,
+    skeletonEnter: isServerSide && resolvedMotion === 'on',
+    mountEnter: animateRowsActive,
+  });
   // gate 外フォールバック時の開発時警告(例外は投げず uniform にフォールバック)。
   // 変更(①-3): serverSide では行数に関わらず未対応の旨を警告します(行数上限とは別理由のため
   //   メッセージを分けます)。
@@ -3908,6 +3917,8 @@ export function SpreadsheetGrid<T extends object>({
         // 追加(motion-1 / M-1): ポインタで範囲選択をドラッグ中はオーバーレイを瞬時に追従させます(styles.css で
         //   transition を切る。キーボード移動 / クリックでは滑る)。
         uiState.dragState?.type === 'selection' && 'ssg-root--selecting',
+        // 追加(motion-3 / M-4・M-5): 行の並び替えアニメ(行要素の transform に transition)。
+        animateRowsActive && 'ssg-root--animate-rows',
         // 追加(THEME-3): readonly 淡色表示の opt-in 修飾子(styles.css 側で :where ゲート)。
         dimReadOnlyCells && 'ssg-root--dim-readonly',
         // 追加(fill-height): '%' を含む height のときだけ flex column 化します(styles.css)。

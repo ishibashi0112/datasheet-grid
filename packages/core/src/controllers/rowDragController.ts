@@ -116,10 +116,9 @@ const SETTLE_EASING = 'cubic-bezier(0.2, 0.7, 0.3, 1)';
 //   className が上書きされても消えません(CSS 側で淡色表示)。
 const DRAGGING_ROW_ATTRIBUTE = 'data-ssg-row-dragging';
 
-const prefersReducedMotion = (): boolean =>
-  typeof window !== 'undefined' &&
-  typeof window.matchMedia === 'function' &&
-  window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+// 変更(motion-3): 抑制の判定を OS 設定(prefers-reduced-motion)の直接参照から motion prop の実効値(root の
+//   .ssg-motion-off)へ。'auto' では同義、'on' では OS 設定に関わらずスライドします。
+const isMotionOff = (el: HTMLElement | null): boolean => el?.closest('.ssg-motion-off') != null;
 
 const TRANSLATE_Y_PATTERN = /translateY\((-?[\d.]+)px\)/;
 
@@ -384,7 +383,7 @@ export const createRowDragController = (): RowDragController => {
     const to = resolveMoveTargetIndex(from, slot);
     if (to === null) return;
 
-    settlePending = prefersReducedMotion() ? null : captureRowTops();
+    settlePending = isMotionOff(args.scrollContainerRef.current) ? null : captureRowTops();
     args.commitRowMove(from, to);
   };
 

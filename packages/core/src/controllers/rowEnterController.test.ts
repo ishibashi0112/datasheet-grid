@@ -41,7 +41,7 @@ describe('rowEnterController', () => {
 
   it('同一バッチで skeleton 行が実行へ差し替わった行だけに enter クラスと段差インデックスが付く', async () => {
     const controller = createRowEnterController();
-    controller.update({ scrollContainerRef: { current: container }, enabled: true });
+    controller.update({ scrollContainerRef: { current: container }, skeletonEnter: true, mountEnter: false });
     const s3 = makeRow(3, true);
     const s4 = makeRow(4, true);
     const s9 = makeRow(9, true);
@@ -73,7 +73,7 @@ describe('rowEnterController', () => {
 
   it('3 ペインで同じ行 index は同じ段差になり、段差は上限で頭打ちになる', async () => {
     const controller = createRowEnterController();
-    controller.update({ scrollContainerRef: { current: container }, enabled: true });
+    controller.update({ scrollContainerRef: { current: container }, skeletonEnter: true, mountEnter: false });
     const count = ROW_ENTER_STAGGER_CAP + 3;
     const skeletons = Array.from({ length: count }, (_, i) => makeRow(i, true));
     const leftSkeletons = Array.from({ length: count }, (_, i) => makeRow(i, true, 'left'));
@@ -97,7 +97,7 @@ describe('rowEnterController', () => {
 
   it('animationend が届かなくてもフォールバックのタイマーで外れる', async () => {
     const controller = createRowEnterController();
-    controller.update({ scrollContainerRef: { current: container }, enabled: true });
+    controller.update({ scrollContainerRef: { current: container }, skeletonEnter: true, mountEnter: false });
     const s = makeRow(1, true);
     pane.append(s);
     await flushObservers();
@@ -117,9 +117,9 @@ describe('rowEnterController', () => {
     controller.dispose();
   });
 
-  it('enabled=false では observer を付けず、true → false で外れる', async () => {
+  it('両モード false では observer を付けず、true → false で外れる', async () => {
     const controller = createRowEnterController();
-    controller.update({ scrollContainerRef: { current: container }, enabled: false });
+    controller.update({ scrollContainerRef: { current: container }, skeletonEnter: false, mountEnter: false });
     const s = makeRow(2, true);
     pane.append(s);
     await flushObservers();
@@ -129,8 +129,8 @@ describe('rowEnterController', () => {
     await flushObservers();
     expect(r.classList.contains(ROW_ENTER_CLASS_NAME)).toBe(false);
     // 有効化 → 無効化。
-    controller.update({ scrollContainerRef: { current: container }, enabled: true });
-    controller.update({ scrollContainerRef: { current: container }, enabled: false });
+    controller.update({ scrollContainerRef: { current: container }, skeletonEnter: true, mountEnter: false });
+    controller.update({ scrollContainerRef: { current: container }, skeletonEnter: false, mountEnter: false });
     const s2 = makeRow(5, true);
     pane.append(s2);
     await flushObservers();
@@ -139,6 +139,42 @@ describe('rowEnterController', () => {
     pane.append(r2);
     await flushObservers();
     expect(r2.classList.contains(ROW_ENTER_CLASS_NAME)).toBe(false);
+    controller.dispose();
+  });
+
+  // 追加(motion-3 / M-4・M-5): mountEnter。
+  it('mountEnter: スクロール中でなく現れた実行に enter が付き、スクロール中(修飾子あり)や skeleton 行には付かない', async () => {
+    const controller = createRowEnterController();
+    controller.update({ scrollContainerRef: { current: container }, skeletonEnter: false, mountEnter: true });
+    const r1 = makeRow(1, false);
+    const r2 = makeRow(2, false);
+    const s3 = makeRow(3, true);
+    pane.append(r2, r1, s3);
+    await flushObservers();
+    expect(r1.classList.contains(ROW_ENTER_CLASS_NAME)).toBe(true);
+    expect(r2.classList.contains(ROW_ENTER_CLASS_NAME)).toBe(true);
+    expect(r1.style.getPropertyValue(ROW_ENTER_INDEX_VAR)).toBe('0');
+    expect(r2.style.getPropertyValue(ROW_ENTER_INDEX_VAR)).toBe('1');
+    expect(s3.classList.contains(ROW_ENTER_CLASS_NAME)).toBe(false);
+    // スクロール中(修飾子あり)に現れた行には付かない。
+    container.classList.add('ssg-scroll-container--scrolling');
+    const r7 = makeRow(7, false);
+    pane.append(r7);
+    await flushObservers();
+    expect(r7.classList.contains(ROW_ENTER_CLASS_NAME)).toBe(false);
+    container.classList.remove('ssg-scroll-container--scrolling');
+    // 同一バッチ内の DOM 移動(React の並べ替え = remove + insert)は mount ではないので付かない。
+    r1.classList.remove(ROW_ENTER_CLASS_NAME);
+    r2.classList.remove(ROW_ENTER_CLASS_NAME);
+    pane.insertBefore(r1, r2);
+    await flushObservers();
+    expect(r1.classList.contains(ROW_ENTER_CLASS_NAME)).toBe(false);
+    // mountEnter を切ると付かない(observer は skeletonEnter のために残り得る)。
+    controller.update({ scrollContainerRef: { current: container }, skeletonEnter: true, mountEnter: false });
+    const r8 = makeRow(8, false);
+    pane.append(r8);
+    await flushObservers();
+    expect(r8.classList.contains(ROW_ENTER_CLASS_NAME)).toBe(false);
     controller.dispose();
   });
 });

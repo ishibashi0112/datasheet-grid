@@ -2483,6 +2483,19 @@ export type SpreadsheetGridProps<T, F extends GridFrameworkTypes = GridFramework
    * @defaultValue `'auto'`
    */
   motion?: GridMotion;
+  // 追加(motion-3 / M-4・M-5): 行の並び替え(ソート / フィルター / グループ開閉 / データ差し替え)で、描画中の行を
+  //   新しい位置へ滑らせ、スクロールなしで現れた行をフェードインさせます(既定 true)。auto-height / serverSide では
+  //   自動で無効(行高の実測 / ブロック到着と干渉するため)。motion の実効値が 'off' なら動きません。
+  /**
+   * 行の並び替えアニメ。ソート / フィルター / グループ開閉 / `rows` の差し替えで、
+   * 描画中の行が新しい位置へ滑り(`--ssg-motion-base`)、
+   * スクロールなしで現れた行は上から順にフェードインする。
+   * スクロール中の仮想化による出入りは対象外。auto-height 行と serverSide(SSRM)では自動で無効。
+   * `motion` の実効値が `'off'` なら動かない。詳細は「モーション」節。
+   *
+   * @defaultValue `true`
+   */
+  animateRows?: boolean;
   /**
    * 行番号列の幅(px)。
    *

@@ -2666,6 +2666,20 @@
     width: 100%;
     contain: layout style paint;
   }
+  /* 追加(motion-3 / M-4・M-5): 行の並び替えアニメ(animateRows)。root の修飾子があるとき、行要素(データ行 / グループ行 /
+     ラベル行)と展開行の帯は新しい位置へ滑ります(縦位置は inline の translateY / top なので、値の更新がそのまま
+     FLIP になる)。スクロール中は scrollSyncController の修飾子で抑止します(scroll-space 仮想化で描画ウィンドウの
+     基準が動くため)。行ドラッグのドロップ後スライドは inline の transition で上書きされ従来どおり。 */
+  .ssg-root--animate-rows .ssg-body-row {
+    transition: transform var(--ssg-motion-base) var(--ssg-motion-ease);
+  }
+  .ssg-root--animate-rows .ssg-detail-band {
+    transition: top var(--ssg-motion-base) var(--ssg-motion-ease);
+  }
+  .ssg-scroll-container--scrolling .ssg-body-row,
+  .ssg-scroll-container--scrolling .ssg-detail-band {
+    transition: none;
+  }
 
   /* 追加(行選択): チェック選択された行のハイライト。行 div に背景を敷き、非ホバーの
      本体セルを透過にして下地(選択色)を見せます(ホバーセルはホバー色を優先)。

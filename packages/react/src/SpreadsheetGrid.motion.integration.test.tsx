@@ -6,7 +6,7 @@ import { describe, it, expect, vi, beforeAll, afterEach } from 'vitest';
 import { render, cleanup, act } from '@testing-library/react';
 import { createRef } from 'react';
 import { SpreadsheetGrid } from './SpreadsheetGrid';
-import type { GridColumn, SpreadsheetGridHandle } from './model/gridTypes';
+import type { GridColumn, ServerSideDataSource, SpreadsheetGridHandle } from './model/gridTypes';
 
 beforeAll(() => {
   if (!('ResizeObserver' in globalThis)) {
@@ -106,5 +106,36 @@ describe('motion-0: motion prop の配線', () => {
     act(() => {
       ref.current?.closeFilterManager();
     });
+  });
+
+  // 追加(motion-3 / M-4・M-5): animateRows の実効値(root 修飾子)。
+  it('animateRows は既定で root に ssg-root--animate-rows が付き、false / motion=off / autoHeight / serverSide で外れる', async () => {
+    const hasAnim = (c: HTMLElement) =>
+      c.querySelector('.ssg-root')?.classList.contains('ssg-root--animate-rows') ?? false;
+    const base = render(<SpreadsheetGrid columns={columns} rows={rows} />);
+    expect(hasAnim(base.container)).toBe(true);
+    base.unmount();
+    const off = render(<SpreadsheetGrid columns={columns} rows={rows} animateRows={false} />);
+    expect(hasAnim(off.container)).toBe(false);
+    off.unmount();
+    const motionOff = render(<SpreadsheetGrid columns={columns} rows={rows} motion="off" />);
+    expect(hasAnim(motionOff.container)).toBe(false);
+    motionOff.unmount();
+    const autoHeightColumns: GridColumn<Row>[] = [
+      { key: 'id', title: 'ID', width: 80 },
+      { key: 'name', title: 'Name', width: 160, autoHeight: true },
+    ];
+    const autoHeight = render(<SpreadsheetGrid columns={autoHeightColumns} rows={rows} autoHeight />);
+    expect(hasAnim(autoHeight.container)).toBe(false);
+    autoHeight.unmount();
+    const dataSource: ServerSideDataSource<Row> = {
+      getRows: () => Promise.resolve({ rows: [], totalRowCount: 0 }),
+    };
+    const server = render(<SpreadsheetGrid columns={columns} dataSource={dataSource} />);
+    expect(hasAnim(server.container)).toBe(false);
+    await act(async () => {
+      await Promise.resolve();
+    });
+    server.unmount();
   });
 });

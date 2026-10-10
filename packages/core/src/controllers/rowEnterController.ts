@@ -7,12 +7,18 @@
 //     skeleton 由来ではないので対象外(= スクロール中に行がちらつかない)。
 //   - クラスは animationend(セルからのバブル)で外します。motion='off' で継続時間が 0 のときや animationend が
 //     届かない環境のため、フォールバックのタイマーでも外します。
-//   - enabled=false(clientSide / motion='off')では observer を付けません。
+//   - 追加(motion-3 / M-4・M-5): mountEnter が true のとき、スクロール中でないタイミング(スクロールコンテナに
+//     ssg-scroll-container--scrolling が無い)で現れた実行にも同じ enter を付けます(ソートで窓に入った行 / 展開した
+//     グループの子行 / 差し替えた rows の行)。スクロールで出入りする行は修飾子の有無で除外します。
+//   - skeletonEnter / mountEnter が両方 false(clientSide + animateRows=false / motion='off')では observer を付けません。
 type ReadonlyRef<V> = { readonly current: V };
 
 export type RowEnterArgs = {
   scrollContainerRef: ReadonlyRef<HTMLElement | null>;
-  enabled: boolean;
+  // SSRM のブロック到着(skeleton → 実行)で付ける。
+  skeletonEnter: boolean;
+  // スクロール以外で現れた実行に付ける(animateRows)。
+  mountEnter: boolean;
 };
 
 export type RowEnterController = {
@@ -32,9 +38,13 @@ const rowIndexOf = (el: HTMLElement): number => Number(el.getAttribute('data-row
 const isBodyRow = (node: Node): node is HTMLElement =>
   node instanceof HTMLElement && node.classList.contains('ssg-body-row');
 
+// scrollSyncController がスクロール中に付ける修飾子(循環 import を避けるため文字列を重複定義。値は同一)。
+const SCROLLING_CLASS_NAME = 'ssg-scroll-container--scrolling';
+
 export const createRowEnterController = (): RowEnterController => {
   let observer: MutationObserver | null = null;
   let observed: HTMLElement | null = null;
+  let modes = { skeletonEnter: false, mountEnter: false };
   const timers = new Map<HTMLElement, ReturnType<typeof setTimeout>>();
 
   const clear = (el: HTMLElement) => {
@@ -67,11 +77,18 @@ export const createRowEnterController = (): RowEnterController => {
   const handleMutations = (records: MutationRecord[]) => {
     // 同一バッチで消えた skeleton 行の index 集合と、現れた実行の一覧。
     const removedSkeletonIndexes = new Set<number>();
+    // 同一バッチで削除もされた要素 = React の並べ替えによる DOM 移動(remove + insert)。mount ではないので除外。
+    const movedRows = new Set<Node>();
     const addedRows: HTMLElement[] = [];
     for (const record of records) {
       record.removedNodes.forEach((node) => {
-        if (isBodyRow(node) && node.hasAttribute('data-skeleton-row')) {
+        if (!isBodyRow(node)) {
+          return;
+        }
+        if (node.hasAttribute('data-skeleton-row')) {
           removedSkeletonIndexes.add(rowIndexOf(node));
+        } else {
+          movedRows.add(node);
         }
       });
       record.addedNodes.forEach((node) => {
@@ -80,10 +97,16 @@ export const createRowEnterController = (): RowEnterController => {
         }
       });
     }
-    if (removedSkeletonIndexes.size === 0 || addedRows.length === 0) {
+    if (addedRows.length === 0) {
       return;
     }
-    const entering = addedRows.filter((el) => removedSkeletonIndexes.has(rowIndexOf(el)));
+    // mountEnter: スクロール中でなければ、現れた実行すべてが対象。skeletonEnter: skeleton と差し替わった行だけ。
+    const scrolling = observed?.classList.contains(SCROLLING_CLASS_NAME) === true;
+    const entering = addedRows.filter(
+      (el) =>
+        (modes.mountEnter && !scrolling && !movedRows.has(el)) ||
+        (modes.skeletonEnter && removedSkeletonIndexes.has(rowIndexOf(el))),
+    );
     if (entering.length === 0) {
       return;
     }
@@ -108,8 +131,9 @@ export const createRowEnterController = (): RowEnterController => {
   };
 
   return {
-    update: ({ scrollContainerRef, enabled }) => {
-      const el = enabled ? scrollContainerRef.current : null;
+    update: ({ scrollContainerRef, skeletonEnter, mountEnter }) => {
+      modes = { skeletonEnter, mountEnter };
+      const el = skeletonEnter || mountEnter ? scrollContainerRef.current : null;
       if (el === observed) {
         return;
       }
