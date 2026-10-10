@@ -10,7 +10,8 @@
 //     都度読むため、インスタンス別の状態は不要です)。
 //   - 表示は SHOW_DELAY_MS 遅延。一度表示した後 WARMUP_MS 以内の連続 hover は即時表示します。
 //     位置計算は logic/tooltipGeometry.ts の純関数です。
-//   - 非表示条件: 対象からの pointerout / focusout・pointerdown・scroll(capture)・Escape。
+//   - 非表示条件: 対象からの pointerout / focusout・pointerdown・scroll(capture)・Escape。ボタンを押したままの
+//     pointerover(ドラッグ / 範囲選択中)では表示しません。
 //     Escape は window keydown capture で拾いますが、hide のみで stopPropagation しません
 //     (POP-KEY の popover close 系と干渉させないため)。
 //   - classNames.tooltip(slot)は setSlot で反映します。要素は共有のため、複数グリッド同居時は
@@ -130,6 +131,11 @@ function showTooltipFor(target: Element) {
 function handlePointerOverOrFocusIn(event: Event) {
   const node = event.target;
   if (!(node instanceof Element)) {
+    return;
+  }
+  // 修正(M-12 fix): ボタンを押したまま(列 / 行のドラッグ、範囲選択)の移動では出しません。押下で一度消えても、
+  //   直後のウォームアップ中にドラッグ先の列名ラベルや grip の上を通ると即時に出て、ドラッグ中に残っていました。
+  if (typeof PointerEvent !== 'undefined' && event instanceof PointerEvent && event.buttons !== 0) {
     return;
   }
   const target = node.closest(TOOLTIP_SELECTOR);

@@ -7,6 +7,7 @@ import { describe, it, expect, afterEach, beforeEach, vi } from 'vitest';
 import {
   computeHeaderReorderedKeys,
   createColumnHeaderDragController,
+  resolveConsumerDropSlot,
   type ColumnDragHandlePointerEvent,
   type ColumnHeaderDragArgs,
 } from './columnHeaderDragController';
@@ -319,5 +320,67 @@ describe('columnHeaderDragController', () => {
     dispatchPointer('pointerup', 1, 280, 10);
     expect(args.applyColumnOrderAndPin).not.toHaveBeenCalled();
     controller.dispose();
+  });
+
+  // 追加(M-12 fix): 左固定列が無いとき、合成列(行ドラッグハンドル)が中央ペインの先頭に入る。grip を押して離すだけで
+  //   右隣と入れ替わっていた(スロットが合成列ぶん 1 ずれていた)回帰テスト。合成列より前へは置けない。
+  const withHandle = (motion: 'ghost' | 'live') => {
+    const args = makeArgs();
+    const handle: GridColumn<Row> = { key: '__ssg_row_drag_handle__', title: '', width: 28 };
+    const entries = [handle, ...columns.filter((column) => column.visible !== false)].map((column, index) => ({
+      column,
+      logicalIndex: index,
+      paneLocalStart: index === 0 ? 0 : 28 + (index - 1) * 100,
+      paneLocalSize: index === 0 ? 28 : 100,
+      paneLocalEnd: index === 0 ? 28 : 28 + index * 100,
+    }));
+    return {
+      ...args,
+      paneLayout: { ...paneLayout, center: { pane: 'center' as const, entries, totalWidth: 328 } },
+      motion,
+    };
+  };
+
+  for (const motion of ['ghost', 'live'] as const) {
+    it(`合成列が中央の先頭にあっても、grip を押して離すだけでは並べ替えない(${motion})`, () => {
+      const controller = createColumnHeaderDragController<Row>();
+      const args = withHandle(motion);
+      mountCells(args.scrollContainerRef.current!);
+      controller.update(args);
+      // 列 a(28..128)の grip 付近 x=110(中点 78 より右 = 直後のスロット)。
+      controller.onColumnDragHandlePointerDown(columns[0], gripEvent({ clientX: 110 }));
+      dispatchPointer('pointerup', 1, 110, 10);
+      expect(args.applyColumnOrderAndPin).not.toHaveBeenCalled();
+
+      // 列 b を合成列の上(x=5)へ運ぶと、合成列の直後(= 列 a の手前)に入る。
+      controller.onColumnDragHandlePointerDown(columns[1], gripEvent({ clientX: 210 }));
+      dispatchPointer('pointermove', 1, 5, 10);
+      dispatchPointer('pointerup', 1, 5, 10);
+      expect(args.applyColumnOrderAndPin.mock.calls[0][0]).toEqual(['b', 'a', 'c', 'd']);
+      controller.dispose();
+    });
+  }
+});
+
+describe('resolveConsumerDropSlot', () => {
+  it('合成列を除いたアンカー列で consumer の表示列 index へ換算する', () => {
+    const handle: GridColumn<Row> = { key: '__ssg_row_drag_handle__', title: '', width: 28 };
+    const geometry: PaneGeometry<Row> = {
+      pane: 'center',
+      entries: [handle, columns[0], columns[1], columns[3]].map((column, index) => ({
+        column,
+        logicalIndex: index,
+        paneLocalStart: index * 100,
+        paneLocalSize: 100,
+        paneLocalEnd: index * 100 + 100,
+      })),
+      totalWidth: 400,
+    };
+    // consumer の表示列は [a, b, d](c は非表示)。
+    expect(resolveConsumerDropSlot(columns, geometry, 'center', 0)).toBe(0);
+    expect(resolveConsumerDropSlot(columns, geometry, 'center', 1)).toBe(0);
+    expect(resolveConsumerDropSlot(columns, geometry, 'center', 2)).toBe(1);
+    expect(resolveConsumerDropSlot(columns, geometry, 'center', 3)).toBe(2);
+    expect(resolveConsumerDropSlot(columns, geometry, 'center', 4)).toBe(3);
   });
 });

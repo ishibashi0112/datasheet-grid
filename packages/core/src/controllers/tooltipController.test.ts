@@ -105,4 +105,16 @@ describe('tooltipController', () => {
     empty.remove();
     controller.dispose();
   });
+
+  // 追加(M-12 fix): ボタンを押したままの pointerover(ドラッグ / 範囲選択中)では表示しない。
+  it('ボタンを押したままの pointerover では表示しない', () => {
+    const controller = acquireTooltipController();
+    target.dispatchEvent(new PointerEvent('pointerover', { bubbles: true, buttons: 1 }));
+    vi.advanceTimersByTime(400);
+    expect(isVisible()).toBe(false);
+    target.dispatchEvent(new PointerEvent('pointerover', { bubbles: true, buttons: 0 }));
+    vi.advanceTimersByTime(400);
+    expect(isVisible()).toBe(true);
+    controller.dispose();
+  });
 });
