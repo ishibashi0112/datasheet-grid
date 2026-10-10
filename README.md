@@ -11,6 +11,23 @@ A high-performance, virtualized spreadsheet / data grid for **React 19**, writte
 
 ---
 
+## Why SpreadsheetGrid?
+
+**Enterprise-grade features under the MIT license.** The server-side row model (with write-back), row grouping + aggregation, master/detail, range selection + clipboard and set filters — features that sit behind a commercial license in AG Grid Enterprise, Handsontable or MUI X Pro / Premium — ship here under MIT, with no license key. It is built for Japanese business apps: IME-aware editing, phrase-based line breaking, and Japanese documentation.
+
+| Feature | SpreadsheetGrid | AG Grid | Handsontable | MUI X Data Grid |
+| --- | --- | --- | --- | --- |
+| Range selection + copy / paste | MIT | Enterprise | Commercial | Premium |
+| Row grouping + aggregation | MIT | Enterprise | — | Premium |
+| Master / detail | MIT | Enterprise | — | Pro |
+| Server-side row model (+ write-back) | MIT | Enterprise | — | Pro |
+| Set filter (pick values from a list) | MIT | Enterprise | Commercial | — |
+| IME-aware editing (composing Enter never commits) | MIT | — | — | — |
+
+Tiers reflect each vendor's public documentation as of 2026-10. Please open an issue if something is out of date.
+
+---
+
 ## Features
 
 - Scroll-space virtualization that handles up to ~1,000,000 rows.
@@ -28,6 +45,7 @@ A high-performance, virtualized spreadsheet / data grid for **React 19**, writte
 - Both **client-side** (`rows`) and **server-side** (`dataSource`, SSRM) row models — server-side includes query forwarding (filter / sort / global filter), soft refresh (`refreshServerSide()`), load-error retry UI, and cell-edit write-back via `dataSource.updateRows` with optimistic updates and automatic rollback on failure.
 - Themeable with CSS custom properties (`--ssg-*`, defined at zero specificity so your overrides always win). Base styles are plain unlayered CSS with single-class specificity, so they survive CSS resets such as Tailwind Preflight; a cascade-layers variant (`style.layer.css`) is also shipped. `className` / `style` / `classNames` slots cover every visible part (25 slots), and every slot accepts either a class string or `{ className, style }` — the shape returned by StyleX's `stylex.props()`.
 - Styled tooltips out of the box — action hints and truncated-text previews use a custom dark-chip tooltip (no browser-default `title` look). Add `data-ssg-tooltip="text"` to your own elements (custom cells, headers) to get the same tooltip; colors are themeable via `--ssg-tooltip-*` tokens.
+- Motion system — `motion="auto" | "on" | "off"` (default `auto`, honoring `prefers-reduced-motion`) drives every animation through three CSS duration tokens (`--ssg-motion-fast` / `-base` / `-slow`): the active-cell frame slides to its new position, popovers and menus pop in, rows glide to their new order on sort / filter / group toggle (`animateRows`), new rows and SSRM blocks fade in with a skeleton shimmer, `Ctrl/Cmd+C` leaves an Excel-style marching-ants copy range (`showCopyRange`), and SSRM write-back shows per-cell save status (`showSaveStatus`: pending stripes → ✓ / ✕ with a failure chip). Opt-ins: `hoverHighlight="cross"` (row × column crosshair), `highlightChanges` (changed cells flash and numbers count up), `rowDragMotion="live"` (rows make room while you drag).
 - Built-in dark theme — `theme="light" | "dark" | "auto"` switches the grid, every popover / panel / menu, the drag ghost and tooltips through a single token preset. `"auto"` follows `prefers-color-scheme`; with class-based dark frameworks (Mantine / HeroUI / Tailwind) pass your resolved color scheme instead.
 - Toggle the top / bottom bars and their parts via props — whole bars (`showTopBar` / `showBottomBar`), the default top bar's summary chips and global-filter input, and the Rows/Columns counts in each bar.
 - Filter management panel — review every active column filter in one place (jump to the column & edit, clear one / all, add new), opened from the column menu, the default top bar's clickable Filters chip, or `openFilterManager()` on the imperative handle. An optional filter chip bar (`showFilterChipBar`) keeps active filters visible right below the top bar.
@@ -325,6 +343,21 @@ The full prop and type reference lives in [`packages/react/API_REFERENCE.md`](./
 
 **React 19** 製の高性能な仮想化スプレッドシート／データグリッドです。TypeScript で書かれています。
 
+### なぜ SpreadsheetGrid か
+
+**有料グリッドの機能を、MIT で。** サーバーサイド行モデル(書き戻し付き)、行グルーピングと集計、Master/Detail、範囲選択とクリップボード、set フィルター。AG Grid Enterprise / Handsontable / MUI X Pro・Premium では商用ライセンスの機能が、ライセンスキー不要で使えます。日本の業務アプリのために、IME に強い編集・文節単位の折り返し・日本語ドキュメントを備えています。
+
+| 機能 | SpreadsheetGrid | AG Grid | Handsontable | MUI X Data Grid |
+| --- | --- | --- | --- | --- |
+| 範囲選択 + コピー / ペースト | MIT | Enterprise | 商用有料 | Premium |
+| 行グルーピング + 集計 | MIT | Enterprise | — | Premium |
+| Master/Detail(展開行) | MIT | Enterprise | — | Pro |
+| サーバーサイド行モデル(+ 書き戻し) | MIT | Enterprise | — | Pro |
+| set フィルター(値の一覧で絞り込み) | MIT | Enterprise | 商用有料 | — |
+| IME 対応の編集(変換中の Enter で確定しない) | MIT | — | — | — |
+
+各社の区分は 2026-10 時点の公式ドキュメントによるものです(価格は記載していません)。相違があれば Issue でお知らせください。
+
 ### 特徴
 
 - スクロール空間の仮想化により最大 100 万行規模に対応。
@@ -342,6 +375,7 @@ The full prop and type reference lives in [`packages/react/API_REFERENCE.md`](./
 - **クライアントサイド**（`rows`）と**サーバーサイド**（`dataSource`、SSRM）の両行モデル — サーバーサイドはクエリ送出（フィルター / ソート / グローバルフィルター）、ソフトリフレッシュ（`refreshServerSide()`）、取得失敗の再試行 UI に加え、`dataSource.updateRows` によるセル編集の書き戻し（楽観更新 + 失敗時の自動ロールバック）まで対応。
 - CSS カスタムプロパティ（`--ssg-*`。特異度 0 で定義され、利用側の上書きが常に勝ちます）によるテーマ設定。基底スタイルは未レイヤーの単一クラス特異度で、Tailwind Preflight などの CSS リセットに壊されません。カスケードレイヤー版（`style.layer.css`）も同梱。`className` / `style` / `classNames` スロットは可視パーツを網羅（25 スロット）し、各スロットは class 文字列でも `{ className, style }`（StyleX の `stylex.props()` の戻り値と同形）でも受け付けます。
 - スタイル付きツールチップを標準装備 — 操作ヒントや切り詰めテキストの全文表示は、ブラウザ標準の `title` ではなくダークチップのカスタムツールチップで表示。利用側の要素(カスタムセルやヘッダー)にも `data-ssg-tooltip="文言"` を付けるだけで同じ見た目になります。配色は `--ssg-tooltip-*` トークンで調整可。
+- モーション — `motion="auto" | "on" | "off"`(既定 `auto` = OS の「視差効果を減らす」を尊重)で、すべての動きを 3 つの継続時間トークン(`--ssg-motion-fast` / `-base` / `-slow`)で一括制御。アクティブセル枠が新しい位置へ滑る、ポップオーバー / メニューの出現、ソート / フィルター / グループ開閉での行の移動(`animateRows`)、新しい行や SSRM ブロックのフェードイン + スケルトンのシマー、`Ctrl/Cmd+C` 後の Excel と同じ動く点線(`showCopyRange`)、SSRM 書き戻しのセル単位の保存状態(`showSaveStatus`: 保存中の斜線 → ✓ / ✕ と失敗チップ)。opt-in: `hoverHighlight="cross"`(行 × 列のクロスヘア)、`highlightChanges`(変わったセルのフラッシュ + 数値のカウントアップ)、`rowDragMotion="live"`(ドラッグ中に周りの行が退避)。
 - ダークテーマを標準装備 — `theme="light" | "dark" | "auto"` で、グリッド本体・全ポップオーバー / パネル / メニュー・ドラッグゴースト・ツールチップをトークンプリセット 1 つで一括切替。`"auto"` は `prefers-color-scheme` に追従(Mantine / HeroUI / Tailwind のクラスベース dark 運用では、解決済みのカラースキームを渡す使い方を推奨)。
 - トップ / ボトムバーとその構成要素（バー全体〔`showTopBar` / `showBottomBar`〕、既定トップバーの summary chips・グローバルフィルター入力、各バーの Rows/Columns 件数）を props で表示制御。
 - フィルター管理パネル — 適用中の列フィルターを 1 箇所で確認・操作（該当列へジャンプして編集 / 個別・全クリア / 追加）。列メニュー、既定トップバーの Filters chip クリック、ハンドルの `openFilterManager()` から開けます。トップバー直下に常時表示するフィルターチップバー（`showFilterChipBar`）もオプションで利用可。

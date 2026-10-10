@@ -1,7 +1,7 @@
 {
   "name": "@ishibashi0112/spreadsheet-grid",
   "version": "0.45.0",
-  "description": "React 19 製のカスタム仮想化データグリッド。100 万行対応の仮想化・3 ペイン固定列・ソート/フィルター・クライアント/サーバーサイド行モデル対応。コアは @ishibashi0112/spreadsheet-grid-core。",
+  "description": "React 19 製の仮想化データグリッド。SSRM(書き戻し付き)/ 行グルーピング + 集計 / Master/Detail / 範囲選択 + クリップボードを MIT で。IME に強い編集、100 万行の仮想化、Tailwind / Mantine / HeroUI と共存。コアは @ishibashi0112/spreadsheet-grid-core。",
   "keywords": [
     "react",
     "react19",
