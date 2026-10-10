@@ -11,8 +11,14 @@
 //   - dispose はドラッグ中でも window リスナー / rAF / body cursor / ゴーストを確実に後始末します。
 //   - 追加(motion-9 / M-12): 表示方式 motion='live'(columnDragMotion)。同じペイン内では縦線 / ゴーストを出さず、掴んだ列
 //     (ヘッダー + 描画中の本体セル)がポインタ(+ 横 autoscroll ぶん)に追従し、通る先の列が掴んだ列の幅ぶん左右へ退避
-//     します(rowDragController の live 方式の横版。スロット解決は共通)。別ペインへ移す(ピン留めの変更)ときは
-//     ペインをまたいだ追従ができないため、従来どおり縦線 + ゴーストに切り替わります。
+//     します(rowDragController の live 方式の横版。スロット解決は共通)。
+//   - 変更(M-12 D): live 方式で別ペインへ移す(ピン留めの変更)とき。ペインは overflow: clip のため本物のセルはペインの外へ
+//     出せません。そこで掴んだ列(描画中のヘッダー + 本体セル)の複製を、シェル(スクロールコンテナの親)直下のクリップ層
+//     (= 浮かぶ列)に置いてポインタへ追従させ、元のペインは列が抜けた分を詰め、移動先は縦線で示します。浮かぶ列の見出しには
+//     ゴーストと同じアイコン(固定ペインへはピン / 中央へは移動の矢印)を付けます。離すと浮かぶ列が新しい位置へ滑り込み
+//     (確定後の applyReorderSettle)、キャンセルでは元の位置へ戻ります。シェルが無い環境では従来どおり縦線 + ゴーストです。
+//     浮かぶ列は表の枠の内側に収め(端ではポインタに付いていかず止まる。見出しのアイコンと列名を隠さないため)、縦線は浮かぶ列の
+//     上へ写します(本物の縦線はペインの中にあり、前面の浮かぶ列に隠れるため)。
 import type { GridColumn, GridColumnPinned, GridResolvedSlot } from '../model/gridTypes.unbound';
 import {
   findPaneDropSlot,
@@ -200,23 +206,26 @@ const GHOST_ICON_SIZE = 14;
 // ゴーストのアイコン(軽量 inline SVG)。computeHit の pane で出し分けます。
 //   move(四方向矢印)= center へ移動 / pin = left・right へ固定(空ペイン帯を含む)/ out(スラッシュ円)= 枠外(無効)。
 //   いずれも stroke="currentColor" のため、ピル側の color を継承して着色されます。
-const GHOST_ICON_MOVE =
+// 変更(M-12 D): move / pin は浮かぶ列の見出しのアイコンにも使うため、サイズを引数に取る関数にしました。
+const moveIconSvg = (size: number) =>
   '<svg viewBox="0 0 24 24" width="' +
-  GHOST_ICON_SIZE +
+  size +
   '" height="' +
-  GHOST_ICON_SIZE +
+  size +
   '" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' +
   '<polyline points="5 9 2 12 5 15"/><polyline points="9 5 12 2 15 5"/>' +
   '<polyline points="15 19 12 22 9 19"/><polyline points="19 9 22 12 19 15"/>' +
   '<line x1="2" y1="12" x2="22" y2="12"/><line x1="12" y1="2" x2="12" y2="22"/></svg>';
-const GHOST_ICON_PIN =
+const pinIconSvg = (size: number) =>
   '<svg viewBox="0 0 24 24" width="' +
-  GHOST_ICON_SIZE +
+  size +
   '" height="' +
-  GHOST_ICON_SIZE +
+  size +
   '" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' +
   '<line x1="12" y1="17" x2="12" y2="22"/>' +
   '<path d="M5 17h14v-1.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V6h1a2 2 0 0 0 0-4H8a2 2 0 0 0 0 4h1v4.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24Z"/></svg>';
+const GHOST_ICON_MOVE = moveIconSvg(GHOST_ICON_SIZE);
+const GHOST_ICON_PIN = pinIconSvg(GHOST_ICON_SIZE);
 const GHOST_ICON_OUT =
   '<svg viewBox="0 0 24 24" width="' +
   GHOST_ICON_SIZE +
@@ -253,6 +262,26 @@ const DRAGGING_COLUMN_ATTRIBUTE = 'data-ssg-col-dragging';
 //   グループ行のセルは inline の zIndex:1 を持つため、CSS ではなく inline で上書きし、終了時に元の値へ戻します。
 const LIVE_DRAGGING_Z_INDEX = '4';
 
+// 追加(M-12 D): 浮かぶ列(live 方式で別ペインへ移すときの列の複製)。シェル直下に置くクリップ層(スクロールコンテナの
+//   表示領域と同じ矩形)の中で、列の複製を transform でポインタへ追従させます。z-index は固定ペイン(2)/ ヘッダー行(6)/
+//   シェル直下のオーバーレイ(5〜8)より前、検索バー(20)より後ろです。
+const FLOAT_Z_INDEX = '9';
+const FLOAT_LAYER_CLASS = 'ssg-col-drag-float';
+// 浮かぶ列の見出しに付けるアイコン(styles.css の .ssg-col-drag-pin)。
+const FLOAT_PIN_CLASS = 'ssg-col-drag-pin';
+const FLOAT_PIN_ICON_SIZE = 12;
+// 浮かぶ列の上へ写す縦線(本物と同じクラスで同じ見た目)。
+const DROP_INDICATOR_CLASS = 'ssg-col-drop-indicator';
+// 見出しセル / その中の操作群(grip / 列メニュー)のクラス。複製では操作群を外し、アイコンを先頭に入れます。
+const HEADER_CELL_CLASS = 'ssg-header-cell';
+const HEADER_ACTIONS_CLASS = 'ssg-header-actions';
+// 複製から外す属性(列キーで引くクエリ / ツールチップ / フォーカス移動の対象にしない)。
+const FLOAT_STRIP_ATTRIBUTES = ['data-ssg-col-key', 'data-ssg-tooltip', 'data-autoheight-cell', 'id', 'tabindex'];
+// 確定後に新しい位置へ滑り込む時間。
+const FLOAT_LAND_MS = 180;
+// 確定後に applyReorderSettle が来ない(利用側が columns を差し替えなかった等)ときに浮かぶ列を片付けるまでの猶予。
+const FLOAT_LAND_FALLBACK_MS = 400;
+
 // 列セル(ヘッダー / 本体 / グループ行。展開行カード内のネストしたグリッドは除外)を列挙します。
 const collectColumnCells = (container: HTMLElement): HTMLElement[] => {
   const result: HTMLElement[] = [];
@@ -281,6 +310,35 @@ const captureColumnLefts = (container: HTMLElement | null): Map<string, number> 
 
 type DropHit = { pane: ColumnPane; slot: number; leftPx: number };
 
+// live 方式で触ったセルの元の inline style(終了時に戻す)。
+type LiveCellOriginal = { zIndex: string; visibility: string };
+// live 方式のセル配置。follow = 同じペインで追従 / rest = 基準位置(ゴースト表示中)/ lift-out = 別ペインへ持ち出し中
+//   (掴んだ列は隠し、元のペインは列が抜けた分を詰める。列の見た目は浮かぶ列が担う)。
+type LivePlacement = 'follow' | 'rest' | 'lift-out';
+
+// 追加(M-12 D): 浮かぶ列の DOM。layer = クリップ層(シェル直下)/ column = 列の複製を束ねて transform で動かす箱 /
+//   guide = 浮かぶ列の上へ写す縦線 / badge = 見出しのアイコン(見出しが描画されていなければ null)。
+//   layerWidth / columnWidth は枠の内側に収める計算用、scrollTop / cellCount は複製を作り直す判定(縦スクロール / セル数)。
+type FloatColumn = {
+  layer: HTMLDivElement;
+  column: HTMLDivElement;
+  guide: HTMLDivElement;
+  badge: HTMLSpanElement | null;
+  badgeKind: 'pin' | 'move' | null;
+  layerWidth: number;
+  columnWidth: number;
+  scrollTop: number;
+  cellCount: number;
+};
+// 離したあとの浮かぶ列。key = 確定時は新しい位置の列キー(applyReorderSettle で引く)/ キャンセル時は null。
+//   hiddenCells = 滑り込むあいだ隠している本物のセル(元の visibility)。
+type FloatLanding = {
+  float: FloatColumn;
+  key: string | null;
+  timer: number | null;
+  hiddenCells: Array<[HTMLElement, string]>;
+};
+
 export const createColumnHeaderDragController = <T,>(): ColumnHeaderDragController<T> => {
   let args: ColumnHeaderDragArgs<T> | null = null;
 
@@ -307,12 +365,19 @@ export const createColumnHeaderDragController = <T,>(): ColumnHeaderDragControll
   //   inline style を戻すため、元の inline z-index を値に持つ)。
   let liveSourcePane: ColumnPane | null = null;
   let liveStartScrollLeft = 0;
-  let liveCells: Map<HTMLElement, string> | null = null;
+  let liveCells: Map<HTMLElement, LiveCellOriginal> | null = null;
   // キャンセルで基準位置へ戻している最中のセル(transition 後に inline style を戻す)。戻り切る前に次のドラッグが同じセルを
-  //   触ったときは、こちらに控えた元の z-index を引き継ぎ、後始末の対象から外します。
-  let restoringCells: Map<HTMLElement, string> | null = null;
+  //   触ったときは、こちらに控えた元の inline style を引き継ぎ、後始末の対象から外します。
+  let restoringCells: Map<HTMLElement, LiveCellOriginal> | null = null;
   // ゴーストのラベル(live 方式は別ペインへ移すときだけゴーストを出すため、開始時に控えます)。
   let ghostLabel = '';
+
+  // 追加(M-12 D): 浮かぶ列。float = 表示中の浮かぶ列(ドラッグ中だけ)/ grabOffsetX = 掴んだ点の列左端からの距離(浮かぶ列を
+  //   ポインタ基準で置くため。同じペインで追従する本物のセルと同じ位置になる)/ landing = 離したあと新しい位置(確定)か
+  //   元の位置(キャンセル)へ滑り込んでいる浮かぶ列。
+  let float: FloatColumn | null = null;
+  let grabOffsetX = 0;
+  let landing: FloatLanding | null = null;
 
   const isLive = () => args?.motion === 'live';
 
@@ -513,30 +578,41 @@ export const createColumnHeaderDragController = <T,>(): ColumnHeaderDragControll
     }
   };
 
-  // live 方式で初めて触るセルの元の inline z-index を控えます(戻している最中のセルはそちらの値を引き継ぐ)。
-  const touch = (touched: Map<HTMLElement, string>, cell: HTMLElement) => {
+  // live 方式で初めて触るセルの元の inline style を控えます(戻している最中のセルはそちらの値を引き継ぐ)。
+  const touch = (touched: Map<HTMLElement, LiveCellOriginal>, cell: HTMLElement) => {
     const restoring = restoringCells?.get(cell);
     if (restoring !== undefined) restoringCells?.delete(cell);
-    touched.set(cell, restoring ?? cell.style.zIndex);
+    touched.set(cell, restoring ?? { zIndex: cell.style.zIndex, visibility: cell.style.visibility });
   };
 
-  // 追加(motion-9 / M-12): live 方式の位置更新。following=true(同じペイン内)では掴んだ列がポインタ(+ 中央ペインは横
+  // 追加(motion-9 / M-12): live 方式の位置更新。follow(同じペイン内)では掴んだ列がポインタ(+ 中央ペインは横
   //   autoscroll ぶん)に追従し、from → target の間の列が掴んだ列の幅ぶん左右へ退避します(transition 付き)。
-  //   following=false(別ペインへ移す表示 / slot なし)では掴んだ列も退避も基準位置へ戻します。
+  //   rest(ゴースト表示 / slot なし)では掴んだ列も退避も基準位置へ戻します。
+  //   変更(M-12 D): lift-out(別ペインへ持ち出し中)では掴んだ列を隠し、元のペインで後ろの列を掴んだ列の幅ぶん左へ詰めます。
   //   描画中のセルを毎回走査するため、仮想化で後から描画されたセル(縦スクロール / 横 autoscroll)も取り込みます。
-  const applyLivePositions = (slot: number | null, following: boolean) => {
+  //   戻り値は描画中の掴んだ列のセル(浮かぶ列の複製元)です。
+  const applyLivePositions = (slot: number | null, placement: LivePlacement): HTMLElement[] => {
+    const draggedCells: HTMLElement[] = [];
     const touched = liveCells;
     const key = draggingKey;
     const pane = liveSourcePane;
-    if (!touched || key === null || pane === null || args === null) return;
+    if (!touched || key === null || pane === null || args === null) return draggedCells;
     const container = args.scrollContainerRef.current;
-    if (!container) return;
+    if (!container) return draggedCells;
 
     const entries = args.paneLayout[pane].entries;
     const from = entries.findIndex((entry) => entry.column.key === key);
-    if (from < 0) return;
+    if (from < 0) return draggedCells;
     const width = entries[from].paneLocalSize;
-    const target = !following || slot === null ? from : slot > from ? slot - 1 : slot;
+    // lift-out は「末尾へ移した」のと同じ退避(from より後ろの列がすべて左へ詰まる)です。
+    const target =
+      placement === 'lift-out'
+        ? entries.length - 1
+        : placement === 'rest' || slot === null
+          ? from
+          : slot > from
+            ? slot - 1
+            : slot;
     const shiftByKey = new Map<string, number>();
     for (let i = Math.min(from, target); i <= Math.max(from, target); i += 1) {
       if (i === from) continue;
@@ -549,16 +625,26 @@ export const createColumnHeaderDragController = <T,>(): ColumnHeaderDragControll
       const cellKey = cell.dataset.ssgColKey;
       if (cellKey === undefined) continue;
       if (cellKey === key) {
+        draggedCells.push(cell);
         if (!touched.has(cell)) {
           touch(touched, cell);
           cell.style.zIndex = LIVE_DRAGGING_Z_INDEX;
           cell.style.willChange = 'transform';
         }
-        if (following) {
+        const original = touched.get(cell);
+        if (placement === 'follow') {
+          cell.style.visibility = original?.visibility ?? '';
           cell.setAttribute(DRAGGING_COLUMN_ATTRIBUTE, 'live');
           cell.style.transition = 'none';
           cell.style.transform = `translateX(${dragDelta}px)`;
+        } else if (placement === 'lift-out') {
+          // 見た目は浮かぶ列が担うため、本物は基準位置で隠します(同じペインへ戻ると follow で再表示)。
+          cell.style.visibility = 'hidden';
+          cell.removeAttribute(DRAGGING_COLUMN_ATTRIBUTE);
+          cell.style.transition = 'none';
+          cell.style.transform = 'translateX(0px)';
         } else {
+          cell.style.visibility = original?.visibility ?? '';
           cell.removeAttribute(DRAGGING_COLUMN_ATTRIBUTE);
           cell.style.transition = LIVE_SHIFT_TRANSITION;
           cell.style.transform = 'translateX(0px)';
@@ -574,17 +660,224 @@ export const createColumnHeaderDragController = <T,>(): ColumnHeaderDragControll
       cell.style.transition = LIVE_SHIFT_TRANSITION;
       cell.style.transform = next;
     }
+    return draggedCells;
   };
 
   // live 方式で触ったセルの inline style / 属性を元へ戻します。
-  const resetLiveCells = (cells: Map<HTMLElement, string>) => {
-    cells.forEach((zIndex, cell) => {
+  const resetLiveCells = (cells: Map<HTMLElement, LiveCellOriginal>) => {
+    cells.forEach((original, cell) => {
       cell.style.transition = '';
       cell.style.transform = '';
       cell.style.willChange = '';
-      cell.style.zIndex = zIndex;
+      cell.style.zIndex = original.zIndex;
+      cell.style.visibility = original.visibility;
       cell.removeAttribute(DRAGGING_COLUMN_ATTRIBUTE);
     });
+  };
+
+  // ── 追加(M-12 D): 浮かぶ列 ──────────────────────────────
+
+  // 複製をクエリ / ツールチップ / フォーカスの対象から外し、見出しの操作群(grip / 列メニュー)を取り除きます。
+  const sanitizeClone = (clone: HTMLElement) => {
+    const strip = (el: Element) => {
+      for (const name of FLOAT_STRIP_ATTRIBUTES) el.removeAttribute(name);
+    };
+    strip(clone);
+    clone.querySelectorAll('*').forEach(strip);
+    clone.querySelectorAll('.' + HEADER_ACTIONS_CLASS).forEach((el) => el.remove());
+  };
+
+  // 浮かぶ列の複製を (作り直して) 置きます。クリップ層はスクロールコンテナの表示領域(スクロールバーを除く)と同じ矩形で、
+  //   シェル(position: relative)の座標で置きます。複製は描画中のセルの縦位置をそのまま写します(横位置は positionFloat)。
+  const buildFloat = (container: HTMLElement, host: HTMLElement, cells: HTMLElement[]): FloatColumn => {
+    let current = float;
+    if (current === null) {
+      const layer = document.createElement('div');
+      layer.className = FLOAT_LAYER_CLASS;
+      layer.setAttribute('aria-hidden', 'true');
+      layer.setAttribute('inert', '');
+      const column = document.createElement('div');
+      column.style.cssText = 'position:absolute;top:0;left:0;height:100%;will-change:transform';
+      const guide = document.createElement('div');
+      guide.className = DROP_INDICATOR_CLASS;
+      guide.style.cssText = 'position:absolute;display:none';
+      layer.append(column, guide);
+      host.appendChild(layer);
+      current = {
+        layer,
+        column,
+        guide,
+        badge: null,
+        badgeKind: null,
+        layerWidth: 0,
+        columnWidth: 0,
+        scrollTop: 0,
+        cellCount: 0,
+      };
+      float = current;
+    }
+    const hostRect = host.getBoundingClientRect();
+    const containerRect = container.getBoundingClientRect();
+    const layerLeft = containerRect.left + container.clientLeft;
+    const layerTop = containerRect.top + container.clientTop;
+    current.layer.style.cssText = [
+      'position:absolute',
+      `left:${layerLeft - hostRect.left - host.clientLeft + host.scrollLeft}px`,
+      `top:${layerTop - hostRect.top - host.clientTop + host.scrollTop}px`,
+      `width:${container.clientWidth}px`,
+      `height:${container.clientHeight}px`,
+      'overflow:hidden',
+      'pointer-events:none',
+      `z-index:${FLOAT_Z_INDEX}`,
+    ].join(';');
+
+    const bodyClones: HTMLElement[] = [];
+    const headerClones: HTMLElement[] = [];
+    let width = 0;
+    for (const cell of cells) {
+      const rect = cell.getBoundingClientRect();
+      const clone = cell.cloneNode(true) as HTMLElement;
+      sanitizeClone(clone);
+      clone.setAttribute(DRAGGING_COLUMN_ATTRIBUTE, 'live');
+      const style = clone.style;
+      style.position = 'absolute';
+      style.left = '0px';
+      style.top = `${rect.top - layerTop}px`;
+      style.width = `${rect.width}px`;
+      style.minWidth = `${rect.width}px`;
+      style.height = `${rect.height}px`;
+      style.transform = '';
+      style.transition = '';
+      style.visibility = '';
+      style.willChange = '';
+      style.zIndex = '';
+      width = Math.max(width, rect.width);
+      (clone.classList.contains(HEADER_CELL_CLASS) ? headerClones : bodyClones).push(clone);
+    }
+    // 見出しは本体セルより前面(スクロールでヘッダーの下へ潜っている行を覆う。本物のヘッダー行と同じ重なり)。
+    let badge: HTMLSpanElement | null = null;
+    for (const header of headerClones) {
+      header.style.zIndex = '1';
+      if (badge === null) {
+        badge = document.createElement('span');
+        badge.className = FLOAT_PIN_CLASS;
+        header.insertBefore(badge, header.firstChild);
+      }
+    }
+    current.column.replaceChildren(...bodyClones, ...headerClones);
+    current.column.style.width = `${width}px`;
+    current.badge = badge;
+    current.badgeKind = null;
+    current.layerWidth = container.clientWidth;
+    current.columnWidth = width;
+    current.scrollTop = container.scrollTop;
+    current.cellCount = cells.length;
+    return current;
+  };
+
+  // 浮かぶ列を用意します(縦スクロール / 描画中のセル数が変わったら複製し直す)。置けない(シェルが無い / 複製元が無い)
+  //   ときは null。
+  const ensureFloat = (cells: HTMLElement[]): FloatColumn | null => {
+    const container = args?.scrollContainerRef.current ?? null;
+    const host = container?.parentElement ?? null;
+    if (!container || !host) return null;
+    // 複製元が描画されていない(横の仮想化で外れた等)ときは直前の複製を使い続けます。
+    if (cells.length === 0) return float;
+    if (float !== null && float.scrollTop === container.scrollTop && float.cellCount === cells.length) return float;
+    return buildFloat(container, host, cells);
+  };
+
+  // 中央ペインの x(screen)が固定ペインの下に潜っているか(本物の縦線は固定ペインに隠れて見えない位置)。
+  const isUnderPinnedPane = (x: number): boolean => {
+    if (args === null) return false;
+    const leftEl = args.leftPaneScrollRef.current;
+    if (leftEl && args.paneLayout.left.entries.length > 0 && x < leftEl.getBoundingClientRect().right - 0.5) return true;
+    const rightEl = args.rightPaneScrollRef.current;
+    if (rightEl && args.paneLayout.right.entries.length > 0 && x > rightEl.getBoundingClientRect().left + 0.5) return true;
+    return false;
+  };
+
+  // 移動先の縦線を浮かぶ列の上へ写します(位置は本物の縦線の矩形そのまま。本物が出ていない / 中央の縦線が固定ペインの
+  //   下に潜っているときは写さない)。
+  const syncFloatGuide = (current: FloatColumn, pane: ColumnPane, layerRect: DOMRect) => {
+    const guide = current.guide;
+    const source = indicatorElements()[pane];
+    if (!source || source.style.display !== 'block') {
+      guide.style.display = 'none';
+      return;
+    }
+    const rect = source.getBoundingClientRect();
+    if (pane === 'center' && isUnderPinnedPane(rect.left + rect.width / 2)) {
+      guide.style.display = 'none';
+      return;
+    }
+    guide.style.left = `${rect.left - layerRect.left}px`;
+    guide.style.top = `${rect.top - layerRect.top}px`;
+    guide.style.height = `${rect.height}px`;
+    guide.style.display = 'block';
+  };
+
+  // 浮かぶ列をポインタ基準で置き(表の枠の内側に収める)、見出しのアイコンを移動先のペインで出し分け(ゴーストと同じ:
+  //   固定ペインへはピン、中央へは移動の矢印)、縦線を浮かぶ列の上へ写します。
+  const positionFloat = (current: FloatColumn, pane: ColumnPane) => {
+    const layerRect = current.layer.getBoundingClientRect();
+    const maxLeft = Math.max(current.layerWidth - current.columnWidth, 0);
+    const left = Math.min(Math.max(pointer.x - grabOffsetX - layerRect.left, 0), maxLeft);
+    current.column.style.transition = 'none';
+    current.column.style.transform = `translateX(${left}px)`;
+    const kind = pane === 'center' ? 'move' : 'pin';
+    if (current.badge !== null && current.badgeKind !== kind) {
+      current.badgeKind = kind;
+      current.badge.innerHTML = kind === 'move' ? moveIconSvg(FLOAT_PIN_ICON_SIZE) : pinIconSvg(FLOAT_PIN_ICON_SIZE);
+    }
+    syncFloatGuide(current, pane, layerRect);
+  };
+
+  const destroyFloat = () => {
+    float?.layer.remove();
+    float = null;
+  };
+
+  // 離したあとの浮かぶ列を、screen-x(列の左端)へ滑らせます。
+  const slideFloatTo = (current: FloatColumn, screenLeft: number, durationMs: number) => {
+    const layerRect = current.layer.getBoundingClientRect();
+    current.column.style.transition = `transform ${durationMs}ms ${SETTLE_EASING}`;
+    current.column.style.transform = `translateX(${screenLeft - layerRect.left}px)`;
+    current.badge?.remove();
+    current.guide.style.display = 'none';
+  };
+
+  // 滑り込みを終えます(浮かぶ列を外し、隠していた本物のセルを戻す)。次のドラッグ開始 / dispose では途中でも即終了します。
+  const finishLanding = () => {
+    const current = landing;
+    landing = null;
+    if (current === null) return;
+    if (current.timer !== null) window.clearTimeout(current.timer);
+    for (const [cell, visibility] of current.hiddenCells) cell.style.visibility = visibility;
+    current.float.layer.remove();
+  };
+
+  // 確定後(commit 済みの DOM)に、浮かぶ列を新しい位置の列へ滑り込ませます(applyReorderSettle から呼ぶ)。
+  //   列が描画されていない(横の仮想化で画面外)ときは滑らせずに片付けます。
+  const landFloatOnCommittedColumn = () => {
+    const current = landing;
+    if (current === null || current.key === null) return;
+    const key = current.key;
+    current.key = null;
+    const container = args?.scrollContainerRef.current ?? null;
+    const cells = container ? collectColumnCells(container).filter((cell) => cell.dataset.ssgColKey === key) : [];
+    if (cells.length === 0) {
+      finishLanding();
+      return;
+    }
+    const screenLeft = cells[0].getBoundingClientRect().left;
+    for (const cell of cells) {
+      current.hiddenCells.push([cell, cell.style.visibility]);
+      cell.style.visibility = 'hidden';
+    }
+    slideFloatTo(current.float, screenLeft, FLOAT_LAND_MS);
+    if (current.timer !== null) window.clearTimeout(current.timer);
+    current.timer = window.setTimeout(finishLanding, FLOAT_LAND_MS + 40);
   };
 
   const updateIndicator = () => {
@@ -595,15 +888,28 @@ export const createColumnHeaderDragController = <T,>(): ColumnHeaderDragControll
       if (hit) dropTarget = { pane: hit.pane, slot: hit.slot };
       const target = dropTarget;
       if (target !== null && target.pane !== liveSourcePane) {
+        if (hit) showIndicator(hit);
+        // 変更(M-12 D): 別ペインへ移すときは浮かぶ列がポインタに付いてきて、元のペインは詰まり、移動先は縦線で示します。
+        const container = args?.scrollContainerRef.current ?? null;
+        if (container?.parentElement != null) {
+          const current = ensureFloat(applyLivePositions(null, 'lift-out'));
+          if (current !== null) {
+            destroyGhost();
+            positionFloat(current, target.pane);
+            return;
+          }
+        }
+        // 浮かぶ列を置けないときは従来どおり、列を基準位置へ戻してゴーストを出します。
+        destroyFloat();
         createGhost(ghostLabel);
         updateGhost(target.pane);
-        if (hit) showIndicator(hit);
-        applyLivePositions(null, false);
+        applyLivePositions(null, 'rest');
         return;
       }
+      destroyFloat();
       destroyGhost();
       hideAllIndicators();
-      applyLivePositions(target === null ? null : target.slot, true);
+      applyLivePositions(target === null ? null : target.slot, 'follow');
       return;
     }
     // ゴーストは hit の有無に関わらずポインタへ追従(枠外=null は 'out' 表現)。縦線の表示判定は hit 基準。
@@ -698,6 +1004,10 @@ export const createColumnHeaderDragController = <T,>(): ColumnHeaderDragControll
           )
         : null;
 
+    // 追加(M-12 D): 浮かぶ列はドラッグ状態から外し、離したあとの滑り込み(landing)へ引き継ぎます。
+    const lifted = float;
+    float = null;
+
     // 追加(motion-9 / M-12): live 方式の後始末。確定しないとき(キャンセル / no-op)は基準位置へ戻します(transition 付き)。
     if (touched && !keys) {
       touched.forEach((_, cell) => {
@@ -705,11 +1015,33 @@ export const createColumnHeaderDragController = <T,>(): ColumnHeaderDragControll
         cell.style.transition = LIVE_SHIFT_TRANSITION;
         cell.style.transform = 'translateX(0px)';
       });
+      // 変更(M-12 D): 別ペインへ持ち出していたときは、浮かぶ列を元の位置(隠している本物の列の基準位置)へ滑らせ、
+      //   戻り切ってから本物を表示します(本物の visibility は resetLiveCells が戻す)。
+      let returning: FloatLanding | null = null;
+      if (lifted !== null) {
+        let originCell: HTMLElement | null = null;
+        for (const cell of touched.keys()) {
+          if (cell.isConnected && cell.dataset.ssgColKey === draggedKey) {
+            originCell = cell;
+            break;
+          }
+        }
+        if (originCell !== null) {
+          slideFloatTo(lifted, originCell.getBoundingClientRect().left, LIVE_SHIFT_MS);
+          returning = { float: lifted, key: null, timer: null, hiddenCells: [] };
+          landing = returning;
+        } else {
+          lifted.layer.remove();
+        }
+      }
       restoringCells = touched;
       window.setTimeout(() => {
         resetLiveCells(touched);
         if (restoringCells === touched) restoringCells = null;
+        if (returning !== null && landing === returning) finishLanding();
       }, LIVE_SHIFT_MS + 40);
+    } else if (lifted !== null && !keys) {
+      lifted.layer.remove();
     }
 
     if (!keys || !draggedKey || !target || args === null) return; // no-op ドラッグ(同一 pane・同一 slot)/ キャンセル
@@ -726,6 +1058,24 @@ export const createColumnHeaderDragController = <T,>(): ColumnHeaderDragControll
       samePaneReorder && !isMotionOff(scrollContainerRef.current) ? captureColumnLefts(scrollContainerRef.current) : null;
     if (touched) resetLiveCells(touched);
 
+    // 追加(M-12 D): 別ペインへ確定したときは、浮かぶ列を残して新しい位置へ滑り込ませます(commit 後の applyReorderSettle で
+    //   新しい列の位置を測る)。commit が同期的に描画まで進んでも拾えるよう、commit より前に landing を用意します。
+    //   applyReorderSettle が来ない(利用側が columns を差し替えなかった等)ときは猶予後に片付けます。
+    if (lifted !== null) {
+      if (samePaneReorder) {
+        lifted.layer.remove();
+      } else {
+        lifted.badge?.remove();
+        lifted.guide.style.display = 'none';
+        landing = {
+          float: lifted,
+          key: draggedKey,
+          timer: window.setTimeout(finishLanding, FLOAT_LAND_FALLBACK_MS),
+          hiddenCells: [],
+        };
+      }
+    }
+
     const pinOverride = new Map<string, GridColumnPinned | undefined>([
       [draggedKey, target.pane === 'center' ? undefined : target.pane],
     ]);
@@ -734,6 +1084,8 @@ export const createColumnHeaderDragController = <T,>(): ColumnHeaderDragControll
 
   // 並べ替え確定後(commit 済みの DOM)に呼ばれ、各列セルへ FLIP を 1 回当てて「新しい位置へスライド」させます。
   const applyReorderSettle = () => {
+    // 追加(M-12 D): 別ペインへ確定した浮かぶ列の滑り込み(armed のときだけ)。
+    landFloatOnCommittedColumn();
     const before = settlePending;
     settlePending = null;
     if (!before) return;
@@ -795,6 +1147,14 @@ export const createColumnHeaderDragController = <T,>(): ColumnHeaderDragControll
     event.stopPropagation();
     event.preventDefault();
 
+    // 追加(M-12 D): 前のドラッグの浮かぶ列がまだ滑り込み中なら、ここで終えます。キャンセルで戻している最中の列は
+    //   浮かぶ列が戻り切るまで隠しているため、先に表示へ戻します(transform の戻りは従来どおり transition 後に外す)。
+    finishLanding();
+    destroyFloat();
+    restoringCells?.forEach((original, cell) => {
+      cell.style.visibility = original.visibility;
+    });
+
     draggingKey = column.key;
     dropTarget = null;
     pointer = { x: event.clientX, y: event.clientY };
@@ -803,9 +1163,18 @@ export const createColumnHeaderDragController = <T,>(): ColumnHeaderDragControll
     document.body.style.cursor = 'grabbing';
     ghostLabel = column.title || column.key;
     if (isLive()) {
+      const container = args.scrollContainerRef.current;
       liveSourcePane = getColumnPane(column);
-      liveStartScrollLeft = args.scrollContainerRef.current?.scrollLeft ?? 0;
+      liveStartScrollLeft = container?.scrollLeft ?? 0;
       liveCells = new Map();
+      // 追加(M-12 D): 掴んだ点が列の左端からどれだけ右か(浮かぶ列をポインタ基準で置くため)。列のセルが見つからなければ
+      //   列幅の中央を掴んだものとします。
+      const startCell = container
+        ? collectColumnCells(container).find((cell) => cell.dataset.ssgColKey === column.key)
+        : undefined;
+      grabOffsetX = startCell
+        ? event.clientX - startCell.getBoundingClientRect().left
+        : (args.paneLayout[liveSourcePane].entries.find((entry) => entry.column.key === column.key)?.paneLocalSize ?? 0) / 2;
     } else {
       createGhost(ghostLabel);
     }
@@ -886,6 +1255,9 @@ export const createColumnHeaderDragController = <T,>(): ColumnHeaderDragControll
       if (liveCells) resetLiveCells(liveCells);
       liveCells = null;
       liveSourcePane = null;
+      // 追加(M-12 D): 浮かぶ列(ドラッグ中 / 滑り込み中)も外します。
+      destroyFloat();
+      finishLanding();
     },
   };
 };
