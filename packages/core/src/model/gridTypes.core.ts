@@ -2522,6 +2522,20 @@ export type SpreadsheetGridProps<T, F extends GridFrameworkTypes = GridFramework
    * @defaultValue `'row'`
    */
   hoverHighlight?: 'row' | 'cross';
+  // 追加(motion-6 / M-2): rows が変わったとき、値が変わったセルを一瞬アクセント色で光らせ、数値は旧値から新値へ
+  //   カウントアップする(既定 false)。clientSide 専用。描画中のセルだけが対象で、変更が多いとき(2,000 セル超 / 構造変化)
+  //   は何もしない。
+  /**
+   * `rows` が変わったとき、値が変わったセルを一瞬アクセント色で光らせ(`.ssg-body-cell--changed`、
+   * `--ssg-motion-slow`)、数値の既定セルは旧値から新値へカウントアップする(`--ssg-motion-base`。
+   * 表示は `valueFormatter` で整形)。セル編集 / 貼り付け / クリア / undo・redo / 外部からの `rows`
+   * 差し替えのすべてが対象。clientSide 専用(SSRM では無効)。描画中のセルだけが対象で、
+   * 変わったセルが 200 を超えるとフラッシュのみ、2,000 を超える・行の挿入 / 削除 /
+   * 並べ替えを伴う・参照の変わった行が 5,000 を超える(データの読み直し)ときは何もしない。
+   *
+   * @defaultValue `false`
+   */
+  highlightChanges?: boolean;
   /**
    * 行番号列の幅(px)。
    *

@@ -805,6 +805,21 @@
       height var(--ssg-motion-fast) var(--ssg-motion-ease);
   }
 
+  /* 追加(motion-6 / M-2): 変更セルのフラッシュ(highlightChanges)。changeHighlightController が直付けし animationend で
+     外します。背景色そのものは触らず(行ホバー / 選択行 / readonly / invalid の背景を壊さない)、内側の box-shadow で
+     アクセント色の面を重ねてフェードアウトさせます。 */
+  @keyframes ssg-cell-changed {
+    0% {
+      box-shadow: inset 0 0 0 100vmax color-mix(in srgb, var(--ssg-accent) 28%, transparent);
+    }
+    100% {
+      box-shadow: inset 0 0 0 100vmax transparent;
+    }
+  }
+  .ssg-body-cell--changed {
+    animation: ssg-cell-changed var(--ssg-motion-slow) ease-out;
+  }
+
   /* 追加(motion-5 / M-6): クロスヘア(hoverHighlight='cross')。ポインタの列に薄い帯を 1 枚のオーバーレイで重ね
      (セルのクラスを触らないので行の再レンダーが増えない)、列ヘッダーと行番号は選択色で染めます。交点のセルは
      行ホバー色 + 帯で自然に一段濃くなります。 */

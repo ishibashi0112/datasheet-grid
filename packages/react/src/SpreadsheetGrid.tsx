@@ -396,6 +396,8 @@ export function SpreadsheetGrid<T extends object>({
   showCopyRange = true,
   // 追加(motion-5 / M-6): ホバーの強調範囲('row' = 従来 / 'cross' = クロスヘア)。
   hoverHighlight = 'row',
+  // 追加(motion-6 / M-2): 変更セルのフラッシュ + 数値トゥイーン(既定 false。clientSide 専用)。
+  highlightChanges = false,
   rowHeaderWidth = 56,
   // 追加: グリッド高さの外部制御。height で明示高さ、maxHeight でスクロール領域の上限。
   //   '%' を含む height はバー込みのグリッド全体を親へ追従させます(fill-height。logic/gridHeight)。
@@ -1606,6 +1608,16 @@ export function SpreadsheetGrid<T extends object>({
     scrollContainerRef,
     skeletonEnter: isServerSide && resolvedMotion === 'on',
     mountEnter: animateRowsActive,
+  });
+  // 追加(motion-6 / M-2): rows の参照が変わったとき、値が変わった描画中のセルへフラッシュ(+ 数値トゥイーン)を直付け
+  //   します(highlightChanges。clientSide 専用。DOM は React が更新済みなので、レイアウト effect のこの時点で旧値へ
+  //   戻してから補間する)。
+  useControllerLifecycle(engine.changeHighlight, {
+    enabled: highlightChanges && !isServerSide && resolvedMotion === 'on',
+    rows,
+    rowKeyGetter: resolvedRowKeyGetter,
+    columns: visibleColumns,
+    scrollContainerRef,
   });
   // gate 外フォールバック時の開発時警告(例外は投げず uniform にフォールバック)。
   // 変更(①-3): serverSide では行数に関わらず未対応の旨を警告します(行数上限とは別理由のため

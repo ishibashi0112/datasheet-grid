@@ -222,6 +222,8 @@ function GridBodyRowInner<T>({
     <div
       data-pane={pane}
       data-row-index={rowIndex}
+      // 追加(motion-6 / M-2): 変更セルのフラッシュ(changeHighlightController)が rowKey で行を探すための目印。
+      data-row-key={rowKey}
       className={cx(
         'ssg-body-row',
         // 追加(行選択): チェック選択された行のハイライト。
