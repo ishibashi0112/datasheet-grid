@@ -695,7 +695,7 @@ export function Playground() {
             </select>
           </label>
           <p className="m-0 text-xs text-fd-muted-foreground">
-            行 / 列ドラッグの live 方式は「機能」の rowDragMotion / columnDragMotion。auto は OS の「視差効果を減らす」が有効だと動きません(on で強制)。
+            行 / 列ドラッグの live 方式は「機能」の rowDragMotion / columnDragMotion(列の live で ID の左固定ペインへ運ぶと、浮かぶ列にピンのアイコン)。auto は OS の「視差効果を減らす」が有効だと動きません(on で強制)。
           </p>
         </Group>
 
