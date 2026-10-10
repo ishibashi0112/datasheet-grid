@@ -603,6 +603,9 @@ const s = stylex.create({
 | `.ssg-body-cell--readonly` | 読み取り専用セル(範囲選択に入っていないとき。`dimReadOnlyCells` と独立して常時付与)。 |
 | `.ssg-body-cell--invalid` | validation mark 表示中のセル。 |
 | `.ssg-body-cell--has-note` | セルのメモ(`cellNote`)があるセル(右上の印は `::before`。色は `--ssg-note-indicator`)。 |
+| `.ssg-body-cell--cf-bar` | 条件付き書式のデータバーがあるセル(帯は子要素 `.ssg-cf-bar`。負の値は `.ssg-cf-bar--negative`)。 |
+| `.ssg-body-cell--cf-scale` | 条件付き書式のカラースケールで背景を染めたセル。 |
+| `.ssg-chip` | 条件付き書式の状態チップ(色味は `.ssg-chip--info` / `--good` / `--warning` / `--critical` / `--neutral`、任意色は `.ssg-chip--custom`。中身は `.ssg-chip-icon` / `.ssg-chip-label`)。 |
 | `.ssg-body-cell--row-hovered` | 行ホバー中のセル(`enableRowHover` 有効時)。 |
 | `.ssg-body-cell--autoheight` | auto-height 列のセル。 |
 | `.ssg-body-cell--align-center` / `.ssg-body-cell--align-right` | `column.align` の水平寄せ。 |

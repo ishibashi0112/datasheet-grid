@@ -135,6 +135,26 @@
     /* 追加(F-2): セル内検索のヒット(通常 / カレント)。 */
     --ssg-find-mark-bg: rgba(245, 158, 11, 0.4);
     --ssg-find-mark-current-bg: rgba(52, 97, 201, 0.3);
+    /* 追加(F-3): 条件付き書式。データバーはアクセントの淡色、カラースケールは dataviz の参照パレット(sequential は
+       1 色相の淡 → 濃で明るい段に制限 = 文字色を変えない、diverging は 2 色相 + 中立グレー)。チップは状態色(アイコン +
+       ラベルを伴う)。 */
+    --ssg-cf-bar: rgba(52, 97, 201, 0.26);
+    --ssg-cf-bar-negative: rgba(227, 73, 72, 0.3);
+    --ssg-cf-seq-min: #eaf2fd;
+    --ssg-cf-seq-max: #7fb0ee;
+    --ssg-cf-div-negative: #e34948;
+    --ssg-cf-div-mid: #f0efec;
+    --ssg-cf-div-positive: #2a78d6;
+    --ssg-cf-neutral: #475569;
+    --ssg-cf-neutral-bg: #e2e8f0;
+    --ssg-cf-info: #1d4ed8;
+    --ssg-cf-info-bg: #dbeafe;
+    --ssg-cf-good: #15803d;
+    --ssg-cf-good-bg: #dcfce7;
+    --ssg-cf-warning: #b45309;
+    --ssg-cf-warning-bg: #fef3c7;
+    --ssg-cf-critical: #dc2626;
+    --ssg-cf-critical-bg: #fee2e2;
     /* その他 */
     --ssg-drop-indicator: #0f172a;
     --ssg-glyph-faint: #cbd5e1;
@@ -304,6 +324,24 @@
     --ssg-save-ok: #4ade80;
     --ssg-find-mark-bg: rgba(251, 191, 36, 0.35);
     --ssg-find-mark-current-bg: rgba(77, 171, 247, 0.35);
+    /* 条件付き書式(F-3)。ダークは段を選び直す(反転ではない)。 */
+    --ssg-cf-bar: rgba(77, 171, 247, 0.3);
+    --ssg-cf-bar-negative: rgba(255, 107, 107, 0.32);
+    --ssg-cf-seq-min: #1c2636;
+    --ssg-cf-seq-max: #2f5fa0;
+    --ssg-cf-div-negative: #ff6b6b;
+    --ssg-cf-div-mid: #2c2e33;
+    --ssg-cf-div-positive: #4dabf7;
+    --ssg-cf-neutral: #ced4da;
+    --ssg-cf-neutral-bg: #373a40;
+    --ssg-cf-info: #74c0fc;
+    --ssg-cf-info-bg: #1b2e4b;
+    --ssg-cf-good: #69db7c;
+    --ssg-cf-good-bg: #1d3a26;
+    --ssg-cf-warning: #ffd43b;
+    --ssg-cf-warning-bg: #3d3414;
+    --ssg-cf-critical: #ff6b6b;
+    --ssg-cf-critical-bg: #3a2325;
     /* その他 */
     --ssg-drop-indicator: #c1c2c5;
     --ssg-col-hover-bg: rgba(255, 255, 255, 0.045);
@@ -903,6 +941,80 @@
   .ssg-find-mark--current {
     background-color: var(--ssg-find-mark-current-bg);
     box-shadow: 0 0 0 1.5px var(--ssg-accent);
+  }
+
+  /* 追加(F-3): 条件付き書式。
+     - データバー(.ssg-cf-bar): セル内の絶対配置の帯。セル(absolute + z-index)がスタッキングコンテキストになるため
+       z-index: -1 でセル背景の上・文字の下に描かれる。幅 / 左端は inline(%)。
+     - カラースケール(.ssg-body-cell--cf-scale): セル背景を inline の color-mix() で染める(文字色は変えない)。
+     - チップ(.ssg-chip): 角丸のピル + 色味ごとのアイコン。色はトークン --ssg-cf-<tone> / --ssg-cf-<tone>-bg。 */
+  .ssg-cf-bar {
+    position: absolute;
+    top: 4px;
+    bottom: 4px;
+    z-index: -1;
+    border-radius: 0 4px 4px 0;
+    background-color: var(--ssg-cf-bar);
+    pointer-events: none;
+    transition: left var(--ssg-motion-base) var(--ssg-motion-ease), width var(--ssg-motion-base) var(--ssg-motion-ease);
+  }
+  .ssg-cf-bar--negative {
+    border-radius: 4px 0 0 4px;
+    background-color: var(--ssg-cf-bar-negative);
+  }
+  .ssg-body-cell--cf-scale {
+    transition: background-color var(--ssg-motion-base) var(--ssg-motion-ease);
+  }
+  .ssg-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    max-width: 100%;
+    padding: 1px 8px 1px 6px;
+    border-radius: 999px;
+    font-size: 0.92em;
+    line-height: 1.5;
+    color: var(--ssg-cf-chip-fg, var(--ssg-cf-neutral));
+    background-color: var(--ssg-cf-chip-bg, var(--ssg-cf-neutral-bg));
+    white-space: nowrap;
+  }
+  .ssg-chip--info {
+    --ssg-cf-chip-fg: var(--ssg-cf-info);
+    --ssg-cf-chip-bg: var(--ssg-cf-info-bg);
+  }
+  .ssg-chip--good {
+    --ssg-cf-chip-fg: var(--ssg-cf-good);
+    --ssg-cf-chip-bg: var(--ssg-cf-good-bg);
+  }
+  .ssg-chip--warning {
+    --ssg-cf-chip-fg: var(--ssg-cf-warning);
+    --ssg-cf-chip-bg: var(--ssg-cf-warning-bg);
+  }
+  .ssg-chip--critical {
+    --ssg-cf-chip-fg: var(--ssg-cf-critical);
+    --ssg-cf-chip-bg: var(--ssg-cf-critical-bg);
+  }
+  /* 任意色(GridChipSpec.color): 文字はその色、背景はその色の 14% を透明と混ぜる。 */
+  .ssg-chip--custom {
+    --ssg-cf-chip-fg: var(--ssg-cf-chip-color);
+    --ssg-cf-chip-bg: color-mix(in srgb, var(--ssg-cf-chip-color) 14%, transparent);
+  }
+  .ssg-chip-icon {
+    flex: none;
+    display: inline-flex;
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background-color: var(--ssg-cf-chip-fg, var(--ssg-cf-neutral));
+    color: #fff;
+  }
+  .ssg-chip-icon svg {
+    width: 12px;
+    height: 12px;
+  }
+  .ssg-chip-label {
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 
   /* 追加(motion-7 / M-9): セル単位の保存状態(SSRM 書き戻し)。saveStatusController が data-ssg-save を付け替え、

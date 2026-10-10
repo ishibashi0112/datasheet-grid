@@ -183,6 +183,8 @@ type Settings = {
   imeDirectInput: boolean;
   // セル内検索。ON で Ctrl/Cmd+F(グリッドにフォーカス)または右上の検索バーでヒットを強調 + 順送り。
   find: boolean;
+  // 条件付き書式。ON で数量にデータバー、単価にカラースケール、状態に状態チップを付ける。
+  conditionalFormat: boolean;
 };
 
 const DEFAULTS: Settings = {
@@ -220,6 +222,7 @@ const DEFAULTS: Settings = {
   cellNote: false,
   imeDirectInput: false,
   find: false,
+  conditionalFormat: false,
 };
 
 function buildSnippet(s: Settings): string {
@@ -289,6 +292,9 @@ function buildSnippet(s: Settings): string {
     lines.push('  getFilterOptions={fetchDistinctValues} // ({ columnKey, columnFilters, signal }) => Promise<{ options, truncated? }>');
   }
   // セルのメモは列定義側の指定のため、ON のときはコメントで示す。
+  if (s.conditionalFormat) {
+    lines.push("  // columns の数量列: conditionalFormat: { dataBar: {} } / 単価列: { colorScale: {} } / 状態列: { chips: { 受注: 'info', 出荷準備: 'warning', 出荷済: 'good', キャンセル: 'critical' } }");
+  }
   if (s.cellNote) {
     lines.push("  // columns の単価列: cellNote: ({ value }) => (value < 300 ? '販売単価が 300 円未満です。\\n仕入単価を確認してください。' : undefined)");
   }
@@ -353,14 +359,23 @@ function PlaygroundGrid({ settings }: { settings: Settings }) {
   );
   const [rows, setRows] = useState<Row[]>(initialRows);
   const [columns, setColumns] = useState<GridColumn<Row>[]>(initialColumns);
-  // セルのメモ(cellNote)。トグルに合わせて単価 / 数量の列へ付け外しする(OFF では undefined に戻す)。
+  // セルのメモ(cellNote)と条件付き書式(conditionalFormat)。トグルに合わせて状態 / 単価 / 数量の列へ付け外しする(OFF では undefined に戻す)。
   //   数量に負の値を入れると入力エラーとメモが重なり、二重の三角とツールチップ(エラー → メモ)を確認できる。
   const gridColumns = useMemo(
     () =>
       columns.map((column): GridColumn<Row> => {
+        if (column.key === 'status') {
+          return {
+            ...column,
+            conditionalFormat: settings.conditionalFormat
+              ? { chips: { 受注: 'info', 出荷準備: 'warning', 出荷済: 'good', キャンセル: { tone: 'critical', icon: true } } }
+              : undefined,
+          };
+        }
         if (column.key === 'price') {
           return {
             ...column,
+            conditionalFormat: settings.conditionalFormat ? { colorScale: {} } : undefined,
             cellNote: settings.cellNote
               ? ({ value }) =>
                   typeof value === 'number' && value < 300
@@ -372,6 +387,7 @@ function PlaygroundGrid({ settings }: { settings: Settings }) {
         if (column.key === 'qty') {
           return {
             ...column,
+            conditionalFormat: settings.conditionalFormat ? { dataBar: {} } : undefined,
             cellNote: settings.cellNote
               ? ({ value }) => (typeof value === 'number' && value < 10 ? '在庫が少なくなっています。' : undefined)
               : undefined,
@@ -379,7 +395,7 @@ function PlaygroundGrid({ settings }: { settings: Settings }) {
         }
         return column;
       }),
-    [columns, settings.cellNote],
+    [columns, settings.cellNote, settings.conditionalFormat],
   );
   // セル操作の通知のログ(新しい順に 5 件)。
   const [eventLog, setEventLog] = useState<string[]>([]);
@@ -620,6 +636,7 @@ export function Playground() {
           <Toggle label="enableRowDrag" checked={settings.enableRowDrag} onChange={(v) => set('enableRowDrag', v)} />
           <Toggle label="onCellClick ほか(ログ)" checked={settings.cellEventLog} onChange={(v) => set('cellEventLog', v)} />
           <Toggle label="cellNote(メモ)" checked={settings.cellNote} onChange={(v) => set('cellNote', v)} />
+          <Toggle label="conditionalFormat(条件付き書式)" checked={settings.conditionalFormat} onChange={(v) => set('conditionalFormat', v)} />
           <Toggle label="labelRow" checked={settings.labelRow} onChange={(v) => set('labelRow', v)} />
           <label className={settings.labelRow ? '' : 'opacity-50'}>
             <Toggle label="labelRow.sticky" checked={settings.labelRowSticky} onChange={(v) => set('labelRowSticky', v)} />

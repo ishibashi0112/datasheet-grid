@@ -51,6 +51,9 @@ import CopyRangeOverlay from './CopyRangeOverlay';
 import ColumnHoverOverlay from './ColumnHoverOverlay';
 import GridFindBar from './view/GridFindBar';
 import { splitTextByFindRanges } from '@ishibashi0112/spreadsheet-grid-core/logic/find';
+// 追加(F-3): 条件付き書式(チップの解決。帯 / 背景色は GridBodyLayer 側)。
+import { resolveChipSpec } from '@ishibashi0112/spreadsheet-grid-core/logic/conditionalFormat';
+import { GridChip } from './view/GridChip';
 import ActiveCellOverlay, {
   type ActiveCellOverlayRect,
 } from './ActiveCellOverlay';
@@ -2374,6 +2377,11 @@ export function SpreadsheetGrid<T extends object>({
   );
 
   // ── keyboard ──────────────────────────────────────────
+  // ── 追加(F-3): 条件付き書式の列ごとの min / max(ビュー行から集計。内容が同じなら参照不変 = 行 memo を壊さない)──
+  const conditionalFormatStats = useMemo(
+    () => engine.resolveConditionalFormatStats(rowModel, orderedColumns),
+    [engine, rowModel, orderedColumns],
+  );
   // ── 追加(F-2): セル内検索 ──
   //   実体は engine.find(controllers/findController。走査は時間分割)。React はスナップショットを購読し、既定セルの
   //   描画でヒットを <mark> にし、右上の検索バー(GridFindBar)を出します。Ctrl/Cmd+F は keyboardController 経由。
@@ -3454,12 +3462,16 @@ export function SpreadsheetGrid<T extends object>({
       const formattedText = column.valueFormatter
         ? column.valueFormatter({ value, row, column })
         : String(value ?? '');
+      // 追加(F-3): データバーの showValue: false は文字を出さない(帯は GridBodyRow が描く)。
+      const conditionalFormat = column.conditionalFormat;
+      if (conditionalFormat?.dataBar?.showValue === false) {
+        return null;
+      }
       // 追加(F-2): セル内検索のヒットを <mark> にします(既定セルだけ。カレントは --current)。
       const findRanges = findIndex.get(rowIndex)?.get(colIndex);
-      if (findRanges && findRanges.length > 0) {
-        return (
-          <span>
-            {splitTextByFindRanges(formattedText, findRanges).map((segment, segmentIndex) =>
+      const textContent: ReactNode =
+        findRanges && findRanges.length > 0
+          ? splitTextByFindRanges(formattedText, findRanges).map((segment, segmentIndex) =>
               segment.range ? (
                 <mark
                   key={segmentIndex}
@@ -3473,11 +3485,32 @@ export function SpreadsheetGrid<T extends object>({
               ) : (
                 segment.text
               ),
-            )}
-          </span>
-        );
+            )
+          : formattedText;
+      // 追加(F-3): 状態チップ(値 → 色味 / 指定)。ラベル省略時は表示文字列(検索の強調つき)。
+      if (conditionalFormat?.chips) {
+        const chip = resolveChipSpec(conditionalFormat.chips, {
+          row,
+          rowIndex,
+          sourceRowIndex: rowModel.getSourceIndex(rowIndex) ?? rowIndex,
+          rowKey: rowModel.getRowKey(rowIndex) ?? rowIndex,
+          colIndex,
+          value,
+          column,
+          isActive: cellState.isActive,
+          isSelected: cellState.isSelected,
+          isEditing: cellState.isEditing,
+          readOnly: cellState.readOnly,
+        });
+        if (chip) {
+          return (
+            <GridChip spec={chip}>
+              {chip.label === undefined || chip.label === formattedText ? textContent : chip.label}
+            </GridChip>
+          );
+        }
       }
-      return <span>{formattedText}</span>;
+      return <span>{textContent}</span>;
     },
     [
       rowModel,
@@ -4261,6 +4294,7 @@ export function SpreadsheetGrid<T extends object>({
                   autoHeight={autoHeightActive}
                   showCellOverflowTooltip={showCellOverflowTooltip}
                   showValidationMarks={showValidationMarks}
+                  conditionalFormatStats={conditionalFormatStats}
                   isServerSide={isServerSide}
                   collapsedGroupKeys={uiState.collapsedGroupKeys}
                   onGroupToggle={handleGroupToggle}
@@ -4470,6 +4504,7 @@ export function SpreadsheetGrid<T extends object>({
                   autoHeight={autoHeightActive}
                   showCellOverflowTooltip={showCellOverflowTooltip}
                   showValidationMarks={showValidationMarks}
+                  conditionalFormatStats={conditionalFormatStats}
                   isServerSide={isServerSide}
                   collapsedGroupKeys={uiState.collapsedGroupKeys}
                   onGroupToggle={handleGroupToggle}
@@ -4676,6 +4711,7 @@ export function SpreadsheetGrid<T extends object>({
                   autoHeight={autoHeightActive}
                   showCellOverflowTooltip={showCellOverflowTooltip}
                   showValidationMarks={showValidationMarks}
+                  conditionalFormatStats={conditionalFormatStats}
                   isServerSide={isServerSide}
                   collapsedGroupKeys={uiState.collapsedGroupKeys}
                   onGroupToggle={handleGroupToggle}

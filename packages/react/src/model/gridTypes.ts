@@ -19,6 +19,8 @@ export type DetailRowOptions<T> = Core.DetailRowOptions<T, ReactGridTypes>;
 /** ラベル行(見出し / 区切り行)の設定(`labelRow` prop)。各フィールドの説明は JSDoc と同梱の `API_REFERENCE.md`。 */
 export type LabelRowOptions<T> = Core.LabelRowOptions<T, ReactGridTypes>;
 export type CellStyleContext<T> = Core.CellStyleContext<T, ReactGridTypes>;
+/** 条件付き書式(`GridColumn.conditionalFormat`)。`dataBar` / `colorScale` / `chips`。 */
+export type GridConditionalFormat<T> = Core.GridConditionalFormat<T, ReactGridTypes>;
 export type HeaderRenderContext<T> = Core.HeaderRenderContext<T, ReactGridTypes>;
 export type CellValueFormatterParams<T> = Core.CellValueFormatterParams<T, ReactGridTypes>;
 export type CellValueFormatter<T> = Core.CellValueFormatter<T, ReactGridTypes>;

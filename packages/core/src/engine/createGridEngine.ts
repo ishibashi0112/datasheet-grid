@@ -16,6 +16,10 @@ import { createRowEnterController, type RowEnterController } from '../controller
 import { createChangeHighlightController, type ChangeHighlightController } from '../controllers/changeHighlightController';
 import { createSaveStatusController, type SaveStatusController } from '../controllers/saveStatusController';
 import { createFindController, type FindController } from '../controllers/findController';
+import {
+  createConditionalFormatStatsResolver,
+  type ConditionalFormatStatsResolver,
+} from '../logic/conditionalFormat';
 import { createDebouncedValueStore, type DebouncedValueStore } from '../controllers/debouncedValueStore';
 import { createAutoSizeOnDataTrigger, type AutoSizeOnDataTrigger } from '../controllers/columnAutosizeRunner';
 import { createImeInputController, type ImeInputController } from '../controllers/imeInputController';
@@ -102,6 +106,8 @@ export type GridEngine<T> = {
   saveStatus: SaveStatusController;
   // 追加(F-2): セル内検索(開閉 / クエリ / ヒット / カレント。走査は時間分割)。
   find: FindController<T>;
+  // 追加(F-3): 条件付き書式の列ごとの min / max(ビュー行から集計。内容が同じなら前回の参照)。
+  resolveConditionalFormatStats: ConditionalFormatStatsResolver<T>;
   serverSideQueryStore: DebouncedValueStore<ServerSideQueryResolution>;
   autoSizeOnData: AutoSizeOnDataTrigger<T>;
   // 追加(G-2): IME オンのままの直接入力(imeDirectInput)の入力受け。
@@ -164,6 +170,7 @@ export const createGridEngine = <T,>(init: GridEngineInit<T>): GridEngine<T> => 
     changeHighlight,
     saveStatus,
     find,
+    resolveConditionalFormatStats: createConditionalFormatStatsResolver<T>(),
     serverSideQueryStore,
     autoSizeOnData,
     imeInput,

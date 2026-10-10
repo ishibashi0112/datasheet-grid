@@ -1,0 +1,55 @@
+---
+title: 条件付き書式
+description: conditionalFormat でデータバー / カラースケール / 状態チップを列オプション 1 つで描く
+---
+
+Excel の「条件付き書式」に当たる軽量ヘルパーです。列オプション `conditionalFormat` 1 つで、既定セルの描画にデータバー(量)/ カラースケール(量 or 基準からの向き)/ 状態チップ(状態)を重ねます。min / max は表示中の行から自動計算されます(固定値も可)。
+
+```tsx
+const columns: GridColumn<Row>[] = [
+  { key: 'qty', title: '在庫数', width: 100, align: 'right', conditionalFormat: { dataBar: {} } },
+  { key: 'delta', title: '前月比 %', width: 100, conditionalFormat: { colorScale: { type: 'diverging', min: -30, mid: 0, max: 30 } } },
+  { key: 'price', title: '単価', width: 100, conditionalFormat: { colorScale: {} } },
+  { key: 'status', title: '状態', width: 110, conditionalFormat: { chips: { 有効: 'good', 停止: 'warning', 廃番: 'critical' } } },
+];
+```
+
+## データバー(`dataBar`)
+
+値の大きさを背景の帯で示します。`min` / `max` を省略すると、**ビュー行**(フィルター / ソート適用後。SSRM はロード済み範囲)の数値の最小 / 最大を使い、編集やフィルターで変われば取り直します。負の値を含む列は 0 を軸に左へ伸び、負だけの列は右端が軸です(Excel と同じ)。
+
+- `color` / `negativeColor`: 帯の色(既定はトークン `--ssg-cf-bar` / `--ssg-cf-bar-negative`)。
+- `showValue: false`: 文字を出さず帯だけにする。
+
+## カラースケール(`colorScale`)
+
+セル背景を値に応じて染めます。文字色は変えず、明るい段に制限してコントラストを保ちます。
+
+- `type: 'sequential'`(既定): 1 色相の淡 → 濃。
+- `type: 'diverging'`: `mid`(省略時は `min < 0 < max` なら 0、それ以外は中央)を中立色に、負側 / 正側を別の色相で濃くする。
+- `colors`: CSS 色の配列(`[淡, 濃]` / `[負側, 中立, 正側]`)で色の段を差し替え。補間は CSS の `color-mix()` なので、トークン(`var(--ssg-accent)`)もそのまま混ぜられます。
+
+## 状態チップ(`chips`)
+
+値(`String(value)`)→ 色味のマップ、またはセルのコンテキスト(`cellClassName` の関数版と同じ)からチップを返す関数です。色味は `'neutral' | 'info' | 'good' | 'warning' | 'critical'` で、チップはアイコン + ラベルのピル(色だけで意味を運びません)。
+
+```tsx
+chips: {
+  有効: 'good',
+  停止: { tone: 'warning', label: '一時停止' },
+  廃番: { tone: 'critical', icon: false },
+  社内: { color: '#7c3aed' },  // 任意の色
+}
+// 関数版
+chips: ({ row }) => (row.stock === 0 ? 'critical' : null)
+```
+
+`label` 省略時はセルの表示文字列(`valueFormatter` 適用後。[セル内検索](/docs/guides/find)の強調もそのまま)。マップに載っていない値はふつうの文字のままです。
+
+## 見た目と影響範囲
+
+- 1 列に `dataBar` と `colorScale` を同時に指定できます(帯は背景色の上)。`cellClassName` / `getRowClassName` の明示 style は条件付き書式より後勝ちです。
+- 表示だけの機能で、CSV / TSV / クリップボード / `getExportData` / ソート / フィルター / `renderCell` の列には影響しません。
+- `motion` が `'on'` なら帯の長さと背景色は値の変化で滑らかに変わります。
+- 色はトークンで変えられます: `--ssg-cf-bar` / `--ssg-cf-seq-min` / `--ssg-cf-seq-max` / `--ssg-cf-div-negative` / `--ssg-cf-div-mid` / `--ssg-cf-div-positive` / `--ssg-cf-<tone>` / `--ssg-cf-<tone>-bg`。ダークテーマは段を選び直した別の値が入ります([テーマ](/docs/guides/theming))。
+- 状態クラス: `.ssg-body-cell--cf-bar` / `.ssg-cf-bar(--negative)` / `.ssg-body-cell--cf-scale` / `.ssg-chip(--<tone>)`。

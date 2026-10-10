@@ -1135,6 +1135,19 @@ export type GridColumn<T, F extends GridFrameworkTypes = GridFrameworkTypes> = {
    * `getExportData` には含めない。詳細は「セルのメモ(`cellNote`)」節。
    */
   cellNote?: (ctx: CellStyleContext<T, F>) => string | null | undefined;
+  // 追加(F-3): 条件付き書式ヘルパー。JSDoc は API_REFERENCE の表から生成。
+  /**
+   * **条件付き書式**。既定セルの描画に、値の「量」/「向き」/「状態」を重ねる。`dataBar`(背景の帯。
+   * `min` / `max` 省略時はビュー行 = フィルター / ソート適用後の数値から自動集計、負の値は 0
+   * の軸から左へ。`color` / `negativeColor` / `showValue: false` で帯だけ)/
+   * `colorScale`(セル背景を段階的に染める。`type: 'sequential'`(既定。淡 → 濃)/ `'diverging'`(`mid`
+   * を中立色に負側 / 正側を別の色相で。`colors` で色の段を差し替え)/ `chips`(値 → 色味
+   * `'neutral' | 'info' | 'good' | 'warning' | 'critical'` か `{ tone, label, icon, color }`
+   * のマップ、または `ctx` から返す関数。アイコン + ラベルのピル)。複数を同時指定可。表示だけで、
+   * エクスポート / コピー / ソート / フィルターには影響しない。色はトークン `--ssg-cf-*`。
+   * 詳細は「条件付き書式(`conditionalFormat`)」節。
+   */
+  conditionalFormat?: GridConditionalFormat<T, F>;
   // 追加(③): セル内容の水平寄せ(UI 表示のみ・元の値は不変)。未指定は左。
   //   セル表示と編集 input の双方へ反映します(renderCell 指定時もセルコンテナへ適用)。
   /**
@@ -2163,6 +2176,70 @@ export type GridDensity = 'compact' | 'standard' | 'comfortable';
 //   利用側のカラースキーム(useMantineColorScheme 等)の解決値を 'light' | 'dark' で
 //   渡す使い方が本命です。
 export type GridTheme = 'light' | 'dark' | 'auto';
+// 追加(F-3): 条件付き書式ヘルパー(GridColumn.conditionalFormat)の型です。既定セルの描画に、値の「量」(データバー)/
+//   「量 or 基準からの向き」(カラースケール)/ 「状態」(チップ)を重ねます。min / max は省略時にビュー行から自動集計。
+//   表示だけで、CSV / TSV / クリップボード / getExportData / ソート / フィルターには影響しません。
+/** データバー(値の大きさを背景の帯で示す)。`conditionalFormat.dataBar` の設定。 */
+export type GridDataBarFormat = {
+  /** 帯の下限。省略時はビュー行(フィルター / ソート適用後。SSRM はロード済み範囲)の数値の最小値。 */
+  min?: number;
+  /** 帯の上限。省略時はビュー行の数値の最大値。 */
+  max?: number;
+  /** 帯の色(CSS 色)。省略時はトークン `--ssg-cf-bar`。 */
+  color?: string;
+  /** 負の値の帯の色(CSS 色)。省略時はトークン `--ssg-cf-bar-negative`。 */
+  negativeColor?: string;
+  /** `false` で値の文字を出さず帯だけにする(既定 `true`)。 */
+  showValue?: boolean;
+};
+/** カラースケール(値に応じてセル背景を段階的に染める)。`conditionalFormat.colorScale` の設定。 */
+export type GridColorScaleFormat = {
+  /**
+   * `'sequential'`(既定): 1 色相の淡 → 濃(量)。`'diverging'`: `mid` を中立色に、負側 / 正側を別の色相で
+   * 濃くする(基準からの向き)。
+   */
+  type?: 'sequential' | 'diverging';
+  /** 下限。省略時はビュー行の数値の最小値。 */
+  min?: number;
+  /** `'diverging'` の中立点。省略時は `min < 0 < max` なら `0`、それ以外は `(min + max) / 2`。 */
+  mid?: number;
+  /** 上限。省略時はビュー行の数値の最大値。 */
+  max?: number;
+  /**
+   * 色の段(CSS 色)。`'sequential'` は `[淡, 濃]`、`'diverging'` は `[負側, 中立, 正側]`。省略時はトークン
+   * (`--ssg-cf-seq-min` / `--ssg-cf-seq-max`、`--ssg-cf-div-negative` / `--ssg-cf-div-mid` / `--ssg-cf-div-positive`)。
+   */
+  colors?: readonly string[];
+};
+/** 状態チップの色味。アイコンとラベルを伴う(色だけで意味を運ばない)。 */
+export type GridChipTone = 'neutral' | 'info' | 'good' | 'warning' | 'critical';
+/** 状態チップ 1 つの指定。 */
+export type GridChipSpec = {
+  /** 色味(既定 `'neutral'`)。 */
+  tone?: GridChipTone;
+  /** ラベル。省略時はセルの表示文字列(`valueFormatter` 適用後)。 */
+  label?: string;
+  /** `false` でアイコンを出さない(既定 `true`)。 */
+  icon?: boolean;
+  /** 任意の色(CSS 色)。`tone` の色より優先。 */
+  color?: string;
+};
+/** 値(`String(value)`)→ チップのマップ。値は色味の文字列か `GridChipSpec`。載っていない値はチップにしない。 */
+export type GridChipMap = Readonly<Record<string, GridChipTone | GridChipSpec>>;
+/** 条件付き書式(`GridColumn.conditionalFormat`)。複数を同時に指定できる(帯 + 背景色など)。 */
+export type GridConditionalFormat<T, F extends GridFrameworkTypes = GridFrameworkTypes> = {
+  /** データバー。 */
+  dataBar?: GridDataBarFormat;
+  /** カラースケール。 */
+  colorScale?: GridColorScaleFormat;
+  /**
+   * 状態チップ。値 → チップのマップか、セルのコンテキスト(`cellClassName` の関数版と同じ)から
+   * チップを返す関数(`null` / `undefined` でチップにしない)。
+   */
+  chips?:
+    | GridChipMap
+    | ((ctx: CellStyleContext<T, F>) => GridChipTone | GridChipSpec | null | undefined);
+};
 // 追加(F-2): セル内検索のオプションです。
 export type FindOptions = {
   // Ctrl/Cmd+F で検索バーを開く(グリッドにフォーカスがあるときだけ。既定 true。false でブラウザ標準の検索に譲る)。
