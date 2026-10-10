@@ -653,6 +653,18 @@
   .ssg-body-row[data-ssg-row-dragging] .ssg-row-header-cell {
     opacity: 0.45;
   }
+  /* 追加(motion-8 / M-11): live 方式(rowDragMotion='live')で掴んだ行。淡色にせず浮かせます(影を出すため paint
+     containment を外す。行コンテナの z-index で周りの行より前へ)。 */
+  .ssg-body-row[data-ssg-row-dragging='live'] {
+    z-index: 10;
+    contain: layout style;
+  }
+  .ssg-body-row[data-ssg-row-dragging='live'] .ssg-body-cell,
+  .ssg-body-row[data-ssg-row-dragging='live'] .ssg-row-header-cell {
+    opacity: 1;
+    background-color: var(--ssg-row-hover-bg);
+    box-shadow: 0 8px 20px rgba(2, 6, 23, 0.25);
+  }
 
   /* 読み取り専用セル(選択時は通常背景へ戻し、選択塗りを素直に見せる)。
      変更(THEME-3): 組み込みの淡色表示(背景 + 文字色)は dimReadOnlyCells prop

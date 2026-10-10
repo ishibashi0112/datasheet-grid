@@ -34,6 +34,15 @@ const [rows, setRows] = useState(initialRows);
 
 `onRowMove` に渡る `params` は `{ rowKey, fromIndex, toIndex, rows }` です。`fromIndex` / `toIndex` は元 `rows` 配列の index、`rows` は `onRowsChange` に渡したものと同じ新配列参照です。
 
+### 表示方式(`rowDragMotion`)
+
+```tsx
+<SpreadsheetGrid enableRowDrag rowDragMotion="live" ... />  // 'ghost'(既定) | 'live'
+```
+
+- `'ghost'`(既定): ゴーストのラベルがポインタに付いてきて、挿入位置に水平のガイド線が出ます。離すと影響行が新しい位置へスライドします(従来の挙動)。
+- `'live'`: 掴んだ行そのものがポインタに付いてきて、通る先の行がその場で上下へ退避します。ドロップ先が「線」ではなく「隙間」として見えるので、1 行ずれの誤操作が減ります。枠の外で離しても直前の位置へ確定し、`Esc` で元の位置へ戻ります。`motion="off"` のときは `'ghost'` と同じ動きになります。
+
 ### 命令的に動かす(`moveRow`)
 
 ```tsx

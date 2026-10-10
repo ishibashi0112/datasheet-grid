@@ -2549,6 +2549,18 @@ export type SpreadsheetGridProps<T, F extends GridFrameworkTypes = GridFramework
    * @defaultValue `true`
    */
   showSaveStatus?: boolean;
+  // 追加(motion-8 / M-11): 行ドラッグ並べ替えの表示方式。'ghost'(既定 = 従来: ゴースト + ガイド線、ドロップ後に
+  //   スライド)/ 'live'(掴んだ行がポインタに追従し、通る先の行がその場で上下へ退避。ドロップ先が「隙間」として見える)。
+  /**
+   * 行ドラッグ並べ替え(`enableRowDrag`)の表示方式。`'ghost'` は従来(ゴースト + ガイド線、
+   * ドロップ後に新しい位置へスライド)。`'live'` は掴んだ行がポインタに追従し、
+   * 通る先の行がその場で上下へ退避する(ドロップ先が「隙間」として見える。
+   * 枠外で離しても直前の位置へ確定、`Esc` で元へ戻る)。`motion` が `'off'` のときは `'ghost'`
+   * と同じ。
+   *
+   * @defaultValue `'ghost'`
+   */
+  rowDragMotion?: 'ghost' | 'live';
   /**
    * 行番号列の幅(px)。
    *

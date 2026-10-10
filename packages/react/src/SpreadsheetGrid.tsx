@@ -400,6 +400,8 @@ export function SpreadsheetGrid<T extends object>({
   highlightChanges = false,
   // 追加(motion-7 / M-9): SSRM 書き戻しのセル単位の保存状態(既定 true)。
   showSaveStatus = true,
+  // 追加(motion-8 / M-11): 行ドラッグの表示方式('ghost' = 従来 / 'live' = 周りの行が退避)。
+  rowDragMotion = 'ghost',
   rowHeaderWidth = 56,
   // 追加: グリッド高さの外部制御。height で明示高さ、maxHeight でスクロール領域の上限。
   //   '%' を含む height はバー込みのグリッド全体を親へ追従させます(fill-height。logic/gridHeight)。
@@ -3116,6 +3118,8 @@ export function SpreadsheetGrid<T extends object>({
     getRowDragLabel,
     commitRowMove,
     ghostSlot: slots.dragGhost,
+    // 追加(motion-8 / M-11): 'live' では掴んだ行が追従し周りの行が退避する(motion='off' では ghost へフォールバック)。
+    motion: resolvedMotion === 'off' ? 'ghost' : rowDragMotion,
   });
   // 行の並び替え確定(rowModel 差し替え)後に settle アニメを発火します。直前のドロップで armed の
   //   ときだけ動き、それ以外(編集 / フィルター等の rowModel 変化)は即 return するため無害です。

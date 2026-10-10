@@ -55,6 +55,9 @@ export type RowDragArgs = {
   commitRowMove: (fromIndex: number, toIndex: number) => void;
   // classNames.dragGhost の解決済みスロット(ゴースト要素へ className / style)。
   ghostSlot?: GridResolvedSlot;
+  // 追加(motion-8 / M-11): 表示方式。'ghost'(既定 = 従来: ゴースト + ガイド線、ドロップ後にスライド)/ 'live'(掴んだ
+  //   行がポインタに追従し、通る先の行がその場で上下へ退避する。ガイド線 / ゴーストは出さない)。スロット解決は共通。
+  motion?: 'ghost' | 'live';
 };
 
 // ハンドルの pointerdown イベント(構造的型。React の合成 PointerEvent をそのまま渡せます)。
@@ -111,6 +114,9 @@ const GHOST_INK_SHADOW = 'var(--ssg-ghost-shadow)';
 
 const SETTLE_MS = 200;
 const SETTLE_EASING = 'cubic-bezier(0.2, 0.7, 0.3, 1)';
+// 追加(motion-8 / M-11): live 方式で周りの行が退避するときの transition(短め。ドラッグに追従する感触を優先)。
+const LIVE_SHIFT_MS = 160;
+const LIVE_SHIFT_TRANSITION = `transform ${LIVE_SHIFT_MS}ms ${SETTLE_EASING}`;
 
 // ドラッグ中の行(3 ペイン分)へ付ける属性です。フレームワークが管理しない属性なので、hover 等の再レンダーで
 //   className が上書きされても消えません(CSS 側で淡色表示)。
@@ -147,6 +153,11 @@ export const createRowDragController = (): RowDragController => {
   let rafId: number | null = null;
   // settle(FLIP)用: commit 直前の各行要素の screen-y。
   let settlePending: Map<HTMLElement, number> | null = null;
+  // 追加(motion-8 / M-11): live 方式のドラッグ開始時の各行要素の translateY(基準)と scrollTop。
+  let liveBases: Map<HTMLElement, { index: number; baseY: number }> | null = null;
+  let liveStartScrollTop = 0;
+
+  const isLive = () => args?.motion === 'live';
 
   let ghostEl: HTMLDivElement | null = null;
   let ghostIconEl: HTMLSpanElement | null = null;
@@ -248,7 +259,7 @@ export const createRowDragController = (): RowDragController => {
     ghostState = null;
   };
 
-  // ドラッグ中の行(3 ペイン分)の淡色表示属性を付け外しします。
+  // ドラッグ中の行(3 ペイン分)の淡色表示属性を付け外しします(live 方式は値 'live' = 浮いた見た目)。
   const setDraggingRowAttribute = (viewIndex: number | null, on: boolean) => {
     const container = args?.scrollContainerRef.current ?? null;
     if (!container || viewIndex === null) return;
@@ -257,11 +268,64 @@ export const createRowDragController = (): RowDragController => {
       .forEach((row) => {
         if (isInsideDetailCardOf(container, row)) return;
         if (on) {
-          row.setAttribute(DRAGGING_ROW_ATTRIBUTE, '');
+          row.setAttribute(DRAGGING_ROW_ATTRIBUTE, isLive() ? 'live' : '');
         } else {
           row.removeAttribute(DRAGGING_ROW_ATTRIBUTE);
         }
       });
+  };
+
+  // 追加(motion-8 / M-11): live 方式。描画中の行要素の基準 translateY を控えます(autoscroll で後から描画された行は
+  //   applyLivePositions が取り込みます)。
+  const captureLiveBases = (): Map<HTMLElement, { index: number; baseY: number }> | null => {
+    const container = args?.scrollContainerRef.current ?? null;
+    if (!container) return null;
+    const map = new Map<HTMLElement, { index: number; baseY: number }>();
+    for (const row of collectRowElements(container)) {
+      const match = TRANSLATE_Y_PATTERN.exec(row.style.transform);
+      if (!match) continue;
+      map.set(row, { index: Number(row.getAttribute('data-row-index')), baseY: parseFloat(match[1]) });
+    }
+    return map;
+  };
+
+  // 追加(motion-8 / M-11): live 方式の位置更新。掴んだ行はポインタ(+ autoscroll ぶん)に追従し、from → target の間の行は
+  //   掴んだ行の高さぶん上下へ退避します(transition 付き)。slot が null(枠外 / 直上直下)のときは退避を戻します。
+  const applyLivePositions = (slot: number | null) => {
+    const bases = liveBases;
+    const from = draggingIndex;
+    if (!bases || from === null || args === null) return;
+    const container = args.scrollContainerRef.current;
+    if (!container) return;
+    for (const row of collectRowElements(container)) {
+      if (bases.has(row)) continue;
+      const match = TRANSLATE_Y_PATTERN.exec(row.style.transform);
+      if (!match) continue;
+      bases.set(row, { index: Number(row.getAttribute('data-row-index')), baseY: parseFloat(match[1]) });
+    }
+    const height = args.rowMetrics.rowsHeight(from, from);
+    const scrollDelta = (container.scrollTop - liveStartScrollTop) * args.verticalScaleFactor;
+    const dragDelta = (dragOrigin ? pointer.y - dragOrigin.y : 0) + scrollDelta;
+    const target = slot === null ? null : resolveMoveTargetIndex(from, slot);
+    bases.forEach(({ index, baseY }, row) => {
+      if (!row.isConnected) {
+        bases.delete(row);
+        return;
+      }
+      if (index === from) {
+        row.style.transition = 'none';
+        row.style.transform = `translateY(${baseY + dragDelta}px)`;
+        row.style.willChange = 'transform';
+        return;
+      }
+      let shift = 0;
+      if (target !== null) {
+        if (from < index && index <= target) shift = -height;
+        else if (target <= index && index < from) shift = height;
+      }
+      row.style.transition = LIVE_SHIFT_TRANSITION;
+      row.style.transform = `translateY(${baseY + shift}px)`;
+    });
   };
 
   // clientX/clientY → { slot, top(ガイド線の transform 層内 y) } | null(枠外)。
@@ -291,8 +355,18 @@ export const createRowDragController = (): RowDragController => {
 
   const updateIndicator = () => {
     const hit = computeHit(pointer.x, pointer.y);
-    updateGhost(hit);
     const from = draggingIndex;
+    // 追加(motion-8 / M-11): live 方式はガイド線 / ゴーストを出さず、行そのものを動かします。枠外(hit なし)では直前の
+    //   スロットを保ちます(離しても確定。ゴースト方式の「枠外 = キャンセル」とは違う)。
+    if (isLive()) {
+      if (hit && from !== null) {
+        dropSlot = resolveMoveTargetIndex(from, hit.slot) === null ? null : hit.slot;
+      }
+      hideAllIndicators();
+      applyLivePositions(dropSlot);
+      return;
+    }
+    updateGhost(hit);
     // 掴んだ行の直上 / 直下(= 動かない)はガイド線を出さず、ドロップも no-op です。
     if (!hit || from === null || resolveMoveTargetIndex(from, hit.slot) === null) {
       dropSlot = null;
@@ -379,9 +453,38 @@ export const createRowDragController = (): RowDragController => {
     dropSlot = null;
     dragOrigin = null;
 
-    if (!commit || from === null || slot === null || args === null) return;
-    const to = resolveMoveTargetIndex(from, slot);
-    if (to === null) return;
+    const to = from === null || slot === null ? null : resolveMoveTargetIndex(from, slot);
+    const willCommit = commit && from !== null && to !== null && args !== null;
+
+    // 追加(motion-8 / M-11): live 方式の後始末。確定するときは現在の画面位置(追従 / 退避済み)から settle するため
+    //   transform は残して transition だけ外します(captureRowTops が live 位置を読む)。確定しないときは基準位置へ
+    //   戻します(transition 付き)。
+    const bases = liveBases;
+    liveBases = null;
+    if (bases) {
+      if (willCommit) {
+        bases.forEach((_, row) => {
+          row.style.transition = '';
+          row.style.willChange = '';
+        });
+      } else {
+        const restored: HTMLElement[] = [];
+        bases.forEach(({ baseY }, row) => {
+          if (!row.isConnected) return;
+          row.style.transition = LIVE_SHIFT_TRANSITION;
+          row.style.transform = `translateY(${baseY}px)`;
+          restored.push(row);
+        });
+        window.setTimeout(() => {
+          for (const row of restored) {
+            row.style.transition = '';
+            row.style.willChange = '';
+          }
+        }, LIVE_SHIFT_MS + 40);
+      }
+    }
+
+    if (!willCommit || from === null || to === null || args === null) return;
 
     settlePending = isMotionOff(args.scrollContainerRef.current) ? null : captureRowTops();
     args.commitRowMove(from, to);
@@ -441,7 +544,12 @@ export const createRowDragController = (): RowDragController => {
     dragOrigin = { x: event.clientX, y: event.clientY };
     autoScrollArmed = false;
     document.body.style.cursor = 'grabbing';
-    createGhost(args.getRowDragLabel(viewIndex));
+    if (isLive()) {
+      liveBases = captureLiveBases();
+      liveStartScrollTop = args.scrollContainerRef.current?.scrollTop ?? 0;
+    } else {
+      createGhost(args.getRowDragLabel(viewIndex));
+    }
     setDraggingRowAttribute(viewIndex, true);
 
     const target = event.currentTarget;
@@ -515,6 +623,7 @@ export const createRowDragController = (): RowDragController => {
       setDraggingRowAttribute(draggingIndex, false);
       draggingIndex = null;
       dropSlot = null;
+      liveBases = null;
     },
   };
 };
