@@ -54,16 +54,22 @@ const UNIQUE = [
 
 // 他社比較(各社の区分は 2026-10-10 時点の公式ドキュメントの把握。価格は記載しない)。
 type Tier = 'mit' | 'free' | 'paid' | 'ent' | 'none';
-type CompareRow = { feature: string; cells: [string, string, string, string]; tiers: [Tier, Tier, Tier, Tier] };
+// notes はセルの下に小さく添える注記(列 index は cells と同じ)。
+type CompareRow = {
+  feature: string;
+  cells: [string, string, string, string];
+  tiers: [Tier, Tier, Tier, Tier];
+  notes?: Partial<Record<0 | 1 | 2 | 3, string>>;
+};
 const COMPARE_HEADERS = ['機能', 'SpreadsheetGrid', 'AG Grid', 'Handsontable', 'MUI X Data Grid'];
 const COMPARE: CompareRow[] = [
   { feature: '仮想化(〜100 万行)', cells: ['MIT', 'Community', '商用有料', 'Community'], tiers: ['mit', 'free', 'paid', 'free'] },
   { feature: '列ピン留め(3 ペイン)', cells: ['MIT', 'Community', '商用有料', 'Pro'], tiers: ['mit', 'free', 'paid', 'ent'] },
-  { feature: '範囲選択 + コピー & ペースト', cells: ['MIT', 'Enterprise', '商用有料', 'Premium'], tiers: ['mit', 'ent', 'paid', 'ent'] },
+  { feature: '範囲選択 + コピー & ペースト', cells: ['MIT', 'Enterprise', '商用有料', 'Premium'], tiers: ['mit', 'ent', 'paid', 'ent'], notes: { 3: 'コピー単体は Community' } },
   { feature: '行グルーピング + 集計', cells: ['MIT', 'Enterprise', '—', 'Premium'], tiers: ['mit', 'ent', 'none', 'ent'] },
   { feature: 'Master/Detail(展開行)', cells: ['MIT', 'Enterprise', '—', 'Pro'], tiers: ['mit', 'ent', 'none', 'ent'] },
   { feature: 'サーバーサイド行モデル(+ 書き戻し)', cells: ['MIT', 'Enterprise', '—', 'Pro'], tiers: ['mit', 'ent', 'none', 'ent'] },
-  { feature: 'set フィルター(値の一覧で絞り込み)', cells: ['MIT', 'Enterprise', '商用有料', '—'], tiers: ['mit', 'ent', 'paid', 'none'] },
+  { feature: 'set フィルター(値の一覧で絞り込み)', cells: ['MIT', 'Enterprise', '商用有料', '—'], tiers: ['mit', 'ent', 'paid', 'none'], notes: { 2: 'Filter by value 相当' } },
   { feature: 'フィルター管理パネル', cells: ['MIT', 'Enterprise', '—', 'Pro'], tiers: ['mit', 'ent', 'none', 'ent'] },
   { feature: 'コンテキストメニュー', cells: ['MIT', 'Enterprise', '商用有料', '—'], tiers: ['mit', 'ent', 'paid', 'none'] },
   { feature: 'undo / redo', cells: ['MIT', 'Community', '商用有料', '—'], tiers: ['mit', 'free', 'paid', 'none'] },
@@ -228,6 +234,9 @@ export default function HomePage() {
                         }
                       >
                         <span className={'rounded px-1.5 py-0.5 text-xs ' + TIER_CLASS[row.tiers[index]]}>{cell}</span>
+                        {row.notes?.[index as 0 | 1 | 2 | 3] ? (
+                          <span className="mt-1 block text-[11px] text-fd-muted-foreground">{row.notes[index as 0 | 1 | 2 | 3]}</span>
+                        ) : null}
                       </td>
                     ))}
                   </tr>
