@@ -175,7 +175,8 @@
 2. ピン留め行(上下固定行)。
 3. フィルハンドル(セル右下ドラッグでの連続コピー/連番)。
 
-~~差別化 batch(モーション + セル内検索 + 条件付き書式 + テーマビルダー)~~ → **2026-10-10 実装済み**(v0.46.0)。
+~~差別化 batch(モーション + セル内検索 + 条件付き書式 + テーマビルダー)~~ → **2026-10-10 実装済み**(v0.46.1。0.46.0 は
+版上げを古い main 上で実行した誤公開 = core だけ旧コードで npm に上がったため欠番扱い・deprecate 済み)。
 - モーション(batch 0〜8): `motion` prop(`'auto' | 'on' | 'off'`。`logic/motion` + `controllers/reducedMotionStore`、
   `hooks/useResolvedGridMotion`)と継続時間トークン `--ssg-motion-fast/base/slow/ease`、`.ssg-motion-off` を root と
   全ポータル root(`portalClassName`)・ゴースト・ツールチップへ付与。DOM コントローラで実装(render 中の ref 参照なし):
