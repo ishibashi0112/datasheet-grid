@@ -15,6 +15,7 @@ import { ContextMenuDemo } from '@/components/demo/context-menu-demo';
 import { ScrollHintDemo } from '@/components/demo/scroll-hint-demo';
 import { DetailRowDemo } from '@/components/demo/detail-row-demo';
 import { RowDragDemo } from '@/components/demo/row-drag-demo';
+import { ColumnDragDemo } from '@/components/demo/column-drag-demo';
 import { LabelRowDemo } from '@/components/demo/label-row-demo';
 import { SizingDemo } from '@/components/demo/sizing-demo';
 import { CellEventsDemo } from '@/components/demo/cell-events-demo';
@@ -38,6 +39,7 @@ export function getMDXComponents(components?: MDXComponents) {
     ScrollHintDemo,
     DetailRowDemo,
     RowDragDemo,
+    ColumnDragDemo,
     LabelRowDemo,
     SizingDemo,
     CellEventsDemo,

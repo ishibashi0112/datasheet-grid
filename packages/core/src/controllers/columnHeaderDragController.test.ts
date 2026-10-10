@@ -197,4 +197,127 @@ describe('columnHeaderDragController', () => {
     dispatchPointer('pointerup', 1, 280, 10);
     expect(args.applyColumnOrderAndPin).not.toHaveBeenCalled();
   });
+
+  // 追加(motion-9 / M-12): live 方式。同じペイン内は掴んだ列がポインタに追従し、通る先の列が退避する(縦線 / ゴーストなし)。
+  //   別ペイン(固定)へ移すときは縦線 + ゴーストに切り替わり、列は基準位置へ戻る。枠外は直前の位置を保ち、Esc で戻る。
+  const mountCells = (container: HTMLElement) => {
+    const cells: Record<string, HTMLElement[]> = {};
+    for (const key of ['a', 'b', 'd']) {
+      cells[key] = [0, 1].map(() => {
+        const cell = document.createElement('div');
+        cell.dataset.ssgColKey = key;
+        container.appendChild(cell);
+        return cell;
+      });
+    }
+    document.body.appendChild(container);
+    return cells;
+  };
+
+  it("motion='live': 掴んだ列が追従し、通る先の列が退避し、枠外でも直前の位置で commit する", () => {
+    const controller = createColumnHeaderDragController<Row>();
+    const args = makeArgs();
+    const cells = mountCells(args.scrollContainerRef.current!);
+    controller.update({ ...args, motion: 'live' });
+
+    controller.onColumnDragHandlePointerDown(columns[0], gripEvent());
+    expect(document.querySelector('[data-grid-drag-ghost]')).toBeNull();
+    expect(args.centerIndicatorRef.current?.style.display).toBe('none');
+
+    // x=280 → slot 3 → target 2。列 a は +240px 追従、b / d は a の幅(100px)ぶん左へ退避。
+    dispatchPointer('pointermove', 1, 280, 10);
+    for (const cell of cells.a) {
+      expect(cell.style.transform).toBe('translateX(240px)');
+      expect(cell.getAttribute('data-ssg-col-dragging')).toBe('live');
+      expect(cell.style.zIndex).toBe('4');
+    }
+    expect(cells.b[1].style.transform).toBe('translateX(-100px)');
+    expect(cells.d[0].style.transform).toBe('translateX(-100px)');
+    expect(cells.d[0].style.transition).toContain('transform');
+    expect(args.centerIndicatorRef.current?.style.display).toBe('none');
+
+    // x=160 → slot 2 → target 1(b と d の間)。b は退避したまま、d の退避は戻る。
+    dispatchPointer('pointermove', 1, 160, 10);
+    expect(cells.b[0].style.transform).toBe('translateX(-100px)');
+    expect(cells.d[0].style.transform).toBe('translateX(0px)');
+
+    // 枠外へ出ても直前の位置を保つ。
+    dispatchPointer('pointermove', 1, 900, 10);
+    expect(cells.b[0].style.transform).toBe('translateX(-100px)');
+    dispatchPointer('pointerup', 1, 900, 10);
+    expect(args.applyColumnOrderAndPin).toHaveBeenCalledTimes(1);
+    expect(args.applyColumnOrderAndPin.mock.calls[0][0]).toEqual(['b', 'c', 'a', 'd']);
+    // 確定時は inline style を外す(新しい位置への settle は applyReorderSettle が担う)。
+    for (const cell of [...cells.a, ...cells.b, ...cells.d]) {
+      expect(cell.style.transform).toBe('');
+      expect(cell.style.zIndex).toBe('');
+      expect(cell.hasAttribute('data-ssg-col-dragging')).toBe(false);
+    }
+    controller.dispose();
+  });
+
+  it("motion='live': 別ペイン(空の左固定ペイン帯)ではゴースト + 縦線に切り替わり、Esc で元へ戻る", () => {
+    vi.useFakeTimers();
+    try {
+      const controller = createColumnHeaderDragController<Row>();
+      const args = makeArgs();
+      const cells = mountCells(args.scrollContainerRef.current!);
+      controller.update({
+        ...args,
+        leftPaneScrollRef: { current: makeElement(makeRect(0, 0, 0, 300)) },
+        motion: 'live',
+      });
+
+      controller.onColumnDragHandlePointerDown(columns[0], gripEvent());
+      dispatchPointer('pointermove', 1, 280, 10);
+      expect(cells.d[0].style.transform).toBe('translateX(-100px)');
+
+      // x=10 は空の左固定ペインのドロップ帯 → 縦線 + ゴースト。列は基準位置へ戻る。
+      dispatchPointer('pointermove', 1, 10, 10);
+      expect(document.querySelector('[data-grid-drag-ghost]')?.textContent).toBe('A');
+      expect(args.leftIndicatorRef.current?.style.display).toBe('block');
+      expect(cells.a[0].style.transform).toBe('translateX(0px)');
+      expect(cells.a[0].hasAttribute('data-ssg-col-dragging')).toBe(false);
+      expect(cells.d[0].style.transform).toBe('translateX(0px)');
+
+      // 中央へ戻るとゴーストが消え、追従に戻る。
+      dispatchPointer('pointermove', 1, 280, 10);
+      expect(document.querySelector('[data-grid-drag-ghost]')).toBeNull();
+      expect(cells.a[0].style.transform).toBe('translateX(240px)');
+
+      // Escape: commit せず、基準位置へ戻してから inline style を外す。
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+      expect(args.applyColumnOrderAndPin).not.toHaveBeenCalled();
+      expect(document.body.style.cursor).toBe('');
+      expect(cells.a[0].style.transform).toBe('translateX(0px)');
+      expect(cells.d[0].style.transform).toBe('translateX(0px)');
+      vi.advanceTimersByTime(300);
+      expect(cells.a[0].style.transform).toBe('');
+      expect(cells.a[0].style.zIndex).toBe('');
+      expect(cells.d[0].style.transition).toBe('');
+
+      // 左固定ペインへ離すと pin 付きで commit する。
+      controller.onColumnDragHandlePointerDown(columns[0], gripEvent());
+      dispatchPointer('pointermove', 1, 10, 10);
+      dispatchPointer('pointerup', 1, 10, 10);
+      expect(args.applyColumnOrderAndPin.mock.calls[0][1]).toEqual(new Map([['a', 'left']]));
+      controller.dispose();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('ghost 方式でも Escape でキャンセルできる', () => {
+    const controller = createColumnHeaderDragController<Row>();
+    const args = makeArgs();
+    controller.update(args);
+    controller.onColumnDragHandlePointerDown(columns[0], gripEvent());
+    dispatchPointer('pointermove', 1, 280, 10);
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+    expect(document.querySelector('[data-grid-drag-ghost]')).toBeNull();
+    expect(args.centerIndicatorRef.current?.style.display).toBe('none');
+    dispatchPointer('pointerup', 1, 280, 10);
+    expect(args.applyColumnOrderAndPin).not.toHaveBeenCalled();
+    controller.dispose();
+  });
 });

@@ -13,6 +13,7 @@
     "detail-row",
     "label-rows",
     "row-drag",
+    "column-drag",
     "export",
     "customization",
     "conditional-format",

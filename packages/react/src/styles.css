@@ -708,6 +708,20 @@
     background-color: var(--ssg-row-hover-bg);
     box-shadow: 0 8px 20px rgba(2, 6, 23, 0.25);
   }
+  /* 追加(motion-9 / M-12): live 方式(columnDragMotion='live')で掴んだ列のセル(ヘッダー + 本体)。左右に影を落として
+     浮かせます(前面化は controller が inline の z-index で行う。行の paint containment で上下の影は切れるため左右だけ)。 */
+  .ssg-header-cell[data-ssg-col-dragging='live'] {
+    background-color: var(--ssg-header-hover-bg);
+    box-shadow:
+      -6px 0 14px -6px rgba(2, 6, 23, 0.35),
+      6px 0 14px -6px rgba(2, 6, 23, 0.35);
+  }
+  .ssg-body-cell[data-ssg-col-dragging='live'] {
+    background-color: var(--ssg-row-hover-bg);
+    box-shadow:
+      -6px 0 14px -6px rgba(2, 6, 23, 0.35),
+      6px 0 14px -6px rgba(2, 6, 23, 0.35);
+  }
 
   /* 読み取り専用セル(選択時は通常背景へ戻し、選択塗りを素直に見せる)。
      変更(THEME-3): 組み込みの淡色表示(背景 + 文字色)は dimReadOnlyCells prop
