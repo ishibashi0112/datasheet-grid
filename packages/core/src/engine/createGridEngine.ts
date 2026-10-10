@@ -12,6 +12,7 @@ import { createInitialGridUiState } from '../model/gridReducer';
 import { createDetailIndexCacheHolder, type DetailIndexCacheHolder } from '../logic/detailRow';
 import { createAutoHeightMeasurer, type AutoHeightMeasurer } from '../controllers/autoHeightMeasurer';
 import { createScrollSyncController, type ScrollSyncController } from '../controllers/scrollSyncController';
+import { createRowEnterController, type RowEnterController } from '../controllers/rowEnterController';
 import { createDebouncedValueStore, type DebouncedValueStore } from '../controllers/debouncedValueStore';
 import { createAutoSizeOnDataTrigger, type AutoSizeOnDataTrigger } from '../controllers/columnAutosizeRunner';
 import { createImeInputController, type ImeInputController } from '../controllers/imeInputController';
@@ -90,6 +91,8 @@ export type GridEngine<T> = {
   // DOM / タイマーを持つコントローラ。
   autoHeightMeasurer: AutoHeightMeasurer<T>;
   scrollSync: ScrollSyncController;
+  // 追加(motion-2 / M-8): SSRM のブロック到着で差し替わった行へ enter クラスを直付けする DOM コントローラ。
+  rowEnter: RowEnterController;
   serverSideQueryStore: DebouncedValueStore<ServerSideQueryResolution>;
   autoSizeOnData: AutoSizeOnDataTrigger<T>;
   // 追加(G-2): IME オンのままの直接入力(imeDirectInput)の入力受け。
@@ -123,6 +126,7 @@ export const createGridEngine = <T,>(init: GridEngineInit<T>): GridEngine<T> => 
 
   const autoHeightMeasurer = createAutoHeightMeasurer<T>();
   const scrollSync = createScrollSyncController();
+  const rowEnter = createRowEnterController();
   const autoSizeOnData = createAutoSizeOnDataTrigger<T>();
   const imeInput = createImeInputController();
 
@@ -144,6 +148,7 @@ export const createGridEngine = <T,>(init: GridEngineInit<T>): GridEngine<T> => 
     activeCellNotifier: createActiveCellNotifier<T>(),
     autoHeightMeasurer,
     scrollSync,
+    rowEnter,
     serverSideQueryStore,
     autoSizeOnData,
     imeInput,
@@ -151,6 +156,7 @@ export const createGridEngine = <T,>(init: GridEngineInit<T>): GridEngine<T> => 
     dispose: () => {
       autoHeightMeasurer.dispose();
       scrollSync.dispose();
+    rowEnter.dispose();
       serverSideQueryStore.dispose();
       imeInput.dispose();
     },

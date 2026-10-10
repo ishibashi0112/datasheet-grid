@@ -132,6 +132,8 @@
     --ssg-drop-indicator: #0f172a;
     --ssg-glyph-faint: #cbd5e1;
     --ssg-skeleton-bar: #e2e8f0;
+    /* 追加(motion-2 / M-8): スケルトンを流れる光の帯の色(バーより一段明るい面)。 */
+    --ssg-skeleton-bar-hi: #f8fafc;
     /* スクロール位置インジケーター(scrollHint)のカスタムスクロールバー */
     --ssg-scrollhint-track-bg: #f3f5f8;
     --ssg-scrollhint-thumb: #c3cad4;
@@ -293,6 +295,7 @@
     /* その他 */
     --ssg-drop-indicator: #c1c2c5;
     --ssg-skeleton-bar: #2c2e33;
+    --ssg-skeleton-bar-hi: #3b3e45;
     /* スクロール位置インジケーター(scrollHint)のカスタムスクロールバー */
     --ssg-scrollhint-track-bg: #1f2126;
     --ssg-scrollhint-thumb: #41454d;
@@ -2812,6 +2815,47 @@
     height: 10px;
     border-radius: 4px;
     background-color: var(--ssg-skeleton-bar);
+    /* 追加(motion-2 / M-8): 取得中は光の帯が左から右へ流れます(背景位置のアニメ。レイアウトは動かない)。
+       motion='off' では帯を消して静的なバーに戻します。 */
+    background-image: linear-gradient(
+      90deg,
+      var(--ssg-skeleton-bar) 0 35%,
+      var(--ssg-skeleton-bar-hi) 50%,
+      var(--ssg-skeleton-bar) 65% 100%
+    );
+    background-size: 220% 100%;
+    animation: ssg-skeleton-shimmer 1.4s linear infinite;
+  }
+  @keyframes ssg-skeleton-shimmer {
+    from {
+      background-position: 110% 0;
+    }
+    to {
+      background-position: -110% 0;
+    }
+  }
+  .ssg-motion-off .ssg-skeleton-bar {
+    animation: none;
+    background-image: none;
+  }
+  /* 追加(motion-2 / M-8): SSRM のブロック到着でスケルトンから差し替わった行(rowEnterController が
+     --enter と --ssg-row-enter-index を直付け)。行コンテナは仮想化の transform を持つため行自体は動かさず、
+     セル(行番号セル含む)を 3px 下からフェードインさせ、上から順に段差を付けます(段差は fast / 6 ≒ 23ms ×
+     index。motion='off' では継続時間も段差も 0)。 */
+  @keyframes ssg-row-in {
+    from {
+      opacity: 0;
+      transform: translateY(3px);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+  .ssg-body-row--enter > .ssg-body-cell,
+  .ssg-body-row--enter > .ssg-row-header-cell {
+    animation: ssg-row-in var(--ssg-motion-base) var(--ssg-motion-ease) both;
+    animation-delay: calc(var(--ssg-row-enter-index, 0) * var(--ssg-motion-fast) / 6);
   }
 
   /* ── グリッド本体シェル / スクロール(SpreadsheetGrid) ── */

@@ -635,6 +635,13 @@ export function SpreadsheetGrid<T extends object>({
   // dataSource 指定で serverSide モードへ切り替えます。clientSide(dataSource 不在)は従来
   //   経路を一切変えません(以降の各 consumer は rowModel シーム越しで透過に動きます)。
   const isServerSide = dataSource != null;
+  // 追加(motion-0): motion prop を実効値へ解決します('auto' は prefers-reduced-motion 追従)。
+  //   'off' のとき root と全ポータル root へ .ssg-motion-off を付与し、継続時間トークンを 0 にします
+  //   (styles.css)。ゴースト / ツールチップはテーマと同じく DOM の祖先から解決します。
+  //   (配置: motion-2 の rowEnter 接続より前に要るためここで解決。ポータル用の合成はテーマ解決の直後)
+  const resolvedMotion = useResolvedGridMotion(motion);
+  const motionClassName =
+    resolvedMotion === 'off' ? MOTION_OFF_CLASS_NAME : undefined;
   // 変更(stage ②): serverSide でも sort/filter/global-filter の UI を有効化します。ローカル並べ替えは
   //   行わず(serverSide 時は rows=空のため clientSide パイプラインは空走行=ゼロコストでバイパス)、
   //   状態を下の ServerSideQuery に載せて getRows へ送出します。利用者がサーバ非対応の操作を塞ぎたい
@@ -1472,6 +1479,12 @@ export function SpreadsheetGrid<T extends object>({
     setViewState: gridStore.setViewState,
     onScroll,
   });
+  // 追加(motion-2 / M-8): SSRM のブロック到着でスケルトン行が実行へ差し替わったとき、その行へ一過性の enter クラスを
+  //   直付けします(セルが上から順にフェードイン)。clientSide と motion='off' では observer 自体を付けません。
+  useControllerLifecycle(engine.rowEnter, {
+    scrollContainerRef,
+    enabled: isServerSide && resolvedMotion === 'on',
+  });
 
   // 変更(10-C): 列の仮想化は「中央ペインの列エントリ」に対して行います。
   // 変更理由: 固定列は中央スクロール対象外。中央ペインの水平スクロール範囲＝
@@ -1874,12 +1887,6 @@ export function SpreadsheetGrid<T extends object>({
   const resolvedTheme = useResolvedGridTheme(theme);
   const themeClassName =
     resolvedTheme === 'dark' ? 'ssg-theme-dark' : undefined;
-  // 追加(motion-0): motion prop を実効値へ解決します('auto' は prefers-reduced-motion 追従)。
-  //   'off' のとき root と全ポータル root へ .ssg-motion-off を付与し、継続時間トークンを 0 にします
-  //   (styles.css)。ゴースト / ツールチップはテーマと同じく DOM の祖先から解決します。
-  const resolvedMotion = useResolvedGridMotion(motion);
-  const motionClassName =
-    resolvedMotion === 'off' ? MOTION_OFF_CLASS_NAME : undefined;
   // ポータル root へまとめて付ける修飾子(テーマ + モーション)。各ポータルの prop 名は従来どおり
   //   themeClassName ですが、中身は「root と同じ修飾子クラス群」です。
   const portalClassName = cx(themeClassName, motionClassName) || undefined;
