@@ -9,6 +9,7 @@ import {
   ROW_ENTER_FALLBACK_MS,
   ROW_ENTER_INDEX_VAR,
   ROW_ENTER_STAGGER_CAP,
+  transformOfStyleText,
 } from './rowEnterController';
 
 const flushObservers = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
@@ -176,5 +177,76 @@ describe('rowEnterController', () => {
     await flushObservers();
     expect(r8.classList.contains(ROW_ENTER_CLASS_NAME)).toBe(false);
     controller.dispose();
+  });
+
+  it('mountEnter: DOM 移動された行は旧 transform → 新 transform を付け直し(transition を走らせる)、移動していない行・インライン transition の行は触らない', async () => {
+    const controller = createRowEnterController();
+    controller.update({ scrollContainerRef: { current: container }, skeletonEnter: false, mountEnter: true });
+    const r1 = makeRow(1, false);
+    const r2 = makeRow(2, false);
+    const r3 = makeRow(3, false);
+    r1.style.transform = 'translateY(0px)';
+    r2.style.transform = 'translateY(36px)';
+    r3.style.transform = 'translateY(72px)';
+    pane.append(r1, r2, r3);
+    await flushObservers();
+    // style 属性の変化を旧値付きで記録する(コントローラの付け直しを検出する)。
+    const styleWrites = new Map<Element, (string | null)[]>();
+    const spy = new MutationObserver((records) => {
+      for (const record of records) {
+        if (record.type !== 'attributes') continue;
+        const list = styleWrites.get(record.target as Element) ?? [];
+        list.push(transformOfStyleText(record.oldValue));
+        styleWrites.set(record.target as Element, list);
+      }
+    });
+    spy.observe(pane, { subtree: true, attributes: true, attributeFilter: ['style'], attributeOldValue: true });
+    const reflow = vi.spyOn(container, 'getBoundingClientRect');
+    // React のコミット相当: r3 を先頭へ移動(remove + insert)し、3 行の位置を入れ替える。r2(移動なし)は
+    //   CSS の transition がそのまま効くので触らない。
+    r3.style.transform = 'translateY(0px)';
+    r1.style.transform = 'translateY(36px)';
+    r2.style.transform = 'translateY(72px)';
+    pane.insertBefore(r3, r1);
+    await flushObservers();
+    await flushObservers();
+    // r3: コミット(72 → 0)+ 付け直し(0 → 72 → 0)。最終値は新しい位置。
+    expect(styleWrites.get(r3)).toEqual(['translateY(72px)', 'translateY(0px)', 'translateY(72px)']);
+    expect(r3.style.transform).toBe('translateY(0px)');
+    expect(styleWrites.get(r1)).toEqual(['translateY(0px)']);
+    expect(styleWrites.get(r2)).toEqual(['translateY(36px)']);
+    expect(reflow).toHaveBeenCalledTimes(1);
+    // 行ドラッグが管理中(インライン transition あり)の行は付け直さない。
+    styleWrites.clear();
+    r1.style.transition = 'transform 200ms ease';
+    styleWrites.clear();
+    await flushObservers();
+    styleWrites.clear();
+    r1.style.transform = 'translateY(0px)';
+    r3.style.transform = 'translateY(36px)';
+    pane.insertBefore(r1, r3);
+    await flushObservers();
+    await flushObservers();
+    expect(styleWrites.get(r1)).toEqual(['translateY(36px)']);
+    // スクロール中は付け直さない。
+    r1.style.transition = '';
+    container.classList.add('ssg-scroll-container--scrolling');
+    await flushObservers();
+    styleWrites.clear();
+    r3.style.transform = 'translateY(0px)';
+    r1.style.transform = 'translateY(36px)';
+    pane.insertBefore(r3, r1);
+    await flushObservers();
+    await flushObservers();
+    expect(styleWrites.get(r3)).toEqual(['translateY(36px)']);
+    spy.disconnect();
+    controller.dispose();
+  });
+
+  it('transformOfStyleText は style 属性の文字列から transform の値を取り出す', () => {
+    expect(transformOfStyleText('height: 36px; transform: translateY(76px);')).toBe('translateY(76px)');
+    expect(transformOfStyleText('transform: translateY(-4.5px)')).toBe('translateY(-4.5px)');
+    expect(transformOfStyleText('height: 36px;')).toBeNull();
+    expect(transformOfStyleText(null)).toBeNull();
   });
 });

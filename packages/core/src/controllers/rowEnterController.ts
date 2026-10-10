@@ -11,6 +11,12 @@
 //     ssg-scroll-container--scrolling が無い)で現れた実行にも同じ enter を付けます(ソートで窓に入った行 / 展開した
 //     グループの子行 / 差し替えた rows の行)。スクロールで出入りする行は修飾子の有無で除外します。
 //   - skeletonEnter / mountEnter が両方 false(clientSide + animateRows=false / motion='off')では observer を付けません。
+//   - 追加(animateRows の修正): ソート / rows の並べ替えで React が行要素を DOM 上で移動(remove + insert)すると、
+//     ブラウザはその要素の transition を始めません(再挿入された要素には変化前のスタイルが無い)。そのため
+//     styles.css の transform transition が「移動されなかった行」にしか効かず、大半の行が新しい位置へ瞬間移動して
+//     いました。mountEnter のときは style 属性の変化も旧値付きで観測し、移動された行だけ旧 translateY → 新しい値を
+//     インラインで付け直して(1 回のリフローを挟む)同じ transition を走らせます。インラインの transition を持つ行
+//     (行ドラッグの settle / live 方式が管理中)とスクロール中は触りません。
 type ReadonlyRef<V> = { readonly current: V };
 
 export type RowEnterArgs = {
@@ -35,6 +41,16 @@ export const ROW_ENTER_FALLBACK_MS = 1500;
 
 const rowIndexOf = (el: HTMLElement): number => Number(el.getAttribute('data-row-index'));
 
+// style 属性の文字列(例 "height: 36px; transform: translateY(76px);")から transform の値を取り出します。
+const TRANSFORM_IN_STYLE_PATTERN = /(?:^|;)\s*transform\s*:\s*([^;]+)/;
+export const transformOfStyleText = (styleText: string | null): string | null => {
+  if (!styleText) {
+    return null;
+  }
+  const match = TRANSFORM_IN_STYLE_PATTERN.exec(styleText);
+  return match ? match[1].trim() : null;
+};
+
 const isBodyRow = (node: Node): node is HTMLElement =>
   node instanceof HTMLElement && node.classList.contains('ssg-body-row');
 
@@ -44,6 +60,8 @@ const SCROLLING_CLASS_NAME = 'ssg-scroll-container--scrolling';
 export const createRowEnterController = (): RowEnterController => {
   let observer: MutationObserver | null = null;
   let observed: HTMLElement | null = null;
+  // 現在の observer が style 属性も観測しているか(mountEnter の切り替えで付け直す)。
+  let observedAttributes = false;
   let modes = { skeletonEnter: false, mountEnter: false };
   const timers = new Map<HTMLElement, ReturnType<typeof setTimeout>>();
 
@@ -74,13 +92,50 @@ export const createRowEnterController = (): RowEnterController => {
     );
   };
 
+  // DOM 移動で transition が始まらなかった行へ、旧 transform → 新 transform を付け直して transition を走らせます。
+  const restartMovedRowTransitions = (moved: HTMLElement[], previousStyleByRow: Map<HTMLElement, string | null>) => {
+    const targets: { el: HTMLElement; from: string; to: string }[] = [];
+    for (const el of moved) {
+      // 行ドラッグ(settle / live)がインラインの transition で動かしている行は任せる。
+      if (el.style.transition) {
+        continue;
+      }
+      const from = transformOfStyleText(previousStyleByRow.get(el) ?? null);
+      const to = el.style.transform;
+      if (!from || !to || from === to) {
+        continue;
+      }
+      targets.push({ el, from, to });
+    }
+    if (targets.length === 0) {
+      return;
+    }
+    for (const { el, from } of targets) {
+      el.style.transform = from;
+    }
+    // 旧位置を確定させるため 1 回だけ強制リフロー(再挿入後の要素に「変化前のスタイル」を持たせる)。
+    void observed?.getBoundingClientRect();
+    for (const { el, to } of targets) {
+      el.style.transform = to;
+    }
+  };
+
   const handleMutations = (records: MutationRecord[]) => {
     // 同一バッチで消えた skeleton 行の index 集合と、現れた実行の一覧。
     const removedSkeletonIndexes = new Set<number>();
+    // 行要素ごとのバッチ内で最初の style 旧値(= コミット前のスタイル)。
+    const previousStyleByRow = new Map<HTMLElement, string | null>();
     // 同一バッチで削除もされた要素 = React の並べ替えによる DOM 移動(remove + insert)。mount ではないので除外。
     const movedRows = new Set<Node>();
     const addedRows: HTMLElement[] = [];
     for (const record of records) {
+      if (record.type === 'attributes') {
+        const target = record.target;
+        if (isBodyRow(target) && !previousStyleByRow.has(target)) {
+          previousStyleByRow.set(target, record.oldValue);
+        }
+        continue;
+      }
       record.removedNodes.forEach((node) => {
         if (!isBodyRow(node)) {
           return;
@@ -102,6 +157,9 @@ export const createRowEnterController = (): RowEnterController => {
     }
     // mountEnter: スクロール中でなければ、現れた実行すべてが対象。skeletonEnter: skeleton と差し替わった行だけ。
     const scrolling = observed?.classList.contains(SCROLLING_CLASS_NAME) === true;
+    if (modes.mountEnter && !scrolling) {
+      restartMovedRowTransitions(addedRows.filter((el) => movedRows.has(el)), previousStyleByRow);
+    }
     const entering = addedRows.filter(
       (el) =>
         (modes.mountEnter && !scrolling && !movedRows.has(el)) ||
@@ -125,6 +183,7 @@ export const createRowEnterController = (): RowEnterController => {
     observer?.disconnect();
     observer = null;
     observed = null;
+    observedAttributes = false;
     for (const el of Array.from(timers.keys())) {
       clear(el);
     }
@@ -134,7 +193,7 @@ export const createRowEnterController = (): RowEnterController => {
     update: ({ scrollContainerRef, skeletonEnter, mountEnter }) => {
       modes = { skeletonEnter, mountEnter };
       const el = skeletonEnter || mountEnter ? scrollContainerRef.current : null;
-      if (el === observed) {
+      if (el === observed && mountEnter === observedAttributes) {
         return;
       }
       disconnect();
@@ -142,8 +201,15 @@ export const createRowEnterController = (): RowEnterController => {
         return;
       }
       observer = new MutationObserver(handleMutations);
-      observer.observe(el, { childList: true, subtree: true });
+      // mountEnter(animateRows)では DOM 移動された行の旧 transform を知るため style 属性も旧値付きで観測します。
+      observer.observe(
+        el,
+        mountEnter
+          ? { childList: true, subtree: true, attributes: true, attributeFilter: ['style'], attributeOldValue: true }
+          : { childList: true, subtree: true },
+      );
       observed = el;
+      observedAttributes = mountEnter;
     },
     dispose: disconnect,
   };
