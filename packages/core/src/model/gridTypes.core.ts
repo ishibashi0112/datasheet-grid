@@ -1135,6 +1135,19 @@ export type GridColumn<T, F extends GridFrameworkTypes = GridFrameworkTypes> = {
    * `getExportData` には含めない。詳細は「セルのメモ(`cellNote`)」節。
    */
   cellNote?: (ctx: CellStyleContext<T, F>) => string | null | undefined;
+  // 追加(F-3): 条件付き書式ヘルパー。JSDoc は API_REFERENCE の表から生成。
+  /**
+   * **条件付き書式**。既定セルの描画に、値の「量」/「向き」/「状態」を重ねる。`dataBar`(背景の帯。
+   * `min` / `max` 省略時はビュー行 = フィルター / ソート適用後の数値から自動集計、負の値は 0
+   * の軸から左へ。`color` / `negativeColor` / `showValue: false` で帯だけ)/
+   * `colorScale`(セル背景を段階的に染める。`type: 'sequential'`(既定。淡 → 濃)/ `'diverging'`(`mid`
+   * を中立色に負側 / 正側を別の色相で。`colors` で色の段を差し替え)/ `chips`(値 → 色味
+   * `'neutral' | 'info' | 'good' | 'warning' | 'critical'` か `{ tone, label, icon, color }`
+   * のマップ、または `ctx` から返す関数。アイコン + ラベルのピル)。複数を同時指定可。表示だけで、
+   * エクスポート / コピー / ソート / フィルターには影響しない。色はトークン `--ssg-cf-*`。
+   * 詳細は「条件付き書式(`conditionalFormat`)」節。
+   */
+  conditionalFormat?: GridConditionalFormat<T, F>;
   // 追加(③): セル内容の水平寄せ(UI 表示のみ・元の値は不変)。未指定は左。
   //   セル表示と編集 input の双方へ反映します(renderCell 指定時もセルコンテナへ適用)。
   /**
@@ -1683,6 +1696,12 @@ export type GridClassNames<F extends GridFrameworkTypes = GridFrameworkTypes> = 
   // 範囲選択の塗り(.ssg-selection-overlay)。
   /** `activeCellOverlay` / `selectionOverlay`: 付与先: アクティブセル枠 / 範囲選択の塗り */
   selectionOverlay?: GridSlotProps<F>;
+  // 追加(motion-4 / M-3): コピー範囲の動く点線(.ssg-copy-range-overlay)。
+  /** 付与先: コピー範囲の動く点線 `.ssg-copy-range-overlay` */
+  copyRangeOverlay?: GridSlotProps<F>;
+  // 追加(F-2): セル内検索バー(.ssg-find-bar)。
+  /** 付与先: セル内検索バー `.ssg-find-bar` */
+  findBar?: GridSlotProps<F>;
 };
 
 // 追加(imperative API #1): ref ハンドルのスクロール整列指定です。
@@ -2133,6 +2152,18 @@ export type SpreadsheetGridHandle<T> = {
   //   (別タブ表示中のパネルは巻き込みません)。
   /** フィルター管理パネルを閉じる(開いていなければ何もしない)。 */
   closeFilterManager: () => void;
+  // 追加(F-2): セル内検索。
+  /**
+   * 検索バーを開く(`find` が無効なら何もしない)。`query` を渡すとその文字列で検索し、
+   * 先頭のヒットへ移動する。省略時は前回のクエリのまま開く。
+   */
+  openFind: (query?: string) => void;
+  /** 検索バーを閉じる(クエリとヒットの強調が消える。開いていなければ何もしない)。 */
+  closeFind: () => void;
+  /** 次のヒットへ(循環)。カレントのヒットへアクティブセルとスクロールが追従する。 */
+  findNext: () => void;
+  /** 前のヒットへ(循環)。 */
+  findPrev: () => void;
 };
 
 // 追加(THEME-2): グリッド全体の密度プリセットです。'standard' が従来既定と同値。
@@ -2145,6 +2176,89 @@ export type GridDensity = 'compact' | 'standard' | 'comfortable';
 //   利用側のカラースキーム(useMantineColorScheme 等)の解決値を 'light' | 'dark' で
 //   渡す使い方が本命です。
 export type GridTheme = 'light' | 'dark' | 'auto';
+// 追加(F-3): 条件付き書式ヘルパー(GridColumn.conditionalFormat)の型です。既定セルの描画に、値の「量」(データバー)/
+//   「量 or 基準からの向き」(カラースケール)/ 「状態」(チップ)を重ねます。min / max は省略時にビュー行から自動集計。
+//   表示だけで、CSV / TSV / クリップボード / getExportData / ソート / フィルターには影響しません。
+/** データバー(値の大きさを背景の帯で示す)。`conditionalFormat.dataBar` の設定。 */
+export type GridDataBarFormat = {
+  /** 帯の下限。省略時はビュー行(フィルター / ソート適用後。SSRM はロード済み範囲)の数値の最小値。 */
+  min?: number;
+  /** 帯の上限。省略時はビュー行の数値の最大値。 */
+  max?: number;
+  /** 帯の色(CSS 色)。省略時はトークン `--ssg-cf-bar`。 */
+  color?: string;
+  /** 負の値の帯の色(CSS 色)。省略時はトークン `--ssg-cf-bar-negative`。 */
+  negativeColor?: string;
+  /** `false` で値の文字を出さず帯だけにする(既定 `true`)。 */
+  showValue?: boolean;
+};
+/** カラースケール(値に応じてセル背景を段階的に染める)。`conditionalFormat.colorScale` の設定。 */
+export type GridColorScaleFormat = {
+  /**
+   * `'sequential'`(既定): 1 色相の淡 → 濃(量)。`'diverging'`: `mid` を中立色に、負側 / 正側を別の色相で
+   * 濃くする(基準からの向き)。
+   */
+  type?: 'sequential' | 'diverging';
+  /** 下限。省略時はビュー行の数値の最小値。 */
+  min?: number;
+  /** `'diverging'` の中立点。省略時は `min < 0 < max` なら `0`、それ以外は `(min + max) / 2`。 */
+  mid?: number;
+  /** 上限。省略時はビュー行の数値の最大値。 */
+  max?: number;
+  /**
+   * 色の段(CSS 色)。`'sequential'` は `[淡, 濃]`、`'diverging'` は `[負側, 中立, 正側]`。省略時はトークン
+   * (`--ssg-cf-seq-min` / `--ssg-cf-seq-max`、`--ssg-cf-div-negative` / `--ssg-cf-div-mid` / `--ssg-cf-div-positive`)。
+   */
+  colors?: readonly string[];
+};
+/** 状態チップの色味。アイコンとラベルを伴う(色だけで意味を運ばない)。 */
+export type GridChipTone = 'neutral' | 'info' | 'good' | 'warning' | 'critical';
+/** 状態チップ 1 つの指定。 */
+export type GridChipSpec = {
+  /** 色味(既定 `'neutral'`)。 */
+  tone?: GridChipTone;
+  /** ラベル。省略時はセルの表示文字列(`valueFormatter` 適用後)。 */
+  label?: string;
+  /** `false` でアイコンを出さない(既定 `true`)。 */
+  icon?: boolean;
+  /** 任意の色(CSS 色)。`tone` の色より優先。 */
+  color?: string;
+};
+/** 値(`String(value)`)→ チップのマップ。値は色味の文字列か `GridChipSpec`。載っていない値はチップにしない。 */
+export type GridChipMap = Readonly<Record<string, GridChipTone | GridChipSpec>>;
+/** 条件付き書式(`GridColumn.conditionalFormat`)。複数を同時に指定できる(帯 + 背景色など)。 */
+export type GridConditionalFormat<T, F extends GridFrameworkTypes = GridFrameworkTypes> = {
+  /** データバー。 */
+  dataBar?: GridDataBarFormat;
+  /** カラースケール。 */
+  colorScale?: GridColorScaleFormat;
+  /**
+   * 状態チップ。値 → チップのマップか、セルのコンテキスト(`cellClassName` の関数版と同じ)から
+   * チップを返す関数(`null` / `undefined` でチップにしない)。
+   */
+  chips?:
+    | GridChipMap
+    | ((ctx: CellStyleContext<T, F>) => GridChipTone | GridChipSpec | null | undefined);
+};
+// 追加(F-2): セル内検索のオプションです。
+export type FindOptions = {
+  // Ctrl/Cmd+F で検索バーを開く(グリッドにフォーカスがあるときだけ。既定 true。false でブラウザ標準の検索に譲る)。
+  shortcut?: boolean;
+  // 大文字小文字を区別する(既定 false)。
+  caseSensitive?: boolean;
+};
+// 追加(F-2): onFindChange の引数です。
+export type FindChangeParams = {
+  query: string;
+  matchCount: number;
+  // 0 始まりのカレント(ヒットなしは null)。
+  currentIndex: number | null;
+  open: boolean;
+};
+
+// 追加(motion-0): モーション(アニメーション / トランジション)の有効化です。'auto' は OS / ブラウザの
+//   prefers-reduced-motion: reduce を尊重して 'on' / 'off' に解決します(logic/motion.ts)。
+export type GridMotion = 'auto' | 'on' | 'off';
 
 // 追加: データ投入時に全列幅を内容へ自動フィットさせる発火モードです。
 //   'onMount'      = 初回にデータが載った一度きり。
@@ -2465,6 +2579,117 @@ export type SpreadsheetGridProps<T, F extends GridFrameworkTypes = GridFramework
    * @defaultValue `'light'`
    */
   theme?: GridTheme;
+  // 追加(motion-0): モーションの有効化です(既定 'auto')。'off'(または 'auto' + prefers-reduced-motion)では
+  //   root と全ポータル root・ドラッグゴースト・ツールチップへ .ssg-motion-off が付き、継続時間トークン
+  //   (--ssg-motion-fast / base / slow)が 0 になります(styles.css)。各効果はトークンだけを参照します。
+  /**
+   * モーション(アニメーション / トランジション)の有効化。`'auto'` は OS /
+   * ブラウザの「視差効果を減らす」(`prefers-reduced-motion: reduce`)が有効なら `'off'`、それ以外は
+   * `'on'` として扱う。`'off'` では root と全ポータル(popover / menu / panel)
+   * ・ドラッグゴースト・ツールチップへ `.ssg-motion-off` が付き、
+   * 継続時間トークン(`--ssg-motion-fast` / `--ssg-motion-base` / `--ssg-motion-slow`)が 0
+   * になって動きが止まる(表示結果は同じ)。`'on'` は OS 設定に関わらず動かす。
+   * 速さの調整はトークンの上書き。詳細は「モーション」節。
+   *
+   * @defaultValue `'auto'`
+   */
+  motion?: GridMotion;
+  // 追加(motion-3 / M-4・M-5): 行の並び替え(ソート / フィルター / グループ開閉 / データ差し替え)で、描画中の行を
+  //   新しい位置へ滑らせ、スクロールなしで現れた行をフェードインさせます(既定 true)。auto-height / serverSide では
+  //   自動で無効(行高の実測 / ブロック到着と干渉するため)。motion の実効値が 'off' なら動きません。
+  /**
+   * 行の並び替えアニメ。ソート / フィルター / グループ開閉 / `rows` の差し替えで、
+   * 描画中の行が新しい位置へ滑り(`--ssg-motion-base`)、
+   * スクロールなしで現れた行は上から順にフェードインする。
+   * スクロール中の仮想化による出入りは対象外。auto-height 行と serverSide(SSRM)では自動で無効。
+   * `motion` の実効値が `'off'` なら動かない。詳細は「モーション」節。
+   *
+   * @defaultValue `true`
+   */
+  animateRows?: boolean;
+  // 追加(motion-4 / M-3): Ctrl/Cmd+C したあと、コピー元の範囲に Excel と同じ「動く点線」を残します(既定 true)。
+  //   Esc / 編集開始で消え、ソート / フィルター / グループ開閉 / 行数 / 列の変化で描画しなくなります。
+  /**
+   * `Ctrl/Cmd+C` のあと、コピー元の範囲に Excel と同じ「動く点線」
+   * を残す(`.ssg-copy-range-overlay`。`motion` が `'off'` なら静的な点線)。`Esc` と編集開始で消え、
+   * ソート / フィルター / グループ開閉 / 行数 / 列の変化で描画しなくなる(貼り付けでは残る)。`false`
+   * で点線を出さない(コピー自体は従来どおり)。
+   *
+   * @defaultValue `true`
+   */
+  showCopyRange?: boolean;
+  // 追加(motion-5 / M-6): ホバーの強調範囲。'row'(既定 = 従来)はポインタの行だけ。'cross' はその行に加えて
+  //   ポインタの列(列ヘッダー・同じ列の他セルの薄い帯)と行番号も染め、交点が分かるクロスヘア表示。
+  /**
+   * ホバーの強調範囲。`'row'` はポインタの行だけ(従来)。`'cross'` はその行に加えて、
+   * ポインタの列(列ヘッダー + 同じ列の他セルに薄い帯 `.ssg-col-hover-overlay`)
+   * と行番号も染めるクロスヘア表示。色はトークン `--ssg-col-hover-bg`(帯)/
+   * `--ssg-select-bg`(ヘッダー・行番号)。横に長い表で「この値はどの列か」
+   * を視線移動なしで答えるため。
+   *
+   * @defaultValue `'row'`
+   */
+  hoverHighlight?: 'row' | 'cross';
+  // 追加(motion-6 / M-2): rows が変わったとき、値が変わったセルを一瞬アクセント色で光らせ、数値は旧値から新値へ
+  //   カウントアップする(既定 false)。clientSide 専用。描画中のセルだけが対象で、変更が多いとき(2,000 セル超 / 構造変化)
+  //   は何もしない。
+  /**
+   * `rows` が変わったとき、値が変わったセルを一瞬アクセント色で光らせ(`.ssg-body-cell--changed`、
+   * `--ssg-motion-slow`)、数値の既定セルは旧値から新値へカウントアップする(`--ssg-motion-base`。
+   * 表示は `valueFormatter` で整形)。セル編集 / 貼り付け / クリア / undo・redo / 外部からの `rows`
+   * 差し替えのすべてが対象。clientSide 専用(SSRM では無効)。描画中のセルだけが対象で、
+   * 変わったセルが 200 を超えるとフラッシュのみ、2,000 を超える・行の挿入 / 削除 /
+   * 並べ替えを伴う・参照の変わった行が 5,000 を超える(データの読み直し)ときは何もしない。
+   *
+   * @defaultValue `false`
+   */
+  highlightChanges?: boolean;
+  // 追加(motion-7 / M-9): serverSide の書き戻し(dataSource.updateRows)で、確定したセルに保存状態の印を出す(既定 true)。
+  //   保存中: 斜線 + 小さなスピナー / 成功: ✓ バッジ(1.3 秒)/ 失敗: 揺れ + 赤いフラッシュ + ✕ バッジ + セル下のチップ。
+  //   既存の保存失敗バーとは独立(両方出る)。
+  /**
+   * serverSide の書き戻し(`dataSource.updateRows`)で、確定したセルに保存状態の印を出す。
+   * 保存中は斜線 + 小さなスピナー(`[data-ssg-save="pending"]`)、成功は ✓ バッジを 1.3 秒(`"ok"`)、
+   * 失敗は揺れ + 赤いフラッシュ + ✕ バッジ(`"failed"`)とセル下の「保存に失敗しました」チップ(4 秒 /
+   * スクロールで消える)。既存の保存失敗バー(`onServerSideWriteError`)とは独立に出る。
+   * 描画中のセルだけが対象。clientSide では何も出ない。
+   *
+   * @defaultValue `true`
+   */
+  showSaveStatus?: boolean;
+  // 追加(motion-8 / M-11): 行ドラッグ並べ替えの表示方式。'ghost'(既定 = 従来: ゴースト + ガイド線、ドロップ後に
+  //   スライド)/ 'live'(掴んだ行がポインタに追従し、通る先の行がその場で上下へ退避。ドロップ先が「隙間」として見える)。
+  /**
+   * 行ドラッグ並べ替え(`enableRowDrag`)の表示方式。`'ghost'` は従来(ゴースト + ガイド線、
+   * ドロップ後に新しい位置へスライド)。`'live'` は掴んだ行がポインタに追従し、
+   * 通る先の行がその場で上下へ退避する(ドロップ先が「隙間」として見える。
+   * 枠外で離しても直前の位置へ確定、`Esc` で元へ戻る)。`motion` が `'off'` のときは `'ghost'`
+   * と同じ。
+   *
+   * @defaultValue `'ghost'`
+   */
+  rowDragMotion?: 'ghost' | 'live';
+  // 追加(F-2): セル内検索(既定 無効)。true でグリッド右上の検索バー + Ctrl/Cmd+F。表示文字列(valueFormatter 後)への
+  //   部分一致で、ヒットをすべて強調しつつ Enter で順送り(アクティブセルとスクロールが追従)。行は消さない(フィルターとは別)。
+  /**
+   * **セル内検索**。`true` でグリッド右上の検索バー(`.ssg-find-bar`)と
+   * `Ctrl/Cmd+F`(グリッドにフォーカスがあるときだけ横取り)が有効になる。表示文字列(`valueFormatter`
+   * 適用後)への部分一致で、ヒットをすべて `<mark class="ssg-find-mark">` で強調し、`Enter` / `↓`
+   * で次、`Shift+Enter` / `↑` で前へ(アクティブセルとスクロールが追従)、`Esc` で閉じる。
+   * 行は消さない(絞り込みのフィルターとは別)。`FindOptions` =
+   * `{ shortcut?: boolean(既定 true。false でブラウザ標準の検索に譲る), caseSensitive?: boolean(既定 false) }`。
+   * 走査は時間分割(1 チャンク 10ms)で入力を止めない。SSRM はロード済み範囲だけが対象。ヒットは 10,
+   * 000 件で打ち切り(件数に `+`)。詳細は「セル内検索」節。
+   *
+   * @defaultValue `false`
+   */
+  find?: boolean | FindOptions;
+  // 追加(F-2): 検索状態(クエリ / ヒット数 / カレント / 開閉)が変わったときの通知。
+  /**
+   * セル内検索の状態(`{ query, matchCount, currentIndex, open }`)が変わったときの通知。
+   * `currentIndex` は 0 始まり(ヒットなしは `null`)。ツールバーに「3 / 12」を出す等に使う。
+   */
+  onFindChange?: (params: FindChangeParams) => void;
   /**
    * 行番号列の幅(px)。
    *

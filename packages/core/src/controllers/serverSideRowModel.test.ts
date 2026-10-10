@@ -170,4 +170,66 @@ describe('serverSideRowModel', () => {
     controller.dispose();
     expect(lastSignal.aborted).toBe(true);
   });
+
+  // 追加(motion-7 / M-9): 書き戻しのセル単位の状態通知(pending → ok / failed、refresh で cleared)。
+  it('applyCellEdits は onWriteStateChange に pending → ok / failed を rowKey × 変更列で通知し、refresh 後の決着は cleared', async () => {
+    const flush = async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+    };
+    const column = { key: 'v', title: 'v', width: 80 } as const;
+    const makeWritable = (outcome: 'ok' | 'fail') => {
+      const base = makeDataSource({ initialRowCount: 250 });
+      const dataSource: ServerSideDataSource<Row> = {
+        ...base.dataSource,
+        updateRows: () => (outcome === 'ok' ? Promise.resolve() : Promise.reject(new Error('x'))),
+      };
+      return dataSource;
+    };
+    const events: Array<{ state: string; cells: unknown }> = [];
+    const onWriteStateChange = (event: { state: string; cells: unknown }) => events.push(event);
+    const okController = createServerSideRowModel<Row>({
+      dataSource: makeWritable('ok'),
+      rowKeyGetter: (row) => row.v,
+      query: {} as never,
+      queryKey: 'q1',
+      onWriteStateChange,
+    });
+    okController.update({ dataSource: makeWritable('ok'), rowKeyGetter: (row) => row.v, query: {} as never, queryKey: 'q1', onWriteStateChange });
+    okController.requestRange(0, 50);
+    vi.runAllTimers();
+    await flush();
+    okController.applyCellEdits([{ viewIndex: 3, column, value: 99 }]);
+    expect(events.map((e) => e.state)).toEqual(['pending']);
+    expect(events[0].cells).toEqual([{ rowKey: 3, columnKeys: ['v'] }]);
+    await flush();
+    expect(events.map((e) => e.state)).toEqual(['pending', 'ok']);
+
+    events.length = 0;
+    const failController = createServerSideRowModel<Row>({
+      dataSource: makeWritable('fail'),
+      rowKeyGetter: (row) => row.v,
+      query: {} as never,
+      queryKey: 'q1',
+      onWriteStateChange,
+      onWriteError: () => {},
+    });
+    failController.update({ dataSource: makeWritable('fail'), rowKeyGetter: (row) => row.v, query: {} as never, queryKey: 'q1', onWriteStateChange, onWriteError: () => {} });
+    failController.requestRange(0, 50);
+    vi.runAllTimers();
+    await flush();
+    failController.applyCellEdits([{ viewIndex: 1, column, value: 5 }]);
+    await flush();
+    expect(events.map((e) => e.state)).toEqual(['pending', 'failed']);
+
+    events.length = 0;
+    failController.applyCellEdits([{ viewIndex: 2, column, value: 6 }]);
+    failController.refresh();
+    vi.runAllTimers();
+    await flush();
+    expect(events.map((e) => e.state)).toEqual(['pending', 'cleared']);
+    okController.dispose();
+    failController.dispose();
+  });
 });

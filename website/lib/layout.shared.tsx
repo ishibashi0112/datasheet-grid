@@ -11,6 +11,7 @@ export function baseOptions(): BaseLayoutProps {
       { text: 'ドキュメント', url: '/docs' },
       { text: 'API リファレンス', url: '/docs/api/props' },
       { text: 'プレイグラウンド', url: '/playground' },
+      { text: 'テーマビルダー', url: '/theme-builder' },
     ],
     githubUrl: `https://github.com/${gitConfig.user}/${gitConfig.repo}`,
   };

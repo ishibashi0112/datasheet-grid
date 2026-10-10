@@ -26,6 +26,8 @@ export type CellRenderContext<T> = Core.CellRenderContext<T, UnboundGridTypes>;
 export type DetailRowOptions<T> = Core.DetailRowOptions<T, UnboundGridTypes>;
 export type LabelRowOptions<T> = Core.LabelRowOptions<T, UnboundGridTypes>;
 export type CellStyleContext<T> = Core.CellStyleContext<T, UnboundGridTypes>;
+// 追加(F-3): 条件付き書式(chips の関数版が ctx 引数に F を持つ)。
+export type GridConditionalFormat<T> = Core.GridConditionalFormat<T, UnboundGridTypes>;
 export type HeaderRenderContext<T> = Core.HeaderRenderContext<T, UnboundGridTypes>;
 export type CellValueFormatterParams<T> = Core.CellValueFormatterParams<T, UnboundGridTypes>;
 export type CellValueFormatter<T> = Core.CellValueFormatter<T, UnboundGridTypes>;

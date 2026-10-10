@@ -82,6 +82,9 @@ export type PointerInteractionsArgs<T> = {
   setHoveredColumnIndex: (value: number | null) => void;
   enableRowHover: boolean;
   enableColumnHeaderHover: boolean;
+  // 追加(motion-5 / M-6): 本体セルのホバーで列もホバー扱いにする(hoverHighlight='cross')。既定 false(ヘッダー
+  //   3 ペインが列をまたぐたびに再レンダーされるため、クロスヘアのときだけ)。
+  enableColumnHover?: boolean;
   enableRowSelection: boolean;
   onGutterRowSelect: (viewIndex: number, opts: { shiftKey: boolean }) => void;
   onGutterRowSelectDrag: (viewIndex: number) => void;
@@ -467,6 +470,10 @@ export const createPointerInteractionsController = <T,>(): PointerInteractionsCo
     }
     if (args.enableRowHover) {
       args.setHoveredRowIndex(cell.row);
+    }
+    // 追加(motion-5 / M-6): クロスヘアでは本体セルの列もホバー列にする(列ヘッダー / 列の帯の描画元)。
+    if (args.enableColumnHover) {
+      args.setHoveredColumnIndex(cell.col);
     }
     if (!args.enableRangeSelection) {
       return;

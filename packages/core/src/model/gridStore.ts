@@ -8,7 +8,7 @@
 //     直接読みます(latest-ref イディオムの置き換え先)。Solid 版は subscribe から signal を作るだけで
 //     同じ store を共用できます。
 import type { GridUiAction } from './gridActions';
-import type { GridUiState } from './gridTypes.unbound';
+import type { GridUiState, GridSelection } from './gridTypes.unbound';
 import { gridUiReducer } from './gridReducer';
 
 export type GridStoreListener = () => void;
@@ -25,6 +25,23 @@ export type GridViewState = {
   hoveredRowIndex: number | null;
   hoveredColumnIndex: number | null;
   isCornerHovered: boolean;
+  // 追加(motion-4 / M-3): 直近のコピー範囲(コピー時の選択 + そのときのビュー形状)。Excel の「動く点線」の
+  //   描画元で、編集開始(edit/start)と Esc(selection/clear)で消えます(dispatch 内で解除)。ビュー形状が変わった
+  //   (ソート / フィルター / グループ開閉 / 行数 / 列)ときは描画側が view の参照比較で無視します。
+  copiedRange: GridCopiedRange | null;
+};
+
+// 追加(motion-4 / M-3): コピー範囲。view はコピー時点のビュー形状を参照で控えたもの(描画側が現在値と比較)。
+export type GridCopiedRange = {
+  selection: NonNullable<GridSelection>;
+  view: GridCopiedRangeView;
+};
+export type GridCopiedRangeView = {
+  sort: unknown;
+  filters: unknown;
+  collapsedGroupKeys: unknown;
+  viewRowCount: number;
+  columns: unknown;
 };
 
 export const createInitialGridViewState = (): GridViewState => ({
@@ -34,6 +51,7 @@ export const createInitialGridViewState = (): GridViewState => ({
   hoveredRowIndex: null,
   hoveredColumnIndex: null,
   isCornerHovered: false,
+  copiedRange: null,
 });
 
 // 値または「前の値から次の値を作る関数」(React の SetStateAction と同形。React 非依存)。
@@ -80,13 +98,25 @@ export const createGridStore = (
 
   const getState = () => state;
 
+  // 追加(motion-4 / M-3): コピー範囲は編集開始と Esc で消えます(UI アクションと view スライスをまたぐ唯一の規則。
+  //   reducer の no-op(選択なしでの Esc)でも解除するため、reducer の前に判定します)。
+  const clearsCopiedRange = (action: GridUiAction): boolean =>
+    action.type === 'edit/start' || action.type === 'selection/clear';
+
   const dispatch = (action: GridUiAction) => {
-    const next = reducer(state, action);
-    if (Object.is(next, state)) {
-      return;
+    let changed = false;
+    if (viewState.copiedRange !== null && clearsCopiedRange(action)) {
+      viewState = { ...viewState, copiedRange: null };
+      changed = true;
     }
-    state = next;
-    notify();
+    const next = reducer(state, action);
+    if (!Object.is(next, state)) {
+      state = next;
+      changed = true;
+    }
+    if (changed) {
+      notify();
+    }
   };
 
   const getViewState = () => viewState;

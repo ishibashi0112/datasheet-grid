@@ -92,6 +92,9 @@
 - Portal 系(popover / tooltip / panel)は `.ssg-root` 外に描画されるためリテラル色を使う。
 - テーマ: `theme`(light / dark / auto)+ `density`(compact / standard / comfortable)。トークン
   (`--ssg-*`)上書きで個別調整可。Tailwind v4 向けに `style.layer.css` も出力する。
+- モーション(2026-10-10): `motion`(auto / on / off)。継続時間は `--ssg-motion-fast / -base / -slow` と `--ssg-motion-ease`
+  の 4 トークンで一括制御し、`.ssg-motion-off`(root + 全ポータル root)で 0 にする。条件付き書式の色は `--ssg-cf-*`。
+  website の `/theme-builder` がトークンを編集して CSS 変数を書き出す。
 - className 系スロット(2026-09-13 slot-props / StyleX 併用): `classNames`(25 スロット)/ `cellClassName` /
   `getRowClassName` / `detailRow.className` の値は `GridSlotProps = string | { className, style }`。
   解決は `logic/slotProps.ts`(React 非依存)、`classNames` の参照安定化は `hooks/useResolvedGridSlots.ts`
@@ -172,6 +175,30 @@
 2. ピン留め行(上下固定行)。
 3. フィルハンドル(セル右下ドラッグでの連続コピー/連番)。
 
+~~差別化 batch(モーション + セル内検索 + 条件付き書式 + テーマビルダー)~~ → **2026-10-10 実装済み**(v0.46.0)。
+- モーション(batch 0〜8): `motion` prop(`'auto' | 'on' | 'off'`。`logic/motion` + `controllers/reducedMotionStore`、
+  `hooks/useResolvedGridMotion`)と継続時間トークン `--ssg-motion-fast/base/slow/ease`、`.ssg-motion-off` を root と
+  全ポータル root(`portalClassName`)・ゴースト・ツールチップへ付与。DOM コントローラで実装(render 中の ref 参照なし):
+  `scrollSyncController` のスクロール中クラス(`.ssg-scroll-container--scrolling` で追従アニメを抑止)/
+  `rowEnterController`(MutationObserver。同一バッチの removed に含まれるノード = React の DOM 移動と、スクロール由来の
+  mount を除外して `.ssg-body-row--enter` を付与。stagger 上限 12)/ `changeHighlightController`(rows の差分 → フラッシュ
+  + 数値トゥイエン。5,000 行 / 2,000 セル / 200 トゥイーン上限)/ `saveStatusController`(SSRM `onWriteStateChange` → セルの
+  `data-ssg-save` 属性 + 失敗チップ)/ `rowDragController` の live 方式。React 側は `CopyRangeOverlay`(store の view スライス
+  `copiedRange`。`'edit/start'` / `'selection/clear'` で消す)/ `ColumnHoverOverlay`(`hoverHighlight: 'cross'`)。
+  `animateRows`(FLIP)は `.ssg-root--animate-rows` + `data-row-key` の transform。
+- F-2 セル内検索: `find` prop(`boolean | FindOptions`)、`onFindChange`、ハンドル `openFind / closeFind / findNext / findPrev`。
+  `logic/find`(範囲検索 / index / 再走査後のカレント維持)+ `controllers/findController`(`runChunked` の時間分割走査、
+  世代で古い結果を破棄、10,000 件で打ち切り、SSRM 未ロード行は読み飛ばし)。`keyboardController` が Ctrl/Cmd+F を横取り
+  (`openFind` が渡されたときだけ)。描画は既定セルの `splitTextByFindRanges` → `<mark>`、バーは `view/GridFindBar`。
+- F-3 条件付き書式: `GridColumn.conditionalFormat = { dataBar?, colorScale?, chips? }`。`logic/conditionalFormat`(ビュー行の
+  min / max を 1 走査で集計し内容が同じなら前回の Map を返す = GridBodyRow の memo を壊さない / データバーの軸 / color-mix()
+  式 / チップ正規化)。engine `resolveConditionalFormatStats` → シェルの useMemo → `GridBodyLayer`(帯 `.ssg-cf-bar` は
+  絶対配置 z-index: -1、背景色は inline)。チップは `view/GridChip`。トークン `--ssg-cf-*`(ライト / ダーク)。
+- F-4 テーマビルダー: website `app/theme-builder`(`components/theme-builder/theme-builder.tsx`。ssr: false で URL から
+  初期状態)。実物のグリッドに生成 CSS を `<style>` で流し込み、派生色を計算、コントラスト比の注意、共有 URL。ライブラリ不変。
+- F-1 打ち出し: README / ランディング(タグライン「有料級を MIT で」、他にない 5 つ、他社比較表。比較表の区分は 2026-10-10 時点の
+  把握で要確認)。
+
 ~~ラベル行(見出し / 区切り行)~~ → **2026-09-23 実装済み**(label-row batch 1〜5)。
 `labelRow` prop(`isLabelRow` / `getLabel` / `render` / `height` / `className` / `sticky` / `sortMode` /
 `keepEmptySections` / `exportText`)。設計: rows に混在するラベル行を述語で識別し(行の型 T 不変)、
@@ -199,8 +226,8 @@ body 直下ゴースト / 各ペイン transform 層内の水平ガイド線 / �
 展開行帯で同一式。帯の上は「マスター行の下」)。ゲート: clientSide + onRowsChange + 非グルーピングで
 列を出し、order が恒等(`isIdentityOrder`)のときだけ操作可(ソート / フィルター中は淡色 +
 ツールチップで列は残す)。commit は `moveArrayItem` → 履歴ラッパ `handleRowsChange`(undo 対象)→
-`onRowMove`。ドラッグ中に周囲の行が退避する live 方式は未実装(スロット解決を共有して表示側だけ
-差し替える想定。`rowDragMotion: 'live'`)。
+`onRowMove`。ドラッグ中に周囲の行が退避する live 方式は **2026-10-10 の M-11 で実装済み**(`rowDragMotion: 'ghost' | 'live'`。
+rowDragController がスロット解決を共有し、live では掴んだ行がポインタに追従・間の行が行高ぶん transform で退避、Esc で復元)。
 
 ~~展開行(Master/Detail)~~ → **2026-09-04 実装済み**(detail batch 1〜6)。
 `detailRow` prop(`render` / `height`(固定・既定 200)/ `isExpandable` / `showToggleColumn` /

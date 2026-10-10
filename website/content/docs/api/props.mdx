@@ -25,6 +25,15 @@ description: SpreadsheetGridProps<T> の全 prop と既定値
 | `headerHeight` | `number` | density 依存(standard: `40`) | ヘッダー行の高さ(px)。未指定時は density プリセット(compact: `32` / comfortable: `48`)から解決。明示指定が常に優先。 |
 | `density` | `'compact' \| 'standard' \| 'comfortable'` | `'standard'` | 密度プリセット。rowHeight / headerHeight の既定値と寸法トークン(セル横 padding / バー padding / アイコンボタン寸法 / セル文字の相対拡縮)を一括切替。`'standard'` は従来と同値。個別調整はトークン(`--ssg-cell-pad-x` 等)の上書きで可能。popover / menu 等のポータルは対象外。 |
 | `theme` | `'light' \| 'dark' \| 'auto'` | `'light'` | カラーテーマ。`'dark'` でダークプリセット(`.ssg-theme-dark` のトークン一括上書き。Mantine dark 系パレット)をグリッド本体・全ポータル(popover / menu / panel)・ドラッグゴースト・ツールチップへ適用。`'auto'` は `prefers-color-scheme` へ追従(Mantine / HeroUI 等クラスベース dark 運用では、利用側カラースキームの解決値を `'light' \| 'dark'` で渡す使い方を推奨)。個別の色調整はトークン(`--ssg-*`)の上書きで可能。 |
+| `motion` | `'auto' \| 'on' \| 'off'` | `'auto'` | モーション(アニメーション / トランジション)の有効化。`'auto'` は OS / ブラウザの「視差効果を減らす」(`prefers-reduced-motion: reduce`)が有効なら `'off'`、それ以外は `'on'` として扱う。`'off'` では root と全ポータル(popover / menu / panel)・ドラッグゴースト・ツールチップへ `.ssg-motion-off` が付き、継続時間トークン(`--ssg-motion-fast` / `--ssg-motion-base` / `--ssg-motion-slow`)が 0 になって動きが止まる(表示結果は同じ)。`'on'` は OS 設定に関わらず動かす。速さの調整はトークンの上書き。詳細は「モーション」節。 |
+| `animateRows` | `boolean` | `true` | 行の並び替えアニメ。ソート / フィルター / グループ開閉 / `rows` の差し替えで、描画中の行が新しい位置へ滑り(`--ssg-motion-base`)、スクロールなしで現れた行は上から順にフェードインする。スクロール中の仮想化による出入りは対象外。auto-height 行と serverSide(SSRM)では自動で無効。`motion` の実効値が `'off'` なら動かない。詳細は「モーション」節。 |
+| `showCopyRange` | `boolean` | `true` | `Ctrl/Cmd+C` のあと、コピー元の範囲に Excel と同じ「動く点線」を残す(`.ssg-copy-range-overlay`。`motion` が `'off'` なら静的な点線)。`Esc` と編集開始で消え、ソート / フィルター / グループ開閉 / 行数 / 列の変化で描画しなくなる(貼り付けでは残る)。`false` で点線を出さない(コピー自体は従来どおり)。 |
+| `hoverHighlight` | `'row' \| 'cross'` | `'row'` | ホバーの強調範囲。`'row'` はポインタの行だけ(従来)。`'cross'` はその行に加えて、ポインタの列(列ヘッダー + 同じ列の他セルに薄い帯 `.ssg-col-hover-overlay`)と行番号も染めるクロスヘア表示。色はトークン `--ssg-col-hover-bg`(帯)/ `--ssg-select-bg`(ヘッダー・行番号)。横に長い表で「この値はどの列か」を視線移動なしで答えるため。 |
+| `highlightChanges` | `boolean` | `false` | `rows` が変わったとき、値が変わったセルを一瞬アクセント色で光らせ(`.ssg-body-cell--changed`、`--ssg-motion-slow`)、数値の既定セルは旧値から新値へカウントアップする(`--ssg-motion-base`。表示は `valueFormatter` で整形)。セル編集 / 貼り付け / クリア / undo・redo / 外部からの `rows` 差し替えのすべてが対象。clientSide 専用(SSRM では無効)。描画中のセルだけが対象で、変わったセルが 200 を超えるとフラッシュのみ、2,000 を超える・行の挿入 / 削除 / 並べ替えを伴う・参照の変わった行が 5,000 を超える(データの読み直し)ときは何もしない。 |
+| `showSaveStatus` | `boolean` | `true` | serverSide の書き戻し(`dataSource.updateRows`)で、確定したセルに保存状態の印を出す。保存中は斜線 + 小さなスピナー(`[data-ssg-save="pending"]`)、成功は ✓ バッジを 1.3 秒(`"ok"`)、失敗は揺れ + 赤いフラッシュ + ✕ バッジ(`"failed"`)とセル下の「保存に失敗しました」チップ(4 秒 / スクロールで消える)。既存の保存失敗バー(`onServerSideWriteError`)とは独立に出る。描画中のセルだけが対象。clientSide では何も出ない。 |
+| `rowDragMotion` | `'ghost' \| 'live'` | `'ghost'` | 行ドラッグ並べ替え(`enableRowDrag`)の表示方式。`'ghost'` は従来(ゴースト + ガイド線、ドロップ後に新しい位置へスライド)。`'live'` は掴んだ行がポインタに追従し、通る先の行がその場で上下へ退避する(ドロップ先が「隙間」として見える。枠外で離しても直前の位置へ確定、`Esc` で元へ戻る)。`motion` が `'off'` のときは `'ghost'` と同じ。 |
+| `find` | `boolean \| FindOptions` | `false` | **セル内検索**。`true` でグリッド右上の検索バー(`.ssg-find-bar`)と `Ctrl/Cmd+F`(グリッドにフォーカスがあるときだけ横取り)が有効になる。表示文字列(`valueFormatter` 適用後)への部分一致で、ヒットをすべて `<mark class="ssg-find-mark">` で強調し、`Enter` / `↓` で次、`Shift+Enter` / `↑` で前へ(アクティブセルとスクロールが追従)、`Esc` で閉じる。行は消さない(絞り込みのフィルターとは別)。`FindOptions` = `{ shortcut?: boolean(既定 true。false でブラウザ標準の検索に譲る), caseSensitive?: boolean(既定 false) }`。走査は時間分割(1 チャンク 10ms)で入力を止めない。SSRM はロード済み範囲だけが対象。ヒットは 10,000 件で打ち切り(件数に `+`)。詳細は「セル内検索」節。 |
+| `onFindChange` | `(params: FindChangeParams) => void` | — | セル内検索の状態(`{ query, matchCount, currentIndex, open }`)が変わったときの通知。`currentIndex` は 0 始まり(ヒットなしは `null`)。ツールバーに「3 / 12」を出す等に使う。 |
 | `rowHeaderWidth` | `number` | `56` | 行番号列の幅(px)。 |
 | `height` | `number \| string` | `—` | グリッドの明示高さ。**値の種類で何の高さかが変わる**。① `%` を含む文字列(`'100%'` / `'50%'` / `'calc(100% - 40px)'`): トップバー・フィルターチップバー・ボトムバーを含む**グリッド全体**の高さ。`'100%'` でグリッドが親要素に収まり、バーを除いた残りがスクロール領域になる(ルートに `ssg-root--fill-height` が付く)。親要素が確定高さを持つ前提で、親が高さ `auto` だと全行分まで伸びて仮想化が効かない。② `number`(px)/ `%` を含まない文字列(`'400px'` / `'50vh'` / `'calc(100vh - 120px)'`): **スクロール領域だけ**の高さ(グリッド全体はバーの分だけ高くなる)。③ 未指定: スクロール領域は内容の高さで `maxHeight` によりクリップ。ルートへの `style={{ height }}` だけではスクロール領域は決まらないため、高さはこの prop で指定する。 |
 | `maxHeight` | `number \| string` | `—`（既定 480px） | **スクロール領域**の高さ上限(バーは含まない。`height` の種類に関わらず同じ)。`height`・`maxHeight` が**共に未指定のときのみ**既定の 480px が効く（従来挙動）。数値の `height` と併用するとスクロール領域 = `min(height, maxHeight)`、`%` の `height` と併用すると `min(maxHeight, 親の高さ − バー)`(親が大きければグリッド全体はバー + `maxHeight` に縮む)。 |
@@ -446,6 +455,54 @@ const [rows, setRows] = useState(initialRows);
 - **タッチが主のデバイス**(スマホ / タブレット): 入力受けに `inputmode="none"` を付け、セルのタップで仮想キーボードが開かないようにしています(従来どおり)。
 - **確認状況**: Chromium(Chrome / Edge / WebView2 と同じエンジン)で、DevTools Protocol の変換イベント(`Input.imeSetComposition` / `Input.insertText`)を使って確認しています。OS の IME そのもの(Windows の MS-IME など)での最終確認は実機で行ってください。
 
+### モーション(`motion`)
+
+グリッドの動き(アクティブセル枠の追従、ポップオーバーの出現、ソート時の行移動、読み込み中のシマー等)は `motion` prop で一括制御する(**既定 `'auto'`**)。
+
+| 値 | 挙動 |
+| --- | --- |
+| `'auto'` | OS / ブラウザの「視差効果を減らす」(`prefers-reduced-motion: reduce`)が有効なら `'off'`、それ以外は `'on'`。設定の変化にも追従する。 |
+| `'on'` | OS 設定に関わらず動かす。 |
+| `'off'` | すべて止める(表示結果は同じで、瞬時に切り替わる)。 |
+
+- 実装は CSS トークン: `--ssg-motion-fast`(140ms)/ `--ssg-motion-base`(260ms)/ `--ssg-motion-slow`(600ms)/ `--ssg-motion-ease`(イージング)。各効果はこのトークンだけを参照する。`'off'` では root と全ポータル root・ドラッグゴースト・ツールチップに `.ssg-motion-off` が付き、継続時間が 0 になる。
+- 速さは利用側のトークン上書きで変えられる(`.ssg-root { --ssg-motion-base: 180ms; }`)。`.ssg-motion-off` の値は `:where`(特異度 0)で定義しているため、停止中でも特定の効果だけ戻すことができる。
+- SSR では `'auto'` はいったん `'on'` で描画し、ハイドレーション後にクライアント側で再解決する(`theme='auto'` と同じ)。
+- 従来 `prefers-reduced-motion` を直接見ていた効果(ツールパネルのフラッシュ / フィルター候補のスピナー / スクロール位置インジケーターのフェード)も `motion` の実効値で判定するようになった(`'auto'` では従来と同じ)。
+
+#### 効果の一覧
+
+| 効果 | 既定 | トークン | 備考 |
+| --- | --- | --- | --- |
+| アクティブセル枠 / 選択範囲の追従(M-1) | 有効 | `--ssg-motion-fast` | キーボード移動 / クリックで枠が新しい位置へ滑る。スクロール中とポインタでの範囲ドラッグ中は瞬時に追従(漂って見えるのを避ける)。 |
+| ポップオーバー / メニューの出現(M-7) | 有効 | `--ssg-motion-fast` | 列メニュー / コンテキストメニュー / フィルター / ツールパネル / select 候補 / 日付パネルが 4px 上からフェードイン。出現のみ(閉じるのは即時)。 |
+| ソート / フィルター / グループ開閉の行移動(M-4 / M-5) | 有効(`animateRows`) | `--ssg-motion-base` | 描画中の行が新しい位置へ滑る(FLIP 相当。行要素の transform の transition)。auto-height / SSRM では自動 OFF。 |
+| スクロールなしで現れた行のフェードイン(M-4 / M-5) | 有効(`animateRows`) | `--ssg-motion-base` | ソートで窓に入ってきた行、展開したグループの子行、差し替えた `rows` の行が上から順に(約 23ms 刻み)3px 下からフェードイン。スクロールで出入りする行は対象外。 |
+| コピー範囲の動く点線(M-3) | 有効(`showCopyRange`) | — | `Ctrl/Cmd+C` 後、コピー元の範囲に点線が流れる(0.6s 周期)。`motion` が `'off'` では止まった点線。 |
+| ホバーのクロスヘア(M-6) | opt-in(`hoverHighlight: 'cross'`) | — | ポインタの行に加えて列ヘッダー・行番号・同じ列の他セルを薄く染める(動きはなく、静的な強調)。 |
+| 変更セルのフラッシュ + 数値トゥイーン(M-2) | opt-in(`highlightChanges`) | `--ssg-motion-slow` / `--ssg-motion-base` | 値が変わったセルがアクセント色から 600ms でフェードし、数値は 260ms でカウントアップ。 |
+| セル単位の保存状態(M-9) | 有効(`showSaveStatus`、SSRM の書き戻し時) | `--ssg-motion-base` / `--ssg-motion-slow` | 保存中の斜線 + スピナー → ✓ バッジ、失敗は揺れ + 赤いフラッシュ + ✕ とチップ。`motion` が `'off'` では静的な印だけ。 |
+| 行ドラッグの live 退避(M-11) | opt-in(`rowDragMotion: 'live'`) | 160ms 固定 | 掴んだ行がポインタに追従し、通る先の行がその場で退避。ドロップ後は従来どおりスライドで収まる。 |
+| 読み込み中のシマーと到着行のフェードイン(M-8) | 有効 | `--ssg-motion-base` | SSRM の取得中はスケルトンに光の帯が流れ、ブロックが到着して差し替わった行のセルが上から順に(約 23ms 刻み)3px 下からフェードイン。スクロールで出入りする行は対象外。clientSide では発生しない。 |
+| 細かな遷移 | 有効 | `--ssg-motion-fast` | ヘッダー操作アイコンのフェード、チェックボックス、タブのインジケータ、ツールチップ、スクロール位置インジケーター。 |
+
+### セル内検索(`find`)
+
+`find` を付けると、グリッドにフォーカスがある状態の `Ctrl/Cmd+F`(または `handle.openFind()`)でグリッド右上に検索バーが出る(**既定は無効**)。「絞り込み(フィルター)」とは別に、**行を消さずに場所を探す**操作で、ブラウザの `Ctrl+F` では探せない仮想化された行も対象になる。
+
+```tsx
+<SpreadsheetGrid find ... />
+// find={{ shortcut: false, caseSensitive: true }}
+```
+
+- **対象**: ビュー行(フィルター / ソート適用後)× 可視列の**表示文字列**(`valueFormatter` 適用後 = 画面に見えている文字)。`renderCell` の列も表示文字列(`valueFormatter` または `String(value)`)で検索されるが、`<mark>` の強調は既定セルだけ(カレントへの移動は同じ)。
+- **走査**: 時間分割(`logic/chunkedLoop`。1 チャンク 10ms)で入力・描画を止めない。走査中は件数が「検索中…」になる。クエリ / 大文字小文字 / `rows`(編集・差し替え)/ ソート / フィルター / 列が変わると再走査し、同じヒットが残っていればカレントを保つ(移動はしない)。
+- **順送り**: `Enter` / `↓` で次、`Shift+Enter` / `↑` で前(循環)。カレントのヒットへはクリック相当の単一選択 + 可視化スクロール(`selectCell(row, col, { scrollIntoView: true })` と同じ)。クエリを打ち直すと先頭のヒットへ移動する。
+- **閉じる**: `Esc` / × でクエリとヒットが消え、フォーカスはグリッド本体へ戻る。`find` を `false` にすると開いていても閉じる。
+- **ヒット数の上限**: 10,000 件で打ち切り(件数表示に `+`)。SSRM は**ロード済み範囲だけ**が対象(未ロード行は読み飛ばす)。
+- **スタイル**: ヒットは `.ssg-find-mark`、カレントは `.ssg-find-mark--current`(トークン `--ssg-find-mark-bg` / `--ssg-find-mark-current-bg`)。バーは `classNames.findBar`。
+- **ショートカット**: `Ctrl/Cmd+F` の横取りはグリッド本体にフォーカスがあるときだけ(フィルター入力 / エディタ内では効かない)。`shortcut: false` でブラウザ標準の検索に譲り、`handle.openFind()` だけで開く運用もできる。
+
 ### キーボード操作
 
 グリッド本体フォーカス中(編集中でない)の操作一覧。フィルター入力等のフォーム要素にフォーカス中は無効。
@@ -456,6 +513,7 @@ const [rows, setRows] = useState(initialRows);
 | `Enter` / `F2` / 印字キー直打ち | 編集開始(印字キーはその 1 文字を初期値に)。編集可否は `readOnly` / 列 / `canEditCell` に従う。 |
 | `Escape` | 選択解除。 |
 | `Ctrl/Cmd+C` / ペースト(`Ctrl/Cmd+V`) | 選択範囲の TSV コピー / アクティブセル起点の貼り付け(readOnly では no-op)。TSV は Excel / Google スプレッドシート互換(改行・タブ・`"` を含むセルは `"…"` で囲み `"` は `""`。貼り付けはこの引用符を解釈し、途中の空行も行として保持する)。 |
+| `Ctrl/Cmd+F` | セル内検索バーを開く(`find` が有効なとき。無効ならブラウザ標準の検索)。 |
 | `Ctrl/Cmd+A` | 全体選択(2 回目で解除)。 |
 | `Delete` / `Backspace` | 選択セル(なければアクティブセル)の値クリア。編集不可セルは対象外。クリア値は「空文字のペースト」と同じ規則(`parseClipboardValue('')` 経由、未定義なら `''`)。変更が無ければ no-op(undo 履歴にも積まれない)。 |
 | `Ctrl/Cmd+Z` / `Ctrl/Cmd+Shift+Z` / `Ctrl/Cmd+Y` | undo / redo(詳細は命令的 API の「undo / redo」節)。 |
@@ -507,6 +565,8 @@ type GridSlotProps = string | { className?: string; style?: CSSProperties };
 | `errorBar` | SSRM のエラーバー `.ssg-ssrm-error-bar` |
 | `scrollHint` | スクロール位置インジケーター `.ssg-scroll-hint` |
 | `activeCellOverlay` / `selectionOverlay` | アクティブセル枠 / 範囲選択の塗り |
+| `copyRangeOverlay` | コピー範囲の動く点線 `.ssg-copy-range-overlay` |
+| `findBar` | セル内検索バー `.ssg-find-bar` |
 
 ### StyleX との併用
 
@@ -543,6 +603,9 @@ const s = stylex.create({
 | `.ssg-body-cell--readonly` | 読み取り専用セル(範囲選択に入っていないとき。`dimReadOnlyCells` と独立して常時付与)。 |
 | `.ssg-body-cell--invalid` | validation mark 表示中のセル。 |
 | `.ssg-body-cell--has-note` | セルのメモ(`cellNote`)があるセル(右上の印は `::before`。色は `--ssg-note-indicator`)。 |
+| `.ssg-body-cell--cf-bar` | 条件付き書式のデータバーがあるセル(帯は子要素 `.ssg-cf-bar`。負の値は `.ssg-cf-bar--negative`)。 |
+| `.ssg-body-cell--cf-scale` | 条件付き書式のカラースケールで背景を染めたセル。 |
+| `.ssg-chip` | 条件付き書式の状態チップ(色味は `.ssg-chip--info` / `--good` / `--warning` / `--critical` / `--neutral`、任意色は `.ssg-chip--custom`。中身は `.ssg-chip-icon` / `.ssg-chip-label`)。 |
 | `.ssg-body-cell--row-hovered` | 行ホバー中のセル(`enableRowHover` 有効時)。 |
 | `.ssg-body-cell--autoheight` | auto-height 列のセル。 |
 | `.ssg-body-cell--align-center` / `.ssg-body-cell--align-right` | `column.align` の水平寄せ。 |

@@ -3,7 +3,7 @@ title: はじめに
 description: SpreadsheetGrid — React 19 製の高性能・仮想化スプレッドシート / データグリッド
 ---
 
-**SpreadsheetGrid**(`@ishibashi0112/spreadsheet-grid`)は、React 19 + TypeScript 製の仮想化データグリッドです。スクロール空間の仮想化により **約 100 万行** までのデータを軽快に扱え、Excel ライクなセル編集・範囲選択・コピー & ペーストを備えています。
+**SpreadsheetGrid**(`@ishibashi0112/spreadsheet-grid`)は、React 19 + TypeScript 製の仮想化データグリッドです。サーバーサイド行モデル(書き戻し付き)・行グルーピングと集計・Master/Detail・範囲選択とクリップボードなど、他社グリッドでは商用ライセンスの機能を **MIT** で提供します。スクロール空間の仮想化により **約 100 万行** までのデータを軽快に扱え、IME に強い Excel ライクなセル編集を備えています。
 
 <BasicGridDemo />
 
@@ -23,7 +23,10 @@ description: SpreadsheetGrid — React 19 製の高性能・仮想化スプレ�
 - **行ドラッグ並び替え** — `enableRowDrag` でハンドル列(⋮⋮)を掴んで行を上下へ移動。`onRowsChange` に新配列が返り undo 対象
 - **サーバーサイド行モデル(SSRM)** — クエリ転送(フィルター / ソート)、ソフトリフレッシュ、ロードエラーのリトライ UI、`updateRows` による書き戻し(楽観更新 + 失敗時ロールバック)
 - **CSV / Excel エクスポート** — 組み込み CSV + ライブラリ非依存の `getExportData()`
-- **テーマ** — CSS カスタムプロパティ(`--ssg-*`)、ダークテーマ(`light` / `dark` / `auto`)
+- **モーション** — `motion` prop で一括制御(OS の「視差効果を減らす」を尊重)。アクティブセル枠の追従、ポップオーバーの出現、ソート / グループ開閉での行の移動、コピー範囲の動く点線、SSRM 書き戻しのセル単位の保存状態。opt-in でクロスヘア / 変更セルのフラッシュ / 行ドラッグの live 退避
+- **セル内検索** — `find` で `Ctrl/Cmd+F` の検索バー。仮想化された全行のヒットを強調して順送り(行は消さない)
+- **条件付き書式** — `column.conditionalFormat` でデータバー / カラースケール / 状態チップ。min / max はビュー行から自動集計
+- **テーマ** — CSS カスタムプロパティ(`--ssg-*`)、ダークテーマ(`light` / `dark` / `auto`)、[テーマビルダー](/theme-builder)で CSS 変数を書き出し
 - **共存前提の CSS 設計** — Tailwind(v3 / v4)・Mantine・HeroUI と衝突しない
 - **TypeScript ファースト** — 完全な型定義、コントロールドな API
 

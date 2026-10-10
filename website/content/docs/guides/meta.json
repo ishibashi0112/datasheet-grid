@@ -4,6 +4,7 @@
     "editing",
     "cell-events",
     "filter-sort",
+    "find",
     "sizing",
     "large-data",
     "scroll-hint",
@@ -14,7 +15,9 @@
     "row-drag",
     "export",
     "customization",
+    "conditional-format",
     "theming",
+    "motion",
     "keyboard",
     "testing"
   ]

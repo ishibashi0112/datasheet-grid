@@ -12,6 +12,14 @@ import { createInitialGridUiState } from '../model/gridReducer';
 import { createDetailIndexCacheHolder, type DetailIndexCacheHolder } from '../logic/detailRow';
 import { createAutoHeightMeasurer, type AutoHeightMeasurer } from '../controllers/autoHeightMeasurer';
 import { createScrollSyncController, type ScrollSyncController } from '../controllers/scrollSyncController';
+import { createRowEnterController, type RowEnterController } from '../controllers/rowEnterController';
+import { createChangeHighlightController, type ChangeHighlightController } from '../controllers/changeHighlightController';
+import { createSaveStatusController, type SaveStatusController } from '../controllers/saveStatusController';
+import { createFindController, type FindController } from '../controllers/findController';
+import {
+  createConditionalFormatStatsResolver,
+  type ConditionalFormatStatsResolver,
+} from '../logic/conditionalFormat';
 import { createDebouncedValueStore, type DebouncedValueStore } from '../controllers/debouncedValueStore';
 import { createAutoSizeOnDataTrigger, type AutoSizeOnDataTrigger } from '../controllers/columnAutosizeRunner';
 import { createImeInputController, type ImeInputController } from '../controllers/imeInputController';
@@ -90,6 +98,16 @@ export type GridEngine<T> = {
   // DOM / タイマーを持つコントローラ。
   autoHeightMeasurer: AutoHeightMeasurer<T>;
   scrollSync: ScrollSyncController;
+  // 追加(motion-2 / M-8): SSRM のブロック到着で差し替わった行へ enter クラスを直付けする DOM コントローラ。
+  rowEnter: RowEnterController;
+  // 追加(motion-6 / M-2): rows の差分で値が変わったセルへフラッシュ / 数値トゥイーンを直付けする DOM コントローラ。
+  changeHighlight: ChangeHighlightController<T>;
+  // 追加(motion-7 / M-9): SSRM 書き戻しのセル単位の保存状態を data 属性で直付けする DOM コントローラ。
+  saveStatus: SaveStatusController;
+  // 追加(F-2): セル内検索(開閉 / クエリ / ヒット / カレント。走査は時間分割)。
+  find: FindController<T>;
+  // 追加(F-3): 条件付き書式の列ごとの min / max(ビュー行から集計。内容が同じなら前回の参照)。
+  resolveConditionalFormatStats: ConditionalFormatStatsResolver<T>;
   serverSideQueryStore: DebouncedValueStore<ServerSideQueryResolution>;
   autoSizeOnData: AutoSizeOnDataTrigger<T>;
   // 追加(G-2): IME オンのままの直接入力(imeDirectInput)の入力受け。
@@ -123,6 +141,10 @@ export const createGridEngine = <T,>(init: GridEngineInit<T>): GridEngine<T> => 
 
   const autoHeightMeasurer = createAutoHeightMeasurer<T>();
   const scrollSync = createScrollSyncController();
+  const rowEnter = createRowEnterController();
+  const changeHighlight = createChangeHighlightController<T>();
+  const saveStatus = createSaveStatusController();
+  const find = createFindController<T>();
   const autoSizeOnData = createAutoSizeOnDataTrigger<T>();
   const imeInput = createImeInputController();
 
@@ -144,6 +166,11 @@ export const createGridEngine = <T,>(init: GridEngineInit<T>): GridEngine<T> => 
     activeCellNotifier: createActiveCellNotifier<T>(),
     autoHeightMeasurer,
     scrollSync,
+    rowEnter,
+    changeHighlight,
+    saveStatus,
+    find,
+    resolveConditionalFormatStats: createConditionalFormatStatsResolver<T>(),
     serverSideQueryStore,
     autoSizeOnData,
     imeInput,
@@ -151,6 +178,10 @@ export const createGridEngine = <T,>(init: GridEngineInit<T>): GridEngine<T> => 
     dispose: () => {
       autoHeightMeasurer.dispose();
       scrollSync.dispose();
+    rowEnter.dispose();
+    changeHighlight.dispose();
+    saveStatus.dispose();
+    find.dispose();
       serverSideQueryStore.dispose();
       imeInput.dispose();
     },

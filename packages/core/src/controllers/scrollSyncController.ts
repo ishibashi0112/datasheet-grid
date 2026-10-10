@@ -24,12 +24,19 @@ export type ScrollSyncController = {
   dispose: () => void;
 };
 
+// 追加(motion-1 / M-1): スクロール中だけスクロールコンテナへ付く修飾子です。styles.css はこの間、アクティブセル枠 /
+//   選択範囲オーバーレイの追従 transition を切ります(scroll-space 仮想化で描画ウィンドウの基準が動くと overlay の
+//   top が変わるため、滑らせると画面上で漂って見える)。停止から SCROLLING_IDLE_MS で外します。
+export const SCROLLING_CLASS_NAME = 'ssg-scroll-container--scrolling';
+export const SCROLLING_IDLE_MS = 120;
+
 export const createScrollSyncController = (): ScrollSyncController => {
   let args: ScrollSyncArgs | null = null;
   let detach: (() => void) | null = null;
   let apiScrollPending = 0;
   let pendingNotify: GridScrollEventParams | null = null;
   let notifyFrameId: number | null = null;
+  let scrollingIdleTimer: ReturnType<typeof setTimeout> | null = null;
 
   const flushScrollNotify = () => {
     notifyFrameId = null;
@@ -49,6 +56,15 @@ export const createScrollSyncController = (): ScrollSyncController => {
     });
     const handleScroll = () => {
       args?.setViewState({ scrollTop: el.scrollTop });
+      // 追加(motion-1): スクロール中の修飾子(停止から SCROLLING_IDLE_MS 後に外す)。
+      el.classList.add(SCROLLING_CLASS_NAME);
+      if (scrollingIdleTimer !== null) {
+        clearTimeout(scrollingIdleTimer);
+      }
+      scrollingIdleTimer = setTimeout(() => {
+        scrollingIdleTimer = null;
+        el.classList.remove(SCROLLING_CLASS_NAME);
+      }, SCROLLING_IDLE_MS);
       // source の判定はイベント単位(rAF 単位だと api 消費がずれるため)。
       const source: GridScrollEventParams['source'] = apiScrollPending > 0 ? 'api' : 'user';
       if (source === 'api') {
@@ -78,6 +94,11 @@ export const createScrollSyncController = (): ScrollSyncController => {
         cancelAnimationFrame(notifyFrameId);
         notifyFrameId = null;
       }
+      if (scrollingIdleTimer !== null) {
+        clearTimeout(scrollingIdleTimer);
+        scrollingIdleTimer = null;
+      }
+      el.classList.remove(SCROLLING_CLASS_NAME);
       resizeObserver.disconnect();
     };
   };

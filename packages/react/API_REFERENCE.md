@@ -33,6 +33,15 @@
 | `headerHeight` | `number` | density 依存(standard: `40`) | ヘッダー行の高さ(px)。未指定時は density プリセット(compact: `32` / comfortable: `48`)から解決。明示指定が常に優先。 |
 | `density` | `'compact' \| 'standard' \| 'comfortable'` | `'standard'` | 密度プリセット。rowHeight / headerHeight の既定値と寸法トークン(セル横 padding / バー padding / アイコンボタン寸法 / セル文字の相対拡縮)を一括切替。`'standard'` は従来と同値。個別調整はトークン(`--ssg-cell-pad-x` 等)の上書きで可能。popover / menu 等のポータルは対象外。 |
 | `theme` | `'light' \| 'dark' \| 'auto'` | `'light'` | カラーテーマ。`'dark'` でダークプリセット(`.ssg-theme-dark` のトークン一括上書き。Mantine dark 系パレット)をグリッド本体・全ポータル(popover / menu / panel)・ドラッグゴースト・ツールチップへ適用。`'auto'` は `prefers-color-scheme` へ追従(Mantine / HeroUI 等クラスベース dark 運用では、利用側カラースキームの解決値を `'light' \| 'dark'` で渡す使い方を推奨)。個別の色調整はトークン(`--ssg-*`)の上書きで可能。 |
+| `motion` | `'auto' \| 'on' \| 'off'` | `'auto'` | モーション(アニメーション / トランジション)の有効化。`'auto'` は OS / ブラウザの「視差効果を減らす」(`prefers-reduced-motion: reduce`)が有効なら `'off'`、それ以外は `'on'` として扱う。`'off'` では root と全ポータル(popover / menu / panel)・ドラッグゴースト・ツールチップへ `.ssg-motion-off` が付き、継続時間トークン(`--ssg-motion-fast` / `--ssg-motion-base` / `--ssg-motion-slow`)が 0 になって動きが止まる(表示結果は同じ)。`'on'` は OS 設定に関わらず動かす。速さの調整はトークンの上書き。詳細は「モーション」節。 |
+| `animateRows` | `boolean` | `true` | 行の並び替えアニメ。ソート / フィルター / グループ開閉 / `rows` の差し替えで、描画中の行が新しい位置へ滑り(`--ssg-motion-base`)、スクロールなしで現れた行は上から順にフェードインする。スクロール中の仮想化による出入りは対象外。auto-height 行と serverSide(SSRM)では自動で無効。`motion` の実効値が `'off'` なら動かない。詳細は「モーション」節。 |
+| `showCopyRange` | `boolean` | `true` | `Ctrl/Cmd+C` のあと、コピー元の範囲に Excel と同じ「動く点線」を残す(`.ssg-copy-range-overlay`。`motion` が `'off'` なら静的な点線)。`Esc` と編集開始で消え、ソート / フィルター / グループ開閉 / 行数 / 列の変化で描画しなくなる(貼り付けでは残る)。`false` で点線を出さない(コピー自体は従来どおり)。 |
+| `hoverHighlight` | `'row' \| 'cross'` | `'row'` | ホバーの強調範囲。`'row'` はポインタの行だけ(従来)。`'cross'` はその行に加えて、ポインタの列(列ヘッダー + 同じ列の他セルに薄い帯 `.ssg-col-hover-overlay`)と行番号も染めるクロスヘア表示。色はトークン `--ssg-col-hover-bg`(帯)/ `--ssg-select-bg`(ヘッダー・行番号)。横に長い表で「この値はどの列か」を視線移動なしで答えるため。 |
+| `highlightChanges` | `boolean` | `false` | `rows` が変わったとき、値が変わったセルを一瞬アクセント色で光らせ(`.ssg-body-cell--changed`、`--ssg-motion-slow`)、数値の既定セルは旧値から新値へカウントアップする(`--ssg-motion-base`。表示は `valueFormatter` で整形)。セル編集 / 貼り付け / クリア / undo・redo / 外部からの `rows` 差し替えのすべてが対象。clientSide 専用(SSRM では無効)。描画中のセルだけが対象で、変わったセルが 200 を超えるとフラッシュのみ、2,000 を超える・行の挿入 / 削除 / 並べ替えを伴う・参照の変わった行が 5,000 を超える(データの読み直し)ときは何もしない。 |
+| `showSaveStatus` | `boolean` | `true` | serverSide の書き戻し(`dataSource.updateRows`)で、確定したセルに保存状態の印を出す。保存中は斜線 + 小さなスピナー(`[data-ssg-save="pending"]`)、成功は ✓ バッジを 1.3 秒(`"ok"`)、失敗は揺れ + 赤いフラッシュ + ✕ バッジ(`"failed"`)とセル下の「保存に失敗しました」チップ(4 秒 / スクロールで消える)。既存の保存失敗バー(`onServerSideWriteError`)とは独立に出る。描画中のセルだけが対象。clientSide では何も出ない。 |
+| `rowDragMotion` | `'ghost' \| 'live'` | `'ghost'` | 行ドラッグ並べ替え(`enableRowDrag`)の表示方式。`'ghost'` は従来(ゴースト + ガイド線、ドロップ後に新しい位置へスライド)。`'live'` は掴んだ行がポインタに追従し、通る先の行がその場で上下へ退避する(ドロップ先が「隙間」として見える。枠外で離しても直前の位置へ確定、`Esc` で元へ戻る)。`motion` が `'off'` のときは `'ghost'` と同じ。 |
+| `find` | `boolean \| FindOptions` | `false` | **セル内検索**。`true` でグリッド右上の検索バー(`.ssg-find-bar`)と `Ctrl/Cmd+F`(グリッドにフォーカスがあるときだけ横取り)が有効になる。表示文字列(`valueFormatter` 適用後)への部分一致で、ヒットをすべて `<mark class="ssg-find-mark">` で強調し、`Enter` / `↓` で次、`Shift+Enter` / `↑` で前へ(アクティブセルとスクロールが追従)、`Esc` で閉じる。行は消さない(絞り込みのフィルターとは別)。`FindOptions` = `{ shortcut?: boolean(既定 true。false でブラウザ標準の検索に譲る), caseSensitive?: boolean(既定 false) }`。走査は時間分割(1 チャンク 10ms)で入力を止めない。SSRM はロード済み範囲だけが対象。ヒットは 10,000 件で打ち切り(件数に `+`)。詳細は「セル内検索」節。 |
+| `onFindChange` | `(params: FindChangeParams) => void` | — | セル内検索の状態(`{ query, matchCount, currentIndex, open }`)が変わったときの通知。`currentIndex` は 0 始まり(ヒットなしは `null`)。ツールバーに「3 / 12」を出す等に使う。 |
 | `rowHeaderWidth` | `number` | `56` | 行番号列の幅(px)。 |
 | `height` | `number \| string` | `—` | グリッドの明示高さ。**値の種類で何の高さかが変わる**。① `%` を含む文字列(`'100%'` / `'50%'` / `'calc(100% - 40px)'`): トップバー・フィルターチップバー・ボトムバーを含む**グリッド全体**の高さ。`'100%'` でグリッドが親要素に収まり、バーを除いた残りがスクロール領域になる(ルートに `ssg-root--fill-height` が付く)。親要素が確定高さを持つ前提で、親が高さ `auto` だと全行分まで伸びて仮想化が効かない。② `number`(px)/ `%` を含まない文字列(`'400px'` / `'50vh'` / `'calc(100vh - 120px)'`): **スクロール領域だけ**の高さ(グリッド全体はバーの分だけ高くなる)。③ 未指定: スクロール領域は内容の高さで `maxHeight` によりクリップ。ルートへの `style={{ height }}` だけではスクロール領域は決まらないため、高さはこの prop で指定する。 |
 | `maxHeight` | `number \| string` | `—`（既定 480px） | **スクロール領域**の高さ上限(バーは含まない。`height` の種類に関わらず同じ)。`height`・`maxHeight` が**共に未指定のときのみ**既定の 480px が効く（従来挙動）。数値の `height` と併用するとスクロール領域 = `min(height, maxHeight)`、`%` の `height` と併用すると `min(maxHeight, 親の高さ − バー)`(親が大きければグリッド全体はバー + `maxHeight` に縮む)。 |
@@ -324,6 +333,54 @@ const gridRef = useRef<SpreadsheetGridHandle<Row>>(null);
 - **タッチが主のデバイス**(スマホ / タブレット): 入力受けに `inputmode="none"` を付け、セルのタップで仮想キーボードが開かないようにしています(従来どおり)。
 - **確認状況**: Chromium(Chrome / Edge / WebView2 と同じエンジン)で、DevTools Protocol の変換イベント(`Input.imeSetComposition` / `Input.insertText`)を使って確認しています。OS の IME そのもの(Windows の MS-IME など)での最終確認は実機で行ってください。
 
+### モーション(`motion`)
+
+グリッドの動き(アクティブセル枠の追従、ポップオーバーの出現、ソート時の行移動、読み込み中のシマー等)は `motion` prop で一括制御する(**既定 `'auto'`**)。
+
+| 値 | 挙動 |
+| --- | --- |
+| `'auto'` | OS / ブラウザの「視差効果を減らす」(`prefers-reduced-motion: reduce`)が有効なら `'off'`、それ以外は `'on'`。設定の変化にも追従する。 |
+| `'on'` | OS 設定に関わらず動かす。 |
+| `'off'` | すべて止める(表示結果は同じで、瞬時に切り替わる)。 |
+
+- 実装は CSS トークン: `--ssg-motion-fast`(140ms)/ `--ssg-motion-base`(260ms)/ `--ssg-motion-slow`(600ms)/ `--ssg-motion-ease`(イージング)。各効果はこのトークンだけを参照する。`'off'` では root と全ポータル root・ドラッグゴースト・ツールチップに `.ssg-motion-off` が付き、継続時間が 0 になる。
+- 速さは利用側のトークン上書きで変えられる(`.ssg-root { --ssg-motion-base: 180ms; }`)。`.ssg-motion-off` の値は `:where`(特異度 0)で定義しているため、停止中でも特定の効果だけ戻すことができる。
+- SSR では `'auto'` はいったん `'on'` で描画し、ハイドレーション後にクライアント側で再解決する(`theme='auto'` と同じ)。
+- 従来 `prefers-reduced-motion` を直接見ていた効果(ツールパネルのフラッシュ / フィルター候補のスピナー / スクロール位置インジケーターのフェード)も `motion` の実効値で判定するようになった(`'auto'` では従来と同じ)。
+
+#### 効果の一覧
+
+| 効果 | 既定 | トークン | 備考 |
+| --- | --- | --- | --- |
+| アクティブセル枠 / 選択範囲の追従(M-1) | 有効 | `--ssg-motion-fast` | キーボード移動 / クリックで枠が新しい位置へ滑る。スクロール中とポインタでの範囲ドラッグ中は瞬時に追従(漂って見えるのを避ける)。 |
+| ポップオーバー / メニューの出現(M-7) | 有効 | `--ssg-motion-fast` | 列メニュー / コンテキストメニュー / フィルター / ツールパネル / select 候補 / 日付パネルが 4px 上からフェードイン。出現のみ(閉じるのは即時)。 |
+| ソート / フィルター / グループ開閉の行移動(M-4 / M-5) | 有効(`animateRows`) | `--ssg-motion-base` | 描画中の行が新しい位置へ滑る(FLIP 相当。行要素の transform の transition)。auto-height / SSRM では自動 OFF。 |
+| スクロールなしで現れた行のフェードイン(M-4 / M-5) | 有効(`animateRows`) | `--ssg-motion-base` | ソートで窓に入ってきた行、展開したグループの子行、差し替えた `rows` の行が上から順に(約 23ms 刻み)3px 下からフェードイン。スクロールで出入りする行は対象外。 |
+| コピー範囲の動く点線(M-3) | 有効(`showCopyRange`) | — | `Ctrl/Cmd+C` 後、コピー元の範囲に点線が流れる(0.6s 周期)。`motion` が `'off'` では止まった点線。 |
+| ホバーのクロスヘア(M-6) | opt-in(`hoverHighlight: 'cross'`) | — | ポインタの行に加えて列ヘッダー・行番号・同じ列の他セルを薄く染める(動きはなく、静的な強調)。 |
+| 変更セルのフラッシュ + 数値トゥイーン(M-2) | opt-in(`highlightChanges`) | `--ssg-motion-slow` / `--ssg-motion-base` | 値が変わったセルがアクセント色から 600ms でフェードし、数値は 260ms でカウントアップ。 |
+| セル単位の保存状態(M-9) | 有効(`showSaveStatus`、SSRM の書き戻し時) | `--ssg-motion-base` / `--ssg-motion-slow` | 保存中の斜線 + スピナー → ✓ バッジ、失敗は揺れ + 赤いフラッシュ + ✕ とチップ。`motion` が `'off'` では静的な印だけ。 |
+| 行ドラッグの live 退避(M-11) | opt-in(`rowDragMotion: 'live'`) | 160ms 固定 | 掴んだ行がポインタに追従し、通る先の行がその場で退避。ドロップ後は従来どおりスライドで収まる。 |
+| 読み込み中のシマーと到着行のフェードイン(M-8) | 有効 | `--ssg-motion-base` | SSRM の取得中はスケルトンに光の帯が流れ、ブロックが到着して差し替わった行のセルが上から順に(約 23ms 刻み)3px 下からフェードイン。スクロールで出入りする行は対象外。clientSide では発生しない。 |
+| 細かな遷移 | 有効 | `--ssg-motion-fast` | ヘッダー操作アイコンのフェード、チェックボックス、タブのインジケータ、ツールチップ、スクロール位置インジケーター。 |
+
+### セル内検索(`find`)
+
+`find` を付けると、グリッドにフォーカスがある状態の `Ctrl/Cmd+F`(または `handle.openFind()`)でグリッド右上に検索バーが出る(**既定は無効**)。「絞り込み(フィルター)」とは別に、**行を消さずに場所を探す**操作で、ブラウザの `Ctrl+F` では探せない仮想化された行も対象になる。
+
+```tsx
+<SpreadsheetGrid find ... />
+// find={{ shortcut: false, caseSensitive: true }}
+```
+
+- **対象**: ビュー行(フィルター / ソート適用後)× 可視列の**表示文字列**(`valueFormatter` 適用後 = 画面に見えている文字)。`renderCell` の列も表示文字列(`valueFormatter` または `String(value)`)で検索されるが、`<mark>` の強調は既定セルだけ(カレントへの移動は同じ)。
+- **走査**: 時間分割(`logic/chunkedLoop`。1 チャンク 10ms)で入力・描画を止めない。走査中は件数が「検索中…」になる。クエリ / 大文字小文字 / `rows`(編集・差し替え)/ ソート / フィルター / 列が変わると再走査し、同じヒットが残っていればカレントを保つ(移動はしない)。
+- **順送り**: `Enter` / `↓` で次、`Shift+Enter` / `↑` で前(循環)。カレントのヒットへはクリック相当の単一選択 + 可視化スクロール(`selectCell(row, col, { scrollIntoView: true })` と同じ)。クエリを打ち直すと先頭のヒットへ移動する。
+- **閉じる**: `Esc` / × でクエリとヒットが消え、フォーカスはグリッド本体へ戻る。`find` を `false` にすると開いていても閉じる。
+- **ヒット数の上限**: 10,000 件で打ち切り(件数表示に `+`)。SSRM は**ロード済み範囲だけ**が対象(未ロード行は読み飛ばす)。
+- **スタイル**: ヒットは `.ssg-find-mark`、カレントは `.ssg-find-mark--current`(トークン `--ssg-find-mark-bg` / `--ssg-find-mark-current-bg`)。バーは `classNames.findBar`。
+- **ショートカット**: `Ctrl/Cmd+F` の横取りはグリッド本体にフォーカスがあるときだけ(フィルター入力 / エディタ内では効かない)。`shortcut: false` でブラウザ標準の検索に譲り、`handle.openFind()` だけで開く運用もできる。
+
 ### キーボード操作
 
 グリッド本体フォーカス中(編集中でない)の操作一覧。フィルター入力等のフォーム要素にフォーカス中は無効。
@@ -334,6 +391,7 @@ const gridRef = useRef<SpreadsheetGridHandle<Row>>(null);
 | `Enter` / `F2` / 印字キー直打ち | 編集開始(印字キーはその 1 文字を初期値に)。編集可否は `readOnly` / 列 / `canEditCell` に従う。 |
 | `Escape` | 選択解除。 |
 | `Ctrl/Cmd+C` / ペースト(`Ctrl/Cmd+V`) | 選択範囲の TSV コピー(`isRowExportable` 指定時は `false` の行を除く)/ アクティブセル起点の貼り付け(readOnly では no-op)。TSV は Excel / Google スプレッドシート互換(改行・タブ・`"` を含むセルは `"…"` で囲み `"` は `""`。貼り付けはこの引用符を解釈し、途中の空行も行として保持する)。 |
+| `Ctrl/Cmd+F` | セル内検索バーを開く(`find` が有効なとき。無効ならブラウザ標準の検索)。 |
 | `Ctrl/Cmd+A` | 全体選択(2 回目で解除)。 |
 | `Delete` / `Backspace` | 選択セル(なければアクティブセル)の値クリア。編集不可セルは対象外。クリア値は「空文字のペースト」と同じ規則(`parseClipboardValue('')` 経由、未定義なら `''`)。変更が無ければ no-op(undo 履歴にも積まれない)。 |
 | `Ctrl/Cmd+Z` / `Ctrl/Cmd+Shift+Z` / `Ctrl/Cmd+Y` | undo / redo(詳細は命令的 API の「undo / redo」節)。 |
@@ -377,6 +435,7 @@ IME オンのまま(編集していないセルで)日本語を打ち始める�
 | `valueFormatter` | `(params: CellValueFormatterParams<T>) => string` | — | セル表示値の整形(UI 表示のみ)。`renderCell` 未指定の既定セルが返り値を表示。組み込み `numberFormatter` 等を渡せる。元の値/編集/コピー/ソート/フィルターには影響しない。 |
 | `cellClassName` | `GridSlotProps \| ((ctx: CellStyleContext<T>) => GridSlotProps \| undefined)` | — | セルへ付与する追加 class(条件付きスタイル)。`GridSlotProps` = `string \| { className?, style? }` で、StyleX の `stylex.props(...)` をそのまま返せる(`style` はセルへインライン付与。座標 / 寸法はグリッドが後勝ち)。関数版は値 / 状態に応じて返せる。`ctx` には view の `rowIndex` に加え source 基準の `sourceRowIndex` / `rowKey` が入る(ソート / フィルター ON でも source 行基準のデータと突き合わせ可能。「補助型」節参照)。基底 `.ssg-body-cell` は未レイヤー・特異度 (0,1,0)。確実な上書きは `.ssg-body-cell.my-class` の連結を推奨。 |
 | `cellNote` | `(ctx: CellStyleContext<T>) => string \| null \| undefined` | — | セルのメモ(FarPoint SPREAD のセルメモ / Excel のメモ相当)。文字列を返したセルの右上に印(10px の三角。色はトークン `--ssg-note-indicator`)を出し、マウスを乗せるとその文字列をツールチップで表示する(`\n` で改行)。`undefined` / `null` / 空文字(空白だけを含む)なら何も出さない。`ctx` は `cellClassName` の関数版と同じ。入力エラー(`validate` の mark)と同じセルでは、エラーの 6px の赤い三角がメモの三角の上に重なって両方見え、ツールチップは「エラー → 改行 → メモ」の順。描画中のセルだけ評価する(`cellClassName` 関数と同じコスト階級)。CSV / TSV / クリップボード / `getExportData` には含めない。詳細は「セルのメモ(`cellNote`)」節。 |
+| `conditionalFormat` | `GridConditionalFormat<T>` | — | **条件付き書式**。既定セルの描画に、値の「量」/「向き」/「状態」を重ねる。`dataBar`(背景の帯。`min` / `max` 省略時はビュー行 = フィルター / ソート適用後の数値から自動集計、負の値は 0 の軸から左へ。`color` / `negativeColor` / `showValue: false` で帯だけ)/ `colorScale`(セル背景を段階的に染める。`type: 'sequential'`(既定。淡 → 濃)/ `'diverging'`(`mid` を中立色に負側 / 正側を別の色相で。`colors` で色の段を差し替え)/ `chips`(値 → 色味 `'neutral' \| 'info' \| 'good' \| 'warning' \| 'critical'` か `{ tone, label, icon, color }` のマップ、または `ctx` から返す関数。アイコン + ラベルのピル)。複数を同時指定可。表示だけで、エクスポート / コピー / ソート / フィルターには影響しない。色はトークン `--ssg-cf-*`。詳細は「条件付き書式(`conditionalFormat`)」節。 |
 | `renderHeader` | `(ctx: HeaderRenderContext<T>) => ReactNode` | — | カスタムヘッダー描画。 |
 | `filterType` | `'text' \| 'textSet' \| 'number' \| 'numberSet' \| 'date' \| 'dateSet' \| 'select' \| 'set' \| 'custom' \| 'auto'` | — | フィルター UI の種別。`'auto'` は列の値から `numberSet` / `textSet` / `dateSet` を自動判定する opt-in(下記「filterType: 'auto'(自動判定)」節)。`'numberSet'` / `'textSet'` / `'dateSet'` は条件(演算子 + 値)と Set 一覧を 1 つの popover に縦に並べて **AND 結合**する複合フィルター(条件を適用すると Set 候補が連動して絞られる。候補外になった値の選択は破棄せず保持)。numberSet の演算子は 以上 / より大きい / 以下 / 未満 / に等しい / に等しくない / 範囲 / 空白 / 空白でない、textSet は を含む / に等しい / で始まる / で終わる / 空白 / 空白でない(判定は大文字小文字無視)。dateSet は 範囲 / 以降 / 以前 / に等しい / に等しくない / 空白 / 空白でない + 相対プリセット(今日 / 今月 / 過去 30 日。**相対のまま保存され評価のたびに解決**)で、Set 部分は年 / 月 / 日の 3 階層ツリー(親は 3 状態チェック)になる。 |
 | `filterOptions` | `readonly GridSelectFilterOption[]` | rows から自動収集 | select / set / numberSet / textSet / dateSet の候補(readonly / `as const` 配列も可)。 |
@@ -671,6 +730,26 @@ const columns: GridColumn<Part>[] = [
 - **ツールチップ**: グリッドの既存のカスタムツールチップ(`data-ssg-tooltip`。「ツールチップ」節)で表示する。表示はマウスを乗せたとき(既存と同じ遅延)。メモのあるセルでは、省略時の全文ツールチップ(`showCellOverflowTooltip`)よりメモを優先する。
 - **出力には含めない**: CSV / TSV(コピー)/ `getExportData` には出力されない(表示だけの情報)。
 - **評価のタイミング**: 描画中のセルだけ、行の再描画のたびに評価する(`cellClassName` 関数と同じコスト階級。純粋・軽量に保つこと)。行は行データ・列定義などが変わったときに再描画されるため、メモの内容を `rows` 以外の state(取込結果の Map など)から引く場合は、その state を `useMemo` の依存に入れて `columns` を作り直す。
+
+### 条件付き書式(`conditionalFormat`)
+
+Excel の「条件付き書式」に当たる軽量ヘルパーです。列オプション 1 つで、既定セルの描画にデータバー(量)/ カラースケール(量 or 基準からの向き)/ 状態チップ(状態)を重ねます。min / max は表示中の行から自動計算(固定値も可)。`cellClassName` の関数版で同じ見た目は作れますが、min / max の集計と帯の描画を毎回書かずに済みます。
+
+```tsx
+const columns: GridColumn<Row>[] = [
+  { key: 'qty', title: '在庫数', width: 100, align: 'right', conditionalFormat: { dataBar: {} } },
+  { key: 'delta', title: '前月比 %', width: 100, conditionalFormat: { colorScale: { type: 'diverging', min: -30, mid: 0, max: 30 } } },
+  { key: 'price', title: '単価', width: 100, conditionalFormat: { colorScale: {} } },
+  { key: 'status', title: '状態', width: 110, conditionalFormat: { chips: { 有効: 'good', 停止: 'warning', 廃番: { tone: 'critical', label: '廃番(取扱終了)' } } } },
+];
+```
+
+- **データバー(`dataBar`)**: 値の大きさを背景の帯(`.ssg-cf-bar`。上下 4px の余白、右端を角丸)で示す。`min` / `max` を省略すると、**ビュー行**(フィルター / ソート適用後。SSRM はロード済み範囲)の数値の最小 / 最大を使い、編集 / フィルターで変われば取り直す(内容が同じなら再描画しない)。負の値を含む列は 0 を軸に左へ伸び(`.ssg-cf-bar--negative`。色は `negativeColor` / `--ssg-cf-bar-negative`)、負だけの列は右端が軸(Excel と同じ)。`color` で帯の色(既定 `--ssg-cf-bar` = アクセントの淡色)、`showValue: false` で文字を出さず帯だけにする。数値以外のセルには出ない。
+- **カラースケール(`colorScale`)**: セル背景(`.ssg-body-cell--cf-scale`)を値に応じて染める。文字色は変えない(明るい段に制限してコントラストを保つ)。`type: 'sequential'`(既定)は 1 色相の淡 → 濃(`--ssg-cf-seq-min` → `--ssg-cf-seq-max`)。`'diverging'` は `mid`(省略時は `min < 0 < max` なら 0、それ以外は中央)を中立色(`--ssg-cf-div-mid`)にして、負側(`--ssg-cf-div-negative`)/ 正側(`--ssg-cf-div-positive`)を別の色相で濃くする。`colors` に CSS 色の配列(`[淡, 濃]` / `[負側, 中立, 正側]`)を渡すと差し替え。色の補間は CSS の `color-mix()` で行う(トークンや任意の CSS 色をそのまま混ぜられる)。
+- **状態チップ(`chips`)**: 値(`String(value)`)→ 色味のマップ、または `ctx`(`cellClassName` の関数版と同じ)からチップを返す関数。チップ(`.ssg-chip.ssg-chip--<tone>`)はアイコン + ラベルのピルで、色だけで意味を運ばない(`icon: false` でアイコンなし)。`label` 省略時はセルの表示文字列(`valueFormatter` 適用後。セル内検索の強調もそのまま)、`color` で任意の色(`.ssg-chip--custom`)。マップに載っていない値 / 関数が `null` を返した値はふつうの文字のまま。
+- **組み合わせ**: 1 列に `dataBar` と `colorScale` を同時に指定できる(帯は背景色の上)。`cellClassName` / `getRowClassName` の明示 style は条件付き書式より後勝ち。
+- **影響範囲**: 表示だけ。CSV / TSV / クリップボード / `getExportData` / ソート / フィルター / `renderCell` の列(カスタム描画が優先)には影響しない。`motion` が `'on'` なら帯の長さと背景色は値の変化で滑らかに変わる。
+- **色のトークン**: `--ssg-cf-bar` / `--ssg-cf-bar-negative` / `--ssg-cf-seq-min` / `--ssg-cf-seq-max` / `--ssg-cf-div-negative` / `--ssg-cf-div-mid` / `--ssg-cf-div-positive` / `--ssg-cf-<tone>` / `--ssg-cf-<tone>-bg`(tone = neutral / info / good / warning / critical)。ダークテーマは段を選び直した別の値。
 
 ### flex と autoSize(列幅の決め方)
 
@@ -1178,6 +1257,15 @@ const buffer = await writeXlsx({
 | `openFilterManager()` | フィルター管理パネル(適用中の列フィルターの一覧 / 該当列へジャンプして編集 / 個別・全クリア / 追加)を開く。`enableColumnFilter=false` のときは何もしない。列メニューの「フィルターを管理…」/ 既定トップバーの **Filters chip クリック**(`enableColumnFilter=true` 時にクリック可能)と同じパネル。 |
 | `closeFilterManager()` | フィルター管理パネルを閉じる(開いていなければ何もしない)。 |
 
+### セル内検索
+
+| メソッド | 説明 |
+| --- | --- |
+| `openFind(query?)` | 検索バーを開く(`find` が無効なら何もしない)。`query` を渡すとその文字列で検索し、先頭のヒットへ移動する。省略時は前回のクエリのまま開く。 |
+| `closeFind()` | 検索バーを閉じる(クエリとヒットの強調が消える。開いていなければ何もしない)。 |
+| `findNext()` | 次のヒットへ(循環)。カレントのヒットへアクティブセルとスクロールが追従する。 |
+| `findPrev()` | 前のヒットへ(循環)。 |
+
 ### ツールチップ(TT-1)
 
 グリッド内・ポータル内の操作ヒント / 切り詰めテキスト全文表示は、`title` 属性ではなく**カスタムツールチップ**(`.ssg-tooltip`・body 直下シングルトン)で表示される。表示対象は `data-ssg-tooltip="文言"` 属性で、window の pointerover / focusin 委譲で拾うため、**利用側が自前の要素(カスタムセル / renderHeader 等)へ同属性を付けても同じ見た目のツールチップが出る**。配色は `--ssg-tooltip-bg / --ssg-tooltip-text / --ssg-tooltip-shadow` トークンで調整可能。
@@ -1380,6 +1468,8 @@ type GridSlotProps = string | { className?: string; style?: CSSProperties };
 | `errorBar` | SSRM のエラーバー `.ssg-ssrm-error-bar` |
 | `scrollHint` | スクロール位置インジケーター `.ssg-scroll-hint` |
 | `activeCellOverlay` / `selectionOverlay` | アクティブセル枠 / 範囲選択の塗り |
+| `copyRangeOverlay` | コピー範囲の動く点線 `.ssg-copy-range-overlay` |
+| `findBar` | セル内検索バー `.ssg-find-bar` |
 
 ### StyleX との併用
 
@@ -1416,6 +1506,9 @@ const s = stylex.create({
 | `.ssg-body-cell--readonly` | 読み取り専用セル(範囲選択に入っていないとき。`dimReadOnlyCells` と独立して常時付与)。 |
 | `.ssg-body-cell--invalid` | validation mark 表示中のセル。 |
 | `.ssg-body-cell--has-note` | セルのメモ(`cellNote`)があるセル(右上の印は `::before`。色は `--ssg-note-indicator`)。 |
+| `.ssg-body-cell--cf-bar` | 条件付き書式のデータバーがあるセル(帯は子要素 `.ssg-cf-bar`。負の値は `.ssg-cf-bar--negative`)。 |
+| `.ssg-body-cell--cf-scale` | 条件付き書式のカラースケールで背景を染めたセル。 |
+| `.ssg-chip` | 条件付き書式の状態チップ(色味は `.ssg-chip--info` / `--good` / `--warning` / `--critical` / `--neutral`、任意色は `.ssg-chip--custom`。中身は `.ssg-chip-icon` / `.ssg-chip-label`)。 |
 | `.ssg-body-cell--row-hovered` | 行ホバー中のセル(`enableRowHover` 有効時)。 |
 | `.ssg-body-cell--autoheight` | auto-height 列のセル。 |
 | `.ssg-body-cell--align-center` / `.ssg-body-cell--align-right` | `column.align` の水平寄せ。 |

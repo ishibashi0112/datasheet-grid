@@ -138,4 +138,58 @@ describe('rowDragController', () => {
     expect(document.querySelector('[data-grid-drag-ghost]')).toBeNull();
     controller.dispose();
   });
+
+  // 追加(motion-8 / M-11): live 方式。掴んだ行がポインタに追従し、通る先の行が退避する。確定で commitRowMove、
+  //   Esc で基準位置へ戻る。ガイド線 / ゴーストは出ない。
+  it("motion='live': 掴んだ行が追従し、通る先の行が退避し、up で commit / Escape で戻る", () => {
+    vi.useFakeTimers();
+    try {
+      const controller = createRowDragController();
+      const { args, container, commitRowMove } = makeArgs();
+      const rows = Array.from(container.querySelectorAll<HTMLElement>('.ssg-body-row'));
+      rows.forEach((row, i) => {
+        row.style.transform = `translateY(${i * 10}px)`;
+      });
+      controller.update({ ...args, motion: 'live' });
+
+      controller.onRowDragHandlePointerDown(1, handleEvent());
+      expect(rows[1].getAttribute('data-ssg-row-dragging')).toBe('live');
+      expect(document.querySelector('[data-grid-drag-ghost]')).toBeNull();
+      // y=47 → slot 5 → target 4。行 1 は +32px 追従、行 2..4 は -10px 退避、行 5 以降は不変。
+      dispatchPointer('pointermove', 1, 20, 47);
+      expect(rows[1].style.transform).toBe('translateY(42px)');
+      expect(rows[2].style.transform).toBe('translateY(10px)');
+      expect(rows[4].style.transform).toBe('translateY(30px)');
+      expect(rows[5].style.transform).toBe('translateY(50px)');
+      expect(rows[2].style.transition).toContain('transform');
+      expect(args.centerIndicatorRef.current?.style.display).toBe('none');
+      // 枠外へ出ても直前のスロットを保つ(退避は維持)。
+      dispatchPointer('pointermove', 1, 500, 47);
+      expect(rows[2].style.transform).toBe('translateY(10px)');
+      dispatchPointer('pointerup', 1, 500, 47);
+      expect(commitRowMove).toHaveBeenCalledWith(1, 4);
+      expect(rows[1].hasAttribute('data-ssg-row-dragging')).toBe(false);
+      // 確定時は transition だけ外し transform は残す(settle が現在位置から動かす)。
+      expect(rows[2].style.transition).toBe('');
+      expect(rows[2].style.transform).toBe('translateY(10px)');
+
+      // Escape: 基準位置へ戻る。
+      commitRowMove.mockClear();
+      rows.forEach((row, i) => {
+        row.style.transform = `translateY(${i * 10}px)`;
+      });
+      controller.onRowDragHandlePointerDown(1, handleEvent());
+      dispatchPointer('pointermove', 1, 20, 47);
+      expect(rows[3].style.transform).toBe('translateY(20px)');
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+      expect(commitRowMove).not.toHaveBeenCalled();
+      expect(rows[1].style.transform).toBe('translateY(10px)');
+      expect(rows[3].style.transform).toBe('translateY(30px)');
+      vi.advanceTimersByTime(300);
+      expect(rows[3].style.transition).toBe('');
+      controller.dispose();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });

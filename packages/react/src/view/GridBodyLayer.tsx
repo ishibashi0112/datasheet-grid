@@ -37,6 +37,14 @@ import { shouldMarkCellOverflowTooltip } from '@ishibashi0112/spreadsheet-grid-c
 import { getInvalidMessage } from '@ishibashi0112/spreadsheet-grid-core/logic/validation';
 // 追加(G-3): セルのメモ(cellNote)の正規化と、ツールチップ文言(エラー → 改行 → メモ)の合成です。
 import { normalizeCellNote, resolveCellTooltipText } from '@ishibashi0112/spreadsheet-grid-core/logic/cellNote';
+// 追加(F-3): 条件付き書式(データバー / カラースケール)。チップはシェルの renderCellContent 側。
+import {
+  EMPTY_CONDITIONAL_FORMAT_STATS,
+  resolveColorScaleBackground,
+  resolveDataBar,
+  type ConditionalFormatStatsMap,
+  type DataBarGeometry,
+} from '@ishibashi0112/spreadsheet-grid-core/logic/conditionalFormat';
 import { RowSelectionCheckbox } from './RowSelectionCheckbox';
 // 追加(label-row ②): ラベル行(帯 + sticky な中身)です。
 import { GridBodyLabelRow, type GridBodyLabelRowRenderContent } from './GridBodyLabelRow';
@@ -113,6 +121,8 @@ type GridBodyRowProps<T> = {
   //   false ではマークを出さず、可視セルごとの validate 評価もスキップします
   //   (評価結果はマーク表示にしか使わないため、評価ごと省くのが最小コスト)。
   showValidationMarks: boolean;
+  // 追加(F-3): 条件付き書式の列ごとの min / max(シェルで集計。内容が同じなら参照が変わらない = memo 安全)。
+  conditionalFormatStats: ConditionalFormatStatsMap;
   // 追加(C1-6): auto-height セルの min-height 下限(基準行高=estimate)。rowHeight(=解決済み行高/
   //   実測由来)を下限にすると一度伸びた行が縮まなくなる(min-height で測定が下げ止まる)ため、
   //   下限は実測に依存しない固定値(基準行高)にして shrink を可能にします。GridBodyLayer の基準
@@ -193,6 +203,7 @@ function GridBodyRowInner<T>({
   autoHeight,
   showCellOverflowTooltip,
   showValidationMarks,
+  conditionalFormatStats,
   autoHeightMinHeight,
   rowHeaderCellStyle,
   isRowHovered,
@@ -222,6 +233,8 @@ function GridBodyRowInner<T>({
     <div
       data-pane={pane}
       data-row-index={rowIndex}
+      // 追加(motion-6 / M-2): 変更セルのフラッシュ(changeHighlightController)が rowKey で行を探すための目印。
+      data-row-key={rowKey}
       className={cx(
         'ssg-body-row',
         // 追加(行選択): チェック選択された行のハイライト。
@@ -343,6 +356,26 @@ function GridBodyRowInner<T>({
           conditionalCellSlot = columnCellClassName;
         }
         const conditionalCell = resolveSlotProps<CSSProperties>(conditionalCellSlot);
+        // 追加(F-3): 条件付き書式(データバー / カラースケール)。指定列だけ値解決します(未指定列は無コスト)。
+        //   帯は .ssg-cf-bar(絶対配置・文字の下)、背景色は inline の color-mix()(文字色は変えない)。
+        const conditionalFormat = column.conditionalFormat;
+        let dataBar: DataBarGeometry | null = null;
+        let scaleBackground: string | null = null;
+        if (conditionalFormat && (conditionalFormat.dataBar || conditionalFormat.colorScale)) {
+          const stats = conditionalFormatStats.get(column.key);
+          const cellValue = styleContext ? styleContext.value : getCellValue(row, column);
+          if (conditionalFormat.dataBar) {
+            dataBar = resolveDataBar(conditionalFormat.dataBar, cellValue, stats);
+          }
+          if (conditionalFormat.colorScale) {
+            scaleBackground = resolveColorScaleBackground(conditionalFormat.colorScale, cellValue, stats);
+          }
+        }
+        const dataBarColor = dataBar
+          ? dataBar.negative
+            ? conditionalFormat?.dataBar?.negativeColor
+            : conditionalFormat?.dataBar?.color
+          : undefined;
         // 追加(validation): mark 表示の導出です。validate 指定列だけ値解決して評価します
         //   (未指定列は無コスト)。state を持たないため、undo/redo・外部 rows 差し替え後も
         //   常に rows と整合します。メッセージはカスタムツールチップ(data-ssg-tooltip)で
@@ -369,6 +402,8 @@ function GridBodyRowInner<T>({
           readOnlyCell && !isSelected && 'ssg-body-cell--readonly',
           invalidMessage !== null && 'ssg-body-cell--invalid',
           cellNote !== null && 'ssg-body-cell--has-note',
+          dataBar !== null && 'ssg-body-cell--cf-bar',
+          scaleBackground !== null && 'ssg-body-cell--cf-scale',
           isRowHovered && 'ssg-body-cell--row-hovered',
           rowClassName,
           conditionalCell.className,
@@ -416,6 +451,8 @@ function GridBodyRowInner<T>({
             style={{
               // 追加(slot-props): スロット / 行 / セルの style を先に展開し、座標 / 寸法はグリッドが後勝ち。
               ...slots?.bodyCell?.style,
+              // 追加(F-3): カラースケールの背景色(行 / 列の明示 style が後勝ち)。
+              ...(scaleBackground !== null ? { backgroundColor: scaleBackground } : null),
               ...rowStyle,
               ...conditionalCell.style,
               left,
@@ -437,6 +474,17 @@ function GridBodyRowInner<T>({
               zIndex: isActive ? 3 : 1,
             }}
           >
+            {dataBar && (
+              <span
+                className={cx('ssg-cf-bar', dataBar.negative && 'ssg-cf-bar--negative')}
+                style={{
+                  left: `${dataBar.start}%`,
+                  width: `${dataBar.end - dataBar.start}%`,
+                  ...(dataBarColor ? { backgroundColor: dataBarColor } : null),
+                }}
+                aria-hidden="true"
+              />
+            )}
             {renderCellContent(row, rowIndex, column, colIndex, {
               isActive,
               isSelected,
@@ -836,6 +884,8 @@ type GridBodyLayerProps<T> = {
   showCellOverflowTooltip?: boolean;
   // 追加(validation 表示制御): invalid マークの表示可否です。未指定時 true(現行の常時表示)。
   showValidationMarks?: boolean;
+  // 追加(F-3): 条件付き書式の列ごとの min / max(未指定 = 空の Map)。
+  conditionalFormatStats?: ConditionalFormatStatsMap;
   // 追加(①-4): serverSide(SSRM)モードか。true のとき未ロード行をスケルトン描画します。
   //   未指定時 false(clientSide は従来どおり未ロード=OOB を null 返し)。
   isServerSide?: boolean;
@@ -921,6 +971,7 @@ export function GridBodyLayer<T>({
   autoHeight = false,
   showCellOverflowTooltip = false,
   showValidationMarks = true,
+  conditionalFormatStats = EMPTY_CONDITIONAL_FORMAT_STATS,
   isServerSide = false,
   collapsedGroupKeys,
   onGroupToggle,
@@ -1133,6 +1184,7 @@ export function GridBodyLayer<T>({
             autoHeight={autoHeight}
             showCellOverflowTooltip={showCellOverflowTooltip}
             showValidationMarks={showValidationMarks}
+            conditionalFormatStats={conditionalFormatStats}
             autoHeightMinHeight={rowHeight}
             rowHeaderCellStyle={rowHeaderCellStyle}
             isRowHovered={hoveredRowIndex === rowIndex}

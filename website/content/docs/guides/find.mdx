@@ -1,0 +1,38 @@
+---
+title: セル内検索
+description: find prop で Ctrl+F の検索バーを出し、ヒットを強調しながら順送りする
+---
+
+`find` を付けると、グリッドにフォーカスがある状態の `Ctrl/Cmd+F`(または `handle.openFind()`)でグリッド右上に検索バーが出ます(**既定は無効**)。「絞り込み(フィルター)」とは別に、**行を消さずに場所を探す**操作です。ブラウザの `Ctrl+F` では探せない仮想化された行も対象になります。
+
+```tsx
+<SpreadsheetGrid rows={rows} columns={columns} find />
+```
+
+- 表示文字列(`valueFormatter` 適用後 = 画面に見えている文字)への部分一致で、ヒットをすべて強調します。大文字小文字は区別しません(`find={{ caseSensitive: true }}` で区別)。
+- `Enter` / `↓` で次、`Shift+Enter` / `↑` で前のヒットへ(循環)。アクティブセルとスクロールが追従します。クエリを打ち直すと先頭のヒットへ移動します。
+- `Esc` / × で閉じ、フォーカスはグリッド本体へ戻ります。
+- 走査は時間分割(1 チャンク 10ms)で、10 万行でも入力を止めません。ヒットは 10,000 件で打ち切ります(件数に `+`)。
+- 編集・ソート・フィルターで内容が変わると自動で再走査し、同じヒットが残っていればカレントを保ちます。
+
+## ショートカットを奪わない
+
+`Ctrl/Cmd+F` の横取りはグリッド本体にフォーカスがあるときだけです(フィルター入力やエディタの中では効きません)。ページ側の検索を優先したい場合は `shortcut: false` にして、ツールバーのボタンなどから `handle.openFind()` で開いてください。
+
+```tsx
+const ref = useRef<SpreadsheetGridHandle<Row>>(null);
+
+<button onClick={() => ref.current?.openFind()}>検索</button>
+<SpreadsheetGrid ref={ref} find={{ shortcut: false }} onFindChange={({ matchCount, currentIndex }) => setLabel(`${(currentIndex ?? 0) + 1} / ${matchCount}`)} />
+```
+
+`onFindChange` は `{ query, matchCount, currentIndex, open }` を渡します(`currentIndex` は 0 始まり、ヒットなしは `null`)。命令的 API は `openFind(query?)` / `closeFind()` / `findNext()` / `findPrev()` です。
+
+## 見た目
+
+ヒットは `.ssg-find-mark`、カレントは `.ssg-find-mark--current` で、色はトークン `--ssg-find-mark-bg` / `--ssg-find-mark-current-bg` で変えられます。検索バーは `classNames.findBar` でクラス / style を足せます。
+
+## 制限
+
+- SSRM(`dataSource`)では**ロード済み範囲だけ**が対象です(未ロード行は読み飛ばします)。
+- `renderCell` の列は表示文字列で検索されますが、`<mark>` の強調は既定セルだけです(カレントへの移動は同じです)。

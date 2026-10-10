@@ -128,14 +128,62 @@
     --ssg-invalid-bg: rgba(239, 68, 68, 0.08);
     /* 追加(G-3): セルのメモ(cellNote)の右上の印 */
     --ssg-note-indicator: #f59e0b;
+    /* 追加(motion-7 / M-9): セル単位の保存状態(SSRM 書き戻し)の色。 */
+    --ssg-save-pending: var(--ssg-accent);
+    --ssg-save-ok: #16a34a;
+    --ssg-save-failed: var(--ssg-invalid);
+    /* 追加(F-2): セル内検索のヒット(通常 / カレント)。 */
+    --ssg-find-mark-bg: rgba(245, 158, 11, 0.4);
+    --ssg-find-mark-current-bg: rgba(52, 97, 201, 0.3);
+    /* 追加(F-3): 条件付き書式。データバーはアクセントの淡色、カラースケールは dataviz の参照パレット(sequential は
+       1 色相の淡 → 濃で明るい段に制限 = 文字色を変えない、diverging は 2 色相 + 中立グレー)。チップは状態色(アイコン +
+       ラベルを伴う)。 */
+    --ssg-cf-bar: rgba(52, 97, 201, 0.26);
+    --ssg-cf-bar-negative: rgba(227, 73, 72, 0.3);
+    --ssg-cf-seq-min: #eaf2fd;
+    --ssg-cf-seq-max: #7fb0ee;
+    --ssg-cf-div-negative: #e34948;
+    --ssg-cf-div-mid: #f0efec;
+    --ssg-cf-div-positive: #2a78d6;
+    --ssg-cf-neutral: #475569;
+    --ssg-cf-neutral-bg: #e2e8f0;
+    --ssg-cf-info: #1d4ed8;
+    --ssg-cf-info-bg: #dbeafe;
+    --ssg-cf-good: #15803d;
+    --ssg-cf-good-bg: #dcfce7;
+    --ssg-cf-warning: #b45309;
+    --ssg-cf-warning-bg: #fef3c7;
+    --ssg-cf-critical: #dc2626;
+    --ssg-cf-critical-bg: #fee2e2;
     /* その他 */
     --ssg-drop-indicator: #0f172a;
     --ssg-glyph-faint: #cbd5e1;
+    /* 追加(motion-5 / M-6): クロスヘア(hoverHighlight='cross')の列の帯。行ホバー色の上に重ねても破綻しない薄い墨。 */
+    --ssg-col-hover-bg: rgba(15, 23, 42, 0.04);
     --ssg-skeleton-bar: #e2e8f0;
+    /* 追加(motion-2 / M-8): スケルトンを流れる光の帯の色(バーより一段明るい面)。 */
+    --ssg-skeleton-bar-hi: #f8fafc;
     /* スクロール位置インジケーター(scrollHint)のカスタムスクロールバー */
     --ssg-scrollhint-track-bg: #f3f5f8;
     --ssg-scrollhint-thumb: #c3cad4;
     --ssg-scrollhint-thumb-active: #a9b1bf;
+    /* 追加(motion-0): モーションの継続時間とイージング。各効果(アクティブセル枠の追従 / ポップオーバーの出現 /
+       行の移動 / 読み込みシマー等)はこのトークンだけを参照します。motion='off'(または 'auto' +
+       prefers-reduced-motion)では root / 全ポータル root に .ssg-motion-off が付き、下の :where ブロックで
+       継続時間が 0 になります(表示結果は同じで瞬時に切り替わる)。利用側は `.ssg-root { --ssg-motion-base: 180ms }`
+       のように上書きして速さを変えられます。 */
+    --ssg-motion-fast: 140ms;
+    --ssg-motion-base: 260ms;
+    --ssg-motion-slow: 600ms;
+    --ssg-motion-ease: cubic-bezier(0.2, 0.8, 0.2, 1);
+  }
+
+  /* 追加(motion-0): モーション停止。root / 全ポータル root / ゴースト / ツールチップへ付く修飾子です。
+     :where(特異度 0)なので利用側のトークン上書きが常に勝ちます(動かしたい効果だけ戻すことも可)。 */
+  :where(.ssg-motion-off) {
+    --ssg-motion-fast: 0ms;
+    --ssg-motion-base: 0ms;
+    --ssg-motion-slow: 0ms;
   }
 
   /* 密度プリセット(THEME-2)。density prop が root へ付与する修飾子で寸法トークンを一括切替します。
@@ -273,9 +321,32 @@
     --ssg-invalid-bg: rgba(248, 113, 113, 0.14);
     /* セルのメモ(cellNote) */
     --ssg-note-indicator: #fbbf24;
+    --ssg-save-ok: #4ade80;
+    --ssg-find-mark-bg: rgba(251, 191, 36, 0.35);
+    --ssg-find-mark-current-bg: rgba(77, 171, 247, 0.35);
+    /* 条件付き書式(F-3)。ダークは段を選び直す(反転ではない)。 */
+    --ssg-cf-bar: rgba(77, 171, 247, 0.3);
+    --ssg-cf-bar-negative: rgba(255, 107, 107, 0.32);
+    --ssg-cf-seq-min: #1c2636;
+    --ssg-cf-seq-max: #2f5fa0;
+    --ssg-cf-div-negative: #ff6b6b;
+    --ssg-cf-div-mid: #2c2e33;
+    --ssg-cf-div-positive: #4dabf7;
+    --ssg-cf-neutral: #ced4da;
+    --ssg-cf-neutral-bg: #373a40;
+    --ssg-cf-info: #74c0fc;
+    --ssg-cf-info-bg: #1b2e4b;
+    --ssg-cf-good: #69db7c;
+    --ssg-cf-good-bg: #1d3a26;
+    --ssg-cf-warning: #ffd43b;
+    --ssg-cf-warning-bg: #3d3414;
+    --ssg-cf-critical: #ff6b6b;
+    --ssg-cf-critical-bg: #3a2325;
     /* その他 */
     --ssg-drop-indicator: #c1c2c5;
+    --ssg-col-hover-bg: rgba(255, 255, 255, 0.045);
     --ssg-skeleton-bar: #2c2e33;
+    --ssg-skeleton-bar-hi: #3b3e45;
     /* スクロール位置インジケーター(scrollHint)のカスタムスクロールバー */
     --ssg-scrollhint-track-bg: #1f2126;
     --ssg-scrollhint-thumb: #41454d;
@@ -325,7 +396,7 @@
     cursor: pointer;
     font-size: 11px;
     line-height: 1;
-    transition: background-color 100ms ease, color 100ms ease;
+    transition: background-color var(--ssg-motion-fast) ease, color var(--ssg-motion-fast) ease;
   }
 
   .ssg-icon-btn:hover {
@@ -625,6 +696,18 @@
   .ssg-body-row[data-ssg-row-dragging] .ssg-row-header-cell {
     opacity: 0.45;
   }
+  /* 追加(motion-8 / M-11): live 方式(rowDragMotion='live')で掴んだ行。淡色にせず浮かせます(影を出すため paint
+     containment を外す。行コンテナの z-index で周りの行より前へ)。 */
+  .ssg-body-row[data-ssg-row-dragging='live'] {
+    z-index: 10;
+    contain: layout style;
+  }
+  .ssg-body-row[data-ssg-row-dragging='live'] .ssg-body-cell,
+  .ssg-body-row[data-ssg-row-dragging='live'] .ssg-row-header-cell {
+    opacity: 1;
+    background-color: var(--ssg-row-hover-bg);
+    box-shadow: 0 8px 20px rgba(2, 6, 23, 0.25);
+  }
 
   /* 読み取り専用セル(選択時は通常背景へ戻し、選択塗りを素直に見せる)。
      変更(THEME-3): 組み込みの淡色表示(背景 + 文字色)は dimReadOnlyCells prop
@@ -709,8 +792,8 @@
     border-radius: 4px;
     background-color: var(--ssg-checkbox-bg);
     transition:
-      background-color 120ms ease,
-      border-color 120ms ease;
+      background-color var(--ssg-motion-fast) ease,
+      border-color var(--ssg-motion-fast) ease;
   }
   /* チェック済み: accent 塗り + 白いチェックマーク(::after を回転ボーダーで描画)。 */
   .ssg-row-checkbox[data-state='checked'],
@@ -754,20 +837,368 @@
 
   /* ── オーバーレイ / エディタ ── */
   /* アクティブセル枠。座標 / 幅 / 高さはインライン(動的)。枠色は accent に追従。 */
+  /* 追加(motion-1 / M-1): 枠はキーボード移動 / クリックで新しい位置へ滑って追従します(left / top / width /
+     height の transition。要素の mount 直後は transition しないため初回表示は瞬時)。 */
   .ssg-active-cell-overlay {
     box-sizing: border-box;
     border: 2px solid var(--ssg-accent);
     pointer-events: none;
     z-index: 4;
+    transition:
+      left var(--ssg-motion-fast) var(--ssg-motion-ease),
+      top var(--ssg-motion-fast) var(--ssg-motion-ease),
+      width var(--ssg-motion-fast) var(--ssg-motion-ease),
+      height var(--ssg-motion-fast) var(--ssg-motion-ease);
   }
 
-  /* 選択範囲(枠 + 塗り)。 */
+  /* 選択範囲(枠 + 塗り)。追従はアクティブセル枠と同じ。 */
   .ssg-selection-overlay {
     box-sizing: border-box;
     border: 2px solid var(--ssg-accent);
     background-color: var(--ssg-selection-fill);
     pointer-events: none;
     z-index: 2;
+    transition:
+      left var(--ssg-motion-fast) var(--ssg-motion-ease),
+      top var(--ssg-motion-fast) var(--ssg-motion-ease),
+      width var(--ssg-motion-fast) var(--ssg-motion-ease),
+      height var(--ssg-motion-fast) var(--ssg-motion-ease);
+  }
+
+  /* ── 追加(F-2): セル内検索(find)。右上に浮く検索バーと、既定セル内のヒットの <mark>。 ── */
+  .ssg-find-bar {
+    position: absolute;
+    right: 10px;
+    z-index: 20;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 6px 4px 8px;
+    border: 1px solid var(--ssg-panel-border);
+    border-radius: 9px;
+    background-color: var(--ssg-panel-bg);
+    color: var(--ssg-panel-text);
+    box-shadow: var(--ssg-popover-shadow);
+    animation: ssg-pop-in var(--ssg-motion-fast) var(--ssg-motion-ease);
+  }
+  .ssg-find-bar-icon {
+    display: inline-flex;
+    align-items: center;
+    color: var(--ssg-panel-text-faint);
+  }
+  .ssg-find-bar-input {
+    width: 160px;
+    border: 0;
+    outline: none;
+    background: transparent;
+    color: var(--ssg-panel-text-strong);
+    font: inherit;
+    font-size: 12.5px;
+    padding: 2px 0;
+  }
+  .ssg-find-bar-count {
+    min-width: 44px;
+    text-align: right;
+    font-size: 11.5px;
+    color: var(--ssg-panel-text-muted);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+  .ssg-find-bar-count--none {
+    color: var(--ssg-danger);
+  }
+  .ssg-find-bar-btn {
+    width: 22px;
+    height: 22px;
+    border: 0;
+    border-radius: 5px;
+    background: transparent;
+    color: var(--ssg-panel-text-muted);
+    font-size: 13px;
+    line-height: 1;
+    cursor: pointer;
+    padding: 0;
+  }
+  .ssg-find-bar-btn:hover:not(:disabled) {
+    background-color: var(--ssg-panel-hover-bg);
+    color: var(--ssg-panel-text-strong);
+  }
+  .ssg-find-bar-btn:disabled {
+    color: var(--ssg-panel-text-disabled);
+    cursor: default;
+  }
+  .ssg-find-bar-btn:focus-visible {
+    outline: 2px solid var(--ssg-panel-accent);
+    outline-offset: 1px;
+  }
+  /* ヒットの強調(既定セルの表示文字列内)。カレントは accent のリング。 */
+  .ssg-find-mark {
+    background-color: var(--ssg-find-mark-bg);
+    color: inherit;
+    border-radius: 2px;
+    padding: 0 1px;
+  }
+  .ssg-find-mark--current {
+    background-color: var(--ssg-find-mark-current-bg);
+    box-shadow: 0 0 0 1.5px var(--ssg-accent);
+  }
+
+  /* 追加(F-3): 条件付き書式。
+     - データバー(.ssg-cf-bar): セル内の絶対配置の帯。セル(absolute + z-index)がスタッキングコンテキストになるため
+       z-index: -1 でセル背景の上・文字の下に描かれる。幅 / 左端は inline(%)。
+     - カラースケール(.ssg-body-cell--cf-scale): セル背景を inline の color-mix() で染める(文字色は変えない)。
+     - チップ(.ssg-chip): 角丸のピル + 色味ごとのアイコン。色はトークン --ssg-cf-<tone> / --ssg-cf-<tone>-bg。 */
+  .ssg-cf-bar {
+    position: absolute;
+    top: 4px;
+    bottom: 4px;
+    z-index: -1;
+    border-radius: 0 4px 4px 0;
+    background-color: var(--ssg-cf-bar);
+    pointer-events: none;
+    transition: left var(--ssg-motion-base) var(--ssg-motion-ease), width var(--ssg-motion-base) var(--ssg-motion-ease);
+  }
+  .ssg-cf-bar--negative {
+    border-radius: 4px 0 0 4px;
+    background-color: var(--ssg-cf-bar-negative);
+  }
+  .ssg-body-cell--cf-scale {
+    transition: background-color var(--ssg-motion-base) var(--ssg-motion-ease);
+  }
+  .ssg-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    max-width: 100%;
+    padding: 1px 8px 1px 6px;
+    border-radius: 999px;
+    font-size: 0.92em;
+    line-height: 1.5;
+    color: var(--ssg-cf-chip-fg, var(--ssg-cf-neutral));
+    background-color: var(--ssg-cf-chip-bg, var(--ssg-cf-neutral-bg));
+    white-space: nowrap;
+  }
+  .ssg-chip--info {
+    --ssg-cf-chip-fg: var(--ssg-cf-info);
+    --ssg-cf-chip-bg: var(--ssg-cf-info-bg);
+  }
+  .ssg-chip--good {
+    --ssg-cf-chip-fg: var(--ssg-cf-good);
+    --ssg-cf-chip-bg: var(--ssg-cf-good-bg);
+  }
+  .ssg-chip--warning {
+    --ssg-cf-chip-fg: var(--ssg-cf-warning);
+    --ssg-cf-chip-bg: var(--ssg-cf-warning-bg);
+  }
+  .ssg-chip--critical {
+    --ssg-cf-chip-fg: var(--ssg-cf-critical);
+    --ssg-cf-chip-bg: var(--ssg-cf-critical-bg);
+  }
+  /* 任意色(GridChipSpec.color): 文字はその色、背景はその色の 14% を透明と混ぜる。 */
+  .ssg-chip--custom {
+    --ssg-cf-chip-fg: var(--ssg-cf-chip-color);
+    --ssg-cf-chip-bg: color-mix(in srgb, var(--ssg-cf-chip-color) 14%, transparent);
+  }
+  .ssg-chip-icon {
+    flex: none;
+    display: inline-flex;
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background-color: var(--ssg-cf-chip-fg, var(--ssg-cf-neutral));
+    color: #fff;
+  }
+  .ssg-chip-icon svg {
+    width: 12px;
+    height: 12px;
+  }
+  .ssg-chip-label {
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  /* 追加(motion-7 / M-9): セル単位の保存状態(SSRM 書き戻し)。saveStatusController が data-ssg-save を付け替え、
+     インジケーター(.ssg-save-indicator)をセル末尾に足します。保存中は斜線が流れ、成功は ✓、失敗は揺れ + 赤いフラッシュ。
+     motion='off' では流れ / 揺れ / バッジの出入りが止まり、印だけが残ります。 */
+  .ssg-body-cell[data-ssg-save='pending'] {
+    background-image: repeating-linear-gradient(
+      135deg,
+      transparent 0 6px,
+      color-mix(in srgb, var(--ssg-save-pending) 8%, transparent) 6px 12px
+    );
+    background-size: 34px 34px;
+    animation: ssg-save-stripes calc(var(--ssg-motion-slow) * 1.5 + 1ms) linear infinite;
+  }
+  @keyframes ssg-save-stripes {
+    to {
+      background-position: 34px 0;
+    }
+  }
+  .ssg-motion-off .ssg-body-cell[data-ssg-save='pending'] {
+    animation: none;
+  }
+  .ssg-body-cell[data-ssg-save='failed'] {
+    animation:
+      ssg-save-shake var(--ssg-motion-base) var(--ssg-motion-ease),
+      ssg-save-failed-flash var(--ssg-motion-slow) ease-out;
+  }
+  @keyframes ssg-save-shake {
+    0%,
+    100% {
+      transform: none;
+    }
+    20% {
+      transform: translateX(-3px);
+    }
+    40% {
+      transform: translateX(3px);
+    }
+    60% {
+      transform: translateX(-2px);
+    }
+    80% {
+      transform: translateX(2px);
+    }
+  }
+  @keyframes ssg-save-failed-flash {
+    0% {
+      box-shadow: inset 0 0 0 100vmax color-mix(in srgb, var(--ssg-save-failed) 25%, transparent);
+    }
+    100% {
+      box-shadow: inset 0 0 0 100vmax transparent;
+    }
+  }
+  .ssg-save-indicator {
+    position: absolute;
+    top: 2px;
+    right: 3px;
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    font-size: 9px;
+    font-weight: 700;
+    line-height: 12px;
+    text-align: center;
+    pointer-events: none;
+    z-index: 2;
+  }
+  .ssg-save-indicator[data-kind='pending'] {
+    width: 9px;
+    height: 9px;
+    top: 3px;
+    border: 1.5px solid color-mix(in srgb, var(--ssg-save-pending) 35%, transparent);
+    border-top-color: var(--ssg-save-pending);
+    animation: ssg-save-spin calc(var(--ssg-motion-slow) + 1ms) linear infinite;
+  }
+  @keyframes ssg-save-spin {
+    to {
+      transform: rotate(360deg);
+    }
+  }
+  .ssg-motion-off .ssg-save-indicator[data-kind='pending'] {
+    animation: none;
+  }
+  .ssg-save-indicator[data-kind='ok'] {
+    background-color: var(--ssg-save-ok);
+    color: #ffffff;
+    animation: ssg-save-badge-in var(--ssg-motion-fast) var(--ssg-motion-ease) both;
+  }
+  .ssg-save-indicator[data-kind='failed'] {
+    background-color: var(--ssg-save-failed);
+    color: #ffffff;
+    animation: ssg-save-badge-in var(--ssg-motion-fast) var(--ssg-motion-ease) both;
+  }
+  @keyframes ssg-save-badge-in {
+    from {
+      opacity: 0;
+      transform: scale(0.4);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+  /* 失敗チップ(シェル直下の浮き要素。saveStatusController が座標を inline で与える)。 */
+  .ssg-save-failed-chip {
+    position: absolute;
+    z-index: 8;
+    padding: 4px 8px;
+    border-radius: 7px;
+    background-color: var(--ssg-danger-bg);
+    color: var(--ssg-danger);
+    font-size: 12px;
+    line-height: 1.4;
+    white-space: nowrap;
+    pointer-events: none;
+    box-shadow: var(--ssg-popover-shadow);
+    animation: ssg-pop-in var(--ssg-motion-fast) var(--ssg-motion-ease);
+  }
+
+  /* 追加(motion-6 / M-2): 変更セルのフラッシュ(highlightChanges)。changeHighlightController が直付けし animationend で
+     外します。背景色そのものは触らず(行ホバー / 選択行 / readonly / invalid の背景を壊さない)、内側の box-shadow で
+     アクセント色の面を重ねてフェードアウトさせます。 */
+  @keyframes ssg-cell-changed {
+    0% {
+      box-shadow: inset 0 0 0 100vmax color-mix(in srgb, var(--ssg-accent) 28%, transparent);
+    }
+    100% {
+      box-shadow: inset 0 0 0 100vmax transparent;
+    }
+  }
+  .ssg-body-cell--changed {
+    animation: ssg-cell-changed var(--ssg-motion-slow) ease-out;
+  }
+
+  /* 追加(motion-5 / M-6): クロスヘア(hoverHighlight='cross')。ポインタの列に薄い帯を 1 枚のオーバーレイで重ね
+     (セルのクラスを触らないので行の再レンダーが増えない)、列ヘッダーと行番号は選択色で染めます。交点のセルは
+     行ホバー色 + 帯で自然に一段濃くなります。 */
+  .ssg-col-hover-overlay {
+    position: absolute;
+    pointer-events: none;
+    z-index: 1;
+    background-color: var(--ssg-col-hover-bg);
+  }
+  .ssg-root--hover-cross .ssg-header-cell--hovered {
+    background-color: var(--ssg-select-bg);
+    color: var(--ssg-accent-strong);
+  }
+  .ssg-root--hover-cross .ssg-header-cell--hovered .ssg-header-label {
+    color: var(--ssg-accent-strong);
+  }
+
+  /* 追加(motion-4 / M-3): コピー範囲(Ctrl/Cmd+C 後の「動く点線」)。枠は背景グラデーション 4 本(上下 = 横縞、左右 =
+     縦縞)を border-box に敷き、background-position をずらして流します(border を動かすより軽い)。塗りはなく、
+     選択の塗り(z 2)と アクティブ枠(z 4)の間に置きます。motion='off' では静的な点線(アニメなし)。 */
+  .ssg-copy-range-overlay {
+    box-sizing: border-box;
+    pointer-events: none;
+    z-index: 3;
+    background-image:
+      linear-gradient(90deg, var(--ssg-accent) 50%, transparent 50%),
+      linear-gradient(90deg, var(--ssg-accent) 50%, transparent 50%),
+      linear-gradient(0deg, var(--ssg-accent) 50%, transparent 50%),
+      linear-gradient(0deg, var(--ssg-accent) 50%, transparent 50%);
+    background-repeat: repeat-x, repeat-x, repeat-y, repeat-y;
+    background-size: 8px 2px, 8px 2px, 2px 8px, 2px 8px;
+    background-position: 0 0, 0 100%, 0 0, 100% 0;
+    animation: ssg-copy-ants 0.6s linear infinite;
+  }
+  @keyframes ssg-copy-ants {
+    to {
+      background-position: 8px 0, -8px 100%, 0 -8px, 100% 8px;
+    }
+  }
+  .ssg-motion-off .ssg-copy-range-overlay {
+    animation: none;
+  }
+
+  /* 追加(motion-1 / M-1): スクロール中(scroll-space 仮想化で描画ウィンドウの基準が動く。scrollSyncController が
+     付ける)とポインタで範囲選択をドラッグ中(root の --selecting)は瞬時に追従させます(滑らせると漂って見える)。 */
+  .ssg-scroll-container--scrolling .ssg-active-cell-overlay,
+  .ssg-scroll-container--scrolling .ssg-selection-overlay,
+  .ssg-root--selecting .ssg-active-cell-overlay,
+  .ssg-root--selecting .ssg-selection-overlay {
+    transition: none;
   }
 
   /* セルエディタ。wrapper は座標のみインライン。 */
@@ -1283,10 +1714,11 @@
   .ssg-toolpanel--flash {
     animation: ssg-toolpanel-flash 0.45s ease-out;
   }
-  @media (prefers-reduced-motion: reduce) {
-    .ssg-toolpanel--flash {
-      animation: none;
-    }
+  /* 変更(motion-0): 抑制の判定を prefers-reduced-motion の直接参照から motion prop の修飾子へ(auto では同義。
+     'on' では OS 設定に関わらず動く)。パネル root 自身に修飾子が付くため自己参照も含めます。 */
+  .ssg-motion-off .ssg-toolpanel--flash,
+  .ssg-motion-off.ssg-toolpanel--flash {
+    animation: none;
   }
 
   /* ヘッダー(SegmentedControl + ×)。--draggable(FM-4)併用で掴んで移動できる。 */
@@ -1321,7 +1753,7 @@
     background-color: var(--ssg-seg-indicator-bg);
     box-shadow: var(--ssg-seg-indicator-shadow);
     transform: translateX(calc(var(--ssg-seg-index) * 100%));
-    transition: transform 160ms ease;
+    transition: transform var(--ssg-motion-fast) ease;
   }
   .ssg-toolpanel-seg-btn {
     position: relative;
@@ -1343,7 +1775,7 @@
     white-space: nowrap;
     cursor: pointer;
     user-select: none;
-    transition: color 120ms ease;
+    transition: color var(--ssg-motion-fast) ease;
   }
   .ssg-toolpanel-seg-btn:not(.ssg-toolpanel-seg-btn--active):hover {
     color: var(--ssg-panel-text-sub);
@@ -1919,7 +2351,7 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    transition: background-color 80ms ease, border-color 80ms ease;
+    transition: background-color var(--ssg-motion-fast) ease, border-color var(--ssg-motion-fast) ease;
   }
   .ssg-checkbox--filled {
     border-color: var(--ssg-panel-accent);
@@ -2452,6 +2884,27 @@
 
   /* ── 列メニュー popover(ColumnMenuPopover) ── */
   /* ルート/サブメニュー共通のパネル枠(radius 10)。座標/zIndex は inline。 */
+  /* 追加(motion-1 / M-7): ポップオーバー / メニュー / パネル / 候補リスト / 日付パネルの出現。4px 上から
+     フェードインします(出現のみ。閉じるときは従来どおり即時 unmount)。transform は translate だけで scale を
+     使わないため、配置側がパネル自身の getBoundingClientRect で測る高さは動かしません。 */
+  @keyframes ssg-pop-in {
+    from {
+      opacity: 0;
+      transform: translateY(-4px);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+  .ssg-menu-panel,
+  .ssg-filter-popover,
+  .ssg-select-editor-popover,
+  .ssg-popover,
+  .ssg-dp-panel {
+    animation: ssg-pop-in var(--ssg-motion-fast) var(--ssg-motion-ease);
+  }
+
   .ssg-menu-panel {
     padding: 8px;
     box-sizing: border-box;
@@ -2603,6 +3056,20 @@
     width: 100%;
     contain: layout style paint;
   }
+  /* 追加(motion-3 / M-4・M-5): 行の並び替えアニメ(animateRows)。root の修飾子があるとき、行要素(データ行 / グループ行 /
+     ラベル行)と展開行の帯は新しい位置へ滑ります(縦位置は inline の translateY / top なので、値の更新がそのまま
+     FLIP になる)。スクロール中は scrollSyncController の修飾子で抑止します(scroll-space 仮想化で描画ウィンドウの
+     基準が動くため)。行ドラッグのドロップ後スライドは inline の transition で上書きされ従来どおり。 */
+  .ssg-root--animate-rows .ssg-body-row {
+    transition: transform var(--ssg-motion-base) var(--ssg-motion-ease);
+  }
+  .ssg-root--animate-rows .ssg-detail-band {
+    transition: top var(--ssg-motion-base) var(--ssg-motion-ease);
+  }
+  .ssg-scroll-container--scrolling .ssg-body-row,
+  .ssg-scroll-container--scrolling .ssg-detail-band {
+    transition: none;
+  }
 
   /* 追加(行選択): チェック選択された行のハイライト。行 div に背景を敷き、非ホバーの
      本体セルを透過にして下地(選択色)を見せます(ホバーセルはホバー色を優先)。
@@ -2650,7 +3117,7 @@
     padding: 0 6px 0 14px;
     background-color: var(--ssg-header-bg);
     opacity: 0;
-    transition: opacity 100ms ease;
+    transition: opacity var(--ssg-motion-fast) ease;
     pointer-events: none;
   }
   .ssg-header-cell:hover .ssg-header-actions {
@@ -2752,6 +3219,47 @@
     height: 10px;
     border-radius: 4px;
     background-color: var(--ssg-skeleton-bar);
+    /* 追加(motion-2 / M-8): 取得中は光の帯が左から右へ流れます(背景位置のアニメ。レイアウトは動かない)。
+       motion='off' では帯を消して静的なバーに戻します。 */
+    background-image: linear-gradient(
+      90deg,
+      var(--ssg-skeleton-bar) 0 35%,
+      var(--ssg-skeleton-bar-hi) 50%,
+      var(--ssg-skeleton-bar) 65% 100%
+    );
+    background-size: 220% 100%;
+    animation: ssg-skeleton-shimmer 1.4s linear infinite;
+  }
+  @keyframes ssg-skeleton-shimmer {
+    from {
+      background-position: 110% 0;
+    }
+    to {
+      background-position: -110% 0;
+    }
+  }
+  .ssg-motion-off .ssg-skeleton-bar {
+    animation: none;
+    background-image: none;
+  }
+  /* 追加(motion-2 / M-8): SSRM のブロック到着でスケルトンから差し替わった行(rowEnterController が
+     --enter と --ssg-row-enter-index を直付け)。行コンテナは仮想化の transform を持つため行自体は動かさず、
+     セル(行番号セル含む)を 3px 下からフェードインさせ、上から順に段差を付けます(段差は fast / 6 ≒ 23ms ×
+     index。motion='off' では継続時間も段差も 0)。 */
+  @keyframes ssg-row-in {
+    from {
+      opacity: 0;
+      transform: translateY(3px);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+  .ssg-body-row--enter > .ssg-body-cell,
+  .ssg-body-row--enter > .ssg-row-header-cell {
+    animation: ssg-row-in var(--ssg-motion-base) var(--ssg-motion-ease) both;
+    animation-delay: calc(var(--ssg-row-enter-index, 0) * var(--ssg-motion-fast) / 6);
   }
 
   /* ── グリッド本体シェル / スクロール(SpreadsheetGrid) ── */
@@ -2879,11 +3387,9 @@
       transform: rotate(360deg);
     }
   }
-  /* モーション低減設定では回転を止めます(アクセシビリティ)。 */
-  @media (prefers-reduced-motion: reduce) {
-    .ssg-filter-spinner {
-      animation: none;
-    }
+  /* モーション低減設定では回転を止めます(アクセシビリティ)。変更(motion-0): motion prop の修飾子で判定。 */
+  .ssg-motion-off .ssg-filter-spinner {
+    animation: none;
   }
 
   /* ── 追加(batch 9): SSRM エラーバー(getRows 失敗の再試行 UI) ── */
@@ -3021,7 +3527,7 @@
     pointer-events: none;
     opacity: 0;
     transform: translateY(2px);
-    transition: opacity 120ms ease, transform 120ms ease;
+    transition: opacity var(--ssg-motion-fast) ease, transform var(--ssg-motion-fast) ease;
     max-width: 260px;
     white-space: pre-line;
     overflow-wrap: break-word;
@@ -3069,7 +3575,7 @@
     line-height: 1.4;
     white-space: nowrap;
     opacity: 0;
-    transition: opacity 180ms ease;
+    transition: opacity var(--ssg-motion-fast) ease;
   }
 
   .ssg-scroll-hint-bubble--visible {
@@ -3109,7 +3615,7 @@
       transparent
     );
     opacity: 0;
-    transition: opacity 180ms ease;
+    transition: opacity var(--ssg-motion-fast) ease;
   }
 
   .ssg-scroll-hint-ruler--visible {
@@ -3201,7 +3707,7 @@
     right: 3px;
     border-radius: 4px;
     background-color: var(--ssg-scrollhint-thumb);
-    transition: background-color 120ms ease;
+    transition: background-color var(--ssg-motion-fast) ease;
   }
 
   .ssg-scroll-hint-scrollbar:hover .ssg-scroll-hint-scrollbar-thumb,
@@ -3239,9 +3745,8 @@
     background-color: var(--ssg-scrollhint-thumb-active);
   }
 
-  @media (prefers-reduced-motion: reduce) {
-    .ssg-scroll-hint-bubble,
-    .ssg-scroll-hint-ruler {
-      transition: none;
-    }
+  /* 変更(motion-0): motion prop の修飾子で判定(従来は prefers-reduced-motion の直接参照)。 */
+  .ssg-motion-off .ssg-scroll-hint-bubble,
+  .ssg-motion-off .ssg-scroll-hint-ruler {
+    transition: none;
   }

@@ -37,6 +37,7 @@ description: ダークテーマ(light / dark / auto)、密度(density)、CSS ト
   --ssg-header-bg: #f8fafc;       /* ヘッダー背景 */
   --ssg-invalid: #dc2626;         /* バリデーション NG の色 */
   --ssg-note-indicator: #f59e0b;  /* セルのメモ(cellNote)の印 */
+  --ssg-cf-bar: rgba(52, 97, 201, 0.26); /* 条件付き書式のデータバー(--ssg-cf-seq-* / --ssg-cf-div-* / --ssg-cf-good 等も) */
   --ssg-tooltip-bg: #1e293b;      /* ツールチップ背景 */
 }
 ```
@@ -44,6 +45,10 @@ description: ダークテーマ(light / dark / auto)、密度(density)、CSS ト
 ```tsx
 <SpreadsheetGrid className="my-grid" ... />
 ```
+
+## テーマビルダー
+
+[テーマビルダー](/theme-builder)で、アクセント / ヘッダー背景 / セル背景 / 文字色 / 罫線 / 外枠 / 角丸 / 密度 / 文字サイズを実物のグリッドで動かしながら調整できます。派生色(hover / 選択 / 読み取り専用 / パネル)は自動で埋まり、生成された CSS 変数をコピーして貼るだけです。プリセット(既定 / Mantine 風 / HeroUI 風 / 業務グレー / Excel 風 / ダーク)から始められ、状態は URL に載るのでチームで共有できます。
 
 ## 条件付きセルスタイル
 

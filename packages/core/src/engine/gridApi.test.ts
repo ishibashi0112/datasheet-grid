@@ -106,6 +106,7 @@ const makeArgs = (overrides: Partial<GridApiArgs<Row>> = {}) => {
     moveRowByKey: vi.fn(),
     commitRowSelection: vi.fn(),
     markApiScroll,
+    find: { open: vi.fn(), close: vi.fn(), next: vi.fn(), prev: vi.fn() },
     ...overrides,
   };
   return { args, actions, markApiScroll };

@@ -2,7 +2,7 @@
 //   rAF 間引き通知(user / api 判定、同一フレームの user 優先)/ ResizeObserver で viewport 再計測 / dispose で解除)。
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { createScrollSyncController } from './scrollSyncController';
+import { createScrollSyncController, SCROLLING_CLASS_NAME, SCROLLING_IDLE_MS } from './scrollSyncController';
 
 let rafQueue: FrameRequestCallback[] = [];
 let resizeCallback: (() => void) | null = null;
@@ -113,5 +113,36 @@ describe('createScrollSyncController', () => {
     setViewState.mockClear();
     el.dispatchEvent(new Event('scroll'));
     expect(setViewState).not.toHaveBeenCalled();
+  });
+
+  // 追加(motion-1 / M-1): スクロール中の修飾子(overlay の追従 transition を切る)。停止から SCROLLING_IDLE_MS で外れ、
+  //   dispose で即時に外れる。
+  it('scroll 中は ssg-scroll-container--scrolling が付き、停止から一定時間で外れる(dispose でも外れる)', () => {
+    vi.useFakeTimers();
+    try {
+      const controller = createScrollSyncController();
+      const el = makeElement();
+      controller.update({ scrollContainerRef: { current: el }, setViewState: vi.fn(), onScroll: undefined });
+      expect(el.classList.contains(SCROLLING_CLASS_NAME)).toBe(false);
+      el.scrollTop = 40;
+      el.dispatchEvent(new Event('scroll'));
+      expect(el.classList.contains(SCROLLING_CLASS_NAME)).toBe(true);
+      // 連続スクロールでタイマーは延長される。
+      vi.advanceTimersByTime(SCROLLING_IDLE_MS - 20);
+      el.dispatchEvent(new Event('scroll'));
+      vi.advanceTimersByTime(SCROLLING_IDLE_MS - 20);
+      expect(el.classList.contains(SCROLLING_CLASS_NAME)).toBe(true);
+      vi.advanceTimersByTime(20);
+      expect(el.classList.contains(SCROLLING_CLASS_NAME)).toBe(false);
+      // dispose は待たずに外す。
+      el.dispatchEvent(new Event('scroll'));
+      expect(el.classList.contains(SCROLLING_CLASS_NAME)).toBe(true);
+      controller.dispose();
+      expect(el.classList.contains(SCROLLING_CLASS_NAME)).toBe(false);
+      vi.advanceTimersByTime(SCROLLING_IDLE_MS + 10);
+      expect(el.classList.contains(SCROLLING_CLASS_NAME)).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

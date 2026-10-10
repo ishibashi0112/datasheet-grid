@@ -43,13 +43,17 @@ import { gridActions } from '@ishibashi0112/spreadsheet-grid-core/model/gridActi
 import { useGridStore, useGridViewState } from './hooks/useGridStore';
 import {
   buildSelectionSnapshot,
-  normalizeCellRange,
-  normalizeColumnRange,
-  normalizeRowRange,
 } from '@ishibashi0112/spreadsheet-grid-core/model/gridSelectors';
 import SelectionOverlay, {
   type SelectionOverlayRect,
 } from './SelectionOverlay';
+import CopyRangeOverlay from './CopyRangeOverlay';
+import ColumnHoverOverlay from './ColumnHoverOverlay';
+import GridFindBar from './view/GridFindBar';
+import { splitTextByFindRanges } from '@ishibashi0112/spreadsheet-grid-core/logic/find';
+// 追加(F-3): 条件付き書式(チップの解決。帯 / 背景色は GridBodyLayer 側)。
+import { resolveChipSpec } from '@ishibashi0112/spreadsheet-grid-core/logic/conditionalFormat';
+import { GridChip } from './view/GridChip';
 import ActiveCellOverlay, {
   type ActiveCellOverlayRect,
 } from './ActiveCellOverlay';
@@ -67,6 +71,13 @@ import { useGridViewportSync } from './hooks/useGridViewportSync';
 import { useGridTooltip } from './hooks/useGridTooltip';
 // 追加(TH-DK-2): theme prop('light' | 'dark' | 'auto')の実効テーマ解決フックです。
 import { useResolvedGridTheme } from './hooks/useResolvedGridTheme';
+import { useResolvedGridMotion } from './hooks/useResolvedGridMotion';
+import { MOTION_OFF_CLASS_NAME } from '@ishibashi0112/spreadsheet-grid-core/logic/motion';
+import {
+  resolveSelectionBand,
+  resolveSelectionBandSegments,
+  resolveSelectionExtents,
+} from '@ishibashi0112/spreadsheet-grid-core/logic/selectionOverlayGeometry';
 // 追加(13-B3-2): ヘッダー D&D 列並べ替え controller です。
 import { useColumnHeaderDragController } from './hooks/useColumnHeaderDragController';
 // 追加(row-drag ③): 行ドラッグ並び替え controller です。
@@ -114,14 +125,11 @@ import { inferColumnFilterType } from '@ishibashi0112/spreadsheet-grid-core/logi
 //           中央列リサイズ中も固定ペインの renderEntries 参照を不変に保ちます。
 import {
   buildColumnMeasurements,
-  computePaneColumnExtents,
-  computeFullWidthPaneExtents,
   computeSinglePaneColumnExtent,
   // 追加(13-B3-1.5): 列の所属ペイン(pinned 由来)を columnChooserItems へ付与するために使います。
   getColumnPane,
   type PaneColumnEntry,
   type ColumnPane,
-  type PaneColumnExtentMap,
 } from '@ishibashi0112/spreadsheet-grid-core/logic/geometry';
 import { buildClearCellEdits, clearCellsInSelection } from '@ishibashi0112/spreadsheet-grid-core/logic/clearCells';
 // 追加: データ投入時の列幅自動フィットの発火判定(純関数)です。
@@ -131,7 +139,6 @@ import { buildClearCellEdits, clearCellsInSelection } from '@ishibashi0112/sprea
 import {
   MAX_BODY_PX,
   AUTO_HEIGHT_MAX_ROWS,
-  clipRowRangeToWindow,
   // 追加(label-row ③.5): 縦固定の現在セクション判定で物理 scrollTop を論理へ換算します。
   physicalToLogicalScrollTop,
 } from '@ishibashi0112/spreadsheet-grid-core/logic/verticalGeometry';
@@ -142,7 +149,6 @@ import {
   isInsideDetailCardOf,
   isSyntheticColumnKey,
   seedDetailIndexCache,
-  splitRowBandByDetail,
 } from '@ishibashi0112/spreadsheet-grid-core/logic/detailRow';
 // 追加(label-row ②): ラベル行(見出し / 区切り行)の SSRM ラッパです。
 import { resolveStickyLabel, wrapRowModelWithLabelRows } from '@ishibashi0112/spreadsheet-grid-core/logic/labelRows';
@@ -387,6 +393,23 @@ export function SpreadsheetGrid<T extends object>({
   headerHeight: headerHeightProp,
   density = 'standard',
   theme = 'light',
+  // 追加(motion-0): モーションの有効化('auto' = prefers-reduced-motion を尊重)。
+  motion = 'auto',
+  // 追加(motion-3 / M-4・M-5): 行の並び替えアニメ(既定 true。auto-height / serverSide では自動 OFF)。
+  animateRows = true,
+  // 追加(motion-4 / M-3): コピー範囲の動く点線(既定 true)。
+  showCopyRange = true,
+  // 追加(motion-5 / M-6): ホバーの強調範囲('row' = 従来 / 'cross' = クロスヘア)。
+  hoverHighlight = 'row',
+  // 追加(motion-6 / M-2): 変更セルのフラッシュ + 数値トゥイーン(既定 false。clientSide 専用)。
+  highlightChanges = false,
+  // 追加(motion-7 / M-9): SSRM 書き戻しのセル単位の保存状態(既定 true)。
+  showSaveStatus = true,
+  // 追加(motion-8 / M-11): 行ドラッグの表示方式('ghost' = 従来 / 'live' = 周りの行が退避)。
+  rowDragMotion = 'ghost',
+  // 追加(F-2): セル内検索(既定 無効)。
+  find = false,
+  onFindChange,
   rowHeaderWidth = 56,
   // 追加: グリッド高さの外部制御。height で明示高さ、maxHeight でスクロール領域の上限。
   //   '%' を含む height はバー込みのグリッド全体を親へ追従させます(fill-height。logic/gridHeight)。
@@ -631,6 +654,13 @@ export function SpreadsheetGrid<T extends object>({
   // dataSource 指定で serverSide モードへ切り替えます。clientSide(dataSource 不在)は従来
   //   経路を一切変えません(以降の各 consumer は rowModel シーム越しで透過に動きます)。
   const isServerSide = dataSource != null;
+  // 追加(motion-0): motion prop を実効値へ解決します('auto' は prefers-reduced-motion 追従)。
+  //   'off' のとき root と全ポータル root へ .ssg-motion-off を付与し、継続時間トークンを 0 にします
+  //   (styles.css)。ゴースト / ツールチップはテーマと同じく DOM の祖先から解決します。
+  //   (配置: motion-2 の rowEnter 接続より前に要るためここで解決。ポータル用の合成はテーマ解決の直後)
+  const resolvedMotion = useResolvedGridMotion(motion);
+  const motionClassName =
+    resolvedMotion === 'off' ? MOTION_OFF_CLASS_NAME : undefined;
   // 変更(stage ②): serverSide でも sort/filter/global-filter の UI を有効化します。ローカル並べ替えは
   //   行わず(serverSide 時は rows=空のため clientSide パイプラインは空走行=ゼロコストでバイパス)、
   //   状態を下の ServerSideQuery に載せて getRows へ送出します。利用者がサーバ非対応の操作を塞ぎたい
@@ -656,6 +686,8 @@ export function SpreadsheetGrid<T extends object>({
       hoveredRowIndex,
       hoveredColumnIndex,
       isCornerHovered,
+      // 追加(motion-4 / M-3): コピー範囲(動く点線)。
+      copiedRange,
     },
     {
       // 注記: viewportWidth / viewportHeight は scroll / resize effect が gridStore.setViewState で
@@ -1210,6 +1242,8 @@ export function SpreadsheetGrid<T extends object>({
     onLoadError: onServerSideLoadError,
     // 追加(SSRM 書き戻し): updateRows 失敗(ロールバック済み)の外部通知です(同じく latest-ref)。
     onWriteError: onServerSideWriteError,
+    // 追加(motion-7 / M-9): セル単位の保存状態(pending → ok | failed)を saveStatusController へ。
+    onWriteStateChange: engine.saveStatus.handle,
   });
   // 追加(batch 9): 内蔵エラーバーの「閉じる」状態です。閉じた時点の loadError 参照を記録し、
   //   同一参照の間だけ非表示にします(失敗集合が変わる = 新しい失敗イベントで新参照になり
@@ -1576,6 +1610,35 @@ export function SpreadsheetGrid<T extends object>({
       labelRowHeightOption,
     ],
   );
+
+  // 追加(motion-3 / M-4・M-5): 行の並び替えアニメの実効値。auto-height(行高の実測で transform が動く)と serverSide
+  //   (ブロック到着で行が差し替わる)では自動 OFF。root 修飾子(ssg-root--animate-rows)で行要素の transform に
+  //   transition を付けます(styles.css。スクロール中は scrollSyncController の修飾子で抑止)。
+  const animateRowsActive =
+    animateRows && resolvedMotion === 'on' && !autoHeightActive && !isServerSide;
+  // 追加(motion-2 / M-8、motion-3): スケルトン行が実行へ差し替わった行(SSRM)と、スクロール以外で現れた行(animateRows)
+  //   へ一過性の enter クラスを直付けします(セルが上から順にフェードイン)。両方 OFF なら observer 自体を付けません。
+  useControllerLifecycle(engine.rowEnter, {
+    scrollContainerRef,
+    skeletonEnter: isServerSide && resolvedMotion === 'on',
+    mountEnter: animateRowsActive,
+  });
+  // 追加(motion-6 / M-2): rows の参照が変わったとき、値が変わった描画中のセルへフラッシュ(+ 数値トゥイーン)を直付け
+  //   します(highlightChanges。clientSide 専用。DOM は React が更新済みなので、レイアウト effect のこの時点で旧値へ
+  //   戻してから補間する)。
+  useControllerLifecycle(engine.changeHighlight, {
+    enabled: highlightChanges && !isServerSide && resolvedMotion === 'on',
+    rows,
+    rowKeyGetter: resolvedRowKeyGetter,
+    columns: visibleColumns,
+    scrollContainerRef,
+  });
+  // 追加(motion-7 / M-9): SSRM 書き戻しのセル単位の保存状態(data-ssg-save + インジケーター + 失敗チップ)。
+  useControllerLifecycle(engine.saveStatus, {
+    scrollContainerRef,
+    shellRef: gridRootRef,
+    enabled: showSaveStatus && isServerSide,
+  });
   // gate 外フォールバック時の開発時警告(例外は投げず uniform にフォールバック)。
   // 変更(①-3): serverSide では行数に関わらず未対応の旨を警告します(行数上限とは別理由のため
   //   メッセージを分けます)。
@@ -1870,6 +1933,9 @@ export function SpreadsheetGrid<T extends object>({
   const resolvedTheme = useResolvedGridTheme(theme);
   const themeClassName =
     resolvedTheme === 'dark' ? 'ssg-theme-dark' : undefined;
+  // ポータル root へまとめて付ける修飾子(テーマ + モーション)。各ポータルの prop 名は従来どおり
+  //   themeClassName ですが、中身は「root と同じ修飾子クラス群」です。
+  const portalClassName = cx(themeClassName, motionClassName) || undefined;
 
   // 追加(slot-props): classNames / detailRow.className を解決済みスロットへ変換します(署名 memo で
   //   参照安定。利用側がレンダー毎に新しいオブジェクトを渡しても memo 済み子の props は揺れません)。
@@ -2025,6 +2091,8 @@ export function SpreadsheetGrid<T extends object>({
     setHoveredColumnIndex,
     enableRowHover,
     enableColumnHeaderHover,
+    // 追加(motion-5 / M-6): クロスヘアでは本体セルのホバーで列もホバー列にします。
+    enableColumnHover: hoverHighlight === 'cross',
     // 追加(行選択): ガター行選択の有効化とコールバックです。
     enableRowSelection,
     onGutterRowSelect: handleGutterRowSelect,
@@ -2169,6 +2237,21 @@ export function SpreadsheetGrid<T extends object>({
       uiState,
       readOnly,
       canEditCell,
+      // 追加(motion-4 / M-3): コピー成功時にコピー元の選択とビュー形状を控えます(動く点線の描画元。
+      //   ビュー形状が変わったら描画側が参照比較で無視するため、解除の effect は不要)。
+      onCopied: (selection) =>
+        gridStore.setViewState({
+          copiedRange: {
+            selection,
+            view: {
+              sort: uiState.sort,
+              filters: uiState.filters,
+              collapsedGroupKeys: uiState.collapsedGroupKeys,
+              viewRowCount,
+              columns: orderedColumns,
+            },
+          },
+        }),
       createRow,
       createOverflowColumn,
       // 変更(undo/redo): paste の変更前 rows を履歴へ積むため、生の onRowsChange ではなく
@@ -2294,6 +2377,40 @@ export function SpreadsheetGrid<T extends object>({
   );
 
   // ── keyboard ──────────────────────────────────────────
+  // ── 追加(F-3): 条件付き書式の列ごとの min / max(ビュー行から集計。内容が同じなら参照不変 = 行 memo を壊さない)──
+  const conditionalFormatStats = useMemo(
+    () => engine.resolveConditionalFormatStats(rowModel, orderedColumns),
+    [engine, rowModel, orderedColumns],
+  );
+  // ── 追加(F-2): セル内検索 ──
+  //   実体は engine.find(controllers/findController。走査は時間分割)。React はスナップショットを購読し、既定セルの
+  //   描画でヒットを <mark> にし、右上の検索バー(GridFindBar)を出します。Ctrl/Cmd+F は keyboardController 経由。
+  const findEnabled = find !== false && find !== undefined;
+  const findOptions = typeof find === 'object' ? find : null;
+  const findShortcut = findEnabled && (findOptions?.shortcut ?? true);
+  const findCaseSensitive = findOptions?.caseSensitive ?? false;
+  const findSnapshot = useSyncExternalStore(engine.find.subscribe, engine.find.getSnapshot, engine.find.getSnapshot);
+  const findIndex = findSnapshot.index;
+  const findCurrentIndex = findSnapshot.currentIndex;
+  const openFindFromShortcut = useCallback(() => {
+    engine.find.open();
+  }, [engine]);
+  useControllerLifecycle(engine.find, {
+    enabled: findEnabled,
+    rowModel,
+    columns: orderedColumns,
+    caseSensitive: findCaseSensitive,
+    // カレントのヒットへ: クリック相当の単一選択 + 可視化スクロール(命令的 API と同じ経路)。
+    onNavigate: (rowIndex: number, colIndex: number) => {
+      gridApi.handle.selectCell(rowIndex, colIndex, { scrollIntoView: true });
+    },
+    onChange: onFindChange,
+  });
+  const closeFindAndRefocus = useCallback(() => {
+    engine.find.close();
+    gridRootRef.current?.focus({ preventScroll: true });
+  }, [engine]);
+
   const { handleKeyDown } = useGridKeyboardInteractions({
     uiState,
     // 変更(DS-3-1): filteredRows 配列 → rowModel シームを渡します(keyboard consumer 移行)。
@@ -2306,6 +2423,8 @@ export function SpreadsheetGrid<T extends object>({
     setEditorInitialValue,
     dispatch,
     handleCopy,
+    // 追加(F-2): Ctrl/Cmd+F で検索バーを開く(find が有効で shortcut が true のときだけ横取り)。
+    openFind: findShortcut ? openFindFromShortcut : undefined,
     handleCellDoubleClick,
     isWholeGridSelected,
     selectEntireGrid,
@@ -2462,111 +2581,86 @@ export function SpreadsheetGrid<T extends object>({
   //             no-op(scaleFactor=1)でも可視域等価です。
 
   // 横 extent + 生の選択行範囲(スクロール非依存)。
-  const selectionExtents = useMemo<{
-    extents: PaneColumnExtentMap;
-    startRow: number;
-    endRow: number;
-  } | null>(() => {
-    if (!uiState.selection) {
-      return null;
-    }
-
-    if (uiState.selection.type === 'cell') {
-      const normalizedRange = normalizeCellRange(uiState.selection.range);
-      const extents = computePaneColumnExtents(
-        paneLayout,
-        normalizedRange.start.col,
-        normalizedRange.end.col,
-      );
-      return {
-        extents,
-        startRow: normalizedRange.start.row,
-        endRow: normalizedRange.end.row,
-      };
-    }
-
-    if (uiState.selection.type === 'row') {
-      const normalizedRange = normalizeRowRange(
-        uiState.selection.startRow,
-        uiState.selection.endRow,
-      );
-      // 行選択は全ペインの全列を覆います。
-      const extents = computeFullWidthPaneExtents(paneLayout);
-      return {
-        extents,
-        startRow: normalizedRange.startRow,
-        endRow: normalizedRange.endRow,
-      };
-    }
-
-    // col selection: 縦は全行が対象(窓クリップ側で帯に畳む)。
-    const normalizedRange = normalizeColumnRange(
-      uiState.selection.startCol,
-      uiState.selection.endCol,
-    );
-    const extents = computePaneColumnExtents(
-      paneLayout,
-      normalizedRange.startCol,
-      normalizedRange.endCol,
-    );
-    return {
-      extents,
-      startRow: 0,
-      endRow: Math.max(viewRowCount - 1, 0),
-    };
-  }, [uiState.selection, paneLayout, viewRowCount]);
+  // 変更(motion-4): 本体は logic/selectionOverlayGeometry の純関数へ(コピー範囲の点線と共用)。
+  const selectionExtents = useMemo(
+    () => resolveSelectionExtents(uiState.selection, paneLayout, viewRowCount),
+    [uiState.selection, paneLayout, viewRowCount],
+  );
 
   // 縦帯(スクロール依存): 選択行範囲を描画窓へクリップし、rowMetrics で top/height を求めます。
   //   窓と交差しない(画面外へ完全にスクロールアウトした)選択は null で描画しません。
-  const selectionBand = useMemo<{ top: number; height: number } | null>(() => {
-    if (!selectionExtents) {
-      return null;
-    }
-    const clipped = clipRowRangeToWindow(
-      selectionExtents.startRow,
-      selectionExtents.endRow,
-      windowFirstRow,
-      windowLastRow,
-    );
-    if (!clipped) {
-      return null;
-    }
-    return {
-      top: rowMetrics.rowTop(clipped.start),
-      height: rowMetrics.rowsHeight(clipped.start, clipped.end),
-    };
-  }, [selectionExtents, rowMetrics, windowFirstRow, windowLastRow]);
+  const selectionBand = useMemo(
+    () => resolveSelectionBand(selectionExtents, windowFirstRow, windowLastRow, rowMetrics),
+    [selectionExtents, rowMetrics, windowFirstRow, windowLastRow],
+  );
   // 追加(detail ③): 展開行があるとき、選択の縦帯を detail 帯を避けた複数セグメントへ分割します。
   //   展開行なし(detailActive=false)では null で、従来の selectionBand 1 本のままです。
-  const selectionBandSegments = useMemo<
-    ReadonlyArray<{ top: number; height: number }> | null
-  >(() => {
-    if (!detailActive || !selectionExtents) {
-      return null;
-    }
-    const clipped = clipRowRangeToWindow(
-      selectionExtents.startRow,
-      selectionExtents.endRow,
-      windowFirstRow,
-      windowLastRow,
-    );
-    if (!clipped) {
-      return null;
-    }
-    return splitRowBandByDetail(
-      clipped.start,
-      clipped.end,
-      rowMetrics,
-      detailExtras,
-    );
-  }, [
-    detailActive,
-    selectionExtents,
-    rowMetrics,
-    detailExtras,
-    windowFirstRow,
-    windowLastRow,
-  ]);
+  const selectionBandSegments = useMemo(
+    () =>
+      resolveSelectionBandSegments(
+        detailActive,
+        selectionExtents,
+        windowFirstRow,
+        windowLastRow,
+        rowMetrics,
+        detailExtras,
+      ),
+    [detailActive, selectionExtents, rowMetrics, detailExtras, windowFirstRow, windowLastRow],
+  );
+
+  // 追加(motion-4 / M-3): コピー範囲(動く点線)。コピー時点のビュー形状(ソート / フィルター / グループ開閉 / 行数 / 列)
+  //   と現在値を参照比較し、変わっていれば描画しません(= ソート等で範囲が崩れたら解除)。幾何はライブ選択と同じ計算。
+  const copiedSelection =
+    showCopyRange &&
+    copiedRange &&
+    copiedRange.view.sort === uiState.sort &&
+    copiedRange.view.filters === uiState.filters &&
+    copiedRange.view.collapsedGroupKeys === uiState.collapsedGroupKeys &&
+    copiedRange.view.viewRowCount === viewRowCount &&
+    copiedRange.view.columns === orderedColumns
+      ? copiedRange.selection
+      : null;
+  const copiedExtents = useMemo(
+    () => resolveSelectionExtents(copiedSelection, paneLayout, viewRowCount),
+    [copiedSelection, paneLayout, viewRowCount],
+  );
+  const copiedBand = useMemo(
+    () => resolveSelectionBand(copiedExtents, windowFirstRow, windowLastRow, rowMetrics),
+    [copiedExtents, rowMetrics, windowFirstRow, windowLastRow],
+  );
+  const copiedBandSegments = useMemo(
+    () =>
+      resolveSelectionBandSegments(
+        detailActive,
+        copiedExtents,
+        windowFirstRow,
+        windowLastRow,
+        rowMetrics,
+        detailExtras,
+      ),
+    [detailActive, copiedExtents, rowMetrics, detailExtras, windowFirstRow, windowLastRow],
+  );
+  const copyRectsForPane = useCallback(
+    (pane: ColumnPane): SelectionOverlayRect[] => {
+      const extent = copiedExtents?.extents[pane];
+      if (!extent) {
+        return [];
+      }
+      if (copiedBandSegments) {
+        return copiedBandSegments.map((segment) => ({
+          left: extent.start,
+          top: segment.top,
+          width: extent.width,
+          height: segment.height,
+        }));
+      }
+      if (!copiedBand) {
+        return [];
+      }
+      return [{ left: extent.start, top: copiedBand.top, width: extent.width, height: copiedBand.height }];
+    },
+    [copiedExtents, copiedBand, copiedBandSegments],
+  );
 
   // 追加(10-D): 指定ペインの選択矩形（ペインローカル）を返します。該当列が無い / 窓外なら null です。
   const selectionRectForPane = useCallback(
@@ -2606,6 +2700,27 @@ export function SpreadsheetGrid<T extends object>({
       }));
     },
     [selectionBandSegments, selectionExtents],
+  );
+
+  // 追加(motion-5 / M-6): クロスヘアのポインタ列の帯(ペインローカル)。描画窓の縦範囲だけを覆います。
+  const columnHoverRectForPane = useCallback(
+    (pane: ColumnPane): SelectionOverlayRect | null => {
+      if (hoverHighlight !== 'cross' || hoveredColumnIndex === null || windowLastRow < windowFirstRow) {
+        return null;
+      }
+      const single = computeSinglePaneColumnExtent(paneLayout, hoveredColumnIndex);
+      if (!single || single.pane !== pane) {
+        return null;
+      }
+      const top = rowMetrics.rowTop(windowFirstRow);
+      return {
+        left: single.extent.start,
+        top,
+        width: single.extent.width,
+        height: rowMetrics.rowTop(windowLastRow + 1) - top,
+      };
+    },
+    [hoverHighlight, hoveredColumnIndex, paneLayout, rowMetrics, windowFirstRow, windowLastRow],
   );
 
   // ── corner header ─────────────────────────────────────
@@ -3047,6 +3162,8 @@ export function SpreadsheetGrid<T extends object>({
     getRowDragLabel,
     commitRowMove,
     ghostSlot: slots.dragGhost,
+    // 追加(motion-8 / M-11): 'live' では掴んだ行が追従し周りの行が退避する(motion='off' では ghost へフォールバック)。
+    motion: resolvedMotion === 'off' ? 'ghost' : rowDragMotion,
   });
   // 行の並び替え確定(rowModel 差し替え)後に settle アニメを発火します。直前のドロップで armed の
   //   ときだけ動き、それ以外(編集 / フィルター等の rowModel 変化)は即 return するため無害です。
@@ -3345,12 +3462,62 @@ export function SpreadsheetGrid<T extends object>({
       const formattedText = column.valueFormatter
         ? column.valueFormatter({ value, row, column })
         : String(value ?? '');
-      return <span>{formattedText}</span>;
+      // 追加(F-3): データバーの showValue: false は文字を出さない(帯は GridBodyRow が描く)。
+      const conditionalFormat = column.conditionalFormat;
+      if (conditionalFormat?.dataBar?.showValue === false) {
+        return null;
+      }
+      // 追加(F-2): セル内検索のヒットを <mark> にします(既定セルだけ。カレントは --current)。
+      const findRanges = findIndex.get(rowIndex)?.get(colIndex);
+      const textContent: ReactNode =
+        findRanges && findRanges.length > 0
+          ? splitTextByFindRanges(formattedText, findRanges).map((segment, segmentIndex) =>
+              segment.range ? (
+                <mark
+                  key={segmentIndex}
+                  className={cx(
+                    'ssg-find-mark',
+                    segment.range.matchIndex === findCurrentIndex && 'ssg-find-mark--current',
+                  )}
+                >
+                  {segment.text}
+                </mark>
+              ) : (
+                segment.text
+              ),
+            )
+          : formattedText;
+      // 追加(F-3): 状態チップ(値 → 色味 / 指定)。ラベル省略時は表示文字列(検索の強調つき)。
+      if (conditionalFormat?.chips) {
+        const chip = resolveChipSpec(conditionalFormat.chips, {
+          row,
+          rowIndex,
+          sourceRowIndex: rowModel.getSourceIndex(rowIndex) ?? rowIndex,
+          rowKey: rowModel.getRowKey(rowIndex) ?? rowIndex,
+          colIndex,
+          value,
+          column,
+          isActive: cellState.isActive,
+          isSelected: cellState.isSelected,
+          isEditing: cellState.isEditing,
+          readOnly: cellState.readOnly,
+        });
+        if (chip) {
+          return (
+            <GridChip spec={chip}>
+              {chip.label === undefined || chip.label === formattedText ? textContent : chip.label}
+            </GridChip>
+          );
+        }
+      }
+      return <span>{textContent}</span>;
     },
     [
       rowModel,
       handleRowsChange,
       rows,
+      findIndex,
+      findCurrentIndex,
       toggleCheckboxCell,
       slots.checkbox,
       applyServerSideCellEdits,
@@ -3529,7 +3696,7 @@ export function SpreadsheetGrid<T extends object>({
   const renderedFilterPopover = openedFilterColumn ? (
     <ColumnFilterPopover
       popoverSlot={slots.popover}
-      themeClassName={themeClassName}
+      themeClassName={portalClassName}
       isOpen={Boolean(filterPopoverState)}
       title={openedFilterColumn.title || openedFilterColumn.key}
       filterType={openedFilterType ?? 'text'}
@@ -3587,7 +3754,7 @@ export function SpreadsheetGrid<T extends object>({
   const renderedColumnMenuPopover = openedMenuColumn ? (
     <ColumnMenuPopover
       slots={slots}
-      themeClassName={themeClassName}
+      themeClassName={portalClassName}
       isOpen={isColumnMenuOpen}
       title={openedMenuColumn.title || openedMenuColumn.key}
       columnKey={openedMenuColumn.key}
@@ -3688,7 +3855,7 @@ export function SpreadsheetGrid<T extends object>({
   const renderedToolPanel = (
     <ToolPanel
       popoverSlot={slots.popover}
-      themeClassName={themeClassName}
+      themeClassName={portalClassName}
       activeTab={activeToolPanelTab}
       flashTick={toolPanelFlashTick}
       tabs={toolPanelTabs}
@@ -3710,7 +3877,7 @@ export function SpreadsheetGrid<T extends object>({
   const renderedCellContextMenuPopover = (
     <CellContextMenuPopover
       slots={slots}
-      themeClassName={themeClassName}
+      themeClassName={portalClassName}
       isOpen={isContextMenuOpen}
       items={contextMenuState?.items ?? EMPTY_CONTEXT_MENU_ITEMS}
       layout={contextMenuLayout}
@@ -3834,6 +4001,8 @@ export function SpreadsheetGrid<T extends object>({
     activeToolPanelTab,
     openToolPanel,
     closeToolPanel,
+    // 追加(F-2): セル内検索の命令的 API(openFind / closeFind / findNext / findPrev)の委譲先。
+    find: { open: engine.find.open, close: engine.find.close, next: engine.find.next, prev: engine.find.prev },
     undoRows,
     redoRows,
     canUndoRows,
@@ -3883,6 +4052,15 @@ export function SpreadsheetGrid<T extends object>({
         density !== 'standard' && `ssg-root--density-${density}`,
         // 追加(TH-DK-2): ダークテーマ修飾子(light は付与なし=既定トークンのまま)。
         themeClassName,
+        // 追加(motion-0): モーション停止の修飾子('on' は付与なし=既定の継続時間のまま)。
+        motionClassName,
+        // 追加(motion-1 / M-1): ポインタで範囲選択をドラッグ中はオーバーレイを瞬時に追従させます(styles.css で
+        //   transition を切る。キーボード移動 / クリックでは滑る)。
+        uiState.dragState?.type === 'selection' && 'ssg-root--selecting',
+        // 追加(motion-3 / M-4・M-5): 行の並び替えアニメ(行要素の transform に transition)。
+        animateRowsActive && 'ssg-root--animate-rows',
+        // 追加(motion-5 / M-6): クロスヘア(列ヘッダー / 行番号を選択色で染める。列の帯は ColumnHoverOverlay)。
+        hoverHighlight === 'cross' && 'ssg-root--hover-cross',
         // 追加(THEME-3): readonly 淡色表示の opt-in 修飾子(styles.css 側で :where ゲート)。
         dimReadOnlyCells && 'ssg-root--dim-readonly',
         // 追加(fill-height): '%' を含む height のときだけ flex column 化します(styles.css)。
@@ -3915,7 +4093,13 @@ export function SpreadsheetGrid<T extends object>({
         style={{ cursor: isAutosizing ? 'progress' : undefined }}
         onDragStart={handleNativeDragStart}
         // 追加(UI hover): grid 本体(ヘッダー+ボディ)から出たら行ホバーをクリアします。
-        onPointerLeave={() => applyHoveredRowChange(null)}
+        onPointerLeave={() => {
+          applyHoveredRowChange(null);
+          // 追加(motion-5 / M-6): クロスヘアの列ホバーも本体から出たら消します。
+          if (hoverHighlight === 'cross') {
+            setHoveredColumnIndex(null);
+          }
+        }}
         onPointerMoveCapture={(event) => {
           pointerClientRef.current = { x: event.clientX, y: event.clientY };
           updateSelectionFromPointer(event.clientX, event.clientY);
@@ -4055,6 +4239,24 @@ export function SpreadsheetGrid<T extends object>({
                     leadingWidth={leftLeadingWidth}
                   />
                 ))}
+                {/* 追加(motion-4 / M-3): コピー範囲の動く点線(選択の塗りと同じ座標系)。 */}
+                {copyRectsForPane('left').map((rect, segmentIndex) => (
+                  <CopyRangeOverlay
+                    slot={slots.copyRangeOverlay}
+                    key={segmentIndex}
+                    rect={rect}
+                    headerHeight={headerHeight}
+                    baseOffset={overlayBaseOffset}
+                    leadingWidth={leftLeadingWidth}
+                  />
+                ))}
+                {/* 追加(motion-5 / M-6): クロスヘアのポインタ列の帯。 */}
+                <ColumnHoverOverlay
+                  rect={columnHoverRectForPane('left')}
+                  headerHeight={headerHeight}
+                  baseOffset={overlayBaseOffset}
+                  leadingWidth={leftLeadingWidth}
+                />
 
                 <ActiveCellOverlay
                   slot={slots.activeCellOverlay}
@@ -4073,7 +4275,7 @@ export function SpreadsheetGrid<T extends object>({
                   initialValue={editorInitialValue}
                   editor={editingColumn?.editor}
                   editorSession={editorSession}
-                  themeClassName={themeClassName}
+                  themeClassName={portalClassName}
                   onCommit={commitEdit}
                   onCancel={cancelEdit}
                   align={editingColumn?.align}
@@ -4092,6 +4294,7 @@ export function SpreadsheetGrid<T extends object>({
                   autoHeight={autoHeightActive}
                   showCellOverflowTooltip={showCellOverflowTooltip}
                   showValidationMarks={showValidationMarks}
+                  conditionalFormatStats={conditionalFormatStats}
                   isServerSide={isServerSide}
                   collapsedGroupKeys={uiState.collapsedGroupKeys}
                   onGroupToggle={handleGroupToggle}
@@ -4246,6 +4449,24 @@ export function SpreadsheetGrid<T extends object>({
                     leadingWidth={centerLeadingWidth}
                   />
                 ))}
+                {/* 追加(motion-4 / M-3): コピー範囲の動く点線(選択の塗りと同じ座標系)。 */}
+                {copyRectsForPane('center').map((rect, segmentIndex) => (
+                  <CopyRangeOverlay
+                    slot={slots.copyRangeOverlay}
+                    key={segmentIndex}
+                    rect={rect}
+                    headerHeight={headerHeight}
+                    baseOffset={overlayBaseOffset}
+                    leadingWidth={centerLeadingWidth}
+                  />
+                ))}
+                {/* 追加(motion-5 / M-6): クロスヘアのポインタ列の帯。 */}
+                <ColumnHoverOverlay
+                  rect={columnHoverRectForPane('center')}
+                  headerHeight={headerHeight}
+                  baseOffset={overlayBaseOffset}
+                  leadingWidth={centerLeadingWidth}
+                />
 
                 <ActiveCellOverlay
                   slot={slots.activeCellOverlay}
@@ -4264,7 +4485,7 @@ export function SpreadsheetGrid<T extends object>({
                   initialValue={editorInitialValue}
                   editor={editingColumn?.editor}
                   editorSession={editorSession}
-                  themeClassName={themeClassName}
+                  themeClassName={portalClassName}
                   onCommit={commitEdit}
                   onCancel={cancelEdit}
                   align={editingColumn?.align}
@@ -4283,6 +4504,7 @@ export function SpreadsheetGrid<T extends object>({
                   autoHeight={autoHeightActive}
                   showCellOverflowTooltip={showCellOverflowTooltip}
                   showValidationMarks={showValidationMarks}
+                  conditionalFormatStats={conditionalFormatStats}
                   isServerSide={isServerSide}
                   collapsedGroupKeys={uiState.collapsedGroupKeys}
                   onGroupToggle={handleGroupToggle}
@@ -4434,6 +4656,24 @@ export function SpreadsheetGrid<T extends object>({
                     leadingWidth={rightLeadingWidth}
                   />
                 ))}
+                {/* 追加(motion-4 / M-3): コピー範囲の動く点線(選択の塗りと同じ座標系)。 */}
+                {copyRectsForPane('right').map((rect, segmentIndex) => (
+                  <CopyRangeOverlay
+                    slot={slots.copyRangeOverlay}
+                    key={segmentIndex}
+                    rect={rect}
+                    headerHeight={headerHeight}
+                    baseOffset={overlayBaseOffset}
+                    leadingWidth={rightLeadingWidth}
+                  />
+                ))}
+                {/* 追加(motion-5 / M-6): クロスヘアのポインタ列の帯。 */}
+                <ColumnHoverOverlay
+                  rect={columnHoverRectForPane('right')}
+                  headerHeight={headerHeight}
+                  baseOffset={overlayBaseOffset}
+                  leadingWidth={rightLeadingWidth}
+                />
 
                 <ActiveCellOverlay
                   slot={slots.activeCellOverlay}
@@ -4452,7 +4692,7 @@ export function SpreadsheetGrid<T extends object>({
                   initialValue={editorInitialValue}
                   editor={editingColumn?.editor}
                   editorSession={editorSession}
-                  themeClassName={themeClassName}
+                  themeClassName={portalClassName}
                   onCommit={commitEdit}
                   onCancel={cancelEdit}
                   align={editingColumn?.align}
@@ -4471,6 +4711,7 @@ export function SpreadsheetGrid<T extends object>({
                   autoHeight={autoHeightActive}
                   showCellOverflowTooltip={showCellOverflowTooltip}
                   showValidationMarks={showValidationMarks}
+                  conditionalFormatStats={conditionalFormatStats}
                   isServerSide={isServerSide}
                   collapsedGroupKeys={uiState.collapsedGroupKeys}
                   onGroupToggle={handleGroupToggle}
@@ -4587,6 +4828,19 @@ export function SpreadsheetGrid<T extends object>({
               </span>
             </span>
           </div>
+        )}
+
+        {/* 追加(F-2): セル内検索バー(右上に浮く。ヘッダー直下)。開いているときだけ描画。 */}
+        {findSnapshot.open && (
+          <GridFindBar
+            snapshot={findSnapshot}
+            headerHeight={headerHeight}
+            onQueryChange={engine.find.setQuery}
+            onNext={engine.find.next}
+            onPrev={engine.find.prev}
+            onClose={closeFindAndRefocus}
+            slot={slots.findBar}
+          />
         )}
 
         {/* 追加(batch 9): SSRM エラーバー(getRows 失敗の再試行 UI)です。autosize / filter overlay と

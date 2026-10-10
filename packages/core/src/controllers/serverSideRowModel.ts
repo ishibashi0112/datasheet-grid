@@ -43,6 +43,15 @@ export type ServerSideRowModelArgs<T> = {
   onLoadError?: (error: unknown, params: ServerSideLoadErrorParams) => void;
   onWriteError?: (error: unknown, params: ServerSideWriteErrorParams<T>) => void;
   debounceMs?: number;
+  // 追加(motion-7 / M-9): 書き戻しのセル単位の状態通知(pending → ok | failed。refresh / クエリ変化で無効化された
+  //   in-flight は cleared)。シェルが saveStatusController へ渡してセルに印を付けます。
+  onWriteStateChange?: (event: ServerSideWriteStateEvent) => void;
+};
+
+// 追加(motion-7 / M-9): 書き戻し 1 回ぶんのセル集合と状態です。
+export type ServerSideWriteStateEvent = {
+  state: 'pending' | 'ok' | 'failed' | 'cleared';
+  cells: ReadonlyArray<{ rowKey: GridRowKey; columnKeys: readonly string[] }>;
 };
 
 export type ServerSideLoadErrorState = {
@@ -300,10 +309,20 @@ export const createServerSideRowModel = <T,>(
       writeId: pendingEdits.beginWrite(update.rowIndex, update.row),
     }));
     bumpVersion();
+    // 追加(motion-7 / M-9): セル単位の保存状態(rowKey × 変更列)。
+    const stateCells = updates.map((update) => ({
+      rowKey: update.rowKey,
+      columnKeys: update.changes.map((change) => change.columnKey),
+    }));
+    const notifyWriteState = (state: ServerSideWriteStateEvent['state']) => {
+      args.onWriteStateChange?.({ state, cells: stateCells });
+    };
+    notifyWriteState('pending');
 
     updateRows({ updates })
       .then((result) => {
         if (writeEpoch !== epoch) {
+          notifyWriteState('cleared');
           return;
         }
         const confirmedRows = result === undefined ? undefined : result.rows;
@@ -312,9 +331,11 @@ export const createServerSideRowModel = <T,>(
           pendingEdits.settleWrite(write.viewIndex, write.writeId);
         });
         bumpVersion();
+        notifyWriteState('ok');
       })
       .catch((error: unknown) => {
         if (writeEpoch !== epoch) {
+          notifyWriteState('cleared');
           return;
         }
         for (const write of writes) {
@@ -323,6 +344,7 @@ export const createServerSideRowModel = <T,>(
         writeError = { failedRowCount: updates.length };
         args.onWriteError?.(error, { updates });
         bumpVersion();
+        notifyWriteState('failed');
       });
     return updates.length;
   };

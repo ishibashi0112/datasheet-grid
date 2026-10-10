@@ -53,6 +53,9 @@ export type ClipboardControllerArgs<T extends object> = {
   applyServerSideCellEdits?: (edits: ServerSideCellEditInput<T>[]) => number;
   isRowExportable?: SpreadsheetGridProps<T>['isRowExportable'];
   dispatch: (action: GridUiAction) => void;
+  // 追加(motion-4 / M-3): コピーが成功したとき(クリップボードへ書けたとき)に、コピー元の選択を通知します。
+  //   シェルはこれで view スライスの copiedRange(動く点線)を立てます。
+  onCopied?: (selection: NonNullable<GridSelection>) => void;
 };
 
 export type ClipboardController<T extends object> = {
@@ -155,7 +158,10 @@ export const createClipboardController = <T extends object>(): ClipboardControll
     if (!text) {
       return;
     }
-    await writeTextToClipboard(text);
+    const written = await writeTextToClipboard(text);
+    if (written && uiState.selection) {
+      current.onCopied?.(uiState.selection);
+    }
   };
 
   const handlePaste = (event: ClipboardEventLike) => {
