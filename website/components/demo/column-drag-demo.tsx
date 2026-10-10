@@ -2,7 +2,8 @@
 
 // 列の並べ替えデモ: 列ヘッダーの grip(⠿)を掴んで左右へドラッグし、列の順番を入れ替える。
 //   表示方式(columnDragMotion)は 'live'(掴んだ列が追従し周りの列が退避)と 'ghost'(ゴースト + 縦線)を切り替えられる。
-//   「ID」は左固定。固定ペインへ運ぶと固定の変更(ピン留め / 解除)になる。
+//   「ID」は左固定。固定ペインへ運ぶと固定の変更(ピン留め / 解除)になる。live でペインをまたぐと列の複製(浮かぶ列)が
+//   付いてきて、見出しにピン / 移動の矢印のアイコンが出る。
 import { useState } from 'react';
 import { SpreadsheetGrid, type GridColumn } from '@ishibashi0112/spreadsheet-grid';
 import '@ishibashi0112/spreadsheet-grid/style.css';
@@ -61,6 +62,9 @@ export function ColumnDragDemo() {
         >
           列の順番をリセット
         </button>
+        {dragMotion === 'live' && (
+          <span className="text-xs text-fd-muted-foreground">ID の左固定ペインへ運ぶと、浮かぶ列にピンのアイコンが出ます</span>
+        )}
       </div>
       <SpreadsheetGrid
         rows={rows}
