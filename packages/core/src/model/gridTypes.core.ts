@@ -2145,6 +2145,9 @@ export type GridDensity = 'compact' | 'standard' | 'comfortable';
 //   利用側のカラースキーム(useMantineColorScheme 等)の解決値を 'light' | 'dark' で
 //   渡す使い方が本命です。
 export type GridTheme = 'light' | 'dark' | 'auto';
+// 追加(motion-0): モーション(アニメーション / トランジション)の有効化です。'auto' は OS / ブラウザの
+//   prefers-reduced-motion: reduce を尊重して 'on' / 'off' に解決します(logic/motion.ts)。
+export type GridMotion = 'auto' | 'on' | 'off';
 
 // 追加: データ投入時に全列幅を内容へ自動フィットさせる発火モードです。
 //   'onMount'      = 初回にデータが載った一度きり。
@@ -2465,6 +2468,21 @@ export type SpreadsheetGridProps<T, F extends GridFrameworkTypes = GridFramework
    * @defaultValue `'light'`
    */
   theme?: GridTheme;
+  // 追加(motion-0): モーションの有効化です(既定 'auto')。'off'(または 'auto' + prefers-reduced-motion)では
+  //   root と全ポータル root・ドラッグゴースト・ツールチップへ .ssg-motion-off が付き、継続時間トークン
+  //   (--ssg-motion-fast / base / slow)が 0 になります(styles.css)。各効果はトークンだけを参照します。
+  /**
+   * モーション(アニメーション / トランジション)の有効化。`'auto'` は OS /
+   * ブラウザの「視差効果を減らす」(`prefers-reduced-motion: reduce`)が有効なら `'off'`、それ以外は
+   * `'on'` として扱う。`'off'` では root と全ポータル(popover / menu / panel)
+   * ・ドラッグゴースト・ツールチップへ `.ssg-motion-off` が付き、
+   * 継続時間トークン(`--ssg-motion-fast` / `--ssg-motion-base` / `--ssg-motion-slow`)が 0
+   * になって動きが止まる(表示結果は同じ)。`'on'` は OS 設定に関わらず動かす。
+   * 速さの調整はトークンの上書き。詳細は「モーション」節。
+   *
+   * @defaultValue `'auto'`
+   */
+  motion?: GridMotion;
   /**
    * 行番号列の幅(px)。
    *

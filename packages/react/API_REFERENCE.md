@@ -33,6 +33,7 @@
 | `headerHeight` | `number` | density 依存(standard: `40`) | ヘッダー行の高さ(px)。未指定時は density プリセット(compact: `32` / comfortable: `48`)から解決。明示指定が常に優先。 |
 | `density` | `'compact' \| 'standard' \| 'comfortable'` | `'standard'` | 密度プリセット。rowHeight / headerHeight の既定値と寸法トークン(セル横 padding / バー padding / アイコンボタン寸法 / セル文字の相対拡縮)を一括切替。`'standard'` は従来と同値。個別調整はトークン(`--ssg-cell-pad-x` 等)の上書きで可能。popover / menu 等のポータルは対象外。 |
 | `theme` | `'light' \| 'dark' \| 'auto'` | `'light'` | カラーテーマ。`'dark'` でダークプリセット(`.ssg-theme-dark` のトークン一括上書き。Mantine dark 系パレット)をグリッド本体・全ポータル(popover / menu / panel)・ドラッグゴースト・ツールチップへ適用。`'auto'` は `prefers-color-scheme` へ追従(Mantine / HeroUI 等クラスベース dark 運用では、利用側カラースキームの解決値を `'light' \| 'dark'` で渡す使い方を推奨)。個別の色調整はトークン(`--ssg-*`)の上書きで可能。 |
+| `motion` | `'auto' \| 'on' \| 'off'` | `'auto'` | モーション(アニメーション / トランジション)の有効化。`'auto'` は OS / ブラウザの「視差効果を減らす」(`prefers-reduced-motion: reduce`)が有効なら `'off'`、それ以外は `'on'` として扱う。`'off'` では root と全ポータル(popover / menu / panel)・ドラッグゴースト・ツールチップへ `.ssg-motion-off` が付き、継続時間トークン(`--ssg-motion-fast` / `--ssg-motion-base` / `--ssg-motion-slow`)が 0 になって動きが止まる(表示結果は同じ)。`'on'` は OS 設定に関わらず動かす。速さの調整はトークンの上書き。詳細は「モーション」節。 |
 | `rowHeaderWidth` | `number` | `56` | 行番号列の幅(px)。 |
 | `height` | `number \| string` | `—` | グリッドの明示高さ。**値の種類で何の高さかが変わる**。① `%` を含む文字列(`'100%'` / `'50%'` / `'calc(100% - 40px)'`): トップバー・フィルターチップバー・ボトムバーを含む**グリッド全体**の高さ。`'100%'` でグリッドが親要素に収まり、バーを除いた残りがスクロール領域になる(ルートに `ssg-root--fill-height` が付く)。親要素が確定高さを持つ前提で、親が高さ `auto` だと全行分まで伸びて仮想化が効かない。② `number`(px)/ `%` を含まない文字列(`'400px'` / `'50vh'` / `'calc(100vh - 120px)'`): **スクロール領域だけ**の高さ(グリッド全体はバーの分だけ高くなる)。③ 未指定: スクロール領域は内容の高さで `maxHeight` によりクリップ。ルートへの `style={{ height }}` だけではスクロール領域は決まらないため、高さはこの prop で指定する。 |
 | `maxHeight` | `number \| string` | `—`（既定 480px） | **スクロール領域**の高さ上限(バーは含まない。`height` の種類に関わらず同じ)。`height`・`maxHeight` が**共に未指定のときのみ**既定の 480px が効く（従来挙動）。数値の `height` と併用するとスクロール領域 = `min(height, maxHeight)`、`%` の `height` と併用すると `min(maxHeight, 親の高さ − バー)`(親が大きければグリッド全体はバー + `maxHeight` に縮む)。 |
@@ -323,6 +324,21 @@ const gridRef = useRef<SpreadsheetGridHandle<Row>>(null);
 - **フォーカス**: 有効中は `document.activeElement` が入力受け(`input[data-ssg-ime-input]`)になります。グリッドにフォーカスがあるかを `gridElement.contains(document.activeElement)` で判定している場合は従来どおり動きますが、「入力欄にフォーカスがあるときは無効」になるショートカット(Mantine の `useHotkeys` の既定など)はグリッド上で効かなくなります。これが既定 OFF の理由です。
 - **タッチが主のデバイス**(スマホ / タブレット): 入力受けに `inputmode="none"` を付け、セルのタップで仮想キーボードが開かないようにしています(従来どおり)。
 - **確認状況**: Chromium(Chrome / Edge / WebView2 と同じエンジン)で、DevTools Protocol の変換イベント(`Input.imeSetComposition` / `Input.insertText`)を使って確認しています。OS の IME そのもの(Windows の MS-IME など)での最終確認は実機で行ってください。
+
+### モーション(`motion`)
+
+グリッドの動き(アクティブセル枠の追従、ポップオーバーの出現、ソート時の行移動、読み込み中のシマー等)は `motion` prop で一括制御する(**既定 `'auto'`**)。
+
+| 値 | 挙動 |
+| --- | --- |
+| `'auto'` | OS / ブラウザの「視差効果を減らす」(`prefers-reduced-motion: reduce`)が有効なら `'off'`、それ以外は `'on'`。設定の変化にも追従する。 |
+| `'on'` | OS 設定に関わらず動かす。 |
+| `'off'` | すべて止める(表示結果は同じで、瞬時に切り替わる)。 |
+
+- 実装は CSS トークン: `--ssg-motion-fast`(140ms)/ `--ssg-motion-base`(260ms)/ `--ssg-motion-slow`(600ms)/ `--ssg-motion-ease`(イージング)。各効果はこのトークンだけを参照する。`'off'` では root と全ポータル root・ドラッグゴースト・ツールチップに `.ssg-motion-off` が付き、継続時間が 0 になる。
+- 速さは利用側のトークン上書きで変えられる(`.ssg-root { --ssg-motion-base: 180ms; }`)。`.ssg-motion-off` の値は `:where`(特異度 0)で定義しているため、停止中でも特定の効果だけ戻すことができる。
+- SSR では `'auto'` はいったん `'on'` で描画し、ハイドレーション後にクライアント側で再解決する(`theme='auto'` と同じ)。
+- 従来 `prefers-reduced-motion` を直接見ていた効果(ツールパネルのフラッシュ / フィルター候補のスピナー / スクロール位置インジケーターのフェード)も `motion` の実効値で判定するようになった(`'auto'` では従来と同じ)。
 
 ### キーボード操作
 

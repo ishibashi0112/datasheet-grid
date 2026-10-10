@@ -136,6 +136,23 @@
     --ssg-scrollhint-track-bg: #f3f5f8;
     --ssg-scrollhint-thumb: #c3cad4;
     --ssg-scrollhint-thumb-active: #a9b1bf;
+    /* 追加(motion-0): モーションの継続時間とイージング。各効果(アクティブセル枠の追従 / ポップオーバーの出現 /
+       行の移動 / 読み込みシマー等)はこのトークンだけを参照します。motion='off'(または 'auto' +
+       prefers-reduced-motion)では root / 全ポータル root に .ssg-motion-off が付き、下の :where ブロックで
+       継続時間が 0 になります(表示結果は同じで瞬時に切り替わる)。利用側は `.ssg-root { --ssg-motion-base: 180ms }`
+       のように上書きして速さを変えられます。 */
+    --ssg-motion-fast: 140ms;
+    --ssg-motion-base: 260ms;
+    --ssg-motion-slow: 600ms;
+    --ssg-motion-ease: cubic-bezier(0.2, 0.8, 0.2, 1);
+  }
+
+  /* 追加(motion-0): モーション停止。root / 全ポータル root / ゴースト / ツールチップへ付く修飾子です。
+     :where(特異度 0)なので利用側のトークン上書きが常に勝ちます(動かしたい効果だけ戻すことも可)。 */
+  :where(.ssg-motion-off) {
+    --ssg-motion-fast: 0ms;
+    --ssg-motion-base: 0ms;
+    --ssg-motion-slow: 0ms;
   }
 
   /* 密度プリセット(THEME-2)。density prop が root へ付与する修飾子で寸法トークンを一括切替します。
@@ -1283,10 +1300,11 @@
   .ssg-toolpanel--flash {
     animation: ssg-toolpanel-flash 0.45s ease-out;
   }
-  @media (prefers-reduced-motion: reduce) {
-    .ssg-toolpanel--flash {
-      animation: none;
-    }
+  /* 変更(motion-0): 抑制の判定を prefers-reduced-motion の直接参照から motion prop の修飾子へ(auto では同義。
+     'on' では OS 設定に関わらず動く)。パネル root 自身に修飾子が付くため自己参照も含めます。 */
+  .ssg-motion-off .ssg-toolpanel--flash,
+  .ssg-motion-off.ssg-toolpanel--flash {
+    animation: none;
   }
 
   /* ヘッダー(SegmentedControl + ×)。--draggable(FM-4)併用で掴んで移動できる。 */
@@ -2879,11 +2897,9 @@
       transform: rotate(360deg);
     }
   }
-  /* モーション低減設定では回転を止めます(アクセシビリティ)。 */
-  @media (prefers-reduced-motion: reduce) {
-    .ssg-filter-spinner {
-      animation: none;
-    }
+  /* モーション低減設定では回転を止めます(アクセシビリティ)。変更(motion-0): motion prop の修飾子で判定。 */
+  .ssg-motion-off .ssg-filter-spinner {
+    animation: none;
   }
 
   /* ── 追加(batch 9): SSRM エラーバー(getRows 失敗の再試行 UI) ── */
@@ -3239,9 +3255,8 @@
     background-color: var(--ssg-scrollhint-thumb-active);
   }
 
-  @media (prefers-reduced-motion: reduce) {
-    .ssg-scroll-hint-bubble,
-    .ssg-scroll-hint-ruler {
-      transition: none;
-    }
+  /* 変更(motion-0): motion prop の修飾子で判定(従来は prefers-reduced-motion の直接参照)。 */
+  .ssg-motion-off .ssg-scroll-hint-bubble,
+  .ssg-motion-off .ssg-scroll-hint-ruler {
+    transition: none;
   }

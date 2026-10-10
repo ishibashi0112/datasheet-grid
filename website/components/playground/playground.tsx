@@ -11,6 +11,7 @@ import {
   type GridCellRef,
   type GridColumn,
   type GridDensity,
+  type GridMotion,
   type GridTheme,
   type RowSelectionMode,
 } from '@ishibashi0112/spreadsheet-grid';
@@ -136,6 +137,8 @@ function insertLabelRows(rows: Row[]): Row[] {
 type Settings = {
   theme: GridTheme;
   density: GridDensity;
+  // モーション(アニメーション)。'auto' は OS の「視差効果を減らす」を尊重、'off' で全停止。
+  motion: GridMotion;
   height: number;
   rowCount: number;
   showTopBar: boolean;
@@ -183,6 +186,7 @@ type Settings = {
 const DEFAULTS: Settings = {
   theme: 'auto',
   density: 'standard',
+  motion: 'auto',
   height: 440,
   rowCount: 1_000,
   showTopBar: true,
@@ -226,6 +230,7 @@ function buildSnippet(s: Settings): string {
     `  height={${s.height}}`,
     `  theme="${s.theme}"`,
     `  density="${s.density}"`,
+    `  motion="${s.motion}"`,
     `  showTopBar={${s.showTopBar}}`,
     `  showBottomBar={${s.showBottomBar}}`,
     `  showFilterChipBar={${s.showFilterChipBar}}`,
@@ -414,6 +419,7 @@ function PlaygroundGrid({ settings }: { settings: Settings }) {
         height={settings.height}
         theme={settings.theme}
         density={settings.density}
+        motion={settings.motion}
         showTopBar={settings.showTopBar}
         showBottomBar={settings.showBottomBar}
         showFilterChipBar={settings.showFilterChipBar}
@@ -548,6 +554,18 @@ export function Playground() {
               <option value="standard">standard</option>
               <option value="compact">compact</option>
               <option value="comfortable">comfortable</option>
+            </select>
+          </label>
+          <label className="flex items-center justify-between gap-2 text-sm">
+            motion
+            <select
+              className={selectClass}
+              value={settings.motion}
+              onChange={(e) => set('motion', e.target.value as GridMotion)}
+            >
+              <option value="auto">auto</option>
+              <option value="on">on</option>
+              <option value="off">off</option>
             </select>
           </label>
           <label className="flex items-center justify-between gap-2 text-sm">

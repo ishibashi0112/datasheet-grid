@@ -106,6 +106,11 @@ function showTooltipFor(target: Element) {
     'ssg-theme-dark',
     target.closest('.ssg-theme-dark') !== null,
   );
+  // 追加(motion-0): モーション停止もテーマと同じく祖先(.ssg-motion-off)から解決します。
+  el.classList.toggle(
+    'ssg-motion-off',
+    target.closest('.ssg-motion-off') !== null,
+  );
   el.textContent = text;
   // 実寸(offsetWidth/Height)を得るため、いったん原点へ置いてから配置します。
   el.style.left = '0px';

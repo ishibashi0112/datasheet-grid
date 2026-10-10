@@ -264,6 +264,10 @@ export const createColumnHeaderDragController = <T,>(): ColumnHeaderDragControll
     if (args?.scrollContainerRef.current?.closest('.ssg-theme-dark') != null) {
       el.classList.add('ssg-theme-dark');
     }
+    // 追加(motion-0): モーション停止の修飾子もテーマと同じく祖先から引き継ぎます。
+    if (args?.scrollContainerRef.current?.closest('.ssg-motion-off') != null) {
+      el.classList.add('ssg-motion-off');
+    }
     el.style.cssText = [
       'position:fixed',
       'top:0',

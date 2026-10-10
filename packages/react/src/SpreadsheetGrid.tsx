@@ -67,6 +67,8 @@ import { useGridViewportSync } from './hooks/useGridViewportSync';
 import { useGridTooltip } from './hooks/useGridTooltip';
 // 追加(TH-DK-2): theme prop('light' | 'dark' | 'auto')の実効テーマ解決フックです。
 import { useResolvedGridTheme } from './hooks/useResolvedGridTheme';
+import { useResolvedGridMotion } from './hooks/useResolvedGridMotion';
+import { MOTION_OFF_CLASS_NAME } from '@ishibashi0112/spreadsheet-grid-core/logic/motion';
 // 追加(13-B3-2): ヘッダー D&D 列並べ替え controller です。
 import { useColumnHeaderDragController } from './hooks/useColumnHeaderDragController';
 // 追加(row-drag ③): 行ドラッグ並び替え controller です。
@@ -387,6 +389,8 @@ export function SpreadsheetGrid<T extends object>({
   headerHeight: headerHeightProp,
   density = 'standard',
   theme = 'light',
+  // 追加(motion-0): モーションの有効化('auto' = prefers-reduced-motion を尊重)。
+  motion = 'auto',
   rowHeaderWidth = 56,
   // 追加: グリッド高さの外部制御。height で明示高さ、maxHeight でスクロール領域の上限。
   //   '%' を含む height はバー込みのグリッド全体を親へ追従させます(fill-height。logic/gridHeight)。
@@ -1870,6 +1874,15 @@ export function SpreadsheetGrid<T extends object>({
   const resolvedTheme = useResolvedGridTheme(theme);
   const themeClassName =
     resolvedTheme === 'dark' ? 'ssg-theme-dark' : undefined;
+  // 追加(motion-0): motion prop を実効値へ解決します('auto' は prefers-reduced-motion 追従)。
+  //   'off' のとき root と全ポータル root へ .ssg-motion-off を付与し、継続時間トークンを 0 にします
+  //   (styles.css)。ゴースト / ツールチップはテーマと同じく DOM の祖先から解決します。
+  const resolvedMotion = useResolvedGridMotion(motion);
+  const motionClassName =
+    resolvedMotion === 'off' ? MOTION_OFF_CLASS_NAME : undefined;
+  // ポータル root へまとめて付ける修飾子(テーマ + モーション)。各ポータルの prop 名は従来どおり
+  //   themeClassName ですが、中身は「root と同じ修飾子クラス群」です。
+  const portalClassName = cx(themeClassName, motionClassName) || undefined;
 
   // 追加(slot-props): classNames / detailRow.className を解決済みスロットへ変換します(署名 memo で
   //   参照安定。利用側がレンダー毎に新しいオブジェクトを渡しても memo 済み子の props は揺れません)。
@@ -3529,7 +3542,7 @@ export function SpreadsheetGrid<T extends object>({
   const renderedFilterPopover = openedFilterColumn ? (
     <ColumnFilterPopover
       popoverSlot={slots.popover}
-      themeClassName={themeClassName}
+      themeClassName={portalClassName}
       isOpen={Boolean(filterPopoverState)}
       title={openedFilterColumn.title || openedFilterColumn.key}
       filterType={openedFilterType ?? 'text'}
@@ -3587,7 +3600,7 @@ export function SpreadsheetGrid<T extends object>({
   const renderedColumnMenuPopover = openedMenuColumn ? (
     <ColumnMenuPopover
       slots={slots}
-      themeClassName={themeClassName}
+      themeClassName={portalClassName}
       isOpen={isColumnMenuOpen}
       title={openedMenuColumn.title || openedMenuColumn.key}
       columnKey={openedMenuColumn.key}
@@ -3688,7 +3701,7 @@ export function SpreadsheetGrid<T extends object>({
   const renderedToolPanel = (
     <ToolPanel
       popoverSlot={slots.popover}
-      themeClassName={themeClassName}
+      themeClassName={portalClassName}
       activeTab={activeToolPanelTab}
       flashTick={toolPanelFlashTick}
       tabs={toolPanelTabs}
@@ -3710,7 +3723,7 @@ export function SpreadsheetGrid<T extends object>({
   const renderedCellContextMenuPopover = (
     <CellContextMenuPopover
       slots={slots}
-      themeClassName={themeClassName}
+      themeClassName={portalClassName}
       isOpen={isContextMenuOpen}
       items={contextMenuState?.items ?? EMPTY_CONTEXT_MENU_ITEMS}
       layout={contextMenuLayout}
@@ -3883,6 +3896,8 @@ export function SpreadsheetGrid<T extends object>({
         density !== 'standard' && `ssg-root--density-${density}`,
         // 追加(TH-DK-2): ダークテーマ修飾子(light は付与なし=既定トークンのまま)。
         themeClassName,
+        // 追加(motion-0): モーション停止の修飾子('on' は付与なし=既定の継続時間のまま)。
+        motionClassName,
         // 追加(THEME-3): readonly 淡色表示の opt-in 修飾子(styles.css 側で :where ゲート)。
         dimReadOnlyCells && 'ssg-root--dim-readonly',
         // 追加(fill-height): '%' を含む height のときだけ flex column 化します(styles.css)。
@@ -4073,7 +4088,7 @@ export function SpreadsheetGrid<T extends object>({
                   initialValue={editorInitialValue}
                   editor={editingColumn?.editor}
                   editorSession={editorSession}
-                  themeClassName={themeClassName}
+                  themeClassName={portalClassName}
                   onCommit={commitEdit}
                   onCancel={cancelEdit}
                   align={editingColumn?.align}
@@ -4264,7 +4279,7 @@ export function SpreadsheetGrid<T extends object>({
                   initialValue={editorInitialValue}
                   editor={editingColumn?.editor}
                   editorSession={editorSession}
-                  themeClassName={themeClassName}
+                  themeClassName={portalClassName}
                   onCommit={commitEdit}
                   onCancel={cancelEdit}
                   align={editingColumn?.align}
@@ -4452,7 +4467,7 @@ export function SpreadsheetGrid<T extends object>({
                   initialValue={editorInitialValue}
                   editor={editingColumn?.editor}
                   editorSession={editorSession}
-                  themeClassName={themeClassName}
+                  themeClassName={portalClassName}
                   onCommit={commitEdit}
                   onCancel={cancelEdit}
                   align={editingColumn?.align}
