@@ -165,6 +165,8 @@ type Settings = {
   detailRow: boolean;
   // 行ドラッグ並び替え。ON でハンドル列(⋮⋮)が先頭に入り、行を上下へ動かせる(ソート / フィルター中は無効)。
   enableRowDrag: boolean;
+  // 行ドラッグの表示方式。'ghost'(既定 = ゴースト + ガイド線)/ 'live'(掴んだ行が追従し周りの行が退避)。
+  rowDragMotion: 'ghost' | 'live';
   // ラベル行(見出し / 区切り行)。ON で rows に 20 行ごとの見出し行を混在させ、全幅の帯で描く。
   labelRow: boolean;
   // ラベル行の縦スクロール固定(現在セクションの見出しをヘッダー直下に固定)。
@@ -213,6 +215,7 @@ const DEFAULTS: Settings = {
   scrollHintMinRows: 0,
   detailRow: false,
   enableRowDrag: false,
+  rowDragMotion: 'ghost',
   labelRow: false,
   labelRowSticky: true,
   manualFiltering: false,
@@ -279,6 +282,8 @@ function buildSnippet(s: Settings): string {
   // enableRowDrag は既定 OFF のため、ON のときだけスニペットへ載せる。
   if (s.enableRowDrag) {
     lines.push('  enableRowDrag');
+    // rowDragMotion は既定 'ghost' のため、'live' のときだけ載せる。
+    if (s.rowDragMotion === 'live') lines.push('  rowDragMotion="live"');
   }
   // manualFiltering / manualSorting は既定 OFF のため、ON のときだけスニペットへ載せる。
   if (s.manualFiltering) {
@@ -465,6 +470,7 @@ function PlaygroundGrid({ settings }: { settings: Settings }) {
         }
         detailRow={settings.detailRow ? playgroundDetailRow : undefined}
         enableRowDrag={settings.enableRowDrag}
+        rowDragMotion={settings.rowDragMotion}
         manualFiltering={settings.manualFiltering}
         manualSorting={settings.manualSorting}
         getFilterOptions={settings.asyncFilterOptions ? getFilterOptions : undefined}
@@ -634,6 +640,18 @@ export function Playground() {
           <Toggle label="enableClearOnDelete" checked={settings.enableClearOnDelete} onChange={(v) => set('enableClearOnDelete', v)} />
           <Toggle label="detailRow" checked={settings.detailRow} onChange={(v) => set('detailRow', v)} />
           <Toggle label="enableRowDrag" checked={settings.enableRowDrag} onChange={(v) => set('enableRowDrag', v)} />
+          <label className={`flex items-center justify-between gap-2 text-sm ${settings.enableRowDrag ? '' : 'opacity-50'}`}>
+            <code className="text-xs">rowDragMotion</code>
+            <select
+              className={selectClass}
+              value={settings.rowDragMotion}
+              disabled={!settings.enableRowDrag}
+              onChange={(e) => set('rowDragMotion', e.target.value as 'ghost' | 'live')}
+            >
+              <option value="ghost">ghost</option>
+              <option value="live">live</option>
+            </select>
+          </label>
           <Toggle label="onCellClick ほか(ログ)" checked={settings.cellEventLog} onChange={(v) => set('cellEventLog', v)} />
           <Toggle label="cellNote(メモ)" checked={settings.cellNote} onChange={(v) => set('cellNote', v)} />
           <Toggle label="conditionalFormat(条件付き書式)" checked={settings.conditionalFormat} onChange={(v) => set('conditionalFormat', v)} />

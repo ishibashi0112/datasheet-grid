@@ -2,6 +2,7 @@
 
 // 行ドラッグ並び替えのデモ: 先頭のハンドル(⋮⋮)を掴んでタスクの優先順を入れ替える。
 //   「確定」行は isRowDraggable で固定し、onRowMove の通知と moveRow() / undo() を確認できる。
+//   表示方式(rowDragMotion)は 'live'(掴んだ行が追従し周りが退避)と 'ghost'(ゴースト + ガイド線)を切り替えられる。
 import { useRef, useState } from 'react';
 import {
   SpreadsheetGrid,
@@ -48,6 +49,7 @@ export function RowDragDemo() {
   const gridRef = useRef<SpreadsheetGridHandle<Task>>(null);
   const [tasks, setTasks] = useState<Task[]>(initialTasks);
   const [lastMove, setLastMove] = useState<string>('(まだ移動していません)');
+  const [dragMotion, setDragMotion] = useState<'ghost' | 'live'>('live');
 
   const handleRowMove = ({ rowKey, fromIndex, toIndex }: RowMoveParams<Task>) => {
     setLastMove(`${String(rowKey)} を ${fromIndex + 1} 行目 → ${toIndex + 1} 行目へ`);
@@ -56,6 +58,17 @@ export function RowDragDemo() {
   return (
     <div className="flex flex-col gap-2">
       <div className="flex flex-wrap items-center gap-2 text-sm">
+        <label className="flex items-center gap-1">
+          表示方式
+          <select
+            className="rounded-md border bg-transparent px-2 py-1"
+            value={dragMotion}
+            onChange={(e) => setDragMotion(e.target.value as 'ghost' | 'live')}
+          >
+            <option value="live">live(行が追従・周りが退避)</option>
+            <option value="ghost">ghost(ゴースト + ガイド線)</option>
+          </select>
+        </label>
         <button
           type="button"
           className="rounded-md border px-2 py-1 hover:bg-fd-accent"
@@ -91,6 +104,7 @@ export function RowDragDemo() {
         height={360}
         theme="auto"
         enableRowDrag
+        rowDragMotion={dragMotion}
         // 「確定」のタスクは順番を固定(ハンドルを出さない)
         isRowDraggable={(row) => row.status !== '確定'}
         onRowMove={handleRowMove}
