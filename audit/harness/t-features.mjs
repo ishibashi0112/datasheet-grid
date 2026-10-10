@@ -100,7 +100,8 @@ import { OUT, open, check, unexpectedPageErrors, summary, errorsOf, renderedRowI
   check('detail: toggle column rendered', toggles > 0, toggles);
   await clearEvents(page);
   await page.locator('.ssg-body-row[data-row-index="1"] .ssg-detail-toggle').first().click();
-  await waitIdle(page, 200);
+  // animateRows(既定 true)で下の行が --ssg-motion-base(260ms)かけて滑るため、収まるまで待つ。
+  await waitIdle(page, 450);
   const card = await page.locator('[data-testid="detail-card"]').count();
   check('detail: toggle click opens card', card === 1, card);
   check('detail: onExpandedDetailRowKeysChange fired with key 2', JSON.stringify((await events(page, 'onExpandedDetailRowKeysChange')).at(-1)?.payload) === '[2]', (await events(page, 'onExpandedDetailRowKeysChange')).map((e) => e.payload));

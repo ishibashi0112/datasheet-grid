@@ -19,6 +19,9 @@ import { ColumnDragDemo } from '@/components/demo/column-drag-demo';
 import { LabelRowDemo } from '@/components/demo/label-row-demo';
 import { SizingDemo } from '@/components/demo/sizing-demo';
 import { CellEventsDemo } from '@/components/demo/cell-events-demo';
+import { MotionDemo } from '@/components/demo/motion-demo';
+import { FindDemo } from '@/components/demo/find-demo';
+import { ConditionalFormatDemo } from '@/components/demo/conditional-format-demo';
 
 export function getMDXComponents(components?: MDXComponents) {
   return {
@@ -43,6 +46,9 @@ export function getMDXComponents(components?: MDXComponents) {
     LabelRowDemo,
     SizingDemo,
     CellEventsDemo,
+    MotionDemo,
+    FindDemo,
+    ConditionalFormatDemo,
     ...components,
   } satisfies MDXComponents;
 }
