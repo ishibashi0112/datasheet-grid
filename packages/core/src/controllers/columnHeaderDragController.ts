@@ -20,6 +20,7 @@ import {
   getColumnPane,
   type ColumnPane,
   type GridPaneLayout,
+  type PaneGeometry,
 } from '../logic/geometry';
 import {
   AUTO_SCROLL_ACTIVATION_DISTANCE,
@@ -30,7 +31,7 @@ import {
   resolveAutoScrollAxisDirection,
   resolveScrollContentBox,
 } from '../logic/autoScrollGeometry';
-import { isInsideDetailCardOf } from '../logic/detailRow';
+import { isInsideDetailCardOf, isSyntheticColumnKey } from '../logic/detailRow';
 import { applySlotToElement } from '../logic/slotDom';
 
 type ApplyColumnOrderAndPin = (
@@ -91,6 +92,40 @@ export function computeHeaderReorderedKeys<T>(
 
   return [...groups.left, ...groups.center, ...groups.right];
 }
+
+// 修正(M-12 fix): ペイン geometry のスロット(合成列を含む表示エントリの index)を、computeHeaderReorderedKeys が受け取る
+//   「consumer の columns 上の target pane 表示列 index」へ換算します。合成列(行ドラッグハンドル / 展開行トグル / 自動グループ
+//   列)は consumer の columns に無く、行グルーピング中のグループ元列は columns では表示扱いでも画面には出ないため、index を
+//   そのまま渡すと 1 列ずれていました(左固定列が無いときに合成列が中央ペインの先頭に入り、grip を押して離すだけで右隣と
+//   入れ替わる)。スロット位置以降で最初の非合成エントリ(= その手前に挿入するアンカー列)をキーで引き当てて換算します。
+export function resolveConsumerDropSlot<T>(
+  columns: GridColumn<T>[],
+  paneGeometry: PaneGeometry<T>,
+  pane: ColumnPane,
+  slot: number,
+): number {
+  const visibleKeys = columns
+    .filter((column) => getColumnPane(column) === pane && column.visible !== false)
+    .map((column) => column.key);
+  const { entries } = paneGeometry;
+  for (let i = Math.max(slot, 0); i < entries.length; i += 1) {
+    const key = entries[i].column.key;
+    if (isSyntheticColumnKey(key)) continue;
+    const index = visibleKeys.indexOf(key);
+    return index < 0 ? visibleKeys.length : index;
+  }
+  return visibleKeys.length;
+}
+
+// 修正(M-12 fix): ペイン先頭の合成列の本数。合成列より前へは置けないため、スロットの下限にします(縦線 / live の退避も
+//   実際の挿入位置と一致させる)。
+const countLeadingSyntheticEntries = <T,>(paneGeometry: PaneGeometry<T>): number => {
+  let count = 0;
+  while (count < paneGeometry.entries.length && isSyntheticColumnKey(paneGeometry.entries[count].column.key)) {
+    count += 1;
+  }
+  return count;
+};
 
 type ReadonlyRef<V> = { readonly current: V };
 
@@ -418,7 +453,7 @@ export const createColumnHeaderDragController = <T,>(): ColumnHeaderDragControll
       const rect = leftEl.getBoundingClientRect();
       if (clientX < rect.right) {
         const localX = clientX - rect.left - leftLeadingWidth;
-        const slot = findPaneDropSlot(paneLayout.left, localX);
+        const slot = Math.max(findPaneDropSlot(paneLayout.left, localX), countLeadingSyntheticEntries(paneLayout.left));
         return {
           pane: 'left',
           slot,
@@ -438,7 +473,7 @@ export const createColumnHeaderDragController = <T,>(): ColumnHeaderDragControll
       const rect = rightEl.getBoundingClientRect();
       if (clientX >= rect.left) {
         const localX = clientX - rect.left - rightLeadingWidth;
-        const slot = findPaneDropSlot(paneLayout.right, localX);
+        const slot = Math.max(findPaneDropSlot(paneLayout.right, localX), countLeadingSyntheticEntries(paneLayout.right));
         return {
           pane: 'right',
           slot,
@@ -451,7 +486,10 @@ export const createColumnHeaderDragController = <T,>(): ColumnHeaderDragControll
     if (centerEl && paneLayout.center.entries.length > 0) {
       const rect = centerEl.getBoundingClientRect();
       const localX = centerEl.scrollLeft + clientX - rect.left - centerLeadingWidth;
-      const slot = findPaneDropSlot(paneLayout.center, Math.max(localX, 0));
+      const slot = Math.max(
+        findPaneDropSlot(paneLayout.center, Math.max(localX, 0)),
+        countLeadingSyntheticEntries(paneLayout.center),
+      );
       return {
         pane: 'center',
         slot,
@@ -643,9 +681,21 @@ export const createColumnHeaderDragController = <T,>(): ColumnHeaderDragControll
     liveCells = null;
     liveSourcePane = null;
 
+    // 修正(M-12 fix): 同じペインで掴んだ列の直前 / 直後のスロットは、画面上の位置が変わらないので何もしません(表示されない
+    //   列 = 行グルーピング中のグループ元列を挟むと、columns の配列順だけが変わって onColumnsChange が呼ばれていた)。
+    const unchangedSlot =
+      draggedKey !== null && target !== null && args !== null
+        ? args.paneLayout[target.pane].entries.findIndex((entry) => entry.column.key === draggedKey)
+        : -1;
+    const isNoOpDrop = target !== null && unchangedSlot >= 0 && (target.slot === unchangedSlot || target.slot === unchangedSlot + 1);
     const keys =
-      commit && draggedKey && target && args !== null
-        ? computeHeaderReorderedKeys(args.columns, draggedKey, target.pane, target.slot)
+      commit && draggedKey && target && args !== null && !isNoOpDrop
+        ? computeHeaderReorderedKeys(
+            args.columns,
+            draggedKey,
+            target.pane,
+            resolveConsumerDropSlot(args.columns, args.paneLayout[target.pane], target.pane, target.slot),
+          )
         : null;
 
     // 追加(motion-9 / M-12): live 方式の後始末。確定しないとき(キャンセル / no-op)は基準位置へ戻します(transition 付き)。
