@@ -390,8 +390,28 @@ describe('columnHeaderDragController', () => {
       expect(floatLayer()!.querySelector('.ssg-col-drag-pin')).toBeNull();
       expect((floatLayer()!.lastElementChild as HTMLElement).style.display).toBe('none');
 
-      // 確定後の描画(applyReorderSettle): 新しい位置の列を隠し、浮かぶ列をその左端(x=120)へ滑らせる。
+      // 確定とは別の描き直し(まだ a が左固定ペインに無い)では待ち続ける(元の位置へ滑らせない)。
       for (const cell of cells.a) cell.getBoundingClientRect = () => makeRect(120, 0, 100, 30);
+      controller.applyReorderSettle();
+      for (const cell of cells.a) expect(cell.style.visibility).toBe('');
+      expect(floatColumn()?.style.transition).toBe('none');
+
+      // 確定後の描画(applyReorderSettle): 新しい位置の列を隠し、浮かぶ列をその左端(x=120)へ滑らせる。
+      const pinnedA: GridColumn<Row> = { ...columns[0], pinned: 'left' };
+      controller.update({
+        ...args,
+        columns: [pinnedA, ...columns.slice(1)],
+        paneLayout: {
+          ...paneLayout,
+          left: {
+            pane: 'left',
+            entries: [{ column: pinnedA, logicalIndex: 0, paneLocalStart: 0, paneLocalSize: 100, paneLocalEnd: 100 }],
+            totalWidth: 100,
+          },
+        },
+        leftPaneScrollRef: { current: makeElement(makeRect(0, 0, 100, 300)) },
+        motion: 'live',
+      });
       controller.applyReorderSettle();
       for (const cell of cells.a) expect(cell.style.visibility).toBe('hidden');
       expect(floatColumn()?.style.transform).toBe('translateX(120px)');
@@ -597,6 +617,150 @@ describe('columnHeaderDragController', () => {
       expect(cells.a[0].style.visibility).toBe('');
       vi.advanceTimersByTime(300);
       expect(cells.a[0].style.visibility).toBe('');
+      controller.dispose();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  // 修正(M-12 D 見直し)。
+  it("motion='live': ドラッグ中に 2 本目のポインタで grip を押しても始めず、同じポインタなら前のドラッグを取り消して始め直す", () => {
+    const controller = createColumnHeaderDragController<Row>();
+    const args = makeArgs();
+    const cells = mountCells(args.scrollContainerRef.current!, { header: true });
+    controller.update({
+      ...args,
+      leftPaneScrollRef: { current: makeElement(makeRect(0, 0, 0, 300)) },
+      motion: 'live',
+    });
+    controller.onColumnDragHandlePointerDown(columns[0], gripEvent());
+    dispatchPointer('pointermove', 1, 10, 10);
+    expect(cells.a[0].style.visibility).toBe('hidden');
+
+    // 2 本目(pointerId 2)は無視: 1 本目の状態(浮かぶ列 / 隠した列)はそのまま。
+    controller.onColumnDragHandlePointerDown(columns[1], gripEvent({ pointerId: 2, clientX: 140 }));
+    expect(floatLayer()).not.toBeNull();
+    expect(cells.a[0].style.visibility).toBe('hidden');
+    dispatchPointer('pointerup', 2, 140, 10);
+    expect(args.applyColumnOrderAndPin).not.toHaveBeenCalled();
+    dispatchPointer('pointerup', 1, 10, 10);
+    expect(args.applyColumnOrderAndPin).toHaveBeenCalledTimes(1);
+    expect(args.applyColumnOrderAndPin.mock.calls[0][1]).toEqual(new Map([['a', 'left']]));
+
+    // 同じポインタの pointerdown が来た(pointerup を取りこぼした)ときは、前のドラッグを確定せずに取り消して始め直す。
+    controller.onColumnDragHandlePointerDown(columns[0], gripEvent());
+    dispatchPointer('pointermove', 1, 10, 10);
+    controller.onColumnDragHandlePointerDown(columns[1], gripEvent({ clientX: 140 }));
+    expect(args.applyColumnOrderAndPin).toHaveBeenCalledTimes(1);
+    expect(floatLayer()).toBeNull();
+    expect(cells.a[0].style.visibility).toBe('');
+    dispatchPointer('pointerup', 1, 140, 10);
+    controller.dispose();
+  });
+
+  it("motion='live': ドラッグ中に新しく描画されたセルは退避先へ transition なしで置く(滑り込んで見えない)", () => {
+    const controller = createColumnHeaderDragController<Row>();
+    const args = makeArgs();
+    const container = args.scrollContainerRef.current!;
+    const cells = mountCells(container);
+    controller.update({ ...args, motion: 'live' });
+    controller.onColumnDragHandlePointerDown(columns[0], gripEvent());
+    dispatchPointer('pointermove', 1, 280, 10);
+    expect(cells.d[0].style.transition).toContain('transform');
+    // 縦スクロールで d の行が 1 つ描画された。
+    const added = document.createElement('div');
+    added.dataset.ssgColKey = 'd';
+    container.appendChild(added);
+    dispatchPointer('pointermove', 1, 282, 10);
+    expect(added.style.transform).toBe('translateX(-100px)');
+    expect(added.style.transition).toBe('none');
+    controller.dispose();
+  });
+
+  it("motion='live': 掴んだ列が描画されていないまま同じペインへ戻ったときは浮かぶ列が代わりに追従し、離すと片付く", () => {
+    const controller = createColumnHeaderDragController<Row>();
+    const args = makeArgs();
+    const container = args.scrollContainerRef.current!;
+    const cells = mountCells(container, { header: true });
+    controller.update({
+      ...args,
+      leftPaneScrollRef: { current: makeElement(makeRect(0, 0, 0, 300)) },
+      motion: 'live',
+    });
+    controller.onColumnDragHandlePointerDown(columns[0], gripEvent());
+    dispatchPointer('pointermove', 1, 10, 10);
+    expect(floatLayer()).not.toBeNull();
+    // 端の autoscroll で元の位置が横の仮想化で外れた(a のセルが外れた)。
+    for (const cell of cells.a) cell.remove();
+    dispatchPointer('pointermove', 1, 280, 10);
+    expect(args.leftIndicatorRef.current?.style.display).toBe('none');
+    expect(floatLayer()).not.toBeNull();
+    expect(floatColumn()?.style.transform).toBe('translateX(240px)');
+    const badge = floatLayer()!.querySelector<HTMLElement>('.ssg-col-drag-pin');
+    expect(badge?.style.display).toBe('none');
+    expect((floatLayer()!.lastElementChild as HTMLElement).style.display).toBe('none');
+    // 退避は同じペインの追従と同じ(b / d が左へ)。
+    expect(cells.b[0].style.transform).toBe('translateX(-100px)');
+    dispatchPointer('pointerup', 1, 280, 10);
+    expect(args.applyColumnOrderAndPin.mock.calls[0][0]).toEqual(['b', 'c', 'd', 'a']);
+    expect(floatLayer()).not.toBeNull();
+    // 確定後の描画で a が描画されていなければ、滑らせずに片付ける。
+    controller.applyReorderSettle();
+    expect(floatLayer()).toBeNull();
+    controller.dispose();
+  });
+
+  it("motion='live': 動いている最中の列を掴んでも、掴んだ点は transform を除いた基準位置から測る", () => {
+    const controller = createColumnHeaderDragController<Row>();
+    const args = makeArgs();
+    const cells = mountCells(args.scrollContainerRef.current!, { header: true });
+    // a の見出しは基準位置 0 から +30px 動いている途中(画面上の左端 30)。
+    cells.a[0].getBoundingClientRect = () => makeRect(30, 0, 100, 30);
+    const original = window.getComputedStyle;
+    const spy = vi
+      .spyOn(window, 'getComputedStyle')
+      .mockImplementation((el: Element, pseudo?: string | null) =>
+        el === cells.a[0] ? ({ transform: 'matrix(1, 0, 0, 1, 30, 0)' } as CSSStyleDeclaration) : original(el, pseudo),
+      );
+    try {
+      controller.update({
+        ...args,
+        rightPaneScrollRef: { current: makeElement(makeRect(400, 0, 0, 300)) },
+        motion: 'live',
+      });
+      // 押下 x=70 → 基準位置の左端 0 から 70px(画面上の左端 30 から測ると 40px になってずれる)。
+      controller.onColumnDragHandlePointerDown(columns[0], gripEvent({ clientX: 70 }));
+      dispatchPointer('pointermove', 1, 390, 10);
+      expect(floatColumn()?.style.transform).toBe('translateX(300px)');
+      controller.dispose();
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it('確定後のスライド(FLIP)の途中で次のドラッグを始めると、スライドの後始末をその場で済ませる', () => {
+    vi.useFakeTimers();
+    try {
+      const controller = createColumnHeaderDragController<Row>();
+      const args = makeArgs();
+      const cells = mountCells(args.scrollContainerRef.current!);
+      controller.update(args);
+      // ghost 方式で a を末尾へ。確定前の b の左端 100 → 確定後 0(FLIP で 100px ぶん戻して見せてから滑らせる)。
+      for (const cell of cells.b) cell.getBoundingClientRect = () => makeRect(100, 0, 100, 30);
+      controller.onColumnDragHandlePointerDown(columns[0], gripEvent());
+      dispatchPointer('pointermove', 1, 280, 10);
+      dispatchPointer('pointerup', 1, 280, 10);
+      for (const cell of cells.b) cell.getBoundingClientRect = () => makeRect(0, 0, 100, 30);
+      controller.applyReorderSettle();
+      expect(cells.b[0].style.transform).toBe('translateX(0)');
+      expect(cells.b[0].style.transition).toContain('transform');
+
+      controller.onColumnDragHandlePointerDown(columns[3], gripEvent({ clientX: 240 }));
+      expect(cells.b[0].style.transform).toBe('');
+      expect(cells.b[0].style.transition).toBe('');
+      dispatchPointer('pointerup', 1, 240, 10);
+      vi.advanceTimersByTime(400);
+      expect(cells.b[0].style.transform).toBe('');
       controller.dispose();
     } finally {
       vi.useRealTimers();
