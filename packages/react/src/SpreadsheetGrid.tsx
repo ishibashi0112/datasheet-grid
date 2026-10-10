@@ -3898,6 +3898,9 @@ export function SpreadsheetGrid<T extends object>({
         themeClassName,
         // 追加(motion-0): モーション停止の修飾子('on' は付与なし=既定の継続時間のまま)。
         motionClassName,
+        // 追加(motion-1 / M-1): ポインタで範囲選択をドラッグ中はオーバーレイを瞬時に追従させます(styles.css で
+        //   transition を切る。キーボード移動 / クリックでは滑る)。
+        uiState.dragState?.type === 'selection' && 'ssg-root--selecting',
         // 追加(THEME-3): readonly 淡色表示の opt-in 修飾子(styles.css 側で :where ゲート)。
         dimReadOnlyCells && 'ssg-root--dim-readonly',
         // 追加(fill-height): '%' を含む height のときだけ flex column 化します(styles.css)。

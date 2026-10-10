@@ -342,7 +342,7 @@
     cursor: pointer;
     font-size: 11px;
     line-height: 1;
-    transition: background-color 100ms ease, color 100ms ease;
+    transition: background-color var(--ssg-motion-fast) ease, color var(--ssg-motion-fast) ease;
   }
 
   .ssg-icon-btn:hover {
@@ -726,8 +726,8 @@
     border-radius: 4px;
     background-color: var(--ssg-checkbox-bg);
     transition:
-      background-color 120ms ease,
-      border-color 120ms ease;
+      background-color var(--ssg-motion-fast) ease,
+      border-color var(--ssg-motion-fast) ease;
   }
   /* チェック済み: accent 塗り + 白いチェックマーク(::after を回転ボーダーで描画)。 */
   .ssg-row-checkbox[data-state='checked'],
@@ -771,20 +771,41 @@
 
   /* ── オーバーレイ / エディタ ── */
   /* アクティブセル枠。座標 / 幅 / 高さはインライン(動的)。枠色は accent に追従。 */
+  /* 追加(motion-1 / M-1): 枠はキーボード移動 / クリックで新しい位置へ滑って追従します(left / top / width /
+     height の transition。要素の mount 直後は transition しないため初回表示は瞬時)。 */
   .ssg-active-cell-overlay {
     box-sizing: border-box;
     border: 2px solid var(--ssg-accent);
     pointer-events: none;
     z-index: 4;
+    transition:
+      left var(--ssg-motion-fast) var(--ssg-motion-ease),
+      top var(--ssg-motion-fast) var(--ssg-motion-ease),
+      width var(--ssg-motion-fast) var(--ssg-motion-ease),
+      height var(--ssg-motion-fast) var(--ssg-motion-ease);
   }
 
-  /* 選択範囲(枠 + 塗り)。 */
+  /* 選択範囲(枠 + 塗り)。追従はアクティブセル枠と同じ。 */
   .ssg-selection-overlay {
     box-sizing: border-box;
     border: 2px solid var(--ssg-accent);
     background-color: var(--ssg-selection-fill);
     pointer-events: none;
     z-index: 2;
+    transition:
+      left var(--ssg-motion-fast) var(--ssg-motion-ease),
+      top var(--ssg-motion-fast) var(--ssg-motion-ease),
+      width var(--ssg-motion-fast) var(--ssg-motion-ease),
+      height var(--ssg-motion-fast) var(--ssg-motion-ease);
+  }
+
+  /* 追加(motion-1 / M-1): スクロール中(scroll-space 仮想化で描画ウィンドウの基準が動く。scrollSyncController が
+     付ける)とポインタで範囲選択をドラッグ中(root の --selecting)は瞬時に追従させます(滑らせると漂って見える)。 */
+  .ssg-scroll-container--scrolling .ssg-active-cell-overlay,
+  .ssg-scroll-container--scrolling .ssg-selection-overlay,
+  .ssg-root--selecting .ssg-active-cell-overlay,
+  .ssg-root--selecting .ssg-selection-overlay {
+    transition: none;
   }
 
   /* セルエディタ。wrapper は座標のみインライン。 */
@@ -1339,7 +1360,7 @@
     background-color: var(--ssg-seg-indicator-bg);
     box-shadow: var(--ssg-seg-indicator-shadow);
     transform: translateX(calc(var(--ssg-seg-index) * 100%));
-    transition: transform 160ms ease;
+    transition: transform var(--ssg-motion-fast) ease;
   }
   .ssg-toolpanel-seg-btn {
     position: relative;
@@ -1361,7 +1382,7 @@
     white-space: nowrap;
     cursor: pointer;
     user-select: none;
-    transition: color 120ms ease;
+    transition: color var(--ssg-motion-fast) ease;
   }
   .ssg-toolpanel-seg-btn:not(.ssg-toolpanel-seg-btn--active):hover {
     color: var(--ssg-panel-text-sub);
@@ -1937,7 +1958,7 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    transition: background-color 80ms ease, border-color 80ms ease;
+    transition: background-color var(--ssg-motion-fast) ease, border-color var(--ssg-motion-fast) ease;
   }
   .ssg-checkbox--filled {
     border-color: var(--ssg-panel-accent);
@@ -2470,6 +2491,27 @@
 
   /* ── 列メニュー popover(ColumnMenuPopover) ── */
   /* ルート/サブメニュー共通のパネル枠(radius 10)。座標/zIndex は inline。 */
+  /* 追加(motion-1 / M-7): ポップオーバー / メニュー / パネル / 候補リスト / 日付パネルの出現。4px 上から
+     フェードインします(出現のみ。閉じるときは従来どおり即時 unmount)。transform は translate だけで scale を
+     使わないため、配置側がパネル自身の getBoundingClientRect で測る高さは動かしません。 */
+  @keyframes ssg-pop-in {
+    from {
+      opacity: 0;
+      transform: translateY(-4px);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+  .ssg-menu-panel,
+  .ssg-filter-popover,
+  .ssg-select-editor-popover,
+  .ssg-popover,
+  .ssg-dp-panel {
+    animation: ssg-pop-in var(--ssg-motion-fast) var(--ssg-motion-ease);
+  }
+
   .ssg-menu-panel {
     padding: 8px;
     box-sizing: border-box;
@@ -2668,7 +2710,7 @@
     padding: 0 6px 0 14px;
     background-color: var(--ssg-header-bg);
     opacity: 0;
-    transition: opacity 100ms ease;
+    transition: opacity var(--ssg-motion-fast) ease;
     pointer-events: none;
   }
   .ssg-header-cell:hover .ssg-header-actions {
@@ -3037,7 +3079,7 @@
     pointer-events: none;
     opacity: 0;
     transform: translateY(2px);
-    transition: opacity 120ms ease, transform 120ms ease;
+    transition: opacity var(--ssg-motion-fast) ease, transform var(--ssg-motion-fast) ease;
     max-width: 260px;
     white-space: pre-line;
     overflow-wrap: break-word;
@@ -3085,7 +3127,7 @@
     line-height: 1.4;
     white-space: nowrap;
     opacity: 0;
-    transition: opacity 180ms ease;
+    transition: opacity var(--ssg-motion-fast) ease;
   }
 
   .ssg-scroll-hint-bubble--visible {
@@ -3125,7 +3167,7 @@
       transparent
     );
     opacity: 0;
-    transition: opacity 180ms ease;
+    transition: opacity var(--ssg-motion-fast) ease;
   }
 
   .ssg-scroll-hint-ruler--visible {
@@ -3217,7 +3259,7 @@
     right: 3px;
     border-radius: 4px;
     background-color: var(--ssg-scrollhint-thumb);
-    transition: background-color 120ms ease;
+    transition: background-color var(--ssg-motion-fast) ease;
   }
 
   .ssg-scroll-hint-scrollbar:hover .ssg-scroll-hint-scrollbar-thumb,
