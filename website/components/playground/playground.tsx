@@ -181,6 +181,8 @@ type Settings = {
   cellNote: boolean;
   // IME オンのままの直接入力。ON でセルを選んだまま日本語を打ち始められる(Windows + MS-IME の実機確認用)。
   imeDirectInput: boolean;
+  // セル内検索。ON で Ctrl/Cmd+F(グリッドにフォーカス)または右上の検索バーでヒットを強調 + 順送り。
+  find: boolean;
 };
 
 const DEFAULTS: Settings = {
@@ -217,6 +219,7 @@ const DEFAULTS: Settings = {
   cellEventLog: false,
   cellNote: false,
   imeDirectInput: false,
+  find: false,
 };
 
 function buildSnippet(s: Settings): string {
@@ -245,6 +248,7 @@ function buildSnippet(s: Settings): string {
     `  dimReadOnlyCells={${s.dimReadOnlyCells}}`,
     `  showValidationMarks={${s.showValidationMarks}}`,
     ...(s.imeDirectInput ? ['  imeDirectInput'] : []),
+    ...(s.find ? ['  find'] : []),
     `  enableRowSelection={${s.enableRowSelection}}`,
   ];
   if (s.enableRowSelection) {
@@ -434,6 +438,7 @@ function PlaygroundGrid({ settings }: { settings: Settings }) {
         dimReadOnlyCells={settings.dimReadOnlyCells}
         showValidationMarks={settings.showValidationMarks}
         imeDirectInput={settings.imeDirectInput}
+        find={settings.find}
         enableRowSelection={settings.enableRowSelection}
         rowSelectionMode={settings.rowSelectionMode}
         enableSelectAllRows={settings.enableRowSelection && settings.enableSelectAllRows}
@@ -640,6 +645,7 @@ export function Playground() {
           <Toggle label="dimReadOnlyCells" checked={settings.dimReadOnlyCells} onChange={(v) => set('dimReadOnlyCells', v)} />
           <Toggle label="showValidationMarks" checked={settings.showValidationMarks} onChange={(v) => set('showValidationMarks', v)} />
           <Toggle label="imeDirectInput" checked={settings.imeDirectInput} onChange={(v) => set('imeDirectInput', v)} />
+          <Toggle label="find(Ctrl+F)" checked={settings.find} onChange={(v) => set('find', v)} />
         </Group>
 
         <Group title="行選択(チェックボックス)">

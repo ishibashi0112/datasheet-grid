@@ -125,4 +125,29 @@ describe('keyboardController', () => {
     expect(shiftTab.preventDefault).toHaveBeenCalled();
     expect(t.dispatch).toHaveBeenCalled();
   });
+
+  it('Ctrl/Cmd+F: openFind が渡されたときだけ横取りして開く(F-2)。未指定ならブラウザ標準の検索へ', async () => {
+    const rowModel: RowModel<Row> = {
+      getRow: (i) => rows[i],
+      getRowCount: () => rows.length,
+      getSourceIndex: (i) => i,
+      getRowKey: (i) => rows[i]?.id ?? i,
+    };
+    const c = createKeyboardController<Row>();
+    const t = makeArgs(rowModel);
+    const openFind = vi.fn();
+    c.update({ ...t.args, openFind });
+    const ctrlF = { ...ev('f'), ctrlKey: true };
+    await c.handleKeyDown(ctrlF);
+    expect(ctrlF.preventDefault).toHaveBeenCalled();
+    expect(openFind).toHaveBeenCalledTimes(1);
+    const metaF = { ...ev('F'), metaKey: true };
+    await c.handleKeyDown(metaF);
+    expect(openFind).toHaveBeenCalledTimes(2);
+    // openFind なし(find 無効 / shortcut: false)では preventDefault しない。
+    c.update({ ...t.args, openFind: undefined });
+    const plain = { ...ev('f'), ctrlKey: true };
+    await c.handleKeyDown(plain);
+    expect(plain.preventDefault).not.toHaveBeenCalled();
+  });
 });

@@ -32,6 +32,8 @@ description: SpreadsheetGridProps<T> の全 prop と既定値
 | `highlightChanges` | `boolean` | `false` | `rows` が変わったとき、値が変わったセルを一瞬アクセント色で光らせ(`.ssg-body-cell--changed`、`--ssg-motion-slow`)、数値の既定セルは旧値から新値へカウントアップする(`--ssg-motion-base`。表示は `valueFormatter` で整形)。セル編集 / 貼り付け / クリア / undo・redo / 外部からの `rows` 差し替えのすべてが対象。clientSide 専用(SSRM では無効)。描画中のセルだけが対象で、変わったセルが 200 を超えるとフラッシュのみ、2,000 を超える・行の挿入 / 削除 / 並べ替えを伴う・参照の変わった行が 5,000 を超える(データの読み直し)ときは何もしない。 |
 | `showSaveStatus` | `boolean` | `true` | serverSide の書き戻し(`dataSource.updateRows`)で、確定したセルに保存状態の印を出す。保存中は斜線 + 小さなスピナー(`[data-ssg-save="pending"]`)、成功は ✓ バッジを 1.3 秒(`"ok"`)、失敗は揺れ + 赤いフラッシュ + ✕ バッジ(`"failed"`)とセル下の「保存に失敗しました」チップ(4 秒 / スクロールで消える)。既存の保存失敗バー(`onServerSideWriteError`)とは独立に出る。描画中のセルだけが対象。clientSide では何も出ない。 |
 | `rowDragMotion` | `'ghost' \| 'live'` | `'ghost'` | 行ドラッグ並べ替え(`enableRowDrag`)の表示方式。`'ghost'` は従来(ゴースト + ガイド線、ドロップ後に新しい位置へスライド)。`'live'` は掴んだ行がポインタに追従し、通る先の行がその場で上下へ退避する(ドロップ先が「隙間」として見える。枠外で離しても直前の位置へ確定、`Esc` で元へ戻る)。`motion` が `'off'` のときは `'ghost'` と同じ。 |
+| `find` | `boolean \| FindOptions` | `false` | **セル内検索**。`true` でグリッド右上の検索バー(`.ssg-find-bar`)と `Ctrl/Cmd+F`(グリッドにフォーカスがあるときだけ横取り)が有効になる。表示文字列(`valueFormatter` 適用後)への部分一致で、ヒットをすべて `<mark class="ssg-find-mark">` で強調し、`Enter` / `↓` で次、`Shift+Enter` / `↑` で前へ(アクティブセルとスクロールが追従)、`Esc` で閉じる。行は消さない(絞り込みのフィルターとは別)。`FindOptions` = `{ shortcut?: boolean(既定 true。false でブラウザ標準の検索に譲る), caseSensitive?: boolean(既定 false) }`。走査は時間分割(1 チャンク 10ms)で入力を止めない。SSRM はロード済み範囲だけが対象。ヒットは 10,000 件で打ち切り(件数に `+`)。詳細は「セル内検索」節。 |
+| `onFindChange` | `(params: FindChangeParams) => void` | — | セル内検索の状態(`{ query, matchCount, currentIndex, open }`)が変わったときの通知。`currentIndex` は 0 始まり(ヒットなしは `null`)。ツールバーに「3 / 12」を出す等に使う。 |
 | `rowHeaderWidth` | `number` | `56` | 行番号列の幅(px)。 |
 | `height` | `number \| string` | `—` | グリッドの明示高さ。**値の種類で何の高さかが変わる**。① `%` を含む文字列(`'100%'` / `'50%'` / `'calc(100% - 40px)'`): トップバー・フィルターチップバー・ボトムバーを含む**グリッド全体**の高さ。`'100%'` でグリッドが親要素に収まり、バーを除いた残りがスクロール領域になる(ルートに `ssg-root--fill-height` が付く)。親要素が確定高さを持つ前提で、親が高さ `auto` だと全行分まで伸びて仮想化が効かない。② `number`(px)/ `%` を含まない文字列(`'400px'` / `'50vh'` / `'calc(100vh - 120px)'`): **スクロール領域だけ**の高さ(グリッド全体はバーの分だけ高くなる)。③ 未指定: スクロール領域は内容の高さで `maxHeight` によりクリップ。ルートへの `style={{ height }}` だけではスクロール領域は決まらないため、高さはこの prop で指定する。 |
 | `maxHeight` | `number \| string` | `—`（既定 480px） | **スクロール領域**の高さ上限(バーは含まない。`height` の種類に関わらず同じ)。`height`・`maxHeight` が**共に未指定のときのみ**既定の 480px が効く（従来挙動）。数値の `height` と併用するとスクロール領域 = `min(height, maxHeight)`、`%` の `height` と併用すると `min(maxHeight, 親の高さ − バー)`(親が大きければグリッド全体はバー + `maxHeight` に縮む)。 |
@@ -484,6 +486,23 @@ const [rows, setRows] = useState(initialRows);
 | 読み込み中のシマーと到着行のフェードイン(M-8) | 有効 | `--ssg-motion-base` | SSRM の取得中はスケルトンに光の帯が流れ、ブロックが到着して差し替わった行のセルが上から順に(約 23ms 刻み)3px 下からフェードイン。スクロールで出入りする行は対象外。clientSide では発生しない。 |
 | 細かな遷移 | 有効 | `--ssg-motion-fast` | ヘッダー操作アイコンのフェード、チェックボックス、タブのインジケータ、ツールチップ、スクロール位置インジケーター。 |
 
+### セル内検索(`find`)
+
+`find` を付けると、グリッドにフォーカスがある状態の `Ctrl/Cmd+F`(または `handle.openFind()`)でグリッド右上に検索バーが出る(**既定は無効**)。「絞り込み(フィルター)」とは別に、**行を消さずに場所を探す**操作で、ブラウザの `Ctrl+F` では探せない仮想化された行も対象になる。
+
+```tsx
+<SpreadsheetGrid find ... />
+// find={{ shortcut: false, caseSensitive: true }}
+```
+
+- **対象**: ビュー行(フィルター / ソート適用後)× 可視列の**表示文字列**(`valueFormatter` 適用後 = 画面に見えている文字)。`renderCell` の列も表示文字列(`valueFormatter` または `String(value)`)で検索されるが、`<mark>` の強調は既定セルだけ(カレントへの移動は同じ)。
+- **走査**: 時間分割(`logic/chunkedLoop`。1 チャンク 10ms)で入力・描画を止めない。走査中は件数が「検索中…」になる。クエリ / 大文字小文字 / `rows`(編集・差し替え)/ ソート / フィルター / 列が変わると再走査し、同じヒットが残っていればカレントを保つ(移動はしない)。
+- **順送り**: `Enter` / `↓` で次、`Shift+Enter` / `↑` で前(循環)。カレントのヒットへはクリック相当の単一選択 + 可視化スクロール(`selectCell(row, col, { scrollIntoView: true })` と同じ)。クエリを打ち直すと先頭のヒットへ移動する。
+- **閉じる**: `Esc` / × でクエリとヒットが消え、フォーカスはグリッド本体へ戻る。`find` を `false` にすると開いていても閉じる。
+- **ヒット数の上限**: 10,000 件で打ち切り(件数表示に `+`)。SSRM は**ロード済み範囲だけ**が対象(未ロード行は読み飛ばす)。
+- **スタイル**: ヒットは `.ssg-find-mark`、カレントは `.ssg-find-mark--current`(トークン `--ssg-find-mark-bg` / `--ssg-find-mark-current-bg`)。バーは `classNames.findBar`。
+- **ショートカット**: `Ctrl/Cmd+F` の横取りはグリッド本体にフォーカスがあるときだけ(フィルター入力 / エディタ内では効かない)。`shortcut: false` でブラウザ標準の検索に譲り、`handle.openFind()` だけで開く運用もできる。
+
 ### キーボード操作
 
 グリッド本体フォーカス中(編集中でない)の操作一覧。フィルター入力等のフォーム要素にフォーカス中は無効。
@@ -494,6 +513,7 @@ const [rows, setRows] = useState(initialRows);
 | `Enter` / `F2` / 印字キー直打ち | 編集開始(印字キーはその 1 文字を初期値に)。編集可否は `readOnly` / 列 / `canEditCell` に従う。 |
 | `Escape` | 選択解除。 |
 | `Ctrl/Cmd+C` / ペースト(`Ctrl/Cmd+V`) | 選択範囲の TSV コピー / アクティブセル起点の貼り付け(readOnly では no-op)。TSV は Excel / Google スプレッドシート互換(改行・タブ・`"` を含むセルは `"…"` で囲み `"` は `""`。貼り付けはこの引用符を解釈し、途中の空行も行として保持する)。 |
+| `Ctrl/Cmd+F` | セル内検索バーを開く(`find` が有効なとき。無効ならブラウザ標準の検索)。 |
 | `Ctrl/Cmd+A` | 全体選択(2 回目で解除)。 |
 | `Delete` / `Backspace` | 選択セル(なければアクティブセル)の値クリア。編集不可セルは対象外。クリア値は「空文字のペースト」と同じ規則(`parseClipboardValue('')` 経由、未定義なら `''`)。変更が無ければ no-op(undo 履歴にも積まれない)。 |
 | `Ctrl/Cmd+Z` / `Ctrl/Cmd+Shift+Z` / `Ctrl/Cmd+Y` | undo / redo(詳細は命令的 API の「undo / redo」節)。 |
@@ -546,6 +566,7 @@ type GridSlotProps = string | { className?: string; style?: CSSProperties };
 | `scrollHint` | スクロール位置インジケーター `.ssg-scroll-hint` |
 | `activeCellOverlay` / `selectionOverlay` | アクティブセル枠 / 範囲選択の塗り |
 | `copyRangeOverlay` | コピー範囲の動く点線 `.ssg-copy-range-overlay` |
+| `findBar` | セル内検索バー `.ssg-find-bar` |
 
 ### StyleX との併用
 

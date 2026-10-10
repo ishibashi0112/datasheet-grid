@@ -105,6 +105,8 @@ export type GridApiArgs<T> = {
   activeToolPanelTab: ToolPanelTab | null;
   openToolPanel: (tab: ToolPanelTab) => void;
   closeToolPanel: () => void;
+  // 追加(F-2): セル内検索(openFind / closeFind / findNext / findPrev の委譲先)。
+  find: { open: (query?: string) => void; close: () => void; next: () => void; prev: () => void };
   // undo / redo(history controller)。
   undoRows: () => void;
   redoRows: () => void;
@@ -819,6 +821,20 @@ export const createGridApi = <T,>(): GridApi<T> => {
       if (s && s.activeToolPanelTab === 'filter') {
         s.closeToolPanel();
       }
+    },
+
+    // ── 追加(F-2): セル内検索 ──
+    openFind: (query) => {
+      args?.find.open(query);
+    },
+    closeFind: () => {
+      args?.find.close();
+    },
+    findNext: () => {
+      args?.find.next();
+    },
+    findPrev: () => {
+      args?.find.prev();
     },
   };
 

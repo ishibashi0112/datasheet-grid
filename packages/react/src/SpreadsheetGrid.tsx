@@ -49,6 +49,8 @@ import SelectionOverlay, {
 } from './SelectionOverlay';
 import CopyRangeOverlay from './CopyRangeOverlay';
 import ColumnHoverOverlay from './ColumnHoverOverlay';
+import GridFindBar from './view/GridFindBar';
+import { splitTextByFindRanges } from '@ishibashi0112/spreadsheet-grid-core/logic/find';
 import ActiveCellOverlay, {
   type ActiveCellOverlayRect,
 } from './ActiveCellOverlay';
@@ -402,6 +404,9 @@ export function SpreadsheetGrid<T extends object>({
   showSaveStatus = true,
   // 追加(motion-8 / M-11): 行ドラッグの表示方式('ghost' = 従来 / 'live' = 周りの行が退避)。
   rowDragMotion = 'ghost',
+  // 追加(F-2): セル内検索(既定 無効)。
+  find = false,
+  onFindChange,
   rowHeaderWidth = 56,
   // 追加: グリッド高さの外部制御。height で明示高さ、maxHeight でスクロール領域の上限。
   //   '%' を含む height はバー込みのグリッド全体を親へ追従させます(fill-height。logic/gridHeight)。
@@ -2369,6 +2374,35 @@ export function SpreadsheetGrid<T extends object>({
   );
 
   // ── keyboard ──────────────────────────────────────────
+  // ── 追加(F-2): セル内検索 ──
+  //   実体は engine.find(controllers/findController。走査は時間分割)。React はスナップショットを購読し、既定セルの
+  //   描画でヒットを <mark> にし、右上の検索バー(GridFindBar)を出します。Ctrl/Cmd+F は keyboardController 経由。
+  const findEnabled = find !== false && find !== undefined;
+  const findOptions = typeof find === 'object' ? find : null;
+  const findShortcut = findEnabled && (findOptions?.shortcut ?? true);
+  const findCaseSensitive = findOptions?.caseSensitive ?? false;
+  const findSnapshot = useSyncExternalStore(engine.find.subscribe, engine.find.getSnapshot, engine.find.getSnapshot);
+  const findIndex = findSnapshot.index;
+  const findCurrentIndex = findSnapshot.currentIndex;
+  const openFindFromShortcut = useCallback(() => {
+    engine.find.open();
+  }, [engine]);
+  useControllerLifecycle(engine.find, {
+    enabled: findEnabled,
+    rowModel,
+    columns: orderedColumns,
+    caseSensitive: findCaseSensitive,
+    // カレントのヒットへ: クリック相当の単一選択 + 可視化スクロール(命令的 API と同じ経路)。
+    onNavigate: (rowIndex: number, colIndex: number) => {
+      gridApi.handle.selectCell(rowIndex, colIndex, { scrollIntoView: true });
+    },
+    onChange: onFindChange,
+  });
+  const closeFindAndRefocus = useCallback(() => {
+    engine.find.close();
+    gridRootRef.current?.focus({ preventScroll: true });
+  }, [engine]);
+
   const { handleKeyDown } = useGridKeyboardInteractions({
     uiState,
     // 変更(DS-3-1): filteredRows 配列 → rowModel シームを渡します(keyboard consumer 移行)。
@@ -2381,6 +2415,8 @@ export function SpreadsheetGrid<T extends object>({
     setEditorInitialValue,
     dispatch,
     handleCopy,
+    // 追加(F-2): Ctrl/Cmd+F で検索バーを開く(find が有効で shortcut が true のときだけ横取り)。
+    openFind: findShortcut ? openFindFromShortcut : undefined,
     handleCellDoubleClick,
     isWholeGridSelected,
     selectEntireGrid,
@@ -3418,12 +3454,37 @@ export function SpreadsheetGrid<T extends object>({
       const formattedText = column.valueFormatter
         ? column.valueFormatter({ value, row, column })
         : String(value ?? '');
+      // 追加(F-2): セル内検索のヒットを <mark> にします(既定セルだけ。カレントは --current)。
+      const findRanges = findIndex.get(rowIndex)?.get(colIndex);
+      if (findRanges && findRanges.length > 0) {
+        return (
+          <span>
+            {splitTextByFindRanges(formattedText, findRanges).map((segment, segmentIndex) =>
+              segment.range ? (
+                <mark
+                  key={segmentIndex}
+                  className={cx(
+                    'ssg-find-mark',
+                    segment.range.matchIndex === findCurrentIndex && 'ssg-find-mark--current',
+                  )}
+                >
+                  {segment.text}
+                </mark>
+              ) : (
+                segment.text
+              ),
+            )}
+          </span>
+        );
+      }
       return <span>{formattedText}</span>;
     },
     [
       rowModel,
       handleRowsChange,
       rows,
+      findIndex,
+      findCurrentIndex,
       toggleCheckboxCell,
       slots.checkbox,
       applyServerSideCellEdits,
@@ -3907,6 +3968,8 @@ export function SpreadsheetGrid<T extends object>({
     activeToolPanelTab,
     openToolPanel,
     closeToolPanel,
+    // 追加(F-2): セル内検索の命令的 API(openFind / closeFind / findNext / findPrev)の委譲先。
+    find: { open: engine.find.open, close: engine.find.close, next: engine.find.next, prev: engine.find.prev },
     undoRows,
     redoRows,
     canUndoRows,
@@ -4729,6 +4792,19 @@ export function SpreadsheetGrid<T extends object>({
               </span>
             </span>
           </div>
+        )}
+
+        {/* 追加(F-2): セル内検索バー(右上に浮く。ヘッダー直下)。開いているときだけ描画。 */}
+        {findSnapshot.open && (
+          <GridFindBar
+            snapshot={findSnapshot}
+            headerHeight={headerHeight}
+            onQueryChange={engine.find.setQuery}
+            onNext={engine.find.next}
+            onPrev={engine.find.prev}
+            onClose={closeFindAndRefocus}
+            slot={slots.findBar}
+          />
         )}
 
         {/* 追加(batch 9): SSRM エラーバー(getRows 失敗の再試行 UI)です。autosize / filter overlay と

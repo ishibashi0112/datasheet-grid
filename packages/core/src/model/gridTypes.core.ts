@@ -1686,6 +1686,9 @@ export type GridClassNames<F extends GridFrameworkTypes = GridFrameworkTypes> = 
   // 追加(motion-4 / M-3): コピー範囲の動く点線(.ssg-copy-range-overlay)。
   /** 付与先: コピー範囲の動く点線 `.ssg-copy-range-overlay` */
   copyRangeOverlay?: GridSlotProps<F>;
+  // 追加(F-2): セル内検索バー(.ssg-find-bar)。
+  /** 付与先: セル内検索バー `.ssg-find-bar` */
+  findBar?: GridSlotProps<F>;
 };
 
 // 追加(imperative API #1): ref ハンドルのスクロール整列指定です。
@@ -2136,6 +2139,18 @@ export type SpreadsheetGridHandle<T> = {
   //   (別タブ表示中のパネルは巻き込みません)。
   /** フィルター管理パネルを閉じる(開いていなければ何もしない)。 */
   closeFilterManager: () => void;
+  // 追加(F-2): セル内検索。
+  /**
+   * 検索バーを開く(`find` が無効なら何もしない)。`query` を渡すとその文字列で検索し、
+   * 先頭のヒットへ移動する。省略時は前回のクエリのまま開く。
+   */
+  openFind: (query?: string) => void;
+  /** 検索バーを閉じる(クエリとヒットの強調が消える。開いていなければ何もしない)。 */
+  closeFind: () => void;
+  /** 次のヒットへ(循環)。カレントのヒットへアクティブセルとスクロールが追従する。 */
+  findNext: () => void;
+  /** 前のヒットへ(循環)。 */
+  findPrev: () => void;
 };
 
 // 追加(THEME-2): グリッド全体の密度プリセットです。'standard' が従来既定と同値。
@@ -2148,6 +2163,22 @@ export type GridDensity = 'compact' | 'standard' | 'comfortable';
 //   利用側のカラースキーム(useMantineColorScheme 等)の解決値を 'light' | 'dark' で
 //   渡す使い方が本命です。
 export type GridTheme = 'light' | 'dark' | 'auto';
+// 追加(F-2): セル内検索のオプションです。
+export type FindOptions = {
+  // Ctrl/Cmd+F で検索バーを開く(グリッドにフォーカスがあるときだけ。既定 true。false でブラウザ標準の検索に譲る)。
+  shortcut?: boolean;
+  // 大文字小文字を区別する(既定 false)。
+  caseSensitive?: boolean;
+};
+// 追加(F-2): onFindChange の引数です。
+export type FindChangeParams = {
+  query: string;
+  matchCount: number;
+  // 0 始まりのカレント(ヒットなしは null)。
+  currentIndex: number | null;
+  open: boolean;
+};
+
 // 追加(motion-0): モーション(アニメーション / トランジション)の有効化です。'auto' は OS / ブラウザの
 //   prefers-reduced-motion: reduce を尊重して 'on' / 'off' に解決します(logic/motion.ts)。
 export type GridMotion = 'auto' | 'on' | 'off';
@@ -2561,6 +2592,27 @@ export type SpreadsheetGridProps<T, F extends GridFrameworkTypes = GridFramework
    * @defaultValue `'ghost'`
    */
   rowDragMotion?: 'ghost' | 'live';
+  // 追加(F-2): セル内検索(既定 無効)。true でグリッド右上の検索バー + Ctrl/Cmd+F。表示文字列(valueFormatter 後)への
+  //   部分一致で、ヒットをすべて強調しつつ Enter で順送り(アクティブセルとスクロールが追従)。行は消さない(フィルターとは別)。
+  /**
+   * **セル内検索**。`true` でグリッド右上の検索バー(`.ssg-find-bar`)と
+   * `Ctrl/Cmd+F`(グリッドにフォーカスがあるときだけ横取り)が有効になる。表示文字列(`valueFormatter`
+   * 適用後)への部分一致で、ヒットをすべて `<mark class="ssg-find-mark">` で強調し、`Enter` / `↓`
+   * で次、`Shift+Enter` / `↑` で前へ(アクティブセルとスクロールが追従)、`Esc` で閉じる。
+   * 行は消さない(絞り込みのフィルターとは別)。`FindOptions` =
+   * `{ shortcut?: boolean(既定 true。false でブラウザ標準の検索に譲る), caseSensitive?: boolean(既定 false) }`。
+   * 走査は時間分割(1 チャンク 10ms)で入力を止めない。SSRM はロード済み範囲だけが対象。ヒットは 10,
+   * 000 件で打ち切り(件数に `+`)。詳細は「セル内検索」節。
+   *
+   * @defaultValue `false`
+   */
+  find?: boolean | FindOptions;
+  // 追加(F-2): 検索状態(クエリ / ヒット数 / カレント / 開閉)が変わったときの通知。
+  /**
+   * セル内検索の状態(`{ query, matchCount, currentIndex, open }`)が変わったときの通知。
+   * `currentIndex` は 0 始まり(ヒットなしは `null`)。ツールバーに「3 / 12」を出す等に使う。
+   */
+  onFindChange?: (params: FindChangeParams) => void;
   /**
    * 行番号列の幅(px)。
    *

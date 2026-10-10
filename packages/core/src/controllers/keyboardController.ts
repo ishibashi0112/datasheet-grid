@@ -38,6 +38,8 @@ export type KeyboardControllerArgs<T> = {
   setEditorInitialValue: (value: string) => void;
   dispatch: (action: GridUiAction) => void;
   handleCopy: () => Promise<void>;
+  // 追加(F-2): Ctrl/Cmd+F で検索バーを開く(未指定ならブラウザ標準の検索に譲る)。
+  openFind?: () => void;
   handleCellDoubleClick: (cell: CellCoord) => void;
   isWholeGridSelected: boolean;
   selectEntireGrid: () => void;
@@ -120,6 +122,7 @@ export const createKeyboardController = <T,>(): KeyboardController<T> => {
       setEditorInitialValue,
       dispatch,
       handleCopy,
+      openFind,
       handleCellDoubleClick,
       isWholeGridSelected,
       selectEntireGrid,
@@ -148,6 +151,12 @@ export const createKeyboardController = <T,>(): KeyboardController<T> => {
     if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'c') {
       event.preventDefault();
       await handleCopy();
+      return;
+    }
+    // 追加(F-2): セル内検索(グリッドにフォーカスがあるときだけ横取り)。
+    if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'f' && openFind) {
+      event.preventDefault();
+      openFind();
       return;
     }
 

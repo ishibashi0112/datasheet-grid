@@ -15,6 +15,7 @@ import { createScrollSyncController, type ScrollSyncController } from '../contro
 import { createRowEnterController, type RowEnterController } from '../controllers/rowEnterController';
 import { createChangeHighlightController, type ChangeHighlightController } from '../controllers/changeHighlightController';
 import { createSaveStatusController, type SaveStatusController } from '../controllers/saveStatusController';
+import { createFindController, type FindController } from '../controllers/findController';
 import { createDebouncedValueStore, type DebouncedValueStore } from '../controllers/debouncedValueStore';
 import { createAutoSizeOnDataTrigger, type AutoSizeOnDataTrigger } from '../controllers/columnAutosizeRunner';
 import { createImeInputController, type ImeInputController } from '../controllers/imeInputController';
@@ -99,6 +100,8 @@ export type GridEngine<T> = {
   changeHighlight: ChangeHighlightController<T>;
   // 追加(motion-7 / M-9): SSRM 書き戻しのセル単位の保存状態を data 属性で直付けする DOM コントローラ。
   saveStatus: SaveStatusController;
+  // 追加(F-2): セル内検索(開閉 / クエリ / ヒット / カレント。走査は時間分割)。
+  find: FindController<T>;
   serverSideQueryStore: DebouncedValueStore<ServerSideQueryResolution>;
   autoSizeOnData: AutoSizeOnDataTrigger<T>;
   // 追加(G-2): IME オンのままの直接入力(imeDirectInput)の入力受け。
@@ -135,6 +138,7 @@ export const createGridEngine = <T,>(init: GridEngineInit<T>): GridEngine<T> => 
   const rowEnter = createRowEnterController();
   const changeHighlight = createChangeHighlightController<T>();
   const saveStatus = createSaveStatusController();
+  const find = createFindController<T>();
   const autoSizeOnData = createAutoSizeOnDataTrigger<T>();
   const imeInput = createImeInputController();
 
@@ -159,6 +163,7 @@ export const createGridEngine = <T,>(init: GridEngineInit<T>): GridEngine<T> => 
     rowEnter,
     changeHighlight,
     saveStatus,
+    find,
     serverSideQueryStore,
     autoSizeOnData,
     imeInput,
@@ -169,6 +174,7 @@ export const createGridEngine = <T,>(init: GridEngineInit<T>): GridEngine<T> => 
     rowEnter.dispose();
     changeHighlight.dispose();
     saveStatus.dispose();
+    find.dispose();
       serverSideQueryStore.dispose();
       imeInput.dispose();
     },

@@ -162,6 +162,9 @@ export type {
   GridTheme,
   // 追加(motion-0): モーションの有効化('auto' | 'on' | 'off')。
   GridMotion,
+  // 追加(F-2): セル内検索のオプションと通知引数。
+  FindOptions,
+  FindChangeParams,
   // 追加: データ投入時の列幅自動フィットの発火モード('onMount' | 'onDataChange' | false)。
   AutoSizeColumnsMode,
   // 追加(バッチ②/コンテキストメニュー): セル/行の汎用コンテキストメニュー(完全カスタム)の公開型群。

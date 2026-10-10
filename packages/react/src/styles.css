@@ -132,6 +132,9 @@
     --ssg-save-pending: var(--ssg-accent);
     --ssg-save-ok: #16a34a;
     --ssg-save-failed: var(--ssg-invalid);
+    /* 追加(F-2): セル内検索のヒット(通常 / カレント)。 */
+    --ssg-find-mark-bg: rgba(245, 158, 11, 0.4);
+    --ssg-find-mark-current-bg: rgba(52, 97, 201, 0.3);
     /* その他 */
     --ssg-drop-indicator: #0f172a;
     --ssg-glyph-faint: #cbd5e1;
@@ -299,6 +302,8 @@
     /* セルのメモ(cellNote) */
     --ssg-note-indicator: #fbbf24;
     --ssg-save-ok: #4ade80;
+    --ssg-find-mark-bg: rgba(251, 191, 36, 0.35);
+    --ssg-find-mark-current-bg: rgba(77, 171, 247, 0.35);
     /* その他 */
     --ssg-drop-indicator: #c1c2c5;
     --ssg-col-hover-bg: rgba(255, 255, 255, 0.045);
@@ -820,6 +825,84 @@
       top var(--ssg-motion-fast) var(--ssg-motion-ease),
       width var(--ssg-motion-fast) var(--ssg-motion-ease),
       height var(--ssg-motion-fast) var(--ssg-motion-ease);
+  }
+
+  /* ── 追加(F-2): セル内検索(find)。右上に浮く検索バーと、既定セル内のヒットの <mark>。 ── */
+  .ssg-find-bar {
+    position: absolute;
+    right: 10px;
+    z-index: 20;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 6px 4px 8px;
+    border: 1px solid var(--ssg-panel-border);
+    border-radius: 9px;
+    background-color: var(--ssg-panel-bg);
+    color: var(--ssg-panel-text);
+    box-shadow: var(--ssg-popover-shadow);
+    animation: ssg-pop-in var(--ssg-motion-fast) var(--ssg-motion-ease);
+  }
+  .ssg-find-bar-icon {
+    display: inline-flex;
+    align-items: center;
+    color: var(--ssg-panel-text-faint);
+  }
+  .ssg-find-bar-input {
+    width: 160px;
+    border: 0;
+    outline: none;
+    background: transparent;
+    color: var(--ssg-panel-text-strong);
+    font: inherit;
+    font-size: 12.5px;
+    padding: 2px 0;
+  }
+  .ssg-find-bar-count {
+    min-width: 44px;
+    text-align: right;
+    font-size: 11.5px;
+    color: var(--ssg-panel-text-muted);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+  .ssg-find-bar-count--none {
+    color: var(--ssg-danger);
+  }
+  .ssg-find-bar-btn {
+    width: 22px;
+    height: 22px;
+    border: 0;
+    border-radius: 5px;
+    background: transparent;
+    color: var(--ssg-panel-text-muted);
+    font-size: 13px;
+    line-height: 1;
+    cursor: pointer;
+    padding: 0;
+  }
+  .ssg-find-bar-btn:hover:not(:disabled) {
+    background-color: var(--ssg-panel-hover-bg);
+    color: var(--ssg-panel-text-strong);
+  }
+  .ssg-find-bar-btn:disabled {
+    color: var(--ssg-panel-text-disabled);
+    cursor: default;
+  }
+  .ssg-find-bar-btn:focus-visible {
+    outline: 2px solid var(--ssg-panel-accent);
+    outline-offset: 1px;
+  }
+  /* ヒットの強調(既定セルの表示文字列内)。カレントは accent のリング。 */
+  .ssg-find-mark {
+    background-color: var(--ssg-find-mark-bg);
+    color: inherit;
+    border-radius: 2px;
+    padding: 0 1px;
+  }
+  .ssg-find-mark--current {
+    background-color: var(--ssg-find-mark-current-bg);
+    box-shadow: 0 0 0 1.5px var(--ssg-accent);
   }
 
   /* 追加(motion-7 / M-9): セル単位の保存状態(SSRM 書き戻し)。saveStatusController が data-ssg-save を付け替え、
