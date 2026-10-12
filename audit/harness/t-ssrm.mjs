@@ -1,7 +1,15 @@
 // SSRM(serverSide)モックでの取得 / 競合 / エラー / 書き戻し / refresh の検証。
-import { OUT, open, check, unexpectedPageErrors, summary, errorsOf, renderedRowIndexes, cellText, cell, scrollTo, focusGrid, waitIdle, events, clearEvents } from './pw.mjs';
+import { OUT, open, check, unexpectedPageErrors, summary, errorsOf, renderedRowIndexes, cell, scrollTo, focusGrid, waitIdle, events, clearEvents } from './pw.mjs';
 
 const { page, pageErrors, close } = await open('ssrm');
+// セルの値の表示。保存状態の印(showSaveStatus の .ssg-save-indicator = ✓ / 失敗の .ssg-save-failed-chip = ✕。
+//   0.46.1 で既定 ON)はセルの中に足されるため、値の比較からは除く。
+const cellText = (p, rowIndex, colKey) =>
+  cell(p, rowIndex, colKey).evaluate((el) => {
+    const clone = el.cloneNode(true);
+    clone.querySelectorAll('.ssg-save-indicator, .ssg-save-failed-chip').forEach((node) => node.remove());
+    return clone.textContent?.trim();
+  });
 const ctl = () => page.evaluate(() => ({ ...window.__ssrm, server: undefined, calls: window.__ssrm.calls.map((c) => ({ ...c })) }));
 const waitLoaded = async (rowIndex, timeout = 5000) => {
   await page.waitForFunction((r) => {
