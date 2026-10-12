@@ -70,6 +70,22 @@ describe('createColumnResolver', () => {
       columns: [{ ...columns[0], pinned: 'left', visible: false }, columns[1]],
     });
     expect(hiddenPinned.effectiveColumns[0].pinned).toBeUndefined();
+    // 追加(audit B-07 補足): グルーピング中のグループ元列は表示から外れるため、左固定でも数えない。
+    const groupedPinned = resolve({
+      ...baseInputs,
+      detailToggleColumnActive: true,
+      columns: [{ ...columns[0], pinned: 'left', rowGroup: true }, columns[1]],
+    });
+    expect(groupedPinned.rowGroupingActive).toBe(true);
+    expect(groupedPinned.orderedColumns.some((column) => column.pinned === 'left')).toBe(false);
+    // SSRM ではグルーピングは無効なので、グループ元列も表示されたまま左固定として数える。
+    const serverPinned = resolve({
+      ...baseInputs,
+      isServerSide: true,
+      detailToggleColumnActive: true,
+      columns: [{ ...columns[0], pinned: 'left', rowGroup: true }, columns[1]],
+    });
+    expect(serverPinned.effectiveColumns[0].pinned).toBe('left');
     // SSRM では行ドラッグは出さない。
     const server = resolve({ ...baseInputs, enableRowDrag: true, hasRowsChange: true, isServerSide: true });
     expect(server.rowDragAvailable).toBe(false);

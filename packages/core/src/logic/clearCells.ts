@@ -237,7 +237,10 @@ export const buildClearCellEdits = <T extends object>({
         continue;
       }
       const clearedValue = resolveCellParser(column)('', row);
-      if (Object.is(getCellValue(row, column), clearedValue)) {
+      // 修正(audit L-18): clientSide と同じく、未設定(undefined)のセルをクリア値 null で上書きするのも変更なしとみなします
+      //   (書き戻し dataSource.updateRows と保存状態の表示が空振りで走っていた)。
+      const currentValue = getCellValue(row, column);
+      if (Object.is(currentValue, clearedValue) || (currentValue == null && clearedValue == null)) {
         continue;
       }
       if (decideCellWrite(column, row, clearedValue).action === 'reject') {
