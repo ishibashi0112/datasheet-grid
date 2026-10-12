@@ -1,6 +1,7 @@
 import type { SpreadsheetGridSlotContext } from '../model/gridTypes';
 import { cx } from '@ishibashi0112/spreadsheet-grid-core/logic/cx';
 import type { GridResolvedSlot } from '../model/gridTypes';
+import { formatSelectionAggregateNumber } from '@ishibashi0112/spreadsheet-grid-core/logic/selectionAggregates';
 
 type DefaultGridBottomBarProps<T> = {
   context: SpreadsheetGridSlotContext<T>;
@@ -14,6 +15,7 @@ type DefaultGridBottomBarProps<T> = {
 // 変更(UI CSS移行): インライン style(gridBarStyles)を撤去し、styles.css の .ssg-bar-* クラスへ移行。
 // 変更(件数トグル): Rows / Columns の件数 chips(左グループ)を showCounts で出し分けます。
 //   右グループ(Active / Selection / 選択統計 / Cols)は本値の影響を受けず常時表示します。
+// 追加(選択範囲の集計): 右グループの末尾に、区切り線 + 平均 / データの個数 / 合計を足します(2 セル以上の選択時)。
 export function DefaultGridBottomBar<T>({
   context,
   showCounts = true,
@@ -47,9 +49,57 @@ export function DefaultGridBottomBar<T>({
           <span className="ssg-bar-chip">
             Cols: {derivedSummary.selectionStats.selectedColumnCount}
           </span>
+          <SelectionAggregateChips aggregates={context.selectionAggregates} />
         </div>
       </div>
     </div>
+  );
+}
+
+// 追加(選択範囲の集計): Excel のステータスバーと同じ「平均 / データの個数 / 合計」を右端に並べます。
+//   数値が 1 つも無い(文字だけ)ときは「データの個数」だけ、空のセルだけのときは何も出しません。
+//   大きな選択の計算中は「集計中…」と進捗、SSRM で未読み込みの行を飛ばしたときは「読み込み済みの行のみ」を添えます。
+function SelectionAggregateChips({
+  aggregates,
+}: {
+  aggregates: SpreadsheetGridSlotContext<unknown>['selectionAggregates'];
+}) {
+  if (!aggregates) {
+    return null;
+  }
+  if (aggregates.status === 'computing') {
+    return (
+      <>
+        <span className="ssg-bar-sep" aria-hidden="true" />
+        <span className="ssg-bar-aggregates">
+          <span className="ssg-bar-chip">集計中… {Math.floor(aggregates.progress * 100)}%</span>
+        </span>
+      </>
+    );
+  }
+  if (aggregates.count === 0) {
+    return null;
+  }
+  return (
+    <>
+      <span className="ssg-bar-sep" aria-hidden="true" />
+      <span className="ssg-bar-aggregates">
+        {aggregates.average !== undefined ? (
+          <span className="ssg-bar-chip">
+            平均:<b className="ssg-bar-aggregate-value">{formatSelectionAggregateNumber(aggregates.average)}</b>
+          </span>
+        ) : null}
+        <span className="ssg-bar-chip">
+          データの個数:<b className="ssg-bar-aggregate-value">{formatSelectionAggregateNumber(aggregates.count)}</b>
+        </span>
+        {aggregates.sum !== undefined ? (
+          <span className="ssg-bar-chip">
+            合計:<b className="ssg-bar-aggregate-value">{formatSelectionAggregateNumber(aggregates.sum)}</b>
+          </span>
+        ) : null}
+        {aggregates.partial ? <span className="ssg-bar-chip ssg-bar-chip--muted">読み込み済みの行のみ</span> : null}
+      </span>
+    </>
   );
 }
 

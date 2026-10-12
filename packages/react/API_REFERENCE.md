@@ -92,6 +92,7 @@
 | `globalFilterIcon` | `ReactNode` | 組み込み検索アイコン | 既定トップバーのグローバルフィルター入力の左アイコン。`renderTopBar` 未指定時のみ有効。`undefined`=組み込みの検索(虫眼鏡)アイコン / `null`(など falsy)=アイコン無し / 任意 `ReactNode`=差し替え。クリアボタンは入力枠の内側右に `×` で表示され、入力が空のときは出ない。 |
 | `showBottomBar` | `boolean` | `true` | 下部バー(ステータスバー)の表示有無。`false` で `renderBottomBar` に関わらず一切描画しない(表示のマスタースイッチ。矛盾指定時は `renderBottomBar` より優先)。 |
 | `showBottomBarCounts` | `boolean` | `true` | 既定ボトムバーの Rows / Columns 件数 chips(左側)の表示有無。`renderBottomBar` 未指定時のみ有効。右側の Active / Selection / 選択統計 / Cols は対象外。 |
+| `showSelectionAggregates` | `boolean` | `true` | 2 セル以上を選んだとき、選択範囲の集計(平均 / データの個数 / 合計)を既定ボトムバーの右端に出す。数えるのは表示中のデータ行 × データ列のセルで(フィルターで隠れた行・グループ行・ラベル行・合成列は対象外)、合計 / 平均は数値と数値の文字列だけ(グループ集計と同じ判定)、データの個数は空でないセル。大きな選択は時間分割で計算し、その間は「集計中…」。SSRM では読み込み済みの行だけで計算し「読み込み済みの行のみ」と添える。`false` では計算もせず `slotContext.selectionAggregates` は `null`(「選択範囲の集計」節)。 |
 | `showFilterChipBar` | `boolean` | `false` | フィルターチップバー(適用中の列フィルターをトップバー直下にチップで常時表示)の表示有無(opt-in)。有効フィルター 0 件時はバーごと非表示(空バーは出さない)。`showTopBar` とは独立。チップ本体クリックで対象列へジャンプしてフィルター popover を開き、× で個別クリア、「すべてクリア」は列フィルターのみ対象(グローバルフィルターは対象外)。 |
 | `renderTopBar` | `(ctx: SpreadsheetGridSlotContext<T>) => ReactNode` | 内蔵トップバー | 上部バーの差し替え。未指定時は内蔵トップバー(summary chips + フィルター入力。内訳は `showTopBarSummary` / `showTopBarFilter` で制御。フィルター入力は `enableGlobalFilter=true` が前提)。`showTopBar=false` 時は本指定に関わらず描画されない。 |
 | `renderBottomBar` | `(ctx: SpreadsheetGridSlotContext<T>) => ReactNode` | 内蔵ボトムバー | 下部バーの差し替え。未指定時は内蔵ステータスバー。`showBottomBar=false` 時は本指定に関わらず描画されない。 |
@@ -131,13 +132,39 @@
 | フィルター入力だけ(summary なし) | `showTopBarSummary={false}` |
 | トップの Rows/Columns 件数だけ消す | `showTopBarCounts={false}` |
 | ボトムの Rows/Columns 件数だけ消す | `showBottomBarCounts={false}` |
+| 選択範囲の集計(平均 / データの個数 / 合計)を消す | `showSelectionAggregates={false}` |
 | 適用中の列フィルターをチップで常時表示 | `showFilterChipBar`(既定 OFF) |
 | フィルター機能ごと無効 + summary は残す | `enableGlobalFilter={false}` |
 | 完全に自前のバー | `renderTopBar={(ctx) => …}` |
 
 `showTopBarSummary` と `showTopBarFilter`(実効は `showTopBarFilter && enableGlobalFilter`)がともに `false` の場合、既定トップバーは描画されない(空バーを出さない)。
 
-ボトムバーは Rows / Columns 件数のみ `showBottomBarCounts` で出し分けできる(右側の Active / Selection / 選択統計 / Cols は対象外)。それ以外の内訳を変えたい場合は `renderBottomBar` を使う。
+ボトムバーは Rows / Columns 件数を `showBottomBarCounts`、選択範囲の集計を `showSelectionAggregates` で出し分けできる(右側の Active / Selection / 選択統計 / Cols は対象外)。それ以外の内訳を変えたい場合は `renderBottomBar` を使う。
+
+### 選択範囲の集計(`showSelectionAggregates`)
+
+2 セル以上を選ぶと、既定ボトムバーの右端に Excel のステータスバーと同じ **平均 / データの個数 / 合計** が出る(既定 ON)。
+
+- 数えるのは選択範囲のうち表示中のデータ行 × データ列のセル。フィルターで隠れた行・グループ行・ラベル行・合成列(行ドラッグ / 展開トグル / 自動グループ列)は対象外。
+- 合計 / 平均は数値と数値の文字列だけ(グループ集計の `aggFunc` と同じ判定。空白だけの文字列・boolean・`Date` は数えない)。データの個数は空でない(`null` / `undefined` / 空文字でない)セルの数。数値が 1 つも無いときはデータの個数だけ、空のセルだけのときは何も出さない。
+- 値は `getValue` があればその値(表示用の `valueFormatter` は通さない)。表示は小数 4 桁まで・桁区切りあり。
+- 走査するセルが 50,000 を超える選択(全選択など)は主スレッドを塞がないよう時間分割で計算し、その間は「集計中… N%」。編集で値が変わると計算し直す。
+- SSRM では読み込み済みの行だけで計算し、「読み込み済みの行のみ」と添える。
+- 自前のバー(`renderTopBar` / `renderBottomBar`)では `slotContext.selectionAggregates`(`GridSelectionAggregates`。最小 / 最大も入る)で同じ値を使える。
+
+```tsx
+renderBottomBar={(ctx) => {
+  const agg = ctx.selectionAggregates;
+  return (
+    <div className="my-statusbar">
+      {agg?.status === 'computing' && <span>集計中…</span>}
+      {agg?.status === 'ready' && agg.sum !== undefined && (
+        <span>合計 {agg.sum} / 最小 {agg.min} / 最大 {agg.max}</span>
+      )}
+    </div>
+  );
+}}
+```
 
 ### セル操作の通知(`onCellClick` / `onCellDoubleClick` / `onActiveCellChange`)
 
@@ -1561,9 +1588,10 @@ const s = stylex.create({
 - `GridScrollPosition = { top: number; left: number }`(`getScrollPosition` の返り値 / `setScrollPosition` の基準)
 - `GridScrollEventParams = { top: number; left: number; source: 'user' | 'api' }`(`onScroll` の引数。`source` の意味は props 表の `onScroll` 行を参照)
 - `HeaderRenderContext<T> = { colIndex, width, column, filterValue?, isFiltered? }`
-- `SpreadsheetGridSlotContext<T> = { rows, filteredRows, columns, visibleColumns, globalFilterText, columnFilterValues, sortState, setGlobalFilterText, activeCell, selection, derivedSummary, globalFilterStatus, globalFilterProgress }`
+- `SpreadsheetGridSlotContext<T> = { rows, filteredRows, columns, visibleColumns, globalFilterText, columnFilterValues, sortState, setGlobalFilterText, activeCell, selection, derivedSummary, globalFilterStatus, globalFilterProgress, selectionAggregates }`
   - `derivedSummary` は `SpreadsheetGridDerivedSummary`(行/列/フィルター/ソートの summary 文字列・選択統計などを内包)。helper を import せずトップ/ボトムバーで使える。
   - `globalFilterStatus: GlobalFilterStatus`(`'idle' | 'filtering' | 'ready'`)/ `globalFilterProgress: number`(0..1)。グローバルテキストフィルタは行数が大きい(しきい値 50,000 行・条件は `rows.length > 50000`)とき、入力を主スレッドを塞がず時間分割で適用する。適用中は `status='filtering'`・`progress` が進捗(0..1)になる。空/無効は `'idle'`、確定は `'ready'`(progress=1)。50,000 行以下は同期適用のため即 `'ready'`(`'filtering'` を経由しない)。**ローディング表示はグリッドが本体に重ねる組み込み overlay(autosize の計測中 overlay と同じ作法)で行うため、トップバーやカスタム UI 側で扱う必要は通常ない。** この 2 値は、入力の無効化や独自インジケータなどカスタム UI を出したい場合の参照用に公開している。serverSide では基本 `'idle'` / `'ready'`(取得中表示は行スケルトンが担当)。
+  - `selectionAggregates: GridSelectionAggregates | null`。2 セル以上を選んでいるときの選択範囲の集計 `{ status: 'computing' | 'ready'; progress; cellCount; count; numericCount; sum; average; min; max; partial }`(`count` = 空でないセル数、`numericCount` = 数値として数えたセル数、数値が無ければ `sum` / `average` / `min` / `max` は `undefined`、`partial` = SSRM で未読み込みの行を飛ばした)。1 セル以下の選択 / `showSelectionAggregates={false}` / バーが両方非表示のときは `null`。走査セル数が 50,000 を超える選択は時間分割で計算し、その間は `status: 'computing'`(値は未確定、`progress` は 0..1)。既定ボトムバーは平均 / データの個数 / 合計を出す(最小 / 最大はこの値でだけ参照できる)。
 
 ## ライブラリ化の宿題(現状把握)
 

@@ -89,6 +89,8 @@ export type {
   SpreadsheetGridSelectionStats,
   // 追加(F-async): グローバルフィルタの適用状態(slotContext.globalFilterStatus の型)。
   GlobalFilterStatus,
+  // 追加(選択範囲の集計): slotContext.selectionAggregates の型。
+  GridSelectionAggregates,
   // スロットコンテキストが公開する選択 / ソート / 列フィルター値の型族です。
   CellCoord,
   CellRange,

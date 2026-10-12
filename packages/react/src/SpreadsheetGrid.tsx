@@ -64,6 +64,8 @@ import { useFilterPopoverController } from './hooks/useFilterPopoverController';
 // 追加(13-A): 列メニュー(「⋮」+ 右クリック)の popover controller です。
 import { useGridClipboardController } from './hooks/useGridClipboardController';
 import { useGridBarContext } from './hooks/useGridBarContext';
+// 追加(選択範囲の集計)
+import { useSelectionAggregates } from './hooks/useSelectionAggregates';
 import { useGridEditController } from './hooks/useGridEditController';
 import { useGridHistoryController } from './hooks/useGridHistoryController';
 import { useGridKeyboardInteractions } from './hooks/useGridKeyboardInteractions';
@@ -500,6 +502,8 @@ export function SpreadsheetGrid<T extends object>({
   //   トップは showTopBarSummary=true のとき内側で効き、ボトムは左側の件数グループを制御します。
   showTopBarCounts = true,
   showBottomBarCounts = true,
+  // 追加(選択範囲の集計): 2 セル以上を選んだときの平均 / データの個数 / 合計(既定 true)。
+  showSelectionAggregates = true,
   // 追加(FM-2): フィルターチップバー(適用中の列フィルターの常時表示)。既定 false(opt-in)。
   showFilterChipBar = false,
   renderTopBar,
@@ -3600,6 +3604,15 @@ export function SpreadsheetGrid<T extends object>({
 
   // ── bar context ───────────────────────────────────────
   // 追加: bar 用 context / derived summary は hook へ逃がします。
+  // 追加(選択範囲の集計): バーが 1 つも出ないときは計算しません(大きな選択の走査を省く)。
+  const selectionAggregates = useSelectionAggregates({
+    enabled: showSelectionAggregates && (showBottomBar || showTopBar),
+    selection: uiState.selection,
+    viewRowCount,
+    orderedColumns,
+    rowModel,
+  });
+
   const { slotContext } = useGridBarContext({
     rows,
     // 変更(DS-3-7): filteredRows(配列)→ viewRowCount(件数)+ getFilteredRows(遅延 factory)。
@@ -3625,6 +3638,7 @@ export function SpreadsheetGrid<T extends object>({
     // 追加(F-async): グローバルフィルタの適用状態/進捗を slotContext へ渡します(ローディング表示用)。
     globalFilterStatus,
     globalFilterProgress,
+    selectionAggregates,
   });
 
   // ── styles ────────────────────────────────────────────

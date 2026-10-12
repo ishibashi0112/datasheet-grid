@@ -3,6 +3,7 @@ import { selectGlobalFilter } from '@ishibashi0112/spreadsheet-grid-core/model/g
 import type {
   GlobalFilterStatus,
   GridColumn,
+  GridSelectionAggregates,
   GridUiState,
   SpreadsheetGridSlotContext,
 } from '../model/gridTypes';
@@ -20,6 +21,8 @@ type GridSlotContextBase<T> = Omit<
   | 'filteredRows'
   | 'globalFilterStatus'
   | 'globalFilterProgress'
+  // 追加(選択範囲の集計): 大きな選択では時間分割の進捗で変わるため、最終 object でのみ付与します。
+  | 'selectionAggregates'
 >;
 
 type UseGridBarContextArgs<T> = {
@@ -41,6 +44,8 @@ type UseGridBarContextArgs<T> = {
   // 追加(F-async): グローバルフィルタの適用状態と進捗です(useGlobalFilteredOrder の戻り値)。
   globalFilterStatus: GlobalFilterStatus;
   globalFilterProgress: number;
+  // 追加(選択範囲の集計): useSelectionAggregates の戻り値(未指定は null)。
+  selectionAggregates?: GridSelectionAggregates | null;
 };
 
 // 追加: topBar / bottomBar へ渡す slot context と derived summary をまとめて構築します。
@@ -56,6 +61,7 @@ export const useGridBarContext = <T,>({
   setGlobalFilterText,
   globalFilterStatus,
   globalFilterProgress,
+  selectionAggregates = null,
 }: UseGridBarContextArgs<T>) => {
   // 変更(11-B3): slotContextBase の依存を uiState 丸ごとから、bar が実際に参照する
   //   5 フィールドへ分解します。
@@ -121,6 +127,7 @@ export const useGridBarContext = <T,>({
       //   derivedSummary は不変＝サマリ chips は再計算されず、トップバーの進捗表示だけ更新)。
       globalFilterStatus,
       globalFilterProgress,
+      selectionAggregates,
     }),
     [
       derivedSummary,
@@ -129,6 +136,7 @@ export const useGridBarContext = <T,>({
       slotContextBase,
       globalFilterStatus,
       globalFilterProgress,
+      selectionAggregates,
     ],
   );
 

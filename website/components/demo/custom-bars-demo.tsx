@@ -85,9 +85,14 @@ export function CustomBarsDemo() {
         <div className="flex flex-wrap items-center gap-4 border-t border-fd-border px-3 py-1.5 text-xs text-fd-muted-foreground">
           <span>{ctx.derivedSummary.rowSummaryText}</span>
           <span>{ctx.derivedSummary.filterSummaryText}</span>
+          <span>{ctx.derivedSummary.selectionStatsText}</span>
+          {/* 選択範囲の集計(2 セル以上を選んだとき。数値が無ければ sum / average は undefined)。 */}
           <span className="ml-auto">
-            {ctx.derivedSummary.selectionStatsText ||
-              'セル範囲を選択すると合計/平均が出ます'}
+            {ctx.selectionAggregates?.status === 'ready' && ctx.selectionAggregates.sum !== undefined
+              ? `合計 ${ctx.selectionAggregates.sum.toLocaleString()} / 平均 ${(
+                  ctx.selectionAggregates.average ?? 0
+                ).toLocaleString(undefined, { maximumFractionDigits: 2 })}`
+              : '数値のセル範囲を選択すると合計 / 平均が出ます'}
           </span>
         </div>
       )}

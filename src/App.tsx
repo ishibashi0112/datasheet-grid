@@ -641,6 +641,8 @@ function App() {
   //   (showTopBarCounts / showBottomBarCounts の確認用)。
   const [showTopBarCounts, setShowTopBarCounts] = useState(true);
   const [showBottomBarCounts, setShowBottomBarCounts] = useState(true);
+  // 追加(選択範囲の集計デモ): 2 セル以上を選んだときの平均 / データの個数 / 合計の表示有無です。
+  const [showSelectionAggregates, setShowSelectionAggregates] = useState(true);
   // 追加(①デモ): 列リサイズ可否のグリッド既定(enableColumnResize)を切り替えます。
   //   ON でも qty(数量)列は column.resizable:false のため常に不可(=個別上書きの確認)。
   const [resizeEnabled, setResizeEnabled] = useState(true);
@@ -998,6 +1000,17 @@ function App() {
             )}
           >
             {`└ 件数(Rows/Col): ${showBottomBarCounts ? '表示' : '非表示'}`}
+          </button>
+          <button
+            type="button"
+            disabled={!showBottomBar}
+            onClick={() => setShowSelectionAggregates((v) => !v)}
+            style={modeButtonStyle(
+              showBottomBar && showSelectionAggregates,
+              !showBottomBar,
+            )}
+          >
+            {`└ 選択範囲の集計: ${showSelectionAggregates ? '表示' : '非表示'}`}
           </button>
           <button
             type="button"
@@ -1670,6 +1683,7 @@ function App() {
         showTopBarFilter={showTopBarFilter}
         showTopBarCounts={showTopBarCounts}
         showBottomBarCounts={showBottomBarCounts}
+        showSelectionAggregates={showSelectionAggregates}
         // 追加(FM-2 デモ): 上の「フィルターチップバー」トグルと連動します(既定 OFF)。
         showFilterChipBar={showFilterChipBar}
         // 追加(条件付きスタイル デモ): 「保留」行を薄オレンジでハイライトします(getRowClassName)。

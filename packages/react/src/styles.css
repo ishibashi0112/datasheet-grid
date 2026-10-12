@@ -1456,6 +1456,27 @@
     font-variant-numeric: tabular-nums;
     white-space: nowrap;
   }
+  /* 追加(選択範囲の集計): 右グループ末尾の区切り線と、平均 / データの個数 / 合計の並び(狭いバーでは折り返す)。 */
+  .ssg-bar-sep {
+    flex: none;
+    width: 1px;
+    height: 12px;
+    margin: 0 2px;
+    background-color: var(--ssg-divider);
+  }
+  .ssg-bar-aggregates {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    flex-wrap: wrap;
+  }
+  .ssg-bar-aggregate-value {
+    margin-left: 0.25em;
+    font-weight: 600;
+  }
+  .ssg-bar-chip--muted {
+    color: var(--ssg-glyph);
+  }
   .ssg-bar-chip--emphasis {
     background-color: var(--ssg-header-hover-bg);
     color: var(--ssg-header-text);

@@ -151,6 +151,8 @@ type Settings = {
   rowCount: number;
   showTopBar: boolean;
   showBottomBar: boolean;
+  // 2 セル以上を選んだときの平均 / データの個数 / 合計(既定 true)。
+  showSelectionAggregates: boolean;
   showFilterChipBar: boolean;
   enableSorting: boolean;
   enableColumnFilter: boolean;
@@ -211,6 +213,7 @@ const DEFAULTS: Settings = {
   rowCount: 1_000,
   showTopBar: true,
   showBottomBar: true,
+  showSelectionAggregates: true,
   showFilterChipBar: false,
   enableSorting: true,
   enableColumnFilter: true,
@@ -262,6 +265,8 @@ function buildSnippet(s: Settings): string {
     ...(s.highlightChanges ? ['  highlightChanges'] : []),
     `  showTopBar={${s.showTopBar}}`,
     `  showBottomBar={${s.showBottomBar}}`,
+    // showSelectionAggregates は既定 true のため、OFF のときだけ載せる。
+    ...(s.showSelectionAggregates ? [] : ['  showSelectionAggregates={false}']),
     `  showFilterChipBar={${s.showFilterChipBar}}`,
     `  enableSorting={${s.enableSorting}}`,
     `  enableColumnFilter={${s.enableColumnFilter}}`,
@@ -504,6 +509,7 @@ function PlaygroundGrid({ settings }: { settings: Settings }) {
         highlightChanges={settings.highlightChanges}
         showTopBar={settings.showTopBar}
         showBottomBar={settings.showBottomBar}
+        showSelectionAggregates={settings.showSelectionAggregates}
         showFilterChipBar={settings.showFilterChipBar}
         enableSorting={settings.enableSorting}
         enableColumnFilter={settings.enableColumnFilter}
@@ -702,6 +708,11 @@ export function Playground() {
         <Group title="バー表示">
           <Toggle label="showTopBar" checked={settings.showTopBar} onChange={(v) => set('showTopBar', v)} />
           <Toggle label="showBottomBar" checked={settings.showBottomBar} onChange={(v) => set('showBottomBar', v)} />
+          <Toggle
+            label="showSelectionAggregates(選択範囲の平均・個数・合計)"
+            checked={settings.showSelectionAggregates}
+            onChange={(v) => set('showSelectionAggregates', v)}
+          />
           <Toggle label="showFilterChipBar" checked={settings.showFilterChipBar} onChange={(v) => set('showFilterChipBar', v)} />
         </Group>
 
