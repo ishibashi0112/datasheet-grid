@@ -219,4 +219,39 @@ describe('選択範囲の集計(下部バー)', () => {
     });
     expect(aggregateTexts(container)).toEqual([`平均:${(1.75).toLocaleString()}`, 'データの個数:2', `合計:${(3.5).toLocaleString()}`]);
   });
+
+  // 追加(見直し): columns をインライン(毎レンダー新しい配列)で渡しても、大きな選択の集計を最初からやり直さない。
+  it('columns をインラインで渡す親が再描画しても、大きな選択の集計結果を出したまま(集計中に戻らない)', async () => {
+    type BigRow = { id: number; a: number; b: number; c: number };
+    const bigRows: BigRow[] = Array.from({ length: 20_000 }, (_, index) => ({ id: index, a: 1, b: 2, c: 3 }));
+    function InlineColumnsHarness({ gridRef }: { gridRef: Ref<SpreadsheetGridHandle<BigRow>>; tick: number }) {
+      return (
+        <SpreadsheetGrid<BigRow>
+          ref={gridRef}
+          rows={bigRows}
+          columns={[
+            { key: 'a', title: 'A', width: 80 },
+            { key: 'b', title: 'B', width: 80 },
+            { key: 'c', title: 'C', width: 80 },
+          ]}
+          rowKeyGetter={(row) => row.id}
+        />
+      );
+    }
+    const ref = createRef<SpreadsheetGridHandle<BigRow>>();
+    const { container, rerender } = render(<InlineColumnsHarness gridRef={ref} tick={0} />);
+    act(() => {
+      ref.current?.selectRange({ start: { row: 0, col: 0 }, end: { row: bigRows.length - 1, col: 2 } });
+    });
+    // 60,000 セル = 時間分割の経路。完了まで待つ。
+    for (let i = 0; i < 400 && !aggregateTexts(container).some((text) => text?.startsWith('合計')); i += 1) {
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 1));
+      });
+    }
+    const sum = `合計:${(120_000).toLocaleString()}`;
+    expect(aggregateTexts(container)).toContain(sum);
+    rerender(<InlineColumnsHarness gridRef={ref} tick={1} />);
+    expect(aggregateTexts(container)).toContain(sum);
+  });
 });

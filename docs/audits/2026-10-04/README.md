@@ -226,7 +226,7 @@
 | L-20 | 修正(ユーザー判断で推奨案。CSV の `escapeFormulas` オプション、既定 `false`) | 非破壊(opt-in) | `=` / `+` / `-` / `@` / タブ / CR で始まる値の先頭に `'`。数値として読める値(`-5` 等)とヘッダー行は対象外。API_REFERENCE + website(handle)更新 |
 | V-04 | 修正(scrollHint のカスタムバーで pointercancel / lostpointercapture でもドラッグを終える) | 非破壊 | |
 | V-06 | 修正(その月に無い日(2026-02-30 等)を日付として受理しない) | 非破壊 | |
-| V-07 | 修正(チェック行の透明化セレクタを `:where()` で (0,2,0) へ下げ、invalid 背景を保つ) | 非破壊 | 利用側の `.ssg-body-cell.my-class` 上書きが効くように(公開契約どおり) |
+| V-07 | 修正(チェック行の透明化セレクタを `:where()` で (0,2,0) へ下げる。ライブラリ内の他の背景との勝ち負けは従来どおり) | 非破壊 | 利用側の `.ssg-body-cell.my-class` 上書きが効くように(公開契約どおり) |
 | V-08 | 修正(後勝ちで無効だった `.ssg-label-row { contain }` を撤去) | 非破壊 | 描画結果は不変 |
 | V-09 | 修正(列ヘッダーの操作群をキーボードフォーカス時(`:focus-visible`)にも表示) | 非破壊 | |
 | V-10 | 修正(macOS のオーバーレイスクロールバー環境ではトラック帯を 8px に) | 非破壊 | 右端 18px の誤判定 |
@@ -242,4 +242,4 @@
 | P-5 / P-6 | 修正(website 複製の `Ctrl/Cmd+C` 行を同期 / ci.yml のコメントを `packageManager` に直し、デモ app のビルドを CI に追加) | 非破壊 | website の `next build` は CI 対象外のまま(ローカルで `cd website && vp exec next build`) |
 | V-05 | 修正(WAI-ARIA の grid パターン。表本体 `.ssg-scroll-container` を `role="grid"`(`aria-rowcount` / `aria-colcount` / `aria-multiselectable` / `aria-readonly`)、各ペインの行を `role="row"` + `aria-rowindex`(見出し行 1、データ行は表示順 + 2)、セルを `gridcell` / `columnheader` / `rowheader` + `aria-colindex`(見た目の順、行番号列 1)、`aria-sort` はソート第 1 キーの列だけ。フォーカスを受ける `.ssg-shell` は `role="group"` + `aria-activedescendant`(アクティブセルが描画されているときだけ)。新 prop `ariaLabel`) | 非破壊(支援技術向けの属性追加) | ラベル行は行番号も中身も持たないペインの帯を、展開行は中央以外の帯を、縦固定の複製ラベル行は丸ごと `aria-hidden`。展開行の帯は `aria-rowindex` を持たない。編集中のエディタは行の外に重ねるため `role="group"` +「(列名)を編集」の名前で補う(制約として文書化)。キーボードでの行選択の切り替えは未提供(印字キーの編集開始と衝突するため別途)。API_REFERENCE + website(props の「アクセシビリティ」節 / keyboard ガイド)+ 生成 JSDoc 更新 |
 | RD-10 | 修正(行選択 / 全選択のチェックボックスを `role="checkbox"` + `aria-checked`(一部選択は `mixed`)+ 名前「行 N を選択」「すべての行を選択」に。役割はセルから中の glyph へ移し、セルは `rowheader` / `columnheader`。checkbox 列のセルは列名を名前に) | 非破壊 | 孤立していたラベル行の `role="row"` は grid の中に収まった |
-| V-14 | 修正(上部バーの検索欄に `aria-label="表全体を検索"`、コンテキストメニューの区切りに `role="separator"`、ツールパネルのタブと本体を `aria-controls` / `role="tabpanel"` + `aria-labelledby` で結ぶ) | 非破壊 | |
+| V-14 | 修正(上部バーの検索欄に `aria-label`(placeholder と同じ文言。値を入れても名前が消えない)、コンテキストメニューの区切りに `role="separator"`、ツールパネルのタブと本体を `aria-controls` / `role="tabpanel"` + `aria-labelledby` で結ぶ) | 非破壊 | |

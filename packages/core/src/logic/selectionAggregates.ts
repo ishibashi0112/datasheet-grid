@@ -43,6 +43,34 @@ export const resolveSelectionAggregateTarget = <T,>(
   return { startRow: range.startRow, endRow: range.endRow, columns };
 };
 
+// 2 つの集計対象が同じ範囲・同じ列か。集計が列から読むのは key と getValue だけなので、それ以外の列定義の
+//   違い(幅 / title など)は同じとみなします。
+export const isSameSelectionAggregateTarget = <T,>(
+  a: SelectionAggregateTarget<T>,
+  b: SelectionAggregateTarget<T>,
+): boolean =>
+  a.startRow === b.startRow &&
+  a.endRow === b.endRow &&
+  a.columns.length === b.columns.length &&
+  a.columns.every((column, index) => {
+    const other = b.columns[index];
+    return other !== undefined && column.key === other.key && column.getValue === other.getValue;
+  });
+
+// 追加(見直し): 同じ範囲・同じ列なら前回の対象(参照)を返す関数を作ります。columns を毎回新しい配列で渡す
+//   (インライン指定)と対象の参照が毎レンダー変わり、大きな選択の時間分割の計算が最初からやり直しになって
+//   「集計中」に戻っていたため。null(集計しない)を受けたら前回の対象も忘れます。
+export const createSelectionAggregateTargetStabilizer = <T,>() => {
+  let last: SelectionAggregateTarget<T> | null = null;
+  return (next: SelectionAggregateTarget<T> | null): SelectionAggregateTarget<T> | null => {
+    if (next !== null && last !== null && isSameSelectionAggregateTarget(last, next)) {
+      return last;
+    }
+    last = next;
+    return next;
+  };
+};
+
 // 走査するセル数の見積もり(同期で計算するか時間分割にするかの判定用)。
 export const estimateSelectionAggregateCells = <T,>(target: SelectionAggregateTarget<T>): number =>
   (target.endRow - target.startRow + 1) * target.columns.length;

@@ -156,7 +156,8 @@ export function DefaultGridTopBar<T>({
               onChange={(event) => context.setGlobalFilterText(event.target.value)}
               placeholder={globalFilterPlaceholder}
               // 追加(audit V-14): placeholder だけだと値の入力後に名前が消える UA があるため、名前を明示します。
-              aria-label="表全体を検索"
+              //   名前は従来どおり placeholder の文言(利用側の言語に合わせる)。空文字のときだけ既定の名前にします。
+              aria-label={globalFilterPlaceholder || '表全体を検索'}
               className="ssg-bar-input"
             />
             {hasFilterText ? (

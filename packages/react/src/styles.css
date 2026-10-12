@@ -3294,12 +3294,9 @@
   }
   /* 修正(audit V-07): 特異度を (0,3,0) → (0,2,0) に下げ(:not を :where で包む)、公開契約の連結セレクタ
      `.ssg-body-cell.my-class`(0,2,0。利用側 CSS は後から読み込まれる)がチェック行でも勝つようにします。
-     検証 NG(mark)の背景もチェック行で消えないよう、直後で同じ特異度のまま戻します。 */
+     ライブラリ内の他の背景(検証 NG の背景 (0,1,0) など)との勝ち負けは従来どおりです。 */
   .ssg-body-row--checked .ssg-body-cell:where(:not(.ssg-body-cell--row-hovered)) {
     background-color: transparent;
-  }
-  .ssg-body-row--checked .ssg-body-cell--invalid:where(:not(.ssg-body-cell--row-hovered)) {
-    background-color: var(--ssg-invalid-bg);
   }
 
   /* ── ヘッダー内要素(GridHeaderRow) ── */

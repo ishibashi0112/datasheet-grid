@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   computeSelectionAggregates,
+  createSelectionAggregateTargetStabilizer,
   formatSelectionAggregateNumber,
   resolveSelectionAggregateTarget,
 } from './selectionAggregates';
@@ -64,6 +65,31 @@ describe('resolveSelectionAggregateTarget', () => {
     const withToggle: GridColumn<Row>[] = [{ key: DETAIL_TOGGLE_COLUMN_KEY, width: 28 }, ...columns];
     expect(resolveSelectionAggregateTarget(cellRange(0, 0, 1, 1), 5, withToggle)?.columns).toEqual([columns[0]]);
     expect(resolveSelectionAggregateTarget(cellRange(0, 0, 1, 0), 5, withToggle)).toBeNull();
+  });
+});
+
+// 追加(見直し): columns をインラインで渡されても(毎回新しい配列・新しい列オブジェクト)、対象の参照を保つ。
+describe('createSelectionAggregateTargetStabilizer', () => {
+  const freshColumns = (): GridColumn<Row>[] => columns.map((column) => ({ ...column }));
+
+  it('同じ範囲・同じ列(key と getValue)なら前回の対象を返す。幅など他の定義の違いは同じとみなす', () => {
+    const stabilize = createSelectionAggregateTargetStabilizer<Row>();
+    const first = stabilize(resolveSelectionAggregateTarget(cellRange(0, 0, 4, 2), 5, columns));
+    const widened = freshColumns().map((column) => ({ ...column, width: 200 }));
+    expect(stabilize(resolveSelectionAggregateTarget(cellRange(0, 0, 4, 2), 5, widened))).toBe(first);
+  });
+
+  it('範囲・列の key・getValue のどれかが違えば新しい対象。null を挟んだら前回を忘れる', () => {
+    const stabilize = createSelectionAggregateTargetStabilizer<Row>();
+    const first = stabilize(resolveSelectionAggregateTarget(cellRange(0, 0, 4, 2), 5, columns));
+    const otherRange = stabilize(resolveSelectionAggregateTarget(cellRange(0, 0, 3, 2), 5, freshColumns()));
+    expect(otherRange).not.toBe(first);
+    const withGetter = freshColumns();
+    withGetter[1] = { ...withGetter[1], getValue: (row) => row.qty };
+    const getterTarget = stabilize(resolveSelectionAggregateTarget(cellRange(0, 0, 3, 2), 5, withGetter));
+    expect(getterTarget).not.toBe(otherRange);
+    expect(stabilize(null)).toBeNull();
+    expect(stabilize(resolveSelectionAggregateTarget(cellRange(0, 0, 3, 2), 5, withGetter))).not.toBe(getterTarget);
   });
 });
 

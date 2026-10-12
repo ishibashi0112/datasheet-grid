@@ -280,9 +280,17 @@ describe('ARIA(audit V-05 / RD-10 / V-14)', () => {
         { kind: 'action', key: 'b', label: 'B', onSelect: () => {} },
       ],
     });
-    expect(within(container).getByRole('textbox', { name: '表全体を検索' })).toBeTruthy();
     fireEvent.contextMenu(cellAt(grid, 2, 2), { clientX: 10, clientY: 10 });
     expect(document.querySelectorAll('[role="separator"]').length).toBe(1);
+    // 名前は placeholder の文言(既定「グローバルフィルター」)。値を入れても名前は残る。
+    const search = within(container).getByRole('textbox', { name: 'グローバルフィルター' });
+    fireEvent.change(search, { target: { value: 'abc' } });
+    expect(within(container).getByRole('textbox', { name: 'グローバルフィルター' })).toBe(search);
+  });
+
+  it('上部バーの検索欄の名前は利用側の placeholder に従う(V-14)', () => {
+    const { container } = setup({ globalFilterPlaceholder: 'Search all columns' });
+    expect(within(container).getByRole('textbox', { name: 'Search all columns' })).toBeTruthy();
   });
 
   // 構造の不変条件: 支援技術に見える row は必ずセルを持ち、セルは必ず row の直下にあり、
