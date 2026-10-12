@@ -236,10 +236,22 @@
 | V-15 | 修正(「列のリセット」にも `menuItem` スロットを適用) | 非破壊 | |
 | V-16 | 修正(ユーザー判断で推奨案。`renderHeader` 内のボタン / 入力欄 / リンク等から始まった pointerdown では列の範囲選択を始めない) | 挙動変化(改善) | 既定動作も止めないため入力欄にフォーカスが入る。API_REFERENCE + website(column)更新 |
 | B-08 | 現状維持 | 非破壊 | 開発時の警告と文書化済み(約 41.7 万行超で帯を抑止) |
-| B-09 | 対応しない | — | flex の端数幅は 1px 横スクロールバーの可能性のみで、整数化すると配分の合計がずれる副作用がある。実害の報告が出たら再検討 |
-| B-10 / B-11 / M-04 | 対応しない | — | 性能のみ(本番ビルドでは許容範囲)。再計算の細分化は影響範囲が広く、退行リスクに見合わない |
-| L-15 | 対応しない | — | 日付をまたいで開きっぱなしの稀なケース。他の入力が変われば解決し直されるため、時刻を memo 入力に足して全体を毎回再計算するコストに見合わない |
+| B-09 | ~~対応しない~~ → §12 で修正 | — | 当初は「flex の端数幅は 1px 横スクロールバーの可能性のみで、整数化すると配分の合計がずれる副作用がある」として見送り |
+| B-10 / B-11 / M-04 | ~~対応しない~~ → §12 で修正 | — | 当初は「性能のみ(本番ビルドでは許容範囲)。再計算の細分化は影響範囲が広く、退行リスクに見合わない」として見送り |
+| L-15 | ~~対応しない~~ → §12 で修正 | — | 当初は「日付をまたいで開きっぱなしの稀なケース。他の入力が変われば解決し直されるため、時刻を memo 入力に足して全体を毎回再計算するコストに見合わない」として見送り |
 | P-5 / P-6 | 修正(website 複製の `Ctrl/Cmd+C` 行を同期 / ci.yml のコメントを `packageManager` に直し、デモ app のビルドを CI に追加) | 非破壊 | website の `next build` は CI 対象外のまま(ローカルで `cd website && vp exec next build`) |
 | V-05 | 修正(WAI-ARIA の grid パターン。表本体 `.ssg-scroll-container` を `role="grid"`(`aria-rowcount` / `aria-colcount` / `aria-multiselectable` / `aria-readonly`)、各ペインの行を `role="row"` + `aria-rowindex`(見出し行 1、データ行は表示順 + 2)、セルを `gridcell` / `columnheader` / `rowheader` + `aria-colindex`(見た目の順、行番号列 1)、`aria-sort` はソート第 1 キーの列だけ。フォーカスを受ける `.ssg-shell` は `role="group"` + `aria-activedescendant`(アクティブセルが描画されているときだけ)。新 prop `ariaLabel`) | 非破壊(支援技術向けの属性追加) | ラベル行は行番号も中身も持たないペインの帯を、展開行は中央以外の帯を、縦固定の複製ラベル行は丸ごと `aria-hidden`。展開行の帯は `aria-rowindex` を持たない。編集中のエディタは行の外に重ねるため `role="group"` +「(列名)を編集」の名前で補う(制約として文書化)。キーボードでの行選択の切り替えは未提供(印字キーの編集開始と衝突するため別途)。API_REFERENCE + website(props の「アクセシビリティ」節 / keyboard ガイド)+ 生成 JSDoc 更新 |
 | RD-10 | 修正(行選択 / 全選択のチェックボックスを `role="checkbox"` + `aria-checked`(一部選択は `mixed`)+ 名前「行 N を選択」「すべての行を選択」に。役割はセルから中の glyph へ移し、セルは `rowheader` / `columnheader`。checkbox 列のセルは列名を名前に) | 非破壊 | 孤立していたラベル行の `role="row"` は grid の中に収まった |
 | V-14 | 修正(上部バーの検索欄に `aria-label`(placeholder と同じ文言。値を入れても名前が消えない)、コンテキストメニューの区切りに `role="separator"`、ツールパネルのタブと本体を `aria-controls` / `role="tabpanel"` + `aria-labelledby` で結ぶ) | 非破壊 | |
+
+## 12. 対応状況(2026-10-12 見送り分)
+
+§11 で「対応しない」とした 5 件を、ユーザーの依頼で対応した。B-09 の幅の端数と L-15 の日付の変わり目を除き、表示結果は変えない(性能のみ)。各修正に回帰テストを付け、実ブラウザのハーネス `audit/harness/t-leftovers.mjs`(100 万行 / Playwright の時計)と既存の全シナリオで確認した。
+
+| ID | 対応 | 互換性 | 備考 |
+| --- | --- | --- | --- |
+| B-09 | 修正(flex の配分を「左端からの累積位置を切り捨てた差」にし、各列を整数 px に。core `logic/columnFlex`) | 軽微な表示変化 | 各列は比どおりの幅との差が 1px 未満、配分の合計は利用可能幅の整数部分(例: 1000px を 1:1:1 → 333 / 333 / 334。従来は 333.33…)。§11 で懸念した「合計がずれる」は累積位置の切り捨てで起きない。pin / 表示切替で `column.width` へ書き戻す幅も整数になる。ハーネスで 5 種の画面幅で横スクロールバーが出ないことを確認。API_REFERENCE + website(column)+ 生成 JSDoc 更新 |
+| B-10 | 修正(clientSide の行パイプラインに差分経路。列フィルターは評価し直した結果の中身が前回と同じなら前回の参照を返す。ソートは前回のソートキーと並びを持ち、入力の並びが同じならキーを値で比べて、変化なし → 前回の結果 / 1,024 行以下 → その行だけ二分探索で差し込み直し / それ以上 → 全件ソート。core `engine/rowPipeline` + `logic/sorting` の `decorateSortKeys` / `diffSortKeys` / `repositionSortedPositions`) | 非破壊(結果は全件ソートと同一) | 列フィルターと数値キーの前計算(O(n))は従来どおり毎回行い、省けるのはソートの O(n log n)。値で比べるため、行オブジェクトをその場で書き換えて新しい配列を渡しても追従する。比較規則は全件ソートと同じ(同値は元の順)で、乱数の編集で全件ソートと一致することをテスト(`sorting.incremental.test.ts` / `rowPipeline.incremental.test.ts`)。本番ビルド 100 万行のソート中の 1 セル編集: 約 460〜550ms → 約 100〜180ms。グローバルフィルターの時間分割は対象外(従来どおり) |
+| B-11 | 修正(reducer の同値 action を no-op に: `cell/activate` 同座標 / `edit/stop` 非編集時 / `selection/clear` 無選択時 / `filter/setGlobal` 同文字列 / `filter/setColumn` 同値 / `filter/clearColumn` 無いキー / `filter/resetAll` 空 / `sort/set` 同内容 / `sort/clear` 空) | 非破壊 | 同じ state を返すため store は購読者へ通知しない(余分な再レンダーが減るだけ)。同じ値のフィルターを設定し直しても絞り込みはやり直さない(行をその場で書き換えて同じ配列を渡す使い方は元から非対応)。`gridReducer.noop.test.ts` |
+| M-04 | 修正(内蔵トップ / ボトムバーへ slot context を丸ごと渡さず、使うフィールドだけを渡す) | 非破壊 | 開発ビルド 100 万行のソート: 約 80 秒 → 約 0.7 秒。利用側の `renderTopBar` / `renderBottomBar` で ctx を丸ごと子へ渡すと同じことが起きるため、API_REFERENCE + website(props / customization)に注意を追記 |
+| L-15 | 修正(相対日付プリセットが掛かっている間だけ深夜 0 時を見張り(タイマーは最大 1 時間ごと + タブが前面に戻ったとき確かめ直す)、その日付で解決したプリセットの範囲のキーを列フィルターの入力と serverSide の queryKey に足す。core `controllers/dateRolloverStore` + `logic/filtering` の `resolveRelativeDateFilterKey`) | 挙動変化(改善) | 開いたまま日付が変わると、他の操作なしで翌日の範囲になる(serverSide はブロックを取り直す。送る `query` は相対のまま不変)。範囲が変わらない日(「今月」の月内など)は何もしない(レビューで、日付そのものをキーにすると SSRM が毎晩取り直して先頭へスクロールすると分かったため)。列定義に無いプリセット ID(`applyState` で入れたサーバ専用の ID 等)は範囲が分からないので毎日取り直す。プリセットが無ければタイマーもリスナーも持たない。テストで `vi.runAllTimers()` を使うと見張りのタイマーが尽きない点を website(testing)に注記。ハーネスで Playwright の時計を進めて確認。API_REFERENCE + website(server-side / filter-sort)更新 |

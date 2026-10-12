@@ -7,6 +7,8 @@ import {
   createEmptyRowSelection,
   rowSelectionStateEquals,
 } from '../logic/rowSelection';
+// 追加(監査 B-11): 列フィルター値 / ソートの構造等価(同値の set を no-op にする)。
+import { isSameColumnFilterValue, isSameSortState } from '../logic/gridState';
 
 // 追加: 列幅のデフォルト下限です。
 const DEFAULT_MIN_WIDTH = 60;
@@ -111,6 +113,19 @@ export const gridUiReducer = (
 ): GridUiState => {
   switch (action.type) {
     case 'cell/activate':
+      // 追加(監査 B-11): 同じ座標(または null → null)なら no-op として state をそのまま返します。
+      //   列操作の後始末(discardSelectionState)や端でのキー操作で同じセルを指し直しても、購読者へ通知しません。
+      //   アクティブセルの可視化スクロール(viewportSyncController)/ onActiveCellChange は元から座標で比べるため
+      //   挙動は変わりません。
+      if (
+        action.cell === state.activeCell ||
+        (action.cell !== null &&
+          state.activeCell !== null &&
+          action.cell.row === state.activeCell.row &&
+          action.cell.col === state.activeCell.col)
+      ) {
+        return state;
+      }
       return {
         ...state,
         activeCell: action.cell,
@@ -271,6 +286,10 @@ export const gridUiReducer = (
       };
 
     case 'selection/clear':
+      // 追加(監査 B-11): 選択もドラッグも無ければ no-op。
+      if (state.selection === null && state.dragState === null) {
+        return state;
+      }
       return {
         ...state,
         selection: null,
@@ -288,6 +307,10 @@ export const gridUiReducer = (
       };
 
     case 'edit/stop':
+      // 追加(監査 B-11): 編集中でなければ no-op。
+      if (state.editingCell === null) {
+        return state;
+      }
       return {
         ...state,
         editingCell: null,
@@ -375,6 +398,10 @@ export const gridUiReducer = (
     }
 
     case 'filter/setGlobal':
+      // 追加(監査 B-11): 同じ文字列なら no-op。
+      if (state.filters.globalText === action.value) {
+        return state;
+      }
       return {
         ...state,
         filters: {
@@ -383,7 +410,16 @@ export const gridUiReducer = (
         },
       };
 
-    case 'filter/setColumn':
+    case 'filter/setColumn': {
+      // 追加(監査 B-11): 同じ中身の値(構造等価。onFiltersChange と同じ判定)なら no-op。列フィルターの参照が
+      //   保たれるため、行の絞り込み(とその下流)も再計算されません。
+      const currentValue = state.filters.columnFilters[action.columnKey];
+      if (
+        currentValue !== undefined &&
+        (currentValue === action.value || isSameColumnFilterValue(currentValue, action.value))
+      ) {
+        return state;
+      }
       return {
         ...state,
         filters: {
@@ -394,8 +430,13 @@ export const gridUiReducer = (
           },
         },
       };
+    }
 
     case 'filter/clearColumn': {
+      // 追加(監査 B-11): その列にフィルターが無ければ no-op。
+      if (!(action.columnKey in state.filters.columnFilters)) {
+        return state;
+      }
       const nextColumnFilters = { ...state.filters.columnFilters };
       delete nextColumnFilters[action.columnKey];
 
@@ -409,6 +450,10 @@ export const gridUiReducer = (
     }
 
     case 'filter/resetAll':
+      // 追加(監査 B-11): 既に何も掛かっていなければ no-op。
+      if (state.filters.globalText === '' && Object.keys(state.filters.columnFilters).length === 0) {
+        return state;
+      }
       return {
         ...state,
         filters: {
@@ -428,6 +473,10 @@ export const gridUiReducer = (
 
     case 'sort/set':
       // 変更(MS-1): 受け取ったエントリ配列をそのまま採用します。
+      // 追加(監査 B-11): 同じ中身(順序 + 列 + 方向)なら no-op。
+      if (isSameSortState(state.sort, action.entries)) {
+        return state;
+      }
       return {
         ...state,
         sort: action.entries,
@@ -435,6 +484,10 @@ export const gridUiReducer = (
 
     case 'sort/clear':
       // 変更(MS-1): 空配列でソートなしに正規化します。
+      // 追加(監査 B-11): 既にソートなしなら no-op。
+      if (state.sort.length === 0) {
+        return state;
+      }
       return {
         ...state,
         sort: [],

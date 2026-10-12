@@ -237,7 +237,7 @@ export const toDateSetKey = (cellValue: unknown): string => {
 
 // 追加(filter-ext D): 相対プリセットを絶対範囲へ解決します(now 基準・両端含む)。
 //   合意済み仕様: プリセットは相対のまま保存し、フィルター評価のたびにここで解決します
-//   (翌日開くと範囲が追従する)。past30days は「今日を含む過去 30 日間」です。
+//   (翌日開くと範囲が追従する。開いたまま日付が変わったときも追従する = 監査 L-15)。past30days は「今日を含む過去 30 日間」です。
 export const resolveDateFilterPreset = (
   preset: DateFilterPreset,
   now: Date,
@@ -341,6 +341,57 @@ export const matchesParsedDateFilter = (
     default:
       return key === resolved.value;
   }
+};
+
+// 追加(監査 L-15): 列フィルターに相対日付プリセット(今日 / 今月 / 過去 30 日 / 列定義のカスタムプリセット)が
+//   含まれるか。含まれるときだけ、日付が変わったら行の絞り込みをやり直します(serverSide は取り直し)。
+//   プリセットは保存時は相対のまま(評価時に now 基準で解決)のため、日付をまたいで開きっぱなしだと、他の入力が
+//   変わるまで前日の範囲が残っていました。
+export const columnFiltersUseRelativeDate = (
+  columnFilters: Readonly<Record<string, ColumnFilterValue>>,
+): boolean =>
+  Object.values(columnFilters).some(
+    (value) => value?.kind === 'dateSet' && value.condition?.mode === 'preset',
+  );
+
+// 追加(監査 L-15): 相対日付プリセットを基準日(dateKey = 'YYYY-MM-DD')で解決した範囲を、列ごとに並べたキーです
+//   (プリセットが無ければ '')。行パイプラインはこのキーが変わったときだけ列フィルターを評価し直し、serverSide は
+//   queryKey に含めて取り直します。日付が変わっても範囲が同じ(「今月」の月内など)ならキーも同じで、何もしません。
+//   - 範囲はフィルター評価と同じ規則(resolveParsedDateFilter + 列の dateFilterPresets)で解決します。時刻は
+//     基準日の正午に固定します(ビルトインは日付だけで決まり、深夜 0 時ちょうどの夏時間の飛びも避けられます)。
+//   - クライアントで解決できないプリセット(列定義に無い ID = applyState 等で入れたサーバだけが解釈する ID や
+//     列定義から消えた ID / resolve が throw した)は、範囲が分からないため基準日そのものをキーに含めます
+//     (日ごとに変わる扱い = 安全側)。
+export const resolveRelativeDateFilterKey = <T,>(
+  columns: readonly GridColumn<T>[],
+  columnFilters: Readonly<Record<string, ColumnFilterValue>>,
+  dateKey: string,
+): string => {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateKey);
+  const now = match
+    ? new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]), 12)
+    : new Date();
+  const parts: string[] = [];
+  for (const [columnKey, value] of Object.entries(columnFilters)) {
+    if (value?.kind !== 'dateSet' || value.condition?.mode !== 'preset') {
+      continue;
+    }
+    const column = columns.find((candidate) => candidate.key === columnKey);
+    let resolved: ReturnType<typeof resolveParsedDateFilter>;
+    try {
+      resolved = resolveParsedDateFilter(
+        value.condition,
+        now,
+        normalizeDateFilterPresets(column?.dateFilterPresets),
+      );
+    } catch {
+      resolved = null;
+    }
+    parts.push(
+      `${columnKey}=${resolved === null ? `?${dateKey}` : JSON.stringify(resolved)}`,
+    );
+  }
+  return parts.join('\u0000');
 };
 
 // 追加(filter-ext B): B-2 の Float64 key を構築すべき列フィルター値か(comparison / range を
@@ -892,6 +943,8 @@ export const filterOrderByColumns = <T,>(
   numericKeys?: ReadonlyMap<string, Float64Array>,
   // 追加(filter-ext D): 相対日付プリセットの解決基準時刻です(既定 = 現在。テストで固定します)。
   //   フィルター再計算のたびに解決されるため、日付が変わった後の再計算で範囲が追従します。
+  //   変更(監査 L-15): 日付が変わったときの再計算は、行パイプライン(engine/rowPipeline の relativeDateKey)が
+  //   controllers/dateRolloverStore の日付キーを memo 入力に足して起こします。
   now?: Date,
 ): RowOrder => {
   const predicates: CompiledColumnFilterPredicate<T>[] = [];

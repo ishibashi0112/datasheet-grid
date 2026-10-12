@@ -1,10 +1,13 @@
-import type { SpreadsheetGridSlotContext } from '../model/gridTypes';
+import type { GridSelectionAggregates, SpreadsheetGridDerivedSummary } from '../model/gridTypes';
 import { cx } from '@ishibashi0112/spreadsheet-grid-core/logic/cx';
 import type { GridResolvedSlot } from '../model/gridTypes';
 import { formatSelectionAggregateNumber } from '@ishibashi0112/spreadsheet-grid-core/logic/selectionAggregates';
 
-type DefaultGridBottomBarProps<T> = {
-  context: SpreadsheetGridSlotContext<T>;
+// 変更(監査 M-04): slot context を丸ごと受け取るのをやめ、使うフィールドだけを props にしました
+//   (DefaultGridTopBar と同じ理由。開発ビルドで全行の配列が props の差分記録に走査されるのを避けます)。
+type DefaultGridBottomBarProps = {
+  derivedSummary: SpreadsheetGridDerivedSummary;
+  selectionAggregates?: GridSelectionAggregates | null;
   // 追加: Rows / Columns の件数 chips(左グループ)を表示するかどうかです(既定 true)。
   showCounts?: boolean;
   // 追加(slot-props): classNames.statusBar の解決済みスロット(既定バーの root .ssg-bar--bottom へ)。
@@ -20,15 +23,14 @@ type DefaultGridBottomBarProps<T> = {
 //   フォールバックフォントで行も 1px 伸びていたため、バーの空きにだけ置く別の要素にしました(SelectionAggregates)。
 //   件数あり: [件数][集計(空きを埋めて右寄せ)][右グループ]、件数なし: [右グループ][集計(左寄せ)]。
 //   どちらも既存のグループの位置と折り返しは変わりません。
-export function DefaultGridBottomBar<T>({
-  context,
+export function DefaultGridBottomBar({
+  derivedSummary,
+  selectionAggregates,
   showCounts = true,
   slot,
-}: DefaultGridBottomBarProps<T>) {
-  // 追加: slot context が持つ派生 summary を使います。
-  const { derivedSummary } = context;
+}: DefaultGridBottomBarProps) {
   const aggregates = (
-    <SelectionAggregates aggregates={context.selectionAggregates} trailing={!showCounts} />
+    <SelectionAggregates aggregates={selectionAggregates} trailing={!showCounts} />
   );
 
   return (
@@ -73,7 +75,7 @@ function SelectionAggregates({
   aggregates,
   trailing,
 }: {
-  aggregates: SpreadsheetGridSlotContext<unknown>['selectionAggregates'];
+  aggregates: GridSelectionAggregates | null | undefined;
   // 右グループの後ろ(件数なし)なら true: 区切り線を先頭に、中身を左寄せにします。
   trailing: boolean;
 }) {

@@ -243,14 +243,46 @@ export const moveSortEntry = (
 //       行います(挙動の決定権は一貫して値側にあります)。
 //     - 実際の sort 対象は「位置(0..length-1)の number[]」で、確定後に
 //       result[i] = order[positions[i]] で undecorate して Int32Array へ書き戻します。
+// 変更(監査 B-10): 本体を decorateSortKeys(キーの前計算)と sortPositionsByKeys(位置の並べ替え)へ分けました。
+//   行パイプライン(engine/rowPipeline)が前回の decorate 結果を持ち、1 セル編集のように rows だけが変わったときは
+//   キーを比べて「並びが変わらない(ソート列以外の編集)なら前回の結果をそのまま」「数行だけ変わったならその行だけ
+//   差し込み直す」ようにするためです。本関数の結果と性能は従来と同じです(同じ decorate / 比較子をそのまま使う)。
 export const sortOrder = <T,>(
   rows: T[],
   order: RowOrder,
   columns: GridColumn<T>[],
   sort: GridSortState,
 ): RowOrder => {
-  if (sort.length === 0) {
+  const keys = decorateSortKeys(rows, order, columns, sort);
+  if (keys === null) {
     return order;
+  }
+  return undecorateSortedPositions(order, sortPositionsByKeys(keys, order));
+};
+
+// 追加(監査 B-10): sortOrder の decorate 結果(order の位置ごとのソートキー)です。
+//   - numeric: 全ソート列が数値か空値だけ(空値は NaN)。Float64 の key だけで比較します(B-1 の fast path)。
+//   - mixed: 1 列でも空値以外の非数値を含む。全列を種別(数値 / 文字列 / 空値)+ 値で持ちます(fallback)。
+export type DecoratedSortKeys =
+  | { length: number; multipliers: number[]; numeric: true; keys: Float64Array[] }
+  | {
+      length: number;
+      multipliers: number[];
+      numeric: false;
+      kinds: Uint8Array[];
+      numbers: Float64Array[];
+      strings: string[][];
+    };
+
+// 追加(監査 B-10): ソートキーを order の位置ごとに前計算します。sort が空 / 有効な列が無ければ null(並べ替えない)。
+export const decorateSortKeys = <T,>(
+  rows: T[],
+  order: RowOrder,
+  columns: GridColumn<T>[],
+  sort: GridSortState,
+): DecoratedSortKeys | null => {
+  if (sort.length === 0) {
+    return null;
   }
 
   // 列解決はソート前に 1 回だけ(比較関数内で find を毎回呼ばない)。
@@ -267,7 +299,7 @@ export const sortOrder = <T,>(
     );
 
   if (resolved.length === 0) {
-    return order;
+    return null;
   }
 
   const length = order.length;
@@ -308,14 +340,62 @@ export const sortOrder = <T,>(
     numericKeyColumns[c] = keys;
   }
 
-  // 位置(0..length-1)を並べ替えます。比較は decorate 済みキー、
-  // タイブレークは元 source index(order[a]/order[b])で安定化します。
+  if (allNumeric) {
+    return { length, multipliers, numeric: true, keys: numericKeyColumns };
+  }
+
+  // fallback: 1 列でも空値以外の非数値を含む。全列を「種別(数値 / 文字列 / 空値)+ 値」へ decorate し、
+  //   compareSortValues と同じ規則で比較します(監査 L-07 / L-08。分類は列ごと 1 回で、比較子では
+  //   String() / trim() を呼びません)。
+  const kindColumns: Uint8Array[] = new Array<Uint8Array>(columnCount);
+  const numberColumns: Float64Array[] = new Array<Float64Array>(columnCount);
+  const stringColumns: string[][] = new Array<string[]>(columnCount);
+  for (let c = 0; c < columnCount; c += 1) {
+    const column = resolved[c].column;
+    const kinds = new Uint8Array(length);
+    const numbers = new Float64Array(length);
+    const strings = new Array<string>(length);
+    for (let pos = 0; pos < length; pos += 1) {
+      const value = getCellValue(rows[order[pos]], column);
+      if (isBlankSortValue(value)) {
+        kinds[pos] = SORT_KIND_BLANK;
+        continue;
+      }
+      const numeric = Number(value);
+      if (Number.isFinite(numeric)) {
+        kinds[pos] = SORT_KIND_NUMBER;
+        numbers[pos] = numeric;
+      } else {
+        kinds[pos] = SORT_KIND_STRING;
+        strings[pos] = String(value);
+      }
+    }
+    kindColumns[c] = kinds;
+    numberColumns[c] = numbers;
+    stringColumns[c] = strings;
+  }
+  return {
+    length,
+    multipliers,
+    numeric: false,
+    kinds: kindColumns,
+    numbers: numberColumns,
+    strings: stringColumns,
+  };
+};
+
+// 追加(監査 B-10): decorate 済みのキーで位置(0..length-1)を並べ替えます(戻り値は並べ替えた位置の配列)。
+//   比較は decorate 済みキー、タイブレークは元 source index(order[a]/order[b])で安定化します。
+export const sortPositionsByKeys = (decorated: DecoratedSortKeys, order: RowOrder): number[] => {
+  const { length, multipliers } = decorated;
+  const columnCount = multipliers.length;
   const positions = new Array<number>(length);
   for (let i = 0; i < length; i += 1) {
     positions[i] = i;
   }
 
-  if (allNumeric) {
+  if (decorated.numeric) {
+    const numericKeyColumns = decorated.keys;
     // fast path: 全列が数値。Float64 typed key の差分のみで比較します(分岐レス)。
     //   単一列ソートは最頻ケースのため、列ループ・列添字を畳んだ専用形へ特化します
     //   (この特化で単一数値列でも従来 boxed 経路に対し非回帰になります)。
@@ -364,68 +444,190 @@ export const sortOrder = <T,>(
         return order[a] - order[b];
       });
     }
-  } else {
-    // fallback: 1 列でも空値以外の非数値を含む。全列を「種別(数値 / 文字列 / 空値)+ 値」へ decorate し、
-    //   compareSortValues と同じ規則で比較します(監査 L-07 / L-08。分類は列ごと 1 回で、比較子では
-    //   String() / trim() を呼びません)。
-    const kindColumns: Uint8Array[] = new Array<Uint8Array>(columnCount);
-    const numberColumns: Float64Array[] = new Array<Float64Array>(columnCount);
-    const stringColumns: string[][] = new Array<string[]>(columnCount);
-    for (let c = 0; c < columnCount; c += 1) {
-      const column = resolved[c].column;
-      const kinds = new Uint8Array(length);
-      const numbers = new Float64Array(length);
-      const strings = new Array<string>(length);
-      for (let pos = 0; pos < length; pos += 1) {
-        const value = getCellValue(rows[order[pos]], column);
-        if (isBlankSortValue(value)) {
-          kinds[pos] = SORT_KIND_BLANK;
-          continue;
-        }
-        const numeric = Number(value);
-        if (Number.isFinite(numeric)) {
-          kinds[pos] = SORT_KIND_NUMBER;
-          numbers[pos] = numeric;
-        } else {
-          kinds[pos] = SORT_KIND_STRING;
-          strings[pos] = String(value);
-        }
-      }
-      kindColumns[c] = kinds;
-      numberColumns[c] = numbers;
-      stringColumns[c] = strings;
-    }
-    positions.sort((a, b) => {
-      for (let c = 0; c < columnCount; c += 1) {
-        const leftKind = kindColumns[c][a];
-        const rightKind = kindColumns[c][b];
-        if (leftKind === SORT_KIND_BLANK || rightKind === SORT_KIND_BLANK) {
-          if (leftKind !== rightKind) {
-            // 空値は方向によらず末尾。
-            return leftKind === SORT_KIND_BLANK ? 1 : -1;
-          }
-          continue;
-        }
-        let compared: number;
-        if (leftKind !== rightKind) {
-          compared = leftKind - rightKind;
-        } else if (leftKind === SORT_KIND_NUMBER) {
-          compared = numberColumns[c][a] - numberColumns[c][b];
-        } else {
-          compared = STRING_COLLATOR.compare(stringColumns[c][a], stringColumns[c][b]);
-        }
-        if (compared !== 0) {
-          return compared * multipliers[c];
-        }
-      }
-      return order[a] - order[b];
-    });
+    return positions;
   }
 
-  // undecorate: 並べ替えた位置を元 source index へ戻して Int32Array を組み立てます。
+  const { kinds: kindColumns, numbers: numberColumns, strings: stringColumns } = decorated;
+  positions.sort((a, b) => {
+    for (let c = 0; c < columnCount; c += 1) {
+      const leftKind = kindColumns[c][a];
+      const rightKind = kindColumns[c][b];
+      if (leftKind === SORT_KIND_BLANK || rightKind === SORT_KIND_BLANK) {
+        if (leftKind !== rightKind) {
+          // 空値は方向によらず末尾。
+          return leftKind === SORT_KIND_BLANK ? 1 : -1;
+        }
+        continue;
+      }
+      let compared: number;
+      if (leftKind !== rightKind) {
+        compared = leftKind - rightKind;
+      } else if (leftKind === SORT_KIND_NUMBER) {
+        compared = numberColumns[c][a] - numberColumns[c][b];
+      } else {
+        compared = STRING_COLLATOR.compare(stringColumns[c][a], stringColumns[c][b]);
+      }
+      if (compared !== 0) {
+        return compared * multipliers[c];
+      }
+    }
+    return order[a] - order[b];
+  });
+  return positions;
+};
+
+// undecorate: 並べ替えた位置を元 source index へ戻して Int32Array を組み立てます。
+export const undecorateSortedPositions = (order: RowOrder, positions: readonly number[]): RowOrder => {
+  const length = positions.length;
   const result = new Int32Array(length);
   for (let i = 0; i < length; i += 1) {
     result[i] = order[positions[i]];
+  }
+  return result;
+};
+
+// ── 追加(監査 B-10): rows だけが変わったときの差分ソート ─────────────────────
+//   1 セル編集で rows の参照が変わるたびに全行をソートし直していた(100 万行で編集 1 回 = O(n log n))のを、
+//   前回の decorate 結果と今回のキーを比べて省きます。キーの比較は値で行うため、行オブジェクトをその場で
+//   書き換えて新しい配列を渡す使い方でも結果は全件ソートと同じです。
+
+// 位置 pos・列 c のキーを「種別 + 値」へ正規化して読むための小道具(numeric / mixed の差を吸収)。
+const keyKindAt = (decorated: DecoratedSortKeys, c: number, pos: number): number => {
+  if (decorated.numeric) {
+    const key = decorated.keys[c][pos];
+    return key !== key ? SORT_KIND_BLANK : SORT_KIND_NUMBER;
+  }
+  return decorated.kinds[c][pos];
+};
+const keyNumberAt = (decorated: DecoratedSortKeys, c: number, pos: number): number =>
+  decorated.numeric ? decorated.keys[c][pos] : decorated.numbers[c][pos];
+// 種別が文字列のときだけ読みます(numeric は文字列を持たない)。
+const keyStringAt = (decorated: DecoratedSortKeys, c: number, pos: number): string =>
+  decorated.numeric ? '' : decorated.strings[c][pos];
+
+// 2 つの decorate 結果が「同じ並べ方」を表すか(列数と各列の方向が同じ)。違えば位置ごとの比較に意味が無い。
+const isSameSortShape = (a: DecoratedSortKeys, b: DecoratedSortKeys): boolean =>
+  a.length === b.length &&
+  a.multipliers.length === b.multipliers.length &&
+  a.multipliers.every((multiplier, c) => multiplier === b.multipliers[c]);
+
+// 追加(監査 B-10): キーが変わった位置を返します。並べ方が違う / limit 件を超えたら null(全件ソートへ)。
+//   同じ order に対して decorate した 2 つの結果を比べる前提です(位置 = order の添字)。
+export const diffSortKeys = (
+  prev: DecoratedSortKeys,
+  next: DecoratedSortKeys,
+  limit: number,
+): number[] | null => {
+  if (!isSameSortShape(prev, next)) {
+    return null;
+  }
+  const changed: number[] = [];
+  const columnCount = next.multipliers.length;
+  for (let pos = 0; pos < next.length; pos += 1) {
+    for (let c = 0; c < columnCount; c += 1) {
+      const kind = keyKindAt(next, c, pos);
+      let same = kind === keyKindAt(prev, c, pos);
+      if (same && kind === SORT_KIND_NUMBER) {
+        same = keyNumberAt(next, c, pos) === keyNumberAt(prev, c, pos);
+      } else if (same && kind === SORT_KIND_STRING) {
+        same = keyStringAt(next, c, pos) === keyStringAt(prev, c, pos);
+      }
+      if (!same) {
+        changed.push(pos);
+        if (changed.length > limit) {
+          return null;
+        }
+        break;
+      }
+    }
+  }
+  return changed;
+};
+
+// 追加(監査 B-10): 位置 a・b の比較(昇順の比較子)。sortPositionsByKeys の 3 つの比較子(numeric 単一列 /
+//   numeric 多列 / mixed)と同じ全順序です(空値は方向によらず末尾、数値 < 文字列、最後は元 source index)。
+const comparePositionsByKeys = (
+  decorated: DecoratedSortKeys,
+  order: RowOrder,
+  a: number,
+  b: number,
+): number => {
+  const { multipliers } = decorated;
+  for (let c = 0; c < multipliers.length; c += 1) {
+    const leftKind = keyKindAt(decorated, c, a);
+    const rightKind = keyKindAt(decorated, c, b);
+    if (leftKind === SORT_KIND_BLANK || rightKind === SORT_KIND_BLANK) {
+      if (leftKind !== rightKind) {
+        return leftKind === SORT_KIND_BLANK ? 1 : -1;
+      }
+      continue;
+    }
+    let compared: number;
+    if (leftKind !== rightKind) {
+      compared = leftKind - rightKind;
+    } else if (leftKind === SORT_KIND_NUMBER) {
+      compared = keyNumberAt(decorated, c, a) - keyNumberAt(decorated, c, b);
+    } else {
+      compared = STRING_COLLATOR.compare(keyStringAt(decorated, c, a), keyStringAt(decorated, c, b));
+    }
+    if (compared !== 0) {
+      return compared * multipliers[c];
+    }
+  }
+  return order[a] - order[b];
+};
+
+// 追加(監査 B-10): 前回の並べ替え結果(prevPositions)から、キーが変わった位置(changed)だけを抜いて
+//   新しいキーで差し込み直します。変わっていない位置どうしの順序は前後で同じ(キーが同じ = 比較結果が同じ)ため、
+//   結果は全件ソート(sortPositionsByKeys)と一致します。比較は O(k log n)、組み立ては O(n)。
+export const repositionSortedPositions = (
+  prevPositions: readonly number[],
+  changed: readonly number[],
+  decorated: DecoratedSortKeys,
+  order: RowOrder,
+): number[] => {
+  if (changed.length === 0) {
+    return prevPositions.slice();
+  }
+  const isChanged = new Uint8Array(prevPositions.length);
+  for (const pos of changed) {
+    isChanged[pos] = 1;
+  }
+  const remaining: number[] = [];
+  for (const pos of prevPositions) {
+    if (isChanged[pos] === 0) {
+      remaining.push(pos);
+    }
+  }
+  const sortedChanged = changed
+    .slice()
+    .sort((a, b) => comparePositionsByKeys(decorated, order, a, b));
+  const result = new Array<number>(prevPositions.length);
+  let out = 0;
+  let from = 0;
+  for (const pos of sortedChanged) {
+    // remaining[from..] のうち pos より前に来る最後の位置の次(lower bound)。sortedChanged は昇順なので from は単調。
+    let lo = from;
+    let hi = remaining.length;
+    while (lo < hi) {
+      const mid = (lo + hi) >>> 1;
+      if (comparePositionsByKeys(decorated, order, remaining[mid], pos) < 0) {
+        lo = mid + 1;
+      } else {
+        hi = mid;
+      }
+    }
+    for (let i = from; i < lo; i += 1) {
+      result[out] = remaining[i];
+      out += 1;
+    }
+    result[out] = pos;
+    out += 1;
+    from = lo;
+  }
+  for (let i = from; i < remaining.length; i += 1) {
+    result[out] = remaining[i];
+    out += 1;
   }
   return result;
 };

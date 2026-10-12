@@ -25,7 +25,14 @@ import {
   filterOrderByColumns,
   type RowOrder,
 } from '../logic/filtering';
-import { sortOrder } from '../logic/sorting';
+import {
+  decorateSortKeys,
+  diffSortKeys,
+  repositionSortedPositions,
+  sortPositionsByKeys,
+  undecorateSortedPositions,
+  type DecoratedSortKeys,
+} from '../logic/sorting';
 import { isIdentityOrder, isRowDragOperable } from '../logic/rowReorder';
 import {
   buildGroupTree,
@@ -54,6 +61,9 @@ const EMPTY_COLUMN_FILTERS: Record<string, ColumnFilterValue> = {};
 const EMPTY_SORT: GridSortState = [];
 // number 列シグネチャの区切り(NUL は列キーへの混入が実質ありえないため)。
 const SIGNATURE_SEPARATOR = '\u0000';
+// 追加(監査 B-10): rows だけが変わったとき、キーが変わった行がこの件数以下なら全件ソートせず差し込み直します
+//   (比較は O(件数 × log n)。超えたら decorate 済みのキーで全件ソート)。
+const SORT_REPOSITION_LIMIT = 1024;
 
 export type RowOrderInputs<T> = {
   rows: T[];
@@ -76,6 +86,10 @@ export type RowOrderInputs<T> = {
   // 追加(manual-mode): true のときソートを適用しない(空 sort として扱う)。rows の並びがそのまま表示順になり、
   //   恒等判定(行ドラッグ可否)も「並べ替えていない」側になる。
   manualSorting?: boolean;
+  // 追加(監査 L-15): 相対日付プリセット(今日 等)を基準日で解決した範囲のキー(logic/filtering の
+  //   resolveRelativeDateFilterKey)。列フィルターに相対プリセットがあるときだけ渡します(無ければ '' / 未指定)。
+  //   値が変わる = 日付が変わって範囲も変わったら、列フィルターを評価し直します。
+  relativeDateKey?: string;
 };
 
 export type RowOrderResolution = {
@@ -120,6 +134,9 @@ export type ServerSideQueryInputs = {
   columnFilters: Record<string, ColumnFilterValue>;
   sortingEnabled: boolean;
   sort: GridSortState;
+  // 追加(監査 L-15): 相対日付プリセットを解決した範囲のキー(RowOrderInputs.relativeDateKey と同じ)。'' 以外なら
+  //   queryKey に含め、範囲が変わったら取り直します(プリセットは相対のままサーバへ送るため、query 自体は変わらない)。
+  relativeDateKey?: string;
 };
 
 export type ServerSideQueryResolution = {
@@ -173,19 +190,102 @@ export const createRowPipelineResolver = <T,>() => {
     }
     return keyMap;
   });
-  const memoColumnFiltered = createMemo(
-    (
-      rows: T[],
-      globalFilteredOrder: RowOrder,
-      visibleColumns: GridColumn<T>[],
-      columnFilters: Record<string, ColumnFilterValue>,
-      numericKeys: Map<string, Float64Array>,
-    ) => filterOrderByColumns(rows, globalFilteredOrder, visibleColumns, columnFilters, numericKeys),
-  );
-  const memoSorted = createMemo(
-    (rows: T[], columnFilteredOrder: RowOrder, visibleColumns: GridColumn<T>[], sort: GridSortState) =>
-      sortOrder(rows, columnFilteredOrder, visibleColumns, sort),
-  );
+  // 列フィルター済み order。入力がすべて前回と同じ参照なら前回の結果を返します(旧 createMemo と同じ)。
+  // 変更(監査 L-15): 相対日付プリセットの範囲のキー(relativeDateKey)も入力に足し、範囲が変わったら評価し直します。
+  // 変更(監査 B-10): 評価し直した結果の中身が前回と同じなら前回の参照を返します。1 セル編集で rows の参照が変わっても
+  //   絞り込み結果が変わらなければ、下流(ソート / グルーピング / ラベル行 / RowModel の利用側)が「並びは不変」と
+  //   判断できるようにするためです(中身の比較は O(n) で、絞り込み自体の O(n) に比べて十分小さい)。
+  let filterCache: {
+    rows: T[];
+    globalFilteredOrder: RowOrder;
+    columns: GridColumn<T>[];
+    columnFilters: Record<string, ColumnFilterValue>;
+    numericKeys: Map<string, Float64Array>;
+    relativeDateKey: string;
+    result: RowOrder;
+  } | null = null;
+  const resolveColumnFiltered = (
+    rows: T[],
+    globalFilteredOrder: RowOrder,
+    columns: GridColumn<T>[],
+    columnFilters: Record<string, ColumnFilterValue>,
+    numericKeys: Map<string, Float64Array>,
+    relativeDateKey: string,
+  ): RowOrder => {
+    const cached = filterCache;
+    if (
+      cached !== null &&
+      cached.rows === rows &&
+      cached.globalFilteredOrder === globalFilteredOrder &&
+      cached.columns === columns &&
+      cached.columnFilters === columnFilters &&
+      cached.numericKeys === numericKeys &&
+      cached.relativeDateKey === relativeDateKey
+    ) {
+      return cached.result;
+    }
+    let result = filterOrderByColumns(rows, globalFilteredOrder, columns, columnFilters, numericKeys);
+    if (cached !== null && result !== cached.result && isSameOrder(result, cached.result)) {
+      result = cached.result;
+    }
+    filterCache = { rows, globalFilteredOrder, columns, columnFilters, numericKeys, relativeDateKey, result };
+    return result;
+  };
+
+  // ソート済み order。
+  // 変更(監査 B-10): 前回の decorate 結果(位置ごとのソートキー)と並べ替えた位置を持ち、入力の order が前回と同じ
+  //   (= 上の列フィルターの結果が不変)なら、今回のキーと比べて
+  //   - どの位置のキーも同じ(ソート列以外の編集 / 同じ行の配列の作り直し)→ 前回の結果をそのまま返す、
+  //   - 変わった位置が SORT_REPOSITION_LIMIT 件以下 → その位置だけ差し込み直す(repositionSortedPositions)、
+  //   - それ以外 → decorate 済みのキーで全件ソート、
+  //   とします。比べるのは「値」なので、行オブジェクトをその場で書き換えて新しい配列を渡す使い方でも結果は全件ソートと
+  //   同じです。キーの decorate(O(n))は全件ソートでも必要なため、差分経路で増えるのは比較の O(n) だけです。
+  //   ソートが無い / 有効な列が無いときは入力の order をそのまま返し、保持しているキーも捨てます(メモリを抱えない)。
+  let sortCache: {
+    rows: T[];
+    input: RowOrder;
+    columns: GridColumn<T>[];
+    sort: GridSortState;
+    keys: DecoratedSortKeys;
+    positions: number[];
+    result: RowOrder;
+  } | null = null;
+  const resolveSorted = (rows: T[], input: RowOrder, columns: GridColumn<T>[], sort: GridSortState): RowOrder => {
+    const cached = sortCache;
+    if (
+      cached !== null &&
+      cached.rows === rows &&
+      cached.input === input &&
+      cached.columns === columns &&
+      cached.sort === sort
+    ) {
+      return cached.result;
+    }
+    const keys = decorateSortKeys(rows, input, columns, sort);
+    if (keys === null) {
+      sortCache = null;
+      return input;
+    }
+    let positions: number[] | null = null;
+    let result: RowOrder | null = null;
+    if (cached !== null && cached.input === input) {
+      const changed = diffSortKeys(cached.keys, keys, SORT_REPOSITION_LIMIT);
+      if (changed !== null && changed.length === 0) {
+        positions = cached.positions;
+        result = cached.result;
+      } else if (changed !== null) {
+        positions = repositionSortedPositions(cached.positions, changed, keys, input);
+      }
+    }
+    if (positions === null) {
+      positions = sortPositionsByKeys(keys, input);
+    }
+    if (result === null) {
+      result = undecorateSortedPositions(input, positions);
+    }
+    sortCache = { rows, input, columns, sort, keys, positions, result };
+    return result;
+  };
   const memoIdentity = createMemo((rowDragAvailable: boolean, order: RowOrder, rowCount: number) =>
     rowDragAvailable && isIdentityOrder(order, rowCount),
   );
@@ -283,8 +383,14 @@ export const createRowPipelineResolver = <T,>() => {
           })
         : EMPTY_SERVER_QUERY,
   );
-  const memoServerQueryKey = createMemo((isServerSide: boolean, query: ServerSideQuery) =>
-    isServerSide ? serializeServerSideQuery(query) : '',
+  // 変更(監査 L-15): 相対日付プリセットの範囲のキー(relativeDateKey)が '' 以外なら queryKey の末尾に足します。
+  //   範囲が変わると queryKey が変わり、取り直しになります(プリセットが無ければ従来と同じキー)。
+  const memoServerQueryKey = createMemo((isServerSide: boolean, query: ServerSideQuery, relativeDateKey: string) =>
+    isServerSide
+      ? relativeDateKey === ''
+        ? serializeServerSideQuery(query)
+        : `${serializeServerSideQuery(query)}${SIGNATURE_SEPARATOR}${relativeDateKey}`
+      : '',
   );
   const memoServerQueryPair = createMemo(
     (query: ServerSideQuery, queryKey: string): ServerSideQueryResolution => ({ query, queryKey }),
@@ -307,8 +413,15 @@ export const createRowPipelineResolver = <T,>() => {
       const sort = inputs.manualSorting ? EMPTY_SORT : inputs.sort;
       const signature = memoNumberSignature(filterSortColumns, columnFilters);
       const numericKeys = memoNumericKeys(rows, filterSortColumns, signature);
-      const columnFilteredOrder = memoColumnFiltered(rows, globalFilteredOrder, filterSortColumns, columnFilters, numericKeys);
-      const order = memoSorted(rows, columnFilteredOrder, filterSortColumns, sort);
+      const columnFilteredOrder = resolveColumnFiltered(
+        rows,
+        globalFilteredOrder,
+        filterSortColumns,
+        columnFilters,
+        numericKeys,
+        inputs.relativeDateKey ?? '',
+      );
+      const order = resolveSorted(rows, columnFilteredOrder, filterSortColumns, sort);
       const orderIsIdentity = labelLayout
         ? memoIdentityWithLabels(rowDragAvailable, order, memoLabelFreeOrder(labelLayout, rows.length))
         : memoIdentity(rowDragAvailable, order, rows.length);
@@ -360,7 +473,7 @@ export const createRowPipelineResolver = <T,>() => {
         sortingEnabled,
         sort,
       );
-      return memoServerQueryPair(query, memoServerQueryKey(isServerSide, query));
+      return memoServerQueryPair(query, memoServerQueryKey(isServerSide, query, inputs.relativeDateKey ?? ''));
     },
   };
 };

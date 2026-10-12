@@ -133,17 +133,58 @@ describe('computeCenterFlexWidths', () => {
     expect(result).not.toHaveProperty('a');
   });
 
-  it('割り切れない比率でも合計は利用可能幅に厳密一致(端数は最後の列へ)', () => {
+  it('割り切れない比率でも各列は整数 px で、合計は利用可能幅に厳密一致(監査 B-09)', () => {
     // min(既定 50)に張り付かないよう十分な available を与え、純粋な比率配分の端数処理を見ます。
     const result = computeCenterFlexWidths(
       [col({ key: 'a', flex: 1 }), col({ key: 'b', flex: 1 }), col({ key: 'c', flex: 1 })],
       {},
       1000,
     );
-    expect(sum(result)).toBeCloseTo(1000, 10);
-    // 先頭 2 列は等分、最後が端数吸収。
-    expect(result.a).toBeCloseTo(1000 / 3, 10);
-    expect(result.b).toBeCloseTo(1000 / 3, 10);
+    // 右端(333.3… / 666.6… / 1000)の切り捨て位置の差 = 333 / 333 / 334。
+    expect(result).toEqual({ a: 333, b: 333, c: 334 });
+    expect(sum(result)).toBe(1000);
+  });
+
+  it('端数が出る配分は 1px 単位で散らばり、比率どおりの値との差は 1px 未満(監査 B-09)', () => {
+    const columns = [
+      col({ key: 'a', flex: 1 }),
+      col({ key: 'b', flex: 2 }),
+      col({ key: 'c', flex: 3 }),
+      col({ key: 'd', flex: 1 }),
+    ];
+    for (let available = 350; available <= 1400; available += 7) {
+      const result = computeCenterFlexWidths(columns, {}, available);
+      expect(sum(result)).toBe(available);
+      for (const [key, flex] of [['a', 1], ['b', 2], ['c', 3], ['d', 1]] as const) {
+        expect(Number.isInteger(result[key])).toBe(true);
+        expect(Math.abs(result[key] - (available * flex) / 7)).toBeLessThan(1);
+      }
+    }
+  });
+
+  it('利用可能幅や固定列幅が整数でなくても、合計は利用可能幅を超えない(監査 B-09)', () => {
+    // 手動リサイズ幅は clientX 由来で小数になり得る(高 DPI / ズーム)。
+    const result = computeCenterFlexWidths(
+      [col({ key: 'fixed', width: 100 }), col({ key: 'a', flex: 1 }), col({ key: 'b', flex: 1 })],
+      { fixed: 120.5 },
+      1000.75,
+    );
+    expect(Number.isInteger(result.a)).toBe(true);
+    expect(Number.isInteger(result.b)).toBe(true);
+    // 1000.75 − 120.5 = 880.25 → 合計は 880(はみ出さない)。
+    expect(sum(result)).toBe(880);
+    expect(result).toEqual({ a: 440, b: 440 });
+  });
+
+  it('min / max で確定した列があっても、残りの列は整数で min を割らない(監査 B-09)', () => {
+    // a は max 100 で確定、残り 701 を b / c(min 300)で 1:1 → 350.5 ずつ → 350 / 351。
+    const result = computeCenterFlexWidths(
+      [col({ key: 'a', flex: 1, maxWidth: 100 }), col({ key: 'b', flex: 1, minWidth: 300 }), col({ key: 'c', flex: 1 })],
+      {},
+      801,
+    );
+    expect(result).toEqual({ a: 100, b: 350, c: 351 });
+    expect(sum(result)).toBe(801);
   });
 
   it('pinned 列が混在しても flex 対象外(固定として available から差し引く)', () => {

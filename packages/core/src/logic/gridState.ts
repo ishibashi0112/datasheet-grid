@@ -433,7 +433,8 @@ const isSameParsedNumberFilter = (
 //   kind が異なれば不等。各 kind の中身(set の values 配列・number の raw/parsed・text/date/select の
 //   value)を比較します。custom の value(unknown)は深い比較が不能なため Object.is(参照同一)で判定し、
 //   buildGridState が参照共有でコピーする規約と整合させます(同じ filter なら同一参照 → 等価)。
-const isSameColumnFilterValue = (
+// 変更(監査 B-11): reducer の filter/setColumn の同値判定にも使うため export します。
+export const isSameColumnFilterValue = (
   a: ColumnFilterValue,
   b: ColumnFilterValue,
 ): boolean => {

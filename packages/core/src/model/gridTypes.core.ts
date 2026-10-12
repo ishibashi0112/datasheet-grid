@@ -1127,7 +1127,8 @@ export type GridColumn<T, F extends GridFrameworkTypes = GridFrameworkTypes> = {
   //   ※ 中身の長さに合わせて固定 px を決めたい場合は flex ではなく autoSize を使ってください(別概念)。
   /**
    * center 列(非 pinned)の伸縮比。余り幅(コンテナ幅 − 行ヘッダー − pinned 合計 − `width`
-   * 固定列の合計)を flex 比で配分し `minWidth`/`maxWidth` でクランプ。
+   * 固定列の合計)を flex 比で配分し `minWidth`/`maxWidth` でクランプ。配分した幅は整数
+   * px(端数は切り捨てて次の列へ回すため、合計が利用可能幅をはみ出さない)。
    * コンテナ追従でリアクティブに伸縮。手動リサイズで固定 px へ変化(その列の `flex` / `pinned` /
    * `width` 指定が変わるか列のリセットまで固定 → 以後 flex 復帰)。pinned 列では無視。
    * 詳細は下記「flex と autoSize」節。

@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import type { SpreadsheetGridSlotContext } from '../model/gridTypes';
+import type { SpreadsheetGridDerivedSummary } from '../model/gridTypes';
 import { cx } from '@ishibashi0112/spreadsheet-grid-core/logic/cx';
 import type { GridResolvedSlot } from '../model/gridTypes';
 
@@ -39,8 +39,14 @@ const CLEAR_ICON: ReactNode = (
   </svg>
 );
 
-type DefaultGridTopBarProps<T> = {
-  context: SpreadsheetGridSlotContext<T>;
+// 変更(監査 M-04): slot context を丸ごと受け取るのをやめ、使うフィールドだけを props にしました。
+//   context には rows / filteredRows(全行の配列。filteredRows は読むと全行を組み立てる getter)が載るため、
+//   props に渡すと React 19.2+ の開発ビルドが再レンダーのたびに props の差分を記録しようとして巨大配列を走査し、
+//   100 万行ではソート / フィルター / 編集 1 回に数十秒かかっていました(本番ビルドは無関係)。
+type DefaultGridTopBarProps = {
+  derivedSummary: SpreadsheetGridDerivedSummary;
+  globalFilterText: string;
+  setGlobalFilterText: (value: string) => void;
   // 追加: 件数/フィルター/ソートの summary chips を表示するかどうかです(既定 true)。
   showSummary?: boolean;
   // 追加: グローバルフィルター入力欄を表示するかどうかです(既定 true)。
@@ -73,8 +79,10 @@ type DefaultGridTopBarProps<T> = {
 // 変更(F-filter UI): フィルター入力を adornment 構造にしました。入力枠(.ssg-bar-input-group)の内側に
 //       [左アイコン][input][× クリア] を収め、クリアは外出しボタンから入力内側の × へ移行。
 //       placeholder は globalFilterPlaceholder、左アイコンは globalFilterIcon で差し替え可能です。
-export function DefaultGridTopBar<T>({
-  context,
+export function DefaultGridTopBar({
+  derivedSummary,
+  globalFilterText,
+  setGlobalFilterText,
   showSummary = true,
   showFilter = true,
   showCounts = true,
@@ -82,14 +90,11 @@ export function DefaultGridTopBar<T>({
   globalFilterIcon,
   onFilterSummaryClick,
   slot,
-}: DefaultGridTopBarProps<T>) {
-  // 追加: slot context が持つ派生 summary を使います。
-  const { derivedSummary } = context;
-
+}: DefaultGridTopBarProps) {
   // undefined のときだけ既定アイコン。null など falsy なら「アイコン無し」、ReactNode はそのまま差し替え。
   const filterIconNode =
     globalFilterIcon === undefined ? DEFAULT_FILTER_ICON : globalFilterIcon;
-  const hasFilterText = context.globalFilterText.trim().length > 0;
+  const hasFilterText = globalFilterText.trim().length > 0;
 
   return (
     <div className={cx('ssg-bar--top', slot?.className)} style={slot?.style}>
@@ -152,8 +157,8 @@ export function DefaultGridTopBar<T>({
             ) : null}
             <input
               type="text"
-              value={context.globalFilterText}
-              onChange={(event) => context.setGlobalFilterText(event.target.value)}
+              value={globalFilterText}
+              onChange={(event) => setGlobalFilterText(event.target.value)}
               placeholder={globalFilterPlaceholder}
               // 追加(audit V-14): placeholder だけだと値の入力後に名前が消える UA があるため、名前を明示します。
               //   名前は従来どおり placeholder の文言(利用側の言語に合わせる)。空文字のときだけ既定の名前にします。
@@ -163,7 +168,7 @@ export function DefaultGridTopBar<T>({
             {hasFilterText ? (
               <button
                 type="button"
-                onClick={() => context.setGlobalFilterText('')}
+                onClick={() => setGlobalFilterText('')}
                 className="ssg-bar-input-clear"
                 aria-label="フィルターをクリア"
                 data-ssg-tooltip="クリア"
