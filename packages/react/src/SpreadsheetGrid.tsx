@@ -102,8 +102,10 @@ import {
   isActiveColumnFilterValue,
   // 追加(audit L-06): dateSet 列の候補収集を照合と同じ正規化日付キーで行います。
   toDateSetKey,
-  // 追加(監査 L-15): 相対日付プリセットが掛かっているか(日付が変わったら絞り込みをやり直す見張りの入り切り)。
+  // 追加(監査 L-15): 相対日付プリセットが掛かっているか(日付が変わったら絞り込みをやり直す見張りの入り切り)と、
+  //   基準日で解決した範囲のキー(範囲が変わったときだけ絞り込み / 取り直しをやり直す)。
   columnFiltersUseRelativeDate,
+  resolveRelativeDateFilterKey,
   // 行モデルチェーンは order(Int32Array)ベースに一本化しています
   //   (DS-2 で差し替え、旧オブジェクト配列版は DS-3-8 で削除)。
   // 追加(filter-ext A): number フィルターの数値化規則(空白 = NaN)です。B-2 の
@@ -1121,8 +1123,9 @@ export function SpreadsheetGrid<T extends object>({
   });
 
   // 追加(監査 L-15): 相対日付プリセット(今日 / 今月 / 過去 30 日 / カスタム)の基準日。プリセットを含む列フィルターが
-  //   掛かっている間だけ日付の変わり目を見張り(controllers/dateRolloverStore)、基準日を行パイプラインの入力に足します。
-  //   日付が変わると clientSide は列フィルターを評価し直し、serverSide は queryKey が変わって取り直します。
+  //   掛かっている間だけ日付の変わり目を見張り(controllers/dateRolloverStore)、基準日で解決した範囲のキー
+  //   (resolveRelativeDateFilterKey)を行パイプラインの入力に足します。日付が変わって範囲も変わると、clientSide は
+  //   列フィルターを評価し直し、serverSide は queryKey が変わって取り直します(「今月」の月内など範囲が同じなら何もしない)。
   //   手動フィルター(manualFiltering)では行を絞り込まないため見張りません。
   const relativeDateFilterActive = useMemo(
     () =>
@@ -1137,7 +1140,17 @@ export function SpreadsheetGrid<T extends object>({
     engine.dateRollover.getSnapshot,
     engine.dateRollover.getSnapshot,
   );
-  const relativeDateKey = relativeDateFilterActive ? relativeDateSnapshot : '';
+  const relativeDateKey = useMemo(
+    () =>
+      relativeDateFilterActive
+        ? resolveRelativeDateFilterKey(
+            effectiveColumns,
+            isServerSide ? columnFilters : deferredColumnFilters,
+            relativeDateSnapshot,
+          )
+        : '',
+    [relativeDateFilterActive, effectiveColumns, isServerSide, columnFilters, deferredColumnFilters, relativeDateSnapshot],
+  );
 
   const { order, rowDragOperable } = useMemo(
     () =>

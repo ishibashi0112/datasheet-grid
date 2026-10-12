@@ -354,6 +354,46 @@ export const columnFiltersUseRelativeDate = (
     (value) => value?.kind === 'dateSet' && value.condition?.mode === 'preset',
   );
 
+// 追加(監査 L-15): 相対日付プリセットを基準日(dateKey = 'YYYY-MM-DD')で解決した範囲を、列ごとに並べたキーです
+//   (プリセットが無ければ '')。行パイプラインはこのキーが変わったときだけ列フィルターを評価し直し、serverSide は
+//   queryKey に含めて取り直します。日付が変わっても範囲が同じ(「今月」の月内など)ならキーも同じで、何もしません。
+//   - 範囲はフィルター評価と同じ規則(resolveParsedDateFilter + 列の dateFilterPresets)で解決します。時刻は
+//     基準日の正午に固定します(ビルトインは日付だけで決まり、深夜 0 時ちょうどの夏時間の飛びも避けられます)。
+//   - クライアントで解決できないプリセット(列定義に無い ID = applyState 等で入れたサーバだけが解釈する ID や
+//     列定義から消えた ID / resolve が throw した)は、範囲が分からないため基準日そのものをキーに含めます
+//     (日ごとに変わる扱い = 安全側)。
+export const resolveRelativeDateFilterKey = <T,>(
+  columns: readonly GridColumn<T>[],
+  columnFilters: Readonly<Record<string, ColumnFilterValue>>,
+  dateKey: string,
+): string => {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateKey);
+  const now = match
+    ? new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]), 12)
+    : new Date();
+  const parts: string[] = [];
+  for (const [columnKey, value] of Object.entries(columnFilters)) {
+    if (value?.kind !== 'dateSet' || value.condition?.mode !== 'preset') {
+      continue;
+    }
+    const column = columns.find((candidate) => candidate.key === columnKey);
+    let resolved: ReturnType<typeof resolveParsedDateFilter>;
+    try {
+      resolved = resolveParsedDateFilter(
+        value.condition,
+        now,
+        normalizeDateFilterPresets(column?.dateFilterPresets),
+      );
+    } catch {
+      resolved = null;
+    }
+    parts.push(
+      `${columnKey}=${resolved === null ? `?${dateKey}` : JSON.stringify(resolved)}`,
+    );
+  }
+  return parts.join('\u0000');
+};
+
 // 追加(filter-ext B): B-2 の Float64 key を構築すべき列フィルター値か(comparison / range を
 //   持つ number 系のみ)。SpreadsheetGrid の signature 計算が使います。従来は kind:'number' の
 //   存在だけで構築していましたが、key を読まない blank / contains では構築自体を省きます。

@@ -86,8 +86,9 @@ export type RowOrderInputs<T> = {
   // 追加(manual-mode): true のときソートを適用しない(空 sort として扱う)。rows の並びがそのまま表示順になり、
   //   恒等判定(行ドラッグ可否)も「並べ替えていない」側になる。
   manualSorting?: boolean;
-  // 追加(監査 L-15): 相対日付プリセット(今日 等)の解決基準日('YYYY-MM-DD')。列フィルターに相対プリセットが
-  //   あるときだけ渡します(無ければ '' / 未指定)。値が変わる = 日付が変わったら列フィルターを評価し直します。
+  // 追加(監査 L-15): 相対日付プリセット(今日 等)を基準日で解決した範囲のキー(logic/filtering の
+  //   resolveRelativeDateFilterKey)。列フィルターに相対プリセットがあるときだけ渡します(無ければ '' / 未指定)。
+  //   値が変わる = 日付が変わって範囲も変わったら、列フィルターを評価し直します。
   relativeDateKey?: string;
 };
 
@@ -133,8 +134,8 @@ export type ServerSideQueryInputs = {
   columnFilters: Record<string, ColumnFilterValue>;
   sortingEnabled: boolean;
   sort: GridSortState;
-  // 追加(監査 L-15): 相対日付プリセットの解決基準日(RowOrderInputs.relativeDateKey と同じ)。'' 以外なら queryKey に
-  //   含め、日付が変わったら取り直します(プリセットは相対のままサーバへ送るため、query 自体は変わらない)。
+  // 追加(監査 L-15): 相対日付プリセットを解決した範囲のキー(RowOrderInputs.relativeDateKey と同じ)。'' 以外なら
+  //   queryKey に含め、範囲が変わったら取り直します(プリセットは相対のままサーバへ送るため、query 自体は変わらない)。
   relativeDateKey?: string;
 };
 
@@ -190,7 +191,7 @@ export const createRowPipelineResolver = <T,>() => {
     return keyMap;
   });
   // 列フィルター済み order。入力がすべて前回と同じ参照なら前回の結果を返します(旧 createMemo と同じ)。
-  // 変更(監査 L-15): 相対日付プリセットの基準日(relativeDateKey)も入力に足し、日付が変わったら評価し直します。
+  // 変更(監査 L-15): 相対日付プリセットの範囲のキー(relativeDateKey)も入力に足し、範囲が変わったら評価し直します。
   // 変更(監査 B-10): 評価し直した結果の中身が前回と同じなら前回の参照を返します。1 セル編集で rows の参照が変わっても
   //   絞り込み結果が変わらなければ、下流(ソート / グルーピング / ラベル行 / RowModel の利用側)が「並びは不変」と
   //   判断できるようにするためです(中身の比較は O(n) で、絞り込み自体の O(n) に比べて十分小さい)。
@@ -382,8 +383,8 @@ export const createRowPipelineResolver = <T,>() => {
           })
         : EMPTY_SERVER_QUERY,
   );
-  // 変更(監査 L-15): 相対日付プリセットの基準日(relativeDateKey)が '' 以外なら queryKey の末尾に足します。日付が
-  //   変わると queryKey が変わり、取り直しになります(プリセットが無ければ従来と同じキー)。
+  // 変更(監査 L-15): 相対日付プリセットの範囲のキー(relativeDateKey)が '' 以外なら queryKey の末尾に足します。
+  //   範囲が変わると queryKey が変わり、取り直しになります(プリセットが無ければ従来と同じキー)。
   const memoServerQueryKey = createMemo((isServerSide: boolean, query: ServerSideQuery, relativeDateKey: string) =>
     isServerSide
       ? relativeDateKey === ''

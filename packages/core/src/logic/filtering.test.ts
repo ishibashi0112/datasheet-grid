@@ -13,6 +13,7 @@ import {
   buildNumberColumnFilterValue,
   coerceNumberFilterCellValue,
   columnFiltersUseRelativeDate,
+  resolveRelativeDateFilterKey,
   columnFilterUsesNumericKey,
   columnFilterValueToDraftText,
   createSourceOrder,
@@ -1120,5 +1121,79 @@ describe('columnFiltersUseRelativeDate(監査 L-15)', () => {
         f: { kind: 'date', value: '2026-10' },
       }),
     ).toBe(false);
+  });
+});
+
+describe('resolveRelativeDateFilterKey(監査 L-15)', () => {
+  type DateRow = { d: string; e: string };
+  const preset = (id: string): ColumnFilterValue => ({ kind: 'dateSet', condition: { mode: 'preset', preset: id }, set: null });
+  const dateColumns: GridColumn<DateRow>[] = [
+    { key: 'd', title: 'D', width: 100, filterType: 'dateSet' },
+    {
+      key: 'e',
+      title: 'E',
+      width: 100,
+      filterType: 'dateSet',
+      dateFilterPresets: [
+        'today',
+        { id: 'thisYear', label: '今年', resolve: (now) => ({ from: `${now.getFullYear()}-01-01`, to: `${now.getFullYear()}-12-31` }) },
+        {
+          id: 'broken',
+          label: '壊れた',
+          resolve: () => {
+            throw new Error('boom');
+          },
+        },
+      ],
+    },
+  ];
+
+  it('相対プリセットが無ければ空文字', () => {
+    expect(resolveRelativeDateFilterKey(dateColumns, {}, '2026-10-12')).toBe('');
+    expect(
+      resolveRelativeDateFilterKey(dateColumns, { d: { kind: 'dateSet', condition: { mode: 'equals', value: '2026-10-12' }, set: null } }, '2026-10-12'),
+    ).toBe('');
+  });
+
+  it('今日 / 過去 30 日は日付が変わるとキーも変わる', () => {
+    for (const id of ['today', 'last30days']) {
+      const filters = { d: preset(id) };
+      expect(resolveRelativeDateFilterKey(dateColumns, filters, '2026-10-12')).not.toBe(
+        resolveRelativeDateFilterKey(dateColumns, filters, '2026-10-13'),
+      );
+    }
+  });
+
+  it('今月 / 範囲が年単位のカスタムプリセットは、範囲が変わる日だけキーが変わる', () => {
+    const month = { d: preset('thisMonth') };
+    expect(resolveRelativeDateFilterKey(dateColumns, month, '2026-10-12')).toBe(
+      resolveRelativeDateFilterKey(dateColumns, month, '2026-10-31'),
+    );
+    expect(resolveRelativeDateFilterKey(dateColumns, month, '2026-10-31')).not.toBe(
+      resolveRelativeDateFilterKey(dateColumns, month, '2026-11-01'),
+    );
+    const year = { e: preset('thisYear') };
+    expect(resolveRelativeDateFilterKey(dateColumns, year, '2026-01-01')).toBe(
+      resolveRelativeDateFilterKey(dateColumns, year, '2026-12-31'),
+    );
+    expect(resolveRelativeDateFilterKey(dateColumns, year, '2026-12-31')).not.toBe(
+      resolveRelativeDateFilterKey(dateColumns, year, '2027-01-01'),
+    );
+  });
+
+  it('クライアントで解決できないプリセット(列定義に無い ID / resolve が throw)は日ごとに変わる扱い', () => {
+    const cases: Record<string, ColumnFilterValue>[] = [{ d: preset('unknownId') }, { e: preset('broken') }];
+    for (const filters of cases) {
+      expect(resolveRelativeDateFilterKey(dateColumns, filters, '2026-10-12')).not.toBe(
+        resolveRelativeDateFilterKey(dateColumns, filters, '2026-10-13'),
+      );
+    }
+  });
+
+  it('列ごとに並べる(どれか 1 列の範囲が変われば変わる)', () => {
+    const filters = { d: preset('thisMonth'), e: preset('today') };
+    const key = resolveRelativeDateFilterKey(dateColumns, filters, '2026-10-12');
+    expect(key.split('\u0000')).toHaveLength(2);
+    expect(resolveRelativeDateFilterKey(dateColumns, filters, '2026-10-13')).not.toBe(key);
   });
 });

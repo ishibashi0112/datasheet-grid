@@ -48,7 +48,7 @@ React 19 + TypeScript + Vite 製のカスタム AG Grid 風・仮想化データ
 | tsc(build) | `vp exec tsc -b` | 0 |
 | tsc(test) | `vp exec tsc -p tsconfig.vitest.json --noEmit` | 0 |
 | eslint | `vp exec eslint .` | baseline 維持(現状 0 errors / 0 warnings) |
-| test | `vp test` | 全緑(現状 ~1,760 tests / 198 files) |
+| test | `vp test` | 全緑(現状 ~1,800 tests / 202 files) |
 | build | `vp run build:lib`(ルートで `pnpm -r --filter ./packages/* run build:lib` = core → react の順。各パッケージは `vp build --config vite.lib.config.ts` + `tsc -p tsconfig.lib.json`、react はさらに emit-layer-css)。デモ app は `vp build` | 0 |
 
 - リリース: **まず `git checkout main && git pull origin main` で PR マージ後の main を取り込んでから**(古い main 上で版上げすると新機能を含まないコードに新しい版が付いて公開される。2026-10-10 の 0.46.0 がその例)`pnpm run version:minor`(= `node scripts/bump-version.mjs minor`。両パッケージの版を揃えて上げ「X.Y.Z」コミット + `vX.Y.Z` タグ。連番を飛ばすときは `node scripts/bump-version.mjs X.Y.Z` で版を明示)→ ユーザーが `pnpm run publish:all`(= `pnpm -r publish --access public`。core → react の順。2FA は各パッケージ)→ `git push origin main --follow-tags`。旧 `vp exec pnpm version minor` は単一パッケージ時代のもので使わない。

@@ -117,6 +117,43 @@ const TODAY_STATE = {
   check('L-15: SSRM refetches after midnight with a relative preset', countAfter > callsBefore, { callsBefore, countAfter, callsAfter });
   await close();
 }
+// 範囲が変わらない日は何もしない: 「今月」は月内の深夜 0 時では取り直さず(先頭へ戻るスクロールも起きない)、
+//   月が変わるときだけ取り直す。
+const THIS_MONTH_STATE = {
+  ...TODAY_STATE,
+  filters: { globalText: '', columnFilters: { date: { kind: 'dateSet', condition: { mode: 'preset', preset: 'thisMonth' }, set: null } } },
+};
+for (const [label, start, expectRefetch] of [
+  ['mid-month (10/14 → 10/15)', new Date(2026, 9, 14, 23, 59, 0), false],
+  ['month end (10/31 → 11/01)', new Date(2026, 9, 31, 23, 59, 0), true],
+]) {
+  const { page, close } = await open('ssrm', { beforeGoto: (p) => p.clock.install({ time: start }) });
+  await waitIdle(page, 800);
+  await page.evaluate((s) => window.__grid.applyState(s), THIS_MONTH_STATE);
+  await page.clock.fastForward(2_000);
+  await waitIdle(page, 800);
+  await page.evaluate(() => window.__grid.scrollToRow(400, { align: 'start' }));
+  await waitIdle(page, 800);
+  const callsBefore = await page.evaluate(() => window.__ssrm.calls.length);
+  const topBefore = await page.evaluate(() => document.querySelector('.ssg-scroll-container').scrollTop);
+  await page.clock.fastForward(60_000);
+  await waitIdle(page, 800);
+  await page.clock.fastForward(2_000);
+  await waitIdle(page, 800);
+  const callsAfter = await page.evaluate(() => window.__ssrm.calls.length);
+  const topAfter = await page.evaluate(() => document.querySelector('.ssg-scroll-container').scrollTop);
+  if (expectRefetch) {
+    check(`L-15: SSRM thisMonth refetches when the month changes ${label}`, callsAfter > callsBefore, { callsBefore, callsAfter });
+  } else {
+    check(`L-15: SSRM thisMonth does not refetch or scroll on a ${label} midnight`, callsAfter === callsBefore && topAfter === topBefore, {
+      callsBefore,
+      callsAfter,
+      topBefore,
+      topAfter,
+    });
+  }
+  await close();
+}
 
 // ---- B-10 / M-04: 100 万行(開発ビルドでの計測を含む) ----
 {
