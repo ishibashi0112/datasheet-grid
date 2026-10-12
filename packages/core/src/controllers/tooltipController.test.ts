@@ -129,4 +129,27 @@ describe('tooltipController', () => {
     expect(isVisible()).toBe(false);
     controller.dispose();
   });
+
+  // 追加(見直し): overflow マーカーに値があればその文言を出す(合計行の「平均 482.1」)。切れていなければ出さない。
+  it('overflow マーカーの値を文言にし、切れていないときは出さない', () => {
+    const controller = acquireTooltipController();
+    const cell = document.createElement('span');
+    cell.setAttribute('data-ssg-tooltip-overflow', '平均 482.125');
+    cell.textContent = '平均482.125';
+    document.body.appendChild(cell);
+    let scrollWidth = 50;
+    Object.defineProperty(cell, 'scrollWidth', { get: () => scrollWidth, configurable: true });
+    Object.defineProperty(cell, 'clientWidth', { value: 50, configurable: true });
+    cell.dispatchEvent(new PointerEvent('pointerover', { bubbles: true }));
+    vi.advanceTimersByTime(400);
+    expect(isVisible()).toBe(false);
+    cell.dispatchEvent(new PointerEvent('pointerout', { bubbles: true }));
+    scrollWidth = 80;
+    cell.dispatchEvent(new PointerEvent('pointerover', { bubbles: true }));
+    vi.advanceTimersByTime(400);
+    expect(isVisible()).toBe(true);
+    expect(findTooltip()?.textContent).toBe('平均 482.125');
+    cell.remove();
+    controller.dispose();
+  });
 });

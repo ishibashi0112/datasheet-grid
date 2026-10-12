@@ -5,7 +5,9 @@ import { describe, expect, it, vi } from 'vitest';
 import {
   applyFillEditsToRows,
   buildFillEdits,
+  hasFillableSource,
   previewFillValue,
+  resolveFillOptionsChipPosition,
   resolveFillColumnBounds,
   resolveFillDoubleClickTarget,
   resolveFillTarget,
@@ -467,5 +469,47 @@ describe('applyFillEditsToRows', () => {
     expect(next[2]).toEqual({ id: 2, no: 9, name: 'x', qty: null });
     expect(next[0]).toBe(rows[0]);
     expect(applyFillEditsToRows(rows, model, [])).toBe(rows);
+  });
+});
+
+// 追加(見直し): 合成列だけ / ラベル行・グループ行だけの範囲にはハンドルを出さない。
+describe('hasFillableSource', () => {
+  const withSynthetic: GridColumn<Row>[] = [
+    { key: ROW_DRAG_HANDLE_COLUMN_KEY, width: 24 },
+    { key: DETAIL_TOGGLE_COLUMN_KEY, width: 24 },
+    ...columns,
+  ];
+  const labelRow = { key: 'label', label: '見出し' } as unknown as GridLabelRow<Row>;
+  const groupRow = { key: 'g', depth: 0 } as unknown as GridGroupRow;
+  const model = modelOf([undefined, undefined, ...rowsOf(2), undefined], {
+    getLabelRow: (index) => (index === 0 ? labelRow : undefined),
+    getGroupRow: (index) => (index === 1 ? groupRow : undefined),
+  });
+
+  it('合成列だけの範囲は false、データ列を含めば true', () => {
+    expect(hasFillableSource(range(2, 2, 0, 1), model, withSynthetic)).toBe(false);
+    expect(hasFillableSource(range(2, 2, 1, 2), model, withSynthetic)).toBe(true);
+  });
+
+  it('ラベル行 / グループ行だけの範囲は false。データ行や未読み込み行を含めば true', () => {
+    expect(hasFillableSource(range(0, 1, 2, 3), model, withSynthetic)).toBe(false);
+    expect(hasFillableSource(range(1, 2, 2, 3), model, withSynthetic)).toBe(true);
+    // 行 4 はどちらでもない未読み込み行(SSRM)= 読み込まれれば埋められるので出す。
+    expect(hasFillableSource(range(4, 4, 2, 2), model, withSynthetic)).toBe(true);
+  });
+});
+
+// 追加(見直し): 埋めたあとのボタンを、本体の行が見えている下端(合計行の上端)より下へ出さない。
+describe('resolveFillOptionsChipPosition', () => {
+  const corner = { pane: 'center' as const, x: 100, y: 200, paneWidth: 400 };
+
+  it('既定は角の右下。表の下端を超えるときは角の上', () => {
+    expect(resolveFillOptionsChipPosition(corner, 1000)).toEqual({ x: 104, y: 204 });
+    expect(resolveFillOptionsChipPosition(corner, 210)).toEqual({ x: 104, y: 174 });
+  });
+
+  it('見えている下端(visibleBottom)を超えるときも角の上へ', () => {
+    expect(resolveFillOptionsChipPosition(corner, 1000, 230)).toEqual({ x: 104, y: 204 });
+    expect(resolveFillOptionsChipPosition(corner, 1000, 220)).toEqual({ x: 104, y: 174 });
   });
 });

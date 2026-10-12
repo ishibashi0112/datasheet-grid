@@ -20,6 +20,7 @@ import {
   AUTO_SCROLL_ACTIVATION_DISTANCE,
   AUTO_SCROLL_EDGE_THRESHOLD,
   AUTO_SCROLL_STEP,
+  clampClientYAboveFooter,
   computeNextScrollPosition,
   hasPointerLeftActivationRadius,
   resolveAutoScrollAxisDirection,
@@ -37,6 +38,9 @@ export type RowDragArgs = {
   // 行メトリクス(スロット解決 / ガイド線 y の基準)。
   rowMetrics: RowMetrics;
   headerHeight: number;
+  // 追加(合計行 3A): 下端に固定する行(合計行)の高さ。端の自動スクロールの下の帯をその上端へ寄せ、合計行の上の
+  //   ポインタは本体の見えている最後の位置として扱います(合計行の裏の位置へ落とさない)。既定 0(従来どおり)。
+  footerHeight?: number;
   // 物理 → 論理 scrollTop の倍率(scroll-space 仮想化)。通常 1。
   verticalScaleFactor: number;
   // 行 / overlay の transform 層内で差し引く基準オフセット(overlayBaseOffset)。通常 0。
@@ -346,8 +350,14 @@ export const createRowDragController = (): RowDragController => {
     }
 
     // 縦: 中央ペイン基準の物理 y → 論理 content-y(pointerInteractionsController と同じ換算)。
+    //   変更(合計行 3A): 合計行の上のポインタは、本体の見えている最後の位置として扱います。
+    const hitClientY = clampClientYAboveFooter(
+      clientY,
+      r.top + containerEl.clientTop + containerEl.clientHeight,
+      args.footerHeight ?? 0,
+    );
     const centerRect = centerEl.getBoundingClientRect();
-    const physicalY = centerEl.scrollTop + clientY - centerRect.top - headerHeight;
+    const physicalY = centerEl.scrollTop + hitClientY - centerRect.top - headerHeight;
     const d = containerEl.scrollTop * (1 - verticalScaleFactor);
     const logicalY = physicalY - d;
     const slot = resolveRowDropSlot(logicalY, rowMetrics);
@@ -409,7 +419,7 @@ export const createRowDragController = (): RowDragController => {
         const direction = resolveAutoScrollAxisDirection(
           pointer.y,
           contentBox.top,
-          contentBox.bottom,
+          contentBox.bottom - (args?.footerHeight ?? 0),
           AUTO_SCROLL_EDGE_THRESHOLD,
         );
         const nextTop = computeNextScrollPosition(

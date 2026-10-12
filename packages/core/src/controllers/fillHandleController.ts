@@ -104,6 +104,9 @@ export type FillHandleControllerArgs<T> = {
   hitTest: (clientX: number, clientY: number) => CellCoord | null;
   scrollContainerRef: ReadonlyRef<HTMLElement | null>;
   gridRootRef: ReadonlyRef<HTMLElement | null>;
+  // 追加(見直し): 下端に固定する行(合計行)の高さ。端の自動スクロールの下の帯をその上端へ寄せます(既定 0)。
+  //   合計行の上のポインタの扱いは hitTest(pointerInteractionsController)側で揃えています。
+  footerHeight?: number;
   // clientSide の書き込み(履歴付き)と、選び直しの差し替え(履歴を積まない)。
   applyRowsChange?: (nextRows: T[]) => void;
   amendRowsChange?: (nextRows: T[]) => void;
@@ -347,7 +350,12 @@ export const createFillHandleController = <T,>(): FillHandleController<T> => {
     });
     const nextScrollTop = computeNextScrollPosition(
       scrollElement.scrollTop,
-      resolveAutoScrollAxisDirection(active.pointer.y, contentBox.top, contentBox.bottom, AUTO_SCROLL_EDGE_THRESHOLD),
+      resolveAutoScrollAxisDirection(
+        active.pointer.y,
+        contentBox.top,
+        contentBox.bottom - (args.footerHeight ?? 0),
+        AUTO_SCROLL_EDGE_THRESHOLD,
+      ),
       AUTO_SCROLL_STEP,
       scrollElement.scrollHeight - scrollElement.clientHeight,
     );

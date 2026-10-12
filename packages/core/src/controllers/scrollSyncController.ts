@@ -127,8 +127,19 @@ export const createScrollSyncController = (): ScrollSyncController => {
       }
       // 追加(合計行 3A): 合計行の表示 / 高さが変わったら見える高さを測り直します(要素のサイズは変わらないため
       //   ResizeObserver は発火しない)。
-      if ((next.footerHeight ?? 0) !== previousFooterHeight && attachedElement) {
-        next.setViewState({ viewportHeight: bodyViewportHeight(attachedElement) });
+      const footerHeight = next.footerHeight ?? 0;
+      if (footerHeight !== previousFooterHeight && attachedElement) {
+        // 追加(見直し): 末尾までスクロールしていたときに合計行が出た / 高くなったら、末尾に留めます(最後の行を
+        //   合計行の裏に隠さない)。update はコミット後に呼ばれるため、scrollHeight は増えたあとの値です。
+        const el = attachedElement;
+        const grownBy = footerHeight - previousFooterHeight;
+        if (grownBy > 0) {
+          const previousMaxScrollTop = el.scrollHeight - grownBy - el.clientHeight;
+          if (previousMaxScrollTop > 0 && el.scrollTop >= previousMaxScrollTop - 1) {
+            el.scrollTop = el.scrollHeight - el.clientHeight;
+          }
+        }
+        next.setViewState({ viewportHeight: bodyViewportHeight(el) });
       }
     },
     markApiScroll: () => {

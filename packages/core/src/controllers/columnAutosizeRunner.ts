@@ -10,6 +10,7 @@
 import {
   canMeasureAutosize,
   createColumnWidthAccumulator,
+  type AutosizeTotalRowTexts,
 } from '../logic/columnAutosize';
 import { runChunked } from '../logic/chunkedLoop';
 import { createValueStore } from '../logic/valueStore';
@@ -28,6 +29,8 @@ export type ColumnAutosizeRunnerArgs<T> = {
   // 現在の解決済み列幅(flex 解決済み)。
   columnWidths: Record<string, number>;
   dispatch: (action: ReturnType<typeof gridActions.syncColumnWidths>) => void;
+  // 追加(見直し): 合計行の表示(列の key → 文字列と見出し)。幅に収めます。合計行が無ければ省略(従来どおり)。
+  totalRowTexts?: AutosizeTotalRowTexts;
 };
 
 export type ColumnAutosizeRunner<T> = {
@@ -61,7 +64,7 @@ export const createColumnAutosizeRunner = <T,>(): ColumnAutosizeRunner<T> => {
     if (args === null || columns.length === 0 || !canMeasureAutosize()) {
       return;
     }
-    const { rowModel, gridRootRef, columnWidths: currentWidths, dispatch } = args;
+    const { rowModel, gridRootRef, columnWidths: currentWidths, dispatch, totalRowTexts } = args;
     const myGeneration = (runGeneration += 1);
     clearOverlayTimer();
 
@@ -93,7 +96,7 @@ export const createColumnAutosizeRunner = <T,>(): ColumnAutosizeRunner<T> => {
       if (!completed) {
         return;
       }
-      const nextWidths = accumulator.finalize({ gridRoot, currentWidths });
+      const nextWidths = accumulator.finalize({ gridRoot, currentWidths, totalRowTexts });
       if (Object.keys(nextWidths).length > 0) {
         dispatch(gridActions.syncColumnWidths(nextWidths));
       }

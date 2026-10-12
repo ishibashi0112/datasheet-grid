@@ -173,4 +173,30 @@ describe('createScrollSyncController', () => {
     controller.update({ scrollContainerRef: { current: null }, setViewState, onScroll: undefined, footerHeight: 10 });
     expect(setViewState).not.toHaveBeenCalled();
   });
+
+  // 追加(見直し): 末尾までスクロールしていたときに合計行が出たら末尾に留める(最後の行を合計行の裏に隠さない)。
+  it('末尾にいるときに footerHeight が増えたら末尾へ合わせ、途中なら動かさない', () => {
+    const controller = createScrollSyncController();
+    const setViewState = vi.fn();
+    const el = makeElement();
+    let scrollHeight = 1000;
+    Object.defineProperty(el, 'scrollHeight', { get: () => scrollHeight, configurable: true });
+    const ref = { current: el };
+    controller.update({ scrollContainerRef: ref, setViewState, onScroll: undefined });
+    // 末尾(1000 - 300 = 700)にいる。合計行(36)が出て、内容が 36 伸びた。
+    el.scrollTop = 700;
+    scrollHeight = 1036;
+    controller.update({ scrollContainerRef: ref, setViewState, onScroll: undefined, footerHeight: 36 });
+    expect(el.scrollTop).toBe(736);
+    // 外す(縮む)ときは動かさない(ブラウザが範囲内へ詰める)。
+    scrollHeight = 1000;
+    controller.update({ scrollContainerRef: ref, setViewState, onScroll: undefined });
+    expect(el.scrollTop).toBe(736);
+    // 途中にいるときは動かさない。
+    el.scrollTop = 300;
+    scrollHeight = 1036;
+    controller.update({ scrollContainerRef: ref, setViewState, onScroll: undefined, footerHeight: 36 });
+    expect(el.scrollTop).toBe(300);
+    controller.dispose();
+  });
 });

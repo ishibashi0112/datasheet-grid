@@ -152,6 +152,33 @@ const isStructuralRow = <T,>(rowModel: RowModel<T>, viewIndex: number): boolean 
 
 const isFilledCell = (value: unknown): boolean => value !== null && value !== undefined && value !== '';
 
+// 追加(見直し): ハンドルを出せる元の範囲か。合成列(行ドラッグの掴み手 / 展開トグル等)だけ、またはラベル行 /
+//   グループ行だけの範囲は埋める値が無いため出しません(点線は出るのに何も書かれなかった)。
+//   SSRM の未読み込み行はデータ行として扱います(読み込まれれば埋められる)。
+export const hasFillableSource = <T,>(
+  source: FillRange,
+  rowModel: RowModel<T>,
+  columns: readonly GridColumn<T>[],
+): boolean => {
+  let hasDataColumn = false;
+  for (let col = source.startCol; col <= source.endCol; col += 1) {
+    const column = columns[col];
+    if (column !== undefined && !isSyntheticColumnKey(column.key)) {
+      hasDataColumn = true;
+      break;
+    }
+  }
+  if (!hasDataColumn) {
+    return false;
+  }
+  for (let row = source.startRow; row <= source.endRow; row += 1) {
+    if (!isStructuralRow(rowModel, row)) {
+      return true;
+    }
+  }
+  return false;
+};
+
 // ハンドルのダブルクリックで埋める範囲(下へ)。Excel と同じく、左隣(無ければ右隣)のデータ列に値が続くところまで
 //   埋めます。埋める列に値が入っている行の手前で止め、既存の値は上書きしません。ラベル行 / グループ行 /
 //   未読み込み行でも止めます。
@@ -545,16 +572,19 @@ export const FILL_OPTIONS_CHIP_HEIGHT = 22;
 const FILL_OPTIONS_CHIP_GAP = 4;
 
 // ボタンの左上。角の右下へ出し、ペインの右端 / ボディの下端をはみ出すときは角の内側へ寄せます。
+//   変更(見直し): visibleBottom(本体の行が見えている下端。合計行があればその上端)を渡すと、それもはみ出す
+//   ときは角の上へ出します(表の下端の行まで埋めたとき、ボタンが合計行の裏に隠れて押せなかった)。
 export const resolveFillOptionsChipPosition = (
   corner: FillCornerPlacement,
   totalBodyHeight: number,
+  visibleBottom: number = Number.POSITIVE_INFINITY,
 ): { x: number; y: number } => {
   const x =
     corner.x + FILL_OPTIONS_CHIP_GAP + FILL_OPTIONS_CHIP_WIDTH <= corner.paneWidth
       ? corner.x + FILL_OPTIONS_CHIP_GAP
       : Math.max(corner.x - FILL_OPTIONS_CHIP_WIDTH - FILL_OPTIONS_CHIP_GAP, 0);
   const y =
-    corner.y + FILL_OPTIONS_CHIP_GAP + FILL_OPTIONS_CHIP_HEIGHT <= totalBodyHeight
+    corner.y + FILL_OPTIONS_CHIP_GAP + FILL_OPTIONS_CHIP_HEIGHT <= Math.min(totalBodyHeight, visibleBottom)
       ? corner.y + FILL_OPTIONS_CHIP_GAP
       : Math.max(corner.y - FILL_OPTIONS_CHIP_HEIGHT - FILL_OPTIONS_CHIP_GAP, 0);
   return { x, y };

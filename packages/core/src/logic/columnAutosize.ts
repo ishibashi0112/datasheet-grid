@@ -227,6 +227,29 @@ const createMeasuringNode = (text: string): HTMLElement => {
   return node;
 };
 
+// 追加(見直し): 合計行のセル 1 つぶんの計測ノードです。実際の合計行と同じクラス(.ssg-total-cell / .ssg-total-value /
+//   .ssg-total-caption)で組み、太字や見出し(平均 など)の幅も含めて測ります。
+const createTotalRowMeasuringNode = (text: AutosizeTotalRowText): HTMLElement => {
+  const node = createMeasuringNode('');
+  node.className = 'ssg-body-cell ssg-total-cell';
+  const value = document.createElement('span');
+  value.className = 'ssg-total-value';
+  if (text.caption !== undefined && text.caption !== '') {
+    const caption = document.createElement('span');
+    caption.className = 'ssg-total-caption';
+    caption.textContent = text.caption;
+    value.appendChild(caption);
+  }
+  value.appendChild(document.createTextNode(text.text));
+  node.appendChild(value);
+  return node;
+};
+
+// 追加(見直し): 列幅の自動調整で、本体の行に加えて幅に収める合計行の表示(列の key → 文字列と見出し)。
+//   合計行が無ければ渡しません(従来どおり本体の行だけで決まる)。
+export type AutosizeTotalRowText = { text: string; caption?: string };
+export type AutosizeTotalRowTexts = ReadonlyMap<string, AutosizeTotalRowText>;
+
 export type ColumnAutosizeParams<T> = {
   // 計測対象の列です(1 列だけ / 全表示列のどちらも渡せます)。
   columns: GridColumn<T>[];
@@ -259,6 +282,8 @@ export type ColumnWidthAccumulator<T> = {
   finalize: (params: {
     gridRoot: HTMLElement | null;
     currentWidths: Record<string, number>;
+    // 追加(見直し): 合計行の表示も幅に収めます(省略時は従来どおり)。
+    totalRowTexts?: AutosizeTotalRowTexts;
   }) => Record<string, number>;
 };
 
@@ -363,9 +388,11 @@ export function createColumnWidthAccumulator<T>(
   const finalize = ({
     gridRoot,
     currentWidths,
+    totalRowTexts,
   }: {
     gridRoot: HTMLElement | null;
     currentWidths: Record<string, number>;
+    totalRowTexts?: AutosizeTotalRowTexts;
   }): Record<string, number> => {
     const context = getSharedContext();
     if (!context || columns.length === 0) {
@@ -381,7 +408,18 @@ export function createColumnWidthAccumulator<T>(
       // ── DOM 経路: 全列・全候補をノード化(write)してから offsetWidth をまとめて読みます。
       //   write を全件終えてから read するため、強制レイアウトは read の最初の 1 回に集約されます。
       let cellWidthByCol: number[] | null = null;
+      // 追加(見直し): 合計行の表示の幅(列ごと。合計行が無い / その列に表示が無ければ 0)。
+      let totalWidthByCol: number[] | null = null;
       if (container) {
+        const totalNodes: (HTMLElement | null)[] = columns.map((column) => {
+          const totalText = totalRowTexts?.get(column.key);
+          if (isAutosizeExcludedColumn(column) || totalText === undefined || totalText.text === '') {
+            return null;
+          }
+          const node = createTotalRowMeasuringNode(totalText);
+          container.appendChild(node);
+          return node;
+        });
         const nodesByCol: HTMLElement[][] = [];
         for (let ci = 0; ci < columns.length; ci += 1) {
           if (isAutosizeExcludedColumn(columns[ci])) {
@@ -407,6 +445,7 @@ export function createColumnWidthAccumulator<T>(
           nodesByCol.push(nodes);
         }
         // read 相(ここで初回のみレイアウトが走り、以後の offsetWidth は再計算なし)。
+        totalWidthByCol = totalNodes.map((node) => (node ? node.offsetWidth : 0));
         cellWidthByCol = nodesByCol.map((nodes) => {
           let max = 0;
           for (let j = 0; j < nodes.length; j += 1) {
@@ -467,10 +506,21 @@ export function createColumnWidthAccumulator<T>(
               : 0;
         }
 
+        // 追加(見直し): 合計行の表示も収めます(DOM 経路は実寸、フォールバックは canvas 計測 + 補正定数)。
+        let totalRequired = 0;
+        const totalText = totalRowTexts?.get(column.key);
+        if (totalWidthByCol) {
+          totalRequired = totalWidthByCol[ci];
+        } else if (totalText !== undefined && totalText.text !== '') {
+          context.font = cellFont;
+          const label = totalText.caption ? `${totalText.caption} ${totalText.text}` : totalText.text;
+          totalRequired = context.measureText(label).width + TEXT_SAFETY + CELL_HORIZONTAL_FRAME;
+        }
+
         // ── clamp + no-op 判定 ──
         const resolved = Math.ceil(
           clamp(
-            Math.max(headerRequired, cellRequired),
+            Math.max(headerRequired, cellRequired, totalRequired),
             column.minWidth ?? DEFAULT_MIN_WIDTH,
             // 変更(②-S4): 既定上限を撤廃。明示 maxWidth がなければ上限なし(内容にぴったり合わせます)。
             column.maxWidth ?? Number.POSITIVE_INFINITY,

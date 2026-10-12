@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 
 import {
+  clampClientYAboveFooter,
   computeNextScrollPosition,
   hasPointerLeftActivationRadius,
   resolveAutoScrollAxisDirection,
@@ -110,5 +111,18 @@ describe('hasPointerLeftActivationRadius', () => {
     expect(
       hasPointerLeftActivationRadius(origin, { x: 105, y: 105 }, 6),
     ).toBe(true);
+  });
+});
+
+// 追加(合計行 3A): 合計行の上の clientY を本体の見えている最後の位置へ詰める(footerHeight 0 は素通し)。
+describe('clampClientYAboveFooter', () => {
+  it('footerHeight 0 なら clientY をそのまま返す', () => {
+    expect(clampClientYAboveFooter(95, 100, 0)).toBe(95);
+    expect(clampClientYAboveFooter(150, 100, 0)).toBe(150);
+  });
+  it('合計行の上(と下)は合計行の上端の 1px 上へ詰め、それより上はそのまま', () => {
+    expect(clampClientYAboveFooter(95, 100, 30)).toBe(69);
+    expect(clampClientYAboveFooter(150, 100, 30)).toBe(69);
+    expect(clampClientYAboveFooter(50, 100, 30)).toBe(50);
   });
 });

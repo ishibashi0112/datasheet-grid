@@ -235,4 +235,33 @@ describe('pointerInteractionsController', () => {
     controller.handleCellPointerEnter({ row: 1, col: 2 }, pointerEvent());
     expect(setHoveredColumnIndex).toHaveBeenCalledWith(2);
   });
+
+  // 追加(見直し): 合計行(footerHeight)の上のポインタは、本体の見えている最後の行として扱う(裏に隠れた行を選ばない)。
+  it('footerHeight があると、合計行の上の clientY を本体の見えている最後の行に詰める(無ければ従来どおり)', () => {
+    const container = document.createElement('div');
+    Object.defineProperty(container, 'clientHeight', { value: 100, configurable: true });
+    Object.defineProperty(container, 'clientTop', { value: 0, configurable: true });
+    const rect = { top: 0, left: 0, right: 200, bottom: 100, width: 200, height: 100, x: 0, y: 0, toJSON: () => ({}) };
+    vi.spyOn(container, 'getBoundingClientRect').mockReturnValue(rect as DOMRect);
+    const body = container;
+    const controller = createPointerInteractionsController<Row>();
+    controller.update(
+      makeArgs({ scrollContainerRef: { current: container }, bodyScrollRef: { current: body }, filteredRowsLength: 20 }),
+    );
+    // 行の高さ 10。合計行が無ければ clientY 95 は行 9。
+    expect(controller.getCellCoordFromClientPoint(10, 95)?.row).toBe(9);
+    controller.update(
+      makeArgs({
+        scrollContainerRef: { current: container },
+        bodyScrollRef: { current: body },
+        filteredRowsLength: 20,
+        rowMetrics: createUniformRowMetrics(20, 10),
+        footerHeight: 30,
+      }),
+    );
+    // 合計行(下端 30px)の上 = 見えている最後の行(行 6)。合計行より上はそのまま。
+    expect(controller.getCellCoordFromClientPoint(10, 95)?.row).toBe(6);
+    expect(controller.getCellCoordFromClientPoint(10, 45)?.row).toBe(4);
+    controller.dispose();
+  });
 });

@@ -277,6 +277,17 @@ describe('合計行(totalRow)', () => {
     expect(totalText(container, 'qty')).toBe('35');
   });
 
+  // 追加(見直し): 値が列幅で切れたらツールチップで全体を読めるように、値の span に overflow マーカーを付ける
+  //   (右寄せ列は M-01 の CSS で span 側が切れるため、セルではなく span に付ける)。空の欄には付けない。
+  it('値の span に overflow ツールチップの文言(種類 + 値)を付け、空の欄には付けない', () => {
+    const { container } = setup({ totalRow: true });
+    const qtyValue = totalCell(container, 'qty')?.querySelector('.ssg-total-value');
+    expect(qtyValue?.getAttribute('data-ssg-tooltip-overflow')).toBe('35');
+    const priceValue = totalCell(container, 'price')?.querySelector('.ssg-total-value');
+    expect(priceValue?.getAttribute('data-ssg-tooltip-overflow')).toBe('平均 2.625');
+    expect(totalCell(container, 'region')?.querySelector('[data-ssg-tooltip-overflow]')).toBeNull();
+  });
+
   it('エクスポート: includeTotalRow で末尾に合計行(生値)を付ける', () => {
     const { ref } = setup({ totalRow: true });
     const csv = ref.current?.exportCsv({ includeTotalRow: true }) ?? '';

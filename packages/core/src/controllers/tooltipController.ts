@@ -97,11 +97,15 @@ function showTooltipFor(target: Element) {
     return;
   }
   // 静的 data-ssg-tooltip があればその値を、無ければ overflow マーカーとみなし textContent を使います。
+  //   追加(見直し): overflow マーカーに値があれば(合計行の「平均 482.1」のように表示を組み立てたセル)その値を使います。
   const staticText = target.getAttribute(TOOLTIP_ATTRIBUTE);
+  const overflowText = target.getAttribute(TOOLTIP_OVERFLOW_ATTRIBUTE);
   const text =
     staticText !== null && staticText !== ''
       ? staticText
-      : (target.textContent ?? '').trim();
+      : overflowText !== null && overflowText !== ''
+        ? overflowText
+        : (target.textContent ?? '').trim();
   if (text === '') {
     return;
   }

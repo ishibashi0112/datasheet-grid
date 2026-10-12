@@ -59,6 +59,12 @@ export const resolveScrollContentBox = ({
   };
 };
 
+// 追加(合計行 3A): 下端に固定した行(合計行)の高さ。ドラッグ中のヒットテストでは、ポインタが合計行の上に
+//   あっても本体の行が見えている最後の位置(合計行の上端の 1px 上)として扱います(合計行の裏に隠れた行を
+//   選ばない / そこへ落とさない)。footerHeight が 0 なら clientY をそのまま返します(従来どおり)。
+export const clampClientYAboveFooter = (clientY: number, contentBottom: number, footerHeight: number): number =>
+  footerHeight > 0 ? Math.min(clientY, contentBottom - footerHeight - 1) : clientY;
+
 // ポインタの 1 軸座標が端帯(edgeThreshold)へ入っているかを判定し、スクロール方向を返します。
 //   start / end はコンテンツ領域の始端/終端(横なら left/right、縦なら top/bottom)です。
 //   境界ちょうど(start + threshold / end - threshold)は帯外(0)です。

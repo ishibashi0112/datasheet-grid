@@ -250,8 +250,11 @@ import GridTotalRow from './view/GridTotalRow';
 import {
   EMPTY_TOTAL_ROW_CELLS,
   TOTAL_ROW_DEFAULT_LABEL,
+  formatTotalRowCellText,
+  resolveTotalRowCaption,
   resolveTotalRowLabelColumnKey,
 } from '@ishibashi0112/spreadsheet-grid-core/logic/totalRow';
+import type { AutosizeTotalRowText } from '@ishibashi0112/spreadsheet-grid-core/logic/columnAutosize';
 import useColumnMenuController from './hooks/useColumnMenuController';
 import ColumnMenuPopover from './view/ColumnMenuPopover';
 // 変更(UP-1): フィルター管理 / 列の表示 / 並び替えの独立 3 パネルを統合ツールパネル
@@ -292,6 +295,7 @@ import {
 } from './view/FillHandleLayer';
 import { useFillHandleController } from './hooks/useFillHandleController';
 import {
+  hasFillableSource,
   resolveFillCornerPlacement,
   resolveFillOptionsChipPosition,
   resolveFillSource,
@@ -1447,11 +1451,48 @@ export function SpreadsheetGrid<T extends object>({
   // 追加(DS-4 ①-(2)): autosize 計測を「単一経路の時間分割(async)」で実行するランナーです。
   //   overlay は遅延表示で、重い時だけ Pending を出し、メインスレッドを塞ぎません
   //   (小規模は overlay 発火前に完了し、体感は従来の同期計測と同一です)。
+  // ── 追加(合計行 3A): 合計行のセル値(フィルター後のデータ行 = order から集計。serverSide は values だけ)と、
+  //   見出しを出す列。内容が同じなら参照不変(合計行の memo を壊さない)──
+  const totalRowCells = useMemo(
+    () =>
+      totalRowEnabled
+        ? engine.resolveTotalRowCells({
+            rows,
+            order: isServerSide ? null : order,
+            columns: orderedColumns,
+            values: totalRowValues,
+          })
+        : EMPTY_TOTAL_ROW_CELLS,
+    [engine, totalRowEnabled, rows, isServerSide, order, orderedColumns, totalRowValues],
+  );
+  const totalRowLabelColumnKey = useMemo(
+    () => resolveTotalRowLabelColumnKey(orderedColumns, totalRowCells),
+    [orderedColumns, totalRowCells],
+  );
+  // 追加(見直し): 列幅の自動調整で合計行の表示(値と見出し / 見出しを出す列はその文言)も幅に収めます
+  //   (本体の行だけで決めると合計が切れていた)。合計行が無ければ undefined(従来どおり)。
+  const totalRowAutosizeTexts = useMemo(() => {
+    if (!totalRowEnabled) {
+      return undefined;
+    }
+    const texts = new Map<string, AutosizeTotalRowText>();
+    for (const column of orderedColumns) {
+      const cell = totalRowCells.get(column.key);
+      if (cell) {
+        const text = formatTotalRowCellText(column, cell);
+        texts.set(column.key, { text, caption: text !== '' ? resolveTotalRowCaption(cell.kind) : undefined });
+      } else if (column.key === totalRowLabelColumnKey) {
+        texts.set(column.key, { text: totalRowLabel });
+      }
+    }
+    return texts;
+  }, [totalRowEnabled, orderedColumns, totalRowCells, totalRowLabelColumnKey, totalRowLabel]);
   const { isAutosizing, runAutosize } = useColumnAutosizeRunner<T>({
     rowModel,
     gridRootRef,
     columnWidths: effectiveColumnWidths,
     dispatch,
+    totalRowTexts: totalRowAutosizeTexts,
   });
 
   // ── autoSize on data(データ投入時の列幅自動フィット)────────────
@@ -2171,6 +2212,8 @@ export function SpreadsheetGrid<T extends object>({
     centerLeadingWidth,
     rightLeadingWidth,
     headerHeight,
+    // 追加(合計行 3A): 端の自動スクロールの下の帯 / ヒットテストを合計行の上端までにします(無効時 0)。
+    footerHeight,
     // 変更(auto-height シーム): ヒットテストの行解決は rowMetrics 経由(uniform で従来式と一致)。
     rowMetrics,
     // 追加(scroll-space 仮想化): ヒットテスト clientY→row の物理→論理換算に使います。
@@ -2395,6 +2438,7 @@ export function SpreadsheetGrid<T extends object>({
     hitTest: getCellCoordFromClientPoint,
     scrollContainerRef,
     gridRootRef,
+    footerHeight,
     applyRowsChange: handleRowsChange,
     amendRowsChange,
     applyServerSideCellEdits,
@@ -2405,7 +2449,8 @@ export function SpreadsheetGrid<T extends object>({
       return null;
     }
     const source = resolveFillSource(uiState.selection, uiState.activeCell, viewRowCount, orderedColumns.length);
-    if (!source) {
+    // 変更(見直し): 合成列だけ / ラベル行・グループ行だけの範囲には出しません(埋める値が無い)。
+    if (!source || !hasFillableSource(source, rowModel, orderedColumns)) {
       return null;
     }
     return resolveFillCornerPlacement(source, paneLayout, rowMetrics, windowFirstRow, windowLastRow);
@@ -2416,7 +2461,8 @@ export function SpreadsheetGrid<T extends object>({
     uiState.selection,
     uiState.activeCell,
     viewRowCount,
-    orderedColumns.length,
+    orderedColumns,
+    rowModel,
     paneLayout,
     rowMetrics,
     windowFirstRow,
@@ -2475,10 +2521,27 @@ export function SpreadsheetGrid<T extends object>({
       return null;
     }
     const corner = resolveFillCornerPlacement(fillSnapshot.range, paneLayout, rowMetrics, windowFirstRow, windowLastRow);
+    // 変更(見直し): 本体の行が見えている下端(合計行があればその上端)を超えるなら角の上へ出します。座標は
+    //   overlay と同じ(行の座標 − baseOffset + 見出しの高さ = スクロールコンテナ内の位置)。未計測なら使いません。
+    const visibleBottom =
+      viewportHeight > 0 ? scrollTop + viewportHeight - headerHeight + overlayBaseOffset : Number.POSITIVE_INFINITY;
     return corner
-      ? { pane: corner.pane, position: resolveFillOptionsChipPosition(corner, rowMetrics.totalBodyHeight) }
+      ? {
+          pane: corner.pane,
+          position: resolveFillOptionsChipPosition(corner, rowMetrics.totalBodyHeight, visibleBottom),
+        }
       : null;
-  }, [fillSnapshot, paneLayout, rowMetrics, windowFirstRow, windowLastRow]);
+  }, [
+    fillSnapshot,
+    paneLayout,
+    rowMetrics,
+    windowFirstRow,
+    windowLastRow,
+    viewportHeight,
+    scrollTop,
+    headerHeight,
+    overlayBaseOffset,
+  ]);
   const handleFillHandlePointerDown = useCallback(
     (event: PointerEvent<HTMLDivElement>) => fillController.handlePointerDown(event),
     [fillController],
@@ -2635,24 +2698,6 @@ export function SpreadsheetGrid<T extends object>({
   const conditionalFormatStats = useMemo(
     () => engine.resolveConditionalFormatStats(rowModel, orderedColumns),
     [engine, rowModel, orderedColumns],
-  );
-  // ── 追加(合計行 3A): 合計行のセル値(フィルター後のデータ行 = order から集計。serverSide は values だけ)と、
-  //   見出しを出す列。内容が同じなら参照不変(合計行の memo を壊さない)──
-  const totalRowCells = useMemo(
-    () =>
-      totalRowEnabled
-        ? engine.resolveTotalRowCells({
-            rows,
-            order: isServerSide ? null : order,
-            columns: orderedColumns,
-            values: totalRowValues,
-          })
-        : EMPTY_TOTAL_ROW_CELLS,
-    [engine, totalRowEnabled, rows, isServerSide, order, orderedColumns, totalRowValues],
-  );
-  const totalRowLabelColumnKey = useMemo(
-    () => resolveTotalRowLabelColumnKey(orderedColumns, totalRowCells),
-    [orderedColumns, totalRowCells],
   );
   const totalRowExport = useMemo(
     () => (totalRowEnabled ? { cells: totalRowCells, label: totalRowLabel } : undefined),
@@ -3435,6 +3480,7 @@ export function SpreadsheetGrid<T extends object>({
     enabled: rowDragOperable,
     rowMetrics,
     headerHeight,
+    footerHeight,
     verticalScaleFactor,
     windowBaseOffsetPx: overlayBaseOffset,
     scrollContainerRef,

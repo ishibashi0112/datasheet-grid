@@ -111,7 +111,11 @@ function GridTotalRowInner<T>({
             content = renderCell ? (
               renderCell({ column, value: cell.value, kind: cell.kind, text, caption })
             ) : (
-              <span className="ssg-total-value">
+              // 追加(見直し): 値が列幅に収まらず切れたときは、ツールチップで全文を出します(切れていなければ出ない)。
+              <span
+                className="ssg-total-value"
+                data-ssg-tooltip-overflow={text !== '' ? (caption !== undefined ? `${caption} ${text}` : text) : undefined}
+              >
                 {caption !== undefined && text !== '' && <span className="ssg-total-caption">{caption}</span>}
                 {text}
               </span>

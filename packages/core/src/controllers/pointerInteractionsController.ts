@@ -22,6 +22,7 @@ import {
   AUTO_SCROLL_ACTIVATION_DISTANCE,
   AUTO_SCROLL_EDGE_THRESHOLD,
   AUTO_SCROLL_STEP,
+  clampClientYAboveFooter,
   computeNextScrollPosition,
   hasPointerLeftActivationRadius,
   resolveAutoScrollAxisDirection,
@@ -76,6 +77,9 @@ export type PointerInteractionsArgs<T> = {
   centerLeadingWidth: number;
   rightLeadingWidth: number;
   headerHeight: number;
+  // 追加(合計行 3A): 下端に固定する行(合計行)の高さ。端の自動スクロールの下の帯をその上端へ寄せ、ヒットテストは
+  //   合計行の上を本体の見えている最後の行として扱います。既定 0(従来どおり)。
+  footerHeight?: number;
   rowMetrics: RowMetrics;
   verticalScaleFactor: number;
   setHoveredRowIndex: (value: number | null) => void;
@@ -123,6 +127,21 @@ export const createPointerInteractionsController = <T,>(): PointerInteractionsCo
 
   const dragState = () => args?.uiState.dragState ?? null;
 
+  // 追加(合計行 3A): 合計行の上のポインタは、本体の見えている最後の位置として扱います(合計行が無ければそのまま)。
+  const clampFooterClientY = (clientY: number): number => {
+    const footerHeight = args?.footerHeight ?? 0;
+    const scrollElement = args?.scrollContainerRef.current ?? null;
+    if (footerHeight <= 0 || !scrollElement) {
+      return clientY;
+    }
+    const rect = scrollElement.getBoundingClientRect();
+    return clampClientYAboveFooter(
+      clientY,
+      rect.top + scrollElement.clientTop + scrollElement.clientHeight,
+      footerHeight,
+    );
+  };
+
   // クライアント座標 → セル座標(3 ペインのヒットテスト。行は縦ジオメトリへ委譲)。
   const getCellCoordFromClientPoint = (clientX: number, clientY: number): CellCoord | null => {
     if (args === null) {
@@ -148,7 +167,7 @@ export const createPointerInteractionsController = <T,>(): PointerInteractionsCo
       return null;
     }
     const centerRect = centerEl.getBoundingClientRect();
-    const y = centerEl.scrollTop + clientY - centerRect.top - headerHeight;
+    const y = centerEl.scrollTop + clampFooterClientY(clientY) - centerRect.top - headerHeight;
     const row = clientYToRowIndex(
       y,
       scrollContainerRef.current?.scrollTop ?? 0,
@@ -343,9 +362,15 @@ export const createPointerInteractionsController = <T,>(): PointerInteractionsCo
     const current = dragState();
     const isColumnSelection = current?.type === 'selection' && current.selectionKind === 'col';
     const isRowSelection = current?.type === 'selection' && current.selectionKind === 'row';
+    // 変更(合計行 3A): 下の帯は合計行の上端から(既定 footerHeight 0 = 従来どおり)。
     const verticalDirection = isColumnSelection
       ? 0
-      : resolveAutoScrollAxisDirection(pointer.y, contentBox.top, contentBox.bottom, AUTO_SCROLL_EDGE_THRESHOLD);
+      : resolveAutoScrollAxisDirection(
+          pointer.y,
+          contentBox.top,
+          contentBox.bottom - (args.footerHeight ?? 0),
+          AUTO_SCROLL_EDGE_THRESHOLD,
+        );
     const horizontalDirection = isRowSelection
       ? 0
       : resolveAutoScrollAxisDirection(pointer.x, contentBox.left, contentBox.right, AUTO_SCROLL_EDGE_THRESHOLD);
@@ -416,7 +441,7 @@ export const createPointerInteractionsController = <T,>(): PointerInteractionsCo
       const verticalDirection = resolveAutoScrollAxisDirection(
         pointer.y,
         contentBox.top,
-        contentBox.bottom,
+        contentBox.bottom - (args.footerHeight ?? 0),
         AUTO_SCROLL_EDGE_THRESHOLD,
       );
       const nextScrollTop = computeNextScrollPosition(

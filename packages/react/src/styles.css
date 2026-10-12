@@ -634,6 +634,13 @@
     overflow: hidden;
   }
   /* 合計以外の集計(平均 / 最小 / 最大 / 個数)の種類。値の前に小さく出します。 */
+  /* 追加(見直し): 値が列幅に収まらないときは末尾を省略記号で切ります(寄せに関わらず。全文はツールチップ)。 */
+  .ssg-total-value {
+    min-width: 0;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
   .ssg-total-caption {
     margin-right: 6px;
     font-size: 0.85em;

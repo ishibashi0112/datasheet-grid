@@ -237,4 +237,28 @@ describe('rowDragController', () => {
       vi.useRealTimers();
     }
   });
+
+  // 追加(見直し): 合計行(footerHeight)の上で離しても、合計行の裏に隠れた位置へは落とさない。
+  it('footerHeight があると、合計行の上のポインタは本体の見えている最後の位置として扱う', () => {
+    const controller = createRowDragController();
+    const { args, commitRowMove } = makeArgs();
+    controller.update({ ...args, footerHeight: 30 });
+    controller.onRowDragHandlePointerDown(1, handleEvent());
+    // y=95 は合計行(70..100)の上 → y=69(行 6 の後半)= 行 6 の下(y=70)にガイド線。
+    dispatchPointer('pointermove', 1, 20, 95);
+    expect(args.centerIndicatorRef.current?.style.top).toBe('70px');
+    dispatchPointer('pointerup', 1, 20, 95);
+    expect(commitRowMove).toHaveBeenCalledWith(1, 6);
+    controller.dispose();
+
+    // 合計行が無ければ従来どおり(行 9 の下へ)。
+    const plain = createRowDragController();
+    const second = makeArgs();
+    plain.update(second.args);
+    plain.onRowDragHandlePointerDown(1, handleEvent());
+    dispatchPointer('pointermove', 1, 20, 95);
+    dispatchPointer('pointerup', 1, 20, 95);
+    expect(second.commitRowMove).toHaveBeenCalledWith(1, 9);
+    plain.dispose();
+  });
 });
