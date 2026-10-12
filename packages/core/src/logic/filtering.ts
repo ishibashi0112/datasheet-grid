@@ -237,7 +237,7 @@ export const toDateSetKey = (cellValue: unknown): string => {
 
 // 追加(filter-ext D): 相対プリセットを絶対範囲へ解決します(now 基準・両端含む)。
 //   合意済み仕様: プリセットは相対のまま保存し、フィルター評価のたびにここで解決します
-//   (翌日開くと範囲が追従する)。past30days は「今日を含む過去 30 日間」です。
+//   (翌日開くと範囲が追従する。開いたまま日付が変わったときも追従する = 監査 L-15)。past30days は「今日を含む過去 30 日間」です。
 export const resolveDateFilterPreset = (
   preset: DateFilterPreset,
   now: Date,
@@ -342,6 +342,17 @@ export const matchesParsedDateFilter = (
       return key === resolved.value;
   }
 };
+
+// 追加(監査 L-15): 列フィルターに相対日付プリセット(今日 / 今月 / 過去 30 日 / 列定義のカスタムプリセット)が
+//   含まれるか。含まれるときだけ、日付が変わったら行の絞り込みをやり直します(serverSide は取り直し)。
+//   プリセットは保存時は相対のまま(評価時に now 基準で解決)のため、日付をまたいで開きっぱなしだと、他の入力が
+//   変わるまで前日の範囲が残っていました。
+export const columnFiltersUseRelativeDate = (
+  columnFilters: Readonly<Record<string, ColumnFilterValue>>,
+): boolean =>
+  Object.values(columnFilters).some(
+    (value) => value?.kind === 'dateSet' && value.condition?.mode === 'preset',
+  );
 
 // 追加(filter-ext B): B-2 の Float64 key を構築すべき列フィルター値か(comparison / range を
 //   持つ number 系のみ)。SpreadsheetGrid の signature 計算が使います。従来は kind:'number' の
@@ -892,6 +903,8 @@ export const filterOrderByColumns = <T,>(
   numericKeys?: ReadonlyMap<string, Float64Array>,
   // 追加(filter-ext D): 相対日付プリセットの解決基準時刻です(既定 = 現在。テストで固定します)。
   //   フィルター再計算のたびに解決されるため、日付が変わった後の再計算で範囲が追従します。
+  //   変更(監査 L-15): 日付が変わったときの再計算は、行パイプライン(engine/rowPipeline の relativeDateKey)が
+  //   controllers/dateRolloverStore の日付キーを memo 入力に足して起こします。
   now?: Date,
 ): RowOrder => {
   const predicates: CompiledColumnFilterPredicate<T>[] = [];

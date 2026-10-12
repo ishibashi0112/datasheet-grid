@@ -13,7 +13,7 @@ vp install
 pnpm run audit:dev
 
 # 3. 別ターミナルでシナリオを実行(PASS / FAIL を標準出力に出す)
-pnpm run audit:test            # 基本 + 1M 行 + SSRM + ライフサイクル + 機能群 + 所見追試 + 集計 + 合計行 + フィルハンドル
+pnpm run audit:test            # 基本 + 1M 行 + SSRM + ライフサイクル + 機能群 + 所見追試 + 集計 + 合計行 + フィルハンドル + 見送り分
 node audit/harness/t-basic.mjs # 個別に 1 本だけ
 node audit/harness/perf-big.mjs            # 1M 行の計測(dev ビルド)
 HARNESS_BASE=http://127.0.0.1:5178/ node audit/harness/perf-big.mjs  # 本番ビルド(vp build → vp preview --port 5178)に対して
@@ -25,6 +25,7 @@ HARNESS_BASE=http://127.0.0.1:5178/ node audit/harness/perf-big.mjs  # 本番ビ
 - `t-aggregates.mjs` は選択範囲の集計(下部バー)の値・表示・100 万行の時間分割・SSRM の部分集計。
 - `t-total.mjs` は合計行(`totalRow`)の値・下端固定・最終行が合計行に隠れないこと(スクロール / 矢印キー / `scrollToRow` / `scrollToBottom`)・横スクロールと固定列の揃い・列ドラッグ(live)・行が少ないとき・ダークテーマ・100 万行・auto-height / グルーピング / ラベル行 / SSRM との併用。
 - `t-fill.mjs` はフィルハンドル(`fillHandle`)のハンドルの位置・ドラッグ(点線 / 値のツールチップ / 自動スクロール)・連続データ / コピー・`Ctrl` で入れ替え・`Escape`・上 / 左へ・固定ペインをまたぐ・`validate` の reject / 編集不可を飛ばす・埋めたあとのボタンとメニュー(マウス / キーボード)・元に戻す / やり直し・ダブルクリック・出さないとき・ダークテーマ・グルーピング / ラベル行 / SSRM / 100 万行。
+- `t-leftovers.mjs` は §11 で見送り、2026-10-12 に対応した所見(`docs/audits/2026-10-04/README.md` §12)の確認: B-09 flex の幅が整数 px で横スクロールバーが出ない / L-15 相対日付プリセットが深夜 0 時・スリープ明けの focus で翌日へ追従し、プリセットが無ければ何もしない・SSRM は取り直す(`open(…, { beforeGoto: (p) => p.clock.install(…) })` で Playwright の時計を差し込む)/ B-10 100 万行のソート中の編集で並びが正しい(ソート列以外 / ソート列 / 行のその場書き換え)/ M-04 開発ビルドでも 100 万行のソートが数十秒かからない。
 - `t-verify.mjs` は監査所見(RD-1 / RD-2 / C-1 / L-01 / C-3 / B-01 / B-02 / B-03 / V-02 …)の再現スクリプト。修正後は FAIL → PASS に変わることを確認する回帰テストとして使う。
 
 ## 出力の読み方
@@ -35,4 +36,4 @@ HARNESS_BASE=http://127.0.0.1:5178/ node audit/harness/perf-big.mjs  # 本番ビ
 ## 注意
 
 - テストは `waitIdle` の固定待ち時間を含むため、極端に遅いマシンではタイミング起因の FAIL が出ることがある(再実行で安定するものは所見ではない)。
-- 1M 行シナリオの dev ビルド計測は React の開発ビルド固有の遅さ(所見 M-04)を含む。性能判断は本番ビルド(`HARNESS_BASE` で preview を指す)で行うこと。
+- 1M 行シナリオの dev ビルド計測は React の開発ビルド固有の遅さを含む(所見 M-04 の props 差分は 2026-10-12 に解消したが、開発ビルドは本番より遅い)。性能判断は本番ビルド(`HARNESS_BASE` で preview を指す)で行うこと。

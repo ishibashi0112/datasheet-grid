@@ -12,6 +12,7 @@ import {
   applyNumberFilter,
   buildNumberColumnFilterValue,
   coerceNumberFilterCellValue,
+  columnFiltersUseRelativeDate,
   columnFilterUsesNumericKey,
   columnFilterValueToDraftText,
   createSourceOrder,
@@ -1094,5 +1095,30 @@ describe('number filter descriptor helpers', () => {
     const textValue: ColumnFilterValue = { kind: 'text', value: 'x' };
     expect(isSetColumnFilterValue(textValue)).toBe(false);
     expect(isNumberColumnFilterValue(textValue)).toBe(false);
+  });
+});
+
+describe('columnFiltersUseRelativeDate(監査 L-15)', () => {
+  it('dateSet の条件が相対プリセット(ビルトイン / カスタム)のときだけ true', () => {
+    expect(columnFiltersUseRelativeDate({})).toBe(false);
+    expect(
+      columnFiltersUseRelativeDate({
+        d: { kind: 'dateSet', condition: { mode: 'preset', preset: 'today' }, set: null },
+      }),
+    ).toBe(true);
+    expect(
+      columnFiltersUseRelativeDate({
+        x: { kind: 'text', value: 'a' },
+        d: { kind: 'dateSet', condition: { mode: 'preset', preset: 'fiscalYear' }, set: null },
+      }),
+    ).toBe(true);
+    // 絶対日付の条件 / 選択だけ / 旧 date(部分一致)は日付が変わっても結果が変わらない。
+    expect(
+      columnFiltersUseRelativeDate({
+        d: { kind: 'dateSet', condition: { mode: 'equals', value: '2026-10-12' }, set: null },
+        e: { kind: 'dateSet', condition: null, set: { mode: 'include', values: ['2026-10-12'] } },
+        f: { kind: 'date', value: '2026-10' },
+      }),
+    ).toBe(false);
   });
 });

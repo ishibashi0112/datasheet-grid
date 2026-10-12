@@ -95,6 +95,7 @@ description: セル / ヘッダー / トップ・ボトムバー / エディタ 
 
 - `derivedSummary` には行/列/フィルター/ソートの summary 文字列、選択セルの件数などが入っています(`SpreadsheetGridDerivedSummary`)。
 - 2 セル以上を選んでいるときは **`selectionAggregates`** に選択範囲の集計(平均 / データの個数 / 合計 / 最小 / 最大)が入っています(`GridSelectionAggregates`)。既定ボトムバーはこのうち平均 / データの個数 / 合計を右側(Active / Selection の隣の空き)に出します(`showSelectionAggregates={false}` で非表示。詳細は [API リファレンス](/docs/api/props#選択範囲の集計showselectionaggregates))。
+- `ctx` や `rows` / `filteredRows` を子コンポーネントの props にそのまま渡す(`<MyBar ctx={ctx} />` / `<MyBar rows={ctx.filteredRows} />`)のは避け、使う値だけを渡してください(件数なら `ctx.filteredRows.length` や `derivedSummary`)。React 19.2 以降の**開発ビルド**は props の差分を取るために大きな配列を走査するため、100 万行規模ではソート 1 回に数十秒かかることがあります(本番ビルドには影響しません)。上の例のようにバーの中で直接 `ctx` を読む分には問題ありません。
 - **丸ごと差し替えずに調整したい**場合は表示制御 props を使います: `showTopBar` / `showBottomBar`(マスタースイッチ)、既定バーの部品単位では `showTopBarSummary` / `showTopBarFilter` / `showFilterChipBar` など。一覧は [API リファレンス](/docs/api/props#バーの表示制御top--bottom) を参照してください。
 
 ## カスタムエディタ(`type: 'custom'`)

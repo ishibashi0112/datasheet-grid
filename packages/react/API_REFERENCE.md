@@ -524,7 +524,7 @@ WAI-ARIA の grid パターンに沿って、表・行・セルに役割と状�
 | `width` | `number` | (required) | 列幅(px)。 |
 | `minWidth` | `number` | — | リサイズ時の下限幅(未指定時の手動リサイズの下限は 60px。`0` を指定すると 0 まで縮められる)。flex 配分時の下限クランプにも使用(flex 列で未指定なら内部既定 50px)。 |
 | `maxWidth` | `number` | — | 上限幅。**未指定なら上限なし**(autoSize は内容にぴったり合わせ、手動リサイズも自由に広げられます。既定の上限は設けません)。指定すると autoSize / 手動リサイズ / flex 配分の上限クランプに使われます。 |
-| `flex` | `number` | — | center 列(非 pinned)の伸縮比。余り幅(コンテナ幅 − 行ヘッダー − pinned 合計 − `width` 固定列の合計)を flex 比で配分し `minWidth`/`maxWidth` でクランプ。コンテナ追従でリアクティブに伸縮。手動リサイズで固定 px へ変化(その列の `flex` / `pinned` / `width` 指定が変わるか列のリセットまで固定 → 以後 flex 復帰)。pinned 列では無視。詳細は下記「flex と autoSize」節。 |
+| `flex` | `number` | — | center 列(非 pinned)の伸縮比。余り幅(コンテナ幅 − 行ヘッダー − pinned 合計 − `width` 固定列の合計)を flex 比で配分し `minWidth`/`maxWidth` でクランプ。配分した幅は整数 px(端数は切り捨てて次の列へ回すため、合計が利用可能幅をはみ出さない)。コンテナ追従でリアクティブに伸縮。手動リサイズで固定 px へ変化(その列の `flex` / `pinned` / `width` 指定が変わるか列のリセットまで固定 → 以後 flex 復帰)。pinned 列では無視。詳細は下記「flex と autoSize」節。 |
 | `resizable` | `boolean` | グリッドの `enableColumnResize` を継承 | この列の手動リサイズ可否。`false` でヘッダーのリサイズハンドルを非表示。リサイズハンドルの**ダブルクリック**でその列を内容幅へ autoSize(`false` 時はハンドルが無いため不可。列メニューからの autoSize は引き続き可能)。 |
 | `suppressAutoSize` | `boolean` | `false` | `true` で autoSize の対象外(列メニュー / 境界ダブルクリック / すべての列の自動調整すべてでスキップ)。consumer 指定の `width` を維持(固定幅優先)。テキストで測れないカスタムUI列や固定で見せたい列向けの per-column opt-in。 |
 | `estimateCellWidth` | `(row, column) => number` | — | autoSize の幅見積もり。指定列は「セル内容の content 幅(px・セルの padding/border を除く)」をこの関数から得て、**全行の最大 + セル枠**で確定します(テキスト/候補/実 DOM 計測を使わず、React mount もしません)。テキスト長が実描画幅と相関しない renderCell カスタムUI列(横並びバッジ等)向けの opt-in。返す値は `renderCell` の実描画幅と一致させること。 |
@@ -593,7 +593,7 @@ WAI-ARIA の grid パターンに沿って、表・行・セルに役割と状�
 }
 ```
 
-- **意味論はビルトインと同じ「相対保存」**: フィルター値には `{ mode: 'preset', preset: id }` だけが保存され、評価(フィルター再計算)のたびに `resolve(now)` で絶対範囲へ解決されます。`getState()` の状態を翌日復元すると範囲が追従します。
+- **意味論はビルトインと同じ「相対保存」**: フィルター値には `{ mode: 'preset', preset: id }` だけが保存され、評価(フィルター再計算)のたびに `resolve(now)` で絶対範囲へ解決されます。`getState()` の状態を翌日復元すると範囲が追従し、**グリッドを開いたまま日付が変わったときも自動で解決し直します**(相対プリセットが掛かっている間だけ深夜 0 時を見張り、スリープ明け等でタイマーが遅れたときはタブが前面に戻った時点で確かめ直す。serverSide はブロックを取り直す)。
 - `resolve` の返り値は `{ from?, to? }`(両端含む)。**片側のみなら 以降 / 以前**として、`from > to` は自動で入れ替えて評価されます。両方省略は「条件なし」です。
 - **列定義から消えた ID の保存値は「条件なし」として評価**されます(全行非表示になる事故を避ける安全側)。要約表示は 構成ラベル → ビルトイン既定ラベル → 生 ID の順でフォールバックします。
 - **serverSide**: カスタム ID も `{ mode: 'preset', preset: id }` のまま dataSource へ渡ります。解釈(id → WHERE 句)はサーバ側の責務です(「サーバーサイド行モデル」節参照)。
@@ -873,7 +873,7 @@ const columns: GridColumn<Row>[] = [
 | 適用範囲 | center 列(非 pinned)のみ | 任意の列 |
 | 典型用途 | テーブルを横いっぱいに使う / 余白を特定列に吸わせる | 中身が切れないようにする |
 
-- **flex** — `flex` を持つ center 列が「利用可能幅(コンテナ幅 − 行ヘッダー − pinned 合計 − `width` 固定列の合計)」を `flex` 比で分け合い、`minWidth`/`maxWidth` でクランプされます。固定列合計が利用可能幅を超えると flex 列は最小幅(`minWidth`、未指定時は内部既定 50px)まで潰れ、超過分は横スクロールになります。pinned 列では無視されます。
+- **flex** — `flex` を持つ center 列が「利用可能幅(コンテナ幅 − 行ヘッダー − pinned 合計 − `width` 固定列の合計)」を `flex` 比で分け合い、`minWidth`/`maxWidth` でクランプされます。配分した幅は整数 px に揃えます(端数は切り捨てて次の列へ回すため、各列は比どおりの幅との差が 1px 未満で、合計が利用可能幅をはみ出しません。端数による 1px の横スクロールバーを防ぎます)。固定列合計が利用可能幅を超えると flex 列は最小幅(`minWidth`、未指定時は内部既定 50px)まで潰れ、超過分は横スクロールになります。pinned 列では無視されます。
 - **autoSize** — セルの中身に合わせて固定 px を一度だけ算出します(コンテナ幅は見ません)。算出時点の内容で幅が確定し、その後コンテナや内容が変わっても自動では追従しません。起動は列メニューのほか、ヘッダー境界(リサイズハンドル)の**ダブルクリック**でもその列を内容幅へ合わせられます(リサイズ可能な列のみ。AG Grid の境界ダブルクリック相当)。\
   計測は 2 段方式です。**Phase 1** で全表示行を canvas で概算して列ごとの最長候補を絞り、**Phase 2** で候補だけを grid root 配下の隠しセルで**実 DOM 実測**します。これにより**全行を見つつ**(画面外の最長値も反映)、**`valueFormatter` の整形結果・letter-spacing・padding まで実描画どおりに反映**され、はみ出しません。`suppressAutoSize: true` の列は計測対象から外れ `width` を維持します。\
   renderCell で独自 DOM(バッジ等)を描く列は、テキストでは幅が出ないため `estimateCellWidth` を指定します。指定列は Phase 1/2 のテキスト計測を使わず、**`estimateCellWidth(row)` が返す content 幅の全行 running-max + セル枠**で確定します(consumer 申告を信頼。mount なし)。\
@@ -1484,7 +1484,7 @@ clientSide の操作状態(グローバルフィルター・列フィルター�
   - `{ kind: 'number'; raw: string; parsed }` — `parsed` が `comparison`(演算子 `>` `>=` `<` `<=` `=` `!=`)/ `range` / `blank` / `notBlank` / `null`(=`raw` で部分一致。旧 UI の互換値)。判定は常に `parsed` が正で、`raw` は人間可読の表示文字列(現行 UI は「10 以上」のような日本語。旧値は「>=10」等の式文字列)。比較 / 範囲では**空白セル(null / undefined / 空文字)は不一致**(空白の抽出は `blank` / `notBlank`)。
   - `{ kind: 'numberSet'; condition; set }` — 条件 AND 選択の複合(`filterType: 'numberSet'`)。`condition` は上記 `parsed` と同形(`null` = 条件なし)、`set` は `{ mode?: 'include' | 'exclude'; values: string[] }`(`null` = 全選択)。サーバは **condition AND set** で WHERE を組む(例: `qty >= 10 AND qty NOT IN (12)`)。両方 `null` の値は送出されない(クライアント側で clear へ正規化)。
   - `{ kind: 'textSet'; condition; set }` — テキスト版の複合(`filterType: 'textSet'`)。`condition` は `{ mode: 'contains' | 'equals' | 'startsWith' | 'endsWith'; value }` / `{ mode: 'blank' | 'notBlank' }` / `null`(判定は大文字小文字無視・`value` は trim 済み)。`set` と AND 結合の規約は numberSet と同一。
-  - `{ kind: 'dateSet'; condition; set }` — 日付版の複合(`filterType: 'dateSet'`)。`condition` は `{ mode: 'range'; from; to }` / `{ mode: 'onOrAfter' | 'onOrBefore' | 'equals' | 'notEquals'; value }` / `{ mode: 'blank' | 'notBlank' }` / **`{ mode: 'preset'; preset: string }`**(ビルトインは `'today'` / `'thisMonth'` / `'last30days'`。列の `dateFilterPresets` で定義したカスタム ID もそのまま載る)/ `null`。日付は `'YYYY-MM-DD'`(ゼロ埋め ISO)。相対プリセットは**相対のまま送出される**ため、サーバ側も受信時点の「今日」を基準に解決すること(クライアントの clientSide 評価も同じ規約)。カスタム ID の解釈(id → WHERE 句)もサーバ側の責務(`resolve` はクライアント評価専用で送出されない)。`set.values` はセル生値ではなく**正規化済み日付キー**(`'YYYY-MM-DD'`。空白 = `''` / 日付として解釈できない値 = 生値)。
+  - `{ kind: 'dateSet'; condition; set }` — 日付版の複合(`filterType: 'dateSet'`)。`condition` は `{ mode: 'range'; from; to }` / `{ mode: 'onOrAfter' | 'onOrBefore' | 'equals' | 'notEquals'; value }` / `{ mode: 'blank' | 'notBlank' }` / **`{ mode: 'preset'; preset: string }`**(ビルトインは `'today'` / `'thisMonth'` / `'last30days'`。列の `dateFilterPresets` で定義したカスタム ID もそのまま載る)/ `null`。日付は `'YYYY-MM-DD'`(ゼロ埋め ISO)。相対プリセットは**相対のまま送出される**ため、サーバ側も受信時点の「今日」を基準に解決すること(クライアントの clientSide 評価も同じ規約)。グリッドを開いたまま日付が変わると、相対プリセットが掛かっている間はブロックを取り直す(送る `query` の中身は同じ。キャッシュの区別は内部のキーで行う)。カスタム ID の解釈(id → WHERE 句)もサーバ側の責務(`resolve` はクライアント評価専用で送出されない)。`set.values` はセル生値ではなく**正規化済み日付キー**(`'YYYY-MM-DD'`。空白 = `''` / 日付として解釈できない値 = 生値)。
   - `{ kind: 'text'; value }` / `{ kind: 'date'; value }` / `{ kind: 'select'; value }`
   - `{ kind: 'custom'; value }` — `column.filterFn` 利用列の自由形値(サーバ解釈は利用側責務)。
   - アクティブなフィルターのみ送出される。キーは安定 queryKey のため昇順整列される。
@@ -1690,6 +1690,7 @@ const s = stylex.create({
 - `HeaderRenderContext<T> = { colIndex, width, column, filterValue?, isFiltered? }`
 - `SpreadsheetGridSlotContext<T> = { rows, filteredRows, columns, visibleColumns, globalFilterText, columnFilterValues, sortState, setGlobalFilterText, activeCell, selection, derivedSummary, globalFilterStatus, globalFilterProgress, selectionAggregates }`
   - `derivedSummary` は `SpreadsheetGridDerivedSummary`(行/列/フィルター/ソートの summary 文字列・選択統計などを内包)。helper を import せずトップ/ボトムバーで使える。
+  - 開発ビルドでの注意: `ctx` や `rows` / `filteredRows` を子コンポーネントの props にそのまま渡す(`<MyBar ctx={ctx} />` / `<MyBar {...ctx} />` / `<MyBar rows={ctx.filteredRows} />`)と、React 19.2 以降の開発ビルドは Performance Track 向けに props の差分を取るため大きな配列を走査し、100 万行規模ではソート 1 回に数十秒かかることがある。子へは使う値だけを渡す(件数なら `ctx.filteredRows.length` や `derivedSummary`)。本番ビルドには影響しない。内蔵のトップ / ボトムバーも必要な値だけを受け取る。
   - `globalFilterStatus: GlobalFilterStatus`(`'idle' | 'filtering' | 'ready'`)/ `globalFilterProgress: number`(0..1)。グローバルテキストフィルタは行数が大きい(しきい値 50,000 行・条件は `rows.length > 50000`)とき、入力を主スレッドを塞がず時間分割で適用する。適用中は `status='filtering'`・`progress` が進捗(0..1)になる。空/無効は `'idle'`、確定は `'ready'`(progress=1)。50,000 行以下は同期適用のため即 `'ready'`(`'filtering'` を経由しない)。**ローディング表示はグリッドが本体に重ねる組み込み overlay(autosize の計測中 overlay と同じ作法)で行うため、トップバーやカスタム UI 側で扱う必要は通常ない。** この 2 値は、入力の無効化や独自インジケータなどカスタム UI を出したい場合の参照用に公開している。serverSide では基本 `'idle'` / `'ready'`(取得中表示は行スケルトンが担当)。
   - `selectionAggregates?: GridSelectionAggregates | null`(グリッドは常に入れる)。2 セル以上を選んでいるときの選択範囲の集計 `{ status: 'computing' | 'ready'; progress; cellCount; count; numericCount; sum; average; min; max; partial }`(`count` = 空でないセル数、`numericCount` = 数値として数えたセル数、数値が無ければ `sum` / `average` / `min` / `max` は `undefined`、`partial` = SSRM で未読み込みの行を飛ばした)。1 セル以下の選択 / `showSelectionAggregates={false}` / 出す先が無い(ボトムバー非表示で、`renderTopBar` も無い)ときは `null`。走査セル数が 50,000 を超える選択は時間分割で計算し、その間は `status: 'computing'`(値は未確定、`progress` は 0..1 を 5% 刻み)。同じ選択のまま値だけ変わったときは、計算し直すあいだも前の結果(`status: 'ready'`)のままで、終われば差し替わる。既定ボトムバーは平均 / データの個数 / 合計を出す(最小 / 最大はこの値でだけ参照できる)。
 

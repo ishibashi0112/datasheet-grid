@@ -26,6 +26,9 @@ export const isFlexingColumn = <T,>(column: GridColumn<T>): boolean =>
   column.flex > 0 &&
   getColumnPane(column) === 'center';
 
+// 追加(監査 B-09): flex 列の右端を整数へ切り捨てるときの許容誤差(px)。浮動小数の計算誤差だけを吸収する大きさです。
+const FLEX_EDGE_EPSILON = 1e-6;
+
 // 1 列分の flex 解決入力(内部)。
 type FlexEntry = {
   key: string;
@@ -38,8 +41,8 @@ type FlexEntry = {
 //   - 暫定配分で min 未満 / max 超過になる列を 1 件ずつ確定してプールから外し、残り space を
 //     残りの列で再配分します(AG Grid の flex と同等。1 列の min/max 到達が他列の取り分へ波及)。
 //     各反復で必ず 1 列以上プールが縮むため、最大でも entries 件数回で停止します。
-//   - クランプ違反が無くなったら残プールを比率で確定します。浮動小数の端数は最後の列へ寄せ、
-//     確定幅の合計を space に厳密一致させます(横スクロールバーの誤発生を防ぐため)。
+//   - クランプ違反が無くなったら残プールを比率で確定します。確定幅は整数 px で、合計は space を超えない
+//     最大の整数です(監査 B-09。横スクロールバーの誤発生を防ぐため)。
 //   - space が固定列合計を下回る(=負)場合、全 flex 列が順に min へクランプされて潰れ、
 //     合計が利用可能幅を超えて横スクロールが発生します(仕様)。
 const distributeFlexWidths = (
@@ -78,17 +81,23 @@ const distributeFlexWidths = (
       continue;
     }
 
-    // 違反なし: 残プールを比率で確定(端数=浮動小数誤差は最後の列へ寄せ、合計を space に一致)。
-    //   この分岐に到達する時点で space は全列が min 以上を満たす値(= 非負)です。
-    let allocated = 0;
+    // 違反なし: 残プールを比率で確定します。この分岐に到達する時点で space は全列が min 以上を満たす値(= 非負)です。
+    // 変更(監査 B-09): 確定幅を整数 px にしました(従来は 1000 / 3 = 333.33… のような端数のまま columnWidths の
+    //   解決値や、ピン留め / 表示切替で書き戻す column.width に乗り、サブピクセルの丸めで 1px の横スクロールバーが
+    //   出る余地がありました)。各列の右端(比率どおりの累積位置)を切り捨て、隣り合う右端の差を幅にします。
+    //   - 合計は floor(space)(利用可能幅を超えない最大の整数。利用可能幅が整数なら従来どおり厳密一致)。
+    //   - 各列の幅は比率どおりの値との差が 1px 未満で、min / max が整数ならその範囲にも収まります。
+    //   - 1px 単位の端数は、右端の切り捨て位置に応じて列へ散らばります(例: 1000 / 3 列 → 333, 333, 334)。
+    let allocatedFlex = 0;
+    let previousEdge = 0;
     pool.forEach((entry, indexInPool) => {
-      if (indexInPool === pool.length - 1) {
-        result.set(entry.key, space - allocated);
-      } else {
-        const width = (space * entry.flex) / totalFlex;
-        result.set(entry.key, width);
-        allocated += width;
-      }
+      allocatedFlex += entry.flex;
+      // 最後の列の右端は space そのもの(比率の掛け算の浮動小数誤差を持ち込まない)。
+      const exactEdge = indexInPool === pool.length - 1 ? space : (space * allocatedFlex) / totalFlex;
+      // 1000 * 2 / 3 * 3 のような計算誤差で 299.9999… になった値を 1px 削らないよう、わずかに足してから切り捨てます。
+      const edge = Math.floor(exactEdge + FLEX_EDGE_EPSILON);
+      result.set(entry.key, edge - previousEdge);
+      previousEdge = edge;
     });
     break;
   }

@@ -13,7 +13,8 @@ export const BASE = process.env.HARNESS_BASE ?? 'http://127.0.0.1:5177/';
 const KNOWN_CHROME = '/opt/pw-browsers/chromium-1194/chrome-linux/chrome';
 export const CHROME = process.env.SSG_AUDIT_CHROME ?? (existsSync(KNOWN_CHROME) ? KNOWN_CHROME : undefined);
 
-export async function open(scenario, { query = '', viewport = { width: 1400, height: 800 }, headless = true } = {}) {
+// beforeGoto(page): ページを開く前に呼ぶ(page.clock.install で時計を差し替える等。監査 L-15 の確認で使う)。
+export async function open(scenario, { query = '', viewport = { width: 1400, height: 800 }, headless = true, beforeGoto } = {}) {
   const browser = await chromium.launch({ ...(CHROME ? { executablePath: CHROME } : {}), headless });
   const context = await browser.newContext({ viewport, permissions: ['clipboard-read', 'clipboard-write'] });
   const page = await context.newPage();
@@ -22,6 +23,7 @@ export async function open(scenario, { query = '', viewport = { width: 1400, hei
   page.on('console', (m) => {
     if (m.type() === 'error' || m.type() === 'warning') pageErrors.push(`[console.${m.type()}] ${m.text()}`);
   });
+  if (beforeGoto) await beforeGoto(page);
   await page.goto(`${BASE}?s=${scenario}${query ? '&' + query : ''}`);
   await page.waitForFunction(() => window.__ready === true, null, { timeout: 30000 });
   await page.waitForSelector('.ssg-root', { timeout: 30000 });

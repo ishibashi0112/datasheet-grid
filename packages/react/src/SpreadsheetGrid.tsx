@@ -102,6 +102,8 @@ import {
   isActiveColumnFilterValue,
   // 追加(audit L-06): dateSet 列の候補収集を照合と同じ正規化日付キーで行います。
   toDateSetKey,
+  // 追加(監査 L-15): 相対日付プリセットが掛かっているか(日付が変わったら絞り込みをやり直す見張りの入り切り)。
+  columnFiltersUseRelativeDate,
   // 行モデルチェーンは order(Int32Array)ベースに一本化しています
   //   (DS-2 で差し替え、旧オブジェクト配列版は DS-3-8 で削除)。
   // 追加(filter-ext A): number フィルターの数値化規則(空白 = NaN)です。B-2 の
@@ -1118,6 +1120,25 @@ export function SpreadsheetGrid<T extends object>({
     enabled: globalFilterEnabled && !manualFiltering,
   });
 
+  // 追加(監査 L-15): 相対日付プリセット(今日 / 今月 / 過去 30 日 / カスタム)の基準日。プリセットを含む列フィルターが
+  //   掛かっている間だけ日付の変わり目を見張り(controllers/dateRolloverStore)、基準日を行パイプラインの入力に足します。
+  //   日付が変わると clientSide は列フィルターを評価し直し、serverSide は queryKey が変わって取り直します。
+  //   手動フィルター(manualFiltering)では行を絞り込まないため見張りません。
+  const relativeDateFilterActive = useMemo(
+    () =>
+      isServerSide
+        ? columnFilterEnabled && columnFiltersUseRelativeDate(columnFilters)
+        : !manualFiltering && columnFiltersUseRelativeDate(deferredColumnFilters),
+    [isServerSide, columnFilterEnabled, columnFilters, manualFiltering, deferredColumnFilters],
+  );
+  useControllerLifecycle(engine.dateRollover, { active: relativeDateFilterActive });
+  const relativeDateSnapshot = useSyncExternalStore(
+    engine.dateRollover.subscribe,
+    engine.dateRollover.getSnapshot,
+    engine.dateRollover.getSnapshot,
+  );
+  const relativeDateKey = relativeDateFilterActive ? relativeDateSnapshot : '';
+
   const { order, rowDragOperable } = useMemo(
     () =>
       rowPipeline.resolveOrder({
@@ -1131,6 +1152,7 @@ export function SpreadsheetGrid<T extends object>({
         rowDragAvailable,
         manualFiltering,
         manualSorting,
+        relativeDateKey,
       }),
     [
       rowPipeline,
@@ -1143,6 +1165,7 @@ export function SpreadsheetGrid<T extends object>({
       rowDragAvailable,
       manualFiltering,
       manualSorting,
+      relativeDateKey,
     ],
   );
 
@@ -1252,6 +1275,7 @@ export function SpreadsheetGrid<T extends object>({
         columnFilters,
         sortingEnabled,
         sort: uiState.sort,
+        relativeDateKey,
       }),
     [
       rowPipeline,
@@ -1262,6 +1286,7 @@ export function SpreadsheetGrid<T extends object>({
       columnFilters,
       sortingEnabled,
       uiState.sort,
+      relativeDateKey,
     ],
   );
 
@@ -4296,7 +4321,11 @@ export function SpreadsheetGrid<T extends object>({
     showDefaultTopSummary || showDefaultTopFilter ? (
       <DefaultGridTopBar
         slot={slots.toolbar}
-        context={slotContext}
+        // 変更(監査 M-04): slotContext を丸ごと渡さず、使うフィールドだけを渡します(開発ビルドの props 差分記録が
+        //   context の rows / filteredRows = 全行の配列を走査して 100 万行で数十秒かかっていたため)。
+        derivedSummary={slotContext.derivedSummary}
+        globalFilterText={slotContext.globalFilterText}
+        setGlobalFilterText={slotContext.setGlobalFilterText}
         showSummary={showDefaultTopSummary}
         showFilter={showDefaultTopFilter}
         showCounts={showTopBarCounts}
@@ -4322,7 +4351,8 @@ export function SpreadsheetGrid<T extends object>({
         slotContext,
         <DefaultGridBottomBar
           slot={slots.statusBar}
-          context={slotContext}
+          derivedSummary={slotContext.derivedSummary}
+          selectionAggregates={slotContext.selectionAggregates}
           showCounts={showBottomBarCounts}
         />,
       );
