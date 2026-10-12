@@ -70,6 +70,11 @@ import { OUT, open, check, unexpectedPageErrors, summary, errorsOf, renderedRowI
   // フィルターでグループが空になる
   await page.evaluate(() => window.__grid.applyState({ version: 1, columnWidths: {}, filters: { globalText: 'item-00000', columnFilters: {} }, sort: [] }));
   await waitIdle(page, 300);
+  // グローバルフィルターは遅延 + 時間分割で効くため、負荷が高いと 300ms では間に合わないことがある(落ちたら待ち足りない
+  //   だけ)。件数が 9 になるまで待ってから読む(上限 3 秒。来なければ下の check が落ちる)。
+  await page
+    .waitForFunction(() => /Rows: 9 \/ 200/.test(document.querySelector('.ssg-bar--bottom')?.textContent ?? ''), null, { timeout: 3000 })
+    .catch(() => {});
   const groupsAfterFilter = await page.evaluate(() => window.__grid.getGroupRows().length);
   console.log('groups after filter (9 rows):', groupsAfterFilter);
   const bottom = await page.locator('.ssg-bar--bottom').textContent();
