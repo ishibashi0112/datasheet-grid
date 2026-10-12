@@ -33,6 +33,65 @@ const expectedOf = (page, r0, r1, keys) =>
     { r0, r1, keys },
   );
 
+// ---------- バーの高さ / 位置が変わらない(見直しの指摘: 選択のたびにページが上下していた)----------
+{
+  const { page, pageErrors, close } = await open('basic');
+  const measure = () =>
+    page.evaluate(() => {
+      const bar = document.querySelector('.ssg-bar--bottom');
+      const groups = [...bar.querySelectorAll('.ssg-bar-group')].map((g) => {
+        const r = g.getBoundingClientRect();
+        return { left: Math.round(r.left), right: Math.round(r.right), top: Math.round(r.top) };
+      });
+      const inner = bar.querySelector('.ssg-bar-aggregates-inner');
+      const chipsVisible = inner
+        ? [...inner.querySelectorAll('.ssg-bar-chip')].filter((c) => {
+            const r = c.getBoundingClientRect();
+            const box = inner.getBoundingClientRect();
+            return r.width > 0 && r.left >= box.left - 0.5 && r.right <= box.right + 0.5;
+          }).length
+        : 0;
+      return {
+        bar: Math.round(bar.getBoundingClientRect().height),
+        root: Math.round(document.querySelector('.ssg-root').getBoundingClientRect().height),
+        groups,
+        chipsVisible,
+      };
+    });
+  for (const counts of [true, false]) {
+    await page.evaluate((c) => window.__setProps({ showBottomBarCounts: c }), counts);
+    for (const width of [1400, 900, 600, 420]) {
+      await page.setViewportSize({ width, height: 800 });
+      await waitIdle(page, 120);
+      await page.evaluate(() => window.__grid.selectCell(1, 2));
+      await waitIdle(page);
+      const one = await measure();
+      await page.evaluate(() => window.__grid.selectRange({ start: { row: 0, col: 2 }, end: { row: 5, col: 3 } }));
+      await waitIdle(page);
+      const many = await measure();
+      // グループの位置: 段(top)、左のグループの左端、右寄せの右グループ(件数あり)の右端。右グループの幅は
+      //   Selection の表記で変わる(従来どおり)ため、左端は比べない。
+      const anchors = (m) => ({
+        tops: m.groups.map((g) => g.top),
+        firstLeft: m.groups[0].left,
+        lastRight: counts && m.groups.length > 1 && m.groups[1].top === m.groups[0].top ? m.groups[m.groups.length - 1].right : null,
+      });
+      check(
+        `agg: ${width}px・件数${counts ? 'あり' : 'なし'}で 2 セル以上を選んでもバーの高さとグループの位置が変わらない`,
+        one.bar === many.bar && one.root === many.root && JSON.stringify(anchors(one)) === JSON.stringify(anchors(many)),
+        { one, many },
+      );
+      if (width === 1400) {
+        check(`agg: 1400px・件数${counts ? 'あり' : 'なし'}では集計が全部見える`, many.chipsVisible === 3, many);
+      }
+    }
+  }
+  await page.evaluate(() => window.__setProps({ showBottomBarCounts: undefined }));
+  await page.setViewportSize({ width: 1400, height: 800 });
+  check('agg: エラーなし(バーの高さ)', unexpectedPageErrors(pageErrors).length === 0, unexpectedPageErrors(pageErrors));
+  await close();
+}
+
 // ---------- 基本: ドラッグで範囲選択 ----------
 {
   const { page, pageErrors, close } = await open('basic');

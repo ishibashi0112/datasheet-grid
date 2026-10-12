@@ -1600,7 +1600,11 @@
     font-variant-numeric: tabular-nums;
     white-space: nowrap;
   }
-  /* 追加(選択範囲の集計): 右グループ末尾の区切り線と、平均 / データの個数 / 合計の並び(狭いバーでは折り返す)。 */
+  /* 追加(選択範囲の集計): 平均 / データの個数 / 合計。
+     変更(見直し): バーの空きにだけ置きます(選択のたびにバーが折り返して高さが変わらないように)。外側は幅 0 から
+     空きを埋める要素(折り返しの判定では幅 0 = 既存のグループは折り返さない)、margin-left で .ssg-bar-container の
+     gap(6px)を打ち消し、既存のグループの位置を変えません。中身は絶対配置(行の高さに影響しない)で、入りきらない
+     ときは端から切れます。 */
   .ssg-bar-sep {
     flex: none;
     width: 1px;
@@ -1609,10 +1613,25 @@
     background-color: var(--ssg-divider);
   }
   .ssg-bar-aggregates {
-    display: inline-flex;
+    position: relative;
+    flex: 1 1 0;
+    min-width: 0;
+    align-self: stretch;
+    margin-left: -6px;
+  }
+  .ssg-bar-aggregates-inner {
+    position: absolute;
+    inset: 0;
+    display: flex;
     align-items: center;
+    justify-content: flex-end;
     gap: 4px;
-    flex-wrap: wrap;
+    overflow: hidden;
+    white-space: nowrap;
+  }
+  .ssg-bar-aggregates--trailing .ssg-bar-aggregates-inner {
+    justify-content: flex-start;
+    padding-left: 6px;
   }
   .ssg-bar-aggregate-value {
     margin-left: 0.25em;

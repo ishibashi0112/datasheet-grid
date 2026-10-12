@@ -1919,6 +1919,8 @@ export function SpreadsheetGrid<T extends object>({
   //   いないとき(縦横の仮想化で外れた / グループ行・ラベル行・未ロード行)は付けません(存在しない id を指さない)。
   const gridDomId = useId();
   const activeCellDomId = `${gridDomId}-active-cell`;
+  // 追加(見直し): 編集中のエディタの DOM id(編集中のセルが aria-owns で子に持つ)。
+  const cellEditorDomId = `${gridDomId}-cell-editor`;
   const activeCellForAria = uiState.activeCell;
   const activeDescendantId = useMemo(() => {
     const cell = activeCellForAria;
@@ -3830,9 +3832,10 @@ export function SpreadsheetGrid<T extends object>({
 
   // ── bar context ───────────────────────────────────────
   // 追加: bar 用 context / derived summary は hook へ逃がします。
-  // 追加(選択範囲の集計): バーが 1 つも出ないときは計算しません(大きな選択の走査を省く)。
+  // 追加(選択範囲の集計): 出す先が無いときは計算しません(大きな選択の走査を省く)。出す先 = ボトムバー(既定 /
+  //   renderBottomBar)か、自前のトップバー(renderTopBar)。既定のトップバーは集計を出さないため数えません。
   const selectionAggregates = useSelectionAggregates({
-    enabled: showSelectionAggregates && (showBottomBar || showTopBar),
+    enabled: showSelectionAggregates && (showBottomBar || (showTopBar && renderTopBar !== undefined)),
     selection: uiState.selection,
     viewRowCount,
     orderedColumns,
@@ -4630,10 +4633,12 @@ export function SpreadsheetGrid<T extends object>({
                   onCancel={cancelEdit}
                   align={editingColumn?.align}
                   enterMove={editorEnterMove}
+                  domId={cellEditorDomId}
                 />
 
                 <GridBodyLayer
                   activeCellDomId={activeCellDomId}
+                  cellEditorDomId={cellEditorDomId}
                   pane="left"
                   ownsRowHeader
                   leadingWidth={leftLeadingWidth}
@@ -4845,10 +4850,12 @@ export function SpreadsheetGrid<T extends object>({
                   onCancel={cancelEdit}
                   align={editingColumn?.align}
                   enterMove={editorEnterMove}
+                  domId={cellEditorDomId}
                 />
 
                 <GridBodyLayer
                   activeCellDomId={activeCellDomId}
+                  cellEditorDomId={cellEditorDomId}
                   pane="center"
                   ownsRowHeader={centerOwnsRowHeader}
                   leadingWidth={centerLeadingWidth}
@@ -5057,10 +5064,12 @@ export function SpreadsheetGrid<T extends object>({
                   onCancel={cancelEdit}
                   align={editingColumn?.align}
                   enterMove={editorEnterMove}
+                  domId={cellEditorDomId}
                 />
 
                 <GridBodyLayer
                   activeCellDomId={activeCellDomId}
+                  cellEditorDomId={cellEditorDomId}
                   pane="right"
                   ownsRowHeader={false}
                   leadingWidth={rightLeadingWidth}

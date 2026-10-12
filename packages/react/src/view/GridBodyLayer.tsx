@@ -104,6 +104,9 @@ type GridBodyRowProps<T> = {
   sourceRowIndex: number;
   // 追加(audit V-05): アクティブセルに付ける DOM id(シェルの aria-activedescendant が指す。グリッドごとに一定)。
   activeCellDomId?: string;
+  // 追加(見直し): 編集中のエディタ(行の外に重ねる)の DOM id。編集中のセルが aria-owns で子に持ちます
+  //   (支援技術ではエディタがセルの中に入る = grid の直下に行以外を置かない)。グリッドごとに一定。
+  cellEditorDomId?: string;
   // 追加(label-row ③): 行ヘッダー「#」に出す番号(1 始まり)。ラベル行有効時はラベル行を飛ばした
   //   データ行の通し番号、それ以外は view index + 1(従来どおり)。プリミティブ = memo 安全。
   rowNumber: number;
@@ -198,6 +201,7 @@ function GridBodyRowInner<T>({
   rowKey,
   sourceRowIndex,
   activeCellDomId,
+  cellEditorDomId,
   rowNumber,
   row,
   top,
@@ -448,6 +452,7 @@ function GridBodyRowInner<T>({
             aria-selected={isSelected}
             aria-readonly={readOnlyCell || undefined}
             id={isActive ? activeCellDomId : undefined}
+            aria-owns={colIndex === editingColInRow ? cellEditorDomId : undefined}
             data-ssg-col-key={column.key}
             data-autoheight-cell={isAutoHeightCell ? '' : undefined}
             data-ssg-tooltip={tooltipText ?? undefined}
@@ -900,6 +905,8 @@ type GridBodyLayerProps<T> = {
   pane: GridPaneKind;
   // 追加(audit V-05): アクティブセルに付ける DOM id(シェルの aria-activedescendant が指す)。
   activeCellDomId?: string;
+  // 追加(見直し): 編集中のエディタの DOM id(編集中のセルの aria-owns)。
+  cellEditorDomId?: string;
   // 追加(10-C): true のときだけ行番号セルを描画します。
   ownsRowHeader: boolean;
   // 追加(10-C): 列の前に確保する先頭幅です(行ヘッダーを持つペインは rowHeaderWidth、他は 0)。
@@ -1034,6 +1041,7 @@ export function GridBodyLayer<T>({
   getRowClassName,
   slots,
   activeCellDomId,
+  cellEditorDomId,
 }: GridBodyLayerProps<T>) {
   return (
     <>
@@ -1214,6 +1222,7 @@ export function GridBodyLayer<T>({
             rowKey={rowKey}
             sourceRowIndex={sourceRowIndex}
             activeCellDomId={activeCellDomId}
+            cellEditorDomId={cellEditorDomId}
             rowNumber={labelViewIndexes ? resolveDataRowNumber(labelViewIndexes, rowIndex) : rowIndex + 1}
             row={row}
             top={virtualRow.start}

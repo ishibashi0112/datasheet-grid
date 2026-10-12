@@ -1,4 +1,4 @@
-import { memo, type CSSProperties } from 'react';
+import { memo, useLayoutEffect, useRef, type CSSProperties } from 'react';
 import type { GridLabelRow, GridRowKey } from '../model/gridTypes';
 import type { GridPaneKind } from './GridHeaderRow';
 import { cx } from '@ishibashi0112/spreadsheet-grid-core/logic/cx';
@@ -40,6 +40,9 @@ type GridStickyLabelLayerProps<T> = {
   slots?: GridResolvedSlots;
 };
 
+// 追加(見直し): 支援技術から隠した複製(aria-hidden)の中でフォーカスできる要素。
+const FOCUSABLE_SELECTOR = 'a[href], button, input, select, textarea, [tabindex], [contenteditable="true"]';
+
 function GridStickyLabelLayerInner<T>({
   pane,
   ownsRowHeader,
@@ -53,13 +56,37 @@ function GridStickyLabelLayerInner<T>({
   rowStyle,
   slots,
 }: GridStickyLabelLayerProps<T>) {
+  // 追加(見直し): 複製の中身(labelRow.render のボタン等)は Tab で止まらないようにします(aria-hidden の中に
+  //   フォーカスできる要素を残さない。マウスでは押せる = 本物の行と同じ操作)。中身が後から描き替わっても付け直します。
+  const layerRef = useRef<HTMLDivElement>(null);
+  const shown = entry !== null;
+  useLayoutEffect(() => {
+    const layer = layerRef.current;
+    if (!shown || !layer) {
+      return;
+    }
+    const removeFromTabOrder = () => {
+      layer.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR).forEach((element) => {
+        if (element.getAttribute('tabindex') !== '-1') {
+          element.setAttribute('tabindex', '-1');
+        }
+      });
+    };
+    removeFromTabOrder();
+    if (typeof MutationObserver === 'undefined') {
+      return;
+    }
+    const observer = new MutationObserver(removeFromTabOrder);
+    observer.observe(layer, { childList: true, subtree: true });
+    return () => observer.disconnect();
+  }, [shown]);
   if (!entry) {
     return null;
   }
   const { labelRow, rowIndex, rowKey, height, pushOffset } = entry;
   return (
     // 追加(audit V-05): 本物のラベル行の見た目上の複製なので、支援技術からは隠します(同じ行が 2 回読まれないように)。
-    <div className="ssg-sticky-label-layer" style={{ top: headerHeight }} aria-hidden="true">
+    <div ref={layerRef} className="ssg-sticky-label-layer" style={{ top: headerHeight }} aria-hidden="true">
       <div
         data-pane={pane}
         data-ssg-sticky-label=""

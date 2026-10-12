@@ -2,7 +2,7 @@
 //   範囲選択 / 1 セル選択 / 文字だけの列 / showSelectionAggregates=false / 自前のバー / 編集での再計算 /
 //   フィルターで隠れた行を数えないことを、実コンポーネント越しに固定します。
 // @vitest-environment jsdom
-import { describe, it, expect, beforeAll, afterAll, afterEach } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, afterEach, vi } from 'vitest';
 import { render, cleanup, act, fireEvent } from '@testing-library/react';
 import { createRef, useState } from 'react';
 import type { Ref } from 'react';
@@ -15,6 +15,13 @@ import type {
   SpreadsheetGridHandle,
   SpreadsheetGridProps,
 } from './model/gridTypes';
+
+// 集計の対象を解決した回数を数えます(出す先が無いときは計算しないことの確認。値はそのまま)。
+vi.mock('@ishibashi0112/spreadsheet-grid-core/logic/selectionAggregates', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@ishibashi0112/spreadsheet-grid-core/logic/selectionAggregates')>();
+  return { ...actual, resolveSelectionAggregateTarget: vi.fn(actual.resolveSelectionAggregateTarget) };
+});
+import { resolveSelectionAggregateTarget } from '@ishibashi0112/spreadsheet-grid-core/logic/selectionAggregates';
 
 type Row = { id: number; name: string; qty: number | string; price: number };
 
@@ -142,7 +149,7 @@ describe('選択範囲の集計(下部バー)', () => {
   });
 
   it('showSelectionAggregates=false では出さず、slotContext.selectionAggregates も null', () => {
-    const seen: (GridSelectionAggregates | null)[] = [];
+    const seen: (GridSelectionAggregates | null | undefined)[] = [];
     const { container, ref } = setup({
       showSelectionAggregates: false,
       renderBottomBar: (ctx) => {
@@ -159,7 +166,7 @@ describe('選択範囲の集計(下部バー)', () => {
   });
 
   it('自前のバー(renderBottomBar)へ集計値が渡る', () => {
-    let latest: GridSelectionAggregates | null = null;
+    let latest: GridSelectionAggregates | null | undefined = null;
     const { ref } = setup({
       renderBottomBar: (ctx) => {
         latest = ctx.selectionAggregates;
@@ -179,6 +186,30 @@ describe('選択範囲の集計(下部バー)', () => {
       max: 20,
       partial: false,
     });
+  });
+
+  it('出す先が無い(ボトムバー非表示・renderTopBar なし)ときは計算しない。renderTopBar があれば渡す', () => {
+    const resolveTarget = vi.mocked(resolveSelectionAggregateTarget);
+    const hidden = setup({ showBottomBar: false });
+    resolveTarget.mockClear();
+    act(() => {
+      hidden.ref.current?.selectRange({ start: { row: 0, col: 1 }, end: { row: 3, col: 2 } });
+    });
+    expect(resolveTarget).not.toHaveBeenCalled();
+    cleanup();
+
+    let latest: GridSelectionAggregates | null | undefined = null;
+    const custom = setup({
+      showBottomBar: false,
+      renderTopBar: (ctx) => {
+        latest = ctx.selectionAggregates;
+        return null;
+      },
+    });
+    act(() => {
+      custom.ref.current?.selectRange({ start: { row: 0, col: 1 }, end: { row: 3, col: 2 } });
+    });
+    expect(latest).toMatchObject({ status: 'ready', sum: 40.5 });
   });
 
   it('showBottomBarCounts=false でも右のグループに出る', () => {

@@ -88,6 +88,8 @@ type CellEditorLayerProps<T> = {
   // 追加(enter-move ②): 組み込みエディタの Enter 確定後の移動先です(未指定 = 'down')。
   //   custom エディタはキーバインドが consumer 責務のため対象外(ctx.commit の direction で指定)。
   enterMove?: EditorEnterMove;
+  // 追加(見直し): 開いているときの枠の DOM id(編集中のセルが aria-owns で子に持つ)。
+  domId?: string;
 };
 
 // 追加: 編集中セルの上にエディタを重ねる editor layer です。
@@ -109,6 +111,7 @@ export function CellEditorLayer<T>({
   onCancel,
   align,
   enterMove,
+  domId,
 }: CellEditorLayerProps<T>) {
   // 変更(editor 基盤): 「新しい編集セッションの開始」検知を、ドラフト直接リセットから
   //   sessionId カウンタ + key 再マウントへ置き換えました。rect の null → 非 null 遷移を
@@ -273,6 +276,8 @@ export function CellEditorLayer<T>({
       {...(editorSession
         ? { role: 'group', 'aria-label': `${editorSession.column.title || editorSession.column.key} を編集` }
         : {})}
+      // 追加(見直し): 編集中のセルが aria-owns でこの枠を子に持ちます(開いているペインの枠だけ)。
+      id={isOpen && editorSession ? domId : undefined}
     >
       {editorNode}
     </div>

@@ -42,6 +42,8 @@ const setup = (props: Partial<SpreadsheetGridProps<Row>> = {}) => {
   return { ...view, ref, shell, grid };
 };
 
+const setupGrid = (shell: HTMLElement): HTMLElement => shell.querySelector<HTMLElement>('[role="grid"]') as HTMLElement;
+
 // aria-rowindex / aria-colindex で 1 セルを引きます(複数ペインにまたがっても 1 つだけのはず)。
 const cellAt = (grid: HTMLElement, rowIndex: number, colIndex: number): HTMLElement => {
   const matches = grid.querySelectorAll<HTMLElement>(
@@ -210,6 +212,51 @@ describe('ARIA(audit V-05 / RD-10 / V-14)', () => {
     expect(input.tagName).toBe('INPUT');
     const group = input.closest('[role="group"]');
     expect(group?.getAttribute('aria-label')).toBe('Qty を編集');
+    // 編集中のセルが aria-owns でエディタを子に持つ(支援技術ではエディタがセルの中に入る)。
+    expect(group?.id).toBeTruthy();
+    expect(cellAt(setupGrid(shell), 2, 3).getAttribute('aria-owns')).toBe(group?.id);
+    expect(document.querySelectorAll(`[aria-owns="${group?.id}"]`).length).toBe(1);
+    fireEvent.keyDown(input, { key: 'Escape' });
+    expect(document.querySelectorAll('[aria-owns]').length).toBe(0);
+  });
+
+  it('縦固定で複製したラベル行(aria-hidden)の中のボタンは Tab で止まらない', () => {
+    type LRow = { id: string; kind?: 'label'; name: string };
+    const labelRows: LRow[] = [
+      { id: 's1', kind: 'label', name: 'セクション 1' },
+      ...Array.from({ length: 30 }, (_, i) => ({ id: `r${i}`, name: `row ${i}` })),
+    ];
+    const { container } = render(
+      <SpreadsheetGrid<LRow>
+        rows={labelRows}
+        columns={[{ key: 'name', title: '名称', width: 160 }]}
+        rowKeyGetter={(row) => row.id}
+        labelRow={{
+          isLabelRow: (row) => row.kind === 'label',
+          getLabel: (row) => row.name,
+          sticky: true,
+          render: (ctx) => <button type="button">{ctx.label} を開閉</button>,
+        }}
+      />,
+    );
+    const scroller = container.querySelector<HTMLElement>('.ssg-scroll-container') as HTMLElement;
+    act(() => {
+      scroller.scrollTop = 200;
+      fireEvent.scroll(scroller);
+    });
+    const cloneButtons = container.querySelectorAll<HTMLButtonElement>('.ssg-sticky-label-layer button');
+    expect(cloneButtons.length).toBeGreaterThan(0);
+    cloneButtons.forEach((button) => {
+      expect(button.closest('[aria-hidden="true"]')).not.toBeNull();
+      expect(button.getAttribute('tabindex')).toBe('-1');
+    });
+    // 本物のラベル行のボタンは Tab で止まる(手を付けない)。
+    const realButtons = [...container.querySelectorAll<HTMLButtonElement>('[data-ssg-label-row] button')].filter(
+      (button) => !button.closest('.ssg-sticky-label-layer'),
+    );
+    realButtons.forEach((button) => {
+      expect(button.getAttribute('tabindex')).toBeNull();
+    });
   });
 
   it('checkbox 列のセルは列名をアクセシブル名に持つ', () => {

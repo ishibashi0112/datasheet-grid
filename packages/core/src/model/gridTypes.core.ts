@@ -1540,7 +1540,8 @@ export type SpreadsheetGridSlotContext<T, F extends GridFrameworkTypes = GridFra
   globalFilterStatus: GlobalFilterStatus;
   globalFilterProgress: number;
   // 追加(選択範囲の集計): 2 セル以上を選んでいるときの集計。それ以外 / showSelectionAggregates=false は null。
-  selectionAggregates: GridSelectionAggregates | null;
+  //   グリッドは常に入れます。任意(?)なのは、自前で context を組み立てて既定バーを使う利用側の型を壊さないため。
+  selectionAggregates?: GridSelectionAggregates | null;
 };
 
 // ── 追加(バッチ②/コンテキストメニュー): セル/行の汎用コンテキストメニュー(完全カスタム)の公開型群 ──
@@ -3439,8 +3440,8 @@ export type SpreadsheetGridProps<T, F extends GridFrameworkTypes = GridFramework
   // 追加(選択範囲の集計): 2 セル以上を選んだとき、選択範囲の集計(平均 / データの個数 / 合計)を計算して
   //   既定ボトムバーに出すかどうかです。既定 true。false では計算もせず slotContext.selectionAggregates は null。
   /**
-   * 2 セル以上を選んだとき、選択範囲の集計(平均 / データの個数 / 合計)
-   * を既定ボトムバーの右端に出す。数えるのは表示中のデータ行 ×
+   * 2 セル以上を選んだとき、選択範囲の集計(平均 / データの個数 / 合計)を既定ボトムバーの右側(Active
+   * / Selection の隣の空き)に出す。数えるのは表示中のデータ行 ×
    * データ列のセルで(フィルターで隠れた行・グループ行・ラベル行・合成列は対象外)、合計 /
    * 平均は数値と数値の文字列だけ(グループ集計と同じ判定)、データの個数は空でないセル。
    * 大きな選択は時間分割で計算し、その間は「集計中…」。SSRM

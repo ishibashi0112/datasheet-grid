@@ -122,6 +122,43 @@ describe('createSelectionAggregatesRunner', () => {
     expect(runner.getSnapshot().ready).toBeNull();
   });
 
+  it('同じ選択で行だけ変わったら、走っている計算は終えて結果を出し、最新の行で計算し直す(そのあいだは前の結果)', async () => {
+    const runner = createSelectionAggregatesRunner<Row>();
+    const first = keyOf(modelOf([1, 1, 1, 1, 1, 1]), 6);
+    runner.update({ ...first, needsAsync: true });
+    await flushYields();
+    // ライブ更新で行が変わった(選択 = target は同じ)。
+    const second = { rowModel: modelOf([2, 2, 2, 2, 2, 2]), target: first.target };
+    runner.update({ ...second, needsAsync: true });
+    for (let i = 0; i < 8 && runner.getSnapshot().ready === null; i += 1) await flushYields();
+    // 走っていた計算(前の行)は打ち切らずに終え、その結果を最新の選択で出す(集計中にしない)。
+    expect(runner.getSnapshot().ready?.rowModel).toBe(first.rowModel);
+    expect(selectSelectionAggregatesResult(undefined, runner.getSnapshot(), second)).toMatchObject({
+      status: 'ready',
+      sum: 6,
+    });
+    // 行がまた変わっても、前の結果を出し続ける。
+    const third = { rowModel: modelOf([3, 3, 3, 3, 3, 3]), target: first.target };
+    runner.update({ ...third, needsAsync: true });
+    for (let i = 0; i < 8; i += 1) await flushYields();
+    expect(runner.getSnapshot().ready?.rowModel).toBe(third.rowModel);
+    expect(selectSelectionAggregatesResult(undefined, runner.getSnapshot(), third)?.sum).toBe(18);
+  });
+
+  it('進捗はチャンクごとではなく 5% 刻みで公開する(シェル全体を再描画しすぎない)', async () => {
+    const runner = createSelectionAggregatesRunner<Row>();
+    const key = keyOf(modelOf(Array.from({ length: 400 }, () => 1)), 400);
+    let notifications = 0;
+    runner.subscribe(() => {
+      notifications += 1;
+    });
+    runner.update({ ...key, needsAsync: true });
+    for (let i = 0; i < 260; i += 1) await flushYields();
+    expect(selectSelectionAggregatesResult(undefined, runner.getSnapshot(), key)?.sum).toBe(400);
+    // 2 行ずつのチャンク = 200 回の yield。進捗は 20 段階 + 完了 1 回まで。
+    expect(notifications).toBeLessThanOrEqual(21);
+  });
+
   it('計算中の dispose で中断し、同じ args の update で再開する(StrictMode の再マウント)', async () => {
     const runner = createSelectionAggregatesRunner<Row>();
     const key = keyOf(modelOf([1, 2, 3, 4]), 4);
