@@ -133,6 +133,68 @@ describe('serverSideRowModel', () => {
     expect(controller.isRowLoaded(10)).toBe(true);
   });
 
+  // 追加(audit B-03): 末端の部分ブロックがキャッシュ済みのまま件数が増えても、伸びた後半の行を取り直す。
+  it('件数が増えたら、旧件数の末端だった部分ブロックを次の可視窓の要求で取り直す', async () => {
+    let total = 150;
+    const getRows = vi.fn(async ({ startIndex, endIndex }: { startIndex: number; endIndex: number }) => {
+      await Promise.resolve();
+      const rows: Row[] = [];
+      for (let i = startIndex; i < Math.min(endIndex, total); i += 1) rows.push({ v: i });
+      return { rows, totalRowCount: total };
+    });
+    const dataSource: ServerSideDataSource<Row> = { getRows, initialRowCount: 150, blockSize: 100 };
+    const common = { dataSource, rowKeyGetter: (row: Row) => row.v, query: {} as never, queryKey: 'q1' };
+    const controller = createServerSideRowModel<Row>(common);
+    controller.update(common);
+    controller.requestRange(100, 150);
+    vi.runAllTimers();
+    await flush();
+    expect(controller.isRowLoaded(149)).toBe(true);
+    // サーバー側で件数が 200 に増え、block 0 の結果で件数が更新される。
+    total = 200;
+    controller.requestRange(0, 50);
+    vi.runAllTimers();
+    await flush();
+    expect(controller.getSnapshot().rowCount).toBe(200);
+    // 伸びた 150〜199 を見に行くと block 1 を取り直す(取り直すまでは 100〜149 は表示したまま)。
+    controller.requestRange(150, 200);
+    expect(controller.isRowLoaded(120)).toBe(true);
+    vi.runAllTimers();
+    await flush();
+    expect(controller.isRowLoaded(160)).toBe(true);
+    expect(controller.getSnapshot().rowModel.getRow(199)).toEqual({ v: 199 });
+    const block1Calls = getRows.mock.calls.filter(([params]) => params.startIndex === 100).length;
+    expect(block1Calls).toBe(2);
+    // 取り直した後は、同じブロックをもう一度要求しない。
+    controller.requestRange(150, 200);
+    vi.runAllTimers();
+    await flush();
+    expect(getRows.mock.calls.filter(([params]) => params.startIndex === 100).length).toBe(2);
+    controller.dispose();
+  });
+
+  // 追加(audit B-03): 件数が変わらない / 減るときは、部分ブロックを取り直さない(無限の再取得にならない)。
+  it('サーバーが件数どおりの行を返さなくても、件数が増えない限り同じブロックを取り直さない', async () => {
+    const getRows = vi.fn(async ({ startIndex }: { startIndex: number }) => {
+      await Promise.resolve();
+      // 件数 200 と言いつつ、block 1 は 30 行しか返さない(不整合なサーバー)。
+      const count = startIndex === 100 ? 30 : 100;
+      const rows: Row[] = Array.from({ length: count }, (_, i) => ({ v: startIndex + i }));
+      return { rows, totalRowCount: 200 };
+    });
+    const dataSource: ServerSideDataSource<Row> = { getRows, initialRowCount: 200, blockSize: 100 };
+    const common = { dataSource, rowKeyGetter: (row: Row) => row.v, query: {} as never, queryKey: 'q1' };
+    const controller = createServerSideRowModel<Row>(common);
+    controller.update(common);
+    for (let i = 0; i < 3; i += 1) {
+      controller.requestRange(100, 200);
+      vi.runAllTimers();
+      await flush();
+    }
+    expect(getRows.mock.calls.filter(([params]) => params.startIndex === 100).length).toBe(1);
+    controller.dispose();
+  });
+
   it('dispose 後の再 update は確立済みの可視レンジも取り直す', async () => {
     const { dataSource, getRows } = makeDataSource({ initialRowCount: 250 });
     const common = { dataSource, rowKeyGetter: (row: Row) => row.v, query: {} as never, queryKey: 'q1' };

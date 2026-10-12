@@ -42,6 +42,9 @@ type SelectCellEditorProps = {
   popoverSlot?: GridResolvedSlot;
   // 追加(enter-move ②): Enter 確定後の移動先です(未指定 = 'down')。
   enterMove?: EditorEnterMove;
+  // 追加(audit RD-9): 印字キー / IME 確定で編集を始めたときの文字列です。開いた時点でタイプアヘッドに 1 回
+  //   使い、label がその文字列で始まる最初の候補をハイライトします(一致が無ければ現在値のまま)。
+  initialText?: string;
 };
 
 export function SelectCellEditor({
@@ -53,13 +56,22 @@ export function SelectCellEditor({
   themeClassName,
   popoverSlot,
   enterMove,
+  initialText,
 }: SelectCellEditorProps) {
   const inputRef = useRef<HTMLInputElement | null>(null);
   const listRef = useRef<HTMLDivElement | null>(null);
-  const typeaheadRef = useRef(createTypeaheadState());
-  const [highlight, setHighlight] = useState(() =>
-    resolveInitialHighlight(options, value),
-  );
+  // 修正(audit RD-9): 開始文字列があればタイプアヘッドを 1 回適用した状態から始めます(続けて打つと前方一致を
+  //   伸ばせるよう、タイプアヘッドのバッファも引き継ぎます)。
+  const [initialState] = useState(() => {
+    const fallback = resolveInitialHighlight(options, value);
+    if (!initialText) {
+      return { highlight: fallback, typeahead: createTypeaheadState() };
+    }
+    const result = typeaheadJump(createTypeaheadState(), initialText, Date.now(), options);
+    return { highlight: result.index ?? fallback, typeahead: result.state };
+  });
+  const typeaheadRef = useRef(initialState.typeahead);
+  const [highlight, setHighlight] = useState(initialState.highlight);
   const [placement, setPlacement] = useState<SelectPopoverPlacement | null>(null);
   // 追加(validation): reject 列の検証 NG メッセージです(表示中も選択操作は継続できます)。
   const [errorMessage, setErrorMessage] = useState<string | null>(null);

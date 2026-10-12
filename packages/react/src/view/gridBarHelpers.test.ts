@@ -3,8 +3,11 @@
 //   フィルター/ソート要約)と getGridSelectionStats の cell/row/col 分岐を固定します。
 import { describe, it, expect } from 'vitest';
 import type { GridColumn, GridSelection } from '../model/gridTypes';
+import { DETAIL_TOGGLE_COLUMN_KEY } from '@ishibashi0112/spreadsheet-grid-core/logic/detailRow';
+import { ROW_DRAG_HANDLE_COLUMN_KEY } from '@ishibashi0112/spreadsheet-grid-core/logic/rowReorder';
 import {
   buildGridDerivedSummary,
+  createDataColumnNamer,
   formatGridCellLabel,
   formatGridColumnSummary,
   formatGridFilterSummary,
@@ -306,5 +309,62 @@ describe('buildGridDerivedSummary composes the individual helpers', () => {
     expect(summary.hasAnyFilter).toBe(true);
     expect(summary.hasSorting).toBe(true);
     expect(summary.sortedColumnLabel).toBe('金額');
+  });
+});
+
+// 追加(audit V-12): 合成列(行ドラッグハンドル / 展開トグル / 自動グループ列)は A1 の列名に数えません。
+describe('createDataColumnNamer (audit V-12)', () => {
+  const synthetic = [{ key: ROW_DRAG_HANDLE_COLUMN_KEY }, { key: DETAIL_TOGGLE_COLUMN_KEY }];
+  const ordered = [...synthetic, { key: 'a' }, { key: 'b' }, { key: 'c' }];
+
+  it('先頭の合成列を除いて最初のデータ列が A になる', () => {
+    const namer = createDataColumnNamer(ordered);
+    expect(formatGridCellLabel({ row: 0, col: 2 }, namer)).toBe('A1');
+    expect(formatGridCellLabel({ row: 4, col: 4 }, namer)).toBe('C5');
+  });
+
+  it('選択ラベル(セル範囲 / 列選択)も同じ列名を使う', () => {
+    const namer = createDataColumnNamer(ordered);
+    expect(
+      formatGridSelectionLabel(
+        { type: 'cell', range: { start: { row: 0, col: 2 }, end: { row: 2, col: 3 } } },
+        namer,
+      ),
+    ).toBe('A1 - B3');
+    expect(
+      formatGridSelectionLabel({ type: 'col', startCol: 2, endCol: 4 } satisfies GridSelection, namer),
+    ).toBe('Col A - C');
+  });
+
+  it('合成列そのものは直後のデータ列と同じ列名になる(行全体の範囲が A から始まる)', () => {
+    const namer = createDataColumnNamer(ordered);
+    expect(namer(0)).toBe('A');
+    expect(namer(1)).toBe('A');
+  });
+
+  it('合成列が無ければ従来どおり(toExcelColumnName そのもの)', () => {
+    const namer = createDataColumnNamer([{ key: 'a' }, { key: 'b' }]);
+    expect(namer(0)).toBe('A');
+    expect(namer(27)).toBe('AB');
+  });
+
+  it('buildGridDerivedSummary へ渡すと activeCellLabel / selectionLabel に反映される', () => {
+    const columns = makeCols(3);
+    const summary = buildGridDerivedSummary(
+      {
+        rows: [{ id: 1 }] as Row[],
+        columns,
+        visibleColumns: columns,
+        globalFilterText: '',
+        columnFilterValues: {},
+        sortState: [],
+        activeCell: { row: 0, col: 2 },
+        selection: null,
+      },
+      1,
+      undefined,
+      createDataColumnNamer(ordered),
+    );
+    expect(summary.activeCellLabel).toBe('A1');
   });
 });

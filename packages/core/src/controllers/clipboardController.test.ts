@@ -195,6 +195,19 @@ describe('clipboardController', () => {
     expect(written.map((r) => r.name)).toEqual(['p1', 'r1', 'r2', 'p2', 'p3']);
   });
 
+  // 追加(audit C-12): 先頭行が他の行より短い TSV でも、選択範囲は実際に貼り付けた範囲(最も長い行の幅)になる。
+  it('先頭行が短い TSV の貼り付け後の選択範囲は最も長い行の幅になる(C-12)', () => {
+    const c = createClipboardController<Row>();
+    const t = makeArgs({
+      uiState: { ...createInitialGridUiState(), activeCell: { row: 0, col: 0 } },
+    });
+    c.update(t.args);
+    c.handlePaste({ clipboardData: { getData: () => 'a\nb\tc' }, preventDefault: vi.fn() });
+    const written = (t.args.onRowsChange as ReturnType<typeof vi.fn>).mock.calls[0][0] as Row[];
+    expect(written[1]).toMatchObject({ id: 'b', name: 'c' });
+    expect(t.dispatch).toHaveBeenCalledWith({ type: 'selection/update', cell: { row: 1, col: 1 } });
+  });
+
   // 追加(audit RD-2): 編集中 / 入力要素が発火元の paste はグリッドが横取りしない。
   it('セル編集中の paste は無視する(エディタ input のネイティブ貼り付けに委ねる)', () => {
     const c = createClipboardController<Row>();

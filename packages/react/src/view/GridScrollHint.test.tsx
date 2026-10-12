@@ -254,8 +254,10 @@ describe('GridScrollHint', () => {
 
 // トラック帯検知(pointermove の座標判定)に必要な幾何を jsdom へスタブします。
 //   幅 800px・スクロールバー幅 0(macOS オーバーレイ相当)→ 右端 18px が帯。
-const stubScrollerGeometry = (el: HTMLElement) => {
-  Object.defineProperty(el, 'clientWidth', { value: 800, configurable: true });
+// 変更(audit V-10): ネイティブ縦バー 15px(offsetWidth 800 − clientWidth 785)の環境を模します。帯 = バー幅 + 18px。
+//   バー幅 0(オーバーレイバー)は第 2 引数に 0 を渡します(帯は右端 8px だけ)。
+const stubScrollerGeometry = (el: HTMLElement, nativeBarWidth = 15) => {
+  Object.defineProperty(el, 'clientWidth', { value: 800 - nativeBarWidth, configurable: true });
   Object.defineProperty(el, 'offsetWidth', { value: 800, configurable: true });
   el.getBoundingClientRect = () =>
     ({
@@ -385,6 +387,19 @@ describe('GridScrollHint(ルーラー + ジャンププレビュー)', () => {
     ).toBeNull();
   });
 
+  // 追加(audit V-10): バー幅 0(macOS のオーバーレイバー)では右端 8px だけを帯とみなし、右端のセルのホバーで点灯しない。
+  it('ネイティブバー幅 0 の環境では右端 8px だけが帯になる', () => {
+    const { container, getByTestId } = render(
+      <Harness options={resolve({ scrollbar: false })} />,
+    );
+    const scroller = getByTestId('scroller');
+    stubScrollerGeometry(scroller, 0);
+    firePointerMove(scroller, 790, 240);
+    expect(container.querySelector('.ssg-scroll-hint-jumpline')).toBeNull();
+    firePointerMove(scroller, 795, 240);
+    expect(container.querySelector('.ssg-scroll-hint-jumpline')).not.toBeNull();
+  });
+
   it('ruler=false ではルーラーもジャンププレビューも描画しない', () => {
     const { container, getByTestId } = render(
       <Harness options={resolve({ ruler: false, trigger: 'always' })} />,
@@ -503,5 +518,50 @@ describe('GridScrollHint(カスタムスクロールバー)', () => {
     firePointerEvent(gutter as HTMLElement, 'pointerdown', HEADER_HEIGHT + 222);
     firePointerEvent(gutter as HTMLElement, 'pointermove', HEADER_HEIGHT + 240);
     expect(container.querySelector('.ssg-scroll-hint-jumpline')).toBeNull();
+  });
+
+  // 追加(audit V-04): pointercancel / キャプチャ喪失でもドラッグを終える(以後のホバーで scrollTop を書き換えない)。
+  it('pointercancel / lostpointercapture でドラッグを終える', () => {
+    for (const endType of ['pointercancel', 'lostpointercapture'] as const) {
+      const { container, getByTestId } = render(<Harness options={resolve(true)} />);
+      const gutter = container.querySelector<HTMLElement>('.ssg-scroll-hint-scrollbar')!;
+      stubGutterGeometry(gutter);
+      firePointerEvent(gutter, 'pointerdown', HEADER_HEIGHT + 10);
+      expect(gutter.classList.contains('ssg-scroll-hint-scrollbar--dragging')).toBe(true);
+      act(() => {
+        gutter.dispatchEvent(new MouseEvent(endType, { bubbles: true }));
+      });
+      expect(gutter.classList.contains('ssg-scroll-hint-scrollbar--dragging')).toBe(false);
+      const scroller = getByTestId('scroller');
+      const before = scroller.scrollTop;
+      firePointerEvent(gutter, 'pointermove', HEADER_HEIGHT + 300);
+      expect(scroller.scrollTop).toBe(before);
+      cleanup();
+    }
+  });
+});
+
+// 追加(audit V-11): ラベル行があるとき、行番号 / 総行数はラベル行を飛ばして数える(行ヘッダー・バーの件数と揃える)。
+describe('GridScrollHint(ラベル行)', () => {
+  it('行番号と総行数からラベル行を除く', () => {
+    const scrollContainerRef = { current: null };
+    const { container } = render(
+      <GridScrollHint
+        options={resolve({ trigger: 'always' })}
+        scrollContainerRef={scrollContainerRef}
+        scrollTop={10 * ROW_HEIGHT}
+        viewportHeight={VIEWPORT_HEIGHT}
+        headerHeight={HEADER_HEIGHT}
+        physicalBodyHeight={ROW_COUNT * ROW_HEIGHT}
+        verticalScaleFactor={1}
+        rowMetrics={createUniformRowMetrics(ROW_COUNT, ROW_HEIGHT)}
+        rowModel={makeRowModel()}
+        labelViewIndexes={Int32Array.from([0, 5, 500])}
+      />,
+    );
+    const bubble = bubbleOf(container);
+    // view 10 の前にラベル行が 2 つ(0 / 5)→ データ行の 9 番目。総行数は 1,000 − 3。
+    expect(bubble?.textContent).toContain('行 9');
+    expect(bubble?.textContent).toContain((997).toLocaleString());
   });
 });

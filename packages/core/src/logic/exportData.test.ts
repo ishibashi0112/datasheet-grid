@@ -68,6 +68,13 @@ describe('buildGridExportData', () => {
     expect(data.columns).toEqual([{ key: 'a', title: 'a' }]);
   });
 
+  // 追加(audit L-12): title が空文字の列も key をヘッダーに使う(ヘッダー表示等と同じ)。
+  it('title が空文字の列も key をヘッダーに使う', () => {
+    const cols: GridColumn<Row>[] = [{ key: 'a', title: '', width: 100 }];
+    const data = buildGridExportData({ getRow, startRow: 0, endRow: 1, columns: cols });
+    expect(data.columns).toEqual([{ key: 'a', title: 'a' }]);
+  });
+
   it('レンジ [startRow, endRow) は end 排他', () => {
     const data = buildGridExportData({
       getRow,

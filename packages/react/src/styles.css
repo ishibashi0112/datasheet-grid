@@ -532,10 +532,12 @@
   }
 
   /* ── 追加(label-row ②): ラベル行(見出し / 区切り行) ── */
-  /* 行コンテナ = 帯(ペイン幅いっぱいの背景 + 下罫線)。contain: paint は外し、中身の sticky を
-     スクロールコンテナ基準で効かせます。 */
+  /* 行コンテナ = 帯(ペイン幅いっぱいの背景 + 下罫線)。
+     変更(audit V-08): ここにあった `contain: layout style` は後方の `.ssg-body-row`(同特異度・後勝ち)の
+     `contain: layout style paint` に上書きされて効いていなかったため削除しました(実際の描画は従来どおり
+     paint containment あり)。paint containment はスクロールコンテナを作らないため、中身の sticky は
+     共有スクロールコンテナ基準で効き、帯の中に収まる中身は切れません。 */
   .ssg-label-row {
-    contain: layout style;
     background-color: var(--ssg-label-row-bg);
     border-bottom: 1px solid var(--ssg-divider);
   }
@@ -3106,8 +3108,14 @@
   .ssg-body-row--checked {
     background-color: var(--ssg-row-selected-bg);
   }
-  .ssg-body-row--checked .ssg-body-cell:not(.ssg-body-cell--row-hovered) {
+  /* 修正(audit V-07): 特異度を (0,3,0) → (0,2,0) に下げ(:not を :where で包む)、公開契約の連結セレクタ
+     `.ssg-body-cell.my-class`(0,2,0。利用側 CSS は後から読み込まれる)がチェック行でも勝つようにします。
+     検証 NG(mark)の背景もチェック行で消えないよう、直後で同じ特異度のまま戻します。 */
+  .ssg-body-row--checked .ssg-body-cell:where(:not(.ssg-body-cell--row-hovered)) {
     background-color: transparent;
+  }
+  .ssg-body-row--checked .ssg-body-cell--invalid:where(:not(.ssg-body-cell--row-hovered)) {
+    background-color: var(--ssg-invalid-bg);
   }
 
   /* ── ヘッダー内要素(GridHeaderRow) ── */
@@ -3150,6 +3158,13 @@
     pointer-events: none;
   }
   .ssg-header-cell:hover .ssg-header-actions {
+    opacity: 1;
+    pointer-events: auto;
+    background-color: var(--ssg-header-hover-bg);
+  }
+  /* 追加(audit V-09): Tab で ⋮ ボタンへ移ったとき(キーボードのフォーカス表示中)も見えるようにします。
+     マウスで押したあとのフォーカスでは出しっぱなしにしないよう :focus-visible に限ります。 */
+  .ssg-header-actions:has(:focus-visible) {
     opacity: 1;
     pointer-events: auto;
     background-color: var(--ssg-header-hover-bg);

@@ -130,7 +130,10 @@ export const createAutoHeightMeasurer = <T,>(): AutoHeightMeasurer<T> => {
         const anchorTopBefore = rowMetrics.rowTop(anchorRow);
         const offset = beforeScrollTop - anchorTopBefore;
         rebuildPrefixFrom(rowHeightStore, minChanged);
-        const anchorTopAfter = rowHeightStore.prefix[anchorRow];
+        // 修正(audit B-01): 再構築後の位置も捕捉時と同じ装飾済み rowMetrics で読みます(展開行帯 / ラベル行高の
+        //   上書きを含む)。未装飾の store.prefix を読むと、アンカーより上の帯の高さぶん scrollTop が上へ飛びます。
+        //   装飾は base の prefix を参照で読むため、ここで再構築後の値が返ります。
+        const anchorTopAfter = rowMetrics.rowTop(anchorRow);
         // ペイント前(layout フレーム内)に同期適用してジャンプを消します。
         el.scrollTop = anchorTopAfter + offset;
         // 測定収束のための version bump(ペイント前にジオメトリを更新)。
@@ -175,6 +178,11 @@ export const createAutoHeightMeasurer = <T,>(): AutoHeightMeasurer<T> => {
     getSnapshot: snapshot.getSnapshot,
     subscribe: snapshot.subscribe,
     measuredHeights,
-    dispose: disconnect,
+    // 修正(audit C-11): dispose 後に同じ args で update されたとき(StrictMode の擬似アンマウント → 再マウント)も
+    //   測り直して ResizeObserver を作り直せるよう、前回の args を忘れます(測り直しは高さが収束していれば no-op)。
+    dispose: () => {
+      disconnect();
+      last = null;
+    },
   };
 };

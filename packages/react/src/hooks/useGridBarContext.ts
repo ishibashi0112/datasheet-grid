@@ -6,7 +6,7 @@ import type {
   GridUiState,
   SpreadsheetGridSlotContext,
 } from '../model/gridTypes';
-import { buildGridDerivedSummary } from '../view/gridBarHelpers';
+import { buildGridDerivedSummary, createDataColumnNamer } from '../view/gridBarHelpers';
 
 // 追加: derivedSummary / setGlobalFilterText を載せる前の中間 slot context 型です。
 // 変更(DS-3-7): base から filteredRows(配列)を外します。サマリは件数のみ使用し、公開
@@ -34,6 +34,8 @@ type UseGridBarContextArgs<T> = {
   getFilteredRows: () => T[];
   columns: GridColumn<T>[];
   visibleColumns: GridColumn<T>[];
+  // 追加(audit V-12): 画面の並び(合成列込み)。A1 ラベルの列名から合成列を除くのに使います(未指定は従来どおり)。
+  orderedColumns?: GridColumn<T>[];
   uiState: GridUiState;
   setGlobalFilterText: (value: string) => void;
   // 追加(F-async): グローバルフィルタの適用状態と進捗です(useGlobalFilteredOrder の戻り値)。
@@ -49,6 +51,7 @@ export const useGridBarContext = <T,>({
   getFilteredRows,
   columns,
   visibleColumns,
+  orderedColumns,
   uiState,
   setGlobalFilterText,
   globalFilterStatus,
@@ -92,11 +95,15 @@ export const useGridBarContext = <T,>({
     ],
   );
 
+  const columnNamer = useMemo(
+    () => (orderedColumns ? createDataColumnNamer(orderedColumns) : undefined),
+    [orderedColumns],
+  );
   const derivedSummary = useMemo(
     // 変更(DS-3-7): 件数 viewRowCount を明示引数で渡します(filteredRows 配列は使いません)。
     // 変更(label-row ③): 分母 totalRowCount(未指定は rows.length)。
-    () => buildGridDerivedSummary(slotContextBase, viewRowCount, totalRowCount),
-    [slotContextBase, viewRowCount, totalRowCount],
+    () => buildGridDerivedSummary(slotContextBase, viewRowCount, totalRowCount, columnNamer),
+    [slotContextBase, viewRowCount, totalRowCount, columnNamer],
   );
 
   const slotContext = useMemo<SpreadsheetGridSlotContext<T>>(

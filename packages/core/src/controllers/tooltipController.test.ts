@@ -117,4 +117,16 @@ describe('tooltipController', () => {
     expect(isVisible()).toBe(true);
     controller.dispose();
   });
+
+  // 追加(audit C-10): 表示待ちの間に対象が DOM から外れたら(再描画での差し替え)表示しない。
+  it('表示待ちの間に対象が DOM から外れたら表示しない', () => {
+    const controller = acquireTooltipController();
+    // 直前のテストの表示によるウォームアップ(即時表示)を抜けてから始めます。
+    vi.setSystemTime(Date.now() + 60_000);
+    target.dispatchEvent(new PointerEvent('pointerover', { bubbles: true }));
+    target.remove();
+    vi.advanceTimersByTime(400);
+    expect(isVisible()).toBe(false);
+    controller.dispose();
+  });
 });

@@ -15,7 +15,7 @@ import type {
 } from '../model/gridTypes.unbound';
 import { clamp } from '../logic/geometry';
 import { isImeInputTarget, isPrintableKey, shouldIgnoreGridKeydown } from '../logic/domGuards';
-import { isCellEditable } from '../utils/permissions';
+import { isViewCellEditable } from '../utils/permissions';
 
 export type GridKeyboardEventLike = {
   key: string;
@@ -259,8 +259,9 @@ export const createKeyboardController = <T,>(): KeyboardController<T> => {
         return;
       }
       if (
-        !isCellEditable(
+        !isViewCellEditable(
           { readOnly, canEditCell },
+          rowModel,
           uiState.activeCell.row,
           uiState.activeCell.col,
           row,

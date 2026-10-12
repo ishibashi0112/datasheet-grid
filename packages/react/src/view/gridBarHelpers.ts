@@ -9,6 +9,7 @@ import type {
   SpreadsheetGridSelectionStats,
 } from '../model/gridTypes';
 import { toExcelColumnName } from '@ishibashi0112/spreadsheet-grid-core/utils/excelColumnName';
+import { isSyntheticColumnKey } from '@ishibashi0112/spreadsheet-grid-core/logic/detailRow';
 // 追加(12-A): set フィルター対応のフィルター有効判定を共有します。
 import { isActiveColumnFilterValue } from '@ishibashi0112/spreadsheet-grid-core/logic/filtering';
 
@@ -34,16 +35,43 @@ const truncateSummaryText = (value: string, maxLength = 16) => {
   return `${value.slice(0, maxLength)}…`;
 };
 
+// 追加(audit V-12): 列 index(画面の並び = 合成列込み)→ A1 の列名。合成列(行ドラッグハンドル / 展開トグル /
+//   自動グループ列)を数えないため、合成列が先頭にあっても最初のデータ列が "A" になります。合成列が無ければ
+//   toExcelColumnName そのもの(従来どおり)。
+export type GridColumnNamer = (columnIndex: number) => string;
+
+export const createDataColumnNamer = (orderedColumns: ReadonlyArray<{ key: string }>): GridColumnNamer => {
+  const syntheticBefore: number[] = [];
+  let count = 0;
+  for (const column of orderedColumns) {
+    syntheticBefore.push(count);
+    if (isSyntheticColumnKey(column.key)) {
+      count += 1;
+    }
+  }
+  if (count === 0) {
+    return toExcelColumnName;
+  }
+  return (columnIndex) =>
+    toExcelColumnName(Math.max(columnIndex - (syntheticBefore[columnIndex] ?? count), 0));
+};
+
 // 追加: ActiveCell を A1 形式へ整形します。
-export const formatGridCellLabel = (cell: CellCoord | null) => {
+export const formatGridCellLabel = (
+  cell: CellCoord | null,
+  toColumnName: GridColumnNamer = toExcelColumnName,
+) => {
   if (!cell) {
     return 'なし';
   }
-  return `${toExcelColumnName(cell.col)}${cell.row + 1}`;
+  return `${toColumnName(cell.col)}${cell.row + 1}`;
 };
 
 // 追加: selection の概要を短く整形します。
-export const formatGridSelectionLabel = (selection: GridSelection) => {
+export const formatGridSelectionLabel = (
+  selection: GridSelection,
+  toColumnName: GridColumnNamer = toExcelColumnName,
+) => {
   if (!selection) {
     return 'なし';
   }
@@ -66,7 +94,7 @@ export const formatGridSelectionLabel = (selection: GridSelection) => {
       selection.range.end.col,
     );
 
-    return `${toExcelColumnName(startCol)}${startRow + 1} - ${toExcelColumnName(
+    return `${toColumnName(startCol)}${startRow + 1} - ${toColumnName(
       endCol,
     )}${endRow + 1}`;
   }
@@ -79,7 +107,7 @@ export const formatGridSelectionLabel = (selection: GridSelection) => {
 
   const startCol = Math.min(selection.startCol, selection.endCol);
   const endCol = Math.max(selection.startCol, selection.endCol);
-  return `Col ${toExcelColumnName(startCol)} - ${toExcelColumnName(endCol)}`;
+  return `Col ${toColumnName(startCol)} - ${toColumnName(endCol)}`;
 };
 
 // 追加: rows / filteredRows の概要テキストです。
@@ -254,6 +282,8 @@ export const buildGridDerivedSummary = <T,>(
   filteredRowCount: number,
   // 追加(label-row ③): 総データ行数(未指定は rows.length)。
   totalRowCount?: number,
+  // 追加(audit V-12): A1 の列名(未指定は合成列を考慮しない toExcelColumnName)。
+  toColumnName: GridColumnNamer = toExcelColumnName,
 ): SpreadsheetGridDerivedSummary => {
   const selectionStats = getGridSelectionStats(context, filteredRowCount);
   const hasGlobalFilter = context.globalFilterText.trim().length > 0;
@@ -277,8 +307,8 @@ export const buildGridDerivedSummary = <T,>(
     columnSummaryText: formatGridColumnSummary(context),
     filterSummaryText: formatGridFilterSummary(context),
     sortSummaryText: formatGridSortSummary(context),
-    activeCellLabel: formatGridCellLabel(context.activeCell),
-    selectionLabel: formatGridSelectionLabel(context.selection),
+    activeCellLabel: formatGridCellLabel(context.activeCell, toColumnName),
+    selectionLabel: formatGridSelectionLabel(context.selection, toColumnName),
     selectionStatsText: formatGridSelectionStatsLabel(context, filteredRowCount),
     selectionStats,
     hasGlobalFilter,

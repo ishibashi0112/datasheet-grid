@@ -96,6 +96,8 @@ import {
   columnFilterValueToDraftText,
   // 追加(FM-1): フィルター管理パネルの一覧行(有効フィルターの抽出)に使います。
   isActiveColumnFilterValue,
+  // 追加(audit L-06): dateSet 列の候補収集を照合と同じ正規化日付キーで行います。
+  toDateSetKey,
   // 行モデルチェーンは order(Int32Array)ベースに一本化しています
   //   (DS-2 で差し替え、旧オブジェクト配列版は DS-3-8 で削除)。
   // 追加(filter-ext A): number フィルターの数値化規則(空白 = NaN)です。B-2 の
@@ -222,7 +224,7 @@ import type {
   GridContextMenuParams,
   GridContextMenuItem,
 } from './model/gridTypes';
-import { getCellValue, isCellEditable } from '@ishibashi0112/spreadsheet-grid-core/utils/permissions';
+import { getCellValue, isViewCellEditable } from '@ishibashi0112/spreadsheet-grid-core/utils/permissions';
 import { writeRowsCell } from '@ishibashi0112/spreadsheet-grid-core/logic/editorValues';
 import { isCheckboxChecked, toggleCheckboxValue } from '@ishibashi0112/spreadsheet-grid-core/logic/checkboxEditor';
 import { CheckboxCell } from './editors/CheckboxCell';
@@ -535,7 +537,9 @@ export function SpreadsheetGrid<T extends object>({
   //   破壊的に変更しない設計(編集は onRowsChange / onColumnsChange が新配列を返す)のため、
   //   内部の既存シグネチャ(mutable T[])へはこの境界で 1 回だけ型を絞って渡します
   //   (実行時コピーはせず、参照同一性・memo 化はすべて従来どおり)。
-  const rows = rowsProp as T[];
+  // 修正(audit RD-8): dataSource(serverSide)指定時は rows を空配列として扱います(ドキュメントどおり「無視」。
+  //   併用時に clientSide のフィルター / ソート / 候補収集が使われない rows に対して空走していた)。
+  const rows = (dataSource != null ? EMPTY_ROWS : rowsProp) as T[];
   const columns = columnsProp as GridColumn<T>[];
 
   // 追加(THEME-2): density プリセットの既定寸法を解決します(明示 prop が常に優先)。
@@ -1129,10 +1133,12 @@ export function SpreadsheetGrid<T extends object>({
   const sortActive = !manualSorting && uiState.sort.length > 0;
   // 追加(manual-mode): 手動フィルターで rows が 0 件のとき、フィルターが載っていれば「一致する行がありません」
   //   を出す(絞り込みは外部で済んでいるため、rows.length === 0 だけでは区別できない)。
-  const manualFilterActive =
-    manualFiltering &&
-    (globalFilterText.trim().length > 0 ||
-      Object.keys(uiState.filters.columnFilters).length > 0);
+  // 修正(audit RD-8): serverSide もフィルター条件の有無で空状態の文言を分けます(rows は常に空のため、従来は
+  //   フィルター結果が 0 件でも noRowsText だった)。
+  const filterConditionsActive =
+    globalFilterText.trim().length > 0 ||
+    Object.keys(uiState.filters.columnFilters).length > 0;
+  const manualFilterActive = manualFiltering && filterConditionsActive;
   const {
     groupTree,
     groupedDisplay,
@@ -2173,8 +2179,9 @@ export function SpreadsheetGrid<T extends object>({
         activeCell: uiState.activeCell,
         viewRowCount,
         canWriteCell: (viewIndex, colIndex, row, column) =>
-          isCellEditable(
+          isViewCellEditable(
             { readOnly, canEditCell },
+            rowModel,
             viewIndex,
             colIndex,
             row,
@@ -2196,10 +2203,12 @@ export function SpreadsheetGrid<T extends object>({
       selection: uiState.selection,
       activeCell: uiState.activeCell,
       viewRowCount,
-      canWriteCell: (originalRowIndex, colIndex, row, column) =>
-        isCellEditable(
+      // 変更(audit RD-4): canEditCell の rowIndex はビュー行 index(表示 / 編集開始と同じ)。
+      canWriteCell: (_originalRowIndex, colIndex, row, column, viewIndex) =>
+        isViewCellEditable(
           { readOnly, canEditCell },
-          originalRowIndex,
+          rowModel,
+          viewIndex,
           colIndex,
           row,
           column,
@@ -2239,6 +2248,8 @@ export function SpreadsheetGrid<T extends object>({
       uiState,
       readOnly,
       canEditCell,
+      // 追加(audit RD-4): 貼り付けで末尾へ追加した行の rowKey(canEditCell の context)用。
+      rowKeyGetter: resolvedRowKeyGetter,
       // 追加(motion-4 / M-3): コピー成功時にコピー元の選択とビュー形状を控えます(動く点線の描画元。
       //   ビュー形状が変わったら描画側が参照比較で無視するため、解除の effect は不要)。
       onCopied: (selection) =>
@@ -2295,8 +2306,9 @@ export function SpreadsheetGrid<T extends object>({
         return;
       }
       if (
-        !isCellEditable(
+        !isViewCellEditable(
           { readOnly, canEditCell },
+          rowModel,
           cell.row,
           cell.col,
           row,
@@ -2333,8 +2345,9 @@ export function SpreadsheetGrid<T extends object>({
         return;
       }
       if (
-        !isCellEditable(
+        !isViewCellEditable(
           { readOnly, canEditCell },
+          rowModel,
           cell.row,
           cell.col,
           row,
@@ -2539,8 +2552,9 @@ export function SpreadsheetGrid<T extends object>({
         return;
       }
       if (
-        !isCellEditable(
+        !isViewCellEditable(
           { readOnly, canEditCell },
+          rowModel,
           cell.row,
           cell.col,
           row,
@@ -2854,7 +2868,8 @@ export function SpreadsheetGrid<T extends object>({
     () =>
       columns.map((column) => ({
         key: column.key,
-        title: column.title ?? column.key,
+        // 修正(audit L-12): title が空文字なら key(ヘッダー表示等と同じ ||)。
+        title: column.title || column.key,
         visible: column.visible !== false,
         pane: getColumnPane(column),
       })),
@@ -2875,7 +2890,7 @@ export function SpreadsheetGrid<T extends object>({
         )
         .map((column) => ({
           key: column.key,
-          title: column.title ?? column.key,
+          title: column.title || column.key,
         })),
     [visibleColumns],
   );
@@ -3208,12 +3223,19 @@ export function SpreadsheetGrid<T extends object>({
   //   連動し、これが変わったときだけ候補収集をやり直します(旧 getColumnSelectOptions の [rows]
   //   依存と等価)。set 即時適用の再レンダー(uiState 変化)では rows/openedFilterColumn とも不変の
   //   ため identity が保たれ、収集の再実行は起きません(open 中の再収集なしを維持)。
+  // 修正(audit L-06): dateSet 列は照合と同じ正規化日付キー(toDateSetKey)で候補を集めます。Date 値のセルが
+  //   String(Date)('Thu Jul 02 2026 …')の候補になり、年月日ツリーに出ず選んでも一致しなかったため。
+  //   文字列セルは後段の normalizeDateSetOptions と同じキーになるだけで結果は変わりません。
+  const openedFilterIsDateSet = openedFilterType === 'dateSet';
   const getOpenedColumnRawValueAt = useCallback(
-    (index: number): unknown =>
-      openedFilterColumn
-        ? getCellValue(rows[index], openedFilterColumn)
-        : undefined,
-    [rows, openedFilterColumn],
+    (index: number): unknown => {
+      if (!openedFilterColumn) {
+        return undefined;
+      }
+      const value = getCellValue(rows[index], openedFilterColumn);
+      return openedFilterIsDateSet ? toDateSetKey(value) : value;
+    },
+    [rows, openedFilterColumn, openedFilterIsDateSet],
   );
 
   // 変更(DS-4 #1): 候補収集を「通常規模=同期 / 大規模(>閾値)=時間分割の非同期」へ。
@@ -3565,6 +3587,8 @@ export function SpreadsheetGrid<T extends object>({
     getFilteredRows,
     columns,
     visibleColumns,
+    // 追加(audit V-12): A1 ラベルの列名から合成列を除くための画面の並び。
+    orderedColumns,
     uiState,
     setGlobalFilterText,
     // 追加(F-async): グローバルフィルタの適用状態/進捗を slotContext へ渡します(ローディング表示用)。
@@ -4332,7 +4356,6 @@ export function SpreadsheetGrid<T extends object>({
                   entries={detailEntries}
                   mode="band"
                   paneWidth={leftPaneTotalWidth}
-                  baseOffset={overlayBaseOffset}
                   cardStickyLeft={0}
                   cardWidth={0}
                   renderCard={renderDetailCard}
@@ -4542,7 +4565,6 @@ export function SpreadsheetGrid<T extends object>({
                   entries={detailEntries}
                   mode="center"
                   paneWidth={centerContentWidth}
-                  baseOffset={overlayBaseOffset}
                   cardStickyLeft={detailCardStickyLeft}
                   cardWidth={detailCardWidth}
                   cardSlot={detailCardSlot}
@@ -4749,7 +4771,6 @@ export function SpreadsheetGrid<T extends object>({
                   entries={detailEntries}
                   mode="band"
                   paneWidth={rightPaneTotalWidth}
-                  baseOffset={overlayBaseOffset}
                   cardStickyLeft={0}
                   cardWidth={0}
                   renderCard={renderDetailCard}
@@ -4780,7 +4801,7 @@ export function SpreadsheetGrid<T extends object>({
               className={cx('ssg-empty-state', slots.emptyState?.className)}
               style={slots.emptyState?.style}
             >
-              {rows.length === 0 && !manualFilterActive
+              {(isServerSide ? !filterConditionsActive : rows.length === 0 && !manualFilterActive)
                 ? noRowsText
                 : noMatchingRowsText}
             </div>
@@ -4804,6 +4825,7 @@ export function SpreadsheetGrid<T extends object>({
             verticalScaleFactor={verticalScaleFactor}
             rowMetrics={rowMetrics}
             rowModel={rowModel}
+            labelViewIndexes={labelDisplay?.labelViewIndexes}
           />
         )}
 

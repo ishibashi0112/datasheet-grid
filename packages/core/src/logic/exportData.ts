@@ -38,7 +38,8 @@ export const buildGridExportData = <T,>({
   // 列メタは key(オブジェクト系ライブラリ用)と title(ヘッダー表示用)の双方を持たせます。
   const exportColumns = columns.map((column) => ({
     key: column.key,
-    title: column.title ?? column.key,
+    // 修正(audit L-12): title が空文字の列は key にフォールバックします(ヘッダー表示等と同じ ||)。
+    title: column.title || column.key,
   }));
 
   const rows: GridExportData['rows'] = [];

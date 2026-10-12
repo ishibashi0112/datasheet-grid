@@ -729,6 +729,19 @@ export type CellStyleContext<T, F extends GridFrameworkTypes = GridFrameworkType
   readOnly: boolean;
 };
 
+// 追加(audit RD-4): canEditCell の第 5 引数です。第 1 引数 rowIndex はビュー行 index(フィルター / ソート後の
+//   表示位置)で、元 rows の index と行キーをここで渡します(CellStyleContext の sourceRowIndex / rowKey と同基準)。
+//   serverSide では sourceRowIndex は view index と同値です。貼り付けで末尾に追加される行は、追加後の
+//   元 rows の index と rowKeyGetter(row, index) の値(未指定なら index)になります。
+/**
+ * `canEditCell` の第 5 引数。`sourceRowIndex` は元 `rows` の index(serverSide では view index と同値)、
+ * `rowKey` は `rowKeyGetter` の値(未指定なら元 `rows` の index)。
+ */
+export type CanEditCellContext = {
+  sourceRowIndex: number;
+  rowKey: GridRowKey;
+};
+
 // 追加(proposals ⑤): 条件付き行 className(getRowClassName)の第 3 引数コンテキストです。
 //   rowIndex(view)と sourceRowIndex(source)の違いは CellRenderContext の注記を参照
 //   (getInvalidCells() の返す sourceRowIndex / rowKey と同一基準)。
@@ -967,7 +980,10 @@ export type GridColumn<T, F extends GridFrameworkTypes = GridFrameworkTypes> = {
   title?: string;
   /** 列幅(px)。 */
   width: number;
-  /** リサイズ時の下限幅。flex 配分時の下限クランプにも使用(flex 列で未指定なら内部既定 50px)。 */
+  /**
+   * リサイズ時の下限幅(未指定時の手動リサイズの下限は 60px。`0` を指定すると 0 まで縮められる)。
+   * flex 配分時の下限クランプにも使用(flex 列で未指定なら内部既定 50px)。
+   */
   minWidth?: number;
   /**
    * 上限幅。**未指定なら上限なし**(autoSize は内容にぴったり合わせ、
@@ -1082,8 +1098,9 @@ export type GridColumn<T, F extends GridFrameworkTypes = GridFrameworkTypes> = {
   //   ならない値と空値(null / undefined / '')は対象外です(count のみ leaf 行数)。
   //   rowGroup 列がないときは無視されます。
   /**
-   * グルーピング時のこの列の集計。組み込みは値駆動の数値集計(`Number()`
-   * で有限になる値のみ対象・空値除外、`count` は配下 leaf 行数)。
+   * グルーピング時のこの列の集計。
+   * 組み込みは数値と数値の文字列だけを数える集計(空値・空白だけの文字列・`true` /
+   * `false`・`Date`・配列などは対象外、`count` は配下 leaf 行数)。
    * 関数でカスタム集計可(返り値がグループ行に表示)。`rowGroup` 列がないときは無視。
    */
   aggFunc?: GridAggFuncName | GridAggFunc<T, F>;
@@ -1164,7 +1181,12 @@ export type GridColumn<T, F extends GridFrameworkTypes = GridFrameworkTypes> = {
    * `numberFormatter` 等を渡せる。元の値/編集/コピー/ソート/フィルターには影響しない。
    */
   valueFormatter?: CellValueFormatter<T, F>;
-  /** カスタムヘッダー描画。 */
+  /**
+   * カスタムヘッダー描画。中に置いたボタン / 入力欄 / リンク等(`button` / `input` / `select` /
+   * `textarea` / `a[href]` / `label` / `contenteditable` / `role="button"` 等)
+   * を押したときは列の範囲選択を始めない(既定動作も止めないため入力欄にフォーカスが入る)。
+   * それ以外の部分を押すと従来どおり列を選択する。
+   */
   renderHeader?: (ctx: HeaderRenderContext<T, F>) => F['node'];
   // 変更(12-A): 'set' を追加します。AG Grid の Set Filter 相当
   //             (チェックボックス一覧 + 検索 + Select All)の UI になります。
@@ -1765,6 +1787,9 @@ export type CsvExportOptions = {
   delimiter?: string;
   // 先頭に UTF-8 BOM を付けるか(exportCsv は既定 false / downloadCsv は既定 true)。
   bom?: boolean;
+  // 追加(audit L-20): CSV インジェクション対策(既定 false)。= + - @ / タブ / CR で始まる値の先頭に ' を付け、
+  //   表計算ソフトで数式として実行されないようにします(-5 など数値として読める値はそのまま。ヘッダー行は対象外)。
+  escapeFormulas?: boolean;
   // 追加(label-row ④): ラベル行(labelRow)を出力に含めるか(既定 false)。true のとき、ラベル行は
   //   labelRow.exportText(未指定なら getLabel を先頭列・他列は空)の 1 行として出力されます。
   includeLabelRows?: boolean;
@@ -1911,7 +1936,12 @@ export type SpreadsheetGridHandle<T> = {
   /** 現在のアクティブセル `{ row, col }`(なければ `null`)。 */
   getActiveCell: () => CellCoord | null;
   // アクティブセルを設定(null で解除)。scrollIntoView:true で可視化も行います。
-  /** アクティブセル設定(`null` で解除)。`scrollIntoView` で可視化も行う。 */
+  /**
+   * アクティブセル設定(`null` で解除)。`scrollIntoView: true`
+   * で可視化も行う(固定列のセルでも縦方向へスクロールする)。中央ペイン(固定でない列)のセルは、
+   * 指定が無くてもアクティブセルの位置が変わると見える位置までスクロールされる(クリック /
+   * キー操作と同じ動き)。
+   */
   setActiveCell: (
     cell: CellCoord | null,
     options?: { scrollIntoView?: boolean },
@@ -1920,7 +1950,7 @@ export type SpreadsheetGridHandle<T> = {
   /** 現在の選択状態(`GridSelection`)。 */
   getSelection: () => GridSelection;
   // 単一セルを選択(クリック相当)。scrollIntoView:true で可視化も行います。
-  /** 単一セル選択(クリック相当)。 */
+  /** 単一セル選択(クリック相当)。スクロールの扱いは `setActiveCell` と同じ。 */
   selectCell: (
     viewRowIndex: number,
     colIndex: number,
@@ -2663,7 +2693,8 @@ export type SpreadsheetGridProps<T, F extends GridFrameworkTypes = GridFramework
    * 行ドラッグ並べ替え(`enableRowDrag`)の表示方式。`'ghost'` は従来(ゴースト + ガイド線、
    * ドロップ後に新しい位置へスライド)。`'live'` は掴んだ行がポインタに追従し、
    * 通る先の行がその場で上下へ退避する(ドロップ先が「隙間」として見える。
-   * 枠外で離しても直前の位置へ確定、`Esc` で元へ戻る)。`motion` が `'off'` のときは `'ghost'`
+   * 枠外で離しても直前の位置へ確定、`Esc` で元へ戻る。
+   * ウィンドウからフォーカスが外れたときも元へ戻る)。`motion` が `'off'` のときは `'ghost'`
    * と同じ。
    *
    * @defaultValue `'ghost'`
@@ -2675,9 +2706,9 @@ export type SpreadsheetGridProps<T, F extends GridFrameworkTypes = GridFramework
    * 列ヘッダーのドラッグ並べ替え(`onColumnsChange` 指定時)の表示方式。`'ghost'` は従来(ゴースト +
    * 縦線、ドロップ後に新しい位置へスライド)。`'live'` は同じペイン内では掴んだ列(ヘッダー +
    * 描画中のセル)がポインタに追従し、通る先の列がその場で左右へ退避する(ドロップ先が「隙間」
-   * として見える。枠外で離しても直前の位置へ確定、`Esc` で元へ戻る)。
-   * 固定列のペインをまたいで移す(固定の変更)ときは、掴んだ列の複製(浮かぶ列)
-   * がポインタに付いてきて元のペインは列が抜けた分だけ詰まり、
+   * として見える。枠外で離しても直前の位置へ確定、`Esc` で元へ戻る。
+   * ウィンドウからフォーカスが外れたときも元へ戻る)。固定列のペインをまたいで移す(固定の変更)
+   * ときは、掴んだ列の複製(浮かぶ列)がポインタに付いてきて元のペインは列が抜けた分だけ詰まり、
    * 移動先は縦線で示す(浮かぶ列の見出しに、固定ペインへはピン / 中央へは移動の矢印のアイコン。
    * 浮かぶ列は表の枠の内側に収まり、離すと新しい位置へ滑り込む)。`motion` が `'off'` のときは
    * `'ghost'` と同じ。
@@ -2766,12 +2797,23 @@ export type SpreadsheetGridProps<T, F extends GridFrameworkTypes = GridFramework
    * @defaultValue `false`
    */
   dimReadOnlyCells?: boolean;
-  /** セル単位の編集可否ゲート。 */
+  // 変更(audit RD-4): rowIndex はどの経路(表示 / 編集開始 / 確定 / 貼り付け / Delete / IME 入力)でも
+  //   ビュー行 index に統一し、元 rows の index と rowKey を第 5 引数 ctx で渡します(CellStyleContext と同基準)。
+  /**
+   * セル単位の編集可否ゲート。`rowIndex` は**ビュー行 index**(フィルター / ソート後の表示位置)で、
+   * 表示(読み取り専用の見た目)・編集開始・確定・貼り付け・Delete クリア・IME
+   * 入力のどの経路でも同じ値が渡る。`ctx`(`CanEditCellContext`)は `{ sourceRowIndex, rowKey }` = 元
+   * `rows` の index と行キー(`cellClassName` の ctx と同基準。serverSide では `sourceRowIndex` は
+   * view index と同値)。ソート / フィルターで動かない判定は `row` か `ctx.rowKey` で行う。
+   * 貼り付けで末尾に追加される行は、追加後の位置と元 `rows` の index で呼ばれる。※ v0.48 以前は
+   * clientSide の貼り付けと Delete クリアだけ元 `rows` の index が渡っていた。
+   */
   canEditCell?: (
     rowIndex: number,
     colIndex: number,
     row: T,
     column: GridColumn<T, F>,
+    ctx: CanEditCellContext,
   ) => boolean;
   // 追加(undo/redo): グリッド編集(セル編集 / ペースト / renderCell の setValue)の取り消し/やり直し
   //   です(既定 true)。Ctrl/Cmd+Z = undo、Ctrl/Cmd+Shift+Z / Ctrl/Cmd+Y = redo。ハンドルの
@@ -2858,7 +2900,8 @@ export type SpreadsheetGridProps<T, F extends GridFrameworkTypes = GridFramework
   /**
    * undo / redo 可能状態が**変化したとき**に呼ばれる(ツールバーの undo/redo ボタンの disabled
    * 表示などリアクティブな UI 用)。初回マウントでは発火せず、同値では再発火しない。
-   * 毎レンダーのインライン関数でも問題ない。
+   * 毎レンダーのインライン関数でも問題ない。引数の型 `UndoRedoState`(`{ canUndo, canRedo }`)
+   * はパッケージから import できる。
    */
   onUndoRedoStateChange?: (state: UndoRedoState) => void;
   /**
@@ -3134,7 +3177,9 @@ export type SpreadsheetGridProps<T, F extends GridFrameworkTypes = GridFramework
   // 追加(12-B): フィルター結果 0 行時に表示するテキストです
   //             (AG Grid の "No Matching Rows" オーバーレイ相当)。
   /**
-   * フィルター結果 0 行時のオーバーレイ文言。
+   * フィルター結果 0 行時のオーバーレイ文言。serverSide(`dataSource`)では列 /
+   * グローバルフィルターが掛かった状態で 0 件のときにこちら、掛かっていなければ `noRowsText`
+   * を出す。
    *
    * @defaultValue `'一致する行がありません'`
    */

@@ -1,5 +1,5 @@
 // V-1: selectOptions の等価性テスト(旧 adhoc ハーネスの恒久化)。
-//   - collectSelectOptions ≡ 旧 getColumnSelectOptions(String 化・空白ラベル '（空白）'・
+//   - collectSelectOptions ≡ 旧 getColumnSelectOptions(String 化・空白ラベル '(空白)'・
 //     STRING_COLLATOR ソート・初出順 dedupe)。
 //   - createSelectOptionsAccumulator のチャンク収集 ≡ 一括収集(刻み方に依らずバイト等価)。
 //     これは同期/非同期どちらの収集経路でも結果が同一になることの土台です。
@@ -21,7 +21,7 @@ const referenceCollect = (values: unknown[]): SelectOptionEntry[] => {
       continue;
     }
     seen.add(value);
-    options.push({ value, label: value || '（空白）' });
+    options.push({ value, label: value || '(空白)' });
   }
   return options.sort((left, right) =>
     STRING_COLLATOR.compare(left.label, right.label),
@@ -46,7 +46,7 @@ describe('collectSelectOptions (equivalence with legacy getColumnSelectOptions)'
       values: [1, 2, 10, '1', 'apple', 2, 'Apple'],
     },
     {
-      name: 'all blanks collapse to one （空白）',
+      name: 'all blanks collapse to one (空白)',
       values: ['', null, undefined, ''],
     },
   ];
@@ -68,10 +68,10 @@ describe('collectSelectOptions (equivalence with legacy getColumnSelectOptions)'
     }
   });
 
-  it('blank value maps to （空白） label', () => {
+  it('blank value maps to (空白) label', () => {
     const result = collectFromArray(['', 'x']);
     const blank = result.find((entry) => entry.value === '');
-    expect(blank).toEqual({ value: '', label: '（空白）' });
+    expect(blank).toEqual({ value: '', label: '(空白)' });
   });
 });
 

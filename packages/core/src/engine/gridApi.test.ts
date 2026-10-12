@@ -219,6 +219,21 @@ describe('createGridApi', () => {
     expect(api.handle.getExportData({ scope: 'rendered' }).rows).toHaveLength(3);
   });
 
+  // 追加(audit L-20): escapeFormulas は直列化まで届く(既定は従来どおり)。
+  it('exportCsv の escapeFormulas は数式として解釈される値の先頭に \' を付ける', () => {
+    const api = createGridApi<Row>();
+    const formulaColumns: GridColumn<Row>[] = [
+      { ...columns[0] },
+      { ...columns[1], formatClipboardValue: (value) => `=${String(value)}` },
+    ];
+    const { args } = makeArgs({ orderedColumns: formulaColumns, columns: formulaColumns });
+    api.update(args);
+    expect(api.handle.exportCsv({ includeHeaders: false })).toBe('1,=a\r\n2,=b\r\n3,=c');
+    expect(api.handle.exportCsv({ includeHeaders: false, escapeFormulas: true })).toBe(
+      "1,'=a\r\n2,'=b\r\n3,'=c",
+    );
+  });
+
   it('getState は永続スライス + 列メタを返し、openFilterManager / closeFilterManager はツールパネルへ委譲', () => {
     const api = createGridApi<Row>();
     const { args } = makeArgs({ activeToolPanelTab: 'filter' });

@@ -210,6 +210,8 @@ describe('buildGridState', () => {
       columnWidths: { a: 100, b: 'x', c: NaN, d: Infinity, e: 50 },
     });
     expect(migrated.columnWidths).toEqual({ a: 100, e: 50 });
+    // 追加(audit L-17): 負の幅は捨て、0 は採用する(minWidth: 0 の列を縮めた幅として往復しうる)。
+    expect(migrateGridState({ columnWidths: { a: 0, b: -50 } }).columnWidths).toEqual({ a: 0 });
   });
 
   it('filters: globalText 非 string は空に、columnFilters は kind 必須', () => {

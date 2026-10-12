@@ -781,6 +781,22 @@ describe('columnHeaderDragController', () => {
     controller.dispose();
   });
 
+  // 追加(audit C-8): ウィンドウがフォーカスを失ったらキャンセル(pointerup を取りこぼしても後片付けが残らない)。
+  it('ドラッグ中にウィンドウが blur したらキャンセルし、その後の up でも確定しない', () => {
+    const controller = createColumnHeaderDragController<Row>();
+    const args = makeArgs();
+    controller.update(args);
+    controller.onColumnDragHandlePointerDown(columns[0], gripEvent());
+    dispatchPointer('pointermove', 1, 280, 10);
+    window.dispatchEvent(new Event('blur'));
+    expect(document.querySelector('[data-grid-drag-ghost]')).toBeNull();
+    expect(args.centerIndicatorRef.current?.style.display).toBe('none');
+    expect(document.body.style.cursor).toBe('');
+    dispatchPointer('pointerup', 1, 280, 10);
+    expect(args.applyColumnOrderAndPin).not.toHaveBeenCalled();
+    controller.dispose();
+  });
+
   // 追加(M-12 fix): 左固定列が無いとき、合成列(行ドラッグハンドル)が中央ペインの先頭に入る。grip を押して離すだけで
   //   右隣と入れ替わっていた(スロットが合成列ぶん 1 ずれていた)回帰テスト。合成列より前へは置けない。
   const withHandle = (motion: 'ghost' | 'live') => {

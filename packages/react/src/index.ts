@@ -52,6 +52,8 @@ export type {
   // 追加(proposals ①): 条件付きセル className(cellClassName 関数版)の引数型です。
   //   CellRenderContext から setValue を除いた読み取り専用版。
   CellStyleContext,
+  // 追加(audit RD-4): canEditCell の第 5 引数(元 rows の index / rowKey)。
+  CanEditCellContext,
   GridConditionalFormat,
   // 追加(proposals ⑤): 条件付き行 className(getRowClassName)の第 3 引数コンテキストです。
   RowStyleContext,
@@ -161,6 +163,8 @@ export type {
   GridDensity,
   // 追加(TH-DK-2): カラーテーマ('light' | 'dark' | 'auto')。
   GridTheme,
+  // 追加(audit RD-12): onUndoRedoStateChange の引数型。
+  UndoRedoState,
   // 追加(motion-0): モーションの有効化('auto' | 'on' | 'off')。
   GridMotion,
   // 追加(F-2): セル内検索のオプションと通知引数。

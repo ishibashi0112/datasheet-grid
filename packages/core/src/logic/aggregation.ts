@@ -7,8 +7,10 @@ import type { GridAggFuncName } from '../model/gridTypes.unbound';
 //
 //   数値の扱いはソート(logic/sorting.ts)と同じ「値駆動」です: filterType 等の宣言には依存せず、
 //   Number() 変換で有限になる値だけを数値集計(sum / avg / min / max)の対象にします。
-//   空値(null / undefined / '')は数値集計の対象外です(Number(null) / Number('') が 0 に
-//   化けるのを防ぐため明示ガード)。count のみ「配下 leaf 行数」で、値の有無に依存しません。
+//   変更(audit L-10): 対象は「数値(number / bigint)と数値の文字列」だけです(toAggregatableNumber)。
+//   空値(null / undefined / '')・空白だけの文字列・boolean・Date・配列・オブジェクトは数えません
+//   (Number(' ') / Number(true) / Number(new Date()) / Number([7]) が数値に化けるのを防ぐため)。
+//   count のみ「配下 leaf 行数」で、値の有無に依存しません。
 
 // 組み込み集計名の一覧です(型ガード用)。
 export const BUILTIN_AGG_FUNC_NAMES: readonly GridAggFuncName[] = [
@@ -24,6 +26,26 @@ export const BUILTIN_AGG_FUNC_NAMES: readonly GridAggFuncName[] = [
 export const isBuiltinAggFuncName = (value: unknown): value is GridAggFuncName =>
   typeof value === 'string' &&
   (BUILTIN_AGG_FUNC_NAMES as readonly string[]).includes(value);
+
+// 追加(audit L-10): 集計(グループ集計 / 合計行 / 選択範囲の集計)で数値として数える値を number へ変換します。
+//   数えない値は undefined。数値の文字列は Number() の解釈(前後の空白は無視、'1e3' / '0x10' も数値)で、
+//   ソート / 数値フィルターと揃えています。
+export const toAggregatableNumber = (value: unknown): number | undefined => {
+  let numeric: number;
+  if (typeof value === 'number') {
+    numeric = value;
+  } else if (typeof value === 'string') {
+    if (value.trim() === '') {
+      return undefined;
+    }
+    numeric = Number(value);
+  } else if (typeof value === 'bigint') {
+    numeric = Number(value);
+  } else {
+    return undefined;
+  }
+  return Number.isFinite(numeric) ? numeric : undefined;
+};
 
 // 組み込み集計の中間状態です。min / max は番兵(±Infinity)で初期化し、numericCount === 0 の
 //   確定時に undefined(= 表示は空セル)へ倒します。
@@ -52,11 +74,8 @@ export const accumulateBuiltinAgg = (
   value: unknown,
 ): void => {
   accumulator.count += 1;
-  if (value == null || value === '') {
-    return;
-  }
-  const numeric = Number(value);
-  if (!Number.isFinite(numeric)) {
+  const numeric = toAggregatableNumber(value);
+  if (numeric === undefined) {
     return;
   }
   accumulator.numericCount += 1;

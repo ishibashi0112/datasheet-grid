@@ -5,7 +5,7 @@
 //   では入力しません(変換は捨てる = 従来どおり何も入らない)。
 import type { CellCoord, GridColumn, RowModel, SpreadsheetGridProps } from '../model/gridTypes.unbound';
 import { isSyntheticColumnKey } from './detailRow';
-import { isCellEditable } from '../utils/permissions';
+import { isViewCellEditable } from '../utils/permissions';
 
 export type ImeEditTargetContext<T> = {
   rowModel: RowModel<T>;
@@ -34,5 +34,5 @@ export const canStartImeEdit = <T,>(ctx: ImeEditTargetContext<T>, cell: CellCoor
   if (!row) {
     return false;
   }
-  return isCellEditable({ readOnly, canEditCell }, cell.row, cell.col, row, column);
+  return isViewCellEditable({ readOnly, canEditCell }, rowModel, cell.row, cell.col, row, column);
 };

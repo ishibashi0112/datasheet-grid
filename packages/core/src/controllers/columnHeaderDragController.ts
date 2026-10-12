@@ -1268,6 +1268,7 @@ export const createColumnHeaderDragController = <T,>(): ColumnHeaderDragControll
       window.removeEventListener('pointerup', handleUp);
       window.removeEventListener('pointercancel', handleCancel);
       window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('blur', handleBlur);
       activeDragDispose = null;
       try {
         target.releasePointerCapture(pointerId);
@@ -1291,11 +1292,18 @@ export const createColumnHeaderDragController = <T,>(): ColumnHeaderDragControll
       cleanup();
       endDrag(false);
     }
+    // 追加(audit C-8): ウィンドウがフォーカスを失ったら(Alt+Tab / OS の通知等)キャンセルします。pointerup を
+    //   取りこぼしても縦線 / ゴースト / grabbing カーソル / 自動スクロールが残りません(live 方式は元の位置へ戻す)。
+    function handleBlur() {
+      cleanup();
+      endDrag(false);
+    }
 
     window.addEventListener('pointermove', handleMove);
     window.addEventListener('pointerup', handleUp);
     window.addEventListener('pointercancel', handleCancel);
     window.addEventListener('keydown', handleKeyDown);
+    window.addEventListener('blur', handleBlur);
     activeDragDispose = cleanup;
 
     updateIndicator();

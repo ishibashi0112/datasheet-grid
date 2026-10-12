@@ -105,4 +105,26 @@ describe('createGlobalFilteredOrderRunner', () => {
     }
     expect(runner.getSnapshot().ready?.needle).toBe('abc');
   });
+
+  // 追加(audit C-11): StrictMode の擬似アンマウント(dispose)→ 同じ args の update で、中断した run をやり直す。
+  //   走り切った後の dispose → update では計算し直さない。
+  it('走っている run を dispose で中断しても、同じ args の update で走り直す', async () => {
+    const runner = createGlobalFilteredOrderRunner<Row>();
+    const args = { rows, baseOrder, columns, needle: 'aa', needsAsync: true };
+    runner.update(args);
+    await flushYields();
+    runner.dispose();
+    runner.update(args);
+    for (let i = 0; i < 6; i += 1) {
+      await flushYields();
+    }
+    const ready = runner.getSnapshot().ready;
+    expect(Array.from(ready?.order ?? [])).toEqual([0, 2]);
+
+    runner.dispose();
+    runner.update(args);
+    await flushYields();
+    expect(runner.getSnapshot().ready).toBe(ready);
+    expect(pendingYields).toHaveLength(0);
+  });
 });

@@ -42,6 +42,14 @@ export type CellEditorSession<T> = {
   value: unknown;
 };
 
+// 追加(audit RD-7): 編集セッションの同一性(座標 + 行 / 列のキー)。
+type EditorIdentity = {
+  row: number;
+  col: number;
+  rowKey: GridRowKey;
+  columnKey: string;
+};
+
 type CellEditorLayerProps<T> = {
   rect: CellEditorRect | null;
   headerHeight: number;
@@ -113,10 +121,40 @@ export function CellEditorLayer<T>({
   const isOpen = rect !== null;
   const [prevOpen, setPrevOpen] = useState(false);
   const [sessionId, setSessionId] = useState(0);
+  // 修正(audit RD-7): 編集を閉じずに別のセルの編集が始まったとき(フォーカスを持たない custom エディタ中に別セルを
+  //   ダブルクリック等)も新しいセッションとして再マウントし、前のセルのドラフトを持ち越しません。判定は
+  //   「座標と行 / 列のキーが両方変わった」とき。編集中の rows / columns 差し替え(監査 RD-1)は、同じ座標で
+  //   キーだけ変わる 1 レンダー(再ターゲット前)→ 同じキーで座標だけ変わる(再ターゲット後)の順に来るため、
+  //   どちらの段でも再マウントせずドラフトを保ちます。
+  const identity: EditorIdentity | null =
+    isOpen && editorSession
+      ? {
+          row: editorSession.rowIndex,
+          col: editorSession.colIndex,
+          rowKey: editorSession.rowKey,
+          columnKey: editorSession.column.key,
+        }
+      : null;
+  const [prevIdentity, setPrevIdentity] = useState<EditorIdentity | null>(null);
   if (isOpen !== prevOpen) {
     setPrevOpen(isOpen);
+    setPrevIdentity(identity);
     if (isOpen) {
       setSessionId(sessionId + 1);
+    }
+  } else if (identity !== null) {
+    if (prevIdentity === null) {
+      setPrevIdentity(identity);
+    } else {
+      const moved = identity.row !== prevIdentity.row || identity.col !== prevIdentity.col;
+      const rekeyed =
+        !Object.is(identity.rowKey, prevIdentity.rowKey) || identity.columnKey !== prevIdentity.columnKey;
+      if (moved) {
+        setPrevIdentity(identity);
+        if (rekeyed) {
+          setSessionId(sessionId + 1);
+        }
+      }
     }
   }
 
@@ -203,6 +241,11 @@ export function CellEditorLayer<T>({
         enterMove={enterMove}
         options={options}
         value={editorSession?.value}
+        // 修正(audit RD-9): 印字キー / IME 確定での開始(初期値がセル値の文字列と異なる)ならタイプアヘッドに使います。
+        //   F2 / Enter / ダブルクリックでの開始はセル値の文字列が初期値のため使いません。
+        initialText={
+          editorSession && initialValue !== String(editorSession.value ?? '') ? initialValue : undefined
+        }
         onCommit={onCommit}
         onCancel={onCancel}
         align={align}

@@ -515,7 +515,7 @@ export function ColumnMenuPopover({
           onOpenColumnChooser();
         }}
         className={cx('ssg-menu-item', slots?.menuItem?.className)}
-            style={slots?.menuItem?.style}
+        style={slots?.menuItem?.style}
       >
         <span className="ssg-menu-icon" />
         <span className="ssg-menu-label">列の表示</span>
@@ -543,10 +543,13 @@ export function ColumnMenuPopover({
           }
           onResetColumns();
         }}
+        // 修正(audit V-15): 他の項目と同じく menuItem スロット(classNames.menuItem 等)を適用します。
         className={cx(
           'ssg-menu-item',
           !canResetColumns && 'ssg-menu-item--disabled',
+          slots?.menuItem?.className,
         )}
+        style={slots?.menuItem?.style}
       >
         <span className="ssg-menu-icon" />
         <span className="ssg-menu-label">列のリセット</span>

@@ -4,6 +4,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { createAutoHeightMeasurer, type AutoHeightMeasureArgs } from './autoHeightMeasurer';
 import { buildRowHeightStore, createAutoHeightRowMetrics } from '../logic/rowHeightStore';
+import { createDetailRowMetrics, createRowHeightOverrideMetrics } from '../logic/verticalGeometry';
 import type { RowModel } from '../model/gridTypes.unbound';
 
 type Row = { id: number };
@@ -127,5 +128,105 @@ describe('createAutoHeightMeasurer', () => {
     measurer.update(args);
     measurer.dispose();
     expect(disconnect).toHaveBeenCalledTimes(2);
+  });
+
+  // 追加(audit C-11): StrictMode の擬似アンマウント(dispose)→ 同じ args の update でも observer を作り直す。
+  it('dispose 後に同じ args で update すると、測り直して observer を作り直す', () => {
+    const measurer = createAutoHeightMeasurer<Row>();
+    const store = buildRowHeightStore(rows.length, 20, rowModel.getRowKey, measurer.measuredHeights);
+    const args: AutoHeightMeasureArgs<Row> = {
+      scrollContainerRef: { current: makeContainer([20, 20, 20]) },
+      autoHeightActive: true,
+      rowHeightStore: store,
+      rowMetrics: createAutoHeightRowMetrics(store),
+      rowModel,
+      virtualRows: [],
+      viewportHeight: 100,
+      version: 0,
+      nonce: 0,
+    };
+    measurer.update(args);
+    expect(observe).toHaveBeenCalledTimes(3);
+    measurer.dispose();
+    measurer.update(args);
+    expect(observe).toHaveBeenCalledTimes(6);
+    resizeCallback?.();
+    expect(measurer.getSnapshot().nonce).toBe(1);
+  });
+
+  // 追加(audit B-01): 展開行帯 / ラベル行高の上書きがアンカーより上にあっても、アンカー行の画面位置を保つ。
+  describe('装飾済み rowMetrics のアンカー補正(audit B-01)', () => {
+    const tenRows: Row[] = Array.from({ length: 10 }, (_, index) => ({ id: index + 1 }));
+    const tenModel: RowModel<Row> = {
+      getRowCount: () => tenRows.length,
+      getRow: (i) => tenRows[i],
+      getSourceIndex: (i) => i,
+      getRowKey: (i) => tenRows[i]?.id ?? i,
+    };
+    // 行 7 だけ実測 50(他は推定 30 のまま)。
+    const container = () => makeContainer(Array.from({ length: 10 }, (_, index) => (index === 7 ? 50 : 30)));
+
+    it('展開行帯(行 0 の下に 200px)があるとき、アンカー(行 5)より下の行が伸びても scrollTop は変わらない', () => {
+      const measurer = createAutoHeightMeasurer<Row>();
+      const store = buildRowHeightStore(tenRows.length, 30, tenModel.getRowKey, measurer.measuredHeights);
+      const decorated = createDetailRowMetrics(createAutoHeightRowMetrics(store), [{ index: 0, height: 200 }]);
+      expect(decorated.rowTop(5)).toBe(350);
+      const el = container();
+      el.scrollTop = 350;
+      measurer.update({
+        scrollContainerRef: { current: el },
+        autoHeightActive: true,
+        rowHeightStore: store,
+        rowMetrics: decorated,
+        rowModel: tenModel,
+        virtualRows: [],
+        viewportHeight: 100,
+        version: 0,
+        nonce: 0,
+      });
+      expect(el.scrollTop).toBe(350);
+    });
+
+    it('アンカーより上の行が伸びたときは、その差分だけ下へずらす(帯の高さは差し引かない)', () => {
+      const measurer = createAutoHeightMeasurer<Row>();
+      const store = buildRowHeightStore(tenRows.length, 30, tenModel.getRowKey, measurer.measuredHeights);
+      const decorated = createDetailRowMetrics(createAutoHeightRowMetrics(store), [{ index: 0, height: 200 }]);
+      // 行 8(top = 200 + 8*30 = 440)の 10px 下を anchor に。行 7 が 30 → 50 になるので 20px 下へ。
+      const el = container();
+      el.scrollTop = 450;
+      measurer.update({
+        scrollContainerRef: { current: el },
+        autoHeightActive: true,
+        rowHeightStore: store,
+        rowMetrics: decorated,
+        rowModel: tenModel,
+        virtualRows: [],
+        viewportHeight: 100,
+        version: 0,
+        nonce: 0,
+      });
+      expect(el.scrollTop).toBe(470);
+    });
+
+    it('ラベル行高の上書き(行 0 = 100px)があるときも、アンカー(行 5)の位置を保つ', () => {
+      const measurer = createAutoHeightMeasurer<Row>();
+      const store = buildRowHeightStore(tenRows.length, 30, tenModel.getRowKey, measurer.measuredHeights);
+      const decorated = createRowHeightOverrideMetrics(createAutoHeightRowMetrics(store), [{ index: 0, height: 100 }]);
+      expect(decorated.rowTop(5)).toBe(220);
+      const el = container();
+      el.scrollTop = 220;
+      measurer.update({
+        scrollContainerRef: { current: el },
+        autoHeightActive: true,
+        rowHeightStore: store,
+        rowMetrics: decorated,
+        rowModel: tenModel,
+        virtualRows: [],
+        viewportHeight: 100,
+        version: 0,
+        nonce: 0,
+      });
+      expect(el.scrollTop).toBe(220);
+    });
   });
 });

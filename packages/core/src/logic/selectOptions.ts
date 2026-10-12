@@ -21,7 +21,8 @@ export const createSelectOptionsAccumulator = () => {
         return;
       }
       seen.add(value);
-      options.push({ value, label: value || '（空白）' });
+      // 変更(audit L-19): 空白ラベルを他の箇所(条件の要約 / 日付ツリー / グループ行)と同じ半角括弧の '(空白)' に揃えます。
+      options.push({ value, label: value || '(空白)' });
     },
     // 収集済み候補をソート確定します(label の STRING_COLLATOR 比較。旧実装と同一)。
     finalize(): SelectOptionEntry[] {

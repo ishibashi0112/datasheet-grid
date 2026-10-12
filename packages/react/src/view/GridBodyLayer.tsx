@@ -229,6 +229,8 @@ function GridBodyRowInner<T>({
   rowStyle,
   slots,
 }: GridBodyRowProps<T>) {
+  // 追加(audit RD-4): canEditCell の第 5 引数(行内の全セルで共有。canEditCell 未指定なら作りません)。
+  const canEditContext = canEditCell ? { sourceRowIndex, rowKey } : undefined;
   return (
     <div
       data-pane={pane}
@@ -314,6 +316,7 @@ function GridBodyRowInner<T>({
           colIndex,
           row,
           column,
+          canEditContext,
         );
 
         // 追加(C1): auto-height モードかつ駆動列(column.autoHeight)のセルは内容駆動高さにします。

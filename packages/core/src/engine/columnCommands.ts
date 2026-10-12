@@ -444,7 +444,9 @@ export const createColumnCommands = <T,>(): ColumnCommands<T> => {
   return {
     update: (next) => {
       args = next;
-      if (initialColumnState === null) {
+      // 修正(audit B-06): 列が 1 本以上届いた最初の update で初期状態を取ります(columns を非同期に流し込む利用側で
+      //   初回の [] を初期状態にすると、どの列もリセット対象外になり「列のリセット」が効かなかった)。
+      if (initialColumnState === null && next.columns.length > 0) {
         initialColumnState = new Map(
           next.columns.map((column) => [
             column.key,

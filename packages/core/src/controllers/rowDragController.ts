@@ -2,7 +2,7 @@
 //   移設)。列ヘッダー D&D(columnHeaderDragController)と同じ設計方針を縦方向へ適用しています。
 //   - ドラッグ中はフレームワークの state を更新しません。ガイド線(各ペインに常設した水平線。args の indicator
 //     ref 経由)とゴースト(body 直下の fixed ピル)を imperative に動かします(再レンダーゼロ)。
-//   - pointerdown(ハンドル)→ window に pointermove / pointerup / pointercancel / keydown(Escape)を登録
+//   - pointerdown(ハンドル)→ window に pointermove / pointerup / pointercancel / keydown(Escape)/ blur を登録
 //     (このドラッグの pointerId のみ処理)。行は仮想化されており、autoscroll で掴んだ行が窓外へ出るとハンドルごと
 //     unmount するため、要素直付けではなく window 登録が必須です(CLAUDE.md「仮想化 DOM 上のドラッグ」)。
 //   - ヒットテストは中央ペインの rect を基準に clientY → content-y(論理)へ換算し、logic/rowReorder の
@@ -150,6 +150,8 @@ export const createRowDragController = (): RowDragController => {
   let dragOrigin: { x: number; y: number } | null = null;
   let autoScrollArmed = false;
   let activeDragDispose: (() => void) | null = null;
+  // 追加(audit C-9): ドラッグ中のポインタ(2 本目のポインタで始め直さないため)。
+  let activePointerId: number | null = null;
   let rafId: number | null = null;
   // settle(FLIP)用: commit 直前の各行要素の screen-y。
   let settlePending: Map<HTMLElement, number> | null = null;
@@ -452,6 +454,7 @@ export const createRowDragController = (): RowDragController => {
     draggingIndex = null;
     dropSlot = null;
     dragOrigin = null;
+    activePointerId = null;
 
     const to = from === null || slot === null ? null : resolveMoveTargetIndex(from, slot);
     const willCommit = commit && from !== null && to !== null && args !== null;
@@ -538,7 +541,17 @@ export const createRowDragController = (): RowDragController => {
     event.stopPropagation();
     event.preventDefault();
 
+    // 修正(audit C-9): ドラッグ中に別のポインタ(2 本目の指 / ペン)でハンドルを押しても始めません(前のドラッグの
+    //   rAF が止められなくなり、前のポインタを離したときに新しいドラッグの行で確定してしまうため)。同じポインタ
+    //   (pointerup を取りこぼした等)なら前のドラッグを取り消してから始めます(列ドラッグと同じ)。
+    if (draggingIndex !== null) {
+      if (event.pointerId !== activePointerId) return;
+      activeDragDispose?.();
+      endDrag(false);
+    }
+
     draggingIndex = viewIndex;
+    activePointerId = event.pointerId;
     dropSlot = null;
     pointer = { x: event.clientX, y: event.clientY };
     dragOrigin = { x: event.clientX, y: event.clientY };
@@ -570,6 +583,7 @@ export const createRowDragController = (): RowDragController => {
       window.removeEventListener('pointerup', handleUp);
       window.removeEventListener('pointercancel', handleCancel);
       window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('blur', handleBlur);
       activeDragDispose = null;
       try {
         target.releasePointerCapture(pointerId);
@@ -593,11 +607,18 @@ export const createRowDragController = (): RowDragController => {
       cleanup();
       endDrag(false);
     }
+    // 追加(audit C-8): ウィンドウがフォーカスを失ったら(Alt+Tab / OS の通知等)キャンセルします。pointerup を
+    //   取りこぼしてもガイド線 / ゴースト / grabbing カーソル / 自動スクロールが残りません。
+    function handleBlur() {
+      cleanup();
+      endDrag(false);
+    }
 
     window.addEventListener('pointermove', handleMove);
     window.addEventListener('pointerup', handleUp);
     window.addEventListener('pointercancel', handleCancel);
     window.addEventListener('keydown', handleKeyDown);
+    window.addEventListener('blur', handleBlur);
     activeDragDispose = cleanup;
 
     updateIndicator();

@@ -191,3 +191,52 @@
 | H-6 | label `label row stays first after sort` / `sticky label shows section 3` | テストのセレクタ(sticky 複製 / 左ペインの空レイヤーを拾っていた) | ハーネス修正 |
 | H-7 | rowdrag `Escape cancels` | テストの前提誤り(ガイド線は常に DOM にあり display で切り替え) | ハーネス修正(display を確認) |
 | H-8 | ssrm / grouping / autoheight の `no console errors` | ハーネスがテスト自身の意図した警告(console.warning)を数えていた | ハーネス修正(console.error / pageerror のみ数える) |
+
+## 11. 対応状況(2026-10-12 残り全件)
+
+§4 の低優先と §3 の残りを対応した。挙動が変わる 5 件(RD-4 / L-10 / L-20 / V-16 / RD-11)はユーザー判断(推奨案)のうえで実施。各修正に回帰テストを付け、修正を外すとテストが落ちることを確認した。a11y(V-05 / RD-10 / V-14)は ARIA の整備として別バッチで対応する。
+
+| ID | 対応 | 互換性 | 備考 |
+| --- | --- | --- | --- |
+| B-01 | 修正(auto-height の測定後のアンカー補正を、捕捉時と同じ装飾済み `rowMetrics` で読む) | 非破壊 | 展開行帯 / ラベル行高の分だけ scrollTop が上へ飛んでいた |
+| B-03 | 修正(SSRM で件数が増えたら、旧件数の末端だった部分ブロックを取り直し対象にする) | 非破壊 | 取り直すまでは手元の行を表示し続ける |
+| B-06 | 修正(列のリセットの初期スナップショットは、列が 1 本以上ある最初の `update` で取る) | 非破壊 | `columns` を非同期で流し込む(初回 `[]`)利用側でリセットが効くように |
+| B-07 | 修正(合成列を左固定にする判定を「表示中の左固定列があるか」に) | 非破壊 | `visible:false` の左固定列だけで合成列だけの左ペインが出ていた |
+| B-12 | 修正(`minWidth: 0` を手動リサイズの下限として尊重。未指定は従来どおり 60px) | 非破壊 | `\|\|` → `??` |
+| C-4 | 修正(フィルター popover のアンカーが横の仮想化で外れたら同じ列のヘッダーを探し直し、無ければ位置を保つ) | 非破壊 | 左上 (8,8) へ飛んでいた |
+| C-6 | 修正(`autoSizeColumns:'onMount'` の計測が dispose で中断されたら、次の mount でやり直す) | 非破壊 | StrictMode で効かなかった |
+| C-8 / C-9 | 修正(列 / 行ドラッグを window の blur でも取り消す。行ドラッグ中の 2 本目のポインタを無視) | 挙動変化(改善) | ドラッグ中に別アプリへ切り替えると取り消される。API_REFERENCE + website(props / column-drag・row-drag ガイド)更新 |
+| C-10 | 修正(ツールチップの遅延中に対象が DOM から外れたら出さない) | 非破壊 | |
+| C-11 | 修正(`globalFilteredOrder` / `selectOptionsCollector` / `autoHeightMeasurer` が dispose 後の同じ args の update で再開する) | 非破壊 | StrictMode の再入 |
+| C-12 | 修正(clientSide の貼り付け後の選択幅を、最も長い行の幅に) | 非破壊 | serverSide 経路と同じに |
+| RD-4 | 修正(ユーザー判断で推奨案。`canEditCell` の `rowIndex` をすべての経路でビュー行 index に統一し、第 5 引数 `ctx` = `{ sourceRowIndex, rowKey }` を追加) | 挙動変化 | 変わるのは clientSide の貼り付けと Delete クリアだけ(従来は元 `rows` の index)。ソート / フィルター中に `rowIndex` で判定していた利用側は、表示と同じ判定になる。新しい公開型 `CanEditCellContext`。`isCellEditable`(core)は任意の第 6 引数 context、新設 `isViewCellEditable` / `resolveCanEditCellContext`。`clearCellsInSelection` / `applyClipboardMatrixToRows` の `canWriteCell` に第 5 引数(ビュー側の行位置)。API_REFERENCE + website(props)+ 生成 JSDoc 更新 |
+| RD-7 | 修正(エディタの同一性を座標 + rowKey / 列キーで追い、別セルへ移ったら新しいセッションにする) | 非破壊 | 前のセルのドラフトが残っていた。RD-1 の行差し替え時のドラフト保持は維持 |
+| RD-8 | 修正(serverSide の空表示は、列 / グローバルフィルターが掛かっていれば `noMatchingRowsText`。`dataSource` 指定時は `rows` を clientSide パイプラインへ流さない) | 挙動変化(改善) | API_REFERENCE + website(props)更新 |
+| RD-9 | 修正(印字キーで select エディタを開いたとき、その文字で候補を頭出し) | 挙動変化(改善) | API_REFERENCE + website(props のキーボード表)更新 |
+| RD-11 | 現状維持 + 文書化(ユーザー判断で推奨案) | 非破壊 | 中央ペインのアクティブセルは `scrollIntoView` の指定に関わらず位置が変わると可視化される(クリック / キー操作と同じ)。`scrollIntoView: true` は固定列でも縦方向を可視化する、と明記。API_REFERENCE + website(handle)更新 |
+| RD-12 | 修正(`UndoRedoState` を公開) | 非破壊 | `onUndoRedoStateChange` の型表記も `UndoRedoState` に |
+| L-06 | 修正(`Date` インスタンスの dateSet 候補を年月日キーで集める) | 非破壊 | 年月日ツリーに出ず、選んでも一致しなかった |
+| L-10 | 修正(ユーザー判断で推奨案。集計が数えるのは数値と数値の文字列だけ) | 挙動変化 | 空白だけの文字列・boolean・`Date`・配列・オブジェクトを数えない。グループ集計が変わるのはそれらが混ざった列だけ。合計行・選択範囲の集計も同じ規則(`toAggregatableNumber`)。API_REFERENCE + website(column)更新 |
+| L-11 | 修正(`sortMode:'follow'` でもフィルターが無ければ、元から空のセクションのラベルを残す) | 挙動変化(仕様どおりへ) | API_REFERENCE + website(props / label-rows ガイド)更新 |
+| L-12 | 修正(CSV / `getExportData` / 列チューザー / 並べ替え管理の見出しは `title` が空文字なら key) | 非破壊 | |
+| L-16 | 文書化(ユーザー判断で推奨案) | 非破壊 | `Date` はローカル時刻の年月日、文字列は先頭の年月日部分をそのまま使うことと、負オフセット TZ での注意を明記。API_REFERENCE + website(filter-sort ガイド)更新 |
+| L-17 | 修正(`migrateGridState` は幅 0 を受け付け、負値は捨てる) | 非破壊 | B-12 と整合 |
+| L-18 | 修正(空セル(`undefined` / `null`)を Delete しても「変更あり」にしない) | 非破壊 | undo に no-op が積まれていた |
+| L-19 | 修正(空白候補のラベルを `(空白)` に統一) | 軽微な表示変化 | |
+| L-20 | 修正(ユーザー判断で推奨案。CSV の `escapeFormulas` オプション、既定 `false`) | 非破壊(opt-in) | `=` / `+` / `-` / `@` / タブ / CR で始まる値の先頭に `'`。数値として読める値(`-5` 等)とヘッダー行は対象外。API_REFERENCE + website(handle)更新 |
+| V-04 | 修正(scrollHint のカスタムバーで pointercancel / lostpointercapture でもドラッグを終える) | 非破壊 | |
+| V-06 | 修正(その月に無い日(2026-02-30 等)を日付として受理しない) | 非破壊 | |
+| V-07 | 修正(チェック行の透明化セレクタを `:where()` で (0,2,0) へ下げ、invalid 背景を保つ) | 非破壊 | 利用側の `.ssg-body-cell.my-class` 上書きが効くように(公開契約どおり) |
+| V-08 | 修正(後勝ちで無効だった `.ssg-label-row { contain }` を撤去) | 非破壊 | 描画結果は不変 |
+| V-09 | 修正(列ヘッダーの操作群をキーボードフォーカス時(`:focus-visible`)にも表示) | 非破壊 | |
+| V-10 | 修正(macOS のオーバーレイスクロールバー環境ではトラック帯を 8px に) | 非破壊 | 右端 18px の誤判定 |
+| V-11 | 修正(scrollHint の行番号をラベル行を飛ばした番号に) | 非破壊 | 行ヘッダーの番号と一致 |
+| V-12 | 修正(ステータスバーの A1 ラベルの列名は合成列を数えない) | 軽微な表示変化 | 行ドラッグ / 展開トグル / 自動グループ列が先頭にあっても最初のデータ列が A |
+| V-13 | 修正(`GridDetailLayer` の基準オフセットの二重減算を撤去) | 非破壊 | 休眠(現状は 0)だった |
+| V-15 | 修正(「列のリセット」にも `menuItem` スロットを適用) | 非破壊 | |
+| V-16 | 修正(ユーザー判断で推奨案。`renderHeader` 内のボタン / 入力欄 / リンク等から始まった pointerdown では列の範囲選択を始めない) | 挙動変化(改善) | 既定動作も止めないため入力欄にフォーカスが入る。API_REFERENCE + website(column)更新 |
+| B-08 | 現状維持 | 非破壊 | 開発時の警告と文書化済み(約 41.7 万行超で帯を抑止) |
+| B-09 | 対応しない | — | flex の端数幅は 1px 横スクロールバーの可能性のみで、整数化すると配分の合計がずれる副作用がある。実害の報告が出たら再検討 |
+| B-10 / B-11 / M-04 | 対応しない | — | 性能のみ(本番ビルドでは許容範囲)。再計算の細分化は影響範囲が広く、退行リスクに見合わない |
+| L-15 | 対応しない | — | 日付をまたいで開きっぱなしの稀なケース。他の入力が変われば解決し直されるため、時刻を memo 入力に足して全体を毎回再計算するコストに見合わない |
+| P-5 / P-6 | 修正(website 複製の `Ctrl/Cmd+C` 行を同期 / ci.yml のコメントを `packageManager` に直し、デモ app のビルドを CI に追加) | 非破壊 | website の `next build` は CI 対象外のまま(ローカルで `cd website && vp exec next build`) |

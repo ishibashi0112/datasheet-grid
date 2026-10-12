@@ -141,6 +141,23 @@ describe('clearCellsInSelection', () => {
     expect(result.nextRows).toBe(rows);
   });
 
+  // 追加(audit L-18): number 列(クリア値 null)の未設定(undefined)セルは変更なし。
+  it('クリア値が null の列で未設定(undefined)のセルは変更なしとみなす', () => {
+    const numberColumns: GridColumn<Row>[] = [{ key: 'qty', title: 'Qty', width: 100, editor: { type: 'number' } }];
+    const rows = [{ id: 1, name: 'a' } as Row];
+    const result = clearCellsInSelection({
+      rows,
+      resolveSourceIndex: identity,
+      columns: numberColumns,
+      selection: null,
+      activeCell: { row: 0, col: 0 },
+      viewRowCount: 1,
+      canWriteCell: allowAll,
+    });
+    expect(result.changed).toBe(false);
+    expect(result.nextRows).toBe(rows);
+  });
+
   it('view→source 解決を通してソート/フィルター後のビュー座標で正しい行をクリアする', () => {
     const rows = makeRows();
     // ビューは逆順(view 0 = source 2)という想定です。

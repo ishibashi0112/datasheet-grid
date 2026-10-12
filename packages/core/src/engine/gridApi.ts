@@ -417,6 +417,7 @@ export const createGridApi = <T,>(): GridApi<T> => {
       delimiter: options?.delimiter,
       includeHeaders: options?.includeHeaders,
       bom: options?.bom,
+      escapeFormulas: options?.escapeFormulas,
       isRowIncluded: resolved.isRowIncluded,
       getLabelLine: resolved.getLabelLine,
     });

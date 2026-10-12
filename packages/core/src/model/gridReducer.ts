@@ -301,7 +301,8 @@ export const gridUiReducer = (
           columnKey: action.columnKey,
           startX: action.startX,
           startWidth: action.startWidth,
-          minWidth: action.minWidth || DEFAULT_MIN_WIDTH,
+          // 修正(audit B-12): `minWidth: 0` を明示した列は 0 を下限にします(autosize / flex と同じ規則。|| だと 60 に倒れていた)。
+          minWidth: action.minWidth ?? DEFAULT_MIN_WIDTH,
           // 変更(②-S4): 既定の上限(旧 DEFAULT_MAX_WIDTH=1000)を撤廃。列が maxWidth を明示した時だけ
           //   上限を課し、未指定なら上限なし(手動リサイズを既定で縛りません)。下限 minWidth は従来どおり。
           maxWidth: action.maxWidth ?? Number.POSITIVE_INFINITY,

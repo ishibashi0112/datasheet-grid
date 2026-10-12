@@ -21,6 +21,14 @@ const escapeCsvField = (value: string, delimiter: string): string => {
   return `"${value.replace(/"/g, '""')}"`;
 };
 
+// 追加(audit L-20): CSV インジェクション対策(escapeFormulas: true のときだけ)。表計算ソフトが数式として
+//   解釈する先頭文字(= + - @ とタブ / CR。OWASP の推奨)で始まる値の先頭に ' を付けます。数値として
+//   読める値(-5 / +1.5 / -1e3 など)は数式にならないためそのまま出します。
+const FORMULA_TRIGGER = /^[=+\-@\t\r]/;
+const PLAIN_NUMBER = /^[+-]?(?:\d+\.?\d*|\.\d+)(?:e[+-]?\d+)?$/i;
+export const escapeCsvFormula = (value: string): string =>
+  FORMULA_TRIGGER.test(value) && !PLAIN_NUMBER.test(value) ? `'${value}` : value;
+
 // セル 1 個ぶんのエクスポート文字列を、コピーと同じ規則で求めます。
 const exportCellText = <T,>(row: T, column: GridColumn<T>): string => {
   const raw = getCellValue(row, column);
@@ -43,6 +51,8 @@ export type SerializeRowsToCsvParams<T> = {
   includeHeaders?: boolean;
   // 先頭に UTF-8 BOM を付けるか(既定 false)です。Excel での文字化けを防ぎたいとき true にします。
   bom?: boolean;
+  // 追加(audit L-20): 数式として解釈される値の先頭に ' を付けるか(既定 false)。ヘッダー行は対象外です。
+  escapeFormulas?: boolean;
   // 追加(proposals ⑪): 出力対象行フィルタ(bound 済み述語)です。false の行は行ごと除きます。
   //   rowIndex は行レンジと同じ index 空間(通常はビュー行 / scope 'raw' はソース行)です。
   //   ctx(rowKey)の解決は呼び出し側(SpreadsheetGrid の resolveExportScope)が行います。
@@ -69,15 +79,20 @@ export const serializeRowsToCsv = <T,>({
   delimiter = ',',
   includeHeaders = true,
   bom = false,
+  escapeFormulas = false,
   isRowIncluded,
   getLabelLine,
 }: SerializeRowsToCsvParams<T>): string => {
   const lines: string[] = [];
+  // 追加(audit L-20): セル(とラベル行)の値に適用する無害化。ヘッダーは consumer の列タイトルなので対象外です。
+  const cellField = (text: string): string =>
+    escapeCsvField(escapeFormulas ? escapeCsvFormula(text) : text, delimiter);
 
   if (includeHeaders) {
     lines.push(
       columns
-        .map((column) => escapeCsvField(column.title ?? column.key, delimiter))
+        // 修正(audit L-12): title が空文字の列は key にフォールバックします(ヘッダー表示 / 列メニュー等と同じ ||)。
+        .map((column) => escapeCsvField(column.title || column.key, delimiter))
         .join(delimiter),
     );
   }
@@ -90,7 +105,7 @@ export const serializeRowsToCsv = <T,>({
       const line = getLabelLine?.(rowIndex);
       if (line) {
         lines.push(
-          columns.map((_, index) => escapeCsvField(labelExportCellText(line[index]), delimiter)).join(delimiter),
+          columns.map((_, index) => cellField(labelExportCellText(line[index]))).join(delimiter),
         );
       }
       continue;
@@ -99,9 +114,7 @@ export const serializeRowsToCsv = <T,>({
     if (isRowIncluded && !isRowIncluded(row, rowIndex)) {
       continue;
     }
-    const cells = columns.map((column) =>
-      escapeCsvField(exportCellText(row, column), delimiter),
-    );
+    const cells = columns.map((column) => cellField(exportCellText(row, column)));
     lines.push(cells.join(delimiter));
   }
 
