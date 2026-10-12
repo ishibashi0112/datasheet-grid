@@ -139,6 +139,10 @@
     /* 追加(F-2): セル内検索のヒット(通常 / カレント)。 */
     --ssg-find-mark-bg: rgba(245, 158, 11, 0.4);
     --ssg-find-mark-current-bg: rgba(52, 97, 201, 0.3);
+    /* 追加(フィルハンドル 1A): ドラッグ中の「埋める範囲」の点線(文字色に合わせる = テーマに追従)/ ハンドルの縁取り
+       (セルの地色で浮かせる)。 */
+    --ssg-fill-line: var(--ssg-cell-text);
+    --ssg-fill-handle-ring: var(--ssg-cell-bg);
     /* 追加(F-3): 条件付き書式。データバーはアクセントの淡色、カラースケールは dataviz の参照パレット(sequential は
        1 色相の淡 → 濃で明るい段に制限 = 文字色を変えない、diverging は 2 色相 + 中立グレー)。チップは状態色(アイコン +
        ラベルを伴う)。 */
@@ -1264,12 +1268,105 @@
     animation: none;
   }
 
+  /* ── 追加(フィルハンドル 1A): 選択範囲の右下の四角 / ドラッグ中の点線 / 埋めたあとのボタン ──
+     座標(left / top)はインライン。ハンドルは角を中心に置き(margin で半分戻す)、押しやすいよう ::before で
+     当たり判定を広げます。アクティブセル枠(z 4)の上、列ヘッダー / 合計行(z 6)の下。 */
+  .ssg-fill-handle {
+    width: 8px;
+    height: 8px;
+    margin-left: -4px;
+    margin-top: -4px;
+    box-sizing: border-box;
+    border: 1.5px solid var(--ssg-fill-handle-ring);
+    background-color: var(--ssg-accent);
+    cursor: crosshair;
+    touch-action: none;
+    z-index: 5;
+    transition:
+      left var(--ssg-motion-fast) var(--ssg-motion-ease),
+      top var(--ssg-motion-fast) var(--ssg-motion-ease);
+  }
+  .ssg-fill-handle::before {
+    content: '';
+    position: absolute;
+    inset: -6px;
+  }
+  @media (pointer: coarse) {
+    .ssg-fill-handle::before {
+      inset: -12px;
+    }
+  }
+  .ssg-fill-preview {
+    box-sizing: border-box;
+    border: 1.5px dashed var(--ssg-fill-line);
+    pointer-events: none;
+    z-index: 4;
+  }
+  /* ドラッグ中はどこでも十字カーソル(セル / ヘッダーのカーソル指定より優先)。 */
+  .ssg-root--filling,
+  .ssg-root--filling * {
+    cursor: crosshair !important;
+  }
+  .ssg-fill-options {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 3px;
+    width: 36px;
+    height: 22px;
+    padding: 0;
+    box-sizing: border-box;
+    border: 1px solid var(--ssg-panel-border);
+    border-radius: 6px;
+    background-color: var(--ssg-panel-bg);
+    color: var(--ssg-panel-text);
+    box-shadow: var(--ssg-overlay-chip-shadow);
+    cursor: pointer;
+    z-index: 5;
+  }
+  .ssg-fill-options-caret {
+    font-size: 9px;
+    line-height: 1;
+  }
+  .ssg-fill-options:hover,
+  .ssg-fill-options--open {
+    border-color: var(--ssg-accent);
+    color: var(--ssg-accent);
+  }
+  .ssg-fill-options:focus-visible {
+    outline: 2px solid var(--ssg-accent);
+    outline-offset: 1px;
+  }
+  .ssg-fill-menu {
+    min-width: 168px;
+  }
+  /* 開いたときに選ばれている項目へフォーカスを置くため、枠はアクセント色の内側線にします(既定の太い黒枠を出さない)。 */
+  .ssg-fill-menu .ssg-menu-item:focus-visible {
+    outline: 2px solid var(--ssg-accent);
+    outline-offset: -2px;
+  }
+  .ssg-fill-menu-check {
+    color: var(--ssg-panel-accent);
+    font-size: 12px;
+    text-align: center;
+  }
+  .ssg-fill-tooltip {
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+    transition: none;
+  }
+
   /* 追加(motion-1 / M-1): スクロール中(scroll-space 仮想化で描画ウィンドウの基準が動く。scrollSyncController が
      付ける)とポインタで範囲選択をドラッグ中(root の --selecting)は瞬時に追従させます(滑らせると漂って見える)。 */
   .ssg-scroll-container--scrolling .ssg-active-cell-overlay,
   .ssg-scroll-container--scrolling .ssg-selection-overlay,
+  .ssg-scroll-container--scrolling .ssg-fill-handle,
   .ssg-root--selecting .ssg-active-cell-overlay,
-  .ssg-root--selecting .ssg-selection-overlay {
+  .ssg-root--selecting .ssg-selection-overlay,
+  .ssg-root--selecting .ssg-fill-handle,
+  .ssg-root--filling .ssg-active-cell-overlay,
+  .ssg-root--filling .ssg-selection-overlay,
+  .ssg-root--filling .ssg-fill-handle {
     transition: none;
   }
 

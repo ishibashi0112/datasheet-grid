@@ -45,6 +45,9 @@ export type HistoryController<T> = {
   update: (args: HistoryControllerArgs<T>) => void;
   // 行データ変更の履歴化ラッパ(有効時にスナップショットを積んでから onRowsChange へ委譲)。
   handleRowsChange: (nextRows: T[]) => void;
+  // 追加(フィルハンドル 1A): 直前の handleRowsChange の結果を差し替えます(履歴は積まない = 元に戻す 1 回で
+  //   変更前へ戻る)。埋めたあとのボタンで「連続データ / セルのコピー」を選び直すときに使います。
+  amendRowsChange: (nextRows: T[]) => void;
   undo: () => void;
   redo: () => void;
   canUndo: () => boolean;
@@ -138,6 +141,16 @@ export const createHistoryController = <T,>(): HistoryController<T> => {
     args.onRowsChange(nextRows);
   };
 
+  const amendRowsChange = (nextRows: T[]) => {
+    if (args === null || !args.onRowsChange) {
+      return;
+    }
+    if (args.enabled) {
+      selfEmittedRows = nextRows;
+    }
+    args.onRowsChange(nextRows);
+  };
+
   const applyRestore = (
     result: { stack: HistoryStack<GridHistoryEntry<T>>; snapshot: GridHistoryEntry<T> } | null,
   ) => {
@@ -178,5 +191,5 @@ export const createHistoryController = <T,>(): HistoryController<T> => {
     notifyUndoRedoState();
   };
 
-  return { update, handleRowsChange, undo, redo, canUndo, canRedo, clearHistory };
+  return { update, handleRowsChange, amendRowsChange, undo, redo, canUndo, canRedo, clearHistory };
 };

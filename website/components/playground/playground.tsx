@@ -205,6 +205,8 @@ type Settings = {
   conditionalFormat: boolean;
   // 合計行。ON で表の下端に合計行を固定し、商品名 = 個数 / 数量 = 合計 / 単価 = 平均を出す(列の aggFunc)。
   totalRow: boolean;
+  // フィルハンドル。ON で選択範囲の右下の四角を引いて連続データ / コピーで埋める(readOnly では出ない)。
+  fillHandle: boolean;
 };
 
 const DEFAULTS: Settings = {
@@ -251,6 +253,7 @@ const DEFAULTS: Settings = {
   find: false,
   conditionalFormat: false,
   totalRow: false,
+  fillHandle: false,
 };
 
 function buildSnippet(s: Settings): string {
@@ -287,6 +290,7 @@ function buildSnippet(s: Settings): string {
     `  showValidationMarks={${s.showValidationMarks}}`,
     ...(s.imeDirectInput ? ['  imeDirectInput'] : []),
     ...(s.find ? ['  find'] : []),
+    ...(s.fillHandle ? ['  fillHandle'] : []),
     `  enableRowSelection={${s.enableRowSelection}}`,
   ];
   if (s.enableRowSelection) {
@@ -543,6 +547,7 @@ function PlaygroundGrid({ settings }: { settings: Settings }) {
         showValidationMarks={settings.showValidationMarks}
         imeDirectInput={settings.imeDirectInput}
         find={settings.find}
+        fillHandle={settings.fillHandle}
         enableRowSelection={settings.enableRowSelection}
         rowSelectionMode={settings.rowSelectionMode}
         enableSelectAllRows={settings.enableRowSelection && settings.enableSelectAllRows}
@@ -803,6 +808,7 @@ export function Playground() {
           <Toggle label="showValidationMarks" checked={settings.showValidationMarks} onChange={(v) => set('showValidationMarks', v)} />
           <Toggle label="imeDirectInput" checked={settings.imeDirectInput} onChange={(v) => set('imeDirectInput', v)} />
           <Toggle label="find(Ctrl+F)" checked={settings.find} onChange={(v) => set('find', v)} />
+          <Toggle label="fillHandle(フィルハンドル)" checked={settings.fillHandle} onChange={(v) => set('fillHandle', v)} />
         </Group>
 
         <Group title="行選択(チェックボックス)">

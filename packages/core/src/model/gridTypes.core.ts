@@ -753,6 +753,60 @@ export type TotalRowOptions<T, F extends GridFrameworkTypes = GridFrameworkTypes
   className?: GridSlotProps<F>;
 };
 
+// 追加(フィルハンドル 1A): フィルハンドルで埋める向きです。
+export type GridFillDirection = 'down' | 'up' | 'right' | 'left';
+
+// 追加(フィルハンドル 1A): 埋め方です。'series' = 連続データ(1, 2, 3 … / 日付 / 曜日 / 末尾の数)、
+//   'copy' = セルのコピー(元の値を周期で繰り返す)。
+export type GridFillKind = 'series' | 'copy';
+
+// 追加(フィルハンドル 1A): fillHandle.getFillValue へ渡すパラメータです(埋めるセル 1 つぶん)。
+export type GridFillValueParams<T, F extends GridFrameworkTypes = GridFrameworkTypes> = {
+  // 埋めるセルの列。
+  /** 埋めるセルの列。 */
+  column: GridColumn<T, F>;
+  // 埋めるセルの行(書き込み前)。
+  /** 埋めるセルの行(書き込み前)。 */
+  row: T;
+  // 埋めるセルのビュー行 index。
+  /** 埋めるセルのビュー行 index。 */
+  rowIndex: number;
+  // 元の値(埋める向きの順 = 最後の要素が埋めるセルに一番近い)。
+  /**
+   * 元の値。埋める向きの順で、最後の要素が埋めるセルに一番近い(上 / 左へ埋めるときは下 /
+   * 右から並ぶ)。
+   */
+  sourceValues: readonly unknown[];
+  // 元の値の直後を 0 とする位置(ラベル行 / グループ行は数えない)。
+  /** 元の範囲の直後を 0 とする位置(ラベル行 / グループ行は数えない)。 */
+  index: number;
+  /** 埋める向き(`'down' | 'up' | 'right' | 'left'`)。 */
+  direction: GridFillDirection;
+  // この列(上下へ埋めるとき)/ 行(左右へ埋めるとき)の埋め方。
+  /** この列(上下へ埋めるとき)/ 行(左右へ埋めるとき)の埋め方(`'series' | 'copy'`)。 */
+  kind: GridFillKind;
+  // 既定で書く値。
+  /** 既定で書く値。 */
+  defaultValue: unknown;
+};
+
+// 追加(フィルハンドル 1A): フィルハンドルの設定です(fillHandle prop にオブジェクトで渡したとき)。
+/**
+ * フィルハンドルの設定です(`fillHandle` prop)。`true` を渡すと既定値だけで有効になります。
+ *
+ * 各フィールドの説明は React 版パッケージ `@ishibashi0112/spreadsheet-grid` に同梱の `API_REFERENCE.md`
+ * の「フィルハンドル」節と同じ内容です。
+ */
+export type FillHandleOptions<T, F extends GridFrameworkTypes = GridFrameworkTypes> = {
+  // 埋めるセルごとに書く値を決めます(返した値をそのまま書く。既定のままにするなら defaultValue を返す)。
+  /**
+   * 埋めるセルごとに書く値を決める。返した値をそのまま書く(既定のままにするなら
+   * `params.defaultValue` を返す)。編集できないセルでは呼ばれない。返した値も `validate` を通り、
+   * reject なら書かない。
+   */
+  getFillValue?: (params: GridFillValueParams<T, F>) => unknown;
+};
+
 // 追加(row-drag ③): 行ドラッグ並び替え(enableRowDrag)の行ごとの可否判定(isRowDraggable)へ
 //   渡すコンテキストです。sourceRowIndex は元 rows の index。
 export type RowDragContext = {
@@ -3520,6 +3574,22 @@ export type SpreadsheetGridProps<T, F extends GridFrameworkTypes = GridFramework
    * @defaultValue —(無効)
    */
   totalRow?: boolean | TotalRowOptions<T, F>;
+  // ── 追加(フィルハンドル 1A): 選択範囲の右下の四角を引いて連続データ / コピーで埋める ──
+  //   指定時のみ有効な opt-in 機能です。詳細は FillHandleOptions を参照。
+  /**
+   * **フィルハンドル**。選択範囲(無ければアクティブセル)の右下に小さな四角を出し、
+   * 引いた先のセルを**連続データ**(1, 2, 3 … / 日付 / 曜日・月の名前 / `P-001` のような末尾の数)
+   * か**セルのコピー**で埋める(Excel のオートフィル)。ドラッグ中は埋める範囲を点線で、
+   * いちばん遠いセルへ入る値をポインタの近くに出し、`Ctrl`(Mac は `⌘`)で埋め方を入れ替え、`Escape`
+   * でやめる。離したあとは右下のボタンで「連続データ / セルのコピー」を選び直せる(元に戻す 1
+   * 回で埋める前へ)。ハンドルのダブルクリックで隣の列に値が続くところまで下へ埋める。
+   * 書き込みは貼り付けと同じ規則(編集できないセル・`validate` の reject は飛ばす / undo の対象)。
+   * `readOnly` や書き込み先が無い(`onRowsChange` も `dataSource.updateRows` も無い)ときは出さない。
+   * `true` で既定、オブジェクトで `{ getFillValue? }`。詳細は「フィルハンドル」節。
+   *
+   * @defaultValue —(無効)
+   */
+  fillHandle?: boolean | FillHandleOptions<T, F>;
   // ── 追加(row-drag ③): 行ドラッグ並び替え ──
   //   true で先頭にドラッグハンドル列(幅 28px の合成列。左固定列があれば左ペイン)を挿入し、
   //   ハンドルを掴んで行を上下へ動かせます(既定 false)。確定時は onRowsChange へ「移動後の

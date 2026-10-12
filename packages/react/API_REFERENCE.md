@@ -112,6 +112,7 @@
 | `onExpandedDetailRowKeysChange` | `(keys: GridRowKey[]) => void` | — | 展開中の展開行のマスター行キー集合が**変化したとき**に呼ばれる(開閉の永続化・外部同期用)。初回マウントでは発火しない。インライン関数可(latest-ref 経由)。 |
 | `labelRow` | `LabelRowOptions<T>` | —(無効) | **ラベル行(見出し / 区切り行)**。`rows` の中で `isLabelRow(row)` が true の行を「行数に数えない見出し」として、3 ペインを跨ぐ全幅の帯で描画する(中身は `render` で任意の React 要素に差し替え可。横スクロールしても左端に留まる)。編集 / 選択 / コピー / エクスポートの既定対象外で、行番号も消費しない。ソート / フィルターは既定でラベル行から次のラベル行までの区間(セクション)に閉じる(`sortMode`)。`sticky: true` で現在セクションのラベルを列ヘッダー直下に固定。`{ isLabelRow, getLabel, render?, height?, className?, sticky?, sortMode?, keepEmptySections?, exportText? }`。行グルーピング(`rowGroup`)とは別機能で併用不可。詳細は「ラベル行(見出し / 区切り行)」節。 |
 | `totalRow` | `boolean \| TotalRowOptions<T>` | —(無効) | **合計行**。表の下端に合計行を固定表示する(縦スクロールしても動かず、横スクロールと左右の固定列には付いていく)。列ごとの集計は `GridColumn.aggFunc`(行グルーピングと共通)で決め、フィルター後のデータ行で計算し直す(ラベル行は数えず、グルーピング中は折りたたんだ行も数える)。合計以外の組み込み集計は値の前に種類(平均 / 最小 / 最大 / 個数)を出す。表示専用(選択 / 編集 / 貼り付け / コピーの対象外)。`true` で既定値、オブジェクトで `{ label?, values?, renderCell?, height?, className? }`。serverSide は計算せず `values` の値だけを出す。エクスポートは `includeTotalRow: true` のときだけ末尾に含める。詳細は「合計行」節。 |
+| `fillHandle` | `boolean \| FillHandleOptions<T>` | —(無効) | **フィルハンドル**。選択範囲(無ければアクティブセル)の右下に小さな四角を出し、引いた先のセルを**連続データ**(1, 2, 3 … / 日付 / 曜日・月の名前 / `P-001` のような末尾の数)か**セルのコピー**で埋める(Excel のオートフィル)。ドラッグ中は埋める範囲を点線で、いちばん遠いセルへ入る値をポインタの近くに出し、`Ctrl`(Mac は `⌘`)で埋め方を入れ替え、`Escape` でやめる。離したあとは右下のボタンで「連続データ / セルのコピー」を選び直せる(元に戻す 1 回で埋める前へ)。ハンドルのダブルクリックで隣の列に値が続くところまで下へ埋める。書き込みは貼り付けと同じ規則(編集できないセル・`validate` の reject は飛ばす / undo の対象)。`readOnly` や書き込み先が無い(`onRowsChange` も `dataSource.updateRows` も無い)ときは出さない。`true` で既定、オブジェクトで `{ getFillValue? }`。詳細は「フィルハンドル」節。 |
 | `enableRowDrag` | `boolean` | `false` | **行ドラッグ並び替え**。先頭にドラッグハンドル列(幅 28px・タイトル無しの合成列。左固定列があれば左固定側)を挿入し、ハンドル(⋮⋮)を掴んで行を上下へ動かせる。確定時は `onRowsChange` へ移動後の**新配列**を渡し(履歴ラッパ経由 = undo/redo 対象)、続けて `onRowMove` を呼ぶ。clientSide(`rows` + `onRowsChange`)専用で、`dataSource`(serverSide)/ 行グルーピング中 / `onRowsChange` 未指定ではハンドル列を出さない。ソート / フィルター適用中はハンドルを淡色 + 理由ツールチップにして操作を無効化する(列は残る)。詳細は「行ドラッグ並び替え」節。 |
 | `isRowDraggable` | `(row: T, ctx: RowDragContext) => boolean` | 全行可 | 行ごとのドラッグ可否。`false` の行にはハンドルを描画しない。`ctx = { rowKey, sourceRowIndex }`。 |
 | `onRowMove` | `(params: RowMoveParams<T>) => void` | — | 行移動の確定後(`onRowsChange` の直後)に呼ばれる。`params = { rowKey, fromIndex, toIndex, rows }`(index は元 `rows` 配列基準、`rows` は `onRowsChange` と同じ新配列参照)。ハンドルの `moveRow()` による移動でも呼ばれる。 |
@@ -166,6 +167,60 @@ renderBottomBar={(ctx) => {
   );
 }}
 ```
+
+### フィルハンドル(`fillHandle`)
+
+`fillHandle` を指定すると、選択範囲(無ければアクティブセル)の右下に小さな四角(フィルハンドル)が出ます。引くと Excel のオートフィルと同じく、元の値の続き(連続データ)か元の値の繰り返し(セルのコピー)で埋めます。
+
+```tsx
+<SpreadsheetGrid rows={rows} onRowsChange={setRows} columns={columns} fillHandle />
+// 埋める値を差し替える(例: 「数量」列は 10 の倍数に丸める)
+<SpreadsheetGrid
+  rows={rows}
+  onRowsChange={setRows}
+  columns={columns}
+  fillHandle={{
+    getFillValue: ({ column, defaultValue }) =>
+      column.key === 'qty' && typeof defaultValue === 'number' ? Math.round(defaultValue / 10) * 10 : defaultValue,
+  }}
+/>
+```
+
+`FillHandleOptions<T>`(`fillHandle` にオブジェクトで渡したとき):
+
+| Name | Type | Default | Description |
+| --- | --- | --- | --- |
+| `getFillValue` | `(params: GridFillValueParams<T>) => unknown` | — | 埋めるセルごとに書く値を決める。返した値をそのまま書く(既定のままにするなら `params.defaultValue` を返す)。編集できないセルでは呼ばれない。返した値も `validate` を通り、reject なら書かない。 |
+
+`GridFillValueParams<T>`(`getFillValue` の引数):
+
+| フィールド | 型 | 説明 |
+| --- | --- | --- |
+| `column` | `GridColumn<T>` | 埋めるセルの列。 |
+| `row` | `T` | 埋めるセルの行(書き込み前)。 |
+| `rowIndex` | `number` | 埋めるセルのビュー行 index。 |
+| `sourceValues` | `readonly unknown[]` | 元の値。埋める向きの順で、最後の要素が埋めるセルに一番近い(上 / 左へ埋めるときは下 / 右から並ぶ)。 |
+| `index` | `number` | 元の範囲の直後を 0 とする位置(ラベル行 / グループ行は数えない)。 |
+| `direction` | `GridFillDirection` | 埋める向き(`'down' \| 'up' \| 'right' \| 'left'`)。 |
+| `kind` | `GridFillKind` | この列(上下へ埋めるとき)/ 行(左右へ埋めるとき)の埋め方(`'series' \| 'copy'`)。 |
+| `defaultValue` | `unknown` | 既定で書く値。 |
+
+- **操作**: ハンドルを押して上下か左右へ引きます(元の範囲から遠く離れた向きを採る)。点線が埋める範囲、ポインタの近くの値がいちばん遠いセルへ入る値です。表の端へ寄せると自動でスクロールします。`Ctrl`(Mac は `⌘`)を押しているあいだは埋め方が入れ替わり、`Escape` でやめます(ドラッグ中のキーはグリッドへ流しません)。離すと元の範囲 + 埋めた範囲が選ばれます(アクティブセルはそのまま)。
+- **埋め方の既定**: 列ごと(上下へ埋めるとき)/ 行ごと(左右へ埋めるとき)に決めます。続き方の分かる値は連続データ、数値 1 つ・数字だけの文字列 1 つ・続き方の無い値はコピーです。`Ctrl` / `⌘` はこれを入れ替えます(数値 1 つなら 1 ずつ増やす)。上 / 左へ引くと逆向きに続きます(`1, 2, 3` の上は `0, -1 …`。元の値が 1 つなら 1 ずつ戻り、日付は前の日)。
+- **連続データの規則**:
+  - 数値: 2 つ以上なら最小二乗の直線で続けます(等差ならその差。`1, 3` → `5, 7`)。浮動小数の誤差は丸めます。数値の文字列(`'1.5'`)も同じ規則で文字列を返します。
+  - 日付: `Date` と `'YYYY-MM-DD'` / `'YYYY/MM/DD'` の文字列(形式を保つ)。日が同じで月の差が一定なら月単位(`2026-01-15, 2026-02-15` → `2026-03-15`。その月に無い日は月末に丸める)、それ以外は日単位です(1 つだけなら 1 日ずつ)。
+  - 曜日 / 月の名前: 日本語(`月` / `月曜` / `月曜日`、`1月`)と英語の短縮・正式(`Mon` / `Monday`、`Jan` / `January`)。英語は大文字小文字を最後の値に合わせます。
+  - 末尾が数字の文字列(`P-001`、`第1回`): 前置きが同じとき末尾の数を進めます。0 埋めは最後の値が 0 で始まるときだけ桁数を保ちます。
+  - 空のセルを含む元の値・型の混在・真偽値は常にコピーです(空のセルから引くと埋める範囲を空にする。Excel と同じ)。
+- **埋めたあとのボタン**: 埋めた範囲の右下に出ます。押すとメニュー(連続データ / セルのコピー)を開き、選び直すと埋める前の値から作り直します(履歴は 1 つのまま = 元に戻す 1 回で埋める前へ)。連続データにできる値が無いときは「連続データ」を選べません。選択を変える・セルの値が外から変わる・列が変わる・編集を始めると消えます。
+- **ダブルクリック**: ハンドルのダブルクリックで、左隣(値が無ければ右隣)の列に値が続く行まで下へ埋めます。埋める列にすでに値があるセル・ラベル行 / グループ行・未読み込み行の手前で止まり、既存の値は上書きしません。
+- **書き込みの規則**: 貼り付けと同じです。`readOnly` / 列の `editable: false` / `canEditCell` で編集できないセルは飛ばし、`validate` で reject されたセルも書きません(`mark` は書いてエラー表示)。値は型を保って書きます(貼り付けのような文字列からの変換はしない)。clientSide は `onRowsChange` に 1 回で渡し、undo / redo の対象です。
+- **飛ばすもの**: ラベル行 / グループ行(位置にも数えない)/ 合成列(行ドラッグ / 展開トグル / 自動グループ列)/ 合計行。フィルター / ソート中は表示されている順に埋め、隠れた行には書きません。表の末尾より先へ行は増やしません。
+- **出さないとき**: `readOnly`、書き込み先が無い(clientSide で `onRowsChange` が無い / serverSide で `dataSource.updateRows` が無い)、編集中、範囲を選んでいる最中、行 / 列の選択中。
+- **serverSide(`dataSource`)**: `dataSource.updateRows` があるときだけ使えます(楽観更新・失敗時のロールバックは編集と同じ)。読み込まれていない行には書かず、元の範囲に読み込まれていない行がある列 / 行は埋めません。undo / redo はありません(serverSide 共通)。ボタンでの選び直しは、行の並びが埋めたときと同じあいだだけできます。
+- **キーボード / 支援技術**: ハンドルはポインタ操作の部品で、読み上げの対象外です(`aria-hidden`)。キーボードではコピー / 貼り付けで同じことができます。埋めたあとのボタンは `aria-haspopup="menu"`、メニューは `role="menu"` + `role="menuitemradio"`(↑ / ↓ で移動、`Escape` / `Tab` で閉じる)。
+- **見た目**: ハンドル `.ssg-fill-handle`、点線 `.ssg-fill-preview`、ドラッグ中のルート `.ssg-root--filling`、ボタン `.ssg-fill-options`、メニュー `.ssg-menu-panel.ssg-fill-menu`、値のツールチップ `.ssg-tooltip.ssg-fill-tooltip`。トークン `--ssg-fill-line`(点線の色。既定は文字色)/ `--ssg-fill-handle-ring`(ハンドルの縁取り。既定はセルの地色)。ハンドルの色は `--ssg-accent`。
 
 ### セル操作の通知(`onCellClick` / `onCellDoubleClick` / `onActiveCellChange`)
 
@@ -453,6 +508,7 @@ WAI-ARIA の grid パターンに沿って、表・行・セルに役割と状�
 | `editor: { type: 'checkbox' }` のセル | `role="checkbox"`。`aria-label` は列の `title`(無ければ `key`)。 |
 | 編集中のエディタ | `role="group"`、`aria-label` は「(列名)を編集」。 |
 | 合計行(`totalRow`) | `role="row"`(表の最後の行。`aria-rowindex` = 表示行数 + 2)。見出しの欄は `role="rowheader"`、セルは `role="gridcell"`。 |
+| フィルハンドル(`fillHandle`) | ハンドルは `aria-hidden`(ポインタ操作。キーボードではコピー / 貼り付け)。埋めたあとのボタンは `aria-haspopup="menu"` / `aria-expanded` / `aria-label`(「オートフィル オプション(連続データ)」等)、メニューは `role="menu"`、項目は `role="menuitemradio"` + `aria-checked`。 |
 
 - 仮想化で描画していない行・列は DOM に無いため、表全体の中の位置は `aria-rowindex` / `aria-colindex` / `aria-rowcount` / `aria-colcount` で伝える。
 - 制約: 編集中のエディタは行の外に重ねて描画するため、セルの子としては読み上げられない(上の `aria-label` で列名を伝える)。展開行(`detailRow`)の帯は `aria-rowindex` を持たない(データ行の番号をずらさないため)。縦固定で複製したラベル行(`labelRow.sticky`)は `aria-hidden`。
@@ -1602,6 +1658,7 @@ const s = stylex.create({
 | `.ssg-body-cell--autoheight` | auto-height 列のセル。 |
 | `.ssg-body-cell--align-center` / `.ssg-body-cell--align-right` | `column.align` の水平寄せ。 |
 | `.ssg-total-row` / `.ssg-total-cell` | 合計行(`totalRow`)の行 / セル(セルは `.ssg-body-cell` にも付く。種類の見出しは `.ssg-total-caption`)。 |
+| `.ssg-fill-handle` / `.ssg-fill-preview` / `.ssg-fill-options` / `.ssg-fill-menu` / `.ssg-fill-tooltip` / `.ssg-root--filling` | フィルハンドル(`fillHandle`)のハンドル / ドラッグ中の点線 / 埋めたあとのボタン / メニュー / 値のツールチップ / ドラッグ中のルート(カーソルを十字に固定)。 |
 | `.ssg-theme-dark` | `theme="dark"`(または `'auto'` のダーク解決)時に root と各ポータル(popover / menu / panel / ツールチップ)へ。 |
 
 ※上記以外の `ssg-*` クラス(内部構造クラス)は非公開の実装詳細で、予告なく変わり得る。セレクタで依存しないこと。
@@ -1616,6 +1673,7 @@ const s = stylex.create({
   - `detail?: CellDetailContext = { expanded, expandable, toggle, setExpanded }` は `detailRow` prop 有効時のみ定義(「展開行(Master/Detail)」節)。
 - `DetailRowOptions<T>` / `DetailRowRenderContext<T> = { row, rowKey, rowIndex, sourceRowIndex, collapse }` / `CellDetailContext`(展開行。バレルから公開)
 - `LabelRowOptions<T>` / `LabelRowRenderContext<T> = { row, rowKey, rowIndex, sourceRowIndex, label, sectionRowCount }` / `GridLabelRow<T> = { kind: 'label', row, sourceIndex, label, sectionRowCount }` / `LabelRowSortMode = 'section' | 'follow' | 'hide'`(ラベル行。バレルから公開。「ラベル行(見出し / 区切り行)」節)
+- `FillHandleOptions<T> = { getFillValue? }` / `GridFillValueParams<T> = { column, row, rowIndex, sourceValues, index, direction, kind, defaultValue }` / `GridFillDirection = 'down' | 'up' | 'right' | 'left'` / `GridFillKind = 'series' | 'copy'`(フィルハンドル。バレルから公開。「フィルハンドル」節)
 - `RowDragContext = { rowKey, sourceRowIndex }`(`isRowDraggable` の第 2 引数)/ `RowMoveParams<T> = { rowKey, fromIndex, toIndex, rows }`(`onRowMove` の引数。いずれもバレルから公開)
 - `GridCellRef<T> = { row, rowKey, rowIndex, sourceRowIndex, column, columnKey, colIndex, value }`(`onActiveCellChange` の引数)/ `GridCellEventParams<T> = GridCellRef<T> & { event: MouseEvent }`(`onCellClick` の引数。`event` は DOM 標準の `MouseEvent`)/ `GridCellDoubleClickParams<T> = GridCellEventParams<T> & { preventDefault(): void }`(`onCellDoubleClick` の引数。タッチのダブルタップでは `event` は離したときの `PointerEvent`)。いずれもバレルから公開。index の基準は `CellStyleContext` と同じ(「セル操作の通知」節)。
 - `CellStyleContext<T>` = 上記から `setValue` を除いた読み取り専用版(`cellClassName` 関数へ渡る)。バレル(`index.ts`)から公開(`import type { CellStyleContext } from '@ishibashi0112/spreadsheet-grid'`)

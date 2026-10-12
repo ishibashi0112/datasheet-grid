@@ -16,8 +16,14 @@ export const useGridHistoryController = <T,>(args: HistoryControllerArgs<T>) => 
     () => (hasRowsChange ? controller.handleRowsChange : undefined),
     [controller, hasRowsChange],
   );
+  // 追加(フィルハンドル 1A): 直前の変更の差し替え(履歴を積まない)。onRowsChange 未指定時は undefined。
+  const amendRowsChange = useMemo(
+    () => (hasRowsChange ? controller.amendRowsChange : undefined),
+    [controller, hasRowsChange],
+  );
   return {
     handleRowsChange,
+    amendRowsChange,
     undo: controller.undo,
     redo: controller.redo,
     canUndo: controller.canUndo,

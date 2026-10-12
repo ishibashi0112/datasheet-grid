@@ -28,6 +28,9 @@ export type LabelRowOptions<T> = Core.LabelRowOptions<T, UnboundGridTypes>;
 // 追加(合計行 3A): 合計行(renderCell の ctx が F を持つ)。
 export type TotalRowOptions<T> = Core.TotalRowOptions<T, UnboundGridTypes>;
 export type TotalRowCellContext<T> = Core.TotalRowCellContext<T, UnboundGridTypes>;
+// 追加(フィルハンドル 1A): getFillValue の params が列(F)を持つ。
+export type FillHandleOptions<T> = Core.FillHandleOptions<T, UnboundGridTypes>;
+export type GridFillValueParams<T> = Core.GridFillValueParams<T, UnboundGridTypes>;
 export type CellStyleContext<T> = Core.CellStyleContext<T, UnboundGridTypes>;
 // 追加(F-3): 条件付き書式(chips の関数版が ctx 引数に F を持つ)。
 export type GridConditionalFormat<T> = Core.GridConditionalFormat<T, UnboundGridTypes>;

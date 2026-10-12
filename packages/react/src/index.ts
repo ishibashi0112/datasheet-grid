@@ -77,6 +77,11 @@ export type {
   TotalRowOptions,
   TotalRowCellContext,
   TotalRowCellKind,
+  // 追加(フィルハンドル 1A): フィルハンドル(fillHandle prop / getFillValue の params / 向き / 埋め方)の公開型です。
+  FillHandleOptions,
+  GridFillValueParams,
+  GridFillDirection,
+  GridFillKind,
   // 追加(row-drag ③): 行ドラッグ並び替え(enableRowDrag / isRowDraggable / onRowMove)の公開型です。
   RowDragContext,
   RowMoveParams,

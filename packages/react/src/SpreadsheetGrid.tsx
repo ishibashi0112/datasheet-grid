@@ -227,6 +227,8 @@ import type {
   GridContextMenuTarget,
   GridContextMenuParams,
   GridContextMenuItem,
+  // 追加(フィルハンドル 1A): ドラッグ中の点線の範囲(選択と同じ幾何で描く)。
+  GridSelection,
 } from './model/gridTypes';
 import { getCellValue, isViewCellEditable } from '@ishibashi0112/spreadsheet-grid-core/utils/permissions';
 import { writeRowsCell } from '@ishibashi0112/spreadsheet-grid-core/logic/editorValues';
@@ -280,6 +282,20 @@ import {
 } from '@ishibashi0112/spreadsheet-grid-core/logic/contextMenuTarget';
 import useCellContextMenuController from './hooks/useCellContextMenuController';
 import CellContextMenuPopover from './view/CellContextMenuPopover';
+// 追加(フィルハンドル 1A): ハンドル / 点線 / 埋めたあとのボタン / メニュー / 値のツールチップ。
+import {
+  FillHandle,
+  FillOptionsChip,
+  FillOptionsMenu,
+  FillPreviewOverlay,
+  FillTooltip,
+} from './view/FillHandleLayer';
+import { useFillHandleController } from './hooks/useFillHandleController';
+import {
+  resolveFillCornerPlacement,
+  resolveFillOptionsChipPosition,
+  resolveFillSource,
+} from '@ishibashi0112/spreadsheet-grid-core/logic/fillHandle';
 import type { ReactGridTypes } from './model/gridTypes';
 // import ColumnChooserPanel, {
 //   type ColumnChooserItem,
@@ -529,6 +545,8 @@ export function SpreadsheetGrid<T extends object>({
   labelRow,
   // 追加(合計行 3A): 表の下端に固定する合計行。未指定 / false なら機能は完全に休眠します。
   totalRow,
+  // 追加(フィルハンドル 1A): 選択範囲の右下の四角を引いて埋める。未指定 / false なら機能は完全に休眠します。
+  fillHandle,
   // 追加(row-drag ③): 行ドラッグ並び替え(既定 OFF)。
   enableRowDrag = false,
   isRowDraggable,
@@ -2110,6 +2128,8 @@ export function SpreadsheetGrid<T extends object>({
   const cellDoubleClickRef = useRef<(cell: CellCoord, event: MouseEvent) => void>(() => {});
 
   const {
+    // 追加(フィルハンドル 1A): ヒットテスト(フィルハンドルのドラッグ)。
+    getCellCoordFromClientPoint,
     updateSelectionFromPointer,
     handleCellPointerDown,
     // 追加(touch): タッチ由来の native dblclick を無視するラッパ(参照恒久安定)。
@@ -2203,6 +2223,8 @@ export function SpreadsheetGrid<T extends object>({
   const undoRedoEnabled = enableUndoRedo && !readOnly && !isServerSide;
   const {
     handleRowsChange,
+    // 追加(フィルハンドル 1A): 埋めたあとの選び直し(履歴を積まない差し替え)。
+    amendRowsChange,
     undo: undoRows,
     redo: redoRows,
     canUndo: canUndoRows,
@@ -2337,6 +2359,153 @@ export function SpreadsheetGrid<T extends object>({
       isRowExportable,
       dispatch,
     });
+
+  // ── fill handle(フィルハンドル 1A) ─────────────────────
+  // 追加(フィルハンドル 1A): 選択範囲(無ければアクティブセル)の右下の四角を引いて、連続データ / セルのコピーで
+  //   埋めます。書き込みは貼り付けと同じ規則(編集可否 / reject / ラベル行・グループ行を飛ばす)で、clientSide は
+  //   履歴付きの handleRowsChange、serverSide は書き戻し口(updateRows)へ流します。readOnly・書き込み先なしでは休眠。
+  const fillHandleOptions = typeof fillHandle === 'object' ? fillHandle : undefined;
+  const fillHandleEnabled =
+    Boolean(fillHandle) &&
+    !readOnly &&
+    (isServerSide ? applyServerSideCellEdits !== undefined : handleRowsChange !== undefined);
+  const { fillController, fillSnapshot, fillChipRef, fillMenuRef } = useFillHandleController({
+    enabled: fillHandleEnabled,
+    isServerSide,
+    rows,
+    rowModel,
+    columns: orderedColumns,
+    selection: uiState.selection,
+    activeCell: uiState.activeCell,
+    editing: uiState.editingCell !== null,
+    readOnly,
+    canEditCell,
+    getFillValue: fillHandleOptions?.getFillValue,
+    dispatch,
+    hitTest: getCellCoordFromClientPoint,
+    scrollContainerRef,
+    gridRootRef,
+    applyRowsChange: handleRowsChange,
+    amendRowsChange,
+    applyServerSideCellEdits,
+  });
+  // ハンドルを出す角(範囲選択中のドラッグ・編集中・行 / 列選択では出さない)。
+  const fillHandleCorner = useMemo(() => {
+    if (!fillHandleEnabled || uiState.editingCell || uiState.dragState?.type === 'selection') {
+      return null;
+    }
+    const source = resolveFillSource(uiState.selection, uiState.activeCell, viewRowCount, orderedColumns.length);
+    if (!source) {
+      return null;
+    }
+    return resolveFillCornerPlacement(source, paneLayout, rowMetrics, windowFirstRow, windowLastRow);
+  }, [
+    fillHandleEnabled,
+    uiState.editingCell,
+    uiState.dragState,
+    uiState.selection,
+    uiState.activeCell,
+    viewRowCount,
+    orderedColumns.length,
+    paneLayout,
+    rowMetrics,
+    windowFirstRow,
+    windowLastRow,
+  ]);
+  // ドラッグ中の点線(元の範囲 + 埋める範囲)。ペイン別の矩形(展開行の帯は避ける)。
+  const fillPreviewSelection = useMemo<GridSelection>(() => {
+    if (fillSnapshot.status !== 'dragging' || fillSnapshot.target === null) {
+      return null;
+    }
+    const { source, target } = fillSnapshot;
+    return {
+      type: 'cell',
+      range: {
+        start: {
+          row: Math.min(source.startRow, target.range.startRow),
+          col: Math.min(source.startCol, target.range.startCol),
+        },
+        end: {
+          row: Math.max(source.endRow, target.range.endRow),
+          col: Math.max(source.endCol, target.range.endCol),
+        },
+      },
+    };
+  }, [fillSnapshot]);
+  const fillPreviewRectsForPane = useMemo(() => {
+    const extents = resolveSelectionExtents(fillPreviewSelection, paneLayout, viewRowCount);
+    const segments = resolveSelectionBandSegments(
+      detailActive,
+      extents,
+      windowFirstRow,
+      windowLastRow,
+      rowMetrics,
+      detailExtras,
+    );
+    const band = segments ? null : resolveSelectionBand(extents, windowFirstRow, windowLastRow, rowMetrics);
+    return (pane: ColumnPane): SelectionOverlayRect[] => {
+      const extent = extents?.extents[pane];
+      if (!extent) {
+        return [];
+      }
+      if (segments) {
+        return segments.map((segment) => ({
+          left: extent.start,
+          top: segment.top,
+          width: extent.width,
+          height: segment.height,
+        }));
+      }
+      return band ? [{ left: extent.start, top: band.top, width: extent.width, height: band.height }] : [];
+    };
+  }, [fillPreviewSelection, paneLayout, viewRowCount, detailActive, windowFirstRow, windowLastRow, rowMetrics, detailExtras]);
+  // 埋めたあとのボタンの位置(埋めた範囲の右下)。
+  const fillChipPlacement = useMemo(() => {
+    if (fillSnapshot.status !== 'filled') {
+      return null;
+    }
+    const corner = resolveFillCornerPlacement(fillSnapshot.range, paneLayout, rowMetrics, windowFirstRow, windowLastRow);
+    return corner
+      ? { pane: corner.pane, position: resolveFillOptionsChipPosition(corner, rowMetrics.totalBodyHeight) }
+      : null;
+  }, [fillSnapshot, paneLayout, rowMetrics, windowFirstRow, windowLastRow]);
+  const handleFillHandlePointerDown = useCallback(
+    (event: PointerEvent<HTMLDivElement>) => fillController.handlePointerDown(event),
+    [fillController],
+  );
+  // 3 ペイン共通: ハンドル / 点線 / ボタン(各ペインの overlay 層の中、アクティブセル枠の上)。
+  const renderFillHandleLayer = (pane: ColumnPane, leadingWidth: number) => (
+    <>
+      {fillPreviewRectsForPane(pane).map((rect, segmentIndex) => (
+        <FillPreviewOverlay
+          key={segmentIndex}
+          rect={rect}
+          headerHeight={headerHeight}
+          baseOffset={overlayBaseOffset}
+          leadingWidth={leadingWidth}
+        />
+      ))}
+      <FillHandle
+        corner={fillHandleCorner?.pane === pane ? fillHandleCorner : null}
+        headerHeight={headerHeight}
+        baseOffset={overlayBaseOffset}
+        leadingWidth={leadingWidth}
+        onPointerDown={handleFillHandlePointerDown}
+      />
+      {fillSnapshot.status === 'filled' && (
+        <FillOptionsChip
+          position={fillChipPlacement?.pane === pane ? fillChipPlacement.position : null}
+          headerHeight={headerHeight}
+          baseOffset={overlayBaseOffset}
+          leadingWidth={leadingWidth}
+          kind={fillSnapshot.kind}
+          menuOpen={fillSnapshot.menu !== null}
+          chipRef={fillChipRef}
+          controller={fillController}
+        />
+      )}
+    </>
+  );
 
   const selectEntireGrid = useCallback(() => {
     if (viewRowCount === 0 || visibleColumns.length === 0) {
@@ -4210,6 +4379,8 @@ export function SpreadsheetGrid<T extends object>({
         // 追加(motion-1 / M-1): ポインタで範囲選択をドラッグ中はオーバーレイを瞬時に追従させます(styles.css で
         //   transition を切る。キーボード移動 / クリックでは滑る)。
         uiState.dragState?.type === 'selection' && 'ssg-root--selecting',
+        // 追加(フィルハンドル 1A): ハンドルをドラッグ中(十字カーソル / オーバーレイの瞬時追従)。
+        fillSnapshot.status === 'dragging' && 'ssg-root--filling',
         // 追加(motion-3 / M-4・M-5): 行の並び替えアニメ(行要素の transform に transition)。
         animateRowsActive && 'ssg-root--animate-rows',
         // 追加(motion-5 / M-6): クロスヘア(列ヘッダー / 行番号を選択色で染める。列の帯は ColumnHoverOverlay)。
@@ -4434,6 +4605,8 @@ export function SpreadsheetGrid<T extends object>({
                   baseOffset={overlayBaseOffset}
                   leadingWidth={leftLeadingWidth}
                 />
+                {/* 追加(フィルハンドル 1A): ハンドル / ドラッグ中の点線 / 埋めたあとのボタン。 */}
+                {renderFillHandleLayer('left', leftLeadingWidth)}
 
                 <CellEditorLayer
                   slots={slots}
@@ -4647,6 +4820,8 @@ export function SpreadsheetGrid<T extends object>({
                   baseOffset={overlayBaseOffset}
                   leadingWidth={centerLeadingWidth}
                 />
+                {/* 追加(フィルハンドル 1A): ハンドル / ドラッグ中の点線 / 埋めたあとのボタン。 */}
+                {renderFillHandleLayer('center', centerLeadingWidth)}
 
                 <CellEditorLayer
                   slots={slots}
@@ -4857,6 +5032,8 @@ export function SpreadsheetGrid<T extends object>({
                   baseOffset={overlayBaseOffset}
                   leadingWidth={rightLeadingWidth}
                 />
+                {/* 追加(フィルハンドル 1A): ハンドル / ドラッグ中の点線 / 埋めたあとのボタン。 */}
+                {renderFillHandleLayer('right', rightLeadingWidth)}
 
                 <CellEditorLayer
                   slots={slots}
@@ -5115,6 +5292,24 @@ export function SpreadsheetGrid<T extends object>({
       {renderedToolPanel}
       {/* 追加(バッチ②): セル/行の汎用コンテキストメニュー(完全カスタム)です。*/}
       {renderedCellContextMenuPopover}
+      {/* 追加(フィルハンドル 1A): 埋めたあとのメニュー / ドラッグ中の値のツールチップ(ポータル)。 */}
+      {fillSnapshot.status === 'filled' && fillSnapshot.menu !== null && (
+        <FillOptionsMenu
+          layout={fillSnapshot.menu}
+          kind={fillSnapshot.kind}
+          seriesAvailable={fillSnapshot.seriesAvailable}
+          themeClassName={portalClassName}
+          panelRef={fillMenuRef}
+          controller={fillController}
+        />
+      )}
+      {fillSnapshot.status === 'dragging' && fillSnapshot.previewText !== null && (
+        <FillTooltip
+          text={fillSnapshot.previewText}
+          themeClassName={portalClassName}
+          controller={fillController}
+        />
+      )}
     </div>
   );
 }

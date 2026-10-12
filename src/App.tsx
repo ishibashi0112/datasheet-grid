@@ -666,6 +666,9 @@ function App() {
   // 追加(合計行デモ): 表の下端に固定する合計行(totalRow)の ON/OFF です。ON(clientSide)で品名 = 個数 /
   //   数量・金額 = 合計の aggFunc を列へ付け、フィルター後の行で集計します。serverSide では無効。
   const [totalRowEnabled, setTotalRowEnabled] = useState(false);
+  // 追加(フィルハンドルデモ): 選択範囲の右下の四角を引いて埋めるフィルハンドル(fillHandle)の ON/OFF です。
+  //   clientSide は onRowsChange、serverSide は dataSource.updateRows(モック DB)へ書きます。
+  const [fillHandleEnabled, setFillHandleEnabled] = useState(false);
   // 追加(scrollHint デモ): スクロール位置インジケーター(バブル + ルーラー)のモードです。
   //   1M 行での現在位置把握が主目的のため、デモでは既定 ON にしています(ライブラリ既定は OFF)。
   //   hintColumn='partNo' で「行番号 + 品番」を表示します。
@@ -1306,6 +1309,14 @@ function App() {
           >
             合計行: {totalRowEnabled ? 'ON' : 'OFF'}
           </button>
+          {/* 追加(フィルハンドルデモ): 選択範囲の右下の四角を引いて連続データ / コピーで埋める(fillHandle)。 */}
+          <button
+            type="button"
+            onClick={() => setFillHandleEnabled((v) => !v)}
+            style={modeButtonStyle(fillHandleEnabled)}
+          >
+            フィルハンドル: {fillHandleEnabled ? 'ON' : 'OFF'}
+          </button>
           {/* 追加(行選択デモ): チェックボックス行選択の ON/OFF・モード切替・全選択/解除・選択キー確認。 */}
           <button
             type="button"
@@ -1490,6 +1501,8 @@ function App() {
         }}
         // 追加(合計行デモ): 表の下端に固定する合計行(列の aggFunc で集計)。
         totalRow={totalRowEnabled && mode !== 'server'}
+        // 追加(フィルハンドルデモ): 選択範囲の右下の四角を引いて埋める。
+        fillHandle={fillHandleEnabled}
         // 追加(label-row デモ): ラベル行。isLabel の行を見出しとして全幅の帯で描き、React で装飾します
         //   (節番号バッジ + 見出し + セクション内のデータ行数)。
         labelRow={

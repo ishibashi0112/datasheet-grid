@@ -52,6 +52,14 @@ const TABLE_MAPPINGS = [
     match: ({ h3, header }) => h3.includes('`totalRow`') && header[0] === 'Name',
   },
   {
+    type: 'FillHandleOptions',
+    match: ({ h3, header }) => h3.includes('`fillHandle`') && header[0] === 'Name',
+  },
+  {
+    type: 'GridFillValueParams',
+    match: ({ h3, header }) => h3.includes('`fillHandle`') && header[0] === 'フィールド',
+  },
+  {
     type: 'SpreadsheetGridHandle',
     match: ({ h2, header }) => h2.includes('`SpreadsheetGridHandle<T>`') && header[0] === 'メソッド',
   },

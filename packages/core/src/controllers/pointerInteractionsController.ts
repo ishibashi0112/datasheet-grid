@@ -95,6 +95,8 @@ export type PointerInteractionsArgs<T> = {
 
 export type PointerInteractionsController<T> = {
   update: (args: PointerInteractionsArgs<T>) => void;
+  // 追加(フィルハンドル 1A): クライアント座標 → セル座標(3 ペインのヒットテスト。表が空なら null)。
+  getCellCoordFromClientPoint: (clientX: number, clientY: number) => CellCoord | null;
   updateSelectionFromPointer: (clientX: number, clientY: number) => void;
   handleCellPointerDown: (cell: CellCoord, event: GridPointerEventLike) => void;
   handleCellDoubleClick: (cell: CellCoord, event: MouseEvent) => void;
@@ -568,6 +570,7 @@ export const createPointerInteractionsController = <T,>(): PointerInteractionsCo
       attachListeners();
       syncSelectionAutoScroll();
     },
+    getCellCoordFromClientPoint,
     updateSelectionFromPointer,
     handleCellPointerDown,
     handleCellDoubleClick,

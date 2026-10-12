@@ -13,7 +13,7 @@ vp install
 pnpm run audit:dev
 
 # 3. 別ターミナルでシナリオを実行(PASS / FAIL を標準出力に出す)
-pnpm run audit:test            # 基本 + 1M 行 + SSRM + ライフサイクル + 機能群 + 所見追試 + 集計 + 合計行
+pnpm run audit:test            # 基本 + 1M 行 + SSRM + ライフサイクル + 機能群 + 所見追試 + 集計 + 合計行 + フィルハンドル
 node audit/harness/t-basic.mjs # 個別に 1 本だけ
 node audit/harness/perf-big.mjs            # 1M 行の計測(dev ビルド)
 HARNESS_BASE=http://127.0.0.1:5178/ node audit/harness/perf-big.mjs  # 本番ビルド(vp build → vp preview --port 5178)に対して
@@ -24,6 +24,7 @@ HARNESS_BASE=http://127.0.0.1:5178/ node audit/harness/perf-big.mjs  # 本番ビ
 - `window.__grid`(ハンドル)/ `window.__rows()` / `window.__setRows` / `window.__setProps` / `window.__setColumns` / `window.__events`(コールバック記録)/ `window.__errors`(console.error / warn)/ `window.__listeners`(window / document リスナー数)/ `window.__ssrm`(SSRM モック制御)を公開しているので、ブラウザの DevTools から手で叩いて追試できる。
 - `t-aggregates.mjs` は選択範囲の集計(下部バー)の値・表示・100 万行の時間分割・SSRM の部分集計。
 - `t-total.mjs` は合計行(`totalRow`)の値・下端固定・最終行が合計行に隠れないこと(スクロール / 矢印キー / `scrollToRow` / `scrollToBottom`)・横スクロールと固定列の揃い・列ドラッグ(live)・行が少ないとき・ダークテーマ・100 万行・auto-height / グルーピング / ラベル行 / SSRM との併用。
+- `t-fill.mjs` はフィルハンドル(`fillHandle`)のハンドルの位置・ドラッグ(点線 / 値のツールチップ / 自動スクロール)・連続データ / コピー・`Ctrl` で入れ替え・`Escape`・上 / 左へ・固定ペインをまたぐ・`validate` の reject / 編集不可を飛ばす・埋めたあとのボタンとメニュー(マウス / キーボード)・元に戻す / やり直し・ダブルクリック・出さないとき・ダークテーマ・グルーピング / ラベル行 / SSRM / 100 万行。
 - `t-verify.mjs` は監査所見(RD-1 / RD-2 / C-1 / L-01 / C-3 / B-01 / B-02 / B-03 / V-02 …)の再現スクリプト。修正後は FAIL → PASS に変わることを確認する回帰テストとして使う。
 
 ## 出力の読み方
