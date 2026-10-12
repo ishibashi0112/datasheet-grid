@@ -102,6 +102,11 @@ type GridBodyRowProps<T> = {
   // 追加(context 拡張): source 行 index(= rowModel.getSourceIndex(rowIndex)。プリミティブ=
   //   memo 安全)。cellClassName / renderCell の各コンテキストへ view index と併せて公開します。
   sourceRowIndex: number;
+  // 追加(audit V-05): アクティブセルに付ける DOM id(シェルの aria-activedescendant が指す。グリッドごとに一定)。
+  activeCellDomId?: string;
+  // 追加(見直し): 編集中のエディタ(行の外に重ねる)の DOM id。編集中のセルが aria-owns で子に持ちます
+  //   (支援技術ではエディタがセルの中に入る = grid の直下に行以外を置かない)。グリッドごとに一定。
+  cellEditorDomId?: string;
   // 追加(label-row ③): 行ヘッダー「#」に出す番号(1 始まり)。ラベル行有効時はラベル行を飛ばした
   //   データ行の通し番号、それ以外は view index + 1(従来どおり)。プリミティブ = memo 安全。
   rowNumber: number;
@@ -195,6 +200,8 @@ function GridBodyRowInner<T>({
   rowIndex,
   rowKey,
   sourceRowIndex,
+  activeCellDomId,
+  cellEditorDomId,
   rowNumber,
   row,
   top,
@@ -229,10 +236,17 @@ function GridBodyRowInner<T>({
   rowStyle,
   slots,
 }: GridBodyRowProps<T>) {
+  // 追加(audit RD-4): canEditCell の第 5 引数(行内の全セルで共有。canEditCell 未指定なら作りません)。
+  const canEditContext = canEditCell ? { sourceRowIndex, rowKey } : undefined;
   return (
     <div
       data-pane={pane}
       data-row-index={rowIndex}
+      // 追加(audit V-05): ARIA の行(見出し行 = 1 のため view index + 2)。チェックボックス行選択が有効なら
+      //   選択状態を aria-selected で公開します。
+      role="row"
+      aria-rowindex={rowIndex + 2}
+      aria-selected={showRowCheckbox ? isRowChecked : undefined}
       // 追加(motion-6 / M-2): 変更セルのフラッシュ(changeHighlightController)が rowKey で行を探すための目印。
       data-row-key={rowKey}
       className={cx(
@@ -252,8 +266,9 @@ function GridBodyRowInner<T>({
       {ownsRowHeader && (
         <div
           // 追加(行選択): enableRowSelection 時はガター全体がチェックボックスとして振る舞います。
-          role={showRowCheckbox ? 'checkbox' : undefined}
-          aria-checked={showRowCheckbox ? isRowChecked : undefined}
+          // 変更(audit V-05 / RD-10): 行番号セルは rowheader。チェックボックスの役割は中の glyph(名前付き)へ。
+          role="rowheader"
+          aria-colindex={1}
           onPointerDown={(event) => onRowHeaderPointerDown(rowIndex, event)}
           onPointerEnter={(event) => onRowHeaderPointerEnter(rowIndex, event)}
           onPointerLeave={() => onRowHeaderPointerLeave(rowIndex)}
@@ -278,6 +293,7 @@ function GridBodyRowInner<T>({
           {showRowCheckbox ? (
             <RowSelectionCheckbox
               slot={slots?.checkbox}
+              label={`行 ${rowNumber} を選択`}
               state={isRowChecked ? 'checked' : 'unchecked'}
             />
           ) : (
@@ -314,6 +330,7 @@ function GridBodyRowInner<T>({
           colIndex,
           row,
           column,
+          canEditContext,
         );
 
         // 追加(C1): auto-height モードかつ駆動列(column.autoHeight)のセルは内容駆動高さにします。
@@ -429,6 +446,13 @@ function GridBodyRowInner<T>({
         return (
           <div
             key={`${String(rowKey)}-${column.key}`}
+            // 追加(audit V-05): ARIA のセル。aria-colindex は行番号列(1)の次から数える視覚順。
+            role="gridcell"
+            aria-colindex={colIndex + 2}
+            aria-selected={isSelected}
+            aria-readonly={readOnlyCell || undefined}
+            id={isActive ? activeCellDomId : undefined}
+            aria-owns={colIndex === editingColInRow ? cellEditorDomId : undefined}
             data-ssg-col-key={column.key}
             data-autoheight-cell={isAutoHeightCell ? '' : undefined}
             data-ssg-tooltip={tooltipText ?? undefined}
@@ -581,6 +605,10 @@ function GridBodySkeletonRowInner<T>({
       data-pane={pane}
       data-row-index={rowIndex}
       data-skeleton-row=""
+      // 追加(audit V-05): 読み込み中の行(aria-busy)。
+      role="row"
+      aria-rowindex={rowIndex + 2}
+      aria-busy="true"
       className={cx('ssg-body-row', slots?.bodyRow?.className)}
       style={{
         ...slots?.bodyRow?.style,
@@ -590,6 +618,8 @@ function GridBodySkeletonRowInner<T>({
     >
       {ownsRowHeader && (
         <div
+          role="rowheader"
+          aria-colindex={1}
           onPointerDown={(event) => onRowHeaderPointerDown(rowIndex, event)}
           onPointerEnter={(event) => onRowHeaderPointerEnter(rowIndex, event)}
           onPointerLeave={() => onRowHeaderPointerLeave(rowIndex)}
@@ -632,6 +662,8 @@ function GridBodySkeletonRowInner<T>({
         return (
           <div
             key={`skeleton-${pane}-${colIndex}`}
+            role="gridcell"
+            aria-colindex={colIndex + 2}
             className={cx(
               'ssg-body-cell',
               isRowHovered && 'ssg-body-cell--row-hovered',
@@ -751,6 +783,9 @@ function GridBodyGroupRowInner<T>({
       data-pane={pane}
       data-row-index={rowIndex}
       data-ssg-group-row=""
+      // 追加(audit V-05): グループ行も ARIA の行(開閉状態は自動グループ列のボタンの aria-expanded)。
+      role="row"
+      aria-rowindex={rowIndex + 2}
       className={cx(
         'ssg-body-row',
         slots?.bodyRow?.className,
@@ -766,6 +801,8 @@ function GridBodyGroupRowInner<T>({
     >
       {ownsRowHeader && (
         <div
+          role="rowheader"
+          aria-colindex={1}
           onPointerEnter={(event) => onRowHeaderPointerEnter(rowIndex, event)}
           onPointerLeave={() => onRowHeaderPointerLeave(rowIndex)}
           className={cx(
@@ -805,6 +842,8 @@ function GridBodyGroupRowInner<T>({
         return (
           <div
             key={`group-${pane}-${column.key}`}
+            role="gridcell"
+            aria-colindex={entry.logicalIndex + 2}
             data-ssg-col-key={column.key}
             className={cx(
               'ssg-body-cell',
@@ -864,6 +903,10 @@ const GridBodyGroupRow = memo(
 type GridBodyLayerProps<T> = {
   // 追加(10-C): 描画対象のペイン種別です。
   pane: GridPaneKind;
+  // 追加(audit V-05): アクティブセルに付ける DOM id(シェルの aria-activedescendant が指す)。
+  activeCellDomId?: string;
+  // 追加(見直し): 編集中のエディタの DOM id(編集中のセルの aria-owns)。
+  cellEditorDomId?: string;
   // 追加(10-C): true のときだけ行番号セルを描画します。
   ownsRowHeader: boolean;
   // 追加(10-C): 列の前に確保する先頭幅です(行ヘッダーを持つペインは rowHeaderWidth、他は 0)。
@@ -997,6 +1040,8 @@ export function GridBodyLayer<T>({
   renderCellContent,
   getRowClassName,
   slots,
+  activeCellDomId,
+  cellEditorDomId,
 }: GridBodyLayerProps<T>) {
   return (
     <>
@@ -1176,6 +1221,8 @@ export function GridBodyLayer<T>({
             rowIndex={rowIndex}
             rowKey={rowKey}
             sourceRowIndex={sourceRowIndex}
+            activeCellDomId={activeCellDomId}
+            cellEditorDomId={cellEditorDomId}
             rowNumber={labelViewIndexes ? resolveDataRowNumber(labelViewIndexes, rowIndex) : rowIndex + 1}
             row={row}
             top={virtualRow.start}

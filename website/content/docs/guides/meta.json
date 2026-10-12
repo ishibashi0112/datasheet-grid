@@ -2,6 +2,7 @@
   "title": "ガイド",
   "pages": [
     "editing",
+    "fill-handle",
     "cell-events",
     "filter-sort",
     "find",
@@ -12,6 +13,7 @@
     "grouping",
     "detail-row",
     "label-rows",
+    "total-row",
     "row-drag",
     "column-drag",
     "export",

@@ -99,7 +99,8 @@ export function SortManagementPanel({
   );
 
   const titleOf = (key: string) =>
-    columns.find((column) => column.key === key)?.title ?? key;
+    // 修正(audit L-12): title が空文字なら key(ヘッダー表示等と同じ ||)。
+    columns.find((column) => column.key === key)?.title || key;
 
   // ── 優先順位 DnD(MS-3-2) ───────────────────────────────
   //   ColumnChooserPanel の pointer 機構を移植。単一フラットリストのため pane 走査・

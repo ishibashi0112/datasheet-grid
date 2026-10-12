@@ -188,6 +188,9 @@ const padDatePart = (value: number): string => String(value).padStart(2, '0');
 export const formatDateKey = (date: Date): string =>
   `${date.getFullYear()}-${padDatePart(date.getMonth() + 1)}-${padDatePart(date.getDate())}`;
 
+// 追加(audit V-06): 指定年月の日数(month は 1 始まり)。UTC で求めるのでタイムゾーンに依存しません。
+const daysInMonth = (year: number, month: number): number => new Date(Date.UTC(year, month, 0)).getUTCDate();
+
 // 追加(filter-ext D): セル値 → 正規化日付キー('YYYY-MM-DD')です。解釈不可は null。
 //   受理形式: Date インスタンス / 'YYYY-MM-DD'・'YYYY/M/D' 前方一致(時刻部は無視)。
 //   Date.parse への丸投げはしません('2026-13-45' や自由文が環境依存で通るのを防ぐ)。
@@ -210,7 +213,9 @@ export const toDateKey = (cellValue: unknown): string | null => {
   }
   const month = Number(match[2]);
   const day = Number(match[3]);
-  if (month < 1 || month > 12 || day < 1 || day > 31) {
+  // 修正(audit V-06): その月に無い日(2026-02-30 / 2026/4/31)は日付として受理しません(フィルター条件として
+  //   確定すると永久に一致せず、カレンダーにも選択日が出なかった)。うるう年は暦どおり(2028-02-29 は可)。
+  if (month < 1 || month > 12 || day < 1 || day > daysInMonth(Number(match[1]), month)) {
     return null;
   }
   return `${match[1]}-${padDatePart(month)}-${padDatePart(day)}`;

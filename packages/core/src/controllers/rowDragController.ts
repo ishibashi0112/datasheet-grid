@@ -2,7 +2,7 @@
 //   移設)。列ヘッダー D&D(columnHeaderDragController)と同じ設計方針を縦方向へ適用しています。
 //   - ドラッグ中はフレームワークの state を更新しません。ガイド線(各ペインに常設した水平線。args の indicator
 //     ref 経由)とゴースト(body 直下の fixed ピル)を imperative に動かします(再レンダーゼロ)。
-//   - pointerdown(ハンドル)→ window に pointermove / pointerup / pointercancel / keydown(Escape)を登録
+//   - pointerdown(ハンドル)→ window に pointermove / pointerup / pointercancel / keydown(Escape)/ blur を登録
 //     (このドラッグの pointerId のみ処理)。行は仮想化されており、autoscroll で掴んだ行が窓外へ出るとハンドルごと
 //     unmount するため、要素直付けではなく window 登録が必須です(CLAUDE.md「仮想化 DOM 上のドラッグ」)。
 //   - ヒットテストは中央ペインの rect を基準に clientY → content-y(論理)へ換算し、logic/rowReorder の
@@ -20,6 +20,7 @@ import {
   AUTO_SCROLL_ACTIVATION_DISTANCE,
   AUTO_SCROLL_EDGE_THRESHOLD,
   AUTO_SCROLL_STEP,
+  clampClientYAboveFooter,
   computeNextScrollPosition,
   hasPointerLeftActivationRadius,
   resolveAutoScrollAxisDirection,
@@ -37,6 +38,9 @@ export type RowDragArgs = {
   // 行メトリクス(スロット解決 / ガイド線 y の基準)。
   rowMetrics: RowMetrics;
   headerHeight: number;
+  // 追加(合計行 3A): 下端に固定する行(合計行)の高さ。端の自動スクロールの下の帯をその上端へ寄せ、合計行の上の
+  //   ポインタは本体の見えている最後の位置として扱います(合計行の裏の位置へ落とさない)。既定 0(従来どおり)。
+  footerHeight?: number;
   // 物理 → 論理 scrollTop の倍率(scroll-space 仮想化)。通常 1。
   verticalScaleFactor: number;
   // 行 / overlay の transform 層内で差し引く基準オフセット(overlayBaseOffset)。通常 0。
@@ -150,6 +154,8 @@ export const createRowDragController = (): RowDragController => {
   let dragOrigin: { x: number; y: number } | null = null;
   let autoScrollArmed = false;
   let activeDragDispose: (() => void) | null = null;
+  // 追加(audit C-9): ドラッグ中のポインタ(2 本目のポインタで始め直さないため)。
+  let activePointerId: number | null = null;
   let rafId: number | null = null;
   // settle(FLIP)用: commit 直前の各行要素の screen-y。
   let settlePending: Map<HTMLElement, number> | null = null;
@@ -344,8 +350,14 @@ export const createRowDragController = (): RowDragController => {
     }
 
     // 縦: 中央ペイン基準の物理 y → 論理 content-y(pointerInteractionsController と同じ換算)。
+    //   変更(合計行 3A): 合計行の上のポインタは、本体の見えている最後の位置として扱います。
+    const hitClientY = clampClientYAboveFooter(
+      clientY,
+      r.top + containerEl.clientTop + containerEl.clientHeight,
+      args.footerHeight ?? 0,
+    );
     const centerRect = centerEl.getBoundingClientRect();
-    const physicalY = centerEl.scrollTop + clientY - centerRect.top - headerHeight;
+    const physicalY = centerEl.scrollTop + hitClientY - centerRect.top - headerHeight;
     const d = containerEl.scrollTop * (1 - verticalScaleFactor);
     const logicalY = physicalY - d;
     const slot = resolveRowDropSlot(logicalY, rowMetrics);
@@ -407,7 +419,7 @@ export const createRowDragController = (): RowDragController => {
         const direction = resolveAutoScrollAxisDirection(
           pointer.y,
           contentBox.top,
-          contentBox.bottom,
+          contentBox.bottom - (args?.footerHeight ?? 0),
           AUTO_SCROLL_EDGE_THRESHOLD,
         );
         const nextTop = computeNextScrollPosition(
@@ -452,6 +464,7 @@ export const createRowDragController = (): RowDragController => {
     draggingIndex = null;
     dropSlot = null;
     dragOrigin = null;
+    activePointerId = null;
 
     const to = from === null || slot === null ? null : resolveMoveTargetIndex(from, slot);
     const willCommit = commit && from !== null && to !== null && args !== null;
@@ -538,7 +551,17 @@ export const createRowDragController = (): RowDragController => {
     event.stopPropagation();
     event.preventDefault();
 
+    // 修正(audit C-9): ドラッグ中に別のポインタ(2 本目の指 / ペン)でハンドルを押しても始めません(前のドラッグの
+    //   rAF が止められなくなり、前のポインタを離したときに新しいドラッグの行で確定してしまうため)。同じポインタ
+    //   (pointerup を取りこぼした等)なら前のドラッグを取り消してから始めます(列ドラッグと同じ)。
+    if (draggingIndex !== null) {
+      if (event.pointerId !== activePointerId) return;
+      activeDragDispose?.();
+      endDrag(false);
+    }
+
     draggingIndex = viewIndex;
+    activePointerId = event.pointerId;
     dropSlot = null;
     pointer = { x: event.clientX, y: event.clientY };
     dragOrigin = { x: event.clientX, y: event.clientY };
@@ -570,6 +593,7 @@ export const createRowDragController = (): RowDragController => {
       window.removeEventListener('pointerup', handleUp);
       window.removeEventListener('pointercancel', handleCancel);
       window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('blur', handleBlur);
       activeDragDispose = null;
       try {
         target.releasePointerCapture(pointerId);
@@ -593,11 +617,18 @@ export const createRowDragController = (): RowDragController => {
       cleanup();
       endDrag(false);
     }
+    // 追加(audit C-8): ウィンドウがフォーカスを失ったら(Alt+Tab / OS の通知等)キャンセルします。pointerup を
+    //   取りこぼしてもガイド線 / ゴースト / grabbing カーソル / 自動スクロールが残りません。
+    function handleBlur() {
+      cleanup();
+      endDrag(false);
+    }
 
     window.addEventListener('pointermove', handleMove);
     window.addEventListener('pointerup', handleUp);
     window.addEventListener('pointercancel', handleCancel);
     window.addEventListener('keydown', handleKeyDown);
+    window.addEventListener('blur', handleBlur);
     activeDragDispose = cleanup;
 
     updateIndicator();

@@ -66,7 +66,11 @@ function GridBodyLabelRowInner<T>({
       data-row-index={rowIndex}
       data-ssg-label-row=""
       role="row"
+      aria-rowindex={rowIndex + 2}
       aria-label={labelRow.label}
+      // 追加(audit V-05): 行番号セルも中身も持たないペイン(右固定など)の帯は見た目だけなので支援技術から隠します
+      //   (セルの無い row は ARIA の構造違反になるため)。
+      aria-hidden={!ownsRowHeader && !renderContent ? true : undefined}
       className={cx(
         'ssg-body-row',
         'ssg-label-row',
@@ -84,6 +88,8 @@ function GridBodyLabelRowInner<T>({
     >
       {ownsRowHeader && (
         <div
+          role="rowheader"
+          aria-colindex={1}
           className={cx(
             'ssg-header-cell',
             'ssg-row-header-cell',
@@ -99,6 +105,7 @@ function GridBodyLabelRowInner<T>({
       )}
       {renderContent && (
         <div
+          role="gridcell"
           className="ssg-label-row-content-holder"
           style={{ left: contentStickyLeft, width: contentWidth, height: rowHeight }}
         >

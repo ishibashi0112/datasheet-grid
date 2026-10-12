@@ -219,6 +219,67 @@ describe('createGridApi', () => {
     expect(api.handle.getExportData({ scope: 'rendered' }).rows).toHaveLength(3);
   });
 
+  // 追加(合計行 3A): includeTotalRow は scope 'view'(と後方互換 'all')で合計行が有効なときだけ末尾に 1 行出す。
+  it('includeTotalRow: view のときだけ合計行を末尾に出し、rowKinds に total を付ける', () => {
+    const api = createGridApi<Row>();
+    const cells = new Map([['id', { value: 6, kind: 'sum' as const }]]);
+    const { args } = makeArgs({ totalRowExport: { cells, label: '合計' } });
+    api.update(args);
+    // 既定(includeTotalRow なし)は従来どおり。
+    expect(api.handle.exportCsv()).toBe('ID,名前\r\n1,a\r\n2,b\r\n3,c');
+    // 先頭列(ID)に値があるので見出しは置かない。
+    expect(api.handle.exportCsv({ includeTotalRow: true })).toBe('ID,名前\r\n1,a\r\n2,b\r\n3,c\r\n6,');
+    expect(api.handle.exportCsv({ includeTotalRow: true, scope: 'all' })).toBe('ID,名前\r\n1,a\r\n2,b\r\n3,c\r\n6,');
+    expect(api.handle.exportCsv({ includeTotalRow: true, scope: 'raw', includeHeaders: false })).toBe('1,a\r\n2,b\r\n3,c');
+    expect(api.handle.exportCsv({ includeTotalRow: true, scope: 'rendered', includeHeaders: false })).toBe('1,a\r\n2,b\r\n3,c');
+    const data = api.handle.getExportData({ includeTotalRow: true });
+    expect(data.rowKinds).toEqual(['data', 'data', 'data', 'total']);
+    expect(data.rows.at(-1)).toEqual([
+      { value: 6, text: '6' },
+      { value: null, text: '' },
+    ]);
+    expect(api.handle.getExportData().rowKinds).toBeUndefined();
+    // 先頭列に値がなければ見出しを置く。
+    api.update({ ...args, totalRowExport: { cells: new Map([['name', { value: 3, kind: 'count' as const }]]), label: '計' } });
+    expect(api.handle.exportCsv({ includeTotalRow: true, includeHeaders: false })).toBe('1,a\r\n2,b\r\n3,c\r\n計,3');
+    // 合計行が無効(totalRowExport なし)なら出さない。
+    api.update({ ...args, totalRowExport: undefined });
+    expect(api.handle.exportCsv({ includeTotalRow: true, includeHeaders: false })).toBe('1,a\r\n2,b\r\n3,c');
+    expect(api.handle.getExportData({ includeTotalRow: true }).rowKinds).toBeUndefined();
+  });
+
+  // 追加(合計行 3A): 合計行の高さは行を見せる位置と末尾へのスクロールに効く(既定 0 は従来どおり)。
+  it('footerHeight: scrollToRow は合計行の上に見せ、scrollToBottom は合計行ぶん先まで進む', () => {
+    const api = createGridApi<Row>();
+    const { args } = makeArgs({ footerHeight: 30 });
+    api.update(args);
+    // 行 2 の下端 36 + 90 = 126。可視の下端は 100 - 30 = 70 → 56。
+    api.handle.scrollToRow(2);
+    expect(args.scrollContainerRef.current?.scrollTop).toBe(56);
+    api.handle.scrollToBottom();
+    // 36 + 90 + 30 - 100 = 56。
+    expect(args.scrollContainerRef.current?.scrollTop).toBe(56);
+    const plain = makeArgs();
+    api.update(plain.args);
+    api.handle.scrollToBottom();
+    expect(plain.args.scrollContainerRef.current?.scrollTop).toBe(26);
+  });
+
+  // 追加(audit L-20): escapeFormulas は直列化まで届く(既定は従来どおり)。
+  it('exportCsv の escapeFormulas は数式として解釈される値の先頭に \' を付ける', () => {
+    const api = createGridApi<Row>();
+    const formulaColumns: GridColumn<Row>[] = [
+      { ...columns[0] },
+      { ...columns[1], formatClipboardValue: (value) => `=${String(value)}` },
+    ];
+    const { args } = makeArgs({ orderedColumns: formulaColumns, columns: formulaColumns });
+    api.update(args);
+    expect(api.handle.exportCsv({ includeHeaders: false })).toBe('1,=a\r\n2,=b\r\n3,=c');
+    expect(api.handle.exportCsv({ includeHeaders: false, escapeFormulas: true })).toBe(
+      "1,'=a\r\n2,'=b\r\n3,'=c",
+    );
+  });
+
   it('getState は永続スライス + 列メタを返し、openFilterManager / closeFilterManager はツールパネルへ委譲', () => {
     const api = createGridApi<Row>();
     const { args } = makeArgs({ activeToolPanelTab: 'filter' });

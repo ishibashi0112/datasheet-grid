@@ -160,7 +160,8 @@ describe('editController', () => {
     c.update({ ...t2.args, canEditCell });
     expect(c.commitEdit('9')).toEqual({ status: 'noop' });
     expect(t2.args.onRowsChange).not.toHaveBeenCalled();
-    expect(canEditCell).toHaveBeenCalledWith(0, 0, rows[0], columns[0]);
+    // 変更(audit RD-4): 第 5 引数に元 rows の index と rowKey が入る。
+    expect(canEditCell).toHaveBeenCalledWith(0, 0, rows[0], columns[0], { sourceRowIndex: 0, rowKey: 1 });
 
     // 編集可なら従来どおり書き込む
     const t3 = makeArgs(rows, { row: 0, col: 0 });

@@ -72,7 +72,14 @@ export const createColumnResolver = <T,>() => {
       groupColumns: GridColumn<T>[],
       renderDetailToggleCell: NonNullable<GridColumn<T>['renderCell']>,
     ): GridColumn<T>[] => {
-      const hasLeftPinnedColumn = columns.some((column) => column.pinned === 'left');
+      // 修正(audit B-07): 非表示の左固定列は数えません(合成列だけの左ペインができ、行ヘッダーも左へ移っていた)。
+      //   グルーピング中のグループ元列(rowGroup)も表示から外れるため数えません。
+      const hasLeftPinnedColumn = columns.some(
+        (column) =>
+          column.pinned === 'left' &&
+          column.visible !== false &&
+          !(rowGroupingActive && column.rowGroup === true),
+      );
       const rowDragHandleColumn: GridColumn<T> | null = rowDragAvailable
         ? {
             key: ROW_DRAG_HANDLE_COLUMN_KEY,

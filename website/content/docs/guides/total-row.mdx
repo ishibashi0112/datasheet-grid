@@ -1,0 +1,123 @@
+---
+title: 合計行
+description: totalRow で表の下端に合計行を固定する(列ごとの集計は aggFunc・フィルターで再計算・表示専用)
+---
+
+`totalRow` prop を渡すと、表の下端に**合計行**を固定表示します。Excel の「集計行」と同じもので、縦にスクロールしても下端に留まり、横スクロールと左右の固定列には通常の行と同じく付いていきます。どの列を何で集計するかは列の `aggFunc`([行グルーピング](/docs/guides/grouping)と同じ組み込み集計 / カスタム関数)で決め、フィルターをかけると**見えている行だけで計算し直します**。
+
+## デモ(受注明細 > 下端の合計行)
+
+<TotalRowDemo />
+
+- 品名 = 個数、数量 = 合計、単価 = 平均、金額 = 合計です。合計以外の集計は値の前に小さく種類(平均 / 個数)が出ます。
+- 「区分」列でフィルターすると、合計行はその区分の行だけで計算し直されます。数量を編集しても追従します。
+- 左固定の「受注番号」と右固定の「金額」にも合計行が付いていき、横スクロールしても列と揃ったままです。
+- 合計行は表示専用です。押しても選択は動かず、編集 / 貼り付け / コピーの対象にもなりません。
+
+## 使い方
+
+```tsx
+const columns: GridColumn<Order>[] = [
+  { key: 'product', title: '商品', width: 160, aggFunc: 'count' },
+  { key: 'qty', title: '数量', width: 90, align: 'right', aggFunc: 'sum' },
+  { key: 'price', title: '単価', width: 110, align: 'right', aggFunc: 'avg', valueFormatter: yen },
+  { key: 'amount', title: '金額', width: 120, align: 'right', aggFunc: 'sum', valueFormatter: yen },
+];
+
+<SpreadsheetGrid rows={rows} columns={columns} totalRow />
+```
+
+`aggFunc` の無い列は空欄です。見出し(既定「合計」)は、行ドラッグ / 展開トグルの合成列を除いた**先頭列**に出ます。先頭列に値があるときは行番号の欄へ移ります。
+
+### オプション
+
+`totalRow` にオブジェクトを渡すと見出し / 値 / 描画 / 高さを変えられます。
+
+```tsx
+totalRow={{
+  label: '総計',                                    // 見出し(既定 '合計')
+  values: { customer: `${customerCount} 社` },      // この列は計算せずこの値を出す(aggFunc より優先)
+  height: 36,                                       // 既定は rowHeight
+  className: 'my-total-row',                        // 行要素へ追加する class
+}}
+```
+
+| オプション | 説明 |
+| --- | --- |
+| `label` | 見出し。既定 `'合計'`。 |
+| `values` | 列 key → 表示する値。指定した列は計算せずこの値を出す。serverSide はこれだけを使う。 |
+| `renderCell` | 値のあるセルの中身を差し替える(下記)。 |
+| `height` | 合計行の高さ(px)。既定は `rowHeight`。 |
+| `className` | 行要素へ追加する class(または `{ className, style }`)。 |
+
+## 集計の規則
+
+- **対象の行**: フィルター / ソート後のデータ行です。[ラベル行](/docs/guides/label-rows)は数えず、行グルーピング中は折りたたんだグループの行も数えます。
+- **数値の判定**: 行グルーピングの集計と同じで、数値と数値の文字列だけを数えます(空値・空白だけの文字列・`true` / `false`・`Date` などは対象外)。`count` は対象の行数です。数値対象が 0 件の sum / avg / min / max は空セルになります。
+- **カスタム集計**: `aggFunc` に関数を渡すと `{ values, rows, column }` を受け取り、返り値をそのまま出します(グループ行と同じ関数で合計行も計算します)。
+- **計算のタイミング**: 行 / 列 / フィルター / ソートが変わるたびに、対象の行を 1 パスで数え直します(行グルーピングの集計と同じ。100 万行 × 2 列で数十 ms 程度)。`values` の中身だけが変わったときは数え直しません。
+
+```tsx
+{
+  key: 'status',
+  title: '状態',
+  width: 100,
+  aggFunc: ({ values }) => `保留 ${values.filter((v) => v === '保留').length} 件`,
+}
+```
+
+## 表示と整形
+
+- 値の整形は列の `valueFormatter` を使います。合計行に元の行は無いため、formatter に渡る **`row` は `undefined`** です(グループ行と同じ)。`row` を読む formatter の列は、`renderCell` か `values` で整形してください。
+- 文字列(カスタム集計 / `values` の文字列)はそのまま出します。`count` の件数と `valueFormatter` の無い列の数値は、下部バーの選択範囲の集計と同じ書式です(桁区切りあり・小数は 4 桁まで・`0.1 + 0.2` のような浮動小数の誤差は丸める)。
+- 列の `renderCell` / `cellClassName` は合計行には使いません(行データが無いため)。合計行のセルの中身を変えたいときは `totalRow.renderCell` を使います。
+- 列幅の自動調整(列メニュー / 境界のダブルクリック / すべての列の自動調整)は、合計行の表示(種類 + 値)も収まる幅にします。列幅で切れた値は、ポインタを乗せるとツールチップで全体を出します。
+
+```tsx
+totalRow={{
+  renderCell: ({ column, value, kind, text, caption }) =>
+    column.key === 'amount' ? <strong className="text-blue-700">{text}</strong> : (
+      <>
+        {caption && <small>{caption}</small>} {text}
+      </>
+    ),
+}}
+```
+
+`ctx.kind` は `'sum' | 'avg' | 'min' | 'max' | 'count' | 'custom' | 'value'`(`'value'` は `values` で渡した値)、`ctx.text` は既定の表示文字列、`ctx.caption` は種類の見出し(平均 / 最小 / 最大 / 個数。合計とカスタム / values は `undefined`)です。
+
+## スクロールとキーボード
+
+- 行が少ないときは、合計行は最後の行の直後に来ます。行が多いときは表の下端に留まります。
+- 最後までスクロールすると、最終行は合計行のすぐ上に来ます。矢印キーでの移動や `scrollToRow` / `selectCell` で行を見せるときも、合計行の裏に隠しません。
+- 最後までスクロールした状態で合計行を出したときも、最終行を見せたままにします。
+- 範囲選択 / 行ドラッグ / フィルハンドルのドラッグで合計行の上へポインタを動かすと、本体の見えている最後の行として扱います。自動スクロールは合計行の上端から始まります。
+- 合計行は件数表示(bar の Rows)やビュー行 index には数えません。
+
+## エクスポート
+
+既定では含みません。`includeTotalRow: true` を渡すと、scope `'view'`(既定)のときだけ末尾に 1 行出します。値は生値で、見出しは先頭列に値が無いときだけ先頭列に入ります。
+
+```ts
+gridRef.current?.exportCsv({ includeTotalRow: true });
+const data = gridRef.current?.getExportData({ includeTotalRow: true });
+data?.rowKinds; // ['data', 'data', …, 'total']
+```
+
+## serverSide(`dataSource`)
+
+サーバー行モデルは全件を持たないため、合計行は計算しません。サーバーで集計した値を `values` で渡してください(`aggFunc` だけの列は空欄になります)。
+
+```tsx
+<SpreadsheetGrid dataSource={dataSource} columns={columns} totalRow={{ values: serverTotals }} />
+```
+
+## 見た目のカスタマイズ
+
+| 種類 | 名前 |
+| --- | --- |
+| CSS 変数 | `--ssg-total-row-bg` / `--ssg-total-row-text` / `--ssg-total-row-border`(上辺の区切り線) |
+| クラス | `.ssg-total-row`(行)/ `.ssg-total-cell`(セル。`.ssg-body-cell` にも付く)/ `.ssg-total-caption`(種類の見出し)/ `.ssg-total-label`(見出しの文字) |
+| スロット | `classNames.totalRow`(行要素)/ `classNames.totalCell`(セル) |
+
+支援技術には表の最後の行(`role="row"`)として読み上げられ、`aria-rowcount` に 1 行足されます。

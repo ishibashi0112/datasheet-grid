@@ -3,10 +3,11 @@ import { selectGlobalFilter } from '@ishibashi0112/spreadsheet-grid-core/model/g
 import type {
   GlobalFilterStatus,
   GridColumn,
+  GridSelectionAggregates,
   GridUiState,
   SpreadsheetGridSlotContext,
 } from '../model/gridTypes';
-import { buildGridDerivedSummary } from '../view/gridBarHelpers';
+import { buildGridDerivedSummary, createDataColumnNamer } from '../view/gridBarHelpers';
 
 // 追加: derivedSummary / setGlobalFilterText を載せる前の中間 slot context 型です。
 // 変更(DS-3-7): base から filteredRows(配列)を外します。サマリは件数のみ使用し、公開
@@ -20,6 +21,8 @@ type GridSlotContextBase<T> = Omit<
   | 'filteredRows'
   | 'globalFilterStatus'
   | 'globalFilterProgress'
+  // 追加(選択範囲の集計): 大きな選択では時間分割の進捗で変わるため、最終 object でのみ付与します。
+  | 'selectionAggregates'
 >;
 
 type UseGridBarContextArgs<T> = {
@@ -34,11 +37,15 @@ type UseGridBarContextArgs<T> = {
   getFilteredRows: () => T[];
   columns: GridColumn<T>[];
   visibleColumns: GridColumn<T>[];
+  // 追加(audit V-12): 画面の並び(合成列込み)。A1 ラベルの列名から合成列を除くのに使います(未指定は従来どおり)。
+  orderedColumns?: GridColumn<T>[];
   uiState: GridUiState;
   setGlobalFilterText: (value: string) => void;
   // 追加(F-async): グローバルフィルタの適用状態と進捗です(useGlobalFilteredOrder の戻り値)。
   globalFilterStatus: GlobalFilterStatus;
   globalFilterProgress: number;
+  // 追加(選択範囲の集計): useSelectionAggregates の戻り値(未指定は null)。
+  selectionAggregates?: GridSelectionAggregates | null;
 };
 
 // 追加: topBar / bottomBar へ渡す slot context と derived summary をまとめて構築します。
@@ -49,10 +56,12 @@ export const useGridBarContext = <T,>({
   getFilteredRows,
   columns,
   visibleColumns,
+  orderedColumns,
   uiState,
   setGlobalFilterText,
   globalFilterStatus,
   globalFilterProgress,
+  selectionAggregates = null,
 }: UseGridBarContextArgs<T>) => {
   // 変更(11-B3): slotContextBase の依存を uiState 丸ごとから、bar が実際に参照する
   //   5 フィールドへ分解します。
@@ -92,11 +101,15 @@ export const useGridBarContext = <T,>({
     ],
   );
 
+  const columnNamer = useMemo(
+    () => (orderedColumns ? createDataColumnNamer(orderedColumns) : undefined),
+    [orderedColumns],
+  );
   const derivedSummary = useMemo(
     // 変更(DS-3-7): 件数 viewRowCount を明示引数で渡します(filteredRows 配列は使いません)。
     // 変更(label-row ③): 分母 totalRowCount(未指定は rows.length)。
-    () => buildGridDerivedSummary(slotContextBase, viewRowCount, totalRowCount),
-    [slotContextBase, viewRowCount, totalRowCount],
+    () => buildGridDerivedSummary(slotContextBase, viewRowCount, totalRowCount, columnNamer),
+    [slotContextBase, viewRowCount, totalRowCount, columnNamer],
   );
 
   const slotContext = useMemo<SpreadsheetGridSlotContext<T>>(
@@ -114,6 +127,7 @@ export const useGridBarContext = <T,>({
       //   derivedSummary は不変＝サマリ chips は再計算されず、トップバーの進捗表示だけ更新)。
       globalFilterStatus,
       globalFilterProgress,
+      selectionAggregates,
     }),
     [
       derivedSummary,
@@ -122,6 +136,7 @@ export const useGridBarContext = <T,>({
       slotContextBase,
       globalFilterStatus,
       globalFilterProgress,
+      selectionAggregates,
     ],
   );
 

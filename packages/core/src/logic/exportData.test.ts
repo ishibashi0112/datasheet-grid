@@ -68,6 +68,13 @@ describe('buildGridExportData', () => {
     expect(data.columns).toEqual([{ key: 'a', title: 'a' }]);
   });
 
+  // 追加(audit L-12): title が空文字の列も key をヘッダーに使う(ヘッダー表示等と同じ)。
+  it('title が空文字の列も key をヘッダーに使う', () => {
+    const cols: GridColumn<Row>[] = [{ key: 'a', title: '', width: 100 }];
+    const data = buildGridExportData({ getRow, startRow: 0, endRow: 1, columns: cols });
+    expect(data.columns).toEqual([{ key: 'a', title: 'a' }]);
+  });
+
   it('レンジ [startRow, endRow) は end 排他', () => {
     const data = buildGridExportData({
       getRow,
@@ -204,5 +211,50 @@ describe('buildGridExportData × ラベル行(getLabelLine)', () => {
     expect(data.rowKinds).toBeUndefined();
     expect(data.rows).toHaveLength(2);
     expect('rowKinds' in data).toBe(false);
+  });
+});
+
+
+// 追加(合計行 3A): 合計行(totalLine)は末尾に 1 行。rowKinds の 'total' で判別できる。
+describe('buildGridExportData × 合計行(totalLine)', () => {
+  type TRow = { a: string; b: number };
+  const tColumns: GridColumn<TRow>[] = [
+    { key: 'a', title: 'A', width: 100 },
+    { key: 'b', title: 'B', width: 100 },
+  ];
+  const tRows: TRow[] = [
+    { a: 'x', b: 1 },
+    { a: 'y', b: 2 },
+  ];
+
+  it('末尾に value(生値)/ text のセルで出し、rowKinds を付ける', () => {
+    const data = buildGridExportData({
+      getRow: (i) => tRows[i],
+      startRow: 0,
+      endRow: tRows.length,
+      columns: tColumns,
+      totalLine: ['合計', 3],
+    });
+    expect(data.rowKinds).toEqual(['data', 'data', 'total']);
+    expect(data.rows.at(-1)).toEqual([
+      { value: '合計', text: '合計' },
+      { value: 3, text: '3' },
+    ]);
+  });
+
+  it('ラベル行と併用しても行種が揃い、空値は null / 空文字', () => {
+    const data = buildGridExportData({
+      getRow: (i) => (i === 0 ? (undefined as unknown as TRow) : tRows[i - 1]),
+      startRow: 0,
+      endRow: 3,
+      columns: tColumns,
+      getLabelLine: (i) => (i === 0 ? ['節'] : undefined),
+      totalLine: [undefined, null],
+    });
+    expect(data.rowKinds).toEqual(['label', 'data', 'data', 'total']);
+    expect(data.rows.at(-1)).toEqual([
+      { value: null, text: '' },
+      { value: null, text: '' },
+    ]);
   });
 });

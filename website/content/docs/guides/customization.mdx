@@ -93,7 +93,8 @@ description: セル / ヘッダー / トップ・ボトムバー / エディタ 
 />
 ```
 
-- `derivedSummary` には行/列/フィルター/ソートの summary 文字列、選択セルの統計(件数・合計・平均)などが入っています(`SpreadsheetGridDerivedSummary`)。
+- `derivedSummary` には行/列/フィルター/ソートの summary 文字列、選択セルの件数などが入っています(`SpreadsheetGridDerivedSummary`)。
+- 2 セル以上を選んでいるときは **`selectionAggregates`** に選択範囲の集計(平均 / データの個数 / 合計 / 最小 / 最大)が入っています(`GridSelectionAggregates`)。既定ボトムバーはこのうち平均 / データの個数 / 合計を右側(Active / Selection の隣の空き)に出します(`showSelectionAggregates={false}` で非表示。詳細は [API リファレンス](/docs/api/props#選択範囲の集計showselectionaggregates))。
 - **丸ごと差し替えずに調整したい**場合は表示制御 props を使います: `showTopBar` / `showBottomBar`(マスタースイッチ)、既定バーの部品単位では `showTopBarSummary` / `showTopBarFilter` / `showFilterChipBar` など。一覧は [API リファレンス](/docs/api/props#バーの表示制御top--bottom) を参照してください。
 
 ## カスタムエディタ(`type: 'custom'`)

@@ -791,6 +791,12 @@ describe('filterOrderByColumns (filter-ext D: dateSet 複合)', () => {
 
   it('toDateKey / toDateSetKey: 表記ゆれの正規化と空白・非日付の扱い', () => {
     expect(toDateKey('2026/7/1')).toBe('2026-07-01');
+    // 追加(audit V-06): その月に無い日は受理しない(うるう年は暦どおり)。
+    expect(toDateKey('2026-02-30')).toBeNull();
+    expect(toDateKey('2026/4/31')).toBeNull();
+    expect(toDateKey('2026-02-29')).toBeNull();
+    expect(toDateKey('2028-02-29')).toBe('2028-02-29');
+    expect(toDateKey('2026-12-31')).toBe('2026-12-31');
     expect(toDateKey('2026-07-24T10:30')).toBe('2026-07-24');
     expect(toDateKey(new Date(2026, 6, 24))).toBe('2026-07-24');
     expect(toDateKey('2026-13-01')).toBeNull();

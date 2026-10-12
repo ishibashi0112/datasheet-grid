@@ -36,6 +36,9 @@ export type ViewportSyncArgs<T> = {
   activeCellRect: ViewportCellRect | null;
   activeCell: CellCoord | null;
   verticalScaleFactor: number;
+  // 追加(合計行 3A): 下端に固定する行(合計行)の高さ。スクロール可能な高さに足し、行を見せるときは
+  //   その裏に隠れないようにします。既定 0。
+  footerHeight?: number;
 };
 
 export type ViewportSyncController<T> = {
@@ -47,7 +50,7 @@ export const clampScrollToContent = (
   scrollElement: HTMLElement,
   args: Pick<
     ViewportSyncArgs<unknown>,
-    'totalScrollWidth' | 'physicalBodyHeight' | 'headerHeight'
+    'totalScrollWidth' | 'physicalBodyHeight' | 'headerHeight' | 'footerHeight'
   >,
 ): void => {
   const maxScrollLeft = Math.max(
@@ -55,7 +58,7 @@ export const clampScrollToContent = (
     0,
   );
   const maxScrollTop = Math.max(
-    args.headerHeight + args.physicalBodyHeight - scrollElement.clientHeight,
+    args.headerHeight + args.physicalBodyHeight + (args.footerHeight ?? 0) - scrollElement.clientHeight,
     0,
   );
   if (scrollElement.scrollLeft > maxScrollLeft) {
@@ -77,6 +80,7 @@ export const scrollCellIntoView = (
     | 'rightPaneWidth'
     | 'centerLeadingWidth'
     | 'verticalScaleFactor'
+    | 'footerHeight'
   >,
 ): void => {
   const cellTop = args.headerHeight + rect.top;
@@ -89,7 +93,8 @@ export const scrollCellIntoView = (
     args.verticalScaleFactor,
   );
   const currentScrollLeft = scrollElement.scrollLeft;
-  const viewportHeight = scrollElement.clientHeight;
+  // 変更(合計行 3A): 下端の合計行に隠れる分を除いた高さ(既定 0 = 従来どおり clientHeight)。
+  const viewportHeight = scrollElement.clientHeight - (args.footerHeight ?? 0);
   const viewportWidth = scrollElement.clientWidth;
 
   let nextScrollTop = currentScrollTop;
@@ -150,6 +155,7 @@ export const createViewportSyncController = <T,>(): ViewportSyncController<T> =>
         'totalScrollWidth',
         'physicalBodyHeight',
         'headerHeight',
+        'footerHeight',
       ]) &&
       args.scrollElement
     ) {
@@ -168,6 +174,7 @@ export const createViewportSyncController = <T,>(): ViewportSyncController<T> =>
         'rightPaneWidth',
         'centerLeadingWidth',
         'verticalScaleFactor',
+        'footerHeight',
       ])
     ) {
       const prevCell = lastEvaluatedCell;

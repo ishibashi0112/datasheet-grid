@@ -12,6 +12,7 @@ import type {
   GridColumn,
   GridExportData,
   GridState,
+  ServerSideDataSource,
   SpreadsheetGridHandle,
 } from './model/gridTypes';
 
@@ -127,6 +128,32 @@ describe('SpreadsheetGrid manualFiltering / manualSorting(結合)', () => {
         noMatchingRowsText="一致なし"
       />,
     );
+    expect(view.container.querySelector('.ssg-empty-state')?.textContent).toBe('データなし');
+    act(() => {
+      ref.current?.applyState(filteredSortedState);
+    });
+    expect(view.container.querySelector('.ssg-empty-state')?.textContent).toBe('一致なし');
+  });
+
+  // 追加(audit RD-8): serverSide もフィルター条件の有無で空状態の文言を分ける(rows を併せて渡しても無視)。
+  it('serverSide で 0 件のとき、フィルターが載っていれば noMatchingRowsText を出す(rows は無視)', async () => {
+    const ref = createRef<SpreadsheetGridHandle<Row>>();
+    const dataSource: ServerSideDataSource<Row> = {
+      getRows: () => Promise.resolve({ rows: [], totalRowCount: 0 }),
+    };
+    const view = render(
+      <SpreadsheetGrid
+        ref={ref}
+        columns={columns}
+        rows={rows}
+        dataSource={dataSource}
+        noRowsText="データなし"
+        noMatchingRowsText="一致なし"
+      />,
+    );
+    await act(async () => {
+      await Promise.resolve();
+    });
     expect(view.container.querySelector('.ssg-empty-state')?.textContent).toBe('データなし');
     act(() => {
       ref.current?.applyState(filteredSortedState);

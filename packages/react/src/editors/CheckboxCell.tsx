@@ -12,6 +12,8 @@ type CheckboxCellProps = {
   onToggle: () => void;
   // 追加(slot-props): classNames.checkbox の解決済みスロット(glyph へ転送)。
   slot?: GridResolvedSlot;
+  // 追加(audit RD-10): アクセシブル名(列の見出し)。
+  label?: string;
 };
 
 export function CheckboxCell({
@@ -19,11 +21,13 @@ export function CheckboxCell({
   readOnly,
   onToggle,
   slot,
+  label,
 }: CheckboxCellProps) {
   return (
     <span
       role="checkbox"
       aria-checked={checked}
+      aria-label={label}
       aria-disabled={readOnly || undefined}
       className="ssg-cell-checkbox"
       onClick={() => {

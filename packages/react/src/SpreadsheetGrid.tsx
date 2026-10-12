@@ -5,6 +5,8 @@
 // 追加: 列フィルター UI 整備 + ソート/フィルター見た目強化を反映します。
 import {
   useEffect,
+  // 追加(audit V-05): アクティブセルの DOM id(aria-activedescendant)をグリッドごとに一意にします。
+  useId,
   useLayoutEffect,
   useMemo,
   useCallback,
@@ -62,6 +64,8 @@ import { useFilterPopoverController } from './hooks/useFilterPopoverController';
 // 追加(13-A): 列メニュー(「⋮」+ 右クリック)の popover controller です。
 import { useGridClipboardController } from './hooks/useGridClipboardController';
 import { useGridBarContext } from './hooks/useGridBarContext';
+// 追加(選択範囲の集計)
+import { useSelectionAggregates } from './hooks/useSelectionAggregates';
 import { useGridEditController } from './hooks/useGridEditController';
 import { useGridHistoryController } from './hooks/useGridHistoryController';
 import { useGridKeyboardInteractions } from './hooks/useGridKeyboardInteractions';
@@ -96,6 +100,8 @@ import {
   columnFilterValueToDraftText,
   // 追加(FM-1): フィルター管理パネルの一覧行(有効フィルターの抽出)に使います。
   isActiveColumnFilterValue,
+  // 追加(audit L-06): dateSet 列の候補収集を照合と同じ正規化日付キーで行います。
+  toDateSetKey,
   // 行モデルチェーンは order(Int32Array)ベースに一本化しています
   //   (DS-2 で差し替え、旧オブジェクト配列版は DS-3-8 で削除)。
   // 追加(filter-ext A): number フィルターの数値化規則(空白 = NaN)です。B-2 の
@@ -221,8 +227,10 @@ import type {
   GridContextMenuTarget,
   GridContextMenuParams,
   GridContextMenuItem,
+  // 追加(フィルハンドル 1A): ドラッグ中の点線の範囲(選択と同じ幾何で描く)。
+  GridSelection,
 } from './model/gridTypes';
-import { getCellValue, isCellEditable } from '@ishibashi0112/spreadsheet-grid-core/utils/permissions';
+import { getCellValue, isViewCellEditable } from '@ishibashi0112/spreadsheet-grid-core/utils/permissions';
 import { writeRowsCell } from '@ishibashi0112/spreadsheet-grid-core/logic/editorValues';
 import { isCheckboxChecked, toggleCheckboxValue } from '@ishibashi0112/spreadsheet-grid-core/logic/checkboxEditor';
 import { CheckboxCell } from './editors/CheckboxCell';
@@ -236,7 +244,17 @@ import GridBodyLayer from './view/GridBodyLayer';
 // 追加(detail ③): 展開行の帯 + カードを各ペインへ描くレイヤーです。
 import GridDetailLayer from './view/GridDetailLayer';
 import type { GridDetailLayerEntry } from './view/GridDetailLayer';
-import GridHeaderRow from './view/GridHeaderRow';
+import GridHeaderRow, { type GridPaneKind } from './view/GridHeaderRow';
+// 追加(合計行 3A): 下端に固定する合計行と、その集計(core)。
+import GridTotalRow from './view/GridTotalRow';
+import {
+  EMPTY_TOTAL_ROW_CELLS,
+  TOTAL_ROW_DEFAULT_LABEL,
+  formatTotalRowCellText,
+  resolveTotalRowCaption,
+  resolveTotalRowLabelColumnKey,
+} from '@ishibashi0112/spreadsheet-grid-core/logic/totalRow';
+import type { AutosizeTotalRowText } from '@ishibashi0112/spreadsheet-grid-core/logic/columnAutosize';
 import useColumnMenuController from './hooks/useColumnMenuController';
 import ColumnMenuPopover from './view/ColumnMenuPopover';
 // 変更(UP-1): フィルター管理 / 列の表示 / 並び替えの独立 3 パネルを統合ツールパネル
@@ -267,6 +285,21 @@ import {
 } from '@ishibashi0112/spreadsheet-grid-core/logic/contextMenuTarget';
 import useCellContextMenuController from './hooks/useCellContextMenuController';
 import CellContextMenuPopover from './view/CellContextMenuPopover';
+// 追加(フィルハンドル 1A): ハンドル / 点線 / 埋めたあとのボタン / メニュー / 値のツールチップ。
+import {
+  FillHandle,
+  FillOptionsChip,
+  FillOptionsMenu,
+  FillPreviewOverlay,
+  FillTooltip,
+} from './view/FillHandleLayer';
+import { useFillHandleController } from './hooks/useFillHandleController';
+import {
+  hasFillableSource,
+  resolveFillCornerPlacement,
+  resolveFillOptionsChipPosition,
+  resolveFillSource,
+} from '@ishibashi0112/spreadsheet-grid-core/logic/fillHandle';
 import type { ReactGridTypes } from './model/gridTypes';
 // import ColumnChooserPanel, {
 //   type ColumnChooserItem,
@@ -478,6 +511,8 @@ export function SpreadsheetGrid<T extends object>({
   // 追加(12-B): 0 行時の空状態テキストです(AG Grid のオーバーレイ相当)。
   noMatchingRowsText = '一致する行がありません',
   noRowsText = '表示する行がありません',
+  // 追加(audit V-05): 表(role="grid")のアクセシブル名。
+  ariaLabel,
   // 追加: top/bottom バーの表示有無です(既定 true)。false で当該バーを一切描画しません
   //   (renderTopBar / renderBottomBar / enableGlobalFilter より優先のマスタースイッチ)。
   showTopBar = true,
@@ -494,6 +529,8 @@ export function SpreadsheetGrid<T extends object>({
   //   トップは showTopBarSummary=true のとき内側で効き、ボトムは左側の件数グループを制御します。
   showTopBarCounts = true,
   showBottomBarCounts = true,
+  // 追加(選択範囲の集計): 2 セル以上を選んだときの平均 / データの個数 / 合計(既定 true)。
+  showSelectionAggregates = true,
   // 追加(FM-2): フィルターチップバー(適用中の列フィルターの常時表示)。既定 false(opt-in)。
   showFilterChipBar = false,
   renderTopBar,
@@ -510,6 +547,10 @@ export function SpreadsheetGrid<T extends object>({
   onExpandedDetailRowKeysChange,
   // 追加(label-row ②): ラベル行(見出し / 区切り行)。未指定なら機能は完全に休眠します。
   labelRow,
+  // 追加(合計行 3A): 表の下端に固定する合計行。未指定 / false なら機能は完全に休眠します。
+  totalRow,
+  // 追加(フィルハンドル 1A): 選択範囲の右下の四角を引いて埋める。未指定 / false なら機能は完全に休眠します。
+  fillHandle,
   // 追加(row-drag ③): 行ドラッグ並び替え(既定 OFF)。
   enableRowDrag = false,
   isRowDraggable,
@@ -535,7 +576,9 @@ export function SpreadsheetGrid<T extends object>({
   //   破壊的に変更しない設計(編集は onRowsChange / onColumnsChange が新配列を返す)のため、
   //   内部の既存シグネチャ(mutable T[])へはこの境界で 1 回だけ型を絞って渡します
   //   (実行時コピーはせず、参照同一性・memo 化はすべて従来どおり)。
-  const rows = rowsProp as T[];
+  // 修正(audit RD-8): dataSource(serverSide)指定時は rows を空配列として扱います(ドキュメントどおり「無視」。
+  //   併用時に clientSide のフィルター / ソート / 候補収集が使われない rows に対して空走していた)。
+  const rows = (dataSource != null ? EMPTY_ROWS : rowsProp) as T[];
   const columns = columnsProp as GridColumn<T>[];
 
   // 追加(THEME-2): density プリセットの既定寸法を解決します(明示 prop が常に優先)。
@@ -770,6 +813,14 @@ export function SpreadsheetGrid<T extends object>({
   const labelExportText = labelRow?.exportText;
   const labelKeepEmptySections = labelRow?.keepEmptySections ?? false;
   const labelRowEnabled = labelIsLabelRow != null && labelGetLabel != null;
+  // 追加(合計行 3A): 合計行のオプションを分解します(true は既定値だけで有効化)。footerHeight は下端に固定する行の
+  //   高さで、スクロール計算(見える高さ / 末尾 / 行を見せる位置)に渡します。無効時は 0 = 従来どおり。
+  const totalRowOptions = typeof totalRow === 'object' && totalRow !== null ? totalRow : null;
+  const totalRowEnabled = totalRow === true || totalRowOptions !== null;
+  const totalRowLabel = totalRowOptions?.label ?? TOTAL_ROW_DEFAULT_LABEL;
+  const totalRowValues = totalRowOptions?.values;
+  const totalRowRenderCell = totalRowOptions?.renderCell;
+  const footerHeight = totalRowEnabled ? Math.max(0, totalRowOptions?.height ?? rowHeight) : 0;
 
 
 
@@ -1129,10 +1180,12 @@ export function SpreadsheetGrid<T extends object>({
   const sortActive = !manualSorting && uiState.sort.length > 0;
   // 追加(manual-mode): 手動フィルターで rows が 0 件のとき、フィルターが載っていれば「一致する行がありません」
   //   を出す(絞り込みは外部で済んでいるため、rows.length === 0 だけでは区別できない)。
-  const manualFilterActive =
-    manualFiltering &&
-    (globalFilterText.trim().length > 0 ||
-      Object.keys(uiState.filters.columnFilters).length > 0);
+  // 修正(audit RD-8): serverSide もフィルター条件の有無で空状態の文言を分けます(rows は常に空のため、従来は
+  //   フィルター結果が 0 件でも noRowsText だった)。
+  const filterConditionsActive =
+    globalFilterText.trim().length > 0 ||
+    Object.keys(uiState.filters.columnFilters).length > 0;
+  const manualFilterActive = manualFiltering && filterConditionsActive;
   const {
     groupTree,
     groupedDisplay,
@@ -1398,11 +1451,48 @@ export function SpreadsheetGrid<T extends object>({
   // 追加(DS-4 ①-(2)): autosize 計測を「単一経路の時間分割(async)」で実行するランナーです。
   //   overlay は遅延表示で、重い時だけ Pending を出し、メインスレッドを塞ぎません
   //   (小規模は overlay 発火前に完了し、体感は従来の同期計測と同一です)。
+  // ── 追加(合計行 3A): 合計行のセル値(フィルター後のデータ行 = order から集計。serverSide は values だけ)と、
+  //   見出しを出す列。内容が同じなら参照不変(合計行の memo を壊さない)──
+  const totalRowCells = useMemo(
+    () =>
+      totalRowEnabled
+        ? engine.resolveTotalRowCells({
+            rows,
+            order: isServerSide ? null : order,
+            columns: orderedColumns,
+            values: totalRowValues,
+          })
+        : EMPTY_TOTAL_ROW_CELLS,
+    [engine, totalRowEnabled, rows, isServerSide, order, orderedColumns, totalRowValues],
+  );
+  const totalRowLabelColumnKey = useMemo(
+    () => resolveTotalRowLabelColumnKey(orderedColumns, totalRowCells),
+    [orderedColumns, totalRowCells],
+  );
+  // 追加(見直し): 列幅の自動調整で合計行の表示(値と見出し / 見出しを出す列はその文言)も幅に収めます
+  //   (本体の行だけで決めると合計が切れていた)。合計行が無ければ undefined(従来どおり)。
+  const totalRowAutosizeTexts = useMemo(() => {
+    if (!totalRowEnabled) {
+      return undefined;
+    }
+    const texts = new Map<string, AutosizeTotalRowText>();
+    for (const column of orderedColumns) {
+      const cell = totalRowCells.get(column.key);
+      if (cell) {
+        const text = formatTotalRowCellText(column, cell);
+        texts.set(column.key, { text, caption: text !== '' ? resolveTotalRowCaption(cell.kind) : undefined });
+      } else if (column.key === totalRowLabelColumnKey) {
+        texts.set(column.key, { text: totalRowLabel });
+      }
+    }
+    return texts;
+  }, [totalRowEnabled, orderedColumns, totalRowCells, totalRowLabelColumnKey, totalRowLabel]);
   const { isAutosizing, runAutosize } = useColumnAutosizeRunner<T>({
     rowModel,
     gridRootRef,
     columnWidths: effectiveColumnWidths,
     dispatch,
+    totalRowTexts: totalRowAutosizeTexts,
   });
 
   // ── autoSize on data(データ投入時の列幅自動フィット)────────────
@@ -1503,6 +1593,8 @@ export function SpreadsheetGrid<T extends object>({
     scrollContainerRef,
     setViewState: gridStore.setViewState,
     onScroll,
+    // 追加(合計行 3A): viewportHeight は合計行に隠れる分を除いた高さ(無効時 0 = 従来どおり)。
+    footerHeight,
   });
 
   // 変更(10-C): 列の仮想化は「中央ペインの列エントリ」に対して行います。
@@ -1863,6 +1955,34 @@ export function SpreadsheetGrid<T extends object>({
   const leftRenderEntries = paneLayout.left.entries;
   const rightRenderEntries = paneLayout.right.entries;
 
+  // 追加(audit V-05): アクティブセルの DOM id と、シェルの aria-activedescendant。フォーカスはシェル(またはエディタ /
+  //   入力受け)に置いたままなので、支援技術へはアクティブセルを aria-activedescendant で伝えます。参照先が描画されて
+  //   いないとき(縦横の仮想化で外れた / グループ行・ラベル行・未ロード行)は付けません(存在しない id を指さない)。
+  const gridDomId = useId();
+  const activeCellDomId = `${gridDomId}-active-cell`;
+  // 追加(見直し): 編集中のエディタの DOM id(編集中のセルが aria-owns で子に持つ)。
+  const cellEditorDomId = `${gridDomId}-cell-editor`;
+  const activeCellForAria = uiState.activeCell;
+  const activeDescendantId = useMemo(() => {
+    const cell = activeCellForAria;
+    if (cell === null || !virtualRowIndexes.has(cell.row) || rowModel.getRow(cell.row) === undefined) {
+      return undefined;
+    }
+    const isRendered = (entries: readonly (PaneColumnEntry<T> | undefined)[]) =>
+      entries.some((entry) => entry?.logicalIndex === cell.col);
+    return isRendered(leftRenderEntries) || isRendered(centerRenderEntries) || isRendered(rightRenderEntries)
+      ? activeCellDomId
+      : undefined;
+  }, [
+    activeCellForAria,
+    virtualRowIndexes,
+    rowModel,
+    leftRenderEntries,
+    centerRenderEntries,
+    rightRenderEntries,
+    activeCellDomId,
+  ]);
+
   // ── active cell placement（10-D: ペイン別座標系） ──────
   // 追加(10-D): active cell が属するペインと、そのペインローカル矩形を求めます。
   //             col は logicalIndex（orderedColumns 空間）として扱い、
@@ -1943,6 +2063,11 @@ export function SpreadsheetGrid<T extends object>({
   //   参照安定。利用側がレンダー毎に新しいオブジェクトを渡しても memo 済み子の props は揺れません)。
   const slots = useResolvedGridSlots(classNames);
   const detailCardSlot = useResolvedGridSlot(detailRow?.className);
+  // 追加(合計行 3A): totalRow.className(classNames.totalRow に加えて付与)。
+  const totalRowSlot = useResolvedGridSlot(totalRowOptions?.className);
+  // 追加(合計行 3A): 合計行に入ったら行ホバーを外します(列ヘッダーに入ったときと同じ。直前にいた行を
+  //   強調したままにしない)。applyHoveredRowChange は恒久安定なので合計行の memo を崩しません。
+  const handleTotalRowPointerEnter = useCallback(() => applyHoveredRowChange(null), [applyHoveredRowChange]);
 
   // 追加(TT-1): カスタムツールチップの表示制御です(body 直下シングルトン + window 委譲。
   //   複数グリッド同居時はフック内の refCount で共有されます)。
@@ -1965,6 +2090,8 @@ export function SpreadsheetGrid<T extends object>({
     activeCell: uiState.activeCell,
     // 追加(scroll-space 仮想化): active cell 自動スクロールの論理↔物理換算に使います。
     verticalScaleFactor,
+    // 追加(合計行 3A): スクロール可能な高さに足し、行を見せるときは合計行の裏に隠さない。
+    footerHeight,
   });
 
   // 注記(10-G): 旧実装にあった「中央ペインの scrollTop を transform で固定ペインへ同期する
@@ -2044,6 +2171,8 @@ export function SpreadsheetGrid<T extends object>({
   const cellDoubleClickRef = useRef<(cell: CellCoord, event: MouseEvent) => void>(() => {});
 
   const {
+    // 追加(フィルハンドル 1A): ヒットテスト(フィルハンドルのドラッグ)。
+    getCellCoordFromClientPoint,
     updateSelectionFromPointer,
     handleCellPointerDown,
     // 追加(touch): タッチ由来の native dblclick を無視するラッパ(参照恒久安定)。
@@ -2083,6 +2212,8 @@ export function SpreadsheetGrid<T extends object>({
     centerLeadingWidth,
     rightLeadingWidth,
     headerHeight,
+    // 追加(合計行 3A): 端の自動スクロールの下の帯 / ヒットテストを合計行の上端までにします(無効時 0)。
+    footerHeight,
     // 変更(auto-height シーム): ヒットテストの行解決は rowMetrics 経由(uniform で従来式と一致)。
     rowMetrics,
     // 追加(scroll-space 仮想化): ヒットテスト clientY→row の物理→論理換算に使います。
@@ -2137,6 +2268,8 @@ export function SpreadsheetGrid<T extends object>({
   const undoRedoEnabled = enableUndoRedo && !readOnly && !isServerSide;
   const {
     handleRowsChange,
+    // 追加(フィルハンドル 1A): 埋めたあとの選び直し(履歴を積まない差し替え)。
+    amendRowsChange,
     undo: undoRows,
     redo: redoRows,
     canUndo: canUndoRows,
@@ -2173,8 +2306,9 @@ export function SpreadsheetGrid<T extends object>({
         activeCell: uiState.activeCell,
         viewRowCount,
         canWriteCell: (viewIndex, colIndex, row, column) =>
-          isCellEditable(
+          isViewCellEditable(
             { readOnly, canEditCell },
+            rowModel,
             viewIndex,
             colIndex,
             row,
@@ -2196,10 +2330,12 @@ export function SpreadsheetGrid<T extends object>({
       selection: uiState.selection,
       activeCell: uiState.activeCell,
       viewRowCount,
-      canWriteCell: (originalRowIndex, colIndex, row, column) =>
-        isCellEditable(
+      // 変更(audit RD-4): canEditCell の rowIndex はビュー行 index(表示 / 編集開始と同じ)。
+      canWriteCell: (_originalRowIndex, colIndex, row, column, viewIndex) =>
+        isViewCellEditable(
           { readOnly, canEditCell },
-          originalRowIndex,
+          rowModel,
+          viewIndex,
           colIndex,
           row,
           column,
@@ -2239,6 +2375,8 @@ export function SpreadsheetGrid<T extends object>({
       uiState,
       readOnly,
       canEditCell,
+      // 追加(audit RD-4): 貼り付けで末尾へ追加した行の rowKey(canEditCell の context)用。
+      rowKeyGetter: resolvedRowKeyGetter,
       // 追加(motion-4 / M-3): コピー成功時にコピー元の選択とビュー形状を控えます(動く点線の描画元。
       //   ビュー形状が変わったら描画側が参照比較で無視するため、解除の effect は不要)。
       onCopied: (selection) =>
@@ -2266,6 +2404,181 @@ export function SpreadsheetGrid<T extends object>({
       isRowExportable,
       dispatch,
     });
+
+  // ── fill handle(フィルハンドル 1A) ─────────────────────
+  // 追加(フィルハンドル 1A): 選択範囲(無ければアクティブセル)の右下の四角を引いて、連続データ / セルのコピーで
+  //   埋めます。書き込みは貼り付けと同じ規則(編集可否 / reject / ラベル行・グループ行を飛ばす)で、clientSide は
+  //   履歴付きの handleRowsChange、serverSide は書き戻し口(updateRows)へ流します。readOnly・書き込み先なしでは休眠。
+  const fillHandleOptions = typeof fillHandle === 'object' ? fillHandle : undefined;
+  const fillHandleEnabled =
+    Boolean(fillHandle) &&
+    !readOnly &&
+    (isServerSide ? applyServerSideCellEdits !== undefined : handleRowsChange !== undefined);
+  const { fillController, fillSnapshot, fillChipRef, fillMenuRef } = useFillHandleController({
+    enabled: fillHandleEnabled,
+    isServerSide,
+    rows,
+    rowModel,
+    columns: orderedColumns,
+    selection: uiState.selection,
+    activeCell: uiState.activeCell,
+    editing: uiState.editingCell !== null,
+    // 変更(見直し): 表示の条件が変わったら埋めたあとのボタンを消します(並びが変わった行へ選び直さない)。
+    viewKey: [
+      uiState.sort,
+      uiState.filters,
+      uiState.collapsedGroupKeys,
+      serverSideQueryKey,
+      serverSideRefreshToken,
+    ],
+    readOnly,
+    canEditCell,
+    getFillValue: fillHandleOptions?.getFillValue,
+    dispatch,
+    hitTest: getCellCoordFromClientPoint,
+    scrollContainerRef,
+    gridRootRef,
+    footerHeight,
+    applyRowsChange: handleRowsChange,
+    amendRowsChange,
+    applyServerSideCellEdits,
+  });
+  // ハンドルを出す角(範囲選択中のドラッグ・編集中・行 / 列選択では出さない)。
+  const fillHandleCorner = useMemo(() => {
+    if (!fillHandleEnabled || uiState.editingCell || uiState.dragState?.type === 'selection') {
+      return null;
+    }
+    const source = resolveFillSource(uiState.selection, uiState.activeCell, viewRowCount, orderedColumns.length);
+    // 変更(見直し): 合成列だけ / ラベル行・グループ行だけの範囲には出しません(埋める値が無い)。
+    if (!source || !hasFillableSource(source, rowModel, orderedColumns)) {
+      return null;
+    }
+    return resolveFillCornerPlacement(source, paneLayout, rowMetrics, windowFirstRow, windowLastRow);
+  }, [
+    fillHandleEnabled,
+    uiState.editingCell,
+    uiState.dragState,
+    uiState.selection,
+    uiState.activeCell,
+    viewRowCount,
+    orderedColumns,
+    rowModel,
+    paneLayout,
+    rowMetrics,
+    windowFirstRow,
+    windowLastRow,
+  ]);
+  // ドラッグ中の点線(元の範囲 + 埋める範囲)。ペイン別の矩形(展開行の帯は避ける)。
+  const fillPreviewSelection = useMemo<GridSelection>(() => {
+    if (fillSnapshot.status !== 'dragging' || fillSnapshot.target === null) {
+      return null;
+    }
+    const { source, target } = fillSnapshot;
+    return {
+      type: 'cell',
+      range: {
+        start: {
+          row: Math.min(source.startRow, target.range.startRow),
+          col: Math.min(source.startCol, target.range.startCol),
+        },
+        end: {
+          row: Math.max(source.endRow, target.range.endRow),
+          col: Math.max(source.endCol, target.range.endCol),
+        },
+      },
+    };
+  }, [fillSnapshot]);
+  const fillPreviewRectsForPane = useMemo(() => {
+    const extents = resolveSelectionExtents(fillPreviewSelection, paneLayout, viewRowCount);
+    const segments = resolveSelectionBandSegments(
+      detailActive,
+      extents,
+      windowFirstRow,
+      windowLastRow,
+      rowMetrics,
+      detailExtras,
+    );
+    const band = segments ? null : resolveSelectionBand(extents, windowFirstRow, windowLastRow, rowMetrics);
+    return (pane: ColumnPane): SelectionOverlayRect[] => {
+      const extent = extents?.extents[pane];
+      if (!extent) {
+        return [];
+      }
+      if (segments) {
+        return segments.map((segment) => ({
+          left: extent.start,
+          top: segment.top,
+          width: extent.width,
+          height: segment.height,
+        }));
+      }
+      return band ? [{ left: extent.start, top: band.top, width: extent.width, height: band.height }] : [];
+    };
+  }, [fillPreviewSelection, paneLayout, viewRowCount, detailActive, windowFirstRow, windowLastRow, rowMetrics, detailExtras]);
+  // 埋めたあとのボタンの位置(埋めた範囲の右下)。
+  const fillChipPlacement = useMemo(() => {
+    if (fillSnapshot.status !== 'filled') {
+      return null;
+    }
+    const corner = resolveFillCornerPlacement(fillSnapshot.range, paneLayout, rowMetrics, windowFirstRow, windowLastRow);
+    // 変更(見直し): 本体の行が見えている下端(合計行があればその上端)を超えるなら角の上へ出します。座標は
+    //   overlay と同じ(行の座標 − baseOffset + 見出しの高さ = スクロールコンテナ内の位置)。未計測なら使いません。
+    const visibleBottom =
+      viewportHeight > 0 ? scrollTop + viewportHeight - headerHeight + overlayBaseOffset : Number.POSITIVE_INFINITY;
+    return corner
+      ? {
+          pane: corner.pane,
+          position: resolveFillOptionsChipPosition(corner, rowMetrics.totalBodyHeight, visibleBottom),
+        }
+      : null;
+  }, [
+    fillSnapshot,
+    paneLayout,
+    rowMetrics,
+    windowFirstRow,
+    windowLastRow,
+    viewportHeight,
+    scrollTop,
+    headerHeight,
+    overlayBaseOffset,
+  ]);
+  const handleFillHandlePointerDown = useCallback(
+    (event: PointerEvent<HTMLDivElement>) => fillController.handlePointerDown(event),
+    [fillController],
+  );
+  // 3 ペイン共通: ハンドル / 点線 / ボタン(各ペインの overlay 層の中、アクティブセル枠の上)。
+  const renderFillHandleLayer = (pane: ColumnPane, leadingWidth: number) => (
+    <>
+      {fillPreviewRectsForPane(pane).map((rect, segmentIndex) => (
+        <FillPreviewOverlay
+          key={segmentIndex}
+          rect={rect}
+          headerHeight={headerHeight}
+          baseOffset={overlayBaseOffset}
+          leadingWidth={leadingWidth}
+        />
+      ))}
+      <FillHandle
+        corner={fillHandleCorner?.pane === pane ? fillHandleCorner : null}
+        headerHeight={headerHeight}
+        baseOffset={overlayBaseOffset}
+        leadingWidth={leadingWidth}
+        onPointerDown={handleFillHandlePointerDown}
+      />
+      {fillSnapshot.status === 'filled' && (
+        <FillOptionsChip
+          position={fillChipPlacement?.pane === pane ? fillChipPlacement.position : null}
+          headerHeight={headerHeight}
+          baseOffset={overlayBaseOffset}
+          leadingWidth={leadingWidth}
+          kind={fillSnapshot.kind}
+          menuOpen={fillSnapshot.menu !== null}
+          chipRef={fillChipRef}
+          controller={fillController}
+        />
+      )}
+    </>
+  );
 
   const selectEntireGrid = useCallback(() => {
     if (viewRowCount === 0 || visibleColumns.length === 0) {
@@ -2295,8 +2608,9 @@ export function SpreadsheetGrid<T extends object>({
         return;
       }
       if (
-        !isCellEditable(
+        !isViewCellEditable(
           { readOnly, canEditCell },
+          rowModel,
           cell.row,
           cell.col,
           row,
@@ -2333,8 +2647,9 @@ export function SpreadsheetGrid<T extends object>({
         return;
       }
       if (
-        !isCellEditable(
+        !isViewCellEditable(
           { readOnly, canEditCell },
+          rowModel,
           cell.row,
           cell.col,
           row,
@@ -2383,6 +2698,10 @@ export function SpreadsheetGrid<T extends object>({
   const conditionalFormatStats = useMemo(
     () => engine.resolveConditionalFormatStats(rowModel, orderedColumns),
     [engine, rowModel, orderedColumns],
+  );
+  const totalRowExport = useMemo(
+    () => (totalRowEnabled ? { cells: totalRowCells, label: totalRowLabel } : undefined),
+    [totalRowEnabled, totalRowCells, totalRowLabel],
   );
   // ── 追加(F-2): セル内検索 ──
   //   実体は engine.find(controllers/findController。走査は時間分割)。React はスナップショットを購読し、既定セルの
@@ -2539,8 +2858,9 @@ export function SpreadsheetGrid<T extends object>({
         return;
       }
       if (
-        !isCellEditable(
+        !isViewCellEditable(
           { readOnly, canEditCell },
+          rowModel,
           cell.row,
           cell.col,
           row,
@@ -2854,7 +3174,8 @@ export function SpreadsheetGrid<T extends object>({
     () =>
       columns.map((column) => ({
         key: column.key,
-        title: column.title ?? column.key,
+        // 修正(audit L-12): title が空文字なら key(ヘッダー表示等と同じ ||)。
+        title: column.title || column.key,
         visible: column.visible !== false,
         pane: getColumnPane(column),
       })),
@@ -2875,7 +3196,7 @@ export function SpreadsheetGrid<T extends object>({
         )
         .map((column) => ({
           key: column.key,
-          title: column.title ?? column.key,
+          title: column.title || column.key,
         })),
     [visibleColumns],
   );
@@ -3159,6 +3480,7 @@ export function SpreadsheetGrid<T extends object>({
     enabled: rowDragOperable,
     rowMetrics,
     headerHeight,
+    footerHeight,
     verticalScaleFactor,
     windowBaseOffsetPx: overlayBaseOffset,
     scrollContainerRef,
@@ -3196,7 +3518,8 @@ export function SpreadsheetGrid<T extends object>({
   const columnDropIndicatorStyle: CSSProperties = {
     position: 'absolute',
     top: 0,
-    height: headerHeight + physicalBodyHeight,
+    // 変更(合計行 3A): 合計行まで貫きます(無効時 0)。
+    height: headerHeight + physicalBodyHeight + footerHeight,
     transform: 'translateX(-1px)',
     pointerEvents: 'none',
     zIndex: 8,
@@ -3208,12 +3531,19 @@ export function SpreadsheetGrid<T extends object>({
   //   連動し、これが変わったときだけ候補収集をやり直します(旧 getColumnSelectOptions の [rows]
   //   依存と等価)。set 即時適用の再レンダー(uiState 変化)では rows/openedFilterColumn とも不変の
   //   ため identity が保たれ、収集の再実行は起きません(open 中の再収集なしを維持)。
+  // 修正(audit L-06): dateSet 列は照合と同じ正規化日付キー(toDateSetKey)で候補を集めます。Date 値のセルが
+  //   String(Date)('Thu Jul 02 2026 …')の候補になり、年月日ツリーに出ず選んでも一致しなかったため。
+  //   文字列セルは後段の normalizeDateSetOptions と同じキーになるだけで結果は変わりません。
+  const openedFilterIsDateSet = openedFilterType === 'dateSet';
   const getOpenedColumnRawValueAt = useCallback(
-    (index: number): unknown =>
-      openedFilterColumn
-        ? getCellValue(rows[index], openedFilterColumn)
-        : undefined,
-    [rows, openedFilterColumn],
+    (index: number): unknown => {
+      if (!openedFilterColumn) {
+        return undefined;
+      }
+      const value = getCellValue(rows[index], openedFilterColumn);
+      return openedFilterIsDateSet ? toDateSetKey(value) : value;
+    },
+    [rows, openedFilterColumn, openedFilterIsDateSet],
   );
 
   // 変更(DS-4 #1): 候補収集を「通常規模=同期 / 大規模(>閾値)=時間分割の非同期」へ。
@@ -3454,6 +3784,7 @@ export function SpreadsheetGrid<T extends object>({
         return (
           <CheckboxCell
             slot={slots.checkbox}
+            label={column.title || column.key}
             checked={isCheckboxChecked(value, column.editor)}
             readOnly={cellState.readOnly}
             onToggle={() =>
@@ -3547,6 +3878,16 @@ export function SpreadsheetGrid<T extends object>({
 
   // ── bar context ───────────────────────────────────────
   // 追加: bar 用 context / derived summary は hook へ逃がします。
+  // 追加(選択範囲の集計): 出す先が無いときは計算しません(大きな選択の走査を省く)。出す先 = ボトムバー(既定 /
+  //   renderBottomBar)か、自前のトップバー(renderTopBar)。既定のトップバーは集計を出さないため数えません。
+  const selectionAggregates = useSelectionAggregates({
+    enabled: showSelectionAggregates && (showBottomBar || (showTopBar && renderTopBar !== undefined)),
+    selection: uiState.selection,
+    viewRowCount,
+    orderedColumns,
+    rowModel,
+  });
+
   const { slotContext } = useGridBarContext({
     rows,
     // 変更(DS-3-7): filteredRows(配列)→ viewRowCount(件数)+ getFilteredRows(遅延 factory)。
@@ -3565,11 +3906,14 @@ export function SpreadsheetGrid<T extends object>({
     getFilteredRows,
     columns,
     visibleColumns,
+    // 追加(audit V-12): A1 ラベルの列名から合成列を除くための画面の並び。
+    orderedColumns,
     uiState,
     setGlobalFilterText,
     // 追加(F-async): グローバルフィルタの適用状態/進捗を slotContext へ渡します(ローディング表示用)。
     globalFilterStatus,
     globalFilterProgress,
+    selectionAggregates,
   });
 
   // ── styles ────────────────────────────────────────────
@@ -3627,6 +3971,34 @@ export function SpreadsheetGrid<T extends object>({
   //   - frozen shadow（影）＋ ペイン境界線は従来どおり付けます（hasContent のときのみ）。
   //   - zIndex で中央ペイン(zIndex:1)より前面に描画し、影が中央ペインのセルに重なって
   //     「浮いた固定列」に見えるようにします。
+  // 追加(合計行 3A): 各ペインの合計行(無効時は何も描かない)。行ヘッダーの持ち主 / 列の並びは本体の行と同じです。
+  const renderTotalRow = (
+    pane: GridPaneKind,
+    ownsRowHeader: boolean,
+    leadingWidth: number,
+    renderEntries: PaneColumnEntry<T>[],
+  ) =>
+    totalRowEnabled ? (
+      <GridTotalRow<T>
+        pane={pane}
+        ownsRowHeader={ownsRowHeader}
+        leadingWidth={leadingWidth}
+        bodyHeight={physicalBodyHeight}
+        height={footerHeight}
+        renderEntries={renderEntries}
+        cells={totalRowCells}
+        label={totalRowLabel}
+        labelColumnKey={totalRowLabelColumnKey}
+        ariaRowIndex={viewRowCount + 2}
+        rowHeaderCellStyle={rowHeaderCellStyle}
+        renderCell={totalRowRenderCell}
+        rowClassName={totalRowSlot.className}
+        rowStyle={totalRowSlot.style}
+        slots={slots}
+        onPointerEnter={handleTotalRowPointerEnter}
+      />
+    ) : null;
+
   const pinnedPaneStyle = (
     side: 'left' | 'right',
     width: number,
@@ -4002,6 +4374,9 @@ export function SpreadsheetGrid<T extends object>({
     isRowExportable,
     // 追加(label-row ④): ラベル行のエクスポート設定(scope 'raw' の除外 / includeLabelRows の出力値)。
     labelRowExport,
+    // 追加(合計行 3A): 合計行のエクスポート(includeTotalRow)と、末尾 / 行を見せる位置の計算に使う高さ。
+    totalRowExport,
+    footerHeight,
     activeToolPanelTab,
     openToolPanel,
     closeToolPanel,
@@ -4061,6 +4436,8 @@ export function SpreadsheetGrid<T extends object>({
         // 追加(motion-1 / M-1): ポインタで範囲選択をドラッグ中はオーバーレイを瞬時に追従させます(styles.css で
         //   transition を切る。キーボード移動 / クリックでは滑る)。
         uiState.dragState?.type === 'selection' && 'ssg-root--selecting',
+        // 追加(フィルハンドル 1A): ハンドルをドラッグ中(十字カーソル / オーバーレイの瞬時追従)。
+        fillSnapshot.status === 'dragging' && 'ssg-root--filling',
         // 追加(motion-3 / M-4・M-5): 行の並び替えアニメ(行要素の transform に transition)。
         animateRowsActive && 'ssg-root--animate-rows',
         // 追加(motion-5 / M-6): クロスヘア(列ヘッダー / 行番号を選択色で染める。列の帯は ColumnHoverOverlay)。
@@ -4110,6 +4487,11 @@ export function SpreadsheetGrid<T extends object>({
         }}
         // 追加: popup(フィルター / 列メニュー)open 中は grid root を tab フォーカス対象から外します。
         tabIndex={isAnyGridPopupOpen ? -1 : 0}
+        // 追加(audit V-05): フォーカスを持つシェルからアクティブセルを指します(aria-activedescendant を持てる
+        //   role として group。表そのもの(role="grid")は内側のスクロールコンテナ。シェルには検索バー / エラー
+        //   バー / 入力受けなど表の行ではない要素も入るため)。
+        role="group"
+        aria-activedescendant={activeDescendantId}
         // 追加: popup open 中は root の keyboard/paste handler 自体を外します。
         onKeyDown={isAnyGridPopupOpen ? undefined : handleKeyDown}
         onPaste={isAnyGridPopupOpen ? undefined : handlePaste}
@@ -4122,6 +4504,15 @@ export function SpreadsheetGrid<T extends object>({
         {/*   pinned 列がない場合は左右ペインが width:0 で非表示、中央ペインのみ表示。     */}
         <div
           ref={scrollContainerRef}
+          // 追加(audit V-05): ARIA の表。行数は見出し行 + 表示行(仮想化で描画していない行も数える)、列数は
+          //   行番号列 + 視覚順の列。範囲選択できるなら複数選択可、readOnly なら読み取り専用。
+          role="grid"
+          aria-label={ariaLabel}
+          // 変更(合計行 3A): 合計行を表示しているときは 1 行足します(見出し行 + 表示行 + 合計行)。
+          aria-rowcount={viewRowCount + 1 + (totalRowEnabled ? 1 : 0)}
+          aria-colcount={orderedColumns.length + 1}
+          aria-multiselectable={enableRangeSelection || undefined}
+          aria-readonly={readOnly || undefined}
           className={cx(
             'ssg-scroll-container',
             // 追加(scrollHint): カスタムスクロールバー有効時はネイティブ縦バーを隠し、
@@ -4137,7 +4528,8 @@ export function SpreadsheetGrid<T extends object>({
             style={{
               width: totalScrollWidth,
               minWidth: totalScrollWidth,
-              height: headerHeight + physicalBodyHeight,
+              // 変更(合計行 3A): 下端に固定する合計行の高さを足します(無効時 0)。
+              height: headerHeight + physicalBodyHeight + footerHeight,
             }}
           >
 
@@ -4163,7 +4555,8 @@ export function SpreadsheetGrid<T extends object>({
                   overflow: 'clip',
                   width: leftPaneTotalWidth,
                   minWidth: leftPaneTotalWidth,
-                  height: headerHeight + physicalBodyHeight,
+                  // 変更(合計行 3A): 合計行(ボックスの下端の sticky 行)の高さを足します。
+                  height: headerHeight + physicalBodyHeight + footerHeight,
                 }}
               >
                 <GridHeaderRow
@@ -4269,6 +4662,8 @@ export function SpreadsheetGrid<T extends object>({
                   baseOffset={overlayBaseOffset}
                   leadingWidth={leftLeadingWidth}
                 />
+                {/* 追加(フィルハンドル 1A): ハンドル / ドラッグ中の点線 / 埋めたあとのボタン。 */}
+                {renderFillHandleLayer('left', leftLeadingWidth)}
 
                 <CellEditorLayer
                   slots={slots}
@@ -4284,9 +4679,12 @@ export function SpreadsheetGrid<T extends object>({
                   onCancel={cancelEdit}
                   align={editingColumn?.align}
                   enterMove={editorEnterMove}
+                  domId={cellEditorDomId}
                 />
 
                 <GridBodyLayer
+                  activeCellDomId={activeCellDomId}
+                  cellEditorDomId={cellEditorDomId}
                   pane="left"
                   ownsRowHeader
                   leadingWidth={leftLeadingWidth}
@@ -4332,7 +4730,6 @@ export function SpreadsheetGrid<T extends object>({
                   entries={detailEntries}
                   mode="band"
                   paneWidth={leftPaneTotalWidth}
-                  baseOffset={overlayBaseOffset}
                   cardStickyLeft={0}
                   cardWidth={0}
                   renderCard={renderDetailCard}
@@ -4345,6 +4742,8 @@ export function SpreadsheetGrid<T extends object>({
                   />
                 )}
                 </div>
+                {/* 追加(合計行 3A): 下端に固定する合計行(本体ぶんの空きの直後 = ボックスの下端の sticky 行)。 */}
+                {renderTotalRow('left', true, leftLeadingWidth, leftRenderEntries)}
               </div>
             )}
 
@@ -4374,7 +4773,8 @@ export function SpreadsheetGrid<T extends object>({
                 overflow: 'clip',
                 width: centerContentWidth,
                 minWidth: centerContentWidth,
-                height: headerHeight + physicalBodyHeight,
+                // 変更(合計行 3A): 合計行(ボックスの下端の sticky 行)の高さを足します。
+                height: headerHeight + physicalBodyHeight + footerHeight,
               }}
             >
               <GridHeaderRow
@@ -4479,6 +4879,8 @@ export function SpreadsheetGrid<T extends object>({
                   baseOffset={overlayBaseOffset}
                   leadingWidth={centerLeadingWidth}
                 />
+                {/* 追加(フィルハンドル 1A): ハンドル / ドラッグ中の点線 / 埋めたあとのボタン。 */}
+                {renderFillHandleLayer('center', centerLeadingWidth)}
 
                 <CellEditorLayer
                   slots={slots}
@@ -4494,9 +4896,12 @@ export function SpreadsheetGrid<T extends object>({
                   onCancel={cancelEdit}
                   align={editingColumn?.align}
                   enterMove={editorEnterMove}
+                  domId={cellEditorDomId}
                 />
 
                 <GridBodyLayer
+                  activeCellDomId={activeCellDomId}
+                  cellEditorDomId={cellEditorDomId}
                   pane="center"
                   ownsRowHeader={centerOwnsRowHeader}
                   leadingWidth={centerLeadingWidth}
@@ -4542,7 +4947,6 @@ export function SpreadsheetGrid<T extends object>({
                   entries={detailEntries}
                   mode="center"
                   paneWidth={centerContentWidth}
-                  baseOffset={overlayBaseOffset}
                   cardStickyLeft={detailCardStickyLeft}
                   cardWidth={detailCardWidth}
                   cardSlot={detailCardSlot}
@@ -4560,6 +4964,8 @@ export function SpreadsheetGrid<T extends object>({
                   />
                 )}
               </div>
+              {/* 追加(合計行 3A): 下端に固定する合計行(本体ぶんの空きの直後 = ボックスの下端の sticky 行)。 */}
+              {renderTotalRow('center', centerOwnsRowHeader, centerLeadingWidth, centerRenderEntries)}
 
               {/* 追加(13-B3-2): 中央ペインのドロップインジケータ(縦線)。
                   controller が ref 経由で display/left を imperative に制御します
@@ -4583,7 +4989,8 @@ export function SpreadsheetGrid<T extends object>({
                   overflow: 'clip',
                   width: rightPaneTotalWidth,
                   minWidth: rightPaneTotalWidth,
-                  height: headerHeight + physicalBodyHeight,
+                  // 変更(合計行 3A): 合計行(ボックスの下端の sticky 行)の高さを足します。
+                  height: headerHeight + physicalBodyHeight + footerHeight,
                 }}
               >
                 <GridHeaderRow
@@ -4686,6 +5093,8 @@ export function SpreadsheetGrid<T extends object>({
                   baseOffset={overlayBaseOffset}
                   leadingWidth={rightLeadingWidth}
                 />
+                {/* 追加(フィルハンドル 1A): ハンドル / ドラッグ中の点線 / 埋めたあとのボタン。 */}
+                {renderFillHandleLayer('right', rightLeadingWidth)}
 
                 <CellEditorLayer
                   slots={slots}
@@ -4701,9 +5110,12 @@ export function SpreadsheetGrid<T extends object>({
                   onCancel={cancelEdit}
                   align={editingColumn?.align}
                   enterMove={editorEnterMove}
+                  domId={cellEditorDomId}
                 />
 
                 <GridBodyLayer
+                  activeCellDomId={activeCellDomId}
+                  cellEditorDomId={cellEditorDomId}
                   pane="right"
                   ownsRowHeader={false}
                   leadingWidth={rightLeadingWidth}
@@ -4749,7 +5161,6 @@ export function SpreadsheetGrid<T extends object>({
                   entries={detailEntries}
                   mode="band"
                   paneWidth={rightPaneTotalWidth}
-                  baseOffset={overlayBaseOffset}
                   cardStickyLeft={0}
                   cardWidth={0}
                   renderCard={renderDetailCard}
@@ -4759,6 +5170,8 @@ export function SpreadsheetGrid<T extends object>({
                   <div ref={rightRowDropIndicatorRef} className="ssg-row-drop-indicator" />
                 )}
                 </div>
+                {/* 追加(合計行 3A): 下端に固定する合計行(本体ぶんの空きの直後 = ボックスの下端の sticky 行)。 */}
+                {renderTotalRow('right', false, rightLeadingWidth, rightRenderEntries)}
               </div>
             )}
 
@@ -4780,7 +5193,7 @@ export function SpreadsheetGrid<T extends object>({
               className={cx('ssg-empty-state', slots.emptyState?.className)}
               style={slots.emptyState?.style}
             >
-              {rows.length === 0 && !manualFilterActive
+              {(isServerSide ? !filterConditionsActive : rows.length === 0 && !manualFilterActive)
                 ? noRowsText
                 : noMatchingRowsText}
             </div>
@@ -4804,6 +5217,7 @@ export function SpreadsheetGrid<T extends object>({
             verticalScaleFactor={verticalScaleFactor}
             rowMetrics={rowMetrics}
             rowModel={rowModel}
+            labelViewIndexes={labelDisplay?.labelViewIndexes}
           />
         )}
 
@@ -4941,6 +5355,24 @@ export function SpreadsheetGrid<T extends object>({
       {renderedToolPanel}
       {/* 追加(バッチ②): セル/行の汎用コンテキストメニュー(完全カスタム)です。*/}
       {renderedCellContextMenuPopover}
+      {/* 追加(フィルハンドル 1A): 埋めたあとのメニュー / ドラッグ中の値のツールチップ(ポータル)。 */}
+      {fillSnapshot.status === 'filled' && fillSnapshot.menu !== null && (
+        <FillOptionsMenu
+          layout={fillSnapshot.menu}
+          kind={fillSnapshot.kind}
+          seriesAvailable={fillSnapshot.seriesAvailable}
+          themeClassName={portalClassName}
+          panelRef={fillMenuRef}
+          controller={fillController}
+        />
+      )}
+      {fillSnapshot.status === 'dragging' && fillSnapshot.previewText !== null && (
+        <FillTooltip
+          text={fillSnapshot.previewText}
+          themeClassName={portalClassName}
+          controller={fillController}
+        />
+      )}
     </div>
   );
 }

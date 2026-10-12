@@ -33,8 +33,6 @@ type GridDetailLayerProps = {
   mode: 'center' | 'band';
   // このペインの幅(帯の幅)。
   paneWidth: number;
-  // 追加(scroll-space 仮想化): 絶対論理 top から差し引く基準オフセット(metrics 経路では 0)。
-  baseOffset: number;
   // カードの sticky 左オフセット(= 左固定ペイン幅 + 中央ペイン先頭幅)とカード幅(中央可視幅)。
   cardStickyLeft: number;
   cardWidth: number;
@@ -55,7 +53,6 @@ function GridDetailLayerInner({
   entries,
   mode,
   paneWidth,
-  baseOffset,
   cardStickyLeft,
   cardWidth,
   cardSlot,
@@ -76,7 +73,9 @@ function GridDetailLayerInner({
         const bandStyle: CSSProperties = {
           position: 'absolute',
           left: 0,
-          top: virtualRow.start + (virtualRow.size ?? 0) - baseOffset,
+          // 修正(audit V-13): virtualRow.start は行と同じ座標(verticalGeometry が windowBaseOffsetPx を差し引き済み)
+          //   なのでそのまま使います。オーバーレイ系(絶対論理 top から baseOffset を引く)とは座標の由来が違います。
+          top: virtualRow.start + (virtualRow.size ?? 0),
           width: paneWidth,
           height: detailSize,
         };
@@ -84,11 +83,15 @@ function GridDetailLayerInner({
           <div
             key={entry.rowKey}
             className={cx('ssg-detail-band', slots?.detailBand?.className)}
+            // 追加(audit V-05): カードを持つ帯(中央ペイン)は ARIA の行 + セル(行番号は持たない)。左右の固定ペインの
+            //   帯は背景だけなので支援技術から隠します。
+            {...(mode === 'center' ? { role: 'row' } : { 'aria-hidden': true })}
             data-detail-row-index={virtualRow.index}
             style={{ ...slots?.detailBand?.style, ...bandStyle }}
           >
             {mode === 'center' && (
               <div
+                role="gridcell"
                 className="ssg-detail-card-holder"
                 style={{ left: cardStickyLeft, width: cardWidth }}
               >

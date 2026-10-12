@@ -110,4 +110,28 @@ describe('createSelectOptionsCollector', () => {
     }
     expect(collector.getSnapshot().source).toBe(second);
   });
+
+  // 追加(audit C-11): StrictMode の擬似アンマウント(dispose)→ 同じ args の update で、中断した収集をやり直す。
+  //   走り切った後の dispose → update では収集し直さない。
+  it('収集中に dispose で中断しても、同じ args の update で収集し直す', async () => {
+    const collector = createSelectOptionsCollector();
+    const getRawValueAt = (i: number) => `v${i}`;
+    const args = { needsAsync: true, rowCount: 5, getRawValueAt };
+    collector.update(args);
+    await flushYields();
+    collector.dispose();
+    collector.update(args);
+    for (let i = 0; i < 6; i += 1) {
+      await flushYields();
+    }
+    const snapshot = collector.getSnapshot();
+    expect(snapshot.result.status).toBe('ready');
+    expect(snapshot.result.options.map((o) => o.value)).toEqual(['v0', 'v1', 'v2', 'v3', 'v4']);
+
+    collector.dispose();
+    collector.update(args);
+    await flushYields();
+    expect(collector.getSnapshot()).toBe(snapshot);
+    expect(pendingYields).toHaveLength(0);
+  });
 });

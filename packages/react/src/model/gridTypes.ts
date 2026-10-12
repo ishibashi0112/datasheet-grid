@@ -18,6 +18,14 @@ export type CellRenderContext<T> = Core.CellRenderContext<T, ReactGridTypes>;
 export type DetailRowOptions<T> = Core.DetailRowOptions<T, ReactGridTypes>;
 /** ラベル行(見出し / 区切り行)の設定(`labelRow` prop)。各フィールドの説明は JSDoc と同梱の `API_REFERENCE.md`。 */
 export type LabelRowOptions<T> = Core.LabelRowOptions<T, ReactGridTypes>;
+/** 合計行の設定(`totalRow` prop)。各フィールドの説明は JSDoc と同梱の `API_REFERENCE.md`。 */
+export type TotalRowOptions<T> = Core.TotalRowOptions<T, ReactGridTypes>;
+/** `totalRow.renderCell` へ渡る合計行のセルの文脈。 */
+export type TotalRowCellContext<T> = Core.TotalRowCellContext<T, ReactGridTypes>;
+/** フィルハンドルの設定(`fillHandle` prop)。各フィールドの説明は JSDoc と同梱の `API_REFERENCE.md`。 */
+export type FillHandleOptions<T> = Core.FillHandleOptions<T, ReactGridTypes>;
+/** `fillHandle.getFillValue` へ渡る、埋めるセル 1 つぶんのパラメータ。 */
+export type GridFillValueParams<T> = Core.GridFillValueParams<T, ReactGridTypes>;
 export type CellStyleContext<T> = Core.CellStyleContext<T, ReactGridTypes>;
 /** 条件付き書式(`GridColumn.conditionalFormat`)。`dataBar` / `colorScale` / `chips`。 */
 export type GridConditionalFormat<T> = Core.GridConditionalFormat<T, ReactGridTypes>;

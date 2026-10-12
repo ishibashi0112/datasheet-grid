@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 
-import { serializeRowsToCsv } from './exportCsv';
+import { escapeCsvFormula, serializeRowsToCsv } from './exportCsv';
 import type { GridColumn } from '../model/gridTypes.unbound';
 
 type Row = { a: string; b: number; c?: string };
@@ -27,6 +27,17 @@ describe('serializeRowsToCsv', () => {
       columns,
     });
     expect(csv).toBe('A,B\r\nx,1\r\ny,2\r\nz,3');
+  });
+
+  // 追加(audit L-12): title が空文字の列は key をヘッダーにする。
+  it('title が空文字 / 未指定の列は key をヘッダーにする', () => {
+    const csv = serializeRowsToCsv({
+      getRow,
+      startRow: 0,
+      endRow: 1,
+      columns: [{ key: 'a', title: '', width: 100 }, { key: 'b', width: 100 }],
+    });
+    expect(csv).toBe('a,b\r\nx,1');
   });
 
   it('includeHeaders=false でヘッダーを省く', () => {
@@ -172,5 +183,113 @@ describe('serializeRowsToCsv × ラベル行(getLabelLine)', () => {
       getLabelLine: (i) => (i === 2 ? lines[2] : undefined),
     });
     expect(partial).toBe('x,1\r\n第 2 節,2\r\ny,2');
+  });
+});
+
+
+// 追加(audit L-20): escapeFormulas(既定 false)。
+describe('serializeRowsToCsv の escapeFormulas(audit L-20)', () => {
+  const formulaRows: Row[] = [
+    { a: '=SUM(A1:A2)', b: -5 },
+    { a: '+cmd', b: 1 },
+    { a: '@x', b: 2 },
+    { a: '-1+2', b: 3 },
+    { a: '\tx', b: 4 },
+  ];
+  const getFormulaRow = (i: number): Row => formulaRows[i];
+
+  it('既定(false)では従来どおりそのまま出す', () => {
+    const csv = serializeRowsToCsv({
+      getRow: getFormulaRow,
+      startRow: 0,
+      endRow: 2,
+      columns,
+      includeHeaders: false,
+    });
+    expect(csv).toBe('=SUM(A1:A2),-5\r\n+cmd,1');
+  });
+
+  it('true では = + - @ / タブで始まる値の先頭に \' を付け、数値として読める値はそのまま', () => {
+    const csv = serializeRowsToCsv({
+      getRow: getFormulaRow,
+      startRow: 0,
+      endRow: formulaRows.length,
+      columns: [{ key: 'a', title: '=A', width: 100 }, columns[1]],
+      escapeFormulas: true,
+    });
+    expect(csv).toBe(
+      ['=A,B', "'=SUM(A1:A2),-5", "'+cmd,1", "'@x,2", "'-1+2,3", "'\tx,4"].join('\r\n'),
+    );
+  });
+
+  it('無害化した後に RFC 4180 のクォートが掛かる', () => {
+    const csv = serializeRowsToCsv({
+      getRow: () => ({ a: '=HYPERLINK("http://x","y")', b: 1 }),
+      startRow: 0,
+      endRow: 1,
+      columns,
+      includeHeaders: false,
+      escapeFormulas: true,
+    });
+    expect(csv).toBe('"\'=HYPERLINK(""http://x"",""y"")",1');
+  });
+
+  it('ラベル行の値にも適用する', () => {
+    const csv = serializeRowsToCsv({
+      getRow: () => undefined as unknown as Row,
+      startRow: 0,
+      endRow: 1,
+      columns,
+      includeHeaders: false,
+      escapeFormulas: true,
+      getLabelLine: () => ['=1+1', null],
+    });
+    expect(csv).toBe("'=1+1,");
+  });
+
+  it('escapeCsvFormula: 数値リテラルは対象外', () => {
+    expect(escapeCsvFormula('-5')).toBe('-5');
+    expect(escapeCsvFormula('+1.5')).toBe('+1.5');
+    expect(escapeCsvFormula('-1e3')).toBe('-1e3');
+    expect(escapeCsvFormula('-.5')).toBe('-.5');
+    expect(escapeCsvFormula('-')).toBe("'-");
+    expect(escapeCsvFormula('abc=1')).toBe('abc=1');
+    expect(escapeCsvFormula('')).toBe('');
+  });
+});
+
+// 追加(合計行 3A): 合計行(totalLine)は末尾に 1 行。空値は空、エスケープ / 数式の無害化も通常どおり。
+describe('serializeRowsToCsv × 合計行(totalLine)', () => {
+  it('末尾に 1 行出す(ヘッダーなしでも、行が 0 件でも)', () => {
+    const csv = serializeRowsToCsv({
+      getRow,
+      startRow: 0,
+      endRow: rows.length,
+      columns,
+      includeHeaders: false,
+      totalLine: ['合計', 3],
+    });
+    expect(csv.split('\r\n').at(-1)).toBe('合計,3');
+    const empty = serializeRowsToCsv({
+      getRow,
+      startRow: 0,
+      endRow: 0,
+      columns,
+      totalLine: [undefined, null],
+    });
+    expect(empty).toBe('A,B\r\n,');
+  });
+
+  it('値の区切り文字はエスケープし、escapeFormulas は合計行にも効く', () => {
+    const csv = serializeRowsToCsv({
+      getRow,
+      startRow: 0,
+      endRow: 0,
+      columns,
+      includeHeaders: false,
+      escapeFormulas: true,
+      totalLine: ['a,b', '=1+1'],
+    });
+    expect(csv).toBe(`"a,b",'=1+1`);
   });
 });

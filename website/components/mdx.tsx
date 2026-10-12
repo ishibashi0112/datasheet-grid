@@ -17,6 +17,8 @@ import { DetailRowDemo } from '@/components/demo/detail-row-demo';
 import { RowDragDemo } from '@/components/demo/row-drag-demo';
 import { ColumnDragDemo } from '@/components/demo/column-drag-demo';
 import { LabelRowDemo } from '@/components/demo/label-row-demo';
+import { TotalRowDemo } from '@/components/demo/total-row-demo';
+import { FillHandleDemo } from '@/components/demo/fill-handle-demo';
 import { SizingDemo } from '@/components/demo/sizing-demo';
 import { CellEventsDemo } from '@/components/demo/cell-events-demo';
 import { MotionDemo } from '@/components/demo/motion-demo';
@@ -44,6 +46,8 @@ export function getMDXComponents(components?: MDXComponents) {
     RowDragDemo,
     ColumnDragDemo,
     LabelRowDemo,
+    TotalRowDemo,
+    FillHandleDemo,
     SizingDemo,
     CellEventsDemo,
     MotionDemo,

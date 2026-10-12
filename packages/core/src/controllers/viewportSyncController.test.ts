@@ -110,4 +110,36 @@ describe('viewportSyncController', () => {
       }),
     ).not.toThrow();
   });
+
+  // 追加(合計行 3A): 合計行の高さはスクロール可能な高さに足し、行を見せるときはその裏に隠さない。
+  it('footerHeight: clamp の上限に足し、変化でも clamp し、可視化では合計行の上へ出す', () => {
+    const scroll = createScrollElement();
+    scroll.raw.scrollTop = 3470;
+    const controller = createViewportSyncController();
+    // 40 + 3600 + 36 - 200 = 3476 以内なので不変(合計行なしなら 3440 へ clamp される位置)。
+    controller.update({ ...baseArgs(scroll.element), footerHeight: 36 });
+    expect(scroll.raw.scrollTop).toBe(3470);
+    // 合計行を外す → 上限が縮むので clamp。
+    controller.update({ ...baseArgs(scroll.element), footerHeight: 0 });
+    expect(scroll.raw.scrollTop).toBe(3440);
+
+    // 可視化: 下端 = scrollTop + (200 - 36)。行の下端 40 + 300 = 340 > 164 → 340 - 164 = 176 へ。
+    const visible = createScrollElement();
+    const rect = { left: 0, top: 264, width: 80, height: 36 };
+    createViewportSyncController().update({
+      ...baseArgs(visible.element),
+      activeCell: { row: 7, col: 0 },
+      activeCellRect: rect,
+      footerHeight: 36,
+    });
+    expect(visible.scrollTo).toHaveBeenLastCalledWith(expect.objectContaining({ top: 176 }));
+    // 合計行なし(従来)は 340 - 200 = 140。
+    const plain = createScrollElement();
+    createViewportSyncController().update({
+      ...baseArgs(plain.element),
+      activeCell: { row: 7, col: 0 },
+      activeCellRect: rect,
+    });
+    expect(plain.scrollTo).toHaveBeenLastCalledWith(expect.objectContaining({ top: 140 }));
+  });
 });

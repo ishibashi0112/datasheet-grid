@@ -25,12 +25,15 @@ const renderSelectEditor = ({
   editorOptions = options,
   value = 'banana',
   themeClassName,
+  initialValue,
 }: {
   editorOptions?:
     | GridSelectEditorOption[]
     | ((row: Row) => GridSelectEditorOption[]);
   value?: unknown;
   themeClassName?: string;
+  // 印字キーでの開始を模すときに指定(未指定 = F2 等でセル値の文字列が初期値)。
+  initialValue?: string;
 } = {}) => {
   const onCommit = vi.fn();
   const onCancel = vi.fn();
@@ -39,7 +42,7 @@ const renderSelectEditor = ({
       rect={rect}
       headerHeight={40}
       leadingWidth={56}
-      initialValue={String(value ?? '')}
+      initialValue={initialValue ?? String(value ?? '')}
       editor={{ type: 'select', options: editorOptions }}
       editorSession={{
         row: { fruit: 'banana' },
@@ -124,6 +127,24 @@ describe('SelectCellEditor', () => {
     fireEvent.keyDown(input, { key: 'e' });
     fireEvent.keyDown(input, { key: 'Enter' });
     expect(onCommit).toHaveBeenCalledWith('berry', 'down');
+  });
+
+  // 追加(audit RD-9): 印字キーで開始したら、そのキーをタイプアヘッドに使う(続けて打つと前方一致を伸ばせる)。
+  it('印字キーで開始したら、そのキーで始まる候補をハイライトして始める', () => {
+    const { onCommit, input } = renderSelectEditor({ value: 'banana', initialValue: 'a' });
+    expect(input.value).toBe('Apple');
+    fireEvent.keyDown(input, { key: 'Enter' });
+    expect(onCommit).toHaveBeenLastCalledWith('apple', 'down');
+  });
+
+  it('開始キーに続けて打つと前方一致を伸ばし、一致しない開始キーは現在値のまま', () => {
+    const first = renderSelectEditor({ value: 'apple', initialValue: 'b' });
+    expect(first.input.value).toBe('Banana');
+    fireEvent.keyDown(first.input, { key: 'e' });
+    expect(first.input.value).toBe('Berry');
+    cleanup();
+    const second = renderSelectEditor({ value: 'banana', initialValue: 'z' });
+    expect(second.input.value).toBe('Banana');
   });
 
   it('動的 options(行依存関数)は編集中の行で解決される', () => {

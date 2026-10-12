@@ -10,6 +10,7 @@
 import {
   canMeasureAutosize,
   createColumnWidthAccumulator,
+  type AutosizeTotalRowTexts,
 } from '../logic/columnAutosize';
 import { runChunked } from '../logic/chunkedLoop';
 import { createValueStore } from '../logic/valueStore';
@@ -28,6 +29,8 @@ export type ColumnAutosizeRunnerArgs<T> = {
   // 現在の解決済み列幅(flex 解決済み)。
   columnWidths: Record<string, number>;
   dispatch: (action: ReturnType<typeof gridActions.syncColumnWidths>) => void;
+  // 追加(見直し): 合計行の表示(列の key → 文字列と見出し)。幅に収めます。合計行が無ければ省略(従来どおり)。
+  totalRowTexts?: AutosizeTotalRowTexts;
 };
 
 export type ColumnAutosizeRunner<T> = {
@@ -61,7 +64,7 @@ export const createColumnAutosizeRunner = <T,>(): ColumnAutosizeRunner<T> => {
     if (args === null || columns.length === 0 || !canMeasureAutosize()) {
       return;
     }
-    const { rowModel, gridRootRef, columnWidths: currentWidths, dispatch } = args;
+    const { rowModel, gridRootRef, columnWidths: currentWidths, dispatch, totalRowTexts } = args;
     const myGeneration = (runGeneration += 1);
     clearOverlayTimer();
 
@@ -93,7 +96,7 @@ export const createColumnAutosizeRunner = <T,>(): ColumnAutosizeRunner<T> => {
       if (!completed) {
         return;
       }
-      const nextWidths = accumulator.finalize({ gridRoot, currentWidths });
+      const nextWidths = accumulator.finalize({ gridRoot, currentWidths, totalRowTexts });
       if (Object.keys(nextWidths).length > 0) {
         dispatch(gridActions.syncColumnWidths(nextWidths));
       }
@@ -137,12 +140,27 @@ export type AutoSizeOnDataArgs<T> = {
 
 export type AutoSizeOnDataTrigger<T> = {
   update: (args: AutoSizeOnDataArgs<T>) => void;
+  // 追加(audit C-6): 前回の args を忘れ、走り切っていない 'onMount' の計測があれば「未発火」に戻します。
+  dispose: () => void;
 };
 
 export const createAutoSizeOnDataTrigger = <T,>(): AutoSizeOnDataTrigger<T> => {
   let last: AutoSizeOnDataArgs<T> | null = null;
   let hasAutoSizedOnMount = false;
+  // 追加(audit C-6): 'onMount' の計測が走っている間は true。StrictMode の擬似アンマウントでランナーが計測を
+  //   打ち切る(dispose で世代を進める)ため、走り切る前に dispose されたら再マウントの update で計測し直します。
+  //   世代(token)は打ち切られた計測の後始末が新しい計測のフラグを下ろさないためのものです。
+  let mountRunPending = false;
+  let mountRunToken = 0;
   return {
+    dispose: () => {
+      last = null;
+      mountRunToken += 1;
+      if (mountRunPending) {
+        mountRunPending = false;
+        hasAutoSizedOnMount = false;
+      }
+    },
     update: (next) => {
       if (
         last !== null &&
@@ -163,7 +181,17 @@ export const createAutoSizeOnDataTrigger = <T,>(): AutoSizeOnDataTrigger<T> => {
       });
       hasAutoSizedOnMount = nextHasAutoSizedOnMount;
       if (shouldRun) {
-        void next.runAutosize(next.visibleColumns);
+        if (next.mode !== 'onMount') {
+          void next.runAutosize(next.visibleColumns);
+          return;
+        }
+        mountRunPending = true;
+        const token = mountRunToken;
+        void next.runAutosize(next.visibleColumns).finally(() => {
+          if (token === mountRunToken) {
+            mountRunPending = false;
+          }
+        });
       }
     },
   };

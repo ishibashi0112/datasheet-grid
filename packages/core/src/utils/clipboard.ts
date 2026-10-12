@@ -234,11 +234,14 @@ export const applyClipboardMatrixToRows = <T extends object,>(
   matrix: ClipboardMatrix,
   startRowIndex: number,
   startColIndex: number,
+  // 変更(audit RD-4): 第 5 引数に貼り付け先の行位置(startRowIndex + 行オフセット = resolveSourceIndex へ渡す値)を
+  //   足しました。呼び出し側はこれをビュー行 index へ換算して canEditCell へ渡します。
   canWriteCell: (
     originalRowIndex: number,
     colIndex: number,
     row: T,
     column: GridColumn<T>,
+    filteredRowIndex: number,
   ) => boolean,
 ): T[] => {
   if (matrix.length === 0) {
@@ -269,7 +272,7 @@ export const applyClipboardMatrixToRows = <T extends object,>(
         continue;
       }
 
-      if (!canWriteCell(originalRowIndex, colIndex, currentRow, column)) {
+      if (!canWriteCell(originalRowIndex, colIndex, currentRow, column, filteredRowIndex)) {
         continue;
       }
 

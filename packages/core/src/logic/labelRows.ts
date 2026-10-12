@@ -193,9 +193,11 @@ export const buildLabelDisplay = <T,>({
     // 中身の無いセクションのラベルは(残す設定のときだけ)元の順序を保ったまま、次に現れる
     //   ラベル行の直前 / 末尾へ差します。nextEmptyK は「まだ検討していない最小のラベル index」。
     let nextEmptyK = 0;
+    // 修正(audit L-11): 'section' と同じく、フィルターしていない(ソートだけの)ときは元から空のセクションのラベルも
+    //   残します(従来は keepEmptySections だけを見ていたため、ソートしただけで消えていた)。
     const flushEmptyBefore = (k: number): void => {
       while (nextEmptyK < k) {
-        if (keepEmptySections && firstPos[nextEmptyK + 1] === -1) {
+        if ((keepEmptySections || !filterActive) && firstPos[nextEmptyK + 1] === -1) {
           emitLabel(nextEmptyK, 0);
         }
         nextEmptyK += 1;

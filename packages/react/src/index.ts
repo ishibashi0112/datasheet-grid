@@ -52,6 +52,8 @@ export type {
   // 追加(proposals ①): 条件付きセル className(cellClassName 関数版)の引数型です。
   //   CellRenderContext から setValue を除いた読み取り専用版。
   CellStyleContext,
+  // 追加(audit RD-4): canEditCell の第 5 引数(元 rows の index / rowKey)。
+  CanEditCellContext,
   GridConditionalFormat,
   // 追加(proposals ⑤): 条件付き行 className(getRowClassName)の第 3 引数コンテキストです。
   RowStyleContext,
@@ -71,6 +73,15 @@ export type {
   LabelRowRenderContext,
   GridLabelRow,
   LabelRowSortMode,
+  // 追加(合計行 3A): 合計行(totalRow prop / renderCell の ctx / セルの種別)の公開型です。
+  TotalRowOptions,
+  TotalRowCellContext,
+  TotalRowCellKind,
+  // 追加(フィルハンドル 1A): フィルハンドル(fillHandle prop / getFillValue の params / 向き / 埋め方)の公開型です。
+  FillHandleOptions,
+  GridFillValueParams,
+  GridFillDirection,
+  GridFillKind,
   // 追加(row-drag ③): 行ドラッグ並び替え(enableRowDrag / isRowDraggable / onRowMove)の公開型です。
   RowDragContext,
   RowMoveParams,
@@ -87,6 +98,8 @@ export type {
   SpreadsheetGridSelectionStats,
   // 追加(F-async): グローバルフィルタの適用状態(slotContext.globalFilterStatus の型)。
   GlobalFilterStatus,
+  // 追加(選択範囲の集計): slotContext.selectionAggregates の型。
+  GridSelectionAggregates,
   // スロットコンテキストが公開する選択 / ソート / 列フィルター値の型族です。
   CellCoord,
   CellRange,
@@ -161,6 +174,8 @@ export type {
   GridDensity,
   // 追加(TH-DK-2): カラーテーマ('light' | 'dark' | 'auto')。
   GridTheme,
+  // 追加(audit RD-12): onUndoRedoStateChange の引数型。
+  UndoRedoState,
   // 追加(motion-0): モーションの有効化('auto' | 'on' | 'off')。
   GridMotion,
   // 追加(F-2): セル内検索のオプションと通知引数。

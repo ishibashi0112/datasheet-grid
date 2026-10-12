@@ -9,6 +9,7 @@
 import { gridActions, type GridUiAction } from '../model/gridActions';
 import type {
   GridColumn,
+  GridRowKey,
   GridSelection,
   GridUiState,
   RowModel,
@@ -16,7 +17,7 @@ import type {
 } from '../model/gridTypes.unbound';
 import { clamp } from '../logic/geometry';
 import { shouldIgnoreGridKeydown } from '../logic/domGuards';
-import { getCellValue, isCellEditable } from '../utils/permissions';
+import { getCellValue, isCellEditable, isViewCellEditable } from '../utils/permissions';
 import {
   applyClipboardMatrixToRows,
   buildClipboardCellEdits,
@@ -46,6 +47,9 @@ export type ClipboardControllerArgs<T extends object> = {
   uiState: GridUiState;
   readOnly: boolean;
   canEditCell: SpreadsheetGridProps<T>['canEditCell'];
+  // 追加(audit RD-4): 貼り付けで末尾へ追加した行の rowKey(canEditCell の context)を求めるための行キー解決。
+  //   未指定なら元 rows の index(rowKeyGetter 未指定時の既定と同じ)。
+  rowKeyGetter?: (row: T, sourceIndex: number) => GridRowKey;
   createRow?: () => T;
   createOverflowColumn?: (columnIndex: number) => GridColumn<T>;
   onRowsChange?: (nextRows: T[]) => void;
@@ -176,6 +180,7 @@ export const createClipboardController = <T extends object>(): ClipboardControll
       uiState,
       readOnly,
       canEditCell,
+      rowKeyGetter,
       createRow,
       createOverflowColumn,
       onRowsChange,
@@ -240,7 +245,7 @@ export const createClipboardController = <T extends object>(): ClipboardControll
         startFilteredRowIndex,
         startColIndexForEdits,
         (viewIndex, colIndex, row, column) =>
-          isCellEditable({ readOnly, canEditCell }, targetViewIndex(viewIndex), colIndex, row, column),
+          isViewCellEditable({ readOnly, canEditCell }, rowModel, targetViewIndex(viewIndex), colIndex, row, column),
       ).map((edit) => ({ ...edit, viewIndex: targetViewIndex(edit.viewIndex) }));
       if (edits.length > 0) {
         applyServerSideCellEdits(edits);
@@ -323,8 +328,19 @@ export const createClipboardController = <T extends object>(): ClipboardControll
       matrix,
       startFilteredRowIndex,
       startColIndex,
-      (originalRowIndex, colIndex, row, column) =>
-        isCellEditable({ readOnly, canEditCell }, originalRowIndex, colIndex, row, column),
+      // 変更(audit RD-4): canEditCell の rowIndex はビュー行 index(表示 / 編集開始と同じ)。末尾へ追加される行は
+      //   追加後の位置(view 行数以降)と、元 rows の index / rowKeyGetter の値を渡します。
+      (originalRowIndex, colIndex, row, column, filteredRowIndex) => {
+        const viewIndex = targetViewIndex(filteredRowIndex);
+        const rowKey =
+          viewIndex < viewRowCountForPaste
+            ? rowModel.getRowKey(viewIndex)
+            : (rowKeyGetter?.(row, originalRowIndex) ?? originalRowIndex);
+        return isCellEditable({ readOnly, canEditCell }, viewIndex, colIndex, row, column, {
+          sourceRowIndex: originalRowIndex,
+          rowKey: rowKey ?? originalRowIndex,
+        });
+      },
     );
 
     const endRow = clamp(
@@ -332,8 +348,10 @@ export const createClipboardController = <T extends object>(): ClipboardControll
       0,
       Math.max(Math.max(rowModel.getRowCount() - 1, 0), lastTargetViewIndex),
     );
+    // 修正(audit C-12): 選択範囲の幅は serverSide 経路と同じく最も長い行の幅にします(先頭行が他の行より短い TSV
+    //   (`a\nb\tc` 等)で、実際に貼り付けた範囲より狭くなっていた)。
     const endCol = clamp(
-      uiState.activeCell.col + Math.max((matrix[0]?.length ?? 1) - 1, 0),
+      uiState.activeCell.col + Math.max(maxPasteWidth - 1, 0),
       0,
       Math.max(
         Math.max(workingColumns.length - 1, 0),

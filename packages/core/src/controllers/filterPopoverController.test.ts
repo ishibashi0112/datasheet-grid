@@ -84,4 +84,42 @@ describe('createFilterPopoverController', () => {
     document.body.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }));
     expect(c.getSnapshot().state?.columnKey).toBe('name');
   });
+
+  // 追加(audit C-4): 開いたまま横スクロールでアンカーのヘッダーセルが外れても、左上へ飛ばない。
+  it('アンカーが DOM から外れたら同じ列のセルを探し直し、無ければ直前の位置のまま', () => {
+    const c = createFilterPopoverController<unknown>();
+    const root = document.createElement('div');
+    const makeCell = (rect: { top: number; left: number; width: number; height: number }) => {
+      const cell = document.createElement('div');
+      cell.dataset.ssgColKey = 'name';
+      cell.getBoundingClientRect = () =>
+        (cell.isConnected
+          ? { ...rect, right: rect.left + rect.width, bottom: rect.top + rect.height, x: rect.left, y: rect.top }
+          : { top: 0, left: 0, width: 0, height: 0, right: 0, bottom: 0, x: 0, y: 0 }) as DOMRect;
+      return cell;
+    };
+    const first = makeCell({ top: 100, left: 300, width: 120, height: 32 });
+    root.appendChild(first);
+    document.body.appendChild(root);
+    c.update({ visibleColumns: columns, columnFilterValues: {}, enableColumnFilter: true, gridRootRef: { current: root } });
+    c.open(columns[0]);
+    const opened = c.getSnapshot().layout;
+    expect(opened).not.toBeNull();
+    expect(opened?.top).toBeGreaterThan(100);
+
+    // 横の仮想化でセルが外れる → scroll で再配置しても位置を保つ(閉じない)。
+    first.remove();
+    window.dispatchEvent(new Event('scroll'));
+    expect(c.getSnapshot().layout).toEqual(opened);
+    expect(c.getSnapshot().state?.columnKey).toBe('name');
+
+    // 同じ列のセルが別の位置で描かれ直したら、そちらへ付いていく。
+    const second = makeCell({ top: 100, left: 500, width: 120, height: 32 });
+    root.appendChild(second);
+    window.dispatchEvent(new Event('scroll'));
+    const moved = c.getSnapshot().layout;
+    expect(moved?.top).toBe(opened?.top);
+    expect(moved?.left).not.toBe(opened?.left);
+    c.dispose();
+  });
 });

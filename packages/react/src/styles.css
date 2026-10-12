@@ -59,6 +59,10 @@
     --ssg-label-row-bg: #eef2f7;
     --ssg-label-row-text: #1e293b;
     --ssg-label-row-accent: var(--ssg-accent);
+    /* 追加(合計行 3A): 合計行の背景・文字色・上辺の区切り線。 */
+    --ssg-total-row-bg: #f2f5fa;
+    --ssg-total-row-text: var(--ssg-cell-text);
+    --ssg-total-row-border: var(--ssg-divider);
     --ssg-checkbox-border: #94a3b8;
     --ssg-checkbox-bg: #ffffff;
     --ssg-checkbox-checked-bg: var(--ssg-accent);
@@ -135,6 +139,10 @@
     /* 追加(F-2): セル内検索のヒット(通常 / カレント)。 */
     --ssg-find-mark-bg: rgba(245, 158, 11, 0.4);
     --ssg-find-mark-current-bg: rgba(52, 97, 201, 0.3);
+    /* 追加(フィルハンドル 1A): ドラッグ中の「埋める範囲」の点線(文字色に合わせる = テーマに追従)/ ハンドルの縁取り
+       (セルの地色で浮かせる)。 */
+    --ssg-fill-line: var(--ssg-cell-text);
+    --ssg-fill-handle-ring: var(--ssg-cell-bg);
     /* 追加(F-3): 条件付き書式。データバーはアクセントの淡色、カラースケールは dataviz の参照パレット(sequential は
        1 色相の淡 → 濃で明るい段に制限 = 文字色を変えない、diverging は 2 色相 + 中立グレー)。チップは状態色(アイコン +
        ラベルを伴う)。 */
@@ -265,6 +273,8 @@
     --ssg-label-row-bg: #24272e;
     --ssg-label-row-text: #e6e7ea;
     --ssg-label-row-accent: var(--ssg-accent);
+    /* 追加(合計行 3A): 合計行の背景(文字色・区切り線は既定の var() 参照で追従)。 */
+    --ssg-total-row-bg: #222429;
     --ssg-checkbox-border: #5c5f66;
     --ssg-checkbox-bg: #1a1b1e;
     --ssg-checkbox-checked-mark: #141517;
@@ -532,10 +542,12 @@
   }
 
   /* ── 追加(label-row ②): ラベル行(見出し / 区切り行) ── */
-  /* 行コンテナ = 帯(ペイン幅いっぱいの背景 + 下罫線)。contain: paint は外し、中身の sticky を
-     スクロールコンテナ基準で効かせます。 */
+  /* 行コンテナ = 帯(ペイン幅いっぱいの背景 + 下罫線)。
+     変更(audit V-08): ここにあった `contain: layout style` は後方の `.ssg-body-row`(同特異度・後勝ち)の
+     `contain: layout style paint` に上書きされて効いていなかったため削除しました(実際の描画は従来どおり
+     paint containment あり)。paint containment はスクロールコンテナを作らないため、中身の sticky は
+     共有スクロールコンテナ基準で効き、帯の中に収まる中身は切れません。 */
   .ssg-label-row {
-    contain: layout style;
     background-color: var(--ssg-label-row-bg);
     border-bottom: 1px solid var(--ssg-divider);
   }
@@ -596,6 +608,48 @@
   .ssg-label-row--sticky {
     pointer-events: auto;
     box-shadow: 0 1px 0 var(--ssg-divider);
+  }
+
+  /* ── 追加(合計行 3A): 表の下端に固定する合計行(totalRow) ── */
+  /* 各ペインのボックスの下端(本体ぶんの空きの直後)に置く sticky 行です。縦スクロール中はスクロールコンテナの
+     下端に留まり、行が少ないときは最後の行の直後に来ます。z-index はヘッダー行と同じ 6(本体の行 / 選択枠 /
+     エディタより前面)。上辺の区切り線は box-shadow(セルの境界と重ならない)。 */
+  .ssg-total-row {
+    position: sticky;
+    bottom: 0;
+    z-index: 6;
+    background-color: var(--ssg-total-row-bg);
+    box-shadow: 0 -1px 0 var(--ssg-total-row-border);
+  }
+  .ssg-total-cell {
+    background-color: var(--ssg-total-row-bg);
+    color: var(--ssg-total-row-text);
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+  }
+  .ssg-total-row-header {
+    background-color: var(--ssg-total-row-bg);
+    font-weight: 600;
+    white-space: nowrap;
+    overflow: hidden;
+  }
+  /* 合計以外の集計(平均 / 最小 / 最大 / 個数)の種類。値の前に小さく出します。 */
+  /* 追加(見直し): 値が列幅に収まらないときは末尾を省略記号で切ります(寄せに関わらず。全文はツールチップ)。 */
+  .ssg-total-value {
+    min-width: 0;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .ssg-total-caption {
+    margin-right: 6px;
+    font-size: 0.85em;
+    font-weight: 500;
+    color: var(--ssg-glyph);
+  }
+  .ssg-total-label {
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 
   /* ── 展開行(detail / Master-Detail) ── */
@@ -1221,12 +1275,111 @@
     animation: none;
   }
 
+  /* ── 追加(フィルハンドル 1A): 選択範囲の右下の四角 / ドラッグ中の点線 / 埋めたあとのボタン ──
+     座標(left / top)はインライン。ハンドルは角を中心に置き(margin で半分戻す)、押しやすいよう ::before で
+     当たり判定を少しだけ広げます(隣のセルのクリック / ダブルクリックを奪わないよう、マウスは見えている四角 ± 2px
+     = 12px 四方・タッチは 24px 四方。::before の基準は縁取り 1.5px の内側なので inset はその 1.5px を足した値。
+     ダブルクリックは見えている四角 ± 2px のときだけ = fillHandleController)。
+     アクティブセル枠(z 4)の上、列ヘッダー / 合計行(z 6)の下。 */
+  .ssg-fill-handle {
+    width: 8px;
+    height: 8px;
+    margin-left: -4px;
+    margin-top: -4px;
+    box-sizing: border-box;
+    border: 1.5px solid var(--ssg-fill-handle-ring);
+    background-color: var(--ssg-accent);
+    cursor: crosshair;
+    touch-action: none;
+    z-index: 5;
+    transition:
+      left var(--ssg-motion-fast) var(--ssg-motion-ease),
+      top var(--ssg-motion-fast) var(--ssg-motion-ease);
+  }
+  .ssg-fill-handle::before {
+    content: '';
+    position: absolute;
+    inset: -3.5px;
+  }
+  @media (pointer: coarse) {
+    .ssg-fill-handle::before {
+      inset: -9.5px;
+    }
+  }
+  .ssg-fill-preview {
+    box-sizing: border-box;
+    border: 1.5px dashed var(--ssg-fill-line);
+    pointer-events: none;
+    z-index: 4;
+  }
+  /* ドラッグ中はどこでも十字カーソル(セル / ヘッダーのカーソル指定より優先)。 */
+  .ssg-root--filling,
+  .ssg-root--filling * {
+    cursor: crosshair !important;
+  }
+  .ssg-fill-options {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 3px;
+    width: 36px;
+    height: 22px;
+    padding: 0;
+    box-sizing: border-box;
+    border: 1px solid var(--ssg-panel-border);
+    border-radius: 6px;
+    background-color: var(--ssg-panel-bg);
+    color: var(--ssg-panel-text);
+    box-shadow: var(--ssg-overlay-chip-shadow);
+    cursor: pointer;
+    z-index: 5;
+  }
+  .ssg-fill-options-caret {
+    font-size: 9px;
+    line-height: 1;
+  }
+  .ssg-fill-options:hover,
+  .ssg-fill-options--open {
+    border-color: var(--ssg-accent);
+    color: var(--ssg-accent);
+  }
+  .ssg-fill-options:focus-visible {
+    outline: 2px solid var(--ssg-accent);
+    outline-offset: 1px;
+  }
+  .ssg-fill-menu {
+    min-width: 168px;
+  }
+  /* 開いたときに選ばれている項目へフォーカスを置くため、枠はアクセント色の内側線にします(既定の太い黒枠を出さない)。 */
+  .ssg-fill-menu .ssg-menu-item:focus-visible {
+    outline: 2px solid var(--ssg-accent);
+    outline-offset: -2px;
+  }
+  .ssg-fill-menu-check {
+    color: var(--ssg-panel-accent);
+    font-size: 12px;
+    text-align: center;
+  }
+  /* .ssg-tooltip(後方で定義)より強く指定します(折り返さない・ポインタに遅れず付いてくる)。 */
+  .ssg-tooltip.ssg-fill-tooltip {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    font-variant-numeric: tabular-nums;
+    transition: none;
+  }
+
   /* 追加(motion-1 / M-1): スクロール中(scroll-space 仮想化で描画ウィンドウの基準が動く。scrollSyncController が
      付ける)とポインタで範囲選択をドラッグ中(root の --selecting)は瞬時に追従させます(滑らせると漂って見える)。 */
   .ssg-scroll-container--scrolling .ssg-active-cell-overlay,
   .ssg-scroll-container--scrolling .ssg-selection-overlay,
+  .ssg-scroll-container--scrolling .ssg-fill-handle,
   .ssg-root--selecting .ssg-active-cell-overlay,
-  .ssg-root--selecting .ssg-selection-overlay {
+  .ssg-root--selecting .ssg-selection-overlay,
+  .ssg-root--selecting .ssg-fill-handle,
+  .ssg-root--filling .ssg-active-cell-overlay,
+  .ssg-root--filling .ssg-selection-overlay,
+  .ssg-root--filling .ssg-fill-handle {
     transition: none;
   }
 
@@ -1453,6 +1606,46 @@
     font-size: 11.5px;
     font-variant-numeric: tabular-nums;
     white-space: nowrap;
+  }
+  /* 追加(選択範囲の集計): 平均 / データの個数 / 合計。
+     変更(見直し): バーの空きにだけ置きます(選択のたびにバーが折り返して高さが変わらないように)。外側は幅 0 から
+     空きを埋める要素(折り返しの判定では幅 0 = 既存のグループは折り返さない)、margin-left で .ssg-bar-container の
+     gap(6px)を打ち消し、既存のグループの位置を変えません。中身は絶対配置(行の高さに影響しない)で、入りきらない
+     ときは端から切れます。 */
+  .ssg-bar-sep {
+    flex: none;
+    width: 1px;
+    height: 12px;
+    margin: 0 2px;
+    background-color: var(--ssg-divider);
+  }
+  .ssg-bar-aggregates {
+    position: relative;
+    flex: 1 1 0;
+    min-width: 0;
+    align-self: stretch;
+    margin-left: -6px;
+  }
+  .ssg-bar-aggregates-inner {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 4px;
+    overflow: hidden;
+    white-space: nowrap;
+  }
+  .ssg-bar-aggregates--trailing .ssg-bar-aggregates-inner {
+    justify-content: flex-start;
+    padding-left: 6px;
+  }
+  .ssg-bar-aggregate-value {
+    margin-left: 0.25em;
+    font-weight: 600;
+  }
+  .ssg-bar-chip--muted {
+    color: var(--ssg-glyph);
   }
   .ssg-bar-chip--emphasis {
     background-color: var(--ssg-header-hover-bg);
@@ -3106,7 +3299,10 @@
   .ssg-body-row--checked {
     background-color: var(--ssg-row-selected-bg);
   }
-  .ssg-body-row--checked .ssg-body-cell:not(.ssg-body-cell--row-hovered) {
+  /* 修正(audit V-07): 特異度を (0,3,0) → (0,2,0) に下げ(:not を :where で包む)、公開契約の連結セレクタ
+     `.ssg-body-cell.my-class`(0,2,0。利用側 CSS は後から読み込まれる)がチェック行でも勝つようにします。
+     ライブラリ内の他の背景(検証 NG の背景 (0,1,0) など)との勝ち負けは従来どおりです。 */
+  .ssg-body-row--checked .ssg-body-cell:where(:not(.ssg-body-cell--row-hovered)) {
     background-color: transparent;
   }
 
@@ -3150,6 +3346,13 @@
     pointer-events: none;
   }
   .ssg-header-cell:hover .ssg-header-actions {
+    opacity: 1;
+    pointer-events: auto;
+    background-color: var(--ssg-header-hover-bg);
+  }
+  /* 追加(audit V-09): Tab で ⋮ ボタンへ移ったとき(キーボードのフォーカス表示中)も見えるようにします。
+     マウスで押したあとのフォーカスでは出しっぱなしにしないよう :focus-visible に限ります。 */
+  .ssg-header-actions:has(:focus-visible) {
     opacity: 1;
     pointer-events: auto;
     background-color: var(--ssg-header-hover-bg);

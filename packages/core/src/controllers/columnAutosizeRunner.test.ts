@@ -127,4 +127,25 @@ describe('createAutoSizeOnDataTrigger', () => {
     onChange.update({ mode: 'onDataChange', isServerSide: true, rows: [{ id: 4 }], visibleColumns: columns, runAutosize });
     expect(runAutosize).toHaveBeenCalledTimes(3);
   });
+
+  // 追加(audit C-6): StrictMode(update → dispose → 同じ args で update)で 'onMount' の計測が打ち切られても、
+  //   再マウントの update で計測し直す。走り切った後の dispose では計測し直さない。
+  it("'onMount' の計測が走り切る前に dispose されたら、同じ args の update で計測し直す", async () => {
+    let resolveRun: () => void = () => {};
+    const runAutosize = vi.fn(() => new Promise<void>((resolve) => { resolveRun = resolve; }));
+    const trigger = createAutoSizeOnDataTrigger<Row>();
+    const args = { mode: 'onMount' as const, isServerSide: false, rows: [{ id: 1 }], visibleColumns: columns, runAutosize };
+    trigger.update(args);
+    expect(runAutosize).toHaveBeenCalledTimes(1);
+    trigger.dispose();
+    trigger.update(args);
+    expect(runAutosize).toHaveBeenCalledTimes(2);
+    // 2 回目が走り切った後は、dispose → update でも計測しない(onMount は一度きり)。
+    resolveRun();
+    await Promise.resolve();
+    await Promise.resolve();
+    trigger.dispose();
+    trigger.update(args);
+    expect(runAutosize).toHaveBeenCalledTimes(2);
+  });
 });

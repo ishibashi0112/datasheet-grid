@@ -641,6 +641,8 @@ function App() {
   //   (showTopBarCounts / showBottomBarCounts の確認用)。
   const [showTopBarCounts, setShowTopBarCounts] = useState(true);
   const [showBottomBarCounts, setShowBottomBarCounts] = useState(true);
+  // 追加(選択範囲の集計デモ): 2 セル以上を選んだときの平均 / データの個数 / 合計の表示有無です。
+  const [showSelectionAggregates, setShowSelectionAggregates] = useState(true);
   // 追加(①デモ): 列リサイズ可否のグリッド既定(enableColumnResize)を切り替えます。
   //   ON でも qty(数量)列は column.resizable:false のため常に不可(=個別上書きの確認)。
   const [resizeEnabled, setResizeEnabled] = useState(true);
@@ -661,6 +663,12 @@ function App() {
   //   縦スクロール固定(sticky)は別トグルで確認できます。
   const [labelRowEnabled, setLabelRowEnabled] = useState(false);
   const [labelRowSticky, setLabelRowSticky] = useState(true);
+  // 追加(合計行デモ): 表の下端に固定する合計行(totalRow)の ON/OFF です。ON(clientSide)で品名 = 個数 /
+  //   数量・金額 = 合計の aggFunc を列へ付け、フィルター後の行で集計します。serverSide では無効。
+  const [totalRowEnabled, setTotalRowEnabled] = useState(false);
+  // 追加(フィルハンドルデモ): 選択範囲の右下の四角を引いて埋めるフィルハンドル(fillHandle)の ON/OFF です。
+  //   clientSide は onRowsChange、serverSide は dataSource.updateRows(モック DB)へ書きます。
+  const [fillHandleEnabled, setFillHandleEnabled] = useState(false);
   // 追加(scrollHint デモ): スクロール位置インジケーター(バブル + ルーラー)のモードです。
   //   1M 行での現在位置把握が主目的のため、デモでは既定 ON にしています(ライブラリ既定は OFF)。
   //   hintColumn='partNo' で「行番号 + 品番」を表示します。
@@ -819,8 +827,12 @@ function App() {
   // 追加(grouping デモ): グリッドへ渡す列です。トグル ON(clientSide)のときだけ
   //   単位 → 状態 の rowGroup と 数量/金額 の sum 集計を列定義へ付与します(列 state 自体は
   //   変えず表示用に導出)。OFF 時は DnD 等で state に流入したフラグを外して素の列へ戻します。
+  //   変更(合計行デモ): 合計行 ON(clientSide)のときは 品名 = 個数 / 数量・金額 = 合計の aggFunc も付けます
+  //   (グルーピング中はグループ行にも同じ集計が出ます)。
   const gridColumns = useMemo(() => {
-    if (!rowGroupingEnabled || mode === 'server') {
+    const grouping = rowGroupingEnabled && mode !== 'server';
+    const totals = totalRowEnabled && mode !== 'server';
+    if (!grouping && !totals) {
       return columns.some((column) => column.rowGroup || column.aggFunc)
         ? columns.map((column) => ({
             ...column,
@@ -829,14 +841,17 @@ function App() {
           }))
         : columns;
     }
-    return columns.map((column) =>
-      column.key === 'status' || column.key === 'unit'
-        ? { ...column, rowGroup: true }
-        : column.key === 'qty' || column.key === 'amount'
-          ? { ...column, aggFunc: 'sum' as const }
-          : column,
-    );
-  }, [columns, rowGroupingEnabled, mode]);
+    return columns.map((column) => {
+      const rowGroup = grouping && (column.key === 'status' || column.key === 'unit') ? true : undefined;
+      const aggFunc =
+        column.key === 'qty' || column.key === 'amount'
+          ? ('sum' as const)
+          : totals && column.key === 'partName'
+            ? ('count' as const)
+            : undefined;
+      return { ...column, rowGroup, aggFunc };
+    });
+  }, [columns, rowGroupingEnabled, totalRowEnabled, mode]);
 
   return (
     <main
@@ -998,6 +1013,17 @@ function App() {
             )}
           >
             {`└ 件数(Rows/Col): ${showBottomBarCounts ? '表示' : '非表示'}`}
+          </button>
+          <button
+            type="button"
+            disabled={!showBottomBar}
+            onClick={() => setShowSelectionAggregates((v) => !v)}
+            style={modeButtonStyle(
+              showBottomBar && showSelectionAggregates,
+              !showBottomBar,
+            )}
+          >
+            {`└ 選択範囲の集計: ${showSelectionAggregates ? '表示' : '非表示'}`}
           </button>
           <button
             type="button"
@@ -1274,6 +1300,23 @@ function App() {
           >
             ラベル行の縦固定: {labelRowSticky ? 'ON' : 'OFF'}
           </button>
+          {/* 追加(合計行デモ): 表の下端に固定する合計行(totalRow)。serverSide では無効。 */}
+          <button
+            type="button"
+            onClick={() => setTotalRowEnabled((v) => !v)}
+            disabled={mode === 'server'}
+            style={modeButtonStyle(totalRowEnabled, mode === 'server')}
+          >
+            合計行: {totalRowEnabled ? 'ON' : 'OFF'}
+          </button>
+          {/* 追加(フィルハンドルデモ): 選択範囲の右下の四角を引いて連続データ / コピーで埋める(fillHandle)。 */}
+          <button
+            type="button"
+            onClick={() => setFillHandleEnabled((v) => !v)}
+            style={modeButtonStyle(fillHandleEnabled)}
+          >
+            フィルハンドル: {fillHandleEnabled ? 'ON' : 'OFF'}
+          </button>
           {/* 追加(行選択デモ): チェックボックス行選択の ON/OFF・モード切替・全選択/解除・選択キー確認。 */}
           <button
             type="button"
@@ -1456,6 +1499,10 @@ function App() {
             `[demo] onRowMove: ${String(params.rowKey)} を ${params.fromIndex} → ${params.toIndex} へ移動`,
           );
         }}
+        // 追加(合計行デモ): 表の下端に固定する合計行(列の aggFunc で集計)。
+        totalRow={totalRowEnabled && mode !== 'server'}
+        // 追加(フィルハンドルデモ): 選択範囲の右下の四角を引いて埋める。
+        fillHandle={fillHandleEnabled}
         // 追加(label-row デモ): ラベル行。isLabel の行を見出しとして全幅の帯で描き、React で装飾します
         //   (節番号バッジ + 見出し + セクション内のデータ行数)。
         labelRow={
@@ -1670,6 +1717,7 @@ function App() {
         showTopBarFilter={showTopBarFilter}
         showTopBarCounts={showTopBarCounts}
         showBottomBarCounts={showBottomBarCounts}
+        showSelectionAggregates={showSelectionAggregates}
         // 追加(FM-2 デモ): 上の「フィルターチップバー」トグルと連動します(既定 OFF)。
         showFilterChipBar={showFilterChipBar}
         // 追加(条件付きスタイル デモ): 「保留」行を薄オレンジでハイライトします(getRowClassName)。

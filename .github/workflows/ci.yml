@@ -18,7 +18,7 @@ jobs:
 
       - uses: pnpm/action-setup@v4
         with:
-          # package.json の devEngines.packageManager と揃える
+          # package.json の packageManager(pnpm@11.12.0)と揃える(devEngines は 2026-07-18 に削除済み)
           version: 11.12.0
 
       - uses: actions/setup-node@v4
@@ -39,6 +39,10 @@ jobs:
 
       - name: Build library
         run: pnpm run build:lib
+
+      # 追加(audit P-6): CLAUDE.md のゲート表にあるデモ app のビルドも CI で確認する(website は対象外)。
+      - name: Build demo app
+        run: pnpm exec vp build
 
       - name: Lint
         run: pnpm lint

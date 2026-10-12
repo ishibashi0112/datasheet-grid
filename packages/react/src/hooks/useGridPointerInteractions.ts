@@ -40,6 +40,8 @@ type UseGridPointerInteractionsArgs<T> = Omit<
 export const useGridPointerInteractions = <T,>(args: UseGridPointerInteractionsArgs<T>) => {
   const controller = useController(() => createPointerInteractionsController<T>(), args);
   return {
+    // 追加(フィルハンドル 1A): ヒットテスト(フィルハンドルのドラッグが使う)。
+    getCellCoordFromClientPoint: controller.getCellCoordFromClientPoint,
     updateSelectionFromPointer: controller.updateSelectionFromPointer,
     handleCellPointerDown: controller.handleCellPointerDown,
     handleCellDoubleClick: controller.handleCellDoubleClick,

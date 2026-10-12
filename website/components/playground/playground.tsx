@@ -33,6 +33,10 @@ type Row = {
 const CATEGORIES = ['家電', '食品', '衣料', '書籍', '雑貨'];
 const STATUSES = ['受注', '出荷準備', '出荷済', 'キャンセル'];
 
+// 単価の表示整形。合計行 ON のときは平均の小数を 1 桁に丸める版へ差し替える(単価は整数なのでデータ行の見た目は同じ)。
+const priceFormatter = numberFormatter<Row>();
+const priceFormatterForTotal = numberFormatter<Row>({ maximumFractionDigits: 1 });
+
 // 初期の列定義。PlaygroundGrid では state に持ち onColumnsChange で controlled にする(列 D&D / 固定切替 / 表示切替 /
 //   列チューザーの並べ替えは controlled columns のときだけ有効 = ヘッダー右端の grip が出る)。
 const initialColumns: GridColumn<Row>[] = [
@@ -69,7 +73,7 @@ const initialColumns: GridColumn<Row>[] = [
     width: 120,
     align: 'right',
     filterType: 'number',
-    valueFormatter: numberFormatter(),
+    valueFormatter: priceFormatter,
     editable: true,
     editor: { type: 'number', min: 0 },
   },
@@ -151,6 +155,8 @@ type Settings = {
   rowCount: number;
   showTopBar: boolean;
   showBottomBar: boolean;
+  // 2 セル以上を選んだときの平均 / データの個数 / 合計(既定 true)。
+  showSelectionAggregates: boolean;
   showFilterChipBar: boolean;
   enableSorting: boolean;
   enableColumnFilter: boolean;
@@ -197,6 +203,10 @@ type Settings = {
   find: boolean;
   // 条件付き書式。ON で数量にデータバー、単価にカラースケール、状態に状態チップを付ける。
   conditionalFormat: boolean;
+  // 合計行。ON で表の下端に合計行を固定し、商品名 = 個数 / 数量 = 合計 / 単価 = 平均を出す(列の aggFunc)。
+  totalRow: boolean;
+  // フィルハンドル。ON で選択範囲の右下の四角を引いて連続データ / コピーで埋める(readOnly では出ない)。
+  fillHandle: boolean;
 };
 
 const DEFAULTS: Settings = {
@@ -211,6 +221,7 @@ const DEFAULTS: Settings = {
   rowCount: 1_000,
   showTopBar: true,
   showBottomBar: true,
+  showSelectionAggregates: true,
   showFilterChipBar: false,
   enableSorting: true,
   enableColumnFilter: true,
@@ -241,6 +252,8 @@ const DEFAULTS: Settings = {
   imeDirectInput: false,
   find: false,
   conditionalFormat: false,
+  totalRow: false,
+  fillHandle: false,
 };
 
 function buildSnippet(s: Settings): string {
@@ -262,6 +275,8 @@ function buildSnippet(s: Settings): string {
     ...(s.highlightChanges ? ['  highlightChanges'] : []),
     `  showTopBar={${s.showTopBar}}`,
     `  showBottomBar={${s.showBottomBar}}`,
+    // showSelectionAggregates は既定 true のため、OFF のときだけ載せる。
+    ...(s.showSelectionAggregates ? [] : ['  showSelectionAggregates={false}']),
     `  showFilterChipBar={${s.showFilterChipBar}}`,
     `  enableSorting={${s.enableSorting}}`,
     `  enableColumnFilter={${s.enableColumnFilter}}`,
@@ -275,6 +290,7 @@ function buildSnippet(s: Settings): string {
     `  showValidationMarks={${s.showValidationMarks}}`,
     ...(s.imeDirectInput ? ['  imeDirectInput'] : []),
     ...(s.find ? ['  find'] : []),
+    ...(s.fillHandle ? ['  fillHandle'] : []),
     `  enableRowSelection={${s.enableRowSelection}}`,
   ];
   if (s.enableRowSelection) {
@@ -343,6 +359,13 @@ function buildSnippet(s: Settings): string {
       '  }}',
     );
   }
+  // totalRow は既定 OFF(undefined)のため、ON のときだけスニペットへ載せる。
+  if (s.totalRow) {
+    lines.push(
+      "  // columns: 商品名 aggFunc: 'count' / 数量 aggFunc: 'sum' / 単価 aggFunc: 'avg'",
+      '  totalRow',
+    );
+  }
   lines.push('/>');
   return lines.join('\n');
 }
@@ -391,6 +414,9 @@ function PlaygroundGrid({ settings }: { settings: Settings }) {
   const gridColumns = useMemo(
     () =>
       columns.map((column): GridColumn<Row> => {
+        if (column.key === 'name') {
+          return { ...column, aggFunc: settings.totalRow ? 'count' : undefined };
+        }
         if (column.key === 'status') {
           return {
             ...column,
@@ -402,6 +428,8 @@ function PlaygroundGrid({ settings }: { settings: Settings }) {
         if (column.key === 'price') {
           return {
             ...column,
+            aggFunc: settings.totalRow ? 'avg' : undefined,
+            valueFormatter: settings.totalRow ? priceFormatterForTotal : priceFormatter,
             conditionalFormat: settings.conditionalFormat ? { colorScale: {} } : undefined,
             cellNote: settings.cellNote
               ? ({ value }) =>
@@ -414,6 +442,7 @@ function PlaygroundGrid({ settings }: { settings: Settings }) {
         if (column.key === 'qty') {
           return {
             ...column,
+            aggFunc: settings.totalRow ? 'sum' : undefined,
             conditionalFormat: settings.conditionalFormat ? { dataBar: {} } : undefined,
             cellNote: settings.cellNote
               ? ({ value }) => (typeof value === 'number' && value < 10 ? '在庫が少なくなっています。' : undefined)
@@ -422,7 +451,7 @@ function PlaygroundGrid({ settings }: { settings: Settings }) {
         }
         return column;
       }),
-    [columns, settings.cellNote, settings.conditionalFormat],
+    [columns, settings.cellNote, settings.conditionalFormat, settings.totalRow],
   );
   // セル操作の通知のログ(新しい順に 5 件)。
   const [eventLog, setEventLog] = useState<string[]>([]);
@@ -504,6 +533,7 @@ function PlaygroundGrid({ settings }: { settings: Settings }) {
         highlightChanges={settings.highlightChanges}
         showTopBar={settings.showTopBar}
         showBottomBar={settings.showBottomBar}
+        showSelectionAggregates={settings.showSelectionAggregates}
         showFilterChipBar={settings.showFilterChipBar}
         enableSorting={settings.enableSorting}
         enableColumnFilter={settings.enableColumnFilter}
@@ -517,6 +547,7 @@ function PlaygroundGrid({ settings }: { settings: Settings }) {
         showValidationMarks={settings.showValidationMarks}
         imeDirectInput={settings.imeDirectInput}
         find={settings.find}
+        fillHandle={settings.fillHandle}
         enableRowSelection={settings.enableRowSelection}
         rowSelectionMode={settings.rowSelectionMode}
         enableSelectAllRows={settings.enableRowSelection && settings.enableSelectAllRows}
@@ -532,6 +563,7 @@ function PlaygroundGrid({ settings }: { settings: Settings }) {
         manualFiltering={settings.manualFiltering}
         manualSorting={settings.manualSorting}
         getFilterOptions={settings.asyncFilterOptions ? getFilterOptions : undefined}
+        totalRow={settings.totalRow}
         labelRow={
           settings.labelRow
             ? {
@@ -702,6 +734,11 @@ export function Playground() {
         <Group title="バー表示">
           <Toggle label="showTopBar" checked={settings.showTopBar} onChange={(v) => set('showTopBar', v)} />
           <Toggle label="showBottomBar" checked={settings.showBottomBar} onChange={(v) => set('showBottomBar', v)} />
+          <Toggle
+            label="showSelectionAggregates(選択範囲の平均・個数・合計)"
+            checked={settings.showSelectionAggregates}
+            onChange={(v) => set('showSelectionAggregates', v)}
+          />
           <Toggle label="showFilterChipBar" checked={settings.showFilterChipBar} onChange={(v) => set('showFilterChipBar', v)} />
         </Group>
 
@@ -748,6 +785,7 @@ export function Playground() {
           <label className={settings.labelRow ? '' : 'opacity-50'}>
             <Toggle label="labelRow.sticky" checked={settings.labelRowSticky} onChange={(v) => set('labelRowSticky', v)} />
           </label>
+          <Toggle label="totalRow(合計行)" checked={settings.totalRow} onChange={(v) => set('totalRow', v)} />
           <Toggle label="scrollHint" checked={settings.scrollHint} onChange={(v) => set('scrollHint', v)} />
           <label className="flex items-center justify-between gap-2 text-sm">
             <code className="text-xs">scrollHint.minRows</code>
@@ -770,6 +808,7 @@ export function Playground() {
           <Toggle label="showValidationMarks" checked={settings.showValidationMarks} onChange={(v) => set('showValidationMarks', v)} />
           <Toggle label="imeDirectInput" checked={settings.imeDirectInput} onChange={(v) => set('imeDirectInput', v)} />
           <Toggle label="find(Ctrl+F)" checked={settings.find} onChange={(v) => set('find', v)} />
+          <Toggle label="fillHandle(フィルハンドル)" checked={settings.fillHandle} onChange={(v) => set('fillHandle', v)} />
         </Group>
 
         <Group title="行選択(チェックボックス)">

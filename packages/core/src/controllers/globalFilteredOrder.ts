@@ -115,9 +115,10 @@ export const createGlobalFilteredOrderRunner = <T,>(): GlobalFilteredOrderRunner
     const buffer = new Int32Array(length);
     let count = 0;
     let cancelled = false;
-    cancelCurrent = () => {
+    const cancel = () => {
       cancelled = true;
     };
+    cancelCurrent = cancel;
     void runChunked(
       length,
       (pos) => {
@@ -137,6 +138,10 @@ export const createGlobalFilteredOrderRunner = <T,>(): GlobalFilteredOrderRunner
         },
       },
     ).then((completed) => {
+      // 追加(audit C-11): 走り切った run は「走っている run」から外します(dispose で current を忘れる判定に使う)。
+      if (cancelCurrent === cancel) {
+        cancelCurrent = null;
+      }
       if (!completed) {
         return;
       }
@@ -168,9 +173,15 @@ export const createGlobalFilteredOrderRunner = <T,>(): GlobalFilteredOrderRunner
     update,
     subscribe: store.subscribe,
     getSnapshot: store.getSnapshot,
+    // 修正(audit C-11): 走っている run を中断したときは前回の args も忘れます。StrictMode の擬似アンマウント →
+    //   再マウントで同じ args の update が来たとき、keyChanged=false で再開されず進捗が固着するのを防ぎます。
+    //   走り切った後の dispose では args を保持します(同じ args で計算し直さない)。
     dispose: () => {
-      cancelCurrent?.();
-      cancelCurrent = null;
+      if (cancelCurrent !== null) {
+        cancelCurrent();
+        cancelCurrent = null;
+        current = null;
+      }
     },
   };
 };

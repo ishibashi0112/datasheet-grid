@@ -1,6 +1,6 @@
 // 追加(clear): logic/clearCells.ts(選択セルの値クリア)の単体テストです。
 import { describe, it, expect } from 'vitest';
-import { clearCellsInSelection, resolveClearTarget } from './clearCells';
+import { buildClearCellEdits, clearCellsInSelection, resolveClearTarget } from './clearCells';
 import type { GridColumn } from '../model/gridTypes.unbound';
 
 type Row = { id: number; name: string; qty: number | string | null };
@@ -141,6 +141,23 @@ describe('clearCellsInSelection', () => {
     expect(result.nextRows).toBe(rows);
   });
 
+  // 追加(audit L-18): number 列(クリア値 null)の未設定(undefined)セルは変更なし。
+  it('クリア値が null の列で未設定(undefined)のセルは変更なしとみなす', () => {
+    const numberColumns: GridColumn<Row>[] = [{ key: 'qty', title: 'Qty', width: 100, editor: { type: 'number' } }];
+    const rows = [{ id: 1, name: 'a' } as Row];
+    const result = clearCellsInSelection({
+      rows,
+      resolveSourceIndex: identity,
+      columns: numberColumns,
+      selection: null,
+      activeCell: { row: 0, col: 0 },
+      viewRowCount: 1,
+      canWriteCell: allowAll,
+    });
+    expect(result.changed).toBe(false);
+    expect(result.nextRows).toBe(rows);
+  });
+
   it('view→source 解決を通してソート/フィルター後のビュー座標で正しい行をクリアする', () => {
     const rows = makeRows();
     // ビューは逆順(view 0 = source 2)という想定です。
@@ -173,5 +190,38 @@ describe('clearCellsInSelection', () => {
     expect(nextRows[0].name).toBe('');
     expect(nextRows[1]).toBe(rows[1]);
     expect(nextRows[2]).toBe(rows[2]);
+  });
+});
+
+// 追加(audit L-18 補足): serverSide の Delete(buildClearCellEdits)も clientSide と同じ規則で空セルを飛ばします。
+describe('buildClearCellEdits', () => {
+  const numberColumns: GridColumn<Row>[] = [
+    { key: 'qty', title: 'Qty', width: 100, editor: { type: 'number' } },
+  ];
+
+  it('クリア値が null の列で未設定(undefined)/ null のセルは書き戻しを作らない', () => {
+    const rows = [{ id: 1, name: 'a' } as Row, { id: 2, name: 'b', qty: null }];
+    const edits = buildClearCellEdits({
+      getRow: (viewIndex) => rows[viewIndex],
+      columns: numberColumns,
+      selection: { type: 'cell', range: { start: { row: 0, col: 0 }, end: { row: 1, col: 0 } } },
+      activeCell: { row: 0, col: 0 },
+      viewRowCount: rows.length,
+      canWriteCell: allowAll,
+    });
+    expect(edits).toEqual([]);
+  });
+
+  it('値のあるセルはクリア値で書き戻す', () => {
+    const rows = [{ id: 1, name: 'a', qty: 5 }];
+    const edits = buildClearCellEdits({
+      getRow: (viewIndex) => rows[viewIndex],
+      columns: numberColumns,
+      selection: null,
+      activeCell: { row: 0, col: 0 },
+      viewRowCount: rows.length,
+      canWriteCell: allowAll,
+    });
+    expect(edits).toEqual([{ viewIndex: 0, column: numberColumns[0], value: null }]);
   });
 });

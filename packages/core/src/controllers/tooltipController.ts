@@ -91,12 +91,21 @@ function hideTooltip() {
 }
 
 function showTooltipFor(target: Element) {
+  // 修正(audit C-10): 表示待ちの間に対象が再描画で DOM から外れたら出しません(外れた要素の矩形は 0 で、
+  //   画面左上に出て pointerout も来ないまま残るため)。
+  if (!target.isConnected) {
+    return;
+  }
   // 静的 data-ssg-tooltip があればその値を、無ければ overflow マーカーとみなし textContent を使います。
+  //   追加(見直し): overflow マーカーに値があれば(合計行の「平均 482.1」のように表示を組み立てたセル)その値を使います。
   const staticText = target.getAttribute(TOOLTIP_ATTRIBUTE);
+  const overflowText = target.getAttribute(TOOLTIP_OVERFLOW_ATTRIBUTE);
   const text =
     staticText !== null && staticText !== ''
       ? staticText
-      : (target.textContent ?? '').trim();
+      : overflowText !== null && overflowText !== ''
+        ? overflowText
+        : (target.textContent ?? '').trim();
   if (text === '') {
     return;
   }

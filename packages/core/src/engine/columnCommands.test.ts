@@ -119,6 +119,21 @@ describe('createColumnCommands', () => {
     expect(reset[1].visible).toBeUndefined();
   });
 
+  // 追加(audit B-06): columns を非同期に流し込む利用側(初回 [])でも、列が届いた最初の update で初期状態を取る。
+  it('列リセット: 初回 columns が空なら、列が届いた最初の update で初期状態を取る', () => {
+    const commands = createColumnCommands<Row>();
+    const { args, onColumnsChange } = makeArgs({ columns: [], visibleColumns: [], orderedColumns: [] });
+    commands.update(args);
+    expect(commands.getInitialColumnState()).toBeNull();
+    commands.update({ ...args, columns, visibleColumns: columns, orderedColumns: columns });
+    expect(commands.getInitialColumnState()?.get('b')).toEqual({ width: 100, pinned: undefined, visible: undefined });
+    const changed: GridColumn<Row>[] = [columns[0], { ...columns[1], visible: false }, columns[2]];
+    commands.update({ ...args, columns: changed, visibleColumns: [columns[0], columns[2]], orderedColumns: [columns[0], columns[2]] });
+    commands.handleColumnChooserReset();
+    expect(onColumnsChange).toHaveBeenCalledTimes(1);
+    expect(onColumnsChange.mock.calls[0][0][1].visible).toBeUndefined();
+  });
+
   it('ソート: 同じ列・同方向の再選択は解除、管理パネルの追加は setSort、enableSorting=false では無視', () => {
     const commands = createColumnCommands<Row>();
     const { args, actions } = makeArgs({ sort: [{ columnKey: 'a', direction: 'asc' }] });

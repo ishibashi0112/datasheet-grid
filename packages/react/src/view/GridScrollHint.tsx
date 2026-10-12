@@ -18,6 +18,7 @@ import type {
 import { cx } from '@ishibashi0112/spreadsheet-grid-core/logic/cx';
 import type { RowModel } from '../model/gridTypes';
 import type { RowMetrics } from '@ishibashi0112/spreadsheet-grid-core/logic/verticalGeometry';
+import { resolveDataRowNumber } from '@ishibashi0112/spreadsheet-grid-core/logic/labelRows';
 import { physicalToLogicalScrollTop } from '@ishibashi0112/spreadsheet-grid-core/logic/verticalGeometry';
 import {
   computeScrollHintRulerTicks,
@@ -39,6 +40,10 @@ export const SCROLL_HINT_GUTTER_WIDTH_PX = 14;
 //   ネイティブスクロールバー(幅はプラットフォーム依存。macOS オーバーレイでは 0)に
 //   右端の余白を足した帯を「トラック上」とみなします。
 const SCROLL_HINT_TRACK_ZONE_PX = 18;
+// 追加(audit V-10): ネイティブ縦バーの幅が 0(macOS 既定のオーバーレイスクロールバー)のときの帯幅(px)です。
+//   バー幅 0 で 18px の帯を取ると、右端のセルをホバーしているだけでジャンプライン / ルーラーが点灯していました。
+//   オーバーレイバーは右端の数 px に重なって出るため、そこだけを「トラック上」とみなします。
+const SCROLL_HINT_OVERLAY_TRACK_ZONE_PX = 8;
 // ジャンプラベルが上端に近いとき、線の下側へ反転させるしきい値(px)です。
 const SCROLL_HINT_JUMP_LABEL_FLIP_PX = 28;
 
@@ -62,6 +67,9 @@ export type GridScrollHintProps<T> = {
   rowModel: RowModel<T>;
   // 追加(slot-props): classNames.scrollHint の解決済みスロット(root .ssg-scroll-hint へ)。
   slot?: GridResolvedSlot;
+  // 追加(audit V-11): ラベル行の view index(昇順)。指定時は行番号 / 総行数をラベル行を飛ばして数えます
+  //   (行ヘッダーの番号・バーの件数と揃える)。
+  labelViewIndexes?: ArrayLike<number> | null;
 };
 
 export function GridScrollHint<T>({
@@ -75,6 +83,7 @@ export function GridScrollHint<T>({
   rowMetrics,
   rowModel,
   slot,
+  labelViewIndexes,
 }: GridScrollHintProps<T>) {
   // スクロール活動フラグ(最後のスクロールから LINGER ms 経過で消灯)。
   const [scrollActive, setScrollActive] = useState(false);
@@ -137,10 +146,12 @@ export function GridScrollHint<T>({
     const handlePointerMove = (event: PointerEvent) => {
       const rect = el.getBoundingClientRect();
       const x = event.clientX - rect.left;
+      const nativeBarWidth = Math.max(el.offsetWidth - el.clientWidth, 0);
       const zoneStart =
         el.offsetWidth -
-        Math.max(el.offsetWidth - el.clientWidth, 0) -
-        SCROLL_HINT_TRACK_ZONE_PX;
+        (nativeBarWidth > 0
+          ? nativeBarWidth + SCROLL_HINT_TRACK_ZONE_PX
+          : SCROLL_HINT_OVERLAY_TRACK_ZONE_PX);
       setTrackPointerY(x >= zoneStart ? event.clientY - rect.top : null);
     };
     // ResizeObserver は observe 直後にも 1 回発火するため、スクロールバー幅の初期計測を兼ねます。
@@ -192,15 +203,21 @@ export function GridScrollHint<T>({
 
   // ルーラー目盛り(スクロール非依存。行数と可視高さが変わったときだけ再計算)。
   const rulerHeight = Math.max(viewportHeight - headerHeight, 0);
+  // 追加(audit V-11): 行番号 / 総行数はラベル行を飛ばして数えます(行ヘッダーの番号・バーの件数と揃える)。
+  //   ルーラーの目盛りも同じ件数で振ります(位置は比例の目安)。
+  const labelCount = labelViewIndexes?.length ?? 0;
+  const dataRowCount = Math.max(rowMetrics.rowCount - labelCount, 0);
+  const rowNumberOf = (viewIndex: number): number =>
+    labelViewIndexes && labelCount > 0 ? resolveDataRowNumber(labelViewIndexes, viewIndex) : viewIndex + 1;
   const rulerTicks = useMemo(
     () =>
       options.ruler
         ? computeScrollHintRulerTicks({
-            rowCount: rowMetrics.rowCount,
+            rowCount: dataRowCount,
             rulerHeight,
           })
         : [],
-    [options.ruler, rowMetrics.rowCount, rulerHeight],
+    [options.ruler, dataRowCount, rulerHeight],
   );
 
   if (track === null || rowMetrics.rowCount <= 0) {
@@ -311,10 +328,19 @@ export function GridScrollHint<T>({
     }
     setTrackPointerY(y);
   };
-  const handleGutterPointerUp = (event: ReactPointerEvent<HTMLDivElement>) => {
+  // 追加(audit V-04): ドラッグの終了(pointerup / pointercancel / キャプチャ喪失で共通)。pointercancel 等で
+  //   終わらずにドラッグ中のまま残り、以後ガターをホバーするだけで scrollTop が書き換わっていました。
+  const endGutterDrag = () => {
     dragGrabRef.current = null;
     setDragging(false);
-    gutterRef.current?.releasePointerCapture(event.pointerId);
+  };
+  const handleGutterPointerUp = (event: ReactPointerEvent<HTMLDivElement>) => {
+    endGutterDrag();
+    try {
+      gutterRef.current?.releasePointerCapture(event.pointerId);
+    } catch {
+      /* キャプチャが既に外れていても無害 */
+    }
   };
   const handleGutterPointerEnter = () => setHovered(true);
   const handleGutterPointerLeave = () => {
@@ -363,7 +389,7 @@ export function GridScrollHint<T>({
                 'ssg-scroll-hint-jumpline-label--below',
             )}
           >
-            行 {(jumpPreview.rowIndex + 1).toLocaleString()} へ
+            行 {rowNumberOf(jumpPreview.rowIndex).toLocaleString()} へ
             {jumpPreview.detail !== null && (
               <span className="ssg-scroll-hint-jumpline-detail">
                 {' '}・ {jumpPreview.detail}
@@ -384,9 +410,9 @@ export function GridScrollHint<T>({
           }}
         >
           <span className="ssg-scroll-hint-bubble-main">
-            行 {(topRowIndex + 1).toLocaleString()}
+            行 {rowNumberOf(topRowIndex).toLocaleString()}
             <span className="ssg-scroll-hint-bubble-total">
-              {' '}/ {rowMetrics.rowCount.toLocaleString()}
+              {' '}/ {dataRowCount.toLocaleString()}
             </span>
           </span>
           {detail !== null && (
@@ -409,6 +435,8 @@ export function GridScrollHint<T>({
           onPointerDown={handleGutterPointerDown}
           onPointerMove={handleGutterPointerMove}
           onPointerUp={handleGutterPointerUp}
+          onPointerCancel={endGutterDrag}
+          onLostPointerCapture={endGutterDrag}
           onPointerEnter={handleGutterPointerEnter}
           onPointerLeave={handleGutterPointerLeave}
         >

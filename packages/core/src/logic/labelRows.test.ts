@@ -119,9 +119,10 @@ describe('buildLabelDisplay', () => {
   it("'follow': 全体順のまま、各セクションの最初のデータ行の直前にラベルが付く", () => {
     const display = build(sortedByPriceDesc, { sortMode: 'follow', sortActive: true });
     // 価格降順: c(50) e(40) a(30) d(20) b(10) f(5)
-    expect(decode(display)).toEqual(['[L1]', 'c', 'e', '[L0]', 'a', 'd', 'b', '[L3]', 'f']);
-    expect(display.labels.map((label) => label.row.id)).toEqual(['L1', 'L0', 'L3']);
-    expect(Array.from(display.labelViewIndexes)).toEqual([0, 3, 7]);
+    // 変更(audit L-11): 元から空のセクション(L2)のラベルは、ソートだけなら 'section' と同じく残る(次のラベルの直前)。
+    expect(decode(display)).toEqual(['[L1]', 'c', 'e', '[L0]', 'a', 'd', 'b', '[L2]', '[L3]', 'f']);
+    expect(display.labels.map((label) => label.row.id)).toEqual(['L1', 'L0', 'L2', 'L3']);
+    expect(Array.from(display.labelViewIndexes)).toEqual([0, 3, 7, 8]);
   });
 
   it("'follow' + keepEmptySections: 中身の無いセクションのラベルは次のラベルの直前 / 末尾に順序どおり残る", () => {

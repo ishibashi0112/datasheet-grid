@@ -53,6 +53,45 @@ describe('historyController', () => {
     expect(t.onRowsChange).toHaveBeenLastCalledWith(rows2);
   });
 
+  it('amendRowsChange は直前の変更を差し替え、履歴を積まない(元に戻す 1 回で変更前へ)', () => {
+    const c = createHistoryController<Row>();
+    const t = makeArgs();
+    c.update(t.args);
+    const filled = [{ id: 2 }];
+    c.handleRowsChange(filled);
+    c.update({ ...t.args, rows: filled });
+    const amended = [{ id: 3 }];
+    c.amendRowsChange(amended);
+    expect(t.onRowsChange).toHaveBeenLastCalledWith(amended);
+    // 自己発行の rows が戻ってきても履歴はリセットしない。
+    c.update({ ...t.args, rows: amended });
+    expect(c.canUndo()).toBe(true);
+    c.undo();
+    expect(t.onRowsChange).toHaveBeenLastCalledWith(t.args.rows);
+    c.update({ ...t.args, rows: t.args.rows });
+    expect(c.canUndo()).toBe(false);
+    c.redo();
+    expect(t.onRowsChange).toHaveBeenLastCalledWith(amended);
+  });
+
+  it('amendRowsChange は親がまだ rows を戻していなくても差し替える', () => {
+    const c = createHistoryController<Row>();
+    const t = makeArgs();
+    c.update(t.args);
+    c.handleRowsChange([{ id: 2 }]);
+    const amended = [{ id: 3 }];
+    c.amendRowsChange(amended);
+    c.update({ ...t.args, rows: amended });
+    expect(c.canUndo()).toBe(true);
+    // 履歴無効でも onRowsChange へは渡す。
+    const d = createHistoryController<Row>();
+    const u = makeArgs({ enabled: false });
+    d.update(u.args);
+    d.amendRowsChange(amended);
+    expect(u.onRowsChange).toHaveBeenLastCalledWith(amended);
+    expect(d.canUndo()).toBe(false);
+  });
+
   it('外部からの rows 差し替えで履歴をリセットし、状態が変わったときだけ通知する', () => {
     const c = createHistoryController<Row>();
     const t = makeArgs();

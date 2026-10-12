@@ -20,6 +20,7 @@ import {
   createConditionalFormatStatsResolver,
   type ConditionalFormatStatsResolver,
 } from '../logic/conditionalFormat';
+import { createTotalRowCellsResolver, type TotalRowCellsResolver } from '../logic/totalRow';
 import { createDebouncedValueStore, type DebouncedValueStore } from '../controllers/debouncedValueStore';
 import { createAutoSizeOnDataTrigger, type AutoSizeOnDataTrigger } from '../controllers/columnAutosizeRunner';
 import { createImeInputController, type ImeInputController } from '../controllers/imeInputController';
@@ -108,6 +109,8 @@ export type GridEngine<T> = {
   find: FindController<T>;
   // 追加(F-3): 条件付き書式の列ごとの min / max(ビュー行から集計。内容が同じなら前回の参照)。
   resolveConditionalFormatStats: ConditionalFormatStatsResolver<T>;
+  // 追加(合計行 3A): 合計行のセル値(フィルター後のデータ行から集計。内容が同じなら前回の参照)。
+  resolveTotalRowCells: TotalRowCellsResolver<T>;
   serverSideQueryStore: DebouncedValueStore<ServerSideQueryResolution>;
   autoSizeOnData: AutoSizeOnDataTrigger<T>;
   // 追加(G-2): IME オンのままの直接入力(imeDirectInput)の入力受け。
@@ -171,6 +174,7 @@ export const createGridEngine = <T,>(init: GridEngineInit<T>): GridEngine<T> => 
     saveStatus,
     find,
     resolveConditionalFormatStats: createConditionalFormatStatsResolver<T>(),
+    resolveTotalRowCells: createTotalRowCellsResolver<T>(),
     serverSideQueryStore,
     autoSizeOnData,
     imeInput,

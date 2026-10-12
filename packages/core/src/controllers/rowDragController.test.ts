@@ -129,6 +129,51 @@ describe('rowDragController', () => {
     expect(commitRowMove).not.toHaveBeenCalled();
   });
 
+  // 追加(audit C-8): ウィンドウがフォーカスを失ったらキャンセル(pointerup を取りこぼしても後片付けが残らない)。
+  it('ドラッグ中にウィンドウが blur したらキャンセルし、その後の up でも確定しない', () => {
+    const controller = createRowDragController();
+    const { args, container, commitRowMove } = makeArgs();
+    controller.update(args);
+    controller.onRowDragHandlePointerDown(1, handleEvent());
+    dispatchPointer('pointermove', 1, 20, 47);
+    window.dispatchEvent(new Event('blur'));
+    expect(container.querySelector('[data-row-index="1"]')?.hasAttribute('data-ssg-row-dragging')).toBe(false);
+    expect(document.querySelector('[data-grid-drag-ghost]')).toBeNull();
+    expect(args.centerIndicatorRef.current?.style.display).toBe('none');
+    expect(document.body.style.cursor).toBe('');
+    dispatchPointer('pointerup', 1, 20, 47);
+    expect(commitRowMove).not.toHaveBeenCalled();
+    controller.dispose();
+  });
+
+  // 追加(audit C-9): ドラッグ中に別のポインタでハンドルを押しても始め直さない(前のポインタの up で前の行のまま確定)。
+  //   同じポインタで押し直したときは前のドラッグを取り消して始め直す。
+  it('ドラッグ中の 2 本目のポインタは無視し、同じポインタの押し直しは前のドラッグを取り消して始め直す', () => {
+    const controller = createRowDragController();
+    const { args, container, commitRowMove } = makeArgs();
+    controller.update(args);
+    controller.onRowDragHandlePointerDown(1, handleEvent());
+    controller.onRowDragHandlePointerDown(6, handleEvent({ pointerId: 2, clientY: 65 }));
+    expect(container.querySelector('[data-row-index="6"]')?.hasAttribute('data-ssg-row-dragging')).toBe(false);
+    dispatchPointer('pointerup', 2, 20, 85);
+    expect(commitRowMove).not.toHaveBeenCalled();
+    dispatchPointer('pointermove', 1, 20, 47);
+    dispatchPointer('pointerup', 1, 20, 47);
+    expect(commitRowMove).toHaveBeenCalledTimes(1);
+    expect(commitRowMove).toHaveBeenCalledWith(1, 4);
+
+    controller.onRowDragHandlePointerDown(1, handleEvent());
+    controller.onRowDragHandlePointerDown(6, handleEvent({ clientY: 65 }));
+    expect(container.querySelector('[data-row-index="1"]')?.hasAttribute('data-ssg-row-dragging')).toBe(false);
+    expect(container.querySelector('[data-row-index="6"]')?.hasAttribute('data-ssg-row-dragging')).toBe(true);
+    expect(document.querySelectorAll('[data-grid-drag-ghost]')).toHaveLength(1);
+    dispatchPointer('pointermove', 1, 20, 27);
+    dispatchPointer('pointerup', 1, 20, 27);
+    expect(commitRowMove).toHaveBeenCalledTimes(2);
+    expect(commitRowMove).toHaveBeenLastCalledWith(6, 3);
+    controller.dispose();
+  });
+
   it('update で enabled=false にすると以後のドラッグは開始しない', () => {
     const controller = createRowDragController();
     const { args } = makeArgs();
@@ -191,5 +236,29 @@ describe('rowDragController', () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  // 追加(見直し): 合計行(footerHeight)の上で離しても、合計行の裏に隠れた位置へは落とさない。
+  it('footerHeight があると、合計行の上のポインタは本体の見えている最後の位置として扱う', () => {
+    const controller = createRowDragController();
+    const { args, commitRowMove } = makeArgs();
+    controller.update({ ...args, footerHeight: 30 });
+    controller.onRowDragHandlePointerDown(1, handleEvent());
+    // y=95 は合計行(70..100)の上 → y=69(行 6 の後半)= 行 6 の下(y=70)にガイド線。
+    dispatchPointer('pointermove', 1, 20, 95);
+    expect(args.centerIndicatorRef.current?.style.top).toBe('70px');
+    dispatchPointer('pointerup', 1, 20, 95);
+    expect(commitRowMove).toHaveBeenCalledWith(1, 6);
+    controller.dispose();
+
+    // 合計行が無ければ従来どおり(行 9 の下へ)。
+    const plain = createRowDragController();
+    const second = makeArgs();
+    plain.update(second.args);
+    plain.onRowDragHandlePointerDown(1, handleEvent());
+    dispatchPointer('pointermove', 1, 20, 95);
+    dispatchPointer('pointerup', 1, 20, 95);
+    expect(second.commitRowMove).toHaveBeenCalledWith(1, 9);
+    plain.dispose();
   });
 });

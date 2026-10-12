@@ -174,7 +174,7 @@ export const buildGridState = (
 
 // applyState に渡る外部入力(localStorage 等の deserialize 結果)を、現行スキーマの GridState へ
 //   防御的に正規化します。型不一致 / 欠損フィールドは既定へ畳み、reducer が消費できる形へ揃えます。
-//   - columnWidths : 有限数値のエントリだけ採用(それ以外は捨てる)。
+//   - columnWidths : 0 以上の有限数値のエントリだけ採用(それ以外は捨てる)。
 //   - filters      : globalText は string(既定 '')、columnFilters は kind を持つオブジェクトだけ採用。
 //                    値の kind 中身までは検証しません(getState 出力の往復を前提とします)。
 //   - sort         : columnKey(string)+ direction('asc' | 'desc')のエントリだけ採用。
@@ -187,13 +187,15 @@ export const migrateGridState = (input: unknown): GridState => {
       : {};
 
   // columnWidths: number(有限)値のみ採用します。
+  // 修正(audit L-17): 負の幅は捨てます(描画側の `columnWidths[key] ?? column.width` をすり抜けて列が潰れていた)。
+  //   0 は `minWidth: 0` の列を手動で縮めた幅として往復しうるため採用します。
   const columnWidths: Record<string, number> = {};
   const rawWidths = source.columnWidths;
   if (rawWidths && typeof rawWidths === 'object') {
     const widthMap = rawWidths as Record<string, unknown>;
     for (const key of Object.keys(widthMap)) {
       const w = widthMap[key];
-      if (typeof w === 'number' && Number.isFinite(w)) {
+      if (typeof w === 'number' && Number.isFinite(w) && w >= 0) {
         columnWidths[key] = w;
       }
     }

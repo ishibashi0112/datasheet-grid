@@ -24,7 +24,7 @@ import { parseCommittedValue, writeRowsCell } from '../logic/editorValues';
 import { decideCellWrite } from '../logic/validation';
 import { clamp } from '../logic/geometry';
 import { isFocusInsideDetailCard } from '../logic/detailRow';
-import { isCellEditable } from '../utils/permissions';
+import { isViewCellEditable } from '../utils/permissions';
 import type { ServerSideCellEditInput } from '../logic/serverSideEdits';
 
 export type EditControllerArgs<T extends object> = {
@@ -282,8 +282,9 @@ export const createEditController = <T extends object>(): EditController<T> => {
     // 追加(監査 RD-6): 確定時点で編集不可(編集中に readOnly へ切替 / canEditCell が false へ変化)なら
     //   書き込まずに編集を終了します(cancel と同じ後処理)。
     if (
-      !isCellEditable(
+      !isViewCellEditable(
         { readOnly: args.readOnly, canEditCell: args.canEditCell },
+        rowModel,
         editingCell.row,
         editingCell.col,
         row,

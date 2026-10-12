@@ -152,11 +152,35 @@ export const createFilterPopoverController = <T,>(): FilterPopoverController<T> 
   const openedColumn = () =>
     args === null ? null : resolveOpenedFilterColumn(args.visibleColumns, store.getSnapshot().state);
 
+  // アンカー: root 内のヘッダーセル(展開行カード内のネストしたグリッドのセルは除外)。
+  const resolveAnchor = (columnKey: string): HTMLElement | null => {
+    const rootEl = args?.gridRootRef.current ?? null;
+    if (!rootEl) {
+      return null;
+    }
+    const headerCells = rootEl.querySelectorAll<HTMLElement>('[data-ssg-col-key]');
+    return (
+      Array.from(headerCells).find(
+        (cell) => cell.dataset.ssgColKey === columnKey && !isInsideDetailCardOf(rootEl, cell),
+      ) ?? null
+    );
+  };
+
   const updateLayout = () => {
     const state = store.getSnapshot().state;
     if (!state || !anchorElement) {
       setLayout(null);
       return;
+    }
+    // 修正(audit C-4): 開いたまま横スクロールしてアンカーのヘッダーセルが横の仮想化で外れると、
+    //   0 矩形を基準に左上へ飛んでいました。外れていたら同じ列のヘッダーセルを探し直し、見つからなければ
+    //   直前の位置のまま動かしません(閉じると入力途中の条件が消えるため閉じない)。
+    if (!anchorElement.isConnected) {
+      const next = resolveAnchor(state.columnKey);
+      if (next === null) {
+        return;
+      }
+      anchorElement = next;
     }
     const anchorRect = anchorElement.getBoundingClientRect();
     const column = openedColumn();
@@ -230,16 +254,7 @@ export const createFilterPopoverController = <T,>(): FilterPopoverController<T> 
     const { gridRootRef, resolveColumnFilterType, columnFilterValues } = args;
     blurForPopover(gridRootRef.current);
 
-    // アンカー: root 内のヘッダーセル(展開行カード内のネストしたグリッドのセルは除外)。
-    const rootEl = gridRootRef.current;
-    const headerCells = rootEl?.querySelectorAll<HTMLElement>('[data-ssg-col-key]');
-    anchorElement =
-      rootEl && headerCells
-        ? (Array.from(headerCells).find(
-            (cell) =>
-              cell.dataset.ssgColKey === column.key && !isInsideDetailCardOf(rootEl, cell),
-          ) ?? null)
-        : null;
+    anchorElement = resolveAnchor(column.key);
 
     const filterType: ColumnFilterUiType =
       column.filterType === 'auto' && resolveColumnFilterType

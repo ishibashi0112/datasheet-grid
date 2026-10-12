@@ -98,6 +98,9 @@ export const createServerSideRowModel = <T,>(
 
   const inFlight = new Map<number, AbortController>();
   const failedBlocks = new Set<number>();
+  // 追加(audit B-03): 件数が増えたときに「旧件数で末端だった部分ブロック」を入れておき、次に可視窓が
+  //   求めたときに取り直します(取り直すまでは手元の行を表示し続ける)。キャッシュ済みでも fetchBlock は飛ばしません。
+  const staleBlocks = new Set<number>();
   let timer: ReturnType<typeof setTimeout> | null = null;
   let latestRange = { start: 0, end: 0 };
   let writeEpoch = 0;
@@ -179,7 +182,7 @@ export const createServerSideRowModel = <T,>(
     if (dataSource == null) {
       return;
     }
-    if (cache.hasBlock(blockIndex) || inFlight.has(blockIndex)) {
+    if ((cache.hasBlock(blockIndex) && !staleBlocks.has(blockIndex)) || inFlight.has(blockIndex)) {
       return;
     }
     const controller = new AbortController();
@@ -198,10 +201,22 @@ export const createServerSideRowModel = <T,>(
         }
         inFlight.delete(blockIndex);
         cache.setBlock(blockIndex, result.rows);
+        staleBlocks.delete(blockIndex);
         if (failedBlocks.delete(blockIndex)) {
           loadError = failedBlocks.size === 0 ? null : { failedBlockCount: failedBlocks.size };
         }
         if (result.totalRowCount !== rowCount) {
+          // 修正(audit B-03): 件数が増えたら、旧件数の末端で途中までしか行の無いブロックを取り直し対象にします
+          //   (キャッシュ済みのまま hasBlock で飛ばすと、伸びた後半の行がスケルトンのまま残っていた)。
+          const tailBlock = Math.floor(rowCount / blockSize);
+          if (
+            result.totalRowCount > rowCount &&
+            rowCount % blockSize !== 0 &&
+            tailBlock !== blockIndex &&
+            cache.hasBlock(tailBlock)
+          ) {
+            staleBlocks.add(tailBlock);
+          }
           rowCount = result.totalRowCount;
         }
         bumpVersion();
@@ -263,6 +278,7 @@ export const createServerSideRowModel = <T,>(
     clearTimer();
     cache.clear();
     failedBlocks.clear();
+    staleBlocks.clear();
     loadError = null;
     resetWriteState();
   };
