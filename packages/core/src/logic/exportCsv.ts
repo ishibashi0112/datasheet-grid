@@ -61,6 +61,8 @@ export type SerializeRowsToCsvParams<T> = {
   //   undefined を返した index に対して呼ばれ、値の列(エクスポート列順。不足分は空 / 余りは切り捨て)を
   //   返せばその行を 1 行として出力します。undefined ならスキップ(未ロード行と同じ)。
   getLabelLine?: (rowIndex: number) => LabelExportLine | undefined;
+  // 追加(合計行 3A): 末尾に出す合計行の値です(エクスポート列順。includeTotalRow のとき呼び出し側が渡す)。
+  totalLine?: ReadonlyArray<unknown>;
 };
 
 // 追加(label-row ④): ラベル行 1 行ぶんの出力値です(列順)。
@@ -69,6 +71,9 @@ export type LabelExportLine = ReadonlyArray<string | number | null | undefined>;
 // ラベル行のセル値 → 文字列(null / undefined は空)。
 export const labelExportCellText = (value: string | number | null | undefined): string =>
   value == null ? '' : String(value);
+
+// 追加(合計行 3A): 合計行のセル値 → 文字列(null / undefined は空)。
+export const totalExportCellText = (value: unknown): string => (value == null ? '' : String(value));
 
 // 行レンジ × 列集合から CSV 文字列を生成します。行区切りは RFC 4180 に従い CRLF です。
 export const serializeRowsToCsv = <T,>({
@@ -82,6 +87,7 @@ export const serializeRowsToCsv = <T,>({
   escapeFormulas = false,
   isRowIncluded,
   getLabelLine,
+  totalLine,
 }: SerializeRowsToCsvParams<T>): string => {
   const lines: string[] = [];
   // 追加(audit L-20): セル(とラベル行)の値に適用する無害化。ヘッダーは consumer の列タイトルなので対象外です。
@@ -116,6 +122,11 @@ export const serializeRowsToCsv = <T,>({
     }
     const cells = columns.map((column) => cellField(exportCellText(row, column)));
     lines.push(cells.join(delimiter));
+  }
+
+  // 追加(合計行 3A): 合計行は末尾に 1 行(値は生値の文字列表現。空値は空)。
+  if (totalLine) {
+    lines.push(columns.map((_, index) => cellField(totalExportCellText(totalLine[index]))).join(delimiter));
   }
 
   const body = lines.join('\r\n');

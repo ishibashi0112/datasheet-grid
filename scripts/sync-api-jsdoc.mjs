@@ -48,6 +48,10 @@ const TABLE_MAPPINGS = [
     match: ({ h3, header }) => h3.includes('`labelRow`') && header[0] === 'Name',
   },
   {
+    type: 'TotalRowOptions',
+    match: ({ h3, header }) => h3.includes('`totalRow`') && header[0] === 'Name',
+  },
+  {
     type: 'SpreadsheetGridHandle',
     match: ({ h2, header }) => h2.includes('`SpreadsheetGridHandle<T>`') && header[0] === 'メソッド',
   },

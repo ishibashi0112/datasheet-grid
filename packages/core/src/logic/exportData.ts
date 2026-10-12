@@ -1,6 +1,6 @@
 import type { GridColumn, GridExportData } from '../model/gridTypes.unbound';
 import { getCellValue } from '../utils/permissions';
-import { labelExportCellText, type LabelExportLine } from './exportCsv';
+import { labelExportCellText, totalExportCellText, type LabelExportLine } from './exportCsv';
 
 // 追加(imperative API: getExportData): エクスポート用「整形済みデータ」の純ロジックです。ハンドル
 //   (SpreadsheetGridHandle の getExportData)から呼ばれ、DOM や副作用には一切触れません(列メタ +
@@ -24,6 +24,8 @@ export type BuildGridExportDataParams<T> = {
   isRowIncluded?: (row: T, rowIndex: number) => boolean;
   // 追加(label-row ④): ラベル行の出力行(serializeRowsToCsv と同じ契約)。指定時は rowKinds も返します。
   getLabelLine?: (rowIndex: number) => LabelExportLine | undefined;
+  // 追加(合計行 3A): 末尾に出す合計行の値(serializeRowsToCsv と同じ契約)。指定時は rowKinds も返します。
+  totalLine?: ReadonlyArray<unknown>;
 };
 
 // 行レンジ × 列集合から、列メタ(key / title)と 2 次元セル(value / text)を生成します。
@@ -34,6 +36,7 @@ export const buildGridExportData = <T,>({
   columns,
   isRowIncluded,
   getLabelLine,
+  totalLine,
 }: BuildGridExportDataParams<T>): GridExportData => {
   // 列メタは key(オブジェクト系ライブラリ用)と title(ヘッダー表示用)の双方を持たせます。
   const exportColumns = columns.map((column) => ({
@@ -44,7 +47,8 @@ export const buildGridExportData = <T,>({
 
   const rows: GridExportData['rows'] = [];
   // 追加(label-row ④): ラベル行を含める指定(getLabelLine)があるときだけ行種配列を付けます。
-  const rowKinds: Array<'data' | 'label'> | undefined = getLabelLine ? [] : undefined;
+  //   追加(合計行 3A): 合計行を出すとき(totalLine)も付けます。
+  const rowKinds: Array<'data' | 'label' | 'total'> | undefined = getLabelLine || totalLine ? [] : undefined;
   for (let rowIndex = startRow; rowIndex < endRow; rowIndex += 1) {
     const row = getRow(rowIndex);
     // SSRM 未ロード行(undefined)はスキップします。clientSide では常に行が存在します。
@@ -76,6 +80,17 @@ export const buildGridExportData = <T,>({
         return { value, text };
       }),
     );
+  }
+
+  // 追加(合計行 3A): 合計行は末尾に 1 行(value は生値。見出しは文字列)。
+  if (totalLine) {
+    rows.push(
+      columns.map((_, index) => {
+        const value = totalLine[index];
+        return { value: value ?? null, text: totalExportCellText(value) };
+      }),
+    );
+    rowKinds?.push('total');
   }
 
   return rowKinds ? { columns: exportColumns, rows, rowKinds } : { columns: exportColumns, rows };

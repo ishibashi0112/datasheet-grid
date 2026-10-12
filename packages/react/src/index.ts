@@ -73,6 +73,10 @@ export type {
   LabelRowRenderContext,
   GridLabelRow,
   LabelRowSortMode,
+  // 追加(合計行 3A): 合計行(totalRow prop / renderCell の ctx / セルの種別)の公開型です。
+  TotalRowOptions,
+  TotalRowCellContext,
+  TotalRowCellKind,
   // 追加(row-drag ③): 行ドラッグ並び替え(enableRowDrag / isRowDraggable / onRowMove)の公開型です。
   RowDragContext,
   RowMoveParams,

@@ -213,3 +213,48 @@ describe('buildGridExportData × ラベル行(getLabelLine)', () => {
     expect('rowKinds' in data).toBe(false);
   });
 });
+
+
+// 追加(合計行 3A): 合計行(totalLine)は末尾に 1 行。rowKinds の 'total' で判別できる。
+describe('buildGridExportData × 合計行(totalLine)', () => {
+  type TRow = { a: string; b: number };
+  const tColumns: GridColumn<TRow>[] = [
+    { key: 'a', title: 'A', width: 100 },
+    { key: 'b', title: 'B', width: 100 },
+  ];
+  const tRows: TRow[] = [
+    { a: 'x', b: 1 },
+    { a: 'y', b: 2 },
+  ];
+
+  it('末尾に value(生値)/ text のセルで出し、rowKinds を付ける', () => {
+    const data = buildGridExportData({
+      getRow: (i) => tRows[i],
+      startRow: 0,
+      endRow: tRows.length,
+      columns: tColumns,
+      totalLine: ['合計', 3],
+    });
+    expect(data.rowKinds).toEqual(['data', 'data', 'total']);
+    expect(data.rows.at(-1)).toEqual([
+      { value: '合計', text: '合計' },
+      { value: 3, text: '3' },
+    ]);
+  });
+
+  it('ラベル行と併用しても行種が揃い、空値は null / 空文字', () => {
+    const data = buildGridExportData({
+      getRow: (i) => (i === 0 ? (undefined as unknown as TRow) : tRows[i - 1]),
+      startRow: 0,
+      endRow: 3,
+      columns: tColumns,
+      getLabelLine: (i) => (i === 0 ? ['節'] : undefined),
+      totalLine: [undefined, null],
+    });
+    expect(data.rowKinds).toEqual(['label', 'data', 'data', 'total']);
+    expect(data.rows.at(-1)).toEqual([
+      { value: null, text: '' },
+      { value: null, text: '' },
+    ]);
+  });
+});

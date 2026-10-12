@@ -257,3 +257,39 @@ describe('serializeRowsToCsv の escapeFormulas(audit L-20)', () => {
     expect(escapeCsvFormula('')).toBe('');
   });
 });
+
+// 追加(合計行 3A): 合計行(totalLine)は末尾に 1 行。空値は空、エスケープ / 数式の無害化も通常どおり。
+describe('serializeRowsToCsv × 合計行(totalLine)', () => {
+  it('末尾に 1 行出す(ヘッダーなしでも、行が 0 件でも)', () => {
+    const csv = serializeRowsToCsv({
+      getRow,
+      startRow: 0,
+      endRow: rows.length,
+      columns,
+      includeHeaders: false,
+      totalLine: ['合計', 3],
+    });
+    expect(csv.split('\r\n').at(-1)).toBe('合計,3');
+    const empty = serializeRowsToCsv({
+      getRow,
+      startRow: 0,
+      endRow: 0,
+      columns,
+      totalLine: [undefined, null],
+    });
+    expect(empty).toBe('A,B\r\n,');
+  });
+
+  it('値の区切り文字はエスケープし、escapeFormulas は合計行にも効く', () => {
+    const csv = serializeRowsToCsv({
+      getRow,
+      startRow: 0,
+      endRow: 0,
+      columns,
+      includeHeaders: false,
+      escapeFormulas: true,
+      totalLine: ['a,b', '=1+1'],
+    });
+    expect(csv).toBe(`"a,b",'=1+1`);
+  });
+});

@@ -111,6 +111,7 @@
 | `detailRow` | `DetailRowOptions<T>` | —(無効) | **展開行(Master/Detail)**。マスター行の直下に、行順(view index)を変えずに全幅の帯を差し込み、その中(カード)へ `render` の返す任意の React 要素(自前のサブグリッド / フォーム / 集計パネル等)を描画する。指定時のみ有効で、未指定なら既存の描画・状態・イベント経路は一切変わらない。`{ render, height?, isExpandable?, showToggleColumn?, className? }`。clientSide / serverSide の両方で使える(serverSide の制約は節内)。詳細は「展開行(Master/Detail)」節を参照。 |
 | `onExpandedDetailRowKeysChange` | `(keys: GridRowKey[]) => void` | — | 展開中の展開行のマスター行キー集合が**変化したとき**に呼ばれる(開閉の永続化・外部同期用)。初回マウントでは発火しない。インライン関数可(latest-ref 経由)。 |
 | `labelRow` | `LabelRowOptions<T>` | —(無効) | **ラベル行(見出し / 区切り行)**。`rows` の中で `isLabelRow(row)` が true の行を「行数に数えない見出し」として、3 ペインを跨ぐ全幅の帯で描画する(中身は `render` で任意の React 要素に差し替え可。横スクロールしても左端に留まる)。編集 / 選択 / コピー / エクスポートの既定対象外で、行番号も消費しない。ソート / フィルターは既定でラベル行から次のラベル行までの区間(セクション)に閉じる(`sortMode`)。`sticky: true` で現在セクションのラベルを列ヘッダー直下に固定。`{ isLabelRow, getLabel, render?, height?, className?, sticky?, sortMode?, keepEmptySections?, exportText? }`。行グルーピング(`rowGroup`)とは別機能で併用不可。詳細は「ラベル行(見出し / 区切り行)」節。 |
+| `totalRow` | `boolean \| TotalRowOptions<T>` | —(無効) | **合計行**。表の下端に合計行を固定表示する(縦スクロールしても動かず、横スクロールと左右の固定列には付いていく)。列ごとの集計は `GridColumn.aggFunc`(行グルーピングと共通)で決め、フィルター後のデータ行で計算し直す(ラベル行は数えず、グルーピング中は折りたたんだ行も数える)。合計以外の組み込み集計は値の前に種類(平均 / 最小 / 最大 / 個数)を出す。表示専用(選択 / 編集 / 貼り付け / コピーの対象外)。`true` で既定値、オブジェクトで `{ label?, values?, renderCell?, height?, className? }`。serverSide は計算せず `values` の値だけを出す。エクスポートは `includeTotalRow: true` のときだけ末尾に含める。詳細は「合計行」節。 |
 | `enableRowDrag` | `boolean` | `false` | **行ドラッグ並び替え**。先頭にドラッグハンドル列(幅 28px・タイトル無しの合成列。左固定列があれば左固定側)を挿入し、ハンドル(⋮⋮)を掴んで行を上下へ動かせる。確定時は `onRowsChange` へ移動後の**新配列**を渡し(履歴ラッパ経由 = undo/redo 対象)、続けて `onRowMove` を呼ぶ。clientSide(`rows` + `onRowsChange`)専用で、`dataSource`(serverSide)/ 行グルーピング中 / `onRowsChange` 未指定ではハンドル列を出さない。ソート / フィルター適用中はハンドルを淡色 + 理由ツールチップにして操作を無効化する(列は残る)。詳細は「行ドラッグ並び替え」節。 |
 | `isRowDraggable` | `(row: T, ctx: RowDragContext) => boolean` | 全行可 | 行ごとのドラッグ可否。`false` の行にはハンドルを描画しない。`ctx = { rowKey, sourceRowIndex }`。 |
 | `onRowMove` | `(params: RowMoveParams<T>) => void` | — | 行移動の確定後(`onRowsChange` の直後)に呼ばれる。`params = { rowKey, fromIndex, toIndex, rows }`(index は元 `rows` 配列基準、`rows` は `onRowsChange` と同じ新配列参照)。ハンドルの `moveRow()` による移動でも呼ばれる。 |
@@ -442,7 +443,7 @@ WAI-ARIA の grid パターンに沿って、表・行・セルに役割と状�
 
 | 要素 | 役割 / 属性 |
 | --- | --- |
-| 表本体(`.ssg-scroll-container`) | `role="grid"`。`aria-label`(`ariaLabel`)/ `aria-rowcount`(見出し行を含む表示中の行数)/ `aria-colcount`(行番号列を含む列数)/ `aria-multiselectable`(`enableRangeSelection` 時)/ `aria-readonly`(`readOnly` 時)。 |
+| 表本体(`.ssg-scroll-container`) | `role="grid"`。`aria-label`(`ariaLabel`)/ `aria-rowcount`(見出し行を含む表示中の行数。合計行(`totalRow`)があればそれも含む)/ `aria-colcount`(行番号列を含む列数)/ `aria-multiselectable`(`enableRangeSelection` 時)/ `aria-readonly`(`readOnly` 時)。 |
 | フォーカスを受ける要素(`.ssg-shell`) | `role="group"`。`aria-activedescendant` はアクティブセルが描画されているときだけ、そのセルの `id`(キーボードでセルを移動すると支援技術がそのセルを読み上げる)。 |
 | 見出し行 / データ行 | `role="row"`。`aria-rowindex` は見出し行が 1、データ行は表示順 + 2。行選択のチェックボックスがあるときは `aria-selected`。未ロード行(SSRM のスケルトン)は `aria-busy`。 |
 | 列見出し | `role="columnheader"`。`aria-colindex`(行番号列が 1)。ソートの第 1 キーの列だけ `aria-sort`(`ascending` / `descending`)。 |
@@ -451,6 +452,7 @@ WAI-ARIA の grid パターンに沿って、表・行・セルに役割と状�
 | 行選択のチェックボックス | `role="checkbox"`。`aria-checked`(一部選択は `mixed`)/ `aria-label`(「すべての行を選択」「行 N を選択」)。 |
 | `editor: { type: 'checkbox' }` のセル | `role="checkbox"`。`aria-label` は列の `title`(無ければ `key`)。 |
 | 編集中のエディタ | `role="group"`、`aria-label` は「(列名)を編集」。 |
+| 合計行(`totalRow`) | `role="row"`(表の最後の行。`aria-rowindex` = 表示行数 + 2)。見出しの欄は `role="rowheader"`、セルは `role="gridcell"`。 |
 
 - 仮想化で描画していない行・列は DOM に無いため、表全体の中の位置は `aria-rowindex` / `aria-colindex` / `aria-rowcount` / `aria-colcount` で伝える。
 - 制約: 編集中のエディタは行の外に重ねて描画するため、セルの子としては読み上げられない(上の `aria-label` で列名を伝える)。展開行(`detailRow`)の帯は `aria-rowindex` を持たない(データ行の番号をずらさないため)。縦固定で複製したラベル行(`labelRow.sticky`)は `aria-hidden`。
@@ -476,7 +478,7 @@ WAI-ARIA の grid パターンに沿って、表・行・セルに役割と状�
 | `readOnly` | `boolean` | — | この列を読み取り専用にする。 |
 | `pinned` | `'left' \| 'right'` | undefined = 中央スクロール | 列固定の方向。 |
 | `rowGroup` | `boolean` | — | `true` でこの列を行グルーピングの対象にする(複数指定時は `columns` 配列の出現順が階層順)。有効時はグループ元列が表示から外れ、先頭に自動グループ列(ツリー表示)が注入される。**clientSide 限定**(serverSide では無視 + 開発時警告)。詳細は「行グルーピング + 集計」節。 |
-| `aggFunc` | `'sum' \| 'min' \| 'max' \| 'avg' \| 'count' \| GridAggFunc<T>` | — | グルーピング時のこの列の集計。組み込みは数値と数値の文字列だけを数える集計(空値・空白だけの文字列・`true` / `false`・`Date`・配列などは対象外、`count` は配下 leaf 行数)。関数でカスタム集計可(返り値がグループ行に表示)。`rowGroup` 列がないときは無視。 |
+| `aggFunc` | `'sum' \| 'min' \| 'max' \| 'avg' \| 'count' \| GridAggFunc<T>` | — | グルーピング時と合計行(`totalRow`)のこの列の集計。組み込みは数値と数値の文字列だけを数える集計(空値・空白だけの文字列・`true` / `false`・`Date`・配列などは対象外、`count` は配下 leaf 行数 / 合計行では対象の行数)。関数でカスタム集計可(返り値がグループ行 / 合計行に表示)。`rowGroup` 列も `totalRow` もないときは無視。 |
 | `getValue` | `(row: T) => unknown` | `row[key]` | 値アクセサ。 |
 | `setValue` | `(row: T, value: unknown) => T` | — | 値ライター(新しい行を返す)。 |
 | `renderCell` | `(ctx: CellRenderContext<T>) => ReactNode` | プレーン `<span>` | カスタムセル描画。 |
@@ -924,6 +926,42 @@ const columns: GridColumn<Order>[] = [
 
 グループ行の記述子は `GridGroupRow`(`groupKey` / `columnKey` / `value` / `label` / `level` / `leafCount` / `aggregates`)としてバレルから公開されます(`getGroupRows()` の返り値)。
 
+### 合計行(`totalRow`)
+
+`totalRow` prop で、表の下端に合計行を固定表示します。どの列を何で集計するかは列の `aggFunc`(行グルーピングと同じ組み込み集計 / カスタム関数)で決め、フィルターをかけると見えている行だけで計算し直します。
+
+```tsx
+const columns: GridColumn<Order>[] = [
+  { key: 'product', title: '商品', width: 160 },
+  { key: 'qty', title: '数量', width: 90, align: 'right', aggFunc: 'sum' },
+  { key: 'price', title: '単価', width: 110, align: 'right', aggFunc: 'avg', valueFormatter: yen },
+  { key: 'amount', title: '金額', width: 120, align: 'right', aggFunc: 'sum', valueFormatter: yen },
+];
+
+<SpreadsheetGrid rows={rows} columns={columns} totalRow />
+// 見出しを変える / 一部の列は値を渡す
+<SpreadsheetGrid rows={rows} columns={columns} totalRow={{ label: '総計', values: { product: `${rows.length} 品目` } }} />
+```
+
+`TotalRowOptions<T>`(`totalRow` にオブジェクトで渡したとき):
+
+| Name | Type | Default | Description |
+| --- | --- | --- | --- |
+| `label` | `string` | `'合計'` | 見出し。行ドラッグ / 展開トグルの合成列を除いた先頭列に出す(その列に値があるときは行番号の欄へ)。 |
+| `values` | `Record<string, unknown>` | — | 列 key → 表示する値。指定した列は計算せずこの値を出す(`aggFunc` より優先。serverSide はこれだけ)。 |
+| `renderCell` | `(ctx: TotalRowCellContext<T>) => ReactNode` | — | 値のあるセルの中身を差し替える。`ctx = { column, value, kind, text, caption }`(`kind` は `'sum' \| 'avg' \| 'min' \| 'max' \| 'count' \| 'custom' \| 'value'`、`text` は既定の表示文字列、`caption` は種類の見出し)。 |
+| `height` | `number` | `rowHeight` | 合計行の高さ(px)。 |
+| `className` | `GridSlotProps` | — | 行要素へ追加する class(または `{ className, style }`)。`classNames.totalRow` に加えて付与。 |
+
+- **集計の対象**: フィルター / ソート後のデータ行です。ラベル行(`labelRow`)は数えず、行グルーピング中は折りたたんだグループの行も数えます。数値の判定は行グルーピングの集計と同じで(数値と数値の文字列だけ)、`count` は対象の行数です。数値対象が 0 件の sum / avg / min / max は空セルになります。
+- **表示**: 合計以外の組み込み集計(平均 / 最小 / 最大 / 個数)は値の前に小さく種類を出します。値の整形は列の `valueFormatter` を使います(グループ行と同じく合計行に元の行は無いため **`row` は `undefined`**。`row` を読む formatter の列は `renderCell` か `values` で整形してください)。文字列(カスタム集計 / `values` の文字列)はそのまま出します。`count` の件数と `valueFormatter` の無い列の数値は、下部バーの選択範囲の集計と同じ書式(桁区切りあり・小数は 4 桁まで・浮動小数の誤差は丸める)です。列の `renderCell` / `cellClassName` は合計行には使いません(行データが無いため)。中身の差し替えは `totalRow.renderCell` で行います。
+- **位置**: 縦スクロール中は表の下端に留まり、行が少ないときは最後の行の直後に来ます。横スクロールと左右の固定列には通常の行と同じく付いていきます。最後までスクロールすると最終行は合計行のすぐ上に来て、キーボード操作 / `scrollToRow` で行を見せるときも合計行の裏に隠しません。
+- **表示専用**: セル選択 / 編集 / 貼り付け / コピー / クリア / 行選択 / 右クリックメニューの対象外です(押しても選択は動きません)。件数表示(bar の Rows)やビュー行 index には数えません。
+- **エクスポート**: 既定では含みません。`exportCsv` / `getExportData` の `includeTotalRow: true` で、scope `'view'` のときだけ末尾に 1 行出します(値は生値。見出しは先頭列に値が無いときだけ先頭列へ)。`getExportData` は `rowKinds` の `'total'` で判別できます。
+- **serverSide(`dataSource`)**: 全件を持たないため計算しません。サーバーで集計した値を `values` で渡してください。
+- **アクセシビリティ**: 表の最後の行(`role="row"`)として読み上げます(`aria-rowcount` に 1 行足す)。
+- **見た目**: 行は `.ssg-total-row`、セルは `.ssg-body-cell.ssg-total-cell`、種類の見出しは `.ssg-total-caption`。トークン `--ssg-total-row-bg` / `--ssg-total-row-text` / `--ssg-total-row-border`(上辺の区切り線)。
+
 ### 展開行(Master/Detail)(`detailRow`)
 
 `detailRow` prop を渡すと、各行を「展開」してマスター行の直下に消費側 UI(カード)を差し込めます(AG Grid の Master/Detail 相当)。行グルーピングが「ライブラリがグループ行を作る」機能なのに対し、展開行は「行の下に何を出すかを利用側が全面的に決める」動線です。両者は独立で併用もできます。
@@ -1185,7 +1223,7 @@ const gridRef = useRef<SpreadsheetGridHandle<Row>>(null);
 | `exportCsv(options?)` | CSV 文字列を返す(純粋・副作用なし)。 |
 | `downloadCsv(filename?, options?)` | `exportCsv` の結果を `.csv` としてダウンロード(`filename` 既定 `'export.csv'`、`bom` 既定 `true`)。 |
 
-`CsvExportOptions`: `scope`(下表)、`includeHeaders`(既定 `true`)、`delimiter`(既定 `','`。`'\t'` で TSV)、`bom`(`exportCsv` は既定 `false` / `downloadCsv` は既定 `true` = Excel 互換)、`escapeFormulas`(既定 `false`。`true` で `=` / `+` / `-` / `@` / タブ / CR で始まる値の先頭に `'` を付け、表計算ソフトで数式として実行されないようにする(CSV インジェクション対策)。`-5` のように数値として読める値はそのまま。ヘッダー行は対象外)、`includeLabelRows`(既定 `false`。ラベル行(`labelRow`)を `exportText`(未指定なら `getLabel` を先頭列・他列は空)の 1 行として出力する)。値整形はコピー(クリップボード)と同じ規則(`formatClipboardValue` があればそれ、無ければ `String(value ?? '')`)。RFC 4180 のクォート、行区切りは CRLF。props の `isRowExportable` 指定時は `false` の行が出力から行ごと除かれる(コピー / `getExportData` も同じ規則)。
+`CsvExportOptions`: `scope`(下表)、`includeHeaders`(既定 `true`)、`delimiter`(既定 `','`。`'\t'` で TSV)、`bom`(`exportCsv` は既定 `false` / `downloadCsv` は既定 `true` = Excel 互換)、`escapeFormulas`(既定 `false`。`true` で `=` / `+` / `-` / `@` / タブ / CR で始まる値の先頭に `'` を付け、表計算ソフトで数式として実行されないようにする(CSV インジェクション対策)。`-5` のように数値として読める値はそのまま。ヘッダー行は対象外)、`includeLabelRows`(既定 `false`。ラベル行(`labelRow`)を `exportText`(未指定なら `getLabel` を先頭列・他列は空)の 1 行として出力する)、`includeTotalRow`(既定 `false`。合計行(`totalRow`)を末尾に 1 行出す。scope `'view'` のときだけで、値は生値)。値整形はコピー(クリップボード)と同じ規則(`formatClipboardValue` があればそれ、無ければ `String(value ?? '')`)。RFC 4180 のクォート、行区切りは CRLF。props の `isRowExportable` 指定時は `false` の行が出力から行ごと除かれる(コピー / `getExportData` も同じ規則)。
 
 **scope 対応表**(`exportCsv` / `downloadCsv` / `getExportData` 共通):
 
@@ -1206,7 +1244,7 @@ serverSide(SSRM)の注意: `'view'` は未ロード行をスキップ(= ロー�
 | --- | --- |
 | `getExportData(options?)` | 列メタ + 2 次元セルの、シリアライズ非依存な整形済みデータを返す(純粋・副作用なし)。 |
 
-`GridExportOptions`: `scope`(既定 `'view'`。上記 **scope 対応表**と同一規則を共有)、`includeLabelRows`(既定 `false`。ラベル行を含める。含めたときは `rowKinds` で行種を判別できる)。
+`GridExportOptions`: `scope`(既定 `'view'`。上記 **scope 対応表**と同一規則を共有)、`includeLabelRows`(既定 `false`。ラベル行を含める。含めたときは `rowKinds` で行種を判別できる)、`includeTotalRow`(既定 `false`。合計行を末尾に含める。scope `'view'` のときだけで、`rowKinds` の `'total'` で判別できる)。
 
 戻り値 `GridExportData`:
 
@@ -1214,7 +1252,7 @@ serverSide(SSRM)の注意: `'view'` は未ロード行をスキップ(= ロー�
 type GridExportData = {
   columns: { key: string; title: string }[];   // 視覚順(selection では選択列のみ)
   rows: { value: unknown; text: string }[][];   // scope の行レンジ(SSRM 未ロード行はスキップ)
-  rowKinds?: ('data' | 'label')[];              // includeLabelRows: true のときだけ(rows と同じ長さ)
+  rowKinds?: ('data' | 'label' | 'total')[];    // ラベル行 / 合計行を含めたときだけ(rows と同じ長さ)
 };
 ```
 
@@ -1484,7 +1522,7 @@ beforeAll(() => {
 
 ## パーツ別スロット(`classNames` / `GridSlotProps`)
 
-`className` 系の受け口(`classNames.*` / `cellClassName` / `getRowClassName` / `detailRow.className` / `labelRow.className`)はすべて **`GridSlotProps`** を受ける(バレルから `GridSlotProps` / `GridClassNames` を公開)。
+`className` 系の受け口(`classNames.*` / `cellClassName` / `getRowClassName` / `detailRow.className` / `labelRow.className` / `totalRow.className`)はすべて **`GridSlotProps`** を受ける(バレルから `GridSlotProps` / `GridClassNames` を公開)。
 
 ```ts
 type GridSlotProps = string | { className?: string; style?: CSSProperties };
@@ -1506,6 +1544,7 @@ type GridSlotProps = string | { className?: string; style?: CSSProperties };
 | `groupRow` / `groupCell` | グループ行 / グループ行のセル(`bodyRow` / `bodyCell` に加えて付与) |
 | `detailBand` / `detailCard` | 展開行の帯 / カード(`detailRow.className` に加えて付与) |
 | `labelRow` / `labelRowContent` | ラベル行(見出し / 区切り行)の行要素 `.ssg-body-row[data-ssg-label-row]`(`bodyRow` / `labelRow.className` に加えて付与。縦固定の複製にも付く)/ 中身の器 `.ssg-label-row-content` |
+| `totalRow` / `totalCell` | 合計行の行要素 `.ssg-total-row`(3 ペイン分。`totalRow.className` に加えて付与)/ 合計行のセル `.ssg-total-cell`(`bodyCell` に加えて付与) |
 | `iconButton` | ヘッダーのアイコンボタン `.ssg-icon-btn` |
 | `popover` | ポータル系パネルの root(列メニュー / フィルター / コンテキストメニュー / select エディタ候補 / ツールパネル。`document.body` 直下) |
 | `menuItem` | メニュー項目 `.ssg-menu-item`(列メニュー / コンテキストメニュー) |
@@ -1562,6 +1601,7 @@ const s = stylex.create({
 | `.ssg-body-cell--row-hovered` | 行ホバー中のセル(`enableRowHover` 有効時)。 |
 | `.ssg-body-cell--autoheight` | auto-height 列のセル。 |
 | `.ssg-body-cell--align-center` / `.ssg-body-cell--align-right` | `column.align` の水平寄せ。 |
+| `.ssg-total-row` / `.ssg-total-cell` | 合計行(`totalRow`)の行 / セル(セルは `.ssg-body-cell` にも付く。種類の見出しは `.ssg-total-caption`)。 |
 | `.ssg-theme-dark` | `theme="dark"`(または `'auto'` のダーク解決)時に root と各ポータル(popover / menu / panel / ツールチップ)へ。 |
 
 ※上記以外の `ssg-*` クラス(内部構造クラス)は非公開の実装詳細で、予告なく変わり得る。セレクタで依存しないこと。

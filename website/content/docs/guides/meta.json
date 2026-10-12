@@ -12,6 +12,7 @@
     "grouping",
     "detail-row",
     "label-rows",
+    "total-row",
     "row-drag",
     "column-drag",
     "export",

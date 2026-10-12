@@ -663,6 +663,9 @@ function App() {
   //   縦スクロール固定(sticky)は別トグルで確認できます。
   const [labelRowEnabled, setLabelRowEnabled] = useState(false);
   const [labelRowSticky, setLabelRowSticky] = useState(true);
+  // 追加(合計行デモ): 表の下端に固定する合計行(totalRow)の ON/OFF です。ON(clientSide)で品名 = 個数 /
+  //   数量・金額 = 合計の aggFunc を列へ付け、フィルター後の行で集計します。serverSide では無効。
+  const [totalRowEnabled, setTotalRowEnabled] = useState(false);
   // 追加(scrollHint デモ): スクロール位置インジケーター(バブル + ルーラー)のモードです。
   //   1M 行での現在位置把握が主目的のため、デモでは既定 ON にしています(ライブラリ既定は OFF)。
   //   hintColumn='partNo' で「行番号 + 品番」を表示します。
@@ -821,8 +824,12 @@ function App() {
   // 追加(grouping デモ): グリッドへ渡す列です。トグル ON(clientSide)のときだけ
   //   単位 → 状態 の rowGroup と 数量/金額 の sum 集計を列定義へ付与します(列 state 自体は
   //   変えず表示用に導出)。OFF 時は DnD 等で state に流入したフラグを外して素の列へ戻します。
+  //   変更(合計行デモ): 合計行 ON(clientSide)のときは 品名 = 個数 / 数量・金額 = 合計の aggFunc も付けます
+  //   (グルーピング中はグループ行にも同じ集計が出ます)。
   const gridColumns = useMemo(() => {
-    if (!rowGroupingEnabled || mode === 'server') {
+    const grouping = rowGroupingEnabled && mode !== 'server';
+    const totals = totalRowEnabled && mode !== 'server';
+    if (!grouping && !totals) {
       return columns.some((column) => column.rowGroup || column.aggFunc)
         ? columns.map((column) => ({
             ...column,
@@ -831,14 +838,17 @@ function App() {
           }))
         : columns;
     }
-    return columns.map((column) =>
-      column.key === 'status' || column.key === 'unit'
-        ? { ...column, rowGroup: true }
-        : column.key === 'qty' || column.key === 'amount'
-          ? { ...column, aggFunc: 'sum' as const }
-          : column,
-    );
-  }, [columns, rowGroupingEnabled, mode]);
+    return columns.map((column) => {
+      const rowGroup = grouping && (column.key === 'status' || column.key === 'unit') ? true : undefined;
+      const aggFunc =
+        column.key === 'qty' || column.key === 'amount'
+          ? ('sum' as const)
+          : totals && column.key === 'partName'
+            ? ('count' as const)
+            : undefined;
+      return { ...column, rowGroup, aggFunc };
+    });
+  }, [columns, rowGroupingEnabled, totalRowEnabled, mode]);
 
   return (
     <main
@@ -1287,6 +1297,15 @@ function App() {
           >
             ラベル行の縦固定: {labelRowSticky ? 'ON' : 'OFF'}
           </button>
+          {/* 追加(合計行デモ): 表の下端に固定する合計行(totalRow)。serverSide では無効。 */}
+          <button
+            type="button"
+            onClick={() => setTotalRowEnabled((v) => !v)}
+            disabled={mode === 'server'}
+            style={modeButtonStyle(totalRowEnabled, mode === 'server')}
+          >
+            合計行: {totalRowEnabled ? 'ON' : 'OFF'}
+          </button>
           {/* 追加(行選択デモ): チェックボックス行選択の ON/OFF・モード切替・全選択/解除・選択キー確認。 */}
           <button
             type="button"
@@ -1469,6 +1488,8 @@ function App() {
             `[demo] onRowMove: ${String(params.rowKey)} を ${params.fromIndex} → ${params.toIndex} へ移動`,
           );
         }}
+        // 追加(合計行デモ): 表の下端に固定する合計行(列の aggFunc で集計)。
+        totalRow={totalRowEnabled && mode !== 'server'}
         // 追加(label-row デモ): ラベル行。isLabel の行を見出しとして全幅の帯で描き、React で装飾します
         //   (節番号バッジ + 見出し + セクション内のデータ行数)。
         labelRow={

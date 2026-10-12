@@ -242,7 +242,14 @@ import GridBodyLayer from './view/GridBodyLayer';
 // 追加(detail ③): 展開行の帯 + カードを各ペインへ描くレイヤーです。
 import GridDetailLayer from './view/GridDetailLayer';
 import type { GridDetailLayerEntry } from './view/GridDetailLayer';
-import GridHeaderRow from './view/GridHeaderRow';
+import GridHeaderRow, { type GridPaneKind } from './view/GridHeaderRow';
+// 追加(合計行 3A): 下端に固定する合計行と、その集計(core)。
+import GridTotalRow from './view/GridTotalRow';
+import {
+  EMPTY_TOTAL_ROW_CELLS,
+  TOTAL_ROW_DEFAULT_LABEL,
+  resolveTotalRowLabelColumnKey,
+} from '@ishibashi0112/spreadsheet-grid-core/logic/totalRow';
 import useColumnMenuController from './hooks/useColumnMenuController';
 import ColumnMenuPopover from './view/ColumnMenuPopover';
 // 変更(UP-1): フィルター管理 / 列の表示 / 並び替えの独立 3 パネルを統合ツールパネル
@@ -520,6 +527,8 @@ export function SpreadsheetGrid<T extends object>({
   onExpandedDetailRowKeysChange,
   // 追加(label-row ②): ラベル行(見出し / 区切り行)。未指定なら機能は完全に休眠します。
   labelRow,
+  // 追加(合計行 3A): 表の下端に固定する合計行。未指定 / false なら機能は完全に休眠します。
+  totalRow,
   // 追加(row-drag ③): 行ドラッグ並び替え(既定 OFF)。
   enableRowDrag = false,
   isRowDraggable,
@@ -782,6 +791,14 @@ export function SpreadsheetGrid<T extends object>({
   const labelExportText = labelRow?.exportText;
   const labelKeepEmptySections = labelRow?.keepEmptySections ?? false;
   const labelRowEnabled = labelIsLabelRow != null && labelGetLabel != null;
+  // 追加(合計行 3A): 合計行のオプションを分解します(true は既定値だけで有効化)。footerHeight は下端に固定する行の
+  //   高さで、スクロール計算(見える高さ / 末尾 / 行を見せる位置)に渡します。無効時は 0 = 従来どおり。
+  const totalRowOptions = typeof totalRow === 'object' && totalRow !== null ? totalRow : null;
+  const totalRowEnabled = totalRow === true || totalRowOptions !== null;
+  const totalRowLabel = totalRowOptions?.label ?? TOTAL_ROW_DEFAULT_LABEL;
+  const totalRowValues = totalRowOptions?.values;
+  const totalRowRenderCell = totalRowOptions?.renderCell;
+  const footerHeight = totalRowEnabled ? Math.max(0, totalRowOptions?.height ?? rowHeight) : 0;
 
 
 
@@ -1517,6 +1534,8 @@ export function SpreadsheetGrid<T extends object>({
     scrollContainerRef,
     setViewState: gridStore.setViewState,
     onScroll,
+    // 追加(合計行 3A): viewportHeight は合計行に隠れる分を除いた高さ(無効時 0 = 従来どおり)。
+    footerHeight,
   });
 
   // 変更(10-C): 列の仮想化は「中央ペインの列エントリ」に対して行います。
@@ -1983,6 +2002,11 @@ export function SpreadsheetGrid<T extends object>({
   //   参照安定。利用側がレンダー毎に新しいオブジェクトを渡しても memo 済み子の props は揺れません)。
   const slots = useResolvedGridSlots(classNames);
   const detailCardSlot = useResolvedGridSlot(detailRow?.className);
+  // 追加(合計行 3A): totalRow.className(classNames.totalRow に加えて付与)。
+  const totalRowSlot = useResolvedGridSlot(totalRowOptions?.className);
+  // 追加(合計行 3A): 合計行に入ったら行ホバーを外します(列ヘッダーに入ったときと同じ。直前にいた行を
+  //   強調したままにしない)。applyHoveredRowChange は恒久安定なので合計行の memo を崩しません。
+  const handleTotalRowPointerEnter = useCallback(() => applyHoveredRowChange(null), [applyHoveredRowChange]);
 
   // 追加(TT-1): カスタムツールチップの表示制御です(body 直下シングルトン + window 委譲。
   //   複数グリッド同居時はフック内の refCount で共有されます)。
@@ -2005,6 +2029,8 @@ export function SpreadsheetGrid<T extends object>({
     activeCell: uiState.activeCell,
     // 追加(scroll-space 仮想化): active cell 自動スクロールの論理↔物理換算に使います。
     verticalScaleFactor,
+    // 追加(合計行 3A): スクロール可能な高さに足し、行を見せるときは合計行の裏に隠さない。
+    footerHeight,
   });
 
   // 注記(10-G): 旧実装にあった「中央ペインの scrollTop を transform で固定ペインへ同期する
@@ -2430,6 +2456,28 @@ export function SpreadsheetGrid<T extends object>({
   const conditionalFormatStats = useMemo(
     () => engine.resolveConditionalFormatStats(rowModel, orderedColumns),
     [engine, rowModel, orderedColumns],
+  );
+  // ── 追加(合計行 3A): 合計行のセル値(フィルター後のデータ行 = order から集計。serverSide は values だけ)と、
+  //   見出しを出す列。内容が同じなら参照不変(合計行の memo を壊さない)──
+  const totalRowCells = useMemo(
+    () =>
+      totalRowEnabled
+        ? engine.resolveTotalRowCells({
+            rows,
+            order: isServerSide ? null : order,
+            columns: orderedColumns,
+            values: totalRowValues,
+          })
+        : EMPTY_TOTAL_ROW_CELLS,
+    [engine, totalRowEnabled, rows, isServerSide, order, orderedColumns, totalRowValues],
+  );
+  const totalRowLabelColumnKey = useMemo(
+    () => resolveTotalRowLabelColumnKey(orderedColumns, totalRowCells),
+    [orderedColumns, totalRowCells],
+  );
+  const totalRowExport = useMemo(
+    () => (totalRowEnabled ? { cells: totalRowCells, label: totalRowLabel } : undefined),
+    [totalRowEnabled, totalRowCells, totalRowLabel],
   );
   // ── 追加(F-2): セル内検索 ──
   //   実体は engine.find(controllers/findController。走査は時間分割)。React はスナップショットを購読し、既定セルの
@@ -3245,7 +3293,8 @@ export function SpreadsheetGrid<T extends object>({
   const columnDropIndicatorStyle: CSSProperties = {
     position: 'absolute',
     top: 0,
-    height: headerHeight + physicalBodyHeight,
+    // 変更(合計行 3A): 合計行まで貫きます(無効時 0)。
+    height: headerHeight + physicalBodyHeight + footerHeight,
     transform: 'translateX(-1px)',
     pointerEvents: 'none',
     zIndex: 8,
@@ -3696,6 +3745,34 @@ export function SpreadsheetGrid<T extends object>({
   //   - frozen shadow（影）＋ ペイン境界線は従来どおり付けます（hasContent のときのみ）。
   //   - zIndex で中央ペイン(zIndex:1)より前面に描画し、影が中央ペインのセルに重なって
   //     「浮いた固定列」に見えるようにします。
+  // 追加(合計行 3A): 各ペインの合計行(無効時は何も描かない)。行ヘッダーの持ち主 / 列の並びは本体の行と同じです。
+  const renderTotalRow = (
+    pane: GridPaneKind,
+    ownsRowHeader: boolean,
+    leadingWidth: number,
+    renderEntries: PaneColumnEntry<T>[],
+  ) =>
+    totalRowEnabled ? (
+      <GridTotalRow<T>
+        pane={pane}
+        ownsRowHeader={ownsRowHeader}
+        leadingWidth={leadingWidth}
+        bodyHeight={physicalBodyHeight}
+        height={footerHeight}
+        renderEntries={renderEntries}
+        cells={totalRowCells}
+        label={totalRowLabel}
+        labelColumnKey={totalRowLabelColumnKey}
+        ariaRowIndex={viewRowCount + 2}
+        rowHeaderCellStyle={rowHeaderCellStyle}
+        renderCell={totalRowRenderCell}
+        rowClassName={totalRowSlot.className}
+        rowStyle={totalRowSlot.style}
+        slots={slots}
+        onPointerEnter={handleTotalRowPointerEnter}
+      />
+    ) : null;
+
   const pinnedPaneStyle = (
     side: 'left' | 'right',
     width: number,
@@ -4071,6 +4148,9 @@ export function SpreadsheetGrid<T extends object>({
     isRowExportable,
     // 追加(label-row ④): ラベル行のエクスポート設定(scope 'raw' の除外 / includeLabelRows の出力値)。
     labelRowExport,
+    // 追加(合計行 3A): 合計行のエクスポート(includeTotalRow)と、末尾 / 行を見せる位置の計算に使う高さ。
+    totalRowExport,
+    footerHeight,
     activeToolPanelTab,
     openToolPanel,
     closeToolPanel,
@@ -4200,7 +4280,8 @@ export function SpreadsheetGrid<T extends object>({
           //   行番号列 + 視覚順の列。範囲選択できるなら複数選択可、readOnly なら読み取り専用。
           role="grid"
           aria-label={ariaLabel}
-          aria-rowcount={viewRowCount + 1}
+          // 変更(合計行 3A): 合計行を表示しているときは 1 行足します(見出し行 + 表示行 + 合計行)。
+          aria-rowcount={viewRowCount + 1 + (totalRowEnabled ? 1 : 0)}
           aria-colcount={orderedColumns.length + 1}
           aria-multiselectable={enableRangeSelection || undefined}
           aria-readonly={readOnly || undefined}
@@ -4219,7 +4300,8 @@ export function SpreadsheetGrid<T extends object>({
             style={{
               width: totalScrollWidth,
               minWidth: totalScrollWidth,
-              height: headerHeight + physicalBodyHeight,
+              // 変更(合計行 3A): 下端に固定する合計行の高さを足します(無効時 0)。
+              height: headerHeight + physicalBodyHeight + footerHeight,
             }}
           >
 
@@ -4245,7 +4327,8 @@ export function SpreadsheetGrid<T extends object>({
                   overflow: 'clip',
                   width: leftPaneTotalWidth,
                   minWidth: leftPaneTotalWidth,
-                  height: headerHeight + physicalBodyHeight,
+                  // 変更(合計行 3A): 合計行(ボックスの下端の sticky 行)の高さを足します。
+                  height: headerHeight + physicalBodyHeight + footerHeight,
                 }}
               >
                 <GridHeaderRow
@@ -4427,6 +4510,8 @@ export function SpreadsheetGrid<T extends object>({
                   />
                 )}
                 </div>
+                {/* 追加(合計行 3A): 下端に固定する合計行(本体ぶんの空きの直後 = ボックスの下端の sticky 行)。 */}
+                {renderTotalRow('left', true, leftLeadingWidth, leftRenderEntries)}
               </div>
             )}
 
@@ -4456,7 +4541,8 @@ export function SpreadsheetGrid<T extends object>({
                 overflow: 'clip',
                 width: centerContentWidth,
                 minWidth: centerContentWidth,
-                height: headerHeight + physicalBodyHeight,
+                // 変更(合計行 3A): 合計行(ボックスの下端の sticky 行)の高さを足します。
+                height: headerHeight + physicalBodyHeight + footerHeight,
               }}
             >
               <GridHeaderRow
@@ -4642,6 +4728,8 @@ export function SpreadsheetGrid<T extends object>({
                   />
                 )}
               </div>
+              {/* 追加(合計行 3A): 下端に固定する合計行(本体ぶんの空きの直後 = ボックスの下端の sticky 行)。 */}
+              {renderTotalRow('center', centerOwnsRowHeader, centerLeadingWidth, centerRenderEntries)}
 
               {/* 追加(13-B3-2): 中央ペインのドロップインジケータ(縦線)。
                   controller が ref 経由で display/left を imperative に制御します
@@ -4665,7 +4753,8 @@ export function SpreadsheetGrid<T extends object>({
                   overflow: 'clip',
                   width: rightPaneTotalWidth,
                   minWidth: rightPaneTotalWidth,
-                  height: headerHeight + physicalBodyHeight,
+                  // 変更(合計行 3A): 合計行(ボックスの下端の sticky 行)の高さを足します。
+                  height: headerHeight + physicalBodyHeight + footerHeight,
                 }}
               >
                 <GridHeaderRow
@@ -4841,6 +4930,8 @@ export function SpreadsheetGrid<T extends object>({
                   <div ref={rightRowDropIndicatorRef} className="ssg-row-drop-indicator" />
                 )}
                 </div>
+                {/* 追加(合計行 3A): 下端に固定する合計行(本体ぶんの空きの直後 = ボックスの下端の sticky 行)。 */}
+                {renderTotalRow('right', false, rightLeadingWidth, rightRenderEntries)}
               </div>
             )}
 

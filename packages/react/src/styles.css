@@ -59,6 +59,10 @@
     --ssg-label-row-bg: #eef2f7;
     --ssg-label-row-text: #1e293b;
     --ssg-label-row-accent: var(--ssg-accent);
+    /* 追加(合計行 3A): 合計行の背景・文字色・上辺の区切り線。 */
+    --ssg-total-row-bg: #f2f5fa;
+    --ssg-total-row-text: var(--ssg-cell-text);
+    --ssg-total-row-border: var(--ssg-divider);
     --ssg-checkbox-border: #94a3b8;
     --ssg-checkbox-bg: #ffffff;
     --ssg-checkbox-checked-bg: var(--ssg-accent);
@@ -265,6 +269,8 @@
     --ssg-label-row-bg: #24272e;
     --ssg-label-row-text: #e6e7ea;
     --ssg-label-row-accent: var(--ssg-accent);
+    /* 追加(合計行 3A): 合計行の背景(文字色・区切り線は既定の var() 参照で追従)。 */
+    --ssg-total-row-bg: #222429;
     --ssg-checkbox-border: #5c5f66;
     --ssg-checkbox-bg: #1a1b1e;
     --ssg-checkbox-checked-mark: #141517;
@@ -598,6 +604,41 @@
   .ssg-label-row--sticky {
     pointer-events: auto;
     box-shadow: 0 1px 0 var(--ssg-divider);
+  }
+
+  /* ── 追加(合計行 3A): 表の下端に固定する合計行(totalRow) ── */
+  /* 各ペインのボックスの下端(本体ぶんの空きの直後)に置く sticky 行です。縦スクロール中はスクロールコンテナの
+     下端に留まり、行が少ないときは最後の行の直後に来ます。z-index はヘッダー行と同じ 6(本体の行 / 選択枠 /
+     エディタより前面)。上辺の区切り線は box-shadow(セルの境界と重ならない)。 */
+  .ssg-total-row {
+    position: sticky;
+    bottom: 0;
+    z-index: 6;
+    background-color: var(--ssg-total-row-bg);
+    box-shadow: 0 -1px 0 var(--ssg-total-row-border);
+  }
+  .ssg-total-cell {
+    background-color: var(--ssg-total-row-bg);
+    color: var(--ssg-total-row-text);
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+  }
+  .ssg-total-row-header {
+    background-color: var(--ssg-total-row-bg);
+    font-weight: 600;
+    white-space: nowrap;
+    overflow: hidden;
+  }
+  /* 合計以外の集計(平均 / 最小 / 最大 / 個数)の種類。値の前に小さく出します。 */
+  .ssg-total-caption {
+    margin-right: 6px;
+    font-size: 0.85em;
+    font-weight: 500;
+    color: var(--ssg-glyph);
+  }
+  .ssg-total-label {
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 
   /* ── 展開行(detail / Master-Detail) ── */

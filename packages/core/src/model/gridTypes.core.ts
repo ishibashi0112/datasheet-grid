@@ -694,6 +694,65 @@ export type LabelRowOptions<T, F extends GridFrameworkTypes = GridFrameworkTypes
   exportText?: (row: T) => string | ReadonlyArray<string | number | null | undefined>;
 };
 
+// 追加(合計行 3A): 合計行(totalRow)のセルの種別です。組み込み集計名、'custom'(aggFunc が関数)、
+//   'value'(totalRow.values で渡した値)のいずれかです。
+export type TotalRowCellKind = GridAggFuncName | 'custom' | 'value';
+
+// 追加(合計行 3A): totalRow.renderCell へ渡すコンテキストです。
+export type TotalRowCellContext<T, F extends GridFrameworkTypes = GridFrameworkTypes> = {
+  column: GridColumn<T, F>;
+  // 集計値(または values で渡した値)。数値対象が 0 件の sum / avg / min / max は undefined。
+  value: unknown;
+  kind: TotalRowCellKind;
+  // 既定の表示文字列(valueFormatter 適用済み。count は件数のまま)。
+  text: string;
+  // 値の前に出す小さな見出し(平均 / 最小 / 最大 / 個数)。合計・カスタム・values の値は undefined。
+  caption: string | undefined;
+};
+
+// 追加(合計行 3A): 合計行の設定です(totalRow prop にオブジェクトで渡したとき)。true は既定値だけで有効化します。
+//   列ごとの集計は GridColumn.aggFunc(行グルーピングと共通)で決め、フィルター後のデータ行(ラベル行は除く。
+//   グルーピング中は折りたたまれた行も含む)で計算します。serverSide では計算せず values の値だけを出します。
+/**
+ * 合計行の設定です(`totalRow` prop)。`true` を渡すと既定値だけで有効になります。
+ *
+ * 各フィールドの説明は React 版パッケージ `@ishibashi0112/spreadsheet-grid` に同梱の `API_REFERENCE.md`
+ * の「合計行」節と同じ内容です。
+ */
+export type TotalRowOptions<T, F extends GridFrameworkTypes = GridFrameworkTypes> = {
+  // 先頭列(行ドラッグ / 展開トグルの合成列を除く)に出す見出しです。先頭列に値があるときは行番号の欄へ出します。
+  /**
+   * 見出し。行ドラッグ /
+   * 展開トグルの合成列を除いた先頭列に出す(その列に値があるときは行番号の欄へ)。
+   *
+   * @defaultValue `'合計'`
+   */
+  label?: string;
+  // 列 key → 表示する値です。指定した列は計算せずこの値を出します(serverSide はこれだけ)。
+  /**
+   * 列 key → 表示する値。指定した列は計算せずこの値を出す(`aggFunc` より優先。serverSide
+   * はこれだけ)。
+   */
+  values?: Readonly<Record<string, unknown>>;
+  // 値のあるセルの中身を差し替えます(既定は caption + text)。
+  /**
+   * 値のあるセルの中身を差し替える。`ctx = { column, value, kind, text, caption }`(`kind` は
+   * `'sum' | 'avg' | 'min' | 'max' | 'count' | 'custom' | 'value'`、`text` は既定の表示文字列、
+   * `caption` は種類の見出し)。
+   */
+  renderCell?: (ctx: TotalRowCellContext<T, F>) => F['node'];
+  // 合計行の高さ(px)。未指定は rowHeight。
+  /**
+   * 合計行の高さ(px)。
+   *
+   * @defaultValue `rowHeight`
+   */
+  height?: number;
+  // 合計行の行要素へ追加する className(または { className, style })。classNames.totalRow に加えて付与。
+  /** 行要素へ追加する class(または `{ className, style }`)。`classNames.totalRow` に加えて付与。 */
+  className?: GridSlotProps<F>;
+};
+
 // 追加(row-drag ③): 行ドラッグ並び替え(enableRowDrag)の行ごとの可否判定(isRowDraggable)へ
 //   渡すコンテキストです。sourceRowIndex は元 rows の index。
 export type RowDragContext = {
@@ -1098,10 +1157,11 @@ export type GridColumn<T, F extends GridFrameworkTypes = GridFrameworkTypes> = {
   //   ならない値と空値(null / undefined / '')は対象外です(count のみ leaf 行数)。
   //   rowGroup 列がないときは無視されます。
   /**
-   * グルーピング時のこの列の集計。
+   * グルーピング時と合計行(`totalRow`)のこの列の集計。
    * 組み込みは数値と数値の文字列だけを数える集計(空値・空白だけの文字列・`true` /
-   * `false`・`Date`・配列などは対象外、`count` は配下 leaf 行数)。
-   * 関数でカスタム集計可(返り値がグループ行に表示)。`rowGroup` 列がないときは無視。
+   * `false`・`Date`・配列などは対象外、`count` は配下 leaf 行数 / 合計行では対象の行数)。
+   * 関数でカスタム集計可(返り値がグループ行 / 合計行に表示)。`rowGroup` 列も `totalRow`
+   * もないときは無視。
    */
   aggFunc?: GridAggFuncName | GridAggFunc<T, F>;
   /**
@@ -1699,6 +1759,18 @@ export type GridClassNames<F extends GridFrameworkTypes = GridFrameworkTypes> = 
    * 縦固定の複製にも付く)/ 中身の器 `.ssg-label-row-content`
    */
   labelRowContent?: GridSlotProps<F>;
+  // 追加(合計行 3A): 合計行(.ssg-total-row。3 ペイン分)。
+  /**
+   * `totalRow` / `totalCell`: 付与先: 合計行の行要素 `.ssg-total-row`(3 ペイン分。
+   * `totalRow.className` に加えて付与)/ 合計行のセル `.ssg-total-cell`(`bodyCell` に加えて付与)
+   */
+  totalRow?: GridSlotProps<F>;
+  // 追加(合計行 3A): 合計行のセル(.ssg-total-cell)。
+  /**
+   * `totalRow` / `totalCell`: 付与先: 合計行の行要素 `.ssg-total-row`(3 ペイン分。
+   * `totalRow.className` に加えて付与)/ 合計行のセル `.ssg-total-cell`(`bodyCell` に加えて付与)
+   */
+  totalCell?: GridSlotProps<F>;
   // ポータル系パネルのルート(列メニュー / フィルター / コンテキストメニュー / select エディタ候補 /
   //   ツールパネル。document.body 直下に描画されるため .ssg-root の子孫ではありません)。
   /**
@@ -1818,6 +1890,8 @@ export type CsvExportOptions = {
   // 追加(label-row ④): ラベル行(labelRow)を出力に含めるか(既定 false)。true のとき、ラベル行は
   //   labelRow.exportText(未指定なら getLabel を先頭列・他列は空)の 1 行として出力されます。
   includeLabelRows?: boolean;
+  // 追加(合計行 3A): 合計行(totalRow)を末尾に含めるか(既定 false)。scope 'view' のときだけ出力します。
+  includeTotalRow?: boolean;
 };
 
 // 追加(imperative API: getExportData): エクスポート用「整形済みデータ」のオプションです。CSV と同じ
@@ -1829,6 +1903,9 @@ export type GridExportOptions = {
   // 追加(label-row ④): ラベル行を含めるか(既定 false)。true のとき rows にラベル行が混ざり、
   //   GridExportData.rowKinds で行種を判別できます。
   includeLabelRows?: boolean;
+  // 追加(合計行 3A): 合計行(totalRow)を末尾に含めるか(既定 false)。scope 'view' のときだけ出力し、
+  //   GridExportData.rowKinds の 'total' で判別できます。
+  includeTotalRow?: boolean;
 };
 
 // 追加(imperative API: getExportData): エクスポート 1 セルの内容です。
@@ -1849,9 +1926,10 @@ export type GridExportCell = {
 export type GridExportData = {
   columns: { key: string; title: string }[];
   rows: GridExportCell[][];
-  // 追加(label-row ④): rows と同じ長さの行種配列です(includeLabelRows: true のときのみ存在)。
+  // 追加(label-row ④): rows と同じ長さの行種配列です(includeLabelRows / includeTotalRow で行が増えるときのみ存在)。
   //   'label' の行は labelRow.exportText 由来のセル列で、Excel 側で結合セル / 書式を当てる判定に使えます。
-  rowKinds?: Array<'data' | 'label'>;
+  //   追加(合計行 3A): 'total' は末尾の合計行です。
+  rowKinds?: Array<'data' | 'label' | 'total'>;
 };
 
 // 追加(state v2): 列メタのシリアライズ単位です(getState / applyState の GridState.columns 要素)。
@@ -3426,6 +3504,22 @@ export type SpreadsheetGridProps<T, F extends GridFrameworkTypes = GridFramework
    * @defaultValue —(無効)
    */
   labelRow?: LabelRowOptions<T, F>;
+  // ── 追加(合計行 3A): 表の下端に固定する合計行 ──
+  //   指定時のみ有効な opt-in 機能です。詳細は TotalRowOptions を参照。
+  /**
+   * **合計行**。表の下端に合計行を固定表示する(縦スクロールしても動かず、
+   * 横スクロールと左右の固定列には付いていく)。列ごとの集計は
+   * `GridColumn.aggFunc`(行グルーピングと共通)で決め、
+   * フィルター後のデータ行で計算し直す(ラベル行は数えず、グルーピング中は折りたたんだ行も数える)。
+   * 合計以外の組み込み集計は値の前に種類(平均 / 最小 / 最大 / 個数)を出す。表示専用(選択 / 編集 /
+   * 貼り付け / コピーの対象外)。`true` で既定値、オブジェクトで
+   * `{ label?, values?, renderCell?, height?, className? }`。serverSide は計算せず `values`
+   * の値だけを出す。エクスポートは `includeTotalRow: true` のときだけ末尾に含める。詳細は「合計行」
+   * 節。
+   *
+   * @defaultValue —(無効)
+   */
+  totalRow?: boolean | TotalRowOptions<T, F>;
   // ── 追加(row-drag ③): 行ドラッグ並び替え ──
   //   true で先頭にドラッグハンドル列(幅 28px の合成列。左固定列があれば左ペイン)を挿入し、
   //   ハンドルを掴んで行を上下へ動かせます(既定 false)。確定時は onRowsChange へ「移動後の

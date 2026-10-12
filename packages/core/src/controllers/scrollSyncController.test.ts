@@ -145,4 +145,32 @@ describe('createScrollSyncController', () => {
       vi.useRealTimers();
     }
   });
+
+  // 追加(合計行 3A): 合計行の高さぶんを引いた高さを viewportHeight にし、高さが変わったら測り直す(既定 0 は従来どおり)。
+  it('footerHeight を引いた高さを viewportHeight にし、footerHeight の変化で測り直す', () => {
+    const controller = createScrollSyncController();
+    const setViewState = vi.fn();
+    const el = makeElement();
+    const ref = { current: el };
+    controller.update({ scrollContainerRef: ref, setViewState, onScroll: undefined, footerHeight: 36 });
+    expect(setViewState).toHaveBeenLastCalledWith({ scrollTop: 0, viewportHeight: 264, viewportWidth: 500 });
+    // 同じ高さの update では測り直さない。
+    setViewState.mockClear();
+    controller.update({ scrollContainerRef: ref, setViewState, onScroll: undefined, footerHeight: 36 });
+    expect(setViewState).not.toHaveBeenCalled();
+    // ResizeObserver も同じ基準。
+    resizeCallback?.();
+    expect(setViewState).toHaveBeenLastCalledWith({ viewportHeight: 264, viewportWidth: 500 });
+    // 合計行を外す → clientHeight に戻る。
+    controller.update({ scrollContainerRef: ref, setViewState, onScroll: undefined });
+    expect(setViewState).toHaveBeenLastCalledWith({ viewportHeight: 300 });
+    // 高さが clientHeight を超えても負にならない。
+    controller.update({ scrollContainerRef: ref, setViewState, onScroll: undefined, footerHeight: 400 });
+    expect(setViewState).toHaveBeenLastCalledWith({ viewportHeight: 0 });
+    controller.dispose();
+    // dispose 後は測り直さない。
+    setViewState.mockClear();
+    controller.update({ scrollContainerRef: { current: null }, setViewState, onScroll: undefined, footerHeight: 10 });
+    expect(setViewState).not.toHaveBeenCalled();
+  });
 });

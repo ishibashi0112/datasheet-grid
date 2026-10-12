@@ -88,5 +88,6 @@ React 19 + TypeScript + Vite 製のカスタム AG Grid 風・仮想化データ
 - 展開行(Master/Detail)は 2026-09-04 に実装済み(detail batch 1〜6: `detailRow` prop、rowKey ベース状態、`data-ssg-detail` イベント境界。clientSide / SSRM 両対応)。
 - 行ドラッグ並び替えは 2026-09-04 に実装済み(row-drag batch 1〜5: `enableRowDrag` / `isRowDraggable` / `onRowMove` / `moveRow()`。合成ハンドル列 + ガイド線 + ドロップ後 FLIP。clientSide 限定・ソート / フィルター中は無効。ドラッグ中に行が退避する live 方式は 2026-10-10 の M-11 で `rowDragMotion: 'live'` として実装済み)。
 - ラベル行(見出し / 区切り行)は 2026-09-23 に実装済み(label-row batch 1〜5: `labelRow` prop = `isLabelRow` / `getLabel` / `render` / `height` / `className` / `sticky` / `sortMode` / `keepEmptySections` / `exportText`。rows 混在 + 述語識別、セクション内ソート、全幅帯 + sticky-left の中身、縦固定レイヤー、エクスポートの `includeLabelRows` / `rowKinds`。clientSide 中心・SSRM は述語判定のみ・rowGroup とは併用不可)。
-- 大きな未実装: 多段カラムヘッダー、ピン留め行、フィルハンドル。※エディタ種別(text / number / select / date / checkbox / custom)とセル編集バリデーション(mark / reject)は 2026-07-14 に実装済み。
+- 合計行は 2026-10-12 に実装済み(`totalRow` prop。列の `aggFunc` をフィルター後のデータ行で集計し、表の下端に sticky で固定。本体の見える高さは `footerHeight` を引いて幾何計算へ通す = scrollSync / viewportSync / gridApi。表示専用・エクスポートは `includeTotalRow`。serverSide は `values` のみ)。
+- 大きな未実装: 多段カラムヘッダー、ピン留め行(任意の行の上下固定。下端の合計行は `totalRow` で実装済み)、フィルハンドル。※エディタ種別(text / number / select / date / checkbox / custom)とセル編集バリデーション(mark / reject)は 2026-07-14 に実装済み。
 - react-doctor 由来の保留: `no-giant-component`(App.tsx + SpreadsheetGrid.tsx)、`require-pnpm-hardening`(`pnpm-workspace.yaml` 判断待ち)、`prefer-module-scope-pure-function`(ハンドラ巻き上げ Batch A 未実行)。

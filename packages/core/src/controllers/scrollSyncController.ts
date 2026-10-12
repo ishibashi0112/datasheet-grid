@@ -16,6 +16,10 @@ export type ScrollSyncArgs = {
   scrollContainerRef: ReadonlyRef<HTMLElement | null>;
   setViewState: (patch: GridViewStatePatch) => void;
   onScroll: ((params: GridScrollEventParams) => void) | undefined;
+  // 追加(合計行 3A): 下端に固定する行(合計行)の高さ。view スライスの viewportHeight は clientHeight からこれを
+  //   引いた「本体の行が見える高さ」にします(窓の行数 / scroll-space 仮想化の倍率 / 末尾の判定が合計行の裏の行を
+  //   見えている扱いにしないため)。既定 0(従来どおり clientHeight)。
+  footerHeight?: number;
 };
 
 export type ScrollSyncController = {
@@ -37,6 +41,7 @@ export const createScrollSyncController = (): ScrollSyncController => {
   let pendingNotify: GridScrollEventParams | null = null;
   let notifyFrameId: number | null = null;
   let scrollingIdleTimer: ReturnType<typeof setTimeout> | null = null;
+  let attachedElement: HTMLElement | null = null;
 
   const flushScrollNotify = () => {
     notifyFrameId = null;
@@ -47,11 +52,16 @@ export const createScrollSyncController = (): ScrollSyncController => {
     }
   };
 
+  // 追加(合計行 3A): 本体の行が見える高さ(clientHeight − 合計行の高さ)。
+  const bodyViewportHeight = (el: HTMLElement): number =>
+    Math.max(el.clientHeight - (args?.footerHeight ?? 0), 0);
+
   const attach = (el: HTMLElement) => {
+    attachedElement = el;
     // center 列 flex の利用可能幅算出に使う可視幅も同時に計測します(3 値をまとめて 1 回の更新)。
     args?.setViewState({
       scrollTop: el.scrollTop,
-      viewportHeight: el.clientHeight,
+      viewportHeight: bodyViewportHeight(el),
       viewportWidth: el.clientWidth,
     });
     const handleScroll = () => {
@@ -83,7 +93,7 @@ export const createScrollSyncController = (): ScrollSyncController => {
     el.addEventListener('scroll', handleScroll, { passive: true });
     const resizeObserver = new ResizeObserver(() => {
       args?.setViewState({
-        viewportHeight: el.clientHeight,
+        viewportHeight: bodyViewportHeight(el),
         viewportWidth: el.clientWidth,
       });
     });
@@ -100,17 +110,25 @@ export const createScrollSyncController = (): ScrollSyncController => {
       }
       el.classList.remove(SCROLLING_CLASS_NAME);
       resizeObserver.disconnect();
+      attachedElement = null;
     };
   };
 
   return {
     update: (next) => {
+      const previousFooterHeight = args?.footerHeight ?? 0;
       args = next;
       if (detach === null) {
         const el = next.scrollContainerRef.current;
         if (el) {
           attach(el);
         }
+        return;
+      }
+      // 追加(合計行 3A): 合計行の表示 / 高さが変わったら見える高さを測り直します(要素のサイズは変わらないため
+      //   ResizeObserver は発火しない)。
+      if ((next.footerHeight ?? 0) !== previousFooterHeight && attachedElement) {
+        next.setViewState({ viewportHeight: bodyViewportHeight(attachedElement) });
       }
     },
     markApiScroll: () => {

@@ -120,6 +120,7 @@ const derive = (s: ThemeState) => {
       ['--ssg-readonly-text', mix(s.text, s.cell, 0.4)],
       ['--ssg-group-row-bg', s.header],
       ['--ssg-label-row-bg', s.header],
+      ['--ssg-total-row-bg', s.header],
       ['--ssg-glyph', mix(s.text, s.cell, 0.5)],
       ['--ssg-glyph-hover', mix(s.text, s.cell, 0.15)],
       ['--ssg-checkbox-bg', s.cell],

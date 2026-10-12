@@ -49,6 +49,7 @@ import {
 } from '../logic/grouping';
 import { serializeRowsToCsv, type LabelExportLine } from '../logic/exportCsv';
 import { buildGridExportData } from '../logic/exportData';
+import { buildTotalRowExportLine, type TotalRowCells } from '../logic/totalRow';
 import { normalizeExportScope } from '../logic/exportScope';
 import { scanInvalidCells } from '../logic/validation';
 import type { ToolPanelTab } from '../controllers/toolPanelController';
@@ -78,6 +79,8 @@ export type GridApiArgs<T> = {
   windowFirstRow: number;
   windowLastRow: number;
   physicalBodyHeight: number;
+  // 追加(合計行 3A): 下端に固定する行(合計行)の高さ。末尾へのスクロール / 行を見せる位置に効きます。既定 0。
+  footerHeight?: number;
   // 追加(監査 M-05): 行高を実測するモード(auto-height 列 / 展開行)か。scrollToBottom() 直後の計測で総高が
   //   伸びたとき、末尾へ再補正するかの判定に使います(固定行高では総高が計測で変わらないため補正しない)。
   measuredRowHeights?: boolean;
@@ -101,6 +104,8 @@ export type GridApiArgs<T> = {
         exportText: ((row: T) => string | LabelExportLine) | undefined;
       }
     | undefined;
+  // 追加(合計行 3A): 合計行のエクスポート(includeTotalRow)の値と見出し(totalRow 無効時は undefined)。
+  totalRowExport?: { cells: TotalRowCells; label: string } | undefined;
   // 統合ツールパネル(openFilterManager / closeFilterManager の委譲先)。
   activeToolPanelTab: ToolPanelTab | null;
   openToolPanel: (tab: ToolPanelTab) => void;
@@ -203,7 +208,8 @@ export const createGridApi = <T,>(): GridApi<T> => {
       // 帯を含まないセル行の高さ(展開行なしでは rowsHeight と一致)。
       rowHeight: s.rowMetrics.cellHeight(clamped),
       headerHeight: s.headerHeight,
-      viewportHeight: el.clientHeight,
+      // 変更(合計行 3A): 下端の合計行に隠れる分を除いた高さ。
+      viewportHeight: el.clientHeight - (s.footerHeight ?? 0),
       currentScrollTop: physicalToLogicalScrollTop(el.scrollTop, s.verticalScaleFactor),
       align,
     });
@@ -404,37 +410,57 @@ export const createGridApi = <T,>(): GridApi<T> => {
   const stripSyntheticColumns = (exportColumns: GridColumn<T>[]): GridColumn<T>[] =>
     exportColumns.filter((column) => !isSyntheticColumnKey(column.key));
 
+  // 追加(合計行 3A): 合計行の出力行です。includeTotalRow かつ scope 'view'(後方互換 'all' を含む)で、合計行が
+  //   有効なときだけ。'raw'(フィルター無視)/ 'rendered' / 'selection' は合計の対象行と一致しないため出しません。
+  const resolveTotalLine = (
+    scope: CsvExportScope,
+    includeTotalRow: boolean | undefined,
+    exportColumns: GridColumn<T>[],
+  ): unknown[] | undefined => {
+    const totalRowExport = args?.totalRowExport;
+    if (includeTotalRow !== true || !totalRowExport || normalizeExportScope(scope) !== 'view') {
+      return undefined;
+    }
+    return buildTotalRowExportLine(exportColumns, totalRowExport.cells, totalRowExport.label);
+  };
+
   const buildCsv = (options?: CsvExportOptions): string => {
-    const resolved = resolveExportScope(options?.scope ?? 'view', options?.includeLabelRows === true);
+    const scope = options?.scope ?? 'view';
+    const resolved = resolveExportScope(scope, options?.includeLabelRows === true);
     if (!resolved) {
       return options?.bom ? '\uFEFF' : '';
     }
+    const exportColumns = stripSyntheticColumns(resolved.columns);
     return serializeRowsToCsv({
       getRow: resolved.getRow,
       startRow: resolved.startRow,
       endRow: resolved.endRow,
-      columns: stripSyntheticColumns(resolved.columns),
+      columns: exportColumns,
       delimiter: options?.delimiter,
       includeHeaders: options?.includeHeaders,
       bom: options?.bom,
       escapeFormulas: options?.escapeFormulas,
       isRowIncluded: resolved.isRowIncluded,
       getLabelLine: resolved.getLabelLine,
+      totalLine: resolveTotalLine(scope, options?.includeTotalRow, exportColumns),
     });
   };
 
   const buildExportData = (options?: GridExportOptions): GridExportData => {
-    const resolved = resolveExportScope(options?.scope ?? 'view', options?.includeLabelRows === true);
+    const scope = options?.scope ?? 'view';
+    const resolved = resolveExportScope(scope, options?.includeLabelRows === true);
     if (!resolved) {
       return { columns: [], rows: [] };
     }
+    const exportColumns = stripSyntheticColumns(resolved.columns);
     return buildGridExportData({
       getRow: resolved.getRow,
       startRow: resolved.startRow,
       endRow: resolved.endRow,
-      columns: stripSyntheticColumns(resolved.columns),
+      columns: exportColumns,
       isRowIncluded: resolved.isRowIncluded,
       getLabelLine: resolved.getLabelLine,
+      totalLine: resolveTotalLine(scope, options?.includeTotalRow, exportColumns),
     });
   };
 
@@ -459,7 +485,7 @@ export const createGridApi = <T,>(): GridApi<T> => {
         return;
       }
       applyApiScroll(el, {
-        top: Math.max(s.headerHeight + s.physicalBodyHeight - el.clientHeight, 0),
+        top: Math.max(s.headerHeight + s.physicalBodyHeight + (s.footerHeight ?? 0) - el.clientHeight, 0),
         left: el.scrollLeft,
       });
       bottomPin = s.measuredRowHeights ? { pinnedTop: el.scrollTop, until: Date.now() + BOTTOM_PIN_MS } : null;
@@ -853,7 +879,7 @@ export const createGridApi = <T,>(): GridApi<T> => {
         return;
       }
       applyApiScroll(el, {
-        top: Math.max(next.headerHeight + next.physicalBodyHeight - el.clientHeight, 0),
+        top: Math.max(next.headerHeight + next.physicalBodyHeight + (next.footerHeight ?? 0) - el.clientHeight, 0),
         left: el.scrollLeft,
       });
       bottomPin = { ...bottomPin, pinnedTop: el.scrollTop };
