@@ -233,6 +233,9 @@ function GridHeaderRowInner<T>({
   return (
     <div
       data-pane={pane}
+      // 追加(audit V-05): ARIA の表構造(見出し行 = 1 行目。3 ペインの見出し行はいずれも同じ行番号)。
+      role="row"
+      aria-rowindex={1}
       className={cx('ssg-header-row', slots?.headerRow?.className)}
       style={{
         ...slots?.headerRow?.style,
@@ -241,17 +244,10 @@ function GridHeaderRowInner<T>({
     >
       {ownsRowHeader && (
         <div
-          // 追加(行選択): 全選択チェック表示時はコーナーが tri-state チェックとして振る舞います。
-          role={showSelectAllCheckbox ? 'checkbox' : undefined}
-          aria-checked={
-            showSelectAllCheckbox
-              ? selectAllState === 'all'
-                ? true
-                : selectAllState === 'some'
-                  ? 'mixed'
-                  : false
-              : undefined
-          }
+          // 変更(audit V-05 / RD-10): コーナーは行番号列の見出し(columnheader)。全選択チェック表示時の
+          //   tri-state チェックの役割は中のチェックボックス(アクセシブル名付き)へ移しました。
+          role="columnheader"
+          aria-colindex={1}
           onPointerDown={onCornerPointerDown}
           onPointerEnter={onCornerPointerEnter}
           onPointerLeave={onCornerPointerLeave}
@@ -278,6 +274,7 @@ function GridHeaderRowInner<T>({
           {showSelectAllCheckbox ? (
             <RowSelectionCheckbox
               slot={slots?.checkbox}
+              label="すべての行を選択"
               state={
                 selectAllState === 'all'
                   ? 'checked'
@@ -352,6 +349,17 @@ function GridHeaderRowInner<T>({
           <div
             key={column.key}
             data-ssg-col-key={column.key}
+            // 追加(audit V-05): 列見出し。aria-colindex は行番号列(1)の次から数える視覚順。aria-sort は
+            //   第 1 ソートキーの列だけに付けます(ARIA の推奨どおり 1 列のみ)。
+            role="columnheader"
+            aria-colindex={colIndex + 2}
+            aria-sort={
+              sortIndex === 0 && sortEntry
+                ? sortEntry.direction === 'asc'
+                  ? 'ascending'
+                  : 'descending'
+                : undefined
+            }
             onPointerDown={(event) => {
               if (column.renderHeader && isFromRenderHeaderControl(event)) {
                 return;

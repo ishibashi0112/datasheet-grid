@@ -5,6 +5,8 @@
 // 追加: 列フィルター UI 整備 + ソート/フィルター見た目強化を反映します。
 import {
   useEffect,
+  // 追加(audit V-05): アクティブセルの DOM id(aria-activedescendant)をグリッドごとに一意にします。
+  useId,
   useLayoutEffect,
   useMemo,
   useCallback,
@@ -480,6 +482,8 @@ export function SpreadsheetGrid<T extends object>({
   // 追加(12-B): 0 行時の空状態テキストです(AG Grid のオーバーレイ相当)。
   noMatchingRowsText = '一致する行がありません',
   noRowsText = '表示する行がありません',
+  // 追加(audit V-05): 表(role="grid")のアクセシブル名。
+  ariaLabel,
   // 追加: top/bottom バーの表示有無です(既定 true)。false で当該バーを一切描画しません
   //   (renderTopBar / renderBottomBar / enableGlobalFilter より優先のマスタースイッチ)。
   showTopBar = true,
@@ -1868,6 +1872,32 @@ export function SpreadsheetGrid<T extends object>({
 
   const leftRenderEntries = paneLayout.left.entries;
   const rightRenderEntries = paneLayout.right.entries;
+
+  // 追加(audit V-05): アクティブセルの DOM id と、シェルの aria-activedescendant。フォーカスはシェル(またはエディタ /
+  //   入力受け)に置いたままなので、支援技術へはアクティブセルを aria-activedescendant で伝えます。参照先が描画されて
+  //   いないとき(縦横の仮想化で外れた / グループ行・ラベル行・未ロード行)は付けません(存在しない id を指さない)。
+  const gridDomId = useId();
+  const activeCellDomId = `${gridDomId}-active-cell`;
+  const activeCellForAria = uiState.activeCell;
+  const activeDescendantId = useMemo(() => {
+    const cell = activeCellForAria;
+    if (cell === null || !virtualRowIndexes.has(cell.row) || rowModel.getRow(cell.row) === undefined) {
+      return undefined;
+    }
+    const isRendered = (entries: readonly (PaneColumnEntry<T> | undefined)[]) =>
+      entries.some((entry) => entry?.logicalIndex === cell.col);
+    return isRendered(leftRenderEntries) || isRendered(centerRenderEntries) || isRendered(rightRenderEntries)
+      ? activeCellDomId
+      : undefined;
+  }, [
+    activeCellForAria,
+    virtualRowIndexes,
+    rowModel,
+    leftRenderEntries,
+    centerRenderEntries,
+    rightRenderEntries,
+    activeCellDomId,
+  ]);
 
   // ── active cell placement（10-D: ペイン別座標系） ──────
   // 追加(10-D): active cell が属するペインと、そのペインローカル矩形を求めます。
@@ -3476,6 +3506,7 @@ export function SpreadsheetGrid<T extends object>({
         return (
           <CheckboxCell
             slot={slots.checkbox}
+            label={column.title || column.key}
             checked={isCheckboxChecked(value, column.editor)}
             readOnly={cellState.readOnly}
             onToggle={() =>
@@ -4134,6 +4165,11 @@ export function SpreadsheetGrid<T extends object>({
         }}
         // 追加: popup(フィルター / 列メニュー)open 中は grid root を tab フォーカス対象から外します。
         tabIndex={isAnyGridPopupOpen ? -1 : 0}
+        // 追加(audit V-05): フォーカスを持つシェルからアクティブセルを指します(aria-activedescendant を持てる
+        //   role として group。表そのもの(role="grid")は内側のスクロールコンテナ。シェルには検索バー / エラー
+        //   バー / 入力受けなど表の行ではない要素も入るため)。
+        role="group"
+        aria-activedescendant={activeDescendantId}
         // 追加: popup open 中は root の keyboard/paste handler 自体を外します。
         onKeyDown={isAnyGridPopupOpen ? undefined : handleKeyDown}
         onPaste={isAnyGridPopupOpen ? undefined : handlePaste}
@@ -4146,6 +4182,14 @@ export function SpreadsheetGrid<T extends object>({
         {/*   pinned 列がない場合は左右ペインが width:0 で非表示、中央ペインのみ表示。     */}
         <div
           ref={scrollContainerRef}
+          // 追加(audit V-05): ARIA の表。行数は見出し行 + 表示行(仮想化で描画していない行も数える)、列数は
+          //   行番号列 + 視覚順の列。範囲選択できるなら複数選択可、readOnly なら読み取り専用。
+          role="grid"
+          aria-label={ariaLabel}
+          aria-rowcount={viewRowCount + 1}
+          aria-colcount={orderedColumns.length + 1}
+          aria-multiselectable={enableRangeSelection || undefined}
+          aria-readonly={readOnly || undefined}
           className={cx(
             'ssg-scroll-container',
             // 追加(scrollHint): カスタムスクロールバー有効時はネイティブ縦バーを隠し、
@@ -4311,6 +4355,7 @@ export function SpreadsheetGrid<T extends object>({
                 />
 
                 <GridBodyLayer
+                  activeCellDomId={activeCellDomId}
                   pane="left"
                   ownsRowHeader
                   leadingWidth={leftLeadingWidth}
@@ -4520,6 +4565,7 @@ export function SpreadsheetGrid<T extends object>({
                 />
 
                 <GridBodyLayer
+                  activeCellDomId={activeCellDomId}
                   pane="center"
                   ownsRowHeader={centerOwnsRowHeader}
                   leadingWidth={centerLeadingWidth}
@@ -4726,6 +4772,7 @@ export function SpreadsheetGrid<T extends object>({
                 />
 
                 <GridBodyLayer
+                  activeCellDomId={activeCellDomId}
                   pane="right"
                   ownsRowHeader={false}
                   leadingWidth={rightLeadingWidth}

@@ -10,7 +10,7 @@
 //   - SegmentedControl は Mantine 風のスライドインジケータです。セグメントは等幅のため、
 //     インジケータは CSS 変数(--ssg-seg-count / --ssg-seg-index)による translateX だけで
 //     追従し、実測(offsetWidth)を使いません(resize / タブ数変化に自動追従)。
-import { useEffect } from 'react';
+import { useEffect, useId } from 'react';
 import { createPortal } from 'react-dom';
 import { cx } from '@ishibashi0112/spreadsheet-grid-core/logic/cx';
 import type { CSSProperties, KeyboardEvent, PointerEvent, ReactNode, RefObject } from 'react';
@@ -72,6 +72,8 @@ export function ToolPanel({
     layout,
     onPanelMove,
   });
+  // 追加(audit V-14): タブ / タブパネルの id の基底。
+  const tabIdBase = useId();
 
   // 追加(UP-2 / 既開時フラッシュ): flashTick が増えたら panelRef の枠を一瞬フラッシュします。
   //   既存のヘッダージャンプ(ssg-header-cell--jump-flash)と同じ「JS 直付け + animationend
@@ -159,6 +161,9 @@ export function ToolPanel({
                 key={descriptor.tab}
                 type="button"
                 role="tab"
+                // 追加(audit V-14): タブとパネルを id で結びます(パネルはアクティブタブの中身 1 つだけ)。
+                id={`${tabIdBase}-tab-${descriptor.tab}`}
+                aria-controls={isActive ? `${tabIdBase}-panel` : undefined}
                 aria-selected={isActive}
                 onClick={() => {
                   if (!isActive) {
@@ -193,7 +198,14 @@ export function ToolPanel({
       {/* ── ボディ: アクティブタブのコンテンツ ── */}
       {/* min-height でタブ間の高さのガタつきを緩和しつつ、内容が短いタブでは各コンテンツの
           リスト(flex: 1)が伸びてフッターが下端に揃います(自然高 + min-height 方式)。 */}
-      <div className="ssg-toolpanel-body">{children}</div>
+      <div
+        className="ssg-toolpanel-body"
+        role="tabpanel"
+        id={`${tabIdBase}-panel`}
+        aria-labelledby={`${tabIdBase}-tab-${activeTab}`}
+      >
+        {children}
+      </div>
     </div>,
     document.body,
   );

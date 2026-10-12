@@ -55,6 +55,18 @@ describe('ToolPanel(統合ツールパネルのシェル UP-1)', () => {
     expect(tabs[1].getAttribute('aria-selected')).toBe('true');
   });
 
+  // 追加(audit V-14): アクティブタブとパネル本体を aria-controls / aria-labelledby で結ぶ。
+  it('アクティブタブは tabpanel を aria-controls で指し、tabpanel は aria-labelledby でそのタブを指す', () => {
+    render(<ToolPanel {...makeProps('columns')}>content</ToolPanel>);
+    const panel = screen.getByRole('tabpanel');
+    const active = screen.getByRole('tab', { name: '列' });
+    expect(active.getAttribute('aria-controls')).toBe(panel.id);
+    expect(panel.getAttribute('aria-labelledby')).toBe(active.id);
+    expect(screen.getByRole('tabpanel', { name: '列' })).toBe(panel);
+    // 非アクティブのタブはパネルを持たないため aria-controls を付けない。
+    expect(screen.getByRole('tab', { name: /フィルター/ }).hasAttribute('aria-controls')).toBe(false);
+  });
+
   it('非アクティブタブのクリックで onSelectTab(tab)、アクティブタブの再クリックは発火しない', () => {
     const props = makeProps('columns');
     render(<ToolPanel {...props}>content</ToolPanel>);

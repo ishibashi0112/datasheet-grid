@@ -83,6 +83,7 @@
 | `enableColumnHeaderHover` | `boolean` | `true` | 列ヘッダーのホバー時にヘッダーセルを薄くハイライト。 |
 | `noMatchingRowsText` | `string` | `'一致する行がありません'` | フィルター結果 0 行時のオーバーレイ文言。serverSide(`dataSource`)では列 / グローバルフィルターが掛かった状態で 0 件のときにこちら、掛かっていなければ `noRowsText` を出す。 |
 | `noRowsText` | `string` | `'表示する行がありません'` | rows が 0 件のときの文言。 |
+| `ariaLabel` | `string` | — | 表(`role="grid"` の要素)のアクセシブル名。スクリーンリーダーが表を読み上げるときの名前で、1 画面に複数のグリッドを置くときは付けておくと区別できる(「アクセシビリティ」節)。 |
 | `showTopBar` | `boolean` | `true` | 上部バー(ツールバー)の表示有無。`false` で `renderTopBar` / `enableGlobalFilter` に関わらず一切描画しない(表示のマスタースイッチ。矛盾指定時は `renderTopBar` より優先)。 |
 | `showTopBarSummary` | `boolean` | `true` | 既定トップバーの summary chips(件数/フィルター/ソート)の表示有無。`renderTopBar` 未指定時のみ有効。これと `showTopBarFilter` がともに非表示なら既定トップバーは描画されない(空バーを出さない)。 |
 | `showTopBarCounts` | `boolean` | `true` | 既定トップバーの Rows / Columns 件数 chips の表示有無。`showTopBarSummary=true`(かつ `renderTopBar` 未指定)のときのみ有効。Filter / Sort chips は対象外。 |
@@ -407,6 +408,25 @@ const gridRef = useRef<SpreadsheetGridHandle<Row>>(null);
 IME オンのまま(編集していないセルで)日本語を打ち始めるには `imeDirectInput` を有効にする(既定 OFF。無効時は変換が始まらず最初の入力が失われる。「IME オンのままの直接入力」節)。
 
 確定後の移動先は「確定を反映した再レンダー後」の行数・列数でクランプされる。このため、`onRowsChange` で末尾に空行を追加する消費側(Excel 的な入力グリッドの定石パターン)では、最終行の `Enter` 確定で「増えた行」へそのまま移動できる。行が増えない場合は従来どおり最終行に留まる。
+
+### アクセシビリティ
+
+WAI-ARIA の grid パターンに沿って、表・行・セルに役割と状態を付けている(支援技術向け。`ariaLabel` で表の名前を付けられる)。
+
+| 要素 | 役割 / 属性 |
+| --- | --- |
+| 表本体(`.ssg-scroll-container`) | `role="grid"`。`aria-label`(`ariaLabel`)/ `aria-rowcount`(見出し行を含む表示中の行数)/ `aria-colcount`(行番号列を含む列数)/ `aria-multiselectable`(`enableRangeSelection` 時)/ `aria-readonly`(`readOnly` 時)。 |
+| フォーカスを受ける要素(`.ssg-shell`) | `role="group"`。`aria-activedescendant` はアクティブセルが描画されているときだけ、そのセルの `id`(キーボードでセルを移動すると支援技術がそのセルを読み上げる)。 |
+| 見出し行 / データ行 | `role="row"`。`aria-rowindex` は見出し行が 1、データ行は表示順 + 2。行選択のチェックボックスがあるときは `aria-selected`。未ロード行(SSRM のスケルトン)は `aria-busy`。 |
+| 列見出し | `role="columnheader"`。`aria-colindex`(行番号列が 1)。ソートの第 1 キーの列だけ `aria-sort`(`ascending` / `descending`)。 |
+| 行番号 / 左上の角 | `role="rowheader"` / `role="columnheader"`。 |
+| セル | `role="gridcell"`。`aria-colindex` / `aria-selected`(選択範囲内)/ `aria-readonly`(編集できないセル)。 |
+| 行選択のチェックボックス | `role="checkbox"`。`aria-checked`(一部選択は `mixed`)/ `aria-label`(「すべての行を選択」「行 N を選択」)。 |
+| `editor: { type: 'checkbox' }` のセル | `role="checkbox"`。`aria-label` は列の `title`(無ければ `key`)。 |
+| 編集中のエディタ | `role="group"`、`aria-label` は「(列名)を編集」。 |
+
+- 仮想化で描画していない行・列は DOM に無いため、表全体の中の位置は `aria-rowindex` / `aria-colindex` / `aria-rowcount` / `aria-colcount` で伝える。
+- 制約: 編集中のエディタは行の外に重ねて描画するため、セルの子としては読み上げられない(上の `aria-label` で列名を伝える)。展開行(`detailRow`)の帯は `aria-rowindex` を持たない(データ行の番号をずらさないため)。縦固定で複製したラベル行(`labelRow.sticky`)は `aria-hidden`。
 
 ## GridColumn props (`GridColumn<T>`)
 

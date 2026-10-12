@@ -3192,6 +3192,12 @@ export type SpreadsheetGridProps<T, F extends GridFrameworkTypes = GridFramework
    * @defaultValue `'表示する行がありません'`
    */
   noRowsText?: string;
+  // 追加(audit V-05): 表(role="grid" の要素)のアクセシブル名。スクリーンリーダーが表を読み上げるときの名前です。
+  /**
+   * 表(`role="grid"` の要素)のアクセシブル名。スクリーンリーダーが表を読み上げるときの名前で、1
+   * 画面に複数のグリッドを置くときは付けておくと区別できる(「アクセシビリティ」節)。
+   */
+  ariaLabel?: string;
   // 追加: 上部バー(ツールバー)を表示するかどうかです。既定 true。
   //   false にすると renderTopBar / enableGlobalFilter に関わらず上部バーを一切描画しません
   //   (表示のマスタースイッチ。矛盾指定時は renderTopBar より優先されます)。

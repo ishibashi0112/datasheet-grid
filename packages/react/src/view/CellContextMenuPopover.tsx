@@ -87,6 +87,8 @@ export function CellContextMenuPopover({
           return (
             <div
               key={item.id ?? `sep-${index}`}
+              // 追加(audit V-14): role="menu" の中の区切りとして公開します。
+              role="separator"
               className="ssg-menu-separator"
             />
           );

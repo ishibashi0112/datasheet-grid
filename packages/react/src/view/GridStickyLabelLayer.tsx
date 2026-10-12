@@ -58,7 +58,8 @@ function GridStickyLabelLayerInner<T>({
   }
   const { labelRow, rowIndex, rowKey, height, pushOffset } = entry;
   return (
-    <div className="ssg-sticky-label-layer" style={{ top: headerHeight }}>
+    // 追加(audit V-05): 本物のラベル行の見た目上の複製なので、支援技術からは隠します(同じ行が 2 回読まれないように)。
+    <div className="ssg-sticky-label-layer" style={{ top: headerHeight }} aria-hidden="true">
       <div
         data-pane={pane}
         data-ssg-sticky-label=""

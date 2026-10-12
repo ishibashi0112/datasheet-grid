@@ -83,11 +83,15 @@ function GridDetailLayerInner({
           <div
             key={entry.rowKey}
             className={cx('ssg-detail-band', slots?.detailBand?.className)}
+            // 追加(audit V-05): カードを持つ帯(中央ペイン)は ARIA の行 + セル(行番号は持たない)。左右の固定ペインの
+            //   帯は背景だけなので支援技術から隠します。
+            {...(mode === 'center' ? { role: 'row' } : { 'aria-hidden': true })}
             data-detail-row-index={virtualRow.index}
             style={{ ...slots?.detailBand?.style, ...bandStyle }}
           >
             {mode === 'center' && (
               <div
+                role="gridcell"
                 className="ssg-detail-card-holder"
                 style={{ left: cardStickyLeft, width: cardWidth }}
               >

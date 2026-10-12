@@ -269,6 +269,10 @@ export function CellEditorLayer<T>({
     <div
       className={cx('ssg-cell-editor', slots?.cellEditor?.className)}
       style={{ ...slots?.cellEditor?.style, ...wrapperStyle }}
+      // 追加(audit V-05): エディタは行の外に重ねて描画するため、どの列を編集しているかを名前で伝えます。
+      {...(editorSession
+        ? { role: 'group', 'aria-label': `${editorSession.column.title || editorSession.column.key} を編集` }
+        : {})}
     >
       {editorNode}
     </div>

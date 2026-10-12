@@ -194,7 +194,7 @@
 
 ## 11. 対応状況(2026-10-12 残り全件)
 
-§4 の低優先と §3 の残りを対応した。挙動が変わる 5 件(RD-4 / L-10 / L-20 / V-16 / RD-11)はユーザー判断(推奨案)のうえで実施。各修正に回帰テストを付け、修正を外すとテストが落ちることを確認した。a11y(V-05 / RD-10 / V-14)は ARIA の整備として別バッチで対応する。
+§4 の低優先と §3 の残りを対応した。挙動が変わる 5 件(RD-4 / L-10 / L-20 / V-16 / RD-11)はユーザー判断(推奨案)のうえで実施。各修正に回帰テストを付け、修正を外すとテストが落ちることを確認した。a11y(V-05 / RD-10 / V-14)は ARIA の整備として別バッチ(下表の末尾 3 行)で対応した。
 
 | ID | 対応 | 互換性 | 備考 |
 | --- | --- | --- | --- |
@@ -240,3 +240,6 @@
 | B-10 / B-11 / M-04 | 対応しない | — | 性能のみ(本番ビルドでは許容範囲)。再計算の細分化は影響範囲が広く、退行リスクに見合わない |
 | L-15 | 対応しない | — | 日付をまたいで開きっぱなしの稀なケース。他の入力が変われば解決し直されるため、時刻を memo 入力に足して全体を毎回再計算するコストに見合わない |
 | P-5 / P-6 | 修正(website 複製の `Ctrl/Cmd+C` 行を同期 / ci.yml のコメントを `packageManager` に直し、デモ app のビルドを CI に追加) | 非破壊 | website の `next build` は CI 対象外のまま(ローカルで `cd website && vp exec next build`) |
+| V-05 | 修正(WAI-ARIA の grid パターン。表本体 `.ssg-scroll-container` を `role="grid"`(`aria-rowcount` / `aria-colcount` / `aria-multiselectable` / `aria-readonly`)、各ペインの行を `role="row"` + `aria-rowindex`(見出し行 1、データ行は表示順 + 2)、セルを `gridcell` / `columnheader` / `rowheader` + `aria-colindex`(見た目の順、行番号列 1)、`aria-sort` はソート第 1 キーの列だけ。フォーカスを受ける `.ssg-shell` は `role="group"` + `aria-activedescendant`(アクティブセルが描画されているときだけ)。新 prop `ariaLabel`) | 非破壊(支援技術向けの属性追加) | ラベル行は行番号も中身も持たないペインの帯を、展開行は中央以外の帯を、縦固定の複製ラベル行は丸ごと `aria-hidden`。展開行の帯は `aria-rowindex` を持たない。編集中のエディタは行の外に重ねるため `role="group"` +「(列名)を編集」の名前で補う(制約として文書化)。キーボードでの行選択の切り替えは未提供(印字キーの編集開始と衝突するため別途)。API_REFERENCE + website(props の「アクセシビリティ」節 / keyboard ガイド)+ 生成 JSDoc 更新 |
+| RD-10 | 修正(行選択 / 全選択のチェックボックスを `role="checkbox"` + `aria-checked`(一部選択は `mixed`)+ 名前「行 N を選択」「すべての行を選択」に。役割はセルから中の glyph へ移し、セルは `rowheader` / `columnheader`。checkbox 列のセルは列名を名前に) | 非破壊 | 孤立していたラベル行の `role="row"` は grid の中に収まった |
+| V-14 | 修正(上部バーの検索欄に `aria-label="表全体を検索"`、コンテキストメニューの区切りに `role="separator"`、ツールパネルのタブと本体を `aria-controls` / `role="tabpanel"` + `aria-labelledby` で結ぶ) | 非破壊 | |
