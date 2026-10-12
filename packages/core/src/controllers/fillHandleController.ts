@@ -10,7 +10,8 @@
 //     そのまま。書き込みが 1 つも無ければ何もしません。
 //   - 埋めたあとはボタン(chip)を出し、メニューで埋め方を選び直せます。clientSide は埋める前の rows / 行モデル
 //     から作り直して amendRowsChange(履歴を積まない = 元に戻す 1 回で埋める前へ)、serverSide は行キーが
-//     埋めたときと同じことを確かめてから上書きします。選択 / rows / 列が変わったり編集が始まったら消します。
+//     埋めたときと同じことを確かめてから上書きします。選択 / rows / 列 / 表示の条件(viewKey: ソート / フィルター /
+//     グループ開閉 / serverSide の問い合わせ)が変わったり編集が始まったら消します。
 //   - 状態は snapshot(subscribe / getSnapshot)で、ドラッグ中のポインタ位置は別の pointer ストア(値の
 //     ツールチップだけが購読し、シェル全体を再描画しない)で公開します。
 import { gridActions, type GridUiAction } from '../model/gridActions';
@@ -92,6 +93,9 @@ export type FillHandleControllerArgs<T> = {
   selection: GridSelection;
   activeCell: CellCoord | null;
   editing: boolean;
+  // 表示の条件(ソート / フィルター / グループ開閉 / serverSide の問い合わせ等)。要素のどれかが変わったら(Object.is)
+  //   埋めたあとのボタンを消します(並びが変わった行へ選び直さない。serverSide の行キーが位置のままでも)。
+  viewKey?: readonly unknown[];
   readOnly: boolean;
   canEditCell: SpreadsheetGridProps<T>['canEditCell'];
   getFillValue?: (params: GridFillValueParams<T>) => unknown;
@@ -116,8 +120,11 @@ export type FillHandlePointerEvent = {
   metaKey: boolean;
   // 押した時刻(ダブルクリックの判定。Event.timeStamp と同じ時計)。
   timeStamp: number;
+  // ハンドルの要素(見えている四角の矩形でダブルクリックを判定します。無ければ判定しない)。
+  currentTarget?: EventTarget | null;
   preventDefault: () => void;
-  stopPropagation: () => void;
+  // 変更(見直し): 呼びません(開いているポップオーバーの外側クリック判定へ届かせるため)。型の互換で残しています。
+  stopPropagation?: () => void;
 };
 
 export type FillHandleController<T> = {
@@ -165,6 +172,40 @@ const isSameColumnOrder = <T,>(a: readonly GridColumn<T>[], b: readonly GridColu
 // ハンドルの 2 回目の押下をダブルクリックとみなす間隔(ms)と距離(px)。
 const DOUBLE_CLICK_MS = 500;
 const DOUBLE_CLICK_SLOP_PX = 6;
+// ダブルクリックは 2 回とも見えている四角(8px)の縁から この px 以内を押したときだけ(styles.css の ::before と同じ
+//   幅)。タッチの広い当たり判定(隣のセルの角にかかる)でのダブルタップは、隣のセルの編集の意図とみなします。
+const DOUBLE_CLICK_SQUARE_SLOP_PX = 2;
+
+const isPressOnVisibleSquare = (event: FillHandlePointerEvent): boolean => {
+  const element = event.currentTarget;
+  if (!(element instanceof Element)) {
+    return true;
+  }
+  const rect = element.getBoundingClientRect();
+  return (
+    event.clientX >= rect.left - DOUBLE_CLICK_SQUARE_SLOP_PX &&
+    event.clientX <= rect.right + DOUBLE_CLICK_SQUARE_SLOP_PX &&
+    event.clientY >= rect.top - DOUBLE_CLICK_SQUARE_SLOP_PX &&
+    event.clientY <= rect.bottom + DOUBLE_CLICK_SQUARE_SLOP_PX
+  );
+};
+
+const isSameViewKey = (a: readonly unknown[] | undefined, b: readonly unknown[] | undefined): boolean =>
+  a === b ||
+  (a !== undefined && b !== undefined && a.length === b.length && a.every((value, index) => Object.is(value, b[index])));
+
+const isSameFillValue = (a: unknown, b: unknown): boolean =>
+  Object.is(a, b) || (a instanceof Date && b instanceof Date && a.getTime() === b.getTime());
+
+// 選び直した書き込みが今の書き込みと同じか(同じなら書き直さない)。
+const isSameFillEdits = <T,>(a: readonly FillCellEdit<T>[], b: readonly FillCellEdit<T>[]): boolean =>
+  a.length === b.length &&
+  a.every(
+    (edit, index) =>
+      edit.viewIndex === b[index].viewIndex &&
+      edit.column.key === b[index].column.key &&
+      isSameFillValue(edit.value, b[index].value),
+  );
 
 // 埋めたときの記録(ボタンでの選び直し用)。
 type FillRecord<T> = {
@@ -175,6 +216,10 @@ type FillRecord<T> = {
   previousSource: FillRange;
   selectionConfirmed: boolean;
   columns: GridColumn<T>[];
+  viewKey: readonly unknown[] | undefined;
+  // 最後に選んだ埋め方と、そのときの書き込み(選び直しで同じ書き込みになるなら何もしない)。
+  request: FillRequest;
+  edits: FillCellEdit<T>[];
   // clientSide: 埋める前の rows / 行モデル と、これまでに出した rows(親が戻すのを待つあいだも消さない)。
   baseRows: readonly T[] | null;
   baseRowModel: RowModel<T> | null;
@@ -199,6 +244,8 @@ export const createFillHandleController = <T,>(): FillHandleController<T> => {
     source: FillRange;
     activeCell: CellCoord | null;
     origin: { x: number; y: number };
+    // 見えている四角を押したか(ダブルクリックの 1 回目にできるか)。
+    onSquare: boolean;
     pointer: { x: number; y: number };
     toggled: boolean;
     target: FillTarget | null;
@@ -245,6 +292,7 @@ export const createFillHandleController = <T,>(): FillHandleController<T> => {
         source: drag.source,
         target: drag.target,
         request: request(drag.toggled),
+        canWriteCell: canWriteCell(args),
         getFillValue: args.getFillValue,
       });
       // 空の値(空欄で埋める)はツールチップを出しません。
@@ -332,9 +380,9 @@ export const createFillHandleController = <T,>(): FillHandleController<T> => {
       applyFill(finished.source, finished.target, request(finished.toggled), finished.activeCell);
       return;
     }
-    // 埋めずに離した(クリック)。次の押下が近ければダブルクリックです。
+    // 埋めずに離した(クリック)。次の押下が近ければダブルクリックです(見えている四角を押したときだけ)。
     lastClick =
-      commit && timeStamp !== undefined
+      commit && timeStamp !== undefined && finished.onSquare
         ? { time: timeStamp, x: finished.origin.x, y: finished.origin.y }
         : null;
   };
@@ -411,6 +459,9 @@ export const createFillHandleController = <T,>(): FillHandleController<T> => {
       previousSource: source,
       selectionConfirmed: false,
       columns: current.columns,
+      viewKey: current.viewKey,
+      request: fillRequest,
+      edits: result.edits,
       baseRows,
       baseRowModel: current.isServerSide ? null : current.rowModel,
       emittedRows,
@@ -467,10 +518,17 @@ export const createFillHandleController = <T,>(): FillHandleController<T> => {
   };
 
   const hideChip = () => {
+    // メニューにフォーカスがあるまま消えるとき(外から rows / 表示が変わった等)は、フォーカスをグリッドへ戻します
+    //   (消えたメニューと一緒に body へ落とさない)。
+    const focusInMenu =
+      typeof document !== 'undefined' && menuPanel.current?.contains(document.activeElement) === true;
     record = null;
     menuBindings.detach();
     if (store.getSnapshot().status === 'filled') {
       store.setSnapshot(IDLE);
+    }
+    if (focusInMenu && args !== null) {
+      restoreGridFocus(args.gridRootRef);
     }
   };
 
@@ -510,7 +568,9 @@ export const createFillHandleController = <T,>(): FillHandleController<T> => {
     const snapshot = store.getSnapshot();
     const fill = record;
     closeMenuWith(true);
-    if (args === null || fill === null || snapshot.status !== 'filled' || snapshot.kind === kind) {
+    // 変更(見直し): 表示中の種類(どれか 1 列でも連続データなら「連続データ」)ではなく、書き込みが変わるかで決めます
+    //   (列ごとに埋め方が混ざるとき「連続データ」を選ぶと、コピーだった列も連続データにする)。
+    if (args === null || fill === null || snapshot.status !== 'filled' || fill.request === kind) {
       return;
     }
     const current = args;
@@ -528,9 +588,11 @@ export const createFillHandleController = <T,>(): FillHandleController<T> => {
         canWriteCell: canWriteCell(current),
         getFillValue: current.getFillValue,
       });
-      if (result.edits.length > 0) {
+      fill.request = kind;
+      if (result.edits.length > 0 && !isSameFillEdits(result.edits, fill.edits)) {
         current.applyServerSideCellEdits(result.edits);
       }
+      fill.edits = result.edits;
       store.setSnapshot({ ...snapshot, kind: result.kind, menu: null });
       return;
     }
@@ -557,9 +619,13 @@ export const createFillHandleController = <T,>(): FillHandleController<T> => {
         ),
       getFillValue: current.getFillValue,
     });
-    const nextRows = applyFillEditsToRows(fill.baseRows, baseRowModel, result.edits);
-    fill.emittedRows.push(nextRows);
-    current.amendRowsChange(nextRows);
+    fill.request = kind;
+    if (!isSameFillEdits(result.edits, fill.edits)) {
+      const nextRows = applyFillEditsToRows(fill.baseRows, baseRowModel, result.edits);
+      fill.emittedRows.push(nextRows);
+      fill.edits = result.edits;
+      current.amendRowsChange(nextRows);
+    }
     store.setSnapshot({ ...snapshot, kind: result.kind, menu: null });
   };
 
@@ -582,7 +648,12 @@ export const createFillHandleController = <T,>(): FillHandleController<T> => {
     if (fill === null) {
       return;
     }
-    if (!next.enabled || next.editing || !isSameColumnOrder(next.columns, fill.columns)) {
+    if (
+      !next.enabled ||
+      next.editing ||
+      !isSameColumnOrder(next.columns, fill.columns) ||
+      !isSameViewKey(next.viewKey, fill.viewKey)
+    ) {
       hideChip();
       return;
     }
@@ -606,8 +677,9 @@ export const createFillHandleController = <T,>(): FillHandleController<T> => {
     if (args === null || event.button !== 0) {
       return;
     }
+    // 変更(見直し): stopPropagation はしません(開いているコンテキストメニュー / 列メニュー等の「外側の押下で
+    //   閉じる」へ届かせる)。ハンドルの祖先にセルの pointerdown は無いため、選択は始まりません。
     event.preventDefault();
-    event.stopPropagation();
     if (drag !== null || !args.enabled || args.editing) {
       return;
     }
@@ -623,8 +695,10 @@ export const createFillHandleController = <T,>(): FillHandleController<T> => {
     // 2 回目の押下(埋めずに離した直後・近い位置)はダブルクリック: 隣の列に合わせて下へ埋めます。
     const previousClick = lastClick;
     lastClick = null;
+    const onSquare = isPressOnVisibleSquare(event);
     if (
       previousClick !== null &&
+      onSquare &&
       event.timeStamp - previousClick.time <= DOUBLE_CLICK_MS &&
       Math.abs(event.clientX - previousClick.x) <= DOUBLE_CLICK_SLOP_PX &&
       Math.abs(event.clientY - previousClick.y) <= DOUBLE_CLICK_SLOP_PX
@@ -688,6 +762,7 @@ export const createFillHandleController = <T,>(): FillHandleController<T> => {
       source,
       activeCell: args.activeCell,
       origin,
+      onSquare,
       pointer: origin,
       toggled: event.ctrlKey || event.metaKey,
       target: null,

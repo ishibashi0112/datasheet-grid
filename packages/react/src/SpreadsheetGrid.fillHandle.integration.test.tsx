@@ -280,6 +280,119 @@ describe('フィルハンドル(fillHandle)', () => {
     expect(onRows.mock.calls[0][0].map((row) => row.code)).toEqual(['P-001', 'P-002', 'P-003', 'P-004', '']);
   });
 
+  // ── 見直しの指摘(2026-10-12)──
+
+  it('2 回押しても、どちらかが見えている四角(±2px)の外ならダブルクリックにしない', () => {
+    const { container, ref, onRows } = setup({ fillHandle: true });
+    selectCell(ref, 0, 1);
+    const handle = handleOf(container)!;
+    vi.spyOn(handle, 'getBoundingClientRect').mockReturnValue(new DOMRect(300, 100, 8, 8));
+    // 四角の右下から 6px 外(タッチの広い当たり判定の中 = 隣のセルの角)を 2 回押す。
+    pointer(handle, 'pointerdown', { clientX: 314, clientY: 114, timeStamp: 1000 });
+    pointer(window, 'pointerup', { clientX: 314, clientY: 114, timeStamp: 1080 });
+    pointer(handle, 'pointerdown', { clientX: 314, clientY: 114, timeStamp: 1250 });
+    pointer(window, 'pointerup', { clientX: 314, clientY: 114, timeStamp: 1330 });
+    expect(onRows).not.toHaveBeenCalled();
+    // 四角の中(縁から 2px 以内を含む)なら埋める。
+    pointer(handle, 'pointerdown', { clientX: 304, clientY: 104, timeStamp: 3000 });
+    pointer(window, 'pointerup', { clientX: 304, clientY: 104, timeStamp: 3080 });
+    pointer(handle, 'pointerdown', { clientX: 309, clientY: 109, timeStamp: 3250 });
+    expect(onRows).toHaveBeenCalledTimes(1);
+  });
+
+  it('埋めたあとにソートが変わるとボタンを消す(並びが変わった行へ選び直さない)', () => {
+    const { container, ref, onRows } = setup({ fillHandle: true });
+    act(() => {
+      ref.current?.selectRange({ start: { row: 0, col: 0 }, end: { row: 1, col: 0 } });
+    });
+    dragHandleTo(container, 4, 0);
+    expect(container.querySelector('.ssg-fill-options')).not.toBeNull();
+    act(() => {
+      const state = ref.current!.getState();
+      ref.current?.applyState({ ...state, sort: [{ columnKey: 'memo', direction: 'desc' }] });
+    });
+    expect(container.querySelector('.ssg-fill-options')).toBeNull();
+    expect(onRows).toHaveBeenCalledTimes(1);
+  });
+
+  it('列ごとに埋め方が混ざるとき、ボタンで「連続データ」を選ぶとコピーだった列も連続データにする', () => {
+    const { container, ref, onRows } = setup({ fillHandle: true });
+    act(() => {
+      ref.current?.selectRange({ start: { row: 0, col: 0 }, end: { row: 0, col: 1 } });
+    });
+    dragHandleTo(container, 2, 1);
+    // No(数値 1 つ)はコピー、Code(末尾の数)は連続データ。
+    expect(onRows.mock.calls[0][0].map((row) => [row.no, row.code]).slice(0, 3)).toEqual([
+      [1, 'P-001'],
+      [1, 'P-002'],
+      [1, 'P-003'],
+    ]);
+    fireEvent.click(container.querySelector<HTMLButtonElement>('.ssg-fill-options')!);
+    const items = document.querySelectorAll<HTMLButtonElement>('.ssg-fill-menu [role="menuitemradio"]');
+    fireEvent.click(items[0]);
+    expect(onRows).toHaveBeenCalledTimes(2);
+    expect(onRows.mock.calls[1][0].map((row) => [row.no, row.code]).slice(0, 3)).toEqual([
+      [1, 'P-001'],
+      [2, 'P-002'],
+      [3, 'P-003'],
+    ]);
+    // もう一度「連続データ」を選んでも何もしない。
+    fireEvent.click(container.querySelector<HTMLButtonElement>('.ssg-fill-options')!);
+    fireEvent.click(document.querySelectorAll<HTMLButtonElement>('.ssg-fill-menu [role="menuitemradio"]')[0]);
+    expect(onRows).toHaveBeenCalledTimes(2);
+  });
+
+  it('ドラッグ中のツールチップでも、編集できないセルでは getFillValue を呼ばない', () => {
+    const getFillValue = vi.fn(({ defaultValue }: { defaultValue: unknown }) => defaultValue);
+    const { container, ref, onRows } = setup({ fillHandle: { getFillValue } });
+    selectCell(ref, 0, 2);
+    pointer(handleOf(container)!, 'pointerdown', { clientX: 0, clientY: 0 });
+    // Qty → Memo(editable: false)へ右に引く。
+    pointer(window, 'pointermove', cellPoint(0, 3));
+    expect(container.querySelector('.ssg-fill-preview')).not.toBeNull();
+    pointer(window, 'pointerup', cellPoint(0, 3));
+    expect(getFillValue).not.toHaveBeenCalled();
+    expect(onRows).not.toHaveBeenCalled();
+  });
+
+  it('ハンドルを押すと、開いているコンテキストメニューを閉じる', () => {
+    const { container, ref } = setup({
+      fillHandle: true,
+      enableContextMenu: true,
+      getContextMenuItems: () => [{ kind: 'action', key: 'a', label: 'A', onSelect: () => {} }],
+    });
+    selectCell(ref, 0, 0);
+    const cell = container.querySelectorAll('.ssg-body-row')[0]?.querySelectorAll<HTMLElement>('.ssg-body-cell')[0];
+    act(() => {
+      fireEvent.contextMenu(cell!, { clientX: 10, clientY: 10 });
+    });
+    expect(document.querySelector('[role="menu"]')).not.toBeNull();
+    const handle = handleOf(container)!;
+    pointer(handle, 'pointerdown', { clientX: 0, clientY: 0 });
+    pointer(window, 'pointerup', { clientX: 0, clientY: 0 });
+    expect(document.querySelector('[role="menu"]')).toBeNull();
+  });
+
+  it('メニューを開いたままボタンが消えたら、フォーカスをグリッドへ戻す', async () => {
+    const { container, ref } = setup({ fillHandle: true });
+    act(() => {
+      ref.current?.selectRange({ start: { row: 0, col: 0 }, end: { row: 1, col: 0 } });
+    });
+    dragHandleTo(container, 4, 0);
+    fireEvent.click(container.querySelector<HTMLButtonElement>('.ssg-fill-options')!);
+    const checked = document.querySelector<HTMLButtonElement>('.ssg-fill-menu [aria-checked="true"]');
+    expect(document.activeElement).toBe(checked);
+    // 外から rows が変わる(ここでは元に戻す)とボタンもメニューも消える。
+    act(() => {
+      ref.current?.undo();
+    });
+    expect(document.querySelector('.ssg-fill-menu')).toBeNull();
+    await act(async () => {
+      await new Promise((resolve) => requestAnimationFrame(() => resolve(null)));
+    });
+    expect(document.activeElement).toBe(container.querySelector('.ssg-shell'));
+  });
+
   it('getFillValue の返り値を書く', () => {
     const getFillValue = vi.fn(({ defaultValue, column }: { defaultValue: unknown; column: GridColumn<Row> }) =>
       column.key === 'no' ? Number(defaultValue) * 10 : defaultValue,

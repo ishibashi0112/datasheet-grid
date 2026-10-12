@@ -1270,7 +1270,10 @@
 
   /* ── 追加(フィルハンドル 1A): 選択範囲の右下の四角 / ドラッグ中の点線 / 埋めたあとのボタン ──
      座標(left / top)はインライン。ハンドルは角を中心に置き(margin で半分戻す)、押しやすいよう ::before で
-     当たり判定を広げます。アクティブセル枠(z 4)の上、列ヘッダー / 合計行(z 6)の下。 */
+     当たり判定を少しだけ広げます(隣のセルのクリック / ダブルクリックを奪わないよう、マウスは見えている四角 ± 2px
+     = 12px 四方・タッチは 24px 四方。::before の基準は縁取り 1.5px の内側なので inset はその 1.5px を足した値。
+     ダブルクリックは見えている四角 ± 2px のときだけ = fillHandleController)。
+     アクティブセル枠(z 4)の上、列ヘッダー / 合計行(z 6)の下。 */
   .ssg-fill-handle {
     width: 8px;
     height: 8px;
@@ -1289,11 +1292,11 @@
   .ssg-fill-handle::before {
     content: '';
     position: absolute;
-    inset: -6px;
+    inset: -3.5px;
   }
   @media (pointer: coarse) {
     .ssg-fill-handle::before {
-      inset: -12px;
+      inset: -9.5px;
     }
   }
   .ssg-fill-preview {
@@ -1350,8 +1353,11 @@
     font-size: 12px;
     text-align: center;
   }
-  .ssg-fill-tooltip {
+  /* .ssg-tooltip(後方で定義)より強く指定します(折り返さない・ポインタに遅れず付いてくる)。 */
+  .ssg-tooltip.ssg-fill-tooltip {
     white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
     font-variant-numeric: tabular-nums;
     transition: none;
   }

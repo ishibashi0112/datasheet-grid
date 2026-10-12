@@ -107,6 +107,13 @@ const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
   check('fill: ハンドルは 8px 四方', near(h1.w, 8, 0.6) && near(h1.h, 8, 0.6), h1);
   const cursor = await page.evaluate(() => getComputedStyle(document.querySelector('.ssg-fill-handle')).cursor);
   check('fill: ハンドルのカーソルは十字', cursor === 'crosshair', cursor);
+  // 当たり判定は見えている四角 ± 2px(隣のセルのクリック / ダブルクリックを奪わない)。
+  const hit = await page.evaluate(({ x, y }) => {
+    const handle = document.querySelector('.ssg-fill-handle');
+    const at = (dx, dy) => document.elementFromPoint(x + dx, y + dy) === handle;
+    return { in5: at(5, 5), out7: at(7, 7), outRight: at(8, 0), outBelow: at(0, 8) };
+  }, { x: h1.x, y: h1.y });
+  check('fill: 当たり判定は見えている四角 ± 2px まで(その外は隣のセル)', hit.in5 && !hit.out7 && !hit.outRight && !hit.outBelow, hit);
 
   // 範囲選択の右下に付く
   await selectRange(page, 1, QTY - 1, 2, QTY);
@@ -127,6 +134,12 @@ const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
       return { top: r.top, bottom: r.bottom, left: r.left, right: r.right, border: getComputedStyle(e).borderTopStyle };
     }),
     tip: document.querySelector('.ssg-fill-tooltip')?.textContent ?? null,
+    tipStyle: (() => {
+      const el = document.querySelector('.ssg-fill-tooltip');
+      if (!el) return null;
+      const cs = getComputedStyle(el);
+      return { whiteSpace: cs.whiteSpace, transition: cs.transitionDuration };
+    })(),
     filling: document.querySelector('.ssg-root').classList.contains('ssg-root--filling'),
     bodyCursor: getComputedStyle(document.querySelector('.ssg-body-cell')).cursor,
   }));
@@ -138,6 +151,7 @@ const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
     { mid, top1, bottom5 },
   );
   check('fill: いちばん遠いセルへ入る値をツールチップに出す(valueFormatter 込み)', mid.tip === '50', mid.tip);
+  check('fill: ツールチップは折り返さず、遅れずに付いてくる(.ssg-tooltip より強い指定)', mid.tipStyle?.whiteSpace === 'nowrap' && mid.tipStyle?.transition === '0s', mid.tipStyle);
   check('fill: ドラッグ中はルートに .ssg-root--filling(カーソルは十字)', mid.filling && mid.bodyCursor === 'crosshair', mid);
   // ドラッグ中のキーはグリッドへ流さない
   const activeBefore = await page.evaluate(() => window.__grid.getActiveCell());
@@ -219,6 +233,28 @@ const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
   await cell(page, 8, 'name').click();
   await waitIdle(page);
   check('fill: 選択を変えるとボタンが消える', (await chip(page)) === null);
+  // ソートが変わるとボタンが消える(並びが変わった行へ選び直さない)
+  await selectRange(page, 1, QTY, 2, QTY);
+  await waitIdle(page);
+  await dragTo(page, 3, 'qty');
+  check('fill: (ソート前)埋めたあとにボタン', (await chip(page)) !== null);
+  await page.evaluate(() => window.__grid.applyState({ ...window.__grid.getState(), sort: [{ columnKey: 'name', direction: 'desc' }] }));
+  await waitIdle(page, 150);
+  check('fill: ソートが変わるとボタンが消える', (await chip(page)) === null);
+  await page.evaluate(() => window.__grid.applyState({ ...window.__grid.getState(), sort: [] }));
+  await page.evaluate(() => window.__grid.undo());
+  await waitIdle(page, 150);
+  // ハンドルを押すと開いているコンテキストメニューを閉じる(ハーネスはコンテキストメニュー有効)
+  await cell(page, 8, 'name').click({ button: 'right' });
+  await waitIdle(page, 120);
+  const ctxOpen = await page.locator('.ssg-menu-panel[role="menu"]').count();
+  const hCtx = await handleInfo(page);
+  await page.mouse.move(hCtx.press[0], hCtx.press[1]);
+  await page.mouse.down();
+  await page.mouse.up();
+  await waitIdle(page, 120);
+  const ctxAfter = await page.locator('.ssg-menu-panel[role="menu"]').count();
+  check('fill: ハンドルを押すと開いているコンテキストメニューを閉じる', ctxOpen === 1 && ctxAfter === 0, { ctxOpen, ctxAfter });
 
   // ── Ctrl で入れ替え: 数値 1 つ → 1 ずつ ──
   await patchRows(page, 'qty', { 10: 7, 11: null, 12: null, 13: null });

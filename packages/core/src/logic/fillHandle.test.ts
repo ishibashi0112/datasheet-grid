@@ -332,6 +332,23 @@ describe('buildFillEdits(下 / 上)', () => {
     });
   });
 
+  it('ツールチップの値(previewFillValue)は、いちばん遠いセルが編集できなければ getFillValue を呼ばず既定の値', () => {
+    const rows = rowsOf(3, (index) => (index === 0 ? { no: 10 } : {}));
+    const getFillValue = vi.fn(() => 'x');
+    const params = {
+      rowModel: modelOf(rows),
+      columns,
+      source: range(0, 0, 0, 0),
+      target: { direction: 'down' as const, range: range(1, 2, 0, 0) },
+      request: 'toggled' as const,
+      getFillValue,
+    };
+    expect(previewFillValue({ ...params, canWriteCell: (viewIndex: number) => viewIndex !== 2 })?.value).toBe(12);
+    expect(getFillValue).not.toHaveBeenCalled();
+    expect(previewFillValue({ ...params, canWriteCell: allowAll })?.value).toBe('x');
+    expect(getFillValue).toHaveBeenCalledTimes(1);
+  });
+
   it('続き方の無い値だけならコピーで、連続データは選べない', () => {
     const rows = rowsOf(3, (index) => (index === 0 ? { name: '東京' } : {}));
     const result = buildFillEdits({

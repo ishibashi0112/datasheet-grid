@@ -371,32 +371,39 @@ export type FillPreview<T> = {
 };
 
 // ドラッグ中に出す「いちばん遠いセルへ入る値」(上下へは元の範囲の先頭のデータ列、左右へは先頭のデータ行)。
-//   編集可否 / reject は見ません(見た目の目安)。書けるセルが無い / 元の値が読めないときは null。
+//   reject は見ません(見た目の目安)。書けるセルが無い / 元の値が読めないときは null。
+//   getFillValue は、いちばん遠いセルが編集できるとき(canWriteCell)だけ呼びます(確定時と同じく、編集できない
+//   セルでは呼ばない。編集できなければ既定の値を出します)。
 export const previewFillValue = <T,>({
   rowModel,
   columns,
   source,
   target,
   request,
+  canWriteCell,
   getFillValue,
-}: Omit<BuildFillEditsParams<T>, 'canWriteCell'>): FillPreview<T> | null => {
+}: Omit<BuildFillEditsParams<T>, 'canWriteCell'> & {
+  canWriteCell?: BuildFillEditsParams<T>['canWriteCell'];
+}): FillPreview<T> | null => {
   const { direction, range } = target;
   const vertical = direction === 'down' || direction === 'up';
   const forward = direction === 'down' || direction === 'right';
   let sourceValues: unknown[];
   let column: GridColumn<T>;
+  let colIndex: number;
   let viewIndex: number;
   let row: T | undefined;
   let targetRowMissing = false;
   let lastIndex: number;
   if (vertical) {
-    const colIndex = fillPositions(source.startCol, source.endCol, 1, (index) => {
+    const firstCol = fillPositions(source.startCol, source.endCol, 1, (index) => {
       const candidate = columns[index];
       return candidate !== undefined && !isSyntheticColumnKey(candidate.key);
     })[0];
-    if (colIndex === undefined) {
+    if (firstCol === undefined) {
       return null;
     }
+    colIndex = firstCol;
     column = columns[colIndex];
     const isDataPosition = (index: number) => !isStructuralRow(rowModel, index);
     const sourceRows = forward
@@ -447,7 +454,8 @@ export const previewFillValue = <T,>({
     }
     sourceValues = sourceCols.map((colIndex) => getCellValue(sourceRow, columns[colIndex]));
     lastIndex = targetCols.length - 1;
-    column = columns[targetCols[lastIndex]];
+    colIndex = targetCols[lastIndex];
+    column = columns[colIndex];
     viewIndex = firstRow;
     row = sourceRow;
   }
@@ -455,7 +463,10 @@ export const previewFillValue = <T,>({
   const kind = resolveFillLineKind(analysis, request);
   const defaultValue = createFillLineValues(sourceValues, analysis, kind)(lastIndex);
   const value =
-    getFillValue && row !== undefined && !targetRowMissing
+    getFillValue &&
+    row !== undefined &&
+    !targetRowMissing &&
+    (canWriteCell === undefined || canWriteCell(viewIndex, colIndex, row, column))
       ? getFillValue({
           column,
           row,

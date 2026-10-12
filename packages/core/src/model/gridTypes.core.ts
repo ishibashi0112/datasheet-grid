@@ -801,8 +801,9 @@ export type FillHandleOptions<T, F extends GridFrameworkTypes = GridFrameworkTyp
   // 埋めるセルごとに書く値を決めます(返した値をそのまま書く。既定のままにするなら defaultValue を返す)。
   /**
    * 埋めるセルごとに書く値を決める。返した値をそのまま書く(既定のままにするなら
-   * `params.defaultValue` を返す)。編集できないセルでは呼ばれない。返した値も `validate` を通り、
-   * reject なら書かない。
+   * `params.defaultValue` を返す)。編集できないセルでは呼ばれない。
+   * ドラッグ中のツールチップ(いちばん遠いセルの値)でも呼ぶため、副作用の無い関数にする。返した値も
+   * `validate` を通り、reject なら書かない。
    */
   getFillValue?: (params: GridFillValueParams<T, F>) => unknown;
 };

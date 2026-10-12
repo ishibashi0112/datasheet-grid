@@ -121,9 +121,9 @@ export function FillOptionsChip({
       aria-expanded={menuOpen}
       title="オートフィル オプション"
       onPointerDown={(event) => {
-        // グリッドの選択を始めず、フォーカスもグリッドに残します。
+        // フォーカスをグリッドに残します(ボタンの祖先にセルは無いため選択は始まらない)。伝播は止めません
+        //   (開いている別のポップオーバーの「外側の押下で閉じる」へ届かせる。自分のメニューはボタンを内側とみなす)。
         event.preventDefault();
-        event.stopPropagation();
       }}
       onClick={(event) => {
         const rect = event.currentTarget.getBoundingClientRect();

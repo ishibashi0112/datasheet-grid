@@ -453,4 +453,30 @@ describe('fillHandleController: serverSide', () => {
     expect(applyServerSideCellEdits).toHaveBeenCalledTimes(2);
     expect(controller.getSnapshot()).toEqual({ status: 'idle' });
   });
+
+  it('表示の条件(viewKey: ソート / フィルター / グループ開閉 / 問い合わせ)が変わればボタンを消す(行キーが位置のままでも別の行へ書かない)', () => {
+    const controller = createFillHandleController<Row>();
+    const applyServerSideCellEdits = vi.fn((edits: FillCellEdit<Row>[]) => edits.length);
+    const sortA = [{ columnKey: 'no', direction: 'asc' }];
+    const { args } = makeArgs({
+      isServerSide: true,
+      applyRowsChange: undefined,
+      amendRowsChange: undefined,
+      applyServerSideCellEdits,
+      viewKey: [sortA, 'query-1'],
+    });
+    controller.update(args);
+    controller.handlePointerDown(downEvent());
+    dispatchPointer('pointermove', 1, 45, 35);
+    dispatchPointer('pointerup', 1, 45, 35);
+    const filledArgs = { ...args, selection: cellSelection(0, 0, 3, 0) };
+    controller.update(filledArgs);
+    // 同じ値の新しい配列なら残す。
+    controller.update({ ...filledArgs, viewKey: [sortA, 'query-1'] });
+    expect(controller.getSnapshot()).toMatchObject({ status: 'filled' });
+    controller.update({ ...filledArgs, viewKey: [sortA, 'query-2'] });
+    expect(controller.getSnapshot()).toEqual({ status: 'idle' });
+    controller.chooseKind('copy');
+    expect(applyServerSideCellEdits).toHaveBeenCalledTimes(1);
+  });
 });

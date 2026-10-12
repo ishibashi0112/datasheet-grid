@@ -2378,6 +2378,14 @@ export function SpreadsheetGrid<T extends object>({
     selection: uiState.selection,
     activeCell: uiState.activeCell,
     editing: uiState.editingCell !== null,
+    // 変更(見直し): 表示の条件が変わったら埋めたあとのボタンを消します(並びが変わった行へ選び直さない)。
+    viewKey: [
+      uiState.sort,
+      uiState.filters,
+      uiState.collapsedGroupKeys,
+      serverSideQueryKey,
+      serverSideRefreshToken,
+    ],
     readOnly,
     canEditCell,
     getFillValue: fillHandleOptions?.getFillValue,
