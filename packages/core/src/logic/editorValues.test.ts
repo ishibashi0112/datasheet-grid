@@ -5,6 +5,7 @@ import {
   parseCommittedValue,
   resolveCellParser,
   toDateInputValue,
+  toNumberInputText,
   writeRowsCell,
 } from './editorValues';
 
@@ -52,6 +53,55 @@ describe('resolveCellParser', () => {
     expect(parser('abc', makeRow())).toBe('abc');
     // 非有限(Infinity / NaN)は数値化せず生文字列のまま。
     expect(parser('Infinity', makeRow())).toBe('Infinity');
+  });
+
+  it('editor:number の既定パーサ: 全角の数字・符号・小数点と 3 桁区切りも数値として読む(全角数値)', () => {
+    const column: GridColumn<Row> = {
+      key: 'qty',
+      width: 80,
+      editor: { type: 'number' },
+    };
+    const parser = resolveCellParser(column);
+    expect(parser('１２３', makeRow())).toBe(123);
+    expect(parser('１２．５', makeRow())).toBe(12.5);
+    // IME のひらがな入力の「ー」(長音)/ 全角マイナス / マイナス記号。
+    expect(parser('ー５', makeRow())).toBe(-5);
+    expect(parser('－５', makeRow())).toBe(-5);
+    expect(parser('−５', makeRow())).toBe(-5);
+    // 3 桁区切り(Excel の書式付きの値の貼り付け)。区切り方が 3 桁でないものは数値にしない。
+    expect(parser('1,234', makeRow())).toBe(1234);
+    expect(parser('１，２３４，５６７．８', makeRow())).toBe(1234567.8);
+    expect(parser('-1,234', makeRow())).toBe(-1234);
+    expect(parser('12,34', makeRow())).toBe('12,34');
+    expect(parser('0,500', makeRow())).toBe('0,500');
+    // 句読点の設定が「、。」の IME で「.」「,」キーから入る「。」「、」。
+    expect(parser('１２。５', makeRow())).toBe(12.5);
+    expect(parser('１、２３４', makeRow())).toBe(1234);
+    // 前後の空白(全角含む)は無視、空白だけは null(従来は 0)。
+    expect(parser('　１２　', makeRow())).toBe(12);
+    expect(parser('   ', makeRow())).toBeNull();
+    expect(parser('　', makeRow())).toBeNull();
+    // 数値でないものは元の文字列のまま(寄せた文字列ではない)。
+    expect(parser('１２あ', makeRow())).toBe('１２あ');
+    expect(parser('ー', makeRow())).toBe('ー');
+    // 丸数字 / 上付き数字は別の数に化けないよう数値にしない(NFKC は使わない)。
+    expect(parser('①', makeRow())).toBe('①');
+    expect(parser('10⁵', makeRow())).toBe('10⁵');
+  });
+
+  it('toNumberInputText: type="number" に入れられる半角の文字列、読めなければ null(全角数値)', () => {
+    expect(toNumberInputText('１２．５')).toBe('12.5');
+    expect(toNumberInputText('ー１２')).toBe('-12');
+    expect(toNumberInputText('１，２３４')).toBe('1234');
+    expect(toNumberInputText('１。５')).toBe('1.5');
+    expect(toNumberInputText('1e3')).toBe('1e3');
+    // type="number" が受け付けない書き方は数値を文字列に戻す。
+    expect(toNumberInputText('１．')).toBe('1');
+    expect(toNumberInputText('．５')).toBe('0.5');
+    expect(toNumberInputText('＋５')).toBe('5');
+    expect(toNumberInputText('かな')).toBeNull();
+    expect(toNumberInputText('')).toBeNull();
+    expect(toNumberInputText('Infinity')).toBeNull();
   });
 
   it('editor:number でも parseClipboardValue 明示指定が勝つ', () => {

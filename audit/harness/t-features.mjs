@@ -614,14 +614,61 @@ import { OUT, open, check, unexpectedPageErrors, summary, errorsOf, renderedRowI
   await waitIdle(page, 200);
   check('ime: cancelled composition → no editing', (await page.locator('.ssg-cell-editor').count()) === 0 && (await page.locator('.ssg-ime-input--composing').count()) === 0);
 
-  // number エディタの列(text 以外)では変換を捨てる(従来どおり何も入らない)。
+  // 変更(全角数値): number エディタの列では、確定した全角の数字を半角に直して編集が始まる(従来は捨てていた)。
   await cell(page, 4, 'qty').click();
-  const qtyBefore = await cellText(page, 4, 'qty');
   await cdp.send('Input.imeSetComposition', { text: '１', selectionStart: 1, selectionEnd: 1 });
-  const qtyComposing = await page.locator('.ssg-ime-input--composing').count();
+  await cdp.send('Input.imeSetComposition', { text: '１２', selectionStart: 2, selectionEnd: 2 });
+  await waitIdle(page);
+  const qtyGeo = await page.evaluate(() => {
+    const ime = document.querySelector('[data-ssg-ime-input]');
+    return { composing: ime.classList.contains('ssg-ime-input--composing'), value: ime.value, align: getComputedStyle(ime).textAlign };
+  });
+  check('ime: number column → composing text shown over the cell (right aligned)', qtyGeo.composing && qtyGeo.value === '１２' && qtyGeo.align === 'right', qtyGeo);
   await cdp.send('Input.insertText', { text: '１２' });
   await waitIdle(page, 200);
-  check('ime: non-text editor column → composition discarded', qtyComposing === 0 && (await page.locator('.ssg-cell-editor').count()) === 0 && (await cellText(page, 4, 'qty')) === qtyBefore && (await imeValue()) === '');
+  const qtyEditor = await page.evaluate(() => {
+    const ed = document.querySelector('.ssg-cell-editor-input');
+    return ed ? { type: ed.type, value: ed.value, focused: document.activeElement === ed } : null;
+  });
+  check('ime: number column → commit opens the number editor with half-width digits', qtyEditor && qtyEditor.type === 'number' && qtyEditor.value === '12' && qtyEditor.focused, qtyEditor);
+  check('ime: number column → IME input hidden after hand-off', (await page.locator('.ssg-ime-input--composing').count()) === 0 && (await imeValue()) === '');
+  // 続けて IME で打った全角の数字も末尾に半角で続く(Chromium の type="number" が確定時に半角へ直す)。
+  await cdp.send('Input.imeSetComposition', { text: '３', selectionStart: 1, selectionEnd: 1 });
+  await cdp.send('Input.insertText', { text: '３' });
+  await waitIdle(page);
+  const qtyDraft = await page.locator('.ssg-cell-editor-input').inputValue().catch(() => null);
+  check('ime: number column → further full-width digits append in half-width', qtyDraft === '123', qtyDraft);
+  await page.keyboard.press('Enter');
+  await waitIdle(page, 250);
+  const qtyWritten = await page.evaluate(() => window.__rows()[4]?.qty);
+  check('ime: number column → second Enter writes the number', qtyWritten === 123 && (await active())?.ime === true, { qtyWritten, active: await active() });
+  // 数値として読めない変換(かな)は捨てる。
+  await cell(page, 4, 'qty').click();
+  await cdp.send('Input.imeSetComposition', { text: 'かな', selectionStart: 2, selectionEnd: 2 });
+  await cdp.send('Input.insertText', { text: 'かな' });
+  await waitIdle(page, 200);
+  check('ime: number column → non-numeric composition discarded', (await page.locator('.ssg-cell-editor').count()) === 0 && (await page.evaluate(() => window.__rows()[4]?.qty)) === 123 && (await page.locator('.ssg-ime-input--composing').count()) === 0 && (await imeValue()) === '');
+  // 句読点の設定が「、。」の IME で「.」キーから入る「。」も小数点として読む。
+  await cdp.send('Input.imeSetComposition', { text: '１。５', selectionStart: 3, selectionEnd: 3 });
+  await cdp.send('Input.insertText', { text: '１。５' });
+  await waitIdle(page, 200);
+  const qtyMaru = await page.locator('.ssg-cell-editor-input').inputValue().catch(() => null);
+  check('ime: number column → 「。」 is read as the decimal point', qtyMaru === '1.5', qtyMaru);
+  await page.keyboard.press('Escape');
+  await waitIdle(page, 200);
+  // 全角数字 / 3 桁区切りの貼り付けは数値で入る。
+  await pasteText(page, '１，２３４');
+  const qtyPasted = await page.evaluate(() => window.__rows()[4]?.qty);
+  check('ime: number column → pasting full-width digits writes a number', qtyPasted === 1234, qtyPasted);
+
+  // text / number 以外のエディタの列(select)では変換を捨てる(従来どおり何も入らない)。
+  await cell(page, 4, 'category').click();
+  const catBefore = await cellText(page, 4, 'category');
+  await cdp.send('Input.imeSetComposition', { text: '１', selectionStart: 1, selectionEnd: 1 });
+  const catComposing = await page.locator('.ssg-ime-input--composing').count();
+  await cdp.send('Input.insertText', { text: '１２' });
+  await waitIdle(page, 200);
+  check('ime: select column → composition discarded', catComposing === 0 && (await page.locator('.ssg-cell-editor').count()) === 0 && (await cellText(page, 4, 'category')) === catBefore && (await imeValue()) === '');
 
   // IME を使わない文字キー / F2 / Delete / 矢印 / 貼り付けは従来どおり。
   await cell(page, 5, 'name').click();

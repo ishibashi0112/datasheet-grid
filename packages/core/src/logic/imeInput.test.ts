@@ -1,9 +1,10 @@
 // 追加(G-2): IME オンのままの直接入力の判定(canStartImeEdit)と、入力受けをグリッド本体として扱うガード
 //   (domGuards の isImeInputTarget / shouldIgnoreGridKeydown)の契約テストです。
+// 追加(全角数値): number 列も対象になったこと(canStartImeEdit)と、確定した文字列の直し方(resolveImeEditText)。
 // @vitest-environment jsdom
 import { describe, it, expect } from 'vitest';
 import type { GridColumn, GridGroupRow, GridLabelRow, RowModel } from '../model/gridTypes.unbound';
-import { canStartImeEdit } from './imeInput';
+import { canStartImeEdit, resolveImeEditText } from './imeInput';
 import { IME_INPUT_ATTRIBUTE, isImeInputTarget, shouldIgnoreGridKeydown } from './domGuards';
 import { ROW_DRAG_HANDLE_COLUMN_KEY } from './rowReorder';
 
@@ -20,6 +21,7 @@ const columns: GridColumn<Row>[] = [
   { key: 'qty', title: '数量', width: 80, editor: { type: 'number' } },
   { key: 'locked', title: '固定', width: 80, readOnly: true },
   { key: ROW_DRAG_HANDLE_COLUMN_KEY, title: '', width: 28 },
+  { key: 'day', title: '日付', width: 100, editor: { type: 'date' } },
 ];
 
 const makeModel = (extra: Partial<RowModel<Row>> = {}): RowModel<Row> => ({
@@ -39,19 +41,33 @@ const ctx = (extra: Partial<Parameters<typeof canStartImeEdit<Row>>[0]> = {}) =>
 });
 
 describe('canStartImeEdit', () => {
-  it('text エディタ(未指定 / type text)の編集可能なデータセルだけ true', () => {
+  it('text エディタ(未指定 / type text)と number エディタの編集可能なデータセルだけ true', () => {
     expect(canStartImeEdit(ctx(), { row: 0, col: 0 })).toBe(true);
     expect(canStartImeEdit(ctx(), { row: 1, col: 1 })).toBe(true);
+    expect(canStartImeEdit(ctx(), { row: 0, col: 2 })).toBe(true);
   });
 
-  it('text 以外のエディタ / 読み取り専用 / 合成列 / 範囲外は false', () => {
-    expect(canStartImeEdit(ctx(), { row: 0, col: 2 })).toBe(false);
+  it('text / number 以外のエディタ / 読み取り専用 / 合成列 / 範囲外は false', () => {
+    expect(canStartImeEdit(ctx(), { row: 0, col: 5 })).toBe(false);
     expect(canStartImeEdit(ctx(), { row: 0, col: 3 })).toBe(false);
     expect(canStartImeEdit(ctx(), { row: 0, col: 4 })).toBe(false);
     expect(canStartImeEdit(ctx(), { row: 2, col: 0 })).toBe(false);
     expect(canStartImeEdit(ctx(), { row: 0, col: 9 })).toBe(false);
     expect(canStartImeEdit(ctx({ readOnly: true }), { row: 0, col: 0 })).toBe(false);
     expect(canStartImeEdit(ctx({ canEditCell: (rowIndex) => rowIndex !== 1 }), { row: 1, col: 0 })).toBe(false);
+    expect(canStartImeEdit(ctx({ readOnly: true }), { row: 0, col: 2 })).toBe(false);
+  });
+
+  it('resolveImeEditText: text 列はそのまま、number 列は半角の数値表記へ直し、読めなければ null', () => {
+    expect(resolveImeEditText(columns, { row: 0, col: 0 }, '漢字')).toBe('漢字');
+    expect(resolveImeEditText(columns, { row: 0, col: 1 }, '１２')).toBe('１２');
+    expect(resolveImeEditText(columns, { row: 0, col: 2 }, '１２３')).toBe('123');
+    expect(resolveImeEditText(columns, { row: 0, col: 2 }, '１２．５')).toBe('12.5');
+    expect(resolveImeEditText(columns, { row: 0, col: 2 }, 'ー５')).toBe('-5');
+    expect(resolveImeEditText(columns, { row: 0, col: 2 }, '－５')).toBe('-5');
+    expect(resolveImeEditText(columns, { row: 0, col: 2 }, '１，２３４')).toBe('1234');
+    expect(resolveImeEditText(columns, { row: 0, col: 2 }, 'かな')).toBeNull();
+    expect(resolveImeEditText(columns, { row: 0, col: 2 }, 'ー')).toBeNull();
   });
 
   it('グループ行 / ラベル行 / 未ロード行は false', () => {

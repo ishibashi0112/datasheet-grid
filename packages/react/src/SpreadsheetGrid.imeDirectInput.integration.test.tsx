@@ -2,8 +2,9 @@
 //   ①既定(未指定)では入力受けを描画しない(従来どおりルートがフォーカスを持つ)
 //   ②有効時はセルのクリックで入力受けにフォーカスが来て、変換 → 確定で確定文字列を初期値に編集が始まり、
 //     もう一度 Enter でセルを確定して移動する
-//   ③text 以外のエディタの列では変換を捨てる
+//   ③text / number 以外のエディタの列では変換を捨てる
 //   ④入力受けにフォーカスがあっても矢印 / F2 は従来どおりで、変換中のキーはグリッドが扱わない
+//   ⑤number 列では確定した全角の数字を半角にして編集が始まり、数値でない変換は捨てる(全角数値)
 //   を検証します(CDP での実ブラウザ確認は audit/harness の t-features)。
 // @vitest-environment jsdom
 import { describe, it, expect, beforeAll, afterAll, afterEach } from 'vitest';
@@ -15,17 +16,18 @@ import { SpreadsheetGrid } from './SpreadsheetGrid';
 import { installJsdomLayoutStubs } from './testing';
 import type { GridColumn, SpreadsheetGridHandle } from './model/gridTypes';
 
-type Row = { id: number; name: string; qty: number };
+type Row = { id: number; name: string; qty: number; day: string };
 
 const initialRows: Row[] = [
-  { id: 1, name: 'alpha', qty: 5 },
-  { id: 2, name: 'beta', qty: 12 },
-  { id: 3, name: 'gamma', qty: 30 },
+  { id: 1, name: 'alpha', qty: 5, day: '2026-10-01' },
+  { id: 2, name: 'beta', qty: 12, day: '2026-10-02' },
+  { id: 3, name: 'gamma', qty: 30, day: '2026-10-03' },
 ];
 
 const columns: GridColumn<Row>[] = [
   { key: 'name', title: '名前', width: 160 },
   { key: 'qty', title: '数量', width: 100, editor: { type: 'number' } },
+  { key: 'day', title: '日付', width: 120, editor: { type: 'date' } },
 ];
 
 let restore: () => void;
@@ -134,10 +136,10 @@ describe('IME オンのままの直接入力(imeDirectInput・G-2)', () => {
     expect(document.activeElement).toBe(ime);
   });
 
-  it('text 以外のエディタの列では変換を捨てる(編集を始めない)', async () => {
+  it('text / number 以外のエディタの列では変換を捨てる(編集を始めない)', async () => {
     const { container } = renderGrid(true);
     const ime = getImeInput(container)!;
-    clickCell(getCell(container, 0, 1));
+    clickCell(getCell(container, 0, 2));
     fireEvent.compositionStart(ime, { data: '' });
     expect(ime.classList.contains('ssg-ime-input--composing')).toBe(false);
     ime.value = '１２';
@@ -147,7 +149,43 @@ describe('IME オンのままの直接入力(imeDirectInput・G-2)', () => {
     });
     expect(container.querySelector('.ssg-cell-editor-input')).toBeNull();
     expect(ime.value).toBe('');
-    expect(currentRows[0]?.qty).toBe(5);
+    expect(currentRows[0]?.day).toBe('2026-10-01');
+  });
+
+  it('number 列では確定した全角の数字を半角にして編集が始まり、Enter で数値が入る(全角数値)', async () => {
+    const { container, ref } = renderGrid(true);
+    const ime = getImeInput(container)!;
+    clickCell(getCell(container, 0, 1));
+    fireEvent.compositionStart(ime, { data: '' });
+    expect(ime.classList.contains('ssg-ime-input--composing')).toBe(true);
+    ime.value = '１２．５';
+    fireEvent.input(ime);
+    await act(async () => {
+      fireEvent.compositionEnd(ime, { data: '１２．５' });
+      await Promise.resolve();
+    });
+    const editor = container.querySelector<HTMLInputElement>('.ssg-cell-editor-input');
+    expect(editor?.type).toBe('number');
+    expect(editor?.value).toBe('12.5');
+
+    await act(async () => {
+      fireEvent.keyDown(editor!, { key: 'Enter' });
+      await new Promise((resolve) => requestAnimationFrame(() => resolve(null)));
+    });
+    expect(currentRows[0]?.qty).toBe(12.5);
+    expect(ref.current?.getActiveCell()).toEqual({ row: 1, col: 1 });
+    expect(document.activeElement).toBe(ime);
+  });
+
+  it('number 列で数値として読めない変換は捨てる(全角数値)', async () => {
+    const { container } = renderGrid(true);
+    const ime = getImeInput(container)!;
+    clickCell(getCell(container, 1, 1));
+    await composeAndCommit(ime, 'かな');
+    expect(container.querySelector('.ssg-cell-editor-input')).toBeNull();
+    expect(ime.classList.contains('ssg-ime-input--composing')).toBe(false);
+    expect(ime.value).toBe('');
+    expect(currentRows[1]?.qty).toBe(12);
   });
 
   it('入力受けにフォーカスがあっても矢印 / F2 は従来どおりで、変換中のキーはグリッドが扱わない', () => {

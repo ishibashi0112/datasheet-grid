@@ -5,6 +5,7 @@
 //   ④変換中 / 受け渡し中以外に入った文字は捨てる
 //   ⑤端の列の Tab(既定動作に任せたもの)は既定動作の前にルートへフォーカスを戻す
 //   ⑥dispose 後の update でリスナーを付け直せる(StrictMode の二重マウント)
+//   ⑦確定した文字列は resolveEditText で直して startEdit へ渡し、null なら捨てる(全角数値)
 //   を検証します(CDP での実ブラウザ確認は audit/harness の t-features)。
 // @vitest-environment jsdom
 import { describe, it, expect, vi, afterEach } from 'vitest';
@@ -136,6 +137,36 @@ describe('imeInputController', () => {
     composition(input, 'compositionend', 'て');
     await flushMicrotasks();
     expect(startEdit).not.toHaveBeenCalled();
+    expect(input.value).toBe('');
+    controller.dispose();
+  });
+
+  it('確定した文字列は resolveEditText で直して渡し、null なら捨てる(全角数値)', async () => {
+    const { root, input, startEdit, args } = setup();
+    const controller = createImeInputController();
+    controller.attach(input);
+    const resolveEditText = (_cell: { row: number; col: number }, text: string) =>
+      text === '１２' ? '12' : null;
+    controller.update(args({ resolveEditText }));
+    root.focus();
+
+    composition(input, 'compositionstart');
+    expect(input.classList.contains(IME_INPUT_COMPOSING_CLASS)).toBe(true);
+    input.value = '１２';
+    composition(input, 'compositionend', '１２');
+    await flushMicrotasks();
+    expect(startEdit).toHaveBeenCalledWith({ row: 0, col: 0 }, '12');
+    controller.update(args({ resolveEditText, editing: true }));
+    controller.update(args({ resolveEditText }));
+    startEdit.mockClear();
+
+    // 読めない変換(null)は捨てて表示を戻す。
+    composition(input, 'compositionstart');
+    input.value = 'かな';
+    composition(input, 'compositionend', 'かな');
+    await flushMicrotasks();
+    expect(startEdit).not.toHaveBeenCalled();
+    expect(input.classList.contains(IME_INPUT_COMPOSING_CLASS)).toBe(false);
     expect(input.value).toBe('');
     controller.dispose();
   });
