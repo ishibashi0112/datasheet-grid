@@ -135,6 +135,17 @@ describe('SpreadsheetGrid バリデーション(結合)', () => {
     expect(currentRows[0].qty).toBe('not-a-number');
   });
 
+  // 追加(全角数値): number 列の既定パーサは全角の数字・符号と 3 桁区切りを半角の数値として読みます。
+  it('経路 B: number 列への全角数字 / 3 桁区切りのペーストは数値で書き込み、invalid にならない', () => {
+    const ref = createRef<SpreadsheetGridHandle<Row>>();
+    const { container } = render(<ValidationHarness gridRef={ref} />);
+
+    pasteIntoCell(container, ref, { row: 0, col: 2 }, '１，２３４\r\nー５');
+    expect(currentRows[0].qty).toBe(1234);
+    expect(currentRows[1].qty).toBe(-5);
+    expect(ref.current?.getInvalidCells()).toEqual([]);
+  });
+
   it('経路 C: reject 列は Delete でクリアできない(必須列)、mark 列はクリアできる', () => {
     const ref = createRef<SpreadsheetGridHandle<Row>>();
     const { container } = render(<ValidationHarness gridRef={ref} />);

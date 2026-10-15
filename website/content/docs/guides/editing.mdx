@@ -34,7 +34,7 @@ const columns: GridColumn<Row>[] = [
 ]
 ```
 
-`number` / `date` / `checkbox` には既定の「文字列 → 値」パーサが付き、**貼り付け / Delete クリア / エディタ確定で共通**に効きます(例: number 列を Delete でクリアすると `null` になる)。明示の `parseClipboardValue` は常に優先されます。
+`number` / `date` / `checkbox` には既定の「文字列 → 値」パーサが付き、**貼り付け / Delete クリア / エディタ確定で共通**に効きます(例: number 列を Delete でクリアすると `null` になる)。number 列は全角の数字・符号・小数点と 3 桁区切りも数値として読みます(`１，２３４` や Excel の `1,234` を貼り付けると `1234`)。明示の `parseClipboardValue` は常に優先されます。
 
 独自 UI で編集したい場合は `{ type: 'custom', render: (ctx) => <MyEditor ... /> }` を使います。`ctx.commit(value)` / `ctx.cancel()` で確定・キャンセルします。
 

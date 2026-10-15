@@ -38,7 +38,7 @@ import { useVirtualizerCore } from './hooks/useVirtualizerCore';
 import { createGridEngine } from '@ishibashi0112/spreadsheet-grid-core/engine/createGridEngine';
 import { useControllerLifecycle } from './hooks/useController';
 // 追加(G-2): IME オンのままの直接入力(imeDirectInput)の入力してよいセルの判定と、入力受けの属性名です。
-import { canStartImeEdit } from '@ishibashi0112/spreadsheet-grid-core/logic/imeInput';
+import { canStartImeEdit, resolveImeEditText } from '@ishibashi0112/spreadsheet-grid-core/logic/imeInput';
 import { IME_INPUT_ATTRIBUTE } from '@ishibashi0112/spreadsheet-grid-core/logic/domGuards';
 
 import { gridActions } from '@ishibashi0112/spreadsheet-grid-core/model/gridActions';
@@ -2842,6 +2842,8 @@ export function SpreadsheetGrid<T extends object>({
     canStartEdit: (cell: CellCoord) =>
       canStartImeEdit({ rowModel, columns: orderedColumns, readOnly, canEditCell }, cell),
     startEdit: startEditWithValue,
+    // 追加(全角数値): number 列は確定した文字列を半角の数値表記へ直して編集を始めます(読めない変換は捨てる)。
+    resolveEditText: (cell: CellCoord, text: string) => resolveImeEditText(orderedColumns, cell, text),
   });
   // 入力受けの ref コールバック(React Compiler の lint が ref に渡した値を ref 扱いするため、コントローラを直接渡さず
   //   ローカル関数で包みます)。

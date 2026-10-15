@@ -6,15 +6,61 @@ import type { GridColumn } from '../model/gridTypes.unbound';
 import { setCellValue } from '../utils/permissions';
 import { parseCheckboxEditorValue } from './checkboxEditor';
 
+// 追加(全角数値): 数値として読む前に、全角の数字・符号・小数点・スペース(全角の英数字・記号 U+FF01〜U+FF5E と
+//   U+3000 を半角へ)、IME のひらがな入力で「-」キーから入る長音「ー」やマイナス記号「−」、句読点の設定が「、。」の
+//   IME で「.」「,」キーから入る「。」「、」、3 桁区切りのカンマ(「1,234」「１，２３４」)を半角の数値表記へ寄せます。
+//   NFKC は使いません(「①」→ 1、「10⁵」→ 105 のように別の数に化けるため)。数値として読めるかは呼び出し側(Number)が
+//   判定します(寄せた結果が数値でなければ元の文字列を使う)。3 桁区切りは先頭が 0 でないときだけ(「0,500」は欧州式の
+//   小数かコードの可能性があるため数値にしない)。
+const FULL_WIDTH_ASCII_PATTERN = /[\uFF01-\uFF5E]/g;
+const NUMBER_DASH_PATTERN = /[ー−‐‑ｰ]/g;
+const THOUSANDS_SEPARATED_PATTERN = /^[+-]?[1-9]\d{0,2}(?:,\d{3})+(?:\.\d+)?$/;
+
+export const normalizeNumberText = (raw: string): string => {
+  const text = raw
+    .replace(FULL_WIDTH_ASCII_PATTERN, (ch) => String.fromCharCode(ch.charCodeAt(0) - 0xfee0))
+    .replace(/\u3000/g, ' ')
+    .replace(/。/g, '.')
+    .replace(/、/g, ',')
+    .trim()
+    .replace(NUMBER_DASH_PATTERN, '-');
+  return THOUSANDS_SEPARATED_PATTERN.test(text) ? text.replace(/,/g, '') : text;
+};
+
+// 追加(全角数値): 文字列を数値として読みます(normalizeNumberText を通す)。読めない / 空白だけ / 非有限は null。
+export const parseNumberText = (raw: string): number | null => {
+  const text = normalizeNumberText(raw);
+  if (text === '') {
+    return null;
+  }
+  const parsed = Number(text);
+  return Number.isFinite(parsed) ? parsed : null;
+};
+
+// 追加(全角数値): number エディタ(<input type="number">)の初期値に渡す半角の文字列です。数値として読めなければ
+//   null。type="number" が受け付けない書き方("1." / ".5" / "+5" / "0x1F" など。value に入れると空になる)は
+//   読んだ数値を文字列に戻して渡します。
+const HTML_FLOAT_PATTERN = /^-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?$/;
+
+export const toNumberInputText = (raw: string): string | null => {
+  const parsed = parseNumberText(raw);
+  if (parsed === null) {
+    return null;
+  }
+  const text = normalizeNumberText(raw);
+  return HTML_FLOAT_PATTERN.test(text) ? text : String(parsed);
+};
+
 // 追加(editor: number): number エディタの既定パーサです。mark 思想(不正値も一旦受け入れて
 //   表示側で警告)に合わせ、パース不可の文字列は破壊せずそのまま返します。
 //   '' → null / 有限数値文字列 → number / それ以外 → 生文字列のまま。
+// 変更(全角数値): 全角の数字・符号・小数点と 3 桁区切りも数値として読みます(normalizeNumberText)。空白だけの
+//   文字列は null(従来は Number('  ') = 0 で 0 になっていた)。
 const parseNumberEditorValue = (raw: string): unknown => {
-  if (raw === '') {
+  if (raw.trim() === '') {
     return null;
   }
-  const parsed = Number(raw);
-  return Number.isFinite(parsed) ? parsed : raw;
+  return parseNumberText(raw) ?? raw;
 };
 
 // 追加(editor: date): Date を 'YYYY-MM-DD'(ローカル日付)へ整形します。

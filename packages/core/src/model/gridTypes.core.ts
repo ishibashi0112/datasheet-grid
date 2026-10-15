@@ -929,6 +929,7 @@ export type GridColumnEditor<T, F extends GridFrameworkTypes = GridFrameworkType
       // 数値エディタ(<input type="number">)。min / max / step はネイティブ属性へ反映します。
       //   既定パーサ: '' → null / 数値文字列 → number / 非数値 → 生文字列のまま
       //   (parseClipboardValue 明示指定が常に優先。logic/editorValues.ts 参照)。
+      //   変更(全角数値): 全角の数字・符号・小数点と 3 桁区切りも数値として読み、空白だけは null。
       type: 'number';
       min?: number;
       max?: number;
@@ -3029,13 +3030,16 @@ export type SpreadsheetGridProps<T, F extends GridFrameworkTypes = GridFramework
   //   変換中の文字をセルの上に表示し、変換を確定すると確定した文字列を初期値に編集を始めます(もう一度 Enter で
   //   セルを確定して移動)。既定 false(opt-in)の理由: 有効中はグリッドにフォーカスがあるあいだ
   //   document.activeElement が input になり、入力欄では反応しないアプリのショートカットが効かなくなるため。
+  //   変更(全角数値): number エディタの列も対象(確定した全角の数字を半角に直して編集開始。logic/imeInput)。
   /**
    * **IME オンのままの直接入力**(Excel / SPREAD と同じ)。`true` で、
    * 編集していないあいだグリッドのフォーカスをアクティブセル上の透明な入力欄(入力受け)に置き、IME
    * の変換をそこで始める。text エディタ(`editor` 未指定 / `type: 'text'`)
    * の編集可能セルでは変換中の文字をセルの上に表示し、
    * 変換を確定すると確定した文字列を初期値に編集を始める(もう一度 `Enter` でセルを確定して移動)。
-   * それ以外の列(number / select / date / checkbox / custom)
+   * number エディタの列では確定した全角の数字・符号・小数点・3
+   * 桁区切りを半角に直して編集を始め(「１２．５」→ `12.5`)、数値として読めない変換は捨てる。
+   * それ以外の列(select / date / checkbox / custom)
    * と読み取り専用セルでは変換を捨てる(従来どおり何も入らない)。キー操作 / コピー・貼り付け / `Tab`
    * は従来どおり。既定 OFF の理由: 有効中はグリッドにフォーカスがあるあいだ
    * `document.activeElement` が入力欄になり、入力欄では反応しないアプリのショートカット(例: Mantine

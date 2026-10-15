@@ -4,12 +4,14 @@
 //   キーは 'Process' で届き、入力欄が無いので変換そのものが始まらず、打った文字が失われていました。
 // 方式: 透明な input(入力受け)をシェル内に置き、編集していないあいだはグリッドのフォーカスをそこへ置きます。
 //   - キー操作 / 貼り付けはグリッド本体と同じ扱い(logic/domGuards の IME_INPUT_ATTRIBUTE で除外しない)。
-//   - 変換が始まったら(compositionstart)、アクティブセルが text エディタで編集可能なら入力受けをセルの上に
+//   - 変換が始まったら(compositionstart)、アクティブセルが text / number エディタで編集可能なら入力受けをセルの上に
 //     エディタと同じ見た目で表示し、変換中の文字を見せます。変換は入力受けの中でそのまま続きます
 //     (変換中に別の要素へフォーカスを移すと変換が途切れるため、入力受け自身で受ける)。
 //   - 変換が確定したら(compositionend)、確定した文字列を初期値に通常の編集を開始します(startEdit)。もう一度
 //     Enter でセルを確定して移動するのは通常のエディタの動き(Excel / SPREAD と同じ)。編集できないセルでの変換は
 //     捨てます(従来どおり何も入らない)。
+//   - 追加(全角数値): 確定した文字列は resolveEditText で編集の初期値へ直します(number 列は半角の数値表記へ。
+//     null = 数値として読めない変換は捨てる)。
 //   - 変換中にポインタを押した(別のセル / グリッド外をクリックした)ことで確定した変換は捨てます(Chromium は
 //     フォーカスが移る前の mousedown で変換を確定させるため、そこで編集を始めるとクリック先からフォーカスを奪う)。
 //   - ルートへのフォーカス(セルのクリック / 編集確定後 / ポップアップを閉じた後 / Tab で入ってきたとき)は
@@ -40,6 +42,9 @@ export type ImeInputControllerArgs = {
   canStartEdit: (cell: CellCoord) => boolean;
   // 確定した文字列を初期値に編集を開始します(edit controller の startEditWithValue)。
   startEdit: (cell: CellCoord, text: string) => void;
+  // 追加(全角数値): 確定した文字列から編集の初期値を決めます(logic/imeInput の resolveImeEditText)。null は変換を
+  //   捨てる。未指定なら確定した文字列のまま。
+  resolveEditText?: (cell: CellCoord, text: string) => string | null;
 };
 
 export type ImeInputController = {
@@ -172,8 +177,13 @@ export const createImeInputController = (): ImeInputController => {
         hideComposing();
         return;
       }
+      const editText = args.resolveEditText ? args.resolveEditText(current.cell, text) : text;
+      if (editText === null || editText === '') {
+        hideComposing();
+        return;
+      }
       handoff = true;
-      args.startEdit(current.cell, text);
+      args.startEdit(current.cell, editText);
       // 編集が始まらなかったとき(外部要因)の保険: 次のフレームでまだ編集していなければ表示を戻します。
       requestAnimationFrame(() => {
         if (handoff && args !== null && !args.editing) {
