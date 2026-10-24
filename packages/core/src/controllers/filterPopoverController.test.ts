@@ -66,10 +66,13 @@ describe('createFilterPopoverController', () => {
     expect(c.getSnapshot().state?.columnKey).toBe('name');
     expect(c.getSnapshot().layout).toMatchObject({ width: 240 });
 
+    const panel = document.createElement('div');
     const input = document.createElement('input');
     input.type = 'text';
     input.value = 'abc';
-    document.body.appendChild(input);
+    panel.appendChild(input);
+    document.body.appendChild(panel);
+    c.panelRef.current = panel;
     c.textInputRef.current = input;
     // レンダー後の update でフォーカスを予約 → 二重 rAF 後に末尾へ。
     c.update(args);
@@ -83,6 +86,62 @@ describe('createFilterPopoverController', () => {
     c.dispose();
     document.body.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }));
     expect(c.getSnapshot().state?.columnKey).toBe('name');
+  });
+
+  // 追加(lazy-popups): ポップオーバー部品の遅延読み込み中に開かれた(パネル未描画の)ときは予約せず、
+  //   読み込み後の描画で呼ばれる update で予約する(初回オープンでも入力欄へフォーカスが入る)。
+  it('パネルが未描画の間はフォーカスを予約せず、描画後の update で予約する', () => {
+    const c = createFilterPopoverController<unknown>();
+    const root = document.createElement('div');
+    const cell = document.createElement('div');
+    cell.dataset.ssgColKey = 'name';
+    root.appendChild(cell);
+    document.body.appendChild(root);
+    const args = {
+      visibleColumns: columns,
+      columnFilterValues: {},
+      enableColumnFilter: true,
+      gridRootRef: { current: root },
+    };
+    c.update(args);
+    c.open(columns[0]);
+    // 部品の読み込み中: パネルが無いまま再描画が続いても予約しない。
+    c.update(args);
+    expect(rafCallbacks).toHaveLength(0);
+
+    const panel = document.createElement('div');
+    const input = document.createElement('input');
+    input.type = 'text';
+    panel.appendChild(input);
+    document.body.appendChild(panel);
+    c.panelRef.current = panel;
+    c.textInputRef.current = input;
+    c.update(args);
+    expect(document.activeElement).not.toBe(input);
+    flushRaf();
+    expect(document.activeElement).toBe(input);
+    c.dispose();
+  });
+
+  // 追加(lazy-popups): パネルが未描画の間(部品の遅延読み込み中)だけ、window の Escape で閉じる。
+  it('パネルが未描画の間は Escape で閉じ、描画後の Escape はパネル側に任せる', () => {
+    const c = createFilterPopoverController<unknown>();
+    const root = document.createElement('div');
+    const cell = document.createElement('div');
+    cell.dataset.ssgColKey = 'name';
+    root.appendChild(cell);
+    document.body.appendChild(root);
+    c.update({ visibleColumns: columns, columnFilterValues: {}, enableColumnFilter: true, gridRootRef: { current: root } });
+
+    c.open(columns[0]);
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+    expect(c.getSnapshot().state).toBeNull();
+
+    c.open(columns[0]);
+    c.panelRef.current = document.createElement('div');
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+    expect(c.getSnapshot().state?.columnKey).toBe('name');
+    c.dispose();
   });
 
   // 追加(audit C-4): 開いたまま横スクロールでアンカーのヘッダーセルが外れても、左上へ飛ばない。

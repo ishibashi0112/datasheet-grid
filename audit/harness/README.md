@@ -13,7 +13,7 @@ vp install
 pnpm run audit:dev
 
 # 3. 別ターミナルでシナリオを実行(PASS / FAIL を標準出力に出す)
-pnpm run audit:test            # 基本 + 1M 行 + SSRM + ライフサイクル + 機能群 + 所見追試 + 集計 + 合計行 + フィルハンドル + 見送り分
+pnpm run audit:test            # 基本 + 1M 行 + SSRM + ライフサイクル + 機能群 + 所見追試 + 集計 + 合計行 + フィルハンドル + 見送り分 + 遅延読み込み
 node audit/harness/t-basic.mjs # 個別に 1 本だけ
 node audit/harness/perf-big.mjs            # 1M 行の計測(dev ビルド)
 HARNESS_BASE=http://127.0.0.1:5178/ node audit/harness/perf-big.mjs  # 本番ビルド(vp build → vp preview --port 5178)に対して
@@ -26,6 +26,7 @@ HARNESS_BASE=http://127.0.0.1:5178/ node audit/harness/perf-big.mjs  # 本番ビ
 - `t-total.mjs` は合計行(`totalRow`)の値・下端固定・最終行が合計行に隠れないこと(スクロール / 矢印キー / `scrollToRow` / `scrollToBottom`)・横スクロールと固定列の揃い・列ドラッグ(live)・行が少ないとき・ダークテーマ・100 万行・auto-height / グルーピング / ラベル行 / SSRM との併用。
 - `t-fill.mjs` はフィルハンドル(`fillHandle`)のハンドルの位置・ドラッグ(点線 / 値のツールチップ / 自動スクロール)・連続データ / コピー・`Ctrl` で入れ替え・`Escape`・上 / 左へ・固定ペインをまたぐ・`validate` の reject / 編集不可を飛ばす・埋めたあとのボタンとメニュー(マウス / キーボード)・元に戻す / やり直し・ダブルクリック・出さないとき・ダークテーマ・グルーピング / ラベル行 / SSRM / 100 万行。
 - `t-leftovers.mjs` は §11 で見送り、2026-10-12 に対応した所見(`docs/audits/2026-10-04/README.md` §12)の確認: B-09 flex の幅が整数 px で横スクロールバーが出ない / L-15 相対日付プリセットが深夜 0 時・スリープ明けの focus で翌日へ追従し、プリセットが無ければ何もしない・SSRM は取り直す(「今月」は月内の 0 時では取り直さずスクロールも保ち、月が変わるときだけ取り直す)(`open(…, { beforeGoto: (p) => p.clock.install(…) })` で Playwright の時計を差し込む)/ B-10 100 万行のソート中の編集で並びが正しい(ソート列以外 / ソート列 / 行のその場書き換え)/ M-04 開発ビルドでも 100 万行のソートが数十秒かからない。
+- `t-lazy.mjs` は列フィルターポップオーバー / ツールパネルの部品の遅延読み込み(lazy-popups): 先読みを止めると初期表示では読み込まない / 開いたときにその部品だけ読み込む / 読み込みが遅く(`page.route` で遅延)ても出たあと入力欄へフォーカスが入り、複合フィルターも画面内に収まる / 読み込み中に Escape で閉じられる / マウント後の暇なときに先読みし、先読み後は次のフレームで出る / 読み込みに失敗(`route.abort`)しても例外にせず、閉じてキーボード操作を続けられる。失敗後の開き直しはブラウザが失敗した import をキャッシュするため `INFO` として出すだけ。
 - `t-verify.mjs` は監査所見(RD-1 / RD-2 / C-1 / L-01 / C-3 / B-01 / B-02 / B-03 / V-02 …)の再現スクリプト。修正後は FAIL → PASS に変わることを確認する回帰テストとして使う。
 
 ## 出力の読み方

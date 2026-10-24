@@ -239,7 +239,14 @@ import { writeRowsCell } from '@ishibashi0112/spreadsheet-grid-core/logic/editor
 import { isCheckboxChecked, toggleCheckboxValue } from '@ishibashi0112/spreadsheet-grid-core/logic/checkboxEditor';
 import { CheckboxCell } from './editors/CheckboxCell';
 import { decideCellWrite } from '@ishibashi0112/spreadsheet-grid-core/logic/validation';
-import ColumnFilterPopover from './view/ColumnFilterPopover';
+// 変更(lazy-popups): 列フィルターポップオーバーとツールパネル(+ 3 タブ)は別チャンクへ分けて遅延読み込みします
+//   (view/lazyPopups。シェルから部品を静的に import しないこと = 初期チャンクへ戻ってしまう)。
+import {
+  filterPopoverModule,
+  toolPanelModule,
+  useLazyModule,
+  type ToolPanelViews,
+} from './view/lazyPopups';
 // 追加(13-A): 列メニュー popover(列固定の切替 UI)です。
 import DefaultGridBottomBar from './view/DefaultGridBottomBar';
 import DefaultGridTopBar from './view/DefaultGridTopBar';
@@ -267,14 +274,12 @@ import ColumnMenuPopover from './view/ColumnMenuPopover';
 //   は削除し、各 view はタブコンテンツ(フレームなし)として ToolPanel の children に入ります。
 import useToolPanelController from './hooks/useToolPanelController';
 import type { ToolPanelTab } from './hooks/useToolPanelController';
-import ToolPanel, { type ToolPanelTabDescriptor } from './view/ToolPanel';
-import ColumnChooserPanel, { type ColumnChooserItem } from './view/ColumnChooserPanel';
-import SortManagementPanel, {
-  type SortManagementColumn,
-} from './view/SortManagementPanel';
-import FilterManagementPanel, {
-  type FilterManagementEntry,
-  type FilterManagementAddableColumn,
+import type { ToolPanelTabDescriptor } from './view/ToolPanel';
+import type { ColumnChooserItem } from './view/ColumnChooserPanel';
+import type { SortManagementColumn } from './view/SortManagementPanel';
+import type {
+  FilterManagementEntry,
+  FilterManagementAddableColumn,
 } from './view/FilterManagementPanel';
 // 追加(FM-2): フィルターチップバー(適用中の列フィルターの常時表示 / opt-in)です。
 import GridFilterChipBar from './view/GridFilterChipBar';
@@ -998,6 +1003,23 @@ export function SpreadsheetGrid<T extends object>({
     alliedRef: filterPopoverRef,
     suppressEscape: isFilterPopoverOpen,
     onSuppressedEscape: closeColumnFilterPopover,
+  });
+
+  // 追加(lazy-popups): 列フィルターポップオーバー / ツールパネルの部品(別チャンク)の読み込み状態です。
+  //   読み込み前は null(部品を描画しない)。使える機能ならマウント後の暇なときに先読みし、先読み前に
+  //   開かれたらその場で読み込みます。読み込み完了でシェルごと再描画され、コントローラの update が
+  //   描画済みのパネルを見て位置の追従 / 入力欄フォーカスを始めます。読み込みに失敗したら閉じます。
+  const filterPopoverViews = useLazyModule(filterPopoverModule, {
+    needed: openedFilterColumn !== null,
+    prefetch:
+      columnFilterEnabled && visibleColumns.some((column) => Boolean(column.filterType)),
+    onLoadError: closeColumnFilterPopover,
+  });
+  const toolPanelViews = useLazyModule(toolPanelModule, {
+    needed: activeToolPanelTab !== null,
+    prefetch: availableToolPanelTabs.length > 0,
+    retainAfterNeeded: true,
+    onLoadError: closeToolPanel,
   });
 
   // ── cell context menu(バッチ②) ──────────────────────
@@ -4109,8 +4131,9 @@ export function SpreadsheetGrid<T extends object>({
       ? describeColumnFilterValue(openedSetFilterValue, openedDatePresets)
       : 'フィルターなし';
 
-  const renderedFilterPopover = openedFilterColumn ? (
-    <ColumnFilterPopover
+  // 変更(lazy-popups): 部品(別チャンク)の読み込み前は描画しません(読み込み完了でシェルごと再描画)。
+  const renderedFilterPopover = openedFilterColumn && filterPopoverViews ? (
+    <filterPopoverViews.default
       popoverSlot={slots.popover}
       themeClassName={portalClassName}
       isOpen={Boolean(filterPopoverState)}
@@ -4227,8 +4250,9 @@ export function SpreadsheetGrid<T extends object>({
 
   // アクティブタブのコンテンツです。✎(編集)と「フィルターを追加」は同じジャンプ経路
   // (jumpToColumnFilter)です(FM-1 から不変)。
-  const toolPanelContent: Record<ToolPanelTab, () => ReactNode> = {
-    filter: () => (
+  // 変更(lazy-popups): タブの中身の部品はツールパネルと同じチャンク(toolPanelViews)から受け取ります。
+  const toolPanelContent: Record<ToolPanelTab, (views: ToolPanelViews) => ReactNode> = {
+    filter: ({ FilterManagementPanel }) => (
       <FilterManagementPanel
         entries={filterManagerEntries}
         addableColumns={filterManagerAddableColumns}
@@ -4242,7 +4266,7 @@ export function SpreadsheetGrid<T extends object>({
         onClearGlobalFilter={handleFilterManagerClearGlobal}
       />
     ),
-    columns: () => (
+    columns: ({ ColumnChooserPanel }) => (
       <ColumnChooserPanel
         items={columnChooserItems}
         canToggle={Boolean(onColumnsChange)}
@@ -4253,7 +4277,7 @@ export function SpreadsheetGrid<T extends object>({
         onReorderColumns={handleColumnChooserReorder}
       />
     ),
-    sort: () => (
+    sort: ({ SortManagementPanel }) => (
       <SortManagementPanel
         entries={uiState.sort}
         columns={sortManagerColumns}
@@ -4268,8 +4292,10 @@ export function SpreadsheetGrid<T extends object>({
     ),
   };
 
-  const renderedToolPanel = (
-    <ToolPanel
+  // 変更(lazy-popups): 部品(別チャンク)の読み込み前と、まだ一度も開いていない間は描画しません。一度開いたあとは
+  //   従来どおり常に置きます(閉じている間はコンポーネント側が null を返す)。
+  const renderedToolPanel = toolPanelViews ? (
+    <toolPanelViews.ToolPanel
       popoverSlot={slots.popover}
       themeClassName={portalClassName}
       activeTab={activeToolPanelTab}
@@ -4282,10 +4308,10 @@ export function SpreadsheetGrid<T extends object>({
       onPanelMove={moveToolPanel}
     >
       {activeToolPanelTab !== null
-        ? toolPanelContent[activeToolPanelTab]()
+        ? toolPanelContent[activeToolPanelTab](toolPanelViews)
         : null}
-    </ToolPanel>
-  );
+    </toolPanelViews.ToolPanel>
+  ) : null;
 
   // ── cell context menu popover(バッチ②) ───────────────
   // 追加(バッチ②): コンテキストメニュー popover の描画です(portal で body 直下へ出します)。

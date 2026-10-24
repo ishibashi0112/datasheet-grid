@@ -29,6 +29,20 @@ import '@ishibashi0112/spreadsheet-grid/style.css'
 
 ベーススタイルは `.ssg-*` クラスにスコープされた通常(未レイヤー)の CSS で、デザイントークンは特異度ゼロ(`:where(.ssg-root)`)で定義されています。そのため **import 順序に関係なく、利用側の上書きが常に勝ちます**。
 
+## 遅延読み込みされる部品
+
+列フィルターのポップオーバーと、ツールパネル(フィルター管理 / 列の表示 / 並び替え)の部品は、本体とは別のチャンクに分かれていて最初の読み込みには含まれません(最初に読み込む JS が約 1 割小さくなります)。設定は不要で、動的 import(`import()`)に対応したバンドラー(Vite / webpack / Next.js / Rollup / esbuild など)ならそのまま動きます。
+
+- グリッドは表示されたあと、ブラウザが暇なときにこれらの部品を先読みします(その機能が使えるときだけ)。
+- 先読みの前に開かれたときはその場で読み込み、読み込みが終わってから表示します。
+- 画面遷移の前などに先に読み込んでおきたいときは `preloadGridPopups()` を呼べます(通常は不要)。テストでの使い方は[テスト](/docs/guides/testing#ポップオーバーを開くテスト)を参照してください。
+
+```ts
+import { preloadGridPopups } from '@ishibashi0112/spreadsheet-grid'
+
+void preloadGridPopups()
+```
+
 ## Tailwind CSS / HeroUI / Mantine / StyleX との共存
 
 - **Tailwind CSS v3(+ HeroUI)** — そのまま動きます。Preflight のリセットはクラスセレクタに特異度で負けるため、グリッドを壊せません。

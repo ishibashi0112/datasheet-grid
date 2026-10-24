@@ -13,5 +13,7 @@ export default defineConfig({
     environment: 'node',
     // 変更(非依存化 ⑤-2): テストは packages/*/src 配下(core / react)。
     include: ['packages/*/src/**/*.test.{ts,tsx}'],
+    // 追加(lazy-popups): React 版の jsdom テストで遅延読み込みのポップオーバー部品を先読みします。
+    setupFiles: ['./vitest.setup.ts'],
   },
 });

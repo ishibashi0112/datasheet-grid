@@ -1561,6 +1561,23 @@ const dataSource: ServerSideDataSource<Row> = {
 
 `initialRowCount` と内部の行数 state は mount 時に確定する。そのため **実行時にモードを切り替える場合は `key` を変えてグリッドを再マウントすること**(clientSide で mount 後に `dataSource` を後付けしても件数が初期化されない)。serverSide で直接 mount する通常利用ではこの限りではない。
 
+## ポップオーバー部品の遅延読み込み(`preloadGridPopups`)
+
+列フィルターのポップオーバーと、ツールパネル(フィルター管理 / 列の表示 / 並び替え)の部品は本体と別のチャンクに分かれていて、初期の読み込みに含まれない(lazy-popups。初期の JS が約 1 割小さくなる。props / ハンドルは不変)。
+
+- グリッドはマウント後、ブラウザが暇なとき(`requestIdleCallback`。無い環境では約 200ms 後)に、その機能が使えるときだけ部品を先読みする(列フィルター = `enableColumnFilter` かつ `filterType` を持つ列がある / ツールパネル = フィルター・列メニュー・ソートのどれかが使える)。
+- 先読みの前に開かれたときはその場で読み込み、読み込みが終わるまで部品は出ない(出たあと入力欄へフォーカスが入る。読み込み中も Escape で閉じられる)。先読みが終わっただけではグリッドは再描画しない。
+- 読み込みに失敗したときは `console.error` に出して閉じる(次に開いたときに読み直しを試みるが、ブラウザによっては失敗した動的 import をページの再読み込みまで覚えている)。
+- 動的 import(`import()`)に対応したバンドラー(Vite / webpack / Next.js / Rollup / esbuild など)が前提。CJS ビルドは `require` で読み込む。
+
+```ts
+import { preloadGridPopups } from '@ishibashi0112/spreadsheet-grid';
+```
+
+| 関数 | 説明 |
+| --- | --- |
+| `preloadGridPopups(): Promise<void>` | 部品を先に読み込む。通常は不要(グリッドが自動で先読みする)。テストでポップオーバーを開いた直後に同期で中身を確かめるとき(`beforeAll` で `await`)や、画面遷移の前に読み込んでおきたいときに使う。 |
+
 ## テスト支援(`/testing` サブパス)
 
 jsdom はレイアウトを計算しないため、素の jsdom では実グリッドの行・列が 1 本も描画されない(縦: スクロール要素の `clientHeight` / `clientWidth` が 0。横: 列仮想化(`@tanstack/virtual-core`)が **ResizeObserver の通知**から矩形を得るため、no-op スタブでは幅 0 のまま)。`@ishibashi0112/spreadsheet-grid/testing` の `installJsdomLayoutStubs()` がこれをまとめて解決する(proposals ③)。
@@ -1578,6 +1595,7 @@ beforeAll(() => {
 - 返り値はインストール前へ戻す restore 関数(`afterAll(restore)` 用・任意)。
 - React 非依存の小さなモジュールで、本体バンドルとは独立(`dist/testing.js`)。
 - これで `.ssg-body-row` / `.ssg-body-cell` の描画・付与クラス・セル文字列を DOM で検証できる(本体の `SpreadsheetGrid.jsdomLayoutStubs.integration.test.tsx` が動作保証)。
+- 列フィルターのポップオーバー / ツールパネルを開いた直後に**同期で**中身を確かめるテストでは、部品の遅延読み込みが終わっていないと出ていない。`beforeAll(() => preloadGridPopups())`(本体から import)で先に読み込むか、`findBy*` / `waitFor` で待つ([ポップオーバー部品の遅延読み込み](#ポップオーバー部品の遅延読み込みpreloadgridpopups))。
 
 ## パーツ別スロット(`classNames` / `GridSlotProps`)
 

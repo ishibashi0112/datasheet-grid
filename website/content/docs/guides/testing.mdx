@@ -56,6 +56,21 @@ expect(container.querySelectorAll('.ssg-body-cell.my-warn-cell')).toHaveLength(2
 
 状態クラスの一覧(公開契約)は [SpreadsheetGrid props の「スタイリング用の状態クラス」](/docs/api/props#スタイリング用の状態クラス公開契約)を参照してください。
 
+## ポップオーバーを開くテスト
+
+列フィルターのポップオーバーとツールパネル(フィルター管理 / 列の表示 / 並び替え)の部品は、別のチャンクから遅延読み込みされます([インストール](/docs/installation#遅延読み込みされる部品))。読み込みが終わる前は表示されないため、開いた直後に**同期で**中身を確かめるテストでは、先に `preloadGridPopups()` で読み込んでおきます。
+
+```ts
+import { beforeAll } from 'vitest';
+import { preloadGridPopups } from '@ishibashi0112/spreadsheet-grid';
+
+beforeAll(async () => {
+  await preloadGridPopups();
+});
+```
+
+`findBy*` / `waitFor` で表示を待つテストなら、`preloadGridPopups()` は無くても動きます。
+
 ## 偽のタイマーを使うとき
 
 `dateSet` の相対プリセット(今日 / 今月 / 過去 30 日 / カスタム)を列フィルターに掛けている間、グリッドは日付の変わり目を見張るタイマー(最大 1 時間ごとに張り直す)を持ちます。`vi.useFakeTimers()` の下で `vi.runAllTimers()` を呼ぶとこのタイマーが尽きないため、上限回数で打ち切られます。時刻を進めたいときは `vi.advanceTimersByTime()` / `vi.runOnlyPendingTimers()` を使ってください(相対プリセットが掛かっていなければタイマーはありません)。
