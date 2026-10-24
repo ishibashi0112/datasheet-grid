@@ -39,6 +39,8 @@ import type { GridFindBar } from '../view/GridFindBar';
 import type { GridScrollHint } from '../view/GridScrollHint';
 import type { GridTotalRow } from '../view/GridTotalRow';
 import type { GridChip } from '../view/GridChip';
+import type { CopyRangeOverlay } from '../CopyRangeOverlay';
+import type { ColumnHoverOverlay } from '../ColumnHoverOverlay';
 import type { GridSelectionAggregates as GridSelectionAggregatesView } from '../view/GridSelectionAggregates';
 import type { UseSelectionAggregatesArgs } from '../hooks/useSelectionAggregates';
 import type { UseColumnHeaderDragControllerArgs } from '../hooks/useColumnHeaderDragController';
@@ -181,6 +183,11 @@ export type ReactGridFeatures = {
   selectionAggregates?: {
     useSelectionAggregates: <T>(args: UseSelectionAggregatesArgs<T>) => GridSelectionAggregates | null;
     SelectionAggregates: typeof GridSelectionAggregatesView;
+  };
+  // 動きの追加分(M-2 / M-3 / M-6): 変更セルの強調(core)+ コピー範囲の点線 + クロスヘアの列の帯。
+  motionExtras?: NonNullable<GridCoreFeatures['motionExtras']> & {
+    CopyRangeOverlay: typeof CopyRangeOverlay;
+    ColumnHoverOverlay: typeof ColumnHoverOverlay;
   };
   // セル / 行のコンテキストメニュー(バッチ②): controller の接続 + popover、右クリックの対象の解決。
   contextMenu?: {

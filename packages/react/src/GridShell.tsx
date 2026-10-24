@@ -48,8 +48,6 @@ import {
 import SelectionOverlay, {
   type SelectionOverlayRect,
 } from './SelectionOverlay';
-import CopyRangeOverlay from './CopyRangeOverlay';
-import ColumnHoverOverlay from './ColumnHoverOverlay';
 // 変更(差し込み式 段階 2): 検索バー / ヒット分割は機能セット(features.find)から受け取ります。
 // 追加(F-3): 条件付き書式(チップの解決。帯 / 背景色は GridBodyLayer 側)。
 import ActiveCellOverlay, {
@@ -2746,6 +2744,10 @@ export function useGridShell<T extends object>({
     [detailActive, selectionExtents, rowMetrics, detailExtras, windowFirstRow, windowLastRow],
   );
 
+  // 変更(差し込み式 段階 2): 点線 / クロスヘアの帯の描画部品は機能(features/motionExtras)から。無い構成では
+  //   showCopyRange=false / hoverHighlight='row' として扱われ(createSpreadsheetGrid)、何も描きません。
+  const CopyRangeOverlay = features.motionExtras?.CopyRangeOverlay;
+  const ColumnHoverOverlay = features.motionExtras?.ColumnHoverOverlay;
   // 追加(motion-4 / M-3): コピー範囲(動く点線)。コピー時点のビュー形状(ソート / フィルター / グループ開閉 / 行数 / 列)
   //   と現在値を参照比較し、変わっていれば描画しません(= ソート等で範囲が崩れたら解除)。幾何はライブ選択と同じ計算。
   const copiedSelection =
@@ -4375,23 +4377,26 @@ export function useGridShell<T extends object>({
                   />
                 ))}
                 {/* 追加(motion-4 / M-3): コピー範囲の動く点線(選択の塗りと同じ座標系)。 */}
-                {copyRectsForPane('left').map((rect, segmentIndex) => (
-                  <CopyRangeOverlay
-                    slot={slots.copyRangeOverlay}
-                    key={segmentIndex}
-                    rect={rect}
+                {CopyRangeOverlay &&
+                  copyRectsForPane('left').map((rect, segmentIndex) => (
+                    <CopyRangeOverlay
+                      slot={slots.copyRangeOverlay}
+                      key={segmentIndex}
+                      rect={rect}
+                      headerHeight={headerHeight}
+                      baseOffset={overlayBaseOffset}
+                      leadingWidth={leftLeadingWidth}
+                    />
+                  ))}
+                {/* 追加(motion-5 / M-6): クロスヘアのポインタ列の帯。 */}
+                {ColumnHoverOverlay && (
+                  <ColumnHoverOverlay
+                    rect={columnHoverRectForPane('left')}
                     headerHeight={headerHeight}
                     baseOffset={overlayBaseOffset}
                     leadingWidth={leftLeadingWidth}
                   />
-                ))}
-                {/* 追加(motion-5 / M-6): クロスヘアのポインタ列の帯。 */}
-                <ColumnHoverOverlay
-                  rect={columnHoverRectForPane('left')}
-                  headerHeight={headerHeight}
-                  baseOffset={overlayBaseOffset}
-                  leadingWidth={leftLeadingWidth}
-                />
+                )}
 
                 <ActiveCellOverlay
                   slot={slots.activeCellOverlay}
@@ -4589,23 +4594,26 @@ export function useGridShell<T extends object>({
                   />
                 ))}
                 {/* 追加(motion-4 / M-3): コピー範囲の動く点線(選択の塗りと同じ座標系)。 */}
-                {copyRectsForPane('center').map((rect, segmentIndex) => (
-                  <CopyRangeOverlay
-                    slot={slots.copyRangeOverlay}
-                    key={segmentIndex}
-                    rect={rect}
+                {CopyRangeOverlay &&
+                  copyRectsForPane('center').map((rect, segmentIndex) => (
+                    <CopyRangeOverlay
+                      slot={slots.copyRangeOverlay}
+                      key={segmentIndex}
+                      rect={rect}
+                      headerHeight={headerHeight}
+                      baseOffset={overlayBaseOffset}
+                      leadingWidth={centerLeadingWidth}
+                    />
+                  ))}
+                {/* 追加(motion-5 / M-6): クロスヘアのポインタ列の帯。 */}
+                {ColumnHoverOverlay && (
+                  <ColumnHoverOverlay
+                    rect={columnHoverRectForPane('center')}
                     headerHeight={headerHeight}
                     baseOffset={overlayBaseOffset}
                     leadingWidth={centerLeadingWidth}
                   />
-                ))}
-                {/* 追加(motion-5 / M-6): クロスヘアのポインタ列の帯。 */}
-                <ColumnHoverOverlay
-                  rect={columnHoverRectForPane('center')}
-                  headerHeight={headerHeight}
-                  baseOffset={overlayBaseOffset}
-                  leadingWidth={centerLeadingWidth}
-                />
+                )}
 
                 <ActiveCellOverlay
                   slot={slots.activeCellOverlay}
@@ -4803,23 +4811,26 @@ export function useGridShell<T extends object>({
                   />
                 ))}
                 {/* 追加(motion-4 / M-3): コピー範囲の動く点線(選択の塗りと同じ座標系)。 */}
-                {copyRectsForPane('right').map((rect, segmentIndex) => (
-                  <CopyRangeOverlay
-                    slot={slots.copyRangeOverlay}
-                    key={segmentIndex}
-                    rect={rect}
+                {CopyRangeOverlay &&
+                  copyRectsForPane('right').map((rect, segmentIndex) => (
+                    <CopyRangeOverlay
+                      slot={slots.copyRangeOverlay}
+                      key={segmentIndex}
+                      rect={rect}
+                      headerHeight={headerHeight}
+                      baseOffset={overlayBaseOffset}
+                      leadingWidth={rightLeadingWidth}
+                    />
+                  ))}
+                {/* 追加(motion-5 / M-6): クロスヘアのポインタ列の帯。 */}
+                {ColumnHoverOverlay && (
+                  <ColumnHoverOverlay
+                    rect={columnHoverRectForPane('right')}
                     headerHeight={headerHeight}
                     baseOffset={overlayBaseOffset}
                     leadingWidth={rightLeadingWidth}
                   />
-                ))}
-                {/* 追加(motion-5 / M-6): クロスヘアのポインタ列の帯。 */}
-                <ColumnHoverOverlay
-                  rect={columnHoverRectForPane('right')}
-                  headerHeight={headerHeight}
-                  baseOffset={overlayBaseOffset}
-                  leadingWidth={rightLeadingWidth}
-                />
+                )}
 
                 <ActiveCellOverlay
                   slot={slots.activeCellOverlay}

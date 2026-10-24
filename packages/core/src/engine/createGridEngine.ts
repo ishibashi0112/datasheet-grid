@@ -13,10 +13,11 @@ import { createDetailIndexCacheHolder, type DetailIndexCacheHolder } from '../lo
 import { createAutoHeightMeasurer, type AutoHeightMeasurer } from '../controllers/autoHeightMeasurer';
 import { createScrollSyncController, type ScrollSyncController } from '../controllers/scrollSyncController';
 import { createRowEnterController, type RowEnterController } from '../controllers/rowEnterController';
-import { createChangeHighlightController, type ChangeHighlightController } from '../controllers/changeHighlightController';
+import type { ChangeHighlightController } from '../controllers/changeHighlightController';
 import { createSaveStatusController, type SaveStatusController } from '../controllers/saveStatusController';
 import type { FindController } from '../controllers/findController';
 import {
+  createInertChangeHighlightController,
   createInertConditionalFormatStatsResolver,
   createInertFindController,
   createInertImeInputController,
@@ -155,7 +156,9 @@ export const createGridEngine = <T,>(init: GridEngineInit<T>): GridEngine<T> => 
   const autoHeightMeasurer = createAutoHeightMeasurer<T>();
   const scrollSync = createScrollSyncController();
   const rowEnter = createRowEnterController();
-  const changeHighlight = createChangeHighlightController<T>();
+  // 変更(差し込み式 段階 2): 機能セットに motionExtras が無ければ代役(変更セルを強調しない)。
+  const changeHighlight =
+    init.features.motionExtras?.createChangeHighlightController<T>() ?? createInertChangeHighlightController<T>();
   const saveStatus = createSaveStatusController();
   const find = init.features.find?.createFindController<T>() ?? createInertFindController<T>();
   const autoSizeOnData = createAutoSizeOnDataTrigger<T>();

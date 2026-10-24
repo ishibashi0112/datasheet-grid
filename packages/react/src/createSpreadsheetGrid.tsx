@@ -19,6 +19,7 @@ const DISABLED_FEATURE_PROPS: { [K in keyof ReactGridFeatures]?: Partial<Spreads
   rowDrag: { enableRowDrag: false },
   columnAutosize: { autoSizeColumns: false },
   contextMenu: { enableContextMenu: false },
+  motionExtras: { highlightChanges: false, showCopyRange: false, hoverHighlight: 'row' },
 };
 
 export function createSpreadsheetGrid({ features }: CreateSpreadsheetGridOptions) {

@@ -1,4 +1,4 @@
-// 機能別: グルーピング / 展開行 / ラベル行 / 行ドラッグ / auto-height / 条件付き書式。
+// 機能別: グルーピング / 展開行 / ラベル行 / 行ドラッグ / auto-height / 条件付き書式 / 動きの追加分。
 import { OUT, open, check, unexpectedPageErrors, summary, errorsOf, renderedRowIndexes, cellText, cell, header, scrollTo, focusGrid, waitIdle, events, clearEvents, pasteText, rows, state } from './pw.mjs';
 
 // ---------- グルーピング ----------
@@ -756,6 +756,32 @@ import { OUT, open, check, unexpectedPageErrors, summary, errorsOf, renderedRowI
   check('cf: chips rendered for the mapped status value', cf.chips > 0 && Boolean(cf.firstStatus), cf);
   const errs = await errorsOf(page);
   check('cf: no console errors', errs.length === 0 && unexpectedPageErrors(pageErrors).length === 0, [...errs, ...pageErrors].slice(0, 5));
+  await close();
+}
+
+
+// ---------- 動きの追加分: 変更セルの強調 / クロスヘア(差し込み式にしたあとも全部入りで動くこと) ----------
+{
+  const { page, pageErrors, close } = await open('basic', { query: 'n=100' });
+  await page.evaluate(() => window.__setProps({ highlightChanges: true, hoverHighlight: 'cross' }));
+  await waitIdle(page, 200);
+  await page.evaluate(() => window.__setRows(window.__rows().map((r, i) => (i === 1 ? { ...r, qty: (r.qty ?? 0) + 1 } : r))));
+  await waitIdle(page, 50);
+  const changed = await page.evaluate(() =>
+    [...document.querySelectorAll('.ssg-body-cell--changed')].map(
+      (el) => `${el.closest('.ssg-body-row')?.getAttribute('data-row-index')}:${el.getAttribute('data-ssg-col-key')}`,
+    ),
+  );
+  check('motion-extras: highlightChanges flashes only the changed cell', changed.length > 0 && changed.every((c) => c === '1:qty'), changed);
+  await cell(page, 2, 'name').hover();
+  await waitIdle(page, 100);
+  const cross = await page.evaluate(() => ({
+    rootClass: document.querySelector('.ssg-root')?.classList.contains('ssg-root--hover-cross'),
+    bands: document.querySelectorAll('.ssg-col-hover-overlay').length,
+  }));
+  check('motion-extras: hoverHighlight=cross shows the column band', cross.rootClass === true && cross.bands > 0, cross);
+  const errs = await errorsOf(page);
+  check('motion-extras: no console errors', errs.length === 0 && unexpectedPageErrors(pageErrors).length === 0, [...errs, ...pageErrors].slice(0, 5));
   await close();
 }
 

@@ -12,33 +12,46 @@ declare const process: { env: { NODE_ENV?: string } };
 
 type FeatureName = keyof ReactGridFeatures;
 
-// 機能ごとの「その機能の prop が使われているか」。機能を足すと型がここへの追加を求めます。
-const FEATURE_PROPS: {
-  [K in FeatureName]-?: { prop: string; isUsed: <T extends object>(props: SpreadsheetGridProps<T>) => boolean };
-} = {
-  find: { prop: 'find', isUsed: (props) => props.find !== undefined && props.find !== false },
-  fillHandle: { prop: 'fillHandle', isUsed: (props) => Boolean(props.fillHandle) },
+type FeaturePropCheck = { prop: string; isUsed: <T extends object>(props: SpreadsheetGridProps<T>) => boolean };
+
+// 機能ごとの「その機能の prop が使われているか」(1 つの機能に prop が複数あれば並べる)。機能を足すと型がここへの
+//   追加を求めます。
+const FEATURE_PROPS: { [K in FeatureName]-?: readonly FeaturePropCheck[] } = {
+  find: [{ prop: 'find', isUsed: (props) => props.find !== undefined && props.find !== false }],
+  fillHandle: [{ prop: 'fillHandle', isUsed: (props) => Boolean(props.fillHandle) }],
   // 列の並べ替えは onColumnsChange で有効になる(リサイズ等と共通の prop なので、それでは警告しない)。
-  columnReorder: { prop: 'columnDragMotion', isUsed: (props) => props.columnDragMotion !== undefined },
-  rowDrag: { prop: 'enableRowDrag', isUsed: (props) => props.enableRowDrag === true },
-  scrollHint: { prop: 'scrollHint', isUsed: (props) => props.scrollHint !== undefined && props.scrollHint !== false },
-  imeDirectInput: { prop: 'imeDirectInput', isUsed: (props) => props.imeDirectInput === true },
-  totalRow: { prop: 'totalRow', isUsed: (props) => props.totalRow !== undefined && props.totalRow !== false },
-  columnAutosize: {
-    prop: 'autoSizeColumns',
-    isUsed: (props) => props.autoSizeColumns !== undefined && props.autoSizeColumns !== false,
-  },
-  contextMenu: { prop: 'enableContextMenu', isUsed: (props) => props.enableContextMenu === true },
+  columnReorder: [{ prop: 'columnDragMotion', isUsed: (props) => props.columnDragMotion !== undefined }],
+  rowDrag: [{ prop: 'enableRowDrag', isUsed: (props) => props.enableRowDrag === true }],
+  scrollHint: [{ prop: 'scrollHint', isUsed: (props) => props.scrollHint !== undefined && props.scrollHint !== false }],
+  imeDirectInput: [{ prop: 'imeDirectInput', isUsed: (props) => props.imeDirectInput === true }],
+  totalRow: [{ prop: 'totalRow', isUsed: (props) => props.totalRow !== undefined && props.totalRow !== false }],
+  columnAutosize: [
+    {
+      prop: 'autoSizeColumns',
+      isUsed: (props) => props.autoSizeColumns !== undefined && props.autoSizeColumns !== false,
+    },
+  ],
+  contextMenu: [{ prop: 'enableContextMenu', isUsed: (props) => props.enableContextMenu === true }],
   // 列の指定(GridColumn.conditionalFormat)。どれか 1 列でも指定していれば警告する。
-  conditionalFormat: {
-    prop: 'columns[].conditionalFormat',
-    isUsed: (props) => props.columns.some((column) => column.conditionalFormat !== undefined),
-  },
+  conditionalFormat: [
+    {
+      prop: 'columns[].conditionalFormat',
+      isUsed: (props) => props.columns.some((column) => column.conditionalFormat !== undefined),
+    },
+  ],
   // 既定 true の prop なので、明示して true を渡したときだけ警告する(省略しただけでは警告しない)。
-  selectionAggregates: {
-    prop: 'showSelectionAggregates',
-    isUsed: (props) => props.showSelectionAggregates === true,
-  },
+  selectionAggregates: [
+    {
+      prop: 'showSelectionAggregates',
+      isUsed: (props) => props.showSelectionAggregates === true,
+    },
+  ],
+  // showCopyRange も既定 true なので明示したときだけ。hoverHighlight は既定の 'row' 以外のとき。
+  motionExtras: [
+    { prop: 'highlightChanges', isUsed: (props) => props.highlightChanges === true },
+    { prop: 'showCopyRange', isUsed: (props) => props.showCopyRange === true },
+    { prop: 'hoverHighlight', isUsed: (props) => props.hoverHighlight === 'cross' },
+  ],
 };
 
 function useUnregisteredFeatureWarningsInDev<T extends object>(
@@ -47,8 +60,8 @@ function useUnregisteredFeatureWarningsInDev<T extends object>(
 ): void {
   // 警告の対象を文字列のキーへ畳みます(中身が変わったときだけ effect を走らせる)。
   const missingKey = (Object.keys(FEATURE_PROPS) as FeatureName[])
-    .filter((name) => features[name] === undefined && FEATURE_PROPS[name].isUsed(props))
-    .map((name) => FEATURE_PROPS[name].prop)
+    .filter((name) => features[name] === undefined)
+    .flatMap((name) => FEATURE_PROPS[name].filter((check) => check.isUsed(props)).map((check) => check.prop))
     .join(',');
   useEffect(() => {
     if (missingKey !== '') {

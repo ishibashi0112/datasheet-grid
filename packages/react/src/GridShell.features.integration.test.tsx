@@ -17,6 +17,7 @@ import { imeDirectInputFeature } from './features/imeDirectInput';
 import { contextMenuFeature } from './features/contextMenu';
 import { conditionalFormatFeature } from './features/conditionalFormat';
 import { selectionAggregatesFeature } from './features/selectionAggregates';
+import { motionExtrasFeature } from './features/motionExtras';
 import { installJsdomLayoutStubs } from './testing';
 import { resetUnregisteredFeatureWarnings } from '@ishibashi0112/spreadsheet-grid-core/logic/featureWarnings';
 import { ROW_DRAG_HANDLE_COLUMN_KEY } from '@ishibashi0112/spreadsheet-grid-core/logic/rowReorder';
@@ -41,6 +42,7 @@ const ImeOnlyGrid = createSpreadsheetGrid({ features: { imeDirectInput: imeDirec
 const ContextMenuOnlyGrid = createSpreadsheetGrid({ features: { contextMenu: contextMenuFeature } });
 const ConditionalFormatOnlyGrid = createSpreadsheetGrid({ features: { conditionalFormat: conditionalFormatFeature } });
 const SelectionAggregatesOnlyGrid = createSpreadsheetGrid({ features: { selectionAggregates: selectionAggregatesFeature } });
+const MotionExtrasOnlyGrid = createSpreadsheetGrid({ features: { motionExtras: motionExtrasFeature } });
 
 let restore: () => void;
 beforeAll(() => {
@@ -463,5 +465,76 @@ describe('差し込み式: selectionAggregates', () => {
       ref.current?.selectRange({ start: { row: 0, col: 0 }, end: { row: 1, col: 0 } });
     });
     expect(aggregateTexts(container)).toEqual(['平均:2.5', 'データの個数:2', '合計:5']);
+  });
+});
+
+describe('差し込み式: motionExtras', () => {
+  type Sales = { id: number; name: string; qty: number };
+  const salesRows: Sales[] = [
+    { id: 1, name: 'alpha', qty: 5 },
+    { id: 2, name: 'beta', qty: 12 },
+  ];
+  const salesColumns: GridColumn<Sales>[] = [
+    { key: 'name', title: '名前', width: 160 },
+    { key: 'qty', title: '数量', width: 100 },
+  ];
+  const changedRows = salesRows.map((r) => (r.id === 2 ? { ...r, qty: 20 } : r));
+  const bodyCellOf = (container: HTMLElement, rowIndex: number, key: string) =>
+    container.querySelector(`.ssg-body-row[data-row-index="${rowIndex}"] [data-ssg-col-key="${key}"]`) as HTMLElement;
+  const copyRange = async (container: HTMLElement, ref: React.RefObject<SpreadsheetGridHandle<Sales> | null>) => {
+    act(() => {
+      ref.current?.selectRange({ start: { row: 0, col: 0 }, end: { row: 1, col: 1 } });
+    });
+    await act(async () => {
+      fireEvent.keyDown(container.querySelector('.ssg-shell') as HTMLElement, { key: 'c', ctrlKey: true });
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+  };
+  let writeText: ReturnType<typeof vi.fn>;
+  beforeAll(() => {
+    writeText = vi.fn(() => Promise.resolve());
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });
+  });
+
+  it('機能セットに無ければ変更セルの強調 / コピー範囲の点線 / クロスヘアを出さず、明示した prop だけ開発時に 1 回ずつ警告する', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const ref = createRef<SpreadsheetGridHandle<Sales>>();
+    const props = { columns: salesColumns, rowKeyGetter: (r: Sales) => r.id, highlightChanges: true, showCopyRange: true };
+    const { container, rerender } = render(
+      <MinimalGrid ref={ref} rows={salesRows} hoverHighlight="cross" {...props} />,
+    );
+    rerender(<MinimalGrid ref={ref} rows={changedRows} hoverHighlight="cross" {...props} />);
+    expect(container.querySelector('.ssg-body-cell--changed')).toBeNull();
+    expect(container.querySelector('.ssg-root')?.classList.contains('ssg-root--hover-cross')).toBe(false);
+    fireEvent.pointerEnter(bodyCellOf(container, 1, 'qty'));
+    expect(container.querySelector('.ssg-col-hover-overlay')).toBeNull();
+    await copyRange(container, ref);
+    expect(writeText).toHaveBeenCalled();
+    expect(document.querySelector('.ssg-copy-range-overlay')).toBeNull();
+    for (const prop of ['highlightChanges', 'showCopyRange', 'hoverHighlight']) {
+      expect(warn.mock.calls.filter(([message]) => String(message).includes(`\`${prop}\``))).toHaveLength(1);
+    }
+  });
+
+  it('既定(showCopyRange 省略 = true)のままなら警告しない', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    render(<MinimalGrid rows={salesRows} columns={salesColumns} rowKeyGetter={(r) => r.id} />);
+    expect(warn.mock.calls.filter(([message]) => String(message).includes('spreadsheet-grid'))).toHaveLength(0);
+  });
+
+  it('motionExtras だけを入れた構成では 3 つとも動く', async () => {
+    const ref = createRef<SpreadsheetGridHandle<Sales>>();
+    const props = { columns: salesColumns, rowKeyGetter: (r: Sales) => r.id, highlightChanges: true };
+    const { container, rerender } = render(
+      <MotionExtrasOnlyGrid ref={ref} rows={salesRows} hoverHighlight="cross" {...props} />,
+    );
+    rerender(<MotionExtrasOnlyGrid ref={ref} rows={changedRows} hoverHighlight="cross" {...props} />);
+    expect(bodyCellOf(container, 1, 'qty').classList.contains('ssg-body-cell--changed')).toBe(true);
+    expect(container.querySelector('.ssg-root')?.classList.contains('ssg-root--hover-cross')).toBe(true);
+    fireEvent.pointerEnter(bodyCellOf(container, 1, 'qty'));
+    expect(container.querySelector('.ssg-col-hover-overlay')).not.toBeNull();
+    await copyRange(container, ref);
+    expect(document.querySelectorAll('.ssg-copy-range-overlay').length).toBeGreaterThan(0);
   });
 });

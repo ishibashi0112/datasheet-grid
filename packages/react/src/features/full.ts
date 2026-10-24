@@ -7,6 +7,7 @@ import { contextMenuFeature } from './contextMenu';
 import { fillHandleFeature } from './fillHandle';
 import { findFeature } from './find';
 import { imeDirectInputFeature } from './imeDirectInput';
+import { motionExtrasFeature } from './motionExtras';
 import { rowDragFeature } from './rowDrag';
 import { scrollHintFeature } from './scrollHint';
 import { selectionAggregatesFeature } from './selectionAggregates';
@@ -25,4 +26,5 @@ export const fullGridFeatures: Required<ReactGridFeatures> = {
   contextMenu: contextMenuFeature,
   conditionalFormat: conditionalFormatFeature,
   selectionAggregates: selectionAggregatesFeature,
+  motionExtras: motionExtrasFeature,
 };

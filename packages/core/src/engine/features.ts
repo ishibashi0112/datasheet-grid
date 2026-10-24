@@ -13,6 +13,7 @@ import type { TotalRowCells, TotalRowCellsResolver } from '../logic/totalRow';
 import type { ImeInputController } from '../controllers/imeInputController';
 import type { canStartImeEdit, resolveImeEditText } from '../logic/imeInput';
 import type { ConditionalFormatStatsMap, ConditionalFormatStatsResolver } from '../logic/conditionalFormat';
+import type { ChangeHighlightController } from '../controllers/changeHighlightController';
 
 export type GridCoreFeatures = {
   // セル内検索(F-2)。
@@ -32,6 +33,10 @@ export type GridCoreFeatures = {
   // 条件付き書式(F-3): データバー / カラースケールの列ごとの min / max をビュー行から集計するリゾルバ。
   conditionalFormat?: {
     createConditionalFormatStatsResolver: <T>() => ConditionalFormatStatsResolver<T>;
+  };
+  // 動きの追加分(M-2 / M-3 / M-6)のうちエンジン側: 変更セルのフラッシュ + 数値トゥイーン(highlightChanges)。
+  motionExtras?: {
+    createChangeHighlightController: <T>() => ChangeHighlightController<T>;
   };
 };
 
@@ -81,3 +86,9 @@ export const createInertConditionalFormatStatsResolver =
   <T,>(): ConditionalFormatStatsResolver<T> =>
   () =>
     EMPTY_CONDITIONAL_FORMAT_STATS;
+
+// motionExtras が無いときの代役: 変更セルを強調しない。
+export const createInertChangeHighlightController = <T,>(): ChangeHighlightController<T> => ({
+  update: noop,
+  dispose: noop,
+});
