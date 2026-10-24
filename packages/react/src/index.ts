@@ -6,6 +6,9 @@
 export { SpreadsheetGrid } from './SpreadsheetGrid';
 // 値フォーマッタ(UI 表示のみ)の組み込みファクタ。利用側も CellValueFormatter で自作可。
 export { numberFormatter } from '@ishibashi0112/spreadsheet-grid-core/logic/valueFormatters';
+// 追加(lazy-popups): 列フィルターポップオーバー / ツールパネルの部品(別チャンク)を先に読み込みます
+//   (通常は不要。テストで開いた直後に同期で確かめるとき / 画面遷移前の先読み用)。
+export { preloadGridPopups } from './view/lazyPopups';
 
 // 公開型です。
 export type {

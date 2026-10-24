@@ -21,3 +21,18 @@ export const yieldToMain = (): Promise<void> =>
     };
     channel.port2.postMessage(null);
   });
+
+// 追加(lazy-popups): ブラウザが暇なときに task を 1 回だけ走らせます(遅延読み込みする部品の先読み用)。
+//   requestIdleCallback が無い環境(Safari / jsdom / SSR 等)では、初回描画と競合しにくい短い遅延の
+//   setTimeout へフォールバックします。返り値の関数で取り消せます(アンマウント時の後始末)。
+//   timeoutMs はブラウザが暇にならなくても走らせる上限(requestIdleCallback の timeout)です。
+const IDLE_FALLBACK_DELAY_MS = 200;
+
+export const scheduleIdleTask = (task: () => void, timeoutMs = 2000): (() => void) => {
+  if (typeof requestIdleCallback === 'function') {
+    const handle = requestIdleCallback(() => task(), { timeout: timeoutMs });
+    return () => cancelIdleCallback(handle);
+  }
+  const handle = setTimeout(task, IDLE_FALLBACK_DELAY_MS);
+  return () => clearTimeout(handle);
+};

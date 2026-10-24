@@ -11,6 +11,7 @@
 //     扱いません = 旧実装どおり。ツールパネル側の suppressEscape 経由で閉じます)。
 //   - update(args) はレンダー後に毎回呼ばれる前提で、ResizeObserver の接続 / フォーカス予約は update で
 //     「開いていてパネル要素があるか」「フォーカス条件(列 / 配置)が変わったか」を見て行います(旧 effect 相当)。
+//     フォーカスの予約はパネルが描画されてから行います(部品の遅延読み込み中に開かれても、描画後に予約)。
 import type {
   ColumnFilterUiType,
   ColumnFilterValue,
@@ -245,6 +246,16 @@ export const createFilterPopoverController = <T,>(): FilterPopoverController<T> 
     // グリッド外を押して閉じたときは押下先にフォーカスを残します(監査 C-3)。
     onOutsidePointerDown: (target) =>
       closeWith(args !== null && isInsideGridRoot(args.gridRootRef, target)),
+    // 追加(lazy-popups): パネルが未描画の間(部品の遅延読み込み中)は Escape で閉じます(開いている間はグリッドの
+    //   キーボード操作が止まるため、見えないまま閉じられなくならないように)。描画後の Escape は従来どおり
+    //   パネル側(入力欄)とツールパネルの suppressEscape が扱います。
+    onKeyDown: (event) => {
+      if (event.key !== 'Escape' || panelRef.current !== null) {
+        return;
+      }
+      event.preventDefault();
+      close();
+    },
   });
 
   const open = (column: GridColumn<T>) => {
@@ -337,6 +348,13 @@ export const createFilterPopoverController = <T,>(): FilterPopoverController<T> 
     const { state, layout } = store.getSnapshot();
     const column = openedColumn();
     if (!state || !column || !layout) {
+      cancelFocusFrames();
+      lastFocusKey = null;
+      return;
+    }
+    // 追加(lazy-popups): パネルがまだ描画されていない間(ポップオーバー部品の遅延読み込み中)は予約しません。
+    //   読み込み後の描画で呼ばれる update で改めて予約し、初回オープンでも入力欄へフォーカスします。
+    if (panelRef.current === null) {
       cancelFocusFrames();
       lastFocusKey = null;
       return;
