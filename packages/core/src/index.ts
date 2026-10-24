@@ -7,6 +7,10 @@
 export type * from './model/gridTypes.core';
 export { createGridEngine } from './engine/createGridEngine';
 export type { GridEngine, GridEngineInit } from './engine/createGridEngine';
+// 追加(差し込み式 段階 2): createGridEngine に渡す機能セットの型(無い機能は何もしない代役が受ける)と、全機能の表。
+//   createGridEngine は渡した機能だけを動かすので、従来どおり全機能を動かすには fullCoreFeatures を渡します。
+export type { GridCoreFeatures } from './engine/features';
+export { fullCoreFeatures } from './engine/fullFeatures';
 export { createGridStore } from './model/gridStore';
 export type { GridStore, GridViewState, GridViewStatePatch } from './model/gridStore';
 export { gridActions } from './model/gridActions';

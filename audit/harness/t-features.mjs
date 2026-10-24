@@ -1,4 +1,4 @@
-// 機能別: グルーピング / 展開行 / ラベル行 / 行ドラッグ / auto-height。
+// 機能別: グルーピング / 展開行 / ラベル行 / 行ドラッグ / auto-height / 条件付き書式 / 動きの追加分。
 import { OUT, open, check, unexpectedPageErrors, summary, errorsOf, renderedRowIndexes, cellText, cell, header, scrollTo, focusGrid, waitIdle, events, clearEvents, pasteText, rows, state } from './pw.mjs';
 
 // ---------- グルーピング ----------
@@ -726,6 +726,62 @@ import { OUT, open, check, unexpectedPageErrors, summary, errorsOf, renderedRowI
 
   const errs = await errorsOf(page);
   check('ime: no console errors', errs.length === 0 && unexpectedPageErrors(pageErrors).length === 0, [...errs, ...pageErrors].slice(0, 5));
+  await close();
+}
+
+
+// ---------- 条件付き書式(差し込み式にしたあとも全部入りで描かれること) ----------
+{
+  const { page, pageErrors, close } = await open('basic', { query: 'n=100' });
+  await page.evaluate(() => {
+    const statusValue = window.__rows()[0].status;
+    window.__setColumns(
+      window.__columns().map((c) => {
+        if (c.key === 'qty') return { ...c, conditionalFormat: { dataBar: {} } };
+        if (c.key === 'price') return { ...c, conditionalFormat: { colorScale: {} } };
+        if (c.key === 'status') return { ...c, conditionalFormat: { chips: { [statusValue]: { tone: 'good' } } } };
+        return c;
+      }),
+    );
+  });
+  await waitIdle(page, 200);
+  const cf = await page.evaluate(() => ({
+    bars: document.querySelectorAll('.ssg-body-cell--cf-bar .ssg-cf-bar').length,
+    scales: document.querySelectorAll('.ssg-body-cell--cf-scale').length,
+    chips: document.querySelectorAll('.ssg-body-cell .ssg-chip--good').length,
+    firstStatus: document.querySelector('.ssg-body-row[data-row-index="0"] [data-ssg-col-key="status"]')?.textContent,
+  }));
+  check('cf: data bars rendered on the qty column', cf.bars > 0, cf);
+  check('cf: color scale background on the price column', cf.scales > 0, cf);
+  check('cf: chips rendered for the mapped status value', cf.chips > 0 && Boolean(cf.firstStatus), cf);
+  const errs = await errorsOf(page);
+  check('cf: no console errors', errs.length === 0 && unexpectedPageErrors(pageErrors).length === 0, [...errs, ...pageErrors].slice(0, 5));
+  await close();
+}
+
+
+// ---------- 動きの追加分: 変更セルの強調 / クロスヘア(差し込み式にしたあとも全部入りで動くこと) ----------
+{
+  const { page, pageErrors, close } = await open('basic', { query: 'n=100' });
+  await page.evaluate(() => window.__setProps({ highlightChanges: true, hoverHighlight: 'cross' }));
+  await waitIdle(page, 200);
+  await page.evaluate(() => window.__setRows(window.__rows().map((r, i) => (i === 1 ? { ...r, qty: (r.qty ?? 0) + 1 } : r))));
+  await waitIdle(page, 50);
+  const changed = await page.evaluate(() =>
+    [...document.querySelectorAll('.ssg-body-cell--changed')].map(
+      (el) => `${el.closest('.ssg-body-row')?.getAttribute('data-row-index')}:${el.getAttribute('data-ssg-col-key')}`,
+    ),
+  );
+  check('motion-extras: highlightChanges flashes only the changed cell', changed.length > 0 && changed.every((c) => c === '1:qty'), changed);
+  await cell(page, 2, 'name').hover();
+  await waitIdle(page, 100);
+  const cross = await page.evaluate(() => ({
+    rootClass: document.querySelector('.ssg-root')?.classList.contains('ssg-root--hover-cross'),
+    bands: document.querySelectorAll('.ssg-col-hover-overlay').length,
+  }));
+  check('motion-extras: hoverHighlight=cross shows the column band', cross.rootClass === true && cross.bands > 0, cross);
+  const errs = await errorsOf(page);
+  check('motion-extras: no console errors', errs.length === 0 && unexpectedPageErrors(pageErrors).length === 0, [...errs, ...pageErrors].slice(0, 5));
   await close();
 }
 

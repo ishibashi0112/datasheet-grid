@@ -9,7 +9,7 @@ import {
 } from '@ishibashi0112/spreadsheet-grid-core/controllers/columnHeaderDragController';
 import { useController } from './useController';
 
-type UseColumnHeaderDragControllerArgs<T> = Omit<
+export type UseColumnHeaderDragControllerArgs<T> = Omit<
   ColumnHeaderDragArgs<T>,
   | 'leftPaneScrollRef'
   | 'rightPaneScrollRef'

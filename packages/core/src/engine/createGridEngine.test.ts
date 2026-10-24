@@ -3,6 +3,9 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { createGridEngine } from './createGridEngine';
+import { createFindController } from '../controllers/findController';
+import { createTotalRowCellsResolver } from '../logic/totalRow';
+import { createConditionalFormatStatsResolver } from '../logic/conditionalFormat';
 import type { GridColumn } from '../model/gridTypes.unbound';
 
 type Row = { id: number; name: string };
@@ -30,6 +33,7 @@ afterEach(() => {
 describe('createGridEngine', () => {
   it('初期 store 状態の列幅は空で、同じ入力の resolveColumns は同じ参照を返す', () => {
     const engine = createGridEngine<Row>({
+      features: {},
       columnInputs,
       serverSide: { isServerSide: false, enableGlobalFilter: true, enableColumnFilter: true, enableSorting: true },
     });
@@ -44,6 +48,7 @@ describe('createGridEngine', () => {
 
   it('serverSide query の seed は初期 uiState から作られ、debounce ストアの初期値と一致する', () => {
     const engine = createGridEngine<Row>({
+      features: {},
       columnInputs: { ...columnInputs, isServerSide: true },
       serverSide: { isServerSide: true, enableGlobalFilter: true, enableColumnFilter: true, enableSorting: true },
     });
@@ -67,6 +72,7 @@ describe('createGridEngine', () => {
 
   it('dispose は auto-height 測定 / スクロール計測 / debounce ストアの後始末を行う', () => {
     const engine = createGridEngine<Row>({
+      features: {},
       columnInputs,
       serverSide: { isServerSide: false, enableGlobalFilter: true, enableColumnFilter: true, enableSorting: true },
     });
@@ -83,5 +89,78 @@ describe('createGridEngine', () => {
     engine.dispose();
     vi.advanceTimersByTime(300);
     expect(engine.serverSideQueryStore.getSnapshot()).not.toBe(next);
+  });
+
+  // 追加(差し込み式 段階 2): 機能セットにある機能だけ本物のコントローラを作り、無い機能は何もしない代役にする。
+  it('features.find があれば検索のコントローラを作り、無ければ閉じたままの代役にする', () => {
+    const serverSide = { isServerSide: false, enableGlobalFilter: true, enableColumnFilter: true, enableSorting: true };
+    const findArgs = {
+      enabled: true,
+      rowModel: { getRowCount: () => 0, getRow: () => undefined } as never,
+      columns,
+      caseSensitive: false,
+      onNavigate: () => {},
+    };
+    const withFind = createGridEngine<Row>({ features: { find: { createFindController } }, columnInputs, serverSide });
+    withFind.find.update(findArgs);
+    withFind.find.open('a');
+    expect(withFind.find.getSnapshot().open).toBe(true);
+    withFind.dispose();
+
+    const withoutFind = createGridEngine<Row>({ features: {}, columnInputs, serverSide });
+    withoutFind.find.update(findArgs);
+    withoutFind.find.open('a');
+    expect(withoutFind.find.getSnapshot()).toMatchObject({ open: false, query: '', matches: [], currentIndex: null });
+    expect(withoutFind.find.getSnapshot()).toBe(withoutFind.find.getSnapshot());
+    withoutFind.dispose();
+  });
+
+  it('機能セットに totalRow があれば合計行を集計し、無ければ代役(常に空)', () => {
+    const serverSide = { isServerSide: false, enableGlobalFilter: false, enableColumnFilter: false, enableSorting: false };
+    type Sales = { id: number; qty: number };
+    const inputs = {
+      rows: [
+        { id: 1, qty: 2 },
+        { id: 2, qty: 3 },
+      ] as Sales[],
+      order: null,
+      columns: [{ key: 'qty', title: '数量', width: 80, aggFunc: 'sum' }] as GridColumn<Sales>[],
+      values: { qty: 5 },
+    };
+    const salesColumnInputs = { ...columnInputs, columns: inputs.columns } as never;
+    const withTotal = createGridEngine<Sales>({
+      features: { totalRow: { createTotalRowCellsResolver } },
+      columnInputs: salesColumnInputs,
+      serverSide,
+    });
+    expect(withTotal.resolveTotalRowCells(inputs).get('qty')?.value).toBe(5);
+    withTotal.dispose();
+
+    const withoutTotal = createGridEngine<Sales>({ features: {}, columnInputs: salesColumnInputs, serverSide });
+    expect(withoutTotal.resolveTotalRowCells(inputs).size).toBe(0);
+    withoutTotal.dispose();
+  });
+
+  it('機能セットに conditionalFormat があれば列の min / max を集計し、無ければ代役(常に空)', () => {
+    const serverSide = { isServerSide: false, enableGlobalFilter: false, enableColumnFilter: false, enableSorting: false };
+    type Sales = { id: number; qty: number };
+    const salesRows: Sales[] = [
+      { id: 1, qty: 2 },
+      { id: 2, qty: 7 },
+    ];
+    const rowModel = { getRowCount: () => salesRows.length, getRow: (index: number) => salesRows[index] } as never;
+    const salesColumns = [{ key: 'qty', title: '数量', width: 80, conditionalFormat: { dataBar: {} } }] as GridColumn<Sales>[];
+    const salesColumnInputs = { ...columnInputs, columns: salesColumns } as never;
+    const withFormat = createGridEngine<Sales>({
+      features: { conditionalFormat: { createConditionalFormatStatsResolver } },
+      columnInputs: salesColumnInputs,
+      serverSide,
+    });
+    expect(withFormat.resolveConditionalFormatStats(rowModel, salesColumns).get('qty')).toEqual({ min: 2, max: 7 });
+    withFormat.dispose();
+
+    const withoutFormat = createGridEngine<Sales>({ features: {}, columnInputs: salesColumnInputs, serverSide });
+    expect(withoutFormat.resolveConditionalFormatStats(rowModel, salesColumns).size).toBe(0);
+    withoutFormat.dispose();
   });
 });

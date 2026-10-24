@@ -38,13 +38,13 @@ import { getInvalidMessage } from '@ishibashi0112/spreadsheet-grid-core/logic/va
 // 追加(G-3): セルのメモ(cellNote)の正規化と、ツールチップ文言(エラー → 改行 → メモ)の合成です。
 import { normalizeCellNote, resolveCellTooltipText } from '@ishibashi0112/spreadsheet-grid-core/logic/cellNote';
 // 追加(F-3): 条件付き書式(データバー / カラースケール)。チップはシェルの renderCellContent 側。
+// 変更(差し込み式 段階 2): 帯 / 背景色を求める関数は機能(features/conditionalFormat)から prop で受け取ります。
 import {
   EMPTY_CONDITIONAL_FORMAT_STATS,
-  resolveColorScaleBackground,
-  resolveDataBar,
   type ConditionalFormatStatsMap,
   type DataBarGeometry,
 } from '@ishibashi0112/spreadsheet-grid-core/logic/conditionalFormat';
+import type { ConditionalFormatCellResolvers } from '../features/types';
 import { RowSelectionCheckbox } from './RowSelectionCheckbox';
 // 追加(label-row ②): ラベル行(帯 + sticky な中身)です。
 import { GridBodyLabelRow, type GridBodyLabelRowRenderContent } from './GridBodyLabelRow';
@@ -128,6 +128,9 @@ type GridBodyRowProps<T> = {
   showValidationMarks: boolean;
   // 追加(F-3): 条件付き書式の列ごとの min / max(シェルで集計。内容が同じなら参照が変わらない = memo 安全)。
   conditionalFormatStats: ConditionalFormatStatsMap;
+  // 変更(差し込み式 段階 2): データバー / カラースケールを求める関数(機能セットに無ければ undefined = 描かない)。
+  //   機能の表はモジュールで固定の値なので参照は変わりません(memo 安全)。
+  conditionalFormatResolvers: ConditionalFormatCellResolvers | undefined;
   // 追加(C1-6): auto-height セルの min-height 下限(基準行高=estimate)。rowHeight(=解決済み行高/
   //   実測由来)を下限にすると一度伸びた行が縮まなくなる(min-height で測定が下げ止まる)ため、
   //   下限は実測に依存しない固定値(基準行高)にして shrink を可能にします。GridBodyLayer の基準
@@ -211,6 +214,7 @@ function GridBodyRowInner<T>({
   showCellOverflowTooltip,
   showValidationMarks,
   conditionalFormatStats,
+  conditionalFormatResolvers,
   autoHeightMinHeight,
   rowHeaderCellStyle,
   isRowHovered,
@@ -375,17 +379,21 @@ function GridBodyRowInner<T>({
         const conditionalCell = resolveSlotProps<CSSProperties>(conditionalCellSlot);
         // 追加(F-3): 条件付き書式(データバー / カラースケール)。指定列だけ値解決します(未指定列は無コスト)。
         //   帯は .ssg-cf-bar(絶対配置・文字の下)、背景色は inline の color-mix()(文字色は変えない)。
-        const conditionalFormat = column.conditionalFormat;
+        const conditionalFormat = conditionalFormatResolvers ? column.conditionalFormat : undefined;
         let dataBar: DataBarGeometry | null = null;
         let scaleBackground: string | null = null;
-        if (conditionalFormat && (conditionalFormat.dataBar || conditionalFormat.colorScale)) {
+        if (conditionalFormatResolvers && conditionalFormat && (conditionalFormat.dataBar || conditionalFormat.colorScale)) {
           const stats = conditionalFormatStats.get(column.key);
           const cellValue = styleContext ? styleContext.value : getCellValue(row, column);
           if (conditionalFormat.dataBar) {
-            dataBar = resolveDataBar(conditionalFormat.dataBar, cellValue, stats);
+            dataBar = conditionalFormatResolvers.resolveDataBar(conditionalFormat.dataBar, cellValue, stats);
           }
           if (conditionalFormat.colorScale) {
-            scaleBackground = resolveColorScaleBackground(conditionalFormat.colorScale, cellValue, stats);
+            scaleBackground = conditionalFormatResolvers.resolveColorScaleBackground(
+              conditionalFormat.colorScale,
+              cellValue,
+              stats,
+            );
           }
         }
         const dataBarColor = dataBar
@@ -929,6 +937,8 @@ type GridBodyLayerProps<T> = {
   showValidationMarks?: boolean;
   // 追加(F-3): 条件付き書式の列ごとの min / max(未指定 = 空の Map)。
   conditionalFormatStats?: ConditionalFormatStatsMap;
+  // 変更(差し込み式 段階 2): データバー / カラースケールを求める関数(未指定 = 条件付き書式を描かない)。
+  conditionalFormatResolvers?: ConditionalFormatCellResolvers;
   // 追加(①-4): serverSide(SSRM)モードか。true のとき未ロード行をスケルトン描画します。
   //   未指定時 false(clientSide は従来どおり未ロード=OOB を null 返し)。
   isServerSide?: boolean;
@@ -1015,6 +1025,7 @@ export function GridBodyLayer<T>({
   showCellOverflowTooltip = false,
   showValidationMarks = true,
   conditionalFormatStats = EMPTY_CONDITIONAL_FORMAT_STATS,
+  conditionalFormatResolvers,
   isServerSide = false,
   collapsedGroupKeys,
   onGroupToggle,
@@ -1232,6 +1243,7 @@ export function GridBodyLayer<T>({
             showCellOverflowTooltip={showCellOverflowTooltip}
             showValidationMarks={showValidationMarks}
             conditionalFormatStats={conditionalFormatStats}
+            conditionalFormatResolvers={conditionalFormatResolvers}
             autoHeightMinHeight={rowHeight}
             rowHeaderCellStyle={rowHeaderCellStyle}
             isRowHovered={hoveredRowIndex === rowIndex}

@@ -1,0 +1,564 @@
+// 追加(差し込み式 段階 2): 機能セットを外した / 1 つだけ入れた構成のシェルの結合テストです。全部入り(SpreadsheetGrid)の
+//   テストだけだと、機能を外したときにだけ出る不具合(代役の取り違え / 静的 import の残り)を見逃すため、
+//   createSpreadsheetGrid に機能セットを渡して確かめます。機能を移すたびにここへ足します。
+// @vitest-environment jsdom
+import { describe, it, expect, vi, beforeAll, afterAll, afterEach } from 'vitest';
+import { render, cleanup, act, fireEvent } from '@testing-library/react';
+import { createRef } from 'react';
+import { createSpreadsheetGrid } from './createSpreadsheetGrid';
+import { findFeature } from './features/find';
+import { fillHandleFeature } from './features/fillHandle';
+import { columnReorderFeature } from './features/columnReorder';
+import { rowDragFeature } from './features/rowDrag';
+import { scrollHintFeature } from './features/scrollHint';
+import { columnAutosizeFeature } from './features/columnAutosize';
+import { totalRowFeature } from './features/totalRow';
+import { imeDirectInputFeature } from './features/imeDirectInput';
+import { contextMenuFeature } from './features/contextMenu';
+import { conditionalFormatFeature } from './features/conditionalFormat';
+import { selectionAggregatesFeature } from './features/selectionAggregates';
+import { motionExtrasFeature } from './features/motionExtras';
+import { exportFeature } from './features/export';
+import { installJsdomLayoutStubs } from './testing';
+import { resetUnregisteredFeatureWarnings } from '@ishibashi0112/spreadsheet-grid-core/logic/featureWarnings';
+import { ROW_DRAG_HANDLE_COLUMN_KEY } from '@ishibashi0112/spreadsheet-grid-core/logic/rowReorder';
+import type { GridColumn, SpreadsheetGridHandle } from './model/gridTypes';
+
+type Row = { id: number; name: string };
+const rows: Row[] = [
+  { id: 1, name: 'alpha' },
+  { id: 2, name: 'beta' },
+];
+const columns: GridColumn<Row>[] = [{ key: 'name', title: '名前', width: 160 }];
+
+const MinimalGrid = createSpreadsheetGrid({ features: {} });
+const FindOnlyGrid = createSpreadsheetGrid({ features: { find: findFeature } });
+const FillOnlyGrid = createSpreadsheetGrid({ features: { fillHandle: fillHandleFeature } });
+const ColumnReorderOnlyGrid = createSpreadsheetGrid({ features: { columnReorder: columnReorderFeature } });
+const RowDragOnlyGrid = createSpreadsheetGrid({ features: { rowDrag: rowDragFeature } });
+const ScrollHintOnlyGrid = createSpreadsheetGrid({ features: { scrollHint: scrollHintFeature } });
+const ColumnAutosizeOnlyGrid = createSpreadsheetGrid({ features: { columnAutosize: columnAutosizeFeature } });
+const TotalRowOnlyGrid = createSpreadsheetGrid({ features: { totalRow: totalRowFeature } });
+const ImeOnlyGrid = createSpreadsheetGrid({ features: { imeDirectInput: imeDirectInputFeature } });
+const ContextMenuOnlyGrid = createSpreadsheetGrid({ features: { contextMenu: contextMenuFeature } });
+const ConditionalFormatOnlyGrid = createSpreadsheetGrid({ features: { conditionalFormat: conditionalFormatFeature } });
+const SelectionAggregatesOnlyGrid = createSpreadsheetGrid({ features: { selectionAggregates: selectionAggregatesFeature } });
+const MotionExtrasOnlyGrid = createSpreadsheetGrid({ features: { motionExtras: motionExtrasFeature } });
+const ExportOnlyGrid = createSpreadsheetGrid({ features: { export: exportFeature } });
+
+let restore: () => void;
+beforeAll(() => {
+  restore = installJsdomLayoutStubs();
+});
+afterAll(() => {
+  restore();
+});
+afterEach(() => {
+  cleanup();
+  resetUnregisteredFeatureWarnings();
+  vi.restoreAllMocks();
+});
+
+const flushScan = async () => {
+  await act(async () => {
+    for (let i = 0; i < 6; i += 1) {
+      await new Promise<void>((resolve) => setTimeout(resolve, 0));
+    }
+  });
+};
+
+describe('差し込み式: find', () => {
+  it('機能セットに無ければ find を渡しても検索バーは出ず、Ctrl+F も横取りせず、開発時に 1 回だけ警告する', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const ref = createRef<SpreadsheetGridHandle<Row>>();
+    const onFindChange = vi.fn();
+    const { container, rerender } = render(
+      <MinimalGrid ref={ref} rows={rows} columns={columns} rowKeyGetter={(r) => r.id} find onFindChange={onFindChange} />,
+    );
+    act(() => {
+      ref.current?.openFind('alpha');
+    });
+    expect(container.querySelector('.ssg-find-bar')).toBeNull();
+    const shell = container.querySelector('.ssg-shell') as HTMLElement;
+    const notPrevented = fireEvent.keyDown(shell, { key: 'f', ctrlKey: true });
+    expect(notPrevented).toBe(true);
+    expect(container.querySelector('.ssg-find-bar')).toBeNull();
+    expect(onFindChange).not.toHaveBeenCalled();
+    // 警告は find の 1 回だけ(再描画しても繰り返さない)。
+    rerender(<MinimalGrid ref={ref} rows={[...rows]} columns={columns} rowKeyGetter={(r) => r.id} find onFindChange={onFindChange} />);
+    const findWarnings = warn.mock.calls.filter(([message]) => String(message).includes('`find`'));
+    expect(findWarnings).toHaveLength(1);
+  });
+
+  it('find を使わなければ警告しない', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    render(<MinimalGrid rows={rows} columns={columns} rowKeyGetter={(r) => r.id} />);
+    expect(warn).not.toHaveBeenCalled();
+  });
+
+  it('find だけを入れた構成でも検索バーとヒットの強調が動く', async () => {
+    const ref = createRef<SpreadsheetGridHandle<Row>>();
+    const { container } = render(<FindOnlyGrid ref={ref} rows={rows} columns={columns} rowKeyGetter={(r) => r.id} find />);
+    act(() => {
+      ref.current?.openFind('alp');
+    });
+    expect(container.querySelector('.ssg-find-bar')).not.toBeNull();
+    await flushScan();
+    expect(Array.from(container.querySelectorAll('.ssg-find-mark')).map((el) => el.textContent)).toEqual(['alp']);
+  });
+});
+
+describe('差し込み式: fillHandle', () => {
+  it('機能セットに無ければ fillHandle を渡してもハンドルは出ず、開発時に 1 回だけ警告する', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const ref = createRef<SpreadsheetGridHandle<Row>>();
+    const { container, rerender } = render(
+      <MinimalGrid ref={ref} rows={rows} columns={columns} rowKeyGetter={(r) => r.id} onRowsChange={() => {}} fillHandle />,
+    );
+    act(() => {
+      ref.current?.selectCell(0, 0);
+    });
+    expect(container.querySelector('.ssg-fill-handle')).toBeNull();
+    expect(container.querySelector('.ssg-root--filling')).toBeNull();
+    rerender(
+      <MinimalGrid ref={ref} rows={[...rows]} columns={columns} rowKeyGetter={(r) => r.id} onRowsChange={() => {}} fillHandle />,
+    );
+    const fillWarnings = warn.mock.calls.filter(([message]) => String(message).includes('`fillHandle`'));
+    expect(fillWarnings).toHaveLength(1);
+  });
+
+  it('fillHandle だけを入れた構成ではハンドルが出て、引くと埋まる', () => {
+    const ref = createRef<SpreadsheetGridHandle<Row>>();
+    const onRowsChange = vi.fn<(next: Row[]) => void>();
+    const { container } = render(
+      <FillOnlyGrid
+        ref={ref}
+        rows={rows}
+        columns={columns}
+        rowKeyGetter={(r) => r.id}
+        onRowsChange={onRowsChange}
+        fillHandle
+        rowHeight={30}
+        headerHeight={40}
+        rowHeaderWidth={56}
+      />,
+    );
+    act(() => {
+      ref.current?.selectCell(0, 0);
+    });
+    const handle = container.querySelector<HTMLElement>('.ssg-fill-handle');
+    expect(handle).not.toBeNull();
+    const dispatchPointer = (target: EventTarget, type: string, clientX: number, clientY: number) => {
+      const event = new window.PointerEvent(type, { bubbles: true, cancelable: true, button: 0, clientX, clientY });
+      if (event.pointerId !== 1) {
+        Object.defineProperty(event, 'pointerId', { value: 1 });
+      }
+      act(() => {
+        target.dispatchEvent(event);
+      });
+    };
+    // 1 行目(名前列)から 2 行目まで引く(行 = (clientY - 40) / 30、列は行番号 56px の右から)。
+    dispatchPointer(handle as HTMLElement, 'pointerdown', 0, 0);
+    dispatchPointer(window, 'pointermove', 56 + 80, 40 + 30 + 15);
+    expect(container.querySelector('.ssg-root--filling')).not.toBeNull();
+    dispatchPointer(window, 'pointerup', 56 + 80, 40 + 30 + 15);
+    expect(onRowsChange).toHaveBeenCalledTimes(1);
+    expect(onRowsChange.mock.calls[0]?.[0].map((r) => r.name)).toEqual(['alpha', 'alpha']);
+  });
+});
+
+describe('差し込み式: columnReorder', () => {
+  it('機能セットに無ければ onColumnsChange があっても grip とドロップの縦線を出さない(警告もしない)', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const { container } = render(
+      <MinimalGrid rows={rows} columns={columns} rowKeyGetter={(r) => r.id} onColumnsChange={() => {}} />,
+    );
+    expect(container.querySelectorAll('.ssg-header-grip')).toHaveLength(0);
+    expect(container.querySelectorAll('.ssg-col-drop-indicator')).toHaveLength(0);
+    // 列メニュー(⋮)は従来どおり出る。
+    expect(container.querySelectorAll('.ssg-header-actions .ssg-icon-btn').length).toBeGreaterThan(0);
+    expect(warn).not.toHaveBeenCalled();
+  });
+
+  it('機能セットに無いのに columnDragMotion を渡すと開発時に 1 回だけ警告する', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    render(
+      <MinimalGrid
+        rows={rows}
+        columns={columns}
+        rowKeyGetter={(r) => r.id}
+        onColumnsChange={() => {}}
+        columnDragMotion="live"
+      />,
+    );
+    const warnings = warn.mock.calls.filter(([message]) => String(message).includes('`columnDragMotion`'));
+    expect(warnings).toHaveLength(1);
+  });
+
+  it('columnReorder だけを入れた構成では grip と 3 ペインぶんのドロップの縦線が出る', () => {
+    const { container } = render(
+      <ColumnReorderOnlyGrid rows={rows} columns={columns} rowKeyGetter={(r) => r.id} onColumnsChange={() => {}} />,
+    );
+    expect(container.querySelectorAll('.ssg-header-grip')).toHaveLength(columns.length);
+    expect(container.querySelectorAll('.ssg-col-drop-indicator')).toHaveLength(3);
+  });
+});
+
+describe('差し込み式: rowDrag', () => {
+  it('機能セットに無ければ enableRowDrag を渡してもハンドル列とガイド線を出さず、開発時に 1 回だけ警告する', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const ref = createRef<SpreadsheetGridHandle<Row>>();
+    const { container } = render(
+      <MinimalGrid ref={ref} rows={rows} columns={columns} rowKeyGetter={(r) => r.id} onRowsChange={() => {}} enableRowDrag />,
+    );
+    expect(container.querySelectorAll('.ssg-row-drag-handle')).toHaveLength(0);
+    expect(container.querySelectorAll('.ssg-row-drop-indicator')).toHaveLength(0);
+    // ハンドル列(合成列)を作らない。
+    expect(container.querySelector(`[data-ssg-col-key="${ROW_DRAG_HANDLE_COLUMN_KEY}"]`)).toBeNull();
+    const warnings = warn.mock.calls.filter(([message]) => String(message).includes('`enableRowDrag`'));
+    expect(warnings).toHaveLength(1);
+  });
+
+  it('rowDrag だけを入れた構成ではハンドルとガイド線が出て、moveRow で並べ替えられる', () => {
+    const ref = createRef<SpreadsheetGridHandle<Row>>();
+    const onRowsChange = vi.fn<(next: Row[]) => void>();
+    const { container } = render(
+      <RowDragOnlyGrid ref={ref} rows={rows} columns={columns} rowKeyGetter={(r) => r.id} onRowsChange={onRowsChange} enableRowDrag />,
+    );
+    expect(container.querySelector(`[data-ssg-col-key="${ROW_DRAG_HANDLE_COLUMN_KEY}"]`)).not.toBeNull();
+    expect(container.querySelectorAll('.ssg-row-drag-handle')).toHaveLength(rows.length);
+    expect(container.querySelectorAll('.ssg-row-drop-indicator').length).toBeGreaterThan(0);
+    act(() => {
+      ref.current?.moveRow(2, 0);
+    });
+    expect(onRowsChange.mock.calls[0]?.[0].map((r) => r.name)).toEqual(['beta', 'alpha']);
+  });
+});
+
+describe('差し込み式: scrollHint', () => {
+  it('機能セットに無ければ scrollHint を渡してもインジケーターを出さずネイティブのスクロールバーのまま、開発時に 1 回だけ警告する', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const { container } = render(
+      <MinimalGrid rows={rows} columns={columns} rowKeyGetter={(r) => r.id} scrollHint={{ scrollbar: true }} />,
+    );
+    expect(container.querySelector('.ssg-scroll-hint')).toBeNull();
+    expect(container.querySelector('.ssg-scroll-container--custom-scrollbar')).toBeNull();
+    const warnings = warn.mock.calls.filter(([message]) => String(message).includes('`scrollHint`'));
+    expect(warnings).toHaveLength(1);
+  });
+
+  it('scrollHint だけを入れた構成ではカスタムスクロールバーになる', () => {
+    const { container } = render(
+      <ScrollHintOnlyGrid rows={rows} columns={columns} rowKeyGetter={(r) => r.id} scrollHint={{ scrollbar: true }} />,
+    );
+    expect(container.querySelector('.ssg-scroll-container--custom-scrollbar')).not.toBeNull();
+  });
+});
+
+describe('差し込み式: columnAutosize', () => {
+  const openColumnMenu = (container: HTMLElement) => {
+    const menuButton = container.querySelector<HTMLElement>('[aria-label="列メニュー"]');
+    if (!menuButton) throw new Error('列メニューのボタンがありません');
+    act(() => {
+      fireEvent.pointerDown(menuButton, { button: 0 });
+    });
+  };
+  const menuLabels = () => Array.from(document.querySelectorAll('.ssg-menu-label')).map((el) => el.textContent);
+
+  it('機能セットに無ければ列メニューに幅の自動調整を出さず、autoSizeColumns は開発時に 1 回だけ警告する', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const { container } = render(
+      <MinimalGrid rows={rows} columns={columns} rowKeyGetter={(r) => r.id} autoSizeColumns="onMount" />,
+    );
+    openColumnMenu(container);
+    expect(menuLabels().length).toBeGreaterThan(0);
+    expect(menuLabels()).not.toContain('この列の幅を自動調整');
+    expect(menuLabels()).not.toContain('すべての列の幅を自動調整');
+    const warnings = warn.mock.calls.filter(([message]) => String(message).includes('`autoSizeColumns`'));
+    expect(warnings).toHaveLength(1);
+  });
+
+  it('columnAutosize だけを入れた構成では列メニューに幅の自動調整が出る', () => {
+    const { container } = render(<ColumnAutosizeOnlyGrid rows={rows} columns={columns} rowKeyGetter={(r) => r.id} />);
+    openColumnMenu(container);
+    expect(menuLabels()).toContain('この列の幅を自動調整');
+    expect(menuLabels()).toContain('すべての列の幅を自動調整');
+  });
+});
+
+describe('差し込み式: totalRow', () => {
+  type Sales = { id: number; name: string; qty: number };
+  const salesRows: Sales[] = [
+    { id: 1, name: 'alpha', qty: 2 },
+    { id: 2, name: 'beta', qty: 3 },
+  ];
+  const salesColumns: GridColumn<Sales>[] = [
+    { key: 'name', title: '名前', width: 160 },
+    { key: 'qty', title: '数量', width: 100, aggFunc: 'sum' },
+  ];
+  const MinimalSalesGrid = createSpreadsheetGrid({ features: {} });
+
+  it('機能セットに無ければ totalRow を渡しても合計行を出さず、開発時に 1 回だけ警告する', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const { container } = render(
+      <MinimalSalesGrid rows={salesRows} columns={salesColumns} rowKeyGetter={(r) => r.id} totalRow />,
+    );
+    expect(container.querySelector('.ssg-total-row')).toBeNull();
+    const warnings = warn.mock.calls.filter(([message]) => String(message).includes('`totalRow`'));
+    expect(warnings).toHaveLength(1);
+  });
+
+  it('totalRow だけを入れた構成では合計行が出て集計される', () => {
+    const { container } = render(
+      <TotalRowOnlyGrid rows={salesRows} columns={salesColumns} rowKeyGetter={(r) => r.id} totalRow />,
+    );
+    expect(container.querySelector('.ssg-total-row')).not.toBeNull();
+    expect(Array.from(container.querySelectorAll('.ssg-total-value')).map((el) => el.textContent)).toContain('5');
+  });
+});
+
+describe('差し込み式: imeDirectInput', () => {
+  it('機能セットに無ければ imeDirectInput を渡しても入力受けを描画せず、開発時に 1 回だけ警告する', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const { container } = render(
+      <MinimalGrid rows={rows} columns={columns} rowKeyGetter={(r) => r.id} onRowsChange={() => {}} imeDirectInput />,
+    );
+    expect(container.querySelector('.ssg-ime-input')).toBeNull();
+    const warnings = warn.mock.calls.filter(([message]) => String(message).includes('`imeDirectInput`'));
+    expect(warnings).toHaveLength(1);
+  });
+
+  it('imeDirectInput だけを入れた構成では入力受けが描画される', () => {
+    const { container } = render(
+      <ImeOnlyGrid rows={rows} columns={columns} rowKeyGetter={(r) => r.id} onRowsChange={() => {}} imeDirectInput />,
+    );
+    expect(container.querySelector('.ssg-ime-input')).not.toBeNull();
+  });
+});
+
+describe('差し込み式: contextMenu', () => {
+  const contextMenuItems = () => [{ kind: 'action' as const, key: 'copy', label: 'コピーする', onSelect: () => {} }];
+  const bodyCell = (container: HTMLElement) =>
+    container.querySelector('[data-row-index="0"] [data-ssg-col-key="name"]') as HTMLElement;
+
+  it('機能セットに無ければ右クリックはブラウザ標準のメニューのまま(独自メニューを出さない)で、開発時に 1 回だけ警告する', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const onContextMenuOpen = vi.fn();
+    const { container } = render(
+      <MinimalGrid
+        rows={rows}
+        columns={columns}
+        rowKeyGetter={(r) => r.id}
+        enableContextMenu
+        getContextMenuItems={contextMenuItems}
+        onContextMenuOpen={onContextMenuOpen}
+      />,
+    );
+    // 既定の動作を止めない = ブラウザ標準のメニューが出る。
+    expect(fireEvent.contextMenu(bodyCell(container), { clientX: 10, clientY: 10 })).toBe(true);
+    expect(document.querySelector('[role="menu"]')).toBeNull();
+    expect(onContextMenuOpen).not.toHaveBeenCalled();
+    const warnings = warn.mock.calls.filter(([message]) => String(message).includes('`enableContextMenu`'));
+    expect(warnings).toHaveLength(1);
+  });
+
+  it('contextMenu だけを入れた構成では右クリックで独自メニューが開き、対象のセルが渡る', () => {
+    const onContextMenuOpen = vi.fn();
+    const { container } = render(
+      <ContextMenuOnlyGrid
+        rows={rows}
+        columns={columns}
+        rowKeyGetter={(r) => r.id}
+        enableContextMenu
+        getContextMenuItems={contextMenuItems}
+        onContextMenuOpen={onContextMenuOpen}
+      />,
+    );
+    expect(fireEvent.contextMenu(bodyCell(container), { clientX: 10, clientY: 10 })).toBe(false);
+    expect(document.querySelector('[role="menu"]')?.textContent).toContain('コピーする');
+    expect(onContextMenuOpen).toHaveBeenCalledTimes(1);
+    expect(onContextMenuOpen.mock.calls[0]?.[0].target).toMatchObject({ type: 'cell', rowIndex: 0, colIndex: 0, value: 'alpha' });
+  });
+});
+
+describe('差し込み式: conditionalFormat', () => {
+  type Task = { id: number; status: string; qty: number; score: number };
+  const taskRows: Task[] = [
+    { id: 1, status: 'done', qty: 2, score: 10 },
+    { id: 2, status: 'todo', qty: 8, score: 30 },
+  ];
+  const taskColumns: GridColumn<Task>[] = [
+    { key: 'status', title: '状態', width: 120, conditionalFormat: { chips: { done: { tone: 'good', label: '完了' } } } },
+    { key: 'qty', title: '数量', width: 100, conditionalFormat: { dataBar: { showValue: false } } },
+    { key: 'score', title: '点数', width: 100, conditionalFormat: { colorScale: {} } },
+  ];
+  const cellOf = (container: HTMLElement, rowIndex: number, key: string) =>
+    container.querySelector(`[data-row-index="${rowIndex}"] [data-ssg-col-key="${key}"]`) as HTMLElement;
+
+  it('機能セットに無ければ conditionalFormat を指定した列も素の表示で(帯 / 背景色 / チップなし、値は出す)、開発時に 1 回だけ警告する', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const { container } = render(<MinimalGrid rows={taskRows} columns={taskColumns} rowKeyGetter={(r) => r.id} />);
+    expect(container.querySelector('.ssg-body-cell--cf-bar, .ssg-body-cell--cf-scale, .ssg-cf-bar, .ssg-chip')).toBeNull();
+    expect(cellOf(container, 0, 'status').textContent).toBe('done');
+    // showValue: false も無視する(帯が無いのに値まで消さない)。
+    expect(cellOf(container, 1, 'qty').textContent).toBe('8');
+    const warnings = warn.mock.calls.filter(([message]) => String(message).includes('`columns[].conditionalFormat`'));
+    expect(warnings).toHaveLength(1);
+  });
+
+  it('conditionalFormat だけを入れた構成ではデータバー / カラースケール / チップが出る', () => {
+    const { container } = render(
+      <ConditionalFormatOnlyGrid rows={taskRows} columns={taskColumns} rowKeyGetter={(r) => r.id} />,
+    );
+    expect(cellOf(container, 1, 'qty').classList.contains('ssg-body-cell--cf-bar')).toBe(true);
+    expect(cellOf(container, 1, 'qty').textContent).toBe('');
+    expect(cellOf(container, 1, 'score').classList.contains('ssg-body-cell--cf-scale')).toBe(true);
+    expect(cellOf(container, 0, 'status').querySelector('.ssg-chip')?.textContent).toContain('完了');
+  });
+});
+
+describe('差し込み式: selectionAggregates', () => {
+  type Sales = { id: number; qty: number };
+  const salesRows: Sales[] = [
+    { id: 1, qty: 2 },
+    { id: 2, qty: 3 },
+  ];
+  const salesColumns: GridColumn<Sales>[] = [{ key: 'qty', title: '数量', width: 100 }];
+  const aggregateTexts = (container: HTMLElement) =>
+    Array.from(container.querySelectorAll('.ssg-bar-aggregates .ssg-bar-chip')).map((chip) => chip.textContent);
+
+  it('機能セットに無ければ範囲を選んでも集計を出さず(slot context も null)、明示した showSelectionAggregates だけ開発時に 1 回警告する', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const ref = createRef<SpreadsheetGridHandle<Sales>>();
+    const seen: unknown[] = [];
+    const { container, rerender } = render(
+      <MinimalGrid ref={ref} rows={salesRows} columns={salesColumns} rowKeyGetter={(r) => r.id} />,
+    );
+    act(() => {
+      ref.current?.selectRange({ start: { row: 0, col: 0 }, end: { row: 1, col: 0 } });
+    });
+    expect(container.querySelector('.ssg-bar-aggregates')).toBeNull();
+    // 既定(省略)は true なので、省略しただけでは警告しない。
+    expect(warn.mock.calls.filter(([message]) => String(message).includes('`showSelectionAggregates`'))).toHaveLength(0);
+    rerender(
+      <MinimalGrid
+        ref={ref}
+        rows={salesRows}
+        columns={salesColumns}
+        rowKeyGetter={(r) => r.id}
+        showSelectionAggregates
+        renderBottomBar={(context) => {
+          seen.push(context.selectionAggregates);
+          return null;
+        }}
+      />,
+    );
+    expect(seen.length).toBeGreaterThan(0);
+    expect(seen.every((value) => value === null)).toBe(true);
+    expect(warn.mock.calls.filter(([message]) => String(message).includes('`showSelectionAggregates`'))).toHaveLength(1);
+  });
+
+  it('selectionAggregates だけを入れた構成では下部バーに集計が出る', () => {
+    const ref = createRef<SpreadsheetGridHandle<Sales>>();
+    const { container } = render(
+      <SelectionAggregatesOnlyGrid ref={ref} rows={salesRows} columns={salesColumns} rowKeyGetter={(r) => r.id} />,
+    );
+    act(() => {
+      ref.current?.selectRange({ start: { row: 0, col: 0 }, end: { row: 1, col: 0 } });
+    });
+    expect(aggregateTexts(container)).toEqual(['平均:2.5', 'データの個数:2', '合計:5']);
+  });
+});
+
+describe('差し込み式: motionExtras', () => {
+  type Sales = { id: number; name: string; qty: number };
+  const salesRows: Sales[] = [
+    { id: 1, name: 'alpha', qty: 5 },
+    { id: 2, name: 'beta', qty: 12 },
+  ];
+  const salesColumns: GridColumn<Sales>[] = [
+    { key: 'name', title: '名前', width: 160 },
+    { key: 'qty', title: '数量', width: 100 },
+  ];
+  const changedRows = salesRows.map((r) => (r.id === 2 ? { ...r, qty: 20 } : r));
+  const bodyCellOf = (container: HTMLElement, rowIndex: number, key: string) =>
+    container.querySelector(`.ssg-body-row[data-row-index="${rowIndex}"] [data-ssg-col-key="${key}"]`) as HTMLElement;
+  const copyRange = async (container: HTMLElement, ref: React.RefObject<SpreadsheetGridHandle<Sales> | null>) => {
+    act(() => {
+      ref.current?.selectRange({ start: { row: 0, col: 0 }, end: { row: 1, col: 1 } });
+    });
+    await act(async () => {
+      fireEvent.keyDown(container.querySelector('.ssg-shell') as HTMLElement, { key: 'c', ctrlKey: true });
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+  };
+  let writeText: ReturnType<typeof vi.fn>;
+  beforeAll(() => {
+    writeText = vi.fn(() => Promise.resolve());
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });
+  });
+
+  it('機能セットに無ければ変更セルの強調 / コピー範囲の点線 / クロスヘアを出さず、明示した prop だけ開発時に 1 回ずつ警告する', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const ref = createRef<SpreadsheetGridHandle<Sales>>();
+    const props = { columns: salesColumns, rowKeyGetter: (r: Sales) => r.id, highlightChanges: true, showCopyRange: true };
+    const { container, rerender } = render(
+      <MinimalGrid ref={ref} rows={salesRows} hoverHighlight="cross" {...props} />,
+    );
+    rerender(<MinimalGrid ref={ref} rows={changedRows} hoverHighlight="cross" {...props} />);
+    expect(container.querySelector('.ssg-body-cell--changed')).toBeNull();
+    expect(container.querySelector('.ssg-root')?.classList.contains('ssg-root--hover-cross')).toBe(false);
+    fireEvent.pointerEnter(bodyCellOf(container, 1, 'qty'));
+    expect(container.querySelector('.ssg-col-hover-overlay')).toBeNull();
+    await copyRange(container, ref);
+    expect(writeText).toHaveBeenCalled();
+    expect(document.querySelector('.ssg-copy-range-overlay')).toBeNull();
+    for (const prop of ['highlightChanges', 'showCopyRange', 'hoverHighlight']) {
+      expect(warn.mock.calls.filter(([message]) => String(message).includes(`\`${prop}\``))).toHaveLength(1);
+    }
+  });
+
+  it('既定(showCopyRange 省略 = true)のままなら警告しない', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    render(<MinimalGrid rows={salesRows} columns={salesColumns} rowKeyGetter={(r) => r.id} />);
+    expect(warn.mock.calls.filter(([message]) => String(message).includes('spreadsheet-grid'))).toHaveLength(0);
+  });
+
+  it('motionExtras だけを入れた構成では 3 つとも動く', async () => {
+    const ref = createRef<SpreadsheetGridHandle<Sales>>();
+    const props = { columns: salesColumns, rowKeyGetter: (r: Sales) => r.id, highlightChanges: true };
+    const { container, rerender } = render(
+      <MotionExtrasOnlyGrid ref={ref} rows={salesRows} hoverHighlight="cross" {...props} />,
+    );
+    rerender(<MotionExtrasOnlyGrid ref={ref} rows={changedRows} hoverHighlight="cross" {...props} />);
+    expect(bodyCellOf(container, 1, 'qty').classList.contains('ssg-body-cell--changed')).toBe(true);
+    expect(container.querySelector('.ssg-root')?.classList.contains('ssg-root--hover-cross')).toBe(true);
+    fireEvent.pointerEnter(bodyCellOf(container, 1, 'qty'));
+    expect(container.querySelector('.ssg-col-hover-overlay')).not.toBeNull();
+    await copyRange(container, ref);
+    expect(document.querySelectorAll('.ssg-copy-range-overlay').length).toBeGreaterThan(0);
+  });
+});
+
+describe('差し込み式: export', () => {
+  it('機能セットに無ければ exportCsv / getExportData は空を返し、呼ぶと開発時にメソッドごと 1 回だけ警告する', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const ref = createRef<SpreadsheetGridHandle<Row>>();
+    render(<MinimalGrid ref={ref} rows={rows} columns={columns} rowKeyGetter={(r) => r.id} />);
+    // 描画しただけでは警告しない(メソッドを呼んだときだけ)。
+    expect(warn.mock.calls.filter(([message]) => String(message).includes('spreadsheet-grid'))).toHaveLength(0);
+    expect(ref.current?.exportCsv()).toBe('');
+    expect(ref.current?.exportCsv()).toBe('');
+    expect(ref.current?.getExportData()).toEqual({ columns: [], rows: [] });
+    expect(warn.mock.calls.filter(([message]) => String(message).includes('`exportCsv()`'))).toHaveLength(1);
+    expect(warn.mock.calls.filter(([message]) => String(message).includes('`getExportData()`'))).toHaveLength(1);
+  });
+
+  it('export だけを入れた構成では CSV と整形済みデータが出る', () => {
+    const ref = createRef<SpreadsheetGridHandle<Row>>();
+    render(<ExportOnlyGrid ref={ref} rows={rows} columns={columns} rowKeyGetter={(r) => r.id} />);
+    expect(ref.current?.exportCsv()).toBe('名前\r\nalpha\r\nbeta');
+    expect(ref.current?.getExportData().rows.map((cells) => cells.map((cell) => cell.value))).toEqual([['alpha'], ['beta']]);
+  });
+});

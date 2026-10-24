@@ -13,18 +13,23 @@ import { createDetailIndexCacheHolder, type DetailIndexCacheHolder } from '../lo
 import { createAutoHeightMeasurer, type AutoHeightMeasurer } from '../controllers/autoHeightMeasurer';
 import { createScrollSyncController, type ScrollSyncController } from '../controllers/scrollSyncController';
 import { createRowEnterController, type RowEnterController } from '../controllers/rowEnterController';
-import { createChangeHighlightController, type ChangeHighlightController } from '../controllers/changeHighlightController';
+import type { ChangeHighlightController } from '../controllers/changeHighlightController';
 import { createSaveStatusController, type SaveStatusController } from '../controllers/saveStatusController';
-import { createFindController, type FindController } from '../controllers/findController';
+import type { FindController } from '../controllers/findController';
 import {
-  createConditionalFormatStatsResolver,
-  type ConditionalFormatStatsResolver,
-} from '../logic/conditionalFormat';
-import { createTotalRowCellsResolver, type TotalRowCellsResolver } from '../logic/totalRow';
+  createInertChangeHighlightController,
+  createInertConditionalFormatStatsResolver,
+  createInertFindController,
+  createInertImeInputController,
+  createInertTotalRowCellsResolver,
+  type GridCoreFeatures,
+} from './features';
+import type { ConditionalFormatStatsResolver } from '../logic/conditionalFormat';
+import type { TotalRowCellsResolver } from '../logic/totalRow';
 import { createDebouncedValueStore, type DebouncedValueStore } from '../controllers/debouncedValueStore';
 import { createDateRolloverStore, type DateRolloverStore } from '../controllers/dateRolloverStore';
 import { createAutoSizeOnDataTrigger, type AutoSizeOnDataTrigger } from '../controllers/columnAutosizeRunner';
-import { createImeInputController, type ImeInputController } from '../controllers/imeInputController';
+import type { ImeInputController } from '../controllers/imeInputController';
 import {
   createColumnResolver,
   createPaneLayoutResolver,
@@ -66,6 +71,9 @@ import {
 export const SERVER_SIDE_QUERY_DEBOUNCE_MS = 300;
 
 export type GridEngineInit<T> = {
+  // 追加(差し込み式 段階 2): 機能セット(engine/features.ts)。無い機能は何もしない代役が受けます(全機能は
+  //   engine/fullFeatures.ts の fullCoreFeatures)。
+  features: GridCoreFeatures;
   // 初期 store 状態(初回の visibleColumns)を作るための列解決入力。
   columnInputs: ColumnResolutionInputs<T>;
   // serverSide query の初期値(debounce ストアの seed。mount 時の queryKey と一致させる)。
@@ -149,11 +157,14 @@ export const createGridEngine = <T,>(init: GridEngineInit<T>): GridEngine<T> => 
   const autoHeightMeasurer = createAutoHeightMeasurer<T>();
   const scrollSync = createScrollSyncController();
   const rowEnter = createRowEnterController();
-  const changeHighlight = createChangeHighlightController<T>();
+  // 変更(差し込み式 段階 2): 機能セットに motionExtras が無ければ代役(変更セルを強調しない)。
+  const changeHighlight =
+    init.features.motionExtras?.createChangeHighlightController<T>() ?? createInertChangeHighlightController<T>();
   const saveStatus = createSaveStatusController();
-  const find = createFindController<T>();
+  const find = init.features.find?.createFindController<T>() ?? createInertFindController<T>();
   const autoSizeOnData = createAutoSizeOnDataTrigger<T>();
-  const imeInput = createImeInputController();
+  // 変更(差し込み式 段階 2): 機能セットに imeDirectInput が無ければ代役(何もしない)。
+  const imeInput = init.features.imeDirectInput?.createImeInputController() ?? createInertImeInputController();
 
   return {
     store,
@@ -165,7 +176,7 @@ export const createGridEngine = <T,>(init: GridEngineInit<T>): GridEngine<T> => 
     columnCommands: createColumnCommands<T>(),
     filterPopoverCommands: createFilterPopoverCommands<T>(),
     rowSelectionCommands: createRowSelectionCommands<T>(),
-    gridApi: createGridApi<T>(),
+    gridApi: createGridApi<T>(init.features),
     hoverRowNotifier: createHoverRowNotifier(),
     detailKeysNotifier: createDetailKeysNotifier(),
     stateChangeNotifier: createStateChangeNotifier<T>(),
@@ -177,8 +188,13 @@ export const createGridEngine = <T,>(init: GridEngineInit<T>): GridEngine<T> => 
     changeHighlight,
     saveStatus,
     find,
-    resolveConditionalFormatStats: createConditionalFormatStatsResolver<T>(),
-    resolveTotalRowCells: createTotalRowCellsResolver<T>(),
+    // 変更(差し込み式 段階 2): 機能セットに conditionalFormat が無ければ代役(常に空)。
+    resolveConditionalFormatStats:
+      init.features.conditionalFormat?.createConditionalFormatStatsResolver<T>() ??
+      createInertConditionalFormatStatsResolver<T>(),
+    // 変更(差し込み式 段階 2): 機能セットに totalRow が無ければ代役(常に空)。
+    resolveTotalRowCells:
+      init.features.totalRow?.createTotalRowCellsResolver<T>() ?? createInertTotalRowCellsResolver<T>(),
     serverSideQueryStore,
     dateRollover,
     autoSizeOnData,

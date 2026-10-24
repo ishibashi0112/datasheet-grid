@@ -3,6 +3,10 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi } from 'vitest';
 import { createGridApi, type GridApiArgs } from './gridApi';
+import { createExportCommands } from './exportCommands';
+
+// 変更(差し込み式 段階 2): エクスポートは機能セットの export から(全部入りと同じ構成でテストする)。
+const withExport = { export: { createExportCommands } };
 import type { GridColumn, RowModel } from '../model/gridTypes.unbound';
 import type { GridUiAction } from '../model/gridActions';
 import { createInitialGridUiState } from '../model/gridReducer';
@@ -114,7 +118,7 @@ const makeArgs = (overrides: Partial<GridApiArgs<Row>> = {}) => {
 
 describe('createGridApi', () => {
   it('update 前は安全な既定値を返し、update 後は最新 args を読む(ハンドルの参照は不変)', () => {
-    const api = createGridApi<Row>();
+    const api = createGridApi<Row>(withExport);
     const handle = api.handle;
     expect(handle.getActiveCell()).toBeNull();
     expect(handle.getSelectedRows()).toEqual([]);
@@ -128,7 +132,7 @@ describe('createGridApi', () => {
   });
 
   it('選択 API は reducer への dispatch に翻訳され、scrollIntoView で位置が変わると markApiScroll が呼ばれる', () => {
-    const api = createGridApi<Row>();
+    const api = createGridApi<Row>(withExport);
     const { args, actions, markApiScroll } = makeArgs();
     api.update(args);
     api.handle.selectCell(2, 1, { scrollIntoView: true });
@@ -159,7 +163,7 @@ describe('createGridApi', () => {
       if (typeof options.top === 'number') scrollTop = options.top;
     }) as typeof el.scrollTo;
     const base = makeArgs({ scrollContainerRef: { current: el }, headerHeight: 0, physicalBodyHeight: 1000, measuredRowHeights: true });
-    const api = createGridApi<Row>();
+    const api = createGridApi<Row>(withExport);
     api.update(base.args);
     api.handle.scrollToBottom();
     expect(scrollTop).toBe(900);
@@ -185,7 +189,7 @@ describe('createGridApi', () => {
   });
 
   it('selectCell / setActiveCell / selectRange は範囲外 index をクランプする', () => {
-    const api = createGridApi<Row>();
+    const api = createGridApi<Row>(withExport);
     const { args, actions } = makeArgs();
     api.update(args);
     api.handle.selectCell(999, 999);
@@ -203,7 +207,7 @@ describe('createGridApi', () => {
   });
 
   it('exportCsv は scope に応じて行 / 列を解決し、selection 無しの scope=selection は空文字', () => {
-    const api = createGridApi<Row>();
+    const api = createGridApi<Row>(withExport);
     const { args } = makeArgs();
     api.update(args);
     expect(api.handle.exportCsv()).toBe('ID,名前\r\n1,a\r\n2,b\r\n3,c');
@@ -221,7 +225,7 @@ describe('createGridApi', () => {
 
   // 追加(合計行 3A): includeTotalRow は scope 'view'(と後方互換 'all')で合計行が有効なときだけ末尾に 1 行出す。
   it('includeTotalRow: view のときだけ合計行を末尾に出し、rowKinds に total を付ける', () => {
-    const api = createGridApi<Row>();
+    const api = createGridApi<Row>(withExport);
     const cells = new Map([['id', { value: 6, kind: 'sum' as const }]]);
     const { args } = makeArgs({ totalRowExport: { cells, label: '合計' } });
     api.update(args);
@@ -250,7 +254,7 @@ describe('createGridApi', () => {
 
   // 追加(合計行 3A): 合計行の高さは行を見せる位置と末尾へのスクロールに効く(既定 0 は従来どおり)。
   it('footerHeight: scrollToRow は合計行の上に見せ、scrollToBottom は合計行ぶん先まで進む', () => {
-    const api = createGridApi<Row>();
+    const api = createGridApi<Row>(withExport);
     const { args } = makeArgs({ footerHeight: 30 });
     api.update(args);
     // 行 2 の下端 36 + 90 = 126。可視の下端は 100 - 30 = 70 → 56。
@@ -267,7 +271,7 @@ describe('createGridApi', () => {
 
   // 追加(audit L-20): escapeFormulas は直列化まで届く(既定は従来どおり)。
   it('exportCsv の escapeFormulas は数式として解釈される値の先頭に \' を付ける', () => {
-    const api = createGridApi<Row>();
+    const api = createGridApi<Row>(withExport);
     const formulaColumns: GridColumn<Row>[] = [
       { ...columns[0] },
       { ...columns[1], formatClipboardValue: (value) => `=${String(value)}` },
@@ -281,7 +285,7 @@ describe('createGridApi', () => {
   });
 
   it('getState は永続スライス + 列メタを返し、openFilterManager / closeFilterManager はツールパネルへ委譲', () => {
-    const api = createGridApi<Row>();
+    const api = createGridApi<Row>(withExport);
     const { args } = makeArgs({ activeToolPanelTab: 'filter' });
     api.update(args);
     const state = api.handle.getState();
@@ -296,7 +300,7 @@ describe('createGridApi', () => {
   });
 
   it('展開行 API: detailRow 無効では no-op、isExpandable=false の行は展開しない', () => {
-    const api = createGridApi<Row>();
+    const api = createGridApi<Row>(withExport);
     const disabled = makeArgs();
     api.update(disabled.args);
     api.handle.setDetailRowExpanded(1, true);
@@ -307,5 +311,18 @@ describe('createGridApi', () => {
     expect(enabled.actions).toEqual([]);
     api.handle.setDetailRowExpanded(2, true);
     expect(enabled.actions.map((action) => action.type)).toEqual(['detail/setExpanded']);
+  });
+
+  it('機能セットに export が無ければエクスポートは空を返し、downloadCsv は何もしない', () => {
+    const api = createGridApi<Row>();
+    const { args } = makeArgs();
+    api.update(args);
+    expect(api.handle.exportCsv()).toBe('');
+    expect(api.handle.exportCsv({ bom: true })).toBe('\uFEFF');
+    expect(api.handle.getExportData()).toEqual({ columns: [], rows: [] });
+    const createElement = vi.spyOn(document, 'createElement');
+    api.handle.downloadCsv('a.csv');
+    expect(createElement).not.toHaveBeenCalled();
+    createElement.mockRestore();
   });
 });
