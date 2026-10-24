@@ -1,9 +1,61 @@
 // 追加(差し込み式 段階 2): React 版の機能セットの型です。エンジン(core)の機能セット(GridCoreFeatures)を広げ、
-//   シェルが描画に使う部品(コンポーネント / 純関数)を足します。各機能の値は features/<機能名>.ts にあり、
+//   シェルが描画に使う部品(コンポーネント / 純関数 / hook)を足します。各機能の値は features/<機能名>.ts にあり、
 //   全部入りの表は features/full.ts です。
+//   - ReactGridFeatures は利用側が渡す形(どの機能も省略できる)、GridShellFeatures はシェルが受け取る形です。
+//     hook の部品はシェルが機能を移す前と同じ位置で必ず呼ぶため、無い機能には代役を入れて渡します(features/resolve.ts)。
+//     機能セットはモジュールの読み込み時に決まって描画中は変わらないため、本物と代役が入れ替わることはありません。
+import type { ReactNode } from 'react';
 import type { GridCoreFeatures } from '@ishibashi0112/spreadsheet-grid-core/engine/features';
 import type { splitTextByFindRanges } from '@ishibashi0112/spreadsheet-grid-core/logic/find';
+import type { FillHandleControllerArgs } from '@ishibashi0112/spreadsheet-grid-core/controllers/fillHandleController';
+import type { ColumnPane, GridPaneLayout } from '@ishibashi0112/spreadsheet-grid-core/logic/geometry';
+import type { DetailRowExtra, RowMetrics } from '@ishibashi0112/spreadsheet-grid-core/logic/verticalGeometry';
+import type { GridColumn, GridUiState, RowModel, SpreadsheetGridProps } from '../model/gridTypes';
 import type { GridFindBar } from '../view/GridFindBar';
+
+// フィルハンドル(fillHandle)の hook が受け取るシェルの値です(シェルにあったときの自由変数そのまま)。
+export type FillHandleFeatureArgs<T> = {
+  fillHandle: SpreadsheetGridProps<T>['fillHandle'];
+  readOnly: boolean;
+  isServerSide: boolean;
+  rows: FillHandleControllerArgs<T>['rows'];
+  rowModel: RowModel<T>;
+  orderedColumns: GridColumn<T>[];
+  uiState: GridUiState;
+  serverSideQueryKey: string;
+  serverSideRefreshToken: number | undefined;
+  canEditCell: FillHandleControllerArgs<T>['canEditCell'];
+  dispatch: FillHandleControllerArgs<T>['dispatch'];
+  getCellCoordFromClientPoint: FillHandleControllerArgs<T>['hitTest'];
+  scrollContainerRef: FillHandleControllerArgs<T>['scrollContainerRef'];
+  gridRootRef: FillHandleControllerArgs<T>['gridRootRef'];
+  footerHeight: number;
+  handleRowsChange: FillHandleControllerArgs<T>['applyRowsChange'];
+  amendRowsChange: FillHandleControllerArgs<T>['amendRowsChange'];
+  applyServerSideCellEdits: FillHandleControllerArgs<T>['applyServerSideCellEdits'];
+  viewRowCount: number;
+  paneLayout: GridPaneLayout<T>;
+  rowMetrics: RowMetrics;
+  windowFirstRow: number;
+  windowLastRow: number;
+  detailActive: boolean;
+  detailExtras: readonly DetailRowExtra[];
+  viewportHeight: number;
+  scrollTop: number;
+  headerHeight: number;
+  overlayBaseOffset: number;
+  // ポータル(メニュー / ツールチップ)へ渡すテーマ / モーションのクラス。
+  portalClassName: string | undefined;
+};
+
+export type FillHandleFeatureResult = {
+  // ドラッグ中か(ルートの .ssg-root--filling)。
+  filling: boolean;
+  // 各ペインの overlay 層に置く、ハンドル / 点線 / 埋めたあとのボタン。
+  renderLayer: (pane: ColumnPane, leadingWidth: number) => ReactNode;
+  // ルートの末尾に置く、埋めたあとのメニュー / ドラッグ中の値のツールチップ(ポータル)。
+  renderPortals: () => ReactNode;
+};
 
 export type ReactGridFeatures = {
   // セル内検索(F-2): 走査のコントローラ(core)+ 検索バー + セル文字列のヒット分割。
@@ -11,4 +63,14 @@ export type ReactGridFeatures = {
     FindBar: typeof GridFindBar;
     splitTextByFindRanges: typeof splitTextByFindRanges;
   };
+  // フィルハンドル(フィルハンドル 1A): コントローラの接続から描画までを 1 つの hook で。
+  fillHandle?: {
+    useFillHandle: <T>(args: FillHandleFeatureArgs<T>) => FillHandleFeatureResult;
+  };
 };
+
+// シェルが受け取る機能セット: hook の部品を持つ機能は必ずある(無い機能は代役)。それ以外の機能は省略のまま
+//   (シェルが ?. で見て、無ければ何もしない)。
+type HookFeatureName = 'fillHandle';
+export type GridShellFeatures = Omit<ReactGridFeatures, HookFeatureName> &
+  Required<Pick<ReactGridFeatures, HookFeatureName>>;

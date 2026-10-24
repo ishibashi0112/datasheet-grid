@@ -29,7 +29,7 @@ const CONFIGS = [
   {
     name: 'minimal',
     label: '機能セットなしのシェル(移行中)',
-    code: "import { useGridShell } from './GridShell.tsx'; const features = {}; export function Grid(props) { return useGridShell(props, features); }",
+    code: "import { createSpreadsheetGrid } from './createSpreadsheetGrid.tsx'; export const Grid = createSpreadsheetGrid({ features: {} });",
   },
 ];
 

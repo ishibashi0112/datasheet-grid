@@ -1,16 +1,16 @@
 // 追加(差し込み式 段階 2): 機能セットを外した / 1 つだけ入れた構成のシェルの結合テストです。全部入り(SpreadsheetGrid)の
 //   テストだけだと、機能を外したときにだけ出る不具合(代役の取り違え / 静的 import の残り)を見逃すため、
-//   useGridShell に機能セットを直接渡して確かめます。機能を移すたびにここへ足します。
+//   createSpreadsheetGrid に機能セットを渡して確かめます。機能を移すたびにここへ足します。
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeAll, afterAll, afterEach } from 'vitest';
 import { render, cleanup, act, fireEvent } from '@testing-library/react';
 import { createRef } from 'react';
-import { useGridShell } from './GridShell';
+import { createSpreadsheetGrid } from './createSpreadsheetGrid';
 import { findFeature } from './features/find';
-import type { ReactGridFeatures } from './features/types';
+import { fillHandleFeature } from './features/fillHandle';
 import { installJsdomLayoutStubs } from './testing';
 import { resetUnregisteredFeatureWarnings } from '@ishibashi0112/spreadsheet-grid-core/logic/featureWarnings';
-import type { GridColumn, SpreadsheetGridHandle, SpreadsheetGridProps } from './model/gridTypes';
+import type { GridColumn, SpreadsheetGridHandle } from './model/gridTypes';
 
 type Row = { id: number; name: string };
 const rows: Row[] = [
@@ -19,14 +19,9 @@ const rows: Row[] = [
 ];
 const columns: GridColumn<Row>[] = [{ key: 'name', title: '名前', width: 160 }];
 
-const NO_FEATURES: ReactGridFeatures = {};
-const FIND_ONLY: ReactGridFeatures = { find: findFeature };
-function MinimalGrid(props: SpreadsheetGridProps<Row>) {
-  return useGridShell(props, NO_FEATURES);
-}
-function FindOnlyGrid(props: SpreadsheetGridProps<Row>) {
-  return useGridShell(props, FIND_ONLY);
-}
+const MinimalGrid = createSpreadsheetGrid({ features: {} });
+const FindOnlyGrid = createSpreadsheetGrid({ features: { find: findFeature } });
+const FillOnlyGrid = createSpreadsheetGrid({ features: { fillHandle: fillHandleFeature } });
 
 let restore: () => void;
 beforeAll(() => {
@@ -87,5 +82,64 @@ describe('差し込み式: find', () => {
     expect(container.querySelector('.ssg-find-bar')).not.toBeNull();
     await flushScan();
     expect(Array.from(container.querySelectorAll('.ssg-find-mark')).map((el) => el.textContent)).toEqual(['alp']);
+  });
+});
+
+describe('差し込み式: fillHandle', () => {
+  it('機能セットに無ければ fillHandle を渡してもハンドルは出ず、開発時に 1 回だけ警告する', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const ref = createRef<SpreadsheetGridHandle<Row>>();
+    const { container, rerender } = render(
+      <MinimalGrid ref={ref} rows={rows} columns={columns} rowKeyGetter={(r) => r.id} onRowsChange={() => {}} fillHandle />,
+    );
+    act(() => {
+      ref.current?.selectCell(0, 0);
+    });
+    expect(container.querySelector('.ssg-fill-handle')).toBeNull();
+    expect(container.querySelector('.ssg-root--filling')).toBeNull();
+    rerender(
+      <MinimalGrid ref={ref} rows={[...rows]} columns={columns} rowKeyGetter={(r) => r.id} onRowsChange={() => {}} fillHandle />,
+    );
+    const fillWarnings = warn.mock.calls.filter(([message]) => String(message).includes('`fillHandle`'));
+    expect(fillWarnings).toHaveLength(1);
+  });
+
+  it('fillHandle だけを入れた構成ではハンドルが出て、引くと埋まる', () => {
+    const ref = createRef<SpreadsheetGridHandle<Row>>();
+    const onRowsChange = vi.fn<(next: Row[]) => void>();
+    const { container } = render(
+      <FillOnlyGrid
+        ref={ref}
+        rows={rows}
+        columns={columns}
+        rowKeyGetter={(r) => r.id}
+        onRowsChange={onRowsChange}
+        fillHandle
+        rowHeight={30}
+        headerHeight={40}
+        rowHeaderWidth={56}
+      />,
+    );
+    act(() => {
+      ref.current?.selectCell(0, 0);
+    });
+    const handle = container.querySelector<HTMLElement>('.ssg-fill-handle');
+    expect(handle).not.toBeNull();
+    const dispatchPointer = (target: EventTarget, type: string, clientX: number, clientY: number) => {
+      const event = new window.PointerEvent(type, { bubbles: true, cancelable: true, button: 0, clientX, clientY });
+      if (event.pointerId !== 1) {
+        Object.defineProperty(event, 'pointerId', { value: 1 });
+      }
+      act(() => {
+        target.dispatchEvent(event);
+      });
+    };
+    // 1 行目(名前列)から 2 行目まで引く(行 = (clientY - 40) / 30、列は行番号 56px の右から)。
+    dispatchPointer(handle as HTMLElement, 'pointerdown', 0, 0);
+    dispatchPointer(window, 'pointermove', 56 + 80, 40 + 30 + 15);
+    expect(container.querySelector('.ssg-root--filling')).not.toBeNull();
+    dispatchPointer(window, 'pointerup', 56 + 80, 40 + 30 + 15);
+    expect(onRowsChange).toHaveBeenCalledTimes(1);
+    expect(onRowsChange.mock.calls[0]?.[0].map((r) => r.name)).toEqual(['alpha', 'alpha']);
   });
 });

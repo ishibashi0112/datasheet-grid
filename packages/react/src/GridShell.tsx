@@ -230,8 +230,6 @@ import type {
   GridContextMenuTarget,
   GridContextMenuParams,
   GridContextMenuItem,
-  // 追加(フィルハンドル 1A): ドラッグ中の点線の範囲(選択と同じ幾何で描く)。
-  GridSelection,
 } from './model/gridTypes';
 import { getCellValue, isViewCellEditable } from '@ishibashi0112/spreadsheet-grid-core/utils/permissions';
 import { writeRowsCell } from '@ishibashi0112/spreadsheet-grid-core/logic/editorValues';
@@ -293,25 +291,10 @@ import {
 } from '@ishibashi0112/spreadsheet-grid-core/logic/contextMenuTarget';
 import useCellContextMenuController from './hooks/useCellContextMenuController';
 import CellContextMenuPopover from './view/CellContextMenuPopover';
-// 追加(フィルハンドル 1A): ハンドル / 点線 / 埋めたあとのボタン / メニュー / 値のツールチップ。
-import {
-  FillHandle,
-  FillOptionsChip,
-  FillOptionsMenu,
-  FillPreviewOverlay,
-  FillTooltip,
-} from './view/FillHandleLayer';
-import { useFillHandleController } from './hooks/useFillHandleController';
-import {
-  hasFillableSource,
-  resolveFillCornerPlacement,
-  resolveFillOptionsChipPosition,
-  resolveFillSource,
-} from '@ishibashi0112/spreadsheet-grid-core/logic/fillHandle';
+// 変更(差し込み式 段階 2): フィルハンドルの部品は機能セット(features.fillHandle)から受け取ります(無ければ代役)。
 import type { ReactGridTypes } from './model/gridTypes';
-// 追加(差し込み式 段階 2): 機能セットの型と、機能セットに無い機能の prop の開発時警告です。
-import type { ReactGridFeatures } from './features/types';
-import { useUnregisteredFeatureWarnings } from './hooks/useUnregisteredFeatureWarnings';
+// 追加(差し込み式 段階 2): シェルが受け取る機能セットの型です(無い機能の代役と警告は createSpreadsheetGrid 側)。
+import type { GridShellFeatures } from './features/types';
 // import ColumnChooserPanel, {
 //   type ColumnChooserItem,
 // } from './view/ColumnChooserPanel';
@@ -373,7 +356,8 @@ const renderDetailToggleCell = (ctx: CellRenderContext<unknown>) => {
 // 変更(差し込み式 段階 2): グリッド本体(旧 SpreadsheetGrid コンポーネントの中身)を、機能セット(features)を受け取る
 //   hook にしました。公開コンポーネントは SpreadsheetGrid.tsx(全部入りの機能セットを渡す)で、ここは描画まで含めた
 //   本体です。機能セットはモジュールの読み込み時に決まり描画のあいだ変わらない前提です(機能ごとの hook を
-//   features から選んで呼ぶため、レンダー間で変えると hook の順番が崩れる)。
+//   features から選んで呼ぶため、レンダー間で変えると hook の順番が崩れる)。一部の機能だけの構成は
+//   createSpreadsheetGrid.tsx が代役を入れてそろえ、使われたのに無い機能の prop を開発時に警告します。
 export function useGridShell<T extends object>({
   // 変更(①-3): rows に安定既定値(EMPTY_ROWS)を当てます。rows が optional でも全 consumer は
   //   従来どおり T[] を見ます(serverSide 時は dataSource を使い rows は空のまま)。
@@ -547,7 +531,7 @@ export function useGridShell<T extends object>({
   // 追加(proposals ⑧): スクロール位置の変化通知です(rAF 間引き・source 付き)。
   onScroll,
 }: SpreadsheetGridProps<T>,
-  features: ReactGridFeatures,
+  features: GridShellFeatures,
 ) {
   // 変更(proposals ②): rows / columns は readonly 配列も受け付けます。グリッドは入力配列を
   //   破壊的に変更しない設計(編集は onRowsChange / onColumnsChange が新配列を返す)のため、
@@ -2438,176 +2422,40 @@ export function useGridShell<T extends object>({
   // 追加(フィルハンドル 1A): 選択範囲(無ければアクティブセル)の右下の四角を引いて、連続データ / セルのコピーで
   //   埋めます。書き込みは貼り付けと同じ規則(編集可否 / reject / ラベル行・グループ行を飛ばす)で、clientSide は
   //   履歴付きの handleRowsChange、serverSide は書き戻し口(updateRows)へ流します。readOnly・書き込み先なしでは休眠。
-  const fillHandleOptions = typeof fillHandle === 'object' ? fillHandle : undefined;
-  const fillHandleEnabled =
-    Boolean(fillHandle) &&
-    !readOnly &&
-    (isServerSide ? applyServerSideCellEdits !== undefined : handleRowsChange !== undefined);
-  const { fillController, fillSnapshot, fillChipRef, fillMenuRef } = useFillHandleController({
-    enabled: fillHandleEnabled,
+  // 変更(差し込み式 段階 2): 中身は機能セットの hook(features/fillHandle.tsx)へ移し、この位置で呼びます(hook の
+  //   順番は従来どおり)。機能セットに無ければ代役(何も描かない)が受け、prop は何もしません(開発時に警告)。
+  const fill = features.fillHandle.useFillHandle<T>({
+    fillHandle,
+    readOnly,
     isServerSide,
     rows,
     rowModel,
-    columns: orderedColumns,
-    selection: uiState.selection,
-    activeCell: uiState.activeCell,
-    editing: uiState.editingCell !== null,
-    // 変更(見直し): 表示の条件が変わったら埋めたあとのボタンを消します(並びが変わった行へ選び直さない)。
-    viewKey: [
-      uiState.sort,
-      uiState.filters,
-      uiState.collapsedGroupKeys,
-      serverSideQueryKey,
-      serverSideRefreshToken,
-    ],
-    readOnly,
+    orderedColumns,
+    uiState,
+    serverSideQueryKey,
+    serverSideRefreshToken,
     canEditCell,
-    getFillValue: fillHandleOptions?.getFillValue,
     dispatch,
-    hitTest: getCellCoordFromClientPoint,
+    getCellCoordFromClientPoint,
     scrollContainerRef,
     gridRootRef,
     footerHeight,
-    applyRowsChange: handleRowsChange,
+    handleRowsChange,
     amendRowsChange,
     applyServerSideCellEdits,
-  });
-  // ハンドルを出す角(範囲選択中のドラッグ・編集中・行 / 列選択では出さない)。
-  const fillHandleCorner = useMemo(() => {
-    if (!fillHandleEnabled || uiState.editingCell || uiState.dragState?.type === 'selection') {
-      return null;
-    }
-    const source = resolveFillSource(uiState.selection, uiState.activeCell, viewRowCount, orderedColumns.length);
-    // 変更(見直し): 合成列だけ / ラベル行・グループ行だけの範囲には出しません(埋める値が無い)。
-    if (!source || !hasFillableSource(source, rowModel, orderedColumns)) {
-      return null;
-    }
-    return resolveFillCornerPlacement(source, paneLayout, rowMetrics, windowFirstRow, windowLastRow);
-  }, [
-    fillHandleEnabled,
-    uiState.editingCell,
-    uiState.dragState,
-    uiState.selection,
-    uiState.activeCell,
     viewRowCount,
-    orderedColumns,
-    rowModel,
     paneLayout,
     rowMetrics,
     windowFirstRow,
     windowLastRow,
-  ]);
-  // ドラッグ中の点線(元の範囲 + 埋める範囲)。ペイン別の矩形(展開行の帯は避ける)。
-  const fillPreviewSelection = useMemo<GridSelection>(() => {
-    if (fillSnapshot.status !== 'dragging' || fillSnapshot.target === null) {
-      return null;
-    }
-    const { source, target } = fillSnapshot;
-    return {
-      type: 'cell',
-      range: {
-        start: {
-          row: Math.min(source.startRow, target.range.startRow),
-          col: Math.min(source.startCol, target.range.startCol),
-        },
-        end: {
-          row: Math.max(source.endRow, target.range.endRow),
-          col: Math.max(source.endCol, target.range.endCol),
-        },
-      },
-    };
-  }, [fillSnapshot]);
-  const fillPreviewRectsForPane = useMemo(() => {
-    const extents = resolveSelectionExtents(fillPreviewSelection, paneLayout, viewRowCount);
-    const segments = resolveSelectionBandSegments(
-      detailActive,
-      extents,
-      windowFirstRow,
-      windowLastRow,
-      rowMetrics,
-      detailExtras,
-    );
-    const band = segments ? null : resolveSelectionBand(extents, windowFirstRow, windowLastRow, rowMetrics);
-    return (pane: ColumnPane): SelectionOverlayRect[] => {
-      const extent = extents?.extents[pane];
-      if (!extent) {
-        return [];
-      }
-      if (segments) {
-        return segments.map((segment) => ({
-          left: extent.start,
-          top: segment.top,
-          width: extent.width,
-          height: segment.height,
-        }));
-      }
-      return band ? [{ left: extent.start, top: band.top, width: extent.width, height: band.height }] : [];
-    };
-  }, [fillPreviewSelection, paneLayout, viewRowCount, detailActive, windowFirstRow, windowLastRow, rowMetrics, detailExtras]);
-  // 埋めたあとのボタンの位置(埋めた範囲の右下)。
-  const fillChipPlacement = useMemo(() => {
-    if (fillSnapshot.status !== 'filled') {
-      return null;
-    }
-    const corner = resolveFillCornerPlacement(fillSnapshot.range, paneLayout, rowMetrics, windowFirstRow, windowLastRow);
-    // 変更(見直し): 本体の行が見えている下端(合計行があればその上端)を超えるなら角の上へ出します。座標は
-    //   overlay と同じ(行の座標 − baseOffset + 見出しの高さ = スクロールコンテナ内の位置)。未計測なら使いません。
-    const visibleBottom =
-      viewportHeight > 0 ? scrollTop + viewportHeight - headerHeight + overlayBaseOffset : Number.POSITIVE_INFINITY;
-    return corner
-      ? {
-          pane: corner.pane,
-          position: resolveFillOptionsChipPosition(corner, rowMetrics.totalBodyHeight, visibleBottom),
-        }
-      : null;
-  }, [
-    fillSnapshot,
-    paneLayout,
-    rowMetrics,
-    windowFirstRow,
-    windowLastRow,
+    detailActive,
+    detailExtras,
     viewportHeight,
     scrollTop,
     headerHeight,
     overlayBaseOffset,
-  ]);
-  const handleFillHandlePointerDown = useCallback(
-    (event: PointerEvent<HTMLDivElement>) => fillController.handlePointerDown(event),
-    [fillController],
-  );
-  // 3 ペイン共通: ハンドル / 点線 / ボタン(各ペインの overlay 層の中、アクティブセル枠の上)。
-  const renderFillHandleLayer = (pane: ColumnPane, leadingWidth: number) => (
-    <>
-      {fillPreviewRectsForPane(pane).map((rect, segmentIndex) => (
-        <FillPreviewOverlay
-          key={segmentIndex}
-          rect={rect}
-          headerHeight={headerHeight}
-          baseOffset={overlayBaseOffset}
-          leadingWidth={leadingWidth}
-        />
-      ))}
-      <FillHandle
-        corner={fillHandleCorner?.pane === pane ? fillHandleCorner : null}
-        headerHeight={headerHeight}
-        baseOffset={overlayBaseOffset}
-        leadingWidth={leadingWidth}
-        onPointerDown={handleFillHandlePointerDown}
-      />
-      {fillSnapshot.status === 'filled' && (
-        <FillOptionsChip
-          position={fillChipPlacement?.pane === pane ? fillChipPlacement.position : null}
-          headerHeight={headerHeight}
-          baseOffset={overlayBaseOffset}
-          leadingWidth={leadingWidth}
-          kind={fillSnapshot.kind}
-          menuOpen={fillSnapshot.menu !== null}
-          chipRef={fillChipRef}
-          controller={fillController}
-        />
-      )}
-    </>
-  );
+    portalClassName,
+  });
 
   const selectEntireGrid = useCallback(() => {
     if (viewRowCount === 0 || visibleColumns.length === 0) {
@@ -2737,9 +2585,7 @@ export function useGridShell<T extends object>({
   //   描画でヒットを <mark> にし、右上の検索バー(GridFindBar)を出します。Ctrl/Cmd+F は keyboardController 経由。
   // 変更(差し込み式 段階 2): 機能セットに find が無ければ prop は何もせず(開発時に警告)、engine.find は何もしない
   //   代役(常に閉じたまま)です。Ctrl/Cmd+F も横取りしません(ブラウザの検索に任せる)。
-  const findRequested = find !== false && find !== undefined;
-  useUnregisteredFeatureWarnings([['find', findRequested, features.find !== undefined]]);
-  const findEnabled = findRequested && features.find !== undefined;
+  const findEnabled = find !== false && find !== undefined && features.find !== undefined;
   const findOptions = typeof find === 'object' ? find : null;
   const findShortcut = findEnabled && (findOptions?.shortcut ?? true);
   const findCaseSensitive = findOptions?.caseSensitive ?? false;
@@ -4484,7 +4330,7 @@ export function useGridShell<T extends object>({
         //   transition を切る。キーボード移動 / クリックでは滑る)。
         uiState.dragState?.type === 'selection' && 'ssg-root--selecting',
         // 追加(フィルハンドル 1A): ハンドルをドラッグ中(十字カーソル / オーバーレイの瞬時追従)。
-        fillSnapshot.status === 'dragging' && 'ssg-root--filling',
+        fill.filling && 'ssg-root--filling',
         // 追加(motion-3 / M-4・M-5): 行の並び替えアニメ(行要素の transform に transition)。
         animateRowsActive && 'ssg-root--animate-rows',
         // 追加(motion-5 / M-6): クロスヘア(列ヘッダー / 行番号を選択色で染める。列の帯は ColumnHoverOverlay)。
@@ -4710,7 +4556,7 @@ export function useGridShell<T extends object>({
                   leadingWidth={leftLeadingWidth}
                 />
                 {/* 追加(フィルハンドル 1A): ハンドル / ドラッグ中の点線 / 埋めたあとのボタン。 */}
-                {renderFillHandleLayer('left', leftLeadingWidth)}
+                {fill.renderLayer('left', leftLeadingWidth)}
 
                 <CellEditorLayer
                   slots={slots}
@@ -4927,7 +4773,7 @@ export function useGridShell<T extends object>({
                   leadingWidth={centerLeadingWidth}
                 />
                 {/* 追加(フィルハンドル 1A): ハンドル / ドラッグ中の点線 / 埋めたあとのボタン。 */}
-                {renderFillHandleLayer('center', centerLeadingWidth)}
+                {fill.renderLayer('center', centerLeadingWidth)}
 
                 <CellEditorLayer
                   slots={slots}
@@ -5141,7 +4987,7 @@ export function useGridShell<T extends object>({
                   leadingWidth={rightLeadingWidth}
                 />
                 {/* 追加(フィルハンドル 1A): ハンドル / ドラッグ中の点線 / 埋めたあとのボタン。 */}
-                {renderFillHandleLayer('right', rightLeadingWidth)}
+                {fill.renderLayer('right', rightLeadingWidth)}
 
                 <CellEditorLayer
                   slots={slots}
@@ -5403,23 +5249,7 @@ export function useGridShell<T extends object>({
       {/* 追加(バッチ②): セル/行の汎用コンテキストメニュー(完全カスタム)です。*/}
       {renderedCellContextMenuPopover}
       {/* 追加(フィルハンドル 1A): 埋めたあとのメニュー / ドラッグ中の値のツールチップ(ポータル)。 */}
-      {fillSnapshot.status === 'filled' && fillSnapshot.menu !== null && (
-        <FillOptionsMenu
-          layout={fillSnapshot.menu}
-          kind={fillSnapshot.kind}
-          seriesAvailable={fillSnapshot.seriesAvailable}
-          themeClassName={portalClassName}
-          panelRef={fillMenuRef}
-          controller={fillController}
-        />
-      )}
-      {fillSnapshot.status === 'dragging' && fillSnapshot.previewText !== null && (
-        <FillTooltip
-          text={fillSnapshot.previewText}
-          themeClassName={portalClassName}
-          controller={fillController}
-        />
-      )}
+      {fill.renderPortals()}
     </div>
   );
 }
