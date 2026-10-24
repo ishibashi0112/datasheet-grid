@@ -2,13 +2,17 @@
 //   条件: esbuild で束ねて minify / react・react-dom は外部化 / process.env.NODE_ENV = 'production' /
 //   import.meta.env.DEV = false(公開 dist と同じく開発時だけの処理を落とす)/ splitting あり。
 //   「初期」は入口のチャンク + そこから静的 import でたどれるチャンク、「遅延」は動的 import のチャンク(列フィルターの
-//   ポップオーバー / ツールパネル)。gzip は zlib の level 9。ソース(packages/*/src)を直接束ねるのでビルドは不要です
-//   (core は workspace のリンク + package.json の exports で src を指す)。
+//   ポップオーバー / ツールパネル)。gzip は zlib の level 9。
+//   束ねる元は構成ごとに 2 通り:
+//   - dist: 公開する dist(packages/react/dist + packages/core/dist。core は publishConfig の exports と同じく
+//     dist/<サブパス>.js へ解決)。npm の利用者と同じ形で、先に build:lib が要ります(CI はビルドの後に実行)。
+//   - src: ソース(packages/*/src)を直接。ビルド不要だが、モジュールの並び順が dist と違うため gzip が ±1KB ほど
+//     揺れます(機能の部品を別ファイルへ移しただけで並びが変わる)。dist に入口が無い構成(移行中の機能セットなし)だけに使う。
 //   使い方: node scripts/measure-size.mjs           計測して表を出す
 //           node scripts/measure-size.mjs --check   上限を超えた構成があれば終了コード 1(CI)
 //           node scripts/measure-size.mjs --update  上限を「今の値 + 余裕」に書き直す(機能を足して大きくなったとき)
 import { build } from 'esbuild';
-import { readFileSync, writeFileSync } from 'node:fs';
+import { readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { gzipSync } from 'node:zlib';
 
@@ -21,14 +25,16 @@ const UPDATE_SLACK_KB = 0.5;
 const CONFIGS = [
   {
     name: 'full',
-    label: 'フル版(SpreadsheetGrid)',
-    code: "export { SpreadsheetGrid } from './index.ts';",
+    label: 'フル版(SpreadsheetGrid。公開 dist)',
+    source: 'dist',
+    code: "export { SpreadsheetGrid } from './packages/react/dist/index.js';",
   },
   // 差し込み式へ移行中の見張り: 機能セットを空にしたシェル。機能を移すたびに小さくなり、シェルへ機能の静的 import を
   //   戻してしまうと大きくなる(上限で検出)。/lite の入口ができたらそちらの構成に置き換える。
   {
     name: 'minimal',
-    label: '機能セットなしのシェル(移行中)',
+    label: '機能セットなしのシェル(移行中。src)',
+    source: 'src',
     code: "import { createSpreadsheetGrid } from './createSpreadsheetGrid.tsx'; export const Grid = createSpreadsheetGrid({ features: {} });",
   },
 ];
@@ -36,9 +42,49 @@ const CONFIGS = [
 const kb = (bytes) => bytes / 1024;
 const gzipBytes = (buf) => gzipSync(buf, { level: 9 }).length;
 
+// dist の構成で、core のサブパス import を core の dist へ解決します(publishConfig の exports の `./*` と同じ)。
+const CORE_PACKAGE = '@ishibashi0112/spreadsheet-grid-core';
+const coreDistPlugin = {
+  name: 'core-dist',
+  setup(pluginBuild) {
+    pluginBuild.onResolve({ filter: /^@ishibashi0112\/spreadsheet-grid-core(\/.*)?$/ }, (resolveArgs) => {
+      const subpath = resolveArgs.path.slice(CORE_PACKAGE.length);
+      return { path: `${ROOT}packages/core/dist${subpath === '' ? '/index' : subpath}.js` };
+    });
+  },
+};
+
+// dist がソースより古ければ警告します(ビルドし忘れの計測を防ぐ)。
+const newestMtime = (dir) => {
+  let newest = 0;
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    const path = `${dir}/${entry.name}`;
+    newest = Math.max(newest, entry.isDirectory() ? newestMtime(path) : statSync(path).mtimeMs);
+  }
+  return newest;
+};
+const checkDistFresh = () => {
+  const distEntry = `${ROOT}packages/react/dist/index.js`;
+  let distMtime;
+  try {
+    distMtime = statSync(distEntry).mtimeMs;
+  } catch {
+    console.error('size: packages/react/dist がありません。先に `pnpm run build:lib` を実行してください。');
+    process.exit(1);
+  }
+  const srcMtime = Math.max(newestMtime(`${ROOT}packages/core/src`), newestMtime(`${ROOT}packages/react/src`));
+  if (srcMtime > distMtime) {
+    console.warn('size: 警告 — dist がソースより古いです(`pnpm run build:lib` をやり直すと正しい値になります)。');
+  }
+};
+
 async function measure(config) {
+  const fromDist = config.source === 'dist';
   const result = await build({
-    stdin: { contents: config.code, resolveDir: `${ROOT}packages/react/src`, loader: 'tsx', sourcefile: `size-${config.name}.tsx` },
+    stdin: fromDist
+      ? { contents: config.code, resolveDir: ROOT, loader: 'js', sourcefile: `size-${config.name}.js` }
+      : { contents: config.code, resolveDir: `${ROOT}packages/react/src`, loader: 'tsx', sourcefile: `size-${config.name}.tsx` },
+    plugins: fromDist ? [coreDistPlugin] : [],
     bundle: true,
     minify: true,
     format: 'esm',
@@ -78,6 +124,9 @@ async function measure(config) {
 
 const args = new Set(process.argv.slice(2));
 const budget = JSON.parse(readFileSync(BUDGET_PATH, 'utf8'));
+if (CONFIGS.some((config) => config.source === 'dist')) {
+  checkDistFresh();
+}
 const rows = [];
 for (const config of CONFIGS) {
   rows.push({ config, size: await measure(config), limit: budget.limits?.[config.name]?.initialGzipKB });
