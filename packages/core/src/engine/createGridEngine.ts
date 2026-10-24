@@ -175,7 +175,7 @@ export const createGridEngine = <T,>(init: GridEngineInit<T>): GridEngine<T> => 
     columnCommands: createColumnCommands<T>(),
     filterPopoverCommands: createFilterPopoverCommands<T>(),
     rowSelectionCommands: createRowSelectionCommands<T>(),
-    gridApi: createGridApi<T>(),
+    gridApi: createGridApi<T>(init.features),
     hoverRowNotifier: createHoverRowNotifier(),
     detailKeysNotifier: createDetailKeysNotifier(),
     stateChangeNotifier: createStateChangeNotifier<T>(),

@@ -8,6 +8,8 @@ declare const process: { env: { NODE_ENV?: string } };
 
 const warnedProps = new Set<string>();
 
+const HINT = 'createSpreadsheetGrid の features に該当する機能を入れてください。';
+
 // props: 使われているのに機能セットに無い prop の名前。
 export const warnUnregisteredFeatureProps = (props: readonly string[]): void => {
   if (process.env.NODE_ENV === 'production') {
@@ -19,10 +21,24 @@ export const warnUnregisteredFeatureProps = (props: readonly string[]): void => 
     }
     warnedProps.add(prop);
     console.warn(
-      `[spreadsheet-grid] prop \`${prop}\` が渡されましたが、その機能が機能セットに入っていないため何もしません。` +
-        'createSpreadsheetGrid の features に該当する機能を入れてください。',
+      `[spreadsheet-grid] prop \`${prop}\` が渡されましたが、その機能が機能セットに入っていないため何もしません。` + HINT,
     );
   }
+};
+
+// method: 呼ばれたのに機能セットに無い命令的 API のメソッド名(例: exportCsv)。1 つのメソッドにつき 1 回だけ。
+export const warnUnregisteredFeatureMethod = (method: string): void => {
+  if (process.env.NODE_ENV === 'production') {
+    return;
+  }
+  const key = `${method}()`;
+  if (warnedProps.has(key)) {
+    return;
+  }
+  warnedProps.add(key);
+  console.warn(
+    `[spreadsheet-grid] \`${key}\` が呼ばれましたが、その機能が機能セットに入っていないため何もしません。` + HINT,
+  );
 };
 
 // テスト用: 警告済みの記録を消します(同じ prop の警告をテストごとに確かめるため)。

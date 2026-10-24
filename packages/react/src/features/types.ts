@@ -163,6 +163,8 @@ export type ReactGridFeatures = {
   };
   // IME オンのままの直接入力(G-2): core の部品そのまま(入力受けのコントローラ + 判定 / 初期値の関数)。
   imeDirectInput?: NonNullable<GridCoreFeatures['imeDirectInput']>;
+  // エクスポート(命令的 API の exportCsv / downloadCsv / getExportData)。描画の部品は無い。
+  export?: NonNullable<GridCoreFeatures['export']>;
   // 列幅の自動調整(DS-4 / 13-B1): 計測の時間分割ランナー。
   columnAutosize?: {
     useColumnAutosize: <T>(args: ColumnAutosizeFeatureArgs<T>) => ColumnAutosizeFeatureResult<T>;

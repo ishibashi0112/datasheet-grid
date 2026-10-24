@@ -52,6 +52,8 @@ const FEATURE_PROPS: { [K in FeatureName]-?: readonly FeaturePropCheck[] } = {
     { prop: 'showCopyRange', isUsed: (props) => props.showCopyRange === true },
     { prop: 'hoverHighlight', isUsed: (props) => props.hoverHighlight === 'cross' },
   ],
+  // エクスポートは prop ではなくメソッドなので、呼ばれた時点で警告する(features/resolve.ts の代役)。
+  export: [],
 };
 
 function useUnregisteredFeatureWarningsInDev<T extends object>(

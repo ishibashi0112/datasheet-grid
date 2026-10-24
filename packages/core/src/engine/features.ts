@@ -14,6 +14,8 @@ import type { ImeInputController } from '../controllers/imeInputController';
 import type { canStartImeEdit, resolveImeEditText } from '../logic/imeInput';
 import type { ConditionalFormatStatsMap, ConditionalFormatStatsResolver } from '../logic/conditionalFormat';
 import type { ChangeHighlightController } from '../controllers/changeHighlightController';
+import type { ExportCommands } from './exportCommands';
+import type { GridApiArgs } from './gridApi';
 
 export type GridCoreFeatures = {
   // セル内検索(F-2)。
@@ -37,6 +39,10 @@ export type GridCoreFeatures = {
   // 動きの追加分(M-2 / M-3 / M-6)のうちエンジン側: 変更セルのフラッシュ + 数値トゥイーン(highlightChanges)。
   motionExtras?: {
     createChangeHighlightController: <T>() => ChangeHighlightController<T>;
+  };
+  // エクスポート(命令的 API の exportCsv / downloadCsv / getExportData)。
+  export?: {
+    createExportCommands: <T>(getArgs: () => GridApiArgs<T> | null) => ExportCommands<T>;
   };
 };
 
@@ -91,4 +97,12 @@ export const createInertConditionalFormatStatsResolver =
 export const createInertChangeHighlightController = <T,>(): ChangeHighlightController<T> => ({
   update: noop,
   dispose: noop,
+});
+
+// export が無いときの代役: 何も出力しない(exportCsv は空文字(bom 指定時は BOM だけ)、getExportData は空、
+//   downloadCsv は何もしない)。
+export const createInertExportCommands = <T,>(): ExportCommands<T> => ({
+  exportCsv: (options) => (options?.bom ? '\uFEFF' : ''),
+  downloadCsv: noop,
+  getExportData: () => ({ columns: [], rows: [] }),
 });

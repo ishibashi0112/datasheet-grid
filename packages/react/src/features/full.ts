@@ -4,6 +4,7 @@ import { columnAutosizeFeature } from './columnAutosize';
 import { columnReorderFeature } from './columnReorder';
 import { conditionalFormatFeature } from './conditionalFormat';
 import { contextMenuFeature } from './contextMenu';
+import { exportFeature } from './export';
 import { fillHandleFeature } from './fillHandle';
 import { findFeature } from './find';
 import { imeDirectInputFeature } from './imeDirectInput';
@@ -27,4 +28,5 @@ export const fullGridFeatures: Required<ReactGridFeatures> = {
   conditionalFormat: conditionalFormatFeature,
   selectionAggregates: selectionAggregatesFeature,
   motionExtras: motionExtrasFeature,
+  export: exportFeature,
 };

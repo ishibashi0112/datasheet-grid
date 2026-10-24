@@ -2,6 +2,8 @@
 //   そろえます。hook の部品が無い機能には何もしない / 何も描かない代役を入れます(シェルは hook を同じ位置で必ず呼ぶ)。
 //   代役は機能のモジュールを import しない(型だけ)ので、機能を外した構成に機能の本体を持ち込みません。全部入りの入口は
 //   全機能がそろった表を直接渡すため、このモジュール(代役)は全部入りの JS に入りません。
+import { createInertExportCommands } from '@ishibashi0112/spreadsheet-grid-core/engine/features';
+import { warnUnregisteredFeatureMethod } from '@ishibashi0112/spreadsheet-grid-core/logic/featureWarnings';
 import type { FillHandleFeatureResult, GridShellFeatures, ReactGridFeatures } from './types';
 
 const INERT_FILL_HANDLE: FillHandleFeatureResult = {
@@ -65,6 +67,28 @@ const inertSelectionAggregatesFeature: GridShellFeatures['selectionAggregates'] 
   SelectionAggregates: () => null,
 };
 
+// エクスポートが無い構成: 何も出力しない代役(エンジンの代役と同じ)に、呼ばれたら開発時に 1 回だけ警告するのを足します
+//   (prop ではなくメソッドなので、呼ばれた時点で知らせる)。
+const inertExportFeature: NonNullable<ReactGridFeatures['export']> = {
+  createExportCommands: <T,>() => {
+    const inert = createInertExportCommands<T>();
+    return {
+      exportCsv: (options) => {
+        warnUnregisteredFeatureMethod('exportCsv');
+        return inert.exportCsv(options);
+      },
+      downloadCsv: (filename, options) => {
+        warnUnregisteredFeatureMethod('downloadCsv');
+        inert.downloadCsv(filename, options);
+      },
+      getExportData: (options) => {
+        warnUnregisteredFeatureMethod('getExportData');
+        return inert.getExportData(options);
+      },
+    };
+  },
+};
+
 export const resolveGridShellFeatures = (features: ReactGridFeatures): GridShellFeatures => ({
   ...features,
   fillHandle: features.fillHandle ?? inertFillHandleFeature,
@@ -73,4 +97,5 @@ export const resolveGridShellFeatures = (features: ReactGridFeatures): GridShell
   columnAutosize: features.columnAutosize ?? inertColumnAutosizeFeature,
   contextMenu: features.contextMenu ?? inertContextMenuFeature,
   selectionAggregates: features.selectionAggregates ?? inertSelectionAggregatesFeature,
+  export: features.export ?? inertExportFeature,
 });

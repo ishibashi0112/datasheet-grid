@@ -18,6 +18,7 @@ import { contextMenuFeature } from './features/contextMenu';
 import { conditionalFormatFeature } from './features/conditionalFormat';
 import { selectionAggregatesFeature } from './features/selectionAggregates';
 import { motionExtrasFeature } from './features/motionExtras';
+import { exportFeature } from './features/export';
 import { installJsdomLayoutStubs } from './testing';
 import { resetUnregisteredFeatureWarnings } from '@ishibashi0112/spreadsheet-grid-core/logic/featureWarnings';
 import { ROW_DRAG_HANDLE_COLUMN_KEY } from '@ishibashi0112/spreadsheet-grid-core/logic/rowReorder';
@@ -43,6 +44,7 @@ const ContextMenuOnlyGrid = createSpreadsheetGrid({ features: { contextMenu: con
 const ConditionalFormatOnlyGrid = createSpreadsheetGrid({ features: { conditionalFormat: conditionalFormatFeature } });
 const SelectionAggregatesOnlyGrid = createSpreadsheetGrid({ features: { selectionAggregates: selectionAggregatesFeature } });
 const MotionExtrasOnlyGrid = createSpreadsheetGrid({ features: { motionExtras: motionExtrasFeature } });
+const ExportOnlyGrid = createSpreadsheetGrid({ features: { export: exportFeature } });
 
 let restore: () => void;
 beforeAll(() => {
@@ -536,5 +538,27 @@ describe('差し込み式: motionExtras', () => {
     expect(container.querySelector('.ssg-col-hover-overlay')).not.toBeNull();
     await copyRange(container, ref);
     expect(document.querySelectorAll('.ssg-copy-range-overlay').length).toBeGreaterThan(0);
+  });
+});
+
+describe('差し込み式: export', () => {
+  it('機能セットに無ければ exportCsv / getExportData は空を返し、呼ぶと開発時にメソッドごと 1 回だけ警告する', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const ref = createRef<SpreadsheetGridHandle<Row>>();
+    render(<MinimalGrid ref={ref} rows={rows} columns={columns} rowKeyGetter={(r) => r.id} />);
+    // 描画しただけでは警告しない(メソッドを呼んだときだけ)。
+    expect(warn.mock.calls.filter(([message]) => String(message).includes('spreadsheet-grid'))).toHaveLength(0);
+    expect(ref.current?.exportCsv()).toBe('');
+    expect(ref.current?.exportCsv()).toBe('');
+    expect(ref.current?.getExportData()).toEqual({ columns: [], rows: [] });
+    expect(warn.mock.calls.filter(([message]) => String(message).includes('`exportCsv()`'))).toHaveLength(1);
+    expect(warn.mock.calls.filter(([message]) => String(message).includes('`getExportData()`'))).toHaveLength(1);
+  });
+
+  it('export だけを入れた構成では CSV と整形済みデータが出る', () => {
+    const ref = createRef<SpreadsheetGridHandle<Row>>();
+    render(<ExportOnlyGrid ref={ref} rows={rows} columns={columns} rowKeyGetter={(r) => r.id} />);
+    expect(ref.current?.exportCsv()).toBe('名前\r\nalpha\r\nbeta');
+    expect(ref.current?.getExportData().rows.map((cells) => cells.map((cell) => cell.value))).toEqual([['alpha'], ['beta']]);
   });
 });
