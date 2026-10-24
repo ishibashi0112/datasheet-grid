@@ -16,12 +16,12 @@ import { createRowEnterController, type RowEnterController } from '../controller
 import { createChangeHighlightController, type ChangeHighlightController } from '../controllers/changeHighlightController';
 import { createSaveStatusController, type SaveStatusController } from '../controllers/saveStatusController';
 import type { FindController } from '../controllers/findController';
-import { createInertFindController, type GridCoreFeatures } from './features';
+import { createInertFindController, createInertTotalRowCellsResolver, type GridCoreFeatures } from './features';
 import {
   createConditionalFormatStatsResolver,
   type ConditionalFormatStatsResolver,
 } from '../logic/conditionalFormat';
-import { createTotalRowCellsResolver, type TotalRowCellsResolver } from '../logic/totalRow';
+import type { TotalRowCellsResolver } from '../logic/totalRow';
 import { createDebouncedValueStore, type DebouncedValueStore } from '../controllers/debouncedValueStore';
 import { createDateRolloverStore, type DateRolloverStore } from '../controllers/dateRolloverStore';
 import { createAutoSizeOnDataTrigger, type AutoSizeOnDataTrigger } from '../controllers/columnAutosizeRunner';
@@ -181,7 +181,9 @@ export const createGridEngine = <T,>(init: GridEngineInit<T>): GridEngine<T> => 
     saveStatus,
     find,
     resolveConditionalFormatStats: createConditionalFormatStatsResolver<T>(),
-    resolveTotalRowCells: createTotalRowCellsResolver<T>(),
+    // 変更(差し込み式 段階 2): 機能セットに totalRow が無ければ代役(常に空)。
+    resolveTotalRowCells:
+      init.features.totalRow?.createTotalRowCellsResolver<T>() ?? createInertTotalRowCellsResolver<T>(),
     serverSideQueryStore,
     dateRollover,
     autoSizeOnData,

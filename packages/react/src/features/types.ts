@@ -8,6 +8,11 @@ import type { CSSProperties, ReactNode } from 'react';
 import type { GridCoreFeatures } from '@ishibashi0112/spreadsheet-grid-core/engine/features';
 import type { splitTextByFindRanges } from '@ishibashi0112/spreadsheet-grid-core/logic/find';
 import type { resolveScrollHintOptions } from '@ishibashi0112/spreadsheet-grid-core/logic/scrollHint';
+import type {
+  formatTotalRowCellText,
+  resolveTotalRowCaption,
+  resolveTotalRowLabelColumnKey,
+} from '@ishibashi0112/spreadsheet-grid-core/logic/totalRow';
 import type { FillHandleControllerArgs } from '@ishibashi0112/spreadsheet-grid-core/controllers/fillHandleController';
 import type { ColumnHeaderDragController } from '@ishibashi0112/spreadsheet-grid-core/controllers/columnHeaderDragController';
 import type { ColumnAutosizeRunnerArgs } from '@ishibashi0112/spreadsheet-grid-core/controllers/columnAutosizeRunner';
@@ -16,6 +21,7 @@ import type { DetailRowExtra, RowMetrics } from '@ishibashi0112/spreadsheet-grid
 import type { GridColumn, GridUiState, RowModel, SpreadsheetGridProps } from '../model/gridTypes';
 import type { GridFindBar } from '../view/GridFindBar';
 import type { GridScrollHint } from '../view/GridScrollHint';
+import type { GridTotalRow } from '../view/GridTotalRow';
 import type { UseColumnHeaderDragControllerArgs } from '../hooks/useColumnHeaderDragController';
 import type { UseRowDragControllerArgs } from '../hooks/useRowDragController';
 
@@ -113,6 +119,13 @@ export type ReactGridFeatures = {
   // 列幅の自動調整(DS-4 / 13-B1): 計測の時間分割ランナー。
   columnAutosize?: {
     useColumnAutosize: <T>(args: ColumnAutosizeFeatureArgs<T>) => ColumnAutosizeFeatureResult<T>;
+  };
+  // 合計行(合計行 3A): 集計のリゾルバ(core)+ 描画部品 + 表示の純関数。
+  totalRow?: NonNullable<GridCoreFeatures['totalRow']> & {
+    TotalRow: typeof GridTotalRow;
+    formatTotalRowCellText: typeof formatTotalRowCellText;
+    resolveTotalRowCaption: typeof resolveTotalRowCaption;
+    resolveTotalRowLabelColumnKey: typeof resolveTotalRowLabelColumnKey;
   };
   // スクロール位置インジケーター(scrollHint): オプションの解決 + 描画部品。
   scrollHint?: {

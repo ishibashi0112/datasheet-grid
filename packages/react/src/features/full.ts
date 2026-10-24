@@ -6,6 +6,7 @@ import { fillHandleFeature } from './fillHandle';
 import { findFeature } from './find';
 import { rowDragFeature } from './rowDrag';
 import { scrollHintFeature } from './scrollHint';
+import { totalRowFeature } from './totalRow';
 import type { ReactGridFeatures } from './types';
 
 export const fullGridFeatures: Required<ReactGridFeatures> = {
@@ -15,4 +16,5 @@ export const fullGridFeatures: Required<ReactGridFeatures> = {
   rowDrag: rowDragFeature,
   scrollHint: scrollHintFeature,
   columnAutosize: columnAutosizeFeature,
+  totalRow: totalRowFeature,
 };

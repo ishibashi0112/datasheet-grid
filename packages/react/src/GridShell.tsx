@@ -246,13 +246,10 @@ import GridDetailLayer from './view/GridDetailLayer';
 import type { GridDetailLayerEntry } from './view/GridDetailLayer';
 import GridHeaderRow, { type GridPaneKind } from './view/GridHeaderRow';
 // 追加(合計行 3A): 下端に固定する合計行と、その集計(core)。
-import GridTotalRow from './view/GridTotalRow';
+// 変更(差し込み式 段階 2): 描画部品と集計 / 表示の関数は機能セット(features.totalRow)から受け取ります。
 import {
   EMPTY_TOTAL_ROW_CELLS,
   TOTAL_ROW_DEFAULT_LABEL,
-  formatTotalRowCellText,
-  resolveTotalRowCaption,
-  resolveTotalRowLabelColumnKey,
 } from '@ishibashi0112/spreadsheet-grid-core/logic/totalRow';
 import type { AutosizeTotalRowText } from '@ishibashi0112/spreadsheet-grid-core/logic/columnAutosize';
 import useColumnMenuController from './hooks/useColumnMenuController';
@@ -771,7 +768,9 @@ export function useGridShell<T extends object>({
   // 追加(合計行 3A): 合計行のオプションを分解します(true は既定値だけで有効化)。footerHeight は下端に固定する行の
   //   高さで、スクロール計算(見える高さ / 末尾 / 行を見せる位置)に渡します。無効時は 0 = 従来どおり。
   const totalRowOptions = typeof totalRow === 'object' && totalRow !== null ? totalRow : null;
-  const totalRowEnabled = totalRow === true || totalRowOptions !== null;
+  // 変更(差し込み式 段階 2): 機能セットに totalRow が無ければ無効(prop は何もしない。開発時に警告)。
+  const totalRowFeature = features.totalRow;
+  const totalRowEnabled = (totalRow === true || totalRowOptions !== null) && totalRowFeature !== undefined;
   const totalRowLabel = totalRowOptions?.label ?? TOTAL_ROW_DEFAULT_LABEL;
   const totalRowValues = totalRowOptions?.values;
   const totalRowRenderCell = totalRowOptions?.renderCell;
@@ -1472,15 +1471,16 @@ export function useGridShell<T extends object>({
     [engine, totalRowEnabled, rows, isServerSide, order, orderedColumns, totalRowValues],
   );
   const totalRowLabelColumnKey = useMemo(
-    () => resolveTotalRowLabelColumnKey(orderedColumns, totalRowCells),
-    [orderedColumns, totalRowCells],
+    () => (totalRowFeature ? totalRowFeature.resolveTotalRowLabelColumnKey(orderedColumns, totalRowCells) : null),
+    [totalRowFeature, orderedColumns, totalRowCells],
   );
   // 追加(見直し): 列幅の自動調整で合計行の表示(値と見出し / 見出しを出す列はその文言)も幅に収めます
   //   (本体の行だけで決めると合計が切れていた)。合計行が無ければ undefined(従来どおり)。
   const totalRowAutosizeTexts = useMemo(() => {
-    if (!totalRowEnabled) {
+    if (!totalRowEnabled || !totalRowFeature) {
       return undefined;
     }
+    const { formatTotalRowCellText, resolveTotalRowCaption } = totalRowFeature;
     const texts = new Map<string, AutosizeTotalRowText>();
     for (const column of orderedColumns) {
       const cell = totalRowCells.get(column.key);
@@ -1492,7 +1492,7 @@ export function useGridShell<T extends object>({
       }
     }
     return texts;
-  }, [totalRowEnabled, orderedColumns, totalRowCells, totalRowLabelColumnKey, totalRowLabel]);
+  }, [totalRowEnabled, totalRowFeature, orderedColumns, totalRowCells, totalRowLabelColumnKey, totalRowLabel]);
   // 変更(差し込み式 段階 2): ランナーの接続は機能セットの hook(features/columnAutosize.ts)へ移し、この位置で
   //   呼びます(hook の順番は従来どおり)。無い構成では代役(列メニューの項目なし / autoSizeColumns は false 扱い)。
   const columnAutosize = features.columnAutosize.useColumnAutosize<T>({
@@ -3769,14 +3769,15 @@ export function useGridShell<T extends object>({
   //   - zIndex で中央ペイン(zIndex:1)より前面に描画し、影が中央ペインのセルに重なって
   //     「浮いた固定列」に見えるようにします。
   // 追加(合計行 3A): 各ペインの合計行(無効時は何も描かない)。行ヘッダーの持ち主 / 列の並びは本体の行と同じです。
+  const TotalRow = totalRowFeature?.TotalRow;
   const renderTotalRow = (
     pane: GridPaneKind,
     ownsRowHeader: boolean,
     leadingWidth: number,
     renderEntries: PaneColumnEntry<T>[],
   ) =>
-    totalRowEnabled ? (
-      <GridTotalRow<T>
+    totalRowEnabled && TotalRow ? (
+      <TotalRow<T>
         pane={pane}
         ownsRowHeader={ownsRowHeader}
         leadingWidth={leadingWidth}

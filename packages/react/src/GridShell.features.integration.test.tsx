@@ -12,6 +12,7 @@ import { columnReorderFeature } from './features/columnReorder';
 import { rowDragFeature } from './features/rowDrag';
 import { scrollHintFeature } from './features/scrollHint';
 import { columnAutosizeFeature } from './features/columnAutosize';
+import { totalRowFeature } from './features/totalRow';
 import { installJsdomLayoutStubs } from './testing';
 import { resetUnregisteredFeatureWarnings } from '@ishibashi0112/spreadsheet-grid-core/logic/featureWarnings';
 import { ROW_DRAG_HANDLE_COLUMN_KEY } from '@ishibashi0112/spreadsheet-grid-core/logic/rowReorder';
@@ -31,6 +32,7 @@ const ColumnReorderOnlyGrid = createSpreadsheetGrid({ features: { columnReorder:
 const RowDragOnlyGrid = createSpreadsheetGrid({ features: { rowDrag: rowDragFeature } });
 const ScrollHintOnlyGrid = createSpreadsheetGrid({ features: { scrollHint: scrollHintFeature } });
 const ColumnAutosizeOnlyGrid = createSpreadsheetGrid({ features: { columnAutosize: columnAutosizeFeature } });
+const TotalRowOnlyGrid = createSpreadsheetGrid({ features: { totalRow: totalRowFeature } });
 
 let restore: () => void;
 beforeAll(() => {
@@ -269,5 +271,36 @@ describe('差し込み式: columnAutosize', () => {
     openColumnMenu(container);
     expect(menuLabels()).toContain('この列の幅を自動調整');
     expect(menuLabels()).toContain('すべての列の幅を自動調整');
+  });
+});
+
+describe('差し込み式: totalRow', () => {
+  type Sales = { id: number; name: string; qty: number };
+  const salesRows: Sales[] = [
+    { id: 1, name: 'alpha', qty: 2 },
+    { id: 2, name: 'beta', qty: 3 },
+  ];
+  const salesColumns: GridColumn<Sales>[] = [
+    { key: 'name', title: '名前', width: 160 },
+    { key: 'qty', title: '数量', width: 100, aggFunc: 'sum' },
+  ];
+  const MinimalSalesGrid = createSpreadsheetGrid({ features: {} });
+
+  it('機能セットに無ければ totalRow を渡しても合計行を出さず、開発時に 1 回だけ警告する', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const { container } = render(
+      <MinimalSalesGrid rows={salesRows} columns={salesColumns} rowKeyGetter={(r) => r.id} totalRow />,
+    );
+    expect(container.querySelector('.ssg-total-row')).toBeNull();
+    const warnings = warn.mock.calls.filter(([message]) => String(message).includes('`totalRow`'));
+    expect(warnings).toHaveLength(1);
+  });
+
+  it('totalRow だけを入れた構成では合計行が出て集計される', () => {
+    const { container } = render(
+      <TotalRowOnlyGrid rows={salesRows} columns={salesColumns} rowKeyGetter={(r) => r.id} totalRow />,
+    );
+    expect(container.querySelector('.ssg-total-row')).not.toBeNull();
+    expect(Array.from(container.querySelectorAll('.ssg-total-value')).map((el) => el.textContent)).toContain('5');
   });
 });

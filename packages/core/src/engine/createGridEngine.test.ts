@@ -4,6 +4,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { createGridEngine } from './createGridEngine';
 import { createFindController } from '../controllers/findController';
+import { createTotalRowCellsResolver } from '../logic/totalRow';
 import type { GridColumn } from '../model/gridTypes.unbound';
 
 type Row = { id: number; name: string };
@@ -111,5 +112,31 @@ describe('createGridEngine', () => {
     expect(withoutFind.find.getSnapshot()).toMatchObject({ open: false, query: '', matches: [], currentIndex: null });
     expect(withoutFind.find.getSnapshot()).toBe(withoutFind.find.getSnapshot());
     withoutFind.dispose();
+  });
+
+  it('機能セットに totalRow があれば合計行を集計し、無ければ代役(常に空)', () => {
+    const serverSide = { isServerSide: false, enableGlobalFilter: false, enableColumnFilter: false, enableSorting: false };
+    type Sales = { id: number; qty: number };
+    const inputs = {
+      rows: [
+        { id: 1, qty: 2 },
+        { id: 2, qty: 3 },
+      ] as Sales[],
+      order: null,
+      columns: [{ key: 'qty', title: '数量', width: 80, aggFunc: 'sum' }] as GridColumn<Sales>[],
+      values: { qty: 5 },
+    };
+    const salesColumnInputs = { ...columnInputs, columns: inputs.columns } as never;
+    const withTotal = createGridEngine<Sales>({
+      features: { totalRow: { createTotalRowCellsResolver } },
+      columnInputs: salesColumnInputs,
+      serverSide,
+    });
+    expect(withTotal.resolveTotalRowCells(inputs).get('qty')?.value).toBe(5);
+    withTotal.dispose();
+
+    const withoutTotal = createGridEngine<Sales>({ features: {}, columnInputs: salesColumnInputs, serverSide });
+    expect(withoutTotal.resolveTotalRowCells(inputs).size).toBe(0);
+    withoutTotal.dispose();
   });
 });

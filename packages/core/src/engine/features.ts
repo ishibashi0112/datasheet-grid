@@ -9,11 +9,16 @@
 //   - 描画側(React / 将来の Solid)の機能セットは、この型を広げて描画の部品(検索バー等)を足します。
 import type { FindController, FindSnapshot } from '../controllers/findController';
 import type { FindIndex } from '../logic/find';
+import type { TotalRowCells, TotalRowCellsResolver } from '../logic/totalRow';
 
 export type GridCoreFeatures = {
   // セル内検索(F-2)。
   find?: {
     createFindController: <T>() => FindController<T>;
+  };
+  // 合計行(合計行 3A): 列の aggFunc でフィルター後のデータ行を集計するリゾルバ。
+  totalRow?: {
+    createTotalRowCellsResolver: <T>() => TotalRowCellsResolver<T>;
   };
 };
 
@@ -42,3 +47,10 @@ export const createInertFindController = <T,>(): FindController<T> => ({
   getSnapshot: () => CLOSED_FIND_SNAPSHOT,
   dispose: noop,
 });
+
+// totalRow が無いときの代役: 常に空(シェルは合計行が無効なら呼ばない)。
+const EMPTY_TOTAL_ROW_CELLS: TotalRowCells = new Map();
+export const createInertTotalRowCellsResolver =
+  <T,>(): TotalRowCellsResolver<T> =>
+  () =>
+    EMPTY_TOTAL_ROW_CELLS;
