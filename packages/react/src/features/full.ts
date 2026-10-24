@@ -9,6 +9,7 @@ import { findFeature } from './find';
 import { imeDirectInputFeature } from './imeDirectInput';
 import { rowDragFeature } from './rowDrag';
 import { scrollHintFeature } from './scrollHint';
+import { selectionAggregatesFeature } from './selectionAggregates';
 import { totalRowFeature } from './totalRow';
 import type { ReactGridFeatures } from './types';
 
@@ -23,4 +24,5 @@ export const fullGridFeatures: Required<ReactGridFeatures> = {
   imeDirectInput: imeDirectInputFeature,
   contextMenu: contextMenuFeature,
   conditionalFormat: conditionalFormatFeature,
+  selectionAggregates: selectionAggregatesFeature,
 };

@@ -34,6 +34,11 @@ const FEATURE_PROPS: {
     prop: 'columns[].conditionalFormat',
     isUsed: (props) => props.columns.some((column) => column.conditionalFormat !== undefined),
   },
+  // 既定 true の prop なので、明示して true を渡したときだけ警告する(省略しただけでは警告しない)。
+  selectionAggregates: {
+    prop: 'showSelectionAggregates',
+    isUsed: (props) => props.showSelectionAggregates === true,
+  },
 };
 
 function useUnregisteredFeatureWarningsInDev<T extends object>(

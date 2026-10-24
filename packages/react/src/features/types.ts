@@ -30,6 +30,7 @@ import type {
   GridContextMenuParams,
   GridResolvedSlots,
   GridSelection,
+  GridSelectionAggregates,
   GridUiState,
   RowModel,
   SpreadsheetGridProps,
@@ -38,6 +39,8 @@ import type { GridFindBar } from '../view/GridFindBar';
 import type { GridScrollHint } from '../view/GridScrollHint';
 import type { GridTotalRow } from '../view/GridTotalRow';
 import type { GridChip } from '../view/GridChip';
+import type { GridSelectionAggregates as GridSelectionAggregatesView } from '../view/GridSelectionAggregates';
+import type { UseSelectionAggregatesArgs } from '../hooks/useSelectionAggregates';
 import type { UseColumnHeaderDragControllerArgs } from '../hooks/useColumnHeaderDragController';
 import type { UseRowDragControllerArgs } from '../hooks/useRowDragController';
 
@@ -174,6 +177,11 @@ export type ReactGridFeatures = {
     resolveChipSpec: typeof resolveChipSpec;
     GridChip: typeof GridChip;
   };
+  // 選択範囲の集計(showSelectionAggregates): 集計の hook(大きな選択は時間分割)+ 既定の下部バーの表示部品。
+  selectionAggregates?: {
+    useSelectionAggregates: <T>(args: UseSelectionAggregatesArgs<T>) => GridSelectionAggregates | null;
+    SelectionAggregates: typeof GridSelectionAggregatesView;
+  };
   // セル / 行のコンテキストメニュー(バッチ②): controller の接続 + popover、右クリックの対象の解決。
   contextMenu?: {
     useCellContextMenu: <T>(args: CellContextMenuFeatureArgs) => CellContextMenuFeatureResult<T>;
@@ -192,6 +200,12 @@ export type ReactGridFeatures = {
 
 // シェルが受け取る機能セット: hook の部品を持つ機能は必ずある(無い機能は代役)。それ以外の機能は省略のまま
 //   (シェルが ?. で見て、無ければ何もしない)。
-type HookFeatureName = 'fillHandle' | 'columnReorder' | 'rowDrag' | 'columnAutosize' | 'contextMenu';
+type HookFeatureName =
+  | 'fillHandle'
+  | 'columnReorder'
+  | 'rowDrag'
+  | 'columnAutosize'
+  | 'contextMenu'
+  | 'selectionAggregates';
 export type GridShellFeatures = Omit<ReactGridFeatures, HookFeatureName> &
   Required<Pick<ReactGridFeatures, HookFeatureName>>;

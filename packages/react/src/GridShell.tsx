@@ -61,7 +61,6 @@ import { useFilterPopoverController } from './hooks/useFilterPopoverController';
 import { useGridClipboardController } from './hooks/useGridClipboardController';
 import { useGridBarContext } from './hooks/useGridBarContext';
 // 追加(選択範囲の集計)
-import { useSelectionAggregates } from './hooks/useSelectionAggregates';
 import { useGridEditController } from './hooks/useGridEditController';
 import { useGridHistoryController } from './hooks/useGridHistoryController';
 import { useGridKeyboardInteractions } from './hooks/useGridKeyboardInteractions';
@@ -3617,7 +3616,8 @@ export function useGridShell<T extends object>({
   // 追加: bar 用 context / derived summary は hook へ逃がします。
   // 追加(選択範囲の集計): 出す先が無いときは計算しません(大きな選択の走査を省く)。出す先 = ボトムバー(既定 /
   //   renderBottomBar)か、自前のトップバー(renderTopBar)。既定のトップバーは集計を出さないため数えません。
-  const selectionAggregates = useSelectionAggregates({
+  // 変更(差し込み式 段階 2): 集計の hook は機能(features/selectionAggregates)から。無い構成では常に null。
+  const selectionAggregates = features.selectionAggregates.useSelectionAggregates<T>({
     enabled: showSelectionAggregates && (showBottomBar || (showTopBar && renderTopBar !== undefined)),
     selection: uiState.selection,
     viewRowCount,
@@ -4061,6 +4061,7 @@ export function useGridShell<T extends object>({
           derivedSummary={slotContext.derivedSummary}
           selectionAggregates={slotContext.selectionAggregates}
           showCounts={showBottomBarCounts}
+          SelectionAggregates={features.selectionAggregates.SelectionAggregates}
         />,
       );
 

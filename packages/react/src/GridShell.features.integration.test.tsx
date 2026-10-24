@@ -16,6 +16,7 @@ import { totalRowFeature } from './features/totalRow';
 import { imeDirectInputFeature } from './features/imeDirectInput';
 import { contextMenuFeature } from './features/contextMenu';
 import { conditionalFormatFeature } from './features/conditionalFormat';
+import { selectionAggregatesFeature } from './features/selectionAggregates';
 import { installJsdomLayoutStubs } from './testing';
 import { resetUnregisteredFeatureWarnings } from '@ishibashi0112/spreadsheet-grid-core/logic/featureWarnings';
 import { ROW_DRAG_HANDLE_COLUMN_KEY } from '@ishibashi0112/spreadsheet-grid-core/logic/rowReorder';
@@ -39,6 +40,7 @@ const TotalRowOnlyGrid = createSpreadsheetGrid({ features: { totalRow: totalRowF
 const ImeOnlyGrid = createSpreadsheetGrid({ features: { imeDirectInput: imeDirectInputFeature } });
 const ContextMenuOnlyGrid = createSpreadsheetGrid({ features: { contextMenu: contextMenuFeature } });
 const ConditionalFormatOnlyGrid = createSpreadsheetGrid({ features: { conditionalFormat: conditionalFormatFeature } });
+const SelectionAggregatesOnlyGrid = createSpreadsheetGrid({ features: { selectionAggregates: selectionAggregatesFeature } });
 
 let restore: () => void;
 beforeAll(() => {
@@ -408,5 +410,58 @@ describe('差し込み式: conditionalFormat', () => {
     expect(cellOf(container, 1, 'qty').textContent).toBe('');
     expect(cellOf(container, 1, 'score').classList.contains('ssg-body-cell--cf-scale')).toBe(true);
     expect(cellOf(container, 0, 'status').querySelector('.ssg-chip')?.textContent).toContain('完了');
+  });
+});
+
+describe('差し込み式: selectionAggregates', () => {
+  type Sales = { id: number; qty: number };
+  const salesRows: Sales[] = [
+    { id: 1, qty: 2 },
+    { id: 2, qty: 3 },
+  ];
+  const salesColumns: GridColumn<Sales>[] = [{ key: 'qty', title: '数量', width: 100 }];
+  const aggregateTexts = (container: HTMLElement) =>
+    Array.from(container.querySelectorAll('.ssg-bar-aggregates .ssg-bar-chip')).map((chip) => chip.textContent);
+
+  it('機能セットに無ければ範囲を選んでも集計を出さず(slot context も null)、明示した showSelectionAggregates だけ開発時に 1 回警告する', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const ref = createRef<SpreadsheetGridHandle<Sales>>();
+    const seen: unknown[] = [];
+    const { container, rerender } = render(
+      <MinimalGrid ref={ref} rows={salesRows} columns={salesColumns} rowKeyGetter={(r) => r.id} />,
+    );
+    act(() => {
+      ref.current?.selectRange({ start: { row: 0, col: 0 }, end: { row: 1, col: 0 } });
+    });
+    expect(container.querySelector('.ssg-bar-aggregates')).toBeNull();
+    // 既定(省略)は true なので、省略しただけでは警告しない。
+    expect(warn.mock.calls.filter(([message]) => String(message).includes('`showSelectionAggregates`'))).toHaveLength(0);
+    rerender(
+      <MinimalGrid
+        ref={ref}
+        rows={salesRows}
+        columns={salesColumns}
+        rowKeyGetter={(r) => r.id}
+        showSelectionAggregates
+        renderBottomBar={(context) => {
+          seen.push(context.selectionAggregates);
+          return null;
+        }}
+      />,
+    );
+    expect(seen.length).toBeGreaterThan(0);
+    expect(seen.every((value) => value === null)).toBe(true);
+    expect(warn.mock.calls.filter(([message]) => String(message).includes('`showSelectionAggregates`'))).toHaveLength(1);
+  });
+
+  it('selectionAggregates だけを入れた構成では下部バーに集計が出る', () => {
+    const ref = createRef<SpreadsheetGridHandle<Sales>>();
+    const { container } = render(
+      <SelectionAggregatesOnlyGrid ref={ref} rows={salesRows} columns={salesColumns} rowKeyGetter={(r) => r.id} />,
+    );
+    act(() => {
+      ref.current?.selectRange({ start: { row: 0, col: 0 }, end: { row: 1, col: 0 } });
+    });
+    expect(aggregateTexts(container)).toEqual(['平均:2.5', 'データの個数:2', '合計:5']);
   });
 });

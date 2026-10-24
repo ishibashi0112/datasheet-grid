@@ -14,7 +14,7 @@ import {
 } from '@ishibashi0112/spreadsheet-grid-core/logic/selectionAggregates';
 import { useController } from './useController';
 
-type UseSelectionAggregatesArgs<T> = {
+export type UseSelectionAggregatesArgs<T> = {
   enabled: boolean;
   selection: GridSelection;
   viewRowCount: number;

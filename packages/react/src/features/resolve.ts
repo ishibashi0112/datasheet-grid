@@ -59,6 +59,12 @@ const inertContextMenuFeature: GridShellFeatures['contextMenu'] = {
   buildBodyContextMenuParams: () => null,
 };
 
+// 選択範囲の集計が無い構成では集計せず(null)、既定の下部バーにも何も出しません。
+const inertSelectionAggregatesFeature: GridShellFeatures['selectionAggregates'] = {
+  useSelectionAggregates: () => null,
+  SelectionAggregates: () => null,
+};
+
 export const resolveGridShellFeatures = (features: ReactGridFeatures): GridShellFeatures => ({
   ...features,
   fillHandle: features.fillHandle ?? inertFillHandleFeature,
@@ -66,4 +72,5 @@ export const resolveGridShellFeatures = (features: ReactGridFeatures): GridShell
   rowDrag: features.rowDrag ?? inertRowDragFeature,
   columnAutosize: features.columnAutosize ?? inertColumnAutosizeFeature,
   contextMenu: features.contextMenu ?? inertContextMenuFeature,
+  selectionAggregates: features.selectionAggregates ?? inertSelectionAggregatesFeature,
 });
