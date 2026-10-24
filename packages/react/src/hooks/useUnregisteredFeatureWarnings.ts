@@ -61,6 +61,8 @@ const FEATURE_PROPS: { [K in FeatureName]-?: readonly FeaturePropCheck[] } = {
   ],
   // エクスポートは prop ではなくメソッドなので、呼ばれた時点で警告する(features/resolve.ts の代役)。
   export: [],
+  // 列の autoHeight はグリッドの autoHeight で有効になるので、グリッドの prop だけ見る。
+  autoHeight: [{ prop: 'autoHeight', isUsed: (props) => props.autoHeight === true }],
 };
 
 function useUnregisteredFeatureWarningsInDev<T extends object>(

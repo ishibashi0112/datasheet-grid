@@ -177,6 +177,8 @@ export type ReactGridFeatures = {
   imeDirectInput?: NonNullable<GridCoreFeatures['imeDirectInput']>;
   // エクスポート(命令的 API の exportCsv / downloadCsv / getExportData)。描画の部品は無い。
   export?: NonNullable<GridCoreFeatures['export']>;
+  // 行の高さの実測(autoHeight): 実測のコントローラ + 行高ストア(core)。描画の部品は無い。
+  autoHeight?: NonNullable<GridCoreFeatures['autoHeight']>;
   // 列幅の自動調整(DS-4 / 13-B1): 計測の時間分割ランナー。
   columnAutosize?: {
     useColumnAutosize: <T>(args: ColumnAutosizeFeatureArgs<T>) => ColumnAutosizeFeatureResult<T>;

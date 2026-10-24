@@ -21,6 +21,7 @@ import { conditionalFormatFeature } from './features/conditionalFormat';
 import { selectionAggregatesFeature } from './features/selectionAggregates';
 import { motionExtrasFeature } from './features/motionExtras';
 import { exportFeature } from './features/export';
+import { autoHeightFeature } from './features/autoHeight';
 import { installJsdomLayoutStubs } from './testing';
 import { resetUnregisteredFeatureWarnings } from '@ishibashi0112/spreadsheet-grid-core/logic/featureWarnings';
 import { ROW_DRAG_HANDLE_COLUMN_KEY } from '@ishibashi0112/spreadsheet-grid-core/logic/rowReorder';
@@ -55,6 +56,7 @@ const ConditionalFormatOnlyGrid = createSpreadsheetGrid({ features: { conditiona
 const SelectionAggregatesOnlyGrid = createSpreadsheetGrid({ features: { selectionAggregates: selectionAggregatesFeature } });
 const MotionExtrasOnlyGrid = createSpreadsheetGrid({ features: { motionExtras: motionExtrasFeature } });
 const ExportOnlyGrid = createSpreadsheetGrid({ features: { export: exportFeature } });
+const AutoHeightOnlyGrid = createSpreadsheetGrid({ features: { autoHeight: autoHeightFeature } });
 
 let restore: () => void;
 beforeAll(() => {
@@ -661,5 +663,30 @@ describe('差し込み式: export', () => {
     render(<ExportOnlyGrid ref={ref} rows={rows} columns={columns} rowKeyGetter={(r) => r.id} />);
     expect(ref.current?.exportCsv()).toBe('名前\r\nalpha\r\nbeta');
     expect(ref.current?.getExportData().rows.map((cells) => cells.map((cell) => cell.value))).toEqual([['alpha'], ['beta']]);
+  });
+});
+
+describe('差し込み式: autoHeight', () => {
+  // jsdom のレイアウトスタブはどの要素も高さ 600px と答えるため、実測すれば行の高さは 600px になる。
+  const autoHeightColumns: GridColumn<Row>[] = [{ key: 'name', title: '名前', width: 160, autoHeight: true }];
+  const firstRowHeight = (container: HTMLElement) =>
+    container.querySelector<HTMLElement>('.ssg-body-row[data-row-index="0"]')?.style.height;
+
+  it('機能セットに無ければ autoHeight を渡しても実測せず行の高さは固定のまま、開発時に 1 回だけ警告する', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const { container } = render(
+      <MinimalGrid rows={rows} columns={autoHeightColumns} rowKeyGetter={(r) => r.id} rowHeight={30} autoHeight />,
+    );
+    expect(container.querySelector('[data-autoheight-cell]')).toBeNull();
+    expect(firstRowHeight(container)).toBe('30px');
+    expect(warn.mock.calls.filter(([message]) => String(message).includes('`autoHeight`'))).toHaveLength(1);
+  });
+
+  it('autoHeight だけを入れた構成ではセルを実測して行の高さに反映する', () => {
+    const { container } = render(
+      <AutoHeightOnlyGrid rows={rows} columns={autoHeightColumns} rowKeyGetter={(r) => r.id} rowHeight={30} autoHeight />,
+    );
+    expect(container.querySelector('[data-autoheight-cell]')).not.toBeNull();
+    expect(firstRowHeight(container)).toBe('600px');
   });
 });

@@ -5,6 +5,8 @@
 import { createFindController } from '../controllers/findController';
 import { createImeInputController } from '../controllers/imeInputController';
 import { createChangeHighlightController } from '../controllers/changeHighlightController';
+import { createAutoHeightMeasurer } from '../controllers/autoHeightMeasurer';
+import { buildRowHeightStore, createAutoHeightRowMetrics } from '../logic/rowHeightStore';
 import { createTotalRowCellsResolver } from '../logic/totalRow';
 import { canStartImeEdit, resolveImeEditText } from '../logic/imeInput';
 import { createConditionalFormatStatsResolver } from '../logic/conditionalFormat';
@@ -18,4 +20,5 @@ export const fullCoreFeatures: Required<GridCoreFeatures> = {
   conditionalFormat: { createConditionalFormatStatsResolver },
   motionExtras: { createChangeHighlightController },
   export: { createExportCommands },
+  autoHeight: { createAutoHeightMeasurer, buildRowHeightStore, createAutoHeightRowMetrics },
 };

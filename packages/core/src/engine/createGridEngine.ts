@@ -10,13 +10,14 @@
 import { createGridStore, type GridStore } from '../model/gridStore';
 import { createInitialGridUiState } from '../model/gridReducer';
 import { createDetailIndexCacheHolder, type DetailIndexCacheHolder } from '../logic/detailRow';
-import { createAutoHeightMeasurer, type AutoHeightMeasurer } from '../controllers/autoHeightMeasurer';
+import type { AutoHeightMeasurer } from '../controllers/autoHeightMeasurer';
 import { createScrollSyncController, type ScrollSyncController } from '../controllers/scrollSyncController';
 import { createRowEnterController, type RowEnterController } from '../controllers/rowEnterController';
 import type { ChangeHighlightController } from '../controllers/changeHighlightController';
 import { createSaveStatusController, type SaveStatusController } from '../controllers/saveStatusController';
 import type { FindController } from '../controllers/findController';
 import {
+  createInertAutoHeightMeasurer,
   createInertChangeHighlightController,
   createInertConditionalFormatStatsResolver,
   createInertFindController,
@@ -135,7 +136,7 @@ export const createGridEngine = <T,>(init: GridEngineInit<T>): GridEngine<T> => 
   const resolveColumns = createColumnResolver<T>();
   const resolvePaneLayout = createPaneLayoutResolver<T>();
   const rowPipeline = createRowPipelineResolver<T>();
-  const resolveVerticalLayout = createVerticalLayoutResolver<T>();
+  const resolveVerticalLayout = createVerticalLayoutResolver<T>(init.features.autoHeight);
   const resolveFilterPopoverDerived = createFilterPopoverDerivedResolver<T>();
 
   // 変更(監査 RD-5 / M-03): 初期 state は列に依存しなくなりました(列幅 state は空で始まる)。
@@ -154,7 +155,8 @@ export const createGridEngine = <T,>(init: GridEngineInit<T>): GridEngine<T> => 
   const serverSideQueryStore = createDebouncedValueStore(initialServerSideQuery, SERVER_SIDE_QUERY_DEBOUNCE_MS);
   const dateRollover = createDateRolloverStore();
 
-  const autoHeightMeasurer = createAutoHeightMeasurer<T>();
+  // 変更(差し込み式 段階 4): 機能セットに autoHeight が無ければ代役(測らない)。
+  const autoHeightMeasurer = (init.features.autoHeight?.createAutoHeightMeasurer ?? createInertAutoHeightMeasurer)<T>();
   const scrollSync = createScrollSyncController();
   const rowEnter = createRowEnterController();
   // 変更(差し込み式 段階 2): 機能セットに motionExtras が無ければ代役(変更セルを強調しない)。

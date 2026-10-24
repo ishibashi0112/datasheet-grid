@@ -14,6 +14,8 @@ import type { ImeInputController } from '../controllers/imeInputController';
 import type { canStartImeEdit, resolveImeEditText } from '../logic/imeInput';
 import type { ConditionalFormatStatsMap, ConditionalFormatStatsResolver } from '../logic/conditionalFormat';
 import type { ChangeHighlightController } from '../controllers/changeHighlightController';
+import type { AutoHeightMeasurer, AutoHeightMeasureSnapshot } from '../controllers/autoHeightMeasurer';
+import type { buildRowHeightStore, createAutoHeightRowMetrics } from '../logic/rowHeightStore';
 import type { ExportCommands } from './exportCommands';
 import type { GridApiArgs } from './gridApi';
 
@@ -44,6 +46,15 @@ export type GridCoreFeatures = {
   export?: {
     createExportCommands: <T>(getArgs: () => GridApiArgs<T> | null) => ExportCommands<T>;
   };
+  // 行の高さの実測(autoHeight): 描画済みセルの実測 + ResizeObserver のコントローラと、実測高さの行高ストア
+  //   (縦レイアウトが prefix-sum の行メトリクスを作る)。
+  autoHeight?: AutoHeightFeature;
+};
+
+export type AutoHeightFeature = {
+  createAutoHeightMeasurer: <T>() => AutoHeightMeasurer<T>;
+  buildRowHeightStore: typeof buildRowHeightStore;
+  createAutoHeightRowMetrics: typeof createAutoHeightRowMetrics;
 };
 
 const EMPTY_FIND_INDEX: FindIndex = new Map();
@@ -105,4 +116,14 @@ export const createInertExportCommands = <T,>(): ExportCommands<T> => ({
   exportCsv: (options) => (options?.bom ? '\uFEFF' : ''),
   downloadCsv: noop,
   getExportData: () => ({ columns: [], rows: [] }),
+});
+
+// autoHeight が無いときの代役: 測らない(縦レイアウトも行の高さを固定のまま扱う)。
+const ZERO_AUTO_HEIGHT_SNAPSHOT: AutoHeightMeasureSnapshot = { version: 0, nonce: 0 };
+export const createInertAutoHeightMeasurer = <T,>(): AutoHeightMeasurer<T> => ({
+  update: noop,
+  getSnapshot: () => ZERO_AUTO_HEIGHT_SNAPSHOT,
+  subscribe: unsubscribeNoop,
+  measuredHeights: new Map(),
+  dispose: noop,
 });

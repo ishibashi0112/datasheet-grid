@@ -1573,6 +1573,8 @@ export function useGridShell<T extends object>({
   //   engine/verticalLayout.ts(React 非依存)へ、測定フロー(DOM 実測 + ResizeObserver + アンカー補正)は
   //   controllers/autoHeightMeasurer.ts へ移設しました。測定側の version(prefix 更新)/ nonce(内容変化)を
   //   購読し、再計算 / 再測定のトリガーにします。実測キャッシュ(rowKey 単位)も測定側が持ちます。
+  // 変更(差し込み式 段階 4): 機能セットに autoHeight が無ければエンジンの代役(測らない)と、auto-height が常に無効の
+  //   縦レイアウト。その構成では autoHeight が false で渡ってくる(createSpreadsheetGrid)。
   const autoHeightMeasurer = engine.autoHeightMeasurer;
   const { version: autoHeightVersion, nonce: autoHeightMeasureNonce } =
     useSyncExternalStore(
