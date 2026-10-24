@@ -12,6 +12,7 @@ import type { FindIndex } from '../logic/find';
 import type { TotalRowCells, TotalRowCellsResolver } from '../logic/totalRow';
 import type { ImeInputController } from '../controllers/imeInputController';
 import type { canStartImeEdit, resolveImeEditText } from '../logic/imeInput';
+import type { ConditionalFormatStatsMap, ConditionalFormatStatsResolver } from '../logic/conditionalFormat';
 
 export type GridCoreFeatures = {
   // セル内検索(F-2)。
@@ -27,6 +28,10 @@ export type GridCoreFeatures = {
     createImeInputController: () => ImeInputController;
     canStartImeEdit: typeof canStartImeEdit;
     resolveImeEditText: typeof resolveImeEditText;
+  };
+  // 条件付き書式(F-3): データバー / カラースケールの列ごとの min / max をビュー行から集計するリゾルバ。
+  conditionalFormat?: {
+    createConditionalFormatStatsResolver: <T>() => ConditionalFormatStatsResolver<T>;
   };
 };
 
@@ -69,3 +74,10 @@ export const createInertImeInputController = (): ImeInputController => ({
   attach: noop,
   dispose: noop,
 });
+
+// conditionalFormat が無いときの代役: 常に空(条件付き書式は描かれないので集計しない)。
+const EMPTY_CONDITIONAL_FORMAT_STATS: ConditionalFormatStatsMap = new Map();
+export const createInertConditionalFormatStatsResolver =
+  <T,>(): ConditionalFormatStatsResolver<T> =>
+  () =>
+    EMPTY_CONDITIONAL_FORMAT_STATS;

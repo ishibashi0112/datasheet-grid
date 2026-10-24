@@ -52,8 +52,6 @@ import CopyRangeOverlay from './CopyRangeOverlay';
 import ColumnHoverOverlay from './ColumnHoverOverlay';
 // 変更(差し込み式 段階 2): 検索バー / ヒット分割は機能セット(features.find)から受け取ります。
 // 追加(F-3): 条件付き書式(チップの解決。帯 / 背景色は GridBodyLayer 側)。
-import { resolveChipSpec } from '@ishibashi0112/spreadsheet-grid-core/logic/conditionalFormat';
-import { GridChip } from './view/GridChip';
 import ActiveCellOverlay, {
   type ActiveCellOverlayRect,
 } from './ActiveCellOverlay';
@@ -2502,6 +2500,8 @@ export function useGridShell<T extends object>({
 
   // ── keyboard ──────────────────────────────────────────
   // ── 追加(F-3): 条件付き書式の列ごとの min / max(ビュー行から集計。内容が同じなら参照不変 = 行 memo を壊さない)──
+  // 変更(差し込み式 段階 2): 機能セットに条件付き書式が無ければエンジンの代役が常に空を返します。
+  const conditionalFormatFeature = features.conditionalFormat;
   const conditionalFormatStats = useMemo(
     () => engine.resolveConditionalFormatStats(rowModel, orderedColumns),
     [engine, rowModel, orderedColumns],
@@ -3534,7 +3534,8 @@ export function useGridShell<T extends object>({
         ? column.valueFormatter({ value, row, column })
         : String(value ?? '');
       // 追加(F-3): データバーの showValue: false は文字を出さない(帯は GridBodyRow が描く)。
-      const conditionalFormat = column.conditionalFormat;
+      // 変更(差し込み式 段階 2): 機能セットに条件付き書式が無ければ指定を無視します(素の表示)。
+      const conditionalFormat = conditionalFormatFeature ? column.conditionalFormat : undefined;
       if (conditionalFormat?.dataBar?.showValue === false) {
         return null;
       }
@@ -3559,8 +3560,8 @@ export function useGridShell<T extends object>({
             )
           : formattedText;
       // 追加(F-3): 状態チップ(値 → 色味 / 指定)。ラベル省略時は表示文字列(検索の強調つき)。
-      if (conditionalFormat?.chips) {
-        const chip = resolveChipSpec(conditionalFormat.chips, {
+      if (conditionalFormatFeature && conditionalFormat?.chips) {
+        const chip = conditionalFormatFeature.resolveChipSpec(conditionalFormat.chips, {
           row,
           rowIndex,
           sourceRowIndex: rowModel.getSourceIndex(rowIndex) ?? rowIndex,
@@ -3575,9 +3576,9 @@ export function useGridShell<T extends object>({
         });
         if (chip) {
           return (
-            <GridChip spec={chip}>
+            <conditionalFormatFeature.GridChip spec={chip}>
               {chip.label === undefined || chip.label === formattedText ? textContent : chip.label}
-            </GridChip>
+            </conditionalFormatFeature.GridChip>
           );
         }
       }
@@ -3590,6 +3591,7 @@ export function useGridShell<T extends object>({
       findIndex,
       findCurrentIndex,
       splitTextByFindRanges,
+      conditionalFormatFeature,
       toggleCheckboxCell,
       slots.checkbox,
       applyServerSideCellEdits,
@@ -4432,6 +4434,7 @@ export function useGridShell<T extends object>({
                   showCellOverflowTooltip={showCellOverflowTooltip}
                   showValidationMarks={showValidationMarks}
                   conditionalFormatStats={conditionalFormatStats}
+                  conditionalFormatResolvers={conditionalFormatFeature}
                   isServerSide={isServerSide}
                   collapsedGroupKeys={uiState.collapsedGroupKeys}
                   onGroupToggle={handleGroupToggle}
@@ -4645,6 +4648,7 @@ export function useGridShell<T extends object>({
                   showCellOverflowTooltip={showCellOverflowTooltip}
                   showValidationMarks={showValidationMarks}
                   conditionalFormatStats={conditionalFormatStats}
+                  conditionalFormatResolvers={conditionalFormatFeature}
                   isServerSide={isServerSide}
                   collapsedGroupKeys={uiState.collapsedGroupKeys}
                   onGroupToggle={handleGroupToggle}
@@ -4858,6 +4862,7 @@ export function useGridShell<T extends object>({
                   showCellOverflowTooltip={showCellOverflowTooltip}
                   showValidationMarks={showValidationMarks}
                   conditionalFormatStats={conditionalFormatStats}
+                  conditionalFormatResolvers={conditionalFormatFeature}
                   isServerSide={isServerSide}
                   collapsedGroupKeys={uiState.collapsedGroupKeys}
                   onGroupToggle={handleGroupToggle}

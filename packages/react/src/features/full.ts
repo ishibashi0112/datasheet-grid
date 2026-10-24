@@ -2,6 +2,7 @@
 //   Required で型付けし、機能を足したときにここへの入れ忘れを型で検出します。
 import { columnAutosizeFeature } from './columnAutosize';
 import { columnReorderFeature } from './columnReorder';
+import { conditionalFormatFeature } from './conditionalFormat';
 import { contextMenuFeature } from './contextMenu';
 import { fillHandleFeature } from './fillHandle';
 import { findFeature } from './find';
@@ -21,4 +22,5 @@ export const fullGridFeatures: Required<ReactGridFeatures> = {
   totalRow: totalRowFeature,
   imeDirectInput: imeDirectInputFeature,
   contextMenu: contextMenuFeature,
+  conditionalFormat: conditionalFormatFeature,
 };

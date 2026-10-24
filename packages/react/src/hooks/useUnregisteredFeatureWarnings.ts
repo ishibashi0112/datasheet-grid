@@ -29,6 +29,11 @@ const FEATURE_PROPS: {
     isUsed: (props) => props.autoSizeColumns !== undefined && props.autoSizeColumns !== false,
   },
   contextMenu: { prop: 'enableContextMenu', isUsed: (props) => props.enableContextMenu === true },
+  // 列の指定(GridColumn.conditionalFormat)。どれか 1 列でも指定していれば警告する。
+  conditionalFormat: {
+    prop: 'columns[].conditionalFormat',
+    isUsed: (props) => props.columns.some((column) => column.conditionalFormat !== undefined),
+  },
 };
 
 function useUnregisteredFeatureWarningsInDev<T extends object>(

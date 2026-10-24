@@ -9,6 +9,11 @@ import type { GridCoreFeatures } from '@ishibashi0112/spreadsheet-grid-core/engi
 import type { splitTextByFindRanges } from '@ishibashi0112/spreadsheet-grid-core/logic/find';
 import type { resolveScrollHintOptions } from '@ishibashi0112/spreadsheet-grid-core/logic/scrollHint';
 import type {
+  resolveChipSpec,
+  resolveColorScaleBackground,
+  resolveDataBar,
+} from '@ishibashi0112/spreadsheet-grid-core/logic/conditionalFormat';
+import type {
   formatTotalRowCellText,
   resolveTotalRowCaption,
   resolveTotalRowLabelColumnKey,
@@ -32,6 +37,7 @@ import type {
 import type { GridFindBar } from '../view/GridFindBar';
 import type { GridScrollHint } from '../view/GridScrollHint';
 import type { GridTotalRow } from '../view/GridTotalRow';
+import type { GridChip } from '../view/GridChip';
 import type { UseColumnHeaderDragControllerArgs } from '../hooks/useColumnHeaderDragController';
 import type { UseRowDragControllerArgs } from '../hooks/useRowDragController';
 
@@ -130,6 +136,12 @@ export type BodyContextMenuInput<T> = {
   activeCell: CellCoord | null;
 };
 
+// 条件付き書式のうち本体の行(GridBodyLayer)が使う部品(データバーの幾何 / カラースケールの背景色)。
+export type ConditionalFormatCellResolvers = {
+  resolveDataBar: typeof resolveDataBar;
+  resolveColorScaleBackground: typeof resolveColorScaleBackground;
+};
+
 export type ReactGridFeatures = {
   // セル内検索(F-2): 走査のコントローラ(core)+ 検索バー + セル文字列のヒット分割。
   find?: NonNullable<GridCoreFeatures['find']> & {
@@ -156,6 +168,11 @@ export type ReactGridFeatures = {
     formatTotalRowCellText: typeof formatTotalRowCellText;
     resolveTotalRowCaption: typeof resolveTotalRowCaption;
     resolveTotalRowLabelColumnKey: typeof resolveTotalRowLabelColumnKey;
+  };
+  // 条件付き書式(F-3): min / max の集計(core)+ データバー / カラースケール(本体の行)+ 状態チップ(セル内容)。
+  conditionalFormat?: NonNullable<GridCoreFeatures['conditionalFormat']> & ConditionalFormatCellResolvers & {
+    resolveChipSpec: typeof resolveChipSpec;
+    GridChip: typeof GridChip;
   };
   // セル / 行のコンテキストメニュー(バッチ②): controller の接続 + popover、右クリックの対象の解決。
   contextMenu?: {

@@ -5,6 +5,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { createGridEngine } from './createGridEngine';
 import { createFindController } from '../controllers/findController';
 import { createTotalRowCellsResolver } from '../logic/totalRow';
+import { createConditionalFormatStatsResolver } from '../logic/conditionalFormat';
 import type { GridColumn } from '../model/gridTypes.unbound';
 
 type Row = { id: number; name: string };
@@ -138,5 +139,28 @@ describe('createGridEngine', () => {
     const withoutTotal = createGridEngine<Sales>({ features: {}, columnInputs: salesColumnInputs, serverSide });
     expect(withoutTotal.resolveTotalRowCells(inputs).size).toBe(0);
     withoutTotal.dispose();
+  });
+
+  it('機能セットに conditionalFormat があれば列の min / max を集計し、無ければ代役(常に空)', () => {
+    const serverSide = { isServerSide: false, enableGlobalFilter: false, enableColumnFilter: false, enableSorting: false };
+    type Sales = { id: number; qty: number };
+    const salesRows: Sales[] = [
+      { id: 1, qty: 2 },
+      { id: 2, qty: 7 },
+    ];
+    const rowModel = { getRowCount: () => salesRows.length, getRow: (index: number) => salesRows[index] } as never;
+    const salesColumns = [{ key: 'qty', title: '数量', width: 80, conditionalFormat: { dataBar: {} } }] as GridColumn<Sales>[];
+    const salesColumnInputs = { ...columnInputs, columns: salesColumns } as never;
+    const withFormat = createGridEngine<Sales>({
+      features: { conditionalFormat: { createConditionalFormatStatsResolver } },
+      columnInputs: salesColumnInputs,
+      serverSide,
+    });
+    expect(withFormat.resolveConditionalFormatStats(rowModel, salesColumns).get('qty')).toEqual({ min: 2, max: 7 });
+    withFormat.dispose();
+
+    const withoutFormat = createGridEngine<Sales>({ features: {}, columnInputs: salesColumnInputs, serverSide });
+    expect(withoutFormat.resolveConditionalFormatStats(rowModel, salesColumns).size).toBe(0);
+    withoutFormat.dispose();
   });
 });

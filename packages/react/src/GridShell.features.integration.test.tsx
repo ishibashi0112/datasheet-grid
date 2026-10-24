@@ -15,6 +15,7 @@ import { columnAutosizeFeature } from './features/columnAutosize';
 import { totalRowFeature } from './features/totalRow';
 import { imeDirectInputFeature } from './features/imeDirectInput';
 import { contextMenuFeature } from './features/contextMenu';
+import { conditionalFormatFeature } from './features/conditionalFormat';
 import { installJsdomLayoutStubs } from './testing';
 import { resetUnregisteredFeatureWarnings } from '@ishibashi0112/spreadsheet-grid-core/logic/featureWarnings';
 import { ROW_DRAG_HANDLE_COLUMN_KEY } from '@ishibashi0112/spreadsheet-grid-core/logic/rowReorder';
@@ -37,6 +38,7 @@ const ColumnAutosizeOnlyGrid = createSpreadsheetGrid({ features: { columnAutosiz
 const TotalRowOnlyGrid = createSpreadsheetGrid({ features: { totalRow: totalRowFeature } });
 const ImeOnlyGrid = createSpreadsheetGrid({ features: { imeDirectInput: imeDirectInputFeature } });
 const ContextMenuOnlyGrid = createSpreadsheetGrid({ features: { contextMenu: contextMenuFeature } });
+const ConditionalFormatOnlyGrid = createSpreadsheetGrid({ features: { conditionalFormat: conditionalFormatFeature } });
 
 let restore: () => void;
 beforeAll(() => {
@@ -370,5 +372,41 @@ describe('差し込み式: contextMenu', () => {
     expect(document.querySelector('[role="menu"]')?.textContent).toContain('コピーする');
     expect(onContextMenuOpen).toHaveBeenCalledTimes(1);
     expect(onContextMenuOpen.mock.calls[0]?.[0].target).toMatchObject({ type: 'cell', rowIndex: 0, colIndex: 0, value: 'alpha' });
+  });
+});
+
+describe('差し込み式: conditionalFormat', () => {
+  type Task = { id: number; status: string; qty: number; score: number };
+  const taskRows: Task[] = [
+    { id: 1, status: 'done', qty: 2, score: 10 },
+    { id: 2, status: 'todo', qty: 8, score: 30 },
+  ];
+  const taskColumns: GridColumn<Task>[] = [
+    { key: 'status', title: '状態', width: 120, conditionalFormat: { chips: { done: { tone: 'good', label: '完了' } } } },
+    { key: 'qty', title: '数量', width: 100, conditionalFormat: { dataBar: { showValue: false } } },
+    { key: 'score', title: '点数', width: 100, conditionalFormat: { colorScale: {} } },
+  ];
+  const cellOf = (container: HTMLElement, rowIndex: number, key: string) =>
+    container.querySelector(`[data-row-index="${rowIndex}"] [data-ssg-col-key="${key}"]`) as HTMLElement;
+
+  it('機能セットに無ければ conditionalFormat を指定した列も素の表示で(帯 / 背景色 / チップなし、値は出す)、開発時に 1 回だけ警告する', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const { container } = render(<MinimalGrid rows={taskRows} columns={taskColumns} rowKeyGetter={(r) => r.id} />);
+    expect(container.querySelector('.ssg-body-cell--cf-bar, .ssg-body-cell--cf-scale, .ssg-cf-bar, .ssg-chip')).toBeNull();
+    expect(cellOf(container, 0, 'status').textContent).toBe('done');
+    // showValue: false も無視する(帯が無いのに値まで消さない)。
+    expect(cellOf(container, 1, 'qty').textContent).toBe('8');
+    const warnings = warn.mock.calls.filter(([message]) => String(message).includes('`columns[].conditionalFormat`'));
+    expect(warnings).toHaveLength(1);
+  });
+
+  it('conditionalFormat だけを入れた構成ではデータバー / カラースケール / チップが出る', () => {
+    const { container } = render(
+      <ConditionalFormatOnlyGrid rows={taskRows} columns={taskColumns} rowKeyGetter={(r) => r.id} />,
+    );
+    expect(cellOf(container, 1, 'qty').classList.contains('ssg-body-cell--cf-bar')).toBe(true);
+    expect(cellOf(container, 1, 'qty').textContent).toBe('');
+    expect(cellOf(container, 1, 'score').classList.contains('ssg-body-cell--cf-scale')).toBe(true);
+    expect(cellOf(container, 0, 'status').querySelector('.ssg-chip')?.textContent).toContain('完了');
   });
 });

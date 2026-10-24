@@ -17,15 +17,13 @@ import { createChangeHighlightController, type ChangeHighlightController } from 
 import { createSaveStatusController, type SaveStatusController } from '../controllers/saveStatusController';
 import type { FindController } from '../controllers/findController';
 import {
+  createInertConditionalFormatStatsResolver,
   createInertFindController,
   createInertImeInputController,
   createInertTotalRowCellsResolver,
   type GridCoreFeatures,
 } from './features';
-import {
-  createConditionalFormatStatsResolver,
-  type ConditionalFormatStatsResolver,
-} from '../logic/conditionalFormat';
+import type { ConditionalFormatStatsResolver } from '../logic/conditionalFormat';
 import type { TotalRowCellsResolver } from '../logic/totalRow';
 import { createDebouncedValueStore, type DebouncedValueStore } from '../controllers/debouncedValueStore';
 import { createDateRolloverStore, type DateRolloverStore } from '../controllers/dateRolloverStore';
@@ -186,7 +184,10 @@ export const createGridEngine = <T,>(init: GridEngineInit<T>): GridEngine<T> => 
     changeHighlight,
     saveStatus,
     find,
-    resolveConditionalFormatStats: createConditionalFormatStatsResolver<T>(),
+    // 変更(差し込み式 段階 2): 機能セットに conditionalFormat が無ければ代役(常に空)。
+    resolveConditionalFormatStats:
+      init.features.conditionalFormat?.createConditionalFormatStatsResolver<T>() ??
+      createInertConditionalFormatStatsResolver<T>(),
     // 変更(差し込み式 段階 2): 機能セットに totalRow が無ければ代役(常に空)。
     resolveTotalRowCells:
       init.features.totalRow?.createTotalRowCellsResolver<T>() ?? createInertTotalRowCellsResolver<T>(),
