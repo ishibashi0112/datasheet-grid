@@ -1,7 +1,7 @@
 // 合計行(totalRow): 実ブラウザでの値・下端固定・最終行が合計行に隠れないこと(スクロール / キーボード / API)・
 //   横スクロールと固定列の揃い・列ドラッグ(live)・行が少ないとき・テーマ・100 万行(scroll-space 仮想化)・
 //   auto-height / グルーピング / ラベル行 / SSRM との併用。
-import { OUT, open, check, unexpectedPageErrors, summary, cell, header, focusGrid, waitIdle, scrollTo, renderedRowIndexes } from './pw.mjs';
+import { OUT, open, check, unexpectedPageErrors, summary, cell, header, focusGrid, waitIdle, waitForViewRows, scrollTo, renderedRowIndexes } from './pw.mjs';
 
 // 中央ペインの合計行・指定行・ヘッダー・スクロールコンテナの見える範囲(px。ビューポート座標)。
 const geo = (page, rowIndex) =>
@@ -165,12 +165,16 @@ const fmtNumber = (page, v) =>
     window.__grid.applyState({ version: 1, columnWidths: {}, filters: { globalText: '', columnFilters: { category: { kind: 'set', values: ['A'] } } }, sort: [] }),
   );
   await waitIdle(page, 250);
+  // フィルターの反映(遅延レンダー)を待つ。
+  await waitForViewRows(page, await page.evaluate(() => window.__rows().filter((r) => r.category === 'A').length));
   const filteredSum = await page.evaluate(() =>
     window.__rows().filter((r) => r.category === 'A').reduce((s, r) => s + (typeof r.qty === 'number' ? r.qty : 0), 0),
   );
   check('total: フィルター後の行で再計算', digits(await totalCellText(page, 'qty')) === String(filteredSum), { text: await totalCellText(page, 'qty'), filteredSum });
   await page.evaluate(() => window.__grid.applyState({ version: 1, columnWidths: {}, filters: { globalText: '', columnFilters: {} }, sort: [] }));
   await waitIdle(page, 200);
+  // フィルター解除の反映(遅延レンダー)を待つ(固定時間だけだと遅いマシンでは絞り込まれたままの 2 行目を編集してしまう)。
+  await waitForViewRows(page, await page.evaluate(() => window.__rows().length));
   // 編集 → 再計算
   await scrollTo(page, 0, 0);
   await cell(page, 1, 'qty').click();

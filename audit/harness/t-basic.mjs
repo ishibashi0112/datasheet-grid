@@ -1,5 +1,5 @@
 // basic: 編集 / キーボード / 選択 / クリップボード / undo-redo / ソート / フィルター UI / 列操作 / 行選択 / コンテキストメニュー / 状態往復 / エクスポート。
-import { OUT, open, check, pending, summary, errorsOf, renderedRowIndexes, cellText, cell, header, scrollTo, focusGrid, waitIdle, events, clearEvents, pasteText, copyText, state, rows } from './pw.mjs';
+import { OUT, open, check, pending, summary, errorsOf, renderedRowIndexes, cellText, cell, header, scrollTo, focusGrid, waitIdle, events, clearEvents, pasteText, copyText, state, rows, waitForViewRows } from './pw.mjs';
 
 const { page, pageErrors, close } = await open('basic', { query: 'n=300' });
 const active = () => page.evaluate(() => window.__grid.getActiveCell());
@@ -568,6 +568,8 @@ const errs3 = await errorsOf(page);
 check('applyState tolerates garbage (no throw/console error)', errs3.length === 0 && pageErrors.length === 0, { st3, errs3 });
 await page.evaluate(() => window.__grid.applyState({ version: 1, columnWidths: {}, filters: { globalText: '', columnFilters: {} }, sort: [] }));
 await waitIdle(page, 200);
+// フィルター解除の反映(遅延レンダー)を待つ(固定時間だけだと遅いマシンで解除前の行を書き出す)。
+await waitForViewRows(page, (await rows(page)).length);
 
 // ---- 13. エクスポート ----
 const csv = await page.evaluate(() => window.__grid.exportCsv());

@@ -100,6 +100,15 @@ export async function focusGrid(page) {
 export async function waitIdle(page, ms = 120) {
   await page.waitForTimeout(ms);
 }
+// 列フィルター / グローバルフィルターの評価は低優先度の遅延レンダー(useDeferredValue)で反映されるため、applyState 等で
+//   フィルターを変えた直後は、ソートだけ新しくフィルターは古い表示が続く(本番ビルドで約 0.1 秒、dev ビルドで 0.1〜0.3 秒、
+//   CPU が混んでいるとさらに長い)。固定時間の waitIdle だと反映前の行を見て FAIL することがあるため、表示行数が n に
+//   なるまで待つ(timeout で抜けたら後続の check がその値で FAIL する)。
+export async function waitForViewRows(page, n, timeout = 5000) {
+  await page
+    .waitForFunction((count) => window.__grid.getExportData({ scope: 'view' }).rows.length === count, n, { timeout })
+    .catch(() => {});
+}
 // 貼り付けイベントを合成(Playwright の keyboard では clipboardData を注入できないため)。
 export async function pasteText(page, text) {
   await page.evaluate((t) => {
