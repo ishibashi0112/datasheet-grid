@@ -13,6 +13,7 @@ import { rowDragFeature } from './features/rowDrag';
 import { scrollHintFeature } from './features/scrollHint';
 import { columnAutosizeFeature } from './features/columnAutosize';
 import { totalRowFeature } from './features/totalRow';
+import { imeDirectInputFeature } from './features/imeDirectInput';
 import { installJsdomLayoutStubs } from './testing';
 import { resetUnregisteredFeatureWarnings } from '@ishibashi0112/spreadsheet-grid-core/logic/featureWarnings';
 import { ROW_DRAG_HANDLE_COLUMN_KEY } from '@ishibashi0112/spreadsheet-grid-core/logic/rowReorder';
@@ -33,6 +34,7 @@ const RowDragOnlyGrid = createSpreadsheetGrid({ features: { rowDrag: rowDragFeat
 const ScrollHintOnlyGrid = createSpreadsheetGrid({ features: { scrollHint: scrollHintFeature } });
 const ColumnAutosizeOnlyGrid = createSpreadsheetGrid({ features: { columnAutosize: columnAutosizeFeature } });
 const TotalRowOnlyGrid = createSpreadsheetGrid({ features: { totalRow: totalRowFeature } });
+const ImeOnlyGrid = createSpreadsheetGrid({ features: { imeDirectInput: imeDirectInputFeature } });
 
 let restore: () => void;
 beforeAll(() => {
@@ -302,5 +304,24 @@ describe('差し込み式: totalRow', () => {
     );
     expect(container.querySelector('.ssg-total-row')).not.toBeNull();
     expect(Array.from(container.querySelectorAll('.ssg-total-value')).map((el) => el.textContent)).toContain('5');
+  });
+});
+
+describe('差し込み式: imeDirectInput', () => {
+  it('機能セットに無ければ imeDirectInput を渡しても入力受けを描画せず、開発時に 1 回だけ警告する', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const { container } = render(
+      <MinimalGrid rows={rows} columns={columns} rowKeyGetter={(r) => r.id} onRowsChange={() => {}} imeDirectInput />,
+    );
+    expect(container.querySelector('.ssg-ime-input')).toBeNull();
+    const warnings = warn.mock.calls.filter(([message]) => String(message).includes('`imeDirectInput`'));
+    expect(warnings).toHaveLength(1);
+  });
+
+  it('imeDirectInput だけを入れた構成では入力受けが描画される', () => {
+    const { container } = render(
+      <ImeOnlyGrid rows={rows} columns={columns} rowKeyGetter={(r) => r.id} onRowsChange={() => {}} imeDirectInput />,
+    );
+    expect(container.querySelector('.ssg-ime-input')).not.toBeNull();
   });
 });

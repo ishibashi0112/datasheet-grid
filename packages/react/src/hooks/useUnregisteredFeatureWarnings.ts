@@ -22,6 +22,7 @@ const FEATURE_PROPS: {
   columnReorder: { prop: 'columnDragMotion', isUsed: (props) => props.columnDragMotion !== undefined },
   rowDrag: { prop: 'enableRowDrag', isUsed: (props) => props.enableRowDrag === true },
   scrollHint: { prop: 'scrollHint', isUsed: (props) => props.scrollHint !== undefined && props.scrollHint !== false },
+  imeDirectInput: { prop: 'imeDirectInput', isUsed: (props) => props.imeDirectInput === true },
   totalRow: { prop: 'totalRow', isUsed: (props) => props.totalRow !== undefined && props.totalRow !== false },
   columnAutosize: {
     prop: 'autoSizeColumns',

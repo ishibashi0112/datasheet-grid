@@ -116,6 +116,8 @@ export type ReactGridFeatures = {
   columnReorder?: {
     useColumnReorder: <T>(args: ColumnReorderFeatureArgs<T>) => ColumnReorderFeatureResult<T>;
   };
+  // IME オンのままの直接入力(G-2): core の部品そのまま(入力受けのコントローラ + 判定 / 初期値の関数)。
+  imeDirectInput?: NonNullable<GridCoreFeatures['imeDirectInput']>;
   // 列幅の自動調整(DS-4 / 13-B1): 計測の時間分割ランナー。
   columnAutosize?: {
     useColumnAutosize: <T>(args: ColumnAutosizeFeatureArgs<T>) => ColumnAutosizeFeatureResult<T>;

@@ -10,6 +10,8 @@
 import type { FindController, FindSnapshot } from '../controllers/findController';
 import type { FindIndex } from '../logic/find';
 import type { TotalRowCells, TotalRowCellsResolver } from '../logic/totalRow';
+import type { ImeInputController } from '../controllers/imeInputController';
+import type { canStartImeEdit, resolveImeEditText } from '../logic/imeInput';
 
 export type GridCoreFeatures = {
   // セル内検索(F-2)。
@@ -19,6 +21,12 @@ export type GridCoreFeatures = {
   // 合計行(合計行 3A): 列の aggFunc でフィルター後のデータ行を集計するリゾルバ。
   totalRow?: {
     createTotalRowCellsResolver: <T>() => TotalRowCellsResolver<T>;
+  };
+  // IME オンのままの直接入力(G-2): 透明な入力受けのコントローラ + 入力してよいセルの判定 + 編集の初期値の決定。
+  imeDirectInput?: {
+    createImeInputController: () => ImeInputController;
+    canStartImeEdit: typeof canStartImeEdit;
+    resolveImeEditText: typeof resolveImeEditText;
   };
 };
 
@@ -54,3 +62,10 @@ export const createInertTotalRowCellsResolver =
   <T,>(): TotalRowCellsResolver<T> =>
   () =>
     EMPTY_TOTAL_ROW_CELLS;
+
+// imeDirectInput が無いときの代役: 何もしない(入力受けも描画されない)。
+export const createInertImeInputController = (): ImeInputController => ({
+  update: noop,
+  attach: noop,
+  dispose: noop,
+});

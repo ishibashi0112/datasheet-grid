@@ -4,6 +4,7 @@ import { columnAutosizeFeature } from './columnAutosize';
 import { columnReorderFeature } from './columnReorder';
 import { fillHandleFeature } from './fillHandle';
 import { findFeature } from './find';
+import { imeDirectInputFeature } from './imeDirectInput';
 import { rowDragFeature } from './rowDrag';
 import { scrollHintFeature } from './scrollHint';
 import { totalRowFeature } from './totalRow';
@@ -17,4 +18,5 @@ export const fullGridFeatures: Required<ReactGridFeatures> = {
   scrollHint: scrollHintFeature,
   columnAutosize: columnAutosizeFeature,
   totalRow: totalRowFeature,
+  imeDirectInput: imeDirectInputFeature,
 };

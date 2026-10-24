@@ -16,7 +16,12 @@ import { createRowEnterController, type RowEnterController } from '../controller
 import { createChangeHighlightController, type ChangeHighlightController } from '../controllers/changeHighlightController';
 import { createSaveStatusController, type SaveStatusController } from '../controllers/saveStatusController';
 import type { FindController } from '../controllers/findController';
-import { createInertFindController, createInertTotalRowCellsResolver, type GridCoreFeatures } from './features';
+import {
+  createInertFindController,
+  createInertImeInputController,
+  createInertTotalRowCellsResolver,
+  type GridCoreFeatures,
+} from './features';
 import {
   createConditionalFormatStatsResolver,
   type ConditionalFormatStatsResolver,
@@ -25,7 +30,7 @@ import type { TotalRowCellsResolver } from '../logic/totalRow';
 import { createDebouncedValueStore, type DebouncedValueStore } from '../controllers/debouncedValueStore';
 import { createDateRolloverStore, type DateRolloverStore } from '../controllers/dateRolloverStore';
 import { createAutoSizeOnDataTrigger, type AutoSizeOnDataTrigger } from '../controllers/columnAutosizeRunner';
-import { createImeInputController, type ImeInputController } from '../controllers/imeInputController';
+import type { ImeInputController } from '../controllers/imeInputController';
 import {
   createColumnResolver,
   createPaneLayoutResolver,
@@ -156,7 +161,8 @@ export const createGridEngine = <T,>(init: GridEngineInit<T>): GridEngine<T> => 
   const saveStatus = createSaveStatusController();
   const find = init.features.find?.createFindController<T>() ?? createInertFindController<T>();
   const autoSizeOnData = createAutoSizeOnDataTrigger<T>();
-  const imeInput = createImeInputController();
+  // 変更(差し込み式 段階 2): 機能セットに imeDirectInput が無ければ代役(何もしない)。
+  const imeInput = init.features.imeDirectInput?.createImeInputController() ?? createInertImeInputController();
 
   return {
     store,

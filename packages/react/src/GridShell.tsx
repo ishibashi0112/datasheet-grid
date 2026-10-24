@@ -36,8 +36,8 @@ import { useVirtualizerCore } from './hooks/useVirtualizerCore';
 // 追加(本体分解 E-7): グリッドエンジン(リゾルバ / コマンド / 通知 / DOM コントローラ / store の束ね。React 非依存)。
 import { createGridEngine } from '@ishibashi0112/spreadsheet-grid-core/engine/createGridEngine';
 import { useControllerLifecycle } from './hooks/useController';
-// 追加(G-2): IME オンのままの直接入力(imeDirectInput)の入力してよいセルの判定と、入力受けの属性名です。
-import { canStartImeEdit, resolveImeEditText } from '@ishibashi0112/spreadsheet-grid-core/logic/imeInput';
+// 追加(G-2): IME オンのままの直接入力(imeDirectInput)の入力受けの属性名です。
+// 変更(差し込み式 段階 2): 入力してよいセルの判定 / 編集の初期値の決定は機能セット(features.imeDirectInput)から。
 import { IME_INPUT_ATTRIBUTE } from '@ishibashi0112/spreadsheet-grid-core/logic/domGuards';
 
 import { gridActions } from '@ishibashi0112/spreadsheet-grid-core/model/gridActions';
@@ -2669,8 +2669,11 @@ export function useGridShell<T extends object>({
   //   そこで始めます。変換が確定したら確定した文字列を初期値に通常の編集を開始します(startEditWithValue)。
   //   本体は controllers/imeInputController.ts(React 非依存。engine.imeInput)。無効時はコントローラが何もしません
   //   (入力受けも描画しない)。
+  // 変更(差し込み式 段階 2): 機能セットに imeDirectInput が無ければ無効(engine.imeInput も代役。開発時に警告)。
+  const imeFeature = features.imeDirectInput;
+  const imeDirectInputEnabled = imeDirectInput && imeFeature !== undefined;
   useControllerLifecycle(engine.imeInput, {
-    enabled: imeDirectInput,
+    enabled: imeDirectInputEnabled,
     gridRootRef,
     editing: uiState.editingCell !== null,
     activeCell: uiState.activeCell,
@@ -2679,10 +2682,11 @@ export function useGridShell<T extends object>({
       return column ? { colKey: column.key, align: column.align } : null;
     },
     canStartEdit: (cell: CellCoord) =>
-      canStartImeEdit({ rowModel, columns: orderedColumns, readOnly, canEditCell }, cell),
+      imeFeature?.canStartImeEdit({ rowModel, columns: orderedColumns, readOnly, canEditCell }, cell) === true,
     startEdit: startEditWithValue,
     // 追加(全角数値): number 列は確定した文字列を半角の数値表記へ直して編集を始めます(読めない変換は捨てる)。
-    resolveEditText: (cell: CellCoord, text: string) => resolveImeEditText(orderedColumns, cell, text),
+    resolveEditText: (cell: CellCoord, text: string) =>
+      imeFeature ? imeFeature.resolveImeEditText(orderedColumns, cell, text) : text,
   });
   // 入力受けの ref コールバック(React Compiler の lint が ref に渡した値を ref 扱いするため、コントローラを直接渡さず
   //   ローカル関数で包みます)。
@@ -5131,7 +5135,7 @@ export function useGridShell<T extends object>({
           )}
         {/* 追加(G-2): IME オンのままの直接入力の入力受け(imeDirectInput 有効時のみ)。非制御で、値 / 位置 / 変換中の
             表示はコントローラが直接扱います。Tab の順番には入れません(タブストップはシェルのまま)。 */}
-        {imeDirectInput ? (
+        {imeDirectInputEnabled ? (
           <input
             ref={attachImeInput}
             {...{ [IME_INPUT_ATTRIBUTE]: '' }}
