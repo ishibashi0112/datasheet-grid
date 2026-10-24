@@ -14,7 +14,17 @@ const inertFillHandleFeature: GridShellFeatures['fillHandle'] = {
   useFillHandle: () => INERT_FILL_HANDLE,
 };
 
+const INERT_COLUMN_REORDER = {
+  onColumnDragHandlePointerDown: undefined,
+  renderDropIndicator: () => null,
+};
+
+const inertColumnReorderFeature: GridShellFeatures['columnReorder'] = {
+  useColumnReorder: () => INERT_COLUMN_REORDER,
+};
+
 export const resolveGridShellFeatures = (features: ReactGridFeatures): GridShellFeatures => ({
   ...features,
   fillHandle: features.fillHandle ?? inertFillHandleFeature,
+  columnReorder: features.columnReorder ?? inertColumnReorderFeature,
 });

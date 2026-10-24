@@ -4,14 +4,16 @@
 //   - ReactGridFeatures は利用側が渡す形(どの機能も省略できる)、GridShellFeatures はシェルが受け取る形です。
 //     hook の部品はシェルが機能を移す前と同じ位置で必ず呼ぶため、無い機能には代役を入れて渡します(features/resolve.ts)。
 //     機能セットはモジュールの読み込み時に決まって描画中は変わらないため、本物と代役が入れ替わることはありません。
-import type { ReactNode } from 'react';
+import type { CSSProperties, ReactNode } from 'react';
 import type { GridCoreFeatures } from '@ishibashi0112/spreadsheet-grid-core/engine/features';
 import type { splitTextByFindRanges } from '@ishibashi0112/spreadsheet-grid-core/logic/find';
 import type { FillHandleControllerArgs } from '@ishibashi0112/spreadsheet-grid-core/controllers/fillHandleController';
+import type { ColumnHeaderDragController } from '@ishibashi0112/spreadsheet-grid-core/controllers/columnHeaderDragController';
 import type { ColumnPane, GridPaneLayout } from '@ishibashi0112/spreadsheet-grid-core/logic/geometry';
 import type { DetailRowExtra, RowMetrics } from '@ishibashi0112/spreadsheet-grid-core/logic/verticalGeometry';
 import type { GridColumn, GridUiState, RowModel, SpreadsheetGridProps } from '../model/gridTypes';
 import type { GridFindBar } from '../view/GridFindBar';
+import type { UseColumnHeaderDragControllerArgs } from '../hooks/useColumnHeaderDragController';
 
 // フィルハンドル(fillHandle)の hook が受け取るシェルの値です(シェルにあったときの自由変数そのまま)。
 export type FillHandleFeatureArgs<T> = {
@@ -57,6 +59,15 @@ export type FillHandleFeatureResult = {
   renderPortals: () => ReactNode;
 };
 
+// 列ヘッダーのドラッグによる並べ替え(columnReorder)の hook が受け取る値(コントローラの引数そのまま)と返す値です。
+export type ColumnReorderFeatureArgs<T> = UseColumnHeaderDragControllerArgs<T>;
+export type ColumnReorderFeatureResult<T> = {
+  // 見出しの grip の pointerdown(無い構成では undefined = grip を出さない)。
+  onColumnDragHandlePointerDown: ColumnHeaderDragController<T>['onColumnDragHandlePointerDown'] | undefined;
+  // 各ペインのドロップの縦線(無い構成では描かない)。
+  renderDropIndicator: (pane: ColumnPane, style: CSSProperties) => ReactNode;
+};
+
 export type ReactGridFeatures = {
   // セル内検索(F-2): 走査のコントローラ(core)+ 検索バー + セル文字列のヒット分割。
   find?: NonNullable<GridCoreFeatures['find']> & {
@@ -67,10 +78,14 @@ export type ReactGridFeatures = {
   fillHandle?: {
     useFillHandle: <T>(args: FillHandleFeatureArgs<T>) => FillHandleFeatureResult;
   };
+  // 列ヘッダーのドラッグによる列の並べ替え(13-B3 / M-12): grip / ドロップの縦線 / live 方式。
+  columnReorder?: {
+    useColumnReorder: <T>(args: ColumnReorderFeatureArgs<T>) => ColumnReorderFeatureResult<T>;
+  };
 };
 
 // シェルが受け取る機能セット: hook の部品を持つ機能は必ずある(無い機能は代役)。それ以外の機能は省略のまま
 //   (シェルが ?. で見て、無ければ何もしない)。
-type HookFeatureName = 'fillHandle';
+type HookFeatureName = 'fillHandle' | 'columnReorder';
 export type GridShellFeatures = Omit<ReactGridFeatures, HookFeatureName> &
   Required<Pick<ReactGridFeatures, HookFeatureName>>;

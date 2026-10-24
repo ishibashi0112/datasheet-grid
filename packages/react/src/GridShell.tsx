@@ -81,8 +81,7 @@ import {
   resolveSelectionBandSegments,
   resolveSelectionExtents,
 } from '@ishibashi0112/spreadsheet-grid-core/logic/selectionOverlayGeometry';
-// 追加(13-B3-2): ヘッダー D&D 列並べ替え controller です。
-import { useColumnHeaderDragController } from './hooks/useColumnHeaderDragController';
+// 変更(差し込み式 段階 2): ヘッダー D&D 列並べ替えは機能セット(features.columnReorder)から受け取ります(無ければ代役)。
 // 追加(row-drag ③): 行ドラッグ並び替え controller です。
 import { useRowDragController } from './hooks/useRowDragController';
 import {
@@ -3255,14 +3254,9 @@ export function useGridShell<T extends object>({
 
   // 追加(13-B3-2): ヘッダー D&D 並べ替え controller(ドロップインジケータ ref + 安定ハンドラ)。
   //   enabled は controlled columns(onColumnsChange あり)のときだけ true。
-  const {
-    onColumnDragHandlePointerDown,
-    leftIndicatorRef,
-    centerIndicatorRef,
-    rightIndicatorRef,
-    // 追加(案A): 並べ替え確定後に呼ぶ settle アニメ発火関数です。
-    applyReorderSettle,
-  } = useColumnHeaderDragController<T>({
+  // 変更(差し込み式 段階 2): controller の接続と settle の effect は機能セットの hook(features/columnReorder.tsx)へ
+  //   移し、この位置で呼びます(hook の順番は従来どおり)。機能セットに無ければ代役(grip も縦線も出さない)。
+  const columnReorder = features.columnReorder.useColumnReorder<T>({
     enabled: Boolean(onColumnsChange),
     columns,
     paneLayout,
@@ -3278,14 +3272,6 @@ export function useGridShell<T extends object>({
     // 追加(motion-9 / M-12): 'live' では同じペイン内で掴んだ列が追従し周りの列が退避する(motion='off' では ghost へ)。
     motion: resolvedMotion === 'off' ? 'ghost' : columnDragMotion,
   });
-
-  // 追加(案A): 列レイアウト確定(並べ替え commit を含む)後に settle アニメを発火します。
-  //   applyReorderSettle は「直前のドラッグが same-pane 並べ替えで armed のとき」だけ動き、
-  //   それ以外(初回 / リサイズ / ピン / 非表示)は即 return するため本 effect が走っても無害です。
-  //   useLayoutEffect は paint 前に走るため、瞬間移動は見えず最初から「元位置→新位置」へ滑ります。
-  useLayoutEffect(() => {
-    applyReorderSettle();
-  }, [paneLayout, applyReorderSettle]);
 
   // ── 追加(row-drag ③): 行ドラッグ並び替え ──────────────────
   // 行移動の共通 commit です(ドロップ確定 / 命令的 moveRow)。moveArrayItem が no-op(同一位置 /
@@ -3383,7 +3369,7 @@ export function useGridShell<T extends object>({
   // 追加(13-B3-2): reorder 可能(controlled columns)なときだけバッジを grip 化します。
   //   未指定時はバッジが通常表示になり、列範囲選択など既存挙動は完全に従来どおりです。
   const headerDragHandler = onColumnsChange
-    ? onColumnDragHandlePointerDown
+    ? columnReorder.onColumnDragHandlePointerDown
     : undefined;
 
   // 追加(13-B3-2): ドロップインジケータ(縦線)の共通 style です。display は controller が
@@ -4646,7 +4632,7 @@ export function useGridShell<T extends object>({
                 wrapper(sticky;left:0 = absolute 子の containing block)直下へ移しました。
                 非空時は wrapper と内側 relative コンテナが原点(0,0)・高さ共通のため、
                 leftPx の意味・縦線位置は従来と不変です。 */}
-            <div ref={leftIndicatorRef} className="ssg-col-drop-indicator" style={columnDropIndicatorStyle} />
+            {columnReorder.renderDropIndicator('left', columnDropIndicatorStyle)}
           </div>
 
           {/* ── 中央ペイン ── */}
@@ -4863,7 +4849,7 @@ export function useGridShell<T extends object>({
               {/* 追加(13-B3-2): 中央ペインのドロップインジケータ(縦線)。
                   controller が ref 経由で display/left を imperative に制御します
                   (ドラッグ中の再レンダーなし → GridHeaderRow の memo を維持)。 */}
-              <div ref={centerIndicatorRef} className="ssg-col-drop-indicator" style={columnDropIndicatorStyle} />
+              {columnReorder.renderDropIndicator('center', columnDropIndicatorStyle)}
             </div>
           </div>
 
@@ -5073,7 +5059,7 @@ export function useGridShell<T extends object>({
                 wrapper(sticky;right:0 = absolute 子の containing block)直下へ移しました。
                 非空時は leftPx の意味・位置とも従来と不変です。空時は wrapper 原点が
                 ビューポート右端のため、controller が leftPx を負値(-inset)にして端の内側へ寄せます。 */}
-            <div ref={rightIndicatorRef} className="ssg-col-drop-indicator" style={columnDropIndicatorStyle} />
+            {columnReorder.renderDropIndicator('right', columnDropIndicatorStyle)}
           </div>
 
           </div>

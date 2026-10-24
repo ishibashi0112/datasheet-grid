@@ -8,6 +8,7 @@ import { createRef } from 'react';
 import { createSpreadsheetGrid } from './createSpreadsheetGrid';
 import { findFeature } from './features/find';
 import { fillHandleFeature } from './features/fillHandle';
+import { columnReorderFeature } from './features/columnReorder';
 import { installJsdomLayoutStubs } from './testing';
 import { resetUnregisteredFeatureWarnings } from '@ishibashi0112/spreadsheet-grid-core/logic/featureWarnings';
 import type { GridColumn, SpreadsheetGridHandle } from './model/gridTypes';
@@ -22,6 +23,7 @@ const columns: GridColumn<Row>[] = [{ key: 'name', title: '名前', width: 160 }
 const MinimalGrid = createSpreadsheetGrid({ features: {} });
 const FindOnlyGrid = createSpreadsheetGrid({ features: { find: findFeature } });
 const FillOnlyGrid = createSpreadsheetGrid({ features: { fillHandle: fillHandleFeature } });
+const ColumnReorderOnlyGrid = createSpreadsheetGrid({ features: { columnReorder: columnReorderFeature } });
 
 let restore: () => void;
 beforeAll(() => {
@@ -141,5 +143,42 @@ describe('差し込み式: fillHandle', () => {
     dispatchPointer(window, 'pointerup', 56 + 80, 40 + 30 + 15);
     expect(onRowsChange).toHaveBeenCalledTimes(1);
     expect(onRowsChange.mock.calls[0]?.[0].map((r) => r.name)).toEqual(['alpha', 'alpha']);
+  });
+});
+
+describe('差し込み式: columnReorder', () => {
+  it('機能セットに無ければ onColumnsChange があっても grip とドロップの縦線を出さない(警告もしない)', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const { container } = render(
+      <MinimalGrid rows={rows} columns={columns} rowKeyGetter={(r) => r.id} onColumnsChange={() => {}} />,
+    );
+    expect(container.querySelectorAll('.ssg-header-grip')).toHaveLength(0);
+    expect(container.querySelectorAll('.ssg-col-drop-indicator')).toHaveLength(0);
+    // 列メニュー(⋮)は従来どおり出る。
+    expect(container.querySelectorAll('.ssg-header-actions .ssg-icon-btn').length).toBeGreaterThan(0);
+    expect(warn).not.toHaveBeenCalled();
+  });
+
+  it('機能セットに無いのに columnDragMotion を渡すと開発時に 1 回だけ警告する', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    render(
+      <MinimalGrid
+        rows={rows}
+        columns={columns}
+        rowKeyGetter={(r) => r.id}
+        onColumnsChange={() => {}}
+        columnDragMotion="live"
+      />,
+    );
+    const warnings = warn.mock.calls.filter(([message]) => String(message).includes('`columnDragMotion`'));
+    expect(warnings).toHaveLength(1);
+  });
+
+  it('columnReorder だけを入れた構成では grip と 3 ペインぶんのドロップの縦線が出る', () => {
+    const { container } = render(
+      <ColumnReorderOnlyGrid rows={rows} columns={columns} rowKeyGetter={(r) => r.id} onColumnsChange={() => {}} />,
+    );
+    expect(container.querySelectorAll('.ssg-header-grip')).toHaveLength(columns.length);
+    expect(container.querySelectorAll('.ssg-col-drop-indicator')).toHaveLength(3);
   });
 });
