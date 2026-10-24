@@ -40,6 +40,10 @@ jobs:
       - name: Build library
         run: pnpm run build:lib
 
+      # 追加(差し込み式 段階 1): 利用側で組み込んだときの初期 JS(gzip)が scripts/size-budget.json の上限を超えたら落とす。
+      - name: Bundle size budget
+        run: pnpm run size:check
+
       # 追加(audit P-6): CLAUDE.md のゲート表にあるデモ app のビルドも CI で確認する(website は対象外)。
       - name: Build demo app
         run: pnpm exec vp build

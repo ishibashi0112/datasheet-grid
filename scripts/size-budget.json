@@ -1,0 +1,8 @@
+{
+  "_note": "scripts/measure-size.mjs の上限(初期 JS の gzip、KB)。意図して大きくするときは --update で書き直し、理由をコミットに書く。",
+  "limits": {
+    "full": {
+      "initialGzipKB": 111.1
+    }
+  }
+}

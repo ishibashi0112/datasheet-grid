@@ -20,6 +20,8 @@
     "typecheck:test": "tsc --noEmit -p tsconfig.vitest.json",
     "docs:jsdoc": "node scripts/sync-api-jsdoc.mjs",
     "docs:jsdoc:check": "node scripts/sync-api-jsdoc.mjs --check",
+    "size": "node scripts/measure-size.mjs",
+    "size:check": "node scripts/measure-size.mjs --check",
     "audit:dev": "vp dev --config audit/harness/vite.config.ts audit/harness",
     "audit:test": "node audit/harness/t-basic.mjs && node audit/harness/t-ssrm.mjs && node audit/harness/t-lifecycle.mjs && node audit/harness/t-features.mjs && node audit/harness/t-verify.mjs && node audit/harness/t-aggregates.mjs && node audit/harness/t-total.mjs && node audit/harness/t-fill.mjs && node audit/harness/t-big.mjs && node audit/harness/t-leftovers.mjs && node audit/harness/t-lazy.mjs"
   },
@@ -32,6 +34,7 @@
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
     "@vitejs/plugin-react": "^6.0.1",
+    "esbuild": "0.28.1",
     "eslint": "^10.3.0",
     "eslint-plugin-react-hooks": "^7.1.1",
     "eslint-plugin-react-refresh": "^0.5.2",
