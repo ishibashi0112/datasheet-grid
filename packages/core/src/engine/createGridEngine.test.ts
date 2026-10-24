@@ -3,6 +3,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { createGridEngine } from './createGridEngine';
+import { createFindController } from '../controllers/findController';
 import type { GridColumn } from '../model/gridTypes.unbound';
 
 type Row = { id: number; name: string };
@@ -30,6 +31,7 @@ afterEach(() => {
 describe('createGridEngine', () => {
   it('初期 store 状態の列幅は空で、同じ入力の resolveColumns は同じ参照を返す', () => {
     const engine = createGridEngine<Row>({
+      features: {},
       columnInputs,
       serverSide: { isServerSide: false, enableGlobalFilter: true, enableColumnFilter: true, enableSorting: true },
     });
@@ -44,6 +46,7 @@ describe('createGridEngine', () => {
 
   it('serverSide query の seed は初期 uiState から作られ、debounce ストアの初期値と一致する', () => {
     const engine = createGridEngine<Row>({
+      features: {},
       columnInputs: { ...columnInputs, isServerSide: true },
       serverSide: { isServerSide: true, enableGlobalFilter: true, enableColumnFilter: true, enableSorting: true },
     });
@@ -67,6 +70,7 @@ describe('createGridEngine', () => {
 
   it('dispose は auto-height 測定 / スクロール計測 / debounce ストアの後始末を行う', () => {
     const engine = createGridEngine<Row>({
+      features: {},
       columnInputs,
       serverSide: { isServerSide: false, enableGlobalFilter: true, enableColumnFilter: true, enableSorting: true },
     });
@@ -83,5 +87,29 @@ describe('createGridEngine', () => {
     engine.dispose();
     vi.advanceTimersByTime(300);
     expect(engine.serverSideQueryStore.getSnapshot()).not.toBe(next);
+  });
+
+  // 追加(差し込み式 段階 2): 機能セットにある機能だけ本物のコントローラを作り、無い機能は何もしない代役にする。
+  it('features.find があれば検索のコントローラを作り、無ければ閉じたままの代役にする', () => {
+    const serverSide = { isServerSide: false, enableGlobalFilter: true, enableColumnFilter: true, enableSorting: true };
+    const findArgs = {
+      enabled: true,
+      rowModel: { getRowCount: () => 0, getRow: () => undefined } as never,
+      columns,
+      caseSensitive: false,
+      onNavigate: () => {},
+    };
+    const withFind = createGridEngine<Row>({ features: { find: { createFindController } }, columnInputs, serverSide });
+    withFind.find.update(findArgs);
+    withFind.find.open('a');
+    expect(withFind.find.getSnapshot().open).toBe(true);
+    withFind.dispose();
+
+    const withoutFind = createGridEngine<Row>({ features: {}, columnInputs, serverSide });
+    withoutFind.find.update(findArgs);
+    withoutFind.find.open('a');
+    expect(withoutFind.find.getSnapshot()).toMatchObject({ open: false, query: '', matches: [], currentIndex: null });
+    expect(withoutFind.find.getSnapshot()).toBe(withoutFind.find.getSnapshot());
+    withoutFind.dispose();
   });
 });

@@ -1,8 +1,11 @@
 {
-  "_note": "scripts/measure-size.mjs の上限(初期 JS の gzip、KB)。意図して大きくするときは --update で書き直し、理由をコミットに書く。",
+  "_note": "scripts/measure-size.mjs の上限(初期 JS の gzip、KB)。意図して大きくするときは --update で書き直し、理由をコミットに書く。full は差し込み式への移行のあいだ「移行前 110.6KB + 1KB」で固定する(移行の仕組みの分で増えすぎないかの見張り)。",
   "limits": {
     "full": {
-      "initialGzipKB": 111.1
+      "initialGzipKB": 111.6
+    },
+    "minimal": {
+      "initialGzipKB": 109.8
     }
   }
 }

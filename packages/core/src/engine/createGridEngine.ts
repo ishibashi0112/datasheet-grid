@@ -15,7 +15,8 @@ import { createScrollSyncController, type ScrollSyncController } from '../contro
 import { createRowEnterController, type RowEnterController } from '../controllers/rowEnterController';
 import { createChangeHighlightController, type ChangeHighlightController } from '../controllers/changeHighlightController';
 import { createSaveStatusController, type SaveStatusController } from '../controllers/saveStatusController';
-import { createFindController, type FindController } from '../controllers/findController';
+import type { FindController } from '../controllers/findController';
+import { createInertFindController, type GridCoreFeatures } from './features';
 import {
   createConditionalFormatStatsResolver,
   type ConditionalFormatStatsResolver,
@@ -66,6 +67,8 @@ import {
 export const SERVER_SIDE_QUERY_DEBOUNCE_MS = 300;
 
 export type GridEngineInit<T> = {
+  // 追加(差し込み式 段階 2): 機能セット(engine/features.ts)。無い機能は何もしない代役が受けます。
+  features: GridCoreFeatures;
   // 初期 store 状態(初回の visibleColumns)を作るための列解決入力。
   columnInputs: ColumnResolutionInputs<T>;
   // serverSide query の初期値(debounce ストアの seed。mount 時の queryKey と一致させる)。
@@ -151,7 +154,7 @@ export const createGridEngine = <T,>(init: GridEngineInit<T>): GridEngine<T> => 
   const rowEnter = createRowEnterController();
   const changeHighlight = createChangeHighlightController<T>();
   const saveStatus = createSaveStatusController();
-  const find = createFindController<T>();
+  const find = init.features.find?.createFindController<T>() ?? createInertFindController<T>();
   const autoSizeOnData = createAutoSizeOnDataTrigger<T>();
   const imeInput = createImeInputController();
 

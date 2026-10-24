@@ -24,6 +24,13 @@ const CONFIGS = [
     label: 'フル版(SpreadsheetGrid)',
     code: "export { SpreadsheetGrid } from './index.ts';",
   },
+  // 差し込み式へ移行中の見張り: 機能セットを空にしたシェル。機能を移すたびに小さくなり、シェルへ機能の静的 import を
+  //   戻してしまうと大きくなる(上限で検出)。/lite の入口ができたらそちらの構成に置き換える。
+  {
+    name: 'minimal',
+    label: '機能セットなしのシェル(移行中)',
+    code: "import { useGridShell } from './GridShell.tsx'; const features = {}; export function Grid(props) { return useGridShell(props, features); }",
+  },
 ];
 
 const kb = (bytes) => bytes / 1024;
@@ -31,7 +38,7 @@ const gzipBytes = (buf) => gzipSync(buf, { level: 9 }).length;
 
 async function measure(config) {
   const result = await build({
-    stdin: { contents: config.code, resolveDir: `${ROOT}packages/react/src`, loader: 'ts', sourcefile: `size-${config.name}.ts` },
+    stdin: { contents: config.code, resolveDir: `${ROOT}packages/react/src`, loader: 'tsx', sourcefile: `size-${config.name}.tsx` },
     bundle: true,
     minify: true,
     format: 'esm',
@@ -76,18 +83,18 @@ for (const config of CONFIGS) {
   rows.push({ config, size: await measure(config), limit: budget.limits?.[config.name]?.initialGzipKB });
 }
 
-const fmt = (value) => (value === undefined ? '-' : `${value.toFixed(1)} KB`);
+const fmt = (value) => (value === undefined ? '-' : `${value.toFixed(2)} KB`);
 console.log('バンドルサイズ(esbuild / minify / react 外部化 / gzip level 9)');
 // 日本語は表示幅が揃わないので、説明(label)は最後の列に置きます。
-console.log(['config'.padEnd(12), 'init gzip'.padStart(10), 'limit'.padStart(10), 'init min'.padStart(10), 'lazy gzip'.padStart(10), '  説明'].join(''));
+console.log(['config'.padEnd(12), 'init gzip'.padStart(12), 'limit'.padStart(12), 'init min'.padStart(12), 'lazy gzip'.padStart(12), '  説明'].join(''));
 for (const { config, size, limit } of rows) {
   console.log(
     [
       config.name.padEnd(12),
-      fmt(size.initialGzipKB).padStart(10),
-      fmt(limit).padStart(10),
-      fmt(size.initialMinKB).padStart(10),
-      fmt(size.lazyGzipKB).padStart(10),
+      fmt(size.initialGzipKB).padStart(12),
+      fmt(limit).padStart(12),
+      fmt(size.initialMinKB).padStart(12),
+      fmt(size.lazyGzipKB).padStart(12),
       `  ${config.label}`,
     ].join(''),
   );
