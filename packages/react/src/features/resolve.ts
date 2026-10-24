@@ -1,7 +1,9 @@
 // 追加(差し込み式 段階 2): 利用側が渡した機能セット(一部だけでもよい)を、シェルが受け取る形(GridShellFeatures)へ
 //   そろえます。hook の部品が無い機能には何もしない / 何も描かない代役を入れます(シェルは hook を同じ位置で必ず呼ぶ)。
 //   代役は機能のモジュールを import しない(型だけ)ので、機能を外した構成に機能の本体を持ち込みません。全部入りの入口は
-//   全機能がそろった表を直接渡すため、このモジュール(代役)は全部入りの JS に入りません。
+//   全機能がそろった表を直接渡すため、このモジュール(React 側の代役と警告)は全部入りの JS に入りません。
+//   ※ エンジン側の代役(core engine/features.ts の createInert*)は createGridEngine / gridApi が直接参照するため
+//   全部入りにも入ります(どれも数行)。
 import { createInertExportCommands } from '@ishibashi0112/spreadsheet-grid-core/engine/features';
 import { warnUnregisteredFeatureMethod } from '@ishibashi0112/spreadsheet-grid-core/logic/featureWarnings';
 import type { FillHandleFeatureResult, GridShellFeatures, ReactGridFeatures } from './types';

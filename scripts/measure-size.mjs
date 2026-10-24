@@ -9,8 +9,12 @@
 //   - src: ソース(packages/*/src)を直接。ビルド不要だが、モジュールの並び順が dist と違うため gzip が ±1KB ほど
 //     揺れます(機能の部品を別ファイルへ移しただけで並びが変わる)。dist に入口が無い構成(移行中の機能セットなし)だけに使う。
 //   使い方: node scripts/measure-size.mjs           計測して表を出す
-//           node scripts/measure-size.mjs --check   上限を超えた構成があれば終了コード 1(CI)
+//           node scripts/measure-size.mjs --check   上限を超えた構成があれば終了コード 1(CI)。dist がソースより
+//                                                   古いときも 1(古い dist の値で通してしまわないため)
 //           node scripts/measure-size.mjs --update  上限を「今の値 + 余裕」に書き直す(機能を足して大きくなったとき)
+//           node scripts/measure-size.mjs --update=minimal   指定した構成の上限だけ書き直す(カンマ区切りで複数可。
+//                                                   移行中は full を固定し minimal だけ詰める)
+//   どのディレクトリから実行しても同じ結果になります(esbuild の作業ディレクトリをリポジトリ直下に固定)。
 import { build } from 'esbuild';
 import { readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -54,33 +58,44 @@ const coreDistPlugin = {
   },
 };
 
-// dist がソースより古ければ警告します(ビルドし忘れの計測を防ぐ)。
+// dist がソースより古いかを調べます(ビルドし忘れの計測を防ぐ)。パッケージごと(core / react)に、ソースの
+//   うちビルドに入るファイル(テスト・テスト用の補助・.md を除く)の最新の更新時刻と dist の入口を比べます。
+const isBuildSource = (name) => /\.(ts|tsx|css)$/.test(name) && !/\.test\.tsx?$/.test(name);
 const newestMtime = (dir) => {
   let newest = 0;
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
     const path = `${dir}/${entry.name}`;
-    newest = Math.max(newest, entry.isDirectory() ? newestMtime(path) : statSync(path).mtimeMs);
+    if (entry.isDirectory()) {
+      newest = Math.max(newest, newestMtime(path));
+    } else if (isBuildSource(entry.name)) {
+      newest = Math.max(newest, statSync(path).mtimeMs);
+    }
   }
   return newest;
 };
-const checkDistFresh = () => {
-  const distEntry = `${ROOT}packages/react/dist/index.js`;
-  let distMtime;
-  try {
-    distMtime = statSync(distEntry).mtimeMs;
-  } catch {
-    console.error('size: packages/react/dist がありません。先に `pnpm run build:lib` を実行してください。');
-    process.exit(1);
+// 古いパッケージの名前を返します(dist が無ければ終了)。
+const findStaleDists = () => {
+  const stale = [];
+  for (const pkg of ['core', 'react']) {
+    let distMtime;
+    try {
+      distMtime = statSync(`${ROOT}packages/${pkg}/dist/index.js`).mtimeMs;
+    } catch {
+      console.error(`size: packages/${pkg}/dist がありません。先に \`pnpm run build:lib\` を実行してください。`);
+      process.exit(1);
+    }
+    if (newestMtime(`${ROOT}packages/${pkg}/src`) > distMtime) {
+      stale.push(pkg);
+    }
   }
-  const srcMtime = Math.max(newestMtime(`${ROOT}packages/core/src`), newestMtime(`${ROOT}packages/react/src`));
-  if (srcMtime > distMtime) {
-    console.warn('size: 警告 — dist がソースより古いです(`pnpm run build:lib` をやり直すと正しい値になります)。');
-  }
+  return stale;
 };
 
 async function measure(config) {
   const fromDist = config.source === 'dist';
   const result = await build({
+    // metafile の出力パスは作業ディレクトリ基準の相対パスになるため、リポジトリ直下に固定します(下の absolute)。
+    absWorkingDir: ROOT,
     stdin: fromDist
       ? { contents: config.code, resolveDir: ROOT, loader: 'js', sourcefile: `size-${config.name}.js` }
       : { contents: config.code, resolveDir: `${ROOT}packages/react/src`, loader: 'tsx', sourcefile: `size-${config.name}.tsx` },
@@ -111,7 +126,17 @@ async function measure(config) {
     }
   };
   walk(entryKey);
-  const concat = (keys) => Buffer.concat(keys.map((key) => Buffer.from(contentOf.get(absolute(key)) ?? new Uint8Array())));
+  const concat = (keys) =>
+    Buffer.concat(
+      keys.map((key) => {
+        const content = contentOf.get(absolute(key));
+        // 見つからないまま 0 バイトとして数えると、上限を黙って通してしまうため止めます。
+        if (content === undefined) {
+          throw new Error(`size: 出力 ${key} の中身が見つかりません(パスの解決がずれています)`);
+        }
+        return Buffer.from(content);
+      }),
+    );
   const jsKeys = Object.keys(outputs).filter((key) => key.endsWith('.js'));
   const initialBuf = concat([...initial]);
   const lazyBuf = concat(jsKeys.filter((key) => !initial.has(key)));
@@ -122,10 +147,25 @@ async function measure(config) {
   };
 }
 
-const args = new Set(process.argv.slice(2));
+const argv = process.argv.slice(2);
+const args = new Set(argv);
+// --update(全部)/ --update=a,b(指定した構成だけ)。
+const updateArg = argv.find((arg) => arg === '--update' || arg.startsWith('--update='));
+const updateTargets =
+  updateArg === undefined ? null : updateArg === '--update' ? CONFIGS.map((config) => config.name) : updateArg.slice('--update='.length).split(',');
+if (updateTargets) {
+  const unknown = updateTargets.filter((name) => !CONFIGS.some((config) => config.name === name));
+  if (unknown.length > 0) {
+    console.error(`size: --update の構成名が不明です: ${unknown.join(', ')}`);
+    process.exit(1);
+  }
+}
 const budget = JSON.parse(readFileSync(BUDGET_PATH, 'utf8'));
-if (CONFIGS.some((config) => config.source === 'dist')) {
-  checkDistFresh();
+const staleDists = CONFIGS.some((config) => config.source === 'dist') ? findStaleDists() : [];
+if (staleDists.length > 0) {
+  console.warn(
+    `size: 警告 — dist がソースより古いです(${staleDists.join(', ')})。\`pnpm run build:lib\` をやり直すと正しい値になります。`,
+  );
 }
 const rows = [];
 for (const config of CONFIGS) {
@@ -149,16 +189,22 @@ for (const { config, size, limit } of rows) {
   );
 }
 
-if (args.has('--update')) {
-  const limits = {};
+if (updateTargets) {
+  const limits = { ...budget.limits };
   for (const { config, size } of rows) {
-    limits[config.name] = { initialGzipKB: Math.ceil((size.initialGzipKB + UPDATE_SLACK_KB) * 10) / 10 };
+    if (updateTargets.includes(config.name)) {
+      limits[config.name] = { initialGzipKB: Math.ceil((size.initialGzipKB + UPDATE_SLACK_KB) * 10) / 10 };
+    }
   }
   writeFileSync(BUDGET_PATH, JSON.stringify({ ...budget, limits }, null, 2));
-  console.log(`\n上限を書き直しました: ${BUDGET_PATH}`);
+  console.log(`\n上限を書き直しました(${updateTargets.join(', ')}): ${BUDGET_PATH}`);
 }
 
 if (args.has('--check')) {
+  if (staleDists.length > 0) {
+    console.error('size: dist が古いままでは正しく測れません。`pnpm run build:lib` の後に実行してください。');
+    process.exit(1);
+  }
   const over = rows.filter(({ size, limit }) => limit === undefined || size.initialGzipKB > limit);
   if (over.length > 0) {
     for (const { config, size, limit } of over) {

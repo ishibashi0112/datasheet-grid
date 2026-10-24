@@ -7,7 +7,9 @@ import { warnUnregisteredFeatureProps } from '@ishibashi0112/spreadsheet-grid-co
 import type { ReactGridFeatures } from '../features/types';
 import type { SpreadsheetGridProps } from '../model/gridTypes';
 
-// 型だけの宣言です(利用側のバンドラが process.env.NODE_ENV を文字列へ置き換える)。
+// 型だけの宣言です(利用側のバンドラが process.env.NODE_ENV を文字列へ置き換える)。typeof で守らないのは、守ると
+//   本番でも開発用の分岐が消えなくなるためです(置き換えは React 自身(react パッケージ)も前提にしているので、
+//   React の入ったバンドルでは必ず行われています)。
 declare const process: { env: { NODE_ENV?: string } };
 
 type FeatureName = keyof ReactGridFeatures;

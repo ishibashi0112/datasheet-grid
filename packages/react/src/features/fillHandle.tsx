@@ -1,6 +1,6 @@
 // 追加(差し込み式 段階 2): フィルハンドル(fillHandle prop)の機能です。中身はシェル(GridShell.tsx)にあった
 //   フィルハンドルの節をそのまま移したもので、シェルは元の位置で useFillHandle を呼びます(中の hook の順番は
-//   シェルにあったときと同じ)。機能セットに無い構成では代役(features/inert.ts。何も描かない)が受けます。
+//   シェルにあったときと同じ)。機能セットに無い構成では代役(features/resolve.ts。何も描かない)が受けます。
 import { useCallback, useMemo, type PointerEvent } from 'react';
 import {
   FillHandle,

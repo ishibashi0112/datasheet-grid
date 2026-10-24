@@ -71,7 +71,8 @@ import {
 export const SERVER_SIDE_QUERY_DEBOUNCE_MS = 300;
 
 export type GridEngineInit<T> = {
-  // 追加(差し込み式 段階 2): 機能セット(engine/features.ts)。無い機能は何もしない代役が受けます。
+  // 追加(差し込み式 段階 2): 機能セット(engine/features.ts)。無い機能は何もしない代役が受けます(全機能は
+  //   engine/fullFeatures.ts の fullCoreFeatures)。
   features: GridCoreFeatures;
   // 初期 store 状態(初回の visibleColumns)を作るための列解決入力。
   columnInputs: ColumnResolutionInputs<T>;
