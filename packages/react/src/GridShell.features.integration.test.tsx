@@ -9,8 +9,10 @@ import { createSpreadsheetGrid } from './createSpreadsheetGrid';
 import { findFeature } from './features/find';
 import { fillHandleFeature } from './features/fillHandle';
 import { columnReorderFeature } from './features/columnReorder';
+import { rowDragFeature } from './features/rowDrag';
 import { installJsdomLayoutStubs } from './testing';
 import { resetUnregisteredFeatureWarnings } from '@ishibashi0112/spreadsheet-grid-core/logic/featureWarnings';
+import { ROW_DRAG_HANDLE_COLUMN_KEY } from '@ishibashi0112/spreadsheet-grid-core/logic/rowReorder';
 import type { GridColumn, SpreadsheetGridHandle } from './model/gridTypes';
 
 type Row = { id: number; name: string };
@@ -24,6 +26,7 @@ const MinimalGrid = createSpreadsheetGrid({ features: {} });
 const FindOnlyGrid = createSpreadsheetGrid({ features: { find: findFeature } });
 const FillOnlyGrid = createSpreadsheetGrid({ features: { fillHandle: fillHandleFeature } });
 const ColumnReorderOnlyGrid = createSpreadsheetGrid({ features: { columnReorder: columnReorderFeature } });
+const RowDragOnlyGrid = createSpreadsheetGrid({ features: { rowDrag: rowDragFeature } });
 
 let restore: () => void;
 beforeAll(() => {
@@ -180,5 +183,36 @@ describe('差し込み式: columnReorder', () => {
     );
     expect(container.querySelectorAll('.ssg-header-grip')).toHaveLength(columns.length);
     expect(container.querySelectorAll('.ssg-col-drop-indicator')).toHaveLength(3);
+  });
+});
+
+describe('差し込み式: rowDrag', () => {
+  it('機能セットに無ければ enableRowDrag を渡してもハンドル列とガイド線を出さず、開発時に 1 回だけ警告する', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const ref = createRef<SpreadsheetGridHandle<Row>>();
+    const { container } = render(
+      <MinimalGrid ref={ref} rows={rows} columns={columns} rowKeyGetter={(r) => r.id} onRowsChange={() => {}} enableRowDrag />,
+    );
+    expect(container.querySelectorAll('.ssg-row-drag-handle')).toHaveLength(0);
+    expect(container.querySelectorAll('.ssg-row-drop-indicator')).toHaveLength(0);
+    // ハンドル列(合成列)を作らない。
+    expect(container.querySelector(`[data-ssg-col-key="${ROW_DRAG_HANDLE_COLUMN_KEY}"]`)).toBeNull();
+    const warnings = warn.mock.calls.filter(([message]) => String(message).includes('`enableRowDrag`'));
+    expect(warnings).toHaveLength(1);
+  });
+
+  it('rowDrag だけを入れた構成ではハンドルとガイド線が出て、moveRow で並べ替えられる', () => {
+    const ref = createRef<SpreadsheetGridHandle<Row>>();
+    const onRowsChange = vi.fn<(next: Row[]) => void>();
+    const { container } = render(
+      <RowDragOnlyGrid ref={ref} rows={rows} columns={columns} rowKeyGetter={(r) => r.id} onRowsChange={onRowsChange} enableRowDrag />,
+    );
+    expect(container.querySelector(`[data-ssg-col-key="${ROW_DRAG_HANDLE_COLUMN_KEY}"]`)).not.toBeNull();
+    expect(container.querySelectorAll('.ssg-row-drag-handle')).toHaveLength(rows.length);
+    expect(container.querySelectorAll('.ssg-row-drop-indicator').length).toBeGreaterThan(0);
+    act(() => {
+      ref.current?.moveRow(2, 0);
+    });
+    expect(onRowsChange.mock.calls[0]?.[0].map((r) => r.name)).toEqual(['beta', 'alpha']);
   });
 });

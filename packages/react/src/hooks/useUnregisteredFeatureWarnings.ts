@@ -20,6 +20,7 @@ const FEATURE_PROPS: {
   fillHandle: { prop: 'fillHandle', isUsed: (props) => Boolean(props.fillHandle) },
   // 列の並べ替えは onColumnsChange で有効になる(リサイズ等と共通の prop なので、それでは警告しない)。
   columnReorder: { prop: 'columnDragMotion', isUsed: (props) => props.columnDragMotion !== undefined },
+  rowDrag: { prop: 'enableRowDrag', isUsed: (props) => props.enableRowDrag === true },
 };
 
 function useUnregisteredFeatureWarningsInDev<T extends object>(

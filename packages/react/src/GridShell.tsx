@@ -7,7 +7,6 @@ import {
   useEffect,
   // 追加(audit V-05): アクティブセルの DOM id(aria-activedescendant)をグリッドごとに一意にします。
   useId,
-  useLayoutEffect,
   useMemo,
   useCallback,
   // 追加(11-B7): グローバルフィルタ評価の遅延化(Transition 化)に使います。
@@ -82,8 +81,7 @@ import {
   resolveSelectionExtents,
 } from '@ishibashi0112/spreadsheet-grid-core/logic/selectionOverlayGeometry';
 // 変更(差し込み式 段階 2): ヘッダー D&D 列並べ替えは機能セット(features.columnReorder)から受け取ります(無ければ代役)。
-// 追加(row-drag ③): 行ドラッグ並び替え controller です。
-import { useRowDragController } from './hooks/useRowDragController';
+// 変更(差し込み式 段階 2): 行ドラッグ並び替えは機能セット(features.rowDrag)から受け取ります(無ければ代役)。
 import {
   // 追加(12-A): set フィルター値の判定 / 構築に使います。
   isSetColumnFilterValue,
@@ -155,7 +153,6 @@ import {
   DEFAULT_DETAIL_ROW_HEIGHT,
   DETAIL_TOGGLE_COLUMN_KEY,
   isInsideDetailCardOf,
-  isSyntheticColumnKey,
   seedDetailIndexCache,
 } from '@ishibashi0112/spreadsheet-grid-core/logic/detailRow';
 // 追加(label-row ②): ラベル行(見出し / 区切り行)の SSRM ラッパです。
@@ -164,9 +161,7 @@ import type { GridBodyLabelRowLayer } from './view/GridBodyLayer';
 import { GridStickyLabelLayer, type GridStickyLabelEntry } from './view/GridStickyLabelLayer';
 // 追加(row-drag ③): 行ドラッグ並び替えの純ロジック(ハンドル列キー / 配列移動 / ゲート判定)です。
 import {
-  ROW_DRAG_DISABLED_TOOLTIP,
   ROW_DRAG_HANDLE_COLUMN_KEY,
-  ROW_DRAG_HANDLE_TOOLTIP,
   moveArrayItem,
 } from '@ishibashi0112/spreadsheet-grid-core/logic/rowReorder';
 // 追加(imperative API #1): CSV エクスポート / スクロール先算出の純ロジックです。
@@ -3317,54 +3312,27 @@ export function useGridShell<T extends object>({
     },
     [isServerSide, rows, resolvedRowKeyGetter, commitRowMove],
   );
-  // ゴーストのラベル: 先頭の(合成列でない)表示列の表示値。空なら「行 N」。
-  const getRowDragLabel = useCallback(
-    (viewIndex: number): string => {
-      const fallback = `行 ${viewIndex + 1}`;
-      const row = rowModel.getRow(viewIndex);
-      if (!row) {
-        return fallback;
-      }
-      const column = visibleColumns.find(
-        (candidate) => !isSyntheticColumnKey(candidate.key),
-      );
-      if (!column) {
-        return fallback;
-      }
-      const value = getCellValue(row, column);
-      const text = column.valueFormatter
-        ? column.valueFormatter({ value, row, column })
-        : String(value ?? '');
-      return text.trim().length > 0 ? text : fallback;
-    },
-    [rowModel, visibleColumns],
-  );
-  const {
-    onRowDragHandlePointerDown,
-    leftIndicatorRef: leftRowDropIndicatorRef,
-    centerIndicatorRef: centerRowDropIndicatorRef,
-    rightIndicatorRef: rightRowDropIndicatorRef,
-    applyReorderSettle: applyRowReorderSettle,
-  } = useRowDragController({
-    enabled: rowDragOperable,
-    rowMetrics,
-    headerHeight,
-    footerHeight,
-    verticalScaleFactor,
-    windowBaseOffsetPx: overlayBaseOffset,
-    scrollContainerRef,
-    bodyScrollRef,
-    getRowDragLabel,
-    commitRowMove,
-    ghostSlot: slots.dragGhost,
-    // 追加(motion-8 / M-11): 'live' では掴んだ行が追従し周りの行が退避する(motion='off' では ghost へフォールバック)。
-    motion: resolvedMotion === 'off' ? 'ghost' : rowDragMotion,
-  });
-  // 行の並び替え確定(rowModel 差し替え)後に settle アニメを発火します。直前のドロップで armed の
-  //   ときだけ動き、それ以外(編集 / フィルター等の rowModel 変化)は即 return するため無害です。
-  useLayoutEffect(() => {
-    applyRowReorderSettle();
-  }, [rowModel, applyRowReorderSettle]);
+  // 変更(差し込み式 段階 2): ゴーストのラベル / controller の接続 / settle の layout effect と、ハンドル列のセル・
+  //   ガイド線の描画は機能セットの hook(features/rowDrag.tsx)へ移し、この位置で呼びます(hook の順番は従来どおり)。
+  //   機能セットに無い構成では enableRowDrag が false 扱い(createSpreadsheetGrid)で、ハンドル列もガイド線も出ません。
+  const { renderHandleCell: renderRowDragHandleCell, renderDropIndicator: renderRowDropIndicator } =
+    features.rowDrag.useRowDrag<T>({
+      enabled: rowDragOperable,
+      rowMetrics,
+      headerHeight,
+      footerHeight,
+      verticalScaleFactor,
+      windowBaseOffsetPx: overlayBaseOffset,
+      scrollContainerRef,
+      bodyScrollRef,
+      commitRowMove,
+      ghostSlot: slots.dragGhost,
+      // 追加(motion-8 / M-11): 'live' では掴んだ行が追従し周りの行が退避する(motion='off' では ghost へフォールバック)。
+      motion: resolvedMotion === 'off' ? 'ghost' : rowDragMotion,
+      rowModel,
+      visibleColumns,
+      isRowDraggable,
+    });
 
   // 追加(13-B3-2): reorder 可能(controlled columns)なときだけバッジを grip 化します。
   //   未指定時はバッジが通常表示になり、列範囲選択など既存挙動は完全に従来どおりです。
@@ -3536,50 +3504,9 @@ export function useGridShell<T extends object>({
     ) => {
       const value = getCellValue(row, column);
 
-      // 追加(row-drag ③): 行ドラッグハンドル列(合成列)の本体です。掴み手の pointerdown だけで
-      //   ドラッグを開始し(セル選択へは伝播させない)、ソート / フィルター中は淡色 + 理由の
-      //   ツールチップにします。isRowDraggable が false の行にはハンドルを出しません。
+      // 追加(row-drag ③): 行ドラッグハンドル列(合成列)の本体です(変更(差し込み式 段階 2): 描画は features.rowDrag)。
       if (column.key === ROW_DRAG_HANDLE_COLUMN_KEY) {
-        if (isRowDraggable) {
-          const sourceRowIndex = rowModel.getSourceIndex(rowIndex) ?? rowIndex;
-          const rowKey = rowModel.getRowKey(rowIndex) ?? rowIndex;
-          if (!isRowDraggable(row, { rowKey, sourceRowIndex })) {
-            return null;
-          }
-        }
-        return (
-          <span
-            className={cx(
-              'ssg-row-drag-handle',
-              !rowDragOperable && 'ssg-row-drag-handle--disabled',
-            )}
-            data-ssg-tooltip={
-              rowDragOperable ? ROW_DRAG_HANDLE_TOOLTIP : ROW_DRAG_DISABLED_TOOLTIP
-            }
-            aria-hidden="true"
-            onPointerDown={
-              rowDragOperable
-                ? (event) => onRowDragHandlePointerDown(rowIndex, event)
-                : undefined
-            }
-          >
-            <svg
-              width="8"
-              height="14"
-              viewBox="0 0 8 14"
-              fill="currentColor"
-              aria-hidden="true"
-              focusable="false"
-            >
-              <circle cx="2" cy="3" r="1" />
-              <circle cx="6" cy="3" r="1" />
-              <circle cx="2" cy="7" r="1" />
-              <circle cx="6" cy="7" r="1" />
-              <circle cx="2" cy="11" r="1" />
-              <circle cx="6" cy="11" r="1" />
-            </svg>
-          </span>
-        );
+        return renderRowDragHandleCell(row, rowIndex);
       }
 
       if (column.renderCell) {
@@ -3731,9 +3658,7 @@ export function useGridShell<T extends object>({
       detailIsExpandable,
       toggleDetailRowAt,
       setDetailRowExpandedAt,
-      isRowDraggable,
-      rowDragOperable,
-      onRowDragHandlePointerDown,
+      renderRowDragHandleCell,
     ],
   );
 
@@ -4614,12 +4539,8 @@ export function useGridShell<T extends object>({
                   renderCard={renderDetailCard}
                 />
                 {/* 追加(row-drag ③): 行ドロップ位置のガイド線(左固定ペイン分)。 */}
-                {rowDragAvailable && (
-                  <div
-                    ref={leftRowDropIndicatorRef}
-                    className="ssg-row-drop-indicator ssg-row-drop-indicator--cap"
-                  />
-                )}
+                {rowDragAvailable &&
+                  renderRowDropIndicator('left', 'ssg-row-drop-indicator ssg-row-drop-indicator--cap')}
                 </div>
                 {/* 追加(合計行 3A): 下端に固定する合計行(本体ぶんの空きの直後 = ボックスの下端の sticky 行)。 */}
                 {renderTotalRow('left', true, leftLeadingWidth, leftRenderEntries)}
@@ -4832,16 +4753,15 @@ export function useGridShell<T extends object>({
                   renderCard={renderDetailCard}
                 />
                 {/* 追加(row-drag ③): 行ドロップ位置のガイド線(中央ペイン分)。 */}
-                {rowDragAvailable && (
-                  <div
-                    ref={centerRowDropIndicatorRef}
-                    className={cx(
+                {rowDragAvailable &&
+                  renderRowDropIndicator(
+                    'center',
+                    cx(
                       'ssg-row-drop-indicator',
                       // 左固定ペインが無いときは中央が最左 = キャップ付き。
                       centerOwnsRowHeader && 'ssg-row-drop-indicator--cap',
-                    )}
-                  />
-                )}
+                    ),
+                  )}
               </div>
               {/* 追加(合計行 3A): 下端に固定する合計行(本体ぶんの空きの直後 = ボックスの下端の sticky 行)。 */}
               {renderTotalRow('center', centerOwnsRowHeader, centerLeadingWidth, centerRenderEntries)}
@@ -5045,9 +4965,7 @@ export function useGridShell<T extends object>({
                   renderCard={renderDetailCard}
                 />
                 {/* 追加(row-drag ③): 行ドロップ位置のガイド線(右固定ペイン分)。 */}
-                {rowDragAvailable && (
-                  <div ref={rightRowDropIndicatorRef} className="ssg-row-drop-indicator" />
-                )}
+                {rowDragAvailable && renderRowDropIndicator('right', 'ssg-row-drop-indicator')}
                 </div>
                 {/* 追加(合計行 3A): 下端に固定する合計行(本体ぶんの空きの直後 = ボックスの下端の sticky 行)。 */}
                 {renderTotalRow('right', false, rightLeadingWidth, rightRenderEntries)}

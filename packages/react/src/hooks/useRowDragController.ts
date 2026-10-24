@@ -5,7 +5,7 @@ import { useRef, type RefObject } from 'react';
 import { createRowDragController, type RowDragArgs } from '@ishibashi0112/spreadsheet-grid-core/controllers/rowDragController';
 import { useController } from './useController';
 
-type UseRowDragControllerArgs = Omit<
+export type UseRowDragControllerArgs = Omit<
   RowDragArgs,
   'scrollContainerRef' | 'bodyScrollRef' | 'leftIndicatorRef' | 'centerIndicatorRef' | 'rightIndicatorRef'
 > & {

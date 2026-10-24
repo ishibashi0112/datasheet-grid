@@ -14,6 +14,7 @@ import type { DetailRowExtra, RowMetrics } from '@ishibashi0112/spreadsheet-grid
 import type { GridColumn, GridUiState, RowModel, SpreadsheetGridProps } from '../model/gridTypes';
 import type { GridFindBar } from '../view/GridFindBar';
 import type { UseColumnHeaderDragControllerArgs } from '../hooks/useColumnHeaderDragController';
+import type { UseRowDragControllerArgs } from '../hooks/useRowDragController';
 
 // フィルハンドル(fillHandle)の hook が受け取るシェルの値です(シェルにあったときの自由変数そのまま)。
 export type FillHandleFeatureArgs<T> = {
@@ -68,6 +69,20 @@ export type ColumnReorderFeatureResult<T> = {
   renderDropIndicator: (pane: ColumnPane, style: CSSProperties) => ReactNode;
 };
 
+// 行ドラッグによる並べ替え(rowDrag)の hook が受け取る値(コントローラの引数 + ラベル / ハンドルの描画に使う値)と
+//   返す値です。
+export type RowDragFeatureArgs<T> = Omit<UseRowDragControllerArgs, 'getRowDragLabel'> & {
+  rowModel: RowModel<T>;
+  visibleColumns: GridColumn<T>[];
+  isRowDraggable: SpreadsheetGridProps<T>['isRowDraggable'];
+};
+export type RowDragFeatureResult<T> = {
+  // 行ドラッグハンドル列(合成列)のセルの中身。
+  renderHandleCell: (row: T, rowIndex: number) => ReactNode;
+  // 各ペインの行ドロップ位置のガイド線。
+  renderDropIndicator: (pane: ColumnPane, className: string) => ReactNode;
+};
+
 export type ReactGridFeatures = {
   // セル内検索(F-2): 走査のコントローラ(core)+ 検索バー + セル文字列のヒット分割。
   find?: NonNullable<GridCoreFeatures['find']> & {
@@ -82,10 +97,14 @@ export type ReactGridFeatures = {
   columnReorder?: {
     useColumnReorder: <T>(args: ColumnReorderFeatureArgs<T>) => ColumnReorderFeatureResult<T>;
   };
+  // 行ドラッグによる行の並べ替え(row-drag / M-11): ハンドル列のセル / ガイド線 / live 方式。
+  rowDrag?: {
+    useRowDrag: <T>(args: RowDragFeatureArgs<T>) => RowDragFeatureResult<T>;
+  };
 };
 
 // シェルが受け取る機能セット: hook の部品を持つ機能は必ずある(無い機能は代役)。それ以外の機能は省略のまま
 //   (シェルが ?. で見て、無ければ何もしない)。
-type HookFeatureName = 'fillHandle' | 'columnReorder';
+type HookFeatureName = 'fillHandle' | 'columnReorder' | 'rowDrag';
 export type GridShellFeatures = Omit<ReactGridFeatures, HookFeatureName> &
   Required<Pick<ReactGridFeatures, HookFeatureName>>;

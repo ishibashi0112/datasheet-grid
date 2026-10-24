@@ -23,8 +23,20 @@ const inertColumnReorderFeature: GridShellFeatures['columnReorder'] = {
   useColumnReorder: () => INERT_COLUMN_REORDER,
 };
 
+// 行ドラッグが無い構成では enableRowDrag を false として扱う(createSpreadsheetGrid)ので、ハンドル列もガイド線も
+//   出ません(代役の描画は呼ばれない)。
+const INERT_ROW_DRAG = {
+  renderHandleCell: () => null,
+  renderDropIndicator: () => null,
+};
+
+const inertRowDragFeature: GridShellFeatures['rowDrag'] = {
+  useRowDrag: () => INERT_ROW_DRAG,
+};
+
 export const resolveGridShellFeatures = (features: ReactGridFeatures): GridShellFeatures => ({
   ...features,
   fillHandle: features.fillHandle ?? inertFillHandleFeature,
   columnReorder: features.columnReorder ?? inertColumnReorderFeature,
+  rowDrag: features.rowDrag ?? inertRowDragFeature,
 });
