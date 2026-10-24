@@ -7,12 +7,14 @@
 import type { CSSProperties, ReactNode } from 'react';
 import type { GridCoreFeatures } from '@ishibashi0112/spreadsheet-grid-core/engine/features';
 import type { splitTextByFindRanges } from '@ishibashi0112/spreadsheet-grid-core/logic/find';
+import type { resolveScrollHintOptions } from '@ishibashi0112/spreadsheet-grid-core/logic/scrollHint';
 import type { FillHandleControllerArgs } from '@ishibashi0112/spreadsheet-grid-core/controllers/fillHandleController';
 import type { ColumnHeaderDragController } from '@ishibashi0112/spreadsheet-grid-core/controllers/columnHeaderDragController';
 import type { ColumnPane, GridPaneLayout } from '@ishibashi0112/spreadsheet-grid-core/logic/geometry';
 import type { DetailRowExtra, RowMetrics } from '@ishibashi0112/spreadsheet-grid-core/logic/verticalGeometry';
 import type { GridColumn, GridUiState, RowModel, SpreadsheetGridProps } from '../model/gridTypes';
 import type { GridFindBar } from '../view/GridFindBar';
+import type { GridScrollHint } from '../view/GridScrollHint';
 import type { UseColumnHeaderDragControllerArgs } from '../hooks/useColumnHeaderDragController';
 import type { UseRowDragControllerArgs } from '../hooks/useRowDragController';
 
@@ -96,6 +98,11 @@ export type ReactGridFeatures = {
   // 列ヘッダーのドラッグによる列の並べ替え(13-B3 / M-12): grip / ドロップの縦線 / live 方式。
   columnReorder?: {
     useColumnReorder: <T>(args: ColumnReorderFeatureArgs<T>) => ColumnReorderFeatureResult<T>;
+  };
+  // スクロール位置インジケーター(scrollHint): オプションの解決 + 描画部品。
+  scrollHint?: {
+    resolveScrollHintOptions: typeof resolveScrollHintOptions;
+    ScrollHint: typeof GridScrollHint;
   };
   // 行ドラッグによる行の並べ替え(row-drag / M-11): ハンドル列のセル / ガイド線 / live 方式。
   rowDrag?: {

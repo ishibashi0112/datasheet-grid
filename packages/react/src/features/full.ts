@@ -4,6 +4,7 @@ import { columnReorderFeature } from './columnReorder';
 import { fillHandleFeature } from './fillHandle';
 import { findFeature } from './find';
 import { rowDragFeature } from './rowDrag';
+import { scrollHintFeature } from './scrollHint';
 import type { ReactGridFeatures } from './types';
 
 export const fullGridFeatures: Required<ReactGridFeatures> = {
@@ -11,4 +12,5 @@ export const fullGridFeatures: Required<ReactGridFeatures> = {
   fillHandle: fillHandleFeature,
   columnReorder: columnReorderFeature,
   rowDrag: rowDragFeature,
+  scrollHint: scrollHintFeature,
 };

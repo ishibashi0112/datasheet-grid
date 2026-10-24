@@ -21,6 +21,7 @@ const FEATURE_PROPS: {
   // 列の並べ替えは onColumnsChange で有効になる(リサイズ等と共通の prop なので、それでは警告しない)。
   columnReorder: { prop: 'columnDragMotion', isUsed: (props) => props.columnDragMotion !== undefined },
   rowDrag: { prop: 'enableRowDrag', isUsed: (props) => props.enableRowDrag === true },
+  scrollHint: { prop: 'scrollHint', isUsed: (props) => props.scrollHint !== undefined && props.scrollHint !== false },
 };
 
 function useUnregisteredFeatureWarningsInDev<T extends object>(

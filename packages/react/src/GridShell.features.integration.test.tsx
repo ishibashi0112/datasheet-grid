@@ -10,6 +10,7 @@ import { findFeature } from './features/find';
 import { fillHandleFeature } from './features/fillHandle';
 import { columnReorderFeature } from './features/columnReorder';
 import { rowDragFeature } from './features/rowDrag';
+import { scrollHintFeature } from './features/scrollHint';
 import { installJsdomLayoutStubs } from './testing';
 import { resetUnregisteredFeatureWarnings } from '@ishibashi0112/spreadsheet-grid-core/logic/featureWarnings';
 import { ROW_DRAG_HANDLE_COLUMN_KEY } from '@ishibashi0112/spreadsheet-grid-core/logic/rowReorder';
@@ -27,6 +28,7 @@ const FindOnlyGrid = createSpreadsheetGrid({ features: { find: findFeature } });
 const FillOnlyGrid = createSpreadsheetGrid({ features: { fillHandle: fillHandleFeature } });
 const ColumnReorderOnlyGrid = createSpreadsheetGrid({ features: { columnReorder: columnReorderFeature } });
 const RowDragOnlyGrid = createSpreadsheetGrid({ features: { rowDrag: rowDragFeature } });
+const ScrollHintOnlyGrid = createSpreadsheetGrid({ features: { scrollHint: scrollHintFeature } });
 
 let restore: () => void;
 beforeAll(() => {
@@ -214,5 +216,25 @@ describe('差し込み式: rowDrag', () => {
       ref.current?.moveRow(2, 0);
     });
     expect(onRowsChange.mock.calls[0]?.[0].map((r) => r.name)).toEqual(['beta', 'alpha']);
+  });
+});
+
+describe('差し込み式: scrollHint', () => {
+  it('機能セットに無ければ scrollHint を渡してもインジケーターを出さずネイティブのスクロールバーのまま、開発時に 1 回だけ警告する', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const { container } = render(
+      <MinimalGrid rows={rows} columns={columns} rowKeyGetter={(r) => r.id} scrollHint={{ scrollbar: true }} />,
+    );
+    expect(container.querySelector('.ssg-scroll-hint')).toBeNull();
+    expect(container.querySelector('.ssg-scroll-container--custom-scrollbar')).toBeNull();
+    const warnings = warn.mock.calls.filter(([message]) => String(message).includes('`scrollHint`'));
+    expect(warnings).toHaveLength(1);
+  });
+
+  it('scrollHint だけを入れた構成ではカスタムスクロールバーになる', () => {
+    const { container } = render(
+      <ScrollHintOnlyGrid rows={rows} columns={columns} rowKeyGetter={(r) => r.id} scrollHint={{ scrollbar: true }} />,
+    );
+    expect(container.querySelector('.ssg-scroll-container--custom-scrollbar')).not.toBeNull();
   });
 });

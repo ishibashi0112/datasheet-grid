@@ -274,9 +274,7 @@ import type {
 } from './view/FilterManagementPanel';
 // 追加(FM-2): フィルターチップバー(適用中の列フィルターの常時表示 / opt-in)です。
 import GridFilterChipBar from './view/GridFilterChipBar';
-// 追加(scrollHint): スクロール位置インジケーター(行番号バブル)のオーバーレイです。
-import { GridScrollHint } from './view/GridScrollHint';
-import { resolveScrollHintOptions } from '@ishibashi0112/spreadsheet-grid-core/logic/scrollHint';
+// 変更(差し込み式 段階 2): スクロール位置インジケーターは機能セット(features.scrollHint)から受け取ります。
 // 追加(バッチ②/コンテキストメニュー): 対象解決(純ロジック)/ controller / portal popover。
 import {
   resolveContextMenuColIndex,
@@ -542,9 +540,12 @@ export function useGridShell<T extends object>({
 
   // 追加(scrollHint): スクロール位置インジケーターのオプション解決です。
   //   null = 完全無効(オーバーレイ自体を描画しない)。boolean / オブジェクトの両形を吸収します。
+  // 変更(差し込み式 段階 2): 解決と描画部品は機能セット(features.scrollHint)から。無い構成では常に null(無効)。
+  const resolveScrollHint = features.scrollHint?.resolveScrollHintOptions;
+  const ScrollHint = features.scrollHint?.ScrollHint;
   const resolvedScrollHint = useMemo(
-    () => resolveScrollHintOptions<T, ReactGridTypes>(scrollHint),
-    [scrollHint],
+    () => (resolveScrollHint ? resolveScrollHint<T, ReactGridTypes>(scrollHint) : null),
+    [resolveScrollHint, scrollHint],
   );
 
   // ── refs ──────────────────────────────────────────────
@@ -5002,8 +5003,8 @@ export function useGridShell<T extends object>({
             filter overlay と同じくシェルへの絶対配置・pointer-events: none の装飾オーバーレイ。
             「スクロール中か」の活動状態はコンポーネント内部(自前 passive リスナー)が持ち、
             位置・行番号は親の scrollTop / 縦ジオメトリから毎レンダー導出します。 */}
-        {activeScrollHint !== null && (
-          <GridScrollHint
+        {activeScrollHint !== null && ScrollHint && (
+          <ScrollHint
             slot={slots.scrollHint}
             options={activeScrollHint}
             scrollContainerRef={scrollContainerRef}
