@@ -47,6 +47,8 @@ import type { UseColumnHeaderDragControllerArgs } from '../hooks/useColumnHeader
 import type { UseRowDragControllerArgs } from '../hooks/useRowDragController';
 import type { UseColumnMenuControllerArgs, UseColumnMenuControllerResult } from '../hooks/useColumnMenuController';
 import type { ColumnMenuPopover } from '../view/ColumnMenuPopover';
+import type { UseToolPanelControllerArgs, UseToolPanelControllerResult } from '../hooks/useToolPanelController';
+import type { ToolPanelViews, UseLazyModuleOptions } from '../view/lazyPopups';
 
 // フィルハンドル(fillHandle)の hook が受け取るシェルの値です(シェルにあったときの自由変数そのまま)。
 export type FillHandleFeatureArgs<T> = {
@@ -129,6 +131,10 @@ export type ColumnAutosizeFeatureResult<T> = {
 //   あるかどうか(代役は false。シェルは enableColumnMenu && available で ⋮ ボタンとヘッダーの右クリックを出す)。
 export type ColumnMenuFeatureArgs<T> = UseColumnMenuControllerArgs<T>;
 export type ColumnMenuFeatureResult<T> = UseColumnMenuControllerResult<T> & { available: boolean };
+// ツールパネル(toolPanel)の hook が受け取る値と返す値です。available は機能セットにあるかどうか(代役は false。
+//   シェルはツールパネルを開く入口 = 列メニューの 3 項目 / 既定の上部バーの Filters チップを出さない)。
+export type ToolPanelFeatureArgs = UseToolPanelControllerArgs;
+export type ToolPanelFeatureResult = UseToolPanelControllerResult & { available: boolean };
 // セル / 行のコンテキストメニュー(contextMenu)の hook が受け取る値と返す値、右クリックの対象の解決に渡す値です。
 export type CellContextMenuFeatureArgs = {
   gridRootRef: RefObject<HTMLDivElement | null>;
@@ -202,6 +208,12 @@ export type ReactGridFeatures = {
     useColumnMenu: <T>(args: ColumnMenuFeatureArgs<T>) => ColumnMenuFeatureResult<T>;
     ColumnMenuPopover: typeof ColumnMenuPopover;
   };
+  // ツールパネル(UP-1): controller の接続 + 部品(別チャンク)の遅延読み込み。シェルはそれぞれ元の位置で呼ぶ
+  //   (useToolPanelViews は列フィルターの部品の読み込みの直後)。
+  toolPanel?: {
+    useToolPanel: (args: ToolPanelFeatureArgs) => ToolPanelFeatureResult;
+    useToolPanelViews: (options: UseLazyModuleOptions) => ToolPanelViews | null;
+  };
   // セル / 行のコンテキストメニュー(バッチ②): controller の接続 + popover、右クリックの対象の解決。
   contextMenu?: {
     useCellContextMenu: <T>(args: CellContextMenuFeatureArgs) => CellContextMenuFeatureResult<T>;
@@ -227,6 +239,7 @@ type HookFeatureName =
   | 'columnAutosize'
   | 'contextMenu'
   | 'selectionAggregates'
-  | 'columnMenu';
+  | 'columnMenu'
+  | 'toolPanel';
 export type GridShellFeatures = Omit<ReactGridFeatures, HookFeatureName> &
   Required<Pick<ReactGridFeatures, HookFeatureName>>;

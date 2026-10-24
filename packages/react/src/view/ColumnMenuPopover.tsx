@@ -76,14 +76,15 @@ type ColumnMenuPopoverProps = {
   //             canSort=true のときだけ、昇順/降順の下にリーフ項目として出します
   //             (サブメニューではなく別 popover を開く点は「列の表示」と同じ作法です)。
   //             クリックで列メニューを閉じてパネルを開く配線は SpreadsheetGrid 側が担います。
-  onOpenSortManager: () => void;
+  // 変更(差し込み式 段階 3): ツールパネルの機能が無い構成では渡さず、項目を出しません(下の 2 つも同じ)。
+  onOpenSortManager?: () => void;
   // 追加(FM-1): フィルター管理パネル(FilterManagementPanel)を開くハンドラです。
   //             canManageFilters はグリッドレベルの enableColumnFilter 相当です(canFilter と
   //             違い「この列に filterType があるか」は見ません — パネルは全列のフィルターを
   //             扱うためです)。canSort=false でも項目は出ます(並び替えブロックの直後)。
   //             クリックで列メニューを閉じてパネルを開く配線は SpreadsheetGrid 側が担います。
   canManageFilters: boolean;
-  onOpenFilterManager: () => void;
+  onOpenFilterManager?: () => void;
   // 追加: 開いている列の現在の固定状態です(✓ 表示に使います)。
   pinned: GridColumnPinned | undefined;
   // 追加: onColumnsChange 未指定時は false になり、固定切替の項目を無効化します
@@ -104,7 +105,7 @@ type ColumnMenuPopoverProps = {
   // 追加(13-B2-1): 列の表示/非表示パネル(ColumnChooserPanel)を開くハンドラです。
   //             この項目はサブメニューではなく別 popover を開くリーフ項目です
   //             (クリックで列メニューを閉じてパネルを開きます。配線は SpreadsheetGrid 側)。
-  onOpenColumnChooser: () => void;
+  onOpenColumnChooser?: () => void;
   // 追加(13-B2-3 / gpt5.5対応): 列メニュー root の「列のリセット」用です。
   //             columns は controlled props のため、onColumnsChange 未指定時は無効化します。
   canResetColumns: boolean;
@@ -334,20 +335,22 @@ export function ColumnMenuPopover({
               カスケード(列の固定)を閉じます。✓ 列ぶんのスペーサで他項目と左端を揃えます。
               クリックで列メニューを閉じてパネルを開く処理は SpreadsheetGrid 側
               (onOpenSortManager)が担います。 */}
-          <button
-            type="button"
-            onPointerEnter={() => {
-              setOpenSubmenuKey(null);
-            }}
-            onClick={() => {
-              onOpenSortManager();
-            }}
-            className={cx('ssg-menu-item', slots?.menuItem?.className)}
-            style={slots?.menuItem?.style}
-          >
-            <span className="ssg-menu-icon" />
-            <span className="ssg-menu-label">並び替えを管理…</span>
-          </button>
+          {onOpenSortManager && (
+            <button
+              type="button"
+              onPointerEnter={() => {
+                setOpenSubmenuKey(null);
+              }}
+              onClick={() => {
+                onOpenSortManager();
+              }}
+              className={cx('ssg-menu-item', slots?.menuItem?.className)}
+              style={slots?.menuItem?.style}
+            >
+              <span className="ssg-menu-icon" />
+              <span className="ssg-menu-label">並び替えを管理…</span>
+            </button>
+          )}
         </>
       )}
 
@@ -360,7 +363,7 @@ export function ColumnMenuPopover({
           hover で開いているカスケード(列の固定)を閉じ、✓ 列ぶんのスペーサで左端を
           揃えます。クリックで列メニューを閉じてパネルを開く処理は SpreadsheetGrid 側
           (onOpenFilterManager)が担います。 */}
-      {canManageFilters && (
+      {canManageFilters && onOpenFilterManager && (
         <button
           type="button"
           onPointerEnter={() => {
@@ -379,7 +382,8 @@ export function ColumnMenuPopover({
 
       {/* 変更(FM-1): 区切り(旧 13-B4)の条件を「ソート群のみ」→「ソート群または
           フィルターを管理…のいずれかが出ているとき」へ広げます(位置は不変)。 */}
-      {(canSort || canManageFilters) && <div className="ssg-menu-separator" />}
+      {/* 変更(差し込み式 段階 3): フィルターを管理…を出さない構成(ツールパネルの機能なし)では、その分を数えません。 */}
+      {(canSort || (canManageFilters && onOpenFilterManager !== undefined)) && <div className="ssg-menu-separator" />}
 
       {/* ── ルート項目: 列の固定 ›(サブメニュー親) ── */}
       {/* 追加(13-A2): サブメニューはこの行(position: relative)基準で絶対配置します。
@@ -511,20 +515,22 @@ export function ColumnMenuPopover({
           リーフ項目です。autosize 項目と同じく hover で setOpenSubmenuKey(null) し、
           開いているカスケード(列の固定)を閉じます。クリックで列メニューを閉じて
           パネルを開く処理は SpreadsheetGrid 側(onOpenColumnChooser)が担います。 */}
-      <button
-        type="button"
-        onPointerEnter={() => {
-          setOpenSubmenuKey(null);
-        }}
-        onClick={() => {
-          onOpenColumnChooser();
-        }}
-        className={cx('ssg-menu-item', slots?.menuItem?.className)}
-        style={slots?.menuItem?.style}
-      >
-        <span className="ssg-menu-icon" />
-        <span className="ssg-menu-label">列の表示</span>
-      </button>
+      {onOpenColumnChooser && (
+        <button
+          type="button"
+          onPointerEnter={() => {
+            setOpenSubmenuKey(null);
+          }}
+          onClick={() => {
+            onOpenColumnChooser();
+          }}
+          className={cx('ssg-menu-item', slots?.menuItem?.className)}
+          style={slots?.menuItem?.style}
+        >
+          <span className="ssg-menu-icon" />
+          <span className="ssg-menu-label">列の表示</span>
+        </button>
+      )}
 
       {/* ── ルート項目: 列のリセット(13-B2-3 / gpt5.5対応) ── */}
       {/* 追加(13-B2-3 / gpt5.5対応): 既存の ColumnChooserPanel フッターと同じ

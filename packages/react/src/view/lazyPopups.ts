@@ -19,8 +19,9 @@ import {
 } from '@ishibashi0112/spreadsheet-grid-core/logic/lazyModule';
 import { scheduleIdleTask } from '@ishibashi0112/spreadsheet-grid-core/utils/scheduler';
 
-export const filterPopoverModule = createLazyModule(() => import('./ColumnFilterPopover'));
-export const toolPanelModule = createLazyModule(() => import('./toolPanelViews'));
+// 変更(差し込み式 段階 3): 使われない側(機能を外した構成のツールパネル等)をバンドラが取り除けるよう、副作用なしの印を付けます。
+export const filterPopoverModule = /* @__PURE__ */ createLazyModule(() => import('./ColumnFilterPopover'));
+export const toolPanelModule = /* @__PURE__ */ createLazyModule(() => import('./toolPanelViews'));
 
 export type ToolPanelViews = typeof import('./toolPanelViews');
 

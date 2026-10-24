@@ -36,6 +36,9 @@ const FEATURE_PROPS: { [K in FeatureName]-?: readonly FeaturePropCheck[] } = {
   contextMenu: [{ prop: 'enableContextMenu', isUsed: (props) => props.enableContextMenu === true }],
   // 列メニューは既定で有効(enableColumnMenu 省略 = true)なので、明示した true だけ警告する。
   columnMenu: [{ prop: 'enableColumnMenu', isUsed: (props) => props.enableColumnMenu === true }],
+  // ツールパネルは専用の prop を持たない(タブはフィルター / 列 / 並び替えの各 prop で決まる)。ハンドルの
+  //   openFilterManager は呼ばれた時点で警告する(features/resolve.ts)。
+  toolPanel: [],
   // 列の指定(GridColumn.conditionalFormat)。どれか 1 列でも指定していれば警告する。
   conditionalFormat: [
     {

@@ -223,7 +223,6 @@ import { decideCellWrite } from '@ishibashi0112/spreadsheet-grid-core/logic/vali
 //   (view/lazyPopups。シェルから部品を静的に import しないこと = 初期チャンクへ戻ってしまう)。
 import {
   filterPopoverModule,
-  toolPanelModule,
   useLazyModule,
   type ToolPanelViews,
 } from './view/lazyPopups';
@@ -247,7 +246,6 @@ import type { AutosizeTotalRowText } from '@ishibashi0112/spreadsheet-grid-core/
 //   (ToolPanel + useToolPanelController)へ集約しました。旧 3 controller
 //   (useColumnChooserController / useSortManagementController / useFilterManagementController)
 //   は削除し、各 view はタブコンテンツ(フレームなし)として ToolPanel の children に入ります。
-import useToolPanelController from './hooks/useToolPanelController';
 import type { ToolPanelTab } from './hooks/useToolPanelController';
 import type { ToolPanelTabDescriptor } from './view/ToolPanel';
 import type { ColumnChooserItem } from './view/ColumnChooserPanel';
@@ -917,7 +915,10 @@ export function useGridShell<T extends object>({
   //               - outside-close: alliedRef(filterPopoverRef)内の pointerdown では閉じない
   //               - Escape: popover open 中はパネルを閉じず popover の close へ委譲
   //                 (1 押し目 = popover / 2 押し目 = パネル。フォーカス位置に依りません)
+  // 変更(差し込み式 段階 3): controller の接続は機能セットの toolPanel から受けます(元の位置で呼ぶ)。機能セットに
+  //   無ければ代役(available: false = 閉じたまま)で、パネルを開く入口(列メニューの 3 項目 / Filters チップ)を出しません。
   const {
+    available: toolPanelAvailable,
     activeToolPanelTab,
     availableToolPanelTabs,
     toolPanelLayout,
@@ -926,7 +927,7 @@ export function useGridShell<T extends object>({
     openToolPanel,
     closeToolPanel,
     moveToolPanel,
-  } = useToolPanelController({
+  } = features.toolPanel.useToolPanel({
     canUseFilterTab: columnFilterEnabled,
     canUseColumnsTab: enableColumnMenu,
     canUseSortTab: sortingEnabled,
@@ -946,7 +947,8 @@ export function useGridShell<T extends object>({
       columnFilterEnabled && visibleColumns.some((column) => Boolean(column.filterType)),
     onLoadError: closeColumnFilterPopover,
   });
-  const toolPanelViews = useLazyModule(toolPanelModule, {
+  // 変更(差し込み式 段階 3): ツールパネルの部品の読み込みは機能セットの toolPanel から(元の位置 = 列フィルターの直後)。
+  const toolPanelViews = features.toolPanel.useToolPanelViews({
     needed: activeToolPanelTab !== null,
     prefetch: availableToolPanelTabs.length > 0,
     retainAfterNeeded: true,
@@ -3889,9 +3891,9 @@ export function useGridShell<T extends object>({
       onSortChange={(direction) =>
         handleColumnMenuSortChange(openedMenuColumn.key, direction)
       }
-      onOpenSortManager={handleColumnMenuOpenSortManager}
+      onOpenSortManager={toolPanelAvailable ? handleColumnMenuOpenSortManager : undefined}
       canManageFilters={columnFilterEnabled}
-      onOpenFilterManager={handleColumnMenuOpenFilterManager}
+      onOpenFilterManager={toolPanelAvailable ? handleColumnMenuOpenFilterManager : undefined}
       pinned={openedMenuColumn.pinned}
       canChangePinned={Boolean(onColumnsChange)}
       layout={columnMenuLayout}
@@ -3899,7 +3901,7 @@ export function useGridShell<T extends object>({
       onPinnedChange={handleColumnMenuPinnedChange}
       onAutosizeColumn={columnAutosize.available ? handleColumnMenuAutosizeColumn : undefined}
       onAutosizeAllColumns={columnAutosize.available ? handleColumnMenuAutosizeAllColumns : undefined}
-      onOpenColumnChooser={handleColumnMenuOpenChooser}
+      onOpenColumnChooser={toolPanelAvailable ? handleColumnMenuOpenChooser : undefined}
       canResetColumns={Boolean(onColumnsChange)}
       onResetColumns={handleColumnMenuResetColumns}
       onRequestClose={closeColumnMenu}
@@ -4046,7 +4048,7 @@ export function useGridShell<T extends object>({
         // 追加(FM-3): Filters chip クリックでフィルター管理パネルをトグルします
         //   (フィルター機能が無効なら渡さない = chip は従来どおり非クリックの span)。
         onFilterSummaryClick={
-          columnFilterEnabled ? handleFilterSummaryChipClick : undefined
+          columnFilterEnabled && toolPanelAvailable ? handleFilterSummaryChipClick : undefined
         }
       />
     ) : null;

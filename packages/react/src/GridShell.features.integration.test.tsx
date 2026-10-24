@@ -13,6 +13,7 @@ import { rowDragFeature } from './features/rowDrag';
 import { scrollHintFeature } from './features/scrollHint';
 import { columnAutosizeFeature } from './features/columnAutosize';
 import { columnMenuFeature } from './features/columnMenu';
+import { toolPanelFeature } from './features/toolPanel';
 import { totalRowFeature } from './features/totalRow';
 import { imeDirectInputFeature } from './features/imeDirectInput';
 import { contextMenuFeature } from './features/contextMenu';
@@ -40,6 +41,10 @@ const RowDragOnlyGrid = createSpreadsheetGrid({ features: { rowDrag: rowDragFeat
 const ScrollHintOnlyGrid = createSpreadsheetGrid({ features: { scrollHint: scrollHintFeature } });
 // 列幅の自動調整の項目は列メニューに出るため、列メニューと組み合わせて確かめます。
 const ColumnMenuOnlyGrid = createSpreadsheetGrid({ features: { columnMenu: columnMenuFeature } });
+// ツールパネルを開く入口の多くは列メニューにあるため、列メニューと組み合わせて確かめます。
+const ColumnMenuToolPanelGrid = createSpreadsheetGrid({
+  features: { columnMenu: columnMenuFeature, toolPanel: toolPanelFeature },
+});
 const ColumnMenuAutosizeGrid = createSpreadsheetGrid({
   features: { columnMenu: columnMenuFeature, columnAutosize: columnAutosizeFeature },
 });
@@ -325,6 +330,60 @@ describe('差し込み式: columnMenu', () => {
     });
     expect(fireEvent.contextMenu(headerCell(container), { clientX: 10, clientY: 10 })).toBe(false);
     expect(document.querySelectorAll('.ssg-menu-label').length).toBeGreaterThan(0);
+  });
+});
+
+describe('差し込み式: toolPanel', () => {
+  const filterColumns: GridColumn<Row>[] = [{ key: 'name', title: '名前', width: 160, filterType: 'text' }];
+  const openColumnMenu = (container: HTMLElement) => {
+    const menuButton = container.querySelector<HTMLElement>('[aria-label="列メニュー"]');
+    if (!menuButton) throw new Error('列メニューのボタンがありません');
+    act(() => {
+      fireEvent.pointerDown(menuButton, { button: 0 });
+    });
+  };
+  const menuLabels = () => Array.from(document.querySelectorAll('.ssg-menu-label')).map((el) => el.textContent);
+  const panelOpen = () => document.querySelector('.ssg-toolpanel-seg') !== null;
+
+  it('機能セットに無ければパネルを開く入口(列メニューの 3 項目 / Filters チップ)を出さず、openFilterManager は開発時に 1 回だけ警告する', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const ref = createRef<SpreadsheetGridHandle<Row>>();
+    const { container } = render(
+      <ColumnMenuOnlyGrid ref={ref} rows={rows} columns={filterColumns} rowKeyGetter={(r) => r.id} onColumnsChange={() => {}} />,
+    );
+    expect(container.querySelector('[aria-label="フィルター管理パネルを開閉"]')).toBeNull();
+    openColumnMenu(container);
+    expect(menuLabels()).toContain('昇順で並び替え');
+    expect(menuLabels()).toContain('列のリセット');
+    expect(menuLabels()).not.toContain('並び替えを管理…');
+    expect(menuLabels()).not.toContain('フィルターを管理…');
+    expect(menuLabels()).not.toContain('列の表示');
+    act(() => {
+      ref.current?.openFilterManager();
+      ref.current?.openFilterManager();
+    });
+    expect(panelOpen()).toBe(false);
+    const warnings = warn.mock.calls.filter(([message]) => String(message).includes('`openFilterManager()`'));
+    expect(warnings).toHaveLength(1);
+  });
+
+  it('toolPanel を入れた構成では列メニューの 3 項目と Filters チップが出て、openFilterManager でパネルが開く', () => {
+    const ref = createRef<SpreadsheetGridHandle<Row>>();
+    const { container } = render(
+      <ColumnMenuToolPanelGrid ref={ref} rows={rows} columns={filterColumns} rowKeyGetter={(r) => r.id} onColumnsChange={() => {}} />,
+    );
+    expect(container.querySelector('[aria-label="フィルター管理パネルを開閉"]')).not.toBeNull();
+    openColumnMenu(container);
+    expect(menuLabels()).toContain('並び替えを管理…');
+    expect(menuLabels()).toContain('フィルターを管理…');
+    expect(menuLabels()).toContain('列の表示');
+    act(() => {
+      fireEvent.keyDown(document.activeElement ?? document.body, { key: 'Escape' });
+    });
+    act(() => {
+      ref.current?.openFilterManager();
+    });
+    expect(panelOpen()).toBe(true);
   });
 });
 
