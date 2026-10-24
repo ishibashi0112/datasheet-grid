@@ -42,7 +42,9 @@ export type ColumnCommandsArgs<T> = {
   closeColumnMenu: () => void;
   openToolPanel: (tab: ToolPanelTab) => void;
   openColumnFilterPopover: (column: GridColumn<T>) => void;
-  runAutosize: (columns: GridColumn<T>[]) => Promise<void> | void;
+  // 変更(差し込み式 段階 2): 列幅の自動調整の機能が無い構成では undefined(列メニューの項目は出さず、境界の
+  //   ダブルクリックは通常のリサイズ開始として扱う)。
+  runAutosize: ((columns: GridColumn<T>[]) => Promise<void> | void) | undefined;
 };
 
 export type SortDirection = 'asc' | 'desc';
@@ -155,12 +157,12 @@ export const createColumnCommands = <T,>(): ColumnCommands<T> => {
     if (!targetColumn) {
       return;
     }
-    void runAutosize([targetColumn]);
+    void runAutosize?.([targetColumn]);
   };
   const handleColumnMenuAutosizeAllColumns = () => {
     const { closeColumnMenu, visibleColumns, runAutosize } = requireArgs();
     closeColumnMenu();
-    void runAutosize(visibleColumns);
+    void runAutosize?.(visibleColumns);
   };
 
   // 統合ツールパネルの各タブを開きます(メニューを閉じてから。既に開いていればタブ切替のみ)。
@@ -419,6 +421,7 @@ export const createColumnCommands = <T,>(): ColumnCommands<T> => {
     const now = event.timeStamp;
     const last = lastResizeHandleDown;
     if (
+      runAutosize &&
       last &&
       last.key === column.key &&
       now - last.time < RESIZE_HANDLE_DOUBLE_CLICK_MS &&

@@ -17,6 +17,7 @@ export type CreateSpreadsheetGridOptions = {
 // 機能が無いときに置き換える prop(シェルが機能の部品を呼ぶ前に、その prop で列や行の形を決めるもの)。
 const DISABLED_FEATURE_PROPS: { [K in keyof ReactGridFeatures]?: Partial<SpreadsheetGridProps<object>> } = {
   rowDrag: { enableRowDrag: false },
+  columnAutosize: { autoSizeColumns: false },
 };
 
 export function createSpreadsheetGrid({ features }: CreateSpreadsheetGridOptions) {

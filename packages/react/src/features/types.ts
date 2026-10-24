@@ -10,6 +10,7 @@ import type { splitTextByFindRanges } from '@ishibashi0112/spreadsheet-grid-core
 import type { resolveScrollHintOptions } from '@ishibashi0112/spreadsheet-grid-core/logic/scrollHint';
 import type { FillHandleControllerArgs } from '@ishibashi0112/spreadsheet-grid-core/controllers/fillHandleController';
 import type { ColumnHeaderDragController } from '@ishibashi0112/spreadsheet-grid-core/controllers/columnHeaderDragController';
+import type { ColumnAutosizeRunnerArgs } from '@ishibashi0112/spreadsheet-grid-core/controllers/columnAutosizeRunner';
 import type { ColumnPane, GridPaneLayout } from '@ishibashi0112/spreadsheet-grid-core/logic/geometry';
 import type { DetailRowExtra, RowMetrics } from '@ishibashi0112/spreadsheet-grid-core/logic/verticalGeometry';
 import type { GridColumn, GridUiState, RowModel, SpreadsheetGridProps } from '../model/gridTypes';
@@ -85,6 +86,16 @@ export type RowDragFeatureResult<T> = {
   renderDropIndicator: (pane: ColumnPane, className: string) => ReactNode;
 };
 
+// 列幅の自動調整(columnAutosize)の hook が受け取る値(ランナーの引数そのまま)と返す値です。
+export type ColumnAutosizeFeatureArgs<T> = ColumnAutosizeRunnerArgs<T>;
+export type ColumnAutosizeFeatureResult<T> = {
+  // 機能があるか(無い構成では列メニューの項目を出さない / 境界のダブルクリックは通常のリサイズ)。
+  available: boolean;
+  // 計測中か(Pending の overlay とカーソル)。
+  isAutosizing: boolean;
+  runAutosize: (columns: GridColumn<T>[]) => Promise<void>;
+};
+
 export type ReactGridFeatures = {
   // セル内検索(F-2): 走査のコントローラ(core)+ 検索バー + セル文字列のヒット分割。
   find?: NonNullable<GridCoreFeatures['find']> & {
@@ -99,6 +110,10 @@ export type ReactGridFeatures = {
   columnReorder?: {
     useColumnReorder: <T>(args: ColumnReorderFeatureArgs<T>) => ColumnReorderFeatureResult<T>;
   };
+  // 列幅の自動調整(DS-4 / 13-B1): 計測の時間分割ランナー。
+  columnAutosize?: {
+    useColumnAutosize: <T>(args: ColumnAutosizeFeatureArgs<T>) => ColumnAutosizeFeatureResult<T>;
+  };
   // スクロール位置インジケーター(scrollHint): オプションの解決 + 描画部品。
   scrollHint?: {
     resolveScrollHintOptions: typeof resolveScrollHintOptions;
@@ -112,6 +127,6 @@ export type ReactGridFeatures = {
 
 // シェルが受け取る機能セット: hook の部品を持つ機能は必ずある(無い機能は代役)。それ以外の機能は省略のまま
 //   (シェルが ?. で見て、無ければ何もしない)。
-type HookFeatureName = 'fillHandle' | 'columnReorder' | 'rowDrag';
+type HookFeatureName = 'fillHandle' | 'columnReorder' | 'rowDrag' | 'columnAutosize';
 export type GridShellFeatures = Omit<ReactGridFeatures, HookFeatureName> &
   Required<Pick<ReactGridFeatures, HookFeatureName>>;

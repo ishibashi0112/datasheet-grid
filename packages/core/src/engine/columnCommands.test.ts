@@ -156,4 +156,40 @@ describe('createColumnCommands', () => {
     commands.handleSortManagerClearAll();
     expect(actions).toEqual([]);
   });
+
+  // 追加(差し込み式 段階 2): 列幅の自動調整の機能が無い構成(runAutosize = undefined)。
+  describe('runAutosize が無いとき', () => {
+    const pointer = (timeStamp: number, clientX = 100) => ({
+      timeStamp,
+      clientX,
+      preventDefault: vi.fn(),
+      stopPropagation: vi.fn(),
+    });
+
+    it('境界のダブルクリックで、ある構成は自動調整し、無い構成は 2 回目も通常のリサイズを始める', () => {
+      const withAutosize = createColumnCommands<Row>();
+      const a = makeArgs();
+      withAutosize.update(a.args);
+      withAutosize.handleColumnResizePointerDown(columns[0], pointer(1000));
+      withAutosize.handleColumnResizePointerDown(columns[0], pointer(1100));
+      expect(a.args.runAutosize).toHaveBeenCalledTimes(1);
+      expect(a.actions.filter((action) => action.type === 'column/resizeStart')).toHaveLength(1);
+
+      const withoutAutosize = createColumnCommands<Row>();
+      const b = makeArgs({ runAutosize: undefined });
+      withoutAutosize.update(b.args);
+      withoutAutosize.handleColumnResizePointerDown(columns[0], pointer(1000));
+      withoutAutosize.handleColumnResizePointerDown(columns[0], pointer(1100));
+      expect(b.actions.filter((action) => action.type === 'column/resizeStart')).toHaveLength(2);
+    });
+
+    it('列メニューの自動調整を呼んでもメニューを閉じるだけで落ちない', () => {
+      const commands = createColumnCommands<Row>();
+      const { args } = makeArgs({ runAutosize: undefined });
+      commands.update(args);
+      commands.handleColumnMenuAutosizeColumn('a');
+      commands.handleColumnMenuAutosizeAllColumns();
+      expect(args.closeColumnMenu).toHaveBeenCalledTimes(2);
+    });
+  });
 });

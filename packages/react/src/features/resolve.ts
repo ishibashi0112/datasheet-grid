@@ -34,9 +34,22 @@ const inertRowDragFeature: GridShellFeatures['rowDrag'] = {
   useRowDrag: () => INERT_ROW_DRAG,
 };
 
+// 列幅の自動調整が無い構成では autoSizeColumns を false として扱う(createSpreadsheetGrid)ので、runAutosize は
+//   呼ばれません(念のため何もせず解決する Promise を返す)。
+const INERT_COLUMN_AUTOSIZE = {
+  available: false,
+  isAutosizing: false,
+  runAutosize: () => Promise.resolve(),
+};
+
+const inertColumnAutosizeFeature: GridShellFeatures['columnAutosize'] = {
+  useColumnAutosize: () => INERT_COLUMN_AUTOSIZE,
+};
+
 export const resolveGridShellFeatures = (features: ReactGridFeatures): GridShellFeatures => ({
   ...features,
   fillHandle: features.fillHandle ?? inertFillHandleFeature,
   columnReorder: features.columnReorder ?? inertColumnReorderFeature,
   rowDrag: features.rowDrag ?? inertRowDragFeature,
+  columnAutosize: features.columnAutosize ?? inertColumnAutosizeFeature,
 });

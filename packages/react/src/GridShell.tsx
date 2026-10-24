@@ -176,9 +176,7 @@ import {
 import {
   computeHorizontalScrollTarget,
 } from '@ishibashi0112/spreadsheet-grid-core/logic/scrollTargets';
-// 追加(DS-4 ①-(2)): 列幅自動調整を時間分割(async・単一経路)で実行するランナーです。
-//   計測ロジック本体(logic/columnAutosize)はランナー内部で使うため、ここでの直 import は不要です。
-import useColumnAutosizeRunner from './hooks/useColumnAutosizeRunner';
+// 変更(差し込み式 段階 2): 列幅自動調整のランナーは機能セット(features.columnAutosize)から受け取ります(無ければ代役)。
 // 追加(DS-4 #1): select / set 候補を「通常規模=同期 / 大規模=時間分割の非同期」で収集します。
 import useColumnSelectOptionsCollector from './hooks/useColumnSelectOptionsCollector';
 // 追加(async-options): getFilterOptions 経由の候補取得アダプタと、UI 種別が候補を使うかの判定。
@@ -1495,13 +1493,16 @@ export function useGridShell<T extends object>({
     }
     return texts;
   }, [totalRowEnabled, orderedColumns, totalRowCells, totalRowLabelColumnKey, totalRowLabel]);
-  const { isAutosizing, runAutosize } = useColumnAutosizeRunner<T>({
+  // 変更(差し込み式 段階 2): ランナーの接続は機能セットの hook(features/columnAutosize.ts)へ移し、この位置で
+  //   呼びます(hook の順番は従来どおり)。無い構成では代役(列メニューの項目なし / autoSizeColumns は false 扱い)。
+  const columnAutosize = features.columnAutosize.useColumnAutosize<T>({
     rowModel,
     gridRootRef,
     columnWidths: effectiveColumnWidths,
     dispatch,
     totalRowTexts: totalRowAutosizeTexts,
   });
+  const { isAutosizing, runAutosize } = columnAutosize;
 
   // ── autoSize on data(データ投入時の列幅自動フィット)────────────
   // 変更(本体分解 E-6c): 宣言的トリガー(autoSizeColumns × rows 変化)は controllers/columnAutosizeRunner の
@@ -3010,7 +3011,7 @@ export function useGridShell<T extends object>({
     closeColumnMenu,
     openToolPanel,
     openColumnFilterPopover,
-    runAutosize,
+    runAutosize: columnAutosize.available ? runAutosize : undefined,
   });
   const {
     handleColumnMenuPinnedChange,
@@ -3950,8 +3951,8 @@ export function useGridShell<T extends object>({
       layout={columnMenuLayout}
       popoverRef={columnMenuRef}
       onPinnedChange={handleColumnMenuPinnedChange}
-      onAutosizeColumn={handleColumnMenuAutosizeColumn}
-      onAutosizeAllColumns={handleColumnMenuAutosizeAllColumns}
+      onAutosizeColumn={columnAutosize.available ? handleColumnMenuAutosizeColumn : undefined}
+      onAutosizeAllColumns={columnAutosize.available ? handleColumnMenuAutosizeAllColumns : undefined}
       onOpenColumnChooser={handleColumnMenuOpenChooser}
       canResetColumns={Boolean(onColumnsChange)}
       onResetColumns={handleColumnMenuResetColumns}

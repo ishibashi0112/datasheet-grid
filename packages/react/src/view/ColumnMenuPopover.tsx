@@ -98,8 +98,9 @@ type ColumnMenuPopoverProps = {
   // 追加(13-B1): 幅自動調整のハンドラです。幅は grid 内部 state(columnWidths)で
   //             管理されるため、pinned と違い onColumnsChange の有無に依存せず
   //             常に有効です(手動リサイズと同じ扱い)。
-  onAutosizeColumn: (columnKey: string) => void;
-  onAutosizeAllColumns: () => void;
+  // 変更(差し込み式 段階 2): 列幅の自動調整の機能が無い構成では渡さず、2 つの項目を出しません。
+  onAutosizeColumn?: (columnKey: string) => void;
+  onAutosizeAllColumns?: () => void;
   // 追加(13-B2-1): 列の表示/非表示パネル(ColumnChooserPanel)を開くハンドラです。
   //             この項目はサブメニューではなく別 popover を開くリーフ項目です
   //             (クリックで列メニューを閉じてパネルを開きます。配線は SpreadsheetGrid 側)。
@@ -470,36 +471,40 @@ export function ColumnMenuPopover({
           hover ハイライトは CSS :hover で行います(state を使うと hover のたびに
           popover 全体が再レンダーされるため)。
           実際の close と幅反映は SpreadsheetGrid 側ハンドラが行います。 */}
-      <button
-        type="button"
-        onPointerEnter={() => {
-          setOpenSubmenuKey(null);
-        }}
-        onClick={() => {
-          onAutosizeColumn(columnKey);
-        }}
-        className={cx('ssg-menu-item', slots?.menuItem?.className)}
-            style={slots?.menuItem?.style}
-      >
-        {/* 注記: ✓ 列との左端揃え用スペーサです(ピン行と同じ幅)。*/}
-        <span className="ssg-menu-icon" />
-        <span className="ssg-menu-label">この列の幅を自動調整</span>
-      </button>
+      {onAutosizeColumn && onAutosizeAllColumns && (
+        <>
+          <button
+            type="button"
+            onPointerEnter={() => {
+              setOpenSubmenuKey(null);
+            }}
+            onClick={() => {
+              onAutosizeColumn(columnKey);
+            }}
+            className={cx('ssg-menu-item', slots?.menuItem?.className)}
+                style={slots?.menuItem?.style}
+          >
+            {/* 注記: ✓ 列との左端揃え用スペーサです(ピン行と同じ幅)。*/}
+            <span className="ssg-menu-icon" />
+            <span className="ssg-menu-label">この列の幅を自動調整</span>
+          </button>
 
-      <button
-        type="button"
-        onPointerEnter={() => {
-          setOpenSubmenuKey(null);
-        }}
-        onClick={() => {
-          onAutosizeAllColumns();
-        }}
-        className={cx('ssg-menu-item', slots?.menuItem?.className)}
-            style={slots?.menuItem?.style}
-      >
-        <span className="ssg-menu-icon" />
-        <span className="ssg-menu-label">すべての列の幅を自動調整</span>
-      </button>
+          <button
+            type="button"
+            onPointerEnter={() => {
+              setOpenSubmenuKey(null);
+            }}
+            onClick={() => {
+              onAutosizeAllColumns();
+            }}
+            className={cx('ssg-menu-item', slots?.menuItem?.className)}
+                style={slots?.menuItem?.style}
+          >
+            <span className="ssg-menu-icon" />
+            <span className="ssg-menu-label">すべての列の幅を自動調整</span>
+          </button>
+        </>
+      )}
 
       {/* ── ルート項目: 列の表示(13-B2-1) ── */}
       {/* 追加(13-B2-1): サブメニューではなく別 popover(ColumnChooserPanel)を開く

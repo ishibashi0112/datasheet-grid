@@ -11,6 +11,7 @@ import { fillHandleFeature } from './features/fillHandle';
 import { columnReorderFeature } from './features/columnReorder';
 import { rowDragFeature } from './features/rowDrag';
 import { scrollHintFeature } from './features/scrollHint';
+import { columnAutosizeFeature } from './features/columnAutosize';
 import { installJsdomLayoutStubs } from './testing';
 import { resetUnregisteredFeatureWarnings } from '@ishibashi0112/spreadsheet-grid-core/logic/featureWarnings';
 import { ROW_DRAG_HANDLE_COLUMN_KEY } from '@ishibashi0112/spreadsheet-grid-core/logic/rowReorder';
@@ -29,6 +30,7 @@ const FillOnlyGrid = createSpreadsheetGrid({ features: { fillHandle: fillHandleF
 const ColumnReorderOnlyGrid = createSpreadsheetGrid({ features: { columnReorder: columnReorderFeature } });
 const RowDragOnlyGrid = createSpreadsheetGrid({ features: { rowDrag: rowDragFeature } });
 const ScrollHintOnlyGrid = createSpreadsheetGrid({ features: { scrollHint: scrollHintFeature } });
+const ColumnAutosizeOnlyGrid = createSpreadsheetGrid({ features: { columnAutosize: columnAutosizeFeature } });
 
 let restore: () => void;
 beforeAll(() => {
@@ -236,5 +238,36 @@ describe('差し込み式: scrollHint', () => {
       <ScrollHintOnlyGrid rows={rows} columns={columns} rowKeyGetter={(r) => r.id} scrollHint={{ scrollbar: true }} />,
     );
     expect(container.querySelector('.ssg-scroll-container--custom-scrollbar')).not.toBeNull();
+  });
+});
+
+describe('差し込み式: columnAutosize', () => {
+  const openColumnMenu = (container: HTMLElement) => {
+    const menuButton = container.querySelector<HTMLElement>('[aria-label="列メニュー"]');
+    if (!menuButton) throw new Error('列メニューのボタンがありません');
+    act(() => {
+      fireEvent.pointerDown(menuButton, { button: 0 });
+    });
+  };
+  const menuLabels = () => Array.from(document.querySelectorAll('.ssg-menu-label')).map((el) => el.textContent);
+
+  it('機能セットに無ければ列メニューに幅の自動調整を出さず、autoSizeColumns は開発時に 1 回だけ警告する', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const { container } = render(
+      <MinimalGrid rows={rows} columns={columns} rowKeyGetter={(r) => r.id} autoSizeColumns="onMount" />,
+    );
+    openColumnMenu(container);
+    expect(menuLabels().length).toBeGreaterThan(0);
+    expect(menuLabels()).not.toContain('この列の幅を自動調整');
+    expect(menuLabels()).not.toContain('すべての列の幅を自動調整');
+    const warnings = warn.mock.calls.filter(([message]) => String(message).includes('`autoSizeColumns`'));
+    expect(warnings).toHaveLength(1);
+  });
+
+  it('columnAutosize だけを入れた構成では列メニューに幅の自動調整が出る', () => {
+    const { container } = render(<ColumnAutosizeOnlyGrid rows={rows} columns={columns} rowKeyGetter={(r) => r.id} />);
+    openColumnMenu(container);
+    expect(menuLabels()).toContain('この列の幅を自動調整');
+    expect(menuLabels()).toContain('すべての列の幅を自動調整');
   });
 });
