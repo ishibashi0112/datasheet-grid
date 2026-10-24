@@ -243,8 +243,6 @@ import {
   TOTAL_ROW_DEFAULT_LABEL,
 } from '@ishibashi0112/spreadsheet-grid-core/logic/totalRow';
 import type { AutosizeTotalRowText } from '@ishibashi0112/spreadsheet-grid-core/logic/columnAutosize';
-import useColumnMenuController from './hooks/useColumnMenuController';
-import ColumnMenuPopover from './view/ColumnMenuPopover';
 // 変更(UP-1): フィルター管理 / 列の表示 / 並び替えの独立 3 パネルを統合ツールパネル
 //   (ToolPanel + useToolPanelController)へ集約しました。旧 3 controller
 //   (useColumnChooserController / useSortManagementController / useFilterManagementController)
@@ -889,7 +887,11 @@ export function useGridShell<T extends object>({
   //             layout の作法は useFilterPopoverController と同型です。
   //             相互排他は両 controller の outside-pointerdown close が自然に担います
   //             (片方を開く操作はもう片方にとって outside click になるためです)。
+  // 変更(差し込み式 段階 3): controller の接続と popover は機能セットの columnMenu から受けます(元の位置で呼ぶので
+  //   hook の順番は従来どおり)。機能セットに無ければ代役(available: false = 閉じたまま)で、⋮ ボタンとヘッダーの
+  //   右クリックを出しません(columnMenuEnabled)。ツールパネルの「列」タブの可否は従来どおり enableColumnMenu です。
   const {
+    available: columnMenuAvailable,
     columnMenuLayout,
     columnMenuRef,
     isColumnMenuOpen,
@@ -899,11 +901,12 @@ export function useGridShell<T extends object>({
     openColumnMenuFromButtonClick,
     openColumnMenuFromContextMenu,
     closeColumnMenu,
-  } = useColumnMenuController({
+  } = features.columnMenu.useColumnMenu<T>({
     visibleColumns,
     enableColumnMenu,
     gridRootRef,
   });
+  const columnMenuEnabled = enableColumnMenu && columnMenuAvailable;
 
   // ── tool panel(UP-1) ─────────────────────────────────
   // 変更(UP-1): フィルター管理 / 列の表示 / 並び替えの独立 3 パネルを、SegmentedControl で
@@ -3869,7 +3872,7 @@ export function useGridShell<T extends object>({
   // ── column menu popover(13-A) ────────────────────────
   // 追加(13-A): 列メニュー popover の描画です(portal で body 直下へ出します)。
   const renderedColumnMenuPopover = openedMenuColumn ? (
-    <ColumnMenuPopover
+    <features.columnMenu.ColumnMenuPopover
       slots={slots}
       themeClassName={portalClassName}
       isOpen={isColumnMenuOpen}
@@ -4324,7 +4327,7 @@ export function useGridShell<T extends object>({
                   onColumnHeaderPointerEnter={handleColumnHeaderPointerEnter}
                   onColumnHeaderPointerLeave={handleColumnHeaderPointerLeaveStable}
                   onColumnResizePointerDown={handleColumnResizePointerDown}
-                  enableColumnMenu={enableColumnMenu}
+                  enableColumnMenu={columnMenuEnabled}
                   enableColumnResize={enableColumnResize}
                   openedMenuColumnKey={openedMenuColumnKey}
                   onColumnMenuButtonPointerDown={openColumnMenuFromButton}
@@ -4542,7 +4545,7 @@ export function useGridShell<T extends object>({
                 onColumnHeaderPointerEnter={handleColumnHeaderPointerEnter}
                 onColumnHeaderPointerLeave={handleColumnHeaderPointerLeaveStable}
                 onColumnResizePointerDown={handleColumnResizePointerDown}
-                enableColumnMenu={enableColumnMenu}
+                enableColumnMenu={columnMenuEnabled}
                 enableColumnResize={enableColumnResize}
                 openedMenuColumnKey={openedMenuColumnKey}
                 onColumnMenuButtonPointerDown={openColumnMenuFromButton}
@@ -4761,7 +4764,7 @@ export function useGridShell<T extends object>({
                   onColumnHeaderPointerEnter={handleColumnHeaderPointerEnter}
                   onColumnHeaderPointerLeave={handleColumnHeaderPointerLeaveStable}
                   onColumnResizePointerDown={handleColumnResizePointerDown}
-                  enableColumnMenu={enableColumnMenu}
+                  enableColumnMenu={columnMenuEnabled}
                   enableColumnResize={enableColumnResize}
                   openedMenuColumnKey={openedMenuColumnKey}
                   onColumnMenuButtonPointerDown={openColumnMenuFromButton}

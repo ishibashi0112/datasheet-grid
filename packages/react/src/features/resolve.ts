@@ -63,6 +63,26 @@ const inertContextMenuFeature: GridShellFeatures['contextMenu'] = {
   buildBodyContextMenuParams: () => null,
 };
 
+// 列メニューが無い構成では閉じたままで(available: false)、シェルは ⋮ ボタンもヘッダーの右クリックも出しません
+//   (開く関数は呼ばれない。popover の ref はどこにも付かない)。
+const INERT_COLUMN_MENU = {
+  available: false,
+  columnMenuLayout: null,
+  columnMenuRef: { current: null },
+  isColumnMenuOpen: false,
+  openedMenuColumnKey: null,
+  openedMenuColumn: null,
+  openColumnMenuFromButton: () => {},
+  openColumnMenuFromButtonClick: () => {},
+  openColumnMenuFromContextMenu: () => {},
+  closeColumnMenu: () => {},
+};
+
+const inertColumnMenuFeature: GridShellFeatures['columnMenu'] = {
+  useColumnMenu: () => INERT_COLUMN_MENU,
+  ColumnMenuPopover: () => null,
+};
+
 // 選択範囲の集計が無い構成では集計せず(null)、既定の下部バーにも何も出しません。
 const inertSelectionAggregatesFeature: GridShellFeatures['selectionAggregates'] = {
   useSelectionAggregates: () => null,
@@ -99,5 +119,6 @@ export const resolveGridShellFeatures = (features: ReactGridFeatures): GridShell
   columnAutosize: features.columnAutosize ?? inertColumnAutosizeFeature,
   contextMenu: features.contextMenu ?? inertContextMenuFeature,
   selectionAggregates: features.selectionAggregates ?? inertSelectionAggregatesFeature,
+  columnMenu: features.columnMenu ?? inertColumnMenuFeature,
   export: features.export ?? inertExportFeature,
 });

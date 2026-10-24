@@ -45,6 +45,8 @@ import type { GridSelectionAggregates as GridSelectionAggregatesView } from '../
 import type { UseSelectionAggregatesArgs } from '../hooks/useSelectionAggregates';
 import type { UseColumnHeaderDragControllerArgs } from '../hooks/useColumnHeaderDragController';
 import type { UseRowDragControllerArgs } from '../hooks/useRowDragController';
+import type { UseColumnMenuControllerArgs, UseColumnMenuControllerResult } from '../hooks/useColumnMenuController';
+import type { ColumnMenuPopover } from '../view/ColumnMenuPopover';
 
 // フィルハンドル(fillHandle)の hook が受け取るシェルの値です(シェルにあったときの自由変数そのまま)。
 export type FillHandleFeatureArgs<T> = {
@@ -123,6 +125,10 @@ export type ColumnAutosizeFeatureResult<T> = {
   runAutosize: (columns: GridColumn<T>[]) => Promise<void>;
 };
 
+// 列メニュー(columnMenu)の hook が受け取る値(controller の引数そのまま)と返す値です。available は機能セットに
+//   あるかどうか(代役は false。シェルは enableColumnMenu && available で ⋮ ボタンとヘッダーの右クリックを出す)。
+export type ColumnMenuFeatureArgs<T> = UseColumnMenuControllerArgs<T>;
+export type ColumnMenuFeatureResult<T> = UseColumnMenuControllerResult<T> & { available: boolean };
 // セル / 行のコンテキストメニュー(contextMenu)の hook が受け取る値と返す値、右クリックの対象の解決に渡す値です。
 export type CellContextMenuFeatureArgs = {
   gridRootRef: RefObject<HTMLDivElement | null>;
@@ -191,6 +197,11 @@ export type ReactGridFeatures = {
     CopyRangeOverlay: typeof CopyRangeOverlay;
     ColumnHoverOverlay: typeof ColumnHoverOverlay;
   };
+  // 列メニュー(13-A): ⋮ ボタン / ヘッダーの右クリックで開く popover の controller の接続 + popover。
+  columnMenu?: {
+    useColumnMenu: <T>(args: ColumnMenuFeatureArgs<T>) => ColumnMenuFeatureResult<T>;
+    ColumnMenuPopover: typeof ColumnMenuPopover;
+  };
   // セル / 行のコンテキストメニュー(バッチ②): controller の接続 + popover、右クリックの対象の解決。
   contextMenu?: {
     useCellContextMenu: <T>(args: CellContextMenuFeatureArgs) => CellContextMenuFeatureResult<T>;
@@ -215,6 +226,7 @@ type HookFeatureName =
   | 'rowDrag'
   | 'columnAutosize'
   | 'contextMenu'
-  | 'selectionAggregates';
+  | 'selectionAggregates'
+  | 'columnMenu';
 export type GridShellFeatures = Omit<ReactGridFeatures, HookFeatureName> &
   Required<Pick<ReactGridFeatures, HookFeatureName>>;
