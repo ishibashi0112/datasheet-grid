@@ -14,6 +14,7 @@ import { scrollHintFeature } from './features/scrollHint';
 import { columnAutosizeFeature } from './features/columnAutosize';
 import { totalRowFeature } from './features/totalRow';
 import { imeDirectInputFeature } from './features/imeDirectInput';
+import { contextMenuFeature } from './features/contextMenu';
 import { installJsdomLayoutStubs } from './testing';
 import { resetUnregisteredFeatureWarnings } from '@ishibashi0112/spreadsheet-grid-core/logic/featureWarnings';
 import { ROW_DRAG_HANDLE_COLUMN_KEY } from '@ishibashi0112/spreadsheet-grid-core/logic/rowReorder';
@@ -35,6 +36,7 @@ const ScrollHintOnlyGrid = createSpreadsheetGrid({ features: { scrollHint: scrol
 const ColumnAutosizeOnlyGrid = createSpreadsheetGrid({ features: { columnAutosize: columnAutosizeFeature } });
 const TotalRowOnlyGrid = createSpreadsheetGrid({ features: { totalRow: totalRowFeature } });
 const ImeOnlyGrid = createSpreadsheetGrid({ features: { imeDirectInput: imeDirectInputFeature } });
+const ContextMenuOnlyGrid = createSpreadsheetGrid({ features: { contextMenu: contextMenuFeature } });
 
 let restore: () => void;
 beforeAll(() => {
@@ -323,5 +325,50 @@ describe('差し込み式: imeDirectInput', () => {
       <ImeOnlyGrid rows={rows} columns={columns} rowKeyGetter={(r) => r.id} onRowsChange={() => {}} imeDirectInput />,
     );
     expect(container.querySelector('.ssg-ime-input')).not.toBeNull();
+  });
+});
+
+describe('差し込み式: contextMenu', () => {
+  const contextMenuItems = () => [{ kind: 'action' as const, key: 'copy', label: 'コピーする', onSelect: () => {} }];
+  const bodyCell = (container: HTMLElement) =>
+    container.querySelector('[data-row-index="0"] [data-ssg-col-key="name"]') as HTMLElement;
+
+  it('機能セットに無ければ右クリックはブラウザ標準のメニューのまま(独自メニューを出さない)で、開発時に 1 回だけ警告する', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const onContextMenuOpen = vi.fn();
+    const { container } = render(
+      <MinimalGrid
+        rows={rows}
+        columns={columns}
+        rowKeyGetter={(r) => r.id}
+        enableContextMenu
+        getContextMenuItems={contextMenuItems}
+        onContextMenuOpen={onContextMenuOpen}
+      />,
+    );
+    // 既定の動作を止めない = ブラウザ標準のメニューが出る。
+    expect(fireEvent.contextMenu(bodyCell(container), { clientX: 10, clientY: 10 })).toBe(true);
+    expect(document.querySelector('[role="menu"]')).toBeNull();
+    expect(onContextMenuOpen).not.toHaveBeenCalled();
+    const warnings = warn.mock.calls.filter(([message]) => String(message).includes('`enableContextMenu`'));
+    expect(warnings).toHaveLength(1);
+  });
+
+  it('contextMenu だけを入れた構成では右クリックで独自メニューが開き、対象のセルが渡る', () => {
+    const onContextMenuOpen = vi.fn();
+    const { container } = render(
+      <ContextMenuOnlyGrid
+        rows={rows}
+        columns={columns}
+        rowKeyGetter={(r) => r.id}
+        enableContextMenu
+        getContextMenuItems={contextMenuItems}
+        onContextMenuOpen={onContextMenuOpen}
+      />,
+    );
+    expect(fireEvent.contextMenu(bodyCell(container), { clientX: 10, clientY: 10 })).toBe(false);
+    expect(document.querySelector('[role="menu"]')?.textContent).toContain('コピーする');
+    expect(onContextMenuOpen).toHaveBeenCalledTimes(1);
+    expect(onContextMenuOpen.mock.calls[0]?.[0].target).toMatchObject({ type: 'cell', rowIndex: 0, colIndex: 0, value: 'alpha' });
   });
 });

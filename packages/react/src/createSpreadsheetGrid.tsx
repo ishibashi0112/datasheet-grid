@@ -18,6 +18,7 @@ export type CreateSpreadsheetGridOptions = {
 const DISABLED_FEATURE_PROPS: { [K in keyof ReactGridFeatures]?: Partial<SpreadsheetGridProps<object>> } = {
   rowDrag: { enableRowDrag: false },
   columnAutosize: { autoSizeColumns: false },
+  contextMenu: { enableContextMenu: false },
 };
 
 export function createSpreadsheetGrid({ features }: CreateSpreadsheetGridOptions) {

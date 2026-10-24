@@ -4,7 +4,7 @@
 //   - ReactGridFeatures は利用側が渡す形(どの機能も省略できる)、GridShellFeatures はシェルが受け取る形です。
 //     hook の部品はシェルが機能を移す前と同じ位置で必ず呼ぶため、無い機能には代役を入れて渡します(features/resolve.ts)。
 //     機能セットはモジュールの読み込み時に決まって描画中は変わらないため、本物と代役が入れ替わることはありません。
-import type { CSSProperties, ReactNode } from 'react';
+import type { CSSProperties, MouseEvent as ReactMouseEvent, ReactNode, RefObject } from 'react';
 import type { GridCoreFeatures } from '@ishibashi0112/spreadsheet-grid-core/engine/features';
 import type { splitTextByFindRanges } from '@ishibashi0112/spreadsheet-grid-core/logic/find';
 import type { resolveScrollHintOptions } from '@ishibashi0112/spreadsheet-grid-core/logic/scrollHint';
@@ -18,7 +18,17 @@ import type { ColumnHeaderDragController } from '@ishibashi0112/spreadsheet-grid
 import type { ColumnAutosizeRunnerArgs } from '@ishibashi0112/spreadsheet-grid-core/controllers/columnAutosizeRunner';
 import type { ColumnPane, GridPaneLayout } from '@ishibashi0112/spreadsheet-grid-core/logic/geometry';
 import type { DetailRowExtra, RowMetrics } from '@ishibashi0112/spreadsheet-grid-core/logic/verticalGeometry';
-import type { GridColumn, GridUiState, RowModel, SpreadsheetGridProps } from '../model/gridTypes';
+import type {
+  CellCoord,
+  GridColumn,
+  GridContextMenuItem,
+  GridContextMenuParams,
+  GridResolvedSlots,
+  GridSelection,
+  GridUiState,
+  RowModel,
+  SpreadsheetGridProps,
+} from '../model/gridTypes';
 import type { GridFindBar } from '../view/GridFindBar';
 import type { GridScrollHint } from '../view/GridScrollHint';
 import type { GridTotalRow } from '../view/GridTotalRow';
@@ -102,6 +112,24 @@ export type ColumnAutosizeFeatureResult<T> = {
   runAutosize: (columns: GridColumn<T>[]) => Promise<void>;
 };
 
+// セル / 行のコンテキストメニュー(contextMenu)の hook が受け取る値と返す値、右クリックの対象の解決に渡す値です。
+export type CellContextMenuFeatureArgs = {
+  gridRootRef: RefObject<HTMLDivElement | null>;
+};
+export type CellContextMenuFeatureResult<T> = {
+  isContextMenuOpen: boolean;
+  openContextMenu: (params: GridContextMenuParams<T>, items: GridContextMenuItem[]) => void;
+  // ルートの末尾に置く popover(閉じているときは何も描かない)。
+  renderContextMenuPopover: (slots: GridResolvedSlots, themeClassName: string | undefined) => ReactNode;
+};
+export type BodyContextMenuInput<T> = {
+  event: ReactMouseEvent<HTMLDivElement>;
+  rowModel: RowModel<T>;
+  orderedColumns: GridColumn<T>[];
+  selection: GridSelection;
+  activeCell: CellCoord | null;
+};
+
 export type ReactGridFeatures = {
   // セル内検索(F-2): 走査のコントローラ(core)+ 検索バー + セル文字列のヒット分割。
   find?: NonNullable<GridCoreFeatures['find']> & {
@@ -129,6 +157,11 @@ export type ReactGridFeatures = {
     resolveTotalRowCaption: typeof resolveTotalRowCaption;
     resolveTotalRowLabelColumnKey: typeof resolveTotalRowLabelColumnKey;
   };
+  // セル / 行のコンテキストメニュー(バッチ②): controller の接続 + popover、右クリックの対象の解決。
+  contextMenu?: {
+    useCellContextMenu: <T>(args: CellContextMenuFeatureArgs) => CellContextMenuFeatureResult<T>;
+    buildBodyContextMenuParams: <T>(input: BodyContextMenuInput<T>) => GridContextMenuParams<T> | null;
+  };
   // スクロール位置インジケーター(scrollHint): オプションの解決 + 描画部品。
   scrollHint?: {
     resolveScrollHintOptions: typeof resolveScrollHintOptions;
@@ -142,6 +175,6 @@ export type ReactGridFeatures = {
 
 // シェルが受け取る機能セット: hook の部品を持つ機能は必ずある(無い機能は代役)。それ以外の機能は省略のまま
 //   (シェルが ?. で見て、無ければ何もしない)。
-type HookFeatureName = 'fillHandle' | 'columnReorder' | 'rowDrag' | 'columnAutosize';
+type HookFeatureName = 'fillHandle' | 'columnReorder' | 'rowDrag' | 'columnAutosize' | 'contextMenu';
 export type GridShellFeatures = Omit<ReactGridFeatures, HookFeatureName> &
   Required<Pick<ReactGridFeatures, HookFeatureName>>;

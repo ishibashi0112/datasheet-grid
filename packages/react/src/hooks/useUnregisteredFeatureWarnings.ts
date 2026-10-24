@@ -28,6 +28,7 @@ const FEATURE_PROPS: {
     prop: 'autoSizeColumns',
     isUsed: (props) => props.autoSizeColumns !== undefined && props.autoSizeColumns !== false,
   },
+  contextMenu: { prop: 'enableContextMenu', isUsed: (props) => props.enableContextMenu === true },
 };
 
 function useUnregisteredFeatureWarningsInDev<T extends object>(

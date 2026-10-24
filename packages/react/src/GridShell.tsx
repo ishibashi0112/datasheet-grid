@@ -218,10 +218,6 @@ import type {
   // 追加(proposals ⑧): onScroll 通知パラメータの型です。
   SpreadsheetGridProps,
   // 追加(state #2): onStateChange の lastEmitted 保持 / snapshot 型に使います。
-  // 追加(バッチ②/コンテキストメニュー): 対象/params/項目の公開型。
-  GridContextMenuTarget,
-  GridContextMenuParams,
-  GridContextMenuItem,
 } from './model/gridTypes';
 import { getCellValue, isViewCellEditable } from '@ishibashi0112/spreadsheet-grid-core/utils/permissions';
 import { writeRowsCell } from '@ishibashi0112/spreadsheet-grid-core/logic/editorValues';
@@ -271,13 +267,6 @@ import type {
 import GridFilterChipBar from './view/GridFilterChipBar';
 // 変更(差し込み式 段階 2): スクロール位置インジケーターは機能セット(features.scrollHint)から受け取ります。
 // 追加(バッチ②/コンテキストメニュー): 対象解決(純ロジック)/ controller / portal popover。
-import {
-  resolveContextMenuColIndex,
-  isContextMenuCellSelected,
-  isContextMenuRowSelected,
-} from '@ishibashi0112/spreadsheet-grid-core/logic/contextMenuTarget';
-import useCellContextMenuController from './hooks/useCellContextMenuController';
-import CellContextMenuPopover from './view/CellContextMenuPopover';
 // 変更(差し込み式 段階 2): フィルハンドルの部品は機能セット(features.fillHandle)から受け取ります(無ければ代役)。
 import type { ReactGridTypes } from './model/gridTypes';
 // 追加(差し込み式 段階 2): シェルが受け取る機能セットの型です(無い機能の代役と警告は createSpreadsheetGrid 側)。
@@ -308,7 +297,6 @@ const DENSITY_DIMENSIONS: Record<
 // 追加(B3): flex 非適用時(未計測 / flex 列なし)に返す共有の空 map です。参照同一性で
 //   「flex 素通し(= effectiveColumnWidths は uiState.columnWidths そのまま)」を判定します。
 // 追加(バッチ②): コンテキストメニュー closed 時に popover へ渡す空 items(参照不変)。
-const EMPTY_CONTEXT_MENU_ITEMS: GridContextMenuItem[] = [];
 // 追加(detail ③): 展開行なし時の安定な空配列(参照同一で再計算を誘発しない)。
 // 追加(#2): リサイズハンドルのダブルクリック判定しきい値です。native dblclick は pointerdown の
 //   preventDefault でブラウザ差により抑止されることがあるため、時刻 + 位置で自前判定します
@@ -972,14 +960,10 @@ export function useGridShell<T extends object>({
   //             配置(右クリック座標)/ outside click / Escape / scroll close を管理します。
   //             対象解決・項目供給は下の handleBodyContextMenu(委譲)で行い、確定 params + items を
   //             openContextMenu へ渡します。相互排他は他 popover と同じく outside-pointerdown が担います。
-  const {
-    contextMenuState,
-    contextMenuLayout,
-    contextMenuRef,
-    isContextMenuOpen,
-    openContextMenu,
-    closeContextMenu,
-  } = useCellContextMenuController<T>({ gridRootRef });
+  // 変更(差し込み式 段階 2): controller の接続と popover は機能(features/contextMenu)へ移しました。
+  const { isContextMenuOpen, openContextMenu, renderContextMenuPopover } =
+    features.contextMenu.useCellContextMenu<T>({ gridRootRef });
+  const buildBodyContextMenuParams = features.contextMenu.buildBodyContextMenuParams;
 
   // ── column widths sync ────────────────────────────────
   // 変更(監査 RD-5 / M-03): フル置換(resetColumnWidths。columns の参照が変わるたびに全列を column.width
@@ -1367,68 +1351,17 @@ export function useGridShell<T extends object>({
       if (!enableContextMenu || !getContextMenuItems) {
         return;
       }
-      const targetEl = event.target as HTMLElement | null;
-      if (!targetEl) {
-        return;
-      }
-      // ボディ行コンテナ(行NO ガター含む)。ヘッダーはこれを持たないため null → 早期 return。
-      const rowEl = targetEl.closest<HTMLElement>('[data-row-index]');
-      if (!rowEl) {
-        return;
-      }
-      const rowIndexRaw = rowEl.dataset.rowIndex;
-      if (rowIndexRaw === undefined) {
-        return;
-      }
-      const rowIndex = Number(rowIndexRaw);
-      if (!Number.isInteger(rowIndex)) {
-        return;
-      }
-      const row = rowModel.getRow(rowIndex);
-      // SSRM 未ロード / OOB は開きません(標準メニューへ)。
-      if (!row) {
-        return;
-      }
-      const rowKey = rowModel.getRowKey(rowIndex) ?? rowIndex;
-
-      // セル(data-ssg-col-key あり)か、行NO ガター(なし)かで target を分けます。
-      let target: GridContextMenuTarget<T>;
-      let isTargetSelected: boolean;
-      const cellEl = targetEl.closest<HTMLElement>('[data-ssg-col-key]');
-      const colKey = cellEl?.dataset.ssgColKey;
-      if (cellEl && colKey !== undefined) {
-        const colIndex = resolveContextMenuColIndex(orderedColumns, colKey);
-        if (colIndex < 0) {
-          return;
-        }
-        const column = orderedColumns[colIndex];
-        target = {
-          type: 'cell',
-          rowIndex,
-          colIndex,
-          rowKey,
-          row,
-          column,
-          value: getCellValue(row, column),
-        };
-        isTargetSelected = isContextMenuCellSelected(
-          uiState.selection,
-          rowIndex,
-          colIndex,
-        );
-      } else {
-        target = { type: 'rowHeader', rowIndex, rowKey, row };
-        isTargetSelected = isContextMenuRowSelected(uiState.selection, rowIndex);
-      }
-
-      const params: GridContextMenuParams<T> = {
-        target,
-        clientX: event.clientX,
-        clientY: event.clientY,
+      // 対象(セル / 行番号)の解決は機能側(features/contextMenu)。開かない対象なら null(標準メニューへ)。
+      const params = buildBodyContextMenuParams<T>({
+        event,
+        rowModel,
+        orderedColumns,
         selection: uiState.selection,
         activeCell: uiState.activeCell,
-        isTargetSelected,
-      };
+      });
+      if (!params) {
+        return;
+      }
 
       const items = getContextMenuItems(params);
       // 空(または未定義)なら標準メニューへフォールスルー(空パネルは出さない)。
@@ -1445,6 +1378,7 @@ export function useGridShell<T extends object>({
       enableContextMenu,
       getContextMenuItems,
       onContextMenuOpen,
+      buildBodyContextMenuParams,
       rowModel,
       orderedColumns,
       uiState.selection,
@@ -4056,17 +3990,7 @@ export function useGridShell<T extends object>({
   // ── cell context menu popover(バッチ②) ───────────────
   // 追加(バッチ②): コンテキストメニュー popover の描画です(portal で body 直下へ出します)。
   //             closed 時はコンポーネント側が null を返すため、常時この 1 要素を tail に置きます。
-  const renderedCellContextMenuPopover = (
-    <CellContextMenuPopover
-      slots={slots}
-      themeClassName={portalClassName}
-      isOpen={isContextMenuOpen}
-      items={contextMenuState?.items ?? EMPTY_CONTEXT_MENU_ITEMS}
-      layout={contextMenuLayout}
-      popoverRef={contextMenuRef}
-      onRequestClose={closeContextMenu}
-    />
-  );
+  const renderedCellContextMenuPopover = renderContextMenuPopover(slots, portalClassName);
 
   // 追加(13-A): いずれかの popup(フィルター / 列メニュー)表示中かどうかです。
   //             grid root の tab フォーカス / keyboard / paste handler の一時停止に使います

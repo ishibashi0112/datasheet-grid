@@ -46,10 +46,24 @@ const inertColumnAutosizeFeature: GridShellFeatures['columnAutosize'] = {
   useColumnAutosize: () => INERT_COLUMN_AUTOSIZE,
 };
 
+// コンテキストメニューが無い構成では enableContextMenu を false として扱う(createSpreadsheetGrid)ので、右クリックは
+//   ブラウザ標準のメニューのままです(対象の解決も呼ばれない。念のため null = 開かない)。
+const INERT_CONTEXT_MENU = {
+  isContextMenuOpen: false,
+  openContextMenu: () => {},
+  renderContextMenuPopover: () => null,
+};
+
+const inertContextMenuFeature: GridShellFeatures['contextMenu'] = {
+  useCellContextMenu: () => INERT_CONTEXT_MENU,
+  buildBodyContextMenuParams: () => null,
+};
+
 export const resolveGridShellFeatures = (features: ReactGridFeatures): GridShellFeatures => ({
   ...features,
   fillHandle: features.fillHandle ?? inertFillHandleFeature,
   columnReorder: features.columnReorder ?? inertColumnReorderFeature,
   rowDrag: features.rowDrag ?? inertRowDragFeature,
   columnAutosize: features.columnAutosize ?? inertColumnAutosizeFeature,
+  contextMenu: features.contextMenu ?? inertContextMenuFeature,
 });
