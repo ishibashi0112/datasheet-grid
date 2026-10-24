@@ -106,4 +106,36 @@ describe('findController', () => {
     expect(controller.getSnapshot().open).toBe(false);
     controller.dispose();
   });
+
+  // 追加(onFindChange の連続呼び出し): インラインの rowKeyGetter で再レンダーごとに rowModel が作り直され、
+  //   onChange の中で setState(= 再レンダー = update)する利用側でも、結果が変わらなければ通知は 1 回で止まる。
+  it('rowModel が作り直されても結果が同じなら onChange を呼ばない(通知 → 再レンダー → 再走査の連鎖が止まる)', async () => {
+    const controller = createFindController<Row>();
+    const onNavigate = vi.fn();
+    let renders = 0;
+    const render = () => {
+      renders += 1;
+      // 利用側の再レンダーのたびに新しい rowModel(中身は同じ)が渡る。
+      controller.update({ enabled: true, rowModel: makeRowModel(rows), columns, caseSensitive: false, onNavigate, onChange });
+    };
+    const onChange = vi.fn(() => {
+      if (renders < 50) {
+        render();
+      }
+    });
+    render();
+    controller.open('alpha');
+    await flush();
+    await flush();
+    expect(onChange).toHaveBeenCalledTimes(1);
+    expect(onChange).toHaveBeenLastCalledWith({ query: 'alpha', matchCount: 2, currentIndex: 0, open: true });
+    expect(renders).toBe(2);
+    // 中身が変われば通知する(next でカレントが動く / close)。
+    controller.next();
+    expect(onChange).toHaveBeenLastCalledWith({ query: 'alpha', matchCount: 2, currentIndex: 1, open: true });
+    controller.close();
+    expect(onChange).toHaveBeenLastCalledWith({ query: '', matchCount: 0, currentIndex: null, open: false });
+    expect(onChange).toHaveBeenCalledTimes(3);
+    controller.dispose();
+  });
 });

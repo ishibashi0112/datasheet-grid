@@ -84,9 +84,24 @@ export const createFindController = <T,>(): FindController<T> => {
     store.setSnapshot({ ...store.getSnapshot(), ...next });
   };
 
+  // 変更(onFindChange の連続呼び出し): 前回と同じ内容は通知しません(API の約束どおり「変わったとき」だけ)。
+  //   利用側がインラインの rowKeyGetter を渡すと再レンダーごとに rowModel が作り直されて再走査になり、結果が同じでも
+  //   通知していたため、onFindChange の中で setState すると「通知 → 再レンダー → 再走査 → 通知」が止まらなかった。
+  let lastNotified: FindChangeParams | null = null;
   const notify = () => {
     const s = store.getSnapshot();
-    args?.onChange?.({ query: s.query, matchCount: s.matches.length, currentIndex: s.currentIndex, open: s.open });
+    const params: FindChangeParams = { query: s.query, matchCount: s.matches.length, currentIndex: s.currentIndex, open: s.open };
+    if (
+      lastNotified !== null &&
+      lastNotified.query === params.query &&
+      lastNotified.matchCount === params.matchCount &&
+      lastNotified.currentIndex === params.currentIndex &&
+      lastNotified.open === params.open
+    ) {
+      return;
+    }
+    lastNotified = params;
+    args?.onChange?.(params);
   };
 
   const navigateToCurrent = () => {
