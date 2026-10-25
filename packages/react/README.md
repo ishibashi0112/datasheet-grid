@@ -47,6 +47,7 @@ export function App() {
 
 ```tsx
 import { createSpreadsheetGrid, standardFeatures, serverSideFeature } from '@ishibashi0112/spreadsheet-grid/lite'
+import '@ishibashi0112/spreadsheet-grid/style.css'
 
 // Create it once at module level, not inside a component.
 const Grid = createSpreadsheetGrid({ features: { ...standardFeatures, serverSide: serverSideFeature } })
@@ -90,6 +91,7 @@ React 19 向けの仮想化スプレッドシート / データグリッドで�
 
 ```tsx
 import { createSpreadsheetGrid, standardFeatures, serverSideFeature } from '@ishibashi0112/spreadsheet-grid/lite'
+import '@ishibashi0112/spreadsheet-grid/style.css'
 
 // コンポーネントの中ではなく、モジュールの先頭で 1 回だけ作る
 const Grid = createSpreadsheetGrid({ features: { ...standardFeatures, serverSide: serverSideFeature } })

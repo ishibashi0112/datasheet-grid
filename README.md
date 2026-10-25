@@ -262,6 +262,7 @@ The preset drives the default `rowHeight` / `headerHeight` (compact: 28/32, stan
 
 ```tsx
 import { createSpreadsheetGrid, standardFeatures, serverSideFeature } from '@ishibashi0112/spreadsheet-grid/lite';
+import '@ishibashi0112/spreadsheet-grid/style.css';
 
 // Create it once at module level, not inside a component.
 const Grid = createSpreadsheetGrid({ features: { ...standardFeatures, serverSide: serverSideFeature } });
@@ -614,6 +615,7 @@ flex column の残り（ページヘッダーの下など）を埋める:
 
 ```tsx
 import { createSpreadsheetGrid, standardFeatures, serverSideFeature } from '@ishibashi0112/spreadsheet-grid/lite';
+import '@ishibashi0112/spreadsheet-grid/style.css';
 
 // コンポーネントの中ではなく、モジュールの先頭で 1 回だけ作る
 const Grid = createSpreadsheetGrid({ features: { ...standardFeatures, serverSide: serverSideFeature } });

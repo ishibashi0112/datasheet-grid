@@ -10,14 +10,15 @@
 //     揺れます(機能の部品を別ファイルへ移しただけで並びが変わる)。dist に入口が無い構成だけに使う(今は無し)。
 //   使い方: node scripts/measure-size.mjs           計測して表を出す
 //           node scripts/measure-size.mjs --check   上限を超えた構成があれば終了コード 1(CI)。dist がソースより
-//                                                   古いときも 1(古い dist の値で通してしまわないため)。/lite の入口
-//                                                   (dist/lite.js)が再エクスポートだけになっていないときも 1
+//                                                   古いときも 1(古い dist の値で通してしまわないため)。/lite の dist の
+//                                                   形が崩れたとき(下の checkLiteDistShape)も 1
 //           node scripts/measure-size.mjs --update  上限を「今の値 + 余裕」に書き直す(機能を足して大きくなったとき)
 //           node scripts/measure-size.mjs --update=lite,standard   指定した構成の上限だけ書き直す(カンマ区切りで
 //                                                   複数可。full は 112.3KB で固定しているので書き換えない)
 //   どのディレクトリから実行しても同じ結果になります(esbuild の作業ディレクトリをリポジトリ直下に固定)。
 import { build } from 'esbuild';
 import { readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
+import { dirname, resolve as resolvePath } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { gzipSync } from 'node:zlib';
 
@@ -86,7 +87,9 @@ const findStaleDists = () => {
   for (const pkg of ['core', 'react']) {
     let distMtime;
     try {
-      distMtime = statSync(`${ROOT}packages/${pkg}/dist/index.js`).mtimeMs;
+      // React 版は全部入り(index)と /lite の 2 つのビルドなので、古い方で比べる。
+      const entries = pkg === 'react' ? ['index.js', 'lite.js'] : ['index.js'];
+      distMtime = Math.min(...entries.map((entry) => statSync(`${ROOT}packages/${pkg}/dist/${entry}`).mtimeMs));
     } catch {
       console.error(`size: packages/${pkg}/dist がありません。先に \`pnpm run build:lib\` を実行してください。`);
       process.exit(1);
@@ -98,20 +101,79 @@ const findStaleDists = () => {
   return stale;
 };
 
-// 追加(差し込み式 段階 6): /lite の入口(dist/lite.js)のうち、import / export の文以外の行を返します。Turbopack
-//   (Next.js 16 の既定)は読み込んだモジュールの import をすべて残すので、入口に中身が入ると、入口が再エクスポート
-//   する全機能が利用側のバンドルに残ります(esbuild のこの計測では見えない)。vite.lite.config.ts の先頭も参照。
-const findLiteEntryCode = () =>
-  readFileSync(`${ROOT}packages/react/dist/lite.js`, 'utf8')
+// 追加(差し込み式 段階 6): /lite の dist の形を確かめ、崩れていれば理由を返します。esbuild のこの計測では見えないが、
+//   Turbopack(Next.js 16 の既定)と webpack では使わない機能が利用側のバンドルに残る形への戻りを止めます
+//   (vite.lite.config.ts の先頭も参照)。
+//   1. 入口 dist/lite.js は import / export の文だけ(Turbopack は読み込んだモジュールの import をすべて残すので、
+//      入口に中身があると入口が再エクスポートする全機能が残る)。
+//   2. 本体(dist/lite/createSpreadsheetGrid.js)から静的 import でたどれるファイルに、機能の部品を定義するファイルが
+//      無い(本体が機能のチャンクを import すると、Turbopack では使わなくても残る)。
+//   3. プリセット(dist/lite/features/standard.js)は /* @__PURE__ */ 付きの呼び出しで作る(webpack はオブジェクト
+//      リテラルを副作用なしと見なさず、standardFeatures を使わなくても 5 機能が残る)。
+const LITE_DIST = `${ROOT}packages/react/dist/`;
+const IMPORT_STATEMENT = /^import (?:\{([^}]*)\} from )?"([^"]+)";$/;
+const EXPORT_STATEMENT = /^export \{([^}]*)\};$/;
+const statementLines = (file) =>
+  readFileSync(file, 'utf8')
     .split('\n')
     .map((line) => line.trim())
-    .filter(
-      (line) =>
-        line !== '' &&
-        !line.startsWith('//') &&
-        !/^import \{[^}]*\} from "[^"]+";$/.test(line) &&
-        !/^export \{[^}]*\};$/.test(line),
-    );
+    .filter((line) => line !== '' && !line.startsWith('//'));
+// `a as b, c` → [[a, b], [c, c]]
+const parseBindings = (list) =>
+  list
+    .split(',')
+    .map((part) => part.trim())
+    .filter((part) => part !== '')
+    .map((part) => {
+      const [imported, local = imported] = part.split(/\s+as\s+/);
+      return [imported, local];
+    });
+// 相対パスの静的 import の { 解決後のパス, 取り込む名前の対応 } の一覧。
+const relativeImports = (file) =>
+  statementLines(file)
+    .map((line) => IMPORT_STATEMENT.exec(line))
+    .filter((match) => match !== null && match[2].startsWith('.'))
+    .map((match) => ({ path: resolvePath(dirname(file), match[2]), bindings: parseBindings(match[1] ?? '') }));
+const checkLiteDistShape = () => {
+  const problems = [];
+  const entryCode = statementLines(`${LITE_DIST}lite.js`).filter(
+    (line) => !IMPORT_STATEMENT.test(line) && !EXPORT_STATEMENT.test(line),
+  );
+  if (entryCode.length > 0) {
+    problems.push(`dist/lite.js に再エクスポート以外のコードがあります(先頭: ${entryCode[0].slice(0, 80)})`);
+  }
+  // 機能の部品を定義するファイル: dist/lite/features/<名前>.js が <名前>Feature を import して再エクスポートしていれば
+  //   その import 先、自分で定義していればそのファイル。
+  const featureDir = `${LITE_DIST}lite/features/`;
+  const definingFiles = new Map();
+  for (const fileName of readdirSync(featureDir).filter((name) => name.endsWith('.js') && name !== 'standard.js')) {
+    const facade = `${featureDir}${fileName}`;
+    const exportName = `${fileName.slice(0, -'.js'.length)}Feature`;
+    const local = statementLines(facade)
+      .map((line) => EXPORT_STATEMENT.exec(line))
+      .filter((match) => match !== null)
+      .flatMap((match) => parseBindings(match[1]))
+      .find(([, exported]) => exported === exportName)?.[0];
+    const source = relativeImports(facade).find(({ bindings }) => bindings.some(([, name]) => name === local));
+    definingFiles.set(source ? source.path : facade, exportName);
+  }
+  const reachable = new Set();
+  const walk = (file) => {
+    if (reachable.has(file)) return;
+    reachable.add(file);
+    for (const { path } of relativeImports(file)) walk(path);
+  };
+  walk(`${LITE_DIST}lite/createSpreadsheetGrid.js`);
+  for (const file of reachable) {
+    if (definingFiles.has(file)) {
+      problems.push(`/lite の本体が機能の部品(${definingFiles.get(file)})のファイルを静的 import しています`);
+    }
+  }
+  if (!readFileSync(`${featureDir}standard.js`, 'utf8').includes('/* @__PURE__ */')) {
+    problems.push('dist/lite/features/standard.js の standardFeatures が /* @__PURE__ */ 付きの呼び出しになっていません');
+  }
+  return problems;
+};
 
 async function measure(config) {
   const fromDist = config.source === 'dist';
@@ -239,11 +301,12 @@ if (args.has('--check')) {
     console.error('size: dist が古いままでは正しく測れません。`pnpm run build:lib` の後に実行してください。');
     process.exit(1);
   }
-  const liteEntryCode = findLiteEntryCode();
-  if (liteEntryCode.length > 0) {
-    console.error(
-      `size: dist/lite.js に再エクスポート以外のコードがあります(先頭: ${liteEntryCode[0].slice(0, 80)})。中身は別のエントリ(vite.lite.config.ts)へ出してください。`,
-    );
+  const liteProblems = checkLiteDistShape();
+  if (liteProblems.length > 0) {
+    for (const problem of liteProblems) {
+      console.error(`size: ${problem}`);
+    }
+    console.error('/lite の dist の形は vite.lite.config.ts の先頭のコメントを参照してください。');
     process.exit(1);
   }
   const over = rows.filter(({ size, limit }) => limit === undefined || size.initialGzipKB > limit);

@@ -54,8 +54,11 @@ export function createSpreadsheetGrid({ features }: CreateSpreadsheetGridOptions
     }
   }
   const hasOverrides = Object.keys(overrides).length > 0;
-  return function SpreadsheetGrid<T extends object>(props: SpreadsheetGridProps<T>) {
+  function SpreadsheetGrid<T extends object>(props: SpreadsheetGridProps<T>) {
     useUnregisteredFeatureWarnings(props, features);
     return useGridShell(hasOverrides ? { ...props, ...(overrides as Partial<SpreadsheetGridProps<T>>) } : props, shellFeatures);
-  };
+  }
+  // dist では関数名が縮められるので、React の開発ツールと警告に出す名前を付けます。
+  SpreadsheetGrid.displayName = 'SpreadsheetGrid';
+  return SpreadsheetGrid;
 }

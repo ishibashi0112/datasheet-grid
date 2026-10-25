@@ -50,11 +50,14 @@ const Grid = createSpreadsheetGrid({
 
 - `standardFeatures` は、列フィルター / グローバルフィルター(`filtering`)、列メニュー(`columnMenu`)、ツールパネル(`toolPanel`)、列幅の自動調整(`columnAutosize`)、エクスポート(`export`)です。
 - 列メニューが無いと、画面からソートする入口がありません(ソートは `applyState` 等の API からになります)。ソートを画面で使うなら `columnMenu` を入れてください。
+- 列フィルターを画面から掛ける入口は列メニューの「フィルター…」です。`filtering` だけでは検索欄しか使えないので、列フィルターも使うなら `columnMenu` も入れてください。
+- ツールパネル(`toolPanel`)は列メニューの項目や適用中フィルターのチップから開きます。`columnMenu` か `filtering` と一緒に入れてください(どちらも無いと開く入口が無いので何もしません)。
+- 列メニューの「幅の自動調整」は `columnAutosize` を入れたときだけ出ます。
 - 全部入りで既定オンの機能(列フィルター・列メニュー・列のドラッグ・選択範囲の集計・コピー範囲の点線など)は、`/lite` では入れたときだけ既定オンになります。
 
 ## 入れていない機能を使おうとしたとき
 
-入れていない機能の prop を渡したり、その機能のメソッドを呼んだりしても、何も起きません(エラーにもなりません)。開発ビルドでは、prop ごとに 1 回だけ、足すべき機能を名指しした警告が出ます(prop を持たないエクスポートとツールパネルは、`exportCsv()` / `openFilterManager()` などのメソッドを呼んだ時点で警告します):
+入れていない機能の prop を渡したり、その機能のメソッドを呼んだりしても、何も起きません(エラーにもなりません)。開発ビルドでは、prop ごとに 1 回だけ、足すべき機能を名指しした警告が出ます(prop を持たないエクスポートとツールパネルは、`exportCsv()` / `openFilterManager()` などのメソッドを呼んだ時点で警告します。`openFilterManager()` はフィルタータブを開くので、`filtering` が無いときも警告します):
 
 ```text
 [spreadsheet-grid] prop `fillHandle` が渡されましたが、その機能が機能セットに入っていないため何もしません。createSpreadsheetGrid の features に `fillHandle: fillHandleFeature` を入れてください。
@@ -72,6 +75,7 @@ const Grid = createSpreadsheetGrid({
 ## 注意
 
 - `createSpreadsheetGrid` はモジュールの先頭で呼んでください。コンポーネントの中で呼ぶと描画のたびに別のコンポーネントになり、グリッドの状態(選択・スクロール位置など)が消えます。
+- Next.js(App Router)では、`createSpreadsheetGrid` を呼ぶファイルに `'use client'` を付けてください。作ったコンポーネントや `standardFeatures` は関数なので、サーバーコンポーネントから props で渡せません(クライアントコンポーネントの中で import して使います)。
 - 機能の組み合わせは作ったときに決まります。途中で機能を足したいときは、別の組み合わせで作ったコンポーネントに切り替えてください。
 - 全部入りの `SpreadsheetGrid` と同じアプリで混ぜることはできますが、共通部分が二重に入ります(`/lite` は機能ごとのファイルに分けた別のビルドのため)。どちらかの入口に揃えてください。
 - 使わない機能がバンドルから落ちることは、Vite 8・webpack 5・Next.js 16(既定の Turbopack)・esbuild で確かめています(バンドラーが `package.json` の `sideEffects` と `/* @__PURE__ */` を解釈する必要があります)。

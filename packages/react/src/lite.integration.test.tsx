@@ -48,10 +48,12 @@ describe('/lite の入口', () => {
     expect(featureExports.sort()).toEqual(Object.keys(fullGridFeatures).map((name) => `${name}Feature`).sort());
   });
 
-  it('全部入りのコンポーネントは公開せず、コンポーネント以外の公開物は全部入りの入口と同じ', () => {
+  // preloadGridPopups は src では同じ関数だが、公開する dist では入口ごとに別のビルドなので別の関数になり、それぞれの
+  //   入口の部品だけを読み込む(vite.lite.config.ts)。ここでは同じであることを確かめない。
+  it('全部入りのコンポーネントは公開せず、コンポーネント以外の公開物は全部入りの入口と同じ名前で公開する', () => {
     expect('SpreadsheetGrid' in lite).toBe(false);
     expect(lite.numberFormatter).toBe(full.numberFormatter);
-    expect(lite.preloadGridPopups).toBe(full.preloadGridPopups);
+    expect(typeof lite.preloadGridPopups).toBe('function');
   });
 
   it('standardFeatures はフィルター / 列メニュー / ツールパネル / 列幅の自動調整 / エクスポートで、全部入りと同じ部品', () => {

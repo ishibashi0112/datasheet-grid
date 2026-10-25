@@ -1,5 +1,7 @@
 // 追加(差し込み式 段階 6): 2 つの入口(全部入りの index と /lite)に共通の公開物です(コンポーネント以外)。
-//   どちらの入口からも同じ関数と型を import できます。公開する型は API_REFERENCE.md と対応します。
+//   どちらの入口からも同じ名前の関数と型を import できます。公開する型は API_REFERENCE.md と対応します。dist では
+//   2 つの入口は別のビルド(vite.lite.config.ts)なので、preloadGridPopups はそれぞれの入口のグリッドの部品だけを
+//   読み込みます。
 // 値フォーマッタ(UI 表示のみ)の組み込みファクタ。利用側も CellValueFormatter で自作可。
 export { numberFormatter } from '@ishibashi0112/spreadsheet-grid-core/logic/valueFormatters';
 // 追加(lazy-popups): 列フィルターポップオーバー / ツールパネルの部品(別チャンク)を先に読み込みます
