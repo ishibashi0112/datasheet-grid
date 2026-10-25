@@ -123,6 +123,6 @@ function GridDetailLayerInner({
   );
 }
 
-export const GridDetailLayer = memo(GridDetailLayerInner);
+export const GridDetailLayer = /* @__PURE__ */ memo(GridDetailLayerInner);
 
 export default GridDetailLayer;

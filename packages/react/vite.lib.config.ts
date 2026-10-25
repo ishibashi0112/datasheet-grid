@@ -17,9 +17,14 @@ export default defineConfig({
     lib: {
       // 追加(proposals ③): testing サブパス(jsdom レイアウトスタブ)を第 2 エントリで配布します。
       //   React 非依存の小さなモジュールで、index とはチャンクを共有しません。
+      // 追加(差し込み式 段階 6): /lite の入口を第 3 エントリにします。index と共通の部分は 1 つの共有チャンクに入ります
+      //   (使わない機能は利用側のバンドラが取り除く。package.json の sideEffects と、モジュール直下の memo() 等に付けた
+      //   /* @__PURE__ */ が前提)。preserveModules(モジュールごとのファイル)は試したうえで使いません: 縮めた後の大きさは
+      //   同じでも、利用側で束ねたときの並び順が変わってフル版の gzip が 2〜3KB 増えたため(2026-10-25)。
       entry: {
         index: resolve(import.meta.dirname, 'src/index.ts'),
         testing: resolve(import.meta.dirname, 'src/testing/index.ts'),
+        lite: resolve(import.meta.dirname, 'src/lite.ts'),
       },
       formats: ['es', 'cjs'],
       fileName: (format, entryName) => `${entryName}.${format === 'es' ? 'js' : 'cjs'}`,

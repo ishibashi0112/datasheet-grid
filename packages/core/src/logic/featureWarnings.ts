@@ -10,8 +10,13 @@ const warnedProps = new Set<string>();
 
 const HINT = 'createSpreadsheetGrid の features に該当する機能を入れてください。';
 
-// props: 使われているのに機能セットに無い prop の名前。
-export const warnUnregisteredFeatureProps = (props: readonly string[]): void => {
+// 変更(差し込み式 段階 6): 機能の名前(機能セットのキー)が分かれば、足すべき機能を名指しします(/lite の機能の
+//   部品はキー + Feature の名前で公開している。例: filtering → filteringFeature)。
+const hintFor = (feature: string | undefined): string =>
+  feature === undefined ? HINT : `createSpreadsheetGrid の features に \`${feature}: ${feature}Feature\` を入れてください。`;
+
+// props: 使われているのに機能セットに無い prop の名前。feature: その prop の機能(機能セットのキー)。
+export const warnUnregisteredFeatureProps = (props: readonly string[], feature?: string): void => {
   if (process.env.NODE_ENV === 'production') {
     return;
   }
@@ -21,13 +26,14 @@ export const warnUnregisteredFeatureProps = (props: readonly string[]): void => 
     }
     warnedProps.add(prop);
     console.warn(
-      `[spreadsheet-grid] prop \`${prop}\` が渡されましたが、その機能が機能セットに入っていないため何もしません。` + HINT,
+      `[spreadsheet-grid] prop \`${prop}\` が渡されましたが、その機能が機能セットに入っていないため何もしません。` +
+        hintFor(feature),
     );
   }
 };
 
 // method: 呼ばれたのに機能セットに無い命令的 API のメソッド名(例: exportCsv)。1 つのメソッドにつき 1 回だけ。
-export const warnUnregisteredFeatureMethod = (method: string): void => {
+export const warnUnregisteredFeatureMethod = (method: string, feature?: string): void => {
   if (process.env.NODE_ENV === 'production') {
     return;
   }
@@ -37,13 +43,13 @@ export const warnUnregisteredFeatureMethod = (method: string): void => {
   }
   warnedProps.add(key);
   console.warn(
-    `[spreadsheet-grid] \`${key}\` が呼ばれましたが、その機能が機能セットに入っていないため何もしません。` + HINT,
+    `[spreadsheet-grid] \`${key}\` が呼ばれましたが、その機能が機能セットに入っていないため何もしません。` + hintFor(feature),
   );
 };
 
 // 追加(差し込み式 段階 5): state: 状態としては受け取ったのに、機能セットに無いため効かないもの(例: フィルターの機能が
 //   無い構成で applyState に渡したフィルター)。1 つにつき 1 回だけ。
-export const warnUnregisteredFeatureState = (state: string): void => {
+export const warnUnregisteredFeatureState = (state: string, feature?: string): void => {
   if (process.env.NODE_ENV === 'production') {
     return;
   }
@@ -52,7 +58,9 @@ export const warnUnregisteredFeatureState = (state: string): void => {
     return;
   }
   warnedProps.add(key);
-  console.warn(`[spreadsheet-grid] ${state}が設定されましたが、その機能が機能セットに入っていないため効きません。` + HINT);
+  console.warn(
+    `[spreadsheet-grid] ${state}が設定されましたが、その機能が機能セットに入っていないため効きません。` + hintFor(feature),
+  );
 };
 
 // テスト用: 警告済みの記録を消します(同じ prop の警告をテストごとに確かめるため)。

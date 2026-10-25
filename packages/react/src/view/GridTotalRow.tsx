@@ -155,9 +155,9 @@ function GridTotalRowInner<T>({
   );
 }
 
-const TOTAL_ROW_STYLE_KEYS = new Set<keyof GridTotalRowProps<unknown>>(['rowStyle', 'rowHeaderCellStyle']);
+const TOTAL_ROW_STYLE_KEYS = /* @__PURE__ */ new Set<keyof GridTotalRowProps<unknown>>(['rowStyle', 'rowHeaderCellStyle']);
 
-export const GridTotalRow = memo(GridTotalRowInner, (prev, next) =>
+export const GridTotalRow = /* @__PURE__ */ memo(GridTotalRowInner, (prev, next) =>
   arePropsEqualWithStyleKeys(prev, next, TOTAL_ROW_STYLE_KEYS),
 ) as typeof GridTotalRowInner;
 

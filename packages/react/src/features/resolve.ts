@@ -101,7 +101,7 @@ const INERT_TOOL_PANEL = {
   toolPanelFlashTick: 0,
   toolPanelRef: { current: null },
   openToolPanel: () => {
-    warnUnregisteredFeatureMethod('openFilterManager');
+    warnUnregisteredFeatureMethod('openFilterManager', 'toolPanel');
   },
   closeToolPanel: () => {},
   moveToolPanel: () => {},
@@ -152,7 +152,7 @@ const useInertFilterOrder: GridShellFeatures['filtering']['useFilterOrder'] = (a
   const hasFilterState = args.globalFilterText.trim() !== '' || Object.keys(args.columnFilters).length > 0;
   useEffect(() => {
     if (hasFilterState) {
-      warnUnregisteredFeatureState('フィルターの状態(applyState / setGlobalFilterText)');
+      warnUnregisteredFeatureState('フィルターの状態(applyState / setGlobalFilterText)', 'filtering');
     }
   }, [hasFilterState]);
   return {
@@ -209,15 +209,15 @@ const inertExportFeature: NonNullable<ReactGridFeatures['export']> = {
     const inert = createInertExportCommands<T>();
     return {
       exportCsv: (options) => {
-        warnUnregisteredFeatureMethod('exportCsv');
+        warnUnregisteredFeatureMethod('exportCsv', 'export');
         return inert.exportCsv(options);
       },
       downloadCsv: (filename, options) => {
-        warnUnregisteredFeatureMethod('downloadCsv');
+        warnUnregisteredFeatureMethod('downloadCsv', 'export');
         inert.downloadCsv(filename, options);
       },
       getExportData: (options) => {
-        warnUnregisteredFeatureMethod('getExportData');
+        warnUnregisteredFeatureMethod('getExportData', 'export');
         return inert.getExportData(options);
       },
     };

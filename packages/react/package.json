@@ -42,6 +42,11 @@
       "import": "./dist/index.js",
       "require": "./dist/index.cjs"
     },
+    "./lite": {
+      "types": "./dist/lite.d.ts",
+      "import": "./dist/lite.js",
+      "require": "./dist/lite.cjs"
+    },
     "./testing": {
       "types": "./dist/testing/index.d.ts",
       "import": "./dist/testing.js",

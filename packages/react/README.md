@@ -41,6 +41,19 @@ export function App() {
 }
 ```
 
+## Smaller bundles: `/lite`
+
+`SpreadsheetGrid` includes every feature (about 111KB gzip of initial JS). The `/lite` entry builds a grid with only the features you pass; the rest is left out of your bundle (about 61KB with no features, about 78KB with the `standardFeatures` preset).
+
+```tsx
+import { createSpreadsheetGrid, standardFeatures, serverSideFeature } from '@ishibashi0112/spreadsheet-grid/lite'
+
+// Create it once at module level, not inside a component.
+const Grid = createSpreadsheetGrid({ features: { ...standardFeatures, serverSide: serverSideFeature } })
+```
+
+Props, the `ref` handle and types are the same as `SpreadsheetGrid`. Props of features you did not pass do nothing; in development a `console.warn` names the feature to add. The feature list and sizes are in `API_REFERENCE.md` (「機能を選んで組み込む」).
+
 ## Documentation in this package
 
 Everything below ships inside the npm package, so it is available offline (for example to coding agents reading `node_modules`).
@@ -70,6 +83,19 @@ MIT
 ## 日本語
 
 React 19 向けの仮想化スプレッドシート / データグリッドです(約 100 万行・列固定・Excel ライクな編集 / 選択 / クリップボード・フィルター / ソート・クライアントサイド / サーバーサイド行モデル)。
+
+### バンドルを小さくする: `/lite`
+
+`SpreadsheetGrid` は全機能入りです(初期読み込みの JS が約 111KB gzip)。`/lite` の入口では、渡した機能だけを入れたグリッドを作れます。渡さなかった機能はバンドルに入りません(機能なしで約 61KB、プリセット `standardFeatures` で約 78KB)。
+
+```tsx
+import { createSpreadsheetGrid, standardFeatures, serverSideFeature } from '@ishibashi0112/spreadsheet-grid/lite'
+
+// コンポーネントの中ではなく、モジュールの先頭で 1 回だけ作る
+const Grid = createSpreadsheetGrid({ features: { ...standardFeatures, serverSide: serverSideFeature } })
+```
+
+props・`ref` ハンドル・型は `SpreadsheetGrid` と同じです。渡していない機能の prop は何もせず、開発時は足すべき機能を `console.warn` で知らせます。機能の一覧とサイズは `API_REFERENCE.md` の「機能を選んで組み込む」にあります。
 
 ### このパッケージに同梱のドキュメント
 

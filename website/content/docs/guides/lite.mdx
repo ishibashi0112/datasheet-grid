@@ -1,0 +1,78 @@
+---
+title: バンドルを小さくする(/lite)
+description: createSpreadsheetGrid で使う機能だけを組み込み、初期読み込みの JS を約半分にする
+---
+
+`SpreadsheetGrid` は全機能入りで、初期読み込みの JS は約 111KB(gzip)です。`@ishibashi0112/spreadsheet-grid/lite` の `createSpreadsheetGrid` を使うと、渡した機能だけを入れたグリッドを作れます。渡さなかった機能のコードはバンドルに入りません。
+
+```tsx
+import { createSpreadsheetGrid, standardFeatures } from '@ishibashi0112/spreadsheet-grid/lite';
+import '@ishibashi0112/spreadsheet-grid/style.css';
+
+// モジュールの先頭で 1 回だけ作る(コンポーネントの中では作らない)
+const Grid = createSpreadsheetGrid({ features: standardFeatures });
+
+export function OrdersTable() {
+  return <Grid rows={rows} columns={columns} rowKeyGetter={(row) => row.id} />;
+}
+```
+
+`Grid` は `SpreadsheetGrid` と同じ props・`ref` ハンドル・型で使えます。全部入りから移るときは、使っている機能を `features` に入れて、`SpreadsheetGrid` を `createSpreadsheetGrid` で作ったコンポーネントに置き換えます。
+
+## どれだけ小さくなるか
+
+| 構成 | 初期 JS(gzip) |
+| --- | --- |
+| 全部入り(`SpreadsheetGrid`) | 約 111KB |
+| `/lite` 機能なし | 約 61KB |
+| `/lite` + `standardFeatures` | 約 78KB |
+| `/lite` + `standardFeatures` + `serverSideFeature` | 約 82KB |
+
+esbuild で minify し、React を外部化して計測した値です(`@tanstack/virtual-core` を含む)。Vite で束ねると全体に数 KB 小さく出ます。機能ごとの増え方は [API リファレンス](/docs/api/lite)の表にあります。
+
+## 機能の選び方
+
+機能なしでも、表示(仮想スクロール・固定列)、選択、キー操作、編集、コピー / 貼り付け、元に戻す、列幅の変更、ソート、行選択、展開行、`getState` / `applyState` が動きます。そこへ要る機能を `{ キー: 部品 }` で足します。部品の名前は「キー + `Feature`」です。
+
+```tsx
+import {
+  createSpreadsheetGrid,
+  standardFeatures,
+  findFeature,
+  serverSideFeature,
+} from '@ishibashi0112/spreadsheet-grid/lite';
+
+// プリセットに検索と SSRM を足す
+const Grid = createSpreadsheetGrid({
+  features: { ...standardFeatures, find: findFeature, serverSide: serverSideFeature },
+});
+```
+
+- `standardFeatures` は、列フィルター / グローバルフィルター(`filtering`)、列メニュー(`columnMenu`)、ツールパネル(`toolPanel`)、列幅の自動調整(`columnAutosize`)、エクスポート(`export`)です。
+- 列メニューが無いと、画面からソートする入口がありません(ソートは `applyState` 等の API からになります)。ソートを画面で使うなら `columnMenu` を入れてください。
+- 全部入りで既定オンの機能(列フィルター・列メニュー・列のドラッグ・選択範囲の集計・コピー範囲の点線など)は、`/lite` では入れたときだけ既定オンになります。
+
+## 入れていない機能を使おうとしたとき
+
+入れていない機能の prop を渡したり、その機能のメソッド(`exportCsv()` など)を呼んだりしても、何も起きません(エラーにもなりません)。開発ビルドでは、prop / メソッドごとに 1 回だけ、足すべき機能を名指しした警告が出ます:
+
+```text
+[spreadsheet-grid] prop `fillHandle` が渡されましたが、その機能が機能セットに入っていないため何もしません。createSpreadsheetGrid の features に `fillHandle: fillHandleFeature` を入れてください。
+```
+
+本番ビルドでは警告を出しません(警告の処理ごとバンドルから消えます)。
+
+いくつかの機能は、無いときに別の動きになります。
+
+- `filtering` が無いと、検索欄と列フィルターは出ません。`applyState` で渡したフィルターは状態には入りますが、行は絞り込まれません。
+- `serverSide` が無いと、`dataSource` を無視して `rows` で動きます。
+- `labelRow` が無いと、ラベル行もデータ行として並びます。
+- `grouping` が無いと、`rowGroup` の列はグループ化せずにそのまま表示します。
+
+## 注意
+
+- `createSpreadsheetGrid` はモジュールの先頭で呼んでください。コンポーネントの中で呼ぶと描画のたびに別のコンポーネントになり、グリッドの状態(選択・スクロール位置など)が消えます。
+- 機能の組み合わせは作ったときに決まります。途中で機能を足したいときは、別の組み合わせで作ったコンポーネントに切り替えてください。
+- 全部入りの `SpreadsheetGrid` と同じアプリで混ぜて使えます(共通部分が二重に入ることはありません)。
+- 機能を落とすには、バンドラーが `package.json` の `sideEffects` と `/* @__PURE__ */` を解釈する必要があります。Vite / webpack / Next.js / Rollup / esbuild は既定で解釈します。
+- テストで列フィルターやツールパネルを開くときの `preloadGridPopups()` は `/lite` からも import できます([テスト](/docs/guides/testing#ポップオーバーを開くテスト))。

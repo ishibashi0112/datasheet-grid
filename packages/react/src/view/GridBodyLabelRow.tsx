@@ -121,9 +121,9 @@ function GridBodyLabelRowInner<T>({
   );
 }
 
-const LABEL_ROW_STYLE_KEYS = new Set<keyof GridBodyLabelRowProps<unknown>>(['rowStyle', 'rowHeaderCellStyle']);
+const LABEL_ROW_STYLE_KEYS = /* @__PURE__ */ new Set<keyof GridBodyLabelRowProps<unknown>>(['rowStyle', 'rowHeaderCellStyle']);
 
-export const GridBodyLabelRow = memo(GridBodyLabelRowInner, (prev, next) =>
+export const GridBodyLabelRow = /* @__PURE__ */ memo(GridBodyLabelRowInner, (prev, next) =>
   arePropsEqualWithStyleKeys(prev, next, LABEL_ROW_STYLE_KEYS),
 ) as typeof GridBodyLabelRowInner;
 

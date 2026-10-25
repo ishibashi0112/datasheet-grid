@@ -204,7 +204,7 @@ function GridBodyGroupRowInner<T>({
   );
 }
 
-export const GridBodyGroupRow = memo(
+export const GridBodyGroupRow = /* @__PURE__ */ memo(
   GridBodyGroupRowInner,
 ) as typeof GridBodyGroupRowInner;
 

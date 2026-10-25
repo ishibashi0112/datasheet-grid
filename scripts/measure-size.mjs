@@ -7,13 +7,13 @@
 //   - dist: 公開する dist(packages/react/dist + packages/core/dist。core は publishConfig の exports と同じく
 //     dist/<サブパス>.js へ解決)。npm の利用者と同じ形で、先に build:lib が要ります(CI はビルドの後に実行)。
 //   - src: ソース(packages/*/src)を直接。ビルド不要だが、モジュールの並び順が dist と違うため gzip が ±1KB ほど
-//     揺れます(機能の部品を別ファイルへ移しただけで並びが変わる)。dist に入口が無い構成(移行中の機能セットなし)だけに使う。
+//     揺れます(機能の部品を別ファイルへ移しただけで並びが変わる)。dist に入口が無い構成だけに使う(今は無し)。
 //   使い方: node scripts/measure-size.mjs           計測して表を出す
 //           node scripts/measure-size.mjs --check   上限を超えた構成があれば終了コード 1(CI)。dist がソースより
 //                                                   古いときも 1(古い dist の値で通してしまわないため)
 //           node scripts/measure-size.mjs --update  上限を「今の値 + 余裕」に書き直す(機能を足して大きくなったとき)
-//           node scripts/measure-size.mjs --update=minimal   指定した構成の上限だけ書き直す(カンマ区切りで複数可。
-//                                                   移行中は full を固定し minimal だけ詰める)
+//           node scripts/measure-size.mjs --update=lite,standard   指定した構成の上限だけ書き直す(カンマ区切りで
+//                                                   複数可。full は 112.3KB で固定しているので書き換えない)
 //   どのディレクトリから実行しても同じ結果になります(esbuild の作業ディレクトリをリポジトリ直下に固定)。
 import { build } from 'esbuild';
 import { readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
@@ -33,13 +33,19 @@ const CONFIGS = [
     source: 'dist',
     code: "export { SpreadsheetGrid } from './packages/react/dist/index.js';",
   },
-  // 差し込み式へ移行中の見張り: 機能セットを空にしたシェル。機能を移すたびに小さくなり、シェルへ機能の静的 import を
-  //   戻してしまうと大きくなる(上限で検出)。/lite の入口ができたらそちらの構成に置き換える。
+  // 変更(差し込み式 段階 6): /lite の入口(公開 dist)。機能なしは本体だけの大きさで、本体へ機能の静的 import を
+  //   戻してしまうと大きくなる(上限で検出)。standard はプリセット standardFeatures を差し込んだ構成。
   {
-    name: 'minimal',
-    label: '機能セットなしのシェル(移行中。src)',
-    source: 'src',
-    code: "import { createSpreadsheetGrid } from './createSpreadsheetGrid.tsx'; export const Grid = createSpreadsheetGrid({ features: {} });",
+    name: 'lite',
+    label: '/lite 機能なし(createSpreadsheetGrid のみ。公開 dist)',
+    source: 'dist',
+    code: "import { createSpreadsheetGrid } from './packages/react/dist/lite.js'; export const Grid = createSpreadsheetGrid({ features: {} });",
+  },
+  {
+    name: 'standard',
+    label: '/lite + standardFeatures(公開 dist)',
+    source: 'dist',
+    code: "import { createSpreadsheetGrid, standardFeatures } from './packages/react/dist/lite.js'; export const Grid = createSpreadsheetGrid({ features: standardFeatures });",
   },
 ];
 

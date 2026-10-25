@@ -542,7 +542,7 @@ const areGridBodyRowPropsEqual = (
   prev: Readonly<GridBodyRowProps<unknown>>,
   next: Readonly<GridBodyRowProps<unknown>>,
 ): boolean => arePropsEqualWithStyleKeys(prev, next, GRID_BODY_ROW_STYLE_KEYS);
-const GridBodyRow = memo(
+const GridBodyRow = /* @__PURE__ */ memo(
   GridBodyRowInner,
   areGridBodyRowPropsEqual,
 ) as typeof GridBodyRowInner;
@@ -707,7 +707,7 @@ function GridBodySkeletonRowInner<T>({
   );
 }
 
-const GridBodySkeletonRow = memo(
+const GridBodySkeletonRow = /* @__PURE__ */ memo(
   GridBodySkeletonRowInner,
 ) as typeof GridBodySkeletonRowInner;
 
