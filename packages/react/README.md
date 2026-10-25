@@ -2,6 +2,8 @@
 
 A virtualized spreadsheet / data grid for React 19 (~1M rows, pinned columns, Excel-like editing / selection / clipboard, filters & sorting, client-side and server-side row models). 日本語は下にあります。
 
+**[Docs & live demo](https://datasheet-grid.vercel.app)** · [Playground](https://datasheet-grid.vercel.app/playground) · [GitHub](https://github.com/ishibashi0112/datasheet-grid) · [Changelog](https://github.com/ishibashi0112/datasheet-grid/blob/main/CHANGELOG.md)
+
 ## Install
 
 ```sh
@@ -63,7 +65,8 @@ Everything below ships inside the npm package, so it is available offline (for e
 | --- | --- |
 | Full API reference — props, column options, imperative handle (`ref`), recipes (Japanese) | `API_REFERENCE.md` in this package |
 | Per-field docs (shown on hover) | JSDoc in the type definitions. Field docs live in `@ishibashi0112/spreadsheet-grid-core/dist/model/gridTypes.core.d.ts` and match the tables in `API_REFERENCE.md` |
-| Guides, demos, design notes | [GitHub README](https://github.com/ishibashi0112/datasheet-grid#readme) and the `website/` docs in the repository |
+| Guides with live demos (Japanese), playground, theme builder | [datasheet-grid.vercel.app](https://datasheet-grid.vercel.app) |
+| Design notes, changelog | [GitHub README](https://github.com/ishibashi0112/datasheet-grid#readme) / [CHANGELOG.md](https://github.com/ishibashi0112/datasheet-grid/blob/main/CHANGELOG.md) |
 
 ## Rules that are easy to get wrong
 
@@ -84,6 +87,8 @@ MIT
 ## 日本語
 
 React 19 向けの仮想化スプレッドシート / データグリッドです(約 100 万行・列固定・Excel ライクな編集 / 選択 / クリップボード・フィルター / ソート・クライアントサイド / サーバーサイド行モデル)。
+
+**[ドキュメントとライブデモ](https://datasheet-grid.vercel.app)** · [プレイグラウンド](https://datasheet-grid.vercel.app/playground) · [GitHub](https://github.com/ishibashi0112/datasheet-grid) · [変更履歴](https://github.com/ishibashi0112/datasheet-grid/blob/main/CHANGELOG.md)
 
 ### バンドルを小さくする: `/lite`(0.54.0 から)
 
@@ -107,7 +112,8 @@ npm パッケージに同梱されているため、オフライン(`node_module
 | --- | --- |
 | API リファレンス全体(props / 列定義 / 命令的 API(`ref`)/ レシピ) | 本パッケージ直下の `API_REFERENCE.md` |
 | フィールドごとの説明(ホバーで表示) | 型定義の JSDoc。各フィールドの説明は `@ishibashi0112/spreadsheet-grid-core/dist/model/gridTypes.core.d.ts` にあり、`API_REFERENCE.md` の表と同じ内容 |
-| ガイド / デモ / 設計メモ | [GitHub の README](https://github.com/ishibashi0112/datasheet-grid#readme) とリポジトリの `website/` |
+| ライブデモ付きのガイド / プレイグラウンド / テーマビルダー | [datasheet-grid.vercel.app](https://datasheet-grid.vercel.app) |
+| 設計メモ / 変更履歴 | [GitHub の README](https://github.com/ishibashi0112/datasheet-grid#readme) / [CHANGELOG.md](https://github.com/ishibashi0112/datasheet-grid/blob/main/CHANGELOG.md) |
 
 ### 間違えやすいルール
 

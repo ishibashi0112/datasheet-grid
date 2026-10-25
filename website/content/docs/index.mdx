@@ -30,15 +30,16 @@ description: SpreadsheetGrid — React 19 製の高性能・仮想化スプレ�
 - **セル内検索** — `find` で `Ctrl/Cmd+F` の検索バー。仮想化された全行のヒットを強調して順送り(行は消さない)
 - **条件付き書式** — `column.conditionalFormat` でデータバー / カラースケール / 状態チップ。min / max はビュー行から自動集計
 - **テーマ** — CSS カスタムプロパティ(`--ssg-*`)、ダークテーマ(`light` / `dark` / `auto`)、[テーマビルダー](/theme-builder)で CSS 変数を書き出し
-- **共存前提の CSS 設計** — Tailwind(v3 / v4)・Mantine・HeroUI と衝突しない
+- **共存前提の CSS 設計** — Tailwind(v3 / v4)・Mantine・HeroUI・StyleX と衝突しない
 - **TypeScript ファースト** — 完全な型定義、コントロールドな API
 - **機能を選んで組み込める** — `/lite` の `createSpreadsheetGrid` で使う機能だけを入れ、初期読み込みの JS を全部入り(約 112KB)から約 60〜78KB へ([バンドルを小さくする](/docs/guides/lite))
 
 ## 対応環境
 
 - **react / react-dom `>= 19`**(peer dependencies)
-- ランタイム依存は `@tanstack/virtual-core` のみ(自動でインストールされます)
+- ランタイム依存は `@tanstack/virtual-core` と、このグリッドのコア `@ishibashi0112/spreadsheet-grid-core` のみ(どちらも自動でインストールされます)
 - SSR(Next.js 等)でのサーバーレンダリングに対応
+- 版ごとの変更は[変更履歴(CHANGELOG.md)](https://github.com/ishibashi0112/datasheet-grid/blob/main/CHANGELOG.md)にまとめています
 
 <Cards>
   <Card title="インストール" href="/docs/installation" description="パッケージの導入と CSS の読み込み" />

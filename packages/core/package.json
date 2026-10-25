@@ -17,7 +17,7 @@
     "url": "git+https://github.com/ishibashi0112/datasheet-grid.git",
     "directory": "packages/core"
   },
-  "homepage": "https://github.com/ishibashi0112/datasheet-grid#readme",
+  "homepage": "https://datasheet-grid.vercel.app",
   "bugs": {
     "url": "https://github.com/ishibashi0112/datasheet-grid/issues"
   },
