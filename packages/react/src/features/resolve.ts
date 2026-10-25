@@ -4,7 +4,7 @@
 //   全機能がそろった表を直接渡すため、このモジュール(React 側の代役と警告)は全部入りの JS に入りません。
 //   ※ エンジン側の代役(core engine/features.ts の createInert*)は createGridEngine / gridApi が直接参照するため
 //   全部入りにも入ります(どれも数行)。
-import { useEffect } from 'react';
+import { useCallback, useEffect, useMemo } from 'react';
 import {
   createInertDateRolloverStore,
   createInertExportCommands,
@@ -92,24 +92,64 @@ const inertColumnMenuFeature: GridShellFeatures['columnMenu'] = {
 };
 
 // ツールパネルが無い構成では閉じたままで(available: false)、部品も読み込みません。シェルはパネルを開く入口を出さない
-//   ので、開く関数を呼ぶのはハンドルの openFilterManager だけです(呼ばれたら開発時に 1 回だけ警告する)。
-const INERT_TOOL_PANEL = {
-  available: false,
-  activeToolPanelTab: null,
-  availableToolPanelTabs: [],
-  toolPanelLayout: null,
-  toolPanelFlashTick: 0,
-  toolPanelRef: { current: null },
-  openToolPanel: () => {
-    warnUnregisteredFeatureMethod('openFilterManager');
-  },
-  closeToolPanel: () => {},
-  moveToolPanel: () => {},
+//   ので、開く関数を呼ぶのはハンドルの openFilterManager だけです(呼ばれたら開発時に 1 回だけ、足すべき機能を
+//   知らせる)。missing は足すべき機能: ツールパネルが無ければ toolPanel、ツールパネルはあっても開く入口が 1 つも
+//   無い構成(列メニューもフィルターも無い)では filtering(openFilterManager が開くフィルタータブに要る)。
+const createInertToolPanelFeature = (missing: 'toolPanel' | 'filtering'): GridShellFeatures['toolPanel'] => {
+  const inert = {
+    available: false,
+    activeToolPanelTab: null,
+    availableToolPanelTabs: [],
+    toolPanelLayout: null,
+    toolPanelFlashTick: 0,
+    toolPanelRef: { current: null },
+    openToolPanel: () => {
+      warnUnregisteredFeatureMethod('openFilterManager', missing);
+    },
+    closeToolPanel: () => {},
+    moveToolPanel: () => {},
+  };
+  return { useToolPanel: () => inert, useToolPanelViews: () => null };
 };
 
-const inertToolPanelFeature: GridShellFeatures['toolPanel'] = {
-  useToolPanel: () => INERT_TOOL_PANEL,
-  useToolPanelViews: () => null,
+const inertToolPanelFeature = createInertToolPanelFeature('toolPanel');
+
+// ツールパネルはあるがフィルターが無い構成: フィルタータブが出ないので、openFilterManager(フィルタータブを開く)は
+//   何もしません(全部入りで enableColumnFilter={false} にしたときと同じ)。呼ばれたら開発時に 1 回だけ filtering を
+//   名指しして知らせます。列メニューの入口(列の表示 / 並び替えを管理)はそのまま開けます。
+const withFilterManagerWarning = (
+  toolPanel: NonNullable<ReactGridFeatures['toolPanel']>,
+): GridShellFeatures['toolPanel'] => ({
+  ...toolPanel,
+  useToolPanel: (args) => {
+    const result = toolPanel.useToolPanel(args);
+    const { openToolPanel } = result;
+    const openToolPanelWithWarning = useCallback<typeof openToolPanel>(
+      (tab) => {
+        if (tab === 'filter') {
+          warnUnregisteredFeatureMethod('openFilterManager', 'filtering');
+        }
+        openToolPanel(tab);
+      },
+      [openToolPanel],
+    );
+    return useMemo(() => ({ ...result, openToolPanel: openToolPanelWithWarning }), [result, openToolPanelWithWarning]);
+  },
+});
+
+// ツールパネルの部品の選び方。開く入口は列メニュー(列の表示 / 並び替えを管理 / フィルターを管理)、適用中フィルターの
+//   チップ、ハンドルの openFilterManager(フィルタータブ)なので、列メニューもフィルターも無ければ開けない。そのときは
+//   部品を先読みしないよう代役にします。
+const resolveToolPanelFeature = (features: ReactGridFeatures): GridShellFeatures['toolPanel'] => {
+  if (features.toolPanel === undefined) {
+    return inertToolPanelFeature;
+  }
+  if (features.filtering !== undefined) {
+    return features.toolPanel;
+  }
+  return features.columnMenu === undefined
+    ? createInertToolPanelFeature('filtering')
+    : withFilterManagerWarning(features.toolPanel);
 };
 
 // 選択範囲の集計が無い構成では集計せず(null)、既定の下部バーにも何も出しません。
@@ -152,7 +192,7 @@ const useInertFilterOrder: GridShellFeatures['filtering']['useFilterOrder'] = (a
   const hasFilterState = args.globalFilterText.trim() !== '' || Object.keys(args.columnFilters).length > 0;
   useEffect(() => {
     if (hasFilterState) {
-      warnUnregisteredFeatureState('フィルターの状態(applyState / setGlobalFilterText)');
+      warnUnregisteredFeatureState('フィルターの状態(applyState / setGlobalFilterText)', 'filtering');
     }
   }, [hasFilterState]);
   return {
@@ -209,15 +249,15 @@ const inertExportFeature: NonNullable<ReactGridFeatures['export']> = {
     const inert = createInertExportCommands<T>();
     return {
       exportCsv: (options) => {
-        warnUnregisteredFeatureMethod('exportCsv');
+        warnUnregisteredFeatureMethod('exportCsv', 'export');
         return inert.exportCsv(options);
       },
       downloadCsv: (filename, options) => {
-        warnUnregisteredFeatureMethod('downloadCsv');
+        warnUnregisteredFeatureMethod('downloadCsv', 'export');
         inert.downloadCsv(filename, options);
       },
       getExportData: (options) => {
-        warnUnregisteredFeatureMethod('getExportData');
+        warnUnregisteredFeatureMethod('getExportData', 'export');
         return inert.getExportData(options);
       },
     };
@@ -233,7 +273,7 @@ export const resolveGridShellFeatures = (features: ReactGridFeatures): GridShell
   contextMenu: features.contextMenu ?? inertContextMenuFeature,
   selectionAggregates: features.selectionAggregates ?? inertSelectionAggregatesFeature,
   columnMenu: features.columnMenu ?? inertColumnMenuFeature,
-  toolPanel: features.toolPanel ?? inertToolPanelFeature,
+  toolPanel: resolveToolPanelFeature(features),
   filtering: features.filtering ?? inertFilteringFeature,
   serverSide: features.serverSide ?? inertServerSideFeature,
   export: features.export ?? inertExportFeature,

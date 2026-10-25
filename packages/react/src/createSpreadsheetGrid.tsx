@@ -1,5 +1,4 @@
-// 追加(差し込み式 段階 2): 使う機能だけを差し込んだグリッドのコンポーネントを作ります(/lite の入口で公開する予定。
-//   今は内部用 = 機能を外した構成のテストとサイズ計測で使う)。
+// 追加(差し込み式 段階 2): 使う機能だけを差し込んだグリッドのコンポーネントを作ります(段階 6 で /lite の入口から公開)。
 //   - features に無い機能のモジュールは import されないので、束ねた JS から消えます。
 //   - 無い機能の prop は何もしません(開発時に 1 回だけ警告)。シェルが機能の有無より前に分岐に使う prop は、
 //     無い機能なら「使わない」値に置き換えて渡します(例: 行ドラッグが無ければ enableRowDrag を false = ハンドル列を作らない)。
@@ -11,6 +10,7 @@ import { useUnregisteredFeatureWarnings } from './hooks/useUnregisteredFeatureWa
 import type { SpreadsheetGridProps } from './model/gridTypes';
 
 export type CreateSpreadsheetGridOptions = {
+  /** 差し込む機能(`{ filtering: filteringFeature, ... }`)。キーは機能の名前、値は `/lite` が公開する機能の部品です。 */
   features: ReactGridFeatures;
 };
 
@@ -32,6 +32,19 @@ const DISABLED_FEATURE_PROPS: { [K in keyof ReactGridFeatures]?: Partial<Spreads
   motionExtras: { highlightChanges: false, showCopyRange: false, hoverHighlight: 'row' },
 };
 
+/**
+ * 使う機能だけを差し込んだグリッドのコンポーネントを作ります(`@ishibashi0112/spreadsheet-grid/lite`)。
+ * 差し込まなかった機能のコードはバンドルに入りません。props・ref ハンドル・型は `SpreadsheetGrid` と共通で、
+ * 差し込んでいない機能の prop やメソッドは何もしません(開発時だけ、prop と、prop を持たない機能のメソッド
+ * (`exportCsv` / `openFilterManager` など)を console.warn で知らせます)。
+ * モジュールの先頭で 1 回だけ呼んでください(コンポーネントの中で呼ばない)。機能の組み合わせは作ったときに固定されます。
+ *
+ * @example
+ * import { createSpreadsheetGrid, standardFeatures, serverSideFeature } from '@ishibashi0112/spreadsheet-grid/lite';
+ * import '@ishibashi0112/spreadsheet-grid/style.css';
+ *
+ * const Grid = createSpreadsheetGrid({ features: { ...standardFeatures, serverSide: serverSideFeature } });
+ */
 export function createSpreadsheetGrid({ features }: CreateSpreadsheetGridOptions) {
   const shellFeatures = resolveGridShellFeatures(features);
   const overrides: Partial<SpreadsheetGridProps<object>> = {};
@@ -41,8 +54,11 @@ export function createSpreadsheetGrid({ features }: CreateSpreadsheetGridOptions
     }
   }
   const hasOverrides = Object.keys(overrides).length > 0;
-  return function SpreadsheetGrid<T extends object>(props: SpreadsheetGridProps<T>) {
+  function SpreadsheetGrid<T extends object>(props: SpreadsheetGridProps<T>) {
     useUnregisteredFeatureWarnings(props, features);
     return useGridShell(hasOverrides ? { ...props, ...(overrides as Partial<SpreadsheetGridProps<T>>) } : props, shellFeatures);
-  };
+  }
+  // dist では関数名が縮められるので、React の開発ツールと警告に出す名前を付けます。
+  SpreadsheetGrid.displayName = 'SpreadsheetGrid';
+  return SpreadsheetGrid;
 }

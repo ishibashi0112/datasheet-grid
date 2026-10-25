@@ -534,7 +534,7 @@ function GridHeaderRowInner<T>({
 //       `as typeof GridHeaderRowInner` でジェネリックシグネチャを復元します。
 //       比較関数は渡さず既定の shallow 比較を使います(全 props がプリミティブ or
 //       親側で useMemo / useCallback / latest-ref により参照安定化済みのため)。
-export const GridHeaderRow = memo(
+export const GridHeaderRow = /* @__PURE__ */ memo(
   GridHeaderRowInner,
 ) as typeof GridHeaderRowInner;
 

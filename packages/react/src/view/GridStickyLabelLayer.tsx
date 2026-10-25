@@ -142,9 +142,9 @@ function GridStickyLabelLayerInner<T>({
   );
 }
 
-const STICKY_LABEL_STYLE_KEYS = new Set<keyof GridStickyLabelLayerProps<unknown>>(['rowStyle', 'rowHeaderCellStyle']);
+const STICKY_LABEL_STYLE_KEYS = /* @__PURE__ */ new Set<keyof GridStickyLabelLayerProps<unknown>>(['rowStyle', 'rowHeaderCellStyle']);
 
-export const GridStickyLabelLayer = memo(GridStickyLabelLayerInner, (prev, next) =>
+export const GridStickyLabelLayer = /* @__PURE__ */ memo(GridStickyLabelLayerInner, (prev, next) =>
   arePropsEqualWithStyleKeys(prev, next, STICKY_LABEL_STYLE_KEYS),
 ) as typeof GridStickyLabelLayerInner;
 

@@ -1561,6 +1561,71 @@ const dataSource: ServerSideDataSource<Row> = {
 
 `initialRowCount` と内部の行数 state は mount 時に確定する。そのため **実行時にモードを切り替える場合は `key` を変えてグリッドを再マウントすること**(clientSide で mount 後に `dataSource` を後付けしても件数が初期化されない)。serverSide で直接 mount する通常利用ではこの限りではない。
 
+## 機能を選んで組み込む(`/lite` サブパス)
+
+`@ishibashi0112/spreadsheet-grid/lite` の `createSpreadsheetGrid` で、使う機能だけを差し込んだグリッドを作れる(差し込み式 段階 6)。差し込まなかった機能のコードはバンドルに入らない。全機能を使うなら今までどおり `SpreadsheetGrid`(全部入り)を使う。
+
+```tsx
+import { createSpreadsheetGrid, standardFeatures, serverSideFeature } from '@ishibashi0112/spreadsheet-grid/lite';
+import '@ishibashi0112/spreadsheet-grid/style.css';
+
+// モジュールの先頭で 1 回だけ作る(コンポーネントの中では作らない)
+const Grid = createSpreadsheetGrid({ features: { ...standardFeatures, serverSide: serverSideFeature } });
+
+export const OrdersTable = () => <Grid columns={columns} dataSource={dataSource} />;
+```
+
+| 公開物 | 説明 |
+| --- | --- |
+| `createSpreadsheetGrid({ features }): <T extends object>(props: SpreadsheetGridProps<T>) => JSX.Element` | 機能セットを差し込んだグリッドのコンポーネントを作る。`features` は `{ キー: 機能の部品 }`(下の表)。機能の組み合わせは作ったときに固定される(描画のたびに作り直すとグリッドの状態が消える)。 |
+| `standardFeatures` | よく使う組み合わせ(プリセット): `filtering` / `columnMenu` / `toolPanel` / `columnAutosize` / `export`。ほかの機能は `{ ...standardFeatures, find: findFeature }` のように広げて足す。 |
+| `xxxFeature`(20 個) | 機能の部品。名前は「キー + `Feature`」(下の表)。中身は内部の部品なので、そのまま `features` に渡す(自分で作ったり書き換えたりしない)。 |
+| 型 `GridFeatures` / `CreateSpreadsheetGridOptions` | `features` の型と、`createSpreadsheetGrid` の引数の型。 |
+| `numberFormatter` / `preloadGridPopups` と公開型すべて | 全部入りの入口と同じ名前・使い方。`preloadGridPopups` は同じ入口のグリッドの部品を読み込むので、`/lite` のグリッドには `/lite` から import したものを使う。 |
+
+- **props・ref ハンドル・型は全部入りと共通**。差し込んでいない機能の prop を渡したり、その機能のメソッドを呼んだりしても何もしない(落ちない)。開発ビルドでだけ、prop ごとに 1 回 `console.warn` で「`features` に `fillHandle: fillHandleFeature` を入れてください」のように足すべき機能を知らせる(本番ビルドでは出さない)。prop を持たない機能のメソッド(`exportCsv` / `downloadCsv` / `getExportData` と、`toolPanel` か `filtering` が無いときの `openFilterManager`)は、呼ばれた時点で同じように知らせる。ほかの機能のメソッド(`openFind` など)は全部入りでもその機能の prop が無いと動かないので、prop の警告で知らせる。
+- **全部入りで既定オンの機能は、差し込んだときだけ既定オン**: 列フィルター / グローバルフィルター(`filtering`)、列メニュー(`columnMenu`)、列のドラッグ並べ替え(`columnReorder`。`onColumnsChange` 指定時)、列境界のダブルクリックでの幅の自動調整(`columnAutosize`)、選択範囲の集計(`selectionAggregates`)、コピー範囲の点線(`motionExtras`)。
+- **機能なしで残るもの(本体)**: 表示(縦横の仮想スクロール・固定列)、セル / 範囲選択、キー操作、編集(6 種のエディタと検証)、コピー / 貼り付け / 削除、元に戻す / やり直し、列幅の変更、ソート、行選択(チェックボックス)、展開行(`detailRow`)、セルのメモ(`cellNote`)、`getState` / `applyState`、テーマ / 密度 / モーション、ツールチップ、上部 / 下部バー、ARIA。ソートを画面から操作する入口は列メニューにあるため、`columnMenu` が無い構成のソートは `applyState` 等の API からになる。
+- **画面の入口は機能の組み合わせで決まる**: 列フィルターを画面から掛ける入口は列メニューの「フィルター…」と、適用中フィルターのチップ(ツールパネル)なので、`filtering` だけでは列フィルターを追加できない(グローバル検索欄は使える)。ツールパネルを開く入口は列メニューの項目、適用中フィルターのチップ、`openFilterManager` なので、`toolPanel` は `columnMenu` か `filtering` と一緒に使う(どちらも無いと代役になり、部品も読み込まない)。列メニューの「幅の自動調整」は `columnAutosize` があるときだけ出る。
+- **機能が無いときの扱い(注意が要るもの)**: `filtering` が無いとグローバル / 列フィルターは無効(`enableGlobalFilter` / `enableColumnFilter` を false として扱う)で、`applyState` で渡したフィルターは状態には残るが行には効かない(開発時に警告)。`serverSide` が無いと `dataSource` を無視して clientSide で動く。`labelRow` が無いとラベル行の述語に当たる行もデータ行として並ぶ。`rowGroup` の列は `grouping` が無ければグループ化せずそのまま表示。`autoHeight` が無いと行の高さは一定(`rowHeight`)。`toolPanel` があっても `filtering` が無ければフィルタータブは出ず、`openFilterManager` は何もしない(全部入りで `enableColumnFilter={false}` にしたときと同じ。開発時に警告)。
+- Next.js(App Router)では、`createSpreadsheetGrid` を呼ぶファイルに `'use client'` を付ける。作ったコンポーネントや `standardFeatures` は関数なので、サーバーコンポーネントから props で渡せない(クライアントコンポーネントの中で import して使う)。
+- 全部入りの `SpreadsheetGrid` と同じアプリで混ぜることはできるが、共通部分が二重に入る(`/lite` は機能ごとのファイルに分けた別のビルドのため)。どちらかの入口に揃える。
+
+| キー | 部品 | 中身(関係する prop) | 目安(gzip) |
+| --- | --- | --- | --- |
+| `filtering` | `filteringFeature` | グローバル / 列フィルター、フィルターのポップオーバー(遅延読み込み)、チップバー、非同期の候補(`enableGlobalFilter` / `enableColumnFilter` / `columns[].filterType` / `getFilterOptions` / `showFilterChipBar` / `onFiltersChange` / `manualFiltering` ほか) | +11.8KB(+ 遅延 6.1KB) |
+| `fillHandle` | `fillHandleFeature` | フィルハンドル(`fillHandle`) | +8.6KB |
+| `columnReorder` | `columnReorderFeature` | 列ヘッダーのドラッグ並べ替え(`onColumnsChange` 指定時 / `columnDragMotion`) | +5.8KB |
+| `rowDrag` | `rowDragFeature` | 行のドラッグ並べ替え(`enableRowDrag` / `isRowDraggable` / `onRowMove` / `rowDragMotion`。ハンドルの `moveRow()` は本体にあるので無くても使える) | +3.4KB |
+| `serverSide` | `serverSideFeature` | サーバーサイド行モデル(SSRM)の読み取りと書き戻し、保存状態の表示(`dataSource` / `serverSideRefreshToken` / `showSaveStatus` ほか) | +3.2KB |
+| `columnMenu` | `columnMenuFeature` | 列メニュー(ソート・固定。幅の自動調整は `columnAutosize`、フィルターの入口は `filtering`、パネルの入口は `toolPanel` があるとき。`enableColumnMenu`) | +2.4KB |
+| `columnAutosize` | `columnAutosizeFeature` | 列幅の自動調整(境界のダブルクリック・列メニューの項目・`autoSizeColumns`) | +2.2KB |
+| `find` | `findFeature` | セル内検索(`find` / `onFindChange`) | +2.0KB |
+| `scrollHint` | `scrollHintFeature` | スクロール位置インジケーター(`scrollHint`) | +2.0KB |
+| `export` | `exportFeature` | CSV / TSV / `getExportData`(ハンドルの `exportCsv` / `downloadCsv` / `getExportData`) | +1.9KB |
+| `labelRow` | `labelRowFeature` | ラベル行(`labelRow`) | +1.9KB |
+| `selectionAggregates` | `selectionAggregatesFeature` | 選択範囲の集計(`showSelectionAggregates`) | +1.9KB |
+| `grouping` | `groupingFeature` | 行グルーピングと集計(`columns[].rowGroup` / `aggFunc`) | +1.8KB |
+| `totalRow` | `totalRowFeature` | 合計行(`totalRow`) | +1.7KB |
+| `contextMenu` | `contextMenuFeature` | セル / 行の右クリックメニュー(`enableContextMenu` / `getContextMenuItems`) | +1.6KB |
+| `toolPanel` | `toolPanelFeature` | ツールパネル(フィルター管理 / 列の表示 / 並び替え。部品は遅延読み込み) | +1.6KB(+ 遅延 5.3KB) |
+| `conditionalFormat` | `conditionalFormatFeature` | 条件付き書式とチップ(`columns[].conditionalFormat`) | +1.4KB |
+| `imeDirectInput` | `imeDirectInputFeature` | IME オンのままの直接入力(`imeDirectInput`) | +1.3KB |
+| `motionExtras` | `motionExtrasFeature` | 変更のハイライト、コピー範囲の点線、十字ホバー(`highlightChanges` / `showCopyRange` / `hoverHighlight`) | +1.2KB |
+| `autoHeight` | `autoHeightFeature` | 行の高さの実測(`autoHeight` / `columns[].autoHeight`) | +1.0KB |
+
+サイズ(初期読み込みの JS の gzip。esbuild で minify・React は外部化・`@tanstack/virtual-core` 込み。2026-10-25 の公開 dist で計測):
+
+| 構成 | 初期 JS(gzip) |
+| --- | --- |
+| 全部入り(`SpreadsheetGrid`) | 約 112KB |
+| `/lite` 機能なし | 約 60KB |
+| `/lite` + `standardFeatures` | 約 78KB |
+| `/lite` + `standardFeatures` + `serverSideFeature` | 約 82KB |
+
+- 各機能の目安は「機能なし」に 1 つだけ足したときの増え方で、組み合わせると共通部分のぶん合計より少し小さくなる。Vite(Rolldown)と webpack で束ねると全体に数 KB 小さく出る(例: Vite で全部入り 約 108KB / 機能なし 約 56KB)。
+- 使わない機能がバンドルから落ちることは、Vite 8・webpack 5・Next.js 16(既定の Turbopack)・esbuild で確かめている(バンドラーが `package.json` の `sideEffects` と `/* @__PURE__ */` を解釈する必要がある)。
+
 ## ポップオーバー部品の遅延読み込み(`preloadGridPopups`)
 
 列フィルターのポップオーバーと、ツールパネル(フィルター管理 / 列の表示 / 並び替え)の部品は本体と別のチャンクに分かれていて、初期の読み込みに含まれない(lazy-popups。初期の JS が約 1 割小さくなる。props / ハンドルは不変)。
@@ -1595,7 +1660,7 @@ beforeAll(() => {
 - 返り値はインストール前へ戻す restore 関数(`afterAll(restore)` 用・任意)。
 - React 非依存の小さなモジュールで、本体バンドルとは独立(`dist/testing.js`)。
 - これで `.ssg-body-row` / `.ssg-body-cell` の描画・付与クラス・セル文字列を DOM で検証できる(本体の `SpreadsheetGrid.jsdomLayoutStubs.integration.test.tsx` が動作保証)。
-- 列フィルターのポップオーバー / ツールパネルを開いた直後に**同期で**中身を確かめるテストでは、部品の遅延読み込みが終わっていないと出ていない。`beforeAll(() => preloadGridPopups())`(本体から import)で先に読み込むか、`findBy*` / `waitFor` で待つ([ポップオーバー部品の遅延読み込み](#ポップオーバー部品の遅延読み込みpreloadgridpopups))。
+- 列フィルターのポップオーバー / ツールパネルを開いた直後に**同期で**中身を確かめるテストでは、部品の遅延読み込みが終わっていないと出ていない。`beforeAll(() => preloadGridPopups())`(本体から import。`/lite` のグリッドなら `/lite` から)で先に読み込むか、`findBy*` / `waitFor` で待つ([ポップオーバー部品の遅延読み込み](#ポップオーバー部品の遅延読み込みpreloadgridpopups))。
 
 ## パーツ別スロット(`classNames` / `GridSlotProps`)
 

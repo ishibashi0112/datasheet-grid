@@ -46,6 +46,6 @@ function RowSelectionCheckboxInner({
   );
 }
 
-export const RowSelectionCheckbox = memo(RowSelectionCheckboxInner);
+export const RowSelectionCheckbox = /* @__PURE__ */ memo(RowSelectionCheckboxInner);
 
 export default RowSelectionCheckbox;

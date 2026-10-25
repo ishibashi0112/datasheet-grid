@@ -2,6 +2,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   resetUnregisteredFeatureWarnings,
+  warnUnregisteredFeatureMethod,
   warnUnregisteredFeatureProps,
   warnUnregisteredFeatureState,
 } from './featureWarnings';
@@ -27,6 +28,15 @@ describe('warnUnregisteredFeatureProps', () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     warnUnregisteredFeatureProps(['find']);
     expect(warn).not.toHaveBeenCalled();
+  });
+
+  it('機能の名前を渡せば、足すべき機能(キー: キー + Feature)を名指しする', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    warnUnregisteredFeatureProps(['fillHandle'], 'fillHandle');
+    warnUnregisteredFeatureMethod('exportCsv', 'export');
+    expect(warn.mock.calls[0]?.[0]).toContain('`fillHandle: fillHandleFeature`');
+    expect(warn.mock.calls[1]?.[0]).toContain('`exportCsv()`');
+    expect(warn.mock.calls[1]?.[0]).toContain('`export: exportFeature`');
   });
 });
 

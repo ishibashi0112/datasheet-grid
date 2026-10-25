@@ -53,6 +53,9 @@ const ToolPanelFilteringGrid = createSpreadsheetGrid({ features: { toolPanel: to
 const ColumnMenuToolPanelGrid = createSpreadsheetGrid({
   features: { columnMenu: columnMenuFeature, toolPanel: toolPanelFeature, filtering: filteringFeature },
 });
+// フィルターの無いツールパネル(フィルタータブは出ない)。列メニューがあれば「列の表示」等から開ける。
+const ColumnMenuToolPanelNoFilterGrid = createSpreadsheetGrid({ features: { columnMenu: columnMenuFeature, toolPanel: toolPanelFeature } });
+const ToolPanelOnlyGrid = createSpreadsheetGrid({ features: { toolPanel: toolPanelFeature } });
 const ColumnMenuAutosizeGrid = createSpreadsheetGrid({
   features: { columnMenu: columnMenuFeature, columnAutosize: columnAutosizeFeature },
 });
@@ -381,6 +384,45 @@ describe('差し込み式: toolPanel', () => {
     expect(panelOpen()).toBe(false);
     const warnings = warn.mock.calls.filter(([message]) => String(message).includes('`openFilterManager()`'));
     expect(warnings).toHaveLength(1);
+  });
+
+  it('フィルターが無い構成では openFilterManager は開かず filtering を名指しで警告し、列メニューの「列の表示」からは開ける', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const ref = createRef<SpreadsheetGridHandle<Row>>();
+    const { container } = render(
+      <ColumnMenuToolPanelNoFilterGrid ref={ref} rows={rows} columns={columns} rowKeyGetter={(r) => r.id} onColumnsChange={() => {}} />,
+    );
+    act(() => {
+      ref.current?.openFilterManager();
+      ref.current?.openFilterManager();
+    });
+    expect(panelOpen()).toBe(false);
+    const warnings = warn.mock.calls.filter(([message]) => String(message).includes('`openFilterManager()`'));
+    expect(warnings).toHaveLength(1);
+    expect(String(warnings[0]?.[0])).toContain('`filtering: filteringFeature`');
+    openColumnMenu(container);
+    expect(menuLabels()).not.toContain('フィルターを管理…');
+    const visibilityItem = Array.from(document.querySelectorAll<HTMLButtonElement>('.ssg-menu-item')).find((item) =>
+      item.textContent?.includes('列の表示'),
+    );
+    expect(visibilityItem).toBeDefined();
+    act(() => {
+      fireEvent.click(visibilityItem as HTMLButtonElement);
+    });
+    expect(panelOpen()).toBe(true);
+  });
+
+  it('列メニューもフィルターも無い構成ではツールパネルを開く入口が無いので代役になり、openFilterManager は filtering を名指しで警告する', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const ref = createRef<SpreadsheetGridHandle<Row>>();
+    render(<ToolPanelOnlyGrid ref={ref} rows={rows} columns={columns} rowKeyGetter={(r) => r.id} />);
+    act(() => {
+      ref.current?.openFilterManager();
+    });
+    expect(panelOpen()).toBe(false);
+    const warnings = warn.mock.calls.filter(([message]) => String(message).includes('`openFilterManager()`'));
+    expect(warnings).toHaveLength(1);
+    expect(String(warnings[0]?.[0])).toContain('`filtering: filteringFeature`');
   });
 
   it('toolPanel を入れた構成では列メニューの 3 項目と Filters チップが出て、openFilterManager でパネルが開く', () => {

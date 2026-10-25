@@ -17,6 +17,7 @@ export default defineConfig({
     lib: {
       // 追加(proposals ③): testing サブパス(jsdom レイアウトスタブ)を第 2 エントリで配布します。
       //   React 非依存の小さなモジュールで、index とはチャンクを共有しません。
+      // 追加(差し込み式 段階 6): /lite の入口は別のビルド(vite.lite.config.ts)で作ります。理由は同ファイルの先頭。
       entry: {
         index: resolve(import.meta.dirname, 'src/index.ts'),
         testing: resolve(import.meta.dirname, 'src/testing/index.ts'),

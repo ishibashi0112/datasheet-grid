@@ -256,6 +256,26 @@ Set `density` to switch the overall sizing with one prop — `'compact' | 'stand
 
 The preset drives the default `rowHeight` / `headerHeight` (compact: 28/32, standard: 36/40, comfortable: 44/48 — explicit props always win) and switches sizing tokens (cell horizontal padding, bar padding, icon-button size, relative cell font scale) via a root modifier class. Individual tokens (e.g. `--ssg-cell-pad-x`) can still be overridden for fine-tuning. Popovers/menus are not affected.
 
+## Smaller bundles (`/lite`)
+
+`SpreadsheetGrid` includes every feature (about 112KB gzip of initial JS). `@ishibashi0112/spreadsheet-grid/lite` builds a grid with only the features you pass, and leaves the rest out of your bundle:
+
+```tsx
+import { createSpreadsheetGrid, standardFeatures, serverSideFeature } from '@ishibashi0112/spreadsheet-grid/lite';
+import '@ishibashi0112/spreadsheet-grid/style.css';
+
+// Create it once at module level, not inside a component.
+const Grid = createSpreadsheetGrid({ features: { ...standardFeatures, serverSide: serverSideFeature } });
+```
+
+| Setup | Initial JS (gzip) |
+| --- | --- |
+| `SpreadsheetGrid` (everything) | ~112KB |
+| `/lite`, no features | ~60KB |
+| `/lite` + `standardFeatures` (filters, column menu, tool panel, column autosize, export) | ~78KB |
+
+Props, the `ref` handle and types are the same as `SpreadsheetGrid`. Props of features you did not pass do nothing, and in development a `console.warn` names the feature to add. See the [`/lite` section of the API reference](packages/react/API_REFERENCE.md#機能を選んで組み込むlite-サブパス) for the 20 features and their sizes.
+
 ## Server-side mode (SSRM)
 
 Pass a `dataSource` instead of `rows` to switch to server-side mode. The grid keeps the full scroll height for the total row count and fetches only the blocks near the viewport:
@@ -588,6 +608,26 @@ flex column の残り（ページヘッダーの下など）を埋める:
 ```
 
 プリセットは `rowHeight` / `headerHeight` の既定値（compact: 28/32・standard: 36/40・comfortable: 44/48。明示 prop が常に優先）と、寸法トークン（セル横 padding・バー padding・アイコンボタン寸法・セル文字の相対拡縮）を root 修飾子経由で一括切替します。個別の微調整はトークン（例: `--ssg-cell-pad-x`）の上書きで可能です。popover / メニューは対象外です。
+
+### バンドルを小さくする(`/lite`)
+
+`SpreadsheetGrid` は全機能入りです(初期読み込みの JS が約 112KB gzip)。`@ishibashi0112/spreadsheet-grid/lite` では、渡した機能だけを入れたグリッドを作れます。渡さなかった機能はバンドルに入りません:
+
+```tsx
+import { createSpreadsheetGrid, standardFeatures, serverSideFeature } from '@ishibashi0112/spreadsheet-grid/lite';
+import '@ishibashi0112/spreadsheet-grid/style.css';
+
+// コンポーネントの中ではなく、モジュールの先頭で 1 回だけ作る
+const Grid = createSpreadsheetGrid({ features: { ...standardFeatures, serverSide: serverSideFeature } });
+```
+
+| 構成 | 初期 JS(gzip) |
+| --- | --- |
+| `SpreadsheetGrid`(全部入り) | 約 112KB |
+| `/lite` 機能なし | 約 60KB |
+| `/lite` + `standardFeatures`(フィルター・列メニュー・ツールパネル・列幅の自動調整・エクスポート) | 約 78KB |
+
+props・`ref` ハンドル・型は `SpreadsheetGrid` と同じです。渡していない機能の prop は何もせず、開発時は足すべき機能を `console.warn` で知らせます。20 の機能とサイズは [API リファレンスの `/lite` の節](packages/react/API_REFERENCE.md#機能を選んで組み込むlite-サブパス)にあります。
 
 ### サーバーサイドモード（SSRM）
 

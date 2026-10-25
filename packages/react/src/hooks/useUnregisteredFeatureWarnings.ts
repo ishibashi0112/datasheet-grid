@@ -115,14 +115,20 @@ function useUnregisteredFeatureWarningsInDev<T extends object>(
   props: SpreadsheetGridProps<T>,
   features: ReactGridFeatures,
 ): void {
-  // 警告の対象を文字列のキーへ畳みます(中身が変わったときだけ effect を走らせる)。
+  // 警告の対象を「機能:prop」の文字列のキーへ畳みます(中身が変わったときだけ effect を走らせる)。
   const missingKey = (Object.keys(FEATURE_PROPS) as FeatureName[])
     .filter((name) => features[name] === undefined)
-    .flatMap((name) => FEATURE_PROPS[name].filter((check) => check.isUsed(props, features)).map((check) => check.prop))
+    .flatMap((name) =>
+      FEATURE_PROPS[name].filter((check) => check.isUsed(props, features)).map((check) => `${name}:${check.prop}`),
+    )
     .join(',');
   useEffect(() => {
-    if (missingKey !== '') {
-      warnUnregisteredFeatureProps(missingKey.split(','));
+    if (missingKey === '') {
+      return;
+    }
+    for (const entry of missingKey.split(',')) {
+      const separator = entry.indexOf(':');
+      warnUnregisteredFeatureProps([entry.slice(separator + 1)], entry.slice(0, separator));
     }
   }, [missingKey]);
 }
