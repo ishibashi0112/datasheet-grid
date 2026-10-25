@@ -93,10 +93,6 @@ import {
   isActiveColumnFilterValue,
   // 追加(audit L-06): dateSet 列の候補収集を照合と同じ正規化日付キーで行います。
   toDateSetKey,
-  // 追加(監査 L-15): 相対日付プリセットが掛かっているか(日付が変わったら絞り込みをやり直す見張りの入り切り)と、
-  //   基準日で解決した範囲のキー(範囲が変わったときだけ絞り込み / 取り直しをやり直す)。
-  columnFiltersUseRelativeDate,
-  resolveRelativeDateFilterKey,
   // 行モデルチェーンは order(Int32Array)ベースに一本化しています
   //   (DS-2 で差し替え、旧オブジェクト配列版は DS-3-8 で削除)。
   // 追加(filter-ext A): number フィルターの数値化規則(空白 = NaN)です。B-2 の
@@ -178,7 +174,6 @@ import useColumnSelectOptionsCollector from './hooks/useColumnSelectOptionsColle
 import { useAsyncSelectOptionsSource } from './hooks/useAsyncSelectOptionsSource';
 import { isSelectLikeFilterType } from '@ishibashi0112/spreadsheet-grid-core/controllers/selectOptionsCollector';
 // 追加(F-async): グローバルフィルタの時間分割(非ブロック)適用フックです。
-import { useGlobalFilteredOrder } from './hooks/useGlobalFilteredOrder';
 // 追加(①-3): serverSide(SSRM)の RowModel を供給するフックです(dataSource 指定時に使用)。
 import { useServerSideRowModel } from './hooks/useServerSideRowModel';
 import type {
@@ -1006,7 +1001,7 @@ export function useGridShell<T extends object>({
   const globalFilterText = uiState.filters.globalText;
 
   // 注記(F-async): グローバルフィルタの「入力非ブロック化」は useGlobalFilteredOrder へ移しました
-  //   (旧 11-B7 の useDeferredValue は同フック内部へ内包)。同フックは評価値の遅延化(連続入力の
+  //   (旧 11-B7 の useDeferredValue は同フック内部へ内包。差し込み式 段階 5 以降は features/filtering 経由)。同フックは評価値の遅延化(連続入力の
   //   合体)に加え、しきい値超では時間分割(yieldToMain)で適用するため、1M 行 × 多列でも入力/
   //   スクロールが詰まりません。入力欄の value は従来どおり即時値 globalFilterText
   //   (useGridBarContext → slotContext 経由)を参照します。pending 表示も同フックの status/
@@ -1059,53 +1054,23 @@ export function useGridShell<T extends object>({
     [rowPipeline, rows.length, labelLayout],
   );
 
-  // 変更(F-async): globalFilteredOrder の同期 useMemo を時間分割フックへ差し替えます。
-  //   返り値の order は「現在表示すべきビュー順」で、計算中は前回確定 order を維持します
-  //   (= 下流 columnFiltered / sorted / rowModel は order 参照が安定する限りスキップ＝
-  //   進捗 tick では本体行は再描画されず、トップバーの進捗表示だけが更新されます)。
-  //   status / progress は下のバーコンテキストへ渡してローディング表示に使います。
-  const {
-    order: globalFilteredOrder,
-    status: globalFilterStatus,
-    progress: globalFilterProgress,
-  } = useGlobalFilteredOrder({
-    rows,
-    baseOrder,
-    columns: visibleColumns,
-    globalText: globalFilterText,
-    // 変更(manual-mode): 手動フィルターでは走らせない(order は baseOrder のまま)。
-    enabled: globalFilterEnabled && !manualFiltering,
-  });
-
-  // 追加(監査 L-15): 相対日付プリセット(今日 / 今月 / 過去 30 日 / カスタム)の基準日。プリセットを含む列フィルターが
-  //   掛かっている間だけ日付の変わり目を見張り(controllers/dateRolloverStore)、基準日で解決した範囲のキー
-  //   (resolveRelativeDateFilterKey)を行パイプラインの入力に足します。日付が変わって範囲も変わると、clientSide は
-  //   列フィルターを評価し直し、serverSide は queryKey が変わって取り直します(「今月」の月内など範囲が同じなら何もしない)。
-  //   手動フィルター(manualFiltering)では行を絞り込まないため見張りません。
-  const relativeDateFilterActive = useMemo(
-    () =>
-      isServerSide
-        ? columnFilterEnabled && columnFiltersUseRelativeDate(columnFilters)
-        : !manualFiltering && columnFiltersUseRelativeDate(deferredColumnFilters),
-    [isServerSide, columnFilterEnabled, columnFilters, manualFiltering, deferredColumnFilters],
-  );
-  useControllerLifecycle(engine.dateRollover, { active: relativeDateFilterActive });
-  const relativeDateSnapshot = useSyncExternalStore(
-    engine.dateRollover.subscribe,
-    engine.dateRollover.getSnapshot,
-    engine.dateRollover.getSnapshot,
-  );
-  const relativeDateKey = useMemo(
-    () =>
-      relativeDateFilterActive
-        ? resolveRelativeDateFilterKey(
-            effectiveColumns,
-            isServerSide ? columnFilters : deferredColumnFilters,
-            relativeDateSnapshot,
-          )
-        : '',
-    [relativeDateFilterActive, effectiveColumns, isServerSide, columnFilters, deferredColumnFilters, relativeDateSnapshot],
-  );
+  // 変更(差し込み式 段階 5): グローバルフィルターの適用(F-async の時間分割)と相対日付プリセットの基準日(監査 L-15)は
+  //   フィルターの機能(features/filtering)へ移しました(同じ位置・同じ順番で hook を呼ぶ)。無い構成では恒等 order のまま。
+  const { globalFilteredOrder, globalFilterStatus, globalFilterProgress, relativeDateKey } =
+    features.filtering.useFilterOrder({
+      rows,
+      baseOrder,
+      visibleColumns,
+      effectiveColumns,
+      globalFilterText,
+      globalFilterEnabled,
+      columnFilterEnabled,
+      columnFilters,
+      deferredColumnFilters,
+      manualFiltering,
+      isServerSide,
+      dateRollover: engine.dateRollover,
+    });
 
   const { order, rowDragOperable } = useMemo(
     () =>

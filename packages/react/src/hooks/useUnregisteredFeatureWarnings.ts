@@ -71,6 +71,17 @@ const FEATURE_PROPS: { [K in FeatureName]-?: readonly FeaturePropCheck[] } = {
   ],
   // エクスポートは prop ではなくメソッドなので、呼ばれた時点で警告する(features/resolve.ts の代役)。
   export: [],
+  // フィルターの 2 つのスイッチは既定 true なので、明示して true を渡したときだけ。列の filterType はどれか 1 列でも
+  //   指定していれば警告する。
+  filtering: [
+    { prop: 'enableColumnFilter', isUsed: (props) => props.enableColumnFilter === true },
+    { prop: 'enableGlobalFilter', isUsed: (props) => props.enableGlobalFilter === true },
+    { prop: 'columns[].filterType', isUsed: (props) => props.columns.some((column) => column.filterType !== undefined) },
+    { prop: 'manualFiltering', isUsed: (props) => props.manualFiltering === true },
+    { prop: 'onFiltersChange', isUsed: (props) => props.onFiltersChange !== undefined },
+    { prop: 'getFilterOptions', isUsed: (props) => props.getFilterOptions !== undefined },
+    { prop: 'showFilterChipBar', isUsed: (props) => props.showFilterChipBar === true },
+  ],
   // 列の autoHeight はグリッドの autoHeight で有効になるので、グリッドの prop だけ見る。
   autoHeight: [{ prop: 'autoHeight', isUsed: (props) => props.autoHeight === true }],
 };

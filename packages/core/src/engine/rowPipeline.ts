@@ -3,7 +3,7 @@
 //   セクションを移設)。
 //   - resolveBaseOrder: 恒等 order [0..n-1](長さのみ依存)。
 //   - resolveOrder: グローバルフィルター済み order(非同期ランナーの出力。描画側から受け取る)→ 列フィルター
-//     (number 用 Float64 key の前計算込み)→ ソート → 表示順が恒等かの判定(行ドラッグの操作可否)。
+//     (engine/columnFilterStage。機能セットの filtering があるときだけ)→ ソート → 表示順が恒等かの判定(行ドラッグの操作可否)。
 //   - resolveClientSideRowModel: グループツリー(集計込み)→ 開閉適用 flatten → RowModel シーム。
 //   - resolveServerSideQuery: UI 状態 → ServerSideQuery + 安定 queryKey(clientSide では空固定)。
 //   メモ単位は旧 useMemo と同一で、no-op dispatch(selection 等)では order / rowModel の参照が不変です
@@ -18,13 +18,7 @@ import type {
   RowModel,
   ServerSideQuery,
 } from '../model/gridTypes.unbound';
-import {
-  coerceNumberFilterCellValue,
-  columnFilterUsesNumericKey,
-  createSourceOrder,
-  filterOrderByColumns,
-  type RowOrder,
-} from '../logic/filtering';
+import { createSourceOrder, type RowOrder } from '../logic/filtering';
 import {
   decorateSortKeys,
   diffSortKeys,
@@ -53,13 +47,13 @@ import {
   type LabelDisplay,
   type LabelRowLayout,
 } from '../logic/labelRows';
-import { getCellValue } from '../utils/permissions';
 import { createMemo } from './memo';
+import type { ColumnFilteringFeature } from './features';
 
 const EMPTY_SERVER_QUERY: ServerSideQuery = {};
 const EMPTY_COLUMN_FILTERS: Record<string, ColumnFilterValue> = {};
 const EMPTY_SORT: GridSortState = [];
-// number 列シグネチャの区切り(NUL は列キーへの混入が実質ありえないため)。
+// serverSide の queryKey と相対日付の範囲のキーの区切り(NUL は query の直列化への混入が実質ありえないため)。
 const SIGNATURE_SEPARATOR = '\u0000';
 // 追加(監査 B-10): rows だけが変わったとき、キーが変わった行がこの件数以下なら全件ソートせず差し込み直します
 //   (比較は O(件数 × log n)。超えたら decorate 済みのキーで全件ソート)。
@@ -144,7 +138,10 @@ export type ServerSideQueryResolution = {
   queryKey: string;
 };
 
-export const createRowPipelineResolver = <T,>() => {
+// 変更(差し込み式 段階 5): 列フィルターの段(engine/columnFilterStage)は機能セットの filtering から受けます
+//   (createGridEngine が渡す)。無ければ列フィルターは評価しません(グローバルフィルター済み order をそのままソートへ)。
+export const createRowPipelineResolver = <T,>(filtering: ColumnFilteringFeature | undefined) => {
+  const filterColumns = filtering?.createColumnFilterStage<T>();
   const memoBaseOrder = createMemo((rowCount: number) => createSourceOrder(rowCount));
   // 追加(label-row ①): ラベル行の配置(rows / 述語が変わったときだけ 1 パス)と、ラベル行を除いた恒等 order。
   const memoLabelLayout = createMemo(
@@ -155,86 +152,9 @@ export const createRowPipelineResolver = <T,>() => {
     createLabelFreeOrder(layout, rowCount),
   );
 
-  // number 記述子が当たっている可視列の「集合シグネチャ」(B-2)。値編集(>50 → >500 等)では同一列のままなので
-  //   不変 → 下の numericFilterKeys を保持し、Float64 key をフィルタ値編集をまたいで再利用します。
-  const memoNumberSignature = createMemo(
-    (visibleColumns: GridColumn<T>[], columnFilters: Record<string, ColumnFilterValue>) => {
-      const keys: string[] = [];
-      for (const column of visibleColumns) {
-        if (columnFilterUsesNumericKey(columnFilters[column.key])) {
-          keys.push(column.key);
-        }
-      }
-      return keys.join(SIGNATURE_SEPARATOR);
-    },
-  );
-  // number(comparison/range)用に、列ごとの Number(セル値) を rows 全長・sourceIndex 添字の Float64Array へ
-  //   前計算したキャッシュ(signature に載った列ぶんだけ。number 未使用なら空 Map = 実質ゼロコスト)。
-  const memoNumericKeys = createMemo((rows: T[], visibleColumns: GridColumn<T>[], signature: string) => {
-    const keyMap = new Map<string, Float64Array>();
-    if (signature.length === 0) {
-      return keyMap;
-    }
-    const targetKeys = new Set(signature.split(SIGNATURE_SEPARATOR));
-    const rowCount = rows.length;
-    for (const column of visibleColumns) {
-      if (!targetKeys.has(column.key)) {
-        continue;
-      }
-      const keys = new Float64Array(rowCount);
-      for (let i = 0; i < rowCount; i += 1) {
-        // 数値化は coerceNumberFilterCellValue(空白 = NaN)へ統一(compileSingleColumnFilter の非 key 経路と同一規則)。
-        keys[i] = coerceNumberFilterCellValue(getCellValue(rows[i], column));
-      }
-      keyMap.set(column.key, keys);
-    }
-    return keyMap;
-  });
-  // 列フィルター済み order。入力がすべて前回と同じ参照なら前回の結果を返します(旧 createMemo と同じ)。
-  // 変更(監査 L-15): 相対日付プリセットの範囲のキー(relativeDateKey)も入力に足し、範囲が変わったら評価し直します。
-  // 変更(監査 B-10): 評価し直した結果の中身が前回と同じなら前回の参照を返します。1 セル編集で rows の参照が変わっても
-  //   絞り込み結果が変わらなければ、下流(ソート / グルーピング / ラベル行 / RowModel の利用側)が「並びは不変」と
-  //   判断できるようにするためです(中身の比較は O(n) で、絞り込み自体の O(n) に比べて十分小さい)。
-  let filterCache: {
-    rows: T[];
-    globalFilteredOrder: RowOrder;
-    columns: GridColumn<T>[];
-    columnFilters: Record<string, ColumnFilterValue>;
-    numericKeys: Map<string, Float64Array>;
-    relativeDateKey: string;
-    result: RowOrder;
-  } | null = null;
-  const resolveColumnFiltered = (
-    rows: T[],
-    globalFilteredOrder: RowOrder,
-    columns: GridColumn<T>[],
-    columnFilters: Record<string, ColumnFilterValue>,
-    numericKeys: Map<string, Float64Array>,
-    relativeDateKey: string,
-  ): RowOrder => {
-    const cached = filterCache;
-    if (
-      cached !== null &&
-      cached.rows === rows &&
-      cached.globalFilteredOrder === globalFilteredOrder &&
-      cached.columns === columns &&
-      cached.columnFilters === columnFilters &&
-      cached.numericKeys === numericKeys &&
-      cached.relativeDateKey === relativeDateKey
-    ) {
-      return cached.result;
-    }
-    let result = filterOrderByColumns(rows, globalFilteredOrder, columns, columnFilters, numericKeys);
-    if (cached !== null && result !== cached.result && isSameOrder(result, cached.result)) {
-      result = cached.result;
-    }
-    filterCache = { rows, globalFilteredOrder, columns, columnFilters, numericKeys, relativeDateKey, result };
-    return result;
-  };
-
   // ソート済み order。
   // 変更(監査 B-10): 前回の decorate 結果(位置ごとのソートキー)と並べ替えた位置を持ち、入力の order が前回と同じ
-  //   (= 上の列フィルターの結果が不変)なら、今回のキーと比べて
+  //   (= 列フィルターの段の結果が不変)なら、今回のキーと比べて
   //   - どの位置のキーも同じ(ソート列以外の編集 / 同じ行の配列の作り直し)→ 前回の結果をそのまま返す、
   //   - 変わった位置が SORT_REPOSITION_LIMIT 件以下 → その位置だけ差し込み直す(repositionSortedPositions)、
   //   - それ以外 → decorate 済みのキーで全件ソート、
@@ -411,16 +331,9 @@ export const createRowPipelineResolver = <T,>() => {
       //   Float64 key 前計算のいずれも走らない)。
       const columnFilters = inputs.manualFiltering ? EMPTY_COLUMN_FILTERS : inputs.columnFilters;
       const sort = inputs.manualSorting ? EMPTY_SORT : inputs.sort;
-      const signature = memoNumberSignature(filterSortColumns, columnFilters);
-      const numericKeys = memoNumericKeys(rows, filterSortColumns, signature);
-      const columnFilteredOrder = resolveColumnFiltered(
-        rows,
-        globalFilteredOrder,
-        filterSortColumns,
-        columnFilters,
-        numericKeys,
-        inputs.relativeDateKey ?? '',
-      );
+      const columnFilteredOrder = filterColumns
+        ? filterColumns(rows, globalFilteredOrder, filterSortColumns, columnFilters, inputs.relativeDateKey ?? '')
+        : globalFilteredOrder;
       const order = resolveSorted(rows, columnFilteredOrder, filterSortColumns, sort);
       const orderIsIdentity = labelLayout
         ? memoIdentityWithLabels(rowDragAvailable, order, memoLabelFreeOrder(labelLayout, rows.length))

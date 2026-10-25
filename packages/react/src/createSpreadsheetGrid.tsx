@@ -19,6 +19,9 @@ const DISABLED_FEATURE_PROPS: { [K in keyof ReactGridFeatures]?: Partial<Spreads
   rowDrag: { enableRowDrag: false },
   // 行の高さの実測が無ければ autoHeight を切る(行数の上限超えなどの開発時の注意も出さない)。
   autoHeight: { autoHeight: false },
+  // フィルターが無ければグローバル / 列フィルターを切る(上部バーの入力欄・見出しのフィルターボタン・ツールパネルの
+  //   フィルタータブを出さない。serverSide の query にも載せない)。
+  filtering: { enableColumnFilter: false, enableGlobalFilter: false },
   columnAutosize: { autoSizeColumns: false },
   contextMenu: { enableContextMenu: false },
   motionExtras: { highlightChanges: false, showCopyRange: false, hoverHighlight: 'row' },

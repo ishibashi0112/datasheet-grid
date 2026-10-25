@@ -20,6 +20,7 @@ import {
   createInertAutoHeightMeasurer,
   createInertChangeHighlightController,
   createInertConditionalFormatStatsResolver,
+  createInertDateRolloverStore,
   createInertFindController,
   createInertImeInputController,
   createInertTotalRowCellsResolver,
@@ -28,7 +29,7 @@ import {
 import type { ConditionalFormatStatsResolver } from '../logic/conditionalFormat';
 import type { TotalRowCellsResolver } from '../logic/totalRow';
 import { createDebouncedValueStore, type DebouncedValueStore } from '../controllers/debouncedValueStore';
-import { createDateRolloverStore, type DateRolloverStore } from '../controllers/dateRolloverStore';
+import type { DateRolloverStore } from '../controllers/dateRolloverStore';
 import { createAutoSizeOnDataTrigger, type AutoSizeOnDataTrigger } from '../controllers/columnAutosizeRunner';
 import type { ImeInputController } from '../controllers/imeInputController';
 import {
@@ -135,7 +136,7 @@ export type GridEngine<T> = {
 export const createGridEngine = <T,>(init: GridEngineInit<T>): GridEngine<T> => {
   const resolveColumns = createColumnResolver<T>();
   const resolvePaneLayout = createPaneLayoutResolver<T>();
-  const rowPipeline = createRowPipelineResolver<T>();
+  const rowPipeline = createRowPipelineResolver<T>(init.features.filtering);
   const resolveVerticalLayout = createVerticalLayoutResolver<T>(init.features.autoHeight);
   const resolveFilterPopoverDerived = createFilterPopoverDerivedResolver<T>();
 
@@ -153,7 +154,8 @@ export const createGridEngine = <T,>(init: GridEngineInit<T>): GridEngine<T> => 
     sort: initialUiState.sort,
   });
   const serverSideQueryStore = createDebouncedValueStore(initialServerSideQuery, SERVER_SIDE_QUERY_DEBOUNCE_MS);
-  const dateRollover = createDateRolloverStore();
+  // 変更(差し込み式 段階 5): 機能セットに filtering が無ければ代役(見張らない)。
+  const dateRollover = (init.features.filtering?.createDateRolloverStore ?? createInertDateRolloverStore)();
 
   // 変更(差し込み式 段階 4): 機能セットに autoHeight が無ければ代役(測らない)。
   const autoHeightMeasurer = (init.features.autoHeight?.createAutoHeightMeasurer ?? createInertAutoHeightMeasurer)<T>();

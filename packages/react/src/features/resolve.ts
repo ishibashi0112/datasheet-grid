@@ -4,7 +4,10 @@
 //   全機能がそろった表を直接渡すため、このモジュール(React 側の代役と警告)は全部入りの JS に入りません。
 //   ※ エンジン側の代役(core engine/features.ts の createInert*)は createGridEngine / gridApi が直接参照するため
 //   全部入りにも入ります(どれも数行)。
-import { createInertExportCommands } from '@ishibashi0112/spreadsheet-grid-core/engine/features';
+import {
+  createInertDateRolloverStore,
+  createInertExportCommands,
+} from '@ishibashi0112/spreadsheet-grid-core/engine/features';
 import { warnUnregisteredFeatureMethod } from '@ishibashi0112/spreadsheet-grid-core/logic/featureWarnings';
 import type { FillHandleFeatureResult, GridShellFeatures, ReactGridFeatures } from './types';
 
@@ -110,6 +113,19 @@ const inertSelectionAggregatesFeature: GridShellFeatures['selectionAggregates'] 
   SelectionAggregates: () => null,
 };
 
+// フィルターが無い構成では enableColumnFilter / enableGlobalFilter を false として扱う(createSpreadsheetGrid)ので、
+//   行は絞り込みません(グローバルフィルターは掛けず恒等 order のまま、列フィルターの段は行パイプラインが通さない)。
+const inertFilteringFeature: GridShellFeatures['filtering'] = {
+  createColumnFilterStage: () => (_rows, globalFilteredOrder) => globalFilteredOrder,
+  createDateRolloverStore: createInertDateRolloverStore,
+  useFilterOrder: (args) => ({
+    globalFilteredOrder: args.baseOrder,
+    globalFilterStatus: 'idle',
+    globalFilterProgress: 1,
+    relativeDateKey: '',
+  }),
+};
+
 // エクスポートが無い構成: 何も出力しない代役(エンジンの代役と同じ)に、呼ばれたら開発時に 1 回だけ警告するのを足します
 //   (prop ではなくメソッドなので、呼ばれた時点で知らせる)。
 const inertExportFeature: NonNullable<ReactGridFeatures['export']> = {
@@ -142,5 +158,6 @@ export const resolveGridShellFeatures = (features: ReactGridFeatures): GridShell
   selectionAggregates: features.selectionAggregates ?? inertSelectionAggregatesFeature,
   columnMenu: features.columnMenu ?? inertColumnMenuFeature,
   toolPanel: features.toolPanel ?? inertToolPanelFeature,
+  filtering: features.filtering ?? inertFilteringFeature,
   export: features.export ?? inertExportFeature,
 });

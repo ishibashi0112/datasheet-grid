@@ -16,6 +16,8 @@ import type { ConditionalFormatStatsMap, ConditionalFormatStatsResolver } from '
 import type { ChangeHighlightController } from '../controllers/changeHighlightController';
 import type { AutoHeightMeasurer, AutoHeightMeasureSnapshot } from '../controllers/autoHeightMeasurer';
 import type { buildRowHeightStore, createAutoHeightRowMetrics } from '../logic/rowHeightStore';
+import type { ColumnFilterStage } from './columnFilterStage';
+import type { DateRolloverStore } from '../controllers/dateRolloverStore';
 import type { ExportCommands } from './exportCommands';
 import type { GridApiArgs } from './gridApi';
 
@@ -49,6 +51,14 @@ export type GridCoreFeatures = {
   // 行の高さの実測(autoHeight): 描画済みセルの実測 + ResizeObserver のコントローラと、実測高さの行高ストア
   //   (縦レイアウトが prefix-sum の行メトリクスを作る)。
   autoHeight?: AutoHeightFeature;
+  // フィルター(グローバル / 列): 行パイプラインの列フィルターの段と、相対日付プリセットの日付の変わり目の見張り。
+  filtering?: ColumnFilteringFeature & {
+    createDateRolloverStore: () => DateRolloverStore;
+  };
+};
+
+export type ColumnFilteringFeature = {
+  createColumnFilterStage: <T>() => ColumnFilterStage<T>;
 };
 
 export type AutoHeightFeature = {
@@ -125,5 +135,13 @@ export const createInertAutoHeightMeasurer = <T,>(): AutoHeightMeasurer<T> => ({
   getSnapshot: () => ZERO_AUTO_HEIGHT_SNAPSHOT,
   subscribe: unsubscribeNoop,
   measuredHeights: new Map(),
+  dispose: noop,
+});
+
+// filtering が無いときの代役: 日付の変わり目を見張らない(相対日付プリセットは使われない)。
+export const createInertDateRolloverStore = (): DateRolloverStore => ({
+  update: noop,
+  getSnapshot: () => '',
+  subscribe: unsubscribeNoop,
   dispose: noop,
 });

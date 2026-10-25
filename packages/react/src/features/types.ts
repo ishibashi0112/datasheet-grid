@@ -21,10 +21,13 @@ import type {
 import type { FillHandleControllerArgs } from '@ishibashi0112/spreadsheet-grid-core/controllers/fillHandleController';
 import type { ColumnHeaderDragController } from '@ishibashi0112/spreadsheet-grid-core/controllers/columnHeaderDragController';
 import type { ColumnAutosizeRunnerArgs } from '@ishibashi0112/spreadsheet-grid-core/controllers/columnAutosizeRunner';
+import type { DateRolloverStore } from '@ishibashi0112/spreadsheet-grid-core/controllers/dateRolloverStore';
+import type { RowOrder } from '@ishibashi0112/spreadsheet-grid-core/logic/filtering';
 import type { ColumnPane, GridPaneLayout } from '@ishibashi0112/spreadsheet-grid-core/logic/geometry';
 import type { DetailRowExtra, RowMetrics } from '@ishibashi0112/spreadsheet-grid-core/logic/verticalGeometry';
 import type {
   CellCoord,
+  ColumnFilterValue,
   GridColumn,
   GridContextMenuItem,
   GridContextMenuParams,
@@ -32,6 +35,7 @@ import type {
   GridSelection,
   GridSelectionAggregates,
   GridUiState,
+  GlobalFilterStatus,
   RowModel,
   SpreadsheetGridProps,
 } from '../model/gridTypes';
@@ -92,6 +96,33 @@ export type FillHandleFeatureResult = {
   renderLayer: (pane: ColumnPane, leadingWidth: number) => ReactNode;
   // ルートの末尾に置く、埋めたあとのメニュー / ドラッグ中の値のツールチップ(ポータル)。
   renderPortals: () => ReactNode;
+};
+
+// フィルター(filtering)の行の絞り込みの hook が受け取るシェルの値と返す値です。
+export type FilterOrderFeatureArgs<T> = {
+  rows: T[];
+  // 恒等 order(ラベル行があればラベル行を除いたもの)。
+  baseOrder: RowOrder;
+  // グローバルフィルターの対象列(表示列)/ 相対日付プリセットの範囲の解決に使う列(非表示列を含む)。
+  visibleColumns: GridColumn<T>[];
+  effectiveColumns: GridColumn<T>[];
+  globalFilterText: string;
+  globalFilterEnabled: boolean;
+  columnFilterEnabled: boolean;
+  columnFilters: Record<string, ColumnFilterValue>;
+  deferredColumnFilters: Record<string, ColumnFilterValue>;
+  manualFiltering: boolean;
+  isServerSide: boolean;
+  // エンジンの日付の変わり目の見張り(engine.dateRollover)。
+  dateRollover: DateRolloverStore;
+};
+export type FilterOrderFeatureResult = {
+  // グローバルフィルター済み order(列フィルターとソートは行パイプラインが掛ける)。
+  globalFilteredOrder: RowOrder;
+  globalFilterStatus: GlobalFilterStatus;
+  globalFilterProgress: number;
+  // 相対日付プリセットの範囲のキー(行パイプライン / serverSide の queryKey の入力。無ければ '')。
+  relativeDateKey: string;
 };
 
 // 列ヘッダーのドラッグによる並べ替え(columnReorder)の hook が受け取る値(コントローラの引数そのまま)と返す値です。
@@ -177,6 +208,11 @@ export type ReactGridFeatures = {
   imeDirectInput?: NonNullable<GridCoreFeatures['imeDirectInput']>;
   // エクスポート(命令的 API の exportCsv / downloadCsv / getExportData)。描画の部品は無い。
   export?: NonNullable<GridCoreFeatures['export']>;
+  // フィルター(グローバル / 列): 列フィルターの段と日付の変わり目の見張り(core)+ グローバルフィルターの適用と
+  //   相対日付プリセットの基準日の hook。
+  filtering?: NonNullable<GridCoreFeatures['filtering']> & {
+    useFilterOrder: <T>(args: FilterOrderFeatureArgs<T>) => FilterOrderFeatureResult;
+  };
   // 行の高さの実測(autoHeight): 実測のコントローラ + 行高ストア(core)。描画の部品は無い。
   autoHeight?: NonNullable<GridCoreFeatures['autoHeight']>;
   // 列幅の自動調整(DS-4 / 13-B1): 計測の時間分割ランナー。
@@ -242,6 +278,7 @@ type HookFeatureName =
   | 'contextMenu'
   | 'selectionAggregates'
   | 'columnMenu'
-  | 'toolPanel';
+  | 'toolPanel'
+  | 'filtering';
 export type GridShellFeatures = Omit<ReactGridFeatures, HookFeatureName> &
   Required<Pick<ReactGridFeatures, HookFeatureName>>;

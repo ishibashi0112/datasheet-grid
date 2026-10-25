@@ -22,9 +22,11 @@ import { selectionAggregatesFeature } from './features/selectionAggregates';
 import { motionExtrasFeature } from './features/motionExtras';
 import { exportFeature } from './features/export';
 import { autoHeightFeature } from './features/autoHeight';
+import { filteringFeature } from './features/filtering';
 import { installJsdomLayoutStubs } from './testing';
 import { resetUnregisteredFeatureWarnings } from '@ishibashi0112/spreadsheet-grid-core/logic/featureWarnings';
 import { ROW_DRAG_HANDLE_COLUMN_KEY } from '@ishibashi0112/spreadsheet-grid-core/logic/rowReorder';
+import { GRID_STATE_VERSION } from '@ishibashi0112/spreadsheet-grid-core/logic/gridState';
 import type { GridColumn, SpreadsheetGridHandle } from './model/gridTypes';
 
 type Row = { id: number; name: string };
@@ -42,10 +44,11 @@ const RowDragOnlyGrid = createSpreadsheetGrid({ features: { rowDrag: rowDragFeat
 const ScrollHintOnlyGrid = createSpreadsheetGrid({ features: { scrollHint: scrollHintFeature } });
 // 列幅の自動調整の項目は列メニューに出るため、列メニューと組み合わせて確かめます。
 const ColumnMenuOnlyGrid = createSpreadsheetGrid({ features: { columnMenu: columnMenuFeature } });
-// ツールパネルを開く入口の多くは列メニューにあるため、列メニューと組み合わせて確かめます。
-const ToolPanelOnlyGrid = createSpreadsheetGrid({ features: { toolPanel: toolPanelFeature } });
+// ツールパネルを開く入口の多くは列メニューにあるため、列メニューと組み合わせて確かめます。Filters チップとフィルター
+//   タブは列フィルターがあるときだけ出るため、フィルターの機能も入れます。
+const ToolPanelFilteringGrid = createSpreadsheetGrid({ features: { toolPanel: toolPanelFeature, filtering: filteringFeature } });
 const ColumnMenuToolPanelGrid = createSpreadsheetGrid({
-  features: { columnMenu: columnMenuFeature, toolPanel: toolPanelFeature },
+  features: { columnMenu: columnMenuFeature, toolPanel: toolPanelFeature, filtering: filteringFeature },
 });
 const ColumnMenuAutosizeGrid = createSpreadsheetGrid({
   features: { columnMenu: columnMenuFeature, columnAutosize: columnAutosizeFeature },
@@ -58,6 +61,9 @@ const SelectionAggregatesOnlyGrid = createSpreadsheetGrid({ features: { selectio
 const MotionExtrasOnlyGrid = createSpreadsheetGrid({ features: { motionExtras: motionExtrasFeature } });
 const ExportOnlyGrid = createSpreadsheetGrid({ features: { export: exportFeature } });
 const AutoHeightOnlyGrid = createSpreadsheetGrid({ features: { autoHeight: autoHeightFeature } });
+const FilteringOnlyGrid = createSpreadsheetGrid({ features: { filtering: filteringFeature } });
+// 列フィルターを開く入口(「フィルター…」)は列メニューにあるため、列メニューと組み合わせて確かめます。
+const ColumnMenuFilteringGrid = createSpreadsheetGrid({ features: { columnMenu: columnMenuFeature, filtering: filteringFeature } });
 
 let restore: () => void;
 beforeAll(() => {
@@ -389,11 +395,11 @@ describe('差し込み式: toolPanel', () => {
     expect(panelOpen()).toBe(true);
   });
 
-  it('toolPanel だけの構成でも Filters チップでパネルが開き、enableColumnMenu は「列」タブの有無に効く(警告しない)', () => {
+  it('列メニューの無い構成(ツールパネル + フィルター)でも Filters チップでパネルが開き、enableColumnMenu は「列」タブの有無に効く(警告しない)', () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     const tabLabels = () => Array.from(document.querySelectorAll('[role="tab"]')).map((el) => el.textContent);
     const view = render(
-      <ToolPanelOnlyGrid rows={rows} columns={filterColumns} rowKeyGetter={(r) => r.id} enableColumnMenu onColumnsChange={() => {}} />,
+      <ToolPanelFilteringGrid rows={rows} columns={filterColumns} rowKeyGetter={(r) => r.id} enableColumnMenu onColumnsChange={() => {}} />,
     );
     // 列メニューの機能は無いので ⋮ ボタンは出ない。
     expect(view.container.querySelector('[aria-label="列メニュー"]')).toBeNull();
@@ -406,7 +412,7 @@ describe('差し込み式: toolPanel', () => {
     expect(tabLabels().includes('列')).toBe(true);
     view.unmount();
     render(
-      <ToolPanelOnlyGrid
+      <ToolPanelFilteringGrid
         rows={rows}
         columns={filterColumns}
         rowKeyGetter={(r) => r.id}
@@ -723,5 +729,85 @@ describe('差し込み式: autoHeight', () => {
     );
     expect(container.querySelector('[data-autoheight-cell]')).not.toBeNull();
     expect(firstRowHeight(container)).toBe('600px');
+  });
+});
+
+describe('差し込み式: filtering', () => {
+  const filterColumns: GridColumn<Row>[] = [{ key: 'name', title: '名前', width: 160, filterType: 'text' }];
+  const bodyTexts = (container: HTMLElement) =>
+    Array.from(container.querySelectorAll('.ssg-body-cell[data-ssg-col-key="name"]')).map((cell) => cell.textContent);
+  const searchBox = (container: HTMLElement) => container.querySelector<HTMLInputElement>('input.ssg-bar-input');
+  const openColumnMenu = (container: HTMLElement) => {
+    const menuButton = container.querySelector<HTMLElement>('[aria-label="列メニュー"]');
+    if (!menuButton) throw new Error('列メニューのボタンがありません');
+    act(() => {
+      fireEvent.pointerDown(menuButton, { button: 0 });
+    });
+  };
+  const menuLabels = () => Array.from(document.querySelectorAll('.ssg-menu-label')).map((el) => el.textContent);
+  const columnFilterState = {
+    version: GRID_STATE_VERSION,
+    columnWidths: {},
+    filters: { globalText: '', columnFilters: { name: { kind: 'text' as const, value: 'be' } } },
+    sort: [],
+  };
+
+  it('機能セットに無ければ検索欄と列メニューの「フィルター…」を出さず行を絞り込まない。明示した prop だけ開発時に 1 回ずつ警告する', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const onFiltersChange = vi.fn();
+    const { container } = render(
+      <ColumnMenuOnlyGrid
+        rows={rows}
+        columns={filterColumns}
+        rowKeyGetter={(r) => r.id}
+        enableGlobalFilter
+        onFiltersChange={onFiltersChange}
+      />,
+    );
+    expect(searchBox(container)).toBeNull();
+    expect(bodyTexts(container)).toEqual(['alpha', 'beta']);
+    openColumnMenu(container);
+    expect(menuLabels()).toContain('昇順で並び替え');
+    expect(menuLabels()).not.toContain('フィルター…');
+    for (const prop of ['`enableGlobalFilter`', '`columns[].filterType`', '`onFiltersChange`']) {
+      expect(warn.mock.calls.filter(([message]) => String(message).includes(prop))).toHaveLength(1);
+    }
+    expect(warn.mock.calls.filter(([message]) => String(message).includes('`enableColumnFilter`'))).toHaveLength(0);
+  });
+
+  it('フィルターの prop を使わなければ警告しない', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    render(<MinimalGrid rows={rows} columns={columns} rowKeyGetter={(r) => r.id} />);
+    expect(warn).not.toHaveBeenCalled();
+  });
+
+  it('filtering だけを入れた構成では検索欄で行が絞り込まれ、列フィルター(状態の復元)も効く', () => {
+    const ref = createRef<SpreadsheetGridHandle<Row>>();
+    const onFiltersChange = vi.fn();
+    const { container } = render(
+      <FilteringOnlyGrid ref={ref} rows={rows} columns={filterColumns} rowKeyGetter={(r) => r.id} onFiltersChange={onFiltersChange} />,
+    );
+    const input = searchBox(container);
+    expect(input).not.toBeNull();
+    act(() => {
+      fireEvent.change(input as HTMLInputElement, { target: { value: 'alp' } });
+    });
+    expect(bodyTexts(container)).toEqual(['alpha']);
+    act(() => {
+      fireEvent.change(input as HTMLInputElement, { target: { value: '' } });
+    });
+    expect(bodyTexts(container)).toEqual(['alpha', 'beta']);
+    act(() => {
+      ref.current?.applyState(columnFilterState);
+    });
+    expect(bodyTexts(container)).toEqual(['beta']);
+    expect(container.querySelector('.ssg-header-filtered-mark')).not.toBeNull();
+    expect(onFiltersChange).toHaveBeenCalled();
+  });
+
+  it('列メニューと組み合わせると「フィルター…」が出る', () => {
+    const { container } = render(<ColumnMenuFilteringGrid rows={rows} columns={filterColumns} rowKeyGetter={(r) => r.id} />);
+    openColumnMenu(container);
+    expect(menuLabels()).toContain('フィルター…');
   });
 });

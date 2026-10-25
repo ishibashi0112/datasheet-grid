@@ -4,6 +4,7 @@
 //   - L-15: relativeDateKey(基準日)が変わったら列フィルターを評価し直し、serverSide の queryKey も変わる。
 import { afterEach, describe, it, expect, vi } from 'vitest';
 import { createRowPipelineResolver, type RowOrderInputs } from './rowPipeline';
+import { fullCoreFeatures } from './fullFeatures';
 import type { ColumnFilterValue, GridColumn, GridSortState } from '../model/gridTypes.unbound';
 
 type Row = { id: number; name: string; amount: number | string | null; date: string };
@@ -31,14 +32,14 @@ const AMOUNT_AT_LEAST_30: ColumnFilterValue = {
 
 // 毎回作り直したパイプライン(キャッシュ無し)の結果 = 正解。
 const freshOrder = (inputs: Omit<RowOrderInputs<Row>, 'globalFilteredOrder'>) => {
-  const pipeline = createRowPipelineResolver<Row>();
+  const pipeline = createRowPipelineResolver<Row>(fullCoreFeatures.filtering);
   return Array.from(
     pipeline.resolveOrder({ ...inputs, globalFilteredOrder: pipeline.resolveBaseOrder(inputs.rows.length) }).order,
   );
 };
 
 const setup = (sort: GridSortState, columnFilters: Record<string, ColumnFilterValue> = {}) => {
-  const pipeline = createRowPipelineResolver<Row>();
+  const pipeline = createRowPipelineResolver<Row>(fullCoreFeatures.filtering);
   const resolve = (nextRows: Row[], extra: Partial<RowOrderInputs<Row>> = {}) =>
     pipeline.resolveOrder({
       rows: nextRows,
@@ -130,7 +131,7 @@ describe('resolveOrder の差分経路(監査 B-10)', () => {
 
   it('ソートの方向を変えたら全件ソートし直す', () => {
     const rows = makeRows(80);
-    const pipeline = createRowPipelineResolver<Row>();
+    const pipeline = createRowPipelineResolver<Row>(fullCoreFeatures.filtering);
     const base = pipeline.resolveBaseOrder(rows.length);
     const resolveWith = (sort: GridSortState) =>
       Array.from(
@@ -169,7 +170,7 @@ describe('相対日付プリセットの基準日(監査 L-15)', () => {
   });
 
   it('serverSide の queryKey: 基準日を渡したときだけ末尾に含める', () => {
-    const pipeline = createRowPipelineResolver<Row>();
+    const pipeline = createRowPipelineResolver<Row>(fullCoreFeatures.filtering);
     const base = {
       isServerSide: true,
       globalFilterEnabled: true,

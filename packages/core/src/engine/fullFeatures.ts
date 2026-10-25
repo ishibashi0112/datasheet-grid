@@ -11,6 +11,8 @@ import { createTotalRowCellsResolver } from '../logic/totalRow';
 import { canStartImeEdit, resolveImeEditText } from '../logic/imeInput';
 import { createConditionalFormatStatsResolver } from '../logic/conditionalFormat';
 import { createExportCommands } from './exportCommands';
+import { createColumnFilterStage } from './columnFilterStage';
+import { createDateRolloverStore } from '../controllers/dateRolloverStore';
 import type { GridCoreFeatures } from './features';
 
 export const fullCoreFeatures: Required<GridCoreFeatures> = {
@@ -21,4 +23,5 @@ export const fullCoreFeatures: Required<GridCoreFeatures> = {
   motionExtras: { createChangeHighlightController },
   export: { createExportCommands },
   autoHeight: { createAutoHeightMeasurer, buildRowHeightStore, createAutoHeightRowMetrics },
+  filtering: { createColumnFilterStage, createDateRolloverStore },
 };
