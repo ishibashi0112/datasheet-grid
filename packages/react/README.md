@@ -43,7 +43,7 @@ export function App() {
 
 ## Smaller bundles: `/lite`
 
-`SpreadsheetGrid` includes every feature (about 111KB gzip of initial JS). The `/lite` entry builds a grid with only the features you pass; the rest is left out of your bundle (about 61KB with no features, about 78KB with the `standardFeatures` preset).
+`SpreadsheetGrid` includes every feature (about 112KB gzip of initial JS). The `/lite` entry builds a grid with only the features you pass; the rest is left out of your bundle (about 60KB with no features, about 78KB with the `standardFeatures` preset).
 
 ```tsx
 import { createSpreadsheetGrid, standardFeatures, serverSideFeature } from '@ishibashi0112/spreadsheet-grid/lite'
@@ -86,7 +86,7 @@ React 19 向けの仮想化スプレッドシート / データグリッドで�
 
 ### バンドルを小さくする: `/lite`
 
-`SpreadsheetGrid` は全機能入りです(初期読み込みの JS が約 111KB gzip)。`/lite` の入口では、渡した機能だけを入れたグリッドを作れます。渡さなかった機能はバンドルに入りません(機能なしで約 61KB、プリセット `standardFeatures` で約 78KB)。
+`SpreadsheetGrid` は全機能入りです(初期読み込みの JS が約 112KB gzip)。`/lite` の入口では、渡した機能だけを入れたグリッドを作れます。渡さなかった機能はバンドルに入りません(機能なしで約 60KB、プリセット `standardFeatures` で約 78KB)。
 
 ```tsx
 import { createSpreadsheetGrid, standardFeatures, serverSideFeature } from '@ishibashi0112/spreadsheet-grid/lite'

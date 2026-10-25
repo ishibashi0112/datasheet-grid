@@ -69,7 +69,7 @@
     "access": "public"
   },
   "scripts": {
-    "build:lib": "vp build --config vite.lib.config.ts && tsc -p tsconfig.lib.json && node ../../scripts/fix-dts-extensions.mjs dist && node scripts/emit-layer-css.mjs",
+    "build:lib": "vp build --config vite.lib.config.ts && vp build --config vite.lite.config.ts && tsc -p tsconfig.lib.json && node ../../scripts/fix-dts-extensions.mjs dist && node scripts/emit-layer-css.mjs",
     "build:types": "tsc -p tsconfig.lib.json",
     "prepublishOnly": "pnpm run build:lib"
   },

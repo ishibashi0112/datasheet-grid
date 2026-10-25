@@ -9,10 +9,22 @@ import { filteringFeature } from './filtering';
 import { toolPanelFeature } from './toolPanel';
 import type { ReactGridFeatures } from './types';
 
-export const standardFeatures = {
-  filtering: filteringFeature,
-  columnMenu: columnMenuFeature,
-  toolPanel: toolPanelFeature,
-  columnAutosize: columnAutosizeFeature,
-  export: exportFeature,
-} satisfies ReactGridFeatures;
+// 副作用なしの印を付けた関数呼び出しで作ります。オブジェクトリテラルのまま置くと、使わない構成(standardFeatures を
+//   import しない)でも webpack が中の 5 機能を「使用中」と見なしてバンドルに残すためです(webpack はオブジェクト
+//   リテラルを副作用なしと判定しない。esbuild / Rollup は取り除く)。引数は識別子だけにします(引数にオブジェクト
+//   リテラルがあると webpack は印を無視する)。
+const createStandardFeatures = (
+  filtering: typeof filteringFeature,
+  columnMenu: typeof columnMenuFeature,
+  toolPanel: typeof toolPanelFeature,
+  columnAutosize: typeof columnAutosizeFeature,
+  exportParts: typeof exportFeature,
+) => ({ filtering, columnMenu, toolPanel, columnAutosize, export: exportParts }) satisfies ReactGridFeatures;
+
+export const standardFeatures = /* @__PURE__ */ createStandardFeatures(
+  filteringFeature,
+  columnMenuFeature,
+  toolPanelFeature,
+  columnAutosizeFeature,
+  exportFeature,
+);

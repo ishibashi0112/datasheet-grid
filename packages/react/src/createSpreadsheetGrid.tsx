@@ -35,7 +35,8 @@ const DISABLED_FEATURE_PROPS: { [K in keyof ReactGridFeatures]?: Partial<Spreads
 /**
  * 使う機能だけを差し込んだグリッドのコンポーネントを作ります(`@ishibashi0112/spreadsheet-grid/lite`)。
  * 差し込まなかった機能のコードはバンドルに入りません。props・ref ハンドル・型は `SpreadsheetGrid` と共通で、
- * 差し込んでいない機能の prop やメソッドは何もしません(開発時だけ console.warn で知らせます)。
+ * 差し込んでいない機能の prop やメソッドは何もしません(開発時だけ、prop と、prop を持たない機能のメソッド
+ * (`exportCsv` / `openFilterManager` など)を console.warn で知らせます)。
  * モジュールの先頭で 1 回だけ呼んでください(コンポーネントの中で呼ばない)。機能の組み合わせは作ったときに固定されます。
  *
  * @example

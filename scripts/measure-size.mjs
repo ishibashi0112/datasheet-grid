@@ -10,7 +10,8 @@
 //     揺れます(機能の部品を別ファイルへ移しただけで並びが変わる)。dist に入口が無い構成だけに使う(今は無し)。
 //   使い方: node scripts/measure-size.mjs           計測して表を出す
 //           node scripts/measure-size.mjs --check   上限を超えた構成があれば終了コード 1(CI)。dist がソースより
-//                                                   古いときも 1(古い dist の値で通してしまわないため)
+//                                                   古いときも 1(古い dist の値で通してしまわないため)。/lite の入口
+//                                                   (dist/lite.js)が再エクスポートだけになっていないときも 1
 //           node scripts/measure-size.mjs --update  上限を「今の値 + 余裕」に書き直す(機能を足して大きくなったとき)
 //           node scripts/measure-size.mjs --update=lite,standard   指定した構成の上限だけ書き直す(カンマ区切りで
 //                                                   複数可。full は 112.3KB で固定しているので書き換えない)
@@ -96,6 +97,21 @@ const findStaleDists = () => {
   }
   return stale;
 };
+
+// 追加(差し込み式 段階 6): /lite の入口(dist/lite.js)のうち、import / export の文以外の行を返します。Turbopack
+//   (Next.js 16 の既定)は読み込んだモジュールの import をすべて残すので、入口に中身が入ると、入口が再エクスポート
+//   する全機能が利用側のバンドルに残ります(esbuild のこの計測では見えない)。vite.lite.config.ts の先頭も参照。
+const findLiteEntryCode = () =>
+  readFileSync(`${ROOT}packages/react/dist/lite.js`, 'utf8')
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(
+      (line) =>
+        line !== '' &&
+        !line.startsWith('//') &&
+        !/^import \{[^}]*\} from "[^"]+";$/.test(line) &&
+        !/^export \{[^}]*\};$/.test(line),
+    );
 
 async function measure(config) {
   const fromDist = config.source === 'dist';
@@ -221,6 +237,13 @@ if (updateTargets) {
 if (args.has('--check')) {
   if (staleDists.length > 0) {
     console.error('size: dist が古いままでは正しく測れません。`pnpm run build:lib` の後に実行してください。');
+    process.exit(1);
+  }
+  const liteEntryCode = findLiteEntryCode();
+  if (liteEntryCode.length > 0) {
+    console.error(
+      `size: dist/lite.js に再エクスポート以外のコードがあります(先頭: ${liteEntryCode[0].slice(0, 80)})。中身は別のエントリ(vite.lite.config.ts)へ出してください。`,
+    );
     process.exit(1);
   }
   const over = rows.filter(({ size, limit }) => limit === undefined || size.initialGzipKB > limit);

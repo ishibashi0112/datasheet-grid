@@ -3,7 +3,7 @@ title: バンドルを小さくする(/lite)
 description: createSpreadsheetGrid で使う機能だけを組み込み、初期読み込みの JS を約半分にする
 ---
 
-`SpreadsheetGrid` は全機能入りで、初期読み込みの JS は約 111KB(gzip)です。`@ishibashi0112/spreadsheet-grid/lite` の `createSpreadsheetGrid` を使うと、渡した機能だけを入れたグリッドを作れます。渡さなかった機能のコードはバンドルに入りません。
+`SpreadsheetGrid` は全機能入りで、初期読み込みの JS は約 112KB(gzip)です。`@ishibashi0112/spreadsheet-grid/lite` の `createSpreadsheetGrid` を使うと、渡した機能だけを入れたグリッドを作れます。渡さなかった機能のコードはバンドルに入りません。
 
 ```tsx
 import { createSpreadsheetGrid, standardFeatures } from '@ishibashi0112/spreadsheet-grid/lite';
@@ -23,12 +23,12 @@ export function OrdersTable() {
 
 | 構成 | 初期 JS(gzip) |
 | --- | --- |
-| 全部入り(`SpreadsheetGrid`) | 約 111KB |
-| `/lite` 機能なし | 約 61KB |
+| 全部入り(`SpreadsheetGrid`) | 約 112KB |
+| `/lite` 機能なし | 約 60KB |
 | `/lite` + `standardFeatures` | 約 78KB |
 | `/lite` + `standardFeatures` + `serverSideFeature` | 約 82KB |
 
-esbuild で minify し、React を外部化して計測した値です(`@tanstack/virtual-core` を含む)。Vite で束ねると全体に数 KB 小さく出ます。機能ごとの増え方は [API リファレンス](/docs/api/lite)の表にあります。
+esbuild で minify し、React を外部化して計測した値です(`@tanstack/virtual-core` を含む)。Vite や webpack で束ねると全体に数 KB 小さく出ます。機能ごとの増え方は [API リファレンス](/docs/api/lite)の表にあります。
 
 ## 機能の選び方
 
@@ -54,7 +54,7 @@ const Grid = createSpreadsheetGrid({
 
 ## 入れていない機能を使おうとしたとき
 
-入れていない機能の prop を渡したり、その機能のメソッド(`exportCsv()` など)を呼んだりしても、何も起きません(エラーにもなりません)。開発ビルドでは、prop / メソッドごとに 1 回だけ、足すべき機能を名指しした警告が出ます:
+入れていない機能の prop を渡したり、その機能のメソッドを呼んだりしても、何も起きません(エラーにもなりません)。開発ビルドでは、prop ごとに 1 回だけ、足すべき機能を名指しした警告が出ます(prop を持たないエクスポートとツールパネルは、`exportCsv()` / `openFilterManager()` などのメソッドを呼んだ時点で警告します):
 
 ```text
 [spreadsheet-grid] prop `fillHandle` が渡されましたが、その機能が機能セットに入っていないため何もしません。createSpreadsheetGrid の features に `fillHandle: fillHandleFeature` を入れてください。
@@ -73,6 +73,6 @@ const Grid = createSpreadsheetGrid({
 
 - `createSpreadsheetGrid` はモジュールの先頭で呼んでください。コンポーネントの中で呼ぶと描画のたびに別のコンポーネントになり、グリッドの状態(選択・スクロール位置など)が消えます。
 - 機能の組み合わせは作ったときに決まります。途中で機能を足したいときは、別の組み合わせで作ったコンポーネントに切り替えてください。
-- 全部入りの `SpreadsheetGrid` と同じアプリで混ぜて使えます(共通部分が二重に入ることはありません)。
-- 機能を落とすには、バンドラーが `package.json` の `sideEffects` と `/* @__PURE__ */` を解釈する必要があります。Vite / webpack / Next.js / Rollup / esbuild は既定で解釈します。
-- テストで列フィルターやツールパネルを開くときの `preloadGridPopups()` は `/lite` からも import できます([テスト](/docs/guides/testing#ポップオーバーを開くテスト))。
+- 全部入りの `SpreadsheetGrid` と同じアプリで混ぜることはできますが、共通部分が二重に入ります(`/lite` は機能ごとのファイルに分けた別のビルドのため)。どちらかの入口に揃えてください。
+- 使わない機能がバンドルから落ちることは、Vite 8・webpack 5・Next.js 16(既定の Turbopack)・esbuild で確かめています(バンドラーが `package.json` の `sideEffects` と `/* @__PURE__ */` を解釈する必要があります)。
+- テストで列フィルターやツールパネルを開くときの `preloadGridPopups()` は、`/lite` から import してください(入口ごとに部品が別なので、全部入りの入口のものでは `/lite` のグリッドの部品は読み込まれません。[テスト](/docs/guides/testing#ポップオーバーを開くテスト))。

@@ -69,6 +69,8 @@ beforeAll(async () => {
 });
 ```
 
+`/lite` の `createSpreadsheetGrid` で作ったグリッドでは、`preloadGridPopups` も `@ishibashi0112/spreadsheet-grid/lite` から import してください(入口ごとに部品が別です)。
+
 `findBy*` / `waitFor` で表示を待つテストなら、`preloadGridPopups()` は無くても動きます。
 
 ## 偽のタイマーを使うとき
