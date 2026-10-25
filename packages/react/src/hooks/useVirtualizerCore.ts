@@ -21,6 +21,17 @@ import {
 const useIsomorphicLayoutEffect =
   typeof document !== 'undefined' ? useLayoutEffect : useEffect;
 
+// マウント中かどうかを持つ小さなホルダーです(レンダーをまたいで同じものを使うため useState で 1 回だけ作ります)。
+const createMountState = () => {
+  let mounted = false;
+  return {
+    set: (value: boolean) => {
+      mounted = value;
+    },
+    get: () => mounted,
+  };
+};
+
 export type UseVirtualizerCoreOptions<
   TScrollElement extends Element,
   TItemElement extends Element,
@@ -41,6 +52,7 @@ export function useVirtualizerCore<
 ): Virtualizer<TScrollElement, TItemElement> {
   const { useFlushSync = true, ...rest } = options;
   const rerender = useReducer((x: number) => x + 1, 0)[1];
+  const [mountState] = useState(createMountState);
 
   const resolvedOptions: VirtualizerOptions<TScrollElement, TItemElement> = {
     observeElementRect,
@@ -48,6 +60,13 @@ export function useVirtualizerCore<
     scrollToFn: elementScroll,
     ...rest,
     onChange: (instance, sync) => {
+      // アンマウント後の通知は捨てます。core はスクロール停止の判定(isScrollingResetDelay)を setTimeout で
+      //   遅らせ、購読解除でもその timer を消さないため、スクロール直後にアンマウントすると timer からここへ
+      //   来ます(ブラウザでは無害ですが、jsdom のテストではファイル終了後に window が無い状態で走り、
+      //   未処理の例外になります)。
+      if (!mountState.get()) {
+        return;
+      }
       if (useFlushSync && sync) {
         flushSync(rerender);
       } else {
@@ -64,7 +83,14 @@ export function useVirtualizerCore<
   //   count / estimateSize を見るため。旧 react-virtual と同じ作法)。
   instance.setOptions(resolvedOptions);
 
-  useIsomorphicLayoutEffect(() => instance._didMount(), [instance]);
+  useIsomorphicLayoutEffect(() => {
+    mountState.set(true);
+    const cleanup = instance._didMount();
+    return () => {
+      mountState.set(false);
+      cleanup();
+    };
+  }, [instance, mountState]);
   useIsomorphicLayoutEffect(() => {
     instance._willUpdate();
   });
