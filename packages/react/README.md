@@ -2,7 +2,7 @@
 
 A virtualized spreadsheet / data grid for React 19 (~1M rows, pinned columns, Excel-like editing / selection / clipboard, filters & sorting, client-side and server-side row models). 日本語は下にあります。
 
-**[Docs & live demo](https://datasheet-grid.vercel.app)** · [Playground](https://datasheet-grid.vercel.app/playground) · [GitHub](https://github.com/ishibashi0112/datasheet-grid) · [Changelog](https://github.com/ishibashi0112/datasheet-grid/blob/main/CHANGELOG.md)
+**[Docs & live demo](https://datasheet-grid.vercel.app)** · [Playground](https://datasheet-grid.vercel.app/playground) · [Try on StackBlitz](https://stackblitz.com/fork/github/ishibashi0112/datasheet-grid/tree/main/examples/basic?file=src/App.tsx&terminal=dev) · [GitHub](https://github.com/ishibashi0112/datasheet-grid) · [Changelog](https://github.com/ishibashi0112/datasheet-grid/blob/main/CHANGELOG.md)
 
 ## Install
 
@@ -44,6 +44,8 @@ export function App() {
   )
 }
 ```
+
+More runnable examples (server-side row model, Astryx) are in [`examples/`](https://github.com/ishibashi0112/datasheet-grid/tree/main/examples); each opens in StackBlitz.
 
 ## Smaller bundles: `/lite` (0.54.0+)
 
@@ -90,9 +92,11 @@ MIT
 
 React 19 向けの仮想化スプレッドシート / データグリッドです(約 100 万行・列固定・Excel ライクな編集 / 選択 / クリップボード・フィルター / ソート・クライアントサイド / サーバーサイド行モデル)。
 
-**[ドキュメントとライブデモ](https://datasheet-grid.vercel.app)** · [プレイグラウンド](https://datasheet-grid.vercel.app/playground) · [GitHub](https://github.com/ishibashi0112/datasheet-grid) · [変更履歴](https://github.com/ishibashi0112/datasheet-grid/blob/main/CHANGELOG.md)
+**[ドキュメントとライブデモ](https://datasheet-grid.vercel.app)** · [プレイグラウンド](https://datasheet-grid.vercel.app/playground) · [StackBlitz で試す](https://stackblitz.com/fork/github/ishibashi0112/datasheet-grid/tree/main/examples/basic?file=src/App.tsx&terminal=dev) · [GitHub](https://github.com/ishibashi0112/datasheet-grid) · [変更履歴](https://github.com/ishibashi0112/datasheet-grid/blob/main/CHANGELOG.md)
 
 Astryx / Mantine / HeroUI v3 / shadcn/ui の中で使うときは、`style.css` の後にそれぞれのテーマ(`themes/astryx.css` / `themes/mantine.css` / `themes/heroui.css` / `themes/shadcn.css`)を読み込むと、配色がデザインシステムのテーマとライト / ダークに揃います([ガイド](https://datasheet-grid.vercel.app/docs/guides/design-systems))。
+
+ブラウザで動かせるサンプル(編集できる在庫表 / サーバーサイド行モデル / Astryx)は [`examples/`](https://github.com/ishibashi0112/datasheet-grid/tree/main/examples) にあり、どれも StackBlitz で開けます。
 
 ### バンドルを小さくする: `/lite`(0.54.0 から)
 

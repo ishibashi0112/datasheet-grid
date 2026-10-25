@@ -12,6 +12,10 @@ export const metadata: Metadata = {
 // 変更(F-1 / 打ち出し): ヒーローは「有料級の機能を MIT で」を言い切り、直下に根拠(他にない 5 つ → 他社比較表)を置く。
 const PROOF_CHIPS = ['SSRM(サーバーサイド行モデル)', '行グルーピング + 集計', 'Master/Detail', '範囲選択 + コピペ', 'set フィルター'];
 
+// 追加(広報 2): インストールなしで動かせるサンプル(リポジトリの examples/basic)を StackBlitz で開く。
+const STACKBLITZ_URL =
+  'https://stackblitz.com/fork/github/ishibashi0112/datasheet-grid/tree/main/examples/basic?file=src/App.tsx&terminal=dev';
+
 const BULLETS = [
   '100 万行対応の仮想化 + 3 ペイン固定列',
   'Excel ライクな編集・undo/redo(IME 対応)',
@@ -159,6 +163,14 @@ export default function HomePage() {
             >
               はじめる
             </Link>
+            <a
+              href={STACKBLITZ_URL}
+              target="_blank"
+              rel="noreferrer"
+              className="rounded-lg border px-5 py-2.5 text-sm font-semibold hover:bg-fd-accent"
+            >
+              StackBlitz で試す
+            </a>
             <InstallCommand />
           </div>
         </div>

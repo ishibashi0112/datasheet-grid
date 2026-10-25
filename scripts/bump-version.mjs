@@ -10,8 +10,11 @@
 //   追加(広報 1: 入口の整備): CHANGELOG.md の「## 未リリース」の見出しを「## X.Y.Z — 今日の日付」に書き換えて同じコミットに含めます。
 //     タグを push すると .github/workflows/release.yml がこの節を本文にして GitHub Release を作ります。
 //     「未リリース」の節が無いときは警告だけ出して続けます(Release は本文が無いので作られません)。
+//   追加(広報 2: StackBlitz のサンプル): examples/*/package.json の @ishibashi0112/spreadsheet-grid も ^X.Y.Z へ書き換えて
+//     同じコミットに含めます(サンプルは npm の公開版で動くため)。版上げを main へ push してから publish するまでの間は、
+//     StackBlitz で開いたサンプルのインストールが失敗する(その版がまだ無い)ので、push の後は早めに publish します。
 import { execSync } from 'node:child_process';
-import { readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 
 const kind = process.argv[2];
 const EXPLICIT = /^\d+\.\d+\.\d+$/;
@@ -61,6 +64,18 @@ if (UNRELEASED_HEADING.test(changelogText)) {
   staged.push(changelog);
 } else {
   console.warn('bump-version: CHANGELOG.md に「## 未リリース」の節がありません(GitHub Release の本文が作られません)');
+}
+const examplePackages = existsSync('examples')
+  ? readdirSync('examples', { withFileTypes: true })
+      .filter((entry) => entry.isDirectory() && existsSync(`examples/${entry.name}/package.json`))
+      .map((entry) => `examples/${entry.name}/package.json`)
+  : [];
+for (const file of examplePackages) {
+  const pkg = JSON.parse(readFileSync(file, 'utf8'));
+  if (pkg.dependencies?.['@ishibashi0112/spreadsheet-grid'] === undefined) continue;
+  pkg.dependencies['@ishibashi0112/spreadsheet-grid'] = `^${next}`;
+  writeFileSync(file, JSON.stringify(pkg, null, 2));
+  staged.push(file);
 }
 execSync(`git add ${staged.join(' ')}`);
 execSync(`git commit -q -m "${next}"`);

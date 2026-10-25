@@ -2,6 +2,7 @@
 
 [![npm version](https://img.shields.io/npm/v/@ishibashi0112/spreadsheet-grid.svg)](https://www.npmjs.com/package/@ishibashi0112/spreadsheet-grid)
 [![license](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
+[![Open in StackBlitz](https://img.shields.io/badge/Open%20in-StackBlitz-1269d3?logo=stackblitz)](https://stackblitz.com/fork/github/ishibashi0112/datasheet-grid/tree/main/examples/basic?file=src/App.tsx&terminal=dev)
 
 A high-performance, virtualized spreadsheet / data grid for **React 19**, written in TypeScript.
 
@@ -147,6 +148,14 @@ export function Example() {
 ```
 
 `rows` and `onRowsChange` make the grid a controlled component. A column needs at least `key` and `width`.
+
+### Try it in your browser
+
+These examples open in StackBlitz, so you can run and edit them without installing anything (source: [`examples/`](./examples)):
+
+- [Editable inventory grid](https://stackblitz.com/fork/github/ishibashi0112/datasheet-grid/tree/main/examples/basic?file=src/App.tsx&terminal=dev) — 10,000 rows with editors, validation, filters, conditional formatting, a total row, the fill handle, find and CSV export.
+- [Server-side row model](https://stackblitz.com/fork/github/ishibashi0112/datasheet-grid/tree/main/examples/server-side?file=src/App.tsx&terminal=dev) — 100,000 rows fetched as you scroll; sorting and filtering run on the (simulated) server, and edits are saved with a rollback on failure.
+- [Inside Astryx](https://stackblitz.com/fork/github/ishibashi0112/datasheet-grid/tree/main/examples/astryx?file=src/App.tsx&terminal=dev) — the grid themed by `themes/astryx.css`, with Astryx components in cells.
 
 ## Cell editors & validation
 
@@ -510,6 +519,14 @@ export function Example() {
 ```
 
 `rows` と `onRowsChange` でグリッドは controlled になります。列には最低限 `key` と `width` が必要です。
+
+#### ブラウザで試す
+
+次のサンプルは StackBlitz で開くので、インストールなしで動かして書き換えられます(ソースは [`examples/`](./examples))。
+
+- [編集できる在庫表](https://stackblitz.com/fork/github/ishibashi0112/datasheet-grid/tree/main/examples/basic?file=src/App.tsx&terminal=dev) — 10,000 行。エディタ / バリデーション / フィルター / 条件付き書式 / 合計行 / フィルハンドル / セル内検索 / CSV
+- [サーバーサイド行モデル](https://stackblitz.com/fork/github/ishibashi0112/datasheet-grid/tree/main/examples/server-side?file=src/App.tsx&terminal=dev) — 100,000 件をスクロールに合わせて取得。ソート・フィルターは(擬似的な)サーバー側で処理し、編集は保存(失敗すると元に戻る)
+- [Astryx の中のグリッド](https://stackblitz.com/fork/github/ishibashi0112/datasheet-grid/tree/main/examples/astryx?file=src/App.tsx&terminal=dev) — `themes/astryx.css` で配色を揃え、セルに Astryx の部品を描く
 
 ### セルエディタとバリデーション
 

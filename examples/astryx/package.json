@@ -1,0 +1,27 @@
+{
+  "name": "spreadsheet-grid-example-astryx",
+  "private": true,
+  "version": "0.0.0",
+  "description": "SpreadsheetGrid のサンプル: Astryx の中に置いたグリッド(themes/astryx.css)",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@astryxdesign/core": "^0.7.4",
+    "@astryxdesign/theme-neutral": "^0.7.4",
+    "@ishibashi0112/spreadsheet-grid": "^0.55.0",
+    "@stylexjs/stylex": "^0.19.1",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1"
+  },
+  "devDependencies": {
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^6.1.2",
+    "typescript": "~6.0.3",
+    "vite": "^8.3.4"
+  }
+}

@@ -28,3 +28,5 @@ repomix-output.xml
 *.tgz
 # 監査ハーネスの出力(スクリーンショット等)
 audit/harness/.out
+# サンプル(examples/*)は lockfile を置かない(StackBlitz / 手元の npm install で作られるもの)
+examples/*/package-lock.json
