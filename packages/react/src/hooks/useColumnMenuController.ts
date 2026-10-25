@@ -11,7 +11,7 @@ import { useController } from './useController';
 
 export type { ColumnMenuLayout } from '@ishibashi0112/spreadsheet-grid-core/controllers/columnMenuController';
 
-type UseColumnMenuControllerArgs<T> = {
+export type UseColumnMenuControllerArgs<T> = {
   visibleColumns: GridColumn<T>[];
   enableColumnMenu: boolean;
   gridRootRef: RefObject<HTMLDivElement | null>;
@@ -46,5 +46,8 @@ export const useColumnMenuController = <T,>(args: UseColumnMenuControllerArgs<T>
     closeColumnMenu: controller.close,
   };
 };
+
+// 追加(差し込み式 段階 3): 列メニューの機能(features/columnMenu)が返す値の型に使います。
+export type UseColumnMenuControllerResult<T> = ReturnType<typeof useColumnMenuController<T>>;
 
 export default useColumnMenuController;

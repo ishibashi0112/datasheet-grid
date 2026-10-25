@@ -2,6 +2,7 @@
 //   no-op 入力での参照安定)。
 import { describe, it, expect } from 'vitest';
 import { createVerticalLayoutResolver, type VerticalLayoutInputs } from './verticalLayout';
+import { fullCoreFeatures } from './fullFeatures';
 import type { GridColumn, RowModel } from '../model/gridTypes.unbound';
 import { createDetailIndexCache } from '../logic/detailRow';
 import type { LabelDisplay } from '../logic/labelRows';
@@ -42,7 +43,7 @@ const baseInputs = (): VerticalLayoutInputs<Row> => ({
 
 describe('createVerticalLayoutResolver', () => {
   it('uniform 経路: 駆動列があっても autoHeight=false なら行高ストアなし、描画窓は overscan 込み', () => {
-    const resolve = createVerticalLayoutResolver<Row>();
+    const resolve = createVerticalLayoutResolver<Row>(fullCoreFeatures.autoHeight);
     const first = resolve(baseInputs());
     expect(first.hasAutoHeightColumn).toBe(true);
     expect(first.autoHeightActive).toBe(false);
@@ -64,7 +65,7 @@ describe('createVerticalLayoutResolver', () => {
   });
 
   it('auto-height 経路: 行高ストアを estimate で構築し、serverSide では常に無効', () => {
-    const resolve = createVerticalLayoutResolver<Row>();
+    const resolve = createVerticalLayoutResolver<Row>(fullCoreFeatures.autoHeight);
     const measured = new Map<number, number>([[1, 80]]);
     const active = resolve({ ...baseInputs(), autoHeight: true, measuredHeights: measured });
     expect(active.autoHeightActive).toBe(true);
@@ -80,8 +81,17 @@ describe('createVerticalLayoutResolver', () => {
     expect(server.autoHeightActive).toBe(false);
   });
 
+  it('機能セットに autoHeight が無ければ autoHeight=true でも無効(行高ストアなし、uniform 経路)', () => {
+    const resolve = createVerticalLayoutResolver<Row>(undefined);
+    const result = resolve({ ...baseInputs(), autoHeight: true, measuredHeights: new Map([[1, 80]]) });
+    expect(result.autoHeightActive).toBe(false);
+    expect(result.rowHeightStore).toBeNull();
+    expect(result.rowMetrics.rowTop(1)).toBe(32);
+    expect(result.windowLastRow).toBe(30);
+  });
+
   it('展開行: 展開中キーの帯を rowMetrics に足し、描画窓内のマスター行を detailEntries に出す', () => {
-    const resolve = createVerticalLayoutResolver<Row>();
+    const resolve = createVerticalLayoutResolver<Row>(fullCoreFeatures.autoHeight);
     const result = resolve({
       ...baseInputs(),
       detailRowEnabled: true,
@@ -107,7 +117,7 @@ describe('createVerticalLayoutResolver × ラベル行の行高', () => {
   };
 
   it('labelRowHeight 指定でラベル行だけ高さが変わり、metrics 経路(size 付き)へ切り替わる', () => {
-    const resolve = createVerticalLayoutResolver<Row>();
+    const resolve = createVerticalLayoutResolver<Row>(fullCoreFeatures.autoHeight);
     const result = resolve({ ...baseInputs(), labelDisplay, labelRowHeight: 48 });
     expect(result.labelHeightActive).toBe(true);
     expect(result.rowMetrics.cellHeight(0)).toBe(48);
@@ -128,7 +138,7 @@ describe('createVerticalLayoutResolver × ラベル行の行高', () => {
   });
 
   it('labelRowHeight 未指定 / ラベル行なし / serverSide では従来経路(参照同一)', () => {
-    const resolve = createVerticalLayoutResolver<Row>();
+    const resolve = createVerticalLayoutResolver<Row>(fullCoreFeatures.autoHeight);
     const plain = resolve(baseInputs());
     const noHeight = resolve({ ...baseInputs(), labelDisplay });
     expect(noHeight.labelHeightActive).toBe(false);
@@ -142,7 +152,7 @@ describe('createVerticalLayoutResolver × ラベル行の行高', () => {
   });
 
   it('展開行と合成できる(ラベル行高 → 展開行の帯)', () => {
-    const resolve = createVerticalLayoutResolver<Row>();
+    const resolve = createVerticalLayoutResolver<Row>(fullCoreFeatures.autoHeight);
     const result = resolve({
       ...baseInputs(),
       labelDisplay,

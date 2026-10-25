@@ -137,9 +137,21 @@ async function measure(config) {
         return Buffer.from(content);
       }),
     );
-  const jsKeys = Object.keys(outputs).filter((key) => key.endsWith('.js'));
+  // 遅延分は初期 JS から動的 import でたどれるチャンクだけを数えます。esbuild は使われなくなった動的 import の
+  //   チャンク(機能セットに無い遅延部品)も出力するため、出力をすべて数えると読み込まれない分まで入ってしまう。
+  const reachable = new Set();
+  const walkLazy = (key) => {
+    if (reachable.has(key)) return;
+    reachable.add(key);
+    for (const imported of outputs[key].imports) {
+      if ((imported.kind === 'import-statement' || imported.kind === 'dynamic-import') && outputs[imported.path]) {
+        walkLazy(imported.path);
+      }
+    }
+  };
+  walkLazy(entryKey);
   const initialBuf = concat([...initial]);
-  const lazyBuf = concat(jsKeys.filter((key) => !initial.has(key)));
+  const lazyBuf = concat([...reachable].filter((key) => key.endsWith('.js') && !initial.has(key)));
   return {
     initialMinKB: kb(initialBuf.length),
     initialGzipKB: kb(gzipBytes(initialBuf)),

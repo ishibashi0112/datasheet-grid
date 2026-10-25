@@ -22,10 +22,11 @@ import {
   type VerticalGeometry,
   type VerticalRow,
 } from '../logic/verticalGeometry';
-import { buildRowHeightStore, createAutoHeightRowMetrics, type RowHeightStore } from '../logic/rowHeightStore';
+import type { RowHeightStore } from '../logic/rowHeightStore';
 import { resolveDetailRowExtras, type DetailIndexCache } from '../logic/detailRow';
 import type { LabelDisplay } from '../logic/labelRows';
 import { createMemo } from './memo';
+import type { AutoHeightFeature } from './features';
 
 type ReadonlyRef<V> = { readonly current: V };
 
@@ -98,7 +99,9 @@ export type VerticalLayoutResolution = {
   overlayBaseOffset: number;
 };
 
-export const createVerticalLayoutResolver = <T,>() => {
+// 変更(差し込み式 段階 4): 行高ストアの部品は機能セットの autoHeight から受けます(createGridEngine が渡す)。無ければ
+//   auto-height は常に無効(uniform / 展開行 / ラベル行の経路だけ)で、行高ストアのモジュールを持ち込みません。
+export const createVerticalLayoutResolver = <T,>(autoHeightFeature: AutoHeightFeature | undefined) => {
   const memoHasAutoHeightColumn = createMemo((visibleColumns: GridColumn<T>[]) =>
     visibleColumns.some((column) => column.autoHeight === true),
   );
@@ -112,7 +115,9 @@ export const createVerticalLayoutResolver = <T,>() => {
       rowModel: RowModel<T>,
       measuredHeights: Map<GridRowKey, number>,
     ): RowHeightStore | null =>
-      autoHeightActive ? buildRowHeightStore(viewRowCount, estimate, rowModel.getRowKey, measuredHeights) : null,
+      autoHeightActive && autoHeightFeature
+        ? autoHeightFeature.buildRowHeightStore(viewRowCount, estimate, rowModel.getRowKey, measuredHeights)
+        : null,
   );
   // 行メトリクス(スクロール非依存)。auto-height では prefix-sum 版、uniform では従来版。
   //   autoHeightVersion は測定 flush 後に作り直させるトリガー(本体では参照しない)。
@@ -124,8 +129,8 @@ export const createVerticalLayoutResolver = <T,>() => {
       viewRowCount: number,
       rowHeight: number,
     ): RowMetrics =>
-      autoHeightActive && rowHeightStore
-        ? createAutoHeightRowMetrics(rowHeightStore)
+      autoHeightActive && rowHeightStore && autoHeightFeature
+        ? autoHeightFeature.createAutoHeightRowMetrics(rowHeightStore)
         : createUniformRowMetrics(viewRowCount, rowHeight),
   );
   // 展開中キー集合 → view index 昇順の帯リスト(表示行リストは不変)。走査は clientSide のみ。
@@ -244,8 +249,11 @@ export const createVerticalLayoutResolver = <T,>() => {
     } = inputs;
     const hasAutoHeightColumn = memoHasAutoHeightColumn(visibleColumns);
     // gate: props 有効 + 駆動列あり + 行数が上限内。serverSide では未ロード行の高さが不明なため常に無効。
+    //   変更(差し込み式 段階 4): 機能セットに autoHeight が無ければ常に無効。
     const autoHeightActive =
-      !isServerSide && shouldUseAutoHeight(autoHeight, hasAutoHeightColumn, viewRowCount, AUTO_HEIGHT_MAX_ROWS);
+      autoHeightFeature !== undefined &&
+      !isServerSide &&
+      shouldUseAutoHeight(autoHeight, hasAutoHeightColumn, viewRowCount, AUTO_HEIGHT_MAX_ROWS);
     const rowHeightStore = memoRowHeightStore(autoHeightActive, viewRowCount, estimateRowHeight, rowModel, measuredHeights);
     const baseRowMetrics = memoBaseRowMetrics(autoHeightActive, rowHeightStore, autoHeightVersion, viewRowCount, rowHeight);
     const detailExtras = memoDetailExtras(

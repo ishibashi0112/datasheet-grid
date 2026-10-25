@@ -12,6 +12,8 @@ import { columnReorderFeature } from './features/columnReorder';
 import { rowDragFeature } from './features/rowDrag';
 import { scrollHintFeature } from './features/scrollHint';
 import { columnAutosizeFeature } from './features/columnAutosize';
+import { columnMenuFeature } from './features/columnMenu';
+import { toolPanelFeature } from './features/toolPanel';
 import { totalRowFeature } from './features/totalRow';
 import { imeDirectInputFeature } from './features/imeDirectInput';
 import { contextMenuFeature } from './features/contextMenu';
@@ -19,6 +21,7 @@ import { conditionalFormatFeature } from './features/conditionalFormat';
 import { selectionAggregatesFeature } from './features/selectionAggregates';
 import { motionExtrasFeature } from './features/motionExtras';
 import { exportFeature } from './features/export';
+import { autoHeightFeature } from './features/autoHeight';
 import { installJsdomLayoutStubs } from './testing';
 import { resetUnregisteredFeatureWarnings } from '@ishibashi0112/spreadsheet-grid-core/logic/featureWarnings';
 import { ROW_DRAG_HANDLE_COLUMN_KEY } from '@ishibashi0112/spreadsheet-grid-core/logic/rowReorder';
@@ -37,7 +40,16 @@ const FillOnlyGrid = createSpreadsheetGrid({ features: { fillHandle: fillHandleF
 const ColumnReorderOnlyGrid = createSpreadsheetGrid({ features: { columnReorder: columnReorderFeature } });
 const RowDragOnlyGrid = createSpreadsheetGrid({ features: { rowDrag: rowDragFeature } });
 const ScrollHintOnlyGrid = createSpreadsheetGrid({ features: { scrollHint: scrollHintFeature } });
-const ColumnAutosizeOnlyGrid = createSpreadsheetGrid({ features: { columnAutosize: columnAutosizeFeature } });
+// 列幅の自動調整の項目は列メニューに出るため、列メニューと組み合わせて確かめます。
+const ColumnMenuOnlyGrid = createSpreadsheetGrid({ features: { columnMenu: columnMenuFeature } });
+// ツールパネルを開く入口の多くは列メニューにあるため、列メニューと組み合わせて確かめます。
+const ToolPanelOnlyGrid = createSpreadsheetGrid({ features: { toolPanel: toolPanelFeature } });
+const ColumnMenuToolPanelGrid = createSpreadsheetGrid({
+  features: { columnMenu: columnMenuFeature, toolPanel: toolPanelFeature },
+});
+const ColumnMenuAutosizeGrid = createSpreadsheetGrid({
+  features: { columnMenu: columnMenuFeature, columnAutosize: columnAutosizeFeature },
+});
 const TotalRowOnlyGrid = createSpreadsheetGrid({ features: { totalRow: totalRowFeature } });
 const ImeOnlyGrid = createSpreadsheetGrid({ features: { imeDirectInput: imeDirectInputFeature } });
 const ContextMenuOnlyGrid = createSpreadsheetGrid({ features: { contextMenu: contextMenuFeature } });
@@ -45,6 +57,7 @@ const ConditionalFormatOnlyGrid = createSpreadsheetGrid({ features: { conditiona
 const SelectionAggregatesOnlyGrid = createSpreadsheetGrid({ features: { selectionAggregates: selectionAggregatesFeature } });
 const MotionExtrasOnlyGrid = createSpreadsheetGrid({ features: { motionExtras: motionExtrasFeature } });
 const ExportOnlyGrid = createSpreadsheetGrid({ features: { export: exportFeature } });
+const AutoHeightOnlyGrid = createSpreadsheetGrid({ features: { autoHeight: autoHeightFeature } });
 
 let restore: () => void;
 beforeAll(() => {
@@ -171,11 +184,11 @@ describe('差し込み式: columnReorder', () => {
   it('機能セットに無ければ onColumnsChange があっても grip とドロップの縦線を出さない(警告もしない)', () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     const { container } = render(
-      <MinimalGrid rows={rows} columns={columns} rowKeyGetter={(r) => r.id} onColumnsChange={() => {}} />,
+      <ColumnMenuOnlyGrid rows={rows} columns={columns} rowKeyGetter={(r) => r.id} onColumnsChange={() => {}} />,
     );
     expect(container.querySelectorAll('.ssg-header-grip')).toHaveLength(0);
     expect(container.querySelectorAll('.ssg-col-drop-indicator')).toHaveLength(0);
-    // 列メニュー(⋮)は従来どおり出る。
+    // 列メニュー(⋮)は列メニューの機能があれば従来どおり出る(ヘッダーの操作ボタンの並びは崩れない)。
     expect(container.querySelectorAll('.ssg-header-actions .ssg-icon-btn').length).toBeGreaterThan(0);
     expect(warn).not.toHaveBeenCalled();
   });
@@ -268,7 +281,7 @@ describe('差し込み式: columnAutosize', () => {
   it('機能セットに無ければ列メニューに幅の自動調整を出さず、autoSizeColumns は開発時に 1 回だけ警告する', () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     const { container } = render(
-      <MinimalGrid rows={rows} columns={columns} rowKeyGetter={(r) => r.id} autoSizeColumns="onMount" />,
+      <ColumnMenuOnlyGrid rows={rows} columns={columns} rowKeyGetter={(r) => r.id} autoSizeColumns="onMount" />,
     );
     openColumnMenu(container);
     expect(menuLabels().length).toBeGreaterThan(0);
@@ -278,11 +291,136 @@ describe('差し込み式: columnAutosize', () => {
     expect(warnings).toHaveLength(1);
   });
 
-  it('columnAutosize だけを入れた構成では列メニューに幅の自動調整が出る', () => {
-    const { container } = render(<ColumnAutosizeOnlyGrid rows={rows} columns={columns} rowKeyGetter={(r) => r.id} />);
+  it('columnAutosize を入れた構成では列メニューに幅の自動調整が出る', () => {
+    const { container } = render(<ColumnMenuAutosizeGrid rows={rows} columns={columns} rowKeyGetter={(r) => r.id} />);
     openColumnMenu(container);
     expect(menuLabels()).toContain('この列の幅を自動調整');
     expect(menuLabels()).toContain('すべての列の幅を自動調整');
+  });
+});
+
+describe('差し込み式: columnMenu', () => {
+  const headerCell = (container: HTMLElement) => container.querySelector('.ssg-header-cell[data-ssg-col-key="name"]') as HTMLElement;
+  const menuButton = (container: HTMLElement) => container.querySelector<HTMLElement>('[aria-label="列メニュー"]');
+
+  it('機能セットに無ければ ⋮ ボタンを出さず、ヘッダーの右クリックはブラウザ標準のメニューのまま、明示した enableColumnMenu だけ開発時に 1 回警告する', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const { container } = render(<MinimalGrid rows={rows} columns={columns} rowKeyGetter={(r) => r.id} enableColumnMenu />);
+    expect(menuButton(container)).toBeNull();
+    // 既定の動作を止めない = ブラウザ標準のメニューが出る。
+    expect(fireEvent.contextMenu(headerCell(container), { clientX: 10, clientY: 10 })).toBe(true);
+    expect(document.querySelector('.ssg-menu-label')).toBeNull();
+    const warnings = warn.mock.calls.filter(([message]) => String(message).includes('`enableColumnMenu`'));
+    expect(warnings).toHaveLength(1);
+  });
+
+  it('既定(enableColumnMenu 省略 = true)のままなら警告しない', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    render(<MinimalGrid rows={rows} columns={columns} rowKeyGetter={(r) => r.id} />);
+    expect(warn).not.toHaveBeenCalled();
+  });
+
+  it('columnMenu だけを入れた構成では ⋮ ボタンとヘッダーの右クリックで列メニューが開く', () => {
+    const { container } = render(<ColumnMenuOnlyGrid rows={rows} columns={columns} rowKeyGetter={(r) => r.id} />);
+    const button = menuButton(container);
+    expect(button).not.toBeNull();
+    act(() => {
+      fireEvent.pointerDown(button as HTMLElement, { button: 0 });
+    });
+    expect(document.querySelectorAll('.ssg-menu-label').length).toBeGreaterThan(0);
+    act(() => {
+      fireEvent.keyDown(document.activeElement ?? document.body, { key: 'Escape' });
+    });
+    expect(fireEvent.contextMenu(headerCell(container), { clientX: 10, clientY: 10 })).toBe(false);
+    expect(document.querySelectorAll('.ssg-menu-label').length).toBeGreaterThan(0);
+  });
+});
+
+describe('差し込み式: toolPanel', () => {
+  const filterColumns: GridColumn<Row>[] = [{ key: 'name', title: '名前', width: 160, filterType: 'text' }];
+  const openColumnMenu = (container: HTMLElement) => {
+    const menuButton = container.querySelector<HTMLElement>('[aria-label="列メニュー"]');
+    if (!menuButton) throw new Error('列メニューのボタンがありません');
+    act(() => {
+      fireEvent.pointerDown(menuButton, { button: 0 });
+    });
+  };
+  const menuLabels = () => Array.from(document.querySelectorAll('.ssg-menu-label')).map((el) => el.textContent);
+  const panelOpen = () => document.querySelector('.ssg-toolpanel-seg') !== null;
+
+  it('機能セットに無ければパネルを開く入口(列メニューの 3 項目 / Filters チップ)を出さず、openFilterManager は開発時に 1 回だけ警告する', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const ref = createRef<SpreadsheetGridHandle<Row>>();
+    const { container } = render(
+      <ColumnMenuOnlyGrid ref={ref} rows={rows} columns={filterColumns} rowKeyGetter={(r) => r.id} onColumnsChange={() => {}} />,
+    );
+    expect(container.querySelector('[aria-label="フィルター管理パネルを開閉"]')).toBeNull();
+    openColumnMenu(container);
+    expect(menuLabels()).toContain('昇順で並び替え');
+    expect(menuLabels()).toContain('列のリセット');
+    expect(menuLabels()).not.toContain('並び替えを管理…');
+    expect(menuLabels()).not.toContain('フィルターを管理…');
+    expect(menuLabels()).not.toContain('列の表示');
+    act(() => {
+      ref.current?.openFilterManager();
+      ref.current?.openFilterManager();
+    });
+    expect(panelOpen()).toBe(false);
+    const warnings = warn.mock.calls.filter(([message]) => String(message).includes('`openFilterManager()`'));
+    expect(warnings).toHaveLength(1);
+  });
+
+  it('toolPanel を入れた構成では列メニューの 3 項目と Filters チップが出て、openFilterManager でパネルが開く', () => {
+    const ref = createRef<SpreadsheetGridHandle<Row>>();
+    const { container } = render(
+      <ColumnMenuToolPanelGrid ref={ref} rows={rows} columns={filterColumns} rowKeyGetter={(r) => r.id} onColumnsChange={() => {}} />,
+    );
+    expect(container.querySelector('[aria-label="フィルター管理パネルを開閉"]')).not.toBeNull();
+    openColumnMenu(container);
+    expect(menuLabels()).toContain('並び替えを管理…');
+    expect(menuLabels()).toContain('フィルターを管理…');
+    expect(menuLabels()).toContain('列の表示');
+    act(() => {
+      fireEvent.keyDown(document.activeElement ?? document.body, { key: 'Escape' });
+    });
+    act(() => {
+      ref.current?.openFilterManager();
+    });
+    expect(panelOpen()).toBe(true);
+  });
+
+  it('toolPanel だけの構成でも Filters チップでパネルが開き、enableColumnMenu は「列」タブの有無に効く(警告しない)', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const tabLabels = () => Array.from(document.querySelectorAll('[role="tab"]')).map((el) => el.textContent);
+    const view = render(
+      <ToolPanelOnlyGrid rows={rows} columns={filterColumns} rowKeyGetter={(r) => r.id} enableColumnMenu onColumnsChange={() => {}} />,
+    );
+    // 列メニューの機能は無いので ⋮ ボタンは出ない。
+    expect(view.container.querySelector('[aria-label="列メニュー"]')).toBeNull();
+    const chip = view.container.querySelector<HTMLElement>('[aria-label="フィルター管理パネルを開閉"]');
+    expect(chip).not.toBeNull();
+    act(() => {
+      chip?.click();
+    });
+    expect(panelOpen()).toBe(true);
+    expect(tabLabels().includes('列')).toBe(true);
+    view.unmount();
+    render(
+      <ToolPanelOnlyGrid
+        rows={rows}
+        columns={filterColumns}
+        rowKeyGetter={(r) => r.id}
+        enableColumnMenu={false}
+        onColumnsChange={() => {}}
+      />,
+    );
+    const chip2 = document.querySelector<HTMLElement>('[aria-label="フィルター管理パネルを開閉"]');
+    act(() => {
+      chip2?.click();
+    });
+    expect(panelOpen()).toBe(true);
+    expect(tabLabels().includes('列')).toBe(false);
+    expect(warn.mock.calls.filter(([message]) => String(message).includes('`enableColumnMenu`'))).toHaveLength(0);
   });
 });
 
@@ -560,5 +698,30 @@ describe('差し込み式: export', () => {
     render(<ExportOnlyGrid ref={ref} rows={rows} columns={columns} rowKeyGetter={(r) => r.id} />);
     expect(ref.current?.exportCsv()).toBe('名前\r\nalpha\r\nbeta');
     expect(ref.current?.getExportData().rows.map((cells) => cells.map((cell) => cell.value))).toEqual([['alpha'], ['beta']]);
+  });
+});
+
+describe('差し込み式: autoHeight', () => {
+  // jsdom のレイアウトスタブはどの要素も高さ 600px と答えるため、実測すれば行の高さは 600px になる。
+  const autoHeightColumns: GridColumn<Row>[] = [{ key: 'name', title: '名前', width: 160, autoHeight: true }];
+  const firstRowHeight = (container: HTMLElement) =>
+    container.querySelector<HTMLElement>('.ssg-body-row[data-row-index="0"]')?.style.height;
+
+  it('機能セットに無ければ autoHeight を渡しても実測せず行の高さは固定のまま、開発時に 1 回だけ警告する', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const { container } = render(
+      <MinimalGrid rows={rows} columns={autoHeightColumns} rowKeyGetter={(r) => r.id} rowHeight={30} autoHeight />,
+    );
+    expect(container.querySelector('[data-autoheight-cell]')).toBeNull();
+    expect(firstRowHeight(container)).toBe('30px');
+    expect(warn.mock.calls.filter(([message]) => String(message).includes('`autoHeight`'))).toHaveLength(1);
+  });
+
+  it('autoHeight だけを入れた構成ではセルを実測して行の高さに反映する', () => {
+    const { container } = render(
+      <AutoHeightOnlyGrid rows={rows} columns={autoHeightColumns} rowKeyGetter={(r) => r.id} rowHeight={30} autoHeight />,
+    );
+    expect(container.querySelector('[data-autoheight-cell]')).not.toBeNull();
+    expect(firstRowHeight(container)).toBe('600px');
   });
 });

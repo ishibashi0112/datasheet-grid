@@ -13,7 +13,7 @@ import { useController } from './useController';
 
 export type { ToolPanelLayout, ToolPanelTab } from '@ishibashi0112/spreadsheet-grid-core/controllers/toolPanelController';
 
-type UseToolPanelControllerArgs = {
+export type UseToolPanelControllerArgs = {
   canUseFilterTab: boolean;
   canUseColumnsTab: boolean;
   canUseSortTab: boolean;
@@ -51,5 +51,8 @@ export const useToolPanelController = (args: UseToolPanelControllerArgs) => {
     moveToolPanel: controller.move,
   };
 };
+
+// 追加(差し込み式 段階 3): ツールパネルの機能(features/toolPanel)が返す値の型に使います。
+export type UseToolPanelControllerResult = ReturnType<typeof useToolPanelController>;
 
 export default useToolPanelController;

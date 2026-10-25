@@ -45,6 +45,10 @@ import type { GridSelectionAggregates as GridSelectionAggregatesView } from '../
 import type { UseSelectionAggregatesArgs } from '../hooks/useSelectionAggregates';
 import type { UseColumnHeaderDragControllerArgs } from '../hooks/useColumnHeaderDragController';
 import type { UseRowDragControllerArgs } from '../hooks/useRowDragController';
+import type { UseColumnMenuControllerArgs, UseColumnMenuControllerResult } from '../hooks/useColumnMenuController';
+import type { ColumnMenuPopover } from '../view/ColumnMenuPopover';
+import type { UseToolPanelControllerArgs, UseToolPanelControllerResult } from '../hooks/useToolPanelController';
+import type { ToolPanelViews, UseLazyModuleOptions } from '../view/lazyPopups';
 
 // フィルハンドル(fillHandle)の hook が受け取るシェルの値です(シェルにあったときの自由変数そのまま)。
 export type FillHandleFeatureArgs<T> = {
@@ -123,6 +127,14 @@ export type ColumnAutosizeFeatureResult<T> = {
   runAutosize: (columns: GridColumn<T>[]) => Promise<void>;
 };
 
+// 列メニュー(columnMenu)の hook が受け取る値(controller の引数そのまま)と返す値です。available は機能セットに
+//   あるかどうか(代役は false。シェルは enableColumnMenu && available で ⋮ ボタンとヘッダーの右クリックを出す)。
+export type ColumnMenuFeatureArgs<T> = UseColumnMenuControllerArgs<T>;
+export type ColumnMenuFeatureResult<T> = UseColumnMenuControllerResult<T> & { available: boolean };
+// ツールパネル(toolPanel)の hook が受け取る値と返す値です。available は機能セットにあるかどうか(代役は false。
+//   シェルはツールパネルを開く入口 = 列メニューの 3 項目 / 既定の上部バーの Filters チップを出さない)。
+export type ToolPanelFeatureArgs = UseToolPanelControllerArgs;
+export type ToolPanelFeatureResult = UseToolPanelControllerResult & { available: boolean };
 // セル / 行のコンテキストメニュー(contextMenu)の hook が受け取る値と返す値、右クリックの対象の解決に渡す値です。
 export type CellContextMenuFeatureArgs = {
   gridRootRef: RefObject<HTMLDivElement | null>;
@@ -165,6 +177,8 @@ export type ReactGridFeatures = {
   imeDirectInput?: NonNullable<GridCoreFeatures['imeDirectInput']>;
   // エクスポート(命令的 API の exportCsv / downloadCsv / getExportData)。描画の部品は無い。
   export?: NonNullable<GridCoreFeatures['export']>;
+  // 行の高さの実測(autoHeight): 実測のコントローラ + 行高ストア(core)。描画の部品は無い。
+  autoHeight?: NonNullable<GridCoreFeatures['autoHeight']>;
   // 列幅の自動調整(DS-4 / 13-B1): 計測の時間分割ランナー。
   columnAutosize?: {
     useColumnAutosize: <T>(args: ColumnAutosizeFeatureArgs<T>) => ColumnAutosizeFeatureResult<T>;
@@ -191,6 +205,17 @@ export type ReactGridFeatures = {
     CopyRangeOverlay: typeof CopyRangeOverlay;
     ColumnHoverOverlay: typeof ColumnHoverOverlay;
   };
+  // 列メニュー(13-A): ⋮ ボタン / ヘッダーの右クリックで開く popover の controller の接続 + popover。
+  columnMenu?: {
+    useColumnMenu: <T>(args: ColumnMenuFeatureArgs<T>) => ColumnMenuFeatureResult<T>;
+    ColumnMenuPopover: typeof ColumnMenuPopover;
+  };
+  // ツールパネル(UP-1): controller の接続 + 部品(別チャンク)の遅延読み込み。シェルはそれぞれ元の位置で呼ぶ
+  //   (useToolPanelViews は列フィルターの部品の読み込みの直後)。
+  toolPanel?: {
+    useToolPanel: (args: ToolPanelFeatureArgs) => ToolPanelFeatureResult;
+    useToolPanelViews: (options: UseLazyModuleOptions) => ToolPanelViews | null;
+  };
   // セル / 行のコンテキストメニュー(バッチ②): controller の接続 + popover、右クリックの対象の解決。
   contextMenu?: {
     useCellContextMenu: <T>(args: CellContextMenuFeatureArgs) => CellContextMenuFeatureResult<T>;
@@ -215,6 +240,8 @@ type HookFeatureName =
   | 'rowDrag'
   | 'columnAutosize'
   | 'contextMenu'
-  | 'selectionAggregates';
+  | 'selectionAggregates'
+  | 'columnMenu'
+  | 'toolPanel';
 export type GridShellFeatures = Omit<ReactGridFeatures, HookFeatureName> &
   Required<Pick<ReactGridFeatures, HookFeatureName>>;

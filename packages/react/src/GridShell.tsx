@@ -223,7 +223,6 @@ import { decideCellWrite } from '@ishibashi0112/spreadsheet-grid-core/logic/vali
 //   (view/lazyPopups。シェルから部品を静的に import しないこと = 初期チャンクへ戻ってしまう)。
 import {
   filterPopoverModule,
-  toolPanelModule,
   useLazyModule,
   type ToolPanelViews,
 } from './view/lazyPopups';
@@ -243,13 +242,10 @@ import {
   TOTAL_ROW_DEFAULT_LABEL,
 } from '@ishibashi0112/spreadsheet-grid-core/logic/totalRow';
 import type { AutosizeTotalRowText } from '@ishibashi0112/spreadsheet-grid-core/logic/columnAutosize';
-import useColumnMenuController from './hooks/useColumnMenuController';
-import ColumnMenuPopover from './view/ColumnMenuPopover';
 // 変更(UP-1): フィルター管理 / 列の表示 / 並び替えの独立 3 パネルを統合ツールパネル
 //   (ToolPanel + useToolPanelController)へ集約しました。旧 3 controller
 //   (useColumnChooserController / useSortManagementController / useFilterManagementController)
 //   は削除し、各 view はタブコンテンツ(フレームなし)として ToolPanel の children に入ります。
-import useToolPanelController from './hooks/useToolPanelController';
 import type { ToolPanelTab } from './hooks/useToolPanelController';
 import type { ToolPanelTabDescriptor } from './view/ToolPanel';
 import type { ColumnChooserItem } from './view/ColumnChooserPanel';
@@ -889,7 +885,11 @@ export function useGridShell<T extends object>({
   //             layout の作法は useFilterPopoverController と同型です。
   //             相互排他は両 controller の outside-pointerdown close が自然に担います
   //             (片方を開く操作はもう片方にとって outside click になるためです)。
+  // 変更(差し込み式 段階 3): controller の接続と popover は機能セットの columnMenu から受けます(元の位置で呼ぶので
+  //   hook の順番は従来どおり)。機能セットに無ければ代役(available: false = 閉じたまま)で、⋮ ボタンとヘッダーの
+  //   右クリックを出しません(columnMenuEnabled)。ツールパネルの「列」タブの可否は従来どおり enableColumnMenu です。
   const {
+    available: columnMenuAvailable,
     columnMenuLayout,
     columnMenuRef,
     isColumnMenuOpen,
@@ -899,11 +899,12 @@ export function useGridShell<T extends object>({
     openColumnMenuFromButtonClick,
     openColumnMenuFromContextMenu,
     closeColumnMenu,
-  } = useColumnMenuController({
+  } = features.columnMenu.useColumnMenu<T>({
     visibleColumns,
     enableColumnMenu,
     gridRootRef,
   });
+  const columnMenuEnabled = enableColumnMenu && columnMenuAvailable;
 
   // ── tool panel(UP-1) ─────────────────────────────────
   // 変更(UP-1): フィルター管理 / 列の表示 / 並び替えの独立 3 パネルを、SegmentedControl で
@@ -914,7 +915,10 @@ export function useGridShell<T extends object>({
   //               - outside-close: alliedRef(filterPopoverRef)内の pointerdown では閉じない
   //               - Escape: popover open 中はパネルを閉じず popover の close へ委譲
   //                 (1 押し目 = popover / 2 押し目 = パネル。フォーカス位置に依りません)
+  // 変更(差し込み式 段階 3): controller の接続は機能セットの toolPanel から受けます(元の位置で呼ぶ)。機能セットに
+  //   無ければ代役(available: false = 閉じたまま)で、パネルを開く入口(列メニューの 3 項目 / Filters チップ)を出しません。
   const {
+    available: toolPanelAvailable,
     activeToolPanelTab,
     availableToolPanelTabs,
     toolPanelLayout,
@@ -923,7 +927,7 @@ export function useGridShell<T extends object>({
     openToolPanel,
     closeToolPanel,
     moveToolPanel,
-  } = useToolPanelController({
+  } = features.toolPanel.useToolPanel({
     canUseFilterTab: columnFilterEnabled,
     canUseColumnsTab: enableColumnMenu,
     canUseSortTab: sortingEnabled,
@@ -937,13 +941,18 @@ export function useGridShell<T extends object>({
   //   読み込み前は null(部品を描画しない)。使える機能ならマウント後の暇なときに先読みし、先読み前に
   //   開かれたらその場で読み込みます。読み込み完了でシェルごと再描画され、コントローラの update が
   //   描画済みのパネルを見て位置の追従 / 入力欄フォーカスを始めます。読み込みに失敗したら閉じます。
+  // 変更(差し込み式 段階 3): 列フィルターポップオーバーを開く入口は列メニューとツールパネルだけなので、どちらの機能も
+  //   無い構成では先読みしない(全部入りでは両方あるので従来どおり)。
   const filterPopoverViews = useLazyModule(filterPopoverModule, {
     needed: openedFilterColumn !== null,
     prefetch:
-      columnFilterEnabled && visibleColumns.some((column) => Boolean(column.filterType)),
+      columnFilterEnabled &&
+      (columnMenuAvailable || toolPanelAvailable) &&
+      visibleColumns.some((column) => Boolean(column.filterType)),
     onLoadError: closeColumnFilterPopover,
   });
-  const toolPanelViews = useLazyModule(toolPanelModule, {
+  // 変更(差し込み式 段階 3): ツールパネルの部品の読み込みは機能セットの toolPanel から(元の位置 = 列フィルターの直後)。
+  const toolPanelViews = features.toolPanel.useToolPanelViews({
     needed: activeToolPanelTab !== null,
     prefetch: availableToolPanelTabs.length > 0,
     retainAfterNeeded: true,
@@ -1568,6 +1577,8 @@ export function useGridShell<T extends object>({
   //   engine/verticalLayout.ts(React 非依存)へ、測定フロー(DOM 実測 + ResizeObserver + アンカー補正)は
   //   controllers/autoHeightMeasurer.ts へ移設しました。測定側の version(prefix 更新)/ nonce(内容変化)を
   //   購読し、再計算 / 再測定のトリガーにします。実測キャッシュ(rowKey 単位)も測定側が持ちます。
+  // 変更(差し込み式 段階 4): 機能セットに autoHeight が無ければエンジンの代役(測らない)と、auto-height が常に無効の
+  //   縦レイアウト。その構成では autoHeight が false で渡ってくる(createSpreadsheetGrid)。
   const autoHeightMeasurer = engine.autoHeightMeasurer;
   const { version: autoHeightVersion, nonce: autoHeightMeasureNonce } =
     useSyncExternalStore(
@@ -3869,7 +3880,7 @@ export function useGridShell<T extends object>({
   // ── column menu popover(13-A) ────────────────────────
   // 追加(13-A): 列メニュー popover の描画です(portal で body 直下へ出します)。
   const renderedColumnMenuPopover = openedMenuColumn ? (
-    <ColumnMenuPopover
+    <features.columnMenu.ColumnMenuPopover
       slots={slots}
       themeClassName={portalClassName}
       isOpen={isColumnMenuOpen}
@@ -3886,9 +3897,9 @@ export function useGridShell<T extends object>({
       onSortChange={(direction) =>
         handleColumnMenuSortChange(openedMenuColumn.key, direction)
       }
-      onOpenSortManager={handleColumnMenuOpenSortManager}
+      onOpenSortManager={toolPanelAvailable ? handleColumnMenuOpenSortManager : undefined}
       canManageFilters={columnFilterEnabled}
-      onOpenFilterManager={handleColumnMenuOpenFilterManager}
+      onOpenFilterManager={toolPanelAvailable ? handleColumnMenuOpenFilterManager : undefined}
       pinned={openedMenuColumn.pinned}
       canChangePinned={Boolean(onColumnsChange)}
       layout={columnMenuLayout}
@@ -3896,7 +3907,7 @@ export function useGridShell<T extends object>({
       onPinnedChange={handleColumnMenuPinnedChange}
       onAutosizeColumn={columnAutosize.available ? handleColumnMenuAutosizeColumn : undefined}
       onAutosizeAllColumns={columnAutosize.available ? handleColumnMenuAutosizeAllColumns : undefined}
-      onOpenColumnChooser={handleColumnMenuOpenChooser}
+      onOpenColumnChooser={toolPanelAvailable ? handleColumnMenuOpenChooser : undefined}
       canResetColumns={Boolean(onColumnsChange)}
       onResetColumns={handleColumnMenuResetColumns}
       onRequestClose={closeColumnMenu}
@@ -4043,7 +4054,7 @@ export function useGridShell<T extends object>({
         // 追加(FM-3): Filters chip クリックでフィルター管理パネルをトグルします
         //   (フィルター機能が無効なら渡さない = chip は従来どおり非クリックの span)。
         onFilterSummaryClick={
-          columnFilterEnabled ? handleFilterSummaryChipClick : undefined
+          columnFilterEnabled && toolPanelAvailable ? handleFilterSummaryChipClick : undefined
         }
       />
     ) : null;
@@ -4324,7 +4335,7 @@ export function useGridShell<T extends object>({
                   onColumnHeaderPointerEnter={handleColumnHeaderPointerEnter}
                   onColumnHeaderPointerLeave={handleColumnHeaderPointerLeaveStable}
                   onColumnResizePointerDown={handleColumnResizePointerDown}
-                  enableColumnMenu={enableColumnMenu}
+                  enableColumnMenu={columnMenuEnabled}
                   enableColumnResize={enableColumnResize}
                   openedMenuColumnKey={openedMenuColumnKey}
                   onColumnMenuButtonPointerDown={openColumnMenuFromButton}
@@ -4542,7 +4553,7 @@ export function useGridShell<T extends object>({
                 onColumnHeaderPointerEnter={handleColumnHeaderPointerEnter}
                 onColumnHeaderPointerLeave={handleColumnHeaderPointerLeaveStable}
                 onColumnResizePointerDown={handleColumnResizePointerDown}
-                enableColumnMenu={enableColumnMenu}
+                enableColumnMenu={columnMenuEnabled}
                 enableColumnResize={enableColumnResize}
                 openedMenuColumnKey={openedMenuColumnKey}
                 onColumnMenuButtonPointerDown={openColumnMenuFromButton}
@@ -4761,7 +4772,7 @@ export function useGridShell<T extends object>({
                   onColumnHeaderPointerEnter={handleColumnHeaderPointerEnter}
                   onColumnHeaderPointerLeave={handleColumnHeaderPointerLeaveStable}
                   onColumnResizePointerDown={handleColumnResizePointerDown}
-                  enableColumnMenu={enableColumnMenu}
+                  enableColumnMenu={columnMenuEnabled}
                   enableColumnResize={enableColumnResize}
                   openedMenuColumnKey={openedMenuColumnKey}
                   onColumnMenuButtonPointerDown={openColumnMenuFromButton}
