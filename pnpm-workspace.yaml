@@ -17,6 +17,8 @@ packages:
   - website
 
 # website の依存(esbuild / sharp)のビルドスクリプト許可(pnpm 11 の allowBuilds)。
+#   @astryxdesign/core(website の Astryx デモ)の postinstall は `astryx init` を勧める表示だけなので走らせない。
 allowBuilds:
+  '@astryxdesign/core': false
   esbuild: true
   sharp: true

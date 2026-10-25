@@ -741,7 +741,7 @@ const columns = [
 - `validate` は**純粋・軽量**であること。mark 表示のため、描画中の可視セル(validate 指定列のみ)ごとに毎レンダー評価されます(`cellClassName` 関数と同じコスト階級)。
 - 検証コンテキストは `{ value, row, column }` です(`row` は書き込み前の行。ビュー index はソート / フィルターで不安定なため渡しません)。
 - 保存前の一括チェックはハンドルの `getInvalidCells()` を使います(「命令的 API」節参照)。
-- invalid 表示の配色はトークン `--ssg-invalid` / `--ssg-invalid-bg` で調整できます(light / dark 両対応)。
+- invalid 表示の配色はトークン `--ssg-invalid` / `--ssg-invalid-bg` で調整できます(light / dark 両対応)。エラーの吹き出しの文字色は `--ssg-invalid-contrast`(既定 `#ffffff`)です。
 - 同じセルにメモ(`cellNote`)がある場合は、メモの 10px の三角の上にエラーの 6px の三角が重なります(「セルのメモ(`cellNote`)」節)。
 
 #### 表示タイミングの制御(showValidationMarks)
@@ -1723,6 +1723,42 @@ const s = stylex.create({
 
 - StyleX は子孫セレクタを書けない(要素自身のクラスでしか装飾できない)ため、上記スロットに無い内部要素(ポップオーバー内のボタン / 入力欄等)はデザイントークン(`--ssg-*`)で調整する。
 - StyleX の atomic クラスとグリッドの基底クラスは同じ特異度 (0,1,0)。同じプロパティは後に読み込まれた方が勝つため、グリッド CSS を先に・StyleX の出力 CSS を後に読み込むか、`style.layer.css`(`@layer ssg-base`)を使う。StyleX 側で `useLayers` を有効にしている場合は、未レイヤーのグリッド CSS がレイヤー内に常に勝つため `style.layer.css` が必須。
+
+### Astryx との併用
+
+[Astryx](https://astryx.atmeta.com)(Meta のデザインシステム。StyleX 製)の中でもそのまま使える。グリッドの CSS はレイヤーに入れていないため、Astryx のリセット(`@layer reset`)や部品の CSS(`@layer astryx-base`)に崩されず、セルの中に置いた Astryx の部品(`renderCell` で返す `Button` / `Badge` など)も外に置いたときと同じ見た目になる。配色を揃えるときは下の `themes/astryx.css` を使う。
+
+### デザインシステムのテーマ(`themes/*.css`)
+
+デザインシステムの配色の変数をグリッドのトークン(`--ssg-*`)へつなぐ CSS。`style.css` の後に 1 つ読み込むと、グリッドの配色がそのデザインシステムのテーマ(独自テーマを含む)とライト / ダークの切り替えに付いてくる(JS は増えない)。ライト / ダークはグリッドの `theme` にも渡す。
+
+| ファイル | 対象(確認した版) | 効く範囲 | `theme` に渡すもの |
+| --- | --- | --- | --- |
+| `themes/astryx.css` | Astryx(`@astryxdesign/core` 0.7) | `<Theme>` があるページのすべてのグリッド(最上位の `<Theme>` が `<html>` へ同期する `data-astryx-theme` で判定。ポータルにも当たる) | `useTheme().mode`(必須。Astryx の色は `light-dark()` で、ビルドによってはグリッドの `color-scheme` の側で明暗が選ばれる) |
+| `themes/mantine.css` | Mantine(`@mantine/core` 9.7) | `MantineProvider` があるページのすべてのグリッド(`MantineProvider` が `<html>` に付ける `data-mantine-color-scheme` で判定) | `useComputedColorScheme('light')` |
+| `themes/heroui.css` | HeroUI v3(`@heroui/react` 3.2) | 読み込んだページのすべてのグリッド | `<html>` の `dark` クラスに合わせた `'light'` / `'dark'` |
+| `themes/shadcn.css` | shadcn/ui(`shadcn` 4.22。Tailwind CSS v4 向けの配色の変数) | 読み込んだページのすべてのグリッド | 同上 |
+
+```tsx
+import '@ishibashi0112/spreadsheet-grid/style.css';
+import '@ishibashi0112/spreadsheet-grid/themes/astryx.css';   // style.css の後に読み込む
+import { useTheme } from '@astryxdesign/core/theme';
+
+// <Theme theme={...}> の内側で使う
+function Grid(props: SpreadsheetGridProps<Row>) {
+  const { mode } = useTheme();   // 'light' | 'dark'(mode="system" も解決済みの値)
+  return <SpreadsheetGrid {...props} theme={mode} />;
+}
+```
+
+- どのテーマも、デザインシステムの変数を同じ 16 の入力(面 / 文字 / 罫線 / アクセント / 危険・成功・注意の色とその上の文字色 / 角の丸み)に読み替え、そこからグリッドのトークンを同じ配分(行のホバーの濃さ、選択範囲の混ぜ方など)で決める。ツールチップ / ドラッグ中のゴースト / 条件付き書式の色など、デザインシステムに対応する変数が無い部分は `theme` に渡したプリセットのまま。
+- セレクタは `:where`(特異度 0)。`style.css` より後に読み込めば既定値とダークのプリセットに勝つ(前に読み込むと効かない)。利用側の `.ssg-root { --ssg-cell-bg: ... }` などの上書き(レイヤーに入れていない CSS)は読み込み順に関係なくテーマに勝つ。選択範囲などの色はデザインシステムのアクセントから決めるので、アクセントをまとめて変えるときはデザインシステムの側で変える。
+- `style.css` をレイヤーに入れているとき(`layer(components)` / `style.layer.css`)は、テーマも同じレイヤーの `style.css` の後に入れる(例: `@import '@ishibashi0112/spreadsheet-grid/themes/shadcn.css' layer(components);`)。レイヤーに入れたトークンの上書きは、レイヤーに入っていないテーマに負けるため。
+- HeroUI と shadcn/ui の変数には目印の属性が無いため、そのテーマは読み込んだページのすべてのグリッドに効く。それぞれの変数が無いページで読み込むと色が抜ける。HeroUI v2(`--heroui-*` に HSL の成分を入れる形)と、shadcn/ui の Tailwind CSS v3 向けの書き方(値が `222.2 84% 4.9%` のような HSL の成分)は対象外。
+- shadcn/ui には成功 / 注意の色の変数が無いため、保存できた印とメモの印は Tailwind の green-600 / amber-500。
+- Tailwind CSS だけのときは配色の変数が無いので、トークン(`--ssg-*`)を直接書く([テーマビルダー](https://datasheet-grid.vercel.app/theme-builder)で生成できる)。
+- 自分の StyleX の出力をレイヤーに入れていて(`useLayers`)、そのクラスでグリッドの基底を上書きしたいときは、上の StyleX の注意と同じく `style.layer.css` を使う。
+- デザインシステムの変数名が変わったときはテーマの側で追従する。
 
 ## スタイリング用の状態クラス(公開契約)
 

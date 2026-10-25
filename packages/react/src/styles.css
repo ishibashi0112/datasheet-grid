@@ -130,11 +130,15 @@
     /* バリデーション(validation): invalid セル / reject エラーバブル */
     --ssg-invalid: #ef4444;
     --ssg-invalid-bg: rgba(239, 68, 68, 0.08);
+    /* 追加(デザインシステムのテーマ): invalid / save-ok を塗った上の文字色(セル編集のエラーの吹き出し / 保存の印)。
+       デザインシステムのダークでは塗りが明るい色になることがあるため、文字色もトークンにする。 */
+    --ssg-invalid-contrast: #ffffff;
     /* 追加(G-3): セルのメモ(cellNote)の右上の印 */
     --ssg-note-indicator: #f59e0b;
     /* 追加(motion-7 / M-9): セル単位の保存状態(SSRM 書き戻し)の色。 */
     --ssg-save-pending: var(--ssg-accent);
     --ssg-save-ok: #16a34a;
+    --ssg-save-ok-contrast: #ffffff;
     --ssg-save-failed: var(--ssg-invalid);
     /* 追加(F-2): セル内検索のヒット(通常 / カレント)。 */
     --ssg-find-mark-bg: rgba(245, 158, 11, 0.4);
@@ -1183,12 +1187,12 @@
   }
   .ssg-save-indicator[data-kind='ok'] {
     background-color: var(--ssg-save-ok);
-    color: #ffffff;
+    color: var(--ssg-save-ok-contrast);
     animation: ssg-save-badge-in var(--ssg-motion-fast) var(--ssg-motion-ease) both;
   }
   .ssg-save-indicator[data-kind='failed'] {
     background-color: var(--ssg-save-failed);
-    color: #ffffff;
+    color: var(--ssg-invalid-contrast);
     animation: ssg-save-badge-in var(--ssg-motion-fast) var(--ssg-motion-ease) both;
   }
   @keyframes ssg-save-badge-in {
@@ -1537,7 +1541,7 @@
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-    color: #ffffff;
+    color: var(--ssg-invalid-contrast);
     background-color: var(--ssg-invalid);
     box-shadow: var(--ssg-popover-shadow);
     pointer-events: none;

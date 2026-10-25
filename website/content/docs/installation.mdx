@@ -63,6 +63,9 @@ void preloadGridPopups()
 
 - **Mantine** — そのまま動きます(クラス名・リセットの衝突なし。グリッドのポップオーバーは `z-index: 1000` で Mantine の既定モーダルより上)。
 - **StyleX** — そのまま動きます(reset を持たず、生成クラスは接頭辞 `x` で衝突しません)。`classNames` / `cellClassName` / `getRowClassName` などのスロットへ `stylex.props(...)` の戻り値(`{ className, style }`)をそのまま渡せます。StyleX の atomic クラスとグリッドの基底クラスは同特異度のため、グリッド CSS を先に・StyleX の出力を後に読み込むか、`style.layer.css` を使ってください(StyleX 側で `useLayers` を使う場合は `style.layer.css` が必須)。詳細は[テーマとスタイリング](/docs/guides/theming#stylex-との併用)。
+- **Astryx**(Meta のデザインシステム。StyleX 製)— そのまま動きます(グリッドの CSS はレイヤーに入れていないため、Astryx の `@layer reset` / `@layer astryx-base` に崩されません)。
+
+配色を Astryx / Mantine / HeroUI(v3)/ shadcn/ui のテーマに揃えるときは、`style.css` の後にそれぞれのテーマ(`themes/astryx.css` ほか)を読み込みます。詳細とデモは[デザインシステムに合わせる](/docs/guides/design-systems)。
 
 プレーン CSS でグリッドの既定値を確実に上書きしたい場合は、グリッドのベースクラスに自分のクラスをチェーンして特異度で勝たせます:
 

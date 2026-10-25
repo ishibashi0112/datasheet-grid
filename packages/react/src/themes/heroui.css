@@ -1,0 +1,121 @@
+/*
+  HeroUI v3(https://heroui.com)のテーマ変数をグリッドのトークン(--ssg-*)へつなぐテーマです。
+  使い方: style.css の後に読み込みます。
+    import '@ishibashi0112/spreadsheet-grid/style.css'
+    import '@ishibashi0112/spreadsheet-grid/themes/heroui.css'
+    (HeroUI の CSS は Tailwind CSS v4 の CSS で `@import "tailwindcss"; @import "@heroui/styles";`)
+  - HeroUI v3 の配色の変数(--surface / --accent ほか。:root と .dark / [data-theme] で決まる)を参照します。
+    HeroUI v2(--heroui-* の HSL の成分)は対象外です。
+  - HeroUI の変数には目印の属性が無いため、読み込んだページのすべてのグリッドに効きます(HeroUI の変数が無い
+    ページで読み込むと色が抜けます)。
+  - HeroUI のテーマ(独自テーマを含む)とライト / ダークの切り替えに付いてきます。
+  - ライト / ダーク: <html> の .dark(または data-theme="dark")に合わせて、グリッドの theme prop に 'light' / 'dark' を渡します。
+  - 確認した版: @heroui/react / @heroui/styles 3.2。
+  - 色を決めるのは下の「入力」(--ssg-ds-*。このファイルの中だけで使う中継の変数)だけで、そこからグリッドの
+    トークン(--ssg-*)を決める「配分」はどのデザインシステムのテーマでも同じです(themes/*.css で共通)。
+  - ツールチップ / ドラッグ中のゴースト / 条件付き書式の色など、対応する変数が無いものはグリッドの theme
+    プリセットのままです。ライト / ダークはグリッドの theme prop にも渡してください(上の「ライト / ダーク」)。
+  - セレクタは :where(特異度 0)です。style.css より後に読み込めば既定値とダークのプリセットに勝ちます(前に読み込むと
+    効きません)。利用側の `.ssg-root { --ssg-* }`(レイヤーに入れていない CSS)の上書きは読み込み順に関係なく
+    こちらに勝ちます。style.css をレイヤーに入れているときは、このファイルも同じレイヤーの style.css の後に入れます。
+  - 対象は style.css のトークン定義と同じ要素(ルート + document.body 直下のポータル)です。
+*/
+:where(.ssg-root, .ssg-popover, .ssg-menu-panel, .ssg-filter-popover, .ssg-select-editor-popover, [data-grid-drag-ghost], .ssg-tooltip) {
+  /* ---- 入力(HeroUI の変数) ---- */
+  --ssg-ds-surface: var(--surface);
+  --ssg-ds-surface-muted: var(--surface-secondary);
+  --ssg-ds-popover: var(--overlay);
+  --ssg-ds-text: var(--foreground);
+  --ssg-ds-text-muted: var(--muted);
+  --ssg-ds-text-faint: color-mix(in srgb, var(--muted) 55%, var(--surface));
+  --ssg-ds-border: var(--separator);
+  --ssg-ds-border-strong: var(--border);
+  --ssg-ds-accent: var(--accent);
+  --ssg-ds-accent-contrast: var(--accent-foreground);
+  --ssg-ds-danger: var(--danger);
+  --ssg-ds-danger-contrast: var(--danger-foreground);
+  --ssg-ds-success: var(--success);
+  --ssg-ds-success-contrast: var(--success-foreground);
+  --ssg-ds-warning: var(--warning);
+  --ssg-ds-radius: calc(var(--radius) * 1.5);
+
+  /* ---- 配分(全テーマ共通。上の入力からグリッドのトークンを決める。themes.test.ts が同じ内容かを検査) ---- */
+  --ssg-radius: var(--ssg-ds-radius);
+
+  /* アクセント(アクティブセルの枠 / 選択範囲 / チェックボックス / パネルの選択中)。小さな文字に使う accent-strong は
+     文字色へ寄せて読みやすくする */
+  --ssg-accent: var(--ssg-ds-accent);
+  --ssg-accent-strong: color-mix(in srgb, var(--ssg-ds-accent) 70%, var(--ssg-ds-text));
+
+  /* セルと行 */
+  --ssg-cell-bg: var(--ssg-ds-surface);
+  --ssg-cell-text: var(--ssg-ds-text);
+  --ssg-readonly-bg: color-mix(in srgb, var(--ssg-ds-text) 3%, var(--ssg-ds-surface));
+  --ssg-readonly-text: var(--ssg-ds-text-muted);
+  --ssg-readonly-hover-bg: color-mix(in srgb, var(--ssg-ds-text) 6%, var(--ssg-ds-surface));
+  --ssg-row-hover-bg: color-mix(in srgb, var(--ssg-ds-text) 4%, var(--ssg-ds-surface));
+  --ssg-row-selected-bg: color-mix(in srgb, var(--ssg-ds-accent) 8%, var(--ssg-ds-surface));
+  --ssg-select-bg: color-mix(in srgb, var(--ssg-ds-accent) 14%, var(--ssg-ds-surface));
+  --ssg-select-bg-hover: color-mix(in srgb, var(--ssg-ds-accent) 22%, var(--ssg-ds-surface));
+  --ssg-selection-fill: color-mix(in srgb, var(--ssg-ds-accent) 8%, transparent);
+  --ssg-col-hover-bg: color-mix(in srgb, var(--ssg-ds-text) 4%, transparent);
+
+  /* 見出し / グループ行 / ラベル行 / 合計行(見出しの文字は本文と控えめな文字の中間) */
+  --ssg-header-bg: var(--ssg-ds-surface-muted);
+  --ssg-header-text: color-mix(in srgb, var(--ssg-ds-text) 50%, var(--ssg-ds-text-muted));
+  --ssg-header-hover-bg: color-mix(in srgb, var(--ssg-ds-text) 8%, var(--ssg-ds-surface-muted));
+  --ssg-group-row-bg: var(--ssg-ds-surface-muted);
+  --ssg-group-row-hover-bg: color-mix(in srgb, var(--ssg-ds-text) 6%, var(--ssg-ds-surface-muted));
+  --ssg-label-row-bg: var(--ssg-ds-surface-muted);
+  --ssg-label-row-text: var(--ssg-ds-text);
+  --ssg-total-row-bg: var(--ssg-ds-surface-muted);
+
+  /* 罫線 */
+  --ssg-line: var(--ssg-ds-border);
+  --ssg-line-strong: var(--ssg-ds-border);
+  --ssg-divider: var(--ssg-ds-border);
+  --ssg-pane-border: var(--ssg-ds-border-strong);
+  --ssg-drop-indicator: var(--ssg-ds-text);
+
+  /* アイコン */
+  --ssg-glyph: var(--ssg-ds-text-muted);
+  --ssg-glyph-hover: var(--ssg-ds-text);
+  --ssg-glyph-faint: var(--ssg-ds-text-faint);
+  --ssg-icon-hover-bg: color-mix(in srgb, var(--ssg-ds-text) 8%, transparent);
+  --ssg-icon-active-bg: color-mix(in srgb, var(--ssg-ds-accent) 12%, transparent);
+  --ssg-icon-active-bg-hover: color-mix(in srgb, var(--ssg-ds-accent) 18%, transparent);
+  --ssg-icon-active-border: color-mix(in srgb, var(--ssg-ds-accent) 30%, transparent);
+
+  /* チェックボックス */
+  --ssg-checkbox-border: var(--ssg-ds-border-strong);
+  --ssg-checkbox-bg: var(--ssg-ds-surface);
+  --ssg-checkbox-checked-mark: var(--ssg-ds-accent-contrast);
+
+  /* ポップオーバー / メニュー / パネル */
+  --ssg-panel-bg: var(--ssg-ds-popover);
+  --ssg-panel-border: var(--ssg-ds-border);
+  --ssg-panel-separator: var(--ssg-ds-border);
+  --ssg-panel-text-strong: var(--ssg-ds-text);
+  --ssg-panel-text: var(--ssg-ds-text);
+  --ssg-panel-text-sub: var(--ssg-ds-text-muted);
+  --ssg-panel-text-muted: var(--ssg-ds-text-muted);
+  --ssg-panel-text-faint: var(--ssg-ds-text-faint);
+  --ssg-panel-text-disabled: var(--ssg-ds-text-faint);
+  --ssg-panel-hover-bg: color-mix(in srgb, var(--ssg-ds-text) 6%, transparent);
+  --ssg-panel-hover-bg-subtle: color-mix(in srgb, var(--ssg-ds-text) 3%, transparent);
+  --ssg-panel-accent: var(--ssg-ds-accent);
+  --ssg-panel-accent-bg: color-mix(in srgb, var(--ssg-ds-accent) 10%, var(--ssg-ds-popover));
+  --ssg-panel-accent-text: var(--ssg-ds-text);
+  --ssg-panel-accent-contrast: var(--ssg-ds-accent-contrast);
+
+  /* 状態の色 */
+  --ssg-danger: var(--ssg-ds-danger);
+  --ssg-danger-bg: color-mix(in srgb, var(--ssg-ds-danger) 10%, var(--ssg-ds-popover));
+  --ssg-invalid: var(--ssg-ds-danger);
+  --ssg-invalid-bg: color-mix(in srgb, var(--ssg-ds-danger) 10%, transparent);
+  --ssg-invalid-contrast: var(--ssg-ds-danger-contrast);
+  --ssg-save-ok: var(--ssg-ds-success);
+  --ssg-save-ok-contrast: var(--ssg-ds-success-contrast);
+  --ssg-note-indicator: var(--ssg-ds-warning);
+  --ssg-skeleton-bar: color-mix(in srgb, var(--ssg-ds-text) 8%, var(--ssg-ds-surface));
+}

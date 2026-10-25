@@ -98,6 +98,14 @@ The base styles are plain (unlayered) CSS scoped to `.ssg-*` classes, and all de
 
 - **Mantine** — works out of the box (no class-name or reset conflicts; grid popovers use `z-index: 1000`, above Mantine's default modal z-index).
 - **StyleX** — works out of the box (no resets, `x`-prefixed atomic classes). Pass `stylex.props(...)` straight into `classNames.*`, `cellClassName`, `getRowClassName` or `detailRow.className` — every slot accepts `string | { className, style }`, so StyleX dynamic styles (delivered through the `style` object) reach the element. StyleX atomic classes and the grid's base classes share the same specificity, so load the grid CSS before StyleX's output, or use `style.layer.css` (required when StyleX's `useLayers` option is on). Bridge tokens with `stylex.create({ grid: { '--ssg-accent': vars.accent } })` on the `root` slot.
+- **Astryx** (Meta's design system, built on StyleX) — works out of the box: the grid's unlayered CSS is not affected by Astryx's `@layer reset` / `@layer astryx-base`, and Astryx components rendered inside cells look the same as outside.
+
+**Matching your design system's colors:** import its theme after `style.css` — `themes/astryx.css` (pages with Astryx's `<Theme>`), `themes/mantine.css` (pages with `MantineProvider`), `themes/heroui.css` (HeroUI v3) or `themes/shadcn.css` (shadcn/ui on Tailwind CSS v4). Each theme only maps the design system's color variables onto the grid tokens (`--ssg-*`), so the grid follows its theme and light / dark with no extra JS; also pass the resolved light / dark to the grid's `theme` prop. With Tailwind CSS alone there are no color variables to follow, so set the `--ssg-*` tokens directly (the theme builder generates them). [Guide and demo](https://datasheet-grid.vercel.app/docs/guides/design-systems).
+
+```ts
+import '@ishibashi0112/spreadsheet-grid/style.css'
+import '@ishibashi0112/spreadsheet-grid/themes/mantine.css' // or astryx / heroui / shadcn
+```
 
 To override a grid default reliably in plain CSS, chain your class with the grid's base class so it wins by specificity, independent of import order:
 
@@ -453,6 +461,14 @@ import '@ishibashi0112/spreadsheet-grid/style.css'
 
 - **Mantine** — そのままで動作します（クラス名・リセットの衝突なし。グリッドの popover は `z-index: 1000` で Mantine の既定モーダルより前面）。
 - **StyleX** — そのままで動作します（reset を持たず、生成クラスは接頭辞 `x` で衝突しません）。`classNames.*` / `cellClassName` / `getRowClassName` / `detailRow.className` へ `stylex.props(...)` の戻り値をそのまま渡せます（全スロットが `string | { className, style }` を受けるため、`style` 側で届く StyleX の動的スタイルも欠落しません）。StyleX の atomic クラスと基底クラスは同特異度のため、グリッド CSS を先に・StyleX の出力を後に読み込むか、`style.layer.css` を使ってください（StyleX 側で `useLayers` を使う場合は必須）。トークンは `root` スロットに `stylex.create({ grid: { '--ssg-accent': vars.accent } })` を渡して橋渡しできます。
+- **Astryx**（Meta のデザインシステム。StyleX 製）— そのままで動作します（グリッドの CSS はレイヤーに入れていないため、Astryx の `@layer reset` / `@layer astryx-base` に崩されず、セルの中に置いた Astryx の部品も外と同じ見た目になります）。
+
+**デザインシステムの配色に揃える:** `style.css` の後に、使っているデザインシステムのテーマを読み込みます — `themes/astryx.css`（Astryx の `<Theme>` があるページ）/ `themes/mantine.css`（`MantineProvider` があるページ）/ `themes/heroui.css`（HeroUI v3）/ `themes/shadcn.css`（Tailwind CSS v4 の shadcn/ui）。テーマはデザインシステムの配色の変数をグリッドのトークン（`--ssg-*`）へつなぐだけの CSS で（JS は増えません）、そのテーマとライト / ダークに付いてきます。ライト / ダークはグリッドの `theme` prop にも渡してください。Tailwind CSS だけのときは配色の変数が無いので、`--ssg-*` を直接書きます（テーマビルダーで生成できます）。[ガイドとデモ](https://datasheet-grid.vercel.app/docs/guides/design-systems)。
+
+```ts
+import '@ishibashi0112/spreadsheet-grid/style.css'
+import '@ishibashi0112/spreadsheet-grid/themes/mantine.css' // astryx / heroui / shadcn も同じ形
+```
 
 素の CSS でグリッド既定を確実に上書きするには、基底クラスと連結して特異度で勝たせてください（読み込み順に依存しません）:
 

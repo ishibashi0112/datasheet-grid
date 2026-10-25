@@ -124,4 +124,6 @@ const s = stylex.create({
 - StyleX の atomic クラスとグリッドの基底クラスは同じ特異度 (0,1,0) です。同じプロパティを指定した場合は後に読み込まれた方が勝つため、**グリッド CSS を先に・StyleX の出力 CSS を後に**読み込むか、`style.layer.css`(グリッド全体を `@layer ssg-base` に入れる)を使ってください。StyleX 側で `useLayers` を有効にしている場合は、未レイヤーのグリッド CSS が常に勝ってしまうため `style.layer.css` が必須です。
 - Solid など `class` 属性のフレームワーク向けには StyleX に `stylex.attrs()` があります(将来のアダプタで同じスロット規則を使う予定です)。
 
+StyleX 製のデザインシステム Astryx の中で使うときは、配色を Astryx のテーマへ揃える `themes/astryx.css` があります(Mantine / HeroUI / shadcn/ui の分も同じ形です。[デザインシステムに合わせる](/docs/guides/design-systems))。
+
 Tailwind との共存(レイヤー運用、`style.layer.css`)は[インストール](/docs/installation#tailwind-css--heroui--mantine--stylex-との共存)を参照してください。

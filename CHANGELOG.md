@@ -9,6 +9,11 @@
 
 ## 未リリース
 
+### 追加
+
+- デザインシステムのテーマ `themes/astryx.css` / `themes/mantine.css` / `themes/heroui.css` / `themes/shadcn.css`。`style.css` の後に読み込むと、グリッドの配色が [Astryx](https://astryx.atmeta.com) / [Mantine](https://mantine.dev) / [HeroUI](https://heroui.com)(v3)/ [shadcn/ui](https://ui.shadcn.com) のテーマとライト / ダークに揃います。JS は増えません([ガイド](https://datasheet-grid.vercel.app/docs/guides/design-systems))。
+- トークン `--ssg-invalid-contrast` / `--ssg-save-ok-contrast`(既定 `#ffffff`)。セル編集のエラーの吹き出しと保存の印の文字色です(これまでは白で固定)。
+
 ### 修正
 
 - アンマウントした直後に、仮想化の遅れた通知で再描画しようとしないようにした(jsdom のテストで `window is not defined` になることがあった)

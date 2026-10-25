@@ -25,6 +25,7 @@ import { MotionDemo } from '@/components/demo/motion-demo';
 import { FindDemo } from '@/components/demo/find-demo';
 import { ConditionalFormatDemo } from '@/components/demo/conditional-format-demo';
 import { LiteDemoLoader } from '@/components/demo/lite-demo-loader';
+import { DesignSystemsDemo } from '@/components/demo/design-systems-demo';
 
 export function getMDXComponents(components?: MDXComponents) {
   return {
@@ -55,6 +56,7 @@ export function getMDXComponents(components?: MDXComponents) {
     FindDemo,
     ConditionalFormatDemo,
     LiteDemo: LiteDemoLoader,
+    DesignSystemsDemo,
     ...components,
   } satisfies MDXComponents;
 }
