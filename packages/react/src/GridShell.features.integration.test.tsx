@@ -43,6 +43,7 @@ const ScrollHintOnlyGrid = createSpreadsheetGrid({ features: { scrollHint: scrol
 // 列幅の自動調整の項目は列メニューに出るため、列メニューと組み合わせて確かめます。
 const ColumnMenuOnlyGrid = createSpreadsheetGrid({ features: { columnMenu: columnMenuFeature } });
 // ツールパネルを開く入口の多くは列メニューにあるため、列メニューと組み合わせて確かめます。
+const ToolPanelOnlyGrid = createSpreadsheetGrid({ features: { toolPanel: toolPanelFeature } });
 const ColumnMenuToolPanelGrid = createSpreadsheetGrid({
   features: { columnMenu: columnMenuFeature, toolPanel: toolPanelFeature },
 });
@@ -386,6 +387,40 @@ describe('差し込み式: toolPanel', () => {
       ref.current?.openFilterManager();
     });
     expect(panelOpen()).toBe(true);
+  });
+
+  it('toolPanel だけの構成でも Filters チップでパネルが開き、enableColumnMenu は「列」タブの有無に効く(警告しない)', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const tabLabels = () => Array.from(document.querySelectorAll('[role="tab"]')).map((el) => el.textContent);
+    const view = render(
+      <ToolPanelOnlyGrid rows={rows} columns={filterColumns} rowKeyGetter={(r) => r.id} enableColumnMenu onColumnsChange={() => {}} />,
+    );
+    // 列メニューの機能は無いので ⋮ ボタンは出ない。
+    expect(view.container.querySelector('[aria-label="列メニュー"]')).toBeNull();
+    const chip = view.container.querySelector<HTMLElement>('[aria-label="フィルター管理パネルを開閉"]');
+    expect(chip).not.toBeNull();
+    act(() => {
+      chip?.click();
+    });
+    expect(panelOpen()).toBe(true);
+    expect(tabLabels().includes('列')).toBe(true);
+    view.unmount();
+    render(
+      <ToolPanelOnlyGrid
+        rows={rows}
+        columns={filterColumns}
+        rowKeyGetter={(r) => r.id}
+        enableColumnMenu={false}
+        onColumnsChange={() => {}}
+      />,
+    );
+    const chip2 = document.querySelector<HTMLElement>('[aria-label="フィルター管理パネルを開閉"]');
+    act(() => {
+      chip2?.click();
+    });
+    expect(panelOpen()).toBe(true);
+    expect(tabLabels().includes('列')).toBe(false);
+    expect(warn.mock.calls.filter(([message]) => String(message).includes('`enableColumnMenu`'))).toHaveLength(0);
   });
 });
 

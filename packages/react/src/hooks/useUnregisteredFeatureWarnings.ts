@@ -14,7 +14,11 @@ declare const process: { env: { NODE_ENV?: string } };
 
 type FeatureName = keyof ReactGridFeatures;
 
-type FeaturePropCheck = { prop: string; isUsed: <T extends object>(props: SpreadsheetGridProps<T>) => boolean };
+type FeaturePropCheck = {
+  prop: string;
+  // features: 機能セット(ほかの機能がその prop を使うときに警告しないため)。
+  isUsed: <T extends object>(props: SpreadsheetGridProps<T>, features: ReactGridFeatures) => boolean;
+};
 
 // 機能ごとの「その機能の prop が使われているか」(1 つの機能に prop が複数あれば並べる)。機能を足すと型がここへの
 //   追加を求めます。
@@ -34,8 +38,14 @@ const FEATURE_PROPS: { [K in FeatureName]-?: readonly FeaturePropCheck[] } = {
     },
   ],
   contextMenu: [{ prop: 'enableContextMenu', isUsed: (props) => props.enableContextMenu === true }],
-  // 列メニューは既定で有効(enableColumnMenu 省略 = true)なので、明示した true だけ警告する。
-  columnMenu: [{ prop: 'enableColumnMenu', isUsed: (props) => props.enableColumnMenu === true }],
+  // 列メニューは既定で有効(enableColumnMenu 省略 = true)なので、明示した true だけ警告する。ツールパネルがあれば
+  //   enableColumnMenu はその「列」タブの有無に効くので警告しない。
+  columnMenu: [
+    {
+      prop: 'enableColumnMenu',
+      isUsed: (props, features) => props.enableColumnMenu === true && features.toolPanel === undefined,
+    },
+  ],
   // ツールパネルは専用の prop を持たない(タブはフィルター / 列 / 並び替えの各 prop で決まる)。ハンドルの
   //   openFilterManager は呼ばれた時点で警告する(features/resolve.ts)。
   toolPanel: [],
@@ -72,7 +82,7 @@ function useUnregisteredFeatureWarningsInDev<T extends object>(
   // 警告の対象を文字列のキーへ畳みます(中身が変わったときだけ effect を走らせる)。
   const missingKey = (Object.keys(FEATURE_PROPS) as FeatureName[])
     .filter((name) => features[name] === undefined)
-    .flatMap((name) => FEATURE_PROPS[name].filter((check) => check.isUsed(props)).map((check) => check.prop))
+    .flatMap((name) => FEATURE_PROPS[name].filter((check) => check.isUsed(props, features)).map((check) => check.prop))
     .join(',');
   useEffect(() => {
     if (missingKey !== '') {

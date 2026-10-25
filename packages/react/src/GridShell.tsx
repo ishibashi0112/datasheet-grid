@@ -941,10 +941,14 @@ export function useGridShell<T extends object>({
   //   読み込み前は null(部品を描画しない)。使える機能ならマウント後の暇なときに先読みし、先読み前に
   //   開かれたらその場で読み込みます。読み込み完了でシェルごと再描画され、コントローラの update が
   //   描画済みのパネルを見て位置の追従 / 入力欄フォーカスを始めます。読み込みに失敗したら閉じます。
+  // 変更(差し込み式 段階 3): 列フィルターポップオーバーを開く入口は列メニューとツールパネルだけなので、どちらの機能も
+  //   無い構成では先読みしない(全部入りでは両方あるので従来どおり)。
   const filterPopoverViews = useLazyModule(filterPopoverModule, {
     needed: openedFilterColumn !== null,
     prefetch:
-      columnFilterEnabled && visibleColumns.some((column) => Boolean(column.filterType)),
+      columnFilterEnabled &&
+      (columnMenuAvailable || toolPanelAvailable) &&
+      visibleColumns.some((column) => Boolean(column.filterType)),
     onLoadError: closeColumnFilterPopover,
   });
   // 変更(差し込み式 段階 3): ツールパネルの部品の読み込みは機能セットの toolPanel から(元の位置 = 列フィルターの直後)。
