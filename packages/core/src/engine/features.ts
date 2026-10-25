@@ -52,7 +52,8 @@ export type GridCoreFeatures = {
   // 行の高さの実測(autoHeight): 描画済みセルの実測 + ResizeObserver のコントローラと、実測高さの行高ストア
   //   (縦レイアウトが prefix-sum の行メトリクスを作る)。
   autoHeight?: AutoHeightFeature;
-  // フィルター(グローバル / 列): 行パイプラインの列フィルターの段と、相対日付プリセットの日付の変わり目の見張り。
+  // フィルター: 行パイプラインの列フィルターの段と、相対日付プリセットの日付の変わり目の見張り(グローバルフィルターの
+  //   適用は描画側の機能の hook が担う)。
   filtering?: ColumnFilteringFeature & {
     createDateRolloverStore: () => DateRolloverStore;
   };

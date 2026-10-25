@@ -1,6 +1,10 @@
 // 追加(差し込み式 段階 2): 機能セットに無い機能の prop の開発時警告(1 つの prop につき 1 回 / 本番は出さない)。
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { resetUnregisteredFeatureWarnings, warnUnregisteredFeatureProps } from './featureWarnings';
+import {
+  resetUnregisteredFeatureWarnings,
+  warnUnregisteredFeatureProps,
+  warnUnregisteredFeatureState,
+} from './featureWarnings';
 
 afterEach(() => {
   resetUnregisteredFeatureWarnings();
@@ -23,5 +27,19 @@ describe('warnUnregisteredFeatureProps', () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     warnUnregisteredFeatureProps(['find']);
     expect(warn).not.toHaveBeenCalled();
+  });
+});
+
+describe('warnUnregisteredFeatureState', () => {
+  it('状態ごとに 1 回だけ警告し、本番では警告しない', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    warnUnregisteredFeatureState('フィルターの状態');
+    warnUnregisteredFeatureState('フィルターの状態');
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(warn.mock.calls[0]?.[0]).toContain('フィルターの状態が設定されましたが');
+    resetUnregisteredFeatureWarnings();
+    vi.stubEnv('NODE_ENV', 'production');
+    warnUnregisteredFeatureState('フィルターの状態');
+    expect(warn).toHaveBeenCalledTimes(1);
   });
 });

@@ -148,7 +148,10 @@ describe('SpreadsheetGrid ポップオーバー部品の遅延読み込み', () 
   // 追加(差し込み式 段階 3): 列フィルターポップオーバーを開く入口(列メニュー / ツールパネル)が無い構成でも先読みしない。
   it('列メニューもツールパネルも無い構成(createSpreadsheetGrid)では、フィルターが使えても先読みしない', async () => {
     const { createSpreadsheetGrid } = await import('./createSpreadsheetGrid');
-    const MinimalGrid = createSpreadsheetGrid({ features: {} });
+    // 変更(差し込み式 段階 5): フィルターも機能になったので、フィルターだけを入れた構成で確かめます(機能セットが空だと
+    //   フィルターの代役が部品を返さないため、入口の有無に関係なく先読みしない = 確かめたいことを見られない)。
+    const { filteringFeature } = await import('./features/filtering');
+    const MinimalGrid = createSpreadsheetGrid({ features: { filtering: filteringFeature } });
     render(<MinimalGrid columns={columns} rows={rows} />);
     await act(() => new Promise((resolve) => setTimeout(resolve, 500)));
     expect(lazyPopups.filterPopoverModule.getSnapshot()).toBeNull();

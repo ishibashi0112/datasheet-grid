@@ -81,6 +81,11 @@ const FEATURE_PROPS: { [K in FeatureName]-?: readonly FeaturePropCheck[] } = {
     { prop: 'onFiltersChange', isUsed: (props) => props.onFiltersChange !== undefined },
     { prop: 'getFilterOptions', isUsed: (props) => props.getFilterOptions !== undefined },
     { prop: 'showFilterChipBar', isUsed: (props) => props.showFilterChipBar === true },
+    { prop: 'renderFilterDateInput', isUsed: (props) => props.renderFilterDateInput !== undefined },
+    // 上部バーの検索欄の表示と見た目(showTopBarFilter は既定 true なので明示した true だけ)。
+    { prop: 'showTopBarFilter', isUsed: (props) => props.showTopBarFilter === true },
+    { prop: 'globalFilterPlaceholder', isUsed: (props) => props.globalFilterPlaceholder !== undefined },
+    { prop: 'globalFilterIcon', isUsed: (props) => props.globalFilterIcon !== undefined },
   ],
   // showSaveStatus は既定 true なので、明示して true を渡したときだけ。
   serverSide: [

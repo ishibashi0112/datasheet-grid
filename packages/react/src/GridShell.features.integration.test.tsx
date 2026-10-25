@@ -359,8 +359,9 @@ describe('差し込み式: toolPanel', () => {
   it('機能セットに無ければパネルを開く入口(列メニューの 3 項目 / Filters チップ)を出さず、openFilterManager は開発時に 1 回だけ警告する', () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     const ref = createRef<SpreadsheetGridHandle<Row>>();
+    // フィルターは入れておく(フィルターが無いと列フィルターごと切れるため、ツールパネルの有無を見られない)。
     const { container } = render(
-      <ColumnMenuOnlyGrid ref={ref} rows={rows} columns={filterColumns} rowKeyGetter={(r) => r.id} onColumnsChange={() => {}} />,
+      <ColumnMenuFilteringGrid ref={ref} rows={rows} columns={filterColumns} rowKeyGetter={(r) => r.id} onColumnsChange={() => {}} />,
     );
     expect(container.querySelector('[aria-label="フィルター管理パネルを開閉"]')).toBeNull();
     openColumnMenu(container);
@@ -765,6 +766,7 @@ describe('差し込み式: filtering', () => {
         enableGlobalFilter
         onFiltersChange={onFiltersChange}
         showFilterChipBar
+        globalFilterPlaceholder="検索"
       />,
     );
     expect(searchBox(container)).toBeNull();
@@ -773,10 +775,30 @@ describe('差し込み式: filtering', () => {
     openColumnMenu(container);
     expect(menuLabels()).toContain('昇順で並び替え');
     expect(menuLabels()).not.toContain('フィルター…');
-    for (const prop of ['`enableGlobalFilter`', '`columns[].filterType`', '`onFiltersChange`', '`showFilterChipBar`']) {
+    for (const prop of [
+      '`enableGlobalFilter`',
+      '`columns[].filterType`',
+      '`onFiltersChange`',
+      '`showFilterChipBar`',
+      '`globalFilterPlaceholder`',
+    ]) {
       expect(warn.mock.calls.filter(([message]) => String(message).includes(prop))).toHaveLength(1);
     }
     expect(warn.mock.calls.filter(([message]) => String(message).includes('`enableColumnFilter`'))).toHaveLength(0);
+  });
+
+  it('機能セットに無い構成で applyState に渡したフィルターは行に効かず、開発時に 1 回だけ警告する', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const ref = createRef<SpreadsheetGridHandle<Row>>();
+    const { container } = render(<MinimalGrid ref={ref} rows={rows} columns={columns} rowKeyGetter={(r) => r.id} />);
+    act(() => {
+      ref.current?.applyState(columnFilterState);
+    });
+    act(() => {
+      ref.current?.applyState({ ...columnFilterState, filters: { globalText: 'al', columnFilters: {} } });
+    });
+    expect(bodyTexts(container)).toEqual(['alpha', 'beta']);
+    expect(warn.mock.calls.filter(([message]) => String(message).includes('フィルターの状態'))).toHaveLength(1);
   });
 
   it('フィルターの prop を使わなければ警告しない', () => {

@@ -269,7 +269,8 @@ export type ReactGridFeatures = {
   // エクスポート(命令的 API の exportCsv / downloadCsv / getExportData)。描画の部品は無い。
   export?: NonNullable<GridCoreFeatures['export']>;
   // フィルター(グローバル / 列): 列フィルターの段と日付の変わり目の見張り(core)+ グローバルフィルターの適用と
-  //   相対日付プリセットの基準日の hook。
+  //   相対日付プリセットの基準日の hook / 列フィルターのポップオーバー(controller の接続・部品の遅延読み込み・中身)/
+  //   適用中フィルターの一覧とジャンプ / チップバーの部品。
   filtering?: NonNullable<GridCoreFeatures['filtering']> & {
     useFilterOrder: <T>(args: FilterOrderFeatureArgs<T>) => FilterOrderFeatureResult;
     useFilterPopover: <T>(args: FilterPopoverFeatureArgs<T>) => FilterPopoverFeatureResult<T>;

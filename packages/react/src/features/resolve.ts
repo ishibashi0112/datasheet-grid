@@ -4,12 +4,16 @@
 //   全機能がそろった表を直接渡すため、このモジュール(React 側の代役と警告)は全部入りの JS に入りません。
 //   ※ エンジン側の代役(core engine/features.ts の createInert*)は createGridEngine / gridApi が直接参照するため
 //   全部入りにも入ります(どれも数行)。
+import { useEffect } from 'react';
 import {
   createInertDateRolloverStore,
   createInertExportCommands,
   createInertSaveStatusController,
 } from '@ishibashi0112/spreadsheet-grid-core/engine/features';
-import { warnUnregisteredFeatureMethod } from '@ishibashi0112/spreadsheet-grid-core/logic/featureWarnings';
+import {
+  warnUnregisteredFeatureMethod,
+  warnUnregisteredFeatureState,
+} from '@ishibashi0112/spreadsheet-grid-core/logic/featureWarnings';
 import type { FillHandleFeatureResult, GridShellFeatures, ReactGridFeatures, ServerSideFeatureResult } from './types';
 
 const INERT_FILL_HANDLE: FillHandleFeatureResult = {
@@ -141,17 +145,30 @@ const INERT_FILTER_MANAGEMENT = {
   jumpToColumnFilter: noop,
 };
 
-// フィルターが無い構成では enableColumnFilter / enableGlobalFilter を false として扱う(createSpreadsheetGrid)ので、
-//   行は絞り込みません(グローバルフィルターは掛けず恒等 order のまま、列フィルターの段は行パイプラインが通さない)。
-const inertFilteringFeature: GridShellFeatures['filtering'] = {
-  createColumnFilterStage: () => (_rows, globalFilteredOrder) => globalFilteredOrder,
-  createDateRolloverStore: createInertDateRolloverStore,
-  useFilterOrder: (args) => ({
+// フィルターが無い構成では行を絞り込みません(グローバルフィルターは掛けず恒等 order のまま、列フィルターの段は何もしない)。
+//   フィルターの状態そのもの(ハンドルの applyState / 上部バーの setGlobalFilterText で入る)は store に入るので、
+//   入っていたら開発時に 1 回だけ警告します(効かないことに気づけるように)。
+const useInertFilterOrder: GridShellFeatures['filtering']['useFilterOrder'] = (args) => {
+  const hasFilterState = args.globalFilterText.trim() !== '' || Object.keys(args.columnFilters).length > 0;
+  useEffect(() => {
+    if (hasFilterState) {
+      warnUnregisteredFeatureState('フィルターの状態(applyState / setGlobalFilterText)');
+    }
+  }, [hasFilterState]);
+  return {
     globalFilteredOrder: args.baseOrder,
     globalFilterStatus: 'idle',
     globalFilterProgress: 1,
     relativeDateKey: '',
-  }),
+  };
+};
+
+// フィルターが無い構成では enableColumnFilter / enableGlobalFilter を false として扱う(createSpreadsheetGrid)ので、
+//   列フィルター / 検索欄の入口は出ません。
+const inertFilteringFeature: GridShellFeatures['filtering'] = {
+  createColumnFilterStage: () => (_rows, globalFilteredOrder) => globalFilteredOrder,
+  createDateRolloverStore: createInertDateRolloverStore,
+  useFilterOrder: useInertFilterOrder,
   useFilterPopover: () => INERT_FILTER_POPOVER,
   useFilterPopoverViews: () => null,
   useFilterPopoverContent: () => null,
