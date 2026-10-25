@@ -25,6 +25,7 @@ import { autoHeightFeature } from './features/autoHeight';
 import { filteringFeature } from './features/filtering';
 import { serverSideFeature } from './features/serverSide';
 import { labelRowFeature } from './features/labelRow';
+import { groupingFeature } from './features/grouping';
 import { installJsdomLayoutStubs } from './testing';
 import { resetUnregisteredFeatureWarnings } from '@ishibashi0112/spreadsheet-grid-core/logic/featureWarnings';
 import { ROW_DRAG_HANDLE_COLUMN_KEY } from '@ishibashi0112/spreadsheet-grid-core/logic/rowReorder';
@@ -66,6 +67,7 @@ const AutoHeightOnlyGrid = createSpreadsheetGrid({ features: { autoHeight: autoH
 const FilteringOnlyGrid = createSpreadsheetGrid({ features: { filtering: filteringFeature } });
 const ServerSideOnlyGrid = createSpreadsheetGrid({ features: { serverSide: serverSideFeature } });
 const LabelRowOnlyGrid = createSpreadsheetGrid({ features: { labelRow: labelRowFeature } });
+const GroupingOnlyGrid = createSpreadsheetGrid({ features: { grouping: groupingFeature } });
 // 列フィルターを開く入口(「フィルター…」)は列メニューにあるため、列メニューと組み合わせて確かめます。
 const ColumnMenuFilteringGrid = createSpreadsheetGrid({ features: { columnMenu: columnMenuFeature, filtering: filteringFeature } });
 
@@ -968,6 +970,49 @@ describe('差し込み式: labelRow', () => {
     await scrollTo(container, 45);
     const sticky = container.querySelector<HTMLElement>('[data-pane="center"][data-ssg-sticky-label]');
     expect(sticky?.dataset.ssgStickyLabelRowIndex).toBe('0');
+    expect(warn).not.toHaveBeenCalled();
+  });
+});
+
+describe('差し込み式: grouping', () => {
+  type GRow = { id: number; name: string; region: string; amount: number };
+  const groupRows: GRow[] = [
+    { id: 1, name: 'alpha', region: '東', amount: 10 },
+    { id: 2, name: 'beta', region: '西', amount: 20 },
+    { id: 3, name: 'gamma', region: '東', amount: 30 },
+  ];
+  const groupColumns: GridColumn<GRow>[] = [
+    { key: 'region', title: '地域', width: 100, rowGroup: true },
+    { key: 'name', title: '名前', width: 120 },
+    { key: 'amount', title: '金額', width: 100, aggFunc: 'sum' },
+  ];
+  const groupLabels = (container: HTMLElement) =>
+    Array.from(container.querySelectorAll('[data-ssg-group-row] .ssg-group-label')).map((el) => el.textContent);
+  const cellTexts = (container: HTMLElement, key: string) =>
+    Array.from(container.querySelectorAll(`.ssg-body-cell[data-ssg-col-key="${key}"]`)).map((cell) => cell.textContent);
+
+  it('機能セットに無ければグループ行を作らず rowGroup 列もそのまま表示し、columns[].rowGroup は開発時に 1 回だけ警告する', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const { container } = render(<MinimalGrid rows={groupRows} columns={groupColumns} rowKeyGetter={(r) => r.id} />);
+    expect(container.querySelector('[data-ssg-group-row]')).toBeNull();
+    expect(cellTexts(container, 'region')).toEqual(['東', '西', '東']);
+    expect(cellTexts(container, 'name')).toEqual(['alpha', 'beta', 'gamma']);
+    expect(warn.mock.calls.filter(([message]) => String(message).includes('`columns[].rowGroup`'))).toHaveLength(1);
+  });
+
+  it('grouping だけを入れた構成ではグループ行(集計込み)が出て、開閉できる', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const { container } = render(<GroupingOnlyGrid rows={groupRows} columns={groupColumns} rowKeyGetter={(r) => r.id} />);
+    expect(groupLabels(container)).toEqual(['東', '西']);
+    expect(cellTexts(container, 'name').filter((text) => text !== '')).toEqual(['alpha', 'gamma', 'beta']);
+    const eastAmount = container.querySelector('[data-ssg-group-row] .ssg-body-cell[data-ssg-col-key="amount"]');
+    expect(eastAmount?.textContent).toBe('40');
+    const toggle = container.querySelector<HTMLElement>('[data-ssg-group-row] .ssg-group-toggle');
+    if (!toggle) throw new Error('開閉ボタンがありません');
+    act(() => {
+      fireEvent.click(toggle);
+    });
+    expect(cellTexts(container, 'name').filter((text) => text !== '')).toEqual(['beta']);
     expect(warn).not.toHaveBeenCalled();
   });
 });

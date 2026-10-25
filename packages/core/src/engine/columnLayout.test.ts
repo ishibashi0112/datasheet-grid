@@ -6,6 +6,7 @@ import type { GridColumn } from '../model/gridTypes.unbound';
 import { DETAIL_TOGGLE_COLUMN_KEY } from '../logic/detailRow';
 import { ROW_DRAG_HANDLE_COLUMN_KEY } from '../logic/rowReorder';
 import { GROUP_AUTO_COLUMN_KEY } from '../logic/grouping';
+import { fullCoreFeatures } from './fullFeatures';
 
 type Row = { id: number; name: string; group: string };
 
@@ -27,7 +28,7 @@ const baseInputs = {
 
 describe('createColumnResolver', () => {
   it('合成列なし・グルーピング無効なら effectiveColumns は columns と同一参照、可視列は visible=false を除く', () => {
-    const resolve = createColumnResolver<Row>();
+    const resolve = createColumnResolver<Row>(fullCoreFeatures);
     const result = resolve(baseInputs);
     expect(result.effectiveColumns).toBe(columns);
     expect(result.visibleColumns.map((column) => column.key)).toEqual(['id', 'name']);
@@ -40,7 +41,7 @@ describe('createColumnResolver', () => {
   });
 
   it('行ドラッグハンドル列 → 展開行トグル列 → 元の列 の順で注入し、左固定列があれば左へ pin する', () => {
-    const resolve = createColumnResolver<Row>();
+    const resolve = createColumnResolver<Row>(fullCoreFeatures);
     const result = resolve({
       ...baseInputs,
       enableRowDrag: true,
@@ -92,7 +93,7 @@ describe('createColumnResolver', () => {
   });
 
   it('rowGroup 列があれば自動グループ列を先頭に置き、グループ元列を表示から外す(SSRM では無効)', () => {
-    const resolve = createColumnResolver<Row>();
+    const resolve = createColumnResolver<Row>(fullCoreFeatures);
     const grouped: GridColumn<Row>[] = [columns[0], columns[1], { key: 'group', title: 'グループ', width: 100, rowGroup: true }];
     const result = resolve({ ...baseInputs, columns: grouped });
     expect(result.rowGroupingActive).toBe(true);
@@ -100,6 +101,14 @@ describe('createColumnResolver', () => {
     expect(result.effectiveColumns.map((column) => column.key)).toEqual([GROUP_AUTO_COLUMN_KEY, 'id', 'name']);
     expect(result.effectiveColumns[0].title).toBe('グループ');
     expect(resolve({ ...baseInputs, columns: grouped, isServerSide: true }).rowGroupingActive).toBe(false);
+  });
+
+  it('機能セットに grouping が無ければ行グルーピングは無効で、rowGroup 列もそのまま表示する', () => {
+    const resolve = createColumnResolver<Row>({});
+    const grouped: GridColumn<Row>[] = [columns[0], columns[1], { key: 'group', title: 'グループ', width: 100, rowGroup: true }];
+    const result = resolve({ ...baseInputs, columns: grouped });
+    expect(result.rowGroupingActive).toBe(false);
+    expect(result.effectiveColumns).toBe(grouped);
   });
 });
 

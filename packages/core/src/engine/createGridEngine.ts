@@ -128,7 +128,7 @@ export type GridEngine<T> = {
 };
 
 export const createGridEngine = <T,>(init: GridEngineInit<T>): GridEngine<T> => {
-  const resolveColumns = createColumnResolver<T>();
+  const resolveColumns = createColumnResolver<T>(init.features);
   const resolvePaneLayout = createPaneLayoutResolver<T>();
   const rowPipeline = createRowPipelineResolver<T>(init.features);
   const resolveVerticalLayout = createVerticalLayoutResolver<T>(init.features.autoHeight);

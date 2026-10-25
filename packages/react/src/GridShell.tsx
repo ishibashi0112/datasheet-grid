@@ -1088,6 +1088,8 @@ export function useGridShell<T extends object>({
     ],
   );
 
+  // 変更(差し込み式 段階 5): グループ行の部品は機能セット(features.grouping)から(無い構成ではグループ行を作らない)。
+  const GroupRow = features.grouping?.BodyGroupRow;
   // 追加(grouping ③): グループ開閉のトグルです(GridBodyLayer のシェブロン / グループ行
   //   ダブルクリックから呼ばれます)。dispatch は安定参照のため本ハンドラも恒久安定です。
   const handleGroupToggle = useCallback(
@@ -4000,6 +4002,7 @@ export function useGridShell<T extends object>({
                   isServerSide={isServerSide}
                   collapsedGroupKeys={uiState.collapsedGroupKeys}
                   onGroupToggle={handleGroupToggle}
+                  GroupRow={GroupRow}
                   rowHeaderCellStyle={rowHeaderCellStyle}
                   hoveredRowIndex={resolvedHoveredRowIndex}
                   isWholeGridSelected={isWholeGridSelected}
@@ -4219,6 +4222,7 @@ export function useGridShell<T extends object>({
                   isServerSide={isServerSide}
                   collapsedGroupKeys={uiState.collapsedGroupKeys}
                   onGroupToggle={handleGroupToggle}
+                  GroupRow={GroupRow}
                   rowHeaderCellStyle={rowHeaderCellStyle}
                   hoveredRowIndex={resolvedHoveredRowIndex}
                   isWholeGridSelected={isWholeGridSelected}
@@ -4438,6 +4442,7 @@ export function useGridShell<T extends object>({
                   isServerSide={isServerSide}
                   collapsedGroupKeys={uiState.collapsedGroupKeys}
                   onGroupToggle={handleGroupToggle}
+                  GroupRow={GroupRow}
                   rowHeaderCellStyle={rowHeaderCellStyle}
                   hoveredRowIndex={resolvedHoveredRowIndex}
                   isWholeGridSelected={isWholeGridSelected}

@@ -10,6 +10,7 @@ import { exportFeature } from './export';
 import { fillHandleFeature } from './fillHandle';
 import { filteringFeature } from './filtering';
 import { findFeature } from './find';
+import { groupingFeature } from './grouping';
 import { imeDirectInputFeature } from './imeDirectInput';
 import { labelRowFeature } from './labelRow';
 import { motionExtrasFeature } from './motionExtras';
@@ -41,4 +42,5 @@ export const fullGridFeatures: Required<ReactGridFeatures> = {
   filtering: filteringFeature,
   serverSide: serverSideFeature,
   labelRow: labelRowFeature,
+  grouping: groupingFeature,
 };

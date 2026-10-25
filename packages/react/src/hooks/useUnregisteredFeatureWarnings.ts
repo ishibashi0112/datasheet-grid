@@ -98,6 +98,10 @@ const FEATURE_PROPS: { [K in FeatureName]-?: readonly FeaturePropCheck[] } = {
   // 列の autoHeight はグリッドの autoHeight で有効になるので、グリッドの prop だけ見る。
   autoHeight: [{ prop: 'autoHeight', isUsed: (props) => props.autoHeight === true }],
   labelRow: [{ prop: 'labelRow', isUsed: (props) => props.labelRow !== undefined }],
+  // 列の指定(GridColumn.rowGroup)。aggFunc は合計行でも使うので警告しない。
+  grouping: [
+    { prop: 'columns[].rowGroup', isUsed: (props) => props.columns.some((column) => column.rowGroup === true) },
+  ],
 };
 
 function useUnregisteredFeatureWarningsInDev<T extends object>(

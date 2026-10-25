@@ -29,8 +29,6 @@ import {
 } from '../logic/sorting';
 import { isIdentityOrder, isRowDragOperable } from '../logic/rowReorder';
 import {
-  buildGroupTree,
-  flattenGroupTree,
   groupIndexOfOrderValue,
   groupRowKey,
   isGroupOrderValue,
@@ -131,14 +129,16 @@ export type ServerSideQueryResolution = {
 };
 
 // 機能セットのうち行パイプラインが使う部品です(createGridEngine が渡す)。
-export type RowPipelineFeatures = Pick<GridCoreFeatures, 'filtering' | 'labelRow'>;
+export type RowPipelineFeatures = Pick<GridCoreFeatures, 'filtering' | 'labelRow' | 'grouping'>;
 
 // 変更(差し込み式 段階 5): 列フィルターの段(engine/columnFilterStage)は機能セットの filtering から受けます。
 //   無ければ列フィルターは評価しません(グローバルフィルター済み order をそのままソートへ)。ラベル行の配置 / 表示順 /
-//   行モデルは機能セットの labelRow から受け、無ければラベル行は作りません(配置は常に null)。
+//   行モデルは機能セットの labelRow から受け、無ければラベル行は作りません(配置は常に null)。グループツリーの構築 /
+//   開閉の適用は機能セットの grouping から受け、無ければ作りません(列の解決が行グルーピングを無効にする)。
 export const createRowPipelineResolver = <T,>(features: RowPipelineFeatures) => {
   const filterColumns = features.filtering?.createColumnFilterStage<T>();
   const labelRowFeature = features.labelRow;
+  const groupingFeature = features.grouping;
   const memoBaseOrder = createMemo((rowCount: number) => createSourceOrder(rowCount));
   // 追加(label-row ①): ラベル行の配置(rows / 述語が変わったときだけ 1 パス)と、ラベル行を除いた恒等 order。
   //   (ラベル行を除いた恒等 order は配置があるとき = 機能セットに labelRow があるときだけ作る。)
@@ -217,10 +217,10 @@ export const createRowPipelineResolver = <T,>(features: RowPipelineFeatures) => 
   // グループツリー(集計込み)。開閉状態に依存しないため、開閉操作では再計算されません。
   const memoGroupTree = createMemo(
     (rowGroupingActive: boolean, rows: T[], order: RowOrder, groupColumns: GridColumn<T>[], aggColumns: GridColumn<T>[]) =>
-      rowGroupingActive ? buildGroupTree(rows, order, groupColumns, aggColumns) : null,
+      rowGroupingActive && groupingFeature ? groupingFeature.buildGroupTree(rows, order, groupColumns, aggColumns) : null,
   );
   const memoGroupedDisplay = createMemo((groupTree: GroupTree<T> | null, collapsedGroupKeys: ReadonlySet<string>) =>
-    groupTree ? flattenGroupTree(groupTree, collapsedGroupKeys) : null,
+    groupTree && groupingFeature ? groupingFeature.flattenGroupTree(groupTree, collapsedGroupKeys) : null,
   );
   // 追加(label-row ①): ラベル行の表示順。グルーピング有効時はバイパス(null)。
   const memoLabelDisplay = createMemo(

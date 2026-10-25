@@ -14,6 +14,7 @@ import { createExportCommands } from './exportCommands';
 import { createColumnFilterStage } from './columnFilterStage';
 import { createDateRolloverStore } from '../controllers/dateRolloverStore';
 import { createSaveStatusController } from '../controllers/saveStatusController';
+import { buildGroupTree, flattenGroupTree } from '../logic/grouping';
 import {
   buildLabelDisplay,
   createLabelFreeOrder,
@@ -42,4 +43,5 @@ export const fullCoreFeatures: Required<GridCoreFeatures> = {
     wrapRowModelWithLabelRows,
     resolveStickyLabel,
   },
+  grouping: { buildGroupTree, flattenGroupTree },
 };

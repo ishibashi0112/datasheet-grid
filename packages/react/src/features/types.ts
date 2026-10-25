@@ -44,6 +44,7 @@ import type { GridFindBar } from '../view/GridFindBar';
 import type { GridScrollHint } from '../view/GridScrollHint';
 import type { GridTotalRow } from '../view/GridTotalRow';
 import type { GridBodyLabelRow } from '../view/GridBodyLabelRow';
+import type { GridBodyGroupRow } from '../view/GridBodyGroupRow';
 import type { GridStickyLabelLayer } from '../view/GridStickyLabelLayer';
 import type { GridChip } from '../view/GridChip';
 import type { CopyRangeOverlay } from '../CopyRangeOverlay';
@@ -292,6 +293,10 @@ export type ReactGridFeatures = {
   labelRow?: NonNullable<GridCoreFeatures['labelRow']> & {
     BodyLabelRow: typeof GridBodyLabelRow;
     StickyLabelLayer: typeof GridStickyLabelLayer;
+  };
+  // 行グルーピング(rowGroup / aggFunc): グループツリーの構築と開閉の適用(core)+ グループ行の部品。
+  grouping?: NonNullable<GridCoreFeatures['grouping']> & {
+    BodyGroupRow: typeof GridBodyGroupRow;
   };
   // 列幅の自動調整(DS-4 / 13-B1): 計測の時間分割ランナー。
   columnAutosize?: {
