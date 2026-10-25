@@ -4,9 +4,17 @@
 //   全機能がそろった表を直接渡すため、このモジュール(React 側の代役と警告)は全部入りの JS に入りません。
 //   ※ エンジン側の代役(core engine/features.ts の createInert*)は createGridEngine / gridApi が直接参照するため
 //   全部入りにも入ります(どれも数行)。
-import { createInertExportCommands } from '@ishibashi0112/spreadsheet-grid-core/engine/features';
-import { warnUnregisteredFeatureMethod } from '@ishibashi0112/spreadsheet-grid-core/logic/featureWarnings';
-import type { FillHandleFeatureResult, GridShellFeatures, ReactGridFeatures } from './types';
+import { useEffect } from 'react';
+import {
+  createInertDateRolloverStore,
+  createInertExportCommands,
+  createInertSaveStatusController,
+} from '@ishibashi0112/spreadsheet-grid-core/engine/features';
+import {
+  warnUnregisteredFeatureMethod,
+  warnUnregisteredFeatureState,
+} from '@ishibashi0112/spreadsheet-grid-core/logic/featureWarnings';
+import type { FillHandleFeatureResult, GridShellFeatures, ReactGridFeatures, ServerSideFeatureResult } from './types';
 
 const INERT_FILL_HANDLE: FillHandleFeatureResult = {
   filling: false,
@@ -110,6 +118,90 @@ const inertSelectionAggregatesFeature: GridShellFeatures['selectionAggregates'] 
   SelectionAggregates: () => null,
 };
 
+// 列フィルターのポップオーバーは閉じたまま(シェルは列フィルターを切るので開く入口を出さない。開く関数は何もしない)。
+//   ref はツールパネルの「外側クリックで閉じない範囲」に渡るだけで、どこにも付きません。
+const noop = () => {};
+const INERT_FILTER_POPOVER = {
+  filterPopoverState: null,
+  filterPopoverLayout: null,
+  filterPopoverRef: { current: null },
+  filterTextInputRef: { current: null },
+  filterSelectRef: { current: null },
+  isFilterPopoverOpen: false,
+  openedFilterColumn: null,
+  openedFilterType: null,
+  openColumnFilterPopover: noop,
+  closeColumnFilterPopover: noop,
+  updateFilterPopoverDraft: noop,
+  updateFilterPopoverNumberDraft: noop,
+  updateFilterPopoverTextDraft: noop,
+  updateFilterPopoverDateDraft: noop,
+};
+
+// 適用中フィルターの一覧は空(列フィルターを切るのでツールパネルのフィルタータブもチップバーも出ない)。
+const INERT_FILTER_MANAGEMENT = {
+  filterManagerEntries: [],
+  filterManagerAddableColumns: [],
+  jumpToColumnFilter: noop,
+};
+
+// フィルターが無い構成では行を絞り込みません(グローバルフィルターは掛けず恒等 order のまま、列フィルターの段は何もしない)。
+//   フィルターの状態そのもの(ハンドルの applyState / 上部バーの setGlobalFilterText で入る)は store に入るので、
+//   入っていたら開発時に 1 回だけ警告します(効かないことに気づけるように)。
+const useInertFilterOrder: GridShellFeatures['filtering']['useFilterOrder'] = (args) => {
+  const hasFilterState = args.globalFilterText.trim() !== '' || Object.keys(args.columnFilters).length > 0;
+  useEffect(() => {
+    if (hasFilterState) {
+      warnUnregisteredFeatureState('フィルターの状態(applyState / setGlobalFilterText)');
+    }
+  }, [hasFilterState]);
+  return {
+    globalFilteredOrder: args.baseOrder,
+    globalFilterStatus: 'idle',
+    globalFilterProgress: 1,
+    relativeDateKey: '',
+  };
+};
+
+// フィルターが無い構成では enableColumnFilter / enableGlobalFilter を false として扱う(createSpreadsheetGrid)ので、
+//   列フィルター / 検索欄の入口は出ません。
+const inertFilteringFeature: GridShellFeatures['filtering'] = {
+  createColumnFilterStage: () => (_rows, globalFilteredOrder) => globalFilteredOrder,
+  createDateRolloverStore: createInertDateRolloverStore,
+  useFilterOrder: useInertFilterOrder,
+  useFilterPopover: () => INERT_FILTER_POPOVER,
+  useFilterPopoverViews: () => null,
+  useFilterPopoverContent: () => null,
+  useFilterManagement: () => INERT_FILTER_MANAGEMENT,
+  FilterChipBar: () => null,
+};
+
+// サーバーサイド行モデルが無い構成では dataSource を外す(createSpreadsheetGrid)ので clientSide のままです。代役は件数 0 の
+//   行モデル(シェルは clientSide の行モデルを使うので参照されない)と、何もしない操作 / 何も描かないエラーバー。
+const INERT_SERVER_SIDE: ServerSideFeatureResult<unknown> = {
+  rowModel: {
+    getRowCount: () => 0,
+    getRow: () => undefined,
+    getSourceIndex: () => -1,
+    getRowKey: () => -1,
+  },
+  rowCount: 0,
+  isRowLoaded: () => false,
+  requestRange: noop,
+  refresh: noop,
+  loadError: null,
+  retryFailedBlocks: noop,
+  canUpdateRows: false,
+  applyCellEdits: () => 0,
+  writeError: null,
+  renderErrorBars: () => null,
+};
+
+const inertServerSideFeature: GridShellFeatures['serverSide'] = {
+  createSaveStatusController: createInertSaveStatusController,
+  useServerSide: <T,>() => INERT_SERVER_SIDE as ServerSideFeatureResult<T>,
+};
+
 // エクスポートが無い構成: 何も出力しない代役(エンジンの代役と同じ)に、呼ばれたら開発時に 1 回だけ警告するのを足します
 //   (prop ではなくメソッドなので、呼ばれた時点で知らせる)。
 const inertExportFeature: NonNullable<ReactGridFeatures['export']> = {
@@ -142,5 +234,7 @@ export const resolveGridShellFeatures = (features: ReactGridFeatures): GridShell
   selectionAggregates: features.selectionAggregates ?? inertSelectionAggregatesFeature,
   columnMenu: features.columnMenu ?? inertColumnMenuFeature,
   toolPanel: features.toolPanel ?? inertToolPanelFeature,
+  filtering: features.filtering ?? inertFilteringFeature,
+  serverSide: features.serverSide ?? inertServerSideFeature,
   export: features.export ?? inertExportFeature,
 });

@@ -14,12 +14,14 @@ import type { AutoHeightMeasurer } from '../controllers/autoHeightMeasurer';
 import { createScrollSyncController, type ScrollSyncController } from '../controllers/scrollSyncController';
 import { createRowEnterController, type RowEnterController } from '../controllers/rowEnterController';
 import type { ChangeHighlightController } from '../controllers/changeHighlightController';
-import { createSaveStatusController, type SaveStatusController } from '../controllers/saveStatusController';
+import type { SaveStatusController } from '../controllers/saveStatusController';
 import type { FindController } from '../controllers/findController';
 import {
   createInertAutoHeightMeasurer,
   createInertChangeHighlightController,
   createInertConditionalFormatStatsResolver,
+  createInertDateRolloverStore,
+  createInertSaveStatusController,
   createInertFindController,
   createInertImeInputController,
   createInertTotalRowCellsResolver,
@@ -28,7 +30,7 @@ import {
 import type { ConditionalFormatStatsResolver } from '../logic/conditionalFormat';
 import type { TotalRowCellsResolver } from '../logic/totalRow';
 import { createDebouncedValueStore, type DebouncedValueStore } from '../controllers/debouncedValueStore';
-import { createDateRolloverStore, type DateRolloverStore } from '../controllers/dateRolloverStore';
+import type { DateRolloverStore } from '../controllers/dateRolloverStore';
 import { createAutoSizeOnDataTrigger, type AutoSizeOnDataTrigger } from '../controllers/columnAutosizeRunner';
 import type { ImeInputController } from '../controllers/imeInputController';
 import {
@@ -46,13 +48,6 @@ import {
   type VerticalLayoutResolution,
 } from './verticalLayout';
 import { createColumnCommands, type ColumnCommands } from './columnCommands';
-import {
-  createFilterPopoverCommands,
-  createFilterPopoverDerivedResolver,
-  type FilterPopoverCommands,
-  type FilterPopoverDerived,
-  type FilterPopoverDerivedInputs,
-} from './filterPopoverCommands';
 import { createRowSelectionCommands, type RowSelectionCommands } from './rowSelectionCommands';
 import { createGridApi, type GridApi } from './gridApi';
 import {
@@ -93,10 +88,10 @@ export type GridEngine<T> = {
   resolvePaneLayout: (inputs: PaneLayoutInputs<T>) => PaneLayoutResolution<T>;
   rowPipeline: RowPipelineResolver<T>;
   resolveVerticalLayout: (inputs: VerticalLayoutInputs<T>) => VerticalLayoutResolution;
-  resolveFilterPopoverDerived: (inputs: FilterPopoverDerivedInputs<T>) => FilterPopoverDerived;
   // コマンド群(参照安定。update(args) で最新の状態を受ける)。
+  // 変更(差し込み式 段階 5): 列フィルターのポップオーバーの派生値 / コマンド群(engine/filterPopoverCommands)は持たない
+  //   (描画側のフィルターの機能が作る。機能を外した構成に持ち込まないため)。
   columnCommands: ColumnCommands<T>;
-  filterPopoverCommands: FilterPopoverCommands<T>;
   rowSelectionCommands: RowSelectionCommands<T>;
   gridApi: GridApi<T>;
   // 外部通知。
@@ -133,11 +128,10 @@ export type GridEngine<T> = {
 };
 
 export const createGridEngine = <T,>(init: GridEngineInit<T>): GridEngine<T> => {
-  const resolveColumns = createColumnResolver<T>();
+  const resolveColumns = createColumnResolver<T>(init.features);
   const resolvePaneLayout = createPaneLayoutResolver<T>();
-  const rowPipeline = createRowPipelineResolver<T>();
+  const rowPipeline = createRowPipelineResolver<T>(init.features);
   const resolveVerticalLayout = createVerticalLayoutResolver<T>(init.features.autoHeight);
-  const resolveFilterPopoverDerived = createFilterPopoverDerivedResolver<T>();
 
   // 変更(監査 RD-5 / M-03): 初期 state は列に依存しなくなりました(列幅 state は空で始まる)。
   const store = createGridStore(createInitialGridUiState());
@@ -153,7 +147,8 @@ export const createGridEngine = <T,>(init: GridEngineInit<T>): GridEngine<T> => 
     sort: initialUiState.sort,
   });
   const serverSideQueryStore = createDebouncedValueStore(initialServerSideQuery, SERVER_SIDE_QUERY_DEBOUNCE_MS);
-  const dateRollover = createDateRolloverStore();
+  // 変更(差し込み式 段階 5): 機能セットに filtering が無ければ代役(見張らない)。
+  const dateRollover = (init.features.filtering?.createDateRolloverStore ?? createInertDateRolloverStore)();
 
   // 変更(差し込み式 段階 4): 機能セットに autoHeight が無ければ代役(測らない)。
   const autoHeightMeasurer = (init.features.autoHeight?.createAutoHeightMeasurer ?? createInertAutoHeightMeasurer)<T>();
@@ -162,7 +157,8 @@ export const createGridEngine = <T,>(init: GridEngineInit<T>): GridEngine<T> => 
   // 変更(差し込み式 段階 2): 機能セットに motionExtras が無ければ代役(変更セルを強調しない)。
   const changeHighlight =
     init.features.motionExtras?.createChangeHighlightController<T>() ?? createInertChangeHighlightController<T>();
-  const saveStatus = createSaveStatusController();
+  // 変更(差し込み式 段階 5): 機能セットに serverSide が無ければ代役(保存状態を表示しない)。
+  const saveStatus = (init.features.serverSide?.createSaveStatusController ?? createInertSaveStatusController)();
   const find = init.features.find?.createFindController<T>() ?? createInertFindController<T>();
   const autoSizeOnData = createAutoSizeOnDataTrigger<T>();
   // 変更(差し込み式 段階 2): 機能セットに imeDirectInput が無ければ代役(何もしない)。
@@ -174,9 +170,7 @@ export const createGridEngine = <T,>(init: GridEngineInit<T>): GridEngine<T> => 
     resolvePaneLayout,
     rowPipeline,
     resolveVerticalLayout,
-    resolveFilterPopoverDerived,
     columnCommands: createColumnCommands<T>(),
-    filterPopoverCommands: createFilterPopoverCommands<T>(),
     rowSelectionCommands: createRowSelectionCommands<T>(),
     gridApi: createGridApi<T>(init.features),
     hoverRowNotifier: createHoverRowNotifier(),

@@ -27,6 +27,7 @@ import {
 } from '../logic/rowReorder';
 import { GROUP_AUTO_COLUMN_KEY, collectGroupingColumns } from '../logic/grouping';
 import { createMemo } from './memo';
+import type { GridCoreFeatures } from './features';
 
 // ── 列解決 ─────────────────────────────────────────────
 
@@ -58,7 +59,9 @@ export type ColumnResolution<T> = {
   orderedColumns: GridColumn<T>[];
 };
 
-export const createColumnResolver = <T,>() => {
+// 変更(差し込み式 段階 5): 機能セットに grouping が無ければ行グルーピングは常に無効(rowGroup 列もそのまま表示)。
+export const createColumnResolver = <T,>(features: Pick<GridCoreFeatures, 'grouping'>) => {
+  const groupingAvailable = features.grouping !== undefined;
   const memoGrouping = createMemo((columns: GridColumn<T>[]) => collectGroupingColumns(columns));
   // グルーピング有効時は先頭に自動グループ列(ツリー表示。consumer の columns には現れない合成列)を注入し、
   //   グループ元列(rowGroup)は表示から外します。展開行トグル列(T1)と行ドラッグハンドル列はさらに先頭へ
@@ -136,7 +139,7 @@ export const createColumnResolver = <T,>() => {
     const { columns, isServerSide, enableRowDrag, hasRowsChange, detailToggleColumnActive, renderDetailToggleCell } =
       inputs;
     const { groupColumns, aggColumns } = memoGrouping(columns);
-    const rowGroupingActive = !isServerSide && groupColumns.length > 0;
+    const rowGroupingActive = groupingAvailable && !isServerSide && groupColumns.length > 0;
     const rowDragAvailable = isRowDragAvailable({
       enableRowDrag,
       isServerSide,

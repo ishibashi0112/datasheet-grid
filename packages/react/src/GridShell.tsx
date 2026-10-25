@@ -54,7 +54,6 @@ import ActiveCellOverlay, {
   type ActiveCellOverlayRect,
 } from './ActiveCellOverlay';
 import CellEditorLayer from './CellEditorLayer';
-import { useFilterPopoverController } from './hooks/useFilterPopoverController';
 // 追加(13-A): 列メニュー(「⋮」+ 右クリック)の popover controller です。
 import { useGridClipboardController } from './hooks/useGridClipboardController';
 import { useGridBarContext } from './hooks/useGridBarContext';
@@ -77,38 +76,8 @@ import {
 } from '@ishibashi0112/spreadsheet-grid-core/logic/selectionOverlayGeometry';
 // 変更(差し込み式 段階 2): ヘッダー D&D 列並べ替えは機能セット(features.columnReorder)から受け取ります(無ければ代役)。
 // 変更(差し込み式 段階 2): 行ドラッグ並び替えは機能セット(features.rowDrag)から受け取ります(無ければ代役)。
-import {
-  // 追加(12-A): set フィルター値の判定 / 構築に使います。
-  isSetColumnFilterValue,
-  // 追加(記述子化 / number): number 記述子の判定に使います。
-  //   ※構築は filter-ext A で構造化 draft 経由(buildNumberColumnFilterValueFromDraft)へ
-  //     移行したため、式テキストの buildNumberColumnFilterValue はここでは不要になりました。
-  isNumberColumnFilterValue,
-  // 追加(filter-ext B/C/D): 複合(条件 AND 選択)記述子の判定に使います。
-  // 追加(filter-ext B): B-2 Float64 key の構築対象判定です(comparison / range を持つ
-  //   number 系のみ。number / numberSet の両 kind を単一実装で判定します)。
-  // 追加(記述子化): 現在値表示の text 整形に使います(記述子 → 表示文字列)。
-  columnFilterValueToDraftText,
-  // 追加(FM-1): フィルター管理パネルの一覧行(有効フィルターの抽出)に使います。
-  isActiveColumnFilterValue,
-  // 追加(audit L-06): dateSet 列の候補収集を照合と同じ正規化日付キーで行います。
-  toDateSetKey,
-  // 追加(監査 L-15): 相対日付プリセットが掛かっているか(日付が変わったら絞り込みをやり直す見張りの入り切り)と、
-  //   基準日で解決した範囲のキー(範囲が変わったときだけ絞り込み / 取り直しをやり直す)。
-  columnFiltersUseRelativeDate,
-  resolveRelativeDateFilterKey,
-  // 行モデルチェーンは order(Int32Array)ベースに一本化しています
-  //   (DS-2 で差し替え、旧オブジェクト配列版は DS-3-8 で削除)。
-  // 追加(filter-ext A): number フィルターの数値化規則(空白 = NaN)です。B-2 の
-  //   Float64 key 構築で predicate 側と同一規則を共有します。
-} from '@ishibashi0112/spreadsheet-grid-core/logic/filtering';
-// 追加(FM-1): 列フィルター値 → 人間可読要約(フィルター管理パネルの一覧行)です。
-import { describeColumnFilterValue } from '@ishibashi0112/spreadsheet-grid-core/logic/filterSummary';
-// 追加(preset-opt): dateSet プリセット構成(列定義 dateFilterPresets)の正規化です
-//   (popover のチップ描画 / 候補連動 / 要約ラベルへ同じ正規形を渡します)。
-import { normalizeDateFilterPresets } from '@ishibashi0112/spreadsheet-grid-core/logic/dateFilterPresets';
-// 追加(filter-ext E): filterType: 'auto' の実効種別推定(editor ヒント + 値サンプリング)です。
-import { inferColumnFilterType } from '@ishibashi0112/spreadsheet-grid-core/logic/inferFilterType';
+// 変更(差し込み式 段階 5): フィルター(logic/filtering / filterSummary / dateFilterPresets / inferFilterType)を使う処理は
+//   機能セット(features.filtering)へ移りました(ポップオーバー / 適用中フィルターの一覧 / チップバー)。
 // 変更(10-C): 3ペインレイアウト構築用の helper / 型を追加インポートします。
 // 変更理由: reorderColumnsByPane / buildGridPaneLayout を SpreadsheetGrid で使い、
 //           PaneColumnEntry 型を各ペインの描画エントリ受け渡しに使うためです。
@@ -147,13 +116,12 @@ import {
 import {
   DEFAULT_DETAIL_ROW_HEIGHT,
   DETAIL_TOGGLE_COLUMN_KEY,
-  isInsideDetailCardOf,
   seedDetailIndexCache,
 } from '@ishibashi0112/spreadsheet-grid-core/logic/detailRow';
-// 追加(label-row ②): ラベル行(見出し / 区切り行)の SSRM ラッパです。
-import { resolveStickyLabel, wrapRowModelWithLabelRows } from '@ishibashi0112/spreadsheet-grid-core/logic/labelRows';
+// 変更(差し込み式 段階 5): ラベル行(見出し / 区切り行)の SSRM ラッパ / 縦スクロール固定の解決 / 部品は機能セット
+//   (features.labelRow)から受け取ります。
 import type { GridBodyLabelRowLayer } from './view/GridBodyLayer';
-import { GridStickyLabelLayer, type GridStickyLabelEntry } from './view/GridStickyLabelLayer';
+import type { GridStickyLabelEntry } from './view/GridStickyLabelLayer';
 // 追加(row-drag ③): 行ドラッグ並び替えの純ロジック(ハンドル列キー / 配列移動 / ゲート判定)です。
 import {
   ROW_DRAG_HANDLE_COLUMN_KEY,
@@ -168,23 +136,9 @@ import {
 // 追加(state #1): 列状態 get/apply の純ロジックです(snapshot 組み立て / 外部入力の正規化)。
 // 追加(state #2): onStateChange の発火可否判定(decideStateChangeEmit)も同モジュールから読みます。
 // 追加(state v2): 列メタ(可視 / 順序 / ピン)の抽出 / 適用(extractColumnState / applyColumnState)。
-import {
-  computeHorizontalScrollTarget,
-} from '@ishibashi0112/spreadsheet-grid-core/logic/scrollTargets';
 // 変更(差し込み式 段階 2): 列幅自動調整のランナーは機能セット(features.columnAutosize)から受け取ります(無ければ代役)。
-// 追加(DS-4 #1): select / set 候補を「通常規模=同期 / 大規模=時間分割の非同期」で収集します。
-import useColumnSelectOptionsCollector from './hooks/useColumnSelectOptionsCollector';
-// 追加(async-options): getFilterOptions 経由の候補取得アダプタと、UI 種別が候補を使うかの判定。
-import { useAsyncSelectOptionsSource } from './hooks/useAsyncSelectOptionsSource';
-import { isSelectLikeFilterType } from '@ishibashi0112/spreadsheet-grid-core/controllers/selectOptionsCollector';
-// 追加(F-async): グローバルフィルタの時間分割(非ブロック)適用フックです。
-import { useGlobalFilteredOrder } from './hooks/useGlobalFilteredOrder';
-// 追加(①-3): serverSide(SSRM)の RowModel を供給するフックです(dataSource 指定時に使用)。
-import { useServerSideRowModel } from './hooks/useServerSideRowModel';
-import type {
-  ServerSideLoadErrorState,
-  ServerSideWriteErrorState,
-} from './hooks/useServerSideRowModel';
+// 変更(差し込み式 段階 5): グローバルフィルタの時間分割(非ブロック)適用フックは機能セット(features.filtering)から受け取ります。
+// 変更(差し込み式 段階 5): serverSide(SSRM)の RowModel を供給するフックは機能セット(features.serverSide)から受け取ります。
 // 追加(grouping ②): 行グルーピングの純ロジック(ツリー構築 / 開閉適用 flatten / エンコード)です。
 import type {
   CellCoord,
@@ -204,8 +158,6 @@ import type {
   // 追加(DS-3-0): 行モデルのシーム契約型です(rowModel の構築に使います)。
   // 追加(記述子化): commit 経路で text/date/select/custom を記述子化する際の型です。
   // 追加(12-A): set フィルター値の構築に使います。
-  // 追加(filter-ext E): 'auto' を解決した後の実効フィルター種別です。
-  ColumnFilterUiType,
   // 追加(imperative API #1): ref ハンドルと関連型です。
   // 追加(行選択): 公開記述子と内部状態型です。
   RowSelectionModel,
@@ -221,11 +173,7 @@ import { CheckboxCell } from './editors/CheckboxCell';
 import { decideCellWrite } from '@ishibashi0112/spreadsheet-grid-core/logic/validation';
 // 変更(lazy-popups): 列フィルターポップオーバーとツールパネル(+ 3 タブ)は別チャンクへ分けて遅延読み込みします
 //   (view/lazyPopups。シェルから部品を静的に import しないこと = 初期チャンクへ戻ってしまう)。
-import {
-  filterPopoverModule,
-  useLazyModule,
-  type ToolPanelViews,
-} from './view/lazyPopups';
+import type { ToolPanelViews } from './view/lazyPopups';
 // 追加(13-A): 列メニュー popover(列固定の切替 UI)です。
 import DefaultGridBottomBar from './view/DefaultGridBottomBar';
 import DefaultGridTopBar from './view/DefaultGridTopBar';
@@ -250,12 +198,7 @@ import type { ToolPanelTab } from './hooks/useToolPanelController';
 import type { ToolPanelTabDescriptor } from './view/ToolPanel';
 import type { ColumnChooserItem } from './view/ColumnChooserPanel';
 import type { SortManagementColumn } from './view/SortManagementPanel';
-import type {
-  FilterManagementEntry,
-  FilterManagementAddableColumn,
-} from './view/FilterManagementPanel';
-// 追加(FM-2): フィルターチップバー(適用中の列フィルターの常時表示 / opt-in)です。
-import GridFilterChipBar from './view/GridFilterChipBar';
+// 変更(差し込み式 段階 5): フィルターチップバーは機能セット(features.filtering)から受け取ります(無ければ代役)。
 // 変更(差し込み式 段階 2): スクロール位置インジケーターは機能セット(features.scrollHint)から受け取ります。
 // 追加(バッチ②/コンテキストメニュー): 対象解決(純ロジック)/ controller / portal popover。
 // 変更(差し込み式 段階 2): フィルハンドルの部品は機能セット(features.fillHandle)から受け取ります(無ければ代役)。
@@ -743,7 +686,10 @@ export function useGridShell<T extends object>({
   const labelSticky = labelRow?.sticky === true;
   const labelExportText = labelRow?.exportText;
   const labelKeepEmptySections = labelRow?.keepEmptySections ?? false;
-  const labelRowEnabled = labelIsLabelRow != null && labelGetLabel != null;
+  // 変更(差し込み式 段階 5): 機能セットに labelRow が無ければ無効(createSpreadsheetGrid が labelRow を外す)。
+  const labelRowFeature = features.labelRow;
+  const StickyLabelLayer = labelRowFeature?.StickyLabelLayer;
+  const labelRowEnabled = labelIsLabelRow != null && labelGetLabel != null && labelRowFeature !== undefined;
   // 追加(合計行 3A): 合計行のオプションを分解します(true は既定値だけで有効化)。footerHeight は下端に固定する行の
   //   高さで、スクロール計算(見える高さ / 末尾 / 行を見せる位置)に渡します。無効時は 0 = 従来どおり。
   const totalRowOptions = typeof totalRow === 'object' && totalRow !== null ? totalRow : null;
@@ -817,67 +763,23 @@ export function useGridShell<T extends object>({
 
 
   // ── filter popover ────────────────────────────────────
-  // 追加(filter-ext E): filterType: 'auto' の解決結果キャッシュです(列キー → 実効種別)。
-  //   合意仕様「初回オープン時に推定して以後固定」を担保します。行の追加 / 編集で推定が
-  //   揺れると、適用済み記述子(kind)と UI が食い違うためです。
-  //   判定材料が無かった回(conclusive=false: まだ行が空 等)はキャッシュせず、次回再推定します。
-  const autoFilterTypeCacheRef = useRef(new Map<string, ColumnFilterUiType>());
-
-  // 追加(filter-ext E): 'auto' 列の実効フィルター種別を解決します(popover の open 時に 1 回)。
-  //   優先順位: 適用済み記述子の kind > キャッシュ > editor ヒント / 値サンプリング。
-  //   「適用済み記述子が最優先」は applyState で復元された状態(popover を一度も開いていない
-  //   列にフィルターが載っている)でも UI と記述子を一致させるためです。
-  const resolveAutoColumnFilterType = useCallback(
-    (column: GridColumn<T>): ColumnFilterUiType => {
-      const currentValue = uiState.filters.columnFilters[column.key];
-      if (
-        currentValue?.kind === 'numberSet' ||
-        currentValue?.kind === 'textSet' ||
-        currentValue?.kind === 'dateSet' ||
-        currentValue?.kind === 'text'
-      ) {
-        return currentValue.kind;
-      }
-      const cached = autoFilterTypeCacheRef.current.get(column.key);
-      if (cached) {
-        return cached;
-      }
-      const result = inferColumnFilterType({
-        editorType: column.editor?.type,
-        isServerSide,
-        rowCount: rows.length,
-        getRawValueAt: (index) => getCellValue(rows[index], column),
-      });
-      if (result.conclusive) {
-        autoFilterTypeCacheRef.current.set(column.key, result.filterType);
-      }
-      return result.filterType;
-    },
-    [uiState.filters.columnFilters, isServerSide, rows],
-  );
-
+  // 変更(差し込み式 段階 5): 列フィルターのポップオーバーの controller の接続('auto' 列の種別の推定とキャッシュ込み)は
+  //   フィルターの機能(features/filtering)へ移しました(元の位置で呼ぶ)。無い構成では代役(閉じたまま)。
+  const filterPopover = features.filtering.useFilterPopover<T>({
+    visibleColumns,
+    columnFilters: uiState.filters.columnFilters,
+    columnFilterEnabled,
+    gridRootRef,
+    isServerSide,
+    rows,
+  });
   const {
-    filterPopoverState,
-    filterPopoverLayout,
     filterPopoverRef,
-    filterTextInputRef,
-    filterSelectRef,
     isFilterPopoverOpen,
     openedFilterColumn,
-    openedFilterType,
     openColumnFilterPopover,
     closeColumnFilterPopover,
-    updateFilterPopoverDraft,
-    updateFilterPopoverNumberDraft,
-    updateFilterPopoverTextDraft,
-    updateFilterPopoverDateDraft,
-  } = useFilterPopoverController({
-    visibleColumns,
-    columnFilterValues: uiState.filters.columnFilters,
-    enableColumnFilter: columnFilterEnabled,
-    gridRootRef,
-    resolveColumnFilterType: resolveAutoColumnFilterType,
-  });
+  } = filterPopover;
 
   // ── column menu(13-A) ────────────────────────────────
   // 追加(13-A): 列メニュー(「⋮」ボタン + ヘッダー右クリック)の controller です。
@@ -943,7 +845,8 @@ export function useGridShell<T extends object>({
   //   描画済みのパネルを見て位置の追従 / 入力欄フォーカスを始めます。読み込みに失敗したら閉じます。
   // 変更(差し込み式 段階 3): 列フィルターポップオーバーを開く入口は列メニューとツールパネルだけなので、どちらの機能も
   //   無い構成では先読みしない(全部入りでは両方あるので従来どおり)。
-  const filterPopoverViews = useLazyModule(filterPopoverModule, {
+  // 変更(差し込み式 段階 5): 列フィルターポップオーバーの部品の読み込みは機能セットの filtering から(元の位置)。
+  const filterPopoverViews = features.filtering.useFilterPopoverViews({
     needed: openedFilterColumn !== null,
     prefetch:
       columnFilterEnabled &&
@@ -1006,7 +909,7 @@ export function useGridShell<T extends object>({
   const globalFilterText = uiState.filters.globalText;
 
   // 注記(F-async): グローバルフィルタの「入力非ブロック化」は useGlobalFilteredOrder へ移しました
-  //   (旧 11-B7 の useDeferredValue は同フック内部へ内包)。同フックは評価値の遅延化(連続入力の
+  //   (旧 11-B7 の useDeferredValue は同フック内部へ内包。差し込み式 段階 5 以降は features/filtering 経由)。同フックは評価値の遅延化(連続入力の
   //   合体)に加え、しきい値超では時間分割(yieldToMain)で適用するため、1M 行 × 多列でも入力/
   //   スクロールが詰まりません。入力欄の value は従来どおり即時値 globalFilterText
   //   (useGridBarContext → slotContext 経由)を参照します。pending 表示も同フックの status/
@@ -1059,53 +962,23 @@ export function useGridShell<T extends object>({
     [rowPipeline, rows.length, labelLayout],
   );
 
-  // 変更(F-async): globalFilteredOrder の同期 useMemo を時間分割フックへ差し替えます。
-  //   返り値の order は「現在表示すべきビュー順」で、計算中は前回確定 order を維持します
-  //   (= 下流 columnFiltered / sorted / rowModel は order 参照が安定する限りスキップ＝
-  //   進捗 tick では本体行は再描画されず、トップバーの進捗表示だけが更新されます)。
-  //   status / progress は下のバーコンテキストへ渡してローディング表示に使います。
-  const {
-    order: globalFilteredOrder,
-    status: globalFilterStatus,
-    progress: globalFilterProgress,
-  } = useGlobalFilteredOrder({
-    rows,
-    baseOrder,
-    columns: visibleColumns,
-    globalText: globalFilterText,
-    // 変更(manual-mode): 手動フィルターでは走らせない(order は baseOrder のまま)。
-    enabled: globalFilterEnabled && !manualFiltering,
-  });
-
-  // 追加(監査 L-15): 相対日付プリセット(今日 / 今月 / 過去 30 日 / カスタム)の基準日。プリセットを含む列フィルターが
-  //   掛かっている間だけ日付の変わり目を見張り(controllers/dateRolloverStore)、基準日で解決した範囲のキー
-  //   (resolveRelativeDateFilterKey)を行パイプラインの入力に足します。日付が変わって範囲も変わると、clientSide は
-  //   列フィルターを評価し直し、serverSide は queryKey が変わって取り直します(「今月」の月内など範囲が同じなら何もしない)。
-  //   手動フィルター(manualFiltering)では行を絞り込まないため見張りません。
-  const relativeDateFilterActive = useMemo(
-    () =>
-      isServerSide
-        ? columnFilterEnabled && columnFiltersUseRelativeDate(columnFilters)
-        : !manualFiltering && columnFiltersUseRelativeDate(deferredColumnFilters),
-    [isServerSide, columnFilterEnabled, columnFilters, manualFiltering, deferredColumnFilters],
-  );
-  useControllerLifecycle(engine.dateRollover, { active: relativeDateFilterActive });
-  const relativeDateSnapshot = useSyncExternalStore(
-    engine.dateRollover.subscribe,
-    engine.dateRollover.getSnapshot,
-    engine.dateRollover.getSnapshot,
-  );
-  const relativeDateKey = useMemo(
-    () =>
-      relativeDateFilterActive
-        ? resolveRelativeDateFilterKey(
-            effectiveColumns,
-            isServerSide ? columnFilters : deferredColumnFilters,
-            relativeDateSnapshot,
-          )
-        : '',
-    [relativeDateFilterActive, effectiveColumns, isServerSide, columnFilters, deferredColumnFilters, relativeDateSnapshot],
-  );
+  // 変更(差し込み式 段階 5): グローバルフィルターの適用(F-async の時間分割)と相対日付プリセットの基準日(監査 L-15)は
+  //   フィルターの機能(features/filtering)へ移しました(同じ位置・同じ順番で hook を呼ぶ)。無い構成では恒等 order のまま。
+  const { globalFilteredOrder, globalFilterStatus, globalFilterProgress, relativeDateKey } =
+    features.filtering.useFilterOrder({
+      rows,
+      baseOrder,
+      visibleColumns,
+      effectiveColumns,
+      globalFilterText,
+      globalFilterEnabled,
+      columnFilterEnabled,
+      columnFilters,
+      deferredColumnFilters,
+      manualFiltering,
+      isServerSide,
+      dateRollover: engine.dateRollover,
+    });
 
   const { order, rowDragOperable } = useMemo(
     () =>
@@ -1215,6 +1088,8 @@ export function useGridShell<T extends object>({
     ],
   );
 
+  // 変更(差し込み式 段階 5): グループ行の部品は機能セット(features.grouping)から(無い構成ではグループ行を作らない)。
+  const GroupRow = features.grouping?.BodyGroupRow;
   // 追加(grouping ③): グループ開閉のトグルです(GridBodyLayer のシェブロン / グループ行
   //   ダブルクリックから呼ばれます)。dispatch は安定参照のため本ハンドラも恒久安定です。
   const handleGroupToggle = useCallback(
@@ -1278,30 +1153,20 @@ export function useGridShell<T extends object>({
   // 追加(①-3): serverSide(SSRM)の RowModel を供給します。React Hooks 規則によりフックは
   //   無条件に呼びます。dataSource 不在(clientSide)では hook が inert(件数 0 / 取得 no-op)に
   //   なるよう実装済みのため、clientSide 経路は完全に不変です。
-  const serverSide = useServerSideRowModel<T>({
+  // 変更(差し込み式 段階 5): 行モデルの controller の接続と内蔵エラーバー(「閉じる」状態込み)は機能セットの serverSide
+  //   (features/serverSide)へ移しました(元の位置で呼ぶ)。無い構成では dataSource を外す(createSpreadsheetGrid)ので
+  //   clientSide のままで、代役は件数 0 の行モデルを返します。
+  const serverSide = features.serverSide.useServerSide<T>({
     dataSource,
     rowKeyGetter: resolvedRowKeyGetter,
     query: serverSideQuery,
     queryKey: serverSideQueryKey,
-    // 追加(stage ③): ソフトリフレッシュ signal。queryKey と独立にキャッシュ破棄+可視レンジ取り直しを起こす。
     refreshToken: serverSideRefreshToken,
-    // 追加(batch 9): getRows 失敗の外部通知(abort 除く)。hook 内 latest-ref で読むため
-    //   インライン関数でも fetch 系の再生成は起きません。
     onLoadError: onServerSideLoadError,
-    // 追加(SSRM 書き戻し): updateRows 失敗(ロールバック済み)の外部通知です(同じく latest-ref)。
     onWriteError: onServerSideWriteError,
     // 追加(motion-7 / M-9): セル単位の保存状態(pending → ok | failed)を saveStatusController へ。
     onWriteStateChange: engine.saveStatus.handle,
   });
-  // 追加(batch 9): 内蔵エラーバーの「閉じる」状態です。閉じた時点の loadError 参照を記録し、
-  //   同一参照の間だけ非表示にします(失敗集合が変わる = 新しい失敗イベントで新参照になり
-  //   再表示。クエリ変化 / retry / 全回復で loadError が null に戻れば記録は自然に無効化)。
-  const [dismissedLoadError, setDismissedLoadError] =
-    useState<ServerSideLoadErrorState | null>(null);
-  // 追加(SSRM 書き戻し): 保存失敗バーの「閉じる」状態です(loadError と同じ参照比較の契約。
-  //   新しい書き戻し失敗のたびに writeError が新参照になり再表示されます)。
-  const [dismissedWriteError, setDismissedWriteError] =
-    useState<ServerSideWriteErrorState | null>(null);
   // 可視レンジ通知に使う stable 参照(useCallback)だけを抜き出します。serverSide オブジェクト
   //   自体は毎 render 生成のため、effect 依存にはこの requestRange のみを使います。
   const requestServerSideRange = serverSide.requestRange;
@@ -1314,11 +1179,11 @@ export function useGridShell<T extends object>({
     if (!isServerSide) {
       return clientSideRowModel;
     }
-    if (labelIsLabelRow && labelGetLabel) {
-      return wrapRowModelWithLabelRows(serverSideRowModel, labelIsLabelRow, labelGetLabel);
+    if (labelIsLabelRow && labelGetLabel && labelRowFeature) {
+      return labelRowFeature.wrapRowModelWithLabelRows(serverSideRowModel, labelIsLabelRow, labelGetLabel);
     }
     return serverSideRowModel;
-  }, [isServerSide, clientSideRowModel, serverSideRowModel, labelIsLabelRow, labelGetLabel]);
+  }, [isServerSide, clientSideRowModel, serverSideRowModel, labelIsLabelRow, labelGetLabel, labelRowFeature]);
 
   // 追加(SSRM 書き戻し): 編集可否の合成です。serverSide で dataSource.updateRows が無い間は
   //   全セルを編集不可へ倒します(書き戻し先が無い編集セッションは commit 時に静かに破棄される
@@ -1774,30 +1639,37 @@ export function useGridShell<T extends object>({
   );
   const labelRowLayerCenter = useMemo<GridBodyLabelRowLayer<T> | undefined>(
     () =>
-      labelRowEnabled
+      labelRowEnabled && labelRowFeature
         ? {
+            Row: labelRowFeature.BodyLabelRow,
             renderContent: renderLabelRowContent,
             contentStickyLeft: detailCardStickyLeft,
             contentWidth: detailCardWidth,
             resolveRowSlot: resolveLabelRowSlot,
           }
         : undefined,
-    [labelRowEnabled, renderLabelRowContent, detailCardStickyLeft, detailCardWidth, resolveLabelRowSlot],
+    [labelRowEnabled, labelRowFeature, renderLabelRowContent, detailCardStickyLeft, detailCardWidth, resolveLabelRowSlot],
   );
   const labelRowLayerBand = useMemo<GridBodyLabelRowLayer<T> | undefined>(
     () =>
-      labelRowEnabled
-        ? { renderContent: null, contentStickyLeft: 0, contentWidth: 0, resolveRowSlot: resolveLabelRowSlot }
+      labelRowEnabled && labelRowFeature
+        ? {
+            Row: labelRowFeature.BodyLabelRow,
+            renderContent: null,
+            contentStickyLeft: 0,
+            contentWidth: 0,
+            resolveRowSlot: resolveLabelRowSlot,
+          }
         : undefined,
-    [labelRowEnabled, resolveLabelRowSlot],
+    [labelRowEnabled, labelRowFeature, resolveLabelRowSlot],
   );
   // 追加(label-row ③.5): 縦スクロール固定(labelRow.sticky)。scrollTop(論理)から「現在セクションのラベル行 /
   //   押し上げ量」を純ロジックで求め、各ペインの固定レイヤーへ渡します。clientSide(labelDisplay あり)のみ。
   const stickyLabelEntry = useMemo<GridStickyLabelEntry<T> | null>(() => {
-    if (!labelSticky || !labelDisplay || labelDisplay.labelViewIndexes.length === 0) {
+    if (!labelSticky || !labelDisplay || labelDisplay.labelViewIndexes.length === 0 || !labelRowFeature) {
       return null;
     }
-    const resolution = resolveStickyLabel(
+    const resolution = labelRowFeature.resolveStickyLabel(
       labelDisplay.labelViewIndexes,
       rowMetrics,
       physicalToLogicalScrollTop(scrollTop, verticalScaleFactor),
@@ -1816,14 +1688,16 @@ export function useGridShell<T extends object>({
       height: resolution.height,
       pushOffset: resolution.pushOffset,
     };
-  }, [labelSticky, labelDisplay, rowMetrics, scrollTop, verticalScaleFactor, rowModel]);
+  }, [labelSticky, labelDisplay, labelRowFeature, rowMetrics, scrollTop, verticalScaleFactor, rowModel]);
   // 追加(label-row ④): 命令的 API(exportCsv / getExportData)へ渡すラベル行のエクスポート設定です。
+  //   変更(差し込み式 段階 5): ラベル行の機能が無い構成ではラベル行をデータ行として扱うので渡しません(全部入りでは
+  //   labelRowEnabled は「labelRow の 2 つの関数がある」と同じ)。
   const labelRowExport = useMemo(
     () =>
-      labelIsLabelRow && labelGetLabel
+      labelRowEnabled
         ? { isLabelRow: labelIsLabelRow, getLabel: labelGetLabel, exportText: labelExportText }
         : undefined,
-    [labelIsLabelRow, labelGetLabel, labelExportText],
+    [labelRowEnabled, labelIsLabelRow, labelGetLabel, labelExportText],
   );
   const stickyLabelSlot = useMemo(
     () => resolveSlotProps<CSSProperties>(stickyLabelEntry ? resolveLabelRowSlot(stickyLabelEntry.labelRow) : undefined),
@@ -3031,61 +2905,23 @@ export function useGridShell<T extends object>({
   );
 
   // ── filter management panel actions(FM-1) ────────────
-  // 追加(FM-1): パネルへ渡す「適用中フィルター」一覧です。可視列(視覚順)→ 非表示列
-  //   (columns 定義順)の順で、isActiveColumnFilterValue な値だけを載せます。非表示列も
-  //   出すのは「見えない列に絞り込みが残っている」という発見性の穴を塞ぐのが本機能の主目的
-  //   のためです(非表示列はジャンプ先が無いため ✎ 不可・× のみ可 = isHidden で view が判別)。
-  const filterManagerEntries = useMemo<FilterManagementEntry[]>(() => {
-    const entries: FilterManagementEntry[] = [];
-    const pushEntry = (column: GridColumn<T>, isHidden: boolean) => {
-      const value = columnFilters[column.key];
-      if (!value || !isActiveColumnFilterValue(value)) {
-        return;
-      }
-      entries.push({
-        columnKey: column.key,
-        title: column.title || column.key,
-        // 変更(preset-opt): dateSet はカスタムプリセットのラベル逆引き用に列のプリセット
-        //   構成を渡します(他 kind は未使用のため従来どおり)。
-        summaryText: describeColumnFilterValue(
-          value,
-          value.kind === 'dateSet'
-            ? normalizeDateFilterPresets(column.dateFilterPresets)
-            : undefined,
-        ),
-        isHidden,
-      });
-    };
-    for (const column of orderedColumns) {
-      pushEntry(column, false);
-    }
-    for (const column of columns) {
-      if (column.visible === false) {
-        pushEntry(column, true);
-      }
-    }
-    return entries;
-  }, [columnFilters, columns, orderedColumns]);
-
-  // 追加(FM-1): 「フィルターを追加」の候補列です(可視・filterType あり・未適用)。
-  //   非表示列は除外します(追加 = ✎ と同じ「ジャンプ + popover」で、非表示列は開けないため)。
-  //   filterType 条件は列メニューの「フィルター…」項目(canFilter)と同じ規約です。
-  const filterManagerAddableColumns = useMemo<
-    FilterManagementAddableColumn[]
-  >(
-    () =>
-      visibleColumns
-        .filter(
-          (column) =>
-            Boolean(column.filterType) &&
-            !isActiveColumnFilterValue(columnFilters[column.key]),
-        )
-        .map((column) => ({
-          key: column.key,
-          title: column.title || column.key,
-        })),
-    [columnFilters, visibleColumns],
-  );
+  // 変更(差し込み式 段階 5): 適用中フィルターの一覧 / 「フィルターを追加」の候補列 / 対象列へのジャンプ(パネルの ✎ と
+  //   フィルターチップバー)はフィルターの機能(features/filtering)へ移しました。無い構成では空で、パネルのフィルタータブも
+  //   チップバーも出ません。
+  const { filterManagerEntries, filterManagerAddableColumns, jumpToColumnFilter } =
+    features.filtering.useFilterManagement<T>({
+      columns,
+      orderedColumns,
+      visibleColumns,
+      columnFilters,
+      scrollContainerRef,
+      gridRootRef,
+      paneLayout,
+      leftPaneTotalWidth,
+      centerLeadingWidth,
+      rightPaneTotalWidth,
+      openColumnFilterPopover,
+    });
 
   // 追加(FM-3): 既定トップバーの Filters chip クリックでパネルをトグルします。
   //   chip 側は onPointerDown を stopPropagation して window の outside-close へ届かせない
@@ -3099,105 +2935,6 @@ export function useGridShell<T extends object>({
       openToolPanel('filter');
     }
   }, [activeToolPanelTab, closeToolPanel, openToolPanel]);
-
-  // 追加(FM-1): 対象列まで横スクロールしてからフィルター popover を開きます(パネルの
-  //   ✎ 編集 / フィルターを追加)。openColumnFilterPopover は anchor(ヘッダーセル
-  //   data-ssg-col-key)を開いた時点の DOM から解決するため、列仮想化で対象列が未描画の
-  //   まま開くと layout=null で表示されません。そこで
-  //     ① 横スクロール(center ペインのみ。固定列は常時可視のためスクロール不要)
-  //     ② rAF リトライ(上限 8 フレーム)でヘッダーセルの出現を待つ
-  //     ③ open + ジャンプ先ヘッダーのフラッシュ(ssg-header-cell--jump-flash)
-  //   の順に組み立てます。リトライは上限付きの有限ループでゾンビ化しません(13-B3-7 の
-  //   自己停止ガードと同趣旨)。上限まで出現しなければ開かず終了します(非表示化直後など。
-  //   無表示 popover 状態を作らないため)。
-  const jumpToColumnFilter = useCallback(
-    (columnKey: string) => {
-      const el = scrollContainerRef.current;
-      const colIndex = orderedColumns.findIndex(
-        (column) => column.key === columnKey,
-      );
-      if (colIndex < 0) {
-        return;
-      }
-      const column = orderedColumns[colIndex];
-      if (el) {
-        const single = computeSinglePaneColumnExtent(paneLayout, colIndex);
-        if (single && single.pane === 'center') {
-          const target = computeHorizontalScrollTarget({
-            cellLeft:
-              leftPaneTotalWidth + centerLeadingWidth + single.extent.start,
-            cellWidth: single.extent.width,
-            leftPaneWidth: leftPaneTotalWidth,
-            rightPaneWidth: rightPaneTotalWidth,
-            viewportWidth: el.clientWidth,
-            currentScrollLeft: el.scrollLeft,
-            align: 'auto',
-            maxScrollLeft: el.scrollWidth - el.clientWidth,
-          });
-          if (target !== el.scrollLeft) {
-            el.scrollTo({ left: target, behavior: 'auto' });
-          }
-        }
-      }
-      const findHeaderCell = (): HTMLElement | null => {
-        const root = gridRootRef.current;
-        const cells = root?.querySelectorAll<HTMLElement>('[data-ssg-col-key]');
-        if (!root || !cells) {
-          return null;
-        }
-        return (
-          Array.from(cells).find(
-            (cell) =>
-              cell.dataset.ssgColKey === columnKey &&
-              // 追加(detail ④): 展開行カード内にネストしたグリッドの同名列は対象外です。
-              !isInsideDetailCardOf(root, cell),
-          ) ?? null
-        );
-      };
-      const tryOpen = (attempt: number) => {
-        // unmount 後の遅延実行ガードです(root が消えていたら何もしません)。
-        if (!gridRootRef.current) {
-          return;
-        }
-        const cell = findHeaderCell();
-        if (cell === null) {
-          if (attempt < 8) {
-            requestAnimationFrame(() => tryOpen(attempt + 1));
-          }
-          return;
-        }
-        openColumnFilterPopover(column);
-        // ジャンプ先の視認補助フラッシュです。React はヘッダーセルの className prop が
-        //   変化したときだけ属性を書き戻すため、直付けクラスは通常アニメ完了まで残ります
-        //   (途中で hover 等により書き戻されても視認補助が早く消えるだけで実害なし)。
-        cell.classList.remove('ssg-header-cell--jump-flash');
-        // reflow を挟み、連続ジャンプでも再アニメーションさせます。
-        void cell.offsetWidth;
-        cell.classList.add('ssg-header-cell--jump-flash');
-        cell.addEventListener(
-          'animationend',
-          () => {
-            cell.classList.remove('ssg-header-cell--jump-flash');
-          },
-          { once: true },
-        );
-      };
-      requestAnimationFrame(() => {
-        tryOpen(0);
-      });
-    },
-    // 変更(本体分解 E-5): 旧 apiStateRef 経由の読みを直接参照へ(列レイアウト変化で参照が変わるが、
-    //   渡し先はパネル / バーのコールバックのみでコールドパス)。
-    [
-      gridRootRef,
-      openColumnFilterPopover,
-      orderedColumns,
-      paneLayout,
-      leftPaneTotalWidth,
-      centerLeadingWidth,
-      rightPaneTotalWidth,
-    ],
-  );
 
   // 追加(13-B3-2): ヘッダー D&D 並べ替え controller(ドロップインジケータ ref + 安定ハンドラ)。
   //   enabled は controlled columns(onColumnsChange あり)のときだけ true。
@@ -3316,116 +3053,21 @@ export function useGridShell<T extends object>({
   };
 
   // ── filter popover actions ────────────────────────────
-  // 追加(DS-4 #1): rows[index] の対象列セル値アクセサです。identity は rows/openedFilterColumn に
-  //   連動し、これが変わったときだけ候補収集をやり直します(旧 getColumnSelectOptions の [rows]
-  //   依存と等価)。set 即時適用の再レンダー(uiState 変化)では rows/openedFilterColumn とも不変の
-  //   ため identity が保たれ、収集の再実行は起きません(open 中の再収集なしを維持)。
-  // 修正(audit L-06): dateSet 列は照合と同じ正規化日付キー(toDateSetKey)で候補を集めます。Date 値のセルが
-  //   String(Date)('Thu Jul 02 2026 …')の候補になり、年月日ツリーに出ず選んでも一致しなかったため。
-  //   文字列セルは後段の normalizeDateSetOptions と同じキーになるだけで結果は変わりません。
-  const openedFilterIsDateSet = openedFilterType === 'dateSet';
-  const getOpenedColumnRawValueAt = useCallback(
-    (index: number): unknown => {
-      if (!openedFilterColumn) {
-        return undefined;
-      }
-      const value = getCellValue(rows[index], openedFilterColumn);
-      return openedFilterIsDateSet ? toDateSetKey(value) : value;
-    },
-    [rows, openedFilterColumn, openedFilterIsDateSet],
-  );
-
-  // 変更(DS-4 #1): 候補収集を「通常規模=同期 / 大規模(>閾値)=時間分割の非同期」へ。
-  //   旧実装は open レンダーで同期 useMemo を 1 回走らせる eager 方式で、500k/1M では
-  //   その 1 回(reduce + ソート ≈ 0.4〜1s)が主スレッドを塞いでいました(deferred 化は
-  //   thrash のため不可)。通常規模はフック内の同期 useMemo で従来どおり即時確定し(チラつき無・
-  //   バイト等価)、大規模のみ yieldToMain で時間分割し、収集中は popover を収集中表示にします。
-  //   options 配列は同期/非同期いずれも logic/selectOptions の共有コレクタ経由でバイト等価です。
-  // 追加(async-options): 開いている列が getFilterOptions の対象か(静的 filterOptions 指定列は従来どおり静的、
-  //   候補を使わない種別は対象外)。対象なら rows 収集フックには column=null を渡して収集を止め、非同期ソースの
-  //   結果を使います。優先順位: column.filterOptions > getFilterOptions > rows 自動収集。
-  const openedColumnUsesAsyncOptions =
-    getFilterOptions != null &&
-    openedFilterColumn != null &&
-    isSelectLikeFilterType(openedFilterType) &&
-    !(openedFilterColumn.filterOptions && openedFilterColumn.filterOptions.length > 0);
-  const asyncSelectOptions = useAsyncSelectOptionsSource<T>({
-    columnKey: openedColumnUsesAsyncOptions ? openedFilterColumn.key : null,
-    column: openedColumnUsesAsyncOptions ? openedFilterColumn : null,
+  // 変更(差し込み式 段階 5): 候補の収集(同期 / 時間分割 / getFilterOptions)・派生値・コマンド群と、ポップオーバーの描画は
+  //   フィルターの機能(features/filtering)へ移しました(元の位置で呼ぶので hook の順番は従来どおり)。
+  const renderedFilterPopover = features.filtering.useFilterPopoverContent<T>({
+    filterPopover,
+    views: filterPopoverViews,
+    rows,
     columnFilters: uiState.filters.columnFilters,
-    globalText: globalFilterText,
-    fetch: getFilterOptions ?? null,
+    globalFilterText,
+    getFilterOptions,
+    isServerSide,
+    dispatch,
+    renderFilterDateInput,
+    popoverSlot: slots.popover,
+    portalClassName,
   });
-  const collectedSelectOptions = useColumnSelectOptionsCollector({
-    column: openedColumnUsesAsyncOptions ? null : openedFilterColumn,
-    rowCount: rows.length,
-    getRawValueAt: getOpenedColumnRawValueAt,
-  });
-  const {
-    options: openedFilterSelectOptions,
-    allValues: openedFilterAllValues,
-    status: openedFilterOptionsStatus,
-    progress: openedFilterOptionsProgress,
-    truncated: openedFilterOptionsTruncated,
-    errorMessage: openedFilterOptionsErrorMessage,
-  } = openedColumnUsesAsyncOptions ? asyncSelectOptions.result : collectedSelectOptions;
-
-  // 変更(本体分解 E-4b): popover の派生値(dateSet 正規化候補 / 全値集合 / set 選択状態 / 反転可否 / 複合列か)と
-  //   コマンド群(set のチェック・すべて選択・検索確定・クリア、複合列の条件編集と個別クリア、適用 / クリア)は
-  //   engine/filterPopoverCommands.ts(React 非依存)へ移設しました。
-  const { resolveFilterPopoverDerived } = engine;
-  const filterPopoverDerived = useMemo(
-    () =>
-      resolveFilterPopoverDerived({
-        openedFilterColumn,
-        openedFilterType,
-        openedFilterSelectOptions,
-        openedFilterAllValues,
-        columnFilters: uiState.filters.columnFilters,
-      }),
-    [
-      resolveFilterPopoverDerived,
-      openedFilterColumn,
-      openedFilterType,
-      openedFilterSelectOptions,
-      openedFilterAllValues,
-      uiState.filters.columnFilters,
-    ],
-  );
-  const {
-    openedPopoverSelectOptions,
-    openedSetFilterValue,
-    openedSetSelection,
-  } = filterPopoverDerived;
-  const filterPopoverCommands = engine.filterPopoverCommands;
-  useControllerLifecycle(
-    filterPopoverCommands,
-    {
-      filterPopoverState,
-      openedFilterColumn,
-      openedFilterType,
-      columnFilters: uiState.filters.columnFilters,
-      derived: filterPopoverDerived,
-      dispatch,
-      closeColumnFilterPopover,
-      updateNumberDraft: updateFilterPopoverNumberDraft,
-      updateTextDraft: updateFilterPopoverTextDraft,
-      updateDateDraft: updateFilterPopoverDateDraft,
-    },
-  );
-  const {
-    handleSetFilterValueToggle,
-    handleSetFilterSelectAllChange,
-    handleSetFilterReplaceSelection,
-    clearSetFilterPopoverValue,
-    handleNumberConditionDraftChange,
-    handleTextConditionDraftChange,
-    handleDateConditionDraftChange,
-    handleComboConditionClear,
-    handleComboSelectionClear,
-    applyFilterPopoverValue,
-    clearFilterPopoverValue,
-  } = filterPopoverCommands;
 
   // 変更(UI CSS移行): getHeaderActionButtonStyle(インライン)を撤去しました。
   //   ヘッダーアイコンボタンのスタイルは styles.css(.ssg-icon-btn / --active / :hover)へ移行。
@@ -3781,102 +3423,6 @@ export function useGridShell<T extends object>({
   //           縦横スクロールは外側の共有コンテナが担うため overflow は指定しません。
   //           固定ペインの影が重なるよう position: relative + zIndex: 1（固定ペインより背面）。
 
-  // ── filter popover ────────────────────────────────────
-  // 変更(12-A): set フィルター値はオブジェクトのため String() 直書きを避け、
-  //             現在値テキストをここで type 別に整形します(set は popover 側で
-  //             件数カウンタを表示するため参考表示のみです)。
-  const openedFilterCurrentValueText = (() => {
-    if (!openedFilterColumn) {
-      return '（なし）';
-    }
-    const rawValue = uiState.filters.columnFilters[openedFilterColumn.key];
-    if (isSetColumnFilterValue(rawValue)) {
-      // 変更(反転set): exclude は「除外中」表示にします(total 非依存で正確)。
-      return rawValue.mode === 'exclude'
-        ? `${rawValue.values.length}件を除外中`
-        : `${rawValue.values.length}件を選択中`;
-    }
-    // 追加(記述子化 / number): number 記述子は raw(式そのもの)を現在値表示にします。
-    if (isNumberColumnFilterValue(rawValue)) {
-      return rawValue.raw;
-    }
-    // 変更(記述子化): text/date/select は記述子のため String() 直書きでは "[object Object]" に
-    //   なります。表示文字列は columnFilterValueToDraftText 経由で取り出します(custom は空 → なし)。
-    const text = columnFilterValueToDraftText(rawValue);
-    return text.trim() ? text : '（なし）';
-  })();
-
-  // 追加(preset-opt): 開いている列のプリセット構成(正規形)です。popover のチップ描画・
-  //   候補連動・サマリーのラベル逆引きが共有します(dateSet 以外の列では実質未使用)。
-  const openedDatePresets = openedFilterColumn
-    ? normalizeDateFilterPresets(openedFilterColumn.dateFilterPresets)
-    : undefined;
-
-  // 追加(filter-ext B/C): 複合(numberSet / textSet)popover のフッター上サマリーです
-  //   (「10 以上 かつ 3 件を選択」)。即時適用モデルのため、適用済み記述子からそのまま
-  //   生成すれば表示と結果が常に一致します。
-  const openedComboSummaryText =
-    openedSetFilterValue && isActiveColumnFilterValue(openedSetFilterValue)
-      ? describeColumnFilterValue(openedSetFilterValue, openedDatePresets)
-      : 'フィルターなし';
-
-  // 変更(lazy-popups): 部品(別チャンク)の読み込み前は描画しません(読み込み完了でシェルごと再描画)。
-  const renderedFilterPopover = openedFilterColumn && filterPopoverViews ? (
-    <filterPopoverViews.default
-      popoverSlot={slots.popover}
-      themeClassName={portalClassName}
-      isOpen={Boolean(filterPopoverState)}
-      title={openedFilterColumn.title || openedFilterColumn.key}
-      filterType={openedFilterType ?? 'text'}
-      // 追加(stage ②): serverSide では set/select 候補をクライアントが自動収集できないため、
-      //   候補空時の空表示文言を出し分けます(filterOptions 指定列は従来どおり候補が出ます)。
-      // 変更(async-options): 非同期供給の列では「候補が未指定」文言を出さない(空は本当に空)。
-      isServerSide={isServerSide && !openedColumnUsesAsyncOptions}
-      draftValue={filterPopoverState?.draftValue ?? ''}
-      numberConditionDraft={filterPopoverState?.numberDraft ?? null}
-      onNumberConditionDraftChange={handleNumberConditionDraftChange}
-      textConditionDraft={filterPopoverState?.textDraft ?? null}
-      onTextConditionDraftChange={handleTextConditionDraftChange}
-      dateConditionDraft={filterPopoverState?.dateDraft ?? null}
-      onDateConditionDraftChange={handleDateConditionDraftChange}
-      datePresets={openedDatePresets}
-      // 追加(date-input): 公開契約(FilterDateInputContext)の columnKey はここで付与します
-      //   (popover は列を知らないため)。未指定はネイティブ input(従来挙動)。
-      renderDateInput={
-        renderFilterDateInput
-          ? (ctx) =>
-              renderFilterDateInput({
-                ...ctx,
-                columnKey: openedFilterColumn.key,
-              })
-          : undefined
-      }
-      onComboConditionClear={handleComboConditionClear}
-      onComboSelectionClear={handleComboSelectionClear}
-      comboSummaryText={openedComboSummaryText}
-      currentValueText={openedFilterCurrentValueText}
-      layout={filterPopoverLayout}
-      selectOptions={openedPopoverSelectOptions}
-      setSelection={openedSetSelection}
-      optionsStatus={openedFilterOptionsStatus}
-      optionsProgress={openedFilterOptionsProgress}
-      optionsTruncated={openedFilterOptionsTruncated}
-      optionsErrorMessage={openedFilterOptionsErrorMessage}
-      onOptionsRetry={openedColumnUsesAsyncOptions ? asyncSelectOptions.retry : undefined}
-      popoverRef={filterPopoverRef}
-      textInputRef={filterTextInputRef}
-      selectRef={filterSelectRef}
-      onRequestClose={closeColumnFilterPopover}
-      onDraftChange={updateFilterPopoverDraft}
-      onApply={applyFilterPopoverValue}
-      onClear={clearFilterPopoverValue}
-      onSetValueToggle={handleSetFilterValueToggle}
-      onSetSelectAllChange={handleSetFilterSelectAllChange}
-      onSetClear={clearSetFilterPopoverValue}
-      onSetReplaceSelection={handleSetFilterReplaceSelection}
-    />
-  ) : null;
-
   // ── column menu popover(13-A) ────────────────────────
   // 追加(13-A): 列メニュー popover の描画です(portal で body 直下へ出します)。
   const renderedColumnMenuPopover = openedMenuColumn ? (
@@ -4208,8 +3754,9 @@ export function useGridShell<T extends object>({
       {/* 追加(FM-2): フィルターチップバー(opt-in)。適用中の列フィルターをチップで常時表示します。
           entries / ハンドラはフィルター管理パネル(FM-1)と完全共用です(要約・非表示列の扱いが
           自動で一致)。0 件時はコンポーネント側が null を返すため、条件は prop のみで判定します。 */}
+      {/* 変更(差し込み式 段階 5): 部品は機能セットの filtering から(無い構成の代役は何も描かない)。 */}
       {showFilterChipBar && (
-        <GridFilterChipBar
+        <features.filtering.FilterChipBar
           slot={slots.filterChipBar}
           entries={filterManagerEntries}
           canFilter={columnFilterEnabled}
@@ -4351,19 +3898,21 @@ export function useGridShell<T extends object>({
                 {/*   この div が絶対配置子の containing block となり、中のセルは        */}
                 {/*   headerHeight + start で配置され、sticky ヘッダーの背面を流れます。*/}
                 {/* 追加(label-row ③.5): ラベル行の縦スクロール固定レイヤー(ヘッダー直後の通常フロー / sticky)。 */}
-                <GridStickyLabelLayer
-                  pane="left"
-                  ownsRowHeader
-                  entry={stickyLabelEntry}
-                  headerHeight={headerHeight}
-                  rowHeaderCellStyle={rowHeaderCellStyle}
-                  renderContent={null}
-                  contentStickyLeft={0}
-                  contentWidth={0}
-                  rowClassName={stickyLabelSlot.className}
-                  rowStyle={stickyLabelSlot.style}
-                  slots={slots}
-                />
+                {StickyLabelLayer && (
+                  <StickyLabelLayer
+                    pane="left"
+                    ownsRowHeader
+                    entry={stickyLabelEntry}
+                    headerHeight={headerHeight}
+                    rowHeaderCellStyle={rowHeaderCellStyle}
+                    renderContent={null}
+                    contentStickyLeft={0}
+                    contentWidth={0}
+                    rowClassName={stickyLabelSlot.className}
+                    rowStyle={stickyLabelSlot.style}
+                    slots={slots}
+                  />
+                )}
                 <div
                   style={{
                     position: 'absolute',
@@ -4455,6 +4004,7 @@ export function useGridShell<T extends object>({
                   isServerSide={isServerSide}
                   collapsedGroupKeys={uiState.collapsedGroupKeys}
                   onGroupToggle={handleGroupToggle}
+                  GroupRow={GroupRow}
                   rowHeaderCellStyle={rowHeaderCellStyle}
                   hoveredRowIndex={resolvedHoveredRowIndex}
                   isWholeGridSelected={isWholeGridSelected}
@@ -4569,19 +4119,21 @@ export function useGridShell<T extends object>({
                   ヘッダーは sticky のまま動かしません。原点(0,0)・同サイズの wrapper のため
                   overlay 内部のペインローカル座標は不変で、transform のみ加わります。*/}
               {/* 追加(label-row ③.5): ラベル行の縦スクロール固定レイヤー(ヘッダー直後の通常フロー / sticky)。 */}
-              <GridStickyLabelLayer
-                pane="center"
-                ownsRowHeader={centerOwnsRowHeader}
-                entry={stickyLabelEntry}
-                headerHeight={headerHeight}
-                rowHeaderCellStyle={rowHeaderCellStyle}
-                renderContent={renderLabelRowContent}
-                contentStickyLeft={detailCardStickyLeft}
-                contentWidth={detailCardWidth}
-                rowClassName={stickyLabelSlot.className}
-                rowStyle={stickyLabelSlot.style}
-                slots={slots}
-              />
+              {StickyLabelLayer && (
+                <StickyLabelLayer
+                  pane="center"
+                  ownsRowHeader={centerOwnsRowHeader}
+                  entry={stickyLabelEntry}
+                  headerHeight={headerHeight}
+                  rowHeaderCellStyle={rowHeaderCellStyle}
+                  renderContent={renderLabelRowContent}
+                  contentStickyLeft={detailCardStickyLeft}
+                  contentWidth={detailCardWidth}
+                  rowClassName={stickyLabelSlot.className}
+                  rowStyle={stickyLabelSlot.style}
+                  slots={slots}
+                />
+              )}
               <div
                 style={{
                   position: 'absolute',
@@ -4672,6 +4224,7 @@ export function useGridShell<T extends object>({
                   isServerSide={isServerSide}
                   collapsedGroupKeys={uiState.collapsedGroupKeys}
                   onGroupToggle={handleGroupToggle}
+                  GroupRow={GroupRow}
                   rowHeaderCellStyle={rowHeaderCellStyle}
                   hoveredRowIndex={resolvedHoveredRowIndex}
                   isWholeGridSelected={isWholeGridSelected}
@@ -4785,19 +4338,21 @@ export function useGridShell<T extends object>({
                 {/* 変更(10-G): 左ペインと同様、overlay + body をまとめる絶対配置レイヤーです。*/}
                 {/*   transform 同期は廃止し、縦スクロールは共有コンテナが担います。         */}
                 {/* 追加(label-row ③.5): ラベル行の縦スクロール固定レイヤー(ヘッダー直後の通常フロー / sticky)。 */}
-                <GridStickyLabelLayer
-                  pane="right"
-                  ownsRowHeader={false}
-                  entry={stickyLabelEntry}
-                  headerHeight={headerHeight}
-                  rowHeaderCellStyle={rowHeaderCellStyle}
-                  renderContent={null}
-                  contentStickyLeft={0}
-                  contentWidth={0}
-                  rowClassName={stickyLabelSlot.className}
-                  rowStyle={stickyLabelSlot.style}
-                  slots={slots}
-                />
+                {StickyLabelLayer && (
+                  <StickyLabelLayer
+                    pane="right"
+                    ownsRowHeader={false}
+                    entry={stickyLabelEntry}
+                    headerHeight={headerHeight}
+                    rowHeaderCellStyle={rowHeaderCellStyle}
+                    renderContent={null}
+                    contentStickyLeft={0}
+                    contentWidth={0}
+                    rowClassName={stickyLabelSlot.className}
+                    rowStyle={stickyLabelSlot.style}
+                    slots={slots}
+                  />
+                )}
                 <div
                   style={{
                     position: 'absolute',
@@ -4889,6 +4444,7 @@ export function useGridShell<T extends object>({
                   isServerSide={isServerSide}
                   collapsedGroupKeys={uiState.collapsedGroupKeys}
                   onGroupToggle={handleGroupToggle}
+                  GroupRow={GroupRow}
                   rowHeaderCellStyle={rowHeaderCellStyle}
                   hoveredRowIndex={resolvedHoveredRowIndex}
                   isWholeGridSelected={isWholeGridSelected}
@@ -5017,74 +4573,9 @@ export function useGridShell<T extends object>({
           />
         )}
 
-        {/* 追加(batch 9): SSRM エラーバー(getRows 失敗の再試行 UI)です。autosize / filter overlay と
-            同じくシェルへの絶対配置ですが、下部中央に浮かべ、ボタン操作のため pointer-events は
-            生かします(バー自身のみ。行操作は遮りません)。「閉じる」は同一 loadError 参照の間だけ
-            有効で、新しい失敗(参照変化)で再表示されます。
-            変更(SSRM 書き戻し): 保存失敗バー(writeError)と同時表示できるよう、絶対配置を
-            縦積みコンテナ(.ssg-ssrm-error-bars)へ移しました(単独表示の見た目は従来と同一)。 */}
-        {isServerSide &&
-          ((serverSide.loadError !== null &&
-            serverSide.loadError !== dismissedLoadError) ||
-            (serverSide.writeError !== null &&
-              serverSide.writeError !== dismissedWriteError)) && (
-            <div className="ssg-ssrm-error-bars">
-              {serverSide.loadError !== null &&
-                serverSide.loadError !== dismissedLoadError && (
-                  <div
-                    className={cx('ssg-ssrm-error-bar', slots.errorBar?.className)}
-                    style={slots.errorBar?.style}
-                    role="alert"
-                  >
-                    <span className="ssg-ssrm-error-bar-dot" aria-hidden="true" />
-                    <span className="ssg-ssrm-error-bar-msg">
-                      行の取得に失敗しました(
-                      {serverSide.loadError.failedBlockCount} ブロック)
-                    </span>
-                    <button
-                      type="button"
-                      className="ssg-ssrm-error-bar-retry"
-                      onClick={serverSide.retryFailedBlocks}
-                    >
-                      再試行
-                    </button>
-                    <button
-                      type="button"
-                      className="ssg-ssrm-error-bar-close"
-                      aria-label="エラー通知を閉じる"
-                      onClick={() => setDismissedLoadError(serverSide.loadError)}
-                    >
-                      ×
-                    </button>
-                  </div>
-                )}
-              {/* 追加(SSRM 書き戻し): 保存失敗バーです。フック側でロールバック済みのため再試行は
-                  提供しません(値は既に元へ戻っている)。「閉じる」は同一 writeError 参照の間だけ
-                  有効で、新しい書き戻し失敗(参照変化)で再表示されます。 */}
-              {serverSide.writeError !== null &&
-                serverSide.writeError !== dismissedWriteError && (
-                  <div
-                    className={cx('ssg-ssrm-error-bar', slots.errorBar?.className)}
-                    style={slots.errorBar?.style}
-                    role="alert"
-                  >
-                    <span className="ssg-ssrm-error-bar-dot" aria-hidden="true" />
-                    <span className="ssg-ssrm-error-bar-msg">
-                      変更の保存に失敗しました(
-                      {serverSide.writeError.failedRowCount} 行)。値を元に戻しました
-                    </span>
-                    <button
-                      type="button"
-                      className="ssg-ssrm-error-bar-close"
-                      aria-label="保存エラー通知を閉じる"
-                      onClick={() => setDismissedWriteError(serverSide.writeError)}
-                    >
-                      ×
-                    </button>
-                  </div>
-                )}
-            </div>
-          )}
+        {/* 追加(batch 9): SSRM エラーバー(getRows 失敗の再試行 UI)/ 保存失敗バー(SSRM 書き戻し)です。
+            変更(差し込み式 段階 5): 中身は機能セットの serverSide から(無い構成の代役は何も描かない)。 */}
+        {isServerSide && serverSide.renderErrorBars(slots.errorBar)}
         {/* 追加(G-2): IME オンのままの直接入力の入力受け(imeDirectInput 有効時のみ)。非制御で、値 / 位置 / 変換中の
             表示はコントローラが直接扱います。Tab の順番には入れません(タブストップはシェルのまま)。 */}
         {imeDirectInputEnabled ? (

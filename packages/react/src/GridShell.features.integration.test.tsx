@@ -22,10 +22,15 @@ import { selectionAggregatesFeature } from './features/selectionAggregates';
 import { motionExtrasFeature } from './features/motionExtras';
 import { exportFeature } from './features/export';
 import { autoHeightFeature } from './features/autoHeight';
+import { filteringFeature } from './features/filtering';
+import { serverSideFeature } from './features/serverSide';
+import { labelRowFeature } from './features/labelRow';
+import { groupingFeature } from './features/grouping';
 import { installJsdomLayoutStubs } from './testing';
 import { resetUnregisteredFeatureWarnings } from '@ishibashi0112/spreadsheet-grid-core/logic/featureWarnings';
 import { ROW_DRAG_HANDLE_COLUMN_KEY } from '@ishibashi0112/spreadsheet-grid-core/logic/rowReorder';
-import type { GridColumn, SpreadsheetGridHandle } from './model/gridTypes';
+import { GRID_STATE_VERSION } from '@ishibashi0112/spreadsheet-grid-core/logic/gridState';
+import type { GridColumn, ServerSideDataSource, SpreadsheetGridHandle } from './model/gridTypes';
 
 type Row = { id: number; name: string };
 const rows: Row[] = [
@@ -42,10 +47,11 @@ const RowDragOnlyGrid = createSpreadsheetGrid({ features: { rowDrag: rowDragFeat
 const ScrollHintOnlyGrid = createSpreadsheetGrid({ features: { scrollHint: scrollHintFeature } });
 // 列幅の自動調整の項目は列メニューに出るため、列メニューと組み合わせて確かめます。
 const ColumnMenuOnlyGrid = createSpreadsheetGrid({ features: { columnMenu: columnMenuFeature } });
-// ツールパネルを開く入口の多くは列メニューにあるため、列メニューと組み合わせて確かめます。
-const ToolPanelOnlyGrid = createSpreadsheetGrid({ features: { toolPanel: toolPanelFeature } });
+// ツールパネルを開く入口の多くは列メニューにあるため、列メニューと組み合わせて確かめます。Filters チップとフィルター
+//   タブは列フィルターがあるときだけ出るため、フィルターの機能も入れます。
+const ToolPanelFilteringGrid = createSpreadsheetGrid({ features: { toolPanel: toolPanelFeature, filtering: filteringFeature } });
 const ColumnMenuToolPanelGrid = createSpreadsheetGrid({
-  features: { columnMenu: columnMenuFeature, toolPanel: toolPanelFeature },
+  features: { columnMenu: columnMenuFeature, toolPanel: toolPanelFeature, filtering: filteringFeature },
 });
 const ColumnMenuAutosizeGrid = createSpreadsheetGrid({
   features: { columnMenu: columnMenuFeature, columnAutosize: columnAutosizeFeature },
@@ -58,6 +64,12 @@ const SelectionAggregatesOnlyGrid = createSpreadsheetGrid({ features: { selectio
 const MotionExtrasOnlyGrid = createSpreadsheetGrid({ features: { motionExtras: motionExtrasFeature } });
 const ExportOnlyGrid = createSpreadsheetGrid({ features: { export: exportFeature } });
 const AutoHeightOnlyGrid = createSpreadsheetGrid({ features: { autoHeight: autoHeightFeature } });
+const FilteringOnlyGrid = createSpreadsheetGrid({ features: { filtering: filteringFeature } });
+const ServerSideOnlyGrid = createSpreadsheetGrid({ features: { serverSide: serverSideFeature } });
+const LabelRowOnlyGrid = createSpreadsheetGrid({ features: { labelRow: labelRowFeature } });
+const GroupingOnlyGrid = createSpreadsheetGrid({ features: { grouping: groupingFeature } });
+// 列フィルターを開く入口(「フィルター…」)は列メニューにあるため、列メニューと組み合わせて確かめます。
+const ColumnMenuFilteringGrid = createSpreadsheetGrid({ features: { columnMenu: columnMenuFeature, filtering: filteringFeature } });
 
 let restore: () => void;
 beforeAll(() => {
@@ -351,8 +363,9 @@ describe('差し込み式: toolPanel', () => {
   it('機能セットに無ければパネルを開く入口(列メニューの 3 項目 / Filters チップ)を出さず、openFilterManager は開発時に 1 回だけ警告する', () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     const ref = createRef<SpreadsheetGridHandle<Row>>();
+    // フィルターは入れておく(フィルターが無いと列フィルターごと切れるため、ツールパネルの有無を見られない)。
     const { container } = render(
-      <ColumnMenuOnlyGrid ref={ref} rows={rows} columns={filterColumns} rowKeyGetter={(r) => r.id} onColumnsChange={() => {}} />,
+      <ColumnMenuFilteringGrid ref={ref} rows={rows} columns={filterColumns} rowKeyGetter={(r) => r.id} onColumnsChange={() => {}} />,
     );
     expect(container.querySelector('[aria-label="フィルター管理パネルを開閉"]')).toBeNull();
     openColumnMenu(container);
@@ -389,11 +402,11 @@ describe('差し込み式: toolPanel', () => {
     expect(panelOpen()).toBe(true);
   });
 
-  it('toolPanel だけの構成でも Filters チップでパネルが開き、enableColumnMenu は「列」タブの有無に効く(警告しない)', () => {
+  it('列メニューの無い構成(ツールパネル + フィルター)でも Filters チップでパネルが開き、enableColumnMenu は「列」タブの有無に効く(警告しない)', () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     const tabLabels = () => Array.from(document.querySelectorAll('[role="tab"]')).map((el) => el.textContent);
     const view = render(
-      <ToolPanelOnlyGrid rows={rows} columns={filterColumns} rowKeyGetter={(r) => r.id} enableColumnMenu onColumnsChange={() => {}} />,
+      <ToolPanelFilteringGrid rows={rows} columns={filterColumns} rowKeyGetter={(r) => r.id} enableColumnMenu onColumnsChange={() => {}} />,
     );
     // 列メニューの機能は無いので ⋮ ボタンは出ない。
     expect(view.container.querySelector('[aria-label="列メニュー"]')).toBeNull();
@@ -406,7 +419,7 @@ describe('差し込み式: toolPanel', () => {
     expect(tabLabels().includes('列')).toBe(true);
     view.unmount();
     render(
-      <ToolPanelOnlyGrid
+      <ToolPanelFilteringGrid
         rows={rows}
         columns={filterColumns}
         rowKeyGetter={(r) => r.id}
@@ -723,5 +736,322 @@ describe('差し込み式: autoHeight', () => {
     );
     expect(container.querySelector('[data-autoheight-cell]')).not.toBeNull();
     expect(firstRowHeight(container)).toBe('600px');
+  });
+});
+
+describe('差し込み式: filtering', () => {
+  const filterColumns: GridColumn<Row>[] = [{ key: 'name', title: '名前', width: 160, filterType: 'text' }];
+  const bodyTexts = (container: HTMLElement) =>
+    Array.from(container.querySelectorAll('.ssg-body-cell[data-ssg-col-key="name"]')).map((cell) => cell.textContent);
+  const searchBox = (container: HTMLElement) => container.querySelector<HTMLInputElement>('input.ssg-bar-input');
+  const openColumnMenu = (container: HTMLElement) => {
+    const menuButton = container.querySelector<HTMLElement>('[aria-label="列メニュー"]');
+    if (!menuButton) throw new Error('列メニューのボタンがありません');
+    act(() => {
+      fireEvent.pointerDown(menuButton, { button: 0 });
+    });
+  };
+  const menuLabels = () => Array.from(document.querySelectorAll('.ssg-menu-label')).map((el) => el.textContent);
+  const columnFilterState = {
+    version: GRID_STATE_VERSION,
+    columnWidths: {},
+    filters: { globalText: '', columnFilters: { name: { kind: 'text' as const, value: 'be' } } },
+    sort: [],
+  };
+
+  it('機能セットに無ければ検索欄と列メニューの「フィルター…」を出さず行を絞り込まない。明示した prop だけ開発時に 1 回ずつ警告する', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const onFiltersChange = vi.fn();
+    const { container } = render(
+      <ColumnMenuOnlyGrid
+        rows={rows}
+        columns={filterColumns}
+        rowKeyGetter={(r) => r.id}
+        enableGlobalFilter
+        onFiltersChange={onFiltersChange}
+        showFilterChipBar
+        globalFilterPlaceholder="検索"
+      />,
+    );
+    expect(searchBox(container)).toBeNull();
+    expect(container.querySelector('.ssg-filter-chip-bar')).toBeNull();
+    expect(bodyTexts(container)).toEqual(['alpha', 'beta']);
+    openColumnMenu(container);
+    expect(menuLabels()).toContain('昇順で並び替え');
+    expect(menuLabels()).not.toContain('フィルター…');
+    for (const prop of [
+      '`enableGlobalFilter`',
+      '`columns[].filterType`',
+      '`showFilterChipBar`',
+      '`globalFilterPlaceholder`',
+    ]) {
+      expect(warn.mock.calls.filter(([message]) => String(message).includes(prop))).toHaveLength(1);
+    }
+    expect(warn.mock.calls.filter(([message]) => String(message).includes('`enableColumnFilter`'))).toHaveLength(0);
+    // onFiltersChange は機能が無くても applyState で呼ばれるので警告しない。
+    expect(warn.mock.calls.filter(([message]) => String(message).includes('`onFiltersChange`'))).toHaveLength(0);
+  });
+
+  it('機能セットに無い構成で applyState に渡したフィルターは行に効かず、開発時に 1 回だけ警告する', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const ref = createRef<SpreadsheetGridHandle<Row>>();
+    const { container } = render(<MinimalGrid ref={ref} rows={rows} columns={columns} rowKeyGetter={(r) => r.id} />);
+    act(() => {
+      ref.current?.applyState(columnFilterState);
+    });
+    act(() => {
+      ref.current?.applyState({ ...columnFilterState, filters: { globalText: 'al', columnFilters: {} } });
+    });
+    expect(bodyTexts(container)).toEqual(['alpha', 'beta']);
+    expect(warn.mock.calls.filter(([message]) => String(message).includes('フィルターの状態'))).toHaveLength(1);
+  });
+
+  it('フィルターの prop を使わなければ警告しない', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    render(<MinimalGrid rows={rows} columns={columns} rowKeyGetter={(r) => r.id} />);
+    expect(warn).not.toHaveBeenCalled();
+  });
+
+  it('filtering だけを入れた構成では検索欄で行が絞り込まれ、列フィルター(状態の復元)とチップバーも効く', () => {
+    const ref = createRef<SpreadsheetGridHandle<Row>>();
+    const onFiltersChange = vi.fn();
+    const { container } = render(
+      <FilteringOnlyGrid
+        ref={ref}
+        rows={rows}
+        columns={filterColumns}
+        rowKeyGetter={(r) => r.id}
+        onFiltersChange={onFiltersChange}
+        showFilterChipBar
+      />,
+    );
+    const input = searchBox(container);
+    expect(input).not.toBeNull();
+    act(() => {
+      fireEvent.change(input as HTMLInputElement, { target: { value: 'alp' } });
+    });
+    expect(bodyTexts(container)).toEqual(['alpha']);
+    act(() => {
+      fireEvent.change(input as HTMLInputElement, { target: { value: '' } });
+    });
+    expect(bodyTexts(container)).toEqual(['alpha', 'beta']);
+    act(() => {
+      ref.current?.applyState(columnFilterState);
+    });
+    expect(bodyTexts(container)).toEqual(['beta']);
+    expect(container.querySelector('.ssg-header-filtered-mark')).not.toBeNull();
+    expect(onFiltersChange).toHaveBeenCalled();
+    // チップバーに適用中のフィルターが出て、× で外せる。
+    expect(container.querySelector('.ssg-filter-chip-bar')?.textContent).toContain('名前');
+    act(() => {
+      fireEvent.click(container.querySelector('[aria-label="名前 のフィルターをクリア"]') as HTMLElement);
+    });
+    expect(bodyTexts(container)).toEqual(['alpha', 'beta']);
+    expect(container.querySelector('.ssg-filter-chip-bar')).toBeNull();
+  });
+
+  it('列メニューと組み合わせると「フィルター…」でポップオーバーが開き、候補のチェックで絞り込める', () => {
+    const setColumns: GridColumn<Row>[] = [{ key: 'name', title: '名前', width: 160, filterType: 'set' }];
+    const { container } = render(<ColumnMenuFilteringGrid rows={rows} columns={setColumns} rowKeyGetter={(r) => r.id} />);
+    openColumnMenu(container);
+    const filterItem = Array.from(document.querySelectorAll<HTMLButtonElement>('.ssg-menu-item')).find((item) =>
+      item.textContent?.includes('フィルター…'),
+    );
+    expect(filterItem).toBeDefined();
+    act(() => {
+      fireEvent.click(filterItem as HTMLButtonElement);
+    });
+    const popover = document.querySelector<HTMLElement>('.ssg-filter-popover');
+    expect(popover).not.toBeNull();
+    // 候補は行から集まる(alpha / beta)。alpha のチェックを外すと beta だけになる。
+    const alphaOption = Array.from(popover?.querySelectorAll<HTMLElement>('.ssg-filter-option') ?? []).find(
+      (option) => option.textContent === 'alpha',
+    );
+    expect(alphaOption).toBeDefined();
+    act(() => {
+      fireEvent.click(alphaOption?.querySelector('input') as HTMLInputElement);
+    });
+    expect(bodyTexts(container)).toEqual(['beta']);
+  });
+});
+
+describe('差し込み式: serverSide', () => {
+  const nameTexts = (container: HTMLElement) =>
+    Array.from(container.querySelectorAll('.ssg-body-cell[data-ssg-col-key="name"]')).map((cell) => cell.textContent);
+  const createDataSource = (options?: { fail?: boolean }) => {
+    const getRows = vi.fn<ServerSideDataSource<Row>['getRows']>((params) =>
+      options?.fail
+        ? Promise.reject(new Error('失敗'))
+        : Promise.resolve({ rows: rows.slice(params.startIndex, params.endIndex), totalRowCount: rows.length }),
+    );
+    return { getRows } satisfies ServerSideDataSource<Row>;
+  };
+  const flush = async () => {
+    await act(async () => {
+      for (let i = 0; i < 4; i += 1) {
+        await Promise.resolve();
+      }
+    });
+  };
+
+  it('機能セットに無ければ dataSource を渡しても取得せず空の表(clientSide)のまま、開発時に 1 回だけ警告する', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const dataSource = createDataSource();
+    const { container } = render(<MinimalGrid columns={columns} dataSource={dataSource} rowKeyGetter={(r) => r.id} />);
+    await flush();
+    expect(dataSource.getRows).not.toHaveBeenCalled();
+    expect(nameTexts(container)).toEqual([]);
+    expect(warn.mock.calls.filter(([message]) => String(message).includes('`dataSource`'))).toHaveLength(1);
+  });
+
+  it('serverSide だけを入れた構成では getRows で行を取得して描画し、失敗するとエラーバーが出る', async () => {
+    const dataSource = createDataSource();
+    const view = render(<ServerSideOnlyGrid columns={columns} dataSource={dataSource} rowKeyGetter={(r) => r.id} />);
+    await flush();
+    expect(dataSource.getRows).toHaveBeenCalled();
+    expect(nameTexts(view.container)).toEqual(['alpha', 'beta']);
+    view.unmount();
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    const failing = createDataSource({ fail: true });
+    const { container } = render(<ServerSideOnlyGrid columns={columns} dataSource={failing} rowKeyGetter={(r) => r.id} />);
+    await flush();
+    expect(container.querySelector('.ssg-ssrm-error-bar')?.textContent).toContain('行の取得に失敗しました');
+  });
+});
+
+describe('差し込み式: labelRow', () => {
+  type LRow = { id: string; name: string; kind?: 'label' };
+  // 2 セクション × 5 行(縦スクロール固定を確かめるため、1 セクション目の途中までスクロールする)。
+  const labelRows: LRow[] = [];
+  for (let s = 1; s <= 2; s += 1) {
+    labelRows.push({ id: `s${s}`, name: `セクション ${s}`, kind: 'label' });
+    for (let i = 1; i <= 5; i += 1) {
+      labelRows.push({ id: `${s}-${i}`, name: `row ${s}-${i}` });
+    }
+  }
+  const labelColumns: GridColumn<LRow>[] = [{ key: 'name', title: '名前', width: 160 }];
+  const labelRow = { isLabelRow: (row: LRow) => row.kind === 'label', getLabel: (row: LRow) => row.name, sticky: true };
+  const bodyTexts = (container: HTMLElement) =>
+    Array.from(container.querySelectorAll('.ssg-body-cell[data-ssg-col-key="name"]')).map((cell) => cell.textContent);
+  const scrollTo = async (container: HTMLElement, top: number) => {
+    const scrollEl = container.querySelector<HTMLElement>('.ssg-scroll-container');
+    if (!scrollEl) throw new Error('スクロールコンテナがありません');
+    await act(async () => {
+      scrollEl.scrollTop = top;
+      scrollEl.dispatchEvent(new Event('scroll'));
+    });
+    await act(async () => {
+      await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+    });
+  };
+
+  it('機能セットに無ければラベル行を作らずデータ行として並べ、labelRow は開発時に 1 回だけ警告する', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const { container } = render(
+      <MinimalGrid rows={labelRows} columns={labelColumns} rowKeyGetter={(r) => r.id} rowHeight={30} labelRow={labelRow} />,
+    );
+    expect(container.querySelector('[data-ssg-label-row]')).toBeNull();
+    expect(bodyTexts(container).slice(0, 3)).toEqual(['セクション 1', 'row 1-1', 'row 1-2']);
+    await scrollTo(container, 45);
+    expect(container.querySelector('[data-ssg-sticky-label]')).toBeNull();
+    expect(warn.mock.calls.filter(([message]) => String(message).includes('`labelRow`'))).toHaveLength(1);
+  });
+
+  it('機能セットに無ければエクスポートでもラベル行をデータ行として出す(raw / view とも)', () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const ref = createRef<SpreadsheetGridHandle<LRow>>();
+    render(<ExportOnlyGrid ref={ref} rows={labelRows} columns={labelColumns} rowKeyGetter={(r) => r.id} labelRow={labelRow} />);
+    for (const scope of ['raw', 'view'] as const) {
+      const lines = ref.current?.exportCsv({ scope }).split('\r\n') ?? [];
+      expect(lines.slice(0, 3)).toEqual(['名前', 'セクション 1', 'row 1-1']);
+      expect(lines).toHaveLength(13);
+    }
+  });
+
+  it('labelRow だけを入れた構成ではラベル行が帯になり(データ行だけがセルを持つ)、縦スクロールで固定される', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const { container } = render(
+      <LabelRowOnlyGrid rows={labelRows} columns={labelColumns} rowKeyGetter={(r) => r.id} rowHeight={30} labelRow={labelRow} />,
+    );
+    const labels = Array.from(container.querySelectorAll('.ssg-body-row[data-ssg-label-row] .ssg-label-row-text')).map(
+      (el) => el.textContent,
+    );
+    expect(labels).toEqual(['セクション 1', 'セクション 2']);
+    expect(bodyTexts(container).slice(0, 2)).toEqual(['row 1-1', 'row 1-2']);
+    expect(container.querySelector('[data-ssg-sticky-label]')).toBeNull();
+    await scrollTo(container, 45);
+    const sticky = container.querySelector<HTMLElement>('[data-pane="center"][data-ssg-sticky-label]');
+    expect(sticky?.dataset.ssgStickyLabelRowIndex).toBe('0');
+    expect(warn).not.toHaveBeenCalled();
+  });
+});
+
+describe('差し込み式: grouping', () => {
+  type GRow = { id: number; name: string; region: string; amount: number };
+  const groupRows: GRow[] = [
+    { id: 1, name: 'alpha', region: '東', amount: 10 },
+    { id: 2, name: 'beta', region: '西', amount: 20 },
+    { id: 3, name: 'gamma', region: '東', amount: 30 },
+  ];
+  const groupColumns: GridColumn<GRow>[] = [
+    { key: 'region', title: '地域', width: 100, rowGroup: true },
+    { key: 'name', title: '名前', width: 120 },
+    { key: 'amount', title: '金額', width: 100, aggFunc: 'sum' },
+  ];
+  const groupLabels = (container: HTMLElement) =>
+    Array.from(container.querySelectorAll('[data-ssg-group-row] .ssg-group-label')).map((el) => el.textContent);
+  const cellTexts = (container: HTMLElement, key: string) =>
+    Array.from(container.querySelectorAll(`.ssg-body-cell[data-ssg-col-key="${key}"]`)).map((cell) => cell.textContent);
+
+  it('機能セットに無ければグループ行を作らず rowGroup 列もそのまま表示し、columns[].rowGroup は開発時に 1 回だけ警告する', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const { container } = render(<MinimalGrid rows={groupRows} columns={groupColumns} rowKeyGetter={(r) => r.id} />);
+    expect(container.querySelector('[data-ssg-group-row]')).toBeNull();
+    expect(cellTexts(container, 'region')).toEqual(['東', '西', '東']);
+    expect(cellTexts(container, 'name')).toEqual(['alpha', 'beta', 'gamma']);
+    expect(warn.mock.calls.filter(([message]) => String(message).includes('`columns[].rowGroup`'))).toHaveLength(1);
+  });
+
+  it('機能セットに無ければグループの命令的 API は空 / 何もせず、エクスポートは素の行を出す', () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const ref = createRef<SpreadsheetGridHandle<GRow>>();
+    const { container } = render(<ExportOnlyGrid ref={ref} rows={groupRows} columns={groupColumns} rowKeyGetter={(r) => r.id} />);
+    expect(ref.current?.getGroupRows()).toEqual([]);
+    act(() => {
+      ref.current?.collapseAllGroups();
+      ref.current?.setGroupCollapsed('東', true);
+      ref.current?.expandAllGroups();
+    });
+    expect(cellTexts(container, 'name')).toEqual(['alpha', 'beta', 'gamma']);
+    expect(ref.current?.exportCsv().split('\r\n')).toEqual(['地域,名前,金額', '東,alpha,10', '西,beta,20', '東,gamma,30']);
+  });
+
+  it('serverSide で動く構成では grouping を勧めない(serverSide は rowGroup に未対応のため)', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const dataSource: ServerSideDataSource<GRow> = {
+      getRows: (params) =>
+        Promise.resolve({ rows: groupRows.slice(params.startIndex, params.endIndex), totalRowCount: groupRows.length }),
+    };
+    render(<ServerSideOnlyGrid columns={groupColumns} dataSource={dataSource} rowKeyGetter={(r) => r.id} />);
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(warn.mock.calls.filter(([message]) => String(message).includes('`columns[].rowGroup`'))).toHaveLength(0);
+  });
+
+  it('grouping だけを入れた構成ではグループ行(集計込み)が出て、開閉できる', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const { container } = render(<GroupingOnlyGrid rows={groupRows} columns={groupColumns} rowKeyGetter={(r) => r.id} />);
+    expect(groupLabels(container)).toEqual(['東', '西']);
+    expect(cellTexts(container, 'name').filter((text) => text !== '')).toEqual(['alpha', 'gamma', 'beta']);
+    const eastAmount = container.querySelector('[data-ssg-group-row] .ssg-body-cell[data-ssg-col-key="amount"]');
+    expect(eastAmount?.textContent).toBe('40');
+    const toggle = container.querySelector<HTMLElement>('[data-ssg-group-row] .ssg-group-toggle');
+    if (!toggle) throw new Error('開閉ボタンがありません');
+    act(() => {
+      fireEvent.click(toggle);
+    });
+    expect(cellTexts(container, 'name').filter((text) => text !== '')).toEqual(['beta']);
+    expect(warn).not.toHaveBeenCalled();
   });
 });

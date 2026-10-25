@@ -41,6 +41,20 @@ export const warnUnregisteredFeatureMethod = (method: string): void => {
   );
 };
 
+// 追加(差し込み式 段階 5): state: 状態としては受け取ったのに、機能セットに無いため効かないもの(例: フィルターの機能が
+//   無い構成で applyState に渡したフィルター)。1 つにつき 1 回だけ。
+export const warnUnregisteredFeatureState = (state: string): void => {
+  if (process.env.NODE_ENV === 'production') {
+    return;
+  }
+  const key = `state:${state}`;
+  if (warnedProps.has(key)) {
+    return;
+  }
+  warnedProps.add(key);
+  console.warn(`[spreadsheet-grid] ${state}が設定されましたが、その機能が機能セットに入っていないため効きません。` + HINT);
+};
+
 // テスト用: 警告済みの記録を消します(同じ prop の警告をテストごとに確かめるため)。
 export const resetUnregisteredFeatureWarnings = (): void => {
   warnedProps.clear();

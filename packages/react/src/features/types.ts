@@ -21,10 +21,14 @@ import type {
 import type { FillHandleControllerArgs } from '@ishibashi0112/spreadsheet-grid-core/controllers/fillHandleController';
 import type { ColumnHeaderDragController } from '@ishibashi0112/spreadsheet-grid-core/controllers/columnHeaderDragController';
 import type { ColumnAutosizeRunnerArgs } from '@ishibashi0112/spreadsheet-grid-core/controllers/columnAutosizeRunner';
+import type { DateRolloverStore } from '@ishibashi0112/spreadsheet-grid-core/controllers/dateRolloverStore';
+import type { RowOrder } from '@ishibashi0112/spreadsheet-grid-core/logic/filtering';
+import type { GridUiAction } from '@ishibashi0112/spreadsheet-grid-core/model/gridActions';
 import type { ColumnPane, GridPaneLayout } from '@ishibashi0112/spreadsheet-grid-core/logic/geometry';
 import type { DetailRowExtra, RowMetrics } from '@ishibashi0112/spreadsheet-grid-core/logic/verticalGeometry';
 import type {
   CellCoord,
+  ColumnFilterValue,
   GridColumn,
   GridContextMenuItem,
   GridContextMenuParams,
@@ -32,12 +36,16 @@ import type {
   GridSelection,
   GridSelectionAggregates,
   GridUiState,
+  GlobalFilterStatus,
   RowModel,
   SpreadsheetGridProps,
 } from '../model/gridTypes';
 import type { GridFindBar } from '../view/GridFindBar';
 import type { GridScrollHint } from '../view/GridScrollHint';
 import type { GridTotalRow } from '../view/GridTotalRow';
+import type { GridBodyLabelRow } from '../view/GridBodyLabelRow';
+import type { GridBodyGroupRow } from '../view/GridBodyGroupRow';
+import type { GridStickyLabelLayer } from '../view/GridStickyLabelLayer';
 import type { GridChip } from '../view/GridChip';
 import type { CopyRangeOverlay } from '../CopyRangeOverlay';
 import type { ColumnHoverOverlay } from '../ColumnHoverOverlay';
@@ -47,8 +55,12 @@ import type { UseColumnHeaderDragControllerArgs } from '../hooks/useColumnHeader
 import type { UseRowDragControllerArgs } from '../hooks/useRowDragController';
 import type { UseColumnMenuControllerArgs, UseColumnMenuControllerResult } from '../hooks/useColumnMenuController';
 import type { ColumnMenuPopover } from '../view/ColumnMenuPopover';
+import type { GridFilterChipBar } from '../view/GridFilterChipBar';
+import type { FilterManagementAddableColumn, FilterManagementEntry } from '../view/FilterManagementPanel';
 import type { UseToolPanelControllerArgs, UseToolPanelControllerResult } from '../hooks/useToolPanelController';
-import type { ToolPanelViews, UseLazyModuleOptions } from '../view/lazyPopups';
+import type { FilterPopoverViews, ToolPanelViews, UseLazyModuleOptions } from '../view/lazyPopups';
+import type { useFilterPopoverController } from '../hooks/useFilterPopoverController';
+import type { UseServerSideRowModelParams, UseServerSideRowModelResult } from '../hooks/useServerSideRowModel';
 
 // フィルハンドル(fillHandle)の hook が受け取るシェルの値です(シェルにあったときの自由変数そのまま)。
 export type FillHandleFeatureArgs<T> = {
@@ -92,6 +104,88 @@ export type FillHandleFeatureResult = {
   renderLayer: (pane: ColumnPane, leadingWidth: number) => ReactNode;
   // ルートの末尾に置く、埋めたあとのメニュー / ドラッグ中の値のツールチップ(ポータル)。
   renderPortals: () => ReactNode;
+};
+
+// フィルター(filtering)の行の絞り込みの hook が受け取るシェルの値と返す値です。
+export type FilterOrderFeatureArgs<T> = {
+  rows: T[];
+  // 恒等 order(ラベル行があればラベル行を除いたもの)。
+  baseOrder: RowOrder;
+  // グローバルフィルターの対象列(表示列)/ 相対日付プリセットの範囲の解決に使う列(非表示列を含む)。
+  visibleColumns: GridColumn<T>[];
+  effectiveColumns: GridColumn<T>[];
+  globalFilterText: string;
+  globalFilterEnabled: boolean;
+  columnFilterEnabled: boolean;
+  columnFilters: Record<string, ColumnFilterValue>;
+  deferredColumnFilters: Record<string, ColumnFilterValue>;
+  manualFiltering: boolean;
+  isServerSide: boolean;
+  // エンジンの日付の変わり目の見張り(engine.dateRollover)。
+  dateRollover: DateRolloverStore;
+};
+export type FilterOrderFeatureResult = {
+  // グローバルフィルター済み order(列フィルターとソートは行パイプラインが掛ける)。
+  globalFilteredOrder: RowOrder;
+  globalFilterStatus: GlobalFilterStatus;
+  globalFilterProgress: number;
+  // 相対日付プリセットの範囲のキー(行パイプライン / serverSide の queryKey の入力。無ければ '')。
+  relativeDateKey: string;
+};
+
+// 列フィルターのポップオーバー(filtering)の controller の接続が受け取るシェルの値と返す値です(返す値は controller の
+//   hook の戻り値そのまま)。
+export type FilterPopoverFeatureArgs<T> = {
+  visibleColumns: GridColumn<T>[];
+  columnFilters: Record<string, ColumnFilterValue>;
+  columnFilterEnabled: boolean;
+  gridRootRef: RefObject<HTMLDivElement | null>;
+  isServerSide: boolean;
+  rows: T[];
+};
+export type FilterPopoverFeatureResult<T> = ReturnType<typeof useFilterPopoverController<T>>;
+// ポップオーバーの中身(候補の収集・派生値・コマンド群・描画)の hook が受け取るシェルの値です。
+export type FilterPopoverContentFeatureArgs<T> = {
+  filterPopover: FilterPopoverFeatureResult<T>;
+  // ポップオーバーの部品(読み込み前は null = 描画しない)。
+  views: FilterPopoverViews | null;
+  rows: T[];
+  columnFilters: Record<string, ColumnFilterValue>;
+  globalFilterText: string;
+  getFilterOptions: SpreadsheetGridProps<T>['getFilterOptions'];
+  isServerSide: boolean;
+  dispatch: (action: GridUiAction) => void;
+  renderFilterDateInput: SpreadsheetGridProps<T>['renderFilterDateInput'];
+  popoverSlot: GridResolvedSlots['popover'];
+  portalClassName: string | undefined;
+};
+
+// 適用中フィルターの一覧 / 候補列 / ジャンプ(filtering)の hook が受け取るシェルの値と返す値です。
+export type FilterManagementFeatureArgs<T> = {
+  columns: GridColumn<T>[];
+  orderedColumns: GridColumn<T>[];
+  visibleColumns: GridColumn<T>[];
+  columnFilters: Record<string, ColumnFilterValue>;
+  scrollContainerRef: RefObject<HTMLDivElement | null>;
+  gridRootRef: RefObject<HTMLDivElement | null>;
+  paneLayout: GridPaneLayout<T>;
+  leftPaneTotalWidth: number;
+  centerLeadingWidth: number;
+  rightPaneTotalWidth: number;
+  openColumnFilterPopover: (column: GridColumn<T>) => void;
+};
+export type FilterManagementFeatureResult = {
+  filterManagerEntries: FilterManagementEntry[];
+  filterManagerAddableColumns: FilterManagementAddableColumn[];
+  // 対象列まで横スクロールしてからフィルターのポップオーバーを開く(パネルの ✎ / フィルターを追加 / チップ)。
+  jumpToColumnFilter: (columnKey: string) => void;
+};
+
+// サーバーサイド行モデル(serverSide)の hook が受け取る値(行モデルの controller の引数そのまま)と返す値です。
+export type ServerSideFeatureArgs<T> = UseServerSideRowModelParams<T>;
+export type ServerSideFeatureResult<T> = UseServerSideRowModelResult<T> & {
+  // 内蔵エラーバー(取得失敗の再試行 / 保存失敗)。出すものが無ければ何も描かない。
+  renderErrorBars: (errorBarSlot: GridResolvedSlots['errorBar']) => ReactNode;
 };
 
 // 列ヘッダーのドラッグによる並べ替え(columnReorder)の hook が受け取る値(コントローラの引数そのまま)と返す値です。
@@ -177,8 +271,33 @@ export type ReactGridFeatures = {
   imeDirectInput?: NonNullable<GridCoreFeatures['imeDirectInput']>;
   // エクスポート(命令的 API の exportCsv / downloadCsv / getExportData)。描画の部品は無い。
   export?: NonNullable<GridCoreFeatures['export']>;
+  // フィルター(グローバル / 列): 列フィルターの段と日付の変わり目の見張り(core)+ グローバルフィルターの適用と
+  //   相対日付プリセットの基準日の hook / 列フィルターのポップオーバー(controller の接続・部品の遅延読み込み・中身)/
+  //   適用中フィルターの一覧とジャンプ / チップバーの部品。
+  filtering?: NonNullable<GridCoreFeatures['filtering']> & {
+    useFilterOrder: <T>(args: FilterOrderFeatureArgs<T>) => FilterOrderFeatureResult;
+    useFilterPopover: <T>(args: FilterPopoverFeatureArgs<T>) => FilterPopoverFeatureResult<T>;
+    useFilterPopoverViews: (options: UseLazyModuleOptions) => FilterPopoverViews | null;
+    useFilterPopoverContent: <T>(args: FilterPopoverContentFeatureArgs<T>) => ReactNode;
+    useFilterManagement: <T>(args: FilterManagementFeatureArgs<T>) => FilterManagementFeatureResult;
+    FilterChipBar: typeof GridFilterChipBar;
+  };
+  // サーバーサイド行モデル(SSRM): 保存状態の表示(core)+ 行モデルの接続と内蔵エラーバーの hook。
+  serverSide?: NonNullable<GridCoreFeatures['serverSide']> & {
+    useServerSide: <T>(args: ServerSideFeatureArgs<T>) => ServerSideFeatureResult<T>;
+  };
   // 行の高さの実測(autoHeight): 実測のコントローラ + 行高ストア(core)。描画の部品は無い。
   autoHeight?: NonNullable<GridCoreFeatures['autoHeight']>;
+  // ラベル行(labelRow): 配置 / 表示順 / 行モデル / serverSide のラッパ / 縦スクロール固定の解決(core)+ 帯の行と
+  //   縦スクロール固定の層の部品。
+  labelRow?: NonNullable<GridCoreFeatures['labelRow']> & {
+    BodyLabelRow: typeof GridBodyLabelRow;
+    StickyLabelLayer: typeof GridStickyLabelLayer;
+  };
+  // 行グルーピング(rowGroup / aggFunc): グループツリーの構築と開閉の適用(core)+ グループ行の部品。
+  grouping?: NonNullable<GridCoreFeatures['grouping']> & {
+    BodyGroupRow: typeof GridBodyGroupRow;
+  };
   // 列幅の自動調整(DS-4 / 13-B1): 計測の時間分割ランナー。
   columnAutosize?: {
     useColumnAutosize: <T>(args: ColumnAutosizeFeatureArgs<T>) => ColumnAutosizeFeatureResult<T>;
@@ -242,6 +361,8 @@ type HookFeatureName =
   | 'contextMenu'
   | 'selectionAggregates'
   | 'columnMenu'
-  | 'toolPanel';
+  | 'toolPanel'
+  | 'filtering'
+  | 'serverSide';
 export type GridShellFeatures = Omit<ReactGridFeatures, HookFeatureName> &
   Required<Pick<ReactGridFeatures, HookFeatureName>>;

@@ -16,6 +16,18 @@ import type { ConditionalFormatStatsMap, ConditionalFormatStatsResolver } from '
 import type { ChangeHighlightController } from '../controllers/changeHighlightController';
 import type { AutoHeightMeasurer, AutoHeightMeasureSnapshot } from '../controllers/autoHeightMeasurer';
 import type { buildRowHeightStore, createAutoHeightRowMetrics } from '../logic/rowHeightStore';
+import type { ColumnFilterStage } from './columnFilterStage';
+import type { DateRolloverStore } from '../controllers/dateRolloverStore';
+import type { SaveStatusController } from '../controllers/saveStatusController';
+import type { buildGroupTree, flattenGroupTree } from '../logic/grouping';
+import type {
+  buildLabelDisplay,
+  createLabelFreeOrder,
+  createLabelRowModel,
+  resolveLabelRowLayout,
+  resolveStickyLabel,
+  wrapRowModelWithLabelRows,
+} from '../logic/labelRows';
 import type { ExportCommands } from './exportCommands';
 import type { GridApiArgs } from './gridApi';
 
@@ -49,6 +61,40 @@ export type GridCoreFeatures = {
   // 行の高さの実測(autoHeight): 描画済みセルの実測 + ResizeObserver のコントローラと、実測高さの行高ストア
   //   (縦レイアウトが prefix-sum の行メトリクスを作る)。
   autoHeight?: AutoHeightFeature;
+  // フィルター: 行パイプラインの列フィルターの段と、相対日付プリセットの日付の変わり目の見張り(グローバルフィルターの
+  //   適用は描画側の機能の hook が担う)。
+  filtering?: ColumnFilteringFeature & {
+    createDateRolloverStore: () => DateRolloverStore;
+  };
+  // ラベル行(labelRow): 行パイプラインの配置 / 表示順 / 行モデル(clientSide)+ serverSide の行モデルのラッパ +
+  //   縦スクロール固定の解決(描画側が使う)。
+  labelRow?: LabelRowFeature;
+  // 行グルーピング(rowGroup / aggFunc): グループツリーの構築(集計込み)と開閉の適用。無ければ列の解決が行グルーピングを
+  //   無効にする(自動グループ列を作らず、rowGroup 列もそのまま表示)。
+  grouping?: GroupingFeature;
+  // サーバーサイド行モデル(SSRM): エンジンが持つのは書き戻しのセル単位の保存状態の表示だけ(行モデル本体
+  //   controllers/serverSideRowModel は描画側の機能が作る)。
+  serverSide?: {
+    createSaveStatusController: () => SaveStatusController;
+  };
+};
+
+export type GroupingFeature = {
+  buildGroupTree: typeof buildGroupTree;
+  flattenGroupTree: typeof flattenGroupTree;
+};
+
+export type LabelRowFeature = {
+  resolveLabelRowLayout: typeof resolveLabelRowLayout;
+  createLabelFreeOrder: typeof createLabelFreeOrder;
+  buildLabelDisplay: typeof buildLabelDisplay;
+  createLabelRowModel: typeof createLabelRowModel;
+  wrapRowModelWithLabelRows: typeof wrapRowModelWithLabelRows;
+  resolveStickyLabel: typeof resolveStickyLabel;
+};
+
+export type ColumnFilteringFeature = {
+  createColumnFilterStage: <T>() => ColumnFilterStage<T>;
 };
 
 export type AutoHeightFeature = {
@@ -125,5 +171,20 @@ export const createInertAutoHeightMeasurer = <T,>(): AutoHeightMeasurer<T> => ({
   getSnapshot: () => ZERO_AUTO_HEIGHT_SNAPSHOT,
   subscribe: unsubscribeNoop,
   measuredHeights: new Map(),
+  dispose: noop,
+});
+
+// filtering が無いときの代役: 日付の変わり目を見張らない(相対日付プリセットは使われない)。
+export const createInertDateRolloverStore = (): DateRolloverStore => ({
+  update: noop,
+  getSnapshot: () => '',
+  subscribe: unsubscribeNoop,
+  dispose: noop,
+});
+
+// serverSide が無いときの代役: 保存状態を表示しない(書き戻しが起きない)。
+export const createInertSaveStatusController = (): SaveStatusController => ({
+  update: noop,
+  handle: noop,
   dispose: noop,
 });
