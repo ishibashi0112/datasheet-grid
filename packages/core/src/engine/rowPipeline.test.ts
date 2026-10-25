@@ -23,7 +23,7 @@ const rowKeyGetter = (row: Row) => row.id;
 
 describe('createRowPipelineResolver.resolveOrder', () => {
   it('フィルターなし・ソートなしでは恒等 order で rowDragOperable=true、no-op 入力で参照不変', () => {
-    const pipeline = createRowPipelineResolver<Row>(fullCoreFeatures.filtering);
+    const pipeline = createRowPipelineResolver<Row>(fullCoreFeatures);
     const baseOrder = pipeline.resolveBaseOrder(rows.length);
     const inputs = {
       rows,
@@ -43,7 +43,7 @@ describe('createRowPipelineResolver.resolveOrder', () => {
   });
 
   it('number フィルター(Float64 key 経路)とソートを適用し、非恒等なら rowDragOperable=false', () => {
-    const pipeline = createRowPipelineResolver<Row>(fullCoreFeatures.filtering);
+    const pipeline = createRowPipelineResolver<Row>(fullCoreFeatures);
     const baseOrder = pipeline.resolveBaseOrder(rows.length);
     const result = pipeline.resolveOrder({
       rows,
@@ -65,7 +65,7 @@ describe('createRowPipelineResolver.resolveOrder', () => {
     expect(result.rowDragOperable).toBe(false);
   });
   it('機能セットに filtering が無ければ列フィルターは評価せず、ソートだけを掛ける', () => {
-    const pipeline = createRowPipelineResolver<Row>(undefined);
+    const pipeline = createRowPipelineResolver<Row>({});
     const baseOrder = pipeline.resolveBaseOrder(rows.length);
     const result = pipeline.resolveOrder({
       rows,
@@ -88,7 +88,7 @@ describe('createRowPipelineResolver.resolveOrder', () => {
 
 describe('createRowPipelineResolver.resolveClientSideRowModel', () => {
   it('グルーピング無効では order 直参照の RowModel(getGroupRow なし)、no-op 入力で参照不変', () => {
-    const pipeline = createRowPipelineResolver<Row>(fullCoreFeatures.filtering);
+    const pipeline = createRowPipelineResolver<Row>(fullCoreFeatures);
     const order = pipeline.resolveBaseOrder(rows.length);
     const inputs = {
       rows,
@@ -111,7 +111,7 @@ describe('createRowPipelineResolver.resolveClientSideRowModel', () => {
   });
 
   it('グルーピング有効ではグループ行を含む表示リストになり、開閉で rowModel だけが変わる', () => {
-    const pipeline = createRowPipelineResolver<Row>(fullCoreFeatures.filtering);
+    const pipeline = createRowPipelineResolver<Row>(fullCoreFeatures);
     const order = pipeline.resolveBaseOrder(rows.length);
     const groupColumns: GridColumn<Row>[] = [{ key: 'group', title: 'グループ', width: 100, rowGroup: true }];
     // groupTree は開閉状態に依存しないため、開閉以外の入力を固定すれば参照が保たれる(aggColumns も同一参照)。
@@ -149,7 +149,7 @@ describe('createRowPipelineResolver.resolveClientSideRowModel', () => {
 
 describe('createRowPipelineResolver.resolveServerSideQuery', () => {
   it('clientSide では空 query / 空 key、serverSide では UI 状態から組み立て、無効化された要素は落とす', () => {
-    const pipeline = createRowPipelineResolver<Row>(fullCoreFeatures.filtering);
+    const pipeline = createRowPipelineResolver<Row>(fullCoreFeatures);
     const client = pipeline.resolveServerSideQuery({
       isServerSide: false,
       globalFilterEnabled: true,
@@ -208,7 +208,7 @@ describe('createRowPipelineResolver × ラベル行', () => {
   const keyGetter = (row: LRow) => row.id;
 
   it('resolveLabelRowLayout / resolveBaseOrder: ラベル行を除いた恒等 order(参照安定)', () => {
-    const pipeline = createRowPipelineResolver<LRow>(fullCoreFeatures.filtering);
+    const pipeline = createRowPipelineResolver<LRow>(fullCoreFeatures);
     const layout = pipeline.resolveLabelRowLayout(labelRows, isLabelRow);
     expect(layout).not.toBeNull();
     expect(Array.from(layout!.labelIndexes)).toEqual([0, 3]);
@@ -221,8 +221,42 @@ describe('createRowPipelineResolver × ラベル行', () => {
     expect(Array.from(pipeline.resolveBaseOrder(labelRows.length, null))).toEqual([0, 1, 2, 3, 4]);
   });
 
+  it('機能セットに labelRow が無ければ配置は常に null で、ラベル行もデータ行として並ぶ', () => {
+    const pipeline = createRowPipelineResolver<LRow>({ filtering: fullCoreFeatures.filtering });
+    const layout = pipeline.resolveLabelRowLayout(labelRows, isLabelRow);
+    expect(layout).toBeNull();
+    const baseOrder = pipeline.resolveBaseOrder(labelRows.length, layout);
+    expect(Array.from(baseOrder)).toEqual([0, 1, 2, 3, 4]);
+    const { order } = pipeline.resolveOrder({
+      rows: labelRows,
+      labelLayout: layout,
+      filterSortColumns: labelColumns,
+      columnFilters: {},
+      globalFilteredOrder: baseOrder,
+      sort: [],
+      rowDragAvailable: false,
+    });
+    // 配置を外から渡されても(機能ありの行パイプラインが作ったもの)ラベル行の表示順は作らない。
+    const layoutFromFull = createRowPipelineResolver<LRow>(fullCoreFeatures).resolveLabelRowLayout(labelRows, isLabelRow);
+    const { labelDisplay, rowModel } = pipeline.resolveClientSideRowModel({
+      rows: labelRows,
+      order,
+      rowGroupingActive: false,
+      groupColumns: [],
+      aggColumns: [],
+      collapsedGroupKeys: new Set<string>(),
+      rowKeyGetter: keyGetter,
+      labelLayout: layoutFromFull,
+      sortActive: false,
+      getLabel,
+    });
+    expect(labelDisplay).toBeNull();
+    expect(rowModel.getRowCount()).toBe(5);
+    expect(rowModel.getLabelRow).toBeUndefined();
+  });
+
   it('恒等判定: ソート / フィルターなしはラベル行込みでも rowDragOperable=true、ソートで false', () => {
-    const pipeline = createRowPipelineResolver<LRow>(fullCoreFeatures.filtering);
+    const pipeline = createRowPipelineResolver<LRow>(fullCoreFeatures);
     const layout = pipeline.resolveLabelRowLayout(labelRows, isLabelRow);
     const baseOrder = pipeline.resolveBaseOrder(labelRows.length, layout);
     const inputs = {
@@ -243,7 +277,7 @@ describe('createRowPipelineResolver × ラベル行', () => {
   });
 
   it('resolveClientSideRowModel: ラベル行込みの RowModel(セクション内ソート)と no-op 参照安定', () => {
-    const pipeline = createRowPipelineResolver<LRow>(fullCoreFeatures.filtering);
+    const pipeline = createRowPipelineResolver<LRow>(fullCoreFeatures);
     const layout = pipeline.resolveLabelRowLayout(labelRows, isLabelRow);
     const baseOrder = pipeline.resolveBaseOrder(labelRows.length, layout);
     const { order } = pipeline.resolveOrder({
@@ -288,7 +322,7 @@ describe('createRowPipelineResolver × ラベル行', () => {
   });
 
   it('rowGroupingActive のときはラベル行 stage をバイパスし、labelLayout なしでは従来経路', () => {
-    const pipeline = createRowPipelineResolver<LRow>(fullCoreFeatures.filtering);
+    const pipeline = createRowPipelineResolver<LRow>(fullCoreFeatures);
     const layout = pipeline.resolveLabelRowLayout(labelRows, isLabelRow);
     const groupColumns: GridColumn<LRow>[] = [{ key: 'name', title: '名前', width: 120, rowGroup: true }];
     const order = pipeline.resolveBaseOrder(labelRows.length, layout);
@@ -335,7 +369,7 @@ describe('createRowPipelineResolver.resolveOrder × manual-mode', () => {
   const sort = [{ columnKey: 'name' as const, direction: 'asc' as const }];
 
   it('manualFiltering: 列フィルターを評価せず(ソートは適用)、manualSorting: ソートを適用しない(フィルターは適用)', () => {
-    const pipeline = createRowPipelineResolver<Row>(fullCoreFeatures.filtering);
+    const pipeline = createRowPipelineResolver<Row>(fullCoreFeatures);
     const baseOrder = pipeline.resolveBaseOrder(rows.length);
     const base = { rows, filterSortColumns: columns, columnFilters: numberFilter, globalFilteredOrder: baseOrder, sort, rowDragAvailable: true };
     // 手動フィルター: 3 行とも残り、name 昇順(a, b, c = id 2, 3, 1)。
@@ -352,7 +386,7 @@ describe('createRowPipelineResolver.resolveOrder × manual-mode', () => {
   });
 
   it('手動モードでは記述子 / sort の参照が変わっても order は不変(参照安定)、解除すると即座に適用される', () => {
-    const pipeline = createRowPipelineResolver<Row>(fullCoreFeatures.filtering);
+    const pipeline = createRowPipelineResolver<Row>(fullCoreFeatures);
     const baseOrder = pipeline.resolveBaseOrder(rows.length);
     const base = { rows, filterSortColumns: columns, globalFilteredOrder: baseOrder, rowDragAvailable: true };
     const first = pipeline.resolveOrder({ ...base, columnFilters: numberFilter, sort, manualFiltering: true, manualSorting: true });

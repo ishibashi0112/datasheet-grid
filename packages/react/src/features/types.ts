@@ -43,6 +43,8 @@ import type {
 import type { GridFindBar } from '../view/GridFindBar';
 import type { GridScrollHint } from '../view/GridScrollHint';
 import type { GridTotalRow } from '../view/GridTotalRow';
+import type { GridBodyLabelRow } from '../view/GridBodyLabelRow';
+import type { GridStickyLabelLayer } from '../view/GridStickyLabelLayer';
 import type { GridChip } from '../view/GridChip';
 import type { CopyRangeOverlay } from '../CopyRangeOverlay';
 import type { ColumnHoverOverlay } from '../ColumnHoverOverlay';
@@ -285,6 +287,12 @@ export type ReactGridFeatures = {
   };
   // 行の高さの実測(autoHeight): 実測のコントローラ + 行高ストア(core)。描画の部品は無い。
   autoHeight?: NonNullable<GridCoreFeatures['autoHeight']>;
+  // ラベル行(labelRow): 配置 / 表示順 / 行モデル / serverSide のラッパ / 縦スクロール固定の解決(core)+ 帯の行と
+  //   縦スクロール固定の層の部品。
+  labelRow?: NonNullable<GridCoreFeatures['labelRow']> & {
+    BodyLabelRow: typeof GridBodyLabelRow;
+    StickyLabelLayer: typeof GridStickyLabelLayer;
+  };
   // 列幅の自動調整(DS-4 / 13-B1): 計測の時間分割ランナー。
   columnAutosize?: {
     useColumnAutosize: <T>(args: ColumnAutosizeFeatureArgs<T>) => ColumnAutosizeFeatureResult<T>;

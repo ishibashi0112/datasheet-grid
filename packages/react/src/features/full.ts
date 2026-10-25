@@ -11,6 +11,7 @@ import { fillHandleFeature } from './fillHandle';
 import { filteringFeature } from './filtering';
 import { findFeature } from './find';
 import { imeDirectInputFeature } from './imeDirectInput';
+import { labelRowFeature } from './labelRow';
 import { motionExtrasFeature } from './motionExtras';
 import { rowDragFeature } from './rowDrag';
 import { scrollHintFeature } from './scrollHint';
@@ -39,4 +40,5 @@ export const fullGridFeatures: Required<ReactGridFeatures> = {
   autoHeight: autoHeightFeature,
   filtering: filteringFeature,
   serverSide: serverSideFeature,
+  labelRow: labelRowFeature,
 };

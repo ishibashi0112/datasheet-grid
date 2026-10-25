@@ -118,10 +118,10 @@ import {
   DETAIL_TOGGLE_COLUMN_KEY,
   seedDetailIndexCache,
 } from '@ishibashi0112/spreadsheet-grid-core/logic/detailRow';
-// 追加(label-row ②): ラベル行(見出し / 区切り行)の SSRM ラッパです。
-import { resolveStickyLabel, wrapRowModelWithLabelRows } from '@ishibashi0112/spreadsheet-grid-core/logic/labelRows';
+// 変更(差し込み式 段階 5): ラベル行(見出し / 区切り行)の SSRM ラッパ / 縦スクロール固定の解決 / 部品は機能セット
+//   (features.labelRow)から受け取ります。
 import type { GridBodyLabelRowLayer } from './view/GridBodyLayer';
-import { GridStickyLabelLayer, type GridStickyLabelEntry } from './view/GridStickyLabelLayer';
+import type { GridStickyLabelEntry } from './view/GridStickyLabelLayer';
 // 追加(row-drag ③): 行ドラッグ並び替えの純ロジック(ハンドル列キー / 配列移動 / ゲート判定)です。
 import {
   ROW_DRAG_HANDLE_COLUMN_KEY,
@@ -686,7 +686,10 @@ export function useGridShell<T extends object>({
   const labelSticky = labelRow?.sticky === true;
   const labelExportText = labelRow?.exportText;
   const labelKeepEmptySections = labelRow?.keepEmptySections ?? false;
-  const labelRowEnabled = labelIsLabelRow != null && labelGetLabel != null;
+  // 変更(差し込み式 段階 5): 機能セットに labelRow が無ければ無効(createSpreadsheetGrid が labelRow を外す)。
+  const labelRowFeature = features.labelRow;
+  const StickyLabelLayer = labelRowFeature?.StickyLabelLayer;
+  const labelRowEnabled = labelIsLabelRow != null && labelGetLabel != null && labelRowFeature !== undefined;
   // 追加(合計行 3A): 合計行のオプションを分解します(true は既定値だけで有効化)。footerHeight は下端に固定する行の
   //   高さで、スクロール計算(見える高さ / 末尾 / 行を見せる位置)に渡します。無効時は 0 = 従来どおり。
   const totalRowOptions = typeof totalRow === 'object' && totalRow !== null ? totalRow : null;
@@ -1174,11 +1177,11 @@ export function useGridShell<T extends object>({
     if (!isServerSide) {
       return clientSideRowModel;
     }
-    if (labelIsLabelRow && labelGetLabel) {
-      return wrapRowModelWithLabelRows(serverSideRowModel, labelIsLabelRow, labelGetLabel);
+    if (labelIsLabelRow && labelGetLabel && labelRowFeature) {
+      return labelRowFeature.wrapRowModelWithLabelRows(serverSideRowModel, labelIsLabelRow, labelGetLabel);
     }
     return serverSideRowModel;
-  }, [isServerSide, clientSideRowModel, serverSideRowModel, labelIsLabelRow, labelGetLabel]);
+  }, [isServerSide, clientSideRowModel, serverSideRowModel, labelIsLabelRow, labelGetLabel, labelRowFeature]);
 
   // 追加(SSRM 書き戻し): 編集可否の合成です。serverSide で dataSource.updateRows が無い間は
   //   全セルを編集不可へ倒します(書き戻し先が無い編集セッションは commit 時に静かに破棄される
@@ -1634,30 +1637,37 @@ export function useGridShell<T extends object>({
   );
   const labelRowLayerCenter = useMemo<GridBodyLabelRowLayer<T> | undefined>(
     () =>
-      labelRowEnabled
+      labelRowEnabled && labelRowFeature
         ? {
+            Row: labelRowFeature.BodyLabelRow,
             renderContent: renderLabelRowContent,
             contentStickyLeft: detailCardStickyLeft,
             contentWidth: detailCardWidth,
             resolveRowSlot: resolveLabelRowSlot,
           }
         : undefined,
-    [labelRowEnabled, renderLabelRowContent, detailCardStickyLeft, detailCardWidth, resolveLabelRowSlot],
+    [labelRowEnabled, labelRowFeature, renderLabelRowContent, detailCardStickyLeft, detailCardWidth, resolveLabelRowSlot],
   );
   const labelRowLayerBand = useMemo<GridBodyLabelRowLayer<T> | undefined>(
     () =>
-      labelRowEnabled
-        ? { renderContent: null, contentStickyLeft: 0, contentWidth: 0, resolveRowSlot: resolveLabelRowSlot }
+      labelRowEnabled && labelRowFeature
+        ? {
+            Row: labelRowFeature.BodyLabelRow,
+            renderContent: null,
+            contentStickyLeft: 0,
+            contentWidth: 0,
+            resolveRowSlot: resolveLabelRowSlot,
+          }
         : undefined,
-    [labelRowEnabled, resolveLabelRowSlot],
+    [labelRowEnabled, labelRowFeature, resolveLabelRowSlot],
   );
   // 追加(label-row ③.5): 縦スクロール固定(labelRow.sticky)。scrollTop(論理)から「現在セクションのラベル行 /
   //   押し上げ量」を純ロジックで求め、各ペインの固定レイヤーへ渡します。clientSide(labelDisplay あり)のみ。
   const stickyLabelEntry = useMemo<GridStickyLabelEntry<T> | null>(() => {
-    if (!labelSticky || !labelDisplay || labelDisplay.labelViewIndexes.length === 0) {
+    if (!labelSticky || !labelDisplay || labelDisplay.labelViewIndexes.length === 0 || !labelRowFeature) {
       return null;
     }
-    const resolution = resolveStickyLabel(
+    const resolution = labelRowFeature.resolveStickyLabel(
       labelDisplay.labelViewIndexes,
       rowMetrics,
       physicalToLogicalScrollTop(scrollTop, verticalScaleFactor),
@@ -1676,7 +1686,7 @@ export function useGridShell<T extends object>({
       height: resolution.height,
       pushOffset: resolution.pushOffset,
     };
-  }, [labelSticky, labelDisplay, rowMetrics, scrollTop, verticalScaleFactor, rowModel]);
+  }, [labelSticky, labelDisplay, labelRowFeature, rowMetrics, scrollTop, verticalScaleFactor, rowModel]);
   // 追加(label-row ④): 命令的 API(exportCsv / getExportData)へ渡すラベル行のエクスポート設定です。
   const labelRowExport = useMemo(
     () =>
@@ -3884,19 +3894,21 @@ export function useGridShell<T extends object>({
                 {/*   この div が絶対配置子の containing block となり、中のセルは        */}
                 {/*   headerHeight + start で配置され、sticky ヘッダーの背面を流れます。*/}
                 {/* 追加(label-row ③.5): ラベル行の縦スクロール固定レイヤー(ヘッダー直後の通常フロー / sticky)。 */}
-                <GridStickyLabelLayer
-                  pane="left"
-                  ownsRowHeader
-                  entry={stickyLabelEntry}
-                  headerHeight={headerHeight}
-                  rowHeaderCellStyle={rowHeaderCellStyle}
-                  renderContent={null}
-                  contentStickyLeft={0}
-                  contentWidth={0}
-                  rowClassName={stickyLabelSlot.className}
-                  rowStyle={stickyLabelSlot.style}
-                  slots={slots}
-                />
+                {StickyLabelLayer && (
+                  <StickyLabelLayer
+                    pane="left"
+                    ownsRowHeader
+                    entry={stickyLabelEntry}
+                    headerHeight={headerHeight}
+                    rowHeaderCellStyle={rowHeaderCellStyle}
+                    renderContent={null}
+                    contentStickyLeft={0}
+                    contentWidth={0}
+                    rowClassName={stickyLabelSlot.className}
+                    rowStyle={stickyLabelSlot.style}
+                    slots={slots}
+                  />
+                )}
                 <div
                   style={{
                     position: 'absolute',
@@ -4102,19 +4114,21 @@ export function useGridShell<T extends object>({
                   ヘッダーは sticky のまま動かしません。原点(0,0)・同サイズの wrapper のため
                   overlay 内部のペインローカル座標は不変で、transform のみ加わります。*/}
               {/* 追加(label-row ③.5): ラベル行の縦スクロール固定レイヤー(ヘッダー直後の通常フロー / sticky)。 */}
-              <GridStickyLabelLayer
-                pane="center"
-                ownsRowHeader={centerOwnsRowHeader}
-                entry={stickyLabelEntry}
-                headerHeight={headerHeight}
-                rowHeaderCellStyle={rowHeaderCellStyle}
-                renderContent={renderLabelRowContent}
-                contentStickyLeft={detailCardStickyLeft}
-                contentWidth={detailCardWidth}
-                rowClassName={stickyLabelSlot.className}
-                rowStyle={stickyLabelSlot.style}
-                slots={slots}
-              />
+              {StickyLabelLayer && (
+                <StickyLabelLayer
+                  pane="center"
+                  ownsRowHeader={centerOwnsRowHeader}
+                  entry={stickyLabelEntry}
+                  headerHeight={headerHeight}
+                  rowHeaderCellStyle={rowHeaderCellStyle}
+                  renderContent={renderLabelRowContent}
+                  contentStickyLeft={detailCardStickyLeft}
+                  contentWidth={detailCardWidth}
+                  rowClassName={stickyLabelSlot.className}
+                  rowStyle={stickyLabelSlot.style}
+                  slots={slots}
+                />
+              )}
               <div
                 style={{
                   position: 'absolute',
@@ -4318,19 +4332,21 @@ export function useGridShell<T extends object>({
                 {/* 変更(10-G): 左ペインと同様、overlay + body をまとめる絶対配置レイヤーです。*/}
                 {/*   transform 同期は廃止し、縦スクロールは共有コンテナが担います。         */}
                 {/* 追加(label-row ③.5): ラベル行の縦スクロール固定レイヤー(ヘッダー直後の通常フロー / sticky)。 */}
-                <GridStickyLabelLayer
-                  pane="right"
-                  ownsRowHeader={false}
-                  entry={stickyLabelEntry}
-                  headerHeight={headerHeight}
-                  rowHeaderCellStyle={rowHeaderCellStyle}
-                  renderContent={null}
-                  contentStickyLeft={0}
-                  contentWidth={0}
-                  rowClassName={stickyLabelSlot.className}
-                  rowStyle={stickyLabelSlot.style}
-                  slots={slots}
-                />
+                {StickyLabelLayer && (
+                  <StickyLabelLayer
+                    pane="right"
+                    ownsRowHeader={false}
+                    entry={stickyLabelEntry}
+                    headerHeight={headerHeight}
+                    rowHeaderCellStyle={rowHeaderCellStyle}
+                    renderContent={null}
+                    contentStickyLeft={0}
+                    contentWidth={0}
+                    rowClassName={stickyLabelSlot.className}
+                    rowStyle={stickyLabelSlot.style}
+                    slots={slots}
+                  />
+                )}
                 <div
                   style={{
                     position: 'absolute',

@@ -97,6 +97,7 @@ const FEATURE_PROPS: { [K in FeatureName]-?: readonly FeaturePropCheck[] } = {
   ],
   // 列の autoHeight はグリッドの autoHeight で有効になるので、グリッドの prop だけ見る。
   autoHeight: [{ prop: 'autoHeight', isUsed: (props) => props.autoHeight === true }],
+  labelRow: [{ prop: 'labelRow', isUsed: (props) => props.labelRow !== undefined }],
 };
 
 function useUnregisteredFeatureWarningsInDev<T extends object>(

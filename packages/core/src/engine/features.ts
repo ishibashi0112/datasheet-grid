@@ -19,6 +19,14 @@ import type { buildRowHeightStore, createAutoHeightRowMetrics } from '../logic/r
 import type { ColumnFilterStage } from './columnFilterStage';
 import type { DateRolloverStore } from '../controllers/dateRolloverStore';
 import type { SaveStatusController } from '../controllers/saveStatusController';
+import type {
+  buildLabelDisplay,
+  createLabelFreeOrder,
+  createLabelRowModel,
+  resolveLabelRowLayout,
+  resolveStickyLabel,
+  wrapRowModelWithLabelRows,
+} from '../logic/labelRows';
 import type { ExportCommands } from './exportCommands';
 import type { GridApiArgs } from './gridApi';
 
@@ -57,11 +65,23 @@ export type GridCoreFeatures = {
   filtering?: ColumnFilteringFeature & {
     createDateRolloverStore: () => DateRolloverStore;
   };
+  // ラベル行(labelRow): 行パイプラインの配置 / 表示順 / 行モデル(clientSide)+ serverSide の行モデルのラッパ +
+  //   縦スクロール固定の解決(描画側が使う)。
+  labelRow?: LabelRowFeature;
   // サーバーサイド行モデル(SSRM): エンジンが持つのは書き戻しのセル単位の保存状態の表示だけ(行モデル本体
   //   controllers/serverSideRowModel は描画側の機能が作る)。
   serverSide?: {
     createSaveStatusController: () => SaveStatusController;
   };
+};
+
+export type LabelRowFeature = {
+  resolveLabelRowLayout: typeof resolveLabelRowLayout;
+  createLabelFreeOrder: typeof createLabelFreeOrder;
+  buildLabelDisplay: typeof buildLabelDisplay;
+  createLabelRowModel: typeof createLabelRowModel;
+  wrapRowModelWithLabelRows: typeof wrapRowModelWithLabelRows;
+  resolveStickyLabel: typeof resolveStickyLabel;
 };
 
 export type ColumnFilteringFeature = {

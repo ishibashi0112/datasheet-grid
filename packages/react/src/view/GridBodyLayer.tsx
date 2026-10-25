@@ -47,7 +47,8 @@ import {
 import type { ConditionalFormatCellResolvers } from '../features/types';
 import { RowSelectionCheckbox } from './RowSelectionCheckbox';
 // 追加(label-row ②): ラベル行(帯 + sticky な中身)です。
-import { GridBodyLabelRow, type GridBodyLabelRowRenderContent } from './GridBodyLabelRow';
+// 変更(差し込み式 段階 5): 部品はラベル行の機能から描画設定(labelRowLayer.Row)で受け取ります(型だけ import)。
+import type { GridBodyLabelRow, GridBodyLabelRowRenderContent } from './GridBodyLabelRow';
 import { resolveDataRowNumber } from '@ishibashi0112/spreadsheet-grid-core/logic/labelRows';
 // 変更(10-C): 列座標を ColumnMeasurement(グローバル) から
 //             PaneColumnEntry(ペインローカル) へ切り替えます。
@@ -68,6 +69,8 @@ type VirtualRowLike = {
 
 // 追加(label-row ②): ラベル行の描画設定(親で memo 済み。labelRow prop 有効時のみ渡る)。
 export type GridBodyLabelRowLayer<T> = {
+  // 追加(差し込み式 段階 5): ラベル行の部品(機能セットの labelRow から)。
+  Row: typeof GridBodyLabelRow;
   // 中身の描画(中央ペインのみ。帯だけのペインは null)。
   renderContent: GridBodyLabelRowRenderContent<T> | null;
   contentStickyLeft: number;
@@ -1104,8 +1107,9 @@ export function GridBodyLayer<T>({
         if (labelRow && labelRowLayer) {
           const labelRowKey = rowModel.getRowKey(rowIndex) ?? rowIndex;
           const labelSlot = resolveSlotProps<CSSProperties>(labelRowLayer.resolveRowSlot(labelRow));
+          const LabelRow = labelRowLayer.Row;
           return (
-            <GridBodyLabelRow
+            <LabelRow
               key={String(labelRowKey)}
               pane={pane}
               ownsRowHeader={ownsRowHeader}

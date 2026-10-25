@@ -24,6 +24,7 @@ import { exportFeature } from './features/export';
 import { autoHeightFeature } from './features/autoHeight';
 import { filteringFeature } from './features/filtering';
 import { serverSideFeature } from './features/serverSide';
+import { labelRowFeature } from './features/labelRow';
 import { installJsdomLayoutStubs } from './testing';
 import { resetUnregisteredFeatureWarnings } from '@ishibashi0112/spreadsheet-grid-core/logic/featureWarnings';
 import { ROW_DRAG_HANDLE_COLUMN_KEY } from '@ishibashi0112/spreadsheet-grid-core/logic/rowReorder';
@@ -64,6 +65,7 @@ const ExportOnlyGrid = createSpreadsheetGrid({ features: { export: exportFeature
 const AutoHeightOnlyGrid = createSpreadsheetGrid({ features: { autoHeight: autoHeightFeature } });
 const FilteringOnlyGrid = createSpreadsheetGrid({ features: { filtering: filteringFeature } });
 const ServerSideOnlyGrid = createSpreadsheetGrid({ features: { serverSide: serverSideFeature } });
+const LabelRowOnlyGrid = createSpreadsheetGrid({ features: { labelRow: labelRowFeature } });
 // 列フィルターを開く入口(「フィルター…」)は列メニューにあるため、列メニューと組み合わせて確かめます。
 const ColumnMenuFilteringGrid = createSpreadsheetGrid({ features: { columnMenu: columnMenuFeature, filtering: filteringFeature } });
 
@@ -911,5 +913,61 @@ describe('差し込み式: serverSide', () => {
     const { container } = render(<ServerSideOnlyGrid columns={columns} dataSource={failing} rowKeyGetter={(r) => r.id} />);
     await flush();
     expect(container.querySelector('.ssg-ssrm-error-bar')?.textContent).toContain('行の取得に失敗しました');
+  });
+});
+
+describe('差し込み式: labelRow', () => {
+  type LRow = { id: string; name: string; kind?: 'label' };
+  // 2 セクション × 5 行(縦スクロール固定を確かめるため、1 セクション目の途中までスクロールする)。
+  const labelRows: LRow[] = [];
+  for (let s = 1; s <= 2; s += 1) {
+    labelRows.push({ id: `s${s}`, name: `セクション ${s}`, kind: 'label' });
+    for (let i = 1; i <= 5; i += 1) {
+      labelRows.push({ id: `${s}-${i}`, name: `row ${s}-${i}` });
+    }
+  }
+  const labelColumns: GridColumn<LRow>[] = [{ key: 'name', title: '名前', width: 160 }];
+  const labelRow = { isLabelRow: (row: LRow) => row.kind === 'label', getLabel: (row: LRow) => row.name, sticky: true };
+  const bodyTexts = (container: HTMLElement) =>
+    Array.from(container.querySelectorAll('.ssg-body-cell[data-ssg-col-key="name"]')).map((cell) => cell.textContent);
+  const scrollTo = async (container: HTMLElement, top: number) => {
+    const scrollEl = container.querySelector<HTMLElement>('.ssg-scroll-container');
+    if (!scrollEl) throw new Error('スクロールコンテナがありません');
+    await act(async () => {
+      scrollEl.scrollTop = top;
+      scrollEl.dispatchEvent(new Event('scroll'));
+    });
+    await act(async () => {
+      await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+    });
+  };
+
+  it('機能セットに無ければラベル行を作らずデータ行として並べ、labelRow は開発時に 1 回だけ警告する', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const { container } = render(
+      <MinimalGrid rows={labelRows} columns={labelColumns} rowKeyGetter={(r) => r.id} rowHeight={30} labelRow={labelRow} />,
+    );
+    expect(container.querySelector('[data-ssg-label-row]')).toBeNull();
+    expect(bodyTexts(container).slice(0, 3)).toEqual(['セクション 1', 'row 1-1', 'row 1-2']);
+    await scrollTo(container, 45);
+    expect(container.querySelector('[data-ssg-sticky-label]')).toBeNull();
+    expect(warn.mock.calls.filter(([message]) => String(message).includes('`labelRow`'))).toHaveLength(1);
+  });
+
+  it('labelRow だけを入れた構成ではラベル行が帯になり(データ行だけがセルを持つ)、縦スクロールで固定される', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const { container } = render(
+      <LabelRowOnlyGrid rows={labelRows} columns={labelColumns} rowKeyGetter={(r) => r.id} rowHeight={30} labelRow={labelRow} />,
+    );
+    const labels = Array.from(container.querySelectorAll('.ssg-body-row[data-ssg-label-row] .ssg-label-row-text')).map(
+      (el) => el.textContent,
+    );
+    expect(labels).toEqual(['セクション 1', 'セクション 2']);
+    expect(bodyTexts(container).slice(0, 2)).toEqual(['row 1-1', 'row 1-2']);
+    expect(container.querySelector('[data-ssg-sticky-label]')).toBeNull();
+    await scrollTo(container, 45);
+    const sticky = container.querySelector<HTMLElement>('[data-pane="center"][data-ssg-sticky-label]');
+    expect(sticky?.dataset.ssgStickyLabelRowIndex).toBe('0');
+    expect(warn).not.toHaveBeenCalled();
   });
 });

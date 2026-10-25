@@ -38,17 +38,9 @@ import {
   type GroupedDisplay,
 } from '../logic/grouping';
 import { buildServerSideQuery, serializeServerSideQuery } from '../logic/serverSideQuery';
-import {
-  buildLabelDisplay,
-  createLabelFreeOrder,
-  createLabelRowModel,
-  isSameOrder,
-  resolveLabelRowLayout,
-  type LabelDisplay,
-  type LabelRowLayout,
-} from '../logic/labelRows';
+import { isSameOrder, type LabelDisplay, type LabelRowLayout } from '../logic/labelRows';
 import { createMemo } from './memo';
-import type { ColumnFilteringFeature } from './features';
+import type { GridCoreFeatures } from './features';
 
 const EMPTY_SERVER_QUERY: ServerSideQuery = {};
 const EMPTY_COLUMN_FILTERS: Record<string, ColumnFilterValue> = {};
@@ -138,18 +130,24 @@ export type ServerSideQueryResolution = {
   queryKey: string;
 };
 
-// 変更(差し込み式 段階 5): 列フィルターの段(engine/columnFilterStage)は機能セットの filtering から受けます
-//   (createGridEngine が渡す)。無ければ列フィルターは評価しません(グローバルフィルター済み order をそのままソートへ)。
-export const createRowPipelineResolver = <T,>(filtering: ColumnFilteringFeature | undefined) => {
-  const filterColumns = filtering?.createColumnFilterStage<T>();
+// 機能セットのうち行パイプラインが使う部品です(createGridEngine が渡す)。
+export type RowPipelineFeatures = Pick<GridCoreFeatures, 'filtering' | 'labelRow'>;
+
+// 変更(差し込み式 段階 5): 列フィルターの段(engine/columnFilterStage)は機能セットの filtering から受けます。
+//   無ければ列フィルターは評価しません(グローバルフィルター済み order をそのままソートへ)。ラベル行の配置 / 表示順 /
+//   行モデルは機能セットの labelRow から受け、無ければラベル行は作りません(配置は常に null)。
+export const createRowPipelineResolver = <T,>(features: RowPipelineFeatures) => {
+  const filterColumns = features.filtering?.createColumnFilterStage<T>();
+  const labelRowFeature = features.labelRow;
   const memoBaseOrder = createMemo((rowCount: number) => createSourceOrder(rowCount));
   // 追加(label-row ①): ラベル行の配置(rows / 述語が変わったときだけ 1 パス)と、ラベル行を除いた恒等 order。
+  //   (ラベル行を除いた恒等 order は配置があるとき = 機能セットに labelRow があるときだけ作る。)
   const memoLabelLayout = createMemo(
     (rows: T[], isLabelRow: ((row: T, sourceIndex: number) => boolean) | undefined): LabelRowLayout | null =>
-      isLabelRow ? resolveLabelRowLayout(rows, isLabelRow) : null,
+      isLabelRow && labelRowFeature ? labelRowFeature.resolveLabelRowLayout(rows, isLabelRow) : null,
   );
   const memoLabelFreeOrder = createMemo((layout: LabelRowLayout, rowCount: number) =>
-    createLabelFreeOrder(layout, rowCount),
+    labelRowFeature ? labelRowFeature.createLabelFreeOrder(layout, rowCount) : createSourceOrder(rowCount),
   );
 
   // ソート済み order。
@@ -235,8 +233,8 @@ export const createRowPipelineResolver = <T,>(filtering: ColumnFilteringFeature 
       sortActive: boolean,
       getLabel: ((row: T) => string) | undefined,
     ): LabelDisplay<T> | null =>
-      layout && getLabel
-        ? buildLabelDisplay({ rows, order, layout, sortMode, keepEmptySections, sortActive, getLabel })
+      layout && getLabel && labelRowFeature
+        ? labelRowFeature.buildLabelDisplay({ rows, order, layout, sortMode, keepEmptySections, sortActive, getLabel })
         : null,
   );
   // RowModel シーム。viewIndex は表示上の行 index、getSourceIndex(= order[viewIndex])は元 rows の index。
@@ -250,8 +248,8 @@ export const createRowPipelineResolver = <T,>(filtering: ColumnFilteringFeature 
       rows: T[],
       rowKeyGetter: (row: T, index: number) => GridRowKey,
     ): RowModel<T> => {
-      if (labelDisplay) {
-        return createLabelRowModel(labelDisplay, rows, rowKeyGetter);
+      if (labelDisplay && labelRowFeature) {
+        return labelRowFeature.createLabelRowModel(labelDisplay, rows, rowKeyGetter);
       }
       if (groupedDisplay) {
         const { displayOrder, groups } = groupedDisplay;

@@ -130,7 +130,7 @@ export type GridEngine<T> = {
 export const createGridEngine = <T,>(init: GridEngineInit<T>): GridEngine<T> => {
   const resolveColumns = createColumnResolver<T>();
   const resolvePaneLayout = createPaneLayoutResolver<T>();
-  const rowPipeline = createRowPipelineResolver<T>(init.features.filtering);
+  const rowPipeline = createRowPipelineResolver<T>(init.features);
   const resolveVerticalLayout = createVerticalLayoutResolver<T>(init.features.autoHeight);
 
   // 変更(監査 RD-5 / M-03): 初期 state は列に依存しなくなりました(列幅 state は空で始まる)。
