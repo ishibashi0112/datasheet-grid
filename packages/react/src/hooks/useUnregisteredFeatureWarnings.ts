@@ -72,13 +72,13 @@ const FEATURE_PROPS: { [K in FeatureName]-?: readonly FeaturePropCheck[] } = {
   // エクスポートは prop ではなくメソッドなので、呼ばれた時点で警告する(features/resolve.ts の代役)。
   export: [],
   // フィルターの 2 つのスイッチは既定 true なので、明示して true を渡したときだけ。列の filterType はどれか 1 列でも
-  //   指定していれば警告する。
+  //   指定していれば警告する。onFiltersChange は機能が無くても applyState でフィルターの状態が変われば呼ばれる
+  //   (「何もしない」ではない)ので警告しない。
   filtering: [
     { prop: 'enableColumnFilter', isUsed: (props) => props.enableColumnFilter === true },
     { prop: 'enableGlobalFilter', isUsed: (props) => props.enableGlobalFilter === true },
     { prop: 'columns[].filterType', isUsed: (props) => props.columns.some((column) => column.filterType !== undefined) },
     { prop: 'manualFiltering', isUsed: (props) => props.manualFiltering === true },
-    { prop: 'onFiltersChange', isUsed: (props) => props.onFiltersChange !== undefined },
     { prop: 'getFilterOptions', isUsed: (props) => props.getFilterOptions !== undefined },
     { prop: 'showFilterChipBar', isUsed: (props) => props.showFilterChipBar === true },
     { prop: 'renderFilterDateInput', isUsed: (props) => props.renderFilterDateInput !== undefined },
@@ -98,9 +98,16 @@ const FEATURE_PROPS: { [K in FeatureName]-?: readonly FeaturePropCheck[] } = {
   // 列の autoHeight はグリッドの autoHeight で有効になるので、グリッドの prop だけ見る。
   autoHeight: [{ prop: 'autoHeight', isUsed: (props) => props.autoHeight === true }],
   labelRow: [{ prop: 'labelRow', isUsed: (props) => props.labelRow !== undefined }],
-  // 列の指定(GridColumn.rowGroup)。aggFunc は合計行でも使うので警告しない。
+  // 列の指定(GridColumn.rowGroup)。aggFunc は合計行でも使うので警告しない。serverSide で動くとき(dataSource と
+  //   serverSide の機能がある)は grouping を入れても rowGroup は効かない(serverSide は未対応で、別に警告が出る)ので
+  //   勧めない。serverSide の機能が無ければ dataSource は外されて clientSide になるので警告する。
   grouping: [
-    { prop: 'columns[].rowGroup', isUsed: (props) => props.columns.some((column) => column.rowGroup === true) },
+    {
+      prop: 'columns[].rowGroup',
+      isUsed: (props, features) =>
+        props.columns.some((column) => column.rowGroup === true) &&
+        (props.dataSource === undefined || features.serverSide === undefined),
+    },
   ],
 };
 

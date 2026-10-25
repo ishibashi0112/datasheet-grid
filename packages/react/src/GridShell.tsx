@@ -1690,12 +1690,14 @@ export function useGridShell<T extends object>({
     };
   }, [labelSticky, labelDisplay, labelRowFeature, rowMetrics, scrollTop, verticalScaleFactor, rowModel]);
   // 追加(label-row ④): 命令的 API(exportCsv / getExportData)へ渡すラベル行のエクスポート設定です。
+  //   変更(差し込み式 段階 5): ラベル行の機能が無い構成ではラベル行をデータ行として扱うので渡しません(全部入りでは
+  //   labelRowEnabled は「labelRow の 2 つの関数がある」と同じ)。
   const labelRowExport = useMemo(
     () =>
-      labelIsLabelRow && labelGetLabel
+      labelRowEnabled
         ? { isLabelRow: labelIsLabelRow, getLabel: labelGetLabel, exportText: labelExportText }
         : undefined,
-    [labelIsLabelRow, labelGetLabel, labelExportText],
+    [labelRowEnabled, labelIsLabelRow, labelGetLabel, labelExportText],
   );
   const stickyLabelSlot = useMemo(
     () => resolveSlotProps<CSSProperties>(stickyLabelEntry ? resolveLabelRowSlot(stickyLabelEntry.labelRow) : undefined),

@@ -71,15 +71,17 @@ export type GridCoreFeatures = {
   labelRow?: LabelRowFeature;
   // 行グルーピング(rowGroup / aggFunc): グループツリーの構築(集計込み)と開閉の適用。無ければ列の解決が行グルーピングを
   //   無効にする(自動グループ列を作らず、rowGroup 列もそのまま表示)。
-  grouping?: {
-    buildGroupTree: typeof buildGroupTree;
-    flattenGroupTree: typeof flattenGroupTree;
-  };
+  grouping?: GroupingFeature;
   // サーバーサイド行モデル(SSRM): エンジンが持つのは書き戻しのセル単位の保存状態の表示だけ(行モデル本体
   //   controllers/serverSideRowModel は描画側の機能が作る)。
   serverSide?: {
     createSaveStatusController: () => SaveStatusController;
   };
+};
+
+export type GroupingFeature = {
+  buildGroupTree: typeof buildGroupTree;
+  flattenGroupTree: typeof flattenGroupTree;
 };
 
 export type LabelRowFeature = {

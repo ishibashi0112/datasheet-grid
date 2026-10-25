@@ -782,13 +782,14 @@ describe('差し込み式: filtering', () => {
     for (const prop of [
       '`enableGlobalFilter`',
       '`columns[].filterType`',
-      '`onFiltersChange`',
       '`showFilterChipBar`',
       '`globalFilterPlaceholder`',
     ]) {
       expect(warn.mock.calls.filter(([message]) => String(message).includes(prop))).toHaveLength(1);
     }
     expect(warn.mock.calls.filter(([message]) => String(message).includes('`enableColumnFilter`'))).toHaveLength(0);
+    // onFiltersChange は機能が無くても applyState で呼ばれるので警告しない。
+    expect(warn.mock.calls.filter(([message]) => String(message).includes('`onFiltersChange`'))).toHaveLength(0);
   });
 
   it('機能セットに無い構成で applyState に渡したフィルターは行に効かず、開発時に 1 回だけ警告する', () => {
@@ -956,6 +957,17 @@ describe('差し込み式: labelRow', () => {
     expect(warn.mock.calls.filter(([message]) => String(message).includes('`labelRow`'))).toHaveLength(1);
   });
 
+  it('機能セットに無ければエクスポートでもラベル行をデータ行として出す(raw / view とも)', () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const ref = createRef<SpreadsheetGridHandle<LRow>>();
+    render(<ExportOnlyGrid ref={ref} rows={labelRows} columns={labelColumns} rowKeyGetter={(r) => r.id} labelRow={labelRow} />);
+    for (const scope of ['raw', 'view'] as const) {
+      const lines = ref.current?.exportCsv({ scope }).split('\r\n') ?? [];
+      expect(lines.slice(0, 3)).toEqual(['名前', 'セクション 1', 'row 1-1']);
+      expect(lines).toHaveLength(13);
+    }
+  });
+
   it('labelRow だけを入れた構成ではラベル行が帯になり(データ行だけがセルを持つ)、縦スクロールで固定される', async () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     const { container } = render(
@@ -998,6 +1010,33 @@ describe('差し込み式: grouping', () => {
     expect(cellTexts(container, 'region')).toEqual(['東', '西', '東']);
     expect(cellTexts(container, 'name')).toEqual(['alpha', 'beta', 'gamma']);
     expect(warn.mock.calls.filter(([message]) => String(message).includes('`columns[].rowGroup`'))).toHaveLength(1);
+  });
+
+  it('機能セットに無ければグループの命令的 API は空 / 何もせず、エクスポートは素の行を出す', () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const ref = createRef<SpreadsheetGridHandle<GRow>>();
+    const { container } = render(<ExportOnlyGrid ref={ref} rows={groupRows} columns={groupColumns} rowKeyGetter={(r) => r.id} />);
+    expect(ref.current?.getGroupRows()).toEqual([]);
+    act(() => {
+      ref.current?.collapseAllGroups();
+      ref.current?.setGroupCollapsed('東', true);
+      ref.current?.expandAllGroups();
+    });
+    expect(cellTexts(container, 'name')).toEqual(['alpha', 'beta', 'gamma']);
+    expect(ref.current?.exportCsv().split('\r\n')).toEqual(['地域,名前,金額', '東,alpha,10', '西,beta,20', '東,gamma,30']);
+  });
+
+  it('serverSide で動く構成では grouping を勧めない(serverSide は rowGroup に未対応のため)', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const dataSource: ServerSideDataSource<GRow> = {
+      getRows: (params) =>
+        Promise.resolve({ rows: groupRows.slice(params.startIndex, params.endIndex), totalRowCount: groupRows.length }),
+    };
+    render(<ServerSideOnlyGrid columns={groupColumns} dataSource={dataSource} rowKeyGetter={(r) => r.id} />);
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(warn.mock.calls.filter(([message]) => String(message).includes('`columns[].rowGroup`'))).toHaveLength(0);
   });
 
   it('grouping だけを入れた構成ではグループ行(集計込み)が出て、開閉できる', () => {
