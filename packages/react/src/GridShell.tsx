@@ -76,20 +76,8 @@ import {
 } from '@ishibashi0112/spreadsheet-grid-core/logic/selectionOverlayGeometry';
 // 変更(差し込み式 段階 2): ヘッダー D&D 列並べ替えは機能セット(features.columnReorder)から受け取ります(無ければ代役)。
 // 変更(差し込み式 段階 2): 行ドラッグ並び替えは機能セット(features.rowDrag)から受け取ります(無ければ代役)。
-import {
-  // 追加(FM-1): フィルター管理パネルの一覧行(有効フィルターの抽出)に使います。
-  // 変更(差し込み式 段階 5): popover の現在値表示 / 候補収集に使っていたものは features/filtering へ移りました。
-  isActiveColumnFilterValue,
-  // 行モデルチェーンは order(Int32Array)ベースに一本化しています
-  //   (DS-2 で差し替え、旧オブジェクト配列版は DS-3-8 で削除)。
-  // 追加(filter-ext A): number フィルターの数値化規則(空白 = NaN)です。B-2 の
-  //   Float64 key 構築で predicate 側と同一規則を共有します。
-} from '@ishibashi0112/spreadsheet-grid-core/logic/filtering';
-// 追加(FM-1): 列フィルター値 → 人間可読要約(フィルター管理パネルの一覧行)です。
-import { describeColumnFilterValue } from '@ishibashi0112/spreadsheet-grid-core/logic/filterSummary';
-// 追加(preset-opt): dateSet プリセット構成(列定義 dateFilterPresets)の正規化です
-//   (popover のチップ描画 / 候補連動 / 要約ラベルへ同じ正規形を渡します)。
-import { normalizeDateFilterPresets } from '@ishibashi0112/spreadsheet-grid-core/logic/dateFilterPresets';
+// 変更(差し込み式 段階 5): フィルター(logic/filtering / filterSummary / dateFilterPresets / inferFilterType)を使う処理は
+//   機能セット(features.filtering)へ移りました(ポップオーバー / 適用中フィルターの一覧 / チップバー)。
 // 変更(10-C): 3ペインレイアウト構築用の helper / 型を追加インポートします。
 // 変更理由: reorderColumnsByPane / buildGridPaneLayout を SpreadsheetGrid で使い、
 //           PaneColumnEntry 型を各ペインの描画エントリ受け渡しに使うためです。
@@ -128,7 +116,6 @@ import {
 import {
   DEFAULT_DETAIL_ROW_HEIGHT,
   DETAIL_TOGGLE_COLUMN_KEY,
-  isInsideDetailCardOf,
   seedDetailIndexCache,
 } from '@ishibashi0112/spreadsheet-grid-core/logic/detailRow';
 // 追加(label-row ②): ラベル行(見出し / 区切り行)の SSRM ラッパです。
@@ -149,11 +136,8 @@ import {
 // 追加(state #1): 列状態 get/apply の純ロジックです(snapshot 組み立て / 外部入力の正規化)。
 // 追加(state #2): onStateChange の発火可否判定(decideStateChangeEmit)も同モジュールから読みます。
 // 追加(state v2): 列メタ(可視 / 順序 / ピン)の抽出 / 適用(extractColumnState / applyColumnState)。
-import {
-  computeHorizontalScrollTarget,
-} from '@ishibashi0112/spreadsheet-grid-core/logic/scrollTargets';
 // 変更(差し込み式 段階 2): 列幅自動調整のランナーは機能セット(features.columnAutosize)から受け取ります(無ければ代役)。
-// 追加(F-async): グローバルフィルタの時間分割(非ブロック)適用フックです。
+// 変更(差し込み式 段階 5): グローバルフィルタの時間分割(非ブロック)適用フックは機能セット(features.filtering)から受け取ります。
 // 追加(①-3): serverSide(SSRM)の RowModel を供給するフックです(dataSource 指定時に使用)。
 import { useServerSideRowModel } from './hooks/useServerSideRowModel';
 import type {
@@ -219,12 +203,7 @@ import type { ToolPanelTab } from './hooks/useToolPanelController';
 import type { ToolPanelTabDescriptor } from './view/ToolPanel';
 import type { ColumnChooserItem } from './view/ColumnChooserPanel';
 import type { SortManagementColumn } from './view/SortManagementPanel';
-import type {
-  FilterManagementEntry,
-  FilterManagementAddableColumn,
-} from './view/FilterManagementPanel';
-// 追加(FM-2): フィルターチップバー(適用中の列フィルターの常時表示 / opt-in)です。
-import GridFilterChipBar from './view/GridFilterChipBar';
+// 変更(差し込み式 段階 5): フィルターチップバーは機能セット(features.filtering)から受け取ります(無ければ代役)。
 // 変更(差し込み式 段階 2): スクロール位置インジケーターは機能セット(features.scrollHint)から受け取ります。
 // 追加(バッチ②/コンテキストメニュー): 対象解決(純ロジック)/ controller / portal popover。
 // 変更(差し込み式 段階 2): フィルハンドルの部品は機能セット(features.fillHandle)から受け取ります(無ければ代役)。
@@ -2927,61 +2906,23 @@ export function useGridShell<T extends object>({
   );
 
   // ── filter management panel actions(FM-1) ────────────
-  // 追加(FM-1): パネルへ渡す「適用中フィルター」一覧です。可視列(視覚順)→ 非表示列
-  //   (columns 定義順)の順で、isActiveColumnFilterValue な値だけを載せます。非表示列も
-  //   出すのは「見えない列に絞り込みが残っている」という発見性の穴を塞ぐのが本機能の主目的
-  //   のためです(非表示列はジャンプ先が無いため ✎ 不可・× のみ可 = isHidden で view が判別)。
-  const filterManagerEntries = useMemo<FilterManagementEntry[]>(() => {
-    const entries: FilterManagementEntry[] = [];
-    const pushEntry = (column: GridColumn<T>, isHidden: boolean) => {
-      const value = columnFilters[column.key];
-      if (!value || !isActiveColumnFilterValue(value)) {
-        return;
-      }
-      entries.push({
-        columnKey: column.key,
-        title: column.title || column.key,
-        // 変更(preset-opt): dateSet はカスタムプリセットのラベル逆引き用に列のプリセット
-        //   構成を渡します(他 kind は未使用のため従来どおり)。
-        summaryText: describeColumnFilterValue(
-          value,
-          value.kind === 'dateSet'
-            ? normalizeDateFilterPresets(column.dateFilterPresets)
-            : undefined,
-        ),
-        isHidden,
-      });
-    };
-    for (const column of orderedColumns) {
-      pushEntry(column, false);
-    }
-    for (const column of columns) {
-      if (column.visible === false) {
-        pushEntry(column, true);
-      }
-    }
-    return entries;
-  }, [columnFilters, columns, orderedColumns]);
-
-  // 追加(FM-1): 「フィルターを追加」の候補列です(可視・filterType あり・未適用)。
-  //   非表示列は除外します(追加 = ✎ と同じ「ジャンプ + popover」で、非表示列は開けないため)。
-  //   filterType 条件は列メニューの「フィルター…」項目(canFilter)と同じ規約です。
-  const filterManagerAddableColumns = useMemo<
-    FilterManagementAddableColumn[]
-  >(
-    () =>
-      visibleColumns
-        .filter(
-          (column) =>
-            Boolean(column.filterType) &&
-            !isActiveColumnFilterValue(columnFilters[column.key]),
-        )
-        .map((column) => ({
-          key: column.key,
-          title: column.title || column.key,
-        })),
-    [columnFilters, visibleColumns],
-  );
+  // 変更(差し込み式 段階 5): 適用中フィルターの一覧 / 「フィルターを追加」の候補列 / 対象列へのジャンプ(パネルの ✎ と
+  //   フィルターチップバー)はフィルターの機能(features/filtering)へ移しました。無い構成では空で、パネルのフィルタータブも
+  //   チップバーも出ません。
+  const { filterManagerEntries, filterManagerAddableColumns, jumpToColumnFilter } =
+    features.filtering.useFilterManagement<T>({
+      columns,
+      orderedColumns,
+      visibleColumns,
+      columnFilters,
+      scrollContainerRef,
+      gridRootRef,
+      paneLayout,
+      leftPaneTotalWidth,
+      centerLeadingWidth,
+      rightPaneTotalWidth,
+      openColumnFilterPopover,
+    });
 
   // 追加(FM-3): 既定トップバーの Filters chip クリックでパネルをトグルします。
   //   chip 側は onPointerDown を stopPropagation して window の outside-close へ届かせない
@@ -2995,105 +2936,6 @@ export function useGridShell<T extends object>({
       openToolPanel('filter');
     }
   }, [activeToolPanelTab, closeToolPanel, openToolPanel]);
-
-  // 追加(FM-1): 対象列まで横スクロールしてからフィルター popover を開きます(パネルの
-  //   ✎ 編集 / フィルターを追加)。openColumnFilterPopover は anchor(ヘッダーセル
-  //   data-ssg-col-key)を開いた時点の DOM から解決するため、列仮想化で対象列が未描画の
-  //   まま開くと layout=null で表示されません。そこで
-  //     ① 横スクロール(center ペインのみ。固定列は常時可視のためスクロール不要)
-  //     ② rAF リトライ(上限 8 フレーム)でヘッダーセルの出現を待つ
-  //     ③ open + ジャンプ先ヘッダーのフラッシュ(ssg-header-cell--jump-flash)
-  //   の順に組み立てます。リトライは上限付きの有限ループでゾンビ化しません(13-B3-7 の
-  //   自己停止ガードと同趣旨)。上限まで出現しなければ開かず終了します(非表示化直後など。
-  //   無表示 popover 状態を作らないため)。
-  const jumpToColumnFilter = useCallback(
-    (columnKey: string) => {
-      const el = scrollContainerRef.current;
-      const colIndex = orderedColumns.findIndex(
-        (column) => column.key === columnKey,
-      );
-      if (colIndex < 0) {
-        return;
-      }
-      const column = orderedColumns[colIndex];
-      if (el) {
-        const single = computeSinglePaneColumnExtent(paneLayout, colIndex);
-        if (single && single.pane === 'center') {
-          const target = computeHorizontalScrollTarget({
-            cellLeft:
-              leftPaneTotalWidth + centerLeadingWidth + single.extent.start,
-            cellWidth: single.extent.width,
-            leftPaneWidth: leftPaneTotalWidth,
-            rightPaneWidth: rightPaneTotalWidth,
-            viewportWidth: el.clientWidth,
-            currentScrollLeft: el.scrollLeft,
-            align: 'auto',
-            maxScrollLeft: el.scrollWidth - el.clientWidth,
-          });
-          if (target !== el.scrollLeft) {
-            el.scrollTo({ left: target, behavior: 'auto' });
-          }
-        }
-      }
-      const findHeaderCell = (): HTMLElement | null => {
-        const root = gridRootRef.current;
-        const cells = root?.querySelectorAll<HTMLElement>('[data-ssg-col-key]');
-        if (!root || !cells) {
-          return null;
-        }
-        return (
-          Array.from(cells).find(
-            (cell) =>
-              cell.dataset.ssgColKey === columnKey &&
-              // 追加(detail ④): 展開行カード内にネストしたグリッドの同名列は対象外です。
-              !isInsideDetailCardOf(root, cell),
-          ) ?? null
-        );
-      };
-      const tryOpen = (attempt: number) => {
-        // unmount 後の遅延実行ガードです(root が消えていたら何もしません)。
-        if (!gridRootRef.current) {
-          return;
-        }
-        const cell = findHeaderCell();
-        if (cell === null) {
-          if (attempt < 8) {
-            requestAnimationFrame(() => tryOpen(attempt + 1));
-          }
-          return;
-        }
-        openColumnFilterPopover(column);
-        // ジャンプ先の視認補助フラッシュです。React はヘッダーセルの className prop が
-        //   変化したときだけ属性を書き戻すため、直付けクラスは通常アニメ完了まで残ります
-        //   (途中で hover 等により書き戻されても視認補助が早く消えるだけで実害なし)。
-        cell.classList.remove('ssg-header-cell--jump-flash');
-        // reflow を挟み、連続ジャンプでも再アニメーションさせます。
-        void cell.offsetWidth;
-        cell.classList.add('ssg-header-cell--jump-flash');
-        cell.addEventListener(
-          'animationend',
-          () => {
-            cell.classList.remove('ssg-header-cell--jump-flash');
-          },
-          { once: true },
-        );
-      };
-      requestAnimationFrame(() => {
-        tryOpen(0);
-      });
-    },
-    // 変更(本体分解 E-5): 旧 apiStateRef 経由の読みを直接参照へ(列レイアウト変化で参照が変わるが、
-    //   渡し先はパネル / バーのコールバックのみでコールドパス)。
-    [
-      gridRootRef,
-      openColumnFilterPopover,
-      orderedColumns,
-      paneLayout,
-      leftPaneTotalWidth,
-      centerLeadingWidth,
-      rightPaneTotalWidth,
-    ],
-  );
 
   // 追加(13-B3-2): ヘッダー D&D 並べ替え controller(ドロップインジケータ ref + 安定ハンドラ)。
   //   enabled は controlled columns(onColumnsChange あり)のときだけ true。
@@ -3913,8 +3755,9 @@ export function useGridShell<T extends object>({
       {/* 追加(FM-2): フィルターチップバー(opt-in)。適用中の列フィルターをチップで常時表示します。
           entries / ハンドラはフィルター管理パネル(FM-1)と完全共用です(要約・非表示列の扱いが
           自動で一致)。0 件時はコンポーネント側が null を返すため、条件は prop のみで判定します。 */}
+      {/* 変更(差し込み式 段階 5): 部品は機能セットの filtering から(無い構成の代役は何も描かない)。 */}
       {showFilterChipBar && (
-        <GridFilterChipBar
+        <features.filtering.FilterChipBar
           slot={slots.filterChipBar}
           entries={filterManagerEntries}
           canFilter={columnFilterEnabled}

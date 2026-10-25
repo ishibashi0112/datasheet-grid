@@ -52,6 +52,8 @@ import type { UseColumnHeaderDragControllerArgs } from '../hooks/useColumnHeader
 import type { UseRowDragControllerArgs } from '../hooks/useRowDragController';
 import type { UseColumnMenuControllerArgs, UseColumnMenuControllerResult } from '../hooks/useColumnMenuController';
 import type { ColumnMenuPopover } from '../view/ColumnMenuPopover';
+import type { GridFilterChipBar } from '../view/GridFilterChipBar';
+import type { FilterManagementAddableColumn, FilterManagementEntry } from '../view/FilterManagementPanel';
 import type { UseToolPanelControllerArgs, UseToolPanelControllerResult } from '../hooks/useToolPanelController';
 import type { FilterPopoverViews, ToolPanelViews, UseLazyModuleOptions } from '../view/lazyPopups';
 import type { useFilterPopoverController } from '../hooks/useFilterPopoverController';
@@ -154,6 +156,27 @@ export type FilterPopoverContentFeatureArgs<T> = {
   portalClassName: string | undefined;
 };
 
+// 適用中フィルターの一覧 / 候補列 / ジャンプ(filtering)の hook が受け取るシェルの値と返す値です。
+export type FilterManagementFeatureArgs<T> = {
+  columns: GridColumn<T>[];
+  orderedColumns: GridColumn<T>[];
+  visibleColumns: GridColumn<T>[];
+  columnFilters: Record<string, ColumnFilterValue>;
+  scrollContainerRef: RefObject<HTMLDivElement | null>;
+  gridRootRef: RefObject<HTMLDivElement | null>;
+  paneLayout: GridPaneLayout<T>;
+  leftPaneTotalWidth: number;
+  centerLeadingWidth: number;
+  rightPaneTotalWidth: number;
+  openColumnFilterPopover: (column: GridColumn<T>) => void;
+};
+export type FilterManagementFeatureResult = {
+  filterManagerEntries: FilterManagementEntry[];
+  filterManagerAddableColumns: FilterManagementAddableColumn[];
+  // 対象列まで横スクロールしてからフィルターのポップオーバーを開く(パネルの ✎ / フィルターを追加 / チップ)。
+  jumpToColumnFilter: (columnKey: string) => void;
+};
+
 // 列ヘッダーのドラッグによる並べ替え(columnReorder)の hook が受け取る値(コントローラの引数そのまま)と返す値です。
 export type ColumnReorderFeatureArgs<T> = UseColumnHeaderDragControllerArgs<T>;
 export type ColumnReorderFeatureResult<T> = {
@@ -244,6 +267,8 @@ export type ReactGridFeatures = {
     useFilterPopover: <T>(args: FilterPopoverFeatureArgs<T>) => FilterPopoverFeatureResult<T>;
     useFilterPopoverViews: (options: UseLazyModuleOptions) => FilterPopoverViews | null;
     useFilterPopoverContent: <T>(args: FilterPopoverContentFeatureArgs<T>) => ReactNode;
+    useFilterManagement: <T>(args: FilterManagementFeatureArgs<T>) => FilterManagementFeatureResult;
+    FilterChipBar: typeof GridFilterChipBar;
   };
   // 行の高さの実測(autoHeight): 実測のコントローラ + 行高ストア(core)。描画の部品は無い。
   autoHeight?: NonNullable<GridCoreFeatures['autoHeight']>;

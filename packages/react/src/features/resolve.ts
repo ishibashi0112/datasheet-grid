@@ -133,6 +133,13 @@ const INERT_FILTER_POPOVER = {
   updateFilterPopoverDateDraft: noop,
 };
 
+// 適用中フィルターの一覧は空(列フィルターを切るのでツールパネルのフィルタータブもチップバーも出ない)。
+const INERT_FILTER_MANAGEMENT = {
+  filterManagerEntries: [],
+  filterManagerAddableColumns: [],
+  jumpToColumnFilter: noop,
+};
+
 // フィルターが無い構成では enableColumnFilter / enableGlobalFilter を false として扱う(createSpreadsheetGrid)ので、
 //   行は絞り込みません(グローバルフィルターは掛けず恒等 order のまま、列フィルターの段は行パイプラインが通さない)。
 const inertFilteringFeature: GridShellFeatures['filtering'] = {
@@ -147,6 +154,8 @@ const inertFilteringFeature: GridShellFeatures['filtering'] = {
   useFilterPopover: () => INERT_FILTER_POPOVER,
   useFilterPopoverViews: () => null,
   useFilterPopoverContent: () => null,
+  useFilterManagement: () => INERT_FILTER_MANAGEMENT,
+  FilterChipBar: () => null,
 };
 
 // エクスポートが無い構成: 何も出力しない代役(エンジンの代役と同じ)に、呼ばれたら開発時に 1 回だけ警告するのを足します

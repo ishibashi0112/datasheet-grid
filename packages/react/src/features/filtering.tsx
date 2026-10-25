@@ -8,6 +8,9 @@
 //     - useFilterPopoverViews: ポップオーバーの部品(別チャンク)の読み込み。
 //     - useFilterPopoverContent: 候補の収集(同期 / 時間分割 / getFilterOptions)・派生値・コマンド群(core
 //       engine/filterPopoverCommands。差し込み式 段階 5 からはエンジンではなくこの hook が作る)と、ポップオーバーの描画。
+//     - useFilterManagement: 適用中フィルターの一覧 / 「フィルターを追加」の候補列(ツールパネルのフィルタータブと
+//       フィルターチップバーで共用)と、対象列へ横スクロールしてポップオーバーを開くジャンプ。
+//     - FilterChipBar: フィルターチップバー(showFilterChipBar)。
 //   機能セットに無い構成では enableColumnFilter / enableGlobalFilter を false として扱い(createSpreadsheetGrid)、
 //   行は絞り込みません(代役の useFilterOrder は baseOrder をそのまま返し、ポップオーバーは開かない)。
 import { useCallback, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
@@ -31,12 +34,17 @@ import { describeColumnFilterValue } from '@ishibashi0112/spreadsheet-grid-core/
 import { normalizeDateFilterPresets } from '@ishibashi0112/spreadsheet-grid-core/logic/dateFilterPresets';
 import { inferColumnFilterType } from '@ishibashi0112/spreadsheet-grid-core/logic/inferFilterType';
 import { getCellValue } from '@ishibashi0112/spreadsheet-grid-core/utils/permissions';
+import { computeSinglePaneColumnExtent } from '@ishibashi0112/spreadsheet-grid-core/logic/geometry';
+import { computeHorizontalScrollTarget } from '@ishibashi0112/spreadsheet-grid-core/logic/scrollTargets';
+import { isInsideDetailCardOf } from '@ishibashi0112/spreadsheet-grid-core/logic/detailRow';
 import { useController, useControllerLifecycle } from '../hooks/useController';
 import { useGlobalFilteredOrder } from '../hooks/useGlobalFilteredOrder';
 import { useFilterPopoverController } from '../hooks/useFilterPopoverController';
 import { useAsyncSelectOptionsSource } from '../hooks/useAsyncSelectOptionsSource';
 import useColumnSelectOptionsCollector from '../hooks/useColumnSelectOptionsCollector';
 import { filterPopoverModule, useLazyModule, type UseLazyModuleOptions } from '../view/lazyPopups';
+import GridFilterChipBar from '../view/GridFilterChipBar';
+import type { FilterManagementAddableColumn, FilterManagementEntry } from '../view/FilterManagementPanel';
 import type { ColumnFilterUiType, GridColumn } from '../model/gridTypes';
 import type {
   FilterOrderFeatureArgs,
@@ -44,6 +52,8 @@ import type {
   FilterPopoverContentFeatureArgs,
   FilterPopoverFeatureArgs,
   FilterPopoverFeatureResult,
+  FilterManagementFeatureArgs,
+  FilterManagementFeatureResult,
   ReactGridFeatures,
 } from './types';
 
@@ -408,6 +418,179 @@ const useFilterPopoverContent = <T,>({
   return renderedFilterPopover;
 };
 
+const useFilterManagement = <T,>({
+  columns,
+  orderedColumns,
+  visibleColumns,
+  columnFilters,
+  scrollContainerRef,
+  gridRootRef,
+  paneLayout,
+  leftPaneTotalWidth,
+  centerLeadingWidth,
+  rightPaneTotalWidth,
+  openColumnFilterPopover,
+}: FilterManagementFeatureArgs<T>): FilterManagementFeatureResult => {
+  // 追加(FM-1): パネルへ渡す「適用中フィルター」一覧です。可視列(視覚順)→ 非表示列
+  //   (columns 定義順)の順で、isActiveColumnFilterValue な値だけを載せます。非表示列も
+  //   出すのは「見えない列に絞り込みが残っている」という発見性の穴を塞ぐのが本機能の主目的
+  //   のためです(非表示列はジャンプ先が無いため ✎ 不可・× のみ可 = isHidden で view が判別)。
+  const filterManagerEntries = useMemo<FilterManagementEntry[]>(() => {
+    const entries: FilterManagementEntry[] = [];
+    const pushEntry = (column: GridColumn<T>, isHidden: boolean) => {
+      const value = columnFilters[column.key];
+      if (!value || !isActiveColumnFilterValue(value)) {
+        return;
+      }
+      entries.push({
+        columnKey: column.key,
+        title: column.title || column.key,
+        // 変更(preset-opt): dateSet はカスタムプリセットのラベル逆引き用に列のプリセット
+        //   構成を渡します(他 kind は未使用のため従来どおり)。
+        summaryText: describeColumnFilterValue(
+          value,
+          value.kind === 'dateSet'
+            ? normalizeDateFilterPresets(column.dateFilterPresets)
+            : undefined,
+        ),
+        isHidden,
+      });
+    };
+    for (const column of orderedColumns) {
+      pushEntry(column, false);
+    }
+    for (const column of columns) {
+      if (column.visible === false) {
+        pushEntry(column, true);
+      }
+    }
+    return entries;
+  }, [columnFilters, columns, orderedColumns]);
+
+  // 追加(FM-1): 「フィルターを追加」の候補列です(可視・filterType あり・未適用)。
+  //   非表示列は除外します(追加 = ✎ と同じ「ジャンプ + popover」で、非表示列は開けないため)。
+  //   filterType 条件は列メニューの「フィルター…」項目(canFilter)と同じ規約です。
+  const filterManagerAddableColumns = useMemo<
+    FilterManagementAddableColumn[]
+  >(
+    () =>
+      visibleColumns
+        .filter(
+          (column) =>
+            Boolean(column.filterType) &&
+            !isActiveColumnFilterValue(columnFilters[column.key]),
+        )
+        .map((column) => ({
+          key: column.key,
+          title: column.title || column.key,
+        })),
+    [columnFilters, visibleColumns],
+  );
+
+  // 追加(FM-1): 対象列まで横スクロールしてからフィルター popover を開きます(パネルの
+  //   ✎ 編集 / フィルターを追加)。openColumnFilterPopover は anchor(ヘッダーセル
+  //   data-ssg-col-key)を開いた時点の DOM から解決するため、列仮想化で対象列が未描画の
+  //   まま開くと layout=null で表示されません。そこで
+  //     ① 横スクロール(center ペインのみ。固定列は常時可視のためスクロール不要)
+  //     ② rAF リトライ(上限 8 フレーム)でヘッダーセルの出現を待つ
+  //     ③ open + ジャンプ先ヘッダーのフラッシュ(ssg-header-cell--jump-flash)
+  //   の順に組み立てます。リトライは上限付きの有限ループでゾンビ化しません(13-B3-7 の
+  //   自己停止ガードと同趣旨)。上限まで出現しなければ開かず終了します(非表示化直後など。
+  //   無表示 popover 状態を作らないため)。
+  const jumpToColumnFilter = useCallback(
+    (columnKey: string) => {
+      const el = scrollContainerRef.current;
+      const colIndex = orderedColumns.findIndex(
+        (column) => column.key === columnKey,
+      );
+      if (colIndex < 0) {
+        return;
+      }
+      const column = orderedColumns[colIndex];
+      if (el) {
+        const single = computeSinglePaneColumnExtent(paneLayout, colIndex);
+        if (single && single.pane === 'center') {
+          const target = computeHorizontalScrollTarget({
+            cellLeft:
+              leftPaneTotalWidth + centerLeadingWidth + single.extent.start,
+            cellWidth: single.extent.width,
+            leftPaneWidth: leftPaneTotalWidth,
+            rightPaneWidth: rightPaneTotalWidth,
+            viewportWidth: el.clientWidth,
+            currentScrollLeft: el.scrollLeft,
+            align: 'auto',
+            maxScrollLeft: el.scrollWidth - el.clientWidth,
+          });
+          if (target !== el.scrollLeft) {
+            el.scrollTo({ left: target, behavior: 'auto' });
+          }
+        }
+      }
+      const findHeaderCell = (): HTMLElement | null => {
+        const root = gridRootRef.current;
+        const cells = root?.querySelectorAll<HTMLElement>('[data-ssg-col-key]');
+        if (!root || !cells) {
+          return null;
+        }
+        return (
+          Array.from(cells).find(
+            (cell) =>
+              cell.dataset.ssgColKey === columnKey &&
+              // 追加(detail ④): 展開行カード内にネストしたグリッドの同名列は対象外です。
+              !isInsideDetailCardOf(root, cell),
+          ) ?? null
+        );
+      };
+      const tryOpen = (attempt: number) => {
+        // unmount 後の遅延実行ガードです(root が消えていたら何もしません)。
+        if (!gridRootRef.current) {
+          return;
+        }
+        const cell = findHeaderCell();
+        if (cell === null) {
+          if (attempt < 8) {
+            requestAnimationFrame(() => tryOpen(attempt + 1));
+          }
+          return;
+        }
+        openColumnFilterPopover(column);
+        // ジャンプ先の視認補助フラッシュです。React はヘッダーセルの className prop が
+        //   変化したときだけ属性を書き戻すため、直付けクラスは通常アニメ完了まで残ります
+        //   (途中で hover 等により書き戻されても視認補助が早く消えるだけで実害なし)。
+        cell.classList.remove('ssg-header-cell--jump-flash');
+        // reflow を挟み、連続ジャンプでも再アニメーションさせます。
+        void cell.offsetWidth;
+        cell.classList.add('ssg-header-cell--jump-flash');
+        cell.addEventListener(
+          'animationend',
+          () => {
+            cell.classList.remove('ssg-header-cell--jump-flash');
+          },
+          { once: true },
+        );
+      };
+      requestAnimationFrame(() => {
+        tryOpen(0);
+      });
+    },
+    // 変更(本体分解 E-5): 旧 apiStateRef 経由の読みを直接参照へ(列レイアウト変化で参照が変わるが、
+    //   渡し先はパネル / バーのコールバックのみでコールドパス)。
+    // 変更(差し込み式 段階 5): scrollContainerRef はシェルの useRef(参照は不変)を引数で受けるため deps に足します。
+    [
+      gridRootRef,
+      scrollContainerRef,
+      openColumnFilterPopover,
+      orderedColumns,
+      paneLayout,
+      leftPaneTotalWidth,
+      centerLeadingWidth,
+      rightPaneTotalWidth,
+    ],
+  );
+
+  return { filterManagerEntries, filterManagerAddableColumns, jumpToColumnFilter };
+};
+
 export const filteringFeature: NonNullable<ReactGridFeatures['filtering']> = {
   createColumnFilterStage,
   createDateRolloverStore,
@@ -415,4 +598,6 @@ export const filteringFeature: NonNullable<ReactGridFeatures['filtering']> = {
   useFilterPopover,
   useFilterPopoverViews,
   useFilterPopoverContent,
+  useFilterManagement,
+  FilterChipBar: GridFilterChipBar,
 };

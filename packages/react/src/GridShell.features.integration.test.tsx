@@ -762,14 +762,16 @@ describe('差し込み式: filtering', () => {
         rowKeyGetter={(r) => r.id}
         enableGlobalFilter
         onFiltersChange={onFiltersChange}
+        showFilterChipBar
       />,
     );
     expect(searchBox(container)).toBeNull();
+    expect(container.querySelector('.ssg-filter-chip-bar')).toBeNull();
     expect(bodyTexts(container)).toEqual(['alpha', 'beta']);
     openColumnMenu(container);
     expect(menuLabels()).toContain('昇順で並び替え');
     expect(menuLabels()).not.toContain('フィルター…');
-    for (const prop of ['`enableGlobalFilter`', '`columns[].filterType`', '`onFiltersChange`']) {
+    for (const prop of ['`enableGlobalFilter`', '`columns[].filterType`', '`onFiltersChange`', '`showFilterChipBar`']) {
       expect(warn.mock.calls.filter(([message]) => String(message).includes(prop))).toHaveLength(1);
     }
     expect(warn.mock.calls.filter(([message]) => String(message).includes('`enableColumnFilter`'))).toHaveLength(0);
@@ -781,11 +783,18 @@ describe('差し込み式: filtering', () => {
     expect(warn).not.toHaveBeenCalled();
   });
 
-  it('filtering だけを入れた構成では検索欄で行が絞り込まれ、列フィルター(状態の復元)も効く', () => {
+  it('filtering だけを入れた構成では検索欄で行が絞り込まれ、列フィルター(状態の復元)とチップバーも効く', () => {
     const ref = createRef<SpreadsheetGridHandle<Row>>();
     const onFiltersChange = vi.fn();
     const { container } = render(
-      <FilteringOnlyGrid ref={ref} rows={rows} columns={filterColumns} rowKeyGetter={(r) => r.id} onFiltersChange={onFiltersChange} />,
+      <FilteringOnlyGrid
+        ref={ref}
+        rows={rows}
+        columns={filterColumns}
+        rowKeyGetter={(r) => r.id}
+        onFiltersChange={onFiltersChange}
+        showFilterChipBar
+      />,
     );
     const input = searchBox(container);
     expect(input).not.toBeNull();
@@ -803,6 +812,13 @@ describe('差し込み式: filtering', () => {
     expect(bodyTexts(container)).toEqual(['beta']);
     expect(container.querySelector('.ssg-header-filtered-mark')).not.toBeNull();
     expect(onFiltersChange).toHaveBeenCalled();
+    // チップバーに適用中のフィルターが出て、× で外せる。
+    expect(container.querySelector('.ssg-filter-chip-bar')?.textContent).toContain('名前');
+    act(() => {
+      fireEvent.click(container.querySelector('[aria-label="名前 のフィルターをクリア"]') as HTMLElement);
+    });
+    expect(bodyTexts(container)).toEqual(['alpha', 'beta']);
+    expect(container.querySelector('.ssg-filter-chip-bar')).toBeNull();
   });
 
   it('列メニューと組み合わせると「フィルター…」でポップオーバーが開き、候補のチェックで絞り込める', () => {
