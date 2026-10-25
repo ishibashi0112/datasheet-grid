@@ -13,6 +13,7 @@
     "version:minor": "node scripts/bump-version.mjs minor",
     "version:patch": "node scripts/bump-version.mjs patch",
     "publish:all": "pnpm -r publish --access public",
+    "publish:next": "pnpm -r publish --access public --tag next",
     "lint": "eslint .",
     "preview": "vp preview",
     "test": "vitest run",
