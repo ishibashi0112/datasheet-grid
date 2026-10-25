@@ -1,3 +1,8 @@
+/* 追加(デザインシステムのデモ): Astryx(guides/design-systems のデモの iframe の中身 app/ds-frame/astryx)の CSS の
+   レイヤーを Tailwind のレイヤーの間に並べる宣言。Astryx の README(Next.js + Tailwind)と同じ順番。Astryx の CSS は
+   このファイルより後に読み込まれるので、先に順番を決めておかないと Astryx のレイヤーが Tailwind の utilities より
+   後ろ(= 強い)に並ぶ。 */
+@layer reset, theme, base, astryx-base, astryx-theme, components, utilities;
 @import 'tailwindcss';
 @import 'fumadocs-ui/css/neutral.css';
 @import 'fumadocs-ui/css/preset.css';

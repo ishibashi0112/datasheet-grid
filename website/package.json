@@ -10,7 +10,14 @@
     "postinstall": "fumadocs-mdx"
   },
   "dependencies": {
+    "@astryxdesign/core": "^0.7.4",
+    "@astryxdesign/theme-neutral": "^0.7.4",
+    "@heroui/react": "^3.2.6",
+    "@heroui/styles": "^3.2.6",
     "@ishibashi0112/spreadsheet-grid": "workspace:*",
+    "@mantine/core": "^9.7.3",
+    "@mantine/hooks": "^9.7.3",
+    "@stylexjs/stylex": "^0.19.1",
     "cnfast": "^0.0.8",
     "fumadocs-core": "16.11.5",
     "fumadocs-mdx": "15.2.0",

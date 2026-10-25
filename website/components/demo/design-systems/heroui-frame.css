@@ -1,0 +1,3 @@
+/* HeroUI の画面(app/ds-frame/heroui)だけで読み込む。HeroUI v3 の手順どおり Tailwind CSS v4 と HeroUI の CSS を読み込む。 */
+@import 'tailwindcss';
+@import '@heroui/styles';

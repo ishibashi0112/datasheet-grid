@@ -5,7 +5,7 @@
 //   利用側のバンドラ(vite / postcss-import 等)が同ディレクトリの dist/style.css を
 //   レイヤーへ取り込みます(CSS の複製を持たないため中身の乖離が起きません)。
 // 実行: build:lib の最終ステップ(vite build → tsc → 本スクリプト)。cwd はリポジトリ直下。
-import { existsSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 if (!existsSync('dist/style.css')) {
@@ -19,16 +19,28 @@ writeFileSync(
 );
 console.log('emit-layer-css: dist/style.layer.css を生成しました');
 
+// 追加(デザインシステムのテーマ): デザインシステムのテーマ変数をグリッドのトークンへつなぐ CSS(src/themes/*.css)を
+//   dist/themes/ へそのまま置きます(`import '<pkg>/themes/astryx.css'`。style.css の後に読み込む前提で、ビルドでの
+//   変換は不要)。公開は package.json の exports に 1 つずつ書きます。
+const THEME_FILES = readdirSync('src/themes')
+  .filter((name) => name.endsWith('.css'))
+  .map((name) => `themes/${name}`);
+mkdirSync('dist/themes', { recursive: true });
+for (const name of THEME_FILES) {
+  copyFileSync(`src/${name}`, `dist/${name}`);
+}
+console.log(`emit-layer-css: dist/${THEME_FILES.join(' / dist/')} を置きました`);
+
 // 追加(audit P-3): `import '<pkg>/style.css'` の型解決用の空 d.ts です。package.json の exports で
 //   `./style.css` / `./style.layer.css` に `types` 条件として指し、TS 6(strict = noUncheckedSideEffectImports)
 //   の利用側で vite/client 等の `*.css` 宣言が無くても TS2882 にならないようにします。
-for (const name of ['style.css', 'style.layer.css']) {
+for (const name of ['style.css', 'style.layer.css', ...THEME_FILES]) {
   writeFileSync(
     `dist/${name}.d.ts`,
     `// ${name} の副作用 import 用(型なし)。\nexport {};\n`,
   );
 }
-console.log('emit-layer-css: dist/style.css.d.ts / style.layer.css.d.ts を生成しました');
+console.log('emit-layer-css: CSS の副作用 import 用の d.ts を生成しました');
 
 // 追加(⑤-2 事後): tsc は副作用 import(`import './styles.css'`)を d.ts にも残します。利用側が skipLibCheck: false
 //   で型検査すると .css を解決できず TS2882 になる(vite/client の '*.css' 宣言は配布物に含まれない)ため、

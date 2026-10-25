@@ -70,6 +70,22 @@
       "types": "./dist/style.layer.css.d.ts",
       "default": "./dist/style.layer.css"
     },
+    "./themes/astryx.css": {
+      "types": "./dist/themes/astryx.css.d.ts",
+      "default": "./dist/themes/astryx.css"
+    },
+    "./themes/heroui.css": {
+      "types": "./dist/themes/heroui.css.d.ts",
+      "default": "./dist/themes/heroui.css"
+    },
+    "./themes/mantine.css": {
+      "types": "./dist/themes/mantine.css.d.ts",
+      "default": "./dist/themes/mantine.css"
+    },
+    "./themes/shadcn.css": {
+      "types": "./dist/themes/shadcn.css.d.ts",
+      "default": "./dist/themes/shadcn.css"
+    },
     "./package.json": "./package.json"
   },
   "engines": {
