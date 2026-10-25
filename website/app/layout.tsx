@@ -1,4 +1,4 @@
-import { RootProvider } from 'fumadocs-ui/provider/next';
+import { SiteProvider } from '@/components/site-provider';
 import './global.css';
 import { Inter } from 'next/font/google';
 
@@ -10,7 +10,7 @@ export default function Layout({ children }: LayoutProps<'/'>) {
   return (
     <html lang="ja" className={inter.className} suppressHydrationWarning>
       <body className="flex flex-col min-h-screen">
-        <RootProvider>{children}</RootProvider>
+        <SiteProvider>{children}</SiteProvider>
       </body>
     </html>
   );

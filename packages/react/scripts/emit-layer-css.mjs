@@ -1,10 +1,12 @@
-// dist/style.layer.css を生成します(THEME-1)。
+// dist/style.layer.css を生成し、デザインシステムのテーマ(src/themes/*.css)を dist/themes/ へ置き、CSS の
+// 副作用 import 用の空 d.ts を作ります。
+// style.layer.css(THEME-1):
 // 目的: Tailwind v4 などカスケードレイヤーを運用する利用側向けに、全スタイルを
 //   `@layer ssg-base` へ入れたバリアントを提供します(Mantine の styles.css /
 //   styles.layer.css と同じ二本立て)。実体は 1 行の @import layer() で、
 //   利用側のバンドラ(vite / postcss-import 等)が同ディレクトリの dist/style.css を
 //   レイヤーへ取り込みます(CSS の複製を持たないため中身の乖離が起きません)。
-// 実行: build:lib の最終ステップ(vite build → tsc → 本スクリプト)。cwd はリポジトリ直下。
+// 実行: build:lib の最終ステップ(vite build → tsc → 本スクリプト)。cwd はパッケージ直下(packages/react)。
 import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
@@ -21,10 +23,18 @@ console.log('emit-layer-css: dist/style.layer.css を生成しました');
 
 // 追加(デザインシステムのテーマ): デザインシステムのテーマ変数をグリッドのトークンへつなぐ CSS(src/themes/*.css)を
 //   dist/themes/ へそのまま置きます(`import '<pkg>/themes/astryx.css'`。style.css の後に読み込む前提で、ビルドでの
-//   変換は不要)。公開は package.json の exports に 1 つずつ書きます。
+//   変換は不要)。公開は package.json の exports に 1 つずつ書きます(書き忘れるとビルドを止めます)。
 const THEME_FILES = readdirSync('src/themes')
   .filter((name) => name.endsWith('.css'))
   .map((name) => `themes/${name}`);
+const exportsField = JSON.parse(readFileSync('package.json', 'utf8')).exports ?? {};
+const unexported = THEME_FILES.filter(
+  (name) => exportsField[`./${name}`]?.default !== `./dist/${name}` || exportsField[`./${name}`]?.types !== `./dist/${name}.d.ts`,
+);
+if (unexported.length > 0) {
+  console.error(`emit-layer-css: package.json の exports に次のテーマがありません: ${unexported.join(' / ')}`);
+  process.exit(1);
+}
 mkdirSync('dist/themes', { recursive: true });
 for (const name of THEME_FILES) {
   copyFileSync(`src/${name}`, `dist/${name}`);

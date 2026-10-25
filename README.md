@@ -78,7 +78,7 @@ import '@ishibashi0112/spreadsheet-grid/style.css'
 
 The base styles are plain (unlayered) CSS scoped to `.ssg-*` classes, and all design tokens are defined at zero specificity (`:where(.ssg-root)`), so your token overrides always win regardless of import order.
 
-### Using with Tailwind CSS / HeroUI / Mantine / StyleX / Astryx
+### Using with Tailwind CSS / HeroUI / Mantine
 
 - **Tailwind CSS v3 (and HeroUI on v3)** — works out of the box. Preflight cannot break the grid: its element/universal resets lose to the grid's class selectors by specificity.
 - **Tailwind CSS v4 (and HeroUI on v4)** — works out of the box. If you additionally want Tailwind utilities to override grid defaults without the `!` modifier, put the grid CSS into a cascade layer below `utilities`:
@@ -100,7 +100,7 @@ The base styles are plain (unlayered) CSS scoped to `.ssg-*` classes, and all de
 - **StyleX** — works out of the box (no resets, `x`-prefixed atomic classes). Pass `stylex.props(...)` straight into `classNames.*`, `cellClassName`, `getRowClassName` or `detailRow.className` — every slot accepts `string | { className, style }`, so StyleX dynamic styles (delivered through the `style` object) reach the element. StyleX atomic classes and the grid's base classes share the same specificity, so load the grid CSS before StyleX's output, or use `style.layer.css` (required when StyleX's `useLayers` option is on). Bridge tokens with `stylex.create({ grid: { '--ssg-accent': vars.accent } })` on the `root` slot.
 - **Astryx** (Meta's design system, built on StyleX) — works out of the box: the grid's unlayered CSS is not affected by Astryx's `@layer reset` / `@layer astryx-base`, and Astryx components rendered inside cells look the same as outside.
 
-**Matching your design system's colors:** import its theme after `style.css` — `themes/astryx.css` (inside Astryx's `<Theme>`), `themes/mantine.css` (inside `MantineProvider`), `themes/heroui.css` (HeroUI v3) or `themes/shadcn.css` (shadcn/ui on Tailwind CSS v4). Each theme only maps the design system's color variables onto the grid tokens (`--ssg-*`), so the grid follows its theme and light / dark with no extra JS; also pass the resolved light / dark to the grid's `theme` prop. With Tailwind CSS alone there are no color variables to follow, so set the `--ssg-*` tokens directly (the theme builder generates them). [Guide and demo](https://datasheet-grid.vercel.app/docs/guides/design-systems).
+**Matching your design system's colors:** import its theme after `style.css` — `themes/astryx.css` (pages with Astryx's `<Theme>`), `themes/mantine.css` (pages with `MantineProvider`), `themes/heroui.css` (HeroUI v3) or `themes/shadcn.css` (shadcn/ui on Tailwind CSS v4). Each theme only maps the design system's color variables onto the grid tokens (`--ssg-*`), so the grid follows its theme and light / dark with no extra JS; also pass the resolved light / dark to the grid's `theme` prop. With Tailwind CSS alone there are no color variables to follow, so set the `--ssg-*` tokens directly (the theme builder generates them). [Guide and demo](https://datasheet-grid.vercel.app/docs/guides/design-systems).
 
 ```ts
 import '@ishibashi0112/spreadsheet-grid/style.css'
@@ -441,7 +441,7 @@ import '@ishibashi0112/spreadsheet-grid/style.css'
 
 基底スタイルは `.ssg-*` クラスにスコープした未レイヤーの素の CSS で、デザイントークンはすべて特異度 0（`:where(.ssg-root)`）で定義されています。トークンの上書きは読み込み順に依らず必ず勝ちます。
 
-#### Tailwind CSS / HeroUI / Mantine / StyleX / Astryx との共存
+#### Tailwind CSS / HeroUI / Mantine との共存
 
 - **Tailwind CSS v3（HeroUI の v3 世代）** — そのままで動作します。preflight（要素 / `*` セレクタのリセット）は本グリッドのクラスセレクタに特異度で負けるため、グリッドを壊せません。
 - **Tailwind CSS v4（HeroUI の v4 世代）** — そのままで動作します。さらに Tailwind ユーティリティで `!` 修飾子なしにグリッド既定を上書きしたい場合は、グリッド CSS を `utilities` より下のレイヤーへ入れてください:
@@ -463,7 +463,7 @@ import '@ishibashi0112/spreadsheet-grid/style.css'
 - **StyleX** — そのままで動作します（reset を持たず、生成クラスは接頭辞 `x` で衝突しません）。`classNames.*` / `cellClassName` / `getRowClassName` / `detailRow.className` へ `stylex.props(...)` の戻り値をそのまま渡せます（全スロットが `string | { className, style }` を受けるため、`style` 側で届く StyleX の動的スタイルも欠落しません）。StyleX の atomic クラスと基底クラスは同特異度のため、グリッド CSS を先に・StyleX の出力を後に読み込むか、`style.layer.css` を使ってください（StyleX 側で `useLayers` を使う場合は必須）。トークンは `root` スロットに `stylex.create({ grid: { '--ssg-accent': vars.accent } })` を渡して橋渡しできます。
 - **Astryx**（Meta のデザインシステム。StyleX 製）— そのままで動作します（グリッドの CSS はレイヤーに入れていないため、Astryx の `@layer reset` / `@layer astryx-base` に崩されず、セルの中に置いた Astryx の部品も外と同じ見た目になります）。
 
-**デザインシステムの配色に揃える:** `style.css` の後に、使っているデザインシステムのテーマを読み込みます — `themes/astryx.css`（Astryx の `<Theme>` の内側）/ `themes/mantine.css`（`MantineProvider` の内側）/ `themes/heroui.css`（HeroUI v3）/ `themes/shadcn.css`（Tailwind CSS v4 の shadcn/ui）。テーマはデザインシステムの配色の変数をグリッドのトークン（`--ssg-*`）へつなぐだけの CSS で（JS は増えません）、そのテーマとライト / ダークに付いてきます。ライト / ダークはグリッドの `theme` prop にも渡してください。Tailwind CSS だけのときは配色の変数が無いので、`--ssg-*` を直接書きます（テーマビルダーで生成できます）。[ガイドとデモ](https://datasheet-grid.vercel.app/docs/guides/design-systems)。
+**デザインシステムの配色に揃える:** `style.css` の後に、使っているデザインシステムのテーマを読み込みます — `themes/astryx.css`（Astryx の `<Theme>` があるページ）/ `themes/mantine.css`（`MantineProvider` があるページ）/ `themes/heroui.css`（HeroUI v3）/ `themes/shadcn.css`（Tailwind CSS v4 の shadcn/ui）。テーマはデザインシステムの配色の変数をグリッドのトークン（`--ssg-*`）へつなぐだけの CSS で（JS は増えません）、そのテーマとライト / ダークに付いてきます。ライト / ダークはグリッドの `theme` prop にも渡してください。Tailwind CSS だけのときは配色の変数が無いので、`--ssg-*` を直接書きます（テーマビルダーで生成できます）。[ガイドとデモ](https://datasheet-grid.vercel.app/docs/guides/design-systems)。
 
 ```ts
 import '@ishibashi0112/spreadsheet-grid/style.css'

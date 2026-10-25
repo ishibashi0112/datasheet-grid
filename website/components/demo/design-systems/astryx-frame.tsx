@@ -32,6 +32,9 @@ export function AstryxFrame() {
     action: (row) => <Button label="詳細" size="sm" variant="secondary" onClick={() => setLastOpened(row.name)} />,
   });
 
+  // サイトのライト / ダークが分かるまで(ハイドレーションまで)描かない。
+  if (siteDark === null) return null;
+
   return (
     <Theme theme={neutralTheme} mode={siteDark ? 'dark' : 'light'}>
       <div className="flex min-h-screen flex-col gap-3 p-3" style={{ background: 'var(--color-background-body)' }}>

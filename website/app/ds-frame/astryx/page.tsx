@@ -2,7 +2,7 @@
 import type { Metadata } from 'next';
 import { AstryxFrame } from '@/components/demo/design-systems/astryx-frame';
 
-export const metadata: Metadata = { robots: { index: false, follow: false } };
+export const metadata: Metadata = { title: 'Astryx の中に置いたグリッド', robots: { index: false, follow: false } };
 
 export default function Page() {
   return <AstryxFrame />;

@@ -43,7 +43,7 @@ import { preloadGridPopups } from '@ishibashi0112/spreadsheet-grid'
 void preloadGridPopups()
 ```
 
-## Tailwind CSS / HeroUI / Mantine / StyleX / Astryx との共存
+## Tailwind CSS / HeroUI / Mantine / StyleX との共存
 
 - **Tailwind CSS v3(+ HeroUI)** — そのまま動きます。Preflight のリセットはクラスセレクタに特異度で負けるため、グリッドを壊せません。
 - **Tailwind CSS v4(+ HeroUI)** — そのまま動きます。`!` 修飾子なしで Tailwind ユーティリティにグリッドの既定値を上書きさせたい場合は、グリッド CSS を `utilities` より下のレイヤーに入れます:

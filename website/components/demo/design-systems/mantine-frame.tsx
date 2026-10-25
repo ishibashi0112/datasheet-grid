@@ -36,6 +36,9 @@ export function MantineFrame() {
     ),
   });
 
+  // サイトのライト / ダークが分かるまで(ハイドレーションまで)描かない。
+  if (siteDark === null) return null;
+
   return (
     <MantineProvider forceColorScheme={siteDark ? 'dark' : 'light'}>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 12, padding: 12, minHeight: '100vh' }}>

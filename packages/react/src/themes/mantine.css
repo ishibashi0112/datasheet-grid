@@ -4,8 +4,9 @@
     import '@mantine/core/styles.css'
     import '@ishibashi0112/spreadsheet-grid/style.css'
     import '@ishibashi0112/spreadsheet-grid/themes/mantine.css'
-  - 効くのは MantineProvider が <html> に付ける data-mantine-color-scheme の内側だけです(Mantine の配色の変数は
-    この属性の付いた要素で決まるため)。MantineProvider の外のグリッドは style.css の配色のままです。
+  - 効くのは MantineProvider があるページのグリッドです(MantineProvider が <html> に付ける
+    data-mantine-color-scheme で判定します。Mantine の配色の変数もこの属性で決まります)。MantineProvider が無い
+    ページのグリッドは style.css の配色のままです。
   - テーマの primaryColor / defaultRadius とライト / ダークの切り替えに付いてきます。
   - ライト / ダーク: useComputedColorScheme('light') の値をグリッドの theme prop に渡します。
   - 確認した版: @mantine/core 9.7。
@@ -13,8 +14,9 @@
     トークン(--ssg-*)を決める「配分」はどのデザインシステムのテーマでも同じです(themes/*.css で共通)。
   - ツールチップ / ドラッグ中のゴースト / 条件付き書式の色など、対応する変数が無いものはグリッドの theme
     プリセットのままです。ライト / ダークはグリッドの theme prop にも渡してください(上の「ライト / ダーク」)。
-  - セレクタは :where(特異度 0)です。style.css より後に読み込めば既定値とダークのプリセットに勝ち、利用側の
-    `.ssg-root { --ssg-* }` の上書きは読み込み順に関係なくこちらに勝ちます。
+  - セレクタは :where(特異度 0)です。style.css より後に読み込めば既定値とダークのプリセットに勝ちます(前に読み込むと
+    効きません)。利用側の `.ssg-root { --ssg-* }`(レイヤーに入れていない CSS)の上書きは読み込み順に関係なく
+    こちらに勝ちます。style.css をレイヤーに入れているときは、このファイルも同じレイヤーの style.css の後に入れます。
   - 対象は style.css のトークン定義と同じ要素(ルート + document.body 直下のポータル)です。
 */
 :where([data-mantine-color-scheme]) :where(.ssg-root, .ssg-popover, .ssg-menu-panel, .ssg-filter-popover, .ssg-select-editor-popover, [data-grid-drag-ghost], .ssg-tooltip) {
@@ -30,21 +32,24 @@
   --ssg-ds-accent: var(--mantine-primary-color-filled);
   --ssg-ds-accent-contrast: var(--mantine-primary-color-contrast);
   --ssg-ds-danger: var(--mantine-color-error);
+  --ssg-ds-danger-contrast: #fff;
   --ssg-ds-success: var(--mantine-color-success);
+  --ssg-ds-success-contrast: #fff;
   --ssg-ds-warning: var(--mantine-color-yellow-filled);
   --ssg-ds-radius: var(--mantine-radius-default);
 
   /* ---- 配分(全テーマ共通。上の入力からグリッドのトークンを決める。themes.test.ts が同じ内容かを検査) ---- */
   --ssg-radius: var(--ssg-ds-radius);
 
-  /* アクセント(アクティブセルの枠 / 選択範囲 / チェックボックス / パネルの選択中) */
+  /* アクセント(アクティブセルの枠 / 選択範囲 / チェックボックス / パネルの選択中)。小さな文字に使う accent-strong は
+     文字色へ寄せて読みやすくする */
   --ssg-accent: var(--ssg-ds-accent);
-  --ssg-accent-strong: var(--ssg-ds-accent);
+  --ssg-accent-strong: color-mix(in srgb, var(--ssg-ds-accent) 70%, var(--ssg-ds-text));
 
   /* セルと行 */
   --ssg-cell-bg: var(--ssg-ds-surface);
   --ssg-cell-text: var(--ssg-ds-text);
-  --ssg-readonly-bg: var(--ssg-ds-surface);
+  --ssg-readonly-bg: color-mix(in srgb, var(--ssg-ds-text) 3%, var(--ssg-ds-surface));
   --ssg-readonly-text: var(--ssg-ds-text-muted);
   --ssg-readonly-hover-bg: color-mix(in srgb, var(--ssg-ds-text) 6%, var(--ssg-ds-surface));
   --ssg-row-hover-bg: color-mix(in srgb, var(--ssg-ds-text) 4%, var(--ssg-ds-surface));
@@ -54,9 +59,9 @@
   --ssg-selection-fill: color-mix(in srgb, var(--ssg-ds-accent) 8%, transparent);
   --ssg-col-hover-bg: color-mix(in srgb, var(--ssg-ds-text) 4%, transparent);
 
-  /* 見出し / グループ行 / ラベル行 / 合計行 */
+  /* 見出し / グループ行 / ラベル行 / 合計行(見出しの文字は本文と控えめな文字の中間) */
   --ssg-header-bg: var(--ssg-ds-surface-muted);
-  --ssg-header-text: var(--ssg-ds-text-muted);
+  --ssg-header-text: color-mix(in srgb, var(--ssg-ds-text) 50%, var(--ssg-ds-text-muted));
   --ssg-header-hover-bg: color-mix(in srgb, var(--ssg-ds-text) 8%, var(--ssg-ds-surface-muted));
   --ssg-group-row-bg: var(--ssg-ds-surface-muted);
   --ssg-group-row-hover-bg: color-mix(in srgb, var(--ssg-ds-text) 6%, var(--ssg-ds-surface-muted));
@@ -107,7 +112,9 @@
   --ssg-danger-bg: color-mix(in srgb, var(--ssg-ds-danger) 10%, var(--ssg-ds-popover));
   --ssg-invalid: var(--ssg-ds-danger);
   --ssg-invalid-bg: color-mix(in srgb, var(--ssg-ds-danger) 10%, transparent);
+  --ssg-invalid-contrast: var(--ssg-ds-danger-contrast);
   --ssg-save-ok: var(--ssg-ds-success);
+  --ssg-save-ok-contrast: var(--ssg-ds-success-contrast);
   --ssg-note-indicator: var(--ssg-ds-warning);
   --ssg-skeleton-bar: color-mix(in srgb, var(--ssg-ds-text) 8%, var(--ssg-ds-surface));
 }

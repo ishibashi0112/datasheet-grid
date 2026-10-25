@@ -2,7 +2,7 @@
 import type { Metadata } from 'next';
 import { ShadcnFrame } from '@/components/demo/design-systems/shadcn-frame';
 
-export const metadata: Metadata = { robots: { index: false, follow: false } };
+export const metadata: Metadata = { title: 'shadcn/ui の中に置いたグリッド', robots: { index: false, follow: false } };
 
 export default function Page() {
   return <ShadcnFrame />;

@@ -99,7 +99,7 @@ const columns = [
 - `validate` は**純粋・軽量**であること。mark 表示のため、描画中の可視セル(validate 指定列のみ)ごとに毎レンダー評価されます(`cellClassName` 関数と同じコスト階級)。
 - 検証コンテキストは `{ value, row, column }` です(`row` は書き込み前の行。ビュー index はソート / フィルターで不安定なため渡しません)。
 - 保存前の一括チェックはハンドルの `getInvalidCells()` を使います(「命令的 API」節参照)。
-- invalid 表示の配色はトークン `--ssg-invalid` / `--ssg-invalid-bg` で調整できます(light / dark 両対応)。
+- invalid 表示の配色はトークン `--ssg-invalid` / `--ssg-invalid-bg` で調整できます(light / dark 両対応)。エラーの吹き出しの文字色は `--ssg-invalid-contrast`(既定 `#ffffff`)です。
 - 同じセルにメモ(`cellNote`)がある場合は、メモの 10px の三角の上にエラーの 6px の三角が重なります(「セルのメモ(`cellNote`)」節)。
 
 #### 表示タイミングの制御(showValidationMarks)

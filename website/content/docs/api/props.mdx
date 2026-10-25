@@ -746,8 +746,8 @@ const s = stylex.create({
 
 | ファイル | 対象(確認した版) | 効く範囲 | `theme` に渡すもの |
 | --- | --- | --- | --- |
-| `themes/astryx.css` | Astryx(`@astryxdesign/core` 0.7) | `<Theme>` の内側(`data-astryx-theme` の付いた要素の子孫。ポータルは `<Theme>` が `<html>` へ同期する属性で当たる) | `useTheme().mode` |
-| `themes/mantine.css` | Mantine(`@mantine/core` 9.7) | `MantineProvider` が `<html>` に付ける `data-mantine-color-scheme` の内側 | `useComputedColorScheme('light')` |
+| `themes/astryx.css` | Astryx(`@astryxdesign/core` 0.7) | `<Theme>` があるページのすべてのグリッド(最上位の `<Theme>` が `<html>` へ同期する `data-astryx-theme` で判定。ポータルにも当たる) | `useTheme().mode`(必須。Astryx の色は `light-dark()` で、ビルドによってはグリッドの `color-scheme` の側で明暗が選ばれる) |
+| `themes/mantine.css` | Mantine(`@mantine/core` 9.7) | `MantineProvider` があるページのすべてのグリッド(`MantineProvider` が `<html>` に付ける `data-mantine-color-scheme` で判定) | `useComputedColorScheme('light')` |
 | `themes/heroui.css` | HeroUI v3(`@heroui/react` 3.2) | 読み込んだページのすべてのグリッド | `<html>` の `dark` クラスに合わせた `'light'` / `'dark'` |
 | `themes/shadcn.css` | shadcn/ui(`shadcn` 4.22。Tailwind CSS v4 向けの配色の変数) | 読み込んだページのすべてのグリッド | 同上 |
 
@@ -763,8 +763,9 @@ function Grid(props: SpreadsheetGridProps<Row>) {
 }
 ```
 
-- どのテーマも、デザインシステムの変数を同じ 14 の入力(面 / 文字 / 罫線 / アクセント / 危険・成功・注意の色 / 角の丸み)に読み替え、そこからグリッドのトークンを同じ配分(行のホバーの濃さ、選択範囲の混ぜ方など)で決める。ツールチップ / ドラッグ中のゴースト / 条件付き書式の色など、デザインシステムに対応する変数が無い部分は `theme` に渡したプリセットのまま。
-- セレクタは `:where`(特異度 0)。`style.css` より後に読み込めば既定値とダークのプリセットに勝ち、利用側の `.ssg-root { --ssg-accent: ... }` などの上書きは読み込み順に関係なくテーマに勝つ。
+- どのテーマも、デザインシステムの変数を同じ 16 の入力(面 / 文字 / 罫線 / アクセント / 危険・成功・注意の色とその上の文字色 / 角の丸み)に読み替え、そこからグリッドのトークンを同じ配分(行のホバーの濃さ、選択範囲の混ぜ方など)で決める。ツールチップ / ドラッグ中のゴースト / 条件付き書式の色など、デザインシステムに対応する変数が無い部分は `theme` に渡したプリセットのまま。
+- セレクタは `:where`(特異度 0)。`style.css` より後に読み込めば既定値とダークのプリセットに勝つ(前に読み込むと効かない)。利用側の `.ssg-root { --ssg-cell-bg: ... }` などの上書き(レイヤーに入れていない CSS)は読み込み順に関係なくテーマに勝つ。選択範囲などの色はデザインシステムのアクセントから決めるので、アクセントをまとめて変えるときはデザインシステムの側で変える。
+- `style.css` をレイヤーに入れているとき(`layer(components)` / `style.layer.css`)は、テーマも同じレイヤーの `style.css` の後に入れる(例: `@import '@ishibashi0112/spreadsheet-grid/themes/shadcn.css' layer(components);`)。レイヤーに入れたトークンの上書きは、レイヤーに入っていないテーマに負けるため。
 - HeroUI と shadcn/ui の変数には目印の属性が無いため、そのテーマは読み込んだページのすべてのグリッドに効く。それぞれの変数が無いページで読み込むと色が抜ける。HeroUI v2(`--heroui-*` に HSL の成分を入れる形)と、shadcn/ui の Tailwind CSS v3 向けの書き方(値が `222.2 84% 4.9%` のような HSL の成分)は対象外。
 - shadcn/ui には成功 / 注意の色の変数が無いため、保存できた印とメモの印は Tailwind の green-600 / amber-500。
 - Tailwind CSS だけのときは配色の変数が無いので、トークン(`--ssg-*`)を直接書く([テーマビルダー](https://datasheet-grid.vercel.app/theme-builder)で生成できる)。

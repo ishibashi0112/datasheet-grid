@@ -30,6 +30,9 @@ export function HeroUIFrame() {
     ),
   });
 
+  // サイトのライト / ダークが分かるまで(ハイドレーションまで)描かない。
+  if (siteDark === null) return null;
+
   return (
     <div className="flex min-h-screen flex-col gap-3 bg-background p-3 text-foreground">
       <div className="flex flex-wrap items-center gap-2">

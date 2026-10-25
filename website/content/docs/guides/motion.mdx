@@ -75,7 +75,7 @@ serverSide(`dataSource.updateRows`)の書き戻しでは、確定したセルに
 <SpreadsheetGrid dataSource={dataSource} showSaveStatus={false} />  // 印を出さない
 ```
 
-印は `data-ssg-save="pending" | "ok" | "failed"` 属性と `.ssg-save-indicator` 要素で付くので、色はトークン(`--ssg-save-pending` / `--ssg-save-ok` / `--ssg-save-failed`)で変えられます。
+印は `data-ssg-save="pending" | "ok" | "failed"` 属性と `.ssg-save-indicator` 要素で付くので、色はトークン(`--ssg-save-pending` / `--ssg-save-ok` / `--ssg-save-failed`。印の文字色は `--ssg-save-ok-contrast` / `--ssg-invalid-contrast`)で変えられます。
 
 ## 速さの調整(CSS トークン)
 

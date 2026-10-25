@@ -15,8 +15,9 @@ export default defineConfig({
     include: ['packages/*/src/**/*.test.{ts,tsx}'],
     // 追加(lazy-popups): React 版の jsdom テストで遅延読み込みのポップオーバー部品を先読みします。
     setupFiles: ['./vitest.setup.ts'],
-    // 追加(Astryx の橋渡し): vitest は既定で .css の import を空文字にするので、`?raw` で読む CSS だけは中身を通す
-    // (themes/astryx.test.ts が style.css のトークン定義と突き合わせる)。ふつうの CSS の import は従来どおり空のまま。
+    // 追加(デザインシステムのテーマ): vitest は既定で .css の import を空文字にするので、`?raw` で読む CSS だけは中身を
+    // 通す(themes/themes.test.ts が style.css のトークン定義やデザインシステムの CSS と突き合わせる)。ふつうの CSS の
+    // import は従来どおり空のまま。
     css: { include: [/\.css\?raw$/] },
   },
 });

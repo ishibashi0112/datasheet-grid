@@ -3,12 +3,12 @@ title: デザインシステムに合わせる
 description: Astryx / Mantine / HeroUI / shadcn/ui のテーマ変数にグリッドの配色を揃える themes/*.css
 ---
 
-グリッドは各デザインシステムや Tailwind CSS の中でそのまま使えます(グリッドの CSS はレイヤーに入れていないため、相手のリセットに崩されません。[インストール](/docs/installation#tailwind-css--heroui--mantine--stylex--astryx-との共存)を参照)。配色まで揃えたいときは、使っているデザインシステムのテーマを 1 行読み込みます。テーマは、デザインシステムの配色の変数をグリッドのトークン(`--ssg-*`)へつなぐだけの CSS です。JS は増えません。
+グリッドは各デザインシステムや Tailwind CSS の中でそのまま使えます(グリッドの CSS はレイヤーに入れていないため、相手のリセットに崩されません。[インストール](/docs/installation#tailwind-css--heroui--mantine--stylex-との共存)を参照)。配色まで揃えたいときは、使っているデザインシステムのテーマを 1 行読み込みます。テーマは、デザインシステムの配色の変数をグリッドのトークン(`--ssg-*`)へつなぐだけの CSS です。JS は増えません。
 
 | デザインシステム | 読み込む CSS | 効く範囲 |
 | --- | --- | --- |
-| [Astryx](https://astryx.atmeta.com) | `themes/astryx.css` | `<Theme>` の内側 |
-| [Mantine](https://mantine.dev) | `themes/mantine.css` | `MantineProvider` の内側 |
+| [Astryx](https://astryx.atmeta.com) | `themes/astryx.css` | `<Theme>` があるページのすべてのグリッド |
+| [Mantine](https://mantine.dev) | `themes/mantine.css` | `MantineProvider` があるページのすべてのグリッド |
 | [HeroUI](https://heroui.com)(v3) | `themes/heroui.css` | 読み込んだページのすべてのグリッド |
 | [shadcn/ui](https://ui.shadcn.com) | `themes/shadcn.css` | 読み込んだページのすべてのグリッド |
 
@@ -16,11 +16,11 @@ description: Astryx / Mantine / HeroUI / shadcn/ui のテーマ変数にグリ�
 
 <DesignSystemsDemo />
 
-状態の列のバッジと操作の列のボタンは、それぞれのデザインシステムの部品をセルの中に置いたものです(shadcn/ui は部品をコピーして使う形なので、Button / Badge と同じクラスを書いています)。上の行の外の部品と見比べられます。ライト / ダークはサイト右上のテーマ切り替えで確かめられます。
+状態の列のバッジと操作の列のボタンは、それぞれのデザインシステムの部品をセルの中に置いたものです(shadcn/ui は部品をコピーして使う形なので、Button / Badge と同じクラスを書いています)。上の行の外の部品と見比べられます。ライト / ダークはサイトのテーマ切り替えで確かめられます。
 
 ## 使い方
 
-どのテーマも `style.css` の後に読み込みます。ツールチップなど一部の色はグリッドの `theme` のプリセットのままなので、ライト / ダークは `theme` にも渡します。
+どのテーマも `style.css` の後に読み込みます(前に読み込むと効きません)。ツールチップなど一部の色はグリッドの `theme` のプリセットのままなので、ライト / ダークは `theme` にも渡します。
 
 ### Astryx
 
@@ -45,6 +45,8 @@ function Grid(props: SpreadsheetGridProps<Row>) {
 </Theme>;
 ```
 
+Astryx では `theme` に `mode` を渡すのが必須です。Astryx の色は `light-dark()` で決まり、ビルドによってはグリッドの `theme`(で決まる `color-scheme`)の側で明暗が選ばれるためです。
+
 Tailwind CSS と一緒に使うときは、Astryx の README(Next.js + Tailwind)のとおり Tailwind より先にレイヤーの順番を宣言します(グリッドの CSS は未レイヤーなので、この順番に関係なく効きます)。
 
 ```css
@@ -66,6 +68,10 @@ function Grid(props: SpreadsheetGridProps<Row>) {
   const scheme = useComputedColorScheme('light');
   return <SpreadsheetGrid {...props} theme={scheme} />;
 }
+
+<MantineProvider defaultColorScheme="auto">
+  <Grid rows={rows} columns={columns} onRowsChange={setRows} rowKeyGetter={(row) => row.id} />
+</MantineProvider>;
 ```
 
 テーマの `primaryColor`(アクセント)と `defaultRadius`(角の丸み)にも付いてきます。
@@ -107,7 +113,14 @@ shadcn/ui の init が `globals.css` に書く配色の変数(`--background` / `
 - セルと見出しの背景と文字、罫線、アクセント(アクティブセル / 選択範囲 / チェックボックス)、ポップオーバーとメニュー、エラー / 保存 / メモの印の色、角の丸み。デザインシステムのテーマ(独自テーマを含む)を替えても、ライト / ダークを切り替えても付いてきます。
 - デザインシステムの変数からグリッドの色を決める配分(行のホバーの濃さ、選択範囲の混ぜ方など)は、どのテーマでも同じです。
 - ツールチップ / ドラッグ中のゴースト / 条件付き書式の色など、デザインシステムに対応する変数が無い部分は `theme` に渡したプリセット(ライト / ダーク)のままです。
-- 一部の色だけ変えたいときは、`.ssg-root { --ssg-accent: ... }` のように書けば読み込み順に関係なくテーマに勝ちます(テーマのセレクタは特異度 0 の `:where`)。
+- 一部の色だけ変えたいときは、`.ssg-root { --ssg-cell-bg: ... }` のように変えたいトークンを書けば、読み込み順に関係なくテーマに勝ちます(テーマのセレクタは特異度 0 の `:where`)。選択範囲などの色はデザインシステムのアクセントから決めているので、アクセントをまとめて変えるときはデザインシステムの側(Mantine の `primaryColor` など)で変えます。
+- `style.css` をレイヤーに入れているとき(`style.css` を `layer(components)` で読み込む / `style.layer.css` を使う)は、テーマも同じレイヤーの `style.css` の後に入れます。レイヤーに入れたトークンの上書き(Tailwind の `[--ssg-accent:...]` など)は、レイヤーに入っていないテーマに負けるためです。
+
+```css
+@import 'tailwindcss';
+@import '@ishibashi0112/spreadsheet-grid/style.css' layer(components);
+@import '@ishibashi0112/spreadsheet-grid/themes/shadcn.css' layer(components);
+```
 
 ## ほかのデザインシステムや Tailwind CSS だけのとき
 

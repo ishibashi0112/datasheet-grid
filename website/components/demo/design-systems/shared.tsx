@@ -64,16 +64,18 @@ export const buildColumns = (render: {
 ];
 
 // サイトのダークモード(next-themes が <html> に付ける dark クラス)を購読する。iframe の中でも、next-themes が
-// localStorage の変化(親のページでの切り替え)を受けて dark クラスを付け替える。
+// localStorage の変化(親のページでの切り替え)を受けて dark クラスを付け替える。サーバーとハイドレーションの間は
+// まだ分からないので null(各画面はそのあいだ何も描かない。ダークのときにライトの画面が一瞬見えるのを防ぐ)。
 const subscribeSiteTheme = (onChange: () => void) => {
   const observer = new MutationObserver(onChange);
   observer.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
   return () => observer.disconnect();
 };
 const getSiteDark = () => document.documentElement.classList.contains('dark');
-const getServerSiteDark = () => false;
+const getServerSiteDark = () => null;
 
-export const useSiteDark = () => useSyncExternalStore(subscribeSiteTheme, getSiteDark, getServerSiteDark);
+export const useSiteDark = (): boolean | null =>
+  useSyncExternalStore<boolean | null>(subscribeSiteTheme, getSiteDark, getServerSiteDark);
 
 export const gridProps = {
   rowKeyGetter: (row: Row) => row.id,

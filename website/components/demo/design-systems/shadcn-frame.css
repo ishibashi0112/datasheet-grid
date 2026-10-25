@@ -1,5 +1,5 @@
 /* shadcn/ui の画面(app/ds-frame/shadcn)だけで読み込む。shadcn/ui の init(Tailwind CSS v4・neutral)が globals.css に
-   書く内容のうち、配色の変数と Tailwind の色の対応だけを置く。 */
+   書く内容のうち、配色の変数と Tailwind の色の対応、base の既定(枠線の色など)を置く。 */
 @import 'tailwindcss';
 
 @custom-variant dark (&:is(.dark *));
@@ -70,6 +70,9 @@
 }
 
 @layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
   body {
     @apply bg-background text-foreground;
   }
