@@ -18,6 +18,7 @@ import type { AutoHeightMeasurer, AutoHeightMeasureSnapshot } from '../controlle
 import type { buildRowHeightStore, createAutoHeightRowMetrics } from '../logic/rowHeightStore';
 import type { ColumnFilterStage } from './columnFilterStage';
 import type { DateRolloverStore } from '../controllers/dateRolloverStore';
+import type { SaveStatusController } from '../controllers/saveStatusController';
 import type { ExportCommands } from './exportCommands';
 import type { GridApiArgs } from './gridApi';
 
@@ -54,6 +55,11 @@ export type GridCoreFeatures = {
   // フィルター(グローバル / 列): 行パイプラインの列フィルターの段と、相対日付プリセットの日付の変わり目の見張り。
   filtering?: ColumnFilteringFeature & {
     createDateRolloverStore: () => DateRolloverStore;
+  };
+  // サーバーサイド行モデル(SSRM): エンジンが持つのは書き戻しのセル単位の保存状態の表示だけ(行モデル本体
+  //   controllers/serverSideRowModel は描画側の機能が作る)。
+  serverSide?: {
+    createSaveStatusController: () => SaveStatusController;
   };
 };
 
@@ -143,5 +149,12 @@ export const createInertDateRolloverStore = (): DateRolloverStore => ({
   update: noop,
   getSnapshot: () => '',
   subscribe: unsubscribeNoop,
+  dispose: noop,
+});
+
+// serverSide が無いときの代役: 保存状態を表示しない(書き戻しが起きない)。
+export const createInertSaveStatusController = (): SaveStatusController => ({
+  update: noop,
+  handle: noop,
   dispose: noop,
 });

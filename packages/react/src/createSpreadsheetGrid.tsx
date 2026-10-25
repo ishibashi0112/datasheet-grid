@@ -22,6 +22,8 @@ const DISABLED_FEATURE_PROPS: { [K in keyof ReactGridFeatures]?: Partial<Spreads
   // フィルターが無ければグローバル / 列フィルターを切る(上部バーの入力欄・見出しのフィルターボタン・ツールパネルの
   //   フィルタータブを出さない。serverSide の query にも載せない)。
   filtering: { enableColumnFilter: false, enableGlobalFilter: false },
+  // サーバーサイド行モデルが無ければ dataSource を外す(clientSide。rows を渡していなければ空の表)。
+  serverSide: { dataSource: undefined },
   columnAutosize: { autoSizeColumns: false },
   contextMenu: { enableContextMenu: false },
   motionExtras: { highlightChanges: false, showCopyRange: false, hoverHighlight: 'row' },

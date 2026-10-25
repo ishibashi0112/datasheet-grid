@@ -57,6 +57,7 @@ import type { FilterManagementAddableColumn, FilterManagementEntry } from '../vi
 import type { UseToolPanelControllerArgs, UseToolPanelControllerResult } from '../hooks/useToolPanelController';
 import type { FilterPopoverViews, ToolPanelViews, UseLazyModuleOptions } from '../view/lazyPopups';
 import type { useFilterPopoverController } from '../hooks/useFilterPopoverController';
+import type { UseServerSideRowModelParams, UseServerSideRowModelResult } from '../hooks/useServerSideRowModel';
 
 // フィルハンドル(fillHandle)の hook が受け取るシェルの値です(シェルにあったときの自由変数そのまま)。
 export type FillHandleFeatureArgs<T> = {
@@ -177,6 +178,13 @@ export type FilterManagementFeatureResult = {
   jumpToColumnFilter: (columnKey: string) => void;
 };
 
+// サーバーサイド行モデル(serverSide)の hook が受け取る値(行モデルの controller の引数そのまま)と返す値です。
+export type ServerSideFeatureArgs<T> = UseServerSideRowModelParams<T>;
+export type ServerSideFeatureResult<T> = UseServerSideRowModelResult<T> & {
+  // 内蔵エラーバー(取得失敗の再試行 / 保存失敗)。出すものが無ければ何も描かない。
+  renderErrorBars: (errorBarSlot: GridResolvedSlots['errorBar']) => ReactNode;
+};
+
 // 列ヘッダーのドラッグによる並べ替え(columnReorder)の hook が受け取る値(コントローラの引数そのまま)と返す値です。
 export type ColumnReorderFeatureArgs<T> = UseColumnHeaderDragControllerArgs<T>;
 export type ColumnReorderFeatureResult<T> = {
@@ -270,6 +278,10 @@ export type ReactGridFeatures = {
     useFilterManagement: <T>(args: FilterManagementFeatureArgs<T>) => FilterManagementFeatureResult;
     FilterChipBar: typeof GridFilterChipBar;
   };
+  // サーバーサイド行モデル(SSRM): 保存状態の表示(core)+ 行モデルの接続と内蔵エラーバーの hook。
+  serverSide?: NonNullable<GridCoreFeatures['serverSide']> & {
+    useServerSide: <T>(args: ServerSideFeatureArgs<T>) => ServerSideFeatureResult<T>;
+  };
   // 行の高さの実測(autoHeight): 実測のコントローラ + 行高ストア(core)。描画の部品は無い。
   autoHeight?: NonNullable<GridCoreFeatures['autoHeight']>;
   // 列幅の自動調整(DS-4 / 13-B1): 計測の時間分割ランナー。
@@ -336,6 +348,7 @@ type HookFeatureName =
   | 'selectionAggregates'
   | 'columnMenu'
   | 'toolPanel'
-  | 'filtering';
+  | 'filtering'
+  | 'serverSide';
 export type GridShellFeatures = Omit<ReactGridFeatures, HookFeatureName> &
   Required<Pick<ReactGridFeatures, HookFeatureName>>;

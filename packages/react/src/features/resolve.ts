@@ -7,9 +7,10 @@
 import {
   createInertDateRolloverStore,
   createInertExportCommands,
+  createInertSaveStatusController,
 } from '@ishibashi0112/spreadsheet-grid-core/engine/features';
 import { warnUnregisteredFeatureMethod } from '@ishibashi0112/spreadsheet-grid-core/logic/featureWarnings';
-import type { FillHandleFeatureResult, GridShellFeatures, ReactGridFeatures } from './types';
+import type { FillHandleFeatureResult, GridShellFeatures, ReactGridFeatures, ServerSideFeatureResult } from './types';
 
 const INERT_FILL_HANDLE: FillHandleFeatureResult = {
   filling: false,
@@ -158,6 +159,32 @@ const inertFilteringFeature: GridShellFeatures['filtering'] = {
   FilterChipBar: () => null,
 };
 
+// サーバーサイド行モデルが無い構成では dataSource を外す(createSpreadsheetGrid)ので clientSide のままです。代役は件数 0 の
+//   行モデル(シェルは clientSide の行モデルを使うので参照されない)と、何もしない操作 / 何も描かないエラーバー。
+const INERT_SERVER_SIDE: ServerSideFeatureResult<unknown> = {
+  rowModel: {
+    getRowCount: () => 0,
+    getRow: () => undefined,
+    getSourceIndex: () => -1,
+    getRowKey: () => -1,
+  },
+  rowCount: 0,
+  isRowLoaded: () => false,
+  requestRange: noop,
+  refresh: noop,
+  loadError: null,
+  retryFailedBlocks: noop,
+  canUpdateRows: false,
+  applyCellEdits: () => 0,
+  writeError: null,
+  renderErrorBars: () => null,
+};
+
+const inertServerSideFeature: GridShellFeatures['serverSide'] = {
+  createSaveStatusController: createInertSaveStatusController,
+  useServerSide: <T,>() => INERT_SERVER_SIDE as ServerSideFeatureResult<T>,
+};
+
 // エクスポートが無い構成: 何も出力しない代役(エンジンの代役と同じ)に、呼ばれたら開発時に 1 回だけ警告するのを足します
 //   (prop ではなくメソッドなので、呼ばれた時点で知らせる)。
 const inertExportFeature: NonNullable<ReactGridFeatures['export']> = {
@@ -191,5 +218,6 @@ export const resolveGridShellFeatures = (features: ReactGridFeatures): GridShell
   columnMenu: features.columnMenu ?? inertColumnMenuFeature,
   toolPanel: features.toolPanel ?? inertToolPanelFeature,
   filtering: features.filtering ?? inertFilteringFeature,
+  serverSide: features.serverSide ?? inertServerSideFeature,
   export: features.export ?? inertExportFeature,
 });

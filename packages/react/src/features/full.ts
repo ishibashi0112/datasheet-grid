@@ -15,6 +15,7 @@ import { motionExtrasFeature } from './motionExtras';
 import { rowDragFeature } from './rowDrag';
 import { scrollHintFeature } from './scrollHint';
 import { selectionAggregatesFeature } from './selectionAggregates';
+import { serverSideFeature } from './serverSide';
 import { toolPanelFeature } from './toolPanel';
 import { totalRowFeature } from './totalRow';
 import type { ReactGridFeatures } from './types';
@@ -37,4 +38,5 @@ export const fullGridFeatures: Required<ReactGridFeatures> = {
   toolPanel: toolPanelFeature,
   autoHeight: autoHeightFeature,
   filtering: filteringFeature,
+  serverSide: serverSideFeature,
 };

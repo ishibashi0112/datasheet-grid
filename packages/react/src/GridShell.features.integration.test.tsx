@@ -23,11 +23,12 @@ import { motionExtrasFeature } from './features/motionExtras';
 import { exportFeature } from './features/export';
 import { autoHeightFeature } from './features/autoHeight';
 import { filteringFeature } from './features/filtering';
+import { serverSideFeature } from './features/serverSide';
 import { installJsdomLayoutStubs } from './testing';
 import { resetUnregisteredFeatureWarnings } from '@ishibashi0112/spreadsheet-grid-core/logic/featureWarnings';
 import { ROW_DRAG_HANDLE_COLUMN_KEY } from '@ishibashi0112/spreadsheet-grid-core/logic/rowReorder';
 import { GRID_STATE_VERSION } from '@ishibashi0112/spreadsheet-grid-core/logic/gridState';
-import type { GridColumn, SpreadsheetGridHandle } from './model/gridTypes';
+import type { GridColumn, ServerSideDataSource, SpreadsheetGridHandle } from './model/gridTypes';
 
 type Row = { id: number; name: string };
 const rows: Row[] = [
@@ -62,6 +63,7 @@ const MotionExtrasOnlyGrid = createSpreadsheetGrid({ features: { motionExtras: m
 const ExportOnlyGrid = createSpreadsheetGrid({ features: { export: exportFeature } });
 const AutoHeightOnlyGrid = createSpreadsheetGrid({ features: { autoHeight: autoHeightFeature } });
 const FilteringOnlyGrid = createSpreadsheetGrid({ features: { filtering: filteringFeature } });
+const ServerSideOnlyGrid = createSpreadsheetGrid({ features: { serverSide: serverSideFeature } });
 // 列フィルターを開く入口(「フィルター…」)は列メニューにあるため、列メニューと組み合わせて確かめます。
 const ColumnMenuFilteringGrid = createSpreadsheetGrid({ features: { columnMenu: columnMenuFeature, filtering: filteringFeature } });
 
@@ -843,5 +845,49 @@ describe('差し込み式: filtering', () => {
       fireEvent.click(alphaOption?.querySelector('input') as HTMLInputElement);
     });
     expect(bodyTexts(container)).toEqual(['beta']);
+  });
+});
+
+describe('差し込み式: serverSide', () => {
+  const nameTexts = (container: HTMLElement) =>
+    Array.from(container.querySelectorAll('.ssg-body-cell[data-ssg-col-key="name"]')).map((cell) => cell.textContent);
+  const createDataSource = (options?: { fail?: boolean }) => {
+    const getRows = vi.fn<ServerSideDataSource<Row>['getRows']>((params) =>
+      options?.fail
+        ? Promise.reject(new Error('失敗'))
+        : Promise.resolve({ rows: rows.slice(params.startIndex, params.endIndex), totalRowCount: rows.length }),
+    );
+    return { getRows } satisfies ServerSideDataSource<Row>;
+  };
+  const flush = async () => {
+    await act(async () => {
+      for (let i = 0; i < 4; i += 1) {
+        await Promise.resolve();
+      }
+    });
+  };
+
+  it('機能セットに無ければ dataSource を渡しても取得せず空の表(clientSide)のまま、開発時に 1 回だけ警告する', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const dataSource = createDataSource();
+    const { container } = render(<MinimalGrid columns={columns} dataSource={dataSource} rowKeyGetter={(r) => r.id} />);
+    await flush();
+    expect(dataSource.getRows).not.toHaveBeenCalled();
+    expect(nameTexts(container)).toEqual([]);
+    expect(warn.mock.calls.filter(([message]) => String(message).includes('`dataSource`'))).toHaveLength(1);
+  });
+
+  it('serverSide だけを入れた構成では getRows で行を取得して描画し、失敗するとエラーバーが出る', async () => {
+    const dataSource = createDataSource();
+    const view = render(<ServerSideOnlyGrid columns={columns} dataSource={dataSource} rowKeyGetter={(r) => r.id} />);
+    await flush();
+    expect(dataSource.getRows).toHaveBeenCalled();
+    expect(nameTexts(view.container)).toEqual(['alpha', 'beta']);
+    view.unmount();
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    const failing = createDataSource({ fail: true });
+    const { container } = render(<ServerSideOnlyGrid columns={columns} dataSource={failing} rowKeyGetter={(r) => r.id} />);
+    await flush();
+    expect(container.querySelector('.ssg-ssrm-error-bar')?.textContent).toContain('行の取得に失敗しました');
   });
 });

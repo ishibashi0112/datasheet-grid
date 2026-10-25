@@ -82,6 +82,14 @@ const FEATURE_PROPS: { [K in FeatureName]-?: readonly FeaturePropCheck[] } = {
     { prop: 'getFilterOptions', isUsed: (props) => props.getFilterOptions !== undefined },
     { prop: 'showFilterChipBar', isUsed: (props) => props.showFilterChipBar === true },
   ],
+  // showSaveStatus は既定 true なので、明示して true を渡したときだけ。
+  serverSide: [
+    { prop: 'dataSource', isUsed: (props) => props.dataSource !== undefined },
+    { prop: 'serverSideRefreshToken', isUsed: (props) => props.serverSideRefreshToken !== undefined },
+    { prop: 'onServerSideLoadError', isUsed: (props) => props.onServerSideLoadError !== undefined },
+    { prop: 'onServerSideWriteError', isUsed: (props) => props.onServerSideWriteError !== undefined },
+    { prop: 'showSaveStatus', isUsed: (props) => props.showSaveStatus === true },
+  ],
   // 列の autoHeight はグリッドの autoHeight で有効になるので、グリッドの prop だけ見る。
   autoHeight: [{ prop: 'autoHeight', isUsed: (props) => props.autoHeight === true }],
 };
