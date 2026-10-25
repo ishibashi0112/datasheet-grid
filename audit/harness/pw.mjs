@@ -10,8 +10,10 @@ mkdirSync(OUT, { recursive: true });
 
 export const BASE = process.env.HARNESS_BASE ?? 'http://127.0.0.1:5177/';
 // Chromium の実行ファイル: SSG_AUDIT_CHROME → Claude Code クラウド環境の既知パス → playwright-core の既定解決。
-const KNOWN_CHROME = '/opt/pw-browsers/chromium-1194/chrome-linux/chrome';
-export const CHROME = process.env.SSG_AUDIT_CHROME ?? (existsSync(KNOWN_CHROME) ? KNOWN_CHROME : undefined);
+//   クラウド環境の Chromium は版の付いたディレクトリが入れ替わるため、版なしのシンボリックリンクを先に見る
+//   (2026-10-24 に chromium-1194 が chromium-1243 へ替わり、版付きのパスだけでは起動できなくなった)。
+const KNOWN_CHROMES = ['/opt/pw-browsers/chromium', '/opt/pw-browsers/chromium-1194/chrome-linux/chrome'];
+export const CHROME = process.env.SSG_AUDIT_CHROME ?? KNOWN_CHROMES.find((path) => existsSync(path));
 
 // beforeGoto(page): ページを開く前に呼ぶ(page.clock.install で時計を差し替える等。監査 L-15 の確認で使う)。
 export async function open(scenario, { query = '', viewport = { width: 1400, height: 800 }, headless = true, beforeGoto } = {}) {
