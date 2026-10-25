@@ -21,6 +21,12 @@ export function OrdersTable() {
 
 `Grid` は `SpreadsheetGrid` と同じ props・`ref` ハンドル・型で使えます。全部入りから移るときは、使っている機能を `features` に入れて、`SpreadsheetGrid` を `createSpreadsheetGrid` で作ったコンポーネントに置き換えます。
 
+## 試してみる
+
+機能を選ぶと、その組み合わせで作ったグリッドに切り替わります。どの機能の違いも見えるよう全機能の prop を渡しているので、入れていない機能の分は何も起きません。各機能の右の説明が試し方です。
+
+<LiteDemo />
+
 ## どれだけ小さくなるか
 
 | 構成 | 初期 JS(gzip) |
