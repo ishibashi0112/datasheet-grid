@@ -54,7 +54,6 @@ import ActiveCellOverlay, {
   type ActiveCellOverlayRect,
 } from './ActiveCellOverlay';
 import CellEditorLayer from './CellEditorLayer';
-import { useFilterPopoverController } from './hooks/useFilterPopoverController';
 // 追加(13-A): 列メニュー(「⋮」+ 右クリック)の popover controller です。
 import { useGridClipboardController } from './hooks/useGridClipboardController';
 import { useGridBarContext } from './hooks/useGridBarContext';
@@ -78,21 +77,9 @@ import {
 // 変更(差し込み式 段階 2): ヘッダー D&D 列並べ替えは機能セット(features.columnReorder)から受け取ります(無ければ代役)。
 // 変更(差し込み式 段階 2): 行ドラッグ並び替えは機能セット(features.rowDrag)から受け取ります(無ければ代役)。
 import {
-  // 追加(12-A): set フィルター値の判定 / 構築に使います。
-  isSetColumnFilterValue,
-  // 追加(記述子化 / number): number 記述子の判定に使います。
-  //   ※構築は filter-ext A で構造化 draft 経由(buildNumberColumnFilterValueFromDraft)へ
-  //     移行したため、式テキストの buildNumberColumnFilterValue はここでは不要になりました。
-  isNumberColumnFilterValue,
-  // 追加(filter-ext B/C/D): 複合(条件 AND 選択)記述子の判定に使います。
-  // 追加(filter-ext B): B-2 Float64 key の構築対象判定です(comparison / range を持つ
-  //   number 系のみ。number / numberSet の両 kind を単一実装で判定します)。
-  // 追加(記述子化): 現在値表示の text 整形に使います(記述子 → 表示文字列)。
-  columnFilterValueToDraftText,
   // 追加(FM-1): フィルター管理パネルの一覧行(有効フィルターの抽出)に使います。
+  // 変更(差し込み式 段階 5): popover の現在値表示 / 候補収集に使っていたものは features/filtering へ移りました。
   isActiveColumnFilterValue,
-  // 追加(audit L-06): dateSet 列の候補収集を照合と同じ正規化日付キーで行います。
-  toDateSetKey,
   // 行モデルチェーンは order(Int32Array)ベースに一本化しています
   //   (DS-2 で差し替え、旧オブジェクト配列版は DS-3-8 で削除)。
   // 追加(filter-ext A): number フィルターの数値化規則(空白 = NaN)です。B-2 の
@@ -103,8 +90,6 @@ import { describeColumnFilterValue } from '@ishibashi0112/spreadsheet-grid-core/
 // 追加(preset-opt): dateSet プリセット構成(列定義 dateFilterPresets)の正規化です
 //   (popover のチップ描画 / 候補連動 / 要約ラベルへ同じ正規形を渡します)。
 import { normalizeDateFilterPresets } from '@ishibashi0112/spreadsheet-grid-core/logic/dateFilterPresets';
-// 追加(filter-ext E): filterType: 'auto' の実効種別推定(editor ヒント + 値サンプリング)です。
-import { inferColumnFilterType } from '@ishibashi0112/spreadsheet-grid-core/logic/inferFilterType';
 // 変更(10-C): 3ペインレイアウト構築用の helper / 型を追加インポートします。
 // 変更理由: reorderColumnsByPane / buildGridPaneLayout を SpreadsheetGrid で使い、
 //           PaneColumnEntry 型を各ペインの描画エントリ受け渡しに使うためです。
@@ -168,11 +153,6 @@ import {
   computeHorizontalScrollTarget,
 } from '@ishibashi0112/spreadsheet-grid-core/logic/scrollTargets';
 // 変更(差し込み式 段階 2): 列幅自動調整のランナーは機能セット(features.columnAutosize)から受け取ります(無ければ代役)。
-// 追加(DS-4 #1): select / set 候補を「通常規模=同期 / 大規模=時間分割の非同期」で収集します。
-import useColumnSelectOptionsCollector from './hooks/useColumnSelectOptionsCollector';
-// 追加(async-options): getFilterOptions 経由の候補取得アダプタと、UI 種別が候補を使うかの判定。
-import { useAsyncSelectOptionsSource } from './hooks/useAsyncSelectOptionsSource';
-import { isSelectLikeFilterType } from '@ishibashi0112/spreadsheet-grid-core/controllers/selectOptionsCollector';
 // 追加(F-async): グローバルフィルタの時間分割(非ブロック)適用フックです。
 // 追加(①-3): serverSide(SSRM)の RowModel を供給するフックです(dataSource 指定時に使用)。
 import { useServerSideRowModel } from './hooks/useServerSideRowModel';
@@ -199,8 +179,6 @@ import type {
   // 追加(DS-3-0): 行モデルのシーム契約型です(rowModel の構築に使います)。
   // 追加(記述子化): commit 経路で text/date/select/custom を記述子化する際の型です。
   // 追加(12-A): set フィルター値の構築に使います。
-  // 追加(filter-ext E): 'auto' を解決した後の実効フィルター種別です。
-  ColumnFilterUiType,
   // 追加(imperative API #1): ref ハンドルと関連型です。
   // 追加(行選択): 公開記述子と内部状態型です。
   RowSelectionModel,
@@ -216,11 +194,7 @@ import { CheckboxCell } from './editors/CheckboxCell';
 import { decideCellWrite } from '@ishibashi0112/spreadsheet-grid-core/logic/validation';
 // 変更(lazy-popups): 列フィルターポップオーバーとツールパネル(+ 3 タブ)は別チャンクへ分けて遅延読み込みします
 //   (view/lazyPopups。シェルから部品を静的に import しないこと = 初期チャンクへ戻ってしまう)。
-import {
-  filterPopoverModule,
-  useLazyModule,
-  type ToolPanelViews,
-} from './view/lazyPopups';
+import type { ToolPanelViews } from './view/lazyPopups';
 // 追加(13-A): 列メニュー popover(列固定の切替 UI)です。
 import DefaultGridBottomBar from './view/DefaultGridBottomBar';
 import DefaultGridTopBar from './view/DefaultGridTopBar';
@@ -812,67 +786,23 @@ export function useGridShell<T extends object>({
 
 
   // ── filter popover ────────────────────────────────────
-  // 追加(filter-ext E): filterType: 'auto' の解決結果キャッシュです(列キー → 実効種別)。
-  //   合意仕様「初回オープン時に推定して以後固定」を担保します。行の追加 / 編集で推定が
-  //   揺れると、適用済み記述子(kind)と UI が食い違うためです。
-  //   判定材料が無かった回(conclusive=false: まだ行が空 等)はキャッシュせず、次回再推定します。
-  const autoFilterTypeCacheRef = useRef(new Map<string, ColumnFilterUiType>());
-
-  // 追加(filter-ext E): 'auto' 列の実効フィルター種別を解決します(popover の open 時に 1 回)。
-  //   優先順位: 適用済み記述子の kind > キャッシュ > editor ヒント / 値サンプリング。
-  //   「適用済み記述子が最優先」は applyState で復元された状態(popover を一度も開いていない
-  //   列にフィルターが載っている)でも UI と記述子を一致させるためです。
-  const resolveAutoColumnFilterType = useCallback(
-    (column: GridColumn<T>): ColumnFilterUiType => {
-      const currentValue = uiState.filters.columnFilters[column.key];
-      if (
-        currentValue?.kind === 'numberSet' ||
-        currentValue?.kind === 'textSet' ||
-        currentValue?.kind === 'dateSet' ||
-        currentValue?.kind === 'text'
-      ) {
-        return currentValue.kind;
-      }
-      const cached = autoFilterTypeCacheRef.current.get(column.key);
-      if (cached) {
-        return cached;
-      }
-      const result = inferColumnFilterType({
-        editorType: column.editor?.type,
-        isServerSide,
-        rowCount: rows.length,
-        getRawValueAt: (index) => getCellValue(rows[index], column),
-      });
-      if (result.conclusive) {
-        autoFilterTypeCacheRef.current.set(column.key, result.filterType);
-      }
-      return result.filterType;
-    },
-    [uiState.filters.columnFilters, isServerSide, rows],
-  );
-
+  // 変更(差し込み式 段階 5): 列フィルターのポップオーバーの controller の接続('auto' 列の種別の推定とキャッシュ込み)は
+  //   フィルターの機能(features/filtering)へ移しました(元の位置で呼ぶ)。無い構成では代役(閉じたまま)。
+  const filterPopover = features.filtering.useFilterPopover<T>({
+    visibleColumns,
+    columnFilters: uiState.filters.columnFilters,
+    columnFilterEnabled,
+    gridRootRef,
+    isServerSide,
+    rows,
+  });
   const {
-    filterPopoverState,
-    filterPopoverLayout,
     filterPopoverRef,
-    filterTextInputRef,
-    filterSelectRef,
     isFilterPopoverOpen,
     openedFilterColumn,
-    openedFilterType,
     openColumnFilterPopover,
     closeColumnFilterPopover,
-    updateFilterPopoverDraft,
-    updateFilterPopoverNumberDraft,
-    updateFilterPopoverTextDraft,
-    updateFilterPopoverDateDraft,
-  } = useFilterPopoverController({
-    visibleColumns,
-    columnFilterValues: uiState.filters.columnFilters,
-    enableColumnFilter: columnFilterEnabled,
-    gridRootRef,
-    resolveColumnFilterType: resolveAutoColumnFilterType,
-  });
+  } = filterPopover;
 
   // ── column menu(13-A) ────────────────────────────────
   // 追加(13-A): 列メニュー(「⋮」ボタン + ヘッダー右クリック)の controller です。
@@ -938,7 +868,8 @@ export function useGridShell<T extends object>({
   //   描画済みのパネルを見て位置の追従 / 入力欄フォーカスを始めます。読み込みに失敗したら閉じます。
   // 変更(差し込み式 段階 3): 列フィルターポップオーバーを開く入口は列メニューとツールパネルだけなので、どちらの機能も
   //   無い構成では先読みしない(全部入りでは両方あるので従来どおり)。
-  const filterPopoverViews = useLazyModule(filterPopoverModule, {
+  // 変更(差し込み式 段階 5): 列フィルターポップオーバーの部品の読み込みは機能セットの filtering から(元の位置)。
+  const filterPopoverViews = features.filtering.useFilterPopoverViews({
     needed: openedFilterColumn !== null,
     prefetch:
       columnFilterEnabled &&
@@ -3281,116 +3212,21 @@ export function useGridShell<T extends object>({
   };
 
   // ── filter popover actions ────────────────────────────
-  // 追加(DS-4 #1): rows[index] の対象列セル値アクセサです。identity は rows/openedFilterColumn に
-  //   連動し、これが変わったときだけ候補収集をやり直します(旧 getColumnSelectOptions の [rows]
-  //   依存と等価)。set 即時適用の再レンダー(uiState 変化)では rows/openedFilterColumn とも不変の
-  //   ため identity が保たれ、収集の再実行は起きません(open 中の再収集なしを維持)。
-  // 修正(audit L-06): dateSet 列は照合と同じ正規化日付キー(toDateSetKey)で候補を集めます。Date 値のセルが
-  //   String(Date)('Thu Jul 02 2026 …')の候補になり、年月日ツリーに出ず選んでも一致しなかったため。
-  //   文字列セルは後段の normalizeDateSetOptions と同じキーになるだけで結果は変わりません。
-  const openedFilterIsDateSet = openedFilterType === 'dateSet';
-  const getOpenedColumnRawValueAt = useCallback(
-    (index: number): unknown => {
-      if (!openedFilterColumn) {
-        return undefined;
-      }
-      const value = getCellValue(rows[index], openedFilterColumn);
-      return openedFilterIsDateSet ? toDateSetKey(value) : value;
-    },
-    [rows, openedFilterColumn, openedFilterIsDateSet],
-  );
-
-  // 変更(DS-4 #1): 候補収集を「通常規模=同期 / 大規模(>閾値)=時間分割の非同期」へ。
-  //   旧実装は open レンダーで同期 useMemo を 1 回走らせる eager 方式で、500k/1M では
-  //   その 1 回(reduce + ソート ≈ 0.4〜1s)が主スレッドを塞いでいました(deferred 化は
-  //   thrash のため不可)。通常規模はフック内の同期 useMemo で従来どおり即時確定し(チラつき無・
-  //   バイト等価)、大規模のみ yieldToMain で時間分割し、収集中は popover を収集中表示にします。
-  //   options 配列は同期/非同期いずれも logic/selectOptions の共有コレクタ経由でバイト等価です。
-  // 追加(async-options): 開いている列が getFilterOptions の対象か(静的 filterOptions 指定列は従来どおり静的、
-  //   候補を使わない種別は対象外)。対象なら rows 収集フックには column=null を渡して収集を止め、非同期ソースの
-  //   結果を使います。優先順位: column.filterOptions > getFilterOptions > rows 自動収集。
-  const openedColumnUsesAsyncOptions =
-    getFilterOptions != null &&
-    openedFilterColumn != null &&
-    isSelectLikeFilterType(openedFilterType) &&
-    !(openedFilterColumn.filterOptions && openedFilterColumn.filterOptions.length > 0);
-  const asyncSelectOptions = useAsyncSelectOptionsSource<T>({
-    columnKey: openedColumnUsesAsyncOptions ? openedFilterColumn.key : null,
-    column: openedColumnUsesAsyncOptions ? openedFilterColumn : null,
+  // 変更(差し込み式 段階 5): 候補の収集(同期 / 時間分割 / getFilterOptions)・派生値・コマンド群と、ポップオーバーの描画は
+  //   フィルターの機能(features/filtering)へ移しました(元の位置で呼ぶので hook の順番は従来どおり)。
+  const renderedFilterPopover = features.filtering.useFilterPopoverContent<T>({
+    filterPopover,
+    views: filterPopoverViews,
+    rows,
     columnFilters: uiState.filters.columnFilters,
-    globalText: globalFilterText,
-    fetch: getFilterOptions ?? null,
+    globalFilterText,
+    getFilterOptions,
+    isServerSide,
+    dispatch,
+    renderFilterDateInput,
+    popoverSlot: slots.popover,
+    portalClassName,
   });
-  const collectedSelectOptions = useColumnSelectOptionsCollector({
-    column: openedColumnUsesAsyncOptions ? null : openedFilterColumn,
-    rowCount: rows.length,
-    getRawValueAt: getOpenedColumnRawValueAt,
-  });
-  const {
-    options: openedFilterSelectOptions,
-    allValues: openedFilterAllValues,
-    status: openedFilterOptionsStatus,
-    progress: openedFilterOptionsProgress,
-    truncated: openedFilterOptionsTruncated,
-    errorMessage: openedFilterOptionsErrorMessage,
-  } = openedColumnUsesAsyncOptions ? asyncSelectOptions.result : collectedSelectOptions;
-
-  // 変更(本体分解 E-4b): popover の派生値(dateSet 正規化候補 / 全値集合 / set 選択状態 / 反転可否 / 複合列か)と
-  //   コマンド群(set のチェック・すべて選択・検索確定・クリア、複合列の条件編集と個別クリア、適用 / クリア)は
-  //   engine/filterPopoverCommands.ts(React 非依存)へ移設しました。
-  const { resolveFilterPopoverDerived } = engine;
-  const filterPopoverDerived = useMemo(
-    () =>
-      resolveFilterPopoverDerived({
-        openedFilterColumn,
-        openedFilterType,
-        openedFilterSelectOptions,
-        openedFilterAllValues,
-        columnFilters: uiState.filters.columnFilters,
-      }),
-    [
-      resolveFilterPopoverDerived,
-      openedFilterColumn,
-      openedFilterType,
-      openedFilterSelectOptions,
-      openedFilterAllValues,
-      uiState.filters.columnFilters,
-    ],
-  );
-  const {
-    openedPopoverSelectOptions,
-    openedSetFilterValue,
-    openedSetSelection,
-  } = filterPopoverDerived;
-  const filterPopoverCommands = engine.filterPopoverCommands;
-  useControllerLifecycle(
-    filterPopoverCommands,
-    {
-      filterPopoverState,
-      openedFilterColumn,
-      openedFilterType,
-      columnFilters: uiState.filters.columnFilters,
-      derived: filterPopoverDerived,
-      dispatch,
-      closeColumnFilterPopover,
-      updateNumberDraft: updateFilterPopoverNumberDraft,
-      updateTextDraft: updateFilterPopoverTextDraft,
-      updateDateDraft: updateFilterPopoverDateDraft,
-    },
-  );
-  const {
-    handleSetFilterValueToggle,
-    handleSetFilterSelectAllChange,
-    handleSetFilterReplaceSelection,
-    clearSetFilterPopoverValue,
-    handleNumberConditionDraftChange,
-    handleTextConditionDraftChange,
-    handleDateConditionDraftChange,
-    handleComboConditionClear,
-    handleComboSelectionClear,
-    applyFilterPopoverValue,
-    clearFilterPopoverValue,
-  } = filterPopoverCommands;
 
   // 変更(UI CSS移行): getHeaderActionButtonStyle(インライン)を撤去しました。
   //   ヘッダーアイコンボタンのスタイルは styles.css(.ssg-icon-btn / --active / :hover)へ移行。
@@ -3745,102 +3581,6 @@ export function useGridShell<T extends object>({
   // 変更(10-G): 自前のスクロールは持たず、固定幅(centerContentWidth)で並べます。
   //           縦横スクロールは外側の共有コンテナが担うため overflow は指定しません。
   //           固定ペインの影が重なるよう position: relative + zIndex: 1（固定ペインより背面）。
-
-  // ── filter popover ────────────────────────────────────
-  // 変更(12-A): set フィルター値はオブジェクトのため String() 直書きを避け、
-  //             現在値テキストをここで type 別に整形します(set は popover 側で
-  //             件数カウンタを表示するため参考表示のみです)。
-  const openedFilterCurrentValueText = (() => {
-    if (!openedFilterColumn) {
-      return '（なし）';
-    }
-    const rawValue = uiState.filters.columnFilters[openedFilterColumn.key];
-    if (isSetColumnFilterValue(rawValue)) {
-      // 変更(反転set): exclude は「除外中」表示にします(total 非依存で正確)。
-      return rawValue.mode === 'exclude'
-        ? `${rawValue.values.length}件を除外中`
-        : `${rawValue.values.length}件を選択中`;
-    }
-    // 追加(記述子化 / number): number 記述子は raw(式そのもの)を現在値表示にします。
-    if (isNumberColumnFilterValue(rawValue)) {
-      return rawValue.raw;
-    }
-    // 変更(記述子化): text/date/select は記述子のため String() 直書きでは "[object Object]" に
-    //   なります。表示文字列は columnFilterValueToDraftText 経由で取り出します(custom は空 → なし)。
-    const text = columnFilterValueToDraftText(rawValue);
-    return text.trim() ? text : '（なし）';
-  })();
-
-  // 追加(preset-opt): 開いている列のプリセット構成(正規形)です。popover のチップ描画・
-  //   候補連動・サマリーのラベル逆引きが共有します(dateSet 以外の列では実質未使用)。
-  const openedDatePresets = openedFilterColumn
-    ? normalizeDateFilterPresets(openedFilterColumn.dateFilterPresets)
-    : undefined;
-
-  // 追加(filter-ext B/C): 複合(numberSet / textSet)popover のフッター上サマリーです
-  //   (「10 以上 かつ 3 件を選択」)。即時適用モデルのため、適用済み記述子からそのまま
-  //   生成すれば表示と結果が常に一致します。
-  const openedComboSummaryText =
-    openedSetFilterValue && isActiveColumnFilterValue(openedSetFilterValue)
-      ? describeColumnFilterValue(openedSetFilterValue, openedDatePresets)
-      : 'フィルターなし';
-
-  // 変更(lazy-popups): 部品(別チャンク)の読み込み前は描画しません(読み込み完了でシェルごと再描画)。
-  const renderedFilterPopover = openedFilterColumn && filterPopoverViews ? (
-    <filterPopoverViews.default
-      popoverSlot={slots.popover}
-      themeClassName={portalClassName}
-      isOpen={Boolean(filterPopoverState)}
-      title={openedFilterColumn.title || openedFilterColumn.key}
-      filterType={openedFilterType ?? 'text'}
-      // 追加(stage ②): serverSide では set/select 候補をクライアントが自動収集できないため、
-      //   候補空時の空表示文言を出し分けます(filterOptions 指定列は従来どおり候補が出ます)。
-      // 変更(async-options): 非同期供給の列では「候補が未指定」文言を出さない(空は本当に空)。
-      isServerSide={isServerSide && !openedColumnUsesAsyncOptions}
-      draftValue={filterPopoverState?.draftValue ?? ''}
-      numberConditionDraft={filterPopoverState?.numberDraft ?? null}
-      onNumberConditionDraftChange={handleNumberConditionDraftChange}
-      textConditionDraft={filterPopoverState?.textDraft ?? null}
-      onTextConditionDraftChange={handleTextConditionDraftChange}
-      dateConditionDraft={filterPopoverState?.dateDraft ?? null}
-      onDateConditionDraftChange={handleDateConditionDraftChange}
-      datePresets={openedDatePresets}
-      // 追加(date-input): 公開契約(FilterDateInputContext)の columnKey はここで付与します
-      //   (popover は列を知らないため)。未指定はネイティブ input(従来挙動)。
-      renderDateInput={
-        renderFilterDateInput
-          ? (ctx) =>
-              renderFilterDateInput({
-                ...ctx,
-                columnKey: openedFilterColumn.key,
-              })
-          : undefined
-      }
-      onComboConditionClear={handleComboConditionClear}
-      onComboSelectionClear={handleComboSelectionClear}
-      comboSummaryText={openedComboSummaryText}
-      currentValueText={openedFilterCurrentValueText}
-      layout={filterPopoverLayout}
-      selectOptions={openedPopoverSelectOptions}
-      setSelection={openedSetSelection}
-      optionsStatus={openedFilterOptionsStatus}
-      optionsProgress={openedFilterOptionsProgress}
-      optionsTruncated={openedFilterOptionsTruncated}
-      optionsErrorMessage={openedFilterOptionsErrorMessage}
-      onOptionsRetry={openedColumnUsesAsyncOptions ? asyncSelectOptions.retry : undefined}
-      popoverRef={filterPopoverRef}
-      textInputRef={filterTextInputRef}
-      selectRef={filterSelectRef}
-      onRequestClose={closeColumnFilterPopover}
-      onDraftChange={updateFilterPopoverDraft}
-      onApply={applyFilterPopoverValue}
-      onClear={clearFilterPopoverValue}
-      onSetValueToggle={handleSetFilterValueToggle}
-      onSetSelectAllChange={handleSetFilterSelectAllChange}
-      onSetClear={clearSetFilterPopoverValue}
-      onSetReplaceSelection={handleSetFilterReplaceSelection}
-    />
-  ) : null;
 
   // ── column menu popover(13-A) ────────────────────────
   // 追加(13-A): 列メニュー popover の描画です(portal で body 直下へ出します)。

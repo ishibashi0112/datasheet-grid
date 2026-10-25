@@ -805,9 +805,27 @@ describe('差し込み式: filtering', () => {
     expect(onFiltersChange).toHaveBeenCalled();
   });
 
-  it('列メニューと組み合わせると「フィルター…」が出る', () => {
-    const { container } = render(<ColumnMenuFilteringGrid rows={rows} columns={filterColumns} rowKeyGetter={(r) => r.id} />);
+  it('列メニューと組み合わせると「フィルター…」でポップオーバーが開き、候補のチェックで絞り込める', () => {
+    const setColumns: GridColumn<Row>[] = [{ key: 'name', title: '名前', width: 160, filterType: 'set' }];
+    const { container } = render(<ColumnMenuFilteringGrid rows={rows} columns={setColumns} rowKeyGetter={(r) => r.id} />);
     openColumnMenu(container);
-    expect(menuLabels()).toContain('フィルター…');
+    const filterItem = Array.from(document.querySelectorAll<HTMLButtonElement>('.ssg-menu-item')).find((item) =>
+      item.textContent?.includes('フィルター…'),
+    );
+    expect(filterItem).toBeDefined();
+    act(() => {
+      fireEvent.click(filterItem as HTMLButtonElement);
+    });
+    const popover = document.querySelector<HTMLElement>('.ssg-filter-popover');
+    expect(popover).not.toBeNull();
+    // 候補は行から集まる(alpha / beta)。alpha のチェックを外すと beta だけになる。
+    const alphaOption = Array.from(popover?.querySelectorAll<HTMLElement>('.ssg-filter-option') ?? []).find(
+      (option) => option.textContent === 'alpha',
+    );
+    expect(alphaOption).toBeDefined();
+    act(() => {
+      fireEvent.click(alphaOption?.querySelector('input') as HTMLInputElement);
+    });
+    expect(bodyTexts(container)).toEqual(['beta']);
   });
 });

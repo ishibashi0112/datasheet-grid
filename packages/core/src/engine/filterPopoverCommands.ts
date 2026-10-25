@@ -6,6 +6,8 @@
 //     (即時適用)/ 条件・値の個別クリア、適用ボタン方式(text / number / date / select / custom)の commit。
 //     update(args) で最新の状態を受け取り、各コマンドは呼び出し時点の値を読みます(参照は恒久安定)。
 //   反転 set: values は常に小さい側のみ(include=選択値 / exclude=非選択値)。巨大側は作りません。
+//   変更(差し込み式 段階 5): エンジン(createGridEngine)ではなく、描画側のフィルターの機能が作ります
+//   (React 版は features/filtering の useFilterPopoverContent)。
 import type {
   ColumnFilterUiType,
   ColumnFilterValue,

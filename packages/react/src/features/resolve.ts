@@ -113,6 +113,26 @@ const inertSelectionAggregatesFeature: GridShellFeatures['selectionAggregates'] 
   SelectionAggregates: () => null,
 };
 
+// 列フィルターのポップオーバーは閉じたまま(シェルは列フィルターを切るので開く入口を出さない。開く関数は何もしない)。
+//   ref はツールパネルの「外側クリックで閉じない範囲」に渡るだけで、どこにも付きません。
+const noop = () => {};
+const INERT_FILTER_POPOVER = {
+  filterPopoverState: null,
+  filterPopoverLayout: null,
+  filterPopoverRef: { current: null },
+  filterTextInputRef: { current: null },
+  filterSelectRef: { current: null },
+  isFilterPopoverOpen: false,
+  openedFilterColumn: null,
+  openedFilterType: null,
+  openColumnFilterPopover: noop,
+  closeColumnFilterPopover: noop,
+  updateFilterPopoverDraft: noop,
+  updateFilterPopoverNumberDraft: noop,
+  updateFilterPopoverTextDraft: noop,
+  updateFilterPopoverDateDraft: noop,
+};
+
 // フィルターが無い構成では enableColumnFilter / enableGlobalFilter を false として扱う(createSpreadsheetGrid)ので、
 //   行は絞り込みません(グローバルフィルターは掛けず恒等 order のまま、列フィルターの段は行パイプラインが通さない)。
 const inertFilteringFeature: GridShellFeatures['filtering'] = {
@@ -124,6 +144,9 @@ const inertFilteringFeature: GridShellFeatures['filtering'] = {
     globalFilterProgress: 1,
     relativeDateKey: '',
   }),
+  useFilterPopover: () => INERT_FILTER_POPOVER,
+  useFilterPopoverViews: () => null,
+  useFilterPopoverContent: () => null,
 };
 
 // エクスポートが無い構成: 何も出力しない代役(エンジンの代役と同じ)に、呼ばれたら開発時に 1 回だけ警告するのを足します

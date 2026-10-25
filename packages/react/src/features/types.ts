@@ -23,6 +23,7 @@ import type { ColumnHeaderDragController } from '@ishibashi0112/spreadsheet-grid
 import type { ColumnAutosizeRunnerArgs } from '@ishibashi0112/spreadsheet-grid-core/controllers/columnAutosizeRunner';
 import type { DateRolloverStore } from '@ishibashi0112/spreadsheet-grid-core/controllers/dateRolloverStore';
 import type { RowOrder } from '@ishibashi0112/spreadsheet-grid-core/logic/filtering';
+import type { GridUiAction } from '@ishibashi0112/spreadsheet-grid-core/model/gridActions';
 import type { ColumnPane, GridPaneLayout } from '@ishibashi0112/spreadsheet-grid-core/logic/geometry';
 import type { DetailRowExtra, RowMetrics } from '@ishibashi0112/spreadsheet-grid-core/logic/verticalGeometry';
 import type {
@@ -52,7 +53,8 @@ import type { UseRowDragControllerArgs } from '../hooks/useRowDragController';
 import type { UseColumnMenuControllerArgs, UseColumnMenuControllerResult } from '../hooks/useColumnMenuController';
 import type { ColumnMenuPopover } from '../view/ColumnMenuPopover';
 import type { UseToolPanelControllerArgs, UseToolPanelControllerResult } from '../hooks/useToolPanelController';
-import type { ToolPanelViews, UseLazyModuleOptions } from '../view/lazyPopups';
+import type { FilterPopoverViews, ToolPanelViews, UseLazyModuleOptions } from '../view/lazyPopups';
+import type { useFilterPopoverController } from '../hooks/useFilterPopoverController';
 
 // フィルハンドル(fillHandle)の hook が受け取るシェルの値です(シェルにあったときの自由変数そのまま)。
 export type FillHandleFeatureArgs<T> = {
@@ -123,6 +125,33 @@ export type FilterOrderFeatureResult = {
   globalFilterProgress: number;
   // 相対日付プリセットの範囲のキー(行パイプライン / serverSide の queryKey の入力。無ければ '')。
   relativeDateKey: string;
+};
+
+// 列フィルターのポップオーバー(filtering)の controller の接続が受け取るシェルの値と返す値です(返す値は controller の
+//   hook の戻り値そのまま)。
+export type FilterPopoverFeatureArgs<T> = {
+  visibleColumns: GridColumn<T>[];
+  columnFilters: Record<string, ColumnFilterValue>;
+  columnFilterEnabled: boolean;
+  gridRootRef: RefObject<HTMLDivElement | null>;
+  isServerSide: boolean;
+  rows: T[];
+};
+export type FilterPopoverFeatureResult<T> = ReturnType<typeof useFilterPopoverController<T>>;
+// ポップオーバーの中身(候補の収集・派生値・コマンド群・描画)の hook が受け取るシェルの値です。
+export type FilterPopoverContentFeatureArgs<T> = {
+  filterPopover: FilterPopoverFeatureResult<T>;
+  // ポップオーバーの部品(読み込み前は null = 描画しない)。
+  views: FilterPopoverViews | null;
+  rows: T[];
+  columnFilters: Record<string, ColumnFilterValue>;
+  globalFilterText: string;
+  getFilterOptions: SpreadsheetGridProps<T>['getFilterOptions'];
+  isServerSide: boolean;
+  dispatch: (action: GridUiAction) => void;
+  renderFilterDateInput: SpreadsheetGridProps<T>['renderFilterDateInput'];
+  popoverSlot: GridResolvedSlots['popover'];
+  portalClassName: string | undefined;
 };
 
 // 列ヘッダーのドラッグによる並べ替え(columnReorder)の hook が受け取る値(コントローラの引数そのまま)と返す値です。
@@ -212,6 +241,9 @@ export type ReactGridFeatures = {
   //   相対日付プリセットの基準日の hook。
   filtering?: NonNullable<GridCoreFeatures['filtering']> & {
     useFilterOrder: <T>(args: FilterOrderFeatureArgs<T>) => FilterOrderFeatureResult;
+    useFilterPopover: <T>(args: FilterPopoverFeatureArgs<T>) => FilterPopoverFeatureResult<T>;
+    useFilterPopoverViews: (options: UseLazyModuleOptions) => FilterPopoverViews | null;
+    useFilterPopoverContent: <T>(args: FilterPopoverContentFeatureArgs<T>) => ReactNode;
   };
   // 行の高さの実測(autoHeight): 実測のコントローラ + 行高ストア(core)。描画の部品は無い。
   autoHeight?: NonNullable<GridCoreFeatures['autoHeight']>;

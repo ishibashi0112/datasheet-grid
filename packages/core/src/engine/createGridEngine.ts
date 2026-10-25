@@ -47,13 +47,6 @@ import {
   type VerticalLayoutResolution,
 } from './verticalLayout';
 import { createColumnCommands, type ColumnCommands } from './columnCommands';
-import {
-  createFilterPopoverCommands,
-  createFilterPopoverDerivedResolver,
-  type FilterPopoverCommands,
-  type FilterPopoverDerived,
-  type FilterPopoverDerivedInputs,
-} from './filterPopoverCommands';
 import { createRowSelectionCommands, type RowSelectionCommands } from './rowSelectionCommands';
 import { createGridApi, type GridApi } from './gridApi';
 import {
@@ -94,10 +87,10 @@ export type GridEngine<T> = {
   resolvePaneLayout: (inputs: PaneLayoutInputs<T>) => PaneLayoutResolution<T>;
   rowPipeline: RowPipelineResolver<T>;
   resolveVerticalLayout: (inputs: VerticalLayoutInputs<T>) => VerticalLayoutResolution;
-  resolveFilterPopoverDerived: (inputs: FilterPopoverDerivedInputs<T>) => FilterPopoverDerived;
   // コマンド群(参照安定。update(args) で最新の状態を受ける)。
+  // 変更(差し込み式 段階 5): 列フィルターのポップオーバーの派生値 / コマンド群(engine/filterPopoverCommands)は持たない
+  //   (描画側のフィルターの機能が作る。機能を外した構成に持ち込まないため)。
   columnCommands: ColumnCommands<T>;
-  filterPopoverCommands: FilterPopoverCommands<T>;
   rowSelectionCommands: RowSelectionCommands<T>;
   gridApi: GridApi<T>;
   // 外部通知。
@@ -138,7 +131,6 @@ export const createGridEngine = <T,>(init: GridEngineInit<T>): GridEngine<T> => 
   const resolvePaneLayout = createPaneLayoutResolver<T>();
   const rowPipeline = createRowPipelineResolver<T>(init.features.filtering);
   const resolveVerticalLayout = createVerticalLayoutResolver<T>(init.features.autoHeight);
-  const resolveFilterPopoverDerived = createFilterPopoverDerivedResolver<T>();
 
   // 変更(監査 RD-5 / M-03): 初期 state は列に依存しなくなりました(列幅 state は空で始まる)。
   const store = createGridStore(createInitialGridUiState());
@@ -176,9 +168,7 @@ export const createGridEngine = <T,>(init: GridEngineInit<T>): GridEngine<T> => 
     resolvePaneLayout,
     rowPipeline,
     resolveVerticalLayout,
-    resolveFilterPopoverDerived,
     columnCommands: createColumnCommands<T>(),
-    filterPopoverCommands: createFilterPopoverCommands<T>(),
     rowSelectionCommands: createRowSelectionCommands<T>(),
     gridApi: createGridApi<T>(init.features),
     hoverRowNotifier: createHoverRowNotifier(),

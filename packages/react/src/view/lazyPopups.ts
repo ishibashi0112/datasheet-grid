@@ -24,6 +24,7 @@ export const filterPopoverModule = /* @__PURE__ */ createLazyModule(() => import
 export const toolPanelModule = /* @__PURE__ */ createLazyModule(() => import('./toolPanelViews'));
 
 export type ToolPanelViews = typeof import('./toolPanelViews');
+export type FilterPopoverViews = typeof import('./ColumnFilterPopover');
 
 /**
  * 列フィルターポップオーバーとツールパネルの部品を先に読み込みます。
