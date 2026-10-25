@@ -1,0 +1,63 @@
+name: Release notes
+
+# 追加(広報 1: 入口の整備): vX.Y.Z のタグが push されたら、CHANGELOG.md のその版の節を本文にして GitHub Release を作ります。
+#   npm への publish はこれまでどおり手元で行います(このワークフローは publish しません)。
+#   過去の版をまとめて作るときは、Actions の画面から手動実行し、tags に「all」(CHANGELOG.md の全版のうちタグがあるもの)か
+#   「v0.53.0 v0.54.0」のような空白区切りの一覧を渡します。すでにある Release は本文だけ書き直します。
+on:
+  push:
+    tags: ['v*.*.*']
+  workflow_dispatch:
+    inputs:
+      tags:
+        description: '作る版(all か、空白区切りの vX.Y.Z)'
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Create or update releases
+        env:
+          GH_TOKEN: ${{ github.token }}
+          INPUT_TAGS: ${{ github.event_name == 'workflow_dispatch' && inputs.tags || github.ref_name }}
+        run: |
+          set -euo pipefail
+          if [ "$INPUT_TAGS" = "all" ]; then
+            tags=$(node scripts/changelog-section.mjs --list | sed 's/^/v/')
+          else
+            tags="$INPUT_TAGS"
+          fi
+          # 新しい版がいちばん上に並ぶよう、古い版から順に作ります。「Latest」の印は最後に CHANGELOG.md の最新版へ付けます
+          # (古い版を後から作ったときに Latest が古い版へ移らないように)。
+          for tag in $tags; do
+            if ! git rev-parse -q --verify "refs/tags/$tag" > /dev/null; then
+              echo "skip $tag (タグがありません)"
+              continue
+            fi
+            node scripts/changelog-section.mjs "$tag" > notes.md
+            if gh release view "$tag" > /dev/null 2>&1; then
+              gh release edit "$tag" --title "$tag" --notes-file notes.md
+              echo "updated $tag"
+            else
+              gh release create "$tag" --title "$tag" --notes-file notes.md --verify-tag --latest=false
+              echo "created $tag"
+            fi
+          done
+          newest="v$(node scripts/changelog-section.mjs --list | tail -n 1)"
+          if gh release view "$newest" > /dev/null 2>&1; then
+            gh release edit "$newest" --latest
+            echo "latest $newest"
+          fi

@@ -7,6 +7,9 @@
 //   必ず **origin/main を取り込んだ main 上**で実行する(古い main の上で実行すると、新機能を含まないコードに
 //   新しい版番号が付いて公開されてしまう。2026-10-10 の 0.46.0 がその例)。
 //   その後の publish は `pnpm -r publish --access public`(core → react の順に、各パッケージで 2FA)。
+//   追加(広報 1: 入口の整備): CHANGELOG.md の「## 未リリース」の見出しを「## X.Y.Z — 今日の日付」に書き換えて同じコミットに含めます。
+//     タグを push すると .github/workflows/release.yml がこの節を本文にして GitHub Release を作ります。
+//     「未リリース」の節が無いときは警告だけ出して続けます(Release は本文が無いので作られません)。
 import { execSync } from 'node:child_process';
 import { readFileSync, writeFileSync } from 'node:fs';
 
@@ -47,7 +50,19 @@ for (const file of packages) {
   pkg.version = next;
   writeFileSync(file, JSON.stringify(pkg, null, 2));
 }
-execSync(`git add ${packages.join(' ')}`);
+const changelog = 'CHANGELOG.md';
+const UNRELEASED_HEADING = /^## 未リリース[ \t]*$/m;
+const changelogText = readFileSync(changelog, 'utf8');
+const staged = [...packages];
+if (UNRELEASED_HEADING.test(changelogText)) {
+  const now = new Date();
+  const today = [now.getFullYear(), now.getMonth() + 1, now.getDate()].map((part) => String(part).padStart(2, '0')).join('-');
+  writeFileSync(changelog, changelogText.replace(UNRELEASED_HEADING, `## ${next} — ${today}`));
+  staged.push(changelog);
+} else {
+  console.warn('bump-version: CHANGELOG.md に「## 未リリース」の節がありません(GitHub Release の本文が作られません)');
+}
+execSync(`git add ${staged.join(' ')}`);
 execSync(`git commit -q -m "${next}"`);
 // 注釈付きタグにします(`git push --follow-tags` は注釈付きタグしか push しない。pnpm version と同じ挙動)。
 execSync(`git tag -a v${next} -m ${next}`);

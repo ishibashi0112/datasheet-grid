@@ -7,6 +7,8 @@ A high-performance, virtualized spreadsheet / data grid for **React 19**, writte
 
 高性能な仮想化スプレッドシート／データグリッド（**React 19**・TypeScript 製）。
 
+**[Docs & live demo](https://datasheet-grid.vercel.app)** · [Playground](https://datasheet-grid.vercel.app/playground) · [Theme builder](https://datasheet-grid.vercel.app/theme-builder) · [Changelog](./CHANGELOG.md)
+
 **English** | [日本語](#日本語)
 
 ---
@@ -310,7 +312,7 @@ Sorting, column filters, and the global filter stay enabled and are forwarded to
   }
   ```
 
-- Try the **theme builder** on the docs site (`/theme-builder`): adjust accent / backgrounds / lines / radius / density / font size on a live grid, pick a preset (default / Mantine-like / HeroUI-like / business gray / Excel-like / dark) and copy the generated CSS variables; the state lives in the URL so it can be shared.
+- Try the **[theme builder](https://datasheet-grid.vercel.app/theme-builder)** on the docs site: adjust accent / backgrounds / lines / radius / density / font size on a live grid, pick a preset (default / Mantine-like / HeroUI-like / business gray / Excel-like / dark) and copy the generated CSS variables; the state lives in the URL so it can be shared.
 - Use the `classNames` prop for per-part slots (root / toolbar / statusBar / header & body rows and cells / group & detail rows / popover / menuItem / tooltip / dragGhost / checkbox / cellEditor / emptyState / filterChipBar / errorBar / scrollHint / overlays), `cellClassName` per column, and `getRowClassName` per row. Each accepts a class string or `{ className, style }`; the root also takes a `style` prop. Inline `style` is applied to the part's element while the grid keeps the last word on positioning (`left` / `top` / `width` / `height` / `transform`). Token overrides always apply (tokens are defined at zero specificity). For property overrides, chain with the base class (e.g. `.ssg-body-cell.my-class`) to win regardless of import order — see the Styles section above.
 
 ### Dark theme
@@ -352,7 +354,7 @@ Note: a plain `.ssg-root { --ssg-* }` override wins over **both** themes (theme 
 
 ## API reference
 
-The full prop and type reference lives in [`packages/react/API_REFERENCE.md`](./packages/react/API_REFERENCE.md).
+The full prop and type reference lives in [`packages/react/API_REFERENCE.md`](./packages/react/API_REFERENCE.md). Guides with live demos are on the [docs site](https://datasheet-grid.vercel.app) (Japanese), and every release is listed in [`CHANGELOG.md`](./CHANGELOG.md).
 
 ## License
 
@@ -365,6 +367,8 @@ The full prop and type reference lives in [`packages/react/API_REFERENCE.md`](./
 [English](#ishibashi0112spreadsheet-grid)
 
 **React 19** 製の高性能な仮想化スプレッドシート／データグリッドです。TypeScript で書かれています。
+
+**[ドキュメントとライブデモ](https://datasheet-grid.vercel.app)** · [プレイグラウンド](https://datasheet-grid.vercel.app/playground) · [テーマビルダー](https://datasheet-grid.vercel.app/theme-builder) · [変更履歴](./CHANGELOG.md)
 
 ### なぜ SpreadsheetGrid か
 
@@ -663,7 +667,7 @@ props・`ref` ハンドル・型は `SpreadsheetGrid` と同じです。渡し�
   }
   ```
 
-- ドキュメントサイトの**テーマビルダー**(`/theme-builder`)で、アクセント / 背景 / 罫線 / 角丸 / 密度 / 文字サイズを実物のグリッドで動かしながら調整し、プリセット(既定 / Mantine 風 / HeroUI 風 / 業務グレー / Excel 風 / ダーク)から始めて生成された CSS 変数をコピーできます。状態は URL に載るので共有できます。
+- ドキュメントサイトの**[テーマビルダー](https://datasheet-grid.vercel.app/theme-builder)**で、アクセント / 背景 / 罫線 / 角丸 / 密度 / 文字サイズを実物のグリッドで動かしながら調整し、プリセット(既定 / Mantine 風 / HeroUI 風 / 業務グレー / Excel 風 / ダーク)から始めて生成された CSS 変数をコピーできます。状態は URL に載るので共有できます。
 - パーツ別の class は `classNames` prop、列単位は `cellClassName`、行単位は `getRowClassName` で付与できます。トークン上書きは常に効きます（特異度 0 で定義）。プロパティ上書きは基底クラスとの連結（例: `.ssg-body-cell.my-class`）で読み込み順に依らず確実になります — 上記「スタイル」参照。
 
 #### ダークテーマ
@@ -705,7 +709,7 @@ const { resolvedTheme } = useTheme();
 
 ### API リファレンス
 
-prop と型の完全なリファレンスは [`packages/react/API_REFERENCE.md`](./packages/react/API_REFERENCE.md) にあります。
+prop と型の完全なリファレンスは [`packages/react/API_REFERENCE.md`](./packages/react/API_REFERENCE.md) にあります。ライブデモ付きのガイドは[ドキュメントサイト](https://datasheet-grid.vercel.app)に、各版の変更は [`CHANGELOG.md`](./CHANGELOG.md) にあります。
 
 ### ライセンス
 

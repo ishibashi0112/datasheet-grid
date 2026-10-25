@@ -12,7 +12,17 @@
     "virtualized",
     "virtual-scroll",
     "typescript",
-    "ssrm"
+    "ssrm",
+    "data-grid",
+    "react-grid",
+    "react-table",
+    "editable-table",
+    "excel",
+    "server-side-row-model",
+    "row-grouping",
+    "master-detail",
+    "ime",
+    "japanese"
   ],
   "license": "MIT",
   "author": "Yuki Sakakibara",
@@ -21,7 +31,7 @@
     "url": "git+https://github.com/ishibashi0112/datasheet-grid.git",
     "directory": "packages/react"
   },
-  "homepage": "https://github.com/ishibashi0112/datasheet-grid#readme",
+  "homepage": "https://datasheet-grid.vercel.app",
   "bugs": {
     "url": "https://github.com/ishibashi0112/datasheet-grid/issues"
   },
