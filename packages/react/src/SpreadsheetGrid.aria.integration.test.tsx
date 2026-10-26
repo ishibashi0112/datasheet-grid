@@ -3,7 +3,7 @@
 //   ソート(aria-sort は第 1 キーだけ)・aria-activedescendant(アクティブセルが描画されているときだけ)・
 //   行選択チェックボックスの名前と状態・編集不可セル・編集中エディタの名前を固定します。
 // @vitest-environment jsdom
-import { describe, it, expect, beforeAll, afterAll, afterEach } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, afterEach, vi } from 'vitest';
 import { render, cleanup, act, fireEvent, within } from '@testing-library/react';
 import { createRef } from 'react';
 
@@ -179,6 +179,36 @@ describe('ARIA(audit V-05 / RD-10 / V-14)', () => {
       ref.current?.setActiveCell(null);
     });
     expect(shell.hasAttribute('data-ssg-has-active-cell')).toBe(false);
+  });
+
+  // 追加(フォーカスの枠): マウス / タッチで触った後は枠を出さないための印(data-ssg-pointer)。キーを押したときと、
+  //   フォーカスがグリッドの外へ移ったときに外れる。
+  it('data-ssg-pointer はポインタで付き、キー操作とグリッド外へのフォーカス移動で外れる', () => {
+    const { shell } = setup();
+    const outside = document.createElement('button');
+    document.body.appendChild(outside);
+    const hasFocus = vi.spyOn(document, 'hasFocus').mockReturnValue(true);
+    try {
+      expect(shell.hasAttribute('data-ssg-pointer')).toBe(false);
+      fireEvent.pointerDown(shell);
+      expect(shell.hasAttribute('data-ssg-pointer')).toBe(true);
+      fireEvent.keyDown(shell, { key: 'Shift' });
+      expect(shell.hasAttribute('data-ssg-pointer')).toBe(false);
+      fireEvent.pointerDown(shell);
+      // グリッドの中でのフォーカス移動では外さない。
+      fireEvent.blur(shell, { relatedTarget: shell.querySelector('[role="grid"]') });
+      expect(shell.hasAttribute('data-ssg-pointer')).toBe(true);
+      // ウィンドウの切り替え(document.hasFocus() が false)では外さず、グリッド外の要素へ移ったら外す。
+      hasFocus.mockReturnValue(false);
+      fireEvent.blur(shell, { relatedTarget: null });
+      expect(shell.hasAttribute('data-ssg-pointer')).toBe(true);
+      hasFocus.mockReturnValue(true);
+      fireEvent.blur(shell, { relatedTarget: outside });
+      expect(shell.hasAttribute('data-ssg-pointer')).toBe(false);
+    } finally {
+      outside.remove();
+      hasFocus.mockRestore();
+    }
   });
 
   it('行選択のチェックボックスは名前と状態を持ち、行は aria-selected', () => {

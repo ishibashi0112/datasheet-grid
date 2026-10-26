@@ -14,7 +14,7 @@ import type {
 import { createEditorKeyDownHandler } from './editorKeyBindings';
 import { CellEditorErrorBubble } from './CellEditorErrorBubble';
 import { cx } from '@ishibashi0112/spreadsheet-grid-core/logic/cx';
-import { isNumberInputPrefix, toNumberInputText } from '@ishibashi0112/spreadsheet-grid-core/logic/editorValues';
+import { isNumberInputPrefix, normalizeNumberText } from '@ishibashi0112/spreadsheet-grid-core/logic/editorValues';
 
 type NumberCellEditorProps = {
   initialValue: string;
@@ -46,11 +46,12 @@ export function NumberCellEditor({
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   // 追加(数値の打ち始め): 初期値が数値の書き始め("-" / "+" / "." など)のセッションは type="text" で開きます。
   //   type="number" の input は value に途中の数値を入れると空にしてしまい、セルを選んで「-5」と打つと「5」になる
-  //   (マイナスが落ちる)ため。text でもスマホは数字のキーボード(inputMode="decimal")で、確定する値は type="number"
-  //   と同じく数値として読める半角の文字列か空文字にそろえます(読めない文字列はセルへ入れない)。このセッションでは
-  //   ArrowUp / ArrowDown のステップはありません。セッションの途中で type は切り替えません(キャレットが飛ぶため)。
+  //   (マイナスが落ちる)ため。text でもスマホは数字のキーボード(inputMode="decimal")です。確定する値は打った文字列の
+  //   まま(列のパーサが全角や 3 桁区切りも数値に直す。読めない文字列は貼り付けと同じくそのまま = 検査があれば印 /
+  //   reject)で、書き始めのまま(「-」だけ等)なら空文字にします。このセッションでは ArrowUp / ArrowDown のステップは
+  //   ありません。セッションの途中で type は切り替えません(キャレットが飛ぶため)。
   const [textMode] = useState(() => isNumberInputPrefix(initialValue));
-  const commitValue = textMode ? (toNumberInputText(draftValue) ?? '') : draftValue;
+  const commitValue = textMode && isNumberInputPrefix(normalizeNumberText(draftValue)) ? '' : draftValue;
 
   // マウント時(= 編集セッション開始時)に自動フォーカスします。
   //   ※ type="number" は setSelectionRange 非対応(例外を投げるブラウザあり)のため focus のみ。text のときは

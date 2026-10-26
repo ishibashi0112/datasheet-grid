@@ -94,6 +94,20 @@ describe('number 列の打ち始め(結合)', () => {
     expect(currentRows[0].qty).toBeNull();
   });
 
+  it('全角や 3 桁区切りも数値になる(列のパーサ)', () => {
+    const { input } = startTyping('-');
+    fireEvent.change(input, { target: { value: '－１，２３４' } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+    expect(currentRows[0].qty).toBe(-1234);
+  });
+
+  it('数値として読めない文字列は黙って消さずにそのまま入る(貼り付けと同じ。検査があれば印 / reject)', () => {
+    const { input } = startTyping('-');
+    fireEvent.change(input, { target: { value: '-abc' } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+    expect(currentRows[0].qty).toBe('-abc');
+  });
+
   it('数字から打ち始めたときは従来どおり type="number" で開く', () => {
     const { input } = startTyping('7');
     expect(input.type).toBe('number');

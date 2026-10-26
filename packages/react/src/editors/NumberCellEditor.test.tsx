@@ -86,7 +86,7 @@ describe('NumberCellEditor', () => {
     expect(input.selectionStart).toBe(1);
   });
 
-  it('text で開いたときは数値として読める半角の文字列で commit し、読めなければ空文字', () => {
+  it('text で開いたときは打った文字列のまま commit し(列のパーサが数値に直す)、書き始めのままなら空文字', () => {
     const { onCommit, input } = renderNumberEditor(undefined, '-');
     fireEvent.change(input, { target: { value: '-5' } });
     fireEvent.keyDown(input, { key: 'Enter' });
@@ -94,19 +94,26 @@ describe('NumberCellEditor', () => {
 
     fireEvent.change(input, { target: { value: '－１，２３４．５' } });
     fireEvent.keyDown(input, { key: 'Tab' });
-    expect(onCommit).toHaveBeenLastCalledWith('-1234.5', 'right');
+    expect(onCommit).toHaveBeenLastCalledWith('－１，２３４．５', 'right');
 
+    // 読めない文字列は黙って消さず、そのまま渡す(検査があれば印 / reject、無ければ貼り付けと同じく文字列のまま)。
     fireEvent.change(input, { target: { value: '-abc' } });
     fireEvent.blur(input);
-    expect(onCommit).toHaveBeenLastCalledWith('');
+    expect(onCommit).toHaveBeenLastCalledWith('-abc');
+
+    for (const prefix of ['-', ' - ', 'ー', '+.']) {
+      fireEvent.change(input, { target: { value: prefix } });
+      fireEvent.keyDown(input, { key: 'Enter' });
+      expect(onCommit).toHaveBeenLastCalledWith('', 'down');
+    }
   });
 
-  it('"." で開いて ".5" と打つと 0.5 の文字列で commit する', () => {
+  it('"." で開いて ".5" と打つと ".5" で commit する', () => {
     const { onCommit, input } = renderNumberEditor(undefined, '.');
     expect(input.type).toBe('text');
     fireEvent.change(input, { target: { value: '.5' } });
     fireEvent.keyDown(input, { key: 'Enter' });
-    expect(onCommit).toHaveBeenLastCalledWith('0.5', 'down');
+    expect(onCommit).toHaveBeenLastCalledWith('.5', 'down');
   });
 
   it('数字で始めたときは従来どおり type=number(ドラフト文字列をそのまま commit)', () => {

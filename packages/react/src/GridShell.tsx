@@ -3783,6 +3783,17 @@ export function useGridShell<T extends object>({
           pointerClientRef.current = { x: event.clientX, y: event.clientY };
           updateSelectionFromPointer(event.clientX, event.clientY);
         }}
+        // 追加(フォーカスの枠): マウス / タッチで触ったら data-ssg-pointer を付け、キーを押したときと、フォーカスが
+        //   グリッドの外へ移ったときに外します(styles.css の .ssg-shell:focus-visible。Chromium はクリックでシェルへ
+        //   フォーカスを移した後も :focus-visible にするため、枠を出すのはキーボードで操作しているときだけにする)。
+        //   ウィンドウを切り替えたときの blur(document.hasFocus() が false)では外しません。
+        onPointerDownCapture={(event) => event.currentTarget.setAttribute('data-ssg-pointer', '')}
+        onKeyDownCapture={(event) => event.currentTarget.removeAttribute('data-ssg-pointer')}
+        onBlur={(event) => {
+          if (!event.currentTarget.contains(event.relatedTarget) && document.hasFocus()) {
+            event.currentTarget.removeAttribute('data-ssg-pointer');
+          }
+        }}
         // 追加: popup(フィルター / 列メニュー)open 中は grid root を tab フォーカス対象から外します。
         tabIndex={isAnyGridPopupOpen ? -1 : 0}
         // 追加(audit V-05): フォーカスを持つシェルからアクティブセルを指します(aria-activedescendant を持てる
