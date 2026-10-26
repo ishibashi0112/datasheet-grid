@@ -164,6 +164,23 @@ describe('ARIA(audit V-05 / RD-10 / V-14)', () => {
     expect(id && document.getElementById(id)).toBeTruthy();
   });
 
+  // 追加(フォーカスの枠): シェルのフォーカスの枠(styles.css)はアクティブセルが無いときだけ出すため、
+  //   アクティブセルの有無を data-ssg-has-active-cell で表します(画面外で aria-activedescendant が無いときも付く)。
+  it('data-ssg-has-active-cell はアクティブセルがあるとき(画面外でも)だけ付く', () => {
+    const many: Row[] = Array.from({ length: 2000 }, (_, index) => ({ id: index + 1, name: `r${index}`, qty: index }));
+    const { shell, ref } = setup({ rows: many });
+    expect(shell.hasAttribute('data-ssg-has-active-cell')).toBe(false);
+    act(() => {
+      ref.current?.setActiveCell({ row: 1999, col: 0 });
+    });
+    expect(shell.hasAttribute('aria-activedescendant')).toBe(false);
+    expect(shell.hasAttribute('data-ssg-has-active-cell')).toBe(true);
+    act(() => {
+      ref.current?.setActiveCell(null);
+    });
+    expect(shell.hasAttribute('data-ssg-has-active-cell')).toBe(false);
+  });
+
   it('行選択のチェックボックスは名前と状態を持ち、行は aria-selected', () => {
     const { grid } = setup({ enableRowSelection: true });
     const selectAll = within(grid).getByRole('checkbox', { name: 'すべての行を選択' });

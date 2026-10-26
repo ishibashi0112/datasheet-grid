@@ -3505,6 +3505,24 @@
     overflow: hidden;
     background-color: var(--ssg-cell-bg);
   }
+  /* 追加(フォーカスの枠): シェルは Tab で入るフォーカスの持ち主です。ブラウザ既定のフォーカスの枠(表の上下の
+     黒い線。Chromium ではセルをクリックした後にも出ていた)を消し、フォーカスの位置はアクティブセルの枠で示します
+     (シェルの aria-activedescendant がアクティブセルを指す)。アクティブセルが無いとき(Tab で入った直後など。
+     data-ssg-has-active-cell が付かない)だけ、フォーカスがあることが分かるよう表の内側にアクセント色の枠を出します
+     (アクティブセルがスクロールで画面外に出ただけのときは出さない = マウスのホイールで枠が出入りしない)。
+     枠は outline ではなく重ね合わせの疑似要素で描きます(内側の outline は固定ヘッダー / 固定列 / 合計行の下に隠れるため)。
+     z-index はヘッダー(6)/ 角のセル(7)/ ドロップ位置の線(8)より上・検索バー(20)より下です。 */
+  .ssg-shell:focus-visible {
+    outline: none;
+  }
+  .ssg-shell:focus-visible:not([data-ssg-has-active-cell])::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    z-index: 9;
+    border: 2px solid var(--ssg-accent);
+    pointer-events: none;
+  }
   .ssg-scroll-container {
     max-height: 480px;
     overflow: auto;

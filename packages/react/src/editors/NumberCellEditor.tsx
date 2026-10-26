@@ -4,6 +4,7 @@
 //   (logic/editorValues.ts の number 既定パーサ)で数値 / null へ変換します。
 // 変更(validation): reject 列の検証 NG ではエラーバブル表示 + 編集継続、blur の rejected は
 //   cancel へフォールバックします(TextCellEditor と同じ規則)。
+// 変更(数値の打ち始め): 「-」「+」「.」のキーで始めた編集だけは type="text" で開きます(下の textMode)。
 import { useEffect, useRef, useState } from 'react';
 import type {
   EditorCommitDirection,
@@ -13,6 +14,7 @@ import type {
 import { createEditorKeyDownHandler } from './editorKeyBindings';
 import { CellEditorErrorBubble } from './CellEditorErrorBubble';
 import { cx } from '@ishibashi0112/spreadsheet-grid-core/logic/cx';
+import { isNumberInputPrefix, toNumberInputText } from '@ishibashi0112/spreadsheet-grid-core/logic/editorValues';
 
 type NumberCellEditorProps = {
   initialValue: string;
@@ -42,36 +44,53 @@ export function NumberCellEditor({
   const inputRef = useRef<HTMLInputElement | null>(null);
   const [draftValue, setDraftValue] = useState(initialValue);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  // 追加(数値の打ち始め): 初期値が数値の書き始め("-" / "+" / "." など)のセッションは type="text" で開きます。
+  //   type="number" の input は value に途中の数値を入れると空にしてしまい、セルを選んで「-5」と打つと「5」になる
+  //   (マイナスが落ちる)ため。text でもスマホは数字のキーボード(inputMode="decimal")で、確定する値は type="number"
+  //   と同じく数値として読める半角の文字列か空文字にそろえます(読めない文字列はセルへ入れない)。このセッションでは
+  //   ArrowUp / ArrowDown のステップはありません。セッションの途中で type は切り替えません(キャレットが飛ぶため)。
+  const [textMode] = useState(() => isNumberInputPrefix(initialValue));
+  const commitValue = textMode ? (toNumberInputText(draftValue) ?? '') : draftValue;
 
   // マウント時(= 編集セッション開始時)に自動フォーカスします。
-  //   ※ type="number" は setSelectionRange 非対応(例外を投げるブラウザあり)のため focus のみ。
+  //   ※ type="number" は setSelectionRange 非対応(例外を投げるブラウザあり)のため focus のみ。text のときは
+  //   打った文字の後ろへキャレットを置きます。
   useEffect(() => {
-    inputRef.current?.focus();
+    const input = inputRef.current;
+    if (!input) {
+      return;
+    }
+    input.focus();
+    if (input.type === 'text') {
+      const end = input.value.length;
+      input.setSelectionRange(end, end);
+    }
   }, []);
 
   return (
     <>
       <input
         ref={inputRef}
-        type="number"
+        type={textMode ? 'text' : 'number'}
+        inputMode={textMode ? 'decimal' : undefined}
         value={draftValue}
-        min={min}
-        max={max}
-        step={step}
+        min={textMode ? undefined : min}
+        max={textMode ? undefined : max}
+        step={textMode ? undefined : step}
         onChange={(event) => {
           setDraftValue(event.target.value);
           // 再入力でエラー表示を解除します。
           setErrorMessage(null);
         }}
         onKeyDown={createEditorKeyDownHandler({
-          value: draftValue,
+          value: commitValue,
           onCommit,
           onCancel,
           onRejected: setErrorMessage,
           enterMove,
         })}
         onBlur={() => {
-          const result = onCommit(draftValue);
+          const result = onCommit(commitValue);
           if (result && result.status === 'rejected') {
             onCancel();
           }

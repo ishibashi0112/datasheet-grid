@@ -51,6 +51,13 @@ export const toNumberInputText = (raw: string): string | null => {
   return HTML_FLOAT_PATTERN.test(text) ? text : String(parsed);
 };
 
+// 追加(数値の打ち始め): 数値の書き始めだが、まだ数値ではない文字列("-" / "+" / "." / "-." / "+.")か。印字キーの
+//   「-」「.」で number エディタを開いたときの初期値がこれです。type="number" の input は value に入れると空にする
+//   (続けて「5」と打つと「5」になり、マイナスが落ちる)ため、number エディタはこのときだけ type="text" で開きます。
+const NUMBER_PREFIX_PATTERN = /^[+-]?\.?$/;
+
+export const isNumberInputPrefix = (text: string): boolean => text !== '' && NUMBER_PREFIX_PATTERN.test(text);
+
 // 追加(editor: number): number エディタの既定パーサです。mark 思想(不正値も一旦受け入れて
 //   表示側で警告)に合わせ、パース不可の文字列は破壊せずそのまま返します。
 //   '' → null / 有限数値文字列 → number / それ以外 → 生文字列のまま。

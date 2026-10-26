@@ -15,6 +15,7 @@ const rect = { left: 0, top: 0, width: 120, height: 32 };
 
 const renderNumberEditor = (
   editor: GridColumnEditor<object> = { type: 'number', min: 0, max: 100, step: 5 },
+  initialValue = '10',
 ) => {
   const onCommit = vi.fn();
   const onCancel = vi.fn();
@@ -23,7 +24,7 @@ const renderNumberEditor = (
       rect={rect}
       headerHeight={40}
       leadingWidth={56}
-      initialValue="10"
+      initialValue={initialValue}
       editor={editor}
       onCommit={onCommit}
       onCancel={onCancel}
@@ -72,5 +73,47 @@ describe('NumberCellEditor', () => {
     const { onCommit, input } = renderNumberEditor();
     fireEvent.keyDown(input, { key: 'Enter', isComposing: true });
     expect(onCommit).not.toHaveBeenCalled();
+  });
+
+  // 追加(数値の打ち始め): 「-」「+」「.」で始めた編集は type="text" で開く(type="number" は "-" を空にしてマイナスが落ちる)。
+  it('数値の書き始め("-")で開くと type=text + inputMode=decimal で、打った文字が残る', () => {
+    const { input } = renderNumberEditor(undefined, '-');
+    expect(input.type).toBe('text');
+    expect(input.inputMode).toBe('decimal');
+    expect(input.value).toBe('-');
+    expect(input.getAttribute('min')).toBeNull();
+    expect(input.getAttribute('step')).toBeNull();
+    expect(input.selectionStart).toBe(1);
+  });
+
+  it('text で開いたときは数値として読める半角の文字列で commit し、読めなければ空文字', () => {
+    const { onCommit, input } = renderNumberEditor(undefined, '-');
+    fireEvent.change(input, { target: { value: '-5' } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+    expect(onCommit).toHaveBeenLastCalledWith('-5', 'down');
+
+    fireEvent.change(input, { target: { value: '－１，２３４．５' } });
+    fireEvent.keyDown(input, { key: 'Tab' });
+    expect(onCommit).toHaveBeenLastCalledWith('-1234.5', 'right');
+
+    fireEvent.change(input, { target: { value: '-abc' } });
+    fireEvent.blur(input);
+    expect(onCommit).toHaveBeenLastCalledWith('');
+  });
+
+  it('"." で開いて ".5" と打つと 0.5 の文字列で commit する', () => {
+    const { onCommit, input } = renderNumberEditor(undefined, '.');
+    expect(input.type).toBe('text');
+    fireEvent.change(input, { target: { value: '.5' } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+    expect(onCommit).toHaveBeenLastCalledWith('0.5', 'down');
+  });
+
+  it('数字で始めたときは従来どおり type=number(ドラフト文字列をそのまま commit)', () => {
+    const { onCommit, input } = renderNumberEditor(undefined, '5');
+    expect(input.type).toBe('number');
+    fireEvent.change(input, { target: { value: '56' } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+    expect(onCommit).toHaveBeenLastCalledWith('56', 'down');
   });
 });

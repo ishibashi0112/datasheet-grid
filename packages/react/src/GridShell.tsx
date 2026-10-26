@@ -3790,6 +3790,9 @@ export function useGridShell<T extends object>({
         //   バー / 入力受けなど表の行ではない要素も入るため)。
         role="group"
         aria-activedescendant={activeDescendantId}
+        // 追加(フォーカスの枠): アクティブセルがあるか(画面外でも)。無いときだけシェルにフォーカスの枠を出します
+        //   (styles.css の .ssg-shell:focus-visible。Tab で入った直後など)。
+        data-ssg-has-active-cell={uiState.activeCell === null ? undefined : ''}
         // 追加: popup open 中は root の keyboard/paste handler 自体を外します。
         onKeyDown={isAnyGridPopupOpen ? undefined : handleKeyDown}
         onPaste={isAnyGridPopupOpen ? undefined : handlePaste}

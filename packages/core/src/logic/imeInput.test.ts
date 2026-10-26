@@ -67,7 +67,17 @@ describe('canStartImeEdit', () => {
     expect(resolveImeEditText(columns, { row: 0, col: 2 }, '－５')).toBe('-5');
     expect(resolveImeEditText(columns, { row: 0, col: 2 }, '１，２３４')).toBe('1234');
     expect(resolveImeEditText(columns, { row: 0, col: 2 }, 'かな')).toBeNull();
-    expect(resolveImeEditText(columns, { row: 0, col: 2 }, 'ー')).toBeNull();
+    expect(resolveImeEditText(columns, { row: 0, col: 2 }, 'ー５ー')).toBeNull();
+  });
+
+  it('resolveImeEditText: number 列で数値の書き始め(「ー」「－」「。」だけ)は半角の "-" / "." にする(数値の打ち始め)', () => {
+    expect(resolveImeEditText(columns, { row: 0, col: 2 }, 'ー')).toBe('-');
+    expect(resolveImeEditText(columns, { row: 0, col: 2 }, '－')).toBe('-');
+    expect(resolveImeEditText(columns, { row: 0, col: 2 }, '。')).toBe('.');
+    expect(resolveImeEditText(columns, { row: 0, col: 2 }, '＋')).toBe('+');
+    expect(resolveImeEditText(columns, { row: 0, col: 2 }, 'ーー')).toBeNull();
+    // text 列はそのまま
+    expect(resolveImeEditText(columns, { row: 0, col: 0 }, 'ー')).toBe('ー');
   });
 
   it('グループ行 / ラベル行 / 未ロード行は false', () => {
