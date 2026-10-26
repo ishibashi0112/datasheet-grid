@@ -7,6 +7,12 @@
 
 詳しい使い方は[ドキュメントサイト](https://datasheet-grid.vercel.app)と [API リファレンス](./packages/react/API_REFERENCE.md)を参照してください。
 
+## 未リリース
+
+### 追加
+
+- AI コーディングツール向けの [Agent Skill](https://agentskills.io) を React 版の npm パッケージに同梱しました(`skills/spreadsheet-grid/SKILL.md`)。Claude Code / Cursor / Codex / GitHub Copilot など `SKILL.md` を読むツールが、間違えやすいルールと、同梱の `API_REFERENCE.md` のどこを読めばよいかを読み込みます。Skill のフォルダへ写すか、`npx skills add https://github.com/ishibashi0112/datasheet-grid/tree/main/packages/react/skills/spreadsheet-grid` で入れます([AI アシスタントで使う](https://datasheet-grid.vercel.app/docs/ai-assistants))。JS は増えません。
+
 ## 0.56.0 — 2026-10-26
 
 ### 追加

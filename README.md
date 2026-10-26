@@ -373,6 +373,10 @@ Note: a plain `.ssg-root { --ssg-* }` override wins over **both** themes (theme 
 
 The full prop and type reference lives in [`packages/react/API_REFERENCE.md`](./packages/react/API_REFERENCE.md). Guides with live demos are on the [docs site](https://datasheet-grid.vercel.app) (Japanese), and every release is listed in [`CHANGELOG.md`](./CHANGELOG.md).
 
+### Using with AI coding assistants
+
+AI coding assistants rarely know this new library and tend to guess from other grids. Give them the docs: the package ships an [Agent Skill](https://agentskills.io) ([`packages/react/skills/spreadsheet-grid`](./packages/react/skills/spreadsheet-grid/SKILL.md), 0.57.0+) for tools that read `SKILL.md` (install it with `npx skills add https://github.com/ishibashi0112/datasheet-grid/tree/main/packages/react/skills/spreadsheet-grid`), `API_REFERENCE.md` is in the npm package, and the docs site serves [llms.txt](https://datasheet-grid.vercel.app/llms.txt). Details: [Using with AI assistants](https://datasheet-grid.vercel.app/docs/ai-assistants) (Japanese).
+
 ## License
 
 [MIT](./LICENSE) © 2026 Yuki Sakakibara
@@ -743,6 +747,10 @@ const { resolvedTheme } = useTheme();
 ### API リファレンス
 
 prop と型の完全なリファレンスは [`packages/react/API_REFERENCE.md`](./packages/react/API_REFERENCE.md) にあります。ライブデモ付きのガイドは[ドキュメントサイト](https://datasheet-grid.vercel.app)に、各版の変更は [`CHANGELOG.md`](./CHANGELOG.md) にあります。
+
+#### AI アシスタントで使うとき
+
+AI コーディングツールは新しいこのライブラリをまだほとんど知らず、ほかのグリッドの書き方で推測しがちです。資料を渡してください。`SKILL.md` を読むツール向けに [Agent Skill](https://agentskills.io)([`packages/react/skills/spreadsheet-grid`](./packages/react/skills/spreadsheet-grid/SKILL.md)。0.57.0 から)を npm パッケージに同梱しています(`npx skills add https://github.com/ishibashi0112/datasheet-grid/tree/main/packages/react/skills/spreadsheet-grid` でも入ります)。`API_REFERENCE.md` も npm に同梱、ドキュメントサイトには [llms.txt](https://datasheet-grid.vercel.app/llms.txt) があります。詳しくは [AI アシスタントで使う](https://datasheet-grid.vercel.app/docs/ai-assistants)。
 
 ### ライセンス
 
