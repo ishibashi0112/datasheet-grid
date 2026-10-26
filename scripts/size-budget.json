@@ -5,10 +5,10 @@
       "initialGzipKB": 112.3
     },
     "lite": {
-      "initialGzipKB": 60.6
+      "initialGzipKB": 61.2
     },
     "standard": {
-      "initialGzipKB": 79
+      "initialGzipKB": 79.5
     }
   }
 }

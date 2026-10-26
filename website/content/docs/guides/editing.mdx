@@ -10,7 +10,7 @@ description: エディタ種別(text / number / select / date / checkbox / custo
 <EditingDemo />
 
 - **品名** — 必須チェック + `reject`:空で確定しようとするとエディタが拒否します(エラーバブル表示)。Delete での空クリアもスキップされます。
-- **数量** — `number` エディタ + `mark`:不正値(負数など)も入りますが、セルに警告マークが付きます(ホバーでメッセージ)。
+- **数量** — `number` エディタの `min: 0` + `integer: true`(`mark`):負数や小数も入りますが、セルに警告マークが付きます(ホバーで「0 以上で入力してください」などのメッセージ)。`validate` は書いていません。
 - **区分** — `select` エディタ:↑↓ で選択、Enter で確定。印字キーで前方一致のタイプアヘッドも動きます。
 - **納期** — `date` エディタ:ネイティブの日付ピッカーです。
 - **有効** — `checkbox` エディタ:クリック / Space で即トグル(編集セッションなし)。
@@ -21,7 +21,7 @@ description: エディタ種別(text / number / select / date / checkbox / custo
 const columns: GridColumn<Row>[] = [
   { key: 'name', title: '品名', width: 190, editable: true },                       // text(既定)
   { key: 'qty', title: '数量', width: 120, editable: true,
-    editor: { type: 'number', min: 0, step: 1 } },
+    editor: { type: 'number', min: 0, integer: true } },   // 0 以上の整数(検査にもなる)
   { key: 'category', title: '区分', width: 140, editable: true,
     editor: { type: 'select', options: [
       { label: '通常', value: '通常' },
@@ -62,5 +62,21 @@ const columns: GridColumn<Row>[] = [
 
 - **`'mark'`(既定)** — 値は書き込み、セルに警告表示(背景 + 右上マーカー + ホバーでメッセージ)。判定は表示時に導出されるため、貼り付け・undo・外部からの `rows` 差し替え後も常に実データと整合します。
 - **`'reject'`** — 書き込み自体を拒否。エディタ確定は「拒否 + 編集継続 + エラーバブル」、貼り付け / クリア / [フィルハンドル](/docs/guides/fill-handle)は NG セルだけスキップされます。
+
+### 数値の範囲と整数(組み込みの検査)
+
+number エディタの `min` / `max` と `integer: true`(整数だけ)は、そのまま値の検査になります。`validate` を書かなくても、範囲外や小数のセルに印が付きます(`validationMode: 'reject'` なら書き込みません)。
+
+```tsx
+{ key: 'qty', title: '数量', width: 120, editable: true,
+  editor: { type: 'number', min: 0, integer: true } }       // 0 以上の整数
+{ key: 'rate', title: '割合', width: 120, editable: true,
+  editor: { type: 'number', min: 0, max: 1, step: 0.01 } }  // 0〜1(小数可)
+```
+
+- 検査の順番は「数値か → 整数か → 範囲内か」で、最初に引っかかったものがメッセージになります(「数値で入力してください」「整数で入力してください」「0 以上で入力してください」など)。
+- 空のセルは通します。必須にしたいときは `validate` で書きます。
+- `validate` と併用すると `validate` が先です。`validate` の NG はそのメッセージのまま出て、`validate` が通した値だけを組み込みの検査にかけます。
+- `step` は ↑↓ キーとスピナーの刻みだけで、検査には使いません。
 
 保存前の一括チェックは命令的ハンドルの `getInvalidCells()` を使います。マークを「送信時にだけ」表示する `showValidationMarks` prop と組み合わせた業務フォームのレシピは [API リファレンス](/docs/api/column#バリデーションvalidate--validationmode) を参照してください。

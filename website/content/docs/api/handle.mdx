@@ -118,7 +118,7 @@ const gridRef = useRef<SpreadsheetGridHandle<Row>>(null);
 
 | メソッド | 説明 |
 | --- | --- |
-| `getInvalidCells()` | `validate` 指定列 × 全ソース行をオンデマンドで全走査し、invalid セルの一覧(`GridInvalidCell[]` = `{ rowKey, sourceRowIndex, columnKey, message }`)を返す。保存前チェック用。invalid 表示は表示時導出のため状態を持たず、**呼ばれた時だけ計算**する(明示的な呼び出し = 明示的なコスト)。**`showValidationMarks` の表示状態と無関係に常に動作する**(マーク非表示中の送信前チェックに使える)。非表示列も対象(見えない列の不正値も検出)。clientSide 専用で、serverSide は全行を保持しないため空配列 + `console.warn`。 |
+| `getInvalidCells()` | 検査のある列(`validate` か、number エディタの `min` / `max` / `integer`)× 全ソース行をオンデマンドで全走査し、invalid セルの一覧(`GridInvalidCell[]` = `{ rowKey, sourceRowIndex, columnKey, message }`)を返す。保存前チェック用。invalid 表示は表示時導出のため状態を持たず、**呼ばれた時だけ計算**する(明示的な呼び出し = 明示的なコスト)。**`showValidationMarks` の表示状態と無関係に常に動作する**(マーク非表示中の送信前チェックに使える)。非表示列も対象(見えない列の不正値も検出)。clientSide 専用で、serverSide は全行を保持しないため空配列 + `console.warn`。 |
 
 ### serverSide(SSRM)
 

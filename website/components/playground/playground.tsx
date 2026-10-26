@@ -61,11 +61,8 @@ const initialColumns: GridColumn<Row>[] = [
     align: 'right',
     filterType: 'number',
     editable: true,
-    editor: { type: 'number', min: 0, step: 1 },
-    validate: ({ value }) =>
-      value === null ||
-      (typeof value === 'number' && value >= 0) ||
-      '0 以上で入力してください',
+    // min / integer はそのまま値の検査になる(validate なしで、負数や小数に印とメッセージ)。
+    editor: { type: 'number', min: 0, integer: true },
   },
   {
     key: 'price',

@@ -64,7 +64,7 @@ description: SpreadsheetGridProps<T> の全 prop と既定値
 | `enableColumnResize` | `boolean` | `true` | 列幅の手動リサイズ可否のグリッド既定。各列 `resizable` 未指定時に継承(`column.resizable ?? enableColumnResize`)。 |
 | `autoSizeColumns` | `'onMount' \| 'onDataChange' \| false` | `false` | データ投入時に全列幅を内容へ自動フィット。`'onMount'`=初回にデータが載った一度きり / `'onDataChange'`=`rows`(参照)が変わるたび(= データ差し替えのたび。手動リサイズは上書き) / `false`=無効。計測は列メニュー「すべての列の幅を自動調整」と同一エンジン(`suppressAutoSize` / `autoHeight` 列は除外)。フィルター / ソート / 列並べ替えでは再フィットしません。serverSide(`dataSource`)では無効。詳細は「flex と autoSize」節。 |
 | `showCellOverflowTooltip` | `boolean` | `false` | セル内容が省略(…)される列で、ホバー時に全文ツールチップを表示。対象は既定テキストセルのみ(`renderCell` 列 / `autoHeight` 折り返し列は対象外)。表示はホバー時に `scrollWidth > clientWidth` を判定し、実際にクリップされているセルのみ。既存のカスタムツールチップ(`data-ssg-tooltip`)を共有。詳細は「ツールチップ」節。 |
-| `showValidationMarks` | `boolean` | `true` | invalid マーク(背景 + 右上マーカー + ホバーツールチップ)の表示可否。`false` で非表示 + 可視セルの `validate` 評価スキップ。`getInvalidCells()` と `validationMode: 'reject'` の書き込み拒否には影響しない(独立経路)。「送信時にだけマークを出す」UX は利用側 state で本 prop を切り替えて実現(「バリデーション」節のレシピ参照)。 |
+| `showValidationMarks` | `boolean` | `true` | invalid マーク(背景 + 右上マーカー + ホバーツールチップ)の表示可否。`false` で非表示 + 可視セルの検査(`validate` と number の `min` / `max` / `integer`)の評価スキップ。`getInvalidCells()` と `validationMode: 'reject'` の書き込み拒否には影響しない(独立経路)。「送信時にだけマークを出す」UX は利用側 state で本 prop を切り替えて実現(「バリデーション」節のレシピ参照)。 |
 | `enableColumnMenu` | `boolean` | `true` | 列メニュー(⋮ + ヘッダー右クリック)。 |
 | `enableRowHover` | `boolean` | `true` | 行ホバー時に行全体を薄くハイライト。 |
 | `hoveredRowIndex` | `number \| null` | — | 行ホバーの controlled 値(ビュー行 index / `null` = ホバーなし)。指定時は内部 state を使わずこの値でハイライトし、pointer 由来の変化は `onHoveredRowChange` で通知のみ(optionally controlled)。`enableRowHover: false` のときは無視(ハイライトも通知もしない)。一時的な UI 状態のため `GridState` / ハンドルには載らない。 |

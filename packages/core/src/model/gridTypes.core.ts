@@ -930,10 +930,13 @@ export type GridColumnEditor<T, F extends GridFrameworkTypes = GridFrameworkType
       //   既定パーサ: '' → null / 数値文字列 → number / 非数値 → 生文字列のまま
       //   (parseClipboardValue 明示指定が常に優先。logic/editorValues.ts 参照)。
       //   変更(全角数値): 全角の数字・符号・小数点と 3 桁区切りも数値として読み、空白だけは null。
+      //   変更(数値の検査): min / max と integer(整数だけ)は値の検査にも使います(validate の後に評価。
+      //   validationMode に従い mark / reject。空は通す。logic/validation.ts の getInvalidMessage)。
       type: 'number';
       min?: number;
       max?: number;
       step?: number;
+      integer?: boolean;
     }
   | {
       // select エディタ(候補ドロップダウン)。候補は静的配列 or 行依存の動的関数で指定します
@@ -1373,7 +1376,9 @@ export type GridColumn<T, F extends GridFrameworkTypes = GridFrameworkTypes> = {
   /**
    * セル値の検証。`true`=有効 / `false`=無効(既定メッセージ)/
    * `string`・`{ message }`=無効+メッセージ。**純粋・軽量であること**(描画中の可視セルごとに毎レンダー評価。
-   * `cellClassName` 関数と同コスト階級)。詳細は「バリデーション」節。
+   * `cellClassName` 関数と同コスト階級)。number エディタの `min` / `max` / `integer` の検査は
+   * `validate` の後(`validate` の NG はそのメッセージ、通した値だけ組み込みの検査)。
+   * 詳細は「バリデーション」節。
    */
   validate?: (ctx: CellValidationContext<T, F>) => CellValidationResult;
   // 追加(validation): 検証 NG 時の動作です。既定 'mark'(値は入るが invalid 表示)。
@@ -2286,12 +2291,14 @@ export type SpreadsheetGridHandle<T> = {
 
   // ── バリデーション ──
   // 追加(validation): validate 指定列 × 全ソース行のオンデマンド全走査です(保存前チェック用)。
+  //   変更(数値の検査): number エディタの min / max / integer の列も対象です。
   //   invalid 表示は表示時導出のため状態を持たず、本メソッドは呼ばれた時だけ計算します
   //   (明示的な呼び出し = 明示的なコスト)。clientSide 専用で、serverSide は全行を保持しない
   //   ため空配列を返します(console.warn 付き)。
   /**
-   * `validate` 指定列 × 全ソース行をオンデマンドで全走査し、invalid セルの一覧(`GridInvalidCell[]`
-   * = `{ rowKey, sourceRowIndex, columnKey, message }`)を返す。保存前チェック用。invalid
+   * 検査のある列(`validate` か、number エディタの `min` / `max` / `integer`)×
+   * 全ソース行をオンデマンドで全走査し、invalid セルの一覧(`GridInvalidCell[]` =
+   * `{ rowKey, sourceRowIndex, columnKey, message }`)を返す。保存前チェック用。invalid
    * 表示は表示時導出のため状態を持たず、**呼ばれた時だけ計算**する(明示的な呼び出し =
    * 明示的なコスト)。**`showValidationMarks`
    * の表示状態と無関係に常に動作する**(マーク非表示中の送信前チェックに使える)。
@@ -3248,9 +3255,10 @@ export type SpreadsheetGridProps<T, F extends GridFrameworkTypes = GridFramework
   //   の書き込み拒否(エディタのエラーバブル含む)は write 時ゲートであり本 prop の影響を受けません。
   /**
    * invalid マーク(背景 + 右上マーカー + ホバーツールチップ)の表示可否。`false` で非表示 +
-   * 可視セルの `validate` 評価スキップ。`getInvalidCells()` と `validationMode: 'reject'`
-   * の書き込み拒否には影響しない(独立経路)。「送信時にだけマークを出す」UX は利用側 state で本 prop
-   * を切り替えて実現(「バリデーション」節のレシピ参照)。
+   * 可視セルの検査(`validate` と number の `min` / `max` / `integer`)の評価スキップ。
+   * `getInvalidCells()` と `validationMode: 'reject'` の書き込み拒否には影響しない(独立経路)。
+   * 「送信時にだけマークを出す」UX は利用側 state で本 prop を切り替えて実現(「バリデーション」
+   * 節のレシピ参照)。
    *
    * @defaultValue `true`
    */

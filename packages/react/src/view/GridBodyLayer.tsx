@@ -34,7 +34,7 @@ import type { GridBodyGroupRow } from './GridBodyGroupRow';
 import { resolveIsRowSelected } from '@ishibashi0112/spreadsheet-grid-core/logic/rowSelection';
 // 追加: 省略時ツールチップのマーカー付与判定(純関数)です。
 import { shouldMarkCellOverflowTooltip } from '@ishibashi0112/spreadsheet-grid-core/logic/cellOverflowTooltip';
-import { getInvalidMessage } from '@ishibashi0112/spreadsheet-grid-core/logic/validation';
+import { getInvalidMessage, hasCellValidation } from '@ishibashi0112/spreadsheet-grid-core/logic/validation';
 // 追加(G-3): セルのメモ(cellNote)の正規化と、ツールチップ文言(エラー → 改行 → メモ)の合成です。
 import { normalizeCellNote, resolveCellTooltipText } from '@ishibashi0112/spreadsheet-grid-core/logic/cellNote';
 // 追加(F-3): 条件付き書式(データバー / カラースケール)。チップはシェルの renderCellContent 側。
@@ -410,8 +410,9 @@ function GridBodyRowInner<T>({
         //   表示します(静的属性は overflow マーカーより優先される仕様)。
         // 変更(validation 表示制御): showValidationMarks=false ではマークを出さないため
         //   評価自体をスキップします(reject の write ゲート / getInvalidCells は別経路で不変)。
+        // 変更(数値の検査): validate の無い number 列でも min / max / integer があれば評価します。
         const invalidMessage =
-          showValidationMarks && column.validate
+          showValidationMarks && hasCellValidation(column)
             ? getInvalidMessage(column, row, getCellValue(row, column))
             : null;
         // 追加(G-3): セルのメモ(右上の印 + ツールチップ)。ツールチップは入力エラーと同じ data-ssg-tooltip を

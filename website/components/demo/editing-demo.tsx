@@ -31,15 +31,12 @@ const columns: GridColumn<Row>[] = [
   },
   {
     key: 'qty',
-    title: '数量(number / mark)',
-    width: 170,
+    title: '数量(0 以上の整数 / mark)',
+    width: 210,
     align: 'right',
     editable: true,
-    editor: { type: 'number', min: 0, step: 1 },
-    validate: ({ value }) =>
-      value === null ||
-      (typeof value === 'number' && Number.isInteger(value) && value >= 0) ||
-      '0 以上の整数を入力してください',
+    // min / integer はそのまま値の検査になる(validate なしで、負数や小数に印とメッセージ)。
+    editor: { type: 'number', min: 0, integer: true },
   },
   {
     key: 'category',
