@@ -8,7 +8,7 @@
 //   など数値でない変換は捨てる)。
 import type { CellCoord, GridColumn, RowModel, SpreadsheetGridProps } from '../model/gridTypes.unbound';
 import { isSyntheticColumnKey } from './detailRow';
-import { toNumberInputText } from './editorValues';
+import { isNumberInputPrefix, normalizeNumberText, toNumberInputText } from './editorValues';
 import { isViewCellEditable } from '../utils/permissions';
 
 export type ImeEditTargetContext<T> = {
@@ -44,6 +44,8 @@ export const canStartImeEdit = <T,>(ctx: ImeEditTargetContext<T>, cell: CellCoor
 // 追加(全角数値): 確定した文字列から編集の初期値を決めます(null = 変換を捨てる)。text エディタの列はそのまま、
 //   number エディタの列は半角の数値表記へ直し(「１２．５」→ "12.5" / 「ー５」→ "-5" / 「１，２３４」→ "1234")、
 //   数値として読めなければ null です。
+// 変更(数値の打ち始め): 数値の書き始め(「ー」「－」「。」だけの確定)は半角の "-" / "." にして編集を始めます(キーの
+//   「-」「.」で始めたときと同じ。続けて打った数字と合わせて数値になる)。
 export const resolveImeEditText = <T,>(
   columns: readonly GridColumn<T>[],
   cell: CellCoord,
@@ -51,7 +53,8 @@ export const resolveImeEditText = <T,>(
 ): string | null => {
   const column = columns[cell.col];
   if (column?.editor?.type === 'number') {
-    return toNumberInputText(text);
+    const prefix = normalizeNumberText(text);
+    return toNumberInputText(text) ?? (isNumberInputPrefix(prefix) ? prefix : null);
   }
   return text;
 };

@@ -44,6 +44,10 @@ jobs:
       - name: Bundle size budget
         run: pnpm run size:check
 
+      # 追加(広報 2): examples/*(StackBlitz で開くサンプル)を今のコード(pack した tarball)で型チェック + ビルドする。
+      - name: Check examples
+        run: pnpm run examples:check
+
       # 追加(audit P-6): CLAUDE.md のゲート表にあるデモ app のビルドも CI で確認する(website は対象外)。
       - name: Build demo app
         run: pnpm exec vp build

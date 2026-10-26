@@ -2,6 +2,7 @@
 import { describe, expect, it } from 'vitest';
 import type { GridColumn } from '../model/gridTypes.unbound';
 import {
+  isNumberInputPrefix,
   parseCommittedValue,
   resolveCellParser,
   toDateInputValue,
@@ -102,6 +103,15 @@ describe('resolveCellParser', () => {
     expect(toNumberInputText('かな')).toBeNull();
     expect(toNumberInputText('')).toBeNull();
     expect(toNumberInputText('Infinity')).toBeNull();
+  });
+
+  it('isNumberInputPrefix: 数値の書き始めでまだ数値ではない文字列だけ true(数値の打ち始め)', () => {
+    for (const text of ['-', '+', '.', '-.', '+.']) {
+      expect(isNumberInputPrefix(text)).toBe(true);
+    }
+    for (const text of ['', '5', '-5', '.5', '--', '..', 'e', 'a', ' -', 'ー']) {
+      expect(isNumberInputPrefix(text)).toBe(false);
+    }
   });
 
   it('editor:number でも parseClipboardValue 明示指定が勝つ', () => {

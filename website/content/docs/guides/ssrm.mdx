@@ -20,6 +20,8 @@ description: dataSource によるブロック取得・クエリ転送・書き�
 - **「保存を失敗させる」+ セル編集** — 値が**自動でロールバック**され、保存失敗バーが出ます。
 - ※ デモサーバはステートレスのため、編集値は保存されません(再取得で元に戻ります)。
 
+同じ形をブラウザの中の擬似サーバーで動かすサンプルを [StackBlitz で開けます](https://stackblitz.com/fork/github/ishibashi0112/datasheet-grid/tree/main/examples/server-side?file=src/App.tsx&terminal=dev)(100,000 件。`getRows` / `updateRows` と、`query` をサーバー側で解釈する例)。
+
 ## 最小実装
 
 ```tsx

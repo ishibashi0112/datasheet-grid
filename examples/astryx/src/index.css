@@ -1,0 +1,38 @@
+html,
+body,
+#root {
+  min-height: 100%;
+  margin: 0;
+}
+
+/* Astryx のテーマの色(<Theme> が <html> に付ける data-astryx-theme の変数)でページを塗る */
+body {
+  background: var(--color-background-body);
+  color: var(--color-text-primary);
+  font-family: var(--font-family-body);
+}
+
+.app {
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px;
+}
+
+.toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.toolbar h1 {
+  margin: 0 8px 0 0;
+  font-size: 18px;
+}
+
+.note {
+  font-size: 14px;
+  color: var(--color-text-secondary);
+}
