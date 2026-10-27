@@ -78,7 +78,7 @@ This library is new, so AI coding assistants rarely know its API and tend to gue
 
 - **Skill.** The package ships an [Agent Skill](https://agentskills.io) at `skills/spreadsheet-grid/SKILL.md` (0.57.0+): a short guide with the rules below and where to look in `API_REFERENCE.md`. Tools that read `SKILL.md` (Claude Code, Cursor, Codex, GitHub Copilot and others) use it once it is in their skills folder. Install it from GitHub with `npx skills add https://github.com/ishibashi0112/datasheet-grid/tree/main/packages/react/skills/spreadsheet-grid`, or copy the folder from `node_modules` (for Claude Code, into `.claude/skills/`).
 - **One line for `AGENTS.md` / `CLAUDE.md`:** "Before writing grid code, read `node_modules/@ishibashi0112/spreadsheet-grid/API_REFERENCE.md` and use only the props and methods it lists."
-- **Docs for LLMs:** [llms.txt](https://datasheet-grid.vercel.app/llms.txt) lists every docs page with a link to its Markdown, and [llms-full.txt](https://datasheet-grid.vercel.app/llms-full.txt) has all pages in one (large) file. Each docs page also has "Copy Markdown" and "Open" (in ChatGPT / Claude / Cursor).
+- **Docs for LLMs:** [llms.txt](https://datasheet-grid.vercel.app/llms.txt) lists every docs page (add `.md` to a page URL to get its Markdown), and [llms-full.txt](https://datasheet-grid.vercel.app/llms-full.txt) has all pages in one (large) file. Each docs page also has "Copy Markdown" and "Open" (in ChatGPT / Claude / Cursor).
 
 ## Rules that are easy to get wrong
 
@@ -137,7 +137,7 @@ npm パッケージに同梱されているため、オフライン(`node_module
 
 - **Skill。** パッケージに [Agent Skill](https://agentskills.io) を同梱しています(`skills/spreadsheet-grid/SKILL.md`。0.57.0 から)。下の間違えやすいルールと、`API_REFERENCE.md` のどこを読めばよいかをまとめた短い手順書です。`SKILL.md` を読むツール(Claude Code / Cursor / Codex / GitHub Copilot など)の Skill のフォルダへ置くと使われます。GitHub から `npx skills add https://github.com/ishibashi0112/datasheet-grid/tree/main/packages/react/skills/spreadsheet-grid` で入れるか、`node_modules` からフォルダを写してください(Claude Code なら `.claude/skills/` へ)。
 - **`AGENTS.md` / `CLAUDE.md` に一文。** 「グリッドのコードを書く前に `node_modules/@ishibashi0112/spreadsheet-grid/API_REFERENCE.md` を読み、そこにある props とメソッドだけを使う。」
-- **AI 向けの資料。** [llms.txt](https://datasheet-grid.vercel.app/llms.txt) はドキュメントの全ページの目次(各ページの Markdown へのリンク付き)、[llms-full.txt](https://datasheet-grid.vercel.app/llms-full.txt) は全ページを 1 つにまとめたもの(大きい)です。ドキュメントの各ページの上にも「Copy Markdown」と「Open」(ChatGPT / Claude / Cursor で開く)があります。
+- **AI 向けの資料。** [llms.txt](https://datasheet-grid.vercel.app/llms.txt) はドキュメントの全ページの目次(ページの URL の末尾に `.md` を付けると Markdown で読めます)、[llms-full.txt](https://datasheet-grid.vercel.app/llms-full.txt) は全ページを 1 つにまとめたもの(大きい)です。ドキュメントの各ページの上にも「Copy Markdown」と「Open」(ChatGPT / Claude / Cursor で開く)があります。
 
 ### 間違えやすいルール
 

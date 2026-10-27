@@ -2,11 +2,13 @@ import { describe, expect, it } from 'vitest';
 import skill from '../skills/spreadsheet-grid/SKILL.md?raw';
 import reference from '../API_REFERENCE.md?raw';
 import packageJsonText from '../package.json?raw';
+import { standardFeatures } from './features/standard';
 
 // 追加(AI の入口): npm に同梱する Skill(skills/spreadsheet-grid/SKILL.md)が、公開 API とずれていないかを見張ります。
 //   Skill は AI コーディングツールが読む手順書で、名前を 1 つ間違えると AI がそのまま無い prop を書きます。
 //   - frontmatter が Agent Skills の仕様(name はディレクトリ名と同じ英小文字 + ハイフン、description は 1024 字まで)に沿う
-//   - 本文の `名前` が API_REFERENCE.md に出てくる(prop / メソッド / 型の改名を検出する)
+//   - 本文の `名前` が API_REFERENCE.md に単語として出てくる(prop / メソッド / 型の改名を検出する)
+//   - 本文に並べた standardFeatures の機能が、実際のプリセットの機能と同じ
 //   - 「見出し」が API_REFERENCE.md の見出しにある(AI はこの名前で節を探す)
 //   - パッケージのパスが exports か同梱ファイルにある
 //   失敗したら Skill を直す(API_REFERENCE.md の見出しや名前を変えたときは Skill も合わせる)。
@@ -27,6 +29,10 @@ const identifiers = [...new Set(inlineCode.filter((code) => /^[A-Za-z][A-Za-z0-9
 
 // API_REFERENCE.md に出てこないが Skill に書いてよい名前(React / ツールの名前)。
 const NOT_IN_REFERENCE = new Set(['forwardRef', 'map', 'tsc']);
+
+// 部分一致だと `ref` が `refreshServerSide` に当たるなどで改名を見逃すため、前後が英数字でない所に出てくるかで見ます。
+const appearsAsWord = (text: string, name: string): boolean =>
+  new RegExp(`(?<![A-Za-z0-9_])${name}(?![A-Za-z0-9_])`).test(text);
 
 const referenceHeadings = reference.split('\n').filter((line) => /^#{2,3} /.test(line));
 
@@ -56,8 +62,16 @@ describe('同梱の Skill(skills/spreadsheet-grid/SKILL.md)', () => {
     expect(identifiers.length).toBeGreaterThan(20);
     const missing = identifiers
       .map((code) => code.replace(/<T>$/, '').replace(/\(\)$/, ''))
-      .filter((name) => !NOT_IN_REFERENCE.has(name) && !reference.includes(name));
+      .filter((name) => !NOT_IN_REFERENCE.has(name) && !appearsAsWord(reference, name));
     expect(missing).toEqual([]);
+  });
+
+  it('standardFeatures の中身が実際のプリセットと同じ', () => {
+    const line = body.split('\n').find((text) => text.includes('`standardFeatures` は '));
+    expect(line).toBeDefined();
+    const listed = (line ?? '').slice((line ?? '').indexOf('`standardFeatures` は ') + '`standardFeatures` は '.length).split('。')[0] ?? '';
+    const names = [...listed.matchAll(/`([^`]+)`/g)].map((m) => m[1] ?? '');
+    expect([...names].sort()).toEqual(Object.keys(standardFeatures).sort());
   });
 
   it('「見出し」が API_REFERENCE.md の見出しにある', () => {

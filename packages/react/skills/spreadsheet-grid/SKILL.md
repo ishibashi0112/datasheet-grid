@@ -13,11 +13,11 @@ React 19 の仮想化データグリッドです。新しいライブラリで�
 - **正本**: `node_modules/@ishibashi0112/spreadsheet-grid/API_REFERENCE.md`(インストールした版の公開 API すべて。日本語)。約 1,800 行あるので全部は読まず、見出しを一覧してから要る節だけ読みます。
 
   ```sh
-  grep -n "^## \|^### " node_modules/@ishibashi0112/spreadsheet-grid/API_REFERENCE.md
+  grep -nE "^#{2,3} " node_modules/@ishibashi0112/spreadsheet-grid/API_REFERENCE.md
   ```
 
-- **型の説明**: `node_modules/@ishibashi0112/spreadsheet-grid-core/dist/model/gridTypes.core.d.ts` の JSDoc(API_REFERENCE.md の表と同じ内容)。
-- **ガイドとデモ**: https://datasheet-grid.vercel.app 。AI 向けの目次は https://datasheet-grid.vercel.app/llms.txt で、各ページの Markdown へのリンクが並んでいます。
+- **型の説明**: 主な型(`SpreadsheetGridProps` / `GridColumn` / `SpreadsheetGridHandle` など)のフィールドの説明は、型定義の JSDoc にもあります(API_REFERENCE.md の表と同じ内容。エディタのホバーや定義へ移動で読めます)。
+- **ガイドとデモ**: https://datasheet-grid.vercel.app 。AI 向けの目次は https://datasheet-grid.vercel.app/llms.txt です。各ページの URL の末尾に `.md` を付けると、そのページを Markdown で読めます(例: https://datasheet-grid.vercel.app/docs/installation.md )。
 
 ## 2. 最小の形
 
@@ -56,14 +56,14 @@ export function Inventory() {
 - **行キー。** `rowKeyGetter` で安定したキーを返します(既定は行 index)。
 - **列の `width` は型の上で必須。** 伸縮させる列は `flex` も足します。列は既定で編集できます。止めるときは列の `editable: false` か `readOnly`、セルごとなら `canEditCell`、全体ならグリッドの `readOnly`。
 - **`rows` か `dataSource`。** `rows` はクライアントサイド、`dataSource` を渡すとサーバーサイド行モデルです。両方は渡しません。
-- **高さは `height` prop。** `'100%'` は上下のバーを含む全体の高さで、親に確定した高さが要ります。数値はスクロール領域だけの高さです。指定しないとスクロール領域は 480px が上限です。ルートの `style.height` では決めません。
+- **高さは `height` prop。** `'100%'` は上下のバーを含む全体の高さで、親に確定した高さが要ります。数値はスクロール領域だけの高さです。`height` も `maxHeight` も指定しないと、スクロール領域は 480px が上限です。ルートの `style.height` では決めません。
 - **命令的 API。** `ref` を渡すと `SpreadsheetGridHandle<T>` が入ります(React 19 の ref-as-prop。`forwardRef` は要りません)。
 - **Next.js App Router。** グリッドは `'use client'` のファイルから描画します。
 
 ## 4. 入口の選び方
 
 - `@ishibashi0112/spreadsheet-grid` の `SpreadsheetGrid`: 全部入り(初期 JS 約 112KB gzip)。迷ったらこれ。
-- `@ishibashi0112/spreadsheet-grid/lite` の `createSpreadsheetGrid`: 使う機能だけを入れる(約 60〜82KB)。モジュールの先頭で 1 回だけ作ります。部品の名前は「キー + `Feature`」です(例: `{ ...standardFeatures, serverSide: serverSideFeature }`)。`standardFeatures` は `filtering` / `columnMenu` / `toolPanel` / `columnAutosize` / `export`。足りない機能は開発時に `console.warn` が名指しします。全部入りと同じアプリで混ぜません。
+- `@ishibashi0112/spreadsheet-grid/lite` の `createSpreadsheetGrid`: 使う機能だけを入れる(機能なしで約 60KB、`standardFeatures` で約 78KB)。モジュールの先頭で 1 回だけ作ります。部品の名前は「キー + `Feature`」です(例: `{ ...standardFeatures, serverSide: serverSideFeature }`)。`standardFeatures` は `filtering` / `columnMenu` / `toolPanel` / `columnAutosize` / `export`。足りない機能は開発時に `console.warn` が名指しします。全部入りと同じアプリで混ぜると共通部分が二重に入るので、どちらかの入口に揃えます。
 - `@ishibashi0112/spreadsheet-grid/testing`: jsdom のテストで行と列を描画させる `installJsdomLayoutStubs()`。
 - 型は React 版から import します(`GridColumn` / `SpreadsheetGridHandle` など)。コアの `@ishibashi0112/spreadsheet-grid-core` を React のアプリで直接使う必要はありません。
 

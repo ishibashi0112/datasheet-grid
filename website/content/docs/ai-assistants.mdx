@@ -3,7 +3,7 @@ title: AI アシスタントで使う
 description: Claude Code・Cursor・Codex・GitHub Copilot などに、SpreadsheetGrid の正しい使い方を渡す
 ---
 
-SpreadsheetGrid は新しいライブラリで、AI コーディングツールはまだ API をほとんど知りません。資料を渡さないと、AG Grid などほかのグリッドの書き方で推測し、存在しない prop を書くことがあります。次の 3 つのどれかで資料を渡してください(上ほど手間が少なく効きます)。
+SpreadsheetGrid は新しいライブラリで、AI コーディングツールはまだ API をほとんど知りません。資料を渡さないと、AG Grid などほかのグリッドの書き方で推測し、存在しない prop を書くことがあります。次の 3 つのどれかで資料を渡してください(上ほどよく効きます)。
 
 ## Skill を入れる
 
@@ -15,7 +15,7 @@ GitHub から入れる([skills](https://github.com/vercel-labs/skills) コマン
 npx skills add https://github.com/ishibashi0112/datasheet-grid/tree/main/packages/react/skills/spreadsheet-grid
 ```
 
-インストール済みのパッケージから写す(版が揃います。Claude Code の例):
+GitHub から入れると main の最新の Skill が入ります。インストールした版に揃えるときは、npm のパッケージから写します(Claude Code の例):
 
 ```sh
 mkdir -p .claude/skills
@@ -37,12 +37,13 @@ Skill を使わないツールでも、プロジェクトの指示ファイル(`
 そこにある props とメソッドだけを使う。
 ```
 
-`API_REFERENCE.md` はインストールした版の公開 API すべてで、型定義の JSDoc(エディタのホバーで出る説明)も同じ内容です。約 1,800 行あるので、AI には見出しを一覧してから要る節だけ読ませると速く済みます(Skill にはその手順も書いてあります)。
+`API_REFERENCE.md` はインストールした版の公開 API すべてです(主な型のフィールドの説明は、エディタのホバーで出る型定義の説明(JSDoc)にもあります)。約 1,800 行あるので、AI には見出しを一覧してから要る節だけ読ませると速く済みます(Skill にはその手順も書いてあります)。
 
 ## このサイトの資料を渡す
 
 | 資料 | 内容 |
 | --- | --- |
-| [llms.txt](https://datasheet-grid.vercel.app/llms.txt) | ドキュメントの全ページの目次。各ページの Markdown へのリンク付き |
+| [llms.txt](https://datasheet-grid.vercel.app/llms.txt) | ドキュメントの全ページの目次(各ページへのリンクと説明) |
 | [llms-full.txt](https://datasheet-grid.vercel.app/llms-full.txt) | 全ページを 1 つにまとめたもの。大きいので、目次から要るページだけ渡す方が向いています |
-| 各ページ上部のボタン | 「Copy Markdown」(そのページを Markdown でコピー)と「Open」(ChatGPT / Claude / Cursor でそのページを開く) |
+| 各ページの URL + `.md` | そのページの Markdown(例: [/docs/installation.md](https://datasheet-grid.vercel.app/docs/installation.md)) |
+| 各ページ上部のボタン | 「Copy Markdown」(そのページを Markdown でコピー)と「Open」(ChatGPT / Claude / Cursor などでそのページを開く) |
