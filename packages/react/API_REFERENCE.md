@@ -1659,7 +1659,7 @@ import { preloadGridPopups } from '@ishibashi0112/spreadsheet-grid';
 
 ## ことばで絞り込み(`/ai` サブパス)
 
-`@ishibashi0112/spreadsheet-grid/ai` の `GridAskBar` をグリッドの上に置くと、利用者が「東京の在庫が 10 個以下を高い順に」のように書いた文を AI に頼んで、グリッドのフィルター・並び・グローバル検索・列の表示へ反映できる(0.57.0 で追加)。グリッドは AI を呼ばない。利用側が渡す `ask`(自分のサーバー → 好きな AI)で聞くので、AI の種類は問わず、API キーはサーバーに置ける。全部入り・`/lite` とは別の入口で、使うときだけバンドルに入る(全部入り・`/lite` の JS の大きさは変わらない。`/ai` は約 9.5KB gzip)。
+`@ishibashi0112/spreadsheet-grid/ai` の `GridAskBar` をグリッドの上に置くと、利用者が「東京の在庫が 10 個以下を高い順に」のように書いた文を AI に頼んで、グリッドのフィルター・並び・グローバル検索・列の表示へ反映できる(0.57.0 で追加)。グリッドは AI を呼ばない。利用側が渡す `ask`(自分のサーバー → 好きな AI)で聞くので、AI の種類は問わず、API キーはサーバーに置ける。全部入り・`/lite` とは別の入口で、使うときだけバンドルに入る(全部入り・`/lite` の JS の大きさは変わらない。`/ai` は約 9.7KB gzip)。
 
 ```tsx
 import { useRef } from 'react';
@@ -1720,7 +1720,11 @@ export async function POST(req: Request) {
 }
 ```
 
-- OpenAI では Responses API の `instructions` に `system`、`input` に `prompt`、`text.format` に `{ type: 'json_schema', name: 'grid_view', schema, strict: true }` を渡し、`output_text` を JSON として返す。`schema` は Claude の構造化出力と OpenAI の strict な出力の両方の制約(すべての欄が必須・`additionalProperties: false`・null を許す欄は `anyOf`)に合わせてある。ほかの AI や Vercel AI SDK でも、`schema` を JSON Schema として渡せばよい。答えを JSON の文字列のまま返してもよい(前後の文や ```` ```json ```` の囲みは外して読む)。
+- ほかの AI でも、画面側(`ask`)はそのままで、サーバーで `system` / `prompt` / `schema` を渡す先が変わるだけ。各社のコード全体はドキュメントサイトのガイド「[ことばで絞り込み(AI)](https://datasheet-grid.vercel.app/docs/guides/ai-filter)」。
+  - **OpenAI**(Responses API): `instructions` に `system`、`input` に `prompt`、`text: { format: { type: 'json_schema', name: 'grid_view', schema, strict: true } }`。答えは `response.output_text`。
+  - **Gemini**(`@google/genai` の `models.generateContent`): `contents` に `prompt`、`config` に `{ systemInstruction: system, responseMimeType: 'application/json', responseJsonSchema: schema }`。答えは `response.text`。
+  - **Vercel AI SDK**(AI Gateway): `generateText({ model: 'anthropic/claude-haiku-5.5', system, prompt, output: Output.object({ schema: jsonSchema(schema) }) })` の `output` を返す。`model` の文字列を替えるだけで、AI Gateway 経由でほかの会社の AI に切り替わる。
+- `schema` は Claude / OpenAI(strict)/ Gemini の構造化出力の制約(すべての欄が必須・`additionalProperties: false`・null を許す欄は `anyOf`)に合わせてある。構造化出力の無い AI では、`prompt` の後に「この JSON Schema に合う JSON だけを返す」と書き足し、答えを JSON の文字列のまま返してもよい(前後の文や ```` ```json ```` の囲みは外して読む)。
 - 1 回の頼みは入力 千〜数千トークン・出力 数百トークン程度(列の数と候補の数による)。
 
 ### `GridAskBar` の props(`GridAskBarProps<T>`)

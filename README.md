@@ -309,7 +309,7 @@ const ask: GridAsk = async (request, { signal }) =>
 <SpreadsheetGrid ref={gridRef} columns={columns} rows={rows} />
 ```
 
-It is a separate entry (~9.5KB gzip), so `SpreadsheetGrid` and `/lite` do not grow. The server example (Claude / OpenAI) and the list of what the AI can change are in the [`/ai` section of the API reference](packages/react/API_REFERENCE.md#ことばで絞り込みai-サブパス).
+It is a separate entry (~9.7KB gzip), so `SpreadsheetGrid` and `/lite` do not grow. Server code for Claude, OpenAI, Gemini and the Vercel AI SDK (AI Gateway) is in the [guide with a live demo](https://datasheet-grid.vercel.app/docs/guides/ai-filter); the full API and the list of what the AI can change are in the [`/ai` section of the API reference](packages/react/API_REFERENCE.md#ことばで絞り込みai-サブパス).
 
 ## Server-side mode (SSRM)
 
@@ -700,7 +700,7 @@ const ask: GridAsk = async (request, { signal }) =>
 <SpreadsheetGrid ref={gridRef} columns={columns} rows={rows} />
 ```
 
-別の入口(約 9.5KB gzip)なので、`SpreadsheetGrid` と `/lite` の大きさは変わりません。サーバー側の例(Claude / OpenAI)と AI が変えられるものの一覧は [API リファレンスの `/ai` の節](packages/react/API_REFERENCE.md#ことばで絞り込みai-サブパス)にあります。
+別の入口(約 9.7KB gzip)なので、`SpreadsheetGrid` と `/lite` の大きさは変わりません。Claude・OpenAI・Gemini・Vercel AI SDK(AI Gateway)のサーバー側のコードは[デモ付きのガイド](https://datasheet-grid.vercel.app/docs/guides/ai-filter)に、API の全体と AI が変えられるものの一覧は [API リファレンスの `/ai` の節](packages/react/API_REFERENCE.md#ことばで絞り込みai-サブパス)にあります。
 
 ### サーバーサイドモード（SSRM）
 

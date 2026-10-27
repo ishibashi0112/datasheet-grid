@@ -5,20 +5,34 @@ description: GridAskBar を置くと「東京の在庫が 10 個以下を高い�
 
 `@ishibashi0112/spreadsheet-grid/ai` の `GridAskBar` をグリッドの上に置くと、利用者がふだんの言葉で書いた文を AI に頼んで、グリッドの**フィルター・並び・グローバル検索・列の表示**へ反映できます(0.57.0 から)。フィルターの画面を開いて条件を 1 つずつ入れる代わりに、「今月入荷した家電を高い順に」と書くだけです。
 
-- **グリッドは AI を呼びません。** 利用側が渡す `ask` 関数(自分のサーバー → 好きな AI)で聞くので、AI の種類は問わず、API キーはサーバーに置けます。
+- **グリッドは AI を呼びません。** 利用側が渡す `ask` 関数(自分のサーバー → 好きな AI)で聞くので、Claude・OpenAI・Gemini・Vercel AI Gateway など AI の種類は問わず、API キーはサーバーに置けます。
 - **行のデータは送りません。** 送るのは列の名前と種類、列定義にある候補、今の条件、利用者の文だけです。
 - **答えはすべて検査します。** 無い列・その列で使えない条件・候補に無い値は捨て、何を捨てたかを日本語で出します。入れた条件はチップで見せ、1 回で元に戻せます。
 - 全部入り・`/lite` とは別の入口なので、使うときだけバンドルに入ります(全部入りの大きさは変わりません)。
 
+## 導入は 3 つ
+
+1. **列に `filterType` を付ける。** AI が入れられる条件は、その列のフィルター画面と同じです。数や日付の列は `'number'` / `'numberSet'` / `'dateSet'` にします([AI にできること](#ai-にできること))。
+2. **グリッドの上に `GridAskBar` を置く。** グリッドの ref・同じ列定義・`ask` を渡します。`ask` は頼みを自分のサーバーへ送るだけです([画面側](#画面側))。
+3. **サーバーに 1 ファイル足す。** 受け取った頼みを AI に渡し、答えを返します。Claude・OpenAI・Gemini・Vercel AI SDK(AI Gateway)の例があります([サーバー側](#サーバー側))。
+
+AI の API キーをブラウザに置かないため、Next.js の Route Handler や Hono・Express などのサーバーが要ります(Vite だけで作ったページなら、API を置く場所を別に用意します)。
+
 ## デモ
 
-例の文を押すと、AI の代わりに用意した見本の答えで動きます(答えの検査・反映・チップ・元に戻すは本物の部品です)。下の「AI に渡した頼みと答え」で、`ask` に渡る中身を見られます。
+このサイトでは AI を呼ばず、例の文を押すと**見本の答え**で動きます。見本の答えは、この表で Claude の速いモデル(Haiku 相当)に例の文を実際に聞き、返ってきた答えをそのまま記録したものです(2026-10-27)。答えの検査・表への反映・チップ・元に戻すは本物の部品です。上から順に押すと、次のことを確かめられます。
+
+- 言い換えを読む: 「文房具」→ 分類「文具」、「1,000 円しない」→ 単価 1000 未満、「西日本」→ 倉庫「大阪・福岡」、「ここ 1 か月」→ 入荷日の範囲、「値段」→ 単価、「売り切れ」→ 在庫数 0
+- 続けて頼む: 「さらに 1 万円以上だけ」は今の条件に足す
+- 列に無いことはどうしたかを知らせる: 色の列は無いので、品名に「赤」を含むもので絞り、そう伝える
+
+下の「AI に渡した頼みと答え」で、`ask` に渡る中身(行のデータは入りません)と答えを見られます。
 
 <AiFilterDemo />
 
-## 使い方
+## 画面側
 
-画面側は、`GridAskBar` にグリッドの ref・同じ列定義・`ask` を渡します。
+`GridAskBar` にグリッドの ref・同じ列定義・`ask` を渡します。画面側のコードは、どの AI を使っても同じです。
 
 ```tsx
 'use client';
@@ -56,10 +70,11 @@ export function Inventory() {
 }
 ```
 
-サーバー側は、受け取った `system` / `prompt` / `schema` を AI に渡して、答え(JSON)を返すだけです。答えの形は `schema`(JSON Schema)で決まっているので、AI の構造化出力にそのまま渡します。Next.js の Route Handler と Claude の例:
+## サーバー側
 
-```ts
-// app/api/grid-ask/route.ts
+受け取った `system`(決まった指示文)・`prompt`(列の説明・今の条件・利用者の文)・`schema`(答えの形の JSON Schema)を AI に渡し、答えを返すだけです。`schema` は各社の構造化出力(答えをその形の JSON に固定する機能)にそのまま渡せます。どれも Next.js の Route Handler(`app/api/grid-ask/route.ts`)の例です。Vercel AI SDK の例は AI Gateway を通すので、`model` の文字列を替えるだけでほかの会社の AI に切り替わります。
+
+```ts tab="Claude"
 import Anthropic from '@anthropic-ai/sdk';
 
 const anthropic = new Anthropic(); // ANTHROPIC_API_KEY はサーバーの環境変数
@@ -81,8 +96,68 @@ export async function POST(req: Request) {
 }
 ```
 
-- **OpenAI**: Responses API の `instructions` に `system`、`input` に `prompt`、`text.format` に `{ type: 'json_schema', name: 'grid_view', schema, strict: true }` を渡し、`output_text` を JSON として返します。
-- **そのほかの AI**: `schema` は Claude の構造化出力と OpenAI の strict な出力の両方の制約に合わせてあります。Vercel AI SDK などでも JSON Schema として渡せます。構造化出力が無い AI では、`prompt` の後に「この JSON Schema に合う JSON だけを返す」と書き足して、返ってきた文字列をそのまま返してもかまいません(前後の文や ```` ```json ```` の囲みは外して読みます)。
+```ts tab="OpenAI"
+import OpenAI from 'openai';
+
+const openai = new OpenAI(); // OPENAI_API_KEY はサーバーの環境変数
+
+export async function POST(req: Request) {
+  // ここでログインしているか・呼ぶ回数を確かめる
+  const { system, prompt, schema } = await req.json();
+  const response = await openai.responses.create({
+    model: 'gpt-6-luna', // 小さく速いモデルで足りる
+    instructions: system,
+    input: prompt,
+    // strict: true で答えを schema の形に固定する
+    text: { format: { type: 'json_schema', name: 'grid_view', schema, strict: true } },
+  });
+  return Response.json(response.output_text);
+}
+```
+
+```ts tab="Gemini"
+import { GoogleGenAI } from '@google/genai';
+
+const gemini = new GoogleGenAI({}); // GEMINI_API_KEY はサーバーの環境変数
+
+export async function POST(req: Request) {
+  // ここでログインしているか・呼ぶ回数を確かめる
+  const { system, prompt, schema } = await req.json();
+  const response = await gemini.models.generateContent({
+    model: 'gemini-3.8-flash',
+    contents: prompt,
+    config: {
+      systemInstruction: system,
+      // 答えを schema の形の JSON に固定する
+      responseMimeType: 'application/json',
+      responseJsonSchema: schema,
+    },
+  });
+  return Response.json(response.text ?? null);
+}
+```
+
+```ts tab="Vercel AI SDK"
+import { generateText, jsonSchema, Output } from 'ai';
+
+// AI Gateway のキーは AI_GATEWAY_API_KEY(Vercel にデプロイしたものは自動で認証される)
+export async function POST(req: Request) {
+  // ここでログインしているか・呼ぶ回数を確かめる
+  const { system, prompt, schema } = await req.json();
+  const { output } = await generateText({
+    // 'openai/…' や 'google/…' のモデルに替えるだけで、ほかの会社の AI に切り替わる
+    model: 'anthropic/claude-haiku-5.5',
+    reasoning: 'low',
+    system,
+    prompt,
+    output: Output.object({ schema: jsonSchema(schema) }),
+  });
+  return Response.json(output);
+}
+```
+
+- 返すのは答えの JSON です(オブジェクトでも、JSON の文字列でもかまいません)。バーが読んで検査するので、途中で切れた答えや形の違う答えは「読めませんでした」になり、表は変えません。
+- 上の 4 つ以外の AI でも、`schema` を JSON Schema として渡せば同じです。構造化出力が無い AI では、`prompt` の後に「この JSON Schema に合う JSON だけを返す」と書き足して、返ってきた文字列をそのまま返してもかまいません(前後の文や ```` ```json ```` の囲みは外して読みます)。
 - 公開するページでは、サーバー側でログインの確認と呼ぶ回数の制限を入れてください(誰でも AI の費用を使えてしまうため)。
 
 ## AI にできること
@@ -133,4 +208,6 @@ AI が入れられる条件は、**その列のフィルター画面で手で入
 
 ## AI のモデルの選び方
 
-1 回の頼みは、入力が千〜数千トークン(列と候補の数による)、出力が数百トークンほどです。文から条件を組み立てるだけなので、小さく速いモデル(Claude なら Haiku)で足ります。選択肢から 1 つ選ぶだけの「判断専用」の格安モデルは、この機能には向きません(数や日付の値と、いくつもの条件を自由に組み立てる必要があるため)。
+1 回の頼みは、入力が千〜数千トークン(列と候補の数による)、出力が数百トークンほどです。文から条件を組み立てるだけなので、小さく速いモデル(Claude なら Haiku、OpenAI なら GPT-6 Luna、Gemini なら Flash)で足ります。選択肢から 1 つ選ぶだけの「判断専用」の格安モデルは、この機能には向きません(数や日付の値と、いくつもの条件を自由に組み立てる必要があるため)。
+
+同じ文でも、答え方は毎回少し変わります(「ここ 1 か月」を「過去 30 日」の指定で返すことも、日付の範囲で返すこともあります)。どの答えも検査してから入れ、入れた条件はチップで見えるので、思ったのと違うときは × で外すか、言い直してください。
