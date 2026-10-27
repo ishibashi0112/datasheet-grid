@@ -20,8 +20,9 @@
      等の上書きが読み込み順に依らず必ず勝ちます。
      セレクタリストについて(TH-DK-1): popover / menu / filter popover / ドラッグゴーストは
      document.body 直下のポータルで .ssg-root の継承が届かないため、各ポータル root にも
-     同じトークンを直接定義します(テーマ切替はこのリストへ修飾子を足すだけで全面に効きます)。 */
-  :where(.ssg-root, .ssg-popover, .ssg-menu-panel, .ssg-filter-popover, .ssg-select-editor-popover, [data-grid-drag-ghost], .ssg-tooltip) {
+     同じトークンを直接定義します(テーマ切替はこのリストへ修飾子を足すだけで全面に効きます)。
+     追加(ことばで絞り込み): 入口 /ai の GridAskBar(.ssg-ask)もグリッドの外に置くため、同じリストに入れます。 */
+  :where(.ssg-root, .ssg-popover, .ssg-menu-panel, .ssg-filter-popover, .ssg-select-editor-popover, [data-grid-drag-ghost], .ssg-tooltip, .ssg-ask) {
     /* ネイティブ UI(スクロールバー / select 等)の描画をテーマへ揃えます(TH-DK-2)。
        ダーク時は .ssg-theme-dark 側で dark に切替。:where のため利用側上書きが常に勝ちます。 */
     color-scheme: light;
@@ -372,10 +373,10 @@
      描画が食い違っていました。ルート/ポータル(popover / menu)配下を一律 border-box に固定して
      環境差を排除します。:where(特異度 0)なので、利用側が明示した box-sizing はそのまま勝ちます。
      注記: 擬似要素は :is()/:where() の引数に書けないため、::before / ::after は外側に付けます。 */
-  :where(.ssg-root, .ssg-popover, .ssg-menu-panel, .ssg-filter-popover, .ssg-tooltip),
-  :where(.ssg-root, .ssg-popover, .ssg-menu-panel, .ssg-filter-popover, .ssg-tooltip) :where(*),
-  :where(.ssg-root, .ssg-popover, .ssg-menu-panel, .ssg-filter-popover, .ssg-tooltip) :where(*)::before,
-  :where(.ssg-root, .ssg-popover, .ssg-menu-panel, .ssg-filter-popover, .ssg-tooltip) :where(*)::after {
+  :where(.ssg-root, .ssg-popover, .ssg-menu-panel, .ssg-filter-popover, .ssg-tooltip, .ssg-ask),
+  :where(.ssg-root, .ssg-popover, .ssg-menu-panel, .ssg-filter-popover, .ssg-tooltip, .ssg-ask) :where(*),
+  :where(.ssg-root, .ssg-popover, .ssg-menu-panel, .ssg-filter-popover, .ssg-tooltip, .ssg-ask) :where(*)::before,
+  :where(.ssg-root, .ssg-popover, .ssg-menu-panel, .ssg-filter-popover, .ssg-tooltip, .ssg-ask) :where(*)::after {
     box-sizing: border-box;
   }
 
@@ -4006,4 +4007,273 @@
   .ssg-motion-off .ssg-scroll-hint-bubble,
   .ssg-motion-off .ssg-scroll-hint-ruler {
     transition: none;
+  }
+
+  /* 追加(ことばで絞り込み): 入口 /ai の GridAskBar。グリッドの外(上)に置く入力欄・例・結果(反映した条件のチップ /
+     使えなかった部分 / AI からのひとこと)。色はトークン定義の対象(.ssg-ask)から読みます。ダークはバーへ付く
+     .ssg-theme-dark(theme prop)で切り替わります。 */
+  .ssg-ask {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    min-width: 0;
+    color: var(--ssg-panel-text);
+    font-size: 13px;
+  }
+  .ssg-ask-form {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 0;
+    padding: 4px 4px 4px 10px;
+    border: 1px solid var(--ssg-divider);
+    border-radius: var(--ssg-radius);
+    background-color: var(--ssg-cell-bg);
+    box-shadow: var(--ssg-root-shadow);
+  }
+  .ssg-ask-form:focus-within {
+    border-color: var(--ssg-accent);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--ssg-accent) 18%, transparent);
+  }
+  .ssg-ask-icon {
+    flex: none;
+    color: var(--ssg-accent);
+  }
+  .ssg-ask-input {
+    flex: 1 1 auto;
+    min-width: 0;
+    border: 0;
+    outline: none;
+    background: transparent;
+    color: var(--ssg-cell-text);
+    font: inherit;
+    font-size: 14px;
+    padding: 6px 0;
+  }
+  .ssg-ask-input::placeholder {
+    color: var(--ssg-panel-text-faint);
+  }
+  .ssg-ask-button {
+    flex: none;
+    border: 1px solid var(--ssg-panel-border);
+    border-radius: calc(var(--ssg-radius) - 2px);
+    background-color: var(--ssg-panel-bg);
+    color: var(--ssg-panel-text-strong);
+    font: inherit;
+    font-size: 13px;
+    font-weight: 600;
+    padding: 5px 14px;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .ssg-ask-button:hover:not(:disabled) {
+    background-color: var(--ssg-panel-hover-bg);
+  }
+  .ssg-ask-button--primary {
+    border-color: var(--ssg-panel-accent);
+    background-color: var(--ssg-panel-accent);
+    color: var(--ssg-panel-accent-contrast);
+  }
+  .ssg-ask-button--primary:hover:not(:disabled) {
+    border-color: var(--ssg-accent-strong);
+    background-color: var(--ssg-accent-strong);
+  }
+  .ssg-ask-button:disabled {
+    opacity: 0.45;
+    cursor: default;
+  }
+  .ssg-ask-button:focus-visible,
+  .ssg-ask-example:focus-visible,
+  .ssg-ask-link:focus-visible,
+  .ssg-ask-chip-remove:focus-visible {
+    outline: 2px solid var(--ssg-panel-accent);
+    outline-offset: 1px;
+  }
+  .ssg-ask-examples {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+  }
+  .ssg-ask-examples-label {
+    color: var(--ssg-panel-text-muted);
+    font-size: 12px;
+  }
+  .ssg-ask-example {
+    max-width: 100%;
+    overflow: hidden;
+    border: 1px solid var(--ssg-panel-border);
+    border-radius: 999px;
+    background-color: var(--ssg-panel-bg);
+    color: var(--ssg-panel-text-sub);
+    font: inherit;
+    font-size: 12px;
+    padding: 2px 10px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    cursor: pointer;
+  }
+  .ssg-ask-example:hover:not(:disabled) {
+    border-color: var(--ssg-panel-accent);
+    color: var(--ssg-panel-accent-text);
+  }
+  .ssg-ask-example:disabled {
+    opacity: 0.5;
+    cursor: default;
+  }
+  .ssg-ask-output {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .ssg-ask-output:empty {
+    display: none;
+  }
+  .ssg-ask-status {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: var(--ssg-panel-text-muted);
+    font-size: 12.5px;
+  }
+  .ssg-ask-hint {
+    color: var(--ssg-panel-text-faint);
+    font-size: 12px;
+  }
+  .ssg-ask-spinner {
+    width: 12px;
+    height: 12px;
+    border: 2px solid var(--ssg-panel-separator);
+    border-top-color: var(--ssg-accent);
+    border-radius: 50%;
+    animation: ssg-ask-spin 0.8s linear infinite;
+  }
+  @keyframes ssg-ask-spin {
+    to {
+      transform: rotate(360deg);
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .ssg-ask-spinner {
+      animation-duration: 2.4s;
+    }
+  }
+  .ssg-ask-result {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .ssg-ask-result-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+  }
+  .ssg-ask-result-title {
+    color: var(--ssg-panel-text-sub);
+    font-size: 12px;
+    font-weight: 600;
+  }
+  .ssg-ask-result-actions {
+    display: flex;
+    gap: 12px;
+  }
+  .ssg-ask-link {
+    border: 0;
+    background: none;
+    padding: 0;
+    color: var(--ssg-panel-accent-text);
+    font: inherit;
+    font-size: 12px;
+    cursor: pointer;
+  }
+  .ssg-ask-link:hover:not(:disabled) {
+    text-decoration: underline;
+  }
+  .ssg-ask-link:disabled {
+    color: var(--ssg-panel-text-disabled);
+    cursor: default;
+  }
+  .ssg-ask-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  .ssg-ask-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    max-width: 100%;
+    margin: 0;
+    padding: 2px 4px 2px 10px;
+    border: 1px solid var(--ssg-icon-active-border);
+    border-radius: 999px;
+    background-color: var(--ssg-panel-accent-bg);
+    color: var(--ssg-panel-text-strong);
+    font-size: 12.5px;
+  }
+  .ssg-ask-chip-label {
+    color: var(--ssg-panel-text-muted);
+    font-size: 11.5px;
+    white-space: nowrap;
+  }
+  .ssg-ask-chip-text {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .ssg-ask-chip-remove {
+    flex: none;
+    width: 18px;
+    height: 18px;
+    border: 0;
+    border-radius: 50%;
+    background: transparent;
+    color: var(--ssg-panel-text-muted);
+    font-size: 13px;
+    line-height: 1;
+    padding: 0;
+    cursor: pointer;
+  }
+  .ssg-ask-chip-remove:hover {
+    background-color: var(--ssg-panel-hover-bg);
+    color: var(--ssg-panel-text-strong);
+  }
+  .ssg-ask-empty {
+    color: var(--ssg-panel-text-muted);
+    font-size: 12.5px;
+  }
+  .ssg-ask-note {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 4px 12px;
+    padding: 6px 10px;
+    border: 1px solid var(--ssg-panel-separator);
+    border-radius: calc(var(--ssg-radius) - 2px);
+    background-color: var(--ssg-panel-hover-bg-subtle);
+    color: var(--ssg-panel-text);
+    font-size: 12.5px;
+  }
+  .ssg-ask-note--warn {
+    border-color: color-mix(in srgb, var(--ssg-note-indicator) 40%, var(--ssg-panel-bg));
+    background-color: color-mix(in srgb, var(--ssg-note-indicator) 10%, var(--ssg-panel-bg));
+  }
+  .ssg-ask-note--error {
+    border-color: color-mix(in srgb, var(--ssg-danger) 30%, var(--ssg-panel-bg));
+    background-color: var(--ssg-danger-bg);
+    color: var(--ssg-danger);
+  }
+  .ssg-ask-note-title {
+    color: var(--ssg-panel-text-strong);
+    font-weight: 600;
+  }
+  .ssg-ask-dropped {
+    width: 100%;
+    margin: 0;
+    padding-left: 1.2em;
   }

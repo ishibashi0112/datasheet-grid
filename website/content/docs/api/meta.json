@@ -1,4 +1,4 @@
 {
   "title": "API リファレンス",
-  "pages": ["props", "column", "handle", "server-side", "lite"]
+  "pages": ["props", "column", "handle", "server-side", "lite", "ai"]
 }

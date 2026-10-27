@@ -16,3 +16,24 @@ export type { GridStore, GridViewState, GridViewStatePatch } from './model/gridS
 export { gridActions } from './model/gridActions';
 export type { GridUiAction } from './model/gridActions';
 export { numberFormatter } from './logic/valueFormatters';
+// 追加(ことばで絞り込み): AI に渡す頼みの組み立てと、AI の答えの検査(→ GridState)。グリッドは AI を呼ばず、利用側の
+//   ask(自分のサーバー → 好きな AI)が頼みを受けて答えを返します。React 版は入口 /ai(GridAskBar / useGridAsk)が使います。
+export {
+  createGridAskRequest,
+  describeGridAskView,
+  gridAskSystemPrompt,
+  isGridAskColumnsChanged,
+  isSameGridAskView,
+  readGridAskAnswer,
+  removeGridAskItem,
+} from './logic/gridAsk';
+export type {
+  GridAskAnswer,
+  GridAskFilter,
+  GridAskItem,
+  GridAskOp,
+  GridAskOptions,
+  GridAskRequest,
+  GridAskResult,
+  GridAskSort,
+} from './logic/gridAsk';

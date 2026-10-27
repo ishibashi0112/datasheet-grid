@@ -1,0 +1,134 @@
+---
+title: ことばで絞り込み(AI)
+description: GridAskBar を置くと「東京の在庫が 10 個以下を高い順に」のような文から、フィルター・並び・検索を AI が入れる
+---
+
+`@ishibashi0112/spreadsheet-grid/ai` の `GridAskBar` をグリッドの上に置くと、利用者がふだんの言葉で書いた文を AI に頼んで、グリッドの**フィルター・並び・グローバル検索・列の表示**へ反映できます(0.57.0 から)。フィルターの画面を開いて条件を 1 つずつ入れる代わりに、「今月入荷した家電を高い順に」と書くだけです。
+
+- **グリッドは AI を呼びません。** 利用側が渡す `ask` 関数(自分のサーバー → 好きな AI)で聞くので、AI の種類は問わず、API キーはサーバーに置けます。
+- **行のデータは送りません。** 送るのは列の名前と種類、列定義にある候補、今の条件、利用者の文だけです。
+- **答えはすべて検査します。** 無い列・その列で使えない条件・候補に無い値は捨て、何を捨てたかを日本語で出します。入れた条件はチップで見せ、1 回で元に戻せます。
+- 全部入り・`/lite` とは別の入口なので、使うときだけバンドルに入ります(全部入りの大きさは変わりません)。
+
+## デモ
+
+例の文を押すと、AI の代わりに用意した見本の答えで動きます(答えの検査・反映・チップ・元に戻すは本物の部品です)。下の「AI に渡した頼みと答え」で、`ask` に渡る中身を見られます。
+
+<AiFilterDemo />
+
+## 使い方
+
+画面側は、`GridAskBar` にグリッドの ref・同じ列定義・`ask` を渡します。
+
+```tsx
+'use client';
+import { useRef } from 'react';
+import { SpreadsheetGrid, type SpreadsheetGridHandle } from '@ishibashi0112/spreadsheet-grid';
+import { GridAskBar, type GridAsk } from '@ishibashi0112/spreadsheet-grid/ai';
+import '@ishibashi0112/spreadsheet-grid/style.css';
+
+// 自分のサーバーを通して AI に聞く(API キーをブラウザに置かない)
+const ask: GridAsk = async (request, { signal }) => {
+  const res = await fetch('/api/grid-ask', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(request),
+    signal,
+  });
+  if (!res.ok) throw new Error(`grid-ask: ${res.status}`);
+  return res.json();
+};
+
+export function Inventory() {
+  const gridRef = useRef<SpreadsheetGridHandle<Item>>(null);
+  return (
+    <>
+      <GridAskBar
+        grid={gridRef}
+        columns={columns}
+        ask={ask}
+        examples={['東京の在庫が 10 個以下', '今月入荷した家電を高い順に']}
+        columnHints={{ stock: '個', price: '円・税抜' }}
+      />
+      <SpreadsheetGrid ref={gridRef} columns={columns} rows={rows} />
+    </>
+  );
+}
+```
+
+サーバー側は、受け取った `system` / `prompt` / `schema` を AI に渡して、答え(JSON)を返すだけです。答えの形は `schema`(JSON Schema)で決まっているので、AI の構造化出力にそのまま渡します。Next.js の Route Handler と Claude の例:
+
+```ts
+// app/api/grid-ask/route.ts
+import Anthropic from '@anthropic-ai/sdk';
+
+const anthropic = new Anthropic(); // ANTHROPIC_API_KEY はサーバーの環境変数
+
+export async function POST(req: Request) {
+  // ここでログインしているか・呼ぶ回数を確かめる
+  const { system, prompt, schema } = await req.json();
+  const message = await anthropic.messages.create({
+    model: 'claude-haiku-5-5', // 小さく速いモデルで足りる
+    max_tokens: 1024,
+    system,
+    messages: [{ role: 'user', content: prompt }],
+    output_config: { format: { type: 'json_schema', schema } },
+  });
+  const text = message.content.find((block) => block.type === 'text');
+  return Response.json(text ? JSON.parse(text.text) : null);
+}
+```
+
+- **OpenAI**: Responses API の `instructions` に `system`、`input` に `prompt`、`text.format` に `{ type: 'json_schema', name: 'grid_view', schema, strict: true }` を渡し、`output_text` を JSON として返します。
+- **そのほかの AI**: `schema` は Claude の構造化出力と OpenAI の strict な出力の両方の制約に合わせてあります。Vercel AI SDK などでも JSON Schema として渡せます。構造化出力が無い AI では、`prompt` の後に「この JSON Schema に合う JSON だけを返す」と書き足して、返ってきた文字列をそのまま返してもかまいません(前後の文や ```` ```json ```` の囲みは外して読みます)。
+- 公開するページでは、サーバー側でログインの確認と呼ぶ回数の制限を入れてください(誰でも AI の費用を使えてしまうため)。
+
+## AI にできること
+
+AI が入れられる条件は、**その列のフィルター画面で手で入れられる条件と同じ**です(列の `filterType` で決まります)。フィルター画面と食い違わず、サーバーから読む表(SSRM)でもサーバーの処理と食い違いません。
+
+| 列の `filterType` | AI が入れられる条件 |
+| --- | --- |
+| `text` | 含む |
+| `textSet` | 含む / 等しい / で始まる / で終わる / 空白 / 空白でない と、値の選択 |
+| `number` / `numberSet` | = / ≠ / > / ≥ / < / ≤ / 範囲 / 空白 / 空白でない(`numberSet` は値の選択も) |
+| `date` | 含む(日付を文字として) |
+| `dateSet` | 範囲 / 以降 / 以前 / 等しい / 等しくない / 今日・今月・過去 30 日 / 空白 と、値の選択 |
+| `select` / `set` | 1 つの値に一致 / 値の選択(含める・除く) |
+
+- `filterType` の無い列は絞り込めません(並び替えだけ)。**数や日付の列には `filterType` を付けてください**(`'number'` / `'numberSet'` / `'dateSet'`。`'auto'` の列は editor が number / date ならその種類、それ以外は「含む」だけになります)。
+- 値の選択の候補は `filterOptions`(か select エディタの選択肢)から AI に見せます。候補を渡していない列では、AI が文から書いた値をそのまま使います。
+- ほかに、並び(複数の列も)とグローバル検索の文字を変えます。列を隠す・見せるのは `allowColumnVisibility` を付けたときだけです(グリッドに `onColumnsChange` が要ります)。
+- 「さらに 1 万円以上だけ」のような続けての頼みもできます(今の条件を毎回 AI に渡すため)。前の文は覚えていません。
+- 行のデータを見て答えること(「売れ筋」「おかしな値」など)、行のグループ分け、列の順番と固定は対象外です。
+
+## 列の補足と見せない列
+
+`columnHints` で、列ごとに単位や値の書き方を AI に伝えられます。`false` にした列は AI に見せません(その列の条件も変えません)。
+
+```tsx
+<GridAskBar
+  columnHints={{
+    price: '円・税抜',
+    code: '品番は A-1001 の形',
+    cost: false, // 原価は AI に見せない
+  }}
+  {...props}
+/>
+```
+
+## 入力と元に戻す
+
+- Enter で送ります。**日本語の変換を確定する Enter では送りません。**
+- 考えている間は「止める」か Esc で取り消せます(遅れて届いた答えは捨てます)。
+- 反映した条件はチップで見せ、× でその条件だけ外せます。「元に戻す」で頼む前の見え方に戻ります。反映したあとに表を手で変えたときは、元に戻さずにそう知らせます。
+
+## 見た目と自前の UI
+
+色はグリッドと同じトークン(`--ssg-*`)で決まり、`themes/*.css` もバーに効きます。バーはグリッドの外にあるので、トークンを上書きしているときは `.ssg-root, .ssg-ask { --ssg-accent: … }` のように `.ssg-ask` も並べてください。ダークにするときはグリッドと同じ `theme` を渡します。
+
+自分の見た目で作るときは `useGridAsk` が状態とふるまい(`status` / `session` / `submit` / `cancel` / `undo` / `remove`)だけを返します。頼みの組み立て(`createGridAskRequest`)と答えの検査(`readGridAskAnswer`)は React に依存しない関数で、`@ishibashi0112/spreadsheet-grid-core` からも使えます。詳しくは [API リファレンス](/docs/api/ai) を見てください。
+
+## AI のモデルの選び方
+
+1 回の頼みは、入力が千〜数千トークン(列と候補の数による)、出力が数百トークンほどです。文から条件を組み立てるだけなので、小さく速いモデル(Claude なら Haiku)で足ります。選択肢から 1 つ選ぶだけの「判断専用」の格安モデルは、この機能には向きません(数や日付の値と、いくつもの条件を自由に組み立てる必要があるため)。
