@@ -41,7 +41,8 @@
   ],
   "files": [
     "dist",
-    "API_REFERENCE.md"
+    "API_REFERENCE.md",
+    "skills"
   ],
   "main": "./dist/index.cjs",
   "module": "./dist/index.js",

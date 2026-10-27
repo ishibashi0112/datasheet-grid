@@ -72,6 +72,14 @@ Everything below ships inside the npm package, so it is available offline (for e
 | Guides with live demos (Japanese), playground, theme builder | [datasheet-grid.vercel.app](https://datasheet-grid.vercel.app) |
 | Design notes, changelog | [GitHub README](https://github.com/ishibashi0112/datasheet-grid#readme) / [CHANGELOG.md](https://github.com/ishibashi0112/datasheet-grid/blob/main/CHANGELOG.md) |
 
+## Using with AI coding assistants
+
+This library is new, so AI coding assistants rarely know its API and tend to guess from other grids. Point them at the docs:
+
+- **Skill.** The package ships an [Agent Skill](https://agentskills.io) at `skills/spreadsheet-grid/SKILL.md` (0.57.0+): a short guide with the rules below and where to look in `API_REFERENCE.md`. Tools that read `SKILL.md` (Claude Code, Cursor, Codex, GitHub Copilot and others) use it once it is in their skills folder. Install it from GitHub with `npx skills add https://github.com/ishibashi0112/datasheet-grid/tree/main/packages/react/skills/spreadsheet-grid`, or copy the folder from `node_modules` (for Claude Code, into `.claude/skills/`).
+- **One line for `AGENTS.md` / `CLAUDE.md`:** "Before writing grid code, read `node_modules/@ishibashi0112/spreadsheet-grid/API_REFERENCE.md` and use only the props and methods it lists."
+- **Docs for LLMs:** [llms.txt](https://datasheet-grid.vercel.app/llms.txt) lists every docs page (add `.md` to a page URL to get its Markdown), and [llms-full.txt](https://datasheet-grid.vercel.app/llms-full.txt) has all pages in one (large) file. Each docs page also has "Copy Markdown" and "Open" (in ChatGPT / Claude / Cursor).
+
 ## Rules that are easy to get wrong
 
 - **Import the CSS.** Without `style.css` the grid is unstyled and its scroll area does not work.
@@ -122,6 +130,14 @@ npm パッケージに同梱されているため、オフライン(`node_module
 | フィールドごとの説明(ホバーで表示) | 型定義の JSDoc。各フィールドの説明は `@ishibashi0112/spreadsheet-grid-core/dist/model/gridTypes.core.d.ts` にあり、`API_REFERENCE.md` の表と同じ内容 |
 | ライブデモ付きのガイド / プレイグラウンド / テーマビルダー | [datasheet-grid.vercel.app](https://datasheet-grid.vercel.app) |
 | 設計メモ / 変更履歴 | [GitHub の README](https://github.com/ishibashi0112/datasheet-grid#readme) / [CHANGELOG.md](https://github.com/ishibashi0112/datasheet-grid/blob/main/CHANGELOG.md) |
+
+### AI アシスタントで使うとき
+
+このライブラリは新しく、AI コーディングツールはまだ API をほとんど知りません。ほかのグリッドの書き方で推測しがちなので、資料を渡してください。
+
+- **Skill。** パッケージに [Agent Skill](https://agentskills.io) を同梱しています(`skills/spreadsheet-grid/SKILL.md`。0.57.0 から)。下の間違えやすいルールと、`API_REFERENCE.md` のどこを読めばよいかをまとめた短い手順書です。`SKILL.md` を読むツール(Claude Code / Cursor / Codex / GitHub Copilot など)の Skill のフォルダへ置くと使われます。GitHub から `npx skills add https://github.com/ishibashi0112/datasheet-grid/tree/main/packages/react/skills/spreadsheet-grid` で入れるか、`node_modules` からフォルダを写してください(Claude Code なら `.claude/skills/` へ)。
+- **`AGENTS.md` / `CLAUDE.md` に一文。** 「グリッドのコードを書く前に `node_modules/@ishibashi0112/spreadsheet-grid/API_REFERENCE.md` を読み、そこにある props とメソッドだけを使う。」
+- **AI 向けの資料。** [llms.txt](https://datasheet-grid.vercel.app/llms.txt) はドキュメントの全ページの目次(ページの URL の末尾に `.md` を付けると Markdown で読めます)、[llms-full.txt](https://datasheet-grid.vercel.app/llms-full.txt) は全ページを 1 つにまとめたもの(大きい)です。ドキュメントの各ページの上にも「Copy Markdown」と「Open」(ChatGPT / Claude / Cursor で開く)があります。
 
 ### 間違えやすいルール
 

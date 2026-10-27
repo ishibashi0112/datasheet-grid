@@ -1,0 +1,49 @@
+---
+title: AI アシスタントで使う
+description: Claude Code・Cursor・Codex・GitHub Copilot などに、SpreadsheetGrid の正しい使い方を渡す
+---
+
+SpreadsheetGrid は新しいライブラリで、AI コーディングツールはまだ API をほとんど知りません。資料を渡さないと、AG Grid などほかのグリッドの書き方で推測し、存在しない prop を書くことがあります。次の 3 つのどれかで資料を渡してください(上ほどよく効きます)。
+
+## Skill を入れる
+
+npm パッケージに [Agent Skill](https://agentskills.io) を同梱しています(`skills/spreadsheet-grid/SKILL.md`。0.57.0 から)。間違えやすいルール、最小の形、`API_REFERENCE.md` のどの見出しを読めばよいかをまとめた短い手順書です。`SKILL.md` を読むツール(Claude Code / Cursor / Codex / GitHub Copilot など)は、Skill のフォルダに置くと、このライブラリを使う作業のときに自動で読み込みます。
+
+GitHub から入れる([skills](https://github.com/vercel-labs/skills) コマンド。入れるツールを選べます):
+
+```sh
+npx skills add https://github.com/ishibashi0112/datasheet-grid/tree/main/packages/react/skills/spreadsheet-grid
+```
+
+GitHub から入れると main の最新の Skill が入ります。インストールした版に揃えるときは、npm のパッケージから写します(Claude Code の例):
+
+```sh
+mkdir -p .claude/skills
+cp -r node_modules/@ishibashi0112/spreadsheet-grid/skills/spreadsheet-grid .claude/skills/
+```
+
+インストール済みのパッケージにある Skill をまとめてつなぐ [skills-npm](https://github.com/antfu/skills-npm) でも見つかります(パッケージの `skills/` に置いています)。
+
+<Callout>
+  Skill の中身は短い手順だけで、詳しい API は同梱の `API_REFERENCE.md` を読みに行かせます。パッケージを上げたら、写した Skill も写し直してください。
+</Callout>
+
+## AGENTS.md / CLAUDE.md に一文を足す
+
+Skill を使わないツールでも、プロジェクトの指示ファイル(`AGENTS.md` / `CLAUDE.md` / `.cursor/rules` など)に次の一文を書いておくと、同梱の資料を読んでから書くようになります。
+
+```md
+グリッドのコードを書く前に node_modules/@ishibashi0112/spreadsheet-grid/API_REFERENCE.md を読み、
+そこにある props とメソッドだけを使う。
+```
+
+`API_REFERENCE.md` はインストールした版の公開 API すべてです(主な型のフィールドの説明は、エディタのホバーで出る型定義の説明(JSDoc)にもあります)。約 1,800 行あるので、AI には見出しを一覧してから要る節だけ読ませると速く済みます(Skill にはその手順も書いてあります)。
+
+## このサイトの資料を渡す
+
+| 資料 | 内容 |
+| --- | --- |
+| [llms.txt](https://datasheet-grid.vercel.app/llms.txt) | ドキュメントの全ページの目次(各ページへのリンクと説明) |
+| [llms-full.txt](https://datasheet-grid.vercel.app/llms-full.txt) | 全ページを 1 つにまとめたもの。大きいので、目次から要るページだけ渡す方が向いています |
+| 各ページの URL + `.md` | そのページの Markdown(例: [/docs/installation.md](https://datasheet-grid.vercel.app/docs/installation.md)) |
+| 各ページ上部のボタン | 「Copy Markdown」(そのページを Markdown でコピー)と「Open」(ChatGPT / Claude / Cursor などでそのページを開く) |
