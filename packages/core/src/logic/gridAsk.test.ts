@@ -119,9 +119,10 @@ describe('createGridAskRequest', () => {
     // auto は editor が number なら numberSet、手がかりが無ければ text(含む だけ)
     expect(lines.find((line) => line.startsWith('- amount'))).toContain('number.');
     expect(lines).toContain('- memo "メモ": text. ops: contains, clear');
-    // filterType の無い列は並び替えだけ
-    expect(lines).toContain('- note "備考": no ops (sort only).');
+    // filterType の無い列は絞り込めない(並び替えだけ)
+    expect(lines).toContain('- note "備考": no ops.');
     expect(request.prompt).not.toContain('secret');
+    expect(lines).toContain("Filters: allowed (by each column's ops).");
     expect(lines).toContain('Sort: allowed (any column above).');
     expect(lines).toContain('Hide or show columns: allowed.');
     expect(lines).toContain('Current view: {"filters":[],"sort":[],"search":null,"hidden":[]}');
@@ -519,7 +520,7 @@ describe('readGridAskAnswer', () => {
     expect(readGridAskAnswer(null, stateOf(), options).ok).toBe(false);
   });
 
-  it('filters の配列が無い答え・mode が違う答えは表を変えずに ok: false(サーバーのエラーなど)', () => {
+  it('表への指示に見えない答え・mode が違う答えは表を変えずに ok: false(サーバーのエラーなど)', () => {
     const state = stateOf({ code: { kind: 'text', value: 'A' } }, { sort: [{ columnKey: 'code', direction: 'asc' }] });
     const shape = { ok: false, message: 'AI の答えが表への指示になっていませんでした。言い方を変えてください。' };
     expect(readGridAskAnswer({ error: 'Too many requests' }, state, options)).toEqual(shape);
@@ -527,6 +528,10 @@ describe('readGridAskAnswer', () => {
     expect(readGridAskAnswer(JSON.stringify({ error: 'x' }), state, options)).toEqual(shape);
     expect(readGridAskAnswer({ mode: 'refine', filters: { code: 'A' } }, state, options)).toEqual(shape);
     expect(readGridAskAnswer({ mode: 'add', filters: [] }, state, options)).toEqual(shape);
+    // mode があって filters だけが無い答え(並びだけを返したもの)は、条件なしとして読む
+    const sortOnly = read({ mode: 'refine', sort: [{ column: 'price', direction: 'desc' }] }, state);
+    expect(sortOnly.state.filters.columnFilters).toEqual({ code: { kind: 'text', value: 'A' } });
+    expect(sortOnly.state.sort).toEqual([{ columnKey: 'price', direction: 'desc' }]);
   });
 
   it('知らない条件の名前は答えの文字のまま理由に出す', () => {
@@ -538,6 +543,226 @@ describe('readGridAskAnswer', () => {
     const result = read({ filters: [{ column: 'code', op: 'contains', value: 'A' }] });
     expect(result.state.filters.columnFilters).toEqual({ code: { kind: 'text', value: 'A' } });
     expect(result.dropped).toEqual([]);
+  });
+});
+
+describe('readGridAskAnswer: 利用者の条件を黙って変えない', () => {
+  // AI が Current view をそのまま返したときの答えです(言い直し)。
+  const echo = (state: GridState, mode: 'replace' | 'refine', opts: GridAskOptions<Row> = options) => {
+    const line = createGridAskRequest('x', state, opts).prompt.split('\n').find((text) => text.startsWith('Current view: '));
+    const current = JSON.parse((line ?? '').slice('Current view: '.length)) as {
+      filters?: GridAskFilter[];
+      sort?: { column: string; direction: string }[];
+      search?: string | null;
+    };
+    return answer({
+      mode,
+      filters: (current.filters ?? []).map(({ column, op, value, values, to }) => ({ column, op, value, values, to })),
+      sort: current.sort ?? null,
+      search: current.search ?? null,
+    });
+  };
+
+  it('今の条件をそのまま言い直しても変わらない(空白・文字列の数・前後の空白・打った書き方)', () => {
+    const states = [
+      stateOf({ warehouse: { kind: 'set', mode: 'exclude', values: ['', 'tokyo'] } }),
+      stateOf({ name: { kind: 'textSet', condition: null, set: { mode: 'include', values: ['', 'ABC '] } } }),
+      stateOf({ stock: { kind: 'numberSet', condition: { mode: 'comparison', operator: '<=', value: 10 }, set: { mode: 'include', values: ['100.00', '007'] } } }),
+      stateOf({ arrived: { kind: 'dateSet', condition: null, set: { mode: 'exclude', values: ['', '未定'] } } }),
+      stateOf({ price: { kind: 'number', raw: '1,000 以上', parsed: { mode: 'comparison', operator: '>=', value: 1000 } } }),
+      stateOf({ code: { kind: 'text', value: 'ペン ' } }, { globalText: '赤 ' }),
+      stateOf({ name: { kind: 'textSet', condition: null, set: { mode: 'include', values: ['x'.repeat(1200)] } } }),
+      stateOf({ warehouse: { kind: 'set', mode: 'include', values: ['nagoya'] } }),
+      stateOf({}, { sort: [{ columnKey: 'secret', direction: 'desc' }, { columnKey: 'code', direction: 'asc' }] }),
+    ];
+    states.forEach((state, index) => {
+      for (const mode of ['replace', 'refine'] as const) {
+        const result = read(echo(state, mode), state);
+        const label = `${index} ${mode}`;
+        expect({ changed: result.changed, dropped: result.dropped }, label).toEqual({ changed: false, dropped: [] });
+        expect(result.state.filters, label).toEqual(state.filters);
+        expect(result.state.sort, label).toEqual(state.sort);
+      }
+    });
+  });
+
+  it('"" は空白のセル。言い直しで値を足しても空白の除外は残る', () => {
+    const state = stateOf({ warehouse: { kind: 'set', mode: 'exclude', values: ['', 'tokyo'] } });
+    const result = read(answer({ mode: 'refine', filters: [f('warehouse', 'notIn', { values: ['', 'tokyo', 'osaka'] })] }), state);
+    expect(result.state.filters.columnFilters.warehouse).toEqual({ kind: 'set', mode: 'exclude', values: ['', 'tokyo', 'osaka'] });
+    expect(result.dropped).toEqual([]);
+    // 空白だけを選ぶこともできる(候補に無くても空白は選べる)
+    const blankOnly = read(answer({ filters: [f('stock', 'in', { values: [''] })] }));
+    expect(blankOnly.state.filters.columnFilters.stock).toEqual({ kind: 'numberSet', condition: null, set: { mode: 'include', values: [''] } });
+  });
+
+  it('長い選択は Current view に一部だけ書き、AI が見ていない残りは言い直しでは消さない', () => {
+    const values = Array.from({ length: 600 }, (_, index) => `v${index}`);
+    const state = stateOf({ name: { kind: 'textSet', condition: null, set: { mode: 'exclude', values } } });
+    const prompt = createGridAskRequest('x', state, options).prompt;
+    expect(prompt).toContain('"v499"],"to":null,"more":100}');
+    expect(prompt).not.toContain('"v500"');
+    const shown = values.slice(0, 500);
+    // refine で同じ op のまま足す → 残りの 100 件も残る
+    const refined = read(answer({ mode: 'refine', filters: [f('name', 'notIn', { values: [...shown, 'new'] })] }), state);
+    expect(refined.state.filters.columnFilters.name).toEqual({
+      kind: 'textSet',
+      condition: null,
+      set: { mode: 'exclude', values: [...shown, 'new', ...values.slice(500)] },
+    });
+    // refine で見せた値を外す → 外した値だけが消える
+    const removed = read(answer({ mode: 'refine', filters: [f('name', 'notIn', { values: shown.slice(1) })] }), state);
+    expect(removed.state.filters.columnFilters.name).toEqual({
+      kind: 'textSet',
+      condition: null,
+      set: { mode: 'exclude', values: values.slice(1) },
+    });
+    // replace で別の選択を書いた → 書いたものだけ(前の選択は引き継がない)
+    const replaced = read(answer({ filters: [f('name', 'notIn', { values: ['v1'] })] }), state);
+    expect(replaced.state.filters.columnFilters.name).toEqual({ kind: 'textSet', condition: null, set: { mode: 'exclude', values: ['v1'] } });
+    // op を変えた → 書いたものだけ
+    const flipped = read(answer({ mode: 'refine', filters: [f('name', 'in', { values: shown })] }), state);
+    expect(flipped.state.filters.columnFilters.name).toEqual({ kind: 'textSet', condition: null, set: { mode: 'include', values: shown } });
+  });
+
+  it('選ぶ値の数と長さの上限は、切り詰めずに理由を出す', () => {
+    const many = Array.from({ length: 1003 }, (_, index) => `v${index}`);
+    const result = read(answer({ filters: [f('name', 'in', { values: [...many, 'x'.repeat(1001)] })] }));
+    const set = (result.state.filters.columnFilters.name as Extract<ColumnFilterValue, { kind: 'textSet' }>).set;
+    expect(set?.values).toEqual(many.slice(0, 1000));
+    expect(result.dropped).toEqual(['品名: 選べる値は 1000 件までです(4 件は使いませんでした)']);
+    const long = read(answer({ filters: [f('name', 'in', { values: ['x'.repeat(1001), 'ok', null, 3] as unknown as string[] })] }));
+    expect((long.state.filters.columnFilters.name as Extract<ColumnFilterValue, { kind: 'textSet' }>).set?.values).toEqual(['ok', '3']);
+    expect(long.dropped).toEqual(['品名: 1000 字を超える値(1 件)は使えません', '品名: 値として読めないもの(1 件)は使えません']);
+    const text = read(answer({ filters: [f('code', 'contains', { value: 'x'.repeat(201) })], search: 'y'.repeat(201) }));
+    expect(text.state.filters).toEqual({ globalText: '', columnFilters: {} });
+    expect(text.dropped).toEqual(['品番: 探す文字は 200 字までです', '検索の文字は 200 字までです']);
+  });
+
+  it('filterOptions: [] は行から集める列(候補を決めずに値を受け取る)', () => {
+    const cols: GridColumn<Row>[] = [{ key: 'tag', title: 'タグ', width: 80, filterType: 'set', filterOptions: [] }];
+    const prompt = createGridAskRequest('x', stateOf(), { columns: cols }).prompt;
+    expect(prompt).toContain('- tag "タグ": choice. ops: in, notIn, clear');
+    const result = read(answer({ filters: [f('tag', 'in', { values: ['赤'] })] }), stateOf(), { columns: cols });
+    expect(result.state.filters.columnFilters.tag).toEqual({ kind: 'set', mode: 'include', values: ['赤'] });
+  });
+
+  it('select の値 "" は並べず、選ばれても今の条件を残して理由を出す', () => {
+    const cols: GridColumn<Row>[] = [
+      {
+        key: 'status',
+        title: '状態',
+        width: 80,
+        filterType: 'select',
+        editor: { type: 'select', options: [{ value: '', label: '未設定' }, { value: 'done', label: '完了' }] },
+      },
+    ];
+    expect(createGridAskRequest('x', stateOf(), { columns: cols }).prompt).toContain('values: "done" (完了). ops: equals, clear');
+    const state = stateOf({ status: { kind: 'select', value: 'done' } });
+    const result = read(answer({ mode: 'refine', filters: [f('status', 'equals', { value: '未設定' })] }), state, { columns: cols });
+    expect(result.state.filters.columnFilters).toEqual({ status: { kind: 'select', value: 'done' } });
+    expect(result).toMatchObject({ changed: false, dropped: ['状態: 「未設定」では絞り込めません'] });
+  });
+
+  it('AI に見せていない並びは、並びが変わらなければ元の位置のまま', () => {
+    const state = stateOf({}, { sort: [{ columnKey: 'secret', direction: 'desc' }, { columnKey: 'code', direction: 'asc' }] });
+    const same = read(answer({ mode: 'refine', sort: [{ column: 'code', direction: 'asc' }] }), state);
+    expect(same.changed).toBe(false);
+    expect(same.state.sort).toEqual(state.sort);
+    const changed = read(answer({ mode: 'refine', sort: [{ column: 'price', direction: 'desc' }] }), state);
+    expect(changed.state.sort).toEqual([
+      { columnKey: 'price', direction: 'desc' },
+      { columnKey: 'secret', direction: 'desc' },
+    ]);
+  });
+
+  it('並びの向きは大文字・ascending / descending も読み、読めない向きは理由を出す。op は文字だけ', () => {
+    const result = read(
+      answer({
+        sort: [
+          { column: 'price', direction: 'DESC' },
+          { column: 'code', direction: 'ascending' },
+          { column: 'stock', direction: 'up' },
+        ],
+        filters: [{ column: 'warehouse', op: ['in'], value: null, values: ['東京'], to: null }],
+      }),
+    );
+    expect(result.state.sort).toEqual([
+      { columnKey: 'price', direction: 'desc' },
+      { columnKey: 'code', direction: 'asc' },
+    ]);
+    expect(result.dropped).toEqual(['倉庫: 条件の種類がありません', '並び: 在庫数 の向き「up」は使えません']);
+  });
+
+  it('理由の数と、理由に引く答えの文字は長くしない', () => {
+    const result = read(
+      answer({
+        filters: [
+          f('code', 'x'.repeat(10_000) as GridAskFilter['op'], { value: 'A' }),
+          ...Array.from({ length: 30 }, (_, index) => f(`none${index}`, 'contains', { value: 'A' })),
+        ],
+      }),
+    );
+    expect(result.dropped).toHaveLength(20);
+    expect(result.dropped[0]).toBe(`品番: この列では「${'x'.repeat(40)}…」の条件は使えません`);
+    expect(result.dropped[19]).toBe('ほか 12 件');
+    const unknown = read(answer({ filters: [f('warehouse', 'in', { values: ['a', 'b', 'c', 'd', 'e', 'f', 'g'] })] }));
+    expect(unknown.dropped).toEqual(['倉庫: 「a」「b」「c」「d」「e」ほか 2 件は候補にありません', '倉庫: 選べる値がありません']);
+  });
+
+  it('列が多い表は答えの形で列を enum にせず、列は key か見出しで引く', () => {
+    const wide: GridColumn<Row>[] = Array.from({ length: 101 }, (_, index) => ({
+      key: `c${index}`,
+      title: `列${index}`,
+      width: 80,
+      filterType: 'text' as const,
+    }));
+    const { schema } = createGridAskRequest('x', stateOf(), { columns: wide });
+    expect(JSON.stringify(schema)).not.toContain('"c0"');
+    const result = read(answer({ filters: [f('列5', 'contains', { value: 'A' })], sort: [{ column: 'c7', direction: 'asc' }] }), stateOf(), {
+      columns: wide,
+    });
+    expect(result.state.filters.columnFilters).toEqual({ c5: { kind: 'text', value: 'A' } });
+    expect(result.state.sort).toEqual([{ columnKey: 'c7', direction: 'asc' }]);
+    // 見出しが重なる列は見出しでは引かない
+    const twins: GridColumn<Row>[] = [
+      { key: 'a', title: '名前', width: 80, filterType: 'text' },
+      { key: 'b', title: '名前', width: 80, filterType: 'text' },
+    ];
+    expect(read(answer({ filters: [f('名前', 'contains', { value: 'A' })] }), stateOf(), { columns: twins }).dropped).toEqual([
+      '「名前」という列はありません',
+    ]);
+  });
+
+  it('allowFilter: false は列の条件を変えない(今の条件は replace でも残す)', () => {
+    const state = stateOf({ code: { kind: 'text', value: 'A' } });
+    const opts = { ...options, allowFilter: false };
+    const prompt = createGridAskRequest('x', state, opts).prompt;
+    expect(prompt).toContain('Filters: not allowed.');
+    expect(prompt).toContain('- code "品番": no ops.');
+    expect(prompt).not.toContain('"filters"');
+    const result = read(answer({ filters: [f('code', 'contains', { value: 'B' })], sort: [{ column: 'code', direction: 'asc' }] }), state, opts);
+    expect(result.state.filters.columnFilters).toEqual({ code: { kind: 'text', value: 'A' } });
+    expect(result.state.sort).toEqual([{ columnKey: 'code', direction: 'asc' }]);
+    expect(result.dropped).toEqual(['列の条件は変えない設定です']);
+  });
+
+  it('Current view には AI が変えられる列の条件だけを書く', () => {
+    const state = stateOf({ note: { kind: 'text', value: '急ぎ' }, code: { kind: 'text', value: 'A' } });
+    expect(createGridAskRequest('x', state, options).prompt).toContain(
+      'Current view: {"filters":[{"column":"code","op":"contains","value":"A","values":null,"to":null}]',
+    );
+  });
+
+  it('列の key が __proto__ でも普通の列として扱う', () => {
+    const cols: GridColumn<Row>[] = [
+      { key: '__proto__', title: 'P', width: 80, filterType: 'text' },
+      { key: 'b', title: 'B', width: 80, filterType: 'text' },
+    ];
+    const result = read(answer({ filters: [f('__proto__', 'contains', { value: 'x' })] }), stateOf(), { columns: cols });
+    expect(Object.keys(result.state.filters.columnFilters)).toEqual(['__proto__']);
+    expect(result.changed).toBe(true);
+    expect(Object.getPrototypeOf(result.state.filters.columnFilters)).toBe(Object.prototype);
   });
 });
 

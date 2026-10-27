@@ -119,6 +119,8 @@ const typeAndEnter = (input: HTMLInputElement, text: string) => {
   fireEvent.submit(input.form!);
 };
 
+const errorText = (): string | null | undefined => document.querySelector('.ssg-ask-note--error')?.textContent;
+
 // 偽の ask の答えが反映されるまで待ちます(ask の Promise と、その後の setState)。
 const flush = async () => {
   await act(async () => {
@@ -178,19 +180,20 @@ describe('GridAskBar(結合)', () => {
           resolveAnswer = resolve;
         }),
     );
-    let now = 1000;
-    const clock = vi.spyOn(performance, 'now').mockImplementation(() => now);
     const { grid, input } = setup(ask);
     typeAndEnter(input, '東京だけ');
     expect(screen.getByText(/考えています/)).toBeTruthy();
-    // 送った直後のクリック(「聞く」のダブルクリックの 2 回目)では止めない
-    fireEvent.click(screen.getByRole('button', { name: '止める' }));
+    // 「聞く」のダブルクリックの 2 回目(detail 2)では止めない
+    const stop = screen.getByRole('button', { name: '止める' });
+    expect(fireEvent.click(stop, { detail: 2 })).toBe(false);
     expect(signals[0].aborted).toBe(false);
-    now += 600;
-    fireEvent.click(screen.getByRole('button', { name: '止める' }));
-    clock.mockRestore();
+    // 止めたあとの既定の動作(同じ button が「聞く」= submit に変わってフォームを送る)を止める
+    expect(fireEvent.click(stop, { detail: 1 })).toBe(false);
     expect(signals[0].aborted).toBe(true);
+    expect(ask).toHaveBeenCalledTimes(1);
     expect(screen.queryByText(/考えています/)).toBeNull();
+    // 「止める」のダブルクリックの 2 回目が「聞く」に当たっても送り直さない
+    expect(fireEvent.click(screen.getByRole('button', { name: '聞く' }), { detail: 2 })).toBe(false);
     await act(async () => {
       resolveAnswer(tokyoLowStock);
       await Promise.resolve();
@@ -199,9 +202,96 @@ describe('GridAskBar(結合)', () => {
     expect(screen.queryByText('反映した条件')).toBeNull();
 
     typeAndEnter(input, '東京だけ');
+    // 変換中の Esc(変換の取り消し)では止めない
+    fireEvent.keyDown(input, { key: 'Escape', isComposing: true });
+    fireEvent.keyDown(input, { key: 'Escape', keyCode: 229 });
+    expect(signals[1].aborted).toBe(false);
     fireEvent.keyDown(input, { key: 'Escape' });
     expect(signals[1].aborted).toBe(true);
-    expect(screen.queryByRole('alert')).toBeNull();
+    expect(errorText()).toBeUndefined();
+  });
+
+  it('Esc はフォーカスがバーの中か、どこにも無いときに止める(表やほかの部品の Esc は取らない)', () => {
+    const signals: AbortSignal[] = [];
+    const ask = vi.fn<GridAsk>((_request, { signal }) => {
+      signals.push(signal);
+      return new Promise(() => {});
+    });
+    const { input } = setup(ask, { examples: ['東京だけ'] });
+    const outside = document.createElement('button');
+    document.body.append(outside);
+    try {
+      typeAndEnter(input, '東京だけ');
+      outside.focus();
+      fireEvent.keyDown(outside, { key: 'Escape' });
+      expect(signals[0].aborted).toBe(false);
+      outside.blur();
+      fireEvent.keyDown(document.body, { key: 'Escape' });
+      expect(signals[0].aborted).toBe(true);
+
+      // 例のボタンは聞いている間 aria-disabled(押したボタンにフォーカスが残り、Esc が届く)
+      const example = screen.getByRole('button', { name: '東京だけ' });
+      example.focus();
+      fireEvent.click(example);
+      expect(ask).toHaveBeenCalledTimes(2);
+      expect(example.getAttribute('aria-disabled')).toBe('true');
+      expect(example.hasAttribute('disabled')).toBe(false);
+      fireEvent.click(example);
+      expect(ask).toHaveBeenCalledTimes(2);
+      expect(document.activeElement).toBe(example);
+      fireEvent.keyDown(example, { key: 'Escape' });
+      expect(signals[1].aborted).toBe(true);
+      expect(example.hasAttribute('aria-disabled')).toBe(false);
+    } finally {
+      outside.remove();
+    }
+  });
+
+  it('聞いている間の Enter は無視し、止めるを押せばすぐ止まる', () => {
+    const signals: AbortSignal[] = [];
+    const ask = vi.fn<GridAsk>((_request, { signal }) => {
+      signals.push(signal);
+      return new Promise(() => {});
+    });
+    const { input } = setup(ask);
+    typeAndEnter(input, '東京だけ');
+    typeAndEnter(input, '大阪だけ');
+    expect(ask).toHaveBeenCalledTimes(1);
+    fireEvent.click(screen.getByRole('button', { name: '止める' }), { detail: 1 });
+    expect(signals[0].aborted).toBe(true);
+  });
+
+  it('聞いている間に変わった設定(allowSort・列・onApply)で答えを読む', async () => {
+    let resolveAnswer: (value: unknown) => void = () => {};
+    const ask = vi.fn<GridAsk>(() => new Promise((resolve) => (resolveAnswer = resolve)));
+    const grid = createRef<SpreadsheetGridHandle<Row>>();
+    const first = vi.fn();
+    const second = vi.fn();
+    const App = ({ allowSort, onApply }: { allowSort: boolean; onApply: () => void }) => (
+      <>
+        <GridAskBar grid={grid} columns={baseColumns} ask={ask} allowSort={allowSort} onApply={onApply} />
+        <SpreadsheetGrid ref={grid} columns={baseColumns} rows={rows} rowKeyGetter={(row) => row.id} />
+      </>
+    );
+    const { rerender } = render(<App allowSort onApply={first} />);
+    typeAndEnter(screen.getByRole('textbox', { name: 'ことばで絞り込み' }) as HTMLInputElement, '東京の在庫が少ないもの');
+    rerender(<App allowSort={false} onApply={second} />);
+    await act(async () => {
+      resolveAnswer(tokyoLowStock);
+      await Promise.resolve();
+    });
+    expect(grid.current!.getState().sort).toEqual([]);
+    expect(screen.getByText('並びは変えない設定です')).toBeTruthy();
+    expect(first).not.toHaveBeenCalled();
+    expect(second).toHaveBeenCalledTimes(1);
+  });
+
+  it('表がまだ無いときは知らせる', () => {
+    const ask = vi.fn<GridAsk>(async () => tokyoLowStock);
+    render(<GridAskBar grid={{ current: null }} columns={baseColumns} ask={ask} />);
+    typeAndEnter(screen.getByRole('textbox', { name: 'ことばで絞り込み' }) as HTMLInputElement, '東京だけ');
+    expect(ask).not.toHaveBeenCalled();
+    expect(errorText()).toContain('表が見つかりませんでした。');
   });
 
   it('聞いている間に Activity で隠して戻しても、考えているまま固まらない', async () => {
@@ -317,7 +407,7 @@ describe('GridAskBar(結合)', () => {
     });
     typeAndEnter(input, '東京だけ');
     await flush();
-    expect(screen.getByRole('alert').textContent).toContain('AI の答えが表への指示になっていませんでした。');
+    expect(errorText()).toContain('AI の答えが表への指示になっていませんでした。');
     expect(grid.current!.getState().filters.globalText).toBe('ノ');
     expect(screen.queryByText('反映した条件')).toBeNull();
   });
@@ -355,22 +445,43 @@ describe('GridAskBar(結合)', () => {
     const { grid, input } = setup(ask, { onError });
     typeAndEnter(input, '東京だけ');
     await flush();
-    expect(screen.getByRole('alert').textContent).toContain('AI に聞けませんでした。');
+    expect(errorText()).toContain('AI に聞けませんでした。');
     expect(onError).toHaveBeenCalledWith(failure);
 
+    // 「もう一度」は失敗した文を送り直す(入力欄を書き換えていても)
+    fireEvent.change(input, { target: { value: '大阪' } });
     fireEvent.click(screen.getByRole('button', { name: 'もう一度' }));
     await flush();
-    expect(screen.getByRole('alert').textContent).toContain('AI の答えを読めませんでした。');
+    expect(ask.mock.calls[1][0].text).toBe('東京だけ');
+    expect(errorText()).toContain('AI の答えを読めませんでした。');
     expect(viewIds(grid)).toEqual([1, 2, 3, 4]);
   });
 
-  it('例の文を押すとその文で聞く', async () => {
+  it('例の文を押すとその文で聞く(同じ例が 2 つあっても key は重ならない)', async () => {
     const ask = vi.fn<GridAsk>(async () => tokyoLowStock);
-    const { input } = setup(ask, { examples: ['東京の在庫が 10 個以下'] });
-    fireEvent.click(screen.getByRole('button', { name: '東京の在庫が 10 個以下' }));
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const { input } = setup(ask, { examples: ['東京の在庫が 10 個以下', '東京の在庫が 10 個以下'] });
+    expect(consoleError).not.toHaveBeenCalled();
+    consoleError.mockRestore();
+    const example = screen.getAllByRole('button', { name: '東京の在庫が 10 個以下' })[0];
+    expect(example.getAttribute('title')).toBe('東京の在庫が 10 個以下');
+    fireEvent.click(example);
     await flush();
     expect(ask.mock.calls[0][0].text).toBe('東京の在庫が 10 個以下');
     expect(input.value).toBe('東京の在庫が 10 個以下');
+    // チップは全文を title に持つ(狭い幅で省略されても読める)
+    expect(screen.getAllByRole('listitem')[0].getAttribute('title')).toBe('倉庫: "東京"');
+  });
+
+  it('allowFilter: false は列の条件を変えない', async () => {
+    const ask = vi.fn<GridAsk>(async () => tokyoLowStock);
+    const { grid, input } = setup(ask, { allowFilter: false });
+    typeAndEnter(input, '東京の在庫が少ないもの');
+    await flush();
+    expect(ask.mock.calls[0][0].prompt).toContain('Filters: not allowed.');
+    expect(grid.current!.getState().filters.columnFilters).toEqual({});
+    expect(grid.current!.getState().sort).toEqual([{ columnKey: 'stock', direction: 'desc' }]);
+    expect(screen.getByText('列の条件は変えない設定です')).toBeTruthy();
   });
 
   it('allowColumnVisibility で列を隠し、元に戻すで見せる', async () => {

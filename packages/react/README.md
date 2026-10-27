@@ -63,7 +63,7 @@ Props, the `ref` handle and types are the same as `SpreadsheetGrid`. Props of fe
 
 ## Natural-language filtering: `/ai` (0.57.0+)
 
-`GridAskBar` from the `/ai` entry turns a sentence ("Tokyo items with 10 or fewer in stock, most expensive first") into the grid's filters, sort, global search and column visibility. The grid never calls an AI: your `ask` function forwards the request to your own server, which calls any model with structured output. Row data is never sent, and every answer is validated, shown as chips and undoable. It is a separate entry (about 10.1KB gzip). Server code for Claude, OpenAI, Gemini and the Vercel AI SDK (AI Gateway) is in the [guide](https://datasheet-grid.vercel.app/docs/guides/ai-filter); the API is in `API_REFERENCE.md` (「ことばで絞り込み」).
+`GridAskBar` from the `/ai` entry turns a sentence ("Tokyo items with 10 or fewer in stock, most expensive first") into the grid's filters, sort, global search and column visibility. The grid never calls an AI: your `ask` function forwards the request to your own server, which calls any model with structured output. Row data is never sent, and every answer is validated, shown as chips and undoable. It is a separate entry (about 11.5KB gzip). Server code for Claude, OpenAI, Gemini and the Vercel AI SDK (AI Gateway) is in the [guide](https://datasheet-grid.vercel.app/docs/guides/ai-filter); the API is in `API_REFERENCE.md` (「ことばで絞り込み」).
 
 ```tsx
 import { GridAskBar } from '@ishibashi0112/spreadsheet-grid/ai'
@@ -132,7 +132,7 @@ props・`ref` ハンドル・型は `SpreadsheetGrid` と同じです。渡し�
 
 ### ことばで絞り込み: `/ai`(0.57.0 から)
 
-`/ai` の入口の `GridAskBar` は、「東京の在庫が 10 個以下を高い順に」のような文から、グリッドのフィルター・並び・グローバル検索・列の表示を AI に入れさせます。グリッドは AI を呼びません。利用側の `ask` が自分のサーバーへ頼みを送り、サーバーが好きな AI を構造化出力で呼びます。行のデータは送らず、答えはすべて検査してチップで見せ、元に戻せます。別の入口です(約 10.1KB gzip)。Claude・OpenAI・Gemini・Vercel AI SDK(AI Gateway)のサーバー側のコードは[ガイド](https://datasheet-grid.vercel.app/docs/guides/ai-filter)に、API は `API_REFERENCE.md` の「ことばで絞り込み」にあります。
+`/ai` の入口の `GridAskBar` は、「東京の在庫が 10 個以下を高い順に」のような文から、グリッドのフィルター・並び・グローバル検索・列の表示を AI に入れさせます。グリッドは AI を呼びません。利用側の `ask` が自分のサーバーへ頼みを送り、サーバーが好きな AI を構造化出力で呼びます。行のデータは送らず、答えはすべて検査してチップで見せ、元に戻せます。別の入口です(約 11.5KB gzip)。Claude・OpenAI・Gemini・Vercel AI SDK(AI Gateway)のサーバー側のコードは[ガイド](https://datasheet-grid.vercel.app/docs/guides/ai-filter)に、API は `API_REFERENCE.md` の「ことばで絞り込み」にあります。
 
 ```tsx
 import { GridAskBar } from '@ishibashi0112/spreadsheet-grid/ai'
