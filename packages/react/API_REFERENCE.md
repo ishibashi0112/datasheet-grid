@@ -1708,13 +1708,15 @@ export async function POST(req: Request) {
   const { system, prompt, schema } = await req.json();
   const message = await anthropic.messages.create({
     model: 'claude-haiku-5-5', // 小さく速いモデルで足りる
-    max_tokens: 1024,
+    max_tokens: 4096, // 考える分(thinking)も含む上限
     system,
     messages: [{ role: 'user', content: prompt }],
-    output_config: { format: { type: 'json_schema', schema } },
+    // effort: 'low' で考える量を減らして速く答えさせる。format で答えを schema の形に固定する。
+    output_config: { effort: 'low', format: { type: 'json_schema', schema } },
   });
+  // 答えの文字列をそのまま返す(読んで検査するのはバー側。途中で切れた答えも「読めませんでした」になる)。
   const text = message.content.find((block) => block.type === 'text');
-  return Response.json(text ? JSON.parse(text.text) : null);
+  return Response.json(text ? text.text : null);
 }
 ```
 
