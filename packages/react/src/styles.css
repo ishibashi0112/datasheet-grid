@@ -4126,8 +4126,13 @@
     flex-direction: column;
     gap: 6px;
   }
+  /* 空の間も読み上げの領域(aria-live)として置いておきます(display: none だと中身と同時に現れて読み上げられない)。 */
   .ssg-ask-output:empty {
-    display: none;
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
   }
   .ssg-ask-status {
     display: flex;

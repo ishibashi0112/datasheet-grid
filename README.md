@@ -302,14 +302,17 @@ Props, the `ref` handle and types are the same as `SpreadsheetGrid`. Props of fe
 ```tsx
 import { GridAskBar, type GridAsk } from '@ishibashi0112/spreadsheet-grid/ai';
 
-const ask: GridAsk = async (request, { signal }) =>
-  (await fetch('/api/grid-ask', { method: 'POST', body: JSON.stringify(request), signal })).json();
+const ask: GridAsk = async (request, { signal }) => {
+  const res = await fetch('/api/grid-ask', { method: 'POST', body: JSON.stringify(request), signal });
+  if (!res.ok) throw new Error(`grid-ask: ${res.status}`);
+  return res.json();
+};
 
 <GridAskBar grid={gridRef} columns={columns} ask={ask} examples={['東京の在庫が 10 個以下']} />
 <SpreadsheetGrid ref={gridRef} columns={columns} rows={rows} />
 ```
 
-It is a separate entry (~9.7KB gzip), so `SpreadsheetGrid` and `/lite` do not grow. Server code for Claude, OpenAI, Gemini and the Vercel AI SDK (AI Gateway) is in the [guide with a live demo](https://datasheet-grid.vercel.app/docs/guides/ai-filter); the full API and the list of what the AI can change are in the [`/ai` section of the API reference](packages/react/API_REFERENCE.md#ことばで絞り込みai-サブパス).
+It is a separate entry (~10.1KB gzip), so `SpreadsheetGrid` and `/lite` do not grow. Server code for Claude, OpenAI, Gemini and the Vercel AI SDK (AI Gateway) is in the [guide with a live demo](https://datasheet-grid.vercel.app/docs/guides/ai-filter); the full API and the list of what the AI can change are in the [`/ai` section of the API reference](packages/react/API_REFERENCE.md#ことばで絞り込みai-サブパス).
 
 ## Server-side mode (SSRM)
 
@@ -693,14 +696,17 @@ props・`ref` ハンドル・型は `SpreadsheetGrid` と同じです。渡し�
 ```tsx
 import { GridAskBar, type GridAsk } from '@ishibashi0112/spreadsheet-grid/ai';
 
-const ask: GridAsk = async (request, { signal }) =>
-  (await fetch('/api/grid-ask', { method: 'POST', body: JSON.stringify(request), signal })).json();
+const ask: GridAsk = async (request, { signal }) => {
+  const res = await fetch('/api/grid-ask', { method: 'POST', body: JSON.stringify(request), signal });
+  if (!res.ok) throw new Error(`grid-ask: ${res.status}`);
+  return res.json();
+};
 
 <GridAskBar grid={gridRef} columns={columns} ask={ask} examples={['東京の在庫が 10 個以下']} />
 <SpreadsheetGrid ref={gridRef} columns={columns} rows={rows} />
 ```
 
-別の入口(約 9.7KB gzip)なので、`SpreadsheetGrid` と `/lite` の大きさは変わりません。Claude・OpenAI・Gemini・Vercel AI SDK(AI Gateway)のサーバー側のコードは[デモ付きのガイド](https://datasheet-grid.vercel.app/docs/guides/ai-filter)に、API の全体と AI が変えられるものの一覧は [API リファレンスの `/ai` の節](packages/react/API_REFERENCE.md#ことばで絞り込みai-サブパス)にあります。
+別の入口(約 10.1KB gzip)なので、`SpreadsheetGrid` と `/lite` の大きさは変わりません。Claude・OpenAI・Gemini・Vercel AI SDK(AI Gateway)のサーバー側のコードは[デモ付きのガイド](https://datasheet-grid.vercel.app/docs/guides/ai-filter)に、API の全体と AI が変えられるものの一覧は [API リファレンスの `/ai` の節](packages/react/API_REFERENCE.md#ことばで絞り込みai-サブパス)にあります。
 
 ### サーバーサイドモード（SSRM）
 

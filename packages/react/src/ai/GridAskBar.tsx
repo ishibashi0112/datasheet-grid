@@ -2,7 +2,7 @@
 //   チップ・元に戻す・使えなかった部分・AI からのひとこと)。状態とふるまいは useGridAsk。
 //   グリッドの外に置くため、色のトークンは style.css のトークン定義の対象(.ssg-ask)から読みます。
 //   本体のモジュールは import しない(useGridAsk の先頭のコメント参照)。テーマの解決も core の store から直接行います。
-import { useState, useSyncExternalStore, type KeyboardEvent } from 'react';
+import { useEffect, useRef, useState, useSyncExternalStore, type KeyboardEvent } from 'react';
 import { systemColorSchemeStore } from '@ishibashi0112/spreadsheet-grid-core/controllers/systemColorSchemeStore';
 import { resolveGridTheme } from '@ishibashi0112/spreadsheet-grid-core/logic/theme';
 import type { GridTheme } from '../model/gridTypes';
@@ -44,8 +44,39 @@ export function GridAskBar<T>({
   const dark = resolveGridTheme(theme, systemPrefersDark) === 'dark';
   const asking = ask.status === 'asking';
   const session = ask.session;
+  const inputRef = useRef<HTMLInputElement>(null);
+  const chipsRef = useRef<HTMLUListElement>(null);
+  // 送った時刻です(「聞く」のダブルクリックの 2 回目が、同じ場所に出る「止める」に当たって止めないように)。
+  const sentAtRef = useRef(Number.NEGATIVE_INFINITY);
+  // 押したボタンが消える操作(チップの × / 元に戻す / 閉じる / もう一度)のあとのフォーカスの行き先です。
+  //   chip は外したチップの位置(残ったチップの同じ位置か最後へ)、null は入力欄。
+  const focusAfterRef = useRef<{ chip: number | null; at: number } | null>(null);
+
+  // フォーカスが body に落ちたとき(押したボタンが消えたとき)だけ、直前の操作の行き先へ移します。
+  useEffect(() => {
+    const pending = focusAfterRef.current;
+    focusAfterRef.current = null;
+    if (pending === null || performance.now() - pending.at > 1000) {
+      return;
+    }
+    const active = document.activeElement;
+    if (active !== null && active !== document.body) {
+      return;
+    }
+    const chips = chipsRef.current?.querySelectorAll<HTMLButtonElement>('.ssg-ask-chip-remove');
+    const target =
+      pending.chip !== null && chips && chips.length > 0
+        ? chips[Math.min(pending.chip, chips.length - 1)]
+        : inputRef.current;
+    target?.focus();
+  });
+
+  const keepFocus = (chip: number | null = null) => {
+    focusAfterRef.current = { chip, at: performance.now() };
+  };
 
   const send = (value: string) => {
+    sentAtRef.current = performance.now();
     void ask.submit(value);
   };
 
@@ -77,6 +108,7 @@ export function GridAskBar<T>({
           />
         </svg>
         <input
+          ref={inputRef}
           className="ssg-ask-input"
           type="text"
           value={text}
@@ -87,7 +119,16 @@ export function GridAskBar<T>({
           onKeyDown={handleKeyDown}
         />
         {asking ? (
-          <button type="button" className="ssg-ask-button" onClick={ask.cancel}>
+          <button
+            type="button"
+            className="ssg-ask-button"
+            onClick={() => {
+              // 送った直後(「聞く」のダブルクリックの 2 回目)では止めません。Esc はいつでも止めます。
+              if (performance.now() - sentAtRef.current >= 500) {
+                ask.cancel();
+              }
+            }}
+          >
             止める
           </button>
         ) : (
@@ -125,7 +166,15 @@ export function GridAskBar<T>({
         {!asking && ask.error !== null && (
           <div className="ssg-ask-note ssg-ask-note--error" role="alert">
             <span>{ask.error}</span>
-            <button type="button" className="ssg-ask-link" onClick={() => send(text)} disabled={text.trim() === ''}>
+            <button
+              type="button"
+              className="ssg-ask-link"
+              onClick={() => {
+                keepFocus();
+                send(text);
+              }}
+              disabled={text.trim() === ''}
+            >
               もう一度
             </button>
           </div>
@@ -137,17 +186,31 @@ export function GridAskBar<T>({
                 <div className="ssg-ask-result-head">
                   <span className="ssg-ask-result-title">反映した条件</span>
                   <span className="ssg-ask-result-actions">
-                    <button type="button" className="ssg-ask-link" onClick={ask.undo}>
+                    <button
+                      type="button"
+                      className="ssg-ask-link"
+                      onClick={() => {
+                        keepFocus();
+                        ask.undo();
+                      }}
+                    >
                       元に戻す
                     </button>
-                    <button type="button" className="ssg-ask-link" onClick={ask.dismiss}>
+                    <button
+                      type="button"
+                      className="ssg-ask-link"
+                      onClick={() => {
+                        keepFocus();
+                        ask.dismiss();
+                      }}
+                    >
                       閉じる
                     </button>
                   </span>
                 </div>
                 {session.items.length > 0 ? (
-                  <ul className="ssg-ask-chips">
-                    {session.items.map((item) => (
+                  <ul ref={chipsRef} className="ssg-ask-chips">
+                    {session.items.map((item, index) => (
                       <li key={item.id} className="ssg-ask-chip">
                         <span className="ssg-ask-chip-label">{item.label}</span>
                         <span className="ssg-ask-chip-text">{item.text}</span>
@@ -155,7 +218,10 @@ export function GridAskBar<T>({
                           type="button"
                           className="ssg-ask-chip-remove"
                           aria-label={`${item.label} ${item.text} を外す`}
-                          onClick={() => ask.remove(item.id)}
+                          onClick={() => {
+                            keepFocus(index);
+                            ask.remove(item.id);
+                          }}
                         >
                           ×
                         </button>
@@ -170,7 +236,14 @@ export function GridAskBar<T>({
             {session.phase === 'unchanged' && (
               <div className="ssg-ask-note">
                 <span>変える条件はありませんでした。</span>
-                <button type="button" className="ssg-ask-link" onClick={ask.dismiss}>
+                <button
+                  type="button"
+                  className="ssg-ask-link"
+                  onClick={() => {
+                    keepFocus();
+                    ask.dismiss();
+                  }}
+                >
                   閉じる
                 </button>
               </div>
@@ -178,7 +251,14 @@ export function GridAskBar<T>({
             {session.phase === 'undone' && (
               <div className="ssg-ask-note">
                 <span>元に戻しました。</span>
-                <button type="button" className="ssg-ask-link" onClick={ask.dismiss}>
+                <button
+                  type="button"
+                  className="ssg-ask-link"
+                  onClick={() => {
+                    keepFocus();
+                    ask.dismiss();
+                  }}
+                >
                   閉じる
                 </button>
               </div>

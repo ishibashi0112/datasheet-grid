@@ -357,7 +357,55 @@ describe('readGridAskAnswer', () => {
     expect(result.state.filters.columnFilters.memo).toEqual({
       kind: 'textSet',
       condition: { mode: 'equals', value: 'b' },
-      set: null,
+      set: { values: ['a'] },
+    });
+  });
+
+  it('refine で複合の列の片方だけ来たら、今の記述子のもう片方は残す', () => {
+    const state = stateOf({
+      stock: { kind: 'numberSet', condition: { mode: 'comparison', operator: '<=', value: 10 }, set: null },
+    });
+    // 「さらに 0 は除いて」: 「10 以下」は残して選択を足す
+    expect(read(answer({ mode: 'refine', filters: [f('stock', 'notIn', { values: ['0'] })] }), state).state.filters.columnFilters.stock).toEqual({
+      kind: 'numberSet',
+      condition: { mode: 'comparison', operator: '<=', value: 10 },
+      set: { mode: 'exclude', values: ['0'] },
+    });
+    // 今の条件の側は上書きする(2 つ目扱いにしない)
+    const both = stateOf({
+      stock: {
+        kind: 'numberSet',
+        condition: { mode: 'comparison', operator: '<=', value: 10 },
+        set: { mode: 'exclude', values: ['0'] },
+      },
+    });
+    const replaced = read(answer({ mode: 'refine', filters: [f('stock', '<=', { value: '5' })] }), both);
+    expect(replaced.state.filters.columnFilters.stock).toEqual({
+      kind: 'numberSet',
+      condition: { mode: 'comparison', operator: '<=', value: 5 },
+      set: { mode: 'exclude', values: ['0'] },
+    });
+    expect(replaced.dropped).toEqual([]);
+    // 同じ答えの中の 2 つ目は今までどおり捨てる
+    const twice = read(
+      answer({ mode: 'refine', filters: [f('stock', '<=', { value: '5' }), f('stock', '>=', { value: '1' })] }),
+      both,
+    );
+    expect(twice.dropped).toEqual(['在庫数: 条件は 1 列に 1 つまでです']);
+    // replace は今の記述子を使わない
+    expect(read(answer({ filters: [f('stock', 'notIn', { values: ['0'] })] }), state).state.filters.columnFilters.stock).toEqual({
+      kind: 'numberSet',
+      condition: null,
+      set: { mode: 'exclude', values: ['0'] },
+    });
+  });
+
+  it('numberSet の選択の値は数として揃える', () => {
+    const result = read(answer({ filters: [f('stock', 'in', { values: ['1,000', '０', '10.0', '未定'] })] }));
+    expect(result.state.filters.columnFilters.stock).toEqual({
+      kind: 'numberSet',
+      condition: null,
+      set: { mode: 'include', values: ['1000', '0', '10', '未定'] },
     });
   });
 
@@ -374,6 +422,25 @@ describe('readGridAskAnswer', () => {
     expect(result.state.sort).toEqual([]);
     expect(result.state.filters.globalText).toBe('');
     expect(isGridAskColumnsChanged(state, result.state)).toBe(false);
+  });
+
+  it('replace でも AI に見せていない並びと、絞り込めない列のフィルターは残す', () => {
+    const state = stateOf(
+      { note: { kind: 'text', value: '至急' }, code: { kind: 'text', value: 'A' } },
+      { sort: [{ columnKey: 'secret', direction: 'desc' }, { columnKey: 'code', direction: 'asc' }] },
+    );
+    const replaced = read(answer({ sort: [{ column: 'price', direction: 'asc' }] }), state);
+    expect(replaced.state.filters.columnFilters).toEqual({ note: { kind: 'text', value: '至急' } });
+    expect(replaced.state.sort).toEqual([
+      { columnKey: 'price', direction: 'asc' },
+      { columnKey: 'secret', direction: 'desc' },
+    ]);
+    expect(read(answer({}), state).state.sort).toEqual([{ columnKey: 'secret', direction: 'desc' }]);
+    // refine で並びが来ても、見せていない列の並びは後ろに残す
+    expect(read(answer({ mode: 'refine', sort: [{ column: 'price', direction: 'asc' }] }), state).state.sort).toEqual([
+      { columnKey: 'price', direction: 'asc' },
+      { columnKey: 'secret', direction: 'desc' },
+    ]);
   });
 
   it('refine は今の条件に足し、clear で列の条件を外す', () => {
@@ -411,6 +478,10 @@ describe('readGridAskAnswer', () => {
     expect(result.state.filters.globalText).toBe('ペン');
     expect(result.dropped).toEqual(['並びは変えない設定です', '検索の文字は変えない設定です', '列の表示は変えない設定です']);
     expect(result.changed).toBe(false);
+    // replace の「空から」どおりの空の検索は知らせない
+    const empty = read(answer({ search: '' }), state, { ...options, allowSearch: false });
+    expect(empty.dropped).toEqual([]);
+    expect(empty.state.filters.globalText).toBe('ペン');
   });
 
   it('列を隠す・見せる(無い列は捨て、すべては隠さない)', () => {
@@ -446,6 +517,21 @@ describe('readGridAskAnswer', () => {
       message: 'AI の答えが表への指示になっていませんでした。言い方を変えてください。',
     });
     expect(readGridAskAnswer(null, stateOf(), options).ok).toBe(false);
+  });
+
+  it('filters の配列が無い答え・mode が違う答えは表を変えずに ok: false(サーバーのエラーなど)', () => {
+    const state = stateOf({ code: { kind: 'text', value: 'A' } }, { sort: [{ columnKey: 'code', direction: 'asc' }] });
+    const shape = { ok: false, message: 'AI の答えが表への指示になっていませんでした。言い方を変えてください。' };
+    expect(readGridAskAnswer({ error: 'Too many requests' }, state, options)).toEqual(shape);
+    expect(readGridAskAnswer({}, state, options)).toEqual(shape);
+    expect(readGridAskAnswer(JSON.stringify({ error: 'x' }), state, options)).toEqual(shape);
+    expect(readGridAskAnswer({ mode: 'refine', filters: { code: 'A' } }, state, options)).toEqual(shape);
+    expect(readGridAskAnswer({ mode: 'add', filters: [] }, state, options)).toEqual(shape);
+  });
+
+  it('知らない条件の名前は答えの文字のまま理由に出す', () => {
+    const result = read(answer({ filters: [f('code', 'toString' as GridAskFilter['op'], { value: 'A' })] }));
+    expect(result.dropped).toEqual(['品番: この列では「toString」の条件は使えません']);
   });
 
   it('答えの欠けた欄は無いものとして扱う', () => {

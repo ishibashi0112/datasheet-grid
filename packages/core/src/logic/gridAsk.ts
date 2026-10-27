@@ -645,6 +645,11 @@ const pickValues = <T,>(
     } else if (column.filterType === 'dateSet') {
       // dateSet の選択は日付キー('YYYY-MM-DD')。日付でない値はセルの生値のキーとしてそのまま。
       value = toDateKey(text) ?? text;
+    } else if (column.filterType === 'numberSet') {
+      // numberSet の選択はセルの数を文字列にしたもの('1000')。'1,000' / '０' / '10.0' も同じ数のキーにします
+      //   (比べる条件と同じく parseNumberText で読む。数でない値はそのまま)。
+      const number = parseNumberText(text);
+      value = number === null ? text : String(number);
     }
     if (value === null) {
       unknown.push(text);
@@ -659,12 +664,16 @@ const pickValues = <T,>(
 };
 
 type CompositeValue = Extract<ColumnFilterValue, { kind: 'numberSet' | 'textSet' | 'dateSet' }>;
+type CompositeSide = 'condition' | 'set';
 
+// base は始めにする記述子(同じ答えで先に決めた値、refine では今の値)。fixed はその列で同じ答えの中で
+//   もう決めた側です(複合列の条件と選択は 1 つずつ。今の値の側は上書きします)。
 const buildFilterValue = <T,>(
   column: AskColumn<T>,
   op: GridAskOp,
   filter: Record<string, unknown>,
   base: ColumnFilterValue | undefined,
+  fixed: ReadonlySet<CompositeSide>,
   dropped: string[],
 ): Built<ColumnFilterValue> => {
   const filterType = column.filterType as AskFilterType;
@@ -697,13 +706,14 @@ const buildFilterValue = <T,>(
       return ok({ kind: 'number', raw: formatParsedNumberFilter(parsed.value), parsed: parsed.value });
     }
     default: {
-      // 条件 AND 選択の複合です。同じ答えの中で同じ列に条件と選択が 1 つずつ来たら合わせます。
+      // 条件 AND 選択の複合です。同じ答えの中で同じ列に条件と選択が 1 つずつ来たら合わせます。refine で
+      //   片方だけ来たときは、今の記述子のもう片方を残します(「さらに 0 は除いて」で「10 以下」を消さない)。
       const next: CompositeValue =
         base && base.kind === filterType
           ? (cloneColumnFilterValue(base) as CompositeValue)
           : ({ kind: filterType, condition: null, set: null } as CompositeValue);
       if (op === 'in' || op === 'notIn') {
-        if (next.set) {
+        if (fixed.has('set')) {
           return ng('値の選択は 1 列に 1 つまでです');
         }
         const picked = pickValues(column, filter.values, dropped);
@@ -713,7 +723,7 @@ const buildFilterValue = <T,>(
         next.set = { mode: op === 'notIn' ? 'exclude' : 'include', values: picked.value };
         return ok(next);
       }
-      if (next.condition) {
+      if (fixed.has('condition')) {
         return ng('条件は 1 列に 1 つまでです');
       }
       if (next.kind === 'numberSet') {
@@ -783,8 +793,12 @@ export const readGridAskAnswer = <T,>(
   if (parsed === undefined) {
     return { ok: false, message: READ_ERROR };
   }
+  // filters の配列が無い答え(サーバーのエラーの { error } など)と mode が違う答えは、表を変えずに読めなかった
+  //   ことにします(replace として読むと、表の条件が全部消えるため)。mode が無いだけなら replace です。
   const source = asRecord(parsed);
-  if (!source) {
+  const rawFilters: unknown[] | null = source && Array.isArray(source.filters) ? source.filters : null;
+  const mode = source?.mode;
+  if (!source || rawFilters === null || (mode !== undefined && mode !== 'replace' && mode !== 'refine')) {
     return { ok: false, message: SHAPE_ERROR };
   }
   const columns = resolveAskColumns(options, state);
@@ -792,21 +806,27 @@ export const readGridAskAnswer = <T,>(
   const allowSort = isAllowed(options.allowSort, true);
   const allowSearch = isAllowed(options.allowSearch, true);
   const allowColumnVisibility = isAllowed(options.allowColumnVisibility, false);
-  const refine = source.mode === 'refine';
+  const refine = mode === 'refine';
   const dropped: string[] = [];
 
-  // replace は AI に見せた列の条件・並び・検索を空にしてから始めます(見せていない列の条件と、隠した列はそのまま)。
+  // replace は AI に見せた列の条件・並び・検索を空にしてから始めます。AI が変えられない条件(見せていない列の
+  //   条件と並び、絞り込めない列 = custom などのフィルター)と、隠した列はそのままです。
   const columnFilters: Record<string, ColumnFilterValue> = {};
   for (const [key, value] of Object.entries(state.filters.columnFilters)) {
-    if (refine || !byKey.has(key)) {
+    const column = byKey.get(key);
+    if (refine || !column || column.filterType === null) {
       columnFilters[key] = cloneColumnFilterValue(value);
     }
   }
-  let sort: GridSortEntry[] = refine || !allowSort ? state.sort.map((entry) => ({ ...entry })) : [];
+  // 見せていない列の並びは、AI の並びの後ろに残します(Current view に出していないので AI は書けません)。
+  const keptSort = state.sort.filter((entry) => !byKey.has(entry.columnKey)).map((entry) => ({ ...entry }));
+  let sort: GridSortEntry[] = refine || !allowSort ? state.sort.map((entry) => ({ ...entry })) : keptSort;
   let globalText = refine || !allowSearch ? state.filters.globalText : '';
 
   const touched = new Set<string>();
-  for (const rawFilter of Array.isArray(source.filters) ? source.filters : []) {
+  // 複合列で、同じ答えの中でもう決めた側(条件 / 選択)です。
+  const fixedSides = new Map<string, Set<CompositeSide>>();
+  for (const rawFilter of rawFilters) {
     const filter = asRecord(rawFilter);
     if (!filter) {
       continue;
@@ -822,12 +842,15 @@ export const readGridAskAnswer = <T,>(
       continue;
     }
     if (!column.ops.includes(op)) {
-      dropped.push(`${column.title}: この列では「${OP_LABELS[op] ?? String(filter.op)}」の条件は使えません`);
+      // OP_LABELS は自分のキーだけを引きます('toString' などで prototype の値を出さない)。
+      const opLabel = Object.prototype.hasOwnProperty.call(OP_LABELS, op) ? OP_LABELS[op] : String(filter.op);
+      dropped.push(`${column.title}: この列では「${opLabel}」の条件は使えません`);
       continue;
     }
     if (op === 'clear') {
       delete columnFilters[column.key];
       touched.delete(column.key);
+      fixedSides.delete(column.key);
       continue;
     }
     const isComposite =
@@ -836,19 +859,19 @@ export const readGridAskAnswer = <T,>(
       dropped.push(`${column.title}: 条件は 1 列に 1 つまでです`);
       continue;
     }
-    const built = buildFilterValue(
-      column,
-      op,
-      filter,
-      touched.has(column.key) ? columnFilters[column.key] : undefined,
-      dropped,
-    );
+    // replace では AI に見せた列の今の条件を消してあるので、base は同じ答えで先に決めた値だけになります。
+    const sides = fixedSides.get(column.key) ?? new Set<CompositeSide>();
+    const built = buildFilterValue(column, op, filter, columnFilters[column.key], sides, dropped);
     if ('error' in built) {
       dropped.push(`${column.title}: ${built.error}`);
       continue;
     }
     columnFilters[column.key] = built.value;
     touched.add(column.key);
+    if (isComposite) {
+      sides.add(op === 'in' || op === 'notIn' ? 'set' : 'condition');
+      fixedSides.set(column.key, sides);
+    }
   }
 
   if (Array.isArray(source.sort)) {
@@ -869,7 +892,7 @@ export const readGridAskAnswer = <T,>(
           nextSort.push({ columnKey: column.key, direction: entry.direction === 'desc' ? 'desc' : 'asc' });
         }
       }
-      sort = nextSort;
+      sort = [...nextSort, ...keptSort];
     }
   }
 
@@ -877,7 +900,8 @@ export const readGridAskAnswer = <T,>(
     const search = source.search.trim().slice(0, TEXT_LIMIT);
     if (allowSearch) {
       globalText = search;
-    } else if (search !== state.filters.globalText) {
+    } else if (search !== '' && search !== state.filters.globalText) {
+      // 空は replace の「空から始める」どおりに返しただけなので知らせません(検索はそのまま)。
       dropped.push('検索の文字は変えない設定です');
     }
   }

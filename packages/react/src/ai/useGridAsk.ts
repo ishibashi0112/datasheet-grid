@@ -18,7 +18,7 @@ import type { GridColumn, GridState } from '../model/gridTypes';
 
 /**
  * AI に聞く関数です(利用側が用意する)。`request` を自分のサーバーへ送り、AI の答え(オブジェクトか JSON の文字列)を返します。
- * `signal` は「止める」で abort されます(fetch にそのまま渡せます)。
+ * `signal` は「止める」/ Esc / アンマウントで abort されます(fetch にそのまま渡せます)。
  */
 export type GridAsk = (request: GridAskRequest, context: { signal: AbortSignal }) => Promise<unknown> | unknown;
 
@@ -104,7 +104,11 @@ const toApplicable = (current: GridState, next: GridState): GridState =>
   isGridAskColumnsChanged(current, next) ? next : { ...next, columns: undefined };
 
 // 元に戻す: 今の列幅・列の順番・固定はそのままで、見え方(フィルター / 並び / 検索 / 隠した列)だけを戻します。
-const restoreView = (current: GridState, before: GridState): GridState => {
+//   列の表示を AI に任せていないときは、隠した列も今のまま(手で隠した列を戻さない)。
+const restoreView = (current: GridState, before: GridState, columnVisibility: boolean): GridState => {
+  if (!columnVisibility) {
+    return { ...current, filters: before.filters, sort: before.sort };
+  }
   const hidden = new Set((before.columns ?? []).filter((entry) => entry.visible === false).map((entry) => entry.key));
   return {
     ...current,
@@ -129,13 +133,20 @@ export function useGridAsk<T>(options: UseGridAskOptions<T>): UseGridAskResult {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [session, setSession] = useState<SessionState | null>(null);
-  // 聞いている間の AbortController(止める / 次の頼み / アンマウントで abort)。
+  // 聞いている間の AbortController(止める / Esc / アンマウントで abort。聞いている間の次の頼みは受け付けない)。
   const pendingRef = useRef<AbortController | null>(null);
 
+  // アンマウントで聞くのをやめます。<Activity mode="hidden"> で隠したときもここを通り、また表示したときに
+  //   「考えています」のまま固まらないよう status も戻します(本当のアンマウントでは何も起きない)。
   useEffect(
     () => () => {
-      pendingRef.current?.abort();
+      const controller = pendingRef.current;
+      if (controller === null) {
+        return;
+      }
       pendingRef.current = null;
+      controller.abort();
+      setStatus('idle');
     },
     [],
   );
@@ -212,14 +223,19 @@ export function useGridAsk<T>(options: UseGridAskOptions<T>): UseGridAskResult {
     setStatus('idle');
   };
 
-  // 反映したあと表が手で変えられていないかを確かめてから、今の状態を返します。
+  const columnVisibility = options.allowColumnVisibility ?? false;
+  // 反映したあと表が手で変えられていないかを確かめてから、今の状態を返します。列の表示を AI に任せていない
+  //   ときは、隠した列の違い(手で隠した列)は見ません。
   const readUnchanged = (current: SessionState): { target: GridAskTarget; now: GridState } | null => {
     const target = options.grid.current;
     if (target === null || current.view.phase !== 'applied') {
       return null;
     }
     const now = target.getState();
-    if (!isSameGridAskView(now, current.applied)) {
+    const same = columnVisibility
+      ? isSameGridAskView(now, current.applied)
+      : isSameGridAskView({ ...now, columns: undefined }, { ...current.applied, columns: undefined });
+    if (!same) {
       setNotice(CHANGED_NOTICE);
       return null;
     }
@@ -234,7 +250,7 @@ export function useGridAsk<T>(options: UseGridAskOptions<T>): UseGridAskResult {
     if (checked === null) {
       return;
     }
-    const restored = restoreView(checked.now, session.before);
+    const restored = restoreView(checked.now, session.before, columnVisibility);
     checked.target.applyState(toApplicable(checked.now, restored));
     setNotice(null);
     setSession({ ...session, view: { ...session.view, phase: 'undone' } });
