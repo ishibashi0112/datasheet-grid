@@ -20,7 +20,7 @@
     こちらに勝ちます。style.css をレイヤーに入れているときは、このファイルも同じレイヤーの style.css の後に入れます。
   - 対象は style.css のトークン定義と同じ要素(ルート + document.body 直下のポータル)です。
 */
-:where(.ssg-root, .ssg-popover, .ssg-menu-panel, .ssg-filter-popover, .ssg-select-editor-popover, [data-grid-drag-ghost], .ssg-tooltip) {
+:where(.ssg-root, .ssg-popover, .ssg-menu-panel, .ssg-filter-popover, .ssg-select-editor-popover, [data-grid-drag-ghost], .ssg-tooltip, .ssg-ask) {
   /* ---- 入力(shadcn/ui の変数) ---- */
   --ssg-ds-surface: var(--background);
   --ssg-ds-surface-muted: color-mix(in srgb, var(--muted) 50%, var(--background));

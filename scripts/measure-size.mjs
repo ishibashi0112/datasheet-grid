@@ -49,6 +49,14 @@ const CONFIGS = [
     source: 'dist',
     code: "import { createSpreadsheetGrid, standardFeatures } from './packages/react/dist/lite.js'; export const Grid = createSpreadsheetGrid({ features: standardFeatures });",
   },
+  // 追加(ことばで絞り込み): 入口 /ai(GridAskBar だけ。グリッド本体は含まない)。/ai を使うと全部入りや /lite に足されるぶん。
+  //   本体のモジュールを import して共有チャンクができると、ここが大きくなる(と同時に full の形も変わる)。
+  {
+    name: 'ai',
+    label: '/ai(GridAskBar のみ。公開 dist)',
+    source: 'dist',
+    code: "export { GridAskBar } from './packages/react/dist/ai.js';",
+  },
 ];
 
 const kb = (bytes) => bytes / 1024;

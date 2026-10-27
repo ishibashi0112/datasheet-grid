@@ -19,7 +19,7 @@
     こちらに勝ちます。style.css をレイヤーに入れているときは、このファイルも同じレイヤーの style.css の後に入れます。
   - 対象は style.css のトークン定義と同じ要素(ルート + document.body 直下のポータル)です。
 */
-:where([data-astryx-theme]) :where(.ssg-root, .ssg-popover, .ssg-menu-panel, .ssg-filter-popover, .ssg-select-editor-popover, [data-grid-drag-ghost], .ssg-tooltip) {
+:where([data-astryx-theme]) :where(.ssg-root, .ssg-popover, .ssg-menu-panel, .ssg-filter-popover, .ssg-select-editor-popover, [data-grid-drag-ghost], .ssg-tooltip, .ssg-ask) {
   /* ---- 入力(Astryx の変数) ---- */
   --ssg-ds-surface: var(--color-background-surface);
   --ssg-ds-surface-muted: var(--color-background-body);

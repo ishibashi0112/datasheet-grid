@@ -295,6 +295,25 @@ const Grid = createSpreadsheetGrid({ features: { ...standardFeatures, serverSide
 
 Props, the `ref` handle and types are the same as `SpreadsheetGrid`. Props of features you did not pass do nothing, and in development a `console.warn` names the feature to add. See the [`/lite` section of the API reference](packages/react/API_REFERENCE.md#機能を選んで組み込むlite-サブパス) for the 20 features and their sizes.
 
+## Natural-language filtering (`/ai`, 0.57.0+)
+
+`GridAskBar` from `@ishibashi0112/spreadsheet-grid/ai` sits above the grid and turns a sentence such as "Tokyo items with 10 or fewer in stock, most expensive first" into the grid's filters, sort, global search and column visibility. The grid never calls an AI: you pass an `ask` function that forwards the request to your own server, which calls any model with structured output (so API keys stay on the server). Row data is never sent — only column keys / titles / filter types / listed options, the current view and the user's sentence. Every answer is validated (unknown columns, operators the column's filter UI does not offer and unlisted values are dropped and reported), applied immediately, shown as chips and undoable in one click.
+
+```tsx
+import { GridAskBar, type GridAsk } from '@ishibashi0112/spreadsheet-grid/ai';
+
+const ask: GridAsk = async (request, { signal }) => {
+  const res = await fetch('/api/grid-ask', { method: 'POST', body: JSON.stringify(request), signal });
+  if (!res.ok) throw new Error(`grid-ask: ${res.status}`);
+  return res.json();
+};
+
+<GridAskBar grid={gridRef} columns={columns} ask={ask} examples={['東京の在庫が 10 個以下']} />
+<SpreadsheetGrid ref={gridRef} columns={columns} rows={rows} />
+```
+
+It is a separate entry (~10.1KB gzip), so `SpreadsheetGrid` and `/lite` do not grow. Server code for Claude, OpenAI, Gemini and the Vercel AI SDK (AI Gateway) is in the [guide with a live demo](https://datasheet-grid.vercel.app/docs/guides/ai-filter); the full API and the list of what the AI can change are in the [`/ai` section of the API reference](packages/react/API_REFERENCE.md#ことばで絞り込みai-サブパス).
+
 ## Server-side mode (SSRM)
 
 Pass a `dataSource` instead of `rows` to switch to server-side mode. The grid keeps the full scroll height for the total row count and fetches only the blocks near the viewport:
@@ -669,6 +688,25 @@ const Grid = createSpreadsheetGrid({ features: { ...standardFeatures, serverSide
 | `/lite` + `standardFeatures`(フィルター・列メニュー・ツールパネル・列幅の自動調整・エクスポート) | 約 78KB |
 
 props・`ref` ハンドル・型は `SpreadsheetGrid` と同じです。渡していない機能の prop は何もせず、開発時は足すべき機能を `console.warn` で知らせます。20 の機能とサイズは [API リファレンスの `/lite` の節](packages/react/API_REFERENCE.md#機能を選んで組み込むlite-サブパス)にあります。
+
+### ことばで絞り込み(`/ai`、0.57.0 から)
+
+`@ishibashi0112/spreadsheet-grid/ai` の `GridAskBar` をグリッドの上に置くと、「東京の在庫が 10 個以下を高い順に」のような文から、グリッドのフィルター・並び・グローバル検索・列の表示を AI が入れます。グリッドは AI を呼びません。利用側の `ask` が自分のサーバーへ頼みを送り、サーバーが好きな AI を構造化出力で呼びます(API キーはサーバーだけ)。行のデータは送りません(送るのは列の key / title / フィルターの種類 / 列定義の候補・今の条件・利用者の文)。答えはすべて検査し(無い列・その列のフィルター画面に無い条件・候補に無い値は捨てて知らせる)、すぐ反映してチップで見せ、1 回で元に戻せます。
+
+```tsx
+import { GridAskBar, type GridAsk } from '@ishibashi0112/spreadsheet-grid/ai';
+
+const ask: GridAsk = async (request, { signal }) => {
+  const res = await fetch('/api/grid-ask', { method: 'POST', body: JSON.stringify(request), signal });
+  if (!res.ok) throw new Error(`grid-ask: ${res.status}`);
+  return res.json();
+};
+
+<GridAskBar grid={gridRef} columns={columns} ask={ask} examples={['東京の在庫が 10 個以下']} />
+<SpreadsheetGrid ref={gridRef} columns={columns} rows={rows} />
+```
+
+別の入口(約 10.1KB gzip)なので、`SpreadsheetGrid` と `/lite` の大きさは変わりません。Claude・OpenAI・Gemini・Vercel AI SDK(AI Gateway)のサーバー側のコードは[デモ付きのガイド](https://datasheet-grid.vercel.app/docs/guides/ai-filter)に、API の全体と AI が変えられるものの一覧は [API リファレンスの `/ai` の節](packages/react/API_REFERENCE.md#ことばで絞り込みai-サブパス)にあります。
 
 ### サーバーサイドモード（SSRM）
 

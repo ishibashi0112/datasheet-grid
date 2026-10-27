@@ -1,0 +1,141 @@
+---
+title: /ai(ことばで絞り込み)
+description: GridAskBar / useGridAsk と、頼みの組み立て・答えの検査(createGridAskRequest / readGridAskAnswer)
+---
+
+## ことばで絞り込み(`/ai` サブパス)
+
+`@ishibashi0112/spreadsheet-grid/ai` の `GridAskBar` をグリッドの上に置くと、利用者が「東京の在庫が 10 個以下を高い順に」のように書いた文を AI に頼んで、グリッドのフィルター・並び・グローバル検索・列の表示へ反映できる(0.57.0 で追加)。グリッドは AI を呼ばない。利用側が渡す `ask`(自分のサーバー → 好きな AI)で聞くので、AI の種類は問わず、API キーはサーバーに置ける。全部入り・`/lite` とは別の入口で、使うときだけバンドルに入る(全部入り・`/lite` の JS の大きさは変わらない。`/ai` は約 10.1KB gzip)。
+
+```tsx
+import { useRef } from 'react';
+import { SpreadsheetGrid, type SpreadsheetGridHandle } from '@ishibashi0112/spreadsheet-grid';
+import { GridAskBar, type GridAsk } from '@ishibashi0112/spreadsheet-grid/ai';
+import '@ishibashi0112/spreadsheet-grid/style.css';
+
+// 自分のサーバーを通して AI に聞く(API キーをブラウザに置かない)
+const ask: GridAsk = async (request, { signal }) => {
+  const res = await fetch('/api/grid-ask', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(request),
+    signal,
+  });
+  if (!res.ok) throw new Error(`grid-ask: ${res.status}`);
+  return res.json();
+};
+
+export function Inventory() {
+  const gridRef = useRef<SpreadsheetGridHandle<Row>>(null);
+  return (
+    <>
+      <GridAskBar
+        grid={gridRef}
+        columns={columns}
+        ask={ask}
+        examples={['東京の在庫が 10 個以下', '今月入荷した家電を高い順に']}
+      />
+      <SpreadsheetGrid ref={gridRef} columns={columns} rows={rows} />
+    </>
+  );
+}
+```
+
+サーバー側の例(Next.js の Route Handler と Claude)。答えの形は `request.schema`(JSON Schema)で決まっているので、構造化出力にそのまま渡す:
+
+```ts
+// app/api/grid-ask/route.ts
+import Anthropic from '@anthropic-ai/sdk';
+
+const anthropic = new Anthropic(); // ANTHROPIC_API_KEY はサーバーの環境変数
+
+export async function POST(req: Request) {
+  // ここでログインしているか・呼ぶ回数を確かめる
+  const { system, prompt, schema } = await req.json();
+  const message = await anthropic.messages.create({
+    model: 'claude-haiku-5-5', // 小さく速いモデルで足りる
+    max_tokens: 4096, // 考える分(thinking)も含む上限
+    system,
+    messages: [{ role: 'user', content: prompt }],
+    // effort: 'low' で考える量を減らして速く答えさせる。format で答えを schema の形に固定する。
+    output_config: { effort: 'low', format: { type: 'json_schema', schema } },
+  });
+  // 答えの文字列をそのまま返す(読んで検査するのはバー側。途中で切れた答えも「読めませんでした」になる)。
+  const text = message.content.find((block) => block.type === 'text');
+  return Response.json(text ? text.text : null);
+}
+```
+
+- ほかの AI でも、画面側(`ask`)はそのままで、サーバーで `system` / `prompt` / `schema` を渡す先が変わるだけ。各社のコード全体はガイド「[ことばで絞り込み(AI)](/docs/guides/ai-filter)」。
+  - **OpenAI**(Responses API): `instructions` に `system`、`input` に `prompt`、`text: { format: { type: 'json_schema', name: 'grid_view', schema, strict: true } }`。答えは `response.output_text`。
+  - **Gemini**(`@google/genai` の `models.generateContent`): `contents` に `prompt`、`config` に `{ systemInstruction: system, responseMimeType: 'application/json', responseJsonSchema: schema }`。答えは `response.text`。
+  - **Vercel AI SDK**(AI Gateway): `generateText({ model: 'anthropic/claude-haiku-5.5', system, prompt, output: Output.object({ schema: jsonSchema(schema) }) })` の `output` を返す。`model` の文字列を替えるだけで、AI Gateway 経由でほかの会社の AI に切り替わる。
+- `schema` は Claude / OpenAI(strict)/ Gemini の構造化出力の制約(すべての欄が必須・`additionalProperties: false`・null を許す欄は `anyOf`)に合わせてある。構造化出力の無い AI では、`prompt` の後に「この JSON Schema に合う JSON だけを返す」と書き足し、答えを JSON の文字列のまま返してもよい(前後の文や ```` ```json ```` の囲みは外して読む)。
+- 1 回の頼みは入力 千〜数千トークン・出力 数百トークン程度(列の数と候補の数による)。
+
+### `GridAskBar` の props(`GridAskBarProps<T>`)
+
+| prop | 型 | 説明 |
+| --- | --- | --- |
+| `grid` | `{ current: { getState, applyState } \| null }` | `SpreadsheetGrid` の ref。`getState()` で今の状態を読み、`applyState()` で反映する。 |
+| `columns` | `readonly GridColumn<T>[]` | グリッドと同じ列定義。AI に見せるのは `key` / `title` / `filterType` / 候補(`filterOptions`、select エディタの静的な選択肢)/ dateSet のプリセットだけ。 |
+| `ask` | `GridAsk` = `(request, { signal }) => Promise<unknown> \| unknown` | AI に聞く関数。`request` は `{ system, prompt, schema, text }`(`text` は利用者の文そのもの)。答えはオブジェクトか JSON の文字列。`signal` は「止める」/ Esc / アンマウントで abort される(聞いている間の次の頼みは受け付けない)。 |
+| `examples` | `readonly string[]` | 入力欄の下に出す例の文。押すとその文で聞く。 |
+| `columnHints` | `Record<string, string \| false>` | 列ごとの補足(単位や値の書き方。例 `{ stock: '個', price: '円・税抜' }`)。`false` でその列を AI に見せない(その列の条件も変えない)。 |
+| `allowSort` | `boolean` | 並びを変えてよいか。既定 `true`(グリッドの `enableSorting` を `false` にしているときは `false` にする)。 |
+| `allowSearch` | `boolean` | グローバル検索の文字を変えてよいか。既定 `true`(`enableGlobalFilter` を `false` にしているときは `false` にする)。 |
+| `allowColumnVisibility` | `boolean` | 列を隠す・見せるのを許す。既定 `false`(列の表示の反映にはグリッドの `onColumnsChange` が要るので、渡しているときに付ける)。 |
+| `onApply` | `(event: { text, state, dropped, unsupported }) => void` | 反映したあとに呼ぶ(ログなどに)。 |
+| `onError` | `(error: unknown) => void` | `ask` が失敗(throw / reject)したときに呼ぶ。止めたときは呼ばない。 |
+| `placeholder` / `label` | `string` | 入力欄のプレースホルダーと、読み上げ用のラベル(既定「ことばで絞り込み」)。 |
+| `className` | `string` | バーの root(`.ssg-ask`)に足すクラス。 |
+| `theme` | `'light' \| 'dark' \| 'auto'` | 配色。既定 `'light'`。グリッドの `theme` と同じ値を渡す。 |
+
+### AI が変えられるもの
+
+- **列フィルター**: AI が入れられる条件は、その列のフィルター画面で手で入れられる条件と同じ(列の `filterType` で決まる)。`filterType` の無い列と `'custom'` の列は絞り込めない(並び替えと表示の切り替えだけ)。数や日付の列は `filterType` を付けておくと「以上」「範囲」「今月」なども使える。
+
+| 列の `filterType` | AI が入れられる条件 |
+| --- | --- |
+| `text` | 含む |
+| `textSet` | 含む / 等しい / で始まる / で終わる / 空白 / 空白でない と、値の選択(含める・除く) |
+| `number` | = / ≠ / > / ≥ / < / ≤ / 範囲 / 空白 / 空白でない |
+| `numberSet` | `number` と同じ条件と、値の選択 |
+| `date` | 含む(日付を文字として) |
+| `dateSet` | 範囲 / 以降 / 以前 / 等しい / 等しくない / プリセット(`dateFilterPresets` の今日・今月など)/ 空白 / 空白でない と、値の選択 |
+| `select` | 1 つの値に一致 |
+| `set` | 値の選択(含める・除く) |
+| `auto` | 適用中の条件の種類 → editor が number なら `numberSet`・date なら `dateSet` → それ以外は `text`(含む だけ)。行のデータからは推定しない |
+
+- **並び**(複数の列も)、**グローバル検索の文字**、**列を隠す・見せる**(`allowColumnVisibility` のときだけ。すべての列は隠さない)。
+- 行のグループ分け・列の順番と固定・列幅は変えない。セルの値や行は変えない。
+- **置き換えと足し算**: AI は「今の条件を空にしてから入れる(replace)」か「今の条件に足す・直す(refine。「さらに」「〜だけ」など)」を選ぶ。今の条件は毎回 AI に渡すので、「さらに 1 万円以上」のような続けての頼みができる(前の文は覚えていない)。replace でも、AI が変えられない条件(AI に見せていない列の条件と並び、絞り込めない列のフィルター)と隠した列はそのまま。refine で「条件 + 値の選択」の列(`numberSet` / `textSet` / `dateSet`)の片方だけを変えたときは、もう片方は残す。
+
+### 送るものと検査
+
+- **送るもの**: 列の `key` / `title` / 使える条件 / 列定義にある候補(最大 50 件を並べ、残りは件数だけ)/ `columnHints` / 今の条件 / 今日の日付 / 利用者の文。**行のデータは送らない**(列定義に候補が無い列の「値の選択」は、AI が文から書いた値をそのまま使う)。
+- **答えはすべて検査する**: `filters` の配列が無い答え(サーバーのエラーの `{ error }` など)は表を変えずに知らせる。無い列・その列で使えない条件・候補に無い値・数や日付として読めない値は捨て、何を捨てたかを「使えなかった部分」に日本語で出す。候補は値・表示名のどちらで答えても値へ直す。数は全角や 3 桁区切りも読み、日付は `YYYY-MM-DD` へ揃える。範囲の逆転は入れ替える。AI が「できなかった」と書いてきた文(`unsupported`)は「AI から: …」として出す。
+- **反映と元に戻す**: 答えはすぐ反映し、反映した状態の条件をチップ(列フィルター → 並び → 検索 → 隠した列)で見せる。チップの × でその条件だけ外せる。「元に戻す」で頼む前の見え方(フィルター・並び・検索・隠した列)へ戻す(列幅・列の順番・固定はそのまま)。反映したあとに表を手で変えたときは、元に戻さず「表の条件が変わったので…」と知らせる(列の表示を AI に任せていないときは、手で隠した列は比べず、元に戻すでも変えない)。列の表示が変わらないときは `applyState` に `columns` を渡さない(列定義を `onColumnsChange` で書き直さない)。
+- **入力**: Enter で送る。日本語の変換を確定する Enter では送らない。考えている間は「止める」か Esc で取り消せる(届いた答えは捨てる。送った直後の 0.5 秒は「止める」を押しても止めない = 「聞く」のダブルクリック対策)。失敗したときは表を変えずに「もう一度」を出す。押したボタン(チップの × / 元に戻す / 閉じる)が消えたら、フォーカスは次のチップか入力欄へ移す。
+- **見た目**: 色はグリッドと同じトークン(`--ssg-*`)で決まる。バーはグリッドの外にあるので、トークンを `.ssg-root { … }` で上書きしているときは `.ssg-root, .ssg-ask { … }` のように `.ssg-ask` も並べる。`themes/*.css` はバーにも効く。クラスは `.ssg-ask` / `.ssg-ask-form` / `.ssg-ask-input` / `.ssg-ask-examples` / `.ssg-ask-chips` / `.ssg-ask-chip` / `.ssg-ask-note` など。
+
+### 自前の見た目で作る(`useGridAsk`)と core の関数
+
+`useGridAsk(options)` は `GridAskBar` の状態とふるまいだけを返す(`options` は `GridAskBar` の props のうち `examples` / `placeholder` / `label` / `className` / `theme` 以外)。
+
+| 返り値 | 説明 |
+| --- | --- |
+| `status` | `'idle' \| 'asking'` |
+| `error` / `notice` | 失敗の文 / 元に戻せなかったときなどの知らせ(無ければ `null`) |
+| `session` | 最後の頼みの結果 `{ phase: 'applied' \| 'unchanged' \| 'undone', text, items, dropped, unsupported }`(`items` はチップ `{ id, label, text }[]`) |
+| `submit(text)` / `cancel()` / `undo()` / `remove(id)` / `dismiss()` | 聞いて反映する / 止める / 元に戻す / チップを外す / 結果を閉じる |
+
+頼みの組み立てと答えの検査は React に依存しない core の関数(`@ishibashi0112/spreadsheet-grid-core` の入口と、`/ai` から再エクスポート)。サーバー側で頼みを組み立て直したり、ほかのフレームワークで使える。
+
+| 関数 | 説明 |
+| --- | --- |
+| `createGridAskRequest(text, state, options): GridAskRequest` | 利用者の文と今の状態(`getState()`)から頼み `{ system, prompt, schema, text }` を作る。`options` は `{ columns, columnHints?, allowSort?, allowSearch?, allowColumnVisibility?, now? }`。 |
+| `readGridAskAnswer(answer, state, options): GridAskResult` | 答えを検査して `{ ok: true, state, changed, dropped, unsupported }`(`state` は `applyState` に渡せる状態)か `{ ok: false, message }` を返す。 |
+| `gridAskSystemPrompt` | `system` の文(いつも同じ)。 |
+| `describeGridAskView(state, options)` / `removeGridAskItem(state, id)` | 状態のチップの一覧 / チップ 1 件を外した状態。 |
+| 型 `GridAskAnswer` / `GridAskFilter` / `GridAskSort` / `GridAskOp` | 答えの形(`mode: 'replace' \| 'refine'`、`filters: { column, op, value, values, to }[]`、`sort`、`search`、`hide`、`show`、`unsupported`)。 |

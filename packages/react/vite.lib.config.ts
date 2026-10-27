@@ -21,6 +21,9 @@ export default defineConfig({
       entry: {
         index: resolve(import.meta.dirname, 'src/index.ts'),
         testing: resolve(import.meta.dirname, 'src/testing/index.ts'),
+        // 追加(ことばで絞り込み): /ai(GridAskBar / useGridAsk)。core と React だけを使い、index とはチャンクを共有しません
+        //   (本体のモジュールを import すると共有チャンクに分かれて全部入りの形が変わるため、src/ai/ は本体を import しない)。
+        ai: resolve(import.meta.dirname, 'src/ai.ts'),
       },
       formats: ['es', 'cjs'],
       fileName: (format, entryName) => `${entryName}.${format === 'es' ? 'js' : 'cjs'}`,
