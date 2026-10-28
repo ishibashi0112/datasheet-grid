@@ -11,7 +11,7 @@
 
 ### 追加
 
-- React 18.3 に対応しました(React 版の peer を `react` / `react-dom` `^18.3.0 || ^19.0.0` に広げました)。これまでは命令的 API の `ref` を React 19 の ref-as-prop で受け取っていたため、React 18 では `ref.current` が null のままでした。React 18 のときだけ `SpreadsheetGrid` と `createSpreadsheetGrid` が作るコンポーネントを内部で `forwardRef` に包むので、書き方はどちらの版でも同じです(利用側で `forwardRef` は要りません)。React 19 の利用者には何も変わりません(部品は従来と同じ)。全部入りの初期 JS は約 0.06KB gzip 増えます。
+- React 18.3 に対応しました(React 版の peer を `react` / `react-dom` `^18.3.0 || ^19.0.0` に広げました)。これまでは命令的 API の `ref` を React 19 の ref-as-prop で受け取っていたため、React 18 では `ref.current` が null のままでした。React 18 のときだけ `SpreadsheetGrid` と `createSpreadsheetGrid` が作るコンポーネントを内部で `forwardRef` に包むので、書き方はどちらの版でも同じです(利用側で `forwardRef` は要りません)。React 19 の利用者には何も変わりません(部品は従来と同じ)。全部入りの初期 JS は約 0.09KB gzip 増えます。
 
 ## 0.57.0 — 2026-10-28
 
