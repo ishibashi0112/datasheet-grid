@@ -10,6 +10,8 @@
 
 どれも Vite + React + TypeScript の単体のプロジェクトで、npm に公開されている `@ishibashi0112/spreadsheet-grid` を使います。
 
+Vite は 7 にしています。Vite 8(Rolldown)は、2026-10-25 から StackBlitz の中で起動できなくなっているためです(Rolldown の WebAssembly 版の部品が読み込めない上流の不具合。手元では Vite 8 でも動きます)。
+
 ## 手元で動かす
 
 ```sh
