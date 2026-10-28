@@ -75,24 +75,28 @@ export function GridAskBar<T>({
 
   // 聞いている間は Esc で止めます。フォーカスがバーの中か、どこにも無い(body)ときだけ(表やほかの部品の Esc は
   //   取らない)。例のボタンを押したあとや、Safari でボタンを押したあとはフォーカスが body にあります。
-  //   変換中の Esc(変換の取り消し)では止めません。
+  //   変換中の Esc(変換の取り消し)では止めません。バーの中かどうかは composedPath で見ます(shadow root の中に
+  //   置いたときは document.activeElement が host になり、contains では見分けられないため)。
   useEffect(() => {
     if (!asking) {
       return undefined;
     }
+    const root = rootRef.current;
+    const doc = root?.ownerDocument ?? document;
     const handleKeyDown = (event: globalThis.KeyboardEvent) => {
       if (event.key !== 'Escape' || event.defaultPrevented || event.isComposing || event.keyCode === 229) {
         return;
       }
-      const active = document.activeElement;
-      if (active !== null && active !== document.body && !rootRef.current?.contains(active)) {
+      const inBar = root !== null && event.composedPath().includes(root);
+      const active = doc.activeElement;
+      if (!inBar && active !== null && active !== doc.body) {
         return;
       }
       event.preventDefault();
       cancel();
     };
-    document.addEventListener('keydown', handleKeyDown);
-    return () => document.removeEventListener('keydown', handleKeyDown);
+    doc.addEventListener('keydown', handleKeyDown);
+    return () => doc.removeEventListener('keydown', handleKeyDown);
   }, [asking, cancel]);
 
   const keepFocus = (chip: number | null = null) => {

@@ -247,6 +247,39 @@ describe('GridAskBar(結合)', () => {
     }
   });
 
+  it('shadow root の中に置いたバーでも、入力欄の Esc で止める', () => {
+    const signals: AbortSignal[] = [];
+    const ask = vi.fn<GridAsk>((_request, { signal }) => {
+      signals.push(signal);
+      return new Promise(() => {});
+    });
+    const host = document.createElement('div');
+    document.body.append(host);
+    const container = document.createElement('div');
+    host.attachShadow({ mode: 'open' }).append(container);
+    const grid = createRef<SpreadsheetGridHandle<Row>>();
+    try {
+      render(
+        <>
+          <GridAskBar grid={grid} columns={baseColumns} ask={ask} />
+          <SpreadsheetGrid ref={grid} columns={baseColumns} rows={rows} rowKeyGetter={(row) => row.id} />
+        </>,
+        { container },
+      );
+      const input = container.querySelector('input') as HTMLInputElement;
+      typeAndEnter(input, '東京だけ');
+      expect(ask).toHaveBeenCalledTimes(1);
+      input.focus();
+      // フォーカスが shadow root の中にあると document.activeElement は host になる
+      expect(document.activeElement).toBe(host);
+      fireEvent.keyDown(input, { key: 'Escape', composed: true });
+      expect(signals[0].aborted).toBe(true);
+    } finally {
+      cleanup();
+      host.remove();
+    }
+  });
+
   it('聞いている間の Enter は無視し、止めるを押せばすぐ止まる', () => {
     const signals: AbortSignal[] = [];
     const ask = vi.fn<GridAsk>((_request, { signal }) => {

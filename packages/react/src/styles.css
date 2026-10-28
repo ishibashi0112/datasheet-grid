@@ -4223,11 +4223,11 @@
     color: var(--ssg-panel-text-strong);
     font-size: 12.5px;
   }
-  /* 狭い幅では条件を省略表示にして、× をチップの中に残します。列名は短いものは縮めず、長いものだけ 10em で
-     省略します(全文はチップの title)。 */
+  /* 狭い幅では条件を省略表示にして、× をチップの中に残します。列名は短いものは縮めず、長いものだけ 10em
+     (チップの半分を超えるときは半分)で省略します(全文はチップの title)。 */
   .ssg-ask-chip-label {
     flex: none;
-    max-width: 10em;
+    max-width: min(10em, 50%);
     overflow: hidden;
     color: var(--ssg-panel-text-muted);
     font-size: 11.5px;

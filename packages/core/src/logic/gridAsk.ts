@@ -420,7 +420,7 @@ export const gridAskSystemPrompt = [
   'You set how a data table is viewed, from one request by its user. You choose filters (which rows to show), the sort order, a quick text search and hidden columns. You never see or change the data.',
   '- Use only the listed columns (by key) and, for each column, only its listed ops. A column without ops cannot be filtered.',
   '- A filter is {column, op, value, values, to}. Comparison ops (=, !=, >, >=, <, <=) and contains, equals, startsWith, endsWith, onOrAfter, onOrBefore, notEquals use "value". "between" uses "value" (from) and "to"; both ends are included. "in" (show only these values) and "notIn" (hide these values) use "values"; pick from the column\'s listed values when it has them (a list ending in "more (not listed)" is cut short). "" in values stands for blank cells. "preset" puts one of the column\'s preset ids in "value". blank, notBlank and clear use none of them. Unused fields are null.',
-  '- "values" is always the whole list after the change: in refine mode, repeat the current values you keep. A current list with "more": N shows only part of its values; the rest stay as long as the column keeps the same op (in or notIn).',
+  '- "values" is always the whole list after the change: in refine mode, repeat the current values you keep. A current list with "more": N shows only part of its values; in refine mode the rest stay while the column keeps the same op (in or notIn). To replace such a list, put op "clear" for the column before the new in or notIn.',
   '- Write numbers as plain digits without units or separators (for example "10000"), and dates as YYYY-MM-DD, except in columns of type "date written as text", where value is text to find as the cells write it.',
   '- Read amounts by their meaning: 「X しない」「X 未満」「X を切る」「under X」 are < X; 「X 以下」 is <= X; 「X 以上」 is >= X; 「X を超える」「X より多い」「over X」 are > X. Use != only for "not equal to" (〜ではない, 〜以外).',
   '- Use at most one filter per column, except that a column whose ops include in/notIn may have one in/notIn and one other op.',
@@ -714,12 +714,14 @@ const setOf = (value: ColumnFilterValue | undefined): { mode: SetMode; values: s
 
 // 1 列の条件を組み立てるときの手がかりです。original は答えを当てる前のその列の条件(言い直しを見分ける)、
 //   base は始めにする記述子(同じ答えで先に決めた値、refine では今の値)、fixed はその列で同じ答えの中で
-//   もう決めた側です(複合列の条件と選択は 1 つずつ。今の値の側は上書きします)。
+//   もう決めた側です(複合列の条件と選択は 1 つずつ。今の値の側は上書きします)。cleared は同じ答えの中で
+//   先にその列を clear したかどうかです(今の選択を入れ替える印)。
 type BuildContext = {
   original: ColumnFilterValue | undefined;
   base: ColumnFilterValue | undefined;
   fixed: ReadonlySet<CompositeSide>;
   refine: boolean;
+  cleared: boolean;
   dropped: string[];
 };
 
@@ -788,9 +790,17 @@ const pickValues = <T,>(
   if (unreadable > 0) {
     context.dropped.push(`${column.title}: 値として読めないもの(${unreadable} 件)は使えません`);
   }
+  // AI が選んだ値が 1 つも無ければ使いません(下で見せていない残りだけが残る選択にしない)。
+  if (picked.size === 0) {
+    return ng('選べる値がありません');
+  }
+  if (current === null || current.mode !== mode) {
+    return ok([...picked]);
+  }
   // Current view に書かなかった今の選択の残りは、AI が見ていないので AI の答えでは消しません。同じ op のまま
-  //   refine で言い直したとき、または replace でも見せた値を全部書いてきたとき(言い直し)に残します。
-  if (current !== null && current.mode === mode && current.values.length > VIEW_VALUES_LIMIT) {
+  //   refine で書き直したとき、または replace でも見せた値を全部書いてきたとき(言い直し)に残します。同じ答えで
+  //   先に clear した列は入れ替えなので残しません。
+  if (current.values.length > VIEW_VALUES_LIMIT && !context.cleared) {
     const listed = current.values.slice(0, VIEW_VALUES_LIMIT);
     if (context.refine || listed.every((value) => picked.has(value))) {
       for (const value of current.values.slice(VIEW_VALUES_LIMIT)) {
@@ -798,7 +808,11 @@ const pickValues = <T,>(
       }
     }
   }
-  return picked.size > 0 ? ok([...picked]) : ng('選べる値がありません');
+  // 並びだけが違う言い直しは今の選択のまま(変わっていないのに変わったことにしない)。
+  if (picked.size === current.values.length && current.values.every((value) => picked.has(value))) {
+    return ok([...current.values]);
+  }
+  return ok([...picked]);
 };
 
 const buildFilterValue = <T,>(
@@ -1025,11 +1039,15 @@ export const readGridAskAnswer = <T,>(
     }
   } else {
     const touched = new Set<string>();
+    // 同じ答えの中で clear した列です(今の選択を入れ替える印。pickValues が見せていない残りを足さない)。
+    const cleared = new Set<string>();
     // 複合列で、同じ答えの中でもう決めた側(条件 / 選択)です。
     const fixedSides = new Map<string, Set<CompositeSide>>();
+    let unreadableFilters = 0;
     for (const rawFilter of rawFilters) {
       const filter = asRecord(rawFilter);
       if (!filter) {
+        unreadableFilters += 1;
         continue;
       }
       const column = resolveColumn(filter.column);
@@ -1057,6 +1075,7 @@ export const readGridAskAnswer = <T,>(
         columnFilters.delete(column.key);
         touched.delete(column.key);
         fixedSides.delete(column.key);
+        cleared.add(column.key);
         continue;
       }
       const isComposite =
@@ -1072,6 +1091,7 @@ export const readGridAskAnswer = <T,>(
         base: columnFilters.get(column.key),
         fixed: sides,
         refine,
+        cleared: cleared.has(column.key),
         dropped,
       });
       if ('error' in built) {
@@ -1084,6 +1104,9 @@ export const readGridAskAnswer = <T,>(
         sides.add(op === 'in' || op === 'notIn' ? 'set' : 'condition');
         fixedSides.set(column.key, sides);
       }
+    }
+    if (unreadableFilters > 0) {
+      dropped.push(`読めない条件(${unreadableFilters} 件)は使えません`);
     }
   }
 
@@ -1110,11 +1133,17 @@ export const readGridAskAnswer = <T,>(
           nextSort.push({ columnKey: column.key, direction });
         }
       }
-      sort = withKeptSort(nextSort, state.sort, isAskable);
+      // refine で並びを書いてきたのに 1 つも使えなかったときは、null と同じく今の並びのままにします(捨てた
+      //   理由は上で出しています。並びを消したいときの [] とは分けます)。
+      if (!(refine && source.sort.length > 0 && nextSort.length === 0)) {
+        sort = withKeptSort(nextSort, state.sort, isAskable);
+      }
     }
   }
 
-  if (typeof source.search === 'string') {
+  if (source.search !== undefined && source.search !== null && typeof source.search !== 'string') {
+    dropped.push('検索の文字を読めませんでした');
+  } else if (typeof source.search === 'string') {
     const search = source.search.trim();
     const currentSearch = state.filters.globalText;
     if (!allowSearch) {
@@ -1135,6 +1164,12 @@ export const readGridAskAnswer = <T,>(
   let nextColumns = state.columns?.map((entry) => ({ ...entry }));
   const hide = Array.isArray(source.hide) ? source.hide.filter((key) => toText(key) !== '') : [];
   const show = Array.isArray(source.show) ? source.show.filter((key) => toText(key) !== '') : [];
+  const unreadableKeys =
+    (Array.isArray(source.hide) ? source.hide.length - hide.length : 0) +
+    (Array.isArray(source.show) ? source.show.length - show.length : 0);
+  if (unreadableKeys > 0) {
+    dropped.push(`読めない列の指定(${unreadableKeys} 件)は使えません`);
+  }
   if (hide.length > 0 || show.length > 0) {
     if (!allowColumnVisibility || !nextColumns) {
       dropped.push('列の表示は変えない設定です');

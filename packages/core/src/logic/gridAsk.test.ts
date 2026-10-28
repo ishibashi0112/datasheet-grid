@@ -336,6 +336,7 @@ describe('readGridAskAnswer', () => {
       '備考: この列では絞り込めません',
       'メモ: この列では「で始まる」の条件は使えません',
       '在庫数: この列では「を含む」の条件は使えません',
+      '読めない条件(1 件)は使えません',
       '並び: 「color」という列はありません',
     ]);
     // 絞り込めない列でも並び替えはできる
@@ -623,6 +624,80 @@ describe('readGridAskAnswer: 利用者の条件を黙って変えない', () => 
     // op を変えた → 書いたものだけ
     const flipped = read(answer({ mode: 'refine', filters: [f('name', 'in', { values: shown })] }), state);
     expect(flipped.state.filters.columnFilters.name).toEqual({ kind: 'textSet', condition: null, set: { mode: 'include', values: shown } });
+  });
+
+  it('長い選択で AI が値を 1 つも選べなかったら今の選択のまま。入れ替えは同じ答えで先に clear', () => {
+    const values = Array.from({ length: 600 }, (_, index) => `v${index}`);
+    const shown = values.slice(0, 500);
+    const state = stateOf({ name: { kind: 'textSet', condition: null, set: { mode: 'include', values } } });
+    const setOfName = (result: ReturnType<typeof read>) =>
+      (result.state.filters.columnFilters.name as Extract<ColumnFilterValue, { kind: 'textSet' }>).set;
+    // refine で空の選択 → 見せていない残りだけの選択にせず、今の選択のまま理由を出す
+    const empty = read(answer({ mode: 'refine', filters: [f('name', 'in', { values: [] })] }), state);
+    expect(empty.state.filters).toEqual(state.filters);
+    expect(empty).toMatchObject({ changed: false, dropped: ['品名: 選べる値がありません'] });
+    // 候補のある列で候補に無い値だけ → 同じく今の選択のまま
+    const tagCols: GridColumn<Row>[] = [
+      { key: 'tag', title: 'タグ', width: 80, filterType: 'set', filterOptions: values.map((value) => ({ value, label: value })) },
+    ];
+    const tagState = buildGridState({}, { globalText: '', columnFilters: { tag: { kind: 'set', mode: 'include', values } } }, [], [{ key: 'tag' }]);
+    const unknown = read(answer({ mode: 'refine', filters: [f('tag', 'in', { values: ['無い値'] })] }), tagState, { columns: tagCols });
+    expect(unknown.state.filters).toEqual(tagState.filters);
+    expect(unknown.dropped).toEqual(['タグ: 「無い値」は候補にありません', 'タグ: 選べる値がありません']);
+    // refine で先に clear → 書いた値だけ(見せていない残りは足さない)
+    const swapped = read(answer({ mode: 'refine', filters: [f('name', 'clear'), f('name', 'in', { values: ['v0'] })] }), state);
+    expect(setOfName(swapped)).toEqual({ mode: 'include', values: ['v0'] });
+    const swappedAll = read(answer({ mode: 'refine', filters: [f('name', 'clear'), f('name', 'in', { values: shown })] }), state);
+    expect(setOfName(swappedAll)).toEqual({ mode: 'include', values: shown });
+    // replace で見せた値の一部だけ → 書いたものだけ(replace は空から始める。全部を書いたときだけ言い直し)
+    const partial = read(answer({ filters: [f('name', 'in', { values: shown.slice(1) })] }), state);
+    expect(setOfName(partial)).toEqual({ mode: 'include', values: shown.slice(1) });
+    // 指示文も同じ決まり(残るのは refine のとき、入れ替えは clear が先)
+    expect(gridAskSystemPrompt).toContain('in refine mode the rest stay while the column keeps the same op (in or notIn)');
+    expect(gridAskSystemPrompt).toContain('put op "clear" for the column before the new in or notIn');
+  });
+
+  it('値の並びだけが違う言い直しは変えない', () => {
+    const state = stateOf({ warehouse: { kind: 'set', mode: 'include', values: ['tokyo', 'osaka'] } });
+    for (const mode of ['replace', 'refine'] as const) {
+      const result = read(answer({ mode, filters: [f('warehouse', 'in', { values: ['大阪', '東京'] })] }), state);
+      expect(result.state.filters, mode).toEqual(state.filters);
+      expect(result.changed, mode).toBe(false);
+    }
+  });
+
+  it('refine で並びの項目が 1 つも使えなければ今の並びのまま([] は並びを消す)', () => {
+    const state = stateOf({}, { sort: [{ columnKey: 'price', direction: 'desc' }, { columnKey: 'stock', direction: 'asc' }] });
+    const bad = read(answer({ mode: 'refine', sort: [{ column: 'stock', direction: 'down' }, { column: 'nothing', direction: 'asc' }] }), state);
+    expect(bad.state.sort).toEqual(state.sort);
+    expect(bad).toMatchObject({
+      changed: false,
+      dropped: ['並び: 在庫数 の向き「down」は使えません', '並び: 「nothing」という列はありません'],
+    });
+    expect(read(answer({ mode: 'refine', sort: [] }), state).state.sort).toEqual([]);
+    // replace は空から始めるので、使えなければ並びなし
+    expect(read(answer({ sort: [{ column: 'stock', direction: 'down' }] }), state).state.sort).toEqual([]);
+  });
+
+  it('読めない条件・列の指定・検索は理由を出す', () => {
+    const state = stateOf({ code: { kind: 'text', value: 'ペン' } }, { globalText: '赤' });
+    const result = read(
+      answer({ mode: 'refine', filters: [null, 3, 'code', [], f('price', '>=', { value: '100' })], hide: ['', 5, null, 'memo'], search: 7 }),
+      state,
+    );
+    expect(result.state.filters).toEqual({
+      globalText: '赤',
+      columnFilters: {
+        code: { kind: 'text', value: 'ペン' },
+        price: { kind: 'number', raw: '100 以上', parsed: { mode: 'comparison', operator: '>=', value: 100 } },
+      },
+    });
+    expect(result.dropped).toEqual([
+      '読めない条件(4 件)は使えません',
+      '検索の文字を読めませんでした',
+      '読めない列の指定(2 件)は使えません',
+      '「5」という列はありません',
+    ]);
   });
 
   it('選ぶ値の数と長さの上限は、切り詰めずに理由を出す', () => {
