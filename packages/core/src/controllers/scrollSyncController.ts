@@ -94,10 +94,16 @@ export const createScrollSyncController = (): ScrollSyncController => {
     // 変更(BR-1 2026-10-28): 見える高さ / 幅は次のフレームで書き込みます。ResizeObserver のコールバックの中で書くと、
     //   同じフレームの描き直しでスクロール領域の大きさがまた変わり(横スクロールバーの出入り等)、ブラウザが
     //   「ResizeObserver loop completed with undelivered notifications」を window の error に出すためです。
+    //   隠れている間(display: none で幅 0)は書きません。前の大きさを残しておくと、同じ大きさで出し直したとき
+    //   (タブの切り替えなど)の最初のフレームが正しく描けるためです(書き込みが 1 フレーム遅れるので、0 を書くと
+    //   出し直した最初のフレームが flex 列の配分なしで描かれる)。
     let resizeFrameId: number | null = null;
     const resizeObserver = new ResizeObserver(() => {
       resizeFrameId ??= requestAnimationFrame(() => {
         resizeFrameId = null;
+        if (el.clientWidth === 0) {
+          return;
+        }
         args?.setViewState({
           viewportHeight: bodyViewportHeight(el),
           viewportWidth: el.clientWidth,

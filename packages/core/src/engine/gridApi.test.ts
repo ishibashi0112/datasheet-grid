@@ -292,6 +292,23 @@ describe('createGridApi', () => {
     expect(el?.scrollTop).toBe(11);
   });
 
+  // 追加(BR-5 見直し): 見えている行への 'auto' は動かない(論理位置を物理へ戻した値が浮動小数の誤差で 7.000…01 に
+  //   なっても切り上げない)。
+  it('縮尺のあるとき、見えている行への auto は位置を変えず markApiScroll も呼ばない', () => {
+    const api = createGridApi<Row>(withExport);
+    const { args, markApiScroll } = makeArgs({ verticalScaleFactor: 2.4 });
+    api.update(args);
+    const el = args.scrollContainerRef.current;
+    // 物理 7 = 論理 16.8。行 1(36 + 30 = 66 〜 96)は可視域 52.8 〜 116.8 に入っている。7 * 2.4 / 2.4 は 7 より少し大きい。
+    expect((7 * 2.4) / 2.4).toBeGreaterThan(7);
+    if (el) el.scrollTop = 7;
+    api.handle.scrollToRow(1);
+    api.handle.scrollToCell(1, 0);
+    // scrollTo には誤差込みの値がそのまま渡る(ブラウザでは同じ位置)。切り上げると 8 になる。
+    expect(el?.scrollTop).toBeCloseTo(7, 6);
+    expect(markApiScroll).not.toHaveBeenCalled();
+  });
+
   // 追加(audit L-20): escapeFormulas は直列化まで届く(既定は従来どおり)。
   it('exportCsv の escapeFormulas は数式として解釈される値の先頭に \' を付ける', () => {
     const api = createGridApi<Row>(withExport);

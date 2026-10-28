@@ -116,6 +116,13 @@ describe('createScrollSyncController', () => {
     expect(setViewState).toHaveBeenCalledTimes(2);
     expect(setViewState).toHaveBeenLastCalledWith({ viewportHeight: 320, viewportWidth: 500 });
 
+    // 追加(BR-1 見直し): 隠れている間(幅 0)は書かない(前の大きさを残す)。
+    Object.defineProperty(el, 'clientWidth', { value: 0, configurable: true });
+    resizeCallback?.();
+    runFrame();
+    expect(setViewState).toHaveBeenCalledTimes(2);
+    Object.defineProperty(el, 'clientWidth', { value: 500, configurable: true });
+
     // dispose は書き込み待ちのフレームも取り消します。
     resizeCallback?.();
     controller.dispose();

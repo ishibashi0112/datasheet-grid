@@ -15,12 +15,13 @@
 
 ### 挙動の変化
 
-- 下部バー(件数あり)の右のグループ(Active / Selection / 選択の件数 / Cols)に最小幅(56ch)を持たせました。これまでは選択を広げて件数の桁が増えるとグループが数 px 伸び、窓の幅 600px 前後でバーが折り返して高さが 27px → 49px に変わり、表全体がずれていました。バーが 2 行になる幅は少し広くなり(500 行 × 12 列の表で約 610px → 約 665px)、2 行目へ回った右のグループは右端に寄ります。件数なし(`showBottomBarCounts: false`)のときは変わりません。
+- 下部バー(件数あり)の右のグループ(Active / Selection / 選択の件数 / Cols)に最小幅(56ch)を持たせました。これまでは選択を広げて件数の桁が増えるとグループが数 px 伸び、窓の幅 600px 前後でバーが折り返して高さが 27px → 49px に変わり、表全体がずれていました。バーが 2 行になる幅は少し広くなり(500 行 × 12 列の表で約 610px → 約 665px)、2 行目へ回った右のグループは右端に寄ります。件数なし(`showBottomBarCounts: false`)のときは変わりません。表記が最小幅より長い大きな表(100 万行など)や、グループの中でチップが折り返す狭い幅(約 420px 以下)では、従来どおり表記の長さで高さが変わります。
+- 大きさの変化への追従が 1 フレーム遅れます(下の ResizeObserver の修正のため)。窓や親の大きさが変わった直後と、auto-height の行の中身の大きさが変わった直後(列の幅を変えるドラッグ中、Web フォントの読み込み、テーマの切り替えなど)は、1 フレームだけ前の大きさのまま描かれ(flex 列の幅や行の高さ)、次のフレームで追いつきます。隠したグリッドを同じ大きさで出し直したとき(タブの切り替えなど)は従来どおり最初から正しく描きます。
 
 ### 修正
 
-- レイアウトが変わるとき(窓の幅の変化、SSRM の読み込み、auto-height の行の高さの変化など)に、ブラウザが「ResizeObserver loop completed with undelivered notifications」を window の error に出し、Sentry などのエラー監視に記録されていたのを直しました(Firefox で多く、Chrome / Safari でも auto-height のときに出ていました)。見える高さ / 幅と auto-height の行の測り直しを、ResizeObserver の通知の次のフレームで行います。core の `createScrollSyncController` / `createAutoHeightMeasurer` を直接使っている場合も、`setViewState` への書き込みと snapshot の `nonce` の更新が次のフレームになります。
-- 行の位置を縮めて持つモード(100 万行など)で最後の行へ移ったとき(`scrollToRow(…, { align: 'end' })` / `selectCell(…, { scrollIntoView: true })` / キー操作)、Safari で最後の行が合計行の下に 2px 隠れていたのを直しました。行を下端に合わせるときはスクロール位置を切り上げます。
+- レイアウトが変わるとき(窓の幅の変化、SSRM の読み込み、auto-height の行の高さの変化など)に、ブラウザが「ResizeObserver loop completed with undelivered notifications」を window の error に出し、Sentry などのエラー監視に記録されていたのを直しました(Firefox で多く、Chrome / Safari でも auto-height のときに出ていました)。見える高さ / 幅と auto-height の行の測り直しを、ResizeObserver の通知の次のフレームで行います(隠れている間の大きさ 0 は書きません)。core の `createScrollSyncController` / `createAutoHeightMeasurer` を直接使っている場合も、`setViewState` への書き込みと snapshot の `nonce` の更新が次のフレームになります。
+- 行の位置を縮めて持つモード(100 万行など)で最後の行へ移ったとき(`scrollToRow(…, { align: 'end' })` / `selectCell(…, { scrollIntoView: true })` / キー操作)、Safari で最後の行が合計行の下に 2px 隠れていたのを直しました。行を下端に合わせるときはスクロール位置を切り上げます(見えている行への `'auto'` は従来どおり動きません)。
 
 ## 0.58.0 — 2026-10-28
 
