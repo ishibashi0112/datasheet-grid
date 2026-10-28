@@ -88,8 +88,8 @@ export const EXAMPLE_TEXTS = [
 ];
 
 // 見本の答え: 例の文を上から順に Claude の速いモデル(Haiku 相当)へ聞き、返ってきた JSON をそのまま置いたもの
-//   (2026-10-27 に記録。行のデータは送っていない)。
-export const RECORDED_ON = '2026-10-27';
+//   (2026-10-28 に記録。行のデータは送っていない)。
+export const RECORDED_ON = '2026-10-28';
 
 export const RECORDED_ANSWERS: Record<string, unknown> = {
   // 「東京の在庫が 10 個以下を、単価の高い順に」
@@ -134,8 +134,8 @@ export const RECORDED_ANSWERS: Record<string, unknown> = {
   // 「ここ 1 か月で入ってきた分」
   [EXAMPLE_TEXTS[3] ?? '']: {
     mode: 'replace',
-    filters: [{ column: 'arrived', op: 'between', value: '2026-09-27', values: null, to: '2026-10-27' }],
-    sort: null,
+    filters: [{ column: 'arrived', op: 'preset', value: 'last30days', values: null, to: null }],
+    sort: [],
     search: null,
     hide: [],
     show: [],
@@ -155,7 +155,7 @@ export const RECORDED_ANSWERS: Record<string, unknown> = {
   [EXAMPLE_TEXTS[5] ?? '']: {
     mode: 'replace',
     filters: [{ column: 'stock', op: '=', value: '0', values: null, to: null }],
-    sort: null,
+    sort: [],
     search: null,
     hide: ['price', 'arrived'],
     show: [],
@@ -164,15 +164,12 @@ export const RECORDED_ANSWERS: Record<string, unknown> = {
   // 「赤い文具を安い順に」
   [EXAMPLE_TEXTS[6] ?? '']: {
     mode: 'replace',
-    filters: [
-      { column: 'name', op: 'contains', value: '赤', values: null, to: null },
-      { column: 'category', op: 'in', value: null, values: ['文具'], to: null },
-    ],
+    filters: [{ column: 'category', op: 'in', value: null, values: ['文具'], to: null }],
     sort: [{ column: 'price', direction: 'asc' }],
-    search: null,
+    search: '赤',
     hide: [],
-    show: ['price'],
-    unsupported: '色の列がないため、品名に「赤」を含む商品で絞り込みました。',
+    show: [],
+    unsupported: '色の列がないため「赤」の文字で検索しています。',
   },
 };
 
