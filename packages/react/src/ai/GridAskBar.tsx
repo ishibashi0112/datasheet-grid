@@ -2,7 +2,7 @@
 //   チップ・元に戻す・使えなかった部分・AI からのひとこと)。状態とふるまいは useGridAsk。
 //   グリッドの外に置くため、色のトークンは style.css のトークン定義の対象(.ssg-ask)から読みます。
 //   本体のモジュールは import しない(useGridAsk の先頭のコメント参照)。テーマの解決も core の store から直接行います。
-import { useEffect, useRef, useState, useSyncExternalStore, type KeyboardEvent } from 'react';
+import { useEffect, useRef, useState, useSyncExternalStore, type KeyboardEvent, type MouseEvent } from 'react';
 import { systemColorSchemeStore } from '@ishibashi0112/spreadsheet-grid-core/controllers/systemColorSchemeStore';
 import { resolveGridTheme } from '@ishibashi0112/spreadsheet-grid-core/logic/theme';
 import type { GridTheme } from '../model/gridTypes';
@@ -44,10 +44,12 @@ export function GridAskBar<T>({
   const dark = resolveGridTheme(theme, systemPrefersDark) === 'dark';
   const asking = ask.status === 'asking';
   const session = ask.session;
+  const cancel = ask.cancel;
+  // 最後に送った文です(失敗したあとの「もう一度」はこの文を送り直す。入力欄を書き換えていても)。
+  const [sentText, setSentText] = useState('');
+  const rootRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const chipsRef = useRef<HTMLUListElement>(null);
-  // 送った時刻です(「聞く」のダブルクリックの 2 回目が、同じ場所に出る「止める」に当たって止めないように)。
-  const sentAtRef = useRef(Number.NEGATIVE_INFINITY);
   // 押したボタンが消える操作(チップの × / 元に戻す / 閉じる / もう一度)のあとのフォーカスの行き先です。
   //   chip は外したチップの位置(残ったチップの同じ位置か最後へ)、null は入力欄。
   const focusAfterRef = useRef<{ chip: number | null; at: number } | null>(null);
@@ -71,29 +73,70 @@ export function GridAskBar<T>({
     target?.focus();
   });
 
+  // 聞いている間は Esc で止めます。フォーカスがバーの中か、どこにも無い(body)ときだけ(表やほかの部品の Esc は
+  //   取らない)。例のボタンを押したあとや、Safari でボタンを押したあとはフォーカスが body にあります。
+  //   変換中の Esc(変換の取り消し)では止めません。バーの中かどうかは composedPath で見ます(shadow root の中に
+  //   置いたときは document.activeElement が host になり、contains では見分けられないため)。
+  useEffect(() => {
+    if (!asking) {
+      return undefined;
+    }
+    const root = rootRef.current;
+    const doc = root?.ownerDocument ?? document;
+    const handleKeyDown = (event: globalThis.KeyboardEvent) => {
+      if (event.key !== 'Escape' || event.defaultPrevented || event.isComposing || event.keyCode === 229) {
+        return;
+      }
+      const inBar = root !== null && event.composedPath().includes(root);
+      const active = doc.activeElement;
+      if (!inBar && active !== null && active !== doc.body) {
+        return;
+      }
+      event.preventDefault();
+      cancel();
+    };
+    doc.addEventListener('keydown', handleKeyDown);
+    return () => doc.removeEventListener('keydown', handleKeyDown);
+  }, [asking, cancel]);
+
   const keepFocus = (chip: number | null = null) => {
     focusAfterRef.current = { chip, at: performance.now() };
   };
 
   const send = (value: string) => {
-    sentAtRef.current = performance.now();
+    if (asking || value.trim() === '') {
+      return;
+    }
+    setSentText(value.trim());
     void ask.submit(value);
   };
 
+  // 変換を確定する Enter では送りません(Safari は確定の keydown が isComposing=false / keyCode 229 で届く)。
   const handleKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
-    // 変換を確定する Enter では送りません(Safari は確定の keydown が isComposing=false / keyCode 229 で届く)。
     if (event.key === 'Enter' && (event.nativeEvent.isComposing || event.keyCode === 229)) {
       event.preventDefault();
+    }
+  };
+
+  // 「聞く」と「止める」は同じ button 要素で、押すと type が submit ↔ button に変わります。クリックを処理している
+  //   間に描画が変わるので、止めたあとの既定の動作(フォームの送信)を止めないと、同じ文をすぐ送り直します。
+  //   ダブルクリックの 2 回目(detail が 2 以上)は、前の 1 回目の続きとして何もしません(聞く → 止める、
+  //   止める → 聞く のどちらにも当たらない)。キーボードで押したときの detail は 0 です。
+  const handleStop = (event: MouseEvent<HTMLButtonElement>) => {
+    event.preventDefault();
+    if (event.detail > 1) {
       return;
     }
-    if (event.key === 'Escape' && asking) {
+    cancel();
+  };
+  const handleAsk = (event: MouseEvent<HTMLButtonElement>) => {
+    if (event.detail > 1) {
       event.preventDefault();
-      ask.cancel();
     }
   };
 
   return (
-    <div className={cx('ssg-ask', dark && 'ssg-theme-dark', className)} data-ssg-ask="">
+    <div ref={rootRef} className={cx('ssg-ask', dark && 'ssg-theme-dark', className)} data-ssg-ask="">
       <form
         className="ssg-ask-form"
         onSubmit={(event) => {
@@ -119,20 +162,16 @@ export function GridAskBar<T>({
           onKeyDown={handleKeyDown}
         />
         {asking ? (
-          <button
-            type="button"
-            className="ssg-ask-button"
-            onClick={() => {
-              // 送った直後(「聞く」のダブルクリックの 2 回目)では止めません。Esc はいつでも止めます。
-              if (performance.now() - sentAtRef.current >= 500) {
-                ask.cancel();
-              }
-            }}
-          >
+          <button type="button" className="ssg-ask-button" onClick={handleStop}>
             止める
           </button>
         ) : (
-          <button type="submit" className="ssg-ask-button ssg-ask-button--primary" disabled={text.trim() === ''}>
+          <button
+            type="submit"
+            className="ssg-ask-button ssg-ask-button--primary"
+            disabled={text.trim() === ''}
+            onClick={handleAsk}
+          >
             聞く
           </button>
         )}
@@ -140,13 +179,18 @@ export function GridAskBar<T>({
       {examples && examples.length > 0 && (
         <div className="ssg-ask-examples">
           <span className="ssg-ask-examples-label">例:</span>
-          {examples.map((example) => (
+          {examples.map((example, index) => (
+            // 聞いている間は aria-disabled(disabled にすると押したボタンからフォーカスが外れ、Esc が届かない)。
             <button
-              key={example}
+              key={index}
               type="button"
               className="ssg-ask-example"
-              disabled={asking}
+              aria-disabled={asking || undefined}
+              title={example}
               onClick={() => {
+                if (asking) {
+                  return;
+                }
                 setText(example);
                 send(example);
               }}
@@ -164,19 +208,21 @@ export function GridAskBar<T>({
           </div>
         )}
         {!asking && ask.error !== null && (
-          <div className="ssg-ask-note ssg-ask-note--error" role="alert">
+          // 読み上げは .ssg-ask-output の aria-live で届きます(role="alert" を重ねると二重に読まれる)。
+          <div className="ssg-ask-note ssg-ask-note--error">
             <span>{ask.error}</span>
-            <button
-              type="button"
-              className="ssg-ask-link"
-              onClick={() => {
-                keepFocus();
-                send(text);
-              }}
-              disabled={text.trim() === ''}
-            >
-              もう一度
-            </button>
+            {sentText !== '' && (
+              <button
+                type="button"
+                className="ssg-ask-link"
+                onClick={() => {
+                  keepFocus();
+                  send(sentText);
+                }}
+              >
+                もう一度
+              </button>
+            )}
           </div>
         )}
         {!asking && session !== null && (
@@ -211,7 +257,7 @@ export function GridAskBar<T>({
                 {session.items.length > 0 ? (
                   <ul ref={chipsRef} className="ssg-ask-chips">
                     {session.items.map((item, index) => (
-                      <li key={item.id} className="ssg-ask-chip">
+                      <li key={item.id} className="ssg-ask-chip" title={`${item.label}: ${item.text}`}>
                         <span className="ssg-ask-chip-label">{item.label}</span>
                         <span className="ssg-ask-chip-text">{item.text}</span>
                         <button

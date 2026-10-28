@@ -45,6 +45,8 @@ export type UseGridAskOptions<T> = {
   ask: GridAsk;
   /** 列ごとの補足(単位や値の書き方)。`false` でその列を AI に見せない。 */
   columnHints?: Readonly<Record<string, string | false>>;
+  /** 列の条件(フィルター)を変えてよいか(既定 true)。 */
+  allowFilter?: boolean;
   /** 並びを変えてよいか(既定 true)。 */
   allowSort?: boolean;
   /** グローバル検索の文字を変えてよいか(既定 true)。 */
@@ -97,7 +99,17 @@ type SessionState = {
 };
 
 const ASK_ERROR = 'AI に聞けませんでした。もう一度試してください。';
+const NO_GRID_ERROR = '表が見つかりませんでした。表が出てから、もう一度試してください。';
 const CHANGED_NOTICE = '表の条件が変わったので、ここからは変えられません。表のフィルターや並びで直してください。';
+
+const toAskOptions = <T,>(options: UseGridAskOptions<T>): GridAskOptions<T> => ({
+  columns: options.columns,
+  columnHints: options.columnHints,
+  allowFilter: options.allowFilter,
+  allowSort: options.allowSort,
+  allowSearch: options.allowSearch,
+  allowColumnVisibility: options.allowColumnVisibility,
+});
 
 // 隠した列が変わらないときは columns を渡しません(列定義を onColumnsChange で書き直さないため)。
 const toApplicable = (current: GridState, next: GridState): GridState =>
@@ -135,6 +147,11 @@ export function useGridAsk<T>(options: UseGridAskOptions<T>): UseGridAskResult {
   const [session, setSession] = useState<SessionState | null>(null);
   // 聞いている間の AbortController(止める / Esc / アンマウントで abort。聞いている間の次の頼みは受け付けない)。
   const pendingRef = useRef<AbortController | null>(null);
+  // 答えが届いたときに読む最新の設定です(聞いている間に列や allowSort が変わったら、変わったあとの設定で読む)。
+  const latestRef = useRef(options);
+  useEffect(() => {
+    latestRef.current = options;
+  });
 
   // アンマウントで聞くのをやめます。<Activity mode="hidden"> で隠したときもここを通り、また表示したときに
   //   「考えています」のまま固まらないよう status も戻します(本当のアンマウントでは何も起きない)。
@@ -151,19 +168,17 @@ export function useGridAsk<T>(options: UseGridAskOptions<T>): UseGridAskResult {
     [],
   );
 
-  const askOptions: GridAskOptions<T> = {
-    columns: options.columns,
-    columnHints: options.columnHints,
-    allowSort: options.allowSort,
-    allowSearch: options.allowSearch,
-    allowColumnVisibility: options.allowColumnVisibility,
-  };
+  const askOptions = toAskOptions(options);
   const describe = (state: GridState): GridAskItem[] => describeGridAskView(state, askOptions);
 
   const submit = async (raw: string): Promise<void> => {
     const text = raw.trim();
+    if (text === '' || pendingRef.current !== null) {
+      return;
+    }
     const grid = options.grid.current;
-    if (text === '' || grid === null || pendingRef.current !== null) {
+    if (grid === null) {
+      setError(NO_GRID_ERROR);
       return;
     }
     const controller = new AbortController();
@@ -182,7 +197,7 @@ export function useGridAsk<T>(options: UseGridAskOptions<T>): UseGridAskResult {
       }
       pendingRef.current = null;
       setStatus('idle');
-      options.onError?.(caught);
+      latestRef.current.onError?.(caught);
       setError(ASK_ERROR);
       return;
     }
@@ -192,25 +207,36 @@ export function useGridAsk<T>(options: UseGridAskOptions<T>): UseGridAskResult {
     }
     pendingRef.current = null;
     setStatus('idle');
-    const target = options.grid.current;
+    // 聞いている間に変わった設定(列・allowSort など)と表の状態で答えを読みます。
+    const latest = latestRef.current;
+    const latestOptions = toAskOptions(latest);
+    const target = latest.grid.current;
     if (target === null) {
+      setError(NO_GRID_ERROR);
       return;
     }
-    // 聞いている間に表が変わっていてもよいように、答えは今の状態に当てます。
     const before = target.getState();
-    const result = readGridAskAnswer(answer, before, askOptions);
+    const result = readGridAskAnswer(answer, before, latestOptions);
     if (!result.ok) {
       setError(result.message);
       return;
     }
     const view = { text, dropped: result.dropped, unsupported: result.unsupported };
     if (!result.changed) {
-      setSession({ view: { ...view, phase: 'unchanged', items: describe(before) }, before, applied: before });
+      setSession({
+        view: { ...view, phase: 'unchanged', items: describeGridAskView(before, latestOptions) },
+        before,
+        applied: before,
+      });
       return;
     }
     target.applyState(toApplicable(before, result.state));
-    setSession({ view: { ...view, phase: 'applied', items: describe(result.state) }, before, applied: result.state });
-    options.onApply?.({ text, state: result.state, dropped: result.dropped, unsupported: result.unsupported });
+    setSession({
+      view: { ...view, phase: 'applied', items: describeGridAskView(result.state, latestOptions) },
+      before,
+      applied: result.state,
+    });
+    latest.onApply?.({ text, state: result.state, dropped: result.dropped, unsupported: result.unsupported });
   };
 
   const cancel = (): void => {

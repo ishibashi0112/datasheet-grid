@@ -13,7 +13,7 @@ import { normalizeDateFilterPresets, type NormalizedDateFilterPreset } from './d
 import { parseNumberText } from './editorValues';
 import { describeColumnFilterValue } from './filterSummary';
 import { formatDateKey, toDateKey } from './filtering';
-import { cloneColumnFilterValue, isSameFilterState, isSameSortState } from './gridState';
+import { cloneColumnFilterValue, isSameColumnFilterValue, isSameFilterState, isSameSortState } from './gridState';
 import { formatParsedNumberFilter } from './numberFilterCondition';
 
 // 追加(ことばで絞り込み): 利用者の文(「東京の在庫が 10 個以下を高い順に」)を AI に渡す頼みへ組み立て、
@@ -89,6 +89,9 @@ export type GridAskOptions<T> = {
   columns: readonly GridColumn<T>[];
   // 列ごとの補足(単位や値の書き方)。false でその列を AI に見せません(その列の条件も変えません)。
   columnHints?: Readonly<Record<string, string | false>>;
+  // 列の条件(フィルター)を変えてよいか(既定 true)。グリッドの enableColumnFilter を false にしているときは
+  //   false にします(表の見出しから外せない条件を入れないため)。
+  allowFilter?: boolean;
   // 並びを変えてよいか(既定 true)。グリッドの enableSorting を false にしているときは false にします。
   allowSort?: boolean;
   // グローバル検索の文字を変えてよいか(既定 true)。enableGlobalFilter を false にしているときは false にします。
@@ -166,7 +169,7 @@ const TYPE_WORDS: Record<AskFilterType, string> = {
   textSet: 'text',
   number: 'number',
   numberSet: 'number',
-  date: 'date (matched as text)',
+  date: 'date written as text',
   dateSet: 'date',
   select: 'choice (one value)',
   set: 'choice',
@@ -198,10 +201,19 @@ const OP_LABELS: Record<GridAskOp, string> = {
 
 // プロンプトに並べる候補の上限です(残りは件数だけ書きます。検査は全候補で行います)。
 const LISTED_OPTION_LIMIT = 50;
-// 答えの文字の上限です(長すぎる答えでグリッドの状態を膨らませないため)。
+// 答えの大きさの上限です(長すぎる答えでグリッドの状態を膨らませないため。切り詰めずに、超えた分は理由を出して捨てる)。
+//   TEXT_LIMIT は条件と検索の文字、VALUE_TEXT_LIMIT は選ぶ値 1 つ、VALUES_LIMIT は 1 列で選ぶ値の数です。
 const TEXT_LIMIT = 200;
+const VALUE_TEXT_LIMIT = 1000;
+const VALUES_LIMIT = 1000;
 const UNSUPPORTED_LIMIT = 300;
-const VALUES_LIMIT = 500;
+// Current view に並べる今の選択の上限です(残りは "more": 件数。AI が同じ op のまま言い直したときは残りも残す)。
+const VIEW_VALUES_LIMIT = 500;
+// 列の key を enum にする列数の上限です(enum の総数に上限がある AI がある。超えたら文字列にして検査で守る)。
+const COLUMN_ENUM_LIMIT = 100;
+// 使えなかった理由の件数と、理由に引く答えの文字の上限です。
+const DROPPED_LIMIT = 20;
+const QUOTE_LIMIT = 40;
 
 type AskOption = { value: string; label: string };
 
@@ -254,28 +266,34 @@ const resolveFilterType = <T,>(
 };
 
 // 候補は filterOptions、無ければ select エディタの静的な選択肢です(行から集める候補は送りません)。
+//   空の配列はグリッドと同じく「行から集める」= 候補なしです。
 const resolveOptions = <T,>(column: GridColumn<T>): AskOption[] | null => {
-  if (column.filterOptions) {
-    return column.filterOptions.map((option) => ({ value: option.value, label: option.label }));
-  }
   const editor = column.editor;
-  if (editor?.type === 'select' && Array.isArray(editor.options)) {
-    return editor.options.map((option) => ({ value: option.value, label: option.label }));
-  }
-  return null;
+  const source =
+    column.filterOptions && column.filterOptions.length > 0
+      ? column.filterOptions
+      : editor?.type === 'select' && Array.isArray(editor.options)
+        ? editor.options
+        : [];
+  return source.length > 0 ? source.map((option) => ({ value: option.value, label: option.label })) : null;
 };
+
+// 自分のキーだけを引きます(列の key が '__proto__' などでも prototype の値を返さない)。
+const ownValue = <V,>(record: Readonly<Record<string, V>> | undefined, key: string): V | undefined =>
+  record !== undefined && Object.prototype.hasOwnProperty.call(record, key) ? record[key] : undefined;
 
 const resolveAskColumns = <T,>(
   options: GridAskOptions<T>,
   state: GridState,
 ): AskColumn<T>[] => {
+  const allowFilter = isAllowed(options.allowFilter, true);
   const result: AskColumn<T>[] = [];
   for (const column of options.columns) {
-    const hint = options.columnHints?.[column.key];
+    const hint = ownValue(options.columnHints, column.key);
     if (hint === false) {
       continue;
     }
-    const filterType = resolveFilterType(column, state.filters.columnFilters[column.key]);
+    const filterType = allowFilter ? resolveFilterType(column, ownValue(state.filters.columnFilters, column.key)) : null;
     const presets = filterType === 'dateSet' ? normalizeDateFilterPresets(column.dateFilterPresets) : [];
     const ops = filterType === null
       ? []
@@ -344,11 +362,22 @@ const dateConditionToItems = (key: string, parsed: ParsedDateFilter): GridAskFil
   }
 };
 
+// 今の選択が長いときは先頭の VIEW_VALUES_LIMIT 件だけを書き、残りの件数を more に書きます。
 const setToItems = (
   key: string,
   set: { mode?: 'include' | 'exclude'; values: string[] } | null,
-): GridAskFilter[] =>
-  set ? [toItem(key, set.mode === 'exclude' ? 'notIn' : 'in', { values: [...set.values] })] : [];
+): GridAskFilter[] => {
+  if (!set) {
+    return [];
+  }
+  const item: GridAskFilter & { more?: number } = toItem(key, set.mode === 'exclude' ? 'notIn' : 'in', {
+    values: set.values.slice(0, VIEW_VALUES_LIMIT),
+  });
+  if (set.values.length > VIEW_VALUES_LIMIT) {
+    item.more = set.values.length - VIEW_VALUES_LIMIT;
+  }
+  return [item];
+};
 
 const filterValueToItems = (key: string, value: ColumnFilterValue): GridAskFilter[] => {
   switch (value.kind) {
@@ -390,13 +419,14 @@ const hiddenKeysOf = (columns: GridColumnState[] | undefined): string[] =>
 export const gridAskSystemPrompt = [
   'You set how a data table is viewed, from one request by its user. You choose filters (which rows to show), the sort order, a quick text search and hidden columns. You never see or change the data.',
   '- Use only the listed columns (by key) and, for each column, only its listed ops. A column without ops cannot be filtered.',
-  '- A filter is {column, op, value, values, to}. Comparison ops (=, !=, >, >=, <, <=) and contains, equals, startsWith, endsWith, onOrAfter, onOrBefore, notEquals use "value". "between" uses "value" (from) and "to"; both ends are included. "in" (show only these values) and "notIn" (hide these values) use "values"; pick from the column\'s listed values when it has them. "preset" puts one of the column\'s preset ids in "value". blank, notBlank and clear use none of them. Unused fields are null.',
-  '- Write numbers as plain digits without units or separators (for example "10000"), and dates as YYYY-MM-DD.',
+  '- A filter is {column, op, value, values, to}. Comparison ops (=, !=, >, >=, <, <=) and contains, equals, startsWith, endsWith, onOrAfter, onOrBefore, notEquals use "value". "between" uses "value" (from) and "to"; both ends are included. "in" (show only these values) and "notIn" (hide these values) use "values"; pick from the column\'s listed values when it has them (a list ending in "more (not listed)" is cut short). "" in values stands for blank cells. "preset" puts one of the column\'s preset ids in "value". blank, notBlank and clear use none of them. Unused fields are null.',
+  '- "values" is always the whole list after the change: in refine mode, repeat the current values you keep. A current list with "more": N shows only part of its values; in refine mode the rest stay while the column keeps the same op (in or notIn). To replace such a list, put op "clear" for the column before the new in or notIn.',
+  '- Write numbers as plain digits without units or separators (for example "10000"), and dates as YYYY-MM-DD, except in columns of type "date written as text", where value is text to find as the cells write it.',
   '- Read amounts by their meaning: 「X しない」「X 未満」「X を切る」「under X」 are < X; 「X 以下」 is <= X; 「X 以上」 is >= X; 「X を超える」「X より多い」「over X」 are > X. Use != only for "not equal to" (〜ではない, 〜以外).',
   '- Use at most one filter per column, except that a column whose ops include in/notIn may have one in/notIn and one other op.',
   '- mode "replace" starts from an empty view (no filters, sort or search; hidden columns stay). mode "refine" keeps the current view and changes only what the request mentions; op "clear" removes a column\'s filter. Use refine only when the request clearly builds on what is shown now (for example: also, too, さらに, それと, そのうえで, その中で, 〜も). A request that describes on its own the rows it wants uses replace, even when it is short.',
-  '- sort lists columns in priority order; null keeps the current sort in refine mode. search is a word to find in any column; use it only when no column fits. null leaves it as it is, "" clears it.',
-  '- Change the sort, the search and hidden columns only when the prompt says it is allowed. hide and show list column keys.',
+  '- sort lists columns in priority order; null keeps the current sort in refine mode. search is a word to find in any column; use it only when no column fits. In refine mode null keeps the current search; "" clears it.',
+  '- Change filters, the sort, the search and hidden columns only when the prompt says it is allowed. hide and show list column keys.',
   '- If any part of the request cannot be done with these columns and ops, do the rest and say briefly what you could not do in "unsupported", in the language of the request. Otherwise unsupported is null. Never invent a column.',
 ].join('\n');
 
@@ -409,17 +439,19 @@ const formatOptions = (options: AskOption[]): string => {
       : JSON.stringify(option.value),
   );
   const rest = options.length - listed.length;
-  return rest > 0 ? `${listed.join(', ')} and ${rest} more` : listed.join(', ');
+  return rest > 0 ? `${listed.join(', ')} and ${rest} more (not listed)` : listed.join(', ');
 };
 
 const describeColumnLine = <T,>(column: AskColumn<T>): string => {
   const head = `- ${column.key} ${JSON.stringify(column.title)}${column.hint ? ` (${column.hint})` : ''}`;
   if (column.filterType === null) {
-    return `${head}: no ops (sort only).`;
+    return `${head}: no ops.`;
   }
   let line = `${head}: ${TYPE_WORDS[column.filterType]}.`;
-  if (column.options && column.options.length > 0) {
-    line += ` values: ${formatOptions(column.options)}.`;
+  // select の値 '' は「すべて」(条件なし)と同じなので並べません(選ばれても検査で捨てる)。
+  const listed = column.filterType === 'select' ? column.options?.filter((option) => option.value !== '') : column.options;
+  if (listed && listed.length > 0) {
+    line += ` values: ${formatOptions(listed)}.`;
   }
   const ops = column.ops.map((op) =>
     op === 'preset'
@@ -431,8 +463,10 @@ const describeColumnLine = <T,>(column: AskColumn<T>): string => {
 
 // 答えの形(JSON Schema)です。列の key だけが列定義で変わり、ほかはいつも同じです(構造化出力のスキーマの
 //   キャッシュが効くように、条件の一覧は列ごとに絞らず全部を並べ、列ごとの制限はプロンプトと検査で守ります)。
+//   列の key の enum は 4 か所に入るので、列が多い表では enum を外します(無い列は検査で捨てる)。
 const buildSchema = (keys: string[]): Record<string, unknown> => {
-  const columnKey = keys.length > 0 ? { type: 'string', enum: keys } : { type: 'string' };
+  const columnKey =
+    keys.length > 0 && keys.length <= COLUMN_ENUM_LIMIT ? { type: 'string', enum: keys } : { type: 'string' };
   const nullableString = { anyOf: [{ type: 'string' }, { type: 'null' }] };
   return {
     type: 'object',
@@ -489,17 +523,21 @@ export const createGridAskRequest = <T,>(
   options: GridAskOptions<T>,
 ): GridAskRequest => {
   const columns = resolveAskColumns(options, state);
+  const allowFilter = isAllowed(options.allowFilter, true);
   const allowSort = isAllowed(options.allowSort, true);
   const allowSearch = isAllowed(options.allowSearch, true);
   const allowColumnVisibility = isAllowed(options.allowColumnVisibility, false);
   const now = options.now ?? new Date();
   const visibleKeys = new Set(columns.map((column) => column.key));
+  // AI が変えられる列(見せていて絞り込める列)の条件だけを書きます(ほかの条件は答えに関係なく残ります)。
+  const filterableKeys = new Set(columns.filter((column) => column.filterType !== null).map((column) => column.key));
 
-  const current: Record<string, unknown> = {
-    filters: Object.entries(state.filters.columnFilters)
-      .filter(([key]) => visibleKeys.has(key))
-      .flatMap(([key, value]) => filterValueToItems(key, value)),
-  };
+  const current: Record<string, unknown> = {};
+  if (allowFilter) {
+    current.filters = Object.entries(state.filters.columnFilters)
+      .filter(([key]) => filterableKeys.has(key))
+      .flatMap(([key, value]) => filterValueToItems(key, value));
+  }
   if (allowSort) {
     current.sort = state.sort
       .filter((entry) => visibleKeys.has(entry.columnKey))
@@ -516,6 +554,7 @@ export const createGridAskRequest = <T,>(
     `Today: ${formatDateKey(now)} (${WEEKDAYS[now.getDay()]})`,
     'Columns:',
     ...columns.map(describeColumnLine),
+    `Filters: ${allowFilter ? 'allowed (by each column\'s ops)' : 'not allowed'}.`,
     `Sort: ${allowSort ? 'allowed (any column above)' : 'not allowed'}.`,
     `Search: ${allowSearch ? 'allowed' : 'not allowed'}.`,
     `Hide or show columns: ${allowColumnVisibility ? 'allowed' : 'not allowed'}.`,
@@ -538,10 +577,10 @@ type Built<V> = { value: V } | { error: string };
 const ok = <V,>(value: V): Built<V> => ({ value });
 const ng = <V,>(error: string): Built<V> => ({ error });
 
-// 文字列(数なら文字列にして)を trim して返します。それ以外は ''。
-const toText = (value: unknown): string => {
+// 答えの値を文字列にします(数は文字列に。それ以外は '')。前後の空白はそのまま(選ぶ値は完全一致で比べるため)。
+const toRawText = (value: unknown): string => {
   if (typeof value === 'string') {
-    return value.trim().slice(0, TEXT_LIMIT);
+    return value;
   }
   if (typeof value === 'number' && Number.isFinite(value)) {
     return String(value);
@@ -549,14 +588,32 @@ const toText = (value: unknown): string => {
   return '';
 };
 
+const toText = (value: unknown): string => toRawText(value).trim();
+
 const toNumber = (value: unknown): number | null => {
   if (typeof value === 'number') {
     return Number.isFinite(value) ? value : null;
   }
-  return typeof value === 'string' ? parseNumberText(value) : null;
+  return typeof value === 'string' && value.length <= TEXT_LIMIT ? parseNumberText(value) : null;
 };
 
-const shown = (value: unknown): string => toText(value) || '(空)';
+// 理由に引く答えの文字です(長い文字は省略。空は「(空)」)。
+const quote = (value: unknown): string => {
+  const text = toText(value);
+  if (text === '') {
+    return '(空)';
+  }
+  return text.length > QUOTE_LIMIT ? `${text.slice(0, QUOTE_LIMIT)}…` : text;
+};
+
+const quoteList = (values: string[]): string => {
+  const head = values.slice(0, 5).map((value) => `「${quote(value)}」`).join('');
+  return values.length > 5 ? `${head}ほか ${values.length - 5} 件` : head;
+};
+
+const columnLabel = (value: unknown): string => (toText(value) === '' ? '(名前なし)' : quote(value));
+
+const tooLongText = (): string => `探す文字は ${TEXT_LIMIT} 字までです`;
 
 const buildNumberCondition = (op: GridAskOp, filter: Record<string, unknown>): Built<ParsedNumberFilter> => {
   if (op === 'blank' || op === 'notBlank') {
@@ -572,17 +629,24 @@ const buildNumberCondition = (op: GridAskOp, filter: Record<string, unknown>): B
   }
   const value = toNumber(filter.value);
   if (value === null) {
-    return ng(`「${shown(filter.value)}」は数として読めません`);
+    return ng(`「${quote(filter.value)}」は数として読めません`);
   }
   return ok({ mode: 'comparison', operator: op as ComparisonOp, value });
 };
 
+// 文字の条件は前後の空白を外します(フィルター画面と同じ)。長すぎる文字は切り詰めずに捨てます。
 const buildTextCondition = (op: GridAskOp, filter: Record<string, unknown>): Built<ParsedTextFilter> => {
   if (op === 'blank' || op === 'notBlank') {
     return ok({ mode: op });
   }
   const value = toText(filter.value);
-  return value ? ok({ mode: op as 'contains' | 'equals' | 'startsWith' | 'endsWith', value }) : ng('探す文字がありません');
+  if (value === '') {
+    return ng('探す文字がありません');
+  }
+  if (value.length > TEXT_LIMIT) {
+    return ng(tooLongText());
+  }
+  return ok({ mode: op as 'contains' | 'equals' | 'startsWith' | 'endsWith', value });
 };
 
 const buildDateCondition = <T,>(
@@ -596,7 +660,7 @@ const buildDateCondition = <T,>(
   if (op === 'preset') {
     const id = toText(filter.value);
     const preset = column.presets.find((entry) => entry.id === id || entry.label === id);
-    return preset ? ok({ mode: 'preset', preset: preset.id }) : ng(`「${shown(filter.value)}」という期間は使えません`);
+    return preset ? ok({ mode: 'preset', preset: preset.id }) : ng(`「${quote(filter.value)}」という期間は使えません`);
   }
   if (op === 'between') {
     const from = toDateKey(toText(filter.value));
@@ -608,7 +672,7 @@ const buildDateCondition = <T,>(
   }
   const value = toDateKey(toText(filter.value));
   if (value === null) {
-    return ng(`「${shown(filter.value)}」は日付として読めません`);
+    return ng(`「${quote(filter.value)}」は日付として読めません`);
   }
   return ok({ mode: op as 'onOrAfter' | 'onOrBefore' | 'equals' | 'notEquals', value });
 };
@@ -623,107 +687,210 @@ const matchOption = (options: AskOption[], text: string): string | null => {
   if (byLabel) {
     return byLabel.value;
   }
-  const folded = text.toLowerCase();
+  const folded = text.trim().toLowerCase();
   const loose = options.find(
     (option) => option.value.trim().toLowerCase() === folded || option.label.trim().toLowerCase() === folded,
   );
   return loose ? loose.value : null;
 };
 
-const pickValues = <T,>(
-  column: AskColumn<T>,
-  raw: unknown,
-  dropped: string[],
-): Built<string[]> => {
-  const list = (Array.isArray(raw) ? raw : []).slice(0, VALUES_LIMIT).map(toText).filter((value) => value !== '');
-  const picked: string[] = [];
-  const unknown: string[] = [];
-  for (const text of list) {
-    let value: string | null = text;
-    if (column.options) {
-      value = matchOption(column.options, text);
-    } else if (column.filterType === 'dateSet') {
-      // dateSet の選択は日付キー('YYYY-MM-DD')。日付でない値はセルの生値のキーとしてそのまま。
-      value = toDateKey(text) ?? text;
-    } else if (column.filterType === 'numberSet') {
-      // numberSet の選択はセルの数を文字列にしたもの('1000')。'1,000' / '０' / '10.0' も同じ数のキーにします
-      //   (比べる条件と同じく parseNumberText で読む。数でない値はそのまま)。
-      const number = parseNumberText(text);
-      value = number === null ? text : String(number);
-    }
-    if (value === null) {
-      unknown.push(text);
-    } else if (!picked.includes(value)) {
-      picked.push(value);
-    }
-  }
-  if (unknown.length > 0) {
-    dropped.push(`${column.title}: 「${unknown.join('」「')}」は候補にありません`);
-  }
-  return picked.length > 0 ? ok(picked) : ng('選べる値がありません');
-};
-
+type SetMode = 'include' | 'exclude';
 type CompositeValue = Extract<ColumnFilterValue, { kind: 'numberSet' | 'textSet' | 'dateSet' }>;
 type CompositeSide = 'condition' | 'set';
 
-// base は始めにする記述子(同じ答えで先に決めた値、refine では今の値)。fixed はその列で同じ答えの中で
-//   もう決めた側です(複合列の条件と選択は 1 つずつ。今の値の側は上書きします)。
+// 記述子の選択(set、または複合の選択側)です。
+const setOf = (value: ColumnFilterValue | undefined): { mode: SetMode; values: string[] } | null => {
+  if (value === undefined) {
+    return null;
+  }
+  if (value.kind === 'set') {
+    return { mode: value.mode === 'exclude' ? 'exclude' : 'include', values: value.values };
+  }
+  if ((value.kind === 'numberSet' || value.kind === 'textSet' || value.kind === 'dateSet') && value.set) {
+    return { mode: value.set.mode === 'exclude' ? 'exclude' : 'include', values: value.set.values };
+  }
+  return null;
+};
+
+// 1 列の条件を組み立てるときの手がかりです。original は答えを当てる前のその列の条件(言い直しを見分ける)、
+//   base は始めにする記述子(同じ答えで先に決めた値、refine では今の値)、fixed はその列で同じ答えの中で
+//   もう決めた側です(複合列の条件と選択は 1 つずつ。今の値の側は上書きします)。cleared は同じ答えの中で
+//   先にその列を clear したかどうかです(今の選択を入れ替える印)。
+type BuildContext = {
+  original: ColumnFilterValue | undefined;
+  base: ColumnFilterValue | undefined;
+  fixed: ReadonlySet<CompositeSide>;
+  refine: boolean;
+  cleared: boolean;
+  dropped: string[];
+};
+
+// in / notIn の値を選びます。今の選択にある値は書かれたまま使います(言い直しで '100.00' を '100' に
+//   変えない)。'' は空白のセルです。ほかは候補から引くか(候補のある列)、列の種類で揃えます
+//   (dateSet は日付キー、numberSet は数を文字列にしたもの。数や日付でない値はそのまま)。
+const pickValues = <T,>(
+  column: AskColumn<T>,
+  raw: unknown,
+  mode: SetMode,
+  context: BuildContext,
+): Built<string[]> => {
+  if (!Array.isArray(raw)) {
+    return ng('選ぶ値がありません');
+  }
+  const current = setOf(context.original);
+  const echoed = new Set(current?.values ?? []);
+  if (raw.length > VALUES_LIMIT) {
+    context.dropped.push(
+      `${column.title}: 選べる値は ${VALUES_LIMIT} 件までです(${raw.length - VALUES_LIMIT} 件は使いませんでした)`,
+    );
+  }
+  const picked = new Set<string>();
+  const unknown: string[] = [];
+  let unreadable = 0;
+  let tooLong = 0;
+  for (const item of raw.slice(0, VALUES_LIMIT)) {
+    if (typeof item !== 'string' && !(typeof item === 'number' && Number.isFinite(item))) {
+      unreadable += 1;
+      continue;
+    }
+    const text = toRawText(item);
+    if (echoed.has(text)) {
+      picked.add(text);
+      continue;
+    }
+    const trimmed = text.trim();
+    if (trimmed.length > VALUE_TEXT_LIMIT) {
+      tooLong += 1;
+      continue;
+    }
+    let value: string | null = trimmed;
+    if (trimmed === '' || echoed.has(trimmed)) {
+      value = trimmed;
+    } else if (column.options) {
+      value = matchOption(column.options, text);
+    } else if (column.filterType === 'dateSet') {
+      value = toDateKey(trimmed) ?? trimmed;
+    } else if (column.filterType === 'numberSet') {
+      // '1,000' / '１０００' / '1000.0' も同じ数のキーにします(比べる条件と同じく parseNumberText で読む)。
+      const number = parseNumberText(trimmed);
+      value = number === null ? trimmed : String(number);
+    }
+    if (value === null) {
+      unknown.push(text);
+    } else {
+      picked.add(value);
+    }
+  }
+  if (unknown.length > 0) {
+    context.dropped.push(`${column.title}: ${quoteList(unknown)}は候補にありません`);
+  }
+  if (tooLong > 0) {
+    context.dropped.push(`${column.title}: ${VALUE_TEXT_LIMIT} 字を超える値(${tooLong} 件)は使えません`);
+  }
+  if (unreadable > 0) {
+    context.dropped.push(`${column.title}: 値として読めないもの(${unreadable} 件)は使えません`);
+  }
+  // AI が選んだ値が 1 つも無ければ使いません(下で見せていない残りだけが残る選択にしない)。
+  if (picked.size === 0) {
+    return ng('選べる値がありません');
+  }
+  if (current === null || current.mode !== mode) {
+    return ok([...picked]);
+  }
+  // Current view に書かなかった今の選択の残りは、AI が見ていないので AI の答えでは消しません。同じ op のまま
+  //   refine で書き直したとき、または replace でも見せた値を全部書いてきたとき(言い直し)に残します。同じ答えで
+  //   先に clear した列は入れ替えなので残しません。
+  if (current.values.length > VIEW_VALUES_LIMIT && !context.cleared) {
+    const listed = current.values.slice(0, VIEW_VALUES_LIMIT);
+    if (context.refine || listed.every((value) => picked.has(value))) {
+      for (const value of current.values.slice(VIEW_VALUES_LIMIT)) {
+        picked.add(value);
+      }
+    }
+  }
+  // 並びだけが違う言い直しは今の選択のまま(変わっていないのに変わったことにしない)。
+  if (picked.size === current.values.length && current.values.every((value) => picked.has(value))) {
+    return ok([...current.values]);
+  }
+  return ok([...picked]);
+};
+
 const buildFilterValue = <T,>(
   column: AskColumn<T>,
   op: GridAskOp,
   filter: Record<string, unknown>,
-  base: ColumnFilterValue | undefined,
-  fixed: ReadonlySet<CompositeSide>,
-  dropped: string[],
+  context: BuildContext,
 ): Built<ColumnFilterValue> => {
   const filterType = column.filterType as AskFilterType;
+  const original = context.original;
   switch (filterType) {
     case 'text':
     case 'date': {
       const value = toText(filter.value);
-      return value ? ok({ kind: filterType, value }) : ng('探す文字がありません');
+      if (value === '') {
+        return ng('探す文字がありません');
+      }
+      // 前後の空白だけが違う言い直しは今の値のまま(グリッドも前後の空白を外して比べる)。
+      if ((original?.kind === 'text' || original?.kind === 'date') && original.kind === filterType && original.value.trim() === value) {
+        return ok({ kind: filterType, value: original.value });
+      }
+      return value.length > TEXT_LIMIT ? ng(tooLongText()) : ok({ kind: filterType, value });
     }
     case 'select': {
-      const text = toText(filter.value);
-      if (!text) {
+      const text = toRawText(filter.value);
+      if (text.trim() === '') {
         return ng('選ぶ値がありません');
       }
-      const value = column.options ? matchOption(column.options, text) : text;
-      return value === null ? ng(`「${text}」は候補にありません`) : ok({ kind: 'select', value });
+      if (original?.kind === 'select' && (original.value === text || original.value === text.trim())) {
+        return ok({ kind: 'select', value: original.value });
+      }
+      const value = column.options ? matchOption(column.options, text) : text.trim();
+      if (value === null) {
+        return ng(`「${quote(text)}」は候補にありません`);
+      }
+      // '' は「すべて」(条件なし)と同じなので選べません。
+      if (value === '') {
+        return ng(`「${quote(text)}」では絞り込めません`);
+      }
+      return value.length > VALUE_TEXT_LIMIT ? ng(`${VALUE_TEXT_LIMIT} 字を超える値は使えません`) : ok({ kind: 'select', value });
     }
     case 'set': {
-      const picked = pickValues(column, filter.values, dropped);
-      if ('error' in picked) {
-        return picked;
-      }
-      return ok({ kind: 'set', mode: op === 'notIn' ? 'exclude' : 'include', values: picked.value });
+      const mode: SetMode = op === 'notIn' ? 'exclude' : 'include';
+      const picked = pickValues(column, filter.values, mode, context);
+      return 'error' in picked ? picked : ok({ kind: 'set', mode, values: picked.value });
     }
     case 'number': {
       const parsed = buildNumberCondition(op, filter);
       if ('error' in parsed) {
         return parsed;
       }
+      // 同じ条件の言い直しは、利用者が打った書き方(raw)のまま残します。
+      if (original?.kind === 'number' && isSameColumnFilterValue({ kind: 'number', raw: original.raw, parsed: parsed.value }, original)) {
+        return ok(cloneColumnFilterValue(original));
+      }
       return ok({ kind: 'number', raw: formatParsedNumberFilter(parsed.value), parsed: parsed.value });
     }
     default: {
       // 条件 AND 選択の複合です。同じ答えの中で同じ列に条件と選択が 1 つずつ来たら合わせます。refine で
       //   片方だけ来たときは、今の記述子のもう片方を残します(「さらに 0 は除いて」で「10 以下」を消さない)。
+      const base = context.base;
       const next: CompositeValue =
         base && base.kind === filterType
           ? (cloneColumnFilterValue(base) as CompositeValue)
           : ({ kind: filterType, condition: null, set: null } as CompositeValue);
       if (op === 'in' || op === 'notIn') {
-        if (fixed.has('set')) {
+        if (context.fixed.has('set')) {
           return ng('値の選択は 1 列に 1 つまでです');
         }
-        const picked = pickValues(column, filter.values, dropped);
+        const mode: SetMode = op === 'notIn' ? 'exclude' : 'include';
+        const picked = pickValues(column, filter.values, mode, context);
         if ('error' in picked) {
           return picked;
         }
-        next.set = { mode: op === 'notIn' ? 'exclude' : 'include', values: picked.value };
+        next.set = { mode, values: picked.value };
         return ok(next);
       }
-      if (fixed.has('condition')) {
+      if (context.fixed.has('condition')) {
         return ng('条件は 1 列に 1 つまでです');
       }
       if (next.kind === 'numberSet') {
@@ -778,7 +945,32 @@ const parseAnswer = (answer: unknown): unknown => {
 const asRecord = (value: unknown): Record<string, unknown> | null =>
   value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : null;
 
-const columnLabel = (value: unknown): string => toText(value) || '(名前なし)';
+const readDirection = (value: unknown): 'asc' | 'desc' | null => {
+  const text = toText(value).toLowerCase();
+  if (text === 'asc' || text === 'ascending') {
+    return 'asc';
+  }
+  return text === 'desc' || text === 'descending' ? 'desc' : null;
+};
+
+// AI に見せていない列の並びは残します(Current view に出していないので AI は書けません)。AI の並びが今の並び
+//   (見せた列の分)と同じなら今の並びのまま、変わったときは AI の並びの後ろに足します(頼まれた並びを先にする)。
+const withKeptSort = (
+  next: GridSortEntry[],
+  current: readonly GridSortEntry[],
+  isAskable: (key: string) => boolean,
+): GridSortEntry[] => {
+  const shown = current.filter((entry) => isAskable(entry.columnKey));
+  if (isSameSortState(next, shown)) {
+    return current.map((entry) => ({ ...entry }));
+  }
+  return [...next, ...current.filter((entry) => !isAskable(entry.columnKey)).map((entry) => ({ ...entry }))];
+};
+
+const limitDropped = (dropped: string[]): string[] =>
+  dropped.length > DROPPED_LIMIT
+    ? [...dropped.slice(0, DROPPED_LIMIT - 1), `ほか ${dropped.length - DROPPED_LIMIT + 1} 件`]
+    : dropped;
 
 /**
  * ask の答えを検査して、反映する状態へ変えます。`state` は頼みを組み立てたときと同じ今の状態(`getState()`)です。
@@ -793,16 +985,33 @@ export const readGridAskAnswer = <T,>(
   if (parsed === undefined) {
     return { ok: false, message: READ_ERROR };
   }
-  // filters の配列が無い答え(サーバーのエラーの { error } など)と mode が違う答えは、表を変えずに読めなかった
-  //   ことにします(replace として読むと、表の条件が全部消えるため)。mode が無いだけなら replace です。
+  // 表への指示に見えない答え(サーバーのエラーの { error } など)と mode が違う答えは、表を変えずに読めなかった
+  //   ことにします(replace として読むと、表の条件が全部消えるため)。mode が無いだけなら replace、filters が
+  //   無いだけ(並びだけを返した答えなど)なら条件なしとして読みます。
   const source = asRecord(parsed);
-  const rawFilters: unknown[] | null = source && Array.isArray(source.filters) ? source.filters : null;
   const mode = source?.mode;
-  if (!source || rawFilters === null || (mode !== undefined && mode !== 'replace' && mode !== 'refine')) {
+  const filtersField = source?.filters;
+  if (
+    !source ||
+    (mode !== undefined && mode !== 'replace' && mode !== 'refine') ||
+    (filtersField !== undefined && !Array.isArray(filtersField)) ||
+    (filtersField === undefined && mode === undefined)
+  ) {
     return { ok: false, message: SHAPE_ERROR };
   }
+  const rawFilters: unknown[] = Array.isArray(filtersField) ? filtersField : [];
   const columns = resolveAskColumns(options, state);
   const byKey = new Map(columns.map((column) => [column.key, column]));
+  // 列は key で引き、無ければ見出し(同じ見出しが 1 列だけのとき)で引きます。
+  const byTitle = new Map<string, AskColumn<T> | null>();
+  for (const column of columns) {
+    byTitle.set(column.title, byTitle.has(column.title) ? null : column);
+  }
+  const resolveColumn = (raw: unknown): AskColumn<T> | undefined => {
+    const text = toText(raw);
+    return byKey.get(text) ?? byTitle.get(text) ?? undefined;
+  };
+  const allowFilter = isAllowed(options.allowFilter, true);
   const allowSort = isAllowed(options.allowSort, true);
   const allowSearch = isAllowed(options.allowSearch, true);
   const allowColumnVisibility = isAllowed(options.allowColumnVisibility, false);
@@ -811,66 +1020,93 @@ export const readGridAskAnswer = <T,>(
 
   // replace は AI に見せた列の条件・並び・検索を空にしてから始めます。AI が変えられない条件(見せていない列の
   //   条件と並び、絞り込めない列 = custom などのフィルター)と、隠した列はそのままです。
-  const columnFilters: Record<string, ColumnFilterValue> = {};
+  //   条件は Map で持ちます(列の key が '__proto__' でも普通のキーとして扱うため)。
+  const columnFilters = new Map<string, ColumnFilterValue>();
   for (const [key, value] of Object.entries(state.filters.columnFilters)) {
     const column = byKey.get(key);
     if (refine || !column || column.filterType === null) {
-      columnFilters[key] = cloneColumnFilterValue(value);
+      columnFilters.set(key, cloneColumnFilterValue(value));
     }
   }
-  // 見せていない列の並びは、AI の並びの後ろに残します(Current view に出していないので AI は書けません)。
-  const keptSort = state.sort.filter((entry) => !byKey.has(entry.columnKey)).map((entry) => ({ ...entry }));
-  let sort: GridSortEntry[] = refine || !allowSort ? state.sort.map((entry) => ({ ...entry })) : keptSort;
+  const isAskable = (key: string): boolean => byKey.has(key);
+  let sort: GridSortEntry[] =
+    refine || !allowSort ? state.sort.map((entry) => ({ ...entry })) : withKeptSort([], state.sort, isAskable);
   let globalText = refine || !allowSearch ? state.filters.globalText : '';
 
-  const touched = new Set<string>();
-  // 複合列で、同じ答えの中でもう決めた側(条件 / 選択)です。
-  const fixedSides = new Map<string, Set<CompositeSide>>();
-  for (const rawFilter of rawFilters) {
-    const filter = asRecord(rawFilter);
-    if (!filter) {
-      continue;
+  if (!allowFilter) {
+    if (rawFilters.length > 0) {
+      dropped.push('列の条件は変えない設定です');
     }
-    const column = byKey.get(toText(filter.column));
-    if (!column) {
-      dropped.push(`「${columnLabel(filter.column)}」という列はありません`);
-      continue;
+  } else {
+    const touched = new Set<string>();
+    // 同じ答えの中で clear した列です(今の選択を入れ替える印。pickValues が見せていない残りを足さない)。
+    const cleared = new Set<string>();
+    // 複合列で、同じ答えの中でもう決めた側(条件 / 選択)です。
+    const fixedSides = new Map<string, Set<CompositeSide>>();
+    let unreadableFilters = 0;
+    for (const rawFilter of rawFilters) {
+      const filter = asRecord(rawFilter);
+      if (!filter) {
+        unreadableFilters += 1;
+        continue;
+      }
+      const column = resolveColumn(filter.column);
+      if (!column) {
+        dropped.push(`「${columnLabel(filter.column)}」という列はありません`);
+        continue;
+      }
+      const opText = typeof filter.op === 'string' ? filter.op.trim() : '';
+      if (column.filterType === null) {
+        dropped.push(`${column.title}: この列では絞り込めません`);
+        continue;
+      }
+      if (opText === '') {
+        dropped.push(`${column.title}: 条件の種類がありません`);
+        continue;
+      }
+      const op = opText as GridAskOp;
+      if (!column.ops.includes(op)) {
+        // OP_LABELS は自分のキーだけを引きます('toString' などで prototype の値を出さない)。
+        const opLabel = Object.prototype.hasOwnProperty.call(OP_LABELS, op) ? OP_LABELS[op] : quote(filter.op);
+        dropped.push(`${column.title}: この列では「${opLabel}」の条件は使えません`);
+        continue;
+      }
+      if (op === 'clear') {
+        columnFilters.delete(column.key);
+        touched.delete(column.key);
+        fixedSides.delete(column.key);
+        cleared.add(column.key);
+        continue;
+      }
+      const isComposite =
+        column.filterType === 'numberSet' || column.filterType === 'textSet' || column.filterType === 'dateSet';
+      if (touched.has(column.key) && !isComposite) {
+        dropped.push(`${column.title}: 条件は 1 列に 1 つまでです`);
+        continue;
+      }
+      // replace では AI に見せた列の今の条件を消してあるので、base は同じ答えで先に決めた値だけになります。
+      const sides = fixedSides.get(column.key) ?? new Set<CompositeSide>();
+      const built = buildFilterValue(column, op, filter, {
+        original: ownValue(state.filters.columnFilters, column.key),
+        base: columnFilters.get(column.key),
+        fixed: sides,
+        refine,
+        cleared: cleared.has(column.key),
+        dropped,
+      });
+      if ('error' in built) {
+        dropped.push(`${column.title}: ${built.error}`);
+        continue;
+      }
+      columnFilters.set(column.key, built.value);
+      touched.add(column.key);
+      if (isComposite) {
+        sides.add(op === 'in' || op === 'notIn' ? 'set' : 'condition');
+        fixedSides.set(column.key, sides);
+      }
     }
-    const op = String(filter.op) as GridAskOp;
-    if (column.filterType === null) {
-      dropped.push(`${column.title}: この列では絞り込めません`);
-      continue;
-    }
-    if (!column.ops.includes(op)) {
-      // OP_LABELS は自分のキーだけを引きます('toString' などで prototype の値を出さない)。
-      const opLabel = Object.prototype.hasOwnProperty.call(OP_LABELS, op) ? OP_LABELS[op] : String(filter.op);
-      dropped.push(`${column.title}: この列では「${opLabel}」の条件は使えません`);
-      continue;
-    }
-    if (op === 'clear') {
-      delete columnFilters[column.key];
-      touched.delete(column.key);
-      fixedSides.delete(column.key);
-      continue;
-    }
-    const isComposite =
-      column.filterType === 'numberSet' || column.filterType === 'textSet' || column.filterType === 'dateSet';
-    if (touched.has(column.key) && !isComposite) {
-      dropped.push(`${column.title}: 条件は 1 列に 1 つまでです`);
-      continue;
-    }
-    // replace では AI に見せた列の今の条件を消してあるので、base は同じ答えで先に決めた値だけになります。
-    const sides = fixedSides.get(column.key) ?? new Set<CompositeSide>();
-    const built = buildFilterValue(column, op, filter, columnFilters[column.key], sides, dropped);
-    if ('error' in built) {
-      dropped.push(`${column.title}: ${built.error}`);
-      continue;
-    }
-    columnFilters[column.key] = built.value;
-    touched.add(column.key);
-    if (isComposite) {
-      sides.add(op === 'in' || op === 'notIn' ? 'set' : 'condition');
-      fixedSides.set(column.key, sides);
+    if (unreadableFilters > 0) {
+      dropped.push(`読めない条件(${unreadableFilters} 件)は使えません`);
     }
   }
 
@@ -883,43 +1119,74 @@ export const readGridAskAnswer = <T,>(
       const nextSort: GridSortEntry[] = [];
       for (const rawEntry of source.sort) {
         const entry = asRecord(rawEntry);
-        const column = entry ? byKey.get(toText(entry.column)) : undefined;
+        const column = entry ? resolveColumn(entry.column) : undefined;
         if (!entry || !column) {
           dropped.push(`並び: 「${columnLabel(entry?.column)}」という列はありません`);
           continue;
         }
+        const direction = readDirection(entry.direction);
+        if (direction === null) {
+          dropped.push(`並び: ${column.title} の向き「${quote(entry.direction)}」は使えません`);
+          continue;
+        }
         if (!nextSort.some((item) => item.columnKey === column.key)) {
-          nextSort.push({ columnKey: column.key, direction: entry.direction === 'desc' ? 'desc' : 'asc' });
+          nextSort.push({ columnKey: column.key, direction });
         }
       }
-      sort = [...nextSort, ...keptSort];
+      // refine で並びを書いてきたのに 1 つも使えなかったときは、null と同じく今の並びのままにします(捨てた
+      //   理由は上で出しています。並びを消したいときの [] とは分けます)。
+      if (!(refine && source.sort.length > 0 && nextSort.length === 0)) {
+        sort = withKeptSort(nextSort, state.sort, isAskable);
+      }
     }
   }
 
-  if (typeof source.search === 'string') {
-    const search = source.search.trim().slice(0, TEXT_LIMIT);
-    if (allowSearch) {
-      globalText = search;
-    } else if (search !== '' && search !== state.filters.globalText) {
+  if (source.search !== undefined && source.search !== null && typeof source.search !== 'string') {
+    dropped.push('検索の文字を読めませんでした');
+  } else if (typeof source.search === 'string') {
+    const search = source.search.trim();
+    const currentSearch = state.filters.globalText;
+    if (!allowSearch) {
       // 空は replace の「空から始める」どおりに返しただけなので知らせません(検索はそのまま)。
-      dropped.push('検索の文字は変えない設定です');
+      if (search !== '' && search !== currentSearch.trim()) {
+        dropped.push('検索の文字は変えない設定です');
+      }
+    } else if (search !== '' && search === currentSearch.trim()) {
+      // 前後の空白だけが違う言い直しは今の文字のまま。
+      globalText = currentSearch;
+    } else if (search.length > TEXT_LIMIT) {
+      dropped.push(`検索の文字は ${TEXT_LIMIT} 字までです`);
+    } else {
+      globalText = search;
     }
   }
 
   let nextColumns = state.columns?.map((entry) => ({ ...entry }));
-  const hide = Array.isArray(source.hide) ? source.hide.map(toText).filter((key) => key !== '') : [];
-  const show = Array.isArray(source.show) ? source.show.map(toText).filter((key) => key !== '') : [];
+  const hide = Array.isArray(source.hide) ? source.hide.filter((key) => toText(key) !== '') : [];
+  const show = Array.isArray(source.show) ? source.show.filter((key) => toText(key) !== '') : [];
+  const unreadableKeys =
+    (Array.isArray(source.hide) ? source.hide.length - hide.length : 0) +
+    (Array.isArray(source.show) ? source.show.length - show.length : 0);
+  if (unreadableKeys > 0) {
+    dropped.push(`読めない列の指定(${unreadableKeys} 件)は使えません`);
+  }
   if (hide.length > 0 || show.length > 0) {
     if (!allowColumnVisibility || !nextColumns) {
       dropped.push('列の表示は変えない設定です');
     } else {
-      for (const key of [...show, ...hide]) {
-        if (!byKey.has(key) || !nextColumns.some((entry) => entry.key === key)) {
-          dropped.push(`「${key}」という列はありません`);
+      const present = new Set(nextColumns.map((entry) => entry.key));
+      const showSet = new Set<string>();
+      const hideSet = new Set<string>();
+      for (const [list, target] of [[show, showSet], [hide, hideSet]] as const) {
+        for (const raw of list) {
+          const column = resolveColumn(raw);
+          if (column && present.has(column.key)) {
+            target.add(column.key);
+          } else {
+            dropped.push(`「${columnLabel(raw)}」という列はありません`);
+          }
         }
       }
-      const showSet = new Set(show.filter((key) => byKey.has(key)));
-      const hideSet = new Set(hide.filter((key) => byKey.has(key)));
       const applied = nextColumns.map((entry) => {
         if (hideSet.has(entry.key)) {
           return { ...entry, visible: false };
@@ -944,7 +1211,7 @@ export const readGridAskAnswer = <T,>(
   const nextState: GridState = {
     version: state.version,
     columnWidths: { ...state.columnWidths },
-    filters: { globalText, columnFilters },
+    filters: { globalText, columnFilters: Object.fromEntries(columnFilters) },
     sort,
     columns: nextColumns,
   };
@@ -952,7 +1219,7 @@ export const readGridAskAnswer = <T,>(
     ok: true,
     state: nextState,
     changed: !isSameGridAskView(nextState, state),
-    dropped,
+    dropped: limitDropped(dropped),
     unsupported,
   };
 };
