@@ -117,7 +117,10 @@ export const createAutoHeightMeasurer = <T,>(): AutoHeightMeasurer<T> => {
         }
         const height = Math.ceil(cell.getBoundingClientRect().height);
         const prev = perRow.get(idx);
-        if (prev === undefined || height > prev) {
+        // 変更(BR-1 見直し 2026-10-28): 高さ 0(隠れている間)は記録しません。行の高さが 0 になると窓に入る行が増え、
+        //   新しく描いた行もまた 0 で測られて、描き直しが止まらなくなる(Maximum update depth exceeded でグリッドが外れる)
+        //   ためです(スクロールした状態で隠したとき。0.58.0 から)。
+        if (height && (prev === undefined || height > prev)) {
           perRow.set(idx, height);
         }
       });

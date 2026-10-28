@@ -173,19 +173,17 @@ export const createGridApi = <T,>(features: Pick<GridCoreFeatures, 'export'> = {
     if (!el || !s) {
       return;
     }
-    let top = logicalTop === null ? el.scrollTop : logicalToPhysicalScrollTop(logicalTop, s.verticalScaleFactor);
-    // 変更(BR-5 2026-10-28): 行を下端に合わせるとき('end'、または 'auto' で下へ動かすとき)は物理位置を切り上げます。
-    //   行の位置を縮めて持つモードでは物理位置が小数になり、WebKit はスクロール位置の小数を切り捨てるため、最後の行が
-    //   合計行の下に 2px 隠れていました。'auto' の向きは論理位置で比べます(見えている行では目標が今の論理位置そのもの。
-    //   物理へ戻した値は浮動小数の誤差でわずかに大きくなることがあり、切り上げると動かないはずの呼び出しで 1px 動く)。
-    if (
-      align === 'end' ||
-      (align === 'auto' && logicalTop !== null && logicalTop > physicalToLogicalScrollTop(el.scrollTop, s.verticalScaleFactor))
-    ) {
-      top = Math.ceil(top);
-    }
+    // 変更(BR-5 2026-10-28): 目標が今の論理位置そのもの(見えている行への 'auto' など)なら物理位置をそのまま使います
+    //   (物理へ戻した値は浮動小数の誤差で前後にずれることがあり、WebKit は小数を切り捨てるので 1px 上へ動いていた)。
+    //   null(現状維持)も今の論理位置として扱います。
+    const current = physicalToLogicalScrollTop(el.scrollTop, s.verticalScaleFactor);
+    const target = logicalTop ?? current;
+    const top = target === current ? el.scrollTop : logicalToPhysicalScrollTop(target, s.verticalScaleFactor);
     applyApiScroll(el, {
-      top,
+      //   行を下端に合わせるとき('end'、または 'auto' で下へ動かすとき)は物理位置を切り上げます。行の位置を縮めて
+      //   持つモードでは物理位置が小数になり、WebKit はスクロール位置の小数を切り捨てるため、最後の行が合計行の下に
+      //   2px 隠れていました。'auto' の向きは論理位置で比べます。
+      top: align === 'end' || (align === 'auto' && target > current) ? Math.ceil(top) : top,
       left: left === null ? el.scrollLeft : left,
     });
   };

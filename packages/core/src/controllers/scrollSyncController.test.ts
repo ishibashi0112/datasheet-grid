@@ -134,6 +134,26 @@ describe('createScrollSyncController', () => {
     expect(setViewState).not.toHaveBeenCalled();
   });
 
+  // 追加(BR-1 見直し 2): 隠れたまま生成された(最初の計測が幅 0 の)ときも、見えたときの書き込みは次のフレーム
+  //   (出した最初のフレームは幅 0 のときの窓で描かれる)。その場で書くと、行の高さを測るモードで出した後に行を
+  //   測らなくなる(0.58.0 の不具合。測る処理が行の描かれる前に走り、その後は呼ばれない)ため。
+  it('隠れたまま生成されたときも、見えたときの書き込みは次のフレームで行う', () => {
+    const controller = createScrollSyncController();
+    const setViewState = vi.fn();
+    const el = makeElement();
+    Object.defineProperty(el, 'clientHeight', { value: 0, configurable: true });
+    Object.defineProperty(el, 'clientWidth', { value: 0, configurable: true });
+    controller.update({ scrollContainerRef: { current: el }, setViewState, onScroll: undefined });
+    expect(setViewState).toHaveBeenLastCalledWith({ scrollTop: 0, viewportHeight: 0, viewportWidth: 0 });
+    Object.defineProperty(el, 'clientHeight', { value: 300, configurable: true });
+    Object.defineProperty(el, 'clientWidth', { value: 500, configurable: true });
+    resizeCallback?.();
+    expect(setViewState).toHaveBeenCalledTimes(1);
+    runFrame();
+    expect(setViewState).toHaveBeenLastCalledWith({ viewportHeight: 300, viewportWidth: 500 });
+    controller.dispose();
+  });
+
   // 追加(motion-1 / M-1): スクロール中の修飾子(overlay の追従 transition を切る)。停止から SCROLLING_IDLE_MS で外れ、
   //   dispose で即時に外れる。
   it('scroll 中は ssg-scroll-container--scrolling が付き、停止から一定時間で外れる(dispose でも外れる)', () => {
@@ -192,6 +212,27 @@ describe('createScrollSyncController', () => {
     setViewState.mockClear();
     controller.update({ scrollContainerRef: { current: null }, setViewState, onScroll: undefined, footerHeight: 10 });
     expect(setViewState).not.toHaveBeenCalled();
+  });
+
+  // 追加(BR-1 見直し 2): 隠れている間(幅 0)に合計行の高さが変わっても書かない(0 を書くと、同じ大きさで出し直した
+  //   最初のフレームが行の少ない窓で描かれる)。見えたときの ResizeObserver で合計行を引いた高さを書く。
+  it('隠れている間に footerHeight が変わっても書かず、見えたときに測り直す', () => {
+    const controller = createScrollSyncController();
+    const setViewState = vi.fn();
+    const el = makeElement();
+    const ref = { current: el };
+    controller.update({ scrollContainerRef: ref, setViewState, onScroll: undefined });
+    Object.defineProperty(el, 'clientHeight', { value: 0, configurable: true });
+    Object.defineProperty(el, 'clientWidth', { value: 0, configurable: true });
+    setViewState.mockClear();
+    controller.update({ scrollContainerRef: ref, setViewState, onScroll: undefined, footerHeight: 36 });
+    expect(setViewState).not.toHaveBeenCalled();
+    Object.defineProperty(el, 'clientHeight', { value: 300, configurable: true });
+    Object.defineProperty(el, 'clientWidth', { value: 500, configurable: true });
+    resizeCallback?.();
+    runFrame();
+    expect(setViewState).toHaveBeenLastCalledWith({ viewportHeight: 264, viewportWidth: 500 });
+    controller.dispose();
   });
 
   // 追加(見直し): 末尾までスクロールしていたときに合計行が出たら末尾に留める(最後の行を合計行の裏に隠さない)。

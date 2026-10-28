@@ -299,13 +299,18 @@ describe('createGridApi', () => {
     const { args, markApiScroll } = makeArgs({ verticalScaleFactor: 2.4 });
     api.update(args);
     const el = args.scrollContainerRef.current;
-    // 物理 7 = 論理 16.8。行 1(36 + 30 = 66 〜 96)は可視域 52.8 〜 116.8 に入っている。7 * 2.4 / 2.4 は 7 より少し大きい。
+    // 物理 7 = 論理 16.8。行 1(36 + 30 = 66 〜 96)は可視域 52.8 〜 116.8 に入っている。7 * 2.4 / 2.4 は 7 より少し大きい
+    //   (切り上げると 8 になる)。7.75 * 2.4 / 2.4 は 7.75 より少し小さい(WebKit は小数を切り捨てるので 1 上へ動く)。
+    //   どちらも今の物理位置をそのまま渡す。
     expect((7 * 2.4) / 2.4).toBeGreaterThan(7);
-    if (el) el.scrollTop = 7;
-    api.handle.scrollToRow(1);
-    api.handle.scrollToCell(1, 0);
-    // scrollTo には誤差込みの値がそのまま渡る(ブラウザでは同じ位置)。切り上げると 8 になる。
-    expect(el?.scrollTop).toBeCloseTo(7, 6);
+    expect((7.75 * 2.4) / 2.4).toBeLessThan(7.75);
+    for (const top of [7, 7.75]) {
+      if (el) el.scrollTop = top;
+      api.handle.scrollToRow(1);
+      expect(el?.scrollTop).toBe(top);
+      api.handle.scrollToCell(1, 0);
+      expect(el?.scrollTop).toBe(top);
+    }
     expect(markApiScroll).not.toHaveBeenCalled();
   });
 

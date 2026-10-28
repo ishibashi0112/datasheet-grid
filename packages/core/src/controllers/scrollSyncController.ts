@@ -143,8 +143,9 @@ export const createScrollSyncController = (): ScrollSyncController => {
       }
       // 追加(合計行 3A): 合計行の表示 / 高さが変わったら見える高さを測り直します(要素のサイズは変わらないため
       //   ResizeObserver は発火しない)。
+      //   変更(BR-1 見直し): 隠れている間(幅 0)は書きません(ResizeObserver の書き込みと同じ理由。見えたときに測り直す)。
       const footerHeight = next.footerHeight ?? 0;
-      if (footerHeight !== previousFooterHeight && attachedElement) {
+      if (footerHeight !== previousFooterHeight && attachedElement?.clientWidth) {
         // 追加(見直し): 末尾までスクロールしていたときに合計行が出た / 高くなったら、末尾に留めます(最後の行を
         //   合計行の裏に隠さない)。update はコミット後に呼ばれるため、scrollHeight は増えたあとの値です。
         const el = attachedElement;
