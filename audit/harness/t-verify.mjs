@@ -1,5 +1,5 @@
 // サブエージェントの高・中所見を実ブラウザで追試する。
-import { open, check, pending, summary, errorsOf, renderedRowIndexes, cellText, cell, header, scrollTo, focusGrid, waitIdle, events, clearEvents, pasteText, rows, state } from './pw.mjs';
+import { open, check, skip, SUPPORTS, pending, summary, errorsOf, renderedRowIndexes, cellText, cell, header, scrollTo, focusGrid, waitIdle, events, clearEvents, pasteText, rows, state } from './pw.mjs';
 
 // ---- C-1: SSRM + StrictMode + initialRowCount 未指定 → 永久に空 ----
 {
@@ -42,7 +42,13 @@ import { open, check, pending, summary, errorsOf, renderedRowIndexes, cellText, 
   const inputVal = await page.evaluate(() => document.querySelector('.ssg-cell-editor-input')?.value);
   const rc = await events(page, 'onRowsChange');
   const r0 = (await rows(page))[0].name;
-  check('RD-2: Ctrl+V inside editor pastes into the input (not the grid)', inputVal === 'PASTED' && rc.length === 0, { inputVal, onRowsChange: rc.length, rowName: r0 });
+  if (SUPPORTS.clipboardSeed) {
+    check('RD-2: Ctrl+V inside editor pastes into the input (not the grid)', inputVal === 'PASTED' && rc.length === 0, { inputVal, onRowsChange: rc.length, rowName: r0 });
+  } else {
+    // クリップボードへ書けないブラウザでは中身は確かめず、グリッドが横取りしない(行を書き換えない)ことだけを見る。
+    check('RD-2: Ctrl+V inside editor is not taken by the grid', rc.length === 0 && r0 === 'item-000001', { inputVal, onRowsChange: rc.length, rowName: r0 });
+    skip('RD-2: 貼り付けた中身が入力欄に入る', 'テストからクリップボードへ書けない');
+  }
   await page.keyboard.press('Escape');
   await waitIdle(page, 100);
   console.log('RD-2 after Escape row0.name =', (await rows(page))[0].name);

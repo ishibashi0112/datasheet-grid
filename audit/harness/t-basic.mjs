@@ -384,7 +384,8 @@ console.log('dateSet popover text:', dsText.replace(/\n+/g, ' | ').slice(0, 500)
 await closePopover();
 // auto(score): 判定種別
 await openFilter('score');
-const autoText = await page.locator('.ssg-filter-popover').innerText();
+// innerText は Chromium だと <select> の選択肢の文字を含むが、WebKit / Firefox では含まないため、選択肢の文字を足して見る。
+const autoText = await page.locator('.ssg-filter-popover').evaluate((el) => el.innerText + '\n' + [...el.querySelectorAll('option')].map((o) => o.textContent).join('\n'));
 check("filterType auto on mixed numbers/'n/a' → textSet (strict: text operators shown)", autoText.includes('を含む') && !autoText.includes('より大きい'), autoText.replace(/\n+/g, ' | ').slice(0, 120));
 await closePopover();
 // すべてクリア(チップバー)

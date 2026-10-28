@@ -170,7 +170,10 @@ await focusGrid(page);
 await page.evaluate(() => {
   const dt = new DataTransfer();
   dt.setData('text/plain', 'p1\tp2\np3\tp4');
-  document.querySelector('.ssg-shell').dispatchEvent(new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true }));
+  const ev = new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true });
+  // Firefox は初期化の DataTransfer を中身の無い別物に差し替えるので被せる(pw.mjs の pasteText と同じ)。
+  if (ev.clipboardData !== dt) Object.defineProperty(ev, 'clipboardData', { value: dt });
+  document.querySelector('.ssg-shell').dispatchEvent(ev);
 });
 await waitIdle(page, 300);
 c = await ctl();

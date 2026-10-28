@@ -1,5 +1,5 @@
 // Playwright ランナー共通部。
-import { chromium } from 'playwright-core';
+import playwright from 'playwright-core';
 
 import { existsSync, mkdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -15,11 +15,55 @@ export const BASE = process.env.HARNESS_BASE ?? 'http://127.0.0.1:5177/';
 const KNOWN_CHROMES = ['/opt/pw-browsers/chromium', '/opt/pw-browsers/chromium-1194/chrome-linux/chrome'];
 export const CHROME = process.env.SSG_AUDIT_CHROME ?? KNOWN_CHROMES.find((path) => existsSync(path));
 
+// 追加(ブラウザ対応の確認 2026-10-28): SSG_AUDIT_BROWSER でブラウザを切り替える。
+//   chromium(既定)/ firefox / webkit = Playwright の各ブラウザ(firefox / webkit は `npx playwright install firefox webkit`
+//     済みが前提。Mac など配布元へ届く環境向け)。
+//   firefox-bidi = 普通の Firefox を WebDriver BiDi で動かす(Playwright の実験的な機能。SSG_AUDIT_FIREFOX に実行ファイル)。
+//   webkitgtk / geckodriver = W3C WebDriver で動かす(wd.mjs)。Linux の OS パッケージの WebKitGTK(apt の webkit2gtk-driver)
+//     や Firefox + geckodriver。webkitgtk は X が要るので xvfb-run -a で包む。
+//   ブラウザによって使えない機能(CDP / ネットワークの横取り / 時計 / メディアの模擬)は SUPPORTS を見て飛ばし、SKIP と出す。
+export const BROWSER = process.env.SSG_AUDIT_BROWSER ?? 'chromium';
+const { chromium, firefox, webkit } = playwright;
+// _bidiFirefox は ESM の名前付きエクスポートに無いので default 側から取る。
+const PLAYWRIGHT_BROWSERS = { chromium, firefox, webkit, 'firefox-bidi': playwright._bidiFirefox };
+const WEBDRIVER_BROWSERS = ['webkitgtk', 'geckodriver'];
+if (!PLAYWRIGHT_BROWSERS[BROWSER] && !WEBDRIVER_BROWSERS.includes(BROWSER)) throw new Error(`SSG_AUDIT_BROWSER=${BROWSER} は未対応です`);
+const viaPlaywright = BROWSER in PLAYWRIGHT_BROWSERS;
+const viaBidi = BROWSER === 'firefox-bidi';
+export const SUPPORTS = {
+  cdp: BROWSER === 'chromium',
+  network: viaPlaywright && !viaBidi, // page.route / page.on('request')
+  clock: viaPlaywright && !viaBidi,
+  emulateMedia: viaPlaywright && !viaBidi,
+  // テストから OS のクリップボードへ書いて、実際の Ctrl+V で貼らせられるか(権限を渡せるのは Chromium だけ)。
+  clipboardSeed: BROWSER === 'chromium',
+};
+let announced = false;
+
 // beforeGoto(page): ページを開く前に呼ぶ(page.clock.install で時計を差し替える等。監査 L-15 の確認で使う)。
 export async function open(scenario, { query = '', viewport = { width: 1400, height: 800 }, headless = true, beforeGoto } = {}) {
-  const browser = await chromium.launch({ ...(CHROME ? { executablePath: CHROME } : {}), headless });
-  const context = await browser.newContext({ viewport, permissions: ['clipboard-read', 'clipboard-write'] });
-  const page = await context.newPage();
+  let page;
+  let closeBrowser;
+  let version;
+  if (viaPlaywright) {
+    const executablePath = BROWSER === 'chromium' ? CHROME : viaBidi ? process.env.SSG_AUDIT_FIREFOX : undefined;
+    const browser = await PLAYWRIGHT_BROWSERS[BROWSER].launch({ ...(executablePath ? { executablePath } : {}), headless });
+    // クリップボードの権限は Chromium だけが持つ(Firefox / WebKit は名前を知らず例外になる)。
+    const context = await browser.newContext({ viewport, ...(BROWSER === 'chromium' ? { permissions: ['clipboard-read', 'clipboard-write'] } : {}) });
+    page = await context.newPage();
+    version = `${BROWSER} ${browser.version()}`;
+    closeBrowser = () => browser.close();
+  } else {
+    const { launchWebDriver } = await import('./wd.mjs');
+    const launched = await launchWebDriver(BROWSER, { viewport });
+    page = launched.page;
+    version = `${BROWSER} (${launched.version})`;
+    closeBrowser = launched.close;
+  }
+  if (!announced) {
+    announced = true;
+    console.log(`BROWSER ${version}`);
+  }
   const pageErrors = [];
   page.on('pageerror', (e) => pageErrors.push('[pageerror] ' + e.message));
   page.on('console', (m) => {
@@ -30,7 +74,7 @@ export async function open(scenario, { query = '', viewport = { width: 1400, hei
   await page.waitForFunction(() => window.__ready === true, null, { timeout: 30000 });
   await page.waitForSelector('.ssg-root', { timeout: 30000 });
   await page.waitForTimeout(150);
-  return { browser, page, pageErrors, close: () => browser.close() };
+  return { page, pageErrors, close: closeBrowser };
 }
 
 export const results = [];
@@ -45,9 +89,15 @@ export function pending(name, ok, detail) {
   pendings.push({ name, ok: !!ok, detail });
   console.log(`PENDING(判断待ち・${ok ? '解消済み' : '未解消'}) ${name}${detail !== undefined ? ' :: ' + (typeof detail === 'string' ? detail : JSON.stringify(detail)) : ''}`);
 }
+// このブラウザでは確かめられない(SUPPORTS が false の機能を使う)確認。FAIL には数えず SKIP として記録する。
+export const skips = [];
+export function skip(name, reason) {
+  skips.push({ name, reason });
+  console.log(`SKIP ${name} :: ${reason}(${BROWSER})`);
+}
 export function summary() {
   const fails = results.filter((r) => !r.ok);
-  console.log(`\n== ${results.length - fails.length}/${results.length} passed; ${fails.length} failed; ${pendings.length} pending(判断待ち: 未解消 ${pendings.filter((p) => !p.ok).length}) ==`);
+  console.log(`\n== ${results.length - fails.length}/${results.length} passed; ${fails.length} failed; ${pendings.length} pending(判断待ち: 未解消 ${pendings.filter((p) => !p.ok).length})${skips.length ? `; ${skips.length} skipped` : ''} ==`);
   for (const f of fails) console.log('  FAIL', f.name, f.detail !== undefined ? JSON.stringify(f.detail) : '');
 }
 
@@ -112,25 +162,27 @@ export async function waitForViewRows(page, n, timeout = 5000) {
     .catch(() => {});
 }
 // 貼り付けイベントを合成(Playwright の keyboard では clipboardData を注入できないため)。
+//   Firefox は ClipboardEvent の初期化で渡した DataTransfer を中身の無い別物に差し替えるので、自分の dt を被せる
+//   (copyText と t-ssrm も同じ)。
 export async function pasteText(page, text) {
   await page.evaluate((t) => {
     const dt = new DataTransfer();
     dt.setData('text/plain', t);
     const target = document.activeElement ?? document.querySelector('.ssg-shell');
     const ev = new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true });
+    if (ev.clipboardData !== dt) Object.defineProperty(ev, 'clipboardData', { value: dt });
     target.dispatchEvent(ev);
   }, text);
   await waitIdle(page);
 }
 export async function copyText(page) {
   return page.evaluate(() => {
-    let out = null;
     const dt = new DataTransfer();
     const target = document.activeElement ?? document.querySelector('.ssg-shell');
     const ev = new ClipboardEvent('copy', { clipboardData: dt, bubbles: true, cancelable: true });
+    if (ev.clipboardData !== dt) Object.defineProperty(ev, 'clipboardData', { value: dt });
     target.dispatchEvent(ev);
-    out = dt.getData('text/plain');
-    return out;
+    return dt.getData('text/plain');
   });
 }
 export async function state(page) {

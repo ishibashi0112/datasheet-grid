@@ -1,7 +1,14 @@
 // 遅延読み込み(lazy-popups): 列フィルターポップオーバーとツールパネルの部品は別チャンク(dev では別モジュール)で、
 //   初期の読み込みに含まれず、暇なときに先読み / 開いたときに読み込まれる。読み込みが遅くても、出たあと入力欄へ
 //   フォーカスが入り、位置もヘッダーの下に付く。読み込みに失敗してもグリッドは壊れず、次に開いたときに読み直す。
-import { open, check, unexpectedPageErrors, summary, header, waitIdle } from './pw.mjs';
+import { open, check, skip, SUPPORTS, unexpectedPageErrors, summary, header, waitIdle } from './pw.mjs';
+
+// 読み込みの観察(page.on('request'))と遅延 / 失敗(page.route)を使うため、それが無いブラウザでは全体を飛ばす。
+if (!SUPPORTS.network) {
+  skip('lazy: 遅延読み込みの確認すべて', 'page.route / page.on(\'request\') が無い');
+  summary();
+  process.exit(0);
+}
 
 const LAZY_RE = /\/(ColumnFilterPopover|toolPanelViews)\.tsx?(\?|$)|\/(ColumnFilterPopover|toolPanelViews)-[\w-]+\.js$/;
 const isFilterModule = (url) => /ColumnFilterPopover/.test(url);

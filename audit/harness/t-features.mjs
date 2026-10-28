@@ -1,5 +1,5 @@
 // 機能別: グルーピング / 展開行 / ラベル行 / 行ドラッグ / auto-height / 条件付き書式 / 動きの追加分。
-import { OUT, open, check, unexpectedPageErrors, summary, errorsOf, renderedRowIndexes, cellText, cell, header, scrollTo, focusGrid, waitIdle, events, clearEvents, pasteText, rows, state } from './pw.mjs';
+import { OUT, open, check, skip, SUPPORTS, unexpectedPageErrors, summary, errorsOf, renderedRowIndexes, cellText, cell, header, scrollTo, focusGrid, waitIdle, events, clearEvents, pasteText, rows, state } from './pw.mjs';
 
 // ---------- グルーピング ----------
 {
@@ -526,9 +526,14 @@ import { OUT, open, check, unexpectedPageErrors, summary, errorsOf, renderedRowI
   check('cell-note: ::before is a 10px amber triangle at the top-right', marker.content === '""' && marker.width === '10px' && marker.color === 'rgb(245, 158, 11)' && marker.top === '0px' && marker.right === '0px', marker);
   await cell(page, 1, 'name').hover();
   await waitIdle(page, 600);
+  // 行数は描画された行の位置で数える(WebKit の innerText は改行が描画されていても空白で返すため)。
   const tip = await page.evaluate(() => {
     const el = document.querySelector('.ssg-tooltip.ssg-tooltip--visible');
-    return el ? { text: el.innerText, lines: el.innerText.split('\n').length } : null;
+    if (!el) return null;
+    const range = document.createRange();
+    range.selectNodeContents(el);
+    const lines = new Set([...range.getClientRects()].map((r) => Math.round(r.top))).size;
+    return { text: el.textContent, lines };
   });
   check('cell-note: hover shows the note with a line break', tip && tip.lines === 2 && tip.text.includes('メモ 2 行目'), tip);
   // 入力エラー(名前は必須)と重ねる: 二重の三角 + 「エラー → 改行 → メモ」。
@@ -552,7 +557,7 @@ import { OUT, open, check, unexpectedPageErrors, summary, errorsOf, renderedRowI
 //   CDP の Input.imeSetComposition / Input.insertText で「変換中 → 確定」を流し、入力受け(imeDirectInput)から編集へ
 //   引き継がれることと、入力受けにフォーカスがあってもキー操作 / 貼り付け / Tab が従来どおりであることを確かめる。
 //   ※ CDP は変換イベントの模擬で、OS の IME(MS-IME)そのものではない。最終確認は Windows 実機。
-{
+if (SUPPORTS.cdp) {
   const { page, pageErrors, close } = await open('basic', { query: 'n=50' });
   const cdp = await page.context().newCDPSession(page);
   const active = () => page.evaluate(() => {
@@ -727,7 +732,7 @@ import { OUT, open, check, unexpectedPageErrors, summary, errorsOf, renderedRowI
   const errs = await errorsOf(page);
   check('ime: no console errors', errs.length === 0 && unexpectedPageErrors(pageErrors).length === 0, [...errs, ...pageErrors].slice(0, 5));
   await close();
-}
+} else skip('ime: IME の変換(G-2)', 'CDP の Input.imeSetComposition で変換を流すため Chromium だけ');
 
 
 // ---------- 条件付き書式(差し込み式にしたあとも全部入りで描かれること) ----------

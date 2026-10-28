@@ -278,7 +278,8 @@ const fmtNumber = (page, v) =>
   const idx = await renderedRowIndexes(page);
   const gEnd = await geo(page, 999_999);
   check('total(big): scrollToBottom で最終行が合計行のすぐ上', idx.at(-1) === 999_999 && rowFullyVisible(gEnd), { last: idx.at(-1), gEnd });
-  await scrollTo(page, 1e12);
+  // 末尾を超える値で最大までスクロールする(WebKit は 32 ビット整数を超える値を 0 に丸めるので 1e9 にとどめる)。
+  await scrollTo(page, 1e9);
   await waitIdle(page, 300);
   const gMax = await geo(page, 999_999);
   check('total(big): 最大までスクロールしても最終行が合計行の上', rowFullyVisible(gMax), gMax);
