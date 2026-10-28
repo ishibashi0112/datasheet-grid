@@ -269,6 +269,29 @@ describe('createGridApi', () => {
     expect(plain.args.scrollContainerRef.current?.scrollTop).toBe(26);
   });
 
+  // 追加(BR-5): 行の位置を縮めて持つモード(縮尺 ≠ 1)で行を下端に合わせるときは物理位置を切り上げる(WebKit は
+  //   スクロール位置の小数を切り捨てるため、切り上げないと最後の行が下に隠れる)。上端に合わせるときはそのまま。
+  it('縮尺のあるとき、下端合わせ(end / 下へ動く auto)だけ物理位置を切り上げる', () => {
+    const api = createGridApi<Row>(withExport);
+    const { args } = makeArgs({ verticalScaleFactor: 2.4 });
+    api.update(args);
+    const el = args.scrollContainerRef.current;
+    // 行 2: 36 + 60 + 30 - 100 = 26(論理)→ 26 / 2.4 = 10.83 → 11。
+    api.handle.scrollToRow(2, { align: 'end' });
+    expect(el?.scrollTop).toBe(11);
+    // 上端合わせ: 行 1 の top 30 → 12.5(切り上げない)。
+    api.handle.scrollToRow(1, { align: 'start' });
+    expect(el?.scrollTop).toBe(12.5);
+    // auto で上へ動く(上端合わせ)ときも切り上げない: 物理 40 = 論理 96 から行 1 へ → 12.5。
+    if (el) el.scrollTop = 40;
+    api.handle.scrollToRow(1);
+    expect(el?.scrollTop).toBe(12.5);
+    // auto で下へ動く(下端合わせ)ときは切り上げる。
+    if (el) el.scrollTop = 0;
+    api.handle.scrollToCell(2, 0);
+    expect(el?.scrollTop).toBe(11);
+  });
+
   // 追加(audit L-20): escapeFormulas は直列化まで届く(既定は従来どおり)。
   it('exportCsv の escapeFormulas は数式として解釈される値の先頭に \' を付ける', () => {
     const api = createGridApi<Row>(withExport);

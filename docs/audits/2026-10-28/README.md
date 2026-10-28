@@ -41,7 +41,7 @@ PASS / 実行した確認の数(SKIP は数に入れない)。
 - React 18.3.1 での結果は §7。
 - Chromium の t-fill の「ハンドルを押すと開いているコンテキストメニューを閉じる」が最初の記録のときに 1 回だけ落ち(右クリックのメニューが 120ms 以内に開かなかった)、続けて 2 回回して通った。見直し後の回し直しでは起きていない。
 
-## 3. 所見(ライブラリ側。未対応)
+## 3. 所見(ライブラリ側。BR-1・BR-2・BR-5 は対応済み = §8)
 
 | ID | 重さ | ブラウザ | 実機 | 要約 | 場所 |
 | --- | --- | --- | --- | --- | --- |
@@ -51,7 +51,7 @@ PASS / 実行した確認の数(SKIP は数に入れない)。
 | BR-4 | 低 | WebKit(要 Mac 実機) | ✅ | 右端の列・最下行のフィルハンドルを押せない。WebKitGTK のスクロールバーは幅 0 で中身の上に重なり、端から約 12px が `elementFromPoint` でスクロール領域そのものを返す(スクロールバーの当たり判定)。ハンドルは角から 4px はみ出し、残りもその帯に入る。macOS の既定(トラックパッド)も重なる型のスクロールバーなので、Mac の Safari / Chrome でも起こりうる | `packages/react/src/styles.css:1289-`(`.ssg-fill-handle`)、`packages/react/src/view/FillHandleLayer.tsx` |
 | BR-5 | 低 | WebKit | ✅ | 100 万行(行の位置を縮めて持つモード、縮尺 2.4)で `selectCell(999999, …, { scrollIntoView: true })` / `scrollToRow(999999, { align: 'end' })` のあと、最終行が合計行の下に 2px 隠れる(scrollTop 14,999,655 / 最大 14,999,656)。論理位置を物理位置へ直した小数のスクロール位置を WebKit が切り捨てるため(Chromium は 14,999,656)。中央寄せ(500,000 行目)でも同じ 1px の差で 2px ずれる | `packages/core/src/controllers/viewportSyncController.ts:126-131`、`packages/core/src/engine/gridApi.ts:176`(`logicalToPhysicalScrollTop`) |
 
-直し方の案(どれも挙動が変わるので未着手):
+直し方の案(調査の時点。BR-1・BR-2・BR-5 の実際の直し方は §8):
 
 - BR-1: virtual-core に `useAnimationFrameWithResizeObserver: true` を渡し、scrollSyncController の ResizeObserver も状態の更新を次のフレームへずらす(同じ値なら何もしない)。
 - BR-2: 件数の欄に桁数ぶんの最小幅(`tabular-nums` + 最小幅)を持たせるか、幅が足りないときは折り返さず集計の側を細くする。
@@ -135,5 +135,11 @@ PASS / 実行した確認の数(SKIP は数に入れない)。
 
 ## 8. 対応状況
 
-- React 18 対応: 実装済み(案 B。§7)。
-- ブラウザの所見 BR-1〜BR-5 の修正、対応ブラウザの下限の明記、semver / 1.0 の方針: 判断待ち(報告書でユーザーに提案した)。
+- React 18 対応: 実装済み(案 B。§7)。0.58.0 で公開。
+- 2026-10-28 にユーザーが選んだこと: BR-1・BR-2・BR-5 を 1 つの PR で直す / 対応ブラウザの下限を Chrome・Edge 111 / Firefox 121 / Safari 16.4 として README とドキュメントに書く / BR-3・BR-4 はユーザーが Mac の Safari で確かめ、再現したものだけ直す / semver / 1.0 は方針を採って準備を始める(BR の PR の後)。
+- BR-1(対応済み): ResizeObserver のコールバックの中で状態を書かず、次のフレームで書く。`packages/core/src/controllers/scrollSyncController.ts`(見える高さ / 幅を view スライスへ)と `packages/core/src/controllers/autoHeightMeasurer.ts`(auto-height の測り直しの合図 `nonce`)。同じフレームに何度通知が来ても書くのは 1 回、外すとき(detach / dispose)は待っているフレームを取り消す。useSyncExternalStore の購読者は store が変わると同期で描き直すため、コールバックの中で書くと同じフレームでスクロール領域の大きさがまた変わり、ブラウザがループの通知を出していた。virtual-core の観測は描き直しを同期で行わない(useVirtualizerCore の rerender は通常の更新)ので、`useAnimationFrameWithResizeObserver` は変えていない。
+- BR-2(対応済み・見た目が少し変わる): 件数ありのとき、下部バーの右のグループに最小幅 `min(56ch, 100%)` を持たせ(500 行 × 12 列の表を全部選んだ表記が収まる幅。`ch` をチップの文字で測るため font-size を 11.5px に揃える)、`margin-left: auto` と `justify-content: flex-end` で右端に寄せる(`packages/react/src/styles.css` の `.ssg-bar--bottom .ssg-bar-group:not(:first-child)`)。バーの折り返しが選択の表記ではなく窓の幅だけで決まる(表記が最小幅を超える大きな選択を除く)。2 行になる境目は Chromium の文字で約 610px → 約 665px に移る。件数なしは折り返さないので対象外。JS は増えない。ハーネスの `t-aggregates` に境目の前後の幅(680 / 608px)を足した。
+- BR-5(対応済み): 行を下端に合わせるとき(`align: 'end'`、`'auto'` で下へ動くとき、キー操作の `cellBottom > visibleBottom`)は、物理のスクロール位置を `Math.ceil` で切り上げる(`packages/core/src/engine/gridApi.ts` の `applyScroll` に `align` を渡す、`packages/core/src/controllers/viewportSyncController.ts` の `scrollCellIntoView`)。上端に合わせるときはそのまま。縮尺 1 では位置が整数なので何も変わらない。
+- フル版の初期 JS: BR-1 と BR-5 で 112.37KB → 112.47KB(上限 112.4KB を超えたので、112.5KB への引き上げを PR でユーザーに伺う)。
+- 単体テスト: scrollSyncController / autoHeightMeasurer(次のフレームで 1 回だけ書く・取り消し)、gridApi / viewportSyncController(縮尺 2.4 で下端合わせだけ切り上げる)。
+- 修正後のハーネス(12 本、Chromium 153 / Firefox 159(geckodriver)/ WebKitGTK 2.52.6): Chromium 593 / 593、Firefox 537 / 537(SKIP 8)、WebKit 534 / 537(SKIP 8)。残る FAIL は BR-3(t-priority の 1 件)と BR-4(t-fill の 2 件)だけ。BR-1(Chromium の t-features / Firefox の t-ssrm・t-lifecycle・t-features・t-aggregates・t-total)・BR-2(WebKit の t-aggregates)・BR-5(WebKit の t-total)は通った。数は `t-aggregates` に足した幅のぶん 4 件(WebDriver では 420px が SKIP なので 4 件のまま)増えている。WebKit の t-aggregates の「計算中のスクロールの次フレームまで 200ms 未満」が 1 回目だけ 362ms で落ち、続けて 2 回回して通った(3 つのブラウザを続けて回した負荷によるもので、修正とは無関係)。

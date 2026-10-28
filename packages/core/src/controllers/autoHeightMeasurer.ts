@@ -60,19 +60,30 @@ export const createAutoHeightMeasurer = <T,>(): AutoHeightMeasurer<T> => {
   let observer: ResizeObserver | null = null;
   const observed = new Set<HTMLElement>();
   let last: AutoHeightMeasureArgs<T> | null = null;
+  // 変更(BR-1 2026-10-28): ResizeObserver の通知は次のフレームで nonce を進めます(測り直しの合図)。コールバックの中で
+  //   進めると、同じフレームの測り直しで行の高さとスクロール領域が変わり、ブラウザが「ResizeObserver loop completed
+  //   with undelivered notifications」を window の error に出すためです(列幅の変更などで起きた)。
+  let nonceFrameId: number | null = null;
 
   const disconnect = () => {
     observer?.disconnect();
     observer = null;
     observed.clear();
+    if (nonceFrameId !== null) {
+      cancelAnimationFrame(nonceFrameId);
+      nonceFrameId = null;
+    }
   };
   const bumpVersion = () => {
     const current = snapshot.getSnapshot();
     snapshot.setSnapshot({ ...current, version: current.version + 1 });
   };
   const bumpNonce = () => {
-    const current = snapshot.getSnapshot();
-    snapshot.setSnapshot({ ...current, nonce: current.nonce + 1 });
+    nonceFrameId ??= requestAnimationFrame(() => {
+      nonceFrameId = null;
+      const current = snapshot.getSnapshot();
+      snapshot.setSnapshot({ ...current, nonce: current.nonce + 1 });
+    });
   };
 
   const measure = (args: AutoHeightMeasureArgs<T>) => {

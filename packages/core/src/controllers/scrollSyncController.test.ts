@@ -35,7 +35,10 @@ beforeEach(() => {
     rafQueue.push(callback);
     return rafQueue.length;
   });
-  vi.stubGlobal('cancelAnimationFrame', () => {});
+  // 変更(BR-1): 取り消したフレームは空の処理に差し替えます(id = 今のキューでの位置 + 1)。
+  vi.stubGlobal('cancelAnimationFrame', (id: number) => {
+    rafQueue[id - 1] = () => {};
+  });
   vi.stubGlobal(
     'ResizeObserver',
     class {
@@ -105,10 +108,19 @@ describe('createScrollSyncController', () => {
     expect(setViewState).not.toHaveBeenCalled();
     controller.update({ scrollContainerRef: { current: el }, setViewState, onScroll: undefined });
     Object.defineProperty(el, 'clientHeight', { value: 320, configurable: true });
+    // 変更(BR-1): ResizeObserver のコールバックの中では書かず、次のフレームで 1 回だけ書きます。
     resizeCallback?.();
+    resizeCallback?.();
+    expect(setViewState).toHaveBeenCalledTimes(1);
+    runFrame();
+    expect(setViewState).toHaveBeenCalledTimes(2);
     expect(setViewState).toHaveBeenLastCalledWith({ viewportHeight: 320, viewportWidth: 500 });
 
+    // dispose は書き込み待ちのフレームも取り消します。
+    resizeCallback?.();
     controller.dispose();
+    runFrame();
+    expect(setViewState).toHaveBeenCalledTimes(2);
     expect(disconnect).toHaveBeenCalledTimes(1);
     setViewState.mockClear();
     el.dispatchEvent(new Event('scroll'));
@@ -158,8 +170,9 @@ describe('createScrollSyncController', () => {
     setViewState.mockClear();
     controller.update({ scrollContainerRef: ref, setViewState, onScroll: undefined, footerHeight: 36 });
     expect(setViewState).not.toHaveBeenCalled();
-    // ResizeObserver も同じ基準。
+    // ResizeObserver も同じ基準(次のフレームで書く)。
     resizeCallback?.();
+    runFrame();
     expect(setViewState).toHaveBeenLastCalledWith({ viewportHeight: 264, viewportWidth: 500 });
     // 合計行を外す → clientHeight に戻る。
     controller.update({ scrollContainerRef: ref, setViewState, onScroll: undefined });

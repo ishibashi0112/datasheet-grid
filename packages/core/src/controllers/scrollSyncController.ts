@@ -91,10 +91,17 @@ export const createScrollSyncController = (): ScrollSyncController => {
       }
     };
     el.addEventListener('scroll', handleScroll, { passive: true });
+    // 変更(BR-1 2026-10-28): 見える高さ / 幅は次のフレームで書き込みます。ResizeObserver のコールバックの中で書くと、
+    //   同じフレームの描き直しでスクロール領域の大きさがまた変わり(横スクロールバーの出入り等)、ブラウザが
+    //   「ResizeObserver loop completed with undelivered notifications」を window の error に出すためです。
+    let resizeFrameId: number | null = null;
     const resizeObserver = new ResizeObserver(() => {
-      args?.setViewState({
-        viewportHeight: bodyViewportHeight(el),
-        viewportWidth: el.clientWidth,
+      resizeFrameId ??= requestAnimationFrame(() => {
+        resizeFrameId = null;
+        args?.setViewState({
+          viewportHeight: bodyViewportHeight(el),
+          viewportWidth: el.clientWidth,
+        });
       });
     });
     resizeObserver.observe(el);
@@ -110,6 +117,9 @@ export const createScrollSyncController = (): ScrollSyncController => {
       }
       el.classList.remove(SCROLLING_CLASS_NAME);
       resizeObserver.disconnect();
+      if (resizeFrameId !== null) {
+        cancelAnimationFrame(resizeFrameId);
+      }
       attachedElement = null;
     };
   };

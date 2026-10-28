@@ -99,6 +99,7 @@ export const scrollCellIntoView = (
 
   let nextScrollTop = currentScrollTop;
   let nextScrollLeft = currentScrollLeft;
+  let alignEnd = false;
 
   const visibleTop = currentScrollTop + args.headerHeight;
   const visibleBottom = currentScrollTop + viewportHeight;
@@ -106,6 +107,7 @@ export const scrollCellIntoView = (
     nextScrollTop = Math.max(cellTop - args.headerHeight, 0);
   } else if (cellBottom > visibleBottom) {
     nextScrollTop = Math.max(cellBottom - viewportHeight, 0);
+    alignEnd = true;
   }
 
   const visibleLeft = currentScrollLeft + args.leftPaneWidth;
@@ -123,8 +125,11 @@ export const scrollCellIntoView = (
     nextScrollTop !== currentScrollTop ||
     nextScrollLeft !== currentScrollLeft
   ) {
+    const top = logicalToPhysicalScrollTop(nextScrollTop, args.verticalScaleFactor);
     scrollElement.scrollTo({
-      top: logicalToPhysicalScrollTop(nextScrollTop, args.verticalScaleFactor),
+      // 変更(BR-5 2026-10-28): 下端に合わせるときは物理位置を切り上げます(行の位置を縮めて持つモードの小数の位置を
+      //   WebKit が切り捨て、最後の行が合計行の下に 2px 隠れていたため)。
+      top: alignEnd ? Math.ceil(top) : top,
       left: nextScrollLeft,
       behavior: 'auto',
     });

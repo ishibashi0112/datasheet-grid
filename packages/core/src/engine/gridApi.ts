@@ -128,7 +128,8 @@ export type GridApi<T> = {
   // 公開ハンドル(参照安定)。
   handle: SpreadsheetGridHandle<T>;
   // 論理 scrollTop を物理へ戻してスクロールコンテナへ適用(横は圧縮対象外で物理 = 論理)。null は現状維持。
-  applyScroll: (logicalTop: number | null, left: number | null) => void;
+  //   align は行を合わせた位置(下端に合わせたときは物理位置を切り上げる。BR-5)。
+  applyScroll: (logicalTop: number | null, left: number | null, align?: ScrollAlign) => void;
   verticalTargetFor: (viewRowIndex: number, align: ScrollAlign) => number | null;
   horizontalTargetFor: (colIndex: number, align: ScrollAlign) => number | null;
   scrollToCellInternal: (viewRowIndex: number, colIndex: number, align: ScrollAlign) => void;
@@ -166,14 +167,21 @@ export const createGridApi = <T,>(features: Pick<GridCoreFeatures, 'export'> = {
     el.scrollTo({ top, left, behavior });
   };
 
-  const applyScroll: GridApi<T>['applyScroll'] = (logicalTop, left) => {
+  const applyScroll: GridApi<T>['applyScroll'] = (logicalTop, left, align) => {
     const el = args?.scrollContainerRef.current ?? null;
     const s = args;
     if (!el || !s) {
       return;
     }
+    let top = logicalTop === null ? el.scrollTop : logicalToPhysicalScrollTop(logicalTop, s.verticalScaleFactor);
+    // 変更(BR-5 2026-10-28): 行を下端に合わせるとき('end'、または 'auto' で下へ動かすとき)は物理位置を切り上げます。
+    //   行の位置を縮めて持つモードでは物理位置が小数になり、WebKit はスクロール位置の小数を切り捨てるため、最後の行が
+    //   合計行の下に 2px 隠れていました。
+    if (align === 'end' || (align === 'auto' && top > el.scrollTop)) {
+      top = Math.ceil(top);
+    }
     applyApiScroll(el, {
-      top: logicalTop === null ? el.scrollTop : logicalToPhysicalScrollTop(logicalTop, s.verticalScaleFactor),
+      top,
       left: left === null ? el.scrollLeft : left,
     });
   };
@@ -221,7 +229,7 @@ export const createGridApi = <T,>(features: Pick<GridCoreFeatures, 'export'> = {
   };
 
   const scrollToCellInternal: GridApi<T>['scrollToCellInternal'] = (viewRowIndex, colIndex, align) => {
-    applyScroll(verticalTargetFor(viewRowIndex, align), horizontalTargetFor(colIndex, align));
+    applyScroll(verticalTargetFor(viewRowIndex, align), horizontalTargetFor(colIndex, align), align);
   };
 
   // 追加(audit B-05): 選択 / アクティブセル API の入力をビュー座標内へクランプします(行は viewRowCount、
@@ -238,8 +246,10 @@ export const createGridApi = <T,>(features: Pick<GridCoreFeatures, 'export'> = {
   };
 
   const handle: SpreadsheetGridHandle<T> = {
-    scrollToRow: (viewRowIndex, scrollOptions) =>
-      applyScroll(verticalTargetFor(viewRowIndex, scrollOptions?.align ?? 'auto'), null),
+    scrollToRow: (viewRowIndex, scrollOptions) => {
+      const align = scrollOptions?.align ?? 'auto';
+      applyScroll(verticalTargetFor(viewRowIndex, align), null, align);
+    },
 
     scrollToCell: (viewRowIndex, colIndex, scrollOptions) =>
       scrollToCellInternal(viewRowIndex, colIndex, scrollOptions?.align ?? 'auto'),

@@ -21,6 +21,15 @@ let resizeCallback: (() => void) | null = null;
 const observe = vi.fn();
 const unobserve = vi.fn();
 const disconnect = vi.fn();
+// 追加(BR-1): rAF のスタブ(nonce は ResizeObserver の次のフレームで進む)。取り消したフレームは空の処理に差し替えます。
+let rafQueue: FrameRequestCallback[] = [];
+const runFrame = () => {
+  const callbacks = rafQueue;
+  rafQueue = [];
+  for (const callback of callbacks) {
+    callback(0);
+  }
+};
 
 const makeContainer = (heights: number[]) => {
   const container = document.createElement('div');
@@ -45,6 +54,14 @@ const makeContainer = (heights: number[]) => {
 
 beforeEach(() => {
   resizeCallback = null;
+  rafQueue = [];
+  vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
+    rafQueue.push(callback);
+    return rafQueue.length;
+  });
+  vi.stubGlobal('cancelAnimationFrame', (id: number) => {
+    rafQueue[id - 1] = () => {};
+  });
   observe.mockClear();
   unobserve.mockClear();
   disconnect.mockClear();
@@ -102,8 +119,16 @@ describe('createAutoHeightMeasurer', () => {
     measurer.update({ ...args, version: 1 });
     expect(measurer.getSnapshot().version).toBe(1);
 
-    // 内容変化(ResizeObserver)で nonce が進む。
+    // 内容変化(ResizeObserver)で nonce が進む。変更(BR-1): コールバックの中では進めず、次のフレームで 1 回だけ進める。
     resizeCallback?.();
+    resizeCallback?.();
+    expect(measurer.getSnapshot()).toEqual({ version: 1, nonce: 0 });
+    runFrame();
+    expect(measurer.getSnapshot()).toEqual({ version: 1, nonce: 1 });
+    // dispose は進める前のフレームを取り消す。
+    resizeCallback?.();
+    measurer.dispose();
+    runFrame();
     expect(measurer.getSnapshot()).toEqual({ version: 1, nonce: 1 });
   });
 
@@ -151,6 +176,7 @@ describe('createAutoHeightMeasurer', () => {
     measurer.update(args);
     expect(observe).toHaveBeenCalledTimes(6);
     resizeCallback?.();
+    runFrame();
     expect(measurer.getSnapshot().nonce).toBe(1);
   });
 

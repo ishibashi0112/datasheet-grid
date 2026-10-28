@@ -7,6 +7,21 @@
 
 詳しい使い方は[ドキュメントサイト](https://datasheet-grid.vercel.app)と [API リファレンス](./packages/react/API_REFERENCE.md)を参照してください。
 
+## 未リリース
+
+### 変更
+
+- 対応ブラウザを README とドキュメント([インストール](https://datasheet-grid.vercel.app/docs/installation))に書きました: Chrome / Edge 111 以降、Firefox 121 以降、Safari 16.4 以降。下限は CSS(`color-mix()` / `:has()`)で決まります。これより古いブラウザでも読み込めますが、一部の色とキーボード操作のフォーカスの表示が出ないことがあります。
+
+### 挙動の変化
+
+- 下部バー(件数あり)の右のグループ(Active / Selection / 選択の件数 / Cols)に最小幅(56ch)を持たせました。これまでは選択を広げて件数の桁が増えるとグループが数 px 伸び、窓の幅 600px 前後でバーが折り返して高さが 27px → 49px に変わり、表全体がずれていました。バーが 2 行になる幅は少し広くなり(500 行 × 12 列の表で約 610px → 約 665px)、2 行目へ回った右のグループは右端に寄ります。件数なし(`showBottomBarCounts: false`)のときは変わりません。
+
+### 修正
+
+- レイアウトが変わるとき(窓の幅の変化、SSRM の読み込み、auto-height の行の高さの変化など)に、ブラウザが「ResizeObserver loop completed with undelivered notifications」を window の error に出し、Sentry などのエラー監視に記録されていたのを直しました(Firefox で多く、Chrome / Safari でも auto-height のときに出ていました)。見える高さ / 幅と auto-height の行の測り直しを、ResizeObserver の通知の次のフレームで行います。core の `createScrollSyncController` / `createAutoHeightMeasurer` を直接使っている場合も、`setViewState` への書き込みと snapshot の `nonce` の更新が次のフレームになります。
+- 行の位置を縮めて持つモード(100 万行など)で最後の行へ移ったとき(`scrollToRow(…, { align: 'end' })` / `selectCell(…, { scrollIntoView: true })` / キー操作)、Safari で最後の行が合計行の下に 2px 隠れていたのを直しました。行を下端に合わせるときはスクロール位置を切り上げます。
+
 ## 0.58.0 — 2026-10-28
 
 ### 追加
