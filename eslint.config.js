@@ -18,6 +18,11 @@ export default defineConfig([
     languageOptions: {
       globals: globals.browser,
     },
+    rules: {
+      // 追加(React 18 対応 2026-10-28): withRefProp(React 18 のときだけ forwardRef で包む)を memo / forwardRef と同じく
+      //   コンポーネントを返す HOC として扱う(configs.vite の allowConstantExport はそのまま)。
+      'react-refresh/only-export-components': ['error', { allowConstantExport: true, extraHOCs: ['withRefProp'] }],
+    },
   },
   // 追加(非依存化 ⑤-1 / 変更 ⑤-2): core パッケージ(packages/core)は React / react-dom / React 版パッケージを
   //   import しない。型は gridTypes.unbound(内部層用の未束縛束縛)か gridTypes.core(F ジェネリック)から取る

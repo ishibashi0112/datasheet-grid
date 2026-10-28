@@ -1,6 +1,6 @@
-# ブラウザ対応と React 18 対応の調査(2026-10-28・v0.57.0 時点・調査のみ、ライブラリの修正なし)
+# ブラウザ対応と React 18 対応の調査(2026-10-28・v0.57.0 時点)
 
-広める計画の残り 2 件(⑥ ブラウザ対応の確認 / ⑦ React 18 対応の調査)の記録。ライブラリのソースは変更していない。変更したのは監査ハーネス(`audit/harness/`)だけで、Chromium 以外でも回せるようにした(使い方は同ディレクトリの README の「他のブラウザで回す」)。
+広める計画の残り 2 件(⑥ ブラウザ対応の確認 / ⑦ React 18 対応の調査)の記録。調査では監査ハーネス(`audit/harness/`)だけを変え、Chromium 以外でも回せるようにした(使い方は同ディレクトリの README の「他のブラウザで回す」)。ブラウザの所見(BR-1〜BR-5)のライブラリ側の修正はしていない。React 18 対応はユーザーが案 B を選び、同じ PR で実装した(§7 の最後)。
 
 ## 1. 進め方と前提
 
@@ -108,7 +108,7 @@ PASS / 実行した確認の数(SKIP は数に入れない)。
 - それ以外に React 19 だけの API は使っていない: React から import しているのは `useState` / `useRef` / `useEffect` / `useLayoutEffect` / `useMemo` / `useCallback` / `useReducer` / `useId` / `useImperativeHandle` / `useSyncExternalStore` / `useDeferredValue`(引数 1 つ)/ `memo` / `createPortal` / `flushSync` で、どれも React 18 にある。内部の部品へ `ref` を渡している所は DOM 要素だけで、コールバック ref の後片付け(React 19 の機能)も使っていない。
 - 確かめたこと:
   - jsdom のテスト(React 18.3.1): そのままだと 195 件が失敗(ref を使うテスト)。`SpreadsheetGrid` / `createSpreadsheetGrid` を forwardRef で包んだ写しでは 2,011 件中 5 件まで減った。残りは (a) 編集確定後のフォーカスの 4 件 = React 18 の `act` と jsdom の rAF の順番の違い(同じ操作を実ブラウザの React 18 で行うと React 19 と同じ結果。下記)と、(b) `<Activity>` を使うテスト 1 件(React 19.2 の部品。テスト側の都合)。ほかに themes.test のファイルが読み込めない(写しに website の依存が無いため。React とは無関係)。
-  - 実ブラウザ(Chromium、React 18.3.1、forwardRef の写し): ハーネス 12 本で 589 / 589。jsdom で落ちた「編集中に別のセル / 行見出しを押して確定」も React 19 と同じ結果(行見出しは `enableRowSelection: false` で確認)。
+  - 実ブラウザ(Chromium、React 18.3.1、forwardRef の写し): ハーネス 12 本で 589 / 589(見直し前のハーネス。Chromium の window の error を拾っていなかったので BR-1 は見えていない)。jsdom で落ちた「編集中に別のセル / 行見出しを押して確定」も React 19 と同じ結果(行見出しは `enableRowSelection: false` で確認)。
   - 利用側アプリ(examples/basic を写し、React 18.3.1 + `@types/react` 18.3 + pack した 0.57.0 の tarball): `tsc --noEmit` と `vite build` が通る(d.ts は React 18 の型でも問題なし)。ただし npm は peer(`react: ^19.0.0`)が合わず `ERESOLVE` で止まる(`--legacy-peer-deps` で入る)。
 - 選択肢とサイズ(`size:check`。別の worktree で 2 つのコンポーネントを包んで build:lib → 計測し、変更は捨てた):
 
@@ -120,6 +120,15 @@ PASS / 実行した確認の数(SKIP は数に入れない)。
 
   B / C はどちらもフル版の上限(2026-10-24 のユーザー判断で 112.3KB 固定)を超えるので、上限の判断が要る。
 
+- 実装(2026-10-28、ユーザーが B を選択): `packages/react/src/withRefProp.ts` が React の `version` を読み込み時に 1 回見て、19 以上ならコンポーネントをそのまま返し、19 未満なら forwardRef で受けた ref を props の `ref` へ戻してから呼ぶ。`SpreadsheetGrid` と `createSpreadsheetGrid` の戻り値に掛けた。React 版の peer を `^18.3.0 || ^19.0.0` に広げ、フル版の上限を 112.4KB に上げた(実測 112.34KB。lite 60.70KB / standard 79.05KB / ai 11.74KB は上限内)。eslint の react-refresh に `withRefProp` を HOC として登録した。
+- 実装の確認:
+  - React 19(リポジトリ): ゲート全緑。`withRefProp.test.tsx` で、React 19 ではそのまま返すことと、react の `version` だけを 18.3.1 に差し替えて読み直すと forwardRef で包まれ、`ref` に命令的ハンドルが入ること(全部入り / `createSpreadsheetGrid`)を確かめる。
+  - React 18.3.1 の写し(jsdom): 2,013 件中 6 件が失敗。上の既知の 5 件(編集確定後のフォーカス 4 件 = `act` の順番、`<Activity>` 1 件)と、`withRefProp.test` の「React 19 ではそのまま返す」(React 18 では包むので当然落ちる)。themes.test は写しに website の依存が無く読み込めない(React とは無関係)。
+  - React 18.3.1 の写し(実ブラウザ、Chromium): ハーネス 12 本で 588 / 589。落ちたのは React 19 と同じ BR-1(auto-height)。t-basic は dev サーバーを起動した直後の 1 回目だけ 16 件目のあとでセルが 30 秒見つからずに止まり、続けて 2 回回して 2 回とも 104 / 104(原因は特定していない。React 19 の写しでは起きていない)。
+  - 利用側アプリ(examples/basic を写し、React 18.3.1 + `@types/react` 18.3 + pack した tarball): `--legacy-peer-deps` なしで `npm install` が通る。`tsc --noEmit` は `--skipLibCheck false` でも通る(全部入りの `ref`・`/lite` のグリッドの `ref`・`/ai` の `GridAskBar` を使う一時ファイルを足して確認)。`vite build` が通り、本番ビルドと dev の両方で CSV ボタン(`gridRef.current?.downloadCsv`)からダウンロードできる(= ref が付いている)。
+  - ライブラリのソースそのものは `@types/react` 18 では型検査が通らない(`useRef` の null の扱いなどの型の違い。公開の d.ts は上のとおり通る)。開発と CI は React 19 で行う。
+
 ## 8. 対応状況
 
-すべて判断待ち(ライブラリの修正なし)。対応ブラウザの方針・React 18 対応の要否・semver / 1.0 の方針は、報告書(Claude Doc)でユーザーに提案した。
+- React 18 対応: 実装済み(案 B。§7)。
+- ブラウザの所見 BR-1〜BR-5 の修正、対応ブラウザの下限の明記、semver / 1.0 の方針: 判断待ち(報告書でユーザーに提案した)。

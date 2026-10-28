@@ -1,7 +1,7 @@
 {
   "name": "@ishibashi0112/spreadsheet-grid",
   "version": "0.57.0",
-  "description": "React 19 製の仮想化データグリッド。SSRM(書き戻し付き)/ 行グルーピング + 集計 / Master/Detail / 範囲選択 + クリップボードを MIT で。IME に強い編集、100 万行の仮想化、Tailwind / Mantine / HeroUI と共存。コアは @ishibashi0112/spreadsheet-grid-core。",
+  "description": "React 18.3 / 19 向けの仮想化データグリッド。SSRM(書き戻し付き)/ 行グルーピング + 集計 / Master/Detail / 範囲選択 + クリップボードを MIT で。IME に強い編集、100 万行の仮想化、Tailwind / Mantine / HeroUI と共存。コアは @ishibashi0112/spreadsheet-grid-core。",
   "keywords": [
     "react",
     "react19",
@@ -106,8 +106,8 @@
     "prepublishOnly": "pnpm run build:lib"
   },
   "peerDependencies": {
-    "react": "^19.0.0",
-    "react-dom": "^19.0.0"
+    "react": "^18.3.0 || ^19.0.0",
+    "react-dom": "^18.3.0 || ^19.0.0"
   },
   "dependencies": {
     "@ishibashi0112/spreadsheet-grid-core": "workspace:^",

@@ -6,7 +6,7 @@ import { InstallCommand } from '@/components/install-command';
 export const metadata: Metadata = {
   title: 'SpreadsheetGrid — 有料グリッドの機能を、MIT で。',
   description:
-    'サーバーサイド行モデル・行グルーピングと集計・Master/Detail・範囲選択とクリップボードを MIT で。IME に強い Excel ライクな編集、100 万行の仮想化、Tailwind / Mantine / HeroUI と共存する React 19 製データグリッド。',
+    'サーバーサイド行モデル・行グルーピングと集計・Master/Detail・範囲選択とクリップボードを MIT で。IME に強い Excel ライクな編集、100 万行の仮想化、Tailwind / Mantine / HeroUI と共存する React 18.3 / 19 向けデータグリッド。',
 };
 
 // 変更(F-1 / 打ち出し): ヒーローは「有料級の機能を MIT で」を言い切り、直下に根拠(他にない 5 つ → 他社比較表)を置く。

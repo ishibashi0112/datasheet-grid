@@ -1167,7 +1167,7 @@ const [rows, setRows] = useState(initialRows);
 
 ## 命令的 API(ref ハンドル / `SpreadsheetGridHandle<T>`)
 
-状態(列幅・可視・sort・filter 等)は controlled のまま、**prop では表現しづらい一発操作**だけを ref ハンドルで提供する。React 19 の **ref-as-prop**(`forwardRef` 不使用)で受け取る。
+状態(列幅・可視・sort・filter 等)は controlled のまま、**prop では表現しづらい一発操作**だけを ref ハンドルで提供する。`ref` prop で受け取る(利用側で `forwardRef` は不要。React 19 は ref-as-prop のまま、React 18.3 ではグリッドが内部で `forwardRef` に包むので、どちらも同じ書き方)。
 
 ```tsx
 import { useRef } from 'react';

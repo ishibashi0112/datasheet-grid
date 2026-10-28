@@ -1,12 +1,12 @@
 ---
 name: spreadsheet-grid
-description: Builds and changes data grids with @ishibashi0112/spreadsheet-grid (SpreadsheetGrid, React 19) - columns, cell editors and validation, filters and sorting, the server-side row model (dataSource), grouping, export, the /lite entry, themes and jsdom tests. Use when code imports @ishibashi0112/spreadsheet-grid, or when the user wants an editable table or spreadsheet-like grid built with it. 表・データグリッド・Excel のように編集できる表を SpreadsheetGrid で作る / 直すときに使う。
+description: Builds and changes data grids with @ishibashi0112/spreadsheet-grid (SpreadsheetGrid, React 18.3 / 19) - columns, cell editors and validation, filters and sorting, the server-side row model (dataSource), grouping, export, the /lite entry, themes and jsdom tests. Use when code imports @ishibashi0112/spreadsheet-grid, or when the user wants an editable table or spreadsheet-like grid built with it. 表・データグリッド・Excel のように編集できる表を SpreadsheetGrid で作る / 直すときに使う。
 license: MIT
 ---
 
 # SpreadsheetGrid(`@ishibashi0112/spreadsheet-grid`)
 
-React 19 の仮想化データグリッドです。新しいライブラリで、AI の学習データにほとんど入っていません。**AG Grid / MUI DataGrid / TanStack Table などの書き方を推測で当てはめないでください。** props とメソッドは、必ず下の資料で名前と型を確かめてから書きます。
+React 18.3 / 19 向けの仮想化データグリッドです。新しいライブラリで、AI の学習データにほとんど入っていません。**AG Grid / MUI DataGrid / TanStack Table などの書き方を推測で当てはめないでください。** props とメソッドは、必ず下の資料で名前と型を確かめてから書きます。
 
 ## 1. まず資料を開く
 
@@ -57,7 +57,7 @@ export function Inventory() {
 - **列の `width` は型の上で必須。** 伸縮させる列は `flex` も足します。列は既定で編集できます。止めるときは列の `editable: false` か `readOnly`、セルごとなら `canEditCell`、全体ならグリッドの `readOnly`。
 - **`rows` か `dataSource`。** `rows` はクライアントサイド、`dataSource` を渡すとサーバーサイド行モデルです。両方は渡しません。
 - **高さは `height` prop。** `'100%'` は上下のバーを含む全体の高さで、親に確定した高さが要ります。数値はスクロール領域だけの高さです。`height` も `maxHeight` も指定しないと、スクロール領域は 480px が上限です。ルートの `style.height` では決めません。
-- **命令的 API。** `ref` を渡すと `SpreadsheetGridHandle<T>` が入ります(React 19 の ref-as-prop。`forwardRef` は要りません)。
+- **命令的 API。** `ref` を渡すと `SpreadsheetGridHandle<T>` が入ります(利用側で `forwardRef` は要りません。React 18.3 / 19 のどちらでも同じ)。
 - **Next.js App Router。** グリッドは `'use client'` のファイルから描画します。
 
 ## 4. 入口の選び方

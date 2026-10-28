@@ -67,9 +67,9 @@ export type GridClassNames = Core.GridClassNames<ReactGridTypes>;
  * `SpreadsheetGrid` の props。各フィールドの説明は JSDoc と同梱の `API_REFERENCE.md`の「SpreadsheetGrid props」表。
  */
 export type SpreadsheetGridProps<T> = Core.SpreadsheetGridProps<T, ReactGridTypes> & {
-  // 追加(imperative API #1): React 19 の ref-as-prop。forwardRef は使いません。
+  // 追加(imperative API #1): React 19 の ref-as-prop。React 18 では公開コンポーネントを withRefProp が forwardRef で包みます。
   /**
-   * 命令的 API(`SpreadsheetGridHandle`)を受け取る ref(React 19 の ref-as-prop。`forwardRef` は不要)。
+   * 命令的 API(`SpreadsheetGridHandle`)を受け取る ref(利用側で `forwardRef` は不要。React 18.3 / 19 のどちらも同じ)。
    * 例: `const gridRef = useRef<SpreadsheetGridHandle<Row>>(null)` → `<SpreadsheetGrid ref={gridRef} … />`。
    */
   ref?: Ref<Core.SpreadsheetGridHandle<T>>;
