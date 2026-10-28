@@ -84,7 +84,7 @@ React 19 + TypeScript + Vite 製のカスタム AG Grid 風・仮想化データ
 
 ## サンプル(examples/。2026-10-25 追加)
 
-- StackBlitz で開くサンプル: `basic`(編集できる在庫表 10,000 行)/ `server-side`(SSRM。ブラウザ内の擬似サーバー `src/fakeServer.ts`)/ `astryx`(`themes/astryx.css` + Astryx の部品)。各サンプルは create-vite の react-ts と同じ構成の単体の Vite プロジェクトで、npm の公開版(`^X.Y.Z`)に依存する。pnpm の workspace には入れない(StackBlitz はそのフォルダだけを npm で開くため)。lockfile は置かない(`.gitignore`)。
+- StackBlitz で開くサンプル: `basic`(編集できる在庫表 10,000 行)/ `server-side`(SSRM。ブラウザ内の擬似サーバー `src/fakeServer.ts`)/ `astryx`(`themes/astryx.css` + Astryx の部品)。各サンプルは create-vite の react-ts と同じ構成の単体の Vite プロジェクトで、npm の公開版(`^X.Y.Z`)に依存する。Vite は 7(`vite` ^7 + `@vitejs/plugin-react` ^5)に留めている: Vite 8 の Rolldown は StackBlitz(WebContainer)では WebAssembly 版の部品を実行時に落として使うが、2026-10-25 公開の `@napi-rs/wasm-runtime` 1.2.6 と `@rolldown/binding-wasm32-wasi` 1.2.15 の `@emnapi/*` の版が合わず「Cannot find native binding」で起動しない(上流の不具合。手元の npm install では起きない)。上流が直ったら Vite 8 へ戻してよいが、StackBlitz で 3 つとも起動するのをユーザーに確かめてもらってから。pnpm の workspace には入れない(StackBlitz はそのフォルダだけを npm で開くため)。lockfile は置かない(`.gitignore`)。
 - 開く URL は `https://stackblitz.com/fork/github/ishibashi0112/datasheet-grid/tree/main/examples/<名前>?file=src/App.tsx&terminal=dev`(vite.new と同じ fork 形式)。リンクは README(ルート / packages/react)・`examples/README.md`・website(トップのボタン / quick-start / guides/ssrm / guides/design-systems)にある。サンプルを足したらここへも足す。
 - サンプルのコードはルートの eslint の対象(`examples/*/dist` は除外)。tsc / vitest の対象外で、型とビルドは `examples:check`(ゲート表)で見る。公開 API を変えたらサンプルも直す(`examples:check` が落ちる)。
 - コンテナから stackblitz.com へは届かないため、StackBlitz 上での確認はユーザーに頼む。手元の確認はサンプルを写して `npm install`(公開版)→ `npx vite` → Playwright。
