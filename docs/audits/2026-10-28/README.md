@@ -127,6 +127,11 @@ PASS / 実行した確認の数(SKIP は数に入れない)。
   - React 18.3.1 の写し(実ブラウザ、Chromium): ハーネス 12 本で 588 / 589。落ちたのは React 19 と同じ BR-1(auto-height)。t-basic は dev サーバーを起動した直後の 1 回目だけ 16 件目のあとでセルが 30 秒見つからずに止まり、続けて 2 回回して 2 回とも 104 / 104(原因は特定していない。React 19 の写しでは起きていない)。
   - 利用側アプリ(examples/basic を写し、React 18.3.1 + `@types/react` 18.3 + pack した tarball): `--legacy-peer-deps` なしで `npm install` が通る。`tsc --noEmit` は `--skipLibCheck false` でも通る(全部入りの `ref`・`/lite` のグリッドの `ref`・`/ai` の `GridAskBar` を使う一時ファイルを足して確認)。`vite build` が通り、本番ビルドと dev の両方で CSV ボタン(`gridRef.current?.downloadCsv`)からダウンロードできる(= ref が付いている)。
   - ライブラリのソースそのものは `@types/react` 18 では型検査が通らない(`useRef` の null の扱いなどの型の違い。公開の d.ts は上のとおり通る)。開発と CI は React 19 で行う。
+- 実装の見直し(別の目のコードレビュー。build:lib した dist を React 18.3.1 / 19.3.0 で createRoot + StrictMode・旧来の `ReactDOM.render`・`renderToString`・`hydrateRoot` に描き、オブジェクト / コールバックの ref・アンマウントで null・`@types/react` 18 + `skipLibCheck: false` の型・ref を props で受ける公開物が 2 つだけなこと・React 18 に無い API を使っていないことを確認)で見つかった点と対応:
+  - React 18 の SSR(開発ビルド)で全部入りを描くたびに `useLayoutEffect does nothing on the server` の警告が 3 件出た(列ドラッグの settle・行ドラッグの settle・ラベル行の縦固定レイヤー。React 19 は出さない)→ `hooks/useController` の `useIsomorphicLayoutEffect`(SSR では useEffect)を書き出して使うようにし、`useVirtualizerCore` の同じ定義もこれにまとめた。ライブラリで素の `useLayoutEffect` を import すると eslint(`no-restricted-imports`)で止まる。
+  - React 18 では包んだ側に名前が無く、開発ツールに `ForwardRef` とだけ出た → `withRefProp` が包む前の `displayName` か関数名を付ける。
+  - `packages/react/README.md` と website の「はじめに」の「対応環境」に peer `>= 19` が残っていた → 直した。
+  - 対応しないもの: d.ts の `SpreadsheetGrid` は関数の型のままで、React 18 での実体は forwardRef のオブジェクト。`SpreadsheetGrid(props)` と関数として直接呼ぶと React 18 では TypeError になる(JSX で使う分には関係ない。関数として呼ぶのは React の使い方として想定外)。
 
 ## 8. 対応状況
 

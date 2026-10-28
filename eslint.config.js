@@ -47,4 +47,24 @@ export default defineConfig([
       ],
     },
   },
+  // 追加(React 18 対応 2026-10-28): React 版のライブラリは素の useLayoutEffect を使わない(React 18 の SSR の開発ビルドで描くたびに
+  //   警告が出る)。hooks/useController の useIsomorphicLayoutEffect を使う。
+  {
+    files: ['packages/react/src/**/*.{ts,tsx}'],
+    ignores: ['packages/react/src/**/*.test.{ts,tsx}', 'packages/react/src/hooks/useController.ts'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          paths: [
+            {
+              name: 'react',
+              importNames: ['useLayoutEffect'],
+              message: 'hooks/useController の useIsomorphicLayoutEffect を使います(React 18 の SSR で警告が出ないように)。',
+            },
+          ],
+        },
+      ],
+    },
+  },
 ])

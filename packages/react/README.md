@@ -10,7 +10,7 @@ A virtualized spreadsheet / data grid for React 18.3 / 19 (~1M rows, pinned colu
 npm install @ishibashi0112/spreadsheet-grid
 ```
 
-Peer dependencies: `react` / `react-dom` `>= 19`. Import the CSS once:
+Peer dependencies: `react` / `react-dom` `^18.3.0 || ^19.0.0` (React 18 is supported from v0.58.0). Import the CSS once:
 
 ```ts
 import '@ishibashi0112/spreadsheet-grid/style.css'

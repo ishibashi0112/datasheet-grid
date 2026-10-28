@@ -2,7 +2,7 @@
 //   live 方式の columnDragMotion)の機能です。中身はシェル(GridShell.tsx)にあった節をそのまま移したもので、シェルは
 //   元の位置で useColumnReorder を呼びます(中の hook の順番はシェルにあったときと同じ)。機能セットに無い構成では
 //   代役(grip を出さない = onColumnsChange が無いときと同じ見出し、縦線も描かない)が受けます。
-import { useLayoutEffect } from 'react';
+import { useIsomorphicLayoutEffect } from '../hooks/useController';
 import { useColumnHeaderDragController } from '../hooks/useColumnHeaderDragController';
 import type { ColumnReorderFeatureArgs, ColumnReorderFeatureResult, ReactGridFeatures } from './types';
 
@@ -23,7 +23,8 @@ const useColumnReorderFeature = <T,>(args: ColumnReorderFeatureArgs<T>): ColumnR
   //   それ以外(初回 / リサイズ / ピン / 非表示)は即 return するため本 effect が走っても無害です。
   //   useLayoutEffect は paint 前に走るため、瞬間移動は見えず最初から「元位置→新位置」へ滑ります。
   const { paneLayout } = args;
-  useLayoutEffect(() => {
+  // 変更(React 18 対応 2026-10-28): React 18 の SSR で警告を出さない useIsomorphicLayoutEffect に(クライアントでは useLayoutEffect のまま)。
+  useIsomorphicLayoutEffect(() => {
     applyReorderSettle();
   }, [paneLayout, applyReorderSettle]);
 

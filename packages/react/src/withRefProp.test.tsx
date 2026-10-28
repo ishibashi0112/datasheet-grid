@@ -47,6 +47,9 @@ describe('withRefProp', () => {
     const LiteGrid18 = createSpreadsheetGrid({ features: {} });
     expect(typeOf(Grid18)).toBe(FORWARD_REF);
     expect(typeOf(LiteGrid18)).toBe(FORWARD_REF);
+    // 開発ツールと警告に出る名前は包む前のもの(createSpreadsheetGrid は displayName、全部入りは関数名)。
+    expect((LiteGrid18 as { displayName?: string }).displayName).toBe('SpreadsheetGrid');
+    expect((Grid18 as { displayName?: string }).displayName).toBeTruthy();
 
     const fullRef = createRef<SpreadsheetGridHandle<Row>>();
     const liteRef = createRef<SpreadsheetGridHandle<Row>>();
