@@ -2566,7 +2566,7 @@ export type ScrollHintOptions<T = unknown, F extends GridFrameworkTypes = GridFr
  */
 export type SpreadsheetGridProps<T, F extends GridFrameworkTypes = GridFrameworkTypes> = {
   // 追加(imperative API #1): React 19 の ref-as-prop。命令的ハンドル(SpreadsheetGridHandle)を受け取ります。
-  //   forwardRef は使いません(React 19 で deprecated 予定のため)。状態は controlled のまま、prop で
+  //   forwardRef は使いません(React 19 で deprecated 予定のため。React 18 のときだけ React 版の withRefProp が包む = 2026-10-28)。状態は controlled のまま、prop で
   //   表現できない一発操作(スクロール/選択操作/CSV)だけをハンドルで提供します。
   //   注記(非依存化 ①): ref prop は React 固有のため core には持たず、model/gridTypes.ts(React 束縛)が付与します。
   // 追加(state #2): 永続スライス(手動リサイズ幅 / フィルター / ソート / 列メタ=可視・順序・ピン)が

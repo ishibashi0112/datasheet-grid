@@ -10,7 +10,9 @@
 //   Solid 版は同じコントローラを onMount / createEffect / onCleanup で接続します。
 import { useEffect, useLayoutEffect, useState } from 'react';
 
-const useIsomorphicLayoutEffect =
+// 変更(React 18 対応 2026-10-28): 素の useLayoutEffect は React 18 の SSR(開発ビルド)で描くたびに警告を出すため、
+//   レイアウト effect が要る所はすべてこれを使います(React 19 は警告しない)。
+export const useIsomorphicLayoutEffect =
   typeof document !== 'undefined' ? useLayoutEffect : useEffect;
 
 export type ControllerLike<Args> = {

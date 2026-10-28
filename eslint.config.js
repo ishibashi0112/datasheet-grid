@@ -18,6 +18,11 @@ export default defineConfig([
     languageOptions: {
       globals: globals.browser,
     },
+    rules: {
+      // 追加(React 18 対応 2026-10-28): withRefProp(React 18 のときだけ forwardRef で包む)を memo / forwardRef と同じく
+      //   コンポーネントを返す HOC として扱う(configs.vite の allowConstantExport はそのまま)。
+      'react-refresh/only-export-components': ['error', { allowConstantExport: true, extraHOCs: ['withRefProp'] }],
+    },
   },
   // 追加(非依存化 ⑤-1 / 変更 ⑤-2): core パッケージ(packages/core)は React / react-dom / React 版パッケージを
   //   import しない。型は gridTypes.unbound(内部層用の未束縛束縛)か gridTypes.core(F ジェネリック)から取る
@@ -36,6 +41,26 @@ export default defineConfig([
             {
               group: ['@ishibashi0112/spreadsheet-grid', '@ishibashi0112/spreadsheet-grid/*'],
               message: 'core は React 版パッケージに依存しません。',
+            },
+          ],
+        },
+      ],
+    },
+  },
+  // 追加(React 18 対応 2026-10-28): React 版のライブラリは素の useLayoutEffect を使わない(React 18 の SSR の開発ビルドで描くたびに
+  //   警告が出る)。hooks/useController の useIsomorphicLayoutEffect を使う。
+  {
+    files: ['packages/react/src/**/*.{ts,tsx}'],
+    ignores: ['packages/react/src/**/*.test.{ts,tsx}', 'packages/react/src/hooks/useController.ts'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          paths: [
+            {
+              name: 'react',
+              importNames: ['useLayoutEffect'],
+              message: 'hooks/useController の useIsomorphicLayoutEffect を使います(React 18 の SSR で警告が出ないように)。',
             },
           ],
         },

@@ -1,6 +1,6 @@
 # @ishibashi0112/spreadsheet-grid
 
-A virtualized spreadsheet / data grid for React 19 (~1M rows, pinned columns, Excel-like editing / selection / clipboard, filters & sorting, client-side and server-side row models). 日本語は下にあります。
+A virtualized spreadsheet / data grid for React 18.3 / 19 (~1M rows, pinned columns, Excel-like editing / selection / clipboard, filters & sorting, client-side and server-side row models). 日本語は下にあります。
 
 **[Docs & live demo](https://datasheet-grid.vercel.app)** · [Playground](https://datasheet-grid.vercel.app/playground) · [Try on StackBlitz](https://stackblitz.com/fork/github/ishibashi0112/datasheet-grid/tree/main/examples/basic?file=src/App.tsx&terminal=dev) · [GitHub](https://github.com/ishibashi0112/datasheet-grid) · [Changelog](https://github.com/ishibashi0112/datasheet-grid/blob/main/CHANGELOG.md)
 
@@ -10,7 +10,7 @@ A virtualized spreadsheet / data grid for React 19 (~1M rows, pinned columns, Ex
 npm install @ishibashi0112/spreadsheet-grid
 ```
 
-Peer dependencies: `react` / `react-dom` `>= 19`. Import the CSS once:
+Peer dependencies: `react` / `react-dom` `^18.3.0 || ^19.0.0` (React 18 is supported from v0.58.0). Import the CSS once:
 
 ```ts
 import '@ishibashi0112/spreadsheet-grid/style.css'
@@ -97,7 +97,7 @@ This library is new, so AI coding assistants rarely know its API and tend to gue
 - **Row keys.** Return a stable key from `rowKeyGetter` (the default is the row index).
 - **`rows` or `dataSource`.** `rows` is the client-side row model; `dataSource` switches to the server-side row model. They are mutually exclusive.
 - **Height.** Use the `height` prop, not `style.height` on the root. A value containing `%` (`'100%'`) sizes the **whole grid including its bars** and needs a parent with a definite height; a number sizes the **scroll area only**. Without `height`, the scroll area is capped at `480px` (`maxHeight`).
-- **Imperative API.** Pass `ref` (React 19 ref-as-prop, no `forwardRef`) to get a `SpreadsheetGridHandle<T>`.
+- **Imperative API.** Pass `ref` to get a `SpreadsheetGridHandle<T>` (no `forwardRef` needed on your side; works the same on React 18.3 and 19).
 - **Next.js App Router.** Render the grid from a Client Component (a file with `'use client'`); the package does not add the directive.
 
 ## License
@@ -108,7 +108,7 @@ MIT
 
 ## 日本語
 
-React 19 向けの仮想化スプレッドシート / データグリッドです(約 100 万行・列固定・Excel ライクな編集 / 選択 / クリップボード・フィルター / ソート・クライアントサイド / サーバーサイド行モデル)。
+React 18.3 / 19 向けの仮想化スプレッドシート / データグリッドです(約 100 万行・列固定・Excel ライクな編集 / 選択 / クリップボード・フィルター / ソート・クライアントサイド / サーバーサイド行モデル)。
 
 **[ドキュメントとライブデモ](https://datasheet-grid.vercel.app)** · [プレイグラウンド](https://datasheet-grid.vercel.app/playground) · [StackBlitz で試す](https://stackblitz.com/fork/github/ishibashi0112/datasheet-grid/tree/main/examples/basic?file=src/App.tsx&terminal=dev) · [GitHub](https://github.com/ishibashi0112/datasheet-grid) · [変更履歴](https://github.com/ishibashi0112/datasheet-grid/blob/main/CHANGELOG.md)
 
@@ -166,5 +166,5 @@ npm パッケージに同梱されているため、オフライン(`node_module
 - **行キー。** `rowKeyGetter` で安定したキーを返してください(既定は行 index)。
 - **`rows` か `dataSource`。** `rows` はクライアントサイド行モデル、`dataSource` を渡すとサーバーサイド行モデルです。両者は排他です。
 - **高さ。** ルートの `style.height` ではなく `height` prop で指定します。`%` を含む値(`'100%'`)は**バーを含むグリッド全体**の高さで、親要素に確定高さが必要です。数値は**スクロール領域だけ**の高さです。`height` 未指定時のスクロール領域は `480px`(`maxHeight`)が上限です。
-- **命令的 API。** `ref`(React 19 の ref-as-prop。`forwardRef` は不要)で `SpreadsheetGridHandle<T>` を受け取ります。
+- **命令的 API。** `ref` を渡すと `SpreadsheetGridHandle<T>` を受け取れます(利用側で `forwardRef` は不要。React 18.3 / 19 のどちらでも同じ)。
 - **Next.js App Router。** クライアントコンポーネント(`'use client'` のファイル)から描画してください。パッケージ側はディレクティブを付けていません。

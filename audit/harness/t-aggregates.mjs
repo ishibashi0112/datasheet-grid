@@ -1,5 +1,5 @@
 // 選択範囲の集計(showSelectionAggregates): 実ブラウザでの値・表示・大きな選択の時間分割・SSRM の部分集計。
-import { OUT, open, check, unexpectedPageErrors, summary, cell, focusGrid, waitIdle } from './pw.mjs';
+import { OUT, open, check, skip, unexpectedPageErrors, summary, cell, focusGrid, waitIdle } from './pw.mjs';
 
 const chips = (page) =>
   page.evaluate(() => [...document.querySelectorAll('.ssg-bar-aggregates .ssg-bar-chip')].map((c) => c.textContent));
@@ -61,7 +61,13 @@ const expectedOf = (page, r0, r1, keys) =>
   for (const counts of [true, false]) {
     await page.evaluate((c) => window.__setProps({ showBottomBarCounts: c }), counts);
     for (const width of [1400, 900, 600, 420]) {
-      await page.setViewportSize({ width, height: 800 });
+      // WebDriver の Firefox は窓を 500px より狭くできない(別の幅のまま測らないよう SKIP にする)。
+      const sized = await page.setViewportSize({ width, height: 800 }).then(() => true, (e) => {
+        if (e.code !== 'WD_VIEWPORT') throw e;
+        skip(`agg: ${width}px・件数${counts ? 'あり' : 'なし'}で 2 セル以上を選んでもバーの高さとグループの位置が変わらない`, 'このブラウザでは窓をこの幅にできない');
+        return false;
+      });
+      if (!sized) continue;
       await waitIdle(page, 120);
       await page.evaluate(() => window.__grid.selectCell(1, 2));
       await waitIdle(page);

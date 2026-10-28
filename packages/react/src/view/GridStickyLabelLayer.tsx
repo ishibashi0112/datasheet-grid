@@ -1,4 +1,5 @@
-import { memo, useLayoutEffect, useRef, type CSSProperties } from 'react';
+import { memo, useRef, type CSSProperties } from 'react';
+import { useIsomorphicLayoutEffect } from '../hooks/useController';
 import type { GridLabelRow, GridRowKey } from '../model/gridTypes';
 import type { GridPaneKind } from './GridHeaderRow';
 import { cx } from '@ishibashi0112/spreadsheet-grid-core/logic/cx';
@@ -60,7 +61,8 @@ function GridStickyLabelLayerInner<T>({
   //   フォーカスできる要素を残さない。マウスでは押せる = 本物の行と同じ操作)。中身が後から描き替わっても付け直します。
   const layerRef = useRef<HTMLDivElement>(null);
   const shown = entry !== null;
-  useLayoutEffect(() => {
+  // 変更(React 18 対応 2026-10-28): React 18 の SSR で警告を出さない useIsomorphicLayoutEffect に(クライアントでは useLayoutEffect のまま)。
+  useIsomorphicLayoutEffect(() => {
     const layer = layerRef.current;
     if (!shown || !layer) {
       return;

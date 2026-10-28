@@ -4,7 +4,8 @@
 //   (中の hook の順番はシェルにあったときと同じ)。行の移動の確定(commitRowMove)と命令的 API の moveRow はシェルに
 //   残します(ドラッグなしでも使える)。機能セットに無い構成では enableRowDrag を false として扱います
 //   (createSpreadsheetGrid。ハンドル列もガイド線も出ない)。
-import { useCallback, useLayoutEffect } from 'react';
+import { useCallback } from 'react';
+import { useIsomorphicLayoutEffect } from '../hooks/useController';
 import { cx } from '@ishibashi0112/spreadsheet-grid-core/logic/cx';
 import { isSyntheticColumnKey } from '@ishibashi0112/spreadsheet-grid-core/logic/detailRow';
 import {
@@ -52,7 +53,8 @@ const useRowDragFeature = <T,>({
   } = useRowDragController({ ...controllerArgs, getRowDragLabel });
   // 行の並び替え確定(rowModel 差し替え)後に settle アニメを発火します。直前のドロップで armed の
   //   ときだけ動き、それ以外(編集 / フィルター等の rowModel 変化)は即 return するため無害です。
-  useLayoutEffect(() => {
+  // 変更(React 18 対応 2026-10-28): React 18 の SSR で警告を出さない useIsomorphicLayoutEffect に(クライアントでは useLayoutEffect のまま)。
+  useIsomorphicLayoutEffect(() => {
     applyRowReorderSettle();
   }, [rowModel, applyRowReorderSettle]);
 

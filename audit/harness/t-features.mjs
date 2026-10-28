@@ -1,5 +1,5 @@
 // 機能別: グルーピング / 展開行 / ラベル行 / 行ドラッグ / auto-height / 条件付き書式 / 動きの追加分。
-import { OUT, open, check, unexpectedPageErrors, summary, errorsOf, renderedRowIndexes, cellText, cell, header, scrollTo, focusGrid, waitIdle, events, clearEvents, pasteText, rows, state } from './pw.mjs';
+import { OUT, open, check, skip, SUPPORTS, unexpectedPageErrors, summary, errorsOf, renderedRowIndexes, cellText, cell, header, scrollTo, focusGrid, waitIdle, events, clearEvents, pasteText, rows, state } from './pw.mjs';
 
 // ---------- グルーピング ----------
 {
@@ -526,9 +526,14 @@ import { OUT, open, check, unexpectedPageErrors, summary, errorsOf, renderedRowI
   check('cell-note: ::before is a 10px amber triangle at the top-right', marker.content === '""' && marker.width === '10px' && marker.color === 'rgb(245, 158, 11)' && marker.top === '0px' && marker.right === '0px', marker);
   await cell(page, 1, 'name').hover();
   await waitIdle(page, 600);
+  // 行数は描画された行の位置で数える(WebKit の innerText は改行が描画されていても空白で返すため)。
   const tip = await page.evaluate(() => {
     const el = document.querySelector('.ssg-tooltip.ssg-tooltip--visible');
-    return el ? { text: el.innerText, lines: el.innerText.split('\n').length } : null;
+    if (!el) return null;
+    const range = document.createRange();
+    range.selectNodeContents(el);
+    const lines = new Set([...range.getClientRects()].map((r) => Math.round(r.top))).size;
+    return { text: el.textContent, lines };
   });
   check('cell-note: hover shows the note with a line break', tip && tip.lines === 2 && tip.text.includes('メモ 2 行目'), tip);
   // 入力エラー(名前は必須)と重ねる: 二重の三角 + 「エラー → 改行 → メモ」。
@@ -549,17 +554,64 @@ import { OUT, open, check, unexpectedPageErrors, summary, errorsOf, renderedRowI
 }
 
 // ---------- IME オンのままの直接入力(G-2)----------
+// 入力受け(imeDirectInput)にフォーカスがあっても、IME を使わない文字キー / F2 / Delete / 矢印 / 貼り付けは従来どおり。
+//   CDP を使わないので全ブラウザで回す(変換の確認は Chromium だけ)。
+const imeActiveOf = (page) => page.evaluate(() => {
+  const el = document.activeElement;
+  return el ? { tag: el.tagName, ime: el.hasAttribute('data-ssg-ime-input'), editor: el.classList.contains('ssg-cell-editor-input'), cls: el.className } : null;
+});
+const imeValueOf = (page) => page.evaluate(() => document.querySelector('[data-ssg-ime-input]')?.value ?? null);
+async function checkImePlainKeys(page, active, imeValue) {
+  await cell(page, 5, 'name').click();
+  await page.keyboard.press('x');
+  await waitIdle(page);
+  check('ime: plain printable key still starts editing with that key', (await page.locator('.ssg-cell-editor-input').inputValue().catch(() => null)) === 'x');
+  await page.keyboard.press('Escape');
+  await waitIdle(page, 200);
+  check('ime: focus back on the IME input after Escape', (await active())?.ime === true, await active());
+  await page.keyboard.press('ArrowDown');
+  await waitIdle(page);
+  check('ime: ArrowDown moves the active cell', JSON.stringify(await page.evaluate(() => window.__grid.getActiveCell())).includes('"row":6'));
+  await pasteText(page, '貼り付け');
+  check('ime: paste writes the cell (and not into the IME input)', (await cellText(page, 6, 'name')) === '貼り付け' && (await imeValue()) === '');
+  await page.keyboard.press('Delete');
+  await waitIdle(page);
+  check('ime: Delete clears the cell', (await cellText(page, 6, 'name')) === '');
+  await page.keyboard.press('F2');
+  await waitIdle(page);
+  check('ime: F2 starts editing', (await page.locator('.ssg-cell-editor').count()) === 1);
+  await page.keyboard.press('Escape');
+  await waitIdle(page, 200);
+}
+// 端の列の Tab はグリッド外へ(無効時と同じ行き先)。無効にすると入力受けを外す。
+async function checkImeTabAndDisable(page) {
+  const lastKey = await page.evaluate(() => [...document.querySelectorAll('.ssg-header-cell[data-ssg-col-key]')].map((h) => h.getAttribute('data-ssg-col-key')).filter((k) => !k.startsWith('__')).pop());
+  const tabTarget = async () => {
+    await cell(page, 8, lastKey).click();
+    await page.keyboard.press('Tab');
+    await waitIdle(page);
+    return page.evaluate(() => {
+      const el = document.activeElement;
+      return el ? `${el.tagName}.${el.className}` : null;
+    });
+  };
+  const withIme = await tabTarget();
+  await page.evaluate(() => window.__setProps({ imeDirectInput: false }));
+  await waitIdle(page, 200);
+  const withoutIme = await tabTarget();
+  check('ime: Tab at the last column leaves the grid like when disabled', withIme === withoutIme && !String(withIme).includes('ssg-ime-input'), { withIme, withoutIme });
+  check('ime: disabling removes the IME input', (await page.locator('[data-ssg-ime-input]').count()) === 0);
+}
+
+// ---------- IME オンのままの直接入力(G-2)の変換----------
 //   CDP の Input.imeSetComposition / Input.insertText で「変換中 → 確定」を流し、入力受け(imeDirectInput)から編集へ
 //   引き継がれることと、入力受けにフォーカスがあってもキー操作 / 貼り付け / Tab が従来どおりであることを確かめる。
 //   ※ CDP は変換イベントの模擬で、OS の IME(MS-IME)そのものではない。最終確認は Windows 実機。
-{
+if (SUPPORTS.cdp) {
   const { page, pageErrors, close } = await open('basic', { query: 'n=50' });
   const cdp = await page.context().newCDPSession(page);
-  const active = () => page.evaluate(() => {
-    const el = document.activeElement;
-    return el ? { tag: el.tagName, ime: el.hasAttribute('data-ssg-ime-input'), editor: el.classList.contains('ssg-cell-editor-input'), cls: el.className } : null;
-  });
-  const imeValue = () => page.evaluate(() => document.querySelector('[data-ssg-ime-input]')?.value ?? null);
+  const active = () => imeActiveOf(page);
+  const imeValue = () => imeValueOf(page);
 
   // 対照: 既定(無効)ではルートにフォーカスがあり、変換を流しても何も起きない(打った文字が失われる現象の再現)。
   await cell(page, 2, 'name').click();
@@ -671,26 +723,7 @@ import { OUT, open, check, unexpectedPageErrors, summary, errorsOf, renderedRowI
   check('ime: select column → composition discarded', catComposing === 0 && (await page.locator('.ssg-cell-editor').count()) === 0 && (await cellText(page, 4, 'category')) === catBefore && (await imeValue()) === '');
 
   // IME を使わない文字キー / F2 / Delete / 矢印 / 貼り付けは従来どおり。
-  await cell(page, 5, 'name').click();
-  await page.keyboard.press('x');
-  await waitIdle(page);
-  check('ime: plain printable key still starts editing with that key', (await page.locator('.ssg-cell-editor-input').inputValue().catch(() => null)) === 'x');
-  await page.keyboard.press('Escape');
-  await waitIdle(page, 200);
-  check('ime: focus back on the IME input after Escape', (await active())?.ime === true, await active());
-  await page.keyboard.press('ArrowDown');
-  await waitIdle(page);
-  check('ime: ArrowDown moves the active cell', JSON.stringify(await page.evaluate(() => window.__grid.getActiveCell())).includes('"row":6'));
-  await pasteText(page, '貼り付け');
-  check('ime: paste writes the cell (and not into the IME input)', (await cellText(page, 6, 'name')) === '貼り付け' && (await imeValue()) === '');
-  await page.keyboard.press('Delete');
-  await waitIdle(page);
-  check('ime: Delete clears the cell', (await cellText(page, 6, 'name')) === '');
-  await page.keyboard.press('F2');
-  await waitIdle(page);
-  check('ime: F2 starts editing', (await page.locator('.ssg-cell-editor').count()) === 1);
-  await page.keyboard.press('Escape');
-  await waitIdle(page, 200);
+  await checkImePlainKeys(page, active, imeValue);
 
   // 変換中にグリッド外をクリックしたら、編集を始めず(フォーカスを奪わず)変換を捨てる。
   await cell(page, 7, 'name').click();
@@ -706,24 +739,26 @@ import { OUT, open, check, unexpectedPageErrors, summary, errorsOf, renderedRowI
   await waitIdle(page, 250);
   check('ime: clicking another cell while composing → that cell becomes active, no editing', (await page.locator('.ssg-cell-editor').count()) === 0 && JSON.stringify(await page.evaluate(() => window.__grid.getActiveCell())).includes('"row":9') && (await active())?.ime === true, await active());
 
-  // 端の列の Tab はグリッド外へ(無効時と同じ行き先)。
-  const lastKey = await page.evaluate(() => [...document.querySelectorAll('.ssg-header-cell[data-ssg-col-key]')].map((h) => h.getAttribute('data-ssg-col-key')).filter((k) => !k.startsWith('__')).pop());
-  const tabTarget = async () => {
-    await cell(page, 8, lastKey).click();
-    await page.keyboard.press('Tab');
-    await waitIdle(page);
-    return page.evaluate(() => {
-      const el = document.activeElement;
-      return el ? `${el.tagName}.${el.className}` : null;
-    });
-  };
-  const withIme = await tabTarget();
-  await page.evaluate(() => window.__setProps({ imeDirectInput: false }));
-  await waitIdle(page, 200);
-  const withoutIme = await tabTarget();
-  check('ime: Tab at the last column leaves the grid like when disabled', withIme === withoutIme && !String(withIme).includes('ssg-ime-input'), { withIme, withoutIme });
-  check('ime: disabling removes the IME input', (await page.locator('[data-ssg-ime-input]').count()) === 0);
+  await checkImeTabAndDisable(page);
 
+  const errs = await errorsOf(page);
+  check('ime: no console errors', errs.length === 0 && unexpectedPageErrors(pageErrors).length === 0, [...errs, ...pageErrors].slice(0, 5));
+  await close();
+} else {
+  skip('ime: IME の変換(G-2)', 'CDP の Input.imeSetComposition で変換を流すため Chromium だけ');
+  // 変換を流さない確認(入力受けへのフォーカス / 文字キー / 矢印 / 貼り付け / Delete / F2 / Tab / 無効化)はこのブラウザでも回す。
+  const { page, pageErrors, close } = await open('basic', { query: 'n=50' });
+  const active = () => imeActiveOf(page);
+  const imeValue = () => imeValueOf(page);
+  await cell(page, 2, 'name').click();
+  await page.evaluate(() => window.__setProps({ imeDirectInput: true }));
+  await waitIdle(page, 200);
+  check('ime: enabling moves focus to the IME input', (await active())?.ime === true, await active());
+  await cell(page, 3, 'name').click();
+  await waitIdle(page);
+  check('ime: cell click → focus on the IME input', (await active())?.ime === true, await active());
+  await checkImePlainKeys(page, active, imeValue);
+  await checkImeTabAndDisable(page);
   const errs = await errorsOf(page);
   check('ime: no console errors', errs.length === 0 && unexpectedPageErrors(pageErrors).length === 0, [...errs, ...pageErrors].slice(0, 5));
   await close();

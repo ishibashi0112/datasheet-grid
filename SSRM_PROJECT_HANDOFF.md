@@ -74,7 +74,7 @@
 
 ### 2.5 命令的 API(ref ハンドル)
 
-- React 19 の ref-as-prop(`forwardRef` 不使用)。`SpreadsheetGridHandle<T>` はスクロール / 選択操作 /
+- React 19 の ref-as-prop(`forwardRef` 不使用。2026-10-28 から React 18.3 のときだけ `withRefProp` が forwardRef で包む)。`SpreadsheetGridHandle<T>` はスクロール / 選択操作 /
   CSV・整形データエクスポート / 状態の保存・復元(`getState` / `applyState`)/ 行選択 / undo・redo /
   UI パネル開閉を公開。
 - ハンドルは 1 回だけ生成(`useImperativeHandle` deps `[]`)し、最新値は毎レンダー更新の

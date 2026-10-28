@@ -4,9 +4,9 @@
 [![license](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
 [![Open in StackBlitz](https://img.shields.io/badge/Open%20in-StackBlitz-1269d3?logo=stackblitz)](https://stackblitz.com/fork/github/ishibashi0112/datasheet-grid/tree/main/examples/basic?file=src/App.tsx&terminal=dev)
 
-A high-performance, virtualized spreadsheet / data grid for **React 19**, written in TypeScript.
+A high-performance, virtualized spreadsheet / data grid for **React 18.3 / 19**, written in TypeScript.
 
-高性能な仮想化スプレッドシート／データグリッド（**React 19**・TypeScript 製）。
+高性能な仮想化スプレッドシート／データグリッド（**React 18.3 / 19**・TypeScript 製）。
 
 **[Docs & live demo](https://datasheet-grid.vercel.app)** · [Playground](https://datasheet-grid.vercel.app/playground) · [Theme builder](https://datasheet-grid.vercel.app/theme-builder) · [Changelog](./CHANGELOG.md)
 
@@ -67,7 +67,7 @@ npm install @ishibashi0112/spreadsheet-grid
 # yarn add @ishibashi0112/spreadsheet-grid
 ```
 
-Requires **react** and **react-dom** `>= 19` as peer dependencies (install them in your app if you have not already). `@tanstack/virtual-core` (the framework-agnostic core of TanStack Virtual) and `@ishibashi0112/spreadsheet-grid-core` (the framework-agnostic core of this grid, split out in v0.39.0) are regular dependencies and are installed automatically; you never import them directly. The React adapter is this package.
+Requires **react** and **react-dom** `^18.3.0 || ^19.0.0` as peer dependencies (install them in your app if you have not already; React 18 is supported from v0.58.0). `@tanstack/virtual-core` (the framework-agnostic core of TanStack Virtual) and `@ishibashi0112/spreadsheet-grid-core` (the framework-agnostic core of this grid, split out in v0.39.0) are regular dependencies and are installed automatically; you never import them directly. The React adapter is this package.
 
 ## Styles
 
@@ -406,7 +406,7 @@ AI coding assistants rarely know this new library and tend to guess from other g
 
 [English](#ishibashi0112spreadsheet-grid)
 
-**React 19** 製の高性能な仮想化スプレッドシート／データグリッドです。TypeScript で書かれています。
+**React 18.3 / 19** 向けの高性能な仮想化スプレッドシート／データグリッドです。TypeScript で書かれています。
 
 **[ドキュメントとライブデモ](https://datasheet-grid.vercel.app)** · [プレイグラウンド](https://datasheet-grid.vercel.app/playground) · [テーマビルダー](https://datasheet-grid.vercel.app/theme-builder) · [変更履歴](./CHANGELOG.md)
 
@@ -461,7 +461,7 @@ npm install @ishibashi0112/spreadsheet-grid
 # yarn add @ishibashi0112/spreadsheet-grid
 ```
 
-peer 依存として **react** / **react-dom** `>= 19` が必要です（未導入なら利用側で入れてください）。`@tanstack/virtual-core`（TanStack Virtual のフレームワーク非依存コア）と `@ishibashi0112/spreadsheet-grid-core`（本グリッドのフレームワーク非依存コア。v0.39.0 で分離）は通常依存として自動的に入ります。アプリ側で直接 import する必要はありません。本パッケージが React 向けアダプタです。
+peer 依存として **react** / **react-dom** `^18.3.0 || ^19.0.0` が必要です（未導入なら利用側で入れてください。React 18 は v0.58.0 から対応）。`@tanstack/virtual-core`（TanStack Virtual のフレームワーク非依存コア）と `@ishibashi0112/spreadsheet-grid-core`（本グリッドのフレームワーク非依存コア。v0.39.0 で分離）は通常依存として自動的に入ります。アプリ側で直接 import する必要はありません。本パッケージが React 向けアダプタです。
 
 ### スタイル
 

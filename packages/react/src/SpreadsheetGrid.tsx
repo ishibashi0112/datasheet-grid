@@ -4,6 +4,11 @@
 import { useGridShell } from './GridShell';
 import { fullGridFeatures } from './features/full';
 import type { SpreadsheetGridProps } from './model/gridTypes';
+import { withRefProp } from './withRefProp';
+
+function SpreadsheetGridBase<T extends object>(props: SpreadsheetGridProps<T>) {
+  return useGridShell(props, fullGridFeatures);
+}
 
 // 追加(api-docs): 公開コンポーネントの JSDoc です(d.ts に残り、エディタ / AI が最初に読む説明になります)。
 /**
@@ -17,7 +22,7 @@ import type { SpreadsheetGridProps } from './model/gridTypes';
  * - 行キーは `rowKeyGetter` で安定した値を返してください(既定は index)。
  * - 高さは `height` prop で指定します。`'100%'` でバー込みのグリッド全体が親に収まります(親は確定高さが
  *   必要)。数値はスクロール領域の高さです。
- * - 命令的 API は `ref`(`SpreadsheetGridHandle<T>`)で受け取ります。
+ * - 命令的 API は `ref`(`SpreadsheetGridHandle<T>`)で受け取ります(React 18.3 / 19 のどちらも `ref` を渡すだけ)。
  * - props / 列定義 / 命令的 API の全説明は同梱の `API_REFERENCE.md` と各 props の JSDoc にあります。
  *
  * @example
@@ -45,6 +50,5 @@ import type { SpreadsheetGridProps } from './model/gridTypes';
  * }
  * ```
  */
-export function SpreadsheetGrid<T extends object>(props: SpreadsheetGridProps<T>) {
-  return useGridShell(props, fullGridFeatures);
-}
+// 変更(React 18 対応 2026-10-28): React 18 でも ref が届くよう withRefProp を通します(React 19 では本体そのもの)。
+export const SpreadsheetGrid = /* @__PURE__ */ withRefProp(SpreadsheetGridBase);

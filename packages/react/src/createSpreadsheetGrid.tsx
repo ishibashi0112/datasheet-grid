@@ -8,6 +8,7 @@ import { resolveGridShellFeatures } from './features/resolve';
 import type { ReactGridFeatures } from './features/types';
 import { useUnregisteredFeatureWarnings } from './hooks/useUnregisteredFeatureWarnings';
 import type { SpreadsheetGridProps } from './model/gridTypes';
+import { withRefProp } from './withRefProp';
 
 export type CreateSpreadsheetGridOptions = {
   /** 差し込む機能(`{ filtering: filteringFeature, ... }`)。キーは機能の名前、値は `/lite` が公開する機能の部品です。 */
@@ -60,5 +61,6 @@ export function createSpreadsheetGrid({ features }: CreateSpreadsheetGridOptions
   }
   // dist では関数名が縮められるので、React の開発ツールと警告に出す名前を付けます。
   SpreadsheetGrid.displayName = 'SpreadsheetGrid';
-  return SpreadsheetGrid;
+  // 変更(React 18 対応 2026-10-28): React 18 でも ref が届くよう withRefProp を通します(React 19 では本体そのもの)。
+  return withRefProp(SpreadsheetGrid);
 }

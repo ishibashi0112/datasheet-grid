@@ -1167,7 +1167,7 @@ const [rows, setRows] = useState(initialRows);
 
 ## 命令的 API(ref ハンドル / `SpreadsheetGridHandle<T>`)
 
-状態(列幅・可視・sort・filter 等)は controlled のまま、**prop では表現しづらい一発操作**だけを ref ハンドルで提供する。React 19 の **ref-as-prop**(`forwardRef` 不使用)で受け取る。
+状態(列幅・可視・sort・filter 等)は controlled のまま、**prop では表現しづらい一発操作**だけを ref ハンドルで提供する。`ref` prop で受け取る(利用側で `forwardRef` は不要。React 19 は ref-as-prop のまま、React 18.3 ではグリッドが内部で `forwardRef` に包むので、どちらも同じ書き方)。
 
 ```tsx
 import { useRef } from 'react';
@@ -1970,6 +1970,6 @@ function Grid(props: SpreadsheetGridProps<Row>) {
 ## ライブラリ化の宿題(現状把握)
 
 - 〔解消〕**no-op props**: `enableClipboard` / `enableColumnResize` を型から削除(常時 ON 固定の挙動は不変)。将来「無効化」が必要になれば配線つきで非破壊追加する。
-- 〔追加済み〕**imperative API(ref ハンドル)**: `SpreadsheetGridProps.ref` で `SpreadsheetGridHandle<T>` を受け取り、スクロール / 選択操作 / CSV / エクスポートデータ(`getExportData`)/ 状態の保存・復元を命令的に呼べる(React 19 ref-as-prop、`forwardRef` 不使用)。詳細は「命令的 API」節。列状態のシリアライズ(`getState` / `applyState`)・変更通知 `onStateChange` prop は追加済み(対象は reducer 内の永続スライス = 手動リサイズ幅 / フィルター / ソート)。列の可視/順序/ピン/flex の状態化は `columns` prop 側で consumer 所有のため未対応(将来 columns 抽出/適用を入れるなら別途合意)。
+- 〔追加済み〕**imperative API(ref ハンドル)**: `SpreadsheetGridProps.ref` で `SpreadsheetGridHandle<T>` を受け取り、スクロール / 選択操作 / CSV / エクスポートデータ(`getExportData`)/ 状態の保存・復元を命令的に呼べる(React 19 ref-as-prop、`forwardRef` 不使用。v0.58.0 から React 18.3 ではグリッドが内部で `forwardRef` に包む)。詳細は「命令的 API」節。列状態のシリアライズ(`getState` / `applyState`)・変更通知 `onStateChange` prop は追加済み(対象は reducer 内の永続スライス = 手動リサイズ幅 / フィルター / ソート)。列の可視/順序/ピン/flex の状態化は `columns` prop 側で consumer 所有のため未対応(将来 columns 抽出/適用を入れるなら別途合意)。
 - 〔解消〕**公開バレル(`index.ts`)**: 入口を `index.ts` に集約し、`SpreadsheetGrid`(named)と公開型群(serverSide 型・`RowModel` 含む)を再エクスポート。`default export` は廃止。
 - 〔解消〕**テーマ/スタイリング API**: `className` / `style` / `classNames`(25 スロット。値は `GridSlotProps = string | { className, style }`)/ `cellClassName` / `getRowClassName` / CSS トークン(`--ssg-*`)を公開(「パーツ別スロット」節)。

@@ -6,7 +6,7 @@
 //   core 側にあり、将来の Solid 版は同じ core に別のアダプタ(createVirtualizer 相当)を被せます。
 //   利用側は getVirtualItems() / getTotalSize() だけを使います(本体グリッドの列仮想化、
 //   フィルターポップオーバーの候補リスト 2 種)。
-import { useEffect, useLayoutEffect, useReducer, useState } from 'react';
+import { useReducer, useState } from 'react';
 import { flushSync } from 'react-dom';
 import {
   Virtualizer,
@@ -16,10 +16,8 @@ import {
   type PartialKeys,
   type VirtualizerOptions,
 } from '@tanstack/virtual-core';
-
-// SSR(document 不在)では useLayoutEffect の警告を避けて useEffect にフォールバックします。
-const useIsomorphicLayoutEffect =
-  typeof document !== 'undefined' ? useLayoutEffect : useEffect;
+// SSR(document 不在)では useLayoutEffect の警告を避けて useEffect にフォールバックします(useController と共用)。
+import { useIsomorphicLayoutEffect } from './useController';
 
 // マウント中かどうかを持つ小さなホルダーです(レンダーをまたいで同じものを使うため useState で 1 回だけ作ります)。
 const createMountState = () => {
