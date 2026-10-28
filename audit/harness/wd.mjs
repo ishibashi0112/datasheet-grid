@@ -6,22 +6,25 @@
 //     screenshot(clip は無視して画面全体)/ setViewportSize / mouse(move / down / up / click / dblclick / wheel)/
 //     keyboard(press / type / down / up)/ on('console' | 'pageerror')。
 //   - 非対応(呼ぶと例外): route / clock / emulateMedia / CDP / on('request')。テスト側は pw.mjs の SUPPORTS で飛ばす。
-//   - Playwright との違い: ページのスクリプトより先には差し込めない(addInitScript とエラーの記録は goto の後から)。
-//     操作の前の待ちは「要素がある + 見える」だけで、手前の要素に隠れていないか(hit target)は確かめない。
+//   - Playwright との違い: ページのスクリプトより先には差し込めない(addInitScript とエラーの記録は goto の後から。
+//     それより前のエラーは goto の直後にページの window.__errors から写す)。
+//     操作の前に「要素がある + 見える + 動きが止まる」を待ち、その点で手前に別の要素があればスクロールし直す。それでも
+//     隠れていれば WARN(wd) を出してそのまま押す(Playwright は押せるまで待ち、最後は timeout で落ちる)。
 //     複数の要素に当たったとき(strict mode violation)は例外にせず先頭を使って警告を出す。
+//     page.evaluate の前と操作のあとに 1 フレーム待つので、一瞬だけの状態を「出ないこと」で見る確認は甘くなる。
 import { spawn } from 'node:child_process';
 import { writeFileSync } from 'node:fs';
 import { createServer } from 'node:net';
 
 const KEYS = {
-  Enter: '', Tab: '', Escape: '', Backspace: '', Delete: '', Insert: '',
-  ArrowLeft: '', ArrowUp: '', ArrowRight: '', ArrowDown: '',
-  Home: '', End: '', PageUp: '', PageDown: '',
-  Shift: '', Control: '', Alt: '', Meta: '', ControlOrMeta: '', Space: ' ',
-  F1: '', F2: '', F3: '', F4: '', F5: '', F6: '',
-  F7: '', F8: '', F9: '', F10: '', F11: '', F12: '',
+  Enter: '\uE007', Tab: '\uE004', Escape: '\uE00C', Backspace: '\uE003', Delete: '\uE017', Insert: '\uE016',
+  ArrowLeft: '\uE012', ArrowUp: '\uE013', ArrowRight: '\uE014', ArrowDown: '\uE015',
+  Home: '\uE011', End: '\uE010', PageUp: '\uE00E', PageDown: '\uE00F',
+  Shift: '\uE008', Control: '\uE009', Alt: '\uE00A', Meta: '\uE03D', ControlOrMeta: '\uE009', Space: ' ',
+  F1: '\uE031', F2: '\uE032', F3: '\uE033', F4: '\uE034', F5: '\uE035', F6: '\uE036',
+  F7: '\uE037', F8: '\uE038', F9: '\uE039', F10: '\uE03A', F11: '\uE03B', F12: '\uE03C',
 };
-const keyValue = (name) => KEYS[name] ?? (name.length === 1 ? name : (() => { throw new Error(`wd: unknown key ${name}`); })());
+const keyValue = (name) => KEYS[name] ?? (name.length === 1 ? name : (() => { throw new Error(`wd: 知らないキーです: ${name}`); })());
 const BUTTONS = { left: 0, middle: 1, right: 2 };
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -59,38 +62,83 @@ const running = new Map();
 async function startDriver(kind) {
   if (running.has(kind)) return running.get(kind);
   const def = DRIVERS[kind];
-  if (!def) throw new Error(`wd: unknown driver ${kind}`);
+  if (!def) throw new Error(`wd: 知らないドライバです: ${kind}`);
   if (kind === 'webkitgtk' && !process.env.DISPLAY) {
     throw new Error('wd: WebKitGTK には X のディスプレイが要ります。xvfb-run -a で包んで実行してください(例: xvfb-run -a env SSG_AUDIT_BROWSER=webkitgtk node audit/harness/t-basic.mjs)');
   }
   const port = await freePort();
-  const proc = spawn(def.bin, def.args(port), { stdio: 'ignore' });
+  // 自分のプロセスグループで起動し、終わるときはグループごと止める(ドライバが起動したブラウザも残さない)。
+  const proc = spawn(def.bin, def.args(port), { stdio: 'ignore', detached: true });
+  let spawnError = null;
+  proc.once('error', (e) => { spawnError = e; });
   proc.unref();
-  process.on('exit', () => { try { proc.kill(); } catch { /* 終了済み */ } });
+  const kill = () => { try { process.kill(-proc.pid, 'SIGKILL'); } catch { /* 終了済み */ } };
+  process.on('exit', kill);
+  for (const signal of ['SIGINT', 'SIGTERM']) process.once(signal, () => { kill(); process.exit(128 + (signal === 'SIGINT' ? 2 : 15)); });
   const url = `http://127.0.0.1:${port}`;
-  for (let i = 0; i < 100; i++) {
+  let ready = false;
+  for (let i = 0; i < 100 && !ready && !spawnError; i++) {
     try {
-      const r = await fetch(`${url}/status`);
-      if (r.ok) break;
+      const r = await fetch(`${url}/status`, { signal: AbortSignal.timeout(1000) });
+      ready = r.ok;
     } catch { /* 起動待ち */ }
-    await sleep(100);
+    if (!ready) await sleep(100);
   }
+  if (spawnError) throw new Error(`wd: ドライバ ${def.bin} を起動できません: ${spawnError.message}`);
+  if (!ready) { kill(); throw new Error(`wd: ドライバ ${def.bin} が 10 秒たっても応答しません`); }
   const driver = { url, def, proc };
   running.set(kind, driver);
   return driver;
 }
 
 async function request(base, method, path, body) {
+  // スクリプトの上限(60 秒)より長く待ってもドライバが返さなければ固まったとみなす。
   const r = await fetch(base + path, {
     method,
     headers: { 'content-type': 'application/json; charset=utf-8' },
     body: body === undefined ? undefined : JSON.stringify(body),
+    signal: AbortSignal.timeout(90000),
   });
   const text = await r.text();
   const json = text ? JSON.parse(text) : {};
   if (json.value && json.value.error) throw new Error(`wd ${method} ${path}: ${json.value.error}: ${json.value.message}`);
   return json.value;
 }
+
+// クリップボードの代役(ページ内で動かす。PAGE_PRELUDE と、pw.mjs が Playwright の Firefox / WebKit へ addInitScript で入れる)。
+//   クリップボードの読み取りはテストからは許可できない(WebDriver の WebKit は拒み、Firefox は「貼り付け」の確認を出して
+//   待ち続ける)ため、グリッドが書いた文字列を覚えておき、読み取りはそれを返す(グリッドのコピーは必ず writeText か
+//   execCommand('copy') を通る)。覚えるのは本物の書き込みが成功したときだけにする(失敗を隠さないため)。
+export const CLIPBOARD_SHIM = String.raw`
+if (!window.__wdClipboardShim) {
+  window.__wdClipboardShim = true;
+  const clip = navigator.clipboard;
+  if (clip) {
+    const write = clip.writeText?.bind(clip);
+    const read = clip.readText?.bind(clip);
+    if (write) clip.writeText = async (t) => {
+      const result = await write(t);
+      window.__wdClipboard = String(t);
+      return result;
+    };
+    clip.readText = async () => {
+      if (window.__wdClipboard !== undefined) return window.__wdClipboard;
+      // まだ何も書いていないときだけ本物を読む(確認を出して待つブラウザのために 1 秒で諦める)。
+      try { if (read) return await Promise.race([read(), new Promise((r) => setTimeout(() => r(''), 1000))]); } catch {}
+      return '';
+    };
+  }
+  const exec = document.execCommand.bind(document);
+  document.execCommand = (cmd, ...rest) => {
+    if (String(cmd).toLowerCase() !== 'copy') return exec(cmd, ...rest);
+    const el = document.activeElement;
+    const text = el && 'value' in el && typeof el.value === 'string' ? el.value.slice(el.selectionStart ?? 0, el.selectionEnd ?? el.value.length) : String(getSelection());
+    const ok = exec(cmd, ...rest);
+    if (ok) window.__wdClipboard = text;
+    return ok;
+  };
+}
+`;
 
 // ---------- ページ内で使う部品(毎回スクリプトの先頭に入れる。遷移で消えるため)----------
 const PAGE_PRELUDE = String.raw`
@@ -104,34 +152,7 @@ if (!window.__wdHooked) {
   }
   window.addEventListener('error', (e) => window.__wdLog.push(['pageerror', String(e.message)]));
   window.addEventListener('unhandledrejection', (e) => window.__wdLog.push(['pageerror', String((e.reason && e.reason.message) || e.reason)]));
-  // クリップボードの読み取りは WebDriver では許可できない(WebKit は拒み、Firefox は「貼り付け」の確認を出して待ち続ける)
-  //   ため、グリッドが書いた文字列を覚えておき、読み取りはそれを返す(グリッドのコピーは必ず writeText か
-  //   execCommand('copy') を通る)。書く側はそのまま動かす。
-  const clip = navigator.clipboard;
-  if (clip) {
-    const write = clip.writeText?.bind(clip);
-    const read = clip.readText?.bind(clip);
-    // テストが page.evaluate から書き込む(ユーザー操作の中でない)ときは WebKit が拒むので、覚えるだけにして成功させる。
-    //   キー操作の中(グリッドのコピー)で拒まれたときはそのまま投げ、グリッドの代替経路(execCommand)を動かす。
-    if (write) clip.writeText = async (t) => {
-      window.__wdClipboard = String(t);
-      try { return await write(t); } catch (e) { if (navigator.userActivation && !navigator.userActivation.isActive) return; throw e; }
-    };
-    clip.readText = async () => {
-      if (window.__wdClipboard !== undefined) return window.__wdClipboard;
-      // まだ何も書いていないときだけ本物を読む(確認を出して待つブラウザのために 1 秒で諦める)。
-      try { if (read) return await Promise.race([read(), new Promise((r) => setTimeout(() => r(''), 1000))]); } catch {}
-      return '';
-    };
-  }
-  const exec = document.execCommand.bind(document);
-  document.execCommand = (cmd, ...rest) => {
-    if (String(cmd).toLowerCase() === 'copy') {
-      const el = document.activeElement;
-      window.__wdClipboard = el && 'value' in el && typeof el.value === 'string' ? el.value.slice(el.selectionStart ?? 0, el.selectionEnd ?? el.value.length) : String(getSelection());
-    }
-    return exec(cmd, ...rest);
-  };
+  ${CLIPBOARD_SHIM}
 }
 const __wdNorm = (s) => String(s ?? '').replace(/\s+/g, ' ').trim();
 const __wdTextMatch = (text, m) => {
@@ -233,7 +254,7 @@ class Locator {
         if (res.count > 1) this._page._warnStrict(this._chain, res.count);
         return res.value;
       }
-      if (!wait || Date.now() > deadline) throw new TimeoutError(`wd: locator ${JSON.stringify(this._chain)} not found (${res.__wdMissing}) within ${timeout}ms`);
+      if (!wait || Date.now() > deadline) throw new TimeoutError(`wd: ${timeout}ms 待っても要素がありません(${res.__wdMissing === 'hidden' ? '見えない' : '無い'}): ${JSON.stringify(this._chain)}`);
       await sleep(50);
     }
   }
@@ -440,7 +461,8 @@ class Keyboard {
     }
     await this._page._actions([this._key(actions)]);
   }
-  async insertText(text) { await this.type(text); }
+  // Playwright の insertText は input だけを送り keydown を出さない。WebDriver では同じことができないので、誤って使わないよう例外にする。
+  async insertText() { throw new Error('wd: keyboard.insertText は使えません(keydown を出さずに文字を入れる手段が WebDriver に無い)'); }
   async down(name) { await this._page._actions([this._key([{ type: 'keyDown', value: keyValue(name) }])]); }
   async up(name) { await this._page._actions([this._key([{ type: 'keyUp', value: keyValue(name) }])]); }
 }
@@ -470,7 +492,7 @@ ${PAGE_PRELUDE}
 );`;
     const res = await this._cmd('POST', '/execute/async', { script, args: [] });
     this._dispatchLog(res?.log ?? []);
-    if (!res?.ok) throw new Error(`wd evaluate: ${res?.e}`);
+    if (!res?.ok) throw new Error(`wd: ページ内のスクリプトが失敗しました: ${res?.e}`);
     return decode(res.v);
   }
   _dispatchLog(entries) {
@@ -497,11 +519,17 @@ ${PAGE_PRELUDE}
   }
   on(event, cb) {
     if (event === 'console' || event === 'pageerror') this._listeners[event].push(cb);
-    else throw new Error(`wd: page.on('${event}') is not supported`);
+    else throw new Error(`wd: page.on('${event}') は使えません`);
   }
   async goto(url) {
     await this._cmd('POST', '/url', { url });
-    await this._run('return true;'); // フックを入れる
+    // フックを入れ、それより前(最初の描画中)のエラーをハーネスのページが最初から記録している window.__errors から写す
+    //   (Playwright は最初から拾うため。写すだけで消さない = テストの errorsOf はそのまま読める)。
+    const early = await this._run('return Array.isArray(window.__errors) ? window.__errors.slice() : [];');
+    this._dispatchLog(early.map((e) => {
+      const kind = /^\[(window\.error|unhandledrejection)\]/.test(e) ? 'pageerror' : e.startsWith('[warn]') ? 'warning' : 'error';
+      return [kind, e.replace(/^\[[^\]]*\] /, '')];
+    }));
     for (const src of this._initScripts) await this._run(`(${src})();`);
   }
   async addInitScript(fn) {
@@ -517,7 +545,7 @@ ${PAGE_PRELUDE}
     for (;;) {
       const v = await this.evaluate(fn, arg);
       if (v) return v;
-      if (Date.now() > deadline) throw new TimeoutError(`wd: waitForFunction timed out after ${timeout}ms`);
+      if (Date.now() > deadline) throw new TimeoutError(`wd: waitForFunction が ${timeout}ms で時間切れです`);
       await sleep(typeof polling === 'number' ? polling : 16);
     }
   }
@@ -531,7 +559,7 @@ ${PAGE_PRELUDE}
         if (s === 'hidden') return els.length === 0 || !__wdVisible(els[0]);
         return els.length > 0 && __wdVisible(els[0]);`);
       if (ok) return;
-      if (Date.now() > deadline) throw new TimeoutError(`wd: waitForSelector ${JSON.stringify(chain)} (${state}) timed out after ${timeout}ms`);
+      if (Date.now() > deadline) throw new TimeoutError(`wd: waitForSelector(${state})が ${timeout}ms で時間切れです: ${JSON.stringify(chain)}`);
       await sleep(50);
     }
   }
@@ -556,21 +584,31 @@ ${PAGE_PRELUDE}
   viewportSize() { return this._viewport; }
   async setViewportSize({ width, height }) {
     // ウィンドウの外枠の分を差し引いて、innerWidth / innerHeight を合わせる。
-    for (let i = 0; i < 3; i++) {
-      const inner = await this._run('return { w: innerWidth, h: innerHeight };');
+    let inner;
+    for (let i = 0; i < 4; i++) {
+      inner = await this._run('return { w: innerWidth, h: innerHeight };');
       if (inner.w === width && inner.h === height) break;
+      if (i === 3) break;
       const rect = await this._cmd('GET', '/window/rect');
       await this._cmd('POST', '/window/rect', { width: rect.width + (width - inner.w), height: rect.height + (height - inner.h) });
       await sleep(100);
     }
+    // 合わないまま進むと、別の幅で回っているのに頼んだ幅の結果として出てしまうので止める。
+    //   (Firefox は窓を幅 500px より狭くできない。テストは code を見て SKIP にできる)
+    if (inner.w !== width || inner.h !== height) {
+      const error = new Error(`wd: 窓の中の大きさを ${width}×${height} にできません(${inner.w}×${inner.h})。webkitgtk で広げられないときは xvfb-run -a -s "-screen 0 1920x1080x24" で画面を広げてください`);
+      error.code = 'WD_VIEWPORT';
+      throw error;
+    }
     this._viewport = { width, height };
   }
   async bringToFront() { /* ウィンドウは 1 つだけ */ }
-  async emulateMedia() { throw new Error('wd: emulateMedia is not supported'); }
-  async route() { throw new Error('wd: route is not supported'); }
-  get clock() { throw new Error('wd: clock is not supported'); }
-  context() { return { newCDPSession: async () => { throw new Error('wd: CDP is not supported'); } }; }
+  async emulateMedia() { throw new Error('wd: emulateMedia は使えません'); }
+  async route() { throw new Error('wd: route は使えません'); }
+  get clock() { throw new Error('wd: clock は使えません'); }
+  context() { return { newCDPSession: async () => { throw new Error('wd: CDP は使えません'); } }; }
   async close() {
+    try { await this._run('return true;'); } catch { /* 閉じ済み。最後のエラーの記録を回収するだけ */ }
     try { await this._cmd('DELETE', ''); } catch { /* 閉じ済み */ }
   }
 }
@@ -583,7 +621,12 @@ export async function launchWebDriver(kind, { viewport }) {
   });
   const caps = session.capabilities ?? {};
   const page = new Page(driver.url, session.sessionId, `${caps.browserName} ${caps.browserVersion}`, kind);
-  await page._cmd('POST', '/url', { url: 'about:blank' });
-  await page.setViewportSize(viewport);
+  try {
+    await page._cmd('POST', '/url', { url: 'about:blank' });
+    await page.setViewportSize(viewport);
+  } catch (e) {
+    await page.close();
+    throw e;
+  }
   return { page, version: page._browserName, close: () => page.close() };
 }

@@ -37,14 +37,14 @@ HARNESS_BASE=http://127.0.0.1:5178/ node audit/harness/perf-big.mjs  # 本番ビ
 | 値 | 中身 | 前提 |
 | --- | --- | --- |
 | `chromium` | Playwright の Chromium | 従来どおり |
-| `firefox` / `webkit` | Playwright の Firefox / WebKit | `npx playwright install firefox webkit` 済み(Mac など、Playwright の配布元へ届く環境) |
+| `firefox` / `webkit` | Playwright の Firefox / WebKit(2026-10-28 時点では配布元へ届かず**未検証**) | `npx playwright install firefox webkit` 済み(Mac など、Playwright の配布元へ届く環境) |
 | `firefox-bidi` | 普通の Firefox を WebDriver BiDi で(Playwright の実験的な機能。2026-10 時点ではダブルクリックが届かず多くの確認が落ちるので `geckodriver` を勧める) | `SSG_AUDIT_FIREFOX` に Firefox の実行ファイル |
 | `webkitgtk` | Linux の WebKitGTK(Safari と同じ WebKit の Linux 版)を W3C WebDriver で(`wd.mjs`) | `apt install webkit2gtk-driver xvfb`。X が要るので `xvfb-run -a` で包む |
 | `geckodriver` | Firefox + geckodriver を W3C WebDriver で(`wd.mjs`) | PATH に `geckodriver`、`SSG_AUDIT_FIREFOX` に Firefox。Linux では conda-forge の `firefox` / `geckodriver` パッケージ(`.conda` を展開するだけ。X は要らない)で入る |
 
 ```bash
-# 例: Linux(クラウド環境を含む)で WebKitGTK に対して 1 本
-xvfb-run -a env SSG_AUDIT_BROWSER=webkitgtk node audit/harness/t-basic.mjs
+# 例: Linux(クラウド環境を含む)で WebKitGTK に対して 1 本(xvfb-run の既定の画面 1280×1024 では 1400px 幅の確認が入らないので広げる)
+xvfb-run -a -s "-screen 0 1920x1080x24" env SSG_AUDIT_BROWSER=webkitgtk node audit/harness/t-basic.mjs
 # 例: Firefox(geckodriver)に対して 1 本
 SSG_AUDIT_BROWSER=geckodriver SSG_AUDIT_FIREFOX=/path/to/firefox node audit/harness/t-basic.mjs
 # 例: Mac で Playwright の WebKit に対して全部
@@ -52,12 +52,15 @@ SSG_AUDIT_BROWSER=webkit pnpm run audit:test
 ```
 
 - 最初の行に `BROWSER <名前> <版>` を出す。
-- ブラウザによって使えない機能(CDP の変換の模擬 / `page.route` / `page.clock` / `emulateMedia`)を使う確認は `pw.mjs` の `SUPPORTS` を見て飛ばし、`SKIP` と出す(FAIL には数えない)。WebDriver(`webkitgtk` / `geckodriver`)では `t-lazy` 全体と `t-leftovers` の L-15、`t-features` の IME、`t-lifecycle` の `theme="auto"` の追従が SKIP になる。
+- ブラウザによって使えない機能(CDP の変換の模擬 / `page.route` / `page.clock` / `emulateMedia`)を使う確認は `pw.mjs` の `SUPPORTS` を見て飛ばし、`SKIP` と出す(FAIL には数えない)。WebDriver(`webkitgtk` / `geckodriver`)では `t-lazy` 全体と `t-leftovers` の L-15、`t-features` の IME の変換(入力受けへのフォーカスや変換を使わないキー操作は回す)、`t-lifecycle` の `theme="auto"` の追従、`t-verify` の RD-2 の実際の Ctrl+V(代わりにエディタへ paste イベントを送ってグリッドが横取りしないことを見る)が SKIP になる。
 - `wd.mjs` は Playwright の Page / Locator / Mouse / Keyboard のうちハーネスが使う分だけを WebDriver で実装したもの。Playwright との違い:
-  - ページのスクリプトより先には差し込めない(`addInitScript` とエラーの記録は `goto` の後から。`window.__errors` はページ側で最初から記録している)。
-  - 操作の前に「要素がある・見える・動きが止まった・その点で上に別の要素が無い(あればスクロールし直す)」を待つ。複数の要素に当たったときは例外にせず先頭を使って `WARN(wd)` を出す。
-  - `page.evaluate` の前に 1 フレーム待つ(WebKit では WebDriver のスクリプトが React の予約した再描画より先に走り、直前の `__setProps` が反映されていない状態を読むことがあるため)。キー / ポインタの操作の後も 1 フレーム待つ。
-  - クリップボードの読み取りは WebDriver では許可できない(WebKit は拒み、Firefox は「貼り付け」の確認を出して待ち続ける)ので、グリッドが `writeText` / `execCommand('copy')` に渡した文字列を覚えておき、`readText` はそれを返す(書く側の経路はそのまま動く)。ユーザー操作の外(テストの `page.evaluate`)からの `writeText` は覚えるだけで成功させる。
+  - ページのスクリプトより先には差し込めない(`addInitScript` とエラーの記録は `goto` の後から。それより前、最初の描画中のエラーは `goto` の直後にページの `window.__errors` から `pageErrors` へ写す)。ページのエラーと console は次にページを呼んだとき(操作 / `evaluate` / `close`)にまとめて回収する。
+  - 操作の前に「要素がある・見える・動きが止まった」を待ち、その点で上に別の要素があればスクロールし直す。それでも隠れていれば `WARN(wd)` を出してそのまま押す(Playwright は押せるまで待ち、最後は timeout で落ちる。`WARN(wd)` の後の FAIL はまずこれを疑う)。複数の要素に当たったときは例外にせず先頭を使って `WARN(wd)` を出す。
+  - `page.evaluate` の前に 1 フレーム待つ(WebKit では WebDriver のスクリプトが React の予約した再描画より先に走り、直前の `__setProps` が反映されていない状態を読むことがあるため)。キー / ポインタの操作の後も 1 フレーム待つ。そのため一瞬だけ出る状態を「出ないこと」で見る確認は Playwright より甘くなる。
+  - 窓の中の大きさ(`innerWidth` / `innerHeight`)を頼んだ値にできなければ例外にする(別の幅のまま回さない)。
+  - ドライバは自分のプロセスグループで起動し、終了時(Ctrl+C を含む)にドライバが起動したブラウザごと止める。
+  - クリップボードの読み取りはテストからは許可できない(WebKit は拒み、Firefox は「貼り付け」の確認を出して待ち続ける)ので、グリッドが `writeText` / `execCommand('copy')` で**書けたときだけ**その文字列を覚えておき、`readText` はそれを返す(書く側の経路はそのまま動き、失敗はそのまま失敗になる)。Playwright の Firefox / WebKit / `firefox-bidi` にも同じ代役を `addInitScript` で入れる。
+- Playwright は window の error のうち例外でないもの(`ResizeObserver loop completed with undelivered notifications` など)を `pageerror` にも console にも出さないので、`pw.mjs` が `addInitScript` で `console.error('[window.error] …')` へ流す(WebDriver と同じ範囲を `pageErrors` で拾うため。2026-10-28 追加)。
   - `webkitgtk` の右クリックはポインタだけ実際に動かし、`pointerdown` / `mousedown` / `contextmenu` / `pointerup` / `mouseup` をページ内で合成する。WebKitGTK 2.52 の WebDriver で右ボタンを押して離すと離したことが伝わらず(`mouseup` の `button` が 0 になり `buttons` に右ボタンが残る)、以降の左クリックが `pointerdown` にならない(素のページでも起きる自動操作側の不具合)。
   - 要素だけのスクリーンショット(`locator.screenshot`)と `clip` は画面全体の保存になる(記録用で判定には使っていない)。
 

@@ -27,8 +27,8 @@ const { chromium, firefox, webkit } = playwright;
 // _bidiFirefox は ESM の名前付きエクスポートに無いので default 側から取る。
 const PLAYWRIGHT_BROWSERS = { chromium, firefox, webkit, 'firefox-bidi': playwright._bidiFirefox };
 const WEBDRIVER_BROWSERS = ['webkitgtk', 'geckodriver'];
-if (!PLAYWRIGHT_BROWSERS[BROWSER] && !WEBDRIVER_BROWSERS.includes(BROWSER)) throw new Error(`SSG_AUDIT_BROWSER=${BROWSER} は未対応です`);
-const viaPlaywright = BROWSER in PLAYWRIGHT_BROWSERS;
+const viaPlaywright = Object.hasOwn(PLAYWRIGHT_BROWSERS, BROWSER);
+if (!viaPlaywright && !WEBDRIVER_BROWSERS.includes(BROWSER)) throw new Error(`SSG_AUDIT_BROWSER=${BROWSER} は未対応です`);
 const viaBidi = BROWSER === 'firefox-bidi';
 export const SUPPORTS = {
   cdp: BROWSER === 'chromium',
@@ -50,6 +50,19 @@ export async function open(scenario, { query = '', viewport = { width: 1400, hei
     const browser = await PLAYWRIGHT_BROWSERS[BROWSER].launch({ ...(executablePath ? { executablePath } : {}), headless });
     // クリップボードの権限は Chromium だけが持つ(Firefox / WebKit は名前を知らず例外になる)。
     const context = await browser.newContext({ viewport, ...(BROWSER === 'chromium' ? { permissions: ['clipboard-read', 'clipboard-write'] } : {}) });
+    // Playwright は window の error のうち例外でないもの(ResizeObserver のループの通知など)を pageerror にも console にも
+    //   出さない。WebDriver(wd.mjs)は拾うので、揃えるため console.error へ流す(ページ側の console の包みより先に
+    //   元の console.error を取っておき、window.__errors には二重に入れない)。
+    await context.addInitScript(() => {
+      const report = console.error.bind(console);
+      window.addEventListener('error', (e) => { if (!(e.error instanceof Error)) report(`[window.error] ${e.message}`); });
+    });
+    // Firefox / WebKit はテストからクリップボードを読めない(または確認を出して待つ)ので wd.mjs と同じ代役を入れる
+    //   (2026-10-28 時点で Playwright の firefox / webkit は配布元へ届かず未検証。firefox-bidi では動く)。
+    if (BROWSER !== 'chromium') {
+      const { CLIPBOARD_SHIM } = await import('./wd.mjs');
+      await context.addInitScript({ content: CLIPBOARD_SHIM });
+    }
     page = await context.newPage();
     version = `${BROWSER} ${browser.version()}`;
     closeBrowser = () => browser.close();

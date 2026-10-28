@@ -32,22 +32,37 @@ import { open, check, skip, SUPPORTS, pending, summary, errorsOf, renderedRowInd
 // ---- RD-2 / C-2: エディタ内 Ctrl+V の横取り ----
 {
   const { page, pageErrors, close } = await open('basic', { query: 'n=50' });
-  await page.evaluate(() => navigator.clipboard.writeText('PASTED'));
+  if (SUPPORTS.clipboardSeed) await page.evaluate(() => navigator.clipboard.writeText('PASTED'));
   await cell(page, 0, 'name').dblclick();
   await page.keyboard.press('Control+A');
   await clearEvents(page);
-  // 実際の Ctrl+V(ブラウザがエディタ input に paste イベントを発火)
-  await page.keyboard.press('Control+v');
-  await waitIdle(page, 150);
-  const inputVal = await page.evaluate(() => document.querySelector('.ssg-cell-editor-input')?.value);
-  const rc = await events(page, 'onRowsChange');
-  const r0 = (await rows(page))[0].name;
   if (SUPPORTS.clipboardSeed) {
+    // 実際の Ctrl+V(ブラウザがエディタ input に paste イベントを発火)
+    await page.keyboard.press('Control+v');
+    await waitIdle(page, 150);
+    const inputVal = await page.evaluate(() => document.querySelector('.ssg-cell-editor-input')?.value);
+    const rc = await events(page, 'onRowsChange');
+    const r0 = (await rows(page))[0].name;
     check('RD-2: Ctrl+V inside editor pastes into the input (not the grid)', inputVal === 'PASTED' && rc.length === 0, { inputVal, onRowsChange: rc.length, rowName: r0 });
   } else {
-    // クリップボードへ書けないブラウザでは中身は確かめず、グリッドが横取りしない(行を書き換えない)ことだけを見る。
-    check('RD-2: Ctrl+V inside editor is not taken by the grid', rc.length === 0 && r0 === 'item-000001', { inputVal, onRowsChange: rc.length, rowName: r0 });
-    skip('RD-2: 貼り付けた中身が入力欄に入る', 'テストからクリップボードへ書けない');
+    // テストからクリップボードへ書けないブラウザでは、中身の入った paste イベントをエディタへ送り、グリッドが横取りしない
+    //   (既定の動作を止めない・行を書き換えない・エディタを閉じない)ことを見る。入力欄へ実際に入るかはブラウザ任せなので見ない。
+    const res = await page.evaluate(() => {
+      const el = document.querySelector('.ssg-cell-editor-input');
+      if (!el) return null;
+      const dt = new DataTransfer();
+      dt.setData('text/plain', 'PASTED');
+      const ev = new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true });
+      if (ev.clipboardData !== dt) Object.defineProperty(ev, 'clipboardData', { value: dt });
+      el.dispatchEvent(ev);
+      return { defaultPrevented: ev.defaultPrevented };
+    });
+    await waitIdle(page, 150);
+    const rc = await events(page, 'onRowsChange');
+    const r0 = (await rows(page))[0].name;
+    const editorOpen = (await page.locator('.ssg-cell-editor-input').count()) === 1;
+    check('RD-2: paste inside editor is left to the input (not taken by the grid)', res && !res.defaultPrevented && rc.length === 0 && r0 === 'item-000001' && editorOpen, { ...res, onRowsChange: rc.length, rowName: r0, editorOpen });
+    skip('RD-2: 実際の Ctrl+V で貼った中身が入力欄に入る', 'テストからクリップボードへ書けない');
   }
   await page.keyboard.press('Escape');
   await waitIdle(page, 100);

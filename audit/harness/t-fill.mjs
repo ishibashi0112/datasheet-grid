@@ -485,7 +485,10 @@ const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
   await waitIdle(page, 150);
   const before = await page.evaluate(() => window.__rows().map((r) => r.custom));
   await scrollTo(page, undefined, 2000);
-  await dragTo(page, firstData + 6, 'custom');
+  // 表の右端の列なので、スクロールバーが中身に重なるブラウザ(WebKitGTK)ではハンドルを押せない(docs/audits/2026-10-28 の
+  //   BR-4)。そのときは押さずに FAIL として記録し、続きを回す。
+  const hGroup = await handleInfo(page);
+  if (hGroup.press) await dragTo(page, firstData + 6, 'custom');
   const written = await page.evaluate(
     ([from, to]) =>
       [...document.querySelectorAll('.ssg-body-row[data-row-index]')]
@@ -499,7 +502,7 @@ const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
   const after = await page.evaluate(() => window.__rows().map((r) => r.custom));
   const changed = after.filter((v, i) => v !== before[i]).length;
   const dataRows = span.filter((r) => !r.group).length;
-  check('fill(grouping): データ行だけに書き、グループ行は位置にも数えない(g2, g3 …)', changed === dataRows && same(written, Array.from({ length: dataRows }, (_, k) => `g${k + 2}`)), { sourceId, written, changed, dataRows });
+  check('fill(grouping): データ行だけに書き、グループ行は位置にも数えない(g2, g3 …)', hGroup.press && changed === dataRows && same(written, Array.from({ length: dataRows }, (_, k) => `g${k + 2}`)), hGroup.press ? { sourceId, written, changed, dataRows } : { reason: 'ハンドルを押せる点がない(BR-4)', handle: hGroup });
   check('fill(grouping): エラーなし', unexpectedPageErrors(pageErrors).length === 0, unexpectedPageErrors(pageErrors));
   await close();
 }
@@ -591,13 +594,16 @@ const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
   await selectRange(page, 999_999, QTY, 999_999, QTY);
   await waitIdle(page, 120);
   const lenBefore = await page.evaluate(() => window.__rows().length);
+  // 最下行もスクロールバーの帯に入るブラウザでは押せない(BR-4。上のグルーピングと同じ扱い)。
   const hEnd = await handleInfo(page);
-  await page.mouse.move(hEnd.press[0], hEnd.press[1]);
-  await page.mouse.down();
-  await page.mouse.move(hEnd.x, hEnd.y + 80, { steps: 4 });
-  await page.mouse.up();
-  await waitIdle(page, 150);
-  check('fill(1M): 表の末尾より先へは行を増やさない', (await page.evaluate(() => window.__rows().length)) === lenBefore);
+  if (hEnd.press) {
+    await page.mouse.move(hEnd.press[0], hEnd.press[1]);
+    await page.mouse.down();
+    await page.mouse.move(hEnd.x, hEnd.y + 80, { steps: 4 });
+    await page.mouse.up();
+    await waitIdle(page, 150);
+  }
+  check('fill(1M): 表の末尾より先へは行を増やさない', hEnd.press && (await page.evaluate(() => window.__rows().length)) === lenBefore, hEnd.press ? undefined : { reason: 'ハンドルを押せる点がない(BR-4)', handle: hEnd });
   check('fill(1M): エラーなし', unexpectedPageErrors(pageErrors).length === 0, unexpectedPageErrors(pageErrors));
   await close();
 }
