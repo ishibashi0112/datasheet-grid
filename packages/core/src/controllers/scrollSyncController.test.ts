@@ -35,7 +35,10 @@ beforeEach(() => {
     rafQueue.push(callback);
     return rafQueue.length;
   });
-  vi.stubGlobal('cancelAnimationFrame', () => {});
+  // 変更(BR-1): 取り消したフレームは空の処理に差し替えます(id = 今のキューでの位置 + 1)。
+  vi.stubGlobal('cancelAnimationFrame', (id: number) => {
+    rafQueue[id - 1] = () => {};
+  });
   vi.stubGlobal(
     'ResizeObserver',
     class {
@@ -105,14 +108,50 @@ describe('createScrollSyncController', () => {
     expect(setViewState).not.toHaveBeenCalled();
     controller.update({ scrollContainerRef: { current: el }, setViewState, onScroll: undefined });
     Object.defineProperty(el, 'clientHeight', { value: 320, configurable: true });
+    // 変更(BR-1): ResizeObserver のコールバックの中では書かず、次のフレームで 1 回だけ書きます。
     resizeCallback?.();
+    resizeCallback?.();
+    expect(setViewState).toHaveBeenCalledTimes(1);
+    runFrame();
+    expect(setViewState).toHaveBeenCalledTimes(2);
     expect(setViewState).toHaveBeenLastCalledWith({ viewportHeight: 320, viewportWidth: 500 });
 
+    // 追加(BR-1 見直し): 隠れている間(幅 0)は書かない(前の大きさを残す)。
+    Object.defineProperty(el, 'clientWidth', { value: 0, configurable: true });
+    resizeCallback?.();
+    runFrame();
+    expect(setViewState).toHaveBeenCalledTimes(2);
+    Object.defineProperty(el, 'clientWidth', { value: 500, configurable: true });
+
+    // dispose は書き込み待ちのフレームも取り消します。
+    resizeCallback?.();
     controller.dispose();
+    runFrame();
+    expect(setViewState).toHaveBeenCalledTimes(2);
     expect(disconnect).toHaveBeenCalledTimes(1);
     setViewState.mockClear();
     el.dispatchEvent(new Event('scroll'));
     expect(setViewState).not.toHaveBeenCalled();
+  });
+
+  // 追加(BR-1 見直し 2): 隠れたまま生成された(最初の計測が幅 0 の)ときも、見えたときの書き込みは次のフレーム
+  //   (出した最初のフレームは幅 0 のときの窓で描かれる)。その場で書くと、行の高さを測るモードで出した後に行を
+  //   測らなくなる(0.58.0 の不具合。測る処理が行の描かれる前に走り、その後は呼ばれない)ため。
+  it('隠れたまま生成されたときも、見えたときの書き込みは次のフレームで行う', () => {
+    const controller = createScrollSyncController();
+    const setViewState = vi.fn();
+    const el = makeElement();
+    Object.defineProperty(el, 'clientHeight', { value: 0, configurable: true });
+    Object.defineProperty(el, 'clientWidth', { value: 0, configurable: true });
+    controller.update({ scrollContainerRef: { current: el }, setViewState, onScroll: undefined });
+    expect(setViewState).toHaveBeenLastCalledWith({ scrollTop: 0, viewportHeight: 0, viewportWidth: 0 });
+    Object.defineProperty(el, 'clientHeight', { value: 300, configurable: true });
+    Object.defineProperty(el, 'clientWidth', { value: 500, configurable: true });
+    resizeCallback?.();
+    expect(setViewState).toHaveBeenCalledTimes(1);
+    runFrame();
+    expect(setViewState).toHaveBeenLastCalledWith({ viewportHeight: 300, viewportWidth: 500 });
+    controller.dispose();
   });
 
   // 追加(motion-1 / M-1): スクロール中の修飾子(overlay の追従 transition を切る)。停止から SCROLLING_IDLE_MS で外れ、
@@ -158,8 +197,9 @@ describe('createScrollSyncController', () => {
     setViewState.mockClear();
     controller.update({ scrollContainerRef: ref, setViewState, onScroll: undefined, footerHeight: 36 });
     expect(setViewState).not.toHaveBeenCalled();
-    // ResizeObserver も同じ基準。
+    // ResizeObserver も同じ基準(次のフレームで書く)。
     resizeCallback?.();
+    runFrame();
     expect(setViewState).toHaveBeenLastCalledWith({ viewportHeight: 264, viewportWidth: 500 });
     // 合計行を外す → clientHeight に戻る。
     controller.update({ scrollContainerRef: ref, setViewState, onScroll: undefined });
@@ -172,6 +212,27 @@ describe('createScrollSyncController', () => {
     setViewState.mockClear();
     controller.update({ scrollContainerRef: { current: null }, setViewState, onScroll: undefined, footerHeight: 10 });
     expect(setViewState).not.toHaveBeenCalled();
+  });
+
+  // 追加(BR-1 見直し 2): 隠れている間(幅 0)に合計行の高さが変わっても書かない(0 を書くと、同じ大きさで出し直した
+  //   最初のフレームが行の少ない窓で描かれる)。見えたときの ResizeObserver で合計行を引いた高さを書く。
+  it('隠れている間に footerHeight が変わっても書かず、見えたときに測り直す', () => {
+    const controller = createScrollSyncController();
+    const setViewState = vi.fn();
+    const el = makeElement();
+    const ref = { current: el };
+    controller.update({ scrollContainerRef: ref, setViewState, onScroll: undefined });
+    Object.defineProperty(el, 'clientHeight', { value: 0, configurable: true });
+    Object.defineProperty(el, 'clientWidth', { value: 0, configurable: true });
+    setViewState.mockClear();
+    controller.update({ scrollContainerRef: ref, setViewState, onScroll: undefined, footerHeight: 36 });
+    expect(setViewState).not.toHaveBeenCalled();
+    Object.defineProperty(el, 'clientHeight', { value: 300, configurable: true });
+    Object.defineProperty(el, 'clientWidth', { value: 500, configurable: true });
+    resizeCallback?.();
+    runFrame();
+    expect(setViewState).toHaveBeenLastCalledWith({ viewportHeight: 264, viewportWidth: 500 });
+    controller.dispose();
   });
 
   // 追加(見直し): 末尾までスクロールしていたときに合計行が出たら末尾に留める(最後の行を合計行の裏に隠さない)。

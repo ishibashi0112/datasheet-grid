@@ -41,7 +41,7 @@ PASS / 実行した確認の数(SKIP は数に入れない)。
 - React 18.3.1 での結果は §7。
 - Chromium の t-fill の「ハンドルを押すと開いているコンテキストメニューを閉じる」が最初の記録のときに 1 回だけ落ち(右クリックのメニューが 120ms 以内に開かなかった)、続けて 2 回回して通った。見直し後の回し直しでは起きていない。
 
-## 3. 所見(ライブラリ側。未対応)
+## 3. 所見(ライブラリ側。BR-1・BR-2・BR-5 は対応済み = §8)
 
 | ID | 重さ | ブラウザ | 実機 | 要約 | 場所 |
 | --- | --- | --- | --- | --- | --- |
@@ -51,7 +51,7 @@ PASS / 実行した確認の数(SKIP は数に入れない)。
 | BR-4 | 低 | WebKit(要 Mac 実機) | ✅ | 右端の列・最下行のフィルハンドルを押せない。WebKitGTK のスクロールバーは幅 0 で中身の上に重なり、端から約 12px が `elementFromPoint` でスクロール領域そのものを返す(スクロールバーの当たり判定)。ハンドルは角から 4px はみ出し、残りもその帯に入る。macOS の既定(トラックパッド)も重なる型のスクロールバーなので、Mac の Safari / Chrome でも起こりうる | `packages/react/src/styles.css:1289-`(`.ssg-fill-handle`)、`packages/react/src/view/FillHandleLayer.tsx` |
 | BR-5 | 低 | WebKit | ✅ | 100 万行(行の位置を縮めて持つモード、縮尺 2.4)で `selectCell(999999, …, { scrollIntoView: true })` / `scrollToRow(999999, { align: 'end' })` のあと、最終行が合計行の下に 2px 隠れる(scrollTop 14,999,655 / 最大 14,999,656)。論理位置を物理位置へ直した小数のスクロール位置を WebKit が切り捨てるため(Chromium は 14,999,656)。中央寄せ(500,000 行目)でも同じ 1px の差で 2px ずれる | `packages/core/src/controllers/viewportSyncController.ts:126-131`、`packages/core/src/engine/gridApi.ts:176`(`logicalToPhysicalScrollTop`) |
 
-直し方の案(どれも挙動が変わるので未着手):
+直し方の案(調査の時点。BR-1・BR-2・BR-5 の実際の直し方は §8):
 
 - BR-1: virtual-core に `useAnimationFrameWithResizeObserver: true` を渡し、scrollSyncController の ResizeObserver も状態の更新を次のフレームへずらす(同じ値なら何もしない)。
 - BR-2: 件数の欄に桁数ぶんの最小幅(`tabular-nums` + 最小幅)を持たせるか、幅が足りないときは折り返さず集計の側を細くする。
@@ -135,5 +135,26 @@ PASS / 実行した確認の数(SKIP は数に入れない)。
 
 ## 8. 対応状況
 
-- React 18 対応: 実装済み(案 B。§7)。
-- ブラウザの所見 BR-1〜BR-5 の修正、対応ブラウザの下限の明記、semver / 1.0 の方針: 判断待ち(報告書でユーザーに提案した)。
+- React 18 対応: 実装済み(案 B。§7)。0.58.0 で公開。
+- 2026-10-28 にユーザーが選んだこと: BR-1・BR-2・BR-5 を 1 つの PR で直す / 対応ブラウザの下限を Chrome・Edge 111 / Firefox 121 / Safari 16.4 として README とドキュメントに書く / BR-3・BR-4 はユーザーが Mac の Safari で確かめ、再現したものだけ直す / semver / 1.0 は方針を採って準備を始める(BR の PR の後)。
+- BR-1(対応済み): ResizeObserver のコールバックの中で状態を書かず、次のフレームで書く。`packages/core/src/controllers/scrollSyncController.ts`(見える高さ / 幅を view スライスへ)と `packages/core/src/controllers/autoHeightMeasurer.ts`(auto-height の測り直しの合図 `nonce`)。同じフレームに何度通知が来ても書くのは 1 回、外すとき(detach / dispose)は待っているフレームを取り消す。useSyncExternalStore の購読者は store が変わると同期で描き直すため、コールバックの中で書くと同じフレームでスクロール領域の大きさがまた変わり、ブラウザがループの通知を出していた。virtual-core の観測は描き直しを同期で行わない(useVirtualizerCore の rerender は通常の更新)ので、`useAnimationFrameWithResizeObserver` は変えていない。
+- BR-2(対応済み・見た目が少し変わる): 件数ありのとき、下部バーの右のグループに最小幅 `min(56ch, 100%)` を持たせ(500 行 × 12 列の表を全部選んだ表記が収まる幅。`ch` をチップの文字で測るため font-size を 11.5px に揃える)、`margin-left: auto` と `justify-content: flex-end` で右端に寄せる(`packages/react/src/styles.css` の `.ssg-bar--bottom .ssg-bar-group:not(:first-child)`)。バーの折り返しが選択の表記ではなく窓の幅だけで決まる(表記が最小幅を超える大きな選択を除く)。2 行になる境目は Chromium の文字で約 610px → 約 665px に移る。件数なしは折り返さないので対象外。JS は増えない。ハーネスの `t-aggregates` に境目の前後の幅(680 / 608px)を足した。
+- BR-5(対応済み): 行を下端に合わせるとき(`align: 'end'`、`'auto'` で下へ動くとき、キー操作の `cellBottom > visibleBottom`)は、物理のスクロール位置を `Math.ceil` で切り上げる(`packages/core/src/engine/gridApi.ts` の `applyScroll` に `align` を渡す、`packages/core/src/controllers/viewportSyncController.ts` の `scrollCellIntoView`)。上端に合わせるときはそのまま。縮尺 1 では位置が整数なので何も変わらない。
+- フル版の初期 JS: BR-1 と BR-5 で 112.37KB → 112.47KB、見直しの修正で 112.49KB(上限 112.4KB を超えたため、2026-10-28 にユーザーの判断で上限を 112.5KB へ上げた)、2 回目の見直しの修正で 112.52KB(同日、ユーザーの判断で上限を 112.6KB へ)。
+- 単体テスト: scrollSyncController / autoHeightMeasurer(次のフレームで 1 回だけ書く・取り消し)、gridApi / viewportSyncController(縮尺 2.4 で下端合わせだけ切り上げる)。
+- PR #45 の別視点の確認(2026-10-28)の指摘と対応:
+  - (中〜低・対応済み)BR-5 の切り上げで、縮尺のあるモードの見えている行への `'auto'`(`scrollToRow` / `scrollToCell` / `scrollIntoView` 付きの選択 / undo・redo の追従)が 1px 動き `onScroll { source: 'api' }` が出ていた。見えている行の目標は今の論理位置そのものだが、物理へ戻した値が浮動小数の誤差で `s + 1ulp` になり「下へ動く」と判定していた(整数の scrollTop の 2〜5%)。向きを論理位置で比べるようにした(`gridApi.ts` の `applyScroll`)。単体テストを追加。
+  - (低・一部対応)BR-1 の次のフレームへの書き込みで、大きさが変わった直後の 1 フレームが前の大きさのまま描かれる(修正前はコールバックの中の書き込みが描く前に同期で描き直していた)。窓や親の大きさの変化での flex 列の幅、auto-height の行の中身の大きさの変化(Web フォント / テーマ / 列の幅のドラッグ。ドラッグ中に行とセルの高さがずれるフレームは修正前 8 → 16 / 約 120 フレーム)。ループの通知を出さない直し方とは引き換えなので残し、CHANGELOG の「挙動の変化」に書いた。隠したグリッドを出し直した最初のフレーム(flex 列が配分前の幅で描かれていた)は、隠れている間の幅 0 を書かないことで修正前どおりに戻した(`scrollSyncController.ts`)。auto-height の隠す / 出し直すは修正前どおり(最初のフレームから一致)。
+  - (低・記録のみ)BR-2 は表記が 56ch より長い大きな表(100 万行の表で 800px でも 27 → 49px)と、右のグループの中でチップが折り返す狭い幅(420px で 49 → 69px)では効かない(修正前からの挙動)。CSS のコメントと CHANGELOG に書いた。
+  - (記録のみ)`packages/core/src/controllers/filterPopoverController.ts` も ResizeObserver のコールバックの中で store に書いている(上下の反転で `maxHeight` が変わるとき)。ハーネスでは通知は出ていない。このときループの通知が出るなら同じ直し方で直す。
+- PR #45 の 2 回目の別視点の確認(2026-10-28。1 回目への対応のコミットを中心に、ほかの機能との組み合わせと Firefox / WebKit。0.58.0 と並べて比べた)の指摘と対応:
+  - (低〜中・記録のみ)隠したまま生成したグリッド(最初は開いていないタブの中。Mantine の Tabs の `keepMounted` など)を初めて出した最初のフレームが、生成時の大きさ 0 のまま描かれる(flex 列が配分前の幅、行の窓が 33 行中 21 行)。修正前は出したときの ResizeObserver のコールバックの中で同期で書いていたので最初から正しかった。「まだ一度も大きさを書いていないときはその場で書く」を試したが、auto-height のグリッドで出した後に行の高さを測らなくなった(0.58.0 と同じ不具合。測る処理が行の描かれる前に走り、その後に呼ばれない)ので戻し、CHANGELOG の「挙動の変化」の記述を正した(1 回目の対応で書いた「タブの切り替えは従来どおり最初から正しく描く」は、一度出したグリッドにだけ当てはまる)。隠している間に大きさが変わったときも同じで、出した最初のフレームは隠す前の大きさで描かれる。単体テストはこの順番(見えたときも次のフレームで書く)を固定し、ハーネスの t-lifecycle は 2 フレーム目で確かめる。
+  - (低・対応済み)合計行の表示 / 高さの変化(`footerHeight`)からの見える高さの書き込みが、隠れている間の幅 0 を書かない対象から漏れていた(隠れている間に合計行を出す / 合計行ありで密度を変えると、出し直した最初のフレームが行の少ない窓で描かれる)。幅 0 のときは書かないようにした(`scrollSyncController.ts`)。単体テストとハーネス(t-lifecycle)を追加。
+  - (低・対応済み・0.58.0 から)縮尺のあるモードで見えている行へ `'auto'` でスクロールしたとき、物理へ戻した値が `p − 1ulp` になると WebKit が小数を切り捨てて 1px 上へ動き、`onScroll` に `source: 'user'` で通知されていた(1 回目の対応は `+1ulp` の向きだけ)。目標が今の論理位置そのものなら物理位置をそのまま渡すようにした(`gridApi.ts` の `applyScroll`)。WebKit で scrollTop 14,000,000〜14,000,039 の 40 位置のうち 7 位置で動いていたのが 0 位置になった。単体テストに `−1ulp` になる位置を足した。
+  - (記録のみ)BR-2 の最小幅のぶん、選択範囲の集計を出す場所が狭くなる(集計が切れずに出る幅が約 906px → 約 957px)。CHANGELOG の「挙動の変化」に足した。
+  - (対応済み・0.58.0 から)0.58.0 では auto-height のグリッドをスクロールした状態で隠すと「Maximum update depth exceeded」でグリッドが外れ、隠したまま生成した auto-height のグリッドは出しても行の高さを測らなかった。指摘では BR-1 の修正で直ったとされたが、確かめると隠す方は「隠れている間に列の仮想化が幅 0 を覚えて auto-height の列が描かれなくなる」ことで偶然避けていただけで、auto-height の列を左に固定する(列の仮想化の外)と同じように外れた。原因は隠れている間のセルを高さ 0 で記録していたこと(行の高さが 0 になると窓に入る行が増え、新しく描いた行もまた 0 で測られて描き直しが止まらない)なので、高さ 0 は記録しないようにした(`autoHeightMeasurer.ts`)。行を測らなかった方は BR-1 の修正で直っている。CHANGELOG の「修正」に足し、単体テストとハーネス(t-lifecycle。固定列の場合も)に確認を足した。
+  - (範囲外・記録のみ)Chromium で縮尺のあるモードの上端合わせ(`'start'` / ↑ キー)の行が見出しの下に 1〜3px 隠れる(BR-5 の裏返し。修正前と同じ)。
+  - (対応済み・この PR で出たもの)指摘への対応のあとにハーネスを回し直して見つけた: Firefox で、隠したグリッドが隠れている間に描き直されると(データや props の変化。ハーネスでは合計行の切り替え)、出した最初のフレームだけ右側の列が欠ける(見出しのセルが 11 → 2)。列の仮想化(virtual-core)が隠れている間に幅 0 を覚え、隠れている間の描き直しで列の窓が空になり、出したときの virtual-core の再描画は通常の更新(描いた後)になるため。0.58.0 では出したときに見える大きさをコールバックの中で同期で書いていたので、その描き直しに乗って最初から正しかった(BR-1 の修正で表に出た)。`packages/react/src/hooks/useVirtualizerCore.ts` で幅 0 の大きさを virtual-core へ渡さないようにした(`scrollSyncController` と同じ考え方)。単体テストを追加。
+  - サイズ: `viewportSyncController.ts` の下端合わせの判定を「下へ動かすとき」(`nextScrollTop > currentScrollTop`。同じ意味)に書き換えて少し縮めたうえで、Firefox の列の欠けの修正で上限 112.5KB を超えた(112.52KB = 115,216 バイト)ため、2026-10-28 にユーザーの判断で上限を 112.6KB へ上げた。
+  - 2 回目の見直しの修正のあとのハーネス(12 本、3 つのブラウザ。確認用のサーバーが途中で古いモジュールを配っていたことに気づき、立て直してから回した): Chromium 600 / 600、Firefox 544 / 544(SKIP 7)、WebKit 541 / 544(SKIP 7)。残る FAIL は BR-3(t-priority の 1 件)と BR-4(t-fill の 2 件)だけ。数は t-lifecycle に足した確認(隠したまま生成 / 隠している間の合計行 / auto-height の隠す・出し直す・固定列)のぶん増えている。途中で WebDriver の起動の時間切れと確認用のサーバーの停止で止まった 3 本(Firefox の t-leftovers、WebKit の t-total・t-leftovers)は回し直して通った。
+- 修正後のハーネス(12 本、Chromium 153 / Firefox 159(geckodriver)/ WebKitGTK 2.52.6): Chromium 593 / 593、Firefox 537 / 537(SKIP 8)、WebKit 534 / 537(SKIP 8)。残る FAIL は BR-3(t-priority の 1 件)と BR-4(t-fill の 2 件)だけ。BR-1(Chromium の t-features / Firefox の t-ssrm・t-lifecycle・t-features・t-aggregates・t-total)・BR-2(WebKit の t-aggregates)・BR-5(WebKit の t-total)は通った。数は `t-aggregates` に足した幅のぶん 4 件(WebDriver では 420px が SKIP なので 4 件のまま)増えている。WebKit の t-aggregates の「計算中のスクロールの次フレームまで 200ms 未満」が 1 回目だけ 362ms で落ち、続けて 2 回回して通った(3 つのブラウザを続けて回した負荷によるもので、修正とは無関係)。見直しの修正のあとにも 3 つのブラウザで全部回し直し、同じ数(Chromium 593 / 593、Firefox 537 / 537、WebKit 534 / 537 で FAIL は BR-3・BR-4 の 3 件だけ)だった。

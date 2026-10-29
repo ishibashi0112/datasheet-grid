@@ -21,6 +21,15 @@ let resizeCallback: (() => void) | null = null;
 const observe = vi.fn();
 const unobserve = vi.fn();
 const disconnect = vi.fn();
+// 追加(BR-1): rAF のスタブ(nonce は ResizeObserver の次のフレームで進む)。取り消したフレームは空の処理に差し替えます。
+let rafQueue: FrameRequestCallback[] = [];
+const runFrame = () => {
+  const callbacks = rafQueue;
+  rafQueue = [];
+  for (const callback of callbacks) {
+    callback(0);
+  }
+};
 
 const makeContainer = (heights: number[]) => {
   const container = document.createElement('div');
@@ -45,6 +54,14 @@ const makeContainer = (heights: number[]) => {
 
 beforeEach(() => {
   resizeCallback = null;
+  rafQueue = [];
+  vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
+    rafQueue.push(callback);
+    return rafQueue.length;
+  });
+  vi.stubGlobal('cancelAnimationFrame', (id: number) => {
+    rafQueue[id - 1] = () => {};
+  });
   observe.mockClear();
   unobserve.mockClear();
   disconnect.mockClear();
@@ -65,6 +82,33 @@ afterEach(() => {
 });
 
 describe('createAutoHeightMeasurer', () => {
+  // 追加(BR-1 見直し 2026-10-28): 高さ 0(隠れている間)は記録しない(0 を記録すると窓に入る行が増えて描き直しが
+  //   止まらなくなる)。0 の行は前の高さのまま、0 でない行だけ反映する。
+  it('高さ 0 のセルは記録しない', () => {
+    const measurer = createAutoHeightMeasurer<Row>();
+    const store = buildRowHeightStore(rows.length, 20, rowModel.getRowKey, measurer.measuredHeights);
+    const args: AutoHeightMeasureArgs<Row> = {
+      scrollContainerRef: { current: makeContainer([0, 0, 0]) },
+      autoHeightActive: true,
+      rowHeightStore: store,
+      rowMetrics: createAutoHeightRowMetrics(store),
+      rowModel,
+      virtualRows: [],
+      viewportHeight: 100,
+      version: 0,
+      nonce: 0,
+    };
+    measurer.update(args);
+    expect(measurer.measuredHeights.size).toBe(0);
+    expect(Array.from(store.heights)).toEqual([20, 20, 20]);
+    expect(measurer.getSnapshot().version).toBe(0);
+    measurer.update({ ...args, scrollContainerRef: { current: makeContainer([0, 45, 0]) }, version: 1 });
+    expect(Array.from(store.heights)).toEqual([20, 45, 20]);
+    expect(measurer.measuredHeights.has(1)).toBe(false);
+    expect(measurer.measuredHeights.get(2)).toBe(45);
+    measurer.dispose();
+  });
+
   it('実測でストアを更新し prefix を再構築、アンカー補正で scrollTop をずらし、version を bump する', () => {
     const measurer = createAutoHeightMeasurer<Row>();
     const listener = vi.fn();
@@ -102,8 +146,16 @@ describe('createAutoHeightMeasurer', () => {
     measurer.update({ ...args, version: 1 });
     expect(measurer.getSnapshot().version).toBe(1);
 
-    // 内容変化(ResizeObserver)で nonce が進む。
+    // 内容変化(ResizeObserver)で nonce が進む。変更(BR-1): コールバックの中では進めず、次のフレームで 1 回だけ進める。
     resizeCallback?.();
+    resizeCallback?.();
+    expect(measurer.getSnapshot()).toEqual({ version: 1, nonce: 0 });
+    runFrame();
+    expect(measurer.getSnapshot()).toEqual({ version: 1, nonce: 1 });
+    // dispose は進める前のフレームを取り消す。
+    resizeCallback?.();
+    measurer.dispose();
+    runFrame();
     expect(measurer.getSnapshot()).toEqual({ version: 1, nonce: 1 });
   });
 
@@ -151,6 +203,7 @@ describe('createAutoHeightMeasurer', () => {
     measurer.update(args);
     expect(observe).toHaveBeenCalledTimes(6);
     resizeCallback?.();
+    runFrame();
     expect(measurer.getSnapshot().nonce).toBe(1);
   });
 

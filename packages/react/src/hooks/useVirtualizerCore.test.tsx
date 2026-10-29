@@ -7,6 +7,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { render, act } from '@testing-library/react';
 import { useState } from 'react';
+import type { Virtualizer } from '@tanstack/virtual-core';
 
 import { useVirtualizerCore } from './useVirtualizerCore';
 
@@ -24,6 +25,18 @@ function Harness({ onChange }: { onChange: () => void }) {
       <div style={{ height: virtualizer.getTotalSize() }} />
     </div>
   );
+}
+
+// 追加(BR-1 見直し): 大きさの観測を差し替えたテスト用(ResizeObserver のコールバックを手で呼ぶ)。
+function RectHarness({ onInstance }: { onInstance: (instance: Virtualizer<HTMLDivElement, Element>) => void }) {
+  const [scrollElement, setScrollElement] = useState<HTMLDivElement | null>(null);
+  const virtualizer = useVirtualizerCore({
+    count: 100,
+    getScrollElement: () => scrollElement,
+    estimateSize: () => 30,
+  });
+  onInstance(virtualizer);
+  return <div ref={setScrollElement} />;
 }
 
 describe('useVirtualizerCore', () => {
@@ -55,5 +68,36 @@ describe('useVirtualizerCore', () => {
       await new Promise<void>((resolve) => setTimeout(resolve, 60));
     });
     expect(onChange).toHaveBeenCalled();
+  });
+
+  // 追加(BR-1 見直し 2026-10-28): 隠れている間(幅 0)の大きさは core へ渡さない(隠れている間の描き直しで窓が空に
+  //   なり、出した最初のフレームの列が欠けるため)。
+  it('幅 0 の大きさは core へ渡さず、前の大きさを残す', () => {
+    let resize: ((entries: unknown[]) => void) | null = null;
+    vi.stubGlobal(
+      'ResizeObserver',
+      class {
+        constructor(callback: (entries: unknown[]) => void) {
+          resize = callback;
+        }
+        observe = vi.fn();
+        unobserve = vi.fn();
+        disconnect = vi.fn();
+      },
+    );
+    try {
+      const holder: { instance: Virtualizer<HTMLDivElement, Element> | null } = { instance: null };
+      render(<RectHarness onInstance={(next) => (holder.instance = next)} />);
+      const fire = (inlineSize: number, blockSize: number) =>
+        act(() => resize?.([{ borderBoxSize: [{ inlineSize, blockSize }] }]));
+      fire(500, 300);
+      expect(holder.instance?.scrollRect).toEqual({ width: 500, height: 300 });
+      fire(0, 0);
+      expect(holder.instance?.scrollRect).toEqual({ width: 500, height: 300 });
+      fire(480, 0);
+      expect(holder.instance?.scrollRect).toEqual({ width: 480, height: 0 });
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 });

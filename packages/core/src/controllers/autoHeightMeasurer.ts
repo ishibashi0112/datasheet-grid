@@ -60,19 +60,30 @@ export const createAutoHeightMeasurer = <T,>(): AutoHeightMeasurer<T> => {
   let observer: ResizeObserver | null = null;
   const observed = new Set<HTMLElement>();
   let last: AutoHeightMeasureArgs<T> | null = null;
+  // 変更(BR-1 2026-10-28): ResizeObserver の通知は次のフレームで nonce を進めます(測り直しの合図)。コールバックの中で
+  //   進めると、同じフレームの測り直しで行の高さとスクロール領域が変わり、ブラウザが「ResizeObserver loop completed
+  //   with undelivered notifications」を window の error に出すためです(列幅の変更などで起きた)。
+  let nonceFrameId: number | null = null;
 
   const disconnect = () => {
     observer?.disconnect();
     observer = null;
     observed.clear();
+    if (nonceFrameId !== null) {
+      cancelAnimationFrame(nonceFrameId);
+      nonceFrameId = null;
+    }
   };
   const bumpVersion = () => {
     const current = snapshot.getSnapshot();
     snapshot.setSnapshot({ ...current, version: current.version + 1 });
   };
   const bumpNonce = () => {
-    const current = snapshot.getSnapshot();
-    snapshot.setSnapshot({ ...current, nonce: current.nonce + 1 });
+    nonceFrameId ??= requestAnimationFrame(() => {
+      nonceFrameId = null;
+      const current = snapshot.getSnapshot();
+      snapshot.setSnapshot({ ...current, nonce: current.nonce + 1 });
+    });
   };
 
   const measure = (args: AutoHeightMeasureArgs<T>) => {
@@ -106,7 +117,10 @@ export const createAutoHeightMeasurer = <T,>(): AutoHeightMeasurer<T> => {
         }
         const height = Math.ceil(cell.getBoundingClientRect().height);
         const prev = perRow.get(idx);
-        if (prev === undefined || height > prev) {
+        // 変更(BR-1 見直し 2026-10-28): 高さ 0(隠れている間)は記録しません。行の高さが 0 になると窓に入る行が増え、
+        //   新しく描いた行もまた 0 で測られて、描き直しが止まらなくなる(Maximum update depth exceeded でグリッドが外れる)
+        //   ためです(スクロールした状態で隠したとき。0.58.0 から)。
+        if (height && (prev === undefined || height > prev)) {
           perRow.set(idx, height);
         }
       });

@@ -91,10 +91,23 @@ export const createScrollSyncController = (): ScrollSyncController => {
       }
     };
     el.addEventListener('scroll', handleScroll, { passive: true });
+    // 変更(BR-1 2026-10-28): 見える高さ / 幅は次のフレームで書き込みます。ResizeObserver のコールバックの中で書くと、
+    //   同じフレームの描き直しでスクロール領域の大きさがまた変わり(横スクロールバーの出入り等)、ブラウザが
+    //   「ResizeObserver loop completed with undelivered notifications」を window の error に出すためです。
+    //   隠れている間(display: none で幅 0)は書きません。前の大きさを残しておくと、同じ大きさで出し直したとき
+    //   (タブの切り替えなど)の最初のフレームが正しく描けるためです(書き込みが 1 フレーム遅れるので、0 を書くと
+    //   出し直した最初のフレームが flex 列の配分なしで描かれる)。
+    let resizeFrameId: number | null = null;
     const resizeObserver = new ResizeObserver(() => {
-      args?.setViewState({
-        viewportHeight: bodyViewportHeight(el),
-        viewportWidth: el.clientWidth,
+      resizeFrameId ??= requestAnimationFrame(() => {
+        resizeFrameId = null;
+        if (el.clientWidth === 0) {
+          return;
+        }
+        args?.setViewState({
+          viewportHeight: bodyViewportHeight(el),
+          viewportWidth: el.clientWidth,
+        });
       });
     });
     resizeObserver.observe(el);
@@ -110,6 +123,9 @@ export const createScrollSyncController = (): ScrollSyncController => {
       }
       el.classList.remove(SCROLLING_CLASS_NAME);
       resizeObserver.disconnect();
+      if (resizeFrameId !== null) {
+        cancelAnimationFrame(resizeFrameId);
+      }
       attachedElement = null;
     };
   };
@@ -127,8 +143,9 @@ export const createScrollSyncController = (): ScrollSyncController => {
       }
       // 追加(合計行 3A): 合計行の表示 / 高さが変わったら見える高さを測り直します(要素のサイズは変わらないため
       //   ResizeObserver は発火しない)。
+      //   変更(BR-1 見直し): 隠れている間(幅 0)は書きません(ResizeObserver の書き込みと同じ理由。見えたときに測り直す)。
       const footerHeight = next.footerHeight ?? 0;
-      if (footerHeight !== previousFooterHeight && attachedElement) {
+      if (footerHeight !== previousFooterHeight && attachedElement?.clientWidth) {
         // 追加(見直し): 末尾までスクロールしていたときに合計行が出た / 高くなったら、末尾に留めます(最後の行を
         //   合計行の裏に隠さない)。update はコミット後に呼ばれるため、scrollHeight は増えたあとの値です。
         const el = attachedElement;

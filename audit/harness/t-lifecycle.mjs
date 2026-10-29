@@ -230,4 +230,103 @@ const diffListeners = (a, b) => Object.fromEntries(Object.entries(b).filter(([k,
   await close();
 }
 
+
+// ---- 隠したまま生成 / 隠して出し直す(BR-1 の見直し 2026-10-28) ----
+//   見える高さ / 幅の書き込みを次のフレームへ遅らせた(BR-1)ので、出したフレームの描き方を確かめる。「出したフレーム」は
+//   出した直後の rAF の中で次の rAF を予約し、その先頭(グリッドが予約した書き込みより前)で DOM を読む。隠したまま
+//   生成したグリッドは、出した最初のフレームだけ幅 0 のときの窓で描かれる(既知。その場で書くと行の高さを測るモードで
+//   行を測らなくなるため)ので、2 フレーム目で確かめて 1 フレーム目は記録だけする。
+{
+  const snap = () => {
+    const sc = document.querySelector('.ssg-scroll-container');
+    const price = document.querySelector('.ssg-header-cell[data-ssg-col-key="price"]');
+    const rows = document.querySelectorAll('.ssg-center-pane .ssg-body-row[data-row-index]');
+    let maxRowHeight = 0;
+    rows.forEach((el) => (maxRowHeight = Math.max(maxRowHeight, el.getBoundingClientRect().height)));
+    return { cw: sc?.clientWidth, sw: sc?.scrollWidth, price: price ? Math.round(price.getBoundingClientRect().width) : null, nrows: rows.length, maxRowHeight: Math.round(maxRowHeight) };
+  };
+  const showAndReadFrames = (page) =>
+    page.evaluate(`new Promise((res) => {
+      const read = ${snap.toString()};
+      document.getElementById('root').style.display = '';
+      requestAnimationFrame(() => requestAnimationFrame(() => {
+        const first = read();
+        requestAnimationFrame(() => res([first, read()]));
+      }));
+    })`);
+  const hide = (page) => page.evaluate(() => (document.getElementById('root').style.display = 'none'));
+  const mountHidden = async (page) => {
+    await hide(page);
+    await page.evaluate(() => window.__mount(false));
+    await waitIdle(page, 150);
+    await page.evaluate(() => window.__mount(true));
+    await waitIdle(page, 300);
+  };
+
+  const { page, pageErrors, close } = await open('basic', { query: 'n=500' });
+  const steady = await page.evaluate(`(${snap.toString()})()`);
+  await mountHidden(page);
+  const [first, second] = await showAndReadFrames(page);
+  check('hidden mount: flex widths and full row window by the second shown frame', second.price === steady.price && second.nrows === steady.nrows, { steady, first, second });
+  // 隠している間に合計行を出す → 同じ大きさで出し直す(行の少ない窓で描かない)。
+  await waitIdle(page, 200);
+  await hide(page);
+  await waitIdle(page, 100);
+  await page.evaluate(() => window.__setProps({ totalRow: true }));
+  await waitIdle(page, 200);
+  const [firstWithTotal] = await showAndReadFrames(page);
+  await waitIdle(page, 200);
+  const settledWithTotal = await page.evaluate(`(${snap.toString()})()`);
+  check('totalRow toggled while hidden: first shown frame does not drop rows', firstWithTotal.nrows >= settledWithTotal.nrows && firstWithTotal.price === steady.price, { firstWithTotal, settledWithTotal });
+  const errs = await errorsOf(page);
+  check('hidden mount / re-show: no console errors (incl. ResizeObserver loop)', errs.length === 0 && pageErrors.length === 0, [...errs, ...pageErrors].slice(0, 5));
+  await close();
+}
+{
+  // 行の高さを測るモード: スクロールした状態で隠すと 0.58.0 では「Maximum update depth exceeded」でグリッドが外れていた
+  //   (隠れている間のセルを高さ 0 で記録していた。BR-1 の見直しで 0 を記録しないようにした)。隠したまま生成したときも、
+  //   出したら行を測る。
+  const { page, pageErrors, close } = await open('autoheight');
+  const rowHeights = () => page.evaluate(() => {
+    let max = 0;
+    document.querySelectorAll('.ssg-center-pane .ssg-body-row[data-row-index]').forEach((el) => (max = Math.max(max, el.getBoundingClientRect().height)));
+    return Math.round(max);
+  });
+  const steadyMax = await rowHeights();
+  await page.evaluate(() => (document.querySelector('.ssg-scroll-container').scrollTop = 2000));
+  await waitIdle(page, 300);
+  await page.evaluate(() => (document.getElementById('root').style.display = 'none'));
+  await waitIdle(page, 1000);
+  await page.evaluate(() => (document.getElementById('root').style.display = ''));
+  await waitIdle(page, 500);
+  const alive = await page.evaluate(() => document.querySelector('.ssg-scroll-container') !== null);
+  const errs = await errorsOf(page);
+  check('autoHeight: hiding while scrolled keeps the grid (no Maximum update depth)', alive && !errs.some((e) => e.includes('Maximum update depth')), errs.slice(0, 3));
+  await page.evaluate(() => (document.getElementById('root').style.display = 'none'));
+  await page.evaluate(() => window.__mount(false));
+  await waitIdle(page, 150);
+  await page.evaluate(() => window.__mount(true));
+  await waitIdle(page, 300);
+  await page.evaluate(() => (document.getElementById('root').style.display = ''));
+  await waitIdle(page, 500);
+  const shownMax = await rowHeights();
+  check('autoHeight: mounted hidden, rows are measured once shown', steadyMax > 40 && shownMax === steadyMax, { steadyMax, shownMax });
+  // 行の高さを測る列を左に固定したとき(固定列は列の仮想化の外なので、隠れている間もセルが残って高さ 0 で測られる。
+  //   0 を記録すると描き直しが止まらなくなっていた)。
+  await page.evaluate(() => window.__setColumns(window.__columns().map((c) => (c.key === 'note' ? { ...c, pinned: 'left' } : c))));
+  await waitIdle(page, 400);
+  await page.evaluate(() => (document.querySelector('.ssg-scroll-container').scrollTop = 2000));
+  await waitIdle(page, 400);
+  await page.evaluate(() => (document.getElementById('root').style.display = 'none'));
+  await waitIdle(page, 1000);
+  await page.evaluate(() => (document.getElementById('root').style.display = ''));
+  await waitIdle(page, 500);
+  const alivePinned = await page.evaluate(() => document.querySelector('.ssg-scroll-container') !== null);
+  const pinnedMax = await rowHeights();
+  check('autoHeight (pinned column): hiding while scrolled keeps the grid and row heights', alivePinned && pinnedMax > 40, { alivePinned, pinnedMax });
+  const errs2 = await errorsOf(page);
+  check('autoHeight hide / re-show: no console errors', errs2.length === 0 && pageErrors.length === 0, [...errs2, ...pageErrors].slice(0, 5));
+  await close();
+}
+
 summary();

@@ -30,6 +30,16 @@ const createMountState = () => {
   };
 };
 
+// 変更(BR-1 見直し 2026-10-28): 隠れている間(display: none で幅 0)の大きさは core へ渡しません。0 を覚えると、隠れて
+//   いる間の描き直し(データや props の変化)で窓が空になり、出したときの core の再描画は通常の更新(描いた後)なので、
+//   Firefox で出した最初のフレームの列が欠けていました(scrollSyncController も隠れている間は書かない)。
+const observeShownElementRect: typeof observeElementRect = (instance, cb) =>
+  observeElementRect(instance, (rect) => {
+    if (rect.width) {
+      cb(rect);
+    }
+  });
+
 export type UseVirtualizerCoreOptions<
   TScrollElement extends Element,
   TItemElement extends Element,
@@ -53,7 +63,7 @@ export function useVirtualizerCore<
   const [mountState] = useState(createMountState);
 
   const resolvedOptions: VirtualizerOptions<TScrollElement, TItemElement> = {
-    observeElementRect,
+    observeElementRect: observeShownElementRect,
     observeElementOffset,
     scrollToFn: elementScroll,
     ...rest,

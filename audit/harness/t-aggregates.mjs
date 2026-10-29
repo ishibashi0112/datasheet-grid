@@ -60,7 +60,9 @@ const expectedOf = (page, r0, r1, keys) =>
     });
   for (const counts of [true, false]) {
     await page.evaluate((c) => window.__setProps({ showBottomBarCounts: c }), counts);
-    for (const width of [1400, 900, 600, 420]) {
+    // 変更(BR-2 2026-10-28): 折り返しの境目の前後(Chromium で 608px、WebKit で 600px が境目だった)と、右のグループに
+    //   最小幅を持たせたあとの境目の近く(680px)も測る。
+    for (const width of [1400, 900, 680, 608, 600, 420]) {
       // WebDriver の Firefox は窓を 500px より狭くできない(別の幅のまま測らないよう SKIP にする)。
       const sized = await page.setViewportSize({ width, height: 800 }).then(() => true, (e) => {
         if (e.code !== 'WD_VIEWPORT') throw e;

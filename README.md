@@ -69,6 +69,8 @@ npm install @ishibashi0112/spreadsheet-grid
 
 Requires **react** and **react-dom** `^18.3.0 || ^19.0.0` as peer dependencies (install them in your app if you have not already; React 18 is supported from v0.58.0). `@tanstack/virtual-core` (the framework-agnostic core of TanStack Virtual) and `@ishibashi0112/spreadsheet-grid-core` (the framework-agnostic core of this grid, split out in v0.39.0) are regular dependencies and are installed automatically; you never import them directly. The React adapter is this package.
 
+Supported browsers: **Chrome / Edge 111+, Firefox 121+, Safari 16.4+**. The floor comes from CSS (`color-mix()`, `:has()`); in older browsers the grid still loads, but some colors (conditional-format chips, save and error marks) and keyboard focus styles may be missing.
+
 ## Styles
 
 The grid ships its CSS as a separate file. Import it once (for example, in your app entry):
@@ -462,6 +464,8 @@ npm install @ishibashi0112/spreadsheet-grid
 ```
 
 peer 依存として **react** / **react-dom** `^18.3.0 || ^19.0.0` が必要です（未導入なら利用側で入れてください。React 18 は v0.58.0 から対応）。`@tanstack/virtual-core`（TanStack Virtual のフレームワーク非依存コア）と `@ishibashi0112/spreadsheet-grid-core`（本グリッドのフレームワーク非依存コア。v0.39.0 で分離）は通常依存として自動的に入ります。アプリ側で直接 import する必要はありません。本パッケージが React 向けアダプタです。
+
+対応ブラウザは **Chrome / Edge 111 以降、Firefox 121 以降、Safari 16.4 以降** です。下限は CSS(`color-mix()` / `:has()`)で決まります。これより古いブラウザでも読み込めますが、一部の色(条件付き書式のチップ、保存やエラーの印)とキーボード操作のフォーカスの表示が出ないことがあります。
 
 ### スタイル
 

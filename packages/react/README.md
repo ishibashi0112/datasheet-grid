@@ -10,7 +10,7 @@ A virtualized spreadsheet / data grid for React 18.3 / 19 (~1M rows, pinned colu
 npm install @ishibashi0112/spreadsheet-grid
 ```
 
-Peer dependencies: `react` / `react-dom` `^18.3.0 || ^19.0.0` (React 18 is supported from v0.58.0). Import the CSS once:
+Peer dependencies: `react` / `react-dom` `^18.3.0 || ^19.0.0` (React 18 is supported from v0.58.0). Supported browsers: Chrome / Edge 111+, Firefox 121+, Safari 16.4+. Import the CSS once:
 
 ```ts
 import '@ishibashi0112/spreadsheet-grid/style.css'
@@ -115,6 +115,8 @@ React 18.3 / 19 向けの仮想化スプレッドシート / データグリッ�
 Astryx / Mantine / HeroUI v3 / shadcn/ui の中で使うときは、`style.css` の後にそれぞれのテーマ(`themes/astryx.css` / `themes/mantine.css` / `themes/heroui.css` / `themes/shadcn.css`)を読み込むと、配色がデザインシステムのテーマとライト / ダークに揃います([ガイド](https://datasheet-grid.vercel.app/docs/guides/design-systems))。
 
 ブラウザで動かせるサンプル(編集できる在庫表 / サーバーサイド行モデル / Astryx)は [`examples/`](https://github.com/ishibashi0112/datasheet-grid/tree/main/examples) にあり、どれも StackBlitz で開けます。
+
+対応ブラウザは Chrome / Edge 111 以降、Firefox 121 以降、Safari 16.4 以降です。
 
 ### バンドルを小さくする: `/lite`(0.54.0 から)
 

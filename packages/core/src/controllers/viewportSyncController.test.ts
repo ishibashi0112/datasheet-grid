@@ -142,4 +142,28 @@ describe('viewportSyncController', () => {
     });
     expect(plain.scrollTo).toHaveBeenLastCalledWith(expect.objectContaining({ top: 140 }));
   });
+
+  // 追加(BR-5): 縮尺のあるとき、下端に合わせるときだけ物理位置を切り上げる(上端に合わせるときはそのまま)。
+  it('縮尺のあるとき、下へ動かして下端に合わせるときだけ物理位置を切り上げる', () => {
+    const rect = { left: 0, top: 264, width: 80, height: 36 };
+    // 下端合わせ: 40 + 300 - 200 = 140(論理)→ 140 / 2.4 = 58.33 → 59。
+    const down = createScrollElement();
+    createViewportSyncController().update({
+      ...baseArgs(down.element),
+      verticalScaleFactor: 2.4,
+      activeCell: { row: 7, col: 0 },
+      activeCellRect: rect,
+    });
+    expect(down.scrollTo).toHaveBeenLastCalledWith(expect.objectContaining({ top: 59 }));
+    // 上端合わせ: 物理 500(論理 1200)から行の top 100 へ → 100 / 2.4 = 41.67(切り上げない)。
+    const up = createScrollElement();
+    up.raw.scrollTop = 500;
+    createViewportSyncController().update({
+      ...baseArgs(up.element),
+      verticalScaleFactor: 2.4,
+      activeCell: { row: 2, col: 0 },
+      activeCellRect: { ...rect, top: 100 },
+    });
+    expect(up.scrollTo).toHaveBeenLastCalledWith(expect.objectContaining({ top: 100 / 2.4 }));
+  });
 });
