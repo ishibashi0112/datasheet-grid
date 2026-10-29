@@ -1773,7 +1773,7 @@ export async function POST(req: Request) {
 - **答えはすべて検査する**: 表への指示に見えない答え(サーバーのエラーの `{ error }` など。`mode` も `filters` も無い答え)は表を変えずに知らせる(`mode` があって `filters` だけが無い答えは条件なしとして読む)。無い列・その列で使えない条件・候補に無い値・数や日付として読めない値・長すぎる値(条件と検索の文字は 200 字、選ぶ値は 1 つ 1000 字・1 列 1000 件まで。切り詰めずに捨てる)は捨て、何を捨てたかを「使えなかった部分」に日本語で出す(20 件まで)。列は `key` で引き、無ければ見出し(同じ見出しが 1 列だけのとき)で引く。候補は値・表示名のどちらで答えても値へ直す(select の値 `''` は「すべて」と同じなので選ばない)。数は全角や 3 桁区切りも読み、日付は `YYYY-MM-DD` へ揃える。範囲の逆転は入れ替える。並びの向きは大文字や `ascending` / `descending` も読む(refine で書いてきた並びが 1 つも使えないときは今の並びのまま)。形の読めない条件・列の指定・検索の文字も、件数を「使えなかった部分」に出す。AI が「できなかった」と書いてきた文(`unsupported`)は「AI から: …」として出す。列が 100 を超える表では、`schema` で列を enum にしない(enum の数に上限がある AI があるため。無い列は検査で捨てる)。
 - **反映と元に戻す**: 答えはすぐ反映し、反映した状態の条件をチップ(列フィルター → 並び → 検索 → 隠した列)で見せる。チップの × でその条件だけ外せる。「元に戻す」で頼む前の見え方(フィルター・並び・検索・隠した列)へ戻す(列幅・列の順番・固定はそのまま)。反映したあとに表を手で変えたときは、元に戻さず「表の条件が変わったので…」と知らせる(列の表示を AI に任せていないときは、手で隠した列は比べず、元に戻すでも変えない)。列の表示が変わらないときは `applyState` に `columns` を渡さない(列定義を `onColumnsChange` で書き直さない)。
 - **入力**: Enter で送る。日本語の変換を確定する Enter では送らない。考えている間は「止める」か Esc で取り消せる(届いた答えは捨てる)。Esc はフォーカスがバーの中か、どこにも無いときに効く(表やほかの部品の Esc は取らない。日本語の変換中の Esc では止めない。バーを shadow root の中に置いても効く)。「聞く」「止める」のダブルクリックの 2 回目は無視する(止めたつもりで送り直したり、送ってすぐ止めたりしない)。考えている間、例のボタンは `aria-disabled`。失敗したときは表を変えずに「もう一度」を出す(失敗した文を送り直す)。表(`grid` の ref)がまだ無いときは知らせる。聞いている間に props(列・`allow*`・`onApply` など)が変わったら、答えは変わったあとの設定で読む。押したボタン(チップの × / 元に戻す / 閉じる)が消えたら、フォーカスは次のチップか入力欄へ移す。チップと例は全文を `title` に持つ(狭い幅では省略表示)。
-- **見た目**: 色はグリッドと同じトークン(`--ssg-*`)で決まる。バーはグリッドの外にあるので、トークンを `.ssg-root { … }` で上書きしているときは `.ssg-root, .ssg-ask { … }` のように `.ssg-ask` も並べる。`themes/*.css` はバーにも効く。クラスは `.ssg-ask` / `.ssg-ask-form` / `.ssg-ask-input` / `.ssg-ask-examples` / `.ssg-ask-chips` / `.ssg-ask-chip` / `.ssg-ask-note` など。
+- **見た目**: 色はグリッドと同じトークン(`--ssg-*`)で決まる。バーはグリッドの外にあるので、トークンを `.ssg-root { … }` で上書きしているときは `.ssg-root, .ssg-ask { … }` のように `.ssg-ask` も並べる。`themes/*.css` はバーにも効く。クラスは `.ssg-ask` / `.ssg-ask-form` / `.ssg-ask-input` / `.ssg-ask-examples` / `.ssg-ask-chips` / `.ssg-ask-chip` / `.ssg-ask-note`(公開契約。ほかの `ssg-ask-*` は内部)。
 
 ### 自前の見た目で作る(`useGridAsk`)と core の関数
 
@@ -1917,26 +1917,100 @@ function Grid(props: SpreadsheetGridProps<Row>) {
 
 `cellClassName` / `getRowClassName` の返すクラスは、下記の内部付与クラスと連結セレクタで組み合わせて使える(例: `.ssg-body-cell.my-diff` で基底に勝たせ、`.ssg-body-cell.my-diff.ssg-body-cell--row-hovered` でホバー時色を切替)。以下は**公開契約**とし、変更時は breaking 扱いにする(proposals ⑥)。
 
+- 下の 2 つの表(クラスと属性)と、次の節のトークン(`--ssg-*`)が CSS の公開範囲。名前を消す・変える、付く要素や条件を変えるのは破壊的変更(方針はドキュメントの[バージョンと互換性](https://datasheet-grid.vercel.app/docs/versioning))。
+- 表に無い `ssg-*` クラス、DOM の入れ子の形、グリッドが付けるインライン style は非公開の実装詳細で、予告なく変わり得る。セレクタで依存しないこと。
+- ドキュメントで名前を出すクラス / 属性は必ずこの表に載せる(`packages/react/src/cssContract.test.ts` が検査する)。
+
+### クラス
+
 | クラス | 付与先 / 条件 |
 | --- | --- |
 | `.ssg-root` | グリッドのルート要素(`className` prop の付与先)。 |
+| `.ssg-root--fill-height` | `height` に `%` を含む値を渡したときのルート(flex column)。 |
+| `.ssg-root--filling` | フィルハンドル(`fillHandle`)のドラッグ中のルート(カーソルを十字に固定)。 |
+| `.ssg-theme-dark` | `theme="dark"`(または `'auto'` のダーク解決)時に root と各ポータル(popover / menu / panel / ツールチップ)へ。 |
+| `.ssg-motion-off` | `motion` が `'off'`(または `'auto'` + 視差効果を減らす)のとき、root と各ポータル・ドラッグのゴースト・ツールチップへ。モーションのトークンが 0 になる(`:where` で定義)。 |
+| `.ssg-shell` | フォーカスを受ける要素(`role="group"`)。 |
+| `.ssg-scroll-container` | 表本体のスクロール要素(`role="grid"`)。 |
+| `.ssg-bar--top` / `.ssg-bar--bottom` | 既定トップバー / 既定ボトムバー(`renderTopBar` / `renderBottomBar` 指定時は付かない)。 |
+| `.ssg-filter-chip-bar` | フィルターチップバー。 |
+| `.ssg-empty-state` | 0 行時の空状態。 |
+| `.ssg-ssrm-error-bar` | SSRM の読み込みエラーバー。 |
+| `.ssg-scroll-hint` | スクロール位置インジケーター(`scrollHint`)。 |
+| `.ssg-find-bar` | セル内検索(`find`)の検索バー。 |
+| `.ssg-find-mark` / `.ssg-find-mark--current` | セル内検索のヒット / 今のヒット(`<mark>`)。 |
+| `.ssg-icon-btn` | ヘッダーのアイコンボタン。 |
+| `.ssg-col-hover-overlay` | `hoverHighlight="cross"` の列の帯。 |
+| `.ssg-col-drop-indicator` | 列ドラッグの挿入位置の縦線。 |
+| `.ssg-col-drag-float` / `.ssg-col-drag-pin` | `columnDragMotion="live"` で固定ペインをまたぐときの浮かぶ列 / 見出しのピン・矢印。 |
 | `.ssg-body-row` | 行コンテナ(`getRowClassName` の付与先のひとつ)。 |
 | `.ssg-body-cell` | データセルの基底(未レイヤー・特異度 (0,1,0))。 |
 | `.ssg-row-header-cell` | 行ヘッダー「#」セル。 |
 | `.ssg-body-cell--readonly` | 読み取り専用セル(範囲選択に入っていないとき。`dimReadOnlyCells` と独立して常時付与)。 |
 | `.ssg-body-cell--invalid` | validation mark 表示中のセル。 |
 | `.ssg-body-cell--has-note` | セルのメモ(`cellNote`)があるセル(右上の印は `::before`。色は `--ssg-note-indicator`)。 |
+| `.ssg-body-cell--changed` | `highlightChanges` で値が変わったセル(光っている間)。 |
 | `.ssg-body-cell--cf-bar` | 条件付き書式のデータバーがあるセル(帯は子要素 `.ssg-cf-bar`。負の値は `.ssg-cf-bar--negative`)。 |
 | `.ssg-body-cell--cf-scale` | 条件付き書式のカラースケールで背景を染めたセル。 |
-| `.ssg-chip` | 条件付き書式の状態チップ(色味は `.ssg-chip--info` / `--good` / `--warning` / `--critical` / `--neutral`、任意色は `.ssg-chip--custom`。中身は `.ssg-chip-icon` / `.ssg-chip-label`)。 |
+| `.ssg-chip` | 条件付き書式の状態チップ(色味は `.ssg-chip--neutral` / `.ssg-chip--info` / `.ssg-chip--good` / `.ssg-chip--warning` / `.ssg-chip--critical`、任意色は `.ssg-chip--custom`。中身は `.ssg-chip-icon` / `.ssg-chip-label`)。 |
 | `.ssg-body-cell--row-hovered` | 行ホバー中のセル(`enableRowHover` 有効時)。 |
 | `.ssg-body-cell--autoheight` | auto-height 列のセル。 |
 | `.ssg-body-cell--align-center` / `.ssg-body-cell--align-right` | `column.align` の水平寄せ。 |
-| `.ssg-total-row` / `.ssg-total-cell` | 合計行(`totalRow`)の行 / セル(セルは `.ssg-body-cell` にも付く。種類の見出しは `.ssg-total-caption`)。 |
-| `.ssg-fill-handle` / `.ssg-fill-preview` / `.ssg-fill-options` / `.ssg-fill-menu` / `.ssg-fill-tooltip` / `.ssg-root--filling` | フィルハンドル(`fillHandle`)のハンドル / ドラッグ中の点線 / 埋めたあとのボタン / メニュー / 値のツールチップ / ドラッグ中のルート(カーソルを十字に固定)。 |
-| `.ssg-theme-dark` | `theme="dark"`(または `'auto'` のダーク解決)時に root と各ポータル(popover / menu / panel / ツールチップ)へ。 |
+| `.ssg-body-cell--row-drag-handle` | 行ドラッグ(`enableRowDrag`)のハンドル列のセル。 |
+| `.ssg-row-drag-handle` / `.ssg-row-drag-handle--disabled` | 行ドラッグのハンドル / 操作できないとき(ソート / フィルター中)。 |
+| `.ssg-row-drop-indicator` | 行ドラッグの挿入位置の線。 |
+| `.ssg-row-checkbox` | 行選択 / checkbox 列のチェックボックス。 |
+| `.ssg-cell-editor` | セルエディタの枠。 |
+| `.ssg-copy-range-overlay` | コピー範囲の動く点線(`showCopyRange`)。 |
+| `.ssg-save-indicator` | SSRM の書き戻しの保存状態の印(状態はセルの `data-ssg-save`)。 |
+| `.ssg-detail-card` | 展開行(`detailRow`)のカード。 |
+| `.ssg-label-row-content` | ラベル行(`labelRow`)の中身の器(行は `.ssg-body-row[data-ssg-label-row]`)。 |
+| `.ssg-total-row` / `.ssg-total-cell` | 合計行(`totalRow`)の行 / セル(セルは `.ssg-body-cell` にも付く。種類の見出しは `.ssg-total-caption`、その文字は `.ssg-total-label`)。 |
+| `.ssg-fill-handle` / `.ssg-fill-preview` / `.ssg-fill-options` / `.ssg-fill-menu` / `.ssg-fill-tooltip` | フィルハンドル(`fillHandle`)のハンドル / ドラッグ中の点線 / 埋めたあとのボタン / メニュー / 値のツールチップ。 |
+| `.ssg-menu-panel` / `.ssg-menu-item` | 列メニュー / コンテキストメニュー / フィルハンドルのメニューのパネル / 項目。 |
+| `.ssg-tooltip` | カスタムツールチップ(`document.body` 直下のシングルトン)。 |
+| `.ssg-ask` | `GridAskBar`(入口 `/ai`)のルート。中は `.ssg-ask-form`(入力の行)/ `.ssg-ask-input`(入力欄)/ `.ssg-ask-examples`(例の文)/ `.ssg-ask-chips` / `.ssg-ask-chip`(入れた条件のチップ)/ `.ssg-ask-note`(注意やエラーの文)。 |
 
-※上記以外の `ssg-*` クラス(内部構造クラス)は非公開の実装詳細で、予告なく変わり得る。セレクタで依存しないこと。
+### 属性
+
+| 属性 | 付く要素 / 意味 |
+| --- | --- |
+| `[data-grid-drag-ghost]` | 列 / 行ドラッグのゴースト(`document.body` 直下。`classNames.dragGhost`)。 |
+| `[data-ssg-col-dragging="live"]` | `columnDragMotion="live"` で掴んでいる列のセル。 |
+| `[data-ssg-row-dragging]` | ドラッグ中の行(`.ssg-body-row`)。 |
+| `[data-ssg-label-row]` | ラベル行の行要素(`.ssg-body-row`)。 |
+| `[data-ssg-save="pending" \| "ok" \| "failed"]` | SSRM の書き戻しで保存中 / 保存できた / 保存できなかったセル。 |
+| `[data-ssg-detail]` | 展開行のカード(`.ssg-detail-card`)。この中のキーボード / クリップボード / コンテキストメニュー / ドラッグ開始のイベントはグリッドへ伝わらない。 |
+| `input[data-ssg-ime-input]` | `imeDirectInput` の入力受け(有効中のフォーカス先)。 |
+| `[data-ssg-tooltip-overflow]` | `showCellOverflowTooltip` で、省略されたときに全文を出すセル。 |
+| `data-ssg-tooltip="文言"` | 利用側が自分の要素に付けると、グリッドのツールチップで文言を出す(「ツールチップ」節)。 |
+| `data-ssg-filter-keep-open` | 利用側が自分の要素(またはその祖先)に付けると、その内側の pointerdown では列フィルターのポップオーバーを閉じない。 |
+
+## CSS トークン(`--ssg-*`)(公開契約)
+
+見た目を変える主な手段。`style.css` が `.ssg-root` と各ポータル(ポップオーバー / メニュー / ドラッグのゴースト / ツールチップ)と `GridAskBar` の `.ssg-ask` に `:where`(特異度 0)で定義しているため、利用側の上書きは読み込み順に関係なく既定値・ダークのプリセット(`.ssg-theme-dark`)・`themes/*.css` に勝つ。
+
+- 下の表の名前が公開契約で、消す・改名する・意味を変えるのは破壊的変更。既定値(色・寸法)の調整は minor で行うことがある(CHANGELOG に書く)。
+- 表に無い `--ssg-*`(要素ごとに内部で使う変数や、`themes/*.css` の中継の `--ssg-ds-*`)は内部。
+- `style.css` にトークンを足したらこの表にも足す(`packages/react/src/cssContract.test.ts` が検査する)。
+
+| 部分 | トークン |
+| --- | --- |
+| 基本の色 | `--ssg-accent` / `--ssg-accent-strong`(アクセント)、`--ssg-line` / `--ssg-line-strong` / `--ssg-divider`(罫線と区切り)、`--ssg-glyph` / `--ssg-glyph-hover` / `--ssg-glyph-faint`(アイコン)、`--ssg-danger` / `--ssg-danger-bg`(削除などの操作) |
+| 本体のセル | `--ssg-cell-bg` / `--ssg-cell-text`、`--ssg-readonly-bg` / `--ssg-readonly-text` / `--ssg-readonly-hover-bg`(読み取り専用)、`--ssg-row-hover-bg`(行ホバー)、`--ssg-row-selected-bg`(行選択)、`--ssg-selection-fill`(範囲選択の塗り)、`--ssg-col-hover-bg`(`hoverHighlight="cross"` の列の帯) |
+| ヘッダー | `--ssg-header-bg` / `--ssg-header-text` / `--ssg-header-hover-bg`、`--ssg-select-bg` / `--ssg-select-bg-hover`(選択範囲に入った見出し)、`--ssg-icon-hover-bg` / `--ssg-icon-active-bg` / `--ssg-icon-active-bg-hover` / `--ssg-icon-active-border`(アイコンボタン) |
+| 行の種類 | `--ssg-group-row-bg` / `--ssg-group-row-hover-bg`(グループ行)、`--ssg-label-row-bg` / `--ssg-label-row-text` / `--ssg-label-row-accent`(ラベル行)、`--ssg-total-row-bg` / `--ssg-total-row-text` / `--ssg-total-row-border`(合計行) |
+| チェックボックス | `--ssg-checkbox-border` / `--ssg-checkbox-bg` / `--ssg-checkbox-checked-bg` / `--ssg-checkbox-checked-mark` / `--ssg-checkbox-hover-border` |
+| 寸法 | `--ssg-radius`、`--ssg-icon-btn-size` / `--ssg-cell-pad-x` / `--ssg-bar-pad-x` / `--ssg-bar-pad-y`(`density` で切り替わる) |
+| パネル(ポップオーバー / メニュー / ツールパネル) | `--ssg-panel-bg` / `--ssg-panel-border` / `--ssg-panel-separator`、`--ssg-panel-text-strong` / `--ssg-panel-text` / `--ssg-panel-text-sub` / `--ssg-panel-text-muted` / `--ssg-panel-text-faint` / `--ssg-panel-text-disabled`(文字。強い順)、`--ssg-panel-hover-bg` / `--ssg-panel-hover-bg-subtle`、`--ssg-panel-accent` / `--ssg-panel-accent-bg` / `--ssg-panel-accent-text` / `--ssg-panel-accent-contrast`、`--ssg-seg-track-bg` / `--ssg-seg-indicator-bg` / `--ssg-seg-indicator-shadow`(ツールパネルのタブの切り替え) |
+| 影と固定ペイン | `--ssg-root-shadow` / `--ssg-panel-shadow` / `--ssg-popover-shadow` / `--ssg-overlay-chip-shadow`、`--ssg-pane-border` / `--ssg-pane-shadow-left` / `--ssg-pane-shadow-right`(固定列のペインの境目) |
+| 暗いチップとドラッグ | `--ssg-pill-bg` / `--ssg-pill-text` / `--ssg-pill-shadow`(列幅の計測中の表示 / スクロール位置の吹き出し / SSRM のエラーバーなど)、`--ssg-ghost-bg` / `--ssg-ghost-text` / `--ssg-ghost-border` / `--ssg-ghost-shadow`(ドラッグのゴースト)、`--ssg-tooltip-bg` / `--ssg-tooltip-text` / `--ssg-tooltip-shadow`(ツールチップ)、`--ssg-drop-indicator`(ドラッグの挿入位置の線) |
+| 入力の検査とメモ | `--ssg-invalid` / `--ssg-invalid-bg` / `--ssg-invalid-contrast`(エラーの色 / セルの背景 / 吹き出しの文字)、`--ssg-note-indicator`(メモの印) |
+| 保存の印(SSRM の書き戻し) | `--ssg-save-pending` / `--ssg-save-ok` / `--ssg-save-ok-contrast` / `--ssg-save-failed` |
+| 検索とフィルハンドル | `--ssg-find-mark-bg` / `--ssg-find-mark-current-bg`、`--ssg-fill-line` / `--ssg-fill-handle-ring` |
+| 条件付き書式 | `--ssg-cf-bar` / `--ssg-cf-bar-negative`(データバー)、`--ssg-cf-seq-min` / `--ssg-cf-seq-max` / `--ssg-cf-div-negative` / `--ssg-cf-div-mid` / `--ssg-cf-div-positive`(カラースケール)、`--ssg-cf-neutral` / `--ssg-cf-neutral-bg` / `--ssg-cf-info` / `--ssg-cf-info-bg` / `--ssg-cf-good` / `--ssg-cf-good-bg` / `--ssg-cf-warning` / `--ssg-cf-warning-bg` / `--ssg-cf-critical` / `--ssg-cf-critical-bg`(チップ) |
+| 読み込み中とスクロール位置 | `--ssg-skeleton-bar` / `--ssg-skeleton-bar-hi`(SSRM のスケルトン)、`--ssg-scrollhint-track-bg` / `--ssg-scrollhint-thumb` / `--ssg-scrollhint-thumb-active`(`scrollHint`) |
+| モーション | `--ssg-motion-fast` / `--ssg-motion-base` / `--ssg-motion-slow` / `--ssg-motion-ease` |
 
 ## 補助型(props で参照される shape)
 
