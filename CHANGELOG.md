@@ -7,7 +7,7 @@
 
 詳しい使い方は[ドキュメントサイト](https://datasheet-grid.vercel.app)と [API リファレンス](./packages/react/API_REFERENCE.md)を参照してください。
 
-## 未リリース
+## 0.59.0 — 2026-10-29
 
 ### 変更
 
