@@ -15,13 +15,13 @@ import {
   resolveFillCornerPlacement,
   resolveFillOptionsChipPosition,
   resolveFillSource,
-} from '@ishibashi0112/spreadsheet-grid-core/logic/fillHandle';
+} from '@ishibashi0112/spreadsheet-grid-core/internal/logic/fillHandle';
 import {
   resolveSelectionBand,
   resolveSelectionBandSegments,
   resolveSelectionExtents,
-} from '@ishibashi0112/spreadsheet-grid-core/logic/selectionOverlayGeometry';
-import type { ColumnPane } from '@ishibashi0112/spreadsheet-grid-core/logic/geometry';
+} from '@ishibashi0112/spreadsheet-grid-core/internal/logic/selectionOverlayGeometry';
+import type { ColumnPane } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/geometry';
 import type { SelectionOverlayRect } from '../SelectionOverlay';
 import type { GridSelection } from '../model/gridTypes';
 import type { FillHandleFeatureArgs, FillHandleFeatureResult, ReactGridFeatures } from './types';

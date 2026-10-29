@@ -9,7 +9,7 @@ import { renderHook, act, cleanup } from '@testing-library/react';
 import type { PointerEvent as ReactPointerEvent } from 'react';
 
 import { useRowDragController } from './useRowDragController';
-import { createUniformRowMetrics } from '@ishibashi0112/spreadsheet-grid-core/logic/verticalGeometry';
+import { createUniformRowMetrics } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/verticalGeometry';
 
 afterEach(() => {
   cleanup();

@@ -8,7 +8,7 @@ import {
   resolveSlotFromSignature,
   resolveSlotMapFromSignature,
   serializeSlotValue,
-} from '@ishibashi0112/spreadsheet-grid-core/logic/slotProps';
+} from '@ishibashi0112/spreadsheet-grid-core/internal/logic/slotProps';
 import type {
   GridClassNames,
   GridResolvedSlot,

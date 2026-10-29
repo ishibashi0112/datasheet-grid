@@ -8,7 +8,7 @@ import { createRef } from 'react';
 import { SpreadsheetGrid } from './SpreadsheetGrid';
 import { installJsdomLayoutStubs } from './testing';
 import type { GridColumn, SpreadsheetGridHandle } from './model/gridTypes';
-import { GRID_STATE_VERSION } from '@ishibashi0112/spreadsheet-grid-core/logic/gridState';
+import { GRID_STATE_VERSION } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/gridState';
 
 type Row = { id: number; qty: number; delta: number; status: string };
 const rows: Row[] = [

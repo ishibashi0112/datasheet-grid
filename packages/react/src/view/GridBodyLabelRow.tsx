@@ -1,8 +1,8 @@
 import { memo, type CSSProperties, type ReactNode } from 'react';
 import type { GridLabelRow, GridRowKey } from '../model/gridTypes';
 import type { GridPaneKind } from './GridHeaderRow';
-import { cx } from '@ishibashi0112/spreadsheet-grid-core/logic/cx';
-import { arePropsEqualWithStyleKeys } from '@ishibashi0112/spreadsheet-grid-core/logic/slotProps';
+import { cx } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/cx';
+import { arePropsEqualWithStyleKeys } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/slotProps';
 import type { GridResolvedSlots } from '../model/gridTypes';
 
 // 追加(label-row ②): ラベル行(見出し / 区切り行)です。

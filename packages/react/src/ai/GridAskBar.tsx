@@ -3,8 +3,8 @@
 //   グリッドの外に置くため、色のトークンは style.css のトークン定義の対象(.ssg-ask)から読みます。
 //   本体のモジュールは import しない(useGridAsk の先頭のコメント参照)。テーマの解決も core の store から直接行います。
 import { useEffect, useRef, useState, useSyncExternalStore, type KeyboardEvent, type MouseEvent } from 'react';
-import { systemColorSchemeStore } from '@ishibashi0112/spreadsheet-grid-core/controllers/systemColorSchemeStore';
-import { resolveGridTheme } from '@ishibashi0112/spreadsheet-grid-core/logic/theme';
+import { systemColorSchemeStore } from '@ishibashi0112/spreadsheet-grid-core/internal/controllers/systemColorSchemeStore';
+import { resolveGridTheme } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/theme';
 import type { GridTheme } from '../model/gridTypes';
 import { useGridAsk, type UseGridAskOptions } from './useGridAsk';
 

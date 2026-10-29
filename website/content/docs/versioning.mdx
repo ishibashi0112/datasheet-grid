@@ -23,7 +23,7 @@ semver の対象は次のものです。
 
 次のものは内部の実装で、どの版でも変わることがあります。
 
-- core のサブパス(`@ishibashi0112/spreadsheet-grid-core/<dir>/<module>`)。React 版が使う部品で、1.0 の前に、保証しないことが名前で分かる場所へ移す予定です。
+- core の部品(`@ishibashi0112/spreadsheet-grid-core/internal/<dir>/<module>`)。React 版が使う部品で、React 版は同じ版の core に固定で依存します。`internal/` の無い旧サブパス(`@ishibashi0112/spreadsheet-grid-core/<dir>/<module>`)は 0.60.0 から非推奨で、0.61.0 で消します。
 - 表に載っていない `ssg-*` クラス、DOM の入れ子の形、グリッドが付けるインライン style。
 
 ## 壊す変更

@@ -6,13 +6,13 @@
 //   (createSpreadsheetGrid。ハンドル列もガイド線も出ない)。
 import { useCallback } from 'react';
 import { useIsomorphicLayoutEffect } from '../hooks/useController';
-import { cx } from '@ishibashi0112/spreadsheet-grid-core/logic/cx';
-import { isSyntheticColumnKey } from '@ishibashi0112/spreadsheet-grid-core/logic/detailRow';
+import { cx } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/cx';
+import { isSyntheticColumnKey } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/detailRow';
 import {
   ROW_DRAG_DISABLED_TOOLTIP,
   ROW_DRAG_HANDLE_TOOLTIP,
-} from '@ishibashi0112/spreadsheet-grid-core/logic/rowReorder';
-import { getCellValue } from '@ishibashi0112/spreadsheet-grid-core/utils/permissions';
+} from '@ishibashi0112/spreadsheet-grid-core/internal/logic/rowReorder';
+import { getCellValue } from '@ishibashi0112/spreadsheet-grid-core/internal/utils/permissions';
 import { useRowDragController } from '../hooks/useRowDragController';
 import type { ReactGridFeatures, RowDragFeatureArgs, RowDragFeatureResult } from './types';
 

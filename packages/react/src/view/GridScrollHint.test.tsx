@@ -9,9 +9,9 @@ import { useRef } from 'react';
 
 import { GridScrollHint } from './GridScrollHint';
 import type { GridScrollHintProps } from './GridScrollHint';
-import { resolveScrollHintOptions } from '@ishibashi0112/spreadsheet-grid-core/logic/scrollHint';
-import type { ResolvedScrollHintOptions } from '@ishibashi0112/spreadsheet-grid-core/logic/scrollHint';
-import { createUniformRowMetrics } from '@ishibashi0112/spreadsheet-grid-core/logic/verticalGeometry';
+import { resolveScrollHintOptions } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/scrollHint';
+import type { ResolvedScrollHintOptions } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/scrollHint';
+import { createUniformRowMetrics } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/verticalGeometry';
 import type { RowModel, ScrollHintOptions } from '../model/gridTypes';
 import type { ReactGridTypes } from '../model/gridTypes';
 

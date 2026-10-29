@@ -13,7 +13,7 @@ import type {
 } from '../model/gridTypes';
 import { createEditorKeyDownHandler } from './editorKeyBindings';
 import { CellEditorErrorBubble } from './CellEditorErrorBubble';
-import { cx } from '@ishibashi0112/spreadsheet-grid-core/logic/cx';
+import { cx } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/cx';
 
 type DateCellEditorProps = {
   // 'YYYY-MM-DD' | ''(正規化済み)。

@@ -7,7 +7,7 @@ import { describe, it, expect, afterEach, vi } from 'vitest';
 import { render, screen, fireEvent, cleanup } from '@testing-library/react';
 
 import { FilterDateField } from './FilterDateField';
-import { formatDateKey } from '@ishibashi0112/spreadsheet-grid-core/logic/filtering';
+import { formatDateKey } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/filtering';
 
 afterEach(() => {
   cleanup();

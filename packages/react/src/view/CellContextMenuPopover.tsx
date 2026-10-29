@@ -3,7 +3,7 @@
 //   だけを描画します。外装は列メニューと同じ .ssg-menu-panel / .ssg-menu-item を再利用します
 //   (portal 先 = document.body で .ssg-root 外のため、CSS はリテラル色で定義済み)。
 import { createPortal } from 'react-dom';
-import { cx } from '@ishibashi0112/spreadsheet-grid-core/logic/cx';
+import { cx } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/cx';
 import type {
   CSSProperties,
   KeyboardEvent,

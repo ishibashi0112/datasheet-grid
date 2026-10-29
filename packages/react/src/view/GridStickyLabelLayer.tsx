@@ -2,8 +2,8 @@ import { memo, useRef, type CSSProperties } from 'react';
 import { useIsomorphicLayoutEffect } from '../hooks/useController';
 import type { GridLabelRow, GridRowKey } from '../model/gridTypes';
 import type { GridPaneKind } from './GridHeaderRow';
-import { cx } from '@ishibashi0112/spreadsheet-grid-core/logic/cx';
-import { arePropsEqualWithStyleKeys } from '@ishibashi0112/spreadsheet-grid-core/logic/slotProps';
+import { cx } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/cx';
+import { arePropsEqualWithStyleKeys } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/slotProps';
 import type { GridResolvedSlots } from '../model/gridTypes';
 import type { GridBodyLabelRowRenderContent } from './GridBodyLabelRow';
 

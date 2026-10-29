@@ -5,27 +5,27 @@
 //     hook の部品はシェルが機能を移す前と同じ位置で必ず呼ぶため、無い機能には代役を入れて渡します(features/resolve.ts)。
 //     機能セットはモジュールの読み込み時に決まって描画中は変わらないため、本物と代役が入れ替わることはありません。
 import type { CSSProperties, MouseEvent as ReactMouseEvent, ReactNode, RefObject } from 'react';
-import type { GridCoreFeatures } from '@ishibashi0112/spreadsheet-grid-core/engine/features';
-import type { splitTextByFindRanges } from '@ishibashi0112/spreadsheet-grid-core/logic/find';
-import type { resolveScrollHintOptions } from '@ishibashi0112/spreadsheet-grid-core/logic/scrollHint';
+import type { GridCoreFeatures } from '@ishibashi0112/spreadsheet-grid-core/internal/engine/features';
+import type { splitTextByFindRanges } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/find';
+import type { resolveScrollHintOptions } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/scrollHint';
 import type {
   resolveChipSpec,
   resolveColorScaleBackground,
   resolveDataBar,
-} from '@ishibashi0112/spreadsheet-grid-core/logic/conditionalFormat';
+} from '@ishibashi0112/spreadsheet-grid-core/internal/logic/conditionalFormat';
 import type {
   formatTotalRowCellText,
   resolveTotalRowCaption,
   resolveTotalRowLabelColumnKey,
-} from '@ishibashi0112/spreadsheet-grid-core/logic/totalRow';
-import type { FillHandleControllerArgs } from '@ishibashi0112/spreadsheet-grid-core/controllers/fillHandleController';
-import type { ColumnHeaderDragController } from '@ishibashi0112/spreadsheet-grid-core/controllers/columnHeaderDragController';
-import type { ColumnAutosizeRunnerArgs } from '@ishibashi0112/spreadsheet-grid-core/controllers/columnAutosizeRunner';
-import type { DateRolloverStore } from '@ishibashi0112/spreadsheet-grid-core/controllers/dateRolloverStore';
-import type { RowOrder } from '@ishibashi0112/spreadsheet-grid-core/logic/filtering';
-import type { GridUiAction } from '@ishibashi0112/spreadsheet-grid-core/model/gridActions';
-import type { ColumnPane, GridPaneLayout } from '@ishibashi0112/spreadsheet-grid-core/logic/geometry';
-import type { DetailRowExtra, RowMetrics } from '@ishibashi0112/spreadsheet-grid-core/logic/verticalGeometry';
+} from '@ishibashi0112/spreadsheet-grid-core/internal/logic/totalRow';
+import type { FillHandleControllerArgs } from '@ishibashi0112/spreadsheet-grid-core/internal/controllers/fillHandleController';
+import type { ColumnHeaderDragController } from '@ishibashi0112/spreadsheet-grid-core/internal/controllers/columnHeaderDragController';
+import type { ColumnAutosizeRunnerArgs } from '@ishibashi0112/spreadsheet-grid-core/internal/controllers/columnAutosizeRunner';
+import type { DateRolloverStore } from '@ishibashi0112/spreadsheet-grid-core/internal/controllers/dateRolloverStore';
+import type { RowOrder } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/filtering';
+import type { GridUiAction } from '@ishibashi0112/spreadsheet-grid-core/internal/model/gridActions';
+import type { ColumnPane, GridPaneLayout } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/geometry';
+import type { DetailRowExtra, RowMetrics } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/verticalGeometry';
 import type {
   CellCoord,
   ColumnFilterValue,

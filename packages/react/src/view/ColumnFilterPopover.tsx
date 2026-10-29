@@ -1,5 +1,5 @@
 import { createPortal } from 'react-dom';
-import { cx } from '@ishibashi0112/spreadsheet-grid-core/logic/cx';
+import { cx } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/cx';
 // 追加(filter-ext E): 'auto' を解決した後の実効フィルター種別です。
 // 追加(date-input): FilterDateInputContext は日付入力スロットの公開契約です(columnKey の
 //   付与は親 SpreadsheetGrid の責務のため、本 view は columnKey 抜きの部分型で受けます)。
@@ -29,9 +29,9 @@ import {
   type RefObject,
 } from 'react';
 // 追加(ime-fix): 複合列の条件 draft 編集オプション(IME 変換中は commit: false で dispatch 保留)です。
-import type { ConditionDraftChangeOptions } from '@ishibashi0112/spreadsheet-grid-core/engine/filterPopoverCommands';
+import type { ConditionDraftChangeOptions } from '@ishibashi0112/spreadsheet-grid-core/internal/engine/filterPopoverCommands';
 // 追加(async-options): 候補の状態('loading' / 'error' を含む)。
-import type { ColumnSelectOptionsStatus } from '@ishibashi0112/spreadsheet-grid-core/controllers/selectOptionsCollector';
+import type { ColumnSelectOptionsStatus } from '@ishibashi0112/spreadsheet-grid-core/internal/controllers/selectOptionsCollector';
 import { useVirtualizerCore } from '../hooks/useVirtualizerCore';
 // 追加(SF-ENTER): set フィルター検索の一致関数と Enter 確定の振る舞い判定です(純関数)。
 //   view ファイルからの非コンポーネント export は react-refresh 制約(eslint baseline)に
@@ -39,13 +39,13 @@ import { useVirtualizerCore } from '../hooks/useVirtualizerCore';
 import {
   filterSetOptionsBySearch,
   resolveSetFilterEnterAction,
-} from '@ishibashi0112/spreadsheet-grid-core/logic/setFilterSearch';
+} from '@ishibashi0112/spreadsheet-grid-core/internal/logic/setFilterSearch';
 // 追加(LINT-1): set 選択状態 { mode, values } 型と mode 判定ヘルパです。react-refresh 制約
 //   (view からの非コンポーネント export)解消のため logic/setFilterSelection.ts へ移設しました。
 import {
   isSetValueSelected,
   type ColumnFilterSetSelection,
-} from '@ishibashi0112/spreadsheet-grid-core/logic/setFilterSelection';
+} from '@ishibashi0112/spreadsheet-grid-core/internal/logic/setFilterSelection';
 // 追加(filter-ext A): number フィルターの演算子セレクト UI 用の純ロジックです
 //   (演算子一覧 / 値入力の個数 / 既定 draft)。draft の合成・復元は親(SpreadsheetGrid /
 //   useFilterPopoverController)側の責務で、本 view は draft の表示と編集通知だけを行います。
@@ -59,7 +59,7 @@ import {
   numberFilterOperandCount,
   type NumberFilterConditionDraft,
   type NumberFilterOperator,
-} from '@ishibashi0112/spreadsheet-grid-core/logic/numberFilterCondition';
+} from '@ishibashi0112/spreadsheet-grid-core/internal/logic/numberFilterCondition';
 // 追加(filter-ext C): textSet のテキスト条件エディタ用の純ロジックです(数値版と同型)。
 import {
   DEFAULT_TEXT_FILTER_DRAFT,
@@ -69,7 +69,7 @@ import {
   textFilterOperandCount,
   type TextFilterConditionDraft,
   type TextFilterOperator,
-} from '@ishibashi0112/spreadsheet-grid-core/logic/textFilterCondition';
+} from '@ishibashi0112/spreadsheet-grid-core/internal/logic/textFilterCondition';
 // 追加(filter-ext D): dateSet の日付条件エディタ(プリセットチップ含む)用の純ロジックです。
 import {
   DATE_FILTER_OPERATOR_OPTIONS,
@@ -80,13 +80,13 @@ import {
   normalizeFilterDateInputValue,
   type DateFilterConditionDraft,
   type DateFilterOperator,
-} from '@ishibashi0112/spreadsheet-grid-core/logic/dateFilterCondition';
+} from '@ishibashi0112/spreadsheet-grid-core/internal/logic/dateFilterCondition';
 // 追加(preset-opt): プリセットチップの構成(正規形)です。列定義 dateFilterPresets の正規化は
 //   親(SpreadsheetGrid)の責務で、本 view は受け取った構成の描画と評価連動だけを行います。
 import {
   normalizeDateFilterPresets,
   type NormalizedDateFilterPreset,
-} from '@ishibashi0112/spreadsheet-grid-core/logic/dateFilterPresets';
+} from '@ishibashi0112/spreadsheet-grid-core/internal/logic/dateFilterPresets';
 // 追加(date-picker B): 内製日付フィールド(自由入力 + ドリルアップカレンダー)です。
 //   ネイティブ <input type="date"> を置き換える既定 UI で、renderFilterDateInput
 //   (利用側スロット)指定時はそちらが優先されます。
@@ -95,7 +95,7 @@ import { FilterDateField } from './FilterDateField';
 import {
   buildDateTreeRows,
   type DateTreeRow,
-} from '@ishibashi0112/spreadsheet-grid-core/logic/dateFilterTree';
+} from '@ishibashi0112/spreadsheet-grid-core/internal/logic/dateFilterTree';
 import type { GridResolvedSlot } from '../model/gridTypes';
 
 // 追加: popover のレイアウト情報です。

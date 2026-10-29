@@ -177,7 +177,14 @@ PASS / 実行した確認の数(SKIP は数に入れない)。
 
 ### 1.0 の前に残っていること
 
-- core のサブパスを `./internal/*` などへ移し、React 版の core への依存を同じ版の固定にする(上記)。今のサブパスを直接使っている人がいれば、1 版は旧パスを残して非推奨にする。
+- ~~core のサブパスを `./internal/*` などへ移し、React 版の core への依存を同じ版の固定にする(上記)。今のサブパスを直接使っている人がいれば、1 版は旧パスを残して非推奨にする。~~ → 対応済み(下記「core の部品の移動」)。0.61.0 で旧 `./*` を exports から消す。
 - 大きな未実装(多段の列見出し、ピン留め行)を、今の API を壊さずに足せるかの見通し。
 - 公開型の型テスト(d.ts を利用側の形で検査する)。
 - 非推奨の手順を実際に使うときの仕組み(開発ビルドだけの console.warn の共通の関数など。CHANGELOG の「非推奨」の見出しと bump-version / release.yml はそのまま使える)。
+
+### core の部品の移動(2026-10-29。ユーザー判断「移す・旧パスは 1 版残す」)
+
+- core の exports に `./internal/*`(開発時は `./src/*.ts`、publish 時は `publishConfig.exports` で dist の `*.d.ts` / `*.js` / `*.cjs`)を足し、React 版の src の import(118 ファイル)を `@ishibashi0112/spreadsheet-grid-core/internal/<dir>/<module>` へ書き換えた。`/testing` はそのまま。Node はパターンの長いキーを優先するので、`./internal/*` と旧 `./*` は同じ dist のファイルを指す(Node の ESM / CJS と tsc の `moduleResolution` bundler / nodenext で、新旧どちらの書き方も同じモジュールに解決されることを pack した tarball で確認)。
+- 旧 `./*` は非推奨(CHANGELOG の「非推奨」、core の README、ドキュメント `docs/versioning`)で、0.61.0 で exports から消す。import のパスには `@deprecated` も console.warn も付けられないので、書いて知らせるだけ。React 版の dist は旧パスを 1 つも import しない(eslint の `no-restricted-imports` で React 版の src とテストを検査)。
+- React 版の core への依存を `workspace:^` → `workspace:*` にした(pnpm が publish 時に同じ版 `X.Y.Z` へ変える。pack した tarball で確認)。
+- JS の大きさは不変(`size:check` の full 112.52KB ほか。`scripts/measure-size.mjs` は `/internal` を外して core の dist を解決する)。examples:check も通る。

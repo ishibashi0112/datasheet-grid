@@ -6,7 +6,7 @@ import { useRef, type RefObject } from 'react';
 import {
   createColumnHeaderDragController,
   type ColumnHeaderDragArgs,
-} from '@ishibashi0112/spreadsheet-grid-core/controllers/columnHeaderDragController';
+} from '@ishibashi0112/spreadsheet-grid-core/internal/controllers/columnHeaderDragController';
 import { useController } from './useController';
 
 export type UseColumnHeaderDragControllerArgs<T> = Omit<

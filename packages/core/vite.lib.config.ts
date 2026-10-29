@@ -3,9 +3,9 @@ import { join, relative, resolve } from 'node:path'
 import { defineConfig } from 'vite'
 
 // core パッケージのライブラリビルド設定です(npm 配布物 dist を生成)。
-//   - React 版 / Solid 版はモジュール単位のサブパス(`@ishibashi0112/spreadsheet-grid-core/logic/filtering` 等)で
+//   - React 版 / Solid 版はモジュール単位のサブパス(`@ishibashi0112/spreadsheet-grid-core/internal/logic/filtering` 等)で
 //     import するため、src 配下の全モジュール(テスト除く)をエントリにし、preserveModules でディレクトリ構造を
-//     保ったまま es / cjs を出力します(exports の "./*" がそのまま dist へ対応)。
+//     保ったまま es / cjs を出力します(exports の "./internal/*" と、非推奨の旧 "./*" がそのまま dist へ対応)。
 //   - 依存はありません(純 TS + DOM API)。d.ts は tsc -p tsconfig.lib.json が同じ構造で出力します。
 const srcDir = resolve(import.meta.dirname, 'src')
 

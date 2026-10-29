@@ -7,10 +7,10 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, renderHook } from '@testing-library/react';
 import type { ClipboardEvent } from 'react';
 import { useGridClipboardController } from './useGridClipboardController';
-import { createInitialGridUiState } from '@ishibashi0112/spreadsheet-grid-core/model/gridReducer';
-import type { GridUiAction } from '@ishibashi0112/spreadsheet-grid-core/model/gridActions';
+import { createInitialGridUiState } from '@ishibashi0112/spreadsheet-grid-core/internal/model/gridReducer';
+import type { GridUiAction } from '@ishibashi0112/spreadsheet-grid-core/internal/model/gridActions';
 import type { CellCoord, GridColumn, GridUiState, RowModel } from '../model/gridTypes';
-import type { ServerSideCellEditInput } from '@ishibashi0112/spreadsheet-grid-core/logic/serverSideEdits';
+import type { ServerSideCellEditInput } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/serverSideEdits';
 
 afterEach(() => {
   cleanup();

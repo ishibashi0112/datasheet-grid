@@ -9,11 +9,11 @@ import {
   createInertDateRolloverStore,
   createInertExportCommands,
   createInertSaveStatusController,
-} from '@ishibashi0112/spreadsheet-grid-core/engine/features';
+} from '@ishibashi0112/spreadsheet-grid-core/internal/engine/features';
 import {
   warnUnregisteredFeatureMethod,
   warnUnregisteredFeatureState,
-} from '@ishibashi0112/spreadsheet-grid-core/logic/featureWarnings';
+} from '@ishibashi0112/spreadsheet-grid-core/internal/logic/featureWarnings';
 import type { FillHandleFeatureResult, GridShellFeatures, ReactGridFeatures, ServerSideFeatureResult } from './types';
 
 const INERT_FILL_HANDLE: FillHandleFeatureResult = {

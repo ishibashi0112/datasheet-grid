@@ -13,7 +13,7 @@ import {
   type GridAskItem,
   type GridAskOptions,
   type GridAskRequest,
-} from '@ishibashi0112/spreadsheet-grid-core/logic/gridAsk';
+} from '@ishibashi0112/spreadsheet-grid-core/internal/logic/gridAsk';
 import type { GridColumn, GridState } from '../model/gridTypes';
 
 /**

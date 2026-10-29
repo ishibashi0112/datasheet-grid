@@ -13,7 +13,7 @@
 //   - .ssg-root 内で描画されるため、ポータル系(popover/panel)と違いデザイントークン
 //     (--ssg-*)が届きます(padding は --ssg-bar-pad-* で density 連動)。
 import type { FilterManagementEntry } from './FilterManagementPanel';
-import { cx } from '@ishibashi0112/spreadsheet-grid-core/logic/cx';
+import { cx } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/cx';
 import type { GridResolvedSlot } from '../model/gridTypes';
 
 type GridFilterChipBarProps = {

@@ -5,8 +5,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, renderHook } from '@testing-library/react';
 import type { KeyboardEvent } from 'react';
 import { useGridKeyboardInteractions } from './useGridKeyboardInteractions';
-import { createInitialGridUiState } from '@ishibashi0112/spreadsheet-grid-core/model/gridReducer';
-import type { GridUiAction } from '@ishibashi0112/spreadsheet-grid-core/model/gridActions';
+import { createInitialGridUiState } from '@ishibashi0112/spreadsheet-grid-core/internal/model/gridReducer';
+import type { GridUiAction } from '@ishibashi0112/spreadsheet-grid-core/internal/model/gridActions';
 import type { CellCoord, GridColumn, GridUiState, RowModel } from '../model/gridTypes';
 
 afterEach(() => {

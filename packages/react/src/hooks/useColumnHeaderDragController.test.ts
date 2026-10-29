@@ -14,7 +14,7 @@ import type { PointerEvent as ReactPointerEvent } from 'react';
 
 import { useColumnHeaderDragController } from './useColumnHeaderDragController';
 import type { GridColumn } from '../model/gridTypes';
-import type { GridPaneLayout, PaneGeometry } from '@ishibashi0112/spreadsheet-grid-core/logic/geometry';
+import type { GridPaneLayout, PaneGeometry } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/geometry';
 
 afterEach(() => {
   cleanup();

@@ -16,8 +16,8 @@ import { useEffect, useState, useSyncExternalStore } from 'react';
 import {
   createLazyModule,
   type LazyModule,
-} from '@ishibashi0112/spreadsheet-grid-core/logic/lazyModule';
-import { scheduleIdleTask } from '@ishibashi0112/spreadsheet-grid-core/utils/scheduler';
+} from '@ishibashi0112/spreadsheet-grid-core/internal/logic/lazyModule';
+import { scheduleIdleTask } from '@ishibashi0112/spreadsheet-grid-core/internal/utils/scheduler';
 
 // 変更(差し込み式 段階 3): 使われない側(機能を外した構成のツールパネル等)をバンドラが取り除けるよう、副作用なしの印を付けます。
 export const filterPopoverModule = /* @__PURE__ */ createLazyModule(() => import('./ColumnFilterPopover'));

@@ -5,7 +5,7 @@
 import { describe, expect, it, vi, afterEach } from 'vitest';
 import { act, cleanup, renderHook } from '@testing-library/react';
 import { useGridHistoryController } from './useGridHistoryController';
-import type { GridUiAction } from '@ishibashi0112/spreadsheet-grid-core/model/gridActions';
+import type { GridUiAction } from '@ishibashi0112/spreadsheet-grid-core/internal/model/gridActions';
 import type { CellCoord, GridSelection, UndoRedoState } from '../model/gridTypes';
 
 afterEach(() => {

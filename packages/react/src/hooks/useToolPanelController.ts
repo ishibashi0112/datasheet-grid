@@ -8,10 +8,10 @@ import {
   resolveAvailableToolPanelTabs,
   type ToolPanelLayout,
   type ToolPanelTab,
-} from '@ishibashi0112/spreadsheet-grid-core/controllers/toolPanelController';
+} from '@ishibashi0112/spreadsheet-grid-core/internal/controllers/toolPanelController';
 import { useController } from './useController';
 
-export type { ToolPanelLayout, ToolPanelTab } from '@ishibashi0112/spreadsheet-grid-core/controllers/toolPanelController';
+export type { ToolPanelLayout, ToolPanelTab } from '@ishibashi0112/spreadsheet-grid-core/internal/controllers/toolPanelController';
 
 export type UseToolPanelControllerArgs = {
   canUseFilterTab: boolean;

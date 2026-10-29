@@ -3,9 +3,9 @@
 import { memo } from 'react';
 import type { CSSProperties, PointerEvent } from 'react';
 import type { GridColumn, GridGroupRow as GridGroupRowDescriptor, GridResolvedSlots } from '../model/gridTypes';
-import { GROUP_AUTO_COLUMN_KEY } from '@ishibashi0112/spreadsheet-grid-core/logic/grouping';
-import type { PaneColumnEntry } from '@ishibashi0112/spreadsheet-grid-core/logic/geometry';
-import { cx } from '@ishibashi0112/spreadsheet-grid-core/logic/cx';
+import { GROUP_AUTO_COLUMN_KEY } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/grouping';
+import type { PaneColumnEntry } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/geometry';
+import { cx } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/cx';
 import type { GridPaneKind } from './GridHeaderRow';
 
 // ──────────────────────────────────────────────────────────

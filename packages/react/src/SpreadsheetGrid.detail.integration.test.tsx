@@ -9,7 +9,7 @@ import { render, cleanup, act, fireEvent } from '@testing-library/react';
 import { createRef } from 'react';
 
 import { SpreadsheetGrid } from './SpreadsheetGrid';
-import { DETAIL_TOGGLE_COLUMN_KEY } from '@ishibashi0112/spreadsheet-grid-core/logic/detailRow';
+import { DETAIL_TOGGLE_COLUMN_KEY } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/detailRow';
 import type {
   DetailRowOptions,
   GridColumn,

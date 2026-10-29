@@ -110,7 +110,7 @@
     "react-dom": "^18.3.0 || ^19.0.0"
   },
   "dependencies": {
-    "@ishibashi0112/spreadsheet-grid-core": "workspace:^",
+    "@ishibashi0112/spreadsheet-grid-core": "workspace:*",
     "@tanstack/virtual-core": "^3.17.0"
   },
   "devDependencies": {

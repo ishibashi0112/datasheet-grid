@@ -9,14 +9,14 @@ import {
   resolveSyncGlobalFilteredOrder,
   selectGlobalFilteredOrderResult,
   type GlobalFilteredOrderResult,
-} from '@ishibashi0112/spreadsheet-grid-core/controllers/globalFilteredOrder';
-import type { RowOrder } from '@ishibashi0112/spreadsheet-grid-core/logic/filtering';
+} from '@ishibashi0112/spreadsheet-grid-core/internal/controllers/globalFilteredOrder';
+import type { RowOrder } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/filtering';
 import { useController } from './useController';
 
 export {
   ASYNC_GLOBAL_FILTER_ROW_THRESHOLD,
   type GlobalFilteredOrderResult,
-} from '@ishibashi0112/spreadsheet-grid-core/controllers/globalFilteredOrder';
+} from '@ishibashi0112/spreadsheet-grid-core/internal/controllers/globalFilteredOrder';
 
 type UseGlobalFilteredOrderArgs<T> = {
   rows: T[];

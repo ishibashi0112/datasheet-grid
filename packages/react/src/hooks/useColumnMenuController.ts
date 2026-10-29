@@ -6,10 +6,10 @@ import type { GridColumn } from '../model/gridTypes';
 import {
   createColumnMenuController,
   type ColumnMenuLayout,
-} from '@ishibashi0112/spreadsheet-grid-core/controllers/columnMenuController';
+} from '@ishibashi0112/spreadsheet-grid-core/internal/controllers/columnMenuController';
 import { useController } from './useController';
 
-export type { ColumnMenuLayout } from '@ishibashi0112/spreadsheet-grid-core/controllers/columnMenuController';
+export type { ColumnMenuLayout } from '@ishibashi0112/spreadsheet-grid-core/internal/controllers/columnMenuController';
 
 export type UseColumnMenuControllerArgs<T> = {
   visibleColumns: GridColumn<T>[];

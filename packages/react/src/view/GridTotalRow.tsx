@@ -1,14 +1,14 @@
 import { memo, type CSSProperties, type ReactNode } from 'react';
 import type { GridResolvedSlots, TotalRowCellContext } from '../model/gridTypes';
 import type { GridPaneKind } from './GridHeaderRow';
-import type { PaneColumnEntry } from '@ishibashi0112/spreadsheet-grid-core/logic/geometry';
-import { cx } from '@ishibashi0112/spreadsheet-grid-core/logic/cx';
-import { arePropsEqualWithStyleKeys } from '@ishibashi0112/spreadsheet-grid-core/logic/slotProps';
+import type { PaneColumnEntry } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/geometry';
+import { cx } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/cx';
+import { arePropsEqualWithStyleKeys } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/slotProps';
 import {
   formatTotalRowCellText,
   resolveTotalRowCaption,
   type TotalRowCells,
-} from '@ishibashi0112/spreadsheet-grid-core/logic/totalRow';
+} from '@ishibashi0112/spreadsheet-grid-core/internal/logic/totalRow';
 
 // 追加(合計行 3A): 表の下端に固定する合計行です(3 ペインそれぞれに描きます)。
 //

@@ -10,14 +10,14 @@ import {
   selectCollectorResult,
   type ColumnSelectOptionsResult,
   type RawValueAccessor,
-} from '@ishibashi0112/spreadsheet-grid-core/controllers/selectOptionsCollector';
+} from '@ishibashi0112/spreadsheet-grid-core/internal/controllers/selectOptionsCollector';
 import { useController } from './useController';
 
 export {
   ASYNC_SELECT_COLLECT_ROW_THRESHOLD,
   type ColumnSelectOptionsResult,
   type ColumnSelectOptionsStatus,
-} from '@ishibashi0112/spreadsheet-grid-core/controllers/selectOptionsCollector';
+} from '@ishibashi0112/spreadsheet-grid-core/internal/controllers/selectOptionsCollector';
 
 type UseColumnSelectOptionsCollectorArgs<T> = {
   column: GridColumn<T> | null;

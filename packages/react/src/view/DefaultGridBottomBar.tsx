@@ -1,5 +1,5 @@
 import type { GridSelectionAggregates, SpreadsheetGridDerivedSummary } from '../model/gridTypes';
-import { cx } from '@ishibashi0112/spreadsheet-grid-core/logic/cx';
+import { cx } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/cx';
 import type { GridResolvedSlot } from '../model/gridTypes';
 import type { GridSelectionAggregates as GridSelectionAggregatesView } from './GridSelectionAggregates';
 

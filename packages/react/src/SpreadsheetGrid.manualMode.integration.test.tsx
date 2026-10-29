@@ -7,7 +7,7 @@ import { render, cleanup, act } from '@testing-library/react';
 import { createRef } from 'react';
 
 import { SpreadsheetGrid } from './SpreadsheetGrid';
-import { GRID_STATE_VERSION } from '@ishibashi0112/spreadsheet-grid-core/logic/gridState';
+import { GRID_STATE_VERSION } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/gridState';
 import type {
   GridColumn,
   GridExportData,

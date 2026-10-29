@@ -8,7 +8,7 @@ import type { CSSProperties, PointerEvent, ReactNode } from 'react';
 //       「行ごとのプリミティブ値」へ分解して渡す。プリミティブなら shallow 比較が
 //       値比較として機能するため、選択範囲が変わっても再レンダーされるのは
 //       実際に選択状態が変化した行だけになる。
-import type { SelectionSnapshot } from '@ishibashi0112/spreadsheet-grid-core/model/gridSelectors';
+import type { SelectionSnapshot } from '@ishibashi0112/spreadsheet-grid-core/internal/model/gridSelectors';
 import type {
   CellCoord,
   CellRenderState,
@@ -27,38 +27,38 @@ import type {
   SpreadsheetGridProps,
 } from '../model/gridTypes';
 // 追加(grouping ③): グループ行の React key です。
-import { groupRowKey } from '@ishibashi0112/spreadsheet-grid-core/logic/grouping';
+import { groupRowKey } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/grouping';
 // 変更(差し込み式 段階 5): グループ行の部品は行グルーピングの機能から受け取ります(GroupRow。型だけ import)。
 import type { GridBodyGroupRow } from './GridBodyGroupRow';
 // 追加(行選択): O(1) 選択判定と、共用チェックボックス glyph です。
-import { resolveIsRowSelected } from '@ishibashi0112/spreadsheet-grid-core/logic/rowSelection';
+import { resolveIsRowSelected } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/rowSelection';
 // 追加: 省略時ツールチップのマーカー付与判定(純関数)です。
-import { shouldMarkCellOverflowTooltip } from '@ishibashi0112/spreadsheet-grid-core/logic/cellOverflowTooltip';
-import { getInvalidMessage, hasCellValidation } from '@ishibashi0112/spreadsheet-grid-core/logic/validation';
+import { shouldMarkCellOverflowTooltip } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/cellOverflowTooltip';
+import { getInvalidMessage, hasCellValidation } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/validation';
 // 追加(G-3): セルのメモ(cellNote)の正規化と、ツールチップ文言(エラー → 改行 → メモ)の合成です。
-import { normalizeCellNote, resolveCellTooltipText } from '@ishibashi0112/spreadsheet-grid-core/logic/cellNote';
+import { normalizeCellNote, resolveCellTooltipText } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/cellNote';
 // 追加(F-3): 条件付き書式(データバー / カラースケール)。チップはシェルの renderCellContent 側。
 // 変更(差し込み式 段階 2): 帯 / 背景色を求める関数は機能(features/conditionalFormat)から prop で受け取ります。
 import {
   EMPTY_CONDITIONAL_FORMAT_STATS,
   type ConditionalFormatStatsMap,
   type DataBarGeometry,
-} from '@ishibashi0112/spreadsheet-grid-core/logic/conditionalFormat';
+} from '@ishibashi0112/spreadsheet-grid-core/internal/logic/conditionalFormat';
 import type { ConditionalFormatCellResolvers } from '../features/types';
 import { RowSelectionCheckbox } from './RowSelectionCheckbox';
 // 追加(label-row ②): ラベル行(帯 + sticky な中身)です。
 // 変更(差し込み式 段階 5): 部品はラベル行の機能から描画設定(labelRowLayer.Row)で受け取ります(型だけ import)。
 import type { GridBodyLabelRow, GridBodyLabelRowRenderContent } from './GridBodyLabelRow';
-import { resolveDataRowNumber } from '@ishibashi0112/spreadsheet-grid-core/logic/labelRows';
+import { resolveDataRowNumber } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/labelRows';
 // 変更(10-C): 列座標を ColumnMeasurement(グローバル) から
 //             PaneColumnEntry(ペインローカル) へ切り替えます。
-import type { PaneColumnEntry } from '@ishibashi0112/spreadsheet-grid-core/logic/geometry';
+import type { PaneColumnEntry } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/geometry';
 import type { GridPaneKind } from './GridHeaderRow';
-import { getCellValue, isCellEditable } from '@ishibashi0112/spreadsheet-grid-core/utils/permissions';
+import { getCellValue, isCellEditable } from '@ishibashi0112/spreadsheet-grid-core/internal/utils/permissions';
 // 追加(UI CSS移行): className 合成ヘルパー。
-import { cx } from '@ishibashi0112/spreadsheet-grid-core/logic/cx';
+import { cx } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/cx';
 import type { GridResolvedSlots, GridSlotProps } from '../model/gridTypes';
-import { arePropsEqualWithStyleKeys, resolveSlotProps } from '@ishibashi0112/spreadsheet-grid-core/logic/slotProps';
+import { arePropsEqualWithStyleKeys, resolveSlotProps } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/slotProps';
 
 type VirtualRowLike = {
   index: number;

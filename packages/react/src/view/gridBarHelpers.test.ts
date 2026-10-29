@@ -3,8 +3,8 @@
 //   フィルター/ソート要約)と getGridSelectionStats の cell/row/col 分岐を固定します。
 import { describe, it, expect } from 'vitest';
 import type { GridColumn, GridSelection } from '../model/gridTypes';
-import { DETAIL_TOGGLE_COLUMN_KEY } from '@ishibashi0112/spreadsheet-grid-core/logic/detailRow';
-import { ROW_DRAG_HANDLE_COLUMN_KEY } from '@ishibashi0112/spreadsheet-grid-core/logic/rowReorder';
+import { DETAIL_TOGGLE_COLUMN_KEY } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/detailRow';
+import { ROW_DRAG_HANDLE_COLUMN_KEY } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/rowReorder';
 import {
   buildGridDerivedSummary,
   createDataColumnNamer,

@@ -40,7 +40,7 @@ if (mismatched.length > 0) {
 
 const work = mkdtempSync(join(tmpdir(), 'ssg-examples-'));
 try {
-  // pnpm pack は workspace:^ を ^X.Y.Z に変える(公開されるものと同じ tarball)
+  // pnpm pack は workspace:* を X.Y.Z に変える(公開されるものと同じ tarball)
   const pack = (dir) => {
     const output = execSync(`pnpm pack --pack-destination "${work}"`, { cwd: join(root, dir) }).toString().trim();
     return output.split('\n').pop().trim();

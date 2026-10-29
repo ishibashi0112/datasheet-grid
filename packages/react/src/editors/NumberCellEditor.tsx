@@ -13,8 +13,8 @@ import type {
 } from '../model/gridTypes';
 import { createEditorKeyDownHandler } from './editorKeyBindings';
 import { CellEditorErrorBubble } from './CellEditorErrorBubble';
-import { cx } from '@ishibashi0112/spreadsheet-grid-core/logic/cx';
-import { isNumberInputPrefix, normalizeNumberText } from '@ishibashi0112/spreadsheet-grid-core/logic/editorValues';
+import { cx } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/cx';
+import { isNumberInputPrefix, normalizeNumberText } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/editorValues';
 
 type NumberCellEditorProps = {
   initialValue: string;

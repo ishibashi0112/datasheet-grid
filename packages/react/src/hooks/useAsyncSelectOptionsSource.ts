@@ -6,8 +6,8 @@ import {
   createAsyncSelectOptionsSource,
   selectAsyncOptionsResult,
   type AsyncSelectOptionsSourceArgs,
-} from '@ishibashi0112/spreadsheet-grid-core/controllers/asyncSelectOptionsSource';
-import type { ColumnSelectOptionsResult } from '@ishibashi0112/spreadsheet-grid-core/controllers/selectOptionsCollector';
+} from '@ishibashi0112/spreadsheet-grid-core/internal/controllers/asyncSelectOptionsSource';
+import type { ColumnSelectOptionsResult } from '@ishibashi0112/spreadsheet-grid-core/internal/controllers/selectOptionsCollector';
 import { useController } from './useController';
 
 export type UseAsyncSelectOptionsSourceResult = {

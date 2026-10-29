@@ -17,11 +17,11 @@ import type {
 } from './model/gridTypes';
 
 // 集計の対象を解決した回数を数えます(出す先が無いときは計算しないことの確認。値はそのまま)。
-vi.mock('@ishibashi0112/spreadsheet-grid-core/logic/selectionAggregates', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('@ishibashi0112/spreadsheet-grid-core/logic/selectionAggregates')>();
+vi.mock('@ishibashi0112/spreadsheet-grid-core/internal/logic/selectionAggregates', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@ishibashi0112/spreadsheet-grid-core/internal/logic/selectionAggregates')>();
   return { ...actual, resolveSelectionAggregateTarget: vi.fn(actual.resolveSelectionAggregateTarget) };
 });
-import { resolveSelectionAggregateTarget } from '@ishibashi0112/spreadsheet-grid-core/logic/selectionAggregates';
+import { resolveSelectionAggregateTarget } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/selectionAggregates';
 
 type Row = { id: number; name: string; qty: number | string; price: number };
 

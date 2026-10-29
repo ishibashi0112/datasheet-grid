@@ -5,7 +5,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, renderHook } from '@testing-library/react';
 import { useFilterPopoverController } from './useFilterPopoverController';
-import { FILTER_POPOVER_KEEP_OPEN_ATTRIBUTE } from '@ishibashi0112/spreadsheet-grid-core/logic/filterPopoverOutsideClick';
+import { FILTER_POPOVER_KEEP_OPEN_ATTRIBUTE } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/filterPopoverOutsideClick';
 import type { ColumnFilterValue, GridColumn } from '../model/gridTypes';
 
 let rafCallbacks: FrameRequestCallback[] = [];

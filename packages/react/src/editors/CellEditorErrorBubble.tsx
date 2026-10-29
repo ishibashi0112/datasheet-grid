@@ -3,7 +3,7 @@
 //   カスタムツールチップ(data-ssg-tooltip)は hover 遅延があるため使いません。
 //   ビューポート下端にかかる場合はセル上側へ簡易フリップします(マウント時に 1 回計測)。
 import { useCallback, useState } from 'react';
-import { cx } from '@ishibashi0112/spreadsheet-grid-core/logic/cx';
+import { cx } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/cx';
 
 export function CellEditorErrorBubble({ message }: { message: string }) {
   const [above, setAbove] = useState(false);

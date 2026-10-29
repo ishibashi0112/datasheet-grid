@@ -3,9 +3,9 @@
 //   --ssg-cf-<tone>-bg(任意色は --ssg-cf-chip-color 経由で .ssg-chip--custom)。
 import type { ReactNode } from 'react';
 import type { CSSProperties } from 'react';
-import type { GridChipSpec, GridChipTone } from '@ishibashi0112/spreadsheet-grid-core/model/gridTypes.core';
-import { resolveChipTone } from '@ishibashi0112/spreadsheet-grid-core/logic/conditionalFormat';
-import { cx } from '@ishibashi0112/spreadsheet-grid-core/logic/cx';
+import type { GridChipSpec, GridChipTone } from '@ishibashi0112/spreadsheet-grid-core/internal/model/gridTypes.core';
+import { resolveChipTone } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/conditionalFormat';
+import { cx } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/cx';
 
 // 色味ごとのアイコン(12px の円の中に白い記号)。
 const ICON_PATHS: Record<GridChipTone, ReactNode> = {

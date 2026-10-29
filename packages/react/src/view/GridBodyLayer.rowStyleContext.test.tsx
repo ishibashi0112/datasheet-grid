@@ -7,7 +7,7 @@ import { describe, it, expect, afterEach } from 'vitest';
 import { render, cleanup } from '@testing-library/react';
 
 import { GridBodyLayer } from './GridBodyLayer';
-import type { PaneColumnEntry } from '@ishibashi0112/spreadsheet-grid-core/logic/geometry';
+import type { PaneColumnEntry } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/geometry';
 import type {
   GridColumn,
   RowModel,

@@ -15,12 +15,12 @@ import type {
 } from 'react';
 
 import { useGridPointerInteractions } from './useGridPointerInteractions';
-import { createInitialGridUiState } from '@ishibashi0112/spreadsheet-grid-core/model/gridReducer';
-import type { GridUiAction } from '@ishibashi0112/spreadsheet-grid-core/model/gridActions';
+import { createInitialGridUiState } from '@ishibashi0112/spreadsheet-grid-core/internal/model/gridReducer';
+import type { GridUiAction } from '@ishibashi0112/spreadsheet-grid-core/internal/model/gridActions';
 import type { CellCoord, GridColumn } from '../model/gridTypes';
-import { gridActions } from '@ishibashi0112/spreadsheet-grid-core/model/gridActions';
-import { createUniformRowMetrics } from '@ishibashi0112/spreadsheet-grid-core/logic/verticalGeometry';
-import type { GridPaneLayout, PaneGeometry } from '@ishibashi0112/spreadsheet-grid-core/logic/geometry';
+import { gridActions } from '@ishibashi0112/spreadsheet-grid-core/internal/model/gridActions';
+import { createUniformRowMetrics } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/verticalGeometry';
+import type { GridPaneLayout, PaneGeometry } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/geometry';
 
 // ── rAF 手動キュー(フレームを決定的に進めるための差し替え) ──
 let rafQueue: FrameRequestCallback[] = [];

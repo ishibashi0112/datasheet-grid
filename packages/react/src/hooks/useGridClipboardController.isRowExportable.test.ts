@@ -8,7 +8,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { renderHook, act, cleanup } from '@testing-library/react';
 
 import { useGridClipboardController } from './useGridClipboardController';
-import { createInitialGridUiState } from '@ishibashi0112/spreadsheet-grid-core/model/gridReducer';
+import { createInitialGridUiState } from '@ishibashi0112/spreadsheet-grid-core/internal/model/gridReducer';
 import type {
   GridColumn,
   GridSelection,

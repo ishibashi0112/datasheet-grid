@@ -5,7 +5,7 @@ import {
   formatTotalRowCellText,
   resolveTotalRowCaption,
   resolveTotalRowLabelColumnKey,
-} from '@ishibashi0112/spreadsheet-grid-core/logic/totalRow';
+} from '@ishibashi0112/spreadsheet-grid-core/internal/logic/totalRow';
 import { GridTotalRow } from '../view/GridTotalRow';
 import type { ReactGridFeatures } from './types';
 

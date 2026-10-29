@@ -14,13 +14,13 @@
 //   機能セットに無い構成では enableColumnFilter / enableGlobalFilter を false として扱い(createSpreadsheetGrid)、
 //   行は絞り込みません(代役の useFilterOrder は baseOrder をそのまま返し、ポップオーバーは開かない)。
 import { useCallback, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
-import { createColumnFilterStage } from '@ishibashi0112/spreadsheet-grid-core/engine/columnFilterStage';
+import { createColumnFilterStage } from '@ishibashi0112/spreadsheet-grid-core/internal/engine/columnFilterStage';
 import {
   createFilterPopoverCommands,
   createFilterPopoverDerivedResolver,
-} from '@ishibashi0112/spreadsheet-grid-core/engine/filterPopoverCommands';
-import { createDateRolloverStore } from '@ishibashi0112/spreadsheet-grid-core/controllers/dateRolloverStore';
-import { isSelectLikeFilterType } from '@ishibashi0112/spreadsheet-grid-core/controllers/selectOptionsCollector';
+} from '@ishibashi0112/spreadsheet-grid-core/internal/engine/filterPopoverCommands';
+import { createDateRolloverStore } from '@ishibashi0112/spreadsheet-grid-core/internal/controllers/dateRolloverStore';
+import { isSelectLikeFilterType } from '@ishibashi0112/spreadsheet-grid-core/internal/controllers/selectOptionsCollector';
 import {
   columnFiltersUseRelativeDate,
   columnFilterValueToDraftText,
@@ -29,14 +29,14 @@ import {
   isSetColumnFilterValue,
   resolveRelativeDateFilterKey,
   toDateSetKey,
-} from '@ishibashi0112/spreadsheet-grid-core/logic/filtering';
-import { describeColumnFilterValue } from '@ishibashi0112/spreadsheet-grid-core/logic/filterSummary';
-import { normalizeDateFilterPresets } from '@ishibashi0112/spreadsheet-grid-core/logic/dateFilterPresets';
-import { inferColumnFilterType } from '@ishibashi0112/spreadsheet-grid-core/logic/inferFilterType';
-import { getCellValue } from '@ishibashi0112/spreadsheet-grid-core/utils/permissions';
-import { computeSinglePaneColumnExtent } from '@ishibashi0112/spreadsheet-grid-core/logic/geometry';
-import { computeHorizontalScrollTarget } from '@ishibashi0112/spreadsheet-grid-core/logic/scrollTargets';
-import { isInsideDetailCardOf } from '@ishibashi0112/spreadsheet-grid-core/logic/detailRow';
+} from '@ishibashi0112/spreadsheet-grid-core/internal/logic/filtering';
+import { describeColumnFilterValue } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/filterSummary';
+import { normalizeDateFilterPresets } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/dateFilterPresets';
+import { inferColumnFilterType } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/inferFilterType';
+import { getCellValue } from '@ishibashi0112/spreadsheet-grid-core/internal/utils/permissions';
+import { computeSinglePaneColumnExtent } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/geometry';
+import { computeHorizontalScrollTarget } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/scrollTargets';
+import { isInsideDetailCardOf } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/detailRow';
 import { useController, useControllerLifecycle } from '../hooks/useController';
 import { useGlobalFilteredOrder } from '../hooks/useGlobalFilteredOrder';
 import { useFilterPopoverController } from '../hooks/useFilterPopoverController';

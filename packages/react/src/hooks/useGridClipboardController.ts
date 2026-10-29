@@ -7,7 +7,7 @@ import {
   computeIsWholeGridSelected,
   createClipboardController,
   type ClipboardControllerArgs,
-} from '@ishibashi0112/spreadsheet-grid-core/controllers/clipboardController';
+} from '@ishibashi0112/spreadsheet-grid-core/internal/controllers/clipboardController';
 import { useController } from './useController';
 
 export const useGridClipboardController = <T extends object>(

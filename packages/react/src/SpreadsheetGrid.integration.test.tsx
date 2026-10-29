@@ -13,7 +13,7 @@ import { createRef, useState } from 'react';
 import type { Ref } from 'react';
 
 import { SpreadsheetGrid } from './SpreadsheetGrid';
-import { GRID_STATE_VERSION } from '@ishibashi0112/spreadsheet-grid-core/logic/gridState';
+import { GRID_STATE_VERSION } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/gridState';
 import type {
   GridColumn,
   GridState,

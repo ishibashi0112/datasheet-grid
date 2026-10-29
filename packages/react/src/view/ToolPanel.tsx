@@ -12,7 +12,7 @@
 //     追従し、実測(offsetWidth)を使いません(resize / タブ数変化に自動追従)。
 import { useEffect, useId } from 'react';
 import { createPortal } from 'react-dom';
-import { cx } from '@ishibashi0112/spreadsheet-grid-core/logic/cx';
+import { cx } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/cx';
 import type { CSSProperties, KeyboardEvent, PointerEvent, ReactNode, RefObject } from 'react';
 import type {
   ToolPanelLayout,

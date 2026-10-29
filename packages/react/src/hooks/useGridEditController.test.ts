@@ -4,8 +4,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, renderHook } from '@testing-library/react';
 import { useGridEditController } from './useGridEditController';
-import { createInitialGridUiState } from '@ishibashi0112/spreadsheet-grid-core/model/gridReducer';
-import type { GridUiAction } from '@ishibashi0112/spreadsheet-grid-core/model/gridActions';
+import { createInitialGridUiState } from '@ishibashi0112/spreadsheet-grid-core/internal/model/gridReducer';
+import type { GridUiAction } from '@ishibashi0112/spreadsheet-grid-core/internal/model/gridActions';
 import type { GridColumn, GridUiState, RowModel } from '../model/gridTypes';
 
 type Row = { id: number; name: string; qty: number };

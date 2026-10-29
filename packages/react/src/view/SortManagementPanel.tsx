@@ -20,7 +20,7 @@
 //   は中身(レベル一覧 / フッター / 注記)だけを描画します。タブ非アクティブ時はアンマウント
 //   されるため isOpen prop は不要になり、DnD の後始末も unmount(state 破棄)で足ります。
 import { useCallback, useMemo, useRef, useState } from 'react';
-import { cx } from '@ishibashi0112/spreadsheet-grid-core/logic/cx';
+import { cx } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/cx';
 import type { PointerEvent } from 'react';
 import type { GridSortEntry } from '../model/gridTypes';
 

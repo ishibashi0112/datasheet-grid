@@ -12,8 +12,8 @@ import { NumberCellEditor } from './editors/NumberCellEditor';
 import { SelectCellEditor } from './editors/SelectCellEditor';
 import { DateCellEditor } from './editors/DateCellEditor';
 import { CustomCellEditor } from './editors/CustomCellEditor';
-import { toDateInputValue } from '@ishibashi0112/spreadsheet-grid-core/logic/editorValues';
-import { cx } from '@ishibashi0112/spreadsheet-grid-core/logic/cx';
+import { toDateInputValue } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/editorValues';
+import { cx } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/cx';
 import type { GridResolvedSlots } from './model/gridTypes';
 
 // 変更(editor 基盤): EditorCommitDirection は model/gridTypes.ts へ移設しました(公開型化)。

@@ -13,11 +13,11 @@ import {
   type RefObject,
 } from 'react';
 import { createPortal } from 'react-dom';
-import { cx } from '@ishibashi0112/spreadsheet-grid-core/logic/cx';
+import { cx } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/cx';
 import type {
   FillHandleController,
   FillMenuLayout,
-} from '@ishibashi0112/spreadsheet-grid-core/controllers/fillHandleController';
+} from '@ishibashi0112/spreadsheet-grid-core/internal/controllers/fillHandleController';
 import type { GridFillKind } from '../model/gridTypes';
 import type { SelectionOverlayRect } from '../SelectionOverlay';
 

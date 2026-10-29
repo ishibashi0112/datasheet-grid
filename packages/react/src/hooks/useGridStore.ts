@@ -8,7 +8,7 @@ import {
   type GridStore,
   type GridViewState,
   type Updater,
-} from '@ishibashi0112/spreadsheet-grid-core/model/gridStore';
+} from '@ishibashi0112/spreadsheet-grid-core/internal/model/gridStore';
 import type { GridUiState } from '../model/gridTypes';
 
 export function useGridStore(

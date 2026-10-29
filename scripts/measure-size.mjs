@@ -62,13 +62,13 @@ const CONFIGS = [
 const kb = (bytes) => bytes / 1024;
 const gzipBytes = (buf) => gzipSync(buf, { level: 9 }).length;
 
-// dist の構成で、core のサブパス import を core の dist へ解決します(publishConfig の exports の `./*` と同じ)。
+// dist の構成で、core のサブパス import を core の dist へ解決します(publishConfig の exports の `./internal/*` / `./*` と同じ)。
 const CORE_PACKAGE = '@ishibashi0112/spreadsheet-grid-core';
 const coreDistPlugin = {
   name: 'core-dist',
   setup(pluginBuild) {
     pluginBuild.onResolve({ filter: /^@ishibashi0112\/spreadsheet-grid-core(\/.*)?$/ }, (resolveArgs) => {
-      const subpath = resolveArgs.path.slice(CORE_PACKAGE.length);
+      const subpath = resolveArgs.path.slice(CORE_PACKAGE.length).replace(/^\/internal(?=\/)/, '');
       return { path: `${ROOT}packages/core/dist${subpath === '' ? '/index' : subpath}.js` };
     });
   },

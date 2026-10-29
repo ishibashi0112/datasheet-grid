@@ -14,7 +14,7 @@ import type {
   GridSlotProps,
   ScrollHintOptions,
   SpreadsheetGridProps,
-} from '@ishibashi0112/spreadsheet-grid-core/model/gridTypes.core';
+} from '@ishibashi0112/spreadsheet-grid-core/internal/model/gridTypes.core';
 import type {
   GridColumn as ReactGridColumn,
   GridSlotProps as ReactGridSlotProps,
@@ -22,7 +22,7 @@ import type {
   SpreadsheetGridProps as ReactSpreadsheetGridProps,
 } from './gridTypes';
 import type { ReactNode, Ref } from 'react';
-import type { SpreadsheetGridHandle } from '@ishibashi0112/spreadsheet-grid-core/model/gridTypes.core';
+import type { SpreadsheetGridHandle } from '@ishibashi0112/spreadsheet-grid-core/internal/model/gridTypes.core';
 
 type Row = { id: number; name: string };
 // React 以外のフレームワークを模した束ね型(描画ノード = 文字列、style = 文字列マップ)。

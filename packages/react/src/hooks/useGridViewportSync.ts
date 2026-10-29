@@ -6,7 +6,7 @@ import { useEffect, useState, type RefObject } from 'react';
 import {
   createViewportSyncController,
   type ViewportSyncArgs,
-} from '@ishibashi0112/spreadsheet-grid-core/controllers/viewportSyncController';
+} from '@ishibashi0112/spreadsheet-grid-core/internal/controllers/viewportSyncController';
 
 type UseGridViewportSyncArgs<T> = Omit<ViewportSyncArgs<T>, 'scrollElement'> & {
   scrollRef: RefObject<HTMLDivElement | null>;

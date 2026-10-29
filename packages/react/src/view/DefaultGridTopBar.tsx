@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 import type { SpreadsheetGridDerivedSummary } from '../model/gridTypes';
-import { cx } from '@ishibashi0112/spreadsheet-grid-core/logic/cx';
+import { cx } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/cx';
 import type { GridResolvedSlot } from '../model/gridTypes';
 
 // 追加(F-filter UI): 既定の左アイコン(検索)です。zero-dep のためインライン SVG で持ち、currentColor で
