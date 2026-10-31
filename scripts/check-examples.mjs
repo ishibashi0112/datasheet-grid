@@ -3,7 +3,7 @@
 //   ルートの tsc / eslint / vitest では依存ごとの確認ができません。ここでは各サンプルを一時ディレクトリへ写し、
 //   公開版の代わりに pnpm pack した core / react の tarball を入れて `npm install` → `npm run build`(tsc + vite build)します。
 //   あわせて、サンプルが依存する版の範囲が今の版(packages/react の version)と同じ ^X.Y.Z かを確かめます
-//   (版上げのときは bump-version.mjs が書き換えます)。
+//   (版上げのときは bump-version.mjs が書き換えます)。pack した React 版が core に同じ版(X.Y.Z)で依存しているかも確かめます。
 //   使い方: build:lib の後に node scripts/check-examples.mjs [サンプル名 ...](CI でも実行。ネットワークが要る)
 import { exec as execCallback, execSync } from 'node:child_process';
 import { cpSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';

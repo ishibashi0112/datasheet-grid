@@ -66,7 +66,7 @@ export default defineConfig([
   // 追加(React 18 対応 2026-10-28): React 版のライブラリは素の useLayoutEffect を使わない(React 18 の SSR の開発ビルドで描くたびに
   //   警告が出る)。hooks/useController の useIsomorphicLayoutEffect を使う。
   // 追加(semver / 1.0 の準備): React 版は core の部品を `…-core/internal/*` から import する(旧サブパス `…-core/<dir>/<module>` は
-  //   非推奨で、次の minor で消す)。入口 `…-core` と `…-core/testing` はそのまま使える。
+  //   0.60.0 で非推奨、0.61.0 で消す)。入口 `…-core` と `…-core/testing` はそのまま使える。
   {
     files: ['packages/react/src/**/*.{ts,tsx}'],
     ignores: ['packages/react/src/**/*.test.{ts,tsx}', 'packages/react/src/hooks/useController.ts'],

@@ -179,13 +179,14 @@ PASS / 実行した確認の数(SKIP は数に入れない)。
 
 - ~~core のサブパスを `./internal/*` などへ移し、React 版の core への依存を同じ版の固定にする(上記)。今のサブパスを直接使っている人がいれば、1 版は旧パスを残して非推奨にする。~~ → 対応済み(下記「core の部品の移動」)。0.61.0 で旧 `./*` を exports から消す。
 - 大きな未実装(多段の列見出し、ピン留め行)を、今の API を壊さずに足せるかの見通し。
+- React 版の上に作ったライブラリが出す d.ts は、型の推論で core の `internal/…` を参照することがある(tsc は型を定義したファイルのパスから exports を引くため。0.59.0 までは旧サブパス。2026-10-31 の 3 回目のレビューで確認)。0.61.0 で壊れることはないが、利用側の d.ts が semver の対象外のパスに頼る形は残るので、1.0 までに React 版の入口から型をどう出すかを決める。
 - 公開型の型テスト(d.ts を利用側の形で検査する)。
 - 非推奨の手順を実際に使うときの仕組み(開発ビルドだけの console.warn の共通の関数など。CHANGELOG の「非推奨」の見出しと bump-version / release.yml はそのまま使える)。
 
 ### core の部品の移動(2026-10-29。ユーザー判断「移す・旧パスは 1 版残す」)
 
 - core の exports に `./internal/*`(開発時は `./src/*.ts`、publish 時は `publishConfig.exports` で dist の `*.d.ts` / `*.js` / `*.cjs`)を足し、React 版の src の import(118 ファイル)を `@ishibashi0112/spreadsheet-grid-core/internal/<dir>/<module>` へ書き換えた。`/testing` はそのまま。Node はパターンの長いキーを優先するので、`./internal/*` と旧 `./*` は同じ dist のファイルを指す(Node の ESM / CJS と tsc の `moduleResolution` bundler / nodenext で、新旧どちらの書き方も同じモジュールに解決されることを pack した tarball で確認)。
-- 旧 `./*` は非推奨(CHANGELOG の「非推奨」、core の README、ドキュメント `docs/versioning`)で、0.61.0 で exports から消す。import のパスには `@deprecated` も console.warn も付けられないので、書いて知らせるだけ。React 版の dist(js / cjs / d.ts)は旧パスを 1 つも参照しない。src とテストの import / export の文は eslint の `no-restricted-imports` で止め(動的 import / `typeof import()` / vi.mock の文字列は見ない)、dist は `size:check`(`scripts/measure-size.mjs` の checkCoreImportPaths)が入口 / `/testing` / `/internal/*` 以外の参照を検査する(d.ts の `import("…")` は tsc が書くもので eslint では見られず、どちらのパスを書くかは core の exports のキーの順 = `./internal/*` が `./*` より前、で決まるため。順を入れ替えると 14 ファイルで落ちることを確認)。
+- 旧 `./*` は非推奨(CHANGELOG の「非推奨」、core の README、ドキュメント `docs/versioning`)で、0.61.0 で exports から消す。import のパスには `@deprecated` も console.warn も付けられないので、書いて知らせるだけ。React 版の dist(js / cjs / d.ts)は旧パスを 1 つも参照しない。src とテストの import / export の文は eslint の `no-restricted-imports` で止め(動的 import / `typeof import()` / vi.mock の文字列は見ない)、dist は `size:check`(`scripts/measure-size.mjs` の checkCoreImportPaths)が入口 / `/testing` / `/internal/*` 以外の参照を検査する(d.ts の `import("…")` は tsc が書くもので eslint では見られず、どちらのパスを書くかは core の exports のキーの順 = `./internal/*` が `./*` より前、で決まるため。順を入れ替えると 8 ファイルの 14 種類の参照で落ちることを確認)。
 - React 版の core への依存を `workspace:^` → `workspace:*` にした(pnpm が publish 時に同じ版 `X.Y.Z` へ変える。pack した tarball で確認)。
 - JS の大きさは不変(`size:check` の full 112.52KB ほか。`scripts/measure-size.mjs` は `/internal` を外して core の dist を解決する)。examples:check も通る。
 - 2 回の別視点のレビュー(2026-10-31)の指摘で足した守り: React 版の dist の参照の形を `size:check` が検査 / pack した React 版の依存が同じ版かを `examples:check` が検査 / 0.61.0 以上へ版を上げるときに core の exports に `./*` が残っていれば `bump-version.mjs` が止める / eslint で `…-core/testing/*` も止める。公開版の形(pack した tarball)を Vite(本番 / 開発)・Next.js 16(Turbopack / webpack の本番 / 開発・SSR)・Vitest + jsdom・Node の ESM / CJS と SSR で動かし、Vite の本番ビルドは公開済み 0.59.0 と中身が同じ(チャンク名の hash だけ違う)ことを確認。
