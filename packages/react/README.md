@@ -100,6 +100,10 @@ This library is new, so AI coding assistants rarely know its API and tend to gue
 - **Imperative API.** Pass `ref` to get a `SpreadsheetGridHandle<T>` (no `forwardRef` needed on your side; works the same on React 18.3 and 19).
 - **Next.js App Router.** Render the grid from a Client Component (a file with `'use client'`); the package does not add the directive.
 
+## Versioning
+
+Releases follow semver, and this package and the core always share one version. While on 0.x, breaking changes ship in minor releases and are listed in the [changelog](https://github.com/ishibashi0112/datasheet-grid/blob/main/CHANGELOG.md) under 「挙動の変化」 / 「core の破壊的変更」. The public surface is the entry points above, the CSS files, `API_REFERENCE.md`, and the CSS tokens, classes and attributes listed there. Subpaths of `@ishibashi0112/spreadsheet-grid-core` are internal and may change in any release. Details: [Versioning](https://datasheet-grid.vercel.app/docs/versioning) (Japanese).
+
 ## License
 
 MIT
@@ -170,3 +174,7 @@ npm パッケージに同梱されているため、オフライン(`node_module
 - **高さ。** ルートの `style.height` ではなく `height` prop で指定します。`%` を含む値(`'100%'`)は**バーを含むグリッド全体**の高さで、親要素に確定高さが必要です。数値は**スクロール領域だけ**の高さです。`height` 未指定時のスクロール領域は `480px`(`maxHeight`)が上限です。
 - **命令的 API。** `ref` を渡すと `SpreadsheetGridHandle<T>` を受け取れます(利用側で `forwardRef` は不要。React 18.3 / 19 のどちらでも同じ)。
 - **Next.js App Router。** クライアントコンポーネント(`'use client'` のファイル)から描画してください。パッケージ側はディレクティブを付けていません。
+
+### バージョンの方針
+
+版は semver に沿って上げ、このパッケージと core はいつも同じ版で出します。0.x の間は壊す変更も minor で出し、[CHANGELOG](https://github.com/ishibashi0112/datasheet-grid/blob/main/CHANGELOG.md) の「挙動の変化」「core の破壊的変更」に書きます。公開範囲は上の入口、CSS ファイル、`API_REFERENCE.md` と、そこに載せた CSS のトークン・クラス・属性です。`@ishibashi0112/spreadsheet-grid-core` のサブパスは内部の部品で、どの版でも変わることがあります。詳しくは[バージョンと互換性](https://datasheet-grid.vercel.app/docs/versioning)。

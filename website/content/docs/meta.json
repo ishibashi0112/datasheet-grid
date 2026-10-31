@@ -1,4 +1,4 @@
 {
   "title": "ドキュメント",
-  "pages": ["index", "installation", "quick-start", "ai-assistants", "guides", "api"]
+  "pages": ["index", "installation", "quick-start", "ai-assistants", "versioning", "guides", "api"]
 }

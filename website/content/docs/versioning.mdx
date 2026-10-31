@@ -1,0 +1,50 @@
+---
+title: バージョンと互換性
+description: 版の上げ方(semver)、公開範囲、壊す変更と非推奨の手順
+---
+
+版は [Semantic Versioning](https://semver.org/lang/ja/) に沿って上げます。React 版 `@ishibashi0112/spreadsheet-grid` と core `@ishibashi0112/spreadsheet-grid-core` は、いつも同じ版で出します。各版の変更は [CHANGELOG](https://github.com/ishibashi0112/datasheet-grid/blob/main/CHANGELOG.md) と [GitHub の Releases](https://github.com/ishibashi0112/datasheet-grid/releases) にあります。
+
+## 今は 0.x
+
+- 0.x の間は、壊す変更も minor(0.**Y**.0)で出します。その変更は CHANGELOG の「挙動の変化」か「core の破壊的変更」に必ず書きます。
+- patch(0.Y.**Z**)は不具合の修正だけです。
+- npm の既定の書き方 `^0.Y.Z` は、同じ 0.Y の中の版だけを受け取ります。minor を上げるときは CHANGELOG を確かめてください。
+
+1.0 からは、壊す変更は major でだけ出します。1.0 は、下の公開範囲と非推奨の手順がそろった版にします(時期は未定です)。
+
+## 公開範囲
+
+semver の対象は次のものです。
+
+- **React 版**: 入口(`@ishibashi0112/spreadsheet-grid` / `/lite` / `/ai` / `/testing`)から import できるもの、CSS ファイル(`style.css` / `style.layer.css` / `themes/*.css`)、[API リファレンス](/docs/api/props)に書いた props・列定義・命令的 API・型とその意味。
+- **CSS**: トークン(`--ssg-*`)と、API リファレンスの[スタイリング用の状態クラス(公開契約)](/docs/api/props#スタイリング用の状態クラス公開契約)に載せたクラスと属性。
+- **core**: 入口 `@ishibashi0112/spreadsheet-grid-core` と `/testing` から import できるもの。
+
+次のものは内部の実装で、どの版でも変わることがあります。
+
+- core のサブパス(`@ishibashi0112/spreadsheet-grid-core/<dir>/<module>`)。React 版が使う部品で、1.0 の前に、保証しないことが名前で分かる場所へ移す予定です。
+- 表に載っていない `ssg-*` クラス、DOM の入れ子の形、グリッドが付けるインライン style。
+
+## 壊す変更
+
+1.0 からは、次の変更は major で出します(0.x の間は minor)。
+
+- 公開 API を消す・改名する、型を狭める
+- 既定値や、ドキュメントに書いた挙動を変える
+- 公開したトークン・クラス・属性を消す・改名する、付く要素や条件を変える
+- 対応ブラウザや React の下限を上げる
+
+次の変更は壊す変更に入れません(minor か patch)。
+
+- 省略できる prop・関数・型を足す
+- ドキュメントに書いたとおりに動くよう不具合を直す
+- トークン・クラスを足す、トークンの既定値(色・寸法)を調整する
+
+## 非推奨の手順
+
+1.0 からは、消すものは消す前の minor で非推奨にして、次の major で消します。0.x の間も、できるときはこの手順を使います。
+
+1. 型に `@deprecated` の JSDoc を付ける(エディタで取り消し線が出ます)
+2. 開発ビルドでだけ、使われたときに console に警告を出す
+3. CHANGELOG の「非推奨」の節に、代わりに使うものと一緒に書く

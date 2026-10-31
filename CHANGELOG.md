@@ -4,8 +4,18 @@
 
 - **挙動の変化**: 公開 API は変わらないものの、見た目や動きが変わる変更です。上げる前に確かめてください。
 - **core の破壊的変更**: core を直接使っている場合だけ影響します。React 版だけを使っている場合は関係ありません。
+- **非推奨**: 今は使えますが、後の版で消す予定のものです。代わりに使うものと一緒に書きます。
+
+版の上げ方と公開範囲は[バージョンと互換性](https://datasheet-grid.vercel.app/docs/versioning)にあります。
 
 詳しい使い方は[ドキュメントサイト](https://datasheet-grid.vercel.app)と [API リファレンス](./packages/react/API_REFERENCE.md)を参照してください。
+
+## 未リリース
+
+### 変更
+
+- バージョンの方針(semver)と公開範囲を README とドキュメント([バージョンと互換性](https://datasheet-grid.vercel.app/docs/versioning))に書きました。0.x の間は壊す変更も minor で出し、この変更履歴の「挙動の変化」「core の破壊的変更」に書きます。1.0 からは壊す変更は major でだけ出し、消すものはその前の minor で非推奨にします。core のサブパス(`@ishibashi0112/spreadsheet-grid-core/<dir>/<module>`)は React 版が使う内部の部品で、semver の対象外です(1.0 の前に内部と分かる場所へ移す予定)。
+- CSS の公開範囲を API リファレンスの「スタイリング用の状態クラス(公開契約)」と、新しい節「CSS トークン(`--ssg-*`)(公開契約)」にまとめました。これまでガイドや API リファレンスの各所で案内していたクラスと属性(`.ssg-find-mark` / `.ssg-row-drag-handle` / `.ssg-ask` / `[data-ssg-save]` など)と、`style.css` のトークン 120 個がすべて載っています。表に無い `ssg-*` クラスと DOM の形は内部です。クラスやトークンの名前と付き方は変えていません。
 
 ## 0.59.0 — 2026-10-29
 

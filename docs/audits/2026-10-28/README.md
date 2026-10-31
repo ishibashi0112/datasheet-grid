@@ -158,3 +158,26 @@ PASS / 実行した確認の数(SKIP は数に入れない)。
   - サイズ: `viewportSyncController.ts` の下端合わせの判定を「下へ動かすとき」(`nextScrollTop > currentScrollTop`。同じ意味)に書き換えて少し縮めたうえで、Firefox の列の欠けの修正で上限 112.5KB を超えた(112.52KB = 115,216 バイト)ため、2026-10-28 にユーザーの判断で上限を 112.6KB へ上げた。
   - 2 回目の見直しの修正のあとのハーネス(12 本、3 つのブラウザ。確認用のサーバーが途中で古いモジュールを配っていたことに気づき、立て直してから回した): Chromium 600 / 600、Firefox 544 / 544(SKIP 7)、WebKit 541 / 544(SKIP 7)。残る FAIL は BR-3(t-priority の 1 件)と BR-4(t-fill の 2 件)だけ。数は t-lifecycle に足した確認(隠したまま生成 / 隠している間の合計行 / auto-height の隠す・出し直す・固定列)のぶん増えている。途中で WebDriver の起動の時間切れと確認用のサーバーの停止で止まった 3 本(Firefox の t-leftovers、WebKit の t-total・t-leftovers)は回し直して通った。
 - 修正後のハーネス(12 本、Chromium 153 / Firefox 159(geckodriver)/ WebKitGTK 2.52.6): Chromium 593 / 593、Firefox 537 / 537(SKIP 8)、WebKit 534 / 537(SKIP 8)。残る FAIL は BR-3(t-priority の 1 件)と BR-4(t-fill の 2 件)だけ。BR-1(Chromium の t-features / Firefox の t-ssrm・t-lifecycle・t-features・t-aggregates・t-total)・BR-2(WebKit の t-aggregates)・BR-5(WebKit の t-total)は通った。数は `t-aggregates` に足した幅のぶん 4 件(WebDriver では 420px が SKIP なので 4 件のまま)増えている。WebKit の t-aggregates の「計算中のスクロールの次フレームまで 200ms 未満」が 1 回目だけ 362ms で落ち、続けて 2 回回して通った(3 つのブラウザを続けて回した負荷によるもので、修正とは無関係)。見直しの修正のあとにも 3 つのブラウザで全部回し直し、同じ数(Chromium 593 / 593、Firefox 537 / 537、WebKit 534 / 537 で FAIL は BR-3・BR-4 の 3 件だけ)だった。
+
+## 9. semver / 1.0 の準備(2026-10-29・v0.59.0 時点)
+
+2026-10-28 に採った方針(1.0 =「公開範囲と、壊すときの手順を決めた版」)の準備の 1 回目。方針はドキュメントの `docs/versioning`(「バージョンと互換性」)と README(英語 / 日本語。React 版 / core の README にも短く)に書いた。
+
+### core のサブパス(`./*`)の使われ方
+
+- **React 版自身が使っている。** 0.59.0 の React 版の dist は core の 87 種類のサブパス(`@ishibashi0112/spreadsheet-grid-core/<dir>/<module>`)を import していて(src では 85 ファイル)、入口 `.` からは 1 つも import していない。そのため `./*` はそのまま外せない。外すには、React 版の import を入口 `.` に寄せる(Turbopack は読み込んだモジュールの import を残すので、`/lite` が core の全体を抱える恐れがあり、測ってから)か、`./internal/*` のような内部と分かる名前へ移すかのどちらか。後者を勧める(利用側で束ねると import の文字列は消えるので、JS の大きさは変わらない)。
+- **React 版と core の版の組み合わせ。** React 版は core に `^X.Y.Z` で依存する(`workspace:^`)。0.x の `^0.59.0` は 0.59.x だけを受け取るが、patch で内部の部品を変えると「React 0.59.0 + core 0.59.1」で壊れうる。サブパスを内部と決めるなら、React 版の core への依存は同じ版の固定(`workspace:*` → `0.59.0`)にするのが筋。1.0 では必須(`^1.0.0` は 1.x のすべてを受け取るため)。
+- **ほかの利用。** このリポジトリの website / examples / 監査ハーネスは core を入口 `.` からしか使っていない(文中で名前を出すだけ)。ドキュメントでサブパスを案内しているのは core の README(フレームワーク版の部品で `API_REFERENCE.md` の対象外、と既に書いていた)と、React 版の README の「JSDoc の場所(`dist/model/gridTypes.core.d.ts`)」だけ。core の `src/index.ts` の先頭のコメントも「安定性は保証しません」と書いていた。npm の検索では、core に依存する公開パッケージはこのリポジトリの 2 つ以外に見つからない(ダウンロード数の API はコンテナから届かず未確認)。ユーザー自身のアプリ(SBOM 移行先など)が core のサブパスを直接 import しているかは、このコンテナからは見られない。
+
+### CSS の公開範囲
+
+- API_REFERENCE.md の「スタイリング用の状態クラス(公開契約)」を、ドキュメントのどこかで名前を出しているクラスと属性の一覧にした(クラス 約 75 / 属性 10。これまでは 22 行で、ガイドや API リファレンスの各所でそれ以外のクラス(`.ssg-find-mark` / `.ssg-row-drag-handle` / `.ssg-col-drag-float` / `.ssg-save-indicator` / `.ssg-ask` など)を案内していた)。どれも実装にあり、名前や付き方は変えていない。
+- 新しい節「CSS トークン(`--ssg-*`)(公開契約)」に、`style.css` のトークン定義(既定値のブロック)の 120 個を部分ごとに並べた。要素ごとに内部で使う変数(`--ssg-cf-chip-*` / `--ssg-row-enter-index` / `--ssg-seg-count` 等)と `themes/*.css` の中継の `--ssg-ds-*` は内部。
+- `packages/react/src/cssContract.test.ts` が、ドキュメント(API_REFERENCE.md / README / Skill / core の README / website の全ページ)で名前を出すクラス・属性・トークンが表にあること、表のクラスと属性が実装にあること、トークンの表が `style.css` のトークン定義と同じこと、website の表(`api/props.mdx`)が同じことを検査する。
+
+### 1.0 の前に残っていること
+
+- core のサブパスを `./internal/*` などへ移し、React 版の core への依存を同じ版の固定にする(上記)。今のサブパスを直接使っている人がいれば、1 版は旧パスを残して非推奨にする。
+- 大きな未実装(多段の列見出し、ピン留め行)を、今の API を壊さずに足せるかの見通し。
+- 公開型の型テスト(d.ts を利用側の形で検査する)。
+- 非推奨の手順を実際に使うときの仕組み(開発ビルドだけの console.warn の共通の関数など。CHANGELOG の「非推奨」の見出しと bump-version / release.yml はそのまま使える)。
