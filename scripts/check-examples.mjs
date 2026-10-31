@@ -47,6 +47,14 @@ try {
   };
   const coreTarball = pack('packages/core');
   const reactTarball = pack('packages/react');
+  // React 版は core の内部の部品を使うので、core には同じ版(workspace:* → X.Y.Z)で依存します(範囲になっていたら止める)
+  const packedReact = JSON.parse(execSync(`tar -xzOf "${reactTarball}" package/package.json`).toString());
+  if (packedReact.dependencies?.[CORE_PACKAGE] !== version) {
+    console.error(
+      `check-examples: pack した ${REACT_PACKAGE} の ${CORE_PACKAGE} への依存が ${packedReact.dependencies?.[CORE_PACKAGE]} です(同じ版 ${version} に固定します。packages/react/package.json は workspace:*)`,
+    );
+    process.exitCode = 1;
+  }
 
   const results = await Promise.all(
     names.map(async (name) => {

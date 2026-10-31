@@ -6,12 +6,17 @@ import tseslint from 'typescript-eslint'
 import { defineConfig, globalIgnores } from 'eslint/config'
 
 // 追加(semver / 1.0 の準備): core の旧サブパス(`@ishibashi0112/spreadsheet-grid-core/<dir>/<module>`。非推奨)の import を止めます。
+//   gitignore と同じ書き方なので、`internal/*` を通すには親の `internal` も通す必要があります(`…-core/internal` だけの
+//   import は exports に無く、型検査とビルドで落ちます)。`testing/*`(`testing/index` など)は旧 `./*` でしか解決しないので止めます。
+//   見るのは import / export の文だけです(動的 import / `typeof import()` / vi.mock の文字列は見ない)。公開する dist は
+//   size:check(scripts/measure-size.mjs の checkCoreImportPaths)が見ます。
 const CORE_SUBPATH_PATTERN = {
   group: [
     '@ishibashi0112/spreadsheet-grid-core/*',
     '!@ishibashi0112/spreadsheet-grid-core/internal',
     '!@ishibashi0112/spreadsheet-grid-core/internal/*',
     '!@ishibashi0112/spreadsheet-grid-core/testing',
+    '@ishibashi0112/spreadsheet-grid-core/testing/*',
   ],
   message: 'core の部品は `@ishibashi0112/spreadsheet-grid-core/internal/<dir>/<module>` から import します(旧サブパスは非推奨)。',
 }

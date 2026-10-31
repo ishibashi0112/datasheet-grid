@@ -15,7 +15,7 @@
 //                                                   決めた形以外で参照したとき(下の checkCoreImportPaths)も 1
 //           node scripts/measure-size.mjs --update  上限を「今の値 + 余裕」に書き直す(機能を足して大きくなったとき)
 //           node scripts/measure-size.mjs --update=lite,standard   指定した構成の上限だけ書き直す(カンマ区切りで
-//                                                   複数可。full は 112.3KB で固定しているので書き換えない)
+//                                                   複数可。full の上限はユーザーが決める(今は 112.6KB)ので、ふだんは書き換えない)
 //   どのディレクトリから実行しても同じ結果になります(esbuild の作業ディレクトリをリポジトリ直下に固定)。
 import { build } from 'esbuild';
 import { readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
@@ -70,7 +70,8 @@ const coreDistPlugin = {
   setup(pluginBuild) {
     pluginBuild.onResolve({ filter: /^@ishibashi0112\/spreadsheet-grid-core(\/.*)?$/ }, (resolveArgs) => {
       const subpath = resolveArgs.path.slice(CORE_PACKAGE.length).replace(/^\/internal(?=\/)/, '');
-      return { path: `${ROOT}packages/core/dist${subpath === '' ? '/index' : subpath}.js` };
+      const file = subpath === '' ? '/index' : subpath === '/testing' ? '/testing/index' : subpath;
+      return { path: `${ROOT}packages/core/dist${file}.js` };
     });
   },
 };
