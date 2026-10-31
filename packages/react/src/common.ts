@@ -3,7 +3,7 @@
 //   2 つの入口は別のビルド(vite.lite.config.ts)なので、preloadGridPopups はそれぞれの入口のグリッドの部品だけを
 //   読み込みます。
 // 値フォーマッタ(UI 表示のみ)の組み込みファクタ。利用側も CellValueFormatter で自作可。
-export { numberFormatter } from '@ishibashi0112/spreadsheet-grid-core/logic/valueFormatters';
+export { numberFormatter } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/valueFormatters';
 // 追加(lazy-popups): 列フィルターポップオーバー / ツールパネルの部品(別チャンク)を先に読み込みます
 //   (通常は不要。テストで開いた直後に同期で確かめるとき / 画面遷移前の先読み用)。
 export { preloadGridPopups } from './view/lazyPopups';
@@ -203,4 +203,4 @@ export type {
   ScrollHintTrigger,
   ScrollHintRenderArgs,
 } from './model/gridTypes';
-export type { NumberFormatterOptions } from '@ishibashi0112/spreadsheet-grid-core/logic/valueFormatters';
+export type { NumberFormatterOptions } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/valueFormatters';

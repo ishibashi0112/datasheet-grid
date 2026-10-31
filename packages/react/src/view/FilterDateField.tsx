@@ -15,8 +15,8 @@ import {
   type PointerEvent,
   type RefObject,
 } from 'react';
-import { cx } from '@ishibashi0112/spreadsheet-grid-core/logic/cx';
-import { toDateKey } from '@ishibashi0112/spreadsheet-grid-core/logic/filtering';
+import { cx } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/cx';
+import { toDateKey } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/filtering';
 import {
   CALENDAR_DOW_LABELS,
   CALENDAR_MONTH_LABELS,
@@ -25,7 +25,7 @@ import {
   formatCalendarTitle,
   formatFilterDateDisplay,
   yearGridStart,
-} from '@ishibashi0112/spreadsheet-grid-core/logic/datePickerCalendar';
+} from '@ishibashi0112/spreadsheet-grid-core/internal/logic/datePickerCalendar';
 
 // ドリルアップの表示段です(日 → 月 → 年)。
 type CalendarView = 'days' | 'months' | 'years';

@@ -27,9 +27,9 @@ import { serverSideFeature } from './features/serverSide';
 import { labelRowFeature } from './features/labelRow';
 import { groupingFeature } from './features/grouping';
 import { installJsdomLayoutStubs } from './testing';
-import { resetUnregisteredFeatureWarnings } from '@ishibashi0112/spreadsheet-grid-core/logic/featureWarnings';
-import { ROW_DRAG_HANDLE_COLUMN_KEY } from '@ishibashi0112/spreadsheet-grid-core/logic/rowReorder';
-import { GRID_STATE_VERSION } from '@ishibashi0112/spreadsheet-grid-core/logic/gridState';
+import { resetUnregisteredFeatureWarnings } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/featureWarnings';
+import { ROW_DRAG_HANDLE_COLUMN_KEY } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/rowReorder';
+import { GRID_STATE_VERSION } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/gridState';
 import type { GridColumn, ServerSideDataSource, SpreadsheetGridHandle } from './model/gridTypes';
 
 type Row = { id: number; name: string };

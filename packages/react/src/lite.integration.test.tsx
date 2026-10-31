@@ -10,7 +10,7 @@ import * as lite from './lite';
 import * as full from './index';
 import { fullGridFeatures } from './features/full';
 import { installJsdomLayoutStubs } from './testing';
-import { resetUnregisteredFeatureWarnings } from '@ishibashi0112/spreadsheet-grid-core/logic/featureWarnings';
+import { resetUnregisteredFeatureWarnings } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/featureWarnings';
 import type { GridColumn } from './model/gridTypes';
 
 type Row = { id: number; name: string };

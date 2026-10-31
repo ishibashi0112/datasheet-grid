@@ -7,9 +7,9 @@
 import { describe, expect, it, afterEach } from 'vitest';
 import { Profiler } from 'react';
 import { act, cleanup, render } from '@testing-library/react';
-import { createGridStore, type GridStore } from '@ishibashi0112/spreadsheet-grid-core/model/gridStore';
-import { createInitialGridUiState } from '@ishibashi0112/spreadsheet-grid-core/model/gridReducer';
-import { gridActions } from '@ishibashi0112/spreadsheet-grid-core/model/gridActions';
+import { createGridStore, type GridStore } from '@ishibashi0112/spreadsheet-grid-core/internal/model/gridStore';
+import { createInitialGridUiState } from '@ishibashi0112/spreadsheet-grid-core/internal/model/gridReducer';
+import { gridActions } from '@ishibashi0112/spreadsheet-grid-core/internal/model/gridActions';
 import { useGridStore, useGridViewState } from './useGridStore';
 
 afterEach(() => {

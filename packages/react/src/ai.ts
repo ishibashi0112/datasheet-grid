@@ -20,7 +20,7 @@ export {
   gridAskSystemPrompt,
   readGridAskAnswer,
   removeGridAskItem,
-} from '@ishibashi0112/spreadsheet-grid-core/logic/gridAsk';
+} from '@ishibashi0112/spreadsheet-grid-core/internal/logic/gridAsk';
 export type {
   GridAskAnswer,
   GridAskFilter,
@@ -30,4 +30,4 @@ export type {
   GridAskRequest,
   GridAskResult,
   GridAskSort,
-} from '@ishibashi0112/spreadsheet-grid-core/logic/gridAsk';
+} from '@ishibashi0112/spreadsheet-grid-core/internal/logic/gridAsk';

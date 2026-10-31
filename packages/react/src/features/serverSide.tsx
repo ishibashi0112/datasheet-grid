@@ -8,8 +8,8 @@
 //   機能セットに無い構成では dataSource を外して clientSide として扱い(createSpreadsheetGrid)、代役は件数 0 の
 //   行モデルを返します。
 import { useState, type ReactNode } from 'react';
-import { createSaveStatusController } from '@ishibashi0112/spreadsheet-grid-core/controllers/saveStatusController';
-import { cx } from '@ishibashi0112/spreadsheet-grid-core/logic/cx';
+import { createSaveStatusController } from '@ishibashi0112/spreadsheet-grid-core/internal/controllers/saveStatusController';
+import { cx } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/cx';
 import {
   useServerSideRowModel,
   type ServerSideLoadErrorState,

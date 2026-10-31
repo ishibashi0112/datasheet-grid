@@ -47,6 +47,16 @@ if (compareVersions(next, current) <= 0) {
   console.error(`bump-version: 指定の版 ${next} は現行 ${current} より大きくありません`);
   process.exit(1);
 }
+// 追加(semver / 1.0 の準備): core の旧サブパス(exports の `./*`)は 0.60.0 で非推奨にし、0.61.0 で消すと CHANGELOG と
+//   ドキュメントに書いています。消し忘れたまま 0.61.0 以上を出さないよう、ここで止めます。
+const coreManifest = JSON.parse(readFileSync(packages[0], 'utf8'));
+const hasOldSubpaths = (exportsMap) => typeof exportsMap === 'object' && exportsMap !== null && './*' in exportsMap;
+if (compareVersions(next, '0.61.0') >= 0 && (hasOldSubpaths(coreManifest.exports) || hasOldSubpaths(coreManifest.publishConfig?.exports))) {
+  console.error(
+    'bump-version: core の旧サブパス(exports の `./*`)は 0.61.0 で消す約束です。packages/core/package.json の exports と publishConfig.exports から `./*` を消し、「0.61.0 で消す」と書いたドキュメントとコメント(`git grep -n 0.61.0` で出るもの)を直し、CHANGELOG の「core の破壊的変更」に書いてから版を上げてください。',
+  );
+  process.exit(1);
+}
 
 for (const file of packages) {
   const pkg = JSON.parse(readFileSync(file, 'utf8'));

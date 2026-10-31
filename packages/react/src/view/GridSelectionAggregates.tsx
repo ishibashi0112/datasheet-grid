@@ -1,8 +1,8 @@
 // 追加(選択範囲の集計)/ 変更(差し込み式 段階 2): 既定の下部バー(DefaultGridBottomBar)に出す選択範囲の集計です。
 //   DefaultGridBottomBar から移しただけで中身は同じです(機能 features/selectionAggregates の部品)。
 import type { GridSelectionAggregates as GridSelectionAggregatesValue } from '../model/gridTypes';
-import { cx } from '@ishibashi0112/spreadsheet-grid-core/logic/cx';
-import { formatSelectionAggregateNumber } from '@ishibashi0112/spreadsheet-grid-core/logic/selectionAggregates';
+import { cx } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/cx';
+import { formatSelectionAggregateNumber } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/selectionAggregates';
 
 // 追加(選択範囲の集計): Excel のステータスバーと同じ「平均 / データの個数 / 合計」を並べます。
 //   数値が 1 つも無い(文字だけ)ときは「データの個数」だけ、空のセルだけのときは何も出しません。

@@ -2,7 +2,7 @@
 //   同じ座標系(ペインローカル + leadingWidth / headerHeight / baseOffset)で、静的スタイル(点線 / アニメ)は
 //   styles.css(.ssg-copy-range-overlay)。
 import type { CSSProperties } from 'react';
-import { cx } from '@ishibashi0112/spreadsheet-grid-core/logic/cx';
+import { cx } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/cx';
 import type { GridResolvedSlot } from './model/gridTypes';
 import type { SelectionOverlayRect } from './SelectionOverlay';
 

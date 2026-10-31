@@ -2,8 +2,8 @@
 //   Shift+Enter / ↑ で前、Esc / × で閉じる(閉じたらグリッド本体へフォーカスを戻す)。件数は aria-live で読み上げ。
 //   位置はヘッダー直下の右端(top はヘッダー高 + 6px をインライン)。
 import { useEffect, useRef, type CSSProperties, type KeyboardEvent, type ChangeEvent } from 'react';
-import { cx } from '@ishibashi0112/spreadsheet-grid-core/logic/cx';
-import type { FindSnapshot } from '@ishibashi0112/spreadsheet-grid-core/controllers/findController';
+import { cx } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/cx';
+import type { FindSnapshot } from '@ishibashi0112/spreadsheet-grid-core/internal/controllers/findController';
 import type { GridResolvedSlot } from '../model/gridTypes';
 
 type GridFindBarProps = {

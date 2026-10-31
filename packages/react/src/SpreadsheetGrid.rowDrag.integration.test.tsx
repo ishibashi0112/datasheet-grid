@@ -11,8 +11,8 @@ import { render, cleanup, act, fireEvent } from '@testing-library/react';
 import { createRef, useState } from 'react';
 
 import { SpreadsheetGrid } from './SpreadsheetGrid';
-import { ROW_DRAG_HANDLE_COLUMN_KEY, ROW_DRAG_DISABLED_TOOLTIP } from '@ishibashi0112/spreadsheet-grid-core/logic/rowReorder';
-import { GRID_STATE_VERSION } from '@ishibashi0112/spreadsheet-grid-core/logic/gridState';
+import { ROW_DRAG_HANDLE_COLUMN_KEY, ROW_DRAG_DISABLED_TOOLTIP } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/rowReorder';
+import { GRID_STATE_VERSION } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/gridState';
 import type {
   GridColumn,
   GridState,

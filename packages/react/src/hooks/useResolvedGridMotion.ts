@@ -3,8 +3,8 @@
 //   解決は logic/motion.ts の純関数で、本 hook は useSyncExternalStore で両者を接続するだけです。
 //   SSR では getServerSnapshot により「低減なし」= 'auto' は 'on' で描画し、ハイドレーション後に再解決します。
 import { useSyncExternalStore } from 'react';
-import { reducedMotionStore } from '@ishibashi0112/spreadsheet-grid-core/controllers/reducedMotionStore';
-import { resolveGridMotion, type ResolvedGridMotion } from '@ishibashi0112/spreadsheet-grid-core/logic/motion';
+import { reducedMotionStore } from '@ishibashi0112/spreadsheet-grid-core/internal/controllers/reducedMotionStore';
+import { resolveGridMotion, type ResolvedGridMotion } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/motion';
 import type { GridMotion } from '../model/gridTypes';
 
 export function useResolvedGridMotion(motion: GridMotion): ResolvedGridMotion {

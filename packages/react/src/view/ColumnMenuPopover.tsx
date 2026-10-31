@@ -14,7 +14,7 @@
 //             AG Grid の Reset Columns 相当を実行できるようにします。
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { cx } from '@ishibashi0112/spreadsheet-grid-core/logic/cx';
+import { cx } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/cx';
 import type {
   CSSProperties,
   KeyboardEvent,

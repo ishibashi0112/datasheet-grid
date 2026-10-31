@@ -3,7 +3,7 @@
 //   SpreadsheetGrid は全機能がそろっているので呼ばない)。本番では何もしない hook に差し替わり、利用側のバンドラが
 //   警告の処理と prop の判定表ごと取り除きます(process.env.NODE_ENV の置き換え)。
 import { useEffect } from 'react';
-import { warnUnregisteredFeatureProps } from '@ishibashi0112/spreadsheet-grid-core/logic/featureWarnings';
+import { warnUnregisteredFeatureProps } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/featureWarnings';
 import type { ReactGridFeatures } from '../features/types';
 import type { SpreadsheetGridProps } from '../model/gridTypes';
 

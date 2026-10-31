@@ -8,7 +8,7 @@ import type { GridColumn, RowModel } from '../model/gridTypes';
 
 // yieldToMain をゲート化(テストが flushYields で進める)。
 const pendingYields: Array<() => void> = [];
-vi.mock('@ishibashi0112/spreadsheet-grid-core/utils/scheduler', () => ({
+vi.mock('@ishibashi0112/spreadsheet-grid-core/internal/utils/scheduler', () => ({
   yieldToMain: (): Promise<void> =>
     new Promise<void>((resolve) => {
       pendingYields.push(resolve);
@@ -23,7 +23,7 @@ const flushYields = async () => {
 
 // 計測ロジックはモック: 行の値を集めて finalize で幅表にします。
 const collected: unknown[] = [];
-vi.mock('@ishibashi0112/spreadsheet-grid-core/logic/columnAutosize', () => ({
+vi.mock('@ishibashi0112/spreadsheet-grid-core/internal/logic/columnAutosize', () => ({
   canMeasureAutosize: () => true,
   createColumnWidthAccumulator: (columns: Array<{ key: string }>) => ({
     collect: (row: unknown) => {

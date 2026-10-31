@@ -7,11 +7,11 @@ import {
   createSelectionAggregatesRunner,
   resolveSyncSelectionAggregates,
   selectSelectionAggregatesResult,
-} from '@ishibashi0112/spreadsheet-grid-core/controllers/selectionAggregatesRunner';
+} from '@ishibashi0112/spreadsheet-grid-core/internal/controllers/selectionAggregatesRunner';
 import {
   createSelectionAggregateTargetStabilizer,
   resolveSelectionAggregateTarget,
-} from '@ishibashi0112/spreadsheet-grid-core/logic/selectionAggregates';
+} from '@ishibashi0112/spreadsheet-grid-core/internal/logic/selectionAggregates';
 import { useController } from './useController';
 
 export type UseSelectionAggregatesArgs<T> = {

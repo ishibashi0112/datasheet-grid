@@ -6,10 +6,10 @@ import { useSyncExternalStore, type RefObject } from 'react';
 import {
   createContextMenuController,
   type CellContextMenuLayout,
-} from '@ishibashi0112/spreadsheet-grid-core/controllers/contextMenuController';
+} from '@ishibashi0112/spreadsheet-grid-core/internal/controllers/contextMenuController';
 import { useController } from './useController';
 
-export type { CellContextMenuLayout } from '@ishibashi0112/spreadsheet-grid-core/controllers/contextMenuController';
+export type { CellContextMenuLayout } from '@ishibashi0112/spreadsheet-grid-core/internal/controllers/contextMenuController';
 
 type UseCellContextMenuControllerArgs = {
   gridRootRef: RefObject<HTMLDivElement | null>;

@@ -8,10 +8,10 @@ import type {
   SpreadsheetGridDerivedSummary,
   SpreadsheetGridSelectionStats,
 } from '../model/gridTypes';
-import { toExcelColumnName } from '@ishibashi0112/spreadsheet-grid-core/utils/excelColumnName';
-import { isSyntheticColumnKey } from '@ishibashi0112/spreadsheet-grid-core/logic/detailRow';
+import { toExcelColumnName } from '@ishibashi0112/spreadsheet-grid-core/internal/utils/excelColumnName';
+import { isSyntheticColumnKey } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/detailRow';
 // 追加(12-A): set フィルター対応のフィルター有効判定を共有します。
-import { isActiveColumnFilterValue } from '@ishibashi0112/spreadsheet-grid-core/logic/filtering';
+import { isActiveColumnFilterValue } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/filtering';
 
 // 追加: Grid の slot renderer を解決します。
 export const resolveGridSlot = <T,>(

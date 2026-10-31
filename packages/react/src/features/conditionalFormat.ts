@@ -7,7 +7,7 @@ import {
   resolveChipSpec,
   resolveColorScaleBackground,
   resolveDataBar,
-} from '@ishibashi0112/spreadsheet-grid-core/logic/conditionalFormat';
+} from '@ishibashi0112/spreadsheet-grid-core/internal/logic/conditionalFormat';
 import { GridChip } from '../view/GridChip';
 import type { ReactGridFeatures } from './types';
 

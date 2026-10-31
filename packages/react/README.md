@@ -78,7 +78,7 @@ Everything below ships inside the npm package, so it is available offline (for e
 | What | Where |
 | --- | --- |
 | Full API reference — props, column options, imperative handle (`ref`), recipes (Japanese) | `API_REFERENCE.md` in this package |
-| Per-field docs (shown on hover) | JSDoc in the type definitions. Field docs live in `@ishibashi0112/spreadsheet-grid-core/dist/model/gridTypes.core.d.ts` and match the tables in `API_REFERENCE.md` |
+| Per-field docs (shown on hover) | JSDoc in the type definitions. Field docs live in the core package's file `dist/model/gridTypes.core.d.ts` and match the tables in `API_REFERENCE.md` |
 | Guides with live demos (Japanese), playground, theme builder | [datasheet-grid.vercel.app](https://datasheet-grid.vercel.app) |
 | Design notes, changelog | [GitHub README](https://github.com/ishibashi0112/datasheet-grid#readme) / [CHANGELOG.md](https://github.com/ishibashi0112/datasheet-grid/blob/main/CHANGELOG.md) |
 
@@ -102,7 +102,7 @@ This library is new, so AI coding assistants rarely know its API and tend to gue
 
 ## Versioning
 
-Releases follow semver, and this package and the core always share one version. While on 0.x, breaking changes ship in minor releases and are listed in the [changelog](https://github.com/ishibashi0112/datasheet-grid/blob/main/CHANGELOG.md) under 「挙動の変化」 / 「core の破壊的変更」. The public surface is the entry points above, the CSS files, `API_REFERENCE.md`, and the CSS tokens, classes and attributes listed there. Subpaths of `@ishibashi0112/spreadsheet-grid-core` are internal and may change in any release. Details: [Versioning](https://datasheet-grid.vercel.app/docs/versioning) (Japanese).
+Releases follow semver, and this package and the core always share one version. While on 0.x, breaking changes ship in minor releases and are listed in the [changelog](https://github.com/ishibashi0112/datasheet-grid/blob/main/CHANGELOG.md) under 「挙動の変化」 / 「core の破壊的変更」. The public surface is the entry points above, the CSS files, `API_REFERENCE.md`, and the CSS tokens, classes and attributes listed there. The core's building blocks (`@ishibashi0112/spreadsheet-grid-core/internal/…`, and the deprecated subpaths without `internal/`) are internal and may change in any release (this package depends on the core of exactly the same version). Details: [Versioning](https://datasheet-grid.vercel.app/docs/versioning) (Japanese).
 
 ## License
 
@@ -153,7 +153,7 @@ npm パッケージに同梱されているため、オフライン(`node_module
 | 内容 | 場所 |
 | --- | --- |
 | API リファレンス全体(props / 列定義 / 命令的 API(`ref`)/ レシピ) | 本パッケージ直下の `API_REFERENCE.md` |
-| フィールドごとの説明(ホバーで表示) | 型定義の JSDoc。各フィールドの説明は `@ishibashi0112/spreadsheet-grid-core/dist/model/gridTypes.core.d.ts` にあり、`API_REFERENCE.md` の表と同じ内容 |
+| フィールドごとの説明(ホバーで表示) | 型定義の JSDoc。各フィールドの説明は core のパッケージのファイル `dist/model/gridTypes.core.d.ts` にあり、`API_REFERENCE.md` の表と同じ内容 |
 | ライブデモ付きのガイド / プレイグラウンド / テーマビルダー | [datasheet-grid.vercel.app](https://datasheet-grid.vercel.app) |
 | 設計メモ / 変更履歴 | [GitHub の README](https://github.com/ishibashi0112/datasheet-grid#readme) / [CHANGELOG.md](https://github.com/ishibashi0112/datasheet-grid/blob/main/CHANGELOG.md) |
 
@@ -177,4 +177,4 @@ npm パッケージに同梱されているため、オフライン(`node_module
 
 ### バージョンの方針
 
-版は semver に沿って上げ、このパッケージと core はいつも同じ版で出します。0.x の間は壊す変更も minor で出し、[CHANGELOG](https://github.com/ishibashi0112/datasheet-grid/blob/main/CHANGELOG.md) の「挙動の変化」「core の破壊的変更」に書きます。公開範囲は上の入口、CSS ファイル、`API_REFERENCE.md` と、そこに載せた CSS のトークン・クラス・属性です。`@ishibashi0112/spreadsheet-grid-core` のサブパスは内部の部品で、どの版でも変わることがあります。詳しくは[バージョンと互換性](https://datasheet-grid.vercel.app/docs/versioning)。
+版は semver に沿って上げ、このパッケージと core はいつも同じ版で出します。0.x の間は壊す変更も minor で出し、[CHANGELOG](https://github.com/ishibashi0112/datasheet-grid/blob/main/CHANGELOG.md) の「挙動の変化」「core の破壊的変更」に書きます。公開範囲は上の入口、CSS ファイル、`API_REFERENCE.md` と、そこに載せた CSS のトークン・クラス・属性です。core の部品(`@ishibashi0112/spreadsheet-grid-core/internal/…` と、非推奨の `internal/` の無いサブパス)は内部で、どの版でも変わることがあります(このパッケージは同じ版の core に固定で依存します)。詳しくは[バージョンと互換性](https://datasheet-grid.vercel.app/docs/versioning)。

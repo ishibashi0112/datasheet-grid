@@ -84,7 +84,7 @@ importers:
   packages/react:
     dependencies:
       '@ishibashi0112/spreadsheet-grid-core':
-        specifier: workspace:^
+        specifier: workspace:*
         version: link:../core
       '@tanstack/virtual-core':
         specifier: ^3.17.0

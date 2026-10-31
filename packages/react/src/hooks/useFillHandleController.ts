@@ -5,7 +5,7 @@ import { useSyncExternalStore } from 'react';
 import {
   createFillHandleController,
   type FillHandleControllerArgs,
-} from '@ishibashi0112/spreadsheet-grid-core/controllers/fillHandleController';
+} from '@ishibashi0112/spreadsheet-grid-core/internal/controllers/fillHandleController';
 import { useController } from './useController';
 
 export const useFillHandleController = <T,>(args: FillHandleControllerArgs<T>) => {

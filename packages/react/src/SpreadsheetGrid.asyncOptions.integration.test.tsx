@@ -7,7 +7,7 @@ import { render, cleanup, act, screen, fireEvent, waitFor } from '@testing-libra
 import { createRef } from 'react';
 
 import { SpreadsheetGrid } from './SpreadsheetGrid';
-import { GRID_STATE_VERSION } from '@ishibashi0112/spreadsheet-grid-core/logic/gridState';
+import { GRID_STATE_VERSION } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/gridState';
 import type {
   GetFilterOptionsParams,
   GridColumn,

@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { selectGlobalFilter } from '@ishibashi0112/spreadsheet-grid-core/model/gridSelectors';
+import { selectGlobalFilter } from '@ishibashi0112/spreadsheet-grid-core/internal/model/gridSelectors';
 import type {
   GlobalFilterStatus,
   GridColumn,

@@ -5,7 +5,7 @@
 //   中断します(window リスナの後始末)。
 import { useCallback, useEffect, useState } from 'react';
 import type { PointerEvent as ReactPointerEvent } from 'react';
-import { createPanelHeaderDragController } from '@ishibashi0112/spreadsheet-grid-core/controllers/panelHeaderDragController';
+import { createPanelHeaderDragController } from '@ishibashi0112/spreadsheet-grid-core/internal/controllers/panelHeaderDragController';
 
 type UsePanelHeaderDragArgs = {
   layout: { top: number; left: number } | null;

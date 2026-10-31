@@ -19,11 +19,11 @@ semver の対象は次のものです。
 
 - **React 版**: 入口(`@ishibashi0112/spreadsheet-grid` / `/lite` / `/ai` / `/testing`)から import できるもの、CSS ファイル(`style.css` / `style.layer.css` / `themes/*.css`)、[API リファレンス](/docs/api/props)に書いた props・列定義・命令的 API・型とその意味。
 - **CSS**: トークン(`--ssg-*`)と、API リファレンスの[スタイリング用の状態クラス(公開契約)](/docs/api/props#スタイリング用の状態クラス公開契約)に載せたクラスと属性。
-- **core**: 入口 `@ishibashi0112/spreadsheet-grid-core` と `/testing` から import できるもの。
+- **core**: 入口 `@ishibashi0112/spreadsheet-grid-core` と `/testing` から import できるもの。React 版は同じ版の core に依存するので、core も直接使うときは React 版と同じ版にそろえてください(違う版だと core が 2 つ入ります)。
 
 次のものは内部の実装で、どの版でも変わることがあります。
 
-- core のサブパス(`@ishibashi0112/spreadsheet-grid-core/<dir>/<module>`)。React 版が使う部品で、1.0 の前に、保証しないことが名前で分かる場所へ移す予定です。
+- core の部品(`@ishibashi0112/spreadsheet-grid-core/internal/<dir>/<module>`)。React 版が使う部品で、React 版は同じ版の core に固定で依存します。`internal/` の無い旧サブパス(`@ishibashi0112/spreadsheet-grid-core/<dir>/<module>`)は 0.60.0 から非推奨で、0.61.0 で消します。
 - 表に載っていない `ssg-*` クラス、DOM の入れ子の形、グリッドが付けるインライン style。
 
 ## 壊す変更

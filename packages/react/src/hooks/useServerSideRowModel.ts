@@ -9,14 +9,14 @@ import {
   type ServerSideLoadErrorState,
   type ServerSideRowModelArgs,
   type ServerSideWriteErrorState,
-} from '@ishibashi0112/spreadsheet-grid-core/controllers/serverSideRowModel';
-import type { ServerSideCellEditInput } from '@ishibashi0112/spreadsheet-grid-core/logic/serverSideEdits';
+} from '@ishibashi0112/spreadsheet-grid-core/internal/controllers/serverSideRowModel';
+import type { ServerSideCellEditInput } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/serverSideEdits';
 import { useController } from './useController';
 
 export type {
   ServerSideLoadErrorState,
   ServerSideWriteErrorState,
-} from '@ishibashi0112/spreadsheet-grid-core/controllers/serverSideRowModel';
+} from '@ishibashi0112/spreadsheet-grid-core/internal/controllers/serverSideRowModel';
 
 export type UseServerSideRowModelParams<T> = ServerSideRowModelArgs<T>;
 

@@ -6,7 +6,7 @@ import { useMemo } from 'react';
 import {
   createHistoryController,
   type HistoryControllerArgs,
-} from '@ishibashi0112/spreadsheet-grid-core/controllers/historyController';
+} from '@ishibashi0112/spreadsheet-grid-core/internal/controllers/historyController';
 import { useController } from './useController';
 
 export const useGridHistoryController = <T,>(args: HistoryControllerArgs<T>) => {

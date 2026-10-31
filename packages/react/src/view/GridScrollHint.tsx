@@ -15,18 +15,18 @@ import type {
   ReactNode,
   RefObject,
 } from 'react';
-import { cx } from '@ishibashi0112/spreadsheet-grid-core/logic/cx';
+import { cx } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/cx';
 import type { RowModel } from '../model/gridTypes';
-import type { RowMetrics } from '@ishibashi0112/spreadsheet-grid-core/logic/verticalGeometry';
-import { resolveDataRowNumber } from '@ishibashi0112/spreadsheet-grid-core/logic/labelRows';
-import { physicalToLogicalScrollTop } from '@ishibashi0112/spreadsheet-grid-core/logic/verticalGeometry';
+import type { RowMetrics } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/verticalGeometry';
+import { resolveDataRowNumber } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/labelRows';
+import { physicalToLogicalScrollTop } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/verticalGeometry';
 import {
   computeScrollHintRulerTicks,
   computeScrollHintTrack,
   computeScrollHintTrackPointerScrollTop,
   resolveScrollHintDetail,
-} from '@ishibashi0112/spreadsheet-grid-core/logic/scrollHint';
-import type { ResolvedScrollHintOptions } from '@ishibashi0112/spreadsheet-grid-core/logic/scrollHint';
+} from '@ishibashi0112/spreadsheet-grid-core/internal/logic/scrollHint';
+import type { ResolvedScrollHintOptions } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/scrollHint';
 import type { GridResolvedSlot } from '../model/gridTypes';
 import type { ReactGridTypes } from '../model/gridTypes';
 

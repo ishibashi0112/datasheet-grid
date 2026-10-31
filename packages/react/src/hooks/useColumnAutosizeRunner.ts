@@ -5,7 +5,7 @@ import { useSyncExternalStore } from 'react';
 import {
   createColumnAutosizeRunner,
   type ColumnAutosizeRunnerArgs,
-} from '@ishibashi0112/spreadsheet-grid-core/controllers/columnAutosizeRunner';
+} from '@ishibashi0112/spreadsheet-grid-core/internal/controllers/columnAutosizeRunner';
 import { useController } from './useController';
 
 export const useColumnAutosizeRunner = <T,>(args: ColumnAutosizeRunnerArgs<T>) => {

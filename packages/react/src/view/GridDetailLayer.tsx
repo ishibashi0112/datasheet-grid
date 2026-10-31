@@ -1,7 +1,7 @@
 import { memo, type CSSProperties, type ReactNode, type SyntheticEvent } from 'react';
-import type { VerticalRow } from '@ishibashi0112/spreadsheet-grid-core/logic/verticalGeometry';
-import { cx } from '@ishibashi0112/spreadsheet-grid-core/logic/cx';
-import { mergeStyles } from '@ishibashi0112/spreadsheet-grid-core/logic/slotProps';
+import type { VerticalRow } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/verticalGeometry';
+import { cx } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/cx';
+import { mergeStyles } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/slotProps';
 import type { GridResolvedSlot, GridResolvedSlots } from '../model/gridTypes';
 
 // 展開行(detail)レイヤーです(detail batch 3)。

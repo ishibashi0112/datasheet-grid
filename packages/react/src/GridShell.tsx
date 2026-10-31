@@ -24,9 +24,9 @@ import {
 
 // 追加(UI CSS移行): 基底スタイル(トークン + .ssg-* クラス)を読み込みます(THEME-1 で未レイヤー化)。
 import './styles.css';
-import { cx } from '@ishibashi0112/spreadsheet-grid-core/logic/cx';
-import { mergeStyles, resolveSlotProps } from '@ishibashi0112/spreadsheet-grid-core/logic/slotProps';
-import { resolveGridHeightLayout } from '@ishibashi0112/spreadsheet-grid-core/logic/gridHeight';
+import { cx } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/cx';
+import { mergeStyles, resolveSlotProps } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/slotProps';
+import { resolveGridHeightLayout } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/gridHeight';
 import {
   useResolvedGridSlot,
   useResolvedGridSlots,
@@ -34,17 +34,17 @@ import {
 
 import { useVirtualizerCore } from './hooks/useVirtualizerCore';
 // 追加(本体分解 E-7): グリッドエンジン(リゾルバ / コマンド / 通知 / DOM コントローラ / store の束ね。React 非依存)。
-import { createGridEngine } from '@ishibashi0112/spreadsheet-grid-core/engine/createGridEngine';
+import { createGridEngine } from '@ishibashi0112/spreadsheet-grid-core/internal/engine/createGridEngine';
 import { useControllerLifecycle } from './hooks/useController';
 // 追加(G-2): IME オンのままの直接入力(imeDirectInput)の入力受けの属性名です。
 // 変更(差し込み式 段階 2): 入力してよいセルの判定 / 編集の初期値の決定は機能セット(features.imeDirectInput)から。
-import { IME_INPUT_ATTRIBUTE } from '@ishibashi0112/spreadsheet-grid-core/logic/domGuards';
+import { IME_INPUT_ATTRIBUTE } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/domGuards';
 
-import { gridActions } from '@ishibashi0112/spreadsheet-grid-core/model/gridActions';
+import { gridActions } from '@ishibashi0112/spreadsheet-grid-core/internal/model/gridActions';
 import { useGridStore, useGridViewState } from './hooks/useGridStore';
 import {
   buildSelectionSnapshot,
-} from '@ishibashi0112/spreadsheet-grid-core/model/gridSelectors';
+} from '@ishibashi0112/spreadsheet-grid-core/internal/model/gridSelectors';
 import SelectionOverlay, {
   type SelectionOverlayRect,
 } from './SelectionOverlay';
@@ -68,12 +68,12 @@ import { useGridTooltip } from './hooks/useGridTooltip';
 // 追加(TH-DK-2): theme prop('light' | 'dark' | 'auto')の実効テーマ解決フックです。
 import { useResolvedGridTheme } from './hooks/useResolvedGridTheme';
 import { useResolvedGridMotion } from './hooks/useResolvedGridMotion';
-import { MOTION_OFF_CLASS_NAME } from '@ishibashi0112/spreadsheet-grid-core/logic/motion';
+import { MOTION_OFF_CLASS_NAME } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/motion';
 import {
   resolveSelectionBand,
   resolveSelectionBandSegments,
   resolveSelectionExtents,
-} from '@ishibashi0112/spreadsheet-grid-core/logic/selectionOverlayGeometry';
+} from '@ishibashi0112/spreadsheet-grid-core/internal/logic/selectionOverlayGeometry';
 // 変更(差し込み式 段階 2): ヘッダー D&D 列並べ替えは機能セット(features.columnReorder)から受け取ります(無ければ代役)。
 // 変更(差し込み式 段階 2): 行ドラッグ並び替えは機能セット(features.rowDrag)から受け取ります(無ければ代役)。
 // 変更(差し込み式 段階 5): フィルター(logic/filtering / filterSummary / dateFilterPresets / inferFilterType)を使う処理は
@@ -100,8 +100,8 @@ import {
   getColumnPane,
   type PaneColumnEntry,
   type ColumnPane,
-} from '@ishibashi0112/spreadsheet-grid-core/logic/geometry';
-import { buildClearCellEdits, clearCellsInSelection } from '@ishibashi0112/spreadsheet-grid-core/logic/clearCells';
+} from '@ishibashi0112/spreadsheet-grid-core/internal/logic/geometry';
+import { buildClearCellEdits, clearCellsInSelection } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/clearCells';
 // 追加: データ投入時の列幅自動フィットの発火判定(純関数)です。
 // 追加(13-B2-5): 列リセットの再構成純ロジック(幅 / 固定 / 表示 / 並び順の完全復元)です。
 // 追加(scroll-space 仮想化): 縦ジオメトリのシーム(uniform window + pixel scaling)です。
@@ -111,13 +111,13 @@ import {
   AUTO_HEIGHT_MAX_ROWS,
   // 追加(label-row ③.5): 縦固定の現在セクション判定で物理 scrollTop を論理へ換算します。
   physicalToLogicalScrollTop,
-} from '@ishibashi0112/spreadsheet-grid-core/logic/verticalGeometry';
+} from '@ishibashi0112/spreadsheet-grid-core/internal/logic/verticalGeometry';
 // 追加(detail ③): 展開行(Master/Detail)の純ロジック(トグル列キー / rowKey→view index 解決 / 選択帯分割)です。
 import {
   DEFAULT_DETAIL_ROW_HEIGHT,
   DETAIL_TOGGLE_COLUMN_KEY,
   seedDetailIndexCache,
-} from '@ishibashi0112/spreadsheet-grid-core/logic/detailRow';
+} from '@ishibashi0112/spreadsheet-grid-core/internal/logic/detailRow';
 // 変更(差し込み式 段階 5): ラベル行(見出し / 区切り行)の SSRM ラッパ / 縦スクロール固定の解決 / 部品は機能セット
 //   (features.labelRow)から受け取ります。
 import type { GridBodyLabelRowLayer } from './view/GridBodyLayer';
@@ -126,13 +126,13 @@ import type { GridStickyLabelEntry } from './view/GridStickyLabelLayer';
 import {
   ROW_DRAG_HANDLE_COLUMN_KEY,
   moveArrayItem,
-} from '@ishibashi0112/spreadsheet-grid-core/logic/rowReorder';
+} from '@ishibashi0112/spreadsheet-grid-core/internal/logic/rowReorder';
 // 追加(imperative API #1): CSV エクスポート / スクロール先算出の純ロジックです。
 // 追加(export-scope 再編): 旧 'all' / 'visible' エイリアスの正規化に使います。
 // 追加(行選択): チェックボックス行選択の純ロジックです。
 import {
   getSelectAllState,
-} from '@ishibashi0112/spreadsheet-grid-core/logic/rowSelection';
+} from '@ishibashi0112/spreadsheet-grid-core/internal/logic/rowSelection';
 // 追加(state #1): 列状態 get/apply の純ロジックです(snapshot 組み立て / 外部入力の正規化)。
 // 追加(state #2): onStateChange の発火可否判定(decideStateChangeEmit)も同モジュールから読みます。
 // 追加(state v2): 列メタ(可視 / 順序 / ピン)の抽出 / 適用(extractColumnState / applyColumnState)。
@@ -166,11 +166,11 @@ import type {
   SpreadsheetGridProps,
   // 追加(state #2): onStateChange の lastEmitted 保持 / snapshot 型に使います。
 } from './model/gridTypes';
-import { getCellValue, isViewCellEditable } from '@ishibashi0112/spreadsheet-grid-core/utils/permissions';
-import { writeRowsCell } from '@ishibashi0112/spreadsheet-grid-core/logic/editorValues';
-import { isCheckboxChecked, toggleCheckboxValue } from '@ishibashi0112/spreadsheet-grid-core/logic/checkboxEditor';
+import { getCellValue, isViewCellEditable } from '@ishibashi0112/spreadsheet-grid-core/internal/utils/permissions';
+import { writeRowsCell } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/editorValues';
+import { isCheckboxChecked, toggleCheckboxValue } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/checkboxEditor';
 import { CheckboxCell } from './editors/CheckboxCell';
-import { decideCellWrite } from '@ishibashi0112/spreadsheet-grid-core/logic/validation';
+import { decideCellWrite } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/validation';
 // 変更(lazy-popups): 列フィルターポップオーバーとツールパネル(+ 3 タブ)は別チャンクへ分けて遅延読み込みします
 //   (view/lazyPopups。シェルから部品を静的に import しないこと = 初期チャンクへ戻ってしまう)。
 import type { ToolPanelViews } from './view/lazyPopups';
@@ -188,8 +188,8 @@ import GridHeaderRow, { type GridPaneKind } from './view/GridHeaderRow';
 import {
   EMPTY_TOTAL_ROW_CELLS,
   TOTAL_ROW_DEFAULT_LABEL,
-} from '@ishibashi0112/spreadsheet-grid-core/logic/totalRow';
-import type { AutosizeTotalRowText } from '@ishibashi0112/spreadsheet-grid-core/logic/columnAutosize';
+} from '@ishibashi0112/spreadsheet-grid-core/internal/logic/totalRow';
+import type { AutosizeTotalRowText } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/columnAutosize';
 // 変更(UP-1): フィルター管理 / 列の表示 / 並び替えの独立 3 パネルを統合ツールパネル
 //   (ToolPanel + useToolPanelController)へ集約しました。旧 3 controller
 //   (useColumnChooserController / useSortManagementController / useFilterManagementController)

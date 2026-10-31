@@ -22,8 +22,8 @@ import {
   resolveInitialHighlight,
   typeaheadJump,
   type SelectPopoverPlacement,
-} from '@ishibashi0112/spreadsheet-grid-core/logic/selectEditorState';
-import { cx } from '@ishibashi0112/spreadsheet-grid-core/logic/cx';
+} from '@ishibashi0112/spreadsheet-grid-core/internal/logic/selectEditorState';
+import { cx } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/cx';
 import type { GridResolvedSlot } from '../model/gridTypes';
 
 type SelectCellEditorProps = {

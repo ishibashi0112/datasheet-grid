@@ -3,7 +3,7 @@
 //   中身は今までどおりの部品で、エンジン / シェルがこの表から取り出して元の位置で使います。機能セットに無い構成では
 //   highlightChanges=false / showCopyRange=false / hoverHighlight='row' として扱います(createSpreadsheetGrid)。
 //   基本のモーション(motion トークン / 滑るアクティブセル / animateRows / 行のフェードイン等)はシェル側に残ります。
-import { createChangeHighlightController } from '@ishibashi0112/spreadsheet-grid-core/controllers/changeHighlightController';
+import { createChangeHighlightController } from '@ishibashi0112/spreadsheet-grid-core/internal/controllers/changeHighlightController';
 import { CopyRangeOverlay } from '../CopyRangeOverlay';
 import { ColumnHoverOverlay } from '../ColumnHoverOverlay';
 import type { ReactGridFeatures } from './types';

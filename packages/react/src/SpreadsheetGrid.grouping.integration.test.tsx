@@ -9,7 +9,7 @@ import { render, cleanup, act, fireEvent } from '@testing-library/react';
 import { createRef } from 'react';
 
 import { SpreadsheetGrid } from './SpreadsheetGrid';
-import { GROUP_AUTO_COLUMN_KEY } from '@ishibashi0112/spreadsheet-grid-core/logic/grouping';
+import { GROUP_AUTO_COLUMN_KEY } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/grouping';
 import type {
   GridColumn,
   ServerSideDataSource,

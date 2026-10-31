@@ -14,12 +14,12 @@ import { render, screen, fireEvent, cleanup } from '@testing-library/react';
 import { createRef } from 'react';
 
 import { ColumnFilterPopover } from './ColumnFilterPopover';
-import type { NumberFilterConditionDraft } from '@ishibashi0112/spreadsheet-grid-core/logic/numberFilterCondition';
-import type { TextFilterConditionDraft } from '@ishibashi0112/spreadsheet-grid-core/logic/textFilterCondition';
+import type { NumberFilterConditionDraft } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/numberFilterCondition';
+import type { TextFilterConditionDraft } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/textFilterCondition';
 import {
   DEFAULT_DATE_FILTER_DRAFT,
   type DateFilterConditionDraft,
-} from '@ishibashi0112/spreadsheet-grid-core/logic/dateFilterCondition';
+} from '@ishibashi0112/spreadsheet-grid-core/internal/logic/dateFilterCondition';
 
 afterEach(() => {
   cleanup();

@@ -5,7 +5,7 @@ import { useEffect, useRef } from 'react';
 import {
   acquireTooltipController,
   type TooltipController,
-} from '@ishibashi0112/spreadsheet-grid-core/controllers/tooltipController';
+} from '@ishibashi0112/spreadsheet-grid-core/internal/controllers/tooltipController';
 import type { GridResolvedSlot } from '../model/gridTypes';
 
 export function useGridTooltip(slot?: GridResolvedSlot) {

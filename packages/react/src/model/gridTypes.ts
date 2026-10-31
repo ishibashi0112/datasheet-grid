@@ -5,10 +5,10 @@
 //   エイリアス、それ以外は core からの再エクスポート)。将来の Solid 版は同じ core に別の束ね型を
 //   渡した束縛ファイルを持ちます。
 import type { CSSProperties, ReactNode, Ref } from 'react';
-import type * as Core from '@ishibashi0112/spreadsheet-grid-core/model/gridTypes.core';
+import type * as Core from '@ishibashi0112/spreadsheet-grid-core/internal/model/gridTypes.core';
 
 // F に依存しない型はそのまま再エクスポートします(下の同名ローカル宣言が優先されます)。
-export type * from '@ishibashi0112/spreadsheet-grid-core/model/gridTypes.core';
+export type * from '@ishibashi0112/spreadsheet-grid-core/internal/model/gridTypes.core';
 
 // React の束ね型です(GridFrameworkTypes の React 版)。
 export type ReactGridTypes = { node: ReactNode; style: CSSProperties };

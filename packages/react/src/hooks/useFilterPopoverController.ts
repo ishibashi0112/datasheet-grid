@@ -7,10 +7,10 @@ import {
   createFilterPopoverController,
   resolveOpenedFilterColumn,
   type FilterPopoverLayout,
-} from '@ishibashi0112/spreadsheet-grid-core/controllers/filterPopoverController';
+} from '@ishibashi0112/spreadsheet-grid-core/internal/controllers/filterPopoverController';
 import { useController } from './useController';
 
-export type { FilterPopoverLayout } from '@ishibashi0112/spreadsheet-grid-core/controllers/filterPopoverController';
+export type { FilterPopoverLayout } from '@ishibashi0112/spreadsheet-grid-core/internal/controllers/filterPopoverController';
 
 type UseFilterPopoverControllerArgs<T> = {
   visibleColumns: GridColumn<T>[];

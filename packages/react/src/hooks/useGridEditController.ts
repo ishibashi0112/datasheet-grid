@@ -5,7 +5,7 @@
 import {
   createEditController,
   type EditControllerArgs,
-} from '@ishibashi0112/spreadsheet-grid-core/controllers/editController';
+} from '@ishibashi0112/spreadsheet-grid-core/internal/controllers/editController';
 import { useController } from './useController';
 
 export const useGridEditController = <T extends object>(

@@ -14,8 +14,14 @@
 
 ### 変更
 
-- バージョンの方針(semver)と公開範囲を README とドキュメント([バージョンと互換性](https://datasheet-grid.vercel.app/docs/versioning))に書きました。0.x の間は壊す変更も minor で出し、この変更履歴の「挙動の変化」「core の破壊的変更」に書きます。1.0 からは壊す変更は major でだけ出し、消すものはその前の minor で非推奨にします。core のサブパス(`@ishibashi0112/spreadsheet-grid-core/<dir>/<module>`)は React 版が使う内部の部品で、semver の対象外です(1.0 の前に内部と分かる場所へ移す予定)。
+- バージョンの方針(semver)と公開範囲を README とドキュメント([バージョンと互換性](https://datasheet-grid.vercel.app/docs/versioning))に書きました。0.x の間は壊す変更も minor で出し、この変更履歴の「挙動の変化」「core の破壊的変更」に書きます。1.0 からは壊す変更は major でだけ出し、消すものはその前の minor で非推奨にします。core の部品(`@ishibashi0112/spreadsheet-grid-core/internal/<dir>/<module>`)は React 版が使う内部の部品で、semver の対象外です。
 - CSS の公開範囲を API リファレンスの「スタイリング用の状態クラス(公開契約)」と、新しい節「CSS トークン(`--ssg-*`)(公開契約)」にまとめました。これまでガイドや API リファレンスの各所で案内していたクラスと属性(`.ssg-find-mark` / `.ssg-row-drag-handle` / `.ssg-ask` / `[data-ssg-save]` など)と、`style.css` のトークン 120 個がすべて載っています。表に無い `ssg-*` クラスと DOM の形は内部です。クラスやトークンの名前と付き方は変えていません。
+- React 版の core への依存を、同じ版の固定にしました(`^X.Y.Z` → `X.Y.Z`)。React 版は core の内部の部品を使うので、版がずれると壊れることがあるためです。両パッケージは今までどおり同じ版で出します。core も直接使っている場合は、React 版と同じ版にそろえてください(違う版だと core が 2 つ入ります)。
+- core の部品を `@ishibashi0112/spreadsheet-grid-core/internal/<dir>/<module>` からも import できるようにし、React 版はこちらを使うようにしました。中身は同じです。こちらも内部の部品で semver の対象外です(旧サブパスの代わりには入口を使ってください。下の「非推奨」)。
+
+### 非推奨
+
+- core の旧サブパス `@ishibashi0112/spreadsheet-grid-core/<dir>/<module>`(`internal/` の無いもの)。0.61.0 で消す予定です。React 版だけを使っている場合は関係ありません(React 版の上に作ったライブラリの型(d.ts)を公開している場合は、0.60.0 以降で作り直してください。0.59.0 までで作った d.ts には、型の推論で旧サブパスが書かれていることがあります)。core を直接使っている場合は入口 `@ishibashi0112/spreadsheet-grid-core` から import してください。入口に無いものが要る場合は `…-core/internal/<dir>/<module>` で動きますが、こちらも内部の部品でどの版でも変わるため、使いたいものを issue で知らせてもらえれば入口に足すことを検討します。
 
 ## 0.59.0 — 2026-10-29
 

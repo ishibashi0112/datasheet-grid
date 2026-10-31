@@ -8,11 +8,11 @@ import {
   type ReactNode,
 } from 'react';
 // 追加(UI CSS移行): className 合成ヘルパー。
-import { cx } from '@ishibashi0112/spreadsheet-grid-core/logic/cx';
+import { cx } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/cx';
 // 変更(11-A): uiState 丸ごと依存を撤廃し、正規化済み SelectionSnapshot を受け取ります。
 // 変更理由: GridBodyRow と同じく、uiState のあらゆる更新で props が変わるのを防ぎ、
 //           将来ヘッダー行を memo 化する際の布石にもなります。
-import type { SelectionSnapshot } from '@ishibashi0112/spreadsheet-grid-core/model/gridSelectors';
+import type { SelectionSnapshot } from '@ishibashi0112/spreadsheet-grid-core/internal/model/gridSelectors';
 import type {
   ColumnFilterValue,
   GridColumn,
@@ -24,13 +24,13 @@ import type {
 import { RowSelectionCheckbox } from './RowSelectionCheckbox';
 // 変更(10-C): 列座標を ColumnMeasurement(グローバル) から
 //             PaneColumnEntry(ペインローカル) へ切り替えます。
-import type { PaneColumnEntry } from '@ishibashi0112/spreadsheet-grid-core/logic/geometry';
+import type { PaneColumnEntry } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/geometry';
 // 追加(12-A): set フィルター対応のフィルター有効判定を共有します。
-import { isActiveColumnFilterValue } from '@ishibashi0112/spreadsheet-grid-core/logic/filtering';
+import { isActiveColumnFilterValue } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/filtering';
 // 追加(grouping ③): 自動グループ列の判定キーです(列メニュー / DnD の対象外化)。
 // 変更(detail ③): 自動グループ列 / 展開行トグル列の合成列判定を共通化しました。
-import { DETAIL_TOGGLE_COLUMN_KEY, isSyntheticColumnKey } from '@ishibashi0112/spreadsheet-grid-core/logic/detailRow';
-import { ROW_DRAG_HANDLE_COLUMN_KEY } from '@ishibashi0112/spreadsheet-grid-core/logic/rowReorder';
+import { DETAIL_TOGGLE_COLUMN_KEY, isSyntheticColumnKey } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/detailRow';
+import { ROW_DRAG_HANDLE_COLUMN_KEY } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/rowReorder';
 import type { GridResolvedSlots } from '../model/gridTypes';
 
 // 追加(10-C): このヘッダーがどのペインを描画しているかの種別です。

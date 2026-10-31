@@ -22,7 +22,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 const { pendingYields } = vi.hoisted(() => ({
   pendingYields: [] as Array<() => void>,
 }));
-vi.mock('@ishibashi0112/spreadsheet-grid-core/utils/scheduler', () => ({
+vi.mock('@ishibashi0112/spreadsheet-grid-core/internal/utils/scheduler', () => ({
   yieldToMain: (): Promise<void> =>
     new Promise<void>((resolve) => {
       pendingYields.push(resolve);
@@ -38,7 +38,7 @@ import {
   createSourceOrder,
   filterOrderByGlobalText,
   type RowOrder,
-} from '@ishibashi0112/spreadsheet-grid-core/logic/filtering';
+} from '@ishibashi0112/spreadsheet-grid-core/internal/logic/filtering';
 import type { GridColumn } from '../model/gridTypes';
 
 // inner loop の budget(10ms)に対し now() 1 回あたり STEP ms 進めます。10/STEP ≒ rows/chunk。

@@ -7,13 +7,13 @@ import type { CellCoord } from '../model/gridTypes';
 import {
   createPointerInteractionsController,
   type PointerInteractionsArgs,
-} from '@ishibashi0112/spreadsheet-grid-core/controllers/pointerInteractionsController';
+} from '@ishibashi0112/spreadsheet-grid-core/internal/controllers/pointerInteractionsController';
 import { useController } from './useController';
 
 export {
   TOUCH_DOUBLE_TAP_MS,
   TOUCH_TAP_SLOP_PX,
-} from '@ishibashi0112/spreadsheet-grid-core/controllers/pointerInteractionsController';
+} from '@ishibashi0112/spreadsheet-grid-core/internal/controllers/pointerInteractionsController';
 
 type UseGridPointerInteractionsArgs<T> = Omit<
   PointerInteractionsArgs<T>,

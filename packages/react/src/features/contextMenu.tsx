@@ -9,8 +9,8 @@ import {
   resolveContextMenuColIndex,
   isContextMenuCellSelected,
   isContextMenuRowSelected,
-} from '@ishibashi0112/spreadsheet-grid-core/logic/contextMenuTarget';
-import { getCellValue } from '@ishibashi0112/spreadsheet-grid-core/utils/permissions';
+} from '@ishibashi0112/spreadsheet-grid-core/internal/logic/contextMenuTarget';
+import { getCellValue } from '@ishibashi0112/spreadsheet-grid-core/internal/utils/permissions';
 import type { GridContextMenuItem, GridContextMenuParams, GridContextMenuTarget } from '../model/gridTypes';
 import type { BodyContextMenuInput, CellContextMenuFeatureArgs, CellContextMenuFeatureResult, ReactGridFeatures } from './types';
 

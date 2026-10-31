@@ -10,8 +10,8 @@
 //   prefers-color-scheme が一致しないことがあります。その場合は利用側のカラースキーム
 //   フックの解決値を 'light' | 'dark' で渡してください(gridTypes.ts の GridTheme 参照)。
 import { useSyncExternalStore } from 'react';
-import { systemColorSchemeStore } from '@ishibashi0112/spreadsheet-grid-core/controllers/systemColorSchemeStore';
-import { resolveGridTheme, type ResolvedGridTheme } from '@ishibashi0112/spreadsheet-grid-core/logic/theme';
+import { systemColorSchemeStore } from '@ishibashi0112/spreadsheet-grid-core/internal/controllers/systemColorSchemeStore';
+import { resolveGridTheme, type ResolvedGridTheme } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/theme';
 import type { GridTheme } from '../model/gridTypes';
 
 export function useResolvedGridTheme(theme: GridTheme): ResolvedGridTheme {

@@ -5,7 +5,7 @@ import { useCallback, type KeyboardEvent } from 'react';
 import {
   createKeyboardController,
   type KeyboardControllerArgs,
-} from '@ishibashi0112/spreadsheet-grid-core/controllers/keyboardController';
+} from '@ishibashi0112/spreadsheet-grid-core/internal/controllers/keyboardController';
 import { useController } from './useController';
 
 export const useGridKeyboardInteractions = <T,>(

@@ -9,7 +9,7 @@ import {
   resolveLabelRowLayout,
   resolveStickyLabel,
   wrapRowModelWithLabelRows,
-} from '@ishibashi0112/spreadsheet-grid-core/logic/labelRows';
+} from '@ishibashi0112/spreadsheet-grid-core/internal/logic/labelRows';
 import { GridBodyLabelRow } from '../view/GridBodyLabelRow';
 import { GridStickyLabelLayer } from '../view/GridStickyLabelLayer';
 import type { ReactGridFeatures } from './types';

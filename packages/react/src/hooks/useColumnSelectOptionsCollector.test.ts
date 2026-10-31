@@ -20,7 +20,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 const { pendingYields } = vi.hoisted(() => ({
   pendingYields: [] as Array<() => void>,
 }));
-vi.mock('@ishibashi0112/spreadsheet-grid-core/utils/scheduler', () => ({
+vi.mock('@ishibashi0112/spreadsheet-grid-core/internal/utils/scheduler', () => ({
   yieldToMain: (): Promise<void> =>
     new Promise<void>((resolve) => {
       pendingYields.push(resolve);
@@ -32,7 +32,7 @@ import {
   useColumnSelectOptionsCollector,
   ASYNC_SELECT_COLLECT_ROW_THRESHOLD,
 } from './useColumnSelectOptionsCollector';
-import { collectSelectOptions } from '@ishibashi0112/spreadsheet-grid-core/logic/selectOptions';
+import { collectSelectOptions } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/selectOptions';
 import type { GridColumn, GridSelectFilterOption } from '../model/gridTypes';
 
 // inner loop の budget(10ms)に対し now() 1 回あたり STEP ms 進めます。10/STEP ≒ rows/chunk。

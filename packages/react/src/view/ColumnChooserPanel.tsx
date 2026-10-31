@@ -38,10 +38,10 @@
 //   アンマウントされるため isOpen prop は不要になり、検索語のリセットは初期 state、開時
 //   フォーカスはマウント effect、DnD の後始末は unmount(state 破棄 + rAF cleanup)で足ります。
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { cx } from '@ishibashi0112/spreadsheet-grid-core/logic/cx';
+import { cx } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/cx';
 import type { PointerEvent } from 'react';
 // 追加(13-B3-1.5): セクション分けの所属ペイン種別です(pinned 由来)。
-import type { ColumnPane } from '@ishibashi0112/spreadsheet-grid-core/logic/geometry';
+import type { ColumnPane } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/geometry';
 
 // 追加(13-B2-1): パネルが必要とする最小の列情報です。
 // 変更(13-B3-1.5): 所属ペイン(pinned 由来。left / center / right)を追加します。
