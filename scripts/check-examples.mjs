@@ -59,7 +59,7 @@ try {
       const pkg = JSON.parse(readFileSync(pkgPath, 'utf8'));
       pkg.dependencies[REACT_PACKAGE] = `file:${reactTarball}`;
       pkg.dependencies[CORE_PACKAGE] = `file:${coreTarball}`;
-      // react が依存する core(^X.Y.Z。まだ公開前の版のことがある)も tarball にそろえる
+      // react が依存する core(同じ版 X.Y.Z。まだ公開前の版のことがある)も tarball にそろえる
       pkg.overrides = { [CORE_PACKAGE]: `$${CORE_PACKAGE}` };
       writeFileSync(pkgPath, JSON.stringify(pkg, null, 2));
       try {

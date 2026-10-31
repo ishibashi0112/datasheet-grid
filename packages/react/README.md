@@ -102,7 +102,7 @@ This library is new, so AI coding assistants rarely know its API and tend to gue
 
 ## Versioning
 
-Releases follow semver, and this package and the core always share one version. While on 0.x, breaking changes ship in minor releases and are listed in the [changelog](https://github.com/ishibashi0112/datasheet-grid/blob/main/CHANGELOG.md) under 「挙動の変化」 / 「core の破壊的変更」. The public surface is the entry points above, the CSS files, `API_REFERENCE.md`, and the CSS tokens, classes and attributes listed there. Subpaths of `@ishibashi0112/spreadsheet-grid-core` are internal and may change in any release (this package depends on the core of exactly the same version). Details: [Versioning](https://datasheet-grid.vercel.app/docs/versioning) (Japanese).
+Releases follow semver, and this package and the core always share one version. While on 0.x, breaking changes ship in minor releases and are listed in the [changelog](https://github.com/ishibashi0112/datasheet-grid/blob/main/CHANGELOG.md) under 「挙動の変化」 / 「core の破壊的変更」. The public surface is the entry points above, the CSS files, `API_REFERENCE.md`, and the CSS tokens, classes and attributes listed there. The core's building blocks (`@ishibashi0112/spreadsheet-grid-core/internal/…`, and the deprecated subpaths without `internal/`) are internal and may change in any release (this package depends on the core of exactly the same version). Details: [Versioning](https://datasheet-grid.vercel.app/docs/versioning) (Japanese).
 
 ## License
 
@@ -177,4 +177,4 @@ npm パッケージに同梱されているため、オフライン(`node_module
 
 ### バージョンの方針
 
-版は semver に沿って上げ、このパッケージと core はいつも同じ版で出します。0.x の間は壊す変更も minor で出し、[CHANGELOG](https://github.com/ishibashi0112/datasheet-grid/blob/main/CHANGELOG.md) の「挙動の変化」「core の破壊的変更」に書きます。公開範囲は上の入口、CSS ファイル、`API_REFERENCE.md` と、そこに載せた CSS のトークン・クラス・属性です。`@ishibashi0112/spreadsheet-grid-core` のサブパスは内部の部品で、どの版でも変わることがあります(このパッケージは同じ版の core に固定で依存します)。詳しくは[バージョンと互換性](https://datasheet-grid.vercel.app/docs/versioning)。
+版は semver に沿って上げ、このパッケージと core はいつも同じ版で出します。0.x の間は壊す変更も minor で出し、[CHANGELOG](https://github.com/ishibashi0112/datasheet-grid/blob/main/CHANGELOG.md) の「挙動の変化」「core の破壊的変更」に書きます。公開範囲は上の入口、CSS ファイル、`API_REFERENCE.md` と、そこに載せた CSS のトークン・クラス・属性です。core の部品(`@ishibashi0112/spreadsheet-grid-core/internal/…` と、非推奨の `internal/` の無いサブパス)は内部で、どの版でも変わることがあります(このパッケージは同じ版の core に固定で依存します)。詳しくは[バージョンと互換性](https://datasheet-grid.vercel.app/docs/versioning)。

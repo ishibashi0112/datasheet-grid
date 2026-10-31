@@ -185,6 +185,6 @@ PASS / 実行した確認の数(SKIP は数に入れない)。
 ### core の部品の移動(2026-10-29。ユーザー判断「移す・旧パスは 1 版残す」)
 
 - core の exports に `./internal/*`(開発時は `./src/*.ts`、publish 時は `publishConfig.exports` で dist の `*.d.ts` / `*.js` / `*.cjs`)を足し、React 版の src の import(118 ファイル)を `@ishibashi0112/spreadsheet-grid-core/internal/<dir>/<module>` へ書き換えた。`/testing` はそのまま。Node はパターンの長いキーを優先するので、`./internal/*` と旧 `./*` は同じ dist のファイルを指す(Node の ESM / CJS と tsc の `moduleResolution` bundler / nodenext で、新旧どちらの書き方も同じモジュールに解決されることを pack した tarball で確認)。
-- 旧 `./*` は非推奨(CHANGELOG の「非推奨」、core の README、ドキュメント `docs/versioning`)で、0.61.0 で exports から消す。import のパスには `@deprecated` も console.warn も付けられないので、書いて知らせるだけ。React 版の dist は旧パスを 1 つも import しない(eslint の `no-restricted-imports` で React 版の src とテストを検査)。
+- 旧 `./*` は非推奨(CHANGELOG の「非推奨」、core の README、ドキュメント `docs/versioning`)で、0.61.0 で exports から消す。import のパスには `@deprecated` も console.warn も付けられないので、書いて知らせるだけ。React 版の dist(js / cjs / d.ts)は旧パスを 1 つも参照しない。src とテストの import は eslint の `no-restricted-imports` で止め、dist は `size:check`(`scripts/measure-size.mjs` の checkCoreImportPaths)が入口 / `/testing` / `/internal/*` 以外の参照を検査する(d.ts の `import("…")` は tsc が書くもので eslint では見られず、どちらのパスを書くかは core の exports のキーの順 = `./internal/*` が `./*` より前、で決まるため。順を入れ替えると 14 ファイルで落ちることを確認)。
 - React 版の core への依存を `workspace:^` → `workspace:*` にした(pnpm が publish 時に同じ版 `X.Y.Z` へ変える。pack した tarball で確認)。
 - JS の大きさは不変(`size:check` の full 112.52KB ほか。`scripts/measure-size.mjs` は `/internal` を外して core の dist を解決する)。examples:check も通る。

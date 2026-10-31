@@ -19,7 +19,7 @@ semver の対象は次のものです。
 
 - **React 版**: 入口(`@ishibashi0112/spreadsheet-grid` / `/lite` / `/ai` / `/testing`)から import できるもの、CSS ファイル(`style.css` / `style.layer.css` / `themes/*.css`)、[API リファレンス](/docs/api/props)に書いた props・列定義・命令的 API・型とその意味。
 - **CSS**: トークン(`--ssg-*`)と、API リファレンスの[スタイリング用の状態クラス(公開契約)](/docs/api/props#スタイリング用の状態クラス公開契約)に載せたクラスと属性。
-- **core**: 入口 `@ishibashi0112/spreadsheet-grid-core` と `/testing` から import できるもの。
+- **core**: 入口 `@ishibashi0112/spreadsheet-grid-core` と `/testing` から import できるもの。React 版は同じ版の core に依存するので、core も直接使うときは React 版と同じ版にそろえてください(違う版だと core が 2 つ入ります)。
 
 次のものは内部の実装で、どの版でも変わることがあります。
 

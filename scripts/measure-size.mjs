@@ -11,7 +11,8 @@
 //   使い方: node scripts/measure-size.mjs           計測して表を出す
 //           node scripts/measure-size.mjs --check   上限を超えた構成があれば終了コード 1(CI)。dist がソースより
 //                                                   古いときも 1(古い dist の値で通してしまわないため)。/lite の dist の
-//                                                   形が崩れたとき(下の checkLiteDistShape)も 1
+//                                                   形が崩れたとき(下の checkLiteDistShape)と、React 版の dist が core を
+//                                                   決めた形以外で参照したとき(下の checkCoreImportPaths)も 1
 //           node scripts/measure-size.mjs --update  上限を「今の値 + 余裕」に書き直す(機能を足して大きくなったとき)
 //           node scripts/measure-size.mjs --update=lite,standard   指定した構成の上限だけ書き直す(カンマ区切りで
 //                                                   複数可。full は 112.3KB で固定しているので書き換えない)
@@ -183,6 +184,33 @@ const checkLiteDistShape = () => {
   return problems;
 };
 
+// 追加(semver / 1.0 の準備): React 版の dist(js / cjs / d.ts)が core を参照する形を確かめ、崩れていれば理由を返します。
+//   使ってよいのは入口(`…-core`)/ `…-core/testing` / `…-core/internal/<dir>/<module>` だけで、旧サブパス
+//   (`…-core/<dir>/<module>`。0.60.0 で非推奨、0.61.0 で exports から消す)が残ると、その版から React 版が壊れます。
+//   src の import は eslint の no-restricted-imports で止めていますが、d.ts の `import("…")` は tsc が書くもので、
+//   どちらのパスを書くかは core の exports のキーの順(`./internal/*` が `./*` より前)で決まるため、ここで dist を見ます。
+const CORE_SPECIFIER = /(["'])@ishibashi0112\/spreadsheet-grid-core((?:\/[^"']*)?)\1/g;
+const checkCoreImportPaths = () => {
+  const problems = new Set();
+  const walk = (dir) => {
+    for (const name of readdirSync(dir)) {
+      const full = `${dir}${name}`;
+      if (statSync(full).isDirectory()) {
+        walk(`${full}/`);
+      } else if (/\.(?:js|cjs|d\.ts)$/.test(name)) {
+        for (const match of readFileSync(full, 'utf8').matchAll(CORE_SPECIFIER)) {
+          const subpath = match[2];
+          if (subpath !== '' && subpath !== '/testing' && !subpath.startsWith('/internal/')) {
+            problems.add(`dist/${full.slice(LITE_DIST.length)} が core を ${match[0]} で参照しています`);
+          }
+        }
+      }
+    }
+  };
+  walk(LITE_DIST);
+  return [...problems];
+};
+
 async function measure(config) {
   const fromDist = config.source === 'dist';
   const result = await build({
@@ -315,6 +343,16 @@ if (args.has('--check')) {
       console.error(`size: ${problem}`);
     }
     console.error('/lite の dist の形は vite.lite.config.ts の先頭のコメントを参照してください。');
+    process.exit(1);
+  }
+  const coreImportProblems = checkCoreImportPaths();
+  if (coreImportProblems.length > 0) {
+    for (const problem of coreImportProblems) {
+      console.error(`size: ${problem}`);
+    }
+    console.error(
+      'React 版の dist は core を入口 / `/testing` / `/internal/*` でだけ参照します。core の exports のキーは `./internal/*` を `./*` より前に置きます(packages/core/package.json)。',
+    );
     process.exit(1);
   }
   const over = rows.filter(({ size, limit }) => limit === undefined || size.initialGzipKB > limit);
