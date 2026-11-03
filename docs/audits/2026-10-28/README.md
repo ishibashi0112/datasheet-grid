@@ -41,7 +41,7 @@ PASS / 実行した確認の数(SKIP は数に入れない)。
 - React 18.3.1 での結果は §7。
 - Chromium の t-fill の「ハンドルを押すと開いているコンテキストメニューを閉じる」が最初の記録のときに 1 回だけ落ち(右クリックのメニューが 120ms 以内に開かなかった)、続けて 2 回回して通った。見直し後の回し直しでは起きていない。
 
-## 3. 所見(ライブラリ側。BR-1・BR-2・BR-5 は対応済み = §8)
+## 3. 所見(ライブラリ側。BR-1・BR-2・BR-5 は対応済み、BR-3・BR-4 はユーザーの判断で様子見 = §8)
 
 | ID | 重さ | ブラウザ | 実機 | 要約 | 場所 |
 | --- | --- | --- | --- | --- | --- |
@@ -140,6 +140,7 @@ PASS / 実行した確認の数(SKIP は数に入れない)。
 - BR-1(対応済み): ResizeObserver のコールバックの中で状態を書かず、次のフレームで書く。`packages/core/src/controllers/scrollSyncController.ts`(見える高さ / 幅を view スライスへ)と `packages/core/src/controllers/autoHeightMeasurer.ts`(auto-height の測り直しの合図 `nonce`)。同じフレームに何度通知が来ても書くのは 1 回、外すとき(detach / dispose)は待っているフレームを取り消す。useSyncExternalStore の購読者は store が変わると同期で描き直すため、コールバックの中で書くと同じフレームでスクロール領域の大きさがまた変わり、ブラウザがループの通知を出していた。virtual-core の観測は描き直しを同期で行わない(useVirtualizerCore の rerender は通常の更新)ので、`useAnimationFrameWithResizeObserver` は変えていない。
 - BR-2(対応済み・見た目が少し変わる): 件数ありのとき、下部バーの右のグループに最小幅 `min(56ch, 100%)` を持たせ(500 行 × 12 列の表を全部選んだ表記が収まる幅。`ch` をチップの文字で測るため font-size を 11.5px に揃える)、`margin-left: auto` と `justify-content: flex-end` で右端に寄せる(`packages/react/src/styles.css` の `.ssg-bar--bottom .ssg-bar-group:not(:first-child)`)。バーの折り返しが選択の表記ではなく窓の幅だけで決まる(表記が最小幅を超える大きな選択を除く)。2 行になる境目は Chromium の文字で約 610px → 約 665px に移る。件数なしは折り返さないので対象外。JS は増えない。ハーネスの `t-aggregates` に境目の前後の幅(680 / 608px)を足した。
 - BR-5(対応済み): 行を下端に合わせるとき(`align: 'end'`、`'auto'` で下へ動くとき、キー操作の `cellBottom > visibleBottom`)は、物理のスクロール位置を `Math.ceil` で切り上げる(`packages/core/src/engine/gridApi.ts` の `applyScroll` に `align` を渡す、`packages/core/src/controllers/viewportSyncController.ts` の `scrollCellIntoView`)。上端に合わせるときはそのまま。縮尺 1 では位置が整数なので何も変わらない。
+- BR-3・BR-4(様子見): Mac の実機での確認をユーザーに頼み、2026-11-03 に「おそらく問題ない」との判断をもらったので、直さずに閉じる。不具合の報告があればそのとき対応する(直し方の案は §3)。ハーネスの WebKitGTK では、最後の記録(下の 2 回目の見直しのあとの回し直し)でも FAIL として出ている(t-priority の 1 件・t-fill の 2 件)。
 - フル版の初期 JS: BR-1 と BR-5 で 112.37KB → 112.47KB、見直しの修正で 112.49KB(上限 112.4KB を超えたため、2026-10-28 にユーザーの判断で上限を 112.5KB へ上げた)、2 回目の見直しの修正で 112.52KB(同日、ユーザーの判断で上限を 112.6KB へ)。
 - 単体テスト: scrollSyncController / autoHeightMeasurer(次のフレームで 1 回だけ書く・取り消し)、gridApi / viewportSyncController(縮尺 2.4 で下端合わせだけ切り上げる)。
 - PR #45 の別視点の確認(2026-10-28)の指摘と対応:
