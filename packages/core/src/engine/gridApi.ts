@@ -587,7 +587,9 @@ export const createGridApi = <T,>(features: Pick<GridCoreFeatures, 'export'> = {
       }
       if (!s.isServerSide) {
         console.warn(
-          '[SpreadsheetGrid] refreshServerSide は clientSide(rows)モードでは何もしません(dataSource 指定時のみ有効です)。',
+          // 変更(1.0 前の最終チェック FC-33): /lite で serverSide の機能が無いと dataSource を渡しても clientSide になるので、
+          //   その場合も分かる文にします。
+          '[SpreadsheetGrid] refreshServerSide は clientSide(rows)モードでは何もしません。dataSource を渡したときだけ有効です(/lite の createSpreadsheetGrid では features に serverSide: serverSideFeature も要ります)。',
         );
         return;
       }
@@ -600,7 +602,9 @@ export const createGridApi = <T,>(features: Pick<GridCoreFeatures, 'export'> = {
       }
       if (!s.isServerSide) {
         console.warn(
-          '[SpreadsheetGrid] retryServerSideLoads は clientSide(rows)モードでは何もしません(dataSource 指定時のみ有効です)。',
+          // 変更(1.0 前の最終チェック FC-33): /lite で serverSide の機能が無いと dataSource を渡しても clientSide になるので、
+          //   その場合も分かる文にします。
+          '[SpreadsheetGrid] retryServerSideLoads は clientSide(rows)モードでは何もしません。dataSource を渡したときだけ有効です(/lite の createSpreadsheetGrid では features に serverSide: serverSideFeature も要ります)。',
         );
         return;
       }
