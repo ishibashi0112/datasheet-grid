@@ -118,6 +118,9 @@ export const createChangeHighlightController = <T,>(): ChangeHighlightController
   let prev: { rows: readonly T[]; rowKeyGetter: (row: T, index: number) => GridRowKey } | null = null;
   const timers = new Map<HTMLElement, ReturnType<typeof setTimeout>>();
   const tweens = new Set<number>();
+  // 追加(FC-14 の見直し): 文字ノードごとに動いている補間の印。セルの値がまた変わったら(補間しない大きな更新でも)消して
+  //   止めます(途中の文字と同じ文字を React が書くと、文字の比較だけでは気づけず古い値で終わっていた)。
+  const tweenTokens = new WeakMap<Text, object>();
 
   const clear = (el: HTMLElement) => {
     el.classList.remove(CHANGED_CLASS_NAME);
@@ -180,9 +183,11 @@ export const createChangeHighlightController = <T,>(): ChangeHighlightController
     //   値が null に変わっても「20」のまま残っていた。
     let written = formatValue(change.column, change.row, from);
     node.nodeValue = written;
+    const token = {};
+    tweenTokens.set(node, token);
     const step = (now: number) => {
       tweens.delete(frameId);
-      if (node.nodeValue !== written) {
+      if (tweenTokens.get(node) !== token || node.nodeValue !== written) {
         return;
       }
       const progress = Math.min(1, (now - start) / durationMs);
@@ -227,6 +232,8 @@ export const createChangeHighlightController = <T,>(): ChangeHighlightController
         container.querySelectorAll<HTMLElement>(selector).forEach((cell) => {
           // 変更(1.0 前の最終チェック FC-15): 展開行の中の入れ子のグリッドのセル(同じ行キー / 列キー)には付けません。
           if (isInsideDetailCardOf(container, cell)) return;
+          const node = textNodeOf(cell);
+          if (node) tweenTokens.delete(node);
           flash(cell);
           if (allowTween && !change.column.renderCell) {
             tween(cell, change, durationMs);

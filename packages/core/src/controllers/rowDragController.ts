@@ -166,7 +166,7 @@ export const createRowDragController = (): RowDragController => {
   let rafId: number | null = null;
   // settle(FLIP)用: commit 直前の各行要素の screen-y。
   // 変更(1.0 前の最終チェック FC-02): 要素ではなく「ペイン + view index」で持ち、確定した移動(from → to)も控えます。
-  let settlePending: { tops: Map<string, number>; from: number; to: number } | null = null;
+  let settlePending: { tops: Map<string, number>; from: number; to: number; row: unknown } | null = null;
   // 追加(FC-12): 掴んだ行の控え(getDragRow の戻り値)。離すときに今の並びで探し直します。
   let draggingRow: unknown = null;
   // 追加(motion-8 / M-11): live 方式のドラッグ開始時の各行要素の translateY(基準)と scrollTop。
@@ -485,6 +485,7 @@ export const createRowDragController = (): RowDragController => {
     //   掴んだ行の今の位置へ直しているので、そのまま使います。
     const from = draggingIndex;
     const slot = dropSlot;
+    const draggedRow = draggingRow;
     setDraggingRowAttribute(from, false);
     draggingIndex = null;
     draggingRow = null;
@@ -533,7 +534,7 @@ export const createRowDragController = (): RowDragController => {
     if (!willCommit || from === null || to === null || args === null) return;
 
     const tops = liveTops ?? (isMotionOff(args.scrollContainerRef.current) ? null : captureRowTops());
-    const pending = tops ? { tops, from, to } : null;
+    const pending = tops ? { tops, from, to, row: draggedRow } : null;
     settlePending = pending;
     args.commitRowMove(from, to);
     // 変更(FC-31): 予約は確定の直後の 1 回だけ有効にします。利用側が並びを反映しない(断る / 非同期で後から反映する)と
@@ -557,6 +558,9 @@ export const createRowDragController = (): RowDragController => {
     if (!container) return;
 
     const { tops, from, to } = pending;
+    // 変更(FC-02 の見直し): 掴んだ行が to に来ていなければ(利用側が並びを反映しなかったのに、同じフレームの再描画で rows の
+    //   参照だけが変わった など)滑らせません。index の対応で引くので、並びが変わっていないと全部の行が誤って滑っていた。
+    if (args?.locateDragRow && pending.row !== null && args.locateDragRow(pending.row, to) !== to) return;
     // 確定後の view index → 確定前の view index(from を to へ動かした並び)。
     const previousIndexOf = (index: number): number => {
       if (index === to) return from;
@@ -698,11 +702,8 @@ export const createRowDragController = (): RowDragController => {
       return;
     }
     const located = args.locateDragRow(draggingRow, draggingIndex);
-    if (located === null) {
-      activeDragDispose?.();
-      endDrag(false);
-      return;
-    }
+    // 変更(FC-12 の見直し): 基準位置の取り直しは取り消しより先にします(先に取り消すと、React が新しい index で書いた
+    //   transform をドラッグ開始時の古い基準位置で上書きし、後ろの行が 1 行ずれたまま残っていた)。
     if (liveBases) {
       liveBases.forEach((base, row) => {
         if (!row.isConnected) {
@@ -720,6 +721,13 @@ export const createRowDragController = (): RowDragController => {
         base.baseY = parseFloat(match[1]);
         base.applied = undefined;
       });
+    }
+    if (located === null) {
+      activeDragDispose?.();
+      endDrag(false);
+      return;
+    }
+    if (liveBases) {
       if (located !== draggingIndex && dragOrigin !== null && previousRowMetrics !== null) {
         dragOrigin = {
           x: dragOrigin.x,

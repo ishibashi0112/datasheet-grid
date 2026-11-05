@@ -129,6 +129,20 @@ describe('createServerSidePendingEdits: 同じ行の書き込みが重なった�
     pending.beginWrite(1, edit(base, nameColumn, 'b'), [{ column: nameColumn, value: 'b' }]);
     expect(pending.settleWrite(1, w1, { ok: true }, base).settledColumnKeys).toEqual(['price']);
   });
+
+  // 追加(FC-05 の見直し): 同じセルの新しい書き込みが先に確定していたら、古い書き込みの失敗でそのセルに印を付けない。
+  it('同じセルの新しい書き込みが先に確定した後、古い書き込みが失敗してもそのセルの印を変えない', () => {
+    const pending = createServerSidePendingEdits<Row>();
+    const w1 = pending.beginWrite(1, edit(base, nameColumn, 'x'), [
+      { column: nameColumn, value: 'x' },
+      { column: priceColumn, value: 1 },
+    ]);
+    const w2 = pending.beginWrite(1, edit(base, nameColumn, 'y'), [{ column: nameColumn, value: 'y' }]);
+    const s2 = pending.settleWrite(1, w2, { ok: true }, base);
+    expect(s2.settledColumnKeys).toEqual(['name']);
+    const s1 = pending.settleWrite(1, w1, { ok: false }, s2.confirmedRow);
+    expect(s1.settledColumnKeys).toEqual(['price']);
+  });
 });
 
 describe('buildServerSideRowUpdates', () => {

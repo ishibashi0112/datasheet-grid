@@ -94,6 +94,22 @@ describe('findController', () => {
     controller.setQuery('12');
     await flush();
     expect(controller.getSnapshot().matches.map((m) => m.colIndex)).toEqual([0]);
+    // renderCell の列は renderCell が中身を描くので、チェックボックス / showValue: false でも従来どおり探す。
+    controller.update({
+      enabled: true,
+      rowModel: {
+        getRow: (i) => flagRows[i],
+        getRowCount: () => flagRows.length,
+        getSourceIndex: (i) => i,
+        getRowKey: (i) => flagRows[i]?.id ?? i,
+      },
+      columns: flagColumns.map((column) => (column.key === 'name' ? column : { ...column, renderCell: () => null })),
+      caseSensitive: false,
+      onNavigate: vi.fn(),
+      onChange: vi.fn(),
+    });
+    await flush();
+    expect(controller.getSnapshot().matches.map((m) => m.colIndex)).toEqual([0, 2]);
     controller.dispose();
   });
 

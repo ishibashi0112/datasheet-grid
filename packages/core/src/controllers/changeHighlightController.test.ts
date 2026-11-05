@@ -7,6 +7,7 @@ import {
   createChangeHighlightController,
   diffChangedCells,
   MAX_CHANGED_ROWS,
+  MAX_TWEEN_CELLS,
   parseCssDuration,
 } from './changeHighlightController';
 import type { GridColumn } from '../model/gridTypes.unbound';
@@ -182,6 +183,36 @@ describe('createChangeHighlightController', () => {
     controller.update({ enabled: true, rows: [{ ...a, qty: 30 }], rowKeyGetter: keyOf, columns, scrollContainerRef: ref });
     while (rafQueue.length > 0) rafQueue.shift()!(t0 + 5000);
     expect(node.nodeValue).toBe('30個');
+    controller.dispose();
+  });
+
+  // 追加(FC-14 の見直し): 途中の文字と同じ文字を React が書いても(補間しない大きな更新)、古い補間は止まる。
+  it('トゥイーン中に同じセルが途中の値と同じ表示へ変わったら(補間しない大きな更新)、古い値で終わらない', () => {
+    const controller = createChangeHighlightController<Row>();
+    const ref = { current: container };
+    const a = { id: 1, name: 'a', qty: 10 };
+    const others = Array.from({ length: MAX_TWEEN_CELLS }, (_, index) => ({ id: index + 2, name: 'x', qty: 0 }));
+    const qtyA = makeCell(1, 'qty', '10個');
+    const node = qtyA.firstElementChild!.firstChild as Text;
+    controller.update({ enabled: true, rows: [a, ...others], rowKeyGetter: keyOf, columns, scrollContainerRef: ref });
+    node.nodeValue = '20個';
+    const t0 = performance.now();
+    const rows1 = [{ ...a, qty: 20 }, ...others];
+    controller.update({ enabled: true, rows: rows1, rowKeyGetter: keyOf, columns, scrollContainerRef: ref });
+    rafQueue.shift()!(t0 + 50);
+    const midText = node.nodeValue!;
+    const mid = Number(midText.replace('個', ''));
+    // 201 セルが変わる更新で、行 a は途中の値と同じ値になった(React は同じ文字を書く)。
+    controller.update({
+      enabled: true,
+      rows: [{ ...a, qty: mid }, ...others.map((row) => ({ ...row, qty: 1 }))],
+      rowKeyGetter: keyOf,
+      columns,
+      scrollContainerRef: ref,
+    });
+    node.nodeValue = midText;
+    while (rafQueue.length > 0) rafQueue.shift()!(t0 + 1000);
+    expect(node.nodeValue).toBe(midText);
     controller.dispose();
   });
 

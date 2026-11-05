@@ -144,8 +144,11 @@ export const createRowEnterController = (): RowEnterController => {
         }
         continue;
       }
+      // 変更(FC-15 の見直し): 入れ子のグリッドから消えた行も見ません(消えた要素は辿れないので、消えた先の親で判定)。
+      const removedFromNested =
+        observed !== null && record.target instanceof Element && isInsideDetailCardOf(observed, record.target);
       record.removedNodes.forEach((node) => {
-        if (!isBodyRow(node)) {
+        if (removedFromNested || !isBodyRow(node)) {
           return;
         }
         if (node.hasAttribute('data-skeleton-row')) {

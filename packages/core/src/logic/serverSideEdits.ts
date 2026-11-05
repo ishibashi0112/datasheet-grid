@@ -142,8 +142,11 @@ export const createServerSidePendingEdits = <T,>(): ServerSidePendingEdits<T> =>
         }
       }
     }
+    // 変更(FC-05 の見直し): 同じセルの新しい書き込みが保存中のときだけでなく、先に確定していたときも印を付けません(新しい
+    //   書き込みの成功の後に古い書き込みが失敗すると、値は新しいままなのに「失敗・値を戻しました」の印が出ていた)。
     const settledColumnKeys = Array.from(new Set(write.changes.map((change) => change.column.key))).filter(
       (columnKey) =>
+        !confirmedLater(columnKey) &&
         !entry.writes.some(
           (pending) => pending.writeId > writeId && pending.changes.some((change) => change.column.key === columnKey),
         ),

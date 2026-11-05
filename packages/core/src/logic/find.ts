@@ -27,8 +27,10 @@ export const resolveFindCellText = <T,>(column: GridColumn<T>, row: T): string =
 
 // 追加(1.0 前の最終チェック FC-26): 検索の対象にする列か。合成列のほか、文字を出さない列(チェックボックスのエディタ =
 //   チェックの印だけ / データバーの showValue: false = 帯だけ)は外します(見えない "true" / 数値にヒットしていた)。
+//   renderCell の列は renderCell が中身を描く(この 2 つより先に効く)ので、従来どおり対象にします。
 export const isFindableColumn = <T,>(column: GridColumn<T>): boolean =>
-  column.editor?.type !== 'checkbox' && column.conditionalFormat?.dataBar?.showValue !== false;
+  column.renderCell !== undefined ||
+  (column.editor?.type !== 'checkbox' && column.conditionalFormat?.dataBar?.showValue !== false);
 
 // text 内の query の出現位置(重ならない範囲)を返します。query が空なら空配列。
 export const findRangesInText = (

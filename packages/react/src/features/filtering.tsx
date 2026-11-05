@@ -456,11 +456,15 @@ const useFilterManagement = <T,>({
         isHidden,
       });
     };
+    const shownKeys = new Set<string>();
     for (const column of orderedColumns) {
+      shownKeys.add(column.key);
       pushEntry(column, false);
     }
+    // 変更(1.0 前の最終チェック FC-08 の見直し): 表示から外れている列は visible: false の列だけでなく、グルーピング中の
+    //   グループ元列も含めます(グループ元列のフィルターは効くので、出さないと外す手段が無い)。
     for (const column of columns) {
-      if (column.visible === false) {
+      if (!shownKeys.has(column.key)) {
         pushEntry(column, true);
       }
     }

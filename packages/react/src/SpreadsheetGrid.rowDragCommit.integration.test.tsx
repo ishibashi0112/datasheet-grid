@@ -289,6 +289,36 @@ describe('ドラッグ中に行の並びが変わる(FC-12)', () => {
     expect(container.querySelector('[data-ssg-row-dragging]')).toBeNull();
   });
 
+  // 追加(FC-12 の見直し): live 方式で掴んだ行が消えて取り消したとき、残りの行を古い基準位置へ戻さない。
+  it('live 方式: 掴んだ行が消えて取り消しても、残りの行は今の位置に並ぶ', () => {
+    const renderLive = (rows: Row[]) => (
+      <SpreadsheetGrid
+        columns={columns}
+        rows={rows}
+        rowKeyGetter={(row: Row) => row.id}
+        onRowsChange={() => {}}
+        enableRowDrag
+        rowDragMotion="live"
+        motion="on"
+        rowHeight={ROW_HEIGHT}
+        headerHeight={HEADER_HEIGHT}
+      />
+    );
+    const { container, rerender } = render(renderLive(initialRows));
+    startDrag(container, 0);
+    act(() => {
+      dispatchWindowPointer('pointermove', 1, lowerHalfY(1));
+    });
+    rerender(renderLive(initialRows.slice(1)));
+    expect(container.querySelector('[data-ssg-row-dragging]')).toBeNull();
+    // 行の translateY は見出しの高さ + index × 行の高さ。
+    expect(rowById(container, 'b')?.style.transform).toBe(`translateY(${HEADER_HEIGHT}px)`);
+    expect(rowById(container, 'c')?.style.transform).toBe(`translateY(${HEADER_HEIGHT + ROW_HEIGHT}px)`);
+    act(() => {
+      dispatchWindowPointer('pointerup', 1, lowerHalfY(1));
+    });
+  });
+
   it('rowKeyGetter なし: 行の数が同じまま作り直されただけなら掴んだときの位置で動かし、数が変われば取り消す', () => {
     const calls: RowMoveParams<Row>[] = [];
     const { container, rerender } = render(renderGrid(initialRows, calls, false));
@@ -306,6 +336,36 @@ describe('ドラッグ中に行の並びが変わる(FC-12)', () => {
 });
 
 describe('並びを反映しなかったときの滑り込みの予約(FC-31)', () => {
+  // 追加(FC-02 の見直し): 断ったのに同じフレームの再描画で rows の参照だけが変わっても、行を滑らせない。
+  for (const motion of ['ghost', 'live'] as const) {
+    for (const withKey of [true, false]) {
+      it(`${motion} 方式・rowKeyGetter ${withKey ? 'あり' : 'なし'}: 利用側が断り、同じフレームで rows の参照だけが変わっても滑らない`, () => {
+        const Rejecting = () => {
+          const [, setTick] = useState(0);
+          return (
+            <SpreadsheetGrid
+              columns={columns}
+              rows={initialRows.filter(() => true)}
+              rowKeyGetter={withKey ? (row: Row) => row.id : undefined}
+              onRowsChange={() => setTick((tick) => tick + 1)}
+              enableRowDrag
+              rowDragMotion={motion}
+              motion="on"
+              rowHeight={ROW_HEIGHT}
+              headerHeight={HEADER_HEIGHT}
+            />
+          );
+        };
+        const { container } = render(<Rejecting />);
+        dragRow(container, 0, lowerHalfY(2));
+        expect(visualOrder(container)).toEqual(['a', 'b', 'c']);
+        for (const row of centerRows(container)) {
+          expect(row.style.transition).not.toContain('transform');
+        }
+      });
+    }
+  }
+
   it('利用側が onRowsChange を反映しなければ、後で行が変わっても古い位置から滑らない', async () => {
     const renderGrid = (rows: Row[]) => (
       <SpreadsheetGrid

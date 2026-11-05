@@ -5,7 +5,7 @@
 //   統合テストで担保します。
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeAll, afterEach } from 'vitest';
-import { render, cleanup, act, fireEvent } from '@testing-library/react';
+import { render, cleanup, act, fireEvent, screen } from '@testing-library/react';
 import { createRef } from 'react';
 
 import { SpreadsheetGrid } from './SpreadsheetGrid';
@@ -337,6 +337,23 @@ describe('グルーピング中のグループ元列のソート / フィルタ�
       });
     });
     expect(groupLabels(ref)).toEqual(['b-関東']);
+  });
+
+  // 追加(FC-08 の見直し): グループ元列のフィルターはチップバー / 管理パネルに非表示列として出る(外す手段を残す)。
+  it('グループ元列の列フィルターはチップバーに非表示列として出て、× で外せる', () => {
+    const ref = createRef<SpreadsheetGridHandle<SalesRow>>();
+    render(<SpreadsheetGrid ref={ref} columns={salesColumns} rows={salesRows} showFilterChipBar />);
+    act(() => {
+      ref.current?.applyState({
+        ...ref.current.getState(),
+        filters: { globalText: '', columnFilters: { region: { kind: 'select', value: 'b-関東' } } },
+      });
+    });
+    expect(groupLabels(ref)).toEqual(['b-関東']);
+    expect(screen.getByText('地域(非表示列)')).toBeTruthy();
+    fireEvent.click(screen.getByLabelText('地域 のフィルターをクリア'));
+    expect(ref.current?.getState().filters.columnFilters).toEqual({});
+    expect(groupLabels(ref)).toEqual(['b-関東', 'a-関西', 'c-北海道']);
   });
 
   it('並び替えの管理パネルの列の候補にグループ元列が入り、自動グループ列は入らない', () => {
