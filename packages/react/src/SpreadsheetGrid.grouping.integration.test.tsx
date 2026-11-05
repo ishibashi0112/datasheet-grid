@@ -5,7 +5,7 @@
 //   統合テストで担保します。
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeAll, afterEach } from 'vitest';
-import { render, cleanup, act, fireEvent } from '@testing-library/react';
+import { render, cleanup, act, fireEvent, screen } from '@testing-library/react';
 import { createRef } from 'react';
 
 import { SpreadsheetGrid } from './SpreadsheetGrid';
@@ -300,5 +300,87 @@ describe('行グルーピングの列面(結合)', () => {
     } finally {
       warnSpy.mockRestore();
     }
+  });
+});
+
+// 追加(1.0 前の最終チェック FC-08): グルーピング中もグループ元列のソート / 列フィルターが効く(ドキュメントどおり)。
+describe('グルーピング中のグループ元列のソート / フィルター', () => {
+  type SalesRow = { region: string; qty: number };
+  const salesRows: SalesRow[] = [
+    { region: 'b-関東', qty: 10 },
+    { region: 'a-関西', qty: 20 },
+    { region: 'c-北海道', qty: 30 },
+    { region: 'b-関東', qty: 5 },
+  ];
+  const salesColumns: GridColumn<SalesRow>[] = [
+    { key: 'region', title: '地域', width: 100, rowGroup: true, filterType: 'select' },
+    { key: 'qty', title: '数量', width: 100, aggFunc: 'sum' },
+  ];
+  const groupLabels = (ref: { current: SpreadsheetGridHandle<SalesRow> | null }) =>
+    (ref.current?.getGroupRows() ?? []).map((group) => group.label);
+
+  it('グループ元列でソートするとグループごと並び替わり、列フィルターで絞れる', () => {
+    const ref = createRef<SpreadsheetGridHandle<SalesRow>>();
+    render(<SpreadsheetGrid ref={ref} columns={salesColumns} rows={salesRows} />);
+    expect(groupLabels(ref)).toEqual(['b-関東', 'a-関西', 'c-北海道']);
+    act(() => {
+      ref.current?.applyState({
+        ...ref.current.getState(),
+        sort: [{ columnKey: 'region', direction: 'desc' }],
+      });
+    });
+    expect(groupLabels(ref)).toEqual(['c-北海道', 'b-関東', 'a-関西']);
+    act(() => {
+      ref.current?.applyState({
+        ...ref.current.getState(),
+        filters: { globalText: '', columnFilters: { region: { kind: 'select', value: 'b-関東' } } },
+      });
+    });
+    expect(groupLabels(ref)).toEqual(['b-関東']);
+  });
+
+  // 追加(FC-08 の見直し): グループ元列のフィルターはチップバー / 管理パネルに非表示列として出る(外す手段を残す)。
+  it('グループ元列の列フィルターはチップバーに非表示列として出て、× で外せる', () => {
+    const ref = createRef<SpreadsheetGridHandle<SalesRow>>();
+    render(<SpreadsheetGrid ref={ref} columns={salesColumns} rows={salesRows} showFilterChipBar />);
+    act(() => {
+      ref.current?.applyState({
+        ...ref.current.getState(),
+        filters: { globalText: '', columnFilters: { region: { kind: 'select', value: 'b-関東' } } },
+      });
+    });
+    expect(groupLabels(ref)).toEqual(['b-関東']);
+    expect(screen.getByText('地域(非表示列)')).toBeTruthy();
+    fireEvent.click(screen.getByLabelText('地域 のフィルターをクリア'));
+    expect(ref.current?.getState().filters.columnFilters).toEqual({});
+    expect(groupLabels(ref)).toEqual(['b-関東', 'a-関西', 'c-北海道']);
+  });
+
+  it('並び替えの管理パネルの列の候補にグループ元列が入り、自動グループ列は入らない', () => {
+    const ref = createRef<SpreadsheetGridHandle<SalesRow>>();
+    const { container } = render(<SpreadsheetGrid ref={ref} columns={salesColumns} rows={salesRows} />);
+    act(() => {
+      ref.current?.applyState({ ...ref.current.getState(), sort: [{ columnKey: 'qty', direction: 'asc' }] });
+    });
+    const menuButton = container.querySelector<HTMLElement>(
+      '.ssg-header-row [data-ssg-col-key="qty"] [aria-label="列メニュー"]',
+    );
+    expect(menuButton).not.toBeNull();
+    act(() => {
+      fireEvent.pointerDown(menuButton as HTMLElement, { button: 0 });
+    });
+    const manageItem = Array.from(document.querySelectorAll<HTMLButtonElement>('.ssg-menu-item')).find((item) =>
+      item.textContent?.includes('並び替えを管理'),
+    );
+    expect(manageItem).toBeDefined();
+    act(() => {
+      fireEvent.click(manageItem as HTMLButtonElement);
+    });
+    const select = document.querySelector<HTMLSelectElement>('.ssg-sort-select');
+    expect(select).not.toBeNull();
+    const optionKeys = Array.from(select?.options ?? []).map((option) => option.value);
+    expect(optionKeys).toContain('region');
+    expect(optionKeys).toContain('qty');
+    expect(optionKeys).not.toContain(GROUP_AUTO_COLUMN_KEY);
   });
 });

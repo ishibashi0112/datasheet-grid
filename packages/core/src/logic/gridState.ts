@@ -72,30 +72,61 @@ export const cloneColumnFilterValue = (
   }
 };
 
-// 追加(audit L-09): 外部入力の列フィルター値が「既知の kind + 最小限の shape」かを判定します。
-//   clone(cloneColumnFilterValue)が配列展開 / 入れ子アクセスを行うフィールドだけを検査し、深い意味検証は
-//   しません(getState 出力の往復が前提。壊れた入力は捨てる = applyState の「耐える」契約)。
+// 追加(audit L-09): 外部入力の列フィルター値が「既知の kind + shape」かを判定します。
+//   変更(1.0 前の最終チェック FC-06): 絞り込みが読むフィールドの型まで検査します(文字列であるべき value / raw /
+//   values の要素、条件の mode と数値)。旧実装は配列 / 入れ子だけを見ていたため、{ kind: 'text' }(value 欠け)や
+//   value が数値の値を通し、絞り込みで TypeError になってグリッドごと落ちていた(壊れた入力は捨てる = applyState の
+//   「耐える」契約)。値の意味(日付として読めるか等)までは見ません(絞り込み側が読めない条件を無視する)。
+const isRecord = (x: unknown): x is Record<string, unknown> => !!x && typeof x === 'object';
+const isFiniteNumber = (x: unknown): boolean => typeof x === 'number' && Number.isFinite(x);
+const isSetMode = (x: unknown): boolean => x === undefined || x === 'include' || x === 'exclude';
+const isStringArray = (x: unknown): boolean => Array.isArray(x) && x.every((item) => typeof item === 'string');
+const NUMBER_OPERATORS = new Set(['>', '>=', '<', '<=', '=', '!=']);
+const TEXT_MODES = new Set(['contains', 'equals', 'startsWith', 'endsWith']);
+const DATE_VALUE_MODES = new Set(['onOrAfter', 'onOrBefore', 'equals', 'notEquals']);
+const isBlankMode = (mode: unknown): boolean => mode === 'blank' || mode === 'notBlank';
+const isParsedNumberFilter = (x: unknown): boolean => {
+  if (x === null) return true;
+  if (!isRecord(x)) return false;
+  if (x.mode === 'comparison') return NUMBER_OPERATORS.has(x.operator as string) && isFiniteNumber(x.value);
+  if (x.mode === 'range') return isFiniteNumber(x.min) && isFiniteNumber(x.max);
+  return isBlankMode(x.mode);
+};
+const isParsedTextFilter = (x: unknown): boolean => {
+  if (x === null) return true;
+  if (!isRecord(x)) return false;
+  if (TEXT_MODES.has(x.mode as string)) return typeof x.value === 'string';
+  return isBlankMode(x.mode);
+};
+const isParsedDateFilter = (x: unknown): boolean => {
+  if (x === null) return true;
+  if (!isRecord(x)) return false;
+  if (x.mode === 'range') return typeof x.from === 'string' && typeof x.to === 'string';
+  if (DATE_VALUE_MODES.has(x.mode as string)) return typeof x.value === 'string';
+  if (x.mode === 'preset') return typeof x.preset === 'string';
+  return isBlankMode(x.mode);
+};
+const isSetPart = (x: unknown): boolean => x === null || (isRecord(x) && isSetMode(x.mode) && isStringArray(x.values));
 const isAcceptableColumnFilterValue = (value: unknown): value is ColumnFilterValue => {
-  if (!value || typeof value !== 'object' || !('kind' in value)) {
+  if (!isRecord(value) || !('kind' in value)) {
     return false;
   }
-  const v = value as Record<string, unknown>;
-  const isSetShape = (set: unknown) =>
-    set === null ||
-    (!!set && typeof set === 'object' && Array.isArray((set as Record<string, unknown>).values));
-  const isObjectOrNull = (x: unknown) => x === null || (!!x && typeof x === 'object');
+  const v = value;
   switch (v.kind) {
     case 'set':
-      return Array.isArray(v.values);
+      return isSetMode(v.mode) && isStringArray(v.values);
     case 'number':
-      return isObjectOrNull(v.parsed ?? null);
+      return typeof v.raw === 'string' && isParsedNumberFilter(v.parsed ?? null);
     case 'numberSet':
+      return isParsedNumberFilter(v.condition ?? null) && isSetPart(v.set ?? null);
     case 'textSet':
+      return isParsedTextFilter(v.condition ?? null) && isSetPart(v.set ?? null);
     case 'dateSet':
-      return isObjectOrNull(v.condition ?? null) && isSetShape(v.set ?? null);
+      return isParsedDateFilter(v.condition ?? null) && isSetPart(v.set ?? null);
     case 'text':
     case 'date':
     case 'select':
+      return typeof v.value === 'string';
     case 'custom':
       return true;
     default:

@@ -8,6 +8,7 @@ import {
 import { getCellValue, setCellValue } from './permissions';
 import { resolveCellParser } from '../logic/editorValues';
 import { decideCellWrite } from '../logic/validation';
+import { isSyntheticColumnKey } from '../logic/detailRow';
 
 // 追加: TSV の行列データ型です。
 export type ClipboardMatrix = string[][];
@@ -99,6 +100,39 @@ export const escapeTsvField = (value: string): string =>
 // 追加(監査 L-04): セル列を TSV の 1 行へ連結します(各セルを escapeTsvField)。
 export const joinTsvRow = (cells: string[]): string => cells.map(escapeTsvField).join('\t');
 
+// 追加(1.0 前の最終チェック FC-03): コピー / 貼り付けの対象にする列か。ライブラリの合成列(行ドラッグハンドル /
+//   展開トグル / 自動グループ列)は値を持たないので、コピーの TSV に空の列を作らず、貼り付けでも 1 列と数えません
+//   (エクスポート / 集計 / フィルハンドルと同じ扱い。Excel に貼ったときに列がずれないようにする)。
+const isClipboardColumn = <T,>(column: GridColumn<T> | undefined): column is GridColumn<T> =>
+  column !== undefined && !isSyntheticColumnKey(column.key);
+
+// 追加(FC-03): 貼り付けの列オフセット 0..width-1 → 書き込む列の index。startColIndex から合成列を飛ばして数えます。
+//   列の数を超えたぶんは連番のまま(はみ出し列 = createOverflowColumn で足す列)。
+export const resolvePasteColumnIndexes = <T,>(
+  columns: GridColumn<T>[],
+  startColIndex: number,
+  width: number,
+): number[] => {
+  const indexes: number[] = [];
+  for (let colIndex = startColIndex; indexes.length < width; colIndex += 1) {
+    const column = columns[colIndex];
+    if (column === undefined || isClipboardColumn(column)) {
+      indexes.push(colIndex);
+    }
+  }
+  return indexes;
+};
+
+// コピーするセルの文字列(formatClipboardValue があればその返り値、無ければ生値の文字列)。
+export const formatClipboardCell = <T,>(row: T, column: GridColumn<T>): string => {
+  const rawValue = getCellValue(row, column);
+  return column.formatClipboardValue ? column.formatClipboardValue(rawValue, row) : String(rawValue ?? '');
+};
+
+// 追加(FC-03): 全体選択のコピー(と行選択)で出す列。合成列を除きます。
+export const filterClipboardColumns = <T,>(columns: GridColumn<T>[]): GridColumn<T>[] =>
+  columns.filter(isClipboardColumn);
+
 // 追加: 選択範囲の rows/columns から TSV を生成します。
 export const serializeSelectionToTsv = <T,>(
   // 変更(DS-3-10): rows: T[] → getRow/viewRowCount の seam-native 署名へ。
@@ -130,8 +164,15 @@ export const serializeSelectionToTsv = <T,>(
   const lines: string[] = [];
 
   // 追加: セル範囲選択のコピーです。
+  // 変更(FC-03): 合成列は出しません(範囲が合成列だけなら何もコピーしない)。
   if (selection.type === 'cell') {
     const normalizedRange = normalizeCellRange(selection.range);
+    const copyColumns = columns
+      .slice(normalizedRange.start.col, normalizedRange.end.col + 1)
+      .filter(isClipboardColumn);
+    if (copyColumns.length === 0) {
+      return '';
+    }
     for (
       let rowIndex = normalizedRange.start.row;
       rowIndex <= normalizedRange.end.row;
@@ -144,23 +185,7 @@ export const serializeSelectionToTsv = <T,>(
       if (isRowIncluded && !isRowIncluded(row, rowIndex)) {
         continue;
       }
-      const cells: string[] = [];
-      for (
-        let colIndex = normalizedRange.start.col;
-        colIndex <= normalizedRange.end.col;
-        colIndex += 1
-      ) {
-        const column = columns[colIndex];
-        if (!column) {
-          continue;
-        }
-        const rawValue = getCellValue(row, column);
-        const formattedValue = column.formatClipboardValue
-          ? column.formatClipboardValue(rawValue, row)
-          : String(rawValue ?? '');
-        cells.push(formattedValue);
-      }
-      lines.push(joinTsvRow(cells));
+      lines.push(joinTsvRow(copyColumns.map((column) => formatClipboardCell(row, column))));
     }
     return lines.join('\n');
   }
@@ -168,6 +193,10 @@ export const serializeSelectionToTsv = <T,>(
   // 追加: 行選択のコピーです。選択された行 × visible columns 全体を対象にします。
   if (selection.type === 'row') {
     const normalizedRange = normalizeRowRange(selection.startRow, selection.endRow);
+    const rowCopyColumns = columns.filter(isClipboardColumn);
+    if (rowCopyColumns.length === 0) {
+      return '';
+    }
     for (
       let rowIndex = normalizedRange.startRow;
       rowIndex <= normalizedRange.endRow;
@@ -180,19 +209,19 @@ export const serializeSelectionToTsv = <T,>(
       if (isRowIncluded && !isRowIncluded(row, rowIndex)) {
         continue;
       }
-      const cells = columns.map((column) => {
-        const rawValue = getCellValue(row, column);
-        return column.formatClipboardValue
-          ? column.formatClipboardValue(rawValue, row)
-          : String(rawValue ?? '');
-      });
-      lines.push(joinTsvRow(cells));
+      lines.push(joinTsvRow(rowCopyColumns.map((column) => formatClipboardCell(row, column))));
     }
     return lines.join('\n');
   }
 
   // 追加: 列選択のコピーです。visible rows × 選択列 を対象にします。
   const normalizedRange = normalizeColumnRange(selection.startCol, selection.endCol);
+  const colCopyColumns = columns
+    .slice(normalizedRange.startCol, normalizedRange.endCol + 1)
+    .filter(isClipboardColumn);
+  if (colCopyColumns.length === 0) {
+    return '';
+  }
   for (let rowIndex = 0; rowIndex < viewRowCount; rowIndex += 1) {
     const row = getRow(rowIndex);
     if (!row) {
@@ -201,23 +230,7 @@ export const serializeSelectionToTsv = <T,>(
     if (isRowIncluded && !isRowIncluded(row, rowIndex)) {
       continue;
     }
-    const cells: string[] = [];
-    for (
-      let colIndex = normalizedRange.startCol;
-      colIndex <= normalizedRange.endCol;
-      colIndex += 1
-    ) {
-      const column = columns[colIndex];
-      if (!column) {
-        continue;
-      }
-      const rawValue = getCellValue(row, column);
-      const formattedValue = column.formatClipboardValue
-        ? column.formatClipboardValue(rawValue, row)
-        : String(rawValue ?? '');
-      cells.push(formattedValue);
-    }
-    lines.push(joinTsvRow(cells));
+    lines.push(joinTsvRow(colCopyColumns.map((column) => formatClipboardCell(row, column))));
   }
 
   return lines.join('\n');
@@ -249,6 +262,12 @@ export const applyClipboardMatrixToRows = <T extends object,>(
   }
 
   const nextRows = [...rows];
+  // 変更(FC-03): 列オフセット → 列 index は合成列を飛ばして数えます。
+  const columnIndexes = resolvePasteColumnIndexes(
+    columns,
+    startColIndex,
+    matrix.reduce((max, matrixRow) => Math.max(max, matrixRow.length), 0),
+  );
 
   for (let rowOffset = 0; rowOffset < matrix.length; rowOffset += 1) {
     const filteredRowIndex = startRowIndex + rowOffset;
@@ -266,7 +285,7 @@ export const applyClipboardMatrixToRows = <T extends object,>(
     let rowChanged = false;
 
     for (let colOffset = 0; colOffset < matrix[rowOffset].length; colOffset += 1) {
-      const colIndex = startColIndex + colOffset;
+      const colIndex = columnIndexes[colOffset];
       const column = columns[colIndex];
       if (!column) {
         continue;
@@ -320,6 +339,12 @@ export const buildClipboardCellEdits = <T extends object,>(
   ) => boolean,
 ): ServerSideCellEditInput<T>[] => {
   const edits: ServerSideCellEditInput<T>[] = [];
+  // 変更(FC-03): 列オフセット → 列 index は合成列を飛ばして数えます(clientSide 版と同じ)。
+  const columnIndexes = resolvePasteColumnIndexes(
+    columns,
+    startColIndex,
+    matrix.reduce((max, matrixRow) => Math.max(max, matrixRow.length), 0),
+  );
   for (let rowOffset = 0; rowOffset < matrix.length; rowOffset += 1) {
     const viewIndex = startRowIndex + rowOffset;
     const row = getRow(viewIndex);
@@ -327,7 +352,7 @@ export const buildClipboardCellEdits = <T extends object,>(
       continue;
     }
     for (let colOffset = 0; colOffset < matrix[rowOffset].length; colOffset += 1) {
-      const colIndex = startColIndex + colOffset;
+      const colIndex = columnIndexes[colOffset];
       const column = columns[colIndex];
       if (!column) {
         continue;

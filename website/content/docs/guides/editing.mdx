@@ -36,7 +36,7 @@ const columns: GridColumn<Row>[] = [
 
 `number` / `date` / `checkbox` には既定の「文字列 → 値」パーサが付き、**貼り付け / Delete クリア / エディタ確定で共通**に効きます(例: number 列を Delete でクリアすると `null` になる)。number 列は全角の数字・符号・小数点と 3 桁区切りも数値として読みます(`１，２３４` や Excel の `1,234` を貼り付けると `1234`)。セルを選んで `-5` や `.5` のようにマイナス / 小数点から打ち始めても、そのまま数値(`-5` / `0.5`)になります。明示の `parseClipboardValue` は常に優先されます。
 
-独自 UI で編集したい場合は `{ type: 'custom', render: (ctx) => <MyEditor ... /> }` を使います。`ctx.commit(value)` / `ctx.cancel()` で確定・キャンセルします。
+独自 UI で編集したい場合は `{ type: 'custom', render: (ctx) => <MyEditor ... /> }` を使います。`ctx.commit(value)` / `ctx.cancel()` で確定・キャンセルします。編集が終わった後(確定 / 取消 / 別のセルの編集が始まった後)に呼んだ前の編集の `ctx.commit` / `ctx.cancel` は何もしません(`ctx.commit` は `{ status: 'noop' }` を返します)。
 
 ## Enter 確定後の移動先(`editorEnterMove`)
 
@@ -46,7 +46,7 @@ const columns: GridColumn<Row>[] = [
 <SpreadsheetGrid editorEnterMove="none" ... />  // 'down'(既定) | 'up' | 'right' | 'left' | 'none'
 ```
 
-`'none'` は移動せずその場に留まります。`Tab` / `Shift+Tab`(右 / 左)には影響しません。custom エディタは `ctx.commit(value, direction)` の第 2 引数で方向を渡してください(本 prop の対象外)。
+`'none'` は移動せずその場に留まります。ラベル行(`labelRow`)には止まらず、同じ向きの次のデータ行へ進みます(先がラベル行だけなら確定した行に留まります)。`Tab` / `Shift+Tab`(右 / 左)には影響しません。custom エディタは `ctx.commit(value, direction)` の第 2 引数で方向を渡してください(本 prop の対象外)。
 
 移動先は「確定を反映した再レンダー後」の行数でクランプされるため、`onRowsChange` で末尾に空行を追加する入力グリッド(貼り付け + 直接入力の定石パターン)では、最終行の `Enter` 確定でそのまま増えた行へ進めます。
 

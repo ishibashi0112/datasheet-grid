@@ -11,6 +11,7 @@
 //     renderCell 列はフラッシュのみ。トゥイーン中の表示は column.valueFormatter で整形します。
 import type { GridColumn, GridRowKey } from '../model/gridTypes.unbound';
 import { getCellValue } from '../utils/permissions';
+import { isInsideDetailCardOf } from '../logic/detailRow';
 
 type ReadonlyRef<V> = { readonly current: V };
 
@@ -117,6 +118,9 @@ export const createChangeHighlightController = <T,>(): ChangeHighlightController
   let prev: { rows: readonly T[]; rowKeyGetter: (row: T, index: number) => GridRowKey } | null = null;
   const timers = new Map<HTMLElement, ReturnType<typeof setTimeout>>();
   const tweens = new Set<number>();
+  // 追加(FC-14 の見直し): 文字ノードごとに動いている補間の印。セルの値がまた変わったら(補間しない大きな更新でも)消して
+  //   止めます(途中の文字と同じ文字を React が書くと、文字の比較だけでは気づけず古い値で終わっていた)。
+  const tweenTokens = new WeakMap<Text, object>();
 
   const clear = (el: HTMLElement) => {
     el.classList.remove(CHANGED_CLASS_NAME);
@@ -174,9 +178,18 @@ export const createChangeHighlightController = <T,>(): ChangeHighlightController
     const decimalsMatch = /\.(\d+)$/.exec(String(to));
     const decimals = Math.min(2, decimalsMatch ? decimalsMatch[1].length : 0);
     const start = performance.now();
-    node.nodeValue = formatValue(change.column, change.row, from);
+    // 変更(1.0 前の最終チェック FC-14): 最後に書いた文字を控え、途中で別の値に描き直されていたら(同じセルの次の変更を
+    //   React が書いた / 次のトゥイーンが始まった)何も書かずにやめます。旧実装は最後のフレームで古い値を書き戻し、
+    //   値が null に変わっても「20」のまま残っていた。
+    let written = formatValue(change.column, change.row, from);
+    node.nodeValue = written;
+    const token = {};
+    tweenTokens.set(node, token);
     const step = (now: number) => {
       tweens.delete(frameId);
+      if (tweenTokens.get(node) !== token || node.nodeValue !== written) {
+        return;
+      }
       const progress = Math.min(1, (now - start) / durationMs);
       if (progress >= 1 || node.parentNode === null) {
         node.nodeValue = finalText;
@@ -184,7 +197,8 @@ export const createChangeHighlightController = <T,>(): ChangeHighlightController
       }
       const eased = 1 - Math.pow(1 - progress, 3);
       const current = Number((from + (to - from) * eased).toFixed(decimals));
-      node.nodeValue = formatValue(change.column, change.row, current);
+      written = formatValue(change.column, change.row, current);
+      node.nodeValue = written;
       frameId = requestAnimationFrame(step);
       tweens.add(frameId);
     };
@@ -216,6 +230,10 @@ export const createChangeHighlightController = <T,>(): ChangeHighlightController
       for (const change of changed) {
         const selector = `.ssg-body-row[data-row-key="${cssEscape(String(change.rowKey))}"] .ssg-body-cell[data-ssg-col-key="${cssEscape(String(change.column.key))}"]`;
         container.querySelectorAll<HTMLElement>(selector).forEach((cell) => {
+          // 変更(1.0 前の最終チェック FC-15): 展開行の中の入れ子のグリッドのセル(同じ行キー / 列キー)には付けません。
+          if (isInsideDetailCardOf(container, cell)) return;
+          const node = textNodeOf(cell);
+          if (node) tweenTokens.delete(node);
           flash(cell);
           if (allowTween && !change.column.renderCell) {
             tween(cell, change, durationMs);

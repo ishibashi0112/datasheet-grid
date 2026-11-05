@@ -97,6 +97,7 @@ import {
   type DateTreeRow,
 } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/dateFilterTree';
 import type { GridResolvedSlot } from '../model/gridTypes';
+import { isImeComposingKeyEvent } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/domGuards';
 
 // 追加: popover のレイアウト情報です。
 // 追加(FIT-1): maxHeight(viewport 内へ収める上限)。指定時は popover の flex 化と併せて
@@ -342,7 +343,7 @@ function SetFilterBody({
           //   (Excel の検索 → OK と同挙動。積み増しは(検索結果をすべて選択)チェックで)。
           if (event.key === 'Enter') {
             // IME 変換確定の Enter では発火させません(日本語入力で必須のガードです)。
-            if (event.nativeEvent.isComposing) {
+            if (isImeComposingKeyEvent(event.nativeEvent)) {
               return;
             }
             event.preventDefault();
@@ -978,7 +979,7 @@ function DateSetFilterBody({
           }
           // 検索 Enter 確定(SetFilterBody と同じ規則。IME 変換確定ガード付き)。
           if (event.key === 'Enter') {
-            if (event.nativeEvent.isComposing) {
+            if (isImeComposingKeyEvent(event.nativeEvent)) {
               return;
             }
             event.preventDefault();
@@ -1364,7 +1365,7 @@ export function ColumnFilterPopover({
     event.stopPropagation();
     // 追加(ime-fix): IME 変換中(isComposing)の Enter / Escape は変換の確定 / 取り消しなので、
     //   適用 / クローズには使いません(検索ボックス / セルエディタと同じガード)。
-    if (event.nativeEvent.isComposing) {
+    if (isImeComposingKeyEvent(event.nativeEvent)) {
       return;
     }
     if (event.key === 'Enter') {
@@ -1570,7 +1571,7 @@ export function ColumnFilterPopover({
               // 追加: filter input 内入力を grid 側へ伝播させません。
               event.stopPropagation();
               // 追加(ime-fix): IME 変換中の Enter / Escape は変換操作なので適用 / クローズしません。
-              if (event.nativeEvent.isComposing) {
+              if (isImeComposingKeyEvent(event.nativeEvent)) {
                 return;
               }
               if (event.key === 'Enter') {

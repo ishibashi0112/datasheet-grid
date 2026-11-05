@@ -20,11 +20,11 @@ import type {
   RowModel,
   SpreadsheetGridProps,
 } from '../model/gridTypes.unbound';
-import { parseCommittedValue, writeRowsCell } from '../logic/editorValues';
+import { isUnchangedEditorCommit, parseCommittedValue, writeRowsCell } from '../logic/editorValues';
 import { decideCellWrite } from '../logic/validation';
 import { clamp } from '../logic/geometry';
 import { isFocusInsideDetailCard } from '../logic/detailRow';
-import { isViewCellEditable } from '../utils/permissions';
+import { getCellValue, isViewCellEditable } from '../utils/permissions';
 import type { ServerSideCellEditInput } from '../logic/serverSideEdits';
 
 export type EditControllerArgs<T extends object> = {
@@ -210,6 +210,8 @@ export const createEditController = <T extends object>(): EditController<T> => {
   const scheduleAfterEdit = (
     nextCell: CellCoord | null,
     stayedFrom: SelectionSnapshot | null = null,
+    // 追加(1.0 前の最終チェック FC-18): 確定した行(縦の移動でラベル行を読み飛ばす向きを決める)。
+    fromRow?: number,
   ) => {
     const current = args;
     if (current === null) {
@@ -228,8 +230,21 @@ export const createEditController = <T extends object>(): EditController<T> => {
         // 行数 / 列数は rAF 時点の最新 args で clamp します(旧 boundsRef 相当)。
         const rowCount = args.rowModel.getRowCount();
         const colCount = args.visibleColumns.length;
+        let row = clamp(nextCell.row, 0, Math.max(rowCount - 1, 0));
+        // 追加(FC-18): 縦の移動(Enter / Shift+Enter)はラベル行に止まらず、同じ向きに読み飛ばします(↑↓ のキーと同じ。
+        //   端までラベル行しか無ければ確定した行に留まる)。従来はラベル行に止まり、続けて打った文字が捨てられていた。
+        const { getLabelRow } = args.rowModel;
+        if (getLabelRow && fromRow !== undefined && row !== fromRow) {
+          const step = row > fromRow ? 1 : -1;
+          while (row >= 0 && row < rowCount && getLabelRow(row)) {
+            row += step;
+          }
+          if (row < 0 || row >= rowCount) {
+            row = clamp(fromRow, 0, Math.max(rowCount - 1, 0));
+          }
+        }
         activateSingleCell({
-          row: clamp(nextCell.row, 0, Math.max(rowCount - 1, 0)),
+          row,
           col: clamp(nextCell.col, 0, Math.max(colCount - 1, 0)),
         });
       }
@@ -297,7 +312,10 @@ export const createEditController = <T extends object>(): EditController<T> => {
       return { status: 'noop' };
     }
 
-    if (applyServerSideCellEdits) {
+    // 追加(1.0 前の最終チェック FC-09): 何も変えずに確定したら書き込まず(onRowsChange / updateRows を呼ばず、履歴も
+    //   積まない)、確定と同じ後処理(フォーカス復帰 + 方向への移動)だけをします。
+    const unchanged = isUnchangedEditorCommit(column, getCellValue(row, column), committedValue);
+    if (!unchanged && applyServerSideCellEdits) {
       const parsedValue = parseCommittedValue(column, committedValue, row);
       const decision = decideCellWrite(column, row, parsedValue);
       if (decision.action === 'reject') {
@@ -306,7 +324,7 @@ export const createEditController = <T extends object>(): EditController<T> => {
       applyServerSideCellEdits([
         { viewIndex: editingCell.row, column, value: parsedValue },
       ]);
-    } else if (onRowsChange) {
+    } else if (!unchanged && onRowsChange) {
       const parsedValue = parseCommittedValue(column, committedValue, row);
       const decision = decideCellWrite(column, row, parsedValue);
       if (decision.action === 'reject') {
@@ -323,6 +341,7 @@ export const createEditController = <T extends object>(): EditController<T> => {
       direction === undefined
         ? { activeCell: uiState.activeCell, selection: uiState.selection }
         : null,
+      editingCell.row,
     );
     dispatch(gridActions.stopEdit());
     return { status: 'committed' };

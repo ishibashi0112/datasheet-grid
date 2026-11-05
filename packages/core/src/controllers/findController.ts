@@ -14,6 +14,7 @@ import {
   findRangesInText,
   resolveCurrentAfterRescan,
   resolveFindCellText,
+  isFindableColumn,
   stepFindIndex,
   type FindIndex,
   type FindMatch,
@@ -151,7 +152,7 @@ export const createFindController = <T,>(): FindController<T> => {
           return;
         }
         columns.forEach((column, colIndex) => {
-          if (truncated || isSyntheticColumnKey(column.key)) {
+          if (truncated || isSyntheticColumnKey(column.key) || !isFindableColumn(column)) {
             return;
           }
           const text = resolveFindCellText(column, row);

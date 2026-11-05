@@ -115,7 +115,7 @@ import {
 // 追加(detail ③): 展開行(Master/Detail)の純ロジック(トグル列キー / rowKey→view index 解決 / 選択帯分割)です。
 import {
   DEFAULT_DETAIL_ROW_HEIGHT,
-  DETAIL_TOGGLE_COLUMN_KEY,
+  isSyntheticColumnKey,
   seedDetailIndexCache,
 } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/detailRow';
 // 変更(差し込み式 段階 5): ラベル行(見出し / 区切り行)の SSRM ラッパ / 縦スクロール固定の解決 / 部品は機能セット
@@ -537,7 +537,7 @@ export function useGridShell<T extends object>({
     aggColumns,
     rowGroupingActive,
     rowDragAvailable,
-    effectiveColumns,
+    filterSortColumns,
     visibleColumns,
     orderedColumns,
   } = useMemo(
@@ -969,7 +969,8 @@ export function useGridShell<T extends object>({
       rows,
       baseOrder,
       visibleColumns,
-      effectiveColumns,
+      // 変更(1.0 前の最終チェック FC-08): 相対日付プリセットの見張りもグループ元列の列フィルターを含めて見ます。
+      effectiveColumns: filterSortColumns,
       globalFilterText,
       globalFilterEnabled,
       columnFilterEnabled,
@@ -986,7 +987,9 @@ export function useGridShell<T extends object>({
         rows,
         labelLayout,
         // 変更(監査 L-02): 非表示列も含めてフィルター / ソートを評価します(バー表示・管理パネルと結果を一致)。
-        filterSortColumns: effectiveColumns,
+        // 変更(1.0 前の最終チェック FC-08): グルーピング中は表示から外したグループ元列も含めます(グループ元列のソートで
+        //   グループごと並び替わる / フィルターで絞れる。旧実装は黙って無視していた)。
+        filterSortColumns,
         columnFilters: deferredColumnFilters,
         globalFilteredOrder,
         sort: uiState.sort,
@@ -999,7 +1002,7 @@ export function useGridShell<T extends object>({
       rowPipeline,
       rows,
       labelLayout,
-      effectiveColumns,
+      filterSortColumns,
       deferredColumnFilters,
       globalFilteredOrder,
       uiState.sort,
@@ -1811,44 +1814,45 @@ export function useGridShell<T extends object>({
   //             col は logicalIndex（orderedColumns 空間）として扱い、
   //             computeSinglePaneColumnExtent で所属ペイン + ローカル extent を取得します。
   //             left は leadingWidth 非含有のローカル列座標で、描画側で leadingWidth を加算します。
-  const activeCellPlacement = useMemo<{
-    pane: ColumnPane;
-    rect: ActiveCellOverlayRect;
-  } | null>(() => {
-    if (!uiState.activeCell) {
-      return null;
-    }
-    const { row, col } = uiState.activeCell;
-    if (row < 0 || row >= viewRowCount) {
-      return null;
-    }
-    const single = computeSinglePaneColumnExtent(paneLayout, col);
-    if (!single) {
-      return null;
-    }
-    return {
-      pane: single.pane,
-      rect: {
-        left: single.extent.start,
-        top: rowMetrics.rowTop(row),
-        width: single.extent.width,
-        // 変更(detail ③): 展開行の帯を含まないセル行の高さ(展開行なしでは rowsHeight(row, row) と一致)。
-        height: rowMetrics.cellHeight(row),
-      },
-    };
-  }, [uiState.activeCell, viewRowCount, paneLayout, rowMetrics]);
-
-  // 追加(10-E): viewport sync（中央ペインの自動スクロール）専用の active cell 矩形です。
-  //             active cell が中央ペインにあるときだけ「中央ペインローカル座標」で返します。
-  //             固定ペイン（left / right）にある場合は横スクロール不要なので null を返し、
-  //             誤って中央ペインを横スクロールさせないようにします。
-  const centerViewportActiveRect = useMemo<ActiveCellOverlayRect | null>(
-    () =>
-      activeCellPlacement && activeCellPlacement.pane === 'center'
-        ? activeCellPlacement.rect
-        : null,
-    [activeCellPlacement],
+  // 変更(1.0 前の最終チェック FC-10): 位置の解決を関数にして、アクティブセルと編集中のセルの両方に使います。
+  const resolveCellPlacement = useCallback(
+    (cell: CellCoord | null): { pane: ColumnPane; rect: ActiveCellOverlayRect } | null => {
+      if (!cell) {
+        return null;
+      }
+      const { row, col } = cell;
+      if (row < 0 || row >= viewRowCount) {
+        return null;
+      }
+      const single = computeSinglePaneColumnExtent(paneLayout, col);
+      if (!single) {
+        return null;
+      }
+      return {
+        pane: single.pane,
+        rect: {
+          left: single.extent.start,
+          top: rowMetrics.rowTop(row),
+          width: single.extent.width,
+          // 変更(detail ③): 展開行の帯を含まないセル行の高さ(展開行なしでは rowsHeight(row, row) と一致)。
+          height: rowMetrics.cellHeight(row),
+        },
+      };
+    },
+    [viewRowCount, paneLayout, rowMetrics],
   );
+  const activeCellPlacement = useMemo(
+    () => resolveCellPlacement(uiState.activeCell),
+    [resolveCellPlacement, uiState.activeCell],
+  );
+  // 追加(FC-10): 編集中のセルの位置です。エディタはアクティブセルではなく編集中のセルに重ねます(blur で閉じない custom
+  //   エディタで編集中に別のセルを押した / 編集中に selectCell を呼んだとき、エディタだけが押したセルへ動き、中身と書き込み先は
+  //   元のセルのままだった)。
+  const editingCellPlacement = useMemo(
+    () => resolveCellPlacement(uiState.editingCell),
+    [resolveCellPlacement, uiState.editingCell],
+  );
+
 
   // 追加(10-D): 指定ペインに active cell があればそのローカル矩形を、無ければ null を返します。
   const activeCellRectForPane = useCallback(
@@ -1859,11 +1863,12 @@ export function useGridShell<T extends object>({
     [activeCellPlacement],
   );
 
-  // 追加(10-D): editor は editingCell があるときだけ、active cell と同じペイン・同じ矩形に出します。
+  // 追加(10-D): editor は editingCell があるときだけ出します。
+  // 変更(FC-10): 位置は active cell ではなく編集中のセル(editingCellPlacement)です。
   const editorRectForPane = useCallback(
     (pane: ColumnPane): ActiveCellOverlayRect | null =>
-      uiState.editingCell ? activeCellRectForPane(pane) : null,
-    [uiState.editingCell, activeCellRectForPane],
+      editingCellPlacement && editingCellPlacement.pane === pane ? editingCellPlacement.rect : null,
+    [editingCellPlacement],
   );
 
   // ── viewport sync ────────────────────────────────────
@@ -1907,7 +1912,10 @@ export function useGridShell<T extends object>({
     leftPaneWidth: leftPaneTotalWidth,
     rightPaneWidth: rightPaneTotalWidth,
     centerLeadingWidth,
-    activeCellRect: centerViewportActiveRect,
+    // 変更(1.0 前の最終チェック FC-01): 固定ペイン(左 / 右)の active cell も矩形を渡し、縦だけ追従させます(従来は中央ペイン
+    //   だけで、固定列で ↓ / Enter と動くと画面の外へ出たまま打ち込めた)。横は中央ペインのときだけ合わせます。
+    activeCellRect: activeCellPlacement?.rect ?? null,
+    activeCellPinned: activeCellPlacement !== null && activeCellPlacement.pane !== 'center',
     // 追加(scroll-jump 対策): 可視化スクロールを「座標が変わったとき」に限定するための座標です
     //   (フィルター確定等のレイアウト再計算による rect 参照変化だけでは発火させない)。
     activeCell: uiState.activeCell,
@@ -2182,6 +2190,9 @@ export function useGridShell<T extends object>({
   ]);
 
   // ── clipboard ─────────────────────────────────────────
+  // 追加(1.0 前の最終チェック FC-21): コピー範囲(動く点線)のビュー形状の列は、列キーの並びで比べます(列の参照で比べると、
+  //   columns をレンダーごとに作り直す利用側では親の再レンダーだけで点線が消えていた)。
+  const orderedColumnKeys = useMemo(() => orderedColumns.map((column) => column.key).join('\u0000'), [orderedColumns]);
   const { isWholeGridSelected, handleCopy, handlePaste } =
     useGridClipboardController({
       rows,
@@ -2211,7 +2222,7 @@ export function useGridShell<T extends object>({
               filters: uiState.filters,
               collapsedGroupKeys: uiState.collapsedGroupKeys,
               viewRowCount,
-              columns: orderedColumns,
+              columns: orderedColumnKeys,
             },
           },
         }),
@@ -2262,6 +2273,7 @@ export function useGridShell<T extends object>({
     detailExtras,
     viewportHeight,
     scrollTop,
+    verticalScaleFactor,
     headerHeight,
     overlayBaseOffset,
     portalClassName,
@@ -2642,7 +2654,7 @@ export function useGridShell<T extends object>({
     copiedRange.view.filters === uiState.filters &&
     copiedRange.view.collapsedGroupKeys === uiState.collapsedGroupKeys &&
     copiedRange.view.viewRowCount === viewRowCount &&
-    copiedRange.view.columns === orderedColumns
+    copiedRange.view.columns === orderedColumnKeys
       ? copiedRange.selection
       : null;
   const copiedExtents = useMemo(
@@ -2889,19 +2901,17 @@ export function useGridShell<T extends object>({
   //             visibleColumns を母集合にします(見えている列だけを並び替え対象に出す＝
   //             挙動が驚かない)。title 未指定は key を表示名にします(chooser と同じ)。
   // 変更(detail ③): 展開行トグル列(合成列・値なし)は一覧から外します。
+  // 変更(1.0 前の最終チェック FC-08): 合成列(自動グループ列を含む)は一覧から外し、グルーピング中は表示から外した
+  //   グループ元列を足します(グループ元列のソートでグループごと並び替わる)。
   const sortManagerColumns = useMemo<SortManagementColumn[]>(
     () =>
-      visibleColumns
-        .filter(
-          (column) =>
-            column.key !== DETAIL_TOGGLE_COLUMN_KEY &&
-            column.key !== ROW_DRAG_HANDLE_COLUMN_KEY,
-        )
+      [...visibleColumns, ...(rowGroupingActive ? groupColumns : [])]
+        .filter((column) => !isSyntheticColumnKey(column.key))
         .map((column) => ({
           key: column.key,
           title: column.title || column.key,
         })),
-    [visibleColumns],
+    [visibleColumns, rowGroupingActive, groupColumns],
   );
 
   // ── filter management panel actions(FM-1) ────────────
@@ -3015,6 +3025,7 @@ export function useGridShell<T extends object>({
       scrollContainerRef,
       bodyScrollRef,
       commitRowMove,
+      hasRowKeys: rowKeyGetter !== undefined,
       ghostSlot: slots.dragGhost,
       // 追加(motion-8 / M-11): 'live' では掴んだ行が追従し周りの行が退避する(motion='off' では ghost へフォールバック)。
       motion: resolvedMotion === 'off' ? 'ghost' : rowDragMotion,

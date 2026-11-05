@@ -370,4 +370,28 @@ describe('createGridApi', () => {
     expect(createElement).not.toHaveBeenCalled();
     createElement.mockRestore();
   });
+
+  // 追加(1.0 前の最終チェック FC-34): URL はクリックの直後ではなく、少し待ってから破棄する。
+  it('downloadCsv はダウンロード用の URL を少し待ってから破棄する', () => {
+    vi.useFakeTimers();
+    const createObjectURL = vi.fn(() => 'blob:test');
+    const revokeObjectURL = vi.fn();
+    vi.stubGlobal('URL', Object.assign(Object.create(URL), { createObjectURL, revokeObjectURL }));
+    const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+    try {
+      const api = createGridApi<Row>(withExport);
+      const { args } = makeArgs();
+      api.update(args);
+      api.handle.downloadCsv('a.csv');
+      expect(click).toHaveBeenCalledTimes(1);
+      expect(createObjectURL).toHaveBeenCalledTimes(1);
+      expect(revokeObjectURL).not.toHaveBeenCalled();
+      vi.advanceTimersByTime(1000);
+      expect(revokeObjectURL).toHaveBeenCalledWith('blob:test');
+    } finally {
+      click.mockRestore();
+      vi.unstubAllGlobals();
+      vi.useRealTimers();
+    }
+  });
 });

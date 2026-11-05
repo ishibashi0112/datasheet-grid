@@ -129,6 +129,10 @@ describe('resolveChipSpec / resolveChipTone', () => {
     expect(resolveChipSpec(chips, ctx('ng'))).toEqual({ tone: 'critical', label: 'NG' });
     expect(resolveChipSpec(chips, ctx('other'))).toBeNull();
     expect(resolveChipSpec(chips, ctx(null))).toBeNull();
+    // 追加(1.0 前の最終チェック FC-25): プロトタイプのキーは拾わない。
+    expect(resolveChipSpec(chips, ctx('constructor'))).toBeNull();
+    expect(resolveChipSpec(chips, ctx('toString'))).toBeNull();
+    expect(resolveChipSpec(chips, ctx('__proto__'))).toBeNull();
   });
   it('関数版はコンテキストから返し、不明な色味は neutral に倒す', () => {
     const fn = (c: CellStyleContext<Row>) => (c.row.delta < 0 ? 'critical' : null);

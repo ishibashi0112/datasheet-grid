@@ -62,6 +62,12 @@ export type RowDragArgs = {
   // 追加(motion-8 / M-11): 表示方式。'ghost'(既定 = 従来: ゴースト + ガイド線、ドロップ後にスライド)/ 'live'(掴んだ
   //   行がポインタに追従し、通る先の行がその場で上下へ退避する。ガイド線 / ゴーストは出さない)。スロット解決は共通。
   motion?: 'ghost' | 'live';
+  // 追加(1.0 前の最終チェック FC-12): 掴んだ行を離すときに今の行の並びで探し直すための関数です。getDragRow は掴んだときの
+  //   行の控え(中身は呼び出し側が決める)、locateDragRow はその行の今の view index(見つからなければ null = ドロップを
+  //   取り消す)。未指定なら
+  //   掴んだときの index のまま(従来どおり)。
+  getDragRow?: (viewIndex: number) => unknown;
+  locateDragRow?: (dragRow: unknown, hint: number) => number | null;
 };
 
 // ハンドルの pointerdown イベント(構造的型。React の合成 PointerEvent をそのまま渡せます)。
@@ -143,6 +149,7 @@ const collectRowElements = (container: HTMLElement): HTMLElement[] => {
 };
 
 type RowDropHit = { slot: number; top: number };
+type LiveBase = { index: number; baseY: number; applied?: string };
 
 export const createRowDragController = (): RowDragController => {
   let args: RowDragArgs | null = null;
@@ -158,9 +165,13 @@ export const createRowDragController = (): RowDragController => {
   let activePointerId: number | null = null;
   let rafId: number | null = null;
   // settle(FLIP)用: commit 直前の各行要素の screen-y。
-  let settlePending: Map<HTMLElement, number> | null = null;
+  // 変更(1.0 前の最終チェック FC-02): 要素ではなく「ペイン + view index」で持ち、確定した移動(from → to)も控えます。
+  let settlePending: { tops: Map<string, number>; from: number; to: number; row: unknown } | null = null;
+  // 追加(FC-12): 掴んだ行の控え(getDragRow の戻り値)。離すときに今の並びで探し直します。
+  let draggingRow: unknown = null;
   // 追加(motion-8 / M-11): live 方式のドラッグ開始時の各行要素の translateY(基準)と scrollTop。
-  let liveBases: Map<HTMLElement, { index: number; baseY: number }> | null = null;
+  //   applied は最後にこのコントローラが書いた transform(FC-12: ドラッグ中に React が書き直したかを見分ける)。
+  let liveBases: Map<HTMLElement, LiveBase> | null = null;
   let liveStartScrollTop = 0;
 
   const isLive = () => args?.motion === 'live';
@@ -266,11 +277,15 @@ export const createRowDragController = (): RowDragController => {
   };
 
   // ドラッグ中の行(3 ペイン分)の淡色表示属性を付け外しします(live 方式は値 'live' = 浮いた見た目)。
+  //   変更(FC-12): 外すときは index でなく属性の付いた行をすべて外します(ドラッグ中に行の並びが変わると、付けた行の
+  //   index が変わって外し漏れていた)。
   const setDraggingRowAttribute = (viewIndex: number | null, on: boolean) => {
     const container = args?.scrollContainerRef.current ?? null;
-    if (!container || viewIndex === null) return;
+    if (!container || (on && viewIndex === null)) return;
     container
-      .querySelectorAll<HTMLElement>(`.ssg-body-row[data-row-index="${viewIndex}"]`)
+      .querySelectorAll<HTMLElement>(
+        on ? `.ssg-body-row[data-row-index="${viewIndex}"]` : `.ssg-body-row[${DRAGGING_ROW_ATTRIBUTE}]`,
+      )
       .forEach((row) => {
         if (isInsideDetailCardOf(container, row)) return;
         if (on) {
@@ -283,10 +298,10 @@ export const createRowDragController = (): RowDragController => {
 
   // 追加(motion-8 / M-11): live 方式。描画中の行要素の基準 translateY を控えます(autoscroll で後から描画された行は
   //   applyLivePositions が取り込みます)。
-  const captureLiveBases = (): Map<HTMLElement, { index: number; baseY: number }> | null => {
+  const captureLiveBases = (): Map<HTMLElement, LiveBase> | null => {
     const container = args?.scrollContainerRef.current ?? null;
     if (!container) return null;
-    const map = new Map<HTMLElement, { index: number; baseY: number }>();
+    const map = new Map<HTMLElement, LiveBase>();
     for (const row of collectRowElements(container)) {
       const match = TRANSLATE_Y_PATTERN.exec(row.style.transform);
       if (!match) continue;
@@ -313,7 +328,8 @@ export const createRowDragController = (): RowDragController => {
     const scrollDelta = (container.scrollTop - liveStartScrollTop) * args.verticalScaleFactor;
     const dragDelta = (dragOrigin ? pointer.y - dragOrigin.y : 0) + scrollDelta;
     const target = slot === null ? null : resolveMoveTargetIndex(from, slot);
-    bases.forEach(({ index, baseY }, row) => {
+    bases.forEach((base, row) => {
+      const { index, baseY } = base;
       if (!row.isConnected) {
         bases.delete(row);
         return;
@@ -322,6 +338,7 @@ export const createRowDragController = (): RowDragController => {
         row.style.transition = 'none';
         row.style.transform = `translateY(${baseY + dragDelta}px)`;
         row.style.willChange = 'transform';
+        base.applied = row.style.transform;
         return;
       }
       let shift = 0;
@@ -331,6 +348,7 @@ export const createRowDragController = (): RowDragController => {
       }
       row.style.transition = LIVE_SHIFT_TRANSITION;
       row.style.transform = `translateY(${baseY + shift}px)`;
+      base.applied = row.style.transform;
     });
   };
 
@@ -438,13 +456,18 @@ export const createRowDragController = (): RowDragController => {
     rafId = requestAnimationFrame(autoScrollTick);
   };
 
-  // commit 直前の各行要素の screen-y を記録します(FLIP の before)。
-  const captureRowTops = (): Map<HTMLElement, number> | null => {
+  // commit 直前の各行の screen-y を「ペイン + view index」で記録します(FLIP の before)。
+  // 変更(1.0 前の最終チェック FC-02): 行要素ではなく view index で持ち、確定後は移動の前後の index の対応(from → to)で
+  //   引きます。rowKeyGetter が無い(行キー = index)と React は行要素を index で使い回すので、要素で引くと別の行の位置から
+  //   滑らせていた。
+  const rowPositionKey = (row: HTMLElement, viewIndex: number): string =>
+    `${row.getAttribute('data-pane') ?? ''}|${viewIndex}`;
+  const captureRowTops = (): Map<string, number> | null => {
     const container = args?.scrollContainerRef.current ?? null;
     if (!container) return null;
-    const map = new Map<HTMLElement, number>();
+    const map = new Map<string, number>();
     for (const row of collectRowElements(container)) {
-      map.set(row, row.getBoundingClientRect().top);
+      map.set(rowPositionKey(row, Number(row.getAttribute('data-row-index'))), row.getBoundingClientRect().top);
     }
     return map;
   };
@@ -458,10 +481,14 @@ export const createRowDragController = (): RowDragController => {
     hideAllIndicators();
     destroyGhost();
 
+    // 変更(1.0 前の最終チェック FC-12): ドラッグ中に行の並びが変わったときは update(followDraggedRow)が draggingIndex を
+    //   掴んだ行の今の位置へ直しているので、そのまま使います。
     const from = draggingIndex;
     const slot = dropSlot;
+    const draggedRow = draggingRow;
     setDraggingRowAttribute(from, false);
     draggingIndex = null;
+    draggingRow = null;
     dropSlot = null;
     dragOrigin = null;
     activePointerId = null;
@@ -469,16 +496,23 @@ export const createRowDragController = (): RowDragController => {
     const to = from === null || slot === null ? null : resolveMoveTargetIndex(from, slot);
     const willCommit = commit && from !== null && to !== null && args !== null;
 
-    // 追加(motion-8 / M-11): live 方式の後始末。確定するときは現在の画面位置(追従 / 退避済み)から settle するため
-    //   transform は残して transition だけ外します(captureRowTops が live 位置を読む)。確定しないときは基準位置へ
-    //   戻します(transition 付き)。
+    // 追加(motion-8 / M-11): live 方式の後始末。確定するときは現在の画面位置(追従 / 退避済み)から settle します
+    //   (captureRowTops が live 位置を読む)。確定しないときは基準位置へ戻します(transition 付き)。
     const bases = liveBases;
     liveBases = null;
+    // 変更(FC-02): 確定するときは、今の画面位置(追従 / 退避済み)を記録してから transform を基準位置へ戻し(transition なし)、
+    //   それから並びを反映します。transform を残したままだと、行キーが index のとき React が行要素を使い回して transform を
+    //   書き直さず、確定後の画面の並びがデータとずれていた(見えている行と、クリックや入力で書き換わる行が違った)。
+    const liveTops =
+      bases && willCommit && args !== null && !isMotionOff(args.scrollContainerRef.current) ? captureRowTops() : null;
     if (bases) {
       if (willCommit) {
-        bases.forEach((_, row) => {
+        bases.forEach(({ baseY }, row) => {
           row.style.transition = '';
           row.style.willChange = '';
+          if (row.isConnected) {
+            row.style.transform = `translateY(${baseY}px)`;
+          }
         });
       } else {
         const restored: HTMLElement[] = [];
@@ -499,23 +533,46 @@ export const createRowDragController = (): RowDragController => {
 
     if (!willCommit || from === null || to === null || args === null) return;
 
-    settlePending = isMotionOff(args.scrollContainerRef.current) ? null : captureRowTops();
+    const tops = liveTops ?? (isMotionOff(args.scrollContainerRef.current) ? null : captureRowTops());
+    const pending = tops ? { tops, from, to, row: draggedRow } : null;
+    settlePending = pending;
     args.commitRowMove(from, to);
+    // 変更(FC-31): 予約は確定の直後の 1 回だけ有効にします。利用側が並びを反映しない(断る / 非同期で後から反映する)と
+    //   予約が残り、後の無関係なレイアウトの変化で古い位置から滑っていた。
+    if (pending) {
+      requestAnimationFrame(() => {
+        if (settlePending === pending) {
+          settlePending = null;
+        }
+      });
+    }
   };
 
   // 並べ替え確定後(commit 済みの DOM)に呼ばれ、行要素へ FLIP を 1 回当てて「新しい位置へスライド」させます。
   //   行の縦位置は translateY(inline)なので、差分を合成した値から本体が設定した値へ transition します。
   const applyReorderSettle = () => {
-    const before = settlePending;
+    const pending = settlePending;
     settlePending = null;
-    if (!before) return;
+    if (!pending) return;
     const container = args?.scrollContainerRef.current ?? null;
     if (!container) return;
 
+    const { tops, from, to } = pending;
+    // 変更(FC-02 の見直し): 掴んだ行が to に来ていなければ(利用側が並びを反映しなかったのに、同じフレームの再描画で rows の
+    //   参照だけが変わった など)滑らせません。index の対応で引くので、並びが変わっていないと全部の行が誤って滑っていた。
+    if (args?.locateDragRow && pending.row !== null && args.locateDragRow(pending.row, to) !== to) return;
+    // 確定後の view index → 確定前の view index(from を to へ動かした並び)。
+    const previousIndexOf = (index: number): number => {
+      if (index === to) return from;
+      if (from < to && index >= from && index < to) return index + 1;
+      if (to < from && index > to && index <= from) return index - 1;
+      return index;
+    };
     const animated: HTMLElement[] = [];
     const targetYByRow = new Map<HTMLElement, number>();
-    before.forEach((oldTop, row) => {
-      if (!row.isConnected) return;
+    collectRowElements(container).forEach((row) => {
+      const oldTop = tops.get(rowPositionKey(row, previousIndexOf(Number(row.getAttribute('data-row-index')))));
+      if (oldTop === undefined) return;
       const newTop = row.getBoundingClientRect().top;
       const delta = oldTop - newTop;
       if (Math.abs(delta) < 0.5) return;
@@ -561,6 +618,7 @@ export const createRowDragController = (): RowDragController => {
     }
 
     draggingIndex = viewIndex;
+    draggingRow = args.getDragRow?.(viewIndex) ?? null;
     activePointerId = event.pointerId;
     dropSlot = null;
     pointer = { x: event.clientX, y: event.clientY };
@@ -635,9 +693,63 @@ export const createRowDragController = (): RowDragController => {
     rafId = requestAnimationFrame(autoScrollTick);
   };
 
+  // 追加(1.0 前の最終チェック FC-12): ドラッグ中に行の並びが変わったら(ポーリング / 他の人の追加。update で locateDragRow が
+  //   変わる)、掴んだ行を今の並びで探し直して追います(掴んだときの index のままだと、離したときに別の行を動かしていた)。
+  //   見つからなければ(消えた)ドラッグを取り消します。live 方式は React が書き直した行の基準位置を取り直し、掴んだ行の
+  //   index が変わったときはポインタの下に留まるよう起点をずらします。
+  const followDraggedRow = (previousRowMetrics: RowDragArgs['rowMetrics'] | null) => {
+    if (draggingIndex === null || draggingRow === null || draggingRow === undefined || args?.locateDragRow === undefined) {
+      return;
+    }
+    const located = args.locateDragRow(draggingRow, draggingIndex);
+    // 変更(FC-12 の見直し): 基準位置の取り直しは取り消しより先にします(先に取り消すと、React が新しい index で書いた
+    //   transform をドラッグ開始時の古い基準位置で上書きし、後ろの行が 1 行ずれたまま残っていた)。
+    if (liveBases) {
+      liveBases.forEach((base, row) => {
+        if (!row.isConnected) {
+          liveBases?.delete(row);
+          return;
+        }
+        const index = Number(row.getAttribute('data-row-index'));
+        if (index === base.index && (base.applied === undefined || row.style.transform === base.applied)) return;
+        const match = TRANSLATE_Y_PATTERN.exec(row.style.transform);
+        if (!match) {
+          liveBases?.delete(row);
+          return;
+        }
+        base.index = index;
+        base.baseY = parseFloat(match[1]);
+        base.applied = undefined;
+      });
+    }
+    if (located === null) {
+      activeDragDispose?.();
+      endDrag(false);
+      return;
+    }
+    if (liveBases) {
+      if (located !== draggingIndex && dragOrigin !== null && previousRowMetrics !== null) {
+        dragOrigin = {
+          x: dragOrigin.x,
+          y: dragOrigin.y + args.rowMetrics.rowTop(located) - previousRowMetrics.rowTop(draggingIndex),
+        };
+      }
+    }
+    if (located !== draggingIndex) {
+      setDraggingRowAttribute(null, false);
+      draggingIndex = located;
+      setDraggingRowAttribute(located, true);
+    }
+    updateIndicator();
+  };
+
   return {
     update: (next) => {
+      const previous = args;
       args = next;
+      if (draggingIndex !== null && previous !== null && previous.locateDragRow !== next.locateDragRow) {
+        followDraggedRow(previous.rowMetrics);
+      }
     },
     onRowDragHandlePointerDown,
     applyReorderSettle,
@@ -653,8 +765,10 @@ export const createRowDragController = (): RowDragController => {
       destroyGhost();
       setDraggingRowAttribute(draggingIndex, false);
       draggingIndex = null;
+      draggingRow = null;
       dropSlot = null;
       liveBases = null;
+      settlePending = null;
     },
   };
 };

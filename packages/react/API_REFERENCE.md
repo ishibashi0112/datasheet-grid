@@ -52,7 +52,7 @@
 | `enableUndoRedo` | `boolean` | `true` | グリッド編集(セル編集 / ペースト / `renderCell` の `setValue`)の取り消し/やり直し。`Ctrl/Cmd+Z` = undo、`Ctrl/Cmd+Shift+Z` / `Ctrl/Cmd+Y` = redo(ハンドルの `undo()` / `redo()` でも可)。clientSide(`rows` + `onRowsChange`)専用で、serverSide(`dataSource`)/ `readOnly` / `onRowsChange` 未指定時は無効。履歴は「変更前 rows 配列」の参照スナップショット(未変更行は構造共有されるため低コスト)。**`onRowsChange` で受け取った配列は参照そのまま `rows` へ戻すのが前提**(map 等で作り直すと毎回「外部変更」と見なされ履歴が消える)。rows が grid 起点以外(親の直接 setState 等)で差し替わると履歴は自動破棄。エディタ内の文字入力の取り消しは input のネイティブ undo に委譲(グリッドの undo は**確定済みの編集**が対象)。 |
 | `undoHistoryLimit` | `number` | `100` | 保持する undo ステップ数の上限。超過分は古い順に破棄。 |
 | `enableClearOnDelete` | `boolean` | `true` | `Delete` / `Backspace` キーによる選択セル(なければアクティブセル)の値クリア。`false` でキーは何もしない(素通し)。ペースト・エディタでの上書き・undo/redo には影響しない(クリアのキーボード操作だけの opt-out)。 |
-| `editorEnterMove` | `EditorEnterMove` | `'down'` | 組み込みエディタ(text / number / select / date)の `Enter` 確定後にアクティブセルをどこへ移すか(`'down'` \| `'up'` \| `'right'` \| `'left'` \| `'none'`。Excel の「Enter キーを押したら、セルを移動する(方向)」相当)。`'none'` は移動せずその場に留まる。`Tab` / `Shift+Tab`(右 / 左)と `Escape` には影響しない。custom エディタはキーバインドが consumer 責務のため対象外(`ctx.commit(value, direction)` の direction で指定)。 |
+| `editorEnterMove` | `EditorEnterMove` | `'down'` | 組み込みエディタ(text / number / select / date)の `Enter` 確定後にアクティブセルをどこへ移すか(`'down'` \| `'up'` \| `'right'` \| `'left'` \| `'none'`。Excel の「Enter キーを押したら、セルを移動する(方向)」相当)。`'none'` は移動せずその場に留まる。`labelRow` 有効時、上下の移動はラベル行に止まらず同じ向きの次のデータ行へ読み飛ばす(↑ / ↓ キーと同じ。先がラベル行だけなら確定した行に留まる)。`Tab` / `Shift+Tab`(右 / 左)と `Escape` には影響しない。custom エディタはキーバインドが consumer 責務のため対象外(`ctx.commit(value, direction)` の direction で指定)。 |
 | `imeDirectInput` | `boolean` | `false` | **IME オンのままの直接入力**(Excel / SPREAD と同じ)。`true` で、編集していないあいだグリッドのフォーカスをアクティブセル上の透明な入力欄(入力受け)に置き、IME の変換をそこで始める。text エディタ(`editor` 未指定 / `type: 'text'`)の編集可能セルでは変換中の文字をセルの上に表示し、変換を確定すると確定した文字列を初期値に編集を始める(もう一度 `Enter` でセルを確定して移動)。number エディタの列では確定した全角の数字・符号・小数点・3 桁区切りを半角に直して編集を始め(「１２．５」→ `12.5`)、数値として読めない変換は捨てる(「ー」「。」だけの変換は `-` / `.` の打ち始めとして編集を始める)。それ以外の列(select / date / checkbox / custom)と読み取り専用セルでは変換を捨てる(従来どおり何も入らない)。キー操作 / コピー・貼り付け / `Tab` は従来どおり。既定 OFF の理由: 有効中はグリッドにフォーカスがあるあいだ `document.activeElement` が入力欄になり、入力欄では反応しないアプリのショートカット(例: Mantine の `useHotkeys` の既定)が効かなくなるため。詳細は「IME オンのままの直接入力」節。 |
 | `onUndoRedoStateChange` | `(state: UndoRedoState) => void` | — | undo / redo 可能状態が**変化したとき**に呼ばれる(ツールバーの undo/redo ボタンの disabled 表示などリアクティブな UI 用)。初回マウントでは発火せず、同値では再発火しない。毎レンダーのインライン関数でも問題ない。引数の型 `UndoRedoState`(`{ canUndo, canRedo }`)はパッケージから import できる。 |
 | `enableRangeSelection` | `boolean` | `true` | 複数セル範囲選択。 |
@@ -210,7 +210,7 @@ renderBottomBar={(ctx) => {
 - **操作**: ハンドルを押して上下か左右へ引きます(元の範囲から遠く離れた向きを採る)。点線が埋める範囲、ポインタの近くの値がいちばん遠いセルへ入る値です。表の端へ寄せると自動でスクロールします。`Ctrl`(Mac は `⌘`)を押しているあいだは埋め方が入れ替わり、`Escape` でやめます(ドラッグ中のキーはグリッドへ流しません)。離すと元の範囲 + 埋めた範囲が選ばれます(アクティブセルはそのまま)。
 - **埋め方の既定**: 列ごと(上下へ埋めるとき)/ 行ごと(左右へ埋めるとき)に決めます。続き方の分かる値は連続データ、数値 1 つ・数字だけの文字列 1 つ・続き方の無い値はコピーです。`Ctrl` / `⌘` はこれを入れ替えます(数値 1 つなら 1 ずつ増やす)。上 / 左へ引くと逆向きに続きます(`1, 2, 3` の上は `0, -1 …`。元の値が 1 つなら 1 ずつ戻り、日付は前の日)。
 - **連続データの規則**:
-  - 数値: 2 つ以上なら最小二乗の直線で続けます(等差ならその差。`1, 3` → `5, 7`)。浮動小数の誤差は丸めます。数値の文字列(`'1.5'`)も同じ規則で文字列を返します。
+  - 数値: 2 つ以上なら最小二乗の直線で続けます(等差ならその差。`1, 3` → `5, 7`)。浮動小数の誤差は丸めます。数値の文字列(`'1.5'`)も同じ規則で文字列を返し、小数の桁は元の値のいちばん多い桁にそろえます(`'1.50', '1.75'` → `'2.00', '2.25'`)。
   - 日付: `Date` と `'YYYY-MM-DD'` / `'YYYY/MM/DD'` の文字列(形式を保つ)。日が同じで月の差が一定なら月単位(`2026-01-15, 2026-02-15` → `2026-03-15`。その月に無い日は月末に丸める)、それ以外は日単位です(1 つだけなら 1 日ずつ)。
   - 曜日 / 月の名前: 日本語(`月` / `月曜` / `月曜日`、`1月`)と英語の短縮・正式(`Mon` / `Monday`、`Jan` / `January`)。英語は大文字小文字を最後の値に合わせます。
   - 末尾が数字の文字列(`P-001`、`No.9`): 前置きが同じとき末尾の数を進めます。0 埋めは最後の値が 0 で始まるときだけ桁数を保ちます。
@@ -462,7 +462,7 @@ const gridRef = useRef<SpreadsheetGridHandle<Row>>(null);
 // find={{ shortcut: false, caseSensitive: true }}
 ```
 
-- **対象**: ビュー行(フィルター / ソート適用後)× 可視列の**表示文字列**(`valueFormatter` 適用後 = 画面に見えている文字)。`renderCell` の列も表示文字列(`valueFormatter` または `String(value)`)で検索されるが、`<mark>` の強調は既定セルだけ(カレントへの移動は同じ)。
+- **対象**: ビュー行(フィルター / ソート適用後)× 可視列の**表示文字列**(`valueFormatter` 適用後 = 画面に見えている文字)。`renderCell` の列も表示文字列(`valueFormatter` または `String(value)`)で検索されるが、`<mark>` の強調は既定セルだけ(カレントへの移動は同じ)。`renderCell` の無い列のうち、チェックボックスのエディタの列と、データバーの `showValue: false` の列(画面に文字が出ない列)は対象外。
 - **走査**: 時間分割(`logic/chunkedLoop`。1 チャンク 10ms)で入力・描画を止めない。走査中は件数が「検索中…」になる。クエリ / 大文字小文字 / `rows`(編集・差し替え)/ ソート / フィルター / 列が変わると再走査し、同じヒットが残っていればカレントを保つ(移動はしない)。
 - **順送り**: `Enter` / `↓` で次、`Shift+Enter` / `↑` で前(循環)。カレントのヒットへはクリック相当の単一選択 + 可視化スクロール(`selectCell(row, col, { scrollIntoView: true })` と同じ)。クエリを打ち直すと先頭のヒットへ移動する。
 - **閉じる**: `Esc` / × でクエリとヒットが消え、フォーカスはグリッド本体へ戻る。`find` を `false` にすると開いていても閉じる。
@@ -479,13 +479,13 @@ const gridRef = useRef<SpreadsheetGridHandle<Row>>(null);
 | 矢印(+ `Shift` で範囲拡張)/ `Tab` / `Shift+Tab` | アクティブセル移動(`labelRow` 有効時、↑ / ↓ はラベル行に止まらず読み飛ばす)。最終列での `Tab` / 先頭列での `Shift+Tab` はグリッドで止めず、ブラウザ既定のフォーカス移動でグリッド外の次 / 前の要素へ移る(キーボードトラップ回避)。 |
 | `Enter` / `F2` / 印字キー直打ち | 編集開始(印字キーはその 1 文字を初期値に。select エディタではその文字で始まる候補を頭出しする)。編集可否は `readOnly` / 列 / `canEditCell` に従う。 |
 | `Escape` | 選択解除。 |
-| `Ctrl/Cmd+C` / ペースト(`Ctrl/Cmd+V`) | 選択範囲の TSV コピー(`isRowExportable` 指定時は `false` の行を除く)/ アクティブセル起点の貼り付け(readOnly では no-op)。TSV は Excel / Google スプレッドシート互換(改行・タブ・`"` を含むセルは `"…"` で囲み `"` は `""`。貼り付けはこの引用符を解釈し、途中の空行も行として保持する)。 |
+| `Ctrl/Cmd+C` / ペースト(`Ctrl/Cmd+V`) | 選択範囲の TSV コピー(`isRowExportable` 指定時は `false` の行を除く)/ アクティブセル起点の貼り付け(readOnly では no-op)。TSV は Excel / Google スプレッドシート互換(改行・タブ・`"` を含むセルは `"…"` で囲み `"` は `""`。貼り付けはこの引用符を解釈し、途中の空行も行として保持する)。合成列(行ドラッグのハンドル列・展開トグル列・自動グループ列)はコピーの列に数えず(TSV に空の列を作らない)、貼り付けでも飛ばす(合成列のセルから貼るとその右のデータ列から書く)。 |
 | `Ctrl/Cmd+F` | セル内検索バーを開く(`find` が有効なとき。無効ならブラウザ標準の検索)。 |
 | `Ctrl/Cmd+A` | 全体選択(2 回目で解除)。 |
 | `Delete` / `Backspace` | 選択セル(なければアクティブセル)の値クリア。編集不可セルは対象外。クリア値は「空文字のペースト」と同じ規則(`parseClipboardValue('')` 経由、未定義なら `''`)。変更が無ければ no-op(undo 履歴にも積まれない)。 |
 | `Ctrl/Cmd+Z` / `Ctrl/Cmd+Shift+Z` / `Ctrl/Cmd+Y` | undo / redo(詳細は命令的 API の「undo / redo」節)。 |
 
-編集エディタ内: `Enter` = 確定して下へ(移動先は `editorEnterMove` で変更可。既定 `'down'`)、`Tab` / `Shift+Tab` = 確定して右 / 左へ、`Escape` = キャンセル、フォーカスアウト = 確定。IME 変換中(`isComposing`)の `Enter` / `Escape` / `Tab` は IME の操作としてのみ扱われ、セル編集の確定 / キャンセルには使われない。
+編集エディタ内: `Enter` = 確定して下へ(移動先は `editorEnterMove` で変更可。既定 `'down'`)、`Tab` / `Shift+Tab` = 確定して右 / 左へ、`Escape` = キャンセル、フォーカスアウト = 確定。値を変えずに確定したとき(F2 → `Enter` など)は書き込まない(`onRowsChange` / `dataSource.updateRows` を呼ばず、undo 履歴にも積まない。確定後の移動はふつうどおり)。IME 変換中(`isComposing`。Safari が変換の確定で送る `keyCode` 229 の keydown も含む)の `Enter` / `Escape` / `Tab` は IME の操作としてのみ扱われ、セル編集の確定 / キャンセルには使われない。
 
 確定 / キャンセル後のフォーカス: `Enter` / `Tab` / `Escape` で確定・キャンセルしたときはグリッドへ戻る(`imeDirectInput` 有効時は入力受けへ)。フォーカスアウトで確定したときは、フォーカスの移り先がグリッド外の要素(グリッドの上のフォームの入力欄 / 上部バーのグローバルフィルター等)ならそこに残し、グリッドへ奪い返さない(クリックした入力欄へそのまま入力できる)。グリッド内の別のセルをクリックしたとき・移り先がないとき(フォーカスを取らない余白のクリック等)はグリッドへ戻る。展開行カード内のフォーカスは奪わない。
 
@@ -709,7 +709,7 @@ const columns = [
 | type | UI / 操作 | オプション | 既定パーサ(`parseClipboardValue` 未指定時) |
 | --- | --- | --- | --- |
 | `'text'` | 従来のテキスト input(既定) | — | パススルー(生文字列のまま) |
-| `'number'` | `<input type="number">`(スピナー / ↑↓ステップ / 不正文字抑止)。セルを選んで `-` / `+` / `.` から打ち始めたときは、その文字を消さないよう文字の入力欄(`inputmode="decimal"`)で開き、確定した文字列を列のパーサで数値に直す(`-5`→`-5`、`.5`→`0.5`、`-` だけなら空。数値として読めない文字列は貼り付けと同じくそのまま) | `min` / `max` / `step` / `integer`(`min` / `max` / `integer` は値の検査にも使う。「バリデーション」節) | `''`・空白だけ→`null` / 有限数値文字列→`number`(全角の数字・符号・小数点と 3 桁区切りも読む: `'１，２３４'`→`1234`、`'ー５'`→`-5`)/ 非数値→生文字列のまま(mark が拾う) |
+| `'number'` | `<input type="number">`(スピナー / ↑↓ステップ / 不正文字抑止)。セルを選んで `-` / `+` / `.` から打ち始めたときは、その文字を消さないよう文字の入力欄(`inputmode="decimal"`)で開き、確定した文字列を列のパーサで数値に直す(`-5`→`-5`、`.5`→`0.5`、`-` だけなら空。数値として読めない文字列は貼り付けと同じくそのまま)。英字など数値にならない文字から打ち始めたとき・数値でない文字列の値を開いたときも文字の入力欄で開き、その文字をそのまま見せる。数値の文字列の値(`'1,234'` / `'１２'`)は半角の数値(`1234` / `12`)で開く | `min` / `max` / `step` / `integer`(`min` / `max` / `integer` は値の検査にも使う。「バリデーション」節) | `''`・空白だけ→`null` / 有限数値文字列→`number`(全角の数字・符号・小数点と 3 桁区切りも読む: `'１，２３４'`→`1234`、`'ー５'`→`-5`)/ 非数値→生文字列のまま(mark が拾う) |
 | `'select'` | 候補ドロップダウン(body 直下ポータル)。↑↓=ハイライト移動 / Enter=確定(下へ)/ Tab=確定(左右へ)/ クリック=確定 / 印字キー=label 前方一致のタイプアヘッド(約 700ms でリセット) | `options: GridSelectEditorOption[] \| (row) => GridSelectEditorOption[]`(静的 or 行依存。関数はレンダー中に呼ばれるため純粋であること) | パススルー(`option.value` は string。型変換したい場合は `parseClipboardValue` を併用) |
 | `'date'` | ネイティブ `<input type="date">`。ドラフトは `'YYYY-MM-DD' \| ''` | — | `''`→`null` / 解釈可能→`'YYYY-MM-DD'` へ正規化 / 解釈不可→生文字列のまま |
 | `'checkbox'` | **直接トグル**(編集セッションなし)。クリック / Space で即トグル。Enter / F2 / ダブルクリックではエディタが開かない | `checkedValue`(既定 `true`)/ `uncheckedValue`(既定 `false`)。checked 判定は `Object.is(value, checkedValue)` のみ | `''`→unchecked / checked・unchecked の文字列表現→対応値 / `'true'`・`'1'`→checked / その他→unchecked |
@@ -722,7 +722,7 @@ const columns = [
 - **select の blur は cancel**(値不変)です。text / number / date の blur = 確定と非対称ですが、select は「選択 = 即確定」でドラフト概念がないためです。
 - **date の Tab はグリッド流(確定 + 移動)**です。ピッカー内のセグメント移動は ← → 矢印で行えます。
 - **checkbox のダブルクリックは click 2 回**(トグル往復)として扱われます(Excel / AG Grid と同様)。`renderCell` 指定時はそちらが優先され、組み込みチェックボックスセルは描画されません。
-- **custom の `ctx.commit(value)`** は、`value` が string なら列パーサ(`parseClipboardValue` ?? editor 既定)を通し、**非 string ならパースをバイパスしてドメイン値をそのまま書き込みます**。`ctx` には `row` / `rowIndex`(ビュー行)/ `sourceRowIndex`・`rowKey`(source 基準)/ `colIndex` / `column` / `value`(編集開始時の生値)/ `initialText`(印字キー開始時はそのキー)/ `align` / `commit` / `cancel` が入ります。`commit` の返り値(`EditorCommitResult`)で reject 列の検証結果を受け取れます(無視しても安全)。`commit(value, direction)` の第 2 引数(`'down' | 'up' | 'right' | 'left'`)で確定後のアクティブセル移動を指定できます(省略時は移動しない。`editorEnterMove` prop は custom エディタには効かないため、Enter で下へ進めたい場合は `'down'` を明示)。
+- **custom の `ctx.commit(value)`** は、`value` が string なら列パーサ(`parseClipboardValue` ?? editor 既定)を通し、**非 string ならパースをバイパスしてドメイン値をそのまま書き込みます**。`ctx` には `row` / `rowIndex`(ビュー行)/ `sourceRowIndex`・`rowKey`(source 基準)/ `colIndex` / `column` / `value`(編集開始時の生値)/ `initialText`(印字キー開始時はそのキー)/ `align` / `commit` / `cancel` が入ります。`commit` の返り値(`EditorCommitResult`)で reject 列の検証結果を受け取れます(無視しても安全)。`commit(value, direction)` の第 2 引数(`'down' | 'up' | 'right' | 'left'`)で確定後のアクティブセル移動を指定できます(省略時は移動しない。`editorEnterMove` prop は custom エディタには効かないため、Enter で下へ進めたい場合は `'down'` を明示)。編集が終わった後(確定 / 取消 / 別のセルの編集が始まった後)に呼んだ前の編集の `ctx.commit` / `ctx.cancel` は何もしない(`ctx.commit` は `{ status: 'noop' }` を返す)。非同期の検査の後で確定する作りでも、遅れて届いた値が別のセルへ書かれることはない。
 
 ### バリデーション(validate / validationMode)
 
@@ -873,7 +873,7 @@ const columns: GridColumn<Row>[] = [
 - **カラースケール(`colorScale`)**: セル背景(`.ssg-body-cell--cf-scale`)を値に応じて染める。文字色は変えない(明るい段に制限してコントラストを保つ)。`type: 'sequential'`(既定)は 1 色相の淡 → 濃(`--ssg-cf-seq-min` → `--ssg-cf-seq-max`)。`'diverging'` は `mid`(省略時は `min < 0 < max` なら 0、それ以外は中央)を中立色(`--ssg-cf-div-mid`)にして、負側(`--ssg-cf-div-negative`)/ 正側(`--ssg-cf-div-positive`)を別の色相で濃くする。`colors` に CSS 色の配列(`[淡, 濃]` / `[負側, 中立, 正側]`)を渡すと差し替え。色の補間は CSS の `color-mix()` で行う(トークンや任意の CSS 色をそのまま混ぜられる)。
 - **状態チップ(`chips`)**: 値(`String(value)`)→ 色味のマップ、または `ctx`(`cellClassName` の関数版と同じ)からチップを返す関数。チップ(`.ssg-chip.ssg-chip--<tone>`)はアイコン + ラベルのピルで、色だけで意味を運ばない(`icon: false` でアイコンなし)。`label` 省略時はセルの表示文字列(`valueFormatter` 適用後。セル内検索の強調もそのまま)、`color` で任意の色(`.ssg-chip--custom`)。マップに載っていない値 / 関数が `null` を返した値はふつうの文字のまま。
 - **組み合わせ**: 1 列に `dataBar` と `colorScale` を同時に指定できる(帯は背景色の上)。`cellClassName` / `getRowClassName` の明示 style は条件付き書式より後勝ち。
-- **影響範囲**: 表示だけ。CSV / TSV / クリップボード / `getExportData` / ソート / フィルター / `renderCell` の列(カスタム描画が優先)には影響しない。`motion` が `'on'` なら帯の長さと背景色は値の変化で滑らかに変わる。
+- **影響範囲**: 表示だけ。CSV / TSV / クリップボード / `getExportData` / ソート / フィルターには影響しない。`renderCell` の列では、データバー(`dataBar`)とカラースケール(`colorScale`)はセルの背景に描かれ、中身は `renderCell` が描く(`chips` と `dataBar.showValue: false` は効かない)。`motion` が `'on'` なら帯の長さと背景色は値の変化で滑らかに変わる。
 - **色のトークン**: `--ssg-cf-bar` / `--ssg-cf-bar-negative` / `--ssg-cf-seq-min` / `--ssg-cf-seq-max` / `--ssg-cf-div-negative` / `--ssg-cf-div-mid` / `--ssg-cf-div-positive` / `--ssg-cf-<tone>` / `--ssg-cf-<tone>-bg`(tone = neutral / info / good / warning / critical)。ダークテーマは段を選び直した別の値。
 
 ### flex と autoSize(列幅の決め方)
@@ -993,7 +993,7 @@ const columns: GridColumn<Order>[] = [
 - **集計**: `aggFunc` 指定列は、グループ行の同じ列位置に集計値を表示します。組み込み(`'sum' | 'min' | 'max' | 'avg' | 'count'`)は数値(`number`)と数値の文字列(`Number()` で有限になる文字列。`'1,200'` のような区切り入りは対象外)だけを数え、空値(`null` / `undefined` / `''` / 空白だけの文字列)・`true` / `false`・`Date`・配列などは対象外(`count` のみ配下 leaf 行数)。数値対象 0 件の sum / avg / min / max は空セルになります。カスタム関数(`GridAggFunc<T>` = `({ values, rows, column }) => unknown`)は返り値がそのまま表示されるため、整形済み文字列を返すこともできます。
 - **集計値の整形**: 列に `valueFormatter` があれば集計値にも適用され、leaf セルと表示が揃います(`numberFormatter()` の 3 桁区切り等)。ただしグループ行に leaf 行は無いため **formatter の `row` は `undefined`** です。`row` を読む formatter を使う列では、`aggFunc` をカスタム関数にして整形済み文字列を返してください。
 - **開閉**: シェブロン click / グループ行 double-click / グループ行上の `Enter`・`Space`。命令的 API(下記)からも操作できます。開閉状態は UI 状態で、undo/redo・`getState()` の対象外です。
-- **並び / フィルター**: グループの並びは「ソート適用後の初出順」です(グループ元列をソートすればグループごと並び替わる)。フィルターは leaf 行に適用され、0 件になったグループは表示から消えます。空値は 1 つの「(空白)」グループへ集約されます。
+- **並び / フィルター**: グループの並びは「ソート適用後の初出順」です(グループ元列をソートすればグループごと並び替わる)。グループ元列は表示から外れますが、そのソートと列フィルターは効きます(「並び替えを管理…」パネルの候補にはグループ元列が入り、自動グループ列は入りません。列フィルターは `applyState` などで掛けられ、フィルターの管理パネルとチップバーには非表示の列と同じく「(非表示列)」として出て × で外せます)。フィルターは leaf 行に適用され、0 件になったグループは表示から消えます。空値は 1 つの「(空白)」グループへ集約されます。
 - **leaf 限定の各機能**: グループ行は編集 / ペースト / クリア / コピー / 行選択 / エクスポートの対象外です(すべて leaf 行のみが対象)。エクスポート(scope `'view'`)は開閉状態に関わらず、フィルター / ソート後の leaf 行をすべて出力します(折りたたんだグループの配下も含む。`isRowExportable` の `ctx.viewRowIndex` は全展開時のビュー行 index)。件数表示(bar の Rows / 行選択件数)も leaf 基準です。
 - **clientSide 限定**: serverSide(`dataSource`)では `rowGroup` は無視されます(開発時警告)。
 
@@ -1440,7 +1440,7 @@ const buffer = await writeXlsx({
 | メソッド | 説明 |
 | --- | --- |
 | `getState()` | 永続化対象(手動リサイズ幅 / フィルター / ソート)のスナップショット `GridState` を返す(純粋・副作用なし)。新規オブジェクトなのでそのまま `JSON.stringify` して保存できる。 |
-| `applyState(state)` | `getState()` の値(または互換な部分形)を適用する。外部入力は内部で防御的に正規化され、幅 reset / フィルター一括 / ソート set の 3 dispatch(1 イベント = 1 再レンダー)で反映。clientSide / serverSide 双方に効く(SSRM は `filters`/`sort` 変化がクエリへ載り再取得)。 |
+| `applyState(state)` | `getState()` の値(または互換な部分形)を適用する。外部入力は内部で防御的に正規化され(形の合わない列フィルターは捨てる)、幅 reset / フィルター一括 / ソート set の 3 dispatch(1 イベント = 1 再レンダー)で反映。clientSide / serverSide 双方に効く(SSRM は `filters`/`sort` 変化がクエリへ載り再取得)。 |
 
 `GridState`: `{ version, columnWidths, filters, sort, columns? }`。`version` はマイグレーション用(現行 `2`)。`columns` は **列メタ(可視 / 順序 / ピン)のスナップショット**(`GridColumnState[]` = `{ key, visible?, pinned? }`。配列順 = 列順)で、`getState()` は常に出力し、`applyState()` は **`onColumnsChange` が指定されているときだけ** `columns` prop へ反映する(列順 / ピン / 可視も復元される点に注意。v1 形式 = `columns` 無しの保存値は列メタを触らない後方互換)。復元した `columns` 配列は固定列ごと(左固定 → 中央 → 右固定)の順に並べ直される(画面上の列順は同じ。列のドラッグ並べ替えと同じ規則で、2 回目以降の `applyState` では順序は変わらない)。`flex` / 列定義そのものは含めない。`activeCell` / `selection` などの一時 UI も含めない。`columnWidths` は**手動リサイズ / autoSize / `applyState` で幅が決まった列だけ**を持つ(それ以外の列は `width` / `flex` で描画され、エントリを持たない)。`columns` を同じ内容の別参照で渡し直しても消えず、列が削除されたとき・その列の `flex` / `pinned` 指定が変わったとき・`width` がエントリと異なる値に指定し直されたとき・列のリセット時にだけ捨てられる。そのため `applyState(getState())` は冪等で、保存値に既定幅が焼き込まれることもない(後からコードで `width` を変えれば、手動リサイズしていない列には反映される)。`custom` フィルターの `value`(`unknown`)は深いコピーをしないため、シリアライズ可能性は consumer 責務。`applyState` は壊れた / 部分的な入力にも耐える(非数値の幅・`kind` 無し / 未知 `kind` / 配列であるべき `values` が欠けた列フィルター・不正な `direction` は捨てる)。
 
@@ -1535,7 +1535,7 @@ set / select / 複合(numberSet / textSet / dateSet)の候補集合はクライ�
 
 ### getRows 失敗時のエラー表示とリトライ(batch 9)
 
-`getRows` が reject する(abort 以外)と、失敗ブロックの行はスケルトンのまま残り、グリッド下部中央に**エラーバー**(「行の取得に失敗しました(N ブロック)」+ 再試行 / 閉じる)が表示される。
+`getRows` が reject する(abort 以外。Promise を返す前に同期で throw したときも同じ)と、失敗ブロックの行はスケルトンのまま残り、グリッド下部中央に**エラーバー**(「行の取得に失敗しました(N ブロック)」+ 再試行 / 閉じる)が表示される。
 
 - **再試行**: 失敗中のブロック**だけ**を即時(debounce なし)取り直す。キャッシュ済みブロックには触れない(`refreshServerSide()` のような全破棄はしない)。再び失敗すればバーが再表示される。
 - **スクロールでは再要求しない**: 失敗中のブロックは、スクロールで再訪しても自動では取り直さない(サーバー障害中にスクロールのたびに再要求して `onServerSideLoadError` が連発するのを防ぐため。AG Grid の `retryServerSideLoads()` と同じ方針)。取り直すのは再試行ボタン / ハンドルの `retryServerSideLoads()` / `refreshServerSide()` / クエリ変化のときだけ。
@@ -1562,9 +1562,9 @@ const dataSource: ServerSideDataSource<Row> = {
 ```
 
 - **楽観更新**: 編集はまず画面へ即時反映され(楽観値)、`updateRows` の resolve で確定する。確定までの間にブロックの再取得や LRU 退避が起きても楽観値の表示は消えない(確定前の編集はキャッシュとは別レイヤーで保持)。
-- **失敗時のロールバック**: `updateRows` が reject すると、該当セルは**編集前の値へ自動で戻り**、グリッド下部に保存失敗バー(「変更の保存に失敗しました(N 行)。値を元に戻しました」+ 閉じる)が表示される。値は復元済みのため再試行ボタンは無い(リトライ導線が必要なら `onServerSideWriteError` の `params.updates` から自前で再送する)。
+- **失敗時のロールバック**: `updateRows` が reject する(Promise を返す前に同期で throw したときも同じ)と、該当セルは**編集前の値へ自動で戻り**、グリッド下部に保存失敗バー(「変更の保存に失敗しました(N 行)。値を元に戻しました」+ 閉じる)が表示される。値は復元済みのため再試行ボタンは無い(リトライ導線が必要なら `onServerSideWriteError` の `params.updates` から自前で再送する)。
 - **`onServerSideWriteError(error, { updates })`**: バーとは独立の外部通知(トースト / ログ / リトライ導線用)。`updates` は失敗した行更新(ロールバック済み)。
-- **同一行への連続編集**: 前の書き込みが確定する前に同じ行を再編集してよい(新しい編集が表示を支配し、古い書き込みの遅延決着が新しい値を巻き戻すことはない)。失敗時のロールバック先は常に「最後にサーバー確定した値」。
+- **同一行への連続編集**: 前の書き込みが確定する前に同じ行を再編集してよい(新しい編集が表示を支配し、古い書き込みの遅延決着が新しい値を巻き戻すことはない)。確定はその書き込みで変えたセルにだけ効き、同じセルを新しい書き込みが先に確定させていれば古い書き込みはそのセルを書かない。古い書き込みが失敗したときは、その書き込みで変えたセルだけを戻す(保存中の新しい書き込みの値は残る)。失敗時のロールバック先は常に「最後にサーバー確定した値」。
 - **バリデーションとの関係**: `validate` / `validationMode` は clientSide と同一規則で機能する(`reject` 列は確定拒否・ペースト/クリアのセル単位スキップ、`mark` 列は不正値も書き戻した上でマーク表示)。
 - **ペースト / Delete クリアの範囲**: 未ロード行(スケルトン)はスキップされる。ペーストの**行/列自動拡張は行わない**(`createRow` / `createOverflowColumn` は serverSide では不発。行追加は「サーバへ反映 → `refreshServerSide()`」運用)。
 - **undo/redo**: serverSide では無効のまま(適用先の全件 rows が無いため。取り消しはサーバ側の履歴で扱う)。

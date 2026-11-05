@@ -44,7 +44,7 @@ description: SpreadsheetGridProps<T> の全 prop と既定値
 | `enableUndoRedo` | `boolean` | `true` | グリッド編集(セル編集 / ペースト / `renderCell` の `setValue`)の取り消し/やり直し。`Ctrl/Cmd+Z` = undo、`Ctrl/Cmd+Shift+Z` / `Ctrl/Cmd+Y` = redo(ハンドルの `undo()` / `redo()` でも可)。clientSide(`rows` + `onRowsChange`)専用で、serverSide(`dataSource`)/ `readOnly` / `onRowsChange` 未指定時は無効。履歴は「変更前 rows 配列」の参照スナップショット(未変更行は構造共有されるため低コスト)。**`onRowsChange` で受け取った配列は参照そのまま `rows` へ戻すのが前提**(map 等で作り直すと毎回「外部変更」と見なされ履歴が消える)。rows が grid 起点以外(親の直接 setState 等)で差し替わると履歴は自動破棄。エディタ内の文字入力の取り消しは input のネイティブ undo に委譲(グリッドの undo は**確定済みの編集**が対象)。 |
 | `undoHistoryLimit` | `number` | `100` | 保持する undo ステップ数の上限。超過分は古い順に破棄。 |
 | `enableClearOnDelete` | `boolean` | `true` | `Delete` / `Backspace` キーによる選択セル(なければアクティブセル)の値クリア。`false` でキーは何もしない(素通し)。ペースト・エディタでの上書き・undo/redo には影響しない(クリアのキーボード操作だけの opt-out)。 |
-| `editorEnterMove` | `EditorEnterMove` | `'down'` | 組み込みエディタ(text / number / select / date)の `Enter` 確定後にアクティブセルをどこへ移すか(`'down'` \| `'up'` \| `'right'` \| `'left'` \| `'none'`。Excel の「Enter キーを押したら、セルを移動する(方向)」相当)。`'none'` は移動せずその場に留まる。`Tab` / `Shift+Tab`(右 / 左)と `Escape` には影響しない。custom エディタはキーバインドが consumer 責務のため対象外(`ctx.commit(value, direction)` の direction で指定)。 |
+| `editorEnterMove` | `EditorEnterMove` | `'down'` | 組み込みエディタ(text / number / select / date)の `Enter` 確定後にアクティブセルをどこへ移すか(`'down'` \| `'up'` \| `'right'` \| `'left'` \| `'none'`。Excel の「Enter キーを押したら、セルを移動する(方向)」相当)。`'none'` は移動せずその場に留まる。`labelRow` 有効時、上下の移動はラベル行に止まらず同じ向きの次のデータ行へ読み飛ばす(↑ / ↓ キーと同じ。先がラベル行だけなら確定した行に留まる)。`Tab` / `Shift+Tab`(右 / 左)と `Escape` には影響しない。custom エディタはキーバインドが consumer 責務のため対象外(`ctx.commit(value, direction)` の direction で指定)。 |
 | `imeDirectInput` | `boolean` | `false` | **IME オンのままの直接入力**(Excel / SPREAD と同じ)。`true` で、編集していないあいだグリッドのフォーカスをアクティブセル上の透明な入力欄(入力受け)に置き、IME の変換をそこで始める。text エディタ(`editor` 未指定 / `type: 'text'`)の編集可能セルでは変換中の文字をセルの上に表示し、変換を確定すると確定した文字列を初期値に編集を始める(もう一度 `Enter` でセルを確定して移動)。number エディタの列では確定した全角の数字・符号・小数点・3 桁区切りを半角に直して編集を始め(「１２．５」→ `12.5`)、数値として読めない変換は捨てる(「ー」「。」だけの変換は `-` / `.` の打ち始めとして編集を始める)。それ以外の列(select / date / checkbox / custom)と読み取り専用セルでは変換を捨てる(従来どおり何も入らない)。キー操作 / コピー・貼り付け / `Tab` は従来どおり。既定 OFF の理由: 有効中はグリッドにフォーカスがあるあいだ `document.activeElement` が入力欄になり、入力欄では反応しないアプリのショートカット(例: Mantine の `useHotkeys` の既定)が効かなくなるため。詳細は「IME オンのままの直接入力」節。 |
 | `onUndoRedoStateChange` | `(state: UndoRedoState) => void` | — | undo / redo 可能状態が**変化したとき**に呼ばれる(ツールバーの undo/redo ボタンの disabled 表示などリアクティブな UI 用)。初回マウントでは発火せず、同値では再発火しない。毎レンダーのインライン関数でも問題ない。引数の型 `UndoRedoState`(`{ canUndo, canRedo }`)はパッケージから import できる。 |
 | `enableRangeSelection` | `boolean` | `true` | 複数セル範囲選択。 |
@@ -202,7 +202,7 @@ renderBottomBar={(ctx) => {
 - **操作**: ハンドルを押して上下か左右へ引きます(元の範囲から遠く離れた向きを採る)。点線が埋める範囲、ポインタの近くの値がいちばん遠いセルへ入る値です。表の端へ寄せると自動でスクロールします。`Ctrl`(Mac は `⌘`)を押しているあいだは埋め方が入れ替わり、`Escape` でやめます(ドラッグ中のキーはグリッドへ流しません)。離すと元の範囲 + 埋めた範囲が選ばれます(アクティブセルはそのまま)。
 - **埋め方の既定**: 列ごと(上下へ埋めるとき)/ 行ごと(左右へ埋めるとき)に決めます。続き方の分かる値は連続データ、数値 1 つ・数字だけの文字列 1 つ・続き方の無い値はコピーです。`Ctrl` / `⌘` はこれを入れ替えます(数値 1 つなら 1 ずつ増やす)。上 / 左へ引くと逆向きに続きます(`1, 2, 3` の上は `0, -1 …`。元の値が 1 つなら 1 ずつ戻り、日付は前の日)。
 - **連続データの規則**:
-  - 数値: 2 つ以上なら最小二乗の直線で続けます(等差ならその差。`1, 3` → `5, 7`)。浮動小数の誤差は丸めます。数値の文字列(`'1.5'`)も同じ規則で文字列を返します。
+  - 数値: 2 つ以上なら最小二乗の直線で続けます(等差ならその差。`1, 3` → `5, 7`)。浮動小数の誤差は丸めます。数値の文字列(`'1.5'`)も同じ規則で文字列を返し、小数の桁は元の値のいちばん多い桁にそろえます(`'1.50', '1.75'` → `'2.00', '2.25'`)。
   - 日付: `Date` と `'YYYY-MM-DD'` / `'YYYY/MM/DD'` の文字列(形式を保つ)。日が同じで月の差が一定なら月単位(`2026-01-15, 2026-02-15` → `2026-03-15`。その月に無い日は月末に丸める)、それ以外は日単位です(1 つだけなら 1 日ずつ)。
   - 曜日 / 月の名前: 日本語(`月` / `月曜` / `月曜日`、`1月`)と英語の短縮・正式(`Mon` / `Monday`、`Jan` / `January`)。英語は大文字小文字を最後の値に合わせます。
   - 末尾が数字の文字列(`P-001`、`No.9`): 前置きが同じとき末尾の数を進めます。0 埋めは最後の値が 0 で始まるときだけ桁数を保ちます。
@@ -620,7 +620,7 @@ const [rows, setRows] = useState(initialRows);
 // find={{ shortcut: false, caseSensitive: true }}
 ```
 
-- **対象**: ビュー行(フィルター / ソート適用後)× 可視列の**表示文字列**(`valueFormatter` 適用後 = 画面に見えている文字)。`renderCell` の列も表示文字列(`valueFormatter` または `String(value)`)で検索されるが、`<mark>` の強調は既定セルだけ(カレントへの移動は同じ)。
+- **対象**: ビュー行(フィルター / ソート適用後)× 可視列の**表示文字列**(`valueFormatter` 適用後 = 画面に見えている文字)。`renderCell` の列も表示文字列(`valueFormatter` または `String(value)`)で検索されるが、`<mark>` の強調は既定セルだけ(カレントへの移動は同じ)。`renderCell` の無い列のうち、チェックボックスのエディタの列と、データバーの `showValue: false` の列(画面に文字が出ない列)は対象外。
 - **走査**: 時間分割(`logic/chunkedLoop`。1 チャンク 10ms)で入力・描画を止めない。走査中は件数が「検索中…」になる。クエリ / 大文字小文字 / `rows`(編集・差し替え)/ ソート / フィルター / 列が変わると再走査し、同じヒットが残っていればカレントを保つ(移動はしない)。
 - **順送り**: `Enter` / `↓` で次、`Shift+Enter` / `↑` で前(循環)。カレントのヒットへはクリック相当の単一選択 + 可視化スクロール(`selectCell(row, col, { scrollIntoView: true })` と同じ)。クエリを打ち直すと先頭のヒットへ移動する。
 - **閉じる**: `Esc` / × でクエリとヒットが消え、フォーカスはグリッド本体へ戻る。`find` を `false` にすると開いていても閉じる。
@@ -637,13 +637,13 @@ const [rows, setRows] = useState(initialRows);
 | 矢印(+ `Shift` で範囲拡張)/ `Tab` / `Shift+Tab` | アクティブセル移動(`labelRow` 有効時、↑ / ↓ はラベル行に止まらず読み飛ばす)。最終列での `Tab` / 先頭列での `Shift+Tab` はグリッドで止めず、ブラウザ既定のフォーカス移動でグリッド外の次 / 前の要素へ移る(キーボードトラップ回避)。 |
 | `Enter` / `F2` / 印字キー直打ち | 編集開始(印字キーはその 1 文字を初期値に。select エディタではその文字で始まる候補を頭出しする)。編集可否は `readOnly` / 列 / `canEditCell` に従う。 |
 | `Escape` | 選択解除。 |
-| `Ctrl/Cmd+C` / ペースト(`Ctrl/Cmd+V`) | 選択範囲の TSV コピー(`isRowExportable` 指定時は `false` の行を除く)/ アクティブセル起点の貼り付け(readOnly では no-op)。TSV は Excel / Google スプレッドシート互換(改行・タブ・`"` を含むセルは `"…"` で囲み `"` は `""`。貼り付けはこの引用符を解釈し、途中の空行も行として保持する)。 |
+| `Ctrl/Cmd+C` / ペースト(`Ctrl/Cmd+V`) | 選択範囲の TSV コピー(`isRowExportable` 指定時は `false` の行を除く)/ アクティブセル起点の貼り付け(readOnly では no-op)。TSV は Excel / Google スプレッドシート互換(改行・タブ・`"` を含むセルは `"…"` で囲み `"` は `""`。貼り付けはこの引用符を解釈し、途中の空行も行として保持する)。合成列(行ドラッグのハンドル列・展開トグル列・自動グループ列)はコピーの列に数えず(TSV に空の列を作らない)、貼り付けでも飛ばす(合成列のセルから貼るとその右のデータ列から書く)。 |
 | `Ctrl/Cmd+F` | セル内検索バーを開く(`find` が有効なとき。無効ならブラウザ標準の検索)。 |
 | `Ctrl/Cmd+A` | 全体選択(2 回目で解除)。 |
 | `Delete` / `Backspace` | 選択セル(なければアクティブセル)の値クリア。編集不可セルは対象外。クリア値は「空文字のペースト」と同じ規則(`parseClipboardValue('')` 経由、未定義なら `''`)。変更が無ければ no-op(undo 履歴にも積まれない)。 |
 | `Ctrl/Cmd+Z` / `Ctrl/Cmd+Shift+Z` / `Ctrl/Cmd+Y` | undo / redo(詳細は命令的 API の「undo / redo」節)。 |
 
-編集エディタ内: `Enter` = 確定して下へ(移動先は `editorEnterMove` で変更可。既定 `'down'`)、`Tab` / `Shift+Tab` = 確定して右 / 左へ、`Escape` = キャンセル、フォーカスアウト = 確定。IME 変換中(`isComposing`)の `Enter` / `Escape` / `Tab` は IME の操作としてのみ扱われ、セル編集の確定 / キャンセルには使われない。
+編集エディタ内: `Enter` = 確定して下へ(移動先は `editorEnterMove` で変更可。既定 `'down'`)、`Tab` / `Shift+Tab` = 確定して右 / 左へ、`Escape` = キャンセル、フォーカスアウト = 確定。値を変えずに確定したとき(F2 → `Enter` など)は書き込まない(`onRowsChange` / `dataSource.updateRows` を呼ばず、undo 履歴にも積まない。確定後の移動はふつうどおり)。IME 変換中(`isComposing`。Safari が変換の確定で送る `keyCode` 229 の keydown も含む)の `Enter` / `Escape` / `Tab` は IME の操作としてのみ扱われ、セル編集の確定 / キャンセルには使われない。
 
 確定 / キャンセル後のフォーカス: `Enter` / `Tab` / `Escape` で確定・キャンセルしたときはグリッドへ戻る(`imeDirectInput` 有効時は入力受けへ)。フォーカスアウトで確定したときは、フォーカスの移り先がグリッド外の要素(グリッドの上のフォームの入力欄 / 上部バーのグローバルフィルター等)ならそこに残し、グリッドへ奪い返さない(クリックした入力欄へそのまま入力できる)。グリッド内の別のセルをクリックしたとき・移り先がないとき(フォーカスを取らない余白のクリック等)はグリッドへ戻る。展開行カード内のフォーカスは奪わない。
 

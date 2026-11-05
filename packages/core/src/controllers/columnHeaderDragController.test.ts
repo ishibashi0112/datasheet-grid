@@ -767,6 +767,32 @@ describe('columnHeaderDragController', () => {
     }
   });
 
+  // 追加(1.0 前の最終チェック FC-31): 利用側が columns を反映しなかったときの予約は次のフレームで捨てる。
+  it('確定後に並びが反映されないまま 1 フレーム過ぎたら、後の描き直しで古い位置から滑らせない', () => {
+    const frames: FrameRequestCallback[] = [];
+    vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
+      frames.push(callback);
+      return frames.length;
+    });
+    const controller = createColumnHeaderDragController<Row>();
+    const args = makeArgs();
+    const cells = mountCells(args.scrollContainerRef.current!);
+    controller.update(args);
+    for (const cell of cells.b) cell.getBoundingClientRect = () => makeRect(100, 0, 100, 30);
+    controller.onColumnDragHandlePointerDown(columns[0], gripEvent());
+    dispatchPointer('pointermove', 1, 280, 10);
+    dispatchPointer('pointerup', 1, 280, 10);
+    expect(args.applyColumnOrderAndPin).toHaveBeenCalledTimes(1);
+    // 利用側は並びを変えない。次のフレームが過ぎる(ドラッグの autoscroll の rAF も含めて流す)。
+    for (const callback of frames.splice(0)) callback(0);
+    // 後で別の理由(列幅の変更など)で b の位置が変わって描き直される。
+    for (const cell of cells.b) cell.getBoundingClientRect = () => makeRect(0, 0, 100, 30);
+    controller.applyReorderSettle();
+    expect(cells.b[0].style.transform).toBe('');
+    expect(cells.b[0].style.transition).toBe('');
+    controller.dispose();
+  });
+
   it('ghost 方式でも Escape でキャンセルできる', () => {
     const controller = createColumnHeaderDragController<Row>();
     const args = makeArgs();

@@ -27,6 +27,7 @@ import {
   buildServerSideRowUpdates,
   createServerSidePendingEdits,
   type ServerSideCellEditInput,
+  type ServerSidePendingChange,
 } from '../logic/serverSideEdits';
 import { createValueStore } from '../logic/valueStore';
 
@@ -190,8 +191,11 @@ export const createServerSideRowModel = <T,>(
     const startIndex = blockIndex * blockSize;
     const endIndex = startIndex + blockSize;
 
-    dataSource
-      .getRows({ startIndex, endIndex, query, signal: controller.signal })
+    // 変更(1.0 前の最終チェック FC-32): getRows が Promise を返す前に同期で throw しても、読み込みの失敗(エラーバー + 再試行)
+    //   として扱います(これまでは例外がそのまま外へ出て、ブロックが取得中のまま残っていた)。
+    new Promise<Awaited<ReturnType<typeof dataSource.getRows>>>((resolve) => {
+      resolve(dataSource.getRows({ startIndex, endIndex, query, signal: controller.signal }));
+    })
       .then((result) => {
         if (controller.signal.aborted) {
           return;
@@ -319,10 +323,22 @@ export const createServerSideRowModel = <T,>(
       return 0;
     }
     const epoch = writeEpoch;
+    // 変更(1.0 前の最終チェック FC-04 / FC-05): 書き込みごとにセルの変更を持たせます(確定値は変更のぶんだけ進め、失敗した
+    //   変更は残りの保存中の変更を当て直して外す = serverSideEdits の settleWrite)。
+    const changesByRow = new Map<number, ServerSidePendingChange<T>[]>();
+    for (const edit of edits) {
+      const list = changesByRow.get(edit.viewIndex);
+      const change = { column: edit.column, value: edit.value };
+      if (list) {
+        list.push(change);
+      } else {
+        changesByRow.set(edit.viewIndex, [change]);
+      }
+    }
     const writes = updates.map((update) => ({
       viewIndex: update.rowIndex,
-      row: update.row,
-      writeId: pendingEdits.beginWrite(update.rowIndex, update.row),
+      rowKey: update.rowKey,
+      writeId: pendingEdits.beginWrite(update.rowIndex, update.row, changesByRow.get(update.rowIndex) ?? []),
     }));
     bumpVersion();
     // 追加(motion-7 / M-9): セル単位の保存状態(rowKey × 変更列)。
@@ -330,37 +346,55 @@ export const createServerSideRowModel = <T,>(
       rowKey: update.rowKey,
       columnKeys: update.changes.map((change) => change.columnKey),
     }));
-    const notifyWriteState = (state: ServerSideWriteStateEvent['state']) => {
-      args.onWriteStateChange?.({ state, cells: stateCells });
+    const notifyWriteState = (
+      state: ServerSideWriteStateEvent['state'],
+      cells: ServerSideWriteStateEvent['cells'] = stateCells,
+    ) => {
+      args.onWriteStateChange?.({ state, cells });
     };
     notifyWriteState('pending');
 
-    updateRows({ updates })
+    // 変更(FC-32): updateRows が Promise を返す前に同期で throw しても、失敗(ロールバック + 失敗バー)として扱います。
+    new Promise<Awaited<ReturnType<typeof updateRows>>>((resolve) => {
+      resolve(updateRows({ updates }));
+    })
       .then((result) => {
         if (writeEpoch !== epoch) {
           notifyWriteState('cleared');
           return;
         }
         const confirmedRows = result === undefined ? undefined : result.rows;
-        writes.forEach((write, index) => {
-          cache.updateRow(write.viewIndex, confirmedRows?.[index] ?? write.row);
-          pendingEdits.settleWrite(write.viewIndex, write.writeId);
+        // 変更(FC-05): 保存状態の印は、同じセルを変える新しい書き込みが保存中でないセルだけ ok にします(古い書き込みの完了で
+        //   新しい書き込みの保存中の印が消えていた)。
+        const settledCells = writes.map((write, index) => {
+          const settlement = pendingEdits.settleWrite(
+            write.viewIndex,
+            write.writeId,
+            { ok: true, serverRow: confirmedRows?.[index] },
+            cache.getRow(write.viewIndex),
+          );
+          if (settlement.confirmedRow !== undefined) {
+            cache.updateRow(write.viewIndex, settlement.confirmedRow);
+          }
+          return { rowKey: write.rowKey, columnKeys: settlement.settledColumnKeys };
         });
         bumpVersion();
-        notifyWriteState('ok');
+        notifyWriteState('ok', settledCells);
       })
       .catch((error: unknown) => {
         if (writeEpoch !== epoch) {
           notifyWriteState('cleared');
           return;
         }
-        for (const write of writes) {
-          pendingEdits.settleWrite(write.viewIndex, write.writeId);
-        }
+        const settledCells = writes.map((write) => ({
+          rowKey: write.rowKey,
+          columnKeys: pendingEdits.settleWrite(write.viewIndex, write.writeId, { ok: false }, cache.getRow(write.viewIndex))
+            .settledColumnKeys,
+        }));
         writeError = { failedRowCount: updates.length };
         args.onWriteError?.(error, { updates });
         bumpVersion();
-        notifyWriteState('failed');
+        notifyWriteState('failed', settledCells);
       });
     return updates.length;
   };

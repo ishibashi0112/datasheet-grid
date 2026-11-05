@@ -5,6 +5,7 @@ import { useEffect, useRef, type CSSProperties, type KeyboardEvent, type ChangeE
 import { cx } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/cx';
 import type { FindSnapshot } from '@ishibashi0112/spreadsheet-grid-core/internal/controllers/findController';
 import type { GridResolvedSlot } from '../model/gridTypes';
+import { isImeComposingKeyEvent } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/domGuards';
 
 type GridFindBarProps = {
   snapshot: FindSnapshot;
@@ -35,7 +36,7 @@ export function GridFindBar({ snapshot, headerHeight, onQueryChange, onNext, onP
           : `${(snapshot.currentIndex ?? 0) + 1} / ${count}${snapshot.truncated ? '+' : ''}`;
 
   const handleKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
-    if (event.nativeEvent.isComposing) {
+    if (isImeComposingKeyEvent(event.nativeEvent)) {
       return;
     }
     if (event.key === 'Enter') {

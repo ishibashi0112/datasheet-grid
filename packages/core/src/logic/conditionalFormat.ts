@@ -218,7 +218,10 @@ export const resolveChipSpec = <T>(
   chips: NonNullable<GridConditionalFormat<T>['chips']>,
   ctx: CellStyleContext<T>,
 ): GridChipSpec | null => {
-  const raw = typeof chips === 'function' ? chips(ctx) : chips[String(ctx.value ?? '')];
+  // 変更(1.0 前の最終チェック FC-25): 対応表は自分のキーだけ引きます(値が 'constructor' / 'toString' / '__proto__' だと
+  //   プロトタイプの関数を拾い、無色のチップが出ていた)。
+  const key = String(ctx.value ?? '');
+  const raw = typeof chips === 'function' ? chips(ctx) : Object.hasOwn(chips, key) ? chips[key] : undefined;
   if (raw === null || raw === undefined) {
     return null;
   }

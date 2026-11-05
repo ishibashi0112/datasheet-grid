@@ -53,7 +53,8 @@ chips: ({ row }) => (row.stock === 0 ? 'critical' : null)
 ## 見た目と影響範囲
 
 - 1 列に `dataBar` と `colorScale` を同時に指定できます(帯は背景色の上)。`cellClassName` / `getRowClassName` の明示 style は条件付き書式より後勝ちです。
-- 表示だけの機能で、CSV / TSV / クリップボード / `getExportData` / ソート / フィルター / `renderCell` の列には影響しません。
+- 表示だけの機能で、CSV / TSV / クリップボード / `getExportData` / ソート / フィルターには影響しません。
+- `renderCell` の列では、データバーとカラースケールはセルの背景に描かれ、中身は `renderCell` が描きます(`chips` と `dataBar` の `showValue: false` は効きません)。
 - `motion` が `'on'` なら帯の長さと背景色は値の変化で滑らかに変わります。
 - 色はトークンで変えられます: `--ssg-cf-bar` / `--ssg-cf-seq-min` / `--ssg-cf-seq-max` / `--ssg-cf-div-negative` / `--ssg-cf-div-mid` / `--ssg-cf-div-positive` / `--ssg-cf-<tone>` / `--ssg-cf-<tone>-bg`。ダークテーマは段を選び直した別の値が入ります([テーマ](/docs/guides/theming))。
 - 状態クラス: `.ssg-body-cell--cf-bar` / `.ssg-cf-bar(--negative)` / `.ssg-body-cell--cf-scale` / `.ssg-chip(--<tone>)`。

@@ -17,6 +17,8 @@
 //     いました。mountEnter のときは style 属性の変化も旧値付きで観測し、移動された行だけ旧 translateY → 新しい値を
 //     インラインで付け直して(1 回のリフローを挟む)同じ transition を走らせます。インラインの transition を持つ行
 //     (行ドラッグの settle / live 方式が管理中)とスクロール中は触りません。
+import { isInsideDetailCardOf } from '../logic/detailRow';
+
 type ReadonlyRef<V> = { readonly current: V };
 
 export type RowEnterArgs = {
@@ -120,6 +122,12 @@ export const createRowEnterController = (): RowEnterController => {
     }
   };
 
+  // 変更(1.0 前の最終チェック FC-15): 展開行の中の入れ子のグリッドの行は対象にしません(subtree で観測しているため、
+  //   入れ子のグリッドをスクロールすると外側のグリッドのフェードインが内側の行に付いていた)。外れた要素は closest で
+  //   カードを辿れないので、追加 / 属性の変化(付いている要素)だけで見ます。
+  const isOwnBodyRow = (node: Node): node is HTMLElement =>
+    isBodyRow(node) && (observed === null || !isInsideDetailCardOf(observed, node));
+
   const handleMutations = (records: MutationRecord[]) => {
     // 同一バッチで消えた skeleton 行の index 集合と、現れた実行の一覧。
     const removedSkeletonIndexes = new Set<number>();
@@ -131,13 +139,16 @@ export const createRowEnterController = (): RowEnterController => {
     for (const record of records) {
       if (record.type === 'attributes') {
         const target = record.target;
-        if (isBodyRow(target) && !previousStyleByRow.has(target)) {
+        if (isOwnBodyRow(target) && !previousStyleByRow.has(target)) {
           previousStyleByRow.set(target, record.oldValue);
         }
         continue;
       }
+      // 変更(FC-15 の見直し): 入れ子のグリッドから消えた行も見ません(消えた要素は辿れないので、消えた先の親で判定)。
+      const removedFromNested =
+        observed !== null && record.target instanceof Element && isInsideDetailCardOf(observed, record.target);
       record.removedNodes.forEach((node) => {
-        if (!isBodyRow(node)) {
+        if (removedFromNested || !isBodyRow(node)) {
           return;
         }
         if (node.hasAttribute('data-skeleton-row')) {
@@ -147,7 +158,7 @@ export const createRowEnterController = (): RowEnterController => {
         }
       });
       record.addedNodes.forEach((node) => {
-        if (isBodyRow(node) && !node.hasAttribute('data-skeleton-row')) {
+        if (isOwnBodyRow(node) && !node.hasAttribute('data-skeleton-row')) {
           addedRows.push(node);
         }
       });

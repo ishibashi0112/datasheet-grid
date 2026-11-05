@@ -119,6 +119,16 @@ describe('日付', () => {
   it('無効な Date はコピー', () => {
     expect(fill([new Date(Number.NaN)], 1, 'series').kind).toBe('copy');
   });
+
+  // 追加(1.0 前の最終チェック FC-20): 年 0〜99 を 1900 年代に読み替えない。
+  it('年 0〜99 の日付も同じ年のまま進む(文字列は 4 桁の年を保つ)', () => {
+    expect(fill(['0050-01-01'], 2).values).toEqual(['0050-01-02', '0050-01-03']);
+    expect(fill(['0099-12-30', '0099-12-31'], 1).values).toEqual(['0100-01-01']);
+    const early = new Date(2000, 0, 1);
+    early.setFullYear(50, 0, 1);
+    const [next] = fill([early], 1).values as Date[];
+    expect([next.getFullYear(), next.getMonth(), next.getDate()]).toEqual([50, 0, 2]);
+  });
 });
 
 describe('曜日 / 月の名前', () => {
@@ -191,6 +201,13 @@ describe('数値の文字列', () => {
     expect(fill(['1.5'], 2, 'toggled')).toEqual({ kind: 'series', values: ['2.5', '3.5'] });
     expect(fill(['0.1', '0.2'], 2).values).toEqual(['0.3', '0.4']);
     expect(fill(['-3', '-1'], 2).values).toEqual(['1', '3']);
+  });
+  // 追加(1.0 前の最終チェック FC-22)。
+  it('小数の桁は元の値の最大の桁にそろえる', () => {
+    expect(fill(['1.50', '1.75'], 2).values).toEqual(['2.00', '2.25']);
+    expect(fill(['1.5', '1.75'], 2).values).toEqual(['2.00', '2.25']);
+    expect(fill(['0.10'], 2, 'toggled').values).toEqual(['1.10', '2.10']);
+    expect(fill(['-0.50', '-0.25'], 2).values).toEqual(['0.00', '0.25']);
   });
 });
 

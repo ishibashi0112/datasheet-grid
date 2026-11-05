@@ -4,12 +4,14 @@
 //   IME 変換中(isComposing)の Enter / Escape / Tab は IME の確定・取り消し・候補操作なので
 //   セル編集の commit / cancel には使いません(日本語入力で変換確定の Enter がセル確定まで
 //   巻き込む誤動作の防止)。変換確定後のキーは isComposing=false で届くため通常どおり動きます。
+//   変更(FC-13): Safari は変換を確定する Enter を isComposing=false / keyCode 229 で送るため、229 も変換中とみなします。
 import type { KeyboardEvent } from 'react';
 import type {
   EditorCommitDirection,
   EditorCommitResult,
   EditorEnterMove,
 } from '../model/gridTypes';
+import { isImeComposingKeyEvent } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/domGuards';
 
 // 追加(enter-move ②): editorEnterMove('none' 含む)を commit へ渡す方向へ解決します。
 //   'none' は「移動しない」= direction 省略(undefined)です。select エディタも共用します。
@@ -45,7 +47,7 @@ export const createEditorKeyDownHandler =
     enterMove,
   }: CreateEditorKeyDownHandlerArgs) =>
   (event: KeyboardEvent<HTMLInputElement>): void => {
-    if (event.nativeEvent.isComposing) {
+    if (isImeComposingKeyEvent(event.nativeEvent)) {
       return;
     }
 

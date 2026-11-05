@@ -22,6 +22,7 @@ import {
   resolveSelectionExtents,
 } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/selectionOverlayGeometry';
 import type { ColumnPane } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/geometry';
+import { physicalToLogicalScrollTop } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/verticalGeometry';
 import type { SelectionOverlayRect } from '../SelectionOverlay';
 import type { GridSelection } from '../model/gridTypes';
 import type { FillHandleFeatureArgs, FillHandleFeatureResult, ReactGridFeatures } from './types';
@@ -54,6 +55,7 @@ const useFillHandleFeature = <T,>({
   detailExtras,
   viewportHeight,
   scrollTop,
+  verticalScaleFactor,
   headerHeight,
   overlayBaseOffset,
   portalClassName,
@@ -173,10 +175,15 @@ const useFillHandleFeature = <T,>({
       return null;
     }
     const corner = resolveFillCornerPlacement(fillSnapshot.range, paneLayout, rowMetrics, windowFirstRow, windowLastRow);
-    // 変更(見直し): 本体の行が見えている下端(合計行があればその上端)を超えるなら角の上へ出します。座標は
-    //   overlay と同じ(行の座標 − baseOffset + 見出しの高さ = スクロールコンテナ内の位置)。未計測なら使いません。
+    // 変更(見直し): 本体の行が見えている下端(合計行があればその上端)を超えるなら角の上へ出します。未計測なら使いません。
+    // 変更(1.0 前の最終チェック FC-23): 角(corner.y)は行の論理座標なので、見えている下端も論理座標で求めます(= 論理
+    //   scrollTop + 見える高さ − 見出しの高さ。overlay の層は translateY で論理スクロールの位置へ引き込まれるため、
+    //   baseOffset は打ち消し合う)。旧実装は物理 scrollTop + baseOffset で、縦の縮尺モード(約 41 万行以上)では
+    //   ボタンを角の上へ出す判定がずれていた。縮尺が無いとき(縮尺 1・baseOffset 0)は同じ値です。
     const visibleBottom =
-      viewportHeight > 0 ? scrollTop + viewportHeight - headerHeight + overlayBaseOffset : Number.POSITIVE_INFINITY;
+      viewportHeight > 0
+        ? physicalToLogicalScrollTop(scrollTop, verticalScaleFactor) + viewportHeight - headerHeight
+        : Number.POSITIVE_INFINITY;
     return corner
       ? {
           pane: corner.pane,
@@ -191,8 +198,8 @@ const useFillHandleFeature = <T,>({
     windowLastRow,
     viewportHeight,
     scrollTop,
+    verticalScaleFactor,
     headerHeight,
-    overlayBaseOffset,
   ]);
   const handleFillHandlePointerDown = useCallback(
     (event: PointerEvent<HTMLDivElement>) => fillController.handlePointerDown(event),

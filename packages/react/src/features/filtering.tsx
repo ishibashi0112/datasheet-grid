@@ -456,11 +456,15 @@ const useFilterManagement = <T,>({
         isHidden,
       });
     };
+    const shownKeys = new Set<string>();
     for (const column of orderedColumns) {
+      shownKeys.add(column.key);
       pushEntry(column, false);
     }
+    // 変更(1.0 前の最終チェック FC-08 の見直し): 表示から外れている列は visible: false の列だけでなく、グルーピング中の
+    //   グループ元列も含めます(グループ元列のフィルターは効くので、出さないと外す手段が無い)。
     for (const column of columns) {
-      if (column.visible === false) {
+      if (!shownKeys.has(column.key)) {
         pushEntry(column, true);
       }
     }
@@ -558,6 +562,10 @@ const useFilterManagement = <T,>({
         //   変化したときだけ属性を書き戻すため、直付けクラスは通常アニメ完了まで残ります
         //   (途中で hover 等により書き戻されても視認補助が早く消えるだけで実害なし)。
         cell.classList.remove('ssg-header-cell--jump-flash');
+        // 追加(1.0 前の最終チェック FC-29): モーションを止めているときは付けません(CSS でも止める。animationend が来ず残るため)。
+        if (cell.closest('.ssg-motion-off') !== null) {
+          return;
+        }
         // reflow を挟み、連続ジャンプでも再アニメーションさせます。
         void cell.offsetWidth;
         cell.classList.add('ssg-header-cell--jump-flash');

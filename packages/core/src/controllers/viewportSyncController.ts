@@ -34,6 +34,9 @@ export type ViewportSyncArgs<T> = {
   rightPaneWidth: number;
   centerLeadingWidth: number;
   activeCellRect: ViewportCellRect | null;
+  // 追加(1.0 前の最終チェック FC-01): active cell が固定ペイン(左 / 右)にあるか。固定ペインは横にスクロールしないので
+  //   縦だけ合わせます(従来は固定ペインでは矩形を渡さず、縦にも追従しなかった = ↓ / Enter で画面外へ出たまま打ち込めた)。
+  activeCellPinned?: boolean;
   activeCell: CellCoord | null;
   verticalScaleFactor: number;
   // 追加(合計行 3A): 下端に固定する行(合計行)の高さ。スクロール可能な高さに足し、行を見せるときは
@@ -81,6 +84,7 @@ export const scrollCellIntoView = (
     | 'centerLeadingWidth'
     | 'verticalScaleFactor'
     | 'footerHeight'
+    | 'activeCellPinned'
   >,
 ): void => {
   const cellTop = args.headerHeight + rect.top;
@@ -110,9 +114,12 @@ export const scrollCellIntoView = (
 
   const visibleLeft = currentScrollLeft + args.leftPaneWidth;
   const visibleRight = currentScrollLeft + viewportWidth - args.rightPaneWidth;
-  if (cellLeft < visibleLeft) {
+  // 固定ペインのセルは常に横の見える範囲にあるので横は動かしません(rect はそのペインのローカル座標で、中央ペインの
+  //   位置ではない)。
+  const pinned = args.activeCellPinned === true;
+  if (!pinned && cellLeft < visibleLeft) {
     nextScrollLeft = Math.max(cellLeft - args.leftPaneWidth, 0);
-  } else if (cellRight > visibleRight) {
+  } else if (!pinned && cellRight > visibleRight) {
     nextScrollLeft = Math.max(
       cellRight - viewportWidth + args.rightPaneWidth,
       0,
@@ -171,6 +178,7 @@ export const createViewportSyncController = <T,>(): ViewportSyncController<T> =>
       changed(prev, args, [
         'scrollElement',
         'activeCellRect',
+        'activeCellPinned',
         'activeCell',
         'headerHeight',
         'leftPaneWidth',

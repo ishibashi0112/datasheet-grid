@@ -91,6 +91,8 @@ export type FillHandleFeatureArgs<T> = {
   detailExtras: readonly DetailRowExtra[];
   viewportHeight: number;
   scrollTop: number;
+  // 追加(1.0 前の最終チェック FC-23): 縦の縮尺(約 41 万行以上で 1 未満)。物理 scrollTop を論理へ直すのに使います。
+  verticalScaleFactor: number;
   headerHeight: number;
   overlayBaseOffset: number;
   // ポータル(メニュー / ツールチップ)へ渡すテーマ / モーションのクラス。
@@ -199,10 +201,15 @@ export type ColumnReorderFeatureResult<T> = {
 
 // 行ドラッグによる並べ替え(rowDrag)の hook が受け取る値(コントローラの引数 + ラベル / ハンドルの描画に使う値)と
 //   返す値です。
-export type RowDragFeatureArgs<T> = Omit<UseRowDragControllerArgs, 'getRowDragLabel'> & {
+export type RowDragFeatureArgs<T> = Omit<
+  UseRowDragControllerArgs,
+  'getRowDragLabel' | 'getDragRow' | 'locateDragRow'
+> & {
   rowModel: RowModel<T>;
   visibleColumns: GridColumn<T>[];
   isRowDraggable: SpreadsheetGridProps<T>['isRowDraggable'];
+  // 追加(1.0 前の最終チェック FC-12): rowKeyGetter が渡されているか(掴んだ行をキーで探し直してよいか)。
+  hasRowKeys: boolean;
 };
 export type RowDragFeatureResult<T> = {
   // 行ドラッグハンドル列(合成列)のセルの中身。

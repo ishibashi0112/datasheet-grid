@@ -65,6 +65,54 @@ describe('findController', () => {
     controller.dispose();
   });
 
+  // 追加(1.0 前の最終チェック FC-26): 文字を出さない列(チェックボックス / showValue: false のデータバー)は探さない。
+  it('チェックボックスの列とデータバーの showValue: false の列は検索の対象にしない', async () => {
+    type FlagRow = { id: number; name: string; done: boolean; score: number };
+    const flagColumns: GridColumn<FlagRow>[] = [
+      { key: 'name', title: 'Name', width: 120 },
+      { key: 'done', title: 'Done', width: 60, editor: { type: 'checkbox' } },
+      { key: 'score', title: 'Score', width: 80, conditionalFormat: { dataBar: { showValue: false } } },
+    ];
+    const flagRows: FlagRow[] = [{ id: 1, name: 'true 12', done: true, score: 12 }];
+    const controller = createFindController<FlagRow>();
+    controller.update({
+      enabled: true,
+      rowModel: {
+        getRow: (i) => flagRows[i],
+        getRowCount: () => flagRows.length,
+        getSourceIndex: (i) => i,
+        getRowKey: (i) => flagRows[i]?.id ?? i,
+      },
+      columns: flagColumns,
+      caseSensitive: false,
+      onNavigate: vi.fn(),
+      onChange: vi.fn(),
+    });
+    controller.open('true');
+    await flush();
+    expect(controller.getSnapshot().matches.map((m) => m.colIndex)).toEqual([0]);
+    controller.setQuery('12');
+    await flush();
+    expect(controller.getSnapshot().matches.map((m) => m.colIndex)).toEqual([0]);
+    // renderCell の列は renderCell が中身を描くので、チェックボックス / showValue: false でも従来どおり探す。
+    controller.update({
+      enabled: true,
+      rowModel: {
+        getRow: (i) => flagRows[i],
+        getRowCount: () => flagRows.length,
+        getSourceIndex: (i) => i,
+        getRowKey: (i) => flagRows[i]?.id ?? i,
+      },
+      columns: flagColumns.map((column) => (column.key === 'name' ? column : { ...column, renderCell: () => null })),
+      caseSensitive: false,
+      onNavigate: vi.fn(),
+      onChange: vi.fn(),
+    });
+    await flush();
+    expect(controller.getSnapshot().matches.map((m) => m.colIndex)).toEqual([0, 2]);
+    controller.dispose();
+  });
+
   it('rowModel の差し替えで再走査し、同じヒットがあればカレントを保つ(移動はしない)。大文字小文字区別も反映', async () => {
     const controller = createFindController<Row>();
     const onNavigate = vi.fn();

@@ -227,8 +227,21 @@ export const createFilterPopoverCommands = <T,>(): FilterPopoverCommands<T> => {
   const commitSetFilterSelection = (columnKey: string, next: ColumnFilterSetSelection, total: number) => {
     const { openedFilterColumn, derived, dispatch } = requireArgs();
     const isComboColumn = openedFilterColumn?.key === columnKey && derived.isComboFilterColumn;
-    const selectedCount = next.mode === 'include' ? next.values.size : total - next.values.size;
-    if (selectedCount >= total) {
+    // 変更(1.0 前の最終チェック FC-07): 候補に無い値(データから消えた古い値 / 保存した状態の値)は数えません。数えると
+    //   include{A, Z} に B を足しただけで「全選択」になってフィルターが外れ(C も出る)、exclude{Z} から A を外すと 0 件扱いで
+    //   include[](全行が消える)になっていた。値そのものは書いたまま残します(候補に無いので結果は変わらない)。
+    //   「全選択」の exclude と「0 件」の include でも候補に無い値は残します(getFilterOptions で候補が他の列のフィルターや
+    //   打ち切りで減っているとき、その値の行はデータにある)。
+    const universe = derived.openedPopoverAllValues;
+    const unknownValues: string[] = [];
+    for (const value of next.values) {
+      if (!universe.has(value)) unknownValues.push(value);
+    }
+    const knownCount = next.values.size - unknownValues.length;
+    const selectedCount = next.mode === 'include' ? knownCount : total - knownCount;
+    const keepUnknown =
+      unknownValues.length > 0 && (next.mode === 'exclude' ? selectedCount >= total : selectedCount <= 0);
+    if (selectedCount >= total && !keepUnknown) {
       if (isComboColumn) {
         const descriptor = buildComboDescriptorWithSet(columnKey, null);
         if (descriptor) {
@@ -239,8 +252,9 @@ export const createFilterPopoverCommands = <T,>(): FilterPopoverCommands<T> => {
       dispatch(gridActions.clearColumnFilter(columnKey));
       return;
     }
-    const setPart =
-      selectedCount <= 0
+    const setPart = keepUnknown
+      ? { mode: next.mode, values: unknownValues }
+      : selectedCount <= 0
         ? { mode: 'include' as const, values: [] as string[] }
         : { mode: next.mode, values: Array.from(next.values) };
     if (isComboColumn) {

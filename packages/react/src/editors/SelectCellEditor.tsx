@@ -25,6 +25,7 @@ import {
 } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/selectEditorState';
 import { cx } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/cx';
 import type { GridResolvedSlot } from '../model/gridTypes';
+import { isImeComposingKeyEvent } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/domGuards';
 
 type SelectCellEditorProps = {
   options: GridSelectEditorOption[];
@@ -151,7 +152,7 @@ export function SelectCellEditor({
 
   const handleKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
     // IME 変換中の操作は無視します(editorKeyBindings と同じガード)。
-    if (event.nativeEvent.isComposing) {
+    if (isImeComposingKeyEvent(event.nativeEvent)) {
       return;
     }
 

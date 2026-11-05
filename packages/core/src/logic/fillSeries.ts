@@ -93,8 +93,16 @@ const numericSeries = (values: readonly number[], singleStep: SingleStep): ((ind
 const DATE_TEXT_RE = /^(\d{4})([-/])(\d{1,2})\2(\d{1,2})$/;
 const DAY_MS = 86_400_000;
 
+// 変更(1.0 前の最終チェック FC-20): Date.UTC は年 0〜99 を 1900 年代に読み替えるため、setUTCFullYear で作ります
+//   (日単位の連続データで '0050-01-01' が 1950 年の続きになっていた)。
+const utcTime = (year: number, monthIndex: number, day: number): number => {
+  const date = new Date(Date.UTC(2000, 0, 1));
+  date.setUTCFullYear(year, monthIndex, day);
+  return date.getTime();
+};
+
 const daysInMonth = (year: number, monthIndex: number): number =>
-  new Date(Date.UTC(year, monthIndex + 1, 0)).getUTCDate();
+  new Date(utcTime(year, monthIndex + 1, 0)).getUTCDate();
 
 type CalendarDate = { year: number; monthIndex: number; day: number };
 
@@ -121,7 +129,7 @@ const parseDateText = (value: string): DateTextParts | null => {
 };
 
 const toDaySerial = ({ year, monthIndex, day }: CalendarDate): number =>
-  Math.round(Date.UTC(year, monthIndex, day) / DAY_MS);
+  Math.round(utcTime(year, monthIndex, day) / DAY_MS);
 
 const fromDaySerial = (serial: number): CalendarDate => {
   const date = new Date(serial * DAY_MS);
@@ -158,9 +166,11 @@ const pad2 = (value: number): string => String(value).padStart(2, '0');
 
 const formatDateText = (date: CalendarDate, separator: string, padded: boolean): string => {
   const month = date.monthIndex + 1;
+  // 年は元の文字列と同じ 4 桁(FC-20: 年 0〜999 で '50-01-02' のように桁が落ちていた)。
+  const year = date.year >= 0 ? String(date.year).padStart(4, '0') : String(date.year);
   return padded
-    ? `${date.year}${separator}${pad2(month)}${separator}${pad2(date.day)}`
-    : `${date.year}${separator}${month}${separator}${date.day}`;
+    ? `${year}${separator}${pad2(month)}${separator}${pad2(date.day)}`
+    : `${year}${separator}${month}${separator}${date.day}`;
 };
 
 const isValidDate = (value: unknown): value is Date =>
@@ -324,8 +334,16 @@ export const analyzeFillLine = (
 
   if (texts.every((text) => NUMERIC_TEXT_RE.test(text)) && !texts.every((text) => DIGITS_ONLY_RE.test(text))) {
     // '1.5' / '-3' など: 数値と同じ規則で、文字列で返します。
+    // 変更(1.0 前の最終チェック FC-22): 小数の桁は元の値の最大の桁にそろえます('1.50', '1.75' → '2.00', '2.25'。
+    //   旧実装は '2', '2.25' と桁がそろわなかった)。元が整数だけなら従来どおり。
     const next = numericSeries(texts.map(Number), singleStep);
-    return { defaultKind: single ? 'copy' : 'series', series: (index) => String(next(index)) };
+    const decimals = Math.max(...texts.map((text) => text.split('.')[1]?.length ?? 0));
+    const toText = (value: number): string => {
+      if (decimals === 0) return String(value);
+      const fixed = value.toFixed(decimals);
+      return Number(fixed) === 0 ? fixed.replace(/^-/, '') : fixed;
+    };
+    return { defaultKind: single ? 'copy' : 'series', series: (index) => toText(next(index)) };
   }
 
   const names = nameListSeries(texts, singleStep);
