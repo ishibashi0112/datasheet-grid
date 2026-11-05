@@ -26,6 +26,7 @@ import {
   formatFilterDateDisplay,
   yearGridStart,
 } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/datePickerCalendar';
+import { isImeComposingKeyEvent } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/domGuards';
 
 // ドリルアップの表示段です(日 → 月 → 年)。
 type CalendarView = 'days' | 'months' | 'years';
@@ -139,7 +140,7 @@ export function FilterDateField({
     // grid 側へは流しません(他の popover 内入力と同じ規則)。
     event.stopPropagation();
     if (event.key === 'Enter') {
-      if (event.nativeEvent.isComposing) {
+      if (isImeComposingKeyEvent(event.nativeEvent)) {
         return;
       }
       event.preventDefault();

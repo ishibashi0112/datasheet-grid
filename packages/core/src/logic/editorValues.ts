@@ -141,6 +141,40 @@ export const parseCommittedValue = <T,>(
     ? resolveCellParser(column)(committedValue, row)
     : committedValue;
 
+// 追加(1.0 前の最終チェック FC-09): 組み込みエディタをセルの値から開いたとき(F2 / Enter / ダブルクリック)の欄の文字列です。
+//   text はセル値の文字列、number は数値の表記に直した文字列(直せなければセル値の文字列のまま = NumberCellEditor が text で
+//   開く)、date は 'YYYY-MM-DD'(読めない値は '')。
+export const toEditorStartText = <T,>(column: GridColumn<T>, value: unknown): string => {
+  const type = column.editor?.type;
+  if (type === 'date') {
+    return toDateInputValue(value);
+  }
+  const text = String(value ?? '');
+  if (type === 'number') {
+    return toNumberInputText(text) ?? text;
+  }
+  return text;
+};
+
+// 追加(FC-09): 何も変えずに確定したか。そのときは書き込みません(date 列で時刻が消える / 読めない値が null になる /
+//   数値 5 が文字列 '5' になる、効果の無い undo を積む、を防ぐ)。確定した値が今の値と同じ(Object.is)か、text / number /
+//   date のエディタで欄の文字列がセルの値から開いたときのまま(toEditorStartText)なら「変えていない」とみなします。
+//   select / checkbox / custom は値そのものを確定するので Object.is だけで比べます。
+export const isUnchangedEditorCommit = <T,>(
+  column: GridColumn<T>,
+  currentValue: unknown,
+  committedValue: unknown,
+): boolean => {
+  if (Object.is(committedValue, currentValue)) {
+    return true;
+  }
+  const type = column.editor?.type;
+  if (typeof committedValue !== 'string' || type === 'select' || type === 'checkbox' || type === 'custom') {
+    return false;
+  }
+  return committedValue === toEditorStartText(column, currentValue);
+};
+
 // 単一セルの書き込みで rows を再構築します(該当 source 行のみ setCellValue で差し替え、
 //   他行は参照を維持)。
 export const writeRowsCell = <T,>(

@@ -10,6 +10,12 @@ export const isPrintableKey = (event: {
   !event.metaKey &&
   !event.altKey;
 
+// 追加(1.0 前の最終チェック FC-13): IME の変換中のキー(候補の操作 / 変換を確定する Enter / 取り消す Escape)か。
+//   Safari は変換を確定する keydown を isComposing=false / keyCode 229 で送るため、isComposing だけでは確定の Enter が
+//   セルの確定や検索の「次へ」になっていました(GridAskBar と同じ判定)。React の合成イベントは nativeEvent を渡します。
+export const isImeComposingKeyEvent = (event: { isComposing?: boolean; keyCode?: number }): boolean =>
+  event.isComposing === true || event.keyCode === 229;
+
 // 追加(G-2): IME オンのままの直接入力(imeDirectInput)の入力受けに付ける属性です。入力受けは編集していない
 //   あいだグリッドのフォーカスを持つ透明な input で、キー操作 / 貼り付けはグリッド本体と同じ扱いにします。
 export const IME_INPUT_ATTRIBUTE = 'data-ssg-ime-input';

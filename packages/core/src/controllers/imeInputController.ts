@@ -20,6 +20,7 @@
 //   接続: React 版は SpreadsheetGrid で useController(update はレイアウト effect)し、<input ref={attach}> を
 //   シェルの末尾に描画します。input は非制御(値 / class / style はこのコントローラが直接扱う)。
 import type { CellCoord } from '../model/gridTypes.unbound';
+import { isImeComposingKeyEvent } from '../logic/domGuards';
 
 type ReadonlyRef<V> = { readonly current: V };
 
@@ -205,7 +206,7 @@ export const createImeInputController = (): ImeInputController => {
   //   ルートへ戻します(既定動作は現在のフォーカス位置を起点に進むため、従来どおりルートからグリッド外へ出る)。
   //   React の委譲リスナー(アプリのルート要素)より後に走るよう、document の bubble で受けます。
   const handleDocumentKeyDown = (event: KeyboardEvent) => {
-    if (event.target !== input || event.key !== 'Tab' || event.defaultPrevented || event.isComposing) {
+    if (event.target !== input || event.key !== 'Tab' || event.defaultPrevented || isImeComposingKeyEvent(event)) {
       return;
     }
     const rootEl = root();

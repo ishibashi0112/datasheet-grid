@@ -17,12 +17,15 @@ import type {
 } from '../model/gridTypes.unbound';
 import { clamp } from '../logic/geometry';
 import { shouldIgnoreGridKeydown } from '../logic/domGuards';
-import { getCellValue, isCellEditable, isViewCellEditable } from '../utils/permissions';
+import { isCellEditable, isViewCellEditable } from '../utils/permissions';
 import {
   applyClipboardMatrixToRows,
   buildClipboardCellEdits,
+  filterClipboardColumns,
+  formatClipboardCell,
   joinTsvRow,
   parseClipboardText,
+  resolvePasteColumnIndexes,
   serializeSelectionToTsv,
   writeTextToClipboard,
 } from '../utils/clipboard';
@@ -113,9 +116,11 @@ export const createClipboardController = <T extends object>(): ClipboardControll
   };
 
   const serializeWholeGridToTsv = (current: ClipboardControllerArgs<T>): string => {
-    const { rowModel, visibleColumns } = current;
+    const { rowModel } = current;
+    // 変更(FC-03): 合成列(行ドラッグハンドル / 展開トグル / 自動グループ列)は出しません。
+    const copyColumns = filterClipboardColumns(current.visibleColumns);
     const rowCount = rowModel.getRowCount();
-    if (rowCount === 0 || visibleColumns.length === 0) {
+    if (rowCount === 0 || copyColumns.length === 0) {
       return '';
     }
     const isRowIncluded = rowIncludedFilter(current);
@@ -128,13 +133,7 @@ export const createClipboardController = <T extends object>(): ClipboardControll
       if (isRowIncluded && !isRowIncluded(row, viewIndex)) {
         continue;
       }
-      const cells = visibleColumns.map((column) => {
-        const rawValue = getCellValue(row, column);
-        return column.formatClipboardValue
-          ? column.formatClipboardValue(rawValue, row)
-          : String(rawValue ?? '');
-      });
-      lines.push(joinTsvRow(cells));
+      lines.push(joinTsvRow(copyColumns.map((column) => formatClipboardCell(row, column))));
     }
     return lines.join('\n');
   };
@@ -225,6 +224,9 @@ export const createClipboardController = <T extends object>(): ClipboardControll
 
     const startFilteredRowIndex = uiState.activeCell.row;
     const startColIndexForEdits = uiState.activeCell.col;
+    // 追加(FC-03): 貼り付けの最後の列。合成列は 1 列と数えないので、範囲の右端は合成列を飛ばした位置です。
+    const pasteColumnIndexes = resolvePasteColumnIndexes(visibleColumns, startColIndexForEdits, maxPasteWidth);
+    const lastPasteColIndex = pasteColumnIndexes[pasteColumnIndexes.length - 1] ?? startColIndexForEdits;
     // 追加(label-row ③): ラベル行(getLabelRow)を読み飛ばした貼り付け先の view index 列です。ラベル行が
     //   無ければ startRow からの連番(= 従来どおり)。行オフセット k の行は pasteTargets[k]。
     const hasLabelRows = rowModel.getLabelRow !== undefined;
@@ -256,7 +258,7 @@ export const createClipboardController = <T extends object>(): ClipboardControll
         Math.max(rowModel.getRowCount() - 1, 0),
       );
       const serverSideEndCol = clamp(
-        uiState.activeCell.col + Math.max(maxPasteWidth - 1, 0),
+        lastPasteColIndex,
         0,
         Math.max(visibleColumns.length - 1, 0),
       );
@@ -303,7 +305,7 @@ export const createClipboardController = <T extends object>(): ClipboardControll
       }
     }
 
-    const requiredColumnCount = startColIndex + maxPasteWidth;
+    const requiredColumnCount = lastPasteColIndex + 1;
     if (requiredColumnCount > workingColumns.length) {
       if (onColumnsChange && createOverflowColumn) {
         // 変更(audit L-01): overflow 列は書き込み用の workingColumns(視覚順 + 合成列)と、consumer へ
@@ -351,12 +353,9 @@ export const createClipboardController = <T extends object>(): ClipboardControll
     // 修正(audit C-12): 選択範囲の幅は serverSide 経路と同じく最も長い行の幅にします(先頭行が他の行より短い TSV
     //   (`a\nb\tc` 等)で、実際に貼り付けた範囲より狭くなっていた)。
     const endCol = clamp(
-      uiState.activeCell.col + Math.max(maxPasteWidth - 1, 0),
+      lastPasteColIndex,
       0,
-      Math.max(
-        Math.max(workingColumns.length - 1, 0),
-        startColIndex + maxPasteWidth - 1,
-      ),
+      Math.max(Math.max(workingColumns.length - 1, 0), lastPasteColIndex),
     );
 
     onRowsChange(nextRows);

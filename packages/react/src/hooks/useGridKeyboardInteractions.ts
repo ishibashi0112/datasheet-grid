@@ -7,6 +7,7 @@ import {
   type KeyboardControllerArgs,
 } from '@ishibashi0112/spreadsheet-grid-core/internal/controllers/keyboardController';
 import { useController } from './useController';
+import { isImeComposingKeyEvent } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/domGuards';
 
 export const useGridKeyboardInteractions = <T,>(
   args: KeyboardControllerArgs<T>,
@@ -20,7 +21,8 @@ export const useGridKeyboardInteractions = <T,>(
         metaKey: event.metaKey,
         shiftKey: event.shiftKey,
         altKey: event.altKey,
-        isComposing: event.nativeEvent.isComposing,
+        // 変更(FC-13): Safari の変換を確定する keydown(isComposing=false / keyCode 229)も変換中として渡します。
+        isComposing: isImeComposingKeyEvent(event.nativeEvent),
         target: event.target,
         preventDefault: () => event.preventDefault(),
       }),

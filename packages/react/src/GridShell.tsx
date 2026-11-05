@@ -1811,44 +1811,45 @@ export function useGridShell<T extends object>({
   //             col は logicalIndex（orderedColumns 空間）として扱い、
   //             computeSinglePaneColumnExtent で所属ペイン + ローカル extent を取得します。
   //             left は leadingWidth 非含有のローカル列座標で、描画側で leadingWidth を加算します。
-  const activeCellPlacement = useMemo<{
-    pane: ColumnPane;
-    rect: ActiveCellOverlayRect;
-  } | null>(() => {
-    if (!uiState.activeCell) {
-      return null;
-    }
-    const { row, col } = uiState.activeCell;
-    if (row < 0 || row >= viewRowCount) {
-      return null;
-    }
-    const single = computeSinglePaneColumnExtent(paneLayout, col);
-    if (!single) {
-      return null;
-    }
-    return {
-      pane: single.pane,
-      rect: {
-        left: single.extent.start,
-        top: rowMetrics.rowTop(row),
-        width: single.extent.width,
-        // 変更(detail ③): 展開行の帯を含まないセル行の高さ(展開行なしでは rowsHeight(row, row) と一致)。
-        height: rowMetrics.cellHeight(row),
-      },
-    };
-  }, [uiState.activeCell, viewRowCount, paneLayout, rowMetrics]);
-
-  // 追加(10-E): viewport sync（中央ペインの自動スクロール）専用の active cell 矩形です。
-  //             active cell が中央ペインにあるときだけ「中央ペインローカル座標」で返します。
-  //             固定ペイン（left / right）にある場合は横スクロール不要なので null を返し、
-  //             誤って中央ペインを横スクロールさせないようにします。
-  const centerViewportActiveRect = useMemo<ActiveCellOverlayRect | null>(
-    () =>
-      activeCellPlacement && activeCellPlacement.pane === 'center'
-        ? activeCellPlacement.rect
-        : null,
-    [activeCellPlacement],
+  // 変更(1.0 前の最終チェック FC-10): 位置の解決を関数にして、アクティブセルと編集中のセルの両方に使います。
+  const resolveCellPlacement = useCallback(
+    (cell: CellCoord | null): { pane: ColumnPane; rect: ActiveCellOverlayRect } | null => {
+      if (!cell) {
+        return null;
+      }
+      const { row, col } = cell;
+      if (row < 0 || row >= viewRowCount) {
+        return null;
+      }
+      const single = computeSinglePaneColumnExtent(paneLayout, col);
+      if (!single) {
+        return null;
+      }
+      return {
+        pane: single.pane,
+        rect: {
+          left: single.extent.start,
+          top: rowMetrics.rowTop(row),
+          width: single.extent.width,
+          // 変更(detail ③): 展開行の帯を含まないセル行の高さ(展開行なしでは rowsHeight(row, row) と一致)。
+          height: rowMetrics.cellHeight(row),
+        },
+      };
+    },
+    [viewRowCount, paneLayout, rowMetrics],
   );
+  const activeCellPlacement = useMemo(
+    () => resolveCellPlacement(uiState.activeCell),
+    [resolveCellPlacement, uiState.activeCell],
+  );
+  // 追加(FC-10): 編集中のセルの位置です。エディタはアクティブセルではなく編集中のセルに重ねます(blur で閉じない custom
+  //   エディタで編集中に別のセルを押した / 編集中に selectCell を呼んだとき、エディタだけが押したセルへ動き、中身と書き込み先は
+  //   元のセルのままだった)。
+  const editingCellPlacement = useMemo(
+    () => resolveCellPlacement(uiState.editingCell),
+    [resolveCellPlacement, uiState.editingCell],
+  );
+
 
   // 追加(10-D): 指定ペインに active cell があればそのローカル矩形を、無ければ null を返します。
   const activeCellRectForPane = useCallback(
@@ -1859,11 +1860,12 @@ export function useGridShell<T extends object>({
     [activeCellPlacement],
   );
 
-  // 追加(10-D): editor は editingCell があるときだけ、active cell と同じペイン・同じ矩形に出します。
+  // 追加(10-D): editor は editingCell があるときだけ出します。
+  // 変更(FC-10): 位置は active cell ではなく編集中のセル(editingCellPlacement)です。
   const editorRectForPane = useCallback(
     (pane: ColumnPane): ActiveCellOverlayRect | null =>
-      uiState.editingCell ? activeCellRectForPane(pane) : null,
-    [uiState.editingCell, activeCellRectForPane],
+      editingCellPlacement && editingCellPlacement.pane === pane ? editingCellPlacement.rect : null,
+    [editingCellPlacement],
   );
 
   // ── viewport sync ────────────────────────────────────
@@ -1907,7 +1909,10 @@ export function useGridShell<T extends object>({
     leftPaneWidth: leftPaneTotalWidth,
     rightPaneWidth: rightPaneTotalWidth,
     centerLeadingWidth,
-    activeCellRect: centerViewportActiveRect,
+    // 変更(1.0 前の最終チェック FC-01): 固定ペイン(左 / 右)の active cell も矩形を渡し、縦だけ追従させます(従来は中央ペイン
+    //   だけで、固定列で ↓ / Enter と動くと画面の外へ出たまま打ち込めた)。横は中央ペインのときだけ合わせます。
+    activeCellRect: activeCellPlacement?.rect ?? null,
+    activeCellPinned: activeCellPlacement !== null && activeCellPlacement.pane !== 'center',
     // 追加(scroll-jump 対策): 可視化スクロールを「座標が変わったとき」に限定するための座標です
     //   (フィルター確定等のレイアウト再計算による rect 参照変化だけでは発火させない)。
     activeCell: uiState.activeCell,

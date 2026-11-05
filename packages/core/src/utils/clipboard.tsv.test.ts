@@ -1,7 +1,16 @@
 // 追加(監査 L-03 / L-04): TSV の解釈 / 出力が Excel / Google スプレッドシート互換であることを固定します。
 import { describe, expect, it } from 'vitest';
-import { escapeTsvField, joinTsvRow, parseClipboardText, serializeSelectionToTsv } from './clipboard';
+import {
+  applyClipboardMatrixToRows,
+  escapeTsvField,
+  joinTsvRow,
+  parseClipboardText,
+  resolvePasteColumnIndexes,
+  serializeSelectionToTsv,
+} from './clipboard';
 import type { GridColumn } from '../model/gridTypes.unbound';
+import { ROW_DRAG_HANDLE_COLUMN_KEY } from '../logic/rowReorder';
+import { DETAIL_TOGGLE_COLUMN_KEY } from '../logic/detailRow';
 
 describe('parseClipboardText(監査 L-03 / L-04)', () => {
   it('基本: タブ区切り / CRLF / 末尾改行の最後の空行だけ落とす', () => {
@@ -56,5 +65,38 @@ describe('escapeTsvField / joinTsvRow(監査 L-04)', () => {
       range: { start: { row: 0, col: 0 }, end: { row: 2, col: 1 } },
     });
     expect(parseClipboardText(tsv)).toEqual(rows.map((r) => [r.a, r.b]));
+  });
+});
+
+describe('合成列はコピー / 貼り付けの列に数えない(1.0 前の最終チェック FC-03)', () => {
+  type Row = { a: string; b: string };
+  const columns: GridColumn<Row>[] = [
+    { key: ROW_DRAG_HANDLE_COLUMN_KEY, title: '', width: 28 },
+    { key: DETAIL_TOGGLE_COLUMN_KEY, title: '', width: 28 },
+    { key: 'a', title: 'A', width: 80 },
+    { key: 'b', title: 'B', width: 80 },
+  ];
+  const rows: Row[] = [
+    { a: '1', b: '2' },
+    { a: '3', b: '4' },
+  ];
+  const getRow = (index: number) => rows[index];
+
+  it('行選択 / 列選択 / セル範囲のどれでも合成列を出さない', () => {
+    expect(serializeSelectionToTsv(getRow, 2, columns, { type: 'row', startRow: 0, endRow: 1 })).toBe('1\t2\n3\t4');
+    expect(serializeSelectionToTsv(getRow, 2, columns, { type: 'col', startCol: 0, endCol: 2 })).toBe('1\n3');
+    expect(
+      serializeSelectionToTsv(getRow, 2, columns, { type: 'cell', range: { start: { row: 0, col: 1 }, end: { row: 0, col: 3 } } }),
+    ).toBe('1\t2');
+    // 合成列だけの範囲は何もコピーしない
+    expect(serializeSelectionToTsv(getRow, 2, columns, { type: 'col', startCol: 0, endCol: 1 })).toBe('');
+  });
+
+  it('貼り付けの列は合成列を飛ばして数え、列の数を超えたぶんは連番', () => {
+    expect(resolvePasteColumnIndexes(columns, 0, 2)).toEqual([2, 3]);
+    expect(resolvePasteColumnIndexes(columns, 1, 3)).toEqual([2, 3, 4]);
+    expect(resolvePasteColumnIndexes(columns, 3, 2)).toEqual([3, 4]);
+    const next = applyClipboardMatrixToRows(rows, (i) => i, columns, [['x', 'y']], 0, 0, () => true);
+    expect(next[0]).toEqual({ a: 'x', b: 'y' });
   });
 });
