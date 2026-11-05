@@ -187,9 +187,9 @@ const checkLiteDistShape = () => {
 
 // 追加(semver / 1.0 の準備): React 版の dist(js / cjs / d.ts)が core を参照する形を確かめ、崩れていれば理由を返します。
 //   使ってよいのは入口(`…-core`)/ `…-core/testing` / `…-core/internal/<dir>/<module>` だけで、旧サブパス
-//   (`…-core/<dir>/<module>`。0.60.0 で非推奨、0.61.0 で exports から消す)が残ると、その版から React 版が壊れます。
+//   (`…-core/<dir>/<module>`。0.60.0 で非推奨、0.61.0 で exports から消した)が残ると、React 版が壊れます。
 //   src の import は eslint の no-restricted-imports で止めていますが、d.ts の `import("…")` は tsc が書くもので、
-//   どちらのパスを書くかは core の exports のキーの順(`./internal/*` が `./*` より前)で決まるため、ここで dist を見ます。
+//   どちらのパスを書くかは core の exports のキーで決まるため(`./*` があった 0.60.0 まではキーの順 = `./internal/*` が前)、ここで dist を見ます。
 const CORE_SPECIFIER = /(["'])@ishibashi0112\/spreadsheet-grid-core((?:\/[^"']*)?)\1/g;
 const checkCoreImportPaths = () => {
   const problems = new Set();

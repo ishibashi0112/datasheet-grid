@@ -102,7 +102,7 @@ This library is new, so AI coding assistants rarely know its API and tend to gue
 
 ## Versioning
 
-Releases follow semver, and this package and the core always share one version. While on 0.x, breaking changes ship in minor releases and are listed in the [changelog](https://github.com/ishibashi0112/datasheet-grid/blob/main/CHANGELOG.md) under 「挙動の変化」 / 「core の破壊的変更」. The public surface is the entry points above, the CSS files, `API_REFERENCE.md`, and the CSS tokens, classes and attributes listed there. The core's building blocks (`@ishibashi0112/spreadsheet-grid-core/internal/…`, and the deprecated subpaths without `internal/`) are internal and may change in any release (this package depends on the core of exactly the same version). Details: [Versioning](https://datasheet-grid.vercel.app/docs/versioning) (Japanese).
+Releases follow semver, and this package and the core always share one version. While on 0.x, breaking changes ship in minor releases and are listed in the [changelog](https://github.com/ishibashi0112/datasheet-grid/blob/main/CHANGELOG.md) under 「挙動の変化」 / 「core の破壊的変更」. The public surface is the entry points above, the CSS files, `API_REFERENCE.md`, and the CSS tokens, classes and attributes listed there. The core's building blocks (`@ishibashi0112/spreadsheet-grid-core/internal/…`; the old subpaths without `internal/` were removed in 0.61.0) are internal and may change in any release (this package depends on the core of exactly the same version). Details: [Versioning](https://datasheet-grid.vercel.app/docs/versioning) (Japanese).
 
 ## License
 

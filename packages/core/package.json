@@ -30,7 +30,6 @@
     ".": "./src/index.ts",
     "./testing": "./src/testing/index.ts",
     "./internal/*": "./src/*.ts",
-    "./*": "./src/*.ts",
     "./package.json": "./package.json"
   },
   "publishConfig": {
@@ -50,11 +49,6 @@
         "require": "./dist/testing/index.cjs"
       },
       "./internal/*": {
-        "types": "./dist/*.d.ts",
-        "import": "./dist/*.js",
-        "require": "./dist/*.cjs"
-      },
-      "./*": {
         "types": "./dist/*.d.ts",
         "import": "./dist/*.js",
         "require": "./dist/*.cjs"
