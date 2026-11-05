@@ -3020,6 +3020,7 @@ export function useGridShell<T extends object>({
       scrollContainerRef,
       bodyScrollRef,
       commitRowMove,
+      hasRowKeys: rowKeyGetter !== undefined,
       ghostSlot: slots.dragGhost,
       // 追加(motion-8 / M-11): 'live' では掴んだ行が追従し周りの行が退避する(motion='off' では ghost へフォールバック)。
       motion: resolvedMotion === 'off' ? 'ghost' : rowDragMotion,

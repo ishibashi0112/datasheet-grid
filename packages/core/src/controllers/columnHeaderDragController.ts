@@ -1117,7 +1117,17 @@ export const createColumnHeaderDragController = <T,>(): ColumnHeaderDragControll
     const pinOverride = new Map<string, GridColumnPinned | undefined>([
       [draggedKey, target.pane === 'center' ? undefined : target.pane],
     ]);
+    const pending = settlePending;
     applyColumnOrderAndPin(keys, pinOverride);
+    // 追加(1.0 前の最終チェック FC-31): 予約は確定の直後の 1 回だけ有効にします。利用側が columns を差し替えない(断る /
+    //   後から反映する)と予約が残り、後の無関係な列の変化(幅の変更等)で古い位置から滑っていた。
+    if (pending !== null) {
+      requestAnimationFrame(() => {
+        if (settlePending === pending) {
+          settlePending = null;
+        }
+      });
+    }
   };
 
   // 並べ替え確定後(commit 済みの DOM)に呼ばれ、各列セルへ FLIP を 1 回当てて「新しい位置へスライド」させます。

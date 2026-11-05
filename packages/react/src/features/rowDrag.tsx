@@ -16,10 +16,13 @@ import { getCellValue } from '@ishibashi0112/spreadsheet-grid-core/internal/util
 import { useRowDragController } from '../hooks/useRowDragController';
 import type { ReactGridFeatures, RowDragFeatureArgs, RowDragFeatureResult } from './types';
 
+type DragRowToken = { row: unknown; rowKey: unknown; rowCount: number };
+
 const useRowDragFeature = <T,>({
   rowModel,
   visibleColumns,
   isRowDraggable,
+  hasRowKeys,
   ...controllerArgs
 }: RowDragFeatureArgs<T>): RowDragFeatureResult<T> => {
   // ゴーストのラベル: 先頭の(合成列でない)表示列の表示値。空なら「行 N」。
@@ -44,13 +47,43 @@ const useRowDragFeature = <T,>({
     },
     [rowModel, visibleColumns],
   );
+  // 追加(1.0 前の最終チェック FC-12): 掴んだ行を控え、離すときに今の並びで探し直します(ドラッグ中にポーリング等で
+  //   行の並びが変わると、掴んだときの index のまま別の行を動かしていた)。行の参照で探し、見つからなければ
+  //   rowKeyGetter があるときだけキーで探します。どちらも無いときは、行数が同じなら掴んだときの index のまま
+  //   (行を作り直すだけの再描画で取り消さないため)、行数が変わっていれば取り消します。
+  const getDragRow = useCallback(
+    (viewIndex: number): DragRowToken | null => {
+      const row = rowModel.getRow(viewIndex);
+      if (row === undefined) return null;
+      return { row, rowKey: rowModel.getRowKey(viewIndex), rowCount: rowModel.getRowCount() };
+    },
+    [rowModel],
+  );
+  const locateDragRow = useCallback(
+    (token: unknown, hint: number): number | null => {
+      const { row, rowKey, rowCount } = token as DragRowToken;
+      if (rowModel.getRow(hint) === row) return hint;
+      const count = rowModel.getRowCount();
+      for (let index = 0; index < count; index += 1) {
+        if (rowModel.getRow(index) === row) return index;
+      }
+      if (hasRowKeys) {
+        for (let index = 0; index < count; index += 1) {
+          if (Object.is(rowModel.getRowKey(index), rowKey)) return index;
+        }
+        return null;
+      }
+      return count === rowCount && hint < rowCount ? hint : null;
+    },
+    [rowModel, hasRowKeys],
+  );
   const {
     onRowDragHandlePointerDown,
     leftIndicatorRef: leftRowDropIndicatorRef,
     centerIndicatorRef: centerRowDropIndicatorRef,
     rightIndicatorRef: rightRowDropIndicatorRef,
     applyReorderSettle: applyRowReorderSettle,
-  } = useRowDragController({ ...controllerArgs, getRowDragLabel });
+  } = useRowDragController({ ...controllerArgs, getRowDragLabel, getDragRow, locateDragRow });
   // 行の並び替え確定(rowModel 差し替え)後に settle アニメを発火します。直前のドロップで armed の
   //   ときだけ動き、それ以外(編集 / フィルター等の rowModel 変化)は即 return するため無害です。
   // 変更(React 18 対応 2026-10-28): React 18 の SSR で警告を出さない useIsomorphicLayoutEffect に(クライアントでは useLayoutEffect のまま)。

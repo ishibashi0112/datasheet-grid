@@ -214,9 +214,11 @@ describe('rowDragController', () => {
       dispatchPointer('pointerup', 1, 500, 47);
       expect(commitRowMove).toHaveBeenCalledWith(1, 4);
       expect(rows[1].hasAttribute('data-ssg-row-dragging')).toBe(false);
-      // 確定時は transition だけ外し transform は残す(settle が現在位置から動かす)。
+      // 変更(1.0 前の最終チェック FC-02): 確定時は今の画面位置を控えてから transform を基準位置へ戻す(transition なし)。
+      //   行キーが index のとき React が行要素を使い回して transform を書き直さないため(settle は控えた位置から動かす)。
       expect(rows[2].style.transition).toBe('');
-      expect(rows[2].style.transform).toBe('translateY(10px)');
+      expect(rows[2].style.transform).toBe('translateY(20px)');
+      expect(rows[1].style.transform).toBe('translateY(10px)');
 
       // Escape: 基準位置へ戻る。
       commitRowMove.mockClear();
