@@ -94,6 +94,18 @@ describe('motion-4: コピー範囲の動く点線(showCopyRange)', () => {
     expect(overlays()).toHaveLength(0);
   });
 
+  // 追加(1.0 前の最終チェック FC-21): 列は参照ではなく列キーの並びで比べる。
+  it('columns を作り直しただけ(同じ列キーの並び)の再レンダーでは点線を残し、列が入れ替わると消える', async () => {
+    const ref = createRef<SpreadsheetGridHandle<Row>>();
+    const { container, rerender } = render(<SpreadsheetGrid<Row> ref={ref} rows={rows} columns={columns} />);
+    await copySelection(container, ref);
+    expect(overlays().length).toBeGreaterThan(0);
+    rerender(<SpreadsheetGrid<Row> ref={ref} rows={rows} columns={columns.map((column) => ({ ...column }))} />);
+    expect(overlays().length).toBeGreaterThan(0);
+    rerender(<SpreadsheetGrid<Row> ref={ref} rows={rows} columns={[columns[1], columns[0]]} />);
+    expect(overlays()).toHaveLength(0);
+  });
+
   it('showCopyRange=false では点線を出さない(コピー自体は行う)', async () => {
     const ref = createRef<SpreadsheetGridHandle<Row>>();
     const { container } = render(

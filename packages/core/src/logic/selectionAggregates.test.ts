@@ -148,4 +148,17 @@ describe('formatSelectionAggregateNumber', () => {
     expect(formatSelectionAggregateNumber(1234567)).toBe((1234567).toLocaleString());
     expect(formatSelectionAggregateNumber(2 / 3)).toBe((0.6667).toLocaleString(undefined, { maximumFractionDigits: 4 }));
   });
+  // 追加(1.0 前の最終チェック FC-16 / FC-19)。
+  it('大きな数を誤った端数で出さず、-0 を出さない', () => {
+    expect(formatSelectionAggregateNumber(586260659877)).toBe((586260659877).toLocaleString());
+    expect(formatSelectionAggregateNumber(999999999999)).toBe((999999999999).toLocaleString());
+    expect(formatSelectionAggregateNumber(9007199254740991)).toBe((9007199254740991).toLocaleString());
+    expect(formatSelectionAggregateNumber(123456789.12 + 0.01)).toBe(
+      (123456789.13).toLocaleString(undefined, { maximumFractionDigits: 4 }),
+    );
+    expect(formatSelectionAggregateNumber(-0.1 + -0.2 + 0.3)).toBe((0).toLocaleString());
+    expect(formatSelectionAggregateNumber(-0)).toBe((0).toLocaleString());
+    expect(formatSelectionAggregateNumber(-0.00004)).toBe((0).toLocaleString());
+    expect(formatSelectionAggregateNumber(-0.5)).toBe((-0.5).toLocaleString());
+  });
 });

@@ -19,6 +19,9 @@ import { buildTotalRowExportLine } from '../logic/totalRow';
 import { normalizeExportScope } from '../logic/exportScope';
 import type { GridApiArgs } from './gridApi';
 
+// ダウンロード用の URL を破棄するまでの猶予(FC-34)。
+const DOWNLOAD_URL_REVOKE_DELAY_MS = 1000;
+
 export type ExportCommands<T> = {
   exportCsv: SpreadsheetGridHandle<T>['exportCsv'];
   downloadCsv: SpreadsheetGridHandle<T>['downloadCsv'];
@@ -267,7 +270,11 @@ export const createExportCommands = <T,>(getArgs: () => GridApiArgs<T> | null): 
       document.body.appendChild(anchor);
       anchor.click();
       document.body.removeChild(anchor);
-      URL.revokeObjectURL(url);
+      // 変更(1.0 前の最終チェック FC-34): URL の破棄はダウンロードが始まってからにします(click の直後に同期で破棄すると、
+      //   一部のブラウザ(古い Safari 等)でダウンロードが失敗する)。
+      setTimeout(() => {
+        URL.revokeObjectURL(url);
+      }, DOWNLOAD_URL_REVOKE_DELAY_MS);
     },
 
 

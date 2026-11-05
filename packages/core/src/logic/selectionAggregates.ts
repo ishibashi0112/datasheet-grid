@@ -175,6 +175,14 @@ export const computeSelectionAggregates = <T,>(
   return finalizeSelectionAggregates(accumulator);
 };
 
-// 下部バー用の数値表示です(浮動小数の誤差を 1e-6 で丸め、小数は 4 桁まで。桁区切りあり)。
-export const formatSelectionAggregateNumber = (value: number): string =>
-  (Math.round(value * 1e6) / 1e6).toLocaleString(undefined, { maximumFractionDigits: 4 });
+// 下部バー用の数値表示です(浮動小数の誤差を丸め、小数は 4 桁まで。桁区切りあり)。
+// 変更(1.0 前の最終チェック FC-16 / FC-19): 誤差の丸めを有効数字 15 桁にします(整数はそのまま)。旧実装の
+//   Math.round(v * 1e6) / 1e6 は約 90 億を超えると v * 1e6 が整数で正確に表せず、586260659877 が
+//   「586,260,659,876.9999」と出ていた。表示の桁(小数 4 桁)で 0 になる値は 0 にします(「-0」を出さない)。
+const FRACTION_DIGITS = 4;
+const ZERO_THRESHOLD = 0.5 / 10 ** FRACTION_DIGITS;
+export const formatSelectionAggregateNumber = (value: number): string => {
+  const cleaned = Number.isInteger(value) ? value : Number(value.toPrecision(15));
+  const shown = Math.abs(cleaned) < ZERO_THRESHOLD ? 0 : cleaned;
+  return shown.toLocaleString(undefined, { maximumFractionDigits: FRACTION_DIGITS });
+};

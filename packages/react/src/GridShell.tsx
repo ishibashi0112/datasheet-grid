@@ -2190,6 +2190,9 @@ export function useGridShell<T extends object>({
   ]);
 
   // ── clipboard ─────────────────────────────────────────
+  // 追加(1.0 前の最終チェック FC-21): コピー範囲(動く点線)のビュー形状の列は、列キーの並びで比べます(列の参照で比べると、
+  //   columns をレンダーごとに作り直す利用側では親の再レンダーだけで点線が消えていた)。
+  const orderedColumnKeys = useMemo(() => orderedColumns.map((column) => column.key).join('\u0000'), [orderedColumns]);
   const { isWholeGridSelected, handleCopy, handlePaste } =
     useGridClipboardController({
       rows,
@@ -2219,7 +2222,7 @@ export function useGridShell<T extends object>({
               filters: uiState.filters,
               collapsedGroupKeys: uiState.collapsedGroupKeys,
               viewRowCount,
-              columns: orderedColumns,
+              columns: orderedColumnKeys,
             },
           },
         }),
@@ -2270,6 +2273,7 @@ export function useGridShell<T extends object>({
     detailExtras,
     viewportHeight,
     scrollTop,
+    verticalScaleFactor,
     headerHeight,
     overlayBaseOffset,
     portalClassName,
@@ -2650,7 +2654,7 @@ export function useGridShell<T extends object>({
     copiedRange.view.filters === uiState.filters &&
     copiedRange.view.collapsedGroupKeys === uiState.collapsedGroupKeys &&
     copiedRange.view.viewRowCount === viewRowCount &&
-    copiedRange.view.columns === orderedColumns
+    copiedRange.view.columns === orderedColumnKeys
       ? copiedRange.selection
       : null;
   const copiedExtents = useMemo(

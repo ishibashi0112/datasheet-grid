@@ -91,6 +91,8 @@ export type FillHandleFeatureArgs<T> = {
   detailExtras: readonly DetailRowExtra[];
   viewportHeight: number;
   scrollTop: number;
+  // 追加(1.0 前の最終チェック FC-23): 縦の縮尺(約 41 万行以上で 1 未満)。物理 scrollTop を論理へ直すのに使います。
+  verticalScaleFactor: number;
   headerHeight: number;
   overlayBaseOffset: number;
   // ポータル(メニュー / ツールチップ)へ渡すテーマ / モーションのクラス。
