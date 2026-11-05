@@ -115,7 +115,7 @@ import {
 // 追加(detail ③): 展開行(Master/Detail)の純ロジック(トグル列キー / rowKey→view index 解決 / 選択帯分割)です。
 import {
   DEFAULT_DETAIL_ROW_HEIGHT,
-  DETAIL_TOGGLE_COLUMN_KEY,
+  isSyntheticColumnKey,
   seedDetailIndexCache,
 } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/detailRow';
 // 変更(差し込み式 段階 5): ラベル行(見出し / 区切り行)の SSRM ラッパ / 縦スクロール固定の解決 / 部品は機能セット
@@ -537,7 +537,7 @@ export function useGridShell<T extends object>({
     aggColumns,
     rowGroupingActive,
     rowDragAvailable,
-    effectiveColumns,
+    filterSortColumns,
     visibleColumns,
     orderedColumns,
   } = useMemo(
@@ -969,7 +969,8 @@ export function useGridShell<T extends object>({
       rows,
       baseOrder,
       visibleColumns,
-      effectiveColumns,
+      // 変更(1.0 前の最終チェック FC-08): 相対日付プリセットの見張りもグループ元列の列フィルターを含めて見ます。
+      effectiveColumns: filterSortColumns,
       globalFilterText,
       globalFilterEnabled,
       columnFilterEnabled,
@@ -986,7 +987,9 @@ export function useGridShell<T extends object>({
         rows,
         labelLayout,
         // 変更(監査 L-02): 非表示列も含めてフィルター / ソートを評価します(バー表示・管理パネルと結果を一致)。
-        filterSortColumns: effectiveColumns,
+        // 変更(1.0 前の最終チェック FC-08): グルーピング中は表示から外したグループ元列も含めます(グループ元列のソートで
+        //   グループごと並び替わる / フィルターで絞れる。旧実装は黙って無視していた)。
+        filterSortColumns,
         columnFilters: deferredColumnFilters,
         globalFilteredOrder,
         sort: uiState.sort,
@@ -999,7 +1002,7 @@ export function useGridShell<T extends object>({
       rowPipeline,
       rows,
       labelLayout,
-      effectiveColumns,
+      filterSortColumns,
       deferredColumnFilters,
       globalFilteredOrder,
       uiState.sort,
@@ -2894,19 +2897,17 @@ export function useGridShell<T extends object>({
   //             visibleColumns を母集合にします(見えている列だけを並び替え対象に出す＝
   //             挙動が驚かない)。title 未指定は key を表示名にします(chooser と同じ)。
   // 変更(detail ③): 展開行トグル列(合成列・値なし)は一覧から外します。
+  // 変更(1.0 前の最終チェック FC-08): 合成列(自動グループ列を含む)は一覧から外し、グルーピング中は表示から外した
+  //   グループ元列を足します(グループ元列のソートでグループごと並び替わる)。
   const sortManagerColumns = useMemo<SortManagementColumn[]>(
     () =>
-      visibleColumns
-        .filter(
-          (column) =>
-            column.key !== DETAIL_TOGGLE_COLUMN_KEY &&
-            column.key !== ROW_DRAG_HANDLE_COLUMN_KEY,
-        )
+      [...visibleColumns, ...(rowGroupingActive ? groupColumns : [])]
+        .filter((column) => !isSyntheticColumnKey(column.key))
         .map((column) => ({
           key: column.key,
           title: column.title || column.key,
         })),
-    [visibleColumns],
+    [visibleColumns, rowGroupingActive, groupColumns],
   );
 
   // ── filter management panel actions(FM-1) ────────────

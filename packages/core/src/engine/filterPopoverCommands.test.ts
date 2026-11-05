@@ -92,6 +92,26 @@ describe('createFilterPopoverCommands', () => {
     expect(restored.actions.map((action) => action.type)).toEqual(['filter/clearColumn']);
   });
 
+  // 追加(1.0 前の最終チェック FC-07): 候補に無い古い値は「全選択 / 0 件」の判定に数えない。
+  it('候補に無い古い値が残っていても、全選択 / 0 件の判定は候補の中だけで数える', () => {
+    // include{a, z}(z は今の候補に無い)に b を足す → a, b だけ(c は出ない = フィルターを外さない)。
+    const included = setup({ columnFilters: { name: { kind: 'set', mode: 'include', values: ['a', 'z'] } } });
+    included.commands.handleSetFilterValueToggle('b');
+    expect(included.actions).toEqual([
+      { type: 'filter/setColumn', columnKey: 'name', value: { kind: 'set', mode: 'include', values: ['a', 'z', 'b'] } },
+    ]);
+    // exclude{z} から a を外す → b, c が残る(0 件扱いの include[] にしない)。
+    const excluded = setup({ columnFilters: { name: { kind: 'set', mode: 'exclude', values: ['z'] } } });
+    excluded.commands.handleSetFilterValueToggle('a');
+    expect(excluded.actions).toEqual([
+      { type: 'filter/setColumn', columnKey: 'name', value: { kind: 'set', mode: 'exclude', values: ['z', 'a'] } },
+    ]);
+    // include{z} に a / b / c をすべて足すと全選択 = clear。
+    const all = setup({ columnFilters: { name: { kind: 'set', mode: 'include', values: ['z', 'a', 'b'] } } });
+    all.commands.handleSetFilterValueToggle('c');
+    expect(all.actions.map((action) => action.type)).toEqual(['filter/clearColumn']);
+  });
+
   it('(すべて選択) の解除は include{} で表現し、検索 Enter 確定は一致候補の include 集合へ置換', () => {
     const { commands, actions } = setup();
     commands.handleSetFilterSelectAllChange('all', false);

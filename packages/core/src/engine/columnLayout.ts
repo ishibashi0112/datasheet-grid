@@ -54,6 +54,10 @@ export type ColumnResolution<T> = {
   rowDragAvailable: boolean;
   // 合成列を注入した内部列リスト(合成列なし・グルーピング無効なら columns と同一参照)。
   effectiveColumns: GridColumn<T>[];
+  // 追加(1.0 前の最終チェック FC-08): 列フィルター / ソートを評価する列。グルーピング中は表示から外したグループ元列
+  //   (rowGroup)も含めます(グループ元列のソートでグループごと並び替わる、フィルターで絞れる = ドキュメントどおり)。
+  //   グルーピング無効なら effectiveColumns と同一参照。
+  filterSortColumns: GridColumn<T>[];
   visibleColumns: GridColumn<T>[];
   // pinned 属性に応じて視覚順序(left → center → right)に並べ替えた可視列。
   orderedColumns: GridColumn<T>[];
@@ -130,6 +134,10 @@ export const createColumnResolver = <T,>(features: Pick<GridCoreFeatures, 'group
       return leadingColumns.length > 0 ? [...leadingColumns, ...grouped] : grouped;
     },
   );
+  const memoFilterSort = createMemo(
+    (rowGroupingActive: boolean, effectiveColumns: GridColumn<T>[], groupColumns: GridColumn<T>[]): GridColumn<T>[] =>
+      rowGroupingActive ? [...effectiveColumns, ...groupColumns] : effectiveColumns,
+  );
   const memoVisible = createMemo((effectiveColumns: GridColumn<T>[]) =>
     effectiveColumns.filter((column) => column.visible !== false),
   );
@@ -154,6 +162,7 @@ export const createColumnResolver = <T,>(features: Pick<GridCoreFeatures, 'group
       groupColumns,
       renderDetailToggleCell,
     );
+    const filterSortColumns = memoFilterSort(rowGroupingActive, effectiveColumns, groupColumns);
     const visibleColumns = memoVisible(effectiveColumns);
     const orderedColumns = memoOrdered(visibleColumns);
     return {
@@ -162,6 +171,7 @@ export const createColumnResolver = <T,>(features: Pick<GridCoreFeatures, 'group
       rowGroupingActive,
       rowDragAvailable,
       effectiveColumns,
+      filterSortColumns,
       visibleColumns,
       orderedColumns,
     };

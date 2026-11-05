@@ -227,7 +227,15 @@ export const createFilterPopoverCommands = <T,>(): FilterPopoverCommands<T> => {
   const commitSetFilterSelection = (columnKey: string, next: ColumnFilterSetSelection, total: number) => {
     const { openedFilterColumn, derived, dispatch } = requireArgs();
     const isComboColumn = openedFilterColumn?.key === columnKey && derived.isComboFilterColumn;
-    const selectedCount = next.mode === 'include' ? next.values.size : total - next.values.size;
+    // 変更(1.0 前の最終チェック FC-07): 候補に無い値(データから消えた古い値 / 保存した状態の値)は数えません。数えると
+    //   include{A, Z} に B を足しただけで「全選択」になってフィルターが外れ(C も出る)、exclude{Z} から A を外すと 0 件扱いで
+    //   include[](全行が消える)になっていた。値そのものは書いたまま残します(候補に無いので結果は変わらない)。
+    const universe = derived.openedPopoverAllValues;
+    let knownCount = 0;
+    for (const value of next.values) {
+      if (universe.has(value)) knownCount += 1;
+    }
+    const selectedCount = next.mode === 'include' ? knownCount : total - knownCount;
     if (selectedCount >= total) {
       if (isComboColumn) {
         const descriptor = buildComboDescriptorWithSet(columnKey, null);

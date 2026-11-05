@@ -230,6 +230,43 @@ describe('buildGridState', () => {
     expect(migrated.filters.columnFilters.ok).toEqual({ kind: 'text', value: 'abc' });
   });
 
+  // 追加(1.0 前の最終チェック FC-06): 絞り込みが読むフィールドの型まで見て、壊れた値は捨てる(グリッドを落とさない)。
+  it('filters: kind ごとの形が壊れた値は捨て、正しい値はそのまま採用する', () => {
+    const valid = {
+      text: { kind: 'text', value: 'abc' },
+      date: { kind: 'date', value: '2026-11-05' },
+      select: { kind: 'select', value: 'x' },
+      set: { kind: 'set', mode: 'exclude', values: ['a', ''] },
+      number: { kind: 'number', raw: '>= 3', parsed: { mode: 'comparison', operator: '>=', value: 3 } },
+      numberRange: { kind: 'number', raw: '1..2', parsed: { mode: 'range', min: 1, max: 2 } },
+      numberBlank: { kind: 'number', raw: '', parsed: null },
+      numberSet: { kind: 'numberSet', condition: { mode: 'blank' }, set: { values: ['1'] } },
+      textSet: { kind: 'textSet', condition: { mode: 'contains', value: 'a' }, set: null },
+      dateSet: { kind: 'dateSet', condition: { mode: 'preset', preset: 'today' }, set: null },
+      dateRange: { kind: 'dateSet', condition: { mode: 'range', from: '2026-01-01', to: '2026-02-01' }, set: null },
+      custom: { kind: 'custom', value: { anything: 1 } },
+    };
+    const broken = {
+      textNoValue: { kind: 'text' },
+      textNumber: { kind: 'text', value: 5 },
+      dateNull: { kind: 'date', value: null },
+      selectNoValue: { kind: 'select' },
+      setNumbers: { kind: 'set', values: [1, 2] },
+      setMode: { kind: 'set', mode: 'only', values: ['a'] },
+      numberNoRaw: { kind: 'number', parsed: null },
+      numberBadOperator: { kind: 'number', raw: 'x', parsed: { mode: 'comparison', operator: '~', value: 1 } },
+      numberNaN: { kind: 'number', raw: 'x', parsed: { mode: 'comparison', operator: '>', value: 'x' } },
+      numberRangeBad: { kind: 'number', raw: 'x', parsed: { mode: 'range', min: 1 } },
+      numberUnknownMode: { kind: 'number', raw: 'x', parsed: { mode: 'between' } },
+      textSetBadCondition: { kind: 'textSet', condition: { mode: 'contains' }, set: null },
+      dateSetBadCondition: { kind: 'dateSet', condition: { mode: 'range', from: 1, to: 2 }, set: null },
+      numberSetBadSet: { kind: 'numberSet', condition: null, set: { values: [1] } },
+    };
+    const migrated = migrateGridState({ filters: { globalText: '', columnFilters: { ...valid, ...broken } } });
+    expect(Object.keys(migrated.filters.columnFilters).sort()).toEqual(Object.keys(valid).sort());
+    expect(migrated.filters.columnFilters.number).toEqual(valid.number);
+  });
+
   it('filters 欠損 / columnFilters 非オブジェクトは既定へ', () => {
     expect(migrateGridState({}).filters).toEqual({ globalText: '', columnFilters: {} });
     expect(
