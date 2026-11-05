@@ -141,6 +141,75 @@ describe('createChangeHighlightController', () => {
     controller.dispose();
   });
 
+  // 追加(1.0 前の最終チェック FC-14): トゥイーン中に同じセルが描き直されたら、古い値を書き戻さない。
+  it('トゥイーン中に同じセルが数値以外へ変わったら、最後のフレームで古い数値を書き戻さない', () => {
+    const controller = createChangeHighlightController<Row>();
+    const ref = { current: container };
+    const a = { id: 1, name: 'a', qty: 10 };
+    const qtyA = makeCell(1, 'qty', '10個');
+    const node = qtyA.firstElementChild!.firstChild as Text;
+    controller.update({ enabled: true, rows: [a], rowKeyGetter: keyOf, columns, scrollContainerRef: ref });
+    node.nodeValue = '20個';
+    const t0 = performance.now();
+    controller.update({ enabled: true, rows: [{ ...a, qty: 20 }], rowKeyGetter: keyOf, columns, scrollContainerRef: ref });
+    rafQueue.shift()!(t0 + 50);
+    // 次の変更(値が null)を React が書いた。
+    node.nodeValue = '';
+    controller.update({
+      enabled: true,
+      rows: [{ ...a, qty: null as unknown as number }],
+      rowKeyGetter: keyOf,
+      columns,
+      scrollContainerRef: ref,
+    });
+    while (rafQueue.length > 0) rafQueue.shift()!(t0 + 1000);
+    expect(node.nodeValue).toBe('');
+    controller.dispose();
+  });
+
+  it('トゥイーン中に同じセルがまた数値で変わったら、新しいトゥイーンだけが書く', () => {
+    const controller = createChangeHighlightController<Row>();
+    const ref = { current: container };
+    const a = { id: 1, name: 'a', qty: 10 };
+    const qtyA = makeCell(1, 'qty', '10個');
+    const node = qtyA.firstElementChild!.firstChild as Text;
+    controller.update({ enabled: true, rows: [a], rowKeyGetter: keyOf, columns, scrollContainerRef: ref });
+    node.nodeValue = '20個';
+    const t0 = performance.now();
+    controller.update({ enabled: true, rows: [{ ...a, qty: 20 }], rowKeyGetter: keyOf, columns, scrollContainerRef: ref });
+    rafQueue.shift()!(t0 + 50);
+    node.nodeValue = '30個';
+    controller.update({ enabled: true, rows: [{ ...a, qty: 30 }], rowKeyGetter: keyOf, columns, scrollContainerRef: ref });
+    while (rafQueue.length > 0) rafQueue.shift()!(t0 + 5000);
+    expect(node.nodeValue).toBe('30個');
+    controller.dispose();
+  });
+
+  it('展開行のカードの中(入れ子のグリッド)の同じ行キー / 列キーのセルには付けない', () => {
+    const controller = createChangeHighlightController<Row>();
+    const ref = { current: container };
+    const a = { id: 1, name: 'a', qty: 1 };
+    const own = makeCell(1, 'name', 'a');
+    const card = document.createElement('div');
+    card.className = 'ssg-detail-card';
+    card.setAttribute('data-ssg-detail', '');
+    container.appendChild(card);
+    const nestedRow = document.createElement('div');
+    nestedRow.className = 'ssg-body-row';
+    nestedRow.setAttribute('data-row-key', '1');
+    const nestedCell = document.createElement('div');
+    nestedCell.className = 'ssg-body-cell';
+    nestedCell.setAttribute('data-ssg-col-key', 'name');
+    nestedCell.appendChild(document.createElement('span'));
+    nestedRow.appendChild(nestedCell);
+    card.appendChild(nestedRow);
+    controller.update({ enabled: true, rows: [a], rowKeyGetter: keyOf, columns, scrollContainerRef: ref });
+    controller.update({ enabled: true, rows: [{ ...a, name: 'b' }], rowKeyGetter: keyOf, columns, scrollContainerRef: ref });
+    expect(own.classList.contains(CHANGED_CLASS_NAME)).toBe(true);
+    expect(nestedCell.classList.contains(CHANGED_CLASS_NAME)).toBe(false);
+    controller.dispose();
+  });
+
   it('enabled=false では何も付かず、renderCell 列はフラッシュのみ(トゥイーンなし)', () => {
     const controller = createChangeHighlightController<Row>();
     const ref = { current: container };

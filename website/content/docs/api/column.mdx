@@ -231,7 +231,7 @@ const columns: GridColumn<Row>[] = [
 - **カラースケール(`colorScale`)**: セル背景(`.ssg-body-cell--cf-scale`)を値に応じて染める。文字色は変えない(明るい段に制限してコントラストを保つ)。`type: 'sequential'`(既定)は 1 色相の淡 → 濃(`--ssg-cf-seq-min` → `--ssg-cf-seq-max`)。`'diverging'` は `mid`(省略時は `min < 0 < max` なら 0、それ以外は中央)を中立色(`--ssg-cf-div-mid`)にして、負側(`--ssg-cf-div-negative`)/ 正側(`--ssg-cf-div-positive`)を別の色相で濃くする。`colors` に CSS 色の配列(`[淡, 濃]` / `[負側, 中立, 正側]`)を渡すと差し替え。色の補間は CSS の `color-mix()` で行う(トークンや任意の CSS 色をそのまま混ぜられる)。
 - **状態チップ(`chips`)**: 値(`String(value)`)→ 色味のマップ、または `ctx`(`cellClassName` の関数版と同じ)からチップを返す関数。チップ(`.ssg-chip.ssg-chip--<tone>`)はアイコン + ラベルのピルで、色だけで意味を運ばない(`icon: false` でアイコンなし)。`label` 省略時はセルの表示文字列(`valueFormatter` 適用後。セル内検索の強調もそのまま)、`color` で任意の色(`.ssg-chip--custom`)。マップに載っていない値 / 関数が `null` を返した値はふつうの文字のまま。
 - **組み合わせ**: 1 列に `dataBar` と `colorScale` を同時に指定できる(帯は背景色の上)。`cellClassName` / `getRowClassName` の明示 style は条件付き書式より後勝ち。
-- **影響範囲**: 表示だけ。CSV / TSV / クリップボード / `getExportData` / ソート / フィルター / `renderCell` の列(カスタム描画が優先)には影響しない。`motion` が `'on'` なら帯の長さと背景色は値の変化で滑らかに変わる。
+- **影響範囲**: 表示だけ。CSV / TSV / クリップボード / `getExportData` / ソート / フィルターには影響しない。`renderCell` の列では、データバー(`dataBar`)とカラースケール(`colorScale`)はセルの背景に描かれ、中身は `renderCell` が描く(`chips` と `dataBar.showValue: false` は効かない)。`motion` が `'on'` なら帯の長さと背景色は値の変化で滑らかに変わる。
 - **色のトークン**: `--ssg-cf-bar` / `--ssg-cf-bar-negative` / `--ssg-cf-seq-min` / `--ssg-cf-seq-max` / `--ssg-cf-div-negative` / `--ssg-cf-div-mid` / `--ssg-cf-div-positive` / `--ssg-cf-<tone>` / `--ssg-cf-<tone>-bg`(tone = neutral / info / good / warning / critical)。ダークテーマは段を選び直した別の値。
 
 ### flex と autoSize(列幅の決め方)

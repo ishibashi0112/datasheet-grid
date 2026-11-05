@@ -3307,6 +3307,19 @@
   .ssg-root--animate-rows .ssg-detail-band {
     transition: top var(--ssg-motion-base) var(--ssg-motion-ease);
   }
+  /* 変更(1.0 前の最終チェック FC-15): 展開行の中の入れ子のグリッドには外側の animateRows を効かせません(入れ子のグリッドが
+     自分で animateRows のときだけ滑る)。特異度は上と同じ (0,2,0) にそろえ(:where)、並び順で勝ち負けを決めます
+     (下のスクロール中の抑止が最後に勝つ)。 */
+  .ssg-root--animate-rows :where(.ssg-detail-card) .ssg-body-row,
+  .ssg-root--animate-rows :where(.ssg-detail-card) .ssg-detail-band {
+    transition: none;
+  }
+  :where(.ssg-detail-card) .ssg-root--animate-rows .ssg-body-row {
+    transition: transform var(--ssg-motion-base) var(--ssg-motion-ease);
+  }
+  :where(.ssg-detail-card) .ssg-root--animate-rows .ssg-detail-band {
+    transition: top var(--ssg-motion-base) var(--ssg-motion-ease);
+  }
   .ssg-scroll-container--scrolling .ssg-body-row,
   .ssg-scroll-container--scrolling .ssg-detail-band {
     transition: none;
@@ -3447,6 +3460,10 @@
   }
   .ssg-header-cell--jump-flash {
     animation: ssg-header-jump-flash 1.2s ease-out;
+  }
+  /* 追加(1.0 前の最終チェック FC-29): motion="off" / OS の「視差効果を減らす」ではツールパネルのフラッシュと同じく止めます。 */
+  .ssg-motion-off .ssg-header-cell--jump-flash {
+    animation: none;
   }
   /* 列リサイズ把手。 */
   .ssg-header-resize {

@@ -243,6 +243,25 @@ describe('rowEnterController', () => {
     controller.dispose();
   });
 
+  // 追加(1.0 前の最終チェック FC-15): 展開行の中の入れ子のグリッドの行には付けない。
+  it('mountEnter: 展開行のカードの中(入れ子のグリッド)に現れた行には enter を付けない', async () => {
+    const controller = createRowEnterController();
+    controller.update({ scrollContainerRef: { current: container }, skeletonEnter: true, mountEnter: true });
+    const card = document.createElement('div');
+    card.className = 'ssg-detail-card';
+    card.setAttribute('data-ssg-detail', '');
+    pane.append(card);
+    await flushObservers();
+    const nested = makeRow(0, false);
+    const own = makeRow(5, false);
+    card.append(nested);
+    pane.append(own);
+    await flushObservers();
+    expect(nested.classList.contains(ROW_ENTER_CLASS_NAME)).toBe(false);
+    expect(own.classList.contains(ROW_ENTER_CLASS_NAME)).toBe(true);
+    controller.dispose();
+  });
+
   it('transformOfStyleText は style 属性の文字列から transform の値を取り出す', () => {
     expect(transformOfStyleText('height: 36px; transform: translateY(76px);')).toBe('translateY(76px)');
     expect(transformOfStyleText('transform: translateY(-4.5px)')).toBe('translateY(-4.5px)');

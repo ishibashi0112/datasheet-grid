@@ -78,8 +78,39 @@ function clearShowTimer() {
   }
 }
 
+// 追加(1.0 前の最終チェック FC-27): 表示中に対象が DOM から外れたら(再描画 / 仮想化で行が外れた)閉じます。外れた要素からは
+//   pointerout が来ないため、押す / スクロール / Esc まで残っていた。表示中だけフレームごとに isConnected を見ます。
+let watchFrameId: number | null = null;
+
+function stopWatchingTarget() {
+  if (watchFrameId !== null) {
+    cancelAnimationFrame(watchFrameId);
+    watchFrameId = null;
+  }
+}
+
+function watchTarget() {
+  stopWatchingTarget();
+  if (typeof requestAnimationFrame !== 'function') {
+    return;
+  }
+  const tick = () => {
+    watchFrameId = null;
+    if (currentTarget === null) {
+      return;
+    }
+    if (!currentTarget.isConnected) {
+      hideTooltip();
+      return;
+    }
+    watchFrameId = requestAnimationFrame(tick);
+  };
+  watchFrameId = requestAnimationFrame(tick);
+}
+
 function hideTooltip() {
   clearShowTimer();
+  stopWatchingTarget();
   if (currentTarget !== null) {
     // 表示中からの hide のみウォームアップを開始します(未表示の hide で延長しないため)。
     warmupUntil = Date.now() + WARMUP_MS;
@@ -135,6 +166,7 @@ function showTooltipFor(target: Element) {
   el.style.top = `${placement.top}px`;
   el.classList.add('ssg-tooltip--visible');
   currentTarget = target;
+  watchTarget();
 }
 
 function handlePointerOverOrFocusIn(event: Event) {
@@ -241,6 +273,7 @@ export function acquireTooltipController(
     if (refCount === 0) {
       uninstallListeners();
       clearShowTimer();
+      stopWatchingTarget();
       currentTarget = null;
       if (tooltipEl !== null) {
         tooltipEl.remove();

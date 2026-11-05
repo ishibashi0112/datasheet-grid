@@ -130,6 +130,19 @@ describe('tooltipController', () => {
     controller.dispose();
   });
 
+  // 追加(1.0 前の最終チェック FC-27): 表示中に対象が DOM から外れたら閉じる(外れた要素からは pointerout が来ない)。
+  it('表示中に対象が DOM から外れたら次のフレームで閉じる', () => {
+    const controller = acquireTooltipController();
+    vi.setSystemTime(Date.now() + 60_000);
+    target.dispatchEvent(new PointerEvent('pointerover', { bubbles: true }));
+    vi.advanceTimersByTime(400);
+    expect(isVisible()).toBe(true);
+    target.remove();
+    vi.advanceTimersByTime(50);
+    expect(isVisible()).toBe(false);
+    controller.dispose();
+  });
+
   // 追加(見直し): overflow マーカーに値があればその文言を出す(合計行の「平均 482.1」)。切れていなければ出さない。
   it('overflow マーカーの値を文言にし、切れていないときは出さない', () => {
     const controller = acquireTooltipController();

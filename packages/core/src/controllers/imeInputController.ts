@@ -21,6 +21,7 @@
 //   シェルの末尾に描画します。input は非制御(値 / class / style はこのコントローラが直接扱う)。
 import type { CellCoord } from '../model/gridTypes.unbound';
 import { isImeComposingKeyEvent } from '../logic/domGuards';
+import { isInsideDetailCardOf } from '../logic/detailRow';
 
 type ReadonlyRef<V> = { readonly current: V };
 
@@ -60,6 +61,8 @@ export type ImeInputController = {
 const findCellElement = (root: HTMLElement, cell: CellCoord, colKey: string): HTMLElement | null => {
   const rows = root.querySelectorAll<HTMLElement>(`.ssg-body-row[data-row-index="${cell.row}"]`);
   for (const row of Array.from(rows)) {
+    // 変更(1.0 前の最終チェック FC-15): 展開行の中の入れ子のグリッドの行(同じ index)は見ません。
+    if (isInsideDetailCardOf(root, row)) continue;
     const cells = row.querySelectorAll<HTMLElement>('.ssg-body-cell');
     for (const el of Array.from(cells)) {
       if (el.getAttribute('data-ssg-col-key') === colKey) {

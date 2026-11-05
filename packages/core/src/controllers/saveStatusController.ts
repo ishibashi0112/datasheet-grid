@@ -9,6 +9,7 @@
 //   - 印の付与は rAF へ遅らせます(楽観更新の再レンダーが同じイベント内で走るため、その後に付ける)。
 //   - インジケーター(スピナー / バッジ)はセルの末尾に追加する実要素です(React のセル内容には触らない)。
 import type { GridRowKey } from '../model/gridTypes.unbound';
+import { isInsideDetailCardOf } from '../logic/detailRow';
 
 type ReadonlyRef<V> = { readonly current: V };
 
@@ -70,7 +71,10 @@ export const createSaveStatusController = (): SaveStatusController => {
       for (const columnKey of cell.columnKeys) {
         container
           .querySelectorAll<HTMLElement>(`${rowSelector} .ssg-body-cell[data-ssg-col-key="${cssEscape(columnKey)}"]`)
-          .forEach((el) => found.push(el));
+          .forEach((el) => {
+            // 変更(1.0 前の最終チェック FC-15): 展開行の中の入れ子のグリッドのセルには付けません。
+            if (!isInsideDetailCardOf(container, el)) found.push(el);
+          });
       }
     }
     return found;
@@ -195,7 +199,9 @@ export const createSaveStatusController = (): SaveStatusController => {
       frames.clear();
       removeChip();
       const container = args?.scrollContainerRef.current;
-      container?.querySelectorAll<HTMLElement>(`[${SAVE_STATE_ATTRIBUTE}]`).forEach(clearCell);
+      container?.querySelectorAll<HTMLElement>(`[${SAVE_STATE_ATTRIBUTE}]`).forEach((cell) => {
+        if (!isInsideDetailCardOf(container, cell)) clearCell(cell);
+      });
       args = null;
     },
   };
