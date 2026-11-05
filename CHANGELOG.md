@@ -10,7 +10,7 @@
 
 詳しい使い方は[ドキュメントサイト](https://datasheet-grid.vercel.app)と [API リファレンス](./packages/react/API_REFERENCE.md)を参照してください。
 
-## 未リリース
+## 0.61.0 — 2026-11-06
 
 1.0.0 の前の最終チェック(`docs/audits/2026-11-05/`)で見つかった不具合の修正と、0.60.0 で非推奨にした core の旧サブパスの削除です。React 版の公開 API(props / 型 / ハンドル / CSS のクラスとトークン)は変えていません。
 
