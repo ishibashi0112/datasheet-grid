@@ -40,3 +40,4 @@ const ref = useRef<SpreadsheetGridHandle<Row>>(null);
 
 - SSRM(`dataSource`)では**ロード済み範囲だけ**が対象です(未ロード行は読み飛ばします)。
 - `renderCell` の列は表示文字列で検索されますが、`<mark>` の強調は既定セルだけです(カレントへの移動は同じです)。
+- チェックボックスのエディタの列と、データバーの `showValue: false` の列(画面に文字が出ない列)は対象外です。

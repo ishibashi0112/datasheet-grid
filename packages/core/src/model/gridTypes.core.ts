@@ -2167,9 +2167,10 @@ export type SpreadsheetGridHandle<T> = {
   //   onColumnsChange 経由で反映します(未指定時はスキップ=幅/フィルター/ソートのみ。v1 完全互換)。
   //   v1 保存値(columns フィールド無し)も読めます(列メタは触りません)。
   /**
-   * `getState()` の値(または互換な部分形)を適用する。外部入力は内部で防御的に正規化され、幅 reset /
-   * フィルター一括 / ソート set の 3 dispatch(1 イベント = 1 再レンダー)で反映。clientSide /
-   * serverSide 双方に効く(SSRM は `filters`/`sort` 変化がクエリへ載り再取得)。
+   * `getState()` の値(または互換な部分形)を適用する。
+   * 外部入力は内部で防御的に正規化され(形の合わない列フィルターは捨てる)、幅 reset / フィルター一括
+   * / ソート set の 3 dispatch(1 イベント = 1 再レンダー)で反映。clientSide / serverSide
+   * 双方に効く(SSRM は `filters`/`sort` 変化がクエリへ載り再取得)。
    */
   applyState: (state: GridState) => void;
 
@@ -3025,8 +3026,10 @@ export type SpreadsheetGridProps<T, F extends GridFrameworkTypes = GridFramework
   /**
    * 組み込みエディタ(text / number / select / date)の `Enter`
    * 確定後にアクティブセルをどこへ移すか(`'down'` | `'up'` | `'right'` | `'left'` | `'none'`。Excel
-   * の「Enter キーを押したら、セルを移動する(方向)」相当)。`'none'` は移動せずその場に留まる。`Tab`
-   * / `Shift+Tab`(右 / 左)と `Escape` には影響しない。custom エディタはキーバインドが consumer
+   * の「Enter キーを押したら、セルを移動する(方向)」相当)。`'none'` は移動せずその場に留まる。
+   * `labelRow` 有効時、上下の移動はラベル行に止まらず同じ向きの次のデータ行へ読み飛ばす(↑ / ↓
+   * キーと同じ。先がラベル行だけなら確定した行に留まる)。`Tab` / `Shift+Tab`(右 / 左)と `Escape`
+   * には影響しない。custom エディタはキーバインドが consumer
    * 責務のため対象外(`ctx.commit(value, direction)` の direction で指定)。
    *
    * @defaultValue `'down'`
