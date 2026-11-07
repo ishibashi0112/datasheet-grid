@@ -41,8 +41,8 @@ describe('createColumnWidthAccumulator(合計行)', () => {
     document.body.appendChild(gridRoot);
     const plain = measure(gridRoot).qty;
     const withTotal = measure(gridRoot, new Map([['qty', { text: '1,234,567', caption: '平均' }]])).qty;
-    // 「平均1,234,567」= 11 文字。
-    expect(withTotal).toBe(11 * CHAR_PX);
+    // 「平均1,234,567」= 11 文字(+ offsetWidth の丸めを吸収する 1px)。
+    expect(withTotal).toBe(11 * CHAR_PX + 1);
     expect(withTotal).toBeGreaterThan(plain);
     // 計測用のノードは後片付けされる。
     expect(gridRoot.childElementCount).toBe(0);
