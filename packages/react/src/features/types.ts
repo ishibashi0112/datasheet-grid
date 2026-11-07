@@ -149,6 +149,8 @@ export type FilterPopoverFeatureArgs<T> = {
   gridRootRef: RefObject<HTMLDivElement | null>;
   isServerSide: boolean;
   rows: T[];
+  // 追加(別視点のレビュー): ラベル行の判定('auto' 列の種別の推定でラベル行の値を数えないため。ラベル行が無ければ未指定)。
+  isLabelRow?: (row: T, sourceIndex: number) => boolean;
 };
 export type FilterPopoverFeatureResult<T> = ReturnType<typeof useFilterPopoverController<T>>;
 // ポップオーバーの中身(候補の収集・派生値・コマンド群・描画)の hook が受け取るシェルの値です。

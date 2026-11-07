@@ -135,6 +135,7 @@ const useFilterPopover = <T,>({
   gridRootRef,
   isServerSide,
   rows,
+  isLabelRow,
 }: FilterPopoverFeatureArgs<T>): FilterPopoverFeatureResult<T> => {
   // 追加(filter-ext E): filterType: 'auto' の解決結果キャッシュです(列キー → 実効種別)。
   //   合意仕様「初回オープン時に推定して以後固定」を担保します。行の追加 / 編集で推定が
@@ -165,14 +166,18 @@ const useFilterPopover = <T,>({
         editorType: column.editor?.type,
         isServerSide,
         rowCount: rows.length,
-        getRawValueAt: (index) => getCellValue(rows[index], column),
+        // 変更(別視点のレビュー): ラベル行は空として数えません(見出しの文字で数値の列が文字の列に推定されていた)。
+        getRawValueAt: (index) => {
+          const row = rows[index];
+          return isLabelRow && row !== undefined && isLabelRow(row, index) ? undefined : getCellValue(row, column);
+        },
       });
       if (result.conclusive) {
         autoFilterTypeCacheRef.current.set(column.key, result.filterType);
       }
       return result.filterType;
     },
-    [columnFilters, isServerSide, rows],
+    [columnFilters, isServerSide, rows, isLabelRow],
   );
 
   return useFilterPopoverController({

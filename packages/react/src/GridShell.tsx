@@ -789,6 +789,7 @@ export function useGridShell<T extends object>({
     gridRootRef,
     isServerSide,
     rows,
+    isLabelRow: labelRowEnabled ? labelIsLabelRow : undefined,
   });
   const {
     filterPopoverRef,
