@@ -16,6 +16,9 @@ import {
 } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/gridAsk';
 import type { GridColumn, GridState } from '../model/gridTypes';
 
+// 型だけの宣言です(利用側のバンドラが process.env.NODE_ENV を文字列へ置き換える。hooks/useUnregisteredFeatureWarnings と同じ)。
+declare const process: { env: { NODE_ENV?: string } };
+
 /**
  * AI に聞く関数です(利用側が用意する)。`request` を自分のサーバーへ送り、AI の答え(オブジェクトか JSON の文字列)を返します。
  * `signal` は「止める」/ Esc / アンマウントで abort されます(fetch にそのまま渡せます)。
@@ -61,8 +64,11 @@ export type UseGridAskOptions<T> = {
 
 /** 最後の頼みの結果です。 */
 export type GridAskSession = {
-  /** applied = 反映した / unchanged = 変える条件が無かった / undone = 元に戻した。 */
-  phase: 'applied' | 'unchanged' | 'undone';
+  /**
+   * applied = 反映した / unchanged = 変える条件が無かった / undone = 元に戻した /
+   * changed = 反映したあと表が手で変わった(チップは古いので、外す・元に戻すはできない。notice にも知らせが入る)。
+   */
+  phase: 'applied' | 'unchanged' | 'undone' | 'changed';
   text: string;
   /** 反映した状態の見え方(チップ)。 */
   items: GridAskItem[];
@@ -79,8 +85,11 @@ export type UseGridAskResult = {
   /** 元に戻せなかったときなどの知らせ。 */
   notice: string | null;
   session: GridAskSession | null;
-  /** 文を AI に聞いて反映する。聞いている間は何もしない。 */
-  submit: (text: string) => Promise<void>;
+  /**
+   * 文を AI に聞いて反映する。聞いている間は何もしない。答えを読めたら(反映した / 変える条件が無かった)true、
+   * 失敗・止めた・聞かなかったときは false で終わる(送ったあとに入力欄を空にするかの判断に使える)。
+   */
+  submit: (text: string) => Promise<boolean>;
   /** 聞いているのを止める。 */
   cancel: () => void;
   /** 反映した条件を元に戻す(表を手で変えたあとは戻さず notice を出す)。 */
@@ -101,6 +110,16 @@ type SessionState = {
 const ASK_ERROR = 'AI に聞けませんでした。もう一度試してください。';
 const NO_GRID_ERROR = '表が見つかりませんでした。表が出てから、もう一度試してください。';
 const CHANGED_NOTICE = '表の条件が変わったので、ここからは変えられません。表のフィルターや並びで直してください。';
+// 追加(dogfood DU-08): 反映したあと表が手で変わったかを確かめる間隔(ms)。クリックとキー操作の後にも確かめます。
+const CHANGE_CHECK_INTERVAL_MS = 1000;
+const CHANGE_CHECK_AFTER_INPUT_MS = 400;
+
+// 反映した状態から表の見え方が変わっていないか。列の表示を AI に任せていないときは、隠した列の違い(手で隠した列)は
+//   見ません。
+const isViewUnchanged = (now: GridState, applied: GridState, columnVisibility: boolean): boolean =>
+  columnVisibility
+    ? isSameGridAskView(now, applied)
+    : isSameGridAskView({ ...now, columns: undefined }, { ...applied, columns: undefined });
 
 const toAskOptions = <T,>(options: UseGridAskOptions<T>): GridAskOptions<T> => ({
   columns: options.columns,
@@ -170,16 +189,74 @@ export function useGridAsk<T>(options: UseGridAskOptions<T>): UseGridAskResult {
 
   const askOptions = toAskOptions(options);
   const describe = (state: GridState): GridAskItem[] => describeGridAskView(state, askOptions);
+  const columnVisibility = options.allowColumnVisibility ?? false;
 
-  const submit = async (raw: string): Promise<void> => {
+  // 追加(dogfood DU-20): columnHints に列に無いキー(打ち間違い)があれば、開発時だけ警告します(`false` で隠した
+  //   つもりの列が AI に送られるため)。同じ組み合わせでは 1 回だけ。
+  const unknownHintKeys =
+    process.env.NODE_ENV === 'production' || !options.columnHints
+      ? ''
+      : Object.keys(options.columnHints)
+          .filter((key) => !options.columns.some((column) => column.key === key))
+          .join(', ');
+  useEffect(() => {
+    if (unknownHintKeys !== '') {
+      console.warn(
+        `[GridAskBar] columnHints に列に無いキーがあります: ${unknownHintKeys}。列の key と同じ名前にしてください(この補足や \`false\` は効いていません)。`,
+      );
+    }
+  }, [unknownHintKeys]);
+
+  // 追加(dogfood DU-08): 反映したあと表が手で変わったら(チップバーの ×・グローバル検索・applyState など)、すぐに
+  //   「変わった」にします。これまでは古いチップが押せるまま残り、押して初めて知らせていました。グリッドの変化を
+  //   知る手段が ref のハンドルだけなので、一定の間隔とクリック / キー操作の後に getState() で比べます(反映した
+  //   状態がある間だけ)。
+  const appliedSession = session !== null && session.view.phase === 'applied' ? session : null;
+  useEffect(() => {
+    if (appliedSession === null) {
+      return undefined;
+    }
+    let inputTimer: ReturnType<typeof setTimeout> | null = null;
+    const check = () => {
+      const target = latestRef.current.grid.current;
+      if (target === null || isViewUnchanged(target.getState(), appliedSession.applied, columnVisibility)) {
+        return;
+      }
+      setSession((current) =>
+        current === appliedSession ? { ...current, view: { ...current.view, phase: 'changed' } } : current,
+      );
+      setNotice(CHANGED_NOTICE);
+    };
+    const checkSoon = () => {
+      if (inputTimer === null) {
+        inputTimer = setTimeout(() => {
+          inputTimer = null;
+          check();
+        }, CHANGE_CHECK_AFTER_INPUT_MS);
+      }
+    };
+    const timer = setInterval(check, CHANGE_CHECK_INTERVAL_MS);
+    document.addEventListener('click', checkSoon, true);
+    document.addEventListener('keyup', checkSoon, true);
+    return () => {
+      clearInterval(timer);
+      if (inputTimer !== null) {
+        clearTimeout(inputTimer);
+      }
+      document.removeEventListener('click', checkSoon, true);
+      document.removeEventListener('keyup', checkSoon, true);
+    };
+  }, [appliedSession, columnVisibility]);
+
+  const submit = async (raw: string): Promise<boolean> => {
     const text = raw.trim();
     if (text === '' || pendingRef.current !== null) {
-      return;
+      return false;
     }
     const grid = options.grid.current;
     if (grid === null) {
       setError(NO_GRID_ERROR);
-      return;
+      return false;
     }
     const controller = new AbortController();
     pendingRef.current = controller;
@@ -193,17 +270,17 @@ export function useGridAsk<T>(options: UseGridAskOptions<T>): UseGridAskResult {
       });
     } catch (caught) {
       if (controller.signal.aborted) {
-        return;
+        return false;
       }
       pendingRef.current = null;
       setStatus('idle');
       latestRef.current.onError?.(caught);
       setError(ASK_ERROR);
-      return;
+      return false;
     }
     // 止めたあとに答えが届いたら捨てます(cancel が状態を戻し済み)。
     if (controller.signal.aborted) {
-      return;
+      return false;
     }
     pendingRef.current = null;
     setStatus('idle');
@@ -213,13 +290,13 @@ export function useGridAsk<T>(options: UseGridAskOptions<T>): UseGridAskResult {
     const target = latest.grid.current;
     if (target === null) {
       setError(NO_GRID_ERROR);
-      return;
+      return false;
     }
     const before = target.getState();
     const result = readGridAskAnswer(answer, before, latestOptions);
     if (!result.ok) {
       setError(result.message);
-      return;
+      return false;
     }
     const view = { text, dropped: result.dropped, unsupported: result.unsupported };
     if (!result.changed) {
@@ -228,7 +305,7 @@ export function useGridAsk<T>(options: UseGridAskOptions<T>): UseGridAskResult {
         before,
         applied: before,
       });
-      return;
+      return true;
     }
     target.applyState(toApplicable(before, result.state));
     setSession({
@@ -237,6 +314,7 @@ export function useGridAsk<T>(options: UseGridAskOptions<T>): UseGridAskResult {
       applied: result.state,
     });
     latest.onApply?.({ text, state: result.state, dropped: result.dropped, unsupported: result.unsupported });
+    return true;
   };
 
   const cancel = (): void => {
@@ -249,20 +327,18 @@ export function useGridAsk<T>(options: UseGridAskOptions<T>): UseGridAskResult {
     setStatus('idle');
   };
 
-  const columnVisibility = options.allowColumnVisibility ?? false;
   // 反映したあと表が手で変えられていないかを確かめてから、今の状態を返します。列の表示を AI に任せていない
   //   ときは、隠した列の違い(手で隠した列)は見ません。
+  // 変更(dogfood DU-08): 変わっていたら、知らせるだけでなく「変わった」(changed)にします(チップを古いまま残さない)。
   const readUnchanged = (current: SessionState): { target: GridAskTarget; now: GridState } | null => {
     const target = options.grid.current;
     if (target === null || current.view.phase !== 'applied') {
       return null;
     }
     const now = target.getState();
-    const same = columnVisibility
-      ? isSameGridAskView(now, current.applied)
-      : isSameGridAskView({ ...now, columns: undefined }, { ...current.applied, columns: undefined });
-    if (!same) {
+    if (!isViewUnchanged(now, current.applied, columnVisibility)) {
       setNotice(CHANGED_NOTICE);
+      setSession({ ...current, view: { ...current.view, phase: 'changed' } });
       return null;
     }
     return { target, now };

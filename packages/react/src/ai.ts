@@ -18,6 +18,9 @@ export {
   createGridAskRequest,
   describeGridAskView,
   gridAskSystemPrompt,
+  // 追加(dogfood DD-07): 自前の UI で反映するとき(隠した列が変わらなければ columns を外す)と、表が手で変わったかの判定に。
+  isGridAskColumnsChanged,
+  isSameGridAskView,
   readGridAskAnswer,
   removeGridAskItem,
 } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/gridAsk';

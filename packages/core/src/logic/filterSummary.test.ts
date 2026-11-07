@@ -5,7 +5,9 @@
 //     exclude は「N 件を除外」/ mode 省略は include 扱い(後方互換)。
 //   - custom: 非空 string は「"x"」(trim)、それ以外は「カスタム条件」。
 import { describe, it, expect } from 'vitest';
-import { describeColumnFilterValue } from './filterSummary';
+import { createColumnFilterDescribeOptions, describeColumnFilterValue } from './filterSummary';
+import { numberFormatter } from './valueFormatters';
+import type { GridColumn } from '../model/gridTypes.unbound';
 
 describe('describeColumnFilterValue', () => {
   it('text / date は trim して「"x" を含む」', () => {
@@ -181,5 +183,84 @@ describe('describeColumnFilterValue', () => {
     expect(
       describeColumnFilterValue({ kind: 'custom', value: { min: 1 } }),
     ).toBe('カスタム条件');
+  });
+});
+// 追加(dogfood DU-07): select / set の値はラベルで、数値の条件は列の valueFormatter で出す(チップバー / フィルターの
+//   管理 / AI バーのチップ)。
+describe('createColumnFilterDescribeOptions(dogfood DU-07)', () => {
+  type Row = { kind: string; rent: number; area: string };
+  const kindColumn: GridColumn<Row> = {
+    key: 'kind',
+    width: 100,
+    filterType: 'select',
+    editor: { type: 'select', options: [{ value: 'mansion', label: 'マンション' }, { value: 'house', label: '一戸建て' }] },
+  };
+  const areaColumn: GridColumn<Row> = {
+    key: 'area',
+    width: 100,
+    filterType: 'set',
+    filterOptions: [{ value: 'tokyo', label: '東京' }, { value: 'osaka', label: '大阪' }],
+  };
+  const rentColumn: GridColumn<Row> = { key: 'rent', width: 100, filterType: 'numberSet', valueFormatter: numberFormatter() };
+
+  it('select / set の値は filterOptions / select エディタのラベルで出す', () => {
+    expect(describeColumnFilterValue({ kind: 'select', value: 'mansion' }, createColumnFilterDescribeOptions(kindColumn))).toBe(
+      '"マンション" に一致',
+    );
+    expect(
+      describeColumnFilterValue({ kind: 'set', mode: 'include', values: ['tokyo', ''] }, createColumnFilterDescribeOptions(areaColumn)),
+    ).toBe('"東京", (空白)');
+    // ラベルの無い値はそのまま
+    expect(
+      describeColumnFilterValue({ kind: 'set', mode: 'include', values: ['nagoya'] }, createColumnFilterDescribeOptions(areaColumn)),
+    ).toBe('"nagoya"');
+  });
+
+  it('数値の条件は valueFormatter で出す(number は式が読めたときだけ。raw は変えない)', () => {
+    const options = createColumnFilterDescribeOptions(rentColumn);
+    expect(
+      describeColumnFilterValue(
+        { kind: 'number', raw: '<= 100000', parsed: { mode: 'comparison', operator: '<=', value: 100000 } },
+        options,
+      ),
+    ).toBe('100,000 以下');
+    expect(describeColumnFilterValue({ kind: 'number', raw: 'abc', parsed: null }, options)).toBe('abc');
+    expect(
+      describeColumnFilterValue(
+        { kind: 'numberSet', condition: { mode: 'range', min: 50000, max: 120000 }, set: { mode: 'include', values: ['80000'] } },
+        options,
+      ),
+    ).toBe('50,000 〜 120,000 かつ "80,000"');
+  });
+
+  it('ラベルが無ければ valueFormatter を値に当て、例外や空の文字列なら値のまま', () => {
+    const labelled: GridColumn<Row> = {
+      key: 'kind',
+      width: 100,
+      filterType: 'set',
+      valueFormatter: ({ value }) => (value === 'house' ? '一戸建て' : value === 'boom' ? (null as unknown as string) : ''),
+    };
+    const options = createColumnFilterDescribeOptions(labelled);
+    expect(describeColumnFilterValue({ kind: 'set', mode: 'include', values: ['house', 'land'] }, options)).toBe('"一戸建て", "land"');
+    const throwing: GridColumn<Row> = {
+      key: 'kind',
+      width: 100,
+      filterType: 'set',
+      valueFormatter: ({ row }) => (row as Row).kind,
+    };
+    expect(describeColumnFilterValue({ kind: 'set', mode: 'include', values: ['x'] }, createColumnFilterDescribeOptions(throwing))).toBe(
+      '"x"',
+    );
+  });
+
+  it('表し方を渡さなければ従来どおり(値と raw)', () => {
+    expect(describeColumnFilterValue({ kind: 'select', value: 'mansion' })).toBe('"mansion" に一致');
+    expect(
+      describeColumnFilterValue({
+        kind: 'number',
+        raw: '<= 100000',
+        parsed: { mode: 'comparison', operator: '<=', value: 100000 },
+      }),
+    ).toBe('<= 100000');
   });
 });

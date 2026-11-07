@@ -30,7 +30,10 @@ import {
   resolveRelativeDateFilterKey,
   toDateSetKey,
 } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/filtering';
-import { describeColumnFilterValue } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/filterSummary';
+import {
+  createColumnFilterDescribeOptions,
+  describeColumnFilterValue,
+} from '@ishibashi0112/spreadsheet-grid-core/internal/logic/filterSummary';
 import { normalizeDateFilterPresets } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/dateFilterPresets';
 import { inferColumnFilterType } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/inferFilterType';
 import { getCellValue } from '@ishibashi0112/spreadsheet-grid-core/internal/utils/permissions';
@@ -356,9 +359,10 @@ const useFilterPopoverContent = <T,>({
   // 追加(filter-ext B/C): 複合(numberSet / textSet)popover のフッター上サマリーです
   //   (「10 以上 かつ 3 件を選択」)。即時適用モデルのため、適用済み記述子からそのまま
   //   生成すれば表示と結果が常に一致します。
+  // 変更(dogfood DU-07): select / set の値はラベルで、数値の条件は列の valueFormatter で出します。
   const openedComboSummaryText =
-    openedSetFilterValue && isActiveColumnFilterValue(openedSetFilterValue)
-      ? describeColumnFilterValue(openedSetFilterValue, openedDatePresets)
+    openedFilterColumn && openedSetFilterValue && isActiveColumnFilterValue(openedSetFilterValue)
+      ? describeColumnFilterValue(openedSetFilterValue, createColumnFilterDescribeOptions(openedFilterColumn))
       : 'フィルターなし';
 
   // 変更(lazy-popups): 部品(別チャンク)の読み込み前は描画しません(読み込み完了でシェルごと再描画)。
@@ -450,12 +454,9 @@ const useFilterManagement = <T,>({
         title: column.title || column.key,
         // 変更(preset-opt): dateSet はカスタムプリセットのラベル逆引き用に列のプリセット
         //   構成を渡します(他 kind は未使用のため従来どおり)。
-        summaryText: describeColumnFilterValue(
-          value,
-          value.kind === 'dateSet'
-            ? normalizeDateFilterPresets(column.dateFilterPresets)
-            : undefined,
-        ),
+        // 変更(dogfood DU-07): select / set の値はラベルで、数値の条件は列の valueFormatter で出します
+        //   (チップバーとフィルターの管理が共有)。
+        summaryText: describeColumnFilterValue(value, createColumnFilterDescribeOptions(column)),
         isHidden,
       });
     };

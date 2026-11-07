@@ -13,6 +13,7 @@ import { Profiler, createRef, useState } from 'react';
 import type { Ref } from 'react';
 
 import { SpreadsheetGrid } from './SpreadsheetGrid';
+import { numberFormatter } from './index';
 import { installJsdomLayoutStubs } from './testing';
 import { GRID_STATE_VERSION } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/gridState';
 import type {
@@ -983,5 +984,47 @@ describe('applyState(dogfood)', () => {
     } finally {
       restore();
     }
+  });
+});
+// 追加(dogfood DU-07): チップバーとフィルターの管理は、select / set の値をラベルで、数値の条件を列の valueFormatter で出す。
+describe('フィルターの要約の表示(dogfood DU-07)', () => {
+  it('チップバーは select のラベルと書式を当てた数値を出す', () => {
+    type Home = { id: number; kind: string; rent: number };
+    const homes: Home[] = [
+      { id: 1, kind: 'mansion', rent: 80000 },
+      { id: 2, kind: 'house', rent: 120000 },
+    ];
+    const homeColumns: GridColumn<Home>[] = [
+      {
+        key: 'kind',
+        title: '種別',
+        width: 100,
+        filterType: 'select',
+        filterOptions: [
+          { value: 'mansion', label: 'マンション' },
+          { value: 'house', label: '一戸建て' },
+        ],
+      },
+      { key: 'rent', title: '家賃', width: 100, filterType: 'number', valueFormatter: numberFormatter() },
+    ];
+    const ref = createRef<SpreadsheetGridHandle<Home>>();
+    const { container } = render(
+      <SpreadsheetGrid<Home> ref={ref} rows={homes} columns={homeColumns} rowKeyGetter={(row) => row.id} showFilterChipBar />,
+    );
+    act(() => {
+      ref.current?.applyState({
+        filters: {
+          globalText: '',
+          columnFilters: {
+            kind: { kind: 'select', value: 'mansion' },
+            rent: { kind: 'number', raw: '<= 100000', parsed: { mode: 'comparison', operator: '<=', value: 100000 } },
+          },
+        },
+      });
+    });
+    const text = container.querySelector('.ssg-filter-chip-bar')?.textContent ?? '';
+    expect(text).toContain('"マンション" に一致');
+    expect(text).toContain('100,000 以下');
+    expect(text).not.toContain('mansion');
   });
 });
