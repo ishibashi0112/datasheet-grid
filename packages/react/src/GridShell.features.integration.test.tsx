@@ -859,8 +859,23 @@ describe('差し込み式: filtering', () => {
     });
     expect(container.textContent).toContain('Filter: なし');
     expect(container.textContent).not.toContain('1列');
+    // 追加(作り直しの確認 lite-1): 見出しの「フィルター適用中」の印(漏斗 / アクセント色)も出さない。
+    expect(container.querySelector('.ssg-header-label--filtered')).toBeNull();
+    expect(container.querySelector('[data-ssg-tooltip="フィルター適用中"]')).toBeNull();
     // 状態には残る(getState で読める。説明どおり)。
     expect(ref.current?.getState().filters.columnFilters).toEqual(columnFilterState.filters.columnFilters);
+  });
+
+  it('filtering を入れた構成では、applyState で渡した列フィルターに見出しの印が付く(lite-1 の対照)', () => {
+    const ref = createRef<SpreadsheetGridHandle<Row>>();
+    const { container } = render(
+      <FilteringOnlyGrid ref={ref} rows={rows} columns={filterColumns} rowKeyGetter={(r) => r.id} />,
+    );
+    act(() => {
+      ref.current?.applyState({ filters: { globalText: '', columnFilters: columnFilterState.filters.columnFilters } });
+    });
+    expect(container.querySelector('.ssg-header-label--filtered')).not.toBeNull();
+    expect(container.querySelector('[data-ssg-tooltip="フィルター適用中"]')).not.toBeNull();
   });
 
   it('フィルターの prop を使わなければ警告しない', () => {

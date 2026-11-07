@@ -99,6 +99,8 @@ The base styles are plain (unlayered) CSS scoped to `.ssg-*` classes, and all de
   @import '@ishibashi0112/spreadsheet-grid/style.layer.css';
   ```
 
+  The declaration must load before `style.layer.css`: `@import` it from the CSS that declares the order as above, or, from JS, import it after that CSS (loading it first makes `ssg-base` the weakest layer).
+
 - **Mantine** — works out of the box (no class-name or reset conflicts; grid popovers use `z-index: 1000`, above Mantine's default modal z-index).
 - **StyleX** — works out of the box (no resets, `x`-prefixed atomic classes). Pass `stylex.props(...)` straight into `classNames.*`, `cellClassName`, `getRowClassName` or `detailRow.className` — every slot accepts `string | { className, style }`, so StyleX dynamic styles (delivered through the `style` object) reach the element. StyleX atomic classes and the grid's base classes share the same specificity, so load the grid CSS before StyleX's output, or use `style.layer.css` (required when StyleX's `useLayers` option is on). Bridge tokens with `stylex.create({ grid: { '--ssg-accent': vars.accent } })` on the `root` slot.
 - **Astryx** (Meta's design system, built on StyleX) — works out of the box: the grid's unlayered CSS is not affected by Astryx's `@layer reset` / `@layer astryx-base`, and Astryx components rendered inside cells look the same as outside.
@@ -292,7 +294,7 @@ const Grid = createSpreadsheetGrid({ features: { ...standardFeatures, serverSide
 | Setup | Initial JS (gzip) |
 | --- | --- |
 | `SpreadsheetGrid` (everything) | ~120KB |
-| `/lite`, no features | ~64KB |
+| `/lite`, no features | ~65KB |
 | `/lite` + `standardFeatures` (filters, column menu, tool panel, column autosize, export) | ~84KB |
 
 Props, the `ref` handle and types are the same as `SpreadsheetGrid`. Props of features you did not pass do nothing, and in development a `console.warn` names the feature to add. See the [`/lite` section of the API reference](packages/react/API_REFERENCE.md#機能を選んで組み込むlite-サブパス) for the 20 features and their sizes.
@@ -506,6 +508,8 @@ import '@ishibashi0112/spreadsheet-grid/style.css'
   @import '@ishibashi0112/spreadsheet-grid/style.layer.css';
   ```
 
+  宣言は `style.layer.css` より先に読まれる必要があります。上のように宣言した CSS の中で `@import` するか、JS で読み込むときは宣言した CSS の後に `import` してください(先に読み込むと `ssg-base` が一番弱いレイヤーになります)。
+
 - **Mantine** — そのままで動作します（クラス名・リセットの衝突なし。グリッドの popover は `z-index: 1000` で Mantine の既定モーダルより前面）。
 - **StyleX** — そのままで動作します（reset を持たず、生成クラスは接頭辞 `x` で衝突しません）。`classNames.*` / `cellClassName` / `getRowClassName` / `detailRow.className` へ `stylex.props(...)` の戻り値をそのまま渡せます（全スロットが `string | { className, style }` を受けるため、`style` 側で届く StyleX の動的スタイルも欠落しません）。StyleX の atomic クラスと基底クラスは同特異度のため、グリッド CSS を先に・StyleX の出力を後に読み込むか、`style.layer.css` を使ってください（StyleX 側で `useLayers` を使う場合は必須）。トークンは `root` スロットに `stylex.create({ grid: { '--ssg-accent': vars.accent } })` を渡して橋渡しできます。
 - **Astryx**（Meta のデザインシステム。StyleX 製）— そのままで動作します（グリッドの CSS はレイヤーに入れていないため、Astryx の `@layer reset` / `@layer astryx-base` に崩されず、セルの中に置いた Astryx の部品も外と同じ見た目になります）。
@@ -699,7 +703,7 @@ const Grid = createSpreadsheetGrid({ features: { ...standardFeatures, serverSide
 | 構成 | 初期 JS(gzip) |
 | --- | --- |
 | `SpreadsheetGrid`(全部入り) | 約 120KB |
-| `/lite` 機能なし | 約 64KB |
+| `/lite` 機能なし | 約 65KB |
 | `/lite` + `standardFeatures`(フィルター・列メニュー・ツールパネル・列幅の自動調整・エクスポート) | 約 84KB |
 
 props・`ref` ハンドル・型は `SpreadsheetGrid` と同じです。渡していない機能の prop は何もせず、開発時は足すべき機能を `console.warn` で知らせます。20 の機能とサイズは [API リファレンスの `/lite` の節](packages/react/API_REFERENCE.md#機能を選んで組み込むlite-サブパス)にあります。

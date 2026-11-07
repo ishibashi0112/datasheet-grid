@@ -215,6 +215,8 @@ import type { GridShellFeatures } from './features/types';
 //   ライン / rowModel など既存 memo を不要に揺らさないよう module スコープで 1 つだけ持ちます。
 //   never[] は任意の T[] に代入可能で、destructure 既定値として rows の型を T[] に保ちます。
 const EMPTY_ROWS: never[] = [];
+// 追加(作り直しの確認 lite-1): フィルターの機能が無い構成で見出しへ渡す、空の列フィルター(参照を保つ)。
+const NO_HEADER_COLUMN_FILTERS: Record<string, never> = {};
 
 // 追加(stage ②): serverSide query 構築/debounce 用の安定既定値・定数です。
 //   clientSide では query を空に保ち(フックは inert)、参照同一で memo/effect を不要に揺らしません。
@@ -513,7 +515,9 @@ export function useGridShell<T extends object>({
   //   本 state が更新されるのは編集開始時のみで、同一イベント内の
   //   dispatch(startEdit) と React が自動バッチするため、編集開始時の
   //   親レンダー回数は従来どおり 1 回です。
-  const [editorInitialValue, setEditorInitialValue] = useState('');
+  //   変更(作り直しの確認 N-1): 初期値は store の view スライス(editorInitialValue)へ移しました(下の
+  //   useGridViewState)。React の state だと、イベントの外から startEditing() を呼んだときに編集中のセル
+  //   (store)だけが先に描かれ、エディタが 1 つ前の初期値で開いていたためです。
 
 
   // ── columns ───────────────────────────────────────────
@@ -624,6 +628,8 @@ export function useGridShell<T extends object>({
       isCornerHovered,
       // 追加(motion-4 / M-3): コピー範囲(動く点線)。
       copiedRange,
+      // 追加(作り直しの確認 N-1): 編集を始めるときのエディタの初期値(旧 useState)。
+      editorInitialValue = '',
     },
     {
       // 注記: viewportWidth / viewportHeight は scroll / resize effect が gridStore.setViewState で
@@ -632,6 +638,7 @@ export function useGridShell<T extends object>({
       setHoveredRowIndex,
       setHoveredColumnIndex,
       setIsCornerHovered,
+      setEditorInitialValue,
     },
   ] = useGridViewState(gridStore);
 
@@ -2383,7 +2390,7 @@ export function useGridShell<T extends object>({
       setEditorInitialValue(String(currentValue ?? ''));
       dispatch(gridActions.startEdit(cell));
     },
-    [canEditCell, dispatch, rowModel, readOnly, orderedColumns],
+    [canEditCell, dispatch, rowModel, readOnly, orderedColumns, setEditorInitialValue],
   );
 
   // 追加(editor: checkbox): checkbox セルの直接トグルです(クリック / Space 共通の集約点)。
@@ -3464,6 +3471,9 @@ export function useGridShell<T extends object>({
     // 追加(dogfood DF-20): フィルターの機能が無い構成では、状態のフィルターを「Filter: …」に数えません。
     filtersApplied: filteringAvailable,
   });
+  // 追加(作り直しの確認 lite-1): 同じく、見出しの「フィルター適用中」の印(漏斗とアクセント色)も出しません
+  //   (applyState で渡したフィルターは状態に残るが、行には効いていない)。
+  const headerColumnFilterValues = filteringAvailable ? uiState.filters.columnFilters : NO_HEADER_COLUMN_FILTERS;
 
   // ── styles ────────────────────────────────────────────
   // 変更(UI CSS移行): 外枠 frame(境界/角丸/影/クリップ)は styles.css の .ssg-root へ、
@@ -4054,7 +4064,7 @@ export function useGridShell<T extends object>({
                   renderEntries={leftRenderEntries}
                   hoveredColumnIndex={hoveredColumnIndex}
                   selectionSnapshot={selectionSnapshot}
-                  columnFilterValues={uiState.filters.columnFilters}
+                  columnFilterValues={headerColumnFilterValues}
                   sortState={uiState.sort}
                   onCornerPointerDown={handleCornerHeaderPointerDown}
                   onCornerPointerEnter={handleCornerPointerEnterStable}
@@ -4275,7 +4285,7 @@ export function useGridShell<T extends object>({
                 renderEntries={centerRenderEntries}
                 hoveredColumnIndex={hoveredColumnIndex}
                 selectionSnapshot={selectionSnapshot}
-                columnFilterValues={uiState.filters.columnFilters}
+                columnFilterValues={headerColumnFilterValues}
                 sortState={uiState.sort}
                 onCornerPointerDown={handleCornerHeaderPointerDown}
                 onCornerPointerEnter={handleCornerPointerEnterStable}
@@ -4497,7 +4507,7 @@ export function useGridShell<T extends object>({
                   renderEntries={rightRenderEntries}
                   hoveredColumnIndex={hoveredColumnIndex}
                   selectionSnapshot={selectionSnapshot}
-                  columnFilterValues={uiState.filters.columnFilters}
+                  columnFilterValues={headerColumnFilterValues}
                   sortState={uiState.sort}
                   onCornerPointerDown={handleCornerHeaderPointerDown}
                   onCornerPointerEnter={handleCornerPointerEnterStable}

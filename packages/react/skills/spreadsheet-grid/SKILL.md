@@ -51,7 +51,7 @@ export function Inventory() {
 
 ## 3. 間違えやすいこと
 
-- **CSS を読み込む。** `import '@ishibashi0112/spreadsheet-grid/style.css'`。無いとスタイルが当たらず、スクロールもしません。Tailwind v4 でも `style.css` のままで動きます。レイヤー版の `style.layer.css`(全体が `@layer ssg-base`)を使うときは、CSS で Tailwind より前に `@layer theme, base, ssg-base, components, utilities;` とレイヤー順を宣言します(宣言しないと `ssg-base` が一番弱いレイヤーになり、Preflight に罫線・ボタン・ポップオーバーが崩されます)。
+- **CSS を読み込む。** `import '@ishibashi0112/spreadsheet-grid/style.css'`。無いとスタイルが当たらず、スクロールもしません。Tailwind v4 でも `style.css` のままで動きます。レイヤー版の `style.layer.css`(全体が `@layer ssg-base`)を使うときは、CSS で Tailwind より前に `@layer theme, base, ssg-base, components, utilities;` とレイヤー順を宣言します(宣言しないと `ssg-base` が一番弱いレイヤーになり、Preflight に罫線・ボタン・ポップオーバーが崩されます)。宣言は `style.layer.css` より先に読ませます(宣言した CSS の中で `@import` するか、JS ならその CSS の後に `import`)。
 - **状態は controlled。** 編集結果は `onRowsChange` が新しい配列で返します。その配列をそのまま `rows` へ戻します(`map` などで作り直すと undo の履歴が消えます)。
 - **行キー。** `rowKeyGetter` で安定したキーを返します(既定は行 index)。
 - **列の `width` は型の上で必須。** 伸縮させる列は `flex` も足します。列は既定で編集できます。止めるときは列の `editable: false` か `readOnly`、セルごとなら `canEditCell`、全体ならグリッドの `readOnly`。
@@ -64,7 +64,7 @@ export function Inventory() {
 ## 4. 入口の選び方
 
 - `@ishibashi0112/spreadsheet-grid` の `SpreadsheetGrid`: 全部入り(初期 JS 約 120KB gzip)。迷ったらこれ。
-- `@ishibashi0112/spreadsheet-grid/lite` の `createSpreadsheetGrid`: 使う機能だけを入れる(機能なしで約 64KB、`standardFeatures` で約 84KB)。モジュールの先頭で 1 回だけ作ります。部品の名前は「キー + `Feature`」です(例: `{ ...standardFeatures, serverSide: serverSideFeature }`)。`standardFeatures` は `filtering` / `columnMenu` / `toolPanel` / `columnAutosize` / `export`。足りない機能は開発時に `console.warn` が名指しします。全部入りと同じアプリで混ぜると共通部分が二重に入るので、どちらかの入口に揃えます。
+- `@ishibashi0112/spreadsheet-grid/lite` の `createSpreadsheetGrid`: 使う機能だけを入れる(機能なしで約 65KB、`standardFeatures` で約 84KB)。モジュールの先頭で 1 回だけ作ります。部品の名前は「キー + `Feature`」です(例: `{ ...standardFeatures, serverSide: serverSideFeature }`)。`standardFeatures` は `filtering` / `columnMenu` / `toolPanel` / `columnAutosize` / `export`。足りない機能は開発時に `console.warn` が名指しします。全部入りと同じアプリで混ぜると共通部分が二重に入るので、どちらかの入口に揃えます。
 - `@ishibashi0112/spreadsheet-grid/ai`: `GridAskBar`(ことばで絞り込み。利用者の文から AI がフィルター・並び・検索を入れる)。グリッドの上に置いて `grid` に ref を渡します。AI は利用側の `ask`(自分のサーバー経由。API キーをブラウザに置かない)で呼び、行のデータは送りません。
 - `@ishibashi0112/spreadsheet-grid/testing`: jsdom のテストで行と列を描画させる `installJsdomLayoutStubs()`。
 - 型は React 版から import します(`GridColumn` / `SpreadsheetGridHandle` など)。コアの `@ishibashi0112/spreadsheet-grid-core` を React のアプリで直接使う必要はありません。コアのサブパス(`@ishibashi0112/spreadsheet-grid-core/internal/…` と旧 `…-core/<dir>/<module>`)は内部の部品で、どの版でも変わるので import しません。

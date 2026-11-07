@@ -16,7 +16,7 @@ Peer dependencies: `react` / `react-dom` `^18.3.0 || ^19.0.0` (React 18 is suppo
 import '@ishibashi0112/spreadsheet-grid/style.css'
 ```
 
-`style.css` also works as is with Tailwind CSS v4. The cascade-layer variant `style.layer.css` (everything inside `@layer ssg-base`) is only for when you want the grid inside your layer order, and then you must declare that order in your CSS before Tailwind — `@layer theme, base, ssg-base, components, utilities;` — otherwise `ssg-base` becomes the weakest layer and Tailwind's preflight breaks the borders, buttons and popovers ([details](https://datasheet-grid.vercel.app/docs/installation)). The same goes for StyleX with `useLayers`.
+`style.css` also works as is with Tailwind CSS v4. The cascade-layer variant `style.layer.css` (everything inside `@layer ssg-base`) is only for when you want the grid inside your layer order, and then you must declare that order in your CSS before Tailwind — `@layer theme, base, ssg-base, components, utilities;` — otherwise `ssg-base` becomes the weakest layer and Tailwind's preflight breaks the borders, buttons and popovers ([details](https://datasheet-grid.vercel.app/docs/installation)). The declaration must load before `style.layer.css`: import `style.layer.css` from that CSS file (`@import`), or, from JS, after it. The same goes for StyleX with `useLayers`.
 
 Using Astryx, Mantine, HeroUI v3 or shadcn/ui? Also import its theme after `style.css` (`themes/astryx.css` / `themes/mantine.css` / `themes/heroui.css` / `themes/shadcn.css`) so the grid follows your design system's colors and light / dark ([guide](https://datasheet-grid.vercel.app/docs/guides/design-systems)).
 
@@ -50,7 +50,7 @@ More runnable examples (server-side row model, Astryx) are in [`examples/`](http
 
 ## Smaller bundles: `/lite` (0.54.0+)
 
-`SpreadsheetGrid` includes every feature (about 120KB gzip of initial JS). The `/lite` entry builds a grid with only the features you pass; the rest is left out of your bundle (about 64KB with no features, about 84KB with the `standardFeatures` preset).
+`SpreadsheetGrid` includes every feature (about 120KB gzip of initial JS). The `/lite` entry builds a grid with only the features you pass; the rest is left out of your bundle (about 65KB with no features, about 84KB with the `standardFeatures` preset).
 
 ```tsx
 import { createSpreadsheetGrid, standardFeatures, serverSideFeature } from '@ishibashi0112/spreadsheet-grid/lite'
@@ -118,7 +118,7 @@ React 18.3 / 19 向けの仮想化スプレッドシート / データグリッ�
 
 **[ドキュメントとライブデモ](https://datasheet-grid.vercel.app)** · [プレイグラウンド](https://datasheet-grid.vercel.app/playground) · [StackBlitz で試す](https://stackblitz.com/fork/github/ishibashi0112/datasheet-grid/tree/main/examples/basic?file=src/App.tsx&terminal=dev) · [GitHub](https://github.com/ishibashi0112/datasheet-grid) · [変更履歴](https://github.com/ishibashi0112/datasheet-grid/blob/main/CHANGELOG.md)
 
-CSS は `import '@ishibashi0112/spreadsheet-grid/style.css'` を 1 回読み込みます。Tailwind CSS v4 でも `style.css` でそのまま動きます。カスケードレイヤー版の `style.layer.css`(全体が `@layer ssg-base`)は、グリッドを自分のレイヤー順に入れたいときだけ使い、そのときは CSS で Tailwind より前に `@layer theme, base, ssg-base, components, utilities;` とレイヤー順を宣言してください(宣言しないと `ssg-base` が一番弱いレイヤーになり、Tailwind の Preflight に罫線・ボタン・ポップオーバーが崩されます。[詳しく](https://datasheet-grid.vercel.app/docs/installation))。StyleX の `useLayers` を使うときも同じです。
+CSS は `import '@ishibashi0112/spreadsheet-grid/style.css'` を 1 回読み込みます。Tailwind CSS v4 でも `style.css` でそのまま動きます。カスケードレイヤー版の `style.layer.css`(全体が `@layer ssg-base`)は、グリッドを自分のレイヤー順に入れたいときだけ使い、そのときは CSS で Tailwind より前に `@layer theme, base, ssg-base, components, utilities;` とレイヤー順を宣言してください(宣言しないと `ssg-base` が一番弱いレイヤーになり、Tailwind の Preflight に罫線・ボタン・ポップオーバーが崩されます。[詳しく](https://datasheet-grid.vercel.app/docs/installation))。宣言は `style.layer.css` より先に読まれる必要があるので、`style.layer.css` は宣言した CSS の中で `@import` するか、JS ならその CSS の後に `import` します。StyleX の `useLayers` を使うときも同じです。
 
 Astryx / Mantine / HeroUI v3 / shadcn/ui の中で使うときは、`style.css` の後にそれぞれのテーマ(`themes/astryx.css` / `themes/mantine.css` / `themes/heroui.css` / `themes/shadcn.css`)を読み込むと、配色がデザインシステムのテーマとライト / ダークに揃います([ガイド](https://datasheet-grid.vercel.app/docs/guides/design-systems))。
 
@@ -128,7 +128,7 @@ Astryx / Mantine / HeroUI v3 / shadcn/ui の中で使うときは、`style.css` 
 
 ### バンドルを小さくする: `/lite`(0.54.0 から)
 
-`SpreadsheetGrid` は全機能入りです(初期読み込みの JS が約 120KB gzip)。`/lite` の入口では、渡した機能だけを入れたグリッドを作れます。渡さなかった機能はバンドルに入りません(機能なしで約 64KB、プリセット `standardFeatures` で約 84KB)。
+`SpreadsheetGrid` は全機能入りです(初期読み込みの JS が約 120KB gzip)。`/lite` の入口では、渡した機能だけを入れたグリッドを作れます。渡さなかった機能はバンドルに入りません(機能なしで約 65KB、プリセット `standardFeatures` で約 84KB)。
 
 ```tsx
 import { createSpreadsheetGrid, standardFeatures, serverSideFeature } from '@ishibashi0112/spreadsheet-grid/lite'

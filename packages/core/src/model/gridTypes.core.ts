@@ -2123,7 +2123,11 @@ export type SpreadsheetGridHandle<T> = {
 
   // ── 選択 / アクティブセル ──
   // 現在のアクティブセル座標(なければ null)。
-  /** 現在のアクティブセル `{ row, col }`(なければ `null`)。 */
+  /**
+   * 現在のアクティブセル `{ row, col }`(なければ `null`)。`selectCell` / `setActiveCell` /
+   * `applyState` の直後に同じ処理の中で読んでも、
+   * 変えた後の値を返す(選択・行選択・展開行の読み取りも同じ)。
+   */
   getActiveCell: () => CellCoord | null;
   // アクティブセルを設定(null で解除)。scrollIntoView:true で可視化も行います。
   /**
@@ -2160,6 +2164,7 @@ export type SpreadsheetGridHandle<T> = {
   /**
    * 行キー(`rowKeyGetter` の値)から今の表示位置(`viewRowIndex`)を返す。
    * 表示に無い行(フィルターで外れた / 閉じたグループの中 / serverSide で未ロード)は `-1`。
+   * 表示されているラベル行(`labelRow`)のキーも引ける(グループ行は対象外)。
    * 並び替えや絞り込みの中で行を足して選ぶときは、`rows.findIndex` の代わりにこれを使う(`rows`
    * の位置は表示位置と違う)。
    */

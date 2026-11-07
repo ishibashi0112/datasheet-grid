@@ -138,7 +138,7 @@ export async function POST(req: Request) {
 - **IME**: 変換を確定する Enter で送らない(`event.nativeEvent.isComposing` か `event.keyCode === 229` の Enter は `preventDefault()`。Safari は確定の keydown が `isComposing: false` / `keyCode: 229` で届く)。
 - **Esc**: 聞いている間の `Esc` で `cancel()` する(バーは、フォーカスがバーの中にあるか、どこにも無いときだけ止める。変換中の `Esc` は除く)。
 - **もう一度**: 失敗したとき(`error`)に送り直すなら、送った文を自分で持っておいて `submit` する(`error` は失敗の文だけで、送った文は持たない)。
-- **入力欄**: 答えを読めたら(`submit` が `true`)入力欄を空にする。失敗したときは残す(直して送れるように)。
+- **入力欄**: 答えを読めたら(`submit` が `true`)入力欄を空にする。ただし考えている間に書き換えていたら残す(送った文と今の入力欄が同じときだけ空にする。バーと同じ)。失敗したときは残す(直して送れるように)。
 
 頼みの組み立てと答えの検査は React に依存しない core の関数(`@ishibashi0112/spreadsheet-grid-core` の入口と、`/ai` から再エクスポート)。サーバー側で頼みを組み立て直したり、ほかのフレームワークで使える。
 
@@ -156,7 +156,8 @@ core の関数で反映するときは、`readGridAskAnswer` の `state` をそ�
 ```ts
 import { createGridAskRequest, readGridAskAnswer, isGridAskColumnsChanged } from '@ishibashi0112/spreadsheet-grid/ai';
 
-const answer = await ask(createGridAskRequest(text, grid.getState(), options));
+const controller = new AbortController(); // 止めるときは controller.abort()
+const answer = await ask(createGridAskRequest(text, grid.getState(), options), { signal: controller.signal });
 const now = grid.getState(); // 答えが届いた時点の状態で読む
 const result = readGridAskAnswer(answer, now, options);
 if (result.ok && result.changed) {

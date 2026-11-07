@@ -1215,14 +1215,14 @@ const gridRef = useRef<SpreadsheetGridHandle<Row>>(null);
 
 | メソッド | 説明 |
 | --- | --- |
-| `getActiveCell()` | 現在のアクティブセル `{ row, col }`(なければ `null`)。 |
+| `getActiveCell()` | 現在のアクティブセル `{ row, col }`(なければ `null`)。`selectCell` / `setActiveCell` / `applyState` の直後に同じ処理の中で読んでも、変えた後の値を返す(選択・行選択・展開行の読み取りも同じ)。 |
 | `setActiveCell(cell \| null, { scrollIntoView? })` | アクティブセル設定(`null` で解除)。`scrollIntoView: true` で可視化も行う(固定列のセルでも縦方向へスクロールする)。中央ペイン(固定でない列)のセルは、指定が無くてもアクティブセルの位置が変わると見える位置までスクロールされる(クリック / キー操作と同じ動き)。 |
 | `getSelection()` | 現在の選択状態(`GridSelection`)。 |
 | `selectCell(viewRowIndex, colIndex, { scrollIntoView? })` | 単一セル選択(クリック相当)。スクロールの扱いは `setActiveCell` と同じ。 |
 | `selectRange(range, { scrollIntoView? })` | セル範囲選択(ドラッグ相当)。アンカーは `range.start`。 |
 | `clearSelection()` | 選択解除。 |
 | `getSelectedRows()` | 選択に交差する行(distinct)を返す。serverSide はロード済み行のみ。 |
-| `getViewRowIndex(rowKey)` | 行キー(`rowKeyGetter` の値)から今の表示位置(`viewRowIndex`)を返す。表示に無い行(フィルターで外れた / 閉じたグループの中 / serverSide で未ロード)は `-1`。並び替えや絞り込みの中で行を足して選ぶときは、`rows.findIndex` の代わりにこれを使う(`rows` の位置は表示位置と違う)。 |
+| `getViewRowIndex(rowKey)` | 行キー(`rowKeyGetter` の値)から今の表示位置(`viewRowIndex`)を返す。表示に無い行(フィルターで外れた / 閉じたグループの中 / serverSide で未ロード)は `-1`。表示されているラベル行(`labelRow`)のキーも引ける(グループ行は対象外)。並び替えや絞り込みの中で行を足して選ぶときは、`rows.findIndex` の代わりにこれを使う(`rows` の位置は表示位置と違う)。 |
 | `getColIndex(columnKey)` | 列キーから今の `colIndex`(固定列と、行ドラッグのハンドル列などライブラリが足す列を含む視覚順)を返す。表示していない列(`visible: false` / グループ化中のグループ元列)は `-1`。 |
 
 > 注: `getSelectedRows()` は**セル範囲選択**に交差する行です。下の**チェックボックス行選択**(`enableRowSelection`)とは別レイヤーで、そちらは `getSelectedRowKeys()` / `getSelectedRowData()` を使います。
@@ -1643,7 +1643,7 @@ export const OrdersTable = () => <Grid columns={columns} dataSource={dataSource}
 - **画面の入口は機能の組み合わせで決まる**: 列フィルターを画面から掛ける入口は列メニューの「フィルター…」と、適用中フィルターのチップ(ツールパネル)なので、`filtering` だけでは列フィルターを追加できない(グローバル検索欄は使える)。ツールパネルを開く入口は列メニューの項目、適用中フィルターのチップ、`openFilterManager` なので、`toolPanel` は `columnMenu` か `filtering` と一緒に使う(どちらも無いと代役になり、部品も読み込まない)。列メニューの「幅の自動調整」は `columnAutosize` があるときだけ出る。
 - **機能が無いときの扱い(注意が要るもの)**: `filtering` が無いとグローバル / 列フィルターは無効(`enableGlobalFilter` / `enableColumnFilter` を false として扱う)で、`applyState` で渡したフィルターは状態には残るが行には効かない(開発時に警告。上部 / 下部バーの「Filter: …」にも数えない)。`serverSide` が無いと `dataSource` を無視して clientSide で動く。`labelRow` が無いとラベル行の述語に当たる行もデータ行として並ぶ。`rowGroup` の列は `grouping` が無ければグループ化せずそのまま表示。`autoHeight` が無いと行の高さは一定(`rowHeight`)。`toolPanel` があっても `filtering` が無ければフィルタータブは出ず、`openFilterManager` は何もしない(全部入りで `enableColumnFilter={false}` にしたときと同じ。開発時に警告)。
 - Next.js(App Router)では、`createSpreadsheetGrid` を呼ぶファイルに `'use client'` を付ける。作ったコンポーネントや `standardFeatures` は関数なので、サーバーコンポーネントから props で渡せない(クライアントコンポーネントの中で import して使う)。
-- 全部入りの `SpreadsheetGrid` と同じアプリで混ぜることはできるが、`/lite` は機能ごとのファイルに分けた別のビルドなので共通部分を共有しない。同じページで両方を使うと共通部分が二重に入り、ページを分けても `/lite` だけのページが大きくなることがある(Next.js 16 の実測で、`standardFeatures` のページが約 82KB → 約 88KB)。どちらかの入口に揃える。
+- 全部入りの `SpreadsheetGrid` と同じアプリで混ぜることはできるが、`/lite` は機能ごとのファイルに分けた別のビルドなので共通部分を共有しない。同じページで両方を使うと共通部分が二重に入り、ページを分けても `/lite` だけのページが大きくなることがある(Next.js 16 の Turbopack の実測で、`standardFeatures` のページが約 85KB → 約 92KB)。どちらかの入口に揃える。
 
 | キー | 部品 | 中身(関係する prop) | 目安(gzip) |
 | --- | --- | --- | --- |
@@ -1673,7 +1673,7 @@ export const OrdersTable = () => <Grid columns={columns} dataSource={dataSource}
 | 構成 | 初期 JS(gzip) |
 | --- | --- |
 | 全部入り(`SpreadsheetGrid`) | 約 120KB |
-| `/lite` 機能なし | 約 64KB |
+| `/lite` 機能なし | 約 65KB |
 | `/lite` + `standardFeatures` | 約 84KB |
 | `/lite` + `standardFeatures` + `serverSideFeature` | 約 88KB |
 
@@ -1832,7 +1832,7 @@ export async function POST(req: Request) {
 - **IME**: 変換を確定する Enter で送らない(`event.nativeEvent.isComposing` か `event.keyCode === 229` の Enter は `preventDefault()`。Safari は確定の keydown が `isComposing: false` / `keyCode: 229` で届く)。
 - **Esc**: 聞いている間の `Esc` で `cancel()` する(バーは、フォーカスがバーの中にあるか、どこにも無いときだけ止める。変換中の `Esc` は除く)。
 - **もう一度**: 失敗したとき(`error`)に送り直すなら、送った文を自分で持っておいて `submit` する(`error` は失敗の文だけで、送った文は持たない)。
-- **入力欄**: 答えを読めたら(`submit` が `true`)入力欄を空にする。失敗したときは残す(直して送れるように)。
+- **入力欄**: 答えを読めたら(`submit` が `true`)入力欄を空にする。ただし考えている間に書き換えていたら残す(送った文と今の入力欄が同じときだけ空にする。バーと同じ)。失敗したときは残す(直して送れるように)。
 
 頼みの組み立てと答えの検査は React に依存しない core の関数(`@ishibashi0112/spreadsheet-grid-core` の入口と、`/ai` から再エクスポート)。サーバー側で頼みを組み立て直したり、ほかのフレームワークで使える。
 
@@ -1850,7 +1850,8 @@ core の関数で反映するときは、`readGridAskAnswer` の `state` をそ�
 ```ts
 import { createGridAskRequest, readGridAskAnswer, isGridAskColumnsChanged } from '@ishibashi0112/spreadsheet-grid/ai';
 
-const answer = await ask(createGridAskRequest(text, grid.getState(), options));
+const controller = new AbortController(); // 止めるときは controller.abort()
+const answer = await ask(createGridAskRequest(text, grid.getState(), options), { signal: controller.signal });
 const now = grid.getState(); // 答えが届いた時点の状態で読む
 const result = readGridAskAnswer(answer, now, options);
 if (result.ok && result.changed) {

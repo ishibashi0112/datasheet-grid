@@ -76,7 +76,7 @@ import type { GridColumn } from '@ishibashi0112/spreadsheet-grid'
 import type { Project } from './types'
 
 export const columns: GridColumn<Project>[] = [
-  { key: 'budget', title: '予算', valueFormatter: ({ value }) => `${Number(value).toLocaleString()} 円` },
+  { key: 'budget', title: '予算', width: 140, valueFormatter: ({ value }) => `${Number(value).toLocaleString()} 円` },
 ]
 ```
 

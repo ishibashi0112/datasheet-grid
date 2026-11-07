@@ -31,7 +31,7 @@ export const OrdersTable = () => <Grid columns={columns} dataSource={dataSource}
 - **画面の入口は機能の組み合わせで決まる**: 列フィルターを画面から掛ける入口は列メニューの「フィルター…」と、適用中フィルターのチップ(ツールパネル)なので、`filtering` だけでは列フィルターを追加できない(グローバル検索欄は使える)。ツールパネルを開く入口は列メニューの項目、適用中フィルターのチップ、`openFilterManager` なので、`toolPanel` は `columnMenu` か `filtering` と一緒に使う(どちらも無いと代役になり、部品も読み込まない)。列メニューの「幅の自動調整」は `columnAutosize` があるときだけ出る。
 - **機能が無いときの扱い(注意が要るもの)**: `filtering` が無いとグローバル / 列フィルターは無効(`enableGlobalFilter` / `enableColumnFilter` を false として扱う)で、`applyState` で渡したフィルターは状態には残るが行には効かない(開発時に警告。上部 / 下部バーの「Filter: …」にも数えない)。`serverSide` が無いと `dataSource` を無視して clientSide で動く。`labelRow` が無いとラベル行の述語に当たる行もデータ行として並ぶ。`rowGroup` の列は `grouping` が無ければグループ化せずそのまま表示。`autoHeight` が無いと行の高さは一定(`rowHeight`)。`toolPanel` があっても `filtering` が無ければフィルタータブは出ず、`openFilterManager` は何もしない(全部入りで `enableColumnFilter={false}` にしたときと同じ。開発時に警告)。
 - Next.js(App Router)では、`createSpreadsheetGrid` を呼ぶファイルに `'use client'` を付ける。作ったコンポーネントや `standardFeatures` は関数なので、サーバーコンポーネントから props で渡せない(クライアントコンポーネントの中で import して使う)。
-- 全部入りの `SpreadsheetGrid` と同じアプリで混ぜることはできるが、`/lite` は機能ごとのファイルに分けた別のビルドなので共通部分を共有しない。同じページで両方を使うと共通部分が二重に入り、ページを分けても `/lite` だけのページが大きくなることがある(Next.js 16 の実測で、`standardFeatures` のページが約 82KB → 約 88KB)。どちらかの入口に揃える。
+- 全部入りの `SpreadsheetGrid` と同じアプリで混ぜることはできるが、`/lite` は機能ごとのファイルに分けた別のビルドなので共通部分を共有しない。同じページで両方を使うと共通部分が二重に入り、ページを分けても `/lite` だけのページが大きくなることがある(Next.js 16 の Turbopack の実測で、`standardFeatures` のページが約 85KB → 約 92KB)。どちらかの入口に揃える。
 
 | キー | 部品 | 中身(関係する prop) | 目安(gzip) |
 | --- | --- | --- | --- |
@@ -61,7 +61,7 @@ export const OrdersTable = () => <Grid columns={columns} dataSource={dataSource}
 | 構成 | 初期 JS(gzip) |
 | --- | --- |
 | 全部入り(`SpreadsheetGrid`) | 約 120KB |
-| `/lite` 機能なし | 約 64KB |
+| `/lite` 機能なし | 約 65KB |
 | `/lite` + `standardFeatures` | 約 84KB |
 | `/lite` + `standardFeatures` + `serverSideFeature` | 約 88KB |
 

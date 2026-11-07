@@ -284,6 +284,9 @@ export const createGridApi = <T,>(features: Pick<GridCoreFeatures, 'export'> = {
     };
   };
 
+  // 追加(作り直しの確認 N-3): store の今の UI 状態(無ければ描画のときの値)。
+  const currentUi = (s: GridApiArgs<T>): GridUiState => s.getUiState?.() ?? s.uiState;
+
   // 追加(dogfood DU-03): getViewRowIndex の行キー → view index のキャッシュ(行モデルごと)。
   let rowKeyIndexCache: { model: RowModel<T> | null; map: Map<GridRowKey, number> } = { model: null, map: new Map() };
 
@@ -342,8 +345,10 @@ export const createGridApi = <T,>(features: Pick<GridCoreFeatures, 'export'> = {
       return { startIndex: s.windowFirstRow, endIndex: s.windowLastRow + 1 };
     },
 
+    // 変更(作り直しの確認 N-3): 読み取りは store の今の値から(selectCell / setActiveCell / applyState の直後に
+    //   読むと、次の描画まで 1 つ前の値を返していた)。下の選択・行選択・展開行の読み取りも同じです。
     getActiveCell: () => {
-      const cell = args?.uiState.activeCell;
+      const cell = args ? currentUi(args).activeCell : null;
       return cell ? { row: cell.row, col: cell.col } : null;
     },
 
@@ -361,7 +366,7 @@ export const createGridApi = <T,>(features: Pick<GridCoreFeatures, 'export'> = {
       }
     },
 
-    getSelection: () => args?.uiState.selection ?? null,
+    getSelection: () => (args ? currentUi(args).selection : null),
 
     // ── フォーカス / 編集の開始(dogfood DU-02)──
     focus: () => {
@@ -376,7 +381,7 @@ export const createGridApi = <T,>(features: Pick<GridCoreFeatures, 'export'> = {
       if ((viewRowIndex === undefined) !== (colIndex === undefined)) {
         return false;
       }
-      const ui = s.getUiState?.() ?? s.uiState;
+      const ui = currentUi(s);
       // 編集中は始めません(今の編集を確定も取消もせずに別のセルへ移らないため)。
       if (ui.editingCell !== null) {
         return false;
@@ -458,7 +463,7 @@ export const createGridApi = <T,>(features: Pick<GridCoreFeatures, 'export'> = {
       if (!s) {
         return [];
       }
-      const sel = s.uiState.selection;
+      const sel = currentUi(s).selection;
       if (!sel) {
         return [];
       }
@@ -504,7 +509,7 @@ export const createGridApi = <T,>(features: Pick<GridCoreFeatures, 'export'> = {
       }
       // 永続スライス(手動リサイズ幅 / フィルター / ソート)+ 列メタ(可視 / 順序 / ピン)を純粋にスナップショット。
       // 変更(dogfood DU-06): store の今の状態を読みます(applyState の直後でも渡した値が返る)。
-      const ui = s.getUiState?.() ?? s.uiState;
+      const ui = currentUi(s);
       return buildGridState(ui.columnWidths, ui.filters, ui.sort, extractColumnState(currentColumns(s)));
     },
 
@@ -524,7 +529,7 @@ export const createGridApi = <T,>(features: Pick<GridCoreFeatures, 'export'> = {
       if (dropped.length > 0) {
         warnDroppedStateColumns(dropped);
       }
-      const ui = s.getUiState?.() ?? s.uiState;
+      const ui = currentUi(s);
       // 列メタ(v2): onColumnsChange があり、かつ正規化後に columns があるときだけ反映(手動リサイズ幅の
       //   column.width 焼き込み込み。幅を渡さないときは今の幅で焼き込み、今の幅を保ちます)。
       if (s.onColumnsChange && patch.columns) {
@@ -553,7 +558,7 @@ export const createGridApi = <T,>(features: Pick<GridCoreFeatures, 'export'> = {
     // ── 行選択(チェックボックス選択)──
     getRowSelection: () => {
       const s = args;
-      return s ? rowSelectionToModel(s.uiState.rowSelection) : { type: 'include', rowKeys: [] };
+      return s ? rowSelectionToModel(currentUi(s).rowSelection) : { type: 'include', rowKeys: [] };
     },
     setRowSelection: (model) => {
       args?.commitRowSelection(rowSelectionFromModel(model));
@@ -563,7 +568,7 @@ export const createGridApi = <T,>(features: Pick<GridCoreFeatures, 'export'> = {
       if (!s) {
         return [];
       }
-      const sel = s.uiState.rowSelection;
+      const sel = currentUi(s).rowSelection;
       // include はキーをそのまま返します(exclude のみ全行を走査)。
       if (sel.mode === 'include') {
         return Array.from(sel.keys);
@@ -587,7 +592,7 @@ export const createGridApi = <T,>(features: Pick<GridCoreFeatures, 'export'> = {
       if (!s) {
         return [];
       }
-      const sel = s.uiState.rowSelection;
+      const sel = currentUi(s).rowSelection;
       const result: T[] = [];
       const count = s.rowModel.getRowCount();
       for (let i = 0; i < count; i += 1) {
@@ -604,11 +609,11 @@ export const createGridApi = <T,>(features: Pick<GridCoreFeatures, 'export'> = {
     },
     getSelectedRowCount: () => {
       const s = args;
-      return s ? countSelectedRows(s.uiState.rowSelection, s.leafRowCount) : 0;
+      return s ? countSelectedRows(currentUi(s).rowSelection, s.leafRowCount) : 0;
     },
     isRowSelected: (rowKey) => {
       const s = args;
-      return s ? resolveIsRowSelected(s.uiState.rowSelection, rowKey) : false;
+      return s ? resolveIsRowSelected(currentUi(s).rowSelection, rowKey) : false;
     },
     selectAllRows: () => {
       args?.commitRowSelection(selectAllRows());
@@ -673,7 +678,7 @@ export const createGridApi = <T,>(features: Pick<GridCoreFeatures, 'export'> = {
     },
     getExpandedDetailRowKeys: () => {
       const s = args;
-      return s && s.detailRowEnabled ? Array.from(s.uiState.expandedDetailRowKeys) : [];
+      return s && s.detailRowEnabled ? Array.from(currentUi(s).expandedDetailRowKeys) : [];
     },
     collapseAllDetailRows: () => {
       const s = args;

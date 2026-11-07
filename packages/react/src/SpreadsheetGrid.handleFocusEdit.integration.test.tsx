@@ -5,7 +5,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect, beforeAll, afterAll, afterEach } from 'vitest';
 import { render, cleanup, act, fireEvent } from '@testing-library/react';
-import { createRef } from 'react';
+import { createRef, startTransition } from 'react';
 
 import { SpreadsheetGrid } from './SpreadsheetGrid';
 import { installJsdomLayoutStubs } from './testing';
@@ -175,6 +175,55 @@ describe('startEditing()(DU-02)', () => {
     expect(result).toBe(false);
     expect(editorInput()).toBeNull();
   });
+
+  // 追加(作り直しの確認 N-1): イベントの外から呼ぶと、編集中のセル(store)が先に描かれ、エディタが 1 つ前の
+  //   初期値で開いていた(React 18 ではタイマー / await の後でも起きた。React 19 では startTransition の中で起きる)。
+  //   何も打たずに Enter で確定すると、前のセルの値が書き込まれていた。
+  it('startTransition の中から呼んでも、エディタはそのセルの今の値で開く(前に開いたセルの値ではない)', () => {
+    const { ref } = setup();
+    act(() => {
+      startTransition(() => {
+        ref.current?.startEditing(1, 0);
+      });
+    });
+    expect(editorInput()?.value).toBe('beta');
+    act(() => {
+      fireEvent.keyDown(editorInput() as HTMLInputElement, { key: 'Escape' });
+    });
+    act(() => {
+      startTransition(() => {
+        ref.current?.startEditing(2, 1);
+      });
+    });
+    expect(editorInput()?.value).toBe('2');
+  });
+});
+
+// 追加(作り直しの確認 N-3): 読み取りは store の今の値から(同じ処理の中で続けて読むと 1 つ前の値だった)。
+describe('書いた直後の読み取り(N-3)', () => {
+  it('selectCell / setActiveCell / setRowSelection の直後に、同じ処理の中で読むと今の値を返す', () => {
+    const { ref } = setup({ enableRowSelection: true });
+    let active: unknown;
+    let selection: unknown;
+    act(() => {
+      ref.current?.selectCell(2, 1);
+      active = ref.current?.getActiveCell();
+      selection = ref.current?.getSelection();
+    });
+    expect(active).toEqual({ row: 2, col: 1 });
+    expect(selection).toEqual({ type: 'cell', range: { start: { row: 2, col: 1 }, end: { row: 2, col: 1 } } });
+    act(() => {
+      ref.current?.setActiveCell({ row: 0, col: 0 });
+      active = ref.current?.getActiveCell();
+    });
+    expect(active).toEqual({ row: 0, col: 0 });
+    let keys: unknown;
+    act(() => {
+      ref.current?.setRowSelection({ type: 'include', rowKeys: [20] });
+      keys = ref.current?.getSelectedRowKeys();
+    });
+    expect(keys).toEqual([20]);
+  });
 });
 
 describe('getViewRowIndex() / getColIndex()(DU-03)', () => {
@@ -193,6 +242,32 @@ describe('getViewRowIndex() / getColIndex()(DU-03)', () => {
     expect(ref.current?.getViewRowIndex(20)).toBe(0);
     expect(ref.current?.getViewRowIndex(30)).toBe(-1);
     expect(ref.current?.getViewRowIndex(999)).toBe(-1);
+  });
+
+  // 追加(作り直しの確認 N-2): 表示されているラベル行のキーで -1 が返っていた(viewRowIndex はラベル行も数える)。
+  it('ラベル行のキーからも表示位置を返す', () => {
+    type LabeledRow = Row & { label?: string };
+    const labeledRows: LabeledRow[] = [
+      { id: 1, name: '', qty: 0, done: false, label: '第1節' },
+      ...rows,
+      { id: 2, name: '', qty: 0, done: false, label: '第2節' },
+      { id: 40, name: 'delta', qty: 4, done: false },
+    ];
+    const labeledRef = createRef<SpreadsheetGridHandle<LabeledRow>>();
+    render(
+      <SpreadsheetGrid<LabeledRow>
+        ref={labeledRef}
+        rows={labeledRows}
+        columns={columns as GridColumn<LabeledRow>[]}
+        rowKeyGetter={(row) => row.id}
+        labelRow={{ isLabelRow: (row) => row.label !== undefined, getLabel: (row) => row.label ?? '' }}
+        height={300}
+      />,
+    );
+    expect(labeledRef.current?.getViewRowIndex(1)).toBe(0);
+    expect(labeledRef.current?.getViewRowIndex(2)).toBe(4);
+    expect(labeledRef.current?.getViewRowIndex(40)).toBe(5);
+    expect(labeledRef.current?.getViewRowIndex(20)).toBe(2);
   });
 
   it('列キーから colIndex(ライブラリが足す列を含む視覚順)を返し、表示していない列は -1', () => {

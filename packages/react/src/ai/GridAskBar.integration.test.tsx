@@ -674,6 +674,8 @@ describe('GridAskBar(結合)', () => {
         const { rerender } = render(<HintsHost hints={{ stok: false, stock: '個' }} />);
         expect(warn).toHaveBeenCalledTimes(1);
         expect(String(warn.mock.calls[0]?.[0])).toContain('stok');
+        // 変更(作り直しの確認 AI-N4): useGridAsk だけの画面でも出るので、部品の名前ではなくライブラリの接頭辞。
+        expect(String(warn.mock.calls[0]?.[0])).toMatch(/^\[spreadsheet-grid\] GridAskBar \/ useGridAsk の columnHints/);
         rerender(<HintsHost hints={{ stok: false, stock: '個' }} />);
         expect(warn).toHaveBeenCalledTimes(1);
         warn.mockClear();

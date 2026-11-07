@@ -12,7 +12,7 @@
 
 ## 未リリース
 
-実際にアプリを作って確かめたチェック(`docs/audits/2026-11-07/`)で見つかったものの修正です。直した分だけ初期 JS(gzip)が増えます: 全部入り 約 115.2KB → 119.8KB、`/lite` 機能なし 約 61.9KB → 64.5KB、`/lite` + `standardFeatures` 約 80.4KB → 83.6KB。
+実際にアプリを作って確かめたチェック(`docs/audits/2026-11-07/`)で見つかったものの修正です。直した分だけ初期 JS(gzip)が増えます: 全部入り 約 115.2KB → 119.8KB、`/lite` 機能なし 約 61.9KB → 64.6KB、`/lite` + `standardFeatures` 約 80.4KB → 83.7KB。
 
 ### 追加
 
@@ -61,7 +61,9 @@
 - `filterType: 'auto'` の列の種別を推定するときに、ラベル行の値も数えていたのを直しました(ラベル行の見出しの文字がその列に入っていると、数値や日付の列が文字の列として推定されていました)。
 - set / textSet の列フィルターで、`rows` から集める候補にラベル行の値が入っていたのを直しました(ラベル行の空の値で「(空白)」も出ていました)。
 - `applyState` でフィルターと並べ替えを一度に渡すと、並べ替えだけの画面が 1〜2 フレーム出てから絞り込まれていたのを直しました(1 回の再描画で両方が出ます)。
-- `/lite` で `filtering` を入れていない構成で `applyState` にフィルターを渡すと、効いていないのに上部 / 下部バーに「Filter: 1列」と出ていたのを直しました(「Filter: なし」のまま。状態には残ります)。
+- `/lite` で `filtering` を入れていない構成で `applyState` にフィルターを渡すと、効いていないのに上部 / 下部バーに「Filter: 1列」と出て、列見出しにも「フィルター適用中」の印(漏斗とアクセント色)が付いていたのを直しました(「Filter: なし」のままで印も付きません。状態には残ります)。
+- CSS の中で `@import '@ishibashi0112/spreadsheet-grid/style.layer.css'` と書くと、Tailwind CSS v4(`@tailwindcss/vite`)でグリッドの CSS が丸ごと消えていたのを直しました(中の 1 行の `@import url("./style.css") layer(ssg-base)` が取り込んだ先の途中に残って捨てられ、相対のパスも利用側のフォルダから探されていた)。`style.layer.css` を、`style.css` の全体を `@layer ssg-base { … }` で包んだファイルにしました(効き方は同じ)。
+- 命令的 API の読み取り(`getActiveCell` / `getSelection` / `getSelectedRows` / 行選択の読み取り / `getExpandedDetailRowKeys`)を、`selectCell` / `setActiveCell` / `setRowSelection` などの直後に同じ処理の中で呼ぶと、次の描画まで 1 つ前の値を返していたのを直しました。
 - 編集中に外からの更新で行の並びが変わったとき、`onActiveCellChange` が「同じ位置に来た別の行 → 編集中の行」と 2 回呼ばれていたのを直しました。付いていった後の編集中の行だけを 1 回通知します。
 - `const f = numberFormatter()` のように型引数なしで作ったフォーマッタを `GridColumn<Row>` の `valueFormatter` に渡すと型エラーになっていたのを直しました(行の型の違う列でも使い回せます。`numberFormatter<Row>()` はこれまでどおりです)。
 - SSRM の書き戻しで、保存中のセルをスクロールで画面の外へ出して戻すと、保存中の印(`showSaveStatus`)が消えていたのを直しました。

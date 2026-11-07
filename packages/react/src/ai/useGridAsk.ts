@@ -199,10 +199,11 @@ export function useGridAsk<T>(options: UseGridAskOptions<T>): UseGridAskResult {
       : Object.keys(options.columnHints)
           .filter((key) => !options.columns.some((column) => column.key === key))
           .join(', ');
+  // 変更(作り直しの確認 AI-N4): 接頭辞を [GridAskBar] から [spreadsheet-grid] に(useGridAsk だけの画面でも出るため)。
   useEffect(() => {
     if (unknownHintKeys !== '') {
       console.warn(
-        `[GridAskBar] columnHints に列に無いキーがあります: ${unknownHintKeys}。列の key と同じ名前にしてください(この補足や \`false\` は効いていません)。`,
+        `[spreadsheet-grid] GridAskBar / useGridAsk の columnHints に列に無いキーがあります: ${unknownHintKeys}。列の key と同じ名前にしてください(この補足や \`false\` は効いていません)。`,
       );
     }
   }, [unknownHintKeys]);

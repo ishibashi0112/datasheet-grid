@@ -139,18 +139,22 @@ export const findViewRowIndexByKey = <T>(
   cache: Map<GridRowKey, number>,
 ): number => {
   const rowCount = rowModel.getRowCount();
+  // 変更(作り直しの確認 N-2): ラベル行(getRow は undefined、getLabelRow が記述子)も、表示されている行として
+  //   キーで引けるようにしました(グループ行と SSRM の未ロード行は従来どおり対象外)。
+  const hasRowAt = (index: number): boolean =>
+    rowModel.getRow(index) != null || rowModel.getLabelRow?.(index) !== undefined;
   const cached = cache.get(rowKey);
   if (
     cached !== undefined &&
     cached >= 0 &&
     cached < rowCount &&
-    rowModel.getRow(cached) != null &&
+    hasRowAt(cached) &&
     rowModel.getRowKey(cached) === rowKey
   ) {
     return cached;
   }
   for (let index = 0; index < rowCount; index += 1) {
-    if (rowModel.getRow(index) != null && rowModel.getRowKey(index) === rowKey) {
+    if (hasRowAt(index) && rowModel.getRowKey(index) === rowKey) {
       cache.set(rowKey, index);
       return index;
     }
