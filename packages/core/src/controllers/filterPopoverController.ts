@@ -246,6 +246,9 @@ export const createFilterPopoverController = <T,>(): FilterPopoverController<T> 
     // グリッド外を押して閉じたときは押下先にフォーカスを残します(監査 C-3)。
     onOutsidePointerDown: (target) =>
       closeWith(args !== null && isInsideGridRoot(args.gridRootRef, target)),
+    // 追加(段階 2 DF-23): グリッドが隠れたら閉じます(隠れたグリッドへフォーカスは戻さない)。
+    getGridRoot: () => args?.gridRootRef.current ?? null,
+    onGridHidden: () => closeWith(false),
     // 追加(lazy-popups): パネルが未描画の間(部品の遅延読み込み中)は Escape で閉じます(開いている間はグリッドの
     //   キーボード操作が止まるため、見えないまま閉じられなくならないように)。描画後の Escape は従来どおり
     //   パネル側(入力欄)とツールパネルの suppressEscape が扱います。

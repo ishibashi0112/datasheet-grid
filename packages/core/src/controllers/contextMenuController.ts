@@ -110,6 +110,9 @@ export const createContextMenuController = <T,>(): ContextMenuController<T> => {
     // グリッド外を押して閉じたときは押下先にフォーカスを残します(監査 C-3)。
     onOutsidePointerDown: (target) =>
       closeWith(args !== null && isInsideGridRoot(args.gridRootRef, target)),
+    // 追加(段階 2 DF-23): グリッドが隠れたら閉じます(隠れたグリッドへフォーカスは戻さない)。
+    getGridRoot: () => args?.gridRootRef.current ?? null,
+    onGridHidden: () => closeWith(false),
     onKeyDown: (event) => {
       if (event.key === 'Escape') {
         event.preventDefault();

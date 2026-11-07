@@ -50,6 +50,70 @@ describe('createPopoverWindowBindings', () => {
     expect(handlers.onResize).toHaveBeenCalledTimes(1);
     expect(handlers.onOutsidePointerDown).toHaveBeenCalledTimes(1);
   });
+
+  // 追加(段階 2 DF-23): クリック以外(element.click() やショートカット)で display: none のタブへ切り替えてグリッドが隠れても、
+  //   ポップオーバーが別の画面の上に残っていました。開いている間だけグリッドの大きさを見張り、0 × 0 になったら知らせます。
+  it('開いている間にグリッドが隠れたら(0 × 0)onGridHidden を呼ぶ。大きさが変わっただけ / 閉じた後は呼ばない', () => {
+    const callbacks: ((entries: { contentRect: { width: number; height: number } }[]) => void)[] = [];
+    const disconnect = vi.fn();
+    class FakeResizeObserver {
+      constructor(callback: (entries: { contentRect: { width: number; height: number } }[]) => void) {
+        callbacks.push(callback);
+      }
+      observe(): void {}
+      unobserve(): void {}
+      disconnect = disconnect;
+    }
+    vi.stubGlobal('ResizeObserver', FakeResizeObserver);
+    const root = document.createElement('div');
+    document.body.appendChild(root);
+    let rect = { width: 800, height: 400 };
+    vi.spyOn(root, 'getBoundingClientRect').mockImplementation(() => ({ ...rect, top: 0, left: 0 }) as DOMRect);
+    const onGridHidden = vi.fn();
+    const bindings = createPopoverWindowBindings({
+      isInside: () => false,
+      onOutsidePointerDown: () => {},
+      getGridRoot: () => root,
+      onGridHidden,
+    });
+    expect(callbacks).toHaveLength(0);
+    bindings.attach();
+    expect(callbacks).toHaveLength(1);
+    const notify = (width: number, height: number) => callbacks[0]([{ contentRect: { width, height } }]);
+    notify(800, 400);
+    rect = { width: 500, height: 400 };
+    notify(500, 400);
+    expect(onGridHidden).not.toHaveBeenCalled();
+    rect = { width: 0, height: 0 };
+    notify(0, 0);
+    expect(onGridHidden).toHaveBeenCalledTimes(1);
+    bindings.detach();
+    expect(disconnect).toHaveBeenCalled();
+    vi.unstubAllGlobals();
+  });
+
+  it('ResizeObserver が無い環境や、グリッドの要素が無いときは何もしない', () => {
+    vi.stubGlobal('ResizeObserver', undefined);
+    const onGridHidden = vi.fn();
+    const bindings = createPopoverWindowBindings({
+      isInside: () => false,
+      onOutsidePointerDown: () => {},
+      getGridRoot: () => document.createElement('div'),
+      onGridHidden,
+    });
+    expect(() => bindings.attach()).not.toThrow();
+    bindings.detach();
+    vi.unstubAllGlobals();
+    const withoutRoot = createPopoverWindowBindings({
+      isInside: () => false,
+      onOutsidePointerDown: () => {},
+      getGridRoot: () => null,
+      onGridHidden,
+    });
+    expect(() => withoutRoot.attach()).not.toThrow();
+    withoutRoot.detach();
+    expect(onGridHidden).not.toHaveBeenCalled();
+  });
 });
 
 describe('blurForPopover / restoreGridFocus', () => {
