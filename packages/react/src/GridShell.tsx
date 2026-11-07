@@ -455,6 +455,7 @@ export function useGridShell<T extends object>({
   ref,
   // 追加(state #2): 永続スライス変化の通知口(保存タイミング signal)。発火規約は型定義のコメント参照。
   onStateChange,
+  initialState,
   // 追加(change-callbacks): フィルター / ソートのスライス単位の変更通知。
   onFiltersChange,
   onSortChange,
@@ -536,6 +537,8 @@ export function useGridShell<T extends object>({
   const [engine] = useState(() =>
     createGridEngine<T>({
       features,
+      // 追加(段階 2 DU-12): 状態の初期値(マウント時だけ使う)。
+      initialState,
       columnInputs: {
         columns,
         isServerSide: dataSource != null,

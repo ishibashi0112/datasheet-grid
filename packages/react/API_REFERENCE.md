@@ -101,6 +101,7 @@
 | `classNames` | `GridClassNames` | — | パーツ別の追加スロット。各値は `GridSlotProps`(`string \| { className?, style? }`)で、StyleX の `stylex.props(...)` の戻り値をそのまま渡せる。全 25 スロット配線済み(一覧と規則は「パーツ別スロット」節)。レンダー毎に新しいオブジェクトを渡してもよい(内容の署名で memo)。基底 class は未レイヤー・特異度 (0,1,0)のため同特異度のクラスは読み込み順で決まる(確実な上書きは連結セレクタか `style.layer.css`)。 |
 | `getRowClassName` | `(row: T, rowIndex: number, ctx: RowStyleContext<T>) => GridSlotProps \| undefined` | — | 行ごとの追加 class(または `{ className, style }`)。行コンテナ + 行ヘッダー「#」セル + 各データセルに付与され、Tailwind / StyleX での行ハイライトに使える。`style` はインラインで付与され、座標 / 寸法はグリッドが後勝ち(返した style は内容比較で memo される)。第 3 引数 `ctx` は `{ row, rowIndex, sourceRowIndex, rowKey, isSelected }`(「補助型」節参照)。既存の 2 引数関数もそのまま動く(後方互換)。グループ行は対象外。class と style は行と各セルの両方に付くので、`opacity` / `filter` のように重なる指定は style で返さず、class を返して `.ssg-body-row.<class>` で行だけに当てる(style の `opacity: 0.5` は 0.25 になる)。 |
 | `onStateChange` | `(state: GridState) => void` | — | 永続スライス(手動リサイズ幅 / フィルター / ソート)が**実際に変化したとき**に最新 `GridState` を渡して呼ばれる。保存タイミングの signal(例: localStorage 自動保存)。発火規約は「状態の保存 / 復元」節を参照。 |
+| `initialState` | `Omit<GridStatePatch, 'columns'>` | — | 状態(列幅 / フィルター / ソート)の初期値。**最初の 1 回(マウント時)だけ**使い、後から変えても今の状態は変わらない(変えるときは `applyState`)。最初の描画・サーバーの描画(SSR)・serverSide の最初の `getRows` から効き、`getState()` もその値を返す。マウント時は `onStateChange` / `onFiltersChange` / `onSortChange` を呼ばない。`getState()` の値をそのまま渡せる(列メタの `columns` は使わない。列の並び / 表示 / 固定は `columns` prop で決める)。今の `columns` に無い列の幅 / フィルター / ソートは捨てる(開発時に警告)。URL のクエリや保存した状態から戻すときに使う。 |
 | `onFiltersChange` | `(filters: GridFilterState) => void` | — | フィルター状態(`globalText` + `columnFilters`)が**実際に変化したとき**だけ、そのスライスの複製を渡して呼ばれる。`onStateChange` は列幅 / 列メタでも呼ばれるため、記述子から WHERE を組み立てるなどフィルターだけを追いたい用途向け。規約は `onStateChange` と同じ(初回非発火 / 同値非発火 / `applyState` でも発火)。 |
 | `onSortChange` | `(sort: GridSortState) => void` | — | ソート状態が**実際に変化したとき**だけ、その複製を渡して呼ばれる(ORDER BY の組み立てなど)。規約は `onFiltersChange` と同じ。 |
 | `onScroll` | `(params: GridScrollEventParams) => void` | — | スクロール位置の変化通知(rAF で 1 フレーム 1 回に間引き・縦横どちらの変化でも発火)。`params` は `{ top, left, source }`(px)。`source: 'api'` は `setScrollPosition` / `scrollTo*` 系由来、`'user'` はそれ以外。2 グリッドの双方向スクロール同期は `source === 'user'` のときだけ相手へ反映することでループを止められる。インライン関数可(latest-ref 経由)。 |
@@ -1481,6 +1482,8 @@ const buffer = await writeXlsx({
 | `getState()` | 永続化対象(手動リサイズ幅 / フィルター / ソート)のスナップショット `GridState` を返す(純粋・副作用なし)。新規オブジェクトなのでそのまま `JSON.stringify` して保存できる。 |
 | `applyState(state)` | `getState()` の値を適用する。**渡したスライスだけを変え、省略した(`undefined` の)スライスは今のまま残す**(`{ sort }` だけなら列幅とフィルターはそのまま。`filters` も `globalText` / `columnFilters` の片方だけ渡せる。引数の型は `GridStatePatch`)。外部入力は内部で防御的に正規化され(形の合わない列フィルターは捨てる)、**今の `columns` に無い列の幅 / 列フィルター / ソートも捨てる**(開発時に警告。列定義を渡してから呼ぶ。自動グループ列などグリッドが足す列の幅は残す。捨てても今の状態と変わらなければ `onStateChange` は呼ばないので、列を消した後の古い保存状態は `applyState` の後の `getState()` の値で保存し直す)。1 回の再描画で反映し(フィルターと並べ替えを一度に渡しても、並べ替えだけの画面を挟まない)、直後の `getState()` は渡した値を返す。clientSide / serverSide 双方に効く(SSRM は `filters`/`sort` 変化がクエリへ載り再取得)。 |
 
+マウントの時点で戻す状態が分かっているときは、`applyState` の代わりに prop の `initialState` に渡す(最初の描画・サーバーの描画・serverSide の最初の `getRows` から効く。`columns` は使わない)。
+
 `GridState`: `{ version, columnWidths, filters, sort, columns? }`。`applyState` の引数の `GridStatePatch` は、その各フィールドを省略できる形(`filters` は `{ globalText?, columnFilters? }`)で、`getState()` の値はそのまま渡せる(全部のフィールドがあるので全部置き換わる)。`version` はマイグレーション用(現行 `2`)。`columns` は **列メタ(可視 / 順序 / ピン)のスナップショット**(`GridColumnState[]` = `{ key, visible?, pinned? }`。配列順 = 列順)で、`getState()` は常に出力し、`applyState()` は **`onColumnsChange` が指定されているときだけ** `columns` prop へ反映する(列順 / ピン / 可視も復元される点に注意。v1 形式 = `columns` 無しの保存値は列メタを触らない後方互換)。復元した `columns` 配列は固定列ごと(左固定 → 中央 → 右固定)の順に並べ直される(画面上の列順は同じ。列のドラッグ並べ替えと同じ規則で、2 回目以降の `applyState` では順序は変わらない)。`flex` / 列定義そのものは含めない。`activeCell` / `selection` などの一時 UI も含めない。`columnWidths` は**手動リサイズ / autoSize / `applyState` で幅が決まった列だけ**を持つ(それ以外の列は `width` / `flex` で描画され、エントリを持たない)。`columns` を同じ内容の別参照で渡し直しても消えず、列が削除されたとき・その列の `flex` / `pinned` 指定が変わったとき・`width` がエントリと異なる値に指定し直されたとき・列のリセット時にだけ捨てられる。そのため `applyState(getState())` は冪等で、保存値に既定幅が焼き込まれることもない(後からコードで `width` を変えれば、手動リサイズしていない列には反映される)。`custom` フィルターの `value`(`unknown`)は深いコピーをしないため、シリアライズ可能性は consumer 責務。`applyState` は壊れた / 部分的な入力にも耐える(非数値の幅・`kind` 無し / 未知 `kind` / 配列であるべき `values` が欠けた列フィルター・不正な `direction` は捨てる)。
 
 ```ts
@@ -1498,30 +1501,42 @@ if (saved) gridRef.current?.applyState(JSON.parse(saved));
 `onStateChange?: (state: GridState) => void`(prop)は、永続スライスが**実際に変化したとき**だけ最新 `GridState` を渡して呼ばれる。保存タイミングの signal として使える(`getState()` を別途叩く必要がない)。発火規約:
 
 - **ドラッグ中は保留**: 列リサイズ / 範囲選択のドラッグ中は確定前のため発火しない。確定(ドラッグ終了)後に 1 回だけ評価する。これにより列リサイズの毎フレーム更新では発火せず、**確定幅で 1 回だけ**通知される。
-- **初回マウントでは発火しない**: 初期状態は通知対象外(復元は `applyState` 側の責務)。
+- **初回マウントでは発火しない**: 初期状態は通知対象外(`initialState` で始めたときも呼ばない。後からの復元は `applyState`)。
 - **同値では発火しない**: 前回通知と構造等価(永続スライスが不変)なら発火しない。`activeCell` / `selection` などの一時 UI 変化では発火しない。
 - **`applyState` も「状態変化」として発火する**: 復元直後に同値を 1 回保存し直す可能性がある(冪等なので実害はない。避けたい場合は consumer 側で直前値と比較してスキップ)。
 - インライン関数を毎レンダー渡してよい(内部で latest-ref 経由で読むため、関数の参照変化では再評価しない)。
 
 **スライス単位の通知 `onFiltersChange` / `onSortChange`**: `onStateChange` は列幅 / 列メタの変更でも呼ばれるため、フィルター / ソートだけを追いたい場合(記述子から WHERE / ORDER BY を組み立てる等)は `onFiltersChange?: (filters: GridFilterState) => void` / `onSortChange?: (sort: GridSortState) => void` を使う。それぞれ該当スライスが**構造的に変化したときだけ**複製を渡して呼ばれ、規約(初回非発火 / 同値非発火 / `applyState` でも発火)は `onStateChange` と同じ。ドラッグ中の保留は無い(フィルター / ソートはドラッグで変わらない)。`onStateChange` と併用でき、同じ変化では両方が呼ばれる。
 
-```ts
-// 自動保存(変化時)+ マウント時復元。
-const gridRef = useRef<SpreadsheetGridHandle<Row>>(null);
-
-useEffect(() => {
+```tsx
+// 自動保存(変化時)+ マウント時の復元。initialState は最初の 1 回だけ使う(最初の描画から効き、
+// 後から applyState で戻すときのような「戻す前の画面」が出ない。serverSide なら最初の getRows から効く)。
+// localStorage はブラウザにしか無いので、クライアントだけで描く画面向け(サーバーの描画では下の URL の例のように渡す)。
+const [initialState] = useState(() => {
   const saved = localStorage.getItem('grid-state');
-  if (saved) gridRef.current?.applyState(JSON.parse(saved));
-}, []);
+  return saved ? JSON.parse(saved) : undefined;
+});
 
 <SpreadsheetGrid
-  ref={gridRef}
   columns={columns}
   rows={rows}
+  initialState={initialState}
   onStateChange={(state) =>
     localStorage.setItem('grid-state', JSON.stringify(state))
   }
 />
+```
+
+```tsx
+// URL のクエリ(?sort=qty.desc)から戻す。Next.js の App Router なら、サーバーの描画から並べ替えが効く。
+// app/orders/page.tsx(サーバーコンポーネント。OrdersGrid は 'use client' で SpreadsheetGrid を描く)
+export default async function Page({ searchParams }: { searchParams: Promise<{ sort?: string }> }) {
+  const [columnKey, direction] = ((await searchParams).sort ?? '').split('.');
+  const initialState = columnKey
+    ? { sort: [{ columnKey, direction: direction === 'desc' ? ('desc' as const) : ('asc' as const) }] }
+    : undefined;
+  return <OrdersGrid initialState={initialState} />;
+}
 ```
 
 ## serverSide モード(SSRM / DS-4 ②)

@@ -2679,6 +2679,19 @@ export type SpreadsheetGridProps<T, F extends GridFrameworkTypes = GridFramework
    * 復元」節を参照。
    */
   onStateChange?: (state: GridState) => void;
+  // 追加(段階 2 DU-12): 状態の初期値です(最初の 1 回 = マウント時だけ使う)。これまでは最初の描画の後に applyState を
+  //   呼ぶしかなく、SSRM はまず条件なしで取りに行き、サーバーの描画には URL から戻した絞り込みが載らなかった。
+  //   列メタ(columns)は columns prop の側で決めるので受けません。
+  /**
+   * 状態(列幅 / フィルター / ソート)の初期値。**最初の 1 回(マウント時)だけ**使い、
+   * 後から変えても今の状態は変わらない(変えるときは `applyState`)。最初の描画・サーバーの描画(SSR)
+   * ・serverSide の最初の `getRows` から効き、`getState()` もその値を返す。マウント時は
+   * `onStateChange` / `onFiltersChange` / `onSortChange` を呼ばない。`getState()`
+   * の値をそのまま渡せる(列メタの `columns` は使わない。列の並び / 表示 / 固定は `columns` prop
+   * で決める)。今の `columns` に無い列の幅 / フィルター / ソートは捨てる(開発時に警告)。URL
+   * のクエリや保存した状態から戻すときに使う。
+   */
+  initialState?: Omit<GridStatePatch, 'columns'>;
   // 追加(change-callbacks): フィルター / ソートの状態が**実際に変化したとき**だけ、そのスライスの複製を渡して
   //   呼ばれます(onStateChange は列幅 / 列メタの変更でも呼ばれるため、フィルター / ソートだけを追いたい用途
   //   ── 例: 記述子から WHERE / ORDER BY を組み立てる ── 向け)。規約は onStateChange と同じ

@@ -8,7 +8,10 @@
 //     担います。エンジンは「同じ入力なら同じ参照」を保証するリゾルバ群と、恒久安定なコマンド群を提供します。
 //   - dispose はエンジンが持つ全コントローラの後始末(タイマー / リスナー / observer)をまとめて行います。
 import { createGridStore, type GridStore } from '../model/gridStore';
-import { createInitialGridUiState } from '../model/gridReducer';
+import { createInitialGridUiState, gridUiReducer } from '../model/gridReducer';
+import { gridActions } from '../model/gridActions';
+import type { GridUiState } from '../model/gridTypes.unbound';
+import { dropUnknownColumnKeys, migrateGridStatePatch } from '../logic/gridState';
 import {
   createDetailIndexCacheHolder,
   createDetailKeysPruner,
@@ -77,6 +80,8 @@ export type GridEngineInit<T> = {
   features: GridCoreFeatures;
   // 初期 store 状態(初回の visibleColumns)を作るための列解決入力。
   columnInputs: ColumnResolutionInputs<T>;
+  // 追加(段階 2 DU-12): 状態の初期値(initialState prop。マウント時だけ使う)。
+  initialState?: unknown;
   // serverSide query の初期値(debounce ストアの seed。mount 時の queryKey と一致させる)。
   serverSide: {
     isServerSide: boolean;
@@ -134,6 +139,49 @@ export type GridEngine<T> = {
   dispose: () => void;
 };
 
+// 型だけの宣言です(ブラウザに process は無く、利用側のバンドラが process.env.NODE_ENV を文字列へ置き換える)。
+declare const process: { env: { NODE_ENV?: string } };
+
+// 追加(段階 2 DU-12): initialState から初期の UI 状態を作ります。applyState と同じ正規化(壊れた入力を捨てる + 今の列に
+//   無い列の幅 / フィルター / ソートを捨てる)を通し、reducer の同じ action で畳み込みます。列メタ(columns)は使いません。
+const resolveInitialUiState = (initialState: unknown, columnKeys: ReadonlySet<string>): GridUiState => {
+  let state = createInitialGridUiState();
+  if (initialState === undefined || initialState === null) {
+    return state;
+  }
+  const { patch, dropped } = dropUnknownColumnKeys(migrateGridStatePatch(initialState), columnKeys);
+  if (process.env.NODE_ENV !== 'production') {
+    if (dropped.length > 0) {
+      console.warn(
+        `[spreadsheet-grid] initialState: 今の列定義(columns)に無い列 ${dropped.map((key) => `\`${key}\``).join(', ')} の` +
+          '列幅 / フィルター / 並べ替えを捨てました。',
+      );
+    }
+    if (patch.columns !== undefined) {
+      console.warn(
+        '[spreadsheet-grid] initialState の columns(列の並び / 表示 / 固定)は使いません。columns prop で決めてください' +
+          '(マウントの後に変えるなら applyState)。',
+      );
+    }
+  }
+  if (patch.columnWidths) {
+    state = gridUiReducer(state, gridActions.resetColumnWidths(patch.columnWidths));
+  }
+  if (patch.filters) {
+    state = gridUiReducer(
+      state,
+      gridActions.setAllFilters({
+        globalText: patch.filters.globalText ?? '',
+        columnFilters: patch.filters.columnFilters ?? {},
+      }),
+    );
+  }
+  if (patch.sort) {
+    state = gridUiReducer(state, gridActions.setSort(patch.sort));
+  }
+  return state;
+};
+
 export const createGridEngine = <T,>(init: GridEngineInit<T>): GridEngine<T> => {
   const resolveColumns = createColumnResolver<T>(init.features);
   const resolvePaneLayout = createPaneLayoutResolver<T>();
@@ -141,7 +189,10 @@ export const createGridEngine = <T,>(init: GridEngineInit<T>): GridEngine<T> => 
   const resolveVerticalLayout = createVerticalLayoutResolver<T>(init.features.autoHeight);
 
   // 変更(監査 RD-5 / M-03): 初期 state は列に依存しなくなりました(列幅 state は空で始まる)。
-  const store = createGridStore(createInitialGridUiState());
+  // 変更(段階 2 DU-12): initialState があればその値で始めます(SSRM の最初の query とサーバーの描画にも効く)。
+  const store = createGridStore(
+    resolveInitialUiState(init.initialState, new Set(init.columnInputs.columns.map((column) => column.key))),
+  );
 
   const initialUiState = store.getState();
   const initialServerSideQuery = rowPipeline.resolveServerSideQuery({
