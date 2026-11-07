@@ -10,7 +10,7 @@
 
 詳しい使い方は[ドキュメントサイト](https://datasheet-grid.vercel.app)と [API リファレンス](./packages/react/API_REFERENCE.md)を参照してください。
 
-## 未リリース
+## 0.62.0 — 2026-11-07
 
 実際にアプリを作って確かめたチェック(`docs/audits/2026-11-07/`)で見つかったものの修正です。直した分だけ初期 JS(gzip)が増えます: 全部入り 約 115.2KB → 119.8KB、`/lite` 機能なし 約 61.9KB → 64.6KB、`/lite` + `standardFeatures` 約 80.4KB → 83.7KB。
 
