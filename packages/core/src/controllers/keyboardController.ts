@@ -65,6 +65,34 @@ const isControlColumnKey = (key: string): boolean =>
   key === ROW_DRAG_HANDLE_COLUMN_KEY || key === DETAIL_TOGGLE_COLUMN_KEY;
 const DEFAULT_PAGE_ROWS = 10;
 
+// 追加(label-row ③): 縦移動ではラベル行(セルを持たない)に止まらず、同じ向きに読み飛ばします。
+//   端までラベル行しか無ければ fallback に留まります(getLabelRow 未定義 = ラベル行なしでは従来どおり)。
+const skipLabelRows = <T,>(rowModel: RowModel<T>, candidateRow: number, step: 1 | -1, fallback: number): number => {
+  if (!rowModel.getLabelRow) {
+    return candidateRow;
+  }
+  const rowCount = rowModel.getRowCount();
+  let candidate = candidateRow;
+  while (candidate >= 0 && candidate < rowCount && rowModel.getLabelRow(candidate)) {
+    candidate += step;
+  }
+  return candidate >= 0 && candidate < rowCount ? candidate : fallback;
+};
+
+// 追加(dogfood DU-01 / DU-16): 端の行(ラベル行を飛ばした最初の行)と端の列(操作用の合成列を飛ばした最初の列)。
+const firstRowIndex = <T,>(rowModel: RowModel<T>): number => skipLabelRows(rowModel, 0, 1, 0);
+const firstColIndex = <T,>(visibleColumns: GridColumn<T>[]): number => {
+  const index = visibleColumns.findIndex((column) => !isControlColumnKey(column.key));
+  return index < 0 ? 0 : index;
+};
+
+// 追加(段階 2 lite-2): 最初のデータのセルです(ラベル行と操作用の合成列を飛ばす)。Tab の最初の止まり先(DU-16)と同じで、
+//   全選択(Ctrl+A / 左上の角)の後のアクティブセルにも使います(これまでは (0, 0) で、枠が合成列やラベル行に乗っていた)。
+export const resolveFirstDataCell = <T,>(rowModel: RowModel<T>, visibleColumns: GridColumn<T>[]): CellCoord => ({
+  row: firstRowIndex(rowModel),
+  col: firstColIndex(visibleColumns),
+});
+
 export type KeyboardController<T> = {
   update: (args: KeyboardControllerArgs<T>) => void;
   handleKeyDown: (event: GridKeyboardEventLike) => Promise<void>;
@@ -77,34 +105,15 @@ export const createKeyboardController = <T,>(): KeyboardController<T> => {
     args = next;
   };
 
-  // 追加(label-row ③): 縦移動ではラベル行(セルを持たない)に止まらず、同じ向きに読み飛ばします。
-  //   端までラベル行しか無ければ fallback に留まります(getLabelRow 未定義 = ラベル行なしでは従来どおり)。
-  const skipLabelRows = (rowModel: RowModel<T>, candidateRow: number, step: 1 | -1, fallback: number): number => {
-    if (!rowModel.getLabelRow) {
-      return candidateRow;
-    }
-    const rowCount = rowModel.getRowCount();
-    let candidate = candidateRow;
-    while (candidate >= 0 && candidate < rowCount && rowModel.getLabelRow(candidate)) {
-      candidate += step;
-    }
-    return candidate >= 0 && candidate < rowCount ? candidate : fallback;
-  };
-
   // 追加(別視点のレビュー): 横の移動の行です。ラベル行なら近いデータ行(上、無ければ下)へ寄せます(範囲の終わりがラベル行の
   //   とき = 末尾がラベル行の表で全選択した後など、横に広げるとアクティブセルがラベル行に乗っていた)。
   const nearestDataRow = (rowModel: RowModel<T>, row: number): number =>
     skipLabelRows(rowModel, row, -1, skipLabelRows(rowModel, row, 1, row));
 
-  // 追加(dogfood DU-01 / DU-16): 端の行(ラベル行を飛ばした最初 / 最後の行)と端の列(先頭は操作用の合成列を飛ばす)。
-  const firstRowIndex = (rowModel: RowModel<T>): number => skipLabelRows(rowModel, 0, 1, 0);
+  // 追加(dogfood DU-01): 端の行(ラベル行を飛ばした最後の行)。最初の行 / 列はモジュール直下の firstRowIndex / firstColIndex。
   const lastRowIndex = (rowModel: RowModel<T>): number => {
     const last = rowModel.getRowCount() - 1;
     return skipLabelRows(rowModel, last, -1, last);
-  };
-  const firstColIndex = (visibleColumns: GridColumn<T>[]): number => {
-    const index = visibleColumns.findIndex((column) => !isControlColumnKey(column.key));
-    return index < 0 ? 0 : index;
   };
 
   // 移動先のセルへアクティブセルを移します(Shift で範囲拡張。起点は今の範囲の起点か、無ければアクティブセル)。
@@ -140,7 +149,7 @@ export const createKeyboardController = <T,>(): KeyboardController<T> => {
     if (rowModel.getRowCount() === 0 || visibleColumns.length === 0) {
       return true;
     }
-    const first = { row: firstRowIndex(rowModel), col: firstColIndex(visibleColumns) };
+    const first = resolveFirstDataCell(rowModel, visibleColumns);
     commitMove(first, first, false);
     return true;
   };

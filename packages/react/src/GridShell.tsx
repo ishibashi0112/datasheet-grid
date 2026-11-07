@@ -42,6 +42,7 @@ import { useControllerLifecycle } from './hooks/useController';
 import { IME_INPUT_ATTRIBUTE } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/domGuards';
 
 import { gridActions } from '@ishibashi0112/spreadsheet-grid-core/internal/model/gridActions';
+import { resolveFirstDataCell } from '@ishibashi0112/spreadsheet-grid-core/internal/controllers/keyboardController';
 import { useGridStore, useGridViewState } from './hooks/useGridStore';
 import {
   buildSelectionSnapshot,
@@ -2353,8 +2354,10 @@ export function useGridShell<T extends object>({
     dispatch(gridActions.startSelection(startCell));
     dispatch(gridActions.updateSelection(endCell));
     dispatch(gridActions.endSelection());
-    dispatch(gridActions.activateCell(startCell));
-  }, [dispatch, viewRowCount, visibleColumns.length]);
+    // 変更(段階 2 lite-2): 範囲は表の全体のまま、アクティブセルは最初のデータのセル(合成列とラベル行を飛ばす。Tab の最初の
+    //   止まり先と同じ)。これまでは (0, 0) で、枠が行ドラッグのハンドル列やラベル行に乗っていました。
+    dispatch(gridActions.activateCell(resolveFirstDataCell(rowModel, visibleColumns)));
+  }, [dispatch, viewRowCount, visibleColumns, rowModel]);
 
   // ── double click → edit ───────────────────────────────
   const handleCellDoubleClick = useCallback(

@@ -1,6 +1,8 @@
 // 追加(1.0 前の最終チェック FC-03): ライブラリの合成列(行ドラッグハンドル / 展開トグル)があるときのコピーと貼り付けです。
 //   コピーの TSV に合成列の空の列が入らないこと(Excel に貼ると 1 列ずれていた)、貼り付けでも合成列を 1 列と数えないこと
 //   (合成列のセルから貼ると先頭のデータ列から書く)を固定します。
+// 追加(段階 2 lite-2): Ctrl+A / 左上の角の後のアクティブセルは最初のデータのセル(合成列とラベル行を飛ばす)。
+//   これまでは (0, 0) に置き、枠が行ドラッグのハンドル列やラベル行に乗っていました。
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeAll, afterAll, afterEach } from 'vitest';
 import { render, cleanup, act, fireEvent } from '@testing-library/react';
@@ -104,5 +106,46 @@ describe('FC-03: 合成列はコピー / 貼り付けの列に数えない', () 
       { id: 1, name: 'X', qty: 9 },
       { id: 2, name: 'Y', qty: 8 },
     ]);
+  });
+});
+
+describe('lite-2: 全選択の後のアクティブセルは最初のデータのセル', () => {
+  it.each([
+    ['合成列なし', {}, 0],
+    ['行ドラッグ', { enableRowDrag: true }, 1],
+    ['展開行 + 行ドラッグ', { enableRowDrag: true, detailRow: { render: () => null } }, 2],
+  ] as [string, Partial<SpreadsheetGridProps<Row>>, number][])('%s: Ctrl+A', (_name, extra, firstDataCol) => {
+    const { ref, shell } = setup(extra);
+    act(() => {
+      fireEvent.keyDown(shell, { key: 'a', ctrlKey: true });
+    });
+    expect(ref.current?.getActiveCell()).toEqual({ row: 0, col: firstDataCol });
+    // 範囲は今までどおり表の全体(合成列を含む)。
+    const selection = ref.current?.getSelection();
+    expect(selection?.type === 'cell' ? selection.range : null).toEqual({
+      start: { row: 0, col: 0 },
+      end: { row: 1, col: firstDataCol + 1 },
+    });
+  });
+
+  it('先頭がラベル行なら、その下のデータ行に置く', () => {
+    type LabeledRow = Row & { label?: string };
+    const labeledRef = createRef<SpreadsheetGridHandle<LabeledRow>>();
+    const { container } = render(
+      <SpreadsheetGrid<LabeledRow>
+        ref={labeledRef}
+        rows={[{ id: 9, name: '', qty: 0, label: '第1節' }, { id: 1, name: 'a', qty: 1 }]}
+        columns={columns as GridColumn<LabeledRow>[]}
+        rowKeyGetter={(r) => r.id}
+        labelRow={{ isLabelRow: (r) => r.label !== undefined, getLabel: (r) => r.label ?? '' }}
+        enableRowDrag
+        onRowsChange={() => {}}
+      />,
+    );
+    const shell = container.querySelector<HTMLElement>('.ssg-shell')!;
+    act(() => {
+      fireEvent.keyDown(shell, { key: 'a', ctrlKey: true });
+    });
+    expect(labeledRef.current?.getActiveCell()).toEqual({ row: 1, col: 1 });
   });
 });
